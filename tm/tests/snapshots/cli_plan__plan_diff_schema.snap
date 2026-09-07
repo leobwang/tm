@@ -1,0 +1,11 @@
+---
+source: tm/tests/cli_plan.rs
+expression: schema(diff)
+---
+{
+  "added": [],
+  "drift_min": "integer",
+  "had_previous": "bool",
+  "moved": [],
+  "removed": []
+}

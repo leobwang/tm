@@ -1,0 +1,20 @@
+---
+source: tm/tests/cli_plan.rs
+expression: schema(&json)
+---
+{
+  "active": {
+    "elapsed_min": "integer",
+    "est_min": "integer",
+    "id": "string",
+    "paused": "bool",
+    "started": "string",
+    "title": "string"
+  },
+  "blocks_done": "integer",
+  "budget_blocks": "integer",
+  "current": "null",
+  "date": "string",
+  "next": [],
+  "now": "string"
+}

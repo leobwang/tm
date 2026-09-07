@@ -1,0 +1,18 @@
+---
+source: tm/tests/cli_lifecycle.rs
+expression: schema_json
+---
+{
+  "entries": [
+    {
+      "actual_min": 60,
+      "ci": 3,
+      "est_min": 60,
+      "ev": "done",
+      "id": "t4",
+      "t": "[t]",
+      "tags": []
+    }
+  ],
+  "total": 3
+}

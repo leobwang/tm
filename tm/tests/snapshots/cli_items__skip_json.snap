@@ -1,0 +1,10 @@
+---
+source: tm/tests/cli_items.rs
+expression: json
+---
+{
+  "actual_min": null,
+  "inst": "2026-09-07",
+  "item": "lunch",
+  "status": "skipped"
+}

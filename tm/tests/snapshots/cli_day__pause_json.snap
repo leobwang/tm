@@ -1,0 +1,8 @@
+---
+source: tm/tests/cli_day.rs
+expression: p
+---
+{
+  "id": "t4",
+  "paused": true
+}

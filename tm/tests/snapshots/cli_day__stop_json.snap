@@ -1,0 +1,9 @@
+---
+source: tm/tests/cli_day.rs
+expression: json
+---
+{
+  "id": "t4",
+  "remaining_min": 40,
+  "worked_min": 20
+}

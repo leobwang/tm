@@ -1,0 +1,19 @@
+---
+source: tm/tests/cli_undo.rs
+expression: json
+---
+{
+  "events": [
+    {
+      "ev": "done",
+      "id": "t4"
+    }
+  ],
+  "files": [
+    "day/2026-09-07.md",
+    "week/2026-W37.md"
+  ],
+  "remaining": 2,
+  "summary": "done ^t4",
+  "verb": "done"
+}

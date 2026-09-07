@@ -1,0 +1,14 @@
+---
+source: tm/tests/cli_day.rs
+expression: "tm.json(&[\"start\", \"^t4\", \"--energy\", \"4\"])"
+---
+{
+  "est_min": 60,
+  "hsw": 2.92,
+  "id": "t4",
+  "multiplier": 1.0,
+  "pred": 5,
+  "rep": 4,
+  "started": "09:00",
+  "title": "Claude Code drafts tests"
+}

@@ -1,0 +1,52 @@
+---
+source: tm/tests/cli_plan.rs
+expression: schema(&json)
+---
+{
+  "blocks_done": "integer",
+  "budget_blocks": "integer",
+  "date": "string",
+  "diagnostics": {
+    "a_capacity_lost": "integer",
+    "blocked": [],
+    "conflicts": [],
+    "deferred": [],
+    "dropped_tail": [],
+    "hot": [],
+    "impossible": [],
+    "notes": [
+      "string"
+    ],
+    "plan_honesty": "null",
+    "rest_debt_min": "integer",
+    "underused": [],
+    "waiting": []
+  },
+  "diff": "null",
+  "explain": "null",
+  "hash": "string",
+  "priorities": [
+    {
+      "allocation_min": "integer",
+      "avail_min": "integer",
+      "bin": "null",
+      "class": "string",
+      "hysteresis_applied": "bool",
+      "id": "string",
+      "k": "integer",
+      "need_min": "integer",
+      "p": "integer",
+      "raw_p": "integer",
+      "shortfall_min": "integer",
+      "u": "null",
+      "until": "null"
+    }
+  ],
+  "segments": [],
+  "window": [
+    "string"
+  ],
+  "wrote": [
+    "string"
+  ]
+}

@@ -1,0 +1,10 @@
+---
+source: tm/tests/cli_day.rs
+expression: end
+---
+{
+  "action": "ended",
+  "actual_min": 25,
+  "place": "walk",
+  "planned_min": 20
+}

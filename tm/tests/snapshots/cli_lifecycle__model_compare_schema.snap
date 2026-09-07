@@ -1,0 +1,12 @@
+---
+source: tm/tests/cli_lifecycle.rs
+expression: "schema(&cmp[\"comparison\"])"
+---
+{
+  "b_is_better": "bool",
+  "bias_a": "number",
+  "bias_b": "number",
+  "mae_a": "number",
+  "mae_b": "number",
+  "n": "integer"
+}
