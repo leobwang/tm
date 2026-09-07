@@ -15,7 +15,7 @@ use tempfile::TempDir;
 use tm_core::horizon::{demote, drop_item, move_item, rank, readopt, Ctx, HorizonError};
 use tm_core::log::Log;
 use tm_core::model::{Horizon, Id, IsoWeek, Stamp, State, YearMonth};
-use tm_core::store::{FsStore, PlanFiles, Store};
+use tm_core::store::{FsStore, MemStore, PlanFiles, Store};
 use tm_core::tree::Tree;
 
 const WEEK: &str = "week/2026-W37.md";
@@ -72,6 +72,10 @@ fn id(s: &str) -> Id {
     Id::new(s)
 }
 
+fn day(s: &str) -> chrono::NaiveDate {
+    s.parse().unwrap()
+}
+
 fn line_of(store: &FsStore, rel: &str, id: &str) -> Option<String> {
     let needle = format!("^{id}");
     text(store, rel)
@@ -101,13 +105,18 @@ fn log_events(store: &FsStore) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Every file except `changed` is byte-identical.
+/// Every file except `changed` is byte-identical — and none of them is gone:
+/// a verb that deleted a whole file would otherwise slip through the loop
+/// over `after`.
 fn only_changed(before: &BTreeMap<String, String>, after: &BTreeMap<String, String>, changed: &[&str]) {
     for (path, text) in after {
         if changed.contains(&path.as_str()) {
             continue;
         }
         assert_eq!(before.get(path), Some(text), "{path} changed unexpectedly");
+    }
+    for path in before.keys() {
+        assert!(after.contains_key(path), "{path} disappeared");
     }
 }
 
@@ -169,6 +178,68 @@ fn move_creates_the_target_file_with_its_front_matter() {
         text(&store, NEXT_WEEK),
         "---\nweek: 2026-W38\nwindow: 2026-09-14..2026-09-20\n---\n- [ ] 1 Pick up package  win:2026-09-07T09:00/21:00 dur:20m ^a3\n"
     );
+}
+
+/// §13's `tm move ^id <horizon>` takes no section, and three section names
+/// change what a line *means* (§4.2). A move with no section keeps clear of
+/// them: into a day it goes to `# Pinned` (§6.2 — the only day section the
+/// planner reads), into a month to the outcomes rather than `# Demoted`
+/// (§6.3), into the backlog outside `## series:` (§5.4 — only the head of a
+/// series is active).
+#[test]
+fn a_move_with_no_section_stays_out_of_the_loaded_ones() {
+    let (_dir, store) = plan();
+
+    let (files, tree) = snapshot(&store);
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-07T09:00:00-05:00"));
+    move_item(&cx, &id("t4"), &Horizon::Day(day("2026-09-07")), None).unwrap();
+    let (files, tree) = snapshot(&store);
+    assert_eq!(
+        files.find(&id("t4")).unwrap().src.section.as_deref(),
+        Some("Pinned")
+    );
+    assert!(tree
+        .day_candidate_ids(day("2026-09-07"), IsoWeek::new(2026, 37))
+        .contains(&id("t4")));
+
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-07T09:05:00-05:00"));
+    move_item(&cx, &id("t5"), &Horizon::Month(YearMonth::new(2026, 9)), None).unwrap();
+    let (files, tree) = snapshot(&store);
+    assert_eq!(
+        files.find(&id("t5")).unwrap().src.section.as_deref(),
+        Some("Outcomes")
+    );
+
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-07T09:10:00-05:00"));
+    move_item(&cx, &id("t1"), &Horizon::Backlog, None).unwrap();
+    let (files, _tree) = snapshot(&store);
+    let t1 = files.find(&id("t1")).unwrap();
+    assert_eq!(t1.series, None, "^t1 joined the series it was appended after");
+    assert_ne!(t1.src.section.as_deref(), Some("series:cell-bio"));
+}
+
+/// A target whose every section is loaded gets the horizon's canonical one
+/// instead — created at the end of the file by the store.
+#[test]
+fn a_move_creates_the_canonical_section_when_every_section_is_loaded() {
+    let store = MemStore::new()
+        .with_file(
+            BACKLOG,
+            "## series:cell-bio\n- [ ] 4 4b Cell Biology vol. 2 ^c2\n",
+        )
+        .with_file(
+            WEEK,
+            "---\nweek: 2026-W37\n---\n# Tasks\n- [ ] 3 1b Something ^ss1\n",
+        );
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-08T09:00:00-05:00"));
+    move_item(&cx, &id("ss1"), &Horizon::Backlog, None).unwrap();
+
+    let backlog = store.text(BACKLOG).unwrap();
+    assert!(backlog.contains("# Untied\n- [ ] 3 1b Something ^ss1"), "{backlog}");
+    let files = store.read_tree().unwrap();
+    assert_eq!(files.find(&id("ss1")).unwrap().series, None);
 }
 
 #[test]

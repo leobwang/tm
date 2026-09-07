@@ -18,7 +18,8 @@
 //!   today's logged minutes from.
 //! * **Single-item verbs** (§13): [`move_item`]`(cx, id, to, section)` moves
 //!   the exact line between horizon files (creating the target with its
-//!   front matter) and logs `move`; [`demote`]`(cx, id)` marks a week item
+//!   front matter, into `section` or the target's default section) and logs
+//!   `move`; [`demote`]`(cx, id)` marks a week item
 //!   `[-]` and copies it into `month/<current>#Demoted` with `est:` and a
 //!   `demoted:W<nn>` stamp; [`readopt`]`(cx, id, to)` moves that copy back
 //!   into a week (`[-]` → `[ ]`, stamps kept); [`drop_item`]`(cx, id)` sets
@@ -40,32 +41,34 @@
 //! # What each close does (§6.3)
 //!
 //! * **day**: every `[>]` in `week/<week of date>` and in the day file's
-//!   `# Pinned` section becomes `[ ]` with `est:` = remaining, where
-//!   remaining = the item's own estimate − the minutes the replay records
-//!   for it *on that date*, floored at [`MIN_REMAINING_MIN`] (a partially
-//!   done item never reads as finished). Pinned items still open then move
-//!   to `week/<week of date>` with `demoted:D<dd>` appended. Nothing else
-//!   moves. An existing day file gets its `<!-- tm:review start -->`
+//!   `# Pinned` section becomes `[ ]` with `est:` = remaining (the §6.4
+//!   rollup), floored at [`MIN_REMAINING_MIN`]. Pinned items still open then
+//!   move to `week/<week of date>` with `demoted:D<dd>` appended. Nothing
+//!   else moves. An existing day file gets its `<!-- tm:review start -->`
 //!   placeholder at the end (`review.rs` fills it later); a day that was
 //!   never planned gets no file.
 //!
-//!   Only the minutes logged *on that date* are subtracted, because `est:`
-//!   is what earlier days already left behind: `tm stop` and a partial
-//!   `tm done` write it and set the state back to `[ ]`, so a line that is
-//!   still `[>]` at midnight is one whose `est:` predates today's block.
+//!   A line that already carries an `est:` keeps it: §9.1's `tm stop` and
+//!   partial `tm done` write `est:` = remaining *after* the block they
+//!   close, so subtracting the day's logged minutes from it again would
+//!   count them twice. Only an estimate no tool has touched (`est:` absent,
+//!   so the remaining is still the leading estimate) has the minutes the
+//!   replay records for the item on that date subtracted from it.
 //! * **week**: every unfinished (`[ ]`/`[>]`) line of the week file becomes
 //!   `[-]` *in place* — the week file is an archive from then on, and its
 //!   front matter gets `closed: <date>` — and is **copied** to
 //!   `month/<current>#Demoted` with `est:` = remaining and a `demoted:W<nn>`
-//!   stamp appended (stamps accumulate: `W36,W37`). Unfinished children —
-//!   items in the week file whose parent is also an unfinished item in the
-//!   *same* week file, at any depth — are removed from the week file
-//!   instead; their remaining is folded into the parent's `est:` by the §6.4
-//!   rollup ([`Tree::remaining`]: a parent with its own estimate already
-//!   covers its children, one without inherits their sum). Dated items past
-//!   due with `on_miss = persist` move to `backlog.md#Overdue` instead of
-//!   being demoted, exactly as written. Recurring items are never touched
-//!   (§5.3), and neither are `[x] [-] [~] [?]` lines.
+//!   stamp appended (stamps accumulate across the *archive copy* too:
+//!   `W36,W37`). Unfinished children — items in the week file whose nearest
+//!   ancestor in the same file is a demoted item, at any depth — are removed
+//!   from the week file instead, and their remaining is folded into that
+//!   ancestor's `est:` (see "Folding children" below). Dated items past due
+//!   with `on_miss = persist` move to `backlog.md#Overdue` instead of being
+//!   demoted, exactly as written; dated intervals that are *not* past due —
+//!   the walls of §7.2: exams, meetings — are never demoted either (§6.3,
+//!   §5.3) and move, with their prep children, into the current week.
+//!   Recurring items are never touched (§5.3), and neither are `[x] [-] [~]
+//!   [?]` lines.
 //! * **month**: unfinished outcomes and everything under `# Demoted` move to
 //!   the next month file, each into the section it came from (outcomes keep
 //!   their `!k`, demoted items keep their stamps); ids listed in `drops`
@@ -82,16 +85,43 @@
 //! * **`est:` units** — whole blocks when the minutes divide evenly (`3b`),
 //!   else the compact `Nm` / `NhMm` form; the floor is
 //!   [`MIN_REMAINING_MIN`].
-//! * **Folding children** — "their remaining is folded into the parent's
-//!   `est:`" is the §6.4 rollup, not a sum on top of the parent's own
-//!   estimate: a milestone written as `6b` with three 1b subtasks carries
-//!   `est:6b`, because §6.4 defines its remaining that way. Only a parent
-//!   with *no* estimate of its own inherits the children's sum.
+//! * **Folding children** — a demoted parent carries
+//!   `max(remaining(parent), Σ own remaining of the children dropped with
+//!   it)`. A subtask is normally a *decomposition* of its parent, so the
+//!   §6.4 rollup (a milestone written as `6b` with three 1b subtasks has
+//!   `remaining = 6b`) already covers it and the `max` changes nothing; when
+//!   the dropped lines add up to more than the parent's own estimate, that
+//!   estimate is stale and the larger number is carried, so a week close
+//!   never removes work from the tree (§0 principle 6). Each dropped line is
+//!   counted once, by its own `est:`/leading estimate; lines that stay (an
+//!   overdue child filed in the backlog, a child living in another file) are
+//!   never folded in.
 //! * **What a week close never touches** — recurring lines (§5.3) and
-//!   anything not `[ ]`/`[>]`. A dated interval written in a *week* file (an
-//!   exam, a meeting) is demoted like any other line: the "calendar
-//!   intervals" §6.3 exempts are the synced `calendar/` walls, which live in
-//!   their own files and are never in a week file.
+//!   anything not `[ ]`/`[>]`. A dated interval (`at:`) is a wall (§7.2:
+//!   "calendar, exams, meetings"), and §6.3 exempts walls from demotion:
+//!   one that is past due goes to `backlog.md#Overdue` like any other
+//!   past-due `persist` item, and one still in the future stays `[ ]` as
+//!   §5.3 requires. Because the week file becomes an archive, staying `[ ]`
+//!   in it would take the wall out of the planner's sight (§6.2 reads
+//!   `week/<this week>`), so the wall and its prep children (§6.4) are moved
+//!   into the current week instead — the one horizon that is still live.
+//!   Closing a week from inside itself leaves them where they are, and so
+//!   does a wall that is already over: nothing is carried from an instance
+//!   that expired (§5.3), and it is still not demoted.
+//! * **A parent cycle** (`@a` on `^b` and `@b` on `^a`, a `tm check` error
+//!   under §5.5) never deletes a line: a cycle member is demoted as a root
+//!   rather than dropped as somebody's child, and the report notes it.
+//! * **Where a section-less move lands** — §13's `tm move ^id <horizon>`
+//!   has no section argument, and three section names change what a line
+//!   *means* (§4.2): `# Demoted` (§6.3), `# Pinned` (§6.2 — the only day
+//!   section the planner reads) and `## series:<name>` (§5.4 — only the head
+//!   is active), to which a day file's append-only `## Log` and free-text
+//!   `## Notes` are added. So a move with no section appends to the last
+//!   section of the target file that means nothing in particular; a move
+//!   into a day always goes to `# Pinned`; a file whose sections are all
+//!   loaded gets the horizon's canonical one (`Untied`, `Outcomes`,
+//!   `Tasks`), created by [`Store::insert_line`]; a file with no sections at
+//!   all (a freshly created week) takes the line at the end.
 //! * **A second demotion of the same item** rewrites the one copy under
 //!   `# Demoted` (accumulating stamps) instead of adding a second line, so
 //!   the id never becomes a `tm check` duplicate; a stamp already on the
@@ -238,6 +268,31 @@ pub struct Moved {
     pub to: String,
 }
 
+/// `Vec<Stamp>` in the notation §4.1 writes and reads (`["W36","W37"]`)
+/// rather than serde's default enum shape (`[{"Week":36}]`), for
+/// `serde(with = ...)`: `W37` is the only spelling of a stamp the rest of
+/// the system — the line token, [`Stamp::parse`], `/plan-month` reading
+/// `tm close --json` — speaks.
+mod stamp_list {
+    use super::*;
+    use serde::ser::SerializeSeq;
+    use serde::{Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(v: &[Stamp], s: S) -> Result<S::Ok, S::Error> {
+        let mut seq = s.serialize_seq(Some(v.len()))?;
+        for stamp in v {
+            seq.serialize_element(&stamp.to_string())?;
+        }
+        seq.end()
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<Stamp>, D::Error> {
+        Vec::<String>::deserialize(d)?
+            .iter()
+            .map(|s| Stamp::parse(s).map_err(serde::de::Error::custom))
+            .collect()
+    }
+}
+
 /// An item that was demoted (or stamped and moved down a horizon).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Demoted {
@@ -245,7 +300,9 @@ pub struct Demoted {
     pub id: Id,
     /// The remaining estimate written as `est:` (0 when the item has none).
     pub est_min: u32,
-    /// Its stamps after the close (`[W36, W37]`).
+    /// Its stamps after the close, in the `demoted:` notation
+    /// (`["W36","W37"]`).
+    #[serde(with = "stamp_list")]
     pub stamps: Vec<Stamp>,
 }
 
@@ -274,8 +331,13 @@ pub struct CloseReport {
     pub demoted: Vec<Demoted>,
     /// `[>]` → `[ ]` rewrites with a fresh `est:` (day close).
     pub reopened: Vec<Reopened>,
-    /// Children removed from the week file because their parent was demoted.
+    /// Children removed from the week file because their parent was demoted
+    /// (their remaining folded into that parent's `est:`).
     pub dropped_children: Vec<Id>,
+    /// Walls — dated intervals (§7.2) — and their prep children, which a
+    /// week close never demotes (§6.3): they stay `[ ]` and, unless the week
+    /// being closed is the current one, move into it.
+    pub carried: Vec<Id>,
     /// Items dropped by `tm close month --drop ^id`.
     pub dropped: Vec<Id>,
     /// Dated persist items moved to `backlog.md#Overdue`.
@@ -298,6 +360,7 @@ impl CloseReport {
             && self.demoted.is_empty()
             && self.reopened.is_empty()
             && self.dropped_children.is_empty()
+            && self.carried.is_empty()
             && self.dropped.is_empty()
             && self.overdue_to_backlog.is_empty()
     }
@@ -335,7 +398,9 @@ pub struct Ctx<'a> {
     pub files: &'a PlanFiles,
     /// The index over `files`.
     pub tree: &'a Tree,
-    /// Log replay, for the minutes [`close_day`] subtracts.
+    /// Log replay. [`close_day`] subtracts the minutes it records for a date
+    /// from the estimate of a line that carries no `est:` of its own — see
+    /// [`close_day`]; a line whose `est:` §9.1 already rewrote is left alone.
     pub replay: Option<&'a Replay>,
     /// The instant the operation happens at; timestamps every log event.
     pub now: DateTime<FixedOffset>,
@@ -453,11 +518,38 @@ fn est_dur(minutes: u32, block_min: u32) -> Dur {
 /// The item's stamps with `add` appended (once — a second close in the same
 /// period does not write `W37,W37`).
 fn stamps_with(item: &Item, add: Stamp) -> Vec<Stamp> {
-    let mut v = item.stamps.demoted.clone();
-    if !v.contains(&add) {
-        v.push(add);
+    merge_stamps(&[], &item.stamps.demoted, add)
+}
+
+/// The stamps a demoted copy carries after this demotion: the history
+/// already on the archive copy (`prior`), then anything the live line adds,
+/// then `add` — each stamp once, oldest first (§6.3 "stamps accumulate:
+/// `W36,W37`"; §11 counts them for the cut proposal).
+fn merge_stamps(prior: &[Stamp], own: &[Stamp], add: Stamp) -> Vec<Stamp> {
+    let mut v: Vec<Stamp> = Vec::new();
+    for s in prior.iter().chain(own).chain(std::iter::once(&add)) {
+        if !v.contains(s) {
+            v.push(*s);
+        }
     }
     v
+}
+
+/// The stamps on the archive copy of `key` under `month/…# Demoted`, read
+/// from the store (the copy may have been written by an earlier close, long
+/// after the snapshot in [`Ctx::files`] was taken). Empty when there is no
+/// such copy.
+fn archived_stamps(cx: &Ctx, month_path: &str, key: &Id) -> Result<Vec<Stamp>, HorizonError> {
+    if !cx.store.exists(month_path) {
+        return Ok(Vec::new());
+    }
+    let parsed = cx.store.read_file(month_path)?;
+    let stamps = parsed
+        .items()
+        .find(|i| Tree::key_of(i) == *key && in_section(i, DEMOTED_SECTION))
+        .map(|i| i.stamps.demoted.clone())
+        .unwrap_or_default();
+    Ok(stamps)
 }
 
 /// `demoted:` value as written (`W36,W37`).
@@ -500,6 +592,102 @@ fn remaining_est(cx: &Ctx, key: &Id, item: &Item) -> Option<u32> {
     let own = item.own_remaining().map(|d| d.as_minutes());
     let rolled = cx.tree.remaining(key);
     own.or(rolled).map(|m| m.max(MIN_REMAINING_MIN))
+}
+
+/// The `est:` a demoted item carries when `folded` minutes of dropped
+/// children go with it (§6.3 "their remaining is folded into the parent's
+/// `est:`"): the larger of the §6.4 rollup and what the dropped lines were
+/// worth, so no work leaves the tree. `None` only when there is nothing to
+/// write at all.
+fn demote_est(cx: &Ctx, key: &Id, item: &Item, folded: u32) -> Option<u32> {
+    match (remaining_est(cx, key, item), folded) {
+        (Some(base), f) => Some(base.max(f)),
+        (None, 0) => None,
+        (None, f) => Some(f.max(MIN_REMAINING_MIN)),
+    }
+}
+
+/// What one line is worth on its own (`est:` → leading estimate → `dur:`),
+/// used to fold a dropped child into its parent: each dropped line counts
+/// once, and a line that has no estimate of its own contributes nothing.
+fn own_minutes(item: &Item) -> u32 {
+    item.own_remaining().map_or(0, |d| d.as_minutes())
+}
+
+// -- where a section-less move lands ----------------------------------------
+
+/// Sections whose *name* changes what a line means, so a move that was not
+/// asked for one must not land in them: `# Demoted` (§6.3), `# Pinned`
+/// (§6.2), `## series:<name>` (§5.4), and a day file's append-only `## Log`
+/// and free-text `## Notes` (§4.3).
+fn is_reserved_section(name: &str) -> bool {
+    matches!(
+        name,
+        DEMOTED_SECTION | PINNED_SECTION | OVERDUE_SECTION | "Log" | "Notes"
+    ) || name.starts_with("series:")
+}
+
+/// The section a horizon file keeps its ordinary work in, created on demand
+/// when every section the file has is reserved.
+fn canonical_section(to: &Horizon) -> Option<&'static str> {
+    match to {
+        Horizon::Day(_) => Some(PINNED_SECTION),
+        Horizon::Backlog => Some("Untied"),
+        Horizon::Month(_) => Some("Outcomes"),
+        Horizon::Week(_) => Some("Tasks"),
+        _ => None,
+    }
+}
+
+/// The section [`move_item`] appends to when §13's `tm move ^id <horizon>`
+/// names none: `# Pinned` in a day file (§6.2: nothing else there is a
+/// planning candidate), otherwise the last section of the target that is not
+/// reserved — the end of the file, when it has no sections at all.
+fn default_section(cx: &Ctx, to: &Horizon) -> Result<Option<String>, HorizonError> {
+    if matches!(to, Horizon::Day(_)) {
+        return Ok(Some(PINNED_SECTION.to_string()));
+    }
+    let path = to.path();
+    if !cx.store.exists(&path) {
+        return Ok(None);
+    }
+    let parsed = cx.store.read_file(&path)?;
+    let headings = edit::headings(&parsed);
+    match headings.last() {
+        // No sections, or a last section that means nothing in particular:
+        // appending at the end of the file is safe.
+        None => Ok(None),
+        Some(h) if !is_reserved_section(&h.text) => Ok(None),
+        Some(_) => Ok(headings
+            .iter()
+            .rev()
+            .find(|h| !is_reserved_section(&h.text))
+            .map(|h| h.text.clone())
+            .or_else(|| canonical_section(to).map(str::to_string))),
+    }
+}
+
+/// Move the line carrying `key` from `from` into the horizon file for `to`
+/// — created with its front matter when missing — appending it to `section`
+/// or to [`default_section`]. Returns the destination path. Writes no log
+/// event: the caller decides whether this was a `move`, a `readopt` or part
+/// of a close.
+fn move_to(
+    cx: &Ctx,
+    from: &str,
+    key: &Id,
+    to: &Horizon,
+    section: Option<&str>,
+) -> Result<String, HorizonError> {
+    let to_path = to.path();
+    let section = match section {
+        Some(s) => Some(s.to_string()),
+        None => default_section(cx, to)?,
+    };
+    cx.store.ensure_horizon_file(to)?;
+    cx.store
+        .move_line_from(Some(from), key, &to_path, section.as_deref())?;
+    Ok(to_path)
 }
 
 // -- raw line/front-matter transforms ---------------------------------------
@@ -617,15 +805,13 @@ fn move_line(
     section: Option<&str>,
     as_readopt: bool,
 ) -> Result<Moved, HorizonError> {
-    let to_path = to.path();
     // Re-open a demoted line that is moving back into a planning horizon.
     let reopen = item.state == State::Demoted && matches!(to, Horizon::Week(_) | Horizon::Day(_));
     if reopen {
         let text = rewrite(item, key, |l| l.set_state(State::Todo))?;
         cx.store.write_line_in(Some(from), key, &text)?;
     }
-    cx.store.ensure_horizon_file(to)?;
-    cx.store.move_line_from(Some(from), key, &to_path, section)?;
+    let to_path = move_to(cx, from, key, to, section)?;
     let ev = if as_readopt {
         Event::Readopt {
             id: key.to_string(),
@@ -665,11 +851,13 @@ pub fn demote(cx: &Ctx, id: &Id) -> Result<Demoted, HorizonError> {
     // A note here would only ever say that the month file has a live line
     // with the same id, which is a `tm check` duplicate-id problem of its own.
     let mut notes = Vec::new();
-    demote_one(cx, &from, id, item, week, month, &mut notes)
+    demote_one(cx, &from, id, item, week, month, 0, &mut notes)
 }
 
 /// Demote one week line: `[-]` in place, a stamped copy under the month's
-/// `# Demoted`, one `demote` event.
+/// `# Demoted`, one `demote` event. `folded` is the remaining of the
+/// children dropped with it (§6.3), 0 for a bare `tm demote`.
+#[allow(clippy::too_many_arguments)]
 fn demote_one(
     cx: &Ctx,
     from: &str,
@@ -677,11 +865,16 @@ fn demote_one(
     item: &Item,
     week: IsoWeek,
     month: YearMonth,
+    folded: u32,
     notes: &mut Vec<String>,
 ) -> Result<Demoted, HorizonError> {
     let block_min = cx.block_min();
-    let est = remaining_est(cx, key, item);
-    let stamps = stamps_with(item, Stamp::Week(week.week));
+    let est = demote_est(cx, key, item, folded);
+    let month_path = Horizon::Month(month).path();
+    // The archive copy is where the history lives: the live week line only
+    // knows the stamps written on it, so the copy's stamps come first.
+    let prior = archived_stamps(cx, &month_path, key)?;
+    let stamps = merge_stamps(&prior, &item.stamps.demoted, Stamp::Week(week.week));
     let value = stamp_value(&stamps);
     let copy = rewrite(item, key, |l| {
         l.set_state(State::Demoted)?;
@@ -692,7 +885,6 @@ fn demote_one(
         Ok(())
     })?;
     let archived = rewrite(item, key, |l| l.set_state(State::Demoted))?;
-    let month_path = Horizon::Month(month).path();
     notes.extend(write_demoted_copy(cx, &month_path, key, &copy)?);
     cx.store.write_line_in(Some(from), key, &archived)?;
     cx.log(Event::Demote {
@@ -815,12 +1007,13 @@ pub fn rank(cx: &Ctx, id: &Id, n: usize) -> Result<bool, HorizonError> {
 /// `tm close day` for `date` (§6.3).
 ///
 /// Every `[>]` in `week/<week of date>` and in the day file's `# Pinned`
-/// section becomes `[ ]` with `est:` = own remaining − the minutes the
-/// replay records for it on `date` (floored at [`MIN_REMAINING_MIN`]);
-/// pinned items still open then move to the week file with `demoted:D<dd>`
-/// (recurring lines stay put, §5.3); nothing else moves. An existing day file
-/// receives its review placeholder. Appends one `demote` per moved pinned
-/// item and a `close{period:"day"}`.
+/// section becomes `[ ]` with `est:` = remaining (the §6.4 rollup, with the
+/// replay's minutes for `date` taken off only when
+/// the line carries no tool-written `est:` yet, floored at
+/// [`MIN_REMAINING_MIN`]); pinned items still open then move to the week
+/// file with `demoted:D<dd>` (recurring lines stay put, §5.3); nothing else
+/// moves. An existing day file receives its review placeholder. Appends one
+/// `demote` per moved pinned item and a `close{period:"day"}`.
 pub fn close_day(cx: &Ctx, date: NaiveDate) -> Result<CloseReport, HorizonError> {
     let week = IsoWeek::from_date(date);
     let week_path = Horizon::Week(week).path();
@@ -899,9 +1092,7 @@ pub fn close_day(cx: &Ctx, date: NaiveDate) -> Result<CloseReport, HorizonError>
                 est_min: est.unwrap_or(0),
             });
         }
-        cx.store.ensure_horizon_file(&Horizon::Week(week))?;
-        cx.store
-            .move_line_from(Some(day_path.as_str()), key, &week_path, None)?;
+        move_to(cx, &day_path, key, &Horizon::Week(week), None)?;
         let est_min = est.or_else(|| remaining_est(cx, key, item)).unwrap_or(0);
         cx.log(Event::Demote {
             id: key.to_string(),
@@ -935,14 +1126,22 @@ pub fn close_day(cx: &Ctx, date: NaiveDate) -> Result<CloseReport, HorizonError>
     Ok(report)
 }
 
-/// Remaining minutes for a day close: the item's own estimate minus the
-/// minutes logged against it *on that date*, floored at
-/// [`MIN_REMAINING_MIN`]. `None` when there is no estimate to shrink.
+/// Remaining minutes for a day close (§6.3 "`est:` = remaining"): the §6.4
+/// rollup as the line has it, floored at [`MIN_REMAINING_MIN`]. `None` when
+/// there is no estimate anywhere to write.
+///
+/// The day's logged minutes are subtracted **only** from a line that carries
+/// no `est:` of its own. `est:` is tool-written (§9.1: `tm stop` and
+/// `tm done --partial` set it to what is left *after* the block they close),
+/// so subtracting the same minutes again at midnight would count them twice
+/// and walk the estimate down to the floor. A line with no `est:` still
+/// carries the estimate it was written with, and the minutes the replay
+/// recorded against it on `date` are genuinely not in it yet.
 fn day_remaining(cx: &Ctx, key: &Id, item: &Item, date: NaiveDate) -> Option<u32> {
-    let base = item
-        .own_remaining()
-        .map(|d| d.as_minutes())
-        .or_else(|| cx.tree.remaining(key))?;
+    let base = remaining_est(cx, key, item)?;
+    if item.est.is_some() {
+        return Some(base);
+    }
     let done = cx
         .replay
         .map_or(0, |r| r.block_minutes_on(key.as_str(), date));
@@ -985,11 +1184,14 @@ fn write_review_placeholder(cx: &Ctx, day_path: &str) -> Result<bool, HorizonErr
 /// `tm close week` for `week` (§6.3).
 ///
 /// Unfinished lines become `[-]` in the week file and are copied to
-/// `month/<current>#Demoted` with `est:` = remaining and `demoted:W<nn>`;
-/// unfinished children of a demoted item are removed from the week file
-/// (their remaining is already in the parent's rollup); dated persist items
-/// past due move to `backlog.md#Overdue` instead; recurring items and closed
-/// lines are untouched. The week file's front matter gets `closed: <date>`.
+/// `month/<current>#Demoted` with `est:` = remaining and `demoted:W<nn>`
+/// (accumulating the stamps the archive copy already carries); unfinished
+/// children of a demoted item are removed from the week file, their
+/// remaining folded into that item's `est:`; dated persist items past due
+/// move to `backlog.md#Overdue` instead; walls — dated intervals that are
+/// not past due (§7.2) — and their prep children are never demoted (§6.3)
+/// and move into the current week; recurring items and closed lines are
+/// untouched. The week file's front matter gets `closed: <date>`.
 pub fn close_week(cx: &Ctx, week: IsoWeek) -> Result<CloseReport, HorizonError> {
     let week_path = Horizon::Week(week).path();
     let file = cx
@@ -1006,60 +1208,100 @@ pub fn close_week(cx: &Ctx, week: IsoWeek) -> Result<CloseReport, HorizonError> 
         .filter(|i| i.state.is_open() && i.recur == Recur::None)
         .map(|i| (Tree::key_of(i), i))
         .collect();
-    let open_keys: HashSet<&Id> = open.iter().map(|(k, _)| k).collect();
     let overdue: HashSet<Id> = open
         .iter()
         .filter(|(k, i)| overdue_at(cx, k, i, now))
         .map(|(k, _)| k.clone())
         .collect();
+    // Walls and their prep are never demoted (§6.3); everything else that is
+    // still open and not past due is.
+    let carried = carried_walls(cx, &open, &overdue, |i| {
+        matches!(i.shape, Shape::Interval { .. })
+    });
+    // Of those, the ones still ahead of us move into the live week; a wall
+    // that is over stays in the archive it was planned in.
+    let carry_forward = carried_walls(cx, &open, &overdue, |i| {
+        matches!(i.shape, Shape::Interval { end, .. } if end >= now)
+    });
+    let candidates: HashSet<Id> = open
+        .iter()
+        .map(|(k, _)| k.clone())
+        .filter(|k| !overdue.contains(k) && !carried.contains(k))
+        .collect();
+    let cycles: HashSet<Id> = cx.tree.parent_cycles().into_iter().flatten().collect();
     let mut roots: Vec<(Id, &Item)> = Vec::new();
-    let mut children: Vec<(Id, &Item)> = Vec::new();
+    let mut children: Vec<(Id, &Item, Id)> = Vec::new();
     for (key, item) in &open {
-        if overdue.contains(key) {
+        if !candidates.contains(key) {
             continue;
         }
-        let under_demoted_parent = cx
-            .tree
-            .parent(key)
-            .is_some_and(|p| open_keys.contains(p) && !overdue.contains(p));
-        if under_demoted_parent {
-            children.push((key.clone(), item));
-        } else {
-            roots.push((key.clone(), item));
+        match demoted_ancestor(cx.tree, &candidates, &cycles, key) {
+            Some(root) => children.push((key.clone(), item, root)),
+            None => {
+                if cycles.contains(key) {
+                    report.notes.push(format!(
+                        "^{key} is in a parent cycle (a `tm check` error); it was demoted as a \
+                         root rather than dropped as somebody's child"
+                    ));
+                }
+                roots.push((key.clone(), item));
+            }
         }
+    }
+    // Each dropped line is worth its own estimate, once, to the item it
+    // folds into (§6.3 "their remaining is folded into the parent's `est:`").
+    let mut folded: HashMap<Id, u32> = HashMap::new();
+    for (_, item, root) in &children {
+        *folded.entry(root.clone()).or_default() += own_minutes(item);
     }
 
     // 1. Demote the roots: `[-]` in place, a stamped copy in the month file.
     for (key, item) in &roots {
-        let demoted = demote_one(cx, &week_path, key, item, week, month, &mut report.notes)?;
+        let fold = folded.get(key).copied().unwrap_or(0);
+        let demoted = demote_one(cx, &week_path, key, item, week, month, fold, &mut report.notes)?;
         report.demoted.push(demoted);
     }
-    // 2. Drop the children's lines; their remaining is in the parent's est:.
-    for (key, _) in &children {
+    // 2. Drop the children's lines; their remaining went into that est:.
+    for (key, _, _) in &children {
         cx.store.remove_line_in(Some(week_path.as_str()), key)?;
         report.dropped_children.push(key.clone());
     }
-    // 3. Dated persist items past due go to `backlog.md#Overdue` instead.
-    for (key, _) in open.iter().filter(|(k, _)| overdue.contains(k)) {
-        cx.store.move_line_from(
-            Some(week_path.as_str()),
-            key,
-            &Horizon::Backlog.path(),
-            Some(OVERDUE_SECTION),
-        )?;
+    // 3. Walls stay `[ ]` (§5.3) and move into the current week, which is the
+    //    horizon the planner still reads (§6.2) — unless that *is* this week.
+    let live = IsoWeek::from_date(cx.today());
+    for (key, _) in open.iter().filter(|(k, _)| carried.contains(k)) {
+        report.carried.push(key.clone());
+        if live == week || !carry_forward.contains(key) {
+            continue;
+        }
+        let to_path = move_to(cx, &week_path, key, &Horizon::Week(live), None)?;
         cx.log(Event::Move {
             id: key.to_string(),
             from: week_path.clone(),
-            to: Horizon::Backlog.path(),
+            to: to_path.clone(),
         })?;
         report.moved.push(Moved {
             id: key.clone(),
             from: week_path.clone(),
-            to: Horizon::Backlog.path(),
+            to: to_path,
+        });
+    }
+    // 4. Dated persist items past due go to `backlog.md#Overdue` instead.
+    for (key, _) in open.iter().filter(|(k, _)| overdue.contains(k)) {
+        let to_path = move_to(cx, &week_path, key, &Horizon::Backlog, Some(OVERDUE_SECTION))?;
+        cx.log(Event::Move {
+            id: key.to_string(),
+            from: week_path.clone(),
+            to: to_path.clone(),
+        })?;
+        report.moved.push(Moved {
+            id: key.clone(),
+            from: week_path.clone(),
+            to: to_path,
         });
         report.overdue_to_backlog.push(key.clone());
     }
-    // 4. The week file is an archive from now on.
+    // 5. The week file is an archive from now on.
     let closed_on = cx.today().format("%Y-%m-%d").to_string();
     cx.store.modify_file(&week_path, &mut |parsed: &ParsedFile| {
         Ok(Some(with_front_matter(parsed, "closed", &closed_on)))
@@ -1075,6 +1317,85 @@ pub fn close_week(cx: &Ctx, week: IsoWeek) -> Result<CloseReport, HorizonError> 
         key: week.to_string(),
     })?;
     Ok(report)
+}
+
+/// The open lines a week close leaves live instead of demoting: dated
+/// intervals that are not past due — the walls of §7.2 (calendar, exams,
+/// meetings), which §6.3 exempts — and everything below them that is still
+/// in this file (§6.4 prep children, at any depth).
+///
+/// `wall` picks which intervals seed the set: every one of them for "never
+/// demote this", only the ones that have not ended for "move this into the
+/// live week" (a wall that is over carries nothing forward — its instance
+/// expired, §5.3 — and a past-due `persist` one is in `overdue` already).
+fn carried_walls(
+    cx: &Ctx,
+    open: &[(Id, &Item)],
+    overdue: &HashSet<Id>,
+    wall: impl Fn(&Item) -> bool,
+) -> HashSet<Id> {
+    let mut carried: HashSet<Id> = open
+        .iter()
+        .filter(|(k, i)| !overdue.contains(k) && wall(i))
+        .map(|(k, _)| k.clone())
+        .collect();
+    // Walk down one generation at a time; `carried` only grows, so this ends.
+    loop {
+        let mut grew = false;
+        for (key, _) in open {
+            if carried.contains(key) || overdue.contains(key) {
+                continue;
+            }
+            if cx.tree.parent(key).is_some_and(|p| carried.contains(p)) {
+                carried.insert(key.clone());
+                grew = true;
+            }
+        }
+        if !grew {
+            return carried;
+        }
+    }
+}
+
+/// Is this line the top of its demoted subtree — is nothing above it in the
+/// same file being demoted too? A member of a parent cycle counts as one: a
+/// cycle has no top, and every line in it would otherwise be dropped as
+/// somebody's child and vanish (§0 principle 6, §5.5).
+fn is_demotion_root(
+    tree: &Tree,
+    candidates: &HashSet<Id>,
+    cycles: &HashSet<Id>,
+    key: &Id,
+) -> bool {
+    cycles.contains(key) || tree.parent(key).is_none_or(|p| !candidates.contains(p))
+}
+
+/// The nearest ancestor of `key` that this close demotes as a root, reached
+/// through a chain of lines it also demotes; `None` when `key` is itself
+/// such a root (or when the chain runs out without finding one, in which
+/// case the caller demotes the line rather than dropping it).
+fn demoted_ancestor(
+    tree: &Tree,
+    candidates: &HashSet<Id>,
+    cycles: &HashSet<Id>,
+    key: &Id,
+) -> Option<Id> {
+    if is_demotion_root(tree, candidates, cycles, key) {
+        return None;
+    }
+    let mut seen: HashSet<Id> = HashSet::new();
+    seen.insert(key.clone());
+    let mut cur = key.clone();
+    while let Some(parent) = tree.parent(&cur) {
+        if !candidates.contains(parent) || !seen.insert(parent.clone()) {
+            return None;
+        }
+        if is_demotion_root(tree, candidates, cycles, parent) {
+            return Some(parent.clone());
+        }
+        cur = parent.clone();
+    }
+    None
 }
 
 /// The §6.3 / §11 "demotion churn" remark: two stamps means re-scope or cut.
@@ -1359,6 +1680,50 @@ mod tests {
             stamp_value(&stamps_with(it, Stamp::Week(36))),
             "W36".to_string()
         );
+    }
+
+    #[test]
+    fn stamps_of_the_archive_copy_come_first_and_survive() {
+        // §6.3: the copy under `# Demoted` is the history; the live line adds
+        // whatever its own `demoted:` says, then this close's stamp.
+        assert_eq!(
+            stamp_value(&merge_stamps(
+                &[Stamp::Week(35), Stamp::Week(36)],
+                &[],
+                Stamp::Week(37)
+            )),
+            "W35,W36,W37"
+        );
+        assert_eq!(
+            stamp_value(&merge_stamps(
+                &[Stamp::Week(35)],
+                &[Stamp::Week(36)],
+                Stamp::Week(37)
+            )),
+            "W35,W36,W37"
+        );
+        // Closing the same week twice does not write `W37,W37`.
+        assert_eq!(
+            stamp_value(&merge_stamps(&[Stamp::Week(37)], &[], Stamp::Week(37))),
+            "W37"
+        );
+    }
+
+    #[test]
+    fn a_section_that_means_something_is_never_a_default_target() {
+        for loaded in [
+            DEMOTED_SECTION,
+            PINNED_SECTION,
+            OVERDUE_SECTION,
+            "Log",
+            "Notes",
+            "series:cell-bio",
+        ] {
+            assert!(is_reserved_section(loaded), "{loaded}");
+        }
+        for neutral in ["Outcomes", "Milestones", "Tasks", "Untied", "Dated, far out"] {
+            assert!(!is_reserved_section(neutral), "{neutral}");
+        }
     }
 
     #[test]

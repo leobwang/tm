@@ -21,10 +21,11 @@ use tm_core::horizon::{
 };
 use tm_core::log::{replay, Event, Log, LogEntry, Replay};
 use tm_core::model::{Id, IsoWeek, Period, Stamp, State, YearMonth};
-use tm_core::store::{FsStore, Store};
+use tm_core::store::{FsStore, MemStore, Store};
 
 const WEEK: &str = "week/2026-W37.md";
 const MONTH: &str = "month/2026-09.md";
+const NEXT_WEEK: &str = "week/2026-W38.md";
 const NEXT_MONTH: &str = "month/2026-10.md";
 const DAY: &str = "day/2026-09-07.md";
 const BACKLOG: &str = "backlog.md";
@@ -178,15 +179,17 @@ fn close_day_resets_the_active_line_and_moves_the_pinned_item() {
     let cx = Ctx::new(&store, &files, &tree, at("2026-09-07T22:30:00-05:00")).with_replay(&r);
     let report = close_day(&cx, date).unwrap();
 
-    // `[>]` -> `[ ]`, `est:` = 1b remaining − 60m done, floored.
+    // `[>]` -> `[ ]`, `est:` = remaining. The §17 M2 definition of done: the
+    // 60 logged minutes are the ones the partial `done` already took off the
+    // line (`est:1b`), so the close must not take them off a second time.
     let t3 = line_of(&store, WEEK, "t3").unwrap();
     assert_eq!(
         t3,
-        format!("- [ ] 4 2b Exercises 5.3–5.5            @m1 est:{MIN_REMAINING_MIN}m ^t3")
+        "- [ ] 4 2b Exercises 5.3–5.5            @m1 est:1b ^t3"
     );
     assert_eq!(report.reopened.len(), 1);
     assert_eq!(report.reopened[0].id, id("t3"));
-    assert_eq!(report.reopened[0].est_min, MIN_REMAINING_MIN);
+    assert_eq!(report.reopened[0].est_min, 60);
 
     // The pinned item left the day file for the week, stamped `D07`.
     assert!(line_of(&store, DAY, "p1").is_none());
@@ -231,6 +234,54 @@ fn close_day_resets_the_active_line_and_moves_the_pinned_item() {
     );
 }
 
+/// The subtraction the M2 definition of done leaves implicit: today's logged
+/// minutes come off an estimate **no tool has written** (`est:` absent). A
+/// line that already carries `est:` keeps it — §9.1 wrote that number after
+/// the block, so taking the minutes off again would count them twice (the
+/// case `close_day_resets_the_active_line_and_moves_the_pinned_item` pins).
+#[test]
+fn close_day_subtracts_todays_minutes_from_an_untouched_estimate() {
+    let floor = format!("{MIN_REMAINING_MIN}m");
+    let cases = [
+        (0, "1b".to_string()),
+        (10, "50m".to_string()),
+        (30, "30m".to_string()),
+        (45, "15m".to_string()),
+        (60, floor.clone()),
+        (90, floor),
+    ];
+    for (done, expected) in cases {
+        let (_dir, store) = plan();
+        // `^t4` is `1b` with no `est:`: nothing has rewritten it yet.
+        store
+            .write_line_in(
+                Some(WEEK),
+                &id("t4"),
+                "- [>] 3 1b Claude Code drafts tests     @m2 ^t4",
+            )
+            .unwrap();
+        let r = replay_of("t4", done, "2026-09-07T10:32:00-05:00");
+        assert_eq!(r.block_minutes_on("t4", d("2026-09-07")), done);
+
+        let files = store.read_tree().unwrap();
+        let tree = files.tree();
+        let cx = Ctx::new(&store, &files, &tree, at("2026-09-07T22:30:00-05:00")).with_replay(&r);
+        let report = close_day(&cx, d("2026-09-07")).unwrap();
+
+        assert_eq!(
+            line_of(&store, WEEK, "t4").unwrap(),
+            format!("- [ ] 3 1b Claude Code drafts tests     @m2 est:{expected} ^t4"),
+            "{done}m done"
+        );
+        let t4 = report
+            .reopened
+            .iter()
+            .find(|r| r.id == id("t4"))
+            .unwrap_or_else(|| panic!("^t4 was not reopened ({done}m done)"));
+        assert_eq!(t4.est_min, 60u32.saturating_sub(done).max(MIN_REMAINING_MIN));
+    }
+}
+
 #[test]
 fn close_day_without_a_replay_keeps_the_whole_remaining_estimate() {
     let (_dir, store) = plan();
@@ -264,6 +315,7 @@ fn close_week_demotes_folds_children_and_files_the_overdue_item() {
     insta::assert_snapshot!("week_after_close", text(&store, WEEK));
     insta::assert_snapshot!("month_after_close", text(&store, MONTH));
     insta::assert_snapshot!("backlog_after_close", text(&store, BACKLOG));
+    insta::assert_snapshot!("next_week_after_close", text(&store, NEXT_WEEK));
 
     // The §4.3 example line's shape: `[-] ci est title @parent est: demoted: ^id`.
     assert_eq!(
@@ -277,18 +329,42 @@ fn close_week_demotes_folds_children_and_files_the_overdue_item() {
     );
     assert!(text(&store, WEEK).contains("closed: 2026-09-14"));
 
-    // Children whose parent is in the same week file are gone from it.
+    // Children whose parent is demoted in the same week file are gone from
+    // it; their remaining is folded into that parent's `est:` (here every
+    // parent's own estimate already covers its subtasks, §6.4).
     let mut dropped: Vec<String> = report
         .dropped_children
         .iter()
         .map(|i| i.to_string())
         .collect();
     dropped.sort();
-    assert_eq!(dropped, vec!["t1", "t3", "t4", "t5", "x2"]);
-    for child in ["t1", "t3", "t4", "t5", "x2"] {
+    assert_eq!(dropped, vec!["t1", "t3", "t4", "t5"]);
+    for child in ["t1", "t3", "t4", "t5"] {
         assert!(line_of(&store, WEEK, child).is_none(), "^{child} still in the week");
         assert!(line_of(&store, MONTH, child).is_none(), "^{child} reached the month");
     }
+
+    // The wall and its prep are never demoted (§6.3): they stay `[ ]` and
+    // move, byte for byte, into the current week.
+    assert_eq!(report.carried, vec![id("x1"), id("x2")]);
+    assert!(line_of(&store, WEEK, "x1").is_none());
+    assert!(line_of(&store, MONTH, "x1").is_none());
+    assert_eq!(
+        line_of(&store, NEXT_WEEK, "x1").as_deref(),
+        before
+            .get(WEEK)
+            .unwrap()
+            .lines()
+            .find(|l| l.ends_with("^x1"))
+    );
+    assert_eq!(
+        line_of(&store, NEXT_WEEK, "x2").as_deref(),
+        before
+            .get(WEEK)
+            .unwrap()
+            .lines()
+            .find(|l| l.ends_with("^x2"))
+    );
 
     // The dated milestone past its due date went to the backlog instead.
     assert_eq!(report.overdue_to_backlog, vec![id("d1")]);
@@ -310,7 +386,6 @@ fn close_week_demotes_folds_children_and_files_the_overdue_item() {
             ("m2".to_string(), 360),
             ("m3".to_string(), 180),
             ("m4".to_string(), 120),
-            ("x1".to_string(), 120),
         ]
     );
     assert!(report
@@ -319,7 +394,7 @@ fn close_week_demotes_folds_children_and_files_the_overdue_item() {
         .all(|d| d.stamps == vec![Stamp::Week(37)]));
 
     let after = tree_text(&store);
-    only_changed(&before, &after, &[WEEK, MONTH, BACKLOG]);
+    only_changed(&before, &after, &[WEEK, MONTH, BACKLOG, NEXT_WEEK]);
     // The month file only gained lines (and rewrote its one demoted copy).
     let (gone, _) = diff(before.get(MONTH).unwrap(), after.get(MONTH).unwrap());
     assert_eq!(
@@ -346,7 +421,8 @@ fn close_week_demotes_folds_children_and_files_the_overdue_item() {
             ("demote".to_string(), "m2".to_string()),
             ("demote".to_string(), "m3".to_string()),
             ("demote".to_string(), "m4".to_string()),
-            ("demote".to_string(), "x1".to_string()),
+            ("move".to_string(), "x1".to_string()),
+            ("move".to_string(), "x2".to_string()),
             ("move".to_string(), "d1".to_string()),
             ("close".to_string(), String::new()),
         ]
@@ -401,7 +477,208 @@ fn close_week_creates_the_month_file_it_demotes_into() {
 fn a_close_report_is_json() {
     let (_dir, store) = plan();
     let report = run_close_week(&store);
-    insta::assert_snapshot!("close_week_report_json", serde_json::to_string_pretty(&report).unwrap());
+    let json = serde_json::to_string_pretty(&report).unwrap();
+    insta::assert_snapshot!("close_week_report_json", json);
+    // A stamp is `W37` everywhere it is written or read (§4.1 `demoted:`),
+    // the `--json` payload `/plan-month` consumes included.
+    assert!(json.contains("\"W37\""), "{json}");
+    assert!(!json.contains("\"Week\""), "{json}");
+}
+
+/// §6.3: a *wall* — a dated interval, §7.2's "calendar, exams, meetings" —
+/// is never demoted. The exam five weeks out stays `[ ]` with its prep, and
+/// moves into the live week rather than being archived with the file.
+#[test]
+fn a_future_wall_and_its_prep_are_carried_not_demoted() {
+    let (_dir, store) = plan();
+    let before = text(&store, WEEK);
+    let report = run_close_week(&store);
+
+    assert_eq!(report.carried, vec![id("x1"), id("x2")]);
+    assert!(report.demoted.iter().all(|d| d.id != id("x1")));
+    assert!(report.dropped_children.iter().all(|c| *c != id("x2")));
+    for wall in ["x1", "x2"] {
+        let line = line_of(&store, NEXT_WEEK, wall).unwrap();
+        assert!(line.starts_with("- [ ] "), "{line}");
+        assert_eq!(
+            Some(line.as_str()),
+            before.lines().find(|l| l.ends_with(&format!("^{wall}"))),
+            "^{wall} did not cross byte for byte"
+        );
+    }
+    // 8b of prep is still 8b of prep, in a file the planner reads (§6.2).
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    assert_eq!(tree.remaining(&id("x2")), Some(480));
+    assert_eq!(tree.prep_need(&id("x1")), 480);
+    assert!(tree
+        .day_candidate_ids(d("2026-09-14"), IsoWeek::new(2026, 38))
+        .contains(&id("x1")));
+}
+
+/// Closing the week you are still in has nowhere to carry a wall to, so it
+/// stays where it is — `[ ]`, untouched.
+#[test]
+fn closing_the_week_from_inside_it_leaves_the_wall_in_place() {
+    let (_dir, store) = plan();
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-13T20:00:00-05:00"));
+    let report = close_week(&cx, IsoWeek::new(2026, 37)).unwrap();
+
+    assert_eq!(report.carried, vec![id("x1"), id("x2")]);
+    assert!(!store.exists(NEXT_WEEK), "no week file was invented");
+    assert_eq!(
+        line_of(&store, WEEK, "x1").unwrap(),
+        "- [ ] 5 2h Midterm                      @O3 at:2026-10-20T10:00/12:00 loc:JCL ^x1"
+    );
+    assert_eq!(
+        line_of(&store, WEEK, "x2").unwrap(),
+        "- [ ] 5 8b Midterm review               @x1 ^x2"
+    );
+}
+
+/// A wall that is already over carries nothing forward — its instance
+/// expired (§5.3) — and is still never demoted: the line stays as written in
+/// the week it was planned in.
+#[test]
+fn a_wall_that_is_over_stays_in_the_archived_week() {
+    let line = "- [ ] 3 Guest lecture at:2026-09-09T15:00/16:20 on-miss:expire ^gv2";
+    let store = MemStore::new()
+        .with_file(
+            WEEK,
+            &format!("---\nweek: 2026-W37\n---\n# Milestones\n{line}\n"),
+        )
+        .with_file(MONTH, "---\nmonth: 2026-09\n---\n# Demoted\n");
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-14T09:00:00-05:00"));
+    let report = close_week(&cx, IsoWeek::new(2026, 37)).unwrap();
+
+    assert_eq!(report.carried, vec![id("gv2")]);
+    assert!(report.demoted.is_empty(), "{report:?}");
+    assert!(report.moved.is_empty(), "{report:?}");
+    assert!(!store.paths().contains(&NEXT_WEEK.to_string()));
+    assert!(store.text(WEEK).unwrap().contains(line), "{}", store.text(WEEK).unwrap());
+}
+
+/// §6.3's parenthetical: the remaining of the children dropped with a
+/// demoted parent is folded into its `est:`. A parent whose own estimate no
+/// longer covers what is under it carries their sum instead, so a week close
+/// never removes work from the tree (§0 principle 6).
+#[test]
+fn the_remaining_of_dropped_children_is_folded_into_the_parent() {
+    let store = MemStore::new()
+        .with_file(
+            WEEK,
+            "---\nweek: 2026-W37\n---\n# Milestones\n\
+             - [ ] 4 2b Parent ^par\n\
+             - [ ] 4 3b Kid one @par ^kid1\n\
+             - [ ] 4 3b Kid two @par ^kid2\n\
+             - [ ] 4 1b Grandkid @kid1 ^kid3\n",
+        )
+        .with_file(MONTH, "---\nmonth: 2026-09\n---\n# Demoted\n");
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    let before: u32 = ["par", "kid1", "kid2", "kid3"]
+        .iter()
+        .map(|k| tree.get(&id(k)).unwrap().own_remaining().unwrap().as_minutes())
+        .sum();
+    assert_eq!(before, 120 + 180 + 180 + 60);
+
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-14T09:00:00-05:00"));
+    let report = close_week(&cx, IsoWeek::new(2026, 37)).unwrap();
+
+    let mut dropped: Vec<String> = report.dropped_children.iter().map(|c| c.to_string()).collect();
+    dropped.sort();
+    assert_eq!(dropped, vec!["kid1", "kid2", "kid3"]);
+    assert_eq!(report.demoted.len(), 1);
+    assert_eq!(report.demoted[0].id, id("par"));
+    // 2b of parent no longer covers 3b + 3b + 1b of dropped lines: it carries
+    // the 7b that is actually left.
+    assert_eq!(report.demoted[0].est_min, 420);
+    assert!(
+        store
+            .text(MONTH)
+            .unwrap()
+            .contains("- [-] 4 2b Parent est:7b demoted:W37 ^par"),
+        "{}",
+        store.text(MONTH).unwrap()
+    );
+    // Nothing left the tree: the one line that survives carries it all.
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    assert_eq!(tree.remaining(&id("par")), Some(420));
+}
+
+/// §5.5 makes a parent cycle a `tm check` error — not a licence to delete
+/// the lines in it. Every member is demoted as a root of its own.
+#[test]
+fn a_parent_cycle_is_demoted_not_deleted() {
+    let store = MemStore::new()
+        .with_file(
+            WEEK,
+            "---\nweek: 2026-W37\n---\n# Milestones\n\
+             - [ ] 4 6b Self parent @mm2 ^mm2\n\
+             - [ ] 4 6b Aye @bbbb ^aaaa\n\
+             - [ ] 4 6b Bee @aaaa ^bbbb\n",
+        )
+        .with_file(MONTH, "---\nmonth: 2026-09\n---\n# Demoted\n");
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    assert_eq!(tree.parent(&id("mm2")), Some(&id("mm2")));
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-14T09:00:00-05:00"));
+    let report = close_week(&cx, IsoWeek::new(2026, 37)).unwrap();
+
+    assert!(report.dropped_children.is_empty(), "{report:?}");
+    let demoted: Vec<String> = report.demoted.iter().map(|d| d.id.to_string()).collect();
+    assert_eq!(demoted, vec!["mm2", "aaaa", "bbbb"]);
+    let month = store.text(MONTH).unwrap();
+    for key in ["mm2", "aaaa", "bbbb"] {
+        assert!(month.contains(&format!("^{key}")), "^{key} was deleted: {month}");
+    }
+    assert_eq!(report.notes.len(), 3, "{:?}", report.notes);
+    assert!(report.notes.iter().all(|n| n.contains("parent cycle")));
+}
+
+/// §6.3 "stamps accumulate: `W36,W37`" — the history lives on the archive
+/// copy under `# Demoted`, which the live week line knows nothing about.
+#[test]
+fn a_week_close_keeps_the_stamps_already_on_the_archive_copy() {
+    let (_dir, store) = plan();
+    let old = line_of(&store, MONTH, "m2").unwrap();
+    store
+        .write_line_in(
+            Some(MONTH),
+            &id("m2"),
+            &old.replace("demoted:W37", "demoted:W35,W36"),
+        )
+        .unwrap();
+
+    let report = run_close_week(&store);
+    let m2 = report.demoted.iter().find(|d| d.id == id("m2")).unwrap();
+    assert_eq!(
+        m2.stamps,
+        vec![Stamp::Week(35), Stamp::Week(36), Stamp::Week(37)]
+    );
+    assert_eq!(
+        line_of(&store, MONTH, "m2").unwrap(),
+        "- [-] 4 6b Rollback path passes tests   @O2 est:6b demoted:W35,W36,W37 ^m2"
+    );
+    // Three stamps is a cut proposal for `/plan-month` (§6.3, §11) …
+    assert!(
+        report
+            .notes
+            .iter()
+            .any(|n| n.contains("^m2") && n.contains("3 demotion stamps")),
+        "{:?}",
+        report.notes
+    );
+    // … and the churn monitor sees it.
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    let churned: Vec<Id> = churn(&tree, 2).into_iter().map(|(i, _)| i).collect();
+    assert_eq!(churned, vec![id("m2")]);
 }
 
 // ---------------------------------------------------------------------------
@@ -566,10 +843,7 @@ fn churn_lists_the_repeatedly_demoted_items() {
     let files = store.read_tree().unwrap();
     let tree = files.tree();
     let once: Vec<Id> = churn(&tree, 1).into_iter().map(|(i, _)| i).collect();
-    assert_eq!(
-        once,
-        vec![id("m1"), id("m2"), id("m3"), id("m4"), id("x1")]
-    );
+    assert_eq!(once, vec![id("m1"), id("m2"), id("m3"), id("m4")]);
     assert!(churn(&tree, 2).is_empty());
 }
 
