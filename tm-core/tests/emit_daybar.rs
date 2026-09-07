@@ -210,6 +210,58 @@ fn hue_index_is_stable_fnv1a_over_the_palette() {
 }
 
 #[test]
+fn col_of_inverts_start_of_for_every_width() {
+    // Regression: `start_of` rounded its boundary to whole seconds (as
+    // `cells_of` does) while `col_of` divided the unrounded minutes, so on any
+    // width that does not divide 1440 the two disagreed — at `cols = 110`, the
+    // config's `min_width`, on half of the columns. The TUI maps a hover `x`
+    // to a column with `col_of` and paints it from `start_of`, so those
+    // columns reported the neighbour's tooltip.
+    let cfg = config();
+    let tree = tree(&cfg);
+    let day = plan();
+    for cols in [1usize, 7, 13, 48, 90, 96, 110, 120, 137, 200, 1440] {
+        let bar = emit::daybar_cells(&day, None, &tree, &cfg, cols, at(6, 5), at(10, 42));
+        for c in 0..cols {
+            let start = bar.start_of(c);
+            assert_eq!(bar.col_of(start), Some(c), "cols {cols}, col {c} start");
+            // The last instant of the cell belongs to it too.
+            let last = bar.start_of(c + 1) - Duration::seconds(1);
+            if last >= start {
+                assert_eq!(bar.col_of(last), Some(c), "cols {cols}, col {c} end");
+            }
+        }
+        // The cursor is the column `now` falls in, by the same rule.
+        assert_eq!(bar.col_of(at(10, 42)), Some(bar.cursor_col), "cols {cols}");
+        // Column boundaries march forwards and cover the whole 24 h.
+        assert_eq!(bar.start_of(0), at(6, 5));
+        assert_eq!((bar.start_of(cols) - at(6, 5)).num_minutes(), 1440);
+    }
+}
+
+#[test]
+fn every_segment_has_a_cell_of_its_own() {
+    // §17.2's SVG draws one rect per segment from `bar.segments`, which every
+    // segment has even when it wins no column.
+    let cfg = config();
+    let tree = tree(&cfg);
+    let day = plan();
+    let bar = emit::daybar_cells(&day, None, &tree, &cfg, 12, at(6, 5), at(10, 42));
+    assert_eq!(bar.segments.len(), day.segments.len());
+    for (i, cell) in bar.segments.iter().enumerate() {
+        assert_eq!(cell.segment, Some(i));
+        assert!(!cell.tooltip.is_empty(), "segment {i} has no tooltip");
+    }
+    // A cell that won a column carries exactly what that segment's own cell
+    // does, so the SVG and the terminal never disagree.
+    for cell in &bar.cells {
+        if let Some(i) = cell.segment {
+            assert_eq!(cell, &bar.segments[i]);
+        }
+    }
+}
+
+#[test]
 fn the_bar_spans_twenty_four_real_hours_across_a_dst_change() {
     // 2026-11-01 is the fall-back day in America/Chicago: 25 wall-clock hours.
     let cfg = config();

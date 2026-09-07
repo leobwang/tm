@@ -77,13 +77,15 @@ pub fn tree(cfg: &Config) -> Tree {
             ),
             (
                 "routines.md",
-                "- lunch      win:11:30-13:30 dur:30m  every:day\n\
+                "- sleep      win:22:00-08:00 dur:8h30m every:day ci:0\n\
+                 - lunch      win:11:30-13:30 dur:30m  every:day\n\
                  - dinner     win:17:30-19:30 dur:30m  every:day\n",
             ),
             ("optional.md", "- Severance S3E4  dur:1h\n"),
             (
                 "calendar/2026-W37.md",
-                "- [ ] 3 Meeting w/ host      at:2026-09-07T12:50/13:50 loc:zoom ^g1\n",
+                "- [ ] 3 Meeting w/ host      at:2026-09-07T12:50/13:50 loc:zoom ^g1\n\
+                 - [ ] 2 Dentist             at:2026-09-07T09:00/10:20 loc:out ^g5\n",
             ),
         ],
         cfg,
@@ -311,6 +313,291 @@ pub fn log_faithful_plan() -> DayPlan {
     day.segments[2].start = at(9, 8);
     day.segments[2].end = at(9, 32);
     day.segments[3].start = at(9, 32);
+    day
+}
+
+/// M4's second fixture day: a **late start with a wall**.
+///
+/// The dentist (`^g5`) runs 09:00–10:20, ten minutes are lost getting back, and
+/// the window only opens at 10:30 — so the day starts after a wall instead of
+/// before one. The budget is 3 blocks, which runs out at 16:30, well inside a
+/// window that closes at 18:30; the divider therefore lands mid-afternoon
+/// rather than at the window's edge. Neither the `↓` nor the `⚠` segment
+/// carries a written note, so both are derived (§4.3).
+pub fn late_start_plan() -> DayPlan {
+    let mut day = DayPlan::empty(date(), (at(10, 30), at(18, 30)), 3);
+    day.segments = vec![
+        other((9, 0), (10, 20), SegKind::Wall, Some("g5"), SegFlags::default()),
+        other(
+            (10, 20),
+            (10, 30),
+            SegKind::Lost,
+            None,
+            SegFlags {
+                planned_min: Some(10),
+                note: Some("leak".to_string()),
+                ..SegFlags::default()
+            },
+        ),
+        block(
+            (10, 30),
+            (11, 30),
+            "t1",
+            Some(5),
+            SegFlags {
+                done: true,
+                planned_min: Some(60),
+                ..SegFlags::default()
+            },
+        ),
+        other(
+            (11, 30),
+            (12, 0),
+            SegKind::Routine,
+            Some("lunch"),
+            SegFlags {
+                planned_min: Some(30),
+                ..SegFlags::default()
+            },
+        ),
+        block(
+            (12, 0),
+            (12, 50),
+            "t3",
+            Some(4),
+            SegFlags {
+                current: true,
+                planned_min: Some(60),
+                ..SegFlags::default()
+            },
+        ),
+        other((12, 50), (13, 50), SegKind::Wall, Some("g1"), SegFlags::default()),
+        other(
+            (13, 50),
+            (14, 10),
+            SegKind::Break,
+            None,
+            SegFlags {
+                planned_min: Some(20),
+                ..SegFlags::default()
+            },
+        ),
+        // `↓` with no written note: emit derives `↓ slot 5, item 3`.
+        block(
+            (14, 10),
+            (15, 10),
+            "t4",
+            Some(5),
+            SegFlags {
+                underused: true,
+                planned_min: Some(60),
+                ..SegFlags::default()
+            },
+        ),
+        block(
+            (15, 30),
+            (16, 30),
+            "t5",
+            Some(3),
+            SegFlags {
+                planned_min: Some(60),
+                ..SegFlags::default()
+            },
+        ),
+        // `⚠` with no written note: emit derives `due today` from the window.
+        block(
+            (16, 30),
+            (16, 50),
+            "a3",
+            None,
+            SegFlags {
+                hot: true,
+                mandatory: true,
+                planned_min: Some(20),
+                ..SegFlags::default()
+            },
+        ),
+        other(
+            (17, 30),
+            (18, 0),
+            SegKind::Routine,
+            Some("dinner"),
+            SegFlags {
+                planned_min: Some(30),
+                ..SegFlags::default()
+            },
+        ),
+        other(
+            (19, 0),
+            (20, 0),
+            SegKind::Optional,
+            Some("Severance S3E4"),
+            SegFlags::default(),
+        ),
+        other((21, 30), (22, 0), SegKind::WindDown, None, SegFlags::default()),
+    ];
+    day.priorities = vec![
+        prio("t1", 1, PrioClass::Dated),
+        prio("t3", 1, PrioClass::Dated),
+        prio("t4", 3, PrioClass::Rank),
+        prio("t5", 3, PrioClass::Rank),
+        prio("a3", 0, PrioClass::Mandatory),
+    ];
+    day.diagnostics.underused = vec![(Id::new("t4"), 5, 3)];
+    day
+}
+
+/// M4's third fixture day: a **home day**.
+///
+/// `location.home_max_ci = 3` (§16), so every slot is predicted at 3 or below
+/// however high the item's own `ci` is — the `ci` column, the bar's brightness
+/// and §11's energy mix all read differently from the lounge day. It also
+/// carries the two shapes the other fixture days do not: a batch (§7.5) and
+/// the sleep routine.
+pub fn home_day_plan() -> DayPlan {
+    let mut day = DayPlan::empty(date(), (at(8, 0), at(17, 0)), 5);
+    let sleep_end = at(22, 0) + chrono::Duration::minutes(510);
+    day.segments = vec![
+        block(
+            (8, 0),
+            (9, 0),
+            "t4",
+            Some(3),
+            SegFlags {
+                done: true,
+                planned_min: Some(60),
+                ..SegFlags::default()
+            },
+        ),
+        other(
+            (9, 0),
+            (9, 20),
+            SegKind::Break,
+            None,
+            SegFlags {
+                done: true,
+                planned_min: Some(20),
+                ..SegFlags::default()
+            },
+        ),
+        block(
+            (9, 20),
+            (10, 20),
+            "t5",
+            Some(3),
+            SegFlags {
+                current: true,
+                planned_min: Some(60),
+                ..SegFlags::default()
+            },
+        ),
+        block(
+            (10, 20),
+            (11, 20),
+            "t3",
+            Some(3),
+            SegFlags {
+                planned_min: Some(60),
+                ..SegFlags::default()
+            },
+        ),
+        other(
+            (11, 30),
+            (12, 0),
+            SegKind::Routine,
+            Some("lunch"),
+            SegFlags {
+                planned_min: Some(30),
+                ..SegFlags::default()
+            },
+        ),
+        Segment {
+            start: at(12, 0),
+            end: at(12, 50),
+            kind: SegKind::Batch(vec![Id::new("a1"), Id::new("p1")]),
+            energy: Some(2),
+            item: None,
+            instance: None,
+            flags: SegFlags {
+                planned_min: Some(50),
+                ..SegFlags::default()
+            },
+        },
+        block(
+            (13, 0),
+            (14, 0),
+            "t1",
+            Some(3),
+            SegFlags {
+                planned_min: Some(60),
+                ..SegFlags::default()
+            },
+        ),
+        other(
+            (14, 0),
+            (14, 20),
+            SegKind::Break,
+            None,
+            SegFlags {
+                planned_min: Some(20),
+                ..SegFlags::default()
+            },
+        ),
+        block(
+            (14, 20),
+            (15, 20),
+            "t2",
+            Some(3),
+            SegFlags {
+                planned_min: Some(60),
+                ..SegFlags::default()
+            },
+        ),
+        block(
+            (15, 20),
+            (15, 40),
+            "a3",
+            Some(2),
+            SegFlags {
+                hot: true,
+                mandatory: true,
+                planned_min: Some(20),
+                ..SegFlags::default()
+            },
+        ),
+        other(
+            (17, 30),
+            (18, 0),
+            SegKind::Routine,
+            Some("dinner"),
+            SegFlags {
+                planned_min: Some(30),
+                ..SegFlags::default()
+            },
+        ),
+        other((21, 30), (22, 0), SegKind::WindDown, None, SegFlags::default()),
+        Segment {
+            start: at(22, 0),
+            end: sleep_end,
+            kind: SegKind::Sleep,
+            energy: None,
+            item: Some(Id::new("sleep")),
+            instance: None,
+            flags: SegFlags {
+                planned_min: Some(510),
+                ..SegFlags::default()
+            },
+        },
+    ];
+    day.priorities = vec![
+        prio("t1", 1, PrioClass::Dated),
+        prio("t2", 1, PrioClass::Dated),
+        prio("t3", 1, PrioClass::Dated),
+        prio("t4", 3, PrioClass::Rank),
+        prio("t5", 3, PrioClass::Rank),
+        prio("a1", 3, PrioClass::Rank),
+        prio("a3", 0, PrioClass::Mandatory),
+    ];
     day
 }
 

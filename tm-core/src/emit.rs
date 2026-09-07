@@ -40,7 +40,7 @@
 //!   [`render_banners`]`(plan, tree, cfg) -> Vec<String>` (§7.3's "needs 8b,
 //!   5b available by Fri", which needs the [`Prio`](crate::priority::Prio)
 //!   numbers).
-//! * [`legend`]`(plan, tree) -> EnergyMix` — §11's energy mix, plus
+//! * [`legend`]`(plan, tree, cfg) -> EnergyMix` — §11's energy mix, plus
 //!   [`EnergyMix::line`] for the bar legend.
 //!
 //! # The row format (§4.3)
@@ -50,9 +50,11 @@
 //! 07:00  5 p1 ✓ Read ch.6 §1–2               @m3  1b  (67m)
 //! ```
 //!
-//! Columns are fixed, counted in characters, every field left-aligned and
-//! padded to at least its width (a longer value pushes the rest of the row
-//! right rather than being truncated — only the title is truncated):
+//! Columns are fixed, counted in *terminal columns* ([`display_width`], so a
+//! wide glyph such as `⏰` or a CJK title character costs two), every field
+//! left-aligned and padded to at least its width (a longer value pushes the
+//! rest of the row right rather than being truncated — only the title is
+//! truncated, and a batch row is fitted by [`fit_batch`]):
 //!
 //! | column | offset | width | content |
 //! |---|---|---|---|
@@ -70,16 +72,22 @@
 //! blanks are trimmed. A `───     window ends 16:00` divider row is inserted
 //! where the budget runs out (see [`render_plan_section`]).
 //!
+//! The trailing note is derived when the segment does not carry one: an
+//! under-used slot reads `↓ slot 4, item 3` (from `diagnostics.underused`) and
+//! a HOT item reads `due today` (from the item's effective due or window) —
+//! see [`note_cell`]. An explicit `SegFlags::note` always wins.
+//!
 //! # Differences from the §4.3 example
 //!
 //! The example in the spec is hand-aligned and internally inconsistent; three
 //! of its rows cannot all hold at once. This renderer keeps every column at a
 //! fixed offset, which reproduces the fullest rows byte for byte
-//! (`07:00`, `08:00`, `09:20`, `21:30`) and differs from the others as follows:
+//! (`07:00`, `08:00`, `09:20`) and differs from the others as follows:
 //!
 //! 1. **Title offset.** The example starts the title at column 14 on rows with
-//!    a mark (`✓ Read ch.6 §1–2`) and on the `⏰`/`🌙` rows, but at column 15
-//!    on rows without one (`lunch 30m`, `Claude Code drafts tests`). Column 14
+//!    a mark (`✓ Read ch.6 §1–2`) but at column 15 on rows without one
+//!    (`lunch 30m`, `Claude Code drafts tests`, and — because `⏰` and `🌙`
+//!    are two columns wide — the wall and wind-down rows too). Column 14
 //!    always wins here, so those rows lose one space.
 //! 2. **Estimate column.** When an item has no `@parent` the example slides
 //!    the estimate left into the parent column (`⏰ … 1h` at 43); this
@@ -107,7 +115,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 use crate::config::Config;
-use crate::model::{Dep, Dur, Id};
+use crate::model::{Dep, Dur, Id, Shape, WindowRange};
 use crate::planner::{DayPlan, Diagnostics, SegKind, Segment};
 use crate::priority::fmt_blocks;
 use crate::tree::Tree;
@@ -202,9 +210,118 @@ impl Layout {
 // Small formatting helpers
 // ---------------------------------------------------------------------------
 
-/// Left-align `s` in `w` characters (a longer `s` is returned unchanged).
+/// East-Asian Wide and Fullwidth code points, plus the emoji that render two
+/// columns wide. Sorted, non-overlapping, binary-searched by [`char_width`].
+///
+/// A compact table rather than the `unicode-width` crate, whose dependency the
+/// workspace does not carry; it covers the glyphs this module emits (`⏰`,
+/// `🌙`) and the CJK and emoji blocks an item title can contain.
+const WIDE_RANGES: &[(u32, u32)] = &[
+    (0x1100, 0x115F),
+    (0x231A, 0x231B),
+    (0x2329, 0x232A),
+    (0x23E9, 0x23EC),
+    (0x23F0, 0x23F0),
+    (0x23F3, 0x23F3),
+    (0x25FD, 0x25FE),
+    (0x2614, 0x2615),
+    (0x2648, 0x2653),
+    (0x267F, 0x267F),
+    (0x2693, 0x2693),
+    (0x26A1, 0x26A1),
+    (0x26AA, 0x26AB),
+    (0x26BD, 0x26BE),
+    (0x26C4, 0x26C5),
+    (0x26CE, 0x26CE),
+    (0x26D4, 0x26D4),
+    (0x26EA, 0x26EA),
+    (0x26F2, 0x26F3),
+    (0x26F5, 0x26F5),
+    (0x26FA, 0x26FA),
+    (0x26FD, 0x26FD),
+    (0x2705, 0x2705),
+    (0x270A, 0x270B),
+    (0x2728, 0x2728),
+    (0x274C, 0x274C),
+    (0x274E, 0x274E),
+    (0x2753, 0x2755),
+    (0x2757, 0x2757),
+    (0x2795, 0x2797),
+    (0x27B0, 0x27B0),
+    (0x27BF, 0x27BF),
+    (0x2B1B, 0x2B1C),
+    (0x2B50, 0x2B50),
+    (0x2B55, 0x2B55),
+    (0x2E80, 0x303E),
+    (0x3041, 0x33FF),
+    (0x3400, 0x4DBF),
+    (0x4E00, 0x9FFF),
+    (0xA000, 0xA4CF),
+    (0xA960, 0xA97F),
+    (0xAC00, 0xD7A3),
+    (0xF900, 0xFAFF),
+    (0xFE10, 0xFE19),
+    (0xFE30, 0xFE6F),
+    (0xFF00, 0xFF60),
+    (0xFFE0, 0xFFE6),
+    (0x1_F004, 0x1_F004),
+    (0x1_F0CF, 0x1_F0CF),
+    (0x1_F18E, 0x1_F18E),
+    (0x1_F191, 0x1_F19A),
+    (0x1_F1E6, 0x1_F1FF),
+    (0x1_F200, 0x1_F2FF),
+    (0x1_F300, 0x1_F9FF),
+    (0x1_FA70, 0x1_FAFF),
+    (0x2_0000, 0x3_FFFD),
+];
+
+/// Code points that take no terminal column: combining marks, the zero-width
+/// joiner family and the variation selectors.
+const ZERO_RANGES: &[(u32, u32)] = &[
+    (0x0300, 0x036F),
+    (0x200B, 0x200F),
+    (0xFE00, 0xFE0F),
+    (0xFEFF, 0xFEFF),
+];
+
+/// Is `cp` inside one of the sorted, non-overlapping `ranges`?
+fn in_ranges(cp: u32, ranges: &[(u32, u32)]) -> bool {
+    ranges
+        .binary_search_by(|(lo, hi)| {
+            if cp < *lo {
+                std::cmp::Ordering::Greater
+            } else if cp > *hi {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        })
+        .is_ok()
+}
+
+/// The terminal columns `c` occupies: 0 for a combining mark or a variation
+/// selector, 2 for East-Asian Wide/Fullwidth and the emoji that default to an
+/// emoji presentation, 1 otherwise.
+pub fn char_width(c: char) -> usize {
+    let cp = c as u32;
+    if in_ranges(cp, ZERO_RANGES) {
+        0
+    } else if in_ranges(cp, WIDE_RANGES) {
+        2
+    } else {
+        1
+    }
+}
+
+/// The terminal columns `s` occupies — what the timeline's fixed columns are
+/// counted in, so that `⏰` and `🌙` do not push their rows one column right.
+pub fn display_width(s: &str) -> usize {
+    s.chars().map(char_width).sum()
+}
+
+/// Left-align `s` in `w` terminal columns (a wider `s` is returned unchanged).
 fn pad(s: &str, w: usize) -> String {
-    let n = s.chars().count();
+    let n = display_width(s);
     if n >= w {
         s.to_string()
     } else {
@@ -217,13 +334,33 @@ fn pad(s: &str, w: usize) -> String {
     }
 }
 
-/// Truncate `s` to `w` characters, marking the cut with `…`.
+/// Truncate `s` to `w` terminal columns, marking the cut with `…`.
+///
+/// The result is never wider than `w`; a cut that would land inside a
+/// double-width character drops that character instead of splitting it, and a
+/// cut that lands after a space drops the space, so the result can be a column
+/// or two narrower.
 fn truncate(s: &str, w: usize) -> String {
-    if s.chars().count() <= w {
+    if display_width(s) <= w {
         return s.to_string();
     }
-    let keep = w.saturating_sub(1);
-    let mut out: String = s.chars().take(keep).collect();
+    if w == 0 {
+        return String::new();
+    }
+    let keep = w - 1; // room for the `…`
+    let mut out = String::with_capacity(s.len());
+    let mut used = 0usize;
+    for c in s.chars() {
+        let cw = char_width(c);
+        if used + cw > keep {
+            break;
+        }
+        used += cw;
+        out.push(c);
+    }
+    while out.ends_with(' ') {
+        out.pop();
+    }
     out.push('…');
     out
 }
@@ -317,21 +454,12 @@ fn title_cell(seg: &Segment, tree: &Tree, cfg: &Config) -> String {
     };
     match &seg.kind {
         SegKind::Batch(ids) => {
-            let names: Vec<String> = ids
-                .iter()
-                .map(|id| {
-                    tree.get(id)
-                        .map(|i| i.title.clone())
-                        .filter(|t| !t.is_empty())
-                        .unwrap_or_else(|| id.to_string())
-                })
-                .collect();
+            let names = batch_names(ids, tree);
             format!("batch: {} ({})", names.join(" · "), names.len())
         }
         SegKind::Break => format!("break {}", fmt_dur(planned)),
-        SegKind::Routine | SegKind::Sleep => {
-            format!("{} {}", name("routine"), fmt_dur(planned))
-        }
+        SegKind::Routine => format!("{} {}", name("routine"), fmt_dur(planned)),
+        SegKind::Sleep => format!("{} {}", name("sleep"), fmt_dur(planned)),
         SegKind::Rest => format!("rest {}", fmt_dur(planned)),
         SegKind::Lost => format!("lost {}", fmt_dur(planned)),
         SegKind::WindDown => format!(
@@ -341,6 +469,51 @@ fn title_cell(seg: &Segment, tree: &Tree, cfg: &Config) -> String {
         ),
         SegKind::Block | SegKind::Optional | SegKind::Wall => name("—"),
     }
+}
+
+/// The titles a batch names, in the order it was assigned (§7.5).
+fn batch_names(ids: &[Id], tree: &Tree) -> Vec<String> {
+    ids.iter()
+        .map(|id| {
+            tree.get(id)
+                .map(|i| i.title.clone())
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| id.to_string())
+        })
+        .collect()
+}
+
+/// §7.5's `batch: package · insurance · bank (3)`, fitted into `width`
+/// terminal columns.
+///
+/// The full form is `batch: <title> · <title> · <title> (n)`, which rarely
+/// fits the §4.3 title column. Rather than let the plain title truncation eat
+/// the member list and the count (the row would then say strictly less than
+/// the spec's form), the frame `batch: ` … ` (n)` is kept and the *members* are
+/// shortened: the columns left over after the frame and the ` · ` separators
+/// are shared out evenly, remainder to the earliest members, and each name is
+/// cut with `…`. Only when even one column per member is impossible does the
+/// whole string fall back to [`truncate`].
+pub fn fit_batch(names: &[String], width: usize) -> String {
+    let n = names.len();
+    let full = format!("batch: {} ({n})", names.join(" · "));
+    if display_width(&full) <= width || n == 0 {
+        return full;
+    }
+    let frame = display_width("batch: ") + display_width(&format!(" ({n})"));
+    let seps = 3 * (n - 1);
+    let avail = width.saturating_sub(frame + seps);
+    if avail < n {
+        return truncate(&full, width);
+    }
+    let share = avail / n;
+    let extra = avail % n;
+    let parts: Vec<String> = names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| truncate(name, share + usize::from(i < extra)))
+        .collect();
+    format!("batch: {} ({n})", parts.join(" · "))
 }
 
 /// `@m3` — the item's written parent, not its root.
@@ -359,6 +532,81 @@ fn key_id(seg: &Segment) -> Option<&Id> {
     match &seg.kind {
         SegKind::Batch(ids) => seg.item.as_ref().or_else(|| ids.first()),
         _ => seg.item.as_ref(),
+    }
+}
+
+/// The trailing note column (§4.3's `↓ slot 4, item 3` and `due today`).
+///
+/// An explicit [`SegFlags::note`](crate::planner::SegFlags::note) wins; without
+/// one the note is derived from the mark the row already carries, so a planner
+/// that only sets `flags.underused` / `flags.hot` still gets the spec's text:
+///
+/// * `↓` → `↓ slot <slot energy>, item <item ci>`, taken from
+///   `plan.diagnostics.underused` (the planner records the exact pair there)
+///   and falling back to the segment's own `energy` and the item's `ci`;
+/// * `⚠` → `overdue` / `due today` / `due tomorrow` / `due Fri` / `due
+///   2026-11-20`, from the item's effective due (§6.4) or, for a window item
+///   such as `win:2026-09-07T09:00/21:00`, the window's last day.
+pub fn note_cell(seg: &Segment, tree: &Tree, plan: &DayPlan) -> String {
+    if let Some(note) = &seg.flags.note {
+        return note.clone();
+    }
+    if seg.flags.underused {
+        if let Some(note) = underused_note(seg, tree, plan) {
+            return note;
+        }
+    }
+    if seg.flags.hot {
+        if let Some(note) = hot_note(seg, tree, plan) {
+            return note;
+        }
+    }
+    String::new()
+}
+
+/// `↓ slot 4, item 3` for an under-used slot (§8.2 step 5).
+fn underused_note(seg: &Segment, tree: &Tree, plan: &DayPlan) -> Option<String> {
+    let id = key_id(seg)?;
+    let (slot, ci) = plan
+        .diagnostics
+        .underused
+        .iter()
+        .find(|(k, _, _)| k == id)
+        .map(|(_, slot, ci)| (*slot, *ci))
+        .or_else(|| Some((seg.energy?, tree.get(id)?.ci)))?;
+    Some(format!("{MARK_UNDERUSED} slot {slot}, item {ci}"))
+}
+
+/// `due today` for a HOT item (§7.2), or the day its deadline falls on.
+fn hot_note(seg: &Segment, tree: &Tree, plan: &DayPlan) -> Option<String> {
+    let due = due_date(tree, key_id(seg)?, plan.date)?;
+    Some(if due < plan.date {
+        "overdue".to_string()
+    } else if due == plan.date {
+        "due today".to_string()
+    } else if plan.date.succ_opt() == Some(due) {
+        "due tomorrow".to_string()
+    } else {
+        format!("due {}", when(due, plan.date))
+    })
+}
+
+/// The day an item is due: its effective due (§6.4), else the last day of its
+/// window (a daily window closes on the day being planned).
+fn due_date(tree: &Tree, id: &Id, today: NaiveDate) -> Option<NaiveDate> {
+    if let Some(dt) = tree.effective_due(id) {
+        return Some(dt.date());
+    }
+    match tree.effective_shape(id) {
+        Shape::Window {
+            range: WindowRange::Absolute { to, .. },
+            ..
+        } => Some(to.date()),
+        Shape::Window {
+            range: WindowRange::Daily { .. },
+            ..
+        } => Some(today),
+        _ => None,
     }
 }
 
@@ -420,7 +668,7 @@ pub fn render_plan_section_with(
                 divider_done = true;
             }
         }
-        body.push_str(&render_row(seg, tree, cfg, &prios, layout));
+        body.push_str(&render_row(seg, plan, tree, cfg, &prios, layout));
         body.push('\n');
     }
     if let (false, Some(at)) = (divider_done, divider_at) {
@@ -471,6 +719,7 @@ fn divider_row(at: &DateTime<Tz>, window_end: &DateTime<Tz>) -> String {
 /// One timeline row (§4.3).
 fn render_row(
     seg: &Segment,
+    plan: &DayPlan,
     tree: &Tree,
     cfg: &Config,
     prios: &HashMap<&Id, u8>,
@@ -504,7 +753,12 @@ fn render_row(
         String::new()
     };
 
-    let title = truncate(&title_cell(seg, tree, cfg), layout.title_w);
+    let title = match &seg.kind {
+        // A batch keeps its member list and its `(n)` (§7.5): the frame is
+        // fitted, not truncated away.
+        SegKind::Batch(ids) => fit_batch(&batch_names(ids, tree), layout.title_w),
+        _ => truncate(&title_cell(seg, tree, cfg), layout.title_w),
+    };
     let actual = if seg.flags.done && !matches!(seg.kind, SegKind::Rest) {
         format!("({}m)", seg.minutes())
     } else {
@@ -527,7 +781,7 @@ fn render_row(
     row.push_str("  ");
     row.push_str(&pad(&actual, ACTUAL_W));
     row.push_str("  ");
-    row.push_str(seg.flags.note.as_deref().unwrap_or(""));
+    row.push_str(&note_cell(seg, tree, plan));
     row.trim_end().to_string()
 }
 
@@ -673,6 +927,12 @@ impl Cell {
 pub struct DayBar {
     /// One cell per column, wake → wake.
     pub cells: Vec<Cell>,
+    /// One cell per *segment* of the plan, in `DayPlan::segments` order — the
+    /// segment's own hue, brightness, style and tooltip, whether or not it won
+    /// a column. [`render_svg`] draws from this (one `<rect>` per segment,
+    /// §17.2); the terminal widget draws from [`DayBar::cells`], and both
+    /// therefore agree on colour and hover text.
+    pub segments: Vec<Cell>,
     /// The plan as it stood at arrival; empty when no ghost was given.
     pub ghost: Vec<Cell>,
     /// The column `now` falls in.
@@ -687,18 +947,46 @@ pub struct DayBar {
     pub span_min: u32,
 }
 
+/// Seconds from wake to the start of column `col` — the one boundary
+/// [`DayBar::start_of`], [`DayBar::col_of`] and [`cells_of`] all draw, so that
+/// `col_of(start_of(c)) == Some(c)` holds for every `cols`, not only the ones
+/// that divide 1440 (`cols = 110`, the config's `min_width`, does not).
+fn cell_start_secs(col: usize, cell_min: f64) -> i64 {
+    (col as f64 * cell_min * 60.0).round() as i64
+}
+
+/// The column `secs` after wake falls in, by [`cell_start_secs`]' boundaries;
+/// out-of-range offsets clamp to the first or last column.
+fn col_at(secs: i64, cols: usize, cell_min: f64) -> usize {
+    let cols = cols.max(1);
+    // The float estimate is right to within one column; walk to the boundary
+    // the cells were actually cut on.
+    let mut col = ((secs.max(0) as f64 / 60.0) / cell_min.max(f64::MIN_POSITIVE)) as usize;
+    col = col.min(cols - 1);
+    while col > 0 && secs < cell_start_secs(col, cell_min) {
+        col -= 1;
+    }
+    while col + 1 < cols && secs >= cell_start_secs(col + 1, cell_min) {
+        col += 1;
+    }
+    col
+}
+
 impl DayBar {
     /// Minutes per cell (`24 h / cols`).
     pub fn cell_minutes(&self) -> f64 {
         f64::from(self.span_min) / self.cols.max(1) as f64
     }
     /// The column an instant falls in, or `None` when it is off the bar.
+    ///
+    /// The inverse of [`DayBar::start_of`]: `col_of(start_of(c)) == Some(c)`
+    /// for every column of every bar.
     pub fn col_of(&self, t: DateTime<Tz>) -> Option<usize> {
-        let m = (t - self.wake).num_seconds() as f64 / 60.0;
-        if m < 0.0 || m >= f64::from(self.span_min) {
+        let secs = (t - self.wake).num_seconds();
+        if secs < 0 || secs >= i64::from(self.span_min) * 60 {
             return None;
         }
-        Some(((m / self.cell_minutes()) as usize).min(self.cols.saturating_sub(1)))
+        Some(col_at(secs, self.cols, self.cell_minutes()))
     }
     /// Where an instant sits horizontally in a bar `width` units wide, clamped
     /// to the bar.
@@ -708,7 +996,7 @@ impl DayBar {
     }
     /// The instant a column starts at.
     pub fn start_of(&self, col: usize) -> DateTime<Tz> {
-        self.wake + Duration::seconds((col as f64 * self.cell_minutes() * 60.0).round() as i64)
+        self.wake + Duration::seconds(cell_start_secs(col, self.cell_minutes()))
     }
 }
 
@@ -736,12 +1024,31 @@ pub fn parse_hex_colour(s: &str) -> Result<(u8, u8, u8), EmitError> {
 }
 
 /// Palette colour `idx`, mid-grey when the palette is empty or malformed.
+///
+/// Rendering never fails on a bad config entry — a day bar with one grey
+/// project still beats no day bar — so a caller that wants to *report* a
+/// malformed `tui.palette` (`tm check`, the TUI at start-up) validates it with
+/// [`palette_colours`] first.
 pub fn palette_rgb(cfg: &Config, idx: usize) -> (u8, u8, u8) {
     let palette = &cfg.tui.palette;
     if palette.is_empty() {
         return (0x88, 0x88, 0x88);
     }
     parse_hex_colour(&palette[idx % palette.len()]).unwrap_or((0x88, 0x88, 0x88))
+}
+
+/// The whole `cfg.tui.palette` as colours, or the first entry that is not
+/// `#rrggbb` (§16's `palette`).
+///
+/// `config.rs` stores the palette as `Vec<String>` without checking it; this
+/// is where a typo such as `#ff00` becomes an [`EmitError`] instead of
+/// silently rendering as mid-grey.
+pub fn palette_colours(cfg: &Config) -> Result<Vec<(u8, u8, u8)>, EmitError> {
+    cfg.tui
+        .palette
+        .iter()
+        .map(|s| parse_hex_colour(s))
+        .collect()
 }
 
 /// Build the day bar (§12.1).
@@ -766,17 +1073,16 @@ pub fn daybar_cells(
     let cols = cols.max(1);
     let span_min: u32 = 24 * 60;
     let cell_min = f64::from(span_min) / cols as f64;
-    let cursor = {
-        let m = (now - wake).num_seconds() as f64 / 60.0;
-        if m < 0.0 {
-            0
-        } else {
-            ((m / cell_min) as usize).min(cols - 1)
-        }
-    };
+    let cursor = col_at((now - wake).num_seconds(), cols, cell_min);
     let row = |p: &DayPlan| -> Vec<Cell> { cells_of(p, tree, cfg, cols, wake, cell_min, cursor) };
     DayBar {
         cells: row(plan),
+        segments: plan
+            .segments
+            .iter()
+            .enumerate()
+            .map(|(idx, seg)| cell_of(seg, idx, tree, cfg, plan))
+            .collect(),
         ghost: ghost.map(row).unwrap_or_default(),
         cursor_col: cursor,
         cols,
@@ -798,8 +1104,8 @@ fn cells_of(
 ) -> Vec<Cell> {
     let mut cells = vec![Cell::empty(); cols];
     for (col, cell) in cells.iter_mut().enumerate() {
-        let cs = wake + Duration::seconds((col as f64 * cell_min * 60.0).round() as i64);
-        let ce = wake + Duration::seconds(((col + 1) as f64 * cell_min * 60.0).round() as i64);
+        let cs = wake + Duration::seconds(cell_start_secs(col, cell_min));
+        let ce = wake + Duration::seconds(cell_start_secs(col + 1, cell_min));
         let past = col <= cursor;
         let mut best: Option<(usize, i64)> = None;
         for (idx, seg) in plan.segments.iter().enumerate() {
@@ -925,6 +1231,9 @@ fn hex(c: (u8, u8, u8)) -> String {
 /// labels every three hours; the cursor line at `bar.now`; and, beneath the
 /// main row, the ghost row (the plan as it stood at arrival) drawn from
 /// `bar.ghost` as runs of equal cells.
+///
+/// `plan` must be the plan `bar` was built from: each segment's colour and
+/// `<title>` come from `bar.segments[idx]`.
 pub fn render_svg(
     bar: &DayBar,
     plan: &DayPlan,
@@ -1083,9 +1392,11 @@ fn pattern_ref(style: CellStyle) -> String {
 
 /// One `<rect>` for one segment, with its `<title>`.
 ///
-/// The colour and the tooltip come from the bar's own cells (matched by
-/// segment index) so the SVG and the terminal never disagree; a segment too
-/// short to own a cell falls back to its style's colour and has no tooltip.
+/// The colour and the tooltip come from the bar's per-segment cell
+/// ([`DayBar::segments`]), which every segment has — a segment that wins no
+/// *column* (one shorter than a cell, or one overlapped by a finished segment
+/// on the log side) still draws in its project hue and still carries its hover
+/// text, which §12.1 and §17.2 both ask for.
 fn segment_rect(
     bar: &DayBar,
     seg: &Segment,
@@ -1105,7 +1416,7 @@ fn segment_rect(
         return None;
     }
     let style = CellStyle::of(seg);
-    let cell = bar.cells.iter().find(|c| c.segment == Some(idx));
+    let cell = bar.segments.get(idx);
     let fill = match (style.is_hatched(), cell) {
         (true, _) => pattern_ref(style),
         (false, Some(c)) => hex(c.rgb(cfg)),
@@ -1412,9 +1723,18 @@ fn join_ids(ids: &[Id]) -> String {
 pub struct EnergyMix {
     /// Planned `Block`/`Batch` minutes at each `ci` 0..=5.
     pub minutes_at_ci: [u32; 6],
-    /// Σ of `minutes_at_ci`.
+    /// Σ of `minutes_at_ci` — the minutes the plan actually spends on blocks.
     pub total_min: u32,
-    /// Share of those minutes spent at `ci ≥ 4`; 0 when nothing is planned.
+    /// The day's budget in minutes (`budget_blocks × block_min`) — §11's
+    /// denominator.
+    pub budget_min: u32,
+    /// §11's "share of budget with `ci ≥ 4`": `(minutes_at_ci[4] +
+    /// minutes_at_ci[5]) / budget_min`.
+    ///
+    /// It is a share *of the budget*, not of what was planned, so a day that
+    /// fills its budget with high-energy work reads 100% and one that
+    /// overruns it reads above 100%. With no budget (`budget_blocks = 0`) it
+    /// falls back to the plan's own block minutes, and with neither it is 0.
     pub share_ci4_plus: f64,
     /// How many segments carry the `↓` mark.
     pub underused_count: usize,
@@ -1444,17 +1764,19 @@ impl EnergyMix {
     }
 }
 
-/// §11's "Energy mix": minutes at each `ci`, the share at `ci ≥ 4`, and the
-/// `↓` count.
+/// §11's "Energy mix": minutes at each `ci`, the share of the budget at
+/// `ci ≥ 4`, and the `↓` count.
 ///
-/// Takes the `tree` (which the scope's signature omitted) because a segment
-/// carries the *slot's* energy, while the mix is about the *item's* `ci`; the
-/// slot energy is the fallback when the tree does not know the item. The share
-/// is over the plan's own block minutes, which is defined for any plan — the
-/// budget is not always the denominator you want (an over-budget day would
-/// score above 100%).
-pub fn legend(plan: &DayPlan, tree: &Tree) -> EnergyMix {
-    let mut mix = EnergyMix::default();
+/// Takes the `tree` and the `cfg` (which the scope's signature omitted)
+/// because a segment carries the *slot's* energy while the mix is about the
+/// *item's* `ci` (the slot energy is the fallback when the tree does not know
+/// the item), and because §11's denominator is the day's budget —
+/// `budget_blocks × block_min` — which needs `block_min` from the config.
+pub fn legend(plan: &DayPlan, tree: &Tree, cfg: &Config) -> EnergyMix {
+    let mut mix = EnergyMix {
+        budget_min: plan.budget_blocks.saturating_mul(cfg.block_min()),
+        ..EnergyMix::default()
+    };
     for seg in &plan.segments {
         if seg.flags.underused {
             mix.underused_count += 1;
@@ -1477,9 +1799,14 @@ pub fn legend(plan: &DayPlan, tree: &Tree) -> EnergyMix {
         mix.minutes_at_ci[ci] += m;
         mix.total_min += m;
     }
-    if mix.total_min > 0 {
+    let denominator = if mix.budget_min > 0 {
+        mix.budget_min
+    } else {
+        mix.total_min
+    };
+    if denominator > 0 {
         let high = mix.minutes_at_ci[4] + mix.minutes_at_ci[5];
-        mix.share_ci4_plus = f64::from(high) / f64::from(mix.total_min);
+        mix.share_ci4_plus = f64::from(high) / f64::from(denominator);
     }
     mix
 }
