@@ -1,0 +1,15 @@
+---
+source: tm-core/tests/emit_now.rs
+expression: "emit::render_diagnostics(&diag, &tree, &cfg).join(\"\\n\")"
+---
+1 underused (4→3) · 120m ci-5 lost
+plan honesty 1.25 — planned above a realistic budget
+rest debt 40m
+d1 impossible: 3b short by 2026-09-11
+hot: a3
+g1 conflicts with g2
+t5 blocked by t4
+deferred: x2
+waiting: a4
+dropped: t5
+replans 4 · drift 75m

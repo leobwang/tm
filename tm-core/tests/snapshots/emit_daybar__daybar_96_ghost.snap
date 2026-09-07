@@ -1,0 +1,5 @@
+---
+source: tm-core/tests/emit_daybar.rs
+expression: ascii(&with.ghost)
+---
+   555555555b44444444rr3333wwww3333
