@@ -1,0 +1,2 @@
+- pset2 fri 6b ci4 max 2b/d
+- ask Kun about the dinner place
