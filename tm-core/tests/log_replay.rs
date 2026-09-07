@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Duration, FixedOffset, NaiveDate};
 use chrono_tz::Tz;
-use tm_core::log::{hours_since_wake, replay, Event, Log, Replay, SegmentKind};
+use tm_core::log::{hours_since_wake, replay, Event, Log, LogEntry, Replay, SegmentKind};
 use tm_core::model::{Id, InstanceStatus, Stamp};
 
 const TZ: Tz = Tz::America__Chicago;
@@ -73,9 +73,27 @@ fn undo_cancels_targets_and_itself() {
         log.compensating_undo(),
         Some(Event::Undo { of: "pause".into(), id: Some("t8".into()) })
     );
-    // The free function applies the mask too, so raw entries are safe.
-    let via_fn = replay(&log.entries, None, TZ);
-    assert_eq!(via_fn, log.replay(None, TZ));
+    // The free function applies the mask itself, so raw entries are safe:
+    // replaying the raw log gives what replaying the already-masked entries
+    // gives — and the masked list really is 12 entries shorter, so this is
+    // not two spellings of the same call.
+    let effective: Vec<LogEntry> = log.effective().cloned().collect();
+    assert_eq!(effective.len(), log.len() - 12);
+    assert!(!effective.iter().any(|e| matches!(e.ev, Event::Undo { .. })));
+    assert_eq!(replay(&log.entries, None, TZ), replay(&effective, None, TZ));
+    // …and it is not vacuous: the undone events do change the result.
+    assert_ne!(replay(&log.entries, None, TZ), replay_raw(&log));
+}
+
+/// Replay as if `undo` did nothing: every entry except the `undo` lines
+/// themselves. Only used to prove the undo mask has an effect.
+fn replay_raw(log: &Log) -> Replay {
+    let kept: Vec<LogEntry> = log
+        .iter()
+        .filter(|e| !matches!(e.ev, Event::Undo { .. }))
+        .cloned()
+        .collect();
+    replay(&kept, None, TZ)
 }
 
 #[test]

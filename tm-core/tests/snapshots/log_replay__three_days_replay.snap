@@ -53,6 +53,8 @@ days:
       - 60
       - 138
       - 125
+    ci_unknown:
+      t4: 45
     done:
       - t1
       - t2
@@ -185,6 +187,7 @@ days:
       - 107
       - 65
       - 0
+    ci_unknown: {}
     done:
       - t3
       - t6
@@ -293,6 +296,7 @@ days:
       - 0
       - 0
       - 60
+    ci_unknown: {}
     done: []
     lost_min: 15
     dropped: []

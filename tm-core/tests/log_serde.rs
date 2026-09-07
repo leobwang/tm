@@ -195,7 +195,7 @@ fn unknown_events_round_trip_and_known_bad_payloads_do_not() {
     assert_eq!(e.ev.name(), "mood");
     assert_eq!(e.ev.primary_id(), None);
     assert!(!e.ev.is_state_change());
-    assert_eq!(e.to_json().unwrap(), line, "lossless (keys sorted)");
+    assert_eq!(e.to_json().unwrap(), line, "already in canonical key order");
 
     // Built by hand, keys come out sorted after `ev`.
     let mut rest = Map::new();
@@ -232,6 +232,42 @@ fn unknown_events_round_trip_and_known_bad_payloads_do_not() {
     // Event alone (without the `t` wrapper) parses too.
     let ev: Event = serde_json::from_str(r#"{"ev":"note","text":"x"}"#).unwrap();
     assert_eq!(ev, Event::Note { text: "x".into() });
+}
+
+/// What "losslessly" means for [`Event::Unknown`], stated where a change
+/// would break it: every key and value survives, but `rest` is a
+/// `serde_json::Map` (a `BTreeMap` here), so a line written with **unsorted**
+/// keys comes back sorted — value-identical, not byte-identical. Every other
+/// unknown-event assertion in this suite (and the fixture) happens to use
+/// keys that are already sorted, so nothing else pins this down.
+#[test]
+fn unknown_events_keep_every_key_but_canonicalise_their_order() {
+    let line = r#"{"t":"2026-09-08T13:00:00-05:00","ev":"mood","note":"meh","level":3,"anger":null}"#;
+    let e = LogEntry::parse(line).unwrap();
+    let back = e.to_json().unwrap();
+    assert_ne!(back, line, "the keys were not written in sorted order");
+    assert_eq!(
+        back,
+        r#"{"t":"2026-09-08T13:00:00-05:00","ev":"mood","anger":null,"level":3,"note":"meh"}"#
+    );
+    // Nothing is lost: same value, and a second round trip is a fixed point.
+    assert_eq!(
+        serde_json::from_str::<Value>(&back).unwrap(),
+        serde_json::from_str::<Value>(line).unwrap()
+    );
+    assert_eq!(LogEntry::parse(&back).unwrap(), e);
+    assert_eq!(LogEntry::parse(&back).unwrap().to_json().unwrap(), back);
+
+    // The documented flip side: an unknown *extra* key on a **known** event is
+    // dropped on re-serialization. Nothing rewrites `.tm/log.jsonl` (§10.1 is
+    // append-only), so this only affects `to_jsonl`.
+    let e = LogEntry::parse(r#"{"t":"2026-09-08T13:00:00-05:00","ev":"note","text":"hi","extra":1}"#)
+        .unwrap();
+    assert_eq!(e.ev, Event::Note { text: "hi".into() });
+    assert_eq!(
+        e.to_json().unwrap(),
+        r#"{"t":"2026-09-08T13:00:00-05:00","ev":"note","text":"hi"}"#
+    );
 }
 
 #[test]

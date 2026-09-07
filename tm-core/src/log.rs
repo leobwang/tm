@@ -7,17 +7,23 @@
 //! * [`Event`] — one variant per event kind with the §10.1 field names
 //!   (`#[serde(tag = "ev")]`, lowercase names; [`EVENT_NAMES`] lists them).
 //!   Unknown event names deserialize into [`Event::Unknown`]`{ ev, rest }`
-//!   and serialize back losslessly (`rest` keys come out sorted); a known
-//!   name with a bad payload is a parse error naming the field, never an
-//!   `Unknown`. [`Event::name`] is the `ev` tag, [`Event::primary_id`] the
-//!   item/instance id an event is about, [`Event::is_state_change`] says
-//!   whether `tm undo` may target it.
+//!   and serialize back with every key and value intact — `rest` is a
+//!   `serde_json::Map`, so the keys come out **sorted**, which is
+//!   value-lossless but not byte-identical for a line written with unsorted
+//!   keys. Unknown *extra* keys on a **known** event are dropped on
+//!   re-serialization; nothing rewrites `log.jsonl` (§10.1 is append-only),
+//!   so this only affects [`Log::to_jsonl`]. A known name with a bad payload
+//!   is a parse error naming the field, never an `Unknown`.
+//!   [`Event::name`] is the `ev` tag, [`Event::primary_id`] the item/instance
+//!   id an event is about, [`Event::is_state_change`] says whether `tm undo`
+//!   may target it.
 //! * [`LogEntry`]`{ t: DateTime<FixedOffset>, ev }` — one line; `t` is
 //!   written RFC 3339 with the local offset (`2026-09-07T06:05:00-05:00`).
 //!   [`LogEntry::to_json`] / [`LogEntry::parse`] convert one line.
 //! * [`Log`] — the entries plus the [`LogWarning`]s for lines that did not
-//!   parse. [`Log::read`]`(path)` (missing file → empty, malformed lines →
-//!   warnings, never an error for content), [`Log::parse`]`(text)`,
+//!   parse. [`Log::read`]`(path)` (missing file → empty; malformed lines,
+//!   invalid UTF-8 included, → warnings; never an error for content),
+//!   [`Log::parse`]`(text)` / [`Log::parse_bytes`]`(bytes)`,
 //!   [`Log::append`]`(path, &entry)` / [`Log::append_all`] (create `.tm/`,
 //!   one object per line), [`Log::to_jsonl`], [`Log::iter_day`]`(date, tz)`,
 //!   [`Log::iter_range`]`(from, to, tz)`, [`Log::iter_item`]`(id)`.
@@ -31,7 +37,8 @@
 //! * Days: [`DayIndex`] — a day runs from `wake` to the next `wake`; an
 //!   entry belongs to the calendar date (in `tz`) of the last `wake` at or
 //!   before it when that wake is less than 24 h earlier, else to its own
-//!   calendar date. [`DayIndex::day_of`], [`DayIndex::bounds`],
+//!   calendar date. Only the first `wake` of a date counts, so a day is
+//!   never longer than 24 h. [`DayIndex::day_of`], [`DayIndex::bounds`],
 //!   [`DayIndex::wake_of`]; [`Log::day_index`]`(tz)` builds one.
 //!   [`hours_since_wake`]`(t, wake)` gives `hsw` rounded to 0.01.
 //! * [`replay`]`(entries, range, tz) -> `[`Replay`] (also [`Log::replay`]):
@@ -54,13 +61,23 @@
 //! # Event conventions (what the writers log, what replay assumes)
 //!
 //! * `wake.t` is the wake time; `arrive.t` the arrival; `start.t` the block
-//!   start. `done.actual_min` is authoritative for the block's minutes.
+//!   start. `done.actual_min` is authoritative for the block's minutes: a
+//!   `done` that closes a block already cut by `stop` (with no block started
+//!   in between) *replaces* its partial credit instead of adding to it.
 //! * `stop{id, remaining_min}` cuts an active block: it gets partial credit
 //!   for its worked minutes — elapsed since `start` minus paused
 //!   (`pause`…`unpause`) and interrupted (`interrupt`…`resume`) time. A
 //!   `start` while another block is open cuts the open block the same way.
 //!   A block still open at the end of the log gets no credit; it is
-//!   reported as [`Replay::open_block`].
+//!   reported as [`Replay::open_block`]. Neither `stop` nor `start` carries a
+//!   `ci`, so a cut block's minutes land in [`DayReplay::ci_unknown`] rather
+//!   than in `minutes_by_ci`/`load`; `Σ minutes_by_ci + ci_unknown_min() ==
+//!   block_min` (§11 needs the tree to attribute the rest).
+//! * `pause`/`unpause` bracket a `Pause` segment. §13 has `tm pause` but no
+//!   `tm unpause`, so a block closed while still paused is ordinary: the
+//!   pause is closed by the `done`/`stop`/next `start` (or by an interruption
+//!   inside it, which splits it in two). An `unpause` with no `pause` open is
+//!   a no-op.
 //! * `break.t` is when the break began; the entry is appended when the break
 //!   ends with `actual_min` set (a missing `actual_min` counts as
 //!   `planned_min`).
@@ -86,7 +103,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
-use std::io::Write;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::ops::RangeInclusive;
 use std::path::Path;
 
@@ -670,9 +687,27 @@ impl Log {
     /// Parse JSONL text. Blank lines are skipped; malformed lines become
     /// warnings.
     pub fn parse(text: &str) -> Log {
+        Log::parse_bytes(text.as_bytes())
+    }
+
+    /// Parse JSONL bytes: the file is split on `\n` and each line is decoded
+    /// on its own, so one line of invalid UTF-8 (a torn write, a zero-padded
+    /// block after a crash) is a [`LogWarning`] like any other malformed line
+    /// instead of taking the whole log with it.
+    pub fn parse_bytes(bytes: &[u8]) -> Log {
         let mut log = Log::new();
-        for (i, raw) in text.lines().enumerate() {
-            let line = raw.trim_end_matches('\r');
+        for (i, raw) in bytes.split(|b| *b == b'\n').enumerate() {
+            let line = match std::str::from_utf8(raw) {
+                Ok(s) => s.trim_end_matches('\r'),
+                Err(err) => {
+                    log.warnings.push(LogWarning {
+                        line: i + 1,
+                        text: String::from_utf8_lossy(raw).trim_end_matches('\r').to_string(),
+                        error: format!("invalid UTF-8: {err}"),
+                    });
+                    continue;
+                }
+            };
             if line.trim().is_empty() {
                 continue;
             }
@@ -688,12 +723,13 @@ impl Log {
         log
     }
 
-    /// Read `path`. A missing file is an empty log; malformed lines are
-    /// collected in `warnings`; only an I/O failure is an error.
+    /// Read `path`. A missing file is an empty log; malformed lines (invalid
+    /// UTF-8 included) are collected in `warnings`; only an I/O failure is an
+    /// error.
     pub fn read(path: impl AsRef<Path>) -> Result<Log, LogError> {
         let path = path.as_ref();
-        match std::fs::read_to_string(path) {
-            Ok(text) => Ok(Log::parse(&text)),
+        match std::fs::read(path) {
+            Ok(bytes) => Ok(Log::parse_bytes(&bytes)),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Log::new()),
             Err(source) => Err(LogError::Read {
                 path: path.display().to_string(),
@@ -707,7 +743,9 @@ impl Log {
         Log::append_all(path, std::slice::from_ref(entry))
     }
 
-    /// Append entries to `path`, one JSON object per line.
+    /// Append entries to `path`, one JSON object per line. A file whose last
+    /// line has no terminating newline (an append that failed part-way) gets
+    /// one first, so the new event is never pasted onto the broken line.
     pub fn append_all(path: impl AsRef<Path>, entries: &[LogEntry]) -> Result<(), LogError> {
         let path = path.as_ref();
         let write_err = |source: std::io::Error| LogError::Write {
@@ -726,9 +764,19 @@ impl Log {
         }
         let mut f = std::fs::OpenOptions::new()
             .create(true)
+            .read(true)
             .append(true)
             .open(path)
             .map_err(write_err)?;
+        let len = f.metadata().map_err(write_err)?.len();
+        if len > 0 {
+            f.seek(SeekFrom::End(-1)).map_err(write_err)?;
+            let mut last = [0u8; 1];
+            f.read_exact(&mut last).map_err(write_err)?;
+            if last[0] != b'\n' {
+                f.write_all(b"\n").map_err(write_err)?;
+            }
+        }
         f.write_all(buf.as_bytes()).map_err(write_err)?;
         Ok(())
     }
@@ -897,7 +945,8 @@ pub fn local_midnight(date: NaiveDate, tz: Tz) -> DateTime<FixedOffset> {
 ///
 /// An instant belongs to the calendar date (in `tz`) of the last `wake` at or
 /// before it when that wake is less than 24 hours earlier; otherwise (no wake
-/// logged, or the wake is stale) to its own calendar date.
+/// logged, or the wake is stale) to its own calendar date. At most one wake
+/// per calendar date is kept, so a day is never longer than 24 hours.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DayIndex {
     tz: Tz,
@@ -905,10 +954,18 @@ pub struct DayIndex {
 }
 
 impl DayIndex {
-    /// Build from wake times (sorted internally).
+    /// Build from wake times (sorted internally). Only the **first** wake on
+    /// each calendar date is kept: a second `tm wake` the same day (a nap, or
+    /// a re-run of the verb) must not stretch that day past 24 hours and
+    /// swallow the next morning (§12.1 "one row per 24h from wake to wake").
+    /// This is the same wake [`DayIndex::wake_of`] and `DayReplay::wake`
+    /// report.
     pub fn new(tz: Tz, wakes: impl IntoIterator<Item = DateTime<FixedOffset>>) -> DayIndex {
         let mut wakes: Vec<_> = wakes.into_iter().collect();
         wakes.sort();
+        wakes.dedup_by(|later, kept| {
+            later.with_timezone(&tz).date_naive() == kept.with_timezone(&tz).date_naive()
+        });
         DayIndex { tz, wakes }
     }
 
@@ -1298,10 +1355,18 @@ pub struct DayReplay {
     pub block_min: u32,
     /// Blocks done (`done` events with `actual_min > 0`).
     pub blocks_done: u32,
-    /// Σ `actual_min × ci / 5` over `done` events.
+    /// §11 load, `Σ block_min × ci / 5`, over the block minutes whose ci the
+    /// log records (i.e. every minute except [`DayReplay::ci_unknown`]).
     pub load: f64,
-    /// Minutes at each ci over `done` events (index = ci).
+    /// Minutes at each ci (index = ci), over the block minutes whose ci the
+    /// log records.
     pub minutes_by_ci: [u32; 6],
+    /// Block minutes whose ci the log does not record, by item id: a block cut
+    /// by `stop` or by the next `start` is credited from the clock, and
+    /// neither event carries a `ci`. `Σ minutes_by_ci + ci_unknown_min() ==
+    /// block_min` always holds, so §11's load and energy mix can be completed
+    /// by looking these items' `ci` up in the tree.
+    pub ci_unknown: BTreeMap<String, u32>,
     /// Ids finished today (non-partial `done`), in order.
     pub done: Vec<String>,
     /// Σ `resume.lost_min`.
@@ -1349,6 +1414,7 @@ impl DayReplay {
             blocks_done: 0,
             load: 0.0,
             minutes_by_ci: [0; 6],
+            ci_unknown: BTreeMap::new(),
             done: Vec::new(),
             lost_min: 0,
             dropped: Vec::new(),
@@ -1377,12 +1443,24 @@ impl DayReplay {
 
     /// Σ break minutes (actual or planned).
     pub fn break_min(&self) -> u32 {
-        self.breaks.iter().map(BreakRecord::actual_or_planned).sum()
+        self.breaks
+            .iter()
+            .fold(0u32, |a, b| a.saturating_add(b.actual_or_planned()))
     }
 
-    /// Block minutes with `ci ≥ 4` over `done` events.
+    /// Block minutes with `ci ≥ 4` among the minutes whose ci is known. The
+    /// §11 energy-mix share is this over `block_min − ci_unknown_min()`, or
+    /// over `block_min` once the caller has attributed
+    /// [`DayReplay::ci_unknown`] from the tree.
     pub fn high_ci_min(&self) -> u32 {
-        self.minutes_by_ci[4] + self.minutes_by_ci[5]
+        self.minutes_by_ci[4].saturating_add(self.minutes_by_ci[5])
+    }
+
+    /// Σ [`DayReplay::ci_unknown`]: block minutes with no ci in the log.
+    pub fn ci_unknown_min(&self) -> u32 {
+        self.ci_unknown
+            .values()
+            .fold(0u32, |a, m| a.saturating_add(*m))
     }
 
     /// Stretches of at least `min_min` minutes between the day's first and
@@ -1417,10 +1495,9 @@ impl DayReplay {
 
     /// Σ minutes of [`DayReplay::gaps`].
     pub fn gap_min(&self, min_min: u32) -> u32 {
-        self.gaps(min_min)
-            .iter()
-            .map(|(s, e)| e.signed_duration_since(*s).num_minutes().max(0) as u32)
-            .sum()
+        self.gaps(min_min).iter().fold(0u32, |a, (s, e)| {
+            a.saturating_add(e.signed_duration_since(*s).num_minutes().max(0) as u32)
+        })
     }
 }
 
@@ -1607,7 +1684,9 @@ impl Replay {
     }
     /// Σ block minutes over all days.
     pub fn total_block_min(&self) -> u32 {
-        self.days.values().map(|d| d.block_min).sum()
+        self.days
+            .values()
+            .fold(0u32, |a, d| a.saturating_add(d.block_min))
     }
 
     /// Block minutes keyed by [`Id`] — the map `tree::done_minutes` (§6.4)
@@ -1647,17 +1726,36 @@ pub fn stamp_from_key(from: &str) -> Option<Stamp> {
 struct Block {
     id: String,
     started: DateTime<FixedOffset>,
+    /// Running since; `None` while paused or interrupted.
     since: Option<DateTime<FixedOffset>>,
+    /// The timer is paused (`pause` seen, no `unpause` yet).
+    paused: bool,
+    /// Start of the open `Pause` segment; taken when the segment is emitted
+    /// (an interruption inside a pause splits it in two, and `paused` stays
+    /// true across it).
     paused_at: Option<DateTime<FixedOffset>>,
     worked_min: u32,
     obs: Option<usize>,
 }
 
+/// The last block cut by `stop` (or by the next `start`), with the minutes it
+/// was credited: a `done` closing the same block replaces that credit instead
+/// of adding to it.
+struct Cut {
+    id: String,
+    t: DateTime<FixedOffset>,
+    min: u32,
+}
+
 struct Machine {
     days: DayIndex,
     range: Option<RangeInclusive<NaiveDate>>,
+    /// `slept_min` per day from the `wake` entries, built before the walk so
+    /// an `energy` line logged before its `wake` still sees it.
+    slept_by_day: HashMap<NaiveDate, u32>,
     out: Replay,
     block: Option<Block>,
+    last_cut: Option<Cut>,
     interrupt: Option<(DateTime<FixedOffset>, Option<String>)>,
 }
 
@@ -1701,32 +1799,103 @@ impl Machine {
             return;
         };
         let min = t.signed_duration_since(since).num_minutes().max(0) as u32;
-        b.worked_min += min;
+        b.worked_min = b.worked_min.saturating_add(min);
         let id = b.id.clone();
         if t > since {
             self.segment(since, t, SegmentKind::Block { id });
         }
     }
 
-    fn credit(&mut self, id: &str, t: DateTime<FixedOffset>, min: u32) {
+    /// Close the open `Pause` segment of the block at `t` (unpause, an
+    /// interruption, or the block being closed while still paused). The
+    /// `paused` flag is untouched: only `unpause` clears it.
+    fn close_pause(&mut self, t: DateTime<FixedOffset>) {
+        let Some(b) = self.block.as_mut() else {
+            return;
+        };
+        let Some(p) = b.paused_at.take() else {
+            return;
+        };
+        let id = b.id.clone();
+        if t > p {
+            self.segment(p, t, SegmentKind::Pause { id });
+        }
+    }
+
+    /// Credit `min` block minutes to `id` at `t`. `ci` is the item's
+    /// min-energy where the log carries it (a `done`); a block cut by `stop`
+    /// or by the next `start` has none, and its minutes are recorded in
+    /// [`DayReplay::ci_unknown`] instead of `minutes_by_ci`/`load`.
+    fn credit(&mut self, id: &str, t: DateTime<FixedOffset>, min: u32, ci: Option<u8>) {
         let day = self.days.day_of(t);
         if !self.in_range(day) {
             return;
         }
         let it = self.item_mut(id);
-        it.minutes += min;
-        *it.minutes_by_day.entry(day).or_insert(0) += min;
+        it.minutes = it.minutes.saturating_add(min);
+        let by_day = it.minutes_by_day.entry(day).or_insert(0);
+        *by_day = by_day.saturating_add(min);
+        let id = id.to_string();
         if let Some(d) = self.day_mut(day) {
-            d.block_min += min;
+            d.block_min = d.block_min.saturating_add(min);
+            match ci {
+                Some(ci) => {
+                    let ci = ci.min(5);
+                    d.minutes_by_ci[ci as usize] =
+                        d.minutes_by_ci[ci as usize].saturating_add(min);
+                    d.load += min as f64 * ci as f64 / 5.0;
+                }
+                None if min > 0 => {
+                    let unknown = d.ci_unknown.entry(id).or_insert(0);
+                    *unknown = unknown.saturating_add(min);
+                }
+                None => {}
+            }
+        }
+    }
+
+    /// Undo a [`Machine::credit`] of ci-unknown minutes (a cut block whose
+    /// `done` turned up right after).
+    fn uncredit_cut(&mut self, cut: &Cut) {
+        if cut.min == 0 {
+            return;
+        }
+        let day = self.days.day_of(cut.t);
+        if !self.in_range(day) {
+            return;
+        }
+        if let Some(it) = self.out.items.get_mut(&cut.id) {
+            it.minutes = it.minutes.saturating_sub(cut.min);
+            if let Some(by_day) = it.minutes_by_day.get_mut(&day) {
+                *by_day = by_day.saturating_sub(cut.min);
+                if *by_day == 0 {
+                    it.minutes_by_day.remove(&day);
+                }
+            }
+        }
+        if let Some(d) = self.out.days.get_mut(&day) {
+            d.block_min = d.block_min.saturating_sub(cut.min);
+            if let Some(unknown) = d.ci_unknown.get_mut(&cut.id) {
+                *unknown = unknown.saturating_sub(cut.min);
+                if *unknown == 0 {
+                    d.ci_unknown.remove(&cut.id);
+                }
+            }
         }
     }
 
     /// Cut the open block at `t` (stop, or a start of another block): its
-    /// worked minutes are credited.
+    /// worked minutes are credited, with no ci (neither event carries one).
     fn cut(&mut self, t: DateTime<FixedOffset>) -> Option<Block> {
         self.close_sub(t);
+        self.close_pause(t);
         let b = self.block.take()?;
-        self.credit(&b.id, t, b.worked_min);
+        self.credit(&b.id, t, b.worked_min, None);
+        self.last_cut = Some(Cut {
+            id: b.id.clone(),
+            t,
+            min: b.worked_min,
+        });
         Some(b)
     }
 
@@ -1830,26 +1999,31 @@ impl Machine {
                     id: id.clone(),
                     started: t,
                     since,
+                    paused: false,
                     paused_at: None,
                     worked_min: 0,
                     obs,
                 });
+                // A new block ends any claim the previous cut had on a later
+                // `done`: those minutes belong to a block of their own.
+                self.last_cut = None;
             }
             Event::Pause { id } => {
-                if self.block.as_ref().is_some_and(|b| &b.id == id) {
+                if self.block.as_ref().is_some_and(|b| &b.id == id && !b.paused) {
                     self.close_sub(t);
                     if let Some(b) = self.block.as_mut() {
-                        if b.paused_at.is_none() {
-                            b.paused_at = Some(t);
-                        }
+                        b.paused = true;
+                        b.paused_at = Some(t);
                     }
                 }
             }
             Event::Unpause { id } => {
-                if self.block.as_ref().is_some_and(|b| &b.id == id) {
-                    let paused_at = self.block.as_mut().and_then(|b| b.paused_at.take());
-                    if let Some(p) = paused_at {
-                        self.segment(p, t, SegmentKind::Pause { id: id.clone() });
+                // A stray `unpause` (a duplicate keypress, or a `pause`
+                // removed by `tm undo`) must not reset the block's clock.
+                if self.block.as_ref().is_some_and(|b| &b.id == id && b.paused) {
+                    self.close_pause(t);
+                    if let Some(b) = self.block.as_mut() {
+                        b.paused = false;
                     }
                     if self.interrupt.is_none() {
                         if let Some(b) = self.block.as_mut() {
@@ -1860,6 +2034,7 @@ impl Machine {
             }
             Event::Interrupt { id } => {
                 self.close_sub(t);
+                self.close_pause(t);
                 if self.interrupt.is_none() {
                     let who = id
                         .clone()
@@ -1888,11 +2063,16 @@ impl Machine {
                     });
                 }
                 if let Some(d) = self.day_mut(rec_day) {
-                    d.lost_min += lost_min;
+                    d.lost_min = d.lost_min.saturating_add(*lost_min);
                     d.dropped.extend(dropped.iter().cloned());
                 }
                 if let Some(b) = self.block.as_mut() {
-                    if b.paused_at.is_none() && b.since.is_none() {
+                    if b.paused {
+                        // Still paused: the pause resumes where the
+                        // interruption left off (a second `resume` without an
+                        // `interrupt` must not restart it).
+                        b.paused_at.get_or_insert(t);
+                    } else if b.since.is_none() {
                         b.since = Some(t);
                     }
                 }
@@ -1909,22 +2089,36 @@ impl Machine {
                 let matched = self.block.as_ref().is_some_and(|b| &b.id == id);
                 if matched {
                     self.close_sub(t);
+                    self.close_pause(t);
                     let b = self.block.take().expect("matched");
                     if let (Some(i), Some(w)) = (b.obs, went) {
                         if let Some(o) = self.out.energy.get_mut(i) {
                             o.went = Some(*w);
                         }
                     }
+                    self.last_cut = None;
                 }
-                self.credit(id, t, *actual_min);
+                // `done.actual_min` is authoritative: when it closes a block
+                // this same item was already given partial credit for (a
+                // `stop` immediately followed by `d`, with no block in
+                // between), it replaces that credit rather than adding to it.
+                // A retro `done` (`actual_min: 0`) has nothing to replace it
+                // with, so the worked minutes stand.
+                if !matched
+                    && *actual_min > 0
+                    && self.block.is_none()
+                    && self.last_cut.as_ref().is_some_and(|c| &c.id == id)
+                {
+                    let cut = self.last_cut.take().expect("checked just above");
+                    self.uncredit_cut(&cut);
+                }
+                self.credit(id, t, *actual_min, Some(*ci));
                 if self.in_range(day) {
                     if *actual_min > 0 {
-                        self.item_mut(id).blocks += 1;
-                        let ci_idx = (*ci).min(5) as usize;
+                        let it = self.item_mut(id);
+                        it.blocks = it.blocks.saturating_add(1);
                         if let Some(d) = self.day_mut(day) {
-                            d.blocks_done += 1;
-                            d.load += *actual_min as f64 * *ci as f64 / 5.0;
-                            d.minutes_by_ci[ci_idx] += actual_min;
+                            d.blocks_done = d.blocks_done.saturating_add(1);
                         }
                         self.out.durations.push(DurationObs {
                             t,
@@ -1953,13 +2147,15 @@ impl Machine {
                 if self.block.as_ref().is_some_and(|b| &b.id == id) {
                     self.cut(t);
                     if self.in_range(day) {
-                        self.item_mut(id).stops += 1;
+                        let it = self.item_mut(id);
+                        it.stops = it.stops.saturating_add(1);
                     }
                 }
             }
             Event::Extend { id, by_min } => {
                 if self.in_range(day) {
-                    self.item_mut(id).extended_min += by_min;
+                    let it = self.item_mut(id);
+                    it.extended_min = it.extended_min.saturating_add(*by_min);
                 }
             }
             Event::Break {
@@ -1992,7 +2188,10 @@ impl Machine {
                 loc,
             } => {
                 if self.in_range(day) {
-                    let slept = self.out.days.get(&day).and_then(|d| d.slept_min);
+                    // From the day index, not from what has been replayed so
+                    // far: `tm wake 06:05` typed after `tm energy 4` appends
+                    // its line last.
+                    let slept = self.slept_by_day.get(&day).copied();
                     self.out.energy.push(EnergyObs {
                         t,
                         day,
@@ -2025,7 +2224,7 @@ impl Machine {
                         min: *min,
                     });
                     if attributed == "leak" {
-                        d.leak_min += min;
+                        d.leak_min = d.leak_min.saturating_add(*min);
                         d.longest_leak = d.longest_leak.max(*min);
                         if self.out.longest_leak.as_ref().is_none_or(|l| *min > l.min) {
                             self.out.longest_leak = Some(LeakRecord {
@@ -2075,7 +2274,7 @@ impl Machine {
                             },
                         );
                         if let Some(d) = self.day_mut(day) {
-                            d.routine_min += min;
+                            d.routine_min = d.routine_min.saturating_add(*min);
                         }
                     }
                 }
@@ -2099,9 +2298,9 @@ impl Machine {
                 drift_min,
             } => {
                 if let Some(d) = self.day_mut(day) {
-                    d.plans += 1;
+                    d.plans = d.plans.saturating_add(1);
                     d.replans_today = d.replans_today.max(*replans_today);
-                    d.drift_min += drift_min;
+                    d.drift_min = d.drift_min.saturating_add(*drift_min);
                     d.last_plan_hash = Some(hash.clone());
                 }
             }
@@ -2165,7 +2364,7 @@ impl Machine {
                 started: b.started,
                 worked_min: b.worked_min,
                 since: b.since,
-                paused: b.paused_at.is_some(),
+                paused: b.paused,
             });
         }
         if let Some((s, id)) = self.interrupt.take() {
@@ -2209,9 +2408,19 @@ fn replay_refs(entries: &[&LogEntry], range: Option<RangeInclusive<NaiveDate>>, 
             .filter(|e| matches!(e.ev, Event::Wake { .. }))
             .map(|e| e.t),
     );
+    // The day's sleep, indexed before the walk: `tm wake 06:05` may be typed
+    // (and appended) after events it precedes. The first `wake` of a day wins,
+    // as it does for `DayReplay::wake`.
+    let mut slept_by_day: HashMap<NaiveDate, u32> = HashMap::new();
+    for e in entries {
+        if let Event::Wake { slept_min, .. } = &e.ev {
+            slept_by_day.entry(days.day_of(e.t)).or_insert(*slept_min);
+        }
+    }
     let mut m = Machine {
         days,
         range: range.clone(),
+        slept_by_day,
         out: Replay {
             tz,
             range,
@@ -2235,6 +2444,7 @@ fn replay_refs(entries: &[&LogEntry], range: Option<RangeInclusive<NaiveDate>>, 
             warnings: Vec::new(),
         },
         block: None,
+        last_cut: None,
         interrupt: None,
     };
     for e in entries {
@@ -2432,8 +2642,16 @@ mod tests {
         assert_eq!(r.block_minutes_on_day(d7), 195);
         assert_eq!(r.lost_min(d7), 20);
         assert_eq!(r.day(d7).unwrap().dropped, vec!["z"]);
-        assert_eq!(r.day(d7).unwrap().load, 48.0);
+        assert_eq!(r.day(d7).unwrap().load, 48.0, "only c's minutes carry a ci");
         assert_eq!(r.day(d7).unwrap().minutes_by_ci[4], 60);
+        // a (90) and b (45) were cut by `stop` / the next `start`, which carry
+        // no ci; every block minute is still accounted for.
+        assert_eq!(r.day(d7).unwrap().ci_unknown_min(), 135);
+        let day = r.day(d7).unwrap();
+        assert_eq!(
+            day.minutes_by_ci.iter().sum::<u32>() + day.ci_unknown_min(),
+            day.block_min
+        );
         assert_eq!(r.energy.len(), 4);
         assert_eq!(r.energy[2].went, Some(3));
         assert_eq!(r.energy[2].weight(), 2.0);
