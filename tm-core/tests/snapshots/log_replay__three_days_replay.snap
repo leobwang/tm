@@ -1,0 +1,743 @@
+---
+source: tm-core/tests/log_replay.rs
+expression: r
+---
+tz: America/Chicago
+range: ~
+days:
+  2026-09-07:
+    date: 2026-09-07
+    wake: "2026-09-07T06:05:00-05:00"
+    slept_min: 490
+    onset_min: ~
+    arrival: "2026-09-07T07:00:00-05:00"
+    loc: lounge
+    window:
+      - "07:00"
+      - "15:00"
+    budget: 6
+    loc_changes:
+      - - "2026-09-07T07:00:00-05:00"
+        - lounge
+      - - "2026-09-07T14:00:00-05:00"
+        - home
+    first_start: "2026-09-07T07:02:00-05:00"
+    starts:
+      - t: "2026-09-07T07:02:00-05:00"
+        id: t1
+        pred: 5
+        rep: 5
+      - t: "2026-09-07T08:10:00-05:00"
+        id: t2
+        pred: 5
+        rep: 5
+      - t: "2026-09-07T09:32:00-05:00"
+        id: t3
+        pred: 5
+        rep: 4
+      - t: "2026-09-07T12:00:00-05:00"
+        id: t4
+        pred: 4
+        rep: ~
+      - t: "2026-09-07T14:05:00-05:00"
+        id: t5
+        pred: 3
+        rep: 3
+    block_min: 368
+    blocks_done: 4
+    load: 271.4
+    minutes_by_ci:
+      - 0
+      - 0
+      - 0
+      - 60
+      - 138
+      - 125
+    ci_unknown:
+      t4: 45
+    done:
+      - t1
+      - t2
+      - t5
+      - a3
+    lost_min: 55
+    dropped:
+      - t5
+    leak_min: 14
+    longest_leak: 14
+    idle:
+      - t: "2026-09-07T15:40:00-05:00"
+        day: 2026-09-07
+        attributed: leak
+        min: 14
+    breaks:
+      - t: "2026-09-07T09:08:00-05:00"
+        day: 2026-09-07
+        planned_min: 20
+        actual_min: 24
+        where: walk
+    routine_min: 48
+    plans: 3
+    replans_today: 4
+    drift_min: 75
+    last_plan_hash: c3d5
+    segments:
+      - start: "2026-09-07T07:02:00-05:00"
+        end: "2026-09-07T08:09:00-05:00"
+        kind:
+          Block:
+            id: t1
+      - start: "2026-09-07T08:10:00-05:00"
+        end: "2026-09-07T09:08:00-05:00"
+        kind:
+          Block:
+            id: t2
+      - start: "2026-09-07T09:08:00-05:00"
+        end: "2026-09-07T09:32:00-05:00"
+        kind:
+          Break:
+            where: walk
+      - start: "2026-09-07T09:32:00-05:00"
+        end: "2026-09-07T11:50:00-05:00"
+        kind:
+          Block:
+            id: t3
+      - start: "2026-09-07T11:20:00-05:00"
+        end: "2026-09-07T11:50:00-05:00"
+        kind:
+          Routine:
+            item: lunch
+            inst: 2026-09-07
+      - start: "2026-09-07T12:00:00-05:00"
+        end: "2026-09-07T12:10:00-05:00"
+        kind:
+          Block:
+            id: t4
+      - start: "2026-09-07T12:10:00-05:00"
+        end: "2026-09-07T13:05:00-05:00"
+        kind:
+          Interrupt:
+            id: t4
+      - start: "2026-09-07T13:05:00-05:00"
+        end: "2026-09-07T13:20:00-05:00"
+        kind:
+          Block:
+            id: t4
+      - start: "2026-09-07T13:20:00-05:00"
+        end: "2026-09-07T13:30:00-05:00"
+        kind:
+          Pause:
+            id: t4
+      - start: "2026-09-07T13:30:00-05:00"
+        end: "2026-09-07T13:50:00-05:00"
+        kind:
+          Block:
+            id: t4
+      - start: "2026-09-07T14:05:00-05:00"
+        end: "2026-09-07T15:05:00-05:00"
+        kind:
+          Block:
+            id: t5
+      - start: "2026-09-07T15:26:00-05:00"
+        end: "2026-09-07T15:40:00-05:00"
+        kind:
+          Idle:
+            attributed: leak
+      - start: "2026-09-07T15:52:00-05:00"
+        end: "2026-09-07T16:10:00-05:00"
+        kind:
+          Routine:
+            item: package
+            inst: 2026-09-07
+  2026-09-08:
+    date: 2026-09-08
+    wake: "2026-09-08T06:40:00-05:00"
+    slept_min: 400
+    onset_min: 35
+    arrival: "2026-09-08T07:30:00-05:00"
+    loc: home
+    window:
+      - "07:30"
+      - "15:30"
+    budget: 6
+    loc_changes:
+      - - "2026-09-08T07:30:00-05:00"
+        - home
+    first_start: "2026-09-08T07:35:00-05:00"
+    starts:
+      - t: "2026-09-08T07:35:00-05:00"
+        id: t3
+        pred: 4
+        rep: 3
+      - t: "2026-09-08T09:05:00-05:00"
+        id: t6
+        pred: 4
+        rep: 4
+      - t: "2026-09-08T10:15:00-05:00"
+        id: t7
+        pred: 4
+        rep: ~
+    block_min: 172
+    blocks_done: 3
+    load: 116.2
+    minutes_by_ci:
+      - 0
+      - 0
+      - 0
+      - 107
+      - 65
+      - 0
+    ci_unknown: {}
+    done:
+      - t3
+      - t6
+      - t7
+    lost_min: 0
+    dropped: []
+    leak_min: 37
+    longest_leak: 25
+    idle:
+      - t: "2026-09-08T10:10:00-05:00"
+        day: 2026-09-08
+        attributed: work
+        min: 3
+      - t: "2026-09-08T12:00:00-05:00"
+        day: 2026-09-08
+        attributed: leak
+        min: 25
+      - t: "2026-09-08T12:30:00-05:00"
+        day: 2026-09-08
+        attributed: leak
+        min: 12
+    breaks:
+      - t: "2026-09-08T08:45:00-05:00"
+        day: 2026-09-08
+        planned_min: 20
+        actual_min: ~
+        where: ~
+    routine_min: 15
+    plans: 2
+    replans_today: 2
+    drift_min: 30
+    last_plan_hash: e5f7
+    segments:
+      - start: "2026-09-08T07:35:00-05:00"
+        end: "2026-09-08T08:40:00-05:00"
+        kind:
+          Block:
+            id: t3
+      - start: "2026-09-08T08:45:00-05:00"
+        end: "2026-09-08T09:05:00-05:00"
+        kind:
+          Break:
+            where: ~
+      - start: "2026-09-08T09:05:00-05:00"
+        end: "2026-09-08T10:07:00-05:00"
+        kind:
+          Block:
+            id: t6
+      - start: "2026-09-08T10:07:00-05:00"
+        end: "2026-09-08T10:10:00-05:00"
+        kind:
+          Idle:
+            attributed: work
+      - start: "2026-09-08T10:15:00-05:00"
+        end: "2026-09-08T11:00:00-05:00"
+        kind:
+          Block:
+            id: t7
+      - start: "2026-09-08T10:45:00-05:00"
+        end: "2026-09-08T11:00:00-05:00"
+        kind:
+          Routine:
+            item: shower
+            inst: "#3"
+      - start: "2026-09-08T11:35:00-05:00"
+        end: "2026-09-08T12:00:00-05:00"
+        kind:
+          Idle:
+            attributed: leak
+      - start: "2026-09-08T12:18:00-05:00"
+        end: "2026-09-08T12:30:00-05:00"
+        kind:
+          Idle:
+            attributed: leak
+  2026-09-09:
+    date: 2026-09-09
+    wake: ~
+    slept_min: ~
+    onset_min: ~
+    arrival: "2026-09-09T09:00:00-05:00"
+    loc: lounge
+    window:
+      - "09:00"
+      - "17:00"
+    budget: 6
+    loc_changes:
+      - - "2026-09-09T09:00:00-05:00"
+        - lounge
+    first_start: "2026-09-09T09:05:00-05:00"
+    starts:
+      - t: "2026-09-09T09:05:00-05:00"
+        id: t8
+        pred: 5
+        rep: 5
+      - t: "2026-09-09T10:05:00-05:00"
+        id: t8
+        pred: 5
+        rep: 4
+    block_min: 60
+    blocks_done: 1
+    load: 60
+    minutes_by_ci:
+      - 0
+      - 0
+      - 0
+      - 0
+      - 0
+      - 60
+    ci_unknown: {}
+    done: []
+    lost_min: 15
+    dropped: []
+    leak_min: 0
+    longest_leak: 0
+    idle: []
+    breaks: []
+    routine_min: 0
+    plans: 0
+    replans_today: 0
+    drift_min: 0
+    last_plan_hash: ~
+    segments:
+      - start: "2026-09-09T09:05:00-05:00"
+        end: "2026-09-09T10:05:00-05:00"
+        kind:
+          Block:
+            id: t8
+      - start: "2026-09-09T10:05:00-05:00"
+        end: "2026-09-09T10:20:00-05:00"
+        kind:
+          Block:
+            id: t8
+      - start: "2026-09-09T10:20:00-05:00"
+        end: "2026-09-09T10:35:00-05:00"
+        kind:
+          Interrupt:
+            id: t8
+      - start: "2026-09-09T10:35:00-05:00"
+        end: "2026-09-09T10:50:00-05:00"
+        kind:
+          Block:
+            id: t8
+items:
+  a3:
+    id: a3
+    minutes: 0
+    blocks: 0
+    minutes_by_day:
+      2026-09-07: 0
+    done_at:
+      - "2026-09-07T18:00:00-05:00"
+    partial_done_at: []
+    stops: 0
+    extended_min: 0
+  t1:
+    id: t1
+    minutes: 67
+    blocks: 1
+    minutes_by_day:
+      2026-09-07: 67
+    done_at:
+      - "2026-09-07T08:09:00-05:00"
+    partial_done_at: []
+    stops: 0
+    extended_min: 0
+  t2:
+    id: t2
+    minutes: 58
+    blocks: 1
+    minutes_by_day:
+      2026-09-07: 58
+    done_at:
+      - "2026-09-07T09:08:00-05:00"
+    partial_done_at: []
+    stops: 0
+    extended_min: 0
+  t3:
+    id: t3
+    minutes: 203
+    blocks: 2
+    minutes_by_day:
+      2026-09-07: 138
+      2026-09-08: 65
+    done_at:
+      - "2026-09-08T08:40:00-05:00"
+    partial_done_at:
+      - "2026-09-07T11:50:00-05:00"
+    stops: 0
+    extended_min: 60
+  t4:
+    id: t4
+    minutes: 45
+    blocks: 0
+    minutes_by_day:
+      2026-09-07: 45
+    done_at: []
+    partial_done_at: []
+    stops: 1
+    extended_min: 0
+  t5:
+    id: t5
+    minutes: 60
+    blocks: 1
+    minutes_by_day:
+      2026-09-07: 60
+    done_at:
+      - "2026-09-07T15:05:00-05:00"
+    partial_done_at: []
+    stops: 0
+    extended_min: 0
+  t6:
+    id: t6
+    minutes: 62
+    blocks: 1
+    minutes_by_day:
+      2026-09-08: 62
+    done_at:
+      - "2026-09-08T10:07:00-05:00"
+    partial_done_at: []
+    stops: 0
+    extended_min: 0
+  t7:
+    id: t7
+    minutes: 45
+    blocks: 1
+    minutes_by_day:
+      2026-09-08: 45
+    done_at:
+      - "2026-09-08T11:00:00-05:00"
+    partial_done_at: []
+    stops: 0
+    extended_min: 0
+  t8:
+    id: t8
+    minutes: 60
+    blocks: 1
+    minutes_by_day:
+      2026-09-09: 60
+    done_at: []
+    partial_done_at:
+      - "2026-09-09T10:05:00-05:00"
+    stops: 0
+    extended_min: 0
+instances:
+  breakfast:
+    2026-09-08:
+      t: "2026-09-08T11:30:00-05:00"
+      status: Expired
+      raw_status: expired
+      actual_min: ~
+  laundry:
+    2026-09-07:
+      t: "2026-09-08T11:30:00-05:00"
+      status: Missed
+      raw_status: missed
+      actual_min: ~
+  lunch:
+    2026-09-07:
+      t: "2026-09-07T11:50:00-05:00"
+      status: Done
+      raw_status: done
+      actual_min: 30
+  package:
+    2026-09-07:
+      t: "2026-09-07T16:10:00-05:00"
+      status: Done
+      raw_status: done
+      actual_min: 18
+  shower:
+    "#3":
+      t: "2026-09-08T11:00:00-05:00"
+      status: Done
+      raw_status: done
+      actual_min: 15
+  workout:
+    2026-09-07:
+      t: "2026-09-07T16:30:00-05:00"
+      status: Skipped
+      raw_status: skipped
+      actual_min: ~
+energy:
+  - t: "2026-09-07T07:02:00-05:00"
+    day: 2026-09-07
+    pred: 5
+    rep: 5
+    hsw: 0.95
+    loc: lounge
+    slept_min: 490
+    went: 1
+    id: t1
+    from_start: true
+  - t: "2026-09-07T08:10:00-05:00"
+    day: 2026-09-07
+    pred: 5
+    rep: 5
+    hsw: 2.08
+    loc: lounge
+    slept_min: 490
+    went: 1
+    id: t2
+    from_start: true
+  - t: "2026-09-07T09:32:00-05:00"
+    day: 2026-09-07
+    pred: 5
+    rep: 4
+    hsw: 3.45
+    loc: lounge
+    slept_min: 490
+    went: ~
+    id: ~
+    from_start: false
+  - t: "2026-09-07T09:32:00-05:00"
+    day: 2026-09-07
+    pred: 5
+    rep: 4
+    hsw: 3.45
+    loc: lounge
+    slept_min: 490
+    went: 2
+    id: t3
+    from_start: true
+  - t: "2026-09-07T14:05:00-05:00"
+    day: 2026-09-07
+    pred: 3
+    rep: 3
+    hsw: 8
+    loc: home
+    slept_min: 490
+    went: 1
+    id: t5
+    from_start: true
+  - t: "2026-09-08T07:35:00-05:00"
+    day: 2026-09-08
+    pred: 4
+    rep: 3
+    hsw: 0.92
+    loc: home
+    slept_min: 400
+    went: 3
+    id: t3
+    from_start: true
+  - t: "2026-09-08T09:05:00-05:00"
+    day: 2026-09-08
+    pred: 4
+    rep: 4
+    hsw: 2.42
+    loc: home
+    slept_min: 400
+    went: 1
+    id: t6
+    from_start: true
+  - t: "2026-09-08T14:10:00-05:00"
+    day: 2026-09-08
+    pred: 3
+    rep: 2
+    hsw: 7.5
+    loc: home
+    slept_min: 400
+    went: ~
+    id: ~
+    from_start: false
+  - t: "2026-09-09T09:05:00-05:00"
+    day: 2026-09-09
+    pred: 5
+    rep: 5
+    hsw: 0
+    loc: lounge
+    slept_min: 0
+    went: 1
+    id: t8
+    from_start: true
+  - t: "2026-09-09T10:05:00-05:00"
+    day: 2026-09-09
+    pred: 5
+    rep: 4
+    hsw: 0
+    loc: lounge
+    slept_min: 0
+    went: ~
+    id: t8
+    from_start: true
+durations:
+  - t: "2026-09-07T08:09:00-05:00"
+    day: 2026-09-07
+    id: t1
+    ci: 5
+    tags:
+      - lean
+    est_min: 60
+    actual_min: 67
+    went: 1
+    partial: false
+  - t: "2026-09-07T09:08:00-05:00"
+    day: 2026-09-07
+    id: t2
+    ci: 5
+    tags:
+      - lean
+    est_min: 60
+    actual_min: 58
+    went: 1
+    partial: false
+  - t: "2026-09-07T11:50:00-05:00"
+    day: 2026-09-07
+    id: t3
+    ci: 4
+    tags:
+      - lean
+    est_min: 120
+    actual_min: 138
+    went: 2
+    partial: true
+  - t: "2026-09-07T15:05:00-05:00"
+    day: 2026-09-07
+    id: t5
+    ci: 3
+    tags:
+      - soundcode
+    est_min: 60
+    actual_min: 60
+    went: 1
+    partial: false
+  - t: "2026-09-08T08:40:00-05:00"
+    day: 2026-09-08
+    id: t3
+    ci: 4
+    tags:
+      - lean
+    est_min: 60
+    actual_min: 65
+    went: 3
+    partial: false
+  - t: "2026-09-08T10:07:00-05:00"
+    day: 2026-09-08
+    id: t6
+    ci: 3
+    tags:
+      - soundcode
+    est_min: 60
+    actual_min: 62
+    went: 1
+    partial: false
+  - t: "2026-09-08T11:00:00-05:00"
+    day: 2026-09-08
+    id: t7
+    ci: 3
+    tags: []
+    est_min: 60
+    actual_min: 45
+    went: 2
+    partial: false
+  - t: "2026-09-09T10:05:00-05:00"
+    day: 2026-09-09
+    id: t8
+    ci: 5
+    tags:
+      - lean
+    est_min: 60
+    actual_min: 60
+    went: 1
+    partial: true
+interrupts:
+  - start: "2026-09-07T12:10:00-05:00"
+    end: "2026-09-07T13:05:00-05:00"
+    day: 2026-09-07
+    id: t4
+    lost_min: 55
+    dropped:
+      - t5
+  - start: "2026-09-09T10:20:00-05:00"
+    end: "2026-09-09T10:35:00-05:00"
+    day: 2026-09-09
+    id: t8
+    lost_min: 15
+    dropped: []
+events:
+  reply:
+    - t: "2026-09-07T17:00:00-05:00"
+      name: reply
+      id: a4
+demotions:
+  m2:
+    - t: "2026-09-08T14:00:00-05:00"
+      id: m2
+      from: 2026-W37
+      to: 2026-09
+      est_min: 180
+      stamp:
+        Week: 37
+closes:
+  - t: "2026-09-07T21:35:00-05:00"
+    period: day
+    key: 2026-09-07
+  - t: "2026-09-09T00:10:00-05:00"
+    period: day
+    key: 2026-09-08
+dropped_items: []
+done_items:
+  - a3
+  - lunch
+  - package
+  - shower
+  - t1
+  - t2
+  - t3
+  - t5
+  - t6
+  - t7
+last_done:
+  a3: "2026-09-07T18:00:00-05:00"
+  lunch: "2026-09-07T11:50:00-05:00"
+  package: "2026-09-07T16:10:00-05:00"
+  shower: "2026-09-08T11:00:00-05:00"
+  t1: "2026-09-07T08:09:00-05:00"
+  t2: "2026-09-07T09:08:00-05:00"
+  t3: "2026-09-08T08:40:00-05:00"
+  t5: "2026-09-07T15:05:00-05:00"
+  t6: "2026-09-08T10:07:00-05:00"
+  t7: "2026-09-08T11:00:00-05:00"
+done_dates:
+  a3:
+    - 2026-09-07
+  lunch:
+    - 2026-09-07
+  package:
+    - 2026-09-07
+  shower:
+    - 2026-09-08
+  t1:
+    - 2026-09-07
+  t2:
+    - 2026-09-07
+  t3:
+    - 2026-09-08
+  t5:
+    - 2026-09-07
+  t6:
+    - 2026-09-08
+  t7:
+    - 2026-09-08
+longest_leak:
+  t: "2026-09-08T12:00:00-05:00"
+  day: 2026-09-08
+  min: 25
+open_block:
+  id: t8
+  started: "2026-09-09T10:05:00-05:00"
+  worked_min: 30
+  since: ~
+  paused: true
+open_interrupt: ~
+unknown: 1
+warnings: []
