@@ -52,7 +52,7 @@ arrival = { Mon = "07:00", Tue = "07:00", Wed = "07:00", Thu = "07:00", Fri = "0
 p_lounge = { Mon = 0.9, Tue = 0.9, Wed = 0.9, Thu = 0.9, Fri = 0.8, Sat = 0.5, Sun = 0.4 }
 
 [calendar]
-ics_urls       = ["https://calendar.google.com/calendar/ical/…/basic.ics"]
+ics_urls       = []              # e.g. ["https://calendar.google.com/calendar/ical/<id>/private-<key>/basic.ics"]
 sync_on_arrive = true
 flight_regex   = "\\b[A-Z]{2} ?\\d{2,4}\\b"
 

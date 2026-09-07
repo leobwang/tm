@@ -6,7 +6,7 @@
 //!   [`WeekConfig`], [`PriorityConfig`], [`LocationConfig`], [`EnergyConfig`]
 //!   (with `prior.<loc>` step functions and [`SleepDebt`]), [`ExpectedConfig`],
 //!   [`CalendarConfig`], [`TuiConfig`]. Every field has the §16 default, so a
-//!   partial or missing file works.
+//!   partial or missing file works; an unknown key anywhere is a parse error.
 //! * `Config::default()`, [`Config::parse`]`(&str)`, [`Config::load`]`(path)`,
 //!   [`Config::load_or_default`]`(path)`, [`Config::to_toml`]`()`,
 //!   [`Config::default_toml`]`()` (the §16 text, used by `tm init`).
@@ -83,6 +83,7 @@ pub mod hhmm {
 
 /// A value per weekday, serialized with `Mon`..`Sun` keys.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PerWeekday<T> {
     /// Monday.
     #[serde(rename = "Mon")]
@@ -283,7 +284,7 @@ impl<'de> Deserialize<'de> for StepFn {
 
 /// `[day]`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct DayConfig {
     /// Minutes per block.
     pub block_min: u32,
@@ -332,7 +333,7 @@ impl Default for DayConfig {
 
 /// `[week]`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct WeekConfig {
     /// Warn if planned > plan_ratio × budget.
     pub plan_ratio: f64,
@@ -346,7 +347,7 @@ impl Default for WeekConfig {
 
 /// `[priority]`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct PriorityConfig {
     /// `k` for roots without `!k` and for untied items.
     pub default_priority: u8,
@@ -374,7 +375,7 @@ impl Default for PriorityConfig {
 
 /// `[location]`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct LocationConfig {
     /// Highest ci schedulable at home (unless `--allow-home`).
     pub home_max_ci: u8,
@@ -388,7 +389,7 @@ impl Default for LocationConfig {
 
 /// `[energy.sleep_debt]`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct SleepDebt {
     /// Sleep shorter than this many hours counts as debt.
     pub under_hours: f64,
@@ -407,7 +408,7 @@ impl Default for SleepDebt {
 
 /// `[energy]`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct EnergyConfig {
     /// Shrinkage weight of the prior (`n0`).
     pub prior_weight: f64,
@@ -448,7 +449,7 @@ impl Default for EnergyConfig {
 
 /// `[expected]` — used by the lookahead until learned.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct ExpectedConfig {
     /// Expected arrival time per weekday.
     #[serde(with = "hhmm_per_weekday")]
@@ -474,11 +475,12 @@ impl Default for ExpectedConfig {
     }
 }
 
-/// `[calendar]`.
+/// `[calendar]`. The default has no ICS addresses, so a missing config
+/// never triggers a fetch; `tm init` writes an example URL in a comment.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct CalendarConfig {
-    /// Private ICS addresses.
+    /// Private ICS addresses (empty = no calendar sync).
     pub ics_urls: Vec<String>,
     /// Sync on `tm arrive`.
     pub sync_on_arrive: bool,
@@ -489,7 +491,7 @@ pub struct CalendarConfig {
 impl Default for CalendarConfig {
     fn default() -> Self {
         CalendarConfig {
-            ics_urls: vec!["https://calendar.google.com/calendar/ical/…/basic.ics".to_string()],
+            ics_urls: Vec::new(),
             sync_on_arrive: true,
             flight_regex: r"\b[A-Z]{2} ?\d{2,4}\b".to_string(),
         }
@@ -498,7 +500,7 @@ impl Default for CalendarConfig {
 
 /// `[tui]`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct TuiConfig {
     /// Project hues.
     pub palette: Vec<String>,
@@ -524,9 +526,11 @@ impl Default for TuiConfig {
     }
 }
 
-/// The whole `config.toml`.
+/// The whole `config.toml`. Every section rejects unknown keys
+/// (`deny_unknown_fields`), so a misspelled key is a parse error instead of
+/// a silent fallback to the default.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct Config {
     /// Local timezone applied at the planner edges.
     pub tz: Tz,
@@ -623,7 +627,7 @@ arrival = { Mon = "07:00", Tue = "07:00", Wed = "07:00", Thu = "07:00", Fri = "0
 p_lounge = { Mon = 0.9, Tue = 0.9, Wed = 0.9, Thu = 0.9, Fri = 0.8, Sat = 0.5, Sun = 0.4 }
 
 [calendar]
-ics_urls       = ["https://calendar.google.com/calendar/ical/…/basic.ics"]
+ics_urls       = []              # e.g. ["https://calendar.google.com/calendar/ical/<id>/private-<key>/basic.ics"]
 sync_on_arrive = true
 flight_regex   = "\\b[A-Z]{2} ?\\d{2,4}\\b"
 
@@ -680,6 +684,12 @@ impl Config {
         self.day.block_min
     }
 
+    /// True when `tm arrive` should sync the calendar: `sync_on_arrive` and
+    /// at least one ICS address configured.
+    pub fn sync_on_arrive_possible(&self) -> bool {
+        self.calendar.sync_on_arrive && !self.calendar.ics_urls.is_empty()
+    }
+
     /// Prior energy at a location `hours_since_wake` hours after waking.
     /// Unknown locations fall back to `lounge`, then to the first curve;
     /// with no curves at all the answer is 3.
@@ -725,6 +735,45 @@ mod tests {
         assert_eq!(cfg.tz, Tz::America__Chicago);
         let cfg = Config::parse("tz = \"Europe/Berlin\"\n").unwrap();
         assert_eq!(cfg.tz, Tz::Europe__Berlin);
+    }
+
+    #[test]
+    fn unknown_keys_are_errors() {
+        // Regression: a misspelled key used to fall back to the default silently.
+        for bad in [
+            "[day]\nblock_mins = 45\n",
+            "[location]\nhome_max_c = 2\n",
+            "[priority]\ndefault_prio = 2\n",
+            "[calendar]\nurl = \"x\"\n",
+            "[energy]\nprior_weigth = 5\n",
+            "[energy.sleep_debt]\nunder = 7\n",
+            "[expected]\narrival = { Mon = \"07:00\", Mo = \"07:00\" }\n",
+            "[expected]\np_lounge = { Mon = 0.9, Monday = 0.9 }\n",
+            "[tui]\nwidth = 100\n",
+            "[week]\nratio = 0.8\n",
+            "timezone = \"UTC\"\n",
+            "[nope]\nx = 1\n",
+        ] {
+            let r = Config::parse(bad);
+            assert!(matches!(r, Err(ConfigError::Parse { .. })), "{bad:?} -> {r:?}");
+        }
+        // Known keys and extra prior curves still parse.
+        let cfg = Config::parse("[energy.prior.cafe]\n\"0-4\" = 3\n\"4+\" = 2\n").unwrap();
+        assert_eq!(cfg.prior_energy("cafe", 5.0), 2);
+    }
+
+    #[test]
+    fn default_has_no_calendar_urls() {
+        // Regression: the default carried the spec's placeholder URL, so a
+        // missing config would try to fetch it on `tm arrive`.
+        let c = Config::default();
+        assert!(c.calendar.ics_urls.is_empty());
+        assert!(!c.sync_on_arrive_possible());
+        let parsed = Config::parse(DEFAULT_TOML).unwrap();
+        assert!(parsed.calendar.ics_urls.is_empty());
+        assert!(DEFAULT_TOML.contains("ics_urls       = []"));
+        let with = Config::parse("[calendar]\nics_urls = [\"https://example.com/a.ics\"]\n").unwrap();
+        assert!(with.sync_on_arrive_possible());
     }
 
     #[test]

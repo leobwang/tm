@@ -12,12 +12,26 @@
 //!   the path.
 //! * [`ItemLine`] — the token list kept on `item.src.tokens`. `to_string()` is
 //!   the original line. Edit operations change only the token they must:
-//!   `set_token` / `remove_token` / `get`, `set_state`, `set_ci`,
-//!   `set_leading_est`, `set_title`, `set_priority`, `set_parent`, `add_tag`,
-//!   `remove_tag`, `add_flag`, `remove_flag`, `append_id`. After an edit,
-//!   re-parse with [`parse_line`] to get a fresh `Item`.
-//! * [`format_item_line`]`(&Item) -> String` — builds a fresh canonical line
-//!   (for `tm add` / capture previews).
+//!   `set_token` / `remove_token` / `get`, `set_state`, `set_state_with_ci`,
+//!   `set_ci`, `remove_ci`, `set_leading_est`, `set_title`, `set_priority`,
+//!   `set_parent`, `add_tag`, `remove_tag`, `add_flag`, `remove_flag`,
+//!   `append_id`. After an edit, re-parse with [`parse_line`] to get a fresh
+//!   `Item`. Edits that touch the positional slots (`set_state`,
+//!   `remove_ci`, `set_leading_est`, `set_title`) return
+//!   [`EditError::Ambiguous`] instead of producing a line that would re-parse
+//!   with a different meaning (a title starting with `5` or `2h` in an empty
+//!   ci / estimate slot, or a title word that is a token); the fix is to pin
+//!   the slot first (`set_ci`, `set_leading_est`, `set_state_with_ci`) or to
+//!   reword the title. Flags are read only after a `@ # ! ^ key:` token, so
+//!   `add_flag` and the removals (`remove_token`, `remove_tag`,
+//!   `set_parent(None)`, `set_priority(None)`, `set_title`) move a flag that
+//!   would end up right after the title to after the `^id`, and fail with
+//!   [`EditError::FlagNeedsBoundary`] when there is no id. A refused edit
+//!   never changes the line.
+//! * [`format_item_line`]`(&Item) -> Result<String, EditError>` — builds a
+//!   fresh canonical line (for `tm add` / capture previews) that re-parses to
+//!   the same fields, or fails with [`EditError::Ambiguous`] when the title
+//!   cannot be written under the grammar.
 //! * [`IdGen`] — deterministic id generator (4 chars from `[a-z0-9]` minus
 //!   `l o 0 1`, injected seed, uniqueness against a `HashSet`), and
 //!   [`append_id_to_text`] for `--fix-ids`.
@@ -33,8 +47,13 @@
 //!   `key:value`, a flag (`open atomic manual travel-day hot`), or a bare
 //!   word. Bare words are appended to the title (joined by single spaces) —
 //!   this is what makes `- [ ] 5 !1 Lean: through ch.8 ^O1` work. A malformed
-//!   structured token (`!9`, `^`, `@`) is kept verbatim and reported as a
-//!   problem, not added to the title.
+//!   structured token (`!9`, `^%`, `@@`) also stays in the title (§4.1:
+//!   tokens the parser cannot classify stay in the title) and is reported as
+//!   a problem; a lone `@ # ! ^` is plain punctuation (title, no problem).
+//! * Flags are recognised only after the title has ended (after the first
+//!   `@ # ! ^ key:` token), per the §4.1 title rule; a title whose last word
+//!   is a flag name (`Lean practice open ^l1`) keeps the word and gets a
+//!   problem so `tm check` can point at it.
 //! * `ci:N` is accepted as a key everywhere (it is the only way to give a ci
 //!   on state-less routine/optional lines); it overrides a positional ci.
 //!   `cap:` is an alias of `max:`. The first occurrence of a repeated key
@@ -89,12 +108,33 @@ pub enum ParseError {
     NotAnItemLine,
 }
 
-/// Errors from an edit operation on an [`ItemLine`].
+/// Errors from an edit operation on an [`ItemLine`] (and from
+/// [`format_item_line`]).
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum EditError {
     /// A positional slot (ci / leading estimate) needs a state on the line.
     #[error("the line has no state, so there is no positional slot")]
     NoState,
+    /// The edit would produce a line that re-parses with a different meaning:
+    /// `word` in the title would be read as a ci, a leading estimate, or a
+    /// token. Pin the slot first (`set_ci`, `set_leading_est`,
+    /// `set_state_with_ci`) or reword the title.
+    #[error("title word `{word}` would be read as a ci, estimate, or token when re-parsed; pin the positional slots first or reword")]
+    Ambiguous {
+        /// The offending word.
+        word: String,
+    },
+    /// The text contains a line break, which cannot live in a line.
+    #[error("text contains a line break")]
+    LineBreak,
+    /// A flag would directly follow the title and be absorbed into it on
+    /// re-parse (flags count only after a `@ # ! ^ key:` token, §4.1). The
+    /// edit could not move it after the `^id` because the line has none.
+    #[error("flag `{flag}` would be absorbed into the title: a `@ # ! ^ key:` token or the `^id` must precede it")]
+    FlagNeedsBoundary {
+        /// The flag.
+        flag: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -128,8 +168,16 @@ pub enum TokenKind {
     Flag,
     /// A bare word after the title (appended to the title).
     Word,
-    /// A malformed structured token, kept verbatim and reported.
+    /// A malformed structured token (`!9`, `^%`): appended to the title like
+    /// a word, and reported as a problem.
     Unparsed,
+}
+
+impl TokenKind {
+    /// True for the kinds whose text is part of the item title.
+    pub fn is_title_text(&self) -> bool {
+        matches!(self, TokenKind::Title | TokenKind::Word | TokenKind::Unparsed)
+    }
 }
 
 /// One token with the exact whitespace that precedes it.
@@ -248,26 +296,69 @@ fn key_prefix(w: &str) -> Option<&str> {
     }
 }
 
+/// The first character when it is one of the structured sigils `@ # ! ^`.
+/// Works on the first *char*, so a word starting with a multi-byte character
+/// (`✈`, `§3`, `—`) is never sliced inside a code point.
+fn sigil(w: &str) -> Option<char> {
+    w.chars().next().filter(|c| matches!(c, '@' | '#' | '!' | '^'))
+}
+
+/// True for a word that ends the title: starts with `@ # ! ^` or matches
+/// `[a-z-]+:`.
 fn starts_token(w: &str) -> bool {
-    matches!(w.as_bytes()[0], b'@' | b'#' | b'!' | b'^') || key_prefix(w).is_some()
+    sigil(w).is_some() || key_prefix(w).is_some()
 }
 
 fn classify(w: &str) -> TokenKind {
-    let rest = &w[1..];
-    match w.as_bytes()[0] {
-        b'@' if !rest.is_empty() => TokenKind::Parent,
-        b'#' if !rest.is_empty() => TokenKind::Tag,
-        b'!' if rest.len() == 1 && matches!(rest.as_bytes()[0], b'1'..=b'4') => {
-            TokenKind::Priority
-        }
-        b'^' if Id::is_valid(rest) => TokenKind::Id,
-        b'@' | b'#' | b'!' | b'^' => TokenKind::Unparsed,
-        _ => match key_prefix(w) {
+    match sigil(w) {
+        // A lone sigil is punctuation ("Meet Kun @ 7pm"), not a broken token.
+        Some(_) if w.len() == 1 => TokenKind::Word,
+        Some('@') => TokenKind::Parent,
+        Some('#') => TokenKind::Tag,
+        Some('!') if matches!(&w[1..], "1" | "2" | "3" | "4") => TokenKind::Priority,
+        Some('^') if Id::is_valid(&w[1..]) => TokenKind::Id,
+        Some(_) => TokenKind::Unparsed,
+        None => match key_prefix(w) {
             Some(k) => TokenKind::Key(k.to_string()),
             None if FLAGS.contains(&w) => TokenKind::Flag,
             None => TokenKind::Word,
         },
     }
+}
+
+/// The first word of `title` that a re-parse would not read as title text,
+/// simulating the tokenizer: after a state, a ci digit in an empty ci slot
+/// or a duration in an empty estimate slot is eaten; from the first word
+/// that ends the title segment on, every word is classified and must come
+/// out as title text (a lone `@` or a malformed `!5` do; `@m1`, `re:`,
+/// `open` do not).
+fn title_conflict(title: &str, has_state: bool, has_ci: bool, has_est: bool) -> Option<String> {
+    let words: Vec<&str> = title.split_whitespace().collect();
+    let first = *words.first()?;
+    if has_state {
+        let eaten_as_ci = !has_ci && is_ci_digit(first);
+        let eaten_as_est = !has_est && Dur::parse_no_days(first, 1).is_ok();
+        if eaten_as_ci || eaten_as_est {
+            return Some(first.to_string());
+        }
+    }
+    let boundary = words.iter().position(|w| starts_token(w))?;
+    words[boundary..]
+        .iter()
+        .find(|w| !classify(w).is_title_text())
+        .map(|w| w.to_string())
+}
+
+fn check_text(text: &str) -> Result<(), EditError> {
+    if text.contains(['\n', '\r']) {
+        return Err(EditError::LineBreak);
+    }
+    Ok(())
+}
+
+/// Whitespace-normalized title text: trimmed, single spaces between words.
+fn normalize_title(title: &str) -> String {
+    title.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 impl ItemLine {
@@ -363,6 +454,32 @@ impl ItemLine {
             .iter()
             .any(|t| t.kind == TokenKind::Tag && t.text[1..] == *tag)
     }
+    /// The title as an item would see it: the title segment plus any bare
+    /// or unparsed words after the tokens, joined by single spaces.
+    pub fn title(&self) -> String {
+        self.tokens
+            .iter()
+            .filter(|t| t.kind.is_title_text())
+            .map(|t| t.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+    fn has(&self, kind: &TokenKind) -> bool {
+        self.index_of(kind).is_some()
+    }
+    /// Text of the leading title segment (the `Title` token), if any.
+    fn title_segment(&self) -> &str {
+        self.index_of(&TokenKind::Title)
+            .map(|i| self.tokens[i].text.as_str())
+            .unwrap_or("")
+    }
+    /// Fail when `title` would not survive a re-parse with the given slots.
+    fn guard_title(title: &str, has_state: bool, has_ci: bool, has_est: bool) -> Result<(), EditError> {
+        match title_conflict(title, has_state, has_ci, has_est) {
+            Some(word) => Err(EditError::Ambiguous { word }),
+            None => Ok(()),
+        }
+    }
 
     // -- generic edits ----------------------------------------------------
 
@@ -380,6 +497,58 @@ impl ItemLine {
         self.tokens.remove(idx);
     }
 
+    /// True when a token before `idx` ends the title (starts with `@ # ! ^`
+    /// or is a `key:`), so a flag at `idx` is read as a flag rather than as
+    /// title text. Bare words do not count: they are absorbed into the title
+    /// themselves once nothing structured precedes them.
+    fn boundary_before(&self, idx: usize) -> bool {
+        self.tokens[..idx]
+            .iter()
+            .any(|t| t.kind != TokenKind::Title && starts_token(&t.text))
+    }
+
+    /// Flags are read only after the title has ended (§4.1), so a flag that
+    /// directly follows the title would be absorbed into it on re-parse.
+    /// Move such flags after the `^id` (keeping their order); without an id,
+    /// fail and leave the line unchanged.
+    fn fix_flag_boundaries(&mut self) -> Result<(), EditError> {
+        let orphans: Vec<usize> = (0..self.tokens.len())
+            .filter(|&i| self.tokens[i].kind == TokenKind::Flag && !self.boundary_before(i))
+            .collect();
+        let Some(&first) = orphans.first() else {
+            return Ok(());
+        };
+        let Some(id) = self.index_of(&TokenKind::Id) else {
+            return Err(EditError::FlagNeedsBoundary {
+                flag: self.tokens[first].text.clone(),
+            });
+        };
+        // Every orphan precedes the id (the id itself is a boundary).
+        let mut moved: Vec<Token> = orphans.iter().rev().map(|&i| self.tokens.remove(i)).collect();
+        moved.reverse();
+        let mut at = id - orphans.len() + 1;
+        for mut t in moved {
+            t.lead = " ".to_string();
+            self.tokens.insert(at, t);
+            at += 1;
+        }
+        Ok(())
+    }
+
+    /// Run `edit` on a copy and keep it only if the flags still have a
+    /// boundary afterwards (moving them after the `^id` when needed), so a
+    /// refused edit changes nothing.
+    fn edit_keeping_flags<T>(
+        &mut self,
+        edit: impl FnOnce(&mut ItemLine) -> T,
+    ) -> Result<T, EditError> {
+        let mut edited = self.clone();
+        let out = edit(&mut edited);
+        edited.fix_flag_boundaries()?;
+        *self = edited;
+        Ok(out)
+    }
+
     /// Set `key:value`: replace in place if present (keeping the key as
     /// written), else insert before `^id`, else append.
     pub fn set_token(&mut self, key: &str, value: &str) {
@@ -395,55 +564,95 @@ impl ItemLine {
         }
     }
 
-    /// Remove `key:…`; returns whether it was present.
-    pub fn remove_token(&mut self, key: &str) -> bool {
+    /// Remove `key:…`; returns whether it was present. Fails (leaving the
+    /// line unchanged) only when the key was the last token keeping a flag
+    /// out of the title and there is no `^id` to move the flag after.
+    pub fn remove_token(&mut self, key: &str) -> Result<bool, EditError> {
         match self.key_index(key) {
-            Some(i) => {
-                self.remove_at(i);
-                true
-            }
-            None => false,
+            Some(i) => self.edit_keeping_flags(|l| l.remove_at(i)).map(|_| true),
+            None => Ok(false),
         }
     }
 
     // -- positional edits -------------------------------------------------
 
-    /// Replace the state, or insert one after the bullet.
-    pub fn set_state(&mut self, state: State) {
+    /// Replace the state, or insert one after the bullet. Inserting a state
+    /// opens the positional ci / estimate slots, so a state-less line whose
+    /// title starts with a ci digit or a duration (`- 5 min stretch …`,
+    /// `- 30m walk …`) is refused with [`EditError::Ambiguous`]; use
+    /// [`ItemLine::set_state_with_ci`] (and `set_leading_est`) to pin the
+    /// slots in the same edit.
+    pub fn set_state(&mut self, state: State) -> Result<(), EditError> {
+        match self.index_of(&TokenKind::State) {
+            Some(i) => self.tokens[i].text = state.as_str().to_string(),
+            None => {
+                Self::guard_title(self.title_segment(), true, false, self.has(&TokenKind::Est))?;
+                self.insert_at(1, TokenKind::State, state.as_str());
+            }
+        }
+        Ok(())
+    }
+
+    /// Set the state and a positional ci together (folding any `ci:` key
+    /// into the positional slot), so a state can be added to a line whose
+    /// title starts with a digit. Still refused when the title starts with a
+    /// duration and the line has no leading estimate (`- 30m walk` cannot
+    /// carry a state without one).
+    pub fn set_state_with_ci(&mut self, state: State, ci: u8) -> Result<(), EditError> {
+        Self::guard_title(self.title_segment(), true, true, self.has(&TokenKind::Est))?;
+        self.remove_token("ci")?;
         match self.index_of(&TokenKind::State) {
             Some(i) => self.tokens[i].text = state.as_str().to_string(),
             None => self.insert_at(1, TokenKind::State, state.as_str()),
         }
+        self.set_ci(ci);
+        Ok(())
     }
 
-    /// Set the ci: replace the positional digit or the `ci:` key, else insert
-    /// a positional ci after the state, else (no state) add `ci:N`.
+    /// Set the ci. The positional digit and a `ci:` key are both updated when
+    /// present (so the fact changes whichever one wins on re-parse); with
+    /// neither, a positional ci is inserted after the state, or `ci:N` is
+    /// added on a state-less line.
     pub fn set_ci(&mut self, ci: u8) {
-        if let Some(i) = self.index_of(&TokenKind::Ci) {
+        let positional = self.index_of(&TokenKind::Ci);
+        let keyed = self.key_index("ci").is_some();
+        if let Some(i) = positional {
             self.tokens[i].text = ci.to_string();
-        } else if self.key_index("ci").is_some() {
+        }
+        if keyed {
             self.set_token("ci", &ci.to_string());
-        } else if let Some(s) = self.index_of(&TokenKind::State) {
-            self.insert_at(s + 1, TokenKind::Ci, &ci.to_string());
-        } else {
-            self.set_token("ci", &ci.to_string());
+        }
+        if positional.is_none() && !keyed {
+            match self.index_of(&TokenKind::State) {
+                Some(s) => self.insert_at(s + 1, TokenKind::Ci, &ci.to_string()),
+                None => self.set_token("ci", &ci.to_string()),
+            }
         }
     }
 
-    /// Remove the positional ci and any `ci:` key.
-    pub fn remove_ci(&mut self) {
+    /// Remove the positional ci and any `ci:` key. Refused when the title
+    /// would then be read as a ci digit (`- [ ] 3 5 things` → `5` is the ci).
+    pub fn remove_ci(&mut self) -> Result<(), EditError> {
+        if self.has(&TokenKind::Ci) {
+            Self::guard_title(self.title_segment(), true, false, self.has(&TokenKind::Est))?;
+        }
+        self.remove_token("ci")?;
         if let Some(i) = self.index_of(&TokenKind::Ci) {
             self.remove_at(i);
         }
-        self.remove_token("ci");
+        Ok(())
     }
 
     /// Set (or with `None` remove) the leading estimate. Inserting needs a
-    /// state on the line (the slot is positional).
+    /// state on the line (the slot is positional); removing is refused when
+    /// the title would then be read as an estimate (`- [ ] 3 2b 30m run`).
     pub fn set_leading_est(&mut self, est: Option<Dur>) -> Result<(), EditError> {
         match (self.index_of(&TokenKind::Est), est) {
             (Some(i), Some(d)) => self.tokens[i].text = d.to_string(),
-            (Some(i), None) => self.remove_at(i),
+            (Some(i), None) => {
+                Self::guard_title(self.title_segment(), true, self.has(&TokenKind::Ci), false)?;
+                self.remove_at(i);
+            }
             (None, None) => {}
             (None, Some(d)) => {
                 let after = self
@@ -456,49 +665,76 @@ impl ItemLine {
         Ok(())
     }
 
-    /// Replace the title (and drop any bare words that were appended to it).
-    pub fn set_title(&mut self, title: &str) {
-        self.tokens.retain(|t| t.kind != TokenKind::Word);
-        match self.index_of(&TokenKind::Title) {
-            Some(i) if title.is_empty() => self.remove_at(i),
-            Some(i) => self.tokens[i].text = title.to_string(),
-            None if title.is_empty() => {}
-            None => {
-                let after = self
-                    .tokens
-                    .iter()
-                    .rposition(|t| {
-                        matches!(
-                            t.kind,
-                            TokenKind::Bullet | TokenKind::State | TokenKind::Ci | TokenKind::Est
-                        )
-                    })
-                    .unwrap_or(0);
-                self.insert_at(after + 1, TokenKind::Title, title);
+    /// Replace the title (dropping any bare or unparsed words that were
+    /// appended to it). The new title is whitespace-normalized; it is refused
+    /// when one of its words would be read as a ci / estimate (in an empty
+    /// slot) or as a token (`@x`, `#x`, `!1`, `^x`, `key:`, a flag after a
+    /// lone sigil) on re-parse. A flag that the old title's bare words kept
+    /// out of the title is moved after the `^id` (see
+    /// [`EditError::FlagNeedsBoundary`]).
+    pub fn set_title(&mut self, title: &str) -> Result<(), EditError> {
+        check_text(title)?;
+        let title = normalize_title(title);
+        Self::guard_title(
+            &title,
+            self.has(&TokenKind::State),
+            self.has(&TokenKind::Ci),
+            self.has(&TokenKind::Est),
+        )?;
+        self.edit_keeping_flags(|l| {
+            l.tokens
+                .retain(|t| !matches!(t.kind, TokenKind::Word | TokenKind::Unparsed));
+            match l.index_of(&TokenKind::Title) {
+                Some(i) if title.is_empty() => l.remove_at(i),
+                Some(i) => l.tokens[i].text = title,
+                None if title.is_empty() => {}
+                None => {
+                    let after = l
+                        .tokens
+                        .iter()
+                        .rposition(|t| {
+                            matches!(
+                                t.kind,
+                                TokenKind::Bullet | TokenKind::State | TokenKind::Ci | TokenKind::Est
+                            )
+                        })
+                        .unwrap_or(0);
+                    l.insert_at(after + 1, TokenKind::Title, &title);
+                }
             }
-        }
+        })
     }
 
     // -- trailing-token edits ---------------------------------------------
 
-    /// Set (or with `None` remove) `!k`.
-    pub fn set_priority(&mut self, k: Option<u8>) {
+    /// Set (or with `None` remove) `!k`. Setting replaces the first `!k`
+    /// (the one that counts); removing drops every `!k` token. Removing can
+    /// fail like [`ItemLine::remove_token`].
+    pub fn set_priority(&mut self, k: Option<u8>) -> Result<(), EditError> {
         match (self.index_of(&TokenKind::Priority), k) {
             (Some(i), Some(k)) => self.tokens[i].text = format!("!{k}"),
-            (Some(i), None) => self.remove_at(i),
+            (Some(_), None) => {
+                self.edit_keeping_flags(|l| l.tokens.retain(|t| t.kind != TokenKind::Priority))?
+            }
             (None, Some(k)) => self.insert_before_id_or_end(TokenKind::Priority, &format!("!{k}")),
             (None, None) => {}
         }
+        Ok(())
     }
 
-    /// Set (or with `None` remove) `@parent`.
-    pub fn set_parent(&mut self, parent: Option<&Ref>) {
+    /// Set (or with `None` remove) `@parent`. Setting replaces the first
+    /// `@parent` (the one that counts); removing drops every `@` token.
+    /// Removing can fail like [`ItemLine::remove_token`].
+    pub fn set_parent(&mut self, parent: Option<&Ref>) -> Result<(), EditError> {
         match (self.index_of(&TokenKind::Parent), parent) {
             (Some(i), Some(p)) => self.tokens[i].text = p.token(),
-            (Some(i), None) => self.remove_at(i),
+            (Some(_), None) => {
+                self.edit_keeping_flags(|l| l.tokens.retain(|t| t.kind != TokenKind::Parent))?
+            }
             (None, Some(p)) => self.insert_before_id_or_end(TokenKind::Parent, &p.token()),
             (None, None) => {}
         }
+        Ok(())
     }
 
     /// Add `#tag` after the last existing tag (no-op if present).
@@ -513,19 +749,31 @@ impl ItemLine {
         }
     }
 
-    /// Remove `#tag`; returns whether it was present.
-    pub fn remove_tag(&mut self, tag: &str) -> bool {
-        let before = self.tokens.len();
-        self.tokens
-            .retain(|t| !(t.kind == TokenKind::Tag && t.text[1..] == *tag));
-        self.tokens.len() != before
+    /// Remove `#tag`; returns whether it was present. Can fail like
+    /// [`ItemLine::remove_token`].
+    pub fn remove_tag(&mut self, tag: &str) -> Result<bool, EditError> {
+        if !self.has_tag(tag) {
+            return Ok(false);
+        }
+        self.edit_keeping_flags(|l| {
+            l.tokens
+                .retain(|t| !(t.kind == TokenKind::Tag && t.text[1..] == *tag))
+        })
+        .map(|_| true)
     }
 
-    /// Add a flag (no-op if present).
-    pub fn add_flag(&mut self, flag: &str) {
-        if !self.has_flag(flag) {
-            self.insert_before_id_or_end(TokenKind::Flag, flag);
+    /// Add a flag (no-op if present): after the last existing flag, else
+    /// before the `^id`, else at the end — moved after the `^id` when nothing
+    /// else would separate it from the title; fails with
+    /// [`EditError::FlagNeedsBoundary`] when that is impossible.
+    pub fn add_flag(&mut self, flag: &str) -> Result<(), EditError> {
+        if self.has_flag(flag) {
+            return Ok(());
         }
+        self.edit_keeping_flags(|l| match l.tokens.iter().rposition(|t| t.kind == TokenKind::Flag) {
+            Some(i) => l.insert_at(i + 1, TokenKind::Flag, flag),
+            None => l.insert_before_id_or_end(TokenKind::Flag, flag),
+        })
     }
 
     /// Remove a flag; returns whether it was present.
@@ -690,7 +938,10 @@ fn build_item(line: ItemLine, ctx: &ParseCtx) -> Item {
                     flags.push(t.text.clone());
                 }
             }
-            TokenKind::Unparsed => col.problems.push(format!("cannot parse token `{}`", t.text)),
+            TokenKind::Unparsed => {
+                title_parts.push(&t.text);
+                col.problems.push(format!("unclassified token `{}` kept in the title", t.text));
+            }
             TokenKind::Key(k) => {
                 let v = t.value().unwrap_or("").to_string();
                 let k = if k == "cap" { "max" } else { k.as_str() };
@@ -707,6 +958,15 @@ fn build_item(line: ItemLine, ctx: &ParseCtx) -> Item {
 
     if !has_state && !ctx.horizon.allows_missing_state() {
         col.problems.push("missing state".to_string());
+    }
+    // A flag name at the end of the title segment is title text by the §4.1
+    // rule; say so, since it was probably meant as a flag.
+    if let Some(last) = line.title_segment().split_whitespace().last() {
+        if FLAGS.contains(&last) {
+            col.problems.push(format!(
+                "title ends with `{last}`: flags count only after a `@ # ! ^ key:` token; move it after one if it was meant as a flag"
+            ));
+        }
     }
 
     // Known keys.
@@ -834,96 +1094,131 @@ fn build_item(line: ItemLine, ctx: &ParseCtx) -> Item {
 /// capture preview). Order: state, ci, est, title, `@parent`, `#tags`, `!k`,
 /// keys in §4.1 table order, extra keys, flags, `^id`. Routine/optional
 /// horizons omit the state and write `ci:N` (only when explicit).
-pub fn format_item_line(item: &Item) -> String {
-    let mut parts: Vec<String> = Vec::new();
+///
+/// The ci is written only when `ci_explicit` (so parent inheritance is not
+/// frozen into the file) — except when the title starts with a ci digit, in
+/// which case the item's ci is pinned so the digit stays title text. Fails
+/// with [`EditError::Ambiguous`] when the title cannot be written under the
+/// grammar (it starts with a duration and there is no leading estimate, or
+/// a word would be read as a token) and with [`EditError::LineBreak`] for a
+/// title containing a line break.
+pub fn format_item_line(item: &Item) -> Result<String, EditError> {
+    check_text(&item.title)?;
+    let title = normalize_title(&item.title);
     let stateless = item.horizon.is_open_file();
+    let first = title.split_whitespace().next().unwrap_or("");
+    let write_ci = !stateless && (item.ci_explicit || is_ci_digit(first));
+    let write_est = !stateless && item.est_original.is_some();
+    if let Some(word) = title_conflict(&title, !stateless, write_ci, write_est) {
+        return Err(EditError::Ambiguous { word });
+    }
+
+    let mut parts: Vec<String> = Vec::new();
     if !stateless {
         parts.push(item.state.as_str().to_string());
-        parts.push(item.ci.to_string());
+        if write_ci {
+            parts.push(item.ci.to_string());
+        }
         if let Some(e) = item.est_original {
             parts.push(e.to_string());
         }
     }
-    if !item.title.is_empty() {
-        parts.push(item.title.clone());
+    if !title.is_empty() {
+        parts.push(title);
     }
+    // Everything between the title and the flags; each of these ends the
+    // title, so any flag after them is safe.
+    let mut mid: Vec<String> = Vec::new();
     if let Some(p) = &item.parent {
-        parts.push(p.token());
+        mid.push(p.token());
     }
     for t in &item.tags {
-        parts.push(format!("#{t}"));
+        mid.push(format!("#{t}"));
     }
     if let Some(k) = item.priority {
-        parts.push(format!("!{k}"));
+        mid.push(format!("!{k}"));
     }
+    // `dur:` is a field of its own; a window's duration is the same key.
+    let dur = item.dur.or(match &item.shape {
+        Shape::Window { dur, .. } => Some(*dur),
+        _ => None,
+    });
     match &item.shape {
-        Shape::None => {
-            if let Some(d) = item.dur {
-                parts.push(format!("dur:{d}"));
-            }
-        }
-        Shape::Point { due } => parts.push(format!("due:{due}")),
+        Shape::None => {}
+        Shape::Point { due } => mid.push(format!("due:{due}")),
         Shape::Interval { start, end } => {
-            parts.push(format!("at:{}", crate::model::fmt_interval(*start, *end)))
+            mid.push(format!("at:{}", crate::model::fmt_interval(*start, *end)))
         }
-        Shape::Window { range, dur } => {
-            parts.push(format!("win:{range}"));
-            parts.push(format!("dur:{dur}"));
-        }
+        Shape::Window { range, .. } => mid.push(format!("win:{range}")),
+    }
+    if let Some(d) = dur {
+        mid.push(format!("dur:{d}"));
     }
     if let Some(p) = item.pref {
-        parts.push(format!("pref:{p}"));
+        mid.push(format!("pref:{p}"));
     }
     if let Some(r) = item.recur.token() {
-        parts.push(r);
+        mid.push(r);
     }
     if item.on_miss != item.shape.default_on_miss() {
-        parts.push(format!("on-miss:{}", item.on_miss));
+        mid.push(format!("on-miss:{}", item.on_miss));
     }
     if let Some(r) = item.budget.floor {
-        parts.push(format!("min:{r}"));
+        mid.push(format!("min:{r}"));
     }
     if let Some(r) = item.budget.cap {
-        parts.push(format!("max:{r}"));
+        mid.push(format!("max:{r}"));
     }
     if !item.after.is_empty() {
         let deps: Vec<String> = item.after.iter().map(|d| d.to_string()).collect();
-        parts.push(format!("after:{}", deps.join(",")));
+        mid.push(format!("after:{}", deps.join(",")));
     }
     if item.loc != Loc::Any {
-        parts.push(format!("loc:{}", item.loc));
+        mid.push(format!("loc:{}", item.loc));
     }
     if let Some(e) = item.est {
-        parts.push(format!("est:{e}"));
+        mid.push(format!("est:{e}"));
     }
     if !item.stamps.demoted.is_empty() {
-        parts.push(format!("demoted:{}", item.stamps.demoted_value()));
+        mid.push(format!("demoted:{}", item.stamps.demoted_value()));
     }
     if let Some(w) = item.stamps.waiting_since {
-        parts.push(format!("waiting:{}", w.format("%Y-%m-%d")));
+        mid.push(format!("waiting:{}", w.format("%Y-%m-%d")));
     }
     if let Some(b) = item.buffer {
-        parts.push(format!("buffer:{b}"));
+        mid.push(format!("buffer:{b}"));
     }
     for (k, v) in &item.extra {
-        parts.push(format!("{k}:{v}"));
-    }
-    if item.scope == Scope::Open && !stateless && !item.has_flag("open") {
-        parts.push("open".to_string());
-    }
-    if !item.splittable && !item.has_flag("atomic") {
-        parts.push("atomic".to_string());
-    }
-    for f in &item.flags {
-        parts.push(f.clone());
+        mid.push(format!("{k}:{v}"));
     }
     if stateless && item.ci_explicit {
-        parts.push(format!("ci:{}", item.ci));
+        mid.push(format!("ci:{}", item.ci));
     }
-    if item.has_id() {
-        parts.push(item.id.token());
+    let mut flags: Vec<String> = Vec::new();
+    if item.scope == Scope::Open && !stateless && !item.has_flag("open") {
+        flags.push("open".to_string());
     }
-    format!("- {}", parts.join(" "))
+    if !item.splittable && !item.has_flag("atomic") {
+        flags.push("atomic".to_string());
+    }
+    flags.extend(item.flags.iter().cloned());
+    let id = item.has_id().then(|| item.id.token());
+    if mid.is_empty() && !flags.is_empty() {
+        // A flag directly after the title would be absorbed into it (§4.1);
+        // the id supplies the boundary instead.
+        let Some(id) = id else {
+            return Err(EditError::FlagNeedsBoundary {
+                flag: flags[0].clone(),
+            });
+        };
+        parts.push(id);
+        parts.extend(flags);
+    } else {
+        parts.extend(mid);
+        parts.extend(flags);
+        parts.extend(id);
+    }
+    Ok(format!("- {}", parts.join(" ")))
 }
 
 // ---------------------------------------------------------------------------
@@ -1644,9 +1939,10 @@ mod tests {
         assert_eq!(it.extra, vec![("due".to_string(), "2026-13-01".to_string()), ("foo".to_string(), "bar".to_string())]);
         assert_eq!(it.shape, Shape::None);
         assert_eq!(it.id, Id::new("t1"));
+        assert_eq!(it.title, "X !9 ^", "unclassified tokens stay in the title");
         assert!(it.problems.iter().any(|p| p.contains("due:2026-13-01")));
         assert!(it.problems.iter().any(|p| p.contains("`!9`")));
-        assert!(it.problems.iter().any(|p| p.contains("`^`")));
+        assert!(!it.problems.iter().any(|p| p.contains("`^`")), "a lone sigil is punctuation");
         assert!(it.problems.iter().any(|p| p.contains("duplicate id")));
         assert_eq!(it.line_text(), "- [ ] 3 X due:2026-13-01 foo:bar !9 ^ ^t1 ^t2");
 
@@ -1731,8 +2027,8 @@ mod tests {
         l.set_token("est", "2b");
         assert_eq!(l.to_string(), "- [>] 4 2b Exercises 5.3–5.5            @m1 est:2b ^t3");
         assert_eq!(l.get("est"), Some("2b"));
-        assert!(l.remove_token("est"));
-        assert!(!l.remove_token("est"));
+        assert_eq!(l.remove_token("est"), Ok(true));
+        assert_eq!(l.remove_token("est"), Ok(false));
         assert_eq!(l.to_string(), s);
 
         let s = "- [ ] 4 6b CS 234 pset 2                @O3 due:2026-09-11T23:59 max:2b/d ^d1";
@@ -1742,7 +2038,7 @@ mod tests {
             l.to_string(),
             "- [ ] 4 6b CS 234 pset 2                @O3 due:2026-09-12T23:59 max:2b/d ^d1"
         );
-        l.set_state(State::Active);
+        l.set_state(State::Active).unwrap();
         assert_eq!(
             l.to_string(),
             "- [>] 4 6b CS 234 pset 2                @O3 due:2026-09-12T23:59 max:2b/d ^d1"
@@ -1763,9 +2059,9 @@ mod tests {
             l.to_string(),
             "- [>] 5 2h CS 234 pset 2                @O3 due:2026-09-12T23:59 max:2b/d ^d1"
         );
-        l.set_title("pset 2");
-        l.set_priority(Some(2));
-        l.add_flag("hot");
+        l.set_title("pset 2").unwrap();
+        l.set_priority(Some(2)).unwrap();
+        l.add_flag("hot").unwrap();
         l.add_tag("cs234");
         l.add_tag("cs234");
         assert_eq!(
@@ -1777,17 +2073,18 @@ mod tests {
             l.to_string(),
             "- [>] 5 2h pset 2                @O3 due:2026-09-12T23:59 max:2b/d !2 hot #cs234 #school ^d1"
         );
-        assert!(l.remove_tag("cs234"));
+        assert_eq!(l.remove_tag("cs234"), Ok(true));
+        assert_eq!(l.remove_tag("cs234"), Ok(false));
         assert!(l.remove_flag("hot"));
         assert!(!l.remove_flag("hot"));
-        l.set_priority(None);
-        l.set_parent(Some(&Ref::new("O2")));
+        l.set_priority(None).unwrap();
+        l.set_parent(Some(&Ref::new("O2"))).unwrap();
         assert_eq!(
             l.to_string(),
             "- [>] 5 2h pset 2                @O2 due:2026-09-12T23:59 max:2b/d #school ^d1"
         );
         // Removing a token removes the whitespace that preceded it.
-        l.set_parent(None);
+        l.set_parent(None).unwrap();
         assert_eq!(
             l.to_string(),
             "- [>] 5 2h pset 2 due:2026-09-12T23:59 max:2b/d #school ^d1"
@@ -1828,12 +2125,12 @@ mod tests {
             "- lunch      win:11:30-13:30 dur:30m  every:day ci:1"
         );
         assert_eq!(l.set_leading_est(Some(Dur::hours(1))), Err(EditError::NoState));
-        l.set_state(State::Todo);
+        l.set_state(State::Todo).unwrap();
         assert_eq!(
             l.to_string(),
             "- [ ] lunch      win:11:30-13:30 dur:30m  every:day ci:1"
         );
-        l.remove_ci();
+        l.remove_ci().unwrap();
         l.set_ci(3);
         assert_eq!(
             l.to_string(),
@@ -1842,43 +2139,381 @@ mod tests {
 
         // set_title on a line whose title was made of bare words after `!1`.
         let mut l = ItemLine::parse("- [ ] 5 !1 Lean: through ch.8 of the tutorial          ^O1").unwrap();
-        l.set_title("Lean: ch.9");
+        l.set_title("Lean: ch.9").unwrap();
         assert_eq!(l.to_string(), "- [ ] 5 Lean: ch.9 !1          ^O1");
+        assert_eq!(l.title(), "Lean: ch.9");
+        // Unparsed words are part of the title and are replaced with it.
+        let mut l = ItemLine::parse("- [ ] 3 Top !5 task ^t1").unwrap();
+        assert_eq!(l.title(), "Top !5 task");
+        l.set_title("  Top task  ").unwrap();
+        assert_eq!(l.to_string(), "- [ ] 3 Top task ^t1");
+    }
+
+    #[test]
+    fn set_ci_updates_positional_and_key() {
+        // Regression: only the positional digit was edited, but `ci:` wins on
+        // re-parse, so the edit had no effect.
+        let mut l = ItemLine::parse("- [ ] 3 Title ci:5 ^t1").unwrap();
+        l.set_ci(4);
+        assert_eq!(l.to_string(), "- [ ] 4 Title ci:4 ^t1");
+        assert_eq!(week(&l.to_string()).ci, 4);
+        let mut l = ItemLine::parse("- [ ] Title ci:5 ^t1").unwrap();
+        l.set_ci(2);
+        assert_eq!(l.to_string(), "- [ ] Title ci:2 ^t1");
+        assert_eq!(week(&l.to_string()).ci, 2);
+        let mut l = ItemLine::parse("- [ ] Title ^t1").unwrap();
+        l.set_ci(2);
+        assert_eq!(l.to_string(), "- [ ] 2 Title ^t1");
+    }
+
+    #[test]
+    fn positional_edits_guard_the_title() {
+        // Regression: set_title wrote `2h nap` into the positional slot and
+        // the re-parse read `2h` as the estimate.
+        let mut l = ItemLine::parse("- [ ] 3 Call ^p1").unwrap();
+        assert_eq!(
+            l.set_title("2h nap"),
+            Err(EditError::Ambiguous { word: "2h".to_string() })
+        );
+        assert_eq!(l.to_string(), "- [ ] 3 Call ^p1", "a refused edit changes nothing");
+        l.set_leading_est(Some(Dur::hours(1))).unwrap();
+        l.set_title("2h nap").unwrap();
+        assert_eq!(l.to_string(), "- [ ] 3 1h 2h nap ^p1");
+        let it = week(&l.to_string());
+        assert_eq!((it.title.as_str(), it.est_original), ("2h nap", Some(Dur::hours(1))));
+
+        let mut l = ItemLine::parse("- [ ] Call ^p1").unwrap();
+        assert_eq!(l.set_title("5 things"), Err(EditError::Ambiguous { word: "5".to_string() }));
+        l.set_ci(3);
+        l.set_title("5 things").unwrap();
+        assert_eq!(week(&l.to_string()).title, "5 things");
+        // With both slots filled any digit/duration title is fine; words that
+        // start a token never are.
+        let mut l = ItemLine::parse("- [ ] 3 2b Call ^p1").unwrap();
+        l.set_title("2h 5 things").unwrap();
+        assert_eq!(week(&l.to_string()).title, "2h 5 things");
+        assert_eq!(l.set_title("Call @m1"), Err(EditError::Ambiguous { word: "@m1".to_string() }));
+        assert_eq!(l.set_title("re: bank"), Err(EditError::Ambiguous { word: "re:".to_string() }));
+        assert_eq!(l.set_title("Note: bank"), Ok(()));
+        assert_eq!(l.set_title("Meet  Kun @ 7pm"), Ok(()), "a lone sigil is title text");
+        assert_eq!(l.to_string(), "- [ ] 3 2b Meet Kun @ 7pm ^p1", "whitespace is normalized");
+        assert_eq!(week(&l.to_string()).title, "Meet Kun @ 7pm");
+        assert_eq!(l.set_title("Top !5 task"), Ok(()), "unparsed words stay title text");
+        assert_eq!(week(&l.to_string()).title, "Top !5 task");
+        // After a lone sigil every word is classified, so a flag is a flag.
+        assert_eq!(l.set_title("Keep @ open"), Err(EditError::Ambiguous { word: "open".to_string() }));
+        assert_eq!(l.set_title("Keep it open"), Ok(()));
+        assert_eq!(l.set_title("a\nb"), Err(EditError::LineBreak));
+        // Stateless lines have no positional slots.
+        let mut l = ItemLine::parse("- lunch win:11:30-13:30 dur:30m").unwrap();
+        l.set_title("5 min stretch").unwrap();
+        assert_eq!(routine(&l.to_string()).title, "5 min stretch");
+
+        // Removing a slot can expose the title the same way.
+        let mut l = ItemLine::parse("- [ ] 3 5 things ^p1").unwrap();
+        assert_eq!(week(&l.to_string()).title, "5 things");
+        assert_eq!(l.remove_ci(), Err(EditError::Ambiguous { word: "5".to_string() }));
+        let mut l = ItemLine::parse("- [ ] 3 2b 30m run ^p1").unwrap();
+        assert_eq!(week(&l.to_string()).title, "30m run");
+        assert_eq!(l.set_leading_est(None), Err(EditError::Ambiguous { word: "30m".to_string() }));
+        l.set_leading_est(Some(Dur::blocks(1, 60))).unwrap();
+        assert_eq!(l.to_string(), "- [ ] 3 1b 30m run ^p1");
+    }
+
+    #[test]
+    fn set_state_on_stateless_line_guards_the_title() {
+        // Regression: inserting `[ ]` before `5 min stretch` made `5` the ci.
+        let ctx = ctx("routines.md");
+        let it = parse_line("- 5 min stretch win:09:00-17:00 dur:5m", &ctx).unwrap();
+        assert_eq!((it.title.as_str(), it.ci), ("5 min stretch", 1));
+        let mut l = it.line().clone();
+        assert_eq!(l.set_state(State::Todo), Err(EditError::Ambiguous { word: "5".to_string() }));
+        assert_eq!(l.to_string(), "- 5 min stretch win:09:00-17:00 dur:5m");
+        l.set_state_with_ci(State::Todo, it.ci).unwrap();
+        assert_eq!(l.to_string(), "- [ ] 1 5 min stretch win:09:00-17:00 dur:5m");
+        let again = parse_line(&l.to_string(), &ctx).unwrap();
+        assert_eq!((again.title.as_str(), again.ci, again.state), ("5 min stretch", 1, State::Todo));
+        // `ci:` keys are folded into the positional slot.
+        let mut l = ItemLine::parse("- 5 min stretch win:09:00-17:00 dur:5m ci:2").unwrap();
+        l.set_state_with_ci(State::Todo, 2).unwrap();
+        assert_eq!(l.to_string(), "- [ ] 2 5 min stretch win:09:00-17:00 dur:5m");
+        // A duration-leading title has no representation with a state.
+        let mut l = ItemLine::parse("- 2h nap dur:2h").unwrap();
+        assert_eq!(l.set_state(State::Todo), Err(EditError::Ambiguous { word: "2h".to_string() }));
+        assert_eq!(l.set_state_with_ci(State::Todo, 1), Err(EditError::Ambiguous { word: "2h".to_string() }));
+        // Ordinary titles are unaffected; a present state is simply replaced.
+        let mut l = ItemLine::parse("- lunch win:11:30-13:30 dur:30m").unwrap();
+        l.set_state(State::Todo).unwrap();
+        assert_eq!(l.to_string(), "- [ ] lunch win:11:30-13:30 dur:30m");
+        l.set_state(State::Done).unwrap();
+        assert_eq!(l.to_string(), "- [x] lunch win:11:30-13:30 dur:30m");
+        let mut l = ItemLine::parse("- [ ] 5 things").unwrap();
+        l.set_state(State::Done).unwrap();
+        assert_eq!(l.to_string(), "- [x] 5 things");
+    }
+
+    #[test]
+    fn multibyte_words_after_tokens_do_not_panic() {
+        // Regression: `classify` sliced `&w[1..]` before checking the first
+        // byte, so any non-ASCII bare word after a token panicked.
+        let cases = [
+            ("- [ ] 3 Read @m1 §3 ^t1", "Read §3"),
+            ("- [ ] 3 Call mom @o1 🎂", "Call mom 🎂"),
+            ("- [ ] 5 !1 Trip ✈ Tokyo ^O1", "Trip ✈ Tokyo"),
+            ("- [ ] 4 !1 Soundcode: demo — runs ^O2", "Soundcode: demo — runs"),
+            ("- [ ] 5 !1 Été prep ^O1", "Été prep"),
+            ("- [ ] 3 Call @m1 über ^t1", "Call über"),
+            ("- [ ] 1 at:2026-09-12T08:15/10:40 ✈ ORD→SFO UA 1234 buffer:2h travel-day ^g3", "✈ ORD→SFO UA 1234"),
+            ("- [ ] 3 X @m1 ^é ^t1", "X ^é"),
+            ("- [ ] 3 X @é #ü ^t1", "X"),
+        ];
+        for (line, title) in cases {
+            let it = week(line);
+            assert_eq!(it.title, title, "{line}");
+            assert_eq!(it.line_text(), line);
+        }
+        let it = week("- [ ] 3 X @é #ü ^t1");
+        assert_eq!(it.parent, Some(Ref::new("é")));
+        assert_eq!(it.tags, vec!["ü"]);
+        let it = week("- [ ] 3 X @m1 ^é ^t1");
+        assert!(it.problems.iter().any(|p| p.contains("`^é`")));
+        assert_eq!(it.id, Id::new("t1"));
+        let f = parse_file("week/2026-W37.md", "- [ ] 3 Read @m1 §3 ^t1\n- [ ] 4 !1 Demo — runs ^O2\n", &Config::default());
+        assert_eq!(f.items().count(), 2);
+        assert_eq!(f.items().nth(1).unwrap().title, "Demo — runs");
+        assert!(f.all_problems().is_empty(), "{:?}", f.all_problems());
+    }
+
+    #[test]
+    fn unparsed_tokens_stay_in_title() {
+        // Regression: malformed structured tokens were dropped from the title.
+        let it = week("- [ ] 3 Meet Kun @ 7pm ^t1");
+        assert_eq!(it.title, "Meet Kun @ 7pm");
+        assert!(it.problems.is_empty(), "{:?}", it.problems);
+        let it = week("- [ ] 3 Top !5 task ^t1");
+        assert_eq!(it.title, "Top !5 task");
+        assert!(it.problems.iter().any(|p| p.contains("`!5`") && p.contains("kept in the title")));
+        let it = week("- [ ] 3 Issue # 42 ! ^ ^t1");
+        assert_eq!(it.title, "Issue # 42 ! ^");
+        assert!(it.problems.is_empty(), "{:?}", it.problems);
+        assert_eq!(it.id, Id::new("t1"));
+        let it = week("- [ ] 3 Call mom @ 5pm !!! ^a1");
+        assert_eq!(it.title, "Call mom @ 5pm !!!");
+        assert_eq!(it.line_text(), "- [ ] 3 Call mom @ 5pm !!! ^a1");
+    }
+
+    #[test]
+    fn trailing_flag_word_in_title_is_reported() {
+        // Flags are read only after the title ends (§4.1 title rule); a title
+        // ending in a flag word keeps the word and gets a problem.
+        let it = week("- [ ] 4 Lean practice open ^l1");
+        assert_eq!(it.title, "Lean practice open");
+        assert_eq!(it.scope, Scope::Finite);
+        assert!(it.flags.is_empty());
+        assert!(it.problems.iter().any(|p| p.contains("title ends with `open`")), "{:?}", it.problems);
+        let it = week("- [ ] 3 X open atomic manual travel-day hot ^a");
+        assert!(it.problems.iter().any(|p| p.contains("title ends with `hot`")));
+        // After any token the flag is a flag.
+        let it = week("- [ ] 4 Lean practice ^l1 open");
+        assert_eq!(it.scope, Scope::Open);
+        assert!(it.problems.is_empty());
+        let it = week("- [ ] 4 Lean practice min:6b/w open ^l1");
+        assert!(it.problems.is_empty());
+        let it = week("- [ ] 3 Read the manual, then ^t1");
+        assert!(it.problems.is_empty(), "only an exact flag word counts");
+    }
+
+    #[test]
+    fn bad_values_are_problems_not_panics() {
+        // Regression: `demoted:Ж37` panicked in Stamp::parse.
+        let it = week("- [ ] 4 X demoted:Ж37 ^q1");
+        assert_eq!(it.extra, vec![("demoted".to_string(), "Ж37".to_string())]);
+        assert!(it.problems.iter().any(|p| p.contains("demoted:Ж37")));
+        assert!(it.stamps.demoted.is_empty());
+        // Regression: an `at:` end before the start produced a negative interval.
+        let it = week("- [ ] 3 X at:2026-09-12T10:00/2026-09-11T09:00 ^z");
+        assert_eq!(it.shape, Shape::None);
+        assert!(it.problems.iter().any(|p| p.contains("end before start")), "{:?}", it.problems);
+        let it = week("- [ ] 3 X win:2026-09-12T10:00/2026-09-11T09:00 dur:1h ^z");
+        assert_eq!(it.shape, Shape::None);
+        assert!(it.problems.iter().any(|p| p.contains("win:2026-09-12T10:00/2026-09-11T09:00")));
+        assert_eq!(it.dur, Some(Dur::hours(1)));
+    }
+
+    #[test]
+    fn own_remaining_falls_back_to_dur() {
+        let it = parse_line("- Severance S3E4  dur:1h", &ctx("optional.md")).unwrap();
+        assert_eq!(it.own_remaining(), Some(Dur::hours(1)));
+        let it = routine("- lunch win:11:30-13:30 dur:30m every:day");
+        assert_eq!(it.own_remaining(), Some(Dur::from_minutes(30)));
+        let it = week("- [ ] 3 2b X est:1b dur:30m ^t1");
+        assert_eq!(it.own_remaining(), Some(Dur::blocks(1, 60)));
+        let it = week("- [ ] 3 2b X dur:30m ^t1");
+        assert_eq!(it.own_remaining(), Some(Dur::blocks(2, 60)));
+        let it = week("- [ ] 3 X ^t1");
+        assert_eq!(it.own_remaining(), None);
     }
 
     #[test]
     fn format_canonical_line() {
+        let fmt = |it: &Item| format_item_line(it).unwrap();
         let it = week("- [ ] 4 6b CS 234 pset 2  @O3 #cs due:2026-09-11T23:59 max:2b/d ^d1");
         assert_eq!(
-            format_item_line(&it),
+            fmt(&it),
             "- [ ] 4 6b CS 234 pset 2 @O3 #cs due:2026-09-11T23:59 max:2b/d ^d1"
         );
         let it = routine("- sleep      win:22:00-08:00 dur:8h30m every:day ci:0");
-        assert_eq!(
-            format_item_line(&it),
-            "- sleep win:22:00-08:00 dur:8h30m every:day ci:0"
-        );
+        assert_eq!(fmt(&it), "- sleep win:22:00-08:00 dur:8h30m every:day ci:0");
         let it = routine("- laundry    win:09:00-21:00 dur:30m  every:week on-miss:persist");
-        assert_eq!(
-            format_item_line(&it),
-            "- laundry win:09:00-21:00 dur:30m every:week on-miss:persist"
-        );
+        assert_eq!(fmt(&it), "- laundry win:09:00-21:00 dur:30m every:week on-miss:persist");
         let it = parse_line("- Factorio        dur:2h max:4h/w", &ctx("optional.md")).unwrap();
-        assert_eq!(format_item_line(&it), "- Factorio dur:2h max:4h/w");
+        assert_eq!(fmt(&it), "- Factorio dur:2h max:4h/w");
         let it = week("- [>] 4 2b Exercises 5.3–5.5 !2 @m1 est:1b atomic hot after:^t4,event:visa loc:zoom foo:bar ^t3");
         assert_eq!(
-            format_item_line(&it),
+            fmt(&it),
             "- [>] 4 2b Exercises 5.3–5.5 @m1 !2 after:^t4,event:visa loc:zoom est:1b foo:bar atomic hot ^t3"
         );
         let it = week("- [ ] 2 Sit at:2026-09-12T23:30/05:45 buffer:1h");
-        assert_eq!(
-            format_item_line(&it),
-            "- [ ] 2 Sit at:2026-09-12T23:30/2026-09-13T05:45 buffer:1h"
-        );
+        assert_eq!(fmt(&it), "- [ ] 2 Sit at:2026-09-12T23:30/2026-09-13T05:45 buffer:1h");
         // A canonical line re-parses to the same fields.
-        let again = week(&format_item_line(&it));
+        let again = week(&fmt(&it));
         assert_eq!(again.shape, it.shape);
         assert_eq!(again.buffer, it.buffer);
+    }
+
+    /// Every field the grammar can express survives `format_item_line` and a
+    /// re-parse (source location aside).
+    fn assert_canonical_round_trip(line: &str, file: &str) -> String {
+        let c = ctx(file);
+        let it = parse_line(line, &c).unwrap();
+        let out = format_item_line(&it).unwrap();
+        let again = parse_line(&out, &c).unwrap();
+        let strip = |mut i: Item| {
+            i.src = SourceLoc::default();
+            i
+        };
+        assert_eq!(strip(again), strip(it), "{line} -> {out}");
+        out
+    }
+
+    #[test]
+    fn format_keeps_ci_inheritance_and_dur() {
+        // Regression: a stateful line without a ci was written with the file
+        // default, freezing it and defeating parent inheritance.
+        let out = assert_canonical_round_trip("- [ ] Read ch.7 @m1 ^t9", "week/2026-W37.md");
+        assert_eq!(out, "- [ ] Read ch.7 @m1 ^t9");
+        let out = assert_canonical_round_trip("- [ ] 2b Read ch.7 @m1 ^t9", "week/2026-W37.md");
+        assert_eq!(out, "- [ ] 2b Read ch.7 @m1 ^t9");
+        let out = assert_canonical_round_trip("- [ ] Read ch.7 ci:4 ^t9", "week/2026-W37.md");
+        assert_eq!(out, "- [ ] 4 Read ch.7 ^t9");
+        // Regression: `dur:` was dropped for Point and Interval shapes.
+        let out = assert_canonical_round_trip("- [ ] 3 X due:2026-09-11 dur:30m ^t1", "week/2026-W37.md");
+        assert_eq!(out, "- [ ] 3 X due:2026-09-11 dur:30m ^t1");
+        let out = assert_canonical_round_trip("- [ ] 3 X at:2026-09-11T10:00/11:00 dur:30m ^t1", "week/2026-W37.md");
+        assert_eq!(out, "- [ ] 3 X at:2026-09-11T10:00/11:00 dur:30m ^t1");
+        let out = assert_canonical_round_trip("- [ ] 1 Pick up package  win:2026-09-07T09:00/21:00 dur:20m ^a3", "backlog.md");
+        assert_eq!(out, "- [ ] 1 Pick up package win:2026-09-07T09:00/21:00 dur:20m ^a3");
+        // A title starting with a ci digit pins the ci so the digit stays text.
+        let out = assert_canonical_round_trip("- [ ] 3 5 things ^t1", "week/2026-W37.md");
+        assert_eq!(out, "- [ ] 3 5 things ^t1");
+        let mut it = week("- [ ] 3 5 things ^t1");
+        it.ci_explicit = false;
+        assert_eq!(format_item_line(&it).unwrap(), "- [ ] 3 5 things ^t1");
+        // A title starting with a duration and no leading estimate cannot be
+        // written; nor can a title word that is a token.
+        let mut it = week("- [ ] 3 30m run ^p1");
+        assert_eq!(it.title, "run");
+        it.title = "30m run".to_string();
+        it.est_original = None;
+        assert_eq!(format_item_line(&it), Err(EditError::Ambiguous { word: "30m".to_string() }));
+        it.est_original = Some(Dur::from_minutes(30));
+        assert_eq!(format_item_line(&it).unwrap(), "- [ ] 3 30m 30m run ^p1");
+        it.title = "run @m1".to_string();
+        assert_eq!(format_item_line(&it), Err(EditError::Ambiguous { word: "@m1".to_string() }));
+        it.title = "run\nfast".to_string();
+        assert_eq!(format_item_line(&it), Err(EditError::LineBreak));
+        // Stateless files have no slots, so a digit-leading title is fine.
+        let out = assert_canonical_round_trip("- 5 min stretch win:09:00-17:00 dur:5m", "routines.md");
+        assert_eq!(out, "- 5 min stretch win:09:00-17:00 dur:5m");
+        for line in [
+            "- [ ] 5 6b Finish ch.5 exercises        @O1 ^m1",
+            "- [ ] 4 6b CS 234 pset 2                @O3 due:2026-09-11T23:59 max:2b/d ^d1",
+            "- [ ] 5 2h Midterm                      @O3 at:2026-10-20T10:00/12:00 loc:JCL ^x1",
+            "- [?] 2 15m Ask Prof. Lee about the reading group  on-event:reply/7d waiting:2026-09-05 ^a4",
+            "- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2",
+            "- [ ] 1 ✈ ORD→SFO UA 1234    at:2026-09-12T08:15/10:40 buffer:2h travel-day ^g3",
+            "- [ ] 4 Lean practice min:6b/w open pref:wake+10m ^l1",
+            "- [ ] 3 Meet Kun @ 7pm ^t1",
+        ] {
+            assert_canonical_round_trip(line, "week/2026-W37.md");
+        }
+        assert_canonical_round_trip("- shower     win:07:00-23:00 dur:20m  after-done:2d~1d", "routines.md");
+    }
+
+    #[test]
+    fn flags_keep_a_boundary_before_them() {
+        // A flag right after the title is title text on re-parse, so edits
+        // that would leave one there move it after the `^id`.
+        let mut l = ItemLine::parse("- [ ] 3 Foo ^t1").unwrap();
+        l.add_flag("open").unwrap();
+        assert_eq!(l.to_string(), "- [ ] 3 Foo ^t1 open");
+        let it = week(&l.to_string());
+        assert_eq!((it.title.as_str(), it.scope), ("Foo", Scope::Open));
+        l.add_flag("hot").unwrap();
+        assert_eq!(l.to_string(), "- [ ] 3 Foo ^t1 open hot");
+        let mut l = ItemLine::parse("- [ ] 3 Foo @m1 ^t1").unwrap();
+        l.add_flag("open").unwrap();
+        assert_eq!(l.to_string(), "- [ ] 3 Foo @m1 open ^t1");
+        let mut l = ItemLine::parse("- [ ] 3 Foo").unwrap();
+        assert_eq!(l.add_flag("open"), Err(EditError::FlagNeedsBoundary { flag: "open".to_string() }));
+        assert_eq!(l.to_string(), "- [ ] 3 Foo");
+
+        // Removing the only boundary token.
+        let mut l = ItemLine::parse("- [ ] 3 Foo @m1 open hot ^t1").unwrap();
+        l.set_parent(None).unwrap();
+        assert_eq!(l.to_string(), "- [ ] 3 Foo ^t1 open hot");
+        assert_eq!(week(&l.to_string()).flags, vec!["open", "hot"]);
+        let mut l = ItemLine::parse("- [ ] 3 Foo due:2026-09-11 open ^t1").unwrap();
+        assert_eq!(l.remove_token("due"), Ok(true));
+        assert_eq!(l.to_string(), "- [ ] 3 Foo ^t1 open");
+        let mut l = ItemLine::parse("- [ ] 3 Foo #x open ^t1").unwrap();
+        assert_eq!(l.remove_tag("x"), Ok(true));
+        assert_eq!(l.to_string(), "- [ ] 3 Foo ^t1 open");
+        let mut l = ItemLine::parse("- [ ] 3 Foo !2 open ^t1").unwrap();
+        l.set_priority(None).unwrap();
+        assert_eq!(l.to_string(), "- [ ] 3 Foo ^t1 open");
+        let mut l = ItemLine::parse("- [ ] 3 Foo !2 open").unwrap();
+        assert_eq!(l.set_priority(None), Err(EditError::FlagNeedsBoundary { flag: "open".to_string() }));
+        assert_eq!(l.to_string(), "- [ ] 3 Foo !2 open", "a refused edit changes nothing");
+        // Duplicated tokens (a reported problem) are all removed by `None`.
+        let mut l = ItemLine::parse("- [ ] 3 Foo @a @b !1 !2 ^t1").unwrap();
+        l.set_parent(None).unwrap();
+        l.set_priority(None).unwrap();
+        assert_eq!(l.to_string(), "- [ ] 3 Foo ^t1");
+        // A bare word is not a boundary either: `Foo bar open` is all title.
+        let mut l = ItemLine::parse("- [ ] 3 Foo @m1 bar open ^t1").unwrap();
+        l.set_parent(None).unwrap();
+        assert_eq!(l.to_string(), "- [ ] 3 Foo bar ^t1 open");
+        assert_eq!(week(&l.to_string()).title, "Foo bar");
+        // set_title drops the bare words that kept the flag out of the title.
+        let mut l = ItemLine::parse("- [ ] A @ open ^t1").unwrap();
+        assert_eq!(week(&l.to_string()).flags, vec!["open"]);
+        l.set_title("a").unwrap();
+        assert_eq!(l.to_string(), "- [ ] a ^t1 open");
+        let mut l = ItemLine::parse("- [ ] A @ open").unwrap();
+        assert_eq!(l.set_title("a"), Err(EditError::FlagNeedsBoundary { flag: "open".to_string() }));
+        assert_eq!(l.to_string(), "- [ ] A @ open");
+        // The canonical builder does the same.
+        let it = week("- [ ] 4 Lean practice ^l1 open");
+        assert_eq!(format_item_line(&it).unwrap(), "- [ ] 4 Lean practice ^l1 open");
+        let mut it = week("- [ ] 4 Lean practice open ^l1");
+        it.flags = vec!["open".to_string()];
+        it.title = "Lean practice".to_string();
+        assert_eq!(format_item_line(&it).unwrap(), "- [ ] 4 Lean practice ^l1 open");
+        it.id = Id::default();
+        assert_eq!(format_item_line(&it), Err(EditError::FlagNeedsBoundary { flag: "open".to_string() }));
+        it.tags = vec!["lean".to_string()];
+        assert_eq!(format_item_line(&it).unwrap(), "- [ ] 4 Lean practice #lean open");
     }
 
     #[test]

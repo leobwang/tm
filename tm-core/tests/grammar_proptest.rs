@@ -2,7 +2,7 @@
 //! and serialize byte-identically, and an edit changes only what it must.
 
 use proptest::prelude::*;
-use tm_core::grammar::{parse_line, ItemLine, ParseCtx};
+use tm_core::grammar::{parse_line, EditError, ItemLine, ParseCtx};
 use tm_core::model::{Dur, Id, Item, SourceLoc, State};
 
 fn ws() -> impl Strategy<Value = String> {
@@ -25,9 +25,24 @@ fn est() -> impl Strategy<Value = String> {
     ]
 }
 
-/// Title words: start with a letter, no `:`; never look like an estimate.
+/// A word that is not a token: ASCII, non-ASCII (multi-byte first char),
+/// digit-leading (may look like a ci digit or a duration), or an uppercase
+/// `Word:` (only `[a-z-]+:` ends the title).
+fn word() -> impl Strategy<Value = String> {
+    prop_oneof![
+        5 => "[A-Za-z][a-z0-9.\\-]{0,6}".prop_map(|s| s),
+        2 => prop::sample::select(vec![
+            "é", "über", "Été", "→", "✈", "—", "§3", "Ж37", "日本語", "ORD→SFO", "🎂", "naïve",
+        ])
+        .prop_map(|s| s.to_string()),
+        2 => "[0-9]{1,2}[a-z]{0,2}".prop_map(|s| s),
+        1 => "[A-Z][a-z]{1,4}:".prop_map(|s| s),
+    ]
+}
+
+/// Title words (1..4 of [`word`]).
 fn title() -> impl Strategy<Value = Vec<String>> {
-    prop::collection::vec("[A-Za-z][a-z0-9.\\-]{0,6}", 1..4)
+    prop::collection::vec(word(), 1..4)
 }
 
 fn date() -> impl Strategy<Value = String> {
@@ -104,7 +119,9 @@ fn token() -> impl Strategy<Value = String> {
         prop::sample::select(vec!["open", "atomic", "manual", "travel-day", "hot"])
             .prop_map(|s| s.to_string()),
         "zz:[a-z0-9]{1,4}".prop_map(|s| s),
-        "[A-Za-z][a-z0-9.]{0,5}".prop_map(|s| s),
+        word(),
+        // Malformed structured tokens and lone sigils stay in the title.
+        prop::sample::select(vec!["@", "#", "!", "^", "!5", "!!!", "^é", "^%"]).prop_map(|s| s.to_string()),
     ]
 }
 
@@ -185,6 +202,13 @@ fn without_src(mut it: Item) -> Item {
     it
 }
 
+/// Title text with whitespace runs collapsed: removing a token can merge a
+/// bare word back into the title segment with its original lead whitespace
+/// (`a @A  a` → `a  a`), which is the same title.
+fn norm(title: &str) -> String {
+    title.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(512))]
 
@@ -234,9 +258,38 @@ proptest! {
         let ctx = ctx_for(stateful);
         let before = parse_line(&text, &ctx).unwrap();
         let mut line = before.line().clone();
-        line.set_state(State::Done);
+        let first = before.title.split_whitespace().next().unwrap_or("").to_string();
+        match line.set_state(State::Done) {
+            Ok(()) => {}
+            Err(EditError::Ambiguous { word }) => {
+                // Only a state-less line whose title starts with a ci digit
+                // or a duration is refused; pinning the ci makes the digit
+                // case representable, the duration case never is.
+                prop_assert!(!stateful);
+                prop_assert_eq!(&word, &first);
+                let is_digit = first.len() == 1 && ("0".."6").contains(&first.as_str());
+                let is_dur = Dur::parse_no_days(&first, 60).is_ok();
+                prop_assert!(is_digit || is_dur, "{}", first);
+                match line.set_state_with_ci(State::Done, before.ci) {
+                    Ok(()) => {
+                        prop_assert!(is_digit);
+                        let after = parse_line(&line.to_string(), &ctx).unwrap();
+                        prop_assert_eq!(&after.title, &before.title);
+                        prop_assert_eq!(after.ci, before.ci);
+                        prop_assert!(after.ci_explicit);
+                        prop_assert_eq!(after.state, State::Done);
+                    }
+                    Err(e) => {
+                        prop_assert!(is_dur, "{:?}", e);
+                        prop_assert_eq!(line.to_string(), text.clone(), "a refused edit changes nothing");
+                    }
+                }
+                return Ok(());
+            }
+            Err(e) => prop_assert!(false, "unexpected {:?}", e),
+        }
         line.add_tag("zz9");
-        line.set_priority(Some(2));
+        line.set_priority(Some(2)).unwrap();
         let after = parse_line(&line.to_string(), &ctx).unwrap();
         let mut expected = without_src(before);
         expected.state = State::Done;
@@ -244,6 +297,87 @@ proptest! {
         expected.priority = Some(2);
         expected.problems.retain(|p| p != "missing state");
         prop_assert_eq!(without_src(after), expected);
+    }
+
+    #[test]
+    fn set_title_survives_reparse((text, stateful) in line(), words in prop::collection::vec(word(), 1..4)) {
+        let ctx = ctx_for(stateful);
+        let before = parse_line(&text, &ctx).unwrap();
+        let mut line = before.line().clone();
+        let title = words.join(" ");
+        match line.set_title(&title) {
+            Ok(()) => {
+                let after = parse_line(&line.to_string(), &ctx).unwrap();
+                prop_assert_eq!(&after.title, &title);
+                prop_assert_eq!(after.ci, before.ci);
+                prop_assert_eq!(after.est_original, before.est_original);
+                prop_assert_eq!(after.state, before.state);
+                prop_assert_eq!(&after.id, &before.id);
+                prop_assert_eq!(&after.flags, &before.flags);
+                prop_assert_eq!(&after.tags, &before.tags);
+                prop_assert_eq!(&after.parent, &before.parent);
+            }
+            Err(EditError::Ambiguous { word }) => {
+                prop_assert!(words.contains(&word), "{} not in {:?}", word, words);
+                prop_assert_eq!(line.to_string(), text.clone(), "a refused edit changes nothing");
+            }
+            Err(EditError::FlagNeedsBoundary { flag }) => {
+                prop_assert!(before.flags.contains(&flag));
+                prop_assert!(!before.has_id());
+                prop_assert_eq!(line.to_string(), text.clone(), "a refused edit changes nothing");
+            }
+            Err(e) => prop_assert!(false, "unexpected {:?}", e),
+        }
+    }
+
+    #[test]
+    fn add_flag_and_remove_parent_keep_flags((text, stateful) in line()) {
+        let ctx = ctx_for(stateful);
+        let before = parse_line(&text, &ctx).unwrap();
+        let mut line = before.line().clone();
+        match line.add_flag("hot") {
+            Ok(()) => {
+                let after = parse_line(&line.to_string(), &ctx).unwrap();
+                prop_assert!(after.is_hot());
+                prop_assert_eq!(&after.title, &before.title);
+                let mut expected_flags = before.flags.clone();
+                if !expected_flags.iter().any(|f| f == "hot") {
+                    expected_flags.push("hot".to_string());
+                }
+                prop_assert_eq!(&after.flags, &expected_flags);
+            }
+            Err(EditError::FlagNeedsBoundary { .. }) => {
+                prop_assert!(!before.has_id());
+                prop_assert_eq!(line.to_string(), text.clone());
+            }
+            Err(e) => prop_assert!(false, "unexpected {:?}", e),
+        }
+        let mut line = before.line().clone();
+        match line.set_parent(None) {
+            Ok(()) => {
+                let after = parse_line(&line.to_string(), &ctx).unwrap();
+                prop_assert_eq!(after.parent, None);
+                prop_assert_eq!(norm(&after.title), norm(&before.title));
+                prop_assert_eq!(&after.flags, &before.flags);
+                prop_assert_eq!(&after.tags, &before.tags);
+            }
+            Err(EditError::FlagNeedsBoundary { .. }) => {
+                prop_assert!(!before.has_id());
+                prop_assert_eq!(line.to_string(), text.clone());
+            }
+            Err(e) => prop_assert!(false, "unexpected {:?}", e),
+        }
+    }
+
+    #[test]
+    fn arbitrary_lines_never_panic(text in "- [^\\r\\n]{0,40}") {
+        let ctx = ctx_for(true);
+        if let Ok(item) = parse_line(&text, &ctx) {
+            prop_assert_eq!(item.line_text(), text.clone());
+            let again = parse_line(&item.line_text(), &ctx).unwrap();
+            prop_assert_eq!(again, item);
+        }
+        let _ = parse_line(&text, &ctx_for(false));
     }
 
     #[test]

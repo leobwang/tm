@@ -291,12 +291,32 @@ impl fmt::Display for Dur {
 
 /// A date or a date-time, exactly as written (`due:2026-09-11` vs
 /// `due:2026-09-11T23:59`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+///
+/// Ordering is chronological: a bare date counts as `23:59` that day (see
+/// [`Moment::end_of_day`]), so `due:` values of both forms sort together in
+/// a deadline (EDF) sort. A date and the equal date-time are distinct values
+/// and the date sorts first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Moment {
     /// `YYYY-MM-DD`.
     Date(NaiveDate),
     /// `YYYY-MM-DDTHH:MM`.
     DateTime(NaiveDateTime),
+}
+
+impl PartialOrd for Moment {
+    fn partial_cmp(&self, other: &Moment) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Moment {
+    fn cmp(&self, other: &Moment) -> std::cmp::Ordering {
+        let variant = |m: &Moment| matches!(m, Moment::DateTime(_)) as u8;
+        self.end_of_day()
+            .cmp(&other.end_of_day())
+            .then_with(|| variant(self).cmp(&variant(other)))
+    }
 }
 
 impl Moment {
@@ -722,13 +742,21 @@ impl fmt::Display for WindowRange {
 }
 
 /// Parse `YYYY-MM-DDTHH:MM/HH:MM` (end on the same day; an end before the
-/// start rolls to the next day) or `YYYY-MM-DDTHH:MM/YYYY-MM-DDTHH:MM`.
+/// start rolls to the next day) or `YYYY-MM-DDTHH:MM/YYYY-MM-DDTHH:MM`
+/// (the end must not precede the start).
 pub fn parse_interval(s: &str) -> Result<(NaiveDateTime, NaiveDateTime), ModelError> {
     let err = || invalid("interval", s);
     let (a, b) = s.split_once('/').ok_or_else(err)?;
     let start = parse_datetime(a).map_err(|_| err())?;
     let end = if b.contains('T') {
-        parse_datetime(b).map_err(|_| err())?
+        let end = parse_datetime(b).map_err(|_| err())?;
+        if end < start {
+            return Err(ModelError::Invalid {
+                what: "interval (end before start)",
+                value: s.to_string(),
+            });
+        }
+        end
     } else {
         let t = parse_time(b).map_err(|_| err())?;
         let mut end = start.date().and_time(t);
@@ -1247,14 +1275,16 @@ impl Stamp {
     /// Parse `W\d+` or `D\d+`.
     pub fn parse(s: &str) -> Result<Stamp, ModelError> {
         let err = || invalid("stamp", s);
-        let (kind, n) = s.split_at(if s.is_empty() { 0 } else { 1 });
+        let mut chars = s.chars();
+        let kind = chars.next().ok_or_else(err)?;
+        let n = chars.as_str();
         if n.is_empty() || !n.bytes().all(|b| b.is_ascii_digit()) {
             return Err(err());
         }
         let n: u32 = n.parse().map_err(|_| err())?;
         match kind {
-            "W" => Ok(Stamp::Week(n)),
-            "D" => Ok(Stamp::Day(n)),
+            'W' => Ok(Stamp::Week(n)),
+            'D' => Ok(Stamp::Day(n)),
             _ => Err(err()),
         }
     }
@@ -1400,10 +1430,11 @@ impl Item {
     pub fn is_hot(&self) -> bool {
         self.has_flag("hot")
     }
-    /// `est` if set, else `est_original` (the line's own remaining estimate;
-    /// `tree.rs` adds the children rollup).
+    /// The line's own remaining estimate: `est` if set, else `est_original`,
+    /// else `dur` (the only estimate a window or optional line carries).
+    /// `tree.rs` adds the children rollup when this is `None`.
     pub fn own_remaining(&self) -> Option<Dur> {
-        self.est.or(self.est_original)
+        self.est.or(self.est_original).or(self.dur)
     }
     /// The byte-faithful line.
     pub fn line(&self) -> &ItemLine {
@@ -1572,6 +1603,34 @@ mod tests {
         assert_eq!(e.date(), s.date().succ_opt().unwrap());
         assert_eq!(fmt_interval(s, e), "2026-09-12T23:30/2026-09-13T05:45");
         assert!(parse_interval("2026-09-12T23:30").is_err());
+        // Regression: a full-form end before the start is an error, not a
+        // negative interval. Equal ends are allowed.
+        let bad = parse_interval("2026-09-12T10:00/2026-09-11T09:00").unwrap_err();
+        assert!(bad.to_string().contains("end before start"), "{bad}");
+        assert!(parse_interval("2026-09-12T10:00/2026-09-12T10:00").is_ok());
+        assert!(WindowRange::parse("2026-09-12T10:00/2026-09-11T09:00").is_err());
+    }
+
+    #[test]
+    fn moment_orders_chronologically() {
+        // Regression: the derived Ord ordered by variant, putting every bare
+        // date before every date-time.
+        let dec = Moment::parse("2026-12-01").unwrap();
+        let jan = Moment::parse("2026-01-01T00:00").unwrap();
+        assert!(jan < dec);
+        assert!(dec > jan);
+        let d = Moment::parse("2026-09-11").unwrap();
+        let early = Moment::parse("2026-09-11T09:00").unwrap();
+        let eod = Moment::parse("2026-09-11T23:59").unwrap();
+        let next = Moment::parse("2026-09-12T00:00").unwrap();
+        assert!(early < d, "a timed deadline that day comes first");
+        assert!(d < eod, "a date sorts before the equal date-time (distinct values)");
+        assert!(d < next);
+        assert_ne!(d, eod);
+        assert_eq!(d.cmp(&d), std::cmp::Ordering::Equal);
+        let mut v = vec![dec, next, d, eod, jan, early];
+        v.sort();
+        assert_eq!(v, vec![jan, early, d, eod, next, dec]);
 
         let w = WindowRange::parse("22:00-08:00").unwrap();
         assert!(w.is_overnight());
@@ -1632,6 +1691,11 @@ mod tests {
         assert_eq!(Stamp::parse("D07").unwrap(), Stamp::Day(7));
         assert_eq!(Stamp::Day(7).to_string(), "D07");
         assert!(Stamp::parse("X1").is_err());
+        // Regression: a multi-byte first character used to panic in split_at.
+        for bad in ["Ж37", "é7", "W", "", "W3x", "→"] {
+            assert!(Stamp::parse(bad).is_err(), "{bad:?}");
+        }
+        assert!(Stamp::parse_list("W36,Ж37").is_err());
 
         assert_eq!(Loc::parse("zoom").unwrap(), Loc::Named("zoom".into()));
         assert_eq!(Loc::parse("out").unwrap(), Loc::Out);
