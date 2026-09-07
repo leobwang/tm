@@ -112,12 +112,20 @@ impl CliError {
             theirs,
         }) = self.conflict()
         {
-            let what = if id.is_empty() {
-                file.clone()
-            } else {
-                format!("{file}: {}", id.token())
-            };
-            eprintln!("tm: conflict in {what} — the file changed under us");
+            // An id conflict is one line each; a whole-file conflict (an
+            // empty id) would be two whole files, so that one is summarised —
+            // the error itself still carries both texts for the TUI's diff.
+            if id.is_empty() {
+                eprintln!("tm: conflict in {file} — the file changed under us");
+                eprintln!("  ours:   {} lines", ours.lines().count());
+                eprintln!("  theirs: {} lines", theirs.lines().count());
+                eprintln!("  reconcile {file} in your editor, then try again");
+                return;
+            }
+            eprintln!(
+                "tm: conflict in {file}: {} — the file changed under us",
+                id.token()
+            );
             eprintln!("  ours:   {}", ours.trim_end());
             eprintln!("  theirs: {}", theirs.trim_end());
             return;

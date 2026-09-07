@@ -11,7 +11,7 @@ expression: json
     },
     {
       "field": "est",
-      "from": "",
+      "from": "30m",
       "to": "45m"
     },
     {
@@ -21,5 +21,5 @@ expression: json
     }
   ],
   "id": "a1",
-  "line": "- [ ] 3 30m Insurance claim for the bike est:45m loc:out  ^a1"
+  "line": "- [ ] 3 45m Insurance claim for the bike loc:out  ^a1"
 }

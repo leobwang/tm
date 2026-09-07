@@ -17,9 +17,13 @@
 //! * [`start`] / [`done`] / [`extend`] / [`stop`] — the block machine; the
 //!   energy report is `--energy N`, or asked on a terminal.
 //! * [`take_break`] — starts a break, or ends the running one and logs it
-//!   with its actual length.
+//!   with its actual length (so does the next `start`, `done` or `stop`).
 //! * [`interrupt`] / [`resume`] / [`pause`] / [`energy`] / [`idle`] — §9's
-//!   remaining rows.
+//!   remaining rows. A non-zero energy δ replans (§8.5).
+//!
+//! Every one of them also writes §4.3's human trace: one `HH:MM …` line in
+//! the day file's `## Log`, and — for `wake` and `arrive` — the runtime front
+//! matter (see [`super::dayfile`]).
 
 use std::io::{self, BufRead, IsTerminal, Write};
 
@@ -30,7 +34,7 @@ use tm_core::capacity;
 use tm_core::energy::{self, Features};
 use tm_core::horizon::MIN_REMAINING_MIN;
 use tm_core::log::{self, Event};
-use tm_core::model::{parse_time, Dur, Id, Recur, State};
+use tm_core::model::{parse_time, Dur, Horizon, Id, Recur, State};
 use tm_core::recur;
 use tm_core::store::{ActiveBlock, BreakState, InterruptState, Store};
 
@@ -73,18 +77,70 @@ fn ask_energy(pred: u8) -> Option<u8> {
     line.trim().parse::<u8>().ok().filter(|v| *v <= 5)
 }
 
-/// Minutes since the last break today (0 when there has been none).
+/// Minutes of working time since the last break *ended* (§8.5's
+/// `since_break` feature, §10.1's `start{since_break_min}`).
+///
+/// `break.t` is when the break *began* — the entry is appended when it ends,
+/// with `actual_min` set (log.rs's convention) — so the end is `t +
+/// actual_min`. With no break yet today the gap is measured from the day's
+/// first `start` instead: zero would read as "a break has just ended" after
+/// five hours of unbroken work.
 fn since_break_min(ctx: &Ctx) -> u32 {
-    let last = ctx
-        .log
-        .iter_day(ctx.today, ctx.cfg.tz)
-        .filter(|e| matches!(e.ev, Event::Break { .. }))
-        .map(|e| e.t)
-        .last();
-    match last {
-        Some(t) => (ctx.now - t).num_minutes().max(0) as u32,
+    let mut since = None;
+    for e in ctx.log.iter_day(ctx.today, ctx.cfg.tz) {
+        match &e.ev {
+            Event::Break { actual_min, .. } => {
+                let mins = i64::from(actual_min.unwrap_or(0));
+                since = Some(e.t + chrono::Duration::minutes(mins));
+            }
+            Event::Start { .. } if since.is_none() => since = Some(e.t),
+            _ => {}
+        }
+    }
+    // A break that is still running (started, not yet ended) is itself the
+    // most recent boundary: nothing has been worked since it began.
+    if let Some(br) = &ctx.state.break_ {
+        if let Some(started) = br.started {
+            return (ctx.now_tz - ctx.at(started)).num_minutes().clamp(0, 24 * 60) as u32;
+        }
+    }
+    match since {
+        Some(t) => (ctx.now - t).num_minutes().clamp(0, 24 * 60) as u32,
         None => 0,
     }
+}
+
+/// "no such item", the error every id argument shares.
+fn missing(id: &Id) -> CliError {
+    CliError::msg(format!("no such item: {}", id.token()))
+}
+
+/// Append one line to the day file's `## Log` at `now` (§4.3) — the human
+/// half of the §10.1 event the verb has just written.
+fn day_note(ctx: &Ctx, text: impl Into<String>) -> Result<(), CliError> {
+    super::dayfile::note(ctx, ctx.today, ctx.now_tz.time(), &text.into())
+}
+
+/// True for a line that carries no state and is never rewritten: §4.3's
+/// `routines.md` and `optional.md`, whose occurrences live in the log as
+/// §10.1 `routine`/`skip` events. Writing `[x]` into one would end the
+/// recurrence for good (§5.1: "a recurring item never changes its line").
+fn is_stateless(item: &tm_core::model::Item) -> bool {
+    matches!(item.horizon, Horizon::Routine | Horizon::Optional)
+}
+
+/// Today's instance key for a stateless line, for §10.1's `routine{inst}`.
+fn instance_key(ctx: &Ctx, item: &tm_core::model::Item) -> String {
+    recur::today_instances(
+        [item],
+        ctx.today,
+        ctx.now_tz.naive_local(),
+        &ctx.replay,
+        &ctx.cfg,
+    )
+    .first()
+    .map(|(i, _)| i.key.to_string())
+    .unwrap_or_else(|| ctx.today.to_string())
 }
 
 /// The features of the current instant (§8.5).
@@ -95,7 +151,8 @@ fn features(ctx: &Ctx, at: DateTime<chrono_tz::Tz>) -> Features {
 }
 
 /// End the running break, appending its §10.1 `break` event with the actual
-/// length. Returns the minutes it lasted.
+/// length and un-pausing the block the break paused (§10.2's
+/// `active.paused`). Returns the minutes it lasted.
 fn end_break(ctx: &mut Ctx) -> Result<Option<u32>, CliError> {
     let Some(br) = ctx.state.break_.take() else {
         return Ok(None);
@@ -103,6 +160,13 @@ fn end_break(ctx: &mut Ctx) -> Result<Option<u32>, CliError> {
     let started = br.started.unwrap_or_else(|| ctx.now_tz.time());
     let start_dt = ctx.at(started);
     let actual = (ctx.now_tz - start_dt).num_minutes().max(0) as u32;
+    // The break paused the block (§9); ending it un-pauses, unless an
+    // interruption is also running and owns the pause.
+    if ctx.state.interrupt.is_none() {
+        if let Some(a) = ctx.state.active.as_mut() {
+            a.paused = false;
+        }
+    }
     let entry = log::LogEntry::new(
         start_dt.fixed_offset(),
         Event::Break {
@@ -113,6 +177,65 @@ fn end_break(ctx: &mut Ctx) -> Result<Option<u32>, CliError> {
     );
     ctx.append_entry(&entry)?;
     Ok(Some(actual))
+}
+
+/// The minutes of the running block that were *not* worked: §9 pauses
+/// (`pause`…`unpause`), interruptions (`interrupt`…`resume`) and breaks
+/// (`break`…) that fell inside it. log.rs's own convention for a block's
+/// worked minutes is "elapsed since `start` minus paused and interrupted
+/// time"; §8.5's duration multiplier and §11's ledgers both double-count
+/// without it (the same minutes are already `resume{lost_min}`).
+fn idle_min_since(ctx: &Ctx, started: DateTime<chrono_tz::Tz>) -> u32 {
+    let mut total = 0i64;
+    let mut open: Option<DateTime<chrono::FixedOffset>> = None;
+    let from = started.fixed_offset();
+    let mut add = |a: DateTime<chrono::FixedOffset>, b: DateTime<chrono::FixedOffset>| {
+        let a = a.max(from);
+        let b = b.min(ctx.now);
+        if b > a {
+            total += (b - a).num_minutes();
+        }
+    };
+    for e in ctx.log.iter_day(ctx.today, ctx.cfg.tz) {
+        match &e.ev {
+            Event::Pause { .. } | Event::Interrupt { .. } => {
+                if open.is_none() {
+                    open = Some(e.t);
+                }
+            }
+            Event::Unpause { .. } | Event::Resume { .. } => {
+                if let Some(a) = open.take() {
+                    add(a, e.t);
+                }
+            }
+            // `break.t` is the break's start; the entry is written when it
+            // ends, so the pair is one entry.
+            Event::Break {
+                actual_min: Some(m),
+                ..
+            } => add(e.t, e.t + chrono::Duration::minutes(i64::from(*m))),
+            _ => {}
+        }
+    }
+    // Anything still open at `now` (a pause or interruption that has not been
+    // lifted) counts up to now.
+    if let Some(a) = open {
+        add(a, ctx.now);
+    }
+    // …and a break the caller is about to close, which is not in the log yet.
+    if let Some(br) = &ctx.state.break_ {
+        if let Some(s) = br.started {
+            add(ctx.at(s).fixed_offset(), ctx.now);
+        }
+    }
+    total.clamp(0, 24 * 60) as u32
+}
+
+/// Minutes actually worked on the running block: wall clock since `started`,
+/// net of [`idle_min_since`].
+fn worked_min(ctx: &Ctx, started: DateTime<chrono_tz::Tz>) -> u32 {
+    let elapsed = (ctx.now_tz - started).num_minutes().max(0) as u32;
+    elapsed.saturating_sub(idle_min_since(ctx, started))
 }
 
 /// `tm wake --json`.
@@ -166,6 +289,24 @@ pub fn wake(g: &Globals, args: &super::WakeArgs) -> Result<i32, CliError> {
     );
     ctx.append_entry(&entry)?;
     ctx.reload()?;
+
+    // §4.3: the day file's front matter carries the wake time and the sleep,
+    // and `## Log` its first line.
+    let slept = super::out::fmt_dur(slept_min);
+    let mut front = vec![("wake", fmt_time(time))];
+    if slept_min > 0 {
+        front.push(("slept", slept.clone()));
+    }
+    super::dayfile::front(&ctx, ctx.today, &front)?;
+    super::dayfile::note(
+        &ctx,
+        ctx.today,
+        time,
+        &format!(
+            "wake slept={slept}{}",
+            onset_min.map(|o| format!(" onset={o}m")).unwrap_or_default()
+        ),
+    )?;
     rec.finish(&ctx, format!("wake {}", fmt_time(time)))?;
 
     let out = WakeOut {
@@ -304,6 +445,18 @@ pub fn arrive(g: &Globals, args: &super::ArriveArgs) -> Result<i32, CliError> {
     ctx.store
         .write_file(ARRIVAL_PLAN_PATH, &serde_json::to_string_pretty(&arrival_plan)?)?;
     ctx.reload()?;
+
+    // §4.3's runtime front matter, and the arrival in `## Log`.
+    super::dayfile::front(
+        &ctx,
+        ctx.today,
+        &[
+            ("loc", loc.clone()),
+            ("window", format!("{}..{}", fmt_time(at), hhmm(end))),
+            ("budget", budget.to_string()),
+        ],
+    )?;
+    super::dayfile::note(&ctx, ctx.today, at, &format!("arrive {loc}"))?;
     rec.finish(&ctx, format!("arrive {loc} {}", fmt_time(at)))?;
 
     let out = ArriveOut {
@@ -369,9 +522,13 @@ pub fn start(g: &Globals, args: &super::StartArgs) -> Result<i32, CliError> {
         }
     }
     let rec = Recorder::start(&ctx, "start")?;
-    end_break(&mut ctx)?;
+    let ended_break = end_break(&mut ctx)?;
 
-    let f = features(&ctx, ctx.now_tz);
+    let mut f = features(&ctx, ctx.now_tz);
+    if ended_break.is_some() {
+        // The break this very command closed is not in `ctx.log` yet.
+        f.since_break_min = 0;
+    }
     let pred = energy::predict(&ctx.model, &ctx.cfg, &f);
     let rep = args.energy.filter(|v| *v <= 5).or_else(|| ask_energy(pred));
     let tags = ctx.tree.tags_effective(&id);
@@ -383,9 +540,13 @@ pub fn start(g: &Globals, args: &super::StartArgs) -> Result<i32, CliError> {
         .unwrap_or_else(|| ctx.block_min());
     let est_min = energy::planned_minutes(remaining, multiplier);
 
-    let mut line = ctx.line(&id)?;
-    line.set_state(State::Active)?;
-    ctx.write_line(&id, &line)?;
+    // §5.1/§4.3: a routine or optional line has no state and never changes —
+    // its occurrences live in the log, not in the file.
+    if !is_stateless(&item) {
+        let mut line = ctx.line(&id)?;
+        line.set_state(State::Active)?;
+        ctx.write_line(&id, &line)?;
+    }
 
     ctx.state.active = Some(ActiveBlock {
         id: id.clone(),
@@ -407,6 +568,14 @@ pub fn start(g: &Globals, args: &super::StartArgs) -> Result<i32, CliError> {
         since_break_min: f.since_break_min,
     })?;
     ctx.reload()?;
+    day_note(
+        &ctx,
+        format!(
+            "start {} pred={pred}{}",
+            id.token(),
+            rep.map(|r| format!(" rep={r}")).unwrap_or_default()
+        ),
+    )?;
     rec.finish(&ctx, format!("start {}", id.token()))?;
 
     let out = StartOut {
@@ -469,56 +638,83 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
         (None, Some(a)) => (a.id.clone(), false),
         (None, None) => return Err(CliError::msg("nothing is running (`tm done ^id` for a retro done)")),
     };
-    let item = ctx.item(&id)?.clone();
+    // §1.3: the other two writers may have removed the line while the block
+    // ran. That must not wedge the block machine, so a missing item only
+    // costs the line edit, not the event and not the state change.
+    let item = match ctx.tree.get(&id) {
+        Some(i) => Some(i.clone()),
+        None if retro => return Err(missing(&id)),
+        None => None,
+    };
     let rec = Recorder::start(&ctx, "done")?;
-    end_break(&mut ctx)?;
 
     let (est_min, actual_min) = if retro {
         (ctx.tree.remaining(&id).unwrap_or(0), 0)
     } else {
         let a = active.as_ref().expect("an active block");
-        let started = ctx.at(a.started);
-        (
-            a.est_min,
-            (ctx.now_tz - started).num_minutes().max(0) as u32,
-        )
+        (a.est_min, worked_min(&ctx, ctx.at(a.started)))
     };
+    end_break(&mut ctx)?;
 
-    let mut line = ctx.line(&id)?;
+    let stateless = item.as_ref().is_some_and(is_stateless);
     let mut remaining_min = None;
-    if args.partial {
-        let left = ctx
-            .tree
-            .remaining(&id)
-            .unwrap_or(est_min)
-            .saturating_sub(actual_min)
-            .max(MIN_REMAINING_MIN);
-        line.set_state(State::Todo)?;
-        line.set_token("est", &est_dur(left, ctx.block_min()).to_string());
-        remaining_min = Some(left);
-    } else if matches!(item.recur, Recur::OnEvent { .. }) {
-        // §5.1: an on-event item goes to `[?]` with `waiting:<today>`.
-        recur::on_done_waiting(&item, ctx.today).apply(&mut line)?;
-    } else {
-        line.set_state(State::Done)?;
+    if let Some(item) = item.as_ref().filter(|_| !stateless) {
+        let mut line = ctx.line(&id)?;
+        if args.partial {
+            let left = ctx
+                .tree
+                .remaining(&id)
+                .unwrap_or(est_min)
+                .saturating_sub(actual_min)
+                .max(MIN_REMAINING_MIN);
+            line.set_state(State::Todo)?;
+            line.set_token("est", &est_dur(left, ctx.block_min()).to_string());
+            remaining_min = Some(left);
+        } else if matches!(item.recur, Recur::OnEvent { .. }) {
+            // §5.1: an on-event item goes to `[?]` with `waiting:<today>`.
+            recur::on_done_waiting(item, ctx.today).apply(&mut line)?;
+        } else {
+            line.set_state(State::Done)?;
+        }
+        ctx.write_line(&id, &line)?;
     }
-    ctx.write_line(&id, &line)?;
 
     if !retro {
         ctx.state.active = None;
     }
     ctx.save_state()?;
 
-    ctx.append_event(Event::Done {
-        id: id.to_string(),
-        est_min,
-        actual_min,
-        went: args.went.filter(|w| (1..=3).contains(w)),
-        tags: ctx.tree.tags_effective(&id),
-        ci: item.ci,
-        partial: args.partial,
-    })?;
+    // §10.1: a routine or optional occurrence is a `routine` event, not a
+    // `done` — a `done{id}` would mark the recurring item finished for good.
+    match item.as_ref().filter(|_| stateless) {
+        Some(item) => ctx.append_event(Event::Routine {
+            item: id.to_string(),
+            inst: instance_key(&ctx, item),
+            status: "done".to_string(),
+            actual_min: Some(actual_min),
+        })?,
+        None => ctx.append_event(Event::Done {
+            id: id.to_string(),
+            est_min,
+            actual_min,
+            went: args.went.filter(|w| (1..=3).contains(w)),
+            tags: ctx.tree.tags_effective(&id),
+            // §3.1's default when the line itself is gone.
+            ci: item.as_ref().map(|i| i.ci).unwrap_or(3),
+            partial: args.partial,
+        })?,
+    }
     ctx.reload()?;
+    day_note(
+        &ctx,
+        format!(
+            "done {} {}m/{}m{}",
+            id.token(),
+            actual_min,
+            est_min,
+            args.went.map(|w| format!(" went={w}")).unwrap_or_default()
+        ),
+    )?;
     rec.finish(&ctx, format!("done {}", id.token()))?;
 
     let state = ctx
@@ -528,7 +724,7 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
         .unwrap_or_else(|| State::Done.as_str().to_string());
     let out = DoneOut {
         id: id.clone(),
-        title: item.title.clone(),
+        title: item.map(|i| i.title).unwrap_or_default(),
         est_min,
         actual_min,
         partial: args.partial,
@@ -578,10 +774,14 @@ pub fn extend(g: &Globals, args: &super::ExtendArgs) -> Result<i32, CliError> {
         None => block_min,
     };
     let id = active.id.clone();
-    let remaining = ctx.tree.remaining(&id).unwrap_or(0);
-    let mut line = ctx.line(&id)?;
-    line.set_token("est", &est_dur(remaining + by, block_min).to_string());
-    ctx.write_line(&id, &line)?;
+    // §1.3: a line the other writers removed costs the `est:` rewrite, not
+    // the block.
+    if let Some(item) = ctx.tree.get(&id).filter(|i| !is_stateless(i)) {
+        let remaining = ctx.tree.remaining(&id).unwrap_or(0);
+        let mut line = item.line().clone();
+        line.set_token("est", &est_dur(remaining + by, block_min).to_string());
+        ctx.write_line(&id, &line)?;
+    }
 
     let est_min = active.est_min + by;
     ctx.state.active = Some(ActiveBlock { est_min, ..active });
@@ -591,6 +791,7 @@ pub fn extend(g: &Globals, args: &super::ExtendArgs) -> Result<i32, CliError> {
         by_min: by,
     })?;
     ctx.reload()?;
+    day_note(&ctx, format!("extend {} +{by}m", id.token()))?;
     rec.finish(&ctx, format!("extend {} +{by}m", id.token()))?;
 
     let out = ExtendOut {
@@ -626,7 +827,10 @@ pub fn stop(g: &Globals) -> Result<i32, CliError> {
     let rec = Recorder::start(&ctx, "stop")?;
     let id = active.id.clone();
     let started = ctx.at(active.started);
-    let worked = (ctx.now_tz - started).num_minutes().max(0) as u32;
+    let worked = worked_min(&ctx, started);
+    // §11's break integrity: a break still running when the block stops is
+    // over too, and its `break` event has to reach the log.
+    end_break(&mut ctx)?;
     let remaining = ctx
         .tree
         .remaining(&id)
@@ -634,10 +838,12 @@ pub fn stop(g: &Globals) -> Result<i32, CliError> {
         .saturating_sub(worked)
         .max(MIN_REMAINING_MIN);
 
-    let mut line = ctx.line(&id)?;
-    line.set_state(State::Todo)?;
-    line.set_token("est", &est_dur(remaining, ctx.block_min()).to_string());
-    ctx.write_line(&id, &line)?;
+    if let Some(item) = ctx.tree.get(&id).filter(|i| !is_stateless(i)) {
+        let mut line = item.line().clone();
+        line.set_state(State::Todo)?;
+        line.set_token("est", &est_dur(remaining, ctx.block_min()).to_string());
+        ctx.write_line(&id, &line)?;
+    }
 
     ctx.state.active = None;
     ctx.save_state()?;
@@ -646,6 +852,10 @@ pub fn stop(g: &Globals) -> Result<i32, CliError> {
         remaining_min: remaining,
     })?;
     ctx.reload()?;
+    day_note(
+        &ctx,
+        format!("stop {} {worked}m · {remaining}m left", id.token()),
+    )?;
     rec.finish(&ctx, format!("stop {}", id.token()))?;
 
     let out = StopOut {
@@ -717,6 +927,20 @@ pub fn take_break(g: &Globals, args: &super::BreakArgs) -> Result<i32, CliError>
         }
     };
     ctx.reload()?;
+    day_note(
+        &ctx,
+        match out.actual_min {
+            Some(a) => format!("break ended {a}m/{}m", out.planned_min),
+            None => format!(
+                "break {}m{}",
+                out.planned_min,
+                out.place
+                    .as_ref()
+                    .map(|p| format!(" where={p}"))
+                    .unwrap_or_default()
+            ),
+        },
+    )?;
     rec.finish(&ctx, format!("break {}", out.action))?;
     emit(
         ctx.json,
@@ -767,6 +991,13 @@ pub fn interrupt(g: &Globals) -> Result<i32, CliError> {
     ctx.save_state()?;
     ctx.append_event(Event::Interrupt { id: id.clone() })?;
     ctx.reload()?;
+    day_note(
+        &ctx,
+        format!(
+            "interrupt{}",
+            id.as_ref().map(|i| format!(" ^{i}")).unwrap_or_default()
+        ),
+    )?;
     rec.finish(&ctx, "interrupt")?;
 
     let out = InterruptOut {
@@ -817,6 +1048,17 @@ pub fn resume(g: &Globals) -> Result<i32, CliError> {
     })?;
     planning::write_plan(&mut ctx, &plan, &prios)?;
     ctx.reload()?;
+    day_note(
+        &ctx,
+        format!(
+            "resume lost={lost}m{}",
+            if dropped.is_empty() {
+                String::new()
+            } else {
+                format!(" dropped={}", dropped.join(","))
+            }
+        ),
+    )?;
     rec.finish(&ctx, format!("resume (lost {lost}m)"))?;
 
     let out = InterruptOut {
@@ -860,6 +1102,14 @@ pub fn pause(g: &Globals) -> Result<i32, CliError> {
         Event::Unpause { id: id.to_string() }
     })?;
     ctx.reload()?;
+    day_note(
+        &ctx,
+        format!(
+            "{} {}",
+            if paused { "pause" } else { "unpause" },
+            id.token()
+        ),
+    )?;
     rec.finish(&ctx, if paused { "pause" } else { "unpause" })?;
 
     let out = PauseOut {
@@ -895,6 +1145,8 @@ pub struct EnergyOut {
     pub hsw: f64,
     /// Location.
     pub loc: String,
+    /// Whether the non-zero δ triggered a replan (§8.5).
+    pub replanned: bool,
 }
 
 /// `tm energy 0-5 [--at HH:MM]`.
@@ -923,19 +1175,47 @@ pub fn energy(g: &Globals, args: &super::EnergyArgs) -> Result<i32, CliError> {
     );
     ctx.append_entry(&entry)?;
     ctx.reload()?;
+    let delta = args.level as i8 - pred as i8;
+
+    // §8.5: "Non-zero δ triggers a replan" — the posterior correction
+    // re-energises every later slot (§9's "slots re-energised").
+    let mut replanned = false;
+    if delta != 0 {
+        let (plan, prios) = planning::build(&ctx, false);
+        planning::write_plan(&mut ctx, &plan, &prios)?;
+        ctx.reload()?;
+        replanned = true;
+    }
+    day_note(
+        &ctx,
+        format!(
+            "energy pred={pred} rep={}{}",
+            args.level,
+            if replanned { " replan" } else { "" }
+        ),
+    )?;
     rec.finish(&ctx, format!("energy {}", args.level))?;
 
     let out = EnergyOut {
         at: fmt_time(at),
         pred,
         rep: args.level,
-        delta: args.level as i8 - pred as i8,
+        delta,
         hsw: f.hsw,
         loc,
+        replanned,
     };
     emit(
         ctx.json,
-        || format!("energy {} (pred {}) at {}", out.rep, out.pred, out.at),
+        || {
+            format!(
+                "energy {} (pred {}) at {}{}",
+                out.rep,
+                out.pred,
+                out.at,
+                if out.replanned { " · replanned" } else { "" }
+            )
+        },
         &out,
     )?;
     Ok(0)
@@ -978,6 +1258,7 @@ pub fn idle(g: &Globals, args: &super::IdleArgs) -> Result<i32, CliError> {
         min,
     })?;
     ctx.reload()?;
+    day_note(&ctx, format!("idle {attributed} {min}m"))?;
     rec.finish(&ctx, format!("idle {attributed} {min}m"))?;
 
     let out = IdleOut {

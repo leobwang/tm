@@ -119,6 +119,40 @@ fn now_reports_the_running_block_and_the_next_segments() {
     assert_eq!(json["active"]["id"], "t4");
     assert_eq!(json["active"]["elapsed_min"], 30);
     assert_eq!(json["active"]["title"], "Claude Code drafts tests");
+    // The idle snapshot above pins `active: null`; the running block has a
+    // shape of its own (§17 M5: `--json` schemas snapshot-tested).
+    insta::assert_json_snapshot!("now_active_schema", schema(&json));
+}
+
+#[test]
+fn a_new_day_plans_the_new_day() {
+    // §8.1: the window and budget belong to the arrival *day*; §6.3 exists
+    // precisely because commands are run on days with no `wake`/`arrive`. The
+    // first such command must not plan — and rewrite — yesterday's day file.
+    let tm = Tm::new();
+    tm.ok_at("2026-09-07T07:00:00-05:00", &["arrive", "lounge"]);
+    assert_eq!(tm.state()["window"][0], "07:00");
+
+    let json = tm.json_at("2026-09-08T11:00:00-05:00", &["plan"]);
+    assert_eq!(json["date"], "2026-09-08");
+    assert_eq!(json["window"][0], "11:00");
+    let wrote: Vec<&str> = json["wrote"]
+        .as_array()
+        .expect("wrote")
+        .iter()
+        .filter_map(|w| w.as_str())
+        .collect();
+    assert_eq!(wrote, ["day/2026-09-08.md", "day/2026-09-08.svg"]);
+    assert_eq!(tm.state()["date"], "2026-09-08");
+
+    // Yesterday's file — which the §6.3 auto-close has just closed — is left
+    // exactly as the close left it.
+    let yesterday = tm.read("day/2026-09-07.md");
+    assert!(
+        !yesterday.contains("<!-- tm:plan start 11:00 -->"),
+        "{yesterday}"
+    );
+    assert_eq!(tm.json_at("2026-09-08T11:01:00-05:00", &["now"])["date"], "2026-09-08");
 }
 
 #[test]

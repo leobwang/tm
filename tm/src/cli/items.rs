@@ -12,10 +12,13 @@
 //!
 //! * [`add`] — a new line, with an id assigned when the file wants one
 //!   ([`id_gen`] seeds the generator from `now`, so `--now` makes it
-//!   reproducible). §10.1 has no `add` event; the line is logged as
-//!   `edit{field:"add"}`.
-//! * [`edit`] — `k=v` pairs plus `--set` / `--unset`, one `edit` event per
-//!   field.
+//!   reproducible; an `^id` the text already carries must be free, §4.1).
+//!   §10.1 has no `add` event; the line is logged as `edit{field:"add"}`.
+//! * [`edit`] — `k=v` pairs (typed: `ci`, `est` — the *leading* estimate,
+//!   §4.1 — `title`, `p`, `state`) plus `--set` (a raw `key:value` token) and
+//!   `--unset`, one `edit` event per field. The result is re-parsed before it
+//!   is written, so the CLI never produces a line its own `tm check` rejects
+//!   ([`reject_new_problems`]).
 //! * [`event`] — §5.1: logs `event{name,id}` and flips every `[?]` item the
 //!   name resolves back to `[ ]` with its estimate reset.
 //! * [`skip`] / [`routine`] — today's instance of a routine (§5.1, §5.3).
@@ -31,7 +34,7 @@ use tm_core::horizon;
 use tm_core::log::Event;
 use tm_core::model::{Dur, Horizon, Id, IsoWeek, State, YearMonth};
 use tm_core::recur;
-use tm_core::store::Store;
+use tm_core::store::{edit as text_edit, Store};
 use tm_core::tree::Tree;
 
 use super::ctx::{Ctx, Globals};
@@ -87,10 +90,70 @@ pub struct AddOut {
     pub id: Id,
     /// The file it went into.
     pub file: String,
-    /// The section, when one was given.
+    /// The section it landed in.
     pub section: Option<String>,
     /// The line as written.
     pub line: String,
+}
+
+/// True for a `## series:<name>` heading (§5.4).
+fn is_series(heading: &str) -> bool {
+    heading.trim_start().starts_with("series:")
+}
+
+/// Insert `text` into `path`, and say which section it landed in.
+///
+/// Without an explicit `--section` the line goes at the end of the file —
+/// except that §4.3's `backlog.md` (and the tree `tm init` writes) *ends*
+/// with a `## series:<name>` section, where a new item would be a silent
+/// non-head and therefore invisible to the planner (§5.4: "only the head is
+/// active; the rest are invisible"). So a trailing series section is skipped:
+/// the line goes under the last ordinary heading, or above the first series
+/// heading when there is none.
+fn insert(
+    ctx: &Ctx,
+    path: &str,
+    section: Option<&str>,
+    text: &str,
+) -> Result<Option<String>, CliError> {
+    if let Some(s) = section {
+        ctx.store.insert_line(path, Some(s), text)?;
+        return Ok(Some(s.to_string()));
+    }
+    if !ctx.store.exists(path) {
+        ctx.store.insert_line(path, None, text)?;
+        return Ok(None);
+    }
+    let parsed = ctx.store.read_file(path)?;
+    let headings = text_edit::headings(&parsed);
+    if !headings.last().is_some_and(|h| is_series(&h.text)) {
+        ctx.store.insert_line(path, None, text)?;
+        return Ok(headings.last().map(|h| h.text.clone()));
+    }
+    match headings.iter().rev().find(|h| !is_series(&h.text)) {
+        Some(h) => {
+            let name = h.text.clone();
+            ctx.store.insert_line(path, Some(&name), text)?;
+            Ok(Some(name))
+        }
+        None => {
+            // Every section is a series: the line belongs above them all.
+            let first = headings
+                .first()
+                .map(|h| h.index)
+                .unwrap_or(parsed.lines.len());
+            let line = text.to_string();
+            ctx.store
+                .modify_file(path, &mut |parsed: &tm_core::grammar::ParsedFile| {
+                    let mut lines: Vec<String> =
+                        parsed.lines.iter().map(|l| l.text()).collect();
+                    let at = first.min(lines.len());
+                    lines.insert(at, line.clone());
+                    Ok(Some(format!("{}\n", lines.join("\n"))))
+                })?;
+            Ok(None)
+        }
+    }
 }
 
 /// `tm add "<line>" [--to <file>] [--section <name>]`.
@@ -117,14 +180,25 @@ pub fn add(g: &Globals, args: &super::AddArgs) -> Result<i32, CliError> {
 
     let mut line = ItemLine::parse(&text).map_err(|e| CliError::msg(e.to_string()))?;
     let mut id = line.id().unwrap_or_default();
+    let mut taken = ctx.taken_ids();
     if id.is_empty() && !horizon.allows_missing_state() {
-        let mut taken = ctx.taken_ids();
         let mut gen = id_gen(&ctx, raw);
         id = gen.next_id(&mut taken);
         line.append_id(&id);
         text = line.to_string();
+    } else if !id.is_empty() && taken.contains(id.as_str()) {
+        // §4.1: ids are global across the tree. The capture path must not be
+        // the thing that creates a `tm check` duplicate.
+        return Err(CliError::msg(format!(
+            "{} is already used{} — drop the `^id` and one will be assigned",
+            id.token(),
+            ctx.files
+                .file_of(&id)
+                .map(|f| format!(" in {f}"))
+                .unwrap_or_default()
+        )));
     }
-    ctx.store.insert_line(&path, args.section.as_deref(), &text)?;
+    let section = insert(&ctx, &path, args.section.as_deref(), &text)?;
     let key = if id.is_empty() {
         Id::new(
             grammar::parse_line(&text, &pctx)
@@ -147,7 +221,7 @@ pub fn add(g: &Globals, args: &super::AddArgs) -> Result<i32, CliError> {
     let out = AddOut {
         id: key,
         file: path,
-        section: args.section.clone(),
+        section,
         line: text,
     };
     emit(
@@ -186,21 +260,40 @@ fn split_pair(pair: &str) -> Result<(&str, &str), CliError> {
         .ok_or_else(|| CliError::msg(format!("expected key=value, got {pair:?}")))
 }
 
-/// Apply one `k=v` to a line, returning the change it made.
+/// Apply one `k=v` to a line, returning the change it made. `raw` is `--set`:
+/// the flag documented as writing a `key:value` token verbatim, so it skips
+/// the typed handling of `ci`, `est`, `title`, `p` and `state`.
 fn apply_pair(
     line: &mut ItemLine,
     item: &tm_core::model::Item,
     key: &str,
     value: &str,
     block_min: u32,
+    raw: bool,
 ) -> Result<FieldChange, CliError> {
     let from = match key {
+        _ if raw => line.get(key).unwrap_or_default().to_string(),
         "ci" => item.ci.to_string(),
         "title" => item.title.clone(),
         "p" | "priority" => item.priority.map(|p| p.to_string()).unwrap_or_default(),
         "state" => item.state.as_str().to_string(),
+        // §4.1: the leading estimate is the item's estimate; `est:` is the
+        // tool-written remainder that `tm stop` / a partial `tm done` keep.
+        "est" => item
+            .est_original
+            .as_ref()
+            .map(|d| d.to_string())
+            .unwrap_or_default(),
         other => line.get(other).unwrap_or_default().to_string(),
     };
+    if raw {
+        line.set_token(key, value);
+        return Ok(FieldChange {
+            field: key.to_string(),
+            from,
+            to: value.to_string(),
+        });
+    }
     match key {
         "ci" => {
             let v: u8 = value
@@ -213,15 +306,27 @@ fn apply_pair(
         }
         "title" => line.set_title(value)?,
         "p" | "priority" => {
+            // §4.1's EBNF: `"!" ("1".."4")`.
             let v: u8 = value
                 .parse()
                 .map_err(|_| CliError::msg(format!("priority must be 1–4, got {value:?}")))?;
+            if !(1..=4).contains(&v) {
+                return Err(CliError::msg(format!(
+                    "priority must be 1–4, got {value:?}"
+                )));
+            }
             line.set_priority(Some(v))?;
         }
         "state" => line.set_state(State::parse(value)?)?,
         "est" => {
-            let d = Dur::parse(value, block_min)?;
-            line.set_token("est", &d.to_string());
+            let d = Dur::parse_no_days(value, block_min)?;
+            match line.set_leading_est(Some(d.clone())) {
+                // §4.3: a `routines.md` / `optional.md` line has no state, so
+                // it has no positional estimate slot either — the `est:` key
+                // is the only place the value can go.
+                Err(grammar::EditError::NoState) => line.set_token("est", &d.to_string()),
+                other => other?,
+            }
         }
         other => line.set_token(other, value),
     }
@@ -230,6 +335,36 @@ fn apply_pair(
         from,
         to: value.to_string(),
     })
+}
+
+/// A [`ParseCtx`] for the file an item lives in.
+fn parse_ctx<'a>(item: &'a tm_core::model::Item, block_min: u32) -> ParseCtx<'a> {
+    ParseCtx {
+        horizon: item.horizon.clone(),
+        section: item.src.section.as_deref(),
+        ..ParseCtx::new(&item.src.file, block_min)
+    }
+}
+
+/// Refuse an edit that would write a line the §4.1 grammar does not accept —
+/// `due:notadate`, `max:nonsense`, an unknown value shape. §14 makes the CLI
+/// the sanctioned writer, so it must never produce a tree its own `tm check`
+/// rejects (§1.3). Only problems the line did *not* already have are raised.
+fn reject_new_problems(
+    item: &tm_core::model::Item,
+    line: &ItemLine,
+    block_min: u32,
+) -> Result<(), CliError> {
+    let pctx = parse_ctx(item, block_min);
+    let before: Vec<String> = grammar::parse_line(&item.line().to_string(), &pctx)
+        .map(|i| i.problems)
+        .unwrap_or_default();
+    let after = grammar::parse_line(&line.to_string(), &pctx)
+        .map_err(|e| CliError::msg(format!("{e}: {line}")))?;
+    if let Some(p) = after.problems.iter().find(|p| !before.contains(p)) {
+        return Err(CliError::msg(format!("{p} (§4.1)")));
+    }
+    Ok(())
 }
 
 /// `tm edit ^id [k=v …] [--set k=v] [--unset k]`.
@@ -244,9 +379,14 @@ pub fn edit(g: &Globals, args: &super::EditArgs) -> Result<i32, CliError> {
     let block_min = ctx.block_min();
     let mut line = ctx.line(&id)?;
     let mut changes = Vec::new();
-    for pair in args.pairs.iter().chain(args.set.iter()) {
+    for (pair, raw) in args
+        .pairs
+        .iter()
+        .map(|p| (p, false))
+        .chain(args.set.iter().map(|p| (p, true)))
+    {
         let (k, v) = split_pair(pair)?;
-        changes.push(apply_pair(&mut line, &item, k, v, block_min)?);
+        changes.push(apply_pair(&mut line, &item, k, v, block_min, raw)?);
     }
     for key in &args.unset {
         let from = match key.as_str() {
@@ -267,6 +407,7 @@ pub fn edit(g: &Globals, args: &super::EditArgs) -> Result<i32, CliError> {
             to: String::new(),
         });
     }
+    reject_new_problems(&item, &line, block_min)?;
     ctx.write_line(&id, &line)?;
     for c in &changes {
         ctx.append_event(Event::Edit {
@@ -409,6 +550,48 @@ pub fn demote(g: &Globals, args: &super::IdArgs) -> Result<i32, CliError> {
     Ok(0)
 }
 
+/// Remove the `[-]` line a `tm demote` left behind when the readopt has just
+/// brought the stamped archive copy back into the *same* file.
+///
+/// `tm demote ^id` marks the week line `[-]` and copies it to
+/// `month/…# Demoted`; `tm readopt ^id` moves that copy into the current
+/// week. Within one week that is the file the `[-]` line is still in, and
+/// `tm_core::horizon::readopt` does not remove it — the id would then be on
+/// two lines and `tm check` would exit 2 (§17 M9: the tree must pass
+/// `tm check`). §6.3 makes the stamped copy the record, so the stale `[-]`
+/// line is the one that goes. Upstream fix: `horizon::readopt`.
+fn drop_stale_demotion(ctx: &Ctx, id: &Id, path: &str) -> Result<(), CliError> {
+    let parsed = ctx.store.read_file(path)?;
+    let stale: Vec<usize> = parsed
+        .lines
+        .iter()
+        .enumerate()
+        .filter(|(i, l)| {
+            l.item()
+                .is_some_and(|it| Tree::key_of(it) == *id && it.state == State::Demoted)
+                && !text_edit::is_demoted(&parsed, *i)
+        })
+        .map(|(i, _)| i)
+        .collect();
+    // Only when the readopted line is really a second copy in this file.
+    let live = parsed
+        .items()
+        .filter(|it| Tree::key_of(it) == *id)
+        .count();
+    if stale.is_empty() || live < 2 {
+        return Ok(());
+    }
+    let idx = stale[0];
+    ctx.store
+        .modify_file(path, &mut |parsed: &grammar::ParsedFile| {
+            if parsed.lines.len() <= idx {
+                return Ok(None);
+            }
+            Ok(Some(text_edit::remove_line(parsed, idx).0))
+        })?;
+    Ok(())
+}
+
 /// `tm readopt ^id [--to week]` (§6.3).
 pub fn readopt(g: &Globals, args: &super::ReadoptArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
@@ -419,6 +602,8 @@ pub fn readopt(g: &Globals, args: &super::ReadoptArgs) -> Result<i32, CliError> 
     };
     let rec = Recorder::start(&ctx, "readopt")?;
     let moved = horizon::readopt(&ctx.hz(), &id, to.as_ref())?;
+    ctx.reload()?;
+    drop_stale_demotion(&ctx, &id, &moved.to)?;
     ctx.reload()?;
     rec.finish(&ctx, format!("readopt {}", id.token()))?;
 
@@ -662,9 +847,21 @@ pub fn triage(g: &Globals) -> Result<i32, CliError> {
     };
     let pctx = ParseCtx::new("inbox.md", ctx.block_min());
     let mut lines = Vec::new();
+    // §14: `tm init` fills `inbox.md` with its guidance inside one HTML
+    // comment. Everything between `<!--` and `-->` is commentary, not
+    // capture — previewing it would have `/triage` `tm add` the guidance.
+    let mut in_comment = false;
     for (i, raw) in text.lines().enumerate() {
         let trimmed = raw.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with("<!--") {
+        if in_comment {
+            in_comment = !trimmed.contains("-->");
+            continue;
+        }
+        if trimmed.starts_with("<!--") {
+            in_comment = !trimmed.contains("-->");
+            continue;
+        }
+        if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
         let candidate = if trimmed.starts_with("- ") {

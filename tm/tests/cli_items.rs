@@ -56,8 +56,12 @@ fn edit_changes_fields_byte_faithfully_and_logs_each_one() {
 
     let after = tm.line("backlog.md", "a1");
     assert_ne!(before, after);
-    assert!(after.starts_with("- [ ] 3 30m Insurance claim"), "{after}");
-    assert!(after.contains("est:45m"), "{after}");
+    // §4.1: `est=` is the item's estimate — the *leading* one. `est:` is the
+    // tool-written remainder (`tm stop`, a partial `tm done`), so a hand edit
+    // must not land there: §6.4's `progress` divides by the leading value and
+    // the §4.3 timeline prints it.
+    assert!(after.starts_with("- [ ] 3 45m Insurance claim"), "{after}");
+    assert!(!after.contains("est:"), "{after}");
     assert!(after.contains("loc:out"), "{after}");
 
     let edits: Vec<_> = tm
@@ -69,7 +73,135 @@ fn edit_changes_fields_byte_faithfully_and_logs_each_one() {
     assert_eq!(edits[0]["field"], "ci");
     assert_eq!(edits[0]["from"], "2");
     assert_eq!(edits[0]["to"], "3");
+    // The `est` edit reports the estimate it replaced, not "".
+    assert_eq!(edits[1]["field"], "est");
+    assert_eq!(edits[1]["from"], "30m");
     insta::assert_json_snapshot!("edit_json", json);
+}
+
+#[test]
+fn edit_est_reaches_a_line_with_no_positional_slot() {
+    // §4.3: a `routines.md` line has no state, so it has no leading-estimate
+    // slot; `est:` is where the value goes.
+    let tm = Tm::new();
+    tm.ok(&["edit", "lunch", "est=45m"]);
+    let text = tm.read("routines.md");
+    assert!(text.contains("- lunch"), "{text}");
+    assert!(text.contains("est:45m"), "{text}");
+    assert_eq!(tm.run(&["check"]).code, 0);
+
+    // A line without a leading estimate gains one.
+    tm.ok(&["edit", "^a3", "est=1b"]);
+    let a3 = tm.line("backlog.md", "a3");
+    assert!(a3.starts_with("- [ ] 1 1b Pick up package"), "{a3}");
+}
+
+#[test]
+fn set_writes_a_raw_token_where_the_typed_edit_would_not() {
+    // `--set` is documented as writing a `key:value` token verbatim, which is
+    // how the tool-written `est:` remainder is reachable by hand.
+    let tm = Tm::new();
+    tm.ok(&["edit", "^a1", "--set", "est=45m"]);
+    let after = tm.line("backlog.md", "a1");
+    assert!(after.starts_with("- [ ] 2 30m Insurance claim"), "{after}");
+    assert!(after.contains("est:45m"), "{after}");
+}
+
+#[test]
+fn edit_refuses_a_priority_outside_the_grammar() {
+    // §4.1's EBNF: `token = … | "!" ("1".."4") | …`. Writing `!9` produces a
+    // line `tm check` rejects (`bad-ci`) and that the grammar then re-reads
+    // as title text, so a second `p=` edit would add a *second* token.
+    let tm = Tm::new();
+    let before = tm.line("week/2026-W37.md", "t1");
+    for bad in ["0", "9", "notanumber"] {
+        let out = tm.run(&["edit", "^t1", &format!("p={bad}")]);
+        assert_eq!(out.code, 1, "p={bad} was accepted");
+        assert!(out.stderr.contains("1–4"), "{}", out.stderr);
+    }
+    assert_eq!(tm.line("week/2026-W37.md", "t1"), before);
+    assert_eq!(tm.run(&["check"]).code, 0);
+
+    tm.ok(&["edit", "^t1", "p=2"]);
+    assert!(tm.line("week/2026-W37.md", "t1").contains("!2"));
+}
+
+#[test]
+fn edit_refuses_a_value_its_own_check_would_reject() {
+    // §14 makes the CLI the sanctioned writer; §1.3 means it must never
+    // produce a tree `tm check` fails on.
+    let tm = Tm::new();
+    let t3 = tm.line("week/2026-W37.md", "t3");
+    let bad = tm.run(&["edit", "^t3", "due=notadate"]);
+    assert_eq!(bad.code, 1, "{}{}", bad.stdout, bad.stderr);
+    assert_eq!(tm.line("week/2026-W37.md", "t3"), t3);
+
+    let a1 = tm.line("backlog.md", "a1");
+    let bad = tm.run(&["edit", "^a1", "--set", "max=nonsense"]);
+    assert_eq!(bad.code, 1, "{}{}", bad.stdout, bad.stderr);
+    assert_eq!(tm.line("backlog.md", "a1"), a1);
+
+    // A good value still goes through.
+    tm.ok(&["edit", "^t3", "due=2026-09-11T23:59"]);
+    assert!(tm.line("week/2026-W37.md", "t3").contains("due:2026-09-11T23:59"));
+    assert_eq!(tm.run(&["check"]).code, 0);
+}
+
+#[test]
+fn add_refuses_a_duplicate_id() {
+    // §4.1: "Ids are global across the tree."
+    let tm = Tm::new();
+    let before = tm.read("backlog.md");
+    let out = tm.run(&["add", "3 1b Dup id ^t1", "--to", "backlog"]);
+    assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains("already used"), "{}", out.stderr);
+    assert_eq!(tm.read("backlog.md"), before);
+    assert_eq!(tm.run(&["check"]).code, 0);
+}
+
+#[test]
+fn add_without_a_section_stays_out_of_a_series() {
+    // §5.4: only the head of a `## series:` is active; a captured item that
+    // lands behind the head is invisible to the planner. `backlog.md` ends
+    // with `## series:cell-bio` in §4.3 and in the `tm init` tree.
+    let tm = Tm::new();
+    let json = tm.json(&["add", "2 30m Renew the passport", "--to", "backlog"]);
+    let id = json["id"].as_str().expect("an id").to_string();
+    assert_eq!(json["section"], "Dated, far out");
+
+    let backlog = tm.read("backlog.md");
+    let series = backlog.split("## series:").nth(1).unwrap_or_default();
+    assert!(!series.contains(&id), "landed inside the series: {backlog}");
+
+    // …and it is a candidate the planner can see.
+    let plan = tm.json(&["plan"]);
+    let ids: Vec<&str> = plan["priorities"]
+        .as_array()
+        .expect("priorities")
+        .iter()
+        .filter_map(|p| p["id"].as_str())
+        .collect();
+    assert!(ids.contains(&id.as_str()), "{ids:?}");
+}
+
+#[test]
+fn demote_then_readopt_in_the_same_week_leaves_one_line() {
+    // §6.3: the demote marks the week line `[-]` and copies it to the month's
+    // `# Demoted`; the readopt brings that stamped copy back. Within one week
+    // both land in the same file, and two lines with one id is a `tm check`
+    // error (§17 M9: the tree must pass `tm check`).
+    let tm = Tm::new();
+    tm.ok(&["demote", "^m4"]);
+    assert_eq!(tm.run(&["check"]).code, 0);
+    tm.ok_at("2026-09-07T09:01:00-05:00", &["readopt", "^m4"]);
+
+    let week = tm.read("week/2026-W37.md");
+    assert_eq!(week.matches("^m4").count(), 1, "{week}");
+    let line = tm.line("week/2026-W37.md", "m4");
+    assert!(line.starts_with("- [ ]"), "{line}");
+    assert!(line.contains("demoted:W37"), "the stamp is kept: {line}");
+    let check = tm.run(&["check"]);
+    assert_eq!(check.code, 0, "{}{}", check.stdout, check.stderr);
 }
 
 #[test]
@@ -258,4 +390,22 @@ fn triage_previews_every_inbox_line() {
     assert_eq!(lines.len(), 4);
     assert!(lines[0]["parsed"].is_string());
     insta::assert_json_snapshot!("triage_json", json);
+}
+
+#[test]
+fn triage_skips_the_guidance_comment_tm_init_writes() {
+    // §14/§17 M9: `tm init` fills `inbox.md` with one HTML comment block.
+    // Previewing its lines would have `/triage` `tm add` the guidance — and
+    // the terminator `-->` — as items.
+    let tm = Tm::new();
+    std::fs::write(
+        tm.plan.join("inbox.md"),
+        "<!--\nCapture, untriaged: one thought per line.\n\n    pset 2 due friday night\n-->\n\
+         - a real capture\n",
+    )
+    .expect("write inbox");
+    let json = tm.json(&["triage"]);
+    let lines = json["lines"].as_array().expect("lines");
+    assert_eq!(lines.len(), 1, "{json}");
+    assert_eq!(lines[0]["raw"], "- a real capture");
 }

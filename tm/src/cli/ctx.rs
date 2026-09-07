@@ -13,7 +13,8 @@
 //!   both `FixedOffset` (log timestamps) and `cfg.tz` (everything else).
 //!   [`Ctx::load`] runs the housekeeping of §6.3 (auto-close of the last
 //!   unclosed day/week/month) and §5.1 (waiting items whose timeout has
-//!   elapsed) unless the verb opts out.
+//!   elapsed) unless the verb opts out, and rolls the day-scoped fields of
+//!   `state.json` when the date has moved on ([`roll_day`]).
 //! * Helpers the verbs share: [`Ctx::append_event`] (§10.1),
 //!   [`Ctx::save_state`] (§10.2), [`Ctx::item`] / [`Ctx::line`] /
 //!   [`Ctx::write_line`] (byte-faithful edits through
@@ -104,6 +105,28 @@ pub fn resolve_dir(explicit: Option<&Path>) -> Result<PathBuf, CliError> {
     ))
 }
 
+/// Drop the day-scoped fields of `state` when the local date has moved on
+/// (§10.2: `date` says which day `window`, `budget` and `last_plan_hash`
+/// belong to). Without this the first command of a new day — which need not
+/// be `tm wake` or `tm arrive`, since §6.3's auto-close exists precisely for
+/// the days you run neither — would plan and rewrite *yesterday's* day file
+/// with yesterday's window (§8.1). Returns whether anything changed.
+///
+/// `active`, `break` and `interrupt` are deliberately left alone: a block
+/// started before midnight is still running, and it is `tm wake` that ends
+/// the night (§10.1). `tm done`/`tm stop` close them as usual.
+fn roll_day(state: &mut RuntimeState, today: NaiveDate) -> bool {
+    if !matches!(state.date, Some(d) if d != today) {
+        return false;
+    }
+    state.date = Some(today);
+    state.arrival = None;
+    state.window = None;
+    state.budget = None;
+    state.last_plan_hash = None;
+    true
+}
+
 /// The stored plan behind `--diff` and the hysteresis roll.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -186,6 +209,9 @@ impl Ctx {
 
         let mut closed = Vec::new();
         if housekeeping {
+            if roll_day(&mut state, today) {
+                store.save_state(&state)?;
+            }
             closed = horizon::auto_close(&store, &mut state, today, now, Some(&replay))?;
         }
 
@@ -361,13 +387,20 @@ impl Ctx {
         capacity::local_dt(self.cfg.tz, dt.date(), dt.time())
     }
 
-    /// §8.1's working window and block budget: what `tm arrive` stored, else
-    /// the formula from the arrival (or now).
+    /// §8.1's working window and block budget: what `tm arrive` stored *for
+    /// today*, else the formula from the arrival (or now). A window stored on
+    /// an earlier day is ignored — its times belong to that day, not this one
+    /// (see [`roll_day`], which normally clears it first).
     pub fn window(&self) -> (DateTime<Tz>, DateTime<Tz>, u32) {
+        let today = self.state.date == Some(self.today);
         match (self.state.window, self.state.budget) {
-            (Some((from, to)), Some(budget)) => (self.at(from), self.at(to), budget),
+            (Some((from, to)), Some(budget)) if today => (self.at(from), self.at(to), budget),
             _ => {
-                let arrival = self.state.arrival.map_or(self.now_tz, |t| self.at(t));
+                let arrival = self
+                    .state
+                    .arrival
+                    .filter(|_| today)
+                    .map_or(self.now_tz, |t| self.at(t));
                 let (end, budget) = capacity::window_and_budget(arrival, &self.walls_today(), &self.cfg);
                 (arrival, end, budget)
             }

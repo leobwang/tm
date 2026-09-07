@@ -8,5 +8,6 @@ expression: json
   "hsw": 4.42,
   "loc": "lounge",
   "pred": 5,
-  "rep": 3
+  "rep": 3,
+  "replanned": true
 }

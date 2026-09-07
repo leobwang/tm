@@ -1,0 +1,19 @@
+---
+source: tm/tests/cli_lifecycle.rs
+expression: schema(&json)
+---
+{
+  "exit_code": "integer",
+  "fixed": [],
+  "problems": [
+    {
+      "code": "string",
+      "file": "string",
+      "id": "string",
+      "line": "integer",
+      "message": "string",
+      "severity": "string"
+    }
+  ],
+  "summary": "string"
+}

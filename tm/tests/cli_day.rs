@@ -262,6 +262,227 @@ fn idle_attributes_the_gap() {
 }
 
 #[test]
+fn ending_a_break_unpauses_the_block() {
+    // §10.2's `active.paused`: the break paused the block, ending it must
+    // clear the flag — otherwise the next `tm pause` unpauses.
+    let tm = Tm::new();
+    tm.ok(&["wake", "06:05", "--slept", "8h10m"]);
+    tm.ok(&["start", "^t4", "--energy", "4"]);
+    tm.ok_at("2026-09-07T10:00:00-05:00", &["break", "20m", "--where", "walk"]);
+    assert_eq!(tm.state()["active"]["paused"], true);
+
+    tm.ok_at("2026-09-07T10:22:00-05:00", &["break"]);
+    assert_eq!(tm.state()["active"]["paused"], false);
+    assert!(!tm.run_at("2026-09-07T10:23:00-05:00", &["now"]).stdout.contains("paused"));
+
+    // …so `tm pause` pauses.
+    let p = tm.json_at("2026-09-07T10:24:00-05:00", &["pause"]);
+    assert_eq!(p["paused"], true);
+}
+
+#[test]
+fn stop_ends_a_running_break() {
+    // §11's break integrity needs every break in the log; §10.1's `break`
+    // entry is written when the break ends, so `tm stop` has to end it.
+    let tm = Tm::new();
+    tm.ok(&["wake", "06:05", "--slept", "8h10m"]);
+    tm.ok(&["start", "^t4", "--energy", "4"]);
+    tm.ok_at("2026-09-07T10:00:00-05:00", &["break", "20m"]);
+    tm.ok_at("2026-09-07T10:30:00-05:00", &["stop"]);
+
+    assert_eq!(tm.state()["break"], serde_json::Value::Null);
+    let br = tm
+        .log()
+        .into_iter()
+        .find(|e| e["ev"] == "break")
+        .expect("the break reached the log");
+    assert_eq!(br["planned_min"], 20);
+    assert_eq!(br["actual_min"], 30);
+}
+
+#[test]
+fn worked_minutes_exclude_interrupted_and_paused_time() {
+    // §9: an interruption pauses the block and its minutes are logged once,
+    // as `resume{lost_min}`. Counting them in `done.actual_min` too would
+    // inflate §8.5's duration multiplier and §11's ledgers.
+    let tm = Tm::new();
+    tm.ok(&["wake", "06:05", "--slept", "8h10m"]);
+    tm.ok(&["start", "^t4", "--energy", "4"]);
+    tm.ok_at("2026-09-07T10:00:00-05:00", &["interrupt"]);
+    tm.ok_at("2026-09-07T10:30:00-05:00", &["resume"]);
+    let json = tm.json_at("2026-09-07T11:00:00-05:00", &["done"]);
+    // 09:00 → 11:00 is 120 minutes, 30 of them interrupted.
+    assert_eq!(json["actual_min"], 90);
+    let done = tm
+        .log()
+        .into_iter()
+        .find(|e| e["ev"] == "done")
+        .expect("a done");
+    assert_eq!(done["actual_min"], 90);
+
+    // The same for a pause and for `tm stop`.
+    let tm = Tm::new();
+    tm.ok(&["wake", "06:05", "--slept", "8h10m"]);
+    tm.ok(&["start", "^t4", "--energy", "4"]);
+    tm.ok_at("2026-09-07T09:30:00-05:00", &["pause"]);
+    tm.ok_at("2026-09-07T09:50:00-05:00", &["pause"]);
+    let json = tm.json_at("2026-09-07T10:00:00-05:00", &["stop"]);
+    assert_eq!(json["worked_min"], 40);
+}
+
+#[test]
+fn a_routine_line_is_never_rewritten() {
+    // §5.1: "a recurring item never changes its line"; §4.3: in `routines.md`
+    // the state is omitted and instances live in the log. A `[x]` there would
+    // end the recurrence for good.
+    let tm = Tm::new();
+    let before = tm.read("routines.md");
+    tm.ok(&["start", "lunch", "--energy", "3"]);
+    assert_eq!(tm.read("routines.md"), before, "start rewrote routines.md");
+    assert_eq!(tm.state()["active"]["id"], "lunch");
+
+    tm.ok_at("2026-09-07T09:40:00-05:00", &["done"]);
+    assert_eq!(tm.read("routines.md"), before, "done rewrote routines.md");
+
+    // §10.1: the occurrence is a `routine` event, not a `done{id}`.
+    let last = tm.last();
+    assert_eq!(last["ev"], "routine");
+    assert_eq!(last["item"], "lunch");
+    assert_eq!(last["inst"], "2026-09-07");
+    assert_eq!(last["status"], "done");
+    assert_eq!(last["actual_min"], 40);
+    assert!(!tm.events().contains(&"done".to_string()), "{:?}", tm.events());
+}
+
+#[test]
+fn since_break_min_is_measured_from_the_end_of_the_break() {
+    // §10.1's `start{since_break_min}`: `break.t` is when the break *began*
+    // (the entry is appended when it ends, carrying `actual_min`), so the
+    // working gap starts at `t + actual_min`.
+    let tm = Tm::new();
+    tm.ok(&["wake", "06:05", "--slept", "8h10m"]);
+    tm.ok(&["break", "20m", "--where", "walk"]);
+    tm.ok_at("2026-09-07T09:25:00-05:00", &["break"]);
+    tm.ok_at("2026-09-07T09:30:00-05:00", &["start", "^t4", "--energy", "4"]);
+    let start = tm
+        .log()
+        .into_iter()
+        .find(|e| e["ev"] == "start")
+        .expect("a start");
+    assert_eq!(start["since_break_min"], 5);
+
+    // With no break all day the gap runs from the first block, not from 0.
+    let tm = Tm::new();
+    tm.ok(&["wake", "06:05", "--slept", "8h10m"]);
+    tm.ok(&["start", "^t4", "--energy", "4"]);
+    tm.ok_at("2026-09-07T11:00:00-05:00", &["done"]);
+    tm.ok_at("2026-09-07T11:00:00-05:00", &["start", "^t5", "--energy", "4"]);
+    let second = tm
+        .log()
+        .into_iter()
+        .filter(|e| e["ev"] == "start")
+        .next_back()
+        .expect("the second start");
+    assert_eq!(second["since_break_min"], 120);
+}
+
+#[test]
+fn the_block_machine_survives_a_line_another_writer_removed() {
+    // §1.3: three writers, one file set. If the running block's line is gone,
+    // `tm done` must still close the block — there is no other way out.
+    let tm = Tm::new();
+    tm.ok(&["wake", "06:05", "--slept", "8h10m"]);
+    tm.ok(&["start", "^t4", "--energy", "4"]);
+
+    let path = tm.plan.join("week/2026-W37.md");
+    let text = std::fs::read_to_string(&path).expect("read week");
+    let kept: Vec<&str> = text.lines().filter(|l| !l.contains("^t4")).collect();
+    std::fs::write(&path, format!("{}\n", kept.join("\n"))).expect("write week");
+
+    let out = tm.run_at("2026-09-07T10:00:00-05:00", &["done"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert_eq!(tm.state()["active"], serde_json::Value::Null);
+    assert_eq!(tm.last()["ev"], "done");
+    assert_eq!(tm.last()["actual_min"], 60);
+}
+
+#[test]
+fn a_non_zero_energy_delta_replans() {
+    // §8.5: "Non-zero δ triggers a replan"; §9's table: "slots re-energised".
+    let tm = Tm::new();
+    tm.ok(&["wake", "06:05", "--slept", "8h10m"]);
+    tm.ok(&["arrive", "lounge"]);
+    let plans = tm.events().iter().filter(|e| *e == "plan").count();
+
+    let same = tm.json_at("2026-09-07T10:30:00-05:00", &["energy", "5"]);
+    assert_eq!(same["delta"], 0);
+    assert_eq!(same["replanned"], false);
+
+    let json = tm.json_at("2026-09-07T10:31:00-05:00", &["energy", "3"]);
+    assert_eq!(json["delta"], -2);
+    assert_eq!(json["replanned"], true);
+    // The plan was rewritten from `now`: §4.3's generated block is re-stamped.
+    assert!(
+        tm.read("day/2026-09-07.md").contains("<!-- tm:plan start 10:31 -->"),
+        "{}",
+        tm.read("day/2026-09-07.md")
+    );
+    assert!(tm.exists(".tm/last_plan.json"));
+    // The placeholder planner returns the same empty day, so §10.1's `plan`
+    // event is (rightly) not repeated for a day that did not move.
+    assert_eq!(tm.events().iter().filter(|e| *e == "plan").count(), plans);
+}
+
+#[test]
+fn the_day_file_carries_the_runtime_front_matter_and_the_log() {
+    // §4.3's day file: `wake`, `slept`, `loc`, `window`, `budget` in the
+    // front matter and an append-only `## Log`. §14 forbids Claude Code from
+    // writing `## Log` and §1.2 gives `emit.rs` only the generated section,
+    // so the CLI is the only writer of either.
+    let tm = Tm::new();
+    tm.ok_at("2026-09-07T08:15:00-05:00", &["wake", "08:15", "--slept", "6h"]);
+    tm.ok_at("2026-09-07T08:30:00-05:00", &["arrive", "home"]);
+    tm.ok_at("2026-09-07T08:35:00-05:00", &["start", "^t4", "--energy", "4"]);
+    tm.ok_at("2026-09-07T09:35:00-05:00", &["done", "--went", "1"]);
+
+    let day = tm.read("day/2026-09-07.md");
+    let front: Vec<&str> = day
+        .split("---")
+        .nth(1)
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .collect();
+    // §4.3's own order: date, wake, slept, loc, window, budget.
+    assert_eq!(
+        front,
+        [
+            "date: 2026-09-07",
+            "wake: 08:15",
+            "slept: 6h",
+            "loc: home",
+            "window: 08:30..17:30",
+            "budget: 6",
+        ],
+        "{day}"
+    );
+
+    let log = day.split("## Log").nth(1).unwrap_or_default();
+    assert!(log.contains("08:15 wake slept=6h"), "{day}");
+    assert!(log.contains("08:30 arrive home"), "{day}");
+    assert!(log.contains("08:35 start ^t4 pred="), "{day}");
+    assert!(log.contains("09:35 done ^t4 60m/60m went=1"), "{day}");
+
+    // A day file the CLI creates has the whole §4.3 skeleton.
+    let tm = Tm::new();
+    tm.ok_at("2026-09-08T08:30:00-05:00", &["arrive", "lounge"]);
+    let day = tm.read("day/2026-09-08.md");
+    for section in ["# Pinned", "## Log", "## Notes", "<!-- tm:plan start"] {
+        assert!(day.contains(section), "missing {section} in {day}");
+    }
+}
+
+#[test]
 fn starting_a_second_block_is_refused() {
     let tm = Tm::new();
     tm.ok(&["wake", "06:05", "--slept", "8h10m"]);

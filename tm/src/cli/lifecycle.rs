@@ -129,6 +129,29 @@ pub struct SyncOut {
     pub warnings: Vec<String>,
 }
 
+/// The feed reader `tm sync-cal` uses: HTTP for the Google Calendar private
+/// addresses §15 names, and the local file for a `file://…` (or plain path)
+/// `ics_urls` entry — an exported `.ics` on disk is a legitimate feed, and it
+/// is what makes §17 M9's "sync against a fixture `.ics`" testable through
+/// the CLI rather than only through `ics.rs`.
+struct CliFetcher;
+
+impl ics::Fetcher for CliFetcher {
+    fn fetch(&self, url: &str) -> Result<String, ics::IcsError> {
+        let local = url
+            .strip_prefix("file://")
+            .map(str::to_string)
+            .or_else(|| (!url.contains("://")).then(|| url.to_string()));
+        match local {
+            Some(path) => std::fs::read_to_string(&path).map_err(|e| ics::IcsError::Body {
+                url: url.to_string(),
+                source: e,
+            }),
+            None => ics::fetch(url),
+        }
+    }
+}
+
 /// Fetch the feeds and write `calendar/<week>.md` (§15). Returns what
 /// changed; a directory with no `ics_urls` is a no-op with a warning.
 pub fn sync_calendar(ctx: &Ctx) -> Result<SyncOut, CliError> {
@@ -146,7 +169,7 @@ pub fn sync_calendar(ctx: &Ctx) -> Result<SyncOut, CliError> {
             existing.push((w, ctx.store.read_text(&path)?));
         }
     }
-    let result = ics::sync_report(&ics::HttpFetcher, &ctx.cfg, ctx.today, &existing)?;
+    let result = ics::sync_report(&CliFetcher, &ctx.cfg, ctx.today, &existing)?;
     let mut out = SyncOut {
         events: result.events.len(),
         warnings: result.warnings.clone(),

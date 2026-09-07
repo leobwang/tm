@@ -11,9 +11,13 @@
 //!   length of `.tm/log.jsonl` before the command runs;
 //!   [`Recorder::finish`] diffs all three and pushes one [`UndoEntry`].
 //! * [`undo`] pops the top entry, appends one `undo` event per event that
-//!   entry wrote (most recent first), restores the bytes of every file it
-//!   changed and puts `state.json` back — except `closed`, which stays as it
-//!   is so the §6.3 auto-close does not run a second time.
+//!   entry wrote (most recent first, or one named after the verb when it
+//!   wrote none), restores the bytes of every file it changed and puts
+//!   `state.json` back — `closed` too when the undone command was a
+//!   `tm close`, so §6.3's auto-close sees the period as open again. A file
+//!   that has changed since — one of the other two writers of §1.3 — stops
+//!   the undo with a `Conflict` (§13's exit code 3) rather than being
+//!   clobbered.
 //! * [`UndoStack`] keeps the last [`MAX_ENTRIES`] commands.
 //!
 //! `state.json` (§10.2) has no field for this stack, so it lives beside it in
@@ -23,7 +27,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use tm_core::log::{Event, Log};
-use tm_core::store::{RuntimeState, Store, StoreExt, LOG_PATH};
+use tm_core::model::Id;
+use tm_core::store::{RuntimeState, Store, StoreError, StoreExt, LOG_PATH};
 
 use super::ctx::Ctx;
 use super::out::CliError;
@@ -42,13 +47,18 @@ pub struct UndoneEvent {
     pub id: Option<String>,
 }
 
-/// One file as it stood before a command.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// One file as it stood before a command, and as the command left it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct FileBefore {
     /// Path relative to the plan root.
     pub path: String,
     /// The text before; `None` when the command created the file.
     pub before: Option<String>,
+    /// The text the command left; `None` when it removed the file. The undo
+    /// refuses to restore a file that no longer matches this (§1.3: the
+    /// other two writers own the same files).
+    pub after: Option<String>,
 }
 
 /// One undoable command.
@@ -145,10 +155,12 @@ impl Recorder {
                 Some(before) => files.push(FileBefore {
                     path: path.clone(),
                     before: Some(before.clone()),
+                    after: Some(text.clone()),
                 }),
                 None => files.push(FileBefore {
                     path: path.clone(),
                     before: None,
+                    after: Some(text.clone()),
                 }),
             }
         }
@@ -157,6 +169,7 @@ impl Recorder {
                 files.push(FileBefore {
                     path: path.clone(),
                     before: Some(before.clone()),
+                    after: None,
                 });
             }
         }
@@ -224,7 +237,36 @@ pub fn undo(ctx: &mut Ctx) -> Result<Undone, CliError> {
         return Err(CliError::msg("nothing to undo"));
     };
 
-    // 1. The log is append-only: cancel each event with an `undo` (§10.1).
+    // 1. §1.3's guard: every file this would restore must still hold exactly
+    //    what the undone command left, or another writer's work would be
+    //    silently discarded. A mismatch is a `Conflict` (§13's exit code 3),
+    //    with both texts, and the entry stays on the stack.
+    for f in &entry.files {
+        let current = ctx
+            .store
+            .exists(&f.path)
+            .then(|| ctx.store.read_text(&f.path))
+            .transpose()?;
+        if current != f.after {
+            return Err(CliError::from(StoreError::Conflict {
+                id: Id::new(""),
+                file: f.path.clone(),
+                ours: f.after.clone().unwrap_or_default(),
+                theirs: current.unwrap_or_default(),
+            }));
+        }
+    }
+
+    // 2. The log is append-only: cancel each event with an `undo` (§10.1).
+    //    A verb that changed a file without logging anything (`tm rank`, §7.4
+    //    — rank is line order) still gets one, named after the verb, so the
+    //    change and its reversal are both visible to a replay.
+    if entry.events.is_empty() {
+        ctx.append_event(Event::Undo {
+            of: entry.verb.clone(),
+            id: None,
+        })?;
+    }
     for e in entry.events.iter().rev() {
         ctx.append_event(Event::Undo {
             of: e.ev.clone(),
@@ -232,7 +274,7 @@ pub fn undo(ctx: &mut Ctx) -> Result<Undone, CliError> {
         })?;
     }
 
-    // 2. Put the file bytes back.
+    // 3. Put the file bytes back.
     let mut restored = Vec::new();
     for f in &entry.files {
         match &f.before {
@@ -249,10 +291,16 @@ pub fn undo(ctx: &mut Ctx) -> Result<Undone, CliError> {
         restored.push(f.path.clone());
     }
 
-    // 3. Put `state.json` back — but keep `closed`, so the §6.3 auto-close
-    //    does not run a second time over periods it has already closed.
+    // 4. Put `state.json` back. `closed` (§10.2) comes back only when the
+    //    undone command is the one that closed a period: §6.3's auto-close is
+    //    keyed on it, so an undone `tm close` whose files are restored must
+    //    leave the period open again — while an unrelated verb must not roll
+    //    back a stamp some later auto-close has set.
+    let closed_by_this = entry.events.iter().any(|e| e.ev == "close");
     let mut state = entry.state.clone();
-    state.closed = ctx.state.closed.clone();
+    if !closed_by_this {
+        state.closed = ctx.state.closed.clone();
+    }
     ctx.state = state;
     ctx.save_state()?;
     stack.save(ctx)?;

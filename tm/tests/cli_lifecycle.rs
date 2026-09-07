@@ -116,6 +116,54 @@ fn sync_cal_without_feeds_is_a_no_op_with_a_warning() {
 }
 
 #[test]
+fn sync_cal_writes_the_calendar_and_keeps_manual_lines() {
+    // §15 / §17 M9: "sync against a fixture `.ics` preserves `manual` lines
+    // and stable ids".
+    let tm = Tm::new();
+    let ics = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../tm-core/tests/fixtures/sample.ics")
+        .canonicalize()
+        .expect("the fixture feed");
+    let cfg = tm.plan.join("config.toml");
+    let text = std::fs::read_to_string(&cfg).expect("read config");
+    std::fs::write(
+        &cfg,
+        text.replace(
+            "ics_urls       = []",
+            &format!("ics_urls       = [\"file://{}\"]", ics.display()),
+        ),
+    )
+    .expect("write config");
+
+    let json = tm.json(&["sync-cal"]);
+    assert!(json["events"].as_u64().unwrap_or(0) > 0, "{json}");
+    let files: Vec<&str> = json["files"]
+        .as_array()
+        .expect("files")
+        .iter()
+        .filter_map(|f| f.as_str())
+        .collect();
+    assert!(files.contains(&"calendar/2026-W37.md"), "{files:?}");
+    assert_eq!(json["weeks"].as_array().map(Vec::len), Some(3));
+
+    let week = tm.read("calendar/2026-W37.md");
+    assert!(week.contains("manual"), "the manual line survives: {week}");
+    assert!(week.contains("^g4"), "with its id: {week}");
+    let ids: Vec<String> = week
+        .lines()
+        .filter_map(|l| l.split_whitespace().find(|w| w.starts_with('^')))
+        .map(str::to_string)
+        .collect();
+    assert!(ids.len() > 1, "{week}");
+
+    // A re-sync is byte-identical: the ids are stable (§15).
+    let again = tm.json_at("2026-09-07T09:05:00-05:00", &["sync-cal"]);
+    assert_eq!(again["files"].as_array().map(Vec::len), Some(0), "{again}");
+    assert_eq!(tm.read("calendar/2026-W37.md"), week);
+    assert_eq!(tm.run(&["check"]).code, 0);
+}
+
+#[test]
 fn model_show_fit_and_compare() {
     let tm = Tm::new();
     tm.ok(&["wake", "06:05", "--slept", "8h10m"]);
@@ -183,6 +231,20 @@ fn check_passes_on_the_fixture_and_fails_on_a_duplicate_id() {
     let out = tm.run(&["check"]);
     assert_eq!(out.code, 2, "{}{}", out.stdout, out.stderr);
     assert!(out.stdout.contains("dup-id"), "{}", out.stdout);
+
+    // The shape of a problem is the half of the contract §14's integration
+    // consumes; the clean snapshot above only pins the empty arrays.
+    let broken = tm.run(&["--json", "check"]);
+    assert_eq!(broken.code, 2, "{}{}", broken.stdout, broken.stderr);
+    let json: serde_json::Value =
+        serde_json::from_str(&broken.stdout).expect("check --json is JSON");
+    assert_eq!(json["exit_code"], 2);
+    assert!(json["problems"]
+        .as_array()
+        .expect("problems")
+        .iter()
+        .any(|p| p["code"] == "dup-id" && p["severity"] == "error"));
+    insta::assert_json_snapshot!("check_problems_schema", schema(&json));
 }
 
 #[test]

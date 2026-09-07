@@ -186,6 +186,65 @@ fn undo_unwinds_the_stack_one_command_at_a_time() {
 }
 
 #[test]
+fn undo_of_a_close_reopens_the_period() {
+    // §17 M5: "`tm undo` compensates each state change". §6.3's auto-close is
+    // keyed on `state.closed`, so leaving the day marked closed while its
+    // files are back would strand it — it would never be closed again.
+    let tm = Tm::new();
+    let week = tm.read("week/2026-W37.md");
+    tm.ok_at("2026-09-07T21:00:00-05:00", &["close", "day"]);
+    assert_eq!(tm.state()["closed"]["day"], "2026-09-07");
+    assert!(tm.read("week/2026-W37.md").contains("^p1"));
+
+    tm.ok_at("2026-09-07T21:01:00-05:00", &["undo"]);
+    assert_eq!(tm.read("week/2026-W37.md"), week);
+    // The auto-close of *earlier* periods stands; this day is open again.
+    assert_eq!(tm.state()["closed"]["day"], "2026-09-06");
+    // One `undo` per event the close wrote: the pinned item's `demote` and
+    // the `close` itself (§10.1), most recent first.
+    assert_eq!(undone(&tm), vec!["close", "demote"]);
+}
+
+#[test]
+fn undo_of_a_verb_that_logs_nothing_still_leaves_a_trace() {
+    // §13: `tm undo` is "a compensating event for the last state change".
+    // `tm rank` rewrites line order (§7.4: rank *is* line order) and logs
+    // nothing, so without this the change and its reversal are both invisible.
+    let tm = Tm::new();
+    tm.ok_at("2026-09-07T06:05:00-05:00", &["wake", "06:05", "--slept", "8h"]);
+    let week = tm.read("week/2026-W37.md");
+    tm.ok(&["rank", "^m3", "1"]);
+    assert_ne!(tm.read("week/2026-W37.md"), week);
+
+    tm.ok_at("2026-09-07T09:01:00-05:00", &["undo"]);
+    assert_eq!(tm.read("week/2026-W37.md"), week);
+    assert_eq!(undone(&tm), vec!["rank"]);
+}
+
+#[test]
+fn undo_refuses_to_discard_another_writers_change() {
+    // §1.3: three writers, one file set. Restoring a whole file would throw
+    // away everything VS Code or Claude Code wrote since — so a file that no
+    // longer holds what the undone command left is §13's exit code 3.
+    let tm = Tm::new();
+    tm.ok(&["wake", "06:05", "--slept", "8h10m"]);
+    tm.ok(&["start", "^t3", "--energy", "4"]);
+    tm.ok_at("2026-09-07T10:00:00-05:00", &["done"]);
+
+    let path = tm.plan.join("week/2026-W37.md");
+    let mut text = std::fs::read_to_string(&path).expect("read week");
+    text.push_str("- [ ] 3 1b Written by Claude Code   @m2 ^zz1\n");
+    std::fs::write(&path, &text).expect("write week");
+
+    let out = tm.run_at("2026-09-07T10:01:00-05:00", &["undo"]);
+    assert_eq!(out.code, 3, "{}{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains("conflict"), "{}", out.stderr);
+    assert_eq!(std::fs::read_to_string(&path).expect("read week"), text);
+    // The entry is still on the stack: nothing was half-undone.
+    assert!(tm.line("week/2026-W37.md", "t3").starts_with("- [x]"));
+}
+
+#[test]
 fn undo_with_an_empty_stack_is_an_error() {
     let tm = Tm::new();
     let out = tm.run(&["undo"]);

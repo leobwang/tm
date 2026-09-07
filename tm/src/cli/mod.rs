@@ -13,7 +13,8 @@
 //!   of §9), [`planning`] (`plan`, `now`), [`items`] (the file verbs of §6.3
 //!   and §13), [`lifecycle`] (`close`, `review`, `sync-cal`, `model`, `log`,
 //!   `check`, `undo`, `tui`), with [`render`] turning a `DayPlan` into the
-//!   generated day section and the day-bar SVG.
+//!   generated day section and the day-bar SVG and [`dayfile`] keeping §4.3's
+//!   day-file front matter and `## Log`.
 //!
 //! Housekeeping: every verb but `init`, `check`, `log`, `undo` and `tui`
 //! loads the plan directory through [`ctx::Ctx::load`], which first runs the
@@ -23,6 +24,7 @@
 
 pub mod ctx;
 pub mod day;
+pub mod dayfile;
 pub mod init;
 pub mod items;
 pub mod lifecycle;

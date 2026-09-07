@@ -21,7 +21,7 @@ use chrono::Timelike;
 use serde::Serialize;
 use tm_core::capacity::{self, DayCapacity};
 use tm_core::log::Event;
-use tm_core::model::{Horizon, Id, IsoWeek};
+use tm_core::model::{Id, IsoWeek};
 use tm_core::planner::{self, DayPlan, Diagnostics, PlanInput, SegKind};
 use tm_core::priority::{self, Prio};
 use tm_core::store::Store;
@@ -252,7 +252,9 @@ pub fn write_plan(ctx: &mut Ctx, plan: &DayPlan, prios: &[Prio]) -> Result<Vec<S
     let mut wrote = Vec::new();
 
     let body = render::timeline(plan, &ctx.tree, &ctx.cfg);
-    let day_path = Horizon::Day(plan.date).path();
+    // §4.3: a day file the CLI creates gets the whole skeleton, not just the
+    // front matter — `# Pinned`, `## Log` and `## Notes` are the human half.
+    let day_path = super::dayfile::ensure(ctx, plan.date)?;
     let stamp = hhmm(ctx.now_tz);
     ctx.store
         .replace_generated_stamped(&day_path, "plan", Some(&stamp), &body)?;
