@@ -86,6 +86,7 @@ expression: review()
     ],
     "total_min": 360,
     "high_min": 280,
+    "budget_min": 360,
     "high_share": 78,
     "underused": 1
   },

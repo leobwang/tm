@@ -35,6 +35,9 @@
 //! * [`MonthReview`] + [`month_review`] + [`render_month`] — outcomes done
 //!   and not, demotion churn, carry-over week over week and the proposed cut
 //!   list (anything with ≥ [`CUT_STAMPS`] stamps).
+//! * [`WaitingRow`] + [`waiting`] + [`render_waiting`] — §11's "Waiting" row
+//!   (items in `[?]` with days waiting and timeout), whose surface is §12.3's
+//!   Necessities screen rather than a review.
 //! * [`write_day_review`] — puts rendered text into the day file's
 //!   `<!-- tm:review start --> … <!-- tm:review end -->` block, the one
 //!   [`horizon::close_day`] leaves behind as a
@@ -54,11 +57,14 @@
 //!    gives the same quantity in blocks for readers who want a small number.
 //!    Blocks the log cannot attribute a `ci` to (a block cut by `stop`, see
 //!    [`log::DayReplay::ci_unknown`]) are attributed from the tree here, so
-//!    the day review's load and energy mix cover every logged minute.
+//!    the day review's load and energy mix cover every logged minute. An
+//!    item the tree no longer holds is attributed `ci 0`: it adds nothing to
+//!    the load, but its minutes stay in [`EnergyMix::total_min`].
 //! 2. **Leak ledger** = `idle{attributed:"leak"}` minutes **plus**
-//!    unattributed gaps of at least `cfg.day.idle_min`
-//!    ([`log::DayReplay::gaps`]), per §11. "Longest single leak" is the
-//!    longest of either kind.
+//!    unattributed gaps *longer than* `cfg.day.idle_min` (§11's strict
+//!    inequality; [`log::DayReplay::gaps`] keeps gaps of at least its
+//!    argument, so it is asked for `idle_min + 1`). "Longest single leak" is
+//!    the longest of either kind.
 //! 3. **Adherence** needs the plan as it stood at arrival, which is not in
 //!    the log; it is the `plan_at_arrival` parameter (§12.1's ghost row).
 //!    A planned block counts as started when a `start` for its id happened
@@ -76,7 +82,12 @@
 //!    [`EnergyReview::mae_learned`] additionally re-score the config prior
 //!    and the learned model with [`energy::compare`]. The bias flip hour is
 //!    the first hour whose bias sign is opposite to the first non-zero hour's
-//!    and after which that first sign never returns.
+//!    and after which that first sign never returns. Both the hourly rows
+//!    and §12.4's `pred … rep …` cells run in the day's own order, forwards
+//!    from the first observation to the last: a day runs wake to wake
+//!    (§10.1), so an observation after midnight is the *end* of the day, not
+//!    its beginning, and the row never reaches back to hours the day never
+//!    lived through.
 //! 6. **Estimate calibration** is computed over the *whole* replay's
 //!    duration observations, not only the day's: §12.4's `lean ×1.6 (n=9)`
 //!    is a running multiplier, and a single day never has nine.
@@ -103,16 +114,26 @@
 //!    latter differing from [`crate::priority::fmt_blocks`] only in that it
 //!    prints a half block as `0.5b` rather than `30m`, which is what §12.4's
 //!    `t5 (0.5b → week)` shows.
-//! 11. **What is not here.** §11's "Waiting" row belongs to the Necessities
-//!    screen (§12.3), not to a review, and needs no log: it is
-//!    `Tree::waiting_ids` plus the `waiting:` stamp. The day bar and the
-//!    week's stacked bars are drawings; this module supplies their numbers
-//!    ([`DayHeat`], [`EnergyMix`]) and leaves the drawing to the TUI.
+//! 11. **Energy mix** is §11's share *of budget*: [`EnergyMix::high_share`]
+//!    is `high_min / budget_min`, where `budget_min` is the block budget
+//!    (§8.1) in minutes — the day's own budget, and for a week the sum of
+//!    the budgets of the days the log knows. A day that works half its
+//!    budget at `ci 5` therefore reads 50%, not 100%, and a day that
+//!    overshoots its budget can read over 100%. The minutes actually worked
+//!    stay in [`EnergyMix::total_min`].
+//! 12. **Break integrity** counts a break as over-run at *more* than
+//!    [`BREAK_OVERRUN_FACTOR`]× its planned length (§11's "share > 2×"), so
+//!    a break of exactly twice its plan does not count.
+//! 13. **What is not here.** §11's "Waiting" row has no review surface — it
+//!    is the Necessities screen (§12.3) — but its data is [`waiting`]. The
+//!    day bar and the week's stacked bars are drawings; this module supplies
+//!    their numbers ([`DayHeat`], [`EnergyMix`]) and leaves the drawing to
+//!    the TUI.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
 
-use chrono::{DateTime, Duration, NaiveDate, NaiveTime, Timelike};
+use chrono::{DateTime, Duration, FixedOffset, NaiveDate, NaiveTime, Timelike};
 use chrono_tz::Tz;
 use serde::Serialize;
 use thiserror::Error;
@@ -151,6 +172,11 @@ pub const HEAT_HOURS: usize = 24;
 
 /// Styles counted per heat-grid cell (see [`Style`]).
 pub const HEAT_STYLES: usize = 7;
+
+/// The most cells §12.4's `energy pred … rep …` row can hold. A day runs
+/// wake to wake, so a long one still fits inside a day and a bit; the cap is
+/// only there to bound a log whose timestamps run away.
+const MAX_ENERGY_HOURS: usize = 48;
 
 /// Errors from writing a review into the day file.
 #[derive(Debug, Error)]
@@ -388,7 +414,8 @@ pub fn render_status_full(head: &StatusHead, s: &StatusLine) -> String {
 pub struct LeakLedger {
     /// Σ `idle{attributed:"leak"}` minutes.
     pub attributed_min: u32,
-    /// Σ unattributed gaps of at least `cfg.day.idle_min`.
+    /// Σ unattributed gaps longer than `cfg.day.idle_min` (§11's strict
+    /// `> idle_min`).
     pub gap_min: u32,
     /// The two above.
     pub total_min: u32,
@@ -400,7 +427,9 @@ fn leak(day: Option<&DayReplay>, cfg: &Config) -> LeakLedger {
     let Some(day) = day else {
         return LeakLedger::default();
     };
-    let gaps = day.gaps(cfg.day.idle_min);
+    // §11 counts gaps *longer* than `idle_min`; `DayReplay::gaps` keeps gaps
+    // of at least its argument, so ask it for one minute more.
+    let gaps = day.gaps(cfg.day.idle_min.saturating_add(1));
     let gap_min = gaps.iter().fold(0u32, |a, (s, e)| {
         a.saturating_add(e.signed_duration_since(*s).num_minutes().max(0) as u32)
     });
@@ -490,6 +519,92 @@ fn window_of(day: &DayReplay) -> Option<(NaiveTime, NaiveTime)> {
 }
 
 // ---------------------------------------------------------------------------
+// Waiting (§11, §12.3)
+// ---------------------------------------------------------------------------
+
+/// One `[?]` item of §11's "Waiting" monitor: how long it has waited and when
+/// the wait times out. §12.3 draws it as `? a4 Prof. Lee reply 2d / 7d`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct WaitingRow {
+    /// The item.
+    pub id: Id,
+    /// Its title.
+    pub title: String,
+    /// The event it waits for (`on-event:reply/7d` → `reply`).
+    pub event: Option<String>,
+    /// `waiting:<date>` as written.
+    pub since: Option<NaiveDate>,
+    /// Days waited so far (0 without a `waiting:` stamp).
+    pub days_waiting: i64,
+    /// Whole days the timeout allows (`7d` → 7), when there is one.
+    pub timeout_days: Option<i64>,
+    /// The date the timeout elapses, when both the stamp and the timeout are
+    /// there.
+    pub timeout_at: Option<NaiveDate>,
+    /// `today` is past `timeout_at` (§5.1: the day *after* the timeout date),
+    /// so the wait ends by timeout.
+    pub expired: bool,
+    /// The `tm event` that already resolved the wait, if the log has one.
+    pub arrived: Option<DateTime<FixedOffset>>,
+}
+
+/// §11's "Waiting" row: every item in state `[?]`, with the days it has
+/// waited and its timeout (§12.3's Necessities screen).
+///
+/// The data is the tree's — [`Tree::waiting_ids`] and
+/// [`crate::recur::waiting_state`] — plus, from the log, the `tm event` that
+/// has already resolved the wait. Rows keep the tree's order.
+pub fn waiting(tree: &Tree, replay: &Replay, today: NaiveDate, cfg: &Config) -> Vec<WaitingRow> {
+    tree.waiting_ids()
+        .into_iter()
+        .filter_map(|id| {
+            let item = tree.get(&id)?;
+            let state = crate::recur::waiting_state(item, replay, today, cfg)?;
+            let (event, timeout_days) = match &item.recur {
+                crate::model::Recur::OnEvent { name, timeout } => (
+                    Some(name.clone()),
+                    timeout.map(|t| i64::from(t.as_minutes()) / 1440),
+                ),
+                _ => (None, None),
+            };
+            Some(WaitingRow {
+                id,
+                title: item.title.clone(),
+                event,
+                since: state.since,
+                days_waiting: state.days_waiting,
+                timeout_days,
+                timeout_at: state.timeout_at,
+                expired: state.expired,
+                arrived: state.arrived,
+            })
+        })
+        .collect()
+}
+
+/// §12.3's Waiting panel, one line per row: `? a4 reply 2d / 7d`.
+pub fn render_waiting(rows: &[WaitingRow]) -> String {
+    let mut out = String::new();
+    for r in rows {
+        let mut line = format!(" ? {} {}", r.id, r.title);
+        if let Some(event) = &r.event {
+            let _ = write!(line, " · {event}");
+        }
+        let _ = write!(line, " · {}d", r.days_waiting);
+        if let Some(days) = r.timeout_days {
+            let _ = write!(line, " / {days}d");
+        }
+        if r.expired {
+            line.push_str(" · timed out");
+        } else if r.arrived.is_some() {
+            line.push_str(" · arrived");
+        }
+        let _ = writeln!(out, "{line}");
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
 // Day review (§12.4)
 // ---------------------------------------------------------------------------
 
@@ -502,7 +617,7 @@ pub struct BreakRow {
     pub actual_min: u32,
     /// `walk`, `seat`, `bed`, `phone`, …
     pub place: Option<String>,
-    /// `actual ≥ 2 × planned`.
+    /// `actual > 2 × planned` (§11's strict `> 2×`).
     pub over: bool,
 }
 
@@ -516,7 +631,7 @@ pub struct BreakIntegrity {
     pub planned_min: u32,
     /// Σ actual minutes.
     pub actual_min: u32,
-    /// Breaks at or over [`BREAK_OVERRUN_FACTOR`]× their planned length.
+    /// Breaks longer than [`BREAK_OVERRUN_FACTOR`]× their planned length.
     pub over_count: usize,
     /// `over_count / breaks.len()`.
     pub over_share: Option<u8>,
@@ -528,7 +643,8 @@ fn break_integrity(breaks: &[BreakRecord]) -> BreakIntegrity {
     let mut out = BreakIntegrity::default();
     for b in breaks {
         let actual = b.actual_or_planned();
-        let over = actual >= b.planned_min.saturating_mul(BREAK_OVERRUN_FACTOR) && b.planned_min > 0;
+        // §11: "share > 2×" — a break of exactly twice its plan is not over.
+        let over = actual > b.planned_min.saturating_mul(BREAK_OVERRUN_FACTOR) && b.planned_min > 0;
         out.planned_min = out.planned_min.saturating_add(b.planned_min);
         out.actual_min = out.actual_min.saturating_add(actual);
         if over {
@@ -549,23 +665,31 @@ fn break_integrity(breaks: &[BreakRecord]) -> BreakIntegrity {
     out
 }
 
-/// §11 energy mix: minutes at each `ci`, the share of the day at `ci ≥ 4`,
-/// and the count of under-used slots the planner reported.
+/// §11 energy mix: minutes at each `ci`, the share **of the budget** at
+/// `ci ≥ 4`, and the count of under-used slots the planner reported.
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct EnergyMix {
     /// Block minutes at each `ci` (index = ci).
     pub minutes_by_ci: [u32; 6],
-    /// Σ of the above.
+    /// Σ of the above: the minutes actually worked.
     pub total_min: u32,
     /// Minutes at `ci ≥ 4`.
     pub high_min: u32,
-    /// `high_min / total_min`.
+    /// The budget those minutes are measured against, in minutes: the block
+    /// budget (§8.1) × `block_min`, summed over the days covered.
+    pub budget_min: u32,
+    /// §11's "share of budget with `ci ≥ 4`": `high_min / budget_min`, so a
+    /// day that works half its budget at `ci 5` reads 50%, not 100%. `None`
+    /// when there is no budget to divide by. It can exceed 100 on a day that
+    /// overshoots its budget.
     pub high_share: Option<u8>,
     /// Slots the planner flagged `↓` (gap ≥ 2) — a parameter.
     pub underused: usize,
 }
 
-/// One hour of §12.4's `energy pred … rep …` row.
+/// One hour of §12.4's `energy pred … rep …` row. The cells run forwards in
+/// time, so a wake-to-wake day that crosses midnight ends on a smaller clock
+/// hour than it started on.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub struct EnergyHour {
     /// Clock hour.
@@ -587,7 +711,9 @@ pub struct EnergyReview {
     pub mae: f64,
     /// Mean signed error `rep − pred` of the logged prediction.
     pub bias: f64,
-    /// `(hour, n, mae, bias)`.
+    /// `(hour, n, mae, bias)`, in the order the day met them: a day runs
+    /// wake to wake (§10.1), so an hour after midnight comes last, not
+    /// first.
     pub by_hour: Vec<(u32, usize, f64, f64)>,
     /// The hour after which the bias sign flips, when it flips once.
     pub flip_hour: Option<u32>,
@@ -744,11 +870,19 @@ pub fn day_review(
 ) -> DayReview {
     let day = replay.day(date);
     let block_min = cfg.block_min().max(1);
+    let budget = extras
+        .budget
+        .or_else(|| day.and_then(|d| d.budget))
+        .unwrap_or_else(|| crate::capacity::budget_blocks(cfg));
 
     // Load and energy mix: start from what the log knows, then attribute the
     // blocks it has no `ci` for (cut blocks) from the tree.
     let (minutes_by_ci, load) = mix_and_load(day.into_iter(), tree);
-    let mix = energy_mix(minutes_by_ci, extras.underused);
+    let mix = energy_mix(
+        minutes_by_ci,
+        budget.saturating_mul(block_min),
+        extras.underused,
+    );
 
     let obs: Vec<log::EnergyObs> = day
         .map(|d| {
@@ -762,12 +896,14 @@ pub fn day_review(
         .unwrap_or_default();
     let calib = energy::calibration(cfg, &obs);
     let comparison = energy::compare(cfg, &Model::from_config(cfg), model, &obs);
+    let by_hour = by_hour_in_day_order(&calib, &obs, cfg.tz);
+    let flip = flip_hour(&by_hour);
     let energy_review = EnergyReview {
         n: calib.n,
         mae: calib.mae,
         bias: calib.bias,
-        by_hour: calib.by_hour.clone(),
-        flip_hour: flip_hour(&calib),
+        by_hour,
+        flip_hour: flip,
         mae_prior: comparison.mae_a,
         mae_learned: comparison.mae_b,
         hours: energy_hours(&obs, day, cfg, model, tz),
@@ -784,11 +920,6 @@ pub fn day_review(
             to: d.to.clone(),
         })
         .collect();
-
-    let budget = extras
-        .budget
-        .or_else(|| day.and_then(|d| d.budget))
-        .unwrap_or_else(|| crate::capacity::budget_blocks(cfg));
 
     DayReview {
         date,
@@ -828,6 +959,10 @@ pub fn day_review(
 
 /// §11's load and energy mix over any set of days: the log's own totals plus
 /// the block minutes it has no `ci` for, attributed from the tree.
+///
+/// An item the tree no longer holds (dropped, or cut out of the plan by a
+/// close) is counted at `ci 0`: it adds nothing to the load, but its minutes
+/// stay in the mix, so `Σ minutes_by_ci == Σ block_min` always holds.
 fn mix_and_load<'a>(
     days: impl Iterator<Item = &'a DayReplay>,
     tree: &Tree,
@@ -840,10 +975,9 @@ fn mix_and_load<'a>(
         }
         load += day.load;
         for (id, min) in &day.ci_unknown {
-            let Some(item) = tree.get(&Id::new(id.clone())) else {
-                continue;
-            };
-            let ci = item.ci.min(5) as usize;
+            let ci = tree
+                .get(&Id::new(id.clone()))
+                .map_or(0, |item| item.ci.min(5) as usize);
             minutes_by_ci[ci] = minutes_by_ci[ci].saturating_add(*min);
             load += *min as f64 * ci as f64 / 5.0;
         }
@@ -851,22 +985,60 @@ fn mix_and_load<'a>(
     (minutes_by_ci, load)
 }
 
-fn energy_mix(minutes_by_ci: [u32; 6], underused: usize) -> EnergyMix {
+fn energy_mix(minutes_by_ci: [u32; 6], budget_min: u32, underused: usize) -> EnergyMix {
     let total: u32 = minutes_by_ci.iter().fold(0u32, |a, m| a.saturating_add(*m));
     let high = minutes_by_ci[4].saturating_add(minutes_by_ci[5]);
     EnergyMix {
         minutes_by_ci,
         total_min: total,
         high_min: high,
-        high_share: pct(high as usize, total as usize),
+        budget_min,
+        // §11: "share of budget with ci ≥ 4", not share of what was worked.
+        high_share: pct(high as usize, budget_min as usize),
         underused,
     }
+}
+
+/// [`energy::calibration`]'s hourly rows in the order the day met them.
+///
+/// The rows are keyed by clock hour, but a day runs wake to wake (§10.1), so
+/// an observation after midnight belongs at the end of the day and not at
+/// its front. Rows are ordered by the first observation in each hour; `tz`
+/// must be the zone `calibration` bucketed them in (`cfg.tz`).
+fn by_hour_in_day_order(
+    calib: &Calibration,
+    obs: &[log::EnergyObs],
+    tz: Tz,
+) -> Vec<(u32, usize, f64, f64)> {
+    let mut first_seen: HashMap<u32, DateTime<FixedOffset>> = HashMap::new();
+    for o in obs {
+        let hour = o.t.with_timezone(&tz).hour();
+        first_seen
+            .entry(hour)
+            .and_modify(|t| {
+                if o.t < *t {
+                    *t = o.t;
+                }
+            })
+            .or_insert(o.t);
+    }
+    let mut rows = calib.by_hour.clone();
+    rows.sort_by(|a, b| {
+        first_seen
+            .get(&a.0)
+            .cmp(&first_seen.get(&b.0))
+            .then(a.0.cmp(&b.0))
+    });
+    rows
 }
 
 /// The hour after which the bias sign flips: the first hour whose bias has
 /// the opposite sign to the first non-zero hour's, provided the original
 /// sign never comes back. `None` when the bias never changes sign.
-fn flip_hour(calib: &Calibration) -> Option<u32> {
+///
+/// `rows` must be in the day's own order (see [`by_hour_in_day_order`]):
+/// across midnight the clock hour no longer sorts the day.
+fn flip_hour(rows: &[(u32, usize, f64, f64)]) -> Option<u32> {
     let sign = |x: f64| {
         if x > 0.0 {
             1i8
@@ -876,23 +1048,21 @@ fn flip_hour(calib: &Calibration) -> Option<u32> {
             0
         }
     };
-    let first = calib.by_hour.iter().find(|(_, _, _, b)| sign(*b) != 0)?;
-    let s0 = sign(first.3);
-    let flip = calib
-        .by_hour
+    let first = rows.iter().position(|(_, _, _, b)| sign(*b) != 0)?;
+    let s0 = sign(rows[first].3);
+    let flip = rows.iter().position(|(_, _, _, b)| sign(*b) == -s0)?;
+    let returns = rows
         .iter()
-        .find(|(_, _, _, b)| sign(*b) == -s0)
-        .map(|(h, _, _, _)| *h)?;
-    let returns = calib
-        .by_hour
-        .iter()
-        .any(|(h, _, _, b)| *h > flip && sign(*b) == s0);
-    (!returns).then_some(flip)
+        .skip(flip + 1)
+        .any(|(_, _, _, b)| sign(*b) == s0);
+    (!returns).then(|| rows[flip].0)
 }
 
-/// §12.4's `pred … rep …` row: one cell per clock hour from the first to the
-/// last observation of the day. An hour with no observation keeps the
-/// model's prediction and reports `None`.
+/// §12.4's `pred … rep …` row: one cell per clock hour from the first
+/// observation of the day to the last, walking **forwards in time** — the
+/// day runs wake to wake (§10.1), so the row may cross midnight and end on a
+/// smaller clock hour than it began on. An hour with no observation keeps
+/// the model's prediction for that hour and reports `None` (§12.1's `·`).
 fn energy_hours(
     obs: &[log::EnergyObs],
     day: Option<&DayReplay>,
@@ -900,49 +1070,58 @@ fn energy_hours(
     model: &Model,
     tz: Tz,
 ) -> Vec<EnergyHour> {
-    let mut preds: BTreeMap<u32, Vec<f64>> = BTreeMap::new();
-    let mut reps: BTreeMap<u32, Vec<f64>> = BTreeMap::new();
+    // Keyed by the instant the hour starts, so the order is chronological.
+    let mut buckets: BTreeMap<DateTime<Tz>, (Vec<f64>, Vec<f64>)> = BTreeMap::new();
     for o in obs {
-        let hour = o.t.with_timezone(&tz).hour();
-        preds.entry(hour).or_default().push(o.pred as f64);
-        reps.entry(hour).or_default().push(o.rep as f64);
+        let e = buckets
+            .entry(hour_start(o.t.with_timezone(&tz)))
+            .or_default();
+        e.0.push(o.pred as f64);
+        e.1.push(o.rep as f64);
     }
     let (Some(first), Some(last)) = (
-        preds.keys().next().copied(),
-        preds.keys().next_back().copied(),
+        buckets.keys().next().copied(),
+        buckets.keys().next_back().copied(),
     ) else {
         return Vec::new();
     };
     let mean = |xs: &[f64]| xs.iter().sum::<f64>() / xs.len() as f64;
-    (first..=last)
-        .map(|hour| {
-            let pred = match preds.get(&hour) {
-                Some(xs) => mean(xs).round() as u8,
-                None => predict_hour(day, cfg, model, tz, hour),
-            };
-            EnergyHour {
-                hour,
-                pred,
-                rep: reps.get(&hour).map(|xs| mean(xs).round() as u8),
-            }
-        })
-        .collect()
+    let mut out = Vec::new();
+    let mut cursor = first;
+    while cursor <= last && out.len() < MAX_ENERGY_HOURS {
+        let cell = buckets.get(&cursor);
+        out.push(EnergyHour {
+            hour: cursor.hour(),
+            pred: match cell {
+                Some((preds, _)) => mean(preds).round() as u8,
+                None => predict_at(day, cfg, model, cursor),
+            },
+            rep: cell.map(|(_, reps)| mean(reps).round() as u8),
+        });
+        let next = hour_start(cursor + Duration::hours(1));
+        if next <= cursor {
+            break;
+        }
+        cursor = next;
+    }
+    out
 }
 
-/// What the model predicts for the top of `hour` on `day` (used for hours
-/// the log never asked about). Falls back to the day's first prediction, and
-/// then to 3, when the day has no wake to measure `hsw` from.
-fn predict_hour(day: Option<&DayReplay>, cfg: &Config, model: &Model, tz: Tz, hour: u32) -> u8 {
+/// The top of `t`'s wall-clock hour, computed in absolute time: `with_minute`
+/// and friends return `None` for the ambiguous hour of a DST fall-back.
+fn hour_start<Z: chrono::TimeZone>(t: DateTime<Z>) -> DateTime<Z> {
+    let secs = t.minute() as i64 * 60 + t.second() as i64;
+    let nanos = t.nanosecond() as i64 % 1_000_000_000;
+    t - Duration::seconds(secs) - Duration::nanoseconds(nanos)
+}
+
+/// What the model predicts at `t` on `day` (used for the hours the log never
+/// asked about). Falls back to 3 when the day has no wake to measure `hsw`
+/// from.
+fn predict_at(day: Option<&DayReplay>, cfg: &Config, model: &Model, t: DateTime<Tz>) -> u8 {
     let Some(day) = day else { return 3 };
     let Some(wake) = day.wake else { return 3 };
-    let wake = wake.with_timezone(&tz);
-    let Some(t) = wake
-        .date_naive()
-        .and_hms_opt(hour, 0, 0)
-        .and_then(|n| n.and_local_timezone(tz).earliest())
-    else {
-        return 3;
-    };
+    let wake = wake.with_timezone(&t.timezone());
     let loc = day
         .loc
         .as_deref()
@@ -1216,12 +1395,11 @@ fn heat_of(day: Option<&DayReplay>, date: NaiveDate, tz: Tz) -> DayHeat {
             let mut cursor = start;
             while cursor < end {
                 let hour = cursor.hour() as usize;
-                let next = (cursor + Duration::hours(1))
-                    .with_minute(0)
-                    .and_then(|t| t.with_second(0))
-                    .and_then(|t| t.with_nanosecond(0))
-                    .unwrap_or(end);
-                let stop = next.min(end);
+                // The top of the next wall-clock hour, in absolute time: a
+                // DST fall-back repeats an hour (so the same cell is filled
+                // twice) and a spring-forward skips one.
+                let next = hour_start(cursor) + Duration::hours(1);
+                let stop = next.max(cursor).min(end);
                 let min = stop.signed_duration_since(cursor).num_minutes().max(0) as u32;
                 if let Some(cell) = hours.get_mut(hour) {
                     cell[style] = cell[style].saturating_add(min);
@@ -1319,8 +1497,8 @@ pub struct WeekReview {
     pub block_len_min: u32,
     /// The heat grid: seven [`DayHeat`] rows.
     pub heat: Vec<DayHeat>,
-    /// §11 energy mix over the week (`underused` is a day-level parameter and
-    /// stays 0 here).
+    /// §11 energy mix over the week, against the sum of the days' block
+    /// budgets (`underused` is a day-level parameter and stays 0 here).
     pub mix: EnergyMix,
     /// §11 break integrity over the week — the `where` histogram §11 asks for.
     pub breaks: BreakIntegrity,
@@ -1366,8 +1544,10 @@ pub fn week_review(
     let dates = week.dates();
     let days: Vec<Option<&DayReplay>> = dates.iter().map(|d| replay.day(*d)).collect();
 
+    let block_len = cfg.block_min().max(1);
     let mut blocks_done = 0u32;
     let mut block_min = 0u32;
+    let mut budget_min = 0u32;
     let mut mae_per_day = Vec::new();
     let mut week_breaks: Vec<BreakRecord> = Vec::new();
     let (mix_by_ci, load) = mix_and_load(days.iter().flatten().copied(), tree);
@@ -1375,6 +1555,14 @@ pub fn week_review(
         let Some(day) = day else { continue };
         blocks_done = blocks_done.saturating_add(day.blocks_done);
         block_min = block_min.saturating_add(day.block_min);
+        // The week's budget for §11's energy-mix share: the days the log
+        // knows about, each with the budget its `arrive` set (§8.1's formula
+        // when it has none). A day with no log at all counts for nothing.
+        budget_min = budget_min.saturating_add(
+            day.budget
+                .unwrap_or_else(|| crate::capacity::budget_blocks(cfg))
+                .saturating_mul(block_len),
+        );
         week_breaks.extend(day.breaks.iter().cloned());
         let obs: Vec<log::EnergyObs> = replay
             .energy
@@ -1414,7 +1602,6 @@ pub fn week_review(
         }
     }
 
-    let block_len = cfg.block_min().max(1);
     let planned_blocks = extras
         .planned_blocks
         .unwrap_or(planned_min as f64 / block_len as f64);
@@ -1463,7 +1650,7 @@ pub fn week_review(
             .zip(&days)
             .map(|(d, day)| heat_of(*day, *d, tz))
             .collect(),
-        mix: energy_mix(mix_by_ci, 0),
+        mix: energy_mix(mix_by_ci, budget_min, 0),
         breaks: break_integrity(&week_breaks),
         latency: dates
             .iter()
@@ -1982,23 +2169,68 @@ mod tests {
 
     #[test]
     fn the_bias_flip_hour_is_the_first_lasting_change_of_sign() {
-        let calib = |rows: &[(u32, f64)]| Calibration {
-            n: rows.len(),
-            mae: 0.0,
-            bias: 0.0,
-            by_hour: rows.iter().map(|(h, b)| (*h, 1, b.abs(), *b)).collect(),
+        let rows = |rows: &[(u32, f64)]| -> Vec<(u32, usize, f64, f64)> {
+            rows.iter().map(|(h, b)| (*h, 1, b.abs(), *b)).collect()
         };
         assert_eq!(
-            flip_hour(&calib(&[(7, 0.0), (8, 1.0), (12, 0.0), (13, -1.0), (14, -1.0)])),
+            flip_hour(&rows(&[(7, 0.0), (8, 1.0), (12, 0.0), (13, -1.0), (14, -1.0)])),
             Some(13)
         );
         // The original sign comes back: no single flip.
-        assert_eq!(
-            flip_hour(&calib(&[(8, 1.0), (13, -1.0), (15, 1.0)])),
-            None
-        );
+        assert_eq!(flip_hour(&rows(&[(8, 1.0), (13, -1.0), (15, 1.0)])), None);
         // Never changes sign.
-        assert_eq!(flip_hour(&calib(&[(8, -1.0), (13, -1.0)])), None);
-        assert_eq!(flip_hour(&calib(&[])), None);
+        assert_eq!(flip_hour(&rows(&[(8, -1.0), (13, -1.0)])), None);
+        assert_eq!(flip_hour(&rows(&[])), None);
+        // The rows are in the day's order, not the clock's: a wake-to-wake
+        // day that crosses midnight flips after 02:00, not after 20:00.
+        assert_eq!(flip_hour(&rows(&[(20, 1.0), (2, -1.0)])), Some(2));
+    }
+
+    #[test]
+    fn the_hourly_rows_follow_the_day_across_midnight() {
+        let cfg = Config::default();
+        let obs = |t: &str, pred: u8, rep: u8| log::EnergyObs {
+            t: DateTime::parse_from_rfc3339(t).unwrap(),
+            day: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+            pred,
+            rep,
+            hsw: 0.0,
+            loc: "lounge".to_string(),
+            slept_min: None,
+            went: None,
+            id: None,
+            from_start: false,
+        };
+        let obs = vec![
+            obs("2026-06-02T02:00:00-05:00", 3, 2),
+            obs("2026-06-01T20:00:00-05:00", 3, 4),
+        ];
+        let calib = energy::calibration(&cfg, &obs);
+        // `calibration` keys by clock hour, so its own order is 2 then 20.
+        assert_eq!(
+            calib.by_hour.iter().map(|r| r.0).collect::<Vec<_>>(),
+            vec![2, 20]
+        );
+        let rows = by_hour_in_day_order(&calib, &obs, cfg.tz);
+        assert_eq!(rows.iter().map(|r| r.0).collect::<Vec<_>>(), vec![20, 2]);
+    }
+
+    #[test]
+    fn the_top_of_the_hour_is_defined_through_a_dst_fall_back() {
+        let tz = chrono_tz::America::Chicago;
+        // 01:30 CST on the fall-back day is the ambiguous hour: chrono's
+        // `with_minute(0)` gives `None` there, `hour_start` does not.
+        let t = DateTime::parse_from_rfc3339("2026-11-01T01:30:00-06:00")
+            .unwrap()
+            .with_timezone(&tz);
+        assert!(t.with_minute(0).is_none());
+        assert_eq!(
+            hour_start(t).to_rfc3339(),
+            "2026-11-01T01:00:00-06:00".to_string()
+        );
+        assert_eq!(
+            (hour_start(t) + Duration::hours(1)).to_rfc3339(),
+            "2026-11-01T02:00:00-06:00".to_string()
+        );
     }
 }

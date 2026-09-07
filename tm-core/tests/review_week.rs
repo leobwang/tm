@@ -249,7 +249,10 @@ fn the_week_carries_the_day_monitors_that_have_a_week_trend() {
     // Saturday adds ci 3 and 2, Sunday ci 5 and 4 → 360 minutes each.
     assert_eq!(r.mix.minutes_by_ci, [0, 0, 360, 360, 360, 360]);
     assert_eq!(r.mix.total_min, 1440);
-    assert_eq!(r.mix.high_share, Some(50)); // 720 of 1440
+    // §11's share is of the *budget*: every one of the seven days arrived
+    // with a budget of six blocks, so 7 × 6 × 60 = 2520 minutes.
+    assert_eq!(r.mix.budget_min, 2520);
+    assert_eq!(r.mix.high_share, Some(29)); // 720 of 2520 = 28.6%
 
     // Break histogram: five days of walk + seat, then one each.
     assert_eq!(r.breaks.planned_min, 240); // 40 × 5 + 20 + 20

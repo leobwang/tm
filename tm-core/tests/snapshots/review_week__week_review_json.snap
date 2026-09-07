@@ -60,7 +60,8 @@ expression: "{ let mut r = r; r.heat.clear(); r }"
     ],
     "total_min": 1440,
     "high_min": 720,
-    "high_share": 50,
+    "budget_min": 2520,
+    "high_share": 29,
     "underused": 0
   },
   "breaks": {
