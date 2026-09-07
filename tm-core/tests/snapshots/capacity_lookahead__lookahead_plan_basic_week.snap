@@ -1,0 +1,13 @@
+---
+source: tm-core/tests/capacity_lookahead.rs
+expression: week_grid(&caps)
+---
+day          tot     5     4     3     2     1     0
+Mon 09-07   6h50    3h    3h   50m     ·     ·     ·
+Tue 09-08     6h    3h    3h     ·     ·     ·     ·
+Wed 09-09     6h    3h    3h     ·     ·     ·     ·
+Thu 09-10     6h    3h    3h     ·     ·     ·     ·
+Fri 09-11     6h    3h    3h     ·     ·     ·     ·
+Sat 09-12     6h    1h    3h    1h    1h     ·     ·
+Sun 09-13     6h     ·     ·    4h    2h     ·     ·
+total      42h50   16h   18h  5h50    3h     ·     ·
