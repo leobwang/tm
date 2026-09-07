@@ -25,6 +25,7 @@
 //! the day file's `## Log`, and — for `wake` and `arrive` — the runtime front
 //! matter (see [`super::dayfile`]).
 
+use std::collections::BTreeSet;
 use std::io::{self, BufRead, IsTerminal, Write};
 
 use chrono::{DateTime, NaiveTime, Timelike};
@@ -1020,11 +1021,19 @@ pub fn resume(g: &Globals) -> Result<i32, CliError> {
     let started = int.started.unwrap_or_else(|| ctx.now_tz.time());
     let lost = (ctx.now_tz - ctx.at(started)).num_minutes().max(0) as u32;
 
-    // §9: the tail the lost minutes cost. The planner is a placeholder, so
-    // the set is empty until M4 lands; the shape is right.
+    // §9: the tail the lost minutes cost — §10.1's `resume{dropped}` names
+    // each item once, however many blocks it held in the plan that is being
+    // replaced.
+    let mut seen = BTreeSet::new();
     let before: Vec<String> = ctx
         .last_plan()
-        .map(|p| p.segments.iter().filter_map(|s| s.item.clone()).collect())
+        .map(|p| {
+            p.segments
+                .iter()
+                .filter_map(|s| s.item.clone())
+                .filter(|i| seen.insert(i.clone()))
+                .collect()
+        })
         .unwrap_or_default();
     ctx.state.interrupt = None;
     if let Some(a) = ctx.state.active.as_mut() {

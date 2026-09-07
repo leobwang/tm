@@ -1,12 +1,26 @@
 //! `tm plan` and `tm now` (§8, §13) against a temp `plan/`.
 //!
-//! The §8.2 algorithm is a placeholder until M4, so these tests assert the
-//! *structure*: exit codes, the files written, the events appended and the
-//! `--json` schema — never which item landed in which slot.
+//! These are the CLI's tests, not the planner's: they assert the *contract*
+//! around §8.2 — exit codes, the files written, the events appended (§10.1),
+//! the `--json` schema and the properties §8.3, §9 and §11 require of a
+//! replan. Which item lands in which slot is `tm-core`'s to pin
+//! (`tm-core/tests/planner_*.rs`); what a segment or a diff must *say* about
+//! it is pinned here.
 
 mod cli_common;
 
 use cli_common::{schema, Tm};
+
+/// The `HH:MM` a segment or diff field carries.
+fn hhmm(v: &serde_json::Value) -> &str {
+    v.as_str().unwrap_or_else(|| panic!("HH:MM, got {v}"))
+}
+
+/// That `HH:MM` as minutes since midnight.
+fn min_of_day(v: &serde_json::Value) -> i64 {
+    let (h, m) = hhmm(v).split_once(':').expect("HH:MM");
+    h.parse::<i64>().expect("hours") * 60 + m.parse::<i64>().expect("minutes")
+}
 
 #[test]
 fn plan_writes_the_generated_section_the_svg_and_the_event() {
@@ -33,16 +47,45 @@ fn plan_writes_the_generated_section_the_svg_and_the_event() {
 
 #[test]
 fn a_replan_that_moves_nothing_is_not_logged_twice() {
+    // §10.1's `plan` entry feeds §11's "replans and drift" monitor, so it must
+    // mark a day that actually moved. §8.3: `plan()` is pure — same input,
+    // same `DayPlan` — so re-running `tm plan` at the same instant with
+    // nothing changed leaves both the count and `last_plan_hash` where they
+    // were. Re-cutting the day two hours later is a real replan: §8.2 step 3
+    // slices free time from `now`, the tail drops, and that *is* logged, with
+    // the drift §11 measures.
     let tm = Tm::new();
     tm.ok(&["arrive", "lounge"]);
-    let plans = tm.events().iter().filter(|e| *e == "plan").count();
+    let plans = |tm: &Tm| tm.events().iter().filter(|e| *e == "plan").count();
+    let first = plans(&tm);
+    assert_eq!(first, 1, "§13: `arrive` plans the day");
+    let hash = tm.state()["last_plan_hash"].clone();
+    assert!(hash.is_string(), "{}", tm.state());
+
+    tm.ok(&["plan"]);
+    assert_eq!(
+        plans(&tm),
+        first,
+        "the day did not move, so it is not a replan"
+    );
+    assert_eq!(tm.state()["last_plan_hash"], hash, "§8.3: same plan");
+
     tm.ok_at("2026-09-07T11:00:00-05:00", &["plan"]);
-    let after = tm.events().iter().filter(|e| *e == "plan").count();
-    assert_eq!(plans, after, "the day did not move, so it is not a replan");
+    assert_eq!(plans(&tm), first + 1, "a day re-cut from 11:00 did move");
+    assert_ne!(tm.state()["last_plan_hash"], hash);
+    let ev = tm.last_ev("plan");
+    assert!(
+        ev["drift_min"].as_u64().is_some_and(|d| d > 0),
+        "§10.1: the replan carries its drift: {ev}"
+    );
+    assert!(ev["replans_today"].as_u64().is_some(), "{ev}");
 }
 
 #[test]
 fn plan_json_has_the_documented_shape() {
+    // §13: every verb accepts `--json`. The document is §8's `DayPlan` — the
+    // window and budget of §8.1, the timeline of §8.2, the diagnostics its
+    // step 8 emits and §7's priorities — plus the files this run wrote.
     let tm = Tm::new();
     tm.ok(&["arrive", "lounge"]);
     let json = tm.json(&["plan"]);
@@ -60,6 +103,40 @@ fn plan_json_has_the_documented_shape() {
         assert!(json.get(key).is_some(), "missing {key} in {json}");
     }
     assert_eq!(json["window"].as_array().map(Vec::len), Some(2));
+
+    // §8.2 emits a day, not an empty list: every segment says when it runs,
+    // what kind it is and — for a slot — the energy it was cut at (§8.2
+    // step 3), which is what the day file and the TUI render from.
+    let segs = json["segments"].as_array().expect("segments");
+    assert!(!segs.is_empty(), "the planner placed nothing: {json}");
+    for seg in segs {
+        for key in [
+            "start", "end", "minutes", "kind", "energy", "item", "mark", "text",
+        ] {
+            assert!(seg.get(key).is_some(), "missing segments[].{key} in {seg}");
+        }
+    }
+    // §8.2 step 3: a Block is a slot, so it reports the energy it was cut at
+    // — the number §4.3's rows lead with and §8.3's energy filter works on.
+    assert!(
+        segs.iter()
+            .any(|s| s["kind"] == "block" && s["energy"].is_u64()),
+        "no block carries its slot energy: {json}"
+    );
+    // §8.2 step 8's diagnostic set, by name.
+    let diag = &json["diagnostics"];
+    for key in [
+        "underused",
+        "a_capacity_lost",
+        "hot",
+        "impossible",
+        "conflicts",
+        "blocked",
+        "deferred",
+        "waiting",
+    ] {
+        assert!(diag.get(key).is_some(), "missing diagnostics.{key} in {json}");
+    }
     insta::assert_json_snapshot!("plan_schema", schema(&json));
 }
 
@@ -76,13 +153,65 @@ fn plan_week_renders_the_capacity_grid() {
 
 #[test]
 fn plan_diff_compares_against_the_stored_plan() {
+    // §9 and §14: `--diff` answers "what moved, and why" against the stored
+    // plan; §11 defines the drift it reports as "Σ minutes segments moved".
+    // Diffing against a plan that is still current moves nothing; a day
+    // re-cut two hours later moves, and `drift_min` is then exactly the sum
+    // of the moves the diff lists — one row per item, however many blocks
+    // that item holds.
     let tm = Tm::new();
     tm.ok(&["arrive", "lounge"]);
     tm.ok(&["plan"]);
+
+    let same = tm.json(&["plan", "--diff"]);
+    let same = &same["diff"];
+    assert_eq!(same["had_previous"], true);
+    assert_eq!(same["drift_min"], 0, "{same}");
+    for key in ["added", "removed", "moved"] {
+        assert_eq!(
+            same[key].as_array().map(Vec::len),
+            Some(0),
+            "nothing changed, so nothing {key}: {same}"
+        );
+    }
+
     let json = tm.json_at("2026-09-07T11:00:00-05:00", &["plan", "--diff"]);
     let diff = &json["diff"];
     assert_eq!(diff["had_previous"], true);
-    assert_eq!(diff["drift_min"], 0);
+    let moved = diff["moved"].as_array().expect("moved");
+    assert!(!moved.is_empty(), "two hours on, the day moved: {diff}");
+
+    let mut ids: Vec<&str> = Vec::new();
+    let mut sum = 0;
+    for m in moved {
+        assert_ne!(m[1], m[2], "a `moved` row moved: {m}");
+        sum += (min_of_day(&m[2]) - min_of_day(&m[1])).abs();
+        ids.push(m[0].as_str().expect("id"));
+    }
+    assert_eq!(
+        diff["drift_min"].as_i64(),
+        Some(sum),
+        "§11: drift is Σ minutes moved: {diff}"
+    );
+    let mut once = ids.clone();
+    once.sort_unstable();
+    once.dedup();
+    assert_eq!(
+        ids.len(),
+        once.len(),
+        "an item with two blocks moves once: {diff}"
+    );
+    // Every item the new plan dropped is named, and none is claimed twice.
+    let removed: Vec<&str> = diff["removed"]
+        .as_array()
+        .expect("removed")
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect();
+    assert!(
+        removed.iter().all(|r| !ids.contains(r)),
+        "an item is moved or removed, not both: {diff}"
+    );
     insta::assert_json_snapshot!("plan_diff_schema", schema(diff));
 }
 
@@ -109,9 +238,29 @@ fn now_reports_the_running_block_and_the_next_segments() {
     tm.ok(&["wake", "06:05", "--slept", "8h10m"]);
     tm.ok(&["arrive", "lounge"]);
 
+    // Nothing has been started, so there is no Active block (§10.2) — but the
+    // day still has a shape: §13's `current` is the segment `now` sits in and
+    // `next` the three that follow it.
     let idle = tm.json(&["now"]);
     assert_eq!(idle["active"], serde_json::Value::Null);
     assert_eq!(idle["date"], "2026-09-07");
+    assert_eq!(idle["now"], "09:00");
+    let current = &idle["current"];
+    assert!(
+        hhmm(&current["start"]) <= "09:00" && "09:00" < hhmm(&current["end"]),
+        "`current` contains `now`: {current}"
+    );
+    let next = idle["next"].as_array().expect("next");
+    assert_eq!(next.len(), 3, "§13: the next three segments: {idle}");
+    let mut cursor = hhmm(&current["start"]).to_string();
+    for seg in next {
+        let start = hhmm(&seg["start"]);
+        assert!(
+            start >= "09:00" && start > cursor.as_str(),
+            "`next` runs forwards from `now`: {idle}"
+        );
+        cursor = start.to_string();
+    }
     insta::assert_json_snapshot!("now_schema", schema(&idle));
 
     tm.ok(&["start", "^t4", "--energy", "4"]);
@@ -119,7 +268,16 @@ fn now_reports_the_running_block_and_the_next_segments() {
     assert_eq!(json["active"]["id"], "t4");
     assert_eq!(json["active"]["elapsed_min"], 30);
     assert_eq!(json["active"]["title"], "Claude Code drafts tests");
-    // The idle snapshot above pins `active: null`; the running block has a
+    // §9: the Active block keeps its slot across a replan, so the block `now`
+    // is inside is that item, marked ▶ and running to the end of its estimate
+    // (started 09:00, `est:` 1b) — the timeline agrees with `state.json`.
+    assert_eq!(json["current"]["item"], "t4");
+    assert_eq!(json["current"]["kind"], "block");
+    assert_eq!(json["current"]["mark"], "▶");
+    assert_eq!(json["current"]["end"], "10:00");
+    assert_eq!(json["current"]["minutes"], 30, "{}", json["current"]);
+    assert_eq!(json["next"].as_array().map(Vec::len), Some(3));
+    // The idle snapshot above pins an empty `active`; the running block has a
     // shape of its own (§17 M5: `--json` schemas snapshot-tested).
     insta::assert_json_snapshot!("now_active_schema", schema(&json));
 }

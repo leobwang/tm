@@ -8,19 +8,25 @@ expression: schema(&json)
   "date": "string",
   "diagnostics": {
     "a_capacity_lost": "integer",
-    "blocked": [],
+    "blocked": [
+      [
+        "string"
+      ]
+    ],
     "conflicts": [],
     "deferred": [],
-    "dropped_tail": [],
-    "hot": [],
-    "impossible": [],
-    "notes": [
+    "dropped_tail": [
       "string"
     ],
-    "plan_honesty": "null",
+    "hot": [],
+    "impossible": [],
+    "notes": [],
+    "plan_honesty": "number",
     "rest_debt_min": "integer",
     "underused": [],
-    "waiting": []
+    "waiting": [
+      "string"
+    ]
   },
   "diff": "null",
   "explain": "null",
@@ -42,7 +48,18 @@ expression: schema(&json)
       "until": "null"
     }
   ],
-  "segments": [],
+  "segments": [
+    {
+      "end": "string",
+      "energy": "null",
+      "item": "string",
+      "kind": "string",
+      "mark": "string",
+      "minutes": "integer",
+      "start": "string",
+      "text": "string"
+    }
+  ],
   "window": [
     "string"
   ],

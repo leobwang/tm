@@ -6,8 +6,28 @@ expression: schema(&idle)
   "active": "null",
   "blocks_done": "integer",
   "budget_blocks": "integer",
-  "current": "null",
+  "current": {
+    "end": "string",
+    "energy": "null",
+    "item": "string",
+    "kind": "string",
+    "mark": "string",
+    "minutes": "integer",
+    "start": "string",
+    "text": "string"
+  },
   "date": "string",
-  "next": [],
+  "next": [
+    {
+      "end": "string",
+      "energy": "null",
+      "item": "string",
+      "kind": "string",
+      "mark": "string",
+      "minutes": "integer",
+      "start": "string",
+      "text": "string"
+    }
+  ],
   "now": "string"
 }

@@ -206,6 +206,26 @@ fn interrupt_and_resume_account_for_the_lost_minutes() {
     let events = tm.events();
     assert!(events.contains(&"resume".to_string()), "{events:?}");
     insta::assert_json_snapshot!("resume_json", r);
+
+    // §9: "segments after t_r shift; tail drops". §10.1's `resume{dropped}`
+    // names what the lost minutes cost — each item once, however many blocks
+    // it held (the morning plan gives `^m4` three).
+    let tm = Tm::new();
+    tm.ok(&["arrive", "lounge"]);
+    tm.ok_at("2026-09-07T09:30:00-05:00", &["interrupt"]);
+    let r = tm.json_at("2026-09-07T15:30:00-05:00", &["resume"]);
+    let dropped: Vec<&str> = r["dropped"]
+        .as_array()
+        .expect("dropped")
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect();
+    assert!(!dropped.is_empty(), "six hours cost the day its tail: {r}");
+    let mut once = dropped.clone();
+    once.sort_unstable();
+    once.dedup();
+    assert_eq!(dropped.len(), once.len(), "each item once: {r}");
+    assert_eq!(tm.last_ev("resume")["dropped"], r["dropped"]);
 }
 
 #[test]
@@ -232,10 +252,16 @@ fn energy_logs_a_report_against_the_prediction() {
     let json = tm.json(&["energy", "3", "--at", "10:30"]);
     assert_eq!(json["rep"], 3);
     assert_eq!(json["at"], "10:30");
-    let last = tm.last();
-    assert_eq!(last["ev"], "energy");
+    // A non-zero delta re-plans (§8.5), so a `plan` entry follows the report;
+    // assert on the `energy` entry itself rather than on the last line.
+    let last = tm.last_ev("energy");
     assert_eq!(last["rep"], 3);
     assert_eq!(last["t"], "2026-09-07T10:30:00-05:00");
+    assert!(
+        tm.events().contains(&"energy".to_string()),
+        "the report is logged: {:?}",
+        tm.events()
+    );
     insta::assert_json_snapshot!("energy_json", json);
 }
 
@@ -377,12 +403,7 @@ fn since_break_min_is_measured_from_the_end_of_the_break() {
     tm.ok(&["start", "^t4", "--energy", "4"]);
     tm.ok_at("2026-09-07T11:00:00-05:00", &["done"]);
     tm.ok_at("2026-09-07T11:00:00-05:00", &["start", "^t5", "--energy", "4"]);
-    let second = tm
-        .log()
-        .into_iter()
-        .filter(|e| e["ev"] == "start")
-        .next_back()
-        .expect("the second start");
+    let second = tm.last_ev("start");
     assert_eq!(second["since_break_min"], 120);
 }
 
@@ -428,9 +449,13 @@ fn a_non_zero_energy_delta_replans() {
         tm.read("day/2026-09-07.md")
     );
     assert!(tm.exists(".tm/last_plan.json"));
-    // The placeholder planner returns the same empty day, so §10.1's `plan`
-    // event is (rightly) not repeated for a day that did not move.
-    assert_eq!(tm.events().iter().filter(|e| *e == "plan").count(), plans);
+    // The re-energised slots move the day, so §10.1's `plan` event is appended
+    // (a replan that changes nothing does not log one — see the delta-0 case
+    // above, which left the count where it was).
+    assert_eq!(
+        tm.events().iter().filter(|e| *e == "plan").count(),
+        plans + 1
+    );
 }
 
 #[test]

@@ -173,6 +173,16 @@ impl Tm {
         self.log().pop().expect("a log entry")
     }
 
+    /// The last log entry with the given `ev`. Use this instead of [`last`]
+    /// when the command under test may be followed by a replan: a non-zero
+    /// energy delta re-plans the day (§8.5), so `plan` lands after `energy`.
+    pub fn last_ev(&self, ev: &str) -> Value {
+        self.log()
+            .into_iter()
+            .rfind(|e| e["ev"] == ev)
+            .unwrap_or_else(|| panic!("a `{ev}` log entry"))
+    }
+
     /// `.tm/state.json`.
     pub fn state(&self) -> Value {
         let text = fs::read_to_string(self.plan.join(".tm/state.json")).unwrap_or_default();

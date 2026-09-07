@@ -7,7 +7,32 @@ expression: json
   "budget": 6,
   "date": "2026-09-07",
   "loc": "home",
-  "plan_at_arrival": [],
+  "plan_at_arrival": [
+    {
+      "id": "t4",
+      "start": "10:20"
+    },
+    {
+      "id": "m4",
+      "start": "12:00"
+    },
+    {
+      "id": "m4",
+      "start": "13:50"
+    },
+    {
+      "id": "m4",
+      "start": "15:10"
+    },
+    {
+      "id": "a1",
+      "start": "17:00"
+    },
+    {
+      "id": "p1",
+      "start": "18:00"
+    }
+  ],
   "plan_hash": "[hash]",
   "synced": [],
   "warnings": [],

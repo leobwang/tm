@@ -12,10 +12,11 @@
 //!   for one item.
 //! * [`now`] — the running block and the next three segments (§13).
 //!
-//! The planner itself is still the placeholder of `planner.rs` (M4), so the
-//! segment list is empty until it lands; everything around it — the window,
-//! the budget, the priorities, the files written, the events logged — is
-//! real, and the JSON shape is the final one.
+//! The segments come from `tm_core::planner` (§8.2's eight steps); everything
+//! around them — the window, the budget, the priorities, the files written,
+//! the events logged — belongs to this layer.
+
+use std::collections::BTreeSet;
 
 use chrono::Timelike;
 use serde::Serialize;
@@ -212,10 +213,17 @@ fn diff(new: &StoredPlan, old: Option<&StoredPlan>) -> PlanDiff {
             .find(|s| s.item.as_deref() == Some(item))
             .map(|s| s.start.clone())
     };
+    // One row per item, in the order the plan first mentions it. An item with
+    // several blocks (or a routine placed twice) reaches this list once:
+    // `moved` compares its *first* start, so a repeat would add the same
+    // movement to `drift_min` again (§11: Σ minutes segments moved).
     let items = |p: &StoredPlan| -> Vec<String> {
-        let mut v: Vec<String> = p.segments.iter().filter_map(|s| s.item.clone()).collect();
-        v.dedup();
-        v
+        let mut seen = BTreeSet::new();
+        p.segments
+            .iter()
+            .filter_map(|s| s.item.clone())
+            .filter(|i| seen.insert(i.clone()))
+            .collect()
     };
     let (new_items, old_items) = (items(new), items(old));
     let mut out = PlanDiff {
