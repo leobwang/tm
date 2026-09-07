@@ -549,3 +549,94 @@ Log events written (through `store.append_text(store::LOG_PATH, …)`, one JSON 
 9. **Overdue → backlog is a pure move**: the line keeps its bytes (no `est:` rewrite, no stamp), per "moved to backlog.md#Overdue *instead*".
 10. **auto_close closes only the last unclosed period of each kind** (yesterday, last week, last month), finest-first, and records periods whose file does not exist as closed without running them — as the scope asked, documented on the function.
 11. **`demote()` refuses non-week items** with `HorizonError::Horizon` (a pinned day item is *moved* by `close_day`; a month outcome has no enclosing horizon). Note this also means demoting an already-demoted item fails once the tree resolves it to the month archive copy — readopt it first (covered by a test).
+
+# priority.rs + planner.rs types (layer 3)
+tm_core::priority
+
+```rust
+// §6.2 candidates
+pub enum Ineligible { Closed(State), Waiting, Blocked(Vec<Dep>), CapReached{cap: Rate, done_min: u32} }  // thiserror Display
+pub struct Candidate { id, title, ci, k, remaining_min, planned_min, need_min, multiplier: f64,
+    effective_due: Option<DateTime<Tz>>, window: Option<(DateTime<Tz>, DateTime<Tz>)>, scope: Scope,
+    floor: Option<Rate>, floor_done_min, cap: Option<Rate>, cap_done_min, state: State,
+    blocked_by: Vec<Dep>, waiting: bool, loc: Loc, splittable: bool, hot: bool, overdue: bool,
+    mandatory: bool, is_optional: bool, is_wall: bool, instance: Option<InstanceKey>,
+    root_order: (usize, usize), own_order: (usize, usize), tags: Vec<String> }   // Clone+Debug+PartialEq+Default+Serialize
+impl Candidate { fn new(id, ci, k, remaining_min, &Config) -> Candidate;   // bare, for tests/fixtures
+                 fn eligible() -> bool; fn ineligible_reason() -> Option<Ineligible>;
+                 fn cap_left_min() -> Option<u32>; fn floor_need_min(&Config) -> Option<u32> }
+pub fn collect_candidates(&Tree, &Replay, &Config, &Model, today: NaiveDate, now: DateTime<Tz>) -> Vec<Candidate>;
+pub fn done_this_period(&Replay, &Tree, &Id, Period, today) -> u32;   // item + descendants, period start..today
+pub fn period_range(Period, today) -> (NaiveDate, NaiveDate);
+pub fn lookahead_days(&[Candidate], today) -> u32;                    // size capacity::lookahead so EDF is honest
+
+// §7.2–§7.4
+pub enum PrioClass { Wall, Hot, Impossible, Overdue, Mandatory, HotFlag, Dated, Floor, Rank, Optional }
+   impl { fn label() -> &'static str; fn is_urgent() -> bool }
+pub struct Prio { id, p: u8, class: PrioClass, k: u8, u: Option<f64>, bin: Option<u8>, need_min, avail_min,
+                  allocation_min, shortfall_min, until: Option<NaiveDate>, hysteresis_applied: bool, raw_p: u8 }
+   impl { fn is_hot() -> bool }                                        // Clone+Debug+PartialEq+Serialize
+pub fn compute(&[Candidate], &[DayCapacity], &BTreeMap<Id,u8>, &Config, today) -> Vec<Prio>;  // 1:1, same order
+pub fn utilization(need_min, avail_min) -> f64;                        // need 0 -> 0.0, avail 0 -> INFINITY
+pub fn bin_of(u: f64, bins: &[f64]) -> Option<u8>;                     // None = HOT
+pub fn priorities_for_state(&[Prio]) -> BTreeMap<Id, u8>;              // state.priorities_yesterday, walls excluded
+
+// §7.4 sorting, §7.5 batching
+pub type SortKey = (u8, (usize, usize), (usize, usize));
+pub fn sort_key(&Prio, &Candidate) -> SortKey;
+pub fn sorted(&[Prio], &[Candidate]) -> Vec<Id>;                       // walls first, then by key; ineligible excluded
+pub fn sorted_candidates<'a>(&[Prio], &'a [Candidate]) -> Vec<&'a Candidate>;
+pub fn blocked(&[Candidate]) -> Vec<(Id, Ineligible)>;
+pub struct Batch { ids: Vec<Id>, ci: u8, total_min: u32, total_remaining_min: u32 }  impl { fn is_batch() -> bool }
+pub fn batches(sorted: &[&Candidate], &Config) -> Vec<Batch>;          // ALL groups, assignment order, singles included
+
+// §13 explain, §11 monitor
+pub struct Explanation { id, priority_part: String, need_part: Option<String>, slot_part: Option<String>,
+                         deps_part: String, cap_part: Option<String>, extra: Vec<String> }   // Display joins with "; "
+pub fn explain(&Id, &[Candidate], &[Prio], &Config) -> String;
+pub fn explanation(&Id, &[Candidate], &[Prio], &Config) -> Option<Explanation>;
+pub fn fmt_blocks(minutes: u32, block_min: u32) -> String;             // "6b" | "2.6b" | "20m"
+pub struct DeadlineHealth { min_slack_days: Option<f64>, hot: usize, impossible: usize, overdue: usize }
+pub fn deadline_health(&[Prio], &[Candidate], today) -> DeadlineHealth;
+```
+
+tm_core::planner (types only; §8.2 is M4)
+
+```rust
+pub struct PlanInput<'a> { tree: &Tree, log: &Log, replay: &Replay, cfg: &Config, model: &Model,
+    runtime: &RuntimeState, now: DateTime<Tz>, caps: Option<&[DayCapacity]>, candidates: Option<&[Candidate]> }
+   impl { fn new(tree, log, replay, cfg, model, runtime, now); fn with_caps(..); fn with_candidates(..); fn date() }
+pub enum SegKind { Block, Batch(Vec<Id>), Break, Routine, Wall, Rest, Optional, WindDown, Sleep, Lost }
+pub struct SegFlags { done, current, underused, hot, mandatory, deferred, ghost, planned_min: Option<u32>,
+                      multiplier: Option<f64>, note: Option<String> }   // Default
+pub struct Segment { start, end: DateTime<Tz>, kind: SegKind, energy: Option<u8>, item: Option<Id>,
+                     instance: Option<InstanceKey>, flags: SegFlags }   impl { fn minutes() }
+pub struct Diagnostics { underused: Vec<(Id,u8,u8)>, a_capacity_lost: u32, hot: Vec<Id>,
+    impossible: Vec<(Id,u32,NaiveDate)>, conflicts: Vec<(Id,Id)>, blocked: Vec<(Id,Vec<Dep>)>, deferred: Vec<Id>,
+    waiting: Vec<Id>, dropped_tail: Vec<Id>, plan_honesty: Option<f64>, rest_debt_min: u32, notes: Vec<String> }
+pub struct DayPlan { date, window: (DateTime<Tz>, DateTime<Tz>), budget_blocks: u32, segments: Vec<Segment>,
+                     diagnostics: Diagnostics, priorities: Vec<(Id, Prio)> }
+   impl { fn empty(date, window, budget); fn hash() -> String /* 16 hex, FNV-1a over serialized segments */;
+          fn block_minutes() -> u32 }
+pub fn plan(&PlanInput) -> DayPlan;
+```
+
+Typical caller: `let cands = priority::collect_candidates(&tree, &replay, &cfg, &model, today, now);` → size the lookahead with `priority::lookahead_days(&cands, today)` → `capacity::lookahead(...)` → `let prios = priority::compute(&cands, &caps, &state.priorities_yesterday, &cfg, today);` → `priority::batches(&priority::sorted_candidates(&prios, &cands), &cfg)` for step 5, `priority::blocked(&cands)` for the diagnostics, `priority::priorities_for_state(&prios)` back into `state.json`.
+
+## Deviations
+All ten are documented in priority.rs's module header under "Choices the spec leaves open (deviations)" / "How the rule is implemented".
+
+1. **Floor `need` carries `safety`.** §7.2 writes `need = floor − done_this_period` while §7.1 defines `need = remaining × safety` for everything. I use `(floor − done) × safety`, which is what the M3 definition of done spells out ("min:6b/w with 2b done → need 4b × safety").
+2. **Which candidates enter the EDF pass.** Only non-wall, non-optional candidates with a *tree* due (`due:` or the §3.2 derived prep due) — **not** instance candidates. A routine window instance also carries a `due` (its window close), but it is a placement window, not a deadline; letting it reserve lookahead capacity would double-count the day. Overdue items *do* take part: their window `[today, past due]` is empty, so they reserve nothing and score `u = ∞`.
+3. **Class precedence.** §7.2's `p = 0` line lists four causes; when several apply the class reported is the first of Wall → Optional → Overdue → Mandatory → HotFlag → Impossible → Hot → Dated/Floor/Rank. So a candidate that is both overdue and (artefactually) impossible reads as `Overdue` while still carrying the EDF numbers — and `deadline_health.overdue` and `.impossible` stay disjoint.
+4. **`u` when nothing is needed** is 0, not ∞ (§7.1 only defines the capacity-0 case), so a finished item is never reported HOT.
+5. **Floors do not reserve.** The floor pass reads the capacity left *after* the EDF pass (§7.1: capacity is net of earlier deadlines' reservations) but subtracts nothing itself — two floors in one period are independent claims and the spec gives them no order.
+6. **A floor whose `u_floor ≥ 1` is HOT/IMPOSSIBLE** like any other `u ≥ 1` (§7.2's HOT line is written over `u`, not over "dated").
+7. **Open, undated, floorless candidates fall back to `p = k + 2`** (§7.2's pure-rank line, which is written for *finite* items). In practice these are non-mandatory routine instances, which the planner places by window rather than by rank.
+8. **Hysteresis applies to every non-wall class**, not only the binned ones — §7.4 states it as a property of `p`. Classes with a constant `p` are unaffected in practice.
+9. **`BTreeMap` instead of `HashMap`** for `compute`'s `yesterday` argument and `priorities_for_state`'s return, matching `store::RuntimeState::priorities_yesterday` exactly so the `state.json` round trip needs no conversion (the scope said `HashMap`).
+10. **`min_slack_days`** (§11 gives no formula) is `days_until_due × (1 − u)` over deadlines that are still ahead (overdue has its own column); a non-finite `u` scores `−days`. **Batching gathers forward** rather than merging only adjacent runs: a batch starts at the first ungrouped small candidate and scans forward for same-`ci` candidates that still fit in a block, so scattered 20m items actually batch (§7.5's own example — "package · insurance · bank" — pairs items that are not adjacent). Walls and optionals are never batched (walls are placed as intervals, optionals only fill rest slots). **`batches` returns one `Vec<Batch>` covering every candidate** (singles as 1-element batches), which is what the scope's "return one Vec<Group> in assignment order" asked for, under the `Batch` name the scope also used.
+
+Two additions beyond the listed scope, both small: `lookahead_days` (see "upstream bugs" — the caller must size the lookahead to the furthest deadline or §7.3 reports false shortfalls) and `Candidate::window` / `Candidate::instance` (the planner needs the placement span and instance key that `recur` computed; recomputing them would duplicate §5.1).
+
+In `planner.rs`: `PlanInput` carries both `log` (as §8 names it) and `replay` (what the planner actually reads), plus the two optional `caps`/`candidates` shortcuts the scope allowed; `Diagnostics` gains the requested `notes: Vec<String>`.
