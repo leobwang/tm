@@ -1,0 +1,50 @@
+---
+name: plan-week
+description: Plan the coming week — propose 3–5 milestones from the month outcomes, the demoted work and the capacity grid, then write week/<next>.md after confirmation. Use when the user says "plan the week", "let's do the Sunday planning", or asks what next week should hold.
+---
+
+# /plan-week
+
+## 1. Read (never guess)
+
+```
+tm plan --week --json          # capacity grid: minutes per day per energy level
+tm review week --json          # last week: blocks, carry-over, calibration, plan honesty
+tm check --json                # the tree must be clean before you propose anything
+```
+
+Then read, in this order: `month/<this month>.md` (outcomes with `!k`, and
+everything under `# Demoted`), `backlog.md` (dated items whose `due:` falls in
+or near the week, and each `## series:` head), `calendar/<next week>.md` (the
+walls that are already booked).
+
+## 2. Propose
+
+- **3–5 milestones**, each a child of an outcome (`@O1`), with `ci` 0–5 and an
+  estimate in blocks. Calibrate it: `tm model --show` gives the duration
+  multiplier per tag, so a 4-block guess on a `#lean` item with `×1.6` really
+  costs 6 blocks of week budget. Say both numbers.
+- **Demoted items first.** Anything in `month/# Demoted` already lost a week;
+  pre-select it, and for anything with two or more `demoted:` stamps propose a
+  cut or a re-scope instead of a third attempt.
+- **Carry-over and honesty.** Show Σ estimates ÷ week budget. Above the
+  `week.plan_ratio` in `config.toml` (0.8), say what you would drop.
+- **Deadlines.** Name every dated item whose `u = need / capacity` is near 1
+  (`tm plan --explain ^id --json`) and what makes it fit: a smaller `est:`, a
+  later `due:`, or fewer milestones.
+
+Show the proposal as the exact lines you would write, grouped under
+`# Milestones` and `# Tasks`.
+
+## 3. Write — only after confirmation
+
+Never create or edit `week/<next>.md` before the user says yes. Then:
+
+```
+tm add "- [ ] 5 6b Finish ch.5 exercises @O1" --to week/<next week>.md --section Milestones
+tm readopt ^m2 --to week          # for each pre-selected demoted item
+tm check
+```
+
+Use `tm add` (it assigns the `^id`) rather than writing lines by hand. Report
+what was written and what was deliberately left out.

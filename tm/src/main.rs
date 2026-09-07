@@ -16,10 +16,16 @@
 //!   → exit code mapping.
 //! * `cli::undo` — the undo stack every mutating verb pushes to (§13
 //!   `tm undo`).
+//!
+//! One sibling module sits outside `cli` because it is content, not command
+//! handling: [`init`] carries everything `tm init` generates (§14's
+//! `CLAUDE.md`, skills and hooks, §16's config, §2's starting files),
+//! embedded from `tm/templates/`.
 
 #![warn(missing_docs)]
 
 mod cli;
+mod init;
 
 fn main() {
     std::process::exit(cli::main());

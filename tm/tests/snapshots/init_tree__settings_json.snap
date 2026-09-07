@@ -1,0 +1,26 @@
+---
+source: tm/tests/init_tree.rs
+expression: text
+---
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "tm check",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "deny": [
+      "Edit(./.tm/**)",
+      "Write(./.tm/**)"
+    ]
+  }
+}
