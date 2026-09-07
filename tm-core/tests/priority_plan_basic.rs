@@ -333,9 +333,13 @@ fn explain_names_the_shortfall_when_impossible() {
 // planner.rs types (§8)
 // ---------------------------------------------------------------------------
 
-/// The stub `plan()` returns a valid, hashable `DayPlan` with §8.1's window
-/// and budget from `state.json`, and says in the diagnostics that the
-/// algorithm is not implemented yet.
+/// `plan()` returns a valid, hashable `DayPlan` with §8.1's window and budget
+/// from `state.json`.
+///
+/// (M4 note: the three assertions this test used to make about the *stub* —
+/// no segments, no block minutes, a "planner not implemented" note — were
+/// replaced when §8.2 landed. Everything else, including the whole hash
+/// contract below, is unchanged.)
 #[test]
 fn planner_types_carry_the_window_budget_and_hash() {
     let (tree, cfg, replay) = plan_basic();
@@ -366,20 +370,25 @@ fn planner_types_carry_the_window_budget_and_hash() {
         (at("2026-09-07", 7, 0), at("2026-09-07", 16, 0))
     );
     assert_eq!(day.budget_blocks, 6);
-    assert!(day.segments.is_empty());
-    assert_eq!(day.block_minutes(), 0);
-    assert_eq!(day.diagnostics.notes, vec!["planner not implemented"]);
+    assert!(!day.segments.is_empty(), "§8.2 fills the day");
+    assert!(day.block_minutes() <= 6 * 60, "§8.3: no overbooking");
 
     // Purity: the same input gives the same plan and the same hash.
     assert_eq!(planner::plan(&input), day);
-    let empty_hash = day.hash();
+    assert_eq!(day.hash(), planner::plan(&input).hash());
+
+    // The hash contract itself is checked on a plan built by hand, so the
+    // segment under test is the only one in it (M4: `plan()` now returns a
+    // full day, and its first segment carries flags of its own).
+    let hand = DayPlan::empty(day.date, day.window, day.budget_blocks);
+    let empty_hash = hand.hash();
     assert_eq!(empty_hash.len(), 16);
     assert!(empty_hash.chars().all(|c| c.is_ascii_hexdigit()));
-    assert_eq!(day.hash(), empty_hash);
+    assert_eq!(hand.hash(), empty_hash);
 
     // A different set of segments hashes differently; the diagnostics do not
     // enter the hash.
-    let mut moved = day.clone();
+    let mut moved = hand.clone();
     moved.segments.push(Segment {
         start: at("2026-09-07", 11, 0),
         end: at("2026-09-07", 12, 0),
@@ -395,7 +404,7 @@ fn planner_types_carry_the_window_budget_and_hash() {
     });
     assert_ne!(moved.hash(), empty_hash);
     assert_eq!(moved.block_minutes(), 60);
-    let mut noted = day.clone();
+    let mut noted = hand.clone();
     noted.diagnostics.rest_debt_min = 40;
     assert_eq!(noted.hash(), empty_hash);
 
@@ -466,8 +475,10 @@ fn plan_without_a_stored_window_uses_the_spec_formula() {
     let now = at("2026-09-07", 10, 42);
     let input = PlanInput::new(&tree, &log, &replay, &cfg, &model, &runtime, now);
     let day = planner::plan(&input);
-    // 10:42 + 8h = 18:42, inside the 19:00 cap.
-    assert_eq!(day.window, (now, at("2026-09-07", 18, 42)));
+    // 10:42 + 8h = 18:42, inside the 19:00 cap, plus §8.1's `Σ duration(walls
+    // inside the window)` — the 12:50–13:50 meeting — is 19:42. (Before M4 the
+    // planner passed no walls to `window_and_budget` and this read 18:42.)
+    assert_eq!(day.window, (now, at("2026-09-07", 19, 42)));
     assert_eq!(day.budget_blocks, 6);
 
     // `tm arrive` at 07:00 without a stored window: the window starts there.
@@ -478,9 +489,11 @@ fn plan_without_a_stored_window_uses_the_spec_formula() {
     };
     let input = PlanInput::new(&tree, &log, &replay, &cfg, &model, &arrived, now);
     let day = planner::plan(&input);
+    // 07:00 + 8h = 15:00, plus the 12:50–13:50 wall inside it, is 16:00 —
+    // which is exactly the window `.tm/state.json` stores in §4.3.
     assert_eq!(
         day.window,
-        (at("2026-09-07", 7, 0), at("2026-09-07", 15, 0))
+        (at("2026-09-07", 7, 0), at("2026-09-07", 16, 0))
     );
 
     // A late arrival is capped at `window_cap` (19:00), never negative.

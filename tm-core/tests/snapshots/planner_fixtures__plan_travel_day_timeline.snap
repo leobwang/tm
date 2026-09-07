@@ -1,0 +1,22 @@
+---
+source: tm-core/tests/planner_fixtures.rs
+expression: timeline(&day)
+---
+date 2026-09-07 · window 07:00–19:40 · budget 6b
+05:30-06:00 routine      · breakfast  ✓    
+06:15-08:15 wall         · g3              buffer before ✈ ORD→SFO UA 1234
+08:15-10:40 wall         · g3              travel day
+10:40-11:00 routine      · a3         !    Pick up package
+11:00-11:30 rest         4 ·               
+11:30-12:00 routine      · lunch      !    lunch
+12:00-12:50 rest         3 ·               
+12:50-13:50 wall         · g1              
+13:50-14:50 optional     · Severance S3E4      Severance S3E4
+15:10-16:00 rest         2 ·               
+16:00-17:00 routine      · workout    !    workout
+17:00-17:30 routine      · laundry    ~    laundry
+17:30-18:00 routine      · dinner     !    dinner
+18:00-18:45 routine      · groceries  ~    groceries
+18:45-20:45 optional     · Factorio        Factorio
+21:30-22:00 wind-down    · ·               wind-down · bed 22:00
+22:00-00:00 sleep        · sleep

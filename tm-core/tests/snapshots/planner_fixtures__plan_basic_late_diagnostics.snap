@@ -1,0 +1,15 @@
+---
+source: tm-core/tests/planner_fixtures.rs
+expression: diagnostics(&day)
+---
+underused      ·
+a_capacity_lost 0m
+hot            ·
+impossible     ·
+conflicts      ·
+blocked        t5(1)
+deferred       ·
+waiting        a4
+dropped_tail   m3 t1 m2 d2 d1 m4 a1 c2 p1 x2
+plan_honesty   1.33
+rest_debt      0m
