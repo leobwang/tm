@@ -1,0 +1,5 @@
+---
+source: tm-core/tests/priority_plan_basic.rs
+expression: "batched.join(\"\\n\")"
+---
+ci1 40m: a3 · shower

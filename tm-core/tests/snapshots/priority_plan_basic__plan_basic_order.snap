@@ -1,0 +1,30 @@
+---
+source: tm-core/tests/priority_plan_basic.rs
+expression: "order.join(\"\\n\")"
+---
+x1
+g1
+a3
+lunch
+dinner
+workout
+laundry
+m1
+m3
+t1
+t3
+m2
+t4
+d2
+d1
+m4
+x2
+a1
+c2
+sleep
+shower
+laundry
+groceries
+Severance S3E4
+Factorio
+p1
