@@ -1,0 +1,403 @@
+---
+source: tm-core/tests/review_week.rs
+expression: "{ let mut r = r; r.heat.clear(); r }"
+---
+{
+  "week": {
+    "year": 2026,
+    "week": 36
+  },
+  "hit": [
+    "m1"
+  ],
+  "demoted": [
+    "m2",
+    "m4"
+  ],
+  "blocks_per_day": [
+    [
+      "2026-08-31",
+      4
+    ],
+    [
+      "2026-09-01",
+      4
+    ],
+    [
+      "2026-09-02",
+      4
+    ],
+    [
+      "2026-09-03",
+      4
+    ],
+    [
+      "2026-09-04",
+      4
+    ],
+    [
+      "2026-09-05",
+      2
+    ],
+    [
+      "2026-09-06",
+      2
+    ]
+  ],
+  "blocks_done": 24,
+  "block_min": 1440,
+  "load": 1008.0,
+  "block_len_min": 60,
+  "heat": [],
+  "mix": {
+    "minutes_by_ci": [
+      0,
+      0,
+      360,
+      360,
+      360,
+      360
+    ],
+    "total_min": 1440,
+    "high_min": 720,
+    "budget_min": 2520,
+    "high_share": 29,
+    "underused": 0
+  },
+  "breaks": {
+    "breaks": [
+      {
+        "planned_min": 20,
+        "actual_min": 20,
+        "place": "walk",
+        "over": false
+      },
+      {
+        "planned_min": 20,
+        "actual_min": 20,
+        "place": "seat",
+        "over": false
+      },
+      {
+        "planned_min": 20,
+        "actual_min": 20,
+        "place": "walk",
+        "over": false
+      },
+      {
+        "planned_min": 20,
+        "actual_min": 20,
+        "place": "seat",
+        "over": false
+      },
+      {
+        "planned_min": 20,
+        "actual_min": 20,
+        "place": "walk",
+        "over": false
+      },
+      {
+        "planned_min": 20,
+        "actual_min": 20,
+        "place": "seat",
+        "over": false
+      },
+      {
+        "planned_min": 20,
+        "actual_min": 20,
+        "place": "walk",
+        "over": false
+      },
+      {
+        "planned_min": 20,
+        "actual_min": 20,
+        "place": "seat",
+        "over": false
+      },
+      {
+        "planned_min": 20,
+        "actual_min": 20,
+        "place": "walk",
+        "over": false
+      },
+      {
+        "planned_min": 20,
+        "actual_min": 20,
+        "place": "seat",
+        "over": false
+      },
+      {
+        "planned_min": 20,
+        "actual_min": 20,
+        "place": "walk",
+        "over": false
+      },
+      {
+        "planned_min": 20,
+        "actual_min": 20,
+        "place": "seat",
+        "over": false
+      }
+    ],
+    "planned_min": 240,
+    "actual_min": 240,
+    "over_count": 0,
+    "over_share": 0,
+    "by_where": {
+      "seat": [
+        6,
+        120
+      ],
+      "walk": [
+        6,
+        120
+      ]
+    }
+  },
+  "latency": [
+    [
+      "2026-08-31",
+      55,
+      5
+    ],
+    [
+      "2026-09-01",
+      55,
+      5
+    ],
+    [
+      "2026-09-02",
+      55,
+      5
+    ],
+    [
+      "2026-09-03",
+      55,
+      5
+    ],
+    [
+      "2026-09-04",
+      55,
+      5
+    ],
+    [
+      "2026-09-05",
+      90,
+      5
+    ],
+    [
+      "2026-09-06",
+      90,
+      5
+    ]
+  ],
+  "sleep": [
+    {
+      "date": "2026-08-31",
+      "slept_min": 480,
+      "onset_min": null,
+      "blocks_done": 4
+    },
+    {
+      "date": "2026-09-01",
+      "slept_min": 480,
+      "onset_min": null,
+      "blocks_done": 4
+    },
+    {
+      "date": "2026-09-02",
+      "slept_min": 480,
+      "onset_min": null,
+      "blocks_done": 4
+    },
+    {
+      "date": "2026-09-03",
+      "slept_min": 400,
+      "onset_min": null,
+      "blocks_done": 4
+    },
+    {
+      "date": "2026-09-04",
+      "slept_min": 480,
+      "onset_min": null,
+      "blocks_done": 4
+    },
+    {
+      "date": "2026-09-05",
+      "slept_min": 520,
+      "onset_min": null,
+      "blocks_done": 2
+    },
+    {
+      "date": "2026-09-06",
+      "slept_min": 500,
+      "onset_min": null,
+      "blocks_done": 2
+    }
+  ],
+  "lounge": {
+    "by_wake_hour": [
+      [
+        6,
+        10,
+        0.9
+      ],
+      [
+        8,
+        3,
+        0.67
+      ]
+    ],
+    "overall": 0.85,
+    "streak": 7
+  },
+  "mae_per_day": [
+    [
+      "2026-08-31",
+      4,
+      0.25
+    ],
+    [
+      "2026-09-01",
+      4,
+      0.0
+    ],
+    [
+      "2026-09-02",
+      4,
+      0.25
+    ],
+    [
+      "2026-09-03",
+      4,
+      0.75
+    ],
+    [
+      "2026-09-04",
+      4,
+      0.0
+    ],
+    [
+      "2026-09-05",
+      2,
+      0.0
+    ],
+    [
+      "2026-09-06",
+      2,
+      0.5
+    ]
+  ],
+  "estimates": [
+    {
+      "tag": "admin",
+      "n": 13,
+      "mean_ratio": 0.82,
+      "multiplier": 0.88,
+      "recent_ratio": 0.83
+    },
+    {
+      "tag": "lean",
+      "n": 12,
+      "mean_ratio": 1.28,
+      "multiplier": 1.19,
+      "recent_ratio": 1.26
+    },
+    {
+      "tag": "soundcode",
+      "n": 11,
+      "mean_ratio": 1.0,
+      "multiplier": 1.0,
+      "recent_ratio": 1.0
+    },
+    {
+      "tag": "_default",
+      "n": 45,
+      "mean_ratio": 1.02,
+      "multiplier": 1.03,
+      "recent_ratio": 1.04
+    }
+  ],
+  "curves": [
+    {
+      "curve": "home",
+      "prior": [
+        3,
+        4,
+        4,
+        4,
+        3,
+        3,
+        3,
+        3,
+        2,
+        2,
+        2,
+        2
+      ],
+      "learned": null
+    },
+    {
+      "curve": "lounge",
+      "prior": [
+        4,
+        5,
+        5,
+        5,
+        5,
+        4,
+        4,
+        4,
+        3,
+        3,
+        2,
+        2
+      ],
+      "learned": null
+    }
+  ],
+  "planned_blocks": 8.0,
+  "budget_blocks": 25,
+  "plan_honesty": 0.4,
+  "deadline_health": null,
+  "churn": [
+    {
+      "id": "m9",
+      "stamps": [
+        {
+          "Week": 34
+        },
+        {
+          "Week": 35
+        },
+        {
+          "Week": 36
+        }
+      ]
+    },
+    {
+      "id": "m4",
+      "stamps": [
+        {
+          "Week": 35
+        },
+        {
+          "Week": 36
+        }
+      ]
+    },
+    {
+      "id": "m8",
+      "stamps": [
+        {
+          "Week": 35
+        },
+        {
+          "Week": 36
+        }
+      ]
+    }
+  ],
+  "carry_in_min": 60,
+  "carry_out_min": 300
+}
