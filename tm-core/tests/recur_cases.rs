@@ -139,12 +139,11 @@ fn shower_is_due_two_days_after_the_last_one_and_valid_for_one_more() {
 #[test]
 fn before_its_due_the_after_done_instance_is_pending_but_not_yet() {
     let w = load();
-    // On 09-06 the shower done on 09-05 is not due until tomorrow, so it is
-    // outside a query for today alone…
+    // On 09-06 the shower done on 09-05 is not due until tomorrow, so a query
+    // for that day alone sees nothing at all: #5 is behind it and #6 ahead.
     assert!(w
         .instances("shower", ("2026-09-06", "2026-09-06"), "2026-09-06")
-        .iter()
-        .all(|i| i.key != InstanceKey::Nth(6)));
+        .is_empty());
     // …and pending, with a future due, in a range that reaches its due date.
     let v = w.instances("shower", ("2026-09-06", "2026-09-08"), "2026-09-06");
     let pending = v.last().expect("the pending instance is always there");
@@ -172,11 +171,15 @@ fn before_its_due_the_after_done_instance_is_pending_but_not_yet() {
 #[test]
 fn a_missed_shower_is_due_immediately_with_the_same_ordinal() {
     let w = load();
-    // 2026-09-09: the 2d~1d chance (07 → 08) is gone.
+    // By 2026-09-10 the 2d~1d chance of the 09-05 shower (due 09-07, valid
+    // through 09-08) is gone. §5.3, window + after-done: the offset still runs
+    // from the last *completion* — 09-05 + 2d = 09-07, already past — so the
+    // next instance is due immediately, i.e. today, not two days from the miss.
     let st = recur::after_done_state(w.item("shower"), &w.replay, date("2026-09-10"), &w.cfg)
         .expect("after-done");
     assert!(st.missed);
-    assert_eq!(st.due, date("2026-09-10"), "offset from the last completion");
+    assert_eq!(st.last_done_date, Some(date("2026-09-05")));
+    assert_eq!(st.due, date("2026-09-10"), "due immediately");
     assert_eq!(st.valid_until, Some(date("2026-09-11")));
     let inst = w.one("shower", "2026-09-10", "2026-09-10");
     assert_eq!(inst.key, InstanceKey::Nth(6), "still the sixth shower");
@@ -234,7 +237,8 @@ fn laundry_persists_and_is_mandatory_and_overdue_today() {
 #[test]
 fn a_missed_expire_window_expires_and_on_miss_next_is_skipped() {
     let w = load();
-    // groceries (expire) was never done in W35 and the week is over.
+    // Two daily routines nobody logged on a day that is now past: stretch is
+    // `on-miss:next`, lunch takes the calendar-window default, `expire`.
     let stretch = w.instances("stretch", ("2026-09-02", "2026-09-02"), "2026-09-07");
     assert_eq!(stretch[0].status, InstanceStatus::Skipped, "on-miss:next");
     let lunch = w.instances("lunch", ("2026-09-03", "2026-09-03"), "2026-09-07");
@@ -507,11 +511,21 @@ fn a_one_off_window_is_mandatory_on_the_day_it_closes() {
     let info = w.info("a3", &inst, "2026-09-07", "2026-09-07T10:42");
     assert!(info.mandatory && info.last_chance);
     assert_eq!(info.dur_min, Some(20));
-    // Once the window has passed there is nothing to place.
+    // Once the window has passed there is nothing to place, and nothing to
+    // badge either.
     let info = w.info("a3", &inst, "2026-09-07", "2026-09-07T21:30");
-    assert!(!info.mandatory);
-    let after = w.info("a3", &inst, "2026-09-08", "2026-09-08T09:00");
-    assert!(!after.mandatory && after.overdue);
+    assert!(!info.mandatory && !info.last_chance);
+    // The next day it has expired (`on-miss:expire` carries nothing), and a
+    // query for 09-08 alone does not reach the window at all.
+    let v = w.instances("a3", ("2026-09-01", "2026-09-08"), "2026-09-08");
+    assert_eq!(keys(&v), vec!["2026-09-07"]);
+    assert_eq!(v[0].status, InstanceStatus::Expired);
+    let after = w.info("a3", &v[0], "2026-09-08", "2026-09-08T09:00");
+    assert!(!after.mandatory && !after.last_chance);
+    assert!(!after.overdue, "expired, not carried into today");
+    assert!(w
+        .instances("a3", ("2026-09-08", "2026-09-08"), "2026-09-08")
+        .is_empty());
 }
 
 #[test]
@@ -555,7 +569,8 @@ fn todays_instances_hold_what_the_planner_may_place() {
         mandatory,
         vec!["k1", "a3", "lunch", "workout", "water-plants", "laundry"]
     );
-    // The one item carried out of last week is the laundry.
+    // Overdue: last week's laundry window (persist, so it carries) and the
+    // vitamins, whose after-done due passed on 09-05 with no validity limit.
     let carried: Vec<String> = today
         .iter()
         .filter(|(_, info)| info.overdue)

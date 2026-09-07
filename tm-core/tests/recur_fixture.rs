@@ -199,9 +199,27 @@ fn week_instances_cover_the_whole_week() {
         .filter(|(i, _)| i.item.as_str() == "lunch")
         .count();
     assert_eq!(lunch, 7);
-    let laundry = grid
+    let laundry: Vec<String> = grid
         .iter()
         .filter(|(i, _)| i.item.as_str() == "laundry")
-        .count();
-    assert_eq!(laundry, 1);
+        .map(|(i, _)| i.key.to_string())
+        .collect();
+    // §12.3 splits the screen: the grid is *this week's* windows, and overdue
+    // persist items are a separate list beside it. So last week's laundry
+    // window (still Pending, carried) keeps its own date and is not a W37
+    // column — `today_instances` is what surfaces it, and does.
+    assert_eq!(laundry, vec!["2026-09-07"]);
+    let items: Vec<_> = tree.iter().collect();
+    let carried: Vec<String> = recur::today_instances(items, today, now, &replay, &cfg)
+        .iter()
+        .filter(|(i, _)| i.item.as_str() == "laundry")
+        .map(|(i, info)| format!("{} overdue={}", i.key, info.overdue))
+        .collect();
+    assert_eq!(
+        carried,
+        vec![
+            "2026-08-31 overdue=true".to_string(),
+            "2026-09-07 overdue=false".to_string()
+        ]
+    );
 }

@@ -52,15 +52,25 @@
 //!   `every:week`, and `due..valid_until` for `after-done:2d~1d`. `due` is the
 //!   end of the *on-time* chance: the window end on the instance's own date.
 //! * **Anchors.** `every:Nd` is anchored at the item's earliest known
-//!   completion (from the log) and falls back to the range start; the phase
-//!   extends in both directions from the anchor. `every:Nw:<wd>` is anchored
-//!   on ISO week number: a week counts when `(iso_week − 1) % N == 0`, so
-//!   `every:2w:Sun` is the Sunday of every odd ISO week. `every:month:D`
-//!   clamps `D` to the length of the month. `every:week` / `every:Nw` (no
-//!   weekday) yields one instance per qualifying ISO week, keyed by its
-//!   Monday and placeable on any day of that week.
-//! * **Ordinals.** `Nth(n)` counts distinct completion *dates* in the log, so
-//!   the next after-done instance after five showers is `#6`.
+//!   completion (from the log); with no completion at all it falls back to a
+//!   *fixed* epoch ([`PHASE_EPOCH`], 1970-01-01), never to the query range, so
+//!   one item has one set of occurrence dates whatever range is asked about.
+//!   The phase extends in both directions from the anchor. `every:Nw:<wd>` and
+//!   `every:Nw` count ISO weeks continuously from the Monday of 1970-W01
+//!   ([`WEEK_EPOCH`]): a week qualifies when that count is a multiple of `N`.
+//!   The count does not restart at a year boundary, so `every:2w:Sun` keeps a
+//!   14-day rhythm across a 53-week ISO year; through 2026 it is the Sunday of
+//!   every odd ISO week. `every:month:D` clamps `D` to the length of the
+//!   month. `every:week` / `every:Nw` (no weekday) yields one instance per
+//!   qualifying ISO week, keyed by its Monday and placeable on any day of that
+//!   week.
+//! * **Ordinals.** `Nth(n)` is one past the highest ordinal the log has
+//!   *resolved* (done, skipped, missed or expired), with the number of
+//!   completion dates as a floor for `done` events that carry no `inst`. So
+//!   the shower after five is `#6`; a second dose of the same sub-day
+//!   `after-done:` item gets its own ordinal instead of colliding with the one
+//!   already logged; and skipping `#6` moves the pending instance on to `#7`
+//!   rather than pinning it to a key the log has closed.
 //! * **Time.** Instance windows and dues are wall-clock `Naive*` values in
 //!   `cfg.tz`, exactly as the line writes them. The only instants are log
 //!   timestamps: they are converted with `cfg.tz` into `DateTime<Tz>` before
@@ -77,6 +87,10 @@
 //!   closed expire window is no longer mandatory. Only `expire` gets that
 //!   veto: §5.2 says "on_miss ≠ expire" for the first arm, so an
 //!   `on-miss:next` instance is mandatory on its closing day too.
+//! * **Last chance** ([`InstanceInfo::last_chance`]) is the badge version of
+//!   the same test and reads `now` too: the span closes today *and* has not
+//!   closed yet. An instance whose window ran out this morning is over, not a
+//!   last chance.
 //!
 //! ## Deviations from the scope
 //!
@@ -94,6 +108,17 @@
 //!    needs to tell "still waiting" from "arrived, flip the line".
 //! 5. [`done_instance`] is added next to [`skip_instance`]; `tm routine done`
 //!    needs the symmetric constructor and it is three lines.
+//! 6. The scope says `every:Nd` falls back to "the range start" when the log
+//!    has no completion. It cannot: [`today_instances`] and [`week_instances`]
+//!    ask about different ranges, so the same item would be due on different
+//!    days on the Today screen and on the Necessities grid, and whether it is
+//!    ever due today would depend on [`CARRY_LOOKBACK_DAYS`]. The fallback is
+//!    the fixed [`PHASE_EPOCH`] instead.
+//! 7. §5.3's `on-miss:next` row applies to `after-done:` items as written:
+//!    a missed chance is Skipped and the *next* occurrence keeps its due point
+//!    (`last done + offset`). Only `on-miss:expire` re-dues it to today.
+//!    [`AfterDoneState`] therefore also reports `pending`, the ordinal of the
+//!    one pending instance, which is not always `count + 1`.
 
 use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime};
 use serde::{Deserialize, Serialize};
@@ -113,6 +138,22 @@ pub type DateRange = (NaiveDate, NaiveDate);
 /// How far back [`today_instances`] looks for a `persist` instance that is
 /// still pending. Older misses are noise, not work.
 pub const CARRY_LOOKBACK_DAYS: i64 = 60;
+
+/// The phase anchor `every:Nd` falls back to when the log has no completion of
+/// the item (1970-01-01). It is fixed on purpose: the occurrence dates of an
+/// item must not depend on the range a caller happens to ask about.
+pub const PHASE_EPOCH: NaiveDate = match NaiveDate::from_ymd_opt(1970, 1, 1) {
+    Some(d) => d,
+    None => NaiveDate::MIN,
+};
+
+/// The Monday `every:Nw` counts weeks from — the Monday of ISO 1970-W01. Using
+/// a running count instead of the ISO week *number* keeps `every:2w` 14 days
+/// apart across a 53-week year.
+pub const WEEK_EPOCH: NaiveDate = match NaiveDate::from_ymd_opt(1969, 12, 29) {
+    Some(d) => d,
+    None => NaiveDate::MIN,
+};
 
 // ---------------------------------------------------------------------------
 // Extra per-instance information
@@ -147,8 +188,13 @@ pub struct AfterDoneState {
     pub last_done: Option<DateTime<FixedOffset>>,
     /// The last completion's local date (`cfg.tz`).
     pub last_done_date: Option<NaiveDate>,
-    /// Completions so far (distinct completion dates in the log).
+    /// Completions so far: the `done` instances the log has for this item, at
+    /// least one per distinct completion date.
     pub count: u32,
+    /// The ordinal of the one pending instance (`#pending`): one past the
+    /// highest ordinal the log has resolved. It is `count + 1` until an
+    /// occurrence is skipped rather than done.
+    pub pending: u32,
     /// The date the next instance is due.
     pub due: NaiveDate,
     /// The moment the on-time chance ends (window close on `due`).
@@ -242,10 +288,13 @@ pub fn instance_info(
     let overdue = actionable && due.is_some_and(|d| d.date() < today);
     InstanceInfo {
         mandatory: is_mandatory(item, inst, today, now),
+        // Today is the last day it can be done at all — and it still can be:
+        // a window that ran out this morning is over, not a last chance, and
+        // `is_mandatory` already reads `now` the same way.
         last_chance: actionable
             && item.on_miss != OnMiss::Persist
             && has_closing_deadline(item)
-            && close.is_some_and(|c| c.date() == today),
+            && close.is_some_and(|c| c.date() == today && now < c),
         overdue,
         carried_from: if overdue { due.map(|d| d.date()) } else { None },
         deferred_from_yesterday: actionable && start.is_some_and(|s| s.date() < today),
@@ -329,6 +378,12 @@ where
 
 /// Every instance of `items` inside one ISO week, with its flags — the
 /// Necessities screen's 7-column grid (§12.3).
+///
+/// This is the grid and only the grid: occurrences whose span intersects that
+/// week, each keyed by its own date. An overdue `persist` instance carried in
+/// from an earlier week keeps its earlier date, so it is *not* here; §12.3
+/// lists those separately ("then overdue-persist items") and
+/// [`today_instances`] is where they come from.
 pub fn week_instances<'a, I>(
     items: I,
     week: IsoWeek,
@@ -356,9 +411,14 @@ where
 /// does not recur on completion.
 ///
 /// Before the first completion the instance is due today. After a miss
-/// (`today > valid_until`) with `on_miss ≠ persist` the next instance is due
-/// immediately — today — and keeps the same ordinal; under `persist` the
-/// original due point stands and the instance simply runs overdue.
+/// (`today > valid_until`) §5.3 splits three ways:
+///
+/// * `expire` (the default) — the chance is gone, so the next instance is due
+///   immediately: today, its offset still measured from the last *completion*,
+///   which is already past;
+/// * `next` — the missed occurrence is Skipped and the next one is unchanged,
+///   so `due` stays at `last done + offset` and [`instances`] reports both;
+/// * `persist` — the original due point stands and the instance runs overdue.
 pub fn after_done_state(
     item: &Item,
     replay: &Replay,
@@ -372,7 +432,7 @@ pub fn after_done_state(
     let last = replay.last_done(key.as_str());
     let last_local = last.map(|t| t.with_timezone(&cfg.tz));
     let last_done_date = last_local.map(|t| t.date_naive());
-    let count = replay.done_dates(key.as_str()).len() as u32;
+    let count = completion_count(&key, replay);
 
     let base_due = match last_local {
         Some(t) => {
@@ -387,7 +447,10 @@ pub fn after_done_state(
     };
     let base_valid = window.map(|w| add_days(base_due, whole_days(w)));
     let missed = base_valid.is_some_and(|v| today > v);
-    let (due, valid_until) = if missed && item.on_miss != OnMiss::Persist {
+    // §5.3: only `expire` re-dues the occurrence to today. `next` leaves it
+    // where it was (and marks the missed one Skipped, see `instances`), and
+    // `persist` carries it overdue.
+    let (due, valid_until) = if missed && item.on_miss == OnMiss::Expire {
         (today, window.map(|w| add_days(today, whole_days(w))))
     } else {
         (base_due, base_valid)
@@ -396,6 +459,7 @@ pub fn after_done_state(
         last_done: last,
         last_done_date,
         count,
+        pending: next_ordinal(&key, replay),
         due,
         due_at: close_on(item, due),
         valid_until,
@@ -589,11 +653,15 @@ fn calendar_instances(
     today: NaiveDate,
     replay: &Replay,
 ) -> Vec<Instance> {
+    // The phase of `every:Nd` is the item's own, never the caller's: the
+    // earliest completion the log knows, else the fixed `PHASE_EPOCH`. Anchor
+    // it on `range.0` and `today_instances` and `week_instances` would put the
+    // same item on different days (see the module docs, deviation 6).
     let anchor = replay
         .done_dates(key.as_str())
         .first()
         .copied()
-        .unwrap_or(range.0);
+        .unwrap_or(PHASE_EPOCH);
     rule_occurrences(rule, range, anchor)
         .into_iter()
         .map(|(first, last)| {
@@ -623,7 +691,17 @@ fn after_done_instances(
     let Some(st) = after_done_state(item, replay, today, cfg) else {
         return Vec::new();
     };
-    let pending = InstanceKey::Nth(st.count + 1);
+    // §5.3 `on-miss:next`: the missed chance is Skipped and the next
+    // occurrence is unchanged, so it takes the following ordinal and keeps
+    // `st.due`. Nothing is logged for the skip, so it is synthesised here.
+    let mut ordinal = st.pending;
+    let skipped = if st.missed && item.on_miss == OnMiss::Next {
+        ordinal += 1;
+        Some(InstanceKey::Nth(st.pending))
+    } else {
+        None
+    };
+    let pending = InstanceKey::Nth(ordinal);
     let mut out = logged_instances(key, range, replay, cfg, Some(pending));
     if st.due <= range.1 && !item.state.is_closed() {
         // With a `~validity` the span ends there; without one the instance
@@ -636,6 +714,15 @@ fn after_done_instances(
             }
             _ => None,
         };
+        if let Some(k) = skipped {
+            out.push(Instance {
+                item: key.clone(),
+                key: k,
+                due: Some(st.due_at),
+                window,
+                status: InstanceStatus::Skipped,
+            });
+        }
         out.push(Instance {
             item: key.clone(),
             key: pending,
@@ -656,8 +743,7 @@ fn on_event_instances(
     cfg: &Config,
 ) -> Vec<Instance> {
     let mut out = Vec::new();
-    let count = replay.done_dates(key.as_str()).len() as u32;
-    let pending = InstanceKey::Nth(count + 1);
+    let pending = InstanceKey::Nth(next_ordinal(key, replay));
     out.extend(logged_instances(key, range, replay, cfg, Some(pending)));
     // While the item waits, no instance is pending: the wait ends when the
     // event arrives or the timeout elapses (§5.1).
@@ -714,6 +800,43 @@ fn one_off_instances(
     }]
 }
 
+/// The ordinal of the single pending occurrence of an ordinal-keyed item
+/// (`after-done:`, `on-event:`).
+///
+/// It is one past the highest ordinal the log has *resolved* — done, skipped,
+/// missed or expired — so a skipped `#2` moves the pending instance on to `#3`
+/// instead of leaving it pinned to a key the log has already closed, and two
+/// completions on the same day advance it twice. A `done` event carries no
+/// `inst` (`tm done ^a4` on an `on-event:` item), so the number of completion
+/// dates is a floor.
+fn next_ordinal(key: &Id, replay: &Replay) -> u32 {
+    let resolved = replay
+        .instances_of(key.as_str())
+        .filter_map(|(inst, rec)| match parse_instance_key(inst) {
+            Some(InstanceKey::Nth(n)) if rec.status != InstanceStatus::Pending => Some(n),
+            _ => None,
+        })
+        .max()
+        .unwrap_or(0);
+    let dates = u32::try_from(replay.done_dates(key.as_str()).len()).unwrap_or(u32::MAX);
+    resolved.max(dates).saturating_add(1)
+}
+
+/// How many times an ordinal-keyed item was completed: the `done` instances
+/// the log has, or — for completions logged without an `inst` — the number of
+/// distinct completion dates.
+fn completion_count(key: &Id, replay: &Replay) -> u32 {
+    let logged = replay
+        .instances_of(key.as_str())
+        .filter(|(inst, rec)| {
+            rec.status == InstanceStatus::Done
+                && matches!(parse_instance_key(inst), Some(InstanceKey::Nth(_)))
+        })
+        .count();
+    let dates = replay.done_dates(key.as_str()).len();
+    u32::try_from(logged.max(dates)).unwrap_or(u32::MAX)
+}
+
 /// The instances the log knows about, for the ordinal-keyed recurrences.
 /// Their window is not reconstructed — only the log says they happened.
 fn logged_instances(
@@ -768,9 +891,9 @@ fn rule_occurrences(rule: &Rule, range: DateRange, anchor: NaiveDate) -> Vec<(Na
             each_day(range, &mut out, |d| (d - anchor).num_days().rem_euclid(n) == 0);
         }
         Rule::EveryNWeeks(n, wd) => {
-            let n = (*n).max(1);
+            let n = i64::from((*n).max(1));
             each_day(range, &mut out, |d| {
-                d.weekday() == *wd && (d.iso_week().week() - 1).is_multiple_of(n)
+                d.weekday() == *wd && week_index(d).rem_euclid(n) == 0
             });
         }
         Rule::Monthly(day) => {
@@ -794,11 +917,11 @@ fn rule_occurrences(rule: &Rule, range: DateRange, anchor: NaiveDate) -> Vec<(Na
             }
         }
         Rule::Weeks(n) => {
-            let n = (*n).max(1);
+            let n = i64::from((*n).max(1));
             let mut monday = add_days(from, -i64::from(from.weekday().num_days_from_monday()));
             while monday <= to {
                 let sunday = add_days(monday, 6);
-                if sunday >= from && (monday.iso_week().week() - 1).is_multiple_of(n) {
+                if sunday >= from && week_index(monday).rem_euclid(n) == 0 {
                     out.push((monday, sunday));
                 }
                 let next = add_days(monday, 7);
@@ -823,6 +946,16 @@ fn each_day(range: DateRange, out: &mut Vec<(NaiveDate, NaiveDate)>, mut f: impl
             None => break,
         }
     }
+}
+
+/// Whole weeks from [`WEEK_EPOCH`] to the Monday of `d`'s ISO week.
+///
+/// This is what `every:Nw` counts. The ISO week *number* cannot be used: it
+/// restarts every year, and a 53-week year would put two occurrences of an
+/// `every:2w` rule on consecutive weeks (2026-W53 and 2027-W01).
+fn week_index(d: NaiveDate) -> i64 {
+    let monday = add_days(d, -i64::from(d.weekday().num_days_from_monday()));
+    (monday - WEEK_EPOCH).num_days().div_euclid(7)
 }
 
 fn month_len(year: i32, month: u32) -> u32 {
