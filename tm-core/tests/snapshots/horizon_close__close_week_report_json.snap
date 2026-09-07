@@ -1,0 +1,75 @@
+---
+source: tm-core/tests/horizon_close.rs
+expression: "serde_json::to_string_pretty(&report).unwrap()"
+---
+{
+  "period": "week",
+  "key": "2026-W37",
+  "moved": [
+    {
+      "id": "d1",
+      "from": "week/2026-W37.md",
+      "to": "backlog.md"
+    }
+  ],
+  "demoted": [
+    {
+      "id": "m1",
+      "est_min": 360,
+      "stamps": [
+        {
+          "Week": 37
+        }
+      ]
+    },
+    {
+      "id": "m2",
+      "est_min": 360,
+      "stamps": [
+        {
+          "Week": 37
+        }
+      ]
+    },
+    {
+      "id": "m3",
+      "est_min": 180,
+      "stamps": [
+        {
+          "Week": 37
+        }
+      ]
+    },
+    {
+      "id": "m4",
+      "est_min": 120,
+      "stamps": [
+        {
+          "Week": 37
+        }
+      ]
+    },
+    {
+      "id": "x1",
+      "est_min": 120,
+      "stamps": [
+        {
+          "Week": 37
+        }
+      ]
+    }
+  ],
+  "reopened": [],
+  "dropped_children": [
+    "x2",
+    "t1",
+    "t3",
+    "t4",
+    "t5"
+  ],
+  "dropped": [],
+  "overdue_to_backlog": [
+    "d1"
+  ],
+  "notes": []
+}

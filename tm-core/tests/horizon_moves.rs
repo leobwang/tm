@@ -1,0 +1,387 @@
+//! `horizon.rs` single-item verbs (§6.3, §13): `tm move`, `tm demote`,
+//! `tm readopt`, `tm drop`, `tm rank` on temp copies of
+//! `tests/fixtures/plan-basic`.
+//!
+//! The invariant these tests are really about: a line that crosses a horizon
+//! crosses it **byte for byte**, apart from the tokens the verb is defined to
+//! change (the state, `est:`, `demoted:`).
+
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use chrono::{DateTime, FixedOffset};
+use tempfile::TempDir;
+use tm_core::horizon::{demote, drop_item, move_item, rank, readopt, Ctx, HorizonError};
+use tm_core::log::Log;
+use tm_core::model::{Horizon, Id, IsoWeek, Stamp, State, YearMonth};
+use tm_core::store::{FsStore, PlanFiles, Store};
+use tm_core::tree::Tree;
+
+const WEEK: &str = "week/2026-W37.md";
+const NEXT_WEEK: &str = "week/2026-W38.md";
+const MONTH: &str = "month/2026-09.md";
+const BACKLOG: &str = "backlog.md";
+
+// ---------------------------------------------------------------------------
+// Fixture plumbing
+// ---------------------------------------------------------------------------
+
+fn fixture_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/plan-basic")
+}
+
+fn copy_dir(from: &Path, to: &Path) {
+    fs::create_dir_all(to).unwrap();
+    for entry in fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        let dest = to.join(entry.file_name());
+        if path.is_dir() {
+            copy_dir(&path, &dest);
+        } else {
+            fs::copy(&path, &dest).unwrap();
+        }
+    }
+}
+
+fn plan() -> (TempDir, FsStore) {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path().join("plan");
+    copy_dir(&fixture_dir(), &root);
+    (dir, FsStore::new(root))
+}
+
+fn tree_text(store: &FsStore) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    for rel in store.list_files().unwrap() {
+        out.insert(rel.clone(), store.read_text(&rel).unwrap());
+    }
+    out
+}
+
+fn text(store: &FsStore, rel: &str) -> String {
+    store.read_text(rel).unwrap()
+}
+
+fn at(s: &str) -> DateTime<FixedOffset> {
+    DateTime::parse_from_rfc3339(s).unwrap()
+}
+
+fn id(s: &str) -> Id {
+    Id::new(s)
+}
+
+fn line_of(store: &FsStore, rel: &str, id: &str) -> Option<String> {
+    let needle = format!("^{id}");
+    text(store, rel)
+        .lines()
+        .find(|l| l.split_whitespace().any(|w| w == needle))
+        .map(str::to_string)
+}
+
+fn snapshot(store: &FsStore) -> (PlanFiles, Tree) {
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    (files, tree)
+}
+
+fn log_events(store: &FsStore) -> Vec<(String, String)> {
+    let path = store.abs_path(".tm/log.jsonl").unwrap();
+    Log::read(path)
+        .unwrap()
+        .entries
+        .iter()
+        .map(|e| {
+            (
+                e.ev.name().to_string(),
+                e.ev.primary_id().unwrap_or_default().to_string(),
+            )
+        })
+        .collect()
+}
+
+/// Every file except `changed` is byte-identical.
+fn only_changed(before: &BTreeMap<String, String>, after: &BTreeMap<String, String>, changed: &[&str]) {
+    for (path, text) in after {
+        if changed.contains(&path.as_str()) {
+            continue;
+        }
+        assert_eq!(before.get(path), Some(text), "{path} changed unexpectedly");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// move (§13 `tm move ^id <backlog|month|week|day>`)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn move_between_backlog_and_week_preserves_the_line_bytes() {
+    let (_dir, store) = plan();
+    let before = tree_text(&store);
+    let original = line_of(&store, BACKLOG, "a1").unwrap();
+
+    // backlog -> week
+    let (files, tree) = snapshot(&store);
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-08T09:00:00-05:00"));
+    let moved = move_item(&cx, &id("a1"), &Horizon::Week(IsoWeek::new(2026, 37)), None).unwrap();
+    assert_eq!(moved.from, BACKLOG);
+    assert_eq!(moved.to, WEEK);
+    assert_eq!(line_of(&store, WEEK, "a1").as_deref(), Some(original.as_str()));
+    assert!(line_of(&store, BACKLOG, "a1").is_none());
+
+    // … and back again, into a named section.
+    let (files, tree) = snapshot(&store);
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-08T09:05:00-05:00"));
+    move_item(&cx, &id("a1"), &Horizon::Backlog, Some("Untied")).unwrap();
+    assert_eq!(
+        line_of(&store, BACKLOG, "a1").as_deref(),
+        Some(original.as_str())
+    );
+
+    // The round trip is byte-exact everywhere; in the backlog the line comes
+    // back at the end of `# Untied` (a move appends), so the file holds the
+    // same lines in a different order and nothing else changed.
+    let after = tree_text(&store);
+    only_changed(&before, &after, &[BACKLOG]);
+    let mut was: Vec<&str> = before.get(BACKLOG).unwrap().lines().collect();
+    let mut is: Vec<&str> = after.get(BACKLOG).unwrap().lines().collect();
+    assert_ne!(was, is, "a1 moved to the end of its section");
+    was.sort_unstable();
+    is.sort_unstable();
+    assert_eq!(was, is, "no line changed a byte");
+    assert_eq!(
+        log_events(&store),
+        vec![
+            ("move".to_string(), "a1".to_string()),
+            ("move".to_string(), "a1".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn move_creates_the_target_file_with_its_front_matter() {
+    let (_dir, store) = plan();
+    let (files, tree) = snapshot(&store);
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-08T09:00:00-05:00"));
+    move_item(&cx, &id("a3"), &Horizon::Week(IsoWeek::new(2026, 38)), None).unwrap();
+    assert_eq!(
+        text(&store, NEXT_WEEK),
+        "---\nweek: 2026-W38\nwindow: 2026-09-14..2026-09-20\n---\n- [ ] 1 Pick up package  win:2026-09-07T09:00/21:00 dur:20m ^a3\n"
+    );
+}
+
+#[test]
+fn moving_a_missing_id_is_an_error_and_writes_nothing() {
+    let (_dir, store) = plan();
+    let before = tree_text(&store);
+    let (files, tree) = snapshot(&store);
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-08T09:00:00-05:00"));
+    let err = move_item(&cx, &id("zzzz"), &Horizon::Backlog, None).unwrap_err();
+    assert!(matches!(err, HorizonError::NotFound(_)), "{err}");
+    assert_eq!(before, tree_text(&store));
+    assert!(!store.exists(".tm/log.jsonl"));
+}
+
+// ---------------------------------------------------------------------------
+// demote / readopt (§6.3)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn demote_marks_the_week_line_and_copies_it_into_the_month() {
+    let (_dir, store) = plan();
+    let before = tree_text(&store);
+    let (files, tree) = snapshot(&store);
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-10T18:00:00-05:00"));
+    let out = demote(&cx, &id("m3")).unwrap();
+
+    assert_eq!(out.est_min, 180);
+    assert_eq!(out.stamps, vec![Stamp::Week(37)]);
+    assert_eq!(
+        line_of(&store, WEEK, "m3").unwrap(),
+        "- [-] 5 3b Read ch.6                    @O1 ^m3"
+    );
+    assert_eq!(
+        line_of(&store, MONTH, "m3").unwrap(),
+        "- [-] 5 3b Read ch.6                    @O1 est:3b demoted:W37 ^m3"
+    );
+    only_changed(&before, &tree_text(&store), &[WEEK, MONTH]);
+    assert_eq!(log_events(&store), vec![("demote".to_string(), "m3".to_string())]);
+
+    // The demoted item now *is* the month copy, so demoting it again is
+    // refused rather than making a copy of a copy.
+    let (files, tree) = snapshot(&store);
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-10T18:05:00-05:00"));
+    let err = demote(&cx, &id("m3")).unwrap_err();
+    assert!(matches!(err, HorizonError::Horizon { .. }), "{err}");
+
+    // Readopting it into the next week and demoting it again accumulates the
+    // stamps on one line (§6.3 `W36,W37`).
+    let (files, tree) = snapshot(&store);
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-14T09:00:00-05:00"));
+    readopt(&cx, &id("m3"), None).unwrap();
+    let (files, tree) = snapshot(&store);
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-20T18:00:00-05:00"));
+    let out = demote(&cx, &id("m3")).unwrap();
+    assert_eq!(out.stamps, vec![Stamp::Week(37), Stamp::Week(38)]);
+    assert_eq!(
+        text(&store, MONTH).matches("^m3").count(),
+        1,
+        "one archive copy only"
+    );
+    assert_eq!(
+        line_of(&store, MONTH, "m3").unwrap(),
+        "- [-] 5 3b Read ch.6                    @O1 est:3b demoted:W37,W38 ^m3"
+    );
+}
+
+#[test]
+fn demote_refuses_an_item_that_is_not_in_a_week_file() {
+    let (_dir, store) = plan();
+    let (files, tree) = snapshot(&store);
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-10T18:00:00-05:00"));
+    let err = demote(&cx, &id("a1")).unwrap_err();
+    assert!(matches!(err, HorizonError::Horizon { .. }), "{err}");
+    assert!(!store.exists(".tm/log.jsonl"));
+}
+
+#[test]
+fn readopt_takes_the_demoted_copy_into_a_week_and_keeps_the_stamps() {
+    let (_dir, store) = plan();
+    let before = tree_text(&store);
+    let (files, tree) = snapshot(&store);
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-14T09:00:00-05:00"));
+    let moved = readopt(
+        &cx,
+        &id("m2"),
+        Some(&Horizon::Week(IsoWeek::new(2026, 38))),
+    )
+    .unwrap();
+
+    assert_eq!(moved.from, MONTH);
+    assert_eq!(moved.to, NEXT_WEEK);
+    assert_eq!(
+        text(&store, NEXT_WEEK),
+        "---\nweek: 2026-W38\nwindow: 2026-09-14..2026-09-20\n---\n- [ ] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2\n"
+    );
+    // The month keeps its `# Demoted` heading, without the line.
+    assert!(line_of(&store, MONTH, "m2").is_none());
+    assert!(text(&store, MONTH).contains("# Demoted"));
+    only_changed(&before, &tree_text(&store), &[MONTH, NEXT_WEEK]);
+    assert_eq!(log_events(&store), vec![("readopt".to_string(), "m2".to_string())]);
+
+    // The tree resolves the readopted line, not the archive copy.
+    let (_files, tree) = snapshot(&store);
+    let m2 = tree.get(&id("m2")).unwrap();
+    assert_eq!(m2.state, State::Todo);
+    assert_eq!(m2.stamps.demoted, vec![Stamp::Week(37)]);
+    assert_eq!(m2.horizon, Horizon::Week(IsoWeek::new(2026, 38)));
+}
+
+#[test]
+fn readopt_defaults_to_the_current_week() {
+    let (_dir, store) = plan();
+    let (files, tree) = snapshot(&store);
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-16T09:00:00-05:00"));
+    let moved = readopt(&cx, &id("m2"), None).unwrap();
+    assert_eq!(moved.to, NEXT_WEEK); // 2026-09-16 is in W38
+    assert!(line_of(&store, NEXT_WEEK, "m2").unwrap().starts_with("- [ ] "));
+}
+
+// ---------------------------------------------------------------------------
+// drop / rank (§13)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn drop_sets_the_state_where_the_line_lives() {
+    let (_dir, store) = plan();
+    let before = tree_text(&store);
+    let (files, tree) = snapshot(&store);
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-08T09:00:00-05:00"));
+    let line = drop_item(&cx, &id("t5")).unwrap();
+    assert_eq!(line, "- [~] 3 1b Review the drafts            @m2 after:^t4 ^t5");
+    assert_eq!(line_of(&store, WEEK, "t5").as_deref(), Some(line.as_str()));
+    only_changed(&before, &tree_text(&store), &[WEEK]);
+    assert_eq!(log_events(&store), vec![("drop".to_string(), "t5".to_string())]);
+}
+
+#[test]
+fn rank_moves_a_line_inside_its_own_section() {
+    let (_dir, store) = plan();
+    let (files, tree) = snapshot(&store);
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-08T09:00:00-05:00"));
+
+    // `# Tasks` is t1 t3 t4 t5; rank t5 first.
+    assert!(rank(&cx, &id("t5"), 1).unwrap());
+    let tasks: Vec<String> = text(&store, WEEK)
+        .lines()
+        .skip_while(|l| !l.starts_with("# Tasks"))
+        .skip(1)
+        .filter(|l| l.starts_with("- "))
+        .map(str::to_string)
+        .collect();
+    assert!(tasks[0].ends_with("^t5"), "{tasks:?}");
+    assert!(tasks[1].ends_with("^t1"), "{tasks:?}");
+    assert_eq!(tasks.len(), 4);
+
+    // Milestones are untouched: rank never leaves the section.
+    assert!(line_of(&store, WEEK, "m1").unwrap().ends_with("^m1"));
+
+    // Ranking it where it already is writes nothing; a rank past the end
+    // clamps to the last position.
+    let (files, tree) = snapshot(&store);
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-08T09:01:00-05:00"));
+    assert!(!rank(&cx, &id("t5"), 1).unwrap());
+    assert!(rank(&cx, &id("t5"), 99).unwrap());
+    let last = text(&store, WEEK)
+        .lines()
+        .filter(|l| l.starts_with("- "))
+        .last()
+        .unwrap()
+        .to_string();
+    assert!(last.ends_with("^t5"), "{last}");
+}
+
+// ---------------------------------------------------------------------------
+// The §6.3 sequence end to end
+// ---------------------------------------------------------------------------
+
+#[test]
+fn demote_then_readopt_leaves_one_live_line_and_one_archive() {
+    let (_dir, store) = plan();
+    let (files, tree) = snapshot(&store);
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-13T18:00:00-05:00"));
+    demote(&cx, &id("m1")).unwrap();
+
+    let (files, tree) = snapshot(&store);
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-14T09:00:00-05:00"));
+    readopt(&cx, &id("m1"), None).unwrap();
+
+    let (_files, tree) = snapshot(&store);
+    assert!(tree.duplicate_ids().is_empty(), "{:?}", tree.duplicate_ids());
+    let m1 = tree.get(&id("m1")).unwrap();
+    assert_eq!(m1.state, State::Todo);
+    assert_eq!(m1.horizon, Horizon::Week(IsoWeek::new(2026, 38)));
+    assert_eq!(m1.stamps.demoted, vec![Stamp::Week(37)]);
+    assert_eq!(m1.est.unwrap().as_minutes(), 360);
+    // The archived `[-]` line stays in the closed week; the month copy left.
+    assert_eq!(
+        line_of(&store, WEEK, "m1").unwrap(),
+        "- [-] 5 6b Finish ch.5 exercises        @O1 ^m1"
+    );
+    assert!(line_of(&store, MONTH, "m1").is_none());
+    assert_eq!(
+        tree.demoted_copies()
+            .iter()
+            .filter(|i| i.id == id("m1"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        tree.month_items(YearMonth::new(2026, 9))
+            .iter()
+            .filter(|i| i.id == id("m1"))
+            .count(),
+        0
+    );
+}

@@ -1,0 +1,18 @@
+---
+source: tm-core/tests/horizon_close.rs
+expression: "text(&store, MONTH)"
+---
+---
+month: 2026-09
+---
+# Outcomes
+- [ ] 5 !1 Lean: through ch.8 of the tutorial          ^O1
+- [ ] 4 !1 Soundcode: end-to-end demo runs             ^O2
+- [ ] 2 !3 Winter course selection + admin done        ^O3
+
+# Demoted
+- [-] 4 6b Rollback path passes tests   @O2 est:6b demoted:W37 ^m2
+- [-] 5 6b Finish ch.5 exercises        @O1 est:6b demoted:W37 ^m1
+- [-] 5 3b Read ch.6                    @O1 est:3b demoted:W37 ^m3
+- [-] 2 2b Pick winter courses          @O3 est:2b demoted:W37 ^m4
+- [-] 5 2h Midterm                      @O3 at:2026-10-20T10:00/12:00 loc:JCL est:2b demoted:W37 ^x1
