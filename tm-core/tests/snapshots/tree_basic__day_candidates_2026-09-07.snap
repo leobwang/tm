@@ -1,0 +1,20 @@
+---
+source: tm-core/tests/tree_basic.rs
+expression: names
+---
+- m1
+- m2
+- m3
+- m4
+- d1
+- x1
+- x2
+- t1
+- t3
+- t4
+- t5
+- a1
+- a3
+- d2
+- c2
+- p1
