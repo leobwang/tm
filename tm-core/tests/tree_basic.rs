@@ -149,10 +149,16 @@ fn ci_is_resolved_from_the_hierarchy() {
 }
 
 #[test]
-fn tags_are_inherited() {
+fn tags_of_the_fixture_lines() {
+    // The fixture has exactly one tagged line and no tagged ancestor, so this
+    // only pins its own-tag behaviour; inheritance through the chain is
+    // `tags_are_inherited_through_the_chain` in tree_synthetic.rs.
     let (t, _) = load();
     assert_eq!(t.tags_effective(&id("d2")), vec!["soundcode".to_string()]);
     assert!(t.tags_effective(&id("t3")).is_empty());
+    // d2 is a child of the untagged O2: nothing is invented.
+    assert_eq!(t.parent(&id("d2")), Some(&id("O2")));
+    assert!(t.tags_effective(&id("O2")).is_empty());
 }
 
 #[test]

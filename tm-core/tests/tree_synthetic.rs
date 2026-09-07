@@ -54,6 +54,85 @@ fn ci_defaults_to_the_nearest_explicit_ancestor() {
 }
 
 #[test]
+fn ci_follows_the_parent_into_another_file_default() {
+    // §3.1: `ci` defaults to the parent's, else 3 — the parent's *resolved*
+    // ci, which for a routine or optional parent is its own file default.
+    let t = tree(&[
+        ("optional.md", "- Show dur:1h ^sh\n"),
+        ("routines.md", "- workout win:16:00-19:00 dur:1h every:Mon\n"),
+        (
+            "week/2026-W37.md",
+            "- [ ] 1b Ep @sh ^ep\n\
+             - [ ] 1b Buy shoes @workout ^s\n\
+             - [ ] 1b Lace them @s ^s2\n\
+             - [ ] 3 1b Explicit under routine @workout ^x\n\
+             - [ ] 1b Under explicit @x ^x2\n\
+             - [ ] 1b Untied ^u\n",
+        ),
+    ]);
+    assert!(t.problems().is_empty(), "{:?}", t.problems());
+    assert_eq!(t.get(&id("sh")).unwrap().ci, 0);
+    assert_eq!(t.get(&id("ep")).unwrap().ci, 0, "the optional parent's ci");
+    assert_eq!(t.get(&id("workout")).unwrap().ci, 1);
+    assert_eq!(t.get(&id("s")).unwrap().ci, 1, "the routine parent's ci");
+    assert_eq!(t.get(&id("s2")).unwrap().ci, 1, "through the ci-less s");
+    assert!(!t.get(&id("s2")).unwrap().ci_explicit);
+    assert_eq!(t.get(&id("x")).unwrap().ci, 3);
+    assert_eq!(t.get(&id("x2")).unwrap().ci, 3, "an explicit ci in between wins");
+    assert_eq!(t.get(&id("u")).unwrap().ci, 3, "no parent: the file default");
+}
+
+#[test]
+fn tags_are_inherited_through_the_chain() {
+    let t = tree(&[
+        ("month/2026-09.md", "- [ ] 4 !1 Out #proj #alpha ^O\n"),
+        ("week/2026-W37.md", "- [ ] 4 2b Mid @O #alpha #mid ^m\n- [ ] 4 1b Leaf @m ^l\n- [ ] 4 1b Own #own @m ^o\n"),
+    ]);
+    // Own tags first, then each ancestor's nearest first, without repeats.
+    assert_eq!(t.tags_effective(&id("O")), vec!["proj", "alpha"]);
+    assert_eq!(t.tags_effective(&id("m")), vec!["alpha", "mid", "proj"]);
+    assert_eq!(t.tags_effective(&id("l")), vec!["alpha", "mid", "proj"]);
+    assert_eq!(t.tags_effective(&id("o")), vec!["own", "alpha", "mid", "proj"]);
+    assert_eq!(t.tags_effective(&id("nope")), Vec::<String>::new());
+}
+
+#[test]
+fn identical_idless_lines_are_not_duplicate_ids() {
+    let t = tree(&[
+        ("inbox.md", "- ask Kun\n- ask Kun\n- something else\n"),
+        ("routines.md", "- lunch win:11:30-13:30 dur:30m every:day\n- lunch win:12:00-14:00 dur:30m every:day ci:2\n"),
+    ]);
+    assert!(t.problems().is_empty(), "{:?}", t.problems());
+    assert!(t.duplicate_ids().is_empty());
+    // Nothing is shadowed: the later lines are keyed `file:line`.
+    assert_eq!(t.len(), 5);
+    let keys: Vec<String> = t.ids().map(|k| k.to_string()).collect();
+    assert_eq!(keys, vec!["ask Kun", "inbox.md:2", "something else", "lunch", "routines.md:2"]);
+    assert_eq!(t.get(&id("lunch")).unwrap().ci, 1, "the first line keeps the title key");
+    assert_eq!(t.get(&id("routines.md:2")).unwrap().ci, 2);
+    assert_eq!(t.routine_ids(), ids(&["lunch", "routines.md:2"]));
+    assert_eq!(t.items_in("inbox.md").len(), 3);
+    assert!(t.nodes().iter().all(|n| n.primary));
+    // The collisions are reported separately, as a warning input.
+    assert_eq!(
+        t.duplicate_titles(),
+        vec![
+            ("ask Kun".to_string(), vec![("inbox.md".to_string(), 1), ("inbox.md".to_string(), 2)]),
+            ("lunch".to_string(), vec![("routines.md".to_string(), 1), ("routines.md".to_string(), 2)]),
+        ]
+    );
+    // A title equal to a real `^id` never steals it.
+    let t = tree(&[
+        ("week/2026-W37.md", "- [ ] 3 1b Real ^lunch\n"),
+        ("routines.md", "- lunch win:11:30-13:30 dur:30m every:day\n"),
+    ]);
+    assert!(t.problems().is_empty());
+    assert_eq!(t.get(&id("lunch")).unwrap().title, "Real");
+    assert_eq!(t.routine_ids(), ids(&["routines.md:1"]));
+    assert!(t.duplicate_titles().is_empty());
+}
+
+#[test]
 fn non_root_priority_is_ignored_for_root_priority() {
     let t = tree(&[
         ("month/2026-09.md", "- [ ] 4 !1 Outcome ^O\n"),

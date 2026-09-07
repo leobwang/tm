@@ -10,18 +10,33 @@
 //! * **Keys.** Items are addressed by [`Id`]. A line without `^id`
 //!   (routines, optional, inbox) is keyed by its title — `Id("lunch")` —
 //!   which is how the CLI names routines (`tm skip lunch`); an id-less line
-//!   with an empty title is keyed `file:line`. [`Tree::key_of`]`(&Item)`
-//!   computes the key; the stored `Item.id` stays what the line says.
-//! * **Nodes.** [`Node`] = the cloned [`Item`] with resolved fields (`ci`
-//!   from the nearest ancestor with an explicit ci, else the file default),
-//!   its key, file index, resolved parent key and root key. [`Tree::get`]
+//!   with an empty title, or whose title is already taken (by a `^id` or an
+//!   earlier id-less line — a repeated inbox capture), is keyed `file:line`,
+//!   so no id-less line is ever shadowed. [`Tree::key_of`]`(&Item)` computes
+//!   the preferred key, [`Node::key`] holds the actual one,
+//!   [`Tree::duplicate_titles`] lists the title collisions; the stored
+//!   `Item.id` stays what the line says.
+//! * **Nodes.** [`Node`] = the cloned [`Item`] with resolved fields (`ci` =
+//!   the parent's resolved ci per §3.1: the nearest ancestor with an explicit
+//!   ci, else the root's file default, else the item's own file default), its
+//!   key, file index, resolved parent key and root key. [`Tree::get`]
 //!   returns the item, [`Tree::node`] the node, [`Tree::nodes`] all of them in
 //!   (file order, line order) — the rank order §7.4 sorts by
 //!   ([`Tree::order`] gives `(file index, line)`).
-//! * **Duplicates.** The same id in two places is a [`TreeProblem::DuplicateId`]
-//!   — except the §6.3 case of a week line *copied* into `month/…# Demoted`:
-//!   the copy outside `# Demoted` is the primary the index points to and the
-//!   `# Demoted` copies are listed by [`Tree::demoted_copies`].
+//! * **Duplicates.** The §6.3 lifecycle legitimately leaves one `^id` on
+//!   several lines: `tm close week` turns the week line into `[-]` (the week
+//!   file becomes an archive) *and* copies it into `month/…# Demoted` with
+//!   `est:` = remaining and a `demoted:` stamp; `tm readopt` then moves that
+//!   copy into the current week, leaving the older `[-]` archive line behind.
+//!   Those `[-]` lines — in a `week/` file or under `month/…# Demoted`, by
+//!   state and horizon, never by file order — are **archive copies**, and the
+//!   tree resolves the id to one item: the primary is the live copy (the one
+//!   that is not an archive copy), else the copy with the most `demoted:`
+//!   stamps, which is the newest record and carries the folded `est:`.
+//!   Shadowed archive copies are listed by [`Tree::demoted_copies`] and still
+//!   appear in [`Tree::week_items`] / [`Tree::month_items`] /
+//!   [`Tree::items_in`]. Anything beyond that — two copies in one file, or
+//!   two live copies — is a [`TreeProblem::DuplicateId`].
 //! * **Hierarchy** (§6.1): [`Tree::parent`], [`Tree::children`] (ordered by
 //!   (file, line)), [`Tree::ancestors`], [`Tree::descendants`],
 //!   [`Tree::root`], [`Tree::roots`], [`Tree::depth`],
@@ -60,7 +75,8 @@
 //! * **Checks**: [`Tree::problems`] collects [`TreeProblem`]s
 //!   ([`Tree::duplicate_ids`], [`Tree::dangling_parents`],
 //!   [`Tree::dangling_deps`], [`Tree::parent_cycles`], [`Tree::dep_cycles`],
-//!   [`Tree::missing_ids`]).
+//!   [`Tree::missing_ids`]); [`Tree::duplicate_titles`] and
+//!   [`Tree::month_items_with_est_and_no_children`] are warning inputs.
 //!
 //! Every walk over `parent` / `after:` is cycle-safe; on a parent cycle
 //! `root` stops at the first repeated node (and the cycle is reported).
@@ -78,7 +94,9 @@ use crate::model::{Dep, Horizon, Id, IsoWeek, Item, OnMiss, Recur, Ref, Shape, S
 /// these (§1.3, §17 M1).
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum TreeProblem {
-    /// One id on several lines (the sanctioned `# Demoted` copy excepted).
+    /// One `^id` on several lines beyond what the §6.3 lifecycle leaves
+    /// behind: two copies in one file, or two live copies (an archive copy is
+    /// a `[-]` line in a `week/` file or under `month/…# Demoted`).
     #[error("duplicate id ^{id} at {}", fmt_locations(.locations))]
     DuplicateId {
         /// The id.
@@ -188,6 +206,7 @@ pub struct Tree {
     roots: Vec<Id>,
     series: BTreeMap<String, Vec<Id>>,
     duplicates: Vec<(Id, Vec<usize>)>,
+    duplicate_titles: Vec<(String, Vec<usize>)>,
     demoted_copies: Vec<usize>,
     dangling_parents: Vec<(Id, Ref)>,
     default_priority: u8,
@@ -217,7 +236,7 @@ impl Tree {
             })
             .collect();
 
-        // 1. Nodes in (file, line) order.
+        // 1. Nodes in (file, line) order, keyed by `^id` / title / `file:line`.
         let mut nodes: Vec<Node> = Vec::new();
         for (fi, f) in files.iter().enumerate() {
             for item in f.items() {
@@ -233,37 +252,66 @@ impl Tree {
             }
         }
 
-        // 2. Index with the duplicate rule.
-        let mut groups: BTreeMap<Id, Vec<usize>> = BTreeMap::new();
-        let mut group_order: Vec<Id> = Vec::new();
-        for (i, n) in nodes.iter().enumerate() {
-            let entry = groups.entry(n.key.clone()).or_default();
-            if entry.is_empty() {
-                group_order.push(n.key.clone());
+        // 2. Title keys. A title already taken — by a `^id`, or by an earlier
+        //    id-less line — falls back to `file:line`, so every id-less line
+        //    stays addressable and none is shadowed (§4.3: inbox, routines and
+        //    optional lines carry no id, and a repeated capture is normal).
+        let mut taken: HashSet<Id> = nodes
+            .iter()
+            .filter(|n| n.item.has_id())
+            .map(|n| n.key.clone())
+            .collect();
+        let mut title_groups: Vec<(String, Vec<usize>)> = Vec::new();
+        let mut title_pos: HashMap<String, usize> = HashMap::new();
+        for i in 0..nodes.len() {
+            let n = &mut nodes[i];
+            if n.item.has_id() || n.item.title.is_empty() {
+                continue;
             }
-            entry.push(i);
+            match title_pos.get(&n.item.title) {
+                Some(&g) => title_groups[g].1.push(i),
+                None => {
+                    title_pos.insert(n.item.title.clone(), title_groups.len());
+                    title_groups.push((n.item.title.clone(), vec![i]));
+                }
+            }
+            if !taken.insert(n.key.clone()) {
+                n.key = line_key(&n.item);
+                n.root = n.key.clone();
+            }
+        }
+        let duplicate_titles: Vec<(String, Vec<usize>)> =
+            title_groups.into_iter().filter(|(_, idxs)| idxs.len() > 1).collect();
+
+        // 3. Index with the duplicate rule (§6.3 archive copies excepted).
+        let mut groups: Vec<(Id, Vec<usize>)> = Vec::new();
+        let mut group_pos: HashMap<Id, usize> = HashMap::new();
+        for (i, n) in nodes.iter().enumerate() {
+            match group_pos.get(&n.key) {
+                Some(&g) => groups[g].1.push(i),
+                None => {
+                    group_pos.insert(n.key.clone(), groups.len());
+                    groups.push((n.key.clone(), vec![i]));
+                }
+            }
         }
         let mut index: HashMap<Id, usize> = HashMap::new();
         let mut duplicates: Vec<(Id, Vec<usize>)> = Vec::new();
         let mut demoted_copies: Vec<usize> = Vec::new();
-        for key in &group_order {
-            let members = &groups[key];
+        for (key, members) in &groups {
+            let primary = *members
+                .iter()
+                .min_by_key(|&&i| copy_rank(&nodes[i]))
+                .expect("a group has at least one member");
+            index.insert(key.clone(), primary);
             if members.len() == 1 {
-                index.insert(key.clone(), members[0]);
                 continue;
             }
-            let (archived, live): (Vec<usize>, Vec<usize>) = members
-                .iter()
-                .copied()
-                .partition(|&i| is_demoted_copy(&nodes[i]));
-            let primary = if live.len() == 1 && !archived.is_empty() {
-                demoted_copies.extend(archived.iter().copied());
-                live[0]
-            } else {
+            if is_real_duplicate(&nodes, members) {
                 duplicates.push((key.clone(), members.clone()));
-                members[0]
-            };
-            index.insert(key.clone(), primary);
+            } else {
+                demoted_copies.extend(members.iter().copied().filter(|&i| i != primary));
+            }
             for &i in members {
                 if i != primary {
                     nodes[i].primary = false;
@@ -272,7 +320,7 @@ impl Tree {
         }
         demoted_copies.sort_unstable();
 
-        // 3. Parents.
+        // 4. Parents.
         let mut dangling_parents: Vec<(Id, Ref)> = Vec::new();
         for n in nodes.iter_mut() {
             if let Some(r) = n.item.parent.clone() {
@@ -285,7 +333,7 @@ impl Tree {
             }
         }
 
-        // 4. Children (primary nodes only), roots.
+        // 5. Children (primary nodes only), roots.
         let mut children: HashMap<Id, Vec<Id>> = HashMap::new();
         let mut roots: Vec<Id> = Vec::new();
         for n in nodes.iter().filter(|n| n.primary) {
@@ -295,21 +343,36 @@ impl Tree {
             }
         }
 
-        // 5. Resolved fields: root, ci.
-        for i in 0..nodes.len() {
-            let chain = ancestor_chain(&nodes, &index, i);
-            nodes[i].root = chain
-                .last()
-                .map(|&a| nodes[a].key.clone())
-                .unwrap_or_else(|| nodes[i].key.clone());
-            if !nodes[i].item.ci_explicit {
-                if let Some(&a) = chain.iter().find(|&&a| nodes[a].item.ci_explicit) {
-                    nodes[i].item.ci = nodes[a].item.ci;
-                }
-            }
+        // 6. Resolved fields: root, ci. `ci` without an explicit value is the
+        //    parent's resolved ci (§3.1): the nearest ancestor with an explicit
+        //    ci, else the top ancestor's file default — which is what the
+        //    parser left in its `ci` — else the item's own file default. Read
+        //    the parsed values for every node first so the result does not
+        //    depend on processing order.
+        let resolved: Vec<(Id, u8)> = (0..nodes.len())
+            .map(|i| {
+                let chain = ancestor_chain(&nodes, &index, i);
+                let root = chain
+                    .last()
+                    .map(|&a| nodes[a].key.clone())
+                    .unwrap_or_else(|| nodes[i].key.clone());
+                let ci = if nodes[i].item.ci_explicit {
+                    nodes[i].item.ci
+                } else {
+                    match chain.iter().find(|&&a| nodes[a].item.ci_explicit) {
+                        Some(&a) => nodes[a].item.ci,
+                        None => chain.last().map(|&a| nodes[a].item.ci).unwrap_or(nodes[i].item.ci),
+                    }
+                };
+                (root, ci)
+            })
+            .collect();
+        for (n, (root, ci)) in nodes.iter_mut().zip(resolved) {
+            n.root = root;
+            n.item.ci = ci;
         }
 
-        // 6. Series sections.
+        // 7. Series sections.
         let mut series: BTreeMap<String, Vec<Id>> = BTreeMap::new();
         for n in nodes.iter().filter(|n| n.primary) {
             if let Some((name, _)) = &n.item.series {
@@ -325,6 +388,7 @@ impl Tree {
             roots,
             series,
             duplicates,
+            duplicate_titles,
             demoted_copies,
             dangling_parents,
             default_priority: cfg.priority.default_priority,
@@ -332,14 +396,17 @@ impl Tree {
     }
 
     /// The key an item is addressed by: its `^id`, else its title, else
-    /// `file:line`.
+    /// `file:line`. This is the key the tree *prefers*; when the title is
+    /// already taken (by a `^id`, or by an earlier id-less line with the same
+    /// title) the tree keys the line `file:line` instead — [`Node::key`] is
+    /// authoritative, and [`Tree::duplicate_titles`] lists such collisions.
     pub fn key_of(item: &Item) -> Id {
         if item.has_id() {
             item.id.clone()
         } else if !item.title.is_empty() {
             Id::new(item.title.clone())
         } else {
-            Id::new(format!("{}:{}", item.src.file, item.src.line))
+            line_key(item)
         }
     }
 
@@ -835,25 +902,46 @@ impl Tree {
         out
     }
 
-    /// Ids on more than one line (the `# Demoted` copy of a week line
-    /// excepted), with every `(file, line)`.
+    /// `^id`s on more than one line beyond what the §6.3 lifecycle leaves
+    /// behind — two copies in one file, or two live copies — with every
+    /// `(file, line)` carrying the id.
     pub fn duplicate_ids(&self) -> Vec<(Id, Vec<(String, usize)>)> {
         self.duplicates
             .iter()
-            .map(|(id, idxs)| {
-                (
-                    id.clone(),
-                    idxs.iter()
-                        .map(|&i| (self.files[self.nodes[i].file].path.clone(), self.nodes[i].item.src.line))
-                        .collect(),
-                )
-            })
+            .map(|(id, idxs)| (id.clone(), self.locations(idxs)))
             .collect()
     }
 
-    /// The `month/…# Demoted` copies whose id also lives elsewhere (§6.3).
+    /// Id-less lines sharing a title (two identical inbox captures, two
+    /// routines called `lunch`), with every `(file, line)`. Not a
+    /// [`TreeProblem`] — uniqueness is a rule about `^id`s (§17.2) — but a
+    /// possible `tm check` warning for routines and optional, whose lines the
+    /// CLI names by title. Only the first line keeps the title key.
+    pub fn duplicate_titles(&self) -> Vec<(String, Vec<(String, usize)>)> {
+        self.duplicate_titles
+            .iter()
+            .map(|(title, idxs)| (title.clone(), self.locations(idxs)))
+            .collect()
+    }
+
+    fn locations(&self, idxs: &[usize]) -> Vec<(String, usize)> {
+        idxs.iter()
+            .map(|&i| (self.files[self.nodes[i].file].path.clone(), self.nodes[i].item.src.line))
+            .collect()
+    }
+
+    /// The archive copies shadowed by another line with the same id (§6.3):
+    /// the `month/…# Demoted` copy of an open week line, the `[-]` archive
+    /// line a closed week keeps once its item is readopted or recorded in the
+    /// month, or the older of two archive lines. In (file, line) order.
     pub fn demoted_copies(&self) -> Vec<&Item> {
         self.demoted_copies.iter().map(|&i| &self.nodes[i].item).collect()
+    }
+
+    /// True for a primary node or a shadowed archive copy — the nodes a
+    /// per-file listing shows.
+    fn is_listed(&self, i: usize) -> bool {
+        self.nodes[i].primary || self.demoted_copies.binary_search(&i).is_ok()
     }
 
     /// Lines without `^id` outside routines, optional and inbox.
@@ -954,21 +1042,23 @@ impl Tree {
         self.keys_where(|i| i.horizon == Horizon::Calendar(week) && i.state.is_open())
     }
 
-    /// Every item of `week/<week>.md`, any state.
+    /// Every item of `week/<week>.md`, any state (a `[-]` archive line whose
+    /// item was readopted elsewhere included — see [`Tree::demoted_copies`]).
     pub fn week_items(&self, week: IsoWeek) -> Vec<&Item> {
-        self.iter().filter(|i| i.horizon == Horizon::Week(week)).collect()
+        self.listed_where(|i| i.horizon == Horizon::Week(week))
     }
 
     /// Every item of `month/<month>.md`, any state (the `# Demoted` copies
     /// included — see [`Tree::demoted_copies`]).
     pub fn month_items(&self, month: YearMonth) -> Vec<&Item> {
+        self.listed_where(|i| i.horizon == Horizon::Month(month))
+    }
+
+    fn listed_where(&self, pred: impl Fn(&Item) -> bool) -> Vec<&Item> {
         self.nodes
             .iter()
             .enumerate()
-            .filter(|(i, n)| {
-                n.item.horizon == Horizon::Month(month)
-                    && (n.primary || self.demoted_copies.binary_search(i).is_ok())
-            })
+            .filter(|(i, n)| pred(&n.item) && self.is_listed(*i))
             .map(|(_, n)| &n.item)
             .collect()
     }
@@ -1039,9 +1129,58 @@ impl Tree {
     }
 }
 
-/// A `month/…# Demoted` line: the sanctioned copy of a demoted week line.
-fn is_demoted_copy(n: &Node) -> bool {
+/// The `file:line` key of an id-less line.
+fn line_key(item: &Item) -> Id {
+    Id::new(format!("{}:{}", item.src.file, item.src.line))
+}
+
+/// A `month/…# Demoted` line: the copy `tm close week` writes (§6.3).
+fn in_month_demoted(n: &Node) -> bool {
     matches!(n.item.horizon, Horizon::Month(_)) && n.item.src.section.as_deref() == Some("Demoted")
+}
+
+/// An **archive copy**: a line the §6.3 lifecycle leaves behind carrying an
+/// id that lives elsewhere too. State *and* horizon, never file order —
+/// `tm close week` turns the week line into `[-]` (the week file becomes an
+/// archive) and copies it into `month/<current># Demoted`, so exactly two
+/// shapes qualify: a `[-]` line in a `week/` file, and a `[-]` line under
+/// `month/…# Demoted`. A `[-]` line anywhere else (backlog, day, a month
+/// section that is not `# Demoted`) is not something a close produces, so it
+/// still counts as a live copy and collides.
+fn is_archive_copy(n: &Node) -> bool {
+    n.item.state == State::Demoted
+        && (matches!(n.item.horizon, Horizon::Week(_)) || in_month_demoted(n))
+}
+
+/// Which of several lines carrying one id is the record (smallest wins; ties
+/// go to the earlier line): the live line — anything that is not an archive
+/// copy — else the copy with the most `demoted:` stamps, since `tm close
+/// week` appends a stamp to the copy it writes and never to the line it
+/// archives, so the most-stamped copy is the newest record (the one carrying
+/// the folded `est:`); else the `month/…# Demoted` copy.
+fn copy_rank(n: &Node) -> (bool, std::cmp::Reverse<usize>, bool) {
+    (
+        is_archive_copy(n),
+        std::cmp::Reverse(n.item.stamps.demoted.len()),
+        !in_month_demoted(n),
+    )
+}
+
+/// True when the lines carrying one id are more than the §6.3 lifecycle
+/// leaves behind: two in one file (a close rewrites a line in place, it never
+/// duplicates one within a file), or two live copies.
+fn is_real_duplicate(nodes: &[Node], members: &[usize]) -> bool {
+    let mut files: HashSet<usize> = HashSet::new();
+    let mut live = 0;
+    for &i in members {
+        if !files.insert(nodes[i].file) {
+            return true;
+        }
+        if !is_archive_copy(&nodes[i]) {
+            live += 1;
+        }
+    }
+    live >= 2
 }
 
 /// Node indices of the ancestors of `i`, nearest first, stopping before a
