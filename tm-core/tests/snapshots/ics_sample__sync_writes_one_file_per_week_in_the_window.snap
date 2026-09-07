@@ -1,0 +1,16 @@
+---
+source: tm-core/tests/ics_sample.rs
+expression: "files[1].1"
+---
+- [ ] 3 Morning pages  at:2026-09-07T06:30/06:50 ^ztwcz2
+- [ ] 3 Meeting w/ host  at:2026-09-07T12:50/13:50 loc:zoom ^jc2anp
+- [ ] 3 Standup with the Berlin team  at:2026-09-08T09:00/09:30 ^ks5a9f
+- [ ] 3 Focus block  at:2026-09-08T13:00/14:00 ^mwufzw
+- [ ] 3 Morning pages  at:2026-09-09T06:30/06:50 ^x3x5rd
+- [ ] 2 CS 234 lecture  at:2026-09-09T15:00/16:20 loc:JCL ^9u4pws
+- [ ] 3 (review:) draft (@lab) (#ops)  at:2026-09-10T16:00/16:45 ^wtc24k
+- [ ] 3 Dinner w/ Kun, then drinks  at:2026-09-10T19:00/20:00 loc:Kun's-place ^8cz4f2
+- [ ] 3 Morning pages  at:2026-09-11T06:30/06:50 ^e2ddi7
+- [ ] 1 ✈ UA 1234 ORD→SFO  at:2026-09-12T08:15/10:40 buffer:2h travel-day ^v79p6u
+- [ ] 3 Morning pages  at:2026-09-13T06:30/06:50 ^qit7fx
+- [ ] 3 Bike tour to Wisconsin  at:2026-09-13T18:00/2026-09-15T12:00 ^antvqp
