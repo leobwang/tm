@@ -18,9 +18,38 @@ fn at(s: &str) -> DateTime<FixedOffset> {
     DateTime::parse_from_rfc3339(s).unwrap()
 }
 
+/// Top-level keys of a JSON object **in the order they were written**:
+/// `serde_json::Map` is a `BTreeMap` here, so parsing would sort them and
+/// hide the field order the spec's examples fix.
 fn keys(json: &str) -> Vec<String> {
-    let v: Value = serde_json::from_str(json).unwrap();
-    v.as_object().unwrap().keys().cloned().collect()
+    let b = json.as_bytes();
+    let mut keys = Vec::new();
+    let mut depth = 0usize;
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'{' | b'[' => depth += 1,
+            b'}' | b']' => depth -= 1,
+            b'"' => {
+                let start = i + 1;
+                let mut j = start;
+                while j < b.len() && b[j] != b'"' {
+                    j += if b[j] == b'\\' { 2 } else { 1 };
+                }
+                let mut k = j + 1;
+                while k < b.len() && b[k].is_ascii_whitespace() {
+                    k += 1;
+                }
+                if depth == 1 && k < b.len() && b[k] == b':' {
+                    keys.push(json[start..j].to_string());
+                }
+                i = j;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    keys
 }
 
 /// The §10.1 examples with their `…` timestamps expanded.
@@ -187,6 +216,10 @@ fn unknown_events_round_trip_and_known_bad_payloads_do_not() {
         .unwrap_err();
     assert!(err.to_string().contains("\"done\""), "{err}");
     assert!(err.to_string().contains("est_min"), "{err}");
+    // A raw-identifier field is named without its `r#` prefix.
+    let err = LogEntry::parse(r#"{"t":"2026-09-08T13:00:00-05:00","ev":"break","planned_min":20,"where":5}"#)
+        .unwrap_err();
+    assert!(err.to_string().contains("\"break\": where:"), "{err}");
     // `ev` itself is required and must be a string.
     assert!(LogEntry::parse(r#"{"t":"2026-09-08T13:00:00-05:00","text":"x"}"#)
         .unwrap_err()

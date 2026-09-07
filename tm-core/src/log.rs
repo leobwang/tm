@@ -44,7 +44,10 @@
 //!   still-open block. Helpers: `block_minutes(id)`, `blocks_done(date)`,
 //!   `is_done(id)`, `last_done(id)`, `done_dates(id)`,
 //!   `instance_status(item, inst)`, `instances_of(item)`, `stamps(id)`,
-//!   `events_named(name)`, `events_for(id)`, `breaks()`. `Replay` is
+//!   `events_named(name)`, `events_for(id)`, `breaks()`,
+//!   `done_minutes_map()` (§6.4, keyed by [`crate::model::Id`] for
+//!   `tree::done_minutes`), and [`DayReplay::gaps`] (unattributed gaps for
+//!   the §11 leak ledger). `Replay` is
 //!   `Serialize`/`Deserialize` (JSON-safe: every map key is a string or a
 //!   date) for `--json` output.
 //!
@@ -81,7 +84,7 @@
 //! * `demote.from` is the horizon key the item left (`2026-W37`,
 //!   `2026-09-07`); it becomes the stamp (`W37`, `D07`).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 use std::io::Write;
 use std::ops::RangeInclusive;
@@ -93,7 +96,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use thiserror::Error;
 
-use crate::model::{parse_date, InstanceStatus, IsoWeek, Stamp};
+use crate::model::{parse_date, Id, InstanceStatus, IsoWeek, Stamp};
 
 /// Errors from reading or writing the log file.
 #[derive(Debug, Error)]
@@ -229,6 +232,32 @@ macro_rules! define_events {
             fn from(k: Known) -> Event {
                 match k {
                     $( Known::$variant { $($field),* } => Event::$variant { $($field),* }, )*
+                }
+            }
+        }
+
+        impl Known {
+            /// The first field of event `ev` present in `map` whose value does
+            /// not match its declared type, as `"<field>: <reason>"`. Used to
+            /// turn serde's positional type error into one that names the
+            /// field; `None` when every present field decodes (the failure was
+            /// a missing field, which serde already names).
+            fn field_error(ev: &str, map: &Map<String, Value>) -> Option<String> {
+                match ev {
+                    $(
+                        $name => {
+                            $(
+                                let key = stringify!($field).trim_start_matches("r#");
+                                if let Some(v) = map.get(key) {
+                                    if let Err(e) = serde_json::from_value::<$ty>(v.clone()) {
+                                        return Some(format!("{key}: {e}"));
+                                    }
+                                }
+                            )*
+                            None
+                        }
+                    )*
+                    _ => None,
                 }
             }
         }
@@ -492,9 +521,14 @@ impl<'de> Deserialize<'de> for Event {
             None => return Err(D::Error::missing_field("ev")),
         };
         if EVENT_NAMES.contains(&ev.as_str()) {
-            Known::deserialize(Value::Object(map))
-                .map(Event::from)
-                .map_err(|e| D::Error::custom(format!("event {ev:?}: {e}")))
+            let value = Value::Object(map);
+            Known::deserialize(&value).map(Event::from).map_err(|e| {
+                let detail = value
+                    .as_object()
+                    .and_then(|m| Known::field_error(&ev, m))
+                    .unwrap_or_else(|| e.to_string());
+                D::Error::custom(format!("event {ev:?}: {detail}"))
+            })
         } else {
             map.remove("ev");
             Ok(Event::Unknown { ev, rest: map })
@@ -503,7 +537,6 @@ impl<'de> Deserialize<'de> for Event {
 }
 
 impl Event {
-
     /// The item id (or routine `item`) the event is about, if any. This is
     /// what `undo{id}` matches against.
     pub fn primary_id(&self) -> Option<&str> {
@@ -1210,6 +1243,19 @@ pub struct OpenBlock {
     pub paused: bool,
 }
 
+impl OpenBlock {
+    /// Worked minutes as of `now`: the closed sub-segments plus the stretch
+    /// running since [`OpenBlock::since`] (nothing accrues while the block is
+    /// paused or interrupted). This is the elapsed time the overtime prompt
+    /// (§9.1) compares against `est × r`.
+    pub fn worked_min_at(&self, now: DateTime<FixedOffset>) -> u32 {
+        let running = self
+            .since
+            .map_or(0, |s| now.signed_duration_since(s).num_minutes().max(0) as u32);
+        self.worked_min + running
+    }
+}
+
 /// A `start` event (for adherence and start latency).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct StartRecord {
@@ -1337,6 +1383,44 @@ impl DayReplay {
     /// Block minutes with `ci ≥ 4` over `done` events.
     pub fn high_ci_min(&self) -> u32 {
         self.minutes_by_ci[4] + self.minutes_by_ci[5]
+    }
+
+    /// Stretches of at least `min_min` minutes between the day's first and
+    /// last logged segment that nothing covers — the *unattributed gaps* of
+    /// the leak ledger (§11), which `review.rs` adds to the `leak` minutes.
+    /// Overlapping segments (a routine inside a block) are merged first, so a
+    /// gap is time with nothing at all logged.
+    pub fn gaps(&self, min_min: u32) -> Vec<(DateTime<FixedOffset>, DateTime<FixedOffset>)> {
+        let mut spans: Vec<(DateTime<FixedOffset>, DateTime<FixedOffset>)> = self
+            .segments
+            .iter()
+            .filter(|s| s.end > s.start)
+            .map(|s| (s.start, s.end))
+            .collect();
+        spans.sort();
+        let mut gaps = Vec::new();
+        let mut cursor = match spans.first() {
+            Some((_, end)) => *end,
+            None => return gaps,
+        };
+        for (start, end) in spans {
+            if start > cursor {
+                let min = start.signed_duration_since(cursor).num_minutes();
+                if min >= min_min as i64 {
+                    gaps.push((cursor, start));
+                }
+            }
+            cursor = cursor.max(end);
+        }
+        gaps
+    }
+
+    /// Σ minutes of [`DayReplay::gaps`].
+    pub fn gap_min(&self, min_min: u32) -> u32 {
+        self.gaps(min_min)
+            .iter()
+            .map(|(s, e)| e.signed_duration_since(*s).num_minutes().max(0) as u32)
+            .sum()
     }
 }
 
@@ -1525,6 +1609,15 @@ impl Replay {
     pub fn total_block_min(&self) -> u32 {
         self.days.values().map(|d| d.block_min).sum()
     }
+
+    /// Block minutes keyed by [`Id`] — the map `tree::done_minutes` (§6.4)
+    /// takes to roll logged minutes up a subtree.
+    pub fn done_minutes_map(&self) -> HashMap<Id, u32> {
+        self.items
+            .iter()
+            .map(|(id, it)| (Id::new(id.clone()), it.minutes))
+            .collect()
+    }
 }
 
 /// Parse a routine status string.
@@ -1643,7 +1736,12 @@ impl Machine {
             return;
         }
         self.out.done_items.insert(id.to_string());
-        self.out.last_done.insert(id.to_string(), t);
+        // Latest by timestamp, not by file position: an appended retro `done`
+        // must not make an older completion look like the last one.
+        let last = self.out.last_done.entry(id.to_string()).or_insert(t);
+        if t > *last {
+            *last = t;
+        }
         self.out
             .done_dates
             .entry(id.to_string())
@@ -2052,7 +2150,11 @@ impl Machine {
                 // Undo entries are removed by the mask before replay; one
                 // reaching here means the caller passed raw entries.
             }
-            Event::Unknown { .. } => self.out.unknown += 1,
+            Event::Unknown { .. } => {
+                if self.in_range(day) {
+                    self.out.unknown += 1;
+                }
+            }
         }
     }
 
@@ -2323,6 +2425,9 @@ mod tests {
         assert_eq!(r.block_minutes("c"), 60);
         assert_eq!(r.block_minutes("d"), 0, "still open");
         assert_eq!(r.open_block.as_ref().map(|b| b.id.as_str()), Some("d"));
+        let open = r.open_block.as_ref().unwrap();
+        assert_eq!(open.worked_min_at(at("2026-09-07T11:40:00-05:00")), 40);
+        assert_eq!(open.worked_min_at(at("2026-09-07T10:00:00-05:00")), 0, "before the start");
         assert_eq!(r.blocks_done(d7), 1);
         assert_eq!(r.block_minutes_on_day(d7), 195);
         assert_eq!(r.lost_min(d7), 20);

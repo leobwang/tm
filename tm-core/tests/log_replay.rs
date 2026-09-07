@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Duration, FixedOffset, NaiveDate};
 use chrono_tz::Tz;
 use tm_core::log::{hours_since_wake, replay, Event, Log, Replay, SegmentKind};
-use tm_core::model::{InstanceStatus, Stamp};
+use tm_core::model::{Id, InstanceStatus, Stamp};
 
 const TZ: Tz = Tz::America__Chicago;
 
@@ -90,9 +90,18 @@ fn days_run_wake_to_wake() {
     assert_eq!(idx.day_of(at("2026-09-09T00:10:00-05:00")), d("2026-09-08"));
     assert_eq!(idx.day_of(at("2026-09-09T09:00:00-05:00")), d("2026-09-09"));
     assert_eq!(idx.wake_of(d("2026-09-09")), None);
+    // 06:20 on the 8th is 24h15m after the 7th's wake: that wake is stale, so
+    // the entry falls back to its calendar date. The 8th therefore begins
+    // when the 7th's wake goes stale (06:05 + 24 h), not at its own 06:40
+    // wake, and the days still tile exactly (`bounds` agrees with `day_of`).
+    assert_eq!(idx.day_of(at("2026-09-08T06:20:00-05:00")), d("2026-09-08"));
+    assert_eq!(
+        idx.bounds(d("2026-09-07")),
+        (at("2026-09-07T00:00:00-05:00"), at("2026-09-08T06:05:00-05:00"))
+    );
     assert_eq!(
         idx.bounds(d("2026-09-08")),
-        (at("2026-09-08T06:40:00-05:00"), at("2026-09-09T06:40:00-05:00"))
+        (at("2026-09-08T06:05:00-05:00"), at("2026-09-09T06:40:00-05:00"))
     );
     assert_eq!(log.iter_day(d("2026-09-07"), TZ).count(), 31);
     assert_eq!(log.iter_day(d("2026-09-08"), TZ).count(), 24, "34 entries minus 10 cancelled");
@@ -165,6 +174,25 @@ fn day_one_matches_hand_computed_values() {
             "15:52-16:10 routine package 2026-09-07 18m",
         ]
     );
+    // Unattributed gaps ≥ 12m (`config.day.idle_min`) between the first and
+    // last logged segment: 13:50→14:05, 15:05→15:26, 15:40→15:52. The
+    // 08:09→08:10 and 11:50→12:00 holes are shorter; the 15:26→15:40 leak is
+    // attributed, so it is not a gap; the lunch routine inside the t3 block
+    // makes no hole.
+    let gaps: Vec<String> = day
+        .gaps(12)
+        .iter()
+        .map(|(s, e)| {
+            format!(
+                "{}-{}",
+                s.with_timezone(&TZ).format("%H:%M"),
+                e.with_timezone(&TZ).format("%H:%M")
+            )
+        })
+        .collect();
+    assert_eq!(gaps, vec!["13:50-14:05", "15:05-15:26", "15:40-15:52"]);
+    assert_eq!(day.gap_min(12), 48);
+    assert_eq!(day.gap_min(60), 0);
     // Energy: t1, t2 (starts), the 09:32 report, t3, t5; t4 had no report.
     let obs: Vec<_> = r.energy_on(d7).collect();
     assert_eq!(obs.len(), 5);
@@ -325,6 +353,11 @@ fn day_three_has_no_wake_and_an_open_block() {
     assert_eq!(r.days.len(), 3);
     assert_eq!(r.breaks().count(), 2);
     assert_eq!(r.items.len(), 9);
+    // The map `tree::done_minutes` (§6.4) consumes.
+    let minutes = r.done_minutes_map();
+    assert_eq!(minutes.len(), 9);
+    assert_eq!(minutes[&Id::new("t3")], 203);
+    assert_eq!(minutes[&Id::new("a3")], 0, "retro done, no block");
 }
 
 #[test]
