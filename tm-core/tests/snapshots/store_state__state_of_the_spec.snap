@@ -1,0 +1,33 @@
+---
+source: tm-core/tests/store_state.rs
+expression: spec_state()
+---
+{
+  "date": "2026-09-07",
+  "wake": "06:05",
+  "arrival": "07:00",
+  "loc": "lounge",
+  "window": [
+    "07:00",
+    "16:00"
+  ],
+  "budget": 6,
+  "active": {
+    "id": "t3",
+    "started": "09:32",
+    "est_min": 192,
+    "paused": false
+  },
+  "break": null,
+  "interrupt": null,
+  "last_plan_hash": "a91f…",
+  "priorities_yesterday": {
+    "d1": 1,
+    "m2": 3
+  },
+  "closed": {
+    "day": "2026-09-06",
+    "week": "2026-W36",
+    "month": "2026-08"
+  }
+}

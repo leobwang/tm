@@ -31,14 +31,21 @@
 //!     is created with its front matter), [`Store::remove_line`]`(id)`,
 //!     [`Store::move_line`]`(id, to_rel, section)` (exact line text
 //!     preserved), [`Store::reorder_line`]`(id, delta)` (TUI `J`/`K`, within
-//!     the section).
+//!     the section). [`Store::write_line_in`], [`Store::remove_line_in`] and
+//!     [`Store::move_line_from`] take the file to look in, which is how the
+//!     `# Demoted` copy of a duplicated id is addressed (§6.3).
 //!   - [`Store::ensure_file`] / [`Store::ensure_horizon_file`],
 //!     [`Store::load_state`] / [`Store::save_state`] (`.tm/state.json`,
 //!     missing → default).
 //! * [`StoreExt`] — `read_json<T>` / `write_json<T>` for `.tm/model.json`
-//!   and friends (blanket impl for every `Store`, `dyn Store` included).
+//!   and friends (blanket impl for every `Store`, `dyn Store` included);
+//!   [`Store::append_text`] extends the append-only `.tm/log.jsonl`.
 //! * [`FsStore`]`::new(root)` — `root` is the `plan/` directory. Writes are
-//!   atomic (temp file in the same directory + rename).
+//!   atomic (temp file in the same directory + rename) and every mutation is
+//!   guarded: the id-addressed ones through [`Store::modify_line`], the
+//!   whole-file ones (appends, generated blocks) through
+//!   [`Store::modify_file`], which re-applies the edit to a racing writer's
+//!   version rather than clobbering it.
 //!   [`FsStore::with_before_write_hook`] injects a closure run between the
 //!   read and the verified write (the race test of §17 M1).
 //! * [`MemStore`] — the same trait over an in-memory `path → text` map, for
@@ -90,6 +97,12 @@ pub const MODEL_PATH: &str = ".tm/model.json";
 /// `.tm/log.jsonl` (§10.1).
 pub const LOG_PATH: &str = ".tm/log.jsonl";
 
+/// How many times [`Store::modify_file`] re-applies a whole-file edit to a
+/// racing writer's version before giving up with [`StoreError::Conflict`].
+/// (§1.3 asks for one retry on a line write; a whole-file edit — an append,
+/// a generated block — merges cleanly, so it is worth going round again.)
+pub const MAX_FILE_ATTEMPTS: usize = 3;
+
 // ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
@@ -121,17 +134,19 @@ pub enum StoreError {
     /// No line carries the id (or, for id-less lines, the title key).
     #[error("no line carries ^{0}")]
     NotFound(Id),
-    /// The file changed between the read and the write, twice (§1.3).
-    /// Carries both versions so the TUI can show a diff.
-    #[error("^{id} in {file} changed underneath the write (ours: {ours:?}, theirs: {theirs:?})")]
+    /// The file kept changing underneath the write (§1.3). Carries both
+    /// versions so the TUI can show a diff: the lines for an id-addressed
+    /// edit, the whole file texts (with an empty `id`) for a whole-file one.
+    #[error("{file} changed underneath the write of ^{id} (ours: {ours:?}, theirs: {theirs:?})")]
     Conflict {
-        /// The id being written.
+        /// The id being written; empty for a whole-file edit.
         id: Id,
         /// The file holding it.
         file: String,
-        /// The line we wanted to write.
+        /// The text we wanted to write.
         ours: String,
-        /// The line as it is in the file now (empty when it disappeared).
+        /// The text as it is in the file now (empty when the line
+        /// disappeared).
         theirs: String,
     },
     /// A `.tm/*.json` file did not parse or serialize.
@@ -575,8 +590,12 @@ pub mod edit {
             }
             None => {
                 let heading_line = format!("{} {}", "#".repeat(level.unwrap_or(1)), name);
-                let mut at = doc.last_nonblank(0, doc.len()).map(|j| j + 1).unwrap_or(0);
-                if at > 0 {
+                let front = front_matter_len(parsed);
+                let mut at = doc.last_nonblank(0, doc.len()).map(|j| j + 1).unwrap_or(front);
+                // A blank line separates the new section from the content
+                // above it — but not from the front matter, which the files of
+                // §4.3 have a heading directly under.
+                if at > front {
                     doc.insert(at, "");
                     at += 1;
                 }
@@ -705,6 +724,11 @@ pub mod edit {
 /// (`None` = nothing to write).
 pub type LineEdit<'a> = dyn FnMut(&ParsedFile, usize) -> Result<Option<String>, StoreError> + 'a;
 
+/// The edit callback of [`Store::modify_file`]: given the parsed file (the
+/// parsed initial text of its horizon when the file does not exist yet),
+/// produce the whole new file text (`None` = nothing to write).
+pub type FileEdit<'a> = dyn FnMut(&ParsedFile) -> Result<Option<String>, StoreError> + 'a;
+
 /// Access to the `plan/` tree. Object-safe; see the module docs for the
 /// provided operations. Relative paths use `/` and are relative to the plan
 /// root (`week/2026-W37.md`, `.tm/state.json`).
@@ -722,6 +746,20 @@ pub trait Store {
     /// The absolute path of a file, when the store is on disk.
     fn abs_path(&self, rel: &str) -> Option<PathBuf>;
 
+    /// Append `text` to `rel` verbatim, creating the file when missing. For
+    /// the append-only `.tm/log.jsonl` (§10.1) — no parsing, no markers, no
+    /// guard: the file is only ever added to. [`FsStore`] opens it in append
+    /// mode instead of rewriting it.
+    fn append_text(&self, rel: &str, text: &str) -> Result<(), StoreError> {
+        let mut out = if self.exists(rel) {
+            self.read_text(rel)?
+        } else {
+            String::new()
+        };
+        out.push_str(text);
+        self.write_file(rel, &out)
+    }
+
     /// `config.toml`, or the defaults when missing.
     fn read_config(&self) -> Result<Config, StoreError> {
         if self.exists(CONFIG_PATH) {
@@ -738,10 +776,29 @@ pub trait Store {
     /// plain read–edit–write; [`FsStore`] adds the §1.3 guard (mtime +
     /// content hash checked before the write, one retry, then `Conflict`).
     fn modify_line(&self, rel: Option<&str>, id: &Id, ours: &str, edit: &mut LineEdit<'_>) -> Result<(), StoreError> {
+        // Only a store with concurrent writers (i.e. [`FsStore`]) can raise a
+        // `Conflict`, so the default implementation has no use for `ours`.
+        let _ = ours;
         let cfg = self.read_config()?;
         let (rel, parsed, idx) = locate(self, &cfg, id, rel)?;
         if let Some(new_text) = edit(&parsed, idx)? {
             self.write_file(&rel, &new_text)?;
+        }
+        Ok(())
+    }
+
+    /// The primitive every whole-file edit goes through: parse `rel` (its
+    /// horizon's initial text when it does not exist yet), run `edit`, write
+    /// the result. The default reads, edits and writes; [`FsStore`] verifies
+    /// that the file did not change in between and, when it did, re-runs
+    /// `edit` on the new text — an append or a generated-block replacement is
+    /// then merged into the other writer's version instead of clobbering it
+    /// (§1.3). After [`MAX_FILE_ATTEMPTS`] racing saves it gives up with
+    /// [`StoreError::Conflict`] carrying both file texts.
+    fn modify_file(&self, rel: &str, edit: &mut FileEdit<'_>) -> Result<(), StoreError> {
+        let parsed = read_or_initial(self, rel)?;
+        if let Some(text) = edit(&parsed)? {
+            self.write_file(rel, &text)?;
         }
         Ok(())
     }
@@ -772,7 +829,13 @@ pub trait Store {
     /// replacement must be one item line with the same `^id` (an id-less
     /// line may gain one). Writing the identical text is a no-op.
     fn write_line(&self, id: &Id, new_text: &str) -> Result<(), StoreError> {
-        self.modify_line(None, id, new_text, &mut |parsed: &ParsedFile, idx: usize| {
+        self.write_line_in(None, id, new_text)
+    }
+
+    /// Like [`Store::write_line`], searching only `rel` when given — the way
+    /// to address the `# Demoted` copy of a duplicated id (§6.3).
+    fn write_line_in(&self, rel: Option<&str>, id: &Id, new_text: &str) -> Result<(), StoreError> {
+        self.modify_line(rel, id, new_text, &mut |parsed: &ParsedFile, idx: usize| {
             edit::validate_replacement(parsed, idx, new_text)?;
             if parsed.lines[idx].text() == new_text {
                 return Ok(None);
@@ -816,8 +879,14 @@ pub trait Store {
     /// duplicate but never lose the line. A missing destination horizon
     /// file is created with its front matter.
     fn move_line(&self, id: &Id, to_rel: &str, section: Option<&str>) -> Result<(), StoreError> {
+        self.move_line_from(None, id, to_rel, section)
+    }
+
+    /// Like [`Store::move_line`], taking the line from `from` when given
+    /// (`tm readopt` moves the `# Demoted` copy, §6.3).
+    fn move_line_from(&self, from: Option<&str>, id: &Id, to_rel: &str, section: Option<&str>) -> Result<(), StoreError> {
         let cfg = self.read_config()?;
-        let (from_rel, parsed, idx) = locate(self, &cfg, id, None)?;
+        let (from_rel, parsed, idx) = locate(self, &cfg, id, from)?;
         let text = parsed.lines[idx].text();
         if from_rel == to_rel {
             let cfg2 = cfg.clone();
@@ -842,8 +911,9 @@ pub trait Store {
     /// horizon file is created first.
     fn append_to_section(&self, rel: &str, heading: &str, line: &str) -> Result<(), StoreError> {
         check_line(rel, line)?;
-        let parsed = read_or_initial(self, rel)?;
-        self.write_file(rel, &edit::append_to_section(&parsed, heading, line))
+        self.modify_file(rel, &mut |parsed: &ParsedFile| {
+            Ok(Some(edit::append_to_section(parsed, heading, line)))
+        })
     }
 
     /// Append `text` at the end of `section` (created as `# Section` when
@@ -851,12 +921,12 @@ pub trait Store {
     /// file is created first.
     fn insert_line(&self, rel: &str, section: Option<&str>, text: &str) -> Result<(), StoreError> {
         check_line(rel, text)?;
-        let parsed = read_or_initial(self, rel)?;
-        let out = match section {
-            Some(s) => edit::append_to_section(&parsed, s, text),
-            None => edit::append_to_end(&parsed, text),
-        };
-        self.write_file(rel, &out)
+        self.modify_file(rel, &mut |parsed: &ParsedFile| {
+            Ok(Some(match section {
+                Some(s) => edit::append_to_section(parsed, s, text),
+                None => edit::append_to_end(parsed, text),
+            }))
+        })
     }
 
     /// Replace the body of the generated block `name` (§1.3), keeping the
@@ -875,8 +945,9 @@ pub trait Store {
         if info.is_some_and(|i| i.contains(['\n', '\r']) || i.contains("-->")) {
             return Err(parse_err(rel, 0, "marker info contains a line break or `-->`"));
         }
-        let parsed = read_or_initial(self, rel)?;
-        self.write_file(rel, &edit::replace_generated(&parsed, name, info, body))
+        self.modify_file(rel, &mut |parsed: &ParsedFile| {
+            Ok(Some(edit::replace_generated(parsed, name, info, body)))
+        })
     }
 
     /// Create `rel` with `initial` unless it exists. Returns whether it was
@@ -1163,6 +1234,20 @@ impl Store for FsStore {
         write_atomic(&self.abs(rel), rel, text)
     }
 
+    /// A real `O_APPEND` write, so `.tm/log.jsonl` never has to be read to be
+    /// extended and concurrent appends do not lose lines.
+    fn append_text(&self, rel: &str, text: &str) -> Result<(), StoreError> {
+        let path = self.abs(rel);
+        if let Some(dir) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            fs::create_dir_all(dir).map_err(|e| io_err(rel, e))?;
+        }
+        let write = || -> std::io::Result<()> {
+            let mut f = fs::OpenOptions::new().create(true).append(true).open(&path)?;
+            f.write_all(text.as_bytes())
+        };
+        write().map_err(|e| io_err(rel, e))
+    }
+
     fn exists(&self, rel: &str) -> bool {
         self.abs(rel).is_file()
     }
@@ -1175,18 +1260,78 @@ impl Store for FsStore {
         Ok(Config::load_or_default(self.abs(CONFIG_PATH))?)
     }
 
+    /// The §1.3 guard for a whole-file edit: read (snapshot), edit, run the
+    /// hook, verify the file is still exactly as it was read (or still
+    /// absent), write atomically. A racing save sends the edit round again on
+    /// the new text — appends and generated blocks merge into it — up to
+    /// [`MAX_FILE_ATTEMPTS`] times, then [`StoreError::Conflict`] with both
+    /// file texts and an empty id.
+    fn modify_file(&self, rel: &str, edit: &mut FileEdit<'_>) -> Result<(), StoreError> {
+        let cfg = self.read_config()?;
+        let path = self.abs(rel);
+        let mut ours = String::new();
+        for attempt in 0..MAX_FILE_ATTEMPTS {
+            let before: Option<Snapshot> = if path.is_file() {
+                Some(Snapshot::read(&path, rel)?)
+            } else {
+                None
+            };
+            let text = match &before {
+                Some(snap) => snap.text.clone(),
+                None => Horizon::from_path(rel).map(|h| initial_text(&h)).unwrap_or_default(),
+            };
+            let parsed = parse_file(rel, &text, &cfg);
+            let Some(new_text) = edit(&parsed)? else {
+                return Ok(());
+            };
+            ours = new_text;
+            if let Some(hook) = &self.before_write {
+                hook(&path, attempt);
+            }
+            match (&before, path.is_file()) {
+                // Unchanged since the read, or still not there: write.
+                (Some(snap), true) if Snapshot::read(&path, rel)?.unchanged_since(snap) => {
+                    return write_atomic(&path, rel, &ours)
+                }
+                (None, false) => return write_atomic(&path, rel, &ours),
+                _ => {}
+            }
+        }
+        Err(StoreError::Conflict {
+            id: Id::default(),
+            file: rel.to_string(),
+            ours,
+            theirs: fs::read_to_string(&path).unwrap_or_default(),
+        })
+    }
+
     /// The §1.3 guard: read (snapshot), edit, run the hook, verify the
     /// file's mtime and content hash are unchanged, write atomically. On a
     /// mismatch re-read and retry once; then [`StoreError::Conflict`] with
-    /// `ours` and the line as it is now.
+    /// `ours` and the line as it is now (empty when the other writer removed
+    /// it).
     fn modify_line(&self, rel: Option<&str>, id: &Id, ours: &str, edit: &mut LineEdit<'_>) -> Result<(), StoreError> {
         let cfg = self.read_config()?;
         let only = rel.is_some();
         let mut hint: Option<String> = rel.map(str::to_string);
-        let mut theirs = String::new();
-        let mut file = String::new();
+        // `Some((file, their line))` once a race has been seen.
+        let mut raced: Option<(String, String)> = None;
         for attempt in 0..2 {
-            let (rel, snap, parsed, idx) = self.locate_snapshot(&cfg, id, hint.as_deref(), only)?;
+            let located = self.locate_snapshot(&cfg, id, hint.as_deref(), only);
+            let (rel, snap, parsed, idx) = match (located, &raced) {
+                (Ok(found), _) => found,
+                // The other writer took the line away between the attempts:
+                // that is the race, not a plain "no such id".
+                (Err(e), Some((file, theirs))) if e.is_not_found() => {
+                    return Err(StoreError::Conflict {
+                        id: id.clone(),
+                        file: file.clone(),
+                        ours: ours.to_string(),
+                        theirs: theirs.clone(),
+                    })
+                }
+                (Err(e), _) => return Err(e),
+            };
             let Some(new_text) = edit(&parsed, idx)? else {
                 return Ok(());
             };
@@ -1199,12 +1344,13 @@ impl Store for FsStore {
                 return write_atomic(&path, &rel, &new_text);
             }
             let current = parse_file(&rel, &now.text, &cfg);
-            theirs = edit::find_line(&current, id)
+            let theirs = edit::find_line(&current, id)
                 .map(|i| current.lines[i].text())
                 .unwrap_or_default();
-            file = rel.clone();
+            raced = Some((rel.clone(), theirs));
             hint = Some(rel);
         }
+        let (file, theirs) = raced.unwrap_or_default();
         Err(StoreError::Conflict {
             id: id.clone(),
             file,
