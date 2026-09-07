@@ -4,9 +4,11 @@
 //!
 //! The fixture holds a one-off meeting with a `TZID`, a UTC event, an all-day
 //! event, a weekly lecture (`BYDAY` + `EXDATE`), a flight, a multi-day event
-//! with a folded `SUMMARY`, a `DURATION`-only daily series, a monthly series
-//! that starts before the window, a cancelled event, a floating event and two
-//! summaries that would break the line grammar if written verbatim.
+//! with a folded `SUMMARY`, a multi-day event that is already under way when
+//! the window opens, another that spans two written weeks, a `DURATION`-only
+//! daily series, a monthly series that starts before the window, a cancelled
+//! event, a floating event and two summaries that would break the line
+//! grammar if written verbatim.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -15,8 +17,9 @@ use chrono::NaiveDate;
 use tm_core::config::Config;
 use tm_core::grammar::{parse_line, ParseCtx};
 use tm_core::ics::{
-    events_in_window, merge_calendar_file, parse_ics_report, render_calendar_lines, sync,
-    sync_report, window_for_week, CalEvent, IcsError, ParseOptions, StaticFetcher,
+    events_in_window, merge_calendar_file, parse_ics_report, render_calendar_lines,
+    render_calendar_weeks, sync, sync_report, window_for_week, CalEvent, IcsError, ParseOptions,
+    StaticFetcher,
 };
 use tm_core::model::{Id, IsoWeek, Shape};
 
@@ -79,6 +82,8 @@ fn the_three_week_window_holds_the_expected_occurrences() {
     assert_eq!(
         digest(&events),
         vec![
+            // Already under way when the window opens (it starts in W35).
+            "2026-08-28T09:00 2026-09-02T17:00 Systems conference",
             // W36: the lecture already runs, twice a week.
             "2026-09-02T15:00 2026-09-02T16:20 CS 234 lecture",
             "2026-09-04T15:00 2026-09-04T16:20 CS 234 lecture",
@@ -94,6 +99,8 @@ fn the_three_week_window_holds_the_expected_occurrences() {
             "2026-09-11T06:30 2026-09-11T06:50 Morning pages",
             "2026-09-12T08:15 2026-09-12T10:40 UA 1234 ORD→SFO",
             "2026-09-13T06:30 2026-09-13T06:50 Morning pages",
+            // Starts on the Sunday of W37 and runs into W38.
+            "2026-09-13T18:00 2026-09-15T12:00 Bike tour to Wisconsin",
             // W38.
             "2026-09-15T06:30 2026-09-15T06:50 Morning pages",
             "2026-09-15T10:00 2026-09-15T10:30 Monthly 1:1 w/ advisor",
@@ -139,14 +146,19 @@ fn parsing_without_a_window_finds_the_same_occurrences_after_filtering() {
     );
 }
 
+/// The three weeks a sync of `today` writes.
+fn weeks() -> [IsoWeek; 3] {
+    [week().prev(), week(), week().next()]
+}
+
 #[test]
 fn rendered_lines_snapshot() {
     let cfg = config();
     let events = parse_window();
     let mut out = String::new();
-    for w in [week().prev(), week(), week().next()] {
+    for (w, lines) in render_calendar_weeks(&events, &cfg, &weeks()) {
         out.push_str(&format!("=== calendar/{w}.md\n"));
-        for line in render_calendar_lines(&events, &cfg, w) {
+        for line in lines {
             out.push_str(&line);
             out.push('\n');
         }
@@ -155,31 +167,64 @@ fn rendered_lines_snapshot() {
 }
 
 #[test]
-fn every_rendered_line_parses_back_into_the_event() {
+fn every_event_in_the_window_is_written_exactly_once() {
     let cfg = config();
     let events = parse_window();
-    for w in [week().prev(), week(), week().next()] {
+    let rendered = render_calendar_weeks(&events, &cfg, &weeks());
+    // Every occurrence lands in exactly one file, ids included: an event that
+    // is already under way when the window opens (the conference starting in
+    // W35) is written into the first week that is being written, and one that
+    // spans two written weeks (the bike tour) stays in the week it starts in.
+    let total: usize = rendered.iter().map(|(_, l)| l.len()).sum();
+    assert_eq!(total, events.len());
+
+    let mut ids: Vec<String> = Vec::new();
+    for (w, lines) in &rendered {
         let path = format!("calendar/{w}.md");
         let ctx = ParseCtx::new(&path, cfg.block_min());
-        let lines = render_calendar_lines(&events, &cfg, w);
-        let in_week: Vec<&CalEvent> = events.iter().filter(|e| e.week() == w).collect();
-        assert_eq!(lines.len(), in_week.len(), "{path}");
-        for line in &lines {
+        for line in lines {
             let item = parse_line(line, &ctx).unwrap();
             assert!(item.problems.is_empty(), "{line}: {:?}", item.problems);
             assert_eq!(item.line_text(), *line);
             let Shape::Interval { start, end } = item.shape else {
                 panic!("{line}: not an interval");
             };
-            let ev = in_week
+            let ev = events
                 .iter()
                 .find(|e| e.start == start && e.end == end)
                 .unwrap_or_else(|| panic!("{line}: no event at {start}"));
             assert_eq!(item.id, ev.id(), "{line}");
-            // Nothing from the summary leaked into a field.
-            assert!(item.parent.is_none() && item.tags.is_empty() && item.priority.is_none());
+            // Only an all-day event carries a tag, and nothing else from the
+            // summary leaked into a field.
+            let expected_tags: Vec<String> = if ev.all_day {
+                vec!["all-day".to_string()]
+            } else {
+                Vec::new()
+            };
+            assert_eq!(item.tags, expected_tags, "{line}");
+            assert!(item.parent.is_none() && item.priority.is_none());
+            ids.push(item.id.to_string());
         }
     }
+    let unique: std::collections::HashSet<&String> = ids.iter().collect();
+    assert_eq!(unique.len(), ids.len(), "an id was written twice: {ids:?}");
+}
+
+#[test]
+fn the_conference_already_under_way_lands_in_the_first_written_week() {
+    let cfg = config();
+    let events = parse_window();
+    let rendered = render_calendar_weeks(&events, &cfg, &weeks());
+    let holding: Vec<String> = rendered
+        .iter()
+        .filter(|(_, lines)| lines.iter().any(|l| l.contains("Systems conference")))
+        .map(|(w, _)| w.to_string())
+        .collect();
+    assert_eq!(holding, vec!["2026-W36"]);
+    assert!(rendered[0]
+        .1
+        .iter()
+        .any(|l| l.contains("at:2026-08-28T09:00/2026-09-02T17:00 loc:Hyde-Park")));
 }
 
 #[test]
@@ -335,9 +380,46 @@ fn re_syncing_never_changes_an_id() {
 fn sync_reports_the_events_it_wrote_and_no_warnings() {
     let report = sync_report(&fetcher(), &config(), today(), &[]).unwrap();
     assert!(report.warnings.is_empty(), "{:?}", report.warnings);
-    assert_eq!(report.events.len(), 19);
+    assert_eq!(report.events.len(), 21);
+    // Every reported occurrence really was written — including the conference
+    // that starts in W35 and the bike tour that spans W37 and W38.
     let written: usize = report.files.iter().map(|(_, t)| t.lines().count()).sum();
     assert_eq!(written, report.events.len());
+}
+
+#[test]
+fn pinning_a_generated_line_does_not_duplicate_it_on_the_next_sync() {
+    let cfg = config();
+    let first = sync(&fetcher(), &cfg, today(), &[]).unwrap();
+    let w37 = first.iter().find(|(w, _)| *w == week()).unwrap().1.clone();
+
+    // The user keeps the meeting by adding the `manual` flag to the line the
+    // sync generated (§4.3: only `manual` lines survive a sync).
+    let line = w37
+        .lines()
+        .find(|l| l.contains("Meeting w/ host"))
+        .unwrap()
+        .to_string();
+    let (head, id) = line.rsplit_once(" ^").unwrap();
+    let pinned = format!("{head} manual ^{id}");
+    let edited: Vec<(IsoWeek, String)> = first
+        .iter()
+        .map(|(w, t)| (*w, t.replace(&line, &pinned)))
+        .collect();
+
+    let again = sync(&fetcher(), &cfg, today(), &edited).unwrap();
+    let text = &again.iter().find(|(w, _)| *w == week()).unwrap().1;
+    assert_eq!(text.lines().filter(|l| **l == pinned).count(), 1);
+    assert_eq!(
+        text.lines()
+            .filter(|l| l.contains("Meeting w/ host"))
+            .count(),
+        1,
+        "{text}"
+    );
+    assert_eq!(text.matches(&format!(" ^{id}")).count(), 1, "{text}");
+    // And it stays put: a further sync changes nothing.
+    assert_eq!(sync(&fetcher(), &cfg, today(), &again).unwrap(), again);
 }
 
 #[test]

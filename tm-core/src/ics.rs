@@ -15,8 +15,10 @@
 //! * [`stable_id`]`(uid, occurrence_start)` — the id written on a generated
 //!   line: a 6-char FNV-1a hash over the `UID` (plus the occurrence start for
 //!   a recurring event), so re-syncs never renumber lines.
-//! * [`render_calendar_lines`]`(events, cfg, week)` — the §4.3 lines for one
-//!   ISO week; [`classify_event`] is the documented ci / flight rule.
+//! * [`render_calendar_weeks`]`(events, cfg, weeks)` — the §4.3 lines for
+//!   several ISO weeks, each event written exactly once (see "Which file an
+//!   event lands in" below); [`render_calendar_lines`] is the one-week case
+//!   and [`classify_event`] is the documented ci / flight rule.
 //! * [`merge_calendar_file`]`(existing, new_lines)` — replace the generated
 //!   lines, keep `manual` lines and prose verbatim.
 //! * [`Fetcher`] (+ [`HttpFetcher`], [`StaticFetcher`], the free [`fetch`])
@@ -37,7 +39,9 @@
 //! * no suffix and no `TZID` — floating; taken as written.
 //! * `;VALUE=DATE` — an all-day event: `all_day` is set and the ICS half-open
 //!   convention is kept, so a one-day event is `at:<date>T00:00/<next>T00:00`.
-//!   All-day events are floating by definition and are never converted.
+//!   All-day events are floating by definition and are never converted. The
+//!   generated line carries the [`ALL_DAY_TAG`] tag (`#all-day`) — see
+//!   "All-day events" below.
 //!
 //! A recurring event is expanded in the wall clock of its own zone (so a
 //! weekly 15:00 lecture stays at 15:00 across a DST change) and each
@@ -49,22 +53,52 @@
 //! `RRULE` is expanded for `FREQ=DAILY`, `FREQ=WEEKLY` (with `BYDAY`) and
 //! `FREQ=MONTHLY` (with `BYMONTHDAY`), honouring `INTERVAL`, `COUNT`,
 //! `UNTIL` and `EXDATE` (`COUNT` counts rule occurrences before `EXDATE`
-//! removal, per RFC 5545). `DTSTART` always counts as the first occurrence.
+//! removal, per RFC 5545). `DTSTART` always counts as the first occurrence
+//! (RFC 5545 3.8.5.3), even when it does not match `BYDAY`/`BYMONTHDAY`.
+//! `UNTIL` written as a UTC instant (`…Z`, which is what RFC 5545 requires
+//! for a zoned `DTSTART`, and what Google writes) is converted into the
+//! event's own zone before it is compared, and it is inclusive.
 //!
 //! Not supported (each is a warning; the event still appears as its single
-//! `DTSTART` occurrence): `FREQ=YEARLY|HOURLY|MINUTELY|SECONDLY`, ordinal
+//! `DTSTART` occurrence): `FREQ=YEARLY|HOURLY|MINUTELY|SECONDLY`, `BYDAY`
+//! outside `FREQ=WEEKLY` and `BYMONTHDAY` outside `FREQ=MONTHLY`, ordinal
 //! `BYDAY` values (`2MO`), negative `BYMONTHDAY` (`-1`), `BYSETPOS`,
 //! `BYMONTH`, `BYWEEKNO`, `BYYEARDAY`, `BYHOUR`/`BYMINUTE`/`BYSECOND`, a
 //! `WKST` other than Monday, and `RDATE`. Events with `RECURRENCE-ID` (a
 //! single edited occurrence of a series) are skipped with a warning, and
 //! `STATUS:CANCELLED` events are dropped silently. `VTIMEZONE` components are
 //! ignored — zones are resolved through `chrono-tz`.
+//!
+//! A feed is untrusted input: an out-of-range `DURATION`, `INTERVAL` or
+//! `UNTIL` never panics — the value is a warning or ends the walk.
+//!
+//! # All-day events
+//!
+//! A `VALUE=DATE` event is written with its true extent (`at:<date>T00:00/…`)
+//! and the [`ALL_DAY_TAG`] tag, because §15 writes calendar files as Interval
+//! items and the extent is the only lossless representation. The tag is the
+//! marker a consumer needs: an all-day entry (a birthday, a holiday, an OOO
+//! marker) is day-level context, **not** a wall, so §8.2 step 1 must skip
+//! `#all-day` intervals when it places walls and §8.1 must leave them out of
+//! `Σ duration(walls)`. Without the tag a 24-hour interval is
+//! indistinguishable from a real 24-hour commitment.
+//!
+//! # Which file an event lands in
+//!
+//! [`render_calendar_weeks`] writes every event exactly once: into the ISO
+//! week it starts in, or — when that week is not one of the weeks being
+//! written, which happens for an event that is already under way when the
+//! window opens — into the first written week it overlaps. An event that
+//! spans two written weeks stays in the week it starts in, whose file holds
+//! its full `at:` interval.
 
 use std::collections::{BTreeMap, HashSet};
 use std::io::BufReader;
 use std::time::Duration as StdDuration;
 
-use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc, Weekday};
+use chrono::{
+    Datelike, Days, Duration, Months, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc, Weekday,
+};
 use chrono_tz::Tz;
 use ical::parser::ical::component::IcalEvent;
 use ical::property::Property;
@@ -73,7 +107,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::config::Config;
-use crate::grammar::{ItemLine, ID_ALPHABET};
+use crate::grammar::{ItemLine, FLAGS, ID_ALPHABET};
 use crate::model::{fmt_interval, Id, IsoWeek};
 
 // ---------------------------------------------------------------------------
@@ -316,14 +350,18 @@ fn convert_event(ev: &IcalEvent, opts: &ParseOptions, warnings: &mut Vec<String>
     let base_end = match prop(ev, "DTEND").and_then(|p| parse_prop_time(p, &label, warnings)) {
         Some(t) => to_zone(t.naive, t.zone, opts.tz),
         None => match prop(ev, "DURATION").and_then(|p| p.value.as_deref()) {
-            Some(v) => match parse_ics_duration(v) {
-                Some(d) => base_start + d,
+            // An out-of-range DURATION is a warning, never a panic: a feed is
+            // untrusted input.
+            Some(v) => match parse_ics_duration(v).and_then(|d| base_start.checked_add_signed(d)) {
+                Some(end) => end,
                 None => {
                     warnings.push(format!("{label}: unreadable DURATION {v:?}; treated as 0"));
                     base_start
                 }
             },
-            None if dtstart.is_date => base_start + Duration::days(1),
+            None if dtstart.is_date => base_start
+                .checked_add_signed(Duration::days(1))
+                .unwrap_or(base_start),
             None => base_start,
         },
     };
@@ -363,7 +401,11 @@ fn convert_event(ev: &IcalEvent, opts: &ParseOptions, warnings: &mut Vec<String>
             if prop(ev, "RDATE").is_some() {
                 warnings.push(format!("{label}: RDATE is not supported; ignored"));
             }
-            rule.expand(dtstart.naive, source_window(opts.window, dtstart.zone))
+            rule.expand(
+                dtstart.naive,
+                dtstart.zone,
+                source_window(opts.window, dtstart.zone, length),
+            )
         }
     };
 
@@ -379,7 +421,7 @@ fn convert_event(ev: &IcalEvent, opts: &ParseOptions, warnings: &mut Vec<String>
                 uid: uid.clone(),
                 summary: summary.clone(),
                 start,
-                end: start + length,
+                end: start.checked_add_signed(length).unwrap_or(start),
                 location: location.clone(),
                 all_day: dtstart.is_date,
                 recurring,
@@ -393,19 +435,29 @@ fn convert_event(ev: &IcalEvent, opts: &ParseOptions, warnings: &mut Vec<String>
         .collect()
 }
 
-/// The expansion window in the *source* zone: widened by two days on each
-/// side so no zone offset (at most 26h apart) can drop an occurrence that
-/// lands inside the window after conversion — the exact filter runs on the
-/// converted times.
+/// The expansion window in the *source* zone.
+///
+/// The lower bound is widened by the occurrence `length`, so an occurrence
+/// that starts before the window but is still running inside it survives the
+/// walk (the exact overlap filter runs afterwards on the converted times),
+/// and by two more days for a zoned event, so no zone offset (at most 26h
+/// apart) can drop an occurrence that lands inside the window after
+/// conversion.
 fn source_window(
     window: Option<(NaiveDateTime, NaiveDateTime)>,
     zone: Zone,
+    length: Duration,
 ) -> Option<(NaiveDateTime, NaiveDateTime)> {
     let (from, to) = window?;
-    match zone {
-        Zone::Floating => Some((from, to)),
-        _ => Some((from - Duration::days(2), to + Duration::days(2))),
-    }
+    let slack = match zone {
+        Zone::Floating => Duration::zero(),
+        _ => Duration::days(2),
+    };
+    let back = length.max(Duration::zero()).checked_add(&slack)?;
+    Some((
+        from.checked_sub_signed(back).unwrap_or(NaiveDateTime::MIN),
+        to.checked_add_signed(slack).unwrap_or(NaiveDateTime::MAX),
+    ))
 }
 
 fn prop<'a>(ev: &'a IcalEvent, name: &str) -> Option<&'a Property> {
@@ -544,6 +596,10 @@ fn zone_from_tzid(tzid: &str) -> Option<Tz> {
 }
 
 /// `P[n]W` / `P[n]D[T[n]H[n]M[n]S]` (a leading `-` inverts).
+///
+/// A value that does not fit a `chrono::Duration` (`P9999999999999999W`) is
+/// `None`, like any other unreadable duration — a feed must not be able to
+/// panic the sync.
 fn parse_ics_duration(v: &str) -> Option<Duration> {
     let v = v.trim();
     let (sign, rest) = match v.strip_prefix('-') {
@@ -563,21 +619,22 @@ fn parse_ics_duration(v: &str) -> Option<Duration> {
                 let n: i64 = num.parse().ok()?;
                 num.clear();
                 any = true;
-                minutes += match (c, in_time) {
-                    ('W', _) | ('w', _) => n * 7 * 24 * 60,
-                    ('D', _) | ('d', _) => n * 24 * 60,
-                    ('H', true) | ('h', true) => n * 60,
+                let add = match (c, in_time) {
+                    ('W', _) | ('w', _) => n.checked_mul(7 * 24 * 60)?,
+                    ('D', _) | ('d', _) => n.checked_mul(24 * 60)?,
+                    ('H', true) | ('h', true) => n.checked_mul(60)?,
                     ('M', true) | ('m', true) => n,
                     ('S', true) | ('s', true) => 0, // sub-minute precision is dropped
                     _ => return None,
                 };
+                minutes = minutes.checked_add(add)?;
             }
         }
     }
     if !num.is_empty() || !any {
         return None;
     }
-    Some(Duration::minutes(sign * minutes))
+    Duration::try_minutes(sign.checked_mul(minutes)?)
 }
 
 /// Convert a wall-clock time in `zone` to naive local time in `target`.
@@ -594,8 +651,8 @@ fn to_zone(naive: NaiveDateTime, zone: Zone, target: Tz) -> NaiveDateTime {
                 .from_local_datetime(&naive)
                 .earliest()
                 .or_else(|| {
-                    tz.from_local_datetime(&(naive + Duration::hours(1)))
-                        .earliest()
+                    let later = naive.checked_add_signed(Duration::hours(1))?;
+                    tz.from_local_datetime(&later).earliest()
                 })
                 .unwrap_or_else(|| Utc.from_utc_datetime(&naive).with_timezone(&tz));
             dt.with_timezone(&target).naive_local()
@@ -613,6 +670,18 @@ enum Freq {
     Weekly,
     Monthly,
     Unsupported,
+}
+
+impl Freq {
+    /// The `FREQ=` name, for warnings.
+    fn name(self) -> &'static str {
+        match self {
+            Freq::Daily => "DAILY",
+            Freq::Weekly => "WEEKLY",
+            Freq::Monthly => "MONTHLY",
+            Freq::Unsupported => "?",
+        }
+    }
 }
 
 /// The subset of `RRULE` this module expands (see the module docs).
@@ -705,98 +774,158 @@ impl Rrule {
         r.byday.dedup();
         r.bymonthday.sort_unstable();
         r.bymonthday.dedup();
+        // `BYDAY` only narrows a weekly rule here and `BYMONTHDAY` only a
+        // monthly one (the checks run after the loop because `FREQ` may come
+        // last). Anywhere else the rule would silently expand to the wrong
+        // dates, so it is reported as unsupported instead.
+        if !r.byday.is_empty() && !matches!(r.freq, Freq::Weekly | Freq::Unsupported) {
+            r.unsupported
+                .push(format!("BYDAY with FREQ={}", r.freq.name()));
+        }
+        if !r.bymonthday.is_empty() && !matches!(r.freq, Freq::Monthly | Freq::Unsupported) {
+            r.unsupported
+                .push(format!("BYMONTHDAY with FREQ={}", r.freq.name()));
+        }
         r
+    }
+
+    /// `UNTIL` in the event's own wall clock.
+    ///
+    /// RFC 5545 3.3.10 requires `UNTIL` to be a UTC instant whenever
+    /// `DTSTART` is zoned, while the walk runs in the source zone's wall
+    /// clock — without this conversion the last occurrence of every series is
+    /// off by the zone offset.
+    fn until_in(&self, zone: Zone) -> Option<NaiveDateTime> {
+        let until = self.until?;
+        match zone {
+            Zone::Named(tz) if self.until_utc => Some(to_zone(until, Zone::Utc, tz)),
+            _ => Some(until),
+        }
     }
 
     /// Occurrence starts in the event's own wall clock, `DTSTART` first.
     ///
-    /// `window` is `[from, to)` in the same wall clock; without one the walk
-    /// stops after [`MAX_UNWINDOWED_OCCURRENCES`].
+    /// `zone` is the zone `DTSTART` is written in — it is what a UTC `UNTIL`
+    /// is converted into. `window` is `[from, to)` in the same wall clock;
+    /// without one the walk stops after [`MAX_UNWINDOWED_OCCURRENCES`].
+    ///
+    /// `DTSTART` is always the first occurrence (RFC 5545 3.8.5.3) even when
+    /// it does not match `BYDAY`/`BYMONTHDAY`, and it counts against `COUNT`.
     fn expand(
         &self,
         start: NaiveDateTime,
+        zone: Zone,
         window: Option<(NaiveDateTime, NaiveDateTime)>,
     ) -> Vec<NaiveDateTime> {
         if !self.unsupported.is_empty() || self.freq == Freq::Unsupported {
             return vec![start];
         }
-        let until = self.until;
+        let until = self.until_in(zone);
         let time = start.time();
-        let mut out: Vec<NaiveDateTime> = Vec::new();
-        let mut generated: u32 = 0;
-        let mut period: u32 = 0;
-        loop {
-            if period > MAX_PERIODS {
+        let mut walk = Walk {
+            out: Vec::new(),
+            generated: 0,
+        };
+        if !self.take(start, until, window, &mut walk) {
+            return walk.out;
+        }
+        for period in 0..=MAX_PERIODS {
+            // `None` means the next period is outside the representable date
+            // range (a huge `INTERVAL`); the walk ends there rather than
+            // panicking.
+            let Some(dates) = self.dates_in_period(start.date(), period) else {
                 break;
-            }
-            let dates = self.dates_in_period(start.date(), period);
+            };
             for d in dates {
                 let occ = d.and_time(time);
-                if occ < start {
-                    continue;
+                if occ <= start {
+                    continue; // before DTSTART, or DTSTART itself (already taken)
                 }
-                if until.is_some_and(|u| occ > u) {
-                    return out;
-                }
-                if self.count.is_some_and(|c| generated >= c) {
-                    return out;
-                }
-                generated += 1;
-                match window {
-                    Some((from, to)) => {
-                        if occ >= to {
-                            return out;
-                        }
-                        if occ >= from {
-                            out.push(occ);
-                        }
-                    }
-                    None => out.push(occ),
+                if !self.take(occ, until, window, &mut walk) {
+                    return walk.out;
                 }
             }
-            if window.is_none() && generated >= MAX_UNWINDOWED_OCCURRENCES {
+            if window.is_none() && walk.generated >= MAX_UNWINDOWED_OCCURRENCES {
                 break;
             }
-            period += 1;
         }
-        out
+        walk.out
     }
 
-    /// The candidate dates of period `n`, ascending.
-    fn dates_in_period(&self, start: NaiveDate, n: u32) -> Vec<NaiveDate> {
-        let step = (n as i64) * (self.interval as i64);
+    /// Take one occurrence in ascending order; `false` ends the walk
+    /// (`UNTIL` passed, `COUNT` reached, or past the window).
+    fn take(
+        &self,
+        occ: NaiveDateTime,
+        until: Option<NaiveDateTime>,
+        window: Option<(NaiveDateTime, NaiveDateTime)>,
+        walk: &mut Walk,
+    ) -> bool {
+        if until.is_some_and(|u| occ > u) {
+            return false;
+        }
+        if self.count.is_some_and(|c| walk.generated >= c) {
+            return false;
+        }
+        walk.generated += 1;
+        match window {
+            Some((from, to)) => {
+                if occ >= to {
+                    return false;
+                }
+                if occ >= from {
+                    walk.out.push(occ);
+                }
+            }
+            None => walk.out.push(occ),
+        }
+        true
+    }
+
+    /// The candidate dates of period `n`, ascending, or `None` when period
+    /// `n` falls outside the representable range of `NaiveDate`.
+    fn dates_in_period(&self, start: NaiveDate, n: u32) -> Option<Vec<NaiveDate>> {
+        let step = (n as u64).checked_mul(self.interval as u64)?;
         match self.freq {
-            Freq::Daily => vec![start + Duration::days(step)],
+            Freq::Daily => Some(vec![start.checked_add_days(Days::new(step))?]),
             Freq::Weekly => {
-                let monday = start - Duration::days(start.weekday().num_days_from_monday() as i64);
-                let week = monday + Duration::days(step * 7);
+                let monday = start
+                    .checked_sub_days(Days::new(start.weekday().num_days_from_monday() as u64))?;
+                let week = monday.checked_add_days(Days::new(step.checked_mul(7)?))?;
                 let days = if self.byday.is_empty() {
                     vec![start.weekday()]
                 } else {
                     self.byday.clone()
                 };
                 days.iter()
-                    .map(|w| week + Duration::days(w.num_days_from_monday() as i64))
+                    .map(|w| week.checked_add_days(Days::new(w.num_days_from_monday() as u64)))
                     .collect()
             }
             Freq::Monthly => {
-                let months = start.year() as i64 * 12 + (start.month() as i64 - 1) + step;
-                let (y, m) = (
-                    (months.div_euclid(12)) as i32,
-                    (months.rem_euclid(12)) as u32 + 1,
-                );
+                let first = start.with_day(1)?;
+                let month = first.checked_add_months(Months::new(u32::try_from(step).ok()?))?;
                 let days = if self.bymonthday.is_empty() {
                     vec![start.day()]
                 } else {
                     self.bymonthday.clone()
                 };
-                days.iter()
-                    .filter_map(|d| NaiveDate::from_ymd_opt(y, m, *d))
-                    .collect()
+                Some(
+                    days.iter()
+                        .filter_map(|d| NaiveDate::from_ymd_opt(month.year(), month.month(), *d))
+                        .collect(),
+                )
             }
-            Freq::Unsupported => Vec::new(),
+            Freq::Unsupported => Some(Vec::new()),
         }
     }
+}
+
+/// The state of one [`Rrule::expand`] walk.
+struct Walk {
+    /// Occurrences inside the window, ascending.
+    out: Vec<NaiveDateTime>,
+    /// Occurrences the rule produced, window or not — what `COUNT` counts.
+    generated: u32,
 }
 
 fn weekday_from_ics(s: &str) -> Option<Weekday> {
@@ -893,6 +1022,16 @@ fn encode_id(hash: u64) -> String {
 /// The buffer written before a flight (§15).
 pub const FLIGHT_BUFFER: &str = "2h";
 
+/// The tag every `VALUE=DATE` (all-day) event carries, written `#all-day`.
+///
+/// An all-day entry is day-level context — a birthday, a holiday, an OOO
+/// marker — not a commitment that blocks time. The interval on the line is
+/// the event's true extent (§15 writes calendar files as Interval items), so
+/// a consumer that places walls (§8.2 step 1) or lengthens the day by
+/// `Σ duration(walls)` (§8.1) must skip the intervals carrying this tag;
+/// without it a one-line birthday would swallow a whole planning day.
+pub const ALL_DAY_TAG: &str = "all-day";
+
 /// Words that mark an event as attendance rather than work.
 const LECTURE_WORDS: &[&str] = &[
     "lecture",
@@ -930,17 +1069,24 @@ impl EventKind {
 /// The documented ci rule (§4.3 shows 1 / 2 / 3 for a flight, a lecture and a
 /// meeting):
 ///
-/// 1. a summary naming a lecture, class, seminar, recitation, colloquium,
-///    tutorial or webinar is a [`EventKind::Lecture`] — checked *first*
-///    because a course code (`CS 234`) matches the default flight regex;
-/// 2. otherwise a `✈` in the summary or a match of `flight_re`
-///    (`config.calendar.flight_regex`) makes it a [`EventKind::Flight`];
-/// 3. otherwise [`EventKind::Other`].
+/// 1. a `✈` in the summary is an unconditional [`EventKind::Flight`] (§15
+///    names the glyph itself as a flight marker), even in
+///    `✈ UA 1234 ORD→LHR business class`;
+/// 2. otherwise a summary naming a lecture, class, seminar, recitation,
+///    colloquium, tutorial or webinar is a [`EventKind::Lecture`] — checked
+///    before the regex because a course code (`CS 234`) matches the default
+///    flight regex;
+/// 3. otherwise a match of `flight_re` (`config.calendar.flight_regex`) makes
+///    it a [`EventKind::Flight`];
+/// 4. otherwise [`EventKind::Other`].
 pub fn classify_event(summary: &str, flight_re: Option<&Regex>) -> EventKind {
+    if summary.contains('✈') {
+        return EventKind::Flight;
+    }
     if LECTURE_WORDS.iter().any(|w| contains_word(summary, w)) {
         return EventKind::Lecture;
     }
-    if summary.contains('✈') || flight_re.is_some_and(|re| re.is_match(summary)) {
+    if flight_re.is_some_and(|re| re.is_match(summary)) {
         return EventKind::Flight;
     }
     EventKind::Other
@@ -953,36 +1099,91 @@ fn contains_word(haystack: &str, word: &str) -> bool {
         .any(|w| w.eq_ignore_ascii_case(word))
 }
 
-/// The §4.3 lines for the events starting in `week`, in start order.
+/// The §4.3 lines for `weeks`, in start order inside each week.
+///
+/// Every event is written **exactly once**: into the ISO week it starts in,
+/// or — when that week is not one of `weeks`, which is what happens to an
+/// event that was already under way when the sync window opened — into the
+/// first of `weeks` it overlaps. An event that overlaps none of `weeks` is
+/// dropped. The result has one entry per requested week, in the order given.
 ///
 /// Each line is
-/// `- [ ] <ci> <Title>  at:<start>/<end> [loc:<x>] [buffer:2h travel-day] ^<id>`
+/// `- [ ] <ci> <Title>  [#all-day] at:<start>/<end> [loc:<x>] [buffer:2h travel-day] ^<id>`
 /// with the short `at:` end form when the event ends on the day it starts and
 /// the full `YYYY-MM-DDTHH:MM` end otherwise. Ids come from [`stable_id`]; on
 /// the (astronomically unlikely) collision inside one week the id is re-hashed
 /// with a counter so a file never has two lines with the same id.
 ///
-/// `ci` and the flight buffer follow [`classify_event`]. A
-/// `config.calendar.flight_regex` that is not a valid regex is ignored — only
-/// `✈` then marks a flight — rather than failing the sync.
-pub fn render_calendar_lines(events: &[CalEvent], cfg: &Config, week: IsoWeek) -> Vec<String> {
+/// `ci` and the flight buffer follow [`classify_event`]; an all-day event
+/// carries [`ALL_DAY_TAG`]. A `config.calendar.flight_regex` that is not a
+/// valid regex is ignored — only `✈` then marks a flight — rather than
+/// failing the sync.
+pub fn render_calendar_weeks(
+    events: &[CalEvent],
+    cfg: &Config,
+    weeks: &[IsoWeek],
+) -> Vec<(IsoWeek, Vec<String>)> {
     let re = Regex::new(&cfg.calendar.flight_regex).ok();
-    let mut list: Vec<&CalEvent> = events.iter().filter(|e| e.week() == week).collect();
-    list.sort_by(|a, b| {
-        a.start
-            .cmp(&b.start)
-            .then_with(|| a.end.cmp(&b.end))
-            .then_with(|| a.summary.cmp(&b.summary))
-            .then_with(|| a.uid.cmp(&b.uid))
-    });
-    let mut taken: HashSet<String> = HashSet::new();
-    list.into_iter()
-        .map(|e| {
-            let kind = classify_event(&e.summary, re.as_ref());
-            let id = unique_id(e, &mut taken);
-            render_line(e, kind, &id)
+    // Weeks in chronological order, so "the first week it overlaps" does not
+    // depend on the order the caller asked for.
+    let mut order: Vec<usize> = (0..weeks.len()).collect();
+    order.sort_by_key(|&i| weeks[i]);
+
+    let mut buckets: Vec<Vec<&CalEvent>> = vec![Vec::new(); weeks.len()];
+    for e in events {
+        let home = order.iter().copied().find(|&i| weeks[i] == e.week());
+        let target = home.or_else(|| {
+            order
+                .iter()
+                .copied()
+                .find(|&i| e.overlaps(week_start(weeks[i]), week_start(weeks[i].next())))
+        });
+        if let Some(i) = target {
+            buckets[i].push(e);
+        }
+    }
+
+    buckets
+        .into_iter()
+        .enumerate()
+        .map(|(i, mut list)| {
+            list.sort_by(|a, b| {
+                a.start
+                    .cmp(&b.start)
+                    .then_with(|| a.end.cmp(&b.end))
+                    .then_with(|| a.summary.cmp(&b.summary))
+                    .then_with(|| a.uid.cmp(&b.uid))
+            });
+            let mut taken: HashSet<String> = HashSet::new();
+            let lines = list
+                .into_iter()
+                .map(|e| {
+                    let kind = classify_event(&e.summary, re.as_ref());
+                    let id = unique_id(e, &mut taken);
+                    render_line(e, kind, &id)
+                })
+                .collect();
+            (weeks[i], lines)
         })
         .collect()
+}
+
+/// The §4.3 lines for one ISO week: [`render_calendar_weeks`] with a single
+/// week, so an event that starts before `week` and is still running inside it
+/// is written here rather than lost.
+///
+/// Rendering several weeks one call at a time would write such an event into
+/// every week it overlaps; call [`render_calendar_weeks`] with all of them.
+pub fn render_calendar_lines(events: &[CalEvent], cfg: &Config, week: IsoWeek) -> Vec<String> {
+    render_calendar_weeks(events, cfg, &[week])
+        .pop()
+        .map(|(_, lines)| lines)
+        .unwrap_or_default()
+}
+
+/// Monday 00:00 of an ISO week.
+fn week_start(week: IsoWeek) -> NaiveDateTime {
+    week.monday().and_time(NaiveTime::MIN)
 }
 
 /// [`stable_id`], disambiguated against the ids already used in this file.
@@ -1003,12 +1204,11 @@ fn unique_id(ev: &CalEvent, taken: &mut HashSet<String>) -> Id {
 
 /// One §4.3 calendar line.
 fn render_line(ev: &CalEvent, kind: EventKind, id: &Id) -> String {
-    let mut s = format!(
-        "- [ ] {} {}  at:{}",
-        kind.ci(),
-        event_title(&ev.summary, kind),
-        fmt_interval(ev.start, ev.end)
-    );
+    let mut s = format!("- [ ] {} {} ", kind.ci(), event_title(&ev.summary, kind));
+    if ev.all_day {
+        s.push_str(&format!(" #{ALL_DAY_TAG}"));
+    }
+    s.push_str(&format!(" at:{}", fmt_interval(ev.start, ev.end)));
     if let Some(loc) = ev.location.as_deref().and_then(loc_token) {
         s.push_str(&format!(" loc:{loc}"));
     }
@@ -1033,18 +1233,20 @@ fn event_title(summary: &str, kind: EventKind) -> String {
 
 /// Make a summary safe to write as a title: a word that the parser would read
 /// as a token (`@x`, `#x`, `!2`, `^x`, `key:value`) — or, in first position, as
-/// the leading estimate (`2h`) — is wrapped in parentheses, which no token
-/// starts with. An empty summary becomes `untitled`.
+/// the leading estimate (`2h`), or, in last position, as a misplaced flag
+/// (`Read the manual`) — is wrapped in parentheses, which no token starts
+/// with. An empty summary becomes `untitled`.
 fn safe_title(summary: &str) -> String {
     let words: Vec<&str> = summary.split_whitespace().collect();
     if words.is_empty() {
         return "untitled".to_string();
     }
+    let last = words.len() - 1;
     words
         .iter()
         .enumerate()
         .map(|(i, w)| {
-            if unsafe_title_word(i, w) {
+            if unsafe_title_word(i, w, i == last) {
                 format!("({w})")
             } else {
                 (*w).to_string()
@@ -1054,11 +1256,16 @@ fn safe_title(summary: &str) -> String {
         .join(" ")
 }
 
-/// True when the word would not survive a re-parse as title text.
-fn unsafe_title_word(index: usize, word: &str) -> bool {
+/// True when the word would not survive a re-parse as title text: `is_last`
+/// says whether it ends the title segment, where the grammar reports a flag
+/// name (§4.1 `open atomic manual travel-day hot`) as a problem.
+fn unsafe_title_word(index: usize, word: &str, is_last: bool) -> bool {
     // The ci slot is always written, so the first title word lands in the
     // (empty) leading-estimate slot.
     if index == 0 && crate::model::Dur::parse_no_days(word, 1).is_ok() {
+        return true;
+    }
+    if is_last && FLAGS.contains(&word) {
         return true;
     }
     let mut chars = word.chars();
@@ -1087,6 +1294,13 @@ fn loc_token(location: &str) -> Option<String> {
 /// while every item line carrying the `manual` flag and every non-item line
 /// (headings, prose, blank lines, front matter) is kept byte for byte.
 ///
+/// A `manual` line takes the occurrence over: a new line whose `^id` is
+/// already on a kept `manual` line is dropped, because pinning a generated
+/// line (adding `manual` to it) is the documented way to keep it, and writing
+/// the sync's own copy next to it would put the same id — and the same wall —
+/// in the file twice (§4.1 "ids are global", a `tm check` duplicate-id
+/// error).
+///
 /// The generated block goes where the file's first generated line was, so the
 /// result is stable under repeated syncs; in a file that has none it goes
 /// after everything kept. The text always ends with a newline (an empty file
@@ -1097,6 +1311,7 @@ pub fn merge_calendar_file(existing_text: Option<&str>, new_lines: &[String]) ->
     };
     let mut kept: Vec<&str> = Vec::new();
     let mut insert_at: Option<usize> = None;
+    let mut manual_ids: HashSet<String> = HashSet::new();
     for line in split_lines(existing) {
         match ItemLine::parse(line) {
             // A generated line: dropped, and it marks where the new block goes.
@@ -1106,14 +1321,29 @@ pub fn merge_calendar_file(existing_text: Option<&str>, new_lines: &[String]) ->
                 }
             }
             // `manual` lines and everything that is not an item line.
-            _ => kept.push(line),
+            other => {
+                if let Ok(l) = other {
+                    if let Some(id) = l.id() {
+                        manual_ids.insert(id.as_str().to_string());
+                    }
+                }
+                kept.push(line);
+            }
         }
     }
+    let fresh: Vec<&str> = new_lines
+        .iter()
+        .filter(|l| match ItemLine::parse(l) {
+            Ok(item) => !item.id().is_some_and(|id| manual_ids.contains(id.as_str())),
+            Err(_) => true,
+        })
+        .map(|s| s.as_str())
+        .collect();
     let at = insert_at.unwrap_or(kept.len());
     let out: Vec<&str> = kept[..at]
         .iter()
         .copied()
-        .chain(new_lines.iter().map(|s| s.as_str()))
+        .chain(fresh)
         .chain(kept[at..].iter().copied())
         .collect();
     join_lines(out)
@@ -1218,7 +1448,10 @@ impl Fetcher for StaticFetcher {
 pub struct SyncResult {
     /// One `(week, text)` per week in the window, oldest first.
     pub files: Vec<(IsoWeek, String)>,
-    /// The occurrences that were written, in start order.
+    /// The occurrences that were written, in start order. Every one of them
+    /// is on a line in [`SyncResult::files`] — the three weeks tile the
+    /// window, and [`render_calendar_weeks`] files an event that started
+    /// before the window into the first week it overlaps.
     pub events: Vec<CalEvent>,
     /// Warnings from every feed, prefixed with the URL.
     pub warnings: Vec<String>,
@@ -1272,10 +1505,9 @@ pub fn sync_report<F: Fetcher + ?Sized>(
             .then_with(|| a.uid.cmp(&b.uid))
     });
 
-    let files = sync_weeks(week)
+    let files = render_calendar_weeks(&events, cfg, &sync_weeks(week))
         .into_iter()
-        .map(|w| {
-            let lines = render_calendar_lines(&events, cfg, w);
+        .map(|(w, lines)| {
             let old = existing
                 .iter()
                 .find(|(k, _)| *k == w)
@@ -1806,6 +2038,284 @@ Notes below the block.
     fn a_body_that_is_not_a_calendar_is_an_error() {
         assert!(parse_ics("<html>nope</html>").is_err());
         assert!(parse_ics("").unwrap().is_empty());
+    }
+
+    // --- Regressions -------------------------------------------------------
+
+    #[test]
+    fn a_utc_until_is_compared_in_the_events_own_zone() {
+        // 20260921T170000Z is exactly the 19:00 Berlin occurrence, and RFC 5545
+        // makes UNTIL inclusive: the third lecture must survive.
+        let text = ics(concat!(
+            "BEGIN:VEVENT\r\nUID:berlin\r\nSUMMARY:Standing sync\r\n",
+            "DTSTART;TZID=Europe/Berlin:20260907T190000\r\n",
+            "DTEND;TZID=Europe/Berlin:20260907T200000\r\n",
+            "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20260921T170000Z\r\nEND:VEVENT\r\n",
+        ));
+        let opts = chicago().window(dt("2026-08-31T00:00"), dt("2026-09-28T00:00"));
+        let starts: Vec<NaiveDateTime> = parse_ics_with(&text, &opts)
+            .unwrap()
+            .iter()
+            .map(|e| e.start)
+            .collect();
+        assert_eq!(
+            starts,
+            vec![
+                dt("2026-09-07T12:00"),
+                dt("2026-09-14T12:00"),
+                dt("2026-09-21T12:00"),
+            ]
+        );
+
+        // West of UTC the same bug produced a phantom occurrence:
+        // 20260904T035959Z is 2026-09-03 22:59:59 in Chicago, so the 09-03
+        // 23:00 occurrence is past UNTIL.
+        let text = ics(concat!(
+            "BEGIN:VEVENT\r\nUID:late\r\nSUMMARY:Night check\r\n",
+            "DTSTART;TZID=America/Chicago:20260902T230000\r\n",
+            "DTEND;TZID=America/Chicago:20260902T233000\r\n",
+            "RRULE:FREQ=DAILY;UNTIL=20260904T035959Z\r\nEND:VEVENT\r\n",
+        ));
+        let starts: Vec<NaiveDateTime> = parse_ics_with(&text, &chicago())
+            .unwrap()
+            .iter()
+            .map(|e| e.start)
+            .collect();
+        assert_eq!(starts, vec![dt("2026-09-02T23:00")]);
+    }
+
+    #[test]
+    fn byday_and_bymonthday_outside_their_freq_are_unsupported() {
+        let cases = [
+            ("FREQ=DAILY;BYDAY=MO,WE,FR;COUNT=6", "BYDAY with FREQ=DAILY"),
+            ("FREQ=MONTHLY;BYDAY=MO;COUNT=4", "BYDAY with FREQ=MONTHLY"),
+            (
+                "FREQ=WEEKLY;BYMONTHDAY=15;COUNT=4",
+                "BYMONTHDAY with FREQ=WEEKLY",
+            ),
+        ];
+        for (rule, warning) in cases {
+            let text = ics(&format!(
+                "BEGIN:VEVENT\r\nUID:r\r\nSUMMARY:Rule\r\nDTSTART:20260907T080000\r\nDTEND:20260907T090000\r\nRRULE:{rule}\r\nEND:VEVENT\r\n"
+            ));
+            let feed = parse_ics_report(&text, &chicago()).unwrap();
+            assert_eq!(feed.events.len(), 1, "{rule}");
+            assert_eq!(feed.events[0].start, dt("2026-09-07T08:00"), "{rule}");
+            assert!(
+                feed.warnings.iter().any(|w| w.contains(warning)),
+                "{rule}: {:?}",
+                feed.warnings
+            );
+        }
+    }
+
+    #[test]
+    fn dtstart_is_the_first_occurrence_even_when_it_misses_byday() {
+        // 2026-09-03 is a Thursday; the rule says Mondays. RFC 5545 3.8.5.3
+        // still makes DTSTART the first instance, and it counts against COUNT.
+        let text = ics(concat!(
+            "BEGIN:VEVENT\r\nUID:off\r\nSUMMARY:Kickoff\r\n",
+            "DTSTART;TZID=America/Chicago:20260903T100000\r\n",
+            "DTEND;TZID=America/Chicago:20260903T110000\r\n",
+            "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=2\r\nEND:VEVENT\r\n",
+        ));
+        let feed = parse_ics_report(&text, &chicago()).unwrap();
+        assert!(feed.warnings.is_empty(), "{:?}", feed.warnings);
+        let starts: Vec<NaiveDateTime> = feed.events.iter().map(|e| e.start).collect();
+        assert_eq!(starts, vec![dt("2026-09-03T10:00"), dt("2026-09-07T10:00")]);
+    }
+
+    #[test]
+    fn an_occurrence_running_into_the_window_from_before_it_is_kept() {
+        // Fri 09:00 → Tue 17:00, weekly on Fridays. The 08-28 occurrence starts
+        // three days before the window and runs two days into it.
+        let text = ics(concat!(
+            "BEGIN:VEVENT\r\nUID:long\r\nSUMMARY:Field work\r\n",
+            "DTSTART;TZID=America/Chicago:20260828T090000\r\n",
+            "DTEND;TZID=America/Chicago:20260901T170000\r\n",
+            "RRULE:FREQ=WEEKLY;BYDAY=FR;COUNT=4\r\nEND:VEVENT\r\n",
+        ));
+        let opts = ParseOptions::for_week(chrono_tz::America::Chicago, IsoWeek::new(2026, 37));
+        let starts: Vec<NaiveDateTime> = parse_ics_with(&text, &opts)
+            .unwrap()
+            .iter()
+            .map(|e| e.start)
+            .collect();
+        assert_eq!(
+            starts,
+            vec![
+                dt("2026-08-28T09:00"),
+                dt("2026-09-04T09:00"),
+                dt("2026-09-11T09:00"),
+                dt("2026-09-18T09:00"),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_out_of_range_interval_or_duration_is_handled_not_panicked() {
+        for rule in [
+            "FREQ=DAILY;INTERVAL=100000000",
+            "FREQ=WEEKLY;INTERVAL=4000000000",
+            "FREQ=MONTHLY;INTERVAL=4294967295",
+        ] {
+            let text = ics(&format!(
+                "BEGIN:VEVENT\r\nUID:i\r\nSUMMARY:Slow\r\nDTSTART:20260908T090000Z\r\nDTEND:20260908T100000Z\r\nRRULE:{rule}\r\nEND:VEVENT\r\n"
+            ));
+            let evs = parse_ics_with(&text, &chicago()).unwrap();
+            assert_eq!(evs.len(), 1, "{rule}");
+        }
+        for dur in ["P9999999999999999W", "P99999999W", "PT9223372036854775807H"] {
+            let text = ics(&format!(
+                "BEGIN:VEVENT\r\nUID:d\r\nSUMMARY:Long\r\nDTSTART:20260908T090000Z\r\nDURATION:{dur}\r\nEND:VEVENT\r\n"
+            ));
+            let feed = parse_ics_report(&text, &chicago()).unwrap();
+            assert_eq!(feed.events.len(), 1, "{dur}");
+            assert_eq!(feed.events[0].minutes(), 0, "{dur}");
+            assert!(
+                feed.warnings.iter().any(|w| w.contains("DURATION")),
+                "{dur}: {:?}",
+                feed.warnings
+            );
+        }
+        assert_eq!(parse_ics_duration("P9999999999999999W"), None);
+    }
+
+    #[test]
+    fn an_event_already_under_way_is_written_into_the_first_synced_week() {
+        // A conference from Fri 2026-08-28 (W35) to Wed 2026-09-02 (W36): the
+        // sync window opens inside it, so it belongs in the W36 file.
+        let text = ics(concat!(
+            "BEGIN:VEVENT\r\nUID:conf\r\nSUMMARY:Systems conference\r\n",
+            "DTSTART;TZID=America/Chicago:20260828T090000\r\n",
+            "DTEND;TZID=America/Chicago:20260902T170000\r\nEND:VEVENT\r\n",
+        ));
+        let mut cfg = Config::default();
+        cfg.calendar.ics_urls = vec!["https://example.test/basic.ics".to_string()];
+        let fetcher = StaticFetcher::new().with("https://example.test/basic.ics", text);
+        let today = NaiveDate::from_ymd_opt(2026, 9, 7).unwrap();
+        let report = sync_report(&fetcher, &cfg, today, &[]).unwrap();
+        assert_eq!(report.events.len(), 1);
+        let written: Vec<(String, usize)> = report
+            .files
+            .iter()
+            .map(|(w, t)| (w.to_string(), t.lines().count()))
+            .collect();
+        assert_eq!(
+            written,
+            vec![
+                ("2026-W36".to_string(), 1),
+                ("2026-W37".to_string(), 0),
+                ("2026-W38".to_string(), 0),
+            ]
+        );
+        assert!(report.files[0]
+            .1
+            .contains("at:2026-08-28T09:00/2026-09-02T17:00"));
+    }
+
+    #[test]
+    fn an_event_spanning_two_written_weeks_is_written_once() {
+        let cfg = Config::default();
+        let ev = event(
+            "Bike tour",
+            "2026-09-13T18:00", // Sunday of W37
+            "2026-09-15T12:00", // Tuesday of W38
+            None,
+        );
+        let weeks = [
+            IsoWeek::new(2026, 36),
+            IsoWeek::new(2026, 37),
+            IsoWeek::new(2026, 38),
+        ];
+        let rendered = render_calendar_weeks(&[ev], &cfg, &weeks);
+        let counts: Vec<usize> = rendered.iter().map(|(_, l)| l.len()).collect();
+        assert_eq!(counts, vec![0, 1, 0]);
+        assert!(rendered[1].1[0].contains("at:2026-09-13T18:00/2026-09-15T12:00"));
+    }
+
+    #[test]
+    fn the_flight_glyph_beats_a_lecture_word() {
+        let re = Regex::new(&Config::default().calendar.flight_regex).unwrap();
+        assert_eq!(
+            classify_event("✈ UA 1234 ORD→LHR business class", Some(&re)),
+            EventKind::Flight
+        );
+        assert_eq!(
+            classify_event("✈ Flight to the Lean seminar", Some(&re)),
+            EventKind::Flight
+        );
+        let cfg = Config::default();
+        let ev = event(
+            "✈ UA 1234 ORD→LHR business class",
+            "2026-09-12T08:15",
+            "2026-09-12T10:40",
+            None,
+        );
+        let lines = render_calendar_lines(&[ev], &cfg, IsoWeek::new(2026, 37));
+        assert!(
+            lines[0].starts_with("- [ ] 1 ✈ UA 1234 ORD→LHR business class  at:")
+                && lines[0].contains("buffer:2h travel-day"),
+            "{}",
+            lines[0]
+        );
+    }
+
+    #[test]
+    fn an_all_day_event_is_tagged() {
+        let cfg = Config::default();
+        let mut ev = event(
+            "Kun's birthday",
+            "2026-09-09T00:00",
+            "2026-09-10T00:00",
+            None,
+        );
+        ev.all_day = true;
+        let lines = render_calendar_lines(&[ev], &cfg, IsoWeek::new(2026, 37));
+        assert_eq!(
+            lines[0].split(" ^").next().unwrap(),
+            "- [ ] 3 Kun's birthday  #all-day at:2026-09-09T00:00/2026-09-10T00:00"
+        );
+        let ctx = ParseCtx::new("calendar/2026-W37.md", cfg.block_min());
+        let item = parse_line(&lines[0], &ctx).unwrap();
+        assert!(item.problems.is_empty(), "{:?}", item.problems);
+        assert_eq!(item.tags, vec![ALL_DAY_TAG.to_string()]);
+        assert_eq!(item.title, "Kun's birthday");
+    }
+
+    #[test]
+    fn a_title_ending_in_a_flag_word_is_wrapped() {
+        let cfg = Config::default();
+        let ctx = ParseCtx::new("calendar/2026-W37.md", cfg.block_min());
+        for summary in ["Read the manual", "travel-day", "Keep it open", "hot"] {
+            let ev = event(summary, "2026-09-08T09:00", "2026-09-08T10:00", None);
+            let lines = render_calendar_lines(&[ev], &cfg, IsoWeek::new(2026, 37));
+            let item = parse_line(&lines[0], &ctx).unwrap();
+            assert!(
+                item.problems.is_empty(),
+                "{}: {:?}",
+                lines[0],
+                item.problems
+            );
+            assert!(
+                !item.is_travel_day() && !item.has_flag("manual"),
+                "{summary}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_manual_copy_of_a_generated_line_is_not_duplicated() {
+        // Pinning a generated line is `manual` on that same line; the sync must
+        // not write its own copy of the occurrence next to it.
+        let generated = "- [ ] 3 Meeting w/ host  at:2026-09-07T12:50/13:50 loc:zoom ^m5gbx4";
+        let pinned = "- [ ] 3 Meeting w/ host  at:2026-09-07T12:50/13:50 loc:zoom manual ^m5gbx4\n";
+        let out = merge_calendar_file(Some(pinned), &[generated.to_string()]);
+        assert_eq!(out, pinned);
+        // A different occurrence is still written.
+        let other = "- [ ] 3 Standup  at:2026-09-08T09:00/09:30 ^aaaaaa".to_string();
+        let out = merge_calendar_file(Some(pinned), &[generated.to_string(), other.clone()]);
+        assert_eq!(out, format!("{pinned}{other}\n"));
     }
 
     #[test]
