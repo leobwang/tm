@@ -1,0 +1,11 @@
+---
+source: tm-core/tests/emit_daybar.rs
+expression: "ids.iter().zip(&hues).map(|(i, h)|\nformat!(\"{i} -> {h}\")).collect::<Vec<_>>().join(\"\\n\")"
+---
+O1 -> 1
+O2 -> 4
+O3 -> 3
+m1 -> 3
+t3 -> 0
+a3 -> 5
+g1 -> 9
