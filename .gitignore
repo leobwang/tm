@@ -3,3 +3,4 @@
 /plan/.tm/state.json
 *.snap.new
 .DS_Store
+/.claude/worktrees/
