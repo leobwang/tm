@@ -283,3 +283,269 @@ Typical CLI use (`tm sync-cal`, `tm arrive` when `cfg.sync_on_arrive_possible()`
 7. `merge_calendar_file` places the generated block where the file's first generated line was (after front matter/headings), keeping `manual` lines, prose and blank lines in their original order; output always ends with `\n`. It is idempotent from the second run onwards.
 8. Unsupported ICS constructs produce warnings (returned in `IcsFeed`/`SyncResult`), not errors; only an unreadable feed or a failed fetch aborts a sync.
 9. `sync` fails the whole sync if any configured feed fails, so no file is half-written.
+
+# check (layer 2)
+Module `tm_core::check` (the file opens with an "API overview" doc comment and a table of every code, severity and meaning).
+
+TYPES
+- `pub enum Severity { Error, Warning }` — `Serialize` as `"error"`/`"warning"`; `as_str()`, `is_error()`, `Display`. Copy/Ord/Hash.
+- `pub struct CheckProblem { pub severity: Severity, pub code: &'static str, pub file: String, pub line: usize /*1-based, 0 = whole file*/, pub id: Option<Id>, pub message: String }` — Clone/Debug/PartialEq/Eq/**Serialize** (no Deserialize: `code` is `&'static str`). `Display` = `file:line: error[code]: message` (`file: …` when line is 0, no prefix when file is empty). Ctors `CheckProblem::error(code, file, line, id, msg)` / `::warning(...)`, plus `is_error()`. `id` is the item's key (`^id`, or the title for an id-less routine/optional/inbox line), `None` for file-level problems and for `missing-id`.
+- `pub enum CheckError { Store(#[from] StoreError) }` (thiserror) — only `fix_ids` can fail; `check` is infallible.
+
+CODES (each a `pub const &str`, all listed in `pub const CODES: &[&str]`)
+errors: `DUP_ID "dup-id"`, `DANGLING_PARENT "dangling-parent"`, `PARENT_CYCLE "parent-cycle"`, `DEP_CYCLE "dep-cycle"`, `DANGLING_DEP "dangling-dep"`, `BAD_VALUE "bad-value"` (also used for a few warnings), `BAD_CI "bad-ci"`, `ROUTINE_SHAPE "routine-shape"`, `CALENDAR_SHAPE "calendar-shape"`.
+warnings: `UNKNOWN_KEY "unknown-key"`, `UNCLASSIFIED_TOKEN "unclassified-token"`, `MISSING_ID "missing-id"`, `OUTCOME_WITH_EST "outcome-with-est"`, `OPTIONAL_SHAPE "optional-shape"`, `PRIORITY_ON_CHILD "priority-on-child"`, `SERIES_ORDER "series-order"`, `WALL_CONFLICT "wall-conflict"`, `DAY_SECTION "day-section"`, `WAITING_STATE "waiting-state"`.
+
+FUNCTIONS
+- `pub fn check(files: &[ParsedFile], tree: &Tree, cfg: &Config) -> Vec<CheckProblem>` — `tree` must be `Tree::build(files, cfg)` (the structural half reads the tree, the per-line half the files). Deterministic, sorted by `(file, line, code, message)`.
+- `pub fn has_errors(&[CheckProblem]) -> bool`
+- `pub fn exit_code(&[CheckProblem]) -> i32` — 2 when any error, else 0 (§13).
+- `pub fn summary(&[CheckProblem]) -> String` — `"no problems"` or `"2 errors, 3 warnings"` (singular/plural handled).
+- `pub fn needs_id(item: &Item) -> bool` — `!item.has_id() && !item.horizon.allows_missing_state()`; the predicate `missing-id` and `fix_ids` share.
+- `pub fn fix_ids(store: &dyn Store, files: &mut [ParsedFile], gen: &mut IdGen) -> Result<Vec<(String /*file*/, usize /*1-based line*/, Id)>, CheckError>` — pass the whole tree (`store.read_tree()?.files`): the ids already in it are the uniqueness set. Each changed file goes through `Store::modify_file` (§1.3 guard: a racing save is merged, ids are re-assigned against the merged text) and the corresponding entry in `files` is replaced by the re-read version, so the caller's tree is up to date afterwards. Files needing no id are not written at all; changed lines differ only by an appended ` ^id`.
+- `pub fn assign_ids_in_text(text: &str, ctx: &ParseCtx<'_>, gen: &mut IdGen, existing: &mut HashSet<String>) -> (String, Vec<Id>)` — the pure single-buffer version for the TUI's first load / previews. Returns `text` unchanged when `ctx.horizon.allows_missing_state()` (routines/optional/inbox) or when nothing was assigned; `existing` absorbs both the ids already in `text` and the new ones. Lines inside `<!-- tm:… -->` generated ranges are never touched.
+
+TYPICAL CLI USE (`tm check [--fix-ids]`):
+```rust
+let plan = store.read_tree()?;                       // PlanFiles { config, files }
+let mut files = plan.files;
+if fix { check::fix_ids(&store, &mut files, &mut IdGen::from_entropy())?; }
+let tree = Tree::build(&files, &plan.config);
+let problems = check::check(&files, &tree, &plan.config);
+for p in &problems { println!("{p}"); }              // or serde_json for --json
+println!("{}", check::summary(&problems));
+std::process::exit(check::exit_code(&problems));
+```
+
+## Deviations (check)
+1. Two codes beyond the scope's "e.g." list, because the scope named the checks but gave no code for them: `day-section` (an item in a `day/` file outside `# Pinned`) and `waiting-state` (`waiting:` without `[?]` and vice versa). Every code is a `pub const` and `CODES` is exhaustive, so the CLI never has to hard-code a string.
+2. `bad-ci` covers both halves of the scope's one bullet: `ci:` outside `0..=5` **and** a `!k` outside `1..=4` (the grammar leaves `!9` as an `Unparsed` token, which check re-labels as `bad-ci` instead of `unclassified-token`, so it is reported once).
+3. Parse problems are split by kind: a value that failed to parse and a missing state are `bad-value` **errors**; a problem the parser resolved by rule (duplicate key/parent/priority/id, conflicting shape or recurrence keys, `ci` given twice, `win:` without `dur:`, a flag absorbed into the title) is a `bad-value` **warning**; an "unknown file kind" file-level problem is a warning so a stray note in `plan/` does not fail a commit hook.
+4. `wall-conflict` sweeps **every** open `Interval` in the tree (sorted by start, pairwise while they overlap), not only `calendar/` lines — the planner treats an exam in `week/` as a wall too (§8.2 step 1) — and reports each overlapping pair once, at the later line, naming both ids. `buffer:` is deliberately not counted (it is placement, not a booking). Only primary nodes are considered, so a §6.3 archive copy never "overlaps itself".
+5. `dup-id` is reported once per line carrying the id (each naming the other locations) rather than once per id, so every offending line shows up in the file-ordered output.
+6. `fix_ids` writes through `Store::modify_file` rather than `Store::write_file`, to get the §1.3 race guard; a test with `FsStore::with_before_write_hook` shows a racing save being merged and its new line also getting an id. After a successful write the entry in `files` is refreshed with `store.read_file`, so `files` is never left stale.
+7. `assign_ids_in_text` takes `existing: &mut HashSet<String>` (rather than an immutable set) so the caller's id set stays correct across successive buffers, and it parses through `grammar::parse_file` with a default `Config` whose only changed field is `ctx.block_min` — that is all `parse_file` reads, and it gives generated-range and section handling for free.
+8. `check` uses `cfg` only for `cfg.block_min()`, to state the `outcome-with-est` estimate in blocks (the unit the month conversation uses).
+
+# recur (layer 2)
+Module `tm_core::recur` — all pure, `today`/`now`/`Replay` injected, no I/O.
+
+```rust
+pub type DateRange = (NaiveDate, NaiveDate);          // inclusive (from, to)
+pub const CARRY_LOOKBACK_DAYS: i64 = 60;
+
+pub fn instances(item: &Item, range: DateRange, today: NaiveDate, replay: &Replay, cfg: &Config) -> Vec<Instance>;
+pub fn instances_with_info(item: &Item, range: DateRange, today: NaiveDate, now: NaiveDateTime, replay: &Replay, cfg: &Config) -> Vec<(Instance, InstanceInfo)>;
+pub fn instance_info(item: &Item, inst: &Instance, today: NaiveDate, now: NaiveDateTime) -> InstanceInfo;
+pub fn is_mandatory(item: &Item, inst: &Instance, today: NaiveDate, now: NaiveDateTime) -> bool;
+pub fn today_instances<'a, I: IntoIterator<Item=&'a Item>>(items: I, today: NaiveDate, now: NaiveDateTime, replay: &Replay, cfg: &Config) -> Vec<(Instance, InstanceInfo)>;
+pub fn week_instances<'a, I: IntoIterator<Item=&'a Item>>(items: I, week: IsoWeek, today: NaiveDate, now: NaiveDateTime, replay: &Replay, cfg: &Config) -> Vec<(Instance, InstanceInfo)>;
+
+pub struct InstanceInfo { pub mandatory: bool, pub last_chance: bool, pub overdue: bool,
+    pub carried_from: Option<NaiveDate>, pub deferred_from_yesterday: bool, pub not_yet: bool,
+    pub dur_min: Option<u32> }                        // Copy + Default + Serialize/Deserialize
+
+pub fn after_done_state(item: &Item, replay: &Replay, today: NaiveDate, cfg: &Config) -> Option<AfterDoneState>;
+pub struct AfterDoneState { pub last_done: Option<DateTime<FixedOffset>>, pub last_done_date: Option<NaiveDate>,
+    pub count: u32, pub due: NaiveDate, pub due_at: NaiveDateTime,
+    pub valid_until: Option<NaiveDate>, pub valid_until_at: Option<NaiveDateTime>, pub missed: bool }
+
+pub fn waiting_state(item: &Item, replay: &Replay, today: NaiveDate, cfg: &Config) -> Option<WaitingState>;
+pub struct WaitingState { pub since: Option<NaiveDate>, pub days_waiting: i64,
+    pub timeout_at: Option<NaiveDate>, pub expired: bool, pub arrived: Option<DateTime<FixedOffset>> }
+pub fn event_resolves(item: &Item, name: &str) -> bool;   // on-event: name, or after:event:name
+
+pub enum Edit { State(State), Set { key: String, value: String }, Unset { key: String } }
+pub struct Edits { pub edits: Vec<Edit> }
+impl Edits { fn is_empty(&self)->bool; fn len(&self)->usize; fn iter(&self)->impl Iterator<Item=&Edit>;
+             fn apply(&self, line: &mut ItemLine) -> Result<(), grammar::EditError>; }
+pub fn on_done_waiting(item: &Item, today: NaiveDate) -> Edits;   // [?] + waiting:<today>
+pub fn on_event_arrived(item: &Item) -> Edits;                    // [ ] − est: − waiting:
+
+pub fn skip_instance(item: &Item, inst: &Instance, now: DateTime<FixedOffset>) -> LogEntry;             // Event::Skip
+pub fn done_instance(item: &Item, inst: &Instance, now: DateTime<FixedOffset>, actual_min: Option<u32>) -> LogEntry; // Event::Routine status "done"
+```
+
+Conventions callers must know: instances are keyed by `Tree::key_of(item)` (title for id-less routine lines); the log `inst` string is `InstanceKey`'s Display (`2026-09-07` / `#6`); an instance's `window` is the whole placeable span (overnight windows run into the next morning, `every:week` spans Mon..Sun, after-done spans due..valid_until) and `due` is the end of the on-time chance; `is_mandatory` requires a `win:` item whose span closes today or earlier, with a persist instance staying mandatory once closed and expire/next losing it once `now` passes the close.
+
+## Deviations (recur)
+All documented at the top of recur.rs under "Deviations from the scope":
+1. Signatures take `today` (and `cfg`, for `cfg.tz`) because statuses are relative to today and log timestamps are `DateTime<FixedOffset>` that only `cfg.tz` turns into local dates; `today_instances`/`week_instances`/`is_mandatory` also take `now` (the scope's `is_mandatory` already did).
+2. `after_done_state` returns `Option<AfterDoneState>` (None when the item is not an `after-done:` item) rather than an unconditional value.
+3. The extra-flags struct is named `InstanceInfo` (the name the planner part of the scope uses), not `InstanceExt`.
+4. `WaitingState` has a fifth field `arrived: Option<DateTime<FixedOffset>>` (the `tm event` that already resolved the wait) so the Necessities screen can tell "still waiting" from "arrived, flip the line"; it is also what lets `instances()` produce a pending instance for a resolved-but-not-yet-rewritten `[?]` line.
+5. Added `done_instance()` beside `skip_instance()` (`tm routine done` needs the symmetric constructor).
+6. Two rules the spec left to me, both documented in the module docs: (a) `Rule::Weeks(n)` (`every:week`, not in the spec's `Rule` enum but added by model.rs) yields one instance per qualifying ISO week keyed by its Monday with a window spanning the whole week — that is what makes "laundry any day, mandatory Sunday, persists into next week" work; (b) `is_mandatory` refines §5.2's "on_miss ≠ expire" with "once the window has closed, only a `persist` instance stays mandatory" (an expire or next window whose close `now` has passed is over), and an `after-done:` item with no `~validity` never counts as a last chance since no day is its last.
+7. `today_instances` bounds the persist carry at `CARRY_LOOKBACK_DAYS = 60` and collapses carried instances to the most recent one per item, so a long-neglected daily persist routine cannot flood the planner.
+
+# energy (layer 2)
+## tm_core::energy
+
+CONSTS: `HSW_BUCKETS: usize = 12`, `DEFAULT_TAG = "_default"`, `WEEKDAY_KEYS: [&str;7]` (Mon..Sun), `WEEKDAYS: [Weekday;7]`.
+ERRORS: `EnergyError { Io{path,source}, Json{path,source} }` (thiserror).
+
+MODEL (`.tm/model.json`, §8.5, field order = spec order, `#[serde(default)]`, unknown keys ignored):
+```rust
+pub struct Model { pub energy: BTreeMap<String, Vec<u8>>,   // curve name -> 12 levels, index = floor(hsw)
+                   pub sleep_debt_shift: f64,
+                   pub duration: BTreeMap<String, f64>,      // tag (or "_default", or "<ci>:<tag>") -> multiplier
+                   pub p_lounge: WeekdayMap<f64>,
+                   pub expected_arrival: WeekdayMap<Hhmm>,
+                   pub fitted: Option<NaiveDate>, pub n_obs: u32 }
+```
+- `Model::default()` (empty = fall back to config priors), `is_empty()`, `is_fitted()`, `from_config(&Config)`.
+- `energy_at(curve, hsw) -> Option<u8>`, `sleep_shift(&Config) -> f64`, `p_lounge_on(Weekday,&Config) -> f64`, `expected_arrival_on(Weekday,&Config) -> NaiveTime`.
+- `from_json(&str)`, `to_json() -> String` (pretty, arrays inline, trailing newline), `load(&Path) -> Result<Option<Model>>`, `load_or_default(&Path)`, `save(&Path)`. `Model` is plain serde, so `store.read_json::<Model>(store::MODEL_PATH)` / `write_json` also work.
+- `WeekdayMap<T>`: `new/get(Weekday)/set/iter()/len/is_empty`, `FromIterator<(Weekday,T)>`; serializes as a Mon..Sun object with missing days omitted. `Hhmm(pub NaiveTime)` serializes as "HH:MM". `weekday_key(Weekday)`, `parse_weekday_key(&str)`.
+
+PREDICT:
+```rust
+pub struct Features { pub loc: Loc, pub hsw: f64, pub hod: f64, pub slept_min: Option<u32>,
+                      pub weekday: Weekday, pub blocks_done: u32, pub since_break_min: u32 }
+Features::new(loc, hsw) | Features::at(t: DateTime<Tz>, wake: DateTime<Tz>, loc) | .with_slept(Option<u32>) | .with_progress(blocks_done, since_break_min) | .under_slept(&Config)
+pub fn predict(&Model, &Config, &Features) -> u8            // learned curve else prior, minus sleep-debt shift, clamped 0..=5
+pub fn bucket(hsw) -> usize                                  // floor, clamped 0..=11
+pub fn curve_key(&Loc, &Config, &Model) -> String            // Lounge->"lounge", Home/Out/Any/unknown->"home", named keeps its name when a curve exists
+pub fn prior_level(&Config, curve, hsw) -> u8
+```
+
+POSTERIOR (today's reports):
+```rust
+pub struct Report { pub t: DateTime<Tz>, pub pred: u8, pub rep: u8 }  // .delta()
+Posterior::none(&Config) | ::from_reports(&[(DateTime<Tz>, pred, rep)], &Config) | ::from_observations(&[EnergyObs], tz, &Config)
+posterior.reports() / is_empty() / latest_before(t) / adjustment(t) -> f64 / correct(t, pred) -> u8
+pub fn posterior_weight(hours_since, full_hours, zero_hours) -> f64   // 1 up to full, linear to 0 at zero
+```
+
+FIT + MONITORS:
+```rust
+pub struct ArrivalObs { pub date: NaiveDate, pub time: NaiveTime, pub loc: String }
+pub struct FitInput<'a> { pub energy: &'a [log::EnergyObs], pub durations: &'a [log::DurationObs],
+                          pub arrivals: &'a [ArrivalObs], pub base: Option<&'a Model> }   // ::new(e,d,a), .with_base(m)
+pub fn fit(&Config, &FitInput, today: NaiveDate) -> Model
+pub fn fit_replay(&Config, &log::Replay, today) -> Model            // `tm model --fit`
+pub fn arrivals_from_replay(&Config, &Replay) -> Vec<ArrivalObs>
+pub fn observation_weight(day, went, today, &Config) -> f64          // exp(-age/decay) * went (3->2.0, 2->1.5)
+pub fn shrunken_mean(prior, n0, &[(w, x)]) -> f64
+pub struct Comparison { n, mae_a, mae_b, bias_a, bias_b, by_hour: Vec<(u32,f64,f64)> }  // .b_is_better()
+pub fn compare(&Config, a: &Model, b: &Model, &[EnergyObs]) -> Comparison       // re-predicts both models
+pub struct Calibration { n, mae, bias, by_hour: Vec<(hour, n, mae, bias)> }
+pub fn calibration(&Config, &[EnergyObs]) -> Calibration                        // §11, uses the LOGGED pred
+pub struct TagStats { tag, n, mean_ratio, multiplier, recent_ratio: Option<f64> }
+pub fn estimate_calibration(&Config, &[DurationObs], today) -> Vec<TagStats>    // §11 "lean ×1.6 (n=9)"
+pub fn features_of(&EnergyObs) -> Features
+pub fn show(&Model) -> String                                                   // `tm model --show`
+```
+
+DURATIONS: `duration_multiplier(&Model, ci, &[String]) -> f64` ("<ci>:<tag>", then "<tag>", then "_default", then 1.0); `planned_minutes(est_min, multiplier) -> u32`; `fmt_multiplier(f64) -> String`; `fmt_planned(&Dur, f64) -> String` ("2b×1.6", plain "2b" at 1.0).
+
+## tm_core::capacity
+
+```rust
+pub type Wall = (DateTime<Tz>, DateTime<Tz>);
+pub type WallsByDate = BTreeMap<NaiveDate, Vec<Wall>>;
+pub enum SlotKind { Block, ShortBlock }
+pub struct Slot { pub start: DateTime<Tz>, pub end: DateTime<Tz>, pub energy: u8, pub kind: SlotKind }  // .minutes(), .fits(ci)
+pub struct Break { pub start, pub end }                                       // .minutes()
+pub enum SlotOrBreak { Slot(Slot), Break(Break) }                             // .start(), .end()
+pub struct Cut { pub slots: Vec<Slot>, pub breaks: Vec<Break> }               // .timeline() interleaved, .slot_minutes(), .break_minutes()
+pub fn local_dt(tz, NaiveDate, NaiveTime) -> DateTime<Tz>                     // DST-safe
+pub fn window_and_budget(arrival: DateTime<Tz>, walls_today: &[Wall], &Config) -> (DateTime<Tz>, u32)
+pub fn budget_blocks(&Config) -> u32          // floor(window_hours*60/block_min*budget_ratio) = 6
+pub fn remaining_budget(budget, blocks_done) -> u32
+pub fn free_intervals(from, to, &[Wall]) -> Vec<Wall>
+pub fn cut_slots(from, end, &[Wall], &Config) -> Cut                          // §8.2 step 3; slots come back with energy 0
+pub fn cut_slots_from(from, end, &[Wall], &Config, blocks_since_break: u32) -> Cut
+pub struct EnergyCtx<'a> { model, cfg, posterior, wake: DateTime<Tz>, loc: Loc, slept_min: Option<u32>, blocks_done: u32, allow_home: bool }
+   EnergyCtx::new(model,cfg,posterior,wake,loc).with_slept(..).with_blocks_done(..).with_allow_home(..)
+   .energy_at(t, blocks_done, since_break_min) -> u8 ; .cap_for_location(u8) -> u8
+pub fn energize(&[Slot], &EnergyCtx) -> Vec<Slot>                             // predict + posterior + home cap
+pub struct DayCapacity { pub date: NaiveDate, pub minutes_at_level: [u32; 6] }
+   ::empty(date), ::from_slots(date, &[Slot]), .total(), .at_least(min_ci)
+pub fn lookahead(&WallsByDate, &Config, &Model, today_slots: &[Slot], from: NaiveDate, days: u32, wake_default: NaiveTime) -> Vec<DayCapacity>
+pub fn available_until(&[DayCapacity], due: NaiveDate, min_ci: u8) -> u32
+pub fn reserve(&mut [DayCapacity], minutes: u32, min_ci: u8) -> u32           // earliest day first, highest level first; returns what it took
+pub fn upto(&[DayCapacity], due: NaiveDate) -> usize                          // slice length for `reserve(&mut caps[..n], ..)`
+pub fn week_grid(&[DayCapacity]) -> String                                    // `tm plan --week`
+```
+Typical planner use: `let (end, budget) = window_and_budget(arrival, walls, cfg); let cut = cut_slots(now, end, walls, cfg); let slots = energize(&cut.slots, &EnergyCtx::new(&model, cfg, &posterior, wake, loc).with_slept(s)); let caps = lookahead(&walls_by_date, cfg, &model, &slots, today, 7, wake_time);` then priority.rs does `reserve(&mut caps[..upto(&caps, due)], need, ci)`.
+
+## Deviations (energy)
+1. **Sleep-debt sign (spec bug).** §8.5 writes `sleep_debt_shift = shrunken mean of (rep − energy[b])`, but the same section *subtracts* the shift and the example value is `+0.8`. Both cannot hold, so `fit` learns the deficit `mean(energy[b] − rep)` (positive under short sleep) and `predict` subtracts it. Documented in the module header.
+2. **`compare` takes `&Config` first**: `compare(cfg, a, b, obs)`. A model falls back to the config priors for buckets it has not learned, so re-predicting needs the config. Also added `calibration(cfg, obs)` (MAE/bias of the *logged* pred, which is what the §11 monitor and §12.4 review row actually show) and `estimate_calibration(cfg, durations, today)` for the §11 estimate-calibration monitor.
+3. **`fit` takes a `FitInput` with an optional `base: Option<&Model>`** rather than three loose slices, and `fit_replay(cfg, &Replay, today)` is the `tm model --fit` entry point. `base` implements §8.5's "hand edits become the new prior": when given, the current model.json is the shrinkage prior instead of the config priors.
+4. **`duration[(ci, tag)]`**: v1 *learns* by first tag plus `_default` (as §8.5's own example is keyed), but the *lookup* tries `"<ci>:<tag>"` first so a hand-edited model can carry the fully-keyed value the formula names.
+5. **Location curves**: `Out`, `Any` and unknown named locations use the **home** curve (conservative), not `Config::prior_energy`'s own lounge fallback; a named location keeps its own curve when the model or config has one.
+6. **Multiple posterior reports**: the most recent report at or before the slot wins (superseded, not summed) — §8.5 only defines one report.
+7. **`cut_slots` returns a `Cut { slots, breaks }`** (plus `timeline()`), not `Vec<Slot>`: the planner needs the breaks too. Added `cut_slots_from(..., blocks_since_break)` for mid-day replans. The "last block may be short or dropped" rule is applied at the end of *every* free stretch (a wall ends a stretch like the window end does), and the break counter is **not** reset by a wall or a placed routine — a caller that wants a routine to count as a break can cut each stretch separately with `cut_slots_from`.
+8. **`energize(slots, &EnergyCtx)`** bundles the model/cfg/posterior/wake/loc/slept/blocks_done/allow_home arguments the scope listed positionally (9 arguments otherwise), and `allow_home` was added because §8.2 step 3 needs `--allow-home`.
+9. **`window_and_budget`** solves `end = base + Σ walls inside [arrival, end]` as a fixed point (an extension can pull in a further wall) and clamps `end ≥ arrival` so arriving after `window_cap` gives an empty window, not a negative one. Walls are clipped and merged, so overlapping walls count once.
+10. **Lookahead budget trim**: future days keep only `budget × block_min` minutes, highest-energy slots first (ties by start time); *today* is taken exactly as handed in, since the planner knows whether its slots are already budget-limited.
+11. **The §4.3 printed timeline cannot be reproduced by `cut_slots` alone** (step 2 has already placed routines there — lunch at 11:20). With only the 12:50–13:50 wall the cut is 07:00, 08:00, break 09:00–09:20, 09:20, 10:20, break 11:20–11:40, 11:40 (12:40→12:50 = 10 min dropped), wall, 13:50, break 14:50–15:10, 15:10–16:00 short. A second test passes lunch in as an occupied interval and reproduces the day file's 11:50/12:50 boundaries. Both layouts are asserted and the interpretation is documented in the module header.
+12. **`model.json` formatting**: `Model::to_json` uses a custom `serde_json` formatter so objects are indented but arrays stay on one line (a 12-level curve reads as a curve). Key order is BTreeMap/Mon..Sun order, so the fixture (written in the spec's key order) round-trips modulo key order — the snapshot pins the canonical output.
+13. `n_obs` is defined as the number of *energy* observations behind the fit (the spec does not say); `fitted` is the injected `today`.
+
+# horizon (layer 2)
+Module `tm_core::horizon` (file opens with an "API overview" doc comment plus a "Choices the spec leaves open" section).
+
+CONSTANTS: `MIN_REMAINING_MIN: u32 = 5` (floor for a computed `est:`), `DEMOTED_SECTION = "Demoted"`, `PINNED_SECTION = "Pinned"`, `OVERDUE_SECTION = "Overdue"`, `REVIEW_BLOCK = "review"`, `REVIEW_PLACEHOLDER = "review pending"`.
+
+ERRORS: `enum HorizonError { Store(#[from] StoreError), NotFound(Id), MissingFile(String), Edit{id, message}, Horizon{id, horizon, message}, Log(#[from] serde_json::Error) }` (thiserror).
+
+CONTEXT:
+```rust
+pub struct Ctx<'a> { pub store: &'a dyn Store, pub files: &'a PlanFiles, pub tree: &'a Tree,
+                     pub replay: Option<&'a Replay>, pub now: DateTime<FixedOffset> }
+impl<'a> Ctx<'a> {
+    pub fn new(store: &'a dyn Store, files: &'a PlanFiles, tree: &'a Tree, now: DateTime<FixedOffset>) -> Ctx<'a>;
+    pub fn with_replay(self, replay: &'a Replay) -> Ctx<'a>;   // builder
+    pub fn cfg(&self) -> &Config;  pub fn block_min(&self) -> u32;
+    pub fn local(&self) -> DateTime<Tz>;  pub fn today(&self) -> NaiveDate;  pub fn now_naive(&self) -> NaiveDateTime;
+}
+```
+Typical caller: `let files = store.read_tree()?; let tree = files.tree(); let cx = Ctx::new(&store, &files, &tree, now);` — after any operation the snapshot is stale, so re-read before the next one.
+
+VERBS (§13):
+```rust
+pub fn move_item(cx: &Ctx, id: &Id, to: &Horizon, section: Option<&str>) -> Result<Moved, HorizonError>;
+pub fn demote(cx: &Ctx, id: &Id) -> Result<Demoted, HorizonError>;          // week items only
+pub fn readopt(cx: &Ctx, id: &Id, to: Option<&Horizon>) -> Result<Moved, HorizonError>;  // None = current week
+pub fn drop_item(cx: &Ctx, id: &Id) -> Result<String, HorizonError>;        // returns the new line text
+pub fn rank(cx: &Ctx, id: &Id, n: usize) -> Result<bool, HorizonError>;     // 1-based, clamped; false = no move
+```
+CLOSES (§6.3):
+```rust
+pub fn close_day(cx: &Ctx, date: NaiveDate) -> Result<CloseReport, HorizonError>;
+pub fn close_week(cx: &Ctx, week: IsoWeek) -> Result<CloseReport, HorizonError>;
+pub fn close_month(cx: &Ctx, month: YearMonth, drops: &[Id]) -> Result<CloseReport, HorizonError>;
+pub fn auto_close(store: &dyn Store, state: &mut RuntimeState, today: NaiveDate,
+                  now: DateTime<FixedOffset>, replay: Option<&Replay>) -> Result<Vec<ClosedPeriod>, HorizonError>;
+pub fn pending_closes(store: &dyn Store, state: &RuntimeState, today: NaiveDate) -> Vec<(Period, String)>;
+pub fn churn(tree: &Tree, min: usize) -> Vec<(Id, Vec<Stamp>)>;   // >= min stamps, most stamped first
+pub fn period_name(p: Period) -> &'static str;                    // "day" | "week" | "month"
+```
+REPORTS (all Clone/Debug/PartialEq/Eq/Serialize/Deserialize):
+```rust
+pub struct Moved { pub id: Id, pub from: String, pub to: String }              // paths, e.g. "week/2026-W37.md"
+pub struct Demoted { pub id: Id, pub est_min: u32, pub stamps: Vec<Stamp> }
+pub struct Reopened { pub id: Id, pub est_min: u32 }
+pub struct CloseReport { pub period: Option<Period> /*json "week"*/, pub key: String,
+    pub moved: Vec<Moved>, pub demoted: Vec<Demoted>, pub reopened: Vec<Reopened>,
+    pub dropped_children: Vec<Id>, pub dropped: Vec<Id>, pub overdue_to_backlog: Vec<Id>,
+    pub notes: Vec<String> }   // + is_empty()
+pub struct ClosedPeriod { pub period: Period, pub key: String, pub report: CloseReport }
+```
+Log events written (through `store.append_text(store::LOG_PATH, …)`, one JSON object per line, timestamped `cx.now`): `demote{id,from,to,est_min}` per demoted/pinned item, `move{id,from,to}` (move_item, overdue→backlog, month carry-over), `readopt{id}`, `drop{id}`, `close{period,key}` at the end of every close.
+
+## Deviations (horizon)
+1. **`est:` at day close (differs from the DoD's literal expectation).** The scope's formula — `remaining = own_remaining − done minutes today, floored` — and the DoD's expected value ("60 done minutes on ^t3 → est:1b") contradict each other on the plan-basic fixture: ^t3 is `- [>] 4 2b … est:1b ^t3`, so own_remaining is 60, minus 60 done = 0 → the floor. I implemented the formula (est: is the running remainder — `tm stop` / partial `tm done` maintain it, so subtracting est_original instead would throw away every earlier day's work), and the test asserts `est:5m` (MIN_REMAINING_MIN). `est:1b` would only follow from `est_original − done_today`, which double-counts across days. If you want the DoD's literal number, change `day_remaining()` in horizon.rs (~line 900) to start from `item.est_original`.
+2. **Signatures.** Free functions take a `Ctx` (store + files + tree + replay + now) instead of long parameter lists; the log path is not injected — events go through `Store::append_text(LOG_PATH, …)` so MemStore-based tests see them. `auto_close` takes the store (not a Ctx) because it re-reads the tree between closes, and it *saves* `.tm/state.json` when anything ran (that is what makes it idempotent across processes).
+3. **`Closed` renamed.** The scope's `auto_close -> Vec<Closed>` would collide with `store::Closed` (the state.json struct); the returned type is `ClosedPeriod { period, key, report }`.
+4. **CloseReport fields.** The scope's tuples became named structs (`Moved`, `Demoted`, `Reopened`) for a usable `--json` shape, and three fields were added: `period`/`key` (which close this was), `reopened` (`[>]`→`[ ]` rewrites at day close) and `dropped` (`tm close month --drop`). `period` serializes as "day"/"week"/"month" to match §10.1.
+5. **Folding children** = the §6.4 rollup (`Tree::remaining`), not a sum on top of the parent's own estimate: a `6b` milestone with 1b subtasks carries `est:6b`. Only a parent with no estimate of its own inherits its children's sum. (Documented in the module header.)
+6. **Week close and intervals.** §6.3's "recurring items and calendar intervals are never touched" is read as: recurring lines (`recur != None`) anywhere, and the synced `calendar/` files (which are never week files). A dated interval written *in a week file* (^x1, the Midterm) is demoted like any other unfinished line — otherwise the clause would exempt nothing at all in a week close. Easy to flip if you disagree: add a `Shape::Interval` guard next to the `Recur::None` filter in `close_week`.
+7. **A second demotion rewrites the existing `# Demoted` copy** (accumulating stamps, deduped) instead of appending a second line, so the id never becomes a `tm check` duplicate. When the target month file already holds a *live* line with the same id, the copy is appended anyway and a note is added to the report.
+8. **Review placeholder placement.** `Store::replace_generated` inserts a missing block right after the front matter / `![day]` line, i.e. *above* the generated plan; the placeholder is instead appended at the end of the day file (below `## Notes`), which is where a review belongs. An existing `tm:review` block is replaced in place via `edit::replace_generated`. A day with no file gets no file created (a note says so).
+9. **Overdue → backlog is a pure move**: the line keeps its bytes (no `est:` rewrite, no stamp), per "moved to backlog.md#Overdue *instead*".
+10. **auto_close closes only the last unclosed period of each kind** (yesterday, last week, last month), finest-first, and records periods whose file does not exist as closed without running them — as the scope asked, documented on the function.
+11. **`demote()` refuses non-week items** with `HorizonError::Horizon` (a pinned day item is *moved* by `close_day`; a month outcome has no enclosing horizon). Note this also means demoting an already-demoted item fails once the tree resolves it to the month archive copy — readopt it first (covered by a test).
