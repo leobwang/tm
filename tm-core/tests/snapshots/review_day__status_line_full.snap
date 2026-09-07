@@ -1,0 +1,5 @@
+---
+source: tm-core/tests/review_day.rs
+expression: "render_status_full(&head, &s)"
+---
+tm · Mon 2026-09-07 · 10:42 · lounge · wake 06:05 (8h10m) · pred 4 rep 4 ·  ● 5/6 · leak 14m · adherence 83% · window → 16:00 · lost 55m

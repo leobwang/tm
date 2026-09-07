@@ -1,0 +1,258 @@
+---
+source: tm-core/tests/review_day.rs
+expression: review()
+---
+{
+  "date": "2026-09-07",
+  "loc": "lounge",
+  "blocks_done": 5,
+  "budget": 6,
+  "load": 293.0,
+  "load_blocks": 4.88,
+  "block_len_min": 60,
+  "plan_honesty": 1.0,
+  "block_min": 360,
+  "window": [
+    "07:00:00",
+    "16:00:00"
+  ],
+  "lost_min": 55,
+  "lost_note": "call",
+  "leak": {
+    "attributed_min": 14,
+    "gap_min": 0,
+    "total_min": 14,
+    "longest_min": 14
+  },
+  "adherence": {
+    "planned": 6,
+    "started_on_time": 5,
+    "completed": 5,
+    "started_pct": 83,
+    "completed_pct": 83,
+    "missed": [
+      "t5"
+    ]
+  },
+  "wake_to_arrive_min": 55,
+  "arrive_to_start_min": 2,
+  "replans": 4,
+  "drift_min": 75,
+  "breaks": {
+    "breaks": [
+      {
+        "planned_min": 20,
+        "actual_min": 24,
+        "place": "walk",
+        "over": false
+      },
+      {
+        "planned_min": 20,
+        "actual_min": 31,
+        "place": "seat",
+        "over": false
+      },
+      {
+        "planned_min": 20,
+        "actual_min": 20,
+        "place": "walk",
+        "over": false
+      }
+    ],
+    "planned_min": 60,
+    "actual_min": 75,
+    "over_count": 0,
+    "over_share": 0,
+    "by_where": {
+      "seat": [
+        1,
+        31
+      ],
+      "walk": [
+        2,
+        44
+      ]
+    }
+  },
+  "rest_debt_min": 0,
+  "mix": {
+    "minutes_by_ci": [
+      0,
+      0,
+      20,
+      60,
+      155,
+      125
+    ],
+    "total_min": 360,
+    "high_min": 280,
+    "high_share": 78,
+    "underused": 1
+  },
+  "energy": {
+    "n": 10,
+    "mae": 0.5,
+    "bias": -0.3,
+    "by_hour": [
+      [
+        7,
+        1,
+        0.0,
+        0.0
+      ],
+      [
+        8,
+        1,
+        1.0,
+        1.0
+      ],
+      [
+        10,
+        2,
+        0.0,
+        0.0
+      ],
+      [
+        11,
+        1,
+        0.0,
+        0.0
+      ],
+      [
+        12,
+        1,
+        0.0,
+        0.0
+      ],
+      [
+        13,
+        1,
+        1.0,
+        -1.0
+      ],
+      [
+        14,
+        1,
+        1.0,
+        -1.0
+      ],
+      [
+        15,
+        2,
+        1.0,
+        -1.0
+      ]
+    ],
+    "flip_hour": 13,
+    "mae_prior": 0.4,
+    "mae_learned": 0.4,
+    "hours": [
+      {
+        "hour": 7,
+        "pred": 5,
+        "rep": 5
+      },
+      {
+        "hour": 8,
+        "pred": 4,
+        "rep": 5
+      },
+      {
+        "hour": 9,
+        "pred": 5,
+        "rep": null
+      },
+      {
+        "hour": 10,
+        "pred": 5,
+        "rep": 5
+      },
+      {
+        "hour": 11,
+        "pred": 4,
+        "rep": 4
+      },
+      {
+        "hour": 12,
+        "pred": 4,
+        "rep": 4
+      },
+      {
+        "hour": 13,
+        "pred": 4,
+        "rep": 3
+      },
+      {
+        "hour": 14,
+        "pred": 4,
+        "rep": 3
+      },
+      {
+        "hour": 15,
+        "pred": 3,
+        "rep": 2
+      }
+    ]
+  },
+  "estimates": [
+    {
+      "tag": "admin",
+      "n": 13,
+      "mean_ratio": 0.82,
+      "multiplier": 0.88,
+      "recent_ratio": 0.83
+    },
+    {
+      "tag": "lean",
+      "n": 12,
+      "mean_ratio": 1.28,
+      "multiplier": 1.19,
+      "recent_ratio": 1.26
+    },
+    {
+      "tag": "soundcode",
+      "n": 11,
+      "mean_ratio": 1.0,
+      "multiplier": 1.0,
+      "recent_ratio": 1.0
+    },
+    {
+      "tag": "_default",
+      "n": 45,
+      "mean_ratio": 1.02,
+      "multiplier": 1.03,
+      "recent_ratio": 1.04
+    }
+  ],
+  "slept_min": 490,
+  "onset_min": 25,
+  "done": [
+    "t1",
+    "t2",
+    "t3",
+    "t4",
+    "p1"
+  ],
+  "demoted": [
+    {
+      "id": "t5",
+      "est_min": 30,
+      "to": "2026-W37"
+    }
+  ],
+  "tomorrow": [
+    {
+      "id": "t5",
+      "note": "after t4"
+    },
+    {
+      "id": "d1",
+      "note": "p1 u=0.6"
+    },
+    {
+      "id": "a3",
+      "note": "done"
+    }
+  ],
+  "optional": null
+}
