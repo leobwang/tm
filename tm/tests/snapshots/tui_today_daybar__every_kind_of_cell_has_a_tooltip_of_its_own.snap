@@ -1,0 +1,17 @@
+---
+source: tm/tests/tui_today_daybar.rs
+expression: "seen.join(\"\\n\")"
+---
+Read ch.6 §1–2 · 1h7m · ci5 · p1 · @O1
+Read ch.6 · 1h1m · ci5 · p1 · @O1
+break · 24m
+Exercises 5.3–5.5 · 1h48m · ci4 · p1 · @O1
+lunch · 30m · ci1
+Claude Code drafts tests · 1h · ci3 · p3 · @O2
+Meeting w/ host · 1h · ci3
+break · 20m
+Review the drafts · 1h · ci3 · p3 · @O2
+Pick up package · 20m · ci1 · p0
+dinner · 30m · ci1
+Severance S3E4 · 1h · ci0
+wind-down · 30m

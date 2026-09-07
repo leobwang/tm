@@ -1,0 +1,34 @@
+---
+source: tm/tests/tui_today_prompts.rs
+expression: term.backend().to_string()
+---
+"tm · Mon 2026-09-07 · 10:42 · lounge · wake 06:05 (8h10m) · pred 4 rep 4 ·  ● 1/6 · leak 59m · adherence 50% · window →…"
+"    █████████░░░███████▒▒▓▓▓▓▓████░░▓▓▓▓░░        ▒▒▒∙∙∙∙∙          ███                                     ▲ 10:42     "
+"    █████████░░████████▒▒▓▓▓▓▓                                                                              plan @07:00 "
+"┌ Timeline ──────────────────────────────────┐┌ Now ─────────────────────────────────┐┌ Week W37 · 1/25 ───────────────┐"
+"│07:00  5 p1 ✓ Read ch.6 §1–2    @m3  1b  (6…││ci4 p1 Exercises 5.3–5.5  @m1         ││  m1 Finish ch.5…     ░░░░░░ 0/6│"
+"│08:07  5 p1 ✓ Read ch.6         @O1  3b  (6…││elapsed 1h10m ▐█████░░░░░░░░░░▌ est 2…││  m2 Rollback pa…     ░░░░░░ 0/6│"
+"│09:08  ·    ✓ break 20m                  (2…││next 11:20 lunch · 11:50 Claude Code …││▶ m3 Read ch.6        ▓▓░░░░ 2/3│"
+"│09:32  4 p1 ▶ Exe┌ Keys — tm-spec §12.6 ───────────────────────────────────────────────────────────┐er…     ░░░░░░ 0/2│"
+"│11:20  ·      lun│  1–5          screens: Today · Queue · Necessities · Review · Inbox             │et…     ░░░░░░ 0/6│"
+"│11:50  4↓p3   Cla│  ?            this help  ·  :  command line (any tm verb)  ·  q  quit           │        ░░░░░░ 0/2│"
+"│12:50  ⏰     Mee│  e / Enter    open the selected line in the editor / drill into it              │rdue ─────────────│" Hidden by multi-width symbols: [(9, " ")]
+"│13:50  ·      bre│  r / R        replan (resume, when interrupted) · sync calendar + replan        │ackage · due today│"
+"│14:10  3 p3   Rev│  j / k        move the selection  ·  mouse: hover the day bar, click to select  │──────────────────│"
+"│15:10  1 p0 ⚠ Pic│  d / x / s    done · extend one block · stop, the remainder re-competes         │ Lee about the re…│"
+"│15:30  ───    win│  b + w/s/b/p  break: walk · seat · bed · phone                                  │cs ───────────────│"
+"│17:30  ·      din│  i / r        interruption starts / ends                                        │→3) · 0 ci-5 lost │"
+"│18:00  ○      Sev│  0 then 0–5   report energy now (1–5 alone switch screens)                      │                  │"
+"│21:30  🌙     win│  l / K / n    location · skip the selected routine · note                       │t4                │" Hidden by multi-width symbols: [(9, " ")]
+"│                 │  Space        pause or unpause the timer                                        │                  │"
+"│                 │                                                                                 │                  │"
+"│                 │  overtime     x extend · s stop · d done · anything else: ask again             │                  │"
+"│                 │  idle         w work · b break · t routine · i interruption · l leak            │                  │"
+"│                 └─────────────────────────────────────────────────────────────────────────────────┘                  │"
+"│                                            │└──────────────────────────────────────┘│                                │"
+"│                                            │┌ Energy today ────────────────────────┐│                                │"
+"│                                            ││pred  4  5  5  4  4  3  3  3  3  3    ││                                │"
+"│                                            ││rep   5  ·  4  ·  ·  ·  ·  ·  ·  ·    ││                                │"
+"│                                            ││     07 08 09 10 11 12 13 14 15 16    ││                                │"
+"└────────────────────────────────────────────┘└──────────────────────────────────────┘└────────────────────────────────┘"
+":                                                            j/k move · Enter open · e edit · r replan · R sync · ? help"

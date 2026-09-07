@@ -473,7 +473,10 @@ pub fn main() -> i32 {
 }
 
 /// Run one verb.
-fn run(g: &Globals, cmd: Command) -> Result<i32, CliError> {
+///
+/// `pub(crate)` because the TUI's `:` command line runs any §13 verb through
+/// exactly this dispatcher (§12: one code path for a keystroke and a verb).
+pub(crate) fn run(g: &Globals, cmd: Command) -> Result<i32, CliError> {
     match cmd {
         Command::Init(a) => init::run(g, &a),
         Command::Wake(a) => day::wake(g, &a),
@@ -508,6 +511,6 @@ fn run(g: &Globals, cmd: Command) -> Result<i32, CliError> {
         Command::Log(a) => lifecycle::log(g, &a),
         Command::Undo => lifecycle::undo(g),
         Command::Check(a) => lifecycle::check(g, &a),
-        Command::Tui => lifecycle::tui(),
+        Command::Tui => lifecycle::tui(g),
     }
 }

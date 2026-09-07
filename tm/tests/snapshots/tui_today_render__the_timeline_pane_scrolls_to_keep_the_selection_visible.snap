@@ -1,0 +1,9 @@
+---
+source: tm/tests/tui_today_render.rs
+expression: rendered
+---
+"15:10  1 p0 ⚠ Pick up p…       20m   …"
+"15:30  ───    window ends 16:00       "
+"17:30  ·      dinner 30m              "
+"18:00  ○      Severance…       1h     "
+"21:30  🌙     wind-down…              " Hidden by multi-width symbols: [(8, " ")]

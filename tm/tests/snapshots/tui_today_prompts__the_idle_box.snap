@@ -1,0 +1,16 @@
+---
+source: tm/tests/tui_today_prompts.rs
+expression: "overlay(|f|\n{ prompts::draw(f, Rect::new(0, 0, 80, 12), &Prompt::Idle(idle.clone())); })"
+---
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"       ┌ Nothing is running (18m) ─────────────────────────────────────┐        "
+"       │  w  work (starts next block)   b  break   t  routine          │        "
+"       │  i  interruption               l  leak (log it, no judgment)  │        "
+"       └───────────────────────────────────────────────────────────────┘        "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "

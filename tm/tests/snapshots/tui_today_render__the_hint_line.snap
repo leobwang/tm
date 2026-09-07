@@ -1,0 +1,5 @@
+---
+source: tm/tests/tui_today_render.rs
+expression: "lines(&[today::hint_line(&app(), 120)])"
+---
+:                                                            j/k move · Enter open · e edit · r replan · R sync · ? help

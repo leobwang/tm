@@ -1,0 +1,9 @@
+---
+source: tm/tests/tui_today_prompts.rs
+expression: small
+---
+"┌ Keys — tm-spec §12.6 ──────┐"
+"│  1–5          screens: Toda│"
+"│  ?            this help  · │"
+"│  e / Enter    open the sele│"
+"└────────────────────────────┘"

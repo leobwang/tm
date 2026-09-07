@@ -16,10 +16,13 @@
 //!   → exit code mapping.
 //! * `cli::undo` — the undo stack every mutating verb pushes to (§13
 //!   `tm undo`).
+//! * `tui` — the ratatui frontend of §12 that `tm tui` starts. It drives the
+//!   same `cli` verbs, so a keystroke and a command line are one code path.
 
 #![warn(missing_docs)]
 
 mod cli;
+mod tui;
 
 fn main() {
     std::process::exit(cli::main());

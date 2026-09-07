@@ -1,0 +1,7 @@
+---
+source: tm/tests/tui_today_render.rs
+expression: "render_lines(&today::energy_lines(&app(), 46), 46)"
+---
+"pred  4  5  5  4  4  3  3  3  3  3            "
+"rep   5  ·  4  ·  ·  ·  ·  ·  ·  ·            "
+"     07 08 09 10 11 12 13 14 15 16            "
