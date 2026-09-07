@@ -640,3 +640,258 @@ All ten are documented in priority.rs's module header under "Choices the spec le
 Two additions beyond the listed scope, both small: `lookahead_days` (see "upstream bugs" — the caller must size the lookahead to the furthest deadline or §7.3 reports false shortfalls) and `Candidate::window` / `Candidate::instance` (the planner needs the placement span and instance key that `recur` computed; recomputing them would duplicate §5.1).
 
 In `planner.rs`: `PlanInput` carries both `log` (as §8 names it) and `replay` (what the planner actually reads), plus the two optional `caps`/`candidates` shortcuts the scope allowed; `Diagnostics` gains the requested `notes: Vec<String>`.
+
+# planner (layer 4)
+`tm_core::planner` — everything below is new or extended; every pre-existing public name (PlanInput, DayPlan, Segment, SegKind, SegFlags, Diagnostics, plan, DayPlan::empty/hash/block_minutes) is unchanged in name and meaning.
+
+```rust
+pub struct PlanInput<'a> {            // Copy; 4 fields added, none removed
+    pub tree: &'a Tree, pub log: &'a Log, pub replay: &'a Replay,
+    pub cfg: &'a Config, pub model: &'a Model, pub runtime: &'a RuntimeState,
+    pub now: DateTime<Tz>,
+    pub caps: Option<&'a [DayCapacity]>, pub candidates: Option<&'a [Candidate]>,
+    pub allow_home: bool,                       // NEW — `tm plan --allow-home`
+    pub overrides: Option<&'a PlanOverrides>,   // NEW — §9.1 what-ifs
+}
+impl PlanInput<'a> {
+    fn new(tree, log, replay, cfg, model, runtime, now) -> PlanInput<'a>;  // unchanged
+    fn with_caps(self, &[DayCapacity]) -> Self;
+    fn with_candidates(self, &[Candidate]) -> Self;
+    fn with_allow_home(self, bool) -> Self;      // NEW
+    fn with_overrides(self, &PlanOverrides) -> Self;  // NEW
+    fn date(&self) -> NaiveDate;
+}
+
+pub fn plan(input: &PlanInput) -> DayPlan;              // §8.2, pure
+pub fn week_plan(input: &PlanInput) -> WeekPlan;        // §13 `tm plan --week`
+pub fn diff(old: &DayPlan, new: &DayPlan) -> PlanDiff;  // §13 `--diff`, §11 drift
+pub fn explain(day: &DayPlan, id: &Id, cands: &[Candidate], cfg: &Config) -> String;  // §13
+pub fn overtime_drops(input: &PlanInput, id: &Id, blocks: u32) -> Vec<Id>;           // §9.1
+pub fn fmt_clock(t: DateTime<Tz>) -> String;            // "HH:MM"
+
+pub struct PlanOverrides {  // Clone+Debug+Default+PartialEq+Eq
+    pub est_min: BTreeMap<Id, u32>, pub extra_min: BTreeMap<Id, u32>, pub drop: BTreeSet<Id>,
+}
+impl PlanOverrides { fn new(); fn with_est(self,&Id,u32); fn extending(self,&Id,u32);
+                     fn dropping(self,&Id); fn is_empty(&self) -> bool }
+
+pub struct PlanDiff { pub moved: Vec<(Id, DateTime<Tz>, DateTime<Tz>)>,
+                      pub added: Vec<Id>, pub removed: Vec<Id>, pub drift_min: u32 }
+impl PlanDiff { fn is_empty(&self) -> bool }
+
+pub struct WeekPlan { pub from: NaiveDate, pub days: Vec<WeekDay>,
+                      pub capacity: Vec<DayCapacity>, pub grid: String,
+                      pub priorities: Vec<(Id, Prio)>, pub unplaced: Vec<Id>,
+                      pub notes: Vec<String> }
+pub struct WeekDay { pub date: NaiveDate, pub capacity_min: u32, pub planned_min: u32,
+                     pub blocks: u32, pub items: Vec<(Id, u32)> }
+
+// added to existing types (nothing renamed or removed)
+impl SegKind  { fn is_work(&self) -> bool }                    // Block | Batch
+impl Segment  { fn items(&self) -> Vec<Id> }                   // one id, or a batch's
+impl DayPlan  { fn planned_block_minutes(&self, from: DateTime<Tz>) -> u32;  // §8.3's LHS
+                fn assigned(&self) -> Vec<Id>;                 // whole day, in time order
+                fn assigned_from(&self, from: DateTime<Tz>) -> Vec<Id>;  // planned half
+                fn segment_of(&self, id: &Id) -> Option<&Segment> }
+```
+
+Notes for callers:
+- `DayPlan::block_minutes()` covers the whole day, the replayed morning included; use `planned_block_minutes(now)` for the budget check.
+- `SegKind::Batch(ids)` segments have `item == None`; use `Segment::items()`.
+- `diagnostics.blocked` holds only dep-blocked items (`Vec<(Id, Vec<Dep>)>`); waiting and cap-exhausted items are in `waiting` / `dropped_tail`, and `priority::blocked(&cands)` still has the full reason list.
+- `plan()` builds its own candidates and lookahead unless `with_candidates` / `with_caps` are given; `DayPlan::priorities` is one `(Id, Prio)` per candidate, in candidate order (two entries can share an id — a carried persist instance and today's).
+- Test helpers live in `tm-core/tests/planner_common/mod.rs` (`load`, `load_with_log`, `BASIC_LOG`, `basic_state`, `timeline`, `diagnostics`) and are reusable by emit.rs / CLI tests via `mod planner_common;`.
+
+## Deviations (planner)
+Documented in planner.rs's module header ("How §8.2 is implemented, and the choices the spec leaves open", 10 numbered points). The ones that matter:
+
+1. **`travel-day` zeroes the remaining budget**, not the window: routines, walls and optionals still get placed. §8.2 only writes "travel-day zeroing".
+2. **An open interruption does not extend the window.** §8.1 extends the window by walls inside it, but §9 says an interruption drops the tail; extending would contradict that. Calendar walls (and their `buffer:`) do extend it.
+3. **`buffer:` is a separate Wall segment** in front of the event and counts as wall time for §8.1. Wall conflicts are computed on the un-buffered intervals (matching `check.rs`'s `wall-conflict` rule).
+4. **No `loc:` filter on routines.** §8.2 lists it under step 5 (ASSIGN); a `loc:out` errand is a reason to go out, not to skip the day.
+5. **Wind-down is blocked for slot cutting**, which is the strongest form of "no Block with `ci ≥ 4` after wind-down": no block of any `ci` is planned there. A mandatory routine with nowhere else to go may still reach into it.
+6. **Sleep detection** is "the routine keyed `sleep`, or an overnight window of ≥ 6 h"; the Sleep segment is clipped at midnight so the DayPlan stays one day.
+7. **The Active block takes consecutive slots** until `est_min − elapsed` is covered, not just the one slot containing `now`. §9 says "no preemption mid-block", and with `est_min` already multiplied a block is often two slots. It is exempt from the key order only for those slots.
+8. **A carried (window-closed) instance** may be placed anywhere left in the day, but a `win:HH:MM-HH:MM` daily range still constrains the hours.
+9. **A group takes another slot whenever it is still owed minutes**, so a 192-minute item consumes four 60-minute slots (the last one partly). Sub-block packing is out of scope.
+10. **`plan_honesty`** = Σ minutes still owed by the groups the day *starts* ÷ (`remaining_budget × block_min`). Any reading based on scheduled block minutes can never exceed 1 (the fill is budget-capped) and so could never fire §11's "> 1.1" warning. `None` when the budget is zero. **`rest_debt_min`** = Σ (`planned_min − actual_min`) over today's logged breaks.
+11. **`a_capacity_lost`** = Rest minutes at energy ≥ 4 on a day that had an unassigned `ci = 5` candidate. **`deferred`** is generalised from "ci-5 items" to any unassigned eligible candidate for which some slot's *raw* prediction was high enough and the posterior-corrected value was not.
+12. **`dropped_tail`** lists every eligible candidate that got no slot, whatever the reason (budget, energy, contiguity) — §8.2 names no narrower rule.
+13. **§8.3's tail-drop is tested as** "removing a block from the budget leaves every kept slot holding the same items and never adds an item". An *energy downgrade* can legitimately swap items (that is exactly what the `deferred` diagnostic reports), so it is not covered by the subset form. **"IMPOSSIBLE never dropped"** is tested as (a) always named in `diagnostics.impossible` with its shortfall and (b) never displaced by a `p > 0` candidate — with many `p = 0` items and few slots some must still be left out.
+14. **`week_plan` is deliberately light** (documented on `WeekPlan`): today is the real `plan()`; later days are a greedy per-day allocation over the lookahead respecting `ci`, deadlines and `max:`, with no routines, breaks, batching, `atomic` contiguity, interruptions or posterior.
+15. **Fixture placement**: `plan-basic` did **not** get a `.tm/` — see `upstream_bugs`. Its planner history lives in `planner_common::BASIC_LOG` / `basic_state()` instead. `plan-home-day/` and `plan-travel-day/` (both copies of `plan-basic` with a changed calendar/state) do carry their own `.tm/`.
+
+# emit (layer 4)
+module tm_core::emit — all pure, no I/O, no clock.
+
+TIMELINE (§4.3)
+- `pub fn render_plan_section(plan: &DayPlan, tree: &Tree, cfg: &Config, now: DateTime<Tz>) -> (String /*info: "10:42"*/, String /*body, rows newline-terminated*/)` — pass `info` to `Store::replace_generated_stamped(rel, "plan", Some(&info), &body)`.
+- `pub fn render_plan_section_with(plan, tree, cfg, now, layout: &Layout) -> (String, String)`
+- `pub struct Layout { pub title_w: usize }` + `Layout::new(w)` (min 4), `Default` = 27.
+- `pub fn svg_link(date: NaiveDate) -> String` → `![day](2026-09-07.svg)`; `pub fn svg_file_name(date) -> String`.
+- Column constants: `TIME_W=5, CI_W=2, P_W=2, MARK_W=1, PARENT_W=3, EST_W=2, ACTUAL_W=1, DEFAULT_TITLE_W=27, TITLE_COL=14`. Glyph/mark constants: `MARK_DONE ✓, MARK_CURRENT ▶, MARK_HOT ⚠, MARK_UNDERUSED ↓, GLYPH_ROUTINE ·, GLYPH_WALL ⏰, GLYPH_OPTIONAL ○, GLYPH_WIND_DOWN 🌙, DIVIDER "───"`.
+- Row: `HH:MM  ci[↓] pN mark title(27) @parent(43) est(48) (actual)(52) note(55)`; character-counted fixed columns, trailing blanks trimmed. `p` is shown for Block/Batch only (a batch shows its first member's `p`). The `───  window ends HH:MM` row is generated where cumulative Block/Batch minutes reach `budget_blocks × block_min`, or at the window end, whichever is earlier.
+
+DAY BAR (§12.1)
+- `pub fn daybar_cells(plan: &DayPlan, ghost: Option<&DayPlan>, tree: &Tree, cfg: &Config, cols: usize, wake: DateTime<Tz>, now: DateTime<Tz>) -> DayBar`
+- `pub struct DayBar { cells: Vec<Cell>, ghost: Vec<Cell>, cursor_col: usize, cols: usize, wake: DateTime<Tz>, now: DateTime<Tz>, span_min: u32 }` + `cell_minutes() -> f64`, `col_of(t) -> Option<usize>`, `x_of(t, width) -> f64`, `start_of(col) -> DateTime<Tz>`.
+- `pub struct Cell { hue: Option<usize>, brightness: u8, style: CellStyle, tooltip: String, segment: Option<usize> }` + `Cell::empty()`, `Cell::rgb(&Config) -> (u8,u8,u8)` (palette hue × brightness/5 for Work; the style's fixed colour otherwise).
+- `pub enum CellStyle { Work, Routine, Break, Lost, Interrupt, Optional, Wall, Rest, Sleep, Empty }` + `CellStyle::of(&Segment)`, `.colour()`, `.is_hatched()`.
+- `pub fn hue_index(root: &Id, palette_len: usize) -> usize` (FNV-1a 32-bit); `pub fn palette_rgb(&Config, idx) -> (u8,u8,u8)`; `pub fn parse_hex_colour(&str) -> Result<(u8,u8,u8), EmitError>`.
+
+SVG (§17.2)
+- `pub fn render_svg(bar: &DayBar, plan: &DayPlan, cfg: &Config, width_px: u32, height_px: u32) -> String` — one `<rect>`+`<title>` per segment, `<pattern id="tm-lost"|"tm-interrupt">` hatching, `stroke-dasharray="2 2"` on optionals, hour ticks (labels every 3 h), `class="cursor"` line + time label, `class="ghost"` row beneath from `bar.ghost` runs.
+
+TEXT
+- `pub fn render_now(plan, tree, now) -> String` (uses `Config::default()`), `pub fn render_now_with(plan, tree, cfg, now) -> String`.
+- `pub fn render_diagnostics(diag: &Diagnostics, tree: &Tree, cfg: &Config) -> Vec<String>` — first line is always `"1 underused (4→3) · 0 ci-5 lost"`.
+- `pub fn render_banners(plan: &DayPlan, tree: &Tree, cfg: &Config) -> Vec<String>` — §7.3's `"d1 CS 234 pset 2: needs 8b, 5b available by Fri"` (reads `plan.priorities`).
+- `pub fn legend(plan: &DayPlan, tree: &Tree) -> EnergyMix`; `pub struct EnergyMix { minutes_at_ci: [u32;6], total_min: u32, share_ci4_plus: f64, underused_count: usize, optional_min: u32 }` + `EnergyMix::line()`.
+- `pub enum EmitError { BadColour(String) }` (thiserror).
+
+CONVENTIONS emit assumes of a DayPlan (documented in the module header, relevant to planner.rs): a finished segment (`flags.done`) spans what actually happened (so `(actual)` = `seg.minutes()`), `flags.planned_min`/`flags.multiplier` are the `2b×1.6` display pair, and a `SegKind::Wall` with `item == None` is §9's ad-hoc interruption (hatched red).
+
+## Deviations (emit)
+1. **Three signatures take one extra argument**, each because the value cannot be derived from what the scope listed: `render_diagnostics(diag, tree, cfg)` and `render_banners(plan, tree, cfg)` need `cfg.block_min()` to print "needs 8b"; `legend(plan, tree)` needs the tree because a segment carries the *slot's* energy while §11's energy mix is about the *item's* ci (slot energy is the fallback). `render_now` keeps the scope's `(plan, tree, now)` and uses `Config::default()`; `render_now_with(plan, tree, cfg, now)` is the explicit-config twin.
+2. **`render_banners` is a second function.** §7.3's exact banner ("needs 8b, 5b available by Fri") needs `Prio::need_min`/`avail_min`, which live on `DayPlan::priorities`, not in `Diagnostics`; `render_diagnostics` alone can only say "d1 impossible: 3b short by 2026-09-11".
+3. **`DayBar` carries four fields beyond `{cells, ghost, cursor_col}`** (`cols`, `wake`, `now`, `span_min`) so the SVG, the TUI widget and the tooltip/hover code measure with the same geometry rather than recomputing it.
+4. **Three documented divergences from the §4.3 example** (its own rows are mutually inconsistent; the module header and the test header list them): (a) rows with a blank mark or a narrow ci-column glyph (`·`, `○`, `───`) start the title at column 14, where the example uses 15 — the example itself uses 14 on marked rows and on the `⏰`/`🌙` rows; (b) when an item has no `@parent`, the estimate stays in the estimate column (48) instead of sliding to 43; (c) the break's `(24m)` sits in the actual column (52), not at 48. Four rows (`07:00`, `08:00`, `09:20`, `21:30`) reproduce byte for byte, as do `@parent` at 43, `est` at 48 and the note at 55.
+5. **The window divider rule is mine** (the spec shows the row without saying where it goes): at the end of the Block/Batch segment whose *elapsed* minutes take the day to `budget_blocks × block_min`, else at the window end, inserted before the first segment starting at/after that instant. On the §4.3 example this lands exactly at 15:10 with "window ends 16:00".
+6. **`Cell::rgb` scales only `Work`.** §12.1's "brightness = ci (0 black … 5 full)" applied to routines (ci 1) or optionals (ci 0) would render them black, so every non-work style has a fixed colour (routines grey, breaks light grey, Lost orange, Interrupt red, walls dark, sleep near-black, rest/empty near-white) and `brightness` stays on the cell for the TUI.
+7. **Interrupt detection**: `SegKind::Wall` with `item == None` maps to `CellStyle::Interrupt` (§9's ad-hoc wall; a synced wall always has an id). `SegKind::WindDown` maps to `CellStyle::Sleep`, `Rest`/`Lost` to their own styles.
+8. **Row kinds the spec does not show** get sensible text: `Rest` → "rest 40m", `Lost` → "lost 55m", `Sleep` → "sleep 8h30m", all with the `·` glyph.
+
+# review (layer 4)
+Module `tm_core::review` (file opens with an "API overview" doc comment plus a "Choices the spec leaves open (deviations)" section).
+
+CONSTS: `ADHERENCE_TOLERANCE_MIN: i64 = 10`, `REST_DEBT_WARN_MIN: u32 = 40`, `BREAK_OVERRUN_FACTOR: u32 = 2`, `CUT_STAMPS: usize = 2`, `HEAT_HOURS: usize = 24`, `HEAT_STYLES: usize = 7`.
+ERRORS: `enum ReviewError { Store(#[from] StoreError) }` (thiserror). Only `write_day_review` can fail; every computation is infallible.
+FORMATTING: `fmt_hm(u32) -> String` (`490 -> "8h10m"`), `fmt_blocks_min(minutes, block_min) -> String` (`30 -> "0.5b"`, `155 -> "2.6b"`, `20 -> "20m"`).
+
+STATUS LINE (§11, §12.1)
+```rust
+pub struct PlannedBlock { pub id: Id, pub start: DateTime<Tz> }   // ::new(id, start)
+pub struct StatusLine { blocks_done: u32, budget: u32, leak_min: u32, adherence_pct: Option<u8>,
+                        window_end: Option<NaiveTime>, lost_min: u32, rest_debt_min: u32, load: f64 }
+pub struct StatusHead { date: NaiveDate, now: NaiveTime, loc: Option<String>, wake: Option<NaiveTime>,
+                        slept_min: Option<u32>, pred: Option<u8>, rep: Option<u8> }
+pub fn status_line(&Replay, &Config, &RuntimeState, plan_at_arrival: &[PlannedBlock]) -> StatusLine;
+pub fn render_status(&StatusLine) -> String;          // "● 5/6 · leak 14m · adherence 83% · window → 16:00 · lost 55m"
+pub fn render_status_full(&StatusHead, &StatusLine) -> String;   // the whole §12.1 first line
+```
+The day is `runtime.date`, else the last day in the replay. `budget` falls back to `runtime.budget` → the `arrive` event → `capacity::budget_blocks(cfg)`. Above `REST_DEBT_WARN_MIN`, `render_status` appends `· rest debt 60m`.
+
+DAY REVIEW (§12.4)
+```rust
+pub struct DayExtras { plan_at_arrival: Vec<PlannedBlock>, underused: usize,
+                       tomorrow_first: Vec<TomorrowCandidate>, optional: Option<OptionalQuota>,
+                       lost_note: Option<String>, budget: Option<u32> }   // Default
+pub struct DayReview { date, loc: Option<String>, blocks_done, budget, load: f64, load_blocks: f64,
+    block_len_min: u32 /* cfg.day.block_min */, plan_honesty: Option<f64>, block_min: u32 /* Σ worked */,
+    window: Option<(NaiveTime, NaiveTime)>, lost_min, lost_note, leak: LeakLedger, adherence: Adherence,
+    wake_to_arrive_min: Option<i64>, arrive_to_start_min: Option<i64>, replans: u32, drift_min: u32,
+    breaks: BreakIntegrity, rest_debt_min: u32, mix: EnergyMix, energy: EnergyReview,
+    estimates: Vec<energy::TagStats>, slept_min, onset_min: Option<u32>, done: Vec<Id>,
+    demoted: Vec<DemotedRow>, tomorrow: Vec<TomorrowCandidate>, optional: Option<OptionalQuota> }
+pub fn day_review(&Tree, &Replay, &Config, &Model, date: NaiveDate, tz: Tz, &DayExtras) -> DayReview;
+pub fn render_day(&DayReview) -> String;   // exactly §12.4's seven rows
+```
+Parts: `LeakLedger { attributed_min, gap_min, total_min, longest_min }`; `Adherence { planned, started_on_time, completed, started_pct, completed_pct, missed: Vec<Id> }`; `BreakRow { planned_min, actual_min, place, over }` + `BreakIntegrity { breaks, planned_min, actual_min, over_count, over_share, by_where: BTreeMap<String,(usize,u32)> }`; `EnergyMix { minutes_by_ci: [u32;6], total_min, high_min, high_share, underused }`; `EnergyHour { hour, pred, rep: Option<u8> }` + `EnergyReview { n, mae, bias, by_hour, flip_hour: Option<u32>, mae_prior, mae_learned, hours: Vec<EnergyHour> }`; `DemotedRow { id, est_min, to }`; `TomorrowCandidate { id, note: Option<String> }` (`::new(id, Option<&str>)`); `OptionalQuota { minutes, cap_min: Option<u32>, outside_rest_min }`.
+
+WEEK REVIEW
+```rust
+pub enum Style { Block, Break, Routine, Interrupt, Pause, Leak, Idle }  // .index() .all() .label()
+pub struct DayHeat { date, hours: Vec<[u32; HEAT_STYLES]> /* 24 */, blocks_done, block_min }  // .total(Style)
+pub struct LoungeRate { by_wake_hour: Vec<(u32, usize, f64)>, overall: Option<f64>, streak: u32 }
+pub struct SleepRow { date, slept_min, onset_min: Option<u32>, blocks_done: u32 }
+pub struct CurveOverlay { curve: String, prior: Vec<u8>, learned: Option<Vec<u8>> }
+pub struct ChurnRow { id: Id, stamps: Vec<Stamp> }
+pub struct WeekExtras { budget_blocks: Option<u32>, planned_blocks: Option<f64>, deadline_health: Option<DeadlineHealth> }
+pub struct WeekReview { week, hit: Vec<Id>, demoted: Vec<Id>, blocks_per_day: Vec<(NaiveDate,u32)>,
+    blocks_done, block_min, load: f64, block_len_min, heat: Vec<DayHeat>, mix: EnergyMix,
+    breaks: BreakIntegrity, latency: Vec<(NaiveDate, Option<i64>, Option<i64>)>, sleep: Vec<SleepRow>,
+    lounge: LoungeRate, mae_per_day: Vec<(NaiveDate, usize, f64)>, estimates: Vec<TagStats>,
+    curves: Vec<CurveOverlay>, planned_blocks: f64, budget_blocks: Option<u32>, plan_honesty: Option<f64>,
+    deadline_health: Option<DeadlineHealth>, churn: Vec<ChurnRow>, carry_in_min, carry_out_min: u32 }
+pub fn week_review(&Tree, &Replay, &Config, &Model, week: IsoWeek, tz: Tz, &WeekExtras) -> WeekReview;
+pub fn render_week(&WeekReview) -> String;
+```
+Milestones = the week file's top-level items (a child of another week item is a task). `plan_honesty = planned_blocks / (budget_blocks × cfg.week.plan_ratio)`. Churn reuses `horizon::churn(tree, CUT_STAMPS)`.
+
+MONTH REVIEW
+```rust
+pub struct OutcomeRow { id, title: String, k: u8, done: bool, progress: Option<f64> }
+pub struct MonthExtras { cut_stamps: usize }   // Default = CUT_STAMPS
+pub struct MonthReview { month, block_len_min, outcomes: Vec<OutcomeRow>, done_count: usize,
+    demoted: Vec<Id>, churn: Vec<ChurnRow>, carry_over: Vec<(String /*"2026-W36"*/, u32)>, cuts: Vec<Id> }
+pub fn month_review(&Tree, &Replay, &Config, month: YearMonth, tz: Tz, &MonthExtras) -> MonthReview;
+pub fn render_month(&MonthReview) -> String;
+```
+
+WRITING
+```rust
+pub fn write_day_review(store: &dyn Store, date: NaiveDate, text: &str) -> Result<(), ReviewError>;
+```
+Replaces the body of the day file's `<!-- tm:review start --> … <!-- tm:review end -->` block (the one `horizon::close_day` leaves with `horizon::REVIEW_PLACEHOLDER`), appends the block at the end when it is missing, and creates the day file with its front matter when it does not exist. Goes through `Store::modify_file`, so §1.3's race guard applies.
+
+Typical CLI use (`tm review day --write --json`): `let replay = log.replay(None, cfg.tz); let r = review::day_review(&tree, &replay, &cfg, &model, today, cfg.tz, &extras);` then `println!("{}", review::render_day(&r))` or `serde_json::to_string(&r)`, and `review::write_day_review(&store, today, &review::render_day(&r))` for `--write`. Every review type is `Serialize` + `Clone` + `Debug` + `PartialEq` (no `Deserialize`: `priority::DeadlineHealth` and `check`-style `&'static str` fields are serialize-only upstream).
+
+## Deviations (review)
+All are listed in review.rs's module header under "Choices the spec leaves open (deviations)":
+
+1. `load` is §11's formula literally (`Σ block_min × ci / 5`, ci-weighted minutes — what `log::DayReplay::load` computes). §12.4's printed `load 18.4` is not reproducible from its own row (five blocks) under any reading of the formula, so the value is the formula's, not the example's (the fixture day prints `load 293.0`). `DayReview::load_blocks` gives the same quantity in blocks. Block minutes the log has no `ci` for (`DayReplay::ci_unknown`, a block cut by `stop`) are attributed from the tree, so load and the energy mix cover every logged minute.
+2. Leak ledger = attributed `idle{leak}` + unattributed gaps ≥ `cfg.day.idle_min` (`DayReplay::gaps`); "longest single leak" is the longest of either kind.
+3. Adherence: each `start` is matched to at most one planned block, closest first, within `ADHERENCE_TOLERANCE_MIN`; "completed" = the planned id has a non-partial `done` that day. `missed` lists the planned blocks that were not started on time.
+4. Rest debt = `⌊blocks_done / break_after_blocks⌋ × break_min − Σ breaks taken`, floored at 0 (§11 gives no formula), so a cut break and a skipped break cost the same.
+5. Energy calibration is scored on the LOGGED `pred` (via `energy::calibration`) — that is what §12.4's row shows; `mae_prior`/`mae_learned` additionally re-score the config prior and the learned model with `energy::compare`. `flip_hour` = the first hour whose bias sign is opposite the first non-zero hour's and after which that first sign never returns (`None` when it never flips or flips back).
+6. Estimate calibration runs over the WHOLE replay's durations, not just the day's: §12.4's `lean ×1.6 (n=9)` is a running multiplier.
+7. Event-to-day attribution: the replay's wake-to-wake day everywhere it already bucketed; demotions (kept globally by the replay) are attributed by their calendar date in `tz`.
+8. Plan honesty: for the week `planned / (budget × cfg.week.plan_ratio)` with the budget a parameter (it lives in the week file's front matter, which the tree does not carry) and planned defaulting to Σ `remaining` over the week's top-level items; for the day `plan_at_arrival.len() / budget` (§8.1 has already applied `budget_ratio`, so the day budget IS the realistic one).
+9. Signatures: `status_line` takes `cfg` in addition to the replay/runtime/plan (the leak ledger needs `idle_min`, rest debt needs `break_min`/`break_after_blocks`, and the budget falls back to §8.1's formula); the three review functions take their `*Extras` by reference. Otherwise the shapes are §11's and §13's.
+10. `fmt_blocks_min` differs from `priority::fmt_blocks` only in printing a half block as `0.5b` rather than `30m`, matching §12.4's `t5 (0.5b → week)`.
+11. Not implemented here: §11's "Waiting" row, whose surface is §12.3's Necessities screen and whose data is `Tree::waiting_ids` + the `waiting:` stamp (no log involved). `HEAT_STYLES = 7` splits idle into `Leak` and `Idle` so §12.1's hatched-orange leak can be drawn separately.
+
+# cli (layer 4)
+`tm` is a bin crate, so nothing is importable; what a downstream agent (the TUI) needs is the module tree and its seams. All items are documented and each file opens with an "API overview".
+
+tm/src/main.rs — `mod cli;` + `fn main() { std::process::exit(cli::main()) }`.
+
+cli/mod.rs
+- `pub struct Cli { json: bool, dir: Option<PathBuf>, now: Option<String>, command: Command }` (clap derive; `--json`, `--dir`, hidden `--now <RFC3339>` are `global = true`).
+- `pub enum Command { Init, Wake, Arrive, Plan, Now, Start, Done, Extend, Stop, Break, Interrupt, Resume, Pause, Energy, Idle, Add, Edit, MoveItem(name="move"), Rank, Demote, Readopt, Drop, Event, Skip, Routine, Close, SyncCal(name="sync-cal"), Review, Model, Log, Undo, Triage, Check, Tui }` with one Args struct per verb (`PlanArgs`, `StartArgs`, …) and `pub enum PeriodArg { Day, Week, Month } -> model::Period`.
+- `pub fn main() -> i32`; `fn run(&Globals, Command) -> Result<i32, CliError>`.
+- **TUI seam**: `Command::Tui => lifecycle::tui()`. The TUI agent adds `tm/src/tui/` and replaces that one arm (`lifecycle::tui()` currently prints "tm tui: not built yet" to stderr and returns 1).
+
+cli/ctx.rs
+- `pub struct Globals { dir: Option<PathBuf>, json: bool, now: Option<DateTime<FixedOffset>> }`
+- `pub fn resolve_dir(Option<&Path>) -> Result<PathBuf, CliError>` (--dir, $TM_DIR, then walk up for a plan root or a `plan/` child).
+- `pub struct Ctx { store: FsStore, cfg: Config, json: bool, now: DateTime<FixedOffset>, now_tz: DateTime<Tz>, today: NaiveDate, state: RuntimeState, files: PlanFiles, tree: Tree, log: Log, replay: Replay, model: Model, closed: Vec<ClosedPeriod>, timed_out: Vec<Id> }`
+- `Ctx::load(&Globals, housekeeping: bool)`, `reload()`, `hz() -> horizon::Ctx`, `append_event(Event)`, `append_entry(&LogEntry)`, `save_state()`, `key(&str) -> Id`, `item(&Id)`, `line(&Id) -> ItemLine`, `write_line(&Id, &ItemLine)`, `block_min()`, `loc()`, `wake_time()`, `wake_dt()`, `slept_min()`, `at(NaiveTime) -> DateTime<Tz>`, `instant(NaiveDateTime)`, `walls_today()/walls_on(date)/walls_by_date(days)`, `window() -> (start, end, budget)`, `today_slots(allow_home) -> Vec<Slot>`, `priorities(allow_home) -> (Vec<Candidate>, Vec<Prio>, Vec<DayCapacity>)`, `hysteresis_input()`, `last_plan()/save_last_plan()`, `plans_today()`, `taken_ids()`.
+- `pub const LAST_PLAN_PATH = ".tm/last_plan.json"`, `ARRIVAL_PLAN_PATH = ".tm/arrival_plan.json"`; `pub struct StoredPlan { date, hash, priorities: BTreeMap<Id,u8>, segments: Vec<StoredSegment{start,end,kind,item}> }`.
+
+cli/out.rs — `pub enum CliError { Msg, Store, Horizon, Log, Ics, Model, Edit, Check, Energy, Io{path,source}, Json }` (thiserror, `#[from]` for each core error) + `msg()`, `io()`, `conflict() -> Option<&StoreError>`, `exit_code()`, `report()`; `pub fn emit<T: Serialize>(json: bool, human: impl FnOnce() -> String, &T)`; `fmt_dur`, `fmt_time`; `EXIT_ERROR = 1`, `EXIT_CONFLICT = 3`.
+
+cli/undo.rs — `pub const UNDO_PATH = ".tm/undo.json"`, `MAX_ENTRIES = 50`; `pub struct Recorder` (`start(&Ctx, verb)`, `finish(&Ctx, summary)`), `pub struct UndoEntry { verb, t, summary, events: Vec<UndoneEvent{ev,id}>, files: Vec<FileBefore{path,before}>, state: RuntimeState }`, `pub struct UndoStack`, `pub fn undo(&mut Ctx) -> Result<Undone, CliError>`.
+
+cli/planning.rs — `pub fn build(&Ctx, allow_home) -> (DayPlan, Vec<Prio>)`, `pub fn write_plan(&mut Ctx, &DayPlan, &[Prio]) -> Result<Vec<String>, CliError>` (day section + SVG + `plan` event + state/sidecar), `pub fn seg_out(&DayPlan, &Ctx) -> Vec<SegOut>`, `plan()`, `now()`; output structs `PlanOut`, `SegOut`, `PlanDiff`, `WeekOut`, `DayOut`, `NowOut`, `ActiveOut`.
+
+cli/render.rs — `pub fn rows(&DayPlan, &Tree, &Config) -> Vec<Row{time,energy,mark,text,item,kind}>`, `pub fn timeline(...) -> String` (the `tm:plan` body), `pub fn svg(...) -> String`, `pub fn kind_name(&SegKind) -> &'static str`. This is the stand-in for `emit.rs`; the TUI can reuse `rows()` for its Timeline pane, or switch to `emit.rs` when it lands.
+
+cli/day.rs, cli/items.rs, cli/lifecycle.rs, cli/init.rs — one `pub fn <verb>(&Globals, &Args) -> Result<i32, CliError>` per verb plus its `Serialize` output struct (`WakeOut`, `ArriveOut`, `StartOut`, `DoneOut`, `ExtendOut`, `StopOut`, `BreakOut`, `InterruptOut`, `PauseOut`, `EnergyOut`, `IdleOut`, `AddOut`, `EditOut`, `MoveOut`, `RankOut`, `DemoteOut`, `DropOut`, `EventOut`, `InstanceOut`, `TriageOut`, `CloseOut`, `SyncOut`, `ReviewOut`, `ModelOut`, `LogOut`, `CheckOut`, `InitOut`, `Undone`). Reusable by the TUI: `lifecycle::sync_calendar(&Ctx) -> Result<SyncOut, CliError>` (what `R` should call) and `items::id_gen(&Ctx, salt) -> IdGen` (deterministic id seeding).
+
+## Deviations (cli)
+1. **emit.rs is still a stub**, so `tm plan` renders the day section and `day/<date>.svg` through a local `cli/render.rs` (§4.3 row shape, §12.1 SVG with `<title>` per segment). Documented in the file header; move it into `emit.rs` when M4 lands and delete render.rs.
+2. **review.rs is still a stub**, so `tm review` assembles §11's monitors from `log::Replay` + `energy::calibration`/`estimate_calibration`/`horizon::churn` locally. The `--json` shape is the review's; swap the body for `review.rs` later.
+3. **`planner::week_plan` does not exist**, so `tm plan --week` is `capacity::lookahead(7 days)` + `capacity::week_grid`.
+4. **Sidecars, because `RuntimeState` has no field for them** (I may not edit store.rs, and unknown keys in state.json are dropped on save): `.tm/undo.json` (the undo stack the scope wanted in state.json), `.tm/arrival_plan.json` (the `plan_at_arrival` block starts for §12.1's ghost row), `.tm/last_plan.json` (`--diff` baseline + the §7.4 hysteresis roll, which needs to know which *day* the stored priorities belong to). All three are documented at their definitions.
+5. **Events §10.1 does not define**: `tm add` logs `edit{id, field:"add", from:"", to:<line>}` (there is no `add` event, and undo needs a target); a §5.1 waiting *timeout* logs `edit{id, field:"state", from:"[?]", to:"[ ]"}` (there is no timeout event). `tm rank` logs nothing (§10.1 has no rank event) but is still undoable.
+6. **`tm break` is a toggle**: the first call sets `state.break` only; the second (or the next `start`/`done`/`stop`) appends one complete `break{planned_min, actual_min, where}` stamped at the break's *start*. That gives §11's break integrity a real `actual_min` with exactly one event per break, at the cost of the start itself not being logged.
+7. **Undo reverts whole-file bytes**: a `Recorder` snapshots every plan `*.md`, `state.json` and the log length before a verb; `tm undo` appends one `undo{of,id}` per event the verb wrote (newest first), restores the changed files' previous bytes (deleting files the verb created), and restores `state.json` except `closed` (so the auto-close does not re-run). Simpler and more robust than inverse line edits; `.tm/last_plan.json` and the SVG are caches and are not restored.
+8. **Deterministic ids**: `tm add` and `tm check --fix-ids` seed `IdGen` from `now` + the line text instead of `IdGen::from_entropy()`, so `--now` pins them for snapshots and nothing in the binary reaches for entropy.
+9. **`tm start` refuses to start a second block** (`tm done`/`tm stop`/`tm extend` first) rather than silently cutting the running one.
+10. **`tm close <period>` closes the current period** by default (`--date` picks another); the *previous* period is what the auto-close handles, so the explicit verb is "I am finished with this one".
+11. **`tm plan` logs a `plan` event only when the hash changed** (per `DayPlan::hash`'s contract) so a standing day is not counted as a replan; it always rewrites the section, the SVG and the sidecar. `--explain` writes nothing at all.
+12. **Extra flags** (all optional, none replacing a spec flag): `done --went 1|2|3` (§10.1's `went`), `arrive --at HH:MM`, `close/review --date`, `idle --min`, `init --example|--force`, `readopt --to`, `move --section`.
+13. **Usage errors exit 1**, not clap's default 2 (§13 reserves 2 for validation problems); `--help`/`--version` exit 0.
+14. `est:` written by `stop`/`extend`/`done --partial` uses whole blocks when the minutes divide evenly, mirroring `horizon.rs`'s private `est_dur` so a stop and a day close write the same text.
+15. The **exit-3 conflict path is unit-tested** in `cli/out.rs`, not integration-tested: the §1.3 race needs a writer between the store's read and its verified write (`FsStore::with_before_write_hook`), which cannot be provoked from outside the process — as the scope anticipated.
