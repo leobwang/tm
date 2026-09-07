@@ -35,7 +35,7 @@ fn model_json_fixture_parses_to_the_spec_values() {
     let m = fixture_model();
     assert_eq!(m.energy["lounge"], vec![4, 5, 5, 5, 5, 4, 4, 4, 3, 3, 2, 2]);
     assert_eq!(m.energy["home"], vec![3, 4, 4, 4, 3, 3, 3, 2, 2, 2, 2, 2]);
-    assert_eq!(m.sleep_debt_shift, 0.8);
+    assert_eq!(m.sleep_debt_shift, Some(0.8));
     assert_eq!(m.duration["lean"], 1.6);
     assert_eq!(m.duration["soundcode"], 1.1);
     assert_eq!(m.duration[DEFAULT_TAG], 1.3);
@@ -72,7 +72,45 @@ fn empty_model_falls_back_to_the_config_and_round_trips() {
     assert_eq!(Model::from_json(&text).unwrap(), m);
     // An unknown key (a v2 field, or a hand edit) is ignored, not fatal.
     let m = Model::from_json(r#"{"sleep_debt_shift": 0.5, "future_field": [1,2]}"#).unwrap();
-    assert_eq!(m.sleep_debt_shift, 0.5);
+    assert_eq!(m.sleep_debt_shift, Some(0.5));
+}
+
+/// §8.5: "hand edits become the new prior". A `model.json` carrying nothing
+/// but a `sleep_debt_shift` must be honoured by `predict` — the value is not
+/// gated on the file also being a fit — and an absent one falls back to
+/// `config.energy.sleep_debt.shift`.
+#[test]
+fn a_hand_written_sleep_debt_shift_is_honoured_by_predict() {
+    let cfg = Config::default(); // sleep_debt.shift = 1, under_hours = 7
+    let short = || Features::new(Loc::Lounge, 2.0).with_slept(Some(5 * 60));
+
+    // Absent: the config shift applies (prior 5 − 1).
+    let none = Model::from_json(r#"{"energy": {"lounge": [5,5,5,5,5,5,5,5,5,5,5,5]}}"#).unwrap();
+    assert_eq!(none.sleep_debt_shift, None);
+    assert_eq!(none.sleep_shift(&cfg), 1.0);
+    assert_eq!(predict(&none, &cfg, &short()), 4);
+
+    // Hand-written, nothing else in the file: 5 − 3 = 2, with no `fitted`
+    // and no `n_obs` to vouch for it.
+    let hand = Model::from_json(r#"{"sleep_debt_shift": 3.0}"#).unwrap();
+    assert!(!hand.is_fitted());
+    assert_eq!(hand.sleep_shift(&cfg), 3.0);
+    assert_eq!(predict(&hand, &cfg, &short()), 2);
+    // Well-slept nights are untouched by the shift.
+    assert_eq!(
+        predict(&hand, &cfg, &Features::new(Loc::Lounge, 2.0).with_slept(Some(8 * 60))),
+        5
+    );
+
+    // A written zero means "short nights cost me nothing", not "unset".
+    let zero = Model::from_json(r#"{"sleep_debt_shift": 0.0}"#).unwrap();
+    assert_eq!(zero.sleep_shift(&cfg), 0.0);
+    assert_eq!(predict(&zero, &cfg, &short()), 5);
+
+    // The distinction survives a round trip: absent stays out of the file.
+    assert!(!Model::default().to_json().contains("sleep_debt_shift"));
+    assert!(zero.to_json().contains("\"sleep_debt_shift\": 0.0"));
+    assert_eq!(Model::from_json(&zero.to_json()).unwrap(), zero);
 }
 
 #[test]
@@ -180,12 +218,12 @@ fn sleep_debt_shift_is_applied_and_clamped() {
     let fit = fixture_model(); // 0.8 → 1
     assert_eq!(predict(&fit, &cfg, &f(6 * 60)), 4);
     let mut small = fixture_model();
-    small.sleep_debt_shift = 0.4; // rounds to 0
+    small.sleep_debt_shift = Some(0.4); // rounds to 0
     assert_eq!(predict(&small, &cfg, &f(6 * 60)), 5);
 
     // Clamped at 0.
     let mut deep = fixture_model();
-    deep.sleep_debt_shift = 9.0;
+    deep.sleep_debt_shift = Some(9.0);
     assert_eq!(predict(&deep, &cfg, &f(6 * 60)), 0);
 }
 

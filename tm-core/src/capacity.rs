@@ -10,16 +10,18 @@
 //! * [`window_and_budget`]`(arrival, walls_today, cfg) -> (end, blocks)` —
 //!   §8.1: `end = min(arrival + window_hours, window_cap) + Σ wall minutes
 //!   inside [arrival, end]` (a fixed point, since extending the window can
-//!   pull in another wall), `budget = floor(window_hours × 60 / block_min ×
-//!   budget_ratio)` (8 h → 6). [`remaining_budget`] subtracts the blocks
-//!   already done.
+//!   pull in another wall; solved exactly, see the function), `budget =
+//!   floor(window_hours × 60 / block_min × budget_ratio)` (8 h → 6).
+//!   [`remaining_budget`] subtracts the blocks already done.
 //! * [`cut_slots`]`(from, end, walls, cfg) -> `[`Cut`] — §8.2 step 3: the
 //!   free time between walls cut into `block_min` blocks with a `break_min`
 //!   break after every `break_after_blocks` blocks. The [`Cut`] carries both
 //!   the [`Slot`]s and the [`Break`]s (the planner places both);
 //!   [`Cut::timeline`] interleaves them. A stretch's last block may be short
 //!   (≥ `min_last_block_min`, [`SlotKind::ShortBlock`]) or dropped.
-//!   [`cut_slots_from`] takes the blocks already done since the last break.
+//!   [`cut_slots_from`] takes the blocks already done since the last break;
+//!   [`cut_slots_around`] also takes the *restful* occupied intervals (a
+//!   placed lunch), which satisfy a pending break.
 //! * [`energize`]`(slots, ctx)` — §8.2 step 3's second half: each slot gets
 //!   [`energy::predict`] + the [`Posterior`] correction + the home cap
 //!   (`min(energy, home_max_ci)` when the location is home and
@@ -30,14 +32,24 @@
 //!   `config.expected`), the calendar walls, the prior curve and the budget.
 //!   [`available_until`] and [`reserve`] are the cumulative helpers §7.3's
 //!   EDF pass uses; [`week_grid`] renders the grid for `tm plan --week`.
-//! * [`local_dt`] resolves a local date + time in a zone (DST-safe).
+//! * [`local_dt`] resolves a local date + time in a zone (DST-safe);
+//!   [`free_intervals`] and [`wall_minutes`] are the wall arithmetic §8.1
+//!   and §8.2 are written in.
 //!
 //! # Interpretation notes (where the spec needed a decision)
 //!
-//! * **Breaks around walls.** The break counter is not reset by a wall: a
-//!   break due when a wall ends is placed right after it (as the §4.3 day
-//!   file shows at 13:50). A break that would not fit before the next wall
-//!   is dropped along with the rest of that stretch.
+//! * **Breaks around walls.** A wall is work, so it does not reset the break
+//!   counter: a break due when a wall ends is placed right after it. A
+//!   *rest* passed to [`cut_slots_around`] does reset it — you have just
+//!   rested. A break that would not fit before the next wall is dropped
+//!   along with the rest of that stretch.
+//! * **A stretch never ends on a break.** §8.2 orders a break "after every
+//!   `break_after_blocks` blocks", i.e. between blocks. A break is therefore
+//!   placed only when a block (full, or short ≥ `min_last_block_min`) still
+//!   fits after it; otherwise the stretch simply ends and the tail is left
+//!   free. Without that rule a day could end on a 20 m rest that rests
+//!   nobody, and [`Cut::break_minutes`] would over-report planned rest to
+//!   §11's rest-debt monitor.
 //! * **Short blocks.** §8.2 says "the last block may be short (≥ 30 m) or
 //!   dropped". The same rule is applied at the end of *every* free stretch,
 //!   not only at the end of the day — a wall ends a stretch exactly as the
@@ -47,8 +59,11 @@
 //!   before step 3 cuts what is left. With only the 12:50–13:50 wall the cut
 //!   is 07:00, 08:00, break 09:00, 09:20, 10:20, break 11:20, 11:40 (12:40
 //!   → 12:50 is 10 m and is dropped), wall, 13:50, break 14:50, 15:10–16:00
-//!   short. Passing the routines in as occupied intervals gives the day
-//!   file's layout.
+//!   short. Passing lunch to [`cut_slots_around`] as a rest gives the day
+//!   file's midday: 10:20 block, lunch, then a full 11:50–12:50 block. The
+//!   day file's afternoon (break at 13:50 after a single block) additionally
+//!   implies that the 12:50 meeting counts towards break accrual; v1 does
+//!   not model that, so the cut breaks at 14:50 instead.
 //! * **Today in the lookahead** is taken from the slots handed in, exactly
 //!   as they are: the planner knows whether it wants them limited to the
 //!   remaining budget. Future days *are* limited to `budget × block_min`
@@ -204,7 +219,7 @@ pub fn local_dt(tz: Tz, date: NaiveDate, time: NaiveTime) -> DateTime<Tz> {
 
 /// Σ minutes of the walls lying inside `[from, to)` (clipped and merged, so
 /// overlapping walls are counted once).
-fn wall_minutes(from: DateTime<Tz>, to: DateTime<Tz>, walls: &[Wall]) -> i64 {
+pub fn wall_minutes(from: DateTime<Tz>, to: DateTime<Tz>, walls: &[Wall]) -> i64 {
     normalize_walls(from, to, walls)
         .iter()
         .map(|(a, b)| (*b - *a).num_minutes())
@@ -214,10 +229,21 @@ fn wall_minutes(from: DateTime<Tz>, to: DateTime<Tz>, walls: &[Wall]) -> i64 {
 /// §8.1: the end of today's working window and the block budget.
 ///
 /// `end = min(arrival + window_hours, window_cap today) + Σ wall minutes
-/// inside [arrival, end]`, solved as a fixed point (extending the window can
-/// pull in a wall that then extends it further). The window never ends
-/// before the arrival, so arriving after `window_cap` gives an empty window
-/// rather than a negative one.
+/// inside [arrival, end]` — a fixed point, since extending the window pulls
+/// in more wall minutes, which extend it further. It is solved exactly (not
+/// by a capped iteration): the walls are clipped to start at the arrival,
+/// merged, and walked in order, and a wall that has come inside the window
+/// extends it by its *whole* remaining duration.
+///
+/// That is the least solution of the equation. A wall `[a, b)` that starts
+/// before the current end contributes `b − a` in one step, because the
+/// window must then reach at least `b`: writing `e' = e + (min(b, e') − a)`,
+/// `e' = e + b − a` satisfies it (and `e' ≥ b` whenever `a ≤ e`). Walls are
+/// sorted, so once one starts at or after the end, no later one can be
+/// inside either and the walk stops.
+///
+/// The window never ends before the arrival, so arriving after `window_cap`
+/// gives an empty window rather than a negative one.
 ///
 /// `budget = floor(window_hours × 60 / block_min × budget_ratio)` — a
 /// function of the *configured* window, not of today's actual length, so a
@@ -232,12 +258,11 @@ pub fn window_and_budget(
     let cap = local_dt(tz, arrival.date_naive(), cfg.day.window_cap);
     let base_end = (arrival + Duration::minutes(window_min)).min(cap).max(arrival);
     let mut end = base_end;
-    for _ in 0..8 {
-        let next = base_end + Duration::minutes(wall_minutes(arrival, end, walls_today));
-        if next == end {
-            break;
+    for (a, b) in walls_after(arrival, walls_today) {
+        if a >= end {
+            break; // sorted: this wall and every later one are outside
         }
-        end = next;
+        end += b - a;
     }
     (end, budget_blocks(cfg))
 }
@@ -258,26 +283,44 @@ pub fn remaining_budget(budget: u32, blocks_done: u32) -> u32 {
 // §8.2 step 3: cutting slots
 // ---------------------------------------------------------------------------
 
-/// Walls clipped to `[from, to)`, sorted and merged.
-fn normalize_walls(
-    from: DateTime<Tz>,
-    to: DateTime<Tz>,
-    walls: &[Wall],
-) -> Vec<Wall> {
-    let mut clipped: Vec<Wall> = walls
-        .iter()
-        .map(|(a, b)| (a.max(&from).to_owned(), b.min(&to).to_owned()))
-        .filter(|(a, b)| b > a)
-        .collect();
-    clipped.sort_by_key(|(a, _)| *a);
+/// Sort and merge a list of intervals (touching ones merge too).
+fn merge_walls(mut walls: Vec<Wall>) -> Vec<Wall> {
+    walls.sort_by_key(|(a, _)| *a);
     let mut merged: Vec<Wall> = Vec::new();
-    for (a, b) in clipped {
+    for (a, b) in walls {
         match merged.last_mut() {
             Some(last) if a <= last.1 => last.1 = last.1.max(b),
             _ => merged.push((a, b)),
         }
     }
     merged
+}
+
+/// Walls clipped to `[from, to)`, sorted and merged.
+fn normalize_walls(
+    from: DateTime<Tz>,
+    to: DateTime<Tz>,
+    walls: &[Wall],
+) -> Vec<Wall> {
+    merge_walls(
+        walls
+            .iter()
+            .map(|(a, b)| (a.max(&from).to_owned(), b.min(&to).to_owned()))
+            .filter(|(a, b)| b > a)
+            .collect(),
+    )
+}
+
+/// Walls clipped to start at `from` (no upper bound), sorted and merged —
+/// what [`window_and_budget`]'s fixed point walks.
+fn walls_after(from: DateTime<Tz>, walls: &[Wall]) -> Vec<Wall> {
+    merge_walls(
+        walls
+            .iter()
+            .map(|(a, b)| (a.max(&from).to_owned(), *b))
+            .filter(|(a, b)| b > a)
+            .collect(),
+    )
 }
 
 /// The free stretches of `[from, to)` left by the walls.
@@ -324,6 +367,25 @@ pub fn cut_slots_from(
     cfg: &Config,
     blocks_since_break: u32,
 ) -> Cut {
+    cut_slots_around(from, end, walls, &[], cfg, blocks_since_break)
+}
+
+/// [`cut_slots_from`] with the *restful* occupied intervals named separately.
+///
+/// `walls` and `rests` both block time; the difference is the break counter.
+/// A `rest` of at least `break_min` — a lunch or a workout the planner has
+/// already placed in §8.2 step 2 — satisfies a pending break, so work
+/// resumes with a full block when it ends instead of resting twice in a row
+/// (the §4.3 day file's `11:20 lunch 30m` / `11:50 … 1b`). A wall is work:
+/// it never resets the counter.
+pub fn cut_slots_around(
+    from: DateTime<Tz>,
+    end: DateTime<Tz>,
+    walls: &[Wall],
+    rests: &[Wall],
+    cfg: &Config,
+    blocks_since_break: u32,
+) -> Cut {
     let mut cut = Cut::default();
     let block_min = cfg.day.block_min;
     if block_min == 0 {
@@ -331,16 +393,29 @@ pub fn cut_slots_from(
     }
     let block = Duration::minutes(block_min as i64);
     let brk = Duration::minutes(cfg.day.break_min as i64);
-    let min_last = cfg.day.min_last_block_min.min(block_min) as i64;
+    let min_last = cfg.day.min_last_block_min.min(block_min).max(1) as i64;
     let mut since_break = blocks_since_break;
 
-    for (start, stop) in free_intervals(from, end, walls) {
+    let occupied: Vec<Wall> = walls.iter().chain(rests).copied().collect();
+    // A rest long enough to count as a break, by the instant it ends.
+    let restful_end = |t: DateTime<Tz>| {
+        rests
+            .iter()
+            .any(|(a, b)| *b == t && (*b - *a).num_minutes() >= cfg.day.break_min as i64)
+    };
+
+    for (start, stop) in free_intervals(from, end, &occupied) {
         let mut t = start;
+        if restful_end(start) {
+            since_break = 0;
+        }
         while t < stop {
             let breaks_on = cfg.day.break_after_blocks > 0 && cfg.day.break_min > 0;
             if breaks_on && since_break >= cfg.day.break_after_blocks {
-                if t + brk > stop {
-                    break; // no room for the break: the stretch ends here
+                // Only rest when work still follows: a stretch that would end
+                // on a break drops it and leaves the tail free instead.
+                if (stop - (t + brk)).num_minutes() < min_last {
+                    break;
                 }
                 cut.breaks.push(Break {
                     start: t,

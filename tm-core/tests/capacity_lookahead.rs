@@ -6,14 +6,14 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone};
+use chrono::{DateTime, NaiveDate, NaiveTime, Weekday};
 use chrono_tz::Tz;
 use tm_core::capacity::{
     available_until, cut_slots, energize, local_dt, lookahead, reserve, upto, week_grid,
-    DayCapacity, EnergyCtx, Slot, WallsByDate,
+    window_and_budget, DayCapacity, EnergyCtx, Slot, WallsByDate,
 };
 use tm_core::config::Config;
-use tm_core::energy::{Model, Posterior};
+use tm_core::energy::{Hhmm, Model, Posterior};
 use tm_core::grammar;
 use tm_core::model::{Loc, Shape};
 
@@ -140,20 +140,85 @@ fn lookahead_uses_todays_slots_and_the_budget_for_later_days() {
     assert_eq!(caps[5].total(), 6 * 60);
 }
 
-/// A learned model changes the lookahead: the expected arrival and location
-/// come from `model.json` when it has them.
+/// §8.4: "expected arrival = `model.expected_arrival(weekday)` (learned;
+/// default config), expected location by `P(lounge | weekday)`". Every
+/// assertion here is written against the *config* answer as well, so a
+/// lookahead that ignored the model and read config.toml would fail.
 #[test]
 fn lookahead_follows_the_learned_arrival_and_location() {
     let cfg = cfg();
+    let mut model = Model::default();
+    // Tuesday: learned arrival 12:00 against the config's 07:00.
+    model
+        .expected_arrival
+        .set(Weekday::Tue, Hhmm(NaiveTime::from_hms_opt(12, 0, 0).unwrap()));
+    // Wednesday: learned P(lounge) 0.2 against the config's 0.9 → a home day.
+    model.p_lounge.set(Weekday::Wed, 0.2);
+    // Sunday: learned P(lounge) 0.8 against the config's 0.4 → a lounge day.
+    model.p_lounge.set(Weekday::Sun, 0.8);
+
+    let learned = week(&cfg, &model);
+    let config = week(&cfg, &Model::default());
+
+    // Tuesday still fills its 6-block budget, but five hours later in the
+    // day: the whole distribution slides down the curve (hsw 5.9 → 11.6).
+    assert_eq!(learned[1].date, date("2026-09-08"));
+    assert_eq!(learned[1].total(), 6 * 60);
+    assert_eq!(learned[1].minutes_at_level, [0, 0, 120, 120, 120, 0]);
+    assert_eq!(config[1].minutes_at_level, [0, 0, 0, 0, 180, 180]);
+
+    // Wednesday at home: the home cap (`home_max_ci` 3) removes every ci-4
+    // and ci-5 minute the config location would have given.
+    assert_eq!(learned[2].date, date("2026-09-09"));
+    assert_eq!(learned[2].minutes_at_level[4], 0);
+    assert_eq!(learned[2].minutes_at_level[5], 0);
+    assert!(config[2].minutes_at_level[5] > 0);
+    assert_eq!(learned[2].total(), config[2].total());
+
+    // Sunday in the lounge: the cap is gone and ci-5 capacity appears.
+    assert!(learned[6].minutes_at_level[5] > 0);
+    assert_eq!(config[6].minutes_at_level[5], 0);
+    assert_eq!(config[6].minutes_at_level[4], 0);
+
+    // Untouched weekdays keep the config answer.
+    assert_eq!(learned[3].minutes_at_level, config[3].minutes_at_level);
+}
+
+/// The learned *curve* feeds the lookahead too: the §8.5 example
+/// `model.json` reports one level less than the prior at hsw 7 (home 3 → 2),
+/// which shows up on Sunday, the fixture week's home day.
+#[test]
+fn lookahead_uses_the_learned_energy_curve() {
+    let cfg = cfg();
     let model = Model::load(&fixtures().join("model.json")).unwrap().unwrap();
-    let caps = week(&cfg, &model);
-    // The fixture model has p_lounge Sat = 0.5 → still lounge, and an
-    // expected arrival of 10:30 on Saturday (vs 10:00 in the config), so the
-    // flight wall no longer overlaps the window and Saturday keeps its
-    // budget.
-    assert_eq!(caps[5].total(), 6 * 60);
-    // Wednesday's learned p_lounge is 0.8 → lounge, ci 5 slots exist.
-    assert!(caps[2].minutes_at_level[5] > 0);
+    assert_eq!(model.energy["home"][7], 2);
+    assert_eq!(cfg.prior_energy("home", 7.0), 3);
+
+    let learned = week(&cfg, &model);
+    let config = week(&cfg, &Model::default());
+    let sunday = 6;
+    assert_eq!(learned[sunday].date, date("2026-09-13"));
+    assert_eq!(learned[sunday].total(), config[sunday].total());
+    assert_ne!(
+        learned[sunday].minutes_at_level,
+        config[sunday].minutes_at_level
+    );
+    // One hour moves from level 3 to level 2 (the hsw-7 block).
+    assert_eq!(
+        learned[sunday].minutes_at_level[3] + 60,
+        config[sunday].minutes_at_level[3]
+    );
+    assert_eq!(
+        learned[sunday].minutes_at_level[2],
+        config[sunday].minutes_at_level[2] + 60
+    );
+    // The fixture's `expected_arrival` is partial (Mon and Sat only), so the
+    // other days still come from `[expected]` in config.toml.
+    assert_eq!(model.expected_arrival.get(Weekday::Wed), None);
+    assert_eq!(
+        model.expected_arrival_on(Weekday::Wed, &cfg),
+        *cfg.expected.arrival.get(Weekday::Wed)
+    );
 }
 
 /// §7.1/§7.3: the cumulative helpers the EDF pass uses.
@@ -213,10 +278,15 @@ fn empty_and_degenerate_inputs() {
     assert_eq!(reserve(&mut one, 60, 0), 0);
 }
 
+/// Today is whatever the planner handed in — empty here — while a later day
+/// is simulated end to end from the config's expected arrival: window, cut,
+/// energies and the budget trim. The expected value is rebuilt from those
+/// pieces rather than copied from a run.
 #[test]
-fn a_day_with_no_arrival_time_still_produces_slots() {
+fn today_is_taken_as_given_and_later_days_are_simulated() {
     let cfg = cfg();
     let model = Model::default();
+    let wake_time = NaiveTime::from_hms_opt(6, 5, 0).unwrap();
     let caps = lookahead(
         &BTreeMap::new(),
         &cfg,
@@ -224,13 +294,43 @@ fn a_day_with_no_arrival_time_still_produces_slots() {
         &[],
         date("2026-09-07"),
         3,
-        NaiveTime::from_hms_opt(6, 5, 0).unwrap(),
+        wake_time,
     );
+    assert_eq!(caps.len(), 3);
     assert_eq!(caps[0].total(), 0, "today came in empty");
-    assert!(caps[1].total() > 0);
-    assert_eq!(
-        TZ.timestamp_opt(0, 0).single().map(|_| ()),
-        Some(()),
-        "timezone sanity"
+
+    // Tuesday, rebuilt by hand: arrival from `[expected]`, no walls.
+    let tuesday = date("2026-09-08");
+    assert_eq!(caps[1].date, tuesday);
+    let arrival = local_dt(TZ, tuesday, *cfg.expected.arrival.get(Weekday::Tue));
+    assert_eq!(arrival, at("2026-09-08", 7, 0));
+    let (end, budget) = window_and_budget(arrival, &[], &cfg);
+    assert_eq!(end, at("2026-09-08", 15, 0));
+    assert_eq!(budget, 6);
+    let cut = cut_slots(arrival, end, &[], &cfg);
+    let posterior = Posterior::none(&cfg);
+    let ctx = EnergyCtx::new(
+        &model,
+        &cfg,
+        &posterior,
+        local_dt(TZ, tuesday, wake_time),
+        Loc::Lounge, // config p_lounge Tue = 0.9 ≥ 0.5
     );
+    let mut want = DayCapacity::empty(tuesday);
+    for s in energize(&cut.slots, &ctx) {
+        want.minutes_at_level[s.energy as usize] += s.minutes();
+    }
+    // The cut is longer than the budget (7 blocks for 6), so §8.4 keeps
+    // `budget × block_min` minutes, highest energy first.
+    assert!(want.total() > budget * cfg.block_min());
+    let mut left = budget * cfg.block_min();
+    let mut trimmed = DayCapacity::empty(tuesday);
+    for level in (0..6).rev() {
+        let take = want.minutes_at_level[level].min(left);
+        trimmed.minutes_at_level[level] = take;
+        left -= take;
+    }
+    assert_eq!(caps[1].minutes_at_level, trimmed.minutes_at_level);
+    assert_eq!(caps[1].minutes_at_level, [0, 0, 0, 0, 180, 180]);
+    assert_eq!(caps[1].total(), 6 * 60);
 }

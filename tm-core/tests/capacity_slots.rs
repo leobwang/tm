@@ -5,8 +5,9 @@
 use chrono::{DateTime, TimeZone};
 use chrono_tz::Tz;
 use tm_core::capacity::{
-    budget_blocks, cut_slots, cut_slots_from, energize, free_intervals, local_dt, remaining_budget,
-    window_and_budget, Break, EnergyCtx, Slot, SlotKind, SlotOrBreak,
+    budget_blocks, cut_slots, cut_slots_around, cut_slots_from, energize, free_intervals, local_dt,
+    remaining_budget, wall_minutes, window_and_budget, Break, EnergyCtx, Slot, SlotKind,
+    SlotOrBreak,
 };
 use tm_core::config::Config;
 use tm_core::energy::{Model, Posterior};
@@ -76,6 +77,47 @@ fn wall_extension_reaches_a_fixed_point() {
     assert_eq!(hm(end), "16:30");
 }
 
+/// §8.1 is an equation, not a fixed number of rounds: `end` must satisfy
+/// `end = base_end + Σ wall minutes inside [arrival, end]` however long the
+/// wall is and however little of it pokes into the base window (a class, an
+/// exam, a `travel-day` flight with `buffer:2h`).
+#[test]
+fn a_long_wall_extends_the_window_by_its_whole_duration() {
+    let cfg = Config::default();
+    // base_end = min(07:00 + 8h, cap 19:00) = 15:00.
+    for (wall, want) in [
+        ((at(14, 30), at(19, 30)), "20:00"), // 5 h wall, 30 min of it inside
+        ((at(14, 30), at(19, 0)), "19:30"),
+        ((at(14, 45), at(20, 0)), "20:15"),
+        ((at(14, 59), at(22, 0)), "22:01"), // 1 min inside, 7 h long
+    ] {
+        let (end, _) = window_and_budget(at(7, 0), &[wall], &cfg);
+        assert_eq!(hm(end), want, "wall {}-{}", hm(wall.0), hm(wall.1));
+        // The §8.1 equation itself: end = 15:00 + Σ walls inside [07:00, end).
+        assert_eq!(
+            end,
+            at(15, 0) + chrono::Duration::minutes(wall_minutes(at(7, 0), end, &[wall])),
+            "not a fixed point for {}-{}",
+            hm(wall.0),
+            hm(wall.1)
+        );
+    }
+
+    // The same wall split into five back-to-back meetings must give the same
+    // answer (the walk merges them).
+    let split: Vec<_> = (0..5)
+        .map(|i| (at(14, 30) + chrono::Duration::hours(i), at(15, 30) + chrono::Duration::hours(i)))
+        .collect();
+    let (end, _) = window_and_budget(at(7, 0), &split, &cfg);
+    assert_eq!(hm(end), "20:00");
+
+    // And the extended window is really usable: 07:00–20:00 minus the 5 h of
+    // meetings is 8 h, every minute of it cut into blocks and breaks.
+    let cut = cut_slots(at(7, 0), end, &split, &cfg);
+    assert_eq!(cut.slot_minutes() + cut.break_minutes(), 8 * 60);
+    assert_eq!(cut.slot_minutes(), 7 * 60);
+}
+
 #[test]
 fn walls_outside_the_window_do_not_extend_it() {
     let cfg = Config::default();
@@ -142,11 +184,13 @@ fn cut_slots_on_the_spec_day() {
     assert!(cut.slots.iter().all(|s| s.energy == 0));
 }
 
-/// With the routines of the §4.3 day also occupied (lunch 11:20–11:50), the
-/// afternoon lines up with the printed timeline: a block at 11:50 and the
-/// wall at 12:50.
+/// A placed routine handed in as a plain wall is *work* to `cut_slots`: the
+/// break that came due at 11:20 is still owed when lunch ends, so it lands at
+/// 11:50 and the pre-meeting block is only 40 min. This does **not** match
+/// the §4.3 day file, which prints a full block at 11:50 — the next test is
+/// the one that reproduces it.
 #[test]
-fn cut_slots_around_a_placed_routine() {
+fn a_routine_passed_as_a_wall_does_not_pay_off_the_break() {
     let cfg = Config::default();
     let walls = [(at(11, 20), at(11, 50)), (at(12, 50), at(13, 50))];
     let cut = cut_slots(at(7, 0), at(16, 0), &walls, &cfg);
@@ -158,7 +202,8 @@ fn cut_slots_around_a_placed_routine() {
             "09:00-09:20 break",
             "09:20-10:20 B",
             "10:20-11:20 B",
-            // lunch 11:20–11:50; the break due at 11:20 lands after it.
+            // lunch 11:20–11:50, then the break owed since 11:20: 50 min of
+            // rest in a row, which is why lunch belongs in `rests`.
             "11:50-12:10 break",
             "12:10-12:50 b",
             "13:50-14:50 B",
@@ -166,6 +211,41 @@ fn cut_slots_around_a_placed_routine() {
             "15:10-16:00 b",
         ]
     );
+}
+
+/// With lunch handed in as a *rest*, the midday lines up with the printed
+/// §4.3 timeline: `10:20` block, `11:20 lunch 30m`, then a full 60 min block
+/// at `11:50` up to the `12:50` meeting — no double rest.
+///
+/// The day file's afternoon (`13:50 break`, `14:10` block) does not follow
+/// from step 3 alone: it implies the 12:50 meeting counts towards break
+/// accrual, which v1 does not model (see the module docs), so the cut breaks
+/// after the 13:50 block instead.
+#[test]
+fn cut_slots_around_a_placed_routine() {
+    let cfg = Config::default();
+    let walls = [(at(12, 50), at(13, 50))];
+    let rests = [(at(11, 20), at(11, 50))];
+    let cut = cut_slots_around(at(7, 0), at(16, 0), &walls, &rests, &cfg, 0);
+    assert_eq!(
+        layout(&cut.timeline()),
+        vec![
+            "07:00-08:00 B",
+            "08:00-09:00 B",
+            "09:00-09:20 break",
+            "09:20-10:20 B",
+            "10:20-11:20 B",
+            // lunch 11:20–11:50 pays off the break due at 11:20.
+            "11:50-12:50 B",
+            "13:50-14:50 B",
+            "14:50-15:10 break",
+            "15:10-16:00 b",
+        ]
+    );
+    // A rest shorter than break_min does not pay off a break.
+    let short_rests = [(at(11, 20), at(11, 30))];
+    let cut = cut_slots_around(at(7, 0), at(16, 0), &walls, &short_rests, &cfg, 0);
+    assert!(layout(&cut.timeline()).contains(&"11:30-11:50 break".to_string()));
 }
 
 /// A replan in the middle of the day can say how many blocks have already
@@ -180,16 +260,63 @@ fn cut_slots_from_a_pending_break() {
             "09:00-09:20 break", // due immediately: two blocks are already done
             "09:20-10:20 B",
             "10:20-11:20 B",
-            "11:20-11:40 break",
-            // 11:40–12:00 is 20 min < min_last_block_min (30) → dropped.
+            // A break is due again at 11:20, but only 20 min would be left
+            // after it — less than min_last_block_min (30) — so no block
+            // could follow. The break is dropped with the tail (§8.2 puts
+            // breaks *between* blocks; a day never ends on one).
         ]
     );
-    // Lower the floor and the 20 min tail survives as a short block.
+    assert!(cut.breaks.iter().all(|b| b.end <= at(9, 20)));
+    // Lower the floor and the 20 min tail survives as a short block, so the
+    // second break has work after it and is placed.
     let mut cfg2 = cfg.clone();
     cfg2.day.min_last_block_min = 20;
     let cut = cut_slots_from(at(9, 0), at(12, 0), &[], &cfg2, 2);
+    assert_eq!(
+        layout(&cut.timeline()),
+        vec![
+            "09:00-09:20 break",
+            "09:20-10:20 B",
+            "10:20-11:20 B",
+            "11:20-11:40 break",
+            "11:40-12:00 b",
+        ]
+    );
     assert_eq!(cut.slots.last().unwrap().minutes(), 20);
     assert_eq!(cut.slots.last().unwrap().kind, SlotKind::ShortBlock);
+}
+
+/// §8.2 step 3 puts a break *after* a run of blocks and before the next one:
+/// a cut therefore never ends on a break, whatever the window end is.
+#[test]
+fn a_cut_never_ends_on_a_break() {
+    let cfg = Config::default();
+    // 07:00 + two blocks: a break is due at 09:00 but no block fits after it
+    // until the window reaches 09:50 (20 min break + a 30 min short block).
+    for (h, m) in [(9, 20), (9, 45), (9, 49), (11, 45), (12, 0)] {
+        let cut = cut_slots(at(7, 0), at(h, m), &[], &cfg);
+        let timeline = cut.timeline();
+        assert!(
+            matches!(timeline.last(), Some(SlotOrBreak::Slot(_))),
+            "window to {h:02}:{m:02} ends on a break: {:?}",
+            layout(&timeline)
+        );
+    }
+    assert_eq!(
+        layout(&cut_slots(at(7, 0), at(9, 45), &[], &cfg).timeline()),
+        vec!["07:00-08:00 B", "08:00-09:00 B"]
+    );
+    assert_eq!(
+        layout(&cut_slots(at(7, 0), at(9, 50), &[], &cfg).timeline()),
+        vec![
+            "07:00-08:00 B",
+            "08:00-09:00 B",
+            "09:00-09:20 break",
+            "09:20-09:50 b",
+        ]
+    );
+    // The dropped break is not counted as planned rest either (§11 rest debt).
+    assert_eq!(cut_slots(at(7, 0), at(9, 45), &[], &cfg).break_minutes(), 0);
 }
 
 #[test]
@@ -367,7 +494,8 @@ fn slots_cross_a_dst_boundary_correctly() {
             "03:00-03:20 break",
             "03:20-04:20",
             "04:20-05:20",
-            "05:20-05:40 break",
+            // A break is due at 05:20 but only 20 min of window remain, so
+            // nothing could follow it: dropped with the tail.
         ]
     );
     assert!(cut.slots.iter().all(|s| s.minutes() == 60));

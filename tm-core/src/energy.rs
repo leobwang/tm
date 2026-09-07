@@ -45,6 +45,15 @@
 //!   learns the *deficit* `mean(energy[b] − rep)` — a positive number when
 //!   short sleep depresses the reports — which is what [`predict`]
 //!   subtracts.
+//! * **Absent vs. zero.** §8.5 wants `model.json` hand-editable and its own
+//!   example is partial (`expected_arrival` has only `Mon` and `Sat`), so
+//!   this module distinguishes "not learned" from a learned zero:
+//!   `sleep_debt_shift` is an `Option` (absent → the config shift, present →
+//!   used as written, `0.0` included), and [`fit`] writes `p_lounge` /
+//!   `expected_arrival` only for weekdays that have an `arrive` observation
+//!   or a value in the base model. A fit therefore never bakes the current
+//!   `[expected]` config into the file, and editing config.toml keeps
+//!   working for the weekdays nothing was learned on.
 //! * **Multiple reports.** §8.5 defines the correction for a single report.
 //!   [`Posterior`] uses the most recent report at or before the slot; older
 //!   reports are superseded rather than summed (summing would double-count
@@ -267,7 +276,12 @@ pub struct Model {
     /// bucket, `HSW_BUCKETS` long.
     pub energy: BTreeMap<String, Vec<u8>>,
     /// Levels subtracted when `slept < config.energy.sleep_debt.under_hours`.
-    pub sleep_debt_shift: f64,
+    /// `None` = not learned and not hand-written: [`Model::sleep_shift`]
+    /// then falls back to `config.energy.sleep_debt.shift`. A value written
+    /// in the file — by a fit or by hand — is always honoured, including
+    /// `0.0` ("short nights do not cost me anything").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sleep_debt_shift: Option<f64>,
     /// Tag (or `"_default"`) → `actual/est` multiplier.
     pub duration: BTreeMap<String, f64>,
     /// `P(lounge | weekday)`.
@@ -289,11 +303,10 @@ impl Model {
             && self.duration.is_empty()
             && self.p_lounge.is_empty()
             && self.expected_arrival.is_empty()
-            && self.sleep_debt_shift == 0.0
+            && self.sleep_debt_shift.is_none()
     }
 
-    /// True when the file came from a fit (or records observations), which is
-    /// what makes [`Model::sleep_shift`] prefer the learned shift.
+    /// True when the file came from a fit (or records observations).
     pub fn is_fitted(&self) -> bool {
         self.fitted.is_some() || self.n_obs > 0
     }
@@ -321,7 +334,7 @@ impl Model {
         );
         Model {
             energy,
-            sleep_debt_shift: cfg.energy.sleep_debt.shift,
+            sleep_debt_shift: Some(cfg.energy.sleep_debt.shift),
             duration,
             p_lounge,
             expected_arrival,
@@ -339,14 +352,11 @@ impl Model {
             .copied()
     }
 
-    /// The shift [`predict`] subtracts under sleep debt: the learned one for
-    /// a fitted model, the config one otherwise.
+    /// The shift [`predict`] subtracts under sleep debt: the one written in
+    /// the model when it has one (fitted or hand-edited), else the config's.
     pub fn sleep_shift(&self, cfg: &Config) -> f64 {
-        if self.is_fitted() {
-            self.sleep_debt_shift
-        } else {
-            cfg.energy.sleep_debt.shift
-        }
+        self.sleep_debt_shift
+            .unwrap_or(cfg.energy.sleep_debt.shift)
     }
 
     /// `P(lounge | weekday)`: learned, else `config.expected.p_lounge`.
@@ -927,7 +937,7 @@ pub fn fit(cfg: &Config, input: &FitInput, today: NaiveDate) -> Model {
     // module note on the sign.
     let under = cfg.energy.sleep_debt.under_hours;
     let shift_prior = base
-        .map(|m| m.sleep_debt_shift)
+        .and_then(|m| m.sleep_debt_shift)
         .unwrap_or(cfg.energy.sleep_debt.shift);
     let shift_obs: Vec<(f64, f64)> = input
         .energy
@@ -945,7 +955,11 @@ pub fn fit(cfg: &Config, input: &FitInput, today: NaiveDate) -> Model {
             )
         })
         .collect();
-    let sleep_debt_shift = round2(shrunken_mean(shift_prior, n0, &shift_obs));
+    // Nothing observed and nothing in the base → leave it absent, so the
+    // config shift keeps applying (see the module note on absent vs. zero).
+    let sleep_debt_shift = (!shift_obs.is_empty()
+        || base.and_then(|m| m.sleep_debt_shift).is_some())
+    .then(|| round2(shrunken_mean(shift_prior, n0, &shift_obs)));
 
     // --- duration multipliers ---------------------------------------------
     let dn0 = cfg.energy.duration_prior_weight;
@@ -987,30 +1001,36 @@ pub fn fit(cfg: &Config, input: &FitInput, today: NaiveDate) -> Model {
             .map(|a| age_weight(a.date, today, cfg.energy.decay_days))
             .collect();
 
-        let lounge_prior = base
-            .and_then(|m| m.p_lounge.get(wd).copied())
-            .unwrap_or_else(|| *cfg.expected.p_lounge.get(wd));
-        let lounge: Vec<(f64, f64)> = day_obs
-            .iter()
-            .zip(&weights)
-            .map(|(a, w)| (*w, if a.loc == "lounge" { 1.0 } else { 0.0 }))
-            .collect();
-        p_lounge.set(wd, round2(shrunken_mean(lounge_prior, n0, &lounge)));
+        // A weekday nothing was observed on stays *absent*, so the lookahead
+        // keeps falling back to `[expected]` in config.toml (§8.4) and an
+        // edit there still takes effect after a fit. A base value is kept:
+        // it was learned once, and a fit with no new data must not lose it.
+        let base_lounge = base.and_then(|m| m.p_lounge.get(wd).copied());
+        if !day_obs.is_empty() || base_lounge.is_some() {
+            let lounge_prior = base_lounge.unwrap_or_else(|| *cfg.expected.p_lounge.get(wd));
+            let lounge: Vec<(f64, f64)> = day_obs
+                .iter()
+                .zip(&weights)
+                .map(|(a, w)| (*w, if a.loc == "lounge" { 1.0 } else { 0.0 }))
+                .collect();
+            p_lounge.set(wd, round2(shrunken_mean(lounge_prior, n0, &lounge)));
+        }
 
-        let arr_prior = base
-            .and_then(|m| m.expected_arrival.get(wd).map(|t| t.0))
-            .unwrap_or_else(|| *cfg.expected.arrival.get(wd));
-        let arrivals: Vec<(f64, f64)> = day_obs
-            .iter()
-            .zip(&weights)
-            .map(|(a, w)| (*w, minutes_of(a.time) as f64))
-            .collect();
-        let mean = shrunken_mean(minutes_of(arr_prior) as f64, n0, &arrivals);
-        let minutes = mean.round().clamp(0.0, 24.0 * 60.0 - 1.0) as u32;
-        expected_arrival.set(
-            wd,
-            Hhmm(NaiveTime::from_hms_opt(minutes / 60, minutes % 60, 0).expect("clamped")),
-        );
+        let base_arrival = base.and_then(|m| m.expected_arrival.get(wd).map(|t| t.0));
+        if !day_obs.is_empty() || base_arrival.is_some() {
+            let arr_prior = base_arrival.unwrap_or_else(|| *cfg.expected.arrival.get(wd));
+            let arrivals: Vec<(f64, f64)> = day_obs
+                .iter()
+                .zip(&weights)
+                .map(|(a, w)| (*w, minutes_of(a.time) as f64))
+                .collect();
+            let mean = shrunken_mean(minutes_of(arr_prior) as f64, n0, &arrivals);
+            let minutes = mean.round().clamp(0.0, 24.0 * 60.0 - 1.0) as u32;
+            expected_arrival.set(
+                wd,
+                Hhmm(NaiveTime::from_hms_opt(minutes / 60, minutes % 60, 0).expect("clamped")),
+            );
+        }
     }
 
     Model {
@@ -1274,7 +1294,10 @@ pub fn show(model: &Model) -> String {
     writeln!(
         s,
         "sleep     debt shift {}",
-        fmt_multiplier(model.sleep_debt_shift)
+        match model.sleep_debt_shift {
+            Some(x) => fmt_multiplier(x),
+            None => "- (config)".to_string(),
+        }
     )
     .ok();
     if !model.duration.is_empty() {

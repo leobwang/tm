@@ -61,7 +61,30 @@ fn the_fixture_log_replays_cleanly() {
     assert!(r.energy.iter().any(|o| !o.from_start));
 }
 
-/// §8.5: `energy[b] = round((n0·prior[b] + Σ wᵢ repᵢ) / (n0 + Σ wᵢ))`.
+/// The hand-computed §8.5 curve for one location:
+/// `energy[b] = round((n0·prior[b] + Σ wᵢ repᵢ) / (n0 + Σ wᵢ))` for all 12
+/// buckets, plus the observation count per bucket.
+fn hand_computed_curve(cfg: &Config, r: &Replay, loc: &str) -> (Vec<u8>, Vec<usize>) {
+    let n0 = cfg.energy.prior_weight;
+    let mut levels = Vec::with_capacity(12);
+    let mut counts = Vec::with_capacity(12);
+    for b in 0..12usize {
+        let obs: Vec<(f64, f64)> = r
+            .energy
+            .iter()
+            .filter(|o| o.loc == loc && o.hsw.floor() as usize == b)
+            .map(|o| (weight(cfg, o.day, o.went), o.rep as f64))
+            .collect();
+        counts.push(obs.len());
+        let prior = cfg.prior_energy(loc, b as f64) as f64;
+        levels.push(shrunken(prior, n0, &obs).round() as u8);
+    }
+    (levels, counts)
+}
+
+/// §8.5: `energy[b] = round((n0·prior[b] + Σ wᵢ repᵢ) / (n0 + Σ wᵢ))`, over
+/// *every* bucket of both curves — including the ones where the reports pull
+/// the level off the prior.
 #[test]
 fn fit_reproduces_hand_computed_bucket_means() {
     let (cfg, r) = setup();
@@ -69,29 +92,32 @@ fn fit_reproduces_hand_computed_bucket_means() {
     let n0 = cfg.energy.prior_weight;
     assert_eq!(n0, 5.0);
 
-    for (loc, b) in [("lounge", 1usize), ("lounge", 5usize), ("home", 3usize)] {
-        let obs: Vec<(f64, f64)> = r
-            .energy
-            .iter()
-            .filter(|o| o.loc == loc && o.hsw.floor() as usize == b)
-            .map(|o| (weight(&cfg, o.day, o.went), o.rep as f64))
-            .collect();
-        assert!(obs.len() >= 3, "{loc} bucket {b}: only {} obs", obs.len());
-        let prior = cfg.prior_energy(loc, b as f64) as f64;
-        let want = shrunken(prior, n0, &obs).round() as u8;
-        assert_eq!(
-            model.energy[loc][b], want,
-            "{loc} bucket {b}: {} observations, prior {prior}",
-            obs.len()
-        );
+    for loc in ["lounge", "home"] {
+        let (want, counts) = hand_computed_curve(&cfg, &r, loc);
+        assert_eq!(model.energy[loc], want, "{loc} curve (obs per bucket {counts:?})");
+        // Buckets with no observations keep the prior exactly.
+        for (b, n) in counts.iter().enumerate() {
+            if *n == 0 {
+                assert_eq!(
+                    model.energy[loc][b],
+                    cfg.prior_energy(loc, b as f64),
+                    "{loc} bucket {b} has no observations"
+                );
+            }
+        }
     }
 
-    // Buckets with no observations keep the prior.
-    let empty_bucket = 11;
-    assert!(!r.energy.iter().any(|o| o.hsw.floor() as usize == empty_bucket));
+    // The fit is not a no-op: on this log the reports move `home` at hsw 7
+    // off its prior. 7 observations there, hand-computed above, so a fit that
+    // silently discarded every energy observation would fail here.
+    assert_eq!(cfg.prior_energy("home", 7.0), 3);
+    assert_eq!(model.energy["home"][7], 2);
     assert_eq!(
-        model.energy["lounge"][empty_bucket],
-        cfg.prior_energy("lounge", empty_bucket as f64)
+        r.energy
+            .iter()
+            .filter(|o| o.loc == "home" && o.hsw.floor() as usize == 7)
+            .count(),
+        7
     );
 
     // Every curve is a full 12-bucket vector and every level is 0..=5.
@@ -101,6 +127,29 @@ fn fit_reproduces_hand_computed_bucket_means() {
     }
     assert_eq!(model.fitted, Some(today()));
     assert_eq!(model.n_obs, r.energy.len() as u32);
+}
+
+/// The mirror image of the test above: with the energy observations taken
+/// away the same fit returns the prior curves unchanged. It pins down that
+/// the fitted curves above are actually driven by the reports (and not by
+/// the durations, the arrivals or the config alone).
+#[test]
+fn a_fit_without_energy_observations_is_the_prior_curve() {
+    let (cfg, r) = setup();
+    let arrivals = arrivals_from_replay(&cfg, &r);
+    let blind = fit(&cfg, &FitInput::new(&[], &r.durations, &arrivals), today());
+    let real = fit_replay(&cfg, &r, today());
+
+    for loc in ["lounge", "home"] {
+        let prior: Vec<u8> = (0..12).map(|b| cfg.prior_energy(loc, b as f64)).collect();
+        assert_eq!(blind.energy[loc], prior, "{loc} without observations");
+    }
+    assert_ne!(blind.energy["home"], real.energy["home"]);
+    assert_eq!(blind.n_obs, 0);
+    // With no short nights to learn from, the shift stays absent so the
+    // config value keeps applying (§8.4/§8.5 config fallback).
+    assert_eq!(blind.sleep_debt_shift, None);
+    assert!(real.sleep_debt_shift.is_some());
 }
 
 /// §8.5: the sleep-debt shift is the shrunken *deficit* `energy[b] − rep`
@@ -122,8 +171,9 @@ fn fit_learns_the_sleep_debt_shift() {
     assert!(obs.len() >= 8, "{} short-night observations", obs.len());
     let want = shrunken(cfg.energy.sleep_debt.shift, cfg.energy.prior_weight, &obs);
     let want = (want * 100.0).round() / 100.0;
-    assert_eq!(model.sleep_debt_shift, want);
-    assert!(model.sleep_debt_shift > 0.0, "a deficit is positive");
+    assert_eq!(model.sleep_debt_shift, Some(want));
+    assert!(want > 0.0, "a deficit is positive");
+    assert_eq!(model.sleep_shift(&cfg), want);
 }
 
 /// §8.5: `duration[tag] = shrunken mean of actual/est`, prior 1.0,
@@ -202,6 +252,51 @@ fn fit_learns_p_lounge_and_arrival_for_monday() {
     assert!(model.p_lounge.get(Weekday::Sun).unwrap() < &0.4);
 }
 
+/// §8.4 falls back to `[expected]` in config.toml for a weekday the model
+/// has not learned, and §8.5's own example `model.json` is partial (only
+/// `Mon` and `Sat`). So a fit writes a weekday only when it has an `arrive`
+/// observation for it — otherwise the first `tm model --fit` would freeze
+/// today's config into the file and later config edits would do nothing.
+#[test]
+fn fit_leaves_unobserved_weekdays_out_of_the_model() {
+    let cfg = Config::load(fixtures().join("plan-basic/config.toml")).unwrap();
+    let monday = ArrivalObs {
+        date: NaiveDate::from_ymd_opt(2026, 9, 7).unwrap(),
+        time: chrono::NaiveTime::from_hms_opt(7, 10, 0).unwrap(),
+        loc: "lounge".to_string(),
+    };
+    let model = fit(&cfg, &FitInput::new(&[], &[], &[monday]), today());
+
+    assert_eq!(model.p_lounge.len(), 1);
+    assert_eq!(model.expected_arrival.len(), 1);
+    assert!(model.p_lounge.get(Weekday::Mon).is_some());
+    assert_eq!(model.p_lounge.get(Weekday::Tue), None);
+    assert_eq!(model.expected_arrival.get(Weekday::Sat), None);
+    assert!(!model.to_json().contains("Tue"), "{}", model.to_json());
+
+    // …so the config still drives the unobserved weekdays after a fit, and a
+    // config edit is still visible through the model's accessors.
+    assert_eq!(
+        model.expected_arrival_on(Weekday::Sat, &cfg),
+        *cfg.expected.arrival.get(Weekday::Sat)
+    );
+    assert_eq!(
+        model.p_lounge_on(Weekday::Tue, &cfg),
+        *cfg.expected.p_lounge.get(Weekday::Tue)
+    );
+
+    // A weekday already in the base model survives a fit that saw nothing
+    // new for it (it was learned once; no observation is not evidence
+    // against it).
+    let refit = fit(
+        &cfg,
+        &FitInput::new(&[], &[], &[]).with_base(&model),
+        today(),
+    );
+    assert_eq!(refit.p_lounge.get(Weekday::Mon), model.p_lounge.get(Weekday::Mon));
+    assert_eq!(refit.p_lounge.get(Weekday::Tue), None);
+}
+
 /// §8.5: "hand edits become the new prior" — a refit shrinks towards the
 /// model on disk when one is passed as the base.
 #[test]
@@ -271,7 +366,9 @@ fn compare_scores_two_models() {
     assert_eq!(c.by_hour, vec![(8, 0.0, 2.0), (15, 1.0, 1.0)]);
 }
 
-/// A model fitted on the log beats the bare prior on that same log.
+/// A model fitted on the log beats the bare prior on that same log — and the
+/// margin comes from the buckets the fit actually moved, not from noise: a
+/// model that merely *restates* the prior ties with it.
 #[test]
 fn a_fitted_model_beats_the_prior_on_its_own_observations() {
     let (cfg, r) = setup();
@@ -279,6 +376,47 @@ fn a_fitted_model_beats_the_prior_on_its_own_observations() {
     let c = compare(&cfg, &Model::default(), &fitted, &r.energy);
     assert_eq!(c.n, r.energy.len());
     assert!(c.b_is_better(), "prior {} vs fitted {}", c.mae_a, c.mae_b);
+
+    // Both MAEs recomputed here from the curves, so `compare` is checked
+    // against the definition and not just against itself.
+    let mae = |m: &Model| {
+        let sum: f64 = r
+            .energy
+            .iter()
+            .map(|o| {
+                let curve = m
+                    .energy
+                    .get(&o.loc)
+                    .map(|c| c[o.hsw.floor() as usize])
+                    .unwrap_or_else(|| cfg.prior_energy(&o.loc, o.hsw));
+                let shift = if o.slept_min.is_some_and(|s| {
+                    s as f64 / 60.0 < cfg.energy.sleep_debt.under_hours
+                }) {
+                    m.sleep_shift(&cfg).round() as i32
+                } else {
+                    0
+                };
+                let pred = (curve as i32 - shift).clamp(0, 5);
+                (o.rep as i32 - pred).abs() as f64
+            })
+            .sum();
+        (sum / r.energy.len() as f64 * 100.0).round() / 100.0
+    };
+    assert_eq!(c.mae_a, mae(&Model::default()));
+    assert_eq!(c.mae_b, mae(&fitted));
+
+    // The prior written out as a model scores exactly like the bare prior:
+    // `b_is_better` above therefore reports learning, not a change of shape.
+    let tie = compare(&cfg, &Model::default(), &Model::from_config(&cfg), &r.energy);
+    assert_eq!(tie.mae_a, tie.mae_b);
+    assert!(!tie.b_is_better());
+
+    // And the win is the `home` hsw-7 bucket: put the prior level back and
+    // the advantage disappears.
+    let mut undone = fitted.clone();
+    undone.energy.get_mut("home").unwrap()[7] = cfg.prior_energy("home", 7.0);
+    let c2 = compare(&cfg, &Model::default(), &undone, &r.energy);
+    assert_eq!(c2.mae_a, c2.mae_b);
 }
 
 /// §11 energy calibration: MAE and bias of the *logged* predictions.
