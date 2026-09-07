@@ -1,0 +1,8 @@
+---
+source: tm/tests/cli_day.rs
+expression: "tm.json(&[\"idle\", \"b\", \"--min\", \"14\"])"
+---
+{
+  "attributed": "break",
+  "min": 14
+}

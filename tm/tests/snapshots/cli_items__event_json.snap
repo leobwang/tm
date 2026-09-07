@@ -1,0 +1,11 @@
+---
+source: tm/tests/cli_items.rs
+expression: json
+---
+{
+  "id": null,
+  "name": "reply",
+  "resolved": [
+    "a4"
+  ]
+}

@@ -1,0 +1,13 @@
+---
+source: tm/tests/cli_day.rs
+expression: "{\n    let tm2 = Tm::new(); tm2.ok(&[\"wake\", \"06:05\", \"--slept\", \"8h10m\"]);\n    tm2.ok(&[\"start\", \"^t4\", \"--energy\", \"4\"]);\n    tm2.json_at(\"2026-09-07T10:00:00-05:00\", &[\"done\"])\n}"
+---
+{
+  "actual_min": 60,
+  "est_min": 60,
+  "id": "t4",
+  "partial": false,
+  "remaining_min": null,
+  "state": "[x]",
+  "title": "Claude Code drafts tests"
+}

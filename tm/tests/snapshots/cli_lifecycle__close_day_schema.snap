@@ -1,0 +1,39 @@
+---
+source: tm/tests/cli_lifecycle.rs
+expression: schema(&json)
+---
+{
+  "key": "string",
+  "period": "string",
+  "report": {
+    "carried": [],
+    "demoted": [
+      {
+        "est_min": "integer",
+        "id": "string",
+        "stamps": [
+          "string"
+        ]
+      }
+    ],
+    "dropped": [],
+    "dropped_children": [],
+    "key": "string",
+    "moved": [
+      {
+        "from": "string",
+        "id": "string",
+        "to": "string"
+      }
+    ],
+    "notes": [],
+    "overdue_to_backlog": [],
+    "period": "string",
+    "reopened": [
+      {
+        "est_min": "integer",
+        "id": "string"
+      }
+    ]
+  }
+}

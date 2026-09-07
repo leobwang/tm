@@ -1,0 +1,33 @@
+---
+source: tm/tests/cli_items.rs
+expression: json
+---
+{
+  "file": "inbox.md",
+  "lines": [
+    {
+      "line": 1,
+      "parsed": "- [ ] pset2 fri 6b ci4 max 2b/d",
+      "problem": null,
+      "raw": "- pset2 fri 6b ci4 max 2b/d"
+    },
+    {
+      "line": 2,
+      "parsed": "- [ ] ask Kun about the dinner place",
+      "problem": null,
+      "raw": "- ask Kun about the dinner place"
+    },
+    {
+      "line": 3,
+      "parsed": "- [ ] renew the bike insurance before October",
+      "problem": null,
+      "raw": "- renew the bike insurance before October"
+    },
+    {
+      "line": 4,
+      "parsed": "- [ ] read the Lean 4 metaprogramming book",
+      "problem": null,
+      "raw": "- read the Lean 4 metaprogramming book"
+    }
+  ]
+}

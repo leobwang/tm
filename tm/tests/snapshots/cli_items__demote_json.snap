@@ -1,0 +1,11 @@
+---
+source: tm/tests/cli_items.rs
+expression: json
+---
+{
+  "est_min": 120,
+  "id": "m4",
+  "stamps": [
+    "W37"
+  ]
+}

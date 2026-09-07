@@ -1,0 +1,13 @@
+---
+source: tm/tests/cli_plan.rs
+expression: schema(&idle)
+---
+{
+  "active": "null",
+  "blocks_done": "integer",
+  "budget_blocks": "integer",
+  "current": "null",
+  "date": "string",
+  "next": [],
+  "now": "string"
+}

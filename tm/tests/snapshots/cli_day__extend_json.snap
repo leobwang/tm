@@ -1,0 +1,9 @@
+---
+source: tm/tests/cli_day.rs
+expression: json
+---
+{
+  "by_min": 60,
+  "est_min": 120,
+  "id": "t4"
+}

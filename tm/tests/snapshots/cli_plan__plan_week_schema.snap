@@ -1,0 +1,17 @@
+---
+source: tm/tests/cli_plan.rs
+expression: schema(&json)
+---
+{
+  "days": [
+    {
+      "date": "string",
+      "minutes_at_level": [
+        "integer"
+      ],
+      "total": "integer"
+    }
+  ],
+  "grid": "string",
+  "week": "string"
+}

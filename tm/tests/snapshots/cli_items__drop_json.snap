@@ -1,0 +1,8 @@
+---
+source: tm/tests/cli_items.rs
+expression: json
+---
+{
+  "id": "m4",
+  "line": "- [~] 2 2b Pick winter courses          @O3 ^m4"
+}

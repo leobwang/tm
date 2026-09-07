@@ -1,0 +1,10 @@
+---
+source: tm/tests/cli_day.rs
+expression: r
+---
+{
+  "action": "resume",
+  "dropped": [],
+  "id": "t4",
+  "lost_min": 55
+}

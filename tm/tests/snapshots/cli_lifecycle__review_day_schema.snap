@@ -1,0 +1,36 @@
+---
+source: tm/tests/cli_lifecycle.rs
+expression: schema(&json)
+---
+{
+  "block_min": "integer",
+  "blocks": "integer",
+  "churn": [],
+  "days": [
+    {
+      "block_min": "integer",
+      "blocks": "integer",
+      "date": "string",
+      "done": [
+        "string"
+      ],
+      "leak_min": "integer",
+      "load": "number",
+      "lost_min": "integer"
+    }
+  ],
+  "energy_bias": "number",
+  "energy_mae": "number",
+  "estimates": [
+    {
+      "multiplier": "number",
+      "n": "integer",
+      "tag": "string"
+    }
+  ],
+  "key": "string",
+  "leak_min": "integer",
+  "lost_min": "integer",
+  "period": "string",
+  "wrote": "null"
+}

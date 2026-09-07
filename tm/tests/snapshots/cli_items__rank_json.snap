@@ -1,0 +1,9 @@
+---
+source: tm/tests/cli_items.rs
+expression: json
+---
+{
+  "id": "m3",
+  "moved": true,
+  "n": 1
+}

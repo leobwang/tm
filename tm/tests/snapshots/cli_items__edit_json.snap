@@ -1,0 +1,25 @@
+---
+source: tm/tests/cli_items.rs
+expression: json
+---
+{
+  "changes": [
+    {
+      "field": "ci",
+      "from": "2",
+      "to": "3"
+    },
+    {
+      "field": "est",
+      "from": "",
+      "to": "45m"
+    },
+    {
+      "field": "loc",
+      "from": "",
+      "to": "out"
+    }
+  ],
+  "id": "a1",
+  "line": "- [ ] 3 30m Insurance claim for the bike est:45m loc:out  ^a1"
+}

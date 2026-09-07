@@ -1,0 +1,12 @@
+---
+source: tm/tests/cli_day.rs
+expression: json
+---
+{
+  "at": "10:30",
+  "delta": -2,
+  "hsw": 4.42,
+  "loc": "lounge",
+  "pred": 5,
+  "rep": 3
+}

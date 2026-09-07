@@ -1,0 +1,18 @@
+---
+source: tm/tests/cli_day.rs
+expression: json
+---
+{
+  "arrival": "09:30",
+  "budget": 6,
+  "date": "2026-09-07",
+  "loc": "home",
+  "plan_at_arrival": [],
+  "plan_hash": "[hash]",
+  "synced": [],
+  "warnings": [],
+  "window": [
+    "09:30",
+    "18:30"
+  ]
+}

@@ -1,0 +1,10 @@
+---
+source: tm/tests/cli_items.rs
+expression: json
+---
+{
+  "file": "backlog.md",
+  "id": "y3y7",
+  "line": "- [ ] 2 30m Call the plumber ^y3y7",
+  "section": "Untied"
+}

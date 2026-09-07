@@ -1,0 +1,10 @@
+---
+source: tm/tests/cli_day.rs
+expression: "tm.json(&[\"wake\", \"06:05\", \"--slept\", \"8h10m\"])"
+---
+{
+  "date": "2026-09-07",
+  "onset_min": null,
+  "slept_min": 490,
+  "wake": "06:05"
+}

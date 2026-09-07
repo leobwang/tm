@@ -1,0 +1,29 @@
+---
+source: tm/tests/cli_lifecycle.rs
+expression: json
+---
+{
+  "created": [
+    "config.toml",
+    "CLAUDE.md",
+    ".claude/settings.json",
+    ".claude/skills/plan-week/SKILL.md",
+    ".claude/skills/plan-month/SKILL.md",
+    ".claude/skills/triage/SKILL.md",
+    ".claude/skills/capture/SKILL.md",
+    ".claude/skills/replan/SKILL.md",
+    ".claude/skills/review-day/SKILL.md",
+    ".claude/skills/review-week/SKILL.md",
+    ".claude/skills/explain/SKILL.md",
+    ".githooks/pre-commit",
+    "inbox.md",
+    "backlog.md",
+    "routines.md",
+    "optional.md",
+    "month/2026-09.md",
+    "week/2026-W37.md"
+  ],
+  "dir": "[dir]",
+  "hook_hint": "[hint]",
+  "skipped": []
+}
