@@ -3,12 +3,19 @@
 //! (§1.3), section appends and the id-addressed line moves — all on temp
 //! copies of `tests/fixtures/plan-basic`, asserting that every byte outside
 //! the edited line is untouched.
+//!
+//! The last section holds the regressions for the ways a writer used to be
+//! able to lose someone else's text: a save-by-delete-then-create, a
+//! concurrent edit to the line being moved, a lost `<!-- tm:… end -->`
+//! marker, a rename of an id-less line, a file that is not UTF-8, a path
+//! that leaves the plan root, and a race that moves only the mtime.
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 use tempfile::TempDir;
 use tm_core::model::{Horizon, Id, IsoWeek};
@@ -562,4 +569,419 @@ fn a_whole_file_edit_conflicts_when_every_attempt_is_raced() {
     }
     assert_eq!(hits.load(Ordering::SeqCst), 3);
     assert_eq!(tree_text(&root)[DAY], last, "nothing of ours reached the disk");
+}
+
+// ---------------------------------------------------------------------------
+// Review regressions
+// ---------------------------------------------------------------------------
+
+/// A store whose hook runs `f` on every guarded attempt, counting the hits.
+fn hooked_store(
+    root: &Path,
+    hits: Arc<AtomicUsize>,
+    f: impl Fn(&Path, usize) + Send + Sync + 'static,
+) -> FsStore {
+    FsStore::new(root).with_before_write_hook(Box::new(move |touched, attempt| {
+        hits.fetch_add(1, Ordering::SeqCst);
+        f(touched, attempt);
+    }))
+}
+
+/// Move a file's mtime without changing a byte of it — an editor's "save
+/// all" with nothing to save, a `touch`. Only the mtime half of the §1.3
+/// guard can see this, so it is what pins that half in place.
+fn touch(path: &Path, secs: u64) {
+    let f = fs::OpenOptions::new().write(true).open(path).unwrap();
+    f.set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(secs)).unwrap();
+}
+
+#[test]
+fn write_line_sees_a_race_that_only_moves_the_mtime() {
+    let (dir, _) = plan();
+    let root = dir.path().join("plan");
+    let before = tree_text(&root);
+    let path = root.join(WEEK);
+
+    let touched = path.clone();
+    let hits = Arc::new(AtomicUsize::new(0));
+    let store = hooked_store(&root, Arc::clone(&hits), move |p, attempt| {
+        if p == touched && attempt == 0 {
+            touch(&touched, 1_000_000_000);
+        }
+    });
+
+    let old = line_with(&before[WEEK], "t3");
+    let new = old.replacen("[>]", "[x]", 1);
+    store.write_line(&Id::new("t3"), &new).unwrap();
+
+    assert_eq!(
+        hits.load(Ordering::SeqCst),
+        2,
+        "identical bytes with a new mtime are still a race, so the write retried"
+    );
+    let after = tree_text(&root);
+    assert_eq!(after[WEEK], before[WEEK].replacen(&old, &new, 1));
+    only_changed(&before, &after, &[WEEK]);
+}
+
+#[test]
+fn write_line_conflicts_when_every_attempt_only_moves_the_mtime() {
+    let (dir, _) = plan();
+    let root = dir.path().join("plan");
+    let before = tree_text(&root);
+    let path = root.join(WEEK);
+
+    let touched = path.clone();
+    let hits = Arc::new(AtomicUsize::new(0));
+    let store = hooked_store(&root, Arc::clone(&hits), move |p, attempt| {
+        if p == touched {
+            touch(&touched, 1_000_000_000 + attempt as u64);
+        }
+    });
+
+    let old = line_with(&before[WEEK], "t3");
+    let new = old.replacen("[>]", "[x]", 1);
+    let err = store.write_line(&Id::new("t3"), &new).unwrap_err();
+    match err {
+        StoreError::Conflict { id, file, ours, theirs } => {
+            assert_eq!(id, Id::new("t3"));
+            assert_eq!(file, WEEK);
+            assert_eq!(ours, new);
+            assert_eq!(theirs, old, "their line is unchanged; only the mtime moved");
+        }
+        other => panic!("expected a conflict, got {other}"),
+    }
+    assert_eq!(hits.load(Ordering::SeqCst), 2);
+    assert_eq!(tree_text(&root)[WEEK], before[WEEK], "not a byte of ours reached the disk");
+}
+
+#[test]
+fn write_line_conflicts_when_the_other_writer_removes_the_file() {
+    let (dir, _) = plan();
+    let root = dir.path().join("plan");
+    let before = tree_text(&root);
+    let path = root.join(WEEK);
+
+    // A save-by-delete-then-create (a non-rename editor save, a `git
+    // checkout`, a file moved out from under tm) caught mid-flight.
+    let gone = path.clone();
+    let hits = Arc::new(AtomicUsize::new(0));
+    let store = hooked_store(&root, Arc::clone(&hits), move |p, _| {
+        if p == gone {
+            let _ = fs::remove_file(&gone);
+        }
+    });
+
+    let old = line_with(&before[WEEK], "t3");
+    let new = old.replacen("[>]", "[x]", 1);
+    let err = store.write_line(&Id::new("t3"), &new).unwrap_err();
+    assert!(err.is_conflict(), "a write race, not a hard I/O failure: {err}");
+    match err {
+        StoreError::Conflict { id, file, ours, theirs } => {
+            assert_eq!(id, Id::new("t3"));
+            assert_eq!(file, WEEK);
+            assert_eq!(ours, new, "the conflict still carries our version for the diff");
+            assert!(theirs.is_empty(), "the line went with the file");
+        }
+        other => panic!("expected a conflict, got {other}"),
+    }
+    assert_eq!(hits.load(Ordering::SeqCst), 1, "the retry has no file left to guard");
+    assert!(!path.exists(), "we did not put the file back");
+}
+
+#[test]
+fn a_whole_file_edit_never_rebuilds_a_file_that_vanished_mid_save() {
+    let (dir, _) = plan();
+    let root = dir.path().join("plan");
+    let before = tree_text(&root);
+    let path = root.join(WEEK);
+
+    let gone = path.clone();
+    let hits = Arc::new(AtomicUsize::new(0));
+    let store = hooked_store(&root, Arc::clone(&hits), move |p, _| {
+        if p == gone {
+            let _ = fs::remove_file(&gone);
+        }
+    });
+
+    let err = store
+        .append_to_section(WEEK, "Milestones", "- [ ] 3 1b Z ^z1")
+        .unwrap_err();
+    assert!(err.is_conflict(), "{err}");
+    match err {
+        StoreError::Conflict { file, ours, theirs, .. } => {
+            assert_eq!(file, WEEK);
+            assert!(
+                ours.contains("Finish ch.5 exercises") && ours.contains("- [ ] 3 1b Z ^z1"),
+                "ours is the merged file, not one line on a fresh front matter:\n{ours}"
+            );
+            assert!(theirs.is_empty(), "the file is gone");
+        }
+        other => panic!("expected a conflict, got {other}"),
+    }
+    assert!(
+        !path.exists(),
+        "the file was neither rebuilt from its horizon's front matter nor half-written"
+    );
+    only_changed(&before, &tree_text(&root), &[WEEK]);
+}
+
+#[test]
+fn a_whole_file_edit_merges_a_save_that_deleted_and_re_created_the_file() {
+    let (dir, _) = plan();
+    let root = dir.path().join("plan");
+    let before = tree_text(&root);
+    let path = root.join(WEEK);
+
+    let theirs = before[WEEK].replace("budget: 25", "budget: 30");
+    let their_file = theirs.clone();
+    let raced = path.clone();
+    let hits = Arc::new(AtomicUsize::new(0));
+    let store = hooked_store(&root, Arc::clone(&hits), move |p, attempt| {
+        if p == raced && attempt == 0 {
+            fs::remove_file(&raced).unwrap();
+            fs::write(&raced, &their_file).unwrap();
+        }
+    });
+
+    store
+        .append_to_section(WEEK, "Milestones", "- [ ] 3 1b Z ^z1")
+        .unwrap();
+
+    let after = tree_text(&root);
+    assert_eq!(
+        after[WEEK],
+        theirs.replacen("@x1 ^x2\n", "@x1 ^x2\n- [ ] 3 1b Z ^z1\n", 1),
+        "the append was re-applied to the version they re-created"
+    );
+    assert_eq!(hits.load(Ordering::SeqCst), 2);
+    only_changed(&before, &after, &[WEEK]);
+}
+
+#[test]
+fn move_line_carries_a_concurrent_edit_of_the_moved_line() {
+    let (dir, _) = plan();
+    let root = dir.path().join("plan");
+    let before = tree_text(&root);
+
+    // Someone saves an edit to the very line we are moving, between our read
+    // of the source and the guarded removal.
+    let their_old = line_with(&before[WEEK], "t1");
+    let their_new = their_old.replacen("[ ]", "[x]", 1).replacen("§1–2", "§1–3", 1);
+    let their_file = before[WEEK].replacen(&their_old, &their_new, 1);
+    let hits = Arc::new(AtomicUsize::new(0));
+    let store = racing_store(&root, WEEK, vec![Some(their_file.clone()), None], Arc::clone(&hits));
+
+    store.move_line(&Id::new("t1"), BACKLOG, Some("Untied")).unwrap();
+
+    let after = tree_text(&root);
+    assert!(!after[WEEK].contains("^t1"), "the source lost the line");
+    assert_eq!(after[WEEK], their_file.replacen(&format!("{their_new}\n"), "", 1));
+    assert!(
+        after[BACKLOG].contains(&their_new),
+        "their edit travelled with the line instead of being overwritten by our stale copy:\n{}",
+        after[BACKLOG]
+    );
+    assert!(!after[BACKLOG].contains(&their_old));
+    only_changed(&before, &after, &[WEEK, BACKLOG]);
+}
+
+/// Delete the day file's `<!-- tm:plan end -->` line — a stray keystroke, a
+/// bad merge, a hand-edited file — and return the text that is now on disk.
+fn day_without_its_end_marker(root: &Path) -> String {
+    let path = root.join(DAY);
+    let broken = fs::read_to_string(&path).unwrap().replacen("<!-- tm:plan end -->\n", "", 1);
+    fs::write(&path, &broken).unwrap();
+    broken
+}
+
+#[test]
+fn replace_generated_keeps_everything_below_a_lost_end_marker() {
+    let (dir, store) = plan();
+    let root = dir.path().join("plan");
+    let broken = day_without_its_end_marker(&root);
+    assert!(
+        store
+            .read_file(DAY)
+            .unwrap()
+            .problems
+            .iter()
+            .any(|p| p.message.contains("unterminated generated section")),
+        "the parser flags the file"
+    );
+
+    store
+        .replace_generated_stamped(DAY, "plan", Some("11:00"), "07:00 row\n")
+        .unwrap();
+
+    // The block is closed directly under its start marker: everything the
+    // lost marker used to sit above is outside the markers and untouched.
+    let after = fs::read_to_string(root.join(DAY)).unwrap();
+    assert_eq!(
+        after,
+        broken.replacen(
+            "<!-- tm:plan start 10:42 -->\n",
+            "<!-- tm:plan start 11:00 -->\n07:00 row\n<!-- tm:plan end -->\n",
+            1
+        )
+    );
+    assert!(after.contains("- [ ] 2 20m Call the bank about the card  ^p1"), "# Pinned survived");
+    assert!(after.contains("06:05 wake slept=8h10m"), "the append-only ## Log survived");
+    assert!(after.contains("## Notes"));
+
+    // The block is well formed again, so the next replan is the ordinary one
+    // and leaves the stale rows below it alone.
+    store.replace_generated(DAY, "plan", "08:00 row\n").unwrap();
+    assert_eq!(
+        fs::read_to_string(root.join(DAY)).unwrap(),
+        after.replacen("07:00 row", "08:00 row", 1)
+    );
+}
+
+#[test]
+fn append_to_section_finds_the_log_below_a_lost_end_marker() {
+    let (dir, store) = plan();
+    let root = dir.path().join("plan");
+    let broken = day_without_its_end_marker(&root);
+
+    store.append_to_section(DAY, "## Log", "07:00 start ^t1").unwrap();
+
+    let after = fs::read_to_string(root.join(DAY)).unwrap();
+    assert_eq!(after.matches("## Log").count(), 1, "no second ## Log was created:\n{after}");
+    assert_eq!(
+        after,
+        broken.replacen("dropped=^t5\n", "dropped=^t5\n07:00 start ^t1\n", 1)
+    );
+
+    // …and the next replan does not take the entry with it.
+    store.replace_generated(DAY, "plan", "07:00 row\n").unwrap();
+    assert!(fs::read_to_string(root.join(DAY)).unwrap().contains("07:00 start ^t1"));
+}
+
+#[test]
+fn a_generated_body_may_not_contain_a_marker_line() {
+    let store = MemStore::new().with_file(
+        BACKLOG,
+        "# A\n<!-- tm:plan start -->\nold\n<!-- tm:plan end -->\n# B\n- [ ] 3 keep ^k\n",
+    );
+    let before = store.text(BACKLOG).unwrap();
+
+    // An emitted row that is itself an end marker would close the block early
+    // and strand the rest of the body outside it for good.
+    let err = store
+        .replace_generated(BACKLOG, "plan", "07:00 x\n<!-- tm:plan end -->\n08:00 y")
+        .unwrap_err();
+    assert!(matches!(err, StoreError::Parse { .. }), "{err}");
+    assert!(store
+        .replace_generated(BACKLOG, "plan", "  <!-- tm:other start 1 -->  ")
+        .is_err());
+    assert_eq!(store.text(BACKLOG).unwrap(), before, "nothing was written");
+
+    // Ordinary rows still go through.
+    store.replace_generated(BACKLOG, "plan", "07:00 x\n08:00 y").unwrap();
+    assert_eq!(
+        store.text(BACKLOG).unwrap(),
+        "# A\n<!-- tm:plan start -->\n07:00 x\n08:00 y\n<!-- tm:plan end -->\n# B\n- [ ] 3 keep ^k\n"
+    );
+}
+
+#[test]
+fn write_line_will_not_rename_an_id_less_line() {
+    let (dir, store) = plan();
+    let root = dir.path().join("plan");
+    let before = tree_text(&root);
+
+    // `routines.md` lines carry no `^id`, so their title *is* the key the
+    // store addresses them by (`Tree::key_of`).
+    let err = store
+        .write_line(&Id::new("lunch"), "- dinner win:00:00-01:00 dur:5m")
+        .unwrap_err();
+    assert!(matches!(err, StoreError::Parse { .. }), "{err}");
+    assert_eq!(tree_text(&root)["routines.md"], before["routines.md"]);
+
+    // Editing the rest of the line is fine…
+    store
+        .write_line(&Id::new("lunch"), "- lunch      win:11:00-13:00 dur:30m  every:day")
+        .unwrap();
+    // …and so is giving it an `^id`, which then takes over as its address and
+    // lets the title change.
+    store
+        .write_line(&Id::new("lunch"), "- lunch      win:11:00-13:00 dur:30m  every:day ^lun")
+        .unwrap();
+    assert!(store.write_line(&Id::new("lunch"), "- lunch dur:1m").unwrap_err().is_not_found());
+    store
+        .write_line(&Id::new("lun"), "- brunch     win:11:00-13:00 dur:30m  every:day ^lun")
+        .unwrap();
+
+    let after = tree_text(&root);
+    assert_eq!(
+        after["routines.md"],
+        before["routines.md"].replacen(
+            "- lunch      win:11:30-13:30 dur:30m  every:day",
+            "- brunch     win:11:00-13:00 dur:30m  every:day ^lun",
+            1
+        )
+    );
+    only_changed(&before, &after, &["routines.md"]);
+}
+
+#[test]
+fn one_file_that_is_not_utf8_does_not_make_the_tree_unreadable() {
+    let (dir, store) = plan();
+    let root = dir.path().join("plan");
+    // A latin-1 note dropped into `plan/`, in the bucket that sorts *first*,
+    // so every later lookup has to step over it.
+    let bad = "month/2026-01.md";
+    fs::write(root.join(bad), [0x2d, 0x20, 0xe9, 0x0a]).unwrap();
+
+    let files = store.read_tree().unwrap();
+    assert_eq!(files.files[0].path, bad);
+    assert!(files.files[0].lines.is_empty());
+    assert!(
+        files.files[0].problems.iter().any(|p| p.message.contains("UTF-8")),
+        "{:?}",
+        files.files[0].problems
+    );
+    assert!(files.find(&Id::new("t3")).is_some(), "the rest of the tree parsed");
+    assert_eq!(files.file_of(&Id::new("O1")), Some("month/2026-09.md"));
+
+    // And an id-addressed write still finds its line past the bad file.
+    let old = line_with(&fs::read_to_string(root.join(WEEK)).unwrap(), "t3");
+    store.write_line(&Id::new("t3"), &old.replacen("[>]", "[x]", 1)).unwrap();
+    assert!(fs::read_to_string(root.join(WEEK)).unwrap().contains("[x] 4 2b Exercises"));
+    assert_eq!(fs::read(root.join(bad)).unwrap(), [0x2d, 0x20, 0xe9, 0x0a], "and left it alone");
+}
+
+#[test]
+fn paths_cannot_leave_the_plan_root() {
+    let (dir, store) = plan();
+    let root = dir.path().join("plan");
+    let before = tree_text(&root);
+
+    for bad in ["../escaped.md", "week/../../escaped.md", "/tmp/tm-escaped.md", "..", ""] {
+        assert!(store.write_file(bad, "boom\n").is_err(), "write_file({bad:?})");
+        assert!(store.read_text(bad).is_err(), "read_text({bad:?})");
+        assert!(!store.exists(bad), "exists({bad:?})");
+        assert_eq!(store.abs_path(bad), None, "abs_path({bad:?})");
+        assert!(store.abs(bad).is_err(), "abs({bad:?})");
+        assert!(store.ensure_file(bad, "boom\n").is_err(), "ensure_file({bad:?})");
+        assert!(store.insert_line(bad, None, "- [ ] 3 x ^zz").is_err(), "insert_line({bad:?})");
+        assert!(store.append_to_section(bad, "Log", "boom").is_err(), "append_to_section({bad:?})");
+        assert!(store.replace_generated(bad, "plan", "boom").is_err(), "replace_generated({bad:?})");
+        assert!(store.append_text(bad, "boom\n").is_err(), "append_text({bad:?})");
+        assert!(store.move_line(&Id::new("a1"), bad, None).is_err(), "move_line({bad:?})");
+    }
+    assert!(!dir.path().join("escaped.md").exists());
+    assert!(!Path::new("/tmp/tm-escaped.md").exists());
+    assert_eq!(tree_text(&root), before, "and the plan tree is untouched");
+
+    // Normal nested paths still resolve.
+    assert_eq!(store.abs(BACKLOG).unwrap(), root.join(BACKLOG));
+    assert_eq!(store.abs("./week/2026-W37.md").unwrap(), root.join("./week/2026-W37.md"));
+
+    // The same rule in the memory store.
+    let mem = MemStore::new().with_file(BACKLOG, "# U\n- [ ] 3 x ^a\n");
+    assert!(mem.write_file("../escaped.md", "boom\n").is_err());
+    assert!(mem.read_text("../escaped.md").is_err());
+    assert!(!mem.exists("../escaped.md"));
 }
