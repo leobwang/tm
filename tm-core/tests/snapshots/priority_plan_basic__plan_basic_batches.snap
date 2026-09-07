@@ -22,7 +22,6 @@ expression: "batched.join(\"\\n\")"
       ci4 240m: c2
       ci0 510m: sleep
       ci1 20m: shower
-      ci1 30m: laundry
       ci1 45m: groceries
       ci0 60m: Severance S3E4
       ci0 120m: Factorio

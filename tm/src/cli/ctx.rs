@@ -313,12 +313,20 @@ impl Ctx {
             .unwrap_or(Loc::Lounge)
     }
 
-    /// Today's wake instant: `state.wake`, else the expected arrival for the
-    /// weekday (§16 `[expected]`).
+    /// Today's wake: `state.wake`, else the `wake` event of the day, else the
+    /// fallback [`Model::wake_or_expected`] owns — the weekday's expected
+    /// arrival (§8.4, §16 `[expected]`). This is the resolution `planner.rs`
+    /// runs, in the same order and through the same fallback, so a plan and
+    /// the verbs that cut their own slots read one wake.
     pub fn wake_time(&self) -> NaiveTime {
-        self.state
-            .wake
-            .unwrap_or_else(|| *self.cfg.expected.arrival.get(self.today.weekday()))
+        let logged = self.state.wake.or_else(|| {
+            self.replay
+                .day(self.today)
+                .and_then(|d| d.wake)
+                .map(|t| t.with_timezone(&self.cfg.tz).time())
+        });
+        self.model
+            .wake_or_expected(logged, self.today.weekday(), &self.cfg)
     }
 
     /// Today's wake instant in `cfg.tz`.

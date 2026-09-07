@@ -348,3 +348,85 @@ fn a_window_that_has_already_closed_is_not_a_last_chance() {
     assert!(!info.last_chance && !info.mandatory);
     assert!(info.deferred_from_yesterday);
 }
+
+// ---------------------------------------------------------------------------
+// §5.3: a persisted routine is one pending instance, not two
+// ---------------------------------------------------------------------------
+
+/// A weekly `on-miss:persist` routine that was missed keeps **one** pending
+/// instance. §5.3 carries the missed one — it "stays Pending", mandatory and
+/// overdue — and the occurrence that comes round while it is still open is the
+/// same obligation, not a second load of laundry: `today_instances` used to
+/// hand the planner both, which placed the routine twice in one day (§5.2
+/// gives a window instance one position, §7.2 gives an item one `p`).
+#[test]
+fn a_missed_persist_routine_and_this_weeks_occurrence_are_one_instance() {
+    let item = routine("- laundry win:09:00-21:00 dur:30m every:week on-miss:persist");
+    let today = date("2026-09-07"); // the Monday of W37
+    let now = dt("2026-09-07T10:42");
+    let keys = |v: &[(Instance, recur::InstanceInfo)]| -> Vec<String> {
+        v.iter().map(|(i, _)| i.key.to_string()).collect()
+    };
+    /// Every listed week's laundry, done on its Monday.
+    fn washed(mondays: &[&str]) -> String {
+        mondays
+            .iter()
+            .map(|d| {
+                format!(
+                    "{{\"t\":\"{d}T11:00:00-05:00\",\"ev\":\"routine\",\"item\":\"laundry\",\
+                     \"inst\":\"{d}\",\"status\":\"done\",\"actual_min\":30}}"
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    // Every week washed but the last: 2026-08-31's window closed on Sunday
+    // with nothing logged, so §5.3 carries it into today.
+    const KEPT_UP: [&str; 8] = [
+        "2026-07-06",
+        "2026-07-13",
+        "2026-07-20",
+        "2026-07-27",
+        "2026-08-03",
+        "2026-08-10",
+        "2026-08-17",
+        "2026-08-24",
+    ];
+    let kept_up = replay_of(&washed(&KEPT_UP));
+
+    // The history holds both live occurrences, each with its own status …
+    let all = recur::instances(
+        &item,
+        (date("2026-08-24"), today),
+        today,
+        &kept_up,
+        &cfg(),
+    );
+    assert_eq!(
+        statuses(&all),
+        vec![
+            "2026-08-24 Done",
+            "2026-08-31 Pending",
+            "2026-09-07 Pending"
+        ]
+    );
+
+    // … but the planner is handed one: last week's miss, §5.3's overdue and
+    // mandatory instance, and not this week's occurrence beside it.
+    let live = recur::today_instances([&item], today, now, &kept_up, &cfg());
+    assert_eq!(keys(&live), vec!["2026-08-31"]);
+    assert!(live[0].1.mandatory && live[0].1.overdue);
+
+    // Wash it, and this week's occurrence is what is left to do — nothing was
+    // lost by the collapse, and it is not overdue.
+    let washed_today = replay_of(&format!(
+        "{}\n{}",
+        washed(&KEPT_UP),
+        washed(&["2026-08-31"])
+    ));
+    let after =
+        recur::today_instances([&item], today, dt("2026-09-07T11:30"), &washed_today, &cfg());
+    assert_eq!(keys(&after), vec!["2026-09-07"]);
+    assert!(!after[0].1.overdue && !after[0].1.mandatory);
+}

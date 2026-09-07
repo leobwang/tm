@@ -140,7 +140,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::{DateTime, Duration, NaiveDate, NaiveTime, Timelike};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveTime, Timelike};
 use chrono_tz::Tz;
 use serde::Serialize;
 
@@ -788,12 +788,22 @@ impl<'a> Planner<'a> {
             .unwrap_or(day_start);
         let today = input.replay.day(date);
 
-        let wake = input
+        // §8.5's `hsw` is measured from the day's `wake`: `state.json`'s, else
+        // the `wake` event of the day. A day with neither falls back to the
+        // weekday's expected arrival — `Model::wake_or_expected` owns that
+        // decision, and the CLI's `Ctx::wake_time` reads it from there too, so
+        // both agree on what an unlogged day started at.
+        let logged_wake = input
             .runtime
             .wake
-            .map(|t| capacity::local_dt(tz, date, t))
-            .or_else(|| today.and_then(|d| d.wake).map(|t| t.with_timezone(&tz)))
-            .unwrap_or(day_start);
+            .or_else(|| today.and_then(|d| d.wake).map(|t| t.with_timezone(&tz).time()));
+        let wake = capacity::local_dt(
+            tz,
+            date,
+            input
+                .model
+                .wake_or_expected(logged_wake, date.weekday(), cfg),
+        );
         let arrival = input
             .runtime
             .arrival

@@ -140,6 +140,40 @@ fn plan_json_has_the_documented_shape() {
     insta::assert_json_snapshot!("plan_schema", schema(&json));
 }
 
+/// §8.5's prior is a step function of hours since wake, and `tm wake` is
+/// optional: arriving without it is a normal day. Both the planner and `Ctx`
+/// take the weekday's expected arrival for the wake nobody logged (§8.4, §16's
+/// `[expected] arrival` — 07:00 on a Monday), so the morning sits at the top
+/// of the curve. Falling back to the start of the day instead put 09:00 at
+/// `hsw` 9, in the curve's `3`/`2` tail, and every ci-4 and ci-5 item was
+/// ineligible for the whole day.
+#[test]
+fn a_day_without_tm_wake_still_plans_demanding_work() {
+    let tm = Tm::new();
+    tm.ok(&["arrive", "lounge"]);
+    assert!(tm.state()["wake"].is_null(), "no wake was logged");
+
+    let json = tm.json(&["plan"]);
+    let peak = json["segments"]
+        .as_array()
+        .expect("segments")
+        .iter()
+        .filter(|s| s["kind"] == "block")
+        .filter_map(|s| s["energy"].as_u64())
+        .max();
+    assert_eq!(peak, Some(5), "the morning is worth a ci-5 block: {json}");
+
+    // `tm plan --week` cuts today's column through `Ctx` rather than the
+    // planner; one wake means one answer.
+    let week = tm.json(&["plan", "--week"]);
+    let today = &week["days"][0];
+    assert_eq!(today["date"], "2026-09-07");
+    assert!(
+        today["minutes_at_level"][5].as_u64().unwrap_or(0) > 0,
+        "the lookahead sees the same energy 5 the plan does: {today}"
+    );
+}
+
 #[test]
 fn plan_week_renders_the_capacity_grid() {
     let tm = Tm::new();

@@ -52,6 +52,43 @@ fn model_json_fixture_parses_to_the_spec_values() {
     assert_eq!(m.n_obs, 61);
 }
 
+/// §8.5 needs a wake to measure `hsw` from and `tm wake` is optional, so a day
+/// with none falls back to the weekday's expected arrival — learned first,
+/// else §16's `[expected] arrival`, exactly as §8.4's lookahead assumes for
+/// the days it cannot observe. Every caller reads it here (the planner and the
+/// CLI once kept two different fallbacks, one of them midnight, which put the
+/// morning in the tail of the prior curve).
+#[test]
+fn an_unlogged_wake_falls_back_to_the_expected_arrival() {
+    let cfg = Config::default();
+    let logged = chrono::NaiveTime::from_hms_opt(6, 5, 0).expect("time");
+
+    // A logged wake is used as it stands, whatever the model knows.
+    let m = fixture_model();
+    assert_eq!(
+        m.wake_or_expected(Some(logged), Weekday::Mon, &cfg),
+        logged
+    );
+    // Learned Monday arrival (`model.json` has 07:10) beats the config's.
+    assert_eq!(
+        m.wake_or_expected(None, Weekday::Mon, &cfg).to_string(),
+        "07:10:00"
+    );
+    // A weekday the model never learned falls through to §16's table.
+    assert_eq!(
+        m.wake_or_expected(None, Weekday::Tue, &cfg),
+        *cfg.expected.arrival.get(Weekday::Tue)
+    );
+    // With no model at all, the config is the answer for every weekday —
+    // never midnight.
+    let empty = Model::default();
+    for wd in [Weekday::Mon, Weekday::Sat, Weekday::Sun] {
+        let t = empty.wake_or_expected(None, wd, &cfg);
+        assert_eq!(t, *cfg.expected.arrival.get(wd));
+        assert_ne!(t, chrono::NaiveTime::MIN);
+    }
+}
+
 /// §17 M8: "model.json round-trips". Byte-for-byte modulo key order and
 /// whitespace: the value re-serializes to the snapshot below and parses back
 /// to an equal model.

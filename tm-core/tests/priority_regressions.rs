@@ -495,9 +495,15 @@ fn window_instances_are_never_batched_together() {
 // §10.2: two instances, one stored priority
 // ---------------------------------------------------------------------------
 
-/// §5.3's carried `on-miss:persist` instance and today's fresh one share an
-/// id. `priorities_for_state` used to keep whichever came last, dropping the
-/// `p = 0` row and giving tomorrow's hysteresis the wrong baseline.
+/// A routine reaches the day once. §5.3's carried `on-miss:persist` instance
+/// *is* the item's pending instance while it is open, so the occurrence that
+/// has since come round is not a second candidate — the laundry used to be
+/// planned twice on the same day, at `p = 0` and again at `p = 5`.
+///
+/// `priorities_for_state` still has to survive two rows for one id (§10.2's
+/// map is keyed by id and `plan()` takes its candidates from the caller): it
+/// used to keep whichever came last, dropping the `p = 0` row and giving
+/// tomorrow's hysteresis the wrong baseline.
 #[test]
 fn priorities_for_state_keeps_the_most_urgent_of_two_instances() {
     let cfg = Config::default();
@@ -507,14 +513,22 @@ fn priorities_for_state_keeps_the_most_urgent_of_two_instances() {
     )]);
     let replay = no_log();
     let cands = candidates(&t, &replay);
-    assert_eq!(cands.len(), 2, "the carried instance and this week's");
-    assert_eq!(ids(&cands), vec!["laundry", "laundry"]);
+    assert_eq!(ids(&cands), vec!["laundry"], "one instance, not two");
 
     let prios = priority::compute(&cands, &flat(7, 5, 240), &empty(), &cfg, date(MONDAY));
     let ps: Vec<u8> = prios.iter().map(|p| p.p).collect();
-    assert_eq!(ps, vec![0, 5]);
+    // Never logged, so last week's window is the carried one: overdue and
+    // mandatory, §7.2's `p = 0`.
+    assert_eq!(ps, vec![0]);
+    assert_eq!(cands[0].instance.map(|k| k.to_string()).as_deref(), Some("2026-08-31"));
 
-    let stored = priority::priorities_for_state(&prios);
+    // Two rows for one id, only `p` differing, as a caller-supplied candidate
+    // list could still hold.
+    let mut two = prios.clone();
+    let mut ranked = prios[0].clone();
+    ranked.p = 5;
+    two.push(ranked);
+    let stored = priority::priorities_for_state(&two);
     assert_eq!(stored.get(&Id::new("laundry")), Some(&0));
     assert_eq!(stored.len(), 1);
 }

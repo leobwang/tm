@@ -541,7 +541,9 @@ fn todays_instances_hold_what_the_planner_may_place() {
     );
     let names: Vec<String> = today.iter().map(|(i, _)| i.item.to_string()).collect();
     // Windows that closed before 10:42 are gone (breakfast, standup, stretch,
-    // last night's sleep); everything still placeable is here.
+    // last night's sleep); everything still placeable is here, each item once:
+    // the laundry's carried `persist` instance is *the* laundry instance today
+    // (§5.3), not one of two.
     assert_eq!(
         names,
         vec![
@@ -553,7 +555,6 @@ fn todays_instances_hold_what_the_planner_may_place() {
             "lunch",
             "workout",
             "water-plants",
-            "laundry",
             "laundry",
             "groceries",
             "shower",

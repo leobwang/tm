@@ -79,6 +79,12 @@
 //! * **Closed items.** A `[x]`/`[-]` item has no pending ordinal instance
 //!   (its logged ones still show), and [`today_instances`] /
 //!   [`week_instances`] skip it entirely.
+//! * **One live instance per item.** [`instances`] reports the history — every
+//!   occurrence in the range with its own status — but [`today_instances`],
+//!   what the planner acts on, yields at most one instance per item: a
+//!   `persist` instance that was missed *is* the item's pending instance
+//!   (§5.3) until it is done or skipped, so neither an older miss nor the
+//!   occurrence that has since come round is a second thing to do today.
 //! * **Mandatory** (§5.2, exact rule): the instance is still actionable, the
 //!   item is a `win:` item, and its span closes today or earlier
 //!   (`close.date() <= today`) — that covers a persisted instance carried
@@ -336,9 +342,21 @@ pub fn is_mandatory(item: &Item, inst: &Instance, today: NaiveDate, now: NaiveDa
 ///
 /// An instance qualifies when it is still actionable, its window has opened
 /// by the end of today, and there is still a chance left: a window that `now`
-/// has already passed only stays under `on-miss:persist`. Instances carried
-/// from an earlier day are collapsed to the most recent one per item; a wholly
-/// future occurrence is left out. Items in a closed state are skipped.
+/// has already passed only stays under `on-miss:persist`. A wholly future
+/// occurrence is left out, and items in a closed state are skipped.
+///
+/// **One instance per item.** A `persist` instance that was missed is still
+/// the item's pending instance (§5.3: it "stays Pending", mandatory and
+/// overdue), so while it is open the occurrence that has since come round is
+/// not a second obligation: today's laundry is *the* laundry, whether it is
+/// last week's window still owed or this week's. Carried instances therefore
+/// collapse to the most recent one, and a surviving carried instance stands
+/// for the current occurrence too — which is what keeps a routine out of the
+/// day twice (§5.2 places a window instance at one position; §7.2 gives an
+/// item one `p`, stored per id in §10.2's map). Nothing is lost by the
+/// collapse: the moment the carried instance is done or skipped, the current
+/// occurrence is what this returns, and the untouched occurrence keeps its own
+/// date on §12.3's week grid ([`week_instances`]) meanwhile.
 pub fn today_instances<'a, I>(
     items: I,
     today: NaiveDate,
@@ -370,8 +388,12 @@ where
         let (carried, current): (Vec<_>, Vec<_>) = mine
             .into_iter()
             .partition(|(i, _)| close_of(i).is_some_and(|c| c.date() < today));
-        out.extend(carried.into_iter().max_by_key(|(i, _)| close_of(i)));
-        out.extend(current);
+        match carried.into_iter().max_by_key(|(i, _)| close_of(i)) {
+            // The carried instance *is* the item's pending one; the occurrence
+            // that came round while it stayed open adds nothing to do today.
+            Some(latest) => out.push(latest),
+            None => out.extend(current),
+        }
     }
     out
 }

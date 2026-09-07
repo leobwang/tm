@@ -376,7 +376,7 @@ All documented at the top of recur.rs under "Deviations from the scope":
 4. `WaitingState` has a fifth field `arrived: Option<DateTime<FixedOffset>>` (the `tm event` that already resolved the wait) so the Necessities screen can tell "still waiting" from "arrived, flip the line"; it is also what lets `instances()` produce a pending instance for a resolved-but-not-yet-rewritten `[?]` line.
 5. Added `done_instance()` beside `skip_instance()` (`tm routine done` needs the symmetric constructor).
 6. Two rules the spec left to me, both documented in the module docs: (a) `Rule::Weeks(n)` (`every:week`, not in the spec's `Rule` enum but added by model.rs) yields one instance per qualifying ISO week keyed by its Monday with a window spanning the whole week — that is what makes "laundry any day, mandatory Sunday, persists into next week" work; (b) `is_mandatory` refines §5.2's "on_miss ≠ expire" with "once the window has closed, only a `persist` instance stays mandatory" (an expire or next window whose close `now` has passed is over), and an `after-done:` item with no `~validity` never counts as a last chance since no day is its last.
-7. `today_instances` bounds the persist carry at `CARRY_LOOKBACK_DAYS = 60` and collapses carried instances to the most recent one per item, so a long-neglected daily persist routine cannot flood the planner.
+7. `today_instances` bounds the persist carry at `CARRY_LOOKBACK_DAYS = 60` and yields **at most one instance per item**: carried instances collapse to the most recent one, and a surviving carried instance stands for the current occurrence too (§5.3's persisted instance *is* the item's pending one until it is done or skipped). So a long-neglected persist routine cannot flood the planner, and a routine is never placed twice in a day. `instances` still reports every occurrence with its own status, and `week_instances` still puts this week's on §12.3's grid.
 
 # energy (layer 2)
 ## tm_core::energy
@@ -394,7 +394,7 @@ pub struct Model { pub energy: BTreeMap<String, Vec<u8>>,   // curve name -> 12 
                    pub fitted: Option<NaiveDate>, pub n_obs: u32 }
 ```
 - `Model::default()` (empty = fall back to config priors), `is_empty()`, `is_fitted()`, `from_config(&Config)`.
-- `energy_at(curve, hsw) -> Option<u8>`, `sleep_shift(&Config) -> f64`, `p_lounge_on(Weekday,&Config) -> f64`, `expected_arrival_on(Weekday,&Config) -> NaiveTime`.
+- `energy_at(curve, hsw) -> Option<u8>`, `sleep_shift(&Config) -> f64`, `p_lounge_on(Weekday,&Config) -> f64`, `expected_arrival_on(Weekday,&Config) -> NaiveTime`, `wake_or_expected(Option<NaiveTime>, Weekday, &Config) -> NaiveTime` (the one fallback for a day with no `wake`: the weekday's expected arrival, §8.4/§16 — planner.rs and cli/ctx.rs both read it from here).
 - `from_json(&str)`, `to_json() -> String` (pretty, arrays inline, trailing newline), `load(&Path) -> Result<Option<Model>>`, `load_or_default(&Path)`, `save(&Path)`. `Model` is plain serde, so `store.read_json::<Model>(store::MODEL_PATH)` / `write_json` also work.
 - `WeekdayMap<T>`: `new/get(Weekday)/set/iter()/len/is_empty`, `FromIterator<(Weekday,T)>`; serializes as a Mon..Sun object with missing days omitted. `Hhmm(pub NaiveTime)` serializes as "HH:MM". `weekday_key(Weekday)`, `parse_weekday_key(&str)`.
 
@@ -699,7 +699,7 @@ Notes for callers:
 - `DayPlan::block_minutes()` covers the whole day, the replayed morning included; use `planned_block_minutes(now)` for the budget check.
 - `SegKind::Batch(ids)` segments have `item == None`; use `Segment::items()`.
 - `diagnostics.blocked` holds only dep-blocked items (`Vec<(Id, Vec<Dep>)>`); waiting and cap-exhausted items are in `waiting` / `dropped_tail`, and `priority::blocked(&cands)` still has the full reason list.
-- `plan()` builds its own candidates and lookahead unless `with_candidates` / `with_caps` are given; `DayPlan::priorities` is one `(Id, Prio)` per candidate, in candidate order (two entries can share an id — a carried persist instance and today's).
+- `plan()` builds its own candidates and lookahead unless `with_candidates` / `with_caps` are given; `DayPlan::priorities` is one `(Id, Prio)` per candidate, in candidate order (`recur::today_instances` gives an item one instance a day, so ids do not repeat unless the caller's own candidate list repeats them; `priorities_for_state` keeps the lowest `p` per id either way).
 - Test helpers live in `tm-core/tests/planner_common/mod.rs` (`load`, `load_with_log`, `BASIC_LOG`, `basic_state`, `timeline`, `diagnostics`) and are reusable by emit.rs / CLI tests via `mod planner_common;`.
 
 ## Deviations (planner)

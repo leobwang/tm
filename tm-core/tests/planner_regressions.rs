@@ -790,6 +790,119 @@ fn a_nonsense_budget_does_not_panic() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// §8.5: the day with no `wake`
+// ---------------------------------------------------------------------------
+
+/// §8.5's prior is a step function of hours since wake, but `tm wake` is
+/// optional: arriving without it is a normal state. The planner used to fall
+/// back to the start of the day, so at 09:21 `hsw` was 9.35 and the lounge
+/// curve was in its `8-10 → 3`, `10+ → 2` tail: every ci-4 and ci-5 item was
+/// ineligible and the whole day went to ci-2 work. The fallback §8.4 and §16
+/// actually name is the weekday's expected arrival, and
+/// `Model::wake_or_expected` is the one place both this and the CLI's
+/// `Ctx::wake_time` read it from.
+#[test]
+fn a_day_with_no_wake_starts_at_the_weekday_expected_arrival() {
+    let fx = load("plan-basic");
+    let now = at("2026-09-07", 9, 21);
+    let arrived = |wake: Option<chrono::NaiveTime>| RuntimeState {
+        date: Some(date("2026-09-07")),
+        wake,
+        arrival: Some(time(9, 20)),
+        loc: Some("lounge".to_string()),
+        window: Some((time(9, 20), time(18, 20))),
+        budget: Some(6),
+        ..RuntimeState::default()
+    };
+
+    // Nothing logged the wake, and §16's `[expected] arrival` for a Monday is
+    // 07:00: the two days are the same day.
+    let unknown = planner::plan(&fx.input(&arrived(None), now));
+    let expected = planner::plan(&fx.input(&arrived(Some(time(7, 0))), now));
+    assert_eq!(
+        timeline(&unknown),
+        timeline(&expected),
+        "an unlogged wake is the weekday's expected arrival"
+    );
+    assert!(unknown == expected, "…and the same DayPlan throughout");
+
+    // And that day works: the morning is at the top of the curve, so the ci-5
+    // milestone gets its slot.
+    let peak = unknown
+        .segments
+        .iter()
+        .filter(|s| matches!(s.kind, SegKind::Block))
+        .filter_map(|s| s.energy)
+        .max();
+    assert_eq!(peak, Some(5), "{}", timeline(&unknown));
+    assert!(
+        unknown.assigned_from(now).contains(&Id::new("m1")),
+        "the ci-5 milestone is planned:\n{}",
+        timeline(&unknown)
+    );
+
+    // The day the old fallback produced, for contrast: midnight puts every
+    // slot in the tail of the curve and no ci-5 item can be placed at all.
+    let midnight = planner::plan(&fx.input(&arrived(Some(time(0, 0))), now));
+    let ci5: Vec<Id> = midnight
+        .assigned_from(now)
+        .into_iter()
+        .filter(|id| ci_of(&fx.tree, id) == 5)
+        .collect();
+    assert!(
+        ci5.is_empty() && midnight != unknown,
+        "midnight is the bug, not the fallback: {ci5:?}\n{}",
+        timeline(&midnight)
+    );
+}
+
+/// §5.3: a routine reaches the day once. The laundry's carried `persist`
+/// instance *is* its pending instance, so the occurrence that came round this
+/// week is not a second load — the planner used to place both, mandatory in
+/// the morning and deferred to the evening.
+#[test]
+fn a_persisted_routine_is_not_planned_twice_in_one_day() {
+    let fx = load("plan-basic");
+    let now = at("2026-09-07", 9, 21);
+    let state = RuntimeState {
+        date: Some(date("2026-09-07")),
+        arrival: Some(time(9, 20)),
+        loc: Some("lounge".to_string()),
+        window: Some((time(9, 20), time(18, 20))),
+        budget: Some(6),
+        ..RuntimeState::default()
+    };
+    let day = planner::plan(&fx.input(&state, now));
+
+    let laundry: Vec<String> = day
+        .segments
+        .iter()
+        .filter(|s| s.item.as_ref() == Some(&Id::new("laundry")))
+        .map(|s| planner::fmt_clock(s.start))
+        .collect();
+    assert_eq!(laundry.len(), 1, "one laundry: {laundry:?}\n{}", timeline(&day));
+
+    // The one that survives is last week's missed window: §5.3's overdue,
+    // mandatory instance, which §7.2 puts at `p = 0`.
+    let seg = day
+        .segments
+        .iter()
+        .find(|s| s.item.as_ref() == Some(&Id::new("laundry")))
+        .expect("laundry is placed");
+    assert_eq!(
+        seg.instance.map(|k| k.to_string()).as_deref(),
+        Some("2026-08-31")
+    );
+    let ps: Vec<u8> = day
+        .priorities
+        .iter()
+        .filter(|(id, _)| id.as_str() == "laundry")
+        .map(|(_, p)| p.p)
+        .collect();
+    assert_eq!(ps, vec![0], "one row in §10.2's per-id map");
+}
+
 /// The timezone every fixture uses, kept honest.
 #[test]
 fn the_fixtures_plan_in_the_configured_zone() {

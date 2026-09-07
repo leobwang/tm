@@ -66,6 +66,12 @@
 //!   tag (plus `_default`), as §8.5's own example does; the lookup still
 //!   tries the fully-keyed `"<ci>:<tag>"` first so a hand-edited model can
 //!   carry the ci-specific value the formula names.
+//! * **A day with no `wake`.** §8.5 measures the prior in hours since wake
+//!   but never says what an unlogged day starts at, and `tm wake` is
+//!   optional. [`Model::wake_or_expected`] is the single answer every caller
+//!   uses — planner and CLI alike: the weekday's expected arrival
+//!   ([`Model::expected_arrival_on`], §8.4's own assumption for days it
+//!   cannot observe, §16's `[expected] arrival` until it is learned).
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -373,6 +379,32 @@ impl Model {
             .get(wd)
             .map(|t| t.0)
             .unwrap_or_else(|| *cfg.expected.arrival.get(wd))
+    }
+
+    /// The wake §8.5 measures `hsw` from — **the one fallback for a day with
+    /// no `wake`**, shared by the planner and the CLI.
+    ///
+    /// `logged` is the wake the day actually has: `state.json`'s `wake`
+    /// (§10.2), else the `wake` event of that day (§10.1). Having neither is a
+    /// normal state — `tm wake` is optional, the day simply started
+    /// unrecorded — so the fallback has to produce a sane day. The only start
+    /// the spec has for a day it did not watch begin is the weekday's
+    /// **expected arrival**: learned ([`Model::expected_arrival_on`], §8.5),
+    /// else `config.expected.arrival` (§16). That is exactly what §8.4's
+    /// lookahead already assumes for every day but today, so today and
+    /// tomorrow are simulated the same way.
+    ///
+    /// Midnight is the trap this exists to close: it puts `hsw` at 9–11 h by
+    /// mid-morning, where §8.5's prior curve is in its `3`/`2` tail, so every
+    /// ci-4 and ci-5 item is ineligible and the whole day fills with ci-2
+    /// work.
+    pub fn wake_or_expected(
+        &self,
+        logged: Option<NaiveTime>,
+        wd: Weekday,
+        cfg: &Config,
+    ) -> NaiveTime {
+        logged.unwrap_or_else(|| self.expected_arrival_on(wd, cfg))
     }
 
     /// Parse `model.json` text.

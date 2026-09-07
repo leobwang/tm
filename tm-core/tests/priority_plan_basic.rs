@@ -139,10 +139,11 @@ fn plan_basic_priorities_and_order() {
     let prios = priority::compute(&cands, &caps, &BTreeMap::new(), &cfg, date("2026-09-07"));
     insta::assert_snapshot!("plan_basic_priorities", table(&cands, &prios, &cfg));
 
-    // `laundry` is `on-miss:persist` and the fixture has no log, so it has two
-    // pending instances: last week's carried one (§5.3: overdue, mandatory)
-    // and this week's. They share an id, so the pairing of candidate to
-    // priority is by position, not by id.
+    // `laundry` is `on-miss:persist` and the fixture has no log, so last
+    // week's window was missed and carries into today (§5.3: overdue,
+    // mandatory, `p = 0` by §7.2). It is the routine's *only* candidate: while
+    // it is open it is the laundry's pending instance, so this week's
+    // occurrence is not a second load to plan today.
     let laundry: Vec<(&str, u8)> = cands
         .iter()
         .zip(&prios)
@@ -157,7 +158,7 @@ fn plan_basic_priorities_and_order() {
             )
         })
         .collect();
-    assert_eq!(laundry, vec![("carried", 0), ("this week", 5)]);
+    assert_eq!(laundry, vec![("carried", 0)]);
 
     let queue = priority::sorted(&prios, &cands);
     let order: Vec<&str> = queue.iter().map(Id::as_str).collect();
@@ -233,8 +234,8 @@ fn plan_basic_priorities_and_order() {
     let stored = priority::priorities_for_state(&prios);
     assert_eq!(stored.get(&Id::new("d1")), Some(&4));
     assert!(!stored.contains_key(&Id::new("x1")));
-    // `laundry` has two instances today (the carried one at p = 0 and this
-    // week's at p = 5); the stored baseline is the more urgent of the two.
+    // `laundry` is today's carried `persist` instance: §7.2's `p = 0`, and
+    // that is the baseline tomorrow compares against.
     assert_eq!(stored.get(&Id::new("laundry")), Some(&0));
 
     // §11 deadline health for the fixture day.
