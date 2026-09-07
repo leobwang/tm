@@ -269,3 +269,37 @@ pub fn diagnostics(day: &DayPlan) -> String {
     }
     out
 }
+
+/// No more than `break_after_blocks` work segments run without a rest of at
+/// least `break_min` between them (a break, a routine or a wall all count as
+/// rest — `capacity.rs` cuts each free stretch separately).
+pub fn assert_break_rule(day: &DayPlan, now: DateTime<Tz>, cfg: &Config) {
+    let mut run = 0;
+    let mut last_end: Option<DateTime<Tz>> = None;
+    for seg in day.segments.iter().filter(|s| s.start >= now) {
+        match seg.kind {
+            SegKind::Block | SegKind::Batch(_) => {
+                // A gap of at least `break_min` is a rest, whatever fills it.
+                if last_end.is_some_and(|e| (seg.start - e).num_minutes() >= i64::from(cfg.day.break_min))
+                {
+                    run = 0;
+                }
+                run += 1;
+                assert!(
+                    run <= cfg.day.break_after_blocks,
+                    "{run} blocks in a row, no break, at {}:\n{}",
+                    seg.start,
+                    timeline(day)
+                );
+                last_end = Some(seg.end);
+            }
+            SegKind::Break | SegKind::Routine | SegKind::Wall | SegKind::Rest => {
+                if seg.minutes() >= cfg.day.break_min {
+                    run = 0;
+                }
+                last_end = Some(seg.end.max(last_end.unwrap_or(seg.end)));
+            }
+            _ => {}
+        }
+    }
+}

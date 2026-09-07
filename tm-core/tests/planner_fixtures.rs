@@ -9,7 +9,10 @@
 mod planner_common;
 
 use chrono::NaiveTime;
-use planner_common::{at, basic_state, date, diagnostics, load, load_with_log, timeline, BASIC_LOG};
+use planner_common::{
+    assert_break_rule, at, basic_state, date, diagnostics, load, load_with_log, timeline,
+    BASIC_LOG,
+};
 use tm_core::planner::{self, SegKind, Segment};
 use tm_core::store::RuntimeState;
 
@@ -45,11 +48,12 @@ use tm_core::store::RuntimeState;
 ///    has all four; the Monday workout is mandatory (its window closes today)
 ///    and lands at 16:00, and the three deferred ones take the lowest-energy
 ///    free positions of the evening (§8.2 step 6).
-/// 6. **§4.3 breaks at 09:00 and at 13:50.** `^a3`'s 20-minute routine at
-///    09:00 *is* the first break as far as `capacity.rs` is concerned (a rest
-///    of at least `break_min` satisfies a pending break), and a wall counts as
-///    work for the counter, so the afternoon break lands at 14:50 rather than
-///    after the single 13:50 block.
+/// 6. **§4.3 breaks at 09:00 and at 13:50.** A rest of at least `break_min`
+///    satisfies a pending break, so `^a3`'s 20-minute routine at 09:00 *is*
+///    the first break and lunch (30m, 11:30) is the second. The counter is
+///    therefore back to zero at 12:00; the 12:50 wall is not work and does not
+///    move it; and the two blocks that follow — 12:00 and 13:50 — earn the
+///    break at 14:50.
 /// 7. **§4.3 marks two blocks `✓` and one `▶`, and shows `(67m)` actuals.**
 ///    Those are log facts; at 07:00 the log holds only wake, breakfast and
 ///    arrive.
@@ -86,8 +90,32 @@ fn plan_basic_early_start() {
         .expect("lunch is placed");
     assert!(lunch.start >= at("2026-09-07", 11, 30));
     assert!(lunch.end <= at("2026-09-07", 13, 30));
-    // A break comes after two blocks of work.
-    assert!(day.segments.iter().any(|s| s.kind == SegKind::Break));
+    // §8.2 step 3's rule: never more than `break_after_blocks` blocks in a row
+    // without a rest, and this day takes its break at 14:50.
+    assert_break_rule(&day, now, &fx.cfg);
+    let breaks: Vec<&Segment> = day
+        .segments
+        .iter()
+        .filter(|s| s.kind == SegKind::Break)
+        .collect();
+    assert_eq!(breaks.len(), 1, "{}", timeline(&day));
+    assert_eq!(breaks[0].start, at("2026-09-07", 14, 50));
+    assert_eq!(breaks[0].end, at("2026-09-07", 15, 10));
+    // §8.2 step 8: what this day could not do (the snapshot pins the rest).
+    assert_eq!(
+        day.diagnostics.blocked,
+        vec![(
+            tm_core::model::Id::new("t5"),
+            vec![tm_core::model::Dep::Item(tm_core::model::Id::new("t4"))]
+        )]
+    );
+    assert_eq!(day.diagnostics.waiting, vec![tm_core::model::Id::new("a4")]);
+    assert!(!day.diagnostics.dropped_tail.is_empty());
+    assert_eq!(day.diagnostics.rest_debt_min, 0, "no break was cut today");
+    // §11: the day opens three milestones it cannot finish, so plan honesty is
+    // well above the 1.1 the monitor warns at (see `Diagnostics::plan_honesty`).
+    let honesty = day.diagnostics.plan_honesty.expect("a six-block budget");
+    assert!((honesty - 780.0 / 360.0).abs() < 0.01, "{honesty}");
     // Nothing works after wind-down.
     let wind = at("2026-09-07", 21, 30);
     assert!(!day
@@ -119,6 +147,7 @@ fn plan_basic_late_start_with_a_wall() {
     insta::assert_snapshot!("plan_basic_late_timeline", timeline(&day));
     insta::assert_snapshot!("plan_basic_late_diagnostics", diagnostics(&day));
 
+    assert_break_rule(&day, now, &fx.cfg);
     // §8.1: the wall inside the window pushes the end out by its duration.
     assert_eq!(day.window.0, at("2026-09-07", 10, 30));
     assert_eq!(day.window.1, at("2026-09-07", 19, 30));
@@ -163,6 +192,7 @@ fn plan_home_day() {
 
     assert_eq!(day.window, (at("2026-09-07", 9, 0), at("2026-09-07", 18, 0)));
     assert_eq!(day.budget_blocks, 6);
+    assert_break_rule(&day, now, &fx.cfg);
     // §8.2 step 3: the home cap holds every slot at or below `home_max_ci`.
     for seg in day.segments.iter().filter(|s| s.energy.is_some()) {
         assert!(

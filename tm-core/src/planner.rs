@@ -90,13 +90,29 @@
 //!    [`priority::sorted_candidates`] is the group order; a cursor walks the
 //!    slots and each slot takes the first group that is still owed minutes,
 //!    fits the slot's energy, matches the location, has `max:` left and — when
-//!    `atomic` — has enough contiguous free slots before the next wall. A
-//!    group keeps taking consecutive slots until its planned minutes
+//!    `atomic` — has enough contiguous free slots before the next wall (a
+//!    planned break does not interrupt such a run; §8.2 step 5 names only the
+//!    wall). A group keeps taking consecutive slots until its planned minutes
 //!    (`remaining × duration multiplier`, §8.5, capped by `max:`) are covered.
-//!    The `state.active` block goes first, whatever the key says (§9: no
-//!    preemption mid-block): it takes the slot at or after `now` and as many
-//!    consecutive slots as `est_min − elapsed` needs, and only then does the
-//!    key order resume.
+//!    §7.5 groups by `ci` and size alone, so a batch is **split** before this
+//!    filter runs wherever its members disagree about the two halves of the
+//!    filter that are written about the *item* — `loc:` and `atomic` — and
+//!    around the item that is running. One member's `loc:out` therefore never
+//!    rides another into the lounge, nor takes it out of the day; the split
+//!    parts are re-sorted into §7.4's key order, so a passenger that loses its
+//!    batch also loses the batch's place in the queue.
+//!    5b. **The running block (§9).** `state.active` is not assigned at all:
+//!    the minutes it still needs (`est_min −` the worked minutes the log
+//!    knows) are *reserved* — like a wall — from `now` to `now + left`, before
+//!    routines are placed and before slots are cut. So nothing is scheduled on
+//!    top of a block that is running, the block survives a `max:`-exhausted or
+//!    dep-blocked item and a spent budget (§9: "no preemption mid-block"), and
+//!    it is the one work segment that carries no slot energy: it sits in no
+//!    cut slot, so §8.3's energy filter — a constraint on step 5's *choice* —
+//!    has nothing to say about it. Its blocks still count against the
+//!    remaining budget, and the stretch it has already run comes from the log
+//!    (`replay.open_block`), marked [`SegFlags::open`] because it grows with
+//!    every replan.
 //! 6. **Deferred routines (step 6).** Each deferred instance is offered every
 //!    free position inside its window — the gaps, the Rest slots and the
 //!    evening, but never the wind-down — and takes the one with the **lowest
@@ -356,6 +372,17 @@ pub struct SegFlags {
     pub deferred: bool,
     /// Drawn as the "plan as it stood at arrival" ghost row (§12.1).
     pub ghost: bool,
+    /// The segment is still **open**: its `end` is `now` because the thing it
+    /// records has not finished yet — the running interruption (§9) and the
+    /// stretch of the running block that has already happened (§12.1).
+    ///
+    /// §8.3's stability invariant ("a replan changes no segment with `end ≤
+    /// now`") is about *settled* segments; an open one necessarily grows with
+    /// every replan, because at 13:05 the truth is "interrupted since 12:10"
+    /// and at 13:35 it is "interrupted since 12:10" for half an hour longer.
+    /// A later plan therefore holds the same segment with a later `end`, never
+    /// a different start, kind or item.
+    pub open: bool,
     /// Minutes the planner set aside: `est × multiplier` (§8.5).
     pub planned_min: Option<u32>,
     /// The duration multiplier behind `planned_min` (`2b×1.6`).
@@ -428,6 +455,14 @@ pub struct Diagnostics {
     /// milestones inside a six-block budget scores well above 1 — which is
     /// the over-commitment the monitor is for. `None` when the budget is
     /// zero (a travel day, or a budget already spent).
+    ///
+    /// Any measure taken over the blocks the plan *assigns* is ≤ 1 by
+    /// construction — step 5 stops at the budget — so it could never reach
+    /// §11's 1.1 threshold. The ratio is therefore about what the day *takes
+    /// on*: on the §4.3 fixture day (which starts `^t3`, `^m1` and `^m2`, 780
+    /// minutes of remaining estimate against a 360-minute budget) it reads
+    /// 2.17, and the monitor is right to say so — two of those three will not
+    /// be finished today. `tests/planner_regressions.rs` pins the reading.
     pub plan_honesty: Option<f64>,
     /// §11: planned break minutes skipped or cut, cumulative today — the
     /// `break` events of today's log whose `actual_min` fell short of their
@@ -587,6 +622,17 @@ impl DayPlan {
         out
     }
 
+    /// The block running at `now` — the `▶` row (§9, §12.1), if any.
+    ///
+    /// Its minutes are a fact rather than a placement: §8.3's budget bound is
+    /// over the blocks the plan *proposes*, so a caller checking that bound
+    /// subtracts this segment (see the module docs, choice 5b).
+    pub fn current_segment(&self) -> Option<&Segment> {
+        self.segments
+            .iter()
+            .find(|s| s.flags.current && s.kind.is_work())
+    }
+
     /// The first segment holding `id`, if any.
     pub fn segment_of(&self, id: &Id) -> Option<&Segment> {
         self.segments
@@ -622,7 +668,7 @@ pub fn week_plan(input: &PlanInput) -> WeekPlan {
 /// prints after `→ drops:`.
 pub fn overtime_drops(input: &PlanInput, id: &Id, blocks: u32) -> Vec<Id> {
     let base = plan(input);
-    let extra = PlanOverrides::new().extending(id, blocks * input.cfg.block_min());
+    let extra = PlanOverrides::new().extending(id, blocks.saturating_mul(input.cfg.block_min()));
     let alt = plan(&input.with_overrides(&extra));
     diff(&base, &alt).removed
 }
@@ -663,6 +709,28 @@ struct RoutineInst {
     deferred: bool,
 }
 
+/// The block running at `now` (§9), and the minutes it still needs.
+#[derive(Clone, Debug)]
+struct ActiveRun {
+    /// The item being worked.
+    id: Id,
+    /// `now`.
+    start: DateTime<Tz>,
+    /// `now + (est_min − worked)`, clipped to the wind-down and the next wall.
+    end: DateTime<Tz>,
+    /// `est_min − worked`, before the clip.
+    left_min: u32,
+    /// The §8.5 multiplier the estimate was sized with, for the display pair.
+    multiplier: Option<f64>,
+}
+
+impl ActiveRun {
+    /// Minutes the reservation actually occupies.
+    fn minutes(&self) -> u32 {
+        (self.end - self.start).num_minutes().max(0) as u32
+    }
+}
+
 /// One assignment group: a batch (§7.5) or a single candidate.
 #[derive(Clone, Debug)]
 struct Group {
@@ -676,6 +744,8 @@ struct Group {
     left_min: i64,
     /// Minutes the day committed to it (for §11's plan honesty).
     commit_min: u32,
+    /// §7.4's sort key: the best key among the members.
+    key: priority::SortKey,
 }
 
 /// Everything one `plan()` call produced, including the pieces `week_plan`
@@ -809,6 +879,14 @@ impl<'a> Planner<'a> {
             notes.push("travel day: no blocks planned (`travel-day` wall today)".to_string());
         }
 
+        // ---- §9: the running block reserves its remaining minutes ---------
+        // It is placed before the routines and before the slots are cut, so
+        // nothing is scheduled on top of a block that is running.
+        let active = self.active_run(&walls, &cands);
+        if let Some(run) = &active {
+            blocked.push((run.start, run.end));
+        }
+
         // ---- step 2: routines --------------------------------------------
         let (mut routines, sleep) = self.collect_routines(&cands);
         self.place_mandatory_and_pref(&mut routines, &mut blocked);
@@ -816,7 +894,7 @@ impl<'a> Planner<'a> {
         // ---- step 3: slots -----------------------------------------------
         let rests: Vec<Wall> = routines.iter().filter_map(|r| r.placed).collect();
         let mut slot_blocked = blocked.clone();
-        slot_blocked.push((self.wind_down.min(self.day_end), self.day_end));
+        slot_blocked.push(self.night());
         let from = self.now.max(window.0).min(window.1);
         let cut = capacity::cut_slots_around(
             from,
@@ -859,15 +937,26 @@ impl<'a> Planner<'a> {
 
         // ---- step 5: assign ----------------------------------------------
         let ranked = priority::sorted_candidates(&prios, &cands);
-        let mut groups = self.build_groups(&cands, &ranked);
+        let mut groups = self.build_groups(&cands, &prios, &ranked, active.as_ref());
         let mut assign: Vec<Option<usize>> = vec![None; slots.len()];
-        let (mut used, active_slot) =
-            self.assign_active(&cands, &slots, &mut groups, &mut assign, remaining_budget);
+        // The running block already spent part of the budget, and part of the
+        // work its own group was owed. It costs exactly **one** block however
+        // long it runs: §8.1 counts `blocks_done` in `done` events, and this
+        // block will close as one of them.
+        let mut used = u32::from(active.is_some());
+        if let Some(run) = &active {
+            if let Some(gi) = groups
+                .iter()
+                .position(|g| g.members.iter().any(|i| cands[*i].id == run.id))
+            {
+                groups[gi].left_min -= i64::from(run.minutes());
+            }
+        }
         for i in 0..slots.len() {
             if assign[i].is_some() || used >= remaining_budget {
                 continue;
             }
-            if let Some(g) = self.pick(&slots[i], i, &slots, &groups, &assign) {
+            if let Some(g) = self.pick(&slots[i], i, &slots, &groups, &assign, &cut.breaks) {
                 assign[i] = Some(g);
                 groups[g].left_min -= i64::from(slots[i].minutes());
                 used += 1;
@@ -875,12 +964,17 @@ impl<'a> Planner<'a> {
         }
 
         // ---- step 6: deferred routines -----------------------------------
+        // The breaks step 3 cut are part of the day too: a deferred routine
+        // that landed on one would be emitted on top of it (§8.2 step 3).
+        let kept_breaks = kept_breaks(&cut.breaks, &slots, &assign);
         self.place_deferred(
             &mut routines,
             &slots,
             &mut assign,
             &mut groups,
             &blocked,
+            &kept_breaks,
+            &cut.breaks,
             &ectx,
             remaining_budget,
             &mut used,
@@ -895,6 +989,7 @@ impl<'a> Planner<'a> {
             .collect();
         day.segments = self.emit_segments(
             &cands,
+            &prios,
             &walls,
             &routines,
             sleep.as_ref(),
@@ -903,7 +998,7 @@ impl<'a> Planner<'a> {
             &groups,
             &cut.breaks,
             &blocked,
-            active_slot,
+            active.as_ref(),
         );
         day.segments
             .sort_by(|a, b| a.start.cmp(&b.start).then(a.end.cmp(&b.end)));
@@ -1153,12 +1248,19 @@ impl<'a> Planner<'a> {
         (out, sleep)
     }
 
-    /// The evening the day is over: `[wind_down, midnight)`. Nothing is cut,
-    /// placed or filled there (§8.2 step 2's "sleep and wind-down define the
-    /// hard end of the day"); only a mandatory instance with nowhere else to
-    /// go may reach into it.
+    /// The evening the day is over: everything from `wind_down` on. Nothing is
+    /// cut, placed or filled there (§8.2 step 2's "sleep and wind-down define
+    /// the hard end of the day"); only a mandatory instance with nowhere else
+    /// to go may reach into it.
+    ///
+    /// It runs to the end of *tomorrow*, not to midnight: §8.1's wall
+    /// extension can push the window past midnight (a six-hour evening wall on
+    /// a late day does), and the small hours are not a second working evening.
     fn night(&self) -> Wall {
-        (self.wind_down.min(self.day_end), self.day_end)
+        (
+            self.wind_down.min(self.day_end),
+            self.day_end + Duration::days(1),
+        )
     }
 
     /// §8.2 step 2: mandatory instances take the earliest feasible position in
@@ -1207,7 +1309,13 @@ impl<'a> Planner<'a> {
     // §8.2 step 5
     // -----------------------------------------------------------------
 
-    fn build_groups(&self, cands: &[Candidate], ranked: &[&Candidate]) -> Vec<Group> {
+    fn build_groups(
+        &self,
+        cands: &[Candidate],
+        prios: &[Prio],
+        ranked: &[&Candidate],
+        active: Option<&ActiveRun>,
+    ) -> Vec<Group> {
         let index = |c: &Candidate| {
             cands
                 .iter()
@@ -1229,74 +1337,119 @@ impl<'a> Planner<'a> {
             if members.is_empty() {
                 continue; // a wall, an optional or a window instance
             }
-            let first = &cands[members[0]];
-            let planned: u32 = members.iter().map(|i| cands[*i].planned_min).sum();
-            let cap_left = members
-                .iter()
-                .filter_map(|i| cands[*i].cap_left_min())
-                .min()
-                .unwrap_or(u32::MAX);
-            let commit = planned.min(cap_left);
-            out.push(Group {
-                members,
-                ci: batch.ci,
-                loc: first.loc.clone(),
-                splittable: first.splittable,
-                multiplier: first.multiplier,
-                left_min: i64::from(commit),
-                commit_min: commit,
-            });
+            // §8.2 step 5's `loc` and `atomic` filters are written about the
+            // *item*, and §7.5 batches by `ci` and size alone: a batch may
+            // well mix a `loc:out` errand, an `atomic` job and a desk task.
+            // Splitting the batch by both keeps the filters honest in both
+            // directions — the errand does not ride into the lounge, and it
+            // does not take the rest of its batch out of the day with it. The
+            // item that is *running* is split out for the same reason: the
+            // minutes its block still needs are its own, not its batch's.
+            for members in split_by_filters(cands, &members, active.map(|r| &r.id)) {
+                let first = &cands[members[0]];
+                let planned: u32 = members.iter().map(|i| cands[*i].planned_min).sum();
+                let cap_left = members
+                    .iter()
+                    .filter_map(|i| cands[*i].cap_left_min())
+                    .min()
+                    .unwrap_or(u32::MAX);
+                let commit = planned.min(cap_left);
+                out.push(Group {
+                    ci: batch.ci,
+                    loc: first.loc.clone(),
+                    splittable: first.splittable,
+                    multiplier: first.multiplier,
+                    left_min: i64::from(commit),
+                    commit_min: commit,
+                    key: members
+                        .iter()
+                        .map(|m| priority::sort_key(&prios[*m], &cands[*m]))
+                        .min()
+                        .expect("a group has members"),
+                    members,
+                });
+            }
         }
+        // §7.4's key order, restored: §7.5's batching gathers *forward*, so a
+        // batch sits at its leader's position and carries its members with it
+        // — but a member split off above is on its own again and takes its own
+        // place in the queue. The sort is stable, so an unsplit batch does not
+        // move.
+        out.sort_by(|a, b| a.key.cmp(&b.key));
         out
     }
 
-    /// §9: the Active block keeps the slot containing `now`, whatever the key
-    /// says, with `est_min − elapsed` minutes still to run.
-    fn assign_active(
-        &self,
-        cands: &[Candidate],
-        slots: &[Slot],
-        groups: &mut [Group],
-        assign: &mut [Option<usize>],
-        remaining_budget: u32,
-    ) -> (u32, Option<usize>) {
-        let Some(active) = &self.input.runtime.active else {
-            return (0, None);
-        };
-        if remaining_budget == 0 {
-            return (0, None);
+    /// §9: the block running at `now` reserves the minutes it still needs.
+    ///
+    /// This is a *fact*, not an assignment: it is not filtered by §8.2 step 5
+    /// (there is no preemption mid-block), it survives a spent budget and an
+    /// item `collect_candidates` calls ineligible, and it is reserved before
+    /// step 2 so nothing is planned on top of it. It yields only to a wall —
+    /// §8.2 step 1 places those first and puts nothing in their overlap — and
+    /// to the wind-down.
+    fn active_run(&self, walls: &[WallSeg], cands: &[Candidate]) -> Option<ActiveRun> {
+        let active = self.input.runtime.active.as_ref()?;
+        if active.paused {
+            return None; // the timer is stopped; the block is not running
         }
-        let Some(gi) = groups
-            .iter()
-            .position(|g| g.members.iter().any(|i| cands[*i].id == active.id))
-        else {
-            return (0, None);
-        };
-        let Some(i0) = slots.iter().position(|s| s.end > self.now) else {
-            return (0, None);
-        };
+        // §9: an interruption pauses the Active block. Its ad-hoc wall covers
+        // `now`, so there is nothing to reserve.
+        if walls.iter().any(|w| w.adhoc && w.end >= self.now) {
+            return None;
+        }
+        // §9.1's `d done` what-if: the block is finished in that plan.
+        if self
+            .input
+            .overrides
+            .is_some_and(|ov| ov.drop.contains(&active.id))
+        {
+            return None;
+        }
         let started = capacity::local_dt(self.tz, self.date, active.started);
-        let elapsed = (self.now - started).num_minutes().max(0) as u32;
-        let left = active.est_min.saturating_sub(elapsed);
+        // The log knows the worked minutes exactly (pauses excluded); the
+        // clock is the fallback when it holds no open block.
+        let worked = self
+            .input
+            .replay
+            .open_block
+            .as_ref()
+            .filter(|b| b.id == active.id.as_str())
+            .map(|b| b.worked_min_at(self.now.fixed_offset()))
+            .unwrap_or_else(|| (self.now - started).num_minutes().max(0) as u32);
+        let left = active.est_min.saturating_sub(worked);
         if left == 0 {
-            return (0, None);
+            return None; // overtime: §9.1's prompt owns the day from here
         }
-        groups[gi].left_min = i64::from(left);
-        groups[gi].commit_min = groups[gi].commit_min.max(left);
-        // The running block finishes: it keeps the slot it is in and however
-        // many follow to cover `est_min − elapsed` (§9, "no preemption
-        // mid-block" — the block, not the slot). Only then does the key order
-        // take over again.
-        let mut used = 0;
-        for (i, slot) in slots.iter().enumerate().skip(i0) {
-            if groups[gi].left_min <= 0 || used >= remaining_budget {
-                break;
-            }
-            assign[i] = Some(gi);
-            groups[gi].left_min -= i64::from(slot.minutes());
-            used += 1;
+        // Never past the wind-down, never into a wall.
+        let limit = if self.now < self.wind_down {
+            self.wind_down.min(self.day_end)
+        } else {
+            self.day_end
+        };
+        if limit <= self.now {
+            return None;
         }
-        (used, Some(i0))
+        let wall_spans: Vec<Wall> = walls.iter().map(|w| (w.blocked_start, w.end)).collect();
+        let (free_from, free_to) = capacity::free_intervals(self.now, limit, &wall_spans)
+            .into_iter()
+            .next()?;
+        if free_from > self.now {
+            return None; // a wall covers `now`
+        }
+        let end = (self.now + Duration::minutes(i64::from(left))).min(free_to);
+        if end <= self.now {
+            return None;
+        }
+        Some(ActiveRun {
+            id: active.id.clone(),
+            start: self.now,
+            end,
+            left_min: left,
+            multiplier: cands
+                .iter()
+                .find(|c| c.id == active.id)
+                .map(|c| c.multiplier),
+        })
     }
 
     /// §8.2 step 5's filter, applied to one slot.
@@ -1307,6 +1460,7 @@ impl<'a> Planner<'a> {
         slots: &[Slot],
         groups: &[Group],
         assign: &[Option<usize>],
+        breaks: &[capacity::Break],
     ) -> Option<usize> {
         for (gi, g) in groups.iter().enumerate() {
             if g.left_min <= 0 || g.ci > slot.energy || !self.loc_ok(&g.loc) {
@@ -1317,7 +1471,7 @@ impl<'a> Planner<'a> {
             if slot.start >= self.wind_down && g.ci >= 4 {
                 continue;
             }
-            if !g.splittable && !contiguous_fits(slots, assign, i, g.left_min as u32) {
+            if !g.splittable && !contiguous_fits(slots, assign, i, g.left_min as u32, breaks) {
                 continue;
             }
             return Some(gi);
@@ -1346,6 +1500,8 @@ impl<'a> Planner<'a> {
         assign: &mut [Option<usize>],
         groups: &mut [Group],
         blocked: &[Wall],
+        kept_breaks: &[capacity::Break],
+        breaks: &[capacity::Break],
         ectx: &EnergyCtx,
         remaining_budget: u32,
         used: &mut u32,
@@ -1361,6 +1517,7 @@ impl<'a> Planner<'a> {
                 continue;
             }
             let mut occupied = occupied_now(blocked, routines, slots, assign);
+            occupied.extend(kept_breaks.iter().map(|b| (b.start, b.end)));
             occupied.push(self.night());
             // Every free position inside the window; the lowest predicted
             // energy wins, ties by the earlier start (§8.2 step 6).
@@ -1415,7 +1572,7 @@ impl<'a> Planner<'a> {
                 if assign[j].is_some() || *used >= remaining_budget {
                     continue;
                 }
-                if let Some(g) = self.pick(&slots[j], j, slots, groups, assign) {
+                if let Some(g) = self.pick(&slots[j], j, slots, groups, assign, breaks) {
                     assign[j] = Some(g);
                     groups[g].left_min -= i64::from(slots[j].minutes());
                     *used += 1;
@@ -1433,6 +1590,7 @@ impl<'a> Planner<'a> {
     fn emit_segments(
         &self,
         cands: &[Candidate],
+        prios: &[Prio],
         walls: &[WallSeg],
         routines: &[RoutineInst],
         sleep: Option<&RoutineInst>,
@@ -1441,9 +1599,32 @@ impl<'a> Planner<'a> {
         groups: &[Group],
         breaks: &[capacity::Break],
         blocked: &[Wall],
-        active_slot: Option<usize>,
+        active: Option<&ActiveRun>,
     ) -> Vec<Segment> {
         let mut out: Vec<Segment> = self.past_segments();
+        // §9: while an interruption runs, nothing is running.
+        let interrupted = walls.iter().any(|w| w.adhoc && w.end >= self.now);
+        out.extend(self.open_block_segment(active.is_none() && !interrupted, walls));
+
+        // §9: the block that is running — a reservation, not a slot, so it
+        // carries no slot energy (see the module docs, choice 5b).
+        if let Some(run) = active {
+            out.push(Segment {
+                start: run.start,
+                end: run.end,
+                kind: SegKind::Block,
+                energy: None,
+                item: Some(run.id.clone()),
+                instance: None,
+                flags: SegFlags {
+                    current: true,
+                    planned_min: Some(run.left_min),
+                    multiplier: run.multiplier,
+                    note: Some(format!("running · {}m left", run.left_min)),
+                    ..SegFlags::default()
+                },
+            });
+        }
 
         // Walls, and the blocked time a `buffer:` puts in front of them.
         for w in walls {
@@ -1456,6 +1637,8 @@ impl<'a> Planner<'a> {
                     item: (!w.id.is_empty()).then(|| w.id.clone()),
                     instance: None,
                     flags: SegFlags {
+                        // It has not ended: the next replan shows it longer.
+                        open: w.end >= self.now,
                         note: Some("interruption".to_string()),
                         ..SegFlags::default()
                     },
@@ -1512,8 +1695,6 @@ impl<'a> Planner<'a> {
 
         // Blocks and batches; the Rest slots are emitted last, once the
         // deferred routines and the optionals have taken their share of them.
-        let active_id = self.input.runtime.active.as_ref().map(|a| a.id.clone());
-        let mut current_marked = false;
         for (i, slot) in slots.iter().enumerate() {
             if let Some(gi) = assign[i] {
                 let g = &groups[gi];
@@ -1524,19 +1705,8 @@ impl<'a> Planner<'a> {
                     SegKind::Block
                 };
                 let gap = slot.energy.saturating_sub(g.ci);
-                let hot = g
-                    .members
-                    .iter()
-                    .any(|m| cands[*m].hot || cands[*m].overdue || cands[*m].mandatory);
-                // §9's `▶`: the slot the Active block kept — the first
-                // slot at or after `now`, which is not always the one
-                // literally containing `now` (a routine may sit there).
-                let current = !current_marked
-                    && active_slot == Some(i)
-                    && active_id.as_ref().is_some_and(|a| ids.contains(a));
-                if current {
-                    current_marked = true;
-                }
+                // `⚠` is §7.2's `p = 0` — the priority, not the `hot` key.
+                let hot = g.members.iter().any(|m| prios[*m].p == 0);
                 out.push(Segment {
                     start: slot.start,
                     end: slot.end,
@@ -1545,7 +1715,6 @@ impl<'a> Planner<'a> {
                     item: (ids.len() == 1).then(|| ids[0].clone()),
                     instance: None,
                     flags: SegFlags {
-                        current,
                         underused: gap >= 2,
                         hot,
                         planned_min: Some(g.commit_min),
@@ -1559,15 +1728,17 @@ impl<'a> Planner<'a> {
         }
 
         // Breaks: a break belongs to the day only when work touches it —
-        // between two blocks, or right after the last one.
-        let kept_breaks: Vec<capacity::Break> = breaks
-            .iter()
+        // between two blocks, or right after the last one — and never when a
+        // routine has taken that stretch (§8.2 step 6 places into the free
+        // positions; a break it could not avoid is time it took over).
+        let kept_breaks: Vec<capacity::Break> = kept_breaks(breaks, slots, assign)
+            .into_iter()
             .filter(|b| {
-                slots.iter().enumerate().any(|(i, s)| {
-                    assign[i].is_some() && (s.end == b.start || s.start == b.end)
-                })
+                !routines
+                    .iter()
+                    .filter_map(|r| r.placed)
+                    .any(|(a, z)| b.start < z && a < b.end)
             })
-            .copied()
             .collect();
         for b in &kept_breaks {
             out.push(Segment {
@@ -1679,6 +1850,45 @@ impl<'a> Planner<'a> {
             });
         }
         out
+    }
+
+    /// The stretch of the running block that has already happened (§12.1:
+    /// left of the cursor the timeline renders the log).
+    ///
+    /// [`Replay`] closes a block's sub-segment only when something interrupts
+    /// it, so the minutes a block has been running for are in no segment;
+    /// without this the day bar shows a hole where the current block is.
+    /// `mark_current` is true when there is nothing left to reserve (the block
+    /// is in overtime), and the `▶` belongs on this half instead. An
+    /// interruption ends the stretch where it started: §9 pauses the block.
+    fn open_block_segment(&self, mark_current: bool, walls: &[WallSeg]) -> Option<Segment> {
+        let open = self.input.replay.open_block.as_ref()?;
+        let since = open.since?.with_timezone(&self.tz);
+        if since < self.day_start || since >= self.now {
+            return None;
+        }
+        let mut end = self.now.min(self.day_end);
+        for w in walls.iter().filter(|w| w.adhoc && w.blocked_start > since) {
+            end = end.min(w.blocked_start);
+        }
+        if end <= since {
+            return None;
+        }
+        Some(Segment {
+            start: since,
+            end,
+            kind: SegKind::Block,
+            energy: None,
+            item: Some(Id::new(open.id.clone())),
+            instance: None,
+            flags: SegFlags {
+                current: mark_current,
+                // It is still running: the next replan shows it longer.
+                open: true,
+                note: Some(format!("{}m so far", open.worked_min_at(self.now.fixed_offset()))),
+                ..SegFlags::default()
+            },
+        })
     }
 
     /// §8.3's stability half: everything that ended before `now` comes from
@@ -1855,7 +2065,9 @@ impl<'a> Planner<'a> {
             .filter(|g| g.members.iter().any(|m| assigned.contains(&cands[*m].id)))
             .map(|g| g.commit_min)
             .sum();
-        let budget_min = remaining_budget * self.cfg.block_min();
+        // `budget` comes from `state.json`, which is hand-editable: saturate
+        // rather than panic on a nonsense value (§10.2).
+        let budget_min = remaining_budget.saturating_mul(self.cfg.block_min());
         d.plan_honesty = (budget_min > 0).then(|| f64::from(committed) / f64::from(budget_min));
 
         // §11 rest debt: planned break minutes today's log lost.
@@ -1941,7 +2153,20 @@ fn occupied_now(
 }
 
 /// §8.2 step 5's `atomic` rule: enough free, time-contiguous slots from `i`.
-fn contiguous_fits(slots: &[Slot], assign: &[Option<usize>], i: usize, need: u32) -> bool {
+///
+/// "Contiguous ... before the next wall" is read as the spec writes it: a
+/// **wall** (or a routine, or anything else that took the time) ends the run,
+/// a planned break does not. Sitting through the 20-minute break the planner
+/// itself inserted is not a context switch, and counting it as one would make
+/// every `atomic` item longer than `break_after_blocks × block_min`
+/// unplaceable on any day.
+fn contiguous_fits(
+    slots: &[Slot],
+    assign: &[Option<usize>],
+    i: usize,
+    need: u32,
+    breaks: &[capacity::Break],
+) -> bool {
     let mut have = 0u32;
     let mut j = i;
     while j < slots.len() {
@@ -1949,7 +2174,10 @@ fn contiguous_fits(slots: &[Slot], assign: &[Option<usize>], i: usize, need: u32
             return false;
         }
         if j > i && slots[j].start != slots[j - 1].end {
-            return false; // a break or a wall interrupts the run
+            let gap = (slots[j - 1].end, slots[j].start);
+            if !breaks.iter().any(|b| b.start == gap.0 && b.end == gap.1) {
+                return false; // a wall or a routine interrupts the run
+            }
         }
         have += slots[j].minutes();
         if have >= need {
@@ -1958,6 +2186,49 @@ fn contiguous_fits(slots: &[Slot], assign: &[Option<usize>], i: usize, need: u32
         j += 1;
     }
     false
+}
+
+/// The breaks that belong to the day: a break is planned only when work
+/// touches it — between two blocks, or right after the last one (§8.2 step 3).
+fn kept_breaks(
+    breaks: &[capacity::Break],
+    slots: &[Slot],
+    assign: &[Option<usize>],
+) -> Vec<capacity::Break> {
+    breaks
+        .iter()
+        .filter(|b| {
+            slots
+                .iter()
+                .enumerate()
+                .any(|(i, s)| assign[i].is_some() && (s.end == b.start || s.start == b.end))
+        })
+        .copied()
+        .collect()
+}
+
+/// One batch's members split into runs of equal `(loc:, splittable, running)`
+/// — the halves of §8.2 step 5's filter that are written about the item, not
+/// about the batch, plus the block that is already running (§9). Each run keeps
+/// the batch's key order.
+fn split_by_filters(
+    cands: &[Candidate],
+    members: &[usize],
+    active: Option<&Id>,
+) -> Vec<Vec<usize>> {
+    let mut out: Vec<((Loc, bool, bool), Vec<usize>)> = Vec::new();
+    for m in members {
+        let key = (
+            cands[*m].loc.clone(),
+            cands[*m].splittable,
+            active == Some(&cands[*m].id),
+        );
+        match out.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, group)) => group.push(*m),
+            None => out.push((key, vec![*m])),
+        }
+    }
+    out.into_iter().map(|(_, group)| group).collect()
 }
 
 /// The `inst` field of a §10.1 `routine` event as an [`InstanceKey`].
@@ -2105,7 +2376,11 @@ pub struct WeekDay {
     pub capacity_min: u32,
     /// Minutes this allocation gives to work.
     pub planned_min: u32,
-    /// `planned_min` in whole blocks, rounded down.
+    /// Blocks of work. **Today** it is the number of blocks [`plan`] actually
+    /// scheduled (§8.4: "the actual remaining slots from §8.2 step 3"), which
+    /// is not `planned_min / block_min` — a day ends in a short block, and a
+    /// slot cut off by a wall is a whole block of the budget all the same. The
+    /// later days have no slots, so there it is `planned_min / block_min`.
     pub blocks: u32,
     /// `(item, minutes)`, in assignment order.
     pub items: Vec<(Id, u32)>,
@@ -2160,6 +2435,7 @@ fn week_from_run(input: &PlanInput, run: &PlanRun) -> WeekPlan {
     if let Some(today) = days.first_mut() {
         for seg in run.day.segments.iter().filter(|s| s.kind.is_work()) {
             today.planned_min += seg.minutes();
+            today.blocks += 1;
             for id in seg.items() {
                 match today.items.iter_mut().find(|(i, _)| *i == id) {
                     Some(entry) => entry.1 += seg.minutes(),
@@ -2167,7 +2443,6 @@ fn week_from_run(input: &PlanInput, run: &PlanRun) -> WeekPlan {
                 }
             }
         }
-        today.blocks = today.planned_min / block_min;
         work[0] = DayCapacity::empty(from);
     }
 

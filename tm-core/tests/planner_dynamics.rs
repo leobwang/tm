@@ -101,7 +101,9 @@ fn a_replan_never_moves_the_past() {
 // ---------------------------------------------------------------------------
 
 /// §9: "Active item keeps its current slot regardless of key (no preemption
-/// mid-block)", with `est_min − elapsed` minutes still to run.
+/// mid-block)", with `est_min − elapsed` minutes still to run. The running
+/// block is reserved from `now`, so nothing else — no routine, no higher-key
+/// item, no break — is planned on top of it.
 #[test]
 fn the_active_block_keeps_the_slot_containing_now() {
     let fx = load_with_log("plan-basic", Some(MORNING));
@@ -117,20 +119,28 @@ fn the_active_block_keeps_the_slot_containing_now() {
     let now = at("2026-09-07", 10, 0);
     let day = planner::plan(&fx.input(&state, now));
     let current = day
-        .segments
-        .iter()
-        .find(|s| s.flags.current)
+        .current_segment()
         .unwrap_or_else(|| panic!("a block is running:\n{}", timeline(&day)));
     assert_eq!(current.item.as_deref_id(), Some("m4"));
     assert!(current.kind.is_work());
-    assert!(current.start >= now, "the kept slot starts at or after now");
-    // 120 − 30 elapsed = 90 minutes left, so it also takes the next slot.
-    let m4: Vec<&tm_core::planner::Segment> = day
-        .segments
-        .iter()
-        .filter(|s| s.item.as_ref().is_some_and(|i| i.as_str() == "m4"))
-        .collect();
-    assert_eq!(m4.len(), 2, "{}", timeline(&day));
+    // 120 − 30 elapsed = 90 minutes still to run, from `now`.
+    assert_eq!(current.start, now);
+    assert_eq!(current.end, at("2026-09-07", 11, 30));
+    assert_eq!(current.flags.planned_min, Some(90));
+    // Exactly one `▶`, and nothing at all overlaps the running block.
+    assert_eq!(
+        day.segments.iter().filter(|s| s.flags.current).count(),
+        1,
+        "{}",
+        timeline(&day)
+    );
+    for seg in day.segments.iter().filter(|s| !s.flags.current) {
+        assert!(
+            seg.end <= current.start || seg.start >= current.end,
+            "{seg:?} runs over the block that is running:\n{}",
+            timeline(&day)
+        );
+    }
 }
 
 /// §9: an interruption that has not been resumed is an ad-hoc wall from its
@@ -352,13 +362,21 @@ fn week_plan_fills_the_grid() {
 
     assert_eq!(week.from, date("2026-09-07"));
     assert_eq!(week.days.len(), 7);
-    // Day 0 is exactly what `plan()` produced.
+    // Day 0 is exactly what `plan()` produced: the same minutes, and the same
+    // number of blocks — six here, though only 350 minutes, because the day
+    // ends in a short block and the 12:00 slot is cut off by the 12:50 wall.
+    // (`planned_min / block_min` would say 5, which is the one thing the grid
+    // must not say about a day the planner filled.)
     let day = planner::plan(&fx.input(&state, now));
+    let blocks = day.segments.iter().filter(|s| s.kind.is_work()).count() as u32;
     assert_eq!(week.days[0].planned_min, day.block_minutes());
-    assert_eq!(week.days[0].blocks, day.block_minutes() / 60);
-    // No day is allocated more than its own capacity.
-    for d in &week.days {
-        assert!(d.planned_min <= d.capacity_min.max(day.block_minutes()), "{d:?}");
+    assert_eq!(week.days[0].blocks, blocks);
+    assert_eq!(blocks, 6, "{}", timeline(&day));
+    assert_eq!(week.days[0].planned_min, 350);
+    // No later day is allocated more than its own capacity (day 0 is the plan
+    // itself, and §8.1's window may exceed the §8.4 grid's expectation).
+    for d in week.days.iter().skip(1) {
+        assert!(d.planned_min <= d.capacity_min, "{d:?}");
     }
     // The grid has a header, seven days and a total.
     assert_eq!(week.grid.lines().count(), 9, "{}", week.grid);
