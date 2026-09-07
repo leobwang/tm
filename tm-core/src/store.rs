@@ -1,1 +1,1790 @@
-//! store — see tm-spec-v1.md. Stub; to be implemented.
+//! Store — tm-spec-v1.md §1.2 `store.rs`, §1.3 (three writers, one file
+//! set), §2 (repository layout), §4.2/§4.3 (file conventions), §10.2
+//! (`state.json`).
+//!
+//! # API overview
+//!
+//! * [`Store`] — the object-safe trait every reader/writer of `plan/` goes
+//!   through. Implementors supply the primitives (`list_files`, `read_text`,
+//!   `write_file`, `exists`, `abs_path`, `read_config`) and the one
+//!   id-addressed edit primitive [`Store::modify_line`]; everything else is a
+//!   provided method built on the pure text transforms in [`edit`], so every
+//!   store behaves identically and bytes outside the edited line are never
+//!   touched:
+//!   - [`Store::read_tree`]`() -> `[`PlanFiles`] (every `*.md` under the root
+//!     in deterministic order — month, week, backlog, routines, optional,
+//!     calendar, day, inbox, then anything else — plus `config.toml`);
+//!     [`Store::read_file`]`(rel)`.
+//!   - [`Store::write_line`]`(id, new_text)` — replace exactly the line
+//!     carrying `^id` (§1.3). On [`FsStore`] the file's mtime *and* content
+//!     hash are checked between the read and the atomic write; on a mismatch
+//!     the store re-reads and retries once, then fails with
+//!     [`StoreError::Conflict`] carrying both texts.
+//!   - [`Store::replace_generated`]`(rel, name, body)` /
+//!     [`Store::replace_generated_stamped`]`(rel, name, info, body)` — the
+//!     block between `<!-- tm:<name> start … -->` and `<!-- tm:<name> end -->`
+//!     (markers kept; inserted after the front matter / `![day](…)` line when
+//!     missing).
+//!   - [`Store::append_to_section`]`(rel, "## Log", line)`,
+//!     [`Store::insert_line`]`(rel, Some("Tasks") | None, text)` (a missing
+//!     section is created at the end as `# Section`; a missing horizon file
+//!     is created with its front matter), [`Store::remove_line`]`(id)`,
+//!     [`Store::move_line`]`(id, to_rel, section)` (exact line text
+//!     preserved), [`Store::reorder_line`]`(id, delta)` (TUI `J`/`K`, within
+//!     the section).
+//!   - [`Store::ensure_file`] / [`Store::ensure_horizon_file`],
+//!     [`Store::load_state`] / [`Store::save_state`] (`.tm/state.json`,
+//!     missing → default).
+//! * [`StoreExt`] — `read_json<T>` / `write_json<T>` for `.tm/model.json`
+//!   and friends (blanket impl for every `Store`, `dyn Store` included).
+//! * [`FsStore`]`::new(root)` — `root` is the `plan/` directory. Writes are
+//!   atomic (temp file in the same directory + rename).
+//!   [`FsStore::with_before_write_hook`] injects a closure run between the
+//!   read and the verified write (the race test of §17 M1).
+//! * [`MemStore`] — the same trait over an in-memory `path → text` map, for
+//!   tests and the planner's purity tests ([`MemStore::from_dir`] loads a
+//!   fixture tree).
+//! * [`PlanFiles`] — `config` + `files: Vec<ParsedFile>` with
+//!   [`PlanFiles::locate`]`(id) -> Option<`[`Location`]`>`
+//!   (file index, line index), [`PlanFiles::find`], [`PlanFiles::ids`],
+//!   [`PlanFiles::tree`].
+//! * [`RuntimeState`] — §10.2 `state.json`, serde-exact.
+//! * Path helpers: [`horizon_path`], [`initial_text`], [`file_rank`],
+//!   [`sort_files`], and the `.tm/` constants [`STATE_PATH`],
+//!   [`MODEL_PATH`], [`LOG_PATH`], [`CONFIG_PATH`].
+//! * [`StoreError`] — `Io`, `Parse`, `NotFound(id)`, `Conflict {…}`, `Json`,
+//!   `Toml`.
+//!
+//! Ids: a line is addressed by its `^id`; an id-less line (routines,
+//! optional, inbox) by the key `tree.rs` gives it (its title). When an id is
+//! on several lines (the §6.3 `# Demoted` copy), the copy outside
+//! `# Demoted` is the one edited.
+
+use std::collections::hash_map::DefaultHasher;
+use std::collections::{BTreeMap, HashSet};
+use std::fmt;
+use std::fs::{self, File};
+use std::hash::{Hash, Hasher};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, MutexGuard};
+use std::time::SystemTime;
+
+use chrono::{NaiveDate, NaiveTime};
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+use crate::config::{hhmm, Config, ConfigError};
+use crate::grammar::{parse_file, ItemLine, ParsedFile};
+use crate::model::{Horizon, Id, IsoWeek, Item, YearMonth};
+use crate::tree::Tree;
+
+/// `config.toml`, relative to the plan root.
+pub const CONFIG_PATH: &str = "config.toml";
+/// `.tm/state.json` (§10.2).
+pub const STATE_PATH: &str = ".tm/state.json";
+/// `.tm/model.json` (§8.5).
+pub const MODEL_PATH: &str = ".tm/model.json";
+/// `.tm/log.jsonl` (§10.1).
+pub const LOG_PATH: &str = ".tm/log.jsonl";
+
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+/// Errors from a [`Store`].
+#[derive(Debug, Error)]
+pub enum StoreError {
+    /// A file could not be read or written.
+    #[error("{path}: {source}")]
+    Io {
+        /// Path (relative to the plan root when known).
+        path: String,
+        /// Underlying error.
+        #[source]
+        source: std::io::Error,
+    },
+    /// Text that cannot go into a plan file (a line break in a line, a
+    /// replacement that is not an item line or changes the `^id`, invalid
+    /// UTF-8).
+    #[error("{path}:{line}: {message}")]
+    Parse {
+        /// File.
+        path: String,
+        /// 1-based line, or 0 for the whole file.
+        line: usize,
+        /// What was wrong.
+        message: String,
+    },
+    /// No line carries the id (or, for id-less lines, the title key).
+    #[error("no line carries ^{0}")]
+    NotFound(Id),
+    /// The file changed between the read and the write, twice (§1.3).
+    /// Carries both versions so the TUI can show a diff.
+    #[error("^{id} in {file} changed underneath the write (ours: {ours:?}, theirs: {theirs:?})")]
+    Conflict {
+        /// The id being written.
+        id: Id,
+        /// The file holding it.
+        file: String,
+        /// The line we wanted to write.
+        ours: String,
+        /// The line as it is in the file now (empty when it disappeared).
+        theirs: String,
+    },
+    /// A `.tm/*.json` file did not parse or serialize.
+    #[error("{path}: {source}")]
+    Json {
+        /// File.
+        path: String,
+        /// Underlying error.
+        #[source]
+        source: serde_json::Error,
+    },
+    /// `config.toml` could not be loaded.
+    #[error(transparent)]
+    Toml(#[from] ConfigError),
+}
+
+impl StoreError {
+    /// True for [`StoreError::Conflict`] (CLI exit code 3).
+    pub fn is_conflict(&self) -> bool {
+        matches!(self, StoreError::Conflict { .. })
+    }
+    /// True for [`StoreError::NotFound`].
+    pub fn is_not_found(&self) -> bool {
+        matches!(self, StoreError::NotFound(_))
+    }
+}
+
+fn io_err(path: &str, source: std::io::Error) -> StoreError {
+    StoreError::Io {
+        path: path.to_string(),
+        source,
+    }
+}
+
+fn parse_err(path: &str, line: usize, message: impl Into<String>) -> StoreError {
+    StoreError::Parse {
+        path: path.to_string(),
+        line,
+        message: message.into(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Paths
+// ---------------------------------------------------------------------------
+
+/// The relative path of a horizon file: `backlog.md`, `month/2026-09.md`,
+/// `week/2026-W37.md`, `day/2026-09-07.md`, `calendar/2026-W37.md`,
+/// `routines.md`, `optional.md`, `inbox.md`.
+pub fn horizon_path(h: &Horizon) -> String {
+    h.path()
+}
+
+/// The text a horizon file starts with: front matter for month
+/// (`month:`), week (`week:` + `window:`) and day (`date:`, plus the
+/// `![day](…)` image line of §4.3); empty for the others.
+pub fn initial_text(h: &Horizon) -> String {
+    match h {
+        Horizon::Month(m) => format!("---\nmonth: {m}\n---\n"),
+        Horizon::Week(w) => {
+            let (a, b) = w.range();
+            format!(
+                "---\nweek: {w}\nwindow: {}..{}\n---\n",
+                a.format("%Y-%m-%d"),
+                b.format("%Y-%m-%d")
+            )
+        }
+        Horizon::Day(d) => {
+            let ds = d.format("%Y-%m-%d");
+            format!("---\ndate: {ds}\n---\n![day]({ds}.svg)\n")
+        }
+        _ => String::new(),
+    }
+}
+
+/// Ordering rank of a plan file: month 0, week 1, backlog 2, routines 3,
+/// optional 4, calendar 5, day 6, inbox 7, unknown 8. Files of one rank
+/// sort by path, so dated files come out chronologically.
+pub fn file_rank(rel: &str) -> u8 {
+    match Horizon::from_path(rel) {
+        Some(Horizon::Month(_)) => 0,
+        Some(Horizon::Week(_)) => 1,
+        Some(Horizon::Backlog) => 2,
+        Some(Horizon::Routine) => 3,
+        Some(Horizon::Optional) => 4,
+        Some(Horizon::Calendar(_)) => 5,
+        Some(Horizon::Day(_)) => 6,
+        Some(Horizon::Inbox) => 7,
+        None => 8,
+    }
+}
+
+/// Sort relative paths into the deterministic tree order (see
+/// [`file_rank`]) and drop duplicates.
+pub fn sort_files(files: &mut Vec<String>) {
+    files.sort_by(|a, b| file_rank(a).cmp(&file_rank(b)).then_with(|| a.cmp(b)));
+    files.dedup();
+}
+
+/// True for a relative path the tree reader takes: a `.md` file outside
+/// hidden directories (`.tm/`, `.claude/`, `.git/`) and not `CLAUDE.md`.
+pub fn is_plan_file(rel: &str) -> bool {
+    let norm = rel.replace('\\', "/");
+    let mut parts = norm.split('/').filter(|p| !p.is_empty()).peekable();
+    let mut name = "";
+    while let Some(p) = parts.next() {
+        if p.starts_with('.') {
+            return false;
+        }
+        if parts.peek().is_none() {
+            name = p;
+        }
+    }
+    name.ends_with(".md") && name != "CLAUDE.md"
+}
+
+// ---------------------------------------------------------------------------
+// The parsed tree
+// ---------------------------------------------------------------------------
+
+/// Where a line is inside a [`PlanFiles`]: indexes into `files` and into
+/// that file's `lines`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Location {
+    /// Index into [`PlanFiles::files`].
+    pub file: usize,
+    /// 0-based index into `ParsedFile::lines` (line number − 1).
+    pub line: usize,
+}
+
+/// Every plan file, parsed, plus the config.
+#[derive(Clone, Debug)]
+pub struct PlanFiles {
+    /// `config.toml` (defaults when missing).
+    pub config: Config,
+    /// Files in tree order (see [`file_rank`]).
+    pub files: Vec<ParsedFile>,
+}
+
+impl PlanFiles {
+    /// The file at a relative path.
+    pub fn file(&self, rel: &str) -> Option<&ParsedFile> {
+        self.files.iter().find(|f| f.path == rel)
+    }
+    /// Every item of every file, in tree order.
+    pub fn items(&self) -> impl Iterator<Item = &Item> {
+        self.files.iter().flat_map(|f| f.items())
+    }
+    /// Where the line for `id` is (the copy outside `# Demoted` when the id
+    /// is duplicated; id-less lines match by their title key).
+    pub fn locate(&self, id: &Id) -> Option<Location> {
+        choose(self.files.iter().enumerate(), id).map(|(file, line)| Location { file, line })
+    }
+    /// The item for `id`.
+    pub fn find(&self, id: &Id) -> Option<&Item> {
+        let loc = self.locate(id)?;
+        self.files[loc.file].lines[loc.line].item()
+    }
+    /// The relative path of the file holding `id`.
+    pub fn file_of(&self, id: &Id) -> Option<&str> {
+        self.locate(id).map(|l| self.files[l.file].path.as_str())
+    }
+    /// Every `^id` in the tree (for `IdGen::next_id`).
+    pub fn ids(&self) -> HashSet<String> {
+        self.items()
+            .filter(|i| i.has_id())
+            .map(|i| i.id.as_str().to_string())
+            .collect()
+    }
+    /// Build the [`Tree`] over these files.
+    pub fn tree(&self) -> Tree {
+        Tree::build(&self.files, &self.config)
+    }
+}
+
+/// The preferred `(file index, line index)` for `id` among several parsed
+/// files: the first match outside a `# Demoted` section, else the first
+/// match.
+fn choose<'a>(files: impl Iterator<Item = (usize, &'a ParsedFile)>, id: &Id) -> Option<(usize, usize)> {
+    let mut fallback = None;
+    for (fi, f) in files {
+        if let Some(li) = edit::find_line(f, id) {
+            if !edit::is_demoted(f, li) {
+                return Some((fi, li));
+            }
+            fallback.get_or_insert((fi, li));
+        }
+    }
+    fallback
+}
+
+// ---------------------------------------------------------------------------
+// Pure text transforms
+// ---------------------------------------------------------------------------
+
+/// Pure transforms on a parsed file. Each returns the new file text; nothing
+/// outside the touched lines changes (line endings included). The stores
+/// call these; they are public so previews (`tm add`, the TUI) can show the
+/// result without writing.
+pub mod edit {
+    use super::*;
+
+    /// A heading line outside the front matter and generated ranges.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct Heading {
+        /// 0-based line index.
+        pub index: usize,
+        /// Number of `#`.
+        pub level: usize,
+        /// Text after the `#`s, trimmed.
+        pub text: String,
+    }
+
+    /// Lines as `(text, eol)` with the file's dominant line ending.
+    struct Doc {
+        lines: Vec<(String, String)>,
+        eol: String,
+    }
+
+    impl Doc {
+        fn new(parsed: &ParsedFile) -> Doc {
+            let lines: Vec<(String, String)> =
+                parsed.lines.iter().map(|l| (l.text(), l.eol.clone())).collect();
+            let eol = lines
+                .iter()
+                .map(|(_, e)| e.as_str())
+                .find(|e| !e.is_empty())
+                .unwrap_or("\n")
+                .to_string();
+            Doc { lines, eol }
+        }
+
+        fn len(&self) -> usize {
+            self.lines.len()
+        }
+
+        /// Insert a line; every line but the last gets a line ending, and a
+        /// file that had no final newline keeps that convention.
+        fn insert(&mut self, idx: usize, text: &str) {
+            let idx = idx.min(self.lines.len());
+            let at_end = idx == self.lines.len();
+            let eol = if at_end && self.lines.last().is_some_and(|(_, e)| e.is_empty()) {
+                String::new()
+            } else {
+                self.eol.clone()
+            };
+            self.lines.insert(idx, (text.to_string(), eol));
+            self.fix_eols();
+        }
+
+        fn remove(&mut self, idx: usize) -> String {
+            self.lines.remove(idx).0
+        }
+
+        fn fix_eols(&mut self) {
+            let n = self.lines.len();
+            let eol = self.eol.clone();
+            for (i, (_, e)) in self.lines.iter_mut().enumerate() {
+                if i + 1 < n && e.is_empty() {
+                    *e = eol.clone();
+                }
+            }
+        }
+
+        /// Index of the last non-blank line in `start..end`.
+        fn last_nonblank(&self, start: usize, end: usize) -> Option<usize> {
+            (start..end.min(self.lines.len()))
+                .rev()
+                .find(|&i| !self.lines[i].0.trim().is_empty())
+        }
+
+        fn text(&self) -> String {
+            let mut out = String::new();
+            for (t, e) in &self.lines {
+                out.push_str(t);
+                out.push_str(e);
+            }
+            out
+        }
+    }
+
+    /// `(level, text)` for a `# Heading` line.
+    fn heading_of(line: &str) -> Option<(usize, &str)> {
+        let hashes = line.bytes().take_while(|b| *b == b'#').count();
+        if hashes == 0 {
+            return None;
+        }
+        let rest = &line[hashes..];
+        if rest.is_empty() || rest.starts_with(' ') || rest.starts_with('\t') {
+            Some((hashes, rest.trim()))
+        } else {
+            None
+        }
+    }
+
+    /// `(level if given, text)` for a requested section: `"## Log"` →
+    /// `(Some(2), "Log")`, `"Tasks"` → `(None, "Tasks")`.
+    fn split_request(heading: &str) -> (Option<usize>, &str) {
+        let h = heading.trim();
+        match heading_of(h) {
+            Some((level, text)) => (Some(level), text),
+            None => (None, h),
+        }
+    }
+
+    /// Number of lines the front matter occupies (0 when there is none):
+    /// `---` on line 1 through the next `---`.
+    pub fn front_matter_len(parsed: &ParsedFile) -> usize {
+        let texts: Vec<String> = parsed.lines.iter().map(|l| l.text()).collect();
+        front_len(&texts)
+    }
+
+    fn front_len(texts: &[String]) -> usize {
+        if texts.first().is_some_and(|l| l.trim_end() == "---") {
+            if let Some(rel) = texts[1..].iter().position(|l| l.trim_end() == "---") {
+                return rel + 2;
+            }
+        }
+        0
+    }
+
+    /// The headings of a file, in order, skipping the front matter and
+    /// generated ranges (as the parser does).
+    pub fn headings(parsed: &ParsedFile) -> Vec<Heading> {
+        let front = front_matter_len(parsed);
+        parsed
+            .lines
+            .iter()
+            .enumerate()
+            .skip(front)
+            .filter(|(i, l)| l.item().is_none() && !parsed.in_generated(i + 1))
+            .filter_map(|(i, l)| {
+                heading_of(&l.text()).map(|(level, text)| Heading {
+                    index: i,
+                    level,
+                    text: text.to_string(),
+                })
+            })
+            .collect()
+    }
+
+    /// The `[start, end)` line range of the section containing line
+    /// `idx`: after its heading up to the next heading (or the end); lines
+    /// before the first heading form the unnamed leading section.
+    pub fn section_range(parsed: &ParsedFile, idx: usize) -> (usize, usize) {
+        let hs = headings(parsed);
+        let len = parsed.lines.len();
+        match hs.iter().rposition(|h| h.index < idx) {
+            Some(k) => (hs[k].index + 1, hs.get(k + 1).map(|h| h.index).unwrap_or(len)),
+            None => (
+                front_matter_len(parsed),
+                hs.first().map(|h| h.index).unwrap_or(len),
+            ),
+        }
+    }
+
+    /// True when the item on line `idx` sits in a `# Demoted` section.
+    pub fn is_demoted(parsed: &ParsedFile, idx: usize) -> bool {
+        parsed.lines[idx]
+            .item()
+            .is_some_and(|it| it.src.section.as_deref() == Some("Demoted"))
+    }
+
+    /// The line index carrying `id`: an item whose `^id` is `id`, or an
+    /// id-less item whose title key (`Tree::key_of`) is `id`. Prefers a
+    /// match outside `# Demoted`.
+    pub fn find_line(parsed: &ParsedFile, id: &Id) -> Option<usize> {
+        let mut fallback = None;
+        for (i, l) in parsed.lines.iter().enumerate() {
+            let Some(it) = l.item() else { continue };
+            let matches = if it.has_id() {
+                it.id == *id
+            } else {
+                Tree::key_of(it) == *id
+            };
+            if !matches {
+                continue;
+            }
+            if !is_demoted(parsed, i) {
+                return Some(i);
+            }
+            fallback.get_or_insert(i);
+        }
+        fallback
+    }
+
+    /// Replace line `idx` with `new_text` (one line, no ending).
+    pub fn replace_line(parsed: &ParsedFile, idx: usize, new_text: &str) -> String {
+        let mut doc = Doc::new(parsed);
+        doc.lines[idx].0 = new_text.to_string();
+        doc.text()
+    }
+
+    /// Remove line `idx`; returns `(new text, removed line)`.
+    pub fn remove_line(parsed: &ParsedFile, idx: usize) -> (String, String) {
+        let mut doc = Doc::new(parsed);
+        let removed = doc.remove(idx);
+        (doc.text(), removed)
+    }
+
+    /// Move the item on line `idx` `delta` positions down (up when
+    /// negative) among the item lines of its section, clamped to the
+    /// section; prose and blank lines stay where they are. `None` when
+    /// nothing moves.
+    pub fn reorder_line(parsed: &ParsedFile, idx: usize, delta: i32) -> Option<String> {
+        let (start, end) = section_range(parsed, idx);
+        let items: Vec<usize> = (start..end)
+            .filter(|&i| parsed.lines[i].item().is_some())
+            .collect();
+        let pos = items.iter().position(|&i| i == idx)?;
+        let last = items.len().checked_sub(1)? as i64;
+        let new_pos = (pos as i64 + delta as i64).clamp(0, last) as usize;
+        if new_pos == pos {
+            return None;
+        }
+        let mut doc = Doc::new(parsed);
+        let text = doc.remove(idx);
+        // Moving down: the target shifted up by one, so inserting at its old
+        // index lands right after it. Moving up: the target did not move, so
+        // the same index lands right before it.
+        doc.insert(items[new_pos], &text);
+        Some(doc.text())
+    }
+
+    /// Append `line` at the end of the section `heading` (given as `"Log"`
+    /// or `"## Log"`; matched by text): after its last non-blank line, so a
+    /// blank separator before the next heading stays. A missing section is
+    /// created at the end of the file (after the last non-blank line, with
+    /// a blank line before it) as the given heading, or `# <text>` when no
+    /// `#`s were given.
+    pub fn append_to_section(parsed: &ParsedFile, heading: &str, line: &str) -> String {
+        let (level, name) = split_request(heading);
+        let hs = headings(parsed);
+        let mut doc = Doc::new(parsed);
+        match hs.iter().position(|h| h.text == name) {
+            Some(k) => {
+                let start = hs[k].index + 1;
+                let end = hs.get(k + 1).map(|h| h.index).unwrap_or(doc.len());
+                let at = doc.last_nonblank(start, end).map(|j| j + 1).unwrap_or(start);
+                doc.insert(at, line);
+            }
+            None => {
+                let heading_line = format!("{} {}", "#".repeat(level.unwrap_or(1)), name);
+                let mut at = doc.last_nonblank(0, doc.len()).map(|j| j + 1).unwrap_or(0);
+                if at > 0 {
+                    doc.insert(at, "");
+                    at += 1;
+                }
+                doc.insert(at, &heading_line);
+                doc.insert(at + 1, line);
+            }
+        }
+        doc.text()
+    }
+
+    /// Append `line` at the end of the file (after its last non-blank
+    /// line; trailing blank lines stay trailing).
+    pub fn append_to_end(parsed: &ParsedFile, line: &str) -> String {
+        let mut doc = Doc::new(parsed);
+        let at = doc.last_nonblank(0, doc.len()).map(|j| j + 1).unwrap_or(doc.len());
+        doc.insert(at, line);
+        doc.text()
+    }
+
+    /// The `<!-- tm:<name> start [info] -->` marker line.
+    pub fn start_marker(name: &str, info: Option<&str>) -> String {
+        match info.map(str::trim).filter(|s| !s.is_empty()) {
+            Some(info) => format!("<!-- tm:{name} start {info} -->"),
+            None => format!("<!-- tm:{name} start -->"),
+        }
+    }
+
+    /// The `<!-- tm:<name> end -->` marker line.
+    pub fn end_marker(name: &str) -> String {
+        format!("<!-- tm:{name} end -->")
+    }
+
+    fn body_lines(body: &str) -> Vec<String> {
+        if body.is_empty() {
+            return Vec::new();
+        }
+        let b = body.strip_suffix('\n').unwrap_or(body);
+        b.split('\n')
+            .map(|l| l.strip_suffix('\r').unwrap_or(l).to_string())
+            .collect()
+    }
+
+    /// Replace everything between the `tm:<name>` markers with `body`
+    /// (lines; a trailing newline is optional), keeping the marker lines.
+    /// `info` rewrites the text after `start` on the start marker (a
+    /// timestamp); `None` keeps whatever is there. Missing markers are
+    /// inserted after the front matter and, when it directly follows, the
+    /// `![…](…)` image line; else at the top. An unterminated block runs to
+    /// the end of the file and gets its end marker.
+    pub fn replace_generated(parsed: &ParsedFile, name: &str, info: Option<&str>, body: &str) -> String {
+        let body = body_lines(body);
+        let mut doc = Doc::new(parsed);
+        match parsed.generated(name) {
+            Some(g) => {
+                let start = g.start_line - 1;
+                let end = g.end_line.map(|e| e - 1).unwrap_or(doc.len());
+                for _ in start + 1..end {
+                    doc.remove(start + 1);
+                }
+                if g.end_line.is_none() {
+                    doc.insert(start + 1, &end_marker(name));
+                }
+                for (k, l) in body.iter().enumerate() {
+                    doc.insert(start + 1 + k, l);
+                }
+                if let Some(info) = info {
+                    doc.lines[start].0 = start_marker(name, Some(info));
+                }
+            }
+            None => {
+                let mut at = front_matter_len(parsed);
+                if doc
+                    .lines
+                    .get(at)
+                    .is_some_and(|(t, _)| t.trim_start().starts_with("![") && t.contains("]("))
+                {
+                    at += 1;
+                }
+                doc.insert(at, &start_marker(name, info));
+                for (k, l) in body.iter().enumerate() {
+                    doc.insert(at + 1 + k, l);
+                }
+                doc.insert(at + 1 + body.len(), &end_marker(name));
+            }
+        }
+        doc.text()
+    }
+
+    /// Check that `new_text` may replace the item on line `idx`: one line,
+    /// an item line, and the same `^id` (an id may be *added* to an id-less
+    /// line, never changed or removed).
+    pub fn validate_replacement(parsed: &ParsedFile, idx: usize, new_text: &str) -> Result<(), StoreError> {
+        let path = parsed.path.as_str();
+        let line = idx + 1;
+        if new_text.contains(['\n', '\r']) {
+            return Err(parse_err(path, line, "replacement contains a line break"));
+        }
+        let new_line = ItemLine::parse(new_text)
+            .map_err(|_| parse_err(path, line, format!("replacement is not an item line: {new_text:?}")))?;
+        let Some(old) = parsed.lines[idx].item() else {
+            return Err(parse_err(path, line, "not an item line"));
+        };
+        if old.has_id() {
+            match new_line.id() {
+                Some(id) if id == old.id => {}
+                Some(id) => {
+                    return Err(parse_err(
+                        path,
+                        line,
+                        format!("replacement changes the id from ^{} to ^{id}", old.id),
+                    ))
+                }
+                None => return Err(parse_err(path, line, format!("replacement drops ^{}", old.id))),
+            }
+        }
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The trait
+// ---------------------------------------------------------------------------
+
+/// The edit callback of [`Store::modify_line`]: given the parsed file and
+/// the line index of the addressed item, produce the whole new file text
+/// (`None` = nothing to write).
+pub type LineEdit<'a> = dyn FnMut(&ParsedFile, usize) -> Result<Option<String>, StoreError> + 'a;
+
+/// Access to the `plan/` tree. Object-safe; see the module docs for the
+/// provided operations. Relative paths use `/` and are relative to the plan
+/// root (`week/2026-W37.md`, `.tm/state.json`).
+pub trait Store {
+    // -- primitives ---------------------------------------------------------
+
+    /// Every plan file (`*.md`, see [`is_plan_file`]) in tree order.
+    fn list_files(&self) -> Result<Vec<String>, StoreError>;
+    /// The raw text of a file.
+    fn read_text(&self, rel: &str) -> Result<String, StoreError>;
+    /// Write a whole file (atomically on disk; parent directories created).
+    fn write_file(&self, rel: &str, text: &str) -> Result<(), StoreError>;
+    /// True when the file exists.
+    fn exists(&self, rel: &str) -> bool;
+    /// The absolute path of a file, when the store is on disk.
+    fn abs_path(&self, rel: &str) -> Option<PathBuf>;
+
+    /// `config.toml`, or the defaults when missing.
+    fn read_config(&self) -> Result<Config, StoreError> {
+        if self.exists(CONFIG_PATH) {
+            Ok(Config::parse(&self.read_text(CONFIG_PATH)?)?)
+        } else {
+            Ok(Config::default())
+        }
+    }
+
+    /// The one primitive every id-addressed edit goes through: locate the
+    /// line for `id` (in `rel` only when given, else across the tree), run
+    /// `edit` on the parsed file, and write the result. `ours` is the line
+    /// text reported in a [`StoreError::Conflict`]. The default does a
+    /// plain read–edit–write; [`FsStore`] adds the §1.3 guard (mtime +
+    /// content hash checked before the write, one retry, then `Conflict`).
+    fn modify_line(&self, rel: Option<&str>, id: &Id, ours: &str, edit: &mut LineEdit<'_>) -> Result<(), StoreError> {
+        let cfg = self.read_config()?;
+        let (rel, parsed, idx) = locate(self, &cfg, id, rel)?;
+        if let Some(new_text) = edit(&parsed, idx)? {
+            self.write_file(&rel, &new_text)?;
+        }
+        Ok(())
+    }
+
+    // -- reading --------------------------------------------------------------
+
+    /// Parse every plan file plus the config.
+    fn read_tree(&self) -> Result<PlanFiles, StoreError> {
+        let config = self.read_config()?;
+        let mut files = Vec::new();
+        for rel in self.list_files()? {
+            let text = self.read_text(&rel)?;
+            files.push(parse_file(&rel, &text, &config));
+        }
+        Ok(PlanFiles { config, files })
+    }
+
+    /// Parse one file.
+    fn read_file(&self, rel: &str) -> Result<ParsedFile, StoreError> {
+        let cfg = self.read_config()?;
+        let text = self.read_text(rel)?;
+        Ok(parse_file(rel, &text, &cfg))
+    }
+
+    // -- line edits -----------------------------------------------------------
+
+    /// Replace exactly the line carrying `id` with `new_text` (§1.3). The
+    /// replacement must be one item line with the same `^id` (an id-less
+    /// line may gain one). Writing the identical text is a no-op.
+    fn write_line(&self, id: &Id, new_text: &str) -> Result<(), StoreError> {
+        self.modify_line(None, id, new_text, &mut |parsed: &ParsedFile, idx: usize| {
+            edit::validate_replacement(parsed, idx, new_text)?;
+            if parsed.lines[idx].text() == new_text {
+                return Ok(None);
+            }
+            Ok(Some(edit::replace_line(parsed, idx, new_text)))
+        })
+    }
+
+    /// Remove the line carrying `id`; returns its text.
+    fn remove_line(&self, id: &Id) -> Result<String, StoreError> {
+        self.remove_line_in(None, id)
+    }
+
+    /// Like [`Store::remove_line`], searching only `rel` when given.
+    fn remove_line_in(&self, rel: Option<&str>, id: &Id) -> Result<String, StoreError> {
+        let mut removed = String::new();
+        self.modify_line(rel, id, "", &mut |parsed: &ParsedFile, idx: usize| {
+            let (text, line) = edit::remove_line(parsed, idx);
+            removed = line;
+            Ok(Some(text))
+        })?;
+        Ok(removed)
+    }
+
+    /// Move the line carrying `id` `delta` positions down (up when
+    /// negative) among the items of its section (TUI `J`/`K`). Returns
+    /// whether it moved (a clamped no-op writes nothing).
+    fn reorder_line(&self, id: &Id, delta: i32) -> Result<bool, StoreError> {
+        let mut moved = false;
+        self.modify_line(None, id, "", &mut |parsed: &ParsedFile, idx: usize| {
+            let out = edit::reorder_line(parsed, idx, delta);
+            moved = out.is_some();
+            Ok(out)
+        })?;
+        Ok(moved)
+    }
+
+    /// Move the line carrying `id` into `to_rel` (appended to `section`, or
+    /// to the end of the file), preserving its exact text. The destination
+    /// is written first, then the source line is removed, so a failure can
+    /// duplicate but never lose the line. A missing destination horizon
+    /// file is created with its front matter.
+    fn move_line(&self, id: &Id, to_rel: &str, section: Option<&str>) -> Result<(), StoreError> {
+        let cfg = self.read_config()?;
+        let (from_rel, parsed, idx) = locate(self, &cfg, id, None)?;
+        let text = parsed.lines[idx].text();
+        if from_rel == to_rel {
+            let cfg2 = cfg.clone();
+            return self.modify_line(Some(to_rel), id, &text, &mut |parsed: &ParsedFile, idx: usize| {
+                let (without, line) = edit::remove_line(parsed, idx);
+                let again = parse_file(to_rel, &without, &cfg2);
+                Ok(Some(match section {
+                    Some(s) => edit::append_to_section(&again, s, &line),
+                    None => edit::append_to_end(&again, &line),
+                }))
+            });
+        }
+        self.insert_line(to_rel, section, &text)?;
+        self.remove_line_in(Some(&from_rel), id)?;
+        Ok(())
+    }
+
+    // -- file edits -----------------------------------------------------------
+
+    /// Append `line` to the section `heading` (`"## Log"` or `"Log"`),
+    /// creating the section at the end of the file when missing. A missing
+    /// horizon file is created first.
+    fn append_to_section(&self, rel: &str, heading: &str, line: &str) -> Result<(), StoreError> {
+        check_line(rel, line)?;
+        let parsed = read_or_initial(self, rel)?;
+        self.write_file(rel, &edit::append_to_section(&parsed, heading, line))
+    }
+
+    /// Append `text` at the end of `section` (created as `# Section` when
+    /// missing) or, with `None`, at the end of the file. A missing horizon
+    /// file is created first.
+    fn insert_line(&self, rel: &str, section: Option<&str>, text: &str) -> Result<(), StoreError> {
+        check_line(rel, text)?;
+        let parsed = read_or_initial(self, rel)?;
+        let out = match section {
+            Some(s) => edit::append_to_section(&parsed, s, text),
+            None => edit::append_to_end(&parsed, text),
+        };
+        self.write_file(rel, &out)
+    }
+
+    /// Replace the body of the generated block `name` (§1.3), keeping the
+    /// marker lines as they are; inserts the markers when missing (see
+    /// [`edit::replace_generated`]). A missing horizon file is created first.
+    fn replace_generated(&self, rel: &str, name: &str, body: &str) -> Result<(), StoreError> {
+        self.replace_generated_stamped(rel, name, None, body)
+    }
+
+    /// Like [`Store::replace_generated`], also rewriting the start marker as
+    /// `<!-- tm:<name> start <info> -->` when `info` is given.
+    fn replace_generated_stamped(&self, rel: &str, name: &str, info: Option<&str>, body: &str) -> Result<(), StoreError> {
+        if name.is_empty() || name.contains(char::is_whitespace) {
+            return Err(parse_err(rel, 0, format!("invalid generated section name {name:?}")));
+        }
+        if info.is_some_and(|i| i.contains(['\n', '\r']) || i.contains("-->")) {
+            return Err(parse_err(rel, 0, "marker info contains a line break or `-->`"));
+        }
+        let parsed = read_or_initial(self, rel)?;
+        self.write_file(rel, &edit::replace_generated(&parsed, name, info, body))
+    }
+
+    /// Create `rel` with `initial` unless it exists. Returns whether it was
+    /// created.
+    fn ensure_file(&self, rel: &str, initial: &str) -> Result<bool, StoreError> {
+        if self.exists(rel) {
+            return Ok(false);
+        }
+        self.write_file(rel, initial)?;
+        Ok(true)
+    }
+
+    /// [`Store::ensure_file`] for a horizon file with its front matter.
+    fn ensure_horizon_file(&self, h: &Horizon) -> Result<bool, StoreError> {
+        self.ensure_file(&horizon_path(h), &initial_text(h))
+    }
+
+    // -- runtime state --------------------------------------------------------
+
+    /// `.tm/state.json`; the default when missing.
+    fn load_state(&self) -> Result<RuntimeState, StoreError> {
+        Ok(read_json(self, STATE_PATH)?.unwrap_or_default())
+    }
+
+    /// Write `.tm/state.json`.
+    fn save_state(&self, state: &RuntimeState) -> Result<(), StoreError> {
+        write_json(self, STATE_PATH, state)
+    }
+}
+
+/// Generic JSON helpers on every [`Store`] (`dyn Store` included).
+pub trait StoreExt: Store {
+    /// Read and parse a JSON file; `None` when missing.
+    fn read_json<T: DeserializeOwned>(&self, rel: &str) -> Result<Option<T>, StoreError> {
+        read_json(self, rel)
+    }
+    /// Write a value as pretty JSON.
+    fn write_json<T: Serialize>(&self, rel: &str, value: &T) -> Result<(), StoreError> {
+        write_json(self, rel, value)
+    }
+}
+
+impl<S: Store + ?Sized> StoreExt for S {}
+
+/// Read and parse a JSON file from a store; `None` when missing.
+pub fn read_json<T: DeserializeOwned, S: Store + ?Sized>(store: &S, rel: &str) -> Result<Option<T>, StoreError> {
+    if !store.exists(rel) {
+        return Ok(None);
+    }
+    let text = store.read_text(rel)?;
+    serde_json::from_str(&text)
+        .map(Some)
+        .map_err(|source| StoreError::Json {
+            path: rel.to_string(),
+            source,
+        })
+}
+
+/// Write a value as pretty JSON (with a final newline) to a store.
+pub fn write_json<T: Serialize, S: Store + ?Sized>(store: &S, rel: &str, value: &T) -> Result<(), StoreError> {
+    let mut text = serde_json::to_string_pretty(value).map_err(|source| StoreError::Json {
+        path: rel.to_string(),
+        source,
+    })?;
+    text.push('\n');
+    store.write_file(rel, &text)
+}
+
+fn check_line(rel: &str, line: &str) -> Result<(), StoreError> {
+    if line.contains(['\n', '\r']) {
+        return Err(parse_err(rel, 0, "text contains a line break"));
+    }
+    Ok(())
+}
+
+/// The parsed file, or the parsed initial text of its horizon when missing.
+fn read_or_initial<S: Store + ?Sized>(store: &S, rel: &str) -> Result<ParsedFile, StoreError> {
+    let cfg = store.read_config()?;
+    let text = if store.exists(rel) {
+        store.read_text(rel)?
+    } else {
+        Horizon::from_path(rel).map(|h| initial_text(&h)).unwrap_or_default()
+    };
+    Ok(parse_file(rel, &text, &cfg))
+}
+
+/// Find `(rel, parsed, line index)` for `id`, in `only` when given, else
+/// across the tree (preferring the copy outside `# Demoted`).
+fn locate<S: Store + ?Sized>(store: &S, cfg: &Config, id: &Id, only: Option<&str>) -> Result<(String, ParsedFile, usize), StoreError> {
+    if let Some(rel) = only {
+        if !store.exists(rel) {
+            return Err(StoreError::NotFound(id.clone()));
+        }
+        let parsed = parse_file(rel, &store.read_text(rel)?, cfg);
+        return match edit::find_line(&parsed, id) {
+            Some(i) => Ok((rel.to_string(), parsed, i)),
+            None => Err(StoreError::NotFound(id.clone())),
+        };
+    }
+    let mut files = Vec::new();
+    for rel in store.list_files()? {
+        let text = store.read_text(&rel)?;
+        files.push(parse_file(&rel, &text, cfg));
+    }
+    match choose(files.iter().enumerate(), id) {
+        Some((fi, li)) => {
+            let parsed = files.swap_remove(fi);
+            Ok((parsed.path.clone(), parsed, li))
+        }
+        None => Err(StoreError::NotFound(id.clone())),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// FsStore
+// ---------------------------------------------------------------------------
+
+/// A hook run between the read and the verified write of an id-addressed
+/// edit: `(absolute path of the file, attempt number starting at 0)`.
+pub type BeforeWriteHook = Box<dyn Fn(&Path, usize) + Send + Sync>;
+
+/// The on-disk store rooted at the `plan/` directory.
+pub struct FsStore {
+    root: PathBuf,
+    before_write: Option<BeforeWriteHook>,
+}
+
+impl fmt::Debug for FsStore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FsStore")
+            .field("root", &self.root)
+            .field("before_write", &self.before_write.is_some())
+            .finish()
+    }
+}
+
+/// What a file looked like when it was read.
+struct Snapshot {
+    text: String,
+    mtime: Option<SystemTime>,
+    hash: u64,
+}
+
+impl Snapshot {
+    fn read(path: &Path, rel: &str) -> Result<Snapshot, StoreError> {
+        let bytes = fs::read(path).map_err(|e| io_err(rel, e))?;
+        let mtime = fs::metadata(path).ok().and_then(|m| m.modified().ok());
+        let mut h = DefaultHasher::new();
+        bytes.hash(&mut h);
+        let hash = h.finish();
+        let text = String::from_utf8(bytes).map_err(|_| parse_err(rel, 0, "not valid UTF-8"))?;
+        Ok(Snapshot { text, mtime, hash })
+    }
+
+    fn unchanged_since(&self, earlier: &Snapshot) -> bool {
+        self.mtime == earlier.mtime && self.hash == earlier.hash
+    }
+}
+
+static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Write `text` to `path` via a temp file in the same directory and a
+/// rename, so readers see either the old or the new file.
+fn write_atomic(path: &Path, rel: &str, text: &str) -> Result<(), StoreError> {
+    let dir = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    fs::create_dir_all(dir).map_err(|e| io_err(rel, e))?;
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let n = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let tmp = dir.join(format!(".{name}.tm-tmp-{}-{n}", std::process::id()));
+    let result = (|| {
+        let mut f = File::create(&tmp)?;
+        f.write_all(text.as_bytes())?;
+        f.sync_all()?;
+        fs::rename(&tmp, path)
+    })();
+    if let Err(e) = result {
+        let _ = fs::remove_file(&tmp);
+        return Err(io_err(rel, e));
+    }
+    Ok(())
+}
+
+fn rel_path(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// Every file under `dir` (recursively) for which `keep(name)` holds;
+/// directories whose name starts with `.` are skipped unless `hidden`.
+fn walk(root: &Path, dir: &Path, hidden: bool, keep: &dyn Fn(&str) -> bool, out: &mut Vec<String>) -> std::io::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if path.is_dir() {
+            if hidden || !name.starts_with('.') {
+                walk(root, &path, hidden, keep, out)?;
+            }
+        } else if keep(&name) {
+            out.push(rel_path(root, &path));
+        }
+    }
+    Ok(())
+}
+
+impl FsStore {
+    /// A store over the `plan/` directory `root`.
+    pub fn new(root: impl Into<PathBuf>) -> FsStore {
+        FsStore {
+            root: root.into(),
+            before_write: None,
+        }
+    }
+
+    /// The plan directory.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// The absolute path of a relative plan path.
+    pub fn abs(&self, rel: &str) -> PathBuf {
+        self.root.join(rel)
+    }
+
+    /// Install a hook run between the read and the verified write of every
+    /// id-addressed edit (`write_line`, `remove_line`, `reorder_line`,
+    /// `move_line`'s removal). Tests use it to simulate a concurrent editor.
+    pub fn with_before_write_hook(mut self, hook: BeforeWriteHook) -> FsStore {
+        self.before_write = Some(hook);
+        self
+    }
+
+    /// Locate `id` with the snapshot of the file it lives in. With a hint
+    /// that file is tried first; with `only` no other file is searched.
+    fn locate_snapshot(&self, cfg: &Config, id: &Id, hint: Option<&str>, only: bool) -> Result<(String, Snapshot, ParsedFile, usize), StoreError> {
+        if let Some(rel) = hint {
+            if self.exists(rel) {
+                let snap = Snapshot::read(&self.abs(rel), rel)?;
+                let parsed = parse_file(rel, &snap.text, cfg);
+                if let Some(i) = edit::find_line(&parsed, id) {
+                    return Ok((rel.to_string(), snap, parsed, i));
+                }
+            }
+            if only {
+                return Err(StoreError::NotFound(id.clone()));
+            }
+        }
+        let mut fallback: Option<(String, Snapshot, ParsedFile, usize)> = None;
+        for rel in self.list_files()? {
+            let snap = Snapshot::read(&self.abs(&rel), &rel)?;
+            let parsed = parse_file(&rel, &snap.text, cfg);
+            if let Some(i) = edit::find_line(&parsed, id) {
+                if !edit::is_demoted(&parsed, i) {
+                    return Ok((rel, snap, parsed, i));
+                }
+                if fallback.is_none() {
+                    fallback = Some((rel, snap, parsed, i));
+                }
+            }
+        }
+        fallback.ok_or_else(|| StoreError::NotFound(id.clone()))
+    }
+}
+
+impl Store for FsStore {
+    fn list_files(&self) -> Result<Vec<String>, StoreError> {
+        let mut out = Vec::new();
+        walk(&self.root, &self.root, false, &|n| n.ends_with(".md") && n != "CLAUDE.md" && !n.starts_with('.'), &mut out)
+            .map_err(|e| io_err(&self.root.display().to_string(), e))?;
+        out.retain(|r| is_plan_file(r));
+        sort_files(&mut out);
+        Ok(out)
+    }
+
+    fn read_text(&self, rel: &str) -> Result<String, StoreError> {
+        fs::read_to_string(self.abs(rel)).map_err(|e| io_err(rel, e))
+    }
+
+    fn write_file(&self, rel: &str, text: &str) -> Result<(), StoreError> {
+        write_atomic(&self.abs(rel), rel, text)
+    }
+
+    fn exists(&self, rel: &str) -> bool {
+        self.abs(rel).is_file()
+    }
+
+    fn abs_path(&self, rel: &str) -> Option<PathBuf> {
+        Some(self.abs(rel))
+    }
+
+    fn read_config(&self) -> Result<Config, StoreError> {
+        Ok(Config::load_or_default(self.abs(CONFIG_PATH))?)
+    }
+
+    /// The §1.3 guard: read (snapshot), edit, run the hook, verify the
+    /// file's mtime and content hash are unchanged, write atomically. On a
+    /// mismatch re-read and retry once; then [`StoreError::Conflict`] with
+    /// `ours` and the line as it is now.
+    fn modify_line(&self, rel: Option<&str>, id: &Id, ours: &str, edit: &mut LineEdit<'_>) -> Result<(), StoreError> {
+        let cfg = self.read_config()?;
+        let only = rel.is_some();
+        let mut hint: Option<String> = rel.map(str::to_string);
+        let mut theirs = String::new();
+        let mut file = String::new();
+        for attempt in 0..2 {
+            let (rel, snap, parsed, idx) = self.locate_snapshot(&cfg, id, hint.as_deref(), only)?;
+            let Some(new_text) = edit(&parsed, idx)? else {
+                return Ok(());
+            };
+            let path = self.abs(&rel);
+            if let Some(hook) = &self.before_write {
+                hook(&path, attempt);
+            }
+            let now = Snapshot::read(&path, &rel)?;
+            if now.unchanged_since(&snap) {
+                return write_atomic(&path, &rel, &new_text);
+            }
+            let current = parse_file(&rel, &now.text, &cfg);
+            theirs = edit::find_line(&current, id)
+                .map(|i| current.lines[i].text())
+                .unwrap_or_default();
+            file = rel.clone();
+            hint = Some(rel);
+        }
+        Err(StoreError::Conflict {
+            id: id.clone(),
+            file,
+            ours: ours.to_string(),
+            theirs,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MemStore
+// ---------------------------------------------------------------------------
+
+/// An in-memory store (`relative path → text`) with the same behaviour as
+/// [`FsStore`] minus the disk: for tests and for the planner's purity
+/// tests. Interior mutability, so it is shared like the on-disk store.
+#[derive(Default)]
+pub struct MemStore {
+    files: Mutex<BTreeMap<String, String>>,
+}
+
+impl fmt::Debug for MemStore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MemStore").field("files", &self.paths()).finish()
+    }
+}
+
+impl Clone for MemStore {
+    fn clone(&self) -> MemStore {
+        MemStore {
+            files: Mutex::new(self.lock().clone()),
+        }
+    }
+}
+
+impl MemStore {
+    /// An empty store.
+    pub fn new() -> MemStore {
+        MemStore::default()
+    }
+
+    /// Load every UTF-8 file under `dir` (recursively, `.tm/` included,
+    /// `.git/` and `target/` skipped) — a fixture tree such as
+    /// `tests/fixtures/plan-basic`.
+    pub fn from_dir(dir: impl AsRef<Path>) -> Result<MemStore, StoreError> {
+        let dir = dir.as_ref();
+        let mut rels = Vec::new();
+        walk(dir, dir, true, &|_| true, &mut rels).map_err(|e| io_err(&dir.display().to_string(), e))?;
+        let store = MemStore::new();
+        for rel in rels {
+            if rel.split('/').any(|p| p == ".git" || p == "target") {
+                continue;
+            }
+            let bytes = fs::read(dir.join(&rel)).map_err(|e| io_err(&rel, e))?;
+            if let Ok(text) = String::from_utf8(bytes) {
+                store.insert(&rel, &text);
+            }
+        }
+        Ok(store)
+    }
+
+    fn lock(&self) -> MutexGuard<'_, BTreeMap<String, String>> {
+        self.files.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Builder form of [`MemStore::insert`].
+    pub fn with_file(self, rel: &str, text: &str) -> MemStore {
+        self.insert(rel, text);
+        self
+    }
+
+    /// Set a file's text.
+    pub fn insert(&self, rel: &str, text: &str) {
+        self.lock().insert(rel.replace('\\', "/"), text.to_string());
+    }
+
+    /// Delete a file; returns its text.
+    pub fn remove(&self, rel: &str) -> Option<String> {
+        self.lock().remove(rel)
+    }
+
+    /// A file's text.
+    pub fn text(&self, rel: &str) -> Option<String> {
+        self.lock().get(rel).cloned()
+    }
+
+    /// Every path in the store, sorted.
+    pub fn paths(&self) -> Vec<String> {
+        self.lock().keys().cloned().collect()
+    }
+
+    /// A copy of every file.
+    pub fn snapshot(&self) -> BTreeMap<String, String> {
+        self.lock().clone()
+    }
+}
+
+impl Store for MemStore {
+    fn list_files(&self) -> Result<Vec<String>, StoreError> {
+        let mut out: Vec<String> = self.lock().keys().filter(|k| is_plan_file(k)).cloned().collect();
+        sort_files(&mut out);
+        Ok(out)
+    }
+
+    fn read_text(&self, rel: &str) -> Result<String, StoreError> {
+        self.text(rel).ok_or_else(|| {
+            io_err(
+                rel,
+                std::io::Error::new(std::io::ErrorKind::NotFound, "no such file in the memory store"),
+            )
+        })
+    }
+
+    fn write_file(&self, rel: &str, text: &str) -> Result<(), StoreError> {
+        self.insert(rel, text);
+        Ok(())
+    }
+
+    fn exists(&self, rel: &str) -> bool {
+        self.lock().contains_key(rel)
+    }
+
+    fn abs_path(&self, _rel: &str) -> Option<PathBuf> {
+        None
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Runtime state (§10.2)
+// ---------------------------------------------------------------------------
+
+/// `Option<NaiveTime>` as `"HH:MM"` / `null`.
+pub mod opt_hhmm {
+    use super::hhmm;
+    use chrono::NaiveTime;
+    use serde::{de, Deserialize, Deserializer, Serializer};
+
+    /// Serialize as `"HH:MM"` or `null`.
+    pub fn serialize<S: Serializer>(t: &Option<NaiveTime>, s: S) -> Result<S::Ok, S::Error> {
+        match t {
+            Some(t) => s.serialize_str(&hhmm::format(t)),
+            None => s.serialize_none(),
+        }
+    }
+
+    /// Deserialize from `"HH:MM"` or `null`.
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<NaiveTime>, D::Error> {
+        let s: Option<String> = Option::deserialize(d)?;
+        s.map(|s| hhmm::parse(&s).map_err(de::Error::custom)).transpose()
+    }
+}
+
+/// `Option<(NaiveTime, NaiveTime)>` as `["HH:MM", "HH:MM"]` / `null`.
+pub mod opt_window {
+    use super::hhmm;
+    use chrono::NaiveTime;
+    use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+
+    /// Serialize as a two-element array or `null`.
+    pub fn serialize<S: Serializer>(w: &Option<(NaiveTime, NaiveTime)>, s: S) -> Result<S::Ok, S::Error> {
+        match w {
+            Some((a, b)) => [hhmm::format(a), hhmm::format(b)].serialize(s),
+            None => s.serialize_none(),
+        }
+    }
+
+    /// Deserialize from a two-element array or `null`.
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<(NaiveTime, NaiveTime)>, D::Error> {
+        let v: Option<[String; 2]> = Option::deserialize(d)?;
+        v.map(|[a, b]| {
+            Ok((
+                hhmm::parse(&a).map_err(de::Error::custom)?,
+                hhmm::parse(&b).map_err(de::Error::custom)?,
+            ))
+        })
+        .transpose()
+    }
+}
+
+/// `Option<T>` as `T`'s `Display` / `FromStr` string (`2026-W36`,
+/// `2026-08`) or `null`.
+pub mod opt_str {
+    use std::fmt::Display;
+    use std::str::FromStr;
+
+    use serde::{de, Deserialize, Deserializer, Serializer};
+
+    /// Serialize with `Display`, or `null`.
+    pub fn serialize<S: Serializer, T: Display>(v: &Option<T>, s: S) -> Result<S::Ok, S::Error> {
+        match v {
+            Some(t) => s.serialize_str(&t.to_string()),
+            None => s.serialize_none(),
+        }
+    }
+
+    /// Deserialize with `FromStr`, or `null`.
+    pub fn deserialize<'de, D: Deserializer<'de>, T: FromStr>(d: D) -> Result<Option<T>, D::Error>
+    where
+        T::Err: Display,
+    {
+        let s: Option<String> = Option::deserialize(d)?;
+        s.map(|s| s.parse().map_err(de::Error::custom)).transpose()
+    }
+}
+
+/// The block being worked on (`state.active`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActiveBlock {
+    /// The item.
+    pub id: Id,
+    /// When it started (`HH:MM`).
+    #[serde(with = "hhmm")]
+    pub started: NaiveTime,
+    /// Planned minutes (`est × duration multiplier`).
+    pub est_min: u32,
+    /// Timer paused (`Space`).
+    pub paused: bool,
+}
+
+/// A running break (`state.break`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct BreakState {
+    /// When it started (`HH:MM`).
+    #[serde(with = "opt_hhmm")]
+    pub started: Option<NaiveTime>,
+    /// Planned minutes.
+    pub planned_min: u32,
+    /// `walk` / `seat` / `bed` / `phone`.
+    #[serde(rename = "where")]
+    pub place: Option<String>,
+}
+
+/// A running interruption (`state.interrupt`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct InterruptState {
+    /// When it started (`HH:MM`).
+    #[serde(with = "opt_hhmm")]
+    pub started: Option<NaiveTime>,
+    /// The block that was interrupted.
+    pub id: Option<Id>,
+}
+
+/// The last closed periods (`state.closed`, §6.3).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct Closed {
+    /// Last day closed.
+    pub day: Option<NaiveDate>,
+    /// Last week closed (`2026-W36`).
+    #[serde(with = "opt_str")]
+    pub week: Option<IsoWeek>,
+    /// Last month closed (`2026-08`).
+    #[serde(with = "opt_str")]
+    pub month: Option<YearMonth>,
+}
+
+/// `.tm/state.json` (§10.2) — runtime, not committed:
+///
+/// ```json
+/// {"date":"2026-09-07","wake":"06:05","arrival":"07:00","loc":"lounge","window":["07:00","16:00"],"budget":6,
+///  "active":{"id":"t3","started":"09:32","est_min":192,"paused":false},
+///  "break":null,"interrupt":null,
+///  "last_plan_hash":"a91f…","priorities_yesterday":{"d1":1,"m2":3},
+///  "closed":{"day":"2026-09-06","week":"2026-W36","month":"2026-08"}}
+/// ```
+///
+/// Every field has a default, so a partial file loads; unknown fields are
+/// ignored.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct RuntimeState {
+    /// The day this state describes.
+    pub date: Option<NaiveDate>,
+    /// `tm wake`.
+    #[serde(with = "opt_hhmm")]
+    pub wake: Option<NaiveTime>,
+    /// `tm arrive`.
+    #[serde(with = "opt_hhmm")]
+    pub arrival: Option<NaiveTime>,
+    /// Current location (`lounge`, `home`, …).
+    pub loc: Option<String>,
+    /// Working window `[start, end]` computed at arrival (§8.1).
+    #[serde(with = "opt_window")]
+    pub window: Option<(NaiveTime, NaiveTime)>,
+    /// Block budget computed at arrival.
+    pub budget: Option<u32>,
+    /// The running block.
+    pub active: Option<ActiveBlock>,
+    /// The running break (`"break"` in JSON).
+    #[serde(rename = "break")]
+    pub break_: Option<BreakState>,
+    /// The running interruption.
+    pub interrupt: Option<InterruptState>,
+    /// Hash of the last emitted plan.
+    pub last_plan_hash: Option<String>,
+    /// Yesterday's `p` per item, for hysteresis (§7.4).
+    pub priorities_yesterday: BTreeMap<Id, u8>,
+    /// Last closed periods.
+    pub closed: Closed,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg() -> Config {
+        Config::default()
+    }
+
+    #[test]
+    fn plan_file_filter_and_order() {
+        assert!(is_plan_file("week/2026-W37.md"));
+        assert!(is_plan_file("backlog.md"));
+        assert!(!is_plan_file(".tm/state.json"));
+        assert!(!is_plan_file(".claude/skills/x/SKILL.md"));
+        assert!(!is_plan_file("CLAUDE.md"));
+        assert!(!is_plan_file("day/2026-09-07.svg"));
+        assert!(!is_plan_file("week/.hidden.md"));
+        let mut files: Vec<String> = [
+            "inbox.md",
+            "day/2026-09-08.md",
+            "day/2026-09-07.md",
+            "week/2026-W37.md",
+            "notes/x.md",
+            "calendar/2026-W37.md",
+            "optional.md",
+            "month/2026-09.md",
+            "routines.md",
+            "backlog.md",
+            "month/2026-08.md",
+            "backlog.md",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        sort_files(&mut files);
+        assert_eq!(
+            files,
+            [
+                "month/2026-08.md",
+                "month/2026-09.md",
+                "week/2026-W37.md",
+                "backlog.md",
+                "routines.md",
+                "optional.md",
+                "calendar/2026-W37.md",
+                "day/2026-09-07.md",
+                "day/2026-09-08.md",
+                "inbox.md",
+                "notes/x.md",
+            ]
+        );
+    }
+
+    #[test]
+    fn initial_texts() {
+        let w = Horizon::Week(IsoWeek::new(2026, 37));
+        assert_eq!(
+            initial_text(&w),
+            "---\nweek: 2026-W37\nwindow: 2026-09-07..2026-09-13\n---\n"
+        );
+        assert_eq!(horizon_path(&w), "week/2026-W37.md");
+        assert_eq!(
+            initial_text(&Horizon::Month(YearMonth::new(2026, 9))),
+            "---\nmonth: 2026-09\n---\n"
+        );
+        let d = Horizon::Day(NaiveDate::from_ymd_opt(2026, 9, 7).unwrap());
+        assert_eq!(
+            initial_text(&d),
+            "---\ndate: 2026-09-07\n---\n![day](2026-09-07.svg)\n"
+        );
+        assert_eq!(initial_text(&Horizon::Backlog), "");
+        let f = parse_file("week/2026-W37.md", &initial_text(&w), &cfg());
+        assert_eq!(f.front("window"), Some("2026-09-07..2026-09-13"));
+        assert!(f.problems.is_empty());
+    }
+
+    #[test]
+    fn sections_and_headings() {
+        let text = "---\nweek: 2026-W37\n---\n# A\n- [ ] 3 x ^a\n\n<!-- tm:plan start -->\n# not a heading\n<!-- tm:plan end -->\n## series:s\n- [ ] 3 y ^b\n- [ ] 3 z ^c\n";
+        let f = parse_file("week/2026-W37.md", text, &cfg());
+        assert_eq!(edit::front_matter_len(&f), 3);
+        let hs = edit::headings(&f);
+        assert_eq!(hs.len(), 2);
+        assert_eq!((hs[0].index, hs[0].level, hs[0].text.as_str()), (3, 1, "A"));
+        assert_eq!((hs[1].index, hs[1].level, hs[1].text.as_str()), (9, 2, "series:s"));
+        assert_eq!(edit::section_range(&f, 4), (4, 9));
+        assert_eq!(edit::section_range(&f, 10), (10, 12));
+        let g = parse_file("routines.md", "- a dur:1m\n- b dur:1m\n", &cfg());
+        assert_eq!(edit::section_range(&g, 1), (0, 2));
+    }
+
+    #[test]
+    fn append_and_insert_keep_bytes() {
+        let text = "# A\n- [ ] 3 x ^a\n\n## Log\n07:00 start\n\n## Notes\n";
+        let f = parse_file("day/2026-09-07.md", text, &cfg());
+        assert_eq!(
+            edit::append_to_section(&f, "## Log", "08:00 done"),
+            "# A\n- [ ] 3 x ^a\n\n## Log\n07:00 start\n08:00 done\n\n## Notes\n"
+        );
+        assert_eq!(
+            edit::append_to_section(&f, "Notes", "free text"),
+            "# A\n- [ ] 3 x ^a\n\n## Log\n07:00 start\n\n## Notes\nfree text\n"
+        );
+        assert_eq!(
+            edit::append_to_section(&f, "Pinned", "- [ ] 2 y ^b"),
+            "# A\n- [ ] 3 x ^a\n\n## Log\n07:00 start\n\n## Notes\n\n# Pinned\n- [ ] 2 y ^b\n"
+        );
+        assert_eq!(edit::append_to_end(&f, "tail"), "# A\n- [ ] 3 x ^a\n\n## Log\n07:00 start\n\n## Notes\ntail\n");
+        // No final newline: the convention is kept.
+        let f = parse_file("inbox.md", "- a\n- b", &cfg());
+        assert_eq!(edit::append_to_end(&f, "- c"), "- a\n- b\n- c");
+        let f = parse_file("inbox.md", "", &cfg());
+        assert_eq!(edit::append_to_end(&f, "- c"), "- c\n");
+        assert_eq!(edit::append_to_section(&f, "## Log", "x"), "## Log\nx\n");
+        // CRLF files keep CRLF.
+        let f = parse_file("inbox.md", "- a\r\n- b\r\n", &cfg());
+        assert_eq!(edit::append_to_end(&f, "- c"), "- a\r\n- b\r\n- c\r\n");
+    }
+
+    #[test]
+    fn generated_blocks() {
+        let text = "---\ndate: 2026-09-07\n---\n![day](2026-09-07.svg)\n<!-- tm:plan start 10:42 -->\nold 1\nold 2\n<!-- tm:plan end -->\n\n# Pinned\n- [ ] 2 y ^p1\n";
+        let f = parse_file("day/2026-09-07.md", text, &cfg());
+        assert_eq!(
+            edit::replace_generated(&f, "plan", None, "new 1\nnew 2\nnew 3\n"),
+            "---\ndate: 2026-09-07\n---\n![day](2026-09-07.svg)\n<!-- tm:plan start 10:42 -->\nnew 1\nnew 2\nnew 3\n<!-- tm:plan end -->\n\n# Pinned\n- [ ] 2 y ^p1\n"
+        );
+        assert_eq!(
+            edit::replace_generated(&f, "plan", Some("11:00"), ""),
+            "---\ndate: 2026-09-07\n---\n![day](2026-09-07.svg)\n<!-- tm:plan start 11:00 -->\n<!-- tm:plan end -->\n\n# Pinned\n- [ ] 2 y ^p1\n"
+        );
+        // Missing: after the image line.
+        let f = parse_file("day/2026-09-07.md", "---\ndate: 2026-09-07\n---\n![day](2026-09-07.svg)\n\n# Pinned\n", &cfg());
+        assert_eq!(
+            edit::replace_generated(&f, "plan", Some("10:42"), "row"),
+            "---\ndate: 2026-09-07\n---\n![day](2026-09-07.svg)\n<!-- tm:plan start 10:42 -->\nrow\n<!-- tm:plan end -->\n\n# Pinned\n"
+        );
+        // Missing: after the front matter; none: at the top.
+        let f = parse_file("week/2026-W37.md", "---\nweek: 2026-W37\n---\n# M\n", &cfg());
+        assert_eq!(
+            edit::replace_generated(&f, "review", None, "a\nb"),
+            "---\nweek: 2026-W37\n---\n<!-- tm:review start -->\na\nb\n<!-- tm:review end -->\n# M\n"
+        );
+        let f = parse_file("backlog.md", "# U\n- [ ] 3 x ^a\n", &cfg());
+        assert_eq!(
+            edit::replace_generated(&f, "x", None, "a"),
+            "<!-- tm:x start -->\na\n<!-- tm:x end -->\n# U\n- [ ] 3 x ^a\n"
+        );
+        let f = parse_file("backlog.md", "", &cfg());
+        assert_eq!(edit::replace_generated(&f, "x", None, ""), "<!-- tm:x start -->\n<!-- tm:x end -->\n");
+        // Unterminated: runs to the end and gets its end marker.
+        let f = parse_file("backlog.md", "# U\n<!-- tm:x start -->\nstale\nmore\n", &cfg());
+        assert_eq!(
+            edit::replace_generated(&f, "x", None, "fresh"),
+            "# U\n<!-- tm:x start -->\nfresh\n<!-- tm:x end -->\n"
+        );
+    }
+
+    #[test]
+    fn find_replace_remove_reorder() {
+        let text = "# M\n- [ ] 3 a ^a\n- [ ] 3 b ^b\n\n# T\n- [ ] 3 c ^c\nprose\n- [ ] 3 d ^d\n- [ ] 3 e ^e\n";
+        let f = parse_file("week/2026-W37.md", text, &cfg());
+        assert_eq!(edit::find_line(&f, &Id::new("d")), Some(7));
+        assert_eq!(edit::find_line(&f, &Id::new("zz")), None);
+        assert_eq!(
+            edit::replace_line(&f, 7, "- [x] 3 d ^d"),
+            "# M\n- [ ] 3 a ^a\n- [ ] 3 b ^b\n\n# T\n- [ ] 3 c ^c\nprose\n- [x] 3 d ^d\n- [ ] 3 e ^e\n"
+        );
+        assert_eq!(
+            edit::remove_line(&f, 7),
+            (
+                "# M\n- [ ] 3 a ^a\n- [ ] 3 b ^b\n\n# T\n- [ ] 3 c ^c\nprose\n- [ ] 3 e ^e\n".to_string(),
+                "- [ ] 3 d ^d".to_string()
+            )
+        );
+        // Up one: jumps over the prose line.
+        assert_eq!(
+            edit::reorder_line(&f, 7, -1).unwrap(),
+            "# M\n- [ ] 3 a ^a\n- [ ] 3 b ^b\n\n# T\n- [ ] 3 d ^d\n- [ ] 3 c ^c\nprose\n- [ ] 3 e ^e\n"
+        );
+        // Down one.
+        assert_eq!(
+            edit::reorder_line(&f, 5, 1).unwrap(),
+            "# M\n- [ ] 3 a ^a\n- [ ] 3 b ^b\n\n# T\nprose\n- [ ] 3 d ^d\n- [ ] 3 c ^c\n- [ ] 3 e ^e\n"
+        );
+        // Clamped to the section; a no-op writes nothing.
+        assert_eq!(
+            edit::reorder_line(&f, 5, -5),
+            None,
+            "first item of the section cannot move up"
+        );
+        assert_eq!(
+            edit::reorder_line(&f, 5, 10).unwrap(),
+            "# M\n- [ ] 3 a ^a\n- [ ] 3 b ^b\n\n# T\nprose\n- [ ] 3 d ^d\n- [ ] 3 e ^e\n- [ ] 3 c ^c\n"
+        );
+        assert_eq!(edit::reorder_line(&f, 2, 1), None, "last item of M stays in M");
+        // Validation.
+        assert!(edit::validate_replacement(&f, 7, "- [x] 3 d ^d").is_ok());
+        assert!(edit::validate_replacement(&f, 7, "- [x] 3 d").is_err());
+        assert!(edit::validate_replacement(&f, 7, "- [x] 3 d ^q").is_err());
+        assert!(edit::validate_replacement(&f, 7, "- [x] 3 d ^d\n- more").is_err());
+        assert!(edit::validate_replacement(&f, 7, "prose").is_err());
+        let r = parse_file("routines.md", "- lunch win:11:30-13:30 dur:30m\n", &cfg());
+        assert_eq!(edit::find_line(&r, &Id::new("lunch")), Some(0));
+        assert!(edit::validate_replacement(&r, 0, "- lunch win:11:30-13:30 dur:30m ^lu").is_ok());
+    }
+
+    #[test]
+    fn demoted_copy_is_not_preferred() {
+        let month = parse_file(
+            "month/2026-09.md",
+            "# Outcomes\n- [ ] 5 !1 O ^O1\n\n# Demoted\n- [-] 4 3b R @O1 est:3b demoted:W37 ^m2\n",
+            &cfg(),
+        );
+        let week = parse_file("week/2026-W37.md", "# M\n- [ ] 4 6b R @O1 ^m2\n", &cfg());
+        assert_eq!(edit::find_line(&month, &Id::new("m2")), Some(4));
+        assert!(edit::is_demoted(&month, 4));
+        let files = vec![month, week];
+        assert_eq!(choose(files.iter().enumerate(), &Id::new("m2")), Some((1, 1)));
+        assert_eq!(choose(files.iter().enumerate(), &Id::new("O1")), Some((0, 1)));
+        let only_month = &files[..1];
+        assert_eq!(choose(only_month.iter().enumerate(), &Id::new("m2")), Some((0, 4)));
+    }
+
+    #[test]
+    fn mem_store_round_trips() {
+        let store = MemStore::new()
+            .with_file("backlog.md", "# U\n- [ ] 3 x ^a\n")
+            .with_file("week/2026-W37.md", "---\nweek: 2026-W37\n---\n# T\n- [ ] 3 y ^b\n")
+            .with_file(".tm/state.json", "{}");
+        assert_eq!(store.list_files().unwrap(), ["week/2026-W37.md", "backlog.md"]);
+        let tree = store.read_tree().unwrap();
+        assert_eq!(tree.files.len(), 2);
+        assert_eq!(tree.locate(&Id::new("b")), Some(Location { file: 0, line: 4 }));
+        assert_eq!(tree.file_of(&Id::new("a")), Some("backlog.md"));
+        assert_eq!(tree.ids().len(), 2);
+        store.write_line(&Id::new("a"), "- [x] 3 x ^a").unwrap();
+        assert_eq!(store.text("backlog.md").unwrap(), "# U\n- [x] 3 x ^a\n");
+        assert!(store.write_line(&Id::new("zz"), "- [x] 3 x ^zz").unwrap_err().is_not_found());
+        store.move_line(&Id::new("a"), "week/2026-W37.md", Some("T")).unwrap();
+        assert_eq!(store.text("backlog.md").unwrap(), "# U\n");
+        assert_eq!(
+            store.text("week/2026-W37.md").unwrap(),
+            "---\nweek: 2026-W37\n---\n# T\n- [ ] 3 y ^b\n- [x] 3 x ^a\n"
+        );
+        assert!(store.reorder_line(&Id::new("a"), -1).unwrap());
+        assert!(!store.reorder_line(&Id::new("a"), -1).unwrap());
+        assert_eq!(store.remove_line(&Id::new("b")).unwrap(), "- [ ] 3 y ^b");
+        assert_eq!(
+            store.text("week/2026-W37.md").unwrap(),
+            "---\nweek: 2026-W37\n---\n# T\n- [x] 3 x ^a\n"
+        );
+        // Same-file move into another section.
+        store.move_line(&Id::new("a"), "week/2026-W37.md", Some("Done")).unwrap();
+        assert_eq!(
+            store.text("week/2026-W37.md").unwrap(),
+            "---\nweek: 2026-W37\n---\n# T\n\n# Done\n- [x] 3 x ^a\n"
+        );
+        // A missing horizon file is created with its front matter.
+        store.insert_line("week/2026-W38.md", Some("Tasks"), "- [ ] 3 z ^z").unwrap();
+        assert_eq!(
+            store.text("week/2026-W38.md").unwrap(),
+            "---\nweek: 2026-W38\nwindow: 2026-09-14..2026-09-20\n---\n# Tasks\n- [ ] 3 z ^z\n"
+        );
+        assert!(!store.ensure_horizon_file(&Horizon::Week(IsoWeek::new(2026, 38))).unwrap());
+        assert!(store.ensure_horizon_file(&Horizon::Month(YearMonth::new(2026, 10))).unwrap());
+        assert_eq!(store.load_state().unwrap(), RuntimeState::default());
+        let mut st = RuntimeState::default();
+        st.budget = Some(6);
+        store.save_state(&st).unwrap();
+        assert_eq!(store.load_state().unwrap(), st);
+        assert_eq!(store.read_json::<RuntimeState>("nope.json").unwrap(), None);
+        store.insert(".tm/model.json", "{ not json");
+        assert!(matches!(store.read_json::<RuntimeState>(".tm/model.json"), Err(StoreError::Json { .. })));
+        let dyn_store: &dyn Store = &store;
+        assert!(dyn_store.read_json::<RuntimeState>("nope.json").unwrap().is_none());
+        let cloned = store.clone();
+        assert_eq!(cloned.snapshot(), store.snapshot());
+    }
+}
