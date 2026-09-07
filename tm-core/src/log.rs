@@ -5,11 +5,13 @@
 //! # API overview
 //!
 //! * [`Event`] — one variant per event kind with the §10.1 field names
-//!   (`#[serde(tag = "ev")]`, lowercase names). Unknown event names
-//!   deserialize into [`Event::Unknown`]`{ ev, rest }` and serialize back
-//!   losslessly (`rest` keys come out sorted). [`Event::name`] is the `ev`
-//!   tag, [`Event::primary_id`] the item/instance id an event is about,
-//!   [`Event::is_state_change`] says whether `tm undo` may target it.
+//!   (`#[serde(tag = "ev")]`, lowercase names; [`EVENT_NAMES`] lists them).
+//!   Unknown event names deserialize into [`Event::Unknown`]`{ ev, rest }`
+//!   and serialize back losslessly (`rest` keys come out sorted); a known
+//!   name with a bad payload is a parse error naming the field, never an
+//!   `Unknown`. [`Event::name`] is the `ev` tag, [`Event::primary_id`] the
+//!   item/instance id an event is about, [`Event::is_state_change`] says
+//!   whether `tm undo` may target it.
 //! * [`LogEntry`]`{ t: DateTime<FixedOffset>, ev }` — one line; `t` is
 //!   written RFC 3339 with the local offset (`2026-09-07T06:05:00-05:00`).
 //!   [`LogEntry::to_json`] / [`LogEntry::parse`] convert one line.
@@ -21,10 +23,11 @@
 //!   [`Log::iter_range`]`(from, to, tz)`, [`Log::iter_item`]`(id)`.
 //! * Undo (§10.1, §13): `undo{of, id?}` cancels the most recent
 //!   not-yet-undone event of kind `of` (with that primary id when given).
-//!   [`Log::undo_mask`] computes which entries are cancelled (the target and
-//!   the undo itself; a dangling undo cancels only itself),
+//!   [`undo_mask`] / [`Log::undo_mask`] compute which entries are cancelled
+//!   (the target and the undo itself; a dangling undo cancels only itself),
 //!   [`Log::effective`] iterates the survivors, [`Log::undo_target`] /
 //!   [`Log::compensating_undo`] pick what `tm undo` should cancel next.
+//!   Every replay and iterator below applies the mask first.
 //! * Days: [`DayIndex`] — a day runs from `wake` to the next `wake`; an
 //!   entry belongs to the calendar date (in `tz`) of the last `wake` at or
 //!   before it when that wake is less than 24 h earlier, else to its own
@@ -35,12 +38,15 @@
 //!   per-day [`DayReplay`] (wake/arrive, block minutes, blocks done, load,
 //!   energy mix, lost, leak, idle, breaks, plans, starts, done ids, actual
 //!   [`LogSegment`]s), per-item [`ItemReplay`] (minutes, blocks, by day,
-//!   done times), [`InstanceRecord`]s per `(item, inst)`, [`EnergyObs`],
-//!   [`DurationObs`], [`Interruption`]s, [`NamedEvent`]s, [`Demotion`]s
-//!   with stamps, [`CloseRecord`]s, the longest leak, the still-open block.
-//!   Helpers: `block_minutes(id)`, `blocks_done(date)`, `is_done(id)`,
-//!   `last_done(id)`, `done_dates(id)`, `instance_status(item, inst)`,
-//!   `stamps(id)`, `events_named(name)`.
+//!   done times), [`InstanceRecord`]s as `item → inst → record`,
+//!   [`EnergyObs`], [`DurationObs`], [`Interruption`]s, [`NamedEvent`]s,
+//!   [`Demotion`]s with stamps, [`CloseRecord`]s, the longest leak, the
+//!   still-open block. Helpers: `block_minutes(id)`, `blocks_done(date)`,
+//!   `is_done(id)`, `last_done(id)`, `done_dates(id)`,
+//!   `instance_status(item, inst)`, `instances_of(item)`, `stamps(id)`,
+//!   `events_named(name)`, `events_for(id)`, `breaks()`. `Replay` is
+//!   `Serialize`/`Deserialize` (JSON-safe: every map key is a string or a
+//!   date) for `--json` output.
 //!
 //! # Event conventions (what the writers log, what replay assumes)
 //!
@@ -154,13 +160,97 @@ fn is_false(b: &bool) -> bool {
 // Events
 // ---------------------------------------------------------------------------
 
-/// One log event (§10.1). Field names are the JSON keys; the variant name in
-/// lowercase is the `ev` tag (`Named` is `event`).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "ev", rename_all = "lowercase")]
-pub enum Event {
+/// Defines [`Event`] (the public enum, one variant per event kind plus
+/// `Unknown`) and a private fallback-free mirror used for deserializing
+/// known names, from one variant list. Each entry is
+/// `Variant => "ev-tag" { fields }`.
+macro_rules! define_events {
+    (
+        $(
+            $(#[$vmeta:meta])*
+            $variant:ident => $name:literal {
+                $(
+                    $(#[$fmeta:meta])*
+                    $field:ident : $ty:ty
+                ),* $(,)?
+            }
+        ),* $(,)?
+    ) => {
+        /// One log event (§10.1). Field names are the JSON keys; the `ev`
+        /// tag is the lowercase variant name (`Named` is `event`).
+        ///
+        /// Deserializing: a known `ev` is decoded strictly (a missing or
+        /// mistyped field is an error naming the event and the field); any
+        /// other `ev` becomes [`Event::Unknown`] with every other key kept
+        /// in `rest`, and serializes back losslessly.
+        #[derive(Clone, Debug, PartialEq, Serialize)]
+        #[serde(tag = "ev")]
+        pub enum Event {
+            $(
+                $(#[$vmeta])*
+                #[serde(rename = $name)]
+                $variant {
+                    $(
+                        $(#[$fmeta])*
+                        $field: $ty
+                    ),*
+                },
+            )*
+            /// Any event kind this version does not know; kept verbatim. A
+            /// known `ev` with an invalid payload is a parse error, never an
+            /// `Unknown`.
+            #[serde(untagged)]
+            Unknown {
+                /// The `ev` tag (never one of [`EVENT_NAMES`]).
+                ev: String,
+                /// Every other field, in key order.
+                #[serde(flatten)]
+                rest: Map<String, Value>,
+            },
+        }
+
+        /// The known variants only: derived, so a bad payload reports the
+        /// offending field instead of falling through to `Unknown`.
+        #[derive(Deserialize)]
+        #[serde(tag = "ev")]
+        enum Known {
+            $(
+                #[serde(rename = $name)]
+                $variant {
+                    $(
+                        $(#[$fmeta])*
+                        $field: $ty
+                    ),*
+                },
+            )*
+        }
+
+        impl From<Known> for Event {
+            fn from(k: Known) -> Event {
+                match k {
+                    $( Known::$variant { $($field),* } => Event::$variant { $($field),* }, )*
+                }
+            }
+        }
+
+        /// The known `ev` tags, in §10.1 order.
+        pub const EVENT_NAMES: &[&str] = &[ $($name),* ];
+
+        impl Event {
+            /// The `ev` tag.
+            pub fn name(&self) -> &str {
+                match self {
+                    $( Event::$variant { .. } => $name, )*
+                    Event::Unknown { ev, .. } => ev,
+                }
+            }
+        }
+    };
+}
+
+define_events! {
     /// `tm wake`: `t` is the wake time.
-    Wake {
+    Wake => "wake" {
         /// Minutes slept.
         slept_min: u32,
         /// Minutes to fall asleep (`--onset`).
@@ -168,7 +258,7 @@ pub enum Event {
         onset_min: Option<u32>,
     },
     /// `tm arrive`: location, working window and block budget for the day.
-    Arrive {
+    Arrive => "arrive" {
         /// Location name (`lounge`, `home`, …).
         loc: String,
         /// `[start, end]` as `HH:MM`.
@@ -177,7 +267,7 @@ pub enum Event {
         budget: u32,
     },
     /// A block started.
-    Start {
+    Start => "start" {
         /// Item id.
         id: String,
         /// Predicted slot energy.
@@ -201,7 +291,7 @@ pub enum Event {
         since_break_min: u32,
     },
     /// A block (or, retro, an item) finished.
-    Done {
+    Done => "done" {
         /// Item id.
         id: String,
         /// Estimated minutes for the block.
@@ -221,21 +311,21 @@ pub enum Event {
         partial: bool,
     },
     /// The block was extended.
-    Extend {
+    Extend => "extend" {
         /// Item id.
         id: String,
         /// Minutes added.
         by_min: u32,
     },
     /// The block was stopped; the remainder re-competes.
-    Stop {
+    Stop => "stop" {
         /// Item id.
         id: String,
         /// Remaining estimate in minutes.
         remaining_min: u32,
     },
     /// A break; `t` is its start.
-    Break {
+    Break => "break" {
         /// Planned length.
         planned_min: u32,
         /// Actual length.
@@ -246,7 +336,7 @@ pub enum Event {
         r#where: Option<String>,
     },
     /// An energy report outside a block start.
-    Energy {
+    Energy => "energy" {
         /// Predicted energy.
         pred: u8,
         /// Reported energy.
@@ -258,13 +348,13 @@ pub enum Event {
         loc: String,
     },
     /// An interruption began.
-    Interrupt {
+    Interrupt => "interrupt" {
         /// The interrupted item, if a block was running.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<String>,
     },
     /// The interruption ended.
-    Resume {
+    Resume => "resume" {
         /// Minutes lost.
         lost_min: u32,
         /// Items dropped from today's plan as a consequence.
@@ -272,24 +362,24 @@ pub enum Event {
         dropped: Vec<String>,
     },
     /// Timer paused.
-    Pause {
+    Pause => "pause" {
         /// Item id.
         id: String,
     },
     /// Timer resumed.
-    Unpause {
+    Unpause => "unpause" {
         /// Item id.
         id: String,
     },
     /// The idle prompt was answered: the gap `[t − min, t]` was attributed.
-    Idle {
+    Idle => "idle" {
         /// `leak`, `work`, `break`, `routine` or `interrupt`.
         attributed: String,
         /// Length of the gap.
         min: u32,
     },
     /// A routine instance changed status.
-    Routine {
+    Routine => "routine" {
         /// Routine name or id.
         item: String,
         /// Instance key: a date or an ordinal (`#3`).
@@ -301,14 +391,14 @@ pub enum Event {
         actual_min: Option<u32>,
     },
     /// A routine instance was skipped.
-    Skip {
+    Skip => "skip" {
         /// Routine name or id.
         item: String,
         /// Instance key.
         inst: String,
     },
     /// A plan was computed.
-    Plan {
+    Plan => "plan" {
         /// Plan hash.
         hash: String,
         /// Replans so far today (running count).
@@ -316,9 +406,8 @@ pub enum Event {
         /// Minutes segments moved by this replan.
         drift_min: u32,
     },
-    /// `tm event <name> [^id]`.
-    #[serde(rename = "event")]
-    Named {
+    /// `tm event <name> [^id]` (the `ev` tag is `event`).
+    Named => "event" {
         /// Event name.
         name: String,
         /// The item it resolves, if given.
@@ -326,7 +415,7 @@ pub enum Event {
         id: Option<String>,
     },
     /// An item was demoted at a close.
-    Demote {
+    Demote => "demote" {
         /// Item id.
         id: String,
         /// Horizon key it left (`2026-W37`, `2026-09-07`).
@@ -337,12 +426,12 @@ pub enum Event {
         est_min: u32,
     },
     /// `tm readopt`.
-    Readopt {
+    Readopt => "readopt" {
         /// Item id.
         id: String,
     },
     /// `tm move`.
-    Move {
+    Move => "move" {
         /// Item id.
         id: String,
         /// Source file / horizon.
@@ -351,12 +440,12 @@ pub enum Event {
         to: String,
     },
     /// `tm drop`.
-    Drop {
+    Drop => "drop" {
         /// Item id.
         id: String,
     },
     /// `tm edit`: one field changed.
-    Edit {
+    Edit => "edit" {
         /// Item id.
         id: String,
         /// Field name.
@@ -367,81 +456,53 @@ pub enum Event {
         to: String,
     },
     /// A free-text note.
-    Note {
+    Note => "note" {
         /// The text.
         text: String,
     },
     /// Location changed.
-    Loc {
+    Loc => "loc" {
         /// New location.
         loc: String,
     },
     /// `tm close <period>` ran.
-    Close {
+    Close => "close" {
         /// `day`, `week` or `month`.
         period: String,
         /// The period key closed (`2026-09-07`, `2026-W37`, `2026-09`).
         key: String,
     },
     /// `tm undo`: cancels the most recent not-yet-undone event of kind `of`.
-    Undo {
+    Undo => "undo" {
         /// Event kind to cancel.
         of: String,
         /// Restrict to events with this primary id.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<String>,
     },
-    /// Any event kind this version does not know; kept verbatim.
-    #[serde(untagged)]
-    Unknown {
-        /// The `ev` tag.
-        ev: String,
-        /// Every other field.
-        #[serde(flatten)]
-        rest: Map<String, Value>,
-    },
 }
 
-/// The known `ev` tags, in §10.1 order.
-pub const EVENT_NAMES: &[&str] = &[
-    "wake", "arrive", "start", "done", "extend", "stop", "break", "energy", "interrupt", "resume",
-    "pause", "unpause", "idle", "routine", "skip", "plan", "event", "demote", "readopt", "move",
-    "drop", "edit", "note", "loc", "close", "undo",
-];
-
-impl Event {
-    /// The `ev` tag.
-    pub fn name(&self) -> &str {
-        match self {
-            Event::Wake { .. } => "wake",
-            Event::Arrive { .. } => "arrive",
-            Event::Start { .. } => "start",
-            Event::Done { .. } => "done",
-            Event::Extend { .. } => "extend",
-            Event::Stop { .. } => "stop",
-            Event::Break { .. } => "break",
-            Event::Energy { .. } => "energy",
-            Event::Interrupt { .. } => "interrupt",
-            Event::Resume { .. } => "resume",
-            Event::Pause { .. } => "pause",
-            Event::Unpause { .. } => "unpause",
-            Event::Idle { .. } => "idle",
-            Event::Routine { .. } => "routine",
-            Event::Skip { .. } => "skip",
-            Event::Plan { .. } => "plan",
-            Event::Named { .. } => "event",
-            Event::Demote { .. } => "demote",
-            Event::Readopt { .. } => "readopt",
-            Event::Move { .. } => "move",
-            Event::Drop { .. } => "drop",
-            Event::Edit { .. } => "edit",
-            Event::Note { .. } => "note",
-            Event::Loc { .. } => "loc",
-            Event::Close { .. } => "close",
-            Event::Undo { .. } => "undo",
-            Event::Unknown { ev, .. } => ev,
+impl<'de> Deserialize<'de> for Event {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Event, D::Error> {
+        use serde::de::Error;
+        let mut map = Map::<String, Value>::deserialize(d)?;
+        let ev = match map.get("ev") {
+            Some(Value::String(s)) => s.clone(),
+            Some(_) => return Err(D::Error::custom("`ev` must be a string")),
+            None => return Err(D::Error::missing_field("ev")),
+        };
+        if EVENT_NAMES.contains(&ev.as_str()) {
+            Known::deserialize(Value::Object(map))
+                .map(Event::from)
+                .map_err(|e| D::Error::custom(format!("event {ev:?}: {e}")))
+        } else {
+            map.remove("ev");
+            Ok(Event::Unknown { ev, rest: map })
         }
     }
+}
+
+impl Event {
 
     /// The item id (or routine `item`) the event is about, if any. This is
     /// what `undo{id}` matches against.
@@ -673,32 +734,9 @@ impl Log {
     /// `undo{of, id?}` cancels the most recent earlier event of kind `of`
     /// (with primary id `id` when given) that is not already cancelled and is
     /// not itself an undo; the undo entry is always cancelled too. An undo
-    /// that matches nothing is *dangling*.
+    /// that matches nothing is *dangling*. See [`undo_mask`].
     pub fn undo_mask(&self) -> UndoMask {
-        let n = self.entries.len();
-        let mut cancelled = vec![false; n];
-        let mut dangling = Vec::new();
-        for i in 0..n {
-            let Event::Undo { of, id } = &self.entries[i].ev else {
-                continue;
-            };
-            cancelled[i] = true;
-            let target = (0..i).rev().find(|&j| {
-                let ev = &self.entries[j].ev;
-                !cancelled[j]
-                    && !matches!(ev, Event::Undo { .. })
-                    && ev.name() == of
-                    && id.as_deref().is_none_or(|want| ev.primary_id() == Some(want))
-            });
-            match target {
-                Some(j) => cancelled[j] = true,
-                None => dangling.push(i),
-            }
-        }
-        UndoMask {
-            cancelled,
-            dangling,
-        }
+        undo_mask(&self.entries)
     }
 
     /// Entries that survive undo cancellation, in order.
@@ -761,8 +799,40 @@ impl Log {
 
     /// Derive state from the surviving entries; `None` = the whole log.
     pub fn replay(&self, range: Option<RangeInclusive<NaiveDate>>, tz: Tz) -> Replay {
-        let entries: Vec<&LogEntry> = self.effective().collect();
-        replay_refs(&entries, range, tz)
+        replay(&self.entries, range, tz)
+    }
+}
+
+/// Which entries of `entries` are cancelled by `undo` entries (§10.1, §13).
+/// Each `undo{of, id?}` cancels the most recent earlier event of kind `of`
+/// (with primary id `id` when given) that is not already cancelled and is
+/// not itself an undo; the undo entry is always cancelled too. An undo that
+/// matches nothing is *dangling* (only itself is cancelled). An undo of an
+/// undo is therefore always dangling.
+pub fn undo_mask(entries: &[LogEntry]) -> UndoMask {
+    let n = entries.len();
+    let mut cancelled = vec![false; n];
+    let mut dangling = Vec::new();
+    for i in 0..n {
+        let Event::Undo { of, id } = &entries[i].ev else {
+            continue;
+        };
+        cancelled[i] = true;
+        let target = (0..i).rev().find(|&j| {
+            let ev = &entries[j].ev;
+            !cancelled[j]
+                && !matches!(ev, Event::Undo { .. })
+                && ev.name() == of
+                && id.as_deref().is_none_or(|want| ev.primary_id() == Some(want))
+        });
+        match target {
+            Some(j) => cancelled[j] = true,
+            None => dangling.push(i),
+        }
+    }
+    UndoMask {
+        cancelled,
+        dangling,
     }
 }
 
@@ -770,9 +840,10 @@ impl Log {
 // Days and hours since wake
 // ---------------------------------------------------------------------------
 
-/// Hours between `wake` and `t`, rounded to 0.01 (the `hsw` field).
+/// Hours between `wake` and `t`, rounded to 0.01 (the `hsw` field). Negative
+/// when `t` is before `wake`.
 pub fn hours_since_wake<A: TimeZone, B: TimeZone>(t: &DateTime<A>, wake: &DateTime<B>) -> f64 {
-    let secs = t.signed_duration_since(wake).num_seconds() as f64;
+    let secs = t.clone().signed_duration_since(wake.clone()).num_seconds() as f64;
     (secs / 36.0).round() / 100.0
 }
 
@@ -1301,8 +1372,8 @@ pub struct Replay {
     pub days: BTreeMap<NaiveDate, DayReplay>,
     /// Per item.
     pub items: BTreeMap<String, ItemReplay>,
-    /// Routine instance statuses by `(item, inst)`.
-    pub instances: BTreeMap<(String, String), InstanceRecord>,
+    /// Routine instance statuses: `item → inst → latest record`.
+    pub instances: BTreeMap<String, BTreeMap<String, InstanceRecord>>,
     /// Energy observations in time order.
     pub energy: Vec<EnergyObs>,
     /// Duration observations in time order.
@@ -1384,15 +1455,44 @@ impl Replay {
             .map(|s| s.iter().copied().collect())
             .unwrap_or_default()
     }
+    /// The latest record of a routine instance, if anything was logged.
+    pub fn instance(&self, item: &str, inst: &str) -> Option<&InstanceRecord> {
+        self.instances.get(item)?.get(inst)
+    }
     /// Status of a routine instance (`Pending` when nothing was logged).
     pub fn instance_status(&self, item: &str, inst: &str) -> InstanceStatus {
-        self.instances
-            .get(&(item.to_string(), inst.to_string()))
+        self.instance(item, inst)
             .map_or(InstanceStatus::Pending, |r| r.status)
+    }
+    /// Every logged instance of `item`: `(inst, record)` sorted by `inst`.
+    pub fn instances_of(&self, item: &str) -> impl Iterator<Item = (&str, &InstanceRecord)> {
+        self.instances
+            .get(item)
+            .into_iter()
+            .flat_map(|m| m.iter().map(|(k, v)| (k.as_str(), v)))
     }
     /// Occurrences of `tm event <name>`.
     pub fn events_named(&self, name: &str) -> &[NamedEvent] {
         self.events.get(name).map_or(&[], Vec::as_slice)
+    }
+    /// Every `tm event` addressed to `id`, in time order.
+    pub fn events_for(&self, id: &str) -> Vec<&NamedEvent> {
+        let mut v: Vec<&NamedEvent> = self
+            .events
+            .values()
+            .flatten()
+            .filter(|e| e.id.as_deref() == Some(id))
+            .collect();
+        v.sort_by_key(|e| e.t);
+        v
+    }
+    /// Every break, in time order across days.
+    pub fn breaks(&self) -> impl Iterator<Item = &BreakRecord> {
+        self.days.values().flat_map(|d| d.breaks.iter())
+    }
+    /// Every interruption on `date`.
+    pub fn interrupts_on(&self, date: NaiveDate) -> impl Iterator<Item = &Interruption> {
+        self.interrupts.iter().filter(move |i| i.day == date)
     }
     /// True when `name` was logged, optionally only after `since`, and
     /// optionally only when addressed to `id`.
@@ -1853,8 +1953,8 @@ impl Machine {
                 }
                 let st = parsed.unwrap_or(InstanceStatus::Pending);
                 if self.in_range(day) {
-                    self.out.instances.insert(
-                        (item.clone(), inst.clone()),
+                    self.out.instances.entry(item.clone()).or_default().insert(
+                        inst.clone(),
                         InstanceRecord {
                             t,
                             status: st,
@@ -1884,8 +1984,8 @@ impl Machine {
             }
             Event::Skip { item, inst } => {
                 if self.in_range(day) {
-                    self.out.instances.insert(
-                        (item.clone(), inst.clone()),
+                    self.out.instances.entry(item.clone()).or_default().insert(
+                        inst.clone(),
                         InstanceRecord {
                             t,
                             status: InstanceStatus::Skipped,
@@ -1983,11 +2083,19 @@ impl Machine {
     }
 }
 
-/// Derive state from `entries` (already undo-filtered; use [`Log::replay`]
-/// for the mask). The block state machine runs over every entry; only
-/// results dated inside `range` (wake-aware days, see [`DayIndex`]) are kept.
+/// Derive state from `entries` in log order. Undo is applied first (see
+/// [`undo_mask`]): an undone event and its `undo` entry are both skipped.
+/// The block state machine then runs over every surviving entry (so a block
+/// cut across a range edge is still accounted for); only results dated
+/// inside `range` (wake-aware days, see [`DayIndex`]; `None` = everything)
+/// are kept.
 pub fn replay(entries: &[LogEntry], range: Option<RangeInclusive<NaiveDate>>, tz: Tz) -> Replay {
-    let refs: Vec<&LogEntry> = entries.iter().collect();
+    let mask = undo_mask(entries);
+    let refs: Vec<&LogEntry> = entries
+        .iter()
+        .zip(&mask.cancelled)
+        .filter_map(|(e, c)| (!*c).then_some(e))
+        .collect();
     replay_refs(&refs, range, tz)
 }
 
@@ -2072,7 +2180,9 @@ mod tests {
         assert_eq!(e.ev.name(), "zorg");
         assert_eq!(e.to_json().unwrap(), line);
         // A known name with a bad payload is an error, not Unknown.
-        assert!(LogEntry::parse(r#"{"t":"2026-09-07T06:05:00-05:00","ev":"wake"}"#).is_err());
+        let err = LogEntry::parse(r#"{"t":"2026-09-07T06:05:00-05:00","ev":"wake"}"#).unwrap_err();
+        eprintln!("bad payload error: {err}");
+        assert!(err.to_string().contains("wake"), "{err}");
         assert!(LogEntry::parse(r#"{"ev":"note","text":"x"}"#).is_err());
         assert!(LogEntry::parse(r#"{"t":"2026-09-07T06:05:00-05:00"}"#).is_err());
     }
@@ -2083,8 +2193,10 @@ mod tests {
         assert_eq!(hours_since_wake(&at("2026-09-07T07:02:00-05:00"), &wake), 0.95);
         assert_eq!(hours_since_wake(&at("2026-09-07T09:32:00-05:00"), &wake), 3.45);
         assert_eq!(hours_since_wake(&at("2026-09-07T06:05:00-05:00"), &wake), 0.0);
-        // Different offsets compare by instant.
-        assert_eq!(hours_since_wake(&at("2026-09-07T13:05:00+01:00"), &wake), 0.0);
+        // Different offsets compare by instant (06:05−05:00 is 11:05Z).
+        assert_eq!(hours_since_wake(&at("2026-09-07T12:05:00+01:00"), &wake), 0.0);
+        assert_eq!(hours_since_wake(&at("2026-09-07T13:05:00+01:00"), &wake), 1.0);
+        assert_eq!(hours_since_wake(&at("2026-09-07T05:35:00-05:00"), &wake), -0.5);
     }
 
     #[test]

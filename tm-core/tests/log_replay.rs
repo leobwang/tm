@@ -1,0 +1,364 @@
+//! Replay of the synthetic three-day fixture (`tests/fixtures/logs/
+//! three-days.jsonl`): every value below is computed by hand from the
+//! fixture. Day 1 mirrors the §10.1 examples; day 2 exercises undo of
+//! `done`, `skip`, `stop`, `drop` and `event`, an unknown event, and the
+//! wake-to-wake day boundary (its `close` is logged after midnight); day 3
+//! has no `wake`, an interruption without an id, and an open paused block.
+
+use std::path::{Path, PathBuf};
+
+use chrono::{DateTime, Duration, FixedOffset, NaiveDate};
+use chrono_tz::Tz;
+use tm_core::log::{hours_since_wake, replay, Event, Log, Replay, SegmentKind};
+use tm_core::model::{InstanceStatus, Stamp};
+
+const TZ: Tz = Tz::America__Chicago;
+
+fn fixture() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/logs/three-days.jsonl")
+}
+
+fn load() -> Log {
+    let log = Log::read(fixture()).unwrap();
+    assert!(log.warnings.is_empty());
+    log
+}
+
+fn at(s: &str) -> DateTime<FixedOffset> {
+    DateTime::parse_from_rfc3339(s).unwrap()
+}
+
+fn d(s: &str) -> NaiveDate {
+    NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+}
+
+fn seg_lines(r: &Replay, date: NaiveDate) -> Vec<String> {
+    r.day(date)
+        .unwrap()
+        .segments
+        .iter()
+        .map(|s| {
+            let kind = match &s.kind {
+                SegmentKind::Block { id } => format!("block {id}"),
+                SegmentKind::Pause { id } => format!("pause {id}"),
+                SegmentKind::Interrupt { id } => format!("interrupt {}", id.as_deref().unwrap_or("-")),
+                SegmentKind::Break { r#where } => format!("break {}", r#where.as_deref().unwrap_or("-")),
+                SegmentKind::Routine { item, inst } => format!("routine {item} {inst}"),
+                SegmentKind::Idle { attributed } => format!("idle {attributed}"),
+            };
+            format!(
+                "{}-{} {} {}m",
+                s.start.with_timezone(&TZ).format("%H:%M"),
+                s.end.with_timezone(&TZ).format("%H:%M"),
+                kind,
+                s.minutes()
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn undo_cancels_targets_and_itself() {
+    let log = load();
+    let mask = log.undo_mask();
+    let cancelled: Vec<usize> = (0..log.len()).filter(|&i| mask.cancelled[i]).map(|i| i + 1).collect();
+    // 1-based fixture lines: (39 done t6, 40), (44 skip laundry, 45),
+    // (46 stop t7, 47), (58 drop a5, 59), (61 event visa, 62), (67 note, 68).
+    assert_eq!(cancelled, vec![39, 40, 44, 45, 46, 47, 58, 59, 61, 62, 67, 68]);
+    assert!(mask.dangling.is_empty());
+    assert_eq!(mask.pairs(), 6);
+    assert_eq!(log.effective().count(), 62);
+    // What `tm undo` would cancel next: the last surviving state change.
+    assert_eq!(
+        log.compensating_undo(),
+        Some(Event::Undo { of: "pause".into(), id: Some("t8".into()) })
+    );
+    // The free function applies the mask too, so raw entries are safe.
+    let via_fn = replay(&log.entries, None, TZ);
+    assert_eq!(via_fn, log.replay(None, TZ));
+}
+
+#[test]
+fn days_run_wake_to_wake() {
+    let log = load();
+    let idx = log.day_index(TZ);
+    assert_eq!(idx.wakes().len(), 2);
+    // 21:30 CDT written as UTC belongs to the 7th; the close at 00:10 on the
+    // 9th belongs to the 8th (its wake is < 24 h earlier); the 9th has no
+    // wake and falls back to the calendar date.
+    assert_eq!(idx.day_of(at("2026-09-08T02:30:00+00:00")), d("2026-09-07"));
+    assert_eq!(idx.day_of(at("2026-09-09T00:10:00-05:00")), d("2026-09-08"));
+    assert_eq!(idx.day_of(at("2026-09-09T09:00:00-05:00")), d("2026-09-09"));
+    assert_eq!(idx.wake_of(d("2026-09-09")), None);
+    assert_eq!(
+        idx.bounds(d("2026-09-08")),
+        (at("2026-09-08T06:40:00-05:00"), at("2026-09-09T06:40:00-05:00"))
+    );
+    assert_eq!(log.iter_day(d("2026-09-07"), TZ).count(), 31);
+    assert_eq!(log.iter_day(d("2026-09-08"), TZ).count(), 24, "34 entries minus 10 cancelled");
+    assert_eq!(log.iter_day(d("2026-09-09"), TZ).count(), 7);
+    assert_eq!(log.iter_range(d("2026-09-07"), d("2026-09-08"), TZ).count(), 55);
+    assert_eq!(log.iter_range(d("2026-09-01"), d("2026-09-06"), TZ).count(), 0);
+    assert_eq!(log.iter_item("t3").count(), 5, "start, extend, done, start, done");
+    // The logged `hsw` values agree with the helper wherever a wake exists.
+    for e in log.effective() {
+        if let Event::Start { hsw, .. } = &e.ev {
+            if let Some(w) = idx.wake_of(idx.day_of(e.t)) {
+                assert_eq!(*hsw, hours_since_wake(&e.t, &w), "{}", e.to_json().unwrap());
+            }
+        }
+    }
+}
+
+#[test]
+fn day_one_matches_hand_computed_values() {
+    let r = load().replay(None, TZ);
+    let d7 = d("2026-09-07");
+    let day = r.day(d7).unwrap();
+    assert_eq!(day.wake, Some(at("2026-09-07T06:05:00-05:00")));
+    assert_eq!((day.slept_min, day.onset_min), (Some(490), None));
+    assert_eq!(day.arrival, Some(at("2026-09-07T07:00:00-05:00")));
+    assert_eq!(day.loc.as_deref(), Some("lounge"));
+    assert_eq!(day.window, Some(["07:00".to_string(), "15:00".to_string()]));
+    assert_eq!(day.budget, Some(6));
+    assert_eq!(day.wake_to_arrive_min(), Some(55));
+    assert_eq!(day.arrive_to_start_min(), Some(2));
+    assert_eq!(day.loc_changes.len(), 2);
+    assert_eq!(day.loc_changes[1].1, "home");
+    // t1 67 + t2 58 + t3 138 (partial) + t4 45 (12:00–12:10, 13:05–13:20,
+    // 13:30–13:50, cut by stop) + t5 60 + a3 0 (retro).
+    assert_eq!(day.block_min, 368);
+    assert_eq!(r.block_minutes_on_day(d7), 368);
+    assert_eq!(day.blocks_done, 4, "t1 t2 t3 t5; the retro done is not a block");
+    assert_eq!(r.blocks_done(d7), 4);
+    assert_eq!(day.done, vec!["t1", "t2", "t5", "a3"]);
+    assert_eq!(day.starts.len(), 5);
+    assert_eq!(day.starts[3].rep, None);
+    assert_eq!(day.minutes_by_ci, [0, 0, 0, 60, 138, 125]);
+    assert_eq!(day.high_ci_min(), 263);
+    assert!((day.load - 271.4).abs() < 1e-9, "{}", day.load);
+    assert_eq!((day.lost_min, day.leak_min, day.longest_leak), (55, 14, 14));
+    assert_eq!(day.dropped, vec!["t5"]);
+    assert_eq!(day.idle.len(), 1);
+    assert_eq!(day.breaks.len(), 1);
+    assert_eq!(day.breaks[0].actual_or_planned(), 24);
+    assert_eq!(day.breaks[0].r#where.as_deref(), Some("walk"));
+    assert_eq!(day.break_min(), 24);
+    assert_eq!(day.routine_min, 48);
+    assert_eq!((day.plans, day.replans_today, day.drift_min), (3, 4, 75));
+    assert_eq!(day.last_plan_hash.as_deref(), Some("c3d5"));
+    assert_eq!(
+        seg_lines(&r, d7),
+        vec![
+            "07:02-08:09 block t1 67m",
+            "08:10-09:08 block t2 58m",
+            "09:08-09:32 break walk 24m",
+            "09:32-11:50 block t3 138m",
+            "11:20-11:50 routine lunch 2026-09-07 30m",
+            "12:00-12:10 block t4 10m",
+            "12:10-13:05 interrupt t4 55m",
+            "13:05-13:20 block t4 15m",
+            "13:20-13:30 pause t4 10m",
+            "13:30-13:50 block t4 20m",
+            "14:05-15:05 block t5 60m",
+            "15:26-15:40 idle leak 14m",
+            "15:52-16:10 routine package 2026-09-07 18m",
+        ]
+    );
+    // Energy: t1, t2 (starts), the 09:32 report, t3, t5; t4 had no report.
+    let obs: Vec<_> = r.energy_on(d7).collect();
+    assert_eq!(obs.len(), 5);
+    assert_eq!(obs[0].id.as_deref(), Some("t1"));
+    assert_eq!((obs[0].pred, obs[0].rep, obs[0].went), (5, 5, Some(1)));
+    assert_eq!(obs[0].slept_min, Some(490));
+    assert!(!obs[2].from_start);
+    assert_eq!((obs[2].pred, obs[2].rep, obs[2].delta()), (5, 4, -1));
+    assert_eq!(obs[2].slept_min, Some(490), "from the day's wake");
+    assert_eq!((obs[3].id.as_deref(), obs[3].went, obs[3].weight()), (Some("t3"), Some(2), 1.5));
+    assert_eq!(obs[4].loc, "home");
+    // Durations: one per timed block; the stop and the retro done give none.
+    let dur: Vec<_> = r.durations_on(d7).collect();
+    assert_eq!(dur.len(), 4);
+    assert_eq!(dur[0].ratio(), Some(67.0 / 60.0));
+    assert_eq!(dur[0].tags, vec!["lean"]);
+    assert_eq!((dur[2].id.as_str(), dur[2].est_min, dur[2].actual_min, dur[2].partial), ("t3", 120, 138, true));
+    assert_eq!(dur[3].ci, 3);
+    // Items.
+    assert_eq!(r.block_minutes("t1"), 67);
+    assert_eq!(r.block_minutes("t4"), 45);
+    assert_eq!(r.block_minutes("a3"), 0);
+    assert_eq!(r.items["t3"].extended_min, 60);
+    assert_eq!(r.items["t4"].stops, 1);
+    assert_eq!(r.items["t3"].partial_done_at.len(), 1);
+    assert_eq!(r.items["a3"].done_at, vec![at("2026-09-07T18:00:00-05:00")]);
+    assert!(r.is_done("a3") && r.is_done("t1") && !r.is_done("t4"));
+    // Instances and events.
+    assert_eq!(r.instance_status("lunch", "2026-09-07"), InstanceStatus::Done);
+    assert_eq!(r.instance("lunch", "2026-09-07").unwrap().actual_min, Some(30));
+    assert_eq!(r.instance_status("workout", "2026-09-07"), InstanceStatus::Skipped);
+    assert_eq!(r.instance_status("package", "2026-09-07"), InstanceStatus::Done);
+    assert_eq!(r.instance_status("package", "2026-09-08"), InstanceStatus::Pending);
+    assert_eq!(r.last_done("lunch"), Some(at("2026-09-07T11:50:00-05:00")));
+    assert_eq!(r.done_dates("package"), vec![d7]);
+    assert_eq!(r.events_named("reply").len(), 1);
+    assert_eq!(r.events_named("reply")[0].id.as_deref(), Some("a4"));
+    assert_eq!(r.events_for("a4").len(), 1);
+    assert!(r.event_occurred("reply", None, Some("a4")));
+    assert!(!r.event_occurred("reply", Some(at("2026-09-07T17:01:00-05:00")), None));
+    assert_eq!(r.interrupts_on(d7).count(), 1);
+    assert_eq!(r.interrupts[0].id.as_deref(), Some("t4"));
+    assert_eq!(r.interrupts[0].lost_min, 55);
+    assert_eq!(r.interrupts[0].start, Some(at("2026-09-07T12:10:00-05:00")));
+}
+
+#[test]
+fn day_two_applies_undo_and_the_midnight_close() {
+    let r = load().replay(None, TZ);
+    let d8 = d("2026-09-08");
+    let day = r.day(d8).unwrap();
+    assert_eq!((day.slept_min, day.onset_min), (Some(400), Some(35)));
+    assert_eq!(day.loc.as_deref(), Some("home"));
+    // t3 65 + t6 62 (the undone 60 does not count) + t7 45 (the undone stop
+    // would have credited 30 more).
+    assert_eq!(day.block_min, 172);
+    assert_eq!(day.blocks_done, 3);
+    assert_eq!(day.done, vec!["t3", "t6", "t7"]);
+    assert_eq!(r.block_minutes("t6"), 62);
+    assert_eq!(r.block_minutes("t7"), 45);
+    assert_eq!(r.items["t7"].stops, 0, "the stop was undone");
+    assert_eq!(r.items["t6"].done_at.len(), 1);
+    assert!((day.load - 116.2).abs() < 1e-9, "{}", day.load);
+    assert_eq!((day.lost_min, day.leak_min, day.longest_leak), (0, 37, 25));
+    assert_eq!(day.idle.len(), 3, "work 3, leak 25, leak 12");
+    assert_eq!(day.idle[0].attributed, "work");
+    assert_eq!(day.breaks[0].actual_min, None);
+    assert_eq!(day.break_min(), 20, "planned when no actual");
+    assert_eq!(day.routine_min, 15);
+    assert_eq!((day.plans, day.replans_today, day.drift_min), (2, 2, 30));
+    assert_eq!(
+        seg_lines(&r, d8),
+        vec![
+            "07:35-08:40 block t3 65m",
+            "08:45-09:05 break - 20m",
+            "09:05-10:07 block t6 62m",
+            "10:07-10:10 idle work 3m",
+            "10:15-11:00 block t7 45m",
+            "10:45-11:00 routine shower #3 15m",
+            "11:35-12:00 idle leak 25m",
+            "12:18-12:30 idle leak 12m",
+        ]
+    );
+    // Energy: t3 (went 3 → double weight), t6 (went from the redone done),
+    // the 14:10 report; t7 had no report.
+    let obs: Vec<_> = r.energy_on(d8).collect();
+    assert_eq!(obs.len(), 3);
+    assert_eq!((obs[0].went, obs[0].weight()), (Some(3), 2.0));
+    assert_eq!((obs[1].id.as_deref(), obs[1].went), (Some("t6"), Some(1)));
+    assert_eq!((obs[2].rep, obs[2].slept_min), (2, Some(400)));
+    assert_eq!(r.durations_on(d8).count(), 3);
+    // Undo results.
+    assert_eq!(r.instance_status("laundry", "2026-09-08"), InstanceStatus::Pending, "skip undone");
+    assert_eq!(r.instance_status("laundry", "2026-09-07"), InstanceStatus::Missed);
+    assert_eq!(r.instance_status("breakfast", "2026-09-08"), InstanceStatus::Expired);
+    assert_eq!(r.instance_status("shower", "#3"), InstanceStatus::Done);
+    assert_eq!(r.instances_of("laundry").map(|(k, _)| k).collect::<Vec<_>>(), vec!["2026-09-07"]);
+    assert!(r.dropped_items.is_empty(), "drop undone");
+    assert!(r.events_named("visa").is_empty(), "event undone");
+    assert_eq!(r.events.len(), 1);
+    // Completion bookkeeping across days.
+    assert!(r.is_done("t3"));
+    assert_eq!(r.last_done("t3"), Some(at("2026-09-08T08:40:00-05:00")));
+    assert_eq!(r.done_dates("t3"), vec![d8], "the day-1 done was partial");
+    assert_eq!(r.done_dates("shower"), vec![d8], "ordinal instance → the day");
+    assert_eq!(r.last_done("shower"), Some(at("2026-09-08T11:00:00-05:00")));
+    assert_eq!(r.block_minutes("t3"), 203);
+    assert_eq!(r.block_minutes_on("t3", d8), 65);
+    // Demotion, drop-less, unknown, closes.
+    assert_eq!(r.stamps("m2"), vec![Stamp::Week(37)]);
+    assert_eq!(r.demotions["m2"][0].est_min, 180);
+    assert_eq!(r.stamps("m9"), vec![]);
+    assert_eq!(r.unknown, 1);
+    assert_eq!(r.closes.len(), 2);
+    assert_eq!(r.closes[1].key, "2026-09-08");
+    assert_eq!(r.longest_leak.as_ref().map(|l| (l.day, l.min)), Some((d8, 25)));
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+}
+
+#[test]
+fn day_three_has_no_wake_and_an_open_block() {
+    let r = load().replay(None, TZ);
+    let d9 = d("2026-09-09");
+    let day = r.day(d9).unwrap();
+    assert_eq!(day.wake, None);
+    assert_eq!(day.arrival, Some(at("2026-09-09T09:00:00-05:00")));
+    assert_eq!(day.block_min, 60, "the open block earns nothing yet");
+    assert_eq!(day.blocks_done, 1);
+    assert!(day.done.is_empty(), "only a partial done");
+    assert_eq!(day.lost_min, 15);
+    assert_eq!(
+        seg_lines(&r, d9),
+        vec![
+            "09:05-10:05 block t8 60m",
+            "10:05-10:20 block t8 15m",
+            "10:20-10:35 interrupt t8 15m",
+            "10:35-10:50 block t8 15m",
+        ]
+    );
+    assert_eq!(r.interrupts.len(), 2);
+    assert_eq!(r.interrupts[1].id.as_deref(), Some("t8"), "taken from the running block");
+    let obs: Vec<_> = r.energy_on(d9).collect();
+    assert_eq!(obs.len(), 2);
+    assert_eq!(obs[0].went, Some(1));
+    assert_eq!(obs[1].went, None, "the second block is still open");
+    assert_eq!(obs[0].slept_min, Some(0));
+    let open = r.open_block.as_ref().unwrap();
+    assert_eq!((open.id.as_str(), open.worked_min, open.paused, open.since), ("t8", 30, true, None));
+    assert_eq!(open.started, at("2026-09-09T10:05:00-05:00"));
+    assert!(r.open_interrupt.is_none());
+    assert!(!r.is_done("t8"));
+    assert_eq!(r.block_minutes("t8"), 60);
+    // Whole-log totals.
+    assert_eq!(r.total_block_min(), 600);
+    assert_eq!(r.energy.len(), 10);
+    assert_eq!(r.durations.len(), 8);
+    assert_eq!(r.done_items.len(), 10);
+    assert_eq!(r.days.len(), 3);
+    assert_eq!(r.breaks().count(), 2);
+    assert_eq!(r.items.len(), 9);
+}
+
+#[test]
+fn range_keeps_only_the_requested_days() {
+    let log = load();
+    let d8 = d("2026-09-08");
+    let r = log.replay(Some(d8..=d8), TZ);
+    assert_eq!(r.days.keys().copied().collect::<Vec<_>>(), vec![d8]);
+    assert_eq!(r.block_minutes("t3"), 65, "only day-2 minutes");
+    assert_eq!(r.block_minutes("t1"), 0);
+    assert!(!r.items.contains_key("t1"));
+    assert_eq!(r.energy.len(), 3);
+    assert_eq!(r.durations.len(), 3);
+    assert!(r.events_named("reply").is_empty());
+    assert_eq!(r.instance_status("lunch", "2026-09-07"), InstanceStatus::Pending);
+    assert_eq!(r.done_dates("t3"), vec![d8]);
+    assert!(r.last_done("lunch").is_none());
+    assert_eq!(r.closes.len(), 1);
+    assert_eq!(r.unknown, 1);
+    assert!(r.open_block.is_some(), "the machine still runs to the end");
+    assert_eq!(r.range, Some(d8..=d8));
+    // A range starting mid-log still credits a block cut inside it.
+    let d9 = d("2026-09-09");
+    let r = log.replay(Some(d9..=d9 + Duration::days(1)), TZ);
+    assert_eq!(r.block_minutes("t8"), 60);
+    assert_eq!(r.lost_min(d9), 15);
+    assert!(r.longest_leak.is_none());
+}
+
+#[test]
+fn replay_is_json_safe_and_snapshotted() {
+    let r = load().replay(None, TZ);
+    let json = serde_json::to_string(&r).unwrap();
+    let back: Replay = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, r);
+    insta::assert_yaml_snapshot!("three_days_replay", r);
+}
