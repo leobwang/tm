@@ -20,7 +20,7 @@ use tm_core::energy::Model;
 use tm_core::log::{self, Log, Replay};
 use tm_core::model::Id;
 use tm_core::planner::{self, DayPlan, PlanInput, SegFlags, SegKind, Segment};
-use tm_core::priority::{self, Candidate, Prio};
+use tm_core::priority::{self, Candidate, Ineligible, Prio};
 use tm_core::store::{MemStore, RuntimeState, Store};
 use tm_core::tree::Tree;
 
@@ -78,6 +78,13 @@ fn today_candidates(tree: &Tree, cfg: &Config, replay: &Replay) -> Vec<Candidate
         date("2026-09-07"),
         at("2026-09-07", 10, 42),
     )
+}
+
+fn find<'a>(cands: &'a [Candidate], id: &str) -> &'a Candidate {
+    cands
+        .iter()
+        .find(|c| c.id.as_str() == id)
+        .unwrap_or_else(|| panic!("no candidate {id}"))
 }
 
 fn fmt_u(u: Option<f64>) -> String {
@@ -156,9 +163,27 @@ fn plan_basic_priorities_and_order() {
     let order: Vec<&str> = queue.iter().map(Id::as_str).collect();
     insta::assert_snapshot!("plan_basic_order", order.join("\n"));
 
+    // §8.2 step 1 places the Intervals that cover today: `^g1` (12:50 today),
+    // not `^x1` (the Midterm on 2026-10-20). Both are walls, only one is this
+    // day's, and the other is not in the queue at all.
+    assert!(find(&cands, "g1").is_wall && find(&cands, "g1").wall_today);
+    assert!(find(&cands, "x1").is_wall && !find(&cands, "x1").wall_today);
+    assert_eq!(order.first(), Some(&"g1"));
+    assert!(!queue.contains(&Id::new("x1")));
+
+    // §5.1: the `[?]` item is listed as waiting rather than dropped, and it
+    // takes no slot.
+    let a4 = find(&cands, "a4");
+    assert!(a4.waiting);
+    assert_eq!(a4.ineligible_reason(), Some(Ineligible::Waiting));
+    assert!(!queue.contains(&Id::new("a4")));
+
     // The queue is non-decreasing in p after the walls, which come first.
     // (Paired by position, since two candidates can share an id.)
-    let walls: usize = cands.iter().filter(|c| c.is_wall && c.eligible()).count();
+    let walls: usize = cands
+        .iter()
+        .filter(|c| c.is_wall && c.wall_today && c.eligible())
+        .count();
     let ranked = priority::sorted_candidates(&prios, &cands);
     assert_eq!(ranked.len(), queue.len());
     let ps: Vec<u8> = ranked
@@ -182,14 +207,16 @@ fn plan_basic_priorities_and_order() {
     insta::assert_snapshot!("plan_basic_blocked", blocked.join("\n"));
     assert!(!queue.contains(&Id::new("t5")));
 
-    // §7.5: the batches the planner consumes, in assignment order.
-    let groups = priority::batches(&priority::sorted_candidates(&prios, &cands), &cfg);
+    // §7.5: the batches the planner consumes, in assignment order — all of
+    // them, so the snapshot also pins what is *not* merged (§8.2 places the
+    // window instances inside their own windows, not in a shared block).
+    let groups = priority::batches(&ranked, &cfg);
     let batched: Vec<String> = groups
         .iter()
-        .filter(|b| b.is_batch())
         .map(|b| {
             format!(
-                "ci{} {}m: {}",
+                "{} ci{} {}m: {}",
+                if b.is_batch() { "batch" } else { "     " },
                 b.ci,
                 b.total_min,
                 b.ids.iter().map(Id::as_str).collect::<Vec<_>>().join(" · ")
@@ -197,11 +224,18 @@ fn plan_basic_priorities_and_order() {
         })
         .collect();
     insta::assert_snapshot!("plan_basic_batches", batched.join("\n"));
+    assert!(
+        !groups.iter().any(|b| b.is_batch()),
+        "every small item here carries a window of its own"
+    );
 
     // §10.2: what tomorrow's hysteresis reads.
     let stored = priority::priorities_for_state(&prios);
     assert_eq!(stored.get(&Id::new("d1")), Some(&4));
     assert!(!stored.contains_key(&Id::new("x1")));
+    // `laundry` has two instances today (the carried one at p = 0 and this
+    // week's at p = 5); the stored baseline is the more urgent of the two.
+    assert_eq!(stored.get(&Id::new("laundry")), Some(&0));
 
     // §11 deadline health for the fixture day.
     let health = priority::deadline_health(&prios, &cands, date("2026-09-07"));
@@ -254,17 +288,45 @@ fn explain_d1_matches_the_spec_shape() {
 }
 
 /// The §7.3 banner text for an item that cannot make its deadline, on the
-/// same fixture: `^x2` (Midterm review, 8b at ci 5) becomes IMPOSSIBLE once
-/// the week is the only capacity there is.
+/// same fixture: `^d1` (CS 234 pset 2, 6b at ci 4, due Friday) against a week
+/// of 30-minute days.
+///
+/// The scarcity has to be real. Sizing the capacity vector *shorter* than the
+/// deadline produces the same banner from an artefact — the days beyond the
+/// vector are missing, not empty — so this test keeps the full
+/// `lookahead_days` horizon and starves it instead, and checks that `^x2`
+/// (due 2026-10-20, far enough away for 30 minutes a day to add up) stays
+/// comfortably dated in the very same run.
 #[test]
 fn explain_names_the_shortfall_when_impossible() {
     let (tree, cfg, replay) = plan_basic();
     let cands = today_candidates(&tree, &cfg, &replay);
-    // Only the seven days §8.4 renders as the week grid: nowhere near the
-    // October exam, so the review does not fit.
-    let prios = priority::compute(&cands, &caps(7), &BTreeMap::new(), &cfg, date("2026-09-07"));
-    let text = priority::explain(&Id::new("x2"), &cands, &prios, &cfg);
-    insta::assert_snapshot!("explain_x2_impossible", text);
+    let today = date("2026-09-07");
+    let days = priority::lookahead_days(&cands, today);
+    let thin: Vec<DayCapacity> = (0..days as i64)
+        .map(|i| {
+            let mut d = DayCapacity::empty(today + Duration::days(i));
+            d.minutes_at_level = [0, 0, 0, 0, 0, 30];
+            d
+        })
+        .collect();
+
+    let prios = priority::compute(&cands, &thin, &BTreeMap::new(), &cfg, today);
+    // need 6b × 1.3 = 468 min, against 5 × 30 = 150 min through Friday.
+    let d1 = prios.iter().find(|p| p.id == Id::new("d1")).expect("^d1");
+    assert!(d1.is_impossible());
+    assert_eq!((d1.need_min, d1.avail_min, d1.shortfall_min), (468, 150, 318));
+    let text = priority::explain(&Id::new("d1"), &cands, &prios, &cfg);
+    insta::assert_snapshot!("explain_d1_impossible", text);
+
+    // The same run, the same capacity: the October deadline is not impossible,
+    // which is what the sibling snapshot says too.
+    let x2 = prios.iter().find(|p| p.id == Id::new("x2")).expect("^x2");
+    assert!(!x2.is_hot(), "{x2:?}");
+    assert_eq!(x2.class.label(), "dated");
+
+    let health = priority::deadline_health(&prios, &cands, today);
+    assert_eq!(health.impossible, 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -337,6 +399,41 @@ fn planner_types_carry_the_window_budget_and_hash() {
     noted.diagnostics.rest_debt_min = 40;
     assert_eq!(noted.hash(), empty_hash);
 
+    // §10.1: the hash says whether the plan *moved*. Working through the day
+    // — marking the block done, becoming the current block, being drawn as
+    // the arrival ghost, gaining a note — moves nothing, so a replan that
+    // changes only those is not a replan.
+    let one_block = moved.hash();
+    for flip in [
+        |f: &mut SegFlags| f.done = true,
+        |f: &mut SegFlags| f.current = true,
+        |f: &mut SegFlags| f.ghost = true,
+        |f: &mut SegFlags| f.underused = true,
+        |f: &mut SegFlags| f.hot = true,
+        |f: &mut SegFlags| f.mandatory = true,
+        |f: &mut SegFlags| f.deferred = true,
+        |f: &mut SegFlags| f.note = Some("due today".to_string()),
+    ] {
+        let mut progressed = moved.clone();
+        flip(&mut progressed.segments[0].flags);
+        assert_ne!(progressed, moved);
+        assert_eq!(
+            progressed.hash(),
+            one_block,
+            "progress flags must not move the plan hash"
+        );
+    }
+    // Moving the block, re-sizing it or putting another item in it does.
+    let mut later = moved.clone();
+    later.segments[0].start = at("2026-09-07", 11, 30);
+    assert_ne!(later.hash(), one_block);
+    let mut other = moved.clone();
+    other.segments[0].item = Some(Id::new("t4"));
+    assert_ne!(other.hash(), one_block);
+    let mut resized = moved.clone();
+    resized.segments[0].flags.planned_min = Some(96);
+    assert_ne!(resized.hash(), one_block);
+
     // The whole plan serializes for `tm plan --json`.
     let json = serde_json::to_string(&moved).expect("DayPlan serializes");
     assert!(json.contains("\"budget_blocks\":6"), "{json}");
@@ -349,4 +446,51 @@ fn planner_types_carry_the_window_budget_and_hash() {
     );
     assert!(bare.diagnostics.notes.is_empty());
     assert_eq!(bare.priorities, Vec::new());
+}
+
+/// §8.1 with no window in `state.json` — `tm plan` before `tm arrive`, or
+/// after a rollover cleared it: `arrival = runtime.arrival, else now`,
+/// `end = min(arrival + window_hours, window_cap)`. Not a zero-length window
+/// with a full budget in it.
+#[test]
+fn plan_without_a_stored_window_uses_the_spec_formula() {
+    let (tree, cfg, replay) = plan_basic();
+    let log = Log::new();
+    let model = Model::default();
+    let runtime = RuntimeState {
+        date: Some(date("2026-09-07")),
+        ..RuntimeState::default()
+    };
+    assert!(runtime.window.is_none() && runtime.budget.is_none());
+
+    let now = at("2026-09-07", 10, 42);
+    let input = PlanInput::new(&tree, &log, &replay, &cfg, &model, &runtime, now);
+    let day = planner::plan(&input);
+    // 10:42 + 8h = 18:42, inside the 19:00 cap.
+    assert_eq!(day.window, (now, at("2026-09-07", 18, 42)));
+    assert_eq!(day.budget_blocks, 6);
+
+    // `tm arrive` at 07:00 without a stored window: the window starts there.
+    let arrived = RuntimeState {
+        date: Some(date("2026-09-07")),
+        arrival: Some(NaiveTime::from_hms_opt(7, 0, 0).expect("time")),
+        ..RuntimeState::default()
+    };
+    let input = PlanInput::new(&tree, &log, &replay, &cfg, &model, &arrived, now);
+    let day = planner::plan(&input);
+    assert_eq!(
+        day.window,
+        (at("2026-09-07", 7, 0), at("2026-09-07", 15, 0))
+    );
+
+    // A late arrival is capped at `window_cap` (19:00), never negative.
+    let late = RuntimeState {
+        date: Some(date("2026-09-07")),
+        arrival: Some(NaiveTime::from_hms_opt(20, 0, 0).expect("time")),
+        ..RuntimeState::default()
+    };
+    let input = PlanInput::new(&tree, &log, &replay, &cfg, &model, &late, now);
+    let day = planner::plan(&input);
+    assert_eq!(day.window.0, at("2026-09-07", 20, 0));
+    assert_eq!(day.window.1, at("2026-09-07", 20, 0));
 }

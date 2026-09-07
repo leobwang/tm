@@ -1,5 +1,0 @@
----
-source: tm-core/tests/priority_plan_basic.rs
-expression: text
----
-p = 0 (IMPOSSIBLE: needs 10.4b, 8.2b available by 2026-10-20); deps ok

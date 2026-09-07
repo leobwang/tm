@@ -15,26 +15,33 @@
 //! * [`collect_candidates`]`(tree, replay, cfg, model, today, now) ->
 //!   Vec<Candidate>` — §6.2's candidate set, resolved: every field §7 needs,
 //!   computed once. The sources are [`Tree::day_candidate_ids`] (week + the
-//!   day file's `# Pinned` + `backlog.md` + series heads), the instances of
-//!   `routines.md` and `optional.md` due today ([`recur::today_instances`]),
-//!   `optional.md` lines themselves, and the `calendar/` intervals that
-//!   touch today. Ineligible candidates are **kept** (§5.5: "a blocked
-//!   high-priority item shows in diagnostics as blocked by ^id rather than
-//!   silently vanishing") — [`Candidate::eligible`] and
-//!   [`Candidate::ineligible_reason`] say why.
+//!   day file's `# Pinned` + `backlog.md` + series heads), the `[?]` items of
+//!   those same files ([`Tree::waiting_ids`], §8.2 step 8's `waiting`), the
+//!   instances of `routines.md` due today ([`recur::today_instances`]),
+//!   `optional.md` lines, and the `calendar/` intervals that cover today —
+//!   looked up in the previous, current and next ISO week's file, because
+//!   `ics.rs` files an occurrence into the week of its *start*. An item whose
+//!   candidacy is an instance (a `win:` window, `every:`, `after-done:`) is a
+//!   candidate only when it has an instance today. Ineligible candidates are
+//!   **kept** (§5.5: "a blocked high-priority item shows in diagnostics as
+//!   blocked by ^id rather than silently vanishing") —
+//!   [`Candidate::eligible`] and [`Candidate::ineligible_reason`] say why.
 //! * [`compute`]`(cands, caps, yesterday, cfg, today) -> Vec<Prio>` — §7.2 +
 //!   §7.3 + §7.4, one [`Prio`] per candidate **in the same order**. `caps` is
 //!   [`capacity::lookahead`]'s output, ascending by date and long enough to
 //!   reach the furthest deadline ([`lookahead_days`] says how long);
 //!   `yesterday` is `state.priorities_yesterday` (§10.2).
 //! * [`sort_key`]`(prio, cand) -> (p, root_order, own_order)` (§7.4) and
-//!   [`sorted`] — the assignable ids, walls first (they are placed by §8.2
-//!   step 1, not competed), then by key. [`blocked`] is the list §8.2 step 8
-//!   puts in `diagnostics.blocked`.
+//!   [`sorted`] — the assignable ids, today's walls first (they are placed by
+//!   §8.2 step 1, not competed), then by key. An Interval that does not cover
+//!   today is a wall of another day and is left out entirely.
+//!   [`blocked`] is the list §8.2 step 8 puts in `diagnostics.blocked`.
 //! * [`batches`]`(sorted_cands, cfg) -> Vec<Batch>` (§7.5) — the assignment
 //!   order as groups: runs of small equal-`ci` candidates merged into one
 //!   block-sized batch, everything else a one-item group, so the planner can
-//!   consume the vector linearly.
+//!   consume the vector linearly. A candidate with a placement window
+//!   ([`Candidate::window`]) is never merged: §8.2 places those at step 2 or
+//!   step 6, inside their own window, not by rank.
 //! * [`explain`]`(id, cands, prios, cfg) -> String` (§13) —
 //!   `p = k(3) + bin(u=0.31 → +1) = 4; need 2b, avail 6b by 2026-09-11;
 //!   deps ok; cap 2b/d: 1b used`. [`explanation`] returns the structured
@@ -64,7 +71,11 @@
 //! The classes are tried in that order, so the first that matches names the
 //! [`PrioClass`]; a candidate that is both overdue and impossible is reported
 //! as `Overdue` (the more specific fact) while still carrying the EDF
-//! numbers.
+//! numbers. The class is therefore *not* the place to read §7.3's verdict
+//! from: [`Prio::is_hot`] and [`Prio::is_impossible`] read it off `u` and
+//! `shortfall_min`, so a `hot`-flagged or overdue item that also cannot make
+//! its deadline still counts in §11's #HOT / #IMPOSSIBLE and still names its
+//! shortfall in [`explain`].
 //!
 //! # Choices the spec leaves open (deviations)
 //!
@@ -73,14 +84,16 @@
 //!    floor need is `(floor − done_this_period) × safety`, i.e. §7.1's
 //!    multiplier applied to §7.2's remainder — the M3 definition of done
 //!    ("`min:6b/w` with 2b done → need 4b × safety") settles it.
-//! 2. **Which candidates enter the EDF pass.** Only non-wall, non-optional
-//!    candidates with a *tree* due (`due:` or the §3.2 derived prep due) —
-//!    not instance candidates. A routine window instance also has a `due`
-//!    (its window's close), but it is a placement window, not a deadline:
-//!    letting it reserve lookahead capacity would double-count the day.
-//!    Overdue items *do* take part; their window `[today, past due]` is
-//!    empty, so they reserve nothing and score `u = ∞`, which is the honest
-//!    answer ("that deadline cannot be met any more").
+//! 2. **Which candidates enter the EDF pass.** Every non-wall, non-optional
+//!    candidate with a due and *no placement window*: a `due:`, the §3.2
+//!    derived prep due, or the due of an instance that has no `win:` (an
+//!    `after-done:` or `on-event:` occurrence of a shapeless item is a real
+//!    deadline). A window instance also has a `due` — its window's close —
+//!    but that is a placement range, not a deadline: letting it reserve
+//!    lookahead capacity would double-count the day. Overdue items *do* take
+//!    part; their window `[today, past due]` is empty, so they reserve
+//!    nothing and score `u = ∞`, which is the honest answer ("that deadline
+//!    cannot be met any more").
 //! 3. **`u` when nothing is needed.** §7.1 says capacity 0 → `u = ∞`. A
 //!    candidate that needs 0 minutes (everything already done) scores
 //!    `u = 0` instead, so a finished item is not reported HOT.
@@ -89,24 +102,41 @@
 //!    earlier deadlines"), but does not itself subtract: two floors in one
 //!    period are independent claims on the same rest-of-period, and the
 //!    spec gives them no order.
-//! 5. **Hysteresis applies to every non-wall class**, not only to the binned
-//!    ones — §7.4 states it as a property of `p`, and the classes with a
-//!    constant `p` (optional, pure rank) are unaffected in practice.
+//! 5. **Hysteresis applies to every class whose `p` can move**, not only to
+//!    the binned ones — §7.4 states it as a property of `p`. The one
+//!    exception is `optional.md`: §7.2 pins those at `p = 5` unconditionally
+//!    ("never compete"), so holding an optional at 6 for a day would put it
+//!    *below* its own rule. Walls are off the scale, and every `p = 0` class
+//!    is exempt by §7.4's own "unless the new value is 0".
 //! 6. **`yesterday` / [`priorities_for_state`] use a `BTreeMap`**, the type
 //!    `store::RuntimeState::priorities_yesterday` already has, so the round
 //!    trip through `state.json` needs no conversion (the scope said
-//!    `HashMap`).
+//!    `HashMap`). Two candidates can share an id (§5.3's carried instance
+//!    plus today's), and the map keeps the **lowest** `p` of the two: that is
+//!    the most urgent thing the item was yesterday, and a lower baseline
+//!    never damps a genuine change.
 //! 7. **`min_slack_days`** (§11 gives no formula) is
 //!    `days_until_due × (1 − u)`: the deadline window is `d` days long and
 //!    the item needs the fraction `u` of it. Only deadlines that are still
 //!    ahead count (overdue items have their own column); `u = ∞` scores
 //!    `−d`.
-//! 8. **Batching gathers forward.** §7.5 says small equal-`ci` candidates
-//!    are grouped "in key order"; small items are rarely adjacent, so
-//!    [`batches`] starts a batch at the first ungrouped small candidate and
-//!    scans forward for the others of the same `ci` that still fit in a
-//!    block. Every candidate appears exactly once, and the groups are in the
-//!    key order of their first member.
+//! 8. **Batching gathers forward, but never past an equal-`ci` candidate.**
+//!    §7.5 says small equal-`ci` candidates are grouped "in key order"; small
+//!    items are rarely adjacent, so [`batches`] starts a batch at the first
+//!    ungrouped small candidate and scans forward for the others of the same
+//!    `ci` that still fit in a block — skipping candidates of a *different*
+//!    `ci` (which §8.3's monotone-rank invariant does not compare) and
+//!    stopping at the first candidate of the *same* `ci` that cannot join, so
+//!    a batch member never overtakes an equal-`(p, ci)` candidate with an
+//!    earlier line order. Every candidate appears exactly once, and the
+//!    groups are in the key order of their first member.
+//! 9. **A window instance is not batched and does not compete for a slot by
+//!    rank.** §8.2 places a mandatory window instance at step 2 and a
+//!    deferred one at step 6, both inside their own window, so [`batches`]
+//!    leaves every candidate with a [`Candidate::window`] in a group of its
+//!    own. They stay in [`sorted`] — the Queue, the diagnostics and
+//!    `--explain` all want them — so a step-5 consumer skips the groups whose
+//!    single member has a window.
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -120,8 +150,8 @@ use crate::config::Config;
 use crate::energy::{self, Model};
 use crate::log::Replay;
 use crate::model::{
-    Dep, Horizon, Id, Instance, InstanceKey, IsoWeek, Loc, OnMiss, Period, Rate, Scope, Shape,
-    State, YearMonth,
+    Dep, Horizon, Id, Instance, InstanceKey, InstanceStatus, Item, IsoWeek, Loc, OnMiss, Period,
+    Rate, Recur, Scope, Shape, State, YearMonth,
 };
 use crate::recur;
 use crate::tree::Tree;
@@ -224,6 +254,10 @@ pub struct Candidate {
     pub is_optional: bool,
     /// Interval shape — a wall, off the priority scale (§7.2, §8.2 step 1).
     pub is_wall: bool,
+    /// The wall's interval covers `today`, so §8.2 step 1 places it in this
+    /// day. An exam six weeks out is a wall (`is_wall`) but not today's:
+    /// [`sorted`] leaves it out of the assignment order.
+    pub wall_today: bool,
     /// The instance this candidate stands for, when it is one (§5.1).
     pub instance: Option<InstanceKey>,
     /// `(file index, line)` of the item's root — the first rank key (§7.4).
@@ -324,9 +358,16 @@ pub fn period_range(per: Period, today: NaiveDate) -> (NaiveDate, NaiveDate) {
     }
 }
 
-/// Logged block minutes for `id` and its descendants inside the period of
-/// `per` containing `today`, up to and including `today` (§7.2's
+/// Logged minutes for `id` and its descendants inside the period of `per`
+/// containing `today`, up to and including `today` (§7.2's
 /// `done_this_period`, §6.2's `max:` filter).
+///
+/// Two kinds of minutes are summed, and they never overlap: the block minutes
+/// of `start`/`done` events ([`Replay::block_minutes_on`]) and the
+/// `actual_min` of §10.1 `routine` events, which credit no block at all. The
+/// second half is what makes `max:4h/w` on an `optional.md` line or
+/// `min:`/`max:` on a `win:` item bind — those are completed with
+/// `tm routine done`, never with `tm done`.
 pub fn done_this_period(
     replay: &Replay,
     tree: &Tree,
@@ -351,22 +392,48 @@ pub fn done_this_period(
             None => break,
         }
     }
+    for i in &ids {
+        for (key, rec) in replay.instances_of(i.as_str()) {
+            if rec.status != InstanceStatus::Done {
+                continue;
+            }
+            let Some(min) = rec.actual_min else {
+                continue;
+            };
+            // A date-keyed instance is credited to its own date (a routine
+            // logged the morning after still belongs to its day); an ordinal
+            // key falls back to when it was logged.
+            let date = NaiveDate::parse_from_str(key, "%Y-%m-%d")
+                .unwrap_or_else(|_| rec.t.with_timezone(&replay.tz).date_naive());
+            if date >= from && date <= today {
+                total = total.saturating_add(min);
+            }
+        }
+    }
     total
 }
 
-/// How many days of [`capacity::lookahead`] the EDF pass needs: through the
-/// furthest effective due among `cands`, and never fewer than seven (the
-/// week `tm plan --week` shows).
+/// How many days of [`capacity::lookahead`] [`compute`] needs: through the
+/// furthest date it sums capacity to — the furthest effective due among
+/// `cands` and the end of the period of every `min:` floor — and never fewer
+/// than seven (the week `tm plan --week` shows).
 ///
-/// §7.3 sums capacity over every day up to a deadline, so a lookahead that
-/// stops before the deadline reports a false shortfall. The caller sizes the
-/// lookahead with this before calling [`compute`].
+/// §7.3 sums capacity over every day up to a deadline and §7.2's floor line
+/// over the rest of the floor's period, so a lookahead that stops before
+/// either reports a false shortfall — a `min:30b/m` floor scored against one
+/// week of capacity is IMPOSSIBLE every day of the month. The caller sizes
+/// the lookahead with this before calling [`compute`].
 pub fn lookahead_days(cands: &[Candidate], today: NaiveDate) -> u32 {
     let furthest = cands
         .iter()
         .filter(|c| !c.is_wall)
-        .filter_map(|c| c.effective_due)
-        .map(|d| d.date_naive())
+        .flat_map(|c| {
+            [
+                c.effective_due.map(|d| d.date_naive()),
+                c.floor.as_ref().map(|r| period_range(r.per, today).1),
+            ]
+        })
+        .flatten()
         .max();
     let days = furthest
         .map(|d| (d - today).num_days() + 1)
@@ -384,6 +451,15 @@ pub fn lookahead_days(cands: &[Candidate], today: NaiveDate) -> u32 {
 /// Ineligible candidates are returned too, with their reason (§5.5); the
 /// order is the tree's (file, line) order, then routines, then optional
 /// lines, then today's calendar walls.
+///
+/// An item whose candidacy *is* an instance — a `win:` window, `every:`,
+/// `after-done:` — is a candidate only on a day it has an instance: a Thursday
+/// errand is not a Monday candidate, and a `every:Tue` workout is not a
+/// Monday one. Without that rule the item would compete for today's slots
+/// with no window attached, and nothing downstream could keep it inside its
+/// §5.2 range. A `[?]` item is the one exception: it is listed (ineligible,
+/// reason [`Ineligible::Waiting`]) whatever its shape, because §8.2 step 8
+/// wants it in `diagnostics.waiting`.
 pub fn collect_candidates(
     tree: &Tree,
     replay: &Replay,
@@ -410,7 +486,12 @@ pub fn collect_candidates(
         seen: HashSet::new(),
         out: Vec::new(),
     };
-    for id in tree.day_candidate_ids(today, week) {
+    // The §6.2 sources, plus the `[?]` lines of those same files, in
+    // (file, line) order.
+    let mut ids = tree.day_candidate_ids(today, week);
+    ids.extend(waiting_candidate_ids(tree, today, week));
+    ids.sort_by_key(|id| tree.order(id).unwrap_or((usize::MAX, usize::MAX)));
+    for id in ids {
         c.add(&id, false, false);
     }
     // A routine with no instance today is simply not a candidate.
@@ -420,16 +501,52 @@ pub fn collect_candidates(
     for id in tree.optional_ids() {
         c.add(&id, true, false);
     }
-    for id in tree.calendar_ids(week) {
-        let touches_today = match tree.get(&id).map(|i| &i.shape) {
-            Some(Shape::Interval { start, end }) => start.date() <= today && end.date() >= today,
-            _ => false,
-        };
-        if touches_today {
-            c.add(&id, false, false);
+    // `ics.rs` files an occurrence into the ISO week of its *start*
+    // (`CalEvent::week`) and a sync writes the previous, current and next
+    // week (`ics::sync_weeks`), so a wall that started last week and runs
+    // into today lives in last week's file.
+    for w in [week.prev(), week, week.next()] {
+        for id in tree.calendar_ids(w) {
+            if covers_today(tree, &id, today) {
+                c.add(&id, false, false);
+            }
         }
     }
     c.out
+}
+
+/// The `[?]` items of §6.2's own files (§5.1, §8.2 step 8's `waiting`).
+///
+/// [`Tree::day_candidate_ids`] filters on `State::is_open()`, which excludes
+/// `[?]`, so waiting items need their own source or they vanish from the plan
+/// entirely instead of being listed as waiting.
+fn waiting_candidate_ids(tree: &Tree, today: NaiveDate, week: IsoWeek) -> Vec<Id> {
+    tree.waiting_ids()
+        .into_iter()
+        .filter(|id| {
+            let Some(item) = tree.get(id) else {
+                return false;
+            };
+            if tree.series_suppressed(id) {
+                return false;
+            }
+            match item.horizon {
+                Horizon::Week(w) => w == week,
+                Horizon::Day(d) => d == today && item.src.section.as_deref() == Some("Pinned"),
+                Horizon::Backlog => true,
+                _ => false,
+            }
+        })
+        .collect()
+}
+
+/// Whether the item's effective Interval covers `today` (§8.2 step 1's
+/// "Interval instances due today"), a multi-day event included.
+fn covers_today(tree: &Tree, id: &Id, today: NaiveDate) -> bool {
+    match tree.effective_shape(id) {
+        Shape::Interval { start, end } => start.date() <= today && end.date() >= today,
+        _ => false,
+    }
 }
 
 /// The working state of [`collect_candidates`].
@@ -448,16 +565,27 @@ struct Collect<'a> {
 }
 
 impl Collect<'_> {
-    /// Add one item: one candidate per instance due today, or — unless
-    /// `require_instance` — one plain candidate when it has no instances.
+    /// Add one item: one candidate per instance due today, or — when the item
+    /// is not instance-shaped and the source does not insist on an instance —
+    /// one plain candidate.
     fn add(&mut self, id: &Id, optional: bool, require_instance: bool) {
         let Some(item) = self.tree.get(id) else {
             return;
         };
+        // A waiting item takes no slot (§5.1) and is listed as it stands, so
+        // it never goes through the instance machinery.
+        if item.state == State::Waiting {
+            if self.seen.insert((id.clone(), None)) {
+                let cand = self.build(id, None, optional);
+                self.out.push(cand);
+            }
+            return;
+        }
         let insts =
             recur::today_instances([item], self.today, self.now_naive, self.replay, self.cfg);
         if insts.is_empty() {
-            if !require_instance && self.seen.insert((id.clone(), None)) {
+            let requires = require_instance || is_instance_shaped(item);
+            if !requires && self.seen.insert((id.clone(), None)) {
                 let cand = self.build(id, None, optional);
                 self.out.push(cand);
             }
@@ -491,6 +619,19 @@ impl Collect<'_> {
             &self.overdue,
         )
     }
+}
+
+/// True when the item competes as an *instance* and not as a line (§5.1): a
+/// `win:` window is placed inside its range on the days it occurs, and a
+/// calendar or after-done recurrence exists only on the days its rule names.
+/// On a day with no instance, such an item is not a candidate at all.
+///
+/// `on-event:` is deliberately not here: its occurrence is "now, once the
+/// event arrived", so [`recur::today_instances`] yields one on every day the
+/// item is not waiting, and a waiting one is handled before this is reached.
+fn is_instance_shaped(item: &Item) -> bool {
+    matches!(item.shape, Shape::Window { .. })
+        || matches!(item.recur, Recur::Calendar(_) | Recur::AfterDone { .. })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -528,6 +669,15 @@ fn build_candidate(
     let window = inst
         .and_then(|(i, _)| i.window)
         .map(|(a, b)| (local(a), local(b)));
+
+    // §8.2 step 1 places the Interval instances that *cover today*. A dated
+    // interval in a week file (an exam six weeks out) is a wall, but not this
+    // day's; the instance's own span wins when the interval recurs.
+    let wall_today = is_wall
+        && match inst.and_then(|(i, _)| i.window) {
+            Some((s, e)) => s.date() <= today && e.date() >= today,
+            None => covers_today(tree, id, today),
+        };
 
     let overdue_flag = match inst {
         Some((_, info)) => info.overdue && item.on_miss == OnMiss::Persist,
@@ -573,6 +723,7 @@ fn build_candidate(
         mandatory,
         is_optional,
         is_wall,
+        wall_today,
         instance: inst.map(|(i, _)| i.key),
         root_order: order(&root),
         own_order: order(id),
@@ -693,9 +844,20 @@ impl Prio {
             raw_p: 0,
         }
     }
-    /// True when the item is HOT or IMPOSSIBLE (§7.3).
+    /// True when the pass found `u ≥ 1` — §7.3's "mark IMPOSSIBLE if
+    /// need > avail else HOT", i.e. HOT *or* IMPOSSIBLE.
+    ///
+    /// This reads `u`, not [`Prio::class`]: §7.2's cascade reports the more
+    /// specific fact first, so an overdue or `hot`-flagged item that also
+    /// cannot make its deadline is classed `Overdue`/`HotFlag` while still
+    /// being HOT here.
     pub fn is_hot(&self) -> bool {
-        matches!(self.class, PrioClass::Hot | PrioClass::Impossible)
+        self.u.is_some_and(|u| !u.is_finite() || u >= 1.0)
+    }
+    /// §7.3's IMPOSSIBLE: `u ≥ 1` **and** `need > avail`, whatever the class.
+    /// [`Prio::shortfall_min`] is the "needs 8b, 5b available by Fri" gap.
+    pub fn is_impossible(&self) -> bool {
+        self.is_hot() && self.shortfall_min > 0
     }
 }
 
@@ -749,12 +911,14 @@ pub fn compute(
 ) -> Vec<Prio> {
     let mut work: Vec<DayCapacity> = caps.to_vec();
 
-    // §7.3: the EDF pass, over dated non-wall, non-optional, non-instance
-    // candidates, by due ascending (ties: line order, then input order).
+    // §7.3: the EDF pass, over the dated non-wall, non-optional candidates
+    // that have a real deadline — a window's close is a placement range, not
+    // a deadline (see deviation 2) — by due ascending (ties: line order, then
+    // input order).
     let mut order: Vec<usize> = (0..cands.len())
         .filter(|&i| {
             let c = &cands[i];
-            !c.is_wall && !c.is_optional && c.instance.is_none() && c.effective_due.is_some()
+            !c.is_wall && !c.is_optional && c.window.is_none() && c.effective_due.is_some()
         })
         .collect();
     order.sort_by(|&a, &b| {
@@ -846,7 +1010,12 @@ pub fn compute(
         };
         prio.class = class;
         prio.raw_p = raw_p;
-        prio.p = apply_hysteresis(raw_p, yesterday.get(&c.id).copied(), cfg);
+        // §7.2 pins optionals at 5 whatever happened yesterday (deviation 5).
+        prio.p = if class == PrioClass::Optional {
+            raw_p
+        } else {
+            apply_hysteresis(raw_p, yesterday.get(&c.id).copied(), cfg)
+        };
         prio.hysteresis_applied = prio.p != prio.raw_p;
         out.push(prio);
     }
@@ -886,12 +1055,19 @@ fn apply_hysteresis(raw_p: u8, yesterday: Option<u8>, cfg: &Config) -> u8 {
 
 /// `state.priorities_yesterday` for the next day (§10.2). Walls are left out
 /// — they are off the scale, so hysteresis never applies to them.
+///
+/// An item can appear twice (§5.3's carried `on-miss:persist` instance beside
+/// today's fresh one); the map keeps the **lowest** `p` of the two, so
+/// tomorrow's baseline is the most urgent thing the item was today rather
+/// than whichever instance happened to come last.
 pub fn priorities_for_state(prios: &[Prio]) -> BTreeMap<Id, u8> {
-    prios
-        .iter()
-        .filter(|p| p.class != PrioClass::Wall)
-        .map(|p| (p.id.clone(), p.p))
-        .collect()
+    let mut out: BTreeMap<Id, u8> = BTreeMap::new();
+    for prio in prios.iter().filter(|p| p.class != PrioClass::Wall) {
+        out.entry(prio.id.clone())
+            .and_modify(|p| *p = (*p).min(prio.p))
+            .or_insert(prio.p);
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -907,9 +1083,15 @@ pub fn sort_key(prio: &Prio, cand: &Candidate) -> SortKey {
     (prio.p, cand.root_order, cand.own_order)
 }
 
-/// The assignment order (§7.4, §8.2 step 5): walls first (placed by step 1),
-/// then eligible candidates by [`sort_key`]. Ineligible candidates are left
-/// out — [`blocked`] keeps them with their reason (§5.5).
+/// The assignment order (§7.4, §8.2 step 5): today's walls first (placed by
+/// step 1), then eligible candidates by [`sort_key`]. Ineligible candidates
+/// are left out — [`blocked`] keeps them with their reason (§5.5) — and so
+/// are Intervals that do not cover today ([`Candidate::wall_today`]): they
+/// are another day's walls, and nothing about them can be placed in this one.
+///
+/// An id can appear twice when an item has two pending instances (§5.3's
+/// carried one and today's); [`sorted_candidates`] is the version that keeps
+/// them apart.
 pub fn sorted(prios: &[Prio], cands: &[Candidate]) -> Vec<Id> {
     sorted_candidates(prios, cands)
         .into_iter()
@@ -923,7 +1105,7 @@ pub fn sorted_candidates<'a>(prios: &[Prio], cands: &'a [Candidate]) -> Vec<&'a 
     // Walls sort first; a candidate with no computed priority (the caller
     // passed a shorter list) sorts last rather than first.
     let mut keyed: Vec<((u8, SortKey), usize)> = (0..cands.len())
-        .filter(|&i| cands[i].eligible())
+        .filter(|&i| cands[i].eligible() && (!cands[i].is_wall || cands[i].wall_today))
         .map(|i| {
             let c = &cands[i];
             let p = if c.is_wall {
@@ -1001,13 +1183,25 @@ impl Batch {
 /// insurance · bank (3)"); every other candidate is a one-item group. The
 /// groups come back in the key order of their first member, so the planner
 /// walks the vector once.
+///
+/// Two rules keep the groups honest (deviations 8 and 9): gathering skips
+/// candidates of a different `ci` but stops at the first candidate of the
+/// *same* `ci` that cannot join, so §8.3's monotone rank holds — a batched
+/// item never overtakes an equal-`(p, ci)` candidate with an earlier line
+/// order; and a candidate with a placement window is never merged, because
+/// §8.2 places it inside that window, not in whatever block its batch got.
 pub fn batches(sorted: &[&Candidate], cfg: &Config) -> Vec<Batch> {
     let block_min = cfg.block_min();
     let max_small = cfg.priority.batch_max_min;
-    // Walls are placed as intervals and optionals only fill rest slots, so
-    // neither ever shares a block with a task.
+    // Walls are placed as intervals, optionals only fill rest slots and
+    // window instances are placed inside their own window, so none of them
+    // ever shares a block with a task.
     let small = |c: &Candidate| {
-        c.remaining_min > 0 && c.remaining_min <= max_small && !c.is_wall && !c.is_optional
+        c.remaining_min > 0
+            && c.remaining_min <= max_small
+            && !c.is_wall
+            && !c.is_optional
+            && c.window.is_none()
     };
 
     let mut used = vec![false; sorted.len()];
@@ -1026,11 +1220,11 @@ pub fn batches(sorted: &[&Candidate], cfg: &Config) -> Vec<Batch> {
         };
         if small(c) {
             for (j, other) in sorted.iter().enumerate().skip(i + 1) {
-                if used[j] || other.ci != c.ci || !small(other) {
-                    continue;
+                if other.ci != c.ci || used[j] {
+                    continue; // another `ci` is not comparable; already grouped
                 }
-                if batch.total_min + other.planned_min > block_min {
-                    continue;
+                if !small(other) || batch.total_min + other.planned_min > block_min {
+                    break; // §8.3: never gather past an equal-`ci` candidate
                 }
                 used[j] = true;
                 batch.ids.push(other.id.clone());
@@ -1141,18 +1335,40 @@ pub fn explanation(
         priority_part.push_str(&format!(" (hysteresis: {} → {})", prio.raw_p, prio.p));
     }
 
-    // The IMPOSSIBLE line already spells the same two numbers out.
-    let need_part =
-        if matches!(prio.class, PrioClass::Wall | PrioClass::Impossible) || prio.until.is_none() {
-            None
-        } else {
-            Some(format!(
-                "need {}, avail {} by {}",
+    // The IMPOSSIBLE line already spells the same two numbers out. Every
+    // other class states them plainly — with §7.3's verdict in front when the
+    // class named something more specific (the `hot` flag, say) and the
+    // deadline is not going to be met. An overdue item is not labelled
+    // IMPOSSIBLE: its deadline is behind it, which the class already says,
+    // and §11 counts it in its own column.
+    let need_part = if matches!(prio.class, PrioClass::Wall | PrioClass::Impossible)
+        || prio.until.is_none()
+    {
+        None
+    } else if prio.is_hot() && !matches!(prio.class, PrioClass::Hot | PrioClass::Overdue) {
+        Some(if prio.is_impossible() {
+            format!(
+                "IMPOSSIBLE: needs {}, {} available by {}",
                 fmt_blocks(prio.need_min, block),
                 fmt_blocks(prio.avail_min, block),
                 fmt_until(prio.until),
-            ))
-        };
+            )
+        } else {
+            format!(
+                "HOT: need {}, avail {} by {}",
+                fmt_blocks(prio.need_min, block),
+                fmt_blocks(prio.avail_min, block),
+                fmt_until(prio.until),
+            )
+        })
+    } else {
+        Some(format!(
+            "need {}, avail {} by {}",
+            fmt_blocks(prio.need_min, block),
+            fmt_blocks(prio.avail_min, block),
+            fmt_until(prio.until),
+        ))
+    };
 
     let deps_part = match cand.ineligible_reason() {
         Some(reason) => reason.to_string(),
@@ -1222,13 +1438,21 @@ pub struct DeadlineHealth {
 }
 
 /// §11's deadline health over one day's priorities.
+///
+/// #HOT and #IMPOSSIBLE are counted off `u` and the shortfall, not off
+/// [`Prio::class`], so an item that carries the `hot` flag (or is mandatory)
+/// and *also* cannot make its deadline is still counted — §7.2's class
+/// cascade names the more specific fact and would otherwise hide it. The four
+/// columns stay exclusive: a past-due item is counted as overdue only, since
+/// it has missed its deadline rather than being forecast to.
 pub fn deadline_health(prios: &[Prio], cands: &[Candidate], today: NaiveDate) -> DeadlineHealth {
     let mut health = DeadlineHealth::default();
     for (i, prio) in prios.iter().enumerate() {
         match prio.class {
-            PrioClass::Hot => health.hot += 1,
-            PrioClass::Impossible => health.impossible += 1,
             PrioClass::Overdue => health.overdue += 1,
+            PrioClass::Wall => {}
+            _ if prio.is_impossible() => health.impossible += 1,
+            _ if prio.is_hot() => health.hot += 1,
             _ => {}
         }
         let is_dated =

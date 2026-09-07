@@ -143,13 +143,37 @@ fn k_comes_from_the_root() {
 }
 
 /// `p` is clamped to 0..=7 even when `k + bin` would overshoot.
+///
+/// With the §16 defaults it cannot: `k ≤ 4` and `bin ≤ 3` land exactly on 7.
+/// Overshooting takes either a fourth bin edge (`bin = 4`) or a `!k` outside
+/// 1..=4 — which `check.rs` flags as `bad-ci` but `grammar.rs` still parses,
+/// so `priority.rs` has to survive it. Both are exercised here; without the
+/// clamp the first two cases give 8 and 9.
 #[test]
 fn p_is_clamped_to_seven() {
     let cfg = Config::default();
     let caps = flat(1, 5, 10_000);
-    let mut c = Candidate::new(Id::new("x"), 0, 4, 60, &cfg); // need 78, u = 0.0078
+    let today = date(MONDAY);
+
+    // Four bin edges: u = 0.0078 falls in the fifth bin, +4, on top of k(4).
+    let mut deep = cfg.clone();
+    deep.priority.bins = vec![0.5, 0.25, 0.1, 0.05];
+    let mut c = Candidate::new(Id::new("x"), 0, 4, 60, &cfg); // need 78
     c.effective_due = Some(due(MONDAY));
-    let prios = priority::compute(&[c], &caps, &empty(), &cfg, date(MONDAY));
+    let prios = priority::compute(&[c.clone()], &caps, &empty(), &deep, today);
+    assert_eq!(prios[0].bin, Some(4));
+    assert_eq!(prios[0].raw_p, 7, "4 + 4 clamped");
+    assert_eq!(prios[0].p, 7);
+
+    // An out-of-range `!k`: k(7) + 2 for the pure-rank line.
+    let mut wild = Candidate::new(Id::new("w"), 0, 7, 60, &cfg);
+    wild.effective_due = None;
+    let prios = priority::compute(&[wild], &caps, &empty(), &cfg, today);
+    assert_eq!(prios[0].k, 7);
+    assert_eq!(prios[0].p, 7);
+
+    // The default config lands on 7 exactly, from both rule lines.
+    let prios = priority::compute(&[c], &caps, &empty(), &cfg, today);
     assert_eq!(prios[0].bin, Some(3)); // k(4) + 3 = 7
     assert_eq!(prios[0].p, 7);
 

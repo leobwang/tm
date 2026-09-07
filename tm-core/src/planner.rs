@@ -20,8 +20,8 @@
 //! * [`DayPlan`] `{ date, window, budget_blocks, segments, diagnostics,
 //!   priorities }` — the whole plan. [`DayPlan::hash`] is the FNV-1a digest
 //!   `state.last_plan_hash` and the `plan` log event (§10.1) carry, taken
-//!   over the serialized segments so a replan that moves nothing hashes the
-//!   same.
+//!   over where each segment sits and what is in it — never over how the day
+//!   is going — so a replan that moves nothing hashes the same.
 //! * [`Segment`] `{ start, end, kind, energy, item, instance, flags }` — one
 //!   row of the timeline (§4.3) and one cell run of the day bar (§12.1).
 //!   [`SegKind`] names what it is; [`SegFlags`] carries the marks (`✓ ▶ ↓ ⚠`)
@@ -231,6 +231,35 @@ pub struct Diagnostics {
     pub notes: Vec<String>,
 }
 
+/// What [`DayPlan::hash`] digests: where a segment sits and what is in it,
+/// without the marks that only say how the day is going.
+#[derive(Debug, Serialize)]
+struct Placement<'a> {
+    start: &'a DateTime<Tz>,
+    end: &'a DateTime<Tz>,
+    kind: &'a SegKind,
+    energy: Option<u8>,
+    item: Option<&'a Id>,
+    instance: Option<&'a InstanceKey>,
+    planned_min: Option<u32>,
+    multiplier: Option<f64>,
+}
+
+impl<'a> Placement<'a> {
+    fn of(seg: &'a Segment) -> Placement<'a> {
+        Placement {
+            start: &seg.start,
+            end: &seg.end,
+            kind: &seg.kind,
+            energy: seg.energy,
+            item: seg.item.as_ref(),
+            instance: seg.instance.as_ref(),
+            planned_min: seg.flags.planned_min,
+            multiplier: seg.flags.multiplier,
+        }
+    }
+}
+
 /// One planned day (§8).
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct DayPlan {
@@ -265,17 +294,26 @@ impl DayPlan {
         }
     }
 
-    /// The plan's identity: a 64-bit FNV-1a digest of the serialized
-    /// segments, as 16 lowercase hex digits.
+    /// The plan's identity: a 64-bit FNV-1a digest of the day's *placement*,
+    /// as 16 lowercase hex digits.
     ///
     /// This is what `state.last_plan_hash` stores and what the `plan` log
-    /// event carries (§10.1, §10.2): two plans with the same segments hash
-    /// the same, so a replan that moves nothing is not logged as a replan.
-    /// Diagnostics and priorities are deliberately not hashed — they change
-    /// with the capacity lookahead without the day itself moving.
+    /// event carries (§10.1, §10.2): two plans that put the same items in the
+    /// same slots hash the same, so a replan that moves nothing is not logged
+    /// as a replan and does not count towards §11's "Replans and drift".
+    ///
+    /// Hashed: each segment's `start`, `end`, `kind`, `energy`, `item`,
+    /// `instance` and the `planned_min` / `multiplier` it was sized with.
+    /// Not hashed: [`Diagnostics`] and [`DayPlan::priorities`] (they move with
+    /// the capacity lookahead without the day itself moving) and every
+    /// progress or display flag — `done`, `current`, `ghost`, `note`,
+    /// `underused`, `hot`, `mandatory`, `deferred`. Those change with each
+    /// `tm done` and at every block boundary; hashing them would make a
+    /// standing day look replanned all afternoon.
     pub fn hash(&self) -> String {
-        let body = serde_json::to_string(&self.segments)
-            .unwrap_or_else(|_| format!("{:?}", self.segments));
+        let placement: Vec<Placement<'_>> = self.segments.iter().map(Placement::of).collect();
+        let body = serde_json::to_string(&placement)
+            .unwrap_or_else(|_| format!("{placement:?}"));
         let mut h = FNV_OFFSET;
         for byte in body.as_bytes() {
             h ^= u64::from(*byte);
@@ -297,24 +335,42 @@ impl DayPlan {
 
 /// `plan(state, now)` (§8) — pure, no I/O.
 ///
-/// **Not implemented yet.** The returned [`DayPlan`] has the window and
-/// budget from `state.json` (§8.1, computed at `tm arrive`), no segments, and
-/// a note in `diagnostics.notes` saying the planner is not implemented. It is
-/// a valid, hashable `DayPlan`, so callers can be written and tested against
-/// it today.
+/// **Not implemented yet.** The returned [`DayPlan`] has §8.1's window and
+/// budget, no segments, and a note in `diagnostics.notes` saying the planner
+/// is not implemented. It is a valid, hashable `DayPlan`, so callers can be
+/// written and tested against it today.
+///
+/// The window is `state.json`'s when `tm arrive` stored one; without one
+/// (before the first `tm arrive`, or after a rollover cleared it) it is
+/// §8.1's formula, through [`capacity::window_and_budget`]: `arrival =
+/// runtime.arrival, else now`, `end = min(arrival + window_hours,
+/// window_cap)`. The `+ Σ duration(walls inside the window)` half of §8.1
+/// arrives with the algorithm (M4): it needs today's walls, which is step 1's
+/// work, so this fallback is the wall-free lower bound.
 pub fn plan(input: &PlanInput) -> DayPlan {
     let cfg = input.cfg;
     let date = input.date();
-    let window = match input.runtime.window {
+    let (window, computed_budget) = match input.runtime.window {
         Some((from, to)) => (
-            capacity::local_dt(cfg.tz, date, from),
-            capacity::local_dt(cfg.tz, date, to),
+            (
+                capacity::local_dt(cfg.tz, date, from),
+                capacity::local_dt(cfg.tz, date, to),
+            ),
+            None,
         ),
-        None => (input.now, input.now),
+        None => {
+            let arrival = input
+                .runtime
+                .arrival
+                .map_or(input.now, |t| capacity::local_dt(cfg.tz, date, t));
+            let (end, budget) = capacity::window_and_budget(arrival, &[], cfg);
+            ((arrival, end), Some(budget))
+        }
     };
     let budget_blocks = input
         .runtime
         .budget
+        .or(computed_budget)
         .unwrap_or_else(|| capacity::budget_blocks(cfg));
     let mut day = DayPlan::empty(date, window, budget_blocks);
     day.diagnostics

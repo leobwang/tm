@@ -2,7 +2,6 @@
 source: tm-core/tests/priority_plan_basic.rs
 expression: "order.join(\"\\n\")"
 ---
-x1
 g1
 a3
 lunch
