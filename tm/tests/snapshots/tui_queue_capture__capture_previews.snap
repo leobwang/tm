@@ -1,0 +1,16 @@
+---
+source: tm/tests/tui_queue_capture.rs
+expression: "table.join(\"\\n\")"
+---
+pset2 fri 6b ci4 max 2b/d
+  parsed  - [ ] 4 6b pset2 due:2026-09-11T23:59 max:2b/d  → week/2026-W37.md #Milestones
+read ch.7 @m3 1b ci5 #lean
+  parsed  - [ ] 5 1b read ch.7 @m3 #lean  → week/2026-W37.md #Tasks
+ask Kun about the dinner place
+  parsed  - ask Kun about the dinner place  → inbox.md
+call the dentist tomorrow 20m ci2 p2
+  parsed  - [ ] 2 20m call the dentist !2 due:2026-09-08T23:59  → week/2026-W37.md #Milestones
+lean practice min 6b/w open ci4
+  parsed  - [ ] 4 lean practice min:6b/w open  → backlog.md
+Sat prep 2b due:2026-09-12 @m1
+  parsed  - [ ] 2b Sat prep @m1 due:2026-09-12  → week/2026-W37.md #Milestones

@@ -1,0 +1,28 @@
+---
+source: tm/tests/tui_queue_screens.rs
+expression: out
+---
+┌ Month 2026-09 ─────────────────────────────────────────────────────────────────────────┐
+│!1 O1 Lean: through ch.8 of the tutorial                                             ░░░│
+│!1 O2 Soundcode: end-to-end demo runs                                                ░░░│
+│!3 O3 Winter course selection + admin done                                           ░░░│
+│                                                                                        │
+│Demoted (1)                                                                             │
+│· m2 Rollback path passes tests                                                      W37│
+└────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Week W37 ──────────────────────────────────────────────────────────────────────────────┐
+│p3  5 6b m1 Finish ch.5 exercises                                             @O1 ░░░░░░│
+│p3  4 6b m2 Rollback path passes tests                                        @O2 ░░░░░░│
+│p3  5 3b m3 Read ch.6                                                            @O1 ░░░│
+│p5  2 2b m4 Pick winter courses                                                   @O3 ░░│
+│p4  4 6b d1 CS 234 pset 2                                  @O3 due Fri  u=0.43  fits 6/6│
+│⏰   5 2h x1 Midterm                                                       @O3 due Oct 20│
+└────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Tasks @m1 ─────────────────────────────────────────────────────────────────────────────┐
+│p3 4 1b Exercises 5.3–5.5                                                               │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│fits this week: 1b of 1b                                                                │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+ h/l · j/k · J/K reorder · Enter · a c E P D A x e

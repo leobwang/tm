@@ -1,0 +1,28 @@
+---
+source: tm/tests/tui_queue_screens.rs
+expression: out
+---
+┌ Week W37 · walls & windows ───┐┌ Deadlines · waiting · necessary ────────────────────────────────────────────────────┐
+│   Mon Tue Wed Thu Fri Sat Sun ││──── IMPOSSIBLE ─────────────────────────────────────────────────────────────────────│
+│06 ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ███ ▒▒▒ ││⚠ i1       Rewrite t…  need 52b  cap 6b  u=8.67  p0  needs 52b, 6b available by Sep 8│
+│07 ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▚▚▚ ▒▒▒ ││──── Dated ──────────────────────────────────────────────────────────────────────────│
+│08 ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ███ ▒▒▒ ││  q8       Book the seminar room               need 1.3b  cap 3b  u=0.43  p4  due Tue│
+│09                     ███     ││  x2       Midterm review                 need 10.4b  cap 84b  u=0.12  p5  due Oct 20│
+│10     ▚▚▚             ███     ││  d2       Workshop paper draft           need 13b  cap 135.6b  u=0.1  p4  due Nov 20│
+│11 ▒▒▒ ███ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ││──── Waiting ────────────────────────────────────────────────────────────────────────│
+│12 ███ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ││? w1       Ask the registrar about credit transfer                             p5  0d│
+│13 ███ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ││──── Necessary today ────────────────────────────────────────────────────────────────│
+│14                             ││! a3       Pick up package          need 20m  p0  mandatory · window closes Mon 21:00│
+│15         ███                 ││! lunch    lunch                    need 30m  p0  mandatory · window closes Mon 13:30│
+│16         ███                 ││! meditate meditate                                              need 0b  p0  overdue│
+│17                             ││                                                                                     │
+│18                             ││                                                                                     │
+│19                             ││                                                                                     │
+│20                             ││                                                                                     │
+│21                             ││                                                                                     │
+│22 ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ││                                                                                     │
+│23 ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ││                                                                                     │
+│                               ││                                                                                     │
+│                               ││                                                                                     │
+└───────────────────────────────┘└─────────────────────────────────────────────────────────────────────────────────────┘
+ ↑/↓ move · E estimate · e edit · t event arrived · k skip instance · 1-5 screens

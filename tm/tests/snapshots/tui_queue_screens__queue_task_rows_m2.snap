@@ -1,0 +1,6 @@
+---
+source: tm/tests/tui_queue_screens.rs
+expression: "task_table.join(\"\\n\")"
+---
+t4  p3 ci3 1b   Claude Code drafts tests       
+t5  p3 ci3 1b   Review the drafts              ⛔ after t4

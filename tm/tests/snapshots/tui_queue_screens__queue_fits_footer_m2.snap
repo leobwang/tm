@@ -1,0 +1,5 @@
+---
+source: tm/tests/tui_queue_screens.rs
+expression: "queue::fits_footer(&view, &tasks)"
+---
+fits this week: 2b of 2b

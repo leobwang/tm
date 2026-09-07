@@ -1,0 +1,13 @@
+---
+source: tm/tests/tui_queue_screens.rs
+expression: "rows.join(\"\\n\")"
+---
+Dated       d1  CS 234 pset 2                          p4 need 7.8b   cap 18b    u=0.43   due Fri
+Dated       x2  Midterm review                         p5 need 10.4b  cap 82.2b  u=0.13   due Oct 20
+Dated       d2  Workshop paper draft                   p4 need 13b    cap 133.8b u=0.1    due Nov 20
+Waiting     a4  Ask Prof. Lee about the reading group  p5 need        cap                 2d / 7d
+Necessary   a3  Pick up package                        p0 need 20m    cap                 mandatory · window closes Mon 21:00
+Necessary   lunch lunch                                  p0 need 30m    cap                 mandatory · window closes Mon 13:30
+Necessary   dinner dinner                                 p0 need 30m    cap                 mandatory · window closes Mon 19:30
+Necessary   workout workout                                p0 need 1b     cap                 mandatory · window closes Mon 19:00
+Necessary   laundry laundry                                p0 need 30m    cap                 overdue · mandatory · window closes Sun 21:00

@@ -1,0 +1,5 @@
+---
+source: tm/tests/tui_queue_capture.rs
+expression: "inbox::preview_text(&cap)"
+---
+parsed  - [ ] 4 6b pset2 due:2026-09-11T23:59 max:2b/d  → week/2026-W37.md #Milestones

@@ -1,0 +1,9 @@
+---
+source: tm/tests/tui_queue_capture.rs
+expression: "ring.join(\"\\n\")"
+---
+week/2026-W37.md #Milestones
+week/2026-W37.md #Tasks
+backlog.md
+day/2026-09-07.md #Pinned
+inbox.md

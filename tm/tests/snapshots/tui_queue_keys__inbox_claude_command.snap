@@ -1,0 +1,5 @@
+---
+source: tm/tests/tui_queue_keys.rs
+expression: "inbox::CLAUDE_TRIAGE"
+---
+claude "/triage"   (reads plan/inbox.md, one `tm add` per line)

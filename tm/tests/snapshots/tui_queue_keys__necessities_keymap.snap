@@ -1,0 +1,20 @@
+---
+source: tm/tests/tui_queue_keys.rs
+expression: "out.join(\"\\n\")"
+---
+E      → Prompt(Estimate(Id("d1")))                                     sel=0
+t      → Note("d1 is not waiting for an event")                         sel=0
+k      → Note("d1 has no instance to skip")                             sel=0
+e      → Edit(Id("d1"))                                                 sel=0
+Down   → Redraw                                                         sel=1
+Up     → Redraw                                                         sel=0
+j      → Redraw                                                         sel=1
+q      → Ignored                                                        sel=0
+waiting/t  → Mutate(Event { name: "reply", id: Some(Id("a4")) })
+waiting/k  → Note("a4 has no instance to skip")
+waiting/E  → Prompt(Estimate(Id("a4")))
+waiting/e  → Edit(Id("a4"))
+necessary/t  → Note("a3 is not waiting for an event")
+necessary/k  → Mutate(Skip { item: Id("a3"), instance: Date(2026-09-07) })
+necessary/E  → Prompt(Estimate(Id("a3")))
+necessary/e  → Edit(Id("a3"))

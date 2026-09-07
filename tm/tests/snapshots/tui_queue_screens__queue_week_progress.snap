@@ -1,0 +1,15 @@
+---
+source: tm/tests/tui_queue_screens.rs
+expression: "rows.join(\"\\n\")"
+---
+m1  Finish ch.5 exercises        ▓▓▓░░░
+m2  Rollback path passes tests   ▓░░░░░
+m3  Read ch.6                    ✓
+m4  Pick winter courses          ░░
+d1  CS 234 pset 2                ░░░░░░
+x1  Midterm                      ░░
+x2  Midterm review               ░░░░░░
+t1  Read ch.6 §1–2               ░
+t3  Exercises 5.3–5.5            ▓
+t4  Claude Code drafts tests     ▓
+t5  Review the drafts            ░

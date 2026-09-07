@@ -1,0 +1,9 @@
+---
+source: tm/tests/tui_queue_screens.rs
+expression: "table.join(\"\\n\")"
+---
+Impossible  i1  Rewrite the whole engine                 need 52b     cap 6b      u=8.67   needs 52b, 6b available by Sep 8
+Dated       q8  Book the seminar room                    need 1.3b    cap 3b      u=0.43   due Tue
+Dated       x2  Midterm review                           need 10.4b   cap 84b     u=0.12   due Oct 20
+Dated       d2  Workshop paper draft                     need 13b     cap 135.6b  u=0.1    due Nov 20
+Waiting     w1  Ask the registrar about credit transfer  need         cap                  0d

@@ -1,0 +1,16 @@
+---
+source: tm/tests/tui_queue_keys.rs
+expression: "out.join(\"\\n\")"
+---
+list/i   → Redraw                                                                   editing=true buffer=""
+list/t   → Redraw                                                                   editing=true buffer="pset2 fri 6b ci4 max 2b/d"
+list/C   → Note("claude \"/triage\"   (reads plan/inbox.md, one `tm add` per line)") editing=false buffer=""
+list/x   → Mutate(DropInboxLine { line: 1 })                                        editing=false buffer=""
+list/j   → Redraw                                                                   editing=false buffer=""
+list/k   → Redraw                                                                   editing=false buffer=""
+list/q   → Ignored                                                                  editing=false buffer=""
+edit/char      → Redraw                                                                   editing=true buffer="pset2 fri 6bz"
+edit/Backspace → Redraw                                                                   editing=true buffer="pset2 fri 6"
+edit/Tab       → Redraw                                                                   editing=true buffer="pset2 fri 6b"
+edit/Esc       → Redraw                                                                   editing=false buffer=""
+edit/Enter     → Mutate(Capture { text: "- [ ] 6b pset2 due:2026-09-11T23:59", file: "week/2026-W37.md", section: Some("Milestones"), from_inbox: None }) editing=false buffer=""
