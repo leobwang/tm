@@ -2,4 +2,4 @@
 source: tm-core/tests/check_fixtures.rs
 expression: "check::summary(&problems)"
 ---
-11 errors, 11 warnings
+12 errors, 13 warnings

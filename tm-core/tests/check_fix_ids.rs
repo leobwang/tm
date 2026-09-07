@@ -10,7 +10,8 @@ use tempfile::TempDir;
 
 use tm_core::check;
 use tm_core::grammar::IdGen;
-use tm_core::store::{FsStore, Store};
+use tm_core::model::Id;
+use tm_core::store::{FsStore, MemStore, Store};
 use tm_core::tree::Tree;
 
 fn fixture(name: &str) -> String {
@@ -74,27 +75,60 @@ fn fix_ids_appends_only_missing_ids() {
     );
 
     // Every other byte of every file is unchanged; the fixed lines differ
-    // only by the appended token.
+    // only by the appended token. Compared whole, so a changed terminator or
+    // a gained trailing newline in the rewritten file fails too.
     let after = texts(&store);
     assert_eq!(before.len(), after.len());
     for ((rel_a, text_a), (rel_b, text_b)) in before.iter().zip(&after) {
         assert_eq!(rel_a, rel_b);
-        let fixed: Vec<&(String, usize, tm_core::model::Id)> =
-            assigned.iter().filter(|(f, _, _)| f == rel_a).collect();
-        if fixed.is_empty() {
-            assert_eq!(text_a, text_b, "{rel_a} must not be touched");
-            continue;
-        }
-        let old: Vec<&str> = text_a.lines().collect();
-        let new: Vec<&str> = text_b.lines().collect();
-        assert_eq!(old.len(), new.len(), "{rel_a} gained or lost a line");
-        for (n, (o, m)) in old.iter().zip(&new).enumerate() {
-            match fixed.iter().find(|(_, line, _)| *line == n + 1) {
-                Some((_, _, id)) => assert_eq!(*m, format!("{o} {}", id.token())),
-                None => assert_eq!(o, m, "{rel_a}:{} changed", n + 1),
+        let fixed: Vec<(usize, &Id)> = assigned
+            .iter()
+            .filter(|(f, _, _)| f == rel_a)
+            .map(|(_, line, id)| (*line, id))
+            .collect();
+        assert_eq!(*text_b, with_ids_appended(text_a, &fixed), "{rel_a} changed");
+    }
+}
+
+/// `text` with ` ^id` appended to the given 1-based lines and nothing else
+/// touched — not the line terminators, not a missing final newline.
+fn with_ids_appended(text: &str, ids: &[(usize, &Id)]) -> String {
+    let mut out = String::new();
+    for (i, chunk) in text.split_inclusive('\n').enumerate() {
+        match ids.iter().find(|(line, _)| *line == i + 1) {
+            Some((_, id)) => {
+                let body = chunk.trim_end_matches('\n').trim_end_matches('\r');
+                out.push_str(body);
+                out.push(' ');
+                out.push_str(&id.token());
+                out.push_str(&chunk[body.len()..]);
             }
+            None => out.push_str(chunk),
         }
     }
+    out
+}
+
+/// §4.1 "serialization is byte-faithful": the rewritten file keeps its CRLF
+/// terminators and gains no final newline of its own. `plan-conflicts` is
+/// all LF and ends every file with a newline, so this is the path the
+/// fixture cannot reach.
+#[test]
+fn fix_ids_keeps_terminators_and_an_unterminated_last_line() {
+    const WEEK: &str = "week/2026-W37.md";
+    let text = "- [ ] 3 1b One\r\n- [ ] 3 1b Two ^aa11\r\n- [ ] 3 1b Three";
+    let store = MemStore::new().with_file(WEEK, text);
+    let mut plan = store.read_tree().expect("tree");
+    let mut gen = IdGen::new(77);
+    let assigned = check::fix_ids(&store, &mut plan.files, &mut gen).expect("fix-ids");
+
+    let fixed: Vec<(usize, &Id)> = assigned.iter().map(|(_, l, id)| (*l, id)).collect();
+    assert_eq!(fixed.iter().map(|(l, _)| *l).collect::<Vec<_>>(), vec![1, 3]);
+    let out = store.read_text(WEEK).unwrap();
+    assert_eq!(out, with_ids_appended(text, &fixed));
+    assert!(out.contains("One ^") && out.contains("Three ^"), "{out:?}");
+    assert!(out.matches("\r\n").count() == 2, "CRLF lost: {out:?}");
+    assert!(!out.ends_with('\n'), "a final newline was added: {out:?}");
 }
 
 #[test]
