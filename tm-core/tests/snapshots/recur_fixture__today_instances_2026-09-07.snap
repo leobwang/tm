@@ -1,0 +1,116 @@
+---
+source: tm-core/tests/recur_fixture.rs
+expression: rows
+---
+- item: k1
+  recur: "every:day"
+  on_miss: expire
+  instances:
+    - inst: 2026-09-07
+      status: Pending
+      due: "2026-09-07T21:00"
+      window: "2026-09-07T19:00..2026-09-07T21:00"
+      flags: mandatory · last-chance · not-yet
+- item: a3
+  recur: "-"
+  on_miss: expire
+  instances:
+    - inst: 2026-09-07
+      status: Pending
+      due: "2026-09-07T21:00"
+      window: "2026-09-07T09:00..2026-09-07T21:00"
+      flags: mandatory · last-chance
+- item: a6
+  recur: "on-event:lease"
+  on_miss: persist
+  instances:
+    - inst: "#1"
+      status: Pending
+      due: ~
+      window: ~
+- item: a7
+  recur: "on-event:dentist/3d"
+  on_miss: persist
+  instances:
+    - inst: "#2"
+      status: Pending
+      due: ~
+      window: ~
+- item: sleep
+  recur: "every:day"
+  on_miss: expire
+  instances:
+    - inst: 2026-09-07
+      status: Pending
+      due: "2026-09-08T08:00"
+      window: "2026-09-07T22:00..2026-09-08T08:00"
+      flags: not-yet
+- item: lunch
+  recur: "every:day"
+  on_miss: expire
+  instances:
+    - inst: 2026-09-07
+      status: Pending
+      due: "2026-09-07T13:30"
+      window: "2026-09-07T11:30..2026-09-07T13:30"
+      flags: mandatory · last-chance · not-yet
+- item: workout
+  recur: "every:Mon,Wed,Fri"
+  on_miss: expire
+  instances:
+    - inst: 2026-09-07
+      status: Pending
+      due: "2026-09-07T19:00"
+      window: "2026-09-07T16:00..2026-09-07T19:00"
+      flags: mandatory · last-chance · not-yet
+- item: water-plants
+  recur: "every:3d"
+  on_miss: expire
+  instances:
+    - inst: 2026-09-07
+      status: Pending
+      due: "2026-09-07T20:00"
+      window: "2026-09-07T08:00..2026-09-07T20:00"
+      flags: mandatory · last-chance
+- item: laundry
+  recur: "every:week"
+  on_miss: persist
+  instances:
+    - inst: 2026-08-31
+      status: Pending
+      due: "2026-09-06T21:00"
+      window: "2026-08-31T09:00..2026-09-06T21:00"
+      flags: mandatory · overdue · carried-from 2026-09-06 · deferred
+- item: laundry
+  recur: "every:week"
+  on_miss: persist
+  instances:
+    - inst: 2026-09-07
+      status: Pending
+      due: "2026-09-13T21:00"
+      window: "2026-09-07T09:00..2026-09-13T21:00"
+- item: groceries
+  recur: "every:week"
+  on_miss: expire
+  instances:
+    - inst: 2026-09-07
+      status: Pending
+      due: "2026-09-13T20:00"
+      window: "2026-09-07T10:00..2026-09-13T20:00"
+- item: shower
+  recur: "after-done:2d~1d"
+  on_miss: expire
+  instances:
+    - inst: "#6"
+      status: Pending
+      due: "2026-09-07T23:00"
+      window: "2026-09-07T07:00..2026-09-08T23:00"
+- item: vitamins
+  recur: "after-done:2d"
+  on_miss: expire
+  instances:
+    - inst: "#4"
+      status: Pending
+      due: "2026-09-05T11:00"
+      window: "2026-09-05T07:00..2026-09-07T11:00"
+      flags: overdue · carried-from 2026-09-05 · deferred
