@@ -355,6 +355,58 @@ fn the_gitignore_keeps_the_runtime_state_out_of_git() {
 }
 
 #[test]
+fn init_takes_the_directory_as_a_flag_or_a_positional() {
+    // `--dir` is global (§13: every verb takes it), and `tm init --help`
+    // promises it. `tm init [dir]` used to shadow it — the positional's clap
+    // id was the global's — so `tm init --dir X` died with "unexpected
+    // argument '--dir' found" while `tm --dir X init` worked.
+    let tm = Tm::empty();
+    let root = tm.tmp.path();
+    let run = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_tm"))
+            .args(args)
+            .arg("--now")
+            .arg(cli_common::NOW)
+            .env_remove("TM_DIR")
+            .output()
+            .expect("run tm");
+        assert!(
+            out.status.success(),
+            "`tm {}` failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice::<serde_json::Value>(&out.stdout).expect("JSON")
+    };
+    let path = |name: &str| root.join(name).to_str().expect("utf-8").to_string();
+    let (flag, global, positional) = (path("flag"), path("global"), path("positional"));
+    let (winner, loser) = (path("winner"), path("loser"));
+
+    // All three spellings work…
+    let after = run(&["init", "--dir", &flag, "--json"]);
+    let before = run(&["--dir", &global, "init", "--json"]);
+    let bare = run(&["init", &positional, "--json"]);
+    for dir in [&flag, &global, &positional] {
+        assert!(
+            Path::new(dir).join("config.toml").is_file(),
+            "no tree in {dir}"
+        );
+    }
+    // …and agree, down to the files they wrote.
+    assert_eq!(after["dir"], flag);
+    assert_eq!(before["dir"], global);
+    assert_eq!(bare["dir"], positional);
+    assert_eq!(after["created"], before["created"]);
+    assert_eq!(after["created"], bare["created"]);
+
+    // Given both, the positional wins (`tm init --help`, README).
+    let both = run(&["init", &winner, "--dir", &loser, "--json"]);
+    assert_eq!(both["dir"], winner);
+    assert!(Path::new(&winner).join("config.toml").is_file());
+    assert!(!Path::new(&loser).exists(), "--dir was used after all");
+}
+
+#[test]
 fn init_refuses_a_non_empty_directory_without_force() {
     let tm = Tm::empty();
     std::fs::create_dir_all(&tm.plan).expect("mkdir");

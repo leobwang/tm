@@ -119,9 +119,9 @@ $ tm now
 tm: no plan directory found (looked for config.toml next to .tm/, here and in every parent); use --dir <path> or set TM_DIR
 ```
 
-One exception, worth knowing before it bites: **`tm init --dir X` is rejected**,
-because `init` has its own positional directory argument. Write `tm init X` or
-`tm --dir X init`.
+`tm init` is the one verb that also takes the directory as a plain argument, so
+`tm init X`, `tm init --dir X` and `tm --dir X init` all create the tree at `X`.
+Give it both and the positional wins: `tm init here --dir there` writes `here`.
 
 ---
 
@@ -1721,7 +1721,7 @@ Every verb has its own `tm <verb> --help` with the exact flags.
 
 | command | what it does |
 |---|---|
-| `tm init [DIR] [--example] [--force]` | create a plan directory: config, files, `CLAUDE.md`, skills, hooks. `--example` fills it with a worked example. Refuses a non-empty directory without `--force`. **Not undoable**, and `--dir` does not work here |
+| `tm init [DIR] [--example] [--force]` | create a plan directory: config, files, `CLAUDE.md`, skills, hooks. The directory is `DIR`, else `--dir`, else `./plan` — `DIR` wins when you give both. `--example` fills it with a worked example. Refuses a non-empty directory without `--force`. **Not undoable** |
 | `tm wake [TIME] [--slept 7h] [--onset 20m]` | record when you woke. `TIME` is zero-padded `HH:MM` |
 | `tm arrive [LOC] [--at HH:MM]` | set the location, sync the calendar, compute window and budget, plan the day |
 | `tm plan [--week] [--diff] [--explain ^ID] [--allow-home]` | plan today and rewrite the day file's generated block. `--week` prints the capacity grid instead; `--explain` prints one item's priority and prints no timetable |

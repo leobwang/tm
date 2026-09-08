@@ -161,7 +161,12 @@ pub enum Command {
 /// `tm init [dir]`.
 #[derive(Debug, Args)]
 pub struct InitArgs {
-    /// Where to create the tree (default: `--dir`, else `./plan`).
+    /// Where to create the tree; beats `--dir` (default: `--dir`, else `./plan`).
+    // `id`: it has to differ from the global `--dir`'s, or this positional
+    // takes that id's place in `init`'s arg tree and `tm init --dir X` dies
+    // with "unexpected argument '--dir' found" (the global is still parsed
+    // into `Cli::dir`, so the two agree with the positional winning).
+    #[arg(id = "init-dir", value_name = "DIR")]
     pub dir: Option<PathBuf>,
     /// Fill the files with the §4.3 example tree instead of guidance.
     #[arg(long)]
@@ -517,5 +522,81 @@ pub(crate) fn run(g: &Globals, cmd: Command) -> Result<i32, CliError> {
         Command::Undo => lifecycle::undo(g),
         Command::Check(a) => lifecycle::check(g, &a),
         Command::Tui => lifecycle::tui(g),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    /// `--json`, `--dir`, `--now`: the flags every verb shares.
+    const GLOBALS: [&str; 3] = ["json", "dir", "now"];
+
+    /// Every verb, and every verb of a verb, with its arguments as
+    /// (clap id, is positional).
+    fn walk(cmd: &clap::Command, path: &str, out: &mut Vec<(String, Vec<(String, bool)>)>) {
+        // `help` is clap's own, and takes none of our flags.
+        for sub in cmd.get_subcommands().filter(|s| s.get_name() != "help") {
+            let name = format!("{path} {}", sub.get_name());
+            let args = sub
+                .get_arguments()
+                .map(|a| (a.get_id().to_string(), a.is_positional()))
+                .collect();
+            out.push((name.clone(), args));
+            walk(sub, &name, out);
+        }
+    }
+
+    /// Every §13 verb takes the global flags. A verb's own argument may not
+    /// carry a global's clap id: it would take the global's place in that
+    /// verb's arg tree, and `tm <verb> --dir X` would then die with
+    /// "unexpected argument '--dir' found". `tm init`'s positional `DIR` did
+    /// exactly that.
+    #[test]
+    fn every_verb_takes_the_global_flags() {
+        let mut cmd = Cli::command();
+        cmd.build();
+        let mut verbs = Vec::new();
+        walk(&cmd, "tm", &mut verbs);
+        assert!(verbs.len() > 30, "expected every §13 verb, got {verbs:?}");
+        for (verb, args) in verbs {
+            for global in GLOBALS {
+                match args.iter().find(|(id, _)| id == global) {
+                    None => panic!("`{verb}` does not take --{global}"),
+                    Some((_, true)) => {
+                        panic!("`{verb}`'s positional argument shadows the global --{global}")
+                    }
+                    Some((_, false)) => {}
+                }
+            }
+        }
+    }
+
+    /// `tm init --dir X`, `tm --dir X init` and `tm init X` all parse and
+    /// agree; the positional wins when both are given (`tm init --help`).
+    #[test]
+    fn init_dir_precedence() {
+        // The resolution `init::run` performs.
+        let dir = |cli: &Cli| match &cli.command {
+            Command::Init(a) => a.dir.clone().or_else(|| cli.dir.clone()),
+            _ => unreachable!("init"),
+        };
+        let parse = |args: &[&str]| Cli::try_parse_from(args).expect("parses");
+
+        assert_eq!(
+            dir(&parse(&["tm", "init", "--dir", "x"])),
+            Some(PathBuf::from("x"))
+        );
+        assert_eq!(
+            dir(&parse(&["tm", "--dir", "x", "init"])),
+            Some(PathBuf::from("x"))
+        );
+        assert_eq!(dir(&parse(&["tm", "init", "x"])), Some(PathBuf::from("x")));
+        assert_eq!(
+            dir(&parse(&["tm", "init", "x", "--dir", "y"])),
+            Some(PathBuf::from("x"))
+        );
+        assert_eq!(dir(&parse(&["tm", "init"])), None);
     }
 }
