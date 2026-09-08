@@ -68,3 +68,60 @@ def loadCheat (planDocs : List Doc) (store : Store)
   ⟨⟨planDocs, store⟩, planWf_of_parts h1 h2 h3 rfl⟩
 
 end Tm
+
+/- ═══════════════════════════════════════════════════════════════════════════
+   CALENDAR CHEATS (Cal.lean / Grain.lean).  Appended; nothing above is edited.
+   ═══════════════════════════════════════════════════════════════════════════ -/
+-- Only so the failures below are the *type* errors they claim to be, and not
+-- an elaborator budget running out first.  It applies from here on only.
+set_option maxRecDepth 10000
+
+namespace Tm
+
+/- CHEAT 9 — hand a date straight through as valid, which is how `Feb 30`
+   reaches a calendar.  `ValidDate` is a `Subtype` over a *decidable* predicate,
+   so the second field is `Date.valid ⟨2024,2,30⟩ = true`, and that computes to
+   `false = true`. -/
+def dateCheat : Cal.ValidDate := ⟨⟨2024, 2, 30⟩, by decide⟩
+
+/- CHEAT 10 — number the weeks inside the civil year, which is what "week 1
+   starts on January 1st" does, and claim it is the ISO week.  It is not: on
+   2027-01-01 this says week 1 and ISO says 2026-W53. -/
+def naiveWeek (n : Nat) : Nat := (n - Cal.jan1 (Cal.ofDay n).year) / 7 + 1
+
+theorem naive_week_is_iso :
+    naiveWeek (Cal.toDay ⟨2027, 1, 1⟩) = (Cal.isoOf (Cal.toDay ⟨2027, 1, 1⟩)).week := by
+  decide
+
+/- CHEAT 11 — name a week's month without naming a tie-break, by assuming the
+   week determines the month.  The rewrite is where the derivation stops:
+   `week_does_not_refine_month` is the counterexample (2026-W36). -/
+theorem week_refines_month : refines week month := by
+  intro a b h
+  rw [index_week] at h
+  rw [index_month, index_month, h]
+
+/- CHEAT 12 — declare `horizon.rs:1543`'s rule stable.  "The month of today" is
+   a function of `now`, so two callers on two days of one week get two answers,
+   and this does not even hold definitionally. -/
+theorem month_of_today_is_stable :
+    Cal.monthOfWeekByToday (Cal.weekOrdinal (Cal.toDay ⟨2026, 8, 31⟩))
+        (Cal.toDay ⟨2026, 8, 31⟩)
+      = Cal.monthOfWeekByToday (Cal.weekOrdinal (Cal.toDay ⟨2026, 8, 31⟩))
+        (Cal.toDay ⟨2026, 9, 6⟩) := by
+  decide
+
+/- CHEAT 13 — drop the century rule and keep "every fourth year".  Refuted by
+   computation at y = 100. -/
+def isLeapCheat (y : Nat) : Bool := y % 4 == 0
+
+theorem leap_is_every_fourth_year : ∀ y, y < 2000 → Cal.isLeap y = isLeapCheat y := by
+  decide
+
+/- CHEAT 14 — get the phase of the seven-day cycle wrong by one.  The three
+   cross-checks in `Cal.lean` exist to catch exactly this, and they do. -/
+def weekdayCheat (n : Nat) : Cal.Weekday := Cal.Weekday.ofIndex (n % 7 + 1)
+
+theorem cheat_weekday_1970 : weekdayCheat (Cal.toDay ⟨1970, 1, 1⟩) = .thursday := by decide
+
+end Tm
