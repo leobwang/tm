@@ -2,7 +2,7 @@
 source: tm/tests/tui_queue_screens.rs
 expression: "lines.join(\"\\n\")"
 ---
-  1  pset2 fri 6b ci4 max 2b/d                     - [ ] 4 6b pset2 due:2026-09-11T23:59 max:2b/d
-  2  ask Kun about the dinner place                - ask Kun about the dinner place
-  3  renew the bike insurance before October       - renew the bike insurance before October
-  4  read the Lean 4 metaprogramming book          - read the Lean 4 metaprogramming book
+  1  pset2 fri 6b ci4 max 2b/d                     week/2026-W37.md #Milestones - [ ] 4 6b pset2 due:2026-09-11T23:59 max:2b/d
+  2  ask Kun about the dinner place                backlog.md                   - [ ] ask Kun about the dinner place
+  3  renew the bike insurance before October       backlog.md                   - [ ] renew the bike insurance before October
+  4  read the Lean 4 metaprogramming book          backlog.md                   - [ ] read the Lean 4 metaprogramming book

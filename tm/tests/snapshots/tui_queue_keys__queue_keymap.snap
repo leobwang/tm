@@ -6,8 +6,8 @@ h         → Redraw                                                            
 l         → Redraw                                                                   pane=Tasks sel=0 focus=-
 j         → Redraw                                                                   pane=Week sel=1 focus=-
 k         → Redraw                                                                   pane=Week sel=0 focus=-
-J         → Mutate(Reorder { id: Id("m1"), delta: 1 })                               pane=Week sel=0 focus=-
-K         → Mutate(Reorder { id: Id("m1"), delta: -1 })                              pane=Week sel=0 focus=-
+J         → Mutate(Reorder { id: Id("m1"), file: Some("week/2026-W37.md"), delta: 1 }) pane=Week sel=0 focus=-
+K         → Mutate(Reorder { id: Id("m1"), file: Some("week/2026-W37.md"), delta: -1 }) pane=Week sel=0 focus=-
 a         → Prompt(Add { file: "week/2026-W37.md", section: Some("Milestones") })    pane=Week sel=0 focus=-
 c         → Prompt(Ci(Id("m1")))                                                     pane=Week sel=0 focus=-
 E         → Prompt(Estimate(Id("m1")))                                               pane=Week sel=0 focus=-
@@ -15,7 +15,7 @@ P         → Note("m1: !k lives on the root (O1) — §7.1")                   
 D         → Mutate(Demote(Id("m1")))                                                 pane=Week sel=0 focus=-
 A         → Mutate(Readopt(Id("m1")))                                                pane=Week sel=0 focus=-
 x         → Mutate(Drop(Id("m1")))                                                   pane=Week sel=0 focus=-
-e         → Edit(Id("m1"))                                                           pane=Week sel=0 focus=-
+e         → Edit { id: Id("m1"), file: Some("week/2026-W37.md") }                    pane=Week sel=0 focus=-
 Enter     → Redraw                                                                   pane=Tasks sel=0 focus=m1
 Esc       → Ignored                                                                  pane=Week sel=0 focus=-
 Left      → Redraw                                                                   pane=Month sel=0 focus=-

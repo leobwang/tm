@@ -1,0 +1,6 @@
+---
+source: tm/tests/tui_queue_screens.rs
+expression: "differ.join(\"\\n\")"
+---
+  1  screen - [ ] 4 6b pset2 due:2026-09-11T23:59 max:2b/d
+     tm triage - [ ] pset2 fri 6b ci4 max 2b/d

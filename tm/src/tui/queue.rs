@@ -14,9 +14,9 @@
 //!
 //! Everything here is a pure function of the state and the [`View`]; the only
 //! side effect the screen performs itself is [`reorder`] (§12.6's `J`/`K`,
-//! which rewrites line order through [`Store::reorder_line`] and therefore
-//! byte-faithfully). Every other key returns an [`Action`] the shell carries
-//! out.
+//! which swaps two item lines in the file the row came from and writes every
+//! other byte back unchanged). Every other key returns an [`Action`] the shell
+//! carries out.
 //!
 //! ## Shared types (used by `necessities.rs` and `inbox.rs` too)
 //!
@@ -30,11 +30,14 @@
 //!
 //! ## The screen
 //!
-//! * [`QueueState`] — pane focus, one cursor per pane, the drill target.
+//! * [`QueueState`] — pane focus, one cursor per pane, the drill target;
+//!   [`Selection`] — the *line* under the cursor (id **and** file: §6.3 leaves
+//!   one `^id` on two lines).
 //! * [`render`] / [`on_key`] — the two functions `tui/mod.rs` dispatches to.
 //! * [`month_rows`], [`week_rows`], [`task_rows`], [`fits_footer`] — the row
 //!   model, so the columns can be asserted without a terminal.
-//! * [`reorder`] — `J`/`K`; [`edit_command`] — `e` (`cfg.tui.editor`).
+//! * [`reorder`] / [`apply_reorder`] — `J`/`K`; [`edit_command`] — `e`
+//!   (`cfg.tui.editor`).
 //!
 //! ## Integration
 //!
@@ -45,6 +48,9 @@
 //! Screen::Queue => queue::render(&app.queue, &app.view(), frame, area),
 //! // and, in the key dispatch:
 //! Screen::Queue => queue::on_key(&mut app.queue, &app.view(), key),
+//! // …whose `Action::Mutate(m)` arm starts with the one mutation this module
+//! // performs itself (every other one is a §13 verb):
+//! if let Some(moved) = queue::apply_reorder(store, &m) { moved?; reload(); }
 //! ```
 //!
 //! where `App` gains a `queue: QueueState` field and a `view(&self) -> View<'_>`
@@ -64,10 +70,11 @@ use ratatui::Frame;
 
 use tm_core::capacity::{self, DayCapacity};
 use tm_core::config::Config;
+use tm_core::grammar::ParsedFile;
 use tm_core::log::Replay;
 use tm_core::model::{Id, InstanceKey, IsoWeek, State, YearMonth};
 use tm_core::priority::{self, Candidate, Prio};
-use tm_core::store::{PlanFiles, Store, StoreError};
+use tm_core::store::{edit, PlanFiles, Store, StoreError};
 use tm_core::tree::Tree;
 
 // ---------------------------------------------------------------------------
@@ -184,7 +191,14 @@ pub enum Action {
     Note(String),
     /// Open the item in the editor (§12: `code -g file:line`, see
     /// [`edit_command`]).
-    Edit(Id),
+    Edit {
+        /// The item.
+        id: Id,
+        /// Which copy of a duplicated id the row was read from (§6.3's
+        /// `# Demoted` archive shares its id with the live line); `None`
+        /// leaves the choice to the tree's primary copy.
+        file: Option<String>,
+    },
     /// Ask the user for a value, then apply it (§12.6's `a c E P`).
     Prompt(Prompt),
     /// Change a file; the shell runs it and reloads the tree.
@@ -216,14 +230,22 @@ pub enum Mutation {
     Reorder {
         /// The line to move.
         id: Id,
+        /// The file the row was read from. An id can name two lines — §6.3
+        /// copies a demoted week line into `month/<m>.md#Demoted` — and the
+        /// row the cursor is on decides which one moves. `None` leaves the
+        /// choice to [`Store::reorder_line`] (the live line).
+        file: Option<String>,
         /// `+1` down, `-1` up.
         delta: i32,
     },
-    /// `D` — `tm demote ^id`.
+    /// `D` — `tm demote ^id`. Refused on a `# Demoted` archive row, which is
+    /// the record of a demotion that already happened (§6.3).
     Demote(Id),
     /// `A` — `tm readopt ^id`.
     Readopt(Id),
-    /// `x` — `tm drop ^id`.
+    /// `x` — `tm drop ^id`. Like `A`, this addresses the *item*, so on a
+    /// `# Demoted` row it drops the item the archive line records, which is
+    /// what §13's verb means by the id.
     Drop(Id),
     /// `k` on Necessities — `tm skip <routine>` for one instance (§5.1).
     Skip {
@@ -397,9 +419,16 @@ pub fn est_text(view: &View<'_>, id: &Id) -> String {
 
 /// The `code -g <file>:<line>` command for `id` (§12, `cfg.tui.editor`).
 ///
+/// `file` names which copy of a duplicated id to open — §6.3 leaves the same
+/// `^id` on a demoted week line and on its `month/<m>.md#Demoted` archive copy,
+/// and `e` must open the line the cursor is on, not the other one. `None` (and
+/// a file that holds no copy) falls back to the tree's primary line.
+///
 /// `None` when the id is not in the tree.
-pub fn edit_command(cfg: &Config, tree: &Tree, id: &Id) -> Option<String> {
-    let item = tree.get(id)?;
+pub fn edit_command(cfg: &Config, tree: &Tree, id: &Id, file: Option<&str>) -> Option<String> {
+    let item = file
+        .and_then(|f| tree.all(id).into_iter().find(|i| i.src.file == f))
+        .or_else(|| tree.get(id))?;
     Some(
         cfg.tui
             .editor
@@ -414,12 +443,64 @@ pub fn edit_command(cfg: &Config, tree: &Tree, id: &Id) -> Option<String> {
 
 /// §12.6's `J`/`K`: move `id` by `delta` lines within its own section.
 ///
-/// This is [`Store::reorder_line`] verbatim, which re-reads the file, swaps two
-/// *item* lines and writes every other byte back unchanged — §12.2's "`J`/`K`
-/// rewrite line order in the file" and M7's "byte-faithfully". Returns `false`
-/// when the line is already at the end of its section.
-pub fn reorder(store: &dyn Store, id: &Id, delta: i32) -> Result<bool, StoreError> {
-    store.reorder_line(id, delta)
+/// With `file = None` this is [`Store::reorder_line`] verbatim, which re-reads
+/// the file, swaps two *item* lines and writes every other byte back unchanged
+/// — §12.2's "`J`/`K` rewrite line order in the file" and M7's
+/// "byte-faithfully". Returns `false` when the line is already at the end of
+/// its section.
+///
+/// `file` names the copy to move. It matters because an id can name two lines:
+/// §6.3 copies a demoted week line into `month/<m>.md#Demoted`, and
+/// [`Store::reorder_line`] resolves a bare id to the copy *outside* `# Demoted`
+/// — so `J` on the Month pane's archive row would otherwise rewrite the week
+/// file the user is not looking at. The rewrite is the same pure
+/// [`edit::reorder_line`] transform the store uses, applied to the named file
+/// through [`Store::modify_file`], so it stays byte-faithful and race-guarded.
+pub fn reorder(
+    store: &dyn Store,
+    id: &Id,
+    file: Option<&str>,
+    delta: i32,
+) -> Result<bool, StoreError> {
+    let Some(rel) = file else {
+        return store.reorder_line(id, delta);
+    };
+    let mut moved = false;
+    let mut found = false;
+    store.modify_file(rel, &mut |parsed: &ParsedFile| {
+        // `modify_file` may re-apply this to a racing writer's text.
+        moved = false;
+        found = false;
+        let Some(idx) = edit::find_line(parsed, id) else {
+            return Ok(None);
+        };
+        found = true;
+        match edit::reorder_line(parsed, idx, delta) {
+            Some(text) => {
+                moved = true;
+                Ok(Some(text))
+            }
+            None => Ok(None),
+        }
+    })?;
+    if !found {
+        return Err(StoreError::NotFound(id.clone()));
+    }
+    Ok(moved)
+}
+
+/// Carry out the [`Mutation::Reorder`] that [`on_key`] returns for `J`/`K`.
+///
+/// This is the whole shell wiring for that key: `Action::Mutate(m)` →
+/// `queue::apply_reorder(store, &m)` → reload. Any other mutation is one of
+/// §13's verbs and is not this module's to perform, so it returns `None`.
+pub fn apply_reorder(store: &dyn Store, m: &Mutation) -> Option<Result<bool, StoreError>> {
+    match m {
+        Mutation::Reorder { id, file, delta } => {
+            Some(reorder(store, id, file.as_deref(), *delta))
+        }
+        _ => None,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -431,6 +512,10 @@ pub fn reorder(store: &dyn Store, id: &Id, delta: i32) -> Result<bool, StoreErro
 pub struct MonthRow {
     /// The item's `^id`.
     pub id: Id,
+    /// The file the line was read from — `month/<m>.md` for both the outcomes
+    /// and the `# Demoted` archive copies, which share their `^id` with a week
+    /// line (§6.3). A mutation on this row must name it.
+    pub file: String,
     /// Explicit `!k` (§4.3: roots carry it).
     pub priority: Option<u8>,
     /// The title.
@@ -448,6 +533,8 @@ pub struct MonthRow {
 pub struct WeekRow {
     /// The item's `^id`.
     pub id: Id,
+    /// The file the line was read from.
+    pub file: String,
     /// `p` from §7, when the item is a candidate today.
     pub p: Option<u8>,
     /// §7.4 held `p` above its raw value this morning.
@@ -480,6 +567,8 @@ pub struct WeekRow {
 pub struct TaskRow {
     /// The item's `^id`.
     pub id: Id,
+    /// The file the line was read from.
+    pub file: String,
     /// `p` from §7.
     pub p: Option<u8>,
     /// Min-energy.
@@ -507,6 +596,7 @@ pub fn month_rows(view: &View<'_>) -> Vec<MonthRow> {
             .unwrap_or(false);
         let id = Tree::key_of(item);
         rows.push(MonthRow {
+            file: item.src.file.clone(),
             priority: item.priority,
             title: item.title.clone(),
             bar: if demoted {
@@ -540,6 +630,7 @@ pub fn week_rows(view: &View<'_>) -> Vec<WeekRow> {
                 .or_else(|| view.tree.effective_due(&id).map(|d| d.date()));
             let remaining = view.tree.remaining(&id).unwrap_or(0);
             WeekRow {
+                file: item.src.file.clone(),
                 p: prio.map(|p| p.p),
                 hysteresis: prio.map(|p| p.hysteresis_applied).unwrap_or(false),
                 ci: item.ci,
@@ -566,8 +657,13 @@ fn blocks_cells(minutes: u32, block_min: u32) -> usize {
     blocks.clamp(1, 6)
 }
 
-/// The Tasks pane's rows: the children of `parent` (§6.1, any depth), or the
-/// week's parentless lines when nothing is selected.
+/// The Tasks pane's rows: the direct children of `parent` (§6.1, §12.2 —
+/// "Tasks @m2"), in file order.
+///
+/// `parent = None` means the cursor is on nothing (both other panes are empty,
+/// or the selection index is past the end after a drop or a reload), and the
+/// pane is then empty: there is no selection whose children could be listed.
+/// The pane title drops the `@<id>` to say so.
 pub fn task_rows(view: &View<'_>, parent: Option<&Id>) -> Vec<TaskRow> {
     let ids: Vec<Id> = match parent {
         Some(p) => view.tree.children(p).to_vec(),
@@ -589,6 +685,7 @@ pub fn task_rows(view: &View<'_>, parent: Option<&Id>) -> Vec<TaskRow> {
                 }
             });
             Some(TaskRow {
+                file: item.src.file.clone(),
                 p: view.prio(&id).map(|p| p.p),
                 ci: item.ci,
                 est: est_text(view, &id),
@@ -665,6 +762,21 @@ impl Pane {
     }
 }
 
+/// What the cursor is on: the line, not just the item.
+///
+/// §6.3 leaves the same `^id` on two lines — a demoted week line and its
+/// `month/<m>.md#Demoted` archive copy — so a key that rewrites a line has to
+/// say *which* line the user is looking at (see [`reorder`], [`edit_command`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Selection {
+    /// The item key (an `^id`, or a title for an id-less line).
+    pub id: Id,
+    /// The file the row was read from.
+    pub file: String,
+    /// True when the row is a `# Demoted` archive copy (§6.3).
+    pub demoted: bool,
+}
+
 /// Screen 2's cursor (§12.2). All of it is display state; nothing is stored.
 #[derive(Debug, Clone, Default)]
 pub struct QueueState {
@@ -705,18 +817,36 @@ impl QueueState {
         }
     }
 
-    /// The selected item in the focused pane.
-    pub fn selected(&self, view: &View<'_>) -> Option<Id> {
+    /// The selected line in the focused pane: its key, its file and whether it
+    /// is a `# Demoted` archive copy (§6.3).
+    pub fn selection(&self, view: &View<'_>) -> Option<Selection> {
         match self.pane {
-            Pane::Month => month_rows(view).get(self.month_sel).map(|r| r.id.clone()),
-            Pane::Week => week_rows(view).get(self.week_sel).map(|r| r.id.clone()),
+            Pane::Month => month_rows(view).get(self.month_sel).map(|r| Selection {
+                id: r.id.clone(),
+                file: r.file.clone(),
+                demoted: r.demoted,
+            }),
+            Pane::Week => week_rows(view).get(self.week_sel).map(|r| Selection {
+                id: r.id.clone(),
+                file: r.file.clone(),
+                demoted: false,
+            }),
             Pane::Tasks => {
                 let parent = self.parent(view);
                 task_rows(view, parent.as_ref())
                     .get(self.task_sel)
-                    .map(|r| r.id.clone())
+                    .map(|r| Selection {
+                        id: r.id.clone(),
+                        file: r.file.clone(),
+                        demoted: false,
+                    })
             }
         }
+    }
+
+    /// The selected item in the focused pane.
+    pub fn selected(&self, view: &View<'_>) -> Option<Id> {
+        self.selection(view).map(|s| s.id)
     }
 
     /// How many rows the focused pane has.
@@ -754,7 +884,7 @@ pub const KEYMAP_NARROW: &str = " h/l · j/k · J/K reorder · Enter · a c E P 
 
 /// Handle one key press (§12.6).
 pub fn on_key(state: &mut QueueState, view: &View<'_>, key: KeyEvent) -> Action {
-    let sel = state.selected(view);
+    let sel = state.selection(view);
     match key.code {
         KeyCode::Char('h') | KeyCode::Left => {
             state.pane = state.pane.left();
@@ -792,15 +922,9 @@ pub fn on_key(state: &mut QueueState, view: &View<'_>, key: KeyEvent) -> Action 
             }
             Action::Redraw
         }
-        KeyCode::Char('J') => match sel {
-            Some(id) => Action::Mutate(Mutation::Reorder { id, delta: 1 }),
-            None => Action::Note("nothing selected".to_string()),
-        },
-        KeyCode::Char('K') => match sel {
-            Some(id) => Action::Mutate(Mutation::Reorder { id, delta: -1 }),
-            None => Action::Note("nothing selected".to_string()),
-        },
-        KeyCode::Enter => match sel {
+        KeyCode::Char('J') => reorder_action(sel, 1),
+        KeyCode::Char('K') => reorder_action(sel, -1),
+        KeyCode::Enter => match sel.map(|s| s.id) {
             Some(id) => {
                 if state.pane != Pane::Tasks {
                     state.anchor = state.pane;
@@ -828,37 +952,61 @@ pub fn on_key(state: &mut QueueState, view: &View<'_>, key: KeyEvent) -> Action 
         KeyCode::Char('c') => prompt_for(sel, Prompt::Ci),
         KeyCode::Char('E') => prompt_for(sel, Prompt::Estimate),
         KeyCode::Char('P') => match sel {
-            Some(id) if view.tree.is_root(&id) => Action::Prompt(Prompt::Priority(id)),
-            Some(id) => Action::Note(format!(
+            Some(s) if view.tree.is_root(&s.id) => Action::Prompt(Prompt::Priority(s.id)),
+            Some(s) => Action::Note(format!(
                 "{}: !k lives on the root ({}) — §7.1",
-                id,
-                view.tree.root(&id)
+                s.id,
+                view.tree.root(&s.id)
             )),
             None => Action::Note("nothing selected".to_string()),
         },
-        KeyCode::Char('D') => mutate_for(sel, Mutation::Demote),
+        // §6.3: the `# Demoted` row *is* the record of a demotion; demoting it
+        // again would move the live line a second time behind the user's back.
+        KeyCode::Char('D') => match sel {
+            Some(s) if s.demoted => Action::Note(format!(
+                "{} is already demoted ({} # Demoted) — A readopts it",
+                s.id, s.file
+            )),
+            other => mutate_for(other, Mutation::Demote),
+        },
         KeyCode::Char('A') => mutate_for(sel, Mutation::Readopt),
         KeyCode::Char('x') => mutate_for(sel, Mutation::Drop),
         KeyCode::Char('e') => match sel {
-            Some(id) => Action::Edit(id),
+            Some(s) => Action::Edit {
+                id: s.id,
+                file: Some(s.file),
+            },
             None => Action::Note("nothing selected".to_string()),
         },
         _ => Action::Ignored,
     }
 }
 
-/// `Prompt` on the selection, or a refusal.
-fn prompt_for(sel: Option<Id>, f: impl FnOnce(Id) -> Prompt) -> Action {
+/// `J`/`K` on the selection: the reorder names the file the row came from, so
+/// the line that moves is the one under the cursor (§6.3).
+fn reorder_action(sel: Option<Selection>, delta: i32) -> Action {
     match sel {
-        Some(id) => Action::Prompt(f(id)),
+        Some(s) => Action::Mutate(Mutation::Reorder {
+            id: s.id,
+            file: Some(s.file),
+            delta,
+        }),
+        None => Action::Note("nothing selected".to_string()),
+    }
+}
+
+/// `Prompt` on the selection, or a refusal.
+fn prompt_for(sel: Option<Selection>, f: impl FnOnce(Id) -> Prompt) -> Action {
+    match sel {
+        Some(s) => Action::Prompt(f(s.id)),
         None => Action::Note("nothing selected".to_string()),
     }
 }
 
 /// `Mutate` on the selection, or a refusal.
-fn mutate_for(sel: Option<Id>, f: impl FnOnce(Id) -> Mutation) -> Action {
+fn mutate_for(sel: Option<Selection>, f: impl FnOnce(Id) -> Mutation) -> Action {
     match sel {
-        Some(id) => Action::Mutate(f(id)),
+        Some(s) => Action::Mutate(f(s.id)),
         None => Action::Note("nothing selected".to_string()),
     }
 }

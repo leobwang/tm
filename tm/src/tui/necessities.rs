@@ -14,12 +14,14 @@
 //!   `Shape::Interval` lines whose span touches this ISO week (the synced
 //!   `calendar/` file and any exam or meeting written in a week file);
 //!   routine windows from [`recur::week_instances`] over `routines.md`. A cell
-//!   covered by two or more walls is a [`Cell::Conflict`] and renders red
-//!   (§8.2 step 1: "overlapping walls → diagnostics.conflicts").
-//! * [`rows`] / [`Row`] / [`Section`] — the right half, in §12.3's order:
-//!   `Impossible`, `Dated` (by `u`, descending), `Waiting`, `Necessary`
-//!   (today's mandatory window instances, §5.2, and the overdue-`persist`
-//!   items, §5.3 — the two things that must happen today).
+//!   inside the *overlap* of two walls is a [`Cell::Conflict`] and renders red
+//!   (§8.2 step 1: "overlapping walls → diagnostics.conflicts") — two walls in
+//!   the same hour that do not overlap are not a conflict, exactly as in
+//!   `check.rs`'s `wall-conflict` rule.
+//! * [`rows`] / [`Row`] / [`Section`] — the right half, in §12.3's order and
+//!   pairwise disjoint: `Impossible`, `Dated` (by `u`, descending), `Waiting`,
+//!   `Necessary` (today's mandatory window instances, §5.2, and the
+//!   overdue-`persist` items, §5.3 — the two things that must happen today).
 //! * [`NecessitiesState`] — the cursor; [`render`] and [`on_key`] are the two
 //!   functions `tui/mod.rs` dispatches to, exactly as for
 //!   [`crate::tui::queue`].
@@ -27,7 +29,7 @@
 //! `k` (skip an instance) is §12.6's key for this screen, so the cursor moves
 //! on `↑`/`↓` (and `j`, which the keymap leaves free) rather than on `j`/`k`.
 
-use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -85,9 +87,9 @@ impl Cell {
     }
 }
 
-/// The first hour the grid shows.
+/// The first hour the grid shows when nothing is scheduled outside it.
 pub const FIRST_HOUR: u32 = 6;
-/// One past the last hour the grid shows.
+/// One past the last hour the grid shows when nothing is scheduled outside it.
 pub const LAST_HOUR: u32 = 24;
 
 /// Windows wider than this are placement freedom, not a constraint, and are
@@ -99,17 +101,32 @@ pub const GRID_WIDTH: u16 = 3 + 7 * 4 + 2;
 
 /// This week's walls and routine windows, one column per day.
 ///
-/// Rows are the hours `FIRST_HOUR..LAST_HOUR` (the night is not drawn: the
-/// `sleep` window would otherwise fill every column). An overnight window
-/// therefore shows only its evening half.
+/// Rows run from [`Grid::first_hour`] to [`Grid::last_hour`]. That band starts
+/// at `FIRST_HOUR..LAST_HOUR` — the night is not drawn by default, because the
+/// `sleep` window would otherwise fill every column — and then *grows* to cover
+/// every wall of the week, so a 03:00 red-eye and the far half of an overnight
+/// `at:` interval are both on screen (§12.3 is the screen that exists to show
+/// walls). Routine *windows* stay clamped to `FIRST_HOUR..LAST_HOUR`, so
+/// opening a night row for a wall does not drag `sleep` in with it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Grid {
     /// Monday..Sunday of the ISO week.
     pub days: [NaiveDate; 7],
-    /// `cells[hour - FIRST_HOUR][weekday]`.
+    /// The first hour drawn (`FIRST_HOUR` unless a wall starts earlier).
+    pub first_hour: u32,
+    /// One past the last hour drawn (`LAST_HOUR` unless a wall ends later).
+    pub last_hour: u32,
+    /// `cells[hour - first_hour][weekday]`.
     pub cells: Vec<[Cell; 7]>,
     /// The pairs of walls that overlap (§8.2 step 1).
     pub conflicts: Vec<(Id, Id)>,
+}
+
+impl Grid {
+    /// How many hour rows the grid has.
+    pub fn rows(&self) -> usize {
+        self.cells.len()
+    }
 }
 
 /// Build the §12.3 grid for the week `view.today` falls in.
@@ -119,37 +136,6 @@ pub fn grid(view: &View<'_>) -> Grid {
     let mut days = [monday; 7];
     for (i, d) in days.iter_mut().enumerate() {
         *d = monday + Duration::days(i as i64);
-    }
-    let rows = (LAST_HOUR - FIRST_HOUR) as usize;
-    let mut walls_at = vec![[0u8; 7]; rows];
-    let mut cells = vec![[Cell::Free; 7]; rows];
-
-    // Routine windows first, so a wall drawn over one wins.
-    let routines: Vec<&tm_core::model::Item> = view
-        .tree
-        .routine_ids()
-        .iter()
-        .filter_map(|id| view.tree.get(id))
-        .collect();
-    let now_naive = view.now.naive_local();
-    for (inst, _) in recur::week_instances(
-        routines,
-        week,
-        view.today,
-        now_naive,
-        view.replay,
-        view.cfg,
-    ) {
-        let Some((from, to)) = inst.window else {
-            continue;
-        };
-        // A window wider than half a day is "any time this week" (§5.1: an
-        // `every:week` instance spans Mon..Sun) and says nothing about *when*;
-        // drawing it would grey out the whole grid.
-        if (to - from) > Duration::hours(MAX_WINDOW_HOURS) {
-            continue;
-        }
-        paint(&mut cells, &days, from, to, Cell::Window, None);
     }
 
     // Walls: every open `at:` interval touching the week, with its `buffer:`
@@ -178,59 +164,138 @@ pub fn grid(view: &View<'_>) -> Grid {
         walls.push((Tree::key_of(item), from, end));
     }
     walls.sort_by_key(|(_, s, _)| *s);
+
+    // The band: the default working hours, widened to hold every wall.
+    let (mut first, mut last) = (FIRST_HOUR, LAST_HOUR);
+    for (_, start, end) in &walls {
+        // A wall may run into the days on either side of the week; only the
+        // part that falls inside a drawn column can widen the band.
+        for day in &days {
+            let (a, b) = clip_to_day(*start, *end, *day);
+            if a >= b {
+                continue;
+            }
+            first = first.min(a.time().hour());
+            // `b` is exclusive: an interval ending at 11:00 fills the 10 row.
+            let end_hour = (b - Duration::minutes(1)).time().hour();
+            last = last.max(end_hour + 1);
+        }
+    }
+    let rows = (last - first) as usize;
+    let mut cells = vec![[Cell::Free; 7]; rows];
+    let band = Band {
+        first_hour: first,
+        last_hour: last,
+    };
+
+    // Routine windows first, so a wall drawn over one wins.
+    let routines: Vec<&tm_core::model::Item> = view
+        .tree
+        .routine_ids()
+        .iter()
+        .filter_map(|id| view.tree.get(id))
+        .collect();
+    let now_naive = view.now.naive_local();
+    for (inst, _) in recur::week_instances(
+        routines,
+        week,
+        view.today,
+        now_naive,
+        view.replay,
+        view.cfg,
+    ) {
+        let Some((from, to)) = inst.window else {
+            continue;
+        };
+        // A window wider than half a day is "any time this week" (§5.1: an
+        // `every:week` instance spans Mon..Sun) and says nothing about *when*;
+        // drawing it would grey out the whole grid.
+        if (to - from) > Duration::hours(MAX_WINDOW_HOURS) {
+            continue;
+        }
+        paint(&mut cells, &band, &days, from, to, Cell::Window, FIRST_HOUR..LAST_HOUR);
+    }
+
     for (_, start, end) in &walls {
         paint(
             &mut cells,
+            &band,
             &days,
             *start,
             *end,
             Cell::Wall,
-            Some(&mut walls_at),
+            first..last,
         );
     }
-    for (r, row) in walls_at.iter().enumerate() {
-        for (c, n) in row.iter().enumerate() {
-            if *n > 1 {
-                cells[r][c] = Cell::Conflict;
-            }
-        }
-    }
 
+    // §12.3's red is "these two walls collide", which is `check.rs`'s
+    // `wall-conflict` rule — a pairwise *overlap*, not two walls that happen
+    // to touch the same hour. So the conflict cells are painted from the
+    // overlapping spans themselves; counting how often a cell was touched
+    // would redden a 10:00–10:20 stand-up next to a 10:40–11:00 sync.
     let mut conflicts = Vec::new();
     for (i, (a, sa, ea)) in walls.iter().enumerate() {
         for (b, sb, eb) in walls.iter().skip(i + 1) {
             if sa < eb && sb < ea {
                 conflicts.push((a.clone(), b.clone()));
+                paint(
+                    &mut cells,
+                    &band,
+                    &days,
+                    *sa.max(sb),
+                    *ea.min(eb),
+                    Cell::Conflict,
+                    first..last,
+                );
             }
         }
     }
 
     Grid {
         days,
+        first_hour: first,
+        last_hour: last,
         cells,
         conflicts,
     }
 }
 
-/// Fill every grid cell the span `[from, to)` touches.
+/// The hour band the grid rows cover.
+struct Band {
+    first_hour: u32,
+    last_hour: u32,
+}
+
+/// The part of `[from, to)` that falls on `day`, as a half-open span.
+fn clip_to_day(
+    from: NaiveDateTime,
+    to: NaiveDateTime,
+    day: NaiveDate,
+) -> (NaiveDateTime, NaiveDateTime) {
+    let start = day.and_time(NaiveTime::MIN);
+    let end = start + Duration::days(1);
+    (from.max(start), to.min(end))
+}
+
+/// Fill every grid cell the span `[from, to)` touches, within `hours`.
 fn paint(
     cells: &mut [[Cell; 7]],
+    band: &Band,
     days: &[NaiveDate; 7],
     from: NaiveDateTime,
     to: NaiveDateTime,
     kind: Cell,
-    mut count: Option<&mut Vec<[u8; 7]>>,
+    hours: std::ops::Range<u32>,
 ) {
     for (col, day) in days.iter().enumerate() {
-        for hour in FIRST_HOUR..LAST_HOUR {
+        for hour in band.first_hour..band.last_hour {
+            if !hours.contains(&hour) {
+                continue;
+            }
             let start = day.and_time(NaiveTime::from_hms_opt(hour, 0, 0).expect("hour"));
             let end = start + Duration::hours(1);
             if from < end && start < to {
-                let row = (hour - FIRST_HOUR) as usize;
-                cells[row][col] = kind;
-                if let Some(c) = count.as_deref_mut() {
-                    c[row][col] = c[row][col].saturating_add(1);
-                }
+                cells[(hour - band.first_hour) as usize][col] = kind;
             }
         }
     }
@@ -292,6 +357,12 @@ pub struct Row {
 }
 
 /// The right half's rows, in §12.3's order.
+///
+/// The four sections are disjoint: every item appears in exactly one of them.
+/// In particular an overdue-`persist` item is *only* under "Necessary today" —
+/// its deadline is behind it, so it has no honest `u`, capacity or shortfall to
+/// show in the dated list, and priority.rs draws the same line (`deadline_health`
+/// counts a past-due item as overdue and never as IMPOSSIBLE).
 pub fn rows(view: &View<'_>) -> Vec<Row> {
     let bm = view.block_min();
     let mut out: Vec<Row> = Vec::new();
@@ -312,7 +383,20 @@ pub fn rows(view: &View<'_>) -> Vec<Row> {
         if cand.instance.is_some() {
             continue;
         }
-        let impossible = prio.shortfall_min > 0 || prio.class == PrioClass::Impossible;
+        // §12.3's last group. An overdue item's `u` is ∞ and its "capacity by
+        // <deadline>" is a statement about a date in the past, which neither
+        // of §7.3's two exits can act on.
+        if cand.overdue {
+            continue;
+        }
+        // §5.1: a `[?]` item takes no slot; §12.3 gives it its own list.
+        if cand.waiting {
+            continue;
+        }
+        // §7.3's verdict, read the way priority.rs defines it (`u ≥ 1` *and*
+        // `need > avail`) rather than off the class, which names the more
+        // specific fact first for a `hot`-flagged or mandatory item.
+        let impossible = prio.is_impossible();
         let detail = if impossible {
             format!(
                 "needs {}, {} available by {}",
@@ -403,9 +487,28 @@ pub fn rows(view: &View<'_>) -> Vec<Row> {
         if !cand.mandatory && !cand.overdue {
             continue;
         }
+        // §5.1: a `[?]` item never takes a slot, so it is never "necessary
+        // today"; it is listed above, under Waiting.
+        if cand.waiting {
+            continue;
+        }
+        // One row per line: a candidate already listed above (an item can be
+        // both dated and mandatory) is not repeated here.
+        if out
+            .iter()
+            .any(|r| r.id == cand.id && r.instance == cand.instance)
+        {
+            continue;
+        }
         let mut detail = Vec::new();
         if cand.overdue {
-            detail.push("overdue".to_string());
+            // A §5.3 overdue-`persist` item names the deadline it missed —
+            // this is the only place it is listed, so the date has to be here.
+            // An instance already prints its window, so it stays terse.
+            detail.push(match (cand.instance, cand.effective_due) {
+                (None, Some(d)) => format!("overdue since {}", short_date(d.date_naive())),
+                _ => "overdue".to_string(),
+            });
         }
         if cand.mandatory {
             detail.push("mandatory".to_string());
@@ -526,7 +629,12 @@ pub fn on_key(state: &mut NecessitiesState, view: &View<'_>, key: KeyEvent) -> A
             None => Action::Note("nothing selected".to_string()),
         },
         KeyCode::Char('e') => match sel {
-            Some(r) => Action::Edit(r.id),
+            // Every row here is a live line addressed by its key, so the
+            // editor opens the tree's primary copy.
+            Some(r) => Action::Edit {
+                id: r.id,
+                file: None,
+            },
             None => Action::Note("nothing selected".to_string()),
         },
         KeyCode::Char('t') => match sel {
@@ -568,9 +676,20 @@ pub fn render(state: &NecessitiesState, view: &View<'_>, frame: &mut Frame, area
         .constraints([Constraint::Min(3), Constraint::Length(1)])
         .split(area);
     let halves = if narrow {
+        // Stacked (§12: "below that, panes stack"). The grid asks for the
+        // height its hours need and gets at most half the screen — the old
+        // fixed 9 rows dropped every wall after 11:00 with nothing to say so,
+        // and taking the whole height would starve the list instead. What does
+        // not fit is reported by both halves rather than silently cut.
+        let g = grid(view);
+        let natural = g.rows() as u16 + 3;
+        let available = outer[0].height;
+        let height = natural
+            .min((available / 2).max(MIN_GRID_HEIGHT))
+            .clamp(1, available);
         Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(9), Constraint::Min(4)])
+            .constraints([Constraint::Length(height), Constraint::Min(0)])
             .split(outer[0])
     } else {
         Layout::default()
@@ -589,8 +708,15 @@ pub fn render(state: &NecessitiesState, view: &View<'_>, frame: &mut Frame, area
     );
 }
 
+/// The height the grid keeps for itself in the stacked layout, even when the
+/// list below would like all of it.
+const MIN_GRID_HEIGHT: u16 = 5;
+
 /// The left half. The grid is a fixed 7 × 3 columns wide, so a stacked
 /// (narrow) layout does not stretch it across the terminal.
+///
+/// When the area is too short for every hour, the last line says how many rows
+/// were dropped rather than ending the grid silently at whatever hour fitted.
 fn render_grid(view: &View<'_>, frame: &mut Frame, area: Rect) {
     let area = Rect {
         width: area.width.min(GRID_WIDTH),
@@ -615,12 +741,16 @@ fn render_grid(view: &View<'_>, frame: &mut Frame, area: Rect) {
         header,
         Style::default().fg(Color::DarkGray),
     )));
-    let rows_available = inner.height as usize - 1;
-    for (r, row) in g.cells.iter().enumerate() {
-        if lines.len() > rows_available {
-            break;
-        }
-        let hour = FIRST_HOUR + r as u32;
+    // The header eats one line; a "… N more" marker eats one more, but only
+    // when there is something to say.
+    let body = inner.height as usize - 1;
+    let shown = if g.rows() <= body {
+        g.rows()
+    } else {
+        body.saturating_sub(1)
+    };
+    for (r, row) in g.cells.iter().take(shown).enumerate() {
+        let hour = g.first_hour + r as u32;
         let mut spans = vec![Span::styled(
             format!("{hour:02} "),
             Style::default().fg(Color::DarkGray),
@@ -630,6 +760,12 @@ fn render_grid(view: &View<'_>, frame: &mut Frame, area: Rect) {
             spans.push(Span::raw(" "));
         }
         lines.push(Line::from(spans));
+    }
+    if shown < g.rows() {
+        lines.push(Line::from(Span::styled(
+            format!("…  {} more hours to {:02}:00", g.rows() - shown, g.last_hour),
+            Style::default().fg(Color::Yellow),
+        )));
     }
     frame.render_widget(Paragraph::new(lines), inner);
 }
@@ -647,16 +783,24 @@ fn weekday3(d: &NaiveDate) -> &'static str {
     }
 }
 
-/// The right half.
+/// The right half. The title carries the count of rows the pane could not fit,
+/// so a short (stacked) layout never hides a deadline in silence.
 fn render_rows(state: &NecessitiesState, view: &View<'_>, frame: &mut Frame, area: Rect) {
     let all = rows(view);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(" Deadlines · waiting · necessary ")
-        .border_style(Style::default().fg(Color::White));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-    if inner.height == 0 {
+    let inner = Rect {
+        x: area.x + 1,
+        y: area.y + 1,
+        width: area.width.saturating_sub(2),
+        height: area.height.saturating_sub(2),
+    };
+    if inner.height == 0 || inner.width == 0 {
+        frame.render_widget(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Deadlines · waiting · necessary ")
+                .border_style(Style::default().fg(Color::White)),
+            area,
+        );
         return;
     }
     let w = inner.width as usize;
@@ -697,6 +841,19 @@ fn render_rows(state: &NecessitiesState, view: &View<'_>, frame: &mut Frame, are
         Some(p) if p >= h => p + 1 - h,
         _ => 0,
     };
+    let hidden = display.len().saturating_sub(h);
+    let title = if hidden == 0 {
+        " Deadlines · waiting · necessary ".to_string()
+    } else {
+        format!(" Deadlines · waiting · necessary · {hidden} more ↓ ")
+    };
+    frame.render_widget(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(title)
+            .border_style(Style::default().fg(Color::White)),
+        area,
+    );
     let lines: Vec<Line<'static>> = display
         .into_iter()
         .skip(offset)

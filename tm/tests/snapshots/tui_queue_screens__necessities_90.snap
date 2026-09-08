@@ -10,6 +10,10 @@ expression: out
 │09                     ███     │
 │10                     ███     │
 │11 ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ │
+│12 ███ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ │
+│13 ███ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ │
+│14                             │
+│…  9 more hours to 24:00       │
 └───────────────────────────────┘
 ┌ Deadlines · waiting · necessary ───────────────────────────────────────────────────────┐
 │──── Dated ─────────────────────────────────────────────────────────────────────────────│
@@ -24,9 +28,5 @@ expression: out
 │! dinner  dinner                       need 30m  p0  mandatory · window closes Mon 19:30│
 │! workout workout                       need 1b  p0  mandatory · window closes Mon 19:00│
 │! laundry laundry            need 30m  p0  overdue · mandatory · window closes Sun 21:00│
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
 └────────────────────────────────────────────────────────────────────────────────────────┘
  ↑/↓ move · E estimate · e edit · t event arrived · k skip instance · 1-5 screens

@@ -105,11 +105,17 @@ fn queue_e_resolves_the_editor_command() {
     let view = w.view();
     let mut state = queue::QueueState::new();
     let action = queue::on_key(&mut state, &view, key('e'));
-    let queue::Action::Edit(id) = action else {
+    let queue::Action::Edit { id, file } = action else {
         panic!("expected Edit");
     };
+    assert_eq!(file.as_deref(), Some("week/2026-W37.md"));
     assert_eq!(
-        queue::edit_command(view.cfg, view.tree, &id).as_deref(),
+        queue::edit_command(view.cfg, view.tree, &id, file.as_deref()).as_deref(),
+        Some("code -g week/2026-W37.md:8")
+    );
+    // A file that holds no copy of the id falls back to the primary line.
+    assert_eq!(
+        queue::edit_command(view.cfg, view.tree, &id, Some("backlog.md")).as_deref(),
         Some("code -g week/2026-W37.md:8")
     );
 }

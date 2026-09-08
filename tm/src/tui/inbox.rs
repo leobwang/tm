@@ -26,7 +26,14 @@
 //! * [`Target`] / [`targets`] — the ring `Tab` cycles: this week's
 //!   `# Milestones` and `# Tasks`, `backlog.md`, today's `# Pinned`, and
 //!   `inbox.md`. The `inbox.md` target keeps the text verbatim (§2: "capture,
-//!   untriaged (bare lines)"), which is what `tm add --to inbox.md` does too.
+//!   untriaged (bare lines)"), which is what `tm add --to inbox.md` does too —
+//!   and it is never the *automatic* target of a line that came from
+//!   `inbox.md`, because triage is meant to get the line out of there.
+//! * [`Capture::problem`] is what `tm add` would refuse (a line that does not
+//!   parse, an `^id` that is taken); [`Capture::warning`] is what `tm check`
+//!   would then complain about (a `@parent` or `after:^id` that names
+//!   nothing). The first blocks `Enter`, the second only colours the preview —
+//!   which is exactly what `tm add` does with the same input.
 //!
 //! Below the box, [`inbox_lines`] lists `inbox.md` with the same preview per
 //! line; `t` loads one into the capture line, `x` drops it, and `C` prints the
@@ -111,20 +118,34 @@ pub fn targets(view: &View<'_>) -> Vec<Target> {
     ]
 }
 
+/// Index of `inbox.md` in [`targets`].
+const INBOX_TARGET: usize = 4;
+/// Index of `backlog.md` in [`targets`].
+const BACKLOG_TARGET: usize = 2;
+
 /// Which target a capture goes to when the user has not pressed `Tab`.
 ///
 /// A dated line is a milestone (§4.3: `^d1` lives in the week file with its
 /// `due:`), a line with a `@parent` is a task under it, and anything else is
-/// untriaged capture.
-fn default_target(parsed: &Normalized) -> usize {
+/// untriaged capture — `inbox.md`.
+///
+/// `from_inbox` is the `t` (triage a line) path, and there the last case is
+/// *not* `inbox.md`: triage is "get this line out of the inbox", so re-adding
+/// it to the file it came from would be a drop-and-re-add that leaves the
+/// screen exactly as it was. An undated, unparented line's home is
+/// `backlog.md` (§2: not scheduled), and `Tab` still reaches every other
+/// target.
+fn default_target(parsed: &Normalized, from_inbox: bool) -> usize {
     if parsed.tokens.iter().any(|t| {
         t.starts_with("due:") || t.starts_with("at:") || t.starts_with("win:")
     }) {
         0
     } else if parsed.tokens.iter().any(|t| t.starts_with('@')) {
         1
+    } else if from_inbox {
+        BACKLOG_TARGET
     } else {
-        4
+        INBOX_TARGET
     }
 }
 
@@ -167,6 +188,14 @@ pub struct Normalized {
 /// weekday ("Sat prep", "buy 2h of parking") loses them to the estimate and the
 /// due date. The preview is there to show that immediately, and writing the
 /// §4.1 token out (`due:2026-09-12`) always wins over the guess.
+///
+/// Rule 3 never guesses. Its values must *validate*, and the two keywords whose
+/// value space is "any word" are deliberately narrow: `after` takes only an
+/// explicit `^id` or `event:<name>` (so "call mom after lunch" stays a title
+/// and does not become `after:^lunch`, which §5.5 would make permanently
+/// ineligible and `tm check` would call `dangling-dep`), and `loc` only the
+/// §4.1 location words. A location of your own is written out — `loc:cafe` —
+/// and rule 1 passes it through.
 pub fn normalize(input: &str, cfg: &Config, today: NaiveDate) -> Normalized {
     let block_min = cfg.block_min();
     let mut out = Normalized::default();
@@ -309,11 +338,24 @@ fn keyword(word: &str, next: &str, cfg: &Config, today: NaiveDate) -> Option<Key
         "at" => model::parse_interval(next)
             .ok()
             .map(|_| Keyword::Token(format!("at:{next}"))),
+        // Only an explicit reference: a bare word after "after" is prose
+        // ("call mom after lunch"), and turning it into `after:^lunch` would
+        // write a §5.5 dependency on an item that does not exist.
         "after" => Dep::parse_list(next)
             .ok()
             .filter(|d| !d.is_empty())
+            .filter(|_| {
+                next.split(',')
+                    .all(|p| {
+                        let p = p.trim();
+                        p.starts_with('^') || p.starts_with("event:")
+                    })
+            })
             .map(|_| Keyword::Token(format!("after:{next}"))),
-        "loc" => Some(Keyword::Token(format!("loc:{next}"))),
+        // Only §4.1's own location words; `loc:cafe` is written out and rule 1
+        // passes it through untouched.
+        "loc" => matches!(next.to_ascii_lowercase().as_str(), "any" | "lounge" | "home" | "out")
+            .then(|| Keyword::Token(format!("loc:{}", next.to_ascii_lowercase()))),
         _ => None,
     }
 }
@@ -365,8 +407,14 @@ pub struct Capture {
     pub target: Target,
     /// Which entry of [`targets`] that is.
     pub target_index: usize,
-    /// Why it cannot be saved, when it cannot.
+    /// Why it cannot be saved, when it cannot — the same refusals `tm add`
+    /// makes (a line that does not parse, an `^id` that is already taken).
     pub problem: Option<String>,
+    /// A `tm check` problem the line *would* create once saved: a dependency
+    /// or a `@parent` that names nothing (§5.5, §6.1). `tm add` writes such a
+    /// line, so the capture does too — but it says so instead of showing a
+    /// clean green parse.
+    pub warning: Option<String>,
 }
 
 /// Parse the capture line for a target (`None` = the automatic one).
@@ -374,10 +422,23 @@ pub struct Capture {
 /// The returned [`Capture::line`] is what `tm add "<line>" --to <file>` writes,
 /// modulo the `^id` the CLI appends.
 pub fn capture(input: &str, view: &View<'_>, target: Option<usize>) -> Capture {
+    capture_from(input, view, target, false)
+}
+
+/// The same, saying whether the text came from `inbox.md` (the `t` key).
+///
+/// A triaged line's automatic target is never `inbox.md` — see
+/// [`default_target`].
+pub fn capture_from(
+    input: &str,
+    view: &View<'_>,
+    target: Option<usize>,
+    from_inbox: bool,
+) -> Capture {
     let raw = input.trim().to_string();
     let parsed = normalize(&raw, view.cfg, view.today);
     let ring = targets(view);
-    let idx = target.unwrap_or_else(|| default_target(&parsed)) % ring.len();
+    let idx = target.unwrap_or_else(|| default_target(&parsed, from_inbox)) % ring.len();
     let target = ring[idx].clone();
     if raw.is_empty() {
         return Capture {
@@ -386,6 +447,7 @@ pub fn capture(input: &str, view: &View<'_>, target: Option<usize>) -> Capture {
             target,
             target_index: idx,
             problem: Some("type to capture".to_string()),
+            warning: None,
         };
     }
     // §2: `inbox.md` holds bare lines, so capture into it keeps the words.
@@ -401,15 +463,17 @@ pub fn capture(input: &str, view: &View<'_>, target: Option<usize>) -> Capture {
             target,
             target_index: idx,
             problem: None,
+            warning: None,
         };
     }
-    match build(&parsed, &target, view.cfg) {
-        Ok(line) => Capture {
+    match build(&parsed, &target, view) {
+        Ok((line, warning)) => Capture {
             raw,
             line,
             target,
             target_index: idx,
             problem: None,
+            warning,
         },
         Err(e) => Capture {
             raw,
@@ -417,12 +481,17 @@ pub fn capture(input: &str, view: &View<'_>, target: Option<usize>) -> Capture {
             target,
             target_index: idx,
             problem: Some(e),
+            warning: None,
         },
     }
 }
 
-/// Assemble and canonicalise the §4.1 line.
-fn build(parsed: &Normalized, target: &Target, cfg: &Config) -> Result<String, String> {
+/// Assemble and canonicalise the §4.1 line, and check it against the tree.
+fn build(
+    parsed: &Normalized,
+    target: &Target,
+    view: &View<'_>,
+) -> Result<(String, Option<String>), String> {
     if let Some(p) = &parsed.problem {
         return Err(p.clone());
     }
@@ -439,19 +508,53 @@ fn build(parsed: &Normalized, target: &Target, cfg: &Config) -> Result<String, S
     let horizon = Horizon::from_path(&target.file).unwrap_or(Horizon::Backlog);
     let ctx = ParseCtx {
         horizon,
-        ..ParseCtx::new(&target.file, cfg.block_min())
+        ..ParseCtx::new(&target.file, view.cfg.block_min())
     };
     let item = grammar::parse_line(&text, &ctx).map_err(|e| e.to_string())?;
     if !item.problems.is_empty() {
         return Err(item.problems.join("; "));
     }
-    grammar::format_item_line(&item).map_err(|e| e.to_string())
+    // §4.1: ids are global across the tree, and `tm add` refuses a line whose
+    // `^id` is taken (exit 1) rather than writing a `tm check` duplicate. The
+    // preview has to refuse it too, or it promises a save that cannot happen.
+    if item.has_id() && view.files.ids().contains(item.id.as_str()) {
+        return Err(format!(
+            "{} is already used{} — drop the `^id` and one will be assigned",
+            item.id.token(),
+            view.files
+                .file_of(&item.id)
+                .map(|f| format!(" in {f}"))
+                .unwrap_or_default()
+        ));
+    }
+    Ok((grammar::format_item_line(&item).map_err(|e| e.to_string())?, dangling(&item, view)))
+}
+
+/// The `tm check` problem the line would create: a `@parent` or an `after:^id`
+/// that names nothing in the tree (§5.5, §6.1). `tm add` writes the line
+/// anyway, so this is a warning, not a refusal.
+fn dangling(item: &model::Item, view: &View<'_>) -> Option<String> {
+    if let Some(p) = &item.parent {
+        let id = p.to_id();
+        if !view.tree.contains(&id) {
+            return Some(format!("parent {} does not exist", p.token()));
+        }
+    }
+    for dep in &item.after {
+        if let Dep::Item(id) = dep {
+            if !view.tree.contains(id) {
+                return Some(format!("dependency after:{} does not exist", id.token()));
+            }
+        }
+    }
+    None
 }
 
 /// §12.5's `parsed …  → <file> #<section>` line.
 pub fn preview_text(cap: &Capture) -> String {
-    match &cap.problem {
-        Some(p) if cap.line.is_empty() => format!("parsed  ! {p}"),
+    match (&cap.problem, &cap.warning) {
+        (Some(p), _) if cap.line.is_empty() => format!("parsed  ! {p}"),
+        (_, Some(w)) => format!("parsed  {}  → {}  ⚠ {w}", cap.line, cap.target),
         _ => format!("parsed  {}  → {}", cap.line, cap.target),
     }
 }
@@ -471,12 +574,19 @@ pub struct InboxLine {
     pub parsed: String,
     /// Why it does not parse, when it does not.
     pub problem: Option<String>,
+    /// Where `t` would send it (§12.5: the target the capture box opens on).
+    pub target: Target,
 }
 
 /// `inbox.md`'s capture lines with their previews (§12.5, `tm triage`).
 ///
 /// Headings, blank lines and the guidance `tm init` writes inside one HTML
-/// comment are skipped, exactly as `tm triage` skips them.
+/// comment are skipped, exactly as `tm triage` skips them, and the line numbers
+/// are `tm triage`'s. The `parsed` column is *this screen's* preview — what
+/// `t` then `Enter` would write, natural-language guesses and all — which is
+/// strictly more than `tm triage`'s plain §4.1 re-parse: the two agree on every
+/// line [`normalize`] recognises nothing in, and differ exactly where the
+/// shorthands of §12.5's own example fire.
 pub fn inbox_lines(view: &View<'_>) -> Vec<InboxLine> {
     let Some(file) = view.files.file("inbox.md") else {
         return Vec::new();
@@ -498,12 +608,13 @@ pub fn inbox_lines(view: &View<'_>) -> Vec<InboxLine> {
             continue;
         }
         let raw = trimmed.strip_prefix("- ").unwrap_or(trimmed).to_string();
-        let cap = capture(&raw, view, None);
+        let cap = capture_from(&raw, view, None, true);
         out.push(InboxLine {
             line: line.number,
             raw,
             parsed: cap.line,
             problem: cap.problem,
+            target: cap.target,
         });
     }
     out
@@ -538,7 +649,7 @@ impl CaptureState {
 
     /// The current parse of the capture line.
     pub fn capture(&self, view: &View<'_>) -> Capture {
-        capture(&self.buffer, view, self.target)
+        capture_from(&self.buffer, view, self.target, self.triaging.is_some())
     }
 }
 
@@ -627,11 +738,17 @@ fn editing_key(state: &mut CaptureState, view: &View<'_>, key: KeyEvent) -> Acti
             match cap.problem {
                 Some(p) => Action::Note(p),
                 None => {
+                    // `from_inbox` tells the shell to drop that line once the
+                    // add lands. It is a line *number*, taken before the add,
+                    // so it must not be sent when the add writes to `inbox.md`
+                    // itself: the insert would shift it and the drop would
+                    // delete a different line.
+                    let same_file = cap.target.file == "inbox.md";
                     let m = Mutation::Capture {
                         text: cap.line,
                         file: cap.target.file,
                         section: cap.target.section,
-                        from_inbox: state.triaging,
+                        from_inbox: state.triaging.filter(|_| !same_file),
                     };
                     state.editing = false;
                     state.buffer.clear();
@@ -708,10 +825,11 @@ fn render_capture(state: &CaptureState, view: &View<'_>, frame: &mut Frame, area
     let preview = preview_text(&cap);
     lines.push(Line::from(Span::styled(
         truncate(&format!("  {preview}"), w),
-        match (&cap.problem, cap.raw.is_empty()) {
-            (_, true) => Style::default().fg(Color::DarkGray),
-            (Some(_), _) => Style::default().fg(Color::Red),
-            (None, _) => Style::default().fg(Color::Green),
+        match (&cap.problem, &cap.warning, cap.raw.is_empty()) {
+            (_, _, true) => Style::default().fg(Color::DarkGray),
+            (Some(_), _, _) => Style::default().fg(Color::Red),
+            (None, Some(_), _) => Style::default().fg(Color::Yellow),
+            (None, None, _) => Style::default().fg(Color::Green),
         },
     )));
     let hint = state.note.clone().unwrap_or_else(|| {
