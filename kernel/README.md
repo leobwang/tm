@@ -16,7 +16,7 @@ kernel/
     TmKernel/Plan.lean       the plan as one object; the invariant, globally
     TmKernel/Cmd.lean        five commands, each with its law proved or refuted
     TmKernel/Boundary.lean   String -> String; one @[export]
-    Check.lean               axiom audit (120 theorems)
+    Check.lean               axiom audit, one line per theorem
     Negative.lean            MUST FAIL to compile — the demonstration
   tm-kernel-ffi/       Rust: the C shim, build.rs, and 21 tests that call Lean
   check.sh             stage-one acceptance
@@ -85,7 +85,10 @@ remove:
   about the glyph the *parser returned*, and the pipeline throws that glyph away
   and asks `glyphAt` for a new one. `load_render_line` and
   `paired_renders_each_placement` are stated about the entity the loader builds,
-  which is what the FFI renders from;
+  which is what the FFI renders from, and
+  `the_kernel_reads_back_what_it_writes` now covers the whole document: read a
+  request, file its lines under their ids, render every document back, and the
+  bytes are the bytes that came in;
 - `move` to a document index that does not exist **deleted the item and returned
   `ok`** — the same missing precondition, moved from "the destination already
   holds this id" to "the destination is not a file". A destination is now a
@@ -164,18 +167,29 @@ but is expected to have type
 in the application
   (statusOfGlyph q.glyph).get ⋯
 
-Negative.lean:68:47: error: Application type mismatch: The argument
+Negative.lean:71:51: error: Application type mismatch: The argument
   rfl
 has type
-  ?m.8 = ?m.8
+  ?m.11 = ?m.11
 but is expected to have type
-  demotionsOriented { docs := planDocs, store := store } = true
+  itemsWf { docs := planDocs, store := store } = true
 in the application
-  planWf_of_parts h1 h2 h3 rfl
+  planWf_of_parts h1 h2 h3 ?m.9 rfl
+
+Negative.lean:251:2: error: Type mismatch
+  sorted_ext_by_key fun x => x.fst
+has type
+  ∀ (l₁ l₂ : List (Nat × List Char)),
+    List.Pairwise (fun a b => a.fst < b.fst) l₁ → …
+but is expected to have type
+  ∀ (l₁ l₂ : List (Nat × List Char)),
+    List.Pairwise (fun a b => a.fst ≤ b.fst) l₁ → …
+                     -- `<` is not `≤`: rank distinctness is what the plan-level
+                     -- round trip needs, and this is the type error that says so
 EXIT=1
 ```
 
-Fourteen cheats, fourteen compile errors:
+Every cheat, one compile error:
 
 | cheat | what it is | why it fails |
 |---|---|---|
@@ -203,14 +217,20 @@ Fourteen cheats, fourteen compile errors:
 | 24 | declare `horizon.rs:1543`'s "month of today" stable | the same week files into August or September depending on the day you run it |
 | 25 | drop the century rule and keep "every fourth year" | refuted by computation at y = 100 |
 | 26 | get the phase of the seven-day cycle wrong by one | the three weekday cross-checks exist for this and they fire |
+| 27 | "the store hands its lines back in rank order, so the sort is a formality" | `decide` refutes it on a two-element list; the store enumerates its domain, not the file |
+| 28 | drop rank distinctness from the round trip and keep the conclusion | `sorted_ext_by_key` needs a **strict** order; with `≤`, two lines at one rank are two files with the same members |
+| 29 | read a file back without asking whether ranks are distinct | `renderDocAt_loadCore` takes `normalized`; without it, which of two lines at one rank comes first depends on the order the host listed its documents |
+| 30 | relocate to rank 0 rather than `freshRank` | `move_at_freshRank_normalized` is about `freshRank` and nothing else; rank 0 is exactly the collision `Normalized` forbids |
+| 31 | check a rank is free by looking only at the item lines | a document's ranks are its prose ranks **and** its item ranks in one list (`weave` orders them against each other), so `SitesFree` has two clauses |
 
 ## What is proved
 
-509 theorems across nine modules. `Check.lean`'s axiom audit covers all of them
+Every theorem across nine modules. `Check.lean`'s axiom audit covers all of them
 and shows only `propext` / `Classical.choice` / `Quot.sound`, **never
-`sorryAx`**; three depend on no axioms at all.
+`sorryAx`**; a handful depend on no axioms at all. (`check.sh` prints the count
+it actually audited, so the number is in the run and not in this file.)
 
-The audit covers all 445 of them, across all nine modules.
+The audit covers all of them, across all nine modules.
 
 
 ### The generating structures
@@ -429,6 +449,33 @@ that is *understood* is the state box, the id, and the estimate.
 - `renderSplit_splitDoc` — **round trip over a whole file**: splitting a
   document into prose and items and putting it back reproduces the file
   exactly.
+- `the_kernel_reads_back_what_it_writes` — **round trip over a whole
+  *request*, which is the step that used to be a test.** For every document of
+  every request `loadPlan` accepts, taking the file apart into prose and
+  entities, filing the entities under their ids, and reading them back out
+  through `renderDocAt` reproduces the input lines. The detour that had to be
+  survived is the store: it enumerates its **domain**, not the file, so the
+  lines come back in an order that has nothing to do with the document, and
+  something has to put them in order without *choosing*. Four theorems do it —
+  `loadCore_lines_mem` (the plan's line list is exactly the request's item
+  lines, so the enumeration order drops out), `buildEntity_renders` (the entity
+  an id's lines build renders exactly those lines, which is `load_render_line`
+  and `paired_renders_each_placement` lifted from "the bytes agree" to "the list
+  agrees"), `sortByRank_id`/`sortByRank_strict`, and `sorted_ext_by_key` (a
+  strictly rank-ordered list is determined by its members). **Rank distinctness
+  is what makes the last one available**, which is `Normalized` earning its
+  place in `planWf`.
+- `runPlan_renders_the_input` — the same statement at the exact call site, for
+  every `(document, index)` pair `runPlan` hands to `renderDocAt`, and
+  `loadPlan_docs` says the response has one entry per request document in the
+  request's order. `the_round_trip_is_not_vacuous` decides that a concrete
+  two-document request does load, so the hypothesis is not empty.
+- `a_command_rewrites_only_the_files_it_touches` — and the other leg: a command
+  re-renders every document, so `demote` in `week/` rewrites `month/` and
+  `backlog.md` too. A file neither the old nor the new entity has a line in
+  comes back byte-identical. `lines_set` — the replacement lemma for
+  `PlanCore.lines` under a single-entity update — is what says so, and it is the
+  same lemma `Normalized` preservation needs.
 - `readNat_digitsOf` — the decimal round trip, so a written `est:` value is the
   value that is read back.
 - `view_set_is_not_silent` — the obligation that kills the shipped
@@ -513,7 +560,7 @@ by computation on every command's post-state:
 
 | check | §  | proved |
 |---|---|---|
-| `Normalized` — rank distinctness | 7.4 | `site_names_one_line`: a `(document, rank)` names one line, the positional dual of "an id names one item". `no_prose_line_shares_a_rank`: and no prose entry can shadow an item line in `weave` |
+| `Normalized` — rank distinctness | 7.4 | `site_names_one_line`: a `(document, rank)` names one line, the positional dual of "an id names one item". `no_prose_line_shares_a_rank`: and no prose entry can shadow an item line in `weave`. `normalized_set`: and a command that lands on free sites preserves it — `lines_set` is the replacement lemma it rests on, and `move_at_freshRank_normalized` and its four siblings discharge it for the five commands |
 | `@parent` total | 3.1 | `parent_names_an_item` |
 | `@parent` acyclic | 6.1 | `parentsAcyclic_sound` and `parentsAcyclic_complete`; `every_item_has_a_root`, `no_item_is_its_own_ancestor` |
 | `after:` total | 5.5 | `dep_names_an_item` |
@@ -613,20 +660,55 @@ fn move_into_the_tombstones_file_is_refused() {
 Stated plainly, because a small thing that compiles is worth more than a large
 sketch, and because the gaps are where the next stage's cost lives.
 
-1. **The plan-level round trip is evaluated, not proved — and this is the gap
-   that hid a real bug, so be precise about where it now stops.** Proved:
-   round trips A and B for a line (`serialize_parse`, `parse_serialize`), across
-   an edit (`setEst_line_reparses`), over a whole file's prose/item split
-   (`renderSplit_splitDoc`), and — new, and the direct answer to the `[-]`
-   regression — **through the entity the loader builds**, for a line on its own
-   (`load_render_line`) and for the two-line demotion form
-   (`paired_renders_each_placement`). Not proved: that the *store*, rebuilt from
-   a parse and read back out through `renderDocAt`, reproduces the same
-   per-document line list. That step needs `sortByRank` to be the identity on an
-   already-ordered list plus a permutation argument over the store's domain, and
-   without Mathlib both are real work. It is checked by
-   `the_kernel_reads_back_what_it_writes`, which demotes and then feeds the
-   kernel's own output back in and asserts the bytes are identical.
+1. **The plan-level round trip is proved now — and what is left is the JSON
+   edge, which is gap 6.** Proved: round trips A and B for a line
+   (`serialize_parse`, `parse_serialize`), across an edit
+   (`setEst_line_reparses`), over a whole file's prose/item split
+   (`renderSplit_splitDoc`), through the entity the loader builds
+   (`load_render_line`, `paired_renders_each_placement`), and — this is the step
+   that used to be a test — over a whole **request**: the store, rebuilt from a
+   parse and read back out through `renderDocAt`, reproduces the same
+   per-document line list (`the_kernel_reads_back_what_it_writes`,
+   `runPlan_renders_the_input`). `sortByRank` is the identity on an
+   already-ordered list (`sortByRank_id`), strict on a rank-distinct one
+   (`sortByRank_strict`), and a strictly ordered list is determined by its
+   members (`sorted_ext_by_key`), so the store's enumeration order does not
+   reach the bytes.
+
+   `the_kernel_reads_back_what_it_writes` (the Rust test) is therefore now a
+   consequence rather than the evidence: the test's second call carries no
+   commands, so its output is the round trip of its input, which is the first
+   call's output.
+
+   **What text can still reach the kernel that no theorem covers**, stated
+   exactly:
+
+   * **the JSON/string edge**, both directions. The theorems begin at `ReqDoc`
+     (a `List (List Char)`) and end at `renderDocAt`'s `List (List Char)`.
+     `Json.parse`, `Json.compress`, `String.toList` and `String.ofList` are
+     between that and the wire and none of them is proved here; nor is splitting
+     a file's bytes on newlines and joining them again, which is the host's job.
+     That is gap 6, and it is now the *only* unproved step on the text path. In
+     particular a request line containing a literal newline round trips as one
+     line here and becomes two lines on disk, and nothing in the kernel notices;
+   * **requests the loader rejects.** Every theorem here is conditioned on
+     `loadPlan docs = .ok p`. `badLine`, `dupId`, `splitLine`, `notADemotion`,
+     `orphanDemotion`, `ambiguousDemotion`, `duplicatePath`, `siteOutOfRange`
+     and the seven `itemCheck` faults are covered by their own theorems
+     (`scanLines_prose`, `unordered_horizons_are_rejected`,
+     `a_shapeless_calendar_line_is_rejected`, …) but not by the round trip, which
+     says nothing about them and should not;
+   * **the post-command render, except for the files the command did not
+     touch.** `a_command_rewrites_only_the_files_it_touches` covers the
+     untouched documents; what a `move` or `demote` does to the *destination*
+     file's byte order is not stated beyond "the rank is fresh, so the line goes
+     last". Stability — a command changes as little as possible — is a
+     stage-5 relational law and is not attempted;
+   * **`Normalized` for a loaded plan is still a load-time check.** It is true by
+     construction (`splitDoc` hands each line index to exactly one of prose and
+     items) but it is not proved that way; `loadPlan` runs the decidable check
+     instead, which is the same discipline — and the same recorded gap — as
+     `sitesInRange` and `demotionsOriented` in gap 10.
 
 2. **A lone `[-]` is rejected, not read; and so is a pair the documents do not
    order.** A demotion is two lines — the tombstone and the live line — and an
@@ -723,10 +805,14 @@ sketch, and because the gaps are where the next stage's cost lives.
    not attempted, and the recommendation in the plan stands: keep the existing
    882-line proptest, state the laws in Lean, and prove them last or never.
 
-6. **The line-splitting at the very edge is unverified.** The kernel's document
+6. **The line-splitting at the very edge is unverified**, and since gap 1
+   closed it is the *only* unproved step on the text path. The kernel's document
    round trip is over `List (List Char)`. Splitting a file's bytes on newlines
    and joining them again happens in JSON at the boundary, and
    `String.intercalate "\n" (s.splitOn "\n") = s` is not a core theorem.
+   `Json.parse`/`Json.compress` and `String.toList`/`String.ofList` are in the
+   same position. A request line containing a literal newline round trips as one
+   line inside the kernel and becomes two lines on disk.
 
 7. **`Id` is `List Char`, not §3.1's "4 chars of `[a-z0-9]`".** The spec's own
    §4.3 fixture ships `^O1`, so the tight type would fail the build on day one.
@@ -745,28 +831,50 @@ sketch, and because the gaps are where the next stage's cost lives.
    `toksWf` to allow an empty word in the last position would close it and costs
    a re-proof of `tokenize_toks`.
 
-10. **`sitesInRange` and `demotionsOriented` are checked at load rather than
-    established by construction.** The loader takes document indices from
-    `zipIdx` over the document list, so every site it builds is in range, and it
-    takes each placement's region from the same document it takes the index from,
-    so `orientPair` establishes the orientation for every entity it builds.
-    Proving either needs the same `zipIdx` bound lemma. The boundary runs the
-    decidable checks instead and returns structured errors, which is the same
-    discipline as `Grain.ofNat?` — but they are checks, not constructions, and
-    the difference is recorded.
+10. **`sitesInRange`, `demotionsOriented` and `Normalized` are checked at load
+    rather than established by construction.** The loader takes document indices
+    from `placementsOf`'s counter, so every site it builds is in range; it takes
+    each placement's region from the same document it takes the index from, so
+    `orientPair` establishes the orientation for every entity it builds; and
+    `splitDoc` hands each line index to exactly one of prose and items, so ranks
+    within a document are distinct. All three are therefore true of every plan
+    the loader builds, and none of the three is *proved* that way. The boundary
+    runs the decidable checks instead and returns structured errors, which is
+    the same discipline as `Grain.ofNat?` — but they are checks, not
+    constructions, and the difference is recorded. (`mem_placementsOf` is now the
+    lemma the first two would be built from; the third would additionally need
+    `PlanCore.lines` of a loaded plan to be `Nodup`, which
+    `loadCore_lines_mem` gives as a membership statement and not as a list.)
 
-11. **`Normalized` is preserved at run time, not by a theorem.** Because rank
-    distinctness joined `planWf`, a move onto a rank another line of the
-    destination already occupies is now refused — so `cmdMove_succeeds` and
-    `mapAt_ok_of_inRange` each carry one more hypothesis, and both say so in
-    their doc comments. At the boundary `applyCmd` always passes `freshRank`,
-    which `freshRank_gt` proves is strictly greater than every rank in the
-    destination; but the step from that to "and therefore `Normalized` still
-    holds of the post-state" is **not written**. It needs a replacement lemma
-    for `PlanCore.lines` under a single-entity update. Until it is, rank
-    freshness rests on `mapAt`'s decidable re-check at run time rather than on
-    a proof, and a command that collided would return `badHorizon` rather than
-    corrupt anything.
+11. **`Normalized` after a command is a theorem now; the six other item-level
+    conjuncts are not, and should not be.** `normalized_set` (Plan.lean) is the
+    preservation proof: a single-entity update onto sites nothing else occupies
+    — no other line of the plan, no prose line of that document — leaves the plan
+    `Normalized`. It rests on `lines_set`, the replacement lemma README's
+    previous version said was missing: the store's domain does not move, so the
+    plan's line list is the old one with exactly that entity's lines swapped out
+    in place.
+
+    At the boundary, `normalized_of_fresh_or_old` reduces the obligation to one
+    hypothesis every command satisfies — each line of the new entity is either on
+    `freshRank` in the destination or on a site the entity already had — and
+    `move_at_freshRank_normalized`, `demote_at_freshRank_normalized`,
+    `readopt_at_freshRank_normalized`, `drop_normalized` and `setEst_normalized`
+    discharge it for the five. `docProseMax_ge` is the other half of the
+    arithmetic: `freshRank_gt` beats every *line* rank in the destination, and
+    this beats every *prose* rank, which matters because `Normalized` counts both
+    in one list.
+
+    `applyCmd_move_succeeds` is `cmdMove_succeeds` with the rank hypothesis
+    gone: what is left is `itemsWfButRanks`, the six conjuncts a move can
+    genuinely violate — a move into a day file outside `# Pinned` breaks
+    `sectionsWf`, a move into `month/` can break `shapesWf`. Those are real
+    refusals, not gaps.
+
+    **What is left**: `cmdMove_succeeds` and `mapAt_ok_of_inRange` in Cmd.lean
+    still take the full `itemsWf` hypothesis. Weakening them to
+    `itemsWfButRanks` is now a mechanical change and is not made here only
+    because Cmd.lean was outside this change's scope.
 
 12. **`series` has a name but no head.** `seriesOf` derives the
     `## series:<name>` a placement sits in. §5.4's *head* — "the first member

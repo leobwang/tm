@@ -1661,6 +1661,36 @@ def run (j : Json) : Except Json Json := do
   | .ok plan   => runPlan plan cmds
 
 
+/-! ### The round trip is not vacuous
+
+A theorem about plans nobody can build is the defect class this kernel exists to
+remove, so the witness is here and not only in the Rust suite: a concrete
+request — a heading and an item line in a week file, a heading in a month file —
+that `loadPlan` accepts, and the round trip for its first document written out in
+bytes. -/
+
+def sampleWeekDoc : ReqDoc :=
+  ⟨"week/2026-W37.md", some ⟨week, 35⟩,
+    ["# Tasks".toList, "- [ ] 5 6b Finish the report ^m1".toList]⟩
+
+def sampleRequest : List ReqDoc :=
+  [sampleWeekDoc, ⟨"month/2026-09.md", some ⟨month, 8⟩, ["# Outcomes".toList]⟩]
+
+def loadsOk (docs : List ReqDoc) : Bool :=
+  match loadPlan docs with
+  | .ok _    => true
+  | .error _ => false
+
+/-- The hypothesis of `the_kernel_reads_back_what_it_writes` is satisfiable, by
+decision. -/
+theorem the_round_trip_is_not_vacuous : loadsOk sampleRequest = true := by decide
+
+/-- And its conclusion at that request is a statement about bytes. -/
+theorem the_round_trip_fires (p : WfPlan) (h : loadPlan sampleRequest = .ok p) :
+    renderDocAt p.val 0 (mkDoc sampleWeekDoc)
+      = ["# Tasks".toList, "- [ ] 5 6b Finish the report ^m1".toList] :=
+  (the_kernel_reads_back_what_it_writes sampleRequest p h 0 sampleWeekDoc rfl).2
+
 /-- Total: every path returns a `String`.  No `panic!`, no `!`, no `partial`. -/
 def call (input : String) : String :=
   match Json.parse input with
