@@ -335,10 +335,12 @@ fn readopt_takes_the_demoted_copy_into_a_week_and_keeps_the_stamps() {
 
     assert_eq!(moved.from, MONTH);
     assert_eq!(moved.to, NEXT_WEEK);
-    // The live line itself, byte for byte, plus the copy's stamp.
+    // The live line itself, byte for byte, plus the copy's stamp and the
+    // remaining §6.3's close recorded on the copy (`est:` = remaining, the
+    // number the demotion existed to keep — §0 principle 6).
     assert_eq!(
         text(&store, NEXT_WEEK),
-        "---\nweek: 2026-W38\nwindow: 2026-09-14..2026-09-20\n---\n- [ ] 4 6b Rollback path passes tests   @O2 demoted:W37 ^m2\n"
+        "---\nweek: 2026-W38\nwindow: 2026-09-14..2026-09-20\n---\n- [ ] 4 6b Rollback path passes tests   @O2 est:3b demoted:W37 ^m2\n"
     );
     // The month keeps its `# Demoted` heading, without the line.
     assert!(line_of(&store, MONTH, "m2").is_none());
@@ -566,4 +568,60 @@ fn demote_then_readopt_leaves_one_live_line_and_one_archive() {
             .count(),
         0
     );
+}
+
+/// §6.3 records the remaining on the archive copy (`est:` = remaining) — the
+/// number the whole demotion exists to keep (§0 principle 6, "demotion, not
+/// deletion"). A readopt that *absorbs* the copy into a live line (§4.1: the
+/// id can only be on one live line) must therefore carry that estimate onto
+/// the line that survives, together with the `demoted:` stamps; throwing the
+/// copy away with its `est:` silently restores the stale pre-demotion
+/// estimate.
+#[test]
+fn a_demote_readopt_round_trip_keeps_the_remaining_and_the_stamps() {
+    let (_dir, store) = plan();
+    // The tree §4.3 ships: a live `[ ] 4 6b … ^m2` in W37 and the archive
+    // copy `[-] … est:3b demoted:W37 ^m2` under `month/2026-09#Demoted`,
+    // which says 3b of the 6b are left.
+    let (files, tree) = snapshot(&store);
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-14T09:00:00-05:00"));
+    readopt(&cx, &id("m2"), Some(&Horizon::Week(IsoWeek::new(2026, 38)))).unwrap();
+
+    assert_eq!(
+        line_of(&store, NEXT_WEEK, "m2").unwrap(),
+        "- [ ] 4 6b Rollback path passes tests   @O2 est:3b demoted:W37 ^m2"
+    );
+    assert!(line_of(&store, MONTH, "m2").is_none(), "the copy was absorbed");
+    let (_files, tree) = snapshot(&store);
+    assert!(tree.duplicate_ids().is_empty(), "{:?}", tree.duplicate_ids());
+    assert_eq!(
+        tree.remaining(&id("m2")),
+        Some(180),
+        "the readopted line is worth what the demotion said was left"
+    );
+
+    // Demoting it again writes one copy carrying that same remaining and
+    // both stamps (§6.3 `demoted: [W36,W37]` accumulate on one line).
+    let (files, tree) = snapshot(&store);
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-20T18:00:00-05:00"));
+    let out = demote(&cx, &id("m2")).unwrap();
+    assert_eq!(out.est_min, 180);
+    assert_eq!(out.stamps, vec![Stamp::Week(37), Stamp::Week(38)]);
+    assert_eq!(
+        line_of(&store, MONTH, "m2").unwrap(),
+        "- [-] 4 6b Rollback path passes tests   @O2 est:3b demoted:W37,W38 ^m2"
+    );
+
+    // And readopting that copy — no live line left to absorb it into — keeps
+    // both across the move.
+    let (files, tree) = snapshot(&store);
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-21T09:00:00-05:00"));
+    readopt(&cx, &id("m2"), None).unwrap();
+    assert_eq!(
+        line_of(&store, "week/2026-W39.md", "m2").unwrap(),
+        "- [ ] 4 6b Rollback path passes tests   @O2 est:3b demoted:W37,W38 ^m2"
+    );
+    let (_files, tree) = snapshot(&store);
+    assert!(tree.duplicate_ids().is_empty(), "{:?}", tree.duplicate_ids());
+    assert_eq!(tree.remaining(&id("m2")), Some(180));
 }

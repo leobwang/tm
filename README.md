@@ -503,9 +503,11 @@ closed month 2026-09 · 6 moved · 4 demoted · 0 reopened · 1 dropped
 It works after the month has ended too. The automatic close runs before the
 verb body and carries everything forward, so by then the line is in the next
 month's file; `--drop` fetches it back and drops it, leaving the same tree the
-same command run on the last day of the month would have. A `--drop` that names
-nothing this close can act on — a typo, or an item that lives in `backlog.md` —
-is an error, not a shrug:
+same command run on the last day of the month would have. Run the identical
+command a second time and it is content: the item is already `[~]`, which is
+what you asked for, so the close reports the drop and changes nothing. A
+`--drop` that names something this close cannot act on — a typo, or a live item
+that lives in `backlog.md` — is still an error, not a shrug:
 
 ```console
 $ tm close month --drop '^a1'
@@ -954,6 +956,13 @@ total:
 - [-] 4 3b Parent with own estimate est:3b demoted:W37 ^qq    # child was 2b; 3b already covers it
 ```
 
+**An item demoted twice keeps one record.** The stamps accumulate on the single
+copy under `# Demoted` (`demoted:W36,W37`); a second demotion never writes a
+second line, and neither does a close catching up on periods you were away for —
+the record is moved into the month the close is running in, stamps and all. That
+is what keeps `tm check` quiet: an `^id` may be on the `[-]` line in the archived
+week and on its one archive copy, and nowhere else.
+
 **Overdue dated items move to `backlog.md`** under a `# Overdue` heading, exactly
 as written — they are not demoted. **Appointments still in the future**, and the
 prep children hanging under them, move into next week's file so the planner can
@@ -982,9 +991,24 @@ rules:
 - **An item that is still live somewhere gets its archive copy folded in**, not
   copied. Right after a week close the id is on two lines: the `[-]` record and
   the live line you carried forward. `tm readopt ^m2 --to week/2026-W38.md` then
-  moves *the live line* into W38, adds the copy's `demoted:` stamps to it, and
-  deletes the copy — one line, one id. Ids are global, so nothing else would
-  leave the tree valid.
+  moves *the live line* into W38, adds the copy's `demoted:` stamps **and its
+  `est:`** to it, and deletes the copy — one line, one id. Ids are global, so
+  nothing else would leave the tree valid. The estimate comes across because the
+  copy is where the remaining was recorded: the archived line still says what
+  the item was estimated at before the demotion, so keeping that number instead
+  would quietly hand you back work you had already done.
+
+On the example tree, where `^m2` ships as exactly that pair:
+
+```console
+$ tm readopt ^m2
+readopted ^m2 → week/2026-W37.md
+$ grep '\^m2' week/2026-W37.md
+- [ ] 4 6b Rollback path passes tests   @O2 est:3b demoted:W37 ^m2
+```
+
+The line still reads `6b` — the original estimate is never rewritten — and
+`est:3b` is what is left of it.
 
 ### Two traps about file names
 

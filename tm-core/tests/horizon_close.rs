@@ -541,11 +541,19 @@ fn close_week_creates_the_month_file_it_demotes_into() {
         text.contains("- [-] 5 3b Read ch.6                    @O1 est:3b demoted:W37 ^m3"),
         "{text}"
     );
-    // The September file is untouched: the demoted copies went to October.
+    // September keeps its outcomes, but not its `# Demoted` copy of `^m2`:
+    // the record moved into the copy October now holds, stamps and all
+    // (§6.3 gives an id one archive copy; two of them in two month files
+    // become one file's `dup-id` the moment a month close carries the older
+    // one forward, §4.1, §17.2).
+    let september = store.read_text(MONTH).unwrap();
+    assert!(line_of(&store, MONTH, "m2").is_none(), "{september}");
+    assert!(september.contains("# Demoted"), "the heading stays");
     assert_eq!(
-        line_of(&store, MONTH, "m2").unwrap(),
-        "- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2"
+        line_of(&store, NEXT_MONTH, "m2").unwrap(),
+        "- [-] 4 6b Rollback path passes tests   @O2 est:6b demoted:W37 ^m2"
     );
+    assert_eq!(text.matches("^m2").count(), 1, "one archive copy: {text}");
 }
 
 #[test]
@@ -971,6 +979,175 @@ fn a_drop_that_cannot_be_honoured_fails_without_writing() {
 
     assert_eq!(tree_text(&store), before, "nothing was written");
     assert_eq!(log_events(&store), Vec::new(), "nothing was logged");
+}
+
+#[test]
+fn re_running_a_drop_that_already_landed_is_not_an_error() {
+    // §6.3: "idempotent". `tm close month --drop ^O3` leaves `^O3` `[~]` in
+    // the month it closed; typing the same command again closes the month
+    // after that one (the auto-close has moved on), and `^O3` is in neither
+    // that month's file nor the next. It is already in the state the drop
+    // asked for, so the second run reports it and does nothing — it does not
+    // fail the whole close.
+    let (_dir, store) = plan();
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    let cx = Ctx::new(&store, &files, &tree, at("2026-10-01T08:00:00-05:00"));
+    close_month(&cx, YearMonth::new(2026, 9), &[id("O3")]).unwrap();
+    let dropped = line_of(&store, MONTH, "O3").unwrap();
+    assert!(dropped.starts_with("- [~] "), "{dropped}");
+
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    let cx = Ctx::new(&store, &files, &tree, at("2026-11-01T08:00:00-05:00"));
+    let before = tree_text(&store);
+    let events = log_events(&store);
+    let report = close_month(&cx, YearMonth::new(2026, 10), &[id("O3")]).unwrap();
+
+    assert_eq!(report.dropped, vec![id("O3")], "the drop is reported as done");
+    assert_eq!(line_of(&store, MONTH, "O3").unwrap(), dropped, "left as it was");
+    assert!(line_of(&store, NEXT_MONTH, "O3").is_none());
+    assert_eq!(
+        tree_text(&store).get(MONTH),
+        before.get(MONTH),
+        "an already-dropped id writes nothing"
+    );
+    let new_events = log_events(&store)[events.len()..].to_vec();
+    assert!(
+        !new_events.iter().any(|(ev, _)| ev == "drop"),
+        "nothing happened to ^O3: {new_events:?}"
+    );
+
+    // The error is still there for an id this close cannot honour: `^m1` is
+    // a live week line, not something the month close dropped.
+    let err = close_month(&cx, YearMonth::new(2026, 10), &[id("m1")]).unwrap_err();
+    assert!(err.to_string().contains("tm drop"), "{err}");
+    let err = close_month(&cx, YearMonth::new(2026, 10), &[id("nope")]).unwrap_err();
+    assert!(matches!(err, HorizonError::NotFound(ref i) if *i == id("nope")), "{err}");
+}
+
+// ---------------------------------------------------------------------------
+// One archive copy per id, however many periods a close catches up over
+// (§4.1, §6.3, §17.2)
+// ---------------------------------------------------------------------------
+
+/// The §4.3 example tree ships `^m2` twice: live in `week/2026-W37` and as
+/// the `[-]` archive copy under `month/2026-09#Demoted` (§6.3's one
+/// sanctioned copy). Come back in October and the sweep closes the week —
+/// which copies the live line into `month/<current>` = 2026-10 — and then
+/// the month, which carries September's `# Demoted` into that same file:
+/// three lines, one id, `tm check` at exit 2 for a tree nobody touched.
+/// §6.3's stamps accumulate on *one* line, so the week close moves the
+/// record it finds instead of writing a second one.
+#[test]
+fn a_catch_up_sweep_leaves_one_archive_copy_per_id() {
+    let (_dir, store) = plan();
+    let mut state = store.load_state().unwrap();
+    let ran = auto_close(
+        &store,
+        &mut state,
+        d("2026-10-05"),
+        at("2026-10-05T09:00:00-05:00"),
+        None,
+    )
+    .unwrap();
+
+    // The week close took September's record with it, so the month close
+    // that follows finds nothing of `^m2` to carry (and nothing to fold).
+    let month = ran
+        .iter()
+        .find(|c| c.period == Period::Month && c.key == "2026-09")
+        .expect("September was closed");
+    assert!(
+        !month.report.notes.iter().any(|n| n.contains("^m2")),
+        "{:?}",
+        month.report.notes
+    );
+    assert!(
+        !month.report.moved.iter().any(|m| m.id == id("m2")),
+        "{:?}",
+        month.report.moved
+    );
+
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    assert!(tree.duplicate_ids().is_empty(), "{:?}", tree.duplicate_ids());
+    // The archive copy is in the month the close ran in, with its stamp, and
+    // it is the only one anywhere.
+    assert_eq!(
+        line_of(&store, NEXT_MONTH, "m2").unwrap(),
+        "- [-] 4 6b Rollback path passes tests   @O2 est:6b demoted:W37 ^m2"
+    );
+    assert!(line_of(&store, MONTH, "m2").is_none());
+    let copies: usize = tree_text(&store)
+        .values()
+        .map(|t| t.matches("^m2").count())
+        .sum();
+    assert_eq!(copies, 2, "the `[-]` week line and one archive copy");
+
+    // And a sweep that catches up over three months does the same.
+    let (_dir, store) = plan();
+    let mut state = store.load_state().unwrap();
+    auto_close(
+        &store,
+        &mut state,
+        d("2026-12-14"),
+        at("2026-12-14T09:00:00-06:00"),
+        None,
+    )
+    .unwrap();
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    assert!(tree.duplicate_ids().is_empty(), "{:?}", tree.duplicate_ids());
+    assert_eq!(
+        line_of(&store, "month/2026-12.md", "m2").unwrap(),
+        "- [-] 4 6b Rollback path passes tests   @O2 est:6b demoted:W37 ^m2"
+    );
+    for month in [MONTH, NEXT_MONTH, "month/2026-11.md"] {
+        assert!(line_of(&store, month, "m2").is_none(), "{month}");
+    }
+}
+
+/// A tree that arrived with two `# Demoted` copies of one id — from another
+/// writer (§1.3), or from a `tm` that used to write them — is not carried
+/// forward twice for ever: the month close folds the second into the first,
+/// stamps and all (§6.3 "`demoted: [W36,W37]`" on one line).
+#[test]
+fn a_month_close_never_carries_an_id_a_file_already_has() {
+    let (_dir, store) = plan();
+    let extra = "- [-] 4 6b Rollback path passes tests   @O2 est:6b demoted:W36 ^m2";
+    let month = format!("{}{extra}\n", text(&store, MONTH));
+    store.write_file(MONTH, &month).unwrap();
+
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    let cx = Ctx::new(&store, &files, &tree, at("2026-10-01T08:00:00-05:00"));
+    let report = close_month(&cx, YearMonth::new(2026, 9), &[]).unwrap();
+
+    assert_eq!(
+        text(&store, NEXT_MONTH).matches("^m2").count(),
+        1,
+        "{}",
+        text(&store, NEXT_MONTH)
+    );
+    // The stamps of both copies, each once and oldest first, on the line
+    // that survived — the record §6.3 keeps, not two of them.
+    assert_eq!(
+        line_of(&store, NEXT_MONTH, "m2").unwrap(),
+        "- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W36,W37 ^m2"
+    );
+    assert!(line_of(&store, MONTH, "m2").is_none(), "{}", text(&store, MONTH));
+    assert!(
+        report.notes.iter().any(|n| n.contains("^m2") && n.contains("merged")),
+        "{:?}",
+        report.notes
+    );
+    let files = store.read_tree().unwrap();
+    assert!(
+        files.tree().duplicate_ids().is_empty(),
+        "{:?}",
+        files.tree().duplicate_ids()
+    );
 }
 
 // ---------------------------------------------------------------------------
