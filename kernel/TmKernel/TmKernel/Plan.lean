@@ -1468,11 +1468,11 @@ theorem render_filter_doc_len (i : Id) (e : Entity) (k : DocIx) :
   unfold render renderCore
   cases h : e.val.archive with
   | none =>
-      simp only [h]
+      simp only
       by_cases hk : e.val.live.doc = k <;> simp [hk]
   | some r =>
       have hne := archive_elsewhere e r h
-      simp only [h]
+      simp only
       by_cases hk : e.val.live.doc = k
       · have hrk : ¬ (r.doc = k) := fun hc => hne (by rw [hc, hk])
         simp [hk, hrk]

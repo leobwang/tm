@@ -937,7 +937,7 @@ theorem buildEntities_fold : ∀ (ps : List Placement) (is : List Id)
             = Except.ok out from h) (by simp)
       | ok e =>
           rw [hbe] at h
-          simp only [Except.bind, pure, Except.pure] at h
+          simp only [pure, Except.pure] at h
           obtain ⟨tl, hout, hmap, hall⟩ := ih (acc ++ [(i, e)]) out h
           refine ⟨(i, e) :: tl, ?_, by simp [hmap], ?_⟩
           · rw [hout, List.append_assoc, List.singleton_append]
@@ -1310,6 +1310,73 @@ theorem the_kernel_reads_back_what_it_writes (docs : List ReqDoc) (p : WfPlan)
     rfl
   · rw [hval]
     exact renderDocAt_loadCore docs items hb hnorm k rd hk
+
+/-! ### A command rewrites only the files it touches
+
+The round trip above is about a plan the loader just built.  The other half of
+"the kernel reads back what it writes" is about a plan a *command* produced: the
+response carries every document, so a `demote` in `week/` re-renders `month/`,
+`backlog.md` and every other file too, and nothing said those came back
+unchanged.  `lines_set` says it in one line — the two line lists differ in one
+contiguous block — so a document neither the old nor the new entity has a line
+in renders identically. -/
+
+theorem renderDocAt_untouched (p : PlanCore) (i : Id) (e e' : Entity)
+    (hs : (p.store.get i).isSome = true) (hget : p.store.get i = some e)
+    (k : DocIx) (d : Doc)
+    (hold : ∀ l ∈ render i e, l.site.doc ≠ k)
+    (hnew : ∀ l ∈ render i e', l.site.doc ≠ k) :
+    renderDocAt { p with store := p.store.set i e' hs } k d = renderDocAt p k d := by
+  obtain ⟨A, C, hp, hp', _, _⟩ := lines_set p i e e' hs hget
+  have hfe : (render i e).filter (fun l => l.site.doc == k) = [] :=
+    List.filter_eq_nil_iff.2 (fun l hl => by simpa using hold l hl)
+  have hfe' : (render i e').filter (fun l => l.site.doc == k) = [] :=
+    List.filter_eq_nil_iff.2 (fun l hl => by simpa using hnew l hl)
+  unfold renderDocAt
+  rw [hp', hp]
+  simp only [List.filter_append, hfe, hfe', List.nil_append]
+
+/-- The post-state of `mapAt`, in the shape the lemmas above want: the same
+`docs`, and the store with exactly one entity replaced. -/
+theorem mapAt_ok_shape (p q : WfPlan) (i : Id) (f : Entity → Except KErr Entity)
+    (hq : p.mapAt i f = .ok q) :
+    ∃ (e e' : Entity) (hs : (p.val.store.get i).isSome = true),
+      p.val.store.get i = some e ∧ f e = .ok e' ∧
+      q.val = { p.val with store := p.val.store.set i e' hs } := by
+  unfold WfPlan.mapAt at hq
+  split at hq
+  · simp at hq
+  · rename_i e hget
+    split at hq
+    · simp at hq
+    · rename_i e' hf
+      split at hq
+      · injection hq with hq
+        exact ⟨e, e', by simp [hget], hget, hf, by rw [← hq]⟩
+      · simp at hq
+
+/-- **A command's output is byte-identical in every file it does not touch.**
+This is the other leg of `the_kernel_reads_back_what_it_writes`: not only does
+the kernel accept its own output, it does not perturb the files it had no
+business perturbing. -/
+theorem a_command_rewrites_only_the_files_it_touches (p q : WfPlan) (i : Id)
+    (f : Entity → Except KErr Entity) (e e' : Entity) (hq : p.mapAt i f = .ok q)
+    (hget : p.val.store.get i = some e) (hget' : q.val.store.get i = some e')
+    (k : DocIx) (d : Doc)
+    (hold : ∀ l ∈ render i e, l.site.doc ≠ k)
+    (hnew : ∀ l ∈ render i e', l.site.doc ≠ k) :
+    renderDocAt q.val k d = renderDocAt p.val k d := by
+  obtain ⟨e₀, e₀', hs, hg₀, _, hshape⟩ := mapAt_ok_shape p q i f hq
+  have he : e₀ = e := Option.some.inj (hg₀.symm.trans hget)
+  have he' : e₀' = e' := by
+    have h1 : q.val.store.get i = some e₀' := by
+      rw [hshape]
+      exact Store.get_set_self p.val.store i e₀' hs
+    exact Option.some.inj (h1.symm.trans hget')
+  subst he
+  subst he'
+  rw [hshape]
+  exact renderDocAt_untouched p.val i e₀ e₀' hs hg₀ k d hold hnew
 
 /-! ## `Normalized` after a command: discharged, not hoped for
 
