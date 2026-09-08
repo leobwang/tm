@@ -573,3 +573,82 @@ sketch, and because the gaps are where the next stage's cost lives.
 - A field's setter is not exported without its `view ∘ set = id` proof.
 - **`Negative.lean` must fail to compile**, and `check.sh` asserts the failure.
   It is the only test that checks the type system is still doing its job.
+
+<!-- ===================================================================
+     THE EXACT-ARITHMETIC LAYER (`TmKernel/Arith.lean`), added on its own
+     branch.  Appended as a block so the three stage-one branches merge.
+     =================================================================== -->
+
+## The exact-arithmetic layer (`TmKernel/Arith.lean`)
+
+1,078 lines, 91 theorems, no `Float`, no fixed point, no `Rat`. §7 and §8 are
+written in decimals; every one of those decimals is a *comparison*, and a
+comparison of ratios cross-multiplies into `Nat`. `u = need/avail` is never
+formed: `u ≥ p/q` is `q·need ≥ p·avail`, and a scale constant folds into the
+same product, so §7.1's safety-1.3 test against an edge is
+`13·rem·q ≥ 10·avail·p` — three multiplications and one `≤`.
+
+What is proved: `Q.le` (cross-multiplication) is reflexive, transitive on
+ratios that denote something, antisymmetric up to value, total, a **congruence**
+for `n/d ≈ (k·n)/(k·d)` — which is what licenses folding a constant in — and,
+on ratios that are whole numbers, literally the `Nat` order. The
+implementation-side tests then agree with the order on the formed ratio
+(`utilGe_eq_le`, `utilScaledGe_eq_le`), unconditionally, `avail = 0` included.
+The bin ladder is a count of missed edges, hence antitone for any edge list at
+all; on §16's shipped edges it is §7.1's `bin(u)` exactly — the five half-open
+intervals, derived rather than sampled. Rounding is three named rules
+(`floorQ`, `ceilQ`, `halfUpQ`), each with its adjunction, its monotonicity, and
+a proof that it is within one minute of the exact value; R1, R2, R4 and R5 are
+built on them and R3 is eliminated by typing the window in minutes.
+
+Gap 5 above says "no exact-arithmetic layer"; that clause is superseded. The
+rest of gap 5 — no `close`, no `ClosePolicy`, no planner, no priority, no
+recurrence, and tail-drop and stability unattempted — still stands.
+
+### What it does **not** cover
+
+12. **`Check.lean` does not audit these 91 theorems.** The file is outside this
+    branch's scope, so the acceptance run's "axiom audit (70 theorems)" is the
+    pre-existing list. The audit was run by hand over all 91 and every one
+    depends only on `propext` / `Quot.sound` / `Classical.choice`; ten depend on
+    no axioms at all. Whoever merges the three stage-one branches should append
+    the `Arith` names to `Check.lean` so CI covers them too.
+
+13. **`0/0` is a decision, not a derivation.** §7.1 says "capacity 0 → `u = ∞`",
+    with no exception for zero need, so `utilGe 0 0 e` is `true` and an item
+    with nothing left to do and no capacity comes out HOT. An `f64`
+    implementation gets `NaN` there, every comparison is false, and it falls off
+    the ladder into the *lowest* bin — `+3`. The two disagree, both are
+    defensible, and this is the kind of "bug versus undocumented deliberate
+    choice" that reading cannot settle. `utilDefined` is the guard; the kernel
+    takes the spec's sentence literally and says so
+    (`util_zero_over_zero_is_undefined`, `util_zero_over_zero_is_hot`).
+
+14. **R7 is open.** §8.4's future-day capacity mixes the lounge and home
+    capacities by `p_lounge`, which is a rational weight over two integer
+    minute-counts. Nothing in this layer rounds it; whether the planner floors
+    the mixture per level, per day, or carries it exact into the EDF pass is a
+    decision the planner has to make and state, and it is not made here.
+
+15. **`ladder_eq_rungs` needs the edges sorted; `rungs_antitone` does not.**
+    That asymmetry is deliberate — antitonicity is the property the list
+    actually supports — but it means a misconfigured `priority.bins` (not
+    descending) still produces a well-defined, antitone bin that is *not* the
+    ladder §7.1 describes. There is no `planWf` clause rejecting such a config,
+    because config validation lives at the boundary and the boundary is not this
+    branch's file. `binsWf` and `descending` are the two decidable predicates a
+    loader should run.
+
+16. **The energy posterior is arithmetic here, not statistics.** `ramp`,
+    `posteriorNum` and `energyAfter` implement §8.5's *correction*, exactly and
+    over `Int`. Fitting the model, `exp(−age/decay)`, the shrinkage means and
+    `p_lounge` stay in Rust, as §3.6 says. `energyAfter` also has no monotonicity
+    theorem in `δ`: it is a clamp composed with a rounding, both monotone, but
+    the composition was not needed by anything yet and was not proved.
+
+17. **Nothing consumes this layer.** Priority and the planner are stages 5 and 6.
+    `needMin`, `budgetBlocks`, `plannedMin` and `energyAfter` are the four sites
+    §7 and §8 will call; until they exist, the parity harness against the Rust
+    `f64` path (§3.5's 0/2,251,500 and 135/150,600 measurements) cannot be re-run
+    against *this* code, and those numbers are quoted from the spike, not
+    reproduced here.

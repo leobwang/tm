@@ -1,3 +1,4 @@
+import TmKernel.Arith
 import TmKernel.Grain
 import TmKernel.Text
 import TmKernel.Line
