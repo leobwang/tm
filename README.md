@@ -2091,8 +2091,10 @@ computed live; re-run `tm plan` to refresh the file.
 ### Closing
 
 - Closing is automatic and silent, on the first command after a period ends.
-- **`tm close day` replaces a written review with the text `review pending`.**
-  Close first, then `tm review day --write`.
+- **`tm close day` puts an empty `<!-- tm:review -->` block at the end of the day
+  file, holding the text `review pending`** until `tm review day --write` fills
+  it in. It never overwrites a review that is already there, so the two can run
+  in either order.
 - **`tm close month --drop ^id` is ignored once the month has auto-closed.** Run
   it on the last day of the month, or `tm drop ^id` first and then close.
 - **A catch-up sweep closes at most 16 periods of each kind.** Older ones are

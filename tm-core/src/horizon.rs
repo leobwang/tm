@@ -45,8 +45,9 @@
 //!   rollup), floored at [`MIN_REMAINING_MIN`]. Pinned items still open then
 //!   move to `week/<week of date>` with `demoted:D<dd>` appended. Nothing
 //!   else moves. An existing day file gets its `<!-- tm:review start -->`
-//!   placeholder at the end (`review.rs` fills it later); a day that was
-//!   never planned gets no file.
+//!   placeholder at the end (`review.rs` fills it later) — unless the block
+//!   is already there with a review in it, which is left untouched; a day
+//!   that was never planned gets no file.
 //!
 //!   A line that already carries an `est:` keeps it: §9.1's `tm stop` and
 //!   partial `tm done` write `est:` = remaining *after* the block they
@@ -166,7 +167,8 @@ pub const OVERDUE_SECTION: &str = "Overdue";
 /// Name of the generated block a close writes into the day file; `review.rs`
 /// replaces its body later.
 pub const REVIEW_BLOCK: &str = "review";
-/// The one-line body [`close_day`] leaves in the review block.
+/// The one-line body [`close_day`] leaves in the review block when it has no
+/// review in it yet. A block that already holds one is never overwritten.
 pub const REVIEW_PLACEHOLDER: &str = "review pending";
 
 // ---------------------------------------------------------------------------
@@ -1097,8 +1099,10 @@ pub fn rank(cx: &Ctx, id: &Id, n: usize) -> Result<bool, HorizonError> {
 /// the line carries no tool-written `est:` yet, floored at
 /// [`MIN_REMAINING_MIN`]); pinned items still open then move to the week
 /// file with `demoted:D<dd>` (recurring lines stay put, §5.3); nothing else
-/// moves. An existing day file receives its review placeholder. Appends one
-/// `demote` per moved pinned item and a `close{period:"day"}`.
+/// moves. An existing day file receives its review placeholder, unless its
+/// review block already holds a review (§13's `tm review day --write`), which
+/// a close never overwrites. Appends one `demote` per moved pinned item and a
+/// `close{period:"day"}`.
 pub fn close_day(cx: &Ctx, date: NaiveDate) -> Result<CloseReport, HorizonError> {
     let week = IsoWeek::from_date(date);
     let week_path = Horizon::Week(week).path();
@@ -1233,10 +1237,44 @@ fn day_remaining(cx: &Ctx, key: &Id, item: &Item, date: NaiveDate) -> Option<u32
     Some(base.saturating_sub(done).max(MIN_REMAINING_MIN))
 }
 
-/// Put the `<!-- tm:review … -->` block in the day file: replacing its body
-/// when the block is there, else appending the block at the end (below
-/// `## Notes`), which is where a review belongs — [`Store::replace_generated`]
-/// would otherwise create it above the generated plan.
+/// True when the review block of a day file already holds a review: a line
+/// between its markers that is neither blank nor [`REVIEW_PLACEHOLDER`].
+///
+/// An **unterminated** block has no body at all (§1.3 and
+/// [`edit::replace_generated`]: with the end marker lost, everything below is
+/// ordinary text), so it counts as empty and the close writes the placeholder
+/// between fresh markers, leaving that text verbatim underneath.
+fn has_written_review(parsed: &ParsedFile) -> bool {
+    let Some(g) = parsed.generated(REVIEW_BLOCK) else {
+        return false;
+    };
+    let Some(end) = g.end_line else {
+        return false;
+    };
+    parsed
+        .lines
+        .get(g.start_line..end - 1)
+        .unwrap_or_default()
+        .iter()
+        .any(|l| {
+            let t = l.text();
+            !t.trim().is_empty() && t.trim() != REVIEW_PLACEHOLDER
+        })
+}
+
+/// Put the `<!-- tm:review … -->` block in the day file: appending it at the
+/// end (below `## Notes`), which is where a review belongs —
+/// [`Store::replace_generated`] would otherwise create it above the generated
+/// plan.
+///
+/// §6.3 gives the day file its review *section*; §13's `tm review day
+/// --write` gives it the review *text*, and the two run in either order —
+/// the close of §13 fires automatically on the first command after the day
+/// ends, which is easily after the review was written by hand. So a block
+/// that already holds a review is **left exactly as it is**: overwriting it
+/// would delete the one copy of that text. Only an absent, empty or
+/// still-placeholder block is (re)written, which is also what keeps a second
+/// close a no-op.
 fn write_review_placeholder(cx: &Ctx, day_path: &str) -> Result<bool, HorizonError> {
     // A day that was never planned has no file; closing it does not create
     // one (`tm close day` after a day off would otherwise leave an empty
@@ -1246,6 +1284,9 @@ fn write_review_placeholder(cx: &Ctx, day_path: &str) -> Result<bool, HorizonErr
     }
     cx.store.modify_file(day_path, &mut |parsed: &ParsedFile| {
         if parsed.generated(REVIEW_BLOCK).is_some() {
+            if has_written_review(parsed) {
+                return Ok(None);
+            }
             return Ok(Some(edit::replace_generated(
                 parsed,
                 REVIEW_BLOCK,

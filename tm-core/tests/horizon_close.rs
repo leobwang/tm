@@ -21,6 +21,7 @@ use tm_core::horizon::{
 };
 use tm_core::log::{replay, Event, Log, LogEntry, Replay};
 use tm_core::model::{Id, IsoWeek, Period, Stamp, State, YearMonth};
+use tm_core::review::write_day_review;
 use tm_core::store::{FsStore, MemStore, Store};
 
 const WEEK: &str = "week/2026-W37.md";
@@ -292,6 +293,80 @@ fn close_day_without_a_replay_keeps_the_whole_remaining_estimate() {
     assert_eq!(
         line_of(&store, WEEK, "t3").unwrap(),
         "- [ ] 4 2b Exercises 5.3–5.5            @m1 est:1b ^t3"
+    );
+}
+
+/// §6.3 gives the day file its review *section*; §13's `tm review day
+/// --write` gives it the review *text*. The close runs automatically on the
+/// first command after the day ends, so it routinely arrives after a review
+/// was written — and must not put `review pending` over it, because that copy
+/// of the text is the only one there is.
+#[test]
+fn close_day_never_overwrites_a_written_review() {
+    let (_dir, store) = plan();
+    let date = d("2026-09-07");
+    let review = " Day 2026-09-07 · lounge · 5/6 blocks\n done      t1 t2 t3\n sleep     8h10m";
+    write_day_review(&store, date, review).unwrap();
+    let before = text(&store, DAY);
+
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-07T22:30:00-05:00"));
+    close_day(&cx, date).unwrap();
+
+    let after = text(&store, DAY);
+    assert!(after.contains(review), "the review was destroyed:\n{after}");
+    assert!(!after.contains(REVIEW_PLACEHOLDER), "{after}");
+    // The close still moved the pinned item; only that line changed.
+    let (gone, new) = diff(&before, &after);
+    assert_eq!(gone, vec!["- [ ] 2 20m Call the bank about the card  ^p1"]);
+    assert!(new.is_empty(), "{new:?}");
+}
+
+/// Closing twice is idempotent (§6.3): the second close finds the placeholder
+/// its own first run left, recognises it as "no review yet" and leaves the
+/// file byte-identical — one block, one placeholder.
+#[test]
+fn closing_the_day_twice_leaves_one_review_placeholder() {
+    let (_dir, store) = plan();
+    let date = d("2026-09-07");
+    for _ in 0..2 {
+        let files = store.read_tree().unwrap();
+        let tree = files.tree();
+        let cx = Ctx::new(&store, &files, &tree, at("2026-09-07T22:30:00-05:00"));
+        close_day(&cx, date).unwrap();
+    }
+    let after = text(&store, DAY);
+    assert_eq!(after.matches("<!-- tm:review start -->").count(), 1, "{after}");
+    assert_eq!(after.matches(REVIEW_PLACEHOLDER).count(), 1, "{after}");
+    assert!(after.trim_end().ends_with("<!-- tm:review end -->"), "{after}");
+}
+
+/// An empty review block — the block without a body a stray edit can leave —
+/// is not user-visible content, so the close still fills it with the
+/// placeholder rather than adding a second block.
+#[test]
+fn close_day_fills_an_empty_review_block() {
+    let (_dir, store) = plan();
+    let date = d("2026-09-07");
+    let day = format!(
+        "{}\n<!-- tm:review start -->\n\n<!-- tm:review end -->\n",
+        text(&store, DAY).trim_end()
+    );
+    store.write_file(DAY, &day).unwrap();
+
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-07T22:30:00-05:00"));
+    close_day(&cx, date).unwrap();
+
+    let after = text(&store, DAY);
+    assert_eq!(after.matches("<!-- tm:review start -->").count(), 1, "{after}");
+    assert!(
+        after.trim_end().ends_with(&format!(
+            "<!-- tm:review start -->\n{REVIEW_PLACEHOLDER}\n<!-- tm:review end -->"
+        )),
+        "{after}"
     );
 }
 
