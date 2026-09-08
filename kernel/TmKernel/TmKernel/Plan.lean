@@ -172,25 +172,154 @@ pass `tm check` at exit 0. -/
 
 def docWf (d : Doc) : Bool := d.prose.all (fun q => !isItemLine q.2)
 
-def planWf (p : PlanCore) : Bool := p.docs.all docWf
+def docsWf (p : PlanCore) : Bool := p.docs.all docWf
+
+/-! ### The second plan-level obligation: a placement names a file that exists
+
+`Site.doc` is a `Nat` and `renderDocAt` renders the indices that exist, so a
+placement pointing past the end of `docs` does not raise anything — the line
+simply is not emitted, and the item is **gone** with the kernel reporting `ok`.
+That is the same shape of missing precondition as `move_to`'s, moved from
+"the destination already holds this id" to "the destination is not a file", and
+it is exactly as fatal.
+
+So it joins the decidable plan-level checker, and `no_line_is_lost` below turns
+it into the sentence that matters: every line a plan denotes lands in a document
+that exists.  A command reaches the destination only through `Dest` (Cmd.lean),
+which carries the proof, so the out-of-range case cannot be written either. -/
+
+def siteInRange (p : PlanCore) (s : Site) : Bool := s.doc < p.docs.length
+
+def entityInRange (p : PlanCore) (e : Entity) : Bool :=
+  siteInRange p e.val.live &&
+    (match e.val.archive with
+     | none   => true
+     | some r => siteInRange p r)
+
+def sitesInRange (p : PlanCore) : Bool :=
+  p.store.dom.all (fun i =>
+    match p.store.get i with
+    | none   => true
+    | some e => entityInRange p e)
+
+/-! ### The third: two documents may not share a path
+
+`Site.doc` is a **list index**, so a theorem quantified over `Site.doc` says
+"one index, one line" — which is not the sentence anyone cares about.  What
+reaches the disk is a *path*, and two documents at different indices carrying
+one path put two lines of one id into one file while every index-level theorem
+stays true.  Path injectivity is therefore part of what it means to be a plan,
+and `no_two_lines_of_one_id_in_one_file` is restated over paths below. -/
+
+def pathsDistinct (p : PlanCore) : Bool := decide ((p.docs.map Doc.path).Nodup)
+
+def planWf (p : PlanCore) : Bool := docsWf p && sitesInRange p && pathsDistinct p
+
+theorem planWf_parts {p : PlanCore} (h : planWf p = true) :
+    docsWf p = true ∧ sitesInRange p = true ∧ pathsDistinct p = true := by
+  simp only [planWf, Bool.and_eq_true] at h
+  exact ⟨h.1.1, h.1.2, h.2⟩
+
+theorem planWf_of_parts {p : PlanCore} (h1 : docsWf p = true) (h2 : sitesInRange p = true)
+    (h3 : pathsDistinct p = true) : planWf p = true := by
+  simp [planWf, h1, h2, h3]
 
 /-- The plan.  You cannot make one without discharging `planWf`. -/
 def WfPlan := { p : PlanCore // planWf p = true }
 
 def WfPlan.val' (p : WfPlan) : PlanCore := p.val
 
+/-- The path a document index names.  `none` is out of range — which
+`no_line_is_lost` rules out for any site a plan actually denotes. -/
+def pathAt (p : PlanCore) (k : DocIx) : Option (List Char) := (p.docs[k]?).map Doc.path
+
 /-- **No prose line is an item line.**  So the only item lines a document emits
 are the ones its entities render, and `no_two_lines_of_one_id_in_one_file`
 covers all of them. -/
 theorem prose_is_never_an_item (p : WfPlan) (d : Doc) (hd : d ∈ p.val.docs)
     (q : Nat × List Char) (hq : q ∈ d.prose) : isItemLine q.2 = false := by
-  have h1 : docWf d = true := List.all_eq_true.1 p.property d hd
+  have h1 : docWf d = true := List.all_eq_true.1 (planWf_parts p.property).1 d hd
   have h2 := List.all_eq_true.1 h1 q hq
   simpa using h2
 
-/-- Changing the store cannot change `planWf`, which only reads `docs`.  This
-is why the plan-level obligation costs nothing per command. -/
-theorem planWf_store (p : PlanCore) (s : Store) : planWf { p with store := s } = planWf p := rfl
+/-- Changing the store cannot change the *document* half of the invariant, which
+reads `docs` only.  The other two halves are not free of the store — that is the
+point of adding them: `sitesInRange` is precisely the obligation a command that
+relocates a line must re-discharge. -/
+theorem docsWf_store (p : PlanCore) (s : Store) : docsWf { p with store := s } = docsWf p := rfl
+
+theorem pathsDistinct_store (p : PlanCore) (s : Store) :
+    pathsDistinct { p with store := s } = pathsDistinct p := rfl
+
+/-! ## Nothing a plan denotes can fall off the end of `docs` -/
+
+/-- A rendered line sits at one of the entity's own two placements. -/
+theorem render_site (i : Id) (e : Entity) (l : Line) (h : l ∈ render i e) :
+    l.site = e.val.live ∨ e.val.archive = some l.site := by
+  unfold render renderCore at h
+  cases ha : e.val.archive with
+  | none =>
+      rw [ha] at h
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at h
+      subst h; left; rfl
+  | some r =>
+      rw [ha] at h
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at h
+      rcases h with rfl | rfl
+      · left; rfl
+      · right; rfl
+
+theorem lines_mem (p : PlanCore) (l : Line) (h : l ∈ p.lines) :
+    ∃ i e, p.store.get i = some e ∧ i ∈ p.store.dom ∧ l ∈ render i e := by
+  unfold PlanCore.lines at h
+  simp only [List.mem_flatMap] at h
+  obtain ⟨i, hi, hl⟩ := h
+  cases g : p.store.get i with
+  | none => rw [g] at hl; simp at hl
+  | some e => rw [g] at hl; exact ⟨i, e, g, hi, hl⟩
+
+/-- **Nothing the kernel holds can silently disappear from the output.**  Every
+line of every plan lands in a document that exists, so rendering document by
+document over `docs` emits all of them.  Before `sitesInRange` joined `planWf`,
+`move` to a document index past the end of `docs` deleted the item and returned
+`ok`. -/
+theorem no_line_is_lost (p : WfPlan) (l : Line) (h : l ∈ p.val.lines) :
+    l.site.doc < p.val.docs.length := by
+  obtain ⟨i, e, hget, hdom, hl⟩ := lines_mem p.val l h
+  have hall := List.all_eq_true.1 (planWf_parts p.property).2.1 i hdom
+  rw [hget] at hall
+  simp only [entityInRange, Bool.and_eq_true, siteInRange, decide_eq_true_eq] at hall
+  rcases render_site i e l hl with hs | hs
+  · rw [hs]; exact hall.1
+  · have := hall.2
+    rw [hs] at this
+    simpa [siteInRange] using this
+
+/-- **The theorem the name always promised.**  Two lines carrying one id that
+land in one *file* — the same path on disk, not merely the same list index —
+are the same line.  The index-level version below is what this is proved from;
+on its own it left two documents free to share a path, and then a demotion put
+two `^m1` lines into one file with every stated theorem still true. -/
+theorem no_two_lines_of_one_id_in_one_path (p : WfPlan) (l₁ l₂ : Line)
+    (h₁ : l₁ ∈ p.val.lines) (h₂ : l₂ ∈ p.val.lines) (hid : l₁.id = l₂.id)
+    (hpath : pathAt p.val l₁.site.doc = pathAt p.val l₂.site.doc) : l₁.site = l₂.site := by
+  have k₁ : l₁.site.doc < p.val.docs.length := no_line_is_lost p l₁ h₁
+  have k₂ : l₂.site.doc < p.val.docs.length := no_line_is_lost p l₂ h₂
+  have hnd : (p.val.docs.map Doc.path).Nodup := by
+    have := (planWf_parts p.property).2.2
+    simpa [pathsDistinct] using this
+  have hm₁ : l₁.site.doc < (p.val.docs.map Doc.path).length := by simpa using k₁
+  have hm₂ : l₂.site.doc < (p.val.docs.map Doc.path).length := by simpa using k₂
+  have heq : (p.val.docs.map Doc.path)[l₁.site.doc] = (p.val.docs.map Doc.path)[l₂.site.doc] := by
+    simp only [List.getElem_map]
+    have e₁ : pathAt p.val l₁.site.doc = some (p.val.docs[l₁.site.doc]).path := by
+      simp [pathAt, List.getElem?_eq_getElem k₁]
+    have e₂ : pathAt p.val l₂.site.doc = some (p.val.docs[l₂.site.doc]).path := by
+      simp [pathAt, List.getElem?_eq_getElem k₂]
+    rw [e₁, e₂] at hpath
+    exact Option.some.inj hpath
+  have hk : l₁.site.doc = l₂.site.doc := (List.getElem_inj hnd).mp heq
+  exact no_two_lines_of_one_id_in_one_file p.val l₁ l₂ h₁ h₂ hid hk
 
 /-! ## Documents: splitting text into prose and items, and putting it back -/
 

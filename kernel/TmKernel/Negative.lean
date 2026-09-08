@@ -44,4 +44,17 @@ theorem close_conserves (bm : Nat) (e : Entity) :
 theorem lead_set_is_not_silent (bm : Nat) (w : List Char) (r : RawItem) :
     viewRemaining bm (setLeadWord w r) = unitValue bm w := rfl
 
+/- CHEAT 6 — take the destination straight off the wire, which is what let
+   `move ^m1 7` delete the item from a one-document plan and return `ok`.  A
+   `Dest` is an index **plus a proof it is a document of this plan**, and a
+   `Nat` decoded from JSON cannot supply the second field. -/
+def destCheat (n : Nat) (p : WfPlan) : Dest p.val := ⟨n, by omega⟩
+
+/- CHEAT 7 — read a `[-]` line back as an ordinary open item, which is what
+   the first loader did: it sent `Glyph.demoted` to `live free` with no archive
+   and `glyphAt` rendered `[ ]`.  The inverse of `glyphAt` is a *partial*
+   function, and `statusOfGlyph .demoted` is `none` for a reason. -/
+def loneDemotedCheat (q : Placement) : Entity :=
+  ⟨⟨⟨q.doc, q.rank⟩, none, (statusOfGlyph q.glyph).get rfl, q.item, []⟩, rfl⟩
+
 end Tm

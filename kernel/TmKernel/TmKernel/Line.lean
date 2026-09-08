@@ -238,16 +238,31 @@ def setEstIn (v : Nat) : List Tok → List Tok
   | []      => []
   | t :: ts => if isEstKey t.word then ⟨t.sep, estWord v⟩ :: ts else t :: setEstIn v ts
 
-def insertBeforeId (n : Tok) : List Tok → List Tok
-  | []      => [n]
-  | u :: us => if isIdWord u.word then n :: u :: us else u :: insertBeforeId n us
+/-- Insert a word immediately before the id token.
+
+**The separator is the whole difficulty, and getting it wrong was a bug.**
+`- [ ]^m1` is a line the parser accepts: its id token carries no separator,
+because nothing precedes it.  Inserting a token in front of that with a leading
+space produced `- [ ] est:45m^m1`, in which `est:45m^m1` is a single word and
+the line no longer has an id token at all — one `tm edit est=` turned a line the
+kernel accepted into a line the kernel reads as prose.  So when the id token has
+no separator of its own, the inserted word takes that position and the id token
+takes the space.  `setEst_canonical` below is the proof that this is now
+airtight, and it closes the gap this module's header used to record. -/
+def insertBeforeId (w : List Char) : List Tok → List Tok
+  | []      => [⟨[' '], w⟩]
+  | u :: us =>
+    if isIdWord u.word then
+      (if u.sep.isEmpty then ⟨[], w⟩ :: ⟨[' '], u.word⟩ :: us
+       else ⟨[' '], w⟩ :: u :: us)
+    else u :: insertBeforeId w us
 
 def hasEst (r : RawItem) : Bool := r.toks.any (fun t => isEstKey t.word)
 
 /-- `tm edit ^id est=v`: write the slot the view reads. -/
 def setEst (v : Nat) (r : RawItem) : RawItem :=
   if hasEst r then ⟨r.indent, setEstIn v r.toks⟩
-  else ⟨r.indent, insertBeforeId ⟨[' '], estWord v⟩ r.toks⟩
+  else ⟨r.indent, insertBeforeId (estWord v) r.toks⟩
 
 /-- The one thing `est:` values must do: survive a write followed by a read. -/
 theorem unitValue_estWord (bm v : Nat) : unitValue bm ((estWord v).drop 4) = some v := by
@@ -276,15 +291,16 @@ theorem find_setEstIn (v : Nat) (ts : List Tok) (h : ts.any (fun t => isEstKey t
         simp only [hk, Bool.false_eq_true]
         exact ih (by simpa [hk] using h)
 
-theorem find_insertBeforeId (n : Tok) (ts : List Tok) (hn : isEstKey n.word = true)
+theorem find_insertBeforeId (w : List Char) (ts : List Tok) (hn : isEstKey w = true)
     (h : ts.any (fun t => isEstKey t.word) = false) :
-    ((insertBeforeId n ts).find? (fun t => isEstKey t.word)).map Tok.word = some n.word := by
+    ((insertBeforeId w ts).find? (fun t => isEstKey t.word)).map Tok.word = some w := by
   induction ts with
   | nil => simp [insertBeforeId, hn]
   | cons u us ih =>
       simp only [List.any_cons, Bool.or_eq_false_iff] at h
       by_cases hid : isIdWord u.word = true
-      · simp [insertBeforeId, if_pos hid, hn]
+      · by_cases hsep : u.sep.isEmpty = true <;>
+          simp [insertBeforeId, hid, hsep, hn]
       · simp only [insertBeforeId, if_neg hid, List.find?_cons]
         simp only [h.1, Bool.false_eq_true]
         exact ih h.2
@@ -309,8 +325,8 @@ theorem view_set_is_not_silent (bm v : Nat) (r : RawItem) :
   · simp only [Bool.not_eq_true] at h
     rw [if_neg (by simp [h])]
     have hn : isEstKey (estWord v) = true := isEstKey_estWord v
-    have := find_insertBeforeId ⟨[' '], estWord v⟩ r.toks hn (by simpa [hasEst] using h)
-    cases hf : (insertBeforeId ⟨[' '], estWord v⟩ r.toks).find? (fun t => isEstKey t.word) with
+    have := find_insertBeforeId (estWord v) r.toks hn (by simpa [hasEst] using h)
+    cases hf : (insertBeforeId (estWord v) r.toks).find? (fun t => isEstKey t.word) with
     | none => rw [hf] at this; simp at this
     | some t =>
         rw [hf] at this
@@ -340,5 +356,240 @@ theorem lead_edit_is_silent :
       viewRemaining bm r ≠ unitValue bm w := by
   refine ⟨⟨[], [⟨[' '], ['6', 'b']⟩, ⟨[' '], ['e','s','t',':','1','b']⟩,
               ⟨[' '], ['^','m','1']⟩]⟩, ['3', 'b'], 90, ?_, ?_⟩ <;> decide
+
+/-! ## The setters preserve `CanonicalItem`
+
+This module's header used to record a gap: that the setters preserve
+`CanonicalItem` was not proved, and was **false** for `setEst`'s insert branch.
+That was not a missing proof, it was a bug — the counterexample is one command
+away from a line the kernel accepts (`- [ ]^m1`, whose id token has no
+separator).  `insertBeforeId` now places the inserted word so that no two words
+can run together, and the obligation is discharged here.
+
+The payoff is `setEst_line_reparses`: whatever `tm edit ^id est=v` writes, the
+kernel reads back as the same item, with the same id and the same box. -/
+
+theorem tok_wf_iff (t : Tok) : t.wf = true ↔
+    (t.sep.all isSp = true ∧ t.word.isEmpty = false ∧ t.word.all (fun c => !isSp c) = true) := by
+  simp [Tok.wf, and_assoc]
+
+theorem digitsOf_no_space (v : Nat) : ∀ c ∈ digitsOf v, isSp c = false := by
+  intro c hc
+  have hd := digitsOf_all_digits v c hc
+  by_cases h : c = ' '
+  · subst h; simp [charDigit] at hd
+  · simpa [isSp] using h
+
+theorem estWord_ne_nil (v : Nat) : (estWord v).isEmpty = false := by simp [estWord]
+
+theorem estWord_no_space (v : Nat) : (estWord v).all (fun c => !isSp c) = true := by
+  simp only [estWord, List.all_eq_true]
+  intro c hc
+  rcases List.mem_append.1 hc with h | h
+  · rcases List.mem_append.1 h with h1 | h1
+    · simp only [List.mem_cons, List.not_mem_nil, or_false] at h1
+      rcases h1 with rfl | rfl | rfl | rfl <;> rfl
+    · simp [digitsOf_no_space v c h1]
+  · simp only [List.mem_cons, List.not_mem_nil, or_false] at h
+    subst h; rfl
+
+theorem estWord_not_id (v : Nat) : isIdWord (estWord v) = false := by simp [isIdWord, estWord]
+
+theorem est_tok_wf (v : Nat) (sp : List Char) (hsp : sp.all isSp = true) :
+    (⟨sp, estWord v⟩ : Tok).wf = true :=
+  (tok_wf_iff _).2 ⟨hsp, estWord_ne_nil v, estWord_no_space v⟩
+
+/-- `toksWf` does not care what the head's separator is, only that it is
+spaces — which is what lets `insertBeforeId` hand the id token a space. -/
+theorem toksWf_head_sep (t : Tok) (sp : List Char) (hsp : sp.all isSp = true) (ts : List Tok)
+    (h : toksWf (t :: ts) = true) : toksWf (⟨sp, t.word⟩ :: ts) = true := by
+  have ht : t.wf = true := by
+    cases ts with
+    | nil => simpa [toksWf] using h
+    | cons u r => simp only [toksWf, Bool.and_eq_true] at h; exact h.1.1
+  have ht' : (⟨sp, t.word⟩ : Tok).wf = true :=
+    (tok_wf_iff _).2 ⟨hsp, ((tok_wf_iff t).1 ht).2.1, ((tok_wf_iff t).1 ht).2.2⟩
+  cases ts with
+  | nil => simpa [toksWf] using ht'
+  | cons u r =>
+      simp only [toksWf, Bool.and_eq_true] at h ⊢
+      exact ⟨⟨ht', h.1.2⟩, h.2⟩
+
+theorem insertBeforeId_head (w : List Char) (u : Tok) (us : List Tok)
+    (hsep : u.sep.isEmpty = false) :
+    ∃ v vs, insertBeforeId w (u :: us) = v :: vs ∧ v.sep.isEmpty = false := by
+  unfold insertBeforeId
+  by_cases hid : isIdWord u.word = true
+  · rw [if_pos hid, if_neg (by simp [hsep])]
+    exact ⟨_, _, rfl, by simp⟩
+  · rw [if_neg hid]
+    exact ⟨u, _, rfl, hsep⟩
+
+theorem toksWf_insertBeforeId (v : Nat) : ∀ ts : List Tok, toksWf ts = true →
+    ts.any (fun t => isIdWord t.word) = true → toksWf (insertBeforeId (estWord v) ts) = true := by
+  intro ts
+  induction ts with
+  | nil => intro _ hid; simp at hid
+  | cons u us ih =>
+      intro h hid
+      unfold insertBeforeId
+      by_cases hidu : isIdWord u.word = true
+      · rw [if_pos hidu]
+        by_cases hsep : u.sep.isEmpty = true
+        · rw [if_pos hsep]
+          simp only [toksWf, Bool.and_eq_true]
+          refine ⟨⟨est_tok_wf v [] rfl, by simp⟩, ?_⟩
+          exact toksWf_head_sep u [' '] rfl us h
+        · rw [if_neg hsep]
+          simp only [toksWf, Bool.and_eq_true]
+          exact ⟨⟨est_tok_wf v [' '] rfl, by simpa using hsep⟩, h⟩
+      · rw [if_neg hidu]
+        have husid : us.any (fun t => isIdWord t.word) = true := by
+          simp only [List.any_cons, Bool.or_eq_true] at hid
+          rcases hid with hc | hc
+          · exact absurd hc hidu
+          · exact hc
+        cases us with
+        | nil => simp at husid
+        | cons x r =>
+            simp only [toksWf, Bool.and_eq_true] at h
+            obtain ⟨y, ys, hy, hys⟩ :=
+              insertBeforeId_head (estWord v) x r (by simpa using h.1.2)
+            rw [hy]
+            simp only [toksWf, Bool.and_eq_true]
+            refine ⟨⟨h.1.1, by simpa using hys⟩, ?_⟩
+            have := ih h.2 husid
+            rwa [hy] at this
+
+theorem toksWf_setEstIn (v : Nat) : ∀ ts : List Tok, toksWf ts = true →
+    toksWf (setEstIn v ts) = true := by
+  intro ts
+  induction ts with
+  | nil => intro _; rfl
+  | cons u us ih =>
+      intro h
+      unfold setEstIn
+      by_cases hk : isEstKey u.word = true
+      · rw [if_pos hk]
+        have hu : u.wf = true := by
+          cases us with
+          | nil => simpa [toksWf] using h
+          | cons x r => simp only [toksWf, Bool.and_eq_true] at h; exact h.1.1
+        have hnew : (⟨u.sep, estWord v⟩ : Tok).wf = true :=
+          est_tok_wf v u.sep ((tok_wf_iff u).1 hu).1
+        cases us with
+        | nil => simpa [toksWf] using hnew
+        | cons x r =>
+            simp only [toksWf, Bool.and_eq_true] at h ⊢
+            exact ⟨⟨hnew, h.1.2⟩, h.2⟩
+      · rw [if_neg hk]
+        cases us with
+        | nil => simpa [toksWf, setEstIn] using h
+        | cons x r =>
+            simp only [toksWf, Bool.and_eq_true] at h
+            have hset : ∃ y ys, setEstIn v (x :: r) = y :: ys ∧ y.sep = x.sep := by
+              unfold setEstIn
+              by_cases hkx : isEstKey x.word = true
+              · rw [if_pos hkx]; exact ⟨⟨x.sep, estWord v⟩, r, rfl, rfl⟩
+              · rw [if_neg hkx]; exact ⟨x, setEstIn v r, rfl, rfl⟩
+            obtain ⟨y, ys, hy, hysep⟩ := hset
+            rw [hy]
+            simp only [toksWf, Bool.and_eq_true]
+            refine ⟨⟨h.1.1, ?_⟩, ?_⟩
+            · rw [hysep]; exact h.1.2
+            · have := ih h.2
+              rwa [hy] at this
+
+theorem idWords_insertBeforeId (v : Nat) : ∀ ts : List Tok,
+    ((insertBeforeId (estWord v) ts).filter (fun t => isIdWord t.word)).map Tok.word
+      = (ts.filter (fun t => isIdWord t.word)).map Tok.word := by
+  intro ts
+  induction ts with
+  | nil => simp [insertBeforeId, estWord_not_id v]
+  | cons u us ih =>
+      unfold insertBeforeId
+      by_cases hid : isIdWord u.word = true
+      · by_cases hsep : u.sep.isEmpty = true <;>
+          simp [hid, hsep, estWord_not_id v]
+      · rw [if_neg hid]
+        simp only [List.filter_cons, hid, Bool.false_eq_true, if_false]
+        exact ih
+
+theorem estKey_not_id (w : List Char) (h : isEstKey w = true) : isIdWord w = false := by
+  cases w with
+  | nil => simp [isEstKey] at h
+  | cons a t =>
+      have ha : a = 'e' := by
+        simp only [isEstKey, List.take_succ_cons, beq_iff_eq, List.cons.injEq] at h
+        exact h.1
+      subst ha
+      rfl
+
+theorem idWords_setEstIn (v : Nat) : ∀ ts : List Tok,
+    ((setEstIn v ts).filter (fun t => isIdWord t.word)).map Tok.word
+      = (ts.filter (fun t => isIdWord t.word)).map Tok.word := by
+  intro ts
+  induction ts with
+  | nil => rfl
+  | cons u us ih =>
+      unfold setEstIn
+      by_cases hk : isEstKey u.word = true
+      · rw [if_pos hk]
+        simp [estKey_not_id u.word hk, estWord_not_id v]
+      · rw [if_neg hk]
+        by_cases hid : isIdWord u.word = true <;> simp [hid, ih]
+
+theorem canonical_iff (i : Id) (r : RawItem) : CanonicalItem i r = true ↔
+    (r.indent.all isSp = true ∧ toksWf r.toks = true ∧
+      (idToks r).map Tok.word = ['^' :: i]) := by
+  unfold CanonicalItem idToks
+  cases r.toks.filter (fun t => isIdWord t.word) with
+  | nil => simp
+  | cons t rest =>
+      cases rest with
+      | cons u rs => simp
+      | nil => simp [and_assoc]
+
+/-- **The obligation the header used to defer.**  `tm edit ^id est=v` takes a
+canonical line to a canonical line — the id token survives, every token stays
+well shaped, and no two words run together. -/
+theorem setEst_canonical (i : Id) (v : Nat) (r : RawItem) (h : CanonicalItem i r = true) :
+    CanonicalItem i (setEst v r) = true := by
+  obtain ⟨hind, htw, hids⟩ := (canonical_iff i r).1 h
+  refine (canonical_iff i (setEst v r)).2 ⟨?_, ?_, ?_⟩
+  · unfold setEst; by_cases hE : hasEst r = true <;> simp [hE, hind]
+  · unfold setEst
+    by_cases hE : hasEst r = true
+    · simp only [hE, if_pos]
+      exact toksWf_setEstIn v r.toks htw
+    · simp only [Bool.not_eq_true] at hE
+      rw [if_neg (by simp [hE])]
+      refine toksWf_insertBeforeId v r.toks htw ?_
+      -- the line has an id token, because `idToks r` is a singleton
+      unfold idToks at hids
+      cases hf : r.toks.filter (fun t => isIdWord t.word) with
+      | nil => rw [hf] at hids; simp at hids
+      | cons t rest =>
+          have hm : t ∈ r.toks.filter (fun x => isIdWord x.word) := by rw [hf]; simp
+          have := (List.mem_filter.1 hm).2
+          simp only [List.any_eq_true]
+          exact ⟨t, (List.mem_filter.1 hm).1, this⟩
+  · unfold setEst idToks
+    by_cases hE : hasEst r = true
+    · simp only [hE, if_pos]
+      rw [idWords_setEstIn v r.toks]
+      exact hids
+    · simp only [Bool.not_eq_true] at hE
+      rw [if_neg (by simp [hE])]
+      rw [idWords_insertBeforeId v r.toks]
+      exact hids
+
+/-- **The payoff, and the answer to "one command from an accepted input".**
+Serialise what `tm edit ^id est=v` produced and the kernel parses it back to the
+same item: same id, same box, same tokens. -/
+theorem setEst_line_reparses (i : Id) (g : Glyph) (v : Nat) (r : RawItem)
+    (h : CanonicalItem i r = true) :
+    parseItem (serializeItem i g (setEst v r)) = .ok (i, g, setEst v r) :=
+  parse_serialize i g (setEst v r) (setEst_canonical i v r h)
 
 end Tm

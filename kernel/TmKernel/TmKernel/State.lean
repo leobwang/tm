@@ -143,4 +143,71 @@ theorem exactly_one_live (i : Id) (e : Entity) :
 theorem archive_line_is_demoted (c : Core) (r : Site) (h : c.archive = some r) :
     glyphAt c r = Glyph.demoted := by simp [glyphAt, h]
 
+/-! ## Reading a glyph back: the inverse of `glyphAt`
+
+`glyphAt` is the only writer of a state box.  A loader therefore has exactly one
+correct job — pick the state whose glyph *is* the one in the file — and getting
+it wrong silently rewrites the user's file with no command run at all.  That is
+what the first version of `entitiesOfDoc` did: it mapped `[-]` to `live free`
+with no archive, and `glyphAt` rendered `[ ]`.
+
+So the inverse is written down as a partial function and its two halves are
+theorems.  `none` means **the glyph is not reachable in that configuration**,
+and the loader must reject rather than pick something close:
+
+* with no archive placement, `[-]` is unreachable — a demotion is two lines;
+* with an archive placement, `[ ]` is unreachable — the live line of a
+  half-finished demotion is `[-]`, never `[ ]`.
+-/
+
+/-- The inverse of `glyphAt` at the live site of an entity with **no** archive
+placement.  `[-]` has no preimage here: a lone `[-]` is not a state this kernel
+can hold. -/
+def statusOfGlyph : Glyph → Option Status
+  | .todo    => some (.live .free)
+  | .active  => some (.live .self)
+  | .done    => some (.settled .done)
+  | .dropped => some (.settled .dropped)
+  | .waiting => some (.live .world)
+  | .demoted => none
+
+/-- The inverse of `glyphAt` at the live site of an entity that **does** have an
+archive placement.  `[ ]` has no preimage here: while a tombstone stands, the
+live line reads `[-]`. -/
+def statusOfGlyphDemoted : Glyph → Option Status
+  | .demoted => some (.live .free)
+  | .active  => some (.live .self)
+  | .done    => some (.settled .done)
+  | .dropped => some (.settled .dropped)
+  | .waiting => some (.live .world)
+  | .todo    => none
+
+/-- **Fidelity, unpaired.**  The entity a loader builds from a glyph renders
+that same glyph back. -/
+theorem glyphAt_statusOfGlyph {g : Glyph} {s : Status} (h : statusOfGlyph g = some s)
+    (site : Site) (l : RawItem) (st : List Nat) :
+    glyphAt ⟨site, none, s, l, st⟩ site = g := by
+  cases g <;> simp only [statusOfGlyph, Option.some.injEq, reduceCtorEq] at h <;>
+    first | (subst h; rfl) | rfl
+
+/-- **Fidelity, paired.**  Same, for the two-line form a demotion leaves: the
+live site renders the glyph it was read with, and the tombstone renders `[-]`
+(`archive_line_is_demoted`). -/
+theorem glyphAt_statusOfGlyphDemoted {g : Glyph} {s : Status}
+    (h : statusOfGlyphDemoted g = some s) (live arch : Site) (hne : arch ≠ live)
+    (l : RawItem) (st : List Nat) :
+    glyphAt ⟨live, some arch, s, l, st⟩ live = g := by
+  have harch : ¬ ((some arch : Option Site) = some live) := by simpa using hne
+  cases g <;> simp only [statusOfGlyphDemoted, Option.some.injEq, reduceCtorEq] at h <;>
+    first | (subst h; simp [glyphAt, harch]) | simp [glyphAt, harch]
+
+/-- The two inverses between them cover every glyph: whichever box is in the
+file, exactly one of the two configurations renders it.  So "no state matches
+this line" is never the reason the loader rejects — it rejects only because the
+*pairing* is wrong, which is a fact about the whole plan and not about one
+line. -/
+theorem every_glyph_has_a_state (g : Glyph) :
+    (statusOfGlyph g).isSome = true ∨ (statusOfGlyphDemoted g).isSome = true := by
+  cases g <;> simp [statusOfGlyph, statusOfGlyphDemoted]
+
 end Tm

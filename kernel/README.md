@@ -15,9 +15,9 @@ kernel/
     TmKernel/Plan.lean       the plan as one object; the invariant, globally
     TmKernel/Cmd.lean        five commands, each with its law proved or refuted
     TmKernel/Boundary.lean   String -> String; one @[export]
-    Check.lean               axiom audit (42 theorems)
+    Check.lean               axiom audit (62 theorems)
     Negative.lean            MUST FAIL to compile — the demonstration
-  tm-kernel-ffi/       Rust: the C shim, build.rs, and 9 tests that call Lean
+  tm-kernel-ffi/       Rust: the C shim, build.rs, and 17 tests that call Lean
   check.sh             stage-one acceptance
   totality.py          the kernel must be total; this enforces it
 ```
@@ -37,9 +37,9 @@ LEAN_PATH=.lake/build/lib/lean ~/.elan/bin/lean Negative.lean   # MUST print err
 cd ../tm-kernel-ffi && cargo test                               # Rust -> C -> Lean
 ```
 
-Measured on an M-series Mac: `lake build TmKernel:static` from clean **1.3 s**;
-`cargo test` from clean, driving lake and linking the Lean runtime, **3.5 s**;
-the linkable archive is **408 KB** and the test binary **3.8 MB**.
+Measured on an M-series Mac: `lake build TmKernel:static` from clean **1.6 s**;
+`cargo test` from clean, driving lake and linking the Lean runtime, **3.6 s**;
+the linkable archive is **497 KB** and the test binary **3.9 MB**.
 
 **No Mathlib.** Everything used — `Fin`, `Nat`, `Option`, `Except`, `Subtype`,
 `List`, `omega`, `decide`, `simp`, `Lean.Data.Json` — is core toolchain.
@@ -66,9 +66,32 @@ one archive placement, in a different file. `move` cannot put a line somewhere
 — it can only replace a `Site`, and replacing it into the file the tombstone
 occupies is refused by the constructor.
 
-The consequence is `every_transform_preserves_the_invariant`: there is no
-preservation proof, and none to write, because the invariant is a theorem about
-*every* `PlanCore`. Commands that do not exist yet cannot break it either.
+The consequence is `no_two_lines_of_one_id_in_one_path`: for that half of the
+invariant there is no preservation proof, and none to write, because it is a
+theorem about *every* `PlanCore`. Commands that do not exist yet cannot break it
+either.
+
+**An audit of the first version of this package found that the structural claim
+was true and the boundary around it was not**, and the corrections are the
+substance of the current version. Three of them are worth stating up front,
+because each is the *same* class of defect as the one the rebuild exists to
+remove:
+
+- a `[-]` line did not survive a read with **no commands at all** — the loader
+  sent `Glyph.demoted` to a live open item and the kernel rewrote the user's
+  file. The line-level round trip theorem did not catch it because it is stated
+  about the glyph the *parser returned*, and the pipeline throws that glyph away
+  and asks `glyphAt` for a new one. `load_render_line` and
+  `paired_renders_each_placement` are stated about the entity the loader builds,
+  which is what the FFI renders from;
+- `move` to a document index that does not exist **deleted the item and returned
+  `ok`** — the same missing precondition, moved from "the destination already
+  holds this id" to "the destination is not a file". A destination is now a
+  `Dest`, whose second field is a proof that the index is a document of this
+  plan, and `no_line_is_lost` is the theorem that nothing can fall off the end;
+- two documents could share a `path`. Every index-level theorem stayed true
+  while two `^m1` lines landed in one file. Paths are now injective by
+  `planWf`, and the theorem is restated over paths.
 
 ## The demonstration
 
@@ -108,10 +131,22 @@ Negative.lean:44:0: error: Not a definitional equality: the left-hand side
   viewRemaining bm (setLeadWord w r)
 is not definitionally equal to the right-hand side
   unitValue bm w
+
+Negative.lean:51:60: error: omega could not prove the goal:
+No usable constraints found.        -- `Dest p.val` wants `n < p.val.docs.length`
+
+Negative.lean:58:55: error: Application type mismatch: The argument
+  rfl
+has type
+  ?m.6 = ?m.6
+but is expected to have type
+  (statusOfGlyph q.glyph).isSome = true
+in the application
+  (statusOfGlyph q.glyph).get ⋯
 EXIT=1
 ```
 
-Five cheats, five compile errors:
+Seven cheats, seven compile errors:
 
 | cheat | what it is | why it fails |
 |---|---|---|
@@ -120,10 +155,12 @@ Five cheats, five compile errors:
 | 3 | **the original bug**: append the rendered line to the destination file | a document holds prose only, and `planWf` says none of it parses as an item, so the appended plan cannot be constructed |
 | 4 | a close that zeroes the estimate it just measured | the conservation obligation is not dischargeable |
 | 5 | export `setLeadWord` as "edit the estimate" — what `tm edit est=` did | the `view ∘ set = id` obligation every setter must discharge cannot be discharged for it |
+| 6 | take a relocation's destination straight off the wire, which is what let `move ^m1 7` delete the item from a one-document plan | a `Dest` is an index **plus a proof it is a document of this plan**, and a `Nat` decoded from JSON cannot supply the second field |
+| 7 | read a lone `[-]` back as an ordinary open item, which is what the first loader did | the inverse of `glyphAt` is a *partial* function and `statusOfGlyph .demoted` is `none`; `.get` needs a proof there is something there |
 
 ## What is proved
 
-96 theorems; the audit in `Check.lean` covers 42 of them and shows only
+148 theorems; the audit in `Check.lean` covers 62 of them and shows only
 `propext` / `Classical.choice` / `Quot.sound`, **never `sorryAx`**. Three
 (`drop_idem`, `readopt_reopens`, `grain_rejects_99`) depend on no axioms at all.
 
@@ -159,13 +196,47 @@ a status — five states, not six — and the glyph is a function of placement.
   line, and exactly one of the (at most two) lines is the live one, so the
   ambiguity of `[-]` in the file is harmless: the role is positional.
 - `no_two_lines_of_one_id_in_one_file` — **the sentence six code paths
-  violated**, for every possible plan.
+  violated**, for every possible plan. It quantifies over `Site.doc`, a list
+  *index*.
+- `no_two_lines_of_one_id_in_one_path` — **the same sentence about what reaches
+  the disk.** Two documents at different indices carrying one path are one file,
+  and the index-level theorem says nothing about that: before path injectivity
+  joined `planWf`, a demote put two `^m1` lines into one `w.md` with every
+  stated theorem still true. This is the version whose name matches its
+  statement.
+- `no_line_is_lost` — every line of every plan lands in a document that exists,
+  so rendering document by document emits all of them. This is what makes
+  `move ^id 7` impossible rather than silent.
 - `lines_per_id_le_two` — and no plan has three lines of one id.
-- `every_transform_preserves_the_invariant`,
-  `every_transform_keeps_lines_le_two` — for *any* transformation, including
-  ones not yet written.
 - `prose_is_never_an_item` — a document's prose contains nothing that parses as
   an item, so the only item lines a file emits are the ones its entities render.
+- `glyphAt_statusOfGlyph`, `glyphAt_statusOfGlyphDemoted` — `glyphAt` is the
+  only writer of a state box, and these are its **inverse**: the entity a loader
+  builds from a glyph renders that same glyph back. Where the inverse is `none`
+  the configuration is unreachable and the loader rejects rather than picking
+  something close.
+
+### Closure, and what is not free
+
+The first version of this package carried a theorem named
+`every_transform_preserves_the_invariant` whose `f`, `p` and `_h` binders were
+all unused: it was `no_two_lines_of_one_id_in_one_file` with three ignorable
+arguments, and its name promised a closure property it did not state. **It is
+withdrawn**, along with `every_transform_keeps_lines_le_two`. What replaces it
+is the honest split:
+
+- the id-uniqueness half genuinely *is* structural. Restating it with a command
+  bound in front adds no information, so it is not restated;
+- the other two halves are **not** free. `sitesInRange` and `pathsDistinct` are
+  decidable predicates that `WfPlan.mapAt` re-establishes by computation on the
+  post-state of every command — the `lift` pattern, at the plan level;
+- `mapAt_ok_of_inRange` and `cmdMove_succeeds` are the proofs that the commands
+  can discharge them, so the check is a proof obligation and not a trapdoor that
+  turns legitimate commands into errors. Every hypothesis in both is
+  load-bearing;
+- `transform_closed` states closure at the type where it is a real claim: over a
+  bare `PlanCore`, with the refinement forgotten, which is what a host would
+  hold if the kernel returned a record instead of a subtype.
 
 ### The grammar
 
@@ -185,8 +256,28 @@ that is *understood* is the state box, the id, and the estimate.
   line whose `^id` disagrees with the id that names it is not a state this
   kernel can hold.
 - `parse_serialize` (**round trip B**) — anything the kernel writes it reads
-  back identically, on `CanonicalItem`, which is decidable. That the setters
-  *preserve* `CanonicalItem` is **not** proved — see gap 10.
+  back identically, on `CanonicalItem`, which is decidable.
+- `setEst_canonical` and `setEst_line_reparses` — **the setters preserve
+  `CanonicalItem`**, so round trip B chains across an edit. This was a stated
+  gap and it was not a missing proof, it was a bug: `- [ ]^m1` is a line the
+  parser accepts whose id token carries no separator, and one `tm edit est=`
+  produced `- [ ] est:45m^m1`, in which `est:45m^m1` is a single word and the
+  line has no id token at all. `insertBeforeId` now hands the id token the space
+  when it has none of its own.
+- `load_render_line` — **the line round trip through the pipeline the FFI
+  actually runs**: parse the bytes, build the entity, ask `glyphAt` for the box,
+  serialise, and get the same bytes. The `[-]` regression is a counterexample to
+  *this* statement and not to `serialize_parse`, which is exactly why it
+  survived a package with a round-trip theorem in it.
+- `paired_renders_each_placement` — and for the two-line form a `demote` writes,
+  each site renders the box that was in the file at that site. The kernel can
+  now read back its own output; the first loader rejected two lines of one id
+  outright.
+- `scanLines_prose` — every prose line of an accepted document failed to parse
+  **because it is not an item line**, not because it is a broken one. A line
+  with an item's shape that does not parse is now an `LErr.badLine`, which was
+  dead code before: `- [Z] x ^a1` and `- [ ] two ^a1 ^a2` were accepted, kept
+  and written back.
 - `renderSplit_splitDoc` — **round trip over a whole file**: splitting a
   document into prose and items and putting it back reproduces the file
   exactly.
@@ -208,7 +299,11 @@ Five commands, each a `Transform = WfPlan → Except KErr WfPlan`.
 | `move` is idempotent (success domain) | **P** | `move_idem` |
 | `move` is last-wins (**first move succeeds**) | **P** | `move_last_wins` |
 | `move` is last-wins globally | **R** | `move_last_wins_refuted_globally` |
-| `move` is invertible | **R** | `move_not_invertible` |
+| `move` is invertible by moving it back | **P** | `move_back_restores` |
+| the `move` *command* is invertible | **R** | `move_back_at_a_fresh_rank_is_not_the_inverse`, `move_out_and_back_is_not_the_inverse` |
+| a move lands on a rank nothing else has | **P** | `freshRank_gt` |
+| a destination that is not a document is refused | **P** | `move_to_a_document_that_does_not_exist_is_rejected` |
+| a move whose destination exists and is free succeeds | **P** | `cmdMove_succeeds` |
 | `drop` is idempotent; `settled` absorbing | **P** | `drop_idem`, `settled_absorbing` |
 | `drop` preserves the archive line's glyph | **P** | `drop_preserves_archive_glyph` |
 | `edit est=v` ⟹ the view reads `v` | **P** | `set_is_not_silent`, `set_last_wins` |
@@ -224,8 +319,16 @@ The refutations are the point, not decoration:
   same as no first move: if the destination collides with the tombstone the
   composite errors while the single move succeeds. This matters for the TUI,
   which retries.
-- **`move` is not invertible**, so `tm undo` must replay the log and never
-  apply an inverse.
+- **`move` is invertible at the `Site` level and the *command* is not**, and the
+  first version of this package got that backwards. It refuted invertibility
+  against `moveTo ⟨e.live.doc, 0⟩` — rank 0, which nobody proposes — while
+  `move_back_restores`, the inverse a reasonable person *would* propose, is
+  provable in this same kernel. The claim is withdrawn and replaced by the two
+  statements that are true: moving a line back to the site it came from restores
+  it exactly, and the **command** cannot do that, because the wire form carries
+  a document and not a rank and the rank is generated fresh
+  (`freshRank_gt`). So `tm undo` must replay the log — for a reason, not by
+  assertion.
 - **`demote` is not idempotent**, and that is correct: stamps accumulate
   deliberately, to drive the month review's "≥ 2 stamps" cut list. Idempotence
   holds only modulo `stamps`, and the kernel has to say which it means rather
@@ -258,7 +361,9 @@ enforced by `totality.py` — it is how the FFI spike silently turned `est: -3`
 into `est: null`, reproducing tm's own estimate-loss bug inside the boundary
 code of a *verified* kernel.
 
-Nine Rust tests call the kernel through the shim. The one that matters:
+Seventeen Rust tests call the kernel through the shim: nine for the behaviour
+the proofs carry, and eight that are the audit's findings as the exact requests
+that reproduced them. The one that matters:
 
 ```rust
 #[test]
@@ -275,18 +380,30 @@ fn move_into_the_tombstones_file_is_refused() {
 Stated plainly, because a small thing that compiles is worth more than a large
 sketch, and because the gaps are where the next stage's cost lives.
 
-1. **The plan-level round trip is evaluated, not proved.** Line-level A and B
-   and the whole-file `renderSplit_splitDoc` are theorems. That the store,
-   rebuilt from a parse and read back out, reproduces the same per-document
-   item list is *demonstrated* by `cargo test` and `#eval`, not proved: it
-   needs a permutation argument over the store's domain that I did not build.
+1. **The plan-level round trip is evaluated, not proved — and this is the gap
+   that hid a real bug, so be precise about where it now stops.** Proved:
+   round trips A and B for a line (`serialize_parse`, `parse_serialize`), across
+   an edit (`setEst_line_reparses`), over a whole file's prose/item split
+   (`renderSplit_splitDoc`), and — new, and the direct answer to the `[-]`
+   regression — **through the entity the loader builds**, for a line on its own
+   (`load_render_line`) and for the two-line demotion form
+   (`paired_renders_each_placement`). Not proved: that the *store*, rebuilt from
+   a parse and read back out through `renderDocAt`, reproduces the same
+   per-document line list. That step needs `sortByRank` to be the identity on an
+   already-ordered list plus a permutation argument over the store's domain, and
+   without Mathlib both are real work. It is checked by
+   `the_kernel_reads_back_what_it_writes`, which demotes and then feeds the
+   kernel's own output back in and asserts the bytes are identical.
 
-2. **Reloading a demoted item is not supported.** After `demote`, the plan
-   renders two `[-]` lines with one id in two files — exactly today's tm format
-   — but the loader accepts at most one line per id, so that output cannot be
-   read back. tm distinguishes the archive copy by its `# Demoted` section;
-   sections are not modelled here. This is the single biggest functional gap
-   and it belongs to stage 2.
+2. **A lone `[-]` is rejected, not read.** A demotion is two lines — the
+   tombstone and the live line — and an entity with no archive placement has no
+   configuration that renders `[-]`. So a `[-]` whose partner is missing (a
+   hand-deleted week file, say) is `LErr.orphanDemotion` rather than a silent
+   rewrite to `[ ]`, which is what it used to be. Today's `tm` accepts it and
+   repairs it in `cli/items.rs::drop_stale_demotion`; in this design that repair
+   belongs in the `Repair` array of the plan's §4.4, returned and never applied
+   silently, and that is stage-2 work. The two-line form itself now loads and
+   round trips.
 
 3. **`Core` has five fields; tm's `Item` has twenty-two.** The
    subtype-over-dependent-record choice is precisely so that this scales, but
@@ -320,14 +437,22 @@ sketch, and because the gaps are where the next stage's cost lives.
 8. **Nothing in the shipped `tm` binary calls this yet.** Stage 3 wires it in.
    The Rust crate here is a bridge and nine tests, not an integration.
 
-9. **`setEst` is not proved to preserve `CanonicalItem`**, so round trip B is
-   not yet chained across an edit. It holds for the replace branch; it is
-   *false in general* for the insert branch, because inserting a token before an
-   id token that was the line's first token leaves that id token without a
-   separator. Real lines never look like that — which is exactly the kind of
-   reasoning this kernel exists to stop relying on.
+9. **`CanonicalItem` excludes a line with trailing whitespace**, because the
+   tokenizer emits a final token with an empty word for it and `Tok.wf` requires
+   words to be non-empty. Such lines parse, render and edit correctly — the FFI
+   tests cover them — but `setEst_canonical` does not apply to them, so for that
+   family the reparse after an edit is checked rather than proved. Widening
+   `toksWf` to allow an empty word in the last position would close it and costs
+   a re-proof of `tokenize_toks`.
 
-10. **The proof-to-definition ratio here is not a forecast.** This fragment has
+10. **`sitesInRange` is checked at load rather than established by
+    construction.** The loader takes document indices from `zipIdx` over the
+    document list, so every site it builds is in range; proving that needs a
+    `zipIdx` bound lemma. The boundary runs the decidable check instead and
+    returns a structured error, which is the same discipline as `Grain.ofNat?`
+    — but it is a check, not a construction, and the difference is recorded.
+
+11. **The proof-to-definition ratio here is not a forecast.** This fragment has
     no planner, no calendar arithmetic and no relational laws — the three places
     the ratio blows up.
 

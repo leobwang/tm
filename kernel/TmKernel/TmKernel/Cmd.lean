@@ -7,11 +7,21 @@ law with its **subdomain**, and the refutations are theorems too: several of
 tm's stated laws are false as written, and a kernel that stayed silent about
 that would be repeating the mistake.
 
-The load-bearing fact is `every_transform_preserves_the_invariant` at the
-bottom: the id-uniqueness invariant is a theorem about the *type*, so no
-command has to preserve it and no command can break it — including commands
-nobody has written yet.  That is what "structural" means here, and it is the
-difference from a runtime check someone must remember to run.
+The invariant splits into a part that is free and a part that is not, and being
+clear about which is which is the whole point of the bottom section.
+
+* **Free.** Two lines of one id in one file are the same line for *every*
+  `PlanCore` (`no_two_lines_of_one_id_in_one_path`, Plan.lean), so no command
+  has to preserve it and none can break it, including commands nobody has
+  written yet.
+* **Not free.** That every placement names a file that exists, and that no two
+  files share a path, are decidable predicates `WfPlan.mapAt` re-establishes by
+  computation on the post-state of every command — `lift`, at the plan level.
+  `mapAt_ok_of_inRange` and `cmdMove_succeeds` are the proofs that the commands
+  can discharge them, so the check is an obligation and not a trapdoor.
+
+An earlier version of this module claimed the first bullet for all three, in a
+theorem whose command argument was unused.  It is withdrawn.
 -/
 namespace Tm
 
@@ -64,8 +74,48 @@ def readopt (t : Site) (e : Entity) : Entity :=
 error out — there is no third possibility and no partial write. -/
 abbrev Transform := WfPlan → Except KErr WfPlan
 
-/-- Apply an entity transform at one id.  Both store obligations and the
-plan-level obligation are discharged here, once, for every command. -/
+/-- **A destination that exists.**
+
+`Site.doc` is a `Nat`, and the request format hands one over as a `Nat`.  If a
+command is allowed to take that `Nat` straight to a `Site`, then `move ^m1 7` in
+a one-document plan writes a placement into document 7, `renderDocAt` renders
+only the documents that are there, and the item is gone with the kernel
+returning `ok`.  That is the same missing precondition this rebuild exists to
+eliminate, moved from "the destination already holds this id" to "the
+destination is not a file".
+
+So a relocating command does not take a `Nat`.  It takes a `Dest`, whose only
+field besides the index is a proof that the index is a document of *this* plan,
+and whose only source is `resolveDest`.  The out-of-range destination is not a
+command that gets rejected; it is a command that cannot be written. -/
+structure Dest (p : PlanCore) where
+  ix : DocIx
+  ok : ix < p.docs.length
+
+/-- The only way to make a `Dest`: ask the plan. -/
+def resolveDest (p : PlanCore) (n : Nat) : Except KErr (Dest p) :=
+  if h : n < p.docs.length then .ok ⟨n, h⟩ else .error .badHorizon
+
+theorem resolveDest_ix {p : PlanCore} {n : Nat} {d : Dest p} (h : resolveDest p n = .ok d) :
+    d.ix = n := by
+  unfold resolveDest at h; split at h
+  · injection h with h; exact congrArg Dest.ix h.symm
+  · simp at h
+
+theorem resolveDest_rejects (p : PlanCore) (n : Nat) (h : ¬ n < p.docs.length) :
+    resolveDest p n = .error .badHorizon := by simp [resolveDest, h]
+
+def Dest.site {p : PlanCore} (d : Dest p) (rank : Nat) : Site := ⟨d.ix, rank⟩
+
+/-- A relocating command.  Its destination is a handle into the plan it is
+applied to, so the type itself carries "this file exists". -/
+abbrev Relocation := (p : WfPlan) → Dest p.val → Except KErr WfPlan
+
+/-- Apply an entity transform at one id.  The store obligations are discharged
+here once; the plan-level obligation is **re-established by computation** on the
+post-state, which is what makes it impossible to forget.  `planWf` now includes
+`sitesInRange`, so this check is the reason a transform cannot leave a placement
+pointing at a file that is not there. -/
 def WfPlan.mapAt (p : WfPlan) (i : Id) (f : Entity → Except KErr Entity) :
     Except KErr WfPlan :=
   match h : p.val.store.get i with
@@ -74,7 +124,9 @@ def WfPlan.mapAt (p : WfPlan) (i : Id) (f : Entity → Except KErr Entity) :
     match f e with
     | .error k => .error k
     | .ok e'   =>
-      .ok ⟨{ p.val with store := p.val.store.set i e' (by rw [h]; rfl) }, p.property⟩
+      if hq : planWf { p.val with store := p.val.store.set i e' (by rw [h]; rfl) } = true then
+        .ok ⟨_, hq⟩
+      else .error .badHorizon
 
 theorem mapAt_get (p q : WfPlan) (i : Id) (f : Entity → Except KErr Entity) (e' : Entity)
     (hq : p.mapAt i f = .ok q) (he : q.val.store.get i = some e') :
@@ -87,22 +139,76 @@ theorem mapAt_get (p q : WfPlan) (i : Id) (f : Entity → Except KErr Entity) (e
     split at hq
     · simp at hq
     · rename_i a ha
-      injection hq with hq
-      subst hq
-      rw [Store.get_set_self] at he
-      injection he with he
-      rw [ha, he]
+      split at hq
+      · injection hq with hq
+        subst hq
+        rw [Store.get_set_self] at he
+        injection he with he
+        rw [ha, he]
+      · simp at hq
 
-/-- `tm move`. -/
-def cmdMove (i : Id) (t : Site) : Transform := (·.mapAt i (moveTo t))
+/-! ### That the plan-level check is a proof obligation, not a trapdoor
+
+A decidable re-check is only honest if the commands can actually discharge it.
+These are the lemmas that say so: a transform whose result stays inside the
+documents that exist always passes, so `mapAt` never converts a legitimate
+command into `badHorizon`. -/
+
+theorem entityInRange_of_mem (p : WfPlan) (i : Id) (e : Entity)
+    (h : p.val.store.get i = some e) : entityInRange p.val e = true := by
+  have hdom : i ∈ p.val.store.dom := (p.val.store.domSpec i).mpr (by rw [h]; rfl)
+  have hall := List.all_eq_true.1 (planWf_parts p.property).2.1 i hdom
+  rw [h] at hall
+  exact hall
+
+theorem sitesInRange_set (p : PlanCore) (i : Id) (e' : Entity) (h : (p.store.get i).isSome = true)
+    (hp : sitesInRange p = true) (hin : entityInRange p e' = true) :
+    sitesInRange { p with store := p.store.set i e' h } = true := by
+  simp only [sitesInRange, List.all_eq_true]
+  intro j hj
+  by_cases hji : j = i
+  · subst hji
+    rw [Store.get_set_self]
+    exact hin
+  · rw [Store.get_set_other _ _ _ _ _ hji]
+    exact List.all_eq_true.1 hp j (by simpa using hj)
+
+/-- **The preservation proof, with every hypothesis load-bearing.**  Given an
+entity transform that succeeds and lands inside the plan's documents, `mapAt`
+succeeds, writes exactly that entity, and leaves `docs` alone. -/
+theorem mapAt_ok_of_inRange (p : WfPlan) (i : Id) (f : Entity → Except KErr Entity)
+    (e e' : Entity) (hget : p.val.store.get i = some e) (hf : f e = .ok e')
+    (hin : entityInRange p.val e' = true) :
+    ∃ q : WfPlan, p.mapAt i f = .ok q ∧ q.val.store.get i = some e' ∧
+      q.val.docs = p.val.docs := by
+  have hsome : (p.val.store.get i).isSome = true := by rw [hget]; rfl
+  have hparts := planWf_parts p.property
+  have hq : planWf { p.val with store := p.val.store.set i e' hsome } = true :=
+    planWf_of_parts hparts.1 (sitesInRange_set p.val i e' hsome hparts.2.1 hin) hparts.2.2
+  refine ⟨⟨_, hq⟩, ?_, ?_, rfl⟩
+  · unfold WfPlan.mapAt
+    split
+    · rename_i hn; rw [hget] at hn; simp at hn
+    · rename_i a hget'
+      rw [hget] at hget'
+      injection hget' with hget'
+      subst hget'
+      rw [hf]
+      simp only [dif_pos hq]
+  · exact Store.get_set_self p.val.store i e' hsome
+
+/-- `tm move`.  The destination is a `Dest`, not a `Nat`. -/
+def cmdMove (i : Id) (rank : Nat) : Relocation := fun p d => p.mapAt i (moveTo (d.site rank))
 /-- `tm drop`. -/
 def cmdDrop (i : Id) : Transform := (·.mapAt i (fun e => .ok (drop e)))
 /-- `tm edit ^id est=v`. -/
 def cmdSetEst (v : Nat) (i : Id) : Transform := (·.mapAt i (fun e => .ok (setEstE v e)))
 /-- `tm demote`. -/
-def cmdDemote (i : Id) (t : Site) (per : Nat) : Transform := (·.mapAt i (demote t per))
+def cmdDemote (i : Id) (rank per : Nat) : Relocation :=
+  fun p d => p.mapAt i (demote (d.site rank) per)
 /-- `tm readopt`. -/
-def cmdReadopt (i : Id) (t : Site) : Transform := (·.mapAt i (fun e => .ok (readopt t e)))
+def cmdReadopt (i : Id) (rank : Nat) : Relocation :=
+  fun p d => p.mapAt i (fun e => .ok (readopt (d.site rank) e))
 
 /-! ## Resolving a horizon to a file
 
@@ -147,9 +253,10 @@ theorem move_into_archive_file_is_rejected (e : Entity) (t r : Site)
   simp [hbad]
 
 /-- The same at the plan level: the command fails, the plan is unchanged. -/
-theorem plan_move_into_archive_file_is_rejected (p : WfPlan) (i : Id) (e : Entity) (t r : Site)
-    (hget : p.val.store.get i = some e) (h : e.val.archive = some r) (hd : r.doc = t.doc) :
-    cmdMove i t p = .error .occupied := by
+theorem plan_move_into_archive_file_is_rejected (p : WfPlan) (i : Id) (e : Entity)
+    (d : Dest p.val) (rank : Nat) (r : Site)
+    (hget : p.val.store.get i = some e) (h : e.val.archive = some r) (hd : r.doc = d.ix) :
+    cmdMove i rank p d = .error .occupied := by
   unfold cmdMove WfPlan.mapAt
   split
   · rename_i hn; rw [hget] at hn; simp at hn
@@ -157,7 +264,35 @@ theorem plan_move_into_archive_file_is_rejected (p : WfPlan) (i : Id) (e : Entit
     rw [hget] at hget'
     injection hget' with hget'
     subst hget'
-    rw [move_into_archive_file_is_rejected e t r h hd]
+    rw [move_into_archive_file_is_rejected e (d.site rank) r h hd]
+
+/-- **The other half of the same story, and the reason the plan-level check is
+not a trapdoor.**  A move to a destination that exists and does not hold this
+id's tombstone *succeeds*, and the item is where the user asked for it.  Both
+hypotheses are used; drop either and the conclusion is false. -/
+theorem cmdMove_succeeds (p : WfPlan) (i : Id) (e : Entity) (d : Dest p.val) (rank : Nat)
+    (hget : p.val.store.get i = some e)
+    (hfree : ∀ r, e.val.archive = some r → r.doc ≠ d.ix) :
+    ∃ q : WfPlan, cmdMove i rank p d = .ok q ∧
+      (∃ e', q.val.store.get i = some e' ∧ e'.val.live = d.site rank) := by
+  have hrange := entityInRange_of_mem p i e hget
+  simp only [entityInRange, Bool.and_eq_true] at hrange
+  have hwf : wf { e.val with live := d.site rank } = true := by
+    cases ha : e.val.archive with
+    | none => simp [wf, ha]
+    | some r =>
+        have := hfree r ha
+        simp [wf, ha, Dest.site]
+        omega
+  have hf : moveTo (d.site rank) e = .ok ⟨_, hwf⟩ := by
+    unfold moveTo lift; simp only [dif_pos hwf]
+  have hin : entityInRange p.val (⟨_, hwf⟩ : Entity) = true := by
+    simp only [entityInRange, Bool.and_eq_true, siteInRange, decide_eq_true_eq]
+    refine ⟨d.ok, ?_⟩
+    have := hrange.2
+    exact this
+  obtain ⟨q, hq, hqi, _⟩ := mapAt_ok_of_inRange p i (moveTo (d.site rank)) e _ hget hf hin
+  exact ⟨q, hq, _, hqi, rfl⟩
 
 /-- **L1 (P).**  `move` is idempotent on the subdomain where it succeeds. -/
 theorem move_idem (t : Site) (e e' : Entity) (h : moveTo t e = .ok e') :
@@ -185,14 +320,47 @@ theorem move_last_wins_refuted_globally :
     ⟨⟨⟨0, 0⟩, some ⟨1, 0⟩, .live .free, ⟨[], []⟩, []⟩, rfl⟩, ?_⟩
   simp [moveTo, lift, Except.map, Except.bind]
 
-/-- **L4 (R).**  `move` is *not* invertible: it assigns a fresh rank in the
-destination section, and moving back does not restore the old one.  Therefore
-`tm undo` must replay the log, never apply an inverse. -/
-theorem move_not_invertible :
-    ∃ (e : Entity) (t : Site),
-      ((moveTo t e).bind (fun a => moveTo ⟨e.val.live.doc, 0⟩ a)).map Subtype.val ≠ .ok e.val := by
-  refine ⟨⟨⟨⟨0, 3⟩, none, .live .free, ⟨[], []⟩, []⟩, rfl⟩, ⟨0, 9⟩, ?_⟩
-  simp [moveTo, lift, Except.map, Except.bind]
+/-! ### L4: what `move` is and is not invertible by
+
+The first version of this refutation picked `moveTo ⟨e.live.doc, 0⟩` as the
+inverse and showed it does not restore an entity whose rank was 3.  That is a
+strawman: nobody proposes rank 0 as an inverse, and the opposite theorem —
+`move_back_restores` — is provable in this same kernel.  So the claim is
+withdrawn and replaced by the two statements that are actually true. -/
+
+/-- **L4a (P).  `move` *is* invertible at the `Site` level**, by the inverse a
+reasonable person would propose: move it back where it came from.  Nothing is
+lost — not the rank, not the tombstone, not the bytes. -/
+theorem move_back_restores (t : Site) (e a : Entity) (h : moveTo t e = .ok a) :
+    (moveTo e.val.live a).map Subtype.val = .ok e.val := by
+  have hv : a.val = { e.val with live := t } := lift_roundtrips _ _ h
+  have hp : wf e.val = true := e.property
+  unfold moveTo lift
+  rw [hv]
+  simp only [wf_eq] at hp
+  simp [hp, Except.map]
+
+/-- **L4b (R).  The *command* is not invertible**, and this is where the real
+obstruction is: the wire form of `move` carries a document, not a rank, and the
+rank is generated fresh in the destination (`freshRank`, Boundary.lean).  So the
+"inverse" a user can issue puts the line back in the right file at the wrong
+place, and `tm undo` must replay the log rather than apply an inverse command.
+
+The hypothesis is exactly "the generated rank is not the one the item had", and
+`freshRank_gt` in Boundary.lean discharges it for every item the plan holds. -/
+theorem move_back_at_a_fresh_rank_is_not_the_inverse (t : Site) (n : Nat) (e a : Entity)
+    (hne : n ≠ e.val.live.rank) (h : moveTo t e = .ok a) :
+    (moveTo ⟨e.val.live.doc, n⟩ a).map Subtype.val ≠ .ok e.val := by
+  have hv : a.val = { e.val with live := t } := lift_roundtrips _ _ h
+  unfold moveTo lift
+  rw [hv]
+  split
+  · intro hc
+    simp only [Except.map, Except.ok.injEq] at hc
+    apply hne
+    have := congrArg (fun c => c.live.rank) hc
+    simpa using this
+  · simp [Except.map]
 
 /-- **L6/L7 (P).** -/
 theorem drop_idem (e : Entity) : (drop (drop e)).val = (drop e).val := rfl
@@ -324,26 +492,58 @@ theorem demoteEst_conserves (bm rec : Nat) (e : Entity) :
 theorem demoteEst_respects_user (bm rec : Nat) (e : Entity) :
     (demoteEst bm true rec e).val.line = e.val.line := rfl
 
-/-! ## The punchline -/
+/-! ## What is actually structural, and what is proved
 
-/-- **Every transformation preserves the identity invariant, including ones
-nobody has written yet.**
+An earlier version of this section carried a theorem named
+`every_transform_preserves_the_invariant` whose `f`, `p` and `_h` binders were
+all unused — it was `no_two_lines_of_one_id_in_one_file` with three ignorable
+arguments, and its name promised a closure property it did not state.  It is
+withdrawn.  What replaces it is the honest split:
 
-There is no preservation proof here, and there is none to write: two lines of
-one id in one file are the same line for *every* `PlanCore`, so a command
-cannot produce a counterexample.  That is the structural difference from a
-runtime check — `Tree::duplicate_ids` was already correct Rust; what was
-missing was anything that ran it on the post-state of every command. -/
-theorem every_transform_preserves_the_invariant
-    (f : Transform) (p q : WfPlan) (_h : f p = .ok q) :
-    ∀ l₁ ∈ q.val.lines, ∀ l₂ ∈ q.val.lines,
-      l₁.id = l₂.id → l₁.site.doc = l₂.site.doc → l₁.site = l₂.site :=
-  fun l₁ h₁ l₂ h₂ hid hdoc => no_two_lines_of_one_id_in_one_file q.val l₁ l₂ h₁ h₂ hid hdoc
+* the id-uniqueness half genuinely **is** structural, and the theorem that says
+  so is `no_two_lines_of_one_id_in_one_path` (Plan.lean).  It quantifies over
+  every `PlanCore` and mentions no command, so there is nothing for a command to
+  preserve.  Restating it with a command bound in front adds no information;
+* the other two halves — every placement names a file that exists, and no two
+  files share a path — are **not** free.  They are decidable predicates that
+  `mapAt` re-establishes on the post-state of every command, and the proof that
+  the commands can discharge them is `mapAt_ok_of_inRange` and `cmdMove_succeeds`
+  above, where the hypotheses do work.
 
-/-- And the same for the count: no plan, reachable or not, has three lines of
-one id. -/
-theorem every_transform_keeps_lines_le_two
-    (f : Transform) (p q : WfPlan) (_h : f p = .ok q) (i : Id) :
-    ((q.val.lines).filter (fun l => l.id == i)).length ≤ 2 := lines_per_id_le_two q.val i
+So the closure statement below is about the pair of them together, and it is not
+a restatement: the `.ok` branch needs `mapAt`'s check to have passed, and the
+`.error` branch is what makes "no partial write" true. -/
+
+/-- The state a command produces with the refinement **forgotten** — a bare
+`PlanCore`, which is what a host would hold if the kernel handed back a record
+instead of a subtype.  Closure is a real claim at this type and a tautology at
+the other one, so this is where it is stated. -/
+def Transform.state (f : Transform) (p : WfPlan) : Option PlanCore :=
+  match f p with
+  | .ok q    => some q.val
+  | .error _ => none
+
+/-- **Closure.**  For every command and every accepted plan, if the command
+produces a state at all, that state passes the decidable checker — the same
+`planWf` that admitted the input, covering all three halves: no prose line is an
+item line, every placement names a file that exists, and no two files share a
+path.  There is no third outcome: `Transform.state` is `none` exactly when the
+command returned a structured error, and then nothing was written. -/
+theorem transform_closed (f : Transform) (p : WfPlan) (q : PlanCore)
+    (h : f.state p = some q) : planWf q = true := by
+  unfold Transform.state at h
+  split at h
+  · rename_i r _
+    injection h with h
+    subst h
+    exact r.property
+  · simp at h
+
+theorem transform_state_none (f : Transform) (p : WfPlan) (h : f.state p = none) :
+    ∃ k : KErr, f p = .error k := by
+  unfold Transform.state at h
+  split at h
+  · simp at h
+  · rename_i k _; exact ⟨k, by assumption⟩
 
 end Tm

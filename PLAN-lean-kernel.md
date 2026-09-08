@@ -101,6 +101,35 @@ theorem lines_per_id_le_two (p : PlanCore) (i : Id) :
     ((p.lines).filter (fun l => l.id == i)).length ≤ 2
 ```
 
+**Correction from the stage-one audit, recorded here because it changes what the
+theorem above is worth.** `Site.doc` is a *list index*. Nothing in the first
+version of the package required two documents to carry distinct `path`s, so two
+documents at different indices could be one file on disk and a demote could put
+two `^m1` lines into it with the theorem above still true. Path injectivity is
+now part of `planWf`, and the claim is restated over what reaches the disk:
+
+```lean
+theorem no_two_lines_of_one_id_in_one_path (p : WfPlan) (l₁ l₂ : Line)
+    (h₁ : l₁ ∈ p.val.lines) (h₂ : l₂ ∈ p.val.lines) (hid : l₁.id = l₂.id)
+    (hpath : pathAt p.val l₁.site.doc = pathAt p.val l₂.site.doc) : l₁.site = l₂.site
+```
+
+Two further corrections from the same audit belong with it, because both are the
+**same missing-precondition shape** this section is about:
+
+- `Site.doc` was an unbounded `Nat` and the boundary took it straight off the
+  wire, so `move ^m1 7` in a one-document plan wrote a placement into document 7,
+  `renderDocAt` rendered the documents that exist, and the item was **deleted
+  with the kernel returning `ok`**. A relocation's destination is now a
+  `Dest p`, whose second field is a proof that the index is a document of `p`,
+  and `no_line_is_lost` says nothing a plan holds can fall off the end.
+- `glyphAt` is the only writer of a state box, and the loader is its inverse.
+  The first loader mapped `Glyph.demoted` to `live free` with no archive, so a
+  `[-]` line came back `[ ]` **with no command run at all** — the shipped bug 2,
+  reproduced inside the verified kernel. The inverse is now written down as a
+  partial function with `glyphAt_statusOfGlyph` / `glyphAt_statusOfGlyphDemoted`
+  as its two halves, and where it is `none` the loader rejects.
+
 Two second-order facts from the same spike, both of which the design has to answer:
 
 - The **checker is weaker than the invariant**. `tree::is_real_duplicate`
@@ -459,7 +488,8 @@ compiled, **R\*** = expected refutation, **?** = open and expensive.
 | L1 | `move t` | idempotent | success domain | **P** `move_idem` |
 | L2 | `move t` | last-wins | **first move succeeds** | **P** `move_last_wins` |
 | L3 | `move` | last-wins | globally | **R** `move_last_wins_refuted_globally` |
-| L4 | `move` | invertible | all | **R** `move_not_invertible` |
+| L4a | `move t` | invertible by `move e.live` | success domain | **P** `move_back_restores` |
+| L4b | `move` **command** | invertible | all | **R** `move_back_at_a_fresh_rank_is_not_the_inverse` |
 | L5 | `move` | rejects tombstone collision | all | **P** `move_into_archive_file_is_rejected` |
 | L6 | `drop` | idempotent | all | **P** |
 | L7 | `drop` | `settled` absorbing | all | **P** |
@@ -825,17 +855,24 @@ a hook runs `Tree::duplicate_ids` on the post-state (on under `debug_assertions`
 behind `--paranoid` in release); (3) land the 173-line proptest and the depth-2
 sweep in CI. Do not wait months for the kernel to fix a bug that ships now.
 
-**Stage 1 is being built now.** Its first slice exists and compiles: 799 lines of
-Lean across 7 modules, no Mathlib, clean `lake build TmArch:static` in 1.33 s from
-clean, a 246 KB archive exporting `_tm_kernel_call`, zero `sorry`, 66 theorems, and
-an axiom audit over 23 key theorems showing only `propext` / `Quot.sound` /
+**Stage 1 is being built now.** Its first slice exists and compiles: 2,981 lines of
+Lean across 7 modules, no Mathlib, clean `lake build TmKernel:static` in 1.6 s from
+clean, a 497 KB archive exporting `_tm_kernel_call`, zero `sorry`, 148 theorems,
+and an axiom audit over 62 key theorems showing only `propext` / `Quot.sound` /
 `Classical.choice`. What remains in stage 1: scaling `Core` from five fields to the
 real `Item`'s twenty-two, the `ClosePolicy` table, the plan-level checkers
 (`Normalized`, the two acyclicity predicates, section discipline), and the four
-`P*`/`R*` laws that are stated but not built.
+`P*`/`R*` laws that are stated but not built. Also outstanding, and named by the
+stage-one audit: the plan-level round trip is proved through the entity the loader
+builds (`load_render_line`, `paired_renders_each_placement`) but not through
+`renderDocAt`'s re-sort of the store's lines — that last step needs a permutation
+argument over the store's domain and an insertion-sort stability lemma, neither of
+which core Lean supplies.
 
 **Cost basis.** Stage 1's shape is measured (one session produced 799 lines with a
-1.09:1 proof-to-definition ratio). Stage 2 is the biggest unknown: `grammar.rs` is
+1.09:1 proof-to-definition ratio; an audit and its repair took that to 2,981 lines,
+and the repair was almost entirely *boundary* code and its proofs — which is the
+cost signal worth carrying forward: the core was right and the edge was not). Stage 2 is the biggest unknown: `grammar.rs` is
 1,246 Rust lines and round-trip B is an induction over the whole token grammar; it
 is the stage most likely to overrun and the one with a named stop condition. Stage
 3 is measured at ~250 lines one-time. Stages 5 and 6 are where the ratio blows up,
