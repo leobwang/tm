@@ -65,10 +65,15 @@ duplicate-id bugs are **one missing precondition in one function**.
 holds `key`**.
 
 ```
-alphabet 141 commands, 19,740 depth-2 sequences, 389 s
-  → 164 violating sequences at HEAD
+the committed harness: alphabet 199 commands, 39,601 depth-2 pairs
+  → 426 violating pairs on main, 0 on the fix branch
   → 1 of them needs a single command on a fresh `tm init --example` tree
 ```
+
+The `against` spike first measured this on a narrower 141-command alphabet
+(19,740 pairs, 164 violating). The harness that ships on
+`fix-move-precondition` uses 199 commands, and its numbers are the ones quoted
+throughout this document.
 
 ```console
 $ tm check                    # no problems, exit 0
@@ -749,7 +754,7 @@ compiler for the **A** rows.
 | A3 | the month close carried a record into a file that already had one | **U** | same |
 | A4 | `readopt` brought a record back into the file its stale line was in | **U** | readopt *consumes* the tombstone (`readopt_clears_archive`, `rfl`) |
 | A5 | `store::choose` and `Tree::get` ranked duplicates differently, so `tm edit` read one line and rewrote another | **U** | `store.get : Id → Option Entity` — there is nothing to rank |
-| A6 | **still open at HEAD**: `tm move` never checks the destination; 164 sequences | **U** | there is no append; `move` replaces a Site and the collision is a constructor obligation |
+| A6 | **open on main**, fixed on `fix-move-precondition`: `tm move` never checks the destination; 426 pairs | **U** | there is no append; `move` replaces a Site and the collision is a constructor obligation |
 
 ### B. "A close's measurement is not lost" — three paths, and a corrected law
 
@@ -916,7 +921,7 @@ because it was refuted. It deserves to be on the record in its own terms:
    is the honest resolution: do the cheap thing first and keep it.
 3. **The kernel is 25–30% of the code.** Seventy percent keeps being written the
    way that produced the bugs, and 11 of 39 defects live entirely there.
-4. **The one-root-cause finding cuts both ways.** That all 164 violations come from
+4. **The one-root-cause finding cuts both ways.** That all 426 violations come from
    one missing precondition supports "one guard fixes it" — and equally supports
    "five patches were applied and the hole is still open at HEAD".
 5. **The FFI marshalling is unverified**, and it is the same class of code that
@@ -1033,8 +1038,8 @@ cd scratchpad/lean-ffi/tm-ffi-demo && cargo build --release    # 2.26 s clean
 
 # The counterfactual harness and the exhaustive sweep
 scratchpad/lean-against/repo/tm-core/tests/invariant_proptest.rs      # 173 lines
-scratchpad/lean-against/repo/tm-core/tests/invariant_exhaustive.rs    # 19,740 pairs
-scratchpad/lean-against/exhaustive.txt                                # 164 violations
+tm-core/tests/invariant_exhaustive.rs (on fix-move-precondition)      # 39,601 pairs
+  426 violating on main, 0 after the fix                             # depth 1: 1 -> 0
 
 # The minimal live reproducer
 scratchpad/lean-inventory/REPRO-move-dup-id.sh

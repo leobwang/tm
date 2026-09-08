@@ -67,7 +67,7 @@ fn demote_leaves_a_tombstone_in_the_closed_file() {
 ///
 /// `horizon::move_line -> move_to` (horizon.rs:943) appends to the destination
 /// without asking whether it already holds the id. The `against` spike found
-/// 164 depth-2 sequences still reachable at tm HEAD that end this way. Here the
+/// 426 depth-2 command pairs reachable on tm `main` end this way. Here the
 /// same sequence is refused, and the plan is left untouched.
 #[test]
 fn move_into_the_tombstones_file_is_refused() {

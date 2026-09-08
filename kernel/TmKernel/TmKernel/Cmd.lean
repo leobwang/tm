@@ -289,7 +289,7 @@ Legend: **P** proved here, **R** refuted here. -/
 
 /-- **L5 (P).**  The precondition the Rust never had, as a theorem: a move into
 the file the tombstone occupies is *rejected*, not silently duplicated.  This
-is the single missing check behind 164 violating command sequences that are
+is the single missing check behind 426 violating command pairs that are
 still reachable at tm HEAD. -/
 theorem move_into_archive_file_is_rejected (e : Entity) (t r : Site)
     (h : e.val.archive = some r) (hd : r.doc = t.doc) : moveTo t e = .error .occupied := by

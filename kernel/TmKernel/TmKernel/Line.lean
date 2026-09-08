@@ -22,14 +22,12 @@ Round trip A (`serialize ∘ parse = id` on accepted lines) is unconditional.
 Round trip B (`parse ∘ serialize = id`) holds on `CanonicalItem`, which is
 decidable.
 
-**Gap, stated rather than glossed:** that the setters below *preserve*
-`CanonicalItem` is not proved here.  It is true for `setEst`'s replace branch
-and it is **false in general for its insert branch** — inserting a token before
-an id token that was the line's first token leaves that id token needing a
-separator it does not have.  Real lines (`- [ ] title ^id`) never hit that, but
-"never in practice" is exactly the kind of reasoning this kernel exists to stop
-relying on.  Until it is proved, `CanonicalItem` is decidable and can be
-checked.
+**The setters preserve `CanonicalItem`, and that is proved here**, not
+deferred: see `setEst_canonical` below.  Both branches are covered — the
+replace branch, and the insert branch that once produced a line the kernel
+could not parse back, by inserting a token before an id token that was the
+line's first and leaving it without the separator it needs.  `CanonicalItem`
+is decidable as well, so a host can check a line it did not get from us.
 -/
 namespace Tm
 

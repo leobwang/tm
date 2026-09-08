@@ -7,7 +7,7 @@ distinction is the whole answer to the bug class.
 
 `horizon::move_line → move_to` (horizon.rs:943) appends a line to a file
 without asking whether that file already holds the id.  The `against` spike
-found 164 depth-2 command sequences still reachable at HEAD that end in a
+found 426 depth-2 command pairs reachable on `main` that end in a
 duplicate id, all funnelling through that one missing precondition.
 
 Here **there is no append**, because item lines are not stored anywhere.  An

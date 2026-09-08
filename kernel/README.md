@@ -55,8 +55,9 @@ the tm workspace does not require `elan` to be installed.
 `tm`'s duplicate-id bugs were not five bugs. The `against` spike established
 by exhaustive search that they are **one missing precondition** in
 `horizon::move_line -> move_to` (horizon.rs:943), which appends a line to the
-destination file without asking whether that file already holds the id. 164
-violating depth-2 command sequences remain reachable at tm HEAD; one of them is
+destination file without asking whether that file already holds the id. 426
+violating depth-2 command pairs of 39,601 (199-command alphabet) are reachable
+on tm `main`, and none on `fix-move-precondition`; one of them is
 a single command on a fresh `tm init --example` tree.
 
 **The structural answer is that there is no append.** Item lines are not
