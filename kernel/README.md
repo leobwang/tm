@@ -8,6 +8,7 @@ seconds.
 ```
 kernel/
   TmKernel/            Lean 4 package, no Mathlib, toolchain pinned to v4.33.1
+    TmKernel/Cal.lean        the calendar: civil dates, ISO weeks, one tie-break
     TmKernel/Grain.lean      the horizon order, derived from one generator
     TmKernel/Text.lean       tokenizer, decimal numerals, the inverse lemmas
     TmKernel/Line.lean       the item line: parse, serialise, the est: view
@@ -174,7 +175,7 @@ in the application
 EXIT=1
 ```
 
-Eight cheats, eight compile errors:
+Fourteen cheats, fourteen compile errors:
 
 | cheat | what it is | why it fails |
 |---|---|---|
@@ -191,12 +192,30 @@ Eight cheats, eight compile errors:
 | 11 | `ci: 9` | `Fin 6`, reached through a smart constructor and never through a numeral — `(9 : Fin 6)` would *silently* wrap to 3 |
 | 12 | `#lean #lean` as two tags | tags are a set structurally: `{ l : List (List Char) // l.Nodup }`, whose proof lives inside the field's own type so `{c with …}` still works |
 | 13 | `win:25:00`, `every:month:32` | `Fin 1440` and `Fin 31`, each with the smart constructor its decoder must use |
+| 16 | form the quotient `u = need/avail` in `Nat`, which is integer division | `3/4` reaches the `1/2` edge and `3/4 = 0` reaches nothing; `utilGe` cross-multiplies and never divides |
+| 17 | round a ratio whose denominator nobody checked | `n / 0` is `0` in Lean, so §8.1's budget with `block_min = 0` would be a silent wrong answer; a rounding site takes a `Pos` |
+| 18 | round the safety margin down, as `priority.rs:349` does | a margin rounded down stops being a margin; R1's rule is a ceiling and `needMin_covers` is why |
+| 19 | derive §7.1's bin edges instead of tabulating them | three of four are halvings, so `1/2^i` looks generative; it disagrees with the spec at every `u` in `[0.1, 0.125)` |
+| 20 | guard the division by zero, as `is_finite()` does | §7.1 says capacity zero makes `u = ∞`, so it reaches every edge; the guard inverts the rule exactly where the item cannot be finished |
+| 21 | hand a date through as valid, which is how `Feb 30` reaches a calendar | `ValidDate` is a `Subtype` over a *decidable* predicate, and `Date.valid ⟨2024,2,30⟩` computes to `false` |
+| 22 | number weeks inside the civil year — "week 1 starts January 1st" — and call it the ISO week | at 2027-01-01 the naive rule says week 1 and ISO says 2026-W53 |
+| 23 | name a week's month without naming a tie-break, by assuming the week determines it | the rewrite has nothing to rewrite; `week_does_not_refine_month` is the counterexample |
+| 24 | declare `horizon.rs:1543`'s "month of today" stable | the same week files into August or September depending on the day you run it |
+| 25 | drop the century rule and keep "every fourth year" | refuted by computation at y = 100 |
+| 26 | get the phase of the seven-day cycle wrong by one | the three weekday cross-checks exist for this and they fire |
 
 ## What is proved
 
-234 theorems; the audit in `Check.lean` covers 120 of them and shows only
-`propext` / `Classical.choice` / `Quot.sound`, **never `sorryAx`**. Three
-(`drop_idem`, `readopt_reopens`, `grain_rejects_99`) depend on no axioms at all.
+509 theorems across nine modules. `Check.lean`'s axiom audit covers 120 of them
+and shows only `propext` / `Classical.choice` / `Quot.sound`, **never
+`sorryAx`**; three depend on no axioms at all.
+
+**The audit does not yet cover `Arith.lean`, `Cal.lean` or `Grain.lean`.** All
+of their theorems were audited out of band when each was built — zero `sorryAx`,
+zero errors — but `Check.lean` is one file that three concurrent branches would
+all append to, so extending it was left to the merge. It is one `#print axioms`
+line per theorem, and it is tracked as a gap.
+
 
 ### The generating structures
 
@@ -217,6 +236,17 @@ an accident.
   target an already-closed week, and does, when Sunday is closed on Monday.
   `#eval` gives `(week 0, week 1)`. **This is a behaviour change that needs
   the user's assent**, and it is recorded here, not decided.
+
+  These two were written against the toy index, and they **survive the real
+  calendar unchanged** — days 6 and 7 of the kernel's epoch are a Sunday and
+  the Monday after it (`epoch_day_6_is_a_sunday`), which is the case the
+  finding names. They are now also stated on a date a reader can check
+  (`impl_day_rule_disagrees_2026`: Sunday 2026-09-06 closed on Monday
+  2026-09-07) and, more to the point, **generalised**:
+  `impl_rule_disagrees_iff` and `containing_targets_a_closed_region_iff` say
+  the two rules differ, and the Rust's target is already closed, **exactly**
+  when the coarser period rolled over in between. So the finding is about
+  closing late, not about one witness.
 - `demotion_target_follows_the_closed_region` — and the close rule *orders* the
   two files of a demotion: the tombstone's region comes strictly before the one
   the work was filed into, in `horizonPrecedes` (lex on grain then block, with
@@ -226,7 +256,61 @@ an accident.
   and `horizonPrecedes_asymm` is why the inversion has exactly one answer.
 
 `Check.lean` prints §6.3's three rows generated from one rule at three grains:
-`(week 35, month 8, month 8)`.
+`(week 35, month 8, month 8)` — the same three values the toy index printed,
+now for the right reason (day 250 of the epoch is 0001-09-08, whose ISO week
+ordinal is 35 and whose month ordinal is 8).
+
+### The calendar
+
+`Cal.lean` replaces the toy index. A `Day` is days since **0001-01-01**
+proleptic Gregorian, which is a Monday — so `n % 7` is the weekday and `n / 7`
+is the ISO week ordinal, with no offset constant.
+
+- `toDay_ofDay` and `ofDay_toDay` — **the load-bearing theorem**: civil date and
+  day number are mutually inverse, on every valid date and every `Nat`. Nothing
+  else in the module would be trustworthy without it. `ofDay_valid` says every
+  `Day` lands on a *valid* date, so there is no partial accessor and no default.
+- `ys_step` — the year table advances by exactly `yearLen`, which is where the
+  leap rule and the day count are tied together. Inverting it is one guess and
+  one correction (`yoe_bracket`), not a search: within a 400-year era a year
+  start is never more than 97 days past `365 * k`.
+- the month table is **data** (§4.1's carve-out) and everything derived from it
+  is checked exhaustively by `decide` — 731 days and 416 (month, day) pairs.
+- `dayOfIso_isoOf` / `isoOf_dayOfIso` — ISO week dates are a faithful coordinate
+  system: `2026-W37-1` names one day and no other. `iso_2026_09_07` is the
+  spec's own file name, checked.
+- `isoWeeksIn_52_or_53`, and `isoWeeksIn_53_iff` — a year has 52 or 53 ISO
+  weeks, and it has 53 **iff** it starts on a Thursday or is a leap year
+  starting on a Wednesday. The classic rule, derived rather than tabulated.
+  `iso_2027_01_01 = 2026-W53-5` and `iso_2025_12_29 = 2026-W01-1` are the
+  neighbouring-ISO-year cases a naive implementation gets wrong.
+- the weekday phase is the **one datum that is not derived** — the seven-day
+  cycle's period is arithmetic but its phase is a fact about the world. It
+  enters through the definition of `weekdayOf` and is cross-checked against
+  1970-01-01 (Thursday), 2000-01-01 (Saturday) and 2026-09-07 (Monday).
+
+### The week → month tie-break, which is a choice
+
+`week_does_not_refine_month` — an ISO week can straddle two civil months
+(2026-W36 runs Aug 31 to Sep 6), so the `day ⊂ week ⊂ month` chain is
+containment at its first step and coarsening only at its second, and naming a
+week's month is a **choice**.
+
+**Chosen:** `monthOfIsoWeek w` is the civil month containing week `w`'s
+Thursday — total, monotone, a month the week actually meets
+(`monthOfIsoWeek_is_met`), and a function of `w` alone. Its stability is
+*structural*: `now` is not in the type.
+
+**Rejected:** "the month of today", which is what `horizon.rs:1543` does. It is
+written down as `monthOfWeekByToday`, whose week argument is unused, and
+`monthOfWeekByToday_is_not_stable` files one week into two different months
+depending on the day the command runs. A file name that depends on when you
+looked is not a file name.
+
+`closeTo_week_is_not_monthOfWeek` keeps the two apart: `closeTo week now` files
+into the month containing `now`, which is right because a close happens at a
+time; the tie-break names the month a week *belongs* to, which must not depend
+on when you asked. They are different functions and they differ.
 
 ### Entity versus observation
 
@@ -603,24 +687,39 @@ sketch, and because the gaps are where the next stage's cost lives.
    and the fields in step (each with its `view ∘ set = id` proof, as `setEst`
    has), is the next slice.
 
-4. **No calendar arithmetic, and therefore no horizon-name resolution.** `Day`
-   is a `Nat` and `index` is `d`, `d/7`, `d/30`. It is enough to *evaluate* the
-   close rule, to prove the two disagreement theorems, and to prove that a close
-   orders the two files of a demotion; it is not ISO week and civil month
-   arithmetic. The week→month tie-break (`firstprinciples` proved week does not
-   refine month) is not implemented.
+4. **The calendar is real now; horizon *names* are still not.** `Cal.lean`
+   gives proleptic Gregorian civil dates with a proved round trip, ISO 8601 week
+   dates with the week-numbering year, the civil month ordinal, and the
+   week→month tie-break (the month of the week's Thursday) named as a choice
+   with the alternative it rejects. `Grain.index` is those three functions, not
+   `d`, `d/7`, `d/30`. What is **still missing**, and it is what "horizon-name
+   resolution" actually needs:
 
-   So `tm move ^id week` — turning the *word* into a file — is not done here: the
-   wire form names a document and `resolveDest` turns that into a `Dest`. A
-   previous version of `Cmd.lean` carried `DocRegion`, `findDoc`,
-   `resolveHorizon` and `demoteTarget` for this, and **nothing called any of
-   them**; a report of that version claimed they had become live, and that was
-   wrong. They are deleted. Dead code that reads like a design decision is worse
-   than no code, because it says a question has been settled that has not been,
-   and wiring the toy calendar into the command path to make them live would have
-   been a worse lie than leaving them. `HorizonRef` went with them, and what it
-   said — backlog is the *absence* of a bound — is now said by `Doc.region`,
-   which is a field the loader actually reads.
+   - **no rendering or parsing of file names.** The kernel can say that
+     2026-09-07 is `2026-W37-1` as a triple of numbers; it cannot produce or read
+     the string `week/2026-W37.md`. So `tm move ^id week` — turning the *word*
+     into a file — is still not done here, and the wire form still names a
+     document that `resolveDest` turns into a `Dest`. This is a small amount of
+     work (a decimal renderer and its inverse already exist in `Text.lean`) but
+     it is work, and claiming the calendar closes it would be false;
+   - **nothing ties a `Doc`'s declared `Region` to its `path`.** A host may still
+     send `{"path":"week/2026-W37.md","grain":1,"ix":35}` and the kernel will
+     believe it; the true ISO week ordinal of 2026-W37 is 105695. The FFI
+     fixtures do exactly this. Nothing in the kernel depends on the value — the
+     horizon order compares grains first — but the correspondence is unchecked,
+     and it is the obvious place for the next boundary bug;
+   - **days only: no time of day, no time zone.** §4.1's `due:2026-09-11T23:59`,
+     `at:`, and the tree's `tz` have nowhere to live. Stages 5 and 6 need them;
+   - **no `Int`**: a `Day` is a `Nat` from 0001-01-01, so dates before that year
+     are unrepresentable. That is deliberate (it is what makes `ofDay` total and
+     the ISO week ordinal `n / 7` with no offset) and it costs nothing a planner
+     wants, but it is a restriction and not an oversight.
+
+   A note for whoever writes the next proof here: `omega` does **not** see
+   through the `Day` abbreviation when `Day` is the type argument of `=` or `≤`,
+   so every day-valued *result* type in `Cal.lean` is written `Nat`. Getting
+   this wrong produces "omega could not prove the goal" on statements that are
+   arithmetically trivial, which costs an hour to diagnose.
 
 5. **No `close`, no `autoClose`, no `ClosePolicy`, no planner, no priority, no
    recurrence, no exact-arithmetic layer.** L16–L27 of the architecture are not

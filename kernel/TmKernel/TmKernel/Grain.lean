@@ -1,3 +1,4 @@
+import TmKernel.Cal
 /-!
 # The horizon order, derived rather than enumerated
 
@@ -15,6 +16,30 @@ generator: `coarsen`, the *saturating* successor of that chain.
   ("`close month` files into the next month") is the **fixed point**, `rfl`.
 * Backlog is the *absence* of a bound, not a coarser grain — which is why the
   successor saturates instead of running off the end.
+
+**What changed here.**  `index` used to be `d`, `d/7`, `d/30` — a toy, and the
+module said so.  It is now the real calendar (`Cal.lean`): day, ISO week
+ordinal, civil month ordinal, over proleptic Gregorian dates with leap years.
+Every derivation below is unchanged, because none of them ever depended on
+*which* partition each grain names — only on there being one per grain.  That
+is the point of deriving them.
+
+Two things the real calendar does change, and both are recorded rather than
+hidden:
+
+1. the two disagreement theorems about `horizon.rs`'s close rule **still hold**,
+   and they are no longer accidents of the toy index: days 6 and 7 of the
+   kernel's epoch are a Sunday and the Monday after it
+   (`epoch_day_6_is_a_sunday`), which is exactly the case the finding names.
+   They are also restated on a date a reader can check
+   (`impl_day_rule_disagrees_2026`), and *generalised*: the two rules disagree
+   **exactly** when the coarser period rolled over between the closed day and
+   `now` (`impl_rule_disagrees_iff`), so this is a fact about closing late, not
+   about one witness;
+2. `week` does not refine `month` — an ISO week can straddle two civil months —
+   so the top step of the chain is coarsening, not containment
+   (`week_does_not_refine_month`).  The tie-break that resolves it is named in
+   `Cal.lean`'s header and re-exported here as `monthOfWeek`.
 -/
 namespace Tm
 
@@ -47,17 +72,28 @@ def demoteGrain (g : Grain) : Grain := coarsen g
 theorem demote_is_one_step (g : Grain) : g ≠ month → (demoteGrain g).val = g.val + 1 := by
   revert g; decide
 
-/-- A day number since an epoch.  Real calendar arithmetic is stage 5; what
-matters here is that each grain has an index function. -/
-abbrev Day := Nat
+/-- **Which block of grain `g` contains day `d`.**  Real arithmetic, from
+`Cal.lean`: the day itself, the ISO week ordinal (`d / 7`, because the kernel's
+day 0 is a Monday), and the civil month ordinal `12 * (year - 1) + month - 1`.
 
-/-- Toy grain indexing, so the close rule can be *evaluated*.  The real kernel
-uses ISO week and civil month arithmetic; the shape is this. -/
+Each is a *monotone* function of the day (`index_mono`), which is the only
+property the horizon order below uses. -/
 def index (g : Grain) (d : Day) : Nat :=
   match g with
   | ⟨0, _⟩ => d
-  | ⟨1, _⟩ => d / 7
-  | _      => d / 30
+  | ⟨1, _⟩ => Cal.weekOrdinal d
+  | _      => Cal.monthOrdinal d
+
+theorem index_day   (d : Day) : index day d   = d                 := rfl
+theorem index_week  (d : Day) : index week d  = Cal.weekOrdinal d := rfl
+theorem index_month (d : Day) : index month d = Cal.monthOrdinal d := rfl
+
+/-- Time only moves periods forward, at every grain. -/
+theorem index_mono (g : Grain) {a b : Nat} (h : a ≤ b) : index g a ≤ index g b := by
+  match g with
+  | ⟨0, _⟩ => exact h
+  | ⟨1, _⟩ => exact Cal.weekOrdinal_mono h
+  | ⟨2, _⟩ => exact Cal.monthOrdinal_mono h
 
 /-- One horizon file: a grain and one block of it. -/
 structure Region where
@@ -73,6 +109,19 @@ def Closed (r : Region) (now : Day) : Prop := index r.grain now > r.ix
 instance (r : Region) (now : Day) : Decidable (Closed r now) := by
   unfold Closed; infer_instance
 
+/-- The region a day is in is never closed at that day. -/
+theorem regionOf_is_open (g : Grain) (now : Day) : ¬ Closed (regionOf g now) now := by
+  simp [Closed, regionOf]
+
+/-- **Once closed, always closed.**  This is what makes catch-up at stage 4 a
+fold rather than a fixed point: a region the clock has passed cannot re-open,
+so `autoClose`'s work only ever shrinks. -/
+theorem closed_is_stable_in_time (r : Region) {a b : Nat} (h : a ≤ b) (hc : Closed r a) :
+    Closed r b := by
+  have := index_mono r.grain h
+  simp only [Closed] at *
+  omega
+
 /-- **The single close rule.**  Closing grain `g` at `now` files leftovers into
 the block of the next coarser grain that contains `now`. -/
 def closeTo (g : Grain) (now : Day) : Region := regionOf (coarsen g) now
@@ -81,12 +130,42 @@ def closeTo (g : Grain) (now : Day) : Region := regionOf (coarsen g) now
 reason it is worth the behaviour change: it can never file work into a file
 that is already closed.  (This is also what makes `close` idempotence provable
 at stage 4: the fold's own output is never back in scope.) -/
-theorem closeTo_target_is_open (g : Grain) (now : Day) : ¬ Closed (closeTo g now) now := by
-  simp [Closed, closeTo, regionOf]
+theorem closeTo_target_is_open (g : Grain) (now : Day) : ¬ Closed (closeTo g now) now :=
+  regionOf_is_open (coarsen g) now
 
 /-- The rule `close_day` actually uses (`IsoWeek::from_date(date)`,
 horizon.rs:1323): the coarser block containing the *closed region*. -/
 def targetContaining (g : Grain) (closedDay : Day) : Region := regionOf (coarsen g) closedDay
+
+/-! ### The disagreement, re-checked over the real calendar
+
+The toy index made `closeTo` and `targetContaining` differ at days 6 and 7
+because `6 / 7 = 0` and `7 / 7 = 1`.  Over the real calendar the same two days
+are Sunday 0001-01-07 and Monday 0001-01-08 — the *same* week boundary, for the
+right reason now — so the two shipped findings survive verbatim.  But a single
+witness was always the weak form.  The general statements are `iff`s. -/
+
+theorem epoch_day_6_is_a_sunday : Cal.weekdayOf 6 = .sunday := by decide
+theorem epoch_day_7_is_a_monday : Cal.weekdayOf 7 = .monday := by decide
+
+/-- **The general form.**  The rule at horizon.rs:1323 and the derived rule
+disagree exactly when the coarser period rolled over between the day that was
+closed and the day the close is run — that is, exactly when the close is late. -/
+theorem impl_rule_disagrees_iff (g : Grain) (closedDay now : Nat) :
+    targetContaining g closedDay ≠ closeTo g now ↔
+      index (coarsen g) closedDay ≠ index (coarsen g) now := by
+  unfold targetContaining closeTo regionOf
+  constructor
+  · intro h hix; exact h (by rw [hix])
+  · intro h hr; exact h (by injection hr)
+
+/-- **And the general form of the second finding.**  The Rust's target is an
+already-closed region exactly when the coarser period rolled over — so every
+late `close day` files work into a week that is shut. -/
+theorem containing_targets_a_closed_region_iff (g : Grain) (closedDay now : Nat) :
+    Closed (targetContaining g closedDay) now ↔
+      index (coarsen g) closedDay < index (coarsen g) now := by
+  simp [Closed, targetContaining, regionOf]
 
 /-- It disagrees with the derived rule, and the disagreement is a Sunday close
 run on Monday: day 6 is in week 0, day 7 in week 1.  **A behaviour change that
@@ -95,6 +174,70 @@ theorem impl_day_rule_disagrees : targetContaining day 6 ≠ closeTo day 7 := by
 
 /-- And the rule the Rust uses can target an already-closed week. -/
 theorem containing_can_target_a_closed_region : Closed (targetContaining day 6) 7 := by decide
+
+/-- The same two findings on a date a user would recognise: Sunday 2026-09-06
+closed on Monday 2026-09-07, the first day of `week/2026-W37.md`. -/
+theorem impl_day_rule_disagrees_2026 :
+    targetContaining day (Cal.toDay ⟨2026, 9, 6⟩) ≠ closeTo day (Cal.toDay ⟨2026, 9, 7⟩) := by
+  decide
+
+theorem containing_can_target_a_closed_region_2026 :
+    Closed (targetContaining day (Cal.toDay ⟨2026, 9, 6⟩)) (Cal.toDay ⟨2026, 9, 7⟩) := by
+  decide
+
+/-! ### Where the chain is containment, and where it is not
+
+A grain refines the next one when "same block here" implies "same block there".
+Below, `day` refines `week` — but only degenerately, because a day-block is a
+single day, so *every* grain refines `week` from `day`.  It is stated to make
+the contrast exact, not because it carries information.
+
+`week` does **not** refine `month`, and that is the fact with content: the
+`day ⊂ week ⊂ month` chain is containment at its first step and coarsening only
+at its second.  Naming the month of a week is therefore a choice, made in
+`Cal.lean`'s header and re-exported below. -/
+
+/-- `g` refines `h`: any two days in one block of `g` are in one block of `h`. -/
+def refines (g h : Grain) : Prop := ∀ a b : Nat, index g a = index g b → index h a = index h b
+
+/-- Degenerate, and labelled as such: a day-block holds one day. -/
+theorem day_refines_week : refines day week := by
+  intro a b h
+  rw [index_day, index_day] at h
+  rw [h]
+
+/-- **The fact with content.**  An ISO week can straddle two civil months —
+2026-W36 runs Aug 31 to Sep 6 — so `week` does not refine `month`. -/
+theorem week_does_not_refine_month : ¬ refines week month := by
+  intro h
+  have := h (Cal.toDay ⟨2026, 8, 31⟩) (Cal.toDay ⟨2026, 9, 6⟩) (by decide)
+  revert this
+  decide
+
+/-- **The named tie-break**, at region level: the month region a week region
+belongs to, taken from `Cal.monthOfIsoWeek` — the month containing the week's
+Thursday.  Its stability is structural: `now` is not in the type. -/
+def monthOfWeek (w : Nat) : Region := ⟨month, Cal.monthOfIsoWeek w⟩
+
+/-- The month it names is one the week actually meets — by construction, since
+the Thursday is in both. -/
+theorem monthOfWeek_is_met (w : Nat) :
+    ∃ d : Nat, index week d = w ∧ regionOf month d = monthOfWeek w :=
+  ⟨Cal.thursdayOf w, Cal.thursdayOf_in_week w, rfl⟩
+
+theorem monthOfWeek_mono {a b : Nat} (h : a ≤ b) : (monthOfWeek a).ix ≤ (monthOfWeek b).ix :=
+  Cal.monthOfIsoWeek_mono h
+
+/-- **The tie-break is not the close rule, and must not be confused with it.**
+`closeTo week now` files into the month containing `now`, which is right because
+a close happens at a time; `monthOfWeek w` names the month a week *belongs* to,
+which must not depend on when you asked.  They are different functions and they
+differ: close 2026-W36 on its own Monday (August 31st) and the leftovers go to
+August, while the week itself is filed under September. -/
+theorem closeTo_week_is_not_monthOfWeek :
+    ∃ now : Nat, closeTo week now ≠ monthOfWeek (index week now) := by
+  refine ⟨Cal.toDay ⟨2026, 8, 31⟩, ?_⟩
+  decide
 
 /-! ## The order a close generates
 
