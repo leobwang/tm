@@ -1,0 +1,6 @@
+name = "TmKernel"
+version = "0.1.0"
+defaultTargets = ["TmKernel"]
+
+[[lean_lib]]
+name = "TmKernel"

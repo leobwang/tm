@@ -1,0 +1,16 @@
+# Its own workspace on purpose: this crate drives `lake` and links the Lean
+# runtime, so the tm workspace build must not depend on elan being installed.
+[workspace]
+
+[package]
+name = "tm-kernel-ffi"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+build = "build.rs"
+description = "String -> String bridge from Rust to the Lean 4 tm kernel"
+
+[build-dependencies]
+cc = "1"
+
+[dependencies]
