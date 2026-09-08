@@ -1,0 +1,62 @@
+tz = "America/Chicago"
+
+[day]
+block_min             = 60
+break_after_blocks    = 2
+break_min             = 20
+window_hours          = 8
+window_cap            = "19:00"
+budget_ratio          = 0.75
+wind_down             = "21:30"
+bed                   = "22:00"
+overtime_reprompt_min = 15
+idle_min              = 12
+min_last_block_min    = 30
+
+[week]
+plan_ratio = 0.8                 # warn if planned > 0.8 × budget
+
+[priority]
+default_priority = 3             # k for roots without !k and for untied items
+bins             = [0.5, 0.25, 0.1]
+safety           = 1.3
+hysteresis       = true
+batch_max_min    = 20
+
+[location]
+home_max_ci = 3
+
+[energy]
+prior_weight          = 5
+decay_days            = 30
+duration_prior_weight = 5
+posterior_full_hours  = 3
+posterior_zero_hours  = 6
+[energy.prior.lounge]            # by hours since wake
+"0-1" = 4
+"1-5" = 5
+"5-8" = 4
+"8-10" = 3
+"10+" = 2
+[energy.prior.home]
+"0-1" = 3
+"1-4" = 4
+"4-8" = 3
+"8+" = 2
+[energy.sleep_debt]
+under_hours = 7.0
+shift       = 1
+
+[expected]                       # used by the lookahead until learned
+arrival = { Mon = "07:00", Tue = "07:00", Wed = "07:00", Thu = "07:00", Fri = "07:00", Sat = "10:00", Sun = "10:00" }
+p_lounge = { Mon = 0.9, Tue = 0.9, Wed = 0.9, Thu = 0.9, Fri = 0.8, Sat = 0.5, Sun = 0.4 }
+
+[calendar]
+ics_urls       = []              # e.g. ["https://calendar.google.com/calendar/ical/<id>/private-<key>/basic.ics"]
+sync_on_arrive = true
+flight_regex   = "\\b[A-Z]{2} ?\\d{2,4}\\b"
+
+[tui]
+palette   = ["#e6194b","#3cb44b","#4363d8","#f58231","#911eb4","#42d4f4","#f032e6","#bfef45","#fabed4","#469990","#dcbeff","#9A6324"]
+min_width = 110
+editor    = "code -g {file}:{line}"

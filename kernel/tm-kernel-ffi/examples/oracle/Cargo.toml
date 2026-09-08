@@ -1,0 +1,18 @@
+# The `main`-side half of the differential oracle.  It is built OUTSIDE this
+# repository, against a scratch checkout of `main`, because `main` still has the
+# Rust kernel and this branch deliberately does not.  `build-oracle.sh` copies
+# this file and `src/main.rs` into that checkout and builds them there.
+#
+# Cargo ignores `examples/oracle/` because it holds no `main.rs` at its root:
+# auto-discovered examples are `examples/*.rs` and `examples/*/main.rs`.
+[package]
+name = "tm-oracle"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "the Rust half of the kernel-vs-Rust differential oracle"
+
+[dependencies]
+tm-core = { path = "../tm-core" }
+serde_json = "1"
+proptest = "1"

@@ -1,0 +1,55 @@
+# Measured, not written by hand: `TM_CORPUS_BLESS=1 cargo test --test corpus`.
+#
+# kind \t name \t outcome \t detail
+#
+# `corpus_round_trip` asserts only that every row recorded `ok` is still
+# `ok`.  A row that starts passing is reported, not failed: the grammar is
+# being extended on other branches and this number may only rise.  The
+# `detail` column is a note, not an assertion.
+#
+# `reject` is the kernel refusing to load the file at all.  It is never
+# "the file changed": a document the kernel accepts and hands back with
+# different bytes is `differs`, and `no_file_is_silently_rewritten` fails
+# on it unconditionally, with no baseline.
+file	plan-basic/backlog.md	ok	
+file	plan-basic/calendar/2026-W37.md	reject	{"itemCheck":"fileKindShape"}
+file	plan-basic/day/2026-09-07.md	ok	
+file	plan-basic/inbox.md	ok	
+file	plan-basic/month/2026-09.md	reject	{"orphanDemotion":"m2"}
+file	plan-basic/optional.md	ok	
+file	plan-basic/routines.md	ok	
+file	plan-basic/week/2026-W37.md	ok	
+plan	plan-basic	reject	{"splitLine":"m2"}
+file	plan-conflicts/backlog.md	reject	{"dupId":"a1"}
+file	plan-conflicts/calendar/2026-W37.md	reject	{"itemCheck":"fileKindShape"}
+file	plan-conflicts/day/2026-09-07.md	reject	{"itemCheck":"sectionDiscipline"}
+file	plan-conflicts/inbox.md	ok	
+file	plan-conflicts/month/2026-09.md	reject	{"orphanDemotion":"m2"}
+file	plan-conflicts/optional.md	ok	
+file	plan-conflicts/routines.md	ok	
+file	plan-conflicts/week/2026-W37.md	reject	{"badLine":{"line":22,"path":"week/2026-W37.md","why":"Tm.PErr.manyIds"}}
+plan	plan-conflicts	reject	{"badLine":{"line":22,"path":"week/2026-W37.md","why":"Tm.PErr.manyIds"}}
+file	plan-home-day/backlog.md	ok	
+file	plan-home-day/calendar/2026-W37.md	reject	{"itemCheck":"fileKindShape"}
+file	plan-home-day/day/2026-09-07.md	ok	
+file	plan-home-day/inbox.md	ok	
+file	plan-home-day/month/2026-09.md	reject	{"orphanDemotion":"m2"}
+file	plan-home-day/optional.md	ok	
+file	plan-home-day/routines.md	ok	
+file	plan-home-day/week/2026-W37.md	ok	
+plan	plan-home-day	reject	{"splitLine":"m2"}
+file	plan-recur/backlog.md	ok	
+file	plan-recur/month/2026-09.md	ok	
+file	plan-recur/optional.md	ok	
+file	plan-recur/routines.md	ok	
+file	plan-recur/week/2026-W37.md	ok	
+plan	plan-recur	ok	
+file	plan-travel-day/backlog.md	ok	
+file	plan-travel-day/calendar/2026-W37.md	reject	{"itemCheck":"fileKindShape"}
+file	plan-travel-day/day/2026-09-07.md	ok	
+file	plan-travel-day/inbox.md	ok	
+file	plan-travel-day/month/2026-09.md	reject	{"orphanDemotion":"m2"}
+file	plan-travel-day/optional.md	ok	
+file	plan-travel-day/routines.md	ok	
+file	plan-travel-day/week/2026-W37.md	ok	
+plan	plan-travel-day	reject	{"splitLine":"m2"}
