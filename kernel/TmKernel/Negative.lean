@@ -118,3 +118,54 @@ def clockCheat : Clock := ⟨1500, by omega⟩
 def monthDayCheat : MonthDay := ⟨31, by omega⟩
 
 end Tm
+
+/- ======================================================================
+   THE EXACT-ARITHMETIC LAYER (`TmKernel/Arith.lean`).
+   Appended as its own block so that the three stage-one branches merge.
+   ====================================================================== -/
+namespace Tm
+
+/- CHEAT 9 — form the quotient.  `u = need/avail` in `Nat` is integer
+   division, which throws the fraction away before the comparison sees it:
+   `u = 3/4` reaches the `1/2` edge, and `3/4 = 0` reaches nothing.  This is
+   why `utilGe` cross-multiplies and no ratio is ever divided. -/
+def utilNatDiv (need avail : Nat) (e : Arith.Q) : Bool :=
+  decide (e.num ≤ e.den * (need / avail))
+
+theorem the_quotient_is_the_comparison :
+    utilNatDiv 3 4 ⟨1, 2⟩ = Arith.utilGe 3 4 ⟨1, 2⟩ := by decide
+
+/- CHEAT 10 — round a ratio whose denominator nobody checked.  `n / 0` is
+   `0` in Lean, so §8.1's budget with `block_min = 0` would be a silent
+   wrong answer rather than an error.  A rounding site takes a `Pos`, and a
+   raw `Q` is not one. -/
+def budgetCheat (windowMin blockMin : Nat) : Nat :=
+  Arith.floorQ (⟨windowMin, blockMin⟩ : Arith.Q)
+
+/- CHEAT 11 — round the safety margin the way `priority.rs:349` does.  A
+   margin rounded down stops being a margin: the reservation for one minute
+   of work at `safety = 1.3` becomes one minute, which does not cover
+   `13/10`.  R1's rule is a ceiling, and `needMin_covers` is why. -/
+def needFloor (rem : Nat) : Nat := Arith.floorQ (Arith.scale Arith.safety rem)
+
+theorem floor_still_covers_the_need :
+    Arith.Q.le (Arith.scale Arith.safety 1).val (Arith.ofNat (needFloor 1)) = true := by decide
+
+/- CHEAT 12 — derive §7.1's bin edges instead of tabulating them.  Three of
+   the four are halvings, so `1/2^i` looks like the generating structure; it
+   disagrees with the spec on every `u` in `[0.1, 0.125)`, and at `u = 0.11`
+   it gives `+3` where the table gives `+2`. -/
+theorem log2_ladder_is_the_table :
+    Arith.binOf Arith.log2Bins 11 100 = Arith.binOf Arith.defaultBins 11 100 := by decide
+
+/- CHEAT 13 — guard the division by zero, which is what `is_finite()` does
+   in the Rust.  §7.1 says capacity zero makes `u = ∞`, so it reaches every
+   edge and the item is HOT; a guard that answers "not urgent" inverts the
+   rule at exactly the point where the item cannot possibly be finished. -/
+def utilGuarded (need avail : Nat) (e : Arith.Q) : Bool :=
+  if avail = 0 then false else Arith.utilGe need avail e
+
+theorem the_finite_guard_is_harmless :
+    utilGuarded 1 0 Arith.hotEdge = Arith.utilGe 1 0 Arith.hotEdge := by decide
+
+end Tm
