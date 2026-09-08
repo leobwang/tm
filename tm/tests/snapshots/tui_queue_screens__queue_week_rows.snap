@@ -1,0 +1,15 @@
+---
+source: tm/tests/tui_queue_screens.rs
+expression: "table.join(\"\\n\")"
+---
+m1  p3 ci5 6b   Finish ch.5 exercises        @O1                                 ░░░░░░
+m2  p3 ci4 6b   Rollback path passes tests   @O2                                 ░░░░░░
+m3  p3 ci5 3b   Read ch.6                    @O1                                 ░░░
+m4  p5 ci2 2b   Pick winter courses          @O3                                 ░░
+d1  p4 ci4 6b   CS 234 pset 2                @O3  due Fri    u=0.43   fits 6/6   ░░░░░░
+x1  p0 ci5 2h   Midterm                      @O3  due Oct 20                     ░░
+x2  p5 ci5 8b   Midterm review               @x1  due Oct 20 u=0.13   fits 8/8   ░░░░░░
+t1  p3 ci5 1b   Read ch.6 §1–2               @m3                                 ░
+t3  p3 ci4 1b   Exercises 5.3–5.5            @m1                                 ░
+t4  p3 ci3 1b   Claude Code drafts tests     @m2                                 ░
+t5  p3 ci3 1b   Review the drafts            @m2                                 ░

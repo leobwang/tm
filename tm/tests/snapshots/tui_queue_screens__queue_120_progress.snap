@@ -1,0 +1,20 @@
+---
+source: tm/tests/tui_queue_screens.rs
+expression: out
+---
+┌ Month 2026-09 ─────────────┐┌ Week W37 · planned 20 / budget 25 ─────────────────┐┌ Tasks @m1 ───────────────────────┐
+│!1 O1 Lean: through ch.… ▓░░││p3  5 6b m1 Finish ch.5 exercises         @O1 ▓▓▓░░░││p3 4 1b Exercises 5.3–5.5         │
+│!1 O2 Soundcode: end-to… ░░░││p3  4 6b m2 Rollback path passes tests    @O2 ▓░░░░░││                                  │
+│!3 O3 Winter course sel… ░░░││    5 3b m3 Read ch.6                          @O1 ✓││                                  │
+│                            ││p5  2 2b m4 Pick winter courses               @O3 ░░││                                  │
+│Demoted (1)                 ││p4  4 6b d1 CS 234 ps… @O3 due Fri  u=0.43  fits 6/6││                                  │
+│· m2 Rollback path pass… W37││⏰   5 2h x1 Midterm                   @O3 due Oct 20││                                  │
+│                            ││p5  5 8b x2 Midter… @x1 due Oct 20  u=0.13  fits 8/8││                                  │
+│                            ││p3  5 1b t1 Read ch.6 §1–2                     @m3 ░││                                  │
+│                            ││p3  4 1b t3 Exercises 5.3–5.5                  @m1 ▓││                                  │
+│                            ││p3  3 1b t4 Claude Code drafts tests           @m2 ▓││                                  │
+│                            ││p3  3 1b t5 Review the drafts                  @m2 ░││                                  │
+│                            ││                                                    ││                                  │
+│                            ││                                                    ││fits this week: 1b of 1b          │
+└────────────────────────────┘└────────────────────────────────────────────────────┘└──────────────────────────────────┘
+ h/l pane · j/k · J/K reorder (rewrites line order) · Enter drill · a add · c ci · E estimate · P priority (roots) · D …

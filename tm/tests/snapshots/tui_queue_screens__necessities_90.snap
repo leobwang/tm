@@ -1,0 +1,32 @@
+---
+source: tm/tests/tui_queue_screens.rs
+expression: out
+---
+┌ Week W37 · walls & windows ───┐
+│   Mon Tue Wed Thu Fri Sat Sun │
+│06 ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ███ ▒▒▒ │
+│07 ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ███ ▒▒▒ │
+│08 ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ███ ▒▒▒ │
+│09                     ███     │
+│10                     ███     │
+│11 ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ │
+│12 ███ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ │
+│13 ███ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒ │
+│14                             │
+│…  9 more hours to 24:00       │
+└───────────────────────────────┘
+┌ Deadlines · waiting · necessary ───────────────────────────────────────────────────────┐
+│──── Dated ─────────────────────────────────────────────────────────────────────────────│
+│  d1      CS 234 pset 2                          need 7.8b  cap 18b  u=0.43  p4  due Fri│
+│  x2      Midterm review                   need 10.4b  cap 82.2b  u=0.13  p5  due Oct 20│
+│  d2      Workshop paper draft               need 13b  cap 133.8b  u=0.1  p4  due Nov 20│
+│──── Waiting ───────────────────────────────────────────────────────────────────────────│
+│? a4      Ask Prof. Lee about the reading group                              p5  2d / 7d│
+│──── Necessary today ───────────────────────────────────────────────────────────────────│
+│! a3      Pick up package              need 20m  p0  mandatory · window closes Mon 21:00│
+│! lunch   lunch                        need 30m  p0  mandatory · window closes Mon 13:30│
+│! dinner  dinner                       need 30m  p0  mandatory · window closes Mon 19:30│
+│! workout workout                       need 1b  p0  mandatory · window closes Mon 19:00│
+│! laundry laundry            need 30m  p0  overdue · mandatory · window closes Sun 21:00│
+└────────────────────────────────────────────────────────────────────────────────────────┘
+ ↑/↓ move · E estimate · e edit · t event arrived · k skip instance · 1-5 screens

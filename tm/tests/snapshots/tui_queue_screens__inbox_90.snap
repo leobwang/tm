@@ -1,0 +1,14 @@
+---
+source: tm/tests/tui_queue_screens.rs
+expression: out
+---
+┌ Capture ───────────────────────────────────────────────────────────────────────────────┐
+│>                                                                                       │
+│  parsed  ! type to capture                                                             │
+│  i capture                                                                             │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+ Inbox (4)   i capture · t triage line · C Claude Code triages all · x drop
+     1  pset2 fri 6b ci4 max 2b/d
+     2  ask Kun about the dinner place
+     3  renew the bike insurance before October
+     4  read the Lean 4 metaprogramming book

@@ -1,0 +1,8 @@
+---
+source: tm/tests/tui_queue_screens.rs
+expression: "months.join(\"\\n\")"
+---
+O1  !1  Lean: through ch.8 of the tutorial            ░░░  
+O2  !1  Soundcode: end-to-end demo runs               ░░░  
+O3  !3  Winter course selection + admin done          ░░░  
+m2  -   Rollback path passes tests                         demoted W37

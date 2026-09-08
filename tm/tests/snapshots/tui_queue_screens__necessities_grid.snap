@@ -1,0 +1,23 @@
+---
+source: tm/tests/tui_queue_screens.rs
+expression: "lines.join(\"\\n\")"
+---
+     Mon Tue Wed Thu Fri Sat Sun
+06   w   w   w   w   w   W   w
+07   w   w   w   w   w   W   w
+08   w   w   w   w   w   W   w
+09   .   .   .   .   .   W   .
+10   .   .   .   .   .   W   .
+11   w   w   w   w   w   w   w
+12   W   w   w   w   w   w   w
+13   W   w   w   w   w   w   w
+14   .   .   .   .   .   .   .
+15   .   .   W   .   .   .   .
+16   w   .   W   .   w   .   .
+17   w   w   w   w   w   w   w
+18   w   w   w   w   w   w   w
+19   w   w   w   W   w   w   w
+20   .   .   .   .   .   .   .
+21   .   .   .   .   .   .   .
+22   w   w   w   w   w   w   w
+23   w   w   w   w   w   w   w
