@@ -693,11 +693,12 @@ sketch, and because the gaps are where the next stage's cost lives.
      line here and becomes two lines on disk, and nothing in the kernel notices;
    * **requests the loader rejects.** Every theorem here is conditioned on
      `loadPlan docs = .ok p`. `badLine`, `dupId`, `splitLine`, `notADemotion`,
-     `orphanDemotion`, `ambiguousDemotion`, `duplicatePath`, `siteOutOfRange`
-     and the seven `itemCheck` faults are covered by their own theorems
-     (`scanLines_prose`, `unordered_horizons_are_rejected`,
-     `a_shapeless_calendar_line_is_rejected`, …) but not by the round trip, which
-     says nothing about them and should not;
+     `orphanDemotion`, `ambiguousDemotion`, `duplicatePath` and the `itemCheck`
+     faults have theorems of their own where they have any (`scanLines_prose`,
+     `unordered_horizons_are_rejected`, `a_shapeless_calendar_line_is_rejected`,
+     `an_unpinned_day_item_is_rejected`) and three of them cannot be reached from
+     a request at all — see gap 10. The round trip says nothing about any of
+     them, and should not;
    * **the post-command render, except for the files the command did not
      touch.** `a_command_rewrites_only_the_files_it_touches` covers the
      untouched documents; what a `move` or `demote` does to the *destination*
