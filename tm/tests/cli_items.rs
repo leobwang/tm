@@ -160,6 +160,55 @@ fn edit_est_reaches_a_line_with_no_positional_slot() {
     assert!(a3.starts_with("- [ ] 1 1b Pick up package"), "{a3}");
 }
 
+/// The minutes `tm plan` gave an item, summed over its segments.
+fn planned_minutes(plan: &serde_json::Value, id: &str) -> i64 {
+    plan["segments"]
+        .as_array()
+        .expect("segments")
+        .iter()
+        .filter(|s| s["item"] == id)
+        .filter_map(|s| s["minutes"].as_i64())
+        .sum()
+}
+
+#[test]
+fn edit_est_moves_the_remaining_estimate_not_the_one_as_written() {
+    // §4.1: `est:` is "the remaining estimate" and it "overrides the leading
+    // estimate"; §3.1 keeps the two apart (`est` against `est_original`, "the
+    // leading estimate as written"). So on a line that already carries `est:`
+    // — every line `tm stop`, a partial `tm done` or a `tm close` has touched
+    // — that token *is* the estimate the user is changing. Writing the leading
+    // one instead would leave §6.4's `remaining` exactly where it was (the
+    // edit would report success and change nothing) and would rewrite the
+    // history §11's estimate calibration measures actual/est against.
+    let tm = Tm::new();
+    let before = tm.json(&["plan"]);
+
+    let json = tm.json(&["edit", "^t3", "est=3b"]);
+    assert_eq!(json["changes"][0]["field"], "est");
+    // The value replaced is the remaining estimate, not the leading one (2b).
+    assert_eq!(json["changes"][0]["from"], "1b");
+    assert_eq!(json["changes"][0]["to"], "3b");
+
+    let after = tm.line("week/2026-W37.md", "t3");
+    assert!(after.contains("est:3b"), "the remainder moved: {after}");
+    assert!(!after.contains("est:1b"), "and only once: {after}");
+    assert!(
+        after.starts_with("- [>] 4 2b Exercises"),
+        "the estimate as written is history, not a field to overwrite: {after}"
+    );
+    assert_eq!(tm.run(&["check"]).code, 0);
+
+    // The parse changed: the item's remaining is 3b, and the planner spends
+    // more of the day on it than the 1b it had left before.
+    assert!(
+        planned_minutes(&tm.json(&["plan"]), "t3") > planned_minutes(&before, "t3"),
+        "the new remaining is invisible to `tm plan`"
+    );
+    // §6.3: the estimate a demotion carries is that same remaining.
+    assert_eq!(tm.json(&["demote", "^t3"])["est_min"], 180);
+}
+
 #[test]
 fn set_writes_a_raw_token_where_the_typed_edit_would_not() {
     // `--set` is documented as writing a `key:value` token verbatim, which is
@@ -275,6 +324,35 @@ fn edit_unset_removes_a_key() {
     assert_eq!(json["changes"][0]["field"], "est");
     assert_eq!(json["changes"][0]["from"], "1b");
     assert!(!tm.line("week/2026-W37.md", "t3").contains("est:"));
+
+    // Dropping the remainder hands `remaining` back to the leading estimate
+    // (§3.1's `est_original`), which is how `est=` reaches that one on a line
+    // that carried an `est:` token.
+    tm.ok(&["edit", "^t3", "est=4b"]);
+    let after = tm.line("week/2026-W37.md", "t3");
+    assert!(after.starts_with("- [>] 4 4b Exercises"), "{after}");
+    assert!(!after.contains("est:"), "{after}");
+}
+
+#[test]
+fn edit_unset_removes_the_positional_ci() {
+    // §4.1 writes the ci in the slot after the state, not as a `key:` token,
+    // so removing the token is not enough: `--unset ci` used to report the
+    // change and leave the digit standing. §3.1: with no ci of its own the
+    // item inherits its parent's again.
+    let tm = Tm::new();
+    let json = tm.json(&["edit", "^t1", "--unset", "ci"]);
+    assert_eq!(json["changes"][0]["field"], "ci");
+    assert_eq!(json["changes"][0]["from"], "5");
+    let after = tm.line("week/2026-W37.md", "t1");
+    assert!(after.starts_with("- [ ] 1b Read ch.6"), "{after}");
+    assert_eq!(tm.run(&["check"]).code, 0);
+
+    // A state-less line spells the same fact `ci:` (§4.3), and that goes too.
+    tm.ok(&["edit", "sleep", "--unset", "ci"]);
+    let routines = tm.read("routines.md");
+    assert!(routines.contains("- sleep"), "{routines}");
+    assert!(!routines.contains("ci:0"), "{routines}");
 }
 
 #[test]
