@@ -723,7 +723,7 @@ is kept and reported as an error — the field is simply absent until you fix it
 
 | field | what it does | accepted | example |
 |---|---|---|---|
-| `est:` | the *remaining* estimate. Overrides the leading estimate for everything the planner does. Usually written by `tm stop`, `tm done --partial`, `tm extend`, a close | `Nb Nm Nh NhMm` (**not** `Nd`) | `est:4h53m` |
+| `est:` | the *remaining* estimate. Overrides the leading estimate for everything the planner does. Usually written by `tm stop`, `tm done --partial`, `tm extend`, a close — and by `tm edit ^id est=…`, which changes this token whenever the line already carries one | `Nb Nm Nh NhMm` (**not** `Nd`) | `est:4h53m` |
 | `ci:` | min-energy as a field — the only way to give a ci on a line with no state (routines, optionals). Beats a positional ci | `ci:0`–`ci:5` | `ci:0` |
 
 **Stamps `tm` writes. Do not hand-edit these.**
@@ -1823,7 +1823,7 @@ Every verb has its own `tm <verb> --help` with the exact flags.
 | command | what it does |
 |---|---|
 | `tm add <LINE> [--to WHERE] [--section S]` | add a line. `--to` takes `inbox` (default), `backlog` (alias `none`), `week`, `month`, `day`, `routines`, `optional`, `calendar`, or a path like `week/2026-W37.md`. A line put in `calendar` must be an `at:` interval or `tm check` will fail |
-| `tm edit <ID> [K=V…] [--set K=V] [--unset KEY]` | edit fields byte-faithfully. `ci=`, `est=`, `due=`, `title=`, `p=`, or any `key=value` |
+| `tm edit <ID> [K=V…] [--set K=V] [--unset KEY]` | edit fields byte-faithfully. `ci=`, `est=`, `due=`, `title=`, `p=`, or any `key=value`. `est=` sets what is *left* of the item: the `est:` token on a line that already carries one, the leading estimate on a line that does not — so the estimate as written stays the historical number `tm` calibrates against. To change that one on a line with a remainder, `--unset est` first. `--unset` also clears the positional `ci` and `!p` |
 | `tm move <ID> <TO> [--section S]` | move an item to another horizon file |
 | `tm rank <ID> <N>` | move an item to position N of its section |
 | `tm demote <ID>` | demote a week item into the month's `# Demoted` |

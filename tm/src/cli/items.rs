@@ -14,9 +14,11 @@
 //!   ([`id_gen`] seeds the generator from `now`, so `--now` makes it
 //!   reproducible; an `^id` the text already carries must be free, §4.1).
 //!   §10.1 has no `add` event; the line is logged as `edit{field:"add"}`.
-//! * [`edit`] — `k=v` pairs (typed: `ci`, `est` — the *leading* estimate,
-//!   §4.1 — `title`, `p`, `state`) plus `--set` (a raw `key:value` token) and
-//!   `--unset`, one `edit` event per field. The result is re-parsed before it
+//! * [`edit`] — `k=v` pairs (typed: `ci`, `est` — the item's *remaining*
+//!   estimate, so the `est:` token when the line carries one and the leading
+//!   estimate otherwise, §4.1 — `title`, `p`, `state`) plus `--set` (a raw
+//!   `key:value` token) and `--unset` (the `key:` token, or the positional
+//!   `p`/`ci`), one `edit` event per field. The result is re-parsed before it
 //!   is written, so the CLI never produces a line its own `tm check` rejects
 //!   ([`reject_new_problems`]).
 //! * [`event`] — §5.1: logs `event{name,id}` and flips every `[?]` item the
@@ -277,13 +279,17 @@ fn apply_pair(
         "title" => item.title.clone(),
         "p" | "priority" => item.priority.map(|p| p.to_string()).unwrap_or_default(),
         "state" => item.state.as_str().to_string(),
-        // §4.1: the leading estimate is the item's estimate; `est:` is the
-        // tool-written remainder that `tm stop` / a partial `tm done` keep.
-        "est" => item
-            .est_original
-            .as_ref()
-            .map(|d| d.to_string())
-            .unwrap_or_default(),
+        // §4.1: `est:` is the remaining estimate and it overrides the leading
+        // one, so the value `est=` replaces is whichever of the two the item's
+        // remaining (§6.4) actually reads.
+        "est" => match line.get("est") {
+            Some(v) => v.to_string(),
+            None => item
+                .est_original
+                .as_ref()
+                .map(|d| d.to_string())
+                .unwrap_or_default(),
+        },
         other => line.get(other).unwrap_or_default().to_string(),
     };
     if raw {
@@ -320,12 +326,25 @@ fn apply_pair(
         "state" => line.set_state(State::parse(value)?)?,
         "est" => {
             let d = Dur::parse_no_days(value, block_min)?;
-            match line.set_leading_est(Some(d.clone())) {
-                // §4.3: a `routines.md` / `optional.md` line has no state, so
-                // it has no positional estimate slot either — the `est:` key
-                // is the only place the value can go.
-                Err(grammar::EditError::NoState) => line.set_token("est", &d.to_string()),
-                other => other?,
+            // §4.1: `est:` is the remaining estimate and "overrides the
+            // leading estimate", which is §3.1's `est_original` — "the leading
+            // estimate as written", the historical number §11 calibrates
+            // actual/est against. So on a line that already carries `est:` the
+            // value has to land there: writing the leading one instead would
+            // leave `remaining` (§6.4) untouched *and* rewrite the history.
+            // `tm edit ^id --unset est` drops the remainder and puts the
+            // leading estimate back in charge of `remaining`, which is how the
+            // leading one is changed on such a line.
+            if line.get("est").is_some() {
+                line.set_token("est", &d.to_string());
+            } else {
+                match line.set_leading_est(Some(d.clone())) {
+                    // §4.3: a `routines.md` / `optional.md` line has no state,
+                    // so it has no positional estimate slot either — the
+                    // `est:` key is the only place the value can go.
+                    Err(grammar::EditError::NoState) => line.set_token("est", &d.to_string()),
+                    other => other?,
+                }
             }
         }
         other => line.set_token(other, value),
@@ -393,6 +412,20 @@ pub fn edit(g: &Globals, args: &super::EditArgs) -> Result<i32, CliError> {
             "p" | "priority" => {
                 let was = item.priority.map(|p| p.to_string()).unwrap_or_default();
                 line.set_priority(None)?;
+                was
+            }
+            // §4.1 writes the ci in the positional slot after the state, so
+            // `remove_token` never finds it there; only the state-less
+            // `routines.md` / `optional.md` lines spell it `ci:`.
+            // [`ItemLine::remove_ci`] clears whichever the line carries (§3.1:
+            // the item then inherits its parent's ci again).
+            "ci" => {
+                let was = match (line.get("ci"), line.index_of(&grammar::TokenKind::Ci)) {
+                    (Some(v), _) => v.to_string(),
+                    (None, Some(_)) => item.ci.to_string(),
+                    (None, None) => String::new(),
+                };
+                line.remove_ci()?;
                 was
             }
             other => {
