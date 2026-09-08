@@ -710,29 +710,39 @@ fn remaining_est(cx: &Ctx, key: &Id, item: &Item) -> Option<u32> {
     own.or(rolled).map(|m| m.max(MIN_REMAINING_MIN))
 }
 
-/// The `est:` a demoted item carries: the largest of the §6.4 rollup,
-/// `folded` — the remaining of the children this close dropped with it
-/// (§6.3 "their remaining is folded into the parent's `est:`") — and
-/// `recorded`, the remaining an earlier demotion already measured onto the
-/// archive copy this one supersedes. `None` only when there is nothing to
-/// write at all.
+/// The `est:` a demoted item carries: the §6.4 rollup, floored at `folded`
+/// — the remaining of the children this close dropped with it (§6.3 "their
+/// remaining is folded into the parent's `est:`") — and, only for a line
+/// that states no estimate of its own, at `recorded`, the remaining an
+/// earlier demotion measured onto the archive copy this one supersedes.
+/// `None` only when there is nothing to write at all.
 ///
-/// All three are floors rather than one of them winning outright, because
-/// each knows something the others cannot (§0 principle 6, "demotion, not
+/// The floors are floors rather than the rollup winning outright because
+/// each knows something the rollup cannot (§0 principle 6, "demotion, not
 /// deletion" — no work leaves the tree):
 ///
-/// * the rollup is the only one that sees the line as it stands now, so an
-///   estimate raised since the last demotion (`tm edit est=`, a child added)
-///   is not thrown away;
 /// * `folded` is the only one that sees the lines this close is about to
 ///   delete from the week file;
 /// * `recorded` is the only one that still knows what an *earlier* close
 ///   measured — its own dropped children included — because §6.3 writes
 ///   `est:` = remaining onto the archive copy and never onto the line it
-///   archives, no verb ever writes that copy ([`tree::record_rank`] ranks
-///   every live line above every archive copy, so it is what `tm edit` and
-///   `tm stop` reach), and this demotion is about to overwrite or delete it.
+///   archives, and this demotion is about to overwrite or delete that copy.
+///
+/// `recorded` is nevertheless not allowed to raise a size the line itself
+/// states, because that is the one number a *user* can have written since:
+/// §4.1 makes the leading estimate the item's estimate — what §13's `tm edit
+/// ^id est=…` sets — and `est:` the remaining, which `tm stop` and `tm done
+/// --partial` keep, and all three land on the line being demoted, never on
+/// the archive copy ([`tree::record_rank`] ranks every live line above every
+/// archive copy, so that is the line every writer reaches). Flooring a
+/// deliberate re-estimate at an older close's measurement would silently
+/// undo it, downwards being the direction that shows. A line with no
+/// estimate of its own says nothing to undo — its remaining is a rollup over
+/// children, or nothing at all — so there `recorded` still stands, which is
+/// what keeps a first close's folded children alive through a second
+/// demotion.
 fn demote_est(cx: &Ctx, key: &Id, item: &Item, folded: u32, recorded: Option<u32>) -> Option<u32> {
+    let recorded = recorded.filter(|_| item.own_remaining().is_none());
     let floor = folded.max(recorded.unwrap_or(0));
     match (remaining_est(cx, key, item), floor) {
         (Some(base), f) => Some(base.max(f)),
@@ -1019,9 +1029,9 @@ fn demote_one(
     // copy and never onto the line it archives, so whatever an earlier close
     // measured — the children it dropped from the week file folded in —
     // exists only on the copy this demotion is about to overwrite or delete.
-    // It goes into the new copy's `est:` as a floor, so the record moves
-    // rather than restarting from the estimate the line has carried since
-    // before its first demotion (§0 principle 6).
+    // It goes into the new copy's `est:` as a floor under a line that states
+    // no estimate of its own ([`demote_est`]), so the record moves rather
+    // than restarting from nothing (§0 principle 6).
     let recorded = here.est_min.max(stale.as_ref().and_then(|(_, r)| r.est_min));
     let est = demote_est(cx, key, item, folded, recorded);
     let stamps = merge_stamps(&prior, &item.stamps.demoted, Stamp::Week(week.week));
@@ -1128,15 +1138,20 @@ pub fn readopt(cx: &Ctx, id: &Id, to: Option<&Horizon>) -> Result<Moved, Horizon
 /// point of demoting rather than deleting (§0 principle 6) — while the live
 /// line still carries whatever it was estimated at before the demotion.
 ///
-/// Nothing has changed that copy since, and nothing ever will:
+/// No verb a user points at the id has changed that copy, or can:
 /// [`tree::record_rank`] ranks *every* live line above *every* archive copy
 /// (`is_archive_copy` is its first key, and `false` sorts first — the stamp
 /// count only breaks ties between two archive copies), so `Tree::get` and
 /// `store::choose` both resolve the id to the live line, and that is the
-/// line `tm edit`, `tm stop` and `tm done --partial` read and rewrite. The
-/// copy is a dead end holding a number that exists nowhere else, and this
-/// absorb deletes it — so the surviving line takes its remaining with it. A
-/// copy that carries no estimate at all leaves the live line's own alone.
+/// line `tm edit`, `tm stop` and `tm done --partial` read and rewrite. Only
+/// the §6.3 lifecycle writes an archive copy, and only by replacing it
+/// whole: the next demotion of the live line has [`demote_one`] overwrite
+/// this copy with a remaining measured from that line, and delete it where
+/// it sits in an older month. Either way nothing ever carries the number
+/// *off* the copy and onto the live line — so a readopt that deletes the
+/// copy has to take its remaining with it, or the measurement goes with the
+/// line. A copy that carries no estimate at all leaves the live line's own
+/// alone.
 fn absorb_into_live(
     cx: &Ctx,
     from: &str,
@@ -1181,6 +1196,30 @@ fn absorb_into_live(
         from: from.to_string(),
         to: to_path,
     }))
+}
+
+/// The line a `[~]` addressed to `key` belongs on, given the line a caller
+/// found for it at `path`: the tree's live line when that one is only a §6.3
+/// archive copy, else the line itself.
+///
+/// [`tree::record_rank`] makes the live line *the item* — `Tree::get` and
+/// `store::choose` both resolve an id to it, which is how `tm drop ^id`
+/// already reaches it through [`locate`] — while the `[-]` line under
+/// `month/…# Demoted` is only the record §6.3 left behind. A month close
+/// scans the file it is closing, so a `--drop` meets the record first, and
+/// the user still means "drop this item". Marking the record would leave
+/// the item untouched *and* make the record a second **live** line
+/// ([`tree::is_archive_copy`] is a state test, so a `[~]` copy is no longer
+/// an archive copy), which is a `tm check` `dup-id` — ids are global (§4.1,
+/// §17.2). The record itself stays `[-]` where it is: the demotion it
+/// archives did happen.
+fn drop_target<'a>(cx: &Ctx<'a>, key: &Id, path: &str, line: &'a Item) -> (String, &'a Item) {
+    if tree::is_archive_copy(line) {
+        if let Some(live) = live_line(cx, key, path) {
+            return live;
+        }
+    }
+    (path.to_string(), line)
 }
 
 /// The live line carrying `key` — one that is not a §6.3 archive copy, the
@@ -1725,6 +1764,12 @@ fn cut_note(id: &Id, stamps: usize) -> String {
 /// behind. The report lists what carried over with its stamp count, which is
 /// what `/plan-month` proposes cuts from.
 ///
+/// A `--drop` names an *item*, and the line this close finds for it is not
+/// always the item: a `# Demoted` line is the archive copy of a week line
+/// that may still be live elsewhere (§4.3's own example tree ships exactly
+/// that pair). The `[~]` goes on the live line then, and the copy stays
+/// `[-]` in the month it records — see [`drop_target`].
+///
 /// A `--drop` is never silently discarded. The close auto-runs with an empty
 /// drop list on the first command after the month ends ([`auto_close`]), so
 /// by the time a user types `tm close month --drop ^id` the carry has usually
@@ -1755,13 +1800,16 @@ pub fn close_month(
         demoted: bool,
     }
     let mut carry: Vec<Carry> = Vec::new();
-    let mut to_drop: Vec<(Id, &Item)> = Vec::new();
+    // `(id, the line to mark `[~]`, the file that line is in)`: the line the
+    // close finds in `from` is not always the item — see [`drop_target`].
+    let mut to_drop: Vec<(Id, &Item, String)> = Vec::new();
     let mut resolved: HashSet<Id> = HashSet::new();
     for item in file.items() {
         let key = Tree::key_of(item);
         if wanted.contains(&key) {
+            let (path, line) = drop_target(cx, &key, &from, item);
             resolved.insert(key.clone());
-            to_drop.push((key, item));
+            to_drop.push((key, line, path));
             continue;
         }
         let demoted = in_section(item, DEMOTED_SECTION);
@@ -1785,7 +1833,7 @@ pub fn close_month(
     // other decision here it is made before the first write, so a `--drop`
     // that cannot be honoured leaves the tree untouched rather than
     // half-closed.
-    let mut pull_back: Vec<(Id, &Item, Option<String>)> = Vec::new();
+    let mut pull_back: Vec<(Id, &Item, String, Option<String>)> = Vec::new();
     // Drops this close has nothing left to do about: the line is already
     // `[~]` wherever it ended up. Reported as dropped, written again nowhere.
     let mut already: Vec<Id> = Vec::new();
@@ -1794,7 +1842,10 @@ pub fn close_month(
             continue;
         }
         match cx.files.file(&to).and_then(|f| item_of(f, id)) {
-            Some(item) => pull_back.push((id.clone(), item, item.src.section.clone())),
+            Some(item) => {
+                let (path, line) = drop_target(cx, id, &to, item);
+                pull_back.push((id.clone(), line, path, item.src.section.clone()));
+            }
             None => {
                 let found = locate(cx, id);
                 // §6.3 "idempotent": the second run of a close that already
@@ -1823,18 +1874,21 @@ pub fn close_month(
         }
     }
 
-    for (key, item) in &to_drop {
-        let text = rewrite(item, key, |l| l.set_state(State::Dropped))?;
-        cx.store.write_line_in(Some(from.as_str()), key, &text)?;
+    for (key, line, path) in &to_drop {
+        let text = rewrite(line, key, |l| l.set_state(State::Dropped))?;
+        cx.store.write_line_in(Some(path.as_str()), key, &text)?;
         cx.log(Event::Drop {
             id: key.to_string(),
         })?;
         report.dropped.push(key.clone());
     }
 
-    for (key, item, section) in &pull_back {
-        let text = rewrite(item, key, |l| l.set_state(State::Dropped))?;
-        cx.store.write_line_in(Some(to.as_str()), key, &text)?;
+    // The record comes back out of `to` either way; the `[~]` goes on
+    // whichever line is the item ([`drop_target`]), which is this one unless
+    // the tree still has a live line for the id somewhere else.
+    for (key, line, path, section) in &pull_back {
+        let text = rewrite(line, key, |l| l.set_state(State::Dropped))?;
+        cx.store.write_line_in(Some(path.as_str()), key, &text)?;
         cx.store
             .move_line_from(Some(to.as_str()), key, &from, section.as_deref())?;
         cx.log(Event::Move {

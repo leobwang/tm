@@ -957,6 +957,59 @@ fn a_demoted_line_can_be_dropped_after_it_carried() {
     );
 }
 
+/// A `--drop` names an item, and the line the close finds for it is not
+/// always the item: §4.3's example tree ships `^m2` twice — live in
+/// `week/2026-W37` and as the `[-]` archive copy under
+/// `month/2026-09#Demoted`, §6.3's one sanctioned pair — so the close meets
+/// the copy. Marking *that* line `[~]` left the item live and turned the
+/// record into a second **live** line (`tree::is_archive_copy` is a state
+/// test, so a `[~]` copy is no longer one), which is a `dup-id`: two
+/// commands from `tm init --example` and `tm check` exits 2. §4.1's ids are
+/// global and `tree::record_rank` makes the live line the item, so the `[~]`
+/// belongs there and the record stays `[-]`.
+#[test]
+fn dropping_an_id_that_resolves_to_an_archive_copy_marks_the_live_line() {
+    const LIVE: &str = "- [~] 4 6b Rollback path passes tests   @O2 ^m2";
+    const RECORD: &str = "- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2";
+
+    let (_dir, store) = plan();
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    let cx = Ctx::new(&store, &files, &tree, at("2026-10-01T08:00:00-05:00"));
+    let report = close_month(&cx, YearMonth::new(2026, 9), &[id("m2")]).unwrap();
+
+    assert_eq!(report.dropped, vec![id("m2")]);
+    assert_eq!(line_of(&store, WEEK, "m2").unwrap(), LIVE, "the item was dropped");
+    assert_eq!(line_of(&store, MONTH, "m2").unwrap(), RECORD, "the record is left as it is");
+    assert!(line_of(&store, NEXT_MONTH, "m2").is_none(), "a dropped line is not carried");
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    assert!(tree.duplicate_ids().is_empty(), "{:?}", tree.duplicate_ids());
+    assert_eq!(tree.get(&id("m2")).unwrap().state, State::Dropped);
+
+    // The same when the auto-close carried the record first and the `--drop`
+    // pulls it back (§6.3 "idempotent"): the record returns to `# Demoted`
+    // and the `[~]` is still on the item.
+    let (_dir, store) = plan();
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    let cx = Ctx::new(&store, &files, &tree, at("2026-10-01T08:00:00-05:00"));
+    close_month(&cx, YearMonth::new(2026, 9), &[]).unwrap();
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    let cx = Ctx::new(&store, &files, &tree, at("2026-10-01T08:01:00-05:00"));
+    close_month(&cx, YearMonth::new(2026, 9), &[id("m2")]).unwrap();
+
+    assert_eq!(line_of(&store, WEEK, "m2").unwrap(), LIVE);
+    assert_eq!(line_of(&store, MONTH, "m2").unwrap(), RECORD);
+    let files = store.read_tree().unwrap();
+    assert!(
+        files.tree().duplicate_ids().is_empty(),
+        "{:?}",
+        files.tree().duplicate_ids()
+    );
+}
+
 #[test]
 fn a_drop_that_cannot_be_honoured_fails_without_writing() {
     // A `--drop` that names nothing this close can act on is an error, not a
@@ -1182,6 +1235,78 @@ fn a_second_demotion_a_month_later_keeps_what_the_first_one_measured() {
     assert_eq!(tree.remaining(&id("s1")), Some(240));
 }
 
+/// …but that floor is under a line that says nothing about its own size, not
+/// over one that does. §4.1 makes the leading estimate the item's estimate —
+/// what §13's `tm edit ^id est=…` writes — and `est:` the remaining that `tm
+/// stop` and a partial `tm done` keep; all of them land on the live line,
+/// never on the archive copy (`tree::record_rank`). So a user who re-scopes
+/// an item downwards and lets it fall again got the earlier close's larger
+/// number written straight back over the re-estimate.
+#[test]
+fn a_re_estimate_on_the_line_beats_what_an_earlier_close_measured() {
+    /// A `plan-basic` whose `^s1` was demoted in W37 with 4b of children
+    /// folded into the archive copy, then came back live in W41 as `line`.
+    fn demoted_then_live_again(line: &str) -> (TempDir, FsStore) {
+        let (dir, store) = plan();
+        for l in [
+            "- [ ] 4 Ship the thing @O2 ^s1",
+            "- [ ] 3 2b Draft it @s1 ^s2",
+            "- [ ] 3 2b Review it @s1 ^s3",
+        ] {
+            store.insert_line(WEEK, Some("Milestones"), l).unwrap();
+        }
+        let files = store.read_tree().unwrap();
+        let tree = files.tree();
+        let cx = Ctx::new(&store, &files, &tree, at("2026-09-14T09:00:00-05:00"));
+        close_week(&cx, IsoWeek::new(2026, 37)).unwrap();
+        assert_eq!(
+            line_of(&store, MONTH, "s1").unwrap(),
+            "- [-] 4 Ship the thing @O2 est:4b demoted:W37 ^s1",
+            "the 4b of children the September close dropped"
+        );
+        store
+            .insert_line("week/2026-W41.md", Some("Milestones"), line)
+            .unwrap();
+        (dir, store)
+    }
+
+    /// The `est:` the October close writes onto the new archive copy.
+    fn demote_again(store: &FsStore) -> String {
+        let files = store.read_tree().unwrap();
+        let tree = files.tree();
+        let cx = Ctx::new(store, &files, &tree, at("2026-10-12T09:00:00-05:00"));
+        close_week(&cx, IsoWeek::new(2026, 41)).unwrap();
+        line_of(store, NEXT_MONTH, "s1").unwrap()
+    }
+
+    // `tm edit ^s1 est=1b` cut it to one block: that is the item's estimate
+    // now, and the demotion records it rather than September's measurement.
+    let (_dir, store) = demoted_then_live_again("- [ ] 4 1b Ship the thing @O2 ^s1");
+    assert_eq!(
+        demote_again(&store),
+        "- [-] 4 1b Ship the thing @O2 est:1b demoted:W37,W41 ^s1",
+        "the user's re-estimate, not the 4b"
+    );
+
+    // Raising it works the same way — the line's own number is the answer,
+    // in either direction.
+    let (_dir, store) = demoted_then_live_again("- [ ] 4 8b Ship the thing @O2 ^s1");
+    assert_eq!(
+        demote_again(&store),
+        "- [-] 4 8b Ship the thing @O2 est:8b demoted:W37,W41 ^s1"
+    );
+
+    // And a line that states no estimate of its own still gets the floor:
+    // there is nothing of the user's to undo, and §0 principle 6 says the
+    // work September folded in does not leave the tree.
+    let (_dir, store) = demoted_then_live_again("- [ ] 4 Ship the thing @O2 ^s1");
+    assert_eq!(
+        demote_again(&store),
+        "- [-] 4 Ship the thing @O2 est:4b demoted:W37,W41 ^s1",
+        "what the first close measured survives an untouched line"
+    );
+}
+
 /// A tree that arrived with two `# Demoted` copies of one id — from another
 /// writer (§1.3), or from a `tm` that used to write them — is not carried
 /// forward twice for ever: the month close folds the second into the first,
@@ -1218,14 +1343,16 @@ fn a_month_close_never_carries_an_id_a_file_already_has() {
         "{:?}",
         report.notes
     );
-    // §10.1 records every state change, and this one moved a record out of
-    // the month that closed: the fold logs the carry's own event, so `tm log
-    // --item ^m2` and `tm undo` see it like any other carried line.
-    assert!(
-        log_events(&store).contains(&("move".to_string(), "m2".to_string())),
-        "the fold logged nothing: {:?}",
-        log_events(&store)
-    );
+    // §10.1 records every state change, and this close moved *two* records
+    // out of the month that closed: the first `^m2` line by the ordinary
+    // carry, the second by the fold. Both log the carry's own event, so `tm
+    // log --item ^m2` and `tm undo` see the fold like any other carried
+    // line. It has to be counted rather than looked for: the ordinary carry
+    // logs one `move` for this id whatever the fold does, so `contains` is
+    // an assertion the fold cannot fail.
+    let events = log_events(&store);
+    let moves = events.iter().filter(|(ev, i)| ev == "move" && i == "m2").count();
+    assert_eq!(moves, 2, "the fold logged nothing: {events:?}");
     let files = store.read_tree().unwrap();
     assert!(
         files.tree().duplicate_ids().is_empty(),

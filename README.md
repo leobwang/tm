@@ -505,8 +505,17 @@ verb body and carries everything forward, so by then the line is in the next
 month's file; `--drop` fetches it back and drops it, leaving the same tree the
 same command run on the last day of the month would have. Run the identical
 command a second time and it is content: the item is already `[~]`, which is
-what you asked for, so the close reports the drop and changes nothing. A
-`--drop` that names something this close cannot act on — a typo, or a live item
+what you asked for, so the close reports the drop and changes nothing.
+
+`--drop` names an **item**, not a line. A `# Demoted` line is often only the
+archive copy of something still live in a week file — that is the pair the
+example tree ships for `^m2` — and dropping the item means dropping the line
+you would still work from. The `[~]` goes on the live line, and the record is
+left as it is, `[-]` in the month it belongs to: the demotion it archives did
+happen. (Marking the copy instead would have left the item live and put the id
+on two live lines, which `tm check` rejects.)
+
+A `--drop` that names something this close cannot act on — a typo, or a live item
 that lives in `backlog.md` — is still an error, not a shrug:
 
 ```console
@@ -985,12 +994,20 @@ is what keeps `tm check` quiet: an `^id` may be on the `[-]` line in the archive
 week and on its one archive copy, and nowhere else.
 
 The **remaining moves with it**. The copy is the only line that carries what a
-demotion measured — the deleted children's minutes included — so the second
-demotion cannot record less than the first one did: it writes the larger of what
-the live line is worth now and what the copy it replaces recorded. A parent that
-went into September's `# Demoted` as `est:4b` because its 2b children were
-deleted with it comes out of October's close as `est:4b demoted:W37,W41`, not as
-the bare line it had shrunk to.
+demotion measured — the deleted children's minutes included — so a line that
+says nothing about its own size cannot come out of the second demotion worth
+less than the first one recorded. A parent that went into September's
+`# Demoted` as `est:4b` because its 2b children were deleted with it comes out
+of October's close as `est:4b demoted:W37,W41`, not as the bare line it had
+shrunk to.
+
+What that floor never does is argue with **you**. An estimate on the line
+itself is yours — the leading estimate is what `tm edit ^id est=…` writes, and
+`est:` is what `tm stop` and `tm done --partial` leave — and both land on the
+live line, never on the archive copy. Re-scope that parent to `1b` and October
+records `est:1b`: a number you wrote wins over a number an older close
+measured, downwards as well as upwards. The floor applies only where the line
+states no size of its own and there is nothing of yours to overrule.
 
 **Overdue dated items move to `backlog.md`** under a `# Overdue` heading, exactly
 as written — they are not demoted. **Appointments still in the future**, and the
