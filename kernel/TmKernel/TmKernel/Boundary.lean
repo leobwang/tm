@@ -62,10 +62,6 @@ def Store.insert (s : Store) (i : Id) (e : Entity) : Store :=
 inductive LErr
   /-- more lines of one id than any entity can render, or two in one file -/
   | dupId (i : Id)
-  /-- a `[-]` with no partner.  A demotion is two lines, one of them the
-      tombstone; a single `[-]` is not a state this kernel can hold, and the
-      first version of the loader turned it into a live `[ ]` item. -/
-  | orphanDemotion (i : Id)
   /-- two lines of one id whose bytes differ.  An entity owns one token vector,
       so there is no value that renders both. -/
   | splitLine (i : Id)
@@ -225,16 +221,24 @@ def pairEntity (arch live : Placement) : Option Entity :=
     | none    => none
     | some st =>
       if h : wf ({ live := ⟨live.doc, live.rank⟩, archive := some ⟨arch.doc, arch.rank⟩,
-                   status := st, line := live.item, stamps := [] } : Core) = true
+                   status := st, line := live.item } : Core) = true
       then some ⟨_, h⟩ else none
   | _ => none
 
-/-- One line on its own: the entity that renders exactly it. -/
-def loneEntity (i : Id) (q : Placement) : Except LErr Entity :=
-  match statusOfGlyph q.glyph with
-  | some st => .ok ⟨{ live := ⟨q.doc, q.rank⟩, archive := none, status := st,
-                      line := q.item, stamps := [] }, rfl⟩
-  | none    => .error (.orphanDemotion i)
+/-- One line on its own: the entity that renders exactly it.  **Total**, and
+that is the fix the corpus forced.
+
+It used to reject a lone `[-]`, on the reading that "a demotion is two lines".
+§6.3's *week* close does write two, but `tm close month` then carries the
+`month/…# Demoted` copy into the next month file and touches nothing else, so a
+`# Demoted` section holds `[-]` lines whose partner is in a file the host need
+not have handed over — and §4.3's own `month/2026-09.md` is such a file.  The
+Rust core agrees: `is_archive_copy` is a predicate on **one** item and a key
+group of size one is resolved without looking for a partner.  So `[-]` standing
+alone is `Status.demoted`, and every `# Demoted` section in the corpus loads. -/
+def loneEntity (q : Placement) : Entity :=
+  ⟨{ live := ⟨q.doc, q.rank⟩, archive := none, status := statusOfGlyph q.glyph,
+     line := q.item }, rfl⟩
 
 /-- **Which line is the tombstone, decided by the files.**  The closed horizon
 comes first; `horizonPrecedes` is antisymmetric, so at most one of the two
@@ -323,7 +327,7 @@ theorem unordered_horizons_are_rejected (i : Id) (a b : Placement)
 
 /-- The whole inverse, for one id's lines. -/
 def buildEntity (i : Id) : List Placement → Except LErr Entity
-  | [q]    => loneEntity i q
+  | [q]    => .ok (loneEntity q)
   | [a, b] => pairedEntity i a b
   | _      => .error (.dupId i)
 
@@ -345,17 +349,10 @@ one.  The `[-]` bug lived in exactly that gap: `serialize_parse` stayed true
 while a `[-]` line came back `[ ]`.  These close it — they are stated about the
 entity the loader builds, which is what the FFI renders from. -/
 
-theorem lone_placement_renders_back (i : Id) (q : Placement) (e : Entity)
-    (he : loneEntity i q = .ok e) :
-    e.val.live = ⟨q.doc, q.rank⟩ ∧ e.val.line = q.item ∧
-      glyphAt e.val e.val.live = q.glyph := by
-  unfold loneEntity at he
-  split at he
-  · rename_i st hst
-    injection he with he
-    subst he
-    exact ⟨rfl, rfl, glyphAt_statusOfGlyph hst _ _ _⟩
-  · simp at he
+theorem lone_placement_renders_back (q : Placement) :
+    (loneEntity q).val.live = ⟨q.doc, q.rank⟩ ∧ (loneEntity q).val.line = q.item ∧
+      glyphAt (loneEntity q).val (loneEntity q).val.live = q.glyph :=
+  ⟨rfl, rfl, glyphAt_statusOfGlyph q.glyph _ _⟩
 
 theorem pairEntity_renders_back (arch live : Placement) (e : Entity)
     (h : pairEntity arch live = some e) :
@@ -378,7 +375,7 @@ theorem pairEntity_renders_back (arch live : Placement) (e : Entity)
           simp only [wf, wfPair, bne_iff_ne, ne_eq] at hwf
           exact hwf (congrArg Site.doc hc)
         exact ⟨rfl, rfl, rfl, harch,
-          glyphAt_statusOfGlyphDemoted hst _ _ hne _ _,
+          glyphAt_statusOfGlyphDemoted hst _ _ hne _,
           archive_line_is_demoted _ _ rfl⟩
       · simp at h
   · simp at h
@@ -428,9 +425,10 @@ counterexample to this statement and not to `serialize_parse`, which is why it
 survived. -/
 theorem load_render_line (cs : List Char) (i : Id) (g : Glyph) (r : RawItem)
     (k rk : Nat) (reg : Option Region) (e : Entity) (hp : parseItem cs = .ok (i, g, r))
-    (he : loneEntity i ⟨k, rk, i, g, r, reg⟩ = .ok e) :
+    (he : e = loneEntity ⟨k, rk, i, g, r, reg⟩) :
     serializeItem i (glyphAt e.val e.val.live) e.val.line = cs := by
-  obtain ⟨_, hline, hglyph⟩ := lone_placement_renders_back i ⟨k, rk, i, g, r, reg⟩ e he
+  subst he
+  obtain ⟨_, hline, hglyph⟩ := lone_placement_renders_back ⟨k, rk, i, g, r, reg⟩
   rw [hglyph, hline]
   exact serialize_parse cs i g r hp
 
@@ -659,8 +657,18 @@ inductive ReqCmd
   | move (i : Id) (doc : DocIx)
   | drop (i : Id)
   | est  (i : Id) (v : Nat)
-  | demote (i : Id) (doc : DocIx) (period : Nat)
+  | demote (i : Id) (doc : DocIx) (stamp : Field.Stamp)
   | readopt (i : Id) (doc : DocIx)
+
+/-- §6.3 stamps a demotion with the grain of the horizon that closed — `W37`
+from a week close, `D07` from a day close — and a `Field.Stamp` carries which.
+The wire sends the period number; the optional `grain` says the letter, and a
+request that omits it means a week, which is the close §6.3 attaches a
+`demoted:` stamp to.  Reading it this way keeps every existing request valid. -/
+def stampOf (j : Json) (n : Nat) : Field.Stamp :=
+  match getStr j "grain" with
+  | .ok g    => if g == "d" then .day n else .week n
+  | .error _ => .week n
 
 def parseCmd (j : Json) : Except String ReqCmd := do
   let op ← getStr j "op"
@@ -668,7 +676,8 @@ def parseCmd (j : Json) : Except String ReqCmd := do
   | "move" => return .move (← getStr j "id").toList (← getNat j "doc")
   | "drop" => return .drop (← getStr j "id").toList
   | "est"  => return .est (← getStr j "id").toList (← getNat j "min")
-  | "demote" => return .demote (← getStr j "id").toList (← getNat j "doc") (← getNat j "period")
+  | "demote" =>
+    return .demote (← getStr j "id").toList (← getNat j "doc") (stampOf j (← getNat j "period"))
   | "readopt" => return .readopt (← getStr j "id").toList (← getNat j "doc")
   | _ => throw s!"unknown op {op}"
 
@@ -758,10 +767,10 @@ def applyCmd (c : ReqCmd) (p : WfPlan) : Except KErr WfPlan :=
     | .ok dd   => cmdMove i (freshRank p.val dd.ix) p dd
   | .drop i         => cmdDrop i p
   | .est i v        => cmdSetEst v i p
-  | .demote i d per =>
+  | .demote i d st =>
     match resolveDest p.val d with
     | .error k => .error k
-    | .ok dd   => cmdDemote i (freshRank p.val dd.ix) per p dd
+    | .ok dd   => cmdDemote i (freshRank p.val dd.ix) st p dd
   | .readopt i d    =>
     match resolveDest p.val d with
     | .error k => .error k
@@ -773,8 +782,9 @@ theorem move_to_a_document_that_does_not_exist_is_rejected (p : WfPlan) (i : Id)
     (h : ¬ n < p.val.docs.length) : applyCmd (.move i n) p = .error .badHorizon := by
   simp [applyCmd, resolveDest, h]
 
-theorem demote_to_a_document_that_does_not_exist_is_rejected (p : WfPlan) (i : Id) (n per : Nat)
-    (h : ¬ n < p.val.docs.length) : applyCmd (.demote i n per) p = .error .badHorizon := by
+theorem demote_to_a_document_that_does_not_exist_is_rejected (p : WfPlan) (i : Id) (n : Nat)
+    (st : Field.Stamp)
+    (h : ¬ n < p.val.docs.length) : applyCmd (.demote i n st) p = .error .badHorizon := by
   simp [applyCmd, resolveDest, h]
 
 def applyAll : List ReqCmd → WfPlan → Except KErr WfPlan
@@ -795,7 +805,6 @@ theorem applyAll_closed (cs : List ReqCmd) (p : WfPlan) (q : PlanCore)
 
 def lerrJson : LErr → Json
   | .dupId i          => Json.mkObj [("dupId", Json.str (String.ofList i))]
-  | .orphanDemotion i => Json.mkObj [("orphanDemotion", Json.str (String.ofList i))]
   | .splitLine i      => Json.mkObj [("splitLine", Json.str (String.ofList i))]
   | .notADemotion i   => Json.mkObj [("notADemotion", Json.str (String.ofList i))]
   | .ambiguousDemotion i => Json.mkObj [("ambiguousDemotion", Json.str (String.ofList i))]
@@ -1037,12 +1046,7 @@ writes back for the id, box and token vector the parser returned. -/
 def placementLine (q : Placement) : Line :=
   ⟨q.id, ⟨q.doc, q.rank⟩, serializeItem q.id q.glyph q.item⟩
 
-theorem loneEntity_archive (i : Id) (q : Placement) (e : Entity)
-    (h : loneEntity i q = .ok e) : e.val.archive = none := by
-  unfold loneEntity at h
-  split at h
-  · injection h with h; rw [← h]
-  · simp at h
+theorem loneEntity_archive (q : Placement) : (loneEntity q).val.archive = none := rfl
 
 theorem buildEntity_renders (i : Id) (qs : List Placement) (e : Entity)
     (hid : ∀ q ∈ qs, q.id = i) (h : buildEntity i qs = .ok e) (l : Line) :
@@ -1050,11 +1054,14 @@ theorem buildEntity_renders (i : Id) (qs : List Placement) (e : Entity)
   match qs with
   | [] => simp [buildEntity] at h
   | [q] =>
-      have h' : loneEntity i q = .ok e := h
+      have h' : e = loneEntity q := by
+        have : Except.ok (loneEntity q) = (.ok e : Except LErr Entity) := h
+        injection this with this; exact this.symm
+      subst h'
       have hq : q.id = i := hid q (by simp)
-      obtain ⟨hlive, hline, hglyph⟩ := lone_placement_renders_back i q e h'
-      have harch := loneEntity_archive i q e h'
-      have hr : render i e = [placementLine q] := by
+      obtain ⟨hlive, hline, hglyph⟩ := lone_placement_renders_back q
+      have harch := loneEntity_archive q
+      have hr : render i (loneEntity q) = [placementLine q] := by
         unfold render renderCore placementLine
         simp only [harch]
         rw [hglyph, hline, hlive, hq]
@@ -1523,9 +1530,10 @@ theorem moveTo_freshRank_normalized (p : WfPlan) (i : Id) (e a : Entity) (k : Do
 
 /-- **`demote` too** — and here the tombstone is the line the item is leaving,
 which is precisely a site the old entity occupied. -/
-theorem demote_at_freshRank_normalized (p : WfPlan) (i : Id) (e a : Entity) (k per : Nat)
+theorem demote_at_freshRank_normalized (p : WfPlan) (i : Id) (e a : Entity) (k : Nat)
+    (st : Field.Stamp)
     (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e)
-    (ha : demote ⟨k, freshRank p.val k⟩ per e = .ok a) :
+    (ha : demote ⟨k, freshRank p.val k⟩ st e = .ok a) :
     normalized { p.val with store := p.val.store.set i a hs } = true := by
   have hv := lift_roundtrips _ _ ha
   refine normalized_after_relocation p i e a k hs hget (by rw [hv]) ?_

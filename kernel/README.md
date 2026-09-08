@@ -12,7 +12,7 @@ kernel/
     TmKernel/Grain.lean      the horizon order, derived from one generator
     TmKernel/Text.lean       tokenizer, numerals (padded and bare), splitting
     TmKernel/Line.lean       the item line and the whole of §4.1's field grammar
-    TmKernel/State.lean      entity vs observation; the id invariant, locally
+    TmKernel/State.lean      entity vs observation; §3.1's fields, as views
     TmKernel/Plan.lean       the plan as one object; the invariant, globally
     TmKernel/Cmd.lean        five commands, each with its law proved or refuted
     TmKernel/Boundary.lean   String -> String; one @[export]
@@ -330,8 +330,13 @@ on when you asked. They are different functions and they differ.
 
 ### Entity versus observation
 
-An id names an entity; a line is an observation of it at a site. `[-]` is not
-a status — five states, not six — and the glyph is a function of placement.
+An id names an entity; a line is an observation of it at a site. The glyph is a
+function of placement **and** status: on the live line of a half-finished
+demotion `[-]` is positional, and standing alone it is a state — §6.3's archive
+copy, which `tm close month` leaves in a `# Demoted` section with no partner in
+the file set. Six states, not five; the fifth-versus-sixth question was decided
+by the corpus, which refused every `# Demoted` section in the fixture trees
+(gap 2).
 
 - `archive_elsewhere`, `one_line_per_file`, `exactly_one_live` — one file, one
   line, and exactly one of the (at most two) lines is the live one. The role is
@@ -356,11 +361,23 @@ a status — five states, not six — and the glyph is a function of placement.
 - `lines_per_id_le_two` — and no plan has three lines of one id.
 - `prose_is_never_an_item` — a document's prose contains nothing that parses as
   an item, so the only item lines a file emits are the ones its entities render.
-- `glyphAt_statusOfGlyph`, `glyphAt_statusOfGlyphDemoted` — `glyphAt` is the
+- `glyphAt_statusOfGlyph`, `glyphAt_statusOfGlyphDemoted`,
+  `every_glyph_has_a_state`, `a_lone_demotion_renders_back` — `glyphAt` is the
   only writer of a state box, and these are its **inverse**: the entity a loader
-  builds from a glyph renders that same glyph back. Where the inverse is `none`
-  the configuration is unreachable and the loader rejects rather than picking
-  something close.
+  builds from a glyph renders that same glyph back. Unpaired the inverse is
+  *total* — there is no box a file can carry that the loader has to refuse —
+  and paired it is partial in exactly one place, `[ ]`, because while a
+  tombstone stands the live line reads `[-]`.
+- `the_fields_are_the_line`, `coreOfLine_shape` and its siblings — §3.1's item
+  fields are **views of the token vector**, so two records carrying the same
+  line carry the same fields and there is no second copy for a command to leave
+  behind. `core_fields_round_trip` chains that onto round trip B:
+  a `Fields` laid out as bytes reads back off the `Core` as itself.
+- `the_spec_calendar_line_is_an_interval`, `the_spec_calendar_line_has_a_loc`,
+  `the_spec_demoted_line_is_read_whole`, `the_spec_item_line_is_read_whole` —
+  §4.3's and §4.1's own lines, read as §3.1's fields and `decide`d, so the
+  kernel rechecks them on every build. The first is the line the corpus refused
+  before the wiring.
 - `the_tombstone_is_behind_the_live_line` — and where the inverse is not a
   function of the glyphs at all, because a demotion writes `[-]` at both sites,
   it is a function of the two **files**: in every accepted plan an entity's
@@ -484,10 +501,11 @@ byte for byte and not interpreted.
 
 ### §4.1's field grammar
 
-The value types live in `Tm.Field`, one module earlier than §3.1's copies in
-`State.lean`, because `State.lean` imports `Line.lean` and the grammar cannot
-name types it comes before.  They are the same data; see gap 3 for what joining
-them costs.
+The value types live in `Tm.Field`, one module before `State.lean`, because
+`State.lean` imports `Line.lean` and the grammar cannot name types it comes
+before.  **They are §3.1's types**: `State.lean` opens them by name rather than
+declaring a second copy, and §3.1's item fields are views of the token vector
+rather than slots beside it.  See gap 3.
 
 - **A round trip per value format.**  `parse_render_dur`, `parse_render_clock`,
   `parse_render_date`, `parse_render_moment`, `parse_render_interval`,
@@ -628,20 +646,25 @@ The refutations are the point, not decoration:
 
 ### The item, and the rest of the plan-level tier
 
-`Core` accounts for all twenty-two of §3.1's fields, in eighteen of its
-own. Four are absent on purpose — `id` is
-the store key, `horizon` is the file (`Site.doc`), `src` is `live` plus `line`,
-and `est`/`est_original` are *views* of the token vector — and two more are
-derived rather than stored: `series` is the section a placement sits in, and
-§3.2's `effective_shape` is a fact about the parent. The rest are typed:
-`ci : Option (Fin 6)`, `!k : Option (Fin 4)`, a four-constructor `Shape` over
-`Fin 1440` clock times, `Recur` as **syntax** (a denotation is not
-serialisable and §0 says the Markdown is the database), budgets as minutes,
-tags as a `Nodup` subtype.
+`Core` accounts for all twenty-two of §3.1's fields, in **four** slots. Four
+are absent on purpose — `id` is the store key, `horizon` is the file
+(`Site.doc`), `src` is `live` plus `line`, and `series`/`effective_shape` are
+derived in `Plan.lean` from the document and the tree. The rest are *views of
+the token vector*, one function each: `Core.shape`, `Core.recur`,
+`Core.budget`, `Core.after`, `Core.loc`, `Core.buffer`, `Core.stamps`,
+`Core.waiting`, `Core.tags`, `Core.ci`, `Core.prio`, `Core.flags`,
+`Core.scope`, `Core.splittable`, `Core.extra`, `Core.title`, `Core.est`. And
+their types are §4.1's, opened from `Field` rather than copied — one `Shape` in
+the kernel, over `DT`/`Moment` and not a re-encoding; `Recur` as **syntax** (a
+denotation is not serialisable and §0 says the Markdown is the database);
+`Stamp` knowing `W37` from `D07`; `Dur` keeping the unit §4.1 says a rewrite
+keeps; `ci : Option (Fin 6)` and `!k : Option (Fin 4)` still bounded; tags
+still a `Nodup` subtype. `parent` is the one exception and gap 22 says why.
 
-Widening the record costs nothing at the other two tiers, and that is the whole
-reason the design is `Bool` + `Subtype`:
-`wf_ignores_the_item_fields` sets all thirteen new fields at once and is `rfl`.
+That is a *narrowing*, and it is what makes the widening free at the other two
+tiers: `wf_ignores_the_item_fields` used to set thirteen fields at once and be
+`rfl`, and now it sets the one slot they all live in — a stronger statement,
+because there is nothing left it does not cover.
 
 Five of them mean nothing until the whole plan is consulted, so they join the
 third tier — one decidable checker, `itemsWf`, inside `planWf`, re-established
@@ -782,7 +805,7 @@ sketch, and because the gaps are where the next stage's cost lives.
      line here and becomes two lines on disk, and nothing in the kernel notices;
    * **requests the loader rejects.** Every theorem here is conditioned on
      `loadPlan docs = .ok p`. `badLine`, `dupId`, `splitLine`, `notADemotion`,
-     `orphanDemotion`, `ambiguousDemotion`, `duplicatePath` and the `itemCheck`
+     `ambiguousDemotion`, `duplicatePath` and the `itemCheck`
      faults have theorems of their own where they have any (`scanLines_prose`,
      `unordered_horizons_are_rejected`, `a_shapeless_calendar_line_is_rejected`,
      `an_unpinned_day_item_is_rejected`) and three of them cannot be reached from
@@ -800,16 +823,24 @@ sketch, and because the gaps are where the next stage's cost lives.
      instead, which is the same discipline — and the same recorded gap — as
      `sitesInRange` and `demotionsOriented` in gap 10.
 
-2. **A lone `[-]` is rejected, not read; and so is a pair the documents do not
-   order.** A demotion is two lines — the tombstone and the live line — and an
-   entity with no archive placement has no configuration that renders `[-]`. So a
-   `[-]` whose partner is missing (a hand-deleted week file, say) is
-   `LErr.orphanDemotion` rather than a silent rewrite to `[ ]`, which is what it
-   used to be. Today's `tm` accepts it and repairs it in
-   `cli/items.rs::drop_stale_demotion`; in this design that repair belongs in the
-   `Repair` array of the plan's §4.4, returned and never applied silently, and
-   that is stage-2 work. The two-line form itself loads and round trips —
-   provided the request says which horizon each file is. Two `[-]` lines in two
+2. **A lone `[-]` loads now; a pair the documents do not order still does
+   not.** *(Was: "a lone `[-]` is rejected, not read." That was a kernel bug and
+   the corpus found it — every `# Demoted` section in the fixture corpus was
+   refused with `LErr.orphanDemotion`, §4.3's own `month/2026-09.md` included.)*
+   The reading that produced it was "a demotion is two lines, so an entity with
+   no archive placement has no configuration that renders `[-]`". §6.3's *week*
+   close does write two, but `tm close month` then carries the
+   `month/…# Demoted` copy into the next month file and touches nothing else,
+   so a `# Demoted` section holds `[-]` lines whose partner is in a file the
+   host need not have handed over. The Rust core is blunter: `State::Demoted`
+   is a variant of the state enum (`model.rs`), `is_archive_copy` is a
+   predicate on **one** item, and `Tree::build` short-circuits a key group of
+   size one before any pairing is attempted (`tree.rs`). So `Status` has six
+   cases, not five; `statusOfGlyph` is total; `glyphAt_statusOfGlyph` holds
+   with no side condition; and `LErr.orphanDemotion` is gone. What stays
+   partial is the *paired* inverse (`statusOfGlyphDemoted`): while a tombstone
+   stands, the live line reads `[-]`, never `[ ]`. The two-line form loads and
+   round trips — provided the request says which horizon each file is. Two `[-]` lines in two
    documents with no declared region, or with the same one, are
    `LErr.ambiguousDemotion`: the kernel's own output is never in that state
    (`demotionsOriented` is part of `planWf`), so this is a diagnostic for a host
@@ -824,19 +855,33 @@ sketch, and because the gaps are where the next stage's cost lives.
    consequence of the fix and not an independent choice; it is still a change a
    user has to assent to.
 
-3. **§4.1's field grammar is proved, and it is not yet wired into `Core`.**
-   `Line.lean` now reads every key, flag and slot §4.1 lists, with a round trip
-   per value, `field_round_trip` over the whole line and one
-   `view ∘ set = id` per field.  What it does **not** do is fill `State.lean`'s
-   `Core`: the values live in `Tm.Field` (they have to — `State.lean` imports
-   `Line.lean`, so the grammar is declared first), and the map from
-   `Field.Shape` to `Tm.Shape`, `Field.Rule` to `Tm.Rule` and so on is a
-   constructor-per-constructor function that belongs in `State.lean`.  Until it
-   is written the loader still builds entities with these fields at their
-   defaults, so §4.3's file-kind shapes still reject `routines.md`,
-   `optional.md` and `calendar/*.md` at load, exactly as before.  The
-   consequence to keep in view: the plan-level tier that *reads* `parent` and
-   `after:` is proved but still cannot fire on anything the boundary builds.
+3. **§4.1's field grammar is wired into `Core`, and the duplicate types are
+   deleted rather than bridged.** *(Was: "not yet wired". The corpus measured
+   the cost — every calendar line refused with `itemCheck: fileKindShape`,
+   §4.3's own `at:2026-09-07T12:50/13:50` included.)* The map from
+   `Field.Shape` to a second `Tm.Shape` was never written, and it is not
+   written now: **the second copy is gone.** §3.1's `Shape`, `Recur`, `Rule`,
+   `Rate`, `Period`, `OnMiss`, `Dep`, `WindowRange`, `Loc`, `Stamp`, `Dur`,
+   `DT`, `Moment` and `Clock` are §4.1's, opened by name from `Field`; the
+   import order permits it, because `State.lean` imports `Line.lean` and can
+   name what it declares. And §3.1's item fields are **views of `line`**, not
+   slots beside it: `Core` stores four things (`live`, `archive`, `status`,
+   `line`) and `Core.shape`, `Core.recur`, `Core.budget`, `Core.after`,
+   `Core.loc`, `Core.buffer`, `Core.stamps`, `Core.waiting`, `Core.tags`,
+   `Core.ci`, `Core.prio`, `Core.flags`, `Core.scope`, `Core.splittable`,
+   `Core.extra`, `Core.title` and `Core.est` read it. `the_fields_are_the_line`
+   is the theorem that says there is nothing for a second reader to disagree
+   with; `wf_ignores_the_item_fields` is now one binder instead of thirteen and
+   covers every field there is. The plan-level tier fires on what the boundary
+   builds: `shapesWf` accepts §4.3's calendar files and `afterTotal` catches
+   `plan-conflicts`' dangling `after:^t9` and its `^z1`/`^z2` cycle.
+
+   What this made visible, and fixed: `demote` used to append its `demoted:`
+   stamp to a slot beside the line, and `renderCore` prints the line — so the
+   stamp reached no file and §6.3's month review would have cut on a number
+   nobody wrote. `demote` now writes it with `Field.setDemoted`, takes a
+   `Field.Stamp` (which knows `W37` from `D07`) rather than a bare `Nat`, and
+   `readopt_demote_id_mod_stamps` states the resulting bytes exactly.
 
 4. **Two readers of `est:` coexist.**  The stage-one `viewRemaining`
    (`Nat`-valued, what `Cmd.lean` and `Boundary.lean` call) and the
@@ -846,8 +891,11 @@ sketch, and because the gaps are where the next stage's cost lives.
    `estWord v` and `keyWord Key.est (renderDur (.simple v .minutes))` are the
    same token, so the stage-one view reads what the field-level setter writes.
    But they are not one function, and the stage-one `unitValue` does not read
-   `NhMm` or `Nd` where `parseDurND` does.  Collapsing them is part of the same
-   wiring slice as gap 3, and until it happens this is a live S2.
+   `NhMm` or `Nd` where `parseDurND` does.  Gap 3's wiring made `Core.est` the
+   field-level reader (`viewRemainingDur`), so the *entity* has one; what still
+   has two is the command path, where `Cmd.setEstE` and `Boundary`'s `est`
+   request go through the stage-one `Nat` reader.  Collapsing those is the next
+   slice, and until it happens this is a live S2.
 
 5. **State-less lines are still not representable.**  §4.1 says
    `routines.md` and `optional.md` omit the state box.  `ci:` as a *key* is
@@ -1043,6 +1091,25 @@ sketch, and because the gaps are where the next stage's cost lives.
     no planner, no calendar arithmetic and no relational laws — the three places
     the ratio blows up.
 
+22. **`parent` is the one §3.1 field still stored, and it is always `none`.**
+    Every other item field is a view of `Core.line` (gap 3); `parent` is not,
+    and the reason is `parentsTotal`, not the grammar — `Field.parentRef` reads
+    `@O2` off the line today. §6.1 says "a week item may be a child of a month
+    item", `parentsTotal` is a **load precondition** rather than `tm check`'s
+    `@ghost` report (§17.2, which is how tm treats it), and so reading the
+    field would make a document set that is one file stop loading: every
+    `week/*.md` and `backlog.md` in the corpus would go from `ok` to
+    `danglingParent` the moment it is wired. The choice — derive the field, or
+    demote `parentsTotal` to a report the way `check.rs` has it — is a decision
+    about the plan tier and is not taken here. Consequence: §3.2's
+    `effectiveShape` prep rule, `effectiveCi` inheritance and `rootPrio` are
+    proved and cannot fire on anything the boundary builds.
+
+23. **The demotion pair is still one token vector, and `orientPair` still
+    orders by horizon.** This is gap 19 restated after the wiring, because the
+    wiring did not touch it and the whole-plan loads still fail on it. See gap
+    19 for the measurement and the two-part diagnosis.
+
 ## Standing rules, each earned by something that went wrong in a spike
 
 - Pin `lean-toolchain`; a change to it is a reviewed decision. `lake update`
@@ -1161,7 +1228,7 @@ and it reaches two steps round trip B cannot: the split of a file's bytes into
 lines and back (gap 6), and the JSON escaping on both sides of the FFI.
 
 ```
-CORPUS: 26/37 files and 1/5 whole plans round-trip byte-identically
+CORPUS: 33/37 files and 1/5 whole plans round-trip byte-identically
 ```
 
 **Nothing in the corpus is silently rewritten.** Not one file is accepted and
@@ -1173,22 +1240,27 @@ round-tripping fails the build and a file that starts round-tripping does not.
 Re-measure with `TM_CORPUS_BLESS=1 cargo test --test corpus`; the table, and the
 minimal set of lines behind each refusal, print under `-- --nocapture`.
 
-The eleven files that do not round-trip fail in four ways, none of them a
-rewrite:
+**The four files that do not round-trip are all `plan-conflicts/`**, the fixture
+that exists to make `tm check` print, and each refusal names a defect
+`corpus/PROVENANCE.md` lists as deliberate:
 
-| n | diagnostic | what it is |
+| file | diagnostic | the line, and the listed defect |
 |---|---|---|
-| 4 | `itemCheck: fileKindShape` | every `calendar/*.md`. Gap 3 predicted this; gap 18 below says it is worse than predicted |
-| 4 | `orphanDemotion: m2` | the `# Demoted` line in every `month/2026-09.md`. Gap 19 |
-| 3 | `dupId`, `sectionDiscipline`, `badLine` | the three in `plan-conflicts/`, the fixture that exists to make `tm check` print |
+| `plan-conflicts/backlog.md` | `dupId: a1` | two `^a1` lines — "a duplicate id" |
+| `plan-conflicts/calendar/2026-W37.md` | `itemCheck: fileKindShape` | line 8, `- [ ] 3 Office hours  loc:JCL ^g7` — "a calendar entry with no time" |
+| `plan-conflicts/day/2026-09-07.md` | `itemCheck: sectionDiscipline` | line 19, `^p2` — "a day-file item outside `# Pinned`" |
+| `plan-conflicts/week/2026-W37.md` | `badLine: manyIds` | line 23, `^%` beside `^q7` — "an odd token `^%`, two ids on one line"; the same file's `danglingDep` catches "a dangling `after:^t9`" and "a two-item `after:` cycle" |
 
-The whole-plan loads add one more: `plan-basic`, `plan-home-day` and
-`plan-travel-day` are `splitLine: m2` — the same gap 19. `plan-recur`, the one
-fixture tree with no demoted line and no calendar file, loads and round-trips
-whole.
+Before the field wiring the count was 26/37: four `calendar/*.md` refused with
+`itemCheck: fileKindShape` (gap 18) and four `month/2026-09.md` refused with
+`orphanDemotion: m2` (gap 2), both of them kernel defects and both now fixed.
+The one `plan-conflicts` calendar refusal that remains is the *right* one, and
+it is the wiring working: eight calendar lines, one refused.
 
-`plan-conflicts` is the fixture the Rust suite uses to make `tm check` print;
-its refusals are the fixture doing its job. The other eight are ours.
+The whole-plan loads are unchanged: `plan-basic`, `plan-home-day` and
+`plan-travel-day` are `splitLine: m2` — gap 19, the one remaining
+kernel-versus-tm disagreement in the corpus. `plan-recur`, the one fixture tree
+with no demoted line, loads and round-trips whole.
 
 ### 2. The differential oracle (`examples/oracle/`, `examples/oracle-compare.rs`)
 
@@ -1222,31 +1294,59 @@ The disagreements are gaps 18–21.
 
 ### What this does **not** cover
 
-18. **`shapeWfFor`'s `.calendar` clause is unsatisfiable, not merely
-    unsatisfied.** Gap 3 says calendar files are rejected because the parser
-    does not fill `shape`. The corpus harness shows the sharper statement:
-    **every one of the 20 calendar item lines in the corpus is refused**,
-    including the ones written exactly as §4.1 writes an interval
-    (`at:2026-09-07T12:50/13:50`), because the loader builds every `Core` with
-    `shape := Shape.none` and `.calendar` demands `Shape.interval`. No line the
-    boundary can currently construct satisfies that clause, so it is a rule that
-    can only ever say no. The `.routines` and `.optional` clauses have the same
-    hole and it is invisible only because those files' lines carry no `[ ]` box
-    and are therefore prose. `Negative.lean`'s CHEAT 30 is the refutation.
+18. **~~`shapeWfFor`'s `.calendar` clause is unsatisfiable~~ — fixed; this is
+    what it was.** The corpus harness found it: **every one of the 20 calendar
+    item lines in the corpus was refused**, including the ones written exactly
+    as §4.1 writes an interval (`at:2026-09-07T12:50/13:50`), because the
+    loader built every `Core` with `shape := Shape.none` and `.calendar`
+    demands an interval. No line the boundary could construct satisfied that
+    clause; it was a rule that could only ever say no. Gap 3's wiring closes
+    it, `Negative.lean`'s CHEAT 30 is the refutation of the assumption that
+    made it invisible, and
+    `State.lean`'s `the_spec_calendar_line_is_an_interval` is the `decide`d
+    reading of the line that was refused. The one calendar line still refused
+    is `plan-conflicts`' `- [ ] 3 Office hours  loc:JCL ^g7` — "a calendar
+    entry with no time", which that fixture exists to have refused.
 
 19. **The kernel's demotion is two byte-identical `[-]` lines; tm's is not.**
     Every `month/2026-09.md` in the corpus carries
     `- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2` in
     `# Demoted`, and the matching `week/2026-W37.md` carries
-    `- [ ] 4 6b Rollback path passes tests   @O2 ^m2`. Alone the month line is
-    `orphanDemotion`; together they are `splitLine`. This is not only a
-    fixture-versus-kernel disagreement: §6.3 itself says the copy filed into the
-    month carries "`est:` = remaining", so **the spec's own demotion pair has
-    two lines with different bytes**, and an `Entity` owning one token vector
-    cannot render both. Either the entity carries a second `RawItem` for the
-    tombstone, or the tombstone's line is derived from the live one by a stated
-    rewrite. That is a modelling decision, it is not made here, and until it is,
-    no tm tree that has ever had a week closed will load.
+    `- [ ] 4 6b Rollback path passes tests   @O2 ^m2`. Alone, the month line
+    loads now (gap 2). **Together they are still `splitLine`**, and that is the
+    only thing standing between three of the five fixture trees and a whole-plan
+    round trip. The diagnosis has two halves and neither is a fixture defect:
+
+    * **The two lines legitimately differ.** §6.3 says the copy filed into the
+      month carries "`est:` = remaining" and a `demoted:` stamp, so the spec's
+      own demotion pair has two lines with different bytes, and an `Entity`
+      owning one token vector cannot render both. `pairedEntity`'s
+      `a.item != b.item → splitLine` is therefore a rule about the model, not
+      about the data. The fix is a second `RawItem` on `Core` for the
+      tombstone (`renderCore` would read `archiveLine.getD line` at the archive
+      site), which `demote` sets and `readopt` clears.
+    * **The orientation is by horizon, and for this pair it is by glyph.**
+      `orientPair` makes the *earlier* horizon the tombstone
+      (`demotion_target_follows_the_closed_region`), so here it would pick the
+      week line — which is `[ ]`, giving `notADemotion`. The Rust oracle ranks
+      by `record_rank = (is_archive_copy, ↓stamps, ¬in_month_demoted)`
+      (`tree.rs`), i.e. **the live line wins and the `[-]` one is the archive,
+      whichever file each is in**; the horizon order is only the tie-break when
+      both are `[-]`, and there it agrees with `orientPair`. So `orientPair`
+      needs a glyph clause, and `demotionsOriented` — which is part of `planWf`
+      and asserts the archive's horizon precedes the live one — has to change
+      with it, because the pre-close pair has the archive in the *month* and
+      the live line in the *week*.
+
+    The oracle also settles what these two lines are: `check_fixtures.rs`
+    asserts `plan-basic` is clean with **zero** problems, warnings included, and
+    `invariant_common/mod.rs` names `^m2` "the one sanctioned pair" — §4.3's
+    example carried live in `week/2026-W37` and as the `[-]` archive copy in
+    `month/2026-09 # Demoted`. It is the **pre-close** shape; the post-close
+    shape is `[-]`/`[-]`, which this kernel already reads. Both are legal.
+    The change is a revision of the demotion model across `Boundary`, `Plan`
+    and `Cmd` with four Check.lean-named theorems in its path, so it is
+    recorded here rather than folded into the field wiring.
 
 20. **A tab is not a separator, and neither is a second space.**
     `Text.lean`'s `isSp c := c == ' '`, but §4.1 says "whitespace-separated

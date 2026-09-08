@@ -12,10 +12,10 @@
 # different bytes is `differs`, and `no_file_is_silently_rewritten` fails
 # on it unconditionally, with no baseline.
 file	plan-basic/backlog.md	ok	
-file	plan-basic/calendar/2026-W37.md	reject	{"itemCheck":"fileKindShape"}
+file	plan-basic/calendar/2026-W37.md	ok	
 file	plan-basic/day/2026-09-07.md	ok	
 file	plan-basic/inbox.md	ok	
-file	plan-basic/month/2026-09.md	reject	{"orphanDemotion":"m2"}
+file	plan-basic/month/2026-09.md	ok	
 file	plan-basic/optional.md	ok	
 file	plan-basic/routines.md	ok	
 file	plan-basic/week/2026-W37.md	ok	
@@ -24,16 +24,16 @@ file	plan-conflicts/backlog.md	reject	{"dupId":"a1"}
 file	plan-conflicts/calendar/2026-W37.md	reject	{"itemCheck":"fileKindShape"}
 file	plan-conflicts/day/2026-09-07.md	reject	{"itemCheck":"sectionDiscipline"}
 file	plan-conflicts/inbox.md	ok	
-file	plan-conflicts/month/2026-09.md	reject	{"orphanDemotion":"m2"}
+file	plan-conflicts/month/2026-09.md	ok	
 file	plan-conflicts/optional.md	ok	
 file	plan-conflicts/routines.md	ok	
 file	plan-conflicts/week/2026-W37.md	reject	{"badLine":{"line":22,"path":"week/2026-W37.md","why":"Tm.PErr.manyIds"}}
 plan	plan-conflicts	reject	{"badLine":{"line":22,"path":"week/2026-W37.md","why":"Tm.PErr.manyIds"}}
 file	plan-home-day/backlog.md	ok	
-file	plan-home-day/calendar/2026-W37.md	reject	{"itemCheck":"fileKindShape"}
+file	plan-home-day/calendar/2026-W37.md	ok	
 file	plan-home-day/day/2026-09-07.md	ok	
 file	plan-home-day/inbox.md	ok	
-file	plan-home-day/month/2026-09.md	reject	{"orphanDemotion":"m2"}
+file	plan-home-day/month/2026-09.md	ok	
 file	plan-home-day/optional.md	ok	
 file	plan-home-day/routines.md	ok	
 file	plan-home-day/week/2026-W37.md	ok	
@@ -45,10 +45,10 @@ file	plan-recur/routines.md	ok
 file	plan-recur/week/2026-W37.md	ok	
 plan	plan-recur	ok	
 file	plan-travel-day/backlog.md	ok	
-file	plan-travel-day/calendar/2026-W37.md	reject	{"itemCheck":"fileKindShape"}
+file	plan-travel-day/calendar/2026-W37.md	ok	
 file	plan-travel-day/day/2026-09-07.md	ok	
 file	plan-travel-day/inbox.md	ok	
-file	plan-travel-day/month/2026-09.md	reject	{"orphanDemotion":"m2"}
+file	plan-travel-day/month/2026-09.md	ok	
 file	plan-travel-day/optional.md	ok	
 file	plan-travel-day/routines.md	ok	
 file	plan-travel-day/week/2026-W37.md	ok	

@@ -50,13 +50,16 @@ theorem lead_set_is_not_silent (bm : Nat) (w : List Char) (r : RawItem) :
    `Nat` decoded from JSON cannot supply the second field. -/
 def destCheat (n : Nat) (p : WfPlan) : Dest p.val := ⟨n, by omega⟩
 
-/- CHEAT 7 — read a `[-]` line back as an ordinary open item, which is what
-   the first loader did: it sent `Glyph.demoted` to `live free` with no archive
-   and `glyphAt` rendered `[ ]`.  The inverse of `glyphAt` is a *partial*
-   function, and `statusOfGlyph .demoted` is `none` for a reason. -/
-def loneDemotedCheat (q : Placement) : Entity :=
-  ⟨{ live := ⟨q.doc, q.rank⟩, archive := none, status := (statusOfGlyph q.glyph).get rfl,
-     line := q.item, stamps := [] }, rfl⟩
+/- CHEAT 7 — read the **live** line of a half-finished demotion as an ordinary
+   open item, which is what the first loader did to every `[-]`: it sent the
+   glyph to `live free` and `glyphAt` rendered `[ ]`.  A lone `[-]` is now a
+   state (`Status.demoted`, §6.3's archive copy), so `statusOfGlyph` is total;
+   what stays partial is the *paired* inverse, because while a tombstone stands
+   the live line reads `[-]` and never `[ ]`.  `statusOfGlyphDemoted .todo` is
+   `none` for that reason. -/
+def pairedTodoCheat (arch : Site) (q : Placement) : Entity :=
+  ⟨{ live := ⟨q.doc, q.rank⟩, archive := some arch,
+     status := (statusOfGlyphDemoted Glyph.todo).get rfl, line := q.item }, rfl⟩
 
 /- CHEAT 8 — build the plan without answering which of a demotion's two `[-]`
    lines is the tombstone.  Deciding it by the order the host listed the
@@ -108,14 +111,18 @@ def ciCheat : Fin 6 := ⟨9, by omega⟩
    duplicate is not something a later `dedup` has to catch. -/
 def tagCheat : TagSet := ⟨[['l', 'e', 'a', 'n'], ['l', 'e', 'a', 'n']], by decide⟩
 
-/- CHEAT 13 — hand a raw list where the set is wanted. -/
-def rawTagsCheat (c : Core) : Core := { c with tags := [['a'], ['a']] }
+/- CHEAT 13 — hand a raw list where the set is wanted.  `Core.tags` is a
+   *view* of the line now, so the cheat is one level down: build the value the
+   view returns out of a list with a duplicate in it. -/
+def rawTagsCheat : TagSet := ⟨[['a'], ['a']], by decide⟩
 
 /- CHEAT 14 — `win:25:00-…`.  A time of day is `Fin 1440`. -/
-def clockCheat : Clock := ⟨1500, by omega⟩
+def clockCheat : Field.Clock := ⟨1500, by omega⟩
 
-/- CHEAT 15 — `every:month:32`. -/
-def monthDayCheat : MonthDay := ⟨31, by omega⟩
+/- CHEAT 15 — `every:month:32`.  The only door into a monthly rule is
+   `parseMonthDay`, and it refuses. -/
+theorem monthDayCheat :
+    Field.parseMonthDay ['3','2'] = some (Field.Rule.monthly 32) := by decide
 
 end Tm
 
@@ -376,19 +383,56 @@ theorem one_space_is_not_the_only_separator_after_the_bullet :
    id `q7`. -/
 theorem a_bare_caret_is_not_an_id : isIdWord ['^'] = false := by decide
 
-/- CHEAT 30 — §4.3's calendar rule ("generated intervals") as `shapeWfFor`
-   states it, against the `Core` the loader actually builds.  Nothing in
-   `Line.lean` interprets `at:` yet — every token but the id and the estimate is
-   kept verbatim — so `Core.shape` is `Shape.none` for every entity the boundary
-   constructs, and the `.calendar` clause is unsatisfiable rather than merely
-   unsatisfied.  All 16 calendar item lines in the corpus are refused with
-   `itemCheck: fileKindShape`, including four that are `at:<date>T<hh:mm>/<hh:mm>`
-   exactly as §4.1 writes them.  The same latent hole is in the `.routines` and
-   `.optional` clauses; it is invisible only because those files' lines carry no
-   `[ ]` box and are therefore prose. -/
-theorem a_loaded_line_can_satisfy_the_calendar_shape_rule
+/- CHEAT 30 — §4.3's calendar rule ("generated intervals") waved through: hold
+   it of *every* line the loader builds.  It used to be `rfl`, and that is the
+   defect this branch fixes.  Nothing joined §4.1's `at:` to §3.1's
+   `Core.shape`, so the shape was `none` for every entity the boundary
+   constructed and the `.calendar` clause was unsatisfiable rather than merely
+   unsatisfied — all 16 calendar item lines in the corpus refused with
+   `itemCheck: fileKindShape`, four of them written exactly as §4.1 writes
+   them.  `Core.shape` is `Field.viewShape` of the line now, so the rule is a
+   real question about the bytes: true of `at:2026-09-07T12:50/13:50`
+   (`the_spec_calendar_line_is_an_interval`, State.lean) and false of
+   `plan-conflicts`' `- [ ] 3 Office hours  loc:JCL ^g7`, which is the line
+   that fixture exists to have refused. -/
+theorem a_loaded_line_always_satisfies_the_calendar_shape_rule
     (live : Site) (st : Status) (r : RawItem) :
     shapeWfFor DocKind.calendar
-      { live := live, archive := none, status := st, line := r, stamps := [] } = true := rfl
+      { live := live, archive := none, status := st, line := r } = true := rfl
+
+/- ======================================================================
+   APPENDED — the cheats §3.1's field wiring makes available, and refuses.
+
+   §3.1's item fields are **views of `Core.line`**, and §3.1's value types
+   **are** §4.1's.  Each cheat below re-opens one of the two holes that were
+   there before: a slot beside the line for a field to drift in, or a second
+   definition of a type §4.1 already has.
+   ====================================================================== -/
+
+/- CHEAT 32 — the duplication itself: a `shape` slot on `Core`, settable
+   without moving the bytes.  Two definitions of `Shape` in one kernel is how
+   `est:` and the leading estimate came to disagree in the Rust; there is one
+   `Shape` now and it is not something a record update can move. -/
+def shapeSlotCheat (c : Core) (s : Field.Shape) : Core := { c with shape := s }
+
+/- CHEAT 33 — a `stamps` slot beside the line, which is what `Core` used to
+   carry.  `renderCore` prints the line, so a stamp written here is a stamp no
+   file ever sees — and §6.3's month review cuts on "≥ 2 stamps". -/
+def stampSlotCheat (c : Core) (st : Field.Stamp) : Core :=
+  { c with stamps := c.stamps ++ [st] }
+
+/- CHEAT 34 — `demote` that records the stamp without writing it.  This is the
+   law the old `Core` satisfied: a line came through a demotion untouched,
+   because the stamp had somewhere else to go. -/
+theorem demote_leaves_the_line_alone (t : Site) (st : Field.Stamp) (e a : Entity)
+    (h : demote t st e = .ok a) : a.val.line = e.val.line := by
+  rw [lift_roundtrips _ _ h]
+
+/- CHEAT 35 — refuse a lone `[-]` again.  §4.3's `month/2026-09.md#Demoted`
+   holds one, `tm close month` carries it into the next month file without
+   touching the week file it was paired with, and the Rust core resolves a key
+   group of size one without looking for a partner.  `orphanDemotion` was the
+   loader saying otherwise, and it is not a diagnostic any more. -/
+def orphanDemotionCheat (i : Id) : LErr := .orphanDemotion i
 
 end Tm

@@ -29,6 +29,8 @@ theorem whose command argument was unused.  It is withdrawn.
 -/
 namespace Tm
 
+open Field (Stamp)
+
 inductive KErr
   | occupied          -- the destination file already holds this id's other line
   | noSuchId
@@ -63,17 +65,22 @@ def drop (e : Entity) : Entity :=
 def setEstE (v : Nat) (e : Entity) : Entity :=
   ⟨{ e.val with line := setEst v e.val.line }, e.property⟩
 
-/-- `close`/`demote`: the live line moves to the coarser file and a tombstone
-stays behind in the file that was closed. -/
-def demote (target : Site) (period : Nat) (e : Entity) : Except KErr Entity :=
+/-- `close`/`demote`: the live line moves to the coarser file, a tombstone
+stays behind in the file that was closed, and §6.3's `demoted:` stamp is
+appended **to the line**.
+
+The stamp used to be a slot beside the line, and `renderCore` prints the line —
+so `demote` recorded a stamp that no file ever saw, and `tm close month`'s
+"≥ 2 stamps" cut list was reading a number the kernel never wrote.  There is
+one place a stamp can live now and this writes it. -/
+def demote (target : Site) (s : Stamp) (e : Entity) : Except KErr Entity :=
   lift { e.val with live := target, archive := some e.val.live,
-                    stamps := e.val.stamps ++ [period] }
+                    line := Field.setDemoted (e.val.stamps ++ [s]) e.val.line }
 
 /-- `readopt` **consumes** the tombstone, which is why it cannot leave a second
 line in the file the stale one was in (bug 5). -/
 def readopt (t : Site) (e : Entity) : Entity :=
-  ⟨{ live := t, archive := none, status := .live .free,
-     line := e.val.line, stamps := e.val.stamps }, rfl⟩
+  ⟨{ live := t, archive := none, status := .live .free, line := e.val.line }, rfl⟩
 
 /-! ## Plan-level commands -/
 
@@ -267,8 +274,8 @@ def cmdDrop (i : Id) : Transform := (·.mapAt i (fun e => .ok (drop e)))
 /-- `tm edit ^id est=v`. -/
 def cmdSetEst (v : Nat) (i : Id) : Transform := (·.mapAt i (fun e => .ok (setEstE v e)))
 /-- `tm demote`. -/
-def cmdDemote (i : Id) (rank per : Nat) : Relocation :=
-  fun p d => p.mapAt i (demote (d.site rank) per)
+def cmdDemote (i : Id) (rank : Nat) (s : Stamp) : Relocation :=
+  fun p d => p.mapAt i (demote (d.site rank) s)
 /-- `tm readopt`. -/
 def cmdReadopt (i : Id) (rank : Nat) : Relocation :=
   fun p d => p.mapAt i (fun e => .ok (readopt (d.site rank) e))
@@ -388,15 +395,16 @@ would write two `[-]` lines that no reader could tell apart; it is refused
 instead.  Both hypotheses are load-bearing: with `e.val.live.doc = d.ix` the
 entity-level `wf` fires first and the error is `occupied`. -/
 theorem demote_into_a_horizon_that_does_not_follow_is_rejected (p : WfPlan) (i : Id) (e : Entity)
-    (d : Dest p.val) (rank per : Nat) (hget : p.val.store.get i = some e)
+    (d : Dest p.val) (rank : Nat) (st : Stamp) (hget : p.val.store.get i = some e)
     (hne : e.val.live.doc ≠ d.ix)
     (hbad : horizonPrecedes (docRegion p.val e.val.live.doc) (docRegion p.val d.ix) = false) :
-    cmdDemote i rank per p d = .error .badHorizon := by
+    cmdDemote i rank st p d = .error .badHorizon := by
   have hwf : wf { e.val with live := d.site rank, archive := some e.val.live,
-                             stamps := e.val.stamps ++ [per] } = true := by
+                             line := Field.setDemoted (e.val.stamps ++ [st]) e.val.line }
+               = true := by
     simp only [wf, wfPair, Dest.site, bne_iff_ne, ne_eq]
     exact hne
-  have hf : demote (d.site rank) per e = .ok ⟨_, hwf⟩ := by
+  have hf : demote (d.site rank) st e = .ok ⟨_, hwf⟩ := by
     unfold demote lift; simp only [dif_pos hwf]
   refine mapAt_rejects_unoriented p i _ e _ hget hf ?_
   simpa [demotionOriented, Dest.site] using hbad
@@ -425,7 +433,7 @@ theorem move_last_wins_refuted_globally :
       ((moveTo t e).bind (moveTo t')).map Subtype.val ≠ (moveTo t' e).map Subtype.val := by
   refine ⟨⟨1, 0⟩, ⟨2, 0⟩,
     ⟨{ live := ⟨0, 0⟩, archive := some ⟨1, 0⟩, status := .live .free,
-       line := ⟨[], []⟩, stamps := [] }, rfl⟩, ?_⟩
+       line := ⟨[], []⟩ }, rfl⟩, ?_⟩
   simp [moveTo, lift, Except.map, Except.bind]
 
 /-! ### L4: what `move` is and is not invertible by
@@ -499,19 +507,24 @@ theorem set_last_wins (bm v v' : Nat) (e : Entity) :
 
 /-! ## demote / readopt: the stamp laws -/
 
-theorem demote_stamps (t : Site) (per : Nat) (e a : Entity) (h : demote t per e = .ok a) :
-    a.val.stamps = e.val.stamps ++ [per] := by
-  have := lift_roundtrips _ _ h; rw [this]
+theorem demote_stamps (t : Site) (st : Stamp) (e a : Entity) (h : demote t st e = .ok a) :
+    a.val.stamps = e.val.stamps ++ [st] := by
+  have hv := lift_roundtrips _ _ h
+  show (Field.viewDemoted a.val.line).getD [] = _
+  rw [hv]
+  show (Field.viewDemoted (Field.setDemoted (e.val.stamps ++ [st]) e.val.line)).getD [] = _
+  rw [Field.view_set_demoted _ _ (by simp)]
+  rfl
 
 /-- **L11 (R).**  `demote` is **not** idempotent, and that is correct: stamps
 accumulate deliberately, to drive the month review's "≥ 2 stamps" cut list.
 Idempotence holds only *modulo* `stamps`, and the kernel must say which it
 means rather than leave two readings of §6.3 available. -/
-theorem demote_not_idem (t t' : Site) (per : Nat) (e a b : Entity)
-    (h1 : demote t per e = .ok a) (h2 : demote t' per a = .ok b) :
+theorem demote_not_idem (t t' : Site) (st : Stamp) (e a b : Entity)
+    (h1 : demote t st e = .ok a) (h2 : demote t' st a = .ok b) :
     b.val.stamps ≠ a.val.stamps := by
-  have ha := demote_stamps t per e a h1
-  have hb := demote_stamps t' per a b h2
+  have ha := demote_stamps t st e a h1
+  have hb := demote_stamps t' st a b h2
   rw [hb, ha]
   intro hc
   have := congrArg List.length hc
@@ -520,28 +533,37 @@ theorem demote_not_idem (t t' : Site) (per : Nat) (e a b : Entity)
 /-- **L12 (R).**  `readopt ∘ demote ≠ id` on the nose, because `demote` stamps.
 §6.3's own wording ("stamp kept") already admits this; here the admission is a
 theorem. -/
-theorem readopt_demote_not_id (t : Site) (per : Nat) (e a : Entity)
-    (h : demote t per e = .ok a) : (readopt e.val.live a).val.stamps ≠ e.val.stamps := by
-  have ha := demote_stamps t per e a h
+theorem readopt_demote_not_id (t : Site) (st : Stamp) (e a : Entity)
+    (h : demote t st e = .ok a) : (readopt e.val.live a).val.stamps ≠ e.val.stamps := by
+  have ha := demote_stamps t st e a h
   show a.val.stamps ≠ e.val.stamps
   rw [ha]
   intro hc
   have := congrArg List.length hc
   simp at this
 
-/-- **L13 (P).**  Modulo stamps, on the subdomain a week item is in before a
+/-- **L13 (P).**  Modulo the stamp, on the subdomain a week item is in before a
 close (`archive = none`, status `live free`), `readopt` undoes `demote`
-exactly: same file, same rank, same tombstone state, same bytes. -/
-theorem readopt_demote_id_mod_stamps (t : Site) (per : Nat) (e a : Entity)
+exactly: same file, same rank, same tombstone state.
+
+"Modulo the stamp" is now a statement about **bytes**, and that is the change
+this law records.  §6.3's `readopt` keeps the stamp, and the stamp is a
+`demoted:` token in the line, so the line that comes back is the line that went
+in with that token appended — spelled out here rather than left as a `≠`.  When
+the stamp was a slot beside the line the fourth conjunct read
+`… = e.val.line`, and it was true only because nothing ever wrote the stamp
+into the file. -/
+theorem readopt_demote_id_mod_stamps (t : Site) (st : Stamp) (e a : Entity)
     (harch : e.val.archive = none) (hst : e.val.status = .live .free)
-    (h : demote t per e = .ok a) :
+    (h : demote t st e = .ok a) :
     (readopt e.val.live a).val.live = e.val.live ∧
     (readopt e.val.live a).val.archive = e.val.archive ∧
     (readopt e.val.live a).val.status = e.val.status ∧
-    (readopt e.val.live a).val.line = e.val.line := by
+    (readopt e.val.live a).val.line
+      = Field.setDemoted (e.val.stamps ++ [st]) e.val.line := by
   have hv := lift_roundtrips _ _ h
   refine ⟨rfl, by rw [harch]; rfl, by rw [hst]; rfl, ?_⟩
-  show a.val.line = e.val.line
+  show a.val.line = _
   rw [hv]
 
 /-! ## Conservation: the invariant three Rust commits tried to enforce -/
@@ -567,7 +589,7 @@ theorem floor_and_respect_are_incompatible (bm : Nat) (f : Nat → Entity → En
     (hf : FloorsAtRecorded bm f) : ¬ RespectsUserEdit bm f := by
   intro hr
   let e0 : Entity := ⟨{ live := ⟨0, 0⟩, archive := none, status := .live .free,
-                        line := ⟨[], []⟩, stamps := [] }, rfl⟩
+                        line := ⟨[], []⟩ }, rfl⟩
   have h1 : 1 ≤ remainingOf bm (f 1 e0).val.line := hf 1 e0
   have h2 : remainingOf bm (f 1 e0).val.line = remainingOf bm e0.val.line := hr 1 e0
   have h3 : remainingOf bm e0.val.line = 0 := rfl

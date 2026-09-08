@@ -25,6 +25,11 @@ it, including commands nobody has written yet.
 -/
 namespace Tm
 
+/-! §4.1's value types — the same ones `State.lean` opens.  There is one
+`Shape` in this kernel and this is it. -/
+
+open Field (Shape Recur Rule Rate Period OnMiss Dep WindowRange Loc Stamp Dur DT Moment)
+
 /-- The entity store.  `dom` is an enumeration order and nothing more;
 `Std.HashMap` instantiates this interface, and keeping the proofs behind it is
 the answer to the FFI spike's "a fast checker and a provable checker may be two
@@ -492,11 +497,23 @@ def sectionsWf (p : PlanCore) : Bool :=
          | none   => true
          | some r => placementSectionWf p r))
 
-/-- How long the shape says the thing takes, where the shape says it at all. -/
+/-- **A duration the line writes is positive**, without asking what a block is.
+`config.block_min` lives at the boundary (§3.1: "`b` converts via
+config.block_min"), so a rule that has to hold of *every* configuration cannot
+multiply — and it does not need to: `0b`, `0m`, `0h` and `0h0m` are zero at
+every `block_min`, and nothing else is zero at any of them. -/
+def durPositive : Dur → Bool
+  | .simple n _ => decide (0 < n)
+  | .hm h m     => decide (0 < h * 60 + m)
+
+/-- How long the shape says the thing takes, where the shape says it at all.
+The interval case measures the two `DT`s and says so in minutes; the window
+case hands back the `dur:` **as written**, unit included, because §4.1 says a
+rewrite keeps the unit. -/
 def declaredDur (c : Core) : Option Dur :=
   match c.shape with
   | .window _ dv  => some dv
-  | .interval a b => some (b - a)
+  | .interval a b => some (.simple (b.abs - a.abs) .minutes)
   | _             => none
 
 /-- §4.3's four file-kind rules, as one function of the kind.
@@ -515,13 +532,13 @@ def shapeWfFor : DocKind → Core → Bool
   | .routines, c =>
       (c.scope == Scope.openEnded) &&
       (match c.shape, c.recur with
-       | .window _ _, _    => true
-       | _,           .afterDone _ _ => true
-       | _,           _    => false)
+       | .window _ _, _  => true
+       | _,           .afterDone _ => true
+       | _,           _  => false)
   | .optional, c =>
       (c.scope == Scope.openEnded) &&
       (match declaredDur c with
-       | some dv => decide (0 < dv)
+       | some dv => durPositive dv
        | none    => false)
   | .calendar, c => (match c.shape with | .interval _ _ => true | _ => false)
   | .month,    c => (c.shape == Shape.none)
@@ -1591,7 +1608,7 @@ def effectiveShape (p : PlanCore) (i : Id) : Shape :=
       (match e.val.parent with
        | none   => Shape.none
        | some j => match shapeOf p j with
-                   | .interval s _ => .point s
+                   | .interval s _ => .point (.dateTime s.day s.time)
                    | _             => Shape.none)
     | s => s
 
@@ -1607,10 +1624,10 @@ theorem effectiveShape_as_written (p : PlanCore) (i : Id) (e : Entity)
 
 /-- **§3.2's prep rule.**  The `^x2` of §4.3 — "Midterm review `@x1`" under the
 interval `^x1` — is due at the exam's start, and nobody wrote that date down. -/
-theorem effectiveShape_prep (p : PlanCore) (i j : Id) (e : Entity) (a b : Instant)
+theorem effectiveShape_prep (p : PlanCore) (i j : Id) (e : Entity) (a b : DT)
     (hget : p.store.get i = some e) (hsh : e.val.shape = Shape.none)
     (hpar : e.val.parent = some j) (hj : shapeOf p j = Shape.interval a b) :
-    effectiveShape p i = Shape.point a := by
+    effectiveShape p i = Shape.point (Moment.dateTime a.day a.time) := by
   simp [effectiveShape, hget, hsh, hpar, hj]
 
 /-- **And it is one step.**  A shapeless child of a shapeless parent has no
@@ -1835,7 +1852,7 @@ theorem routine_lines_are_open (p : WfPlan) (i : Id) (e : Entity)
 theorem routine_lines_have_a_window_or_after_done (p : WfPlan) (i : Id) (e : Entity)
     (hget : p.val.store.get i = some e)
     (hr : docKindAt p.val e.val.live.doc = DocKind.routines) :
-    (∃ r d, e.val.shape = Shape.window r d) ∨ (∃ o w, e.val.recur = Recur.afterDone o w) := by
+    (∃ r d, e.val.shape = Shape.window r d) ∨ (∃ a, e.val.recur = Recur.afterDone a) := by
   have h := shapeWf_of_mem p i e hget
   rw [hr] at h
   simp only [shapeWfFor, Bool.and_eq_true] at h
@@ -1845,31 +1862,31 @@ theorem routine_lines_have_a_window_or_after_done (p : WfPlan) (i : Id) (e : Ent
   | none =>
       rw [hsh] at h2
       cases hrc : e.val.recur with
-      | afterDone o w => exact Or.inr ⟨o, w, rfl⟩
+      | afterDone a => exact Or.inr ⟨a, rfl⟩
       | none => rw [hrc] at h2; simp at h2
       | calendar r => rw [hrc] at h2; simp at h2
-      | onEvent n t => rw [hrc] at h2; simp at h2
+      | onEvent ev => rw [hrc] at h2; simp at h2
   | point d =>
       rw [hsh] at h2
       cases hrc : e.val.recur with
-      | afterDone o w => exact Or.inr ⟨o, w, rfl⟩
+      | afterDone a => exact Or.inr ⟨a, rfl⟩
       | none => rw [hrc] at h2; simp at h2
       | calendar r => rw [hrc] at h2; simp at h2
-      | onEvent n t => rw [hrc] at h2; simp at h2
+      | onEvent ev => rw [hrc] at h2; simp at h2
   | interval a b =>
       rw [hsh] at h2
       cases hrc : e.val.recur with
-      | afterDone o w => exact Or.inr ⟨o, w, rfl⟩
+      | afterDone a => exact Or.inr ⟨a, rfl⟩
       | none => rw [hrc] at h2; simp at h2
       | calendar r => rw [hrc] at h2; simp at h2
-      | onEvent n t => rw [hrc] at h2; simp at h2
+      | onEvent ev => rw [hrc] at h2; simp at h2
 
 /-- §4.3's `optional.md`: `open`, and it says how long it takes — the planner
 gives it a rest slot, and a rest slot has a length. -/
 theorem optional_items_declare_a_duration (p : WfPlan) (i : Id) (e : Entity)
     (hget : p.val.store.get i = some e)
     (ho : docKindAt p.val e.val.live.doc = DocKind.optional) :
-    e.val.scope = Scope.openEnded ∧ ∃ dv, declaredDur e.val = some dv ∧ 0 < dv := by
+    e.val.scope = Scope.openEnded ∧ ∃ dv, declaredDur e.val = some dv ∧ durPositive dv = true := by
   have h := shapeWf_of_mem p i e hget
   rw [ho] at h
   simp only [shapeWfFor, Bool.and_eq_true, beq_iff_eq] at h
@@ -1877,7 +1894,7 @@ theorem optional_items_declare_a_duration (p : WfPlan) (i : Id) (e : Entity)
   have h2 := h.2
   cases hd : declaredDur e.val with
   | none => rw [hd] at h2; simp at h2
-  | some dv => rw [hd] at h2; exact ⟨dv, rfl, by simpa using h2⟩
+  | some dv => rw [hd] at h2; exact ⟨dv, rfl, h2⟩
 
 
 /-- **And no prose line hides under an item line.**  `weave` orders a document

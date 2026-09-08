@@ -128,13 +128,22 @@ fn malformed_json_does_not_panic_the_host() {
 /// `entitiesOfDoc` sent `Glyph.demoted` to `live free` with no archive, and
 /// `glyphAt` rendered `[ ]`. The kernel rewrote the user's file on a read.
 ///
-/// A demotion is two lines, so a lone `[-]` has no entity that renders it and
-/// is now a named diagnostic rather than a silent rewrite.
+/// The first fix refused a lone `[-]` as `orphanDemotion`, on the reading that
+/// "a demotion is two lines". That reading is wrong and the corpus found it:
+/// §6.3's `tm close month` carries the `month/…#Demoted` copy into the next
+/// month file and touches nothing else, so a `# Demoted` section holds `[-]`
+/// lines whose partner is in a file the host need not have handed over —
+/// §4.3's own `month/2026-09.md` is one. So `[-]` standing alone is a state
+/// (`Status.demoted`), and the line comes back byte for byte.
 #[test]
-fn a_lone_demoted_line_is_rejected_not_rewritten() {
+fn a_lone_demoted_line_round_trips() {
     let out = call(r##"{"docs":[{"path":"w.md","lines":["- [-] 5 6b Old work ^m1"]}],"cmds":[]}"##)
         .unwrap();
-    assert_eq!(out, r##"{"err":{"orphanDemotion":"m1"}}"##, "{out}");
+    assert_eq!(
+        out,
+        r##"{"ok":{"docs":[{"lines":["- [-] 5 6b Old work ^m1"],"path":"w.md"}]}}"##,
+        "{out}"
+    );
 }
 
 /// …and the shape a `demote` actually writes — two `[-]` lines of one id in two
