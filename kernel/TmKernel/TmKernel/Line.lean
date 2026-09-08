@@ -5432,5 +5432,434 @@ theorem title_absorbs_the_unclassified (i : Id) (f : Fields) (h : Fields.wf i f 
   rw [filterMapMapNone TokKind.flag kTitleWord (fun _ => rfl) f.flags]
   simp
 
+
+
+/-! ## §4.1's own lines, read
+
+The header example from the spec, a line full of junk, and the two placements
+of a flag word.  These are `decide`d, so they are checked by the kernel every
+time the file is compiled — not by a test that has to be run. -/
+
+/-- The line §4.1 draws its diagram over. -/
+def specLine : List Char := ['-',' ','[',' ',']',' ','4',' ','2','b',' ','E','x','e','r','c','i','s','e','s',' ','5','.','3','-','5','.','5',' ',' ','@','m','1',' ','#','l','e','a','n',' ','d','u','e',':','2','0','2','6','-','0','9','-','1','1','T','2','3',':','5','9',' ','m','a','x',':','2','b','/','d',' ','e','s','t',':','1','b',' ','^','t','3']
+
+def itemOf (cs : List Char) : RawItem :=
+  match parseItem cs with
+  | .ok (_, _, r) => r
+  | .error _      => ⟨[], []⟩
+
+def specItem : RawItem := itemOf specLine
+
+theorem spec_line_is_an_item : isItemLine specLine = true := by decide
+theorem spec_line_ci : viewCi specItem = some ⟨4, by decide⟩ := by decide
+theorem spec_line_leading_estimate : estLeadOf specItem = some (.simple 2 .blocks) := by decide
+/-- `est:` overrides the leading estimate — §4.1, and C1. -/
+theorem spec_line_remaining : viewRemainingDur specItem = some (.simple 1 .blocks) := by decide
+theorem spec_line_title : titleWords specItem = [['E','x','e','r','c','i','s','e','s'], ['5','.','3','-','5','.','5']] := by decide
+theorem spec_line_parent : parentRef specItem = some ['m','1'] := by decide
+theorem spec_line_tags : tagWords specItem = [['l','e','a','n']] := by decide
+theorem spec_line_due :
+    viewDue specItem = some (.dateTime (Cal.toDay ⟨2026, 9, 11⟩) ⟨23 * 60 + 59, by decide⟩) := by
+  decide
+theorem spec_line_max : viewMax specItem = some ⟨.simple 2 .blocks, .day⟩ := by decide
+theorem spec_line_id : idWordOf specItem = some ['t','3'] := by decide
+theorem spec_line_no_problems : problems specItem = [] := by decide
+/-- Round trip A on the spec's own line, including the two spaces before
+`@m1`: the bytes come back exactly. -/
+theorem spec_line_bytes : serializeItem ['t','3'] .todo specItem = specLine := by decide
+
+/-! ### The two rules §4.1 states and `grammar.rs` implements -/
+
+def junkLine : List Char := ['-',' ','[',' ',']',' ','R','e','a','d',' ','r','e',':','t','h','i','s',' ','@','m','1',' ','n','o','t','e',':','x','y','z',' ','!','9',' ','^','t','3']
+def junkItem : RawItem := itemOf junkLine
+
+/-- **An unknown `key:` is preserved with its key and its value.** -/
+theorem junk_extra_keys :
+    extraPairs junkItem = [(['r','e'], ['t','h','i','s']), (['n','o','t','e'], ['x','y','z'])] := by decide
+
+/-- **…and reported**, together with the token the classifier could not
+place. -/
+theorem junk_problems :
+    problems junkItem =
+      [.unknownKey ['r','e'] ['t','h','i','s'], .unknownKey ['n','o','t','e'] ['x','y','z'], .unclassified ['!','9']] := by
+  decide
+
+/-- **A token the parser cannot classify stays in the title** — `!9` is not a
+priority, and it does not vanish. -/
+theorem junk_title : titleWords junkItem = [['R','e','a','d'], ['!','9']] := by decide
+
+/-- And the junk still round trips byte for byte. -/
+theorem junk_bytes : serializeItem ['t','3'] .todo junkItem = junkLine := by decide
+
+/-! ### A flag is a flag only after the title has ended
+
+§4.1's rule, and the reason `setFlag` inserts after the `^id`. -/
+
+def flagInTitleLine : List Char := ['-',' ','[',' ',']',' ','L','e','a','n',' ','p','r','a','c','t','i','c','e',' ','o','p','e','n',' ','^','l','1']
+def flagAfterIdLine : List Char := ['-',' ','[',' ',']',' ','L','e','a','n',' ','p','r','a','c','t','i','c','e',' ','^','l','1',' ','o','p','e','n']
+
+/-- `- [ ] Lean practice open ^l1`: `open` is title text. -/
+theorem flag_word_in_the_title_is_title_text :
+    flagsOf (itemOf flagInTitleLine) = [] ∧
+      titleWords (itemOf flagInTitleLine) = [['L','e','a','n'], ['p','r','a','c','t','i','c','e'], ['o','p','e','n']] := by
+  constructor <;> decide
+
+/-- `- [ ] Lean practice ^l1 open`: the same word after the `^id` is the
+flag. -/
+theorem flag_word_after_the_id_is_a_flag :
+    flagsOf (itemOf flagAfterIdLine) = [.openEnded] ∧
+      titleWords (itemOf flagAfterIdLine) = [['L','e','a','n'], ['p','r','a','c','t','i','c','e']] := by
+  constructor <;> decide
+
+
+/-! ### The two round trips, joined
+
+Round trip B says the *fields* survive.  `CanonicalItem` is what round trip A
+needs, so proving the rendered line canonical joins the two: what `tm add`
+writes from a `Fields` is a line the kernel reads back as the same bytes **and**
+the same fields.
+
+One extra side condition appears here and nowhere else, and it is honest:
+`serializeItem` regenerates the `^id` from the store key, and it recognises an
+id token by `isIdWord` — "starts with `^`".  A word the classifier could not
+place may start with `^` (`^%` is §4.1's own example of an unclassifiable
+token), and such a word would be rewritten as the id.  So a line the kernel
+*writes* may not carry one.  A line the kernel *reads* still keeps it in the
+title (`junk_title` above); this is a restriction on the renderer, not on the
+parser, and it is the same restriction `Id` being `List Char` already implies
+(README gap 7). -/
+
+def Fields.canonicalWf (i : Id) (f : Fields) : Bool :=
+  Fields.wf i f && f.unparsed.all (fun w => !isIdWord w)
+
+def renderWords (i : Id) (f : Fields) : List (List Char) :=
+  (f.ci.map renderCi).toList ++ (f.estLead.map renderDur).toList ++ f.title
+    ++ (('^' :: i) :: ((f.parent.map (fun p => '@' :: p)).toList
+      ++ f.tags.map (fun t => '#' :: t)
+      ++ (f.prio.map renderPrio).toList
+      ++ (kvOf f).map (fun p => keyWord p.1 p.2)
+      ++ f.extra.map (fun p => p.1 ++ ':' :: p.2)
+      ++ f.unparsed
+      ++ f.flags.map Flag.name))
+
+theorem renderToks_words (i : Id) (f : Fields) : renderToks i f = (renderWords i f).map tokOf := by
+  unfold renderToks renderWords midToks ciToks estToks titleToks parentToks tagToks prioToks
+    keyToks extraToks unparsedToks flagToks
+  simp only [List.map_append, List.map_cons, map_map', mapOpt_toList]
+
+theorem toksWf_tokOf : ∀ ws : List (List Char), (∀ w ∈ ws, wordWf w = true) →
+    toksWf (ws.map tokOf) = true := by
+  intro ws
+  induction ws with
+  | nil => intro _; rfl
+  | cons w ws' ih =>
+      intro h
+      cases ws' with
+      | nil =>
+          show (tokOf w).wf = true
+          exact tok_wf_of_wordWf [' '] w rfl (h w (by simp))
+      | cons w2 r =>
+          show toksWf (tokOf w :: tokOf w2 :: r.map tokOf) = true
+          simp only [toksWf, Bool.and_eq_true]
+          exact ⟨⟨tok_wf_of_wordWf [' '] w rfl (h w (by simp)), by simp [tokOf]⟩,
+            ih (fun x hx => h x (by simp [hx]))⟩
+
+/-! #### Every word the layout writes is one word -/
+
+theorem wordWf_cons {c : Char} {w : List Char} (hc : isSp c = false) (h : wordWf w = true) :
+    wordWf (c :: w) = true := by
+  simp only [wordWf, Bool.and_eq_true, Bool.not_eq_true'] at h ⊢
+  refine ⟨rfl, ?_⟩
+  simp only [List.all_cons, Bool.and_eq_true]
+  exact ⟨by simpa using hc, h.2⟩
+
+theorem wordWf_singleton (c : Char) (h : isSp c = false) : wordWf [c] = true := by
+  simp [wordWf, h]
+
+theorem digitChar_not_space (k : Nat) (hk : k < 10) : isSp (digitChar k) = false := by
+  have hd := digit_roundtrip k hk
+  by_cases hs : digitChar k = ' '
+  · rw [hs] at hd; simp [charDigit] at hd
+  · simpa [isSp] using hs
+
+theorem wordWf_renderCi (c : Fin 6) : wordWf (renderCi c) = true :=
+  wordWf_singleton _ (digitChar_not_space c.val (by omega))
+
+theorem wordWf_renderDur (d : Dur) : wordWf (renderDur d) = true := by
+  simp only [wordWf, Bool.and_eq_true, Bool.not_eq_true']
+  constructor
+  · cases hr : renderDur d with
+    | nil => exact absurd hr (renderDur_ne_nil d)
+    | cons a t => rfl
+  · simp only [List.all_eq_true]
+    intro c hc
+    rcases renderDur_chars d c hc with h | h | h | h | h
+    · by_cases hs : c = ' '
+      · rw [hs] at h; simp [isDigitC, charDigit] at h
+      · simpa [isSp] using hs
+    · rw [h]; rfl
+    · rw [h]; rfl
+    · rw [h]; rfl
+    · rw [h]; rfl
+
+theorem wordWf_renderPrio (k : Fin 4) : wordWf (renderPrio k) = true :=
+  wordWf_cons rfl (wordWf_singleton _ (digitChar_not_space (k.val + 1) (by omega)))
+
+theorem wordWf_flag (fl : Flag) : wordWf (Flag.name fl) = true := by cases fl <;> decide
+
+theorem wordWf_isName {i : List Char} (h : isName i = true) : wordWf i = true := by
+  simp only [wordWf, Bool.and_eq_true, Bool.not_eq_true']
+  constructor
+  · cases hi : i with
+    | nil => exact absurd hi (isName_ne_nil h)
+    | cons a t => rfl
+  · simp only [List.all_eq_true]
+    intro c hc
+    simpa using isName_no_space h c hc
+
+theorem wordWf_caret {i : List Char} (h : isName i = true) : wordWf ('^' :: i) = true :=
+  wordWf_cons rfl (wordWf_isName h)
+
+/-! #### No other word looks like an id -/
+
+theorem isIdWord_false_of_head {w : List Char} {p : Char → Bool}
+    (hp : p '^' = false) (h : headSat p w = true) : isIdWord w = false := by
+  cases hw : w with
+  | nil => rfl
+  | cons a t =>
+      rw [hw] at h
+      have ha : p a = true := h
+      have hne : ¬ (a = '^') := by intro hc; rw [hc] at ha; rw [hp] at ha; exact Bool.noConfusion ha
+      simp [isIdWord, hne]
+
+theorem isIdWord_false_of_notStarts {w : List Char} (h : startsToken w = false) :
+    isIdWord w = false := by
+  cases hw : w with
+  | nil => rfl
+  | cons a t =>
+      by_cases ha : a = '^'
+      · exfalso
+        subst ha
+        rw [hw] at h
+        unfold startsToken at h
+        rw [sigilOf_cons '^' t (by decide)] at h
+        exact Bool.noConfusion h
+      · simp [isIdWord, ha]
+
+theorem isIdWord_false_cons {c : Char} (hc : ¬ (c = '^')) (t : List Char) :
+    isIdWord (c :: t) = false := by simp [isIdWord, hc]
+
+theorem filter_map' {α : Type} (g : α → List Char) (p : List Char → Bool) : ∀ l : List α,
+    (l.map g).filter p = (l.filter (fun a => p (g a))).map g := by
+  intro l
+  induction l with
+  | nil => rfl
+  | cons a t ih =>
+      rw [List.map_cons, List.filter_cons, List.filter_cons]
+      by_cases hp : p (g a) = true
+      · rw [if_pos hp, if_pos hp, List.map_cons, ih]
+      · simp only [Bool.not_eq_true] at hp
+        rw [if_neg (by simp [hp]), if_neg (by simp [hp]), ih]
+
+theorem filterMapNoneList {α : Type} (g : α → List Char) (p : List Char → Bool) :
+    ∀ l : List α, (∀ a ∈ l, p (g a) = false) → (l.map g).filter p = [] := by
+  intro l h
+  rw [filter_map' g p l]
+  rw [show l.filter (fun a => p (g a)) = [] from by
+    induction l with
+    | nil => rfl
+    | cons a t ih =>
+        rw [List.filter_cons, if_neg (by simp [h a (by simp)])]
+        exact ih (fun x hx => h x (by simp [hx]))]
+  rfl
+
+theorem filterOptNoneList {α : Type} (x : Option α) (g : α → List Char) (p : List Char → Bool)
+    (h : ∀ a, p (g a) = false) : ((x.map g).toList).filter p = [] := by
+  cases x with
+  | none => rfl
+  | some a =>
+      show ([g a] : List (List Char)).filter p = []
+      rw [List.filter_cons, if_neg (by simp [h a])]
+      rfl
+
+
+
+theorem filter_map_gen {α β : Type} (g : α → β) (p : β → Bool) : ∀ l : List α,
+    (l.map g).filter p = (l.filter (fun a => p (g a))).map g := by
+  intro l
+  induction l with
+  | nil => rfl
+  | cons a t ih =>
+      rw [List.map_cons, List.filter_cons, List.filter_cons]
+      by_cases hp : p (g a) = true
+      · rw [if_pos hp, if_pos hp, List.map_cons, ih]
+      · simp only [Bool.not_eq_true] at hp
+        rw [if_neg (by simp [hp]), if_neg (by simp [hp]), ih]
+
+theorem forall_mem_append' {α : Type} {l₁ l₂ : List α} {P : α → Prop}
+    (h₁ : ∀ a ∈ l₁, P a) (h₂ : ∀ a ∈ l₂, P a) : ∀ a ∈ l₁ ++ l₂, P a := by
+  intro a ha
+  rcases List.mem_append.1 ha with h | h
+  · exact h₁ a h
+  · exact h₂ a h
+
+theorem forall_mem_cons' {α : Type} {a : α} {l : List α} {P : α → Prop}
+    (h₁ : P a) (h₂ : ∀ x ∈ l, P x) : ∀ x ∈ a :: l, P x := by
+  intro x hx
+  rcases List.mem_cons.1 hx with rfl | h
+  · exact h₁
+  · exact h₂ x h
+
+theorem forall_mem_map' {α β : Type} {l : List α} {g : α → β} {P : β → Prop}
+    (h : ∀ a ∈ l, P (g a)) : ∀ w ∈ l.map g, P w := by
+  intro w hw
+  obtain ⟨a, ha, hb⟩ := List.mem_map.1 hw
+  rw [← hb]
+  exact h a ha
+
+theorem forall_mem_optToList' {α β : Type} {x : Option α} {g : α → β} {P : β → Prop}
+    (h : ∀ a, x = some a → P (g a)) : ∀ w ∈ (x.map g).toList, P w := by
+  cases hx : x with
+  | none => intro w hw; simp at hw
+  | some a =>
+      intro w hw
+      have hw' : w ∈ [g a] := hw
+      simp only [List.mem_singleton] at hw'
+      rw [hw']
+      exact h a hx
+
+theorem filter_isIdWord_title : ∀ ws : List (List Char), ws.all titleWordWf = true →
+    ws.filter isIdWord = [] := by
+  intro ws
+  induction ws with
+  | nil => intro _; rfl
+  | cons w rest ih =>
+      intro h
+      simp only [List.all_cons, Bool.and_eq_true] at h
+      have hx := h.1
+      simp only [titleWordWf, Bool.and_eq_true, Bool.not_eq_true'] at hx
+      rw [List.filter_cons, if_neg (by simp [isIdWord_false_of_notStarts hx.2])]
+      exact ih h.2
+
+theorem filter_isIdWord_words : ∀ ws : List (List Char),
+    ws.all (fun w => !isIdWord w) = true → ws.filter isIdWord = [] := by
+  intro ws
+  induction ws with
+  | nil => intro _; rfl
+  | cons w rest ih =>
+      intro h
+      simp only [List.all_cons, Bool.and_eq_true] at h
+      rw [List.filter_cons, if_neg (by simpa using h.1)]
+      exact ih h.2
+
+theorem headSat_keyWord (k : Key) (v : List Char) : headSat isKeyC (keyWord k v) = true :=
+  keyPrefix_head (keyPrefix_keyWord k v)
+
+theorem headSat_flag (fl : Flag) : headSat isLowerC (Flag.name fl) = true := by
+  cases fl <;> decide
+
+theorem renderWords_wordWf (i : Id) (f : Fields) (h : Fields.wf i f = true) :
+    ∀ w ∈ renderWords i f, wordWf w = true := by
+  have hp := h
+  simp only [Fields.wf, Bool.and_eq_true, and_assoc] at hp
+  obtain ⟨hid, htitle, hunp, hextra, hpar, htag, hkv, _⟩ := hp
+  unfold renderWords
+  refine forall_mem_append' (forall_mem_append' (forall_mem_append' ?_ ?_) ?_)
+    (forall_mem_cons' (wordWf_caret hid) ?_)
+  · exact forall_mem_optToList' (fun c _ => wordWf_renderCi c)
+  · exact forall_mem_optToList' (fun d _ => wordWf_renderDur d)
+  · intro w hw
+    have hx := List.all_eq_true.1 htitle w hw
+    simp only [titleWordWf, Bool.and_eq_true] at hx
+    exact hx.1
+  · refine forall_mem_append' (forall_mem_append' (forall_mem_append' (forall_mem_append'
+      (forall_mem_append' (forall_mem_append' ?_ ?_) ?_) ?_) ?_) ?_) ?_
+    · refine forall_mem_optToList' (fun p hpx => wordWf_cons rfl ?_)
+      have hx := optWf_some hpar hpx
+      simp only [Bool.and_eq_true] at hx
+      exact hx.1
+    · refine forall_mem_map' (fun t ht => wordWf_cons rfl ?_)
+      have hx := List.all_eq_true.1 htag t ht
+      simp only [Bool.and_eq_true] at hx
+      exact hx.1
+    · exact forall_mem_optToList' (fun k _ => wordWf_renderPrio k)
+    · exact forall_mem_map' (fun p hpx => keyWord_wordWf p.1 p.2 (List.all_eq_true.1 hkv p hpx))
+    · refine forall_mem_map' (fun p hpx => ?_)
+      have hx := List.all_eq_true.1 hextra p hpx
+      simp only [extraPairWf, Bool.and_eq_true] at hx
+      exact hx.1.1.1
+    · intro w hw
+      have hx := List.all_eq_true.1 hunp w hw
+      simp only [unparsedWordWf, Bool.and_eq_true] at hx
+      exact hx.1
+    · exact forall_mem_map' (fun fl _ => wordWf_flag fl)
+
+theorem filter_isIdWord_render (i : Id) (f : Fields) (h : Fields.canonicalWf i f = true) :
+    (renderWords i f).filter isIdWord = [('^' :: i)] := by
+  simp only [Fields.canonicalWf, Bool.and_eq_true] at h
+  obtain ⟨hwf, hcar⟩ := h
+  have hp := hwf
+  simp only [Fields.wf, Bool.and_eq_true, and_assoc] at hp
+  obtain ⟨hid, htitle, _, hextra, _, _, _⟩ := hp
+  unfold renderWords
+  simp only [List.filter_append]
+  rw [filterOptNoneList f.ci renderCi isIdWord
+        (fun c => isIdWord_false_of_head (p := isDigitC) rfl (renderCi_head c))]
+  rw [filterOptNoneList f.estLead renderDur isIdWord
+        (fun d => isIdWord_false_of_head (p := isDigitC) rfl (renderDur_headSat d))]
+  rw [filter_isIdWord_title f.title htitle]
+  rw [List.filter_cons, if_pos (by rfl)]
+  simp only [List.filter_append]
+  rw [filterOptNoneList f.parent (fun p => '@' :: p) isIdWord
+        (fun p => isIdWord_false_cons (by decide) p)]
+  rw [filterMapNoneList (fun t => '#' :: t) isIdWord f.tags
+        (fun t _ => isIdWord_false_cons (by decide) t)]
+  rw [filterOptNoneList f.prio renderPrio isIdWord
+        (fun k => by
+          show isIdWord ('!' :: [digitChar (k.val + 1)]) = false
+          exact isIdWord_false_cons (by decide) _)]
+  rw [filterMapNoneList (fun p => keyWord p.1 p.2) isIdWord (kvOf f)
+        (fun p _ => isIdWord_false_of_head (p := isKeyC) rfl (headSat_keyWord p.1 p.2))]
+  rw [filterMapNoneList (fun p => p.1 ++ ':' :: p.2) isIdWord f.extra
+        (fun p hpx => isIdWord_false_of_head (p := isKeyC) rfl
+          (keyPrefix_head (keyPrefix_extra (List.all_eq_true.1 hextra p hpx))))]
+  rw [filter_isIdWord_words f.unparsed hcar]
+  rw [filterMapNoneList Flag.name isIdWord f.flags
+        (fun fl _ => isIdWord_false_of_head (p := isLowerC) rfl (headSat_flag fl))]
+  rfl
+
+theorem idToks_render (i : Id) (f : Fields) (h : Fields.canonicalWf i f = true) :
+    idToks (renderItem i f) = [tokOf ('^' :: i)] := by
+  show (renderToks i f).filter (fun t => isIdWord t.word) = _
+  rw [renderToks_words, filter_map_gen tokOf (fun t : Tok => isIdWord t.word) (renderWords i f)]
+  show ((renderWords i f).filter isIdWord).map tokOf = _
+  rw [filter_isIdWord_render i f h]
+  rfl
+
+/-- **The line the kernel writes from a `Fields` is canonical**, so round trip
+A applies to it. -/
+theorem renderItem_canonical (i : Id) (f : Fields) (h : Fields.canonicalWf i f = true) :
+    CanonicalItem i (renderItem i f) = true := by
+  have hwf : Fields.wf i f = true := by
+    simp only [Fields.canonicalWf, Bool.and_eq_true] at h; exact h.1
+  refine (canonical_iff i (renderItem i f)).2 ⟨rfl, ?_, ?_⟩
+  · show toksWf (renderToks i f) = true
+    rw [renderToks_words]
+    exact toksWf_tokOf _ (renderWords_wordWf i f hwf)
+  · rw [idToks_render i f h]
+    rfl
+
+/-- **Both round trips at once.**  What `tm add` writes from a well-formed
+`Fields` is a line the kernel parses back to the same item — the same bytes
+(round trip A, through `CanonicalItem`) and the same fields (round trip B). -/
+theorem render_round_trip (i : Id) (g : Glyph) (f : Fields)
+    (h : Fields.canonicalWf i f = true) :
+    parseItem (serializeItem i g (renderItem i f)) = .ok (i, g, renderItem i f)
+      ∧ viewFields (renderItem i f) = f := by
+  have hwf : Fields.wf i f = true := by
+    simp only [Fields.canonicalWf, Bool.and_eq_true] at h; exact h.1
+  exact ⟨parse_serialize i g (renderItem i f) (renderItem_canonical i f h),
+    field_round_trip i f hwf⟩
+
 end Field
 end Tm
