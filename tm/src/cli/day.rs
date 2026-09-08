@@ -113,7 +113,7 @@ fn since_break_min(ctx: &Ctx) -> u32 {
 
 /// "no such item", the error every id argument shares.
 fn missing(id: &Id) -> CliError {
-    CliError::msg(format!("no such item: {}", id.token()))
+    CliError::NotFound(id.clone())
 }
 
 /// Append one line to the day file's `## Log` at `now` (§4.3) — the human

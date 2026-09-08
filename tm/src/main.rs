@@ -12,8 +12,9 @@
 //! * `cli::ctx::Ctx` — one loaded plan directory: config, store, tree, log,
 //!   replay, model and `.tm/state.json`, plus the housekeeping (§6.3
 //!   auto-close, §5.1 waiting timeouts) that runs before every verb.
-//! * `cli::out` — `--json` vs human output and the `cli::out::CliError`
-//!   → exit code mapping.
+//! * `cli::out` — `--json` vs human output on both paths (a verb's result on
+//!   stdout, `cli::out::ErrorOut` on stderr when it fails) and the
+//!   `cli::out::CliError` → exit code mapping.
 //! * `cli::undo` — the undo stack every mutating verb pushes to (§13
 //!   `tm undo`).
 //!
