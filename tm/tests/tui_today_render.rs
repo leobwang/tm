@@ -7,6 +7,7 @@
 
 mod tui_common;
 
+use tm_core::model::Id;
 use tui_common::today;
 use tui_common::{app, idle_app, lines, render, render_lines};
 
@@ -119,6 +120,48 @@ fn the_week_pane() {
     let title = today::week_title(&app);
     let body = render_lines(&today::week_lines(&app, 38), 38);
     insta::assert_snapshot!(format!("{title}\n{body}"));
+}
+
+#[test]
+fn an_id_less_routine_is_named_once_in_the_hot_and_waiting_lists() {
+    // `tree::key_of` keys a `routines.md` line by its title (§4.3 gives those
+    // lines no `^id`), so id == title and printing both read `lunch lunch`.
+    let mut app = app();
+    app.week.hot = vec![
+        tui_common::app::HotRow {
+            id: Id::new("lunch"),
+            title: "lunch".to_string(),
+            note: "due today".to_string(),
+        },
+        tui_common::app::HotRow {
+            id: Id::new("a3"),
+            title: "Pick up package".to_string(),
+            note: "due today".to_string(),
+        },
+    ];
+    app.week.waiting = vec![tui_common::app::WaitRow {
+        id: Id::new("shower"),
+        title: "shower".to_string(),
+        note: "2d".to_string(),
+    }];
+    let body = render_lines(&today::week_lines(&app, 46), 46);
+    assert!(
+        body.contains("⚠ lunch · due today"),
+        "the routine is named once:\n{body}"
+    );
+    assert!(
+        !body.contains("lunch lunch"),
+        "the title is not doubled:\n{body}"
+    );
+    assert!(
+        body.contains("? shower · 2d"),
+        "the waiting row is named once:\n{body}"
+    );
+    // An item with a real id still shows both.
+    assert!(
+        body.contains("⚠ a3 Pick up package · due today"),
+        "an id-carrying item keeps its id:\n{body}"
+    );
 }
 
 #[test]

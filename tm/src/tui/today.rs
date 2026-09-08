@@ -26,6 +26,7 @@ use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use tm_core::emit;
+use tm_core::model::Id;
 use tm_core::planner::{SegKind, Segment};
 use tm_core::review;
 
@@ -384,6 +385,18 @@ fn separator(text: &str, width: usize) -> Line<'static> {
     ))
 }
 
+/// `<id> <title>`, or just the title when the two are the same.
+///
+/// `tree::key_of` keys an id-less line (a `routines.md` or `optional.md`
+/// entry, §4.3) by its title, so printing both would read `lunch lunch`.
+fn label(id: &Id, title: &str) -> String {
+    if id.as_str() == title {
+        title.to_string()
+    } else {
+        format!("{id} {title}")
+    }
+}
+
 /// The Week pane (§12.1): milestones, HOT/overdue, Waiting, Diagnostics.
 pub fn week_lines(app: &App, width: usize) -> Vec<Line<'static>> {
     let bm = app.cfg.block_min().max(1);
@@ -421,7 +434,7 @@ pub fn week_lines(app: &App, width: usize) -> Vec<Line<'static>> {
         out.push(separator("HOT / overdue", width));
         for h in &app.week.hot {
             out.push(Line::from(Span::styled(
-                clip(&format!("⚠ {} {} · {}", h.id, h.title, h.note), width),
+                clip(&format!("⚠ {} · {}", label(&h.id, &h.title), h.note), width),
                 theme::WARN,
             )));
         }
@@ -430,7 +443,7 @@ pub fn week_lines(app: &App, width: usize) -> Vec<Line<'static>> {
         out.push(separator("Waiting", width));
         for w in &app.week.waiting {
             out.push(Line::from(clip(
-                &format!("? {} {} · {}", w.id, w.title, w.note),
+                &format!("? {} · {}", label(&w.id, &w.title), w.note),
                 width,
             )));
         }
