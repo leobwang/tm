@@ -521,6 +521,7 @@ pub fn close_month(cx: &Ctx, month: YearMonth, drops: &[Id]) -> Result<CloseRepo
 pub fn auto_close(store: &dyn Store, state: &mut RuntimeState, today: NaiveDate,
                   now: DateTime<FixedOffset>, replay: Option<&Replay>) -> Result<Vec<ClosedPeriod>, HorizonError>;
 pub fn pending_closes(store: &dyn Store, state: &RuntimeState, today: NaiveDate) -> Vec<(Period, String)>;
+pub const AUTO_CLOSE_CATCHUP: usize = 16;   // periods of each kind one sweep will catch up on
 pub fn churn(tree: &Tree, min: usize) -> Vec<(Id, Vec<Stamp>)>;   // >= min stamps, most stamped first
 pub fn period_name(p: Period) -> &'static str;                    // "day" | "week" | "month"
 ```
@@ -547,7 +548,7 @@ Log events written (through `store.append_text(store::LOG_PATH, …)`, one JSON 
 7. **A second demotion rewrites the existing `# Demoted` copy** (accumulating stamps, deduped) instead of appending a second line, so the id never becomes a `tm check` duplicate. When the target month file already holds a *live* line with the same id, the copy is appended anyway and a note is added to the report.
 8. **Review placeholder placement.** `Store::replace_generated` inserts a missing block right after the front matter / `![day]` line, i.e. *above* the generated plan; the placeholder is instead appended at the end of the day file (below `## Notes`), which is where a review belongs. An existing `tm:review` block is replaced in place via `edit::replace_generated`. A day with no file gets no file created (a note says so).
 9. **Overdue → backlog is a pure move**: the line keeps its bytes (no `est:` rewrite, no stamp), per "moved to backlog.md#Overdue *instead*".
-10. **auto_close closes only the last unclosed period of each kind** (yesterday, last week, last month), finest-first, and records periods whose file does not exist as closed without running them — as the scope asked, documented on the function.
+10. **auto_close catches up, oldest first, bounded.** §6.3's close "runs automatically on the first command after the period ends", so *every* unclosed period of each kind is closed (finest-first: day, week, month, so a pinned item demoted into the week is demoted on into the month in the same sweep), not just the last one — skipping a week would otherwise strand its unfinished milestones as `[ ]` lines in a file the planner no longer reads, and `state.closed` only moves forward, so nothing would ever pick them up. The sweep is capped at `AUTO_CLOSE_CATCHUP` (16) periods per kind, ending at the last complete one; anything older is stamped closed without running. A tree with **no** close history — every tree between `tm init` and its first command, since `tm init` writes week and day files and no `state.json` — gets the same bounded catch-up. Periods whose file does not exist are recorded as closed without running. `pending_closes` reports exactly what the sweep would run.
 11. **`demote()` refuses non-week items** with `HorizonError::Horizon` (a pinned day item is *moved* by `close_day`; a month outcome has no enclosing horizon). Note this also means demoting an already-demoted item fails once the tree resolves it to the month archive copy — readopt it first (covered by a test).
 
 # priority.rs + planner.rs types (layer 3)
@@ -711,12 +712,12 @@ Documented in planner.rs's module header ("How §8.2 is implemented, and the cho
 4. **No `loc:` filter on routines.** §8.2 lists it under step 5 (ASSIGN); a `loc:out` errand is a reason to go out, not to skip the day.
 5. **Wind-down is blocked for slot cutting**, which is the strongest form of "no Block with `ci ≥ 4` after wind-down": no block of any `ci` is planned there. A mandatory routine with nowhere else to go may still reach into it.
 6. **Sleep detection** is "the routine keyed `sleep`, or an overnight window of ≥ 6 h"; the Sleep segment is clipped at midnight so the DayPlan stays one day.
-7. **The Active block takes consecutive slots** until `est_min − elapsed` is covered, not just the one slot containing `now`. §9 says "no preemption mid-block", and with `est_min` already multiplied a block is often two slots. It is exempt from the key order only for those slots.
+7. **The Active block holds one block, then re-competes.** `state.active` is reserved like a wall from `now` to the end of the block it is in (`started + block_min`, rolled forward while that instant is past; clipped by the next wall, the wind-down and `est_min − elapsed`), so nothing is planned on top of it and it survives an ineligible item or a spent budget. §8.2 step 5's exemption is for the item's current *slot*, one block: reserving the whole remaining estimate made a 6b item swallow 355 minutes in one segment, which deleted every routine window inside it (lunch, dinner) from the day and left step 3 no slots to count a break against. After its block the item takes its place in the key order again, its group already charged for the run's minutes; the run still costs exactly one block of the remaining budget however long it lasts.
 8. **A carried (window-closed) instance** may be placed anywhere left in the day, but a `win:HH:MM-HH:MM` daily range still constrains the hours.
 9. **A group takes another slot whenever it is still owed minutes**, so a 192-minute item consumes four 60-minute slots (the last one partly). Sub-block packing is out of scope.
 10. **`plan_honesty`** = Σ minutes still owed by the groups the day *starts* ÷ (`remaining_budget × block_min`). Any reading based on scheduled block minutes can never exceed 1 (the fill is budget-capped) and so could never fire §11's "> 1.1" warning. `None` when the budget is zero. **`rest_debt_min`** = Σ (`planned_min − actual_min`) over today's logged breaks.
 11. **`a_capacity_lost`** = Rest minutes at energy ≥ 4 on a day that had an unassigned `ci = 5` candidate. **`deferred`** is generalised from "ci-5 items" to any unassigned eligible candidate for which some slot's *raw* prediction was high enough and the posterior-corrected value was not.
-12. **`dropped_tail`** lists every eligible candidate that got no slot, whatever the reason (budget, energy, contiguity) — §8.2 names no narrower rule.
+12. **`dropped_tail`** lists every eligible candidate that got no slot, whatever the reason (budget, energy, contiguity) — §8.2 names no narrower rule. **`notes`** additionally names every window instance step 6 could not place ("lunch: no free 30m position in 11:30–13:30; not planned today"); an instance whose window has already closed is §5.3's expiry, not a placement failure, and is not reported.
 13. **§8.3's tail-drop is tested as** "removing a block from the budget leaves every kept slot holding the same items and never adds an item". An *energy downgrade* can legitimately swap items (that is exactly what the `deferred` diagnostic reports), so it is not covered by the subset form. **"IMPOSSIBLE never dropped"** is tested as (a) always named in `diagnostics.impossible` with its shortfall and (b) never displaced by a `p > 0` candidate — with many `p = 0` items and few slots some must still be left out.
 14. **`week_plan` is deliberately light** (documented on `WeekPlan`): today is the real `plan()`; later days are a greedy per-day allocation over the lookahead respecting `ci`, deadlines and `max:`, with no routines, breaks, batching, `atomic` contiguity, interruptions or posterior.
 15. **Fixture placement**: `plan-basic` did **not** get a `.tm/` — see `upstream_bugs`. Its planner history lives in `planner_common::BASIC_LOG` / `basic_state()` instead. `plan-home-day/` and `plan-travel-day/` (both copies of `plan-basic` with a changed calendar/state) do carry their own `.tm/`.
@@ -875,14 +876,16 @@ cli/undo.rs — `pub const UNDO_PATH = ".tm/undo.json"`, `MAX_ENTRIES = 50`; `pu
 
 cli/planning.rs — `pub fn build(&Ctx, allow_home) -> (DayPlan, Vec<Prio>)`, `pub fn write_plan(&mut Ctx, &DayPlan, &[Prio]) -> Result<Vec<String>, CliError>` (day section + SVG + `plan` event + state/sidecar), `pub fn seg_out(&DayPlan, &Ctx) -> Vec<SegOut>`, `plan()`, `now()`; output structs `PlanOut`, `SegOut`, `PlanDiff`, `WeekOut`, `DayOut`, `NowOut`, `ActiveOut`.
 
-cli/render.rs — `pub fn rows(&DayPlan, &Tree, &Config) -> Vec<Row{time,energy,mark,text,item,kind}>`, `pub fn timeline(...) -> String` (the `tm:plan` body), `pub fn svg(...) -> String`, `pub fn kind_name(&SegKind) -> &'static str`. This is the stand-in for `emit.rs`; the TUI can reuse `rows()` for its Timeline pane, or switch to `emit.rs` when it lands.
+cli/render.rs — the **adapter onto `tm_core::emit`**, not a renderer of its own: `pub fn rows(&DayPlan, &Tree, &Config) -> Vec<Row{time,energy,mark,text,item,kind}>` (one per segment, built from `emit::mark_of` + `emit::render_segment_row`), `pub fn timeline(&DayPlan, &Tree, &Config, now) -> String` (the `tm:plan` body — `emit::render_plan_section(..).1`), `pub fn diagnostics(&DayPlan, &Tree, &Config) -> Vec<String>` (`emit::render_diagnostics`), `pub fn svg(&DayPlan, ghost: Option<&DayPlan>, &Tree, &Config, wake, now) -> String` (`emit::daybar_cells` at `SVG_COLS = 96` then `emit::render_svg` at 960×64), `pub fn kind_name(&SegKind) -> &'static str` (the word `--json` and `.tm/last_plan.json` use). One text for one `DayPlan` across `tm plan`, `tm tui` and the M4 snapshots.
+
+cli/ghost.rs — §12.1's ghost row, shared by both frontends. `pub use crate::tui::app::ArrivalBlock as Block` (the type lives under `tui/` so nothing there imports `crate::cli`), `pub fn blocks(&Ctx) -> Vec<Block>` (`.tm/arrival_plan.json` for *today*; empty when missing, unreadable or stale), `pub fn plan(&[Block], &Config, &Model, &Tree, &RuntimeState, fallback: &DayPlan) -> Option<DayPlan>` — the arrival record **rebuilt** into a `DayPlan` (blocks sized `est × multiplier` per §8.5, clipped at the next recorded start, gaps left empty), never re-planned, since a `plan()` at the arrival instant would see today's log and today's state. `tm plan` feeds it to `render::svg`; the TUI draws it under the day bar.
 
 cli/day.rs, cli/items.rs, cli/lifecycle.rs, cli/init.rs — one `pub fn <verb>(&Globals, &Args) -> Result<i32, CliError>` per verb plus its `Serialize` output struct (`WakeOut`, `ArriveOut`, `StartOut`, `DoneOut`, `ExtendOut`, `StopOut`, `BreakOut`, `InterruptOut`, `PauseOut`, `EnergyOut`, `IdleOut`, `AddOut`, `EditOut`, `MoveOut`, `RankOut`, `DemoteOut`, `DropOut`, `EventOut`, `InstanceOut`, `TriageOut`, `CloseOut`, `SyncOut`, `ReviewOut`, `ModelOut`, `LogOut`, `CheckOut`, `InitOut`, `Undone`). Reusable by the TUI: `lifecycle::sync_calendar(&Ctx) -> Result<SyncOut, CliError>` (what `R` should call) and `items::id_gen(&Ctx, salt) -> IdGen` (deterministic id seeding).
 
 ## Deviations (cli)
-1. **emit.rs is still a stub**, so `tm plan` renders the day section and `day/<date>.svg` through a local `cli/render.rs` (§4.3 row shape, §12.1 SVG with `<title>` per segment). Documented in the file header; move it into `emit.rs` when M4 lands and delete render.rs.
-2. **review.rs is still a stub**, so `tm review` assembles §11's monitors from `log::Replay` + `energy::calibration`/`estimate_calibration`/`horizon::churn` locally. The `--json` shape is the review's; swap the body for `review.rs` later.
-3. **`planner::week_plan` does not exist**, so `tm plan --week` is `capacity::lookahead(7 days)` + `capacity::week_grid`.
+1. **`cli/render.rs` is an adapter, not a second renderer.** It was written when `emit.rs` was a stub; every function now delegates to `tm_core::emit` (§1.2's home for the renderer) and the module keeps its own SVG geometry constants (`SVG_WIDTH/HEIGHT/COLS`) and the `Row`/`kind_name` shapes `--json` serialises. It stays because those two are CLI surface, not `emit` surface.
+2. **`tm review` returns the real review document.** `lifecycle::review` calls `tm_core::review`'s `day_review`/`week_review`/`month_review` and prints `render_day`/`render_week`/`render_month`; `--json` is `ReviewOut { period, key, review: ReviewBody, wrote }` where `ReviewBody` is an untagged `Day(Box<DayReview>) | Week(Box<WeekReview>) | Month(Box<MonthReview>)` — the object §14's `/review-day` and `/review-week` skills read field by field (`tm/tests/init_skills.rs` checks every field name those skills quote against this output). The plan-dependent half of the day monitors comes from `lifecycle::day_extras` (adherence against `.tm/arrival_plan.json`, the under-used count, tomorrow's candidates, the optional quota, the budget), and only for *today*: an earlier day gets what the log alone knows.
+3. **`tm plan --week` still does not call `planner::week_plan`**, though that function now exists: the verb only needs the §8.4 grid, so it stays `capacity::lookahead(7 days)` + `capacity::week_grid`. `planner::week_plan` (and `WeekPlan`) is what a caller wanting the *plan* per day would use.
 4. **Sidecars, because `RuntimeState` has no field for them** (I may not edit store.rs, and unknown keys in state.json are dropped on save): `.tm/undo.json` (the undo stack the scope wanted in state.json), `.tm/arrival_plan.json` (the `plan_at_arrival` block starts for §12.1's ghost row), `.tm/last_plan.json` (`--diff` baseline + the §7.4 hysteresis roll, which needs to know which *day* the stored priorities belong to). All three are documented at their definitions.
 5. **Events §10.1 does not define**: `tm add` logs `edit{id, field:"add", from:"", to:<line>}` (there is no `add` event, and undo needs a target); a §5.1 waiting *timeout* logs `edit{id, field:"state", from:"[?]", to:"[ ]"}` (there is no timeout event). `tm rank` logs nothing (§10.1 has no rank event) but is still undoable.
 6. **`tm break` is a toggle**: the first call sets `state.break` only; the second (or the next `start`/`done`/`stop`) appends one complete `break{planned_min, actual_min, where}` stamped at the break's *start*. That gives §11's break integrity a real `actual_min` with exactly one event per break, at the cost of the start itself not being logged.
@@ -900,7 +903,7 @@ cli/day.rs, cli/items.rs, cli/lifecycle.rs, cli/init.rs — one `pub fn <verb>(&
 `tm` is a bin crate, so nothing is importable; what the queue agent (screens 2–5) needs is the module tree and the seams. Every file opens with an "API overview" doc comment.
 
 crate::tui (tm/src/tui/mod.rs)
-- `pub mod app; pub mod daybar; pub mod prompts; pub mod theme; pub mod today;` plus a marked slot `// screens 2-5: added by the queue agent — pub mod queue; pub mod necessities; pub mod inbox;`
+- `pub mod app; pub mod daybar; pub mod inbox; pub mod necessities; pub mod prompts; pub mod queue; pub mod review; pub mod theme; pub mod today;` — screens 2–5 are wired into the binary, not pending: `app` dispatches their §12.6 key rows and `today::draw` gives each of them the body area.
 - `pub fn run(g: &cli::ctx::Globals) -> Result<i32, CliError>` — the whole frontend. Private helpers: `setup/restore/resume/install_panic_hook`, `load/reload/data_of/now_of`, `watch/is_watched`, `event_loop`, `mouse`, `perform`, `verb`, `editor`; `const DEBOUNCE = 200ms`, `POLL = 200ms`, `INTERACTIVE_VERBS = ["start"]`.
 
 crate::tui::app — pure, no terminal/store/clock
@@ -1002,12 +1005,12 @@ pub fn pane(&str) -> Block;  pub fn pane_focused(&str) -> Block;
 pub fn cell_glyph(&emit::Cell) -> char;  pub fn cell_style(&emit::Cell, &Config, ghost: bool) -> Style;
 ```
 
-Hooks left for the queue agent, each marked `// screens 2-5: added by the queue agent`: the `mod` list in mod.rs, the `Action` enum (their §12.6 rows become variants), `normal_key`'s per-screen dispatch in app.rs (`_ => …` currently gives them the global row and `r` = Replan), `Action::Open`'s drill in `App::apply` (sets `screen = Queue` with `selected_item`), and the screen match in `today::draw`. `Screen` already has all five variants and `App` is shared, so their code compiles against it today.
+Those hooks are now taken. `App` carries the four screen states (`queue: queue::QueueState`, `necessities: necessities::NecessitiesState`, `review: review::ReviewState`, `capture: inbox::CaptureState`) and builds what they render from: `App::view(&self) -> queue::View<'_>` and `App::reviews(&self) -> review::Reviews`. A key the shell's own rows do not claim becomes `Action::ScreenKey(KeyEvent)`; `App::screen_key` hands it to the screen's `on_key` (Today ignores it), and `screen_action` turns the returned `queue::Action` into shell `Effect`s — `Ignored` falls back to the global row (with `r` = Replan), `Note`/`Edit`/`Prompt`/`Mutate` become a message, an editor or a verb. `today::draw` matches `Screen::{Queue, Necessities, Review, Inbox}` to `queue::render` / `necessities::render` / `review::render` / `inbox::render` over the body area.
 
-Test harness reuse: `tm/tests/tui_common/mod.rs` pulls the five pure modules in with `#[path = "../../src/tui/<file>.rs"]` (a bin crate has no lib target, so `use tm::…` is impossible) and offers `config()`, `tree(&cfg)`, `log(&cfg)`, `state()`, `day_plan(&cfg)`, `ghost_plan(&cfg)`, `app()`, `app_at(h, m)`, `overtime_app(h, m, est_min)`, `tight_overtime_app()`, `idle_app(h, m)`, `render(&App, w, h)`, `render_lines(&[Line], w)`, `lines(&[Line])`, `prio(id, p, class)`, `seg(...)`, `at(&cfg, h, m)`. It deliberately does NOT include `mod.rs`, so adding `pub mod queue;` there cannot break these tests.
+Test harness reuse: `tm/tests/tui_common/mod.rs` pulls the nine pure modules in with `#[path = "../../src/tui/<file>.rs"]` (theme, app, daybar, prompts, today, queue, necessities, inbox, review — a bin crate has no lib target, so `use tm::…` is impossible) and offers `config()`, `tree(&cfg)`, `log(&cfg)`, `state()`, `day_plan(&cfg)`, `ghost_plan(&cfg)`, `app()`, `app_at(h, m)`, `overtime_app(h, m, est_min)`, `tight_overtime_app()`, `idle_app(h, m)`, `render(&App, w, h)`, `render_lines(&[Line], w)`, `lines(&[Line])`, `prio(id, p, class)`, `seg(...)`, `at(&cfg, h, m)`. It deliberately does NOT include `mod.rs`, so adding `pub mod queue;` there cannot break these tests.
 
 # tui-queue (layer 5)
-All three modules are self-contained: they depend only on tm-core, ratatui, crossterm and chrono. Shared plumbing lives in `queue.rs`; the other two do `use super::queue::{...}`, which resolves identically whether they sit under `tui/` or at a test crate's root.
+All four screen modules are self-contained: they depend only on tm-core, ratatui, crossterm and chrono. Shared plumbing lives in `queue.rs`; `necessities.rs`, `inbox.rs` and `review.rs` do `use super::queue::{...}`, which resolves identically whether they sit under `tui/` or at a test crate's root.
 
 SHARED (tm::tui::queue)
 ```rust
@@ -1070,6 +1073,16 @@ pub fn render(&NecessitiesState, &View, &mut Frame, Rect);
 pub fn on_key(&mut NecessitiesState, &View, KeyEvent) -> Action;
 ```
 
+SCREEN 4 (review.rs) — §12.4, and the one screen that renders `tm_core::review` rather than a `View`
+```rust
+pub enum Period { Day, Week, Month }                     // Copy+Default(Day); .left() .right() .verb() .title()
+pub struct Reviews { day: DayReview, week: WeekReview, month: MonthReview }   // + .text(Period) -> String
+pub struct ReviewState { period: Period, scroll: usize } // ::new()
+pub fn on_key(&mut ReviewState, &Reviews, KeyEvent) -> Action;
+pub fn render(&ReviewState, &Reviews, &mut Frame, Rect);
+```
+`h`/`l` (or `[`/`]`) change the period, `j`/`k` scroll, `w` and `c` return `Action::Note` with the command to run (`review <period> --write`, `/review-<period>`) rather than writing or shelling out. Every number is `render_day`/`render_week`/`render_month`'s, so the screen, `tm review` and §17 M8's hand-computed values are one set.
+
 SCREEN 5 (inbox.rs)
 ```rust
 pub const CLAUDE_TRIAGE: &str;                           // the `C` command line
@@ -1090,15 +1103,16 @@ pub fn render(&CaptureState, &View, &mut Frame, Rect);
 pub fn on_key(&mut CaptureState, &View, KeyEvent) -> Action;
 ```
 
-MERGE (three `mod` lines in tui/mod.rs + one arm each):
+MERGED (tui/mod.rs declares all four; `today::draw` and `App` dispatch them):
 ```rust
-mod queue; mod necessities; mod inbox;
-Screen::Queue       => queue::render(&app.queue, &app.view(), frame, area),
-Screen::Necessities => necessities::render(&app.necessities, &app.view(), frame, area),
-Screen::Inbox       => inbox::render(&app.capture, &app.view(), frame, area),
-// key dispatch: queue::on_key(&mut app.queue, &app.view(), key) -> Action, etc.
+pub mod queue; pub mod necessities; pub mod inbox; pub mod review;
+Screen::Queue       => queue::render(&app.queue, &app.view(), f, body),
+Screen::Necessities => necessities::render(&app.necessities, &app.view(), f, body),
+Screen::Review      => review::render(&app.review, &app.reviews(), f, body),
+Screen::Inbox       => inbox::render(&app.capture, &app.view(), f, body),
+// key dispatch: App::screen_key -> <screen>::on_key(&mut app.<state>, &view, key) -> queue::Action
 ```
-`App` needs three fields (`queue: QueueState`, `necessities: NecessitiesState`, `capture: CaptureState`) and one `fn view(&self) -> queue::View<'_>` built from its already-loaded tree/files/cfg/replay/candidates/prios/caps. Each `render` draws its own §12.6 keymap row on the last line of the area it is given (as the mock does); pass a one-line-shorter area to suppress it.
+`App` carries the four states (`queue`, `necessities`, `review`, `capture`), `fn view(&self) -> queue::View<'_>` built from its already-loaded tree/files/cfg/replay/candidates/prios/caps, and `fn reviews(&self) -> review::Reviews` built the way `tm review` builds them. Each `render` draws its own §12.6 keymap row on the last line of the area it is given; pass a one-line-shorter area to suppress it.
 
 # init (layer 5)
 `tm` is a bin crate, so this is the module seam, not an importable API. New private-to-the-binary module `tm::init` (declared as `mod init;` in tm/src/main.rs, sibling of `cli`):

@@ -101,9 +101,16 @@ fn a_replan_never_moves_the_past() {
 // ---------------------------------------------------------------------------
 
 /// §9: "Active item keeps its current slot regardless of key (no preemption
-/// mid-block)", with `est_min − elapsed` minutes still to run. The running
-/// block is reserved from `now`, so nothing else — no routine, no higher-key
-/// item, no break — is planned on top of it.
+/// mid-block)" — its current *slot*, one block. The running block is reserved
+/// from `now` to the end of the block it started, so nothing else — no
+/// routine, no higher-key item, no break — is planned on top of it, and the
+/// rest of the day is planned normally around it.
+///
+/// This test used to assert `current.end == at("2026-09-07", 11, 30)`: the
+/// whole `est_min − elapsed` remainder reserved as one segment. §8.2 step 5
+/// exempts the current block from preemption, not the whole estimate, and
+/// reserving the estimate deleted every routine window it covered from the
+/// day (see `a_long_run_still_leaves_room_for_lunch_and_a_break`).
 #[test]
 fn the_active_block_keeps_the_slot_containing_now() {
     let fx = load_with_log("plan-basic", Some(MORNING));
@@ -123,9 +130,11 @@ fn the_active_block_keeps_the_slot_containing_now() {
         .unwrap_or_else(|| panic!("a block is running:\n{}", timeline(&day)));
     assert_eq!(current.item.as_deref_id(), Some("m4"));
     assert!(current.kind.is_work());
-    // 120 − 30 elapsed = 90 minutes still to run, from `now`.
+    // The block started at 09:30 and runs to the end of its 60-minute slot;
+    // `planned_min` still reports the item's own remainder (120 − 30 = 90),
+    // which is what the `▶` row's "90m left" says.
     assert_eq!(current.start, now);
-    assert_eq!(current.end, at("2026-09-07", 11, 30));
+    assert_eq!(current.end, at("2026-09-07", 10, 30));
     assert_eq!(current.flags.planned_min, Some(90));
     // Exactly one `▶`, and nothing at all overlaps the running block.
     assert_eq!(
@@ -139,6 +148,67 @@ fn the_active_block_keeps_the_slot_containing_now() {
             seg.end <= current.start || seg.start >= current.end,
             "{seg:?} runs over the block that is running:\n{}",
             timeline(&day)
+        );
+    }
+}
+
+/// §8.2 steps 3 and 6 against §8.2 step 5: a six-block item that is running
+/// does not swallow the afternoon. It holds the block it is in, and lunch
+/// (`win:11:30-13:30 every:day`) and the `break_after_blocks` break are
+/// placed around it as on any other day.
+///
+/// Reserving the item's whole remaining estimate made the run one 355-minute
+/// segment from 09:35 to 15:30: `cut_slots_around` saw no free time to cut,
+/// so no break ever fell due, and `place_deferred` found no free position for
+/// lunch inside 11:30–13:30 and dropped it — off the timeline and out of the
+/// diagnostics both.
+#[test]
+fn a_long_run_still_leaves_room_for_lunch_and_a_break() {
+    let fx = load_with_log("plan-basic", Some(MORNING));
+    let state = RuntimeState {
+        active: Some(ActiveBlock {
+            id: Id::new("m2"), // `Rollback path passes tests`, 6b
+            started: time(9, 30),
+            est_min: 360,
+            paused: false,
+        }),
+        ..arrived()
+    };
+    let now = at("2026-09-07", 9, 35);
+    let day = planner::plan(&fx.input(&state, now));
+    let tl = timeline(&day);
+
+    let current = day.current_segment().expect("a block is running");
+    assert_eq!(current.item.as_deref_id(), Some("m2"));
+    assert_eq!(current.end, at("2026-09-07", 10, 30), "{tl}");
+
+    // The window `lunch` must be placed in is inside what the old reservation
+    // covered, and it is on the timeline.
+    let lunch = day
+        .segments
+        .iter()
+        .find(|s| s.item.as_ref().is_some_and(|i| i.as_str() == "lunch"))
+        .unwrap_or_else(|| panic!("lunch is planned:\n{tl}"));
+    assert_eq!(lunch.kind, SegKind::Routine);
+    assert!(
+        lunch.start >= at("2026-09-07", 11, 30) && lunch.end <= at("2026-09-07", 13, 30),
+        "lunch sits in its window:\n{tl}"
+    );
+
+    // §8.2 step 3's break: the running block counts as a block worked, so the
+    // day breaks after `break_after_blocks` of them, not never.
+    assert!(
+        day.segments
+            .iter()
+            .any(|s| s.kind == SegKind::Break && s.start > now),
+        "a break follows the run:\n{tl}"
+    );
+
+    // Still no preemption mid-block (§8.2 step 5).
+    for seg in day.segments.iter().filter(|s| !s.flags.current) {
+        assert!(
+            seg.end <= current.start || seg.start >= current.end,
+            "{seg:?} runs over the block that is running:\n{tl}"
         );
     }
 }

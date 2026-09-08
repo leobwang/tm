@@ -102,17 +102,24 @@
 //!    parts are re-sorted into §7.4's key order, so a passenger that loses its
 //!    batch also loses the batch's place in the queue.
 //!    5b. **The running block (§9).** `state.active` is not assigned at all:
-//!    the minutes it still needs (`est_min −` the worked minutes the log
-//!    knows) are *reserved* — like a wall — from `now` to `now + left`, before
-//!    routines are placed and before slots are cut. So nothing is scheduled on
-//!    top of a block that is running, the block survives a `max:`-exhausted or
-//!    dep-blocked item and a spent budget (§9: "no preemption mid-block"), and
-//!    it is the one work segment that carries no slot energy: it sits in no
-//!    cut slot, so §8.3's energy filter — a constraint on step 5's *choice* —
-//!    has nothing to say about it. Its blocks still count against the
-//!    remaining budget, and the stretch it has already run comes from the log
-//!    (`replay.open_block`), marked [`SegFlags::open`] because it grows with
-//!    every replan.
+//!    it is *reserved* — like a wall — from `now` to the end of the block it
+//!    is in, before routines are placed and before slots are cut. So nothing
+//!    is scheduled on top of a block that is running, the block survives a
+//!    `max:`-exhausted or dep-blocked item and a spent budget (§9: "no
+//!    preemption mid-block"), and it is the one work segment that carries no
+//!    slot energy: it sits in no cut slot, so §8.3's energy filter — a
+//!    constraint on step 5's *choice* — has nothing to say about it. The
+//!    reservation ends at `started + block_min` (rolled forward a whole block
+//!    at a time while that instant is past), clipped by the next wall and the
+//!    wind-down, and never runs past `est_min −` the worked minutes the log
+//!    knows. §8.2 step 5 protects the Active item's current *slot*, one block:
+//!    reserving its whole remaining estimate would swallow every routine
+//!    window and every break inside it. After that block the item re-competes
+//!    for slots like any other candidate, with its group already charged for
+//!    the minutes the run spends. Its block counts as one against the
+//!    remaining budget however long it runs, and the stretch it has already
+//!    run comes from the log (`replay.open_block`), marked [`SegFlags::open`]
+//!    because it grows with every replan.
 //! 6. **Deferred routines (step 6).** Each deferred instance is offered every
 //!    free position inside its window — the gaps, the Rest slots and the
 //!    evening, but never the wind-down — and takes the one with the **lowest
@@ -120,7 +127,10 @@
 //!    that finds none may reach into the wind-down, and failing that displaces
 //!    the lowest-energy assigned block inside its window; the displaced group
 //!    returns to the pool and is re-placed in a later free slot if there is
-//!    one.
+//!    one. An instance that still has no position — its window is full — is
+//!    named in `diagnostics.notes`: a day that quietly loses lunch is a day no
+//!    monitor can see. (An instance whose window has *closed* is §5.3's
+//!    expiry, not a placement failure, and is not reported.)
 //! 7. **Rest and optionals (step 7).** Slots past the budget are Rest.
 //!    `optional.md` lines (`p = 5`) then fill the free positions before
 //!    wind-down — the Rest slots first, since they come earlier — each within
@@ -995,6 +1005,25 @@ impl<'a> Planner<'a> {
             remaining_budget,
             &mut used,
         );
+        // A window instance that found no free position is dropped from the
+        // day. Say so: §8.2 step 8's diagnostics are where the planner
+        // reports what it could not place, and a day that quietly loses lunch
+        // is a day no monitor can see. An instance whose window has already
+        // closed is not a placement failure — §5.3's expiry owns that — and
+        // has an empty remaining span, so it is passed over here.
+        for r in routines.iter().filter(|r| r.placed.is_none()) {
+            let from = r.span.0.max(self.now);
+            if r.span.1 <= from {
+                continue;
+            }
+            notes.push(format!(
+                "{}: no free {}m position in {}–{}; not planned today",
+                r.id.as_str(),
+                r.dur_min,
+                fmt_clock(from),
+                fmt_clock(r.span.1),
+            ));
+        }
 
         // ---- steps 7 and 8 ------------------------------------------------
         let mut day = DayPlan::empty(self.date, window, budget_blocks);
@@ -1408,7 +1437,7 @@ impl<'a> Planner<'a> {
         out
     }
 
-    /// §9: the block running at `now` reserves the minutes it still needs.
+    /// §9: the block running at `now` reserves the rest of *its block*.
     ///
     /// This is a *fact*, not an assignment: it is not filtered by §8.2 step 5
     /// (there is no preemption mid-block), it survives a spent budget and an
@@ -1416,6 +1445,19 @@ impl<'a> Planner<'a> {
     /// step 2 so nothing is planned on top of it. It yields only to a wall —
     /// §8.2 step 1 places those first and puts nothing in their overlap — and
     /// to the wind-down.
+    ///
+    /// The reservation ends at the end of the block in progress (`started +
+    /// block_min`, rolled forward while that instant is past), never at the
+    /// end of the item's whole remaining estimate: §8.2 step 5 protects "its
+    /// current slot", one block. Reserving the estimate made a six-block item
+    /// swallow the afternoon in one uninterrupted segment — every routine
+    /// window inside it (lunch, dinner) vanished from the plan with no
+    /// diagnostic, and step 3's `break_after_blocks` break never fell due
+    /// because there were no slots to count. After its block the item
+    /// re-competes for slots like any other candidate (with its group's
+    /// `left_min` already reduced by what the run spends), which is what
+    /// makes an Active item that is still the best candidate simply keep
+    /// going, one block at a time.
     fn active_run(&self, walls: &[WallSeg], cands: &[Candidate]) -> Option<ActiveRun> {
         let active = self.input.runtime.active.as_ref()?;
         if active.paused {
@@ -1465,7 +1507,9 @@ impl<'a> Planner<'a> {
         if free_from > self.now {
             return None; // a wall covers `now`
         }
-        let end = (self.now + Duration::minutes(i64::from(left))).min(free_to);
+        let end = (self.now + Duration::minutes(i64::from(left)))
+            .min(free_to)
+            .min(self.current_block_end(started));
         if end <= self.now {
             return None;
         }
@@ -1479,6 +1523,23 @@ impl<'a> Planner<'a> {
                 .find(|c| c.id == active.id)
                 .map(|c| c.multiplier),
         })
+    }
+
+    /// The end of the `block_min` block that started at `started` and is
+    /// still running at `now` — always strictly after `now`.
+    ///
+    /// A block that has overrun its length is still the block you are in
+    /// (§9.1's overrun prompt is what ends it, not the clock), so the
+    /// boundary rolls forward a whole block at a time rather than falling
+    /// behind `now`. A zero `block_min` (a hand-edited config; §10.2 says
+    /// saturate rather than panic) puts no bound on the run at all.
+    fn current_block_end(&self, started: DateTime<Tz>) -> DateTime<Tz> {
+        let block_min = i64::from(self.cfg.block_min());
+        if block_min <= 0 {
+            return self.day_end;
+        }
+        let elapsed = (self.now - started).num_minutes().max(0);
+        started + Duration::minutes((elapsed / block_min + 1) * block_min)
     }
 
     /// §8.2 step 5's filter, applied to one slot.

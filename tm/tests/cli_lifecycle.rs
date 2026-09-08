@@ -59,7 +59,12 @@ fn close_after_the_period_ended_reports_what_the_auto_close_did() {
         .iter()
         .map(|d| d["id"].as_str().expect("id"))
         .collect();
-    assert_eq!(demoted, vec!["m1", "m2", "m3", "m4"], "{report}");
+    // ^p1 is there because the same sweep closed the days it skipped first:
+    // `day/2026-09-07#Pinned` moved into the week with `demoted:D07` (§6.3's
+    // day row) and the week close then demoted it to the month. Before the
+    // catch-up covered a tree with no close history, only 2026-09-13 was
+    // closed and ^p1 was left behind in the day file.
+    assert_eq!(demoted, vec!["m1", "m2", "m3", "m4", "p1"], "{report}");
     let moved: Vec<&str> = report["moved"]
         .as_array()
         .expect("moved")
@@ -84,7 +89,7 @@ fn close_after_the_period_ended_reports_what_the_auto_close_did() {
     let out = fresh.run_at("2026-09-14T09:00:00-05:00", &["close", "week"]);
     assert_eq!(
         out.stdout.trim(),
-        "closed week 2026-W37 · 3 moved · 4 demoted · 0 reopened · 0 dropped",
+        "closed week 2026-W37 · 3 moved · 5 demoted · 0 reopened · 0 dropped",
         "{}",
         out.stderr
     );
@@ -131,6 +136,40 @@ fn the_first_command_after_a_period_ends_closes_it() {
     assert_eq!(closed["day"], "2026-09-06");
     assert_eq!(closed["week"], "2026-W36");
     assert_eq!(closed["month"], "2026-08");
+}
+
+/// §6.3 + §0 principle 6, the fresh-tree case: `tm init` writes week and day
+/// files and no `state.json`, so the first command a tree ever runs has no
+/// close history behind it. Closing only the *last* period and stamping the
+/// rest left the tree's own first week `[ ]` in a file the planner no longer
+/// reads — never demoted, absent even from `diagnostics.dropped`, and
+/// unreachable afterwards because `state.closed` only moves forward.
+#[test]
+fn a_first_command_two_weeks_late_closes_the_skipped_periods() {
+    let tm = Tm::new();
+    assert!(!tm.exists(".tm/state.json"), "a fresh tree has no close history");
+
+    // Nothing has been run since the tree was made; today is a Monday in W39.
+    tm.ok_at("2026-09-21T09:00:00-05:00", &["plan"]);
+
+    // The week that was live when the tree was made is an archive now, and
+    // its milestones are in the month, not stranded (§6.3).
+    let week = tm.read("week/2026-W37.md");
+    assert!(week.contains("closed:"), "{week}");
+    assert!(tm.line("week/2026-W37.md", "m1").starts_with("- [-]"), "{week}");
+    let month = tm.read("month/2026-09.md");
+    let demoted = month.split("# Demoted").nth(1).unwrap_or_default();
+    for id in ["m1", "m2", "m3", "m4"] {
+        assert!(demoted.contains(&format!("^{id}")), "^{id} demoted: {month}");
+    }
+    assert!(demoted.contains("demoted:W37"), "{month}");
+
+    // The day close ran too: `day/2026-09-07#Pinned` is in the week's archive
+    // with its `demoted:D07` stamp, and from there in the month.
+    assert!(demoted.contains("demoted:D07"), "{month}");
+
+    assert_eq!(tm.state()["closed"]["week"], "2026-W38");
+    assert_eq!(tm.state()["closed"]["day"], "2026-09-20");
 }
 
 /// §11 and §12.4: `tm review day` reports the monitors `tm_core::review`

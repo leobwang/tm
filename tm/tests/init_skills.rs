@@ -272,3 +272,136 @@ fn the_review_skills_declare_the_fields_they_quote() {
         assert!(!declared.is_empty(), "{skill} declares no fields");
     }
 }
+
+/// Every backticked field name in a skill's **prose** is a field one of the
+/// documents that skill runs actually carries.
+///
+/// The `→` declarations were checked above; the prose was not, and it had
+/// drifted from them: `/review-day` told Claude to read `days[].done`,
+/// `leak_min`, `energy_mae` and `energy_bias`, and `/review-week` the same
+/// plus `days[].blocks`, four paragraphs below its own list of the fields
+/// that exist. Nothing in `tm review … --json` is called any of those, so the
+/// numbers could only have been invented.
+#[test]
+fn every_field_the_prose_quotes_exists_too() {
+    let tm = worked_day();
+    let mut checked = 0usize;
+    for skill in SKILLS {
+        let text = tm.read(&format!(".claude/skills/{skill}/SKILL.md"));
+        // The documents this skill actually reads.
+        let mut docs: Vec<(String, Value)> = Vec::new();
+        let commands = documented(skill, &text)
+            .into_iter()
+            .map(|d| d.command)
+            // A skill may also name a `--json` command inline (`/plan-week`
+            // sends you to `tm model --show --json` for the multipliers).
+            .chain(inline_commands(&text));
+        for command in commands {
+            let args = argv(&concrete(&command));
+            if !args.iter().any(|a| a == "--json") {
+                continue;
+            }
+            let args: Vec<&str> = args.iter().map(String::as_str).collect();
+            let out = tm.run_at(EVENING, &args);
+            assert_eq!(out.code, 0, "{skill}: `{command}` exits {}", out.code);
+            docs.push((command, out.json()));
+        }
+        if docs.is_empty() {
+            continue; // `/capture` reads nothing
+        }
+        for name in prose_fields(&text) {
+            assert!(
+                docs.iter()
+                    .any(|(_, doc)| resolve(doc, &name).is_some() || has_key(doc, &name)),
+                "{skill}'s prose quotes `{name}`, which none of the documents \
+                 it runs ({}) carries",
+                docs.iter()
+                    .map(|(c, _)| c.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked > 20, "only {checked} prose fields were checked");
+}
+
+/// Backticked `tm … --json` commands in the prose — a skill may point at a
+/// document without putting it in its "Run" block.
+fn inline_commands(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut fenced = false;
+    for line in text.lines() {
+        if line.starts_with("```") {
+            fenced = !fenced;
+            continue;
+        }
+        if fenced {
+            continue;
+        }
+        for token in line.split('`').skip(1).step_by(2) {
+            if token.starts_with("tm ") && token.contains("--json") {
+                out.push(token.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// The backticked names in `text` outside fenced blocks that are meant to be
+/// `--json` fields: a dotted/indexed path under one of the document roots
+/// (`review.leak.total_min`, `days[].total`), or a bare `snake_case` metric
+/// (`budget_blocks`, `a_capacity_lost`). Prose about the *files* (`est:`,
+/// `backlog.md`, `week.plan_ratio` — a config key) is not a field claim.
+fn prose_fields(text: &str) -> BTreeSet<String> {
+    const ROOTS: &[&str] = &[
+        "review",
+        "diagnostics",
+        "model",
+        "comparison",
+        "segments",
+        "priorities",
+        "days",
+        "lines",
+        "diff",
+    ];
+    let mut out = BTreeSet::new();
+    let mut fenced = false;
+    for line in text.lines() {
+        if line.starts_with("```") {
+            fenced = !fenced;
+            continue;
+        }
+        if fenced {
+            continue;
+        }
+        for token in line.split('`').skip(1).step_by(2) {
+            let name = token.trim();
+            if name.is_empty()
+                || !name.chars().all(|c| {
+                    c.is_ascii_lowercase() || c.is_ascii_digit() || "._[]".contains(c)
+                })
+            {
+                continue;
+            }
+            let root = name.split(['.', '[']).next().unwrap_or_default();
+            let dotted = name.contains('.') && ROOTS.contains(&root);
+            let bare = !name.contains('.') && !name.contains('[') && name.contains('_');
+            if dotted || bare {
+                out.insert(name.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// Whether `key` — a bare field name — appears anywhere in the document.
+fn has_key(doc: &Value, key: &str) -> bool {
+    match doc {
+        Value::Object(map) => {
+            map.contains_key(key) || map.values().any(|v| has_key(v, key))
+        }
+        Value::Array(items) => items.iter().any(|v| has_key(v, key)),
+        _ => false,
+    }
+}

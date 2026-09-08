@@ -28,14 +28,15 @@ tm plan --json → date budget_blocks blocks_done diagnostics.rest_debt_min diag
 Append a short paragraph (4–6 sentences, no bullet dump) to the `## Notes`
 section of `day/<date>.md`, covering:
 
-- **What got done** — `blocks` of `budget_blocks`, and the items in
-  `days[].done` by name.
-- **Where the time went** — `leak_min`, `lost_min`, the day's `load`, and
-  `diagnostics.rest_debt_min`; name what fell off the tail
-  (`diagnostics.dropped_tail`).
-- **How the estimates held** — `estimates[].multiplier` per tag (with its `n`),
-  and whether the energy reports matched the prediction (`energy_mae` and the
-  sign of `energy_bias`).
+- **What got done** — `review.blocks_done` of `review.budget` (the plan
+  document calls the same number `budget_blocks`), and the items in
+  `review.done` by name.
+- **Where the time went** — `review.leak.total_min`, `review.lost_min`, the
+  day's `review.load`, and `diagnostics.rest_debt_min`; name what fell off the
+  tail (`diagnostics.dropped_tail`).
+- **How the estimates held** — `review.estimates[].multiplier` per tag (with
+  its `n`), and whether the energy reports matched the prediction
+  (`review.energy.mae` and the sign of `review.energy.bias`).
 - **One thing to change tomorrow** — a concrete, small change: an estimate to
   fix, a routine to move, a block to start earlier.
 

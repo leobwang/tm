@@ -8,7 +8,7 @@ description: Plan the coming month — propose outcomes with an explicit priorit
 ## 1. Read
 
 ```
-tm review month --json         # blocks done per day, calibration, demotion churn
+tm review month --json         # outcomes done, demotion churn, carry-over by week
 tm review week --json          # the last week, for the trend
 ```
 
@@ -30,11 +30,14 @@ document reports it.
   `!1`–`!4` — only roots carry one, and `k` is what every descendant inherits.
   An outcome with an estimate and no children is a `tm check` warning: outcomes
   are outcomes, milestones live in `week/`.
-- **A cut list.** Everything in `churn` (§11: two or more `demoted:` stamps) is
-  a candidate to cut or re-scope. Say what each cut costs and what it buys: the
-  month has a fixed number of blocks, and the carry-over is already spent.
-- **Capacity.** Compare the carry-over you counted in the file with what the
-  month actually delivered (`blocks`) before proposing anything new.
+- **A cut list.** Everything in `review.churn` (§11: two or more `demoted:`
+  stamps) is a candidate to cut or re-scope. Say what each cut costs and what
+  it buys: the month has a fixed number of blocks, and the carry-over is
+  already spent.
+- **Capacity.** Compare the carry-over you counted in the file
+  (`review.carry_over`, `(week, minutes demoted)` per week) with what the month
+  actually delivered (`review.done_count` of `review.outcomes[]`, and the last
+  week's `review.blocks_done`) before proposing anything new.
 
 ## 3. Write — only after confirmation
 

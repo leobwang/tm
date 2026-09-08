@@ -9,7 +9,7 @@ description: Replan the rest of the day and explain in two sentences what moved 
 
 ```
 tm plan --diff --json          # replans from now and diffs against the last plan
-tm review day --json           # only for the minutes: leak_min, lost_min
+tm review day --json           # only for review.leak.total_min, review.lost_min
 ```
 
 `tm plan` writes the generated section of `day/<today>.md` and the day bar
@@ -29,10 +29,10 @@ The first names what moved: which item is running now, what starts next
 assignment is a rank-ordered fill, so a loss of time always drops a *suffix* of
 the queue; those items are untouched in their files).
 
-The second names the cause: `lost_min` from an interruption, a new wall from
-`calendar/` (`diagnostics.conflicts`), a lower energy prediction that made a
-`ci`-5 item ineligible (`diagnostics.deferred`), a `max:` cap that is spent for
-today, or a dependency that is still blocked (`diagnostics.blocked`).
+The second names the cause: `review.lost_min` from an interruption, a new wall
+from `calendar/` (`diagnostics.conflicts`), a lower energy prediction that made
+a `ci`-5 item ineligible (`diagnostics.deferred`), a `max:` cap that is spent
+for today, or a dependency that is still blocked (`diagnostics.blocked`).
 
 ## 3. Flag, do not fix
 

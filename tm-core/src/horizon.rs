@@ -1603,8 +1603,11 @@ pub fn close_month(
 /// on. A tree that has not been opened for a year should not spend the first
 /// command closing 365 days one at a time; the sweep closes the most recent
 /// [`AUTO_CLOSE_CATCHUP`] periods that still have a file and stamps the rest
-/// as closed. Wide enough for an ordinary holiday (two months of days, a
-/// quarter of weeks) — the case the stamp-without-running bug used to lose.
+/// as closed. Sixteen of each kind is a fortnight and a bit of days, a
+/// quarter of weeks and well over a year of months — wide enough for a
+/// holiday, and the same bound whether or not the tree has close history,
+/// because a fresh tree (no `state.json` yet) is the *commonest* way to
+/// arrive with several unclosed periods behind you.
 pub const AUTO_CLOSE_CATCHUP: usize = 16;
 
 /// Run the closes that are due and have not run yet (§6.3: "runs
@@ -1615,10 +1618,18 @@ pub const AUTO_CLOSE_CATCHUP: usize = 16;
 /// and its unfinished milestones are still demoted into the month, which is
 /// §0's "demotion, not deletion"; stamping a period closed without running
 /// it would strand them in a file the planner no longer reads. A period
-/// whose file does not exist is recorded as closed without running, and a
-/// first run (nothing in `state.closed`) closes only the last period of each
-/// kind — there is no history behind it to catch up on. The catch-up is
-/// capped at [`AUTO_CLOSE_CATCHUP`] periods per kind.
+/// whose file does not exist is recorded as closed without running.
+///
+/// A tree with no close history at all (`state.closed` empty, which is every
+/// tree between `tm init` and its first command) is caught up the same way,
+/// over the last [`AUTO_CLOSE_CATCHUP`] periods of each kind: `tm init`
+/// writes week and day files but no `state.json`, so treating "no history"
+/// as "nothing to catch up on" would stamp the very periods the tree was
+/// created in as closed without running them, and their items — never
+/// demoted, never in a diagnostic, invisible to `tm plan` — could then only
+/// be recovered with an explicit `tm close`. The catch-up is capped at
+/// [`AUTO_CLOSE_CATCHUP`] periods per kind either way; older periods are
+/// stamped, not run.
 ///
 /// The kinds run finest-first (day, week, month) so a pinned item that lands
 /// in the week can still be demoted to the month in the same sweep; the tree
@@ -1638,7 +1649,7 @@ pub fn auto_close(
 
     // -- day: every unclosed day up to yesterday -----------------------------
     if let Some(last_day) = today.pred_opt() {
-        let due = catch_up(state.closed.day, last_day, |d| d.succ_opt());
+        let due = catch_up(state.closed.day, last_day, |d| d.pred_opt());
         for day in due {
             let week_path = Horizon::Week(IsoWeek::from_date(day)).path();
             let day_path = Horizon::Day(day).path();
@@ -1661,7 +1672,7 @@ pub fn auto_close(
 
     // -- week: every unclosed week up to the one before this ------------------
     let last_week = IsoWeek::from_date(today).prev();
-    for week in catch_up(state.closed.week, last_week, |w| Some(w.next())) {
+    for week in catch_up(state.closed.week, last_week, |w| Some(w.prev())) {
         if store.exists(&Horizon::Week(week).path()) {
             let files = store.read_tree()?;
             let tree = files.tree();
@@ -1679,7 +1690,7 @@ pub fn auto_close(
 
     // -- month: every unclosed month up to the one before this ----------------
     let last_month = YearMonth::from_date(today).prev();
-    for month in catch_up(state.closed.month, last_month, |m| Some(m.next())) {
+    for month in catch_up(state.closed.month, last_month, |m| Some(m.prev())) {
         if store.exists(&Horizon::Month(month).path()) {
             let files = store.read_tree()?;
             let tree = files.tree();
@@ -1704,57 +1715,63 @@ pub fn auto_close(
 /// The periods still to close, oldest first: everything after `closed` up to
 /// and including `last`, capped at the most recent [`AUTO_CLOSE_CATCHUP`].
 ///
-/// `None` in `closed` is a tree with no close history — only `last` is due.
-/// An empty result means nothing is overdue.
-fn catch_up<T: Copy + Ord>(closed: Option<T>, last: T, next: impl Fn(T) -> Option<T>) -> Vec<T> {
-    let Some(closed) = closed else {
-        return vec![last];
-    };
-    if closed >= last {
+/// `None` in `closed` is a tree with no close history — the same bounded
+/// window applies, because a period that ended before a tree's first command
+/// is still a period `tm` never closed (§6.3), and the file it left behind is
+/// the only place its unfinished items live.
+///
+/// The walk runs backwards from `last` so that a `closed` in the distant past
+/// costs [`AUTO_CLOSE_CATCHUP`] steps, not one per period since. Periods
+/// older than the window are not returned: they are stamped closed by the
+/// caller's loop as it passes the ones it does run, because `state.closed`
+/// only ever moves forward. An empty result means nothing is overdue.
+fn catch_up<T: Copy + Ord>(closed: Option<T>, last: T, prev: impl Fn(T) -> Option<T>) -> Vec<T> {
+    if closed.is_some_and(|c| c >= last) {
         return Vec::new();
     }
-    let mut out = Vec::new();
-    let mut cur = closed;
-    while let Some(n) = next(cur) {
-        if n > last {
+    let mut out = vec![last];
+    while out.len() < AUTO_CLOSE_CATCHUP {
+        let Some(p) = prev(out[out.len() - 1]) else {
+            break;
+        };
+        if closed.is_some_and(|c| c >= p) {
             break;
         }
-        out.push(n);
-        cur = n;
+        out.push(p);
     }
-    if out.len() > AUTO_CLOSE_CATCHUP {
-        // The oldest are dropped, not run: their files are long stale. They
-        // are still stamped closed by the loop that follows the last one it
-        // does run, because `state.closed` only ever moves forward.
-        out.drain(..out.len() - AUTO_CLOSE_CATCHUP);
-    }
+    out.reverse();
     out
 }
 
 /// The periods [`auto_close`] would close right now, without writing
 /// anything — what `tm status` shows and what the CLI prints before running
 /// a close.
+///
+/// The same catch-up window and the same "has a file" gate as [`auto_close`],
+/// so a sweep that will close three skipped weeks says so instead of naming
+/// only the last one.
 pub fn pending_closes(store: &dyn Store, state: &RuntimeState, today: NaiveDate) -> Vec<(Period, String)> {
     let mut out = Vec::new();
-    if let Some(day) = today.pred_opt() {
-        if state.closed.day.is_none_or(|d| d < day)
-            && (store.exists(&Horizon::Day(day).path())
-                || store.exists(&Horizon::Week(IsoWeek::from_date(day)).path()))
-        {
-            out.push((Period::Day, day.format("%Y-%m-%d").to_string()));
+    if let Some(last_day) = today.pred_opt() {
+        for day in catch_up(state.closed.day, last_day, |d| d.pred_opt()) {
+            if store.exists(&Horizon::Day(day).path())
+                || store.exists(&Horizon::Week(IsoWeek::from_date(day)).path())
+            {
+                out.push((Period::Day, day.format("%Y-%m-%d").to_string()));
+            }
         }
     }
     let last_week = IsoWeek::from_date(today).prev();
-    if state.closed.week.is_none_or(|w| w < last_week)
-        && store.exists(&Horizon::Week(last_week).path())
-    {
-        out.push((Period::Week, last_week.to_string()));
+    for week in catch_up(state.closed.week, last_week, |w| Some(w.prev())) {
+        if store.exists(&Horizon::Week(week).path()) {
+            out.push((Period::Week, week.to_string()));
+        }
     }
     let last_month = YearMonth::from_date(today).prev();
-    if state.closed.month.is_none_or(|m| m < last_month)
-        && store.exists(&Horizon::Month(last_month).path())
-    {
-        out.push((Period::Month, last_month.to_string()));
+    for month in catch_up(state.closed.month, last_month, |m| Some(m.prev())) {
+        if store.exists(&Horizon::Month(month).path()) {
+            out.push((Period::Month, month.to_string()));
+        }
     }
     out
 }
