@@ -1281,6 +1281,14 @@ theorem loadPlan_spec (docs : List ReqDoc) (p : WfPlan) (h : loadPlan docs = .ok
       · simp at h
     · simp at h
 
+/-- The plan holds exactly the request's documents, in the request's order — so
+the response has one entry per request document and they line up. -/
+theorem loadPlan_docs (docs : List ReqDoc) (p : WfPlan) (h : loadPlan docs = .ok p) :
+    p.val.docs = docs.map mkDoc := by
+  obtain ⟨items, _, hval⟩ := loadPlan_spec docs p h
+  rw [hval]
+  rfl
+
 /-- **The gap that hid the `[-]` bug, closed.**  For every document of every
 request the loader accepts, taking the file apart into prose and entities and
 reading it back out through `renderDocAt` reproduces the input lines exactly.
@@ -1302,6 +1310,221 @@ theorem the_kernel_reads_back_what_it_writes (docs : List ReqDoc) (p : WfPlan)
     rfl
   · rw [hval]
     exact renderDocAt_loadCore docs items hb hnorm k rd hk
+
+/-! ## `Normalized` after a command: discharged, not hoped for
+
+`mapAt` re-establishes `planWf` by computation on every post-state, and rank
+distinctness is one of its conjuncts.  That made `mapAt_ok_of_inRange` and
+`cmdMove_succeeds` (Cmd.lean) each carry an `itemsWf` hypothesis about the
+post-state: the boundary always relocates to `freshRank`, and `freshRank_gt`
+proves that rank is above every rank already in the destination, but the step
+from there to "and so the post-state is still `Normalized`" was not written.
+That was README gap 11, and the check it left standing was one no proof could
+be shown to pass — the shape of trapdoor this kernel exists to remove.
+
+The step is written here.  `lines_set` and `normalized_set` (Plan.lean) supply
+the general lemma; what is left is the arithmetic — `freshRank` beats every
+prose rank as well as every line rank — and the observation that **every command
+either lands on the fresh rank or re-uses a site the entity already had**, so
+one hypothesis covers `move`, `demote`, `readopt`, `drop` and `est` together.
+
+What is *not* discharged, and stays a hypothesis, is the rest of `itemsWf`:
+a move into a day file outside `# Pinned` breaks `sectionsWf` and a move into
+`month/` can break `shapesWf`.  Those are real refusals, not gaps. -/
+
+theorem foldl_max_ge_gen {α : Type} (f : α → Nat) : ∀ (xs : List α) (a : Nat),
+    a ≤ xs.foldl (fun acc y => Nat.max acc (f y)) a := by
+  intro xs
+  induction xs with
+  | nil => intro a; exact Nat.le_refl a
+  | cons x t ih => intro a; exact Nat.le_trans (Nat.le_max_left a (f x)) (ih _)
+
+theorem le_foldl_max_gen {α : Type} (f : α → Nat) (x : α) : ∀ (xs : List α) (a : Nat),
+    x ∈ xs → f x ≤ xs.foldl (fun acc y => Nat.max acc (f y)) a := by
+  intro xs
+  induction xs with
+  | nil => intro a h; simp at h
+  | cons y t ih =>
+      intro a h
+      simp only [List.foldl_cons]
+      rcases List.mem_cons.1 h with hh | hh
+      · rw [hh]
+        exact Nat.le_trans (Nat.le_max_right a (f y)) (foldl_max_ge_gen f t _)
+      · exact ih _ hh
+
+/-- **`freshRank` beats the prose too.**  `freshRank_gt` covers the item lines;
+this is the other half, and without it a relocated line could land on a heading's
+rank, which `Normalized` counts in the same list. -/
+theorem docProseMax_ge (p : PlanCore) (k : DocIx) (d : Doc) (hd : p.docs[k]? = some d)
+    (q : Nat × List Char) (hq : q ∈ d.prose) : q.1 ≤ docProseMax p k := by
+  unfold docProseMax
+  rw [hd]
+  exact le_foldl_max_gen Prod.fst q d.prose 0 hq
+
+theorem archive_line_mem (i : Id) (e : Entity) (r : Site) (h : e.val.archive = some r) :
+    ∃ m ∈ render i e, m.site = r := by
+  refine ⟨⟨i, r, serializeItem i (glyphAt e.val r) e.val.line⟩, ?_, rfl⟩
+  unfold render renderCore
+  rw [h]
+  simp
+
+theorem live_line_site_mem (i : Id) (e : Entity) : ∃ m ∈ render i e, m.site = e.val.live := by
+  refine ⟨⟨i, e.val.live, serializeItem i (glyphAt e.val e.val.live) e.val.line⟩, ?_, rfl⟩
+  unfold render renderCore
+  simp
+
+/-- **The one hypothesis every command satisfies**: each line of the new entity
+sits either on the fresh rank in the destination, or on a site the entity
+already occupied.  `SitesFree` follows, and with it `Normalized`. -/
+theorem normalized_of_fresh_or_old (p : WfPlan) (i : Id) (e a : Entity) (k : DocIx)
+    (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e)
+    (hsites : ∀ l ∈ render i a,
+       l.site = ⟨k, freshRank p.val k⟩ ∨ ∃ m ∈ render i e, m.site = l.site) :
+    normalized { p.val with store := p.val.store.set i a hs } = true := by
+  refine normalized_set p.val i e a hs hget (itemsWf_parts p.items).1 ?_
+  intro l hl
+  rcases hsites l hl with hfresh | ⟨m0, hm0, hm0s⟩
+  · have hdoc : l.site.doc = k := by rw [hfresh]
+    have hrank : l.site.rank = freshRank p.val k := by rw [hfresh]
+    constructor
+    · intro m hm hsite
+      exfalso
+      have h1 : m.site.doc = k := by rw [hsite, hdoc]
+      have h2 : m.site.rank = freshRank p.val k := by rw [hsite, hrank]
+      have := freshRank_gt p.val k m hm h1
+      omega
+    · intro d hd q hq
+      rw [hdoc] at hd
+      have h1 := docProseMax_ge p.val k d hd q hq
+      have h2 : docProseMax p.val k < freshRank p.val k :=
+        Nat.lt_succ_of_le (Nat.le_max_left _ _)
+      rw [hrank]
+      omega
+  · have hm0l : m0 ∈ p.val.lines := mem_lines_of_render p.val i e m0 hget hm0
+    constructor
+    · intro m hm hsite
+      have : m = m0 := site_names_one_line p m m0 hm hm0l (by rw [hsite, hm0s])
+      rw [this]
+      exact hm0
+    · intro d hd q hq
+      have hd' : p.val.docs[m0.site.doc]? = some d := by rw [hm0s]; exact hd
+      have := no_prose_line_shares_a_rank p m0 hm0l d hd' q hq
+      rw [hm0s] at this
+      exact this
+
+/-- A relocation: the live line goes to the fresh rank, and any tombstone the
+new entity carries is one the old entity already had a line at. -/
+theorem normalized_after_relocation (p : WfPlan) (i : Id) (e a : Entity) (k : DocIx)
+    (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e)
+    (hlive : a.val.live = ⟨k, freshRank p.val k⟩)
+    (harch : ∀ r, a.val.archive = some r → ∃ m ∈ render i e, m.site = r) :
+    normalized { p.val with store := p.val.store.set i a hs } = true := by
+  refine normalized_of_fresh_or_old p i e a k hs hget ?_
+  intro l hl
+  rcases render_site i a l hl with h | h
+  · exact Or.inl (by rw [h, hlive])
+  · exact Or.inr (harch l.site h)
+
+/-- An edit that moves nothing: both placements are where they were, so there is
+nothing to check at all.  This is `drop` and `est`. -/
+theorem normalized_after_edit (p : WfPlan) (i : Id) (e a : Entity)
+    (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e)
+    (hlive : a.val.live = e.val.live) (harch : a.val.archive = e.val.archive) :
+    normalized { p.val with store := p.val.store.set i a hs } = true := by
+  refine normalized_of_fresh_or_old p i e a 0 hs hget ?_
+  intro l hl
+  refine Or.inr ?_
+  rcases render_site i a l hl with h | h
+  · rw [h, hlive]; exact live_line_site_mem i e
+  · exact archive_line_mem i e l.site (by rw [← harch]; exact h)
+
+/-- **`move` at the boundary's own rank keeps ranks distinct.** -/
+theorem move_at_freshRank_normalized (p : WfPlan) (i : Id) (e a : Entity) (k : DocIx)
+    (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e)
+    (hva : a.val = { e.val with live := ⟨k, freshRank p.val k⟩ }) :
+    normalized { p.val with store := p.val.store.set i a hs } = true := by
+  refine normalized_after_relocation p i e a k hs hget (by rw [hva]) ?_
+  intro r hr
+  rw [hva] at hr
+  exact archive_line_mem i e r hr
+
+theorem moveTo_freshRank_normalized (p : WfPlan) (i : Id) (e a : Entity) (k : DocIx)
+    (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e)
+    (ha : moveTo ⟨k, freshRank p.val k⟩ e = .ok a) :
+    normalized { p.val with store := p.val.store.set i a hs } = true :=
+  move_at_freshRank_normalized p i e a k hs hget (lift_roundtrips _ _ ha)
+
+/-- **`demote` too** — and here the tombstone is the line the item is leaving,
+which is precisely a site the old entity occupied. -/
+theorem demote_at_freshRank_normalized (p : WfPlan) (i : Id) (e a : Entity) (k per : Nat)
+    (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e)
+    (ha : demote ⟨k, freshRank p.val k⟩ per e = .ok a) :
+    normalized { p.val with store := p.val.store.set i a hs } = true := by
+  have hv := lift_roundtrips _ _ ha
+  refine normalized_after_relocation p i e a k hs hget (by rw [hv]) ?_
+  intro r hr
+  rw [hv] at hr
+  have hh : (some e.val.live : Option Site) = some r := hr
+  rw [← Option.some.inj hh]
+  exact live_line_site_mem i e
+
+/-- **And `readopt`**, which consumes the tombstone, so it has one line and it
+is fresh. -/
+theorem readopt_at_freshRank_normalized (p : WfPlan) (i : Id) (e a : Entity) (k : DocIx)
+    (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e)
+    (ha : a = readopt ⟨k, freshRank p.val k⟩ e) :
+    normalized { p.val with store := p.val.store.set i a hs } = true := by
+  subst ha
+  refine normalized_after_relocation p i e _ k hs hget rfl ?_
+  intro r hr
+  exact absurd hr (by simp [readopt])
+
+theorem drop_normalized (p : WfPlan) (i : Id) (e : Entity)
+    (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e) :
+    normalized { p.val with store := p.val.store.set i (drop e) hs } = true :=
+  normalized_after_edit p i e (drop e) hs hget rfl rfl
+
+theorem setEst_normalized (p : WfPlan) (i : Id) (e : Entity) (v : Nat)
+    (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e) :
+    normalized { p.val with store := p.val.store.set i (setEstE v e) hs } = true :=
+  normalized_after_edit p i e (setEstE v e) hs hget rfl rfl
+
+/-- The six conjuncts of `itemsWf` that are **not** rank distinctness.  A
+command really can break any of them — a move into a day file outside
+`# Pinned` breaks `sectionsWf`, a move into `month/` can break `shapesWf` — so
+they stay hypotheses.  `Normalized` is the one that no longer has to be. -/
+def itemsWfButRanks (p : PlanCore) : Bool :=
+  parentsTotal p && parentsAcyclic p && afterTotal p && afterAcyclic p &&
+    sectionsWf p && shapesWf p
+
+theorem itemsWf_of_normalized (p : PlanCore) (h1 : normalized p = true)
+    (h2 : itemsWfButRanks p = true) : itemsWf p = true := by
+  simp only [itemsWfButRanks, Bool.and_eq_true] at h2
+  exact itemsWf_of_parts h1 h2.1.1.1.1.1 h2.1.1.1.1.2 h2.1.1.1.2 h2.1.1.2 h2.1.2 h2.2
+
+/-- **`cmdMove_succeeds` at the boundary, with the rank hypothesis gone.**
+Cmd.lean's version needs the caller to supply `itemsWf` of the post-state,
+because `rank` there is a `Nat` the caller chose.  `applyCmd` does not choose:
+it passes `freshRank`, and `move_at_freshRank_normalized` discharges the
+`Normalized` conjunct outright.  What is left in `hrest` is the six conjuncts a
+move can genuinely violate. -/
+theorem applyCmd_move_succeeds (p : WfPlan) (i : Id) (e : Entity) (n : Nat) (d : Dest p.val)
+    (hn : resolveDest p.val n = .ok d) (hget : p.val.store.get i = some e)
+    (hfree : ∀ r, e.val.archive = some r →
+      horizonPrecedes (docRegion p.val r.doc) (docRegion p.val d.ix) = true)
+    (hrest : ∀ a : Entity, a.val = { e.val with live := d.site (freshRank p.val d.ix) } →
+      ∀ hs : (p.val.store.get i).isSome = true,
+      itemsWfButRanks { p.val with store := p.val.store.set i a hs } = true) :
+    ∃ q : WfPlan, applyCmd (.move i n) p = .ok q ∧
+      ∃ e', q.val.store.get i = some e' ∧ e'.val.live = d.site (freshRank p.val d.ix) := by
+  have hmove := cmdMove_succeeds p i e d (freshRank p.val d.ix) hget hfree ?_
+  · obtain ⟨q, hq, he'⟩ := hmove
+    refine ⟨q, ?_, he'⟩
+    simp only [applyCmd, hn]
+    exact hq
+  · intro a hva hs
+    exact itemsWf_of_normalized _
+      (move_at_freshRank_normalized p i e a d.ix hs hget hva) (hrest a hva hs)
 
 /-- **The same, at the exact call site.**  `runPlan` renders `p.val.docs.zipIdx`,
 so this is the statement for every `(document, index)` pair it actually hands to
