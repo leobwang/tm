@@ -11,7 +11,8 @@
 //! * [`App`] — one loaded plan directory as the TUI sees it: config, tree,
 //!   log and its replay, the learned model, `.tm/state.json`, the current
 //!   [`DayPlan`] and the **ghost** plan (§12.1: the plan as it stood at
-//!   arrival), plus the UI state (screen, mode, selection, command line,
+//!   arrival, built from the [`ArrivalBlock`]s `tm arrive` recorded, never
+//!   recomputed), plus the UI state (screen, mode, selection, command line,
 //!   pending prompt, hover) and the digests the panes read
 //!   ([`App::rows`], [`App::status`], [`App::week`], [`App::energy`]).
 //!   [`App::new`] plans from `now`; [`App::with_plan`] takes a plan as given
@@ -56,11 +57,11 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tm_core::capacity::{self, EnergyCtx};
 use tm_core::config::Config;
 use tm_core::emit;
-use tm_core::energy::{Model, Posterior};
+use tm_core::energy::{self, Model, Posterior};
 use tm_core::horizon::MIN_REMAINING_MIN;
 use tm_core::log::{Log, Replay};
 use tm_core::model::{Id, IsoWeek, Loc, Recur};
-use tm_core::planner::{self, DayPlan, PlanInput, PlanOverrides, SegKind};
+use tm_core::planner::{self, DayPlan, PlanInput, PlanOverrides, SegFlags, SegKind, Segment};
 use tm_core::priority::PrioClass;
 use tm_core::recur;
 use tm_core::review::{self, PlannedBlock, StatusHead, StatusLine};
@@ -444,6 +445,20 @@ pub struct EnergyPane {
     pub rep: Vec<Option<u8>>,
 }
 
+/// One block start of `.tm/arrival_plan.json` — the record `tm arrive`
+/// writes of the plan the day started with (§12.1's ghost row, and §11's
+/// adherence denominator).
+///
+/// The record holds a start and an item per block and nothing else, which is
+/// why the ghost blocks are sized from the tree when the row is built.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ArrivalBlock {
+    /// When the block was planned to start (local, on `state.date`).
+    pub start: NaiveTime,
+    /// The item it was for; `None` for a block the record has no id for.
+    pub id: Option<Id>,
+}
+
 /// Everything [`App::new`] needs that comes from the plan directory.
 pub struct AppData {
     /// `config.toml` (§16).
@@ -458,6 +473,9 @@ pub struct AppData {
     pub log: Log,
     /// Its replay.
     pub replay: Replay,
+    /// `.tm/arrival_plan.json` — the block starts as `tm arrive` recorded
+    /// them (§12.1's ghost row). Empty when the day has no record yet.
+    pub arrival: Vec<ArrivalBlock>,
     /// The instant the TUI is at, in `cfg.tz`.
     pub now: DateTime<Tz>,
 }
@@ -476,6 +494,8 @@ pub struct App {
     pub log: Log,
     /// The replay of the log.
     pub replay: Replay,
+    /// The plan as `tm arrive` recorded it (`.tm/arrival_plan.json`).
+    pub arrival: Vec<ArrivalBlock>,
     /// Today's energy reports as §8.5's posterior correction.
     pub posterior: Posterior,
     /// `now`, in `cfg.tz` (§17.2: injected, never read from a clock here).
@@ -512,8 +532,13 @@ pub struct App {
     pub hover: Option<Hover>,
     /// The open prompt (§9.1, §9.2).
     pub prompt: Option<Prompt>,
-    /// When the last overtime prompt was raised (§9.1's re-prompt clock).
-    pub prompt_at: Option<DateTime<Tz>>,
+    /// When the overtime prompt was last raised or answered — §9.1's own
+    /// re-prompt clock ("then every `overtime_reprompt_min`").
+    pub overtime_at: Option<DateTime<Tz>>,
+    /// When the idle prompt was last raised or answered — §9.2's clock. It is
+    /// deliberately separate from [`App::overtime_at`]: answering one prompt
+    /// must not silence the other.
+    pub idle_at: Option<DateTime<Tz>>,
     /// Set once `q` has been pressed.
     pub quit: bool,
 }
@@ -552,6 +577,7 @@ impl App {
             tree: data.tree,
             log: data.log,
             replay: data.replay,
+            arrival: data.arrival,
             posterior,
             now: data.now,
             today,
@@ -578,7 +604,8 @@ impl App {
             message: None,
             hover: None,
             prompt: None,
-            prompt_at: None,
+            overtime_at: None,
+            idle_at: None,
             quit: false,
         }
     }
@@ -600,19 +627,6 @@ impl App {
         )
     }
 
-    /// The planner's input for another instant (the ghost row, §12.1).
-    fn input_at(&self, at: DateTime<Tz>) -> PlanInput<'_> {
-        PlanInput::new(
-            &self.tree,
-            &self.log,
-            &self.replay,
-            &self.cfg,
-            &self.model,
-            &self.state,
-            at,
-        )
-    }
-
     /// §9: recompute the plan from `now` and refresh every digest.
     pub fn replan(&mut self) {
         let plan = planner::plan(&self.input());
@@ -621,29 +635,112 @@ impl App {
         self.refresh();
     }
 
-    /// The plan as it stood at arrival (§12.1's ghost row): `plan()` run at
-    /// `state.arrival`, which is the day as it looked before anything moved.
+    /// The plan as it stood at arrival (§12.1's ghost row), read back from
+    /// the record `tm arrive` wrote (`.tm/arrival_plan.json`, [`AppData`]),
+    /// **not** recomputed: a `plan()` re-run at `state.arrival` would be run
+    /// with today's runtime state and today's log, so the running block would
+    /// be reserved at the arrival instant and everything closed since would be
+    /// missing — that is not "the plan as it stood at arrival".
     ///
-    /// `.tm/arrival_plan.json` (the CLI's own record) keeps only the block
-    /// starts, not a whole `DayPlan`, so the ghost is recomputed rather than
-    /// read back; the difference is that it uses today's files, not the files
-    /// as they were at 07:00.
+    /// The record keeps a start and an item per block and nothing else, so the
+    /// ghost blocks are sized here: `est × multiplier` as §8.5 sizes a block,
+    /// clipped at the next recorded start. The minutes between two blocks —
+    /// the breaks, routines and walls the record does not name — stay empty in
+    /// the ghost row rather than being painted as work.
+    ///
+    /// `None` when the day has no record: without an arrival there is no plan
+    /// the day started with, and [`daybar`](super::daybar) draws the placeholder row.
     fn arrival_plan(&self) -> Option<DayPlan> {
-        let arrival = self.state.arrival.filter(|_| self.state.date == Some(self.today))?;
-        let at = capacity::local_dt(self.cfg.tz, self.today, arrival);
-        (at < self.now).then(|| planner::plan(&self.input_at(at)))
+        if self.arrival.is_empty() {
+            return None;
+        }
+        let starts: Vec<DateTime<Tz>> = self
+            .arrival
+            .iter()
+            .map(|b| self.local(b.start))
+            .collect();
+        let window = self.arrival_window();
+        let mut segments: Vec<Segment> = Vec::new();
+        for (i, block) in self.arrival.iter().enumerate() {
+            let start = starts[i];
+            let planned = self.ghost_block_min(block.id.as_ref());
+            let mut end = start + Duration::minutes(i64::from(planned));
+            if let Some(next) = starts.get(i + 1) {
+                end = end.min(*next);
+            }
+            if end <= start {
+                continue;
+            }
+            segments.push(Segment {
+                start,
+                end,
+                kind: SegKind::Block,
+                energy: block
+                    .id
+                    .as_ref()
+                    .and_then(|id| self.tree.get(id))
+                    .map(|i| i.ci),
+                item: block.id.clone(),
+                instance: None,
+                flags: SegFlags {
+                    ghost: true,
+                    planned_min: Some(planned),
+                    ..SegFlags::default()
+                },
+            });
+        }
+        Some(DayPlan {
+            date: self.state.date.unwrap_or(self.today),
+            window,
+            budget_blocks: self.state.budget.unwrap_or(self.plan.budget_blocks),
+            segments,
+            diagnostics: Default::default(),
+            priorities: Vec::new(),
+        })
     }
 
-    /// The `PlannedBlock`s the day started with — §11's adherence numerator.
-    fn arrival_blocks(&self) -> Vec<PlannedBlock> {
-        let Some(ghost) = &self.ghost else {
-            return Vec::new();
+    /// The window the ghost row spans: the one arrival computed (§8.1), else
+    /// today's.
+    fn arrival_window(&self) -> (DateTime<Tz>, DateTime<Tz>) {
+        match self.state.window {
+            Some((from, to)) => (self.local(from), self.local(to)),
+            None => self.plan.window,
+        }
+    }
+
+    /// How long a ghost block ran for: `est × multiplier`, the way §8.5 sizes
+    /// a block, falling back to one block.
+    fn ghost_block_min(&self, id: Option<&Id>) -> u32 {
+        let block_min = self.cfg.block_min();
+        let Some(id) = id else {
+            return block_min;
         };
-        ghost
-            .segments
+        let Some(item) = self.tree.get(id) else {
+            return block_min;
+        };
+        let est = self
+            .tree
+            .planned_minutes(id)
+            .or_else(|| self.tree.remaining(id))
+            .filter(|m| *m > 0)
+            .unwrap_or(block_min);
+        let multiplier =
+            energy::duration_multiplier(&self.model, item.ci, &self.tree.tags_effective(id));
+        energy::planned_minutes(est, multiplier).max(MIN_REMAINING_MIN)
+    }
+
+    /// A local time on the day the runtime state describes (§10.2: `date`
+    /// names the day `arrival`, `window` and `active.started` belong to).
+    fn local(&self, t: NaiveTime) -> DateTime<Tz> {
+        capacity::local_dt(self.cfg.tz, self.state.date.unwrap_or(self.today), t)
+    }
+
+    /// The `PlannedBlock`s the day started with — §11's adherence denominator,
+    /// straight from the arrival record.
+    fn arrival_blocks(&self) -> Vec<PlannedBlock> {
+        self.arrival
             .iter()
-            .filter(|s| s.kind.is_work())
-            .filter_map(|s| s.item.clone().map(|id| PlannedBlock::new(id, s.start)))
+            .filter_map(|b| Some(PlannedBlock::new(b.id.clone()?, self.local(b.start))))
             .collect()
     }
 
@@ -675,28 +772,37 @@ impl App {
     /// The timeline rows at a given title width (§4.3's row format, straight
     /// from `emit`; the pane re-renders at its own width).
     ///
-    /// `emit` writes one row per segment plus at most one `───` divider, so
-    /// the rows are matched to segments by walking both in order and skipping
-    /// the divider.
+    /// `emit` writes one row per segment, in segment order, plus at most one
+    /// `───` divider row, so the rows are matched to segments by position: the
+    /// divider is the single extra row, and it is the only row that carries
+    /// `───` in place of the `ci` column ([`emit::TIME_W`] plus two spaces in).
+    /// Searching the whole row for `───` would also match a segment whose
+    /// *title* or note contains that glyph and would then shift every
+    /// following row onto the wrong segment.
     pub fn timeline_rows(&self, title_w: usize) -> Vec<TimelineRow> {
         let layout = emit::Layout::new(title_w);
         let (_, body) =
             emit::render_plan_section_with(&self.plan, &self.tree, &self.cfg, self.now, &layout);
+        let lines: Vec<&str> = body.lines().collect();
+        let divider = (lines.len() == self.plan.segments.len() + 1)
+            .then(|| lines.iter().position(|l| is_divider_row(l)))
+            .flatten();
         let mut seg = 0usize;
-        body.lines()
-            .map(|line| {
-                if line.contains(emit::DIVIDER) {
-                    TimelineRow {
-                        text: line.to_string(),
+        lines
+            .iter()
+            .enumerate()
+            .map(|(i, line)| {
+                if divider == Some(i) {
+                    return TimelineRow {
+                        text: (*line).to_string(),
                         segment: None,
-                    }
-                } else {
-                    let idx = seg;
-                    seg += 1;
-                    TimelineRow {
-                        text: line.to_string(),
-                        segment: (idx < self.plan.segments.len()).then_some(idx),
-                    }
+                    };
+                }
+                let idx = seg;
+                seg += 1;
+                TimelineRow {
+                    text: (*line).to_string(),
+                    segment: (idx < self.plan.segments.len()).then_some(idx),
                 }
             })
             .collect()
@@ -964,6 +1070,7 @@ impl App {
         self.tree = data.tree;
         self.log = data.log;
         self.replay = data.replay;
+        self.arrival = data.arrival;
         self.now = data.now;
         self.today = data.now.date_naive();
         self.replan();
@@ -984,32 +1091,54 @@ impl App {
     }
 
     /// Raise the overtime or idle prompt when it is due (§9.1, §9.2).
+    ///
+    /// Never while the `:` command line or a one-line input is open: the
+    /// prompt would capture the next character typed and run it as an answer
+    /// (`s` in `start …` would stop the block). The prompt is not lost — it is
+    /// raised on the next tick after `Enter` or `Esc`.
     pub fn raise_prompt(&mut self) -> bool {
-        if self.prompt.is_some() {
+        if self.prompt.is_some() || matches!(self.mode, Mode::Command | Mode::Input(_)) {
             return false;
         }
         if let Some(over) = self.overtime_due() {
             self.prompt = Some(Prompt::Overtime(over));
-            self.prompt_at = Some(self.now);
+            self.overtime_at = Some(self.now);
             return true;
         }
         if let Some(idle) = self.idle_due() {
             self.prompt = Some(Prompt::Idle(idle));
-            self.prompt_at = Some(self.now);
+            self.idle_at = Some(self.now);
             return true;
         }
         false
     }
 
-    /// Minutes the running block has been going (§10.2's `active.started`).
+    /// Minutes the running block has been **worked** — what §9.1's `est × r`
+    /// is measured against.
+    ///
+    /// The log knows it exactly: [`tm_core::log::OpenBlock::worked_min_at`]
+    /// excludes the pauses, breaks and interruptions that stop the timer
+    /// (§12.6's `Space`, §9's `b` and `i`), which is also what
+    /// `planner::active_run` sizes the remaining block from. The clock is only
+    /// the fallback for a state whose block the log has no record of, and it
+    /// counts from `state.date` — `active.started` is a bare `HH:MM` and the
+    /// block may have started before midnight (§10.2).
     pub fn active_elapsed_min(&self) -> Option<u32> {
         let active = self.state.active.as_ref()?;
-        let started = capacity::local_dt(self.cfg.tz, self.today, active.started);
+        if let Some(open) = self
+            .replay
+            .open_block
+            .as_ref()
+            .filter(|b| b.id == active.id.as_str())
+        {
+            return Some(open.worked_min_at(self.now.fixed_offset()));
+        }
+        let started = self.local(active.started);
         Some((self.now - started).num_minutes().max(0) as u32)
     }
 
     /// §9.1: the overtime prompt, when the timer has passed `est × r` and the
-    /// last prompt is `overtime_reprompt_min` old.
+    /// last overtime prompt is `overtime_reprompt_min` old.
     pub fn overtime_due(&self) -> Option<Overtime> {
         let active = self.state.active.as_ref()?;
         if active.paused {
@@ -1020,7 +1149,7 @@ impl App {
             return None;
         }
         let reprompt = i64::from(self.cfg.day.overtime_reprompt_min);
-        if let Some(at) = self.prompt_at {
+        if let Some(at) = self.overtime_at {
             if (self.now - at) < Duration::minutes(reprompt) {
                 return None;
             }
@@ -1111,14 +1240,16 @@ impl App {
     }
 
     /// §9.2: nothing has been running for `idle_min`.
+    ///
+    /// A break that has run past its planned minutes counts as nothing running
+    /// (§9's "Break overran" row): the break is over as far as the plan is
+    /// concerned, the block it paused is not accruing time, and the minutes
+    /// since still have to be attributed — answering `b` gives them to the
+    /// break, `w` starts the next block, `l` books them as a leak. Without
+    /// this an unended break silences both prompts for the rest of the day.
     pub fn idle_due(&self) -> Option<Idle> {
-        if self.state.active.is_some()
-            || self.state.break_.is_some()
-            || self.state.interrupt.is_some()
-        {
-            return None;
-        }
-        // A wall or a routine placed over `now` is "running" too (§9.2).
+        // A wall or a routine placed over `now` is "running" too (§9.2) — an
+        // overrun break during a meeting is the meeting, not a gap.
         if self.plan.segments.iter().any(|s| {
             s.start <= self.now
                 && self.now < s.end
@@ -1126,12 +1257,23 @@ impl App {
         }) {
             return None;
         }
-        let since = self.idle_since()?;
+        let since = match self.break_overrun_since() {
+            Some(end) => end,
+            None => {
+                if self.state.active.is_some()
+                    || self.state.break_.is_some()
+                    || self.state.interrupt.is_some()
+                {
+                    return None;
+                }
+                self.idle_since()?
+            }
+        };
         let minutes = (self.now - since).num_minutes();
         if minutes < i64::from(self.cfg.day.idle_min) {
             return None;
         }
-        if let Some(at) = self.prompt_at {
+        if let Some(at) = self.idle_at {
             if (self.now - at) < Duration::minutes(i64::from(self.cfg.day.idle_min)) {
                 return None;
             }
@@ -1139,6 +1281,15 @@ impl App {
         Some(Idle {
             minutes: minutes as u32,
         })
+    }
+
+    /// When the running break was due to end, once it is past (§9's "Break
+    /// overran"). `None` while no break is running or it is still inside its
+    /// planned minutes.
+    pub fn break_overrun_since(&self) -> Option<DateTime<Tz>> {
+        let br = self.state.break_.as_ref()?;
+        let end = self.local(br.started?) + Duration::minutes(i64::from(br.planned_min));
+        (self.now > end).then_some(end)
     }
 
     /// When the gap started: the last event logged today, else the window
@@ -1273,8 +1424,8 @@ impl App {
                 self.mode = Mode::Normal;
                 self.input.clear();
                 self.hover = None;
-                if self.prompt.take().is_some() {
-                    self.prompt_at = Some(self.now);
+                if let Some(prompt) = self.prompt.take() {
+                    self.mark_asked(prompt.kind());
                 }
                 Vec::new()
             }
@@ -1327,23 +1478,67 @@ impl App {
         }
     }
 
+    /// Start the re-prompt clock of one prompt kind (§9.1's
+    /// `overtime_reprompt_min`, §9.2's `idle_min`). The two are separate: an
+    /// answered idle prompt must not silence the overtime prompt.
+    fn mark_asked(&mut self, kind: PromptKind) {
+        match kind {
+            PromptKind::Overtime => self.overtime_at = Some(self.now),
+            PromptKind::Idle => self.idle_at = Some(self.now),
+        }
+    }
+
     /// Answer the open prompt (§9.1, §9.2).
+    ///
+    /// §9.2's keys do two things, in this order: they attribute the gap
+    /// (`tm idle …`, which is what keeps the leak ledger honest) and then they
+    /// *make the transition the key promises* — `w` starts the next block, `b`
+    /// a break, `i` an interruption. `t` only attributes: §13 has no verb that
+    /// starts a routine, and its instance is closed with `tm routine done`.
     fn answer(&mut self, answer: Answer) -> Vec<Effect> {
         let prompt = self.prompt.take();
-        self.prompt_at = Some(self.now);
+        if let Some(prompt) = &prompt {
+            self.mark_asked(prompt.kind());
+        }
         let verb = |args: &[&str]| vec![Effect::Verb(args.iter().map(|s| (*s).into()).collect())];
+        let idle = |args: &[&str], mut rest: Vec<Effect>| {
+            let mut out = verb(args);
+            out.append(&mut rest);
+            out
+        };
         match (prompt, answer) {
             (Some(Prompt::Overtime(_)), Answer::Extend) => verb(&["extend"]),
             (Some(Prompt::Overtime(_)), Answer::Stop) => verb(&["stop"]),
             (Some(Prompt::Overtime(_)), Answer::Done) => verb(&["done"]),
             (_, Answer::Later) => Vec::new(),
-            (Some(Prompt::Idle(_)), Answer::Work) => verb(&["idle", "w"]),
-            (Some(Prompt::Idle(_)), Answer::Break) => verb(&["idle", "b"]),
+            (Some(Prompt::Idle(_)), Answer::Work) => {
+                let start = match self.next_block() {
+                    Some(id) => verb(&["start", &id.token()]),
+                    None => {
+                        self.message = Some("nothing left to start".to_string());
+                        Vec::new()
+                    }
+                };
+                idle(&["idle", "w"], start)
+            }
+            (Some(Prompt::Idle(_)), Answer::Break) => idle(&["idle", "b"], verb(&["break"])),
             (Some(Prompt::Idle(_)), Answer::Routine) => verb(&["idle", "t"]),
-            (Some(Prompt::Idle(_)), Answer::Interrupt) => verb(&["idle", "i"]),
+            (Some(Prompt::Idle(_)), Answer::Interrupt) => {
+                idle(&["idle", "i"], verb(&["interrupt"]))
+            }
             (Some(Prompt::Idle(_)), Answer::Leak) => verb(&["idle", "l"]),
             _ => Vec::new(),
         }
+    }
+
+    /// The next block §9.2's `w` starts: the first work segment of today's
+    /// plan that is not finished yet (`tm start` wants the item by name).
+    pub fn next_block(&self) -> Option<Id> {
+        self.plan
+            .segments
+            .iter()
+            .filter(|s| s.kind.is_work() && !s.flags.done && s.end > self.now)
+            .find_map(|s| s.item.clone())
     }
 }
 
@@ -1352,15 +1547,26 @@ impl App {
 /// The prompt captures every key while it is open (§9.1: "any other key: ask
 /// again in 15m"); otherwise the mode decides, and only [`Mode::Normal`] sees
 /// the per-screen rows of the table.
+///
+/// Typing wins over a prompt: a character typed into the `:` command line or
+/// into the `n`/`l` input belongs to the line being typed, never to a prompt
+/// that appeared under it — otherwise the `s` of `start …` would answer §9.1
+/// with "stop". ([`App::raise_prompt`] does not raise one while a line is open
+/// either; this is the second half of the same rule.)
 pub fn resolve(screen: Screen, mode: Mode, prompt: Option<PromptKind>, key: KeyEvent) -> Action {
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
         return Action::Quit;
+    }
+    if matches!(mode, Mode::Command | Mode::Input(_)) {
+        return text_key(key);
     }
     if let Some(kind) = prompt {
         return prompt_key(kind, key);
     }
     match mode {
         Mode::Help => Action::Cancel,
+        // Both are answered above, before the prompt; this keeps the match
+        // exhaustive without an `_` arm that would swallow a new mode.
         Mode::Command | Mode::Input(_) => text_key(key),
         Mode::BreakWhere => match key.code {
             KeyCode::Char(c) => BreakPlace::from_key(c)
@@ -1453,6 +1659,17 @@ fn today_key(key: KeyEvent) -> Action {
         KeyCode::Char(' ') => Action::Pause,
         _ => Action::None,
     }
+}
+
+/// True for [`emit::render_plan_section`]'s
+/// `15:10  ───     window ends 16:00` row.
+///
+/// The `───` sits where a segment row keeps its `ci` cell — right after the
+/// `HH:MM` time and two spaces ([`emit::TIME_W`]) — and a `ci` cell is always
+/// a digit or one of `emit`'s kind glyphs, so the test is exact.
+fn is_divider_row(line: &str) -> bool {
+    line.get(emit::TIME_W + 2..)
+        .is_some_and(|rest| rest.starts_with(emit::DIVIDER))
 }
 
 /// Split a `:` command line into arguments, honouring `'` and `"` quotes so

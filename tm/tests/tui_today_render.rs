@@ -8,7 +8,7 @@
 mod tui_common;
 
 use tui_common::today;
-use tui_common::{app, app_at, lines, render, render_lines};
+use tui_common::{app, idle_app, lines, render, render_lines};
 
 #[test]
 fn the_whole_screen_at_120_columns() {
@@ -28,8 +28,26 @@ fn the_status_line() {
 }
 
 #[test]
-fn the_week_fold_used_below_min_width() {
-    insta::assert_snapshot!(lines(&[today::week_fold(&app(), 90)]));
+fn the_status_line_folds_the_week_in_below_min_width() {
+    // §12: "Week folded into the status line" — one row, not a row of its own.
+    let row = lines(&[today::status_row(&app(), 90)]);
+    assert_eq!(row.lines().count(), 1);
+    assert!(row.contains("W37"), "the week is in the status line: {row}");
+    insta::assert_snapshot!(row);
+}
+
+#[test]
+fn the_narrow_frame_spends_no_row_on_the_week() {
+    // The frame is status · bar · bar · body … at either width, so the bar
+    // sits on the same rows and `bar_area` can hit-test it (§17.2).
+    let wide = render(&app(), 120, 30);
+    let narrow = render(&app(), 90, 34);
+    for screen in [&wide, &narrow] {
+        let head = screen.lines().next().expect("a status row");
+        assert!(head.contains("tm · Mon 2026-09-07"), "{head}");
+        let bar = screen.lines().nth(1).expect("the plan bar");
+        assert!(bar.contains("▲ 10:42"), "the bar follows the status row: {bar}");
+    }
 }
 
 #[test]
@@ -56,8 +74,38 @@ fn the_now_pane() {
 
 #[test]
 fn the_now_pane_with_nothing_running() {
-    // 16:30: past the last block of the hand-built day.
-    insta::assert_snapshot!(render_lines(&today::now_lines(&app_at(16, 30), 46), 46));
+    // 16:30 with no `active` and no segment flagged current: past the last
+    // block of the hand-built day, in the gap before dinner.
+    let app = idle_app(16, 30);
+    let pane = render_lines(&today::now_lines(&app, 46), 46);
+    assert!(
+        pane.contains("nothing running (16:30)"),
+        "the idle row, not a block: {pane}"
+    );
+    insta::assert_snapshot!(pane);
+}
+
+#[test]
+fn a_row_that_contains_the_divider_glyph_is_still_its_own_segment() {
+    // The `───     window ends` divider is the one row that belongs to no
+    // segment. Detecting it by searching the whole row for `───` would also
+    // match an item's own text and shift every later row onto the wrong
+    // segment — `e` would then open the wrong file and line (§12).
+    let mut app = app();
+    app.plan.segments[0].flags.note = Some("a ─── b".to_string());
+    app.refresh();
+    assert!(app.rows[0].text.contains("───"), "{}", app.rows[0].text);
+    assert_eq!(app.rows[0].segment, Some(0));
+    let mapped: Vec<usize> = app.rows.iter().filter_map(|r| r.segment).collect();
+    assert_eq!(mapped, (0..app.plan.segments.len()).collect::<Vec<_>>());
+    let dividers: Vec<&String> = app
+        .rows
+        .iter()
+        .filter(|r| r.segment.is_none())
+        .map(|r| &r.text)
+        .collect();
+    assert_eq!(dividers.len(), 1);
+    assert!(dividers[0].contains("window ends"), "{}", dividers[0]);
 }
 
 #[test]

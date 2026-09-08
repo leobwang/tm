@@ -157,6 +157,29 @@ fn a_prompt_takes_precedence_over_every_row() {
 }
 
 #[test]
+fn a_character_being_typed_is_never_a_prompt_answer() {
+    // …but not over a line being typed: the `s` of `start …` is text, not
+    // §9.1's "stop" (§12.6's `:` command line, `n` note, `l` location).
+    for mode in [
+        Mode::Command,
+        Mode::Input(InputKind::Note),
+        Mode::Input(InputKind::Location),
+    ] {
+        for kind in [PromptKind::Overtime, PromptKind::Idle] {
+            assert_eq!(
+                resolve(Screen::Today, mode.clone(), Some(kind), c('s')),
+                Action::Input('s'),
+                "{mode:?} + {kind:?}"
+            );
+            assert_eq!(
+                resolve(Screen::Today, mode.clone(), Some(kind), k(KeyCode::Enter)),
+                Action::Submit
+            );
+        }
+    }
+}
+
+#[test]
 fn ctrl_c_always_quits() {
     let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
     assert_eq!(

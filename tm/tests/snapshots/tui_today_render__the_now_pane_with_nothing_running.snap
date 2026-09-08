@@ -1,9 +1,8 @@
 ---
 source: tm/tests/tui_today_render.rs
-expression: "render_lines(&today::now_lines(&app_at(16, 30), 46), 46)"
+expression: pane
 ---
-"ci4 p1 Exercises 5.3–5.5  @m1                 "
-"elapsed 6h58m ▐███████████████▌ est 2b ×1.6   "
+"— nothing running (16:30)                     "
 "next 17:30 dinner · 18:00 Severance S3E4 · 21…"
 "                                              "
 "d done  x extend  s stop  b break  i interrupt"

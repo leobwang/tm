@@ -18,7 +18,12 @@
 //!   file system and [`crate::cli`]. Every [`app::Effect::Verb`] is parsed by
 //!   the *same* clap tree as the command line and run by the *same*
 //!   [`crate::cli::run`], so `d` and `tm done` are one code path (§12), and
-//!   the `:` command line accepts any §13 verb for free.
+//!   the `:` command line accepts any §13 verb for free. The two effects with
+//!   no verb of their own — `n` note and `l` location — are written here, and
+//!   through the same [`crate::cli::undo::Recorder`] every verb uses, so
+//!   `tm undo` keeps working across them.
+//! * [`arrival_blocks`] reads `.tm/arrival_plan.json`, the record §12.1's
+//!   ghost row and §11's adherence are measured against.
 //!
 //! Screens 2–5 (§12.2–§12.5) are a separate module set; this file leaves the
 //! `mod` list and the screen dispatch marked for them.
@@ -32,11 +37,11 @@ pub mod today;
 //   pub mod queue;  pub mod necessities;  pub mod inbox;
 
 use std::io::{self, IsTerminal, Stdout};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration as StdDuration, Instant};
 
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Local, NaiveTime};
 use chrono_tz::Tz;
 use clap::Parser;
 use crossterm::event::{
@@ -54,12 +59,15 @@ use ratatui::Terminal;
 
 use tm_core::config::Config;
 use tm_core::log::Event as LogEvent;
+use tm_core::model::Id;
+use tm_core::store::Store;
 
-use crate::cli::ctx::{resolve_dir, Ctx, Globals};
+use crate::cli::ctx::{resolve_dir, Ctx, Globals, ARRIVAL_PLAN_PATH};
+use crate::cli::day::ArrivalPlan;
 use crate::cli::out::CliError;
-use crate::cli::{dayfile, Cli, Command};
+use crate::cli::{dayfile, undo, Cli, Command};
 
-use app::{App, AppData, Effect, Hover};
+use app::{App, AppData, ArrivalBlock, Effect, Hover};
 
 /// §17.2: "`notify` debounce 200 ms".
 const DEBOUNCE: StdDuration = StdDuration::from_millis(200);
@@ -83,11 +91,15 @@ pub fn run(g: &Globals) -> Result<i32, CliError> {
         ));
     }
     let root = resolve_dir(g.dir.as_deref())?;
+    // `notify` reports absolute, resolved paths; the root may be relative
+    // (`--dir ./plan`) or go through a symlink, so the form the events are
+    // matched against is the canonical one (see [`is_watched`]).
+    let watch_root = root.canonicalize().unwrap_or_else(|_| root.clone());
     let mut app = load(g)?;
     let (watcher, changes) = watch(&root)?;
     install_panic_hook();
     let mut term = setup()?;
-    let result = event_loop(&mut term, &mut app, g, &root, &changes);
+    let result = event_loop(&mut term, &mut app, g, &root, &watch_root, &changes);
     restore();
     drop(watcher);
     result?;
@@ -152,8 +164,33 @@ fn data_of(ctx: &Ctx) -> AppData {
         tree: ctx.tree.clone(),
         log: ctx.log.clone(),
         replay: ctx.replay.clone(),
+        arrival: arrival_blocks(ctx),
         now: ctx.now_tz,
     }
+}
+
+/// `.tm/arrival_plan.json` as [`App`] reads it — the plan the day started
+/// with, for §12.1's ghost row and §11's adherence. Empty when there is no
+/// record, or when the record is for another day (§10.2: the day rolls).
+fn arrival_blocks(ctx: &Ctx) -> Vec<ArrivalBlock> {
+    let Ok(text) = ctx.store.read_text(ARRIVAL_PLAN_PATH) else {
+        return Vec::new();
+    };
+    let Ok(plan) = serde_json::from_str::<ArrivalPlan>(&text) else {
+        return Vec::new();
+    };
+    if plan.date != ctx.today.to_string() {
+        return Vec::new();
+    }
+    plan.blocks
+        .iter()
+        .filter_map(|b| {
+            Some(ArrivalBlock {
+                start: NaiveTime::parse_from_str(&b.start, "%H:%M").ok()?,
+                id: b.id.as_deref().map(Id::new),
+            })
+        })
+        .collect()
 }
 
 /// Load the plan directory and plan today (§6.3's auto-close runs first, as
@@ -191,15 +228,31 @@ fn watch(root: &Path) -> Result<(RecommendedWatcher, Receiver<PathBuf>), CliErro
 }
 
 /// True for a path the tree is parsed from: a `.md` file outside `.tm/`,
-/// `.git/` and the other dot directories (§2). Our own writes to `.tm/` and
-/// to `day/<date>.svg` therefore never trigger a re-parse.
-fn is_watched(path: &Path) -> bool {
+/// `.git/` and the other dot directories *of the plan root* (§2). Our own
+/// writes to `.tm/` and to `day/<date>.svg` therefore never trigger a
+/// re-parse.
+///
+/// The dot test is applied to the path **below `root`** only. Applied to the
+/// whole path it would reject every plan directory that merely *lives* under
+/// a dot directory — `~/.local/share/plan`, `~/.config/tm/plan`, a checkout
+/// under `.claude/worktrees/…` — and the relative form `./plan/…` (whose
+/// first component is `.`), and the §12 watcher would then silently never
+/// fire.
+fn is_watched(root: &Path, path: &Path) -> bool {
     if path.extension().is_none_or(|e| e != "md") {
         return false;
     }
-    !path
-        .components()
-        .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
+    match path.strip_prefix(root) {
+        Ok(rel) => !rel.components().any(
+            |c| matches!(c, Component::Normal(s) if s.to_string_lossy().starts_with('.')),
+        ),
+        // The event path cannot be related to the root. The watcher is rooted
+        // at the plan directory, so trust it and reject only a dot *file* such
+        // as an editor's `.#week.md` lock.
+        Err(_) => !path
+            .file_name()
+            .is_some_and(|n| n.to_string_lossy().starts_with('.')),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -212,6 +265,7 @@ fn event_loop(
     app: &mut App,
     g: &Globals,
     root: &Path,
+    watch_root: &Path,
     changes: &Receiver<PathBuf>,
 ) -> Result<(), CliError> {
     let mut due: Option<Instant> = None;
@@ -251,7 +305,7 @@ fn event_loop(
 
         // §17.2: coalesce a burst of file events into one re-parse.
         while let Ok(path) = changes.try_recv() {
-            if is_watched(&path) {
+            if is_watched(watch_root, &path) {
                 due = Some(Instant::now() + DEBOUNCE);
                 app.message = Some(format!(
                     "{} changed",
@@ -328,22 +382,48 @@ fn perform(
             app.message = Some(message);
         }
         Effect::Note(text) => {
-            let ctx = Ctx::load(g, false)?;
-            ctx.append_event(LogEvent::Note { text: text.clone() })?;
-            dayfile::note(&ctx, ctx.today, ctx.now_tz.time(), &format!("note {text}"))?;
+            note(g, &text)?;
             reload(app, g)?;
             app.message = Some("note written".to_string());
         }
         Effect::SetLocation(loc) => {
-            let mut ctx = Ctx::load(g, false)?;
-            ctx.state.loc = Some(loc.clone());
-            ctx.save_state()?;
-            ctx.append_event(LogEvent::Loc { loc: loc.clone() })?;
+            set_location(g, &loc)?;
             reload(app, g)?;
             app.message = Some(format!("location {loc}"));
         }
     }
     Ok(())
+}
+
+/// §12.6's `n`: a §10.1 `note` event and a `## Log` line.
+///
+/// Wrapped in an [`undo::Recorder`] like every §13 verb: without it `tm undo`
+/// finds the day file changed under it and refuses with a conflict (exit code
+/// 3), which would leave the *previous* command permanently un-undoable.
+fn note(g: &Globals, text: &str) -> Result<(), CliError> {
+    let mut ctx = Ctx::load(g, false)?;
+    let rec = undo::Recorder::start(&ctx, "note")?;
+    ctx.append_event(LogEvent::Note {
+        text: text.to_string(),
+    })?;
+    dayfile::note(&ctx, ctx.today, ctx.now_tz.time(), &format!("note {text}"))?;
+    ctx.reload()?;
+    rec.finish(&ctx, format!("note {text}"))
+}
+
+/// §12.6's `l`: `runtime.loc` and the §10.1 `loc` event, recorded so `tm undo`
+/// can put the location back (and so a later undo does not silently discard
+/// it with the rest of `state.json`).
+fn set_location(g: &Globals, loc: &str) -> Result<(), CliError> {
+    let mut ctx = Ctx::load(g, false)?;
+    let rec = undo::Recorder::start(&ctx, "loc")?;
+    ctx.state.loc = Some(loc.to_string());
+    ctx.save_state()?;
+    ctx.append_event(LogEvent::Loc {
+        loc: loc.to_string(),
+    })?;
+    ctx.reload()?;
+    rec.finish(&ctx, format!("loc {loc}"))
 }
 
 /// Run one §13 verb through the same clap tree and the same dispatcher the
@@ -395,5 +475,113 @@ fn editor(app: &App, root: &Path, file: &str, line: usize) -> String {
     match std::process::Command::new(program).args(parts).spawn() {
         Ok(_) => format!("{file}:{line}"),
         Err(e) => format!("{program}: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use chrono::DateTime;
+
+    use super::*;
+    use crate::cli::WakeArgs;
+
+    /// Copy a directory tree.
+    fn copy_dir(from: &Path, to: &Path) {
+        fs::create_dir_all(to).expect("create dir");
+        for entry in fs::read_dir(from).expect("read fixture") {
+            let entry = entry.expect("dir entry");
+            let target = to.join(entry.file_name());
+            if entry.file_type().expect("file type").is_dir() {
+                copy_dir(&entry.path(), &target);
+            } else {
+                fs::copy(entry.path(), &target).expect("copy file");
+            }
+        }
+    }
+
+    /// A temp copy of the `plan-basic` fixture and the globals pointing at it.
+    fn fixture() -> (tempfile::TempDir, Globals) {
+        let tmp = tempfile::TempDir::new().expect("temp dir");
+        let plan = tmp.path().join("plan");
+        copy_dir(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("../tm-core/tests/fixtures/plan-basic"),
+            &plan,
+        );
+        let now = DateTime::parse_from_rfc3339("2026-09-07T09:00:00-05:00").expect("now");
+        (
+            tmp,
+            Globals {
+                dir: Some(plan),
+                json: false,
+                now: Some(now),
+            },
+        )
+    }
+
+    fn wake(g: &Globals) {
+        crate::cli::run(
+            g,
+            Command::Wake(WakeArgs {
+                time: Some("06:05".to_string()),
+                slept: None,
+                onset: None,
+            }),
+        )
+        .expect("tm wake");
+    }
+
+    #[test]
+    fn the_watcher_looks_below_the_plan_root_for_dot_directories() {
+        // §12's watcher: `.tm/` and `.git/` *inside* the plan root are ours to
+        // ignore; a root that merely lives under a dot directory is not.
+        let root = Path::new("/Users/me/.local/share/plan");
+        assert!(is_watched(root, &root.join("week/2026-W37.md")));
+        assert!(is_watched(root, &root.join("day/2026-09-07.md")));
+        assert!(!is_watched(root, &root.join(".git/notes.md")));
+        assert!(!is_watched(root, &root.join(".tm/scratch.md")));
+        assert!(!is_watched(root, &root.join("day/2026-09-07.svg")));
+
+        let worktree = Path::new("/w/.claude/worktrees/x/plan");
+        assert!(is_watched(worktree, &worktree.join("week/2026-W37.md")));
+
+        // `--dir ./plan` (`resolve_dir` keeps it verbatim): the leading `.`
+        // component of a relative path is not a dot directory.
+        let relative = Path::new("./plan");
+        assert!(is_watched(relative, &relative.join("week/2026-W37.md")));
+
+        // A path that cannot be related to the root is trusted — the watcher
+        // is rooted at the plan directory — except an editor's dot file.
+        assert!(is_watched(Path::new("/other"), Path::new("/p/week/x.md")));
+        assert!(!is_watched(
+            Path::new("/other"),
+            Path::new("/p/week/.#x.md")
+        ));
+    }
+
+    #[test]
+    fn a_note_typed_in_the_tui_does_not_block_undo() {
+        // §13: `tm undo` restores the file bytes the last verb changed, and
+        // refuses with a conflict when the file moved under it. A TUI write
+        // outside the recorder is exactly such a move.
+        let (_tmp, g) = fixture();
+        wake(&g);
+        note(&g, "the printer is out of paper").expect("n note");
+        crate::cli::run(&g, Command::Undo).expect("undo the note");
+        crate::cli::run(&g, Command::Undo).expect("undo the wake underneath it");
+    }
+
+    #[test]
+    fn a_location_set_in_the_tui_does_not_block_undo() {
+        let (_tmp, g) = fixture();
+        wake(&g);
+        set_location(&g, "home").expect("l home");
+        let ctx = Ctx::load(&g, false).expect("load");
+        assert_eq!(ctx.state.loc.as_deref(), Some("home"));
+        crate::cli::run(&g, Command::Undo).expect("undo the location");
+        let ctx = Ctx::load(&g, false).expect("load");
+        assert_ne!(ctx.state.loc.as_deref(), Some("home"), "put back");
+        crate::cli::run(&g, Command::Undo).expect("undo the wake underneath it");
     }
 }

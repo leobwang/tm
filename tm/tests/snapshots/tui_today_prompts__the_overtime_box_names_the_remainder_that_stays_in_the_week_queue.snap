@@ -1,0 +1,16 @@
+---
+source: tm/tests/tui_today_prompts.rs
+expression: "overlay(|f|\n{\n    prompts::draw(f, Rect::new(0, 0, 80, 12),\n    &Prompt::Overtime(over.clone()));\n})"
+---
+"                                                                                "
+"                                                                                "
+"          ┌ Overtime ────────────────────────────────────────────────┐          "
+"          │Finish ch.5 exercises     est 6b = 5h · elapsed 5h30m     │          "
+"          │  x  extend +1 block      → drops: nothing                │          "
+"          │  s  stop, demote rest    → 0.5b stays in the week queue  │          "
+"          │  d  done                                                 │          "
+"          │  any other key: ask again in 15m                         │          "
+"          └──────────────────────────────────────────────────────────┘          "
+"                                                                                "
+"                                                                                "
+"                                                                                "

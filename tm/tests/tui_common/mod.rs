@@ -8,14 +8,17 @@
 //!
 //! What it builds:
 //!
-//! * [`fixture`] — the `plan-basic` tree of §4.3 (from
+//! * [`fixture_dir`] — the `plan-basic` tree of §4.3 (from
 //!   `tm-core/tests/fixtures/plan-basic`), the fixture's own `config.toml`,
 //!   a synthetic log matching that day file's `## Log`, and the runtime state
 //!   §10.2 would hold at 10:42 with `^t3` running.
 //! * [`day_plan`] — a **hand-built** `DayPlan` reproducing §4.3's printed
 //!   timeline, so the snapshots do not depend on the planner's exact output.
-//! * [`app`] — the two glued together, plus [`app_at`] for another instant
-//!   and [`ghost_plan`] for §12.1's ghost row.
+//!   [`log`] agrees with it: every block `day_plan` marks done is a `start`
+//!   and a `done` in the log, because §11's monitors are read off the log.
+//! * [`app`] — the two glued together, plus [`app_at`] for another instant,
+//!   [`app_with`] for another state or log, [`ghost_plan`] for §12.1's ghost
+//!   row and [`arrival`] for the record it is really built from.
 //! * [`render`] / [`lines`] — a `TestBackend` frame, and a `Vec<Line>`, as
 //!   snapshot text.
 
@@ -53,7 +56,7 @@ use tm_core::priority::{Prio, PrioClass};
 use tm_core::store::{ActiveBlock, RuntimeState};
 use tm_core::tree::Tree;
 
-use app::{App, AppData};
+use app::{App, AppData, ArrivalBlock};
 
 /// The day every snapshot is taken on (§4.3's day file).
 pub const DATE: (i32, u32, u32) = (2026, 9, 7);
@@ -174,6 +177,38 @@ pub fn log(cfg: &Config) -> Log {
                 partial: false,
             },
         ),
+        // §4.3's second block. The hand-built `day_plan` marks it done, so the
+        // log has to say so too: every monitor of §11 (blocks done, the leak
+        // ledger, adherence) is derived from this replay, and a plan that
+        // claims a block the log never records would make the status line of
+        // the whole-screen snapshots unreadable as a spec check.
+        e(
+            8,
+            9,
+            Event::Start {
+                id: "m3".into(),
+                pred: 5,
+                rep: Some(5),
+                hsw: 2.07,
+                slept_min: 490,
+                loc: "lounge".into(),
+                blocks_done: 1,
+                since_break_min: 67,
+            },
+        ),
+        e(
+            9,
+            8,
+            Event::Done {
+                id: "m3".into(),
+                est_min: 60,
+                actual_min: 59,
+                went: Some(1),
+                tags: vec!["lean".into()],
+                ci: 5,
+                partial: true,
+            },
+        ),
         e(
             9,
             8,
@@ -217,6 +252,21 @@ pub fn state() -> RuntimeState {
         }),
         ..RuntimeState::default()
     }
+}
+
+/// `.tm/arrival_plan.json` as `tm arrive` wrote it at 07:00: the block starts
+/// the day was planned with (§12.1's ghost row, §11's adherence denominator).
+///
+/// It is the ghost of [`ghost_plan`] in the shape the record keeps — the same
+/// four blocks, in the same order, at the same starts.
+pub fn arrival() -> Vec<ArrivalBlock> {
+    [("t1", (7, 0)), ("m3", (8, 7)), ("t3", (9, 32)), ("t4", (11, 50))]
+        .into_iter()
+        .map(|(id, (h, m))| ArrivalBlock {
+            start: time(h, m),
+            id: Some(Id::new(id)),
+        })
+        .collect()
 }
 
 /// One `(Id, Prio)` for a hand-built plan.
@@ -443,21 +493,41 @@ pub fn app() -> App {
 /// [`app`] at another time of day.
 pub fn app_at(h: u32, m: u32) -> App {
     let cfg = config();
-    let now = at(&cfg, h, m);
-    let log = log(&cfg);
+    app_with(at(&cfg, h, m), state(), log(&cfg))
+}
+
+/// [`app_at`] with the runtime state and the log given: the two things §9's
+/// timers (`active`, `break`, the worked minutes) and §11's monitors are
+/// derived from.
+pub fn app_with(now: DateTime<Tz>, state: RuntimeState, log: Log) -> App {
+    let cfg = config();
     let replay: Replay = log.replay(None, cfg.tz);
     let plan = day_plan(&cfg);
     let ghost = ghost_plan(&cfg);
     let data = AppData {
         model: Default::default(),
-        state: state(),
+        state,
         tree: tree(&cfg),
         log,
         replay,
+        arrival: arrival(),
         now,
         cfg,
     };
     App::with_plan(data, plan, Some(ghost))
+}
+
+/// One log entry on the day under test (§10.1).
+pub fn entry(cfg: &Config, h: u32, m: u32, ev: Event) -> LogEntry {
+    LogEntry::new(stamp(cfg, h, m), ev)
+}
+
+/// [`log`] with more entries, kept in time order.
+pub fn log_plus(cfg: &Config, extra: Vec<LogEntry>) -> Log {
+    let mut log = log(cfg);
+    log.entries.extend(extra);
+    log.entries.sort_by_key(|e| e.t);
+    log
 }
 
 /// [`app_at`] with the running block sized differently, so §9.1's prompt can
@@ -471,20 +541,37 @@ pub fn overtime_app(h: u32, m: u32, est_min: u32) -> App {
     app
 }
 
-/// An app whose block budget is nearly spent, so §9.1's "x extend +1 block"
-/// really does cost the tail of the day: one block done of two, `^t3` an hour
-/// into a one-block estimate at 10:42.
-pub fn tight_overtime_app() -> App {
-    let mut app = overtime_app(10, 42, 60);
-    app.state.budget = Some(2);
+/// [`overtime_app`] with another item running, so §9.1's "stop, demote rest"
+/// line can be exercised on an estimate that leaves a real remainder rather
+/// than the `MIN_REMAINING_MIN` floor.
+pub fn overtime_app_for(id: &str, est_min: u32, h: u32, m: u32) -> App {
+    let mut app = overtime_app(h, m, est_min);
+    if let Some(active) = app.state.active.as_mut() {
+        active.id = Id::new(id);
+    }
     app.refresh();
     app
 }
 
-/// An app with nothing running, for §9.2's idle prompt.
+/// An app whose block budget is nearly spent, so §9.1's "x extend +1 block"
+/// really does cost the tail of the day: two blocks done of three, `^t3` an
+/// hour into a one-block estimate at 10:42.
+pub fn tight_overtime_app() -> App {
+    let mut app = overtime_app(10, 42, 60);
+    app.state.budget = Some(3);
+    app.refresh();
+    app
+}
+
+/// An app with nothing running, for §9.2's idle prompt and the Now pane's
+/// "nothing running" row: no `active` in `state.json`, and no segment flagged
+/// `current` — the planner marks the block it is inside, and there is none.
 pub fn idle_app(h: u32, m: u32) -> App {
     let mut app = app_at(h, m);
     app.state.active = None;
+    for seg in &mut app.plan.segments {
+        seg.flags.current = false;
+    }
     app.refresh();
     app
 }

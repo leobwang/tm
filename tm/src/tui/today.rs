@@ -9,14 +9,15 @@
 //!
 //! Layout (§12): at `cfg.tui.min_width` columns or more the three panes sit
 //! side by side — Timeline | (Now over Energy) | Week — exactly as §12.1
-//! draws them. Below that they stack: Now on top, Energy, then Timeline,
-//! with the Week pane folded into a second status row.
+//! draws them. Below that they stack: Now on top, Energy, then Timeline, and
+//! the Week pane is folded *into the status line* — the frame keeps the same
+//! four rows (status, bar, body, hint) at either width.
 //!
 //! * [`draw`] — the frame.
 //! * [`timeline_lines`], [`now_lines`], [`energy_lines`], [`week_lines`] —
 //!   one pane each, as `Vec<Line>`, so a test can snapshot a pane on its own.
-//! * [`status_line`], [`hint_line`], [`week_fold`] — the three single-row
-//!   pieces.
+//! * [`status_line`], [`status_row`] (the narrow one, with [`week_fold_text`]
+//!   folded into its right-hand end), [`hint_line`] — the single-row pieces.
 
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::Style;
@@ -68,8 +69,33 @@ pub fn status_line(app: &App, width: usize) -> Line<'static> {
     ))
 }
 
-/// The Week pane folded into one row, for narrow terminals (§12).
-pub fn week_fold(app: &App, width: usize) -> Line<'static> {
+/// §12.1's first line with the Week pane folded into it, for a terminal
+/// narrower than `cfg.tui.min_width` (§12: "panes stack (Now on top, Timeline
+/// below, **Week folded into the status line**)" — one row, not two).
+///
+/// The week takes at most half the row, and takes it from the right; the
+/// status line keeps the rest and is clipped into it.
+pub fn status_row(app: &App, width: usize) -> Line<'static> {
+    let fold = week_fold_text(app, width / 2);
+    if fold.is_empty() {
+        return status_line(app, width);
+    }
+    let fw = emit::display_width(&fold);
+    let left = clip(
+        &review::render_status_full(&app.head, &app.status),
+        width.saturating_sub(fw + 2),
+    );
+    let lw = emit::display_width(&left);
+    Line::from(vec![
+        Span::styled(left, theme::STATUS),
+        Span::raw(" ".repeat(width.saturating_sub(lw + fw))),
+        Span::styled(fold, theme::DIM),
+    ])
+}
+
+/// The Week pane's summary, dropping whole parts (never half a word) until it
+/// fits `width`: `W37 1/25 · ⚠ a3 · ? 1 · 1 underused (4→3)`.
+pub fn week_fold_text(app: &App, width: usize) -> String {
     let w = &app.week;
     let mut parts = vec![format!(
         "{} {}/{}",
@@ -93,7 +119,19 @@ pub fn week_fold(app: &App, width: usize) -> Line<'static> {
     if let Some(first) = w.diagnostics.first() {
         parts.push(first.clone());
     }
-    Line::from(Span::styled(clip(&parts.join(" · "), width), theme::DIM))
+    let mut out = String::new();
+    for part in parts {
+        let next = if out.is_empty() {
+            part
+        } else {
+            format!("{out} · {part}")
+        };
+        if emit::display_width(&next) > width {
+            break;
+        }
+        out = next;
+    }
+    clip(&out, width)
 }
 
 /// The Timeline pane (§12.1): [`tm_core::emit::render_plan_section`]'s rows,
@@ -434,10 +472,10 @@ pub fn is_wide(app: &App, area: Rect) -> bool {
 
 /// Where the two day-bar rows sit, for hit-testing the mouse (§17.2).
 ///
-/// It mirrors the vertical constraints [`draw`] uses: the status line, then
-/// the folded week row on a narrow terminal, then the bar.
-pub fn bar_area(app: &App, area: Rect) -> Rect {
-    let offset = if is_wide(app, area) { 1 } else { 2 };
+/// It mirrors the vertical constraints [`draw`] uses: one status row — wide or
+/// narrow, the week is folded *into* it — and then the bar.
+pub fn bar_area(_app: &App, area: Rect) -> Rect {
+    let offset = 1u16;
     let y = area.y.saturating_add(offset);
     let height = BAR_ROWS.min(area.height.saturating_sub(offset));
     Rect {
@@ -457,38 +495,25 @@ pub fn draw(f: &mut Frame, app: &App) {
     let wide = is_wide(app, area);
     let width = usize::from(area.width);
 
-    let rows = if wide {
-        Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(1),
-                Constraint::Length(BAR_ROWS),
-                Constraint::Min(6),
-                Constraint::Length(1),
-            ])
-            .split(area)
-    } else {
-        Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(1),
-                Constraint::Length(1),
-                Constraint::Length(BAR_ROWS),
-                Constraint::Min(6),
-                Constraint::Length(1),
-            ])
-            .split(area)
-    };
-    let (status, fold, bar, body, hint) = if wide {
-        (rows[0], None, rows[1], rows[2], rows[3])
-    } else {
-        (rows[0], Some(rows[1]), rows[2], rows[3], rows[4])
-    };
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(BAR_ROWS),
+            Constraint::Min(6),
+            Constraint::Length(1),
+        ])
+        .split(area);
+    let (status, bar, body, hint) = (rows[0], rows[1], rows[2], rows[3]);
 
-    f.render_widget(Paragraph::new(status_line(app, width)), status);
-    if let Some(fold) = fold {
-        f.render_widget(Paragraph::new(week_fold(app, width)), fold);
-    }
+    // §12: below `min_width` the Week pane is folded into the status line —
+    // the same single row, not a second one.
+    let head = if wide {
+        status_line(app, width)
+    } else {
+        status_row(app, width)
+    };
+    f.render_widget(Paragraph::new(head), status);
     daybar::draw(f, bar, app);
 
     match app.screen {

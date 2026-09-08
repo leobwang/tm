@@ -1,5 +1,0 @@
----
-source: tm/tests/tui_today_render.rs
-expression: "lines(&[today::week_fold(&app(), 90)])"
----
-W37 1/25 · ⚠ a3 · ? 1 · 1 underused (4→3) · 0 ci-5 lost

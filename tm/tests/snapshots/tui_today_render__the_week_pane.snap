@@ -2,10 +2,10 @@
 source: tm/tests/tui_today_render.rs
 expression: "format!(\"{title}\\n{body}\")"
 ---
-Week W37 · 1/25
+Week W37 · 2/25
 "  m1 Finish ch.5 exerc…     ░░░░░░ 0/6"
 "  m2 Rollback path pas…     ░░░░░░ 0/6"
-"▶ m3 Read ch.6              ▓▓░░░░ 2/3"
+"▶ m3 Read ch.6              ▓▓▓▓░░ 3/3"
 "  m4 Pick winter cours…     ░░░░░░ 0/2"
 "  d1 CS 234 pset 2          ░░░░░░ 0/6"
 "  x1 Midterm                ░░░░░░ 0/2"
