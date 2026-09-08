@@ -196,15 +196,15 @@ Fourteen cheats, fourteen compile errors:
 
 ## What is proved
 
-276 theorems (`grep -c '^theorem ' TmKernel/*.lean`; **this count is per
-branch** and needs reconciling when the concurrent module branches merge). 136
+275 theorems (`grep -c '^theorem ' TmKernel/*.lean`; **this count is per
+branch** and needs reconciling when the concurrent module branches merge). 135
 of them are `Cal.lean`'s and `Grain.lean`'s. The audit in `Check.lean` covers 70
 and shows only `propext` / `Classical.choice` / `Quot.sound`, **never
 `sorryAx`**. Three (`drop_idem`, `readopt_reopens`, `grain_rejects_99`) depend on
-no axioms at all, and so do 58 of the calendar's.
+no axioms at all, and so do 57 of the calendar's.
 
 **`Check.lean`'s list has not been extended to `Cal.lean` and `Grain.lean`.**
-All 136 were audited out of band — 0 `sorryAx`, 0 errors, 58 axiom-free, the
+All 135 were audited out of band — 0 `sorryAx`, 0 errors, 57 axiom-free, the
 rest only the three standard axioms — but `Check.lean` is one file that three
 concurrent branches would all append to, so extending it is left to whoever
 merges them. That is a gap in the *audit script*, not in the proofs, and it is
