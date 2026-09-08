@@ -395,6 +395,21 @@ pub enum RoutineCmd {
 /// `tm close week --help` advertised a flag those closes reject; a
 /// subcommand each gives every period the help — and the flags — that period
 /// really has.
+///
+/// A subcommand would ordinarily also mean the period has to come *first*,
+/// and it does not: `tm close --date 2026-09 month` is the same close as
+/// `tm close month --date 2026-09`, and was the only spelling before the
+/// split. Both orders are kept —
+///
+/// * `--date` is declared **once**, here, `global`, so clap takes it on
+///   either side of the period and every period's `--help` still lists it;
+/// * `--drop` cannot be global (a global argument is either shown on all
+///   three periods' help pages or hidden on all three, and §6.3 gives it to
+///   month alone), so the period-first spelling stays on the periods and
+///   this hidden one catches the leading position. [`CloseArgs::drops`]
+///   unions the two, so where it was typed never changes what it means, and
+///   `tm close --drop ^x day` gets §6.3's sentence from
+///   [`lifecycle::close`] rather than clap's "unexpected argument".
 // `subcommand_value_name` / `subcommand_help_heading`: §13 writes the verb
 // `tm close <day|week|month>`, so the usage line and the help section say
 // PERIOD rather than clap's generic COMMAND.
@@ -408,6 +423,16 @@ pub struct CloseArgs {
     /// Which period.
     #[command(subcommand)]
     pub period: ClosePeriod,
+    /// The period to close (default: the current one).
+    #[arg(long, global = true, value_name = "DATE")]
+    pub date: Option<String>,
+    /// `--drop` before the period (`tm close --drop ^id month`): the same
+    /// flag as the month close's, in the position §13's synopsis allows.
+    // `hide`: `tm close --help` says which period owns the drop list in its
+    // about line and must not offer the flag to all three, so this spelling
+    // is parsed and not advertised — exactly like `CloseNoDropArgs::drop`.
+    #[arg(long = "drop", value_name = "^ID", hide = true)]
+    pub drop: Vec<String>,
 }
 
 /// The period `tm close` closes: one variant per §6.3 row.
@@ -432,11 +457,10 @@ pub enum ClosePeriod {
 }
 
 /// `tm close <day|week> [--date …]`: the closes §6.3 gives no drop list.
+/// (`--date` itself is [`CloseArgs`]'s, global, so it works on either side
+/// of the period.)
 #[derive(Debug, Args)]
 pub struct CloseNoDropArgs {
-    /// The period to close (default: the current one).
-    #[arg(long)]
-    pub date: Option<String>,
     /// Not a `tm close day` or `tm close week` flag: §6.3 gives the drop
     /// list to the month close alone.
     // `hide`: a `--help` may not advertise a flag its own verb rejects. The
@@ -450,9 +474,6 @@ pub struct CloseNoDropArgs {
 /// `tm close month [--drop ^id …] [--date …]` (§6.3).
 #[derive(Debug, Args)]
 pub struct CloseMonthArgs {
-    /// The period to close (default: the current one).
-    #[arg(long)]
-    pub date: Option<String>,
     /// Drop these items instead of carrying them into the next month (§6.3).
     #[arg(long = "drop", value_name = "^ID")]
     pub drop: Vec<String>,
@@ -468,22 +489,22 @@ impl CloseArgs {
         }
     }
 
-    /// `--date`: the period to close (default: the current one).
+    /// `--date`: the period to close (default: the current one). One global
+    /// argument, so `tm close --date 2026-09 month` and `tm close month
+    /// --date 2026-09` are the same close.
     pub fn date(&self) -> Option<&str> {
-        match &self.period {
-            ClosePeriod::Day(a) | ClosePeriod::Week(a) => a.date.as_deref(),
-            ClosePeriod::Month(a) => a.date.as_deref(),
-        }
+        self.date.as_deref()
     }
 
-    /// `--drop ^id …`. Non-empty on a day or week close only when the month's
-    /// flag was typed on the wrong period, which [`lifecycle::close`] refuses
-    /// with §6.3's answer.
-    pub fn drops(&self) -> &[String] {
-        match &self.period {
+    /// `--drop ^id …`, from either side of the period. Non-empty on a day or
+    /// week close only when the month's flag was typed on the wrong period,
+    /// which [`lifecycle::close`] refuses with §6.3's answer.
+    pub fn drops(&self) -> Vec<&str> {
+        let period = match &self.period {
             ClosePeriod::Day(a) | ClosePeriod::Week(a) => &a.drop,
             ClosePeriod::Month(a) => &a.drop,
-        }
+        };
+        self.drop.iter().chain(period).map(String::as_str).collect()
     }
 }
 

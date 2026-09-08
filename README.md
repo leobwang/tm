@@ -518,12 +518,27 @@ $ echo $?
 
 `--drop` belongs to the month close alone. `tm close day --help` and
 `tm close week --help` do not offer it — only `tm close month --help` does —
-and typing it on one of them is refused rather than ignored:
+and typing it on one of them is refused rather than ignored, wherever it is
+typed:
 
 ```console
 $ tm close day --drop '^p1'
 tm: --drop belongs to `tm close month` (§6.3); `tm close day` has no drop list — use `tm drop ^id`
+$ tm close --drop '^p1' day
+tm: --drop belongs to `tm close month` (§6.3); `tm close day` has no drop list — use `tm drop ^id`
 ```
+
+Each period is its own command, but the flags read the same on either side of
+it:
+
+```console
+$ tm close --date 2026-09 month
+closed month 2026-09 · 3 moved · 0 demoted · 0 reopened · 0 dropped
+```
+
+`tm close month --date 2026-09` is that same close, and so is
+`tm close --drop '^O3' month`. Where you put the flag never changes what it
+means.
 
 ---
 
@@ -968,6 +983,14 @@ second line, and neither does a close catching up on periods you were away for �
 the record is moved into the month the close is running in, stamps and all. That
 is what keeps `tm check` quiet: an `^id` may be on the `[-]` line in the archived
 week and on its one archive copy, and nowhere else.
+
+The **remaining moves with it**. The copy is the only line that carries what a
+demotion measured — the deleted children's minutes included — so the second
+demotion cannot record less than the first one did: it writes the larger of what
+the live line is worth now and what the copy it replaces recorded. A parent that
+went into September's `# Demoted` as `est:4b` because its 2b children were
+deleted with it comes out of October's close as `est:4b demoted:W37,W41`, not as
+the bare line it had shrunk to.
 
 **Overdue dated items move to `backlog.md`** under a `# Overdue` heading, exactly
 as written — they are not demoted. **Appointments still in the future**, and the
@@ -1758,7 +1781,7 @@ Every verb has its own `tm <verb> --help` with the exact flags.
 | `tm plan [--week] [--diff] [--explain ^ID] [--allow-home]` | plan today and rewrite the day file's generated block. `--week` prints the capacity grid instead; `--explain` prints one item's priority and prints no timetable |
 | `tm now` | the current block and the next three segments. Read-only, always live |
 | `tm review <day\|week\|month> [--date D] [--write]` | the period's numbers. `--write` stores it in the file |
-| `tm close <day\|week\|month> [--date D]` | close a period early. Normally automatic. Each period is its own command, so `tm close day --help` shows only the flags a day close has |
+| `tm close <day\|week\|month> [--date D]` | close a period early. Normally automatic. Each period is its own command, so `tm close day --help` shows only the flags a day close has; the flags work on either side of the period (`tm close --date D month` = `tm close month --date D`) |
 | `tm close month [--drop ^ID]` | …and the drop list is the month close's alone (§6.3). `tm close day --drop ^id` is an error, not a shrug |
 
 ### Working

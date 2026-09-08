@@ -195,6 +195,90 @@ fn close_month_refuses_a_drop_it_cannot_honour() {
     assert!(tm.line("backlog.md", "a1").starts_with("- [ ]"));
 }
 
+/// Every `*.md` file of a plan directory, path and text, sorted — two trees
+/// compare equal exactly when the same close ran on both.
+fn plan_files(tm: &Tm) -> Vec<(String, String)> {
+    fn walk(dir: &std::path::Path, prefix: &str, out: &mut Vec<(String, String)>) {
+        let mut entries: Vec<_> = std::fs::read_dir(dir)
+            .expect("read plan dir")
+            .map(|e| e.expect("dir entry").path())
+            .collect();
+        entries.sort();
+        for path in entries {
+            let name = path.file_name().expect("name").to_string_lossy().to_string();
+            let rel = format!("{prefix}{name}");
+            if path.is_dir() {
+                walk(&path, &format!("{rel}/"), out);
+            } else if rel.ends_with(".md") {
+                out.push((rel, std::fs::read_to_string(&path).expect("read")));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(&tm.plan, "", &mut out);
+    out
+}
+
+/// §13 writes the verb as `tm close <day|week|month> [--drop ^id …]`, and
+/// until the periods became clap subcommands its flags could be typed on
+/// either side of the period. `tm close --date 2026-09 month` is the
+/// spelling a habit or a script may hold, and the split turned it into
+/// clap's "unexpected argument '--date' found". Both orders parse again, and
+/// they are the *same* close: same `--json` report, same bytes on disk.
+#[test]
+fn close_takes_its_flags_on_either_side_of_the_period() {
+    // The instant each close does real work at, and the period it names.
+    let cases = [
+        ("day", "2026-09-07", "2026-09-07T21:00:00-05:00"),
+        ("week", "2026-W37", "2026-09-13T21:00:00-05:00"),
+        ("month", "2026-09", "2026-09-30T21:00:00-05:00"),
+    ];
+    for (period, date, now) in cases {
+        let flag_first = Tm::new();
+        let a = flag_first.json_at(now, &["close", "--date", date, period]);
+        let period_first = Tm::new();
+        let b = period_first.json_at(now, &["close", period, "--date", date]);
+        assert_eq!(a, b, "`tm close --date {date} {period}` reported something else");
+        assert_eq!(
+            plan_files(&flag_first),
+            plan_files(&period_first),
+            "`tm close --date {date} {period}` wrote something else"
+        );
+    }
+
+    // §6.3's drop list is the month's, and it reads the same before the
+    // period as after it: ^O3 is an unfinished outcome of `month/2026-09.md`.
+    let flag_first = Tm::new();
+    let a = flag_first.json_at(
+        "2026-09-30T21:00:00-05:00",
+        &["close", "--drop", "^O3", "month"],
+    );
+    let period_first = Tm::new();
+    let b = period_first.json_at(
+        "2026-09-30T21:00:00-05:00",
+        &["close", "month", "--drop", "^O3"],
+    );
+    assert_eq!(a["report"]["dropped"], serde_json::json!(["O3"]), "{a}");
+    assert_eq!(a, b);
+    assert_eq!(plan_files(&flag_first), plan_files(&period_first));
+
+    // The leading position is not a way round the refusal: `--drop` on a day
+    // or week close still gets §6.3's answer, not clap's.
+    for period in ["day", "week"] {
+        let tm = Tm::new();
+        for args in [
+            vec!["close", "--drop", "^p1", period],
+            vec!["close", period, "--drop", "^p1"],
+        ] {
+            let out = tm.run_at("2026-09-07T21:00:00-05:00", &args);
+            assert_eq!(out.code, 1, "`tm {}`: {}{}", args.join(" "), out.stdout, out.stderr);
+            assert!(out.stderr.contains("tm close month"), "{}", out.stderr);
+            assert!(out.stderr.contains("tm drop ^id"), "{}", out.stderr);
+            assert!(!tm.exists(".tm/state.json"), "nothing ran");
+        }
+    }
+}
+
 /// §6.3 gives `--drop` to the month close alone; a day or week close that
 /// quietly ignored it discarded what the user asked for.
 #[test]

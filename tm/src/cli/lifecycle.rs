@@ -120,7 +120,7 @@ pub fn close(g: &Globals, args: &super::CloseArgs) -> Result<i32, CliError> {
                 }
                 (None, None) => YearMonth::from_date(ctx.today),
             };
-            let drops: Vec<Id> = args.drops().iter().map(|d| Ctx::key(d)).collect();
+            let drops: Vec<Id> = args.drops().into_iter().map(Ctx::key).collect();
             let r = horizon::close_month(&ctx.hz(), month, &drops)?;
             if ctx.state.closed.month.is_none_or(|m| m < month) {
                 ctx.state.closed.month = Some(month);

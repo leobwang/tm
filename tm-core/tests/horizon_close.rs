@@ -1108,6 +1108,80 @@ fn a_catch_up_sweep_leaves_one_archive_copy_per_id() {
     }
 }
 
+/// §6.3's week close writes `est:` = remaining onto the archive copy and
+/// never onto the line it archives, dropped children folded in ("their
+/// remaining is folded into the parent's `est:`", and their lines leave the
+/// week file) — so the copy is the only line in the tree that still knows
+/// what that demotion measured. A close catching up in a *newer* month took
+/// the copy's `demoted:` stamps and deleted its line, and the remaining went
+/// with it: `^s1`, demoted in September carrying the 4b of children the
+/// close dropped, was demoted again in October with no `est:` at all. §0
+/// principle 6 is "demotion, not deletion".
+#[test]
+fn a_second_demotion_a_month_later_keeps_what_the_first_one_measured() {
+    let (_dir, store) = plan();
+    // A milestone with no estimate of its own and two 2b children: §6.4's
+    // rollup makes it worth 4b, and every one of those minutes is on a line
+    // the demotion is about to delete.
+    for line in [
+        "- [ ] 4 Ship the thing @O2 ^s1",
+        "- [ ] 3 2b Draft it @s1 ^s2",
+        "- [ ] 3 2b Review it @s1 ^s3",
+    ] {
+        store.insert_line(WEEK, Some("Milestones"), line).unwrap();
+    }
+
+    // September's close: `^s2`/`^s3` go, their 4b folded into the copy.
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-14T09:00:00-05:00"));
+    close_week(&cx, IsoWeek::new(2026, 37)).unwrap();
+    assert_eq!(
+        line_of(&store, MONTH, "s1").unwrap(),
+        "- [-] 4 Ship the thing @O2 est:4b demoted:W37 ^s1"
+    );
+    for key in ["s2", "s3"] {
+        assert!(line_of(&store, WEEK, key).is_none(), "^{key} is still in {WEEK}");
+    }
+
+    // The item comes back live the way §4.3's own example tree has it — a
+    // `[ ]` week line beside its `[-]` archive copy. (`tm readopt` takes the
+    // copy *with* it, which is `absorb_into_live`'s case, not this one.)
+    store
+        .insert_line(
+            "week/2026-W41.md",
+            Some("Milestones"),
+            "- [ ] 4 Ship the thing @O2 ^s1",
+        )
+        .unwrap();
+
+    // October's close writes into `month/2026-10` and deletes September's
+    // record — the only line that knew about the 4b.
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    let cx = Ctx::new(&store, &files, &tree, at("2026-10-12T09:00:00-05:00"));
+    close_week(&cx, IsoWeek::new(2026, 41)).unwrap();
+
+    assert_eq!(
+        line_of(&store, NEXT_MONTH, "s1").unwrap(),
+        "- [-] 4 Ship the thing @O2 est:4b demoted:W37,W41 ^s1",
+        "the remaining and both stamps are on the surviving line (§6.3, §0.6)"
+    );
+    assert!(
+        line_of(&store, MONTH, "s1").is_none(),
+        "September still has a copy: {}",
+        text(&store, MONTH)
+    );
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    assert!(tree.duplicate_ids().is_empty(), "{:?}", tree.duplicate_ids());
+    // …and the tree reads that one record back: §11 counts two stamps for
+    // the cut proposal, and §6.4's remaining is the 4b, not nothing.
+    let s1 = tree.get(&id("s1")).unwrap();
+    assert_eq!(s1.stamps.demoted, vec![Stamp::Week(37), Stamp::Week(41)]);
+    assert_eq!(tree.remaining(&id("s1")), Some(240));
+}
+
 /// A tree that arrived with two `# Demoted` copies of one id — from another
 /// writer (§1.3), or from a `tm` that used to write them — is not carried
 /// forward twice for ever: the month close folds the second into the first,
@@ -1130,8 +1204,10 @@ fn a_month_close_never_carries_an_id_a_file_already_has() {
         "{}",
         text(&store, NEXT_MONTH)
     );
-    // The stamps of both copies, each once and oldest first, on the line
-    // that survived — the record §6.3 keeps, not two of them.
+    // The stamps of both copies, each once, on the line that survived — the
+    // record §6.3 keeps, not two of them. The order is the order the two
+    // lines were read in (the carried copy's first): a `Stamp` is `W36` with
+    // no year, so there is no age to sort them by.
     assert_eq!(
         line_of(&store, NEXT_MONTH, "m2").unwrap(),
         "- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W36,W37 ^m2"
@@ -1141,6 +1217,14 @@ fn a_month_close_never_carries_an_id_a_file_already_has() {
         report.notes.iter().any(|n| n.contains("^m2") && n.contains("merged")),
         "{:?}",
         report.notes
+    );
+    // §10.1 records every state change, and this one moved a record out of
+    // the month that closed: the fold logs the carry's own event, so `tm log
+    // --item ^m2` and `tm undo` see it like any other carried line.
+    assert!(
+        log_events(&store).contains(&("move".to_string(), "m2".to_string())),
+        "the fold logged nothing: {:?}",
+        log_events(&store)
     );
     let files = store.read_tree().unwrap();
     assert!(

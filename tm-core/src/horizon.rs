@@ -577,15 +577,18 @@ fn stamps_with(item: &Item, add: Stamp) -> Vec<Stamp> {
 
 /// The stamps a demoted copy carries after this demotion: the history
 /// already on the archive copy (`prior`), then anything the live line adds,
-/// then `add` — each stamp once, oldest first (§6.3 "stamps accumulate:
-/// `W36,W37`"; §11 counts them for the cut proposal).
+/// then `add` — each stamp once, in that order (§6.3 "stamps accumulate:
+/// `W36,W37`"; §11 counts them for the cut proposal). The order is where
+/// each stamp was found, not when it was written: a [`Stamp`] is `W37` or
+/// `D07` with no year, so two of them cannot be put in age order at all.
 fn merge_stamps(prior: &[Stamp], own: &[Stamp], add: Stamp) -> Vec<Stamp> {
     union_stamps(&union_stamps(prior, own), &[add])
 }
 
 /// The `demoted:` history of two lines carrying one id, each stamp once and
-/// `a`'s order first — the older record's history, then the newer one's
-/// (§6.3 "stamps accumulate: `W36,W37`").
+/// `a`'s order first, then whatever `b` adds (§6.3 "stamps accumulate:
+/// `W36,W37`"). Callers pass the line whose history came first as `a`; the
+/// stamps themselves cannot be sorted (see [`merge_stamps`]).
 fn union_stamps(a: &[Stamp], b: &[Stamp]) -> Vec<Stamp> {
     let mut v: Vec<Stamp> = Vec::new();
     for s in a.iter().chain(b) {
@@ -596,25 +599,43 @@ fn union_stamps(a: &[Stamp], b: &[Stamp]) -> Vec<Stamp> {
     v
 }
 
-/// The stamps on the archive copy of `key` under `month/…# Demoted`, read
-/// from the store (the copy may have been written by an earlier close, long
-/// after the snapshot in [`Ctx::files`] was taken). Empty when there is no
-/// such copy.
-fn archived_stamps(cx: &Ctx, month_path: &str, key: &Id) -> Result<Vec<Stamp>, HorizonError> {
+/// What an archive copy records about a demotion that already happened: the
+/// `demoted:` stamps it accumulated, and the `est:` that close measured as
+/// the remaining (`None` when the copy carries no explicit `est:`).
+///
+/// Both go away when [`demote_one`] supersedes the copy, so both have to be
+/// read off it first: the stamps accumulate (§6.3 "`W36,W37`") and the
+/// remaining is §0 principle 6's whole point.
+#[derive(Debug, Default)]
+struct ArchivedRecord {
+    /// The copy's `demoted:` stamps, in the order it carries them.
+    stamps: Vec<Stamp>,
+    /// The copy's explicit `est:` in minutes — the remaining the close that
+    /// wrote it measured, dropped children folded in.
+    est_min: Option<u32>,
+}
+
+/// Read [`ArchivedRecord`] off the `# Demoted` copy of `key` in `month_path`,
+/// from the store (that copy may have been written by an earlier close, long
+/// after the snapshot in [`Ctx::files`] was taken). Empty when there is none.
+fn archived_record(cx: &Ctx, month_path: &str, key: &Id) -> Result<ArchivedRecord, HorizonError> {
     if !cx.store.exists(month_path) {
-        return Ok(Vec::new());
+        return Ok(ArchivedRecord::default());
     }
     let parsed = cx.store.read_file(month_path)?;
-    let stamps = parsed
+    let rec = parsed
         .items()
         .find(|i| Tree::key_of(i) == *key && in_section(i, DEMOTED_SECTION))
-        .map(|i| i.stamps.demoted.clone())
+        .map(|i| ArchivedRecord {
+            stamps: i.stamps.demoted.clone(),
+            est_min: i.est.map(|d| d.as_minutes()),
+        })
         .unwrap_or_default();
-    Ok(stamps)
+    Ok(rec)
 }
 
 /// The `# Demoted` archive copy of `key` left in a month file *other* than
-/// the one this demotion writes into, with the stamps it carries.
+/// the one this demotion writes into, with what it records.
 ///
 /// §6.3 gives an id one archive copy ("the line is **copied** to
 /// `month/<current>#Demoted`"), and `tree.rs` models exactly one; but
@@ -624,14 +645,26 @@ fn archived_stamps(cx: &Ctx, month_path: &str, key: &Id) -> Result<Vec<Stamp>, H
 /// id in a single file, which is a `tm check` `dup-id` (§4.1, §17.2).
 /// [`demote_one`] merges this copy's stamps into the one it writes and
 /// deletes it, so the record moves rather than multiplying.
-fn stale_archive_copy<'a>(cx: &Ctx<'a>, month_path: &str, key: &Id) -> Option<(String, Vec<Stamp>)> {
+fn stale_archive_copy<'a>(
+    cx: &Ctx<'a>,
+    month_path: &str,
+    key: &Id,
+) -> Option<(String, ArchivedRecord)> {
     let files: &'a PlanFiles = cx.files;
     files.files.iter().find_map(|f| {
         if f.path == month_path || !matches!(f.horizon, Horizon::Month(_)) {
             return None;
         }
         let item = item_of(f, key)?;
-        in_section(item, DEMOTED_SECTION).then(|| (f.path.clone(), item.stamps.demoted.clone()))
+        in_section(item, DEMOTED_SECTION).then(|| {
+            (
+                f.path.clone(),
+                ArchivedRecord {
+                    stamps: item.stamps.demoted.clone(),
+                    est_min: item.est.map(|d| d.as_minutes()),
+                },
+            )
+        })
     })
 }
 
@@ -677,13 +710,31 @@ fn remaining_est(cx: &Ctx, key: &Id, item: &Item) -> Option<u32> {
     own.or(rolled).map(|m| m.max(MIN_REMAINING_MIN))
 }
 
-/// The `est:` a demoted item carries when `folded` minutes of dropped
-/// children go with it (§6.3 "their remaining is folded into the parent's
-/// `est:`"): the larger of the §6.4 rollup and what the dropped lines were
-/// worth, so no work leaves the tree. `None` only when there is nothing to
+/// The `est:` a demoted item carries: the largest of the §6.4 rollup,
+/// `folded` — the remaining of the children this close dropped with it
+/// (§6.3 "their remaining is folded into the parent's `est:`") — and
+/// `recorded`, the remaining an earlier demotion already measured onto the
+/// archive copy this one supersedes. `None` only when there is nothing to
 /// write at all.
-fn demote_est(cx: &Ctx, key: &Id, item: &Item, folded: u32) -> Option<u32> {
-    match (remaining_est(cx, key, item), folded) {
+///
+/// All three are floors rather than one of them winning outright, because
+/// each knows something the others cannot (§0 principle 6, "demotion, not
+/// deletion" — no work leaves the tree):
+///
+/// * the rollup is the only one that sees the line as it stands now, so an
+///   estimate raised since the last demotion (`tm edit est=`, a child added)
+///   is not thrown away;
+/// * `folded` is the only one that sees the lines this close is about to
+///   delete from the week file;
+/// * `recorded` is the only one that still knows what an *earlier* close
+///   measured — its own dropped children included — because §6.3 writes
+///   `est:` = remaining onto the archive copy and never onto the line it
+///   archives, no verb ever writes that copy ([`tree::record_rank`] ranks
+///   every live line above every archive copy, so it is what `tm edit` and
+///   `tm stop` reach), and this demotion is about to overwrite or delete it.
+fn demote_est(cx: &Ctx, key: &Id, item: &Item, folded: u32, recorded: Option<u32>) -> Option<u32> {
+    let floor = folded.max(recorded.unwrap_or(0));
+    match (remaining_est(cx, key, item), floor) {
         (Some(base), f) => Some(base.max(f)),
         (None, 0) => None,
         (None, f) => Some(f.max(MIN_REMAINING_MIN)),
@@ -952,7 +1003,6 @@ fn demote_one(
     notes: &mut Vec<String>,
 ) -> Result<Demoted, HorizonError> {
     let block_min = cx.block_min();
-    let est = demote_est(cx, key, item, folded);
     let month_path = Horizon::Month(month).path();
     // The archive copy is where the history lives: the live week line only
     // knows the stamps written on it, so the copy's stamps come first — and
@@ -962,8 +1012,18 @@ fn demote_one(
     // Its stamps come first of all, and its line goes away below, so the id
     // keeps the one copy §6.3 sanctions.
     let stale = stale_archive_copy(cx, &month_path, key);
-    let mut prior: Vec<Stamp> = stale.as_ref().map(|(_, s)| s.clone()).unwrap_or_default();
-    prior.extend(archived_stamps(cx, &month_path, key)?);
+    let here = archived_record(cx, &month_path, key)?;
+    let mut prior: Vec<Stamp> = stale.as_ref().map(|(_, r)| r.stamps.clone()).unwrap_or_default();
+    prior.extend(here.stamps.iter().copied());
+    // …and so does the remaining: §6.3 writes `est:` = remaining onto the
+    // copy and never onto the line it archives, so whatever an earlier close
+    // measured — the children it dropped from the week file folded in —
+    // exists only on the copy this demotion is about to overwrite or delete.
+    // It goes into the new copy's `est:` as a floor, so the record moves
+    // rather than restarting from the estimate the line has carried since
+    // before its first demotion (§0 principle 6).
+    let recorded = here.est_min.max(stale.as_ref().and_then(|(_, r)| r.est_min));
+    let est = demote_est(cx, key, item, folded, recorded);
     let stamps = merge_stamps(&prior, &item.stamps.demoted, Stamp::Week(week.week));
     let value = stamp_value(&stamps);
     let copy = rewrite(item, key, |l| {
@@ -1063,13 +1123,20 @@ pub fn readopt(cx: &Ctx, id: &Id, to: Option<&Horizon>) -> Result<Moved, Horizon
 /// is the ordinary readopt.
 ///
 /// The copy owns the *remaining* estimate — §6.3's week close writes `est:`
-/// = remaining onto it, and that number is the whole point of demoting
-/// rather than deleting (§0 principle 6) — while the live line still carries
-/// whatever it was estimated at before the demotion. The copy is also the
-/// newer record of the two (it has the stamp the close appended, which is
-/// how [`tree::record_rank`] tells them apart), so the surviving line takes
-/// its remaining with it; a copy that carries no estimate at all leaves the
-/// live line's own alone.
+/// = remaining onto it (the children it dropped from the week file folded
+/// in) and never onto the line it archives, and that number is the whole
+/// point of demoting rather than deleting (§0 principle 6) — while the live
+/// line still carries whatever it was estimated at before the demotion.
+///
+/// Nothing has changed that copy since, and nothing ever will:
+/// [`tree::record_rank`] ranks *every* live line above *every* archive copy
+/// (`is_archive_copy` is its first key, and `false` sorts first — the stamp
+/// count only breaks ties between two archive copies), so `Tree::get` and
+/// `store::choose` both resolve the id to the live line, and that is the
+/// line `tm edit`, `tm stop` and `tm done --partial` read and rewrite. The
+/// copy is a dead end holding a number that exists nowhere else, and this
+/// absorb deletes it — so the surviving line takes its remaining with it. A
+/// copy that carries no estimate at all leaves the live line's own alone.
 fn absorb_into_live(
     cx: &Ctx,
     from: &str,
@@ -1801,6 +1868,9 @@ pub fn close_month(
         .unwrap_or_default();
     for c in &carry {
         if let Some(there) = in_to.get(&c.key).copied() {
+            // The carried copy's stamps first, then the ones the line in
+            // `to` adds — the order the two lines are read in, not an age
+            // order, which `Stamp` (`W37`, `D07`, no year) cannot express.
             let stamps = union_stamps(&c.item.stamps.demoted, &there.stamps.demoted);
             if stamps != there.stamps.demoted {
                 let text = rewrite(there, &c.key, |l| {
@@ -1810,6 +1880,18 @@ pub fn close_month(
                 cx.store.write_line_in(Some(to.as_str()), &c.key, &text)?;
             }
             cx.store.remove_line_in(Some(from.as_str()), &c.key)?;
+            // §6.3's month close "moves them to the next month file", and
+            // this id's record did move: it has no line in `from` any more
+            // and the line in `to` is now it. The fold is only the carry
+            // arriving where a line for the id already sits, so it logs the
+            // carry's event (§10.1 records every state change, and `tm log
+            // --item ^id` is how §13 asks what became of one) — the note
+            // below says the two records became one, which no event does.
+            cx.log(Event::Move {
+                id: c.key.to_string(),
+                from: from.clone(),
+                to: to.clone(),
+            })?;
             report.notes.push(format!(
                 "^{} was already a line of {to}; the copy carried from {from} was merged \
                  into it (§4.1: one line per id)",
