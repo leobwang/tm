@@ -6054,5 +6054,137 @@ setter writes.  The two views are not yet one function — see the README's gap
 list — but they do not disagree about what a write puts on the line. -/
 theorem the_two_est_setters_write_the_same_token (v : Nat) :
     keyWord Key.est (renderDur (.simple v .minutes)) = estWord v := rfl
+
+
+/-! ### `unsetKey` carries the same obligations
+
+`tm edit ^id <key>=` removes a token, and a removal can break a line as surely
+as an insert can: it is the head's separator that `toksWf` cares about, and a
+removal changes which token is the head. -/
+
+theorem toksWf_head_wf {t : Tok} {ts : List Tok} (h : toksWf (t :: ts) = true) : t.wf = true := by
+  cases ts with
+  | nil => simpa [toksWf] using h
+  | cons u r => simp only [toksWf, Bool.and_eq_true] at h; exact h.1.1
+
+theorem toksWf_tail {t : Tok} {ts : List Tok} (h : toksWf (t :: ts) = true) :
+    toksWf ts = true := by
+  cases ts with
+  | nil => rfl
+  | cons u r => simp only [toksWf, Bool.and_eq_true] at h; exact h.2
+
+theorem toksWf_seps : ∀ (ts : List Tok) (t : Tok), toksWf (t :: ts) = true →
+    ∀ u ∈ ts, u.sep ≠ [] := by
+  intro ts
+  induction ts with
+  | nil => intro _ _ u hu; simp at hu
+  | cons v r ih =>
+      intro t h u hu
+      simp only [toksWf, Bool.and_eq_true, Bool.not_eq_true'] at h
+      rcases List.mem_cons.1 hu with hc | hu'
+      · rw [hc]
+        intro hcc
+        rw [hcc] at h
+        simp at h
+      · exact ih v h.2 u hu'
+
+/-- **Removing tokens cannot break the shape.**  Every surviving token is still
+well shaped, and whichever token becomes the head is allowed the separator it
+already had. -/
+theorem toksWf_filter (p : Tok → Bool) : ∀ ts : List Tok, toksWf ts = true →
+    toksWf (ts.filter p) = true := by
+  intro ts
+  induction ts with
+  | nil => intro _; rfl
+  | cons t r ih =>
+      intro h
+      have hall : ∀ u ∈ r, u.sep ≠ [] := toksWf_seps r t h
+      rw [List.filter_cons]
+      by_cases hp : p t = true
+      · rw [if_pos hp]
+        cases hf : r.filter p with
+        | nil => simpa [toksWf] using toksWf_head_wf h
+        | cons v vs =>
+            have hv : v ∈ r :=
+              (List.mem_filter.1 (show v ∈ r.filter p from by rw [hf]; simp)).1
+            simp only [toksWf, Bool.and_eq_true]
+            refine ⟨⟨toksWf_head_wf h, by simpa using hall v hv⟩, ?_⟩
+            have hx := ih (toksWf_tail h)
+            rwa [hf] at hx
+      · rw [if_neg (by simp [hp])]
+        exact ih (toksWf_tail h)
+
+theorem isKeyTok_false_of_isIdWord (k : Key) (t : Tok) (h : isIdWord t.word = true) :
+    isKeyTok k t = false := by
+  have hs : sigilOf t.word = some '^' := by
+    unfold isIdWord at h
+    cases hu : t.word with
+    | nil => rw [hu] at h; simp at h
+    | cons a tl =>
+        rw [hu] at h
+        simp only [List.head?_cons, beq_iff_eq, Option.some.injEq] at h
+        subst h
+        exact sigilOf_cons '^' tl (by decide)
+  have hkp : keyPrefix t.word = none :=
+    keyPrefix_none_of (headSat_false_of sigil_not_key t.word (sigilOf_head hs))
+  unfold isKeyTok keyOf
+  rw [hkp]
+  simp
+
+theorem idWords_filter_notKey (k : Key) : ∀ ts : List Tok,
+    (((ts.filter (fun t => !isKeyTok k t)).filter (fun t => isIdWord t.word)).map Tok.word)
+      = ((ts.filter (fun t => isIdWord t.word)).map Tok.word) := by
+  intro ts
+  induction ts with
+  | nil => rfl
+  | cons t r ih =>
+      by_cases hid : isIdWord t.word = true
+      · have hk : (!isKeyTok k t) = true := by
+          simp [isKeyTok_false_of_isIdWord k t hid]
+        rw [show (t :: r).filter (fun x => !isKeyTok k x)
+              = t :: r.filter (fun x => !isKeyTok k x) from by rw [List.filter_cons, if_pos hk]]
+        rw [show (t :: r.filter (fun x => !isKeyTok k x)).filter (fun x => isIdWord x.word)
+              = t :: (r.filter (fun x => !isKeyTok k x)).filter (fun x => isIdWord x.word)
+              from by rw [List.filter_cons, if_pos hid]]
+        rw [show (t :: r).filter (fun x => isIdWord x.word)
+              = t :: r.filter (fun x => isIdWord x.word)
+              from by rw [List.filter_cons, if_pos hid]]
+        rw [List.map_cons, List.map_cons, ih]
+      · simp only [Bool.not_eq_true] at hid
+        rw [show (t :: r).filter (fun x => isIdWord x.word)
+              = r.filter (fun x => isIdWord x.word)
+              from by rw [List.filter_cons, if_neg (by simp [hid])]]
+        by_cases hk : (!isKeyTok k t) = true
+        · rw [show (t :: r).filter (fun x => !isKeyTok k x)
+                = t :: r.filter (fun x => !isKeyTok k x) from by rw [List.filter_cons, if_pos hk]]
+          rw [show (t :: r.filter (fun x => !isKeyTok k x)).filter (fun x => isIdWord x.word)
+                = (r.filter (fun x => !isKeyTok k x)).filter (fun x => isIdWord x.word)
+                from by rw [List.filter_cons, if_neg (by simp [hid])]]
+          exact ih
+        · rw [show (t :: r).filter (fun x => !isKeyTok k x)
+                = r.filter (fun x => !isKeyTok k x) from by rw [List.filter_cons, if_neg hk]]
+          exact ih
+
+/-- **`tm edit ^id <key>=` takes a canonical line to a canonical line.** -/
+theorem unsetKey_canonical (i : Id) (k : Key) (r : RawItem) (h : CanonicalItem i r = true) :
+    CanonicalItem i (unsetKey k r) = true := by
+  obtain ⟨hind, htw, hids⟩ := (canonical_iff i r).1 h
+  refine (canonical_iff i (unsetKey k r)).2 ⟨hind, ?_, ?_⟩
+  · exact toksWf_filter _ r.toks htw
+  · show ((r.toks.filter (fun t => !isKeyTok k t)).filter
+      (fun t => isIdWord t.word)).map Tok.word = _
+    rw [idWords_filter_notKey k r.toks]
+    exact hids
+
+theorem unsetKey_line_reparses (i : Id) (g : Glyph) (k : Key) (r : RawItem)
+    (h : CanonicalItem i r = true) :
+    parseItem (serializeItem i g (unsetKey k r)) = .ok (i, g, unsetKey k r) :=
+  parse_serialize i g (unsetKey k r) (unsetKey_canonical i k r h)
+
+/-- `setFlag` is not vacuous either: on §4.1's own line it succeeds, and the
+flag it writes is the flag the view reports. -/
+theorem setFlag_on_the_spec_line :
+    (setFlag .hot specItem).map flagsOf = some [Flag.hot] := by decide
+
 end Field
 end Tm

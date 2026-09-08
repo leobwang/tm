@@ -481,7 +481,10 @@ them costs.
   That is the shape of the fix for C1: the shipped bug was one setter out of a
   family writing the wrong slot, and a family with one member has no odd one
   out.  `setKey_canonical` and `setKey_line_reparses` carry the byte-level
-  guarantee across the edit.
+  guarantee across the edit, and `unsetKey_canonical` /
+  `unsetKey_line_reparses` carry it across a *removal* — which can break a line
+  as surely as an insert can, because removing a token changes which token is
+  the head and `toksWf` cares about the head's separator.
 - **`view_set_remaining` and `view_set_ci`** — C1 and C2 dead as theorems:
   `est:` overrides the leading estimate and `ci:` overrides the positional
   digit, so the setter writes the slot the *view* reads.
