@@ -2820,40 +2820,45 @@ def keyPairs (r : RawItem) : List (Key × List Char) := (kinds r).filterMap kpOn
 
 def lookupKey (k : Key) (r : RawItem) : Option (List Char) := List.lookup k (keyPairs r)
 
-def extraPairs (r : RawItem) : List (List Char × List Char) :=
-  (kinds r).filterMap (fun x => match x with | .extra k v => some (k, v) | _ => none)
+/-- One projection per kind.  They are named rather than written inline because
+the round-trip proof rewrites with them, and an inline `fun x => match x with …`
+is not a thing a rewrite can name. -/
+def kExtra    : TokKind → Option (List Char × List Char)
+  | .extra k v => some (k, v) | _ => none
+def kUnparsed : TokKind → Option (List Char) | .unparsed w => some w | _ => none
+def kTitle    : TokKind → Option (List Char) | .title w => some w | _ => none
+def kTitleWord : TokKind → Option (List Char)
+  | .title w => some w | .unparsed w => some w | _ => none
+def kTag      : TokKind → Option (List Char) | .tag t => some t | _ => none
+def kFlag     : TokKind → Option Flag        | .flag f => some f | _ => none
+def kParent   : TokKind → Option (List Char) | .parent p => some p | _ => none
+def kPrio     : TokKind → Option (Fin 4)     | .prio k => some k | _ => none
+def kId       : TokKind → Option (List Char) | .id i => some i | _ => none
+def kCi       : TokKind → Option (Fin 6)     | .ci c => some c | _ => none
+def kEst      : TokKind → Option Dur         | .est d => some d | _ => none
 
-def unparsedWords (r : RawItem) : List (List Char) :=
-  (kinds r).filterMap (fun x => match x with | .unparsed w => some w | _ => none)
+def extraPairs (r : RawItem) : List (List Char × List Char) := (kinds r).filterMap kExtra
 
-def titleSegment (r : RawItem) : List (List Char) :=
-  (kinds r).filterMap (fun x => match x with | .title w => some w | _ => none)
+def unparsedWords (r : RawItem) : List (List Char) := (kinds r).filterMap kUnparsed
+
+def titleSegment (r : RawItem) : List (List Char) := (kinds r).filterMap kTitle
 
 /-- §4.1: "tokens the parser cannot classify stay in the title". -/
-def titleWords (r : RawItem) : List (List Char) :=
-  (kinds r).filterMap (fun x => match x with
-    | .title w => some w | .unparsed w => some w | _ => none)
+def titleWords (r : RawItem) : List (List Char) := (kinds r).filterMap kTitleWord
 
-def tagWords (r : RawItem) : List (List Char) :=
-  (kinds r).filterMap (fun x => match x with | .tag t => some t | _ => none)
+def tagWords (r : RawItem) : List (List Char) := (kinds r).filterMap kTag
 
-def flagsOf (r : RawItem) : List Flag :=
-  (kinds r).filterMap (fun x => match x with | .flag f => some f | _ => none)
+def flagsOf (r : RawItem) : List Flag := (kinds r).filterMap kFlag
 
-def parentRef (r : RawItem) : Option (List Char) :=
-  (kinds r).findSome? (fun x => match x with | .parent p => some p | _ => none)
+def parentRef (r : RawItem) : Option (List Char) := (kinds r).findSome? kParent
 
-def prioOf (r : RawItem) : Option (Fin 4) :=
-  (kinds r).findSome? (fun x => match x with | .prio k => some k | _ => none)
+def prioOf (r : RawItem) : Option (Fin 4) := (kinds r).findSome? kPrio
 
-def idWordOf (r : RawItem) : Option (List Char) :=
-  (kinds r).findSome? (fun x => match x with | .id i => some i | _ => none)
+def idWordOf (r : RawItem) : Option (List Char) := (kinds r).findSome? kId
 
-def ciSlotOf (r : RawItem) : Option (Fin 6) :=
-  (kinds r).findSome? (fun x => match x with | .ci c => some c | _ => none)
+def ciSlotOf (r : RawItem) : Option (Fin 6) := (kinds r).findSome? kCi
 
-def estLeadOf (r : RawItem) : Option Dur :=
-  (kinds r).findSome? (fun x => match x with | .est d => some d | _ => none)
+def estLeadOf (r : RawItem) : Option Dur := (kinds r).findSome? kEst
 
 /-! ### One view per key -/
 
@@ -4599,5 +4604,833 @@ theorem view_render_ci :
   exact bind_map_render f.ciKey renderCi parseCi (fun a _ => parse_render_ci a)
 
 end KeyRoundTrip
+
+/-! ### The positional half: the classifier over the rendered layout
+
+The three phases that can eat a word are handled once each, and then the token
+run is a plain `map`.  This is where `slotGuard` earns its place: with the ci
+slot empty, the first title word must not be a ci digit; with the estimate slot
+empty, it must not be a duration. -/
+
+theorem filterMapMapNone {α β γ : Type} (g : α → γ) (fv : γ → Option β)
+    (h : ∀ a, fv (g a) = none) : ∀ l : List α, (l.map g).filterMap fv = [] := by
+  intro l
+  induction l with
+  | nil => rfl
+  | cons a t ih => rw [List.map_cons, filterMap_cons_none' fv (g a) _ (h a), ih]
+
+theorem filterMapMapSome {α β γ : Type} (g : α → γ) (fv : γ → Option β) (k : α → β)
+    (h : ∀ a, fv (g a) = some (k a)) : ∀ l : List α, (l.map g).filterMap fv = l.map k := by
+  intro l
+  induction l with
+  | nil => rfl
+  | cons a t ih =>
+      rw [List.map_cons, filterMap_cons_some' fv (g a) (k a) _ (h a), ih, List.map_cons]
+
+theorem filterMapOptNone {α β γ : Type} (x : Option α) (g : α → γ) (fv : γ → Option β)
+    (h : ∀ a, fv (g a) = none) : ((x.map g).toList).filterMap fv = [] := by
+  cases x with
+  | none => rfl
+  | some a =>
+      show ([g a] : List γ).filterMap fv = []
+      rw [filterMap_cons_none' fv (g a) [] (h a)]
+      rfl
+
+theorem filterMapOptSome {α β γ : Type} (x : Option α) (g : α → γ) (fv : γ → Option β)
+    (k : α → β) (h : ∀ a, fv (g a) = some (k a)) :
+    ((x.map g).toList).filterMap fv = (x.map k).toList := by
+  cases x with
+  | none => rfl
+  | some a =>
+      show ([g a] : List γ).filterMap fv = _
+      rw [filterMap_cons_some' fv (g a) (k a) [] (h a)]
+      rfl
+
+theorem findSome_append {α β : Type} (fv : α → Option β) : ∀ l₁ l₂ : List α,
+    (l₁ ++ l₂).findSome? fv = ((l₁.findSome? fv).orElse (fun _ => l₂.findSome? fv)) := by
+  intro l₁
+  induction l₁ with
+  | nil => intro l₂; rfl
+  | cons a t ih =>
+      intro l₂
+      have hrhs : (a :: t).findSome? fv
+          = (match fv a with | some b => some b | none => t.findSome? fv) := rfl
+      show (match fv a with | some b => some b | none => (t ++ l₂).findSome? fv)
+        = ((a :: t).findSome? fv).orElse (fun _ => l₂.findSome? fv)
+      rw [hrhs]
+      cases hv : fv a with
+      | none => exact ih l₂
+      | some b => rfl
+
+theorem findSomeMapNone {α β γ : Type} (g : α → γ) (fv : γ → Option β)
+    (h : ∀ a, fv (g a) = none) : ∀ l : List α, (l.map g).findSome? fv = none := by
+  intro l
+  induction l with
+  | nil => rfl
+  | cons a t ih =>
+      show (match fv (g a) with | some b => some b | none => (t.map g).findSome? fv) = none
+      rw [h a]
+      exact ih
+
+theorem findSomeOptNone {α β γ : Type} (x : Option α) (g : α → γ) (fv : γ → Option β)
+    (h : ∀ a, fv (g a) = none) : ((x.map g).toList).findSome? fv = none := by
+  cases x with
+  | none => rfl
+  | some a =>
+      show (match fv (g a) with | some b => some b | none => ([] : List γ).findSome? fv) = none
+      rw [h a]
+      rfl
+
+theorem findSomeOptSome {α β γ : Type} (x : Option α) (g : α → γ) (fv : γ → Option β)
+    (k : α → β) (h : ∀ a, fv (g a) = some (k a)) :
+    ((x.map g).toList).findSome? fv = x.map k := by
+  cases x with
+  | none => rfl
+  | some a =>
+      show (match fv (g a) with | some b => some b | none => ([] : List γ).findSome? fv) = _
+      rw [h a]
+      rfl
+
+/-! #### The three phases over the layout -/
+
+theorem classifyPhase3_map : ∀ ts : List Tok,
+    classifyPhase3 ts = ts.map (fun t => classifyWord t.word) := by
+  intro ts
+  induction ts with
+  | nil => rfl
+  | cons t ts ih =>
+      show classifyWord t.word :: classifyPhase3 ts = classifyWord t.word :: _
+      rw [ih]
+
+theorem classifyPhase2_title (u : Tok) (b : List Tok) (hu : startsToken u.word = true) :
+    ∀ ws : List (List Char), (∀ w ∈ ws, startsToken w = false) →
+      classifyPhase2 (ws.map tokOf ++ (u :: b))
+        = ws.map TokKind.title ++ classifyPhase3 (u :: b) := by
+  intro ws
+  induction ws with
+  | nil =>
+      intro _
+      show (if startsToken u.word then classifyPhase3 (u :: b)
+            else TokKind.title u.word :: classifyPhase2 b) = _
+      rw [if_pos hu]
+      rfl
+  | cons w ws' ih =>
+      intro h
+      show (if startsToken w then classifyPhase3 (tokOf w :: (ws'.map tokOf ++ (u :: b)))
+            else TokKind.title w :: classifyPhase2 (ws'.map tokOf ++ (u :: b))) = _
+      rw [if_neg (by simp [h w (by simp)])]
+      rw [ih (fun x hx => h x (by simp [hx]))]
+      rfl
+
+theorem classifyPhase1_of_noEst (ts : List Tok)
+    (h : ∀ u b, ts = u :: b → estSlot u.word = none) :
+    classifyPhase1 ts = classifyPhase2 ts := by
+  cases ts with
+  | nil => rfl
+  | cons u b =>
+      show (match estSlot u.word with
+            | some d => TokKind.est d :: classifyPhase2 b
+            | none   => classifyPhase2 (u :: b)) = _
+      rw [h u b rfl]
+
+theorem classifyPhase0_of_noCi (ts : List Tok)
+    (h : ∀ u b, ts = u :: b → ciSlot u.word = none) :
+    classifyPhase0 ts = classifyPhase1 ts := by
+  cases ts with
+  | nil => rfl
+  | cons u b =>
+      show (match ciSlot u.word with
+            | some c => TokKind.ci c :: classifyPhase1 b
+            | none   => classifyPhase1 (u :: b)) = _
+      rw [h u b rfl]
+
+/-! #### What the two positional slots do and do not eat -/
+
+theorem ciSlot_renderCi (c : Fin 6) : ciSlot (renderCi c) = some c := parse_render_ci c
+
+theorem estSlot_renderDur (d : Dur) (h : d.noDays = true) : estSlot (renderDur d) = some d :=
+  parse_render_durND d h
+
+theorem ciSlot_none_of_len {w : List Char} (h : 2 ≤ w.length) : ciSlot w = none := by
+  cases w with
+  | nil => rfl
+  | cons a t =>
+      cases t with
+      | nil => simp at h
+      | cons b t' => rfl
+
+theorem renderDur_length (d : Dur) : 2 ≤ (renderDur d).length := by
+  have hd : ∀ n : Nat, 1 ≤ (digitsOf n).length := by
+    intro n
+    cases hn : digitsOf n with
+    | nil => exact absurd hn (digitsOf_ne_nil n)
+    | cons a t => simp
+  cases d with
+  | simple n u =>
+      show 2 ≤ (digitsOf n ++ [DurUnit.char u]).length
+      rw [List.length_append]
+      have := hd n
+      simp only [List.length_cons, List.length_nil]
+      omega
+  | hm h m =>
+      show 2 ≤ (digitsOf h ++ 'h' :: (digitsOf m ++ ['m'])).length
+      rw [List.length_append]
+      have := hd h
+      simp only [List.length_cons]
+      omega
+
+theorem ciSlot_renderDur (d : Dur) : ciSlot (renderDur d) = none :=
+  ciSlot_none_of_len (renderDur_length d)
+
+theorem ciSlot_caret (i : Id) : ciSlot ('^' :: i) = none := by
+  cases i with
+  | nil => rfl
+  | cons a t => rfl
+
+theorem estSlot_caret (i : Id) : estSlot ('^' :: i) = none := by
+  unfold estSlot parseDurND parseDur
+  rw [show (('^' :: i).takeWhile isDigitC) = [] from by
+    rw [List.takeWhile_cons, if_neg (by decide)]]
+  rfl
+
+theorem startsToken_caret (i : Id) : startsToken ('^' :: i) = true := by
+  unfold startsToken
+  rw [sigilOf_cons '^' i (by decide)]
+  rfl
+
+/-! #### The classification of each token the layout writes -/
+
+theorem key_not_sigil : ∀ c : Char, isKeyC c = true →
+    (fun x => decide (x = '@' ∨ x = '#' ∨ x = '!' ∨ x = '^')) c = false := by
+  intro c h
+  simp only [isKeyC, Bool.or_eq_true, beq_iff_eq] at h
+  simp only [decide_eq_false_iff_not, not_or]
+  rcases h with hl | rfl
+  · simp only [isLowerC, decide_eq_true_eq] at hl
+    refine ⟨?_, ?_, ?_, ?_⟩ <;> (intro hc; subst hc; revert hl; decide)
+  · exact ⟨by decide, by decide, by decide, by decide⟩
+
+theorem sigilOf_keyed {w k : List Char} (h : keyPrefix w = some k) : sigilOf w = none :=
+  sigilOf_none_of (headSat_false_of key_not_sigil w (keyPrefix_head h))
+
+theorem classifyWord_id (i : Id) (h : isName i = true) : classifyWord ('^' :: i) = TokKind.id i := by
+  unfold classifyWord
+  rw [sigilOf_cons '^' i (by decide)]
+  show classifySigil '^' ('^' :: i) = _
+  unfold classifySigil
+  have hne : ¬ (('^' :: i).length = 1) := by
+    intro hc
+    have : i = [] := by simpa using hc
+    exact absurd this (isName_ne_nil h)
+  rw [if_neg hne, if_neg (by decide), if_neg (by decide), if_neg (by decide)]
+  show (if isName i = true then TokKind.id i else TokKind.unparsed ('^' :: i)) = _
+  rw [if_pos h]
+
+theorem classifyWord_parent (p : List Char) (h : p ≠ []) :
+    classifyWord ('@' :: p) = TokKind.parent p := by
+  unfold classifyWord
+  rw [sigilOf_cons '@' p (by decide)]
+  show classifySigil '@' ('@' :: p) = _
+  unfold classifySigil
+  have hne : ¬ (('@' :: p).length = 1) := by
+    intro hc; exact h (by simpa using hc)
+  rw [if_neg hne, if_pos rfl]
+  rfl
+
+theorem classifyWord_tag (t : List Char) (h : t ≠ []) :
+    classifyWord ('#' :: t) = TokKind.tag t := by
+  unfold classifyWord
+  rw [sigilOf_cons '#' t (by decide)]
+  show classifySigil '#' ('#' :: t) = _
+  unfold classifySigil
+  have hne : ¬ (('#' :: t).length = 1) := by
+    intro hc; exact h (by simpa using hc)
+  rw [if_neg hne, if_neg (by decide), if_pos rfl]
+  rfl
+
+theorem classifyWord_prio (k : Fin 4) : classifyWord (renderPrio k) = TokKind.prio k := by
+  have hs : sigilOf (renderPrio k) = some '!' := by
+    show sigilOf ('!' :: [digitChar (k.val + 1)]) = some '!'
+    exact sigilOf_cons '!' _ (by decide)
+  unfold classifyWord
+  rw [hs]
+  show classifySigil '!' (renderPrio k) = _
+  unfold classifySigil
+  have hlen : ¬ ((renderPrio k).length = 1) := by show ¬ (2 = 1); decide
+  rw [if_neg hlen, if_neg (by decide), if_neg (by decide), if_pos rfl]
+  show classifyBang (renderPrio k) = _
+  unfold classifyBang
+  rw [parse_render_prio k]
+
+theorem classifyWord_key (k : Key) (v : List Char) :
+    classifyWord (keyWord k v) = TokKind.key k v := by
+  unfold classifyWord
+  rw [sigilOf_keyed (keyPrefix_keyWord k v), keyPrefix_keyWord k v]
+  show classifyKeyed (Key.name k) (keyWord k v) = _
+  unfold classifyKeyed
+  rw [key_name_roundtrip k, keyValue_keyWord k v]
+  rfl
+
+theorem classifyWord_extra {p : List Char × List Char} (h : extraPairWf p = true) :
+    classifyWord (p.1 ++ ':' :: p.2) = TokKind.extra p.1 p.2 := by
+  have hkn : Key.ofName? p.1 = none := by
+    simp only [extraPairWf, Bool.and_eq_true] at h
+    cases hn : Key.ofName? p.1 with
+    | none => rfl
+    | some k => rw [hn] at h; simp at h
+  have hkv : keyValue (p.1 ++ ':' :: p.2) = some p.2 := by
+    simp only [extraPairWf, Bool.and_eq_true] at h
+    unfold keyValue
+    rw [splitFirst_append ':' p.1 p.2 (by
+      intro c hc hcc
+      subst hcc
+      have := List.all_eq_true.1 h.1.2 ':' hc
+      exact Bool.noConfusion this)]
+    rfl
+  unfold classifyWord
+  rw [sigilOf_keyed (keyPrefix_extra h), keyPrefix_extra h]
+  show classifyKeyed p.1 (p.1 ++ ':' :: p.2) = _
+  unfold classifyKeyed
+  rw [hkn, hkv]
+  rfl
+
+
+/-! #### The whole layout, classified
+
+`renderKinds` is what the four-phase classifier makes of `renderToks`, and
+`kinds_render` is the proof.  Every positional view below is a `filterMap` or a
+`findSome?` over this one list. -/
+
+def midKinds (i : Id) (f : Fields) : List TokKind :=
+  TokKind.id i ::
+    ((f.parent.map TokKind.parent).toList
+      ++ f.tags.map TokKind.tag
+      ++ (f.prio.map TokKind.prio).toList
+      ++ (kvOf f).map (fun p => TokKind.key p.1 p.2)
+      ++ f.extra.map (fun p => TokKind.extra p.1 p.2)
+      ++ f.unparsed.map TokKind.unparsed
+      ++ f.flags.map TokKind.flag)
+
+def renderKinds (i : Id) (f : Fields) : List TokKind :=
+  (f.ci.map TokKind.ci).toList
+    ++ ((f.estLead.map TokKind.est).toList
+      ++ (f.title.map TokKind.title ++ midKinds i f))
+
+theorem map_map' {α γ δ : Type} (g : α → γ) (h : γ → δ) :
+    ∀ l : List α, (l.map g).map h = l.map (fun a => h (g a)) := by
+  intro l
+  induction l with
+  | nil => rfl
+  | cons a t ih => rw [List.map_cons, List.map_cons, List.map_cons, ih]
+
+theorem map_congr' {α γ : Type} (g h : α → γ) :
+    ∀ l : List α, (∀ a ∈ l, g a = h a) → l.map g = l.map h := by
+  intro l
+  induction l with
+  | nil => intro _; rfl
+  | cons a t ih =>
+      intro hc
+      rw [List.map_cons, List.map_cons, hc a (by simp), ih (fun x hx => hc x (by simp [hx]))]
+
+theorem mapOpt_toList {α γ δ : Type} (x : Option α) (g : α → γ) (h : γ → δ) :
+    ((x.map g).toList).map h = (x.map (fun a => h (g a))).toList := by
+  cases x <;> rfl
+
+theorem optMap_congr {α δ : Type} (x : Option α) (g h : α → δ)
+    (hc : ∀ a, x = some a → g a = h a) : x.map g = x.map h := by
+  cases x with
+  | none => rfl
+  | some a => show some (g a) = some (h a); rw [hc a rfl]
+
+theorem midToks_kinds (i : Id) (f : Fields)
+    (hid : isName i = true)
+    (hpar : optWf (fun p => wordWf p && !p.isEmpty) f.parent = true)
+    (htag : f.tags.all (fun t => wordWf t && !t.isEmpty) = true)
+    (hextra : f.extra.all extraPairWf = true)
+    (hunp : f.unparsed.all unparsedWordWf = true) :
+    classifyPhase3 (midToks i f) = midKinds i f := by
+  rw [classifyPhase3_map]
+  show classifyWord ('^' :: i) ::
+    ((parentToks f ++ tagToks f ++ prioToks f ++ keyToks f ++ extraToks f
+      ++ unparsedToks f ++ flagToks f).map (fun t => classifyWord t.word)) = _
+  rw [classifyWord_id i hid]
+  unfold midKinds
+  simp only [List.map_append]
+  congr 1
+  congr 1
+  · congr 1
+    · congr 1
+      · congr 1
+        · congr 1
+          · congr 1
+            · -- parent
+              show ((f.parent.map (fun p => tokOf ('@' :: p))).toList).map _ = _
+              rw [mapOpt_toList]
+              congr 1
+              refine optMap_congr f.parent _ _ (fun p hp => ?_)
+              refine classifyWord_parent p ?_
+              have := optWf_some hpar hp
+              simp only [Bool.and_eq_true, Bool.not_eq_true'] at this
+              intro hc; rw [hc] at this; simp at this
+            · -- tags
+              show (f.tags.map (fun t => tokOf ('#' :: t))).map _ = _
+              rw [map_map']
+              refine map_congr' _ _ f.tags (fun t ht => ?_)
+              refine classifyWord_tag t ?_
+              have := List.all_eq_true.1 htag t ht
+              simp only [Bool.and_eq_true, Bool.not_eq_true'] at this
+              intro hc; rw [hc] at this; simp at this
+          · -- priority
+            show ((f.prio.map (fun k => tokOf (renderPrio k))).toList).map _ = _
+            rw [mapOpt_toList]
+            congr 1
+            exact optMap_congr f.prio _ _ (fun k _ => classifyWord_prio k)
+        · -- keys
+          show ((kvOf f).map (fun p => tokOf (keyWord p.1 p.2))).map _ = _
+          rw [map_map']
+          exact map_congr' _ _ (kvOf f) (fun p _ => classifyWord_key p.1 p.2)
+      · -- unknown keys
+        show (f.extra.map (fun p => tokOf (p.1 ++ ':' :: p.2))).map _ = _
+        rw [map_map']
+        exact map_congr' _ _ f.extra
+          (fun p hp => classifyWord_extra (List.all_eq_true.1 hextra p hp))
+    · -- unclassifiable words
+      show (f.unparsed.map tokOf).map _ = _
+      rw [map_map']
+      refine map_congr' _ _ f.unparsed (fun w hw => ?_)
+      have := List.all_eq_true.1 hunp w hw
+      simp only [unparsedWordWf, Bool.and_eq_true, beq_iff_eq] at this
+      exact this.2
+  · -- flags
+    show (f.flags.map (fun fl => tokOf (Flag.name fl))).map _ = _
+    rw [map_map']
+    exact map_congr' _ _ f.flags (fun fl _ => classifyWord_flag fl)
+
+theorem slotGuard_est {f : Fields} (h : slotGuard f = true) (hest : f.estLead = none)
+    {w : List Char} (hw : f.title.head? = some w) : estSlot w = none := by
+  unfold slotGuard at h
+  rw [hw] at h
+  simp only [Bool.and_eq_true] at h
+  have h1 := h.1
+  rw [hest] at h1
+  cases he : estSlot w with
+  | none => rfl
+  | some d => rw [he] at h1; simp at h1
+
+theorem slotGuard_ci {f : Fields} (h : slotGuard f = true) (hci : f.ci = none)
+    (hest : f.estLead = none) {w : List Char} (hw : f.title.head? = some w) :
+    ciSlot w = none := by
+  unfold slotGuard at h
+  rw [hw] at h
+  simp only [Bool.and_eq_true] at h
+  have h2 := h.2
+  rw [hci, hest] at h2
+  cases hc : ciSlot w with
+  | none => rfl
+  | some c => rw [hc] at h2; simp at h2
+
+theorem head_title_mid (i : Id) (f : Fields) : ∀ u b,
+    titleToks f ++ midToks i f = u :: b →
+      (f.title.head? = some u.word ∨ u.word = '^' :: i) := by
+  intro u b hb
+  cases ht : f.title with
+  | nil =>
+      right
+      rw [show titleToks f = [] from by unfold titleToks; rw [ht]; rfl] at hb
+      show u.word = _
+      have : u = tokOf ('^' :: i) := by
+        unfold midToks at hb
+        simp only [List.nil_append, List.cons.injEq] at hb
+        exact hb.1.symm
+      rw [this]
+      rfl
+  | cons w ws =>
+      left
+      rw [show titleToks f = tokOf w :: ws.map tokOf from by
+        unfold titleToks; rw [ht]; rfl] at hb
+      simp only [List.cons_append, List.cons.injEq] at hb
+      rw [← hb.1]
+      rfl
+
+/-- **The layout, classified.**  This is the induction over the token grammar
+that round trip B rests on. -/
+theorem kinds_render (i : Id) (f : Fields) (h : Fields.wf i f = true) :
+    kinds (renderItem i f) = renderKinds i f := by
+  simp only [Fields.wf, Bool.and_eq_true, and_assoc] at h
+  obtain ⟨hid, htitle, hunp, hextra, hpar, htag, _, hguard, hestwf, _⟩ := h
+  have hmidk : classifyPhase3 (midToks i f) = midKinds i f :=
+    midToks_kinds i f hid hpar htag hextra hunp
+  have hstart : startsToken (tokOf ('^' :: i)).word = true := startsToken_caret i
+  have hphase2 : classifyPhase2 (titleToks f ++ midToks i f)
+      = f.title.map TokKind.title ++ midKinds i f := by
+    unfold midToks titleToks
+    rw [classifyPhase2_title (tokOf ('^' :: i)) _ hstart f.title (fun w hw => by
+      have := List.all_eq_true.1 htitle w hw
+      simp only [titleWordWf, Bool.and_eq_true, Bool.not_eq_true'] at this
+      exact this.2)]
+    unfold midToks at hmidk
+    rw [hmidk]
+  have hphase1 : classifyPhase1 (estToks f ++ (titleToks f ++ midToks i f))
+      = (f.estLead.map TokKind.est).toList ++ (f.title.map TokKind.title ++ midKinds i f) := by
+    cases he : f.estLead with
+    | some d =>
+        have hd : d.noDays = true := by rw [he] at hestwf; exact hestwf
+        rw [show estToks f = [tokOf (renderDur d)] from by unfold estToks; rw [he]; rfl]
+        show (match estSlot (renderDur d) with
+              | some d' => TokKind.est d' :: classifyPhase2 (titleToks f ++ midToks i f)
+              | none    => classifyPhase2 (tokOf (renderDur d) ::
+                             (titleToks f ++ midToks i f))) = _
+        rw [estSlot_renderDur d hd, hphase2]
+        rfl
+    | none =>
+        rw [show estToks f = [] from by unfold estToks; rw [he]; rfl]
+        show classifyPhase1 (titleToks f ++ midToks i f) = _
+        rw [classifyPhase1_of_noEst _ (fun u b hb => by
+          rcases head_title_mid i f u b hb with hh | hh
+          · exact slotGuard_est hguard he hh
+          · rw [hh]; exact estSlot_caret i), hphase2]
+        rfl
+  have hphase0 : classifyPhase0 (ciToks f ++ (estToks f ++ (titleToks f ++ midToks i f)))
+      = renderKinds i f := by
+    unfold renderKinds
+    cases hc : f.ci with
+    | some c =>
+        rw [show ciToks f = [tokOf (renderCi c)] from by unfold ciToks; rw [hc]; rfl]
+        show (match ciSlot (renderCi c) with
+              | some c' => TokKind.ci c' :: classifyPhase1 (estToks f ++
+                             (titleToks f ++ midToks i f))
+              | none    => classifyPhase1 (tokOf (renderCi c) ::
+                             (estToks f ++ (titleToks f ++ midToks i f)))) = _
+        rw [ciSlot_renderCi c, hphase1]
+        rfl
+    | none =>
+        rw [show ciToks f = [] from by unfold ciToks; rw [hc]; rfl]
+        show classifyPhase0 (estToks f ++ (titleToks f ++ midToks i f)) = _
+        rw [classifyPhase0_of_noCi _ (fun u b hb => by
+          cases he : f.estLead with
+          | some d =>
+              rw [show estToks f = [tokOf (renderDur d)] from by unfold estToks; rw [he]; rfl] at hb
+              simp only [List.cons_append, List.cons.injEq] at hb
+              rw [← hb.1]
+              exact ciSlot_renderDur d
+          | none =>
+              rw [show estToks f = [] from by unfold estToks; rw [he]; rfl] at hb
+              simp only [List.nil_append] at hb
+              rcases head_title_mid i f u b hb with hh | hh
+              · exact slotGuard_ci hguard hc he hh
+              · rw [hh]; exact ciSlot_caret i), hphase1]
+        rfl
+  show classifyPhase0 (renderToks i f) = _
+  unfold renderToks
+  rw [List.append_assoc, List.append_assoc]
+  exact hphase0
+
+
+
+/-! #### The positional views over the layout
+
+Nine `filterMap`s and `findSome?`s over `renderKinds`, one per field the token
+run carries.  Each is the same shape: every block of the layout contributes
+nothing except the one that owns the field. -/
+
+theorem findSome_cons_none {α β : Type} (fv : α → Option β) (a : α) (l : List α)
+    (h : fv a = none) : (a :: l).findSome? fv = l.findSome? fv := by
+  show (match fv a with | some b => some b | none => l.findSome? fv) = _
+  rw [h]
+
+theorem orElse_none {α : Type} (x : Option α) : (x.orElse (fun _ => none)) = x := by
+  cases x <;> rfl
+
+theorem view_render_title (i : Id) (f : Fields) (h : Fields.wf i f = true) :
+    titleSegment (renderItem i f) = f.title := by
+  unfold titleSegment
+  rw [kinds_render i f h]
+  unfold renderKinds midKinds
+  simp only [List.filterMap_append]
+  rw [filterMap_cons_none' kTitle (TokKind.id i) _ rfl]
+  simp only [List.filterMap_append]
+  rw [filterMapOptNone f.ci TokKind.ci kTitle (fun _ => rfl)]
+  rw [filterMapOptNone f.estLead TokKind.est kTitle (fun _ => rfl)]
+  rw [filterMapMapSome TokKind.title kTitle (fun a => a) (fun _ => rfl) f.title]
+  rw [filterMapOptNone f.parent TokKind.parent kTitle (fun _ => rfl)]
+  rw [filterMapMapNone TokKind.tag kTitle (fun _ => rfl) f.tags]
+  rw [filterMapOptNone f.prio TokKind.prio kTitle (fun _ => rfl)]
+  rw [filterMapMapNone (fun p => TokKind.key p.1 p.2) kTitle (fun _ => rfl) (kvOf f)]
+  rw [filterMapMapNone (fun p => TokKind.extra p.1 p.2) kTitle (fun _ => rfl) f.extra]
+  rw [filterMapMapNone TokKind.unparsed kTitle (fun _ => rfl) f.unparsed]
+  rw [filterMapMapNone TokKind.flag kTitle (fun _ => rfl) f.flags]
+  simp
+
+theorem view_render_unparsed (i : Id) (f : Fields) (h : Fields.wf i f = true) :
+    unparsedWords (renderItem i f) = f.unparsed := by
+  unfold unparsedWords
+  rw [kinds_render i f h]
+  unfold renderKinds midKinds
+  simp only [List.filterMap_append]
+  rw [filterMap_cons_none' kUnparsed (TokKind.id i) _ rfl]
+  simp only [List.filterMap_append]
+  rw [filterMapOptNone f.ci TokKind.ci kUnparsed (fun _ => rfl)]
+  rw [filterMapOptNone f.estLead TokKind.est kUnparsed (fun _ => rfl)]
+  rw [filterMapMapNone TokKind.title kUnparsed (fun _ => rfl) f.title]
+  rw [filterMapOptNone f.parent TokKind.parent kUnparsed (fun _ => rfl)]
+  rw [filterMapMapNone TokKind.tag kUnparsed (fun _ => rfl) f.tags]
+  rw [filterMapOptNone f.prio TokKind.prio kUnparsed (fun _ => rfl)]
+  rw [filterMapMapNone (fun p => TokKind.key p.1 p.2) kUnparsed (fun _ => rfl) (kvOf f)]
+  rw [filterMapMapNone (fun p => TokKind.extra p.1 p.2) kUnparsed (fun _ => rfl) f.extra]
+  rw [filterMapMapSome TokKind.unparsed kUnparsed (fun a => a) (fun _ => rfl) f.unparsed]
+  rw [filterMapMapNone TokKind.flag kUnparsed (fun _ => rfl) f.flags]
+  simp
+
+theorem view_render_tags (i : Id) (f : Fields) (h : Fields.wf i f = true) :
+    tagWords (renderItem i f) = f.tags := by
+  unfold tagWords
+  rw [kinds_render i f h]
+  unfold renderKinds midKinds
+  simp only [List.filterMap_append]
+  rw [filterMap_cons_none' kTag (TokKind.id i) _ rfl]
+  simp only [List.filterMap_append]
+  rw [filterMapOptNone f.ci TokKind.ci kTag (fun _ => rfl)]
+  rw [filterMapOptNone f.estLead TokKind.est kTag (fun _ => rfl)]
+  rw [filterMapMapNone TokKind.title kTag (fun _ => rfl) f.title]
+  rw [filterMapOptNone f.parent TokKind.parent kTag (fun _ => rfl)]
+  rw [filterMapMapSome TokKind.tag kTag (fun a => a) (fun _ => rfl) f.tags]
+  rw [filterMapOptNone f.prio TokKind.prio kTag (fun _ => rfl)]
+  rw [filterMapMapNone (fun p => TokKind.key p.1 p.2) kTag (fun _ => rfl) (kvOf f)]
+  rw [filterMapMapNone (fun p => TokKind.extra p.1 p.2) kTag (fun _ => rfl) f.extra]
+  rw [filterMapMapNone TokKind.unparsed kTag (fun _ => rfl) f.unparsed]
+  rw [filterMapMapNone TokKind.flag kTag (fun _ => rfl) f.flags]
+  simp
+
+theorem view_render_flags (i : Id) (f : Fields) (h : Fields.wf i f = true) :
+    flagsOf (renderItem i f) = f.flags := by
+  unfold flagsOf
+  rw [kinds_render i f h]
+  unfold renderKinds midKinds
+  simp only [List.filterMap_append]
+  rw [filterMap_cons_none' kFlag (TokKind.id i) _ rfl]
+  simp only [List.filterMap_append]
+  rw [filterMapOptNone f.ci TokKind.ci kFlag (fun _ => rfl)]
+  rw [filterMapOptNone f.estLead TokKind.est kFlag (fun _ => rfl)]
+  rw [filterMapMapNone TokKind.title kFlag (fun _ => rfl) f.title]
+  rw [filterMapOptNone f.parent TokKind.parent kFlag (fun _ => rfl)]
+  rw [filterMapMapNone TokKind.tag kFlag (fun _ => rfl) f.tags]
+  rw [filterMapOptNone f.prio TokKind.prio kFlag (fun _ => rfl)]
+  rw [filterMapMapNone (fun p => TokKind.key p.1 p.2) kFlag (fun _ => rfl) (kvOf f)]
+  rw [filterMapMapNone (fun p => TokKind.extra p.1 p.2) kFlag (fun _ => rfl) f.extra]
+  rw [filterMapMapNone TokKind.unparsed kFlag (fun _ => rfl) f.unparsed]
+  rw [filterMapMapSome TokKind.flag kFlag (fun a => a) (fun _ => rfl) f.flags]
+  simp
+
+theorem view_render_extra (i : Id) (f : Fields) (h : Fields.wf i f = true) :
+    extraPairs (renderItem i f) = f.extra := by
+  unfold extraPairs
+  rw [kinds_render i f h]
+  unfold renderKinds midKinds
+  simp only [List.filterMap_append]
+  rw [filterMap_cons_none' kExtra (TokKind.id i) _ rfl]
+  simp only [List.filterMap_append]
+  rw [filterMapOptNone f.ci TokKind.ci kExtra (fun _ => rfl)]
+  rw [filterMapOptNone f.estLead TokKind.est kExtra (fun _ => rfl)]
+  rw [filterMapMapNone TokKind.title kExtra (fun _ => rfl) f.title]
+  rw [filterMapOptNone f.parent TokKind.parent kExtra (fun _ => rfl)]
+  rw [filterMapMapNone TokKind.tag kExtra (fun _ => rfl) f.tags]
+  rw [filterMapOptNone f.prio TokKind.prio kExtra (fun _ => rfl)]
+  rw [filterMapMapNone (fun p => TokKind.key p.1 p.2) kExtra (fun _ => rfl) (kvOf f)]
+  rw [filterMapMapSome (fun p => TokKind.extra p.1 p.2) kExtra (fun a => a) (fun _ => rfl) f.extra]
+  rw [filterMapMapNone TokKind.unparsed kExtra (fun _ => rfl) f.unparsed]
+  rw [filterMapMapNone TokKind.flag kExtra (fun _ => rfl) f.flags]
+  simp
+
+theorem view_render_parent (i : Id) (f : Fields) (h : Fields.wf i f = true) :
+    parentRef (renderItem i f) = f.parent := by
+  unfold parentRef
+  rw [kinds_render i f h]
+  unfold renderKinds midKinds
+  simp only [findSome_append]
+  rw [findSome_cons_none kParent (TokKind.id i) _ rfl]
+  simp only [findSome_append]
+  rw [findSomeOptNone f.ci TokKind.ci kParent (fun _ => rfl)]
+  rw [findSomeOptNone f.estLead TokKind.est kParent (fun _ => rfl)]
+  rw [findSomeMapNone TokKind.title kParent (fun _ => rfl) f.title]
+  rw [findSomeOptSome f.parent TokKind.parent kParent (fun a => a) (fun _ => rfl)]
+  rw [findSomeMapNone TokKind.tag kParent (fun _ => rfl) f.tags]
+  rw [findSomeOptNone f.prio TokKind.prio kParent (fun _ => rfl)]
+  rw [findSomeMapNone (fun p => TokKind.key p.1 p.2) kParent (fun _ => rfl) (kvOf f)]
+  rw [findSomeMapNone (fun p => TokKind.extra p.1 p.2) kParent (fun _ => rfl) f.extra]
+  rw [findSomeMapNone TokKind.unparsed kParent (fun _ => rfl) f.unparsed]
+  rw [findSomeMapNone TokKind.flag kParent (fun _ => rfl) f.flags]
+  simp
+
+theorem view_render_prio (i : Id) (f : Fields) (h : Fields.wf i f = true) :
+    prioOf (renderItem i f) = f.prio := by
+  unfold prioOf
+  rw [kinds_render i f h]
+  unfold renderKinds midKinds
+  simp only [findSome_append]
+  rw [findSome_cons_none kPrio (TokKind.id i) _ rfl]
+  simp only [findSome_append]
+  rw [findSomeOptNone f.ci TokKind.ci kPrio (fun _ => rfl)]
+  rw [findSomeOptNone f.estLead TokKind.est kPrio (fun _ => rfl)]
+  rw [findSomeMapNone TokKind.title kPrio (fun _ => rfl) f.title]
+  rw [findSomeOptNone f.parent TokKind.parent kPrio (fun _ => rfl)]
+  rw [findSomeMapNone TokKind.tag kPrio (fun _ => rfl) f.tags]
+  rw [findSomeOptSome f.prio TokKind.prio kPrio (fun a => a) (fun _ => rfl)]
+  rw [findSomeMapNone (fun p => TokKind.key p.1 p.2) kPrio (fun _ => rfl) (kvOf f)]
+  rw [findSomeMapNone (fun p => TokKind.extra p.1 p.2) kPrio (fun _ => rfl) f.extra]
+  rw [findSomeMapNone TokKind.unparsed kPrio (fun _ => rfl) f.unparsed]
+  rw [findSomeMapNone TokKind.flag kPrio (fun _ => rfl) f.flags]
+  simp
+
+theorem view_render_ciSlot (i : Id) (f : Fields) (h : Fields.wf i f = true) :
+    ciSlotOf (renderItem i f) = f.ci := by
+  unfold ciSlotOf
+  rw [kinds_render i f h]
+  unfold renderKinds midKinds
+  simp only [findSome_append]
+  rw [findSome_cons_none kCi (TokKind.id i) _ rfl]
+  simp only [findSome_append]
+  rw [findSomeOptSome f.ci TokKind.ci kCi (fun a => a) (fun _ => rfl)]
+  rw [findSomeOptNone f.estLead TokKind.est kCi (fun _ => rfl)]
+  rw [findSomeMapNone TokKind.title kCi (fun _ => rfl) f.title]
+  rw [findSomeOptNone f.parent TokKind.parent kCi (fun _ => rfl)]
+  rw [findSomeMapNone TokKind.tag kCi (fun _ => rfl) f.tags]
+  rw [findSomeOptNone f.prio TokKind.prio kCi (fun _ => rfl)]
+  rw [findSomeMapNone (fun p => TokKind.key p.1 p.2) kCi (fun _ => rfl) (kvOf f)]
+  rw [findSomeMapNone (fun p => TokKind.extra p.1 p.2) kCi (fun _ => rfl) f.extra]
+  rw [findSomeMapNone TokKind.unparsed kCi (fun _ => rfl) f.unparsed]
+  rw [findSomeMapNone TokKind.flag kCi (fun _ => rfl) f.flags]
+  simp
+
+theorem view_render_estLead (i : Id) (f : Fields) (h : Fields.wf i f = true) :
+    estLeadOf (renderItem i f) = f.estLead := by
+  unfold estLeadOf
+  rw [kinds_render i f h]
+  unfold renderKinds midKinds
+  simp only [findSome_append]
+  rw [findSome_cons_none kEst (TokKind.id i) _ rfl]
+  simp only [findSome_append]
+  rw [findSomeOptNone f.ci TokKind.ci kEst (fun _ => rfl)]
+  rw [findSomeOptSome f.estLead TokKind.est kEst (fun a => a) (fun _ => rfl)]
+  rw [findSomeMapNone TokKind.title kEst (fun _ => rfl) f.title]
+  rw [findSomeOptNone f.parent TokKind.parent kEst (fun _ => rfl)]
+  rw [findSomeMapNone TokKind.tag kEst (fun _ => rfl) f.tags]
+  rw [findSomeOptNone f.prio TokKind.prio kEst (fun _ => rfl)]
+  rw [findSomeMapNone (fun p => TokKind.key p.1 p.2) kEst (fun _ => rfl) (kvOf f)]
+  rw [findSomeMapNone (fun p => TokKind.extra p.1 p.2) kEst (fun _ => rfl) f.extra]
+  rw [findSomeMapNone TokKind.unparsed kEst (fun _ => rfl) f.unparsed]
+  rw [findSomeMapNone TokKind.flag kEst (fun _ => rfl) f.flags]
+  simp
+
+theorem view_render_id (i : Id) (f : Fields) (h : Fields.wf i f = true) :
+    idWordOf (renderItem i f) = some i := by
+  unfold idWordOf
+  rw [kinds_render i f h]
+  unfold renderKinds midKinds
+  simp only [findSome_append]
+  rw [findSomeOptNone f.ci TokKind.ci kId (fun _ => rfl)]
+  rw [findSomeOptNone f.estLead TokKind.est kId (fun _ => rfl)]
+  rw [findSomeMapNone TokKind.title kId (fun _ => rfl) f.title]
+  rw [show (TokKind.id i :: ((f.parent.map TokKind.parent).toList
+        ++ f.tags.map TokKind.tag
+        ++ (f.prio.map TokKind.prio).toList
+        ++ (kvOf f).map (fun p => TokKind.key p.1 p.2)
+        ++ f.extra.map (fun p => TokKind.extra p.1 p.2)
+        ++ f.unparsed.map TokKind.unparsed
+        ++ f.flags.map TokKind.flag)).findSome? kId = some i from rfl]
+  simp
+
+
+
+/-! ### Round trip B
+
+Twenty-seven fields, twenty-seven views, one theorem. -/
+
+def viewFields (r : RawItem) : Fields :=
+  { ci        := ciSlotOf r
+    estLead   := estLeadOf r
+    title     := titleSegment r
+    parent    := parentRef r
+    tags      := tagWords r
+    prio      := prioOf r
+    due       := viewDue r
+    interval  := viewAt r
+    window    := viewWin r
+    dur       := viewDur r
+    pref      := viewPref r
+    every     := viewEvery r
+    afterDone := viewAfterDone r
+    onEvent   := viewOnEvent r
+    onMiss    := viewOnMiss r
+    floor     := viewMin r
+    cap       := viewMax r
+    after     := viewAfter r
+    loc       := viewLoc r
+    est       := viewEstKey r
+    demoted   := viewDemoted r
+    waiting   := viewWaiting r
+    buffer    := viewBuffer r
+    ciKey     := viewCiKey r
+    extra     := extraPairs r
+    unparsed  := unparsedWords r
+    flags     := flagsOf r }
+
+/-- **Round trip B.**  Everything the kernel writes from a well-formed
+`Fields`, it reads back as the same `Fields` — nineteen `key:` spellings, five
+flags, both positional slots, the title, the sigil tokens, the unknown keys it
+preserved and the words it could not classify.
+
+This is the direction round trip A does not give you and the one the plan
+named as the stage's biggest unknown. -/
+theorem field_round_trip (i : Id) (f : Fields) (h : Fields.wf i f = true) :
+    viewFields (renderItem i f) = f := by
+  have hparts := h
+  simp only [Fields.wf, Bool.and_eq_true, and_assoc] at hparts
+  obtain ⟨hid, htitle, hunp, hextra, hpar, htag, hkv, hguard, hestwf, hdue, hint, hwin,
+    hdur, hevery, honev, hafter, hloc, hestk, hdem, hwait⟩ := hparts
+  unfold viewFields
+  rw [view_render_ciSlot i f h, view_render_estLead i f h, view_render_title i f h,
+    view_render_parent i f h, view_render_tags i f h, view_render_prio i f h,
+    view_render_extra i f h, view_render_unparsed i f h, view_render_flags i f h]
+  rw [view_render_due i f htitle hunp hextra hdue,
+    view_render_interval i f htitle hunp hextra hint,
+    view_render_window i f htitle hunp hextra hwin,
+    view_render_dur i f htitle hunp hextra hdur,
+    view_render_pref i f htitle hunp hextra,
+    view_render_every i f htitle hunp hextra hevery,
+    view_render_afterDone i f htitle hunp hextra,
+    view_render_onEvent i f htitle hunp hextra honev,
+    view_render_onMiss i f htitle hunp hextra,
+    view_render_floor i f htitle hunp hextra,
+    view_render_cap i f htitle hunp hextra,
+    view_render_after i f htitle hunp hextra hafter,
+    view_render_loc i f htitle hunp hextra hloc,
+    view_render_est i f htitle hunp hextra hestk,
+    view_render_demoted i f htitle hunp hextra hdem,
+    view_render_waiting i f htitle hunp hextra hwait,
+    view_render_buffer i f htitle hunp hextra,
+    view_render_ci i f htitle hunp hextra]
+
+/-- §4.1's title rule at the level of the whole line: the words the classifier
+could not place come back inside the title, after the title segment's own. -/
+theorem title_absorbs_the_unclassified (i : Id) (f : Fields) (h : Fields.wf i f = true) :
+    titleWords (renderItem i f) = f.title ++ f.unparsed := by
+  unfold titleWords
+  rw [kinds_render i f h]
+  unfold renderKinds midKinds
+  simp only [List.filterMap_append]
+  rw [filterMap_cons_none' kTitleWord (TokKind.id i) _ rfl]
+  simp only [List.filterMap_append]
+  rw [filterMapOptNone f.ci TokKind.ci kTitleWord (fun _ => rfl)]
+  rw [filterMapOptNone f.estLead TokKind.est kTitleWord (fun _ => rfl)]
+  rw [filterMapMapSome TokKind.title kTitleWord (fun a => a) (fun _ => rfl) f.title]
+  rw [filterMapOptNone f.parent TokKind.parent kTitleWord (fun _ => rfl)]
+  rw [filterMapMapNone TokKind.tag kTitleWord (fun _ => rfl) f.tags]
+  rw [filterMapOptNone f.prio TokKind.prio kTitleWord (fun _ => rfl)]
+  rw [filterMapMapNone (fun p => TokKind.key p.1 p.2) kTitleWord (fun _ => rfl) (kvOf f)]
+  rw [filterMapMapNone (fun p => TokKind.extra p.1 p.2) kTitleWord (fun _ => rfl) f.extra]
+  rw [filterMapMapSome TokKind.unparsed kTitleWord (fun a => a) (fun _ => rfl) f.unparsed]
+  rw [filterMapMapNone TokKind.flag kTitleWord (fun _ => rfl) f.flags]
+  simp
+
 end Field
 end Tm
