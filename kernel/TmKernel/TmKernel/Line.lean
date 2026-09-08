@@ -5526,7 +5526,7 @@ token), and such a word would be rewritten as the id.  So a line the kernel
 *writes* may not carry one.  A line the kernel *reads* still keeps it in the
 title (`junk_title` above); this is a restriction on the renderer, not on the
 parser, and it is the same restriction `Id` being `List Char` already implies
-(README gap 7). -/
+(README gap 13). -/
 
 def Fields.canonicalWf (i : Id) (f : Fields) : Bool :=
   Fields.wf i f && f.unparsed.all (fun w => !isIdWord w)
@@ -5912,5 +5912,147 @@ theorem demo_line_bytes :
        "waiting:2026-09-05 buffer:2h note:xyz !9 open hot").toList := by
   decide
 
+
+
+/-! ## §4.1's value table, row by row
+
+Every value format the table lists, read by the kernel and checked by `decide`
+at compile time.  A round-trip theorem says a value survives; these say the
+kernel reads the spelling the spec actually writes. -/
+
+/-- `due:` — a date -/
+theorem row_due_date : parseMoment ['2','0','2','6','-','0','9','-','1','1'] = some (.date (Cal.toDay ⟨2026, 9, 11⟩)) := by decide
+
+/-- `due:` — a date-time -/
+theorem row_due_datetime : parseMoment ['2','0','2','6','-','0','9','-','1','1','T','2','3',':','5','9'] = some (.dateTime (Cal.toDay ⟨2026, 9, 11⟩) ⟨23 * 60 + 59, by decide⟩) := by decide
+
+/-- `at:` — §4.1's short end form -/
+theorem row_at_same_day : parseInterval ['2','0','2','6','-','0','9','-','0','7','T','1','2',':','5','0','/','1','3',':','5','0'] = some (⟨Cal.toDay ⟨2026, 9, 7⟩, ⟨12 * 60 + 50, by decide⟩⟩, ⟨Cal.toDay ⟨2026, 9, 7⟩, ⟨13 * 60 + 50, by decide⟩⟩) := by decide
+
+/-- `at:` — §4.1's long end form -/
+theorem row_at_cross_day : parseInterval ['2','0','2','6','-','0','9','-','0','7','T','0','8',':','1','5','/','2','0','2','6','-','0','9','-','1','2','T','1','0',':','4','0'] = some (⟨Cal.toDay ⟨2026, 9, 7⟩, ⟨8 * 60 + 15, by decide⟩⟩, ⟨Cal.toDay ⟨2026, 9, 12⟩, ⟨10 * 60 + 40, by decide⟩⟩) := by decide
+
+/-- `at:` — a short end before the start rolls to the next day (`parse_interval`) -/
+theorem row_at_rolls_past_midnight : parseInterval ['2','0','2','6','-','0','9','-','0','7','T','2','2',':','0','0','/','0','1',':','0','0'] = some (⟨Cal.toDay ⟨2026, 9, 7⟩, ⟨22 * 60 + 0, by decide⟩⟩, ⟨Cal.toDay ⟨2026, 9, 7⟩ + 1, ⟨1 * 60 + 0, by decide⟩⟩) := by decide
+
+/-- `win:` — the daily form -/
+theorem row_win_daily : parseWindow ['1','1',':','3','0','-','1','3',':','3','0'] = some (.daily ⟨11 * 60 + 30, by decide⟩ ⟨13 * 60 + 30, by decide⟩) := by decide
+
+/-- `win:` — the absolute form -/
+theorem row_win_absolute : parseWindow ['2','0','2','6','-','0','9','-','0','7','T','1','4',':','0','0','/','1','7',':','0','0'] = some (.absolute ⟨Cal.toDay ⟨2026, 9, 7⟩, ⟨14 * 60 + 0, by decide⟩⟩ ⟨Cal.toDay ⟨2026, 9, 7⟩, ⟨17 * 60 + 0, by decide⟩⟩) := by decide
+
+/-- `dur:` -/
+theorem row_dur_30m : parseDurND ['3','0','m'] = some (.simple 30 .minutes) := by decide
+
+/-- `dur:` -/
+theorem row_dur_1h : parseDurND ['1','h'] = some (.simple 1 .hours) := by decide
+
+/-- `grammar.rs`'s `NhMm`, which §4.1's table does not list -/
+theorem row_dur_hours_minutes : parseDur ['2','h','3','0','m'] = some (.hm 2 30) := by decide
+
+/-- `pref:` -/
+theorem row_pref_wake_plus : parsePref ['w','a','k','e','+','1','0','m'] = some (.wakePlus (.simple 10 .minutes)) := by decide
+
+/-- `pref:` -/
+theorem row_pref_clock : parsePref ['1','2',':','0','0'] = some (.clock ⟨12 * 60 + 0, by decide⟩) := by decide
+
+/-- `every:` -/
+theorem row_every_day : parseRule ['d','a','y'] = some .daily := by decide
+
+/-- `every:` -/
+theorem row_every_weekday : parseRule ['w','e','e','k','d','a','y'] = some .weekdays := by decide
+
+/-- `every:` -/
+theorem row_every_mwf : parseRule ['M','o','n',',','W','e','d',',','F','r','i'] = some (.weekly [.monday, .wednesday, .friday]) := by decide
+
+/-- `every:` -/
+theorem row_every_2w_sun : parseRule ['2','w',':','S','u','n'] = some (.everyNWeeks 2 .sunday) := by decide
+
+/-- `every:` -/
+theorem row_every_3d : parseRule ['3','d'] = some (.everyNDays 3) := by decide
+
+/-- `every:` -/
+theorem row_every_month_15 : parseRule ['m','o','n','t','h',':','1','5'] = some (.monthly 15) := by decide
+
+/-- `every:week` — in §4.3's routines, absent from §3.1's `Rule` -/
+theorem row_every_week : parseRule ['w','e','e','k'] = some (.weeks 1) := by decide
+
+/-- `after-done:` -/
+theorem row_after_done_offset : parseAfterDone ['2','d'] = some ⟨.simple 2 .days, none⟩ := by decide
+
+/-- `after-done:` with its validity window -/
+theorem row_after_done_window : parseAfterDone ['2','d','~','1','d'] = some ⟨.simple 2 .days, some (.simple 1 .days)⟩ := by decide
+
+/-- `on-event:` -/
+theorem row_on_event_bare : parseOnEvent ['r','e','p','l','y'] = some ⟨['r','e','p','l','y'], none⟩ := by decide
+
+/-- `on-event:` with its timeout -/
+theorem row_on_event_timeout : parseOnEvent ['r','e','p','l','y','/','7','d'] = some ⟨['r','e','p','l','y'], some (.simple 7 .days)⟩ := by decide
+
+/-- `on-miss:` -/
+theorem row_on_miss_expire : parseOnMiss ['e','x','p','i','r','e'] = some .expire := by decide
+
+/-- `on-miss:` -/
+theorem row_on_miss_persist : parseOnMiss ['p','e','r','s','i','s','t'] = some .persist := by decide
+
+/-- `on-miss:` -/
+theorem row_on_miss_next : parseOnMiss ['n','e','x','t'] = some .next := by decide
+
+/-- `min:` -/
+theorem row_min_6b_w : parseRate ['6','b','/','w'] = some ⟨.simple 6 .blocks, .week⟩ := by decide
+
+/-- `max:` -/
+theorem row_max_2b_d : parseRate ['2','b','/','d'] = some ⟨.simple 2 .blocks, .day⟩ := by decide
+
+/-- `cap:` (an alias of `max:`) -/
+theorem row_cap_4h_w : parseRate ['4','h','/','w'] = some ⟨.simple 4 .hours, .week⟩ := by decide
+
+/-- `after:` — an id list -/
+theorem row_after_ids : parseDeps ['^','k','7','q','2',',','^','m','2'] = some [.item ['k','7','q','2'], .item ['m','2']] := by decide
+
+/-- `after:` — an event -/
+theorem row_after_event : parseDeps ['e','v','e','n','t',':','v','i','s','a'] = some [.event ['v','i','s','a']] := by decide
+
+/-- `loc:` -/
+theorem row_loc_lounge : parseLoc ['l','o','u','n','g','e'] = some .lounge := by decide
+
+/-- `loc:` — any other name -/
+theorem row_loc_named : parseLoc ['z','o','o','m'] = some (.named ['z','o','o','m']) := by decide
+
+/-- `est:` -/
+theorem row_est_1b : parseDurND ['1','b'] = some (.simple 1 .blocks) := by decide
+
+/-- `demoted:` (tool-written) -/
+theorem row_demoted_stamps : parseStamps ['W','3','6',',','W','3','7'] = some [.week 36, .week 37] := by decide
+
+/-- `waiting:` (tool-written) -/
+theorem row_waiting_date : parseDate ['2','0','2','6','-','0','9','-','0','5'] = some (Cal.toDay ⟨2026, 9, 5⟩) := by decide
+
+/-- `buffer:` -/
+theorem row_buffer_2h : parseDur ['2','h'] = some (.simple 2 .hours) := by decide
+
+/-- `ci:` — the key form, on a state-less line -/
+theorem row_ci_key : parseCi ['3'] = some ⟨3, by decide⟩ := by decide
+
+/-- Every §4.1 flag. -/
+theorem row_flags :
+    (Flag.ofName? ['o','p','e','n'], Flag.ofName? ['a','t','o','m','i','c'],
+      Flag.ofName? ['m','a','n','u','a','l'],
+      Flag.ofName? ['t','r','a','v','e','l','-','d','a','y'], Flag.ofName? ['h','o','t'])
+      = (some .openEnded, some .atomic, some .manual, some .travelDay, some .hot) := by
+  decide
+
+/-- `intervalWf` is satisfiable: §4.1's own `at:` value. -/
+theorem intervalWf_is_satisfiable :
+    intervalWf ⟨Cal.toDay ⟨2026, 9, 7⟩, ⟨12 * 60 + 50, by decide⟩⟩
+      ⟨Cal.toDay ⟨2026, 9, 7⟩, ⟨13 * 60 + 50, by decide⟩⟩ = true := by decide
+
+/-- **The two `est:` writers agree on the bytes.**  `Text.lean`'s stage-one
+`estWord` and this half's `keyWord Key.est` produce the *same token* for a
+minutes value, so the stage-one `viewRemaining` reads what the field-level
+setter writes.  The two views are not yet one function — see the README's gap
+list — but they do not disagree about what a write puts on the line. -/
+theorem the_two_est_setters_write_the_same_token (v : Nat) :
+    keyWord Key.est (renderDur (.simple v .minutes)) = estWord v := rfl
 end Field
 end Tm

@@ -10,8 +10,8 @@ kernel/
   TmKernel/            Lean 4 package, no Mathlib, toolchain pinned to v4.33.1
     TmKernel/Cal.lean        the calendar: civil dates, ISO weeks, one tie-break
     TmKernel/Grain.lean      the horizon order, derived from one generator
-    TmKernel/Text.lean       tokenizer, decimal numerals, the inverse lemmas
-    TmKernel/Line.lean       the item line: parse, serialise, the est: view
+    TmKernel/Text.lean       tokenizer, numerals (padded and bare), splitting
+    TmKernel/Line.lean       the item line and the whole of §4.1's field grammar
     TmKernel/State.lean      entity vs observation; the id invariant, locally
     TmKernel/Plan.lean       the plan as one object; the invariant, globally
     TmKernel/Cmd.lean        five commands, each with its law proved or refuted
@@ -379,14 +379,13 @@ is the honest split:
 
 ### The grammar
 
-The subset this stage **interprets**: `<indent>- [<state>] <tokens…>`, with the
-six state glyphs, whitespace-separated tokens kept verbatim, exactly one `^id`
-token, and `est:<N>b|m|h` plus the leading estimate `<N>b|m|h` read as numbers.
-Everything else — `@parent`, `#tag`, `!k`, `due:`, `at:`, `every:`,
-`on-event:`, `waiting:`, `max:`, front matter, headings, blank lines, comments,
-generated blocks — is **preserved byte for byte and not interpreted**. That is
-the honest boundary: the subset that is *parsed* is the whole file; the subset
-that is *understood* is the state box, the id, and the estimate.
+`<indent>- [<state>] <tokens…>`, with the six state glyphs, whitespace-separated
+tokens kept verbatim, exactly one `^id` token, and — since the field-grammar
+slice — **the whole of §4.1**: nineteen `key:value` spellings, five flags, both
+positional slots, the four sigil tokens, the title, the unknown keys it
+preserves and the words it cannot classify.  Everything outside an item line
+(front matter, headings, blank lines, comments, generated blocks) is preserved
+byte for byte and not interpreted.
 
 - `tokenize_raw` — the token vector concatenates back to exactly the bytes read.
 - `serialize_parse` (**round trip A**) — every line the parser accepts
@@ -435,6 +434,93 @@ that is *understood* is the state box, the id, and the estimate.
   `tm edit est=` bug, and `lead_edit_is_silent` — **the shipped bug itself, as
   a theorem**: with an `est:` token present, writing the leading estimate
   changes nothing the kernel reads.
+
+### §4.1's field grammar
+
+The value types live in `Tm.Field`, one module earlier than §3.1's copies in
+`State.lean`, because `State.lean` imports `Line.lean` and the grammar cannot
+name types it comes before.  They are the same data; see gap 3 for what joining
+them costs.
+
+- **A round trip per value format.**  `parse_render_dur`, `parse_render_clock`,
+  `parse_render_date`, `parse_render_moment`, `parse_render_interval`,
+  `parse_render_window`, `parse_render_pref`, `parse_render_rule`,
+  `parse_render_afterDone`, `parse_render_onEvent`, `parse_render_onMiss`,
+  `parse_render_rate`, `parse_render_deps`, `parse_render_loc`,
+  `parse_render_stamps`, `parse_render_ci`, `parse_render_prio` — every value
+  the kernel writes it reads back as the same value, unit included.  Where a
+  format needs a side condition the condition is decidable and named
+  (`Rule.wf`, `intervalWf`, `windowWf`, `Loc.wf`, `depsWf`, `Dur.noDays`,
+  `dayWf`), never assumed.
+- **`row_*`, thirty-eight of them** — every row of §4.1's value table, read by
+  the kernel, `decide`d at compile time.  `at:`'s short and long end forms, the
+  short end that rolls past midnight, the overnight `win:`, `2w:Sun`,
+  `month:15`, `2d~1d`, `reply/7d`, `6b/w`, `^k7q2,^m2`, `event:visa`,
+  `W36,W37`, `wake+10m`.
+- **`extract_phase0` — the induction over the token grammar.**  §4.1's line is a
+  four-phase machine (ci slot, estimate slot, title, tokens), and it is four
+  structurally recursive functions.  `extract_phase0` says that a view which
+  reads a word the same way wherever the word sits reads the whole line as a
+  plain scan; its three hypotheses are exactly the three places position can
+  matter.  `keyPairs_raw` is the instance the setters rest on.  `flagsOf` is
+  deliberately *not* an instance, because §4.1's flag rule is positional.
+- **`field_round_trip` (round trip B, at the level of fields)** —
+  `viewFields (renderItem i f) = f` on the decidable `Fields.wf`.  This is the
+  direction round trip A does not give you and the one `PLAN-lean-kernel.md`
+  named as the stage's biggest unknown.
+- **`render_round_trip`** — and the two round trips joined:
+  `renderItem_canonical` puts the rendered line inside `CanonicalItem`, so what
+  the kernel writes from a `Fields` it reads back as the same **bytes** and the
+  same **fields**.
+- **`demo_wf` / `demo_line_bytes`** — `Fields.wf` is satisfiable and richly: a
+  fully populated item, its `Fields.canonicalWf` `decide`d, and the exact bytes
+  it writes spelled out.  A precondition nothing satisfies would make round trip
+  B vacuous; this is the check.
+- **`lookupKey_setKey`, and eighteen `view_set_*`** — there is **one** generic
+  setter, `setKey`, and every field's `view ∘ set = id` is three lines from it.
+  That is the shape of the fix for C1: the shipped bug was one setter out of a
+  family writing the wrong slot, and a family with one member has no odd one
+  out.  `setKey_canonical` and `setKey_line_reparses` carry the byte-level
+  guarantee across the edit.
+- **`view_set_remaining` and `view_set_ci`** — C1 and C2 dead as theorems:
+  `est:` overrides the leading estimate and `ci:` overrides the positional
+  digit, so the setter writes the slot the *view* reads.
+  `est_key_overrides_the_leading_estimate` is the shipped bug's line
+  (`- [ ] 6b Read est:1b ^t3`) with both numbers on it, and
+  `unset_ci_key_leaves_the_positional_digit` is the `--unset ci` shape stated
+  rather than papered over: removing the key leaves the digit, so a complete
+  unset has to clear both slots.
+- **`setFlag` returns `Option`** — §4.1 reads a flag only after a
+  `@ # ! ^ key:` token, so a flag on a line with no such token would be absorbed
+  into the title.  `view_set_flag` fires only when it succeeded and
+  `setFlag_needs_a_boundary` is the refusal; `grammar.rs` calls this
+  `EditError::FlagNeedsBoundary`.
+- **The two §4.1 rules that are easy to lose**, as theorems about every line
+  rather than about the ones a test tried:
+  `unclassified_token_stays_in_the_title` and `unknown_key_is_reported`
+  (preserved *with* its key and value, and reported).  `junk_extra_keys`,
+  `junk_problems`, `junk_title` and `junk_bytes` are the same four claims on
+  `- [ ] Read re:this @m1 note:xyz !9 ^t3`, `decide`d — including that the junk
+  still round trips byte for byte.
+- **`flag_word_in_the_title_is_title_text` / `flag_word_after_the_id_is_a_flag`**
+  — the same word, two positions, two readings, both `decide`d.
+- **`spec_line_*`** — §4.1's own header example, read: ci 4, leading estimate
+  `2b`, remaining estimate `1b` (the `est:` override), title, `@m1`, `#lean`,
+  `due:`, `max:`, `^t3`, no problems, and the bytes back — two spaces before
+  `@m1` included.
+- **`cap_is_an_alias_of_max`** — `cap:` has no field of its own, and writing
+  normalises it to `max:`.  Two names for one budget is the defect class this
+  kernel exists to remove, so the enum is named for the field.
+
+Two layout choices in `renderToks` are deliberate and are recorded because they
+are visible in the output: the `^id` **leads** the token run rather than
+trailing it (§4.1 allows any order; the id is the one token always present, so
+leading it makes "the title ended here" true by construction and makes a
+trailing flag safe with no side condition), and the title-word guard
+`slotGuard` is `grammar.rs`'s `EditError::Ambiguous` written as a
+*precondition* — the kernel refuses to write a line whose title begins with `5`
+or `2h` into an empty positional slot, rather than writing one that reads back
+differently.
 
 ### The commands and their laws
 
@@ -652,38 +738,75 @@ sketch, and because the gaps are where the next stage's cost lives.
    consequence of the fix and not an independent choice; it is still a change a
    user has to assent to.
 
-3. **`Core` carries §3.1's item fields now; the *parser* does not fill them
-   in.** `ci`, `!k`, `@parent`, `scope`, `shape`, `recur`, `on-miss:`,
-   `min:`/`max:`, `atomic`, `after:`, `loc:`, `buffer:` and `#tags` are fields
-   with the types §3.1 gives them, and the plan-level tier that reads them is
-   proved and joined into `planWf` (above). **What is missing is the other half
-   of the pipe: `parseItem` still keeps every token verbatim and interprets
-   none of them**, so every entity the loader builds has these fields at their
-   defaults. Three consequences, all real:
+3. **§4.1's field grammar is proved, and it is not yet wired into `Core`.**
+   `Line.lean` now reads every key, flag and slot §4.1 lists, with a round trip
+   per value, `field_round_trip` over the whole line and one
+   `view ∘ set = id` per field.  What it does **not** do is fill `State.lean`'s
+   `Core`: the values live in `Tm.Field` (they have to — `State.lean` imports
+   `Line.lean`, so the grammar is declared first), and the map from
+   `Field.Shape` to `Tm.Shape`, `Field.Rule` to `Tm.Rule` and so on is a
+   constructor-per-constructor function that belongs in `State.lean`.  Until it
+   is written the loader still builds entities with these fields at their
+   defaults, so §4.3's file-kind shapes still reject `routines.md`,
+   `optional.md` and `calendar/*.md` at load, exactly as before.  The
+   consequence to keep in view: the plan-level tier that *reads* `parent` and
+   `after:` is proved but still cannot fire on anything the boundary builds.
 
-   * a `@parent` or `after:` token in a file is not *read*, so parent totality
-     and both acyclicity checks hold of everything the boundary can currently
-     build. The theorems are about arbitrary `PlanCore`s and `mapAt`
-     re-establishes them on every post-state, but no request can make them fire
-     yet. They are proved, not exercised;
-   * `routines.md`, `optional.md` and `calendar/*.md` are **rejected at load**
-     with `{"err":{"itemCheck":"fileKindShape"}}`, because §4.3 says their lines
-     carry a scope and a shape and the loader gives them neither. That is the
-     honest price of putting §4.3 into the acceptance rule while the parser half
-     is still to come; the alternative — a rule that the default values satisfy
-     — would be a check that cannot fire, which is the defect class this kernel
-     exists to remove. Month, week, day, backlog and out-of-layout paths load
-     exactly as before;
-   * §4.2's section discipline **is** live end to end, because a section is
-     derived from the document's prose and the placement's rank rather than
-     stored. An item under a day file's `## Log`, or a `# Pinned` heading in a
-     month file, is `{"err":{"itemCheck":"sectionDiscipline"}}` today.
+4. **Two readers of `est:` coexist.**  The stage-one `viewRemaining`
+   (`Nat`-valued, what `Cmd.lean` and `Boundary.lean` call) and the
+   field-level `viewRemainingDur` are two functions over one slot — which is
+   the shape of the defect this kernel exists to remove.  They do not
+   *disagree* about the bytes: `the_two_est_setters_write_the_same_token` shows
+   `estWord v` and `keyWord Key.est (renderDur (.simple v .minutes))` are the
+   same token, so the stage-one view reads what the field-level setter writes.
+   But they are not one function, and the stage-one `unitValue` does not read
+   `NhMm` or `Nd` where `parseDurND` does.  Collapsing them is part of the same
+   wiring slice as gap 3, and until it happens this is a live S2.
 
-   Writing the token → field parser, and the setters that keep the token vector
-   and the fields in step (each with its `view ∘ set = id` proof, as `setEst`
-   has), is the next slice.
+5. **State-less lines are still not representable.**  §4.1 says
+   `routines.md` and `optional.md` omit the state box.  `ci:` as a *key* is
+   implemented — it is the mechanism §4.1 gives for those files, and
+   `viewCi` reads it in preference to the positional digit — but `parseItem`
+   still requires `- [<glyph>]`, so a box-less line is prose to this kernel.
+   Fixing it means a `RawItem` that records whether the box was there, which
+   changes a type `State.lean`, `Plan.lean`, `Cmd.lean` and `Boundary.lean` all
+   use.
 
-4. **The calendar is real now; horizon *names* are still not.** `Cal.lean`
+6. **`renderItem` writes a legal line, not the conventional one.**  The `^id`
+   leads the token run (see above), the title is written with single spaces
+   between words, and `Fields.canonicalWf` refuses an unclassifiable word that
+   begins with `^`.  The last is forced: `serializeItem` regenerates the id
+   from the store key and recognises an id token by "starts with `^`", so a
+   rendered `^%` would be rewritten as the id.  A line the kernel *reads* still
+   keeps `^%` in the title (`junk_title`); this is a restriction on the
+   renderer only, and it is the same looseness gap 13 records about `Id`.
+
+7. **`render ∘ view` is not claimed, and is false on whitespace.**  Round trip B
+   is `view ∘ render`.  The other composition fails for a mundane reason: the
+   title's internal whitespace lives in the *token vector* (and round trip A
+   preserves it — `spec_line_bytes` keeps the two spaces before `@m1`), but
+   `titleSegment` returns words, so re-rendering writes single spaces.  Round
+   trip A is the theorem that covers a line read from a file; round trip B is
+   the theorem that covers a line the kernel composes.
+
+8. **The conflict *diagnostics* `build_item` emits are not modelled, only the
+   precedence.**  `shape_at_wins`, `shape_win_needs_dur`, `shape_due_is_last`,
+   `recur_every_wins` and `recur_afterDone_beats_onEvent` say which key wins;
+   `grammar.rs` also pushes "conflicting shape keys (at: wins)" onto
+   `item.problems`, and `problems` here reports only unknown keys and
+   unclassifiable words.  Likewise `title_conflict`: the guard exists as
+   `slotGuard`, a precondition, not as a diagnostic a `tm check` could print.
+
+9. **Weekday and duration spellings are narrower than `chrono`'s.**
+   `parseWeekday` accepts four spellings a day (`Mon`, `mon`, `Monday`,
+   `monday`); `chrono` accepts more.  And `parseDur` keeps `1h90m` as written
+   where the Rust normalises it to `2h30m` — mine round trips, the Rust's does
+   not, and the *minute* readings agree.  `every:week` / `every:Nw` is in
+   `Rule` because §4.3's routines example uses it and §3.1's `Rule` has no
+   constructor for it; that is a gap in the spec, recorded rather than papered
+   over.
+
+10. **The calendar is real now; horizon *names* are still not.** `Cal.lean`
    gives proleptic Gregorian civil dates with a proved round trip, ISO 8601 week
    dates with the week-numbering year, the civil month ordinal, and the
    week→month tie-break (the month of the week's Thursday) named as a choice
@@ -717,27 +840,27 @@ sketch, and because the gaps are where the next stage's cost lives.
    this wrong produces "omega could not prove the goal" on statements that are
    arithmetically trivial, which costs an hour to diagnose.
 
-5. **No `close`, no `autoClose`, no `ClosePolicy`, no planner, no priority, no
+11. **No `close`, no `autoClose`, no `ClosePolicy`, no planner, no priority, no
    recurrence, no exact-arithmetic layer.** L16–L27 of the architecture are not
    here. In particular the two relational laws — tail-drop and stability — are
    not attempted, and the recommendation in the plan stands: keep the existing
    882-line proptest, state the laws in Lean, and prove them last or never.
 
-6. **The line-splitting at the very edge is unverified.** The kernel's document
+12. **The line-splitting at the very edge is unverified.** The kernel's document
    round trip is over `List (List Char)`. Splitting a file's bytes on newlines
    and joining them again happens in JSON at the boundary, and
    `String.intercalate "\n" (s.splitOn "\n") = s` is not a core theorem.
 
-7. **`Id` is `List Char`, not §3.1's "4 chars of `[a-z0-9]`".** The spec's own
+13. **`Id` is `List Char`, not §3.1's "4 chars of `[a-z0-9]`".** The spec's own
    §4.3 fixture ships `^O1`, so the tight type would fail the build on day one.
    The right resolution is to weaken the spec, not the data — but that is a
    judgment a human has to make, and it is recorded here rather than silently
    taken.
 
-8. **Nothing in the shipped `tm` binary calls this yet.** Stage 3 wires it in.
+14. **Nothing in the shipped `tm` binary calls this yet.** Stage 3 wires it in.
    The Rust crate here is a bridge and nine tests, not an integration.
 
-9. **`CanonicalItem` excludes a line with trailing whitespace**, because the
+15. **`CanonicalItem` excludes a line with trailing whitespace**, because the
    tokenizer emits a final token with an empty word for it and `Tok.wf` requires
    words to be non-empty. Such lines parse, render and edit correctly — the FFI
    tests cover them — but `setEst_canonical` does not apply to them, so for that
@@ -745,7 +868,7 @@ sketch, and because the gaps are where the next stage's cost lives.
    `toksWf` to allow an empty word in the last position would close it and costs
    a re-proof of `tokenize_toks`.
 
-10. **`sitesInRange` and `demotionsOriented` are checked at load rather than
+16. **`sitesInRange` and `demotionsOriented` are checked at load rather than
     established by construction.** The loader takes document indices from
     `zipIdx` over the document list, so every site it builds is in range, and it
     takes each placement's region from the same document it takes the index from,
@@ -755,7 +878,7 @@ sketch, and because the gaps are where the next stage's cost lives.
     discipline as `Grain.ofNat?` — but they are checks, not constructions, and
     the difference is recorded.
 
-11. **`Normalized` is preserved at run time, not by a theorem.** Because rank
+17. **`Normalized` is preserved at run time, not by a theorem.** Because rank
     distinctness joined `planWf`, a move onto a rank another line of the
     destination already occupies is now refused — so `cmdMove_succeeds` and
     `mapAt_ok_of_inRange` each carry one more hypothesis, and both say so in
@@ -768,13 +891,13 @@ sketch, and because the gaps are where the next stage's cost lives.
     a proof, and a command that collided would return `badHorizon` rather than
     corrupt anything.
 
-12. **`series` has a name but no head.** `seriesOf` derives the
+18. **`series` has a name but no head.** `seriesOf` derives the
     `## series:<name>` a placement sits in. §5.4's *head* — "the first member
     that is not Done or Dropped is active, the rest are invisible to the
     planner" — and the implied `after:` a series section carries are planner
     concepts, and the planner is not here.
 
-13. **`@parent` is an `Id`, not §3.1's `Ref`.** §3.1 says
+19. **`@parent` is an `Id`, not §3.1's `Ref`.** §3.1 says
     `parent: Option<Ref>` where a `Ref` is `@id` **or `@label`**. Label
     resolution needs a title index and a rule for ambiguity; the kernel takes
     ids only, and a boundary that accepted labels would have to resolve them
@@ -782,7 +905,7 @@ sketch, and because the gaps are where the next stage's cost lives.
     modelled either — it needs the day's `wake`, which is day-file front matter
     the kernel does not read.
 
-14. **§6.2's "outcome with an estimate" warning is not checked.** `shapesWf`'s
+20. **§6.2's "outcome with an estimate" warning is not checked.** `shapesWf`'s
     month rule is the shape half only (a month item's shape is `none`). The
     estimate half — "an item in `month/` with an estimate and no children is a
     `tm check` warning" — would refuse the two-line demotion form *this kernel
@@ -791,7 +914,7 @@ sketch, and because the gaps are where the next stage's cost lives.
     `# Demoted`. Making it real needs `demote` to target a *section*, which is
     stage-4 close work. Recording it rather than weakening it.
 
-15. **The proof-to-definition ratio here is not a forecast.** This fragment has
+21. **The proof-to-definition ratio here is not a forecast.** This fragment has
     no planner, no calendar arithmetic and no relational laws — the three places
     the ratio blows up.
 
