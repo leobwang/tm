@@ -471,6 +471,144 @@ def renderDocAt (p : PlanCore) (k : DocIx) (d : Doc) : List (List Char) :=
     (sortByRank ((p.lines.filter (fun l => l.site.doc == k)).map
       (fun l => (l.site.rank, l.text))))
 
+/-! ### `sortByRank` is a reconstruction, not a choice
+
+`renderDocAt` takes the store's lines for one document — in whatever order the
+store enumerated its domain — and puts them back in rank order.  For that to be
+the *inverse* of `splitDoc` rather than a second opinion about it, three things
+have to be true of the sort, and all three are proved here: it leaves an
+already-ordered list alone, it moves nothing in or out, and it does not merge
+two ranks.  Together with rank distinctness (`Normalized`, part of `planWf`)
+the sorted list is then **determined by its members** (`sorted_ext_by_key`,
+Plan.lean) — so the bytes a host gets back do not depend on the order the store
+enumerated, which is the same defect `orientPair_comm` removes for the demotion
+pair. -/
+
+theorem sortByRank_nil : sortByRank [] = [] := rfl
+
+theorem sortByRank_cons (x : Nat × List Char) (xs : List (Nat × List Char)) :
+    sortByRank (x :: xs) = insertByRank x (sortByRank xs) := rfl
+
+/-- Insertion moves nothing in and nothing out. -/
+theorem insertByRank_mem (x y : Nat × List Char) : ∀ l : List (Nat × List Char),
+    y ∈ insertByRank x l ↔ (y = x ∨ y ∈ l) := by
+  intro l
+  induction l with
+  | nil => simp [insertByRank]
+  | cons z zs ih =>
+      rw [insertByRank]
+      by_cases h : x.1 ≤ z.1
+      · simp [h]
+      · simp only [h, if_false, List.mem_cons, ih]
+        constructor
+        · intro hh
+          rcases hh with hh | hh | hh
+          · exact Or.inr (Or.inl hh)
+          · exact Or.inl hh
+          · exact Or.inr (Or.inr hh)
+        · intro hh
+          rcases hh with hh | hh | hh
+          · exact Or.inr (Or.inl hh)
+          · exact Or.inl hh
+          · exact Or.inr (Or.inr hh)
+
+theorem sortByRank_mem (y : Nat × List Char) : ∀ l : List (Nat × List Char),
+    y ∈ sortByRank l ↔ y ∈ l := by
+  intro l
+  induction l with
+  | nil => simp [sortByRank_nil]
+  | cons x xs ih => rw [sortByRank_cons, insertByRank_mem, ih, List.mem_cons]
+
+/-- Insertion into a rank-ordered list is rank-ordered. -/
+theorem insertByRank_sorted (x : Nat × List Char) : ∀ l : List (Nat × List Char),
+    l.Pairwise (fun a b => a.1 ≤ b.1) → (insertByRank x l).Pairwise (fun a b => a.1 ≤ b.1) := by
+  intro l
+  induction l with
+  | nil => intro _; simp [insertByRank]
+  | cons z zs ih =>
+      intro h
+      rw [List.pairwise_cons] at h
+      rw [insertByRank]
+      by_cases hx : x.1 ≤ z.1
+      · rw [if_pos hx]
+        refine List.pairwise_cons.2 ⟨?_, List.pairwise_cons.2 h⟩
+        intro b hb
+        rcases List.mem_cons.1 hb with hb' | hb'
+        · rw [hb']; exact hx
+        · exact Nat.le_trans hx (h.1 b hb')
+      · rw [if_neg hx]
+        refine List.pairwise_cons.2 ⟨?_, ih h.2⟩
+        intro b hb
+        rcases (insertByRank_mem x b zs).1 hb with hb' | hb'
+        · rw [hb']; omega
+        · exact h.1 b hb'
+
+theorem sortByRank_sorted : ∀ l : List (Nat × List Char),
+    (sortByRank l).Pairwise (fun a b => a.1 ≤ b.1) := by
+  intro l
+  induction l with
+  | nil => simp [sortByRank_nil]
+  | cons x xs ih => rw [sortByRank_cons]; exact insertByRank_sorted x _ ih
+
+/-- Insertion of a fresh rank into a list of distinct ranks keeps them
+distinct — the half of the argument `Normalized` supplies. -/
+theorem insertByRank_distinct (x : Nat × List Char) : ∀ l : List (Nat × List Char),
+    l.Pairwise (fun a b => a.1 ≠ b.1) → (∀ y ∈ l, x.1 ≠ y.1) →
+    (insertByRank x l).Pairwise (fun a b => a.1 ≠ b.1) := by
+  intro l
+  induction l with
+  | nil => intro _ _; simp [insertByRank]
+  | cons z zs ih =>
+      intro h hx
+      rw [List.pairwise_cons] at h
+      rw [insertByRank]
+      by_cases hle : x.1 ≤ z.1
+      · rw [if_pos hle]
+        exact List.pairwise_cons.2 ⟨hx, List.pairwise_cons.2 h⟩
+      · rw [if_neg hle]
+        refine List.pairwise_cons.2 ⟨?_, ih h.2 (fun y hy => hx y (by simp [hy]))⟩
+        intro b hb
+        rcases (insertByRank_mem x b zs).1 hb with hb' | hb'
+        · rw [hb']; exact fun hc => hx z (by simp) hc.symm
+        · exact h.1 b hb'
+
+theorem sortByRank_distinct : ∀ l : List (Nat × List Char),
+    l.Pairwise (fun a b => a.1 ≠ b.1) → (sortByRank l).Pairwise (fun a b => a.1 ≠ b.1) := by
+  intro l
+  induction l with
+  | nil => intro _; simp [sortByRank_nil]
+  | cons x xs ih =>
+      intro h
+      rw [List.pairwise_cons] at h
+      rw [sortByRank_cons]
+      exact insertByRank_distinct x _ (ih h.2) (fun y hy => h.1 y ((sortByRank_mem y xs).1 hy))
+
+/-- **The sort is the identity on a list that is already in rank order.**  This
+is the prose half of the document round trip: `splitDoc` reads prose in line
+order, so `renderDocAt` puts it back exactly where it was. -/
+theorem sortByRank_id : ∀ l : List (Nat × List Char),
+    l.Pairwise (fun a b => a.1 ≤ b.1) → sortByRank l = l := by
+  intro l
+  induction l with
+  | nil => intro _; rfl
+  | cons x xs ih =>
+      intro h
+      rw [List.pairwise_cons] at h
+      rw [sortByRank_cons, ih h.2]
+      cases xs with
+      | nil => rfl
+      | cons z zs =>
+          rw [insertByRank, if_pos (h.1 z (by simp))]
+
+/-- **And the sorted list is the file's line list**: strictly ordered by rank,
+so `sorted_ext_by_key` pins it down from its members alone. -/
+theorem sortByRank_strict (l : List (Nat × List Char))
+    (h : (l.map Prod.fst).Nodup) :
+    (sortByRank l).Pairwise (fun a b => a.1 < b.1) :=
+  pairwise_lt_of_le_ne (fun a : Nat × List Char => a.1) (sortByRank_sorted l)
+    (sortByRank_distinct l (pairwise_ne_of_nodup_keys (fun a : Nat × List Char => a.1) h))
+
+
 /-! ## JSON -/
 
 def jsonErr (s : String) : Json := Json.mkObj [("err", Json.str s)]
@@ -697,6 +835,786 @@ def regionJson (r : Option Region) : List (String × Json) :=
   | none   => []
   | some g => [("grain", Json.num g.grain.val), ("ix", Json.num g.ix)]
 
+/-! ## The plan-level round trip
+
+`renderSplit_splitDoc` (Plan.lean) is the round trip for one file's *text*, and
+`load_render_line` / `paired_renders_each_placement` are the round trip through
+the *entity* the loader builds.  Between them there was a gap, and it is the gap
+that hid the `[-]` regression: the pipeline takes a document's item lines apart,
+files them under their ids in a store, and reads them back out **in the order
+the store enumerates its domain**, which has nothing to do with the file.  That
+the bytes survive that detour was checked by a test that fed the kernel its own
+output back — not proved.
+
+This section proves it.  The chain is:
+
+* `placementsOf` — every item line of the request, with the index and horizon of
+  the file it came from, as a recursion the proofs can induct on;
+* `buildEntities_spec`, `loadStore_get_of_mem` / `loadStore_get_some` — the
+  store holds exactly one entity per id and nothing else;
+* `buildEntity_renders` — **the entity an id's lines build renders exactly those
+  lines back**, which is `load_render_line` and `paired_renders_each_placement`
+  turned from "the bytes agree" into "the *set* of lines agrees";
+* `loadCore_lines_mem` — so the plan's whole line list is exactly the request's
+  placements, and the store's enumeration order has dropped out;
+* `sorted_ext_by_key` plus `Normalized` — so putting them back in rank order
+  reproduces the file, and `the_kernel_reads_back_what_it_writes` below says so
+  for every document of every request the loader accepts.
+-/
+
+/-- The `Doc` a request document becomes: its path, its **prose only**, and the
+horizon it declares. -/
+def mkDoc (d : ReqDoc) : Doc := ⟨d.path.toList, (splitDoc 0 d.lines).prose, d.reg⟩
+
+/-- Every item line of a whole request, each carrying the index and the horizon
+of the document it was read from.  A recursion over the documents rather than
+`zipIdx` over them, so that `mem_placementsOf` is an induction. -/
+def placementsOf : Nat → List ReqDoc → List Placement
+  | _, []        => []
+  | k, d :: rest => placementsOfDoc k d.reg (splitDoc 0 d.lines) ++ placementsOf (k + 1) rest
+
+theorem mem_placementsOfDoc {k : DocIx} {reg : Option Region} {s : DocSplit} {q : Placement} :
+    q ∈ placementsOfDoc k reg s ↔
+      ∃ it ∈ s.items, q = ⟨k, it.1, it.2.1, it.2.2.1, it.2.2.2, reg⟩ := by
+  unfold placementsOfDoc
+  constructor
+  · intro h
+    obtain ⟨it, hit, hq⟩ := List.mem_map.1 h
+    exact ⟨it, hit, hq.symm⟩
+  · rintro ⟨it, hit, rfl⟩
+    exact List.mem_map.2 ⟨it, hit, rfl⟩
+
+theorem mem_placementsOf (q : Placement) : ∀ (k : Nat) (ds : List ReqDoc),
+    q ∈ placementsOf k ds ↔
+      ∃ j, ∃ d : ReqDoc, ds[j]? = some d ∧
+        q ∈ placementsOfDoc (k + j) d.reg (splitDoc 0 d.lines) := by
+  intro k ds
+  induction ds generalizing k with
+  | nil => simp [placementsOf]
+  | cons d rest ih =>
+      rw [placementsOf, List.mem_append, ih (k + 1)]
+      constructor
+      · rintro (h | ⟨j, d', hd', hq⟩)
+        · exact ⟨0, d, by simp, by simpa using h⟩
+        · refine ⟨j + 1, d', by simpa using hd', ?_⟩
+          rw [show k + (j + 1) = (k + 1) + j from by omega]
+          exact hq
+      · rintro ⟨j, d', hd', hq⟩
+        cases j with
+        | zero =>
+            left
+            simp only [List.getElem?_cons_zero, Option.some.injEq] at hd'
+            rw [hd']
+            simpa using hq
+        | succ m =>
+            right
+            refine ⟨m, d', by simpa using hd', ?_⟩
+            rw [show (k + 1) + m = k + (m + 1) from by omega]
+            exact hq
+
+/-! ### The store the loader builds -/
+
+theorem buildEntities_fold : ∀ (ps : List Placement) (is : List Id)
+    (acc out : List (Id × Entity)),
+    is.foldlM (fun acc i => do
+        let e ← buildEntity i (ps.filter (fun q => q.id == i))
+        pure (acc ++ [(i, e)])) acc = Except.ok out →
+    ∃ tl : List (Id × Entity), out = acc ++ tl ∧ tl.map Prod.fst = is ∧
+      ∀ ie ∈ tl, buildEntity ie.1 (ps.filter (fun q => q.id == ie.1)) = .ok ie.2 := by
+  intro ps is
+  induction is with
+  | nil =>
+      intro acc out h
+      simp only [List.foldlM_nil, pure, Except.pure, Except.ok.injEq] at h
+      exact ⟨[], by rw [← h, List.append_nil], rfl, by simp⟩
+  | cons i rest ih =>
+      intro acc out h
+      rw [List.foldlM_cons] at h
+      cases hbe : buildEntity i (ps.filter (fun q => q.id == i)) with
+      | error k =>
+          rw [hbe] at h
+          exact absurd (show (Except.error k : Except LErr (List (Id × Entity)))
+            = Except.ok out from h) (by simp)
+      | ok e =>
+          rw [hbe] at h
+          simp only [pure, Except.pure] at h
+          obtain ⟨tl, hout, hmap, hall⟩ := ih (acc ++ [(i, e)]) out h
+          refine ⟨(i, e) :: tl, ?_, by simp [hmap], ?_⟩
+          · rw [hout, List.append_assoc, List.singleton_append]
+          · intro ie hie
+            rcases List.mem_cons.1 hie with hh | hh
+            · rw [hh]; exact hbe
+            · exact hall ie hh
+
+theorem buildEntities_spec (ps : List Placement) (items : List (Id × Entity))
+    (h : buildEntities ps = .ok items) :
+    items.map Prod.fst = dedupIds (ps.map Placement.id) ∧
+      ∀ ie ∈ items, buildEntity ie.1 (ps.filter (fun q => q.id == ie.1)) = .ok ie.2 := by
+  obtain ⟨tl, hout, hmap, hall⟩ := buildEntities_fold ps (dedupIds (ps.map Placement.id)) [] items h
+  rw [List.nil_append] at hout
+  subst hout
+  exact ⟨hmap, hall⟩
+
+theorem Store.insert_get (s : Store) (i j : Id) (e : Entity) :
+    (s.insert i e).get j = if j = i then some e else s.get j := by
+  unfold Store.insert
+  split <;> rfl
+
+theorem loadStore_fold_not_mem : ∀ (items : List (Id × Entity)) (s : Store) (i : Id),
+    i ∉ items.map Prod.fst →
+    (items.foldl (fun s p => s.insert p.1 p.2) s).get i = s.get i := by
+  intro items
+  induction items with
+  | nil => intro s i _; rfl
+  | cons a t ih =>
+      intro s i h
+      simp only [List.map_cons, List.mem_cons, not_or] at h
+      rw [List.foldl_cons, ih _ i h.2, Store.insert_get, if_neg h.1]
+
+theorem loadStore_fold_mem : ∀ (items : List (Id × Entity)) (s : Store) (i : Id) (e : Entity),
+    (i, e) ∈ items → (items.map Prod.fst).Nodup →
+    (items.foldl (fun s p => s.insert p.1 p.2) s).get i = some e := by
+  intro items
+  induction items with
+  | nil => intro s i e h _; simp at h
+  | cons a t ih =>
+      intro s i e h hnd
+      simp only [List.map_cons, List.nodup_cons] at hnd
+      rcases List.mem_cons.1 h with hh | hh
+      · have hi : a.1 = i := by rw [← hh]
+        have he : a.2 = e := by rw [← hh]
+        rw [List.foldl_cons, loadStore_fold_not_mem t _ i (by rw [hi] at hnd; exact hnd.1),
+          Store.insert_get, if_pos hi.symm, he]
+      · rw [List.foldl_cons]
+        exact ih _ i e hh hnd.2
+
+theorem loadStore_fold_some : ∀ (items : List (Id × Entity)) (s : Store) (i : Id) (e : Entity),
+    (items.foldl (fun s p => s.insert p.1 p.2) s).get i = some e →
+    (i, e) ∈ items ∨ s.get i = some e := by
+  intro items
+  induction items with
+  | nil => intro s i e h; exact Or.inr h
+  | cons a t ih =>
+      intro s i e h
+      rw [List.foldl_cons] at h
+      rcases ih _ i e h with hh | hh
+      · exact Or.inl (List.mem_cons.2 (Or.inr hh))
+      · rw [Store.insert_get] at hh
+        by_cases hia : i = a.1
+        · rw [if_pos hia] at hh
+          injection hh with hh
+          exact Or.inl (List.mem_cons.2 (Or.inl (by rw [hia, ← hh])))
+        · rw [if_neg hia] at hh
+          exact Or.inr hh
+
+theorem loadStore_get_of_mem (items : List (Id × Entity)) (i : Id) (e : Entity)
+    (hnd : (items.map Prod.fst).Nodup) (hm : (i, e) ∈ items) :
+    (loadStore items).get i = some e :=
+  loadStore_fold_mem items emptyStore i e hm hnd
+
+theorem loadStore_get_some (items : List (Id × Entity)) (i : Id) (e : Entity)
+    (h : (loadStore items).get i = some e) : (i, e) ∈ items := by
+  rcases loadStore_fold_some items emptyStore i e h with hh | hh
+  · exact hh
+  · simp [emptyStore] at hh
+
+theorem mem_lines_of_render (p : PlanCore) (i : Id) (e : Entity) (l : Line)
+    (hget : p.store.get i = some e) (hl : l ∈ render i e) : l ∈ p.lines := by
+  unfold PlanCore.lines
+  refine List.mem_flatMap.2 ⟨i, (p.store.domSpec i).mpr (by rw [hget]; rfl), ?_⟩
+  rw [hget]
+  exact hl
+
+/-! ### The entity an id's lines build renders exactly those lines
+
+`load_render_line` and `paired_renders_each_placement` say the *bytes* of each
+line survive.  This says the *list* does: nothing extra is emitted and nothing
+is dropped.  It is the step that turns a fact about one line into a fact about a
+document. -/
+
+/-- The line a placement was read from: its site, and the bytes `serializeItem`
+writes back for the id, box and token vector the parser returned. -/
+def placementLine (q : Placement) : Line :=
+  ⟨q.id, ⟨q.doc, q.rank⟩, serializeItem q.id q.glyph q.item⟩
+
+theorem loneEntity_archive (i : Id) (q : Placement) (e : Entity)
+    (h : loneEntity i q = .ok e) : e.val.archive = none := by
+  unfold loneEntity at h
+  split at h
+  · injection h with h; rw [← h]
+  · simp at h
+
+theorem buildEntity_renders (i : Id) (qs : List Placement) (e : Entity)
+    (hid : ∀ q ∈ qs, q.id = i) (h : buildEntity i qs = .ok e) (l : Line) :
+    l ∈ render i e ↔ ∃ q ∈ qs, l = placementLine q := by
+  match qs with
+  | [] => simp [buildEntity] at h
+  | [q] =>
+      have h' : loneEntity i q = .ok e := h
+      have hq : q.id = i := hid q (by simp)
+      obtain ⟨hlive, hline, hglyph⟩ := lone_placement_renders_back i q e h'
+      have harch := loneEntity_archive i q e h'
+      have hr : render i e = [placementLine q] := by
+        unfold render renderCore placementLine
+        simp only [harch]
+        rw [hglyph, hline, hlive, hq]
+      rw [hr]
+      simp
+  | [a, b] =>
+      have h' : pairedEntity i a b = .ok e := h
+      have ha : a.id = i := hid a (by simp)
+      have hb : b.id = i := hid b (by simp)
+      obtain ⟨arch, live, hor, _, hlive, harch, hline, hitem, hag, hg, hd⟩ :=
+        paired_placement_renders_back i a b e h'
+      have hcases := (orientPair_cases hor).1
+      have hAitem : arch.item = live.item := by
+        rcases hcases with ⟨e1, e2⟩ | ⟨e1, e2⟩
+        · rw [e1, e2]; exact hitem
+        · rw [e1, e2]; exact hitem.symm
+      have hAid : arch.id = i := by
+        rcases hcases with ⟨e1, _⟩ | ⟨e1, _⟩
+        · rw [e1]; exact ha
+        · rw [e1]; exact hb
+      have hLid : live.id = i := by
+        rcases hcases with ⟨_, e2⟩ | ⟨_, e2⟩
+        · rw [e2]; exact hb
+        · rw [e2]; exact ha
+      have hAB : ∀ x : Placement, (x = live ∨ x = arch) ↔ (x = a ∨ x = b) := by
+        intro x
+        rcases hcases with ⟨e1, e2⟩ | ⟨e1, e2⟩
+        · rw [e1, e2]; exact Or.comm
+        · rw [e1, e2]
+      have hr : render i e = [placementLine live, placementLine arch] := by
+        unfold render renderCore placementLine
+        simp only [harch]
+        rw [hd, hg, hline, hlive, hLid, hAid, hag, hAitem]
+      rw [hr]
+      constructor
+      · intro hl
+        rcases List.mem_cons.1 hl with h1 | h1
+        · exact ⟨live, by simpa using (hAB live).1 (Or.inl rfl), h1⟩
+        · rcases List.mem_cons.1 h1 with h2 | h2
+          · exact ⟨arch, by simpa using (hAB arch).1 (Or.inr rfl), h2⟩
+          · simp at h2
+      · rintro ⟨q, hq, hlq⟩
+        rcases (hAB q).2 (by simpa using hq) with h1 | h1
+        · exact List.mem_cons.2 (Or.inl (by rw [hlq, h1]))
+        · exact List.mem_cons.2 (Or.inr (List.mem_cons.2 (Or.inl (by rw [hlq, h1]))))
+  | _ :: _ :: _ :: _ => simp [buildEntity] at h
+
+/-! ### The plan the loader builds, and its line list -/
+
+def loadCore (docs : List ReqDoc) (items : List (Id × Entity)) : PlanCore :=
+  ⟨docs.map mkDoc, loadStore items⟩
+
+/-- The document half of `planWf` is established **by construction**: prose is
+exactly what did not parse as an item, so there is no separate validator to
+drift. -/
+theorem loadCore_docsWf (docs : List ReqDoc) (items : List (Id × Entity)) :
+    docsWf (loadCore docs items) = true := by
+  show List.all (docs.map mkDoc) docWf = true
+  simp only [List.all_eq_true, List.mem_map]
+  rintro d ⟨x, _, rfl⟩
+  show List.all (splitDoc 0 x.lines).prose (fun q => !isItemLine q.2) = true
+  simp only [List.all_eq_true]
+  intro q hq
+  simp [splitDoc_prose_not_item 0 x.lines q hq]
+
+/-- **The plan's line list is exactly the request's item lines.**  The store's
+enumeration order has dropped out entirely: nothing the loader built renders a
+line the files did not contain, and no line of a file is missing. -/
+theorem loadCore_lines_mem (docs : List ReqDoc) (items : List (Id × Entity))
+    (hb : buildEntities (placementsOf 0 docs) = .ok items) (l : Line) :
+    l ∈ (loadCore docs items).lines ↔ ∃ q ∈ placementsOf 0 docs, l = placementLine q := by
+  obtain ⟨hmap, hall⟩ := buildEntities_spec _ _ hb
+  have hnd : (items.map Prod.fst).Nodup := by rw [hmap]; exact dedupIds_nodup _
+  constructor
+  · intro h
+    obtain ⟨i, e, hget, _, hl⟩ := lines_mem (loadCore docs items) l h
+    have hmem : (i, e) ∈ items := loadStore_get_some items i e hget
+    have hbe := hall (i, e) hmem
+    have hidf : ∀ q ∈ (placementsOf 0 docs).filter (fun q => q.id == i), q.id = i := by
+      intro q hq
+      simpa using (List.mem_filter.1 hq).2
+    obtain ⟨q, hq, hlq⟩ := (buildEntity_renders i _ e hidf hbe l).1 hl
+    exact ⟨q, (List.mem_filter.1 hq).1, hlq⟩
+  · rintro ⟨q, hq, hlq⟩
+    have hidin : q.id ∈ items.map Prod.fst := by
+      rw [hmap, mem_dedupIds]
+      exact List.mem_map.2 ⟨q, hq, rfl⟩
+    obtain ⟨ie, hie, hid⟩ := List.mem_map.1 hidin
+    have hget : (loadCore docs items).store.get ie.1 = some ie.2 :=
+      loadStore_get_of_mem items ie.1 ie.2 hnd hie
+    have hbe := hall ie hie
+    have hidf : ∀ x ∈ (placementsOf 0 docs).filter (fun x => x.id == ie.1), x.id = ie.1 := by
+      intro x hx
+      simpa using (List.mem_filter.1 hx).2
+    have hqf : q ∈ (placementsOf 0 docs).filter (fun x => x.id == ie.1) :=
+      List.mem_filter.2 ⟨hq, by simp [hid]⟩
+    have := (buildEntity_renders ie.1 _ ie.2 hidf hbe l).2 ⟨q, hqf, hlq⟩
+    exact mem_lines_of_render _ ie.1 ie.2 l hget this
+
+/-- The placements of one document are exactly its own item lines. -/
+theorem placements_of_doc (docs : List ReqDoc) (k : Nat) (rd : ReqDoc)
+    (hk : docs[k]? = some rd) (q : Placement) :
+    (q ∈ placementsOf 0 docs ∧ q.doc = k) ↔
+      ∃ it ∈ (splitDoc 0 rd.lines).items,
+        q = ⟨k, it.1, it.2.1, it.2.2.1, it.2.2.2, rd.reg⟩ := by
+  constructor
+  · rintro ⟨hq, hdoc⟩
+    obtain ⟨j, d, hd', hqj⟩ := (mem_placementsOf q 0 docs).1 hq
+    obtain ⟨it, hit, hqe⟩ := mem_placementsOfDoc.1 hqj
+    have hjk : j = k := by rw [hqe] at hdoc; simpa using hdoc
+    subst hjk
+    rw [hd'] at hk
+    injection hk with hk
+    subst hk
+    exact ⟨it, hit, by rw [hqe]; simp⟩
+  · rintro ⟨it, hit, rfl⟩
+    refine ⟨(mem_placementsOf _ 0 docs).2 ⟨k, rd, hk, ?_⟩, rfl⟩
+    exact mem_placementsOfDoc.2 ⟨it, hit, by simp⟩
+
+/-- The `(rank, bytes)` pair one parsed item line becomes. -/
+def itemLine (it : Nat × (Id × Glyph × RawItem)) : Nat × List Char :=
+  (it.1, serializeItem it.2.1 it.2.2.1 it.2.2.2)
+
+/-- **The plan-level round trip.**  Every document of a plan the loader built
+renders back, byte for byte, to the lines it was read from — prose interleaved
+with item lines whose state box and `^id` were regenerated from the entity, and
+whose *order* was reconstructed from ranks rather than remembered.
+
+`normalized` is where rank distinctness does its work: without it the sorted
+list would not be determined by its members, and which of two lines sharing a
+rank came first would depend on the order the store enumerated its domain. -/
+theorem renderDocAt_loadCore (docs : List ReqDoc) (items : List (Id × Entity))
+    (hb : buildEntities (placementsOf 0 docs) = .ok items)
+    (hnorm : normalized (loadCore docs items) = true)
+    (k : Nat) (rd : ReqDoc) (hk : docs[k]? = some rd) :
+    renderDocAt (loadCore docs items) k (mkDoc rd) = rd.lines := by
+  have hklt : k < (loadCore docs items).docs.length := by
+    have hlen : k < docs.length := by
+      obtain ⟨h1, _⟩ := List.getElem?_eq_some_iff.1 hk
+      exact h1
+    show k < (docs.map mkDoc).length
+    simpa using hlen
+  -- rank distinctness for the document's item lines, out of `normalized`
+  have hkeys : (((((loadCore docs items).lines.filter (fun l => l.site.doc == k)).map
+      (fun l => (l.site.rank, l.text))).map Prod.fst)).Nodup := by
+    simp only [List.map_map]
+    have hnd : (docRanks (loadCore docs items) k).Nodup := by
+      simp only [normalized, List.all_eq_true, decide_eq_true_eq] at hnorm
+      exact hnorm k (List.mem_range.2 hklt)
+    rw [docRanks_eq] at hnd
+    exact (List.nodup_append.1 hnd).2.1
+  have hX : sortByRank (((loadCore docs items).lines.filter (fun l => l.site.doc == k)).map
+      (fun l => (l.site.rank, l.text)))
+      = (splitDoc 0 rd.lines).items.map itemLine := by
+    refine sorted_ext_by_key (fun x : Nat × List Char => x.1) _ _
+      (sortByRank_strict _ hkeys) ?_ ?_
+    · rw [List.pairwise_map]
+      exact splitDoc_items_sorted 0 rd.lines
+    · intro x
+      rw [sortByRank_mem]
+      constructor
+      · intro hx
+        obtain ⟨l, hl, hxl⟩ := List.mem_map.1 hx
+        have hlf := List.mem_filter.1 hl
+        obtain ⟨q, hq, rfl⟩ := (loadCore_lines_mem docs items hb l).1 hlf.1
+        have hqd : q.doc = k := by simpa [placementLine] using hlf.2
+        obtain ⟨it, hit, rfl⟩ := (placements_of_doc docs k rd hk q).1 ⟨hq, hqd⟩
+        exact List.mem_map.2 ⟨it, hit, by rw [← hxl]; rfl⟩
+      · intro hx
+        obtain ⟨it, hit, hxit⟩ := List.mem_map.1 hx
+        refine List.mem_map.2 ⟨placementLine ⟨k, it.1, it.2.1, it.2.2.1, it.2.2.2, rd.reg⟩, ?_, ?_⟩
+        · refine List.mem_filter.2 ⟨?_, by simp [placementLine]⟩
+          exact (loadCore_lines_mem docs items hb _).2
+            ⟨_, ((placements_of_doc docs k rd hk _).2 ⟨it, hit, rfl⟩).1, rfl⟩
+        · rw [← hxit]; rfl
+  show weave (sortByRank (mkDoc rd).prose) _ = rd.lines
+  rw [hX]
+  show weave (sortByRank (splitDoc 0 rd.lines).prose) _ = rd.lines
+  rw [sortByRank_id _ (splitDoc_prose_sorted 0 rd.lines)]
+  exact renderSplit_splitDoc 0 rd.lines
+
+/-! ### The loader as one function, and the round trip through it -/
+
+/-- Build the plan from a parsed request: one entity per id, one `Doc` per
+request document, and then the four decidable plan-level checks, each returning
+the diagnostic it is named by. -/
+def loadPlan (docs : List ReqDoc) : Except Json WfPlan :=
+  match buildEntities (placementsOf 0 docs) with
+  | .error e => .error (Json.mkObj [("err", lerrJson e)])
+  | .ok items =>
+    if hpath : pathsDistinct (loadCore docs items) = true then
+      if hsites : sitesInRange (loadCore docs items) = true then
+        if hor : demotionsOriented (loadCore docs items) = true then
+          if hitems : itemsWf (loadCore docs items) = true then
+            .ok ⟨loadCore docs items,
+              planWf_of_parts (loadCore_docsWf docs items) hsites hpath hor hitems⟩
+          else
+            .error (Json.mkObj [("err", Json.mkObj
+              [("itemCheck", Json.str (firstItemFault (loadCore docs items)))])])
+        else
+          .error (Json.mkObj [("err", lerrJson (.ambiguousDemotion
+            ((firstUnoriented (loadCore docs items)).getD [])))])
+      else
+        .error (Json.mkObj [("err", Json.mkObj [("kernel", Json.str "siteOutOfRange")])])
+    else
+      .error (Json.mkObj [("err", lerrJson (.duplicatePath
+        ((firstDupPath (docs.map (fun d => d.path.toList))).getD [])))])
+
+theorem loadPlan_spec (docs : List ReqDoc) (p : WfPlan) (h : loadPlan docs = .ok p) :
+    ∃ items, buildEntities (placementsOf 0 docs) = .ok items ∧ p.val = loadCore docs items := by
+  unfold loadPlan at h
+  split at h
+  · simp at h
+  · rename_i items hbe
+    split at h
+    · split at h
+      · split at h
+        · split at h
+          · refine ⟨items, hbe, ?_⟩
+            injection h with h
+            rw [← h]
+          · simp at h
+        · simp at h
+      · simp at h
+    · simp at h
+
+/-- The plan holds exactly the request's documents, in the request's order — so
+the response has one entry per request document and they line up. -/
+theorem loadPlan_docs (docs : List ReqDoc) (p : WfPlan) (h : loadPlan docs = .ok p) :
+    p.val.docs = docs.map mkDoc := by
+  obtain ⟨items, _, hval⟩ := loadPlan_spec docs p h
+  rw [hval]
+  rfl
+
+/-- **The gap that hid the `[-]` bug, closed.**  For every document of every
+request the loader accepts, taking the file apart into prose and entities and
+reading it back out through `renderDocAt` reproduces the input lines exactly.
+
+Until now this was checked by a test (`the_kernel_reads_back_what_it_writes` in
+the Rust suite) that demoted an item and fed the kernel's own output back in.  A
+test covers the shapes someone thought of; the `[-]` regression is exactly the
+shape nobody did. -/
+theorem the_kernel_reads_back_what_it_writes (docs : List ReqDoc) (p : WfPlan)
+    (h : loadPlan docs = .ok p) (k : Nat) (rd : ReqDoc) (hk : docs[k]? = some rd) :
+    p.val.docs[k]? = some (mkDoc rd) ∧ renderDocAt p.val k (mkDoc rd) = rd.lines := by
+  obtain ⟨items, hb, hval⟩ := loadPlan_spec docs p h
+  have hnorm : normalized (loadCore docs items) = true :=
+    (itemsWf_parts (planWf_parts (hval ▸ p.property)).2.2.2.2).1
+  refine ⟨?_, ?_⟩
+  · rw [hval]
+    show (docs.map mkDoc)[k]? = some (mkDoc rd)
+    rw [List.getElem?_map, hk]
+    rfl
+  · rw [hval]
+    exact renderDocAt_loadCore docs items hb hnorm k rd hk
+
+/-! ### A command rewrites only the files it touches
+
+The round trip above is about a plan the loader just built.  The other half of
+"the kernel reads back what it writes" is about a plan a *command* produced: the
+response carries every document, so a `demote` in `week/` re-renders `month/`,
+`backlog.md` and every other file too, and nothing said those came back
+unchanged.  `lines_set` says it in one line — the two line lists differ in one
+contiguous block — so a document neither the old nor the new entity has a line
+in renders identically. -/
+
+theorem renderDocAt_untouched (p : PlanCore) (i : Id) (e e' : Entity)
+    (hs : (p.store.get i).isSome = true) (hget : p.store.get i = some e)
+    (k : DocIx) (d : Doc)
+    (hold : ∀ l ∈ render i e, l.site.doc ≠ k)
+    (hnew : ∀ l ∈ render i e', l.site.doc ≠ k) :
+    renderDocAt { p with store := p.store.set i e' hs } k d = renderDocAt p k d := by
+  obtain ⟨A, C, hp, hp', _, _⟩ := lines_set p i e e' hs hget
+  have hfe : (render i e).filter (fun l => l.site.doc == k) = [] :=
+    List.filter_eq_nil_iff.2 (fun l hl => by simpa using hold l hl)
+  have hfe' : (render i e').filter (fun l => l.site.doc == k) = [] :=
+    List.filter_eq_nil_iff.2 (fun l hl => by simpa using hnew l hl)
+  unfold renderDocAt
+  rw [hp', hp]
+  simp only [List.filter_append, hfe, hfe', List.nil_append]
+
+/-- The post-state of `mapAt`, in the shape the lemmas above want: the same
+`docs`, and the store with exactly one entity replaced. -/
+theorem mapAt_ok_shape (p q : WfPlan) (i : Id) (f : Entity → Except KErr Entity)
+    (hq : p.mapAt i f = .ok q) :
+    ∃ (e e' : Entity) (hs : (p.val.store.get i).isSome = true),
+      p.val.store.get i = some e ∧ f e = .ok e' ∧
+      q.val = { p.val with store := p.val.store.set i e' hs } := by
+  unfold WfPlan.mapAt at hq
+  split at hq
+  · simp at hq
+  · rename_i e hget
+    split at hq
+    · simp at hq
+    · rename_i e' hf
+      split at hq
+      · injection hq with hq
+        exact ⟨e, e', by simp [hget], hget, hf, by rw [← hq]⟩
+      · simp at hq
+
+/-- **A command's output is byte-identical in every file it does not touch.**
+This is the other leg of `the_kernel_reads_back_what_it_writes`: not only does
+the kernel accept its own output, it does not perturb the files it had no
+business perturbing. -/
+theorem a_command_rewrites_only_the_files_it_touches (p q : WfPlan) (i : Id)
+    (f : Entity → Except KErr Entity) (e e' : Entity) (hq : p.mapAt i f = .ok q)
+    (hget : p.val.store.get i = some e) (hget' : q.val.store.get i = some e')
+    (k : DocIx) (d : Doc)
+    (hold : ∀ l ∈ render i e, l.site.doc ≠ k)
+    (hnew : ∀ l ∈ render i e', l.site.doc ≠ k) :
+    renderDocAt q.val k d = renderDocAt p.val k d := by
+  obtain ⟨e₀, e₀', hs, hg₀, _, hshape⟩ := mapAt_ok_shape p q i f hq
+  have he : e₀ = e := Option.some.inj (hg₀.symm.trans hget)
+  have he' : e₀' = e' := by
+    have h1 : q.val.store.get i = some e₀' := by
+      rw [hshape]
+      exact Store.get_set_self p.val.store i e₀' hs
+    exact Option.some.inj (h1.symm.trans hget')
+  subst he
+  subst he'
+  rw [hshape]
+  exact renderDocAt_untouched p.val i e₀ e₀' hs hg₀ k d hold hnew
+
+/-! ## `Normalized` after a command: discharged, not hoped for
+
+`mapAt` re-establishes `planWf` by computation on every post-state, and rank
+distinctness is one of its conjuncts.  That made `mapAt_ok_of_inRange` and
+`cmdMove_succeeds` (Cmd.lean) each carry an `itemsWf` hypothesis about the
+post-state: the boundary always relocates to `freshRank`, and `freshRank_gt`
+proves that rank is above every rank already in the destination, but the step
+from there to "and so the post-state is still `Normalized`" was not written.
+That was README gap 11, and the check it left standing was one no proof could
+be shown to pass — the shape of trapdoor this kernel exists to remove.
+
+The step is written here.  `lines_set` and `normalized_set` (Plan.lean) supply
+the general lemma; what is left is the arithmetic — `freshRank` beats every
+prose rank as well as every line rank — and the observation that **every command
+either lands on the fresh rank or re-uses a site the entity already had**, so
+one hypothesis covers `move`, `demote`, `readopt`, `drop` and `est` together.
+
+What is *not* discharged, and stays a hypothesis, is the rest of `itemsWf`:
+a move into a day file outside `# Pinned` breaks `sectionsWf` and a move into
+`month/` can break `shapesWf`.  Those are real refusals, not gaps. -/
+
+theorem foldl_max_ge_gen {α : Type} (f : α → Nat) : ∀ (xs : List α) (a : Nat),
+    a ≤ xs.foldl (fun acc y => Nat.max acc (f y)) a := by
+  intro xs
+  induction xs with
+  | nil => intro a; exact Nat.le_refl a
+  | cons x t ih => intro a; exact Nat.le_trans (Nat.le_max_left a (f x)) (ih _)
+
+theorem le_foldl_max_gen {α : Type} (f : α → Nat) (x : α) : ∀ (xs : List α) (a : Nat),
+    x ∈ xs → f x ≤ xs.foldl (fun acc y => Nat.max acc (f y)) a := by
+  intro xs
+  induction xs with
+  | nil => intro a h; simp at h
+  | cons y t ih =>
+      intro a h
+      simp only [List.foldl_cons]
+      rcases List.mem_cons.1 h with hh | hh
+      · rw [hh]
+        exact Nat.le_trans (Nat.le_max_right a (f y)) (foldl_max_ge_gen f t _)
+      · exact ih _ hh
+
+/-- **`freshRank` beats the prose too.**  `freshRank_gt` covers the item lines;
+this is the other half, and without it a relocated line could land on a heading's
+rank, which `Normalized` counts in the same list. -/
+theorem docProseMax_ge (p : PlanCore) (k : DocIx) (d : Doc) (hd : p.docs[k]? = some d)
+    (q : Nat × List Char) (hq : q ∈ d.prose) : q.1 ≤ docProseMax p k := by
+  unfold docProseMax
+  rw [hd]
+  exact le_foldl_max_gen Prod.fst q d.prose 0 hq
+
+theorem archive_line_mem (i : Id) (e : Entity) (r : Site) (h : e.val.archive = some r) :
+    ∃ m ∈ render i e, m.site = r := by
+  refine ⟨⟨i, r, serializeItem i (glyphAt e.val r) e.val.line⟩, ?_, rfl⟩
+  unfold render renderCore
+  rw [h]
+  simp
+
+theorem live_line_site_mem (i : Id) (e : Entity) : ∃ m ∈ render i e, m.site = e.val.live := by
+  refine ⟨⟨i, e.val.live, serializeItem i (glyphAt e.val e.val.live) e.val.line⟩, ?_, rfl⟩
+  unfold render renderCore
+  simp
+
+/-- **The one hypothesis every command satisfies**: each line of the new entity
+sits either on the fresh rank in the destination, or on a site the entity
+already occupied.  `SitesFree` follows, and with it `Normalized`. -/
+theorem normalized_of_fresh_or_old (p : WfPlan) (i : Id) (e a : Entity) (k : DocIx)
+    (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e)
+    (hsites : ∀ l ∈ render i a,
+       l.site = ⟨k, freshRank p.val k⟩ ∨ ∃ m ∈ render i e, m.site = l.site) :
+    normalized { p.val with store := p.val.store.set i a hs } = true := by
+  refine normalized_set p.val i e a hs hget (itemsWf_parts p.items).1 ?_
+  intro l hl
+  rcases hsites l hl with hfresh | ⟨m0, hm0, hm0s⟩
+  · have hdoc : l.site.doc = k := by rw [hfresh]
+    have hrank : l.site.rank = freshRank p.val k := by rw [hfresh]
+    constructor
+    · intro m hm hsite
+      exfalso
+      have h1 : m.site.doc = k := by rw [hsite, hdoc]
+      have h2 : m.site.rank = freshRank p.val k := by rw [hsite, hrank]
+      have := freshRank_gt p.val k m hm h1
+      omega
+    · intro d hd q hq
+      rw [hdoc] at hd
+      have h1 := docProseMax_ge p.val k d hd q hq
+      have h2 : docProseMax p.val k < freshRank p.val k :=
+        Nat.lt_succ_of_le (Nat.le_max_left _ _)
+      rw [hrank]
+      omega
+  · have hm0l : m0 ∈ p.val.lines := mem_lines_of_render p.val i e m0 hget hm0
+    constructor
+    · intro m hm hsite
+      have : m = m0 := site_names_one_line p m m0 hm hm0l (by rw [hsite, hm0s])
+      rw [this]
+      exact hm0
+    · intro d hd q hq
+      have hd' : p.val.docs[m0.site.doc]? = some d := by rw [hm0s]; exact hd
+      have := no_prose_line_shares_a_rank p m0 hm0l d hd' q hq
+      rw [hm0s] at this
+      exact this
+
+/-- A relocation: the live line goes to the fresh rank, and any tombstone the
+new entity carries is one the old entity already had a line at. -/
+theorem normalized_after_relocation (p : WfPlan) (i : Id) (e a : Entity) (k : DocIx)
+    (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e)
+    (hlive : a.val.live = ⟨k, freshRank p.val k⟩)
+    (harch : ∀ r, a.val.archive = some r → ∃ m ∈ render i e, m.site = r) :
+    normalized { p.val with store := p.val.store.set i a hs } = true := by
+  refine normalized_of_fresh_or_old p i e a k hs hget ?_
+  intro l hl
+  rcases render_site i a l hl with h | h
+  · exact Or.inl (by rw [h, hlive])
+  · exact Or.inr (harch l.site h)
+
+/-- An edit that moves nothing: both placements are where they were, so there is
+nothing to check at all.  This is `drop` and `est`. -/
+theorem normalized_after_edit (p : WfPlan) (i : Id) (e a : Entity)
+    (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e)
+    (hlive : a.val.live = e.val.live) (harch : a.val.archive = e.val.archive) :
+    normalized { p.val with store := p.val.store.set i a hs } = true := by
+  refine normalized_of_fresh_or_old p i e a 0 hs hget ?_
+  intro l hl
+  refine Or.inr ?_
+  rcases render_site i a l hl with h | h
+  · rw [h, hlive]; exact live_line_site_mem i e
+  · exact archive_line_mem i e l.site (by rw [← harch]; exact h)
+
+/-- **`move` at the boundary's own rank keeps ranks distinct.** -/
+theorem move_at_freshRank_normalized (p : WfPlan) (i : Id) (e a : Entity) (k : DocIx)
+    (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e)
+    (hva : a.val = { e.val with live := ⟨k, freshRank p.val k⟩ }) :
+    normalized { p.val with store := p.val.store.set i a hs } = true := by
+  refine normalized_after_relocation p i e a k hs hget (by rw [hva]) ?_
+  intro r hr
+  rw [hva] at hr
+  exact archive_line_mem i e r hr
+
+theorem moveTo_freshRank_normalized (p : WfPlan) (i : Id) (e a : Entity) (k : DocIx)
+    (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e)
+    (ha : moveTo ⟨k, freshRank p.val k⟩ e = .ok a) :
+    normalized { p.val with store := p.val.store.set i a hs } = true :=
+  move_at_freshRank_normalized p i e a k hs hget (lift_roundtrips _ _ ha)
+
+/-- **`demote` too** — and here the tombstone is the line the item is leaving,
+which is precisely a site the old entity occupied. -/
+theorem demote_at_freshRank_normalized (p : WfPlan) (i : Id) (e a : Entity) (k per : Nat)
+    (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e)
+    (ha : demote ⟨k, freshRank p.val k⟩ per e = .ok a) :
+    normalized { p.val with store := p.val.store.set i a hs } = true := by
+  have hv := lift_roundtrips _ _ ha
+  refine normalized_after_relocation p i e a k hs hget (by rw [hv]) ?_
+  intro r hr
+  rw [hv] at hr
+  have hh : (some e.val.live : Option Site) = some r := hr
+  rw [← Option.some.inj hh]
+  exact live_line_site_mem i e
+
+/-- **And `readopt`**, which consumes the tombstone, so it has one line and it
+is fresh. -/
+theorem readopt_at_freshRank_normalized (p : WfPlan) (i : Id) (e a : Entity) (k : DocIx)
+    (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e)
+    (ha : a = readopt ⟨k, freshRank p.val k⟩ e) :
+    normalized { p.val with store := p.val.store.set i a hs } = true := by
+  subst ha
+  refine normalized_after_relocation p i e _ k hs hget rfl ?_
+  intro r hr
+  exact absurd hr (by simp [readopt])
+
+theorem drop_normalized (p : WfPlan) (i : Id) (e : Entity)
+    (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e) :
+    normalized { p.val with store := p.val.store.set i (drop e) hs } = true :=
+  normalized_after_edit p i e (drop e) hs hget rfl rfl
+
+theorem setEst_normalized (p : WfPlan) (i : Id) (e : Entity) (v : Nat)
+    (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e) :
+    normalized { p.val with store := p.val.store.set i (setEstE v e) hs } = true :=
+  normalized_after_edit p i e (setEstE v e) hs hget rfl rfl
+
+/-- The six conjuncts of `itemsWf` that are **not** rank distinctness.  A
+command really can break any of them — a move into a day file outside
+`# Pinned` breaks `sectionsWf`, a move into `month/` can break `shapesWf` — so
+they stay hypotheses.  `Normalized` is the one that no longer has to be. -/
+def itemsWfButRanks (p : PlanCore) : Bool :=
+  parentsTotal p && parentsAcyclic p && afterTotal p && afterAcyclic p &&
+    sectionsWf p && shapesWf p
+
+theorem itemsWf_of_normalized (p : PlanCore) (h1 : normalized p = true)
+    (h2 : itemsWfButRanks p = true) : itemsWf p = true := by
+  simp only [itemsWfButRanks, Bool.and_eq_true] at h2
+  exact itemsWf_of_parts h1 h2.1.1.1.1.1 h2.1.1.1.1.2 h2.1.1.1.2 h2.1.1.2 h2.1.2 h2.2
+
+/-- **`cmdMove_succeeds` at the boundary, with the rank hypothesis gone.**
+Cmd.lean's version needs the caller to supply `itemsWf` of the post-state,
+because `rank` there is a `Nat` the caller chose.  `applyCmd` does not choose:
+it passes `freshRank`, and `move_at_freshRank_normalized` discharges the
+`Normalized` conjunct outright.  What is left in `hrest` is the six conjuncts a
+move can genuinely violate. -/
+theorem applyCmd_move_succeeds (p : WfPlan) (i : Id) (e : Entity) (n : Nat) (d : Dest p.val)
+    (hn : resolveDest p.val n = .ok d) (hget : p.val.store.get i = some e)
+    (hfree : ∀ r, e.val.archive = some r →
+      horizonPrecedes (docRegion p.val r.doc) (docRegion p.val d.ix) = true)
+    (hrest : ∀ a : Entity, a.val = { e.val with live := d.site (freshRank p.val d.ix) } →
+      ∀ hs : (p.val.store.get i).isSome = true,
+      itemsWfButRanks { p.val with store := p.val.store.set i a hs } = true) :
+    ∃ q : WfPlan, applyCmd (.move i n) p = .ok q ∧
+      ∃ e', q.val.store.get i = some e' ∧ e'.val.live = d.site (freshRank p.val d.ix) := by
+  have hmove := cmdMove_succeeds p i e d (freshRank p.val d.ix) hget hfree ?_
+  · obtain ⟨q, hq, he'⟩ := hmove
+    refine ⟨q, ?_, he'⟩
+    simp only [applyCmd, hn]
+    exact hq
+  · intro a hva hs
+    exact itemsWf_of_normalized _
+      (move_at_freshRank_normalized p i e a d.ix hs hget hva) (hrest a hva hs)
+
+/-- **The same, at the exact call site.**  `runPlan` renders `p.val.docs.zipIdx`,
+so this is the statement for every `(document, index)` pair it actually hands to
+`renderDocAt`: the bytes it emits for that document are the bytes the request
+sent for it.  What is left unverified between here and the wire is the JSON
+string wrapper — splitting a file on newlines and joining it again, which is
+README gap 6 and is not this theorem's business. -/
+theorem runPlan_renders_the_input (docs : List ReqDoc) (p : WfPlan)
+    (h : loadPlan docs = .ok p) (d : Doc) (j : Nat) (hj : (d, j) ∈ p.val.docs.zipIdx) :
+    ∃ rd : ReqDoc, docs[j]? = some rd ∧ d = mkDoc rd ∧ renderDocAt p.val j d = rd.lines := by
+  obtain ⟨items, hb, hval⟩ := loadPlan_spec docs p h
+  have hget : p.val.docs[j]? = some d := List.mem_zipIdx_iff_getElem?.1 hj
+  rw [hval] at hget
+  have hget' : (docs.map mkDoc)[j]? = some d := hget
+  rw [List.getElem?_map] at hget'
+  cases hd : docs[j]? with
+  | none => rw [hd] at hget'; simp at hget'
+  | some rd =>
+      rw [hd] at hget'
+      simp only [Option.map_some, Option.some.injEq] at hget'
+      obtain ⟨_, hr⟩ := the_kernel_reads_back_what_it_writes docs p h j rd hd
+      exact ⟨rd, rfl, hget'.symm, by rw [← hget']; exact hr⟩
+
 /-- Apply the request's commands and render every document back to text. -/
 def runPlan (plan : WfPlan) (cmds : List ReqCmd) : Except Json Json := do
   let plan' ←
@@ -735,57 +1653,43 @@ def run (j : Json) : Except Json Json := do
     match scanLines d.path.toList 0 d.lines with
     | .ok _    => pure ()
     | .error e => throw (Json.mkObj [("err", lerrJson e)])
-  -- parse every document.  A placement carries its document's horizon, which is
-  -- what says which line of a demotion is the tombstone.
-  let splits := docs.map (fun d => (splitDoc 0 d.lines, d.reg))
-  let places := (splits.zipIdx.map (fun p => placementsOfDoc p.2 p.1.2 p.1.1)).flatten
-  let items ←
-    match buildEntities places with
-    | .ok s => pure s
-    | .error e => throw (Json.mkObj [("err", lerrJson e)])
-  let store := loadStore items
-  let planDocs : List Doc :=
-    docs.map (fun d => ⟨d.path.toList, (splitDoc 0 d.lines).prose, d.reg⟩)
-  -- the document half is established **by construction**: prose is exactly what
-  -- did not parse as an item, so there is no separate validator to drift.
-  let hdocs : docsWf ⟨planDocs, store⟩ = true := by
-    show List.all planDocs docWf = true
-    simp only [planDocs, List.all_eq_true, List.mem_map]
-    rintro d ⟨x, _, rfl⟩
-    show List.all (splitDoc 0 x.lines).prose (fun q => !isItemLine q.2) = true
-    simp only [List.all_eq_true]
-    intro q hq
-    simp [splitDoc_prose_not_item 0 x.lines q hq]
-  -- the other three parts are decidable checks at the boundary, in the same
-  -- place and of the same kind as `Grain.ofNat?`.  `pathsDistinct` is the one
-  -- that stops two documents claiming one file (Plan.lean); `sitesInRange` and
-  -- `demotionsOriented` can only fail on a request whose documents were built
-  -- inconsistently with the placements they produced -- `orientPair` establishes
-  -- the second one for every entity it builds -- and both are checked rather
-  -- than assumed because "cannot happen" is what the shipped `move_to` also
-  -- said.  Turning either into a construction needs the same `zipIdx` bound
-  -- lemma; that gap is recorded in the README rather than papered over.
-  if hpath : pathsDistinct (⟨planDocs, store⟩ : PlanCore) = true then
-    if hsites : sitesInRange (⟨planDocs, store⟩ : PlanCore) = true then
-      if hor : demotionsOriented (⟨planDocs, store⟩ : PlanCore) = true then
-        -- and the item half of the plan-level tier: rank distinctness, `@parent`
-        -- and `after:` total and acyclic, §4.2's sections, §4.3's shapes.  Same
-        -- discipline, same place; `firstItemFault` names which one failed.
-        if hitems : itemsWf (⟨planDocs, store⟩ : PlanCore) = true then
-          let plan : WfPlan := ⟨⟨planDocs, store⟩, planWf_of_parts hdocs hsites hpath hor hitems⟩
-          runPlan plan cmds
-        else
-          throw (Json.mkObj [("err", Json.mkObj
-            [("itemCheck", Json.str (firstItemFault ⟨planDocs, store⟩))])])
-      else
-        throw (Json.mkObj [("err", lerrJson (.ambiguousDemotion
-          ((firstUnoriented ⟨planDocs, store⟩).getD [])))])
-    else
-      throw (Json.mkObj [("err", Json.mkObj [("kernel", Json.str "siteOutOfRange")])])
-  else
-    throw (Json.mkObj [("err", lerrJson (.duplicatePath
-      ((firstDupPath (docs.map (fun d => d.path.toList))).getD [])))])
+  -- build the plan and run the request.  `loadPlan` is the whole loader as one
+  -- function, which is what makes `the_kernel_reads_back_what_it_writes` a
+  -- theorem about the code the FFI runs rather than about a copy of it.
+  match loadPlan docs with
+  | .error e   => throw e
+  | .ok plan   => runPlan plan cmds
 
+
+/-! ### The round trip is not vacuous
+
+A theorem about plans nobody can build is the defect class this kernel exists to
+remove, so the witness is here and not only in the Rust suite: a concrete
+request — a heading and an item line in a week file, a heading in a month file —
+that `loadPlan` accepts, and the round trip for its first document written out in
+bytes. -/
+
+def sampleWeekDoc : ReqDoc :=
+  ⟨"week/2026-W37.md", some ⟨week, 35⟩,
+    ["# Tasks".toList, "- [ ] 5 6b Finish the report ^m1".toList]⟩
+
+def sampleRequest : List ReqDoc :=
+  [sampleWeekDoc, ⟨"month/2026-09.md", some ⟨month, 8⟩, ["# Outcomes".toList]⟩]
+
+def loadsOk (docs : List ReqDoc) : Bool :=
+  match loadPlan docs with
+  | .ok _    => true
+  | .error _ => false
+
+/-- The hypothesis of `the_kernel_reads_back_what_it_writes` is satisfiable, by
+decision. -/
+theorem the_round_trip_is_not_vacuous : loadsOk sampleRequest = true := by decide
+
+/-- And its conclusion at that request is a statement about bytes. -/
+theorem the_round_trip_fires (p : WfPlan) (h : loadPlan sampleRequest = .ok p) :
+    renderDocAt p.val 0 (mkDoc sampleWeekDoc)
+      = ["# Tasks".toList, "- [ ] 5 6b Finish the report ^m1".toList] :=
+  (the_kernel_reads_back_what_it_writes sampleRequest p h 0 sampleWeekDoc rfl).2
 
 /-- Total: every path returns a `String`.  No `panic!`, no `!`, no `partial`. -/
 def call (input : String) : String :=

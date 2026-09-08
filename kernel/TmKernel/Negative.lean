@@ -273,3 +273,61 @@ theorem the_slot_guard_is_unnecessary :
   decide
 
 end Tm
+
+/- ==================================================================== -/
+/- Round trip and `Normalized`: the cheats the plan-level proofs refuse. -/
+/- ==================================================================== -/
+
+namespace Tm
+
+/- CHEAT 27 — "the store hands its lines back in rank order, so the sort is a
+   formality."  It is not: the store enumerates its domain, not the file.  A
+   two-line list in the wrong order is the whole counterexample. -/
+def unsortedRanks : List (Nat × List Char) := [(2, "b".toList), (1, "a".toList)]
+
+theorem sorting_is_a_formality : sortByRank unsortedRanks = unsortedRanks := by decide
+
+/- CHEAT 28 — drop rank distinctness from the round trip and keep the
+   conclusion.  `sorted_ext_by_key` needs a **strict** order: with `≤`, two
+   lines at one rank are two different files with the same members and the sort
+   has nothing to choose between them.  `Normalized` is what supplies the
+   strictness, and this is the type error that says so. -/
+theorem sorted_ext_by_le : ∀ (l₁ l₂ : List (Nat × List Char)),
+    l₁.Pairwise (fun a b => a.1 ≤ b.1) → l₂.Pairwise (fun a b => a.1 ≤ b.1) →
+    (∀ x, x ∈ l₁ ↔ x ∈ l₂) → l₁ = l₂ :=
+  sorted_ext_by_key (fun x : Nat × List Char => x.1)
+
+/- CHEAT 29 — read the file back without asking whether ranks are distinct.
+   `renderDocAt_loadCore` takes `normalized` because without it the sorted list
+   is not determined by its members, and which of two lines sharing a rank comes
+   first depends on the order the store enumerated its domain — i.e. on the
+   order the host listed its documents. -/
+theorem round_trip_without_rank_distinctness (docs : List ReqDoc)
+    (items : List (Id × Entity))
+    (hb : buildEntities (placementsOf 0 docs) = .ok items)
+    (k : Nat) (rd : ReqDoc) (hk : docs[k]? = some rd) :
+    renderDocAt (loadCore docs items) k (mkDoc rd) = rd.lines :=
+  renderDocAt_loadCore docs items hb k rd hk
+
+/- CHEAT 30 — "any rank will do."  `freshRank` is not decoration: a move onto a
+   rank another line of the destination already holds is exactly the ambiguity
+   `Normalized` forbids, and rank 0 is the rank a naive implementation picks. -/
+theorem move_to_rank_zero_keeps_ranks_distinct (p : WfPlan) (i : Id) (e a : Entity)
+    (k : DocIx) (hs : (p.val.store.get i).isSome = true)
+    (hget : p.val.store.get i = some e) (hva : a.val = { e.val with live := ⟨k, 0⟩ }) :
+    normalized { p.val with store := p.val.store.set i a hs } = true :=
+  move_at_freshRank_normalized p i e a k hs hget hva
+
+/- CHEAT 31 — count only the item lines when checking a rank is free.  A
+   document's ranks are its prose ranks *and* its item ranks in one list, because
+   `weave` orders them against each other; a relocated line landing on a
+   heading's rank would move that heading with no command run.  `SitesFree` has
+   two clauses for this reason. -/
+theorem normalized_set_ignoring_prose (p : PlanCore) (i : Id) (e e' : Entity)
+    (hs : (p.store.get i).isSome = true) (hget : p.store.get i = some e)
+    (hnorm : normalized p = true)
+    (hfree : ∀ l ∈ render i e', ∀ m ∈ p.lines, m.site = l.site → m ∈ render i e) :
+    normalized { p with store := p.store.set i e' hs } = true :=
+  normalized_set p i e e' hs hget hnorm hfree
+
+end Tm

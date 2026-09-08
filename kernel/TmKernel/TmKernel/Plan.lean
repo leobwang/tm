@@ -830,6 +830,146 @@ theorem renderSplit_splitDoc (k : Nat) (ls : List (List Char)) :
             omega
 
 
+/-! ## Rank order: the three lemmas the *plan-level* round trip needs
+
+`renderSplit_splitDoc` is the round trip for one file's text.  The plan-level
+round trip has to survive a detour the file never takes: the item lines are
+taken apart, stored under their ids, and read back out **in the order the store
+enumerates its domain**, which is not rank order.  Something has to put them
+back in order, and that something must be a *reconstruction* and not a choice —
+otherwise the bytes a host receives depend on the order it happened to list its
+documents in, which is the same defect `orientPair_comm` removes for the
+demotion pair.
+
+Three facts do it, and none of them needs Mathlib:
+
+* a list ordered strictly by rank is **determined by its members**
+  (`sorted_ext_by_key`) — so any correct sort of the store's lines is *the*
+  file's line list, whatever order the store was in;
+* `splitDoc` produces prose in non-decreasing and items in **strictly
+  increasing** rank order (`splitDoc_prose_sorted`, `splitDoc_items_sorted`),
+  because a rank is a line index;
+* rank distinctness — `Normalized`, which joined `planWf` — is what makes
+  "strictly" available on the store's side.
+-/
+
+/-- `splitDoc` in three rewriting steps, so every later proof about it is a
+`rw` and not a `split`. -/
+theorem splitDoc_nil (k : Nat) : splitDoc k [] = ⟨[], []⟩ := rfl
+
+theorem splitDoc_cons_ok (k : Nat) (l : List Char) (rest : List (List Char))
+    (i : Id) (g : Glyph) (r : RawItem) (h : parseItem l = .ok (i, g, r)) :
+    splitDoc k (l :: rest) =
+      ⟨(splitDoc (k + 1) rest).prose, (k, i, g, r) :: (splitDoc (k + 1) rest).items⟩ := by
+  simp only [splitDoc, h]
+
+theorem splitDoc_cons_error (k : Nat) (l : List Char) (rest : List (List Char))
+    (e : PErr) (h : parseItem l = .error e) :
+    splitDoc k (l :: rest) =
+      ⟨(k, l) :: (splitDoc (k + 1) rest).prose, (splitDoc (k + 1) rest).items⟩ := by
+  simp only [splitDoc, h]
+
+/-- **A list ordered strictly by a key is determined by its members.**  Two
+strictly ordered lists with the same elements are the same list — so "sort the
+store's lines by rank" has one answer and it does not depend on the order the
+store handed them over. -/
+theorem sorted_ext_by_key {α : Type} (key : α → Nat) : ∀ (l₁ l₂ : List α),
+    l₁.Pairwise (fun a b => key a < key b) → l₂.Pairwise (fun a b => key a < key b) →
+    (∀ x, x ∈ l₁ ↔ x ∈ l₂) → l₁ = l₂ := by
+  intro l₁
+  induction l₁ with
+  | nil =>
+      intro l₂ _ _ h
+      cases l₂ with
+      | nil => rfl
+      | cons b t => exact absurd ((h b).2 (by simp)) (by simp)
+  | cons a t ih =>
+      intro l₂ h₁ h₂ h
+      cases l₂ with
+      | nil => exact absurd ((h a).1 (by simp)) (by simp)
+      | cons b s =>
+          rw [List.pairwise_cons] at h₁ h₂
+          have hab : a = b := by
+            rcases List.mem_cons.1 ((h a).1 (by simp)) with hx | hx
+            · exact hx
+            · rcases List.mem_cons.1 ((h b).2 (by simp)) with hy | hy
+              · exact hy.symm
+              · exact absurd (Nat.lt_trans (h₁.1 b hy) (h₂.1 a hx)) (Nat.lt_irrefl _)
+          subst hab
+          have hmem : ∀ x, x ∈ t ↔ x ∈ s := by
+            intro x
+            constructor
+            · intro hx
+              rcases List.mem_cons.1 ((h x).1 (by simp [hx])) with he | hs
+              · exact absurd (he ▸ h₁.1 x hx) (Nat.lt_irrefl _)
+              · exact hs
+            · intro hx
+              rcases List.mem_cons.1 ((h x).2 (by simp [hx])) with he | hs
+              · exact absurd (he ▸ h₂.1 x hx) (Nat.lt_irrefl _)
+              · exact hs
+          rw [ih s h₁.2 h₂.2 hmem]
+
+/-- Prose comes out of a file in rank order, because a rank **is** a line
+index. -/
+theorem splitDoc_prose_sorted : ∀ (k : Nat) (ls : List (List Char)),
+    (splitDoc k ls).prose.Pairwise (fun a b => a.1 ≤ b.1) := by
+  intro k ls
+  induction ls generalizing k with
+  | nil => simp [splitDoc_nil]
+  | cons l rest ih =>
+      cases hp : parseItem l with
+      | ok trip =>
+          obtain ⟨i, g, r⟩ := trip
+          rw [splitDoc_cons_ok k l rest i g r hp]
+          exact ih (k + 1)
+      | error e =>
+          rw [splitDoc_cons_error k l rest e hp]
+          refine List.pairwise_cons.2 ⟨?_, ih (k + 1)⟩
+          intro q hq
+          have := splitDoc_prose_ge (k + 1) rest q hq
+          omega
+
+/-- And the item lines come out **strictly** ordered, which is what
+`sorted_ext_by_key` needs on the file's side of the round trip. -/
+theorem splitDoc_items_sorted : ∀ (k : Nat) (ls : List (List Char)),
+    (splitDoc k ls).items.Pairwise (fun a b => a.1 < b.1) := by
+  intro k ls
+  induction ls generalizing k with
+  | nil => simp [splitDoc_nil]
+  | cons l rest ih =>
+      cases hp : parseItem l with
+      | ok trip =>
+          obtain ⟨i, g, r⟩ := trip
+          rw [splitDoc_cons_ok k l rest i g r hp]
+          refine List.pairwise_cons.2 ⟨?_, ih (k + 1)⟩
+          intro q hq
+          have := splitDoc_items_ge (k + 1) rest q hq
+          omega
+      | error e =>
+          rw [splitDoc_cons_error k l rest e hp]
+          exact ih (k + 1)
+
+/-- Strict order out of a weak one and distinct keys.  The weak order is what
+insertion sort gives; the distinctness is `Normalized`. -/
+theorem pairwise_lt_of_le_ne {α : Type} (key : α → Nat) : ∀ {l : List α},
+    l.Pairwise (fun a b => key a ≤ key b) → l.Pairwise (fun a b => key a ≠ key b) →
+    l.Pairwise (fun a b => key a < key b) := by
+  intro l
+  induction l with
+  | nil => intro _ _; simp
+  | cons x xs ih =>
+      intro h1 h2
+      rw [List.pairwise_cons] at h1 h2 ⊢
+      exact ⟨fun b hb => Nat.lt_of_le_of_ne (h1.1 b hb) (h2.1 b hb), ih h1.2 h2.2⟩
+
+/-- `Nodup` of the keys is `Pairwise` of key-distinctness on the list. -/
+theorem pairwise_ne_of_nodup_keys {α : Type} (key : α → Nat) {l : List α}
+    (h : (l.map key).Nodup) : l.Pairwise (fun a b => key a ≠ key b) := by
+  rw [show ((l.map key).Nodup) = ((l.map key).Pairwise (· ≠ ·)) from rfl,
+    List.pairwise_map] at h
+  exact h
+
+
 /-! ## Acyclicity, twice, over a finite domain and without Mathlib
 
 The parent relation is a partial **function**, so its cycles are found by
@@ -1203,6 +1343,224 @@ theorem site_names_one_line (p : WfPlan) (l₁ l₂ : Line)
   have m₂ : l₂ ∈ p.val.lines.filter (fun l => l.site.doc == l₁.site.doc) := by
     simp [List.mem_filter, h₂, hs]
   exact nodup_map_inj hnd2 l₁ m₁ l₂ m₂ (by rw [hs])
+
+/-! ### Replacing one entity: what the plan's line list does
+
+`mapAt` re-establishes `planWf` by *computation* on every post-state, and that
+is the discipline.  But a decidable re-check that no command can be shown to
+pass is a trapdoor, and for `Normalized` the passing argument was missing: the
+boundary always moves a line to `freshRank`, `freshRank_gt` proves that rank is
+above every rank already in the destination, and the step from there to "and so
+the post-state is still `Normalized`" was not written (README gap 11).
+
+The step needs one lemma, and this is it.  A single-entity update leaves the
+store's domain alone, so the plan's line list is the old one with **exactly this
+entity's lines swapped out in place** — same prefix, same suffix.  Everything
+that has to be said about a command's effect on *positions* is said here, once,
+and `normalized_set` below turns it into the preservation proof. -/
+
+theorem flatMap_congr {α β : Type} (l : List α) (f g : α → List β)
+    (h : ∀ x ∈ l, f x = g x) : l.flatMap f = l.flatMap g := by
+  induction l with
+  | nil => rfl
+  | cons a t ih =>
+      rw [List.flatMap_cons, List.flatMap_cons, h a (by simp),
+        ih (fun x hx => h x (by simp [hx]))]
+
+theorem site_eq (s t : Site) (hd : s.doc = t.doc) (hr : s.rank = t.rank) : s = t := by
+  cases s; cases t; simp_all
+
+/-- **The replacement lemma for `PlanCore.lines` under a single-entity
+update.**  The domain does not move, so neither does anything else: the two
+line lists differ in one contiguous block, and every line outside that block
+carries a different id. -/
+theorem lines_set (p : PlanCore) (i : Id) (e e' : Entity)
+    (hs : (p.store.get i).isSome = true) (hget : p.store.get i = some e) :
+    ∃ A C : List Line,
+      p.lines = A ++ (render i e ++ C) ∧
+      PlanCore.lines { p with store := p.store.set i e' hs } = A ++ (render i e' ++ C) ∧
+      (∀ l ∈ A, l.id ≠ i) ∧ (∀ l ∈ C, l.id ≠ i) := by
+  have hdom : i ∈ p.store.dom := (p.store.domSpec i).mpr hs
+  obtain ⟨pre, post, hsplit⟩ := List.append_of_mem hdom
+  have hnd : (pre ++ i :: post).Nodup := by rw [← hsplit]; exact p.store.domNodup
+  have hnp := List.nodup_append.1 hnd
+  have hpre : i ∉ pre := fun hc => hnp.2.2 i hc i (by simp) rfl
+  have hpost : i ∉ post := (List.nodup_cons.1 hnp.2.1).1
+  refine ⟨pre.flatMap (fun j => match p.store.get j with | none => [] | some a => render j a),
+          post.flatMap (fun j => match p.store.get j with | none => [] | some a => render j a),
+          ?_, ?_, ?_, ?_⟩
+  · show p.store.dom.flatMap _ = _
+    rw [hsplit, List.flatMap_append, List.flatMap_cons]
+    simp only [hget]
+  · show (p.store.set i e' hs).dom.flatMap _ = _
+    rw [show (p.store.set i e' hs).dom = p.store.dom from rfl, hsplit,
+      List.flatMap_append, List.flatMap_cons]
+    rw [flatMap_congr pre _ (fun j => match p.store.get j with | none => [] | some a => render j a)
+        (fun j hj => by
+          rw [Store.get_set_other p.store i j e' hs (fun hc => hpre (hc ▸ hj))]),
+      flatMap_congr post _ (fun j => match p.store.get j with | none => [] | some a => render j a)
+        (fun j hj => by
+          rw [Store.get_set_other p.store i j e' hs (fun hc => hpost (hc ▸ hj))])]
+    simp only [Store.get_set_self]
+  · intro l hl
+    obtain ⟨j, hj, hlj⟩ := List.mem_flatMap.1 hl
+    have hji : j ≠ i := fun hc => hpre (hc ▸ hj)
+    cases hgj : p.store.get j with
+    | none => rw [hgj] at hlj; simp at hlj
+    | some a => rw [hgj] at hlj; rw [render_all_same_id j a l hlj]; exact hji
+  · intro l hl
+    obtain ⟨j, hj, hlj⟩ := List.mem_flatMap.1 hl
+    have hji : j ≠ i := fun hc => hpost (hc ▸ hj)
+    cases hgj : p.store.get j with
+    | none => rw [hgj] at hlj; simp at hlj
+    | some a => rw [hgj] at hlj; rw [render_all_same_id j a l hlj]; exact hji
+
+/-- The ranks a list of lines occupies in one document. -/
+def ranksIn (k : DocIx) (ls : List Line) : List Nat :=
+  (ls.filter (fun l => l.site.doc == k)).map (fun l => l.site.rank)
+
+/-- The ranks a document's **prose** occupies. -/
+def proseRanks (p : PlanCore) (k : DocIx) : List Nat :=
+  match p.docs[k]? with
+  | none   => []
+  | some d => d.prose.map Prod.fst
+
+theorem docRanks_eq (p : PlanCore) (k : DocIx) :
+    docRanks p k = proseRanks p k ++ ranksIn k p.lines := rfl
+
+theorem ranksIn_append (k : DocIx) (x y : List Line) :
+    ranksIn k (x ++ y) = ranksIn k x ++ ranksIn k y := by
+  simp [ranksIn, List.filter_append]
+
+theorem mem_ranksIn {k : DocIx} {ls : List Line} {r : Nat} :
+    r ∈ ranksIn k ls ↔ ∃ l, l ∈ ls ∧ l.site.doc = k ∧ l.site.rank = r := by
+  unfold ranksIn
+  constructor
+  · intro h
+    obtain ⟨l, hl, hr⟩ := List.mem_map.1 h
+    have hf := List.mem_filter.1 hl
+    exact ⟨l, hf.1, by simpa using hf.2, hr⟩
+  · rintro ⟨l, hl, hd, rfl⟩
+    exact List.mem_map.2 ⟨l, List.mem_filter.2 ⟨hl, by simp [hd]⟩, rfl⟩
+
+theorem mem_proseRanks {p : PlanCore} {k : DocIx} {r : Nat} (h : r ∈ proseRanks p k) :
+    ∃ d, p.docs[k]? = some d ∧ ∃ q ∈ d.prose, q.1 = r := by
+  unfold proseRanks at h
+  cases hd : p.docs[k]? with
+  | none => rw [hd] at h; simp at h
+  | some d =>
+      rw [hd] at h
+      obtain ⟨q, hq, hr⟩ := List.mem_map.1 h
+      exact ⟨d, rfl, q, hq, hr⟩
+
+theorem nodup_of_length_le_one {α : Type} (l : List α) (h : l.length ≤ 1) : l.Nodup := by
+  match l with
+  | []          => simp
+  | [_]         => simp
+  | _ :: _ :: _ => simp only [List.length_cons] at h; omega
+
+/-- **One entity puts at most one line in any one document** — the two lines of
+a demotion are in two files, which is `wf`.  So the block `lines_set` swaps
+contributes at most one rank per document, and `Normalized` never has to
+compare it with itself. -/
+theorem render_filter_doc_len (i : Id) (e : Entity) (k : DocIx) :
+    ((render i e).filter (fun l => l.site.doc == k)).length ≤ 1 := by
+  unfold render renderCore
+  cases h : e.val.archive with
+  | none =>
+      simp only
+      by_cases hk : e.val.live.doc = k <;> simp [hk]
+  | some r =>
+      have hne := archive_elsewhere e r h
+      simp only
+      by_cases hk : e.val.live.doc = k
+      · have hrk : ¬ (r.doc = k) := fun hc => hne (by rw [hc, hk])
+        simp [hk, hrk]
+      · by_cases hrk : r.doc = k <;> simp [hk, hrk]
+
+theorem ranksIn_render_nodup (i : Id) (e : Entity) (k : DocIx) :
+    (ranksIn k (render i e)).Nodup := by
+  refine nodup_of_length_le_one _ ?_
+  unfold ranksIn
+  rw [List.length_map]
+  exact render_filter_doc_len i e k
+
+/-- Swapping the middle block of a `Nodup` concatenation for a block that is
+itself `Nodup` and meets nothing around it. -/
+theorem nodup_swap_middle {α : Type} (Pr a b b' c : List α)
+    (hold : (Pr ++ (a ++ (b ++ c))).Nodup) (hb' : b'.Nodup)
+    (hdis : ∀ r ∈ b', r ∉ Pr ∧ r ∉ a ∧ r ∉ c) :
+    (Pr ++ (a ++ (b' ++ c))).Nodup := by
+  rw [List.nodup_append] at hold
+  obtain ⟨hPr, h1, hd1⟩ := hold
+  rw [List.nodup_append] at h1
+  obtain ⟨ha, h2, hd2⟩ := h1
+  rw [List.nodup_append] at h2
+  obtain ⟨_, hc, _⟩ := h2
+  refine List.nodup_append.2 ⟨hPr, List.nodup_append.2 ⟨ha,
+    List.nodup_append.2 ⟨hb', hc, ?_⟩, ?_⟩, ?_⟩
+  · intro x hx y hy hxy
+    exact (hdis x hx).2.2 (by rw [hxy]; exact hy)
+  · intro x hx y hy hxy
+    rcases List.mem_append.1 hy with hy' | hy'
+    · exact (hdis y hy').2.1 (by rw [← hxy]; exact hx)
+    · exact hd2 x hx y (List.mem_append.2 (Or.inr hy')) hxy
+  · intro x hx y hy hxy
+    rcases List.mem_append.1 hy with hy' | hy'
+    · exact hd1 x hx y (List.mem_append.2 (Or.inl hy')) hxy
+    · rcases List.mem_append.1 hy' with hy'' | hy''
+      · exact (hdis y hy'').1 (by rw [← hxy]; exact hx)
+      · exact hd1 x hx y (List.mem_append.2 (Or.inr (List.mem_append.2 (Or.inr hy'')))) hxy
+
+/-- **The precondition a command owes `Normalized`**, and nothing more: every
+line the *new* entity renders sits where nothing else is — no other line of the
+plan, and no prose line of that document.  Re-using one of the entity's **own**
+sites is allowed, which is what makes `drop` and `est` free of any obligation
+at all. -/
+def SitesFree (p : PlanCore) (i : Id) (e e' : Entity) : Prop :=
+  ∀ l ∈ render i e',
+    (∀ m ∈ p.lines, m.site = l.site → m ∈ render i e) ∧
+    (∀ d, p.docs[l.site.doc]? = some d → ∀ q ∈ d.prose, q.1 ≠ l.site.rank)
+
+/-- **`Normalized` is preserved by a single-entity update onto free sites** —
+the theorem README gap 11 said was not written.  With it, `mapAt`'s decidable
+re-check of rank distinctness is an obligation the boundary can *discharge*
+rather than a check it merely hopes to pass. -/
+theorem normalized_set (p : PlanCore) (i : Id) (e e' : Entity)
+    (hs : (p.store.get i).isSome = true) (hget : p.store.get i = some e)
+    (hnorm : normalized p = true) (hfree : SitesFree p i e e') :
+    normalized { p with store := p.store.set i e' hs } = true := by
+  obtain ⟨A, C, hp, hp', hA, hC⟩ := lines_set p i e e' hs hget
+  simp only [normalized, List.all_eq_true, decide_eq_true_eq] at hnorm ⊢
+  intro k hk
+  have hold : (docRanks p k).Nodup := hnorm k hk
+  rw [docRanks_eq, hp, ranksIn_append, ranksIn_append] at hold
+  show (docRanks { p with store := p.store.set i e' hs } k).Nodup
+  rw [docRanks_eq]
+  show (proseRanks p k ++ ranksIn k
+    (PlanCore.lines { p with store := p.store.set i e' hs })).Nodup
+  rw [hp', ranksIn_append, ranksIn_append]
+  refine nodup_swap_middle _ _ _ _ _ hold (ranksIn_render_nodup i e' k) ?_
+  intro r hr
+  obtain ⟨l, hl, hld, hlr⟩ := mem_ranksIn.1 hr
+  refine ⟨?_, ?_, ?_⟩
+  · intro hcon
+    obtain ⟨d, hd, q, hq, hqr⟩ := mem_proseRanks hcon
+    exact (hfree l hl).2 d (by rw [hld]; exact hd) q hq (by rw [hqr, hlr])
+  · intro hcon
+    obtain ⟨m, hm, hmd, hmr⟩ := mem_ranksIn.1 hcon
+    have hmem : m ∈ p.lines := by
+      rw [hp]; exact List.mem_append.2 (Or.inl hm)
+    have := (hfree l hl).1 m hmem (site_eq _ _ (by rw [hmd, hld]) (by rw [hmr, hlr]))
+    exact hA m hm (render_all_same_id i e m this)
+  · intro hcon
+    obtain ⟨m, hm, hmd, hmr⟩ := mem_ranksIn.1 hcon
+    have hmem : m ∈ p.lines := by
+      rw [hp]
+      exact List.mem_append.2 (Or.inr (List.mem_append.2 (Or.inr hm)))
+    have := (hfree l hl).1 m hmem (site_eq _ _ (by rw [hmd, hld]) (by rw [hmr, hlr]))
+    exact hC m hm (render_all_same_id i e m this)
+
 
 /-! ## §3.2's derived fields, as functions over the tree
 
