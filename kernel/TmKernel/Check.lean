@@ -95,3 +95,73 @@ open Tm
 #eval (closeTo day 250, closeTo week 250, closeTo month 250)
 -- the rule horizon.rs:1323 uses, versus the derived one, on a Sunday closed on Monday
 #eval (targetContaining day 6, closeTo day 7)
+
+-- ===========================================================================
+-- APPENDED: §3.1's item fields and the rest of the plan-level tier.
+-- ===========================================================================
+
+-- the bounded types and their smart constructors
+#print axioms Tm.clock_rejects_25h
+#print axioms Tm.clock_rejects_minute_60
+#print axioms Tm.weekday_rejects_7
+#print axioms Tm.monthDay_rejects_0
+#print axioms Tm.monthDay_rejects_32
+#print axioms Tm.monthDay_roundtrips
+#print axioms Tm.TagSet.no_duplicates
+#print axioms Tm.TagSet.mem_ofList
+
+-- widening the entity leaves the tier structure alone
+#print axioms Tm.wf_ignores_the_item_fields
+
+-- §5.3's default `on_miss`, derived
+#print axioms Tm.onMiss_interval
+#print axioms Tm.onMiss_point
+#print axioms Tm.onMiss_window
+#print axioms Tm.effectiveOnMiss_override
+#print axioms Tm.effectiveOnMiss_default
+
+-- `@parent`: the walk, sound and complete, and the check bites
+#print axioms Tm.anc_add
+#print axioms Tm.chain_dup_gives_cycle
+#print axioms Tm.parentsAcyclic_sound
+#print axioms Tm.parentsAcyclic_complete
+#print axioms Tm.self_parent_is_rejected
+#print axioms Tm.climb_reaches_a_root
+#print axioms Tm.every_item_has_a_root
+#print axioms Tm.no_item_is_its_own_ancestor
+#print axioms Tm.parent_names_an_item
+
+-- `after:`: the peel, sound and complete, and the check bites
+#print axioms Tm.peelN_empty_or_fixed
+#print axioms Tm.fixed_is_deadlocked
+#print axioms Tm.afterAcyclic_sound
+#print axioms Tm.afterAcyclic_complete
+#print axioms Tm.self_dep_is_rejected
+#print axioms Tm.no_deadlocked_set
+#print axioms Tm.dep_names_an_item
+
+-- `Normalized`: a site names one line
+#print axioms Tm.site_names_one_line
+#print axioms Tm.no_prose_line_shares_a_rank
+
+-- §3.2's derived fields
+#print axioms Tm.effectiveShape_as_written
+#print axioms Tm.effectiveShape_prep
+#print axioms Tm.effectiveShape_does_not_reach_the_grandparent
+#print axioms Tm.effectiveCi_explicit
+#print axioms Tm.effectiveCi_inherits
+#print axioms Tm.effectiveCi_default
+#print axioms Tm.rootPrio_of_a_root
+#print axioms Tm.rootPrio_walks_past_the_child
+
+-- §4.2's sections and §4.3's per-file-kind shapes
+#print axioms Tm.a_demoted_section_is_a_month_section
+#print axioms Tm.a_pinned_section_is_a_day_section
+#print axioms Tm.a_day_file_holds_only_pinned_items
+#print axioms Tm.month_items_are_outcomes
+#print axioms Tm.calendar_lines_are_intervals
+#print axioms Tm.routine_lines_are_open
+#print axioms Tm.routine_lines_have_a_window_or_after_done
+#print axioms Tm.optional_items_declare_a_duration
+#print axioms Tm.a_shapeless_calendar_line_is_rejected
+#print axioms Tm.an_unpinned_day_item_is_rejected

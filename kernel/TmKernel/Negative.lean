@@ -55,16 +55,66 @@ def destCheat (n : Nat) (p : WfPlan) : Dest p.val := ⟨n, by omega⟩
    and `glyphAt` rendered `[ ]`.  The inverse of `glyphAt` is a *partial*
    function, and `statusOfGlyph .demoted` is `none` for a reason. -/
 def loneDemotedCheat (q : Placement) : Entity :=
-  ⟨⟨⟨q.doc, q.rank⟩, none, (statusOfGlyph q.glyph).get rfl, q.item, []⟩, rfl⟩
+  ⟨{ live := ⟨q.doc, q.rank⟩, archive := none, status := (statusOfGlyph q.glyph).get rfl,
+     line := q.item, stamps := [] }, rfl⟩
 
 /- CHEAT 8 — build the plan without answering which of a demotion's two `[-]`
    lines is the tombstone.  Deciding it by the order the host listed the
    documents was this, with the assertion hidden in a `match` that tried one
-   orientation and then the other: three of `planWf`'s four parts discharged and
-   the fourth waved through. -/
+   orientation and then the other: three of `planWf`'s parts discharged and the
+   rest waved through.  (`planWf` has five parts since the item fields joined
+   the plan-level tier, so the first `rfl` Lean reaches is `itemsWf`'s; the
+   cheat is the same one.) -/
 def loadCheat (planDocs : List Doc) (store : Store)
     (h1 : docsWf ⟨planDocs, store⟩ = true) (h2 : sitesInRange ⟨planDocs, store⟩ = true)
     (h3 : pathsDistinct ⟨planDocs, store⟩ = true) : WfPlan :=
-  ⟨⟨planDocs, store⟩, planWf_of_parts h1 h2 h3 rfl⟩
+  ⟨⟨planDocs, store⟩, planWf_of_parts h1 h2 h3 rfl rfl⟩
+
+-- ===========================================================================
+-- APPENDED: the item fields and the rest of the plan-level tier
+-- (State.lean / Plan.lean).  Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 9 — wave the **item half** of the plan-level tier through, which is
+   what "cycles are only a `tm check` warning" amounts to once `tm check` and
+   the acceptance rule are the same function.  `planWf` has five parts now and
+   `itemsWf` is one of them; `rfl` cannot supply it. -/
+def itemTierCheat (planDocs : List Doc) (store : Store)
+    (h1 : docsWf ⟨planDocs, store⟩ = true) (h2 : sitesInRange ⟨planDocs, store⟩ = true)
+    (h3 : pathsDistinct ⟨planDocs, store⟩ = true)
+    (h4 : demotionsOriented ⟨planDocs, store⟩ = true) : WfPlan :=
+  ⟨⟨planDocs, store⟩, planWf_of_parts h1 h2 h3 h4 rfl⟩
+
+/- CHEAT 10 — the sharpest of the new ones: claim a transform that lands in
+   range and keeps its tombstone behind it always succeeds.  It does not, since
+   `Normalized` and `after:` acyclicity joined `planWf`: a move onto an occupied
+   rank, or an edit that closes a dependency cycle, is refused by `mapAt`'s
+   re-check.  The residual obligation is `hrest`, and it cannot be forgotten
+   because the theorem will not apply without it. -/
+theorem move_always_works (p : WfPlan) (i : Id) (f : Entity → Except KErr Entity)
+    (e e' : Entity) (hget : p.val.store.get i = some e) (hf : f e = .ok e')
+    (hin : entityInRange p.val e' = true) (hor : demotionOriented p.val e' = true) :
+    ∃ q : WfPlan, p.mapAt i f = .ok q ∧ q.val.store.get i = some e' ∧
+      q.val.docs = p.val.docs :=
+  mapAt_ok_of_inRange p i f e e' hget hf hin hor
+
+/- CHEAT 11 — `ci: 9`.  The Rust field is a `u8` and the parser clamped; here
+   the bound is the type.  (Note the shape of the cheat: `(9 : Fin 6)` would
+   *silently* wrap to 3 through `OfNat`, which is why every bounded value in
+   this kernel comes from a smart constructor and not from a numeral.) -/
+def ciCheat : Fin 6 := ⟨9, by omega⟩
+
+/- CHEAT 12 — `#lean #lean` as two tags.  Tags are a set structurally, so the
+   duplicate is not something a later `dedup` has to catch. -/
+def tagCheat : TagSet := ⟨[['l', 'e', 'a', 'n'], ['l', 'e', 'a', 'n']], by decide⟩
+
+/- CHEAT 13 — hand a raw list where the set is wanted. -/
+def rawTagsCheat (c : Core) : Core := { c with tags := [['a'], ['a']] }
+
+/- CHEAT 14 — `win:25:00-…`.  A time of day is `Fin 1440`. -/
+def clockCheat : Clock := ⟨1500, by omega⟩
+
+/- CHEAT 15 — `every:month:32`. -/
+def monthDayCheat : MonthDay := ⟨31, by omega⟩
 
 end Tm

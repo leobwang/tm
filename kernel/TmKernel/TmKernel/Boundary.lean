@@ -224,14 +224,16 @@ def pairEntity (arch live : Placement) : Option Entity :=
     match statusOfGlyphDemoted live.glyph with
     | none    => none
     | some st =>
-      if h : wf (⟨⟨live.doc, live.rank⟩, some ⟨arch.doc, arch.rank⟩, st, live.item, []⟩ : Core) = true
+      if h : wf ({ live := ⟨live.doc, live.rank⟩, archive := some ⟨arch.doc, arch.rank⟩,
+                   status := st, line := live.item, stamps := [] } : Core) = true
       then some ⟨_, h⟩ else none
   | _ => none
 
 /-- One line on its own: the entity that renders exactly it. -/
 def loneEntity (i : Id) (q : Placement) : Except LErr Entity :=
   match statusOfGlyph q.glyph with
-  | some st => .ok ⟨⟨⟨q.doc, q.rank⟩, none, st, q.item, []⟩, rfl⟩
+  | some st => .ok ⟨{ live := ⟨q.doc, q.rank⟩, archive := none, status := st,
+                      line := q.item, stamps := [] }, rfl⟩
   | none    => .error (.orphanDemotion i)
 
 /-- **Which line is the tombstone, decided by the files.**  The closed horizon
@@ -766,8 +768,15 @@ def run (j : Json) : Except Json Json := do
   if hpath : pathsDistinct (⟨planDocs, store⟩ : PlanCore) = true then
     if hsites : sitesInRange (⟨planDocs, store⟩ : PlanCore) = true then
       if hor : demotionsOriented (⟨planDocs, store⟩ : PlanCore) = true then
-        let plan : WfPlan := ⟨⟨planDocs, store⟩, planWf_of_parts hdocs hsites hpath hor⟩
-        runPlan plan cmds
+        -- and the item half of the plan-level tier: rank distinctness, `@parent`
+        -- and `after:` total and acyclic, §4.2's sections, §4.3's shapes.  Same
+        -- discipline, same place; `firstItemFault` names which one failed.
+        if hitems : itemsWf (⟨planDocs, store⟩ : PlanCore) = true then
+          let plan : WfPlan := ⟨⟨planDocs, store⟩, planWf_of_parts hdocs hsites hpath hor hitems⟩
+          runPlan plan cmds
+        else
+          throw (Json.mkObj [("err", Json.mkObj
+            [("itemCheck", Json.str (firstItemFault ⟨planDocs, store⟩))])])
       else
         throw (Json.mkObj [("err", lerrJson (.ambiguousDemotion
           ((firstUnoriented ⟨planDocs, store⟩).getD [])))])

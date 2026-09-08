@@ -15,7 +15,7 @@ kernel/
     TmKernel/Plan.lean       the plan as one object; the invariant, globally
     TmKernel/Cmd.lean        five commands, each with its law proved or refuted
     TmKernel/Boundary.lean   String -> String; one @[export]
-    Check.lean               axiom audit (70 theorems)
+    Check.lean               axiom audit (120 theorems)
     Negative.lean            MUST FAIL to compile — the demonstration
   tm-kernel-ffi/       Rust: the C shim, build.rs, and 21 tests that call Lean
   check.sh             stage-one acceptance
@@ -185,11 +185,16 @@ Eight cheats, eight compile errors:
 | 5 | export `setLeadWord` as "edit the estimate" — what `tm edit est=` did | the `view ∘ set = id` obligation every setter must discharge cannot be discharged for it |
 | 6 | take a relocation's destination straight off the wire, which is what let `move ^m1 7` delete the item from a one-document plan | a `Dest` is an index **plus a proof it is a document of this plan**, and a `Nat` decoded from JSON cannot supply the second field |
 | 7 | read a lone `[-]` back as an ordinary open item, which is what the first loader did | the inverse of `glyphAt` is a *partial* function and `statusOfGlyph .demoted` is `none`; `.get` needs a proof there is something there |
-| 8 | build the plan without answering which of a demotion's two `[-]` lines is the tombstone — deciding it by document order was this, with the assertion hidden in a `match` | `planWf` has four parts and `demotionsOriented` is the fourth; `rfl` is not a proof of it |
+| 8 | build the plan without answering which of a demotion's two `[-]` lines is the tombstone — deciding it by document order was this, with the assertion hidden in a `match` | `planWf` has five parts; `rfl` is not a proof of any of them |
+| 9 | wave the **item half** of the plan-level tier through, which is what "cycles are only a `tm check` warning" amounts to once `tm check` and the acceptance rule are one function | `itemsWf` is a part of `planWf` like the other four |
+| 10 | claim a transform that lands in range and keeps its tombstone behind it always succeeds | since `Normalized` and `after:` acyclicity joined `planWf`, `mapAt_ok_of_inRange` carries a fifth obligation and will not apply without it |
+| 11 | `ci: 9` | `Fin 6`, reached through a smart constructor and never through a numeral — `(9 : Fin 6)` would *silently* wrap to 3 |
+| 12 | `#lean #lean` as two tags | tags are a set structurally: `{ l : List (List Char) // l.Nodup }`, whose proof lives inside the field's own type so `{c with …}` still works |
+| 13 | `win:25:00`, `every:month:32` | `Fin 1440` and `Fin 31`, each with the smart constructor its decoder must use |
 
 ## What is proved
 
-160 theorems; the audit in `Check.lean` covers 70 of them and shows only
+234 theorems; the audit in `Check.lean` covers 120 of them and shows only
 `propext` / `Classical.choice` / `Quot.sound`, **never `sorryAx`**. Three
 (`drop_idem`, `readopt_reopens`, `grain_rejects_99`) depend on no axioms at all.
 
@@ -405,6 +410,82 @@ The refutations are the point, not decoration:
   that the exception is written once, in `demoteEst`'s signature, where a later
   writer cannot fail to read it.
 
+### The item, and the rest of the plan-level tier
+
+`Core` accounts for all twenty-two of §3.1's fields, in eighteen of its
+own. Four are absent on purpose — `id` is
+the store key, `horizon` is the file (`Site.doc`), `src` is `live` plus `line`,
+and `est`/`est_original` are *views* of the token vector — and two more are
+derived rather than stored: `series` is the section a placement sits in, and
+§3.2's `effective_shape` is a fact about the parent. The rest are typed:
+`ci : Option (Fin 6)`, `!k : Option (Fin 4)`, a four-constructor `Shape` over
+`Fin 1440` clock times, `Recur` as **syntax** (a denotation is not
+serialisable and §0 says the Markdown is the database), budgets as minutes,
+tags as a `Nodup` subtype.
+
+Widening the record costs nothing at the other two tiers, and that is the whole
+reason the design is `Bool` + `Subtype`:
+`wf_ignores_the_item_fields` sets all thirteen new fields at once and is `rfl`.
+
+Five of them mean nothing until the whole plan is consulted, so they join the
+third tier — one decidable checker, `itemsWf`, inside `planWf`, re-established
+by computation on every command's post-state:
+
+| check | §  | proved |
+|---|---|---|
+| `Normalized` — rank distinctness | 7.4 | `site_names_one_line`: a `(document, rank)` names one line, the positional dual of "an id names one item". `no_prose_line_shares_a_rank`: and no prose entry can shadow an item line in `weave` |
+| `@parent` total | 3.1 | `parent_names_an_item` |
+| `@parent` acyclic | 6.1 | `parentsAcyclic_sound` and `parentsAcyclic_complete`; `every_item_has_a_root`, `no_item_is_its_own_ancestor` |
+| `after:` total | 5.5 | `dep_names_an_item` |
+| `after:` acyclic | 5.5 | `afterAcyclic_sound` and `afterAcyclic_complete`; `no_deadlocked_set` |
+| section discipline | 4.2 | `a_demoted_section_is_a_month_section`, `a_pinned_section_is_a_day_section`, `a_day_file_holds_only_pinned_items` |
+| per-file-kind shapes | 4.3 | `month_items_are_outcomes`, `calendar_lines_are_intervals`, `routine_lines_are_open`, `routine_lines_have_a_window_or_after_done`, `optional_items_declare_a_duration` |
+
+**Acyclicity over a finite domain, without Mathlib, is the substance**, and it
+is done twice because the two relations have different shapes.
+
+`parent` is a partial *function*, so its check is a bounded walk: climb
+`|dom| + 1` links and you must have fallen off the top. Both directions are
+proved, and the second is the one that says the bound is not a guess —
+`parentsAcyclic_complete` takes a chain that survived `|dom| + 1` links,
+observes that all `|dom| + 1` of its ids are ids of a `Nodup` domain of size
+`|dom|`, and gets a repeat out of `List.Nodup.length_le_of_subset` (core, not
+Mathlib). A repeat is a cycle (`chain_dup_gives_cycle`). So the checker rejects
+nothing that is really acyclic, and `climb_reaches_a_root` says the walk stopped
+because it ran out of *parents* and not out of fuel — which is what makes §3.2's
+`root(item)` total.
+
+`after:` is a *relation*, so its check is a peel: strike out every id that no
+longer waits on anything still standing, `|dom|` times. The characterisation of
+"cyclic" here is the standard finite one — a **deadlocked** set, non-empty, in
+which every id waits on another id of the set — and with it both directions are
+arithmetic rather than pigeonhole: `|r|` peels either clear the set or reach a
+fixed point, because a peel that changes anything strictly shortens the list,
+and a non-empty fixed point *is* a deadlocked set (`peelN_empty_or_fixed`,
+`fixed_is_deadlocked`).
+
+And both checks bite: `self_parent_is_rejected` and `self_dep_is_rejected`.
+
+The cost is quadratic in the number of items — `|dom| + 1` walk steps per id,
+`|dom|` peels over `|dom|` ids, and `Normalized` recomputes `PlanCore.lines`
+once per document — and `mapAt` runs the whole of `planWf` after every command.
+That is deliberate at this size (a personal planner is hundreds of items, and
+the FFI round trip is 3.6 s from clean including linking the Lean runtime); if
+it ever matters, the answer is the one the store already uses — a fast
+implementation behind the same interface, with the proofs on the interface.
+
+§4.2's **section is derived, not stored** — the last heading line at or before
+the placement's rank — so it cannot disagree with the file and a move changes
+it for free. §5.3's default `on_miss` is derived too, from one sentence (a
+window is a chance that passes; anything with a date persists), and its four
+table rows are `rfl`; rows 3 and 4 differ only in `recur` and give the same
+answer, which is why the generator does not read `recur`.
+
+§3.2's `effective_shape` is a function over the tree and is **one step, not a
+closure** — the spec says *parent*, and
+`effectiveShape_does_not_reach_the_grandparent` is the theorem that pins that
+down so nobody has to read the code to find out which rule it is.
+
 ### The boundary
 
 One export, `@[export tm_kernel_call] def callExport (input : String) : String`
@@ -491,11 +572,36 @@ sketch, and because the gaps are where the next stage's cost lives.
    consequence of the fix and not an independent choice; it is still a change a
    user has to assent to.
 
-3. **`Core` has five fields; tm's `Item` has twenty-two.** The
-   subtype-over-dependent-record choice is precisely so that this scales, but
-   it has not been scaled. Sections, `@parent`, `after:`, recurrence, shapes,
-   due dates, budgets and tags are all absent. So are acyclicity, section
-   discipline and per-file-kind shape rules — the rest of the plan-level tier.
+3. **`Core` carries §3.1's item fields now; the *parser* does not fill them
+   in.** `ci`, `!k`, `@parent`, `scope`, `shape`, `recur`, `on-miss:`,
+   `min:`/`max:`, `atomic`, `after:`, `loc:`, `buffer:` and `#tags` are fields
+   with the types §3.1 gives them, and the plan-level tier that reads them is
+   proved and joined into `planWf` (above). **What is missing is the other half
+   of the pipe: `parseItem` still keeps every token verbatim and interprets
+   none of them**, so every entity the loader builds has these fields at their
+   defaults. Three consequences, all real:
+
+   * a `@parent` or `after:` token in a file is not *read*, so parent totality
+     and both acyclicity checks hold of everything the boundary can currently
+     build. The theorems are about arbitrary `PlanCore`s and `mapAt`
+     re-establishes them on every post-state, but no request can make them fire
+     yet. They are proved, not exercised;
+   * `routines.md`, `optional.md` and `calendar/*.md` are **rejected at load**
+     with `{"err":{"itemCheck":"fileKindShape"}}`, because §4.3 says their lines
+     carry a scope and a shape and the loader gives them neither. That is the
+     honest price of putting §4.3 into the acceptance rule while the parser half
+     is still to come; the alternative — a rule that the default values satisfy
+     — would be a check that cannot fire, which is the defect class this kernel
+     exists to remove. Month, week, day, backlog and out-of-layout paths load
+     exactly as before;
+   * §4.2's section discipline **is** live end to end, because a section is
+     derived from the document's prose and the placement's rank rather than
+     stored. An item under a day file's `## Log`, or a `# Pinned` heading in a
+     month file, is `{"err":{"itemCheck":"sectionDiscipline"}}` today.
+
+   Writing the token → field parser, and the setters that keep the token vector
+   and the fields in step (each with its `view ∘ set = id` proof, as `setEst`
+   has), is the next slice.
 
 4. **No calendar arithmetic, and therefore no horizon-name resolution.** `Day`
    is a `Nat` and `index` is `d`, `d/7`, `d/30`. It is enough to *evaluate* the
@@ -554,7 +660,43 @@ sketch, and because the gaps are where the next stage's cost lives.
     discipline as `Grain.ofNat?` — but they are checks, not constructions, and
     the difference is recorded.
 
-11. **The proof-to-definition ratio here is not a forecast.** This fragment has
+11. **`Normalized` is preserved at run time, not by a theorem.** Because rank
+    distinctness joined `planWf`, a move onto a rank another line of the
+    destination already occupies is now refused — so `cmdMove_succeeds` and
+    `mapAt_ok_of_inRange` each carry one more hypothesis, and both say so in
+    their doc comments. At the boundary `applyCmd` always passes `freshRank`,
+    which `freshRank_gt` proves is strictly greater than every rank in the
+    destination; but the step from that to "and therefore `Normalized` still
+    holds of the post-state" is **not written**. It needs a replacement lemma
+    for `PlanCore.lines` under a single-entity update. Until it is, rank
+    freshness rests on `mapAt`'s decidable re-check at run time rather than on
+    a proof, and a command that collided would return `badHorizon` rather than
+    corrupt anything.
+
+12. **`series` has a name but no head.** `seriesOf` derives the
+    `## series:<name>` a placement sits in. §5.4's *head* — "the first member
+    that is not Done or Dropped is active, the rest are invisible to the
+    planner" — and the implied `after:` a series section carries are planner
+    concepts, and the planner is not here.
+
+13. **`@parent` is an `Id`, not §3.1's `Ref`.** §3.1 says
+    `parent: Option<Ref>` where a `Ref` is `@id` **or `@label`**. Label
+    resolution needs a title index and a rule for ambiguity; the kernel takes
+    ids only, and a boundary that accepted labels would have to resolve them
+    before it built the store. `pref:` (`wake+10m` or a clock time) is not
+    modelled either — it needs the day's `wake`, which is day-file front matter
+    the kernel does not read.
+
+14. **§6.2's "outcome with an estimate" warning is not checked.** `shapesWf`'s
+    month rule is the shape half only (a month item's shape is `none`). The
+    estimate half — "an item in `month/` with an estimate and no children is a
+    `tm check` warning" — would refuse the two-line demotion form *this kernel
+    writes*, because §6.3's close copies the line, estimate and all, into the
+    month file, and `demote` here lands it at a fresh rank rather than inside
+    `# Demoted`. Making it real needs `demote` to target a *section*, which is
+    stage-4 close work. Recording it rather than weakening it.
+
+15. **The proof-to-definition ratio here is not a forecast.** This fragment has
     no planner, no calendar arithmetic and no relational laws — the three places
     the ratio blows up.
 

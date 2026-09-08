@@ -196,19 +196,30 @@ theorem demotionsOriented_set (p : PlanCore) (i : Id) (e' : Entity)
     exact List.all_eq_true.1 hp j (by simpa using hj)
 
 /-- **The preservation proof, with every hypothesis load-bearing.**  Given an
-entity transform that succeeds, lands inside the plan's documents, and leaves
-any tombstone behind the live line, `mapAt` succeeds, writes exactly that
-entity, and leaves `docs` alone. -/
+entity transform that succeeds, lands inside the plan's documents, leaves any
+tombstone behind the live line, and leaves the item-level checks standing,
+`mapAt` succeeds, writes exactly that entity, and leaves `docs` alone.
+
+`hrest` is the last obligation and it is not decoration: since §3.1's item
+fields joined the plan-level tier (`itemsWf`, Plan.lean), a transform can break
+rank distinctness or `after:` acyclicity, and `mapAt`'s re-check will refuse it.
+It is stated as a hypothesis rather than derived, because deriving it — even
+for a transform that touches neither the placement nor the item fields — needs a
+replacement lemma for `PlanCore.lines` under a single-entity update, which is
+not written (README gap 11). -/
 theorem mapAt_ok_of_inRange (p : WfPlan) (i : Id) (f : Entity → Except KErr Entity)
     (e e' : Entity) (hget : p.val.store.get i = some e) (hf : f e = .ok e')
-    (hin : entityInRange p.val e' = true) (hor : demotionOriented p.val e' = true) :
+    (hin : entityInRange p.val e' = true) (hor : demotionOriented p.val e' = true)
+    (hrest : ∀ hs : (p.val.store.get i).isSome = true,
+      itemsWf { p.val with store := p.val.store.set i e' hs } = true) :
     ∃ q : WfPlan, p.mapAt i f = .ok q ∧ q.val.store.get i = some e' ∧
       q.val.docs = p.val.docs := by
   have hsome : (p.val.store.get i).isSome = true := by rw [hget]; rfl
   have hparts := planWf_parts p.property
   have hq : planWf { p.val with store := p.val.store.set i e' hsome } = true :=
-    planWf_of_parts hparts.1 (sitesInRange_set p.val i e' hsome hparts.2.1 hin) hparts.2.2.1
-      (demotionsOriented_set p.val i e' hsome hparts.2.2.2 hor)
+    planWf_of_parts (p := { p.val with store := p.val.store.set i e' hsome })
+      hparts.1 (sitesInRange_set p.val i e' hsome hparts.2.1 hin) hparts.2.2.1
+      (demotionsOriented_set p.val i e' hsome hparts.2.2.2.1 hor) (hrest hsome)
   refine ⟨⟨_, hq⟩, ?_, ?_, rfl⟩
   · unfold WfPlan.mapAt
     split
@@ -233,7 +244,7 @@ theorem mapAt_rejects_unoriented (p : WfPlan) (i : Id) (f : Entity → Except KE
   have hdom : i ∈ p.val.store.dom := (p.val.store.domSpec i).mpr hsome
   have hq : ¬ (planWf { p.val with store := p.val.store.set i e' hsome } = true) := by
     intro hc
-    have hall := List.all_eq_true.1 (planWf_parts hc).2.2.2 i (by simpa using hdom)
+    have hall := List.all_eq_true.1 (planWf_parts hc).2.2.2.1 i (by simpa using hdom)
     rw [Store.get_set_self] at hall
     -- the updated plan has the same `docs`, and `demotionOriented` reads only those
     have hbad' : demotionOriented p.val e' = true := hall
@@ -319,11 +330,24 @@ used; drop either and the conclusion is false.
 
 `hfree` subsumes the older "the destination does not hold the tombstone": a
 horizon does not precede itself (`horizonPrecedes_irrefl`), so a destination
-ahead of the tombstone is in particular not the tombstone's own file. -/
+ahead of the tombstone is in particular not the tombstone's own file.
+
+`hrank` is the third, and it is the price of `Normalized` joining `planWf`
+(Plan.lean): `rank` is a `Nat` the caller chose, and a move onto a rank another
+line of this document already occupies leaves an order the file does not
+determine.  `applyCmd` (Boundary.lean) always passes `freshRank`, and
+`freshRank_gt` proves that is strictly greater than every rank already in the
+destination — but the step from there to *this* hypothesis is not written, so at
+the boundary rank freshness still rests on `mapAt`'s decidable re-check rather
+than on a theorem.  That gap is README 11, and it is recorded rather than
+papered over. -/
 theorem cmdMove_succeeds (p : WfPlan) (i : Id) (e : Entity) (d : Dest p.val) (rank : Nat)
     (hget : p.val.store.get i = some e)
     (hfree : ∀ r, e.val.archive = some r →
-      horizonPrecedes (docRegion p.val r.doc) (docRegion p.val d.ix) = true) :
+      horizonPrecedes (docRegion p.val r.doc) (docRegion p.val d.ix) = true)
+    (hrank : ∀ a : Entity, a.val = { e.val with live := d.site rank } →
+      ∀ hs : (p.val.store.get i).isSome = true,
+      itemsWf { p.val with store := p.val.store.set i a hs } = true) :
     ∃ q : WfPlan, cmdMove i rank p d = .ok q ∧
       (∃ e', q.val.store.get i = some e' ∧ e'.val.live = d.site rank) := by
   have hrange := entityInRange_of_mem p i e hget
@@ -353,6 +377,7 @@ theorem cmdMove_succeeds (p : WfPlan) (i : Id) (e : Entity) (d : Dest p.val) (ra
     | none => simp [ha]
     | some r => simpa [ha, Dest.site] using hfree r ha
   obtain ⟨q, hq, hqi, _⟩ := mapAt_ok_of_inRange p i (moveTo (d.site rank)) e _ hget hf hin hor
+    (fun hs => hrank ⟨_, hwf⟩ rfl hs)
   exact ⟨q, hq, _, hqi, rfl⟩
 
 /-- **A demotion files work forward, or it does not happen.**  §6.3's close
@@ -399,7 +424,8 @@ theorem move_last_wins_refuted_globally :
     ∃ (t t' : Site) (e : Entity),
       ((moveTo t e).bind (moveTo t')).map Subtype.val ≠ (moveTo t' e).map Subtype.val := by
   refine ⟨⟨1, 0⟩, ⟨2, 0⟩,
-    ⟨⟨⟨0, 0⟩, some ⟨1, 0⟩, .live .free, ⟨[], []⟩, []⟩, rfl⟩, ?_⟩
+    ⟨{ live := ⟨0, 0⟩, archive := some ⟨1, 0⟩, status := .live .free,
+       line := ⟨[], []⟩, stamps := [] }, rfl⟩, ?_⟩
   simp [moveTo, lift, Except.map, Except.bind]
 
 /-! ### L4: what `move` is and is not invertible by
@@ -540,7 +566,8 @@ written once, in the signature, where a later writer cannot fail to read it. -/
 theorem floor_and_respect_are_incompatible (bm : Nat) (f : Nat → Entity → Entity)
     (hf : FloorsAtRecorded bm f) : ¬ RespectsUserEdit bm f := by
   intro hr
-  let e0 : Entity := ⟨⟨⟨0, 0⟩, none, .live .free, ⟨[], []⟩, []⟩, rfl⟩
+  let e0 : Entity := ⟨{ live := ⟨0, 0⟩, archive := none, status := .live .free,
+                        line := ⟨[], []⟩, stamps := [] }, rfl⟩
   have h1 : 1 ≤ remainingOf bm (f 1 e0).val.line := hf 1 e0
   have h2 : remainingOf bm (f 1 e0).val.line = remainingOf bm e0.val.line := hr 1 e0
   have h3 : remainingOf bm e0.val.line = 0 := rfl

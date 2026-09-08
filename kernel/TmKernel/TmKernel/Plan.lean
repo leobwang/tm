@@ -253,18 +253,328 @@ def demotionsOriented (p : PlanCore) : Bool :=
     | none   => true
     | some e => demotionOriented p e)
 
+/-! ### The rest of the plan-level tier: §3.1's item fields
+
+`Core` now carries §3.1's twenty-two fields, and five of them — `parent`,
+`after`, `shape`, `scope`, `recur` — mean nothing until the *whole* plan is
+consulted.  "`@m1` names an item" and "`after:^t4` does not wait on itself" are
+not facts about a record; they are facts about the store, exactly like
+"`Site.doc` names a file that exists".
+
+So they go where the architecture's third tier says: **one decidable checker
+over the whole value**, joined into `planWf`, re-established by computation on
+every post-state (`WfPlan.mapAt`).  That is what makes them unforgettable, and
+it is why the answer to "cycles are a `tm check` error" (§5.5) is that a cyclic
+plan is not a value of this type.
+
+Acyclicity over a finite domain is the substance here, and it is done twice
+because the two relations have different shapes:
+
+* `parent` is a **partial function**, so its acyclicity is a bounded walk:
+  climb `|dom| + 1` links and you must have fallen off the top.  The bound is
+  enough by pigeonhole — the domain is finite and `Nodup`
+  (`parentsAcyclic_complete`), and the check is not merely conservative
+  (`parentsAcyclic_sound`).
+* `after` is a **relation**, so its acyclicity is a peel: strike out every id
+  that no longer waits on anything still standing, `|dom|` times.  Nothing left
+  standing means no *deadlocked* set — a non-empty set in which every id waits
+  on another id of the set, which is the standard finite characterisation of
+  "contains a cycle".  Both directions are proved and neither needs pigeonhole
+  (`afterAcyclic_sound`, `afterAcyclic_complete`).
+-/
+
+/-- `pre` is a prefix of `s`. -/
+def hasPrefix : List Char → List Char → Bool
+  | [],      _       => true
+  | _ :: _,  []      => false
+  | a :: as, b :: bs => a == b && hasPrefix as bs
+
+/-- §2's repository layout, as the only thing that says what kind of file a
+document is.  `Doc.region` cannot: `calendar/2026-W37.md` and
+`week/2026-W37.md` are the same region, and backlog, routines and optional all
+have none. -/
+inductive DocKind | month | week | day | calendar | routines | optional | backlog | other
+deriving DecidableEq, Repr, Inhabited
+
+def docKind (d : Doc) : DocKind :=
+  if hasPrefix "month/".toList d.path then .month
+  else if hasPrefix "week/".toList d.path then .week
+  else if hasPrefix "day/".toList d.path then .day
+  else if hasPrefix "calendar/".toList d.path then .calendar
+  else if d.path == "routines.md".toList then .routines
+  else if d.path == "optional.md".toList then .optional
+  else if d.path == "backlog.md".toList then .backlog
+  else .other
+
+def docKindAt (p : PlanCore) (k : DocIx) : DocKind :=
+  match p.docs[k]? with
+  | none   => .other
+  | some d => docKind d
+
+/-! #### §4.2's sections, derived from the prose and the rank
+
+An item's section is **not a field**.  It is the last heading line at or before
+the item's rank, which is a fact about the document the item sits in — so it
+cannot disagree with the file, and a command that moves a line changes its
+section for free. -/
+
+def isHeading (cs : List Char) : Bool := cs.head? == some '#'
+
+/-- The text of a heading with its `#`s and leading spaces stripped, so
+`# Demoted` and `## Demoted` are one name. -/
+def headingBody (cs : List Char) : List Char :=
+  (cs.dropWhile (fun c => c == '#')).dropWhile isSp
+
+/-- §4.2: exactly three heading names mean anything. -/
+inductive SecKind | demoted | pinned | series (name : List Char) | organisational
+deriving DecidableEq, Repr, Inhabited
+
+def secKind (cs : List Char) : SecKind :=
+  let b := headingBody cs
+  if b == "Demoted".toList then .demoted
+  else if b == "Pinned".toList then .pinned
+  else if hasPrefix "series:".toList b then .series (b.drop 7)
+  else .organisational
+
+/-- The heading with the greatest rank strictly below `rank`. -/
+def lastHeadingBefore (d : Doc) (rank : Nat) : Option (Nat × List Char) :=
+  d.prose.foldl (fun acc q =>
+    if isHeading q.2 && decide (q.1 < rank) then
+      match acc with
+      | none   => some q
+      | some b => if b.1 < q.1 then some q else some b
+    else acc) none
+
+/-- The section a placement sits in.  `none` means the file has no heading
+above it at all. -/
+def sectionAt (p : PlanCore) (s : Site) : Option (List Char) :=
+  match p.docs[s.doc]? with
+  | none   => none
+  | some d => (lastHeadingBefore d s.rank).map Prod.snd
+
+def sectionKindAt (p : PlanCore) (s : Site) : Option SecKind :=
+  (sectionAt p s).map secKind
+
+/-- §3.1's `series: Option<(String, u32)>`, **derived**: the name is the
+section's.  (§5.4's *head* — the first member that is not done or dropped — is
+a planner concept and is not here; see the README's gap list.) -/
+def seriesOf (p : PlanCore) (s : Site) : Option (List Char) :=
+  match sectionKindAt p s with
+  | some (.series n) => some n
+  | _                => none
+
+/-! #### `Normalized`: a rank names one line
+
+Ranks are §7.4's tie-break and `weave`'s ordering key, so two lines of one
+document sharing a rank is an ordering the file does not determine.  It is a
+plan-level predicate and not a per-entity obligation, because a collision is an
+ambiguity between *two* entities and neither of them is malformed. -/
+
+/-- Every rank a document uses — its prose lines and the item lines its
+entities render, together, because `weave` orders them against each other. -/
+def docRanks (p : PlanCore) (k : DocIx) : List Nat :=
+  (match p.docs[k]? with
+   | none   => []
+   | some d => d.prose.map Prod.fst) ++
+  ((p.lines.filter (fun l => l.site.doc == k)).map (fun l => l.site.rank))
+
+def normalized (p : PlanCore) : Bool :=
+  (List.range p.docs.length).all (fun k => decide (docRanks p k).Nodup)
+
+/-! #### `@parent`: total, and acyclic -/
+
+/-- One link up.  `none` both for "no parent" and for "a parent that is not an
+item of this plan" — `parentsTotal` is what separates them. -/
+def parentStep (p : PlanCore) (i : Id) : Option Id :=
+  match p.store.get i with
+  | none   => none
+  | some e => e.val.parent
+
+/-- The `n`-th ancestor of `i`, or `none` if the chain is shorter than `n`. -/
+def anc (p : PlanCore) : Nat → Id → Option Id
+  | 0,     i => some i
+  | n + 1, i => match parentStep p i with
+                | none   => none
+                | some j => anc p n j
+
+/-- Climb at most `n` links, stopping where the chain does. -/
+def climb (p : PlanCore) : Nat → Id → Id
+  | 0,     i => i
+  | n + 1, i => match parentStep p i with
+                | none   => i
+                | some j => climb p n j
+
+/-- One more than the number of ids there are: a chain this long has visited
+some id twice. -/
+def fuel (p : PlanCore) : Nat := p.store.dom.length + 1
+
+def parentsTotal (p : PlanCore) : Bool :=
+  p.store.dom.all (fun i =>
+    match parentStep p i with
+    | none   => true
+    | some j => (p.store.get j).isSome)
+
+def parentsAcyclic (p : PlanCore) : Bool :=
+  p.store.dom.all (fun i => (anc p (fuel p) i).isNone)
+
+/-- §3.2's `root(item)`.  Total by construction; `rootOf_is_a_root` is what
+says the fuel was not merely exhausted. -/
+def rootOf (p : PlanCore) (i : Id) : Id := climb p (fuel p) i
+
+/-- `i` is its own proper ancestor — §5.5's error, for the parent relation. -/
+def OnACycle (p : PlanCore) (i : Id) : Prop := ∃ n, 0 < n ∧ anc p n i = some i
+
+/-! #### `after:`: total, and acyclic -/
+
+def depIds (ds : List Dep) : List Id :=
+  ds.filterMap (fun d => match d with | .item i => some i | .event _ => none)
+
+def depsOf (p : PlanCore) (i : Id) : List Id :=
+  match p.store.get i with
+  | none   => []
+  | some e => depIds e.val.after
+
+def afterTotal (p : PlanCore) : Bool :=
+  p.store.dom.all (fun i => (depsOf p i).all (fun j => (p.store.get j).isSome))
+
+/-- One round: keep only the ids that still wait on something inside `rest`.
+Everything struck out is an id whose dependencies are all already settled or
+outside the set, i.e. one that could be scheduled next. -/
+def peel (p : PlanCore) (rest : List Id) : List Id :=
+  rest.filter (fun i => (depsOf p i).any (fun j => decide (j ∈ rest)))
+
+def peelN (p : PlanCore) : Nat → List Id → List Id
+  | 0,     r => r
+  | n + 1, r => peelN p n (peel p r)
+
+def afterAcyclic (p : PlanCore) : Bool :=
+  (peelN p p.store.dom.length p.store.dom).isEmpty
+
+/-- **§5.5's cycle, as the characterisation that is decidable on a finite
+domain**: a non-empty set of ids in which every id waits on another id *of the
+set*.  A literal cycle `a → b → … → a` is such a set; a set with no such subset
+has an order in which every dependency comes first. -/
+def Deadlocked (p : PlanCore) (c : List Id) : Prop :=
+  c ≠ [] ∧ ∀ i ∈ c, ∃ j ∈ c, j ∈ depsOf p i
+
+/-! #### §4.2's section discipline, and §4.3's per-file-kind shapes -/
+
+/-- §4.2's three meaningful names, each only where it means something:
+`# Demoted` is a month-file section (§6.3) and `# Pinned` is a day-file section
+(§6.2).  Anywhere else the same words would be an organisational heading that
+reads like a rule. -/
+def headingsWf (kind : DocKind) (d : Doc) : Bool :=
+  d.prose.all (fun q =>
+    if isHeading q.2 then
+      match secKind q.2 with
+      | .demoted => kind == DocKind.month
+      | .pinned  => kind == DocKind.day
+      | _        => true
+    else true)
+
+/-- §4.3's day file: its item lines are the `# Pinned` ones.  Everything else in
+a day file — the generated plan block, `## Log`, `## Notes` — is prose, which is
+why `# Pinned` is the one section a day file can put an item in. -/
+def placementSectionWf (p : PlanCore) (s : Site) : Bool :=
+  match docKindAt p s.doc with
+  | .day => (match sectionKindAt p s with
+             | some .pinned => true
+             | _            => false)
+  | _    => true
+
+def sectionsWf (p : PlanCore) : Bool :=
+  p.docs.all (fun d => headingsWf (docKind d) d) &&
+  p.store.dom.all (fun i =>
+    match p.store.get i with
+    | none   => true
+    | some e => placementSectionWf p e.val.live &&
+        (match e.val.archive with
+         | none   => true
+         | some r => placementSectionWf p r))
+
+/-- How long the shape says the thing takes, where the shape says it at all. -/
+def declaredDur (c : Core) : Option Dur :=
+  match c.shape with
+  | .window _ dv  => some dv
+  | .interval a b => some (b - a)
+  | _             => none
+
+/-- §4.3's four file-kind rules, as one function of the kind.
+
+* **routines**: "every line is `open`, has a window or `after-done`".
+* **optional**: `open`, and it must say how long it takes — a bare `dur:` on an
+  optional line is an all-day window in this model, which is the reading that
+  makes §4.3's `- Severance S3E4  dur:1h` a `Shape`.
+* **calendar**: "generated intervals".
+* **month**: "roots carry explicit priority … they are outcomes, not work"
+  (§6.2) — an outcome carries no date, so a month item's shape is `none`.
+
+Every other kind — backlog, week, day, and any path outside §2's layout — has
+no shape rule, which is what §4.3 says about them. -/
+def shapeWfFor : DocKind → Core → Bool
+  | .routines, c =>
+      (c.scope == Scope.openEnded) &&
+      (match c.shape, c.recur with
+       | .window _ _, _    => true
+       | _,           .afterDone _ _ => true
+       | _,           _    => false)
+  | .optional, c =>
+      (c.scope == Scope.openEnded) &&
+      (match declaredDur c with
+       | some dv => decide (0 < dv)
+       | none    => false)
+  | .calendar, c => (match c.shape with | .interval _ _ => true | _ => false)
+  | .month,    c => (c.shape == Shape.none)
+  | _,         _ => true
+
+def shapesWf (p : PlanCore) : Bool :=
+  p.store.dom.all (fun i =>
+    match p.store.get i with
+    | none   => true
+    | some e => shapeWfFor (docKindAt p e.val.live.doc) e.val)
+
+/-- The item half of the plan-level tier, in one Bool. -/
+def itemsWf (p : PlanCore) : Bool :=
+  normalized p && parentsTotal p && parentsAcyclic p && afterTotal p && afterAcyclic p &&
+    sectionsWf p && shapesWf p
+
+theorem itemsWf_parts {p : PlanCore} (h : itemsWf p = true) :
+    normalized p = true ∧ parentsTotal p = true ∧ parentsAcyclic p = true ∧
+      afterTotal p = true ∧ afterAcyclic p = true ∧ sectionsWf p = true ∧
+      shapesWf p = true := by
+  simp only [itemsWf, Bool.and_eq_true] at h
+  exact ⟨h.1.1.1.1.1.1, h.1.1.1.1.1.2, h.1.1.1.1.2, h.1.1.1.2, h.1.1.2, h.1.2, h.2⟩
+
+theorem itemsWf_of_parts {p : PlanCore} (h1 : normalized p = true) (h2 : parentsTotal p = true)
+    (h3 : parentsAcyclic p = true) (h4 : afterTotal p = true) (h5 : afterAcyclic p = true)
+    (h6 : sectionsWf p = true) (h7 : shapesWf p = true) : itemsWf p = true := by
+  simp [itemsWf, h1, h2, h3, h4, h5, h6, h7]
+
 def planWf (p : PlanCore) : Bool :=
-  docsWf p && sitesInRange p && pathsDistinct p && demotionsOriented p
+  docsWf p && sitesInRange p && pathsDistinct p && demotionsOriented p && itemsWf p
 
 theorem planWf_parts {p : PlanCore} (h : planWf p = true) :
     docsWf p = true ∧ sitesInRange p = true ∧ pathsDistinct p = true ∧
-      demotionsOriented p = true := by
+      demotionsOriented p = true ∧ itemsWf p = true := by
   simp only [planWf, Bool.and_eq_true] at h
-  exact ⟨h.1.1.1, h.1.1.2, h.1.2, h.2⟩
+  exact ⟨h.1.1.1.1, h.1.1.1.2, h.1.1.2, h.1.2, h.2⟩
 
 theorem planWf_of_parts {p : PlanCore} (h1 : docsWf p = true) (h2 : sitesInRange p = true)
-    (h3 : pathsDistinct p = true) (h4 : demotionsOriented p = true) : planWf p = true := by
-  simp [planWf, h1, h2, h3, h4]
+    (h3 : pathsDistinct p = true) (h4 : demotionsOriented p = true) (h5 : itemsWf p = true) :
+    planWf p = true := by
+  simp [planWf, h1, h2, h3, h4, h5]
+
+/-- Which of `itemsWf`'s seven conjuncts failed, as a name a host can print.
+`tm check` is the same checker, so the diagnostic and the acceptance rule cannot
+drift apart. -/
+def firstItemFault (p : PlanCore) : String :=
+  if !normalized p then "rankCollision"
+  else if !parentsTotal p then "danglingParent"
+  else if !parentsAcyclic p then "parentCycle"
+  else if !afterTotal p then "danglingDep"
+  else if !afterAcyclic p then "depCycle"
+  else if !sectionsWf p then "sectionDiscipline"
+  else "fileKindShape"
 
 /-- The plan.  You cannot make one without discharging `planWf`. -/
 def WfPlan := { p : PlanCore // planWf p = true }
@@ -371,7 +681,7 @@ theorem the_tombstone_is_behind_the_live_line (p : WfPlan) (i : Id) (e : Entity)
     (hget : p.val.store.get i = some e) (harch : e.val.archive = some r) :
     horizonPrecedes (docRegion p.val r.doc) (docRegion p.val e.val.live.doc) = true := by
   have hdom : i ∈ p.val.store.dom := (p.val.store.domSpec i).mpr (by rw [hget]; rfl)
-  have hall := List.all_eq_true.1 (planWf_parts p.property).2.2.2 i hdom
+  have hall := List.all_eq_true.1 (planWf_parts p.property).2.2.2.1 i hdom
   rw [hget] at hall
   simpa [demotionOriented, harch] using hall
 
@@ -518,5 +828,752 @@ theorem renderSplit_splitDoc (k : Nat) (ls : List (List Char)) :
             have := splitDoc_items_ge (k + 1) rest w hw
             simp only
             omega
+
+
+/-! ## Acyclicity, twice, over a finite domain and without Mathlib
+
+The parent relation is a partial **function**, so its cycles are found by
+walking; the `after:` relation is a **relation**, so its cycles are found by
+peeling.  Each check is proved in both directions, because a checker joined
+into `planWf` that is merely *sound* would refuse plans that are fine, and one
+that is merely *complete* would accept plans that are not.
+-/
+
+theorem anc_zero (p : PlanCore) (i : Id) : anc p 0 i = some i := rfl
+
+theorem anc_succ_none (p : PlanCore) (n : Nat) (i : Id) (h : parentStep p i = none) :
+    anc p (n + 1) i = none := by simp [anc, h]
+
+theorem anc_succ_some (p : PlanCore) (n : Nat) (i j : Id) (h : parentStep p i = some j) :
+    anc p (n + 1) i = anc p n j := by simp [anc, h]
+
+/-- The chain only gets shorter: once it has run out it stays out. -/
+theorem anc_none_mono (p : PlanCore) : ∀ n i, anc p n i = none → anc p (n + 1) i = none := by
+  intro n
+  induction n with
+  | zero => intro i h; simp [anc] at h
+  | succ m ih =>
+      intro i h
+      cases hs : parentStep p i with
+      | none   => exact anc_succ_none p _ i hs
+      | some j =>
+          rw [anc_succ_some p _ i j hs]
+          rw [anc_succ_some p _ i j hs] at h
+          exact ih j h
+
+theorem anc_none_add (p : PlanCore) (a : Nat) (i : Id) (h : anc p a i = none) :
+    ∀ b, anc p (a + b) i = none := by
+  intro b
+  induction b with
+  | zero => exact h
+  | succ c ih => exact anc_none_mono p _ i ih
+
+/-- Walking `a` links and then `b` more is walking `a + b`. -/
+theorem anc_add (p : PlanCore) : ∀ a b i,
+    anc p (a + b) i = (match anc p a i with | none => none | some x => anc p b x) := by
+  intro a
+  induction a with
+  | zero => intro b i; simp [anc]
+  | succ m ih =>
+      intro b i
+      cases hs : parentStep p i with
+      | none =>
+          rw [show m + 1 + b = (m + b) + 1 from by omega, anc_succ_none p _ i hs,
+            anc_succ_none p _ i hs]
+      | some j =>
+          rw [show m + 1 + b = (m + b) + 1 from by omega, anc_succ_some p _ i j hs,
+            anc_succ_some p _ i j hs]
+          exact ih b j
+
+/-- The chain of `i`, `n` links long or as far as it goes. -/
+def chainOf (p : PlanCore) : Nat → Id → List Id
+  | 0,     _ => []
+  | n + 1, i => i :: (match parentStep p i with
+                      | none   => []
+                      | some j => chainOf p n j)
+
+theorem chainOf_succ_none (p : PlanCore) (n : Nat) (i : Id) (h : parentStep p i = none) :
+    chainOf p (n + 1) i = [i] := by simp [chainOf, h]
+
+theorem chainOf_succ_some (p : PlanCore) (n : Nat) (i j : Id) (h : parentStep p i = some j) :
+    chainOf p (n + 1) i = i :: chainOf p n j := by simp [chainOf, h]
+
+/-- If the chain survives `n` links it has visited `n + 1` ids. -/
+theorem chainOf_length (p : PlanCore) : ∀ n i, anc p n i ≠ none →
+    (chainOf p (n + 1) i).length = n + 1 := by
+  intro n
+  induction n with
+  | zero =>
+      intro i _
+      cases hs : parentStep p i <;> simp [chainOf, hs]
+  | succ m ih =>
+      intro i h
+      cases hs : parentStep p i with
+      | none   => rw [anc_succ_none p m i hs] at h; exact absurd rfl h
+      | some j =>
+          rw [anc_succ_some p m i j hs] at h
+          rw [chainOf_succ_some p (m + 1) i j hs, List.length_cons, ih j h]
+
+/-- Every id on the chain is an id of the plan — which is what `parentsTotal`
+buys, and it is the hypothesis the pigeonhole needs. -/
+theorem chainOf_mem_dom (p : PlanCore) (htot : parentsTotal p = true) :
+    ∀ n i, i ∈ p.store.dom → ∀ x ∈ chainOf p n i, x ∈ p.store.dom := by
+  intro n
+  induction n with
+  | zero => intro i _ x hx; simp [chainOf] at hx
+  | succ m ih =>
+      intro i hi x hx
+      cases hs : parentStep p i with
+      | none =>
+          rw [chainOf_succ_none p m i hs] at hx
+          simp only [List.mem_singleton] at hx
+          exact hx ▸ hi
+      | some j =>
+          have hj : j ∈ p.store.dom := by
+            have := List.all_eq_true.1 htot i hi
+            rw [hs] at this
+            exact (p.store.domSpec j).mpr this
+          rw [chainOf_succ_some p m i j hs] at hx
+          rcases List.mem_cons.1 hx with rfl | hx'
+          · exact hi
+          · exact ih j hj x hx'
+
+/-- Every id on the chain is an ancestor of its head. -/
+theorem chainOf_mem_anc (p : PlanCore) : ∀ n i x, x ∈ chainOf p n i → ∃ k, anc p k i = some x := by
+  intro n
+  induction n with
+  | zero => intro i x hx; simp [chainOf] at hx
+  | succ m ih =>
+      intro i x hx
+      cases hs : parentStep p i with
+      | none =>
+          rw [chainOf_succ_none p m i hs] at hx
+          simp only [List.mem_singleton] at hx
+          exact ⟨0, by rw [hx]; exact anc_zero p i⟩
+      | some j =>
+          rw [chainOf_succ_some p m i j hs] at hx
+          rcases List.mem_cons.1 hx with rfl | hx'
+          · exact ⟨0, rfl⟩
+          · obtain ⟨k, hk⟩ := ih j x hx'
+            exact ⟨k + 1, by rw [anc_succ_some p k i j hs]; exact hk⟩
+
+/-- **A repeat on the chain is a cycle.**  This is the half of the pigeonhole
+argument that does the work; the counting half is
+`List.Nodup.length_le_of_subset` from core. -/
+theorem chain_dup_gives_cycle (p : PlanCore) :
+    ∀ n i, ¬ (chainOf p n i).Nodup → ∃ j, OnACycle p j := by
+  intro n
+  induction n with
+  | zero => intro i h; exact absurd (by simp [chainOf]) h
+  | succ m ih =>
+      intro i h
+      cases hs : parentStep p i with
+      | none => rw [chainOf_succ_none p m i hs] at h; exact absurd (by simp) h
+      | some j =>
+          rw [chainOf_succ_some p m i j hs, List.nodup_cons] at h
+          by_cases hmem : i ∈ chainOf p m j
+          · obtain ⟨k, hk⟩ := chainOf_mem_anc p m j i hmem
+            exact ⟨i, k + 1, Nat.succ_pos k, by rw [anc_succ_some p k i j hs]; exact hk⟩
+          · exact ih j (fun hc => h ⟨hmem, hc⟩)
+
+/-- **Soundness: the check means what its name says.**  In a plan the checker
+accepts, no stored id is its own proper ancestor — so `@parent` is a forest and
+§3.2's `root(item)` is a walk that ends. -/
+theorem parentsAcyclic_sound (p : PlanCore) (h : parentsAcyclic p = true)
+    (i : Id) (hi : i ∈ p.store.dom) : ¬ OnACycle p i := by
+  rintro ⟨n, hn, hc⟩
+  have key : ∀ m, anc p (m * n) i = some i := by
+    intro m
+    induction m with
+    | zero => rw [Nat.zero_mul]; exact anc_zero p i
+    | succ k ih =>
+        rw [Nat.succ_mul, anc_add, ih]
+        exact hc
+  have hall := List.all_eq_true.1 h i hi
+  have hnone : anc p (fuel p) i = none := by
+    simpa [Option.isNone_iff_eq_none] using hall
+  have hbig : anc p (fuel p * n) i = none := by
+    rw [show fuel p * n = fuel p + (fuel p * n - fuel p) from by
+      have : fuel p ≤ fuel p * n := Nat.le_mul_of_pos_right _ hn
+      omega]
+    exact anc_none_add p _ i hnone _
+  rw [key (fuel p)] at hbig
+  exact absurd hbig (by simp)
+
+/-- **The bound is enough.**  `|dom| + 1` links is not a guess: a chain that
+long has visited `|dom| + 1` ids of a `Nodup` domain of size `|dom|`, so two of
+them are the same id and that is a cycle.  So the checker never rejects a plan
+whose parents really are acyclic, and "decidable by bounded iteration" costs no
+generality. -/
+theorem parentsAcyclic_complete (p : PlanCore) (htot : parentsTotal p = true)
+    (hno : ∀ j, ¬ OnACycle p j) : parentsAcyclic p = true := by
+  simp only [parentsAcyclic, List.all_eq_true]
+  intro i hi
+  simp only [Option.isNone_iff_eq_none]
+  cases hne0 : anc p (fuel p) i with
+  | none => rfl
+  | some z =>
+  exfalso
+  have hne : anc p (fuel p) i ≠ none := by rw [hne0]; simp
+  have hN : anc p p.store.dom.length i ≠ none := by
+    intro hc
+    exact hne (anc_none_add p _ i hc 1)
+  have hlen : (chainOf p (p.store.dom.length + 1) i).length = p.store.dom.length + 1 :=
+    chainOf_length p _ i hN
+  have hsub : chainOf p (p.store.dom.length + 1) i ⊆ p.store.dom :=
+    fun {x} hx => chainOf_mem_dom p htot _ i hi x hx
+  have hnd : (chainOf p (p.store.dom.length + 1) i).Nodup := by
+    match hdec : decide ((chainOf p (p.store.dom.length + 1) i).Nodup) with
+    | true  => exact of_decide_eq_true hdec
+    | false =>
+        obtain ⟨j, hj⟩ := chain_dup_gives_cycle p _ i (of_decide_eq_false hdec)
+        exact absurd hj (hno j)
+  have := List.Nodup.length_le_of_subset hnd hsub
+  omega
+
+/-- **And the check bites**: an item that is its own parent is not a plan. -/
+theorem self_parent_is_rejected (p : PlanCore) (i : Id) (hi : i ∈ p.store.dom)
+    (h : parentStep p i = some i) : parentsAcyclic p = false := by
+  have key : ∀ n, anc p n i = some i := by
+    intro n
+    induction n with
+    | zero => exact anc_zero p i
+    | succ m ih => rw [anc_succ_some p m i i h]; exact ih
+  cases hb : parentsAcyclic p with
+  | false => rfl
+  | true =>
+      have hall := List.all_eq_true.1 hb i hi
+      rw [key (fuel p)] at hall
+      simp at hall
+
+/-! ### `after:`: the peel, and the deadlocked set -/
+
+theorem peelN_nil (p : PlanCore) : ∀ n, peelN p n [] = [] := by
+  intro n
+  induction n with
+  | zero => rfl
+  | succ m ih => show peelN p m (peel p []) = []; simpa [peel] using ih
+
+theorem peel_eq_or_lt (p : PlanCore) (r : List Id) :
+    peel p r = r ∨ (peel p r).length < r.length := by
+  rcases Nat.lt_or_ge (peel p r).length r.length with h | h
+  · exact Or.inr h
+  · exact Or.inl (List.Sublist.eq_of_length_le List.filter_sublist h)
+
+/-- Peeling `|r|` times either clears the set or reaches a **fixed point that
+is not empty** — and there is no third outcome, because a peel that changes
+anything strictly shortens the list.  This is where the bound `|dom|` comes
+from, and it is arithmetic rather than pigeonhole. -/
+theorem peelN_empty_or_fixed (p : PlanCore) : ∀ n r, r.length ≤ n →
+    peelN p n r = [] ∨ ∃ s, s ≠ [] ∧ peel p s = s := by
+  intro n
+  induction n with
+  | zero =>
+      intro r hr
+      left
+      have : r = [] := List.eq_nil_of_length_eq_zero (Nat.le_zero.1 hr)
+      simpa [peelN] using this
+  | succ m ih =>
+      intro r hr
+      rcases peel_eq_or_lt p r with heq | hlt
+      · by_cases hnil : r = []
+        · left
+          subst hnil
+          show peelN p m (peel p []) = []
+          simpa [peel] using peelN_nil p m
+        · exact Or.inr ⟨r, hnil, heq⟩
+      · have hle : (peel p r).length ≤ m := by omega
+        exact ih (peel p r) hle
+
+/-- A non-empty fixed point of the peel is exactly a deadlocked set. -/
+theorem fixed_is_deadlocked (p : PlanCore) (s : List Id) (hs : s ≠ []) (hfix : peel p s = s) :
+    Deadlocked p s := by
+  refine ⟨hs, ?_⟩
+  intro i hi
+  have hmem : i ∈ peel p s := by rw [hfix]; exact hi
+  have hq := (List.mem_filter.1 hmem).2
+  simp only [List.any_eq_true, decide_eq_true_eq] at hq
+  obtain ⟨j, hj1, hj2⟩ := hq
+  exact ⟨j, hj2, hj1⟩
+
+/-- A deadlocked set is never struck out: every one of its ids still waits on
+one of its ids, whatever else has gone. -/
+theorem deadlocked_survives_peel (p : PlanCore) (c r : List Id) (hd : Deadlocked p c)
+    (hsub : ∀ x ∈ c, x ∈ r) : ∀ x ∈ c, x ∈ peel p r := by
+  intro i hi
+  refine List.mem_filter.2 ⟨hsub i hi, ?_⟩
+  obtain ⟨j, hj, hjd⟩ := hd.2 i hi
+  simp only [List.any_eq_true, decide_eq_true_eq]
+  exact ⟨j, hjd, hsub j hj⟩
+
+theorem deadlocked_survives_peelN (p : PlanCore) (c : List Id) (hd : Deadlocked p c) :
+    ∀ n r, (∀ x ∈ c, x ∈ r) → ∀ x ∈ c, x ∈ peelN p n r := by
+  intro n
+  induction n with
+  | zero => intro r h; exact h
+  | succ m ih => intro r h; exact ih (peel p r) (deadlocked_survives_peel p c r hd h)
+
+/-- **Soundness.**  In a plan the checker accepts there is no deadlocked set of
+stored ids — §5.5's "cycles are a `tm check` error", except that here the cyclic
+plan is not a value. -/
+theorem afterAcyclic_sound (p : PlanCore) (h : afterAcyclic p = true) (c : List Id)
+    (hc : ∀ x ∈ c, x ∈ p.store.dom) : ¬ Deadlocked p c := by
+  intro hd
+  cases hcs : c with
+  | nil => exact hd.1 hcs
+  | cons a t =>
+      have hmem : a ∈ c := by rw [hcs]; simp
+      have := deadlocked_survives_peelN p c hd p.store.dom.length p.store.dom hc a hmem
+      simp only [afterAcyclic, List.isEmpty_iff] at h
+      rw [h] at this
+      simp at this
+
+/-- **The bound is enough here too**, and by counting rather than pigeonhole:
+`|dom|` peels either clear the domain or reach a non-empty fixed point, and a
+non-empty fixed point *is* a deadlocked set. -/
+theorem afterAcyclic_complete (p : PlanCore) (hno : ∀ c, ¬ Deadlocked p c) :
+    afterAcyclic p = true := by
+  rcases peelN_empty_or_fixed p p.store.dom.length p.store.dom (Nat.le_refl _) with
+    h | ⟨s, hs, hfix⟩
+  · simp [afterAcyclic, h]
+  · exact absurd (fixed_is_deadlocked p s hs hfix) (hno s)
+
+/-- **And it bites**: `after:^self` is not a plan. -/
+theorem self_dep_is_rejected (p : PlanCore) (i : Id) (hi : i ∈ p.store.dom)
+    (h : i ∈ depsOf p i) : afterAcyclic p = false := by
+  have hd : Deadlocked p [i] := by
+    refine ⟨by simp, ?_⟩
+    intro x hx
+    simp only [List.mem_singleton] at hx
+    exact ⟨x, by simp [hx], by rw [hx]; exact h⟩
+  have hsub : ∀ x ∈ [i], x ∈ p.store.dom := by
+    intro x hx
+    simp only [List.mem_singleton] at hx
+    exact hx ▸ hi
+  cases hb : afterAcyclic p with
+  | false => rfl
+  | true  => exact absurd hd (afterAcyclic_sound p hb [i] hsub)
+
+
+/-! ## `Normalized`: a `(document, rank)` names one line
+
+`no_two_lines_of_one_id_in_one_path` says an id names at most one line per file.
+This is the other direction — a *position* names at most one line — and together
+they make the correspondence between the store and the bytes on disk a
+bijection.  It is also what makes `weave` (the document round trip) an order and
+not a choice: with two lines at one rank, which came first would depend on the
+fold order rather than on the file. -/
+
+theorem nodup_map_inj {α β} {f : α → β} : ∀ {l : List α}, (l.map f).Nodup →
+    ∀ a ∈ l, ∀ b ∈ l, f a = f b → a = b := by
+  intro l
+  induction l with
+  | nil => intro _ a ha; simp at ha
+  | cons x t ih =>
+      intro h a ha b hb hfab
+      simp only [List.map_cons, List.nodup_cons, List.mem_map] at h
+      rcases List.mem_cons.1 ha with rfl | ha'
+      · rcases List.mem_cons.1 hb with rfl | hb'
+        · rfl
+        · exact absurd ⟨b, hb', hfab.symm⟩ h.1
+      · rcases List.mem_cons.1 hb with rfl | hb'
+        · exact absurd ⟨a, ha', hfab⟩ h.1
+        · exact ih h.2 a ha' b hb' hfab
+
+/-- Shorthand: every accepted plan passes the item half of the checker. -/
+theorem WfPlan.items (p : WfPlan) : itemsWf p.val = true := (planWf_parts p.property).2.2.2.2
+
+/-- **A site names one line.**  Two lines of an accepted plan that sit in the
+same document at the same rank are the same line — same id, same bytes. -/
+theorem site_names_one_line (p : WfPlan) (l₁ l₂ : Line)
+    (h₁ : l₁ ∈ p.val.lines) (h₂ : l₂ ∈ p.val.lines) (hs : l₁.site = l₂.site) : l₁ = l₂ := by
+  have hk : l₁.site.doc < p.val.docs.length := no_line_is_lost p l₁ h₁
+  have hnorm := (itemsWf_parts p.items).1
+  simp only [normalized, List.all_eq_true] at hnorm
+  have hnd : (docRanks p.val l₁.site.doc).Nodup := by
+    have := hnorm l₁.site.doc (List.mem_range.2 hk)
+    simpa using this
+  have hnd2 : ((p.val.lines.filter (fun l => l.site.doc == l₁.site.doc)).map
+      (fun l => l.site.rank)).Nodup := by
+    refine List.Nodup.sublist ?_ hnd
+    unfold docRanks
+    exact List.sublist_append_right _ _
+  have m₁ : l₁ ∈ p.val.lines.filter (fun l => l.site.doc == l₁.site.doc) := by
+    simp [List.mem_filter, h₁]
+  have m₂ : l₂ ∈ p.val.lines.filter (fun l => l.site.doc == l₁.site.doc) := by
+    simp [List.mem_filter, h₂, hs]
+  exact nodup_map_inj hnd2 l₁ m₁ l₂ m₂ (by rw [hs])
+
+/-! ## §3.2's derived fields, as functions over the tree
+
+None of these is a stored field, and that is the point: a stored `effective
+shape` or a stored `root priority` is a second answer to a question the tree
+already answers, which is the shape of S2 and of the `est`/`est_original`
+bug. -/
+
+def shapeOf (p : PlanCore) (i : Id) : Shape :=
+  match p.store.get i with
+  | none   => Shape.none
+  | some e => e.val.shape
+
+/-- §3.2's `effective_shape`: "an item with `shape = None` whose **parent** is
+an `Interval` is treated as `Point { due: parent.start }` (prep work)."
+
+Note *parent*, not *ancestor*: this is one step and not a closure.  The
+transitive version — "the nearest shaped ancestor" — is a different rule that
+the spec does not state, and `effectiveShape_does_not_reach_the_grandparent`
+below is the theorem that pins down which of the two this is, so nobody has to
+read the code to find out. -/
+def effectiveShape (p : PlanCore) (i : Id) : Shape :=
+  match p.store.get i with
+  | none   => Shape.none
+  | some e =>
+    match e.val.shape with
+    | Shape.none =>
+      (match e.val.parent with
+       | none   => Shape.none
+       | some j => match shapeOf p j with
+                   | .interval s _ => .point s
+                   | _             => Shape.none)
+    | s => s
+
+/-- An item that says what it is, is what it says. -/
+theorem effectiveShape_as_written (p : PlanCore) (i : Id) (e : Entity)
+    (hget : p.store.get i = some e) (h : e.val.shape ≠ Shape.none) :
+    effectiveShape p i = e.val.shape := by
+  cases hsh : e.val.shape with
+  | none         => exact absurd hsh h
+  | point d      => simp [effectiveShape, hget, hsh]
+  | interval a b => simp [effectiveShape, hget, hsh]
+  | window r d   => simp [effectiveShape, hget, hsh]
+
+/-- **§3.2's prep rule.**  The `^x2` of §4.3 — "Midterm review `@x1`" under the
+interval `^x1` — is due at the exam's start, and nobody wrote that date down. -/
+theorem effectiveShape_prep (p : PlanCore) (i j : Id) (e : Entity) (a b : Instant)
+    (hget : p.store.get i = some e) (hsh : e.val.shape = Shape.none)
+    (hpar : e.val.parent = some j) (hj : shapeOf p j = Shape.interval a b) :
+    effectiveShape p i = Shape.point a := by
+  simp [effectiveShape, hget, hsh, hpar, hj]
+
+/-- **And it is one step.**  A shapeless child of a shapeless parent has no
+shape, whatever the grandparent is — so `effectiveShape` is §3.2's rule and not
+a transitive closure someone assumed. -/
+theorem effectiveShape_does_not_reach_the_grandparent (p : PlanCore) (i j : Id) (e : Entity)
+    (hget : p.store.get i = some e) (hsh : e.val.shape = Shape.none)
+    (hpar : e.val.parent = some j) (hj : shapeOf p j = Shape.none) :
+    effectiveShape p i = Shape.none := by
+  simp [effectiveShape, hget, hsh, hpar, hj]
+
+/-- §3.1's `ci` default: "the parent's, else 3".  A bounded walk up the tree;
+`parentsAcyclic` is what says the bound is enough for it to be the real
+answer. -/
+def effectiveCiAux (p : PlanCore) : Nat → Id → Fin 6
+  | 0,     _ => 3
+  | n + 1, i =>
+    match p.store.get i with
+    | none   => 3
+    | some e =>
+      match e.val.ci with
+      | some c => c
+      | none   =>
+        match e.val.parent with
+        | none   => 3
+        | some j => effectiveCiAux p n j
+
+def effectiveCi (p : PlanCore) (i : Id) : Fin 6 := effectiveCiAux p (fuel p) i
+
+theorem effectiveCi_explicit (p : PlanCore) (i : Id) (e : Entity) (c : Fin 6)
+    (hget : p.store.get i = some e) (hci : e.val.ci = some c) : effectiveCi p i = c := by
+  simp [effectiveCi, fuel, effectiveCiAux, hget, hci]
+
+theorem effectiveCi_inherits (p : PlanCore) (n : Nat) (i j : Id) (e : Entity)
+    (hget : p.store.get i = some e) (hci : e.val.ci = none) (hpar : e.val.parent = some j) :
+    effectiveCiAux p (n + 1) i = effectiveCiAux p n j := by
+  simp [effectiveCiAux, hget, hci, hpar]
+
+theorem effectiveCi_default (p : PlanCore) (i : Id) (e : Entity)
+    (hget : p.store.get i = some e) (hci : e.val.ci = none) (hpar : e.val.parent = none) :
+    effectiveCi p i = 3 := by
+  simp [effectiveCi, fuel, effectiveCiAux, hget, hci, hpar]
+
+/-- §3.2's `root_priority`: walk `parent` to the top and read the explicit `!k`
+**there**. -/
+def rootPrioAux (p : PlanCore) : Nat → Id → Option (Fin 4)
+  | 0,     _ => none
+  | n + 1, i =>
+    match p.store.get i with
+    | none   => none
+    | some e =>
+      match e.val.parent with
+      | some j => rootPrioAux p n j
+      | none   => e.val.prio
+
+def rootPrio (p : PlanCore) (i : Id) : Option (Fin 4) := rootPrioAux p (fuel p) i
+
+theorem rootPrio_of_a_root (p : PlanCore) (i : Id) (e : Entity)
+    (hget : p.store.get i = some e) (hpar : e.val.parent = none) :
+    rootPrio p i = e.val.prio := by
+  simp [rootPrio, fuel, rootPrioAux, hget, hpar]
+
+/-- **A child's own `!k` is not read** — §4.3's "roots carry explicit
+priority", as the fact that the right-hand side does not mention it. -/
+theorem rootPrio_walks_past_the_child (p : PlanCore) (n : Nat) (i j : Id) (e : Entity)
+    (hget : p.store.get i = some e) (hpar : e.val.parent = some j) :
+    rootPrioAux p (n + 1) i = rootPrioAux p n j := by
+  simp [rootPrioAux, hget, hpar]
+
+/-! ## What an accepted plan therefore guarantees -/
+
+theorem climb_succ_none (p : PlanCore) (n : Nat) (i : Id) (h : parentStep p i = none) :
+    climb p (n + 1) i = i := by simp [climb, h]
+
+theorem climb_succ_some (p : PlanCore) (n : Nat) (i j : Id) (h : parentStep p i = some j) :
+    climb p (n + 1) i = climb p n j := by simp [climb, h]
+
+/-- The walk stops because it ran **out of parents**, not because it ran out of
+fuel — which is exactly what a bounded iteration has to prove. -/
+theorem climb_reaches_a_root (p : PlanCore) : ∀ n i, anc p n i = none →
+    parentStep p (climb p n i) = none := by
+  intro n
+  induction n with
+  | zero => intro i h; simp [anc] at h
+  | succ m ih =>
+      intro i h
+      cases hs : parentStep p i with
+      | none => rw [climb_succ_none p m i hs]; exact hs
+      | some j =>
+          rw [climb_succ_some p m i j hs]
+          rw [anc_succ_some p m i j hs] at h
+          exact ih j h
+
+/-- **§3.2's `root(item)` is total on an accepted plan.** -/
+theorem every_item_has_a_root (p : WfPlan) (i : Id) (e : Entity)
+    (hget : p.val.store.get i = some e) : parentStep p.val (rootOf p.val i) = none := by
+  have hdom : i ∈ p.val.store.dom := (p.val.store.domSpec i).mpr (by rw [hget]; rfl)
+  have hacy := (itemsWf_parts p.items).2.2.1
+  have hall := List.all_eq_true.1 hacy i hdom
+  have hnone : anc p.val (fuel p.val) i = none := by
+    simpa [Option.isNone_iff_eq_none] using hall
+  exact climb_reaches_a_root p.val _ i hnone
+
+/-- **No item is its own ancestor.**  F5, as a fact about the type. -/
+theorem no_item_is_its_own_ancestor (p : WfPlan) (i : Id) (e : Entity)
+    (hget : p.val.store.get i = some e) : ¬ OnACycle p.val i := by
+  have hdom : i ∈ p.val.store.dom := (p.val.store.domSpec i).mpr (by rw [hget]; rfl)
+  exact parentsAcyclic_sound p.val (itemsWf_parts p.items).2.2.1 i hdom
+
+/-- **`@parent` names an item.**  A dangling `@m9` is not a plan. -/
+theorem parent_names_an_item (p : WfPlan) (i j : Id) (e : Entity)
+    (hget : p.val.store.get i = some e) (hpar : e.val.parent = some j) :
+    (p.val.store.get j).isSome = true := by
+  have hdom : i ∈ p.val.store.dom := (p.val.store.domSpec i).mpr (by rw [hget]; rfl)
+  have hall := List.all_eq_true.1 (itemsWf_parts p.items).2.1 i hdom
+  simpa [parentStep, hget, hpar] using hall
+
+/-- **`after:^id` names an item too.** -/
+theorem dep_names_an_item (p : WfPlan) (i j : Id) (e : Entity)
+    (hget : p.val.store.get i = some e) (hdep : Dep.item j ∈ e.val.after) :
+    (p.val.store.get j).isSome = true := by
+  have hdom : i ∈ p.val.store.dom := (p.val.store.domSpec i).mpr (by rw [hget]; rfl)
+  have hall := List.all_eq_true.1 (itemsWf_parts p.items).2.2.2.1 i hdom
+  rw [show depsOf p.val i = depIds e.val.after from by simp [depsOf, hget]] at hall
+  refine List.all_eq_true.1 hall j ?_
+  simp only [depIds, List.mem_filterMap]
+  exact ⟨Dep.item j, hdep, rfl⟩
+
+/-- **No set of items can all be waiting on each other.**  §5.5's cycle error,
+except that the cyclic plan is not a value. -/
+theorem no_deadlocked_set (p : WfPlan) (c : List Id)
+    (hc : ∀ x ∈ c, x ∈ p.val.store.dom) : ¬ Deadlocked p.val c :=
+  afterAcyclic_sound p.val (itemsWf_parts p.items).2.2.2.2.1 c hc
+
+/-- §4.2: a `# Demoted` section is a month-file section (§6.3), wherever it is
+written. -/
+theorem a_demoted_section_is_a_month_section (p : WfPlan) (d : Doc) (hd : d ∈ p.val.docs)
+    (q : Nat × List Char) (hq : q ∈ d.prose) (hh : isHeading q.2 = true)
+    (hk : secKind q.2 = SecKind.demoted) : docKind d = DocKind.month := by
+  have hsec := (itemsWf_parts p.items).2.2.2.2.2.1
+  simp only [sectionsWf, Bool.and_eq_true] at hsec
+  have h1 := List.all_eq_true.1 hsec.1 d hd
+  have h2 := List.all_eq_true.1 h1 q hq
+  simp only [hh, if_true, hk, beq_iff_eq] at h2
+  exact h2
+
+/-- §4.2: and a `# Pinned` section is a day-file section (§6.2). -/
+theorem a_pinned_section_is_a_day_section (p : WfPlan) (d : Doc) (hd : d ∈ p.val.docs)
+    (q : Nat × List Char) (hq : q ∈ d.prose) (hh : isHeading q.2 = true)
+    (hk : secKind q.2 = SecKind.pinned) : docKind d = DocKind.day := by
+  have hsec := (itemsWf_parts p.items).2.2.2.2.2.1
+  simp only [sectionsWf, Bool.and_eq_true] at hsec
+  have h1 := List.all_eq_true.1 hsec.1 d hd
+  have h2 := List.all_eq_true.1 h1 q hq
+  simp only [hh, if_true, hk, beq_iff_eq] at h2
+  exact h2
+
+/-- §4.3's day file: the item lines it holds are the `# Pinned` ones.  The
+generated plan block, `## Log` and `## Notes` are prose, and an item line
+underneath any of them is not a plan. -/
+theorem a_day_file_holds_only_pinned_items (p : WfPlan) (i : Id) (e : Entity)
+    (hget : p.val.store.get i = some e)
+    (hday : docKindAt p.val e.val.live.doc = DocKind.day) :
+    sectionKindAt p.val e.val.live = some SecKind.pinned := by
+  have hdom : i ∈ p.val.store.dom := (p.val.store.domSpec i).mpr (by rw [hget]; rfl)
+  have hsec := (itemsWf_parts p.items).2.2.2.2.2.1
+  simp only [sectionsWf, Bool.and_eq_true] at hsec
+  have h1 := List.all_eq_true.1 hsec.2 i hdom
+  rw [hget] at h1
+  simp only [Bool.and_eq_true] at h1
+  have h2 := h1.1
+  simp only [placementSectionWf, hday] at h2
+  cases hsk : sectionKindAt p.val e.val.live with
+  | none => rw [hsk] at h2; simp at h2
+  | some k =>
+      cases k with
+      | pinned => rfl
+      | demoted => rw [hsk] at h2; simp at h2
+      | series n => rw [hsk] at h2; simp at h2
+      | organisational => rw [hsk] at h2; simp at h2
+
+theorem shapeWf_of_mem (p : WfPlan) (i : Id) (e : Entity) (hget : p.val.store.get i = some e) :
+    shapeWfFor (docKindAt p.val e.val.live.doc) e.val = true := by
+  have hdom : i ∈ p.val.store.dom := (p.val.store.domSpec i).mpr (by rw [hget]; rfl)
+  have hall := List.all_eq_true.1 (itemsWf_parts p.items).2.2.2.2.2.2 i hdom
+  rw [hget] at hall
+  exact hall
+
+/-- §6.2: "month items are outcomes, not work" — an outcome carries no date. -/
+theorem month_items_are_outcomes (p : WfPlan) (i : Id) (e : Entity)
+    (hget : p.val.store.get i = some e)
+    (hm : docKindAt p.val e.val.live.doc = DocKind.month) : e.val.shape = Shape.none := by
+  have h := shapeWf_of_mem p i e hget
+  rw [hm] at h
+  simpa [shapeWfFor] using h
+
+/-- §4.3's `calendar/`: "generated intervals". -/
+theorem calendar_lines_are_intervals (p : WfPlan) (i : Id) (e : Entity)
+    (hget : p.val.store.get i = some e)
+    (hc : docKindAt p.val e.val.live.doc = DocKind.calendar) :
+    ∃ a b, e.val.shape = Shape.interval a b := by
+  have h := shapeWf_of_mem p i e hget
+  rw [hc] at h
+  simp only [shapeWfFor] at h
+  cases hsh : e.val.shape with
+  | interval a b => exact ⟨a, b, rfl⟩
+  | none         => rw [hsh] at h; simp at h
+  | point d      => rw [hsh] at h; simp at h
+  | window r d   => rw [hsh] at h; simp at h
+
+/-- §4.3's `routines.md`: "every line is `open`, has a window or
+`after-done`". -/
+theorem routine_lines_are_open (p : WfPlan) (i : Id) (e : Entity)
+    (hget : p.val.store.get i = some e)
+    (hr : docKindAt p.val e.val.live.doc = DocKind.routines) :
+    e.val.scope = Scope.openEnded := by
+  have h := shapeWf_of_mem p i e hget
+  rw [hr] at h
+  simp only [shapeWfFor, Bool.and_eq_true, beq_iff_eq] at h
+  exact h.1
+
+theorem routine_lines_have_a_window_or_after_done (p : WfPlan) (i : Id) (e : Entity)
+    (hget : p.val.store.get i = some e)
+    (hr : docKindAt p.val e.val.live.doc = DocKind.routines) :
+    (∃ r d, e.val.shape = Shape.window r d) ∨ (∃ o w, e.val.recur = Recur.afterDone o w) := by
+  have h := shapeWf_of_mem p i e hget
+  rw [hr] at h
+  simp only [shapeWfFor, Bool.and_eq_true] at h
+  have h2 := h.2
+  cases hsh : e.val.shape with
+  | window r d => exact Or.inl ⟨r, d, rfl⟩
+  | none =>
+      rw [hsh] at h2
+      cases hrc : e.val.recur with
+      | afterDone o w => exact Or.inr ⟨o, w, rfl⟩
+      | none => rw [hrc] at h2; simp at h2
+      | calendar r => rw [hrc] at h2; simp at h2
+      | onEvent n t => rw [hrc] at h2; simp at h2
+  | point d =>
+      rw [hsh] at h2
+      cases hrc : e.val.recur with
+      | afterDone o w => exact Or.inr ⟨o, w, rfl⟩
+      | none => rw [hrc] at h2; simp at h2
+      | calendar r => rw [hrc] at h2; simp at h2
+      | onEvent n t => rw [hrc] at h2; simp at h2
+  | interval a b =>
+      rw [hsh] at h2
+      cases hrc : e.val.recur with
+      | afterDone o w => exact Or.inr ⟨o, w, rfl⟩
+      | none => rw [hrc] at h2; simp at h2
+      | calendar r => rw [hrc] at h2; simp at h2
+      | onEvent n t => rw [hrc] at h2; simp at h2
+
+/-- §4.3's `optional.md`: `open`, and it says how long it takes — the planner
+gives it a rest slot, and a rest slot has a length. -/
+theorem optional_items_declare_a_duration (p : WfPlan) (i : Id) (e : Entity)
+    (hget : p.val.store.get i = some e)
+    (ho : docKindAt p.val e.val.live.doc = DocKind.optional) :
+    e.val.scope = Scope.openEnded ∧ ∃ dv, declaredDur e.val = some dv ∧ 0 < dv := by
+  have h := shapeWf_of_mem p i e hget
+  rw [ho] at h
+  simp only [shapeWfFor, Bool.and_eq_true, beq_iff_eq] at h
+  refine ⟨h.1, ?_⟩
+  have h2 := h.2
+  cases hd : declaredDur e.val with
+  | none => rw [hd] at h2; simp at h2
+  | some dv => rw [hd] at h2; exact ⟨dv, rfl, by simpa using h2⟩
+
+
+/-- **And no prose line hides under an item line.**  `weave` orders a document
+by rank and breaks a tie in favour of prose, so a prose entry sharing a rank
+with an item line would move that item — a change to the file with no command
+run.  `Normalized` counts prose ranks and item ranks in one list, so the tie
+cannot arise. -/
+theorem no_prose_line_shares_a_rank (p : WfPlan) (l : Line) (hl : l ∈ p.val.lines)
+    (d : Doc) (hd : p.val.docs[l.site.doc]? = some d)
+    (q : Nat × List Char) (hq : q ∈ d.prose) : q.1 ≠ l.site.rank := by
+  have hk : l.site.doc < p.val.docs.length := no_line_is_lost p l hl
+  have hnorm := (itemsWf_parts p.items).1
+  simp only [normalized, List.all_eq_true] at hnorm
+  have hnd : (docRanks p.val l.site.doc).Nodup := by
+    have := hnorm l.site.doc (List.mem_range.2 hk)
+    simpa using this
+  rw [show docRanks p.val l.site.doc
+        = (d.prose.map Prod.fst) ++
+          ((p.val.lines.filter (fun x => x.site.doc == l.site.doc)).map (fun x => x.site.rank))
+      from by simp [docRanks, hd]] at hnd
+  have hdis := (List.nodup_append.1 hnd).2.2
+  refine hdis q.1 (List.mem_map.2 ⟨q, hq, rfl⟩) l.site.rank ?_
+  exact List.mem_map.2 ⟨l, by simp [List.mem_filter, hl], rfl⟩
+
+
+/-! ### And the file-kind checks bite
+
+A checker that no input can fail is not a checker.  These are the two witnesses
+that the §4.3 rules refuse something: a calendar line that is not an interval,
+and a day-file item outside `# Pinned`.  Neither is a plan. -/
+
+theorem a_shapeless_calendar_line_is_rejected (p : PlanCore) (i : Id) (e : Entity)
+    (hdom : i ∈ p.store.dom) (hget : p.store.get i = some e)
+    (hc : docKindAt p e.val.live.doc = DocKind.calendar) (hsh : e.val.shape = Shape.none) :
+    shapesWf p = false := by
+  cases hb : shapesWf p with
+  | false => rfl
+  | true =>
+      have hall := List.all_eq_true.1 hb i hdom
+      rw [hget] at hall
+      simp [hc, shapeWfFor, hsh] at hall
+
+theorem an_unpinned_day_item_is_rejected (p : PlanCore) (i : Id) (e : Entity)
+    (hdom : i ∈ p.store.dom) (hget : p.store.get i = some e)
+    (hday : docKindAt p e.val.live.doc = DocKind.day)
+    (hsec : sectionKindAt p e.val.live = none) : sectionsWf p = false := by
+  cases hb : sectionsWf p with
+  | false => rfl
+  | true =>
+      simp only [sectionsWf, Bool.and_eq_true] at hb
+      have hall := List.all_eq_true.1 hb.2 i hdom
+      rw [hget] at hall
+      simp only [Bool.and_eq_true] at hall
+      have h2 := hall.1
+      simp [placementSectionWf, hday, hsec] at h2
 
 end Tm
