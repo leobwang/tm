@@ -356,8 +356,11 @@ fn init_produces_a_tree_that_passes_check() {
     assert!(tm.exists("month/2026-09.md"));
     assert!(tm.exists("week/2026-W37.md"));
 
-    // The hook runs `tm check` (§14) and the rules are §14's, verbatim.
-    assert!(tm.read(".claude/settings.json").contains("\"tm check\""));
+    // The hook runs `tm check` (§14) — through `.claude/hooks/tm-check.sh`,
+    // which scopes it to this plan tree and reports on stderr — and the rules
+    // are §14's, verbatim.
+    assert!(tm.read(".claude/settings.json").contains("tm-check.sh"));
+    assert!(tm.read(".claude/hooks/tm-check.sh").contains("tm check"));
     assert!(tm.read(".claude/settings.json").contains("PostToolUse"));
     assert!(tm.read(".githooks/pre-commit").contains("tm check"));
     assert!(tm.read("CLAUDE.md").starts_with("# tm — rules for Claude Code"));

@@ -15,6 +15,13 @@ tm plan --week --json          # what the week already holds, before adding to i
 The preview shows what the grammar would make of the line as written. Your job
 is the part it cannot guess.
 
+<!-- json fields -->
+
+```
+tm triage --json → file lines[].line lines[].raw lines[].parsed lines[].problem
+tm plan --week --json → week days[].date days[].total days[].minutes_at_level grid
+```
+
 ## 2. Decide, per line
 
 | Field | Question | Default |
@@ -30,10 +37,11 @@ distorts every plan afterwards. Never invent a deadline.
 
 ## 3. Write
 
-One `tm add` per line, then delete the raw line from `inbox.md`:
+One `tm add` per line — the bare line, **without** the `- [ ] ` prefix, which
+would be read as a flag — then delete the raw line from `inbox.md`:
 
 ```
-tm add "- [ ] 4 6b pset 2 @O3 due:2026-09-11T23:59 max:2b/d" --to week/2026-W37.md --section Milestones
+tm add "4 6b pset 2 @O3 due:2026-09-11T23:59 max:2b/d" --to week/2026-W37.md --section Milestones
 ```
 
 `tm add` assigns the `^id`; never write one yourself. Finish with `tm check`

@@ -26,11 +26,12 @@ pub struct InitOut {
     pub dir: String,
     /// Files written.
     pub created: Vec<String>,
-    /// Files that already existed and were left alone. Always empty: `tm
-    /// init` refuses a non-empty directory rather than half-writing it, and
-    /// `--force` rewrites every file it owns. The one file it merges instead
-    /// of overwriting — `.gitignore` — is reported in `created` only when it
-    /// actually changed.
+    /// Files that were already there and were left byte for byte as they
+    /// were. Empty on a fresh tree; under `--force` it holds the files whose
+    /// content is the user's — §2's items, `config.toml`, and a `.gitignore`
+    /// that already carries the tm block — because `--force` refreshes the
+    /// generated integration (`CLAUDE.md`, the skills, the hooks) without
+    /// touching the database.
     pub skipped: Vec<String>,
     /// How to enable the git pre-commit hook (§1.3).
     pub hook_hint: String,
@@ -52,10 +53,13 @@ pub fn run(g: &Globals, args: &super::InitArgs) -> Result<i32, CliError> {
         .or_else(|| g.dir.clone())
         .unwrap_or_else(|| PathBuf::from("plan"));
 
-    let today = g
+    // §17.2: the day is `now` in the tree's own timezone (§16 `tz`), which is
+    // what every other verb plans in — not the machine's offset, which would
+    // give the fresh tree a `week/` file for a different day than `tm plan`.
+    let now = g
         .now
-        .map(|t| t.date_naive())
-        .unwrap_or_else(|| chrono::Local::now().date_naive());
+        .unwrap_or_else(|| chrono::Local::now().fixed_offset());
+    let today = init::today(&root, now);
     let opts = init::Options {
         example: args.example,
         force: args.force,
@@ -66,10 +70,9 @@ pub fn run(g: &Globals, args: &super::InitArgs) -> Result<i32, CliError> {
     let out = InitOut {
         dir: root.display().to_string(),
         created: written.created,
-        skipped: Vec::new(),
+        skipped: written.unchanged,
         hook_hint: init::hook_hint(&root),
     };
-    let unchanged = written.unchanged;
     let example = args.example;
     emit(
         g.json,
@@ -78,8 +81,12 @@ pub fn run(g: &Globals, args: &super::InitArgs) -> Result<i32, CliError> {
             if example {
                 s.push_str("\nthe example tree is §4.3's, dated 2026-09-07 (week 2026-W37)");
             }
-            if !unchanged.is_empty() {
-                s.push_str(&format!("\nleft alone: {}", unchanged.join(", ")));
+            if !out.skipped.is_empty() {
+                s.push_str(&format!(
+                    "\nleft alone, already there ({}): {}",
+                    out.skipped.len(),
+                    out.skipped.join(", ")
+                ));
             }
             s.push_str(&format!(
                 "\nenable the pre-commit hook with:\n  {}",

@@ -31,6 +31,7 @@ const FILES: &[&str] = &[
     "config.toml",
     "CLAUDE.md",
     ".claude/settings.json",
+    ".claude/hooks/tm-check.sh",
     ".githooks/pre-commit",
     ".gitignore",
     "inbox.md",
@@ -134,6 +135,41 @@ fn claude_md_is_the_section_14_text() {
     insta::assert_snapshot!("claude_md", text);
 }
 
+/// Run a hook script with `payload` on stdin and the binary under test on
+/// `PATH` — what Claude Code and git do.
+fn run_hook(script: &Path, payload: Option<&str>) -> std::process::Output {
+    let bin = Path::new(env!("CARGO_BIN_EXE_tm"));
+    let path = format!(
+        "{}:{}",
+        bin.parent().expect("bin dir").display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let mut cmd = Command::new("sh");
+    cmd.arg(script)
+        .env("PATH", &path)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn().expect("run the hook");
+    {
+        use std::io::Write;
+        let mut stdin = child.stdin.take().expect("stdin");
+        stdin
+            .write_all(payload.unwrap_or("").as_bytes())
+            .expect("write the payload");
+    }
+    child.wait_with_output().expect("hook output")
+}
+
+/// A `PostToolUse` payload for an edit to `file`.
+fn payload(file: &Path) -> String {
+    format!(
+        "{{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Edit\",\
+         \"tool_input\":{{\"file_path\":\"{}\"}}}}",
+        file.display()
+    )
+}
+
 #[test]
 fn the_settings_hook_checks_the_tree_after_every_edit() {
     let tm = init();
@@ -141,8 +177,65 @@ fn the_settings_hook_checks_the_tree_after_every_edit() {
     let json: serde_json::Value = serde_json::from_str(&text).expect("settings.json is JSON");
     let hook = &json["hooks"]["PostToolUse"][0];
     assert_eq!(hook["matcher"], "Edit|MultiEdit|Write");
-    assert_eq!(hook["hooks"][0]["command"], "tm check");
+    // §14's "under `plan/`": a matcher matches tool names, so the scoping and
+    // the reporting live in the script the command runs.
+    let command = hook["hooks"][0]["command"].as_str().expect("a command");
+    assert!(command.contains(".claude/hooks/tm-check.sh"), "{command}");
+    assert!(tm.exists(".claude/hooks/tm-check.sh"));
     insta::assert_snapshot!("settings_json", text);
+}
+
+#[test]
+fn the_post_tool_use_hook_only_fires_for_the_plan_tree() {
+    let tm = init();
+    let script = tm.plan.join(".claude/hooks/tm-check.sh");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&script)
+            .expect("hook")
+            .permissions()
+            .mode();
+        assert!(mode & 0o111 != 0, "the hook is not executable: {mode:o}");
+    }
+
+    // A clean tree: nothing to say, nothing blocked.
+    let clean = run_hook(&script, Some(&payload(&tm.plan.join("backlog.md"))));
+    assert_eq!(clean.status.code(), Some(0), "{clean:?}");
+
+    // A broken one: exit 2 (Claude Code's blocking code) with the diagnostics
+    // on *stderr*, the only stream it feeds back to the model — `tm check`
+    // itself prints them on stdout, so a bare `tm check` would block the turn
+    // with an empty message.
+    std::fs::write(
+        tm.plan.join("backlog.md"),
+        "# Untied\n- [ ] 3 1b Orphan @nope ^zzz9\n",
+    )
+    .expect("write");
+    let dirty = run_hook(&script, Some(&payload(&tm.plan.join("backlog.md"))));
+    assert_eq!(dirty.status.code(), Some(2), "{dirty:?}");
+    let stderr = String::from_utf8_lossy(&dirty.stderr);
+    assert!(stderr.contains("dangling-parent"), "stderr was: {stderr:?}");
+    assert!(
+        String::from_utf8_lossy(&dirty.stdout).trim().is_empty(),
+        "the diagnostics must not go to stdout: {:?}",
+        dirty.stdout
+    );
+
+    // The same broken tree, but the edit was somewhere else: not our business
+    // (§14 scopes the hook to `plan/`), so no turn is blocked by it.
+    for outside in [
+        tm.tmp.path().join("README.md"),
+        tm.plan.join(".tm/state.json"),
+    ] {
+        let out = run_hook(&script, Some(&payload(&outside)));
+        assert_eq!(out.status.code(), Some(0), "{}: {out:?}", outside.display());
+    }
+
+    // A payload with no `file_path` (or no payload at all) is not a reason to
+    // block anything either.
+    let empty = run_hook(&script, None);
+    assert_eq!(empty.status.code(), Some(0), "{empty:?}");
 }
 
 #[test]
@@ -166,7 +259,20 @@ fn every_skill_declares_its_name_and_trigger() {
             "{name}'s description states no trigger: {description}"
         );
         assert!(text.lines().count() < 60, "{name} is longer than ~60 lines");
-        assert!(text.contains("tm "), "{name} runs no tm verb");
+        // Every verb it names lives in a fenced block, so `init_skills.rs`
+        // can run it: prose mentioning "tm" is not a documented command.
+        let mut fenced = false;
+        let commands = text.lines().filter(|line| {
+            if line.starts_with("```") {
+                fenced = !fenced;
+                return false;
+            }
+            fenced && line.starts_with("tm ")
+        });
+        assert!(
+            commands.count() > 0,
+            "{name} documents no `tm …` command in a fenced block"
+        );
     }
     // One in full: the Sunday planning conversation, with its confirmation rule.
     let plan_week = tm.read(".claude/skills/plan-week/SKILL.md");
@@ -269,6 +375,78 @@ fn init_refuses_a_non_empty_directory_without_force() {
         "mine\n",
         "--force adds, it does not clear"
     );
+}
+
+#[test]
+fn the_month_and_week_files_follow_the_configs_timezone() {
+    // §16's `tz` (default America/Chicago) is what every other verb resolves
+    // `--now` in, so the fresh tree must be dated in it and not in whatever
+    // offset the machine (or `--now`) happens to carry: 08:00 in Tokyo on the
+    // 14th is still Sunday the 13th in Chicago, ISO week 2026-W37.
+    let tm = Tm::empty();
+    let now = "2026-09-14T08:00:00+09:00";
+    let out = tm.run_at(now, &["init"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert_eq!(tm.json_at(now, &["plan"])["date"], "2026-09-13");
+    assert!(tm.exists("week/2026-W37.md"), "the current week is missing");
+    assert!(!tm.exists("week/2026-W38.md"), "a stray next-week file");
+    assert!(tm.exists("month/2026-09.md"));
+}
+
+#[test]
+fn force_refreshes_tms_files_and_never_the_users() {
+    // §2: the item files are the database. `--force` is the upgrade path for
+    // the generated integration, not a way to lose a week of work.
+    let tm = init();
+    tm.ok(&["add", "5 6b Finish ch.5 exercises", "--to", "week"]);
+    tm.ok(&["add", "3 2b Renew insurance", "--to", "backlog"]);
+    let week = tm.read("week/2026-W37.md");
+    let backlog = tm.read("backlog.md");
+    std::fs::write(tm.plan.join("config.toml"), "tz = \"Europe/Berlin\"\n").expect("write");
+    std::fs::write(tm.plan.join("CLAUDE.md"), "stale\n").expect("write");
+
+    let json = tm.json(&["init", "--force"]);
+    let names = |key: &str| -> Vec<String> {
+        json[key]
+            .as_array()
+            .expect(key)
+            .iter()
+            .map(|v| v.as_str().unwrap_or_default().to_string())
+            .collect()
+    };
+    let (created, skipped) = (names("created"), names("skipped"));
+
+    // Every file whose content is the user's survives, and is reported.
+    assert_eq!(tm.read("week/2026-W37.md"), week);
+    assert_eq!(tm.read("backlog.md"), backlog);
+    assert_eq!(tm.read("config.toml"), "tz = \"Europe/Berlin\"\n");
+    for kept in [
+        "config.toml",
+        "backlog.md",
+        "inbox.md",
+        "routines.md",
+        "optional.md",
+        "month/2026-09.md",
+        "week/2026-W37.md",
+    ] {
+        assert!(skipped.contains(&kept.to_string()), "{kept}: {skipped:?}");
+        assert!(!created.contains(&kept.to_string()), "{kept}: {created:?}");
+    }
+    // And tm's own files are brought up to date.
+    assert!(tm.read("CLAUDE.md").starts_with("# tm — rules for Claude Code"));
+    for refreshed in [
+        "CLAUDE.md",
+        ".claude/settings.json",
+        ".claude/hooks/tm-check.sh",
+        ".claude/skills/capture/SKILL.md",
+        ".githooks/pre-commit",
+    ] {
+        assert!(created.contains(&refreshed.to_string()), "{created:?}");
+    }
+    // The human output says what it left alone.
+    let human = tm.run(&["init", "--force"]);
+    assert!(human.stdout.contains("left alone"), "{}", human.stdout);
+    assert!(human.stdout.contains("backlog.md"), "{}", human.stdout);
 }
 
 #[test]

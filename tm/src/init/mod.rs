@@ -12,26 +12,36 @@
 //!   `review-week`, `explain`. Each has YAML front matter (`name`,
 //!   `description` = when to use it) and the `tm … --json` commands it runs.
 //! * [`SETTINGS_JSON`] — `.claude/settings.json`: the §14 `PostToolUse` hook
-//!   on `Edit|MultiEdit|Write` that runs `tm check`, plus a `deny` rule for
-//!   `.tm/**` (§14: Claude never touches the runtime state). A hook matcher
-//!   matches tool *names*, not paths; the scoping to `plan/` comes from where
-//!   the file lives — §2 puts `.claude/` inside the plan tree, so the project
-//!   directory is the plan tree and the bare `tm check` resolves it from the
-//!   working directory.
+//!   on `Edit|MultiEdit|Write`, plus a `deny` rule for `.tm/**` (§14: Claude
+//!   never touches the runtime state). A hook matcher matches tool *names*,
+//!   not paths, so the "under `plan/`" half of §14 lives in the command:
+//! * [`HOOK_SCRIPT`] — `.claude/hooks/tm-check.sh`, what that hook runs. It
+//!   checks the payload's `file_path` against this plan tree (an edit
+//!   anywhere else is a no-op) and re-emits `tm check`'s diagnostics on
+//!   *stderr* before exiting 2, because that is the only stream Claude Code
+//!   feeds back to the model on a blocking hook.
 //! * [`PRE_COMMIT`] — `.githooks/pre-commit`, the same check as a git hook
 //!   (§1.3). `tm init` never rewrites the user's git config; it prints
 //!   [`hook_hint`] instead.
 //! * [`GITIGNORE`] — the `.tm/state.json` line and the CLI's other caches.
 //!
-//! Two entry points:
+//! Three entry points:
 //!
 //! * [`files`]`(&`[`Options`]`)` — the whole tree as [`InitFile`] values
 //!   (relative path, text, [`Mode`]), pure and testable; [`DIRS`] lists the
 //!   directories that carry no file of their own (`calendar/`, `.tm/`).
 //! * [`write`]`(root, &`[`Options`]`)` — creates them, returning [`Written`]
 //!   (what was created, what was left alone). It refuses a non-empty
-//!   directory unless [`Options::force`], and never rewrites an existing
-//!   `.gitignore` — it appends the tm block only when it is missing.
+//!   directory unless [`Options::force`]; even then it only ever *adds* to
+//!   the user's own files: every §2 content file and `config.toml` is
+//!   [`Mode::Preserve`] (kept exactly as it is when it already exists) and
+//!   `.gitignore` is [`Mode::Merge`] (the tm block appended when missing).
+//!   `--force` rewrites the generated integration — `CLAUDE.md`, the skills,
+//!   the settings and the two hooks — which is what makes it an upgrade path
+//!   rather than a way to lose a week of items.
+//! * [`today`]`(root, now)` — the date the fresh `month/` and `week/` files
+//!   are for: `now` resolved in the timezone the tree's config declares (§16
+//!   `tz`), which is the timezone every other verb resolves `--now` in.
 //!
 //! [`Options::example`] swaps the guidance files for §4.3's populated tree
 //! (the `plan-basic` fixture, byte for byte), so a new user can run `tm plan`
@@ -41,7 +51,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use chrono::NaiveDate;
+use chrono::{DateTime, FixedOffset, NaiveDate};
 use thiserror::Error;
 use tm_core::config::Config;
 use tm_core::model::{Horizon, IsoWeek, YearMonth};
@@ -50,8 +60,15 @@ use tm_core::store;
 /// §14's `plan/CLAUDE.md`, verbatim.
 pub const CLAUDE_MD: &str = include_str!("../../templates/CLAUDE.md");
 
-/// `.claude/settings.json`: the §14 `PostToolUse` hook running `tm check`.
+/// `.claude/settings.json`: the §14 `PostToolUse` hook running [`HOOK_SCRIPT`].
 pub const SETTINGS_JSON: &str = include_str!("../../templates/settings.json");
+
+/// `.claude/hooks/tm-check.sh`: what the `PostToolUse` hook runs — `tm check`
+/// for edits inside this plan tree, with the diagnostics on stderr (§14).
+pub const HOOK_SCRIPT: &str = include_str!("../../templates/hooks/tm-check.sh");
+
+/// Where [`HOOK_SCRIPT`] lives, relative to the plan root.
+pub const HOOK_SCRIPT_PATH: &str = ".claude/hooks/tm-check.sh";
 
 /// `.githooks/pre-commit`: `tm check` before every commit (§1.3).
 pub const PRE_COMMIT: &str = include_str!("../../templates/pre-commit");
@@ -180,11 +197,16 @@ pub enum Mode {
     /// tm owns the file: written as generated (existing content is replaced
     /// only under `--force`, which is the only way to reach an existing tree).
     Managed,
-    /// [`Mode::Managed`], plus the executable bit on unix (the git hook).
+    /// [`Mode::Managed`], plus the executable bit on unix (the two hooks).
     Executable,
-    /// The user owns the file: created when absent, otherwise extended with
-    /// the missing block, never rewritten — `.gitignore` may hold their own
-    /// entries.
+    /// The user owns the file's *content*: created when absent, and left
+    /// exactly as it is when it already exists — §2's "horizon is the file"
+    /// files are the database, and `config.toml` is the user's settings, so
+    /// not even `--force` overwrites one.
+    Preserve,
+    /// The user owns the file and tm owns one block of it: created when
+    /// absent, otherwise extended with the missing block, never rewritten —
+    /// `.gitignore` may hold their own entries.
     Merge,
 }
 
@@ -208,6 +230,15 @@ impl InitFile {
             mode: Mode::Managed,
         }
     }
+
+    /// A file whose content is the user's: written once, never overwritten.
+    fn preserve(path: impl Into<String>, text: impl Into<String>) -> InitFile {
+        InitFile {
+            path: path.into(),
+            text: text.into(),
+            mode: Mode::Preserve,
+        }
+    }
 }
 
 /// What [`write`] did.
@@ -215,10 +246,10 @@ impl InitFile {
 pub struct Written {
     /// Files created (or, for `.gitignore`, extended), in generation order.
     pub created: Vec<String>,
-    /// [`Mode::Merge`] files that already carried tm's block and were left
-    /// exactly as they were. Nothing else can land here: `tm init` refuses a
-    /// non-empty directory rather than half-writing it, and `--force`
-    /// rewrites every file it owns.
+    /// Files that were already there and were left byte for byte as they
+    /// were: every [`Mode::Preserve`] file that exists (the §2 content files
+    /// and `config.toml` under `--force`) and a [`Mode::Merge`] file that
+    /// already carries tm's block.
     pub unchanged: Vec<String>,
 }
 
@@ -274,15 +305,22 @@ pub fn files(opts: &Options) -> Vec<InitFile> {
     let mut out = Vec::new();
 
     // §16: the complete config, with `ics_urls = []` and the example URL as a
-    // comment (§15). It parses to `Config::default()`.
-    out.push(InitFile::managed(
+    // comment (§15). It parses to `Config::default()`. The user edits it, so
+    // `--force` leaves an existing one alone.
+    out.push(InitFile::preserve(
         store::CONFIG_PATH,
         Config::default_toml(),
     ));
 
-    // §14: the rules, the skills and the two hooks.
+    // §14: the rules, the skills and the two hooks — tm's own, rewritten by
+    // `--force` so an old tree can be brought up to date.
     out.push(InitFile::managed("CLAUDE.md", CLAUDE_MD));
     out.push(InitFile::managed(".claude/settings.json", SETTINGS_JSON));
+    out.push(InitFile {
+        path: HOOK_SCRIPT_PATH.to_string(),
+        text: HOOK_SCRIPT.to_string(),
+        mode: Mode::Executable,
+    });
     for (name, text) in SKILLS {
         out.push(skill_file(name, text));
     }
@@ -297,27 +335,45 @@ pub fn files(opts: &Options) -> Vec<InitFile> {
         mode: Mode::Merge,
     });
 
-    // §2: the files themselves.
+    // §2: the files themselves — the database. Written once; never rewritten,
+    // with or without `--force`.
     if opts.example {
         for (path, text) in EXAMPLE {
-            out.push(InitFile::managed(*path, *text));
+            out.push(InitFile::preserve(*path, *text));
         }
     } else {
         for (path, text) in STARTER {
-            out.push(InitFile::managed(*path, *text));
+            out.push(InitFile::preserve(*path, *text));
         }
         let month = Horizon::Month(YearMonth::from_date(opts.today));
         let week = Horizon::Week(IsoWeek::from_date(opts.today));
-        out.push(InitFile::managed(
+        out.push(InitFile::preserve(
             month.path(),
             format!("{}{MONTH_BODY}", store::initial_text(&month)),
         ));
-        out.push(InitFile::managed(
+        out.push(InitFile::preserve(
             week.path(),
             format!("{}{WEEK_BODY}", store::initial_text(&week)),
         ));
     }
     out
+}
+
+/// The date `tm init` builds the fresh `month/` and `week/` files for: `now`
+/// resolved in the timezone the tree's config declares (§16 `tz`, default
+/// `America/Chicago`).
+///
+/// Every other verb resolves `--now` in `cfg.tz` (§17.2), so reading the
+/// machine's own offset here would give a new tree a `week/` file for a
+/// different day than `tm plan` looks for. An existing `config.toml` — the
+/// `--force` case — wins over the default; an unreadable or unparsable one
+/// falls back to it.
+pub fn today(root: &Path, now: DateTime<FixedOffset>) -> NaiveDate {
+    let cfg = fs::read_to_string(root.join(store::CONFIG_PATH))
+        .ok()
+        .and_then(|text| Config::parse(&text).ok())
+        .unwrap_or_default();
+    now.with_timezone(&cfg.tz).date_naive()
 }
 
 /// True when `dir` exists and holds at least one entry.
@@ -365,9 +421,10 @@ fn merged_gitignore(existing: &str, block: &str) -> Option<String> {
 ///
 /// Refuses a directory that already holds something unless
 /// [`Options::force`]; creates `root` and [`DIRS`] otherwise. Returns what
-/// was written — `.gitignore` appears in [`Written::created`] only when it
-/// was actually created or extended, and in [`Written::unchanged`] when it
-/// already carried the tm block.
+/// was written: a file the user owns — every §2 content file, `config.toml`,
+/// a `.gitignore` that already carries the tm block — appears in
+/// [`Written::unchanged`] and keeps every byte it had, so `--force` can
+/// refresh the generated integration without ever costing the user an item.
 pub fn write(root: &Path, opts: &Options) -> Result<Written, InitError> {
     if !opts.force && is_non_empty(root) {
         return Err(InitError::NotEmpty {
@@ -388,6 +445,10 @@ pub fn write(root: &Path, opts: &Options) -> Result<Written, InitError> {
                 .map_err(|e| InitError::io(parent.display().to_string(), e))?;
         }
         let text = match file.mode {
+            Mode::Preserve if path.exists() => {
+                written.unchanged.push(file.path.clone());
+                continue;
+            }
             Mode::Merge if path.exists() => {
                 let existing = fs::read_to_string(&path)
                     .map_err(|e| InitError::io(path.display().to_string(), e))?;
@@ -447,8 +508,95 @@ mod tests {
             assert!(!description.contains(" #"), "{name}: {description}");
             assert!(front.len() == 2, "{name} front matter: {front:?}");
             assert!(text.lines().count() < 60, "{name} is too long");
-            assert!(text.contains("tm "), "{name} runs no tm command");
+            // The commands live in fenced blocks, so `tm/tests/init_skills.rs`
+            // can extract and actually run every one of them.
+            assert!(
+                fenced_commands(text).next().is_some(),
+                "{name} documents no `tm …` command in a fenced block"
+            );
         }
+    }
+
+    /// Every line of a fenced code block that starts a `tm` command — the
+    /// same extraction `tm/tests/init_skills.rs` runs against the binary.
+    fn fenced_commands(text: &str) -> impl Iterator<Item = &str> {
+        let mut fenced = false;
+        text.lines().filter_map(move |line| {
+            if line.starts_with("```") {
+                fenced = !fenced;
+                return None;
+            }
+            (fenced && line.starts_with("tm ")).then_some(line)
+        })
+    }
+
+    #[test]
+    fn no_skill_documents_an_add_that_the_cli_would_reject() {
+        // `tm add`'s line is a positional: a value starting with `- ` is read
+        // as a flag and the command exits 1, so the `- [ ] ` prefix must not
+        // appear in a documented command (§4.1: the prefix is optional).
+        for (name, text) in SKILLS {
+            for cmd in fenced_commands(text) {
+                assert!(
+                    !cmd.contains("\"- ") && !cmd.contains("'- "),
+                    "{name}: `{cmd}` passes a line starting with `- `"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_users_own_files_are_never_overwritten() {
+        // §2's content files are the database and `config.toml` is the user's
+        // settings: `--force` refreshes tm's own files around them.
+        let by_path = |opts: &Options| -> Vec<(String, Mode)> {
+            files(opts)
+                .into_iter()
+                .map(|f| (f.path, f.mode))
+                .collect()
+        };
+        for opts in [
+            opts(),
+            Options {
+                example: true,
+                ..opts()
+            },
+        ] {
+            for (path, mode) in by_path(&opts) {
+                let owned_by_tm = path == "CLAUDE.md"
+                    || path.starts_with(".claude/")
+                    || path.starts_with(HOOKS_DIR);
+                let expected = match path.as_str() {
+                    ".gitignore" => Mode::Merge,
+                    _ if !owned_by_tm => Mode::Preserve,
+                    _ if path == HOOK_SCRIPT_PATH || path.ends_with("pre-commit") => {
+                        Mode::Executable
+                    }
+                    _ => Mode::Managed,
+                };
+                assert_eq!(mode, expected, "{path}");
+            }
+        }
+    }
+
+    #[test]
+    fn today_is_resolved_in_the_configs_timezone() {
+        // §16's default tz is America/Chicago: 08:00 in Tokyo on the 14th is
+        // still the 13th there, which is the day `tm plan` would work on.
+        let now: DateTime<FixedOffset> = "2026-09-14T08:00:00+09:00".parse().expect("instant");
+        let empty = Path::new("/nonexistent-plan-dir");
+        assert_eq!(
+            today(empty, now),
+            NaiveDate::from_ymd_opt(2026, 9, 13).expect("date")
+        );
+
+        // An existing tree's own `tz` wins (the `--force` case).
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        fs::write(dir.path().join(store::CONFIG_PATH), "tz = \"Asia/Tokyo\"\n").expect("write");
+        assert_eq!(
+            today(dir.path(), now),
+            NaiveDate::from_ymd_opt(2026, 9, 14).expect("date")
+        );
     }
 
     #[test]

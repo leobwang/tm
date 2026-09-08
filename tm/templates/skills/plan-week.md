@@ -9,26 +9,33 @@ description: Plan the coming week — propose 3–5 milestones from the month ou
 
 ```
 tm plan --week --json          # capacity grid: minutes per day per energy level
-tm review week --json          # last week: blocks, carry-over, calibration, plan honesty
+tm review week --json          # last week: blocks done, what finished, calibration
 tm check --json                # the tree must be clean before you propose anything
 ```
 
+<!-- json fields -->
+
+```
+tm plan --week --json → week days[].date days[].total days[].minutes_at_level grid
+tm review week --json → key blocks block_min leak_min lost_min days[].date days[].blocks days[].done estimates[].tag estimates[].multiplier energy_mae churn
+```
+
 Then read, in this order: `month/<this month>.md` (outcomes with `!k`, and
-everything under `# Demoted`), `backlog.md` (dated items whose `due:` falls in
-or near the week, and each `## series:` head), `calendar/<next week>.md` (the
-walls that are already booked).
+everything under `# Demoted`), `week/<this week>.md` (what is unfinished — the
+carry-over no `--json` document carries), `backlog.md` (dated items due in or
+near the week, and each `## series:` head), `calendar/<next week>.md`.
 
 ## 2. Propose
 
 - **3–5 milestones**, each a child of an outcome (`@O1`), with `ci` 0–5 and an
-  estimate in blocks. Calibrate it: `tm model --show` gives the duration
-  multiplier per tag, so a 4-block guess on a `#lean` item with `×1.6` really
-  costs 6 blocks of week budget. Say both numbers.
+  estimate in blocks. Calibrate it: `tm model --show --json` gives
+  `model.duration` per tag, so a 4-block guess on a `#lean` item with `×1.6`
+  really costs 6 blocks of week budget. Say both numbers.
 - **Demoted items first.** Anything in `month/# Demoted` already lost a week;
-  pre-select it, and for anything with two or more `demoted:` stamps propose a
-  cut or a re-scope instead of a third attempt.
-- **Carry-over and honesty.** Show Σ estimates ÷ week budget. Above the
-  `week.plan_ratio` in `config.toml` (0.8), say what you would drop.
+  pre-select it, and for anything in `churn` propose a cut or a re-scope
+  instead of a third attempt.
+- **Honesty.** Show Σ estimates ÷ the week's capacity (Σ `days[].total` ÷ 60
+  for blocks). Above `week.plan_ratio` (0.8), say what you would drop.
 - **Deadlines.** Name every dated item whose `u = need / capacity` is near 1
   (`tm plan --explain ^id --json`) and what makes it fit: a smaller `est:`, a
   later `due:`, or fewer milestones.
@@ -38,10 +45,11 @@ Show the proposal as the exact lines you would write, grouped under
 
 ## 3. Write — only after confirmation
 
-Never create or edit `week/<next>.md` before the user says yes. Then:
+Never create or edit `week/<next>.md` before the user says yes. Then, with the
+bare line (a leading `- [ ] ` would be read as a flag):
 
 ```
-tm add "- [ ] 5 6b Finish ch.5 exercises @O1" --to week/<next week>.md --section Milestones
+tm add "5 6b Finish ch.5 exercises @O1" --to week/<next week>.md --section Milestones
 tm readopt ^m2 --to week          # for each pre-selected demoted item
 tm check
 ```

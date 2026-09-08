@@ -4,9 +4,9 @@ expression: json
 ---
 {
   "created": [
-    "config.toml",
     "CLAUDE.md",
     ".claude/settings.json",
+    ".claude/hooks/tm-check.sh",
     ".claude/skills/plan-week/SKILL.md",
     ".claude/skills/plan-month/SKILL.md",
     ".claude/skills/triage/SKILL.md",
@@ -15,15 +15,18 @@ expression: json
     ".claude/skills/review-day/SKILL.md",
     ".claude/skills/review-week/SKILL.md",
     ".claude/skills/explain/SKILL.md",
-    ".githooks/pre-commit",
+    ".githooks/pre-commit"
+  ],
+  "dir": "[dir]",
+  "hook_hint": "[hint]",
+  "skipped": [
+    "config.toml",
+    ".gitignore",
     "inbox.md",
     "backlog.md",
     "routines.md",
     "optional.md",
     "month/2026-09.md",
     "week/2026-W37.md"
-  ],
-  "dir": "[dir]",
-  "hook_hint": "[hint]",
-  "skipped": []
+  ]
 }

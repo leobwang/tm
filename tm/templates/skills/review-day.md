@@ -9,27 +9,38 @@ description: Write the day review prose into the Notes section of day/<date>.md,
 
 ```
 tm review day --json           # add --date 2026-09-07 for a day other than today
+tm plan --json                 # today's budget and the day's diagnostics
 ```
 
-Everything below comes from that document. Do not recompute it, and do not
-open `.tm/`.
+Everything you write comes from those two documents. Do not recompute a number
+and do not open `.tm/`. These are the fields they carry — anything else does
+not exist, so do not report it:
+
+<!-- json fields -->
+
+```
+tm review day --json → period key blocks block_min leak_min lost_min energy_mae energy_bias days[].date days[].blocks days[].block_min days[].load days[].leak_min days[].lost_min days[].done estimates[].tag estimates[].n estimates[].multiplier churn
+tm plan --json → date budget_blocks blocks_done diagnostics.rest_debt_min diagnostics.plan_honesty diagnostics.dropped_tail diagnostics.impossible
+```
 
 ## 2. Write into `## Notes`
 
 Append a short paragraph (4–6 sentences, no bullet dump) to the `## Notes`
 section of `day/<date>.md`, covering:
 
-- **What got done** — blocks done ÷ budget, and which milestones moved.
-- **Where the time went** — leak minutes and the longest single leak, lost
-  minutes from interruptions, break integrity (planned vs actual), rest debt.
-- **How the estimates held** — actual ÷ est per tag, and whether the day's
-  energy reports matched the prediction (MAE and the sign of the bias).
+- **What got done** — `blocks` of `budget_blocks`, and the items in
+  `days[].done` by name.
+- **Where the time went** — `leak_min`, `lost_min`, the day's `load`, and
+  `diagnostics.rest_debt_min`; name what fell off the tail
+  (`diagnostics.dropped_tail`).
+- **How the estimates held** — `estimates[].multiplier` per tag (with its `n`),
+  and whether the energy reports matched the prediction (`energy_mae` and the
+  sign of `energy_bias`).
 - **One thing to change tomorrow** — a concrete, small change: an estimate to
   fix, a routine to move, a block to start earlier.
 
-Flag, by name: items demoted for the second time or more, estimate drift in one
-direction, a leak trend across the week, and any `[?]` item whose timeout is
-near.
+Flag by name anything in `diagnostics.impossible`, and any item you can see in
+the files with a second `demoted:` stamp.
 
 ## 3. Never
 

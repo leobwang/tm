@@ -11,9 +11,15 @@ description: Explain in plain language why one item sits where it does — its p
 tm plan --explain ^id --json
 ```
 
-It answers in the model's own terms, e.g.
+`explain` answers in the model's own terms, e.g.
 `p = k(3) + bin(u=0.31 → +1) = 4; slot 11:50 energy 4, ci 3, gap 1; deps ok;
-cap 2b/d: 1b used`.
+cap 2b/d: 1b used`, and `priorities[]` carries the same numbers per item:
+
+<!-- json fields -->
+
+```
+tm plan --explain ^id --json → explain priorities[].id priorities[].p priorities[].class priorities[].k priorities[].u priorities[].bin priorities[].need_min priorities[].avail_min priorities[].shortfall_min priorities[].until segments[].item segments[].energy
+```
 
 ## 2. Translate it
 
@@ -22,11 +28,11 @@ stored:
 
 - `k` — the priority of the item's **root**, from `!1`–`!4` on the root line
   (default 3). Nothing on the item itself changes `k`.
-- `u = need / capacity` — the deadline pressure. `need` is the remaining
-  estimate × the safety factor (1.3); `capacity` is the expected slot-minutes
+- `u = need / capacity` — the deadline pressure. `need_min` is the remaining
+  estimate × the safety factor (1.3); `avail_min` is the expected slot-minutes
   before the due date at an energy level the item can use, *after* earlier
   deadlines have reserved theirs. `u ≥ 1` means it does not fit: priority 0.
-- `bin(u)` — 0.5/0.25/0.1 turn `u` into `+0/+1/+2/+3`, so slack costs rank.
+- `bin` — 0.5/0.25/0.1 turn `u` into `+0/+1/+2/+3`, so slack costs rank.
 - Ties break by line order: the rank the user set by cut-and-paste.
 
 Then say why it landed where it did in the day: the slot's predicted energy

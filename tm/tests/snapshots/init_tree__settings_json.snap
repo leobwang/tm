@@ -10,7 +10,7 @@ expression: text
         "hooks": [
           {
             "type": "command",
-            "command": "tm check",
+            "command": "sh \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/tm-check.sh\"",
             "timeout": 20
           }
         ]
