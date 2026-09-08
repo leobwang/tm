@@ -273,6 +273,60 @@ fn energy_above_five_is_an_error() {
     assert!(out.stderr.contains("0–5"), "{}", out.stderr);
 }
 
+/// `tm start --help` says `--energy` is 0–5, the same §8.5 scale `tm energy`
+/// takes and rejects out of range. `start` used to filter an out-of-range
+/// value away instead: `--energy 9` fell back to the prediction, logged no
+/// `rep` at all, and said nothing — the report the user typed, thrown away.
+#[test]
+fn start_refuses_an_energy_outside_the_scale() {
+    let tm = Tm::new();
+    let out = tm.run(&["start", "^t4", "--energy", "9"]);
+    assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains("0–5"), "{}", out.stderr);
+
+    // Refused before anything ran: the line is untouched and no block opened.
+    assert!(tm.line("week/2026-W37.md", "t4").starts_with("- [ ]"));
+    assert!(tm.events().is_empty(), "{:?}", tm.events());
+
+    // The scale itself is unchanged, both ends of it.
+    let tm = Tm::new();
+    tm.ok(&["start", "^t4", "--energy", "0"]);
+    assert_eq!(tm.last_ev("start")["rep"], 0);
+    let tm = Tm::new();
+    tm.ok(&["start", "^t4", "--energy", "5"]);
+    assert_eq!(tm.last_ev("start")["rep"], 5);
+}
+
+/// §10.1's `went` is 1, 2 or 3 (§8.5), which is what `tm done --help` says.
+/// An out-of-range value used to be filtered out of the log event but *not*
+/// out of the day file's `## Log` note, so the two records of one `done`
+/// disagreed: `went=7` in `day/2026-09-07.md`, no `went` at all in
+/// `.tm/log.jsonl`, and §8.5 never saw the report.
+#[test]
+fn done_refuses_a_went_outside_the_scale() {
+    let tm = Tm::new();
+    tm.ok(&["start", "^t4", "--energy", "4"]);
+    let out = tm.run_at("2026-09-07T10:00:00-05:00", &["done", "--went", "7"]);
+    assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains("--went is 1"), "{}", out.stderr);
+
+    // Refused before anything ran: neither record mentions it, and the block
+    // is still running.
+    assert!(!tm.read("day/2026-09-07.md").contains("went=7"));
+    assert_eq!(tm.last_ev("start")["ev"], "start");
+    assert_eq!(tm.state()["active"]["id"], "t4");
+
+    // The scale itself still works, at both ends.
+    for went in ["1", "3"] {
+        let tm = Tm::new();
+        tm.ok(&["start", "^t4", "--energy", "4"]);
+        let json = tm.json_at("2026-09-07T10:00:00-05:00", &["done", "--went", went]);
+        assert_eq!(json["id"], "t4");
+        assert_eq!(tm.last_ev("done")["went"].to_string(), went);
+        assert!(tm.read("day/2026-09-07.md").contains(&format!("went={went}")));
+    }
+}
+
 #[test]
 fn idle_attributes_the_gap() {
     let tm = Tm::new();

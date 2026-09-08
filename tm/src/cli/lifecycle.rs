@@ -58,13 +58,15 @@ pub struct CloseOut {
 
 /// `tm close <day|week|month> [--drop ^id …]` (§6.3).
 pub fn close(g: &Globals, args: &super::CloseArgs) -> Result<i32, CliError> {
-    let period: Period = args.period.into();
+    let period = args.period();
     // §6.3 gives `--drop` to the month close alone: it is the exception to
     // "moves them to the next month file". A day close moves pinned items to
     // the week and a week close demotes into the month, neither of which the
     // flag says anything about — so accepting it there would discard what the
-    // user asked for without a word.
-    if !args.drop.is_empty() && period != Period::Month {
+    // user asked for without a word. `tm close day --help` does not offer the
+    // flag (`CloseNoDropArgs` hides it); this catches it when it is typed
+    // anyway, and says where it belongs.
+    if !args.drops().is_empty() && period != Period::Month {
         return Err(CliError::msg(format!(
             "--drop belongs to `tm close month` (§6.3); `tm close {}` has no drop list — \
              use `tm drop ^id`",
@@ -85,7 +87,7 @@ pub fn close(g: &Globals, args: &super::CloseArgs) -> Result<i32, CliError> {
         .map(|c| c.key.clone());
     let (key, mut report) = match period {
         Period::Day => {
-            let date = match (&args.date, auto.as_deref()) {
+            let date = match (args.date(), auto.as_deref()) {
                 (Some(d), _) => parse_date(d)?,
                 (None, Some(k)) => parse_date(k).unwrap_or(ctx.today),
                 (None, None) => ctx.today,
@@ -97,7 +99,7 @@ pub fn close(g: &Globals, args: &super::CloseArgs) -> Result<i32, CliError> {
             (date.to_string(), r)
         }
         Period::Week => {
-            let week = match (&args.date, auto.as_deref()) {
+            let week = match (args.date(), auto.as_deref()) {
                 (Some(d), _) => IsoWeek::parse(d)?,
                 (None, Some(k)) => {
                     IsoWeek::parse(k).unwrap_or_else(|_| IsoWeek::from_date(ctx.today))
@@ -111,14 +113,14 @@ pub fn close(g: &Globals, args: &super::CloseArgs) -> Result<i32, CliError> {
             (week.to_string(), r)
         }
         Period::Month => {
-            let month = match (&args.date, auto.as_deref()) {
+            let month = match (args.date(), auto.as_deref()) {
                 (Some(d), _) => YearMonth::parse(d)?,
                 (None, Some(k)) => {
                     YearMonth::parse(k).unwrap_or_else(|_| YearMonth::from_date(ctx.today))
                 }
                 (None, None) => YearMonth::from_date(ctx.today),
             };
-            let drops: Vec<Id> = args.drop.iter().map(|d| Ctx::key(d)).collect();
+            let drops: Vec<Id> = args.drops().iter().map(|d| Ctx::key(d)).collect();
             let r = horizon::close_month(&ctx.hz(), month, &drops)?;
             if ctx.state.closed.month.is_none_or(|m| m < month) {
                 ctx.state.closed.month = Some(month);

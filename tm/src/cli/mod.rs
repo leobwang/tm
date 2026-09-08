@@ -137,7 +137,7 @@ pub enum Command {
     Skip(SkipArgs),
     /// Routine instance verbs.
     Routine(RoutineArgs),
-    /// Close a period (§6.3).
+    /// Close a period (§6.3); only the month close takes `--drop`.
     Close(CloseArgs),
     /// Sync the calendar feeds into `calendar/` (§15).
     #[command(name = "sync-cal")]
@@ -387,17 +387,104 @@ pub enum RoutineCmd {
     },
 }
 
-/// `tm close <day|week|month> [--drop ^id …]`.
+/// `tm close <day|week|month> [--drop ^id …]` (§13).
+///
+/// The period is a subcommand rather than a [`PeriodArg`] value because
+/// §6.3's table gives `--drop` to the month row alone. One shared argument
+/// list gave the three periods one help page, so `tm close day --help` and
+/// `tm close week --help` advertised a flag those closes reject; a
+/// subcommand each gives every period the help — and the flags — that period
+/// really has.
+// `subcommand_value_name` / `subcommand_help_heading`: §13 writes the verb
+// `tm close <day|week|month>`, so the usage line and the help section say
+// PERIOD rather than clap's generic COMMAND.
 #[derive(Debug, Args)]
+#[command(
+    subcommand_value_name = "PERIOD",
+    subcommand_help_heading = "Periods",
+    disable_help_subcommand = true
+)]
 pub struct CloseArgs {
     /// Which period.
-    pub period: PeriodArg,
-    /// Drop these items instead of carrying them (month close, §6.3).
-    #[arg(long = "drop", value_name = "^ID")]
-    pub drop: Vec<String>,
+    #[command(subcommand)]
+    pub period: ClosePeriod,
+}
+
+/// The period `tm close` closes: one variant per §6.3 row.
+#[derive(Debug, Subcommand)]
+pub enum ClosePeriod {
+    /// Close a day (§6.3).
+    ///
+    /// `[>]` goes back to `[ ]` with the remainder in `est:`, and pinned
+    /// items move into the week file.
+    Day(CloseNoDropArgs),
+    /// Close an ISO week (§6.3).
+    ///
+    /// Unfinished milestones become `[-]` and are copied into the month's
+    /// `# Demoted`; overdue dated items file under `backlog.md`'s
+    /// `# Overdue`.
+    Week(CloseNoDropArgs),
+    /// Close a calendar month (§6.3).
+    ///
+    /// Unfinished outcomes and everything in `# Demoted` carry into the next
+    /// month's file, unless `--drop` names them.
+    Month(CloseMonthArgs),
+}
+
+/// `tm close <day|week> [--date …]`: the closes §6.3 gives no drop list.
+#[derive(Debug, Args)]
+pub struct CloseNoDropArgs {
     /// The period to close (default: the current one).
     #[arg(long)]
     pub date: Option<String>,
+    /// Not a `tm close day` or `tm close week` flag: §6.3 gives the drop
+    /// list to the month close alone.
+    // `hide`: a `--help` may not advertise a flag its own verb rejects. The
+    // argument is still *parsed* here, so `tm close day --drop ^x` gets
+    // §6.3's answer — which names `tm close month` and `tm drop ^id` —
+    // instead of clap's bare "unexpected argument '--drop' found".
+    #[arg(long = "drop", value_name = "^ID", hide = true)]
+    pub drop: Vec<String>,
+}
+
+/// `tm close month [--drop ^id …] [--date …]` (§6.3).
+#[derive(Debug, Args)]
+pub struct CloseMonthArgs {
+    /// The period to close (default: the current one).
+    #[arg(long)]
+    pub date: Option<String>,
+    /// Drop these items instead of carrying them into the next month (§6.3).
+    #[arg(long = "drop", value_name = "^ID")]
+    pub drop: Vec<String>,
+}
+
+impl CloseArgs {
+    /// Which period this close is for (§6.3).
+    pub fn period(&self) -> Period {
+        match self.period {
+            ClosePeriod::Day(_) => Period::Day,
+            ClosePeriod::Week(_) => Period::Week,
+            ClosePeriod::Month(_) => Period::Month,
+        }
+    }
+
+    /// `--date`: the period to close (default: the current one).
+    pub fn date(&self) -> Option<&str> {
+        match &self.period {
+            ClosePeriod::Day(a) | ClosePeriod::Week(a) => a.date.as_deref(),
+            ClosePeriod::Month(a) => a.date.as_deref(),
+        }
+    }
+
+    /// `--drop ^id …`. Non-empty on a day or week close only when the month's
+    /// flag was typed on the wrong period, which [`lifecycle::close`] refuses
+    /// with §6.3's answer.
+    pub fn drops(&self) -> &[String] {
+        match &self.period {
+            ClosePeriod::Day(a) | ClosePeriod::Week(a) => &a.drop,
+            ClosePeriod::Month(a) => &a.drop,
+        }
+    }
 }
 
 /// `tm review <day|week|month> [--write] [--date …]`.

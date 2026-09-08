@@ -208,6 +208,36 @@ fn close_day_and_week_refuse_a_drop_list() {
     }
 }
 
+/// …and no `--help` offers a flag its own close rejects. The three periods
+/// used to share one argument list, so they shared one help page: `tm close
+/// day --help` and `tm close week --help` both listed `--drop <^ID>`, which
+/// those closes exit 1 on. A period each gives every one the flags it has.
+#[test]
+fn only_the_month_close_offers_drop_in_its_help() {
+    let tm = Tm::new();
+    for period in ["day", "week"] {
+        let out = tm.ok(&["close", period, "--help"]);
+        assert!(
+            !out.stdout.contains("--drop"),
+            "`tm close {period} --help` advertises the flag it rejects:\n{}",
+            out.stdout
+        );
+        assert!(out.stdout.contains("--date"), "{}", out.stdout);
+    }
+
+    // The month's own flag is still there, and still works (§6.3).
+    let month = tm.ok(&["close", "month", "--help"]);
+    assert!(month.stdout.contains("--drop <^ID>"), "{}", month.stdout);
+
+    // …and the verb's own synopsis no longer attaches it to all three: it
+    // lists the periods, and offers no drop list of its own.
+    let close = tm.ok(&["close", "--help"]);
+    assert!(!close.stdout.contains("--drop <^ID>"), "{}", close.stdout);
+    for period in ["day", "week", "month"] {
+        assert!(close.stdout.contains(period), "{}", close.stdout);
+    }
+}
+
 #[test]
 fn the_first_command_after_a_period_ends_closes_it() {
     // §6.3: "runs automatically on the first command after the period ends".
