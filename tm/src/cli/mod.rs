@@ -448,17 +448,28 @@ pub struct CheckArgs {
 pub fn main() -> i32 {
     // A usage error is an error (exit 1), not a validation problem (which is
     // what §13 reserves 2 for); `--help` and `--version` are a success.
+    // The command line has not parsed yet, so `--json` is looked for in the
+    // raw arguments: §13's "every verb accepts `--json`" has to hold for the
+    // failure that says the verb was spelled wrong too.
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
-        Err(e) => {
+        Err(e) if !e.use_stderr() => {
             let _ = e.print();
-            return if e.use_stderr() { out::EXIT_ERROR } else { 0 };
+            return 0;
+        }
+        Err(e) => {
+            if std::env::args_os().any(|a| a == "--json") {
+                CliError::Usage(e.render().to_string().trim_end().to_string()).report(true);
+            } else {
+                let _ = e.print();
+            }
+            return out::EXIT_ERROR;
         }
     };
     let now = match cli.now.as_deref().map(DateTime::parse_from_rfc3339) {
         Some(Ok(t)) => Some(t),
         Some(Err(e)) => {
-            CliError::msg(format!("--now: {e}")).report();
+            CliError::msg(format!("--now: {e}")).report(cli.json);
             return out::EXIT_ERROR;
         }
         None => None,
@@ -471,7 +482,7 @@ pub fn main() -> i32 {
     match run(&g, cli.command) {
         Ok(code) => code,
         Err(e) => {
-            e.report();
+            e.report(g.json);
             e.exit_code()
         }
     }

@@ -285,7 +285,7 @@ impl Ctx {
     pub fn item(&self, id: &Id) -> Result<&Item, CliError> {
         self.tree
             .get(id)
-            .ok_or_else(|| CliError::msg(format!("no such item: {}", id.token())))
+            .ok_or_else(|| CliError::NotFound(id.clone()))
     }
 
     /// The item's line, tokenized for a byte-faithful edit (§4.1).

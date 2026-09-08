@@ -1680,8 +1680,9 @@ block, `b` starts a break, `i` opens an interruption. `t` and `l` only record.
 ## Command reference
 
 Global flags, usable before or after the verb: `--json` (machine-readable
-output — but note that **errors are never JSON**; they are always
-`tm: <message>` on stderr) and `--dir <path>`.
+output, on both paths: the result on stdout when the command works, one error
+object on stderr when it does not — see [Scripting](#scripting)) and
+`--dir <path>`. Without `--json`, errors stay `tm: <message>` on stderr.
 
 Exit codes: **0** ok · **1** an ordinary error · **2** only from `tm check`, and
 only when there is at least one *error* · **3** a write conflict, meaning a plan
@@ -2177,5 +2178,47 @@ when something edits a file underneath a command.
 
 Every verb takes `--json`, and every segment in a plan carries both structured
 fields and its rendered `text`, so a script never has to re-implement the layout.
-But **errors are never JSON**: they are plain text on stderr with a non-zero exit
-code, so check the status before parsing the output.
+
+Failures are JSON too. With `--json`, a command that fails prints **one JSON
+object on stderr** — stdout stays empty — and exits non-zero:
+
+```console
+$ tm drop ^nope --json
+{
+  "ok": false,
+  "kind": "not-found",
+  "message": "no such item: ^nope",
+  "exit_code": 1,
+  "detail": {
+    "id": "^nope"
+  }
+}
+```
+
+The four top-level fields are always there. `ok` is always `false`, so that is
+the cheapest test for "is this a failure document". `kind` is a stable slug you
+can branch on; `message` is the same sentence the human run prints after `tm: `;
+`exit_code` is the code the process is about to exit with.
+
+`detail` holds whatever the failure itself knows, and is `{}` when it knows
+nothing extra — you never have to test whether the key exists:
+
+| `kind` | when | `detail` |
+|---|---|---|
+| `not-found` | no line carries the `^id`, or a file the verb needs is missing | `id` or `path` |
+| `conflict` | a write race (exit 3) | `file`, `ours`, `theirs`, and `id` for a single line |
+| `invalid` | a value that does not parse (`est=zzz`, `due=…`) | `what`, `value` |
+| `usage` | the command line itself does not parse | — |
+| `parse` | text that cannot go into a plan file | `path`, `line` |
+| `edit` | a byte-faithful line edit the grammar refused | `id`, or `word` / `flag` |
+| `horizon` | the verb does not apply to that item's horizon | `id`, `horizon` |
+| `io` | a file could not be read or written | `path` |
+| `config`, `json`, `log`, `model`, `calendar` | `config.toml`, a `.tm/` sidecar, the log, `.tm/model.json`, a calendar feed | `path` or `url` |
+| `error` | anything else ("nothing to undo", "no block running") | — |
+
+The one non-zero exit that is *not* a failure document is `tm check`'s **2**: the
+problems are the verb's result, so they stay on stdout in the usual shape with
+the rest of `tm check --json`.
+
+Without `--json` nothing changed: errors are `tm: <message>` on stderr, and a
+conflict adds its `ours:` / `theirs:` lines.
