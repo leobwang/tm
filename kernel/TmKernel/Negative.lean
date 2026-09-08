@@ -331,3 +331,64 @@ theorem normalized_set_ignoring_prose (p : PlanCore) (i : Id) (e e' : Entity)
   normalized_set p i e e' hs hget hnorm hfree
 
 end Tm
+
+/- ===================================================================
+   FOUND BY THE CORPUS HARNESS AND THE DIFFERENTIAL ORACLE, appended as a
+   block so the stage-two branches merge.  Numbered from 27 provisionally;
+   whoever merges renumbers.
+
+   Each one is an assumption a reader of §4.1 would make, that the shipped
+   Rust makes, and that this kernel does not satisfy.  They are here rather
+   than in a report because a refutation that only lives in prose is one the
+   next writer re-derives differently.  All four were found by running the
+   fixture corpus (`kernel/corpus/`) and 2,048 lines from `main`'s own
+   `grammar_proptest` generator through the boundary and comparing with
+   `tm-core::grammar`; the counts are in `kernel/README.md`.
+   =================================================================== -/
+namespace Tm
+
+/- CHEAT 27 — §4.1 says an item line's tokens are "whitespace-separated
+   words", and `tm-core::grammar` splits on any whitespace run.  `Text.lean`'s
+   separator is `isSp c := c == ' '`, so a tab is an ordinary word character:
+   `a<TAB>b` is ONE token, not two.  Consequences the oracle found:
+   `- [ ] x<TAB>^a1` is refused as `noId`, `- [ ] x ^a1<TAB>` yields the id
+   `"a1\t"` — a store key the Rust's `Id::is_valid` rejects — and `tm edit est=`
+   lands on a different token than the Rust's does when an earlier `est:` is
+   glued to the previous word by a tab. -/
+theorem tokens_are_whitespace_separated :
+    (tokenize "a\tb".toList).length = 2 := by decide
+
+/- CHEAT 28 — the same rule at the head of the line.  `parseBody` matches the
+   literal `- [`, so `- <TAB>[ ] …` and `-  [ ] …` (two spaces) are not item
+   lines at all.  They are kept as prose and written back unchanged, so nothing
+   reports anything: the item is simply invisible to every command, to ranks,
+   and to `tm check`.  1,049 of 2,048 generated lines land here. -/
+theorem one_space_is_not_the_only_separator_after_the_bullet :
+    isItemLine "-  [ ] 2 30m Spaced ^a1".toList = true := by decide
+
+/- CHEAT 29 — §4.1 says a token the parser cannot classify stays in the title,
+   and the Rust keeps `^`, `^%` and `^é` there and records a `tm check`
+   problem.  `isIdWord w := w.head? == some '^'` makes every one of them an id
+   token, so a bare `^` names an entity whose id is the empty list (and two such
+   lines are `dupId ""`), `^%` names one called `%`, and a line carrying both
+   `^%` and a real `^q7` is refused as `manyIds`.  The last of those is
+   `plan-conflicts/week/2026-W37.md:23`, a line the shipped parser reads with
+   id `q7`. -/
+theorem a_bare_caret_is_not_an_id : isIdWord ['^'] = false := by decide
+
+/- CHEAT 30 — §4.3's calendar rule ("generated intervals") as `shapeWfFor`
+   states it, against the `Core` the loader actually builds.  Nothing in
+   `Line.lean` interprets `at:` yet — every token but the id and the estimate is
+   kept verbatim — so `Core.shape` is `Shape.none` for every entity the boundary
+   constructs, and the `.calendar` clause is unsatisfiable rather than merely
+   unsatisfied.  All 16 calendar item lines in the corpus are refused with
+   `itemCheck: fileKindShape`, including four that are `at:<date>T<hh:mm>/<hh:mm>`
+   exactly as §4.1 writes them.  The same latent hole is in the `.routines` and
+   `.optional` clauses; it is invisible only because those files' lines carry no
+   `[ ]` box and are therefore prose. -/
+theorem a_loaded_line_can_satisfy_the_calendar_shape_rule
+    (live : Site) (st : Status) (r : RawItem) :
+    shapeWfFor DocKind.calendar
+      { live := live, archive := none, status := st, line := r, stamps := [] } = true := rfl
+
+end Tm

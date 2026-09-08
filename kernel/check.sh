@@ -37,7 +37,30 @@ else
 fi
 
 # 5. Rust calls the kernel and gets the right answers.
-( cd tm-kernel-ffi && cargo test --quiet >/dev/null 2>&1 ) \
+( cd tm-kernel-ffi && cargo test --quiet --test kernel >/dev/null 2>&1 ) \
   && say "cargo test (Rust -> C shim -> Lean)" "ok" || { say "cargo test" "FAILED"; fail=1; }
+
+# 6. Stage two's acceptance evidence: every Markdown file of the fixture corpus
+#    goes through the String -> String boundary with NO COMMANDS and comes back
+#    byte-identical.  This is the only check that covers the split of bytes into
+#    lines and back, which happens outside the kernel (README gap 6), and the
+#    JSON escaping on both sides of the FFI.
+#
+#    Two assertions, and they are different in kind.  `no_file_is_silently_
+#    rewritten` is absolute: a document the kernel ACCEPTS and hands back with
+#    different bytes is data loss and there is no baseline for it.
+#    `corpus_round_trip` is a ratchet against corpus/round-trip.expected: a file
+#    recorded as round-tripping that stops doing so fails; a file that starts
+#    doing so does not, because the grammar is still being extended.  Rebless
+#    with `TM_CORPUS_BLESS=1 cargo test --test corpus`.
+out=$( cd tm-kernel-ffi && cargo test --quiet --test corpus -- --nocapture 2>&1 )
+rc=$?
+score=$( printf '%s' "$out" | grep -m1 '^CORPUS:' | sed 's/^CORPUS: //' )
+if [ $rc -eq 0 ]; then
+  say "corpus round trip" "ok  (${score:-no score reported})"
+else
+  say "corpus round trip" "FAILED"; fail=1
+  printf '%s\n' "$out" | tail -40
+fi
 
 exit $fail

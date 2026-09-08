@@ -1137,3 +1137,176 @@ recurrence, and tail-drop and stability unattempted — still stands.
     `f64` path (§3.5's 0/2,251,500 and 135/150,600 measurements) cannot be re-run
     against *this* code, and those numbers are quoted from the spike, not
     reproduced here.
+
+<!-- ===================================================================
+     THE ACCEPTANCE EVIDENCE (`kernel/corpus/`, the corpus harness and the
+     differential oracle), added on its own branch.  Appended as a block so
+     the stage-two branches merge.  Gaps numbered from 18 provisionally;
+     whoever merges renumbers.
+     =================================================================== -->
+
+## The acceptance evidence: the fixture corpus, and the Rust as an oracle
+
+Stage 2's acceptance is "`render ∘ parse` byte-identical over the full fixture
+corpus". That corpus now lives here — `kernel/corpus/`, the five fixture plan
+trees copied verbatim off `main` at `557a3d2`, 37 Markdown files,
+`PROVENANCE.md` records the copy — and two harnesses read it.
+
+### 1. The corpus round trip (`check.sh` check 6)
+
+`tm-kernel-ffi/tests/corpus.rs` pushes every Markdown file through the
+`String → String` boundary **with no commands at all** and compares the bytes
+that come back with the bytes that went in. It is a measurement, not a theorem,
+and it reaches two steps round trip B cannot: the split of a file's bytes into
+lines and back (gap 6), and the JSON escaping on both sides of the FFI.
+
+```
+CORPUS: 26/37 files and 1/5 whole plans round-trip byte-identically
+```
+
+**Nothing in the corpus is silently rewritten.** Not one file is accepted and
+handed back changed — the failure mode the first loader had, where a `[-]` came
+back as `[ ]` on a plain read. `no_file_is_silently_rewritten` asserts that
+unconditionally, with no baseline and no exemption; `corpus_round_trip` is a
+ratchet against `corpus/round-trip.expected`, so a file that stops
+round-tripping fails the build and a file that starts round-tripping does not.
+Re-measure with `TM_CORPUS_BLESS=1 cargo test --test corpus`; the table, and the
+minimal set of lines behind each refusal, print under `-- --nocapture`.
+
+The eleven files that do not round-trip fail in four ways, none of them a
+rewrite:
+
+| n | diagnostic | what it is |
+|---|---|---|
+| 4 | `itemCheck: fileKindShape` | every `calendar/*.md`. Gap 3 predicted this; gap 18 below says it is worse than predicted |
+| 4 | `orphanDemotion: m2` | the `# Demoted` line in every `month/2026-09.md`. Gap 19 |
+| 3 | `dupId`, `sectionDiscipline`, `badLine` | the three in `plan-conflicts/`, the fixture that exists to make `tm check` print |
+
+The whole-plan loads add one more: `plan-basic`, `plan-home-day` and
+`plan-travel-day` are `splitLine: m2` — the same gap 19. `plan-recur`, the one
+fixture tree with no demoted line and no calendar file, loads and round-trips
+whole.
+
+`plan-conflicts` is the fixture the Rust suite uses to make `tm check` print;
+its refusals are the fixture doing its job. The other eight are ours.
+
+### 2. The differential oracle (`examples/oracle/`, `examples/oracle-compare.rs`)
+
+The plan says a checked parser is worth having "even with no FFI" because it can
+be run against the Rust. `examples/oracle/run-oracle.sh` extracts `main` into a
+scratch directory, builds a small binary against the shipped
+`tm-core::grammar`, and runs two input sets through both parsers:
+
+* the corpus's own 138 item lines — real tm syntax, every one with an id;
+* 2,048 lines from **`main`'s own `grammar_proptest` generator**, the 512-case
+  strategy that ships, over four seeds.
+
+Four things are comparable through a `String → String` boundary, and the tool
+prints the denominator for each so that "no disagreement" is never confused with
+"never ran": is it an item line; does each side hand the line back unchanged;
+what id does each read (asked by putting the *same line twice* in one document,
+which makes the loader name the id it parsed); and does `tm edit est=` produce
+the same line.
+
+```
+corpus lines     138 compared, 129 with nothing to report
+generated       2048 compared,  479 with nothing to report
+```
+
+**Byte faithfulness holds on both sides everywhere.** 2,186 lines, and neither
+implementation ever returned a line different from the one it was given. That is
+the strongest single result in this section, and it is the property stage 2 is
+named after.
+
+The disagreements are gaps 18–21.
+
+### What this does **not** cover
+
+18. **`shapeWfFor`'s `.calendar` clause is unsatisfiable, not merely
+    unsatisfied.** Gap 3 says calendar files are rejected because the parser
+    does not fill `shape`. The corpus harness shows the sharper statement:
+    **every one of the 20 calendar item lines in the corpus is refused**,
+    including the ones written exactly as §4.1 writes an interval
+    (`at:2026-09-07T12:50/13:50`), because the loader builds every `Core` with
+    `shape := Shape.none` and `.calendar` demands `Shape.interval`. No line the
+    boundary can currently construct satisfies that clause, so it is a rule that
+    can only ever say no. The `.routines` and `.optional` clauses have the same
+    hole and it is invisible only because those files' lines carry no `[ ]` box
+    and are therefore prose. `Negative.lean`'s CHEAT 30 is the refutation.
+
+19. **The kernel's demotion is two byte-identical `[-]` lines; tm's is not.**
+    Every `month/2026-09.md` in the corpus carries
+    `- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2` in
+    `# Demoted`, and the matching `week/2026-W37.md` carries
+    `- [ ] 4 6b Rollback path passes tests   @O2 ^m2`. Alone the month line is
+    `orphanDemotion`; together they are `splitLine`. This is not only a
+    fixture-versus-kernel disagreement: §6.3 itself says the copy filed into the
+    month carries "`est:` = remaining", so **the spec's own demotion pair has
+    two lines with different bytes**, and an `Entity` owning one token vector
+    cannot render both. Either the entity carries a second `RawItem` for the
+    tombstone, or the tombstone's line is derived from the live one by a stated
+    rewrite. That is a modelling decision, it is not made here, and until it is,
+    no tm tree that has ever had a week closed will load.
+
+20. **A tab is not a separator, and neither is a second space.**
+    `Text.lean`'s `isSp c := c == ' '`, but §4.1 says "whitespace-separated
+    words" and `tm-core::grammar` splits on a whitespace run. Measured on the
+    2,048 generated lines:
+
+    * `parseBody` matches the literal `- [`, so `- <TAB>[ ] …` and `-  [ ] …`
+      (two spaces) are **not item lines**. 1,049 lines. This one is silent: the
+      line is kept as prose and written back unchanged, so nothing complains and
+      the item is simply invisible to every command, to ranks and to `tm check`;
+    * `- [ ] x<TAB>^a1` is refused as `noId` — 9 lines the Rust reads fine;
+    * `- [ ] x ^a1<TAB>` yields the id `"a1\t"` — a store key with a tab in it,
+      which the Rust's own `Id::is_valid` would reject. 8 lines got a different
+      id this way;
+    * and it reaches an operation that ships: on
+      `- [>] … @j<TAB>est:48h … ^w4 … est:2h09m`, `tm edit est=45m` writes the
+      *first* `est:` in the Rust (documented: "the first occurrence of a repeated
+      key wins") and the *second* in the kernel, because the kernel cannot see
+      the first. Re-read the kernel's line with the Rust and the estimate is
+      `48h`, not `45m`. This is the shape of the bug the rebuild exists to make
+      impossible, in the same operation, and the kernel is on the wrong side of
+      it. CHEAT 27 and CHEAT 28.
+
+    Otherwise the `est` edit agrees exactly: 132 corpus lines and 44 generated
+    lines, one disagreement, the one above.
+
+21. **Every `^`-leading word is an id.** `isIdWord w := w.head? == some '^'`,
+    where §4.1 says a token the parser cannot classify stays in the title, and
+    the Rust keeps `^`, `^%` and `^é` there with a `tm check` problem. So a bare
+    `^` names an entity whose id is the empty list — and two lines ending in `^`
+    are `dupId ""` — `^%` names one called `%` (18 lines where the Rust reads no
+    id and the kernel reads one), and a line carrying both `^%` and a real
+    `^q7` is refused as `manyIds` (11 lines). The last of those is
+    `plan-conflicts/week/2026-W37.md:23`, which the shipped parser reads with id
+    `q7`. CHEAT 29.
+
+22. **Gap 6 is measured, not closed.** `split_lines`/`join_lines` are
+    `str::split('\n')` and `join("\n")`, the identity on every `String`, and
+    `split_join_is_identity` checks that on all 37 corpus files (the line count
+    is exactly the newline count plus one) and on the shapes that break naive
+    splitters — empty, `"\n"`, no final newline, CRLF. `escaping_survives_the_
+    boundary` then pushes quotes, backslashes, tabs, `U+0001`, DEL, an astral
+    character and a CRLF file through the FFI and back, none of which the corpus
+    contains. But the *Lean* side of the split is still not a theorem, and this
+    is a harness written in the same language as one half of the boundary. It is
+    a much better measurement than none; it is not a proof.
+
+23. **The oracle compares four things, and the item has twenty-two fields.**
+    Title, `ci`, `!k`, `@parent`, `#tags`, shape, recurrence, budget, `loc:`,
+    `buffer:` and the flags have no observable counterpart at stage 1, because
+    the kernel keeps those tokens verbatim and does not interpret them (gap 3).
+    Every one of them is a place the two implementations could differ silently,
+    and the oracle would not know. What it *does* show is the shape of what to
+    expect when the parser lands: on the generated set the Rust reports 391
+    "missing state", 244 duplicate-key, 95 unclassified-token and 32
+    invalid-interval problems on lines the kernel accepts without comment. Those
+    are not disagreements yet; they are the list of checks the kernel still owes.
+
+24. **The oracle is not in `check.sh`.** It needs a Rust build of `main` in a
+    scratch directory outside the repository, which is the wrong dependency for
+    an acceptance script that must run on this branch alone. Run it by hand:
+    `tm-kernel-ffi/examples/oracle/run-oracle.sh`. The corpus harness, which
+    needs nothing but this branch, *is* check 6.
