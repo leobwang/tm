@@ -16,12 +16,20 @@
 //!   → exit code mapping.
 //! * `cli::undo` — the undo stack every mutating verb pushes to (§13
 //!   `tm undo`).
-//! * `tui` — the ratatui frontend of §12 that `tm tui` starts. It drives the
-//!   same `cli` verbs, so a keystroke and a command line are one code path.
+//!
+//! Two sibling modules sit outside `cli`:
+//!
+//! * [`tui`] — the ratatui frontend of §12 that `tm tui` starts. It drives
+//!   the same `cli` verbs, so a keystroke and a command line are one code
+//!   path.
+//! * [`init`] — content rather than command handling: everything `tm init`
+//!   generates (§14's `CLAUDE.md`, skills and hooks, §16's config, §2's
+//!   starting files), embedded from `tm/templates/`.
 
 #![warn(missing_docs)]
 
 mod cli;
+mod init;
 mod tui;
 
 fn main() {

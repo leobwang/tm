@@ -1,0 +1,62 @@
+---
+source: tm/tests/init_tree.rs
+expression: plan_week
+---
+---
+name: plan-week
+description: Plan the coming week — propose 3–5 milestones from the month outcomes, the demoted work and the capacity grid, then write week/<next>.md after confirmation. Use when the user says "plan the week", "let's do the Sunday planning", or asks what next week should hold.
+---
+
+# /plan-week
+
+## 1. Read (never guess)
+
+```
+tm plan --week --json          # capacity grid: minutes per day per energy level
+tm review week --json          # last week: blocks done, what finished, calibration
+tm check --json                # the tree must be clean before you propose anything
+```
+
+<!-- json fields -->
+
+```
+tm plan --week --json → week days[].date days[].total days[].minutes_at_level grid
+tm review week --json → key blocks block_min leak_min lost_min days[].date days[].blocks days[].done estimates[].tag estimates[].multiplier energy_mae churn
+```
+
+Then read, in this order: `month/<this month>.md` (outcomes with `!k`, and
+everything under `# Demoted`), `week/<this week>.md` (what is unfinished — the
+carry-over no `--json` document carries), `backlog.md` (dated items due in or
+near the week, and each `## series:` head), `calendar/<next week>.md`.
+
+## 2. Propose
+
+- **3–5 milestones**, each a child of an outcome (`@O1`), with `ci` 0–5 and an
+  estimate in blocks. Calibrate it: `tm model --show --json` gives
+  `model.duration` per tag, so a 4-block guess on a `#lean` item with `×1.6`
+  really costs 6 blocks of week budget. Say both numbers.
+- **Demoted items first.** Anything in `month/# Demoted` already lost a week;
+  pre-select it, and for anything in `churn` propose a cut or a re-scope
+  instead of a third attempt.
+- **Honesty.** Show Σ estimates ÷ the week's capacity (Σ `days[].total` ÷ 60
+  for blocks). Above `week.plan_ratio` (0.8), say what you would drop.
+- **Deadlines.** Name every dated item whose `u = need / capacity` is near 1
+  (`tm plan --explain ^id --json`) and what makes it fit: a smaller `est:`, a
+  later `due:`, or fewer milestones.
+
+Show the proposal as the exact lines you would write, grouped under
+`# Milestones` and `# Tasks`.
+
+## 3. Write — only after confirmation
+
+Never create or edit `week/<next>.md` before the user says yes. Then, with the
+bare line (a leading `- [ ] ` would be read as a flag):
+
+```
+tm add "5 6b Finish ch.5 exercises @O1" --to week/<next week>.md --section Milestones
+tm readopt ^m2 --to week          # for each pre-selected demoted item
+tm check
+```
+
+Use `tm add` (it assigns the `^id`) rather than writing lines by hand. Report
+what was written and what was deliberately left out.

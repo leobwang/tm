@@ -1,0 +1,7 @@
+# tm — runtime state and caches (tm-spec-v1.md §10.2). The observations
+# (.tm/log.jsonl) and the learned model (.tm/model.json) are worth committing;
+# everything below is derived from them and is per-machine.
+.tm/state.json
+.tm/last_plan.json
+.tm/arrival_plan.json
+.tm/undo.json

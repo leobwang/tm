@@ -1,0 +1,26 @@
+---
+source: tm/tests/init_tree.rs
+expression: text
+---
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/tm-check.sh\"",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "deny": [
+      "Edit(./.tm/**)",
+      "Write(./.tm/**)"
+    ]
+  }
+}
