@@ -1,5 +1,0 @@
----
-source: tm-core/tests/check_fixtures.rs
-expression: lines(&problems)
----
-

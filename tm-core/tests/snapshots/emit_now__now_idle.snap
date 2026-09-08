@@ -1,9 +1,0 @@
----
-source: tm-core/tests/emit_now.rs
-expression: out
----
-— nothing running (13:20)
-next
-  13:50  · break 20m
-  14:10  Review the drafts  @m2  1b
-  15:10  Pick up package  20m

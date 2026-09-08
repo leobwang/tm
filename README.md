@@ -1,5 +1,11 @@
 # tm
 
+> **This branch has no working `tm`.** `rebuild-on-lean` removed the Rust
+> kernel (`tm-core`) in favour of the Lean 4 kernel under `kernel/`, which
+> covers a fraction of it so far. The manual below describes the tool as it
+> exists on `main`. See `PLAN-lean-kernel.md` for what is being built here and
+> `tm/DORMANT.md` for the frontend's status.
+
 `tm` is a personal planner for people who think in plain text. You keep a small
 tree of Markdown files — a month of outcomes, a week of milestones and tasks, a
 backlog, your routines — and `tm` works out what to do next, an hour at a time,

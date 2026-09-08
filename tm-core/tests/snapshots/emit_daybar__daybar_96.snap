@@ -1,5 +1,0 @@
----
-source: tm-core/tests/emit_daybar.rs
-expression: ascii(&bar.cells)
----
-   555555555bb4444444rr3333wwwwb333311       rrroooo         zzz

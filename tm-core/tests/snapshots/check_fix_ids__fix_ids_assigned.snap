@@ -1,5 +1,0 @@
----
-source: tm-core/tests/check_fix_ids.rs
-expression: "assigned.iter().map(|(f, l, id)|\nformat!(\"{f}:{l} {}\", id.token())).collect::<Vec<_>>().join(\"\\n\")"
----
-week/2026-W37.md:24 ^mz9w
