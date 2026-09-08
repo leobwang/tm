@@ -61,11 +61,64 @@ def charDigit : Char → Option Nat
 
 theorem digit_roundtrip : ∀ k < 10, charDigit (digitChar k) = some k := by decide
 
-/-- Decimal digits of `n`, most significant first. -/
-def digitsOf (n : Nat) : List Char :=
-  if h : n < 10 then [digitChar n]
-  else digitsOf (n / 10) ++ [digitChar (n % 10)]
-decreasing_by omega
+/-- Decimal digits of `n`, most significant first.
+
+**Structural, with `n` as its own fuel, and that is deliberate.**  The obvious
+well-founded definition (`n / 10 < n`) is total too, but a well-founded
+definition does not *reduce* in the kernel, so `decide` cannot evaluate
+anything that renders a number — and every example in this file that pins down
+what the kernel writes (`renderDur`, `renderClock`, `renderRule`, the whole
+canonical line) is exactly such a statement.  Fuel buys them back.
+`digitsOf_eq` below is the equation the proofs actually use, so nothing
+downstream sees the fuel. -/
+def digitsAux : Nat → Nat → List Char
+  | 0,     n => [digitChar n]
+  | f + 1, n => if n < 10 then [digitChar n] else digitsAux f (n / 10) ++ [digitChar (n % 10)]
+
+def digitsOf (n : Nat) : List Char := digitsAux n n
+
+/-- Any fuel that covers `n` gives the same digits. -/
+theorem digitsAux_fuel : ∀ n f g : Nat, n ≤ f → n ≤ g → digitsAux f n = digitsAux g n := by
+  intro n
+  induction n using Nat.strongRecOn with
+  | ind n ih =>
+    intro f g hf hg
+    by_cases h : n < 10
+    · cases f with
+      | zero => cases g with
+        | zero => rfl
+        | succ g' => simp [digitsAux, h]
+      | succ f' => cases g with
+        | zero => simp [digitsAux, h]
+        | succ g' => simp [digitsAux, h]
+    · have hn : 10 ≤ n := by omega
+      cases f with
+      | zero => omega
+      | succ f' =>
+        cases g with
+        | zero => omega
+        | succ g' =>
+          have hdiv : n / 10 < n := by omega
+          have h1 : n / 10 ≤ f' := by omega
+          have h2 : n / 10 ≤ g' := by omega
+          simp only [digitsAux, if_neg h]
+          rw [ih (n / 10) hdiv f' g' h1 h2]
+
+/-- The equation `digitsOf` is *used* by: the fuel never appears again. -/
+theorem digitsOf_eq (n : Nat) :
+    digitsOf n = if n < 10 then [digitChar n] else digitsOf (n / 10) ++ [digitChar (n % 10)] := by
+  unfold digitsOf
+  by_cases h : n < 10
+  · cases n with
+    | zero => simp [digitsAux, h]
+    | succ m => simp [digitsAux, h]
+  · have hn : 10 ≤ n := by omega
+    cases n with
+    | zero => omega
+    | succ m =>
+      have h1 : (m + 1) / 10 ≤ m := by omega
+      simp only [digitsAux, if_neg h]
+      rw [digitsAux_fuel ((m + 1) / 10) m ((m + 1) / 10) h1 (Nat.le_refl _)]
 
 /-- Fold a digit list into a number. -/
 def natStep (a : Nat) (c : Char) : Nat := a * 10 + (charDigit c).getD 0
@@ -80,21 +133,21 @@ def readNat (l : List Char) : Option Nat :=
   if l.isEmpty then none else readNatAux l
 
 theorem digitsOf_ne_nil (n : Nat) : digitsOf n ≠ [] := by
-  rw [digitsOf]; by_cases h : n < 10
-  · rw [dif_pos h]; simp
-  · rw [dif_neg h]; simp
+  rw [digitsOf_eq]; by_cases h : n < 10
+  · rw [if_pos h]; simp
+  · rw [if_neg h]; simp
 
 theorem digitsOf_all_digits : ∀ (m : Nat), ∀ c ∈ digitsOf m, (charDigit c).isSome := by
   intro m
   induction m using Nat.strongRecOn with
   | ind m ihm =>
-    rw [digitsOf]
+    rw [digitsOf_eq]
     by_cases hm : m < 10
-    · rw [dif_pos hm]
+    · rw [if_pos hm]
       simp only [List.mem_singleton]
       intro c hc; subst hc
       simp [digit_roundtrip m hm]
-    · rw [dif_neg hm]
+    · rw [if_neg hm]
       intro c hc
       rcases List.mem_append.1 hc with h1 | h1
       · exact ihm (m / 10) (by omega) c h1
@@ -121,12 +174,12 @@ theorem readNatAux_of_digits (a : Nat) (l : List Char) (h : ∀ c ∈ l, (charDi
 theorem natStep_digitsOf (n : Nat) : (digitsOf n).foldl natStep 0 = n := by
   induction n using Nat.strongRecOn with
   | ind n ih =>
-    rw [digitsOf]
+    rw [digitsOf_eq]
     by_cases h : n < 10
-    · rw [dif_pos h]
+    · rw [if_pos h]
       simp only [List.foldl_cons, List.foldl_nil, natStep]
       rw [digit_roundtrip n h]; simp
-    · rw [dif_neg h]
+    · rw [if_neg h]
       simp only [List.foldl_append, List.foldl_cons, List.foldl_nil]
       rw [ih (n / 10) (by omega)]
       simp only [natStep]
@@ -382,5 +435,274 @@ theorem tokenize_toks : ∀ ts : List Tok, toksWf ts = true → tokenize (ts.fla
       have := ih hrest
       unfold tokenize at this
       rw [this]
+
+
+theorem digitsOf_noSpace (v : Nat) : ∀ c ∈ digitsOf v, isSp c = false := by
+  intro c hc
+  have hd := digitsOf_all_digits v c hc
+  by_cases h : c = ' '
+  · subst h; simp [charDigit] at hd
+  · simpa [isSp] using h
+
+/-! ## Fixed-width numerals
+
+`due:2026-09-11` is not `digitsOf`: the date grammar is zero-padded to a fixed
+width, and `2026-9-11` is not a date this kernel writes.  So the padded numeral
+gets the same treatment the bare one got — a round trip, not an assumption. -/
+
+def zeros : Nat → List Char
+  | 0     => []
+  | k + 1 => '0' :: zeros k
+
+/-- `n` in decimal, zero-padded on the left to at least `w` digits. -/
+def padTo (w n : Nat) : List Char := zeros (w - (digitsOf n).length) ++ digitsOf n
+
+theorem zeros_all_zero : ∀ k, ∀ c ∈ zeros k, c = '0' := by
+  intro k
+  induction k with
+  | zero => intro c hc; simp [zeros] at hc
+  | succ k ih =>
+      intro c hc
+      simp only [zeros, List.mem_cons] at hc
+      rcases hc with rfl | hc
+      · rfl
+      · exact ih c hc
+
+theorem natStep_zeros : ∀ k, (zeros k).foldl natStep 0 = 0 := by
+  intro k
+  induction k with
+  | zero => rfl
+  | succ k ih =>
+      show (('0' : Char) :: zeros k).foldl natStep 0 = 0
+      rw [List.foldl_cons]
+      show (zeros k).foldl natStep (natStep 0 '0') = 0
+      simpa [natStep, charDigit] using ih
+
+theorem zeros_are_digits : ∀ k, ∀ c ∈ zeros k, (charDigit c).isSome := by
+  intro k c hc; rw [zeros_all_zero k c hc]; rfl
+
+/-- **The padded numeral round trip.**  Whatever width the kernel pads a number
+to, it reads the same number back. -/
+theorem readNat_padTo (w n : Nat) : readNat (padTo w n) = some n := by
+  have hall : ∀ c ∈ padTo w n, (charDigit c).isSome := by
+    intro c hc
+    rcases List.mem_append.1 hc with h | h
+    · exact zeros_are_digits _ c h
+    · exact digitsOf_all_digits n c h
+  have hne : (padTo w n).isEmpty = false := by
+    unfold padTo
+    cases hd : digitsOf n with
+    | nil => exact absurd hd (digitsOf_ne_nil n)
+    | cons a t => cases zeros (w - (digitsOf n).length) <;> simp
+  unfold readNat
+  rw [hne]
+  simp only [Bool.false_eq_true, if_false, readNatAux]
+  rw [readNatAux_of_digits 0 _ hall]
+  unfold padTo
+  rw [List.foldl_append, natStep_zeros, natStep_digitsOf]
+
+theorem padTo_ne_nil (w n : Nat) : padTo w n ≠ [] := by
+  unfold padTo
+  cases hd : digitsOf n with
+  | nil => exact absurd hd (digitsOf_ne_nil n)
+  | cons a t => cases zeros (w - (digitsOf n).length) <;> simp
+
+theorem padTo_no_space (w n : Nat) : ∀ c ∈ padTo w n, isSp c = false := by
+  intro c hc
+  rcases List.mem_append.1 hc with h | h
+  · rw [zeros_all_zero _ c h]; rfl
+  · exact digitsOf_noSpace n c h
+
+/-! ## Splitting
+
+Three shapes of value in §4.1 need a split: `key:value` (on the **first**
+colon, because `win:11:30-13:30` has three), a comma list (`Mon,Wed,Fri`), and
+a two-part value (`2d~1d`, `reply/7d`).  Each split is paired with the join
+that inverts it, and the inversion is a theorem. -/
+
+/-- Split at the first occurrence of `c`; `none` when `c` does not occur. -/
+def splitFirst (c : Char) : List Char → Option (List Char × List Char)
+  | []      => none
+  | x :: xs => if x == c then some ([], xs)
+               else (splitFirst c xs).map (fun p => (x :: p.1, p.2))
+
+/-- **`splitFirst` inverts concatenation** when the left part does not contain
+the separator — which is what makes `key:value` unambiguous even though the
+value may hold more colons. -/
+theorem splitFirst_append (c : Char) (a b : List Char) (ha : ∀ x ∈ a, x ≠ c) :
+    splitFirst c (a ++ c :: b) = some (a, b) := by
+  induction a with
+  | nil => simp [splitFirst]
+  | cons x t ih =>
+      have hx : ¬ (x = c) := ha x (by simp)
+      have : (x == c) = false := by simpa using hx
+      simp only [List.cons_append, splitFirst, this, Bool.false_eq_true, if_false]
+      rw [ih (fun z hz => ha z (by simp [hz]))]
+      simp
+
+theorem splitFirst_sound (c : Char) : ∀ (l a b : List Char),
+    splitFirst c l = some (a, b) → l = a ++ c :: b := by
+  intro l
+  induction l with
+  | nil => intro a b h; simp [splitFirst] at h
+  | cons x t ih =>
+      intro a b h
+      unfold splitFirst at h
+      by_cases hx : (x == c) = true
+      · rw [if_pos hx] at h
+        simp only [Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        have hxc : x = c := by simpa using hx
+        simp [hxc]
+      · rw [if_neg hx] at h
+        cases hs : splitFirst c t with
+        | none => rw [hs] at h; simp at h
+        | some p =>
+            rw [hs] at h
+            simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
+            obtain ⟨rfl, rfl⟩ := h
+            rw [ih p.1 p.2 hs]
+            rfl
+
+/-- Split on every occurrence of `c`.  Always returns at least one group. -/
+def splitOn (c : Char) : List Char → List (List Char)
+  | []      => [[]]
+  | x :: xs =>
+    if x == c then [] :: splitOn c xs
+    else match splitOn c xs with
+      | []      => [[x]]
+      | g :: gs => (x :: g) :: gs
+
+/-- Join with `c` between groups. -/
+def joinWith (c : Char) : List (List Char) → List Char
+  | []      => []
+  | [g]     => g
+  | g :: gs => g ++ c :: joinWith c gs
+
+theorem splitOn_ne_nil (c : Char) : ∀ l : List Char, splitOn c l ≠ [] := by
+  intro l
+  induction l with
+  | nil => simp [splitOn]
+  | cons x t ih =>
+      unfold splitOn
+      by_cases hx : (x == c) = true
+      · rw [if_pos hx]; simp
+      · rw [if_neg hx]
+        cases hs : splitOn c t with
+        | nil => simp
+        | cons g gs => simp
+
+theorem splitOn_prepend (c : Char) (g rest : List Char) (hg : ∀ x ∈ g, x ≠ c)
+    (h : List Char) (t : List (List Char)) (hs : splitOn c rest = h :: t) :
+    splitOn c (g ++ rest) = (g ++ h) :: t := by
+  induction g with
+  | nil => simpa using hs
+  | cons x g' ih =>
+      have hx : ¬ (x = c) := hg x (by simp)
+      have hxb : (x == c) = false := by simpa using hx
+      have hIH := ih (fun z hz => hg z (by simp [hz]))
+      show splitOn c (x :: (g' ++ rest)) = _
+      unfold splitOn
+      rw [hxb]
+      simp only [Bool.false_eq_true, if_false]
+      rw [hIH]
+      simp
+
+/-- **The comma list round trip.**  `after:^k7q2,^m2` and `every:Mon,Wed,Fri`
+are lists, and a list the kernel writes is a list it reads back — provided no
+element hides the separator, which is a decidable side condition on the
+element grammar. -/
+theorem splitOn_joinWith (c : Char) : ∀ gs : List (List Char), gs ≠ [] →
+    (∀ g ∈ gs, ∀ x ∈ g, x ≠ c) → splitOn c (joinWith c gs) = gs := by
+  intro gs
+  induction gs with
+  | nil => intro h _; exact absurd rfl h
+  | cons g gs' ih =>
+      intro _ hall
+      cases gs' with
+      | nil =>
+          show splitOn c g = [g]
+          have : splitOn c (g ++ []) = (g ++ []) :: [] :=
+            splitOn_prepend c g [] (fun x hx => hall g (by simp) x hx) [] [] rfl
+          simpa using this
+      | cons g2 gs'' =>
+          have hrest : splitOn c (joinWith c (g2 :: gs'')) = g2 :: gs'' :=
+            ih (by simp) (fun z hz => hall z (by simp [hz]))
+          show splitOn c (g ++ c :: joinWith c (g2 :: gs'')) = _
+          have hhead : splitOn c (c :: joinWith c (g2 :: gs''))
+              = [] :: splitOn c (joinWith c (g2 :: gs'')) := by
+            simp [splitOn]
+          rw [splitOn_prepend c g (c :: joinWith c (g2 :: gs''))
+                (fun x hx => hall g (by simp) x hx) [] (splitOn c (joinWith c (g2 :: gs''))) hhead,
+              hrest]
+          simp
+
+
+theorem zeros_length (k : Nat) : (zeros k).length = k := by
+  induction k with
+  | zero => rfl
+  | succ k ih => show (zeros k).length + 1 = k + 1; rw [ih]
+
+/-- A number below `10^(w+1)` has at most `w+1` digits — the fact that makes a
+fixed-width field wide enough. -/
+theorem digitsOf_length_le : ∀ w n : Nat, n < 10 ^ (w + 1) → (digitsOf n).length ≤ w + 1 := by
+  intro w
+  induction w with
+  | zero =>
+      intro n h
+      have h10 : n < 10 := by simpa using h
+      rw [digitsOf_eq, if_pos h10]; simp
+  | succ w ih =>
+      intro n h
+      by_cases hn : n < 10
+      · rw [digitsOf_eq, if_pos hn]; simp
+      · rw [digitsOf_eq, if_neg hn]
+        have hp : (10 : Nat) ^ (w + 1 + 1) = 10 * 10 ^ (w + 1) := by
+          rw [Nat.pow_succ, Nat.mul_comm]
+        have hd : n / 10 < 10 ^ (w + 1) := Nat.div_lt_of_lt_mul (by rw [← hp]; exact h)
+        have := ih (n / 10) hd
+        simp only [List.length_append, List.length_cons, List.length_nil]
+        omega
+
+theorem padTo_length (w n : Nat) (h : (digitsOf n).length ≤ w) : (padTo w n).length = w := by
+  unfold padTo
+  rw [List.length_append, zeros_length]
+  omega
+
+
+theorem splitFirst_none (c : Char) : ∀ l : List Char, (∀ x ∈ l, x ≠ c) → splitFirst c l = none := by
+  intro l
+  induction l with
+  | nil => intro _; rfl
+  | cons x t ih =>
+      intro h
+      have hx : ¬ (x = c) := h x (by simp)
+      have hxb : (x == c) = false := by simpa using hx
+      unfold splitFirst
+      rw [hxb]
+      simp only [Bool.false_eq_true, if_false]
+      rw [ih (fun z hz => h z (by simp [hz]))]
+      rfl
+
+/-- Strip a literal prefix — `pref:wake+10m`'s only structural need. -/
+def stripPre : List Char → List Char → Option (List Char)
+  | [],      l       => some l
+  | _ :: _,  []      => none
+  | p :: ps, c :: cs => if p = c then stripPre ps cs else none
+
+theorem stripPre_append (p l : List Char) : stripPre p (p ++ l) = some l := by
+  induction p with
+  | nil => rfl
+  | cons a t ih =>
+      show (if a = a then stripPre t (t ++ l) else none) = some l
+      rw [if_pos rfl]; exact ih
+
+theorem stripPre_head_ne (a : Char) (as l : List Char)
+    (h : ∀ x, l.head? = some x → x ≠ a) : stripPre (a :: as) l = none := by
+  cases l with
+  | nil => rfl
+  | cons c cs =>
+      have hne : ¬ (a = c) := fun hc => (h c rfl) hc.symm
+      simp [stripPre, hne]
 
 end Tm
