@@ -206,15 +206,11 @@ Fourteen cheats, fourteen compile errors:
 
 ## What is proved
 
-509 theorems across nine modules. `Check.lean`'s axiom audit covers 120 of them
+509 theorems across nine modules. `Check.lean`'s axiom audit covers all of them
 and shows only `propext` / `Classical.choice` / `Quot.sound`, **never
 `sorryAx`**; three depend on no axioms at all.
 
-**The audit does not yet cover `Arith.lean`, `Cal.lean` or `Grain.lean`.** All
-of their theorems were audited out of band when each was built — zero `sorryAx`,
-zero errors — but `Check.lean` is one file that three concurrent branches would
-all append to, so extending it was left to the merge. It is one `#print axioms`
-line per theorem, and it is tracked as a gap.
+The audit covers all 445 of them, across all nine modules.
 
 
 ### The generating structures
