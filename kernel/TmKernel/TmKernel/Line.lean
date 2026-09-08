@@ -3198,5 +3198,732 @@ theorem keyPairs_raw (r : RawItem) :
     (fun w h => ⟨rfl, rawKeyPair_none_of_notStarts h⟩)
     r.toks
 
+
+/-! ## The setters, and `view ∘ set = id`
+
+§4.1's `tm edit ^id <key>=<value>`.  There is **one** generic setter, `setKey`,
+and one theorem — `lookupKey_setKey` — from which every field's
+`view ∘ set = id` follows in three lines.  That is deliberate: the shipped bug
+(C1) was one setter out of a family writing the wrong slot, and a family with
+one member cannot have an odd one out.
+
+A setter that cannot satisfy the law is not exported as a setter.  `setFlag`
+is the one whose domain has to be bounded — §4.1 reads a flag only after a
+`@ # ! ^ key:` token, so a flag on a line with no such token would be absorbed
+into the title.  It returns `Option`, and the boundary condition is in the
+signature rather than in a comment. -/
+
+/-- A value must be one word: non-empty and space-free, or the token it is
+written into would re-tokenise as two. -/
+def wordWf (w : List Char) : Bool := !w.isEmpty && w.all (fun c => !isSp c)
+
+theorem wordWf_iff (w : List Char) :
+    wordWf w = true ↔ (w.isEmpty = false ∧ w.all (fun c => !isSp c) = true) := by
+  simp [wordWf]
+
+def keyWord (k : Key) (v : List Char) : List Char := Key.name k ++ ':' :: v
+
+theorem keyPrefix_keyWord (k : Key) (v : List Char) : keyPrefix (keyWord k v) = some (Key.name k) := by
+  unfold keyPrefix keyWord
+  rw [splitFirst_append ':' (Key.name k) v (fun c hc => (key_name_avoids k c hc).1)]
+  simp only [Option.bind_some]
+  have h1 : (Key.name k).isEmpty = false := by
+    cases hn : Key.name k with
+    | nil => exact absurd hn (key_name_ne_nil k)
+    | cons a t => rfl
+  rw [if_pos (by simp [h1, key_name_isKey k])]
+
+theorem keyValue_keyWord (k : Key) (v : List Char) : keyValue (keyWord k v) = some v := by
+  unfold keyValue keyWord
+  rw [splitFirst_append ':' (Key.name k) v (fun c hc => (key_name_avoids k c hc).1)]
+  rfl
+
+theorem keyOf_keyWord (k : Key) (v : List Char) : keyOf (keyWord k v) = some k := by
+  unfold keyOf
+  rw [keyPrefix_keyWord k v]
+  show Key.ofName? (Key.name k) = some k
+  exact key_name_roundtrip k
+
+/-- The token a setter writes is read back as the key and value it wrote. -/
+theorem rawKeyPair_keyWord (k : Key) (v : List Char) : rawKeyPair (keyWord k v) = some (k, v) := by
+  unfold rawKeyPair
+  rw [keyOf_keyWord k v]
+  show (keyValue (keyWord k v)).map (fun x => (k, x)) = _
+  rw [keyValue_keyWord k v]
+  rfl
+
+theorem keyWord_wordWf (k : Key) (v : List Char) (h : wordWf v = true) :
+    wordWf (keyWord k v) = true := by
+  obtain ⟨hne, hns⟩ := (wordWf_iff v).1 h
+  refine (wordWf_iff _).2 ⟨?_, ?_⟩
+  · unfold keyWord
+    cases hn : Key.name k with
+    | nil => exact absurd hn (key_name_ne_nil k)
+    | cons a t => rfl
+  · simp only [keyWord, List.all_eq_true]
+    intro c hc
+    rcases List.mem_append.1 hc with h1 | h1
+    · simpa using (key_name_avoids k c h1).2
+    · simp only [List.mem_cons] at h1
+      rcases h1 with rfl | h1
+      · rfl
+      · exact List.all_eq_true.1 hns c h1
+
+theorem keyWord_not_id (k : Key) (v : List Char) : isIdWord (keyWord k v) = false := by
+  unfold isIdWord keyWord
+  cases hn : Key.name k with
+  | nil => exact absurd hn (key_name_ne_nil k)
+  | cons a t =>
+      have hk := List.all_eq_true.1 (key_name_isKey k) a (by rw [hn]; simp)
+      have hne : ¬ (a = '^') := by intro hc; rw [hc] at hk; exact Bool.noConfusion hk
+      simp [hne]
+
+/-! ### The generic key setter -/
+
+def isKeyTok (k : Key) (t : Tok) : Bool := keyOf t.word == some k
+
+def setKeyIn (k : Key) (v : List Char) : List Tok → List Tok
+  | []      => []
+  | t :: ts => if isKeyTok k t then ⟨t.sep, keyWord k v⟩ :: ts else t :: setKeyIn k v ts
+
+def hasKeyTok (k : Key) (r : RawItem) : Bool := r.toks.any (isKeyTok k)
+
+/-- `tm edit ^id <key>=<value>`: replace the key's token, or insert one before
+the `^id` (which is where `insertBeforeId` puts it, with the separator care
+that the `est:` insert branch needed). -/
+def setKey (k : Key) (v : List Char) (r : RawItem) : RawItem :=
+  if hasKeyTok k r then ⟨r.indent, setKeyIn k v r.toks⟩
+  else ⟨r.indent, insertBeforeId (keyWord k v) r.toks⟩
+
+/-- `tm edit ^id <key>=` — remove the key's tokens. -/
+def unsetKey (k : Key) (r : RawItem) : RawItem :=
+  ⟨r.indent, r.toks.filter (fun t => !isKeyTok k t)⟩
+
+theorem setKeyIn_cons_pos (k : Key) (v : List Char) (t : Tok) (ts : List Tok)
+    (h : isKeyTok k t = true) : setKeyIn k v (t :: ts) = ⟨t.sep, keyWord k v⟩ :: ts := by
+  show (if isKeyTok k t then (⟨t.sep, keyWord k v⟩ : Tok) :: ts else t :: setKeyIn k v ts) = _
+  rw [if_pos h]
+
+theorem setKeyIn_cons_neg (k : Key) (v : List Char) (t : Tok) (ts : List Tok)
+    (h : isKeyTok k t = false) : setKeyIn k v (t :: ts) = t :: setKeyIn k v ts := by
+  show (if isKeyTok k t then (⟨t.sep, keyWord k v⟩ : Tok) :: ts else t :: setKeyIn k v ts) = _
+  rw [if_neg (by simp [h])]
+
+theorem insertBeforeId_nil (w : List Char) : insertBeforeId w [] = [⟨[' '], w⟩] := rfl
+
+theorem insertBeforeId_id_nosep (w : List Char) (u : Tok) (us : List Tok)
+    (hid : isIdWord u.word = true) (hs : u.sep.isEmpty = true) :
+    insertBeforeId w (u :: us) = ⟨[], w⟩ :: ⟨[' '], u.word⟩ :: us := by
+  show (if isIdWord u.word then
+          (if u.sep.isEmpty then (⟨[], w⟩ : Tok) :: ⟨[' '], u.word⟩ :: us
+           else ⟨[' '], w⟩ :: u :: us)
+        else u :: insertBeforeId w us) = _
+  rw [if_pos hid, if_pos hs]
+
+theorem insertBeforeId_id_sep (w : List Char) (u : Tok) (us : List Tok)
+    (hid : isIdWord u.word = true) (hs : u.sep.isEmpty = false) :
+    insertBeforeId w (u :: us) = ⟨[' '], w⟩ :: u :: us := by
+  show (if isIdWord u.word then
+          (if u.sep.isEmpty then (⟨[], w⟩ : Tok) :: ⟨[' '], u.word⟩ :: us
+           else ⟨[' '], w⟩ :: u :: us)
+        else u :: insertBeforeId w us) = _
+  rw [if_pos hid, if_neg (by simp [hs])]
+
+theorem insertBeforeId_other (w : List Char) (u : Tok) (us : List Tok)
+    (hid : isIdWord u.word = false) : insertBeforeId w (u :: us) = u :: insertBeforeId w us := by
+  show (if isIdWord u.word then
+          (if u.sep.isEmpty then (⟨[], w⟩ : Tok) :: ⟨[' '], u.word⟩ :: us
+           else ⟨[' '], w⟩ :: u :: us)
+        else u :: insertBeforeId w us) = _
+  rw [if_neg (by simp [hid])]
+
+theorem rawKeyPair_key {w : List Char} {p : Key × List Char} (h : rawKeyPair w = some p) :
+    keyOf w = some p.1 := by
+  unfold rawKeyPair at h
+  cases hk : keyOf w with
+  | none => rw [hk] at h; simp at h
+  | some k =>
+      rw [hk] at h
+      simp only [Option.bind_some] at h
+      cases hv : keyValue w with
+      | none => rw [hv] at h; simp at h
+      | some v =>
+          rw [hv] at h
+          simp only [Option.map_some, Option.some.injEq] at h
+          rw [← h]
+
+theorem lookup_cons_ne {β : Type} (k k' : Key) (b : β) (l : List (Key × β)) (h : ¬ (k = k')) :
+    List.lookup k ((k', b) :: l) = List.lookup k l := by
+  show (match k == k' with | true => some b | false => List.lookup k l) = _
+  have hb : (k == k') = false := by simpa using h
+  rw [hb]
+
+theorem lookup_cons_self {β : Type} (k : Key) (b : β) (l : List (Key × β)) :
+    List.lookup k ((k, b) :: l) = some b := by
+  show (match k == k with | true => some b | false => List.lookup k l) = _
+  rw [show (k == k) = true from by simp]
+
+theorem lookup_cons_skip (k : Key) (t : Tok) (ts : List Tok) (h : isKeyTok k t = false) :
+    List.lookup k ((t :: ts).filterMap (fun x => rawKeyPair x.word))
+      = List.lookup k (ts.filterMap (fun x => rawKeyPair x.word)) := by
+  cases hr : rawKeyPair t.word with
+  | none => rw [filterMap_cons_none' (fun x : Tok => rawKeyPair x.word) t ts hr]
+  | some p =>
+      rw [filterMap_cons_some' (fun x : Tok => rawKeyPair x.word) t p ts hr]
+      have hk := rawKeyPair_key hr
+      have hne : ¬ (k = p.1) := by
+        intro hc
+        unfold isKeyTok at h
+        rw [hk, ← hc] at h
+        simp at h
+      exact lookup_cons_ne k p.1 p.2 _ hne
+
+theorem lookup_setKeyIn (k : Key) (v : List Char) : ∀ ts : List Tok,
+    ts.any (isKeyTok k) = true →
+      List.lookup k ((setKeyIn k v ts).filterMap (fun x => rawKeyPair x.word)) = some v := by
+  intro ts
+  induction ts with
+  | nil => intro h; simp at h
+  | cons t ts ih =>
+      intro h
+      by_cases hk : isKeyTok k t = true
+      · rw [setKeyIn_cons_pos k v t ts hk,
+          filterMap_cons_some' (fun x : Tok => rawKeyPair x.word) _ (k, v) ts (rawKeyPair_keyWord k v)]
+        exact lookup_cons_self k v _
+      · simp only [Bool.not_eq_true] at hk
+        rw [setKeyIn_cons_neg k v t ts hk, lookup_cons_skip k t _ hk]
+        refine ih ?_
+        simp only [List.any_cons, Bool.or_eq_true] at h
+        rcases h with hc | hc
+        · rw [hc] at hk; exact Bool.noConfusion hk
+        · exact hc
+
+theorem lookup_insertBeforeId (k : Key) (v : List Char) : ∀ ts : List Tok,
+    ts.any (isKeyTok k) = false →
+      List.lookup k ((insertBeforeId (keyWord k v) ts).filterMap (fun x => rawKeyPair x.word))
+        = some v := by
+  intro ts
+  induction ts with
+  | nil =>
+      intro _
+      rw [insertBeforeId_nil,
+        filterMap_cons_some' (fun x : Tok => rawKeyPair x.word) _ (k, v) [] (rawKeyPair_keyWord k v)]
+      exact lookup_cons_self k v _
+  | cons u us ih =>
+      intro h
+      simp only [List.any_cons, Bool.or_eq_false_iff] at h
+      by_cases hid : isIdWord u.word = true
+      · by_cases hsep : u.sep.isEmpty = true
+        · rw [insertBeforeId_id_nosep _ u us hid hsep,
+            filterMap_cons_some' (fun x : Tok => rawKeyPair x.word) _ (k, v) _ (rawKeyPair_keyWord k v)]
+          exact lookup_cons_self k v _
+        · simp only [Bool.not_eq_true] at hsep
+          rw [insertBeforeId_id_sep _ u us hid hsep,
+            filterMap_cons_some' (fun x : Tok => rawKeyPair x.word) _ (k, v) _ (rawKeyPair_keyWord k v)]
+          exact lookup_cons_self k v _
+      · simp only [Bool.not_eq_true] at hid
+        rw [insertBeforeId_other _ u us hid, lookup_cons_skip k u _ h.1]
+        exact ih h.2
+
+/-- **`view ∘ set`, generically.**  Whatever key a setter writes, the key view
+reads back the value it wrote — replace branch and insert branch alike. -/
+theorem lookupKey_setKey (k : Key) (v : List Char) (r : RawItem) :
+    lookupKey k (setKey k v r) = some v := by
+  unfold lookupKey
+  rw [keyPairs_raw]
+  unfold setKey
+  by_cases h : hasKeyTok k r = true
+  · rw [if_pos h]
+    exact lookup_setKeyIn k v r.toks (by simpa [hasKeyTok] using h)
+  · simp only [Bool.not_eq_true] at h
+    rw [if_neg (by simp [h])]
+    exact lookup_insertBeforeId k v r.toks (by simpa [hasKeyTok] using h)
+
+theorem lookup_filter_none (k : Key) : ∀ ts : List Tok,
+    List.lookup k ((ts.filter (fun t => !isKeyTok k t)).filterMap (fun x => rawKeyPair x.word))
+      = none := by
+  intro ts
+  induction ts with
+  | nil => rfl
+  | cons t ts ih =>
+      rw [List.filter_cons]
+      by_cases hk : isKeyTok k t = true
+      · rw [if_neg (by simp [hk])]; exact ih
+      · simp only [Bool.not_eq_true] at hk
+        rw [if_pos (by simp [hk]), lookup_cons_skip k t _ hk]
+        exact ih
+
+/-- **`view ∘ unset`.**  What a removal removes, the view stops seeing. -/
+theorem lookupKey_unsetKey (k : Key) (r : RawItem) : lookupKey k (unsetKey k r) = none := by
+  unfold lookupKey
+  rw [keyPairs_raw]
+  exact lookup_filter_none k r.toks
+
+/-! ### One `view ∘ set = id` per key
+
+Eighteen fields, eighteen theorems, each of them the obligation `tm edit
+^id est=` failed to discharge. -/
+
+def setDue       (m : Moment)        (r : RawItem) : RawItem := setKey .due (renderMoment m) r
+def setAt        (s e : DT)          (r : RawItem) : RawItem := setKey .interval (renderInterval s e) r
+def setWin       (g : WindowRange)   (r : RawItem) : RawItem := setKey .window (renderWindow g) r
+def setDur       (d : Dur)           (r : RawItem) : RawItem := setKey .dur (renderDur d) r
+def setPref      (p : Pref)          (r : RawItem) : RawItem := setKey .pref (renderPref p) r
+def setEvery     (u : Rule)          (r : RawItem) : RawItem := setKey .every (renderRule u) r
+def setAfterDone (a : AfterDone)     (r : RawItem) : RawItem := setKey .afterDone (renderAfterDone a) r
+def setOnEvent   (e : OnEvent)       (r : RawItem) : RawItem := setKey .onEvent (renderOnEvent e) r
+def setOnMiss    (m : OnMiss)        (r : RawItem) : RawItem := setKey .onMiss (renderOnMiss m) r
+def setMin       (q : Rate)          (r : RawItem) : RawItem := setKey .floor (renderRate q) r
+def setMax       (q : Rate)          (r : RawItem) : RawItem := setKey .cap (renderRate q) r
+def setAfter     (ds : List Dep)     (r : RawItem) : RawItem := setKey .after (renderDeps ds) r
+def setLoc       (c : Loc)           (r : RawItem) : RawItem := setKey .loc (renderLoc c) r
+def setEst       (d : Dur)           (r : RawItem) : RawItem := setKey .est (renderDur d) r
+def setDemoted   (ss : List Stamp)   (r : RawItem) : RawItem := setKey .demoted (renderStamps ss) r
+def setWaiting   (n : Nat)           (r : RawItem) : RawItem := setKey .waiting (renderDate n) r
+def setBuffer    (d : Dur)           (r : RawItem) : RawItem := setKey .buffer (renderDur d) r
+def setCi        (c : Fin 6)         (r : RawItem) : RawItem := setKey .ci (renderCi c) r
+
+theorem view_set_due (m : Moment) (r : RawItem) (h : m.wf = true) :
+    viewDue (setDue m r) = some m := by
+  unfold viewDue setDue; rw [lookupKey_setKey]
+  show parseMoment (renderMoment m) = _
+  exact parse_render_moment m h
+
+theorem view_set_at (s e : DT) (r : RawItem) (h : intervalWf s e = true) :
+    viewAt (setAt s e r) = some (s, e) := by
+  unfold viewAt setAt; rw [lookupKey_setKey]
+  show parseInterval (renderInterval s e) = _
+  exact parse_render_interval s e h
+
+theorem view_set_win (g : WindowRange) (r : RawItem) (h : windowWf g = true) :
+    viewWin (setWin g r) = some g := by
+  unfold viewWin setWin; rw [lookupKey_setKey]
+  show parseWindow (renderWindow g) = _
+  exact parse_render_window g h
+
+theorem view_set_dur (d : Dur) (r : RawItem) (h : d.noDays = true) :
+    viewDur (setDur d r) = some d := by
+  unfold viewDur setDur; rw [lookupKey_setKey]
+  show parseDurND (renderDur d) = _
+  exact parse_render_durND d h
+
+theorem view_set_pref (p : Pref) (r : RawItem) : viewPref (setPref p r) = some p := by
+  unfold viewPref setPref; rw [lookupKey_setKey]
+  show parsePref (renderPref p) = _
+  exact parse_render_pref p
+
+theorem view_set_every (u : Rule) (r : RawItem) (h : u.wf = true) :
+    viewEvery (setEvery u r) = some u := by
+  unfold viewEvery setEvery; rw [lookupKey_setKey]
+  show parseRule (renderRule u) = _
+  exact parse_render_rule u h
+
+theorem view_set_afterDone (a : AfterDone) (r : RawItem) :
+    viewAfterDone (setAfterDone a r) = some a := by
+  unfold viewAfterDone setAfterDone; rw [lookupKey_setKey]
+  show parseAfterDone (renderAfterDone a) = _
+  exact parse_render_afterDone a
+
+theorem view_set_onEvent (e : OnEvent) (r : RawItem) (h : e.wf = true) :
+    viewOnEvent (setOnEvent e r) = some e := by
+  unfold viewOnEvent setOnEvent; rw [lookupKey_setKey]
+  show parseOnEvent (renderOnEvent e) = _
+  exact parse_render_onEvent e h
+
+theorem view_set_onMiss (m : OnMiss) (r : RawItem) : viewOnMiss (setOnMiss m r) = some m := by
+  unfold viewOnMiss setOnMiss; rw [lookupKey_setKey]
+  show parseOnMiss (renderOnMiss m) = _
+  exact parse_render_onMiss m
+
+theorem view_set_min (q : Rate) (r : RawItem) : viewMin (setMin q r) = some q := by
+  unfold viewMin setMin; rw [lookupKey_setKey]
+  show parseRate (renderRate q) = _
+  exact parse_render_rate q
+
+theorem view_set_max (q : Rate) (r : RawItem) : viewMax (setMax q r) = some q := by
+  unfold viewMax setMax; rw [lookupKey_setKey]
+  show parseRate (renderRate q) = _
+  exact parse_render_rate q
+
+theorem view_set_after (ds : List Dep) (r : RawItem) (h : depsWf ds = true) :
+    viewAfter (setAfter ds r) = some ds := by
+  unfold viewAfter setAfter; rw [lookupKey_setKey]
+  show parseDeps (renderDeps ds) = _
+  exact parse_render_deps ds h
+
+theorem view_set_loc (c : Loc) (r : RawItem) (h : c.wf = true) :
+    viewLoc (setLoc c r) = some c := by
+  unfold viewLoc setLoc; rw [lookupKey_setKey]
+  show parseLoc (renderLoc c) = _
+  exact parse_render_loc c h
+
+theorem view_set_estKey (d : Dur) (r : RawItem) (h : d.noDays = true) :
+    viewEstKey (setEst d r) = some d := by
+  unfold viewEstKey setEst; rw [lookupKey_setKey]
+  show parseDurND (renderDur d) = _
+  exact parse_render_durND d h
+
+theorem view_set_demoted (ss : List Stamp) (r : RawItem) (h : ss ≠ []) :
+    viewDemoted (setDemoted ss r) = some ss := by
+  unfold viewDemoted setDemoted; rw [lookupKey_setKey]
+  show parseStamps (renderStamps ss) = _
+  exact parse_render_stamps ss h
+
+theorem view_set_waiting (n : Nat) (r : RawItem) (h : dayWf n = true) :
+    viewWaiting (setWaiting n r) = some n := by
+  unfold viewWaiting setWaiting; rw [lookupKey_setKey]
+  show parseDate (renderDate n) = _
+  exact parse_render_date n h
+
+theorem view_set_buffer (d : Dur) (r : RawItem) : viewBuffer (setBuffer d r) = some d := by
+  unfold viewBuffer setBuffer; rw [lookupKey_setKey]
+  show parseDur (renderDur d) = _
+  exact parse_render_dur d
+
+theorem view_set_ciKey (c : Fin 6) (r : RawItem) : viewCiKey (setCi c r) = some c := by
+  unfold viewCiKey setCi; rw [lookupKey_setKey]
+  show parseCi (renderCi c) = _
+  exact parse_render_ci c
+
+/-! ### The two fields with two slots
+
+C1 and C2.  `est:` overrides the leading estimate and `ci:` overrides the
+positional digit, so the setter must write the slot the *view* reads — which is
+exactly what `tm edit ^id est=` did not do. -/
+
+/-- **C1 is dead.**  What `setEst` writes, `viewRemainingDur` reports — whatever
+leading estimate the line already carried. -/
+theorem view_set_remaining (d : Dur) (r : RawItem) (h : d.noDays = true) :
+    viewRemainingDur (setEst d r) = some d := by
+  unfold viewRemainingDur
+  rw [view_set_estKey d r h]
+
+/-- **C2 is dead.**  What `setCi` writes, `viewCi` reports — whatever positional
+digit the line already carried. -/
+theorem view_set_ci (c : Fin 6) (r : RawItem) : viewCi (setCi c r) = some c := by
+  unfold viewCi
+  rw [view_set_ciKey c r]
+
+theorem est_key_beats_lead (r : RawItem) (d : Dur) (h : viewEstKey r = some d) :
+    viewRemainingDur r = some d := by
+  unfold viewRemainingDur; rw [h]
+
+theorem ci_key_beats_positional (r : RawItem) (c : Fin 6) (h : viewCiKey r = some c) :
+    viewCi r = some c := by
+  unfold viewCi; rw [h]
+
+/-- **The shipped bug as a line.**  `- [ ] 6b Read est:1b ^t3` has a leading
+estimate of six blocks and an `est:` of one, and the remaining estimate the
+kernel reports is one block.  A setter that wrote the *leading* slot would
+change the first number and leave the answer at `1b` — success reported,
+nothing changed. -/
+theorem est_key_overrides_the_leading_estimate :
+    estLeadOf ⟨[], [⟨[' '], ['6','b']⟩, ⟨[' '], ['R','e','a','d']⟩,
+                    ⟨[' '], ['e','s','t',':','1','b']⟩, ⟨[' '], ['^','t','3']⟩]⟩
+        = some (.simple 6 .blocks) ∧
+      viewRemainingDur ⟨[], [⟨[' '], ['6','b']⟩, ⟨[' '], ['R','e','a','d']⟩,
+                            ⟨[' '], ['e','s','t',':','1','b']⟩, ⟨[' '], ['^','t','3']⟩]⟩
+        = some (.simple 1 .blocks) := by
+  constructor <;> decide
+
+/-- **The `--unset ci` shape, stated rather than fixed.**  `ci:` and the
+positional digit are two slots; removing the key leaves the digit, so a
+complete `--unset ci` has to clear both.  Here is a line where it matters. -/
+theorem unset_ci_key_leaves_the_positional_digit :
+    viewCi ⟨[], [⟨[' '], ['4']⟩, ⟨[' '], ['R','e','a','d']⟩,
+                 ⟨[' '], ['c','i',':','2']⟩, ⟨[' '], ['^','t','3']⟩]⟩
+        = some ⟨2, by decide⟩ ∧
+      viewCi (unsetKey .ci ⟨[], [⟨[' '], ['4']⟩, ⟨[' '], ['R','e','a','d']⟩,
+                                 ⟨[' '], ['c','i',':','2']⟩, ⟨[' '], ['^','t','3']⟩]⟩)
+        = some ⟨4, by decide⟩ := by
+  constructor <;> decide
+
+/-- `cap:` normalises to `max:` on write, so the alias cannot become a second
+place a budget lives. -/
+theorem set_max_writes_max (q : Rate) (r : RawItem) :
+    lookupKey .cap (setMax q r) = some (renderRate q) ∧ Key.name .cap = ['m','a','x'] :=
+  ⟨lookupKey_setKey _ _ _, rfl⟩
+
+/-! ### The setters preserve `CanonicalItem`
+
+The obligation `setEst` had to discharge, generalised: whatever `tm edit
+^id <key>=<value>` writes, `parseItem ∘ serializeItem` reads back identically. -/
+
+theorem tok_wf_of_wordWf (sp w : List Char) (hsp : sp.all isSp = true) (hw : wordWf w = true) :
+    (Tok.mk sp w).wf = true :=
+  (tok_wf_iff _).2 ⟨hsp, ((wordWf_iff w).1 hw).1, ((wordWf_iff w).1 hw).2⟩
+
+theorem toksWf_setKeyIn (k : Key) (v : List Char) (hv : wordWf v = true) :
+    ∀ ts : List Tok, toksWf ts = true → toksWf (setKeyIn k v ts) = true := by
+  intro ts
+  induction ts with
+  | nil => intro _; rfl
+  | cons u us ih =>
+      intro h
+      by_cases hk : isKeyTok k u = true
+      · rw [setKeyIn_cons_pos k v u us hk]
+        have hu : u.wf = true := by
+          cases us with
+          | nil => simpa [toksWf] using h
+          | cons x r => simp only [toksWf, Bool.and_eq_true] at h; exact h.1.1
+        have hnew : (Tok.mk u.sep (keyWord k v)).wf = true :=
+          tok_wf_of_wordWf u.sep _ ((tok_wf_iff u).1 hu).1 (keyWord_wordWf k v hv)
+        cases us with
+        | nil => simpa [toksWf] using hnew
+        | cons x r =>
+            simp only [toksWf, Bool.and_eq_true] at h ⊢
+            exact ⟨⟨hnew, h.1.2⟩, h.2⟩
+      · simp only [Bool.not_eq_true] at hk
+        rw [setKeyIn_cons_neg k v u us hk]
+        cases us with
+        | nil => simpa [toksWf, setKeyIn] using h
+        | cons x r =>
+            simp only [toksWf, Bool.and_eq_true] at h
+            have hset : ∃ y ys, setKeyIn k v (x :: r) = y :: ys ∧ y.sep = x.sep := by
+              by_cases hkx : isKeyTok k x = true
+              · exact ⟨⟨x.sep, keyWord k v⟩, r, setKeyIn_cons_pos k v x r hkx, rfl⟩
+              · exact ⟨x, setKeyIn k v r, setKeyIn_cons_neg k v x r (by simpa using hkx), rfl⟩
+            obtain ⟨y, ys, hy, hysep⟩ := hset
+            rw [hy]
+            simp only [toksWf, Bool.and_eq_true]
+            refine ⟨⟨h.1.1, ?_⟩, ?_⟩
+            · rw [hysep]; exact h.1.2
+            · have := ih h.2
+              rwa [hy] at this
+
+theorem toksWf_insertBeforeId_gen (w : List Char) (hw : wordWf w = true) :
+    ∀ ts : List Tok, toksWf ts = true → ts.any (fun t => isIdWord t.word) = true →
+      toksWf (insertBeforeId w ts) = true := by
+  intro ts
+  induction ts with
+  | nil => intro _ hid; simp at hid
+  | cons u us ih =>
+      intro h hid
+      by_cases hidu : isIdWord u.word = true
+      · by_cases hsep : u.sep.isEmpty = true
+        · rw [insertBeforeId_id_nosep w u us hidu hsep]
+          simp only [toksWf, Bool.and_eq_true]
+          exact ⟨⟨tok_wf_of_wordWf [] w rfl hw, by simp⟩, toksWf_head_sep u [' '] rfl us h⟩
+        · simp only [Bool.not_eq_true] at hsep
+          rw [insertBeforeId_id_sep w u us hidu hsep]
+          simp only [toksWf, Bool.and_eq_true]
+          exact ⟨⟨tok_wf_of_wordWf [' '] w rfl hw, by simpa using hsep⟩, h⟩
+      · simp only [Bool.not_eq_true] at hidu
+        rw [insertBeforeId_other w u us hidu]
+        have husid : us.any (fun t => isIdWord t.word) = true := by
+          simp only [List.any_cons, Bool.or_eq_true] at hid
+          rcases hid with hc | hc
+          · rw [hc] at hidu; exact Bool.noConfusion hidu
+          · exact hc
+        cases us with
+        | nil => simp at husid
+        | cons x r =>
+            simp only [toksWf, Bool.and_eq_true] at h
+            obtain ⟨y, ys, hy, hys⟩ := insertBeforeId_head w x r (by simpa using h.1.2)
+            rw [hy]
+            simp only [toksWf, Bool.and_eq_true]
+            refine ⟨⟨h.1.1, by simpa using hys⟩, ?_⟩
+            have := ih h.2 husid
+            rwa [hy] at this
+
+theorem idWords_setKeyIn (k : Key) (v : List Char) : ∀ ts : List Tok,
+    ((setKeyIn k v ts).filter (fun t => isIdWord t.word)).map Tok.word
+      = (ts.filter (fun t => isIdWord t.word)).map Tok.word := by
+  intro ts
+  induction ts with
+  | nil => rfl
+  | cons u us ih =>
+      by_cases hk : isKeyTok k u = true
+      · rw [setKeyIn_cons_pos k v u us hk]
+        have hnid : isIdWord u.word = false := by
+          by_cases hid : isIdWord u.word = true
+          · -- an id word has no key prefix, so it is not a key token
+            have hs : sigilOf u.word = some '^' := by
+              unfold isIdWord at hid
+              cases hu : u.word with
+              | nil => rw [hu] at hid; simp at hid
+              | cons a t =>
+                  rw [hu] at hid
+                  simp only [List.head?_cons, beq_iff_eq, Option.some.injEq] at hid
+                  subst hid
+                  rfl
+            have hkp : keyPrefix u.word = none :=
+              keyPrefix_none_of (headSat_false_of sigil_not_key u.word (sigilOf_head hs))
+            unfold isKeyTok keyOf at hk
+            rw [hkp] at hk
+            simp at hk
+          · simpa using hid
+        simp [List.filter_cons, hnid, keyWord_not_id k v]
+      · simp only [Bool.not_eq_true] at hk
+        rw [setKeyIn_cons_neg k v u us hk]
+        by_cases hid : isIdWord u.word = true <;> simp [List.filter_cons, hid, ih]
+
+theorem idWords_insertBeforeId_gen (w : List Char) (hw : isIdWord w = false) : ∀ ts : List Tok,
+    ((insertBeforeId w ts).filter (fun t => isIdWord t.word)).map Tok.word
+      = (ts.filter (fun t => isIdWord t.word)).map Tok.word := by
+  intro ts
+  induction ts with
+  | nil => rw [insertBeforeId_nil]; simp [hw]
+  | cons u us ih =>
+      by_cases hid : isIdWord u.word = true
+      · by_cases hsep : u.sep.isEmpty = true
+        · rw [insertBeforeId_id_nosep w u us hid hsep]; simp [hid, hw]
+        · simp only [Bool.not_eq_true] at hsep
+          rw [insertBeforeId_id_sep w u us hid hsep]; simp [hid, hw]
+      · simp only [Bool.not_eq_true] at hid
+        rw [insertBeforeId_other w u us hid]
+        simp only [List.filter_cons, hid, Bool.false_eq_true, if_false]
+        exact ih
+
+/-- **Whatever a key setter writes, the kernel reads back.** -/
+theorem setKey_canonical (i : Id) (k : Key) (v : List Char) (r : RawItem)
+    (hv : wordWf v = true) (h : CanonicalItem i r = true) :
+    CanonicalItem i (setKey k v r) = true := by
+  obtain ⟨hind, htw, hids⟩ := (canonical_iff i r).1 h
+  refine (canonical_iff i (setKey k v r)).2 ⟨?_, ?_, ?_⟩
+  · unfold setKey; by_cases hE : hasKeyTok k r = true <;> simp [hE, hind]
+  · unfold setKey
+    by_cases hE : hasKeyTok k r = true
+    · simp only [hE, if_pos]
+      exact toksWf_setKeyIn k v hv r.toks htw
+    · simp only [Bool.not_eq_true] at hE
+      rw [if_neg (by simp [hE])]
+      refine toksWf_insertBeforeId_gen (keyWord k v) (keyWord_wordWf k v hv) r.toks htw ?_
+      unfold idToks at hids
+      cases hf : r.toks.filter (fun t => isIdWord t.word) with
+      | nil => rw [hf] at hids; simp at hids
+      | cons t rest =>
+          have hm : t ∈ r.toks.filter (fun x => isIdWord x.word) := by rw [hf]; simp
+          simp only [List.any_eq_true]
+          exact ⟨t, (List.mem_filter.1 hm).1, (List.mem_filter.1 hm).2⟩
+  · unfold setKey idToks
+    by_cases hE : hasKeyTok k r = true
+    · simp only [hE, if_pos]
+      rw [idWords_setKeyIn k v r.toks]; exact hids
+    · simp only [Bool.not_eq_true] at hE
+      rw [if_neg (by simp [hE])]
+      rw [idWords_insertBeforeId_gen (keyWord k v) (keyWord_not_id k v) r.toks]
+      exact hids
+
+/-- The payoff: `tm edit ^id <key>=<value>` produces a line the kernel parses
+back to the same item — same id, same box, same tokens. -/
+theorem setKey_line_reparses (i : Id) (g : Glyph) (k : Key) (v : List Char) (r : RawItem)
+    (hv : wordWf v = true) (h : CanonicalItem i r = true) :
+    parseItem (serializeItem i g (setKey k v r)) = .ok (i, g, setKey k v r) :=
+  parse_serialize i g (setKey k v r) (setKey_canonical i k v r hv h)
+
+/-! ### Flags: the one setter whose domain has to be bounded
+
+§4.1 reads a flag only after a `@ # ! ^ key:` token.  On a line with no such
+token, a flag word is title text — `- [ ] Lean practice open ^l1` has the word
+`open` in its title — so `setFlag` refuses rather than writing something that
+reads back differently.  `grammar.rs` calls that `EditError::FlagNeedsBoundary`;
+here it is an `Option`, and the theorem below only fires when it succeeded. -/
+
+def insertAfterId (w : List Char) : List Tok → Option (List Tok)
+  | []      => none
+  | u :: us =>
+    if isIdWord u.word then some (u :: ⟨[' '], w⟩ :: us)
+    else (insertAfterId w us).map (fun r => u :: r)
+
+def setFlag (f : Flag) (r : RawItem) : Option RawItem :=
+  (insertAfterId (Flag.name f) r.toks).map (fun ts => ⟨r.indent, ts⟩)
+
+theorem isIdWord_startsToken {w : List Char} (h : isIdWord w = true) : startsToken w = true := by
+  unfold isIdWord at h
+  cases hu : w with
+  | nil => rw [hu] at h; simp at h
+  | cons a t =>
+      rw [hu] at h
+      simp only [List.head?_cons, beq_iff_eq, Option.some.injEq] at h
+      subst h
+      rfl
+
+theorem classifyWord_flag (f : Flag) : classifyWord (Flag.name f) = .flag f := by
+  have hs : sigilOf (Flag.name f) = none := by cases f <;> rfl
+  have hk : keyPrefix (Flag.name f) = none := by
+    unfold keyPrefix
+    rw [splitFirst_none ':' (Flag.name f) (flag_name_no_colon f)]
+    rfl
+  unfold classifyWord
+  rw [hs, hk]
+  show classifyPlain (Flag.name f) = _
+  unfold classifyPlain
+  rw [flag_name_roundtrip f]
+
+theorem insertAfterId_shape (w : List Char) : ∀ ts ts' : List Tok,
+    insertAfterId w ts = some ts' →
+      ∃ a u b, ts' = a ++ u :: ⟨[' '], w⟩ :: b ∧ isIdWord u.word = true := by
+  intro ts
+  induction ts with
+  | nil => intro ts' h; simp [insertAfterId] at h
+  | cons u us ih =>
+      intro ts' h
+      by_cases hid : isIdWord u.word = true
+      · rw [show insertAfterId w (u :: us) = some (u :: ⟨[' '], w⟩ :: us) from by
+              simp [insertAfterId, hid]] at h
+        simp only [Option.some.injEq] at h
+        exact ⟨[], u, us, by rw [← h]; rfl, hid⟩
+      · rw [show insertAfterId w (u :: us) = (insertAfterId w us).map (fun r => u :: r) from by
+              simp [insertAfterId, hid]] at h
+        cases hr : insertAfterId w us with
+        | none => rw [hr] at h; simp at h
+        | some vs =>
+            rw [hr] at h
+            simp only [Option.map_some, Option.some.injEq] at h
+            obtain ⟨a, u2, b, hb, hid2⟩ := ih vs hr
+            exact ⟨u :: a, u2, b, by rw [← h, hb]; rfl, hid2⟩
+
+/-- **`view ∘ set` for a flag.**  When `setFlag` succeeds, the flag is in the
+line's flag set — and it is there because the `^id` before it ended the title,
+which is the only place a flag can safely go. -/
+theorem view_set_flag (f : Flag) (r r' : RawItem) (h : setFlag f r = some r') :
+    f ∈ flagsOf r' := by
+  unfold setFlag at h
+  cases hi : insertAfterId (Flag.name f) r.toks with
+  | none => rw [hi] at h; simp at h
+  | some ts =>
+      rw [hi] at h
+      simp only [Option.map_some, Option.some.injEq] at h
+      obtain ⟨a, u, b, hb, hid⟩ := insertAfterId_shape (Flag.name f) r.toks ts hi
+      obtain ⟨ks, hks⟩ := classifyPhase0_suffix a u (⟨[' '], Flag.name f⟩ :: b)
+        (isIdWord_startsToken hid)
+      have hkinds : kinds r' = ks ++ classifyPhase3 (u :: ⟨[' '], Flag.name f⟩ :: b) := by
+        unfold kinds
+        rw [← h]
+        show classifyPhase0 ts = _
+        rw [hb]
+        exact hks
+      have hmem : TokKind.flag f ∈ kinds r' := by
+        rw [hkinds]
+        refine List.mem_append_right _ ?_
+        show TokKind.flag f ∈ classifyWord u.word :: classifyWord (Flag.name f) :: classifyPhase3 b
+        rw [classifyWord_flag f]
+        simp
+      unfold flagsOf
+      exact List.mem_filterMap.2 ⟨TokKind.flag f, hmem, rfl⟩
+
+/-- And the refusal is real: with no `^id` on the line there is no safe place,
+so `setFlag` returns `none` rather than writing a word that reads back as
+title text. -/
+theorem insertAfterId_none (w : List Char) : ∀ ts : List Tok,
+    ts.all (fun t => !isIdWord t.word) = true → insertAfterId w ts = none := by
+  intro ts
+  induction ts with
+  | nil => intro _; rfl
+  | cons u us ih =>
+      intro h
+      simp only [List.all_cons, Bool.and_eq_true] at h
+      show (if isIdWord u.word then some (u :: ⟨[' '], w⟩ :: us)
+            else (insertAfterId w us).map (fun x => u :: x)) = none
+      rw [if_neg (by simpa using h.1), ih h.2]
+      rfl
+
+theorem setFlag_needs_a_boundary (f : Flag) (r : RawItem)
+    (h : r.toks.all (fun t => !isIdWord t.word) = true) : setFlag f r = none := by
+  unfold setFlag
+  rw [insertAfterId_none (Flag.name f) r.toks h]
+  rfl
+
 end Field
 end Tm
