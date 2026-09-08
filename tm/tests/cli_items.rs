@@ -347,6 +347,50 @@ fn readopt_brings_a_demoted_line_back() {
     insta::assert_json_snapshot!("readopt_json", json);
 }
 
+/// §4.1 + §17.2: ids are global and unique, so no verb may leave one `^id`
+/// on two live lines. `^m2` ships live in `week/2026-W37.md` beside its
+/// `[-]` archive copy under `month/…# Demoted`; readopting it into *another*
+/// horizon used to carry the copy across and report success, leaving `^m2`
+/// live twice and `tm check` at `error[dup-id]`, exit 2 (§17 M9: the tree
+/// must pass `tm check`).
+#[test]
+fn readopt_into_another_horizon_leaves_the_tree_valid() {
+    for to in ["week/2026-W38.md", "day"] {
+        let tm = Tm::new();
+        let json = tm.json(&["readopt", "^m2", "--to", to]);
+        assert_eq!(json["from"], "month/2026-09.md");
+
+        let check = tm.run(&["check"]);
+        assert_eq!(check.code, 0, "{to}: {}{}", check.stdout, check.stderr);
+
+        // Exactly one live line, in the horizon that was asked for, and the
+        // archive copy is gone.
+        let dest = json["to"].as_str().expect("a destination").to_string();
+        assert_eq!(tm.read(&dest).matches("^m2").count(), 1, "{}", tm.read(&dest));
+        assert!(!tm.read("week/2026-W37.md").contains("^m2 "));
+        assert!(!tm.read("week/2026-W37.md").ends_with("^m2\n"));
+        assert!(!tm.read("month/2026-09.md").contains("^m2"));
+        // … carrying the stamp the copy held (§11's demotion churn).
+        let line = tm.line(&dest, "m2");
+        assert!(line.starts_with("- [ ] "), "{line}");
+        assert!(line.contains("demoted:W37"), "{line}");
+    }
+}
+
+/// §6.3: readopt moves a *demoted* line. `^t1` was never demoted, so there
+/// is nothing to readopt — the verb refuses (`tm move` is the verb for that)
+/// instead of silently moving the line and logging a `readopt`.
+#[test]
+fn readopt_refuses_an_item_that_was_never_demoted() {
+    let tm = Tm::new();
+    let before = tm.read("week/2026-W37.md");
+    let out = tm.run(&["readopt", "^t1"]);
+    assert_ne!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains("not demoted"), "{}", out.stderr);
+    assert_eq!(tm.read("week/2026-W37.md"), before);
+    assert!(tm.events().is_empty(), "{:?}", tm.events());
+}
+
 #[test]
 fn drop_marks_the_line_dropped() {
     let tm = Tm::new();

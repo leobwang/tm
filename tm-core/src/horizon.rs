@@ -22,7 +22,9 @@
 //!   `move`; [`demote`]`(cx, id)` marks a week item
 //!   `[-]` and copies it into `month/<current>#Demoted` with `est:` and a
 //!   `demoted:W<nn>` stamp; [`readopt`]`(cx, id, to)` moves that copy back
-//!   into a week (`[-]` → `[ ]`, stamps kept); [`drop_item`]`(cx, id)` sets
+//!   into a week (`[-]` → `[ ]`, stamps kept), refusing an id with no
+//!   demoted line and absorbing the copy into the live line when the id
+//!   still has one; [`drop_item`]`(cx, id)` sets
 //!   `[~]`; [`rank`]`(cx, id, n)` moves a line to position `n` (1-based)
 //!   within its section.
 //! * **Closes** (§6.3): [`close_day`]`(cx, date)`, [`close_week`]`(cx,
@@ -150,7 +152,7 @@ use crate::model::{
     Dur, Horizon, Id, IsoWeek, Item, OnMiss, Period, Recur, Shape, Stamp, State, YearMonth,
 };
 use crate::store::{edit, PlanFiles, RuntimeState, Store, StoreError, LOG_PATH};
-use crate::tree::Tree;
+use crate::tree::{self, Tree};
 
 /// The floor a computed `est:` is clamped to. An item that was worked on for
 /// at least as long as its estimate is not finished — only a `done` event
@@ -974,45 +976,41 @@ fn write_demoted_copy(
 /// — the current week by default — turning `[-]` back into `[ ]` and keeping
 /// its stamps. Logs `readopt`.
 ///
-/// When the target already holds a **live** line with that id — the shape
-/// §4.3's own example tree ships, a `[ ]` week milestone beside its `[-]`
-/// archive copy under `month/…# Demoted` — moving the copy in would make the
-/// id a duplicate (§4.1: ids are global) and break `tm check`. The item is
-/// already where readopt wants it, so the archive copy is *absorbed*
-/// instead: its `demoted:` stamps join the live line and the copy is
-/// removed.
+/// Readopt is the demoted line's verb: an id with no demoted line anywhere is
+/// refused (`tm move` is the verb for moving a live line between horizons),
+/// so a `readopt` event in the log always records a real demotion undone
+/// (§10.1, §11's demotion churn).
+///
+/// When the tree still holds a **live** line with that id — the shape §4.3's
+/// own example tree ships, a `[ ]` week milestone beside its `[-]` archive
+/// copy under `month/…# Demoted` — moving the copy in would put the id on two
+/// live lines (§4.1: ids are global) and break `tm check`. The item is
+/// already in the plan, so the archive copy is *absorbed* instead: its
+/// `demoted:` stamps join the live line, the copy is removed, and the live
+/// line itself is what moves into `to`.
 pub fn readopt(cx: &Ctx, id: &Id, to: Option<&Horizon>) -> Result<Moved, HorizonError> {
     let current = Horizon::Week(IsoWeek::from_date(cx.today()));
     let to = to.unwrap_or(&current);
     let (from, item) = demoted_copy(cx, id)?;
-    let to_path = to.path();
-    let is_copy = item.state == State::Demoted || in_section(item, DEMOTED_SECTION);
-    if is_copy && from != to_path {
-        if let Some(moved) = absorb_into_live(cx, &from, &to_path, id, item)? {
-            return Ok(moved);
-        }
+    if let Some(moved) = absorb_into_live(cx, &from, to, id, item)? {
+        return Ok(moved);
     }
     move_line(cx, &from, id, item, to, None, true)
 }
 
-/// Fold the archive copy of `key` into the live line `to_path` already has,
-/// if it has one: the copy's stamps are merged onto that line and the copy is
-/// deleted. `None` when the target has no live line with that id, which is
-/// the ordinary readopt.
+/// Fold the archive copy of `key` into the live line the tree still has for
+/// it, if there is one: the copy's stamps are merged onto that line, the copy
+/// is deleted, and the line moves into `to` (it is the item; the copy was
+/// only the record). `None` when the id has no live line, which is the
+/// ordinary readopt.
 fn absorb_into_live(
     cx: &Ctx,
     from: &str,
-    to_path: &str,
+    to: &Horizon,
     key: &Id,
     copy: &Item,
 ) -> Result<Option<Moved>, HorizonError> {
-    if !cx.store.exists(to_path) {
-        return Ok(None);
-    }
-    let parsed = cx.store.read_file(to_path)?;
-    let Some(live) = parsed.items().find(|i| {
-        Tree::key_of(i) == *key && i.state != State::Demoted && !in_section(i, DEMOTED_SECTION)
-    }) else {
+    let Some((live_path, live)) = live_line(cx, key, from) else {
         return Ok(None);
     };
     let mut stamps: Vec<Stamp> = Vec::new();
@@ -1027,22 +1025,42 @@ fn absorb_into_live(
             l.set_token("demoted", &value);
             Ok(())
         })?;
-        cx.store.write_line_in(Some(to_path), key, &text)?;
+        cx.store.write_line_in(Some(&live_path), key, &text)?;
     }
     cx.store.remove_line_in(Some(from), key)?;
+    let to_path = to.path();
+    if live_path != to_path {
+        move_to(cx, &live_path, key, to, None)?;
+    }
     cx.log(Event::Readopt {
         id: key.to_string(),
     })?;
     Ok(Some(Moved {
         id: key.clone(),
         from: from.to_string(),
-        to: to_path.to_string(),
+        to: to_path,
     }))
 }
 
+/// The live line carrying `key` — one that is not a §6.3 archive copy, the
+/// same test `tm check` counts duplicates by ([`tree::is_archive_copy`]) — in
+/// a file other than `skip` (the archive copy being readopted). `None` when
+/// the id is only archive copies, which is the ordinary readopt.
+fn live_line<'a>(cx: &Ctx<'a>, key: &Id, skip: &str) -> Option<(String, &'a Item)> {
+    let files: &'a PlanFiles = cx.files;
+    files.files.iter().find_map(|f| {
+        if f.path == skip {
+            return None;
+        }
+        let item = item_of(f, key)?;
+        (!tree::is_archive_copy(item)).then(|| (f.path.clone(), item))
+    })
+}
+
 /// The copy of `id` to readopt: a `# Demoted` line in a month file if there
-/// is one (that is where a week close leaves it), else the line the tree
-/// resolves the id to.
+/// is one (that is where a week close leaves it), else any other demoted
+/// line. Readopt only ever moves a demoted line (§6.3), so an id with none is
+/// refused rather than moved like `tm move`.
 fn demoted_copy<'a>(cx: &Ctx<'a>, id: &Id) -> Result<(String, &'a Item), HorizonError> {
     let files: &'a PlanFiles = cx.files;
     let mut fallback: Option<(String, &Item)> = None;
@@ -1058,7 +1076,14 @@ fn demoted_copy<'a>(cx: &Ctx<'a>, id: &Id) -> Result<(String, &'a Item), Horizon
     }
     match fallback {
         Some(x) => Ok(x),
-        None => locate(cx, id),
+        None => {
+            let (_, item) = locate(cx, id)?;
+            Err(HorizonError::Horizon {
+                id: id.clone(),
+                horizon: item.horizon.to_string(),
+                message: "not demoted, so there is nothing to readopt (use `tm move`)".to_string(),
+            })
+        }
     }
 }
 

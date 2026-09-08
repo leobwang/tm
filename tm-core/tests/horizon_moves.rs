@@ -316,6 +316,10 @@ fn demote_refuses_an_item_that_is_not_in_a_week_file() {
     assert!(!store.exists(".tm/log.jsonl"));
 }
 
+/// §4.1: ids are global, so the live line is the item and the `# Demoted`
+/// copy is only the record — readopting into a week the live line is *not*
+/// in moves that line and absorbs the copy, rather than carrying the copy
+/// across and leaving `^m2` live in two week files.
 #[test]
 fn readopt_takes_the_demoted_copy_into_a_week_and_keeps_the_stamps() {
     let (_dir, store) = plan();
@@ -331,22 +335,47 @@ fn readopt_takes_the_demoted_copy_into_a_week_and_keeps_the_stamps() {
 
     assert_eq!(moved.from, MONTH);
     assert_eq!(moved.to, NEXT_WEEK);
+    // The live line itself, byte for byte, plus the copy's stamp.
     assert_eq!(
         text(&store, NEXT_WEEK),
-        "---\nweek: 2026-W38\nwindow: 2026-09-14..2026-09-20\n---\n- [ ] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2\n"
+        "---\nweek: 2026-W38\nwindow: 2026-09-14..2026-09-20\n---\n- [ ] 4 6b Rollback path passes tests   @O2 demoted:W37 ^m2\n"
     );
     // The month keeps its `# Demoted` heading, without the line.
     assert!(line_of(&store, MONTH, "m2").is_none());
     assert!(text(&store, MONTH).contains("# Demoted"));
-    only_changed(&before, &tree_text(&store), &[MONTH, NEXT_WEEK]);
+    // … and W37 no longer carries it, so the id is on exactly one line.
+    assert!(line_of(&store, WEEK, "m2").is_none());
+    only_changed(&before, &tree_text(&store), &[MONTH, WEEK, NEXT_WEEK]);
     assert_eq!(log_events(&store), vec![("readopt".to_string(), "m2".to_string())]);
 
     // The tree resolves the readopted line, not the archive copy.
-    let (_files, tree) = snapshot(&store);
+    let (files, tree) = snapshot(&store);
+    assert!(tree.duplicate_ids().is_empty(), "{:?}", tree.duplicate_ids());
+    assert_eq!(
+        files.items().filter(|i| Tree::key_of(i) == id("m2")).count(),
+        1
+    );
     let m2 = tree.get(&id("m2")).unwrap();
     assert_eq!(m2.state, State::Todo);
     assert_eq!(m2.stamps.demoted, vec![Stamp::Week(37)]);
     assert_eq!(m2.horizon, Horizon::Week(IsoWeek::new(2026, 38)));
+}
+
+/// §6.3: readopt is the verb for a *demoted* line. An id with no demoted
+/// line anywhere has nothing to readopt, so the verb refuses instead of
+/// quietly acting as `tm move` and writing a `readopt` event §11 counts as
+/// demotion churn.
+#[test]
+fn readopt_refuses_an_item_that_was_never_demoted() {
+    let (_dir, store) = plan();
+    let before = tree_text(&store);
+    let (files, tree) = snapshot(&store);
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-14T09:00:00-05:00"));
+    let err = readopt(&cx, &id("t1"), None).unwrap_err();
+    assert!(matches!(err, HorizonError::Horizon { .. }), "{err}");
+    assert!(err.to_string().contains("not demoted"), "{err}");
+    assert_eq!(before, tree_text(&store));
+    assert!(!store.exists(".tm/log.jsonl"));
 }
 
 #[test]

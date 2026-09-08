@@ -972,6 +972,20 @@ carrying `demoted:W37,W38` has failed to happen twice; that is a decision you
 have been avoiding, not a scheduling problem. `tm review month` lists those under
 `cuts`.
 
+`readopt` is the demoted line's verb, and it is the only one, so it holds to two
+rules:
+
+- **An item that was never demoted is refused**, because there is nothing to
+  bring back: `` tm: ^t1 is in week 2026-W37: not demoted, so there is nothing to
+  readopt (use `tm move`) ``, exit 1. Use `tm move ^t1 <horizon>` to move a live
+  line.
+- **An item that is still live somewhere gets its archive copy folded in**, not
+  copied. Right after a week close the id is on two lines: the `[-]` record and
+  the live line you carried forward. `tm readopt ^m2 --to week/2026-W38.md` then
+  moves *the live line* into W38, adds the copy's `demoted:` stamps to it, and
+  deletes the copy — one line, one id. Ids are global, so nothing else would
+  leave the tree valid.
+
 ### Two traps about file names
 
 1. **A stray `.md` file in the plan directory is still parsed**, and its `- [ ]`
@@ -2085,7 +2099,6 @@ computed live; re-run `tm plan` to refresh the file.
 | `tm plan --explain ^typo` | `^typo is not a candidate today`, exit 0 |
 | `tm event <name>` matching nothing | `event <name> logged`, exit 0 |
 | `tm drop` on an already-dropped item | exit 0 |
-| `tm readopt` on an item that was never demoted | moves it anyway — and can create a duplicate id, which only `tm check` catches |
 | `tm sync-cal` with no feeds | a `!` warning, exit 0 |
 | `tm interrupt` with nothing running | exit 0; `stop`, `extend` and `pause` all fail |
 | `tm done ^other` while a block runs | retro-dones `^other` and **leaves your block running** |
