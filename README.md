@@ -514,8 +514,14 @@ $ echo $?
 1
 ```
 
-`--drop` belongs to the month close alone; `tm close day` and `tm close week`
-reject a drop list rather than ignore it.
+`--drop` belongs to the month close alone. `tm close day --help` and
+`tm close week --help` do not offer it — only `tm close month --help` does —
+and typing it on one of them is refused rather than ignored:
+
+```console
+$ tm close day --drop '^p1'
+tm: --drop belongs to `tm close month` (§6.3); `tm close day` has no drop list — use `tm drop ^id`
+```
 
 ---
 
@@ -1728,14 +1734,15 @@ Every verb has its own `tm <verb> --help` with the exact flags.
 | `tm plan [--week] [--diff] [--explain ^ID] [--allow-home]` | plan today and rewrite the day file's generated block. `--week` prints the capacity grid instead; `--explain` prints one item's priority and prints no timetable |
 | `tm now` | the current block and the next three segments. Read-only, always live |
 | `tm review <day\|week\|month> [--date D] [--write]` | the period's numbers. `--write` stores it in the file |
-| `tm close <day\|week\|month> [--date D] [--drop ^ID]` | close a period early. Normally automatic. `--drop` is for the month close only |
+| `tm close <day\|week\|month> [--date D]` | close a period early. Normally automatic. Each period is its own command, so `tm close day --help` shows only the flags a day close has |
+| `tm close month [--drop ^ID]` | …and the drop list is the month close's alone (§6.3). `tm close day --drop ^id` is an error, not a shrug |
 
 ### Working
 
 | command | what it does |
 |---|---|
-| `tm start <ID> [--energy N]` | start a block. Asks for your energy on a terminal. Accepts a routine's name as well as an id |
-| `tm done [ID] [--partial] [--went 1\|2\|3]` | finish the running block, or an item retrospectively. `--went` is 1 fine, 2 hard, 3 collapsed |
+| `tm start <ID> [--energy N]` | start a block. Asks for your energy on a terminal. Accepts a routine's name as well as an id. `N` is 0–5; anything else is an error |
+| `tm done [ID] [--partial] [--went 1\|2\|3]` | finish the running block, or an item retrospectively. `--went` is 1 fine, 2 hard, 3 collapsed; anything else is an error |
 | `tm extend [BY]` | extend the running block; default one block. Rewrites the item's `est:` |
 | `tm stop` | stop the running block; the remainder goes back in the pool |
 | `tm pause` | pause / unpause the running timer (a toggle) |
@@ -2097,6 +2104,8 @@ computed live; re-run `tm plan` to refresh the file.
 | you ran | what happened |
 |---|---|
 | `tm rank ^id 99` | clamped silently, and still prints `^id → position 99` |
+| `tm plan --week --explain ^id` | prints the week grid; `--week` wins and `--explain` (or `--diff`) is ignored |
+| `tm model --fit --compare` | fits and prints the fit; `--compare` is ignored. §13 writes these three as alternatives — run one at a time |
 | `tm plan --explain ^typo` | `^typo is not a candidate today`, exit 0 |
 | `tm event <name>` matching nothing | `event <name> logged`, exit 0 |
 | `tm drop` on an already-dropped item | exit 0 |

@@ -511,6 +511,14 @@ pub struct StartOut {
 
 /// `tm start ^id`.
 pub fn start(g: &Globals, args: &super::StartArgs) -> Result<i32, CliError> {
+    // `--energy` is §8.5's reported level, the same 0–5 scale `tm energy`
+    // takes — and `tm energy 9` says so. Filtering an out-of-range value away
+    // here instead asked for the energy again on a terminal and recorded
+    // nothing off one, which is the report the user typed thrown away without
+    // a word. Checked before the tree is loaded: nothing else runs.
+    if let Some(level) = args.energy.filter(|v| *v > 5) {
+        return Err(CliError::msg(format!("--energy is 0–5, not {level}")));
+    }
     let mut ctx = Ctx::load(g, true)?;
     let id = Ctx::key(&args.id);
     let item = ctx.item(&id)?.clone();
@@ -531,7 +539,7 @@ pub fn start(g: &Globals, args: &super::StartArgs) -> Result<i32, CliError> {
         f.since_break_min = 0;
     }
     let pred = energy::predict(&ctx.model, &ctx.cfg, &f);
-    let rep = args.energy.filter(|v| *v <= 5).or_else(|| ask_energy(pred));
+    let rep = args.energy.or_else(|| ask_energy(pred));
     let tags = ctx.tree.tags_effective(&id);
     let multiplier = energy::duration_multiplier(&ctx.model, item.ci, &tags);
     let remaining = ctx
@@ -627,6 +635,15 @@ pub struct DoneOut {
 
 /// `tm done [--partial] [^id]`.
 pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
+    // §10.1's `went` is 1, 2 or 3 (§8.5). Filtering anything else away left
+    // the two records of one `done` disagreeing: the `## Log` note in the day
+    // file printed `went=7` while `.tm/log.jsonl` recorded no `went` at all,
+    // and §8.5 never saw the report. Checked before the tree is loaded.
+    if let Some(went) = args.went.filter(|w| !(1..=3).contains(w)) {
+        return Err(CliError::msg(format!(
+            "--went is 1 fine, 2 hard or 3 collapsed (§8.5), not {went}"
+        )));
+    }
     let mut ctx = Ctx::load(g, true)?;
     let active = ctx.state.active.clone();
     let (id, retro) = match (&args.id, &active) {
@@ -698,7 +715,7 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
             id: id.to_string(),
             est_min,
             actual_min,
-            went: args.went.filter(|w| (1..=3).contains(w)),
+            went: args.went,
             tags: ctx.tree.tags_effective(&id),
             // §3.1's default when the line itself is gone.
             ci: item.as_ref().map(|i| i.ci).unwrap_or(3),
