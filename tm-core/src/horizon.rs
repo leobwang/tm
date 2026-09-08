@@ -366,10 +366,20 @@ impl CloseReport {
     /// finds the work done and would otherwise print an all-empty report.
     /// Absorbing what the auto-close did makes `tm close` say what the close
     /// actually did, whichever run performed it.
-    pub fn absorb(&mut self, earlier: CloseReport) {
+    ///
+    /// A `--drop` this run honoured undoes the carry `earlier` reported for
+    /// the same id ([`close_month`] brings the line back), so those entries
+    /// are folded out: the counts describe the tree the two runs together
+    /// left behind, not the intermediate state.
+    pub fn absorb(&mut self, mut earlier: CloseReport) {
         fn prepend<T>(mine: &mut Vec<T>, mut theirs: Vec<T>) {
             theirs.append(mine);
             *mine = theirs;
+        }
+        if !self.dropped.is_empty() {
+            let dropped: HashSet<&Id> = self.dropped.iter().collect();
+            earlier.moved.retain(|m| !dropped.contains(&m.id));
+            earlier.demoted.retain(|d| !dropped.contains(&d.id));
         }
         prepend(&mut self.moved, earlier.moved);
         prepend(&mut self.demoted, earlier.demoted);
@@ -1548,6 +1558,15 @@ fn cut_note(id: &Id, stamps: usize) -> String {
 /// demoted items keep their stamps); ids in `drops` become `[~]` and stay
 /// behind. The report lists what carried over with its stamp count, which is
 /// what `/plan-month` proposes cuts from.
+///
+/// A `--drop` is never silently discarded. The close auto-runs with an empty
+/// drop list on the first command after the month ends ([`auto_close`]), so
+/// by the time a user types `tm close month --drop ^id` the carry has usually
+/// already happened and the line is in the *next* month's file. Such an id is
+/// brought back and dropped, which is exactly where the same command run
+/// before the auto-close would have left it — the close is idempotent under a
+/// growing drop list. An id in neither file cannot be honoured and is an
+/// error.
 pub fn close_month(
     cx: &Ctx,
     month: YearMonth,
@@ -1560,7 +1579,7 @@ pub fn close_month(
         .ok_or_else(|| HorizonError::MissingFile(from.clone()))?;
     let next = month.next();
     let to = Horizon::Month(next).path();
-    let drops: HashSet<&Id> = drops.iter().collect();
+    let wanted: HashSet<&Id> = drops.iter().collect();
     let mut report = CloseReport::new(Period::Month, month.to_string());
 
     struct Carry<'a> {
@@ -1571,9 +1590,11 @@ pub fn close_month(
     }
     let mut carry: Vec<Carry> = Vec::new();
     let mut to_drop: Vec<(Id, &Item)> = Vec::new();
+    let mut resolved: HashSet<Id> = HashSet::new();
     for item in file.items() {
         let key = Tree::key_of(item);
-        if drops.contains(&key) {
+        if wanted.contains(&key) {
+            resolved.insert(key.clone());
             to_drop.push((key, item));
             continue;
         }
@@ -1591,9 +1612,55 @@ pub fn close_month(
         });
     }
 
+    // Drops whose line this close already carried into `to` (an earlier run
+    // of the very same close — usually the auto-close): `(id, line, section
+    // to put it back in)`. `resolved` holds the ids the loop above matched,
+    // so this one sees only the leftovers, each exactly once. Like every
+    // other decision here it is made before the first write, so a `--drop`
+    // that cannot be honoured leaves the tree untouched rather than
+    // half-closed.
+    let mut pull_back: Vec<(Id, &Item, Option<String>)> = Vec::new();
+    for id in drops {
+        if !resolved.insert(id.clone()) {
+            continue;
+        }
+        match cx.files.file(&to).and_then(|f| item_of(f, id)) {
+            Some(item) => pull_back.push((id.clone(), item, item.src.section.clone())),
+            None => {
+                return Err(match locate(cx, id) {
+                    Ok((path, _)) => HorizonError::Horizon {
+                        id: id.clone(),
+                        horizon: path,
+                        message: format!(
+                            "--drop only names items of {from} (or ones this close already \
+                             carried into {to}); drop it where it lives with `tm drop`"
+                        ),
+                    },
+                    Err(e) => e,
+                })
+            }
+        }
+    }
+
     for (key, item) in &to_drop {
         let text = rewrite(item, key, |l| l.set_state(State::Dropped))?;
         cx.store.write_line_in(Some(from.as_str()), key, &text)?;
+        cx.log(Event::Drop {
+            id: key.to_string(),
+        })?;
+        report.dropped.push(key.clone());
+    }
+
+    for (key, item, section) in &pull_back {
+        let text = rewrite(item, key, |l| l.set_state(State::Dropped))?;
+        cx.store.write_line_in(Some(to.as_str()), key, &text)?;
+        cx.store
+            .move_line_from(Some(to.as_str()), key, &from, section.as_deref())?;
+        cx.log(Event::Move {
+            id: key.to_string(),
+            from: to.clone(),
+            to: from.clone(),
+        })?;
         cx.log(Event::Drop {
             id: key.to_string(),
         })?;

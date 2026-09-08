@@ -500,8 +500,22 @@ $ tm close month --drop '^O3'
 closed month 2026-09 · 6 moved · 4 demoted · 0 reopened · 1 dropped
 ```
 
-That has to be done *during* the month. Once the month has auto-closed, the
-`--drop` list has nothing left to act on and is silently ignored.
+It works after the month has ended too. The automatic close runs before the
+verb body and carries everything forward, so by then the line is in the next
+month's file; `--drop` fetches it back and drops it, leaving the same tree the
+same command run on the last day of the month would have. A `--drop` that names
+nothing this close can act on — a typo, or an item that lives in `backlog.md` —
+is an error, not a shrug:
+
+```console
+$ tm close month --drop '^a1'
+tm: ^a1 is in backlog.md: --drop only names items of month/2026-09.md (or ones this close already carried into month/2026-10.md); drop it where it lives with `tm drop`
+$ echo $?
+1
+```
+
+`--drop` belongs to the month close alone; `tm close day` and `tm close week`
+reject a drop list rather than ignore it.
 
 ---
 
@@ -1699,7 +1713,7 @@ Every verb has its own `tm <verb> --help` with the exact flags.
 | `tm plan [--week] [--diff] [--explain ^ID] [--allow-home]` | plan today and rewrite the day file's generated block. `--week` prints the capacity grid instead; `--explain` prints one item's priority and prints no timetable |
 | `tm now` | the current block and the next three segments. Read-only, always live |
 | `tm review <day\|week\|month> [--date D] [--write]` | the period's numbers. `--write` stores it in the file |
-| `tm close <day\|week\|month> [--date D] [--drop ^ID]` | close a period early. Normally automatic |
+| `tm close <day\|week\|month> [--date D] [--drop ^ID]` | close a period early. Normally automatic. `--drop` is for the month close only |
 
 ### Working
 
@@ -2095,8 +2109,11 @@ computed live; re-run `tm plan` to refresh the file.
   file, holding the text `review pending`** until `tm review day --write` fills
   it in. It never overwrites a review that is already there, so the two can run
   in either order.
-- **`tm close month --drop ^id` is ignored once the month has auto-closed.** Run
-  it on the last day of the month, or `tm drop ^id` first and then close.
+- **`tm close <period>` with no `--date` closes the period the auto-close just
+  ran — but only when that happened in this very command.** If some earlier
+  command already triggered it, `tm close month` means "close the month I am in
+  now", and closes it early. After the month has rolled over, name the month you
+  mean: `tm close month --date 2026-09 --drop ^id`.
 - **A catch-up sweep closes at most 16 periods of each kind.** Older ones are
   stamped closed without being run. Sixteen days is a fortnight and a bit, so a
   normal holiday is fine — but a tree left untouched for months can have its

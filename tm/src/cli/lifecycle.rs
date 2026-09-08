@@ -58,8 +58,20 @@ pub struct CloseOut {
 
 /// `tm close <day|week|month> [--drop ^id …]` (§6.3).
 pub fn close(g: &Globals, args: &super::CloseArgs) -> Result<i32, CliError> {
-    let mut ctx = Ctx::load(g, true)?;
     let period: Period = args.period.into();
+    // §6.3 gives `--drop` to the month close alone: it is the exception to
+    // "moves them to the next month file". A day close moves pinned items to
+    // the week and a week close demotes into the month, neither of which the
+    // flag says anything about — so accepting it there would discard what the
+    // user asked for without a word.
+    if !args.drop.is_empty() && period != Period::Month {
+        return Err(CliError::msg(format!(
+            "--drop belongs to `tm close month` (§6.3); `tm close {}` has no drop list — \
+             use `tm drop ^id`",
+            horizon::period_name(period)
+        )));
+    }
+    let mut ctx = Ctx::load(g, true)?;
     let rec = undo_stack::Recorder::start(&ctx, "close")?;
     // §6.3: the close "runs automatically on the first command after the
     // period ends" — and this is that command. When the auto-close in
