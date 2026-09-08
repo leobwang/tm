@@ -846,6 +846,19 @@ sketch, and because the gaps are where the next stage's cost lives.
     `PlanCore.lines` of a loaded plan to be `Nodup`, which
     `loadCore_lines_mem` gives as a membership statement and not as a list.)
 
+    **The consequence, stated rather than hidden: three diagnostics are
+    unreachable from a well-formed request.** `siteOutOfRange`, the plan-level
+    `ambiguousDemotion` that `firstUnoriented` names, and `itemCheck:
+    rankCollision` cannot fire on anything the loader itself builds — and, since
+    `move_at_freshRank_normalized` and its siblings, `rankCollision` cannot fire
+    on an `applyCmd` post-state either. They are kept because "cannot happen" is
+    exactly what the shipped `move_to` also said, and because a hand-written
+    transform can still reach them; but a checker that no *input* can fail is a
+    checker whose bite is a proof and not a test, and that is worth writing down.
+    The load-time `ambiguousDemotion` raised by `pairedEntity` is a different
+    thing and is reachable — `two_demoted_lines_with_no_horizons_are_rejected_by_name`
+    is the request that reaches it.
+
 11. **`Normalized` after a command is a theorem now; the six other item-level
     conjuncts are not, and should not be.** `normalized_set` (Plan.lean) is the
     preservation proof: a single-entity update onto sites nothing else occupies
