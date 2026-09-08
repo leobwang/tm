@@ -96,16 +96,72 @@ theorem impl_day_rule_disagrees : targetContaining day 6 ≠ closeTo day 7 := by
 /-- And the rule the Rust uses can target an already-closed week. -/
 theorem containing_can_target_a_closed_region : Closed (targetContaining day 6) 7 := by decide
 
-/-- A horizon reference as the user writes it: `tm move ^id week`, or
-`backlog`, which is the *absence* of a bound. -/
-inductive HorizonRef
-  | bounded (g : Grain)
-  | backlog
-deriving DecidableEq, Repr
+/-! ## The order a close generates
 
-/-- The file a horizon reference names at `now`. -/
-def HorizonRef.regionAt : HorizonRef → Day → Option Region
-  | .bounded g, now => some (regionOf g now)
-  | .backlog,   _   => none
+A demotion writes two lines: the tombstone stays in the region that was
+**closed**, and the live copy goes to `closeTo`, which `closeTo_target_is_open`
+says is never itself closed.  So the two regions of a demotion are never
+interchangeable — one of them is behind the other in this order — and that is
+the fact the loader inverts when both lines read `[-]`.
+
+`Option Region` is a *horizon*: `none` is backlog, the **absence** of a bound.
+Nothing closes backlog, so no tombstone can sit in it; it is therefore after
+every bounded region and before none of them. -/
+
+/-- Strictly before, on bounded regions: a finer grain is demoted into a coarser
+one (day → week → month), and a month is closed into a later month — §6.3's
+three rows, which are one rule (`closeTo`) at three grains. -/
+def Region.precedes (a b : Region) : Bool :=
+  decide (a.grain.val < b.grain.val) ||
+    (decide (a.grain.val = b.grain.val) && decide (a.ix < b.ix))
+
+/-- The same order on horizons, with backlog last. -/
+def horizonPrecedes : Option Region → Option Region → Bool
+  | some a, some b => Region.precedes a b
+  | some _, none   => true
+  | none,   _      => false
+
+theorem horizonPrecedes_iff (a b : Region) :
+    horizonPrecedes (some a) (some b) = true ↔
+      (a.grain.val < b.grain.val ∨ (a.grain.val = b.grain.val ∧ a.ix < b.ix)) := by
+  simp [horizonPrecedes, Region.precedes]
+
+theorem horizonPrecedes_irrefl (r : Option Region) : horizonPrecedes r r = false := by
+  cases r with
+  | none => rfl
+  | some a => simp [horizonPrecedes, Region.precedes]
+
+/-- **Antisymmetry is what makes the loader determinate.**  At most one of the
+two orientations of a pair of horizons is a demotion, so "which line is the
+tombstone" is decided by the files and never by the order they were listed. -/
+theorem horizonPrecedes_asymm {a b : Option Region} (h : horizonPrecedes a b = true) :
+    horizonPrecedes b a = false := by
+  rcases a with _ | a
+  · simp [horizonPrecedes] at h
+  · rcases b with _ | b
+    · rfl
+    · rw [horizonPrecedes_iff] at h
+      have hn : ¬ (horizonPrecedes (some b) (some a) = true) := by
+        rw [horizonPrecedes_iff]; omega
+      simpa using hn
+
+/-- **Where the order comes from: the close rule itself.**  Close grain `g` at
+`now` and the tombstone's region — the one that was closed — comes strictly
+before the region the leftovers were filed into.  For a bounded grain below
+month the grain alone settles it; for month it is `Closed`, the hypothesis, that
+does.  So every demotion `tm close` writes is orientable, and the loader does not
+have to guess. -/
+theorem demotion_target_follows_the_closed_region (r : Region) (now : Day) (h : Closed r now) :
+    horizonPrecedes (some r) (some (closeTo r.grain now)) = true := by
+  have hlt := r.grain.isLt
+  simp only [Closed] at h
+  rw [horizonPrecedes_iff]
+  by_cases hg : r.grain.val = 2
+  · have hfix : coarsen r.grain = r.grain := Fin.ext (by simp [coarsen, hg])
+    simp only [closeTo, regionOf, hfix]
+    exact Or.inr ⟨trivial, h⟩
+  · left
+    simp only [closeTo, regionOf, coarsen]
+    omega
 
 end Tm

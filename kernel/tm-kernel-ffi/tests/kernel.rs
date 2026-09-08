@@ -37,10 +37,21 @@ fn round_trip_is_byte_faithful() {
 #[test]
 fn move_relocates_the_line_verbatim() {
     let out = call(&req(r#"[{"op":"move","id":"m1","doc":1}]"#)).unwrap();
-    let month = out.split(r#"{"lines":"#).nth(2).unwrap();
+    let month = out.split(r#""lines":"#).nth(2).unwrap();
     assert!(month.contains("Finish ch.5 exercises        @O1 ^m1"), "{out}");
-    let week = out.split(r#"{"lines":"#).nth(1).unwrap();
+    let week = out.split(r#""lines":"#).nth(1).unwrap();
     assert!(!week.contains("^m1"), "the line must leave the week file: {out}");
+}
+
+/// The response carries each document's horizon back, because the request
+/// carries it in: a demotion's two lines are told apart by the regions of their
+/// files, so a response that dropped them would be one the kernel could not
+/// read (see `the_kernel_reads_back_what_it_writes`).
+#[test]
+fn the_response_carries_each_documents_horizon() {
+    let out = call(&req("[]")).unwrap();
+    assert!(out.contains(r#"{"grain":1,"ix":35,"lines":"#), "{out}");
+    assert!(out.contains(r#"{"grain":2,"ix":8,"lines":"#), "{out}");
 }
 
 #[test]
@@ -131,17 +142,89 @@ fn a_lone_demoted_line_is_rejected_not_rewritten() {
 /// it as a duplicate id, so the kernel could not read its own output.
 #[test]
 fn the_two_line_demotion_form_round_trips() {
-    let req = r##"{"docs":[{"path":"w.md","lines":["- [-] 5 6b Old work ^m1"]},{"path":"m.md","lines":["- [-] 5 6b Old work ^m1"]}],"cmds":[]}"##;
-    let out = call(req).unwrap();
+    let out = call(&pair("[]")).unwrap();
     assert_eq!(out.matches("- [-] 5 6b Old work ^m1").count(), 2, "{out}");
     assert!(!out.contains("- [ ]"), "no box may change on a read: {out}");
+}
+
+/// The two-line demotion form, as `demote` writes it: `w.md` is the week that
+/// was closed, `m.md` the month it was filed into.
+fn pair(cmds: &str) -> String {
+    format!(
+        r##"{{"docs":[{{"path":"w.md","grain":1,"ix":35,"lines":["- [-] 5 6b Old work ^m1"]}},
+              {{"path":"m.md","grain":2,"ix":8,"lines":["- [-] 5 6b Old work ^m1"]}}],"cmds":{cmds}}}"##
+    )
+}
+
+/// **The defect an audit found in the first fix of Error 1.** Both lines of a
+/// demotion read `[-]`, so *both* orientations of the pair are entities that
+/// render exactly those two lines: `pairedEntity` tried one and then the other
+/// and the first that worked won, which made the tombstone whichever line the
+/// host happened to list second. Listing the same two files the other way round
+/// moved which file a `drop` marked.
+///
+/// The tombstone is now the line in the horizon that was closed — the week —
+/// whatever order the documents arrive in.
+#[test]
+fn which_line_is_the_tombstone_does_not_depend_on_the_document_order() {
+    let forwards = call(&pair(r#"[{"op":"drop","id":"m1"}]"#)).unwrap();
+    let backwards = call(
+        r##"{"docs":[{"path":"m.md","grain":2,"ix":8,"lines":["- [-] 5 6b Old work ^m1"]},
+              {"path":"w.md","grain":1,"ix":35,"lines":["- [-] 5 6b Old work ^m1"]}],
+             "cmds":[{"op":"drop","id":"m1"}]}"##,
+    )
+    .unwrap();
+    // the live line is the one in the month file, and it is the one that drops
+    for out in [&forwards, &backwards] {
+        let month = out.split(r#""lines":"#).find(|s| s.contains("m.md")).unwrap();
+        let week = out.split(r#""lines":"#).find(|s| s.contains("w.md")).unwrap();
+        assert!(month.contains("- [~] 5 6b Old work ^m1"), "{out}");
+        assert!(week.contains("- [-] 5 6b Old work ^m1"), "the tombstone stays: {out}");
+    }
+}
+
+/// …and where the request declares no horizons there is nothing to decide it
+/// with, so the loader says so instead of choosing. `tm`'s own files always
+/// declare one; a request that does not is a host bug, and this is the
+/// diagnostic for it.
+#[test]
+fn two_demoted_lines_with_no_horizons_are_rejected_by_name() {
+    let out = call(
+        r##"{"docs":[{"path":"w.md","lines":["- [-] 5 6b Old work ^m1"]},{"path":"m.md","lines":["- [-] 5 6b Old work ^m1"]}],"cmds":[]}"##,
+    )
+    .unwrap();
+    assert_eq!(out, r##"{"err":{"ambiguousDemotion":"m1"}}"##, "{out}");
+}
+
+/// The other half of the same rule: the kernel may not *write* a pair it could
+/// not read. A demotion files work forward — §6.3's close targets a region that
+/// is not yet closed — so a `demote` into a finer file, and a `move` that would
+/// carry a demoted line back behind its own tombstone, are refused.
+#[test]
+fn a_demotion_may_not_file_work_backwards() {
+    let back = call(
+        r##"{"docs":[{"path":"w.md","grain":1,"ix":35,"lines":["- [ ] 5 6b Old work ^m1"]},
+              {"path":"d.md","grain":0,"ix":250,"lines":[]}],
+             "cmds":[{"op":"demote","id":"m1","doc":1,"period":37}]}"##,
+    )
+    .unwrap();
+    assert_eq!(back, r##"{"err":{"kernel":"badHorizon"}}"##, "{back}");
+
+    let moved = call(
+        r##"{"docs":[{"path":"w.md","grain":1,"ix":35,"lines":["- [-] 5 6b Old work ^m1"]},
+              {"path":"m.md","grain":2,"ix":8,"lines":["- [-] 5 6b Old work ^m1"]},
+              {"path":"d.md","grain":0,"ix":250,"lines":[]}],
+             "cmds":[{"op":"move","id":"m1","doc":2}]}"##,
+    )
+    .unwrap();
+    assert_eq!(moved, r##"{"err":{"kernel":"badHorizon"}}"##, "{moved}");
 }
 
 /// The whole pipeline, end to end: demote, then feed the kernel's own output
 /// back in with no commands. Nothing moves.
 #[test]
 fn the_kernel_reads_back_what_it_writes() {
-    let start = r##"{"docs":[{"path":"w.md","lines":["# Tasks","- [ ] 5 6b Old work ^m1"]},{"path":"m.md","lines":["# Outcomes"]}],"cmds":[{"op":"demote","id":"m1","doc":1,"period":37}]}"##;
+    let start = r##"{"docs":[{"path":"w.md","grain":1,"ix":35,"lines":["# Tasks","- [ ] 5 6b Old work ^m1"]},{"path":"m.md","grain":2,"ix":8,"lines":["# Outcomes"]}],"cmds":[{"op":"demote","id":"m1","doc":1,"period":37}]}"##;
     let once = call(start).unwrap();
     let docs = once.trim_start_matches(r##"{"ok":{"docs":"##).trim_end_matches("}}");
     let twice = call(&format!(r##"{{"docs":{docs},"cmds":[]}}"##)).unwrap();

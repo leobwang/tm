@@ -14,11 +14,15 @@ clear about which is which is the whole point of the bottom section.
   `PlanCore` (`no_two_lines_of_one_id_in_one_path`, Plan.lean), so no command
   has to preserve it and none can break it, including commands nobody has
   written yet.
-* **Not free.** That every placement names a file that exists, and that no two
-  files share a path, are decidable predicates `WfPlan.mapAt` re-establishes by
-  computation on the post-state of every command — `lift`, at the plan level.
-  `mapAt_ok_of_inRange` and `cmdMove_succeeds` are the proofs that the commands
-  can discharge them, so the check is an obligation and not a trapdoor.
+* **Not free.** That every placement names a file that exists, that no two
+  files share a path, and that a tombstone sits in a horizon strictly before the
+  live line it was left by, are decidable predicates `WfPlan.mapAt`
+  re-establishes by computation on the post-state of every command — `lift`, at
+  the plan level.  `mapAt_ok_of_inRange` and `cmdMove_succeeds` are the proofs
+  that the commands can discharge them, so the check is an obligation and not a
+  trapdoor; `mapAt_rejects_unoriented` and
+  `demote_into_a_horizon_that_does_not_follow_is_rejected` are the proofs that
+  it bites.
 
 An earlier version of this module claimed the first bullet for all three, in a
 theorem whose command argument was unused.  It is withdrawn.
@@ -29,6 +33,9 @@ inductive KErr
   | occupied          -- the destination file already holds this id's other line
   | noSuchId
   | notDemoted
+  /-- the destination is not a horizon this item may occupy: either not a
+      document of this plan at all, or — while a tombstone stands — not ahead of
+      the file that tombstone is in.  Both are "the post-state fails `planWf`". -/
   | badHorizon
 deriving DecidableEq, Repr
 
@@ -113,9 +120,11 @@ abbrev Relocation := (p : WfPlan) → Dest p.val → Except KErr WfPlan
 
 /-- Apply an entity transform at one id.  The store obligations are discharged
 here once; the plan-level obligation is **re-established by computation** on the
-post-state, which is what makes it impossible to forget.  `planWf` now includes
-`sitesInRange`, so this check is the reason a transform cannot leave a placement
-pointing at a file that is not there. -/
+post-state, which is what makes it impossible to forget.  `planWf` includes
+`sitesInRange` and `demotionsOriented`, so this one check is the reason a
+transform cannot leave a placement pointing at a file that is not there, and the
+reason it cannot leave a demotion whose two lines the loader could not tell
+apart. -/
 def WfPlan.mapAt (p : WfPlan) (i : Id) (f : Entity → Except KErr Entity) :
     Except KErr WfPlan :=
   match h : p.val.store.get i with
@@ -173,18 +182,33 @@ theorem sitesInRange_set (p : PlanCore) (i : Id) (e' : Entity) (h : (p.store.get
   · rw [Store.get_set_other _ _ _ _ _ hji]
     exact List.all_eq_true.1 hp j (by simpa using hj)
 
+theorem demotionsOriented_set (p : PlanCore) (i : Id) (e' : Entity)
+    (h : (p.store.get i).isSome = true) (hp : demotionsOriented p = true)
+    (hor : demotionOriented p e' = true) :
+    demotionsOriented { p with store := p.store.set i e' h } = true := by
+  simp only [demotionsOriented, List.all_eq_true]
+  intro j hj
+  by_cases hji : j = i
+  · subst hji
+    rw [Store.get_set_self]
+    exact hor
+  · rw [Store.get_set_other _ _ _ _ _ hji]
+    exact List.all_eq_true.1 hp j (by simpa using hj)
+
 /-- **The preservation proof, with every hypothesis load-bearing.**  Given an
-entity transform that succeeds and lands inside the plan's documents, `mapAt`
-succeeds, writes exactly that entity, and leaves `docs` alone. -/
+entity transform that succeeds, lands inside the plan's documents, and leaves
+any tombstone behind the live line, `mapAt` succeeds, writes exactly that
+entity, and leaves `docs` alone. -/
 theorem mapAt_ok_of_inRange (p : WfPlan) (i : Id) (f : Entity → Except KErr Entity)
     (e e' : Entity) (hget : p.val.store.get i = some e) (hf : f e = .ok e')
-    (hin : entityInRange p.val e' = true) :
+    (hin : entityInRange p.val e' = true) (hor : demotionOriented p.val e' = true) :
     ∃ q : WfPlan, p.mapAt i f = .ok q ∧ q.val.store.get i = some e' ∧
       q.val.docs = p.val.docs := by
   have hsome : (p.val.store.get i).isSome = true := by rw [hget]; rfl
   have hparts := planWf_parts p.property
   have hq : planWf { p.val with store := p.val.store.set i e' hsome } = true :=
-    planWf_of_parts hparts.1 (sitesInRange_set p.val i e' hsome hparts.2.1 hin) hparts.2.2
+    planWf_of_parts hparts.1 (sitesInRange_set p.val i e' hsome hparts.2.1 hin) hparts.2.2.1
+      (demotionsOriented_set p.val i e' hsome hparts.2.2.2 hor)
   refine ⟨⟨_, hq⟩, ?_, ?_, rfl⟩
   · unfold WfPlan.mapAt
     split
@@ -196,6 +220,34 @@ theorem mapAt_ok_of_inRange (p : WfPlan) (i : Id) (f : Entity → Except KErr En
       rw [hf]
       simp only [dif_pos hq]
   · exact Store.get_set_self p.val.store i e' hsome
+
+/-- **And the check bites.**  A transform whose result would leave a tombstone
+in a horizon the live line does not follow is refused, and nothing is written.
+This is the half that keeps the loader honest: the kernel cannot emit a pair of
+`[-]` lines whose orientation the files do not fix, so `ambiguousDemotion`
+(Boundary) is never a diagnosis of the kernel's own output. -/
+theorem mapAt_rejects_unoriented (p : WfPlan) (i : Id) (f : Entity → Except KErr Entity)
+    (e e' : Entity) (hget : p.val.store.get i = some e) (hf : f e = .ok e')
+    (hbad : demotionOriented p.val e' = false) : p.mapAt i f = .error .badHorizon := by
+  have hsome : (p.val.store.get i).isSome = true := by rw [hget]; rfl
+  have hdom : i ∈ p.val.store.dom := (p.val.store.domSpec i).mpr hsome
+  have hq : ¬ (planWf { p.val with store := p.val.store.set i e' hsome } = true) := by
+    intro hc
+    have hall := List.all_eq_true.1 (planWf_parts hc).2.2.2 i (by simpa using hdom)
+    rw [Store.get_set_self] at hall
+    -- the updated plan has the same `docs`, and `demotionOriented` reads only those
+    have hbad' : demotionOriented p.val e' = true := hall
+    rw [hbad] at hbad'
+    simp at hbad'
+  unfold WfPlan.mapAt
+  split
+  · rename_i hn; rw [hget] at hn; simp at hn
+  · rename_i a hget'
+    rw [hget] at hget'
+    injection hget' with hget'
+    subst hget'
+    rw [hf]
+    simp only [dif_neg hq]
 
 /-- `tm move`.  The destination is a `Dest`, not a `Nat`. -/
 def cmdMove (i : Id) (rank : Nat) : Relocation := fun p d => p.mapAt i (moveTo (d.site rank))
@@ -210,35 +262,28 @@ def cmdDemote (i : Id) (rank per : Nat) : Relocation :=
 def cmdReadopt (i : Id) (rank : Nat) : Relocation :=
   fun p d => p.mapAt i (fun e => .ok (readopt (d.site rank) e))
 
-/-! ## Resolving a horizon to a file
+/-! ## Where a horizon *name* is resolved, and why not here
 
-This is where the derived containment order (`Grain`, `coarsen`) becomes
-load-bearing: `move ^id week` names a *grain*, and the file is computed. -/
+A previous version of this module carried `DocRegion`, `findDoc`,
+`resolveHorizon` and `demoteTarget` — "`tm move ^id week` names a grain and the
+file is computed" — and **nothing called any of them**.  They are deleted rather
+than left standing, because dead code that reads like a design decision is worse
+than no code: it says a question has been settled that has not been.
 
-/-- A document knows which horizon block it is, or `none` for backlog — the
-*absence* of a bound, not a coarser grain. -/
-structure DocRegion where
-  region : Option Region
-deriving DecidableEq, Repr, Inhabited
+The wire form names a *document*, and `resolveDest` turns that into a `Dest`.
+Turning the word `week` into a document needs `now` and real ISO-week and
+civil-month arithmetic; `index` here is `d`, `d/7`, `d/30`, deliberately a toy
+(Grain.lean), and wiring a toy calendar into the command path would be a worse
+lie than the dead code was.  So horizon-name resolution stays with the host
+until the calendar layer exists.
 
-def findDoc (rs : List DocRegion) (target : Option Region) : Option DocIx :=
-  let rec go (k : Nat) : List DocRegion → Option DocIx
-    | []      => none
-    | d :: ds => if d.region = target then some k else go (k + 1) ds
-  go 0 rs
+What the derived order *is* load-bearing for is stated where it is used:
+`horizonPrecedes` orders the two files of a demotion
+(`demotion_target_follows_the_closed_region`, Grain.lean), `demotionsOriented`
+makes that part of what a plan is (Plan.lean), and the loader inverts it
+(`orientPair`, Boundary.lean).
 
-/-- `tm move ^id <horizon>` resolves through the derived order. -/
-def resolveHorizon (rs : List DocRegion) (hr : HorizonRef) (now : Day) : Except KErr DocIx :=
-  match findDoc rs (hr.regionAt now) with
-  | some d => .ok d
-  | none   => .error .badHorizon
-
-/-- `demote` targets the next coarser grain — one step along the chain, not a
-row in a table. -/
-def demoteTarget (rs : List DocRegion) (g : Grain) (now : Day) : Except KErr DocIx :=
-  resolveHorizon rs (.bounded (demoteGrain g)) now
-
-/-! ## The laws
+## The laws
 
 Legend: **P** proved here, **R** refuted here. -/
 
@@ -267,21 +312,32 @@ theorem plan_move_into_archive_file_is_rejected (p : WfPlan) (i : Id) (e : Entit
     rw [move_into_archive_file_is_rejected e (d.site rank) r h hd]
 
 /-- **The other half of the same story, and the reason the plan-level check is
-not a trapdoor.**  A move to a destination that exists and does not hold this
-id's tombstone *succeeds*, and the item is where the user asked for it.  Both
-hypotheses are used; drop either and the conclusion is false. -/
+not a trapdoor.**  A move to a destination that exists and is *ahead of* this
+id's tombstone — which for an item with no tombstone is every destination —
+succeeds, and the item is where the user asked for it.  Both hypotheses are
+used; drop either and the conclusion is false.
+
+`hfree` subsumes the older "the destination does not hold the tombstone": a
+horizon does not precede itself (`horizonPrecedes_irrefl`), so a destination
+ahead of the tombstone is in particular not the tombstone's own file. -/
 theorem cmdMove_succeeds (p : WfPlan) (i : Id) (e : Entity) (d : Dest p.val) (rank : Nat)
     (hget : p.val.store.get i = some e)
-    (hfree : ∀ r, e.val.archive = some r → r.doc ≠ d.ix) :
+    (hfree : ∀ r, e.val.archive = some r →
+      horizonPrecedes (docRegion p.val r.doc) (docRegion p.val d.ix) = true) :
     ∃ q : WfPlan, cmdMove i rank p d = .ok q ∧
       (∃ e', q.val.store.get i = some e' ∧ e'.val.live = d.site rank) := by
   have hrange := entityInRange_of_mem p i e hget
   simp only [entityInRange, Bool.and_eq_true] at hrange
+  have hne : ∀ r, e.val.archive = some r → r.doc ≠ d.ix := by
+    intro r hr hc
+    have h1 := hfree r hr
+    rw [hc, horizonPrecedes_irrefl] at h1
+    simp at h1
   have hwf : wf { e.val with live := d.site rank } = true := by
     cases ha : e.val.archive with
     | none => simp [wf, ha]
     | some r =>
-        have := hfree r ha
+        have := hne r ha
         simp [wf, ha, Dest.site]
         omega
   have hf : moveTo (d.site rank) e = .ok ⟨_, hwf⟩ := by
@@ -291,8 +347,34 @@ theorem cmdMove_succeeds (p : WfPlan) (i : Id) (e : Entity) (d : Dest p.val) (ra
     refine ⟨d.ok, ?_⟩
     have := hrange.2
     exact this
-  obtain ⟨q, hq, hqi, _⟩ := mapAt_ok_of_inRange p i (moveTo (d.site rank)) e _ hget hf hin
+  have hor : demotionOriented p.val (⟨_, hwf⟩ : Entity) = true := by
+    unfold demotionOriented
+    cases ha : e.val.archive with
+    | none => simp [ha]
+    | some r => simpa [ha, Dest.site] using hfree r ha
+  obtain ⟨q, hq, hqi, _⟩ := mapAt_ok_of_inRange p i (moveTo (d.site rank)) e _ hget hf hin hor
   exact ⟨q, hq, _, hqi, rfl⟩
+
+/-- **A demotion files work forward, or it does not happen.**  §6.3's close
+files leftovers into `closeTo`, which is never itself closed
+(`closeTo_target_is_open`), so the tombstone's horizon always precedes the live
+line's.  A `demote` whose destination is not ahead of the file the item is in
+would write two `[-]` lines that no reader could tell apart; it is refused
+instead.  Both hypotheses are load-bearing: with `e.val.live.doc = d.ix` the
+entity-level `wf` fires first and the error is `occupied`. -/
+theorem demote_into_a_horizon_that_does_not_follow_is_rejected (p : WfPlan) (i : Id) (e : Entity)
+    (d : Dest p.val) (rank per : Nat) (hget : p.val.store.get i = some e)
+    (hne : e.val.live.doc ≠ d.ix)
+    (hbad : horizonPrecedes (docRegion p.val e.val.live.doc) (docRegion p.val d.ix) = false) :
+    cmdDemote i rank per p d = .error .badHorizon := by
+  have hwf : wf { e.val with live := d.site rank, archive := some e.val.live,
+                             stamps := e.val.stamps ++ [per] } = true := by
+    simp only [wf, wfPair, Dest.site, bne_iff_ne, ne_eq]
+    exact hne
+  have hf : demote (d.site rank) per e = .ok ⟨_, hwf⟩ := by
+    unfold demote lift; simp only [dif_pos hwf]
+  refine mapAt_rejects_unoriented p i _ e _ hget hf ?_
+  simpa [demotionOriented, Dest.site] using hbad
 
 /-- **L1 (P).**  `move` is idempotent on the subdomain where it succeeds. -/
 theorem move_idem (t : Site) (e e' : Entity) (h : moveTo t e = .ok e') :

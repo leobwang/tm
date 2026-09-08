@@ -15,9 +15,9 @@ kernel/
     TmKernel/Plan.lean       the plan as one object; the invariant, globally
     TmKernel/Cmd.lean        five commands, each with its law proved or refuted
     TmKernel/Boundary.lean   String -> String; one @[export]
-    Check.lean               axiom audit (62 theorems)
+    Check.lean               axiom audit (70 theorems)
     Negative.lean            MUST FAIL to compile — the demonstration
-  tm-kernel-ffi/       Rust: the C shim, build.rs, and 17 tests that call Lean
+  tm-kernel-ffi/       Rust: the C shim, build.rs, and 21 tests that call Lean
   check.sh             stage-one acceptance
   totality.py          the kernel must be total; this enforces it
 ```
@@ -93,6 +93,24 @@ remove:
   while two `^m1` lines landed in one file. Paths are now injective by
   `planWf`, and the theorem is restated over paths.
 
+**A second audit found one more, and it is a correction to the first fix in that
+list**, which makes it worth stating separately: an inverse can fail by having no
+value, and it can fail by having **two**.
+
+- `demote` renders `[-]` at *both* of an entity's sites, so for the two-line form
+  it writes, both orientations of the pair are entities that render exactly those
+  two lines. The loader tried one and then the other and took the first that
+  worked, so **which line was the tombstone was decided by the order the host
+  listed the documents in** — the same two files, listed the other way round,
+  made `drop` mark the other one. The module header said the loader "never picks
+  a nearby state", and that was true of the case where nothing renders and false
+  of the case where two things do. What decides it is the domain: a close leaves
+  the tombstone in the region it closed and files the work into `closeTo`, which
+  is never itself closed, so the two horizons are **ordered**. A `Doc` now
+  carries its `Option Region`, `demotionsOriented` joins `planWf`, and the loader
+  inverts an order instead of trying orientations. A pair the documents do not
+  order is `LErr.ambiguousDemotion`, by name.
+
 ## The demonstration
 
 `Negative.lean` writes the bug the way the Rust wrote it and **fails to
@@ -143,10 +161,19 @@ but is expected to have type
   (statusOfGlyph q.glyph).isSome = true
 in the application
   (statusOfGlyph q.glyph).get ⋯
+
+Negative.lean:68:47: error: Application type mismatch: The argument
+  rfl
+has type
+  ?m.8 = ?m.8
+but is expected to have type
+  demotionsOriented { docs := planDocs, store := store } = true
+in the application
+  planWf_of_parts h1 h2 h3 rfl
 EXIT=1
 ```
 
-Seven cheats, seven compile errors:
+Eight cheats, eight compile errors:
 
 | cheat | what it is | why it fails |
 |---|---|---|
@@ -157,10 +184,11 @@ Seven cheats, seven compile errors:
 | 5 | export `setLeadWord` as "edit the estimate" — what `tm edit est=` did | the `view ∘ set = id` obligation every setter must discharge cannot be discharged for it |
 | 6 | take a relocation's destination straight off the wire, which is what let `move ^m1 7` delete the item from a one-document plan | a `Dest` is an index **plus a proof it is a document of this plan**, and a `Nat` decoded from JSON cannot supply the second field |
 | 7 | read a lone `[-]` back as an ordinary open item, which is what the first loader did | the inverse of `glyphAt` is a *partial* function and `statusOfGlyph .demoted` is `none`; `.get` needs a proof there is something there |
+| 8 | build the plan without answering which of a demotion's two `[-]` lines is the tombstone — deciding it by document order was this, with the assertion hidden in a `match` | `planWf` has four parts and `demotionsOriented` is the fourth; `rfl` is not a proof of it |
 
 ## What is proved
 
-148 theorems; the audit in `Check.lean` covers 62 of them and shows only
+160 theorems; the audit in `Check.lean` covers 70 of them and shows only
 `propext` / `Classical.choice` / `Quot.sound`, **never `sorryAx`**. Three
 (`drop_idem`, `readopt_reopens`, `grain_rejects_99`) depend on no axioms at all.
 
@@ -183,6 +211,13 @@ an accident.
   target an already-closed week, and does, when Sunday is closed on Monday.
   `#eval` gives `(week 0, week 1)`. **This is a behaviour change that needs
   the user's assent**, and it is recorded here, not decided.
+- `demotion_target_follows_the_closed_region` — and the close rule *orders* the
+  two files of a demotion: the tombstone's region comes strictly before the one
+  the work was filed into, in `horizonPrecedes` (lex on grain then block, with
+  backlog last because nothing closes backlog). Below month the grain settles it;
+  at month it is `Closed` that does, which is why the fixed point needs the
+  hypothesis and the other two rows do not. This is the fact the loader inverts,
+  and `horizonPrecedes_asymm` is why the inversion has exactly one answer.
 
 `Check.lean` prints §6.3's three rows generated from one rule at three grains:
 `(week 35, month 8, month 8)`.
@@ -193,8 +228,13 @@ An id names an entity; a line is an observation of it at a site. `[-]` is not
 a status — five states, not six — and the glyph is a function of placement.
 
 - `archive_elsewhere`, `one_line_per_file`, `exactly_one_live` — one file, one
-  line, and exactly one of the (at most two) lines is the live one, so the
-  ambiguity of `[-]` in the file is harmless: the role is positional.
+  line, and exactly one of the (at most two) lines is the live one. The role is
+  positional, and an earlier version of this line went on to say that the
+  ambiguity of `[-]` in the file is therefore harmless. It is harmless *inside*
+  an entity, which is all these three theorems are about, and it is not harmless
+  at the boundary: two `[-]` lines are two positions and the bytes do not say
+  which position is which. What says it is the pair of files
+  (`the_tombstone_is_behind_the_live_line`).
 - `no_two_lines_of_one_id_in_one_file` — **the sentence six code paths
   violated**, for every possible plan. It quantifies over `Site.doc`, a list
   *index*.
@@ -215,6 +255,13 @@ a status — five states, not six — and the glyph is a function of placement.
   builds from a glyph renders that same glyph back. Where the inverse is `none`
   the configuration is unreachable and the loader rejects rather than picking
   something close.
+- `the_tombstone_is_behind_the_live_line` — and where the inverse is not a
+  function of the glyphs at all, because a demotion writes `[-]` at both sites,
+  it is a function of the two **files**: in every accepted plan an entity's
+  archive placement sits in a horizon strictly before its live one. That is a
+  fourth conjunct of `planWf`, so `mapAt` re-establishes it on the post-state of
+  every command (`mapAt_rejects_unoriented`), which is what stops the kernel
+  writing a pair it would then have to guess at.
 
 ### Closure, and what is not free
 
@@ -227,13 +274,19 @@ is the honest split:
 
 - the id-uniqueness half genuinely *is* structural. Restating it with a command
   bound in front adds no information, so it is not restated;
-- the other two halves are **not** free. `sitesInRange` and `pathsDistinct` are
-  decidable predicates that `WfPlan.mapAt` re-establishes by computation on the
-  post-state of every command — the `lift` pattern, at the plan level;
+- the other three parts are **not** free. `sitesInRange`, `pathsDistinct` and
+  `demotionsOriented` are decidable predicates that `WfPlan.mapAt` re-establishes
+  by computation on the post-state of every command — the `lift` pattern, at the
+  plan level;
 - `mapAt_ok_of_inRange` and `cmdMove_succeeds` are the proofs that the commands
   can discharge them, so the check is a proof obligation and not a trapdoor that
   turns legitimate commands into errors. Every hypothesis in both is
   load-bearing;
+- `mapAt_rejects_unoriented` and
+  `demote_into_a_horizon_that_does_not_follow_is_rejected` are the proofs that it
+  *bites*: a command that would leave a demotion the loader could not orient
+  errors, and nothing is written. Both directions matter — a check nothing can
+  fail is decoration, and a check a legitimate command fails is a trapdoor;
 - `transform_closed` states closure at the type where it is a real claim: over a
   bare `PlanCore`, with the refinement forgotten, which is what a host would
   hold if the kernel returned a record instead of a subtype.
@@ -273,6 +326,15 @@ that is *understood* is the state box, the id, and the estimate.
   each site renders the box that was in the file at that site. The kernel can
   now read back its own output; the first loader rejected two lines of one id
   outright.
+- `paired_placement_renders_back` — **and it reads it back as one entity, not as
+  whichever of two the argument order happened to reach first.** The orientation
+  is `orientPair a b`, symmetric in its arguments (`orientPair_comm`), so the
+  conclusion names the tombstone instead of offering a disjunction over the two
+  ways the pair could be read — which is what this theorem's conclusion used to
+  be, and was the honest shape for a loader that decided by list order.
+  `pairedEntity_order_independent` is the same claim about the loader step
+  itself, and `unordered_horizons_are_rejected` is what happens when the two
+  documents do not settle it.
 - `scanLines_prose` — every prose line of an accepted document failed to parse
   **because it is not an item line**, not because it is a broken one. A line
   with an item's shape that does not parse is now an `LErr.badLine`, which was
@@ -303,7 +365,8 @@ Five commands, each a `Transform = WfPlan → Except KErr WfPlan`.
 | the `move` *command* is invertible | **R** | `move_back_at_a_fresh_rank_is_not_the_inverse`, `move_out_and_back_is_not_the_inverse` |
 | a move lands on a rank nothing else has | **P** | `freshRank_gt` |
 | a destination that is not a document is refused | **P** | `move_to_a_document_that_does_not_exist_is_rejected` |
-| a move whose destination exists and is free succeeds | **P** | `cmdMove_succeeds` |
+| a move whose destination exists and is ahead of the tombstone succeeds | **P** | `cmdMove_succeeds` |
+| a demotion files work forward, or it does not happen | **P** | `demote_into_a_horizon_that_does_not_follow_is_rejected`, `mapAt_rejects_unoriented` |
 | `drop` is idempotent; `settled` absorbing | **P** | `drop_idem`, `settled_absorbing` |
 | `drop` preserves the archive line's glyph | **P** | `drop_preserves_archive_glyph` |
 | `edit est=v` ⟹ the view reads `v` | **P** | `set_is_not_silent`, `set_last_wins` |
@@ -361,8 +424,16 @@ enforced by `totality.py` — it is how the FFI spike silently turned `est: -3`
 into `est: null`, reproducing tm's own estimate-loss bug inside the boundary
 code of a *verified* kernel.
 
-Seventeen Rust tests call the kernel through the shim: nine for the behaviour
-the proofs carry, and eight that are the audit's findings as the exact requests
+A request document carries `path`, `lines`, and — for a file that is a horizon
+block — `grain` and `ix`. The **response carries the horizon back**, because a
+demotion's two lines are told apart by the regions of their files: a response
+that dropped them would be one the kernel could not read, which
+`the_kernel_reads_back_what_it_writes` would catch. A document with no `grain` is
+backlog, the absence of a bound; that is a legal document and only a *pair* of
+lines across two such documents is refused.
+
+Twenty-one Rust tests call the kernel through the shim: ten for the behaviour
+the proofs carry, and eleven that are the audits' findings as the exact requests
 that reproduced them. The one that matters:
 
 ```rust
@@ -395,15 +466,29 @@ sketch, and because the gaps are where the next stage's cost lives.
    `the_kernel_reads_back_what_it_writes`, which demotes and then feeds the
    kernel's own output back in and asserts the bytes are identical.
 
-2. **A lone `[-]` is rejected, not read.** A demotion is two lines — the
-   tombstone and the live line — and an entity with no archive placement has no
-   configuration that renders `[-]`. So a `[-]` whose partner is missing (a
-   hand-deleted week file, say) is `LErr.orphanDemotion` rather than a silent
-   rewrite to `[ ]`, which is what it used to be. Today's `tm` accepts it and
-   repairs it in `cli/items.rs::drop_stale_demotion`; in this design that repair
-   belongs in the `Repair` array of the plan's §4.4, returned and never applied
-   silently, and that is stage-2 work. The two-line form itself now loads and
-   round trips.
+2. **A lone `[-]` is rejected, not read; and so is a pair the documents do not
+   order.** A demotion is two lines — the tombstone and the live line — and an
+   entity with no archive placement has no configuration that renders `[-]`. So a
+   `[-]` whose partner is missing (a hand-deleted week file, say) is
+   `LErr.orphanDemotion` rather than a silent rewrite to `[ ]`, which is what it
+   used to be. Today's `tm` accepts it and repairs it in
+   `cli/items.rs::drop_stale_demotion`; in this design that repair belongs in the
+   `Repair` array of the plan's §4.4, returned and never applied silently, and
+   that is stage-2 work. The two-line form itself loads and round trips —
+   provided the request says which horizon each file is. Two `[-]` lines in two
+   documents with no declared region, or with the same one, are
+   `LErr.ambiguousDemotion`: the kernel's own output is never in that state
+   (`demotionsOriented` is part of `planWf`), so this is a diagnostic for a host
+   that dropped the regions, and the same `Repair` argument applies to it.
+
+   **Which is also a behaviour restriction, recorded rather than decided.** While
+   a tombstone stands, the item's live line may only be moved to a horizon after
+   the tombstone's — `readopt` consumes the tombstone and then the item can go
+   anywhere. `tm` today allows `tm move ^id day` on a demoted item and leaves the
+   stale `[-]` behind, which is the state `drop_stale_demotion` exists to repair.
+   Refusing it is what makes the two-line form readable at all, so it is a
+   consequence of the fix and not an independent choice; it is still a change a
+   user has to assent to.
 
 3. **`Core` has five fields; tm's `Item` has twenty-two.** The
    subtype-over-dependent-record choice is precisely so that this scales, but
@@ -411,11 +496,24 @@ sketch, and because the gaps are where the next stage's cost lives.
    due dates, budgets and tags are all absent. So are acyclicity, section
    discipline and per-file-kind shape rules — the rest of the plan-level tier.
 
-4. **No calendar arithmetic.** `Day` is a `Nat` and `index` is `d`, `d/7`,
-   `d/30`. It is enough to *evaluate* the close rule and to prove the two
-   disagreement theorems; it is not ISO week and civil month arithmetic. The
-   week→month tie-break (`firstprinciples` proved week does not refine month)
-   is not implemented.
+4. **No calendar arithmetic, and therefore no horizon-name resolution.** `Day`
+   is a `Nat` and `index` is `d`, `d/7`, `d/30`. It is enough to *evaluate* the
+   close rule, to prove the two disagreement theorems, and to prove that a close
+   orders the two files of a demotion; it is not ISO week and civil month
+   arithmetic. The week→month tie-break (`firstprinciples` proved week does not
+   refine month) is not implemented.
+
+   So `tm move ^id week` — turning the *word* into a file — is not done here: the
+   wire form names a document and `resolveDest` turns that into a `Dest`. A
+   previous version of `Cmd.lean` carried `DocRegion`, `findDoc`,
+   `resolveHorizon` and `demoteTarget` for this, and **nothing called any of
+   them**; a report of that version claimed they had become live, and that was
+   wrong. They are deleted. Dead code that reads like a design decision is worse
+   than no code, because it says a question has been settled that has not been,
+   and wiring the toy calendar into the command path to make them live would have
+   been a worse lie than leaving them. `HorizonRef` went with them, and what it
+   said — backlog is the *absence* of a bound — is now said by `Doc.region`,
+   which is a field the loader actually reads.
 
 5. **No `close`, no `autoClose`, no `ClosePolicy`, no planner, no priority, no
    recurrence, no exact-arithmetic layer.** L16–L27 of the architecture are not
@@ -445,12 +543,15 @@ sketch, and because the gaps are where the next stage's cost lives.
    `toksWf` to allow an empty word in the last position would close it and costs
    a re-proof of `tokenize_toks`.
 
-10. **`sitesInRange` is checked at load rather than established by
-    construction.** The loader takes document indices from `zipIdx` over the
-    document list, so every site it builds is in range; proving that needs a
-    `zipIdx` bound lemma. The boundary runs the decidable check instead and
-    returns a structured error, which is the same discipline as `Grain.ofNat?`
-    — but it is a check, not a construction, and the difference is recorded.
+10. **`sitesInRange` and `demotionsOriented` are checked at load rather than
+    established by construction.** The loader takes document indices from
+    `zipIdx` over the document list, so every site it builds is in range, and it
+    takes each placement's region from the same document it takes the index from,
+    so `orientPair` establishes the orientation for every entity it builds.
+    Proving either needs the same `zipIdx` bound lemma. The boundary runs the
+    decidable checks instead and returns structured errors, which is the same
+    discipline as `Grain.ofNat?` — but they are checks, not constructions, and
+    the difference is recorded.
 
 11. **The proof-to-definition ratio here is not a forecast.** This fragment has
     no planner, no calendar arithmetic and no relational laws — the three places

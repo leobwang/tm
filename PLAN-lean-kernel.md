@@ -130,6 +130,24 @@ Two further corrections from the same audit belong with it, because both are the
   partial function with `glyphAt_statusOfGlyph` / `glyphAt_statusOfGlyphDemoted`
   as its two halves, and where it is `none` the loader rejects.
 
+**And a correction to that correction, from the audit after it**, because it is
+the *same* defect one level up: an inverse can fail by having no value and it
+can fail by having two, and the second one was resolved by argument order.
+`demote` renders `[-]` at **both** of an entity's sites, so for the two-line form
+it writes, both orientations of the pair are entities that render exactly those
+two lines. `pairedEntity` tried `pairEntity a b`, then `pairEntity b a`, and took
+the first that worked — so which line was the tombstone was decided by the order
+the host listed the documents in, and swapping two documents in one request moved
+which file a `drop` marked. What decides it is the domain: a close leaves the
+tombstone in the region it closed and files the work into `closeTo`, which is
+never itself closed, so the two horizons are ordered
+(`demotion_target_follows_the_closed_region`). A `Doc` therefore carries its
+`Option Region` — backlog is `none`, the absence of a bound — `horizonPrecedes`
+is antisymmetric, and "the tombstone's horizon precedes the live line's" joins
+`planWf` as a fourth conjunct, so no command can write a pair the loader would
+have to guess at. Where two documents genuinely do not order a pair, the loader
+returns `LErr.ambiguousDemotion` rather than choosing.
+
 Two second-order facts from the same spike, both of which the design has to answer:
 
 - The **checker is weaker than the invariant**. `tree::is_real_duplicate`

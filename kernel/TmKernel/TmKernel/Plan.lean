@@ -1,3 +1,4 @@
+import TmKernel.Grain
 import TmKernel.State
 /-!
 # The plan is one object
@@ -60,10 +61,17 @@ def Store.set (s : Store) (i : Id) (e : Entity) (h : (s.get i).isSome = true) : 
     (s.set i e h).dom = s.dom := rfl
 
 /-- A document body: **prose only**.  Item lines are holes filled by `render`,
-which is why `move` has no `append` to be missing a precondition on. -/
+which is why `move` has no `append` to be missing a precondition on.
+
+`region` is the horizon block the file *is* — `week/2026-W37.md` is `⟨week, 35⟩`
+— and `none` is backlog, the **absence** of a bound rather than a coarser
+grain.  It is not decoration: it is what says which of a demotion's two lines is
+the tombstone (`demotionsOriented` below), and without it that question has no
+answer in the files. -/
 structure Doc where
-  path  : List Char
-  prose : List (Nat × List Char)
+  path   : List Char
+  prose  : List (Nat × List Char)
+  region : Option Region
 deriving Repr, Inhabited
 
 structure PlanCore where
@@ -213,21 +221,53 @@ and `no_two_lines_of_one_id_in_one_file` is restated over paths below. -/
 
 def pathsDistinct (p : PlanCore) : Bool := decide ((p.docs.map Doc.path).Nodup)
 
-def planWf (p : PlanCore) : Bool := docsWf p && sitesInRange p && pathsDistinct p
+/-! ### The fourth: a tombstone is behind the line it left
+
+The two lines of a demotion render the *same* box — `demote` writes `[-]` at
+both sites — so nothing in the bytes says which is the tombstone.  What says it
+is the pair of files: the tombstone stays in the region that was **closed** and
+the live line goes to the region the close filed into, which is strictly after
+it in `horizonPrecedes` (`demotion_target_follows_the_closed_region`, Grain).
+
+Left as a fact about how the pair *arose*, that is not checkable — the loader
+sees two files, not a history.  So it joins the decidable plan-level checker
+instead, and then it is a fact about every accepted plan: the loader can invert
+it (`orientPair`, Boundary), and no command can leave a plan in which it fails,
+because `mapAt` re-establishes `planWf` on every post-state.  In particular a
+`demote` whose destination is not after the file it came from, and a `move` that
+would carry a demoted line back behind its own tombstone, are `badHorizon`. -/
+
+def docRegion (p : PlanCore) (k : DocIx) : Option Region :=
+  match p.docs[k]? with
+  | none   => none
+  | some d => d.region
+
+def demotionOriented (p : PlanCore) (e : Entity) : Bool :=
+  match e.val.archive with
+  | none   => true
+  | some r => horizonPrecedes (docRegion p r.doc) (docRegion p e.val.live.doc)
+
+def demotionsOriented (p : PlanCore) : Bool :=
+  p.store.dom.all (fun i =>
+    match p.store.get i with
+    | none   => true
+    | some e => demotionOriented p e)
+
+def planWf (p : PlanCore) : Bool :=
+  docsWf p && sitesInRange p && pathsDistinct p && demotionsOriented p
 
 theorem planWf_parts {p : PlanCore} (h : planWf p = true) :
-    docsWf p = true ∧ sitesInRange p = true ∧ pathsDistinct p = true := by
+    docsWf p = true ∧ sitesInRange p = true ∧ pathsDistinct p = true ∧
+      demotionsOriented p = true := by
   simp only [planWf, Bool.and_eq_true] at h
-  exact ⟨h.1.1, h.1.2, h.2⟩
+  exact ⟨h.1.1.1, h.1.1.2, h.1.2, h.2⟩
 
 theorem planWf_of_parts {p : PlanCore} (h1 : docsWf p = true) (h2 : sitesInRange p = true)
-    (h3 : pathsDistinct p = true) : planWf p = true := by
-  simp [planWf, h1, h2, h3]
+    (h3 : pathsDistinct p = true) (h4 : demotionsOriented p = true) : planWf p = true := by
+  simp [planWf, h1, h2, h3, h4]
 
 /-- The plan.  You cannot make one without discharging `planWf`. -/
 def WfPlan := { p : PlanCore // planWf p = true }
-
-def WfPlan.val' (p : WfPlan) : PlanCore := p.val
 
 /-- The path a document index names.  `none` is out of range — which
 `no_line_is_lost` rules out for any site a plan actually denotes. -/
@@ -306,7 +346,7 @@ theorem no_two_lines_of_one_id_in_one_path (p : WfPlan) (l₁ l₂ : Line)
   have k₁ : l₁.site.doc < p.val.docs.length := no_line_is_lost p l₁ h₁
   have k₂ : l₂.site.doc < p.val.docs.length := no_line_is_lost p l₂ h₂
   have hnd : (p.val.docs.map Doc.path).Nodup := by
-    have := (planWf_parts p.property).2.2
+    have := (planWf_parts p.property).2.2.1
     simpa [pathsDistinct] using this
   have hm₁ : l₁.site.doc < (p.val.docs.map Doc.path).length := by simpa using k₁
   have hm₂ : l₂.site.doc < (p.val.docs.map Doc.path).length := by simpa using k₂
@@ -320,6 +360,20 @@ theorem no_two_lines_of_one_id_in_one_path (p : WfPlan) (l₁ l₂ : Line)
     exact Option.some.inj hpath
   have hk : l₁.site.doc = l₂.site.doc := (List.getElem_inj hnd).mp heq
   exact no_two_lines_of_one_id_in_one_file p.val l₁ l₂ h₁ h₂ hid hk
+
+/-- **Which of a demotion's two lines is the tombstone is a fact about the
+plan, not a guess.**  In every accepted plan, an entity's archive placement sits
+in a horizon strictly before its live one — so the two are never
+interchangeable, even though `demote` renders `[-]` at both.  This is what the
+loader inverts, and `horizonPrecedes_asymm` is why the inversion has one
+answer. -/
+theorem the_tombstone_is_behind_the_live_line (p : WfPlan) (i : Id) (e : Entity) (r : Site)
+    (hget : p.val.store.get i = some e) (harch : e.val.archive = some r) :
+    horizonPrecedes (docRegion p.val r.doc) (docRegion p.val e.val.live.doc) = true := by
+  have hdom : i ∈ p.val.store.dom := (p.val.store.domSpec i).mpr (by rw [hget]; rfl)
+  have hall := List.all_eq_true.1 (planWf_parts p.property).2.2.2 i hdom
+  rw [hget] at hall
+  simpa [demotionOriented, harch] using hall
 
 /-! ## Documents: splitting text into prose and items, and putting it back -/
 

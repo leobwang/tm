@@ -74,6 +74,14 @@ inductive LErr
       tombstone is `[-]`.  Nothing renders these two, so they are rejected
       rather than approximated. -/
   | notADemotion (i : Id)
+  /-- two lines of one id in two documents whose **horizons do not order them**,
+      so nothing in the files says which line is the tombstone.  `demote` writes
+      `[-]` at both sites, so the boxes cannot settle it either; the closed file
+      is the one behind the other in `horizonPrecedes`, and if the request
+      declared no region for one of them, or the same region for both, that
+      question has no answer.  It is asked here rather than answered by the order
+      the host happened to list the documents. -/
+  | ambiguousDemotion (i : Id)
   /-- a line that looks like an item and does not parse -/
   | badLine (path : List Char) (n : Nat) (why : PErr)
   /-- two documents with one path: they are one file on disk -/
@@ -127,8 +135,8 @@ theorem scanLines_prose (path : List Char) (k : Nat) (ls : List (List Char))
           | noId       => rw [hpl] at h; simp at h
           | manyIds    => rw [hpl] at h; simp at h
 
-/-! ### The loader is the inverse of `render`, and where it has no inverse it
-rejects
+/-! ### The loader is the inverse of `render`, and where the inverse is not
+unique it rejects
 
 `render` writes at most two lines for an id: the live one, whose box is
 `glyphAt` of the status, and the tombstone, whose box is always `[-]`.  So the
@@ -138,19 +146,43 @@ first version mapped each line to its own entity with `archive = none` and sent
 into an open task with no command run.  It also meant the kernel could not read
 back the two-line form its own `demote` writes.
 
-Where no entity renders the lines it was given, the loader returns an `LErr`.
-It never picks a nearby state. -/
+The promise this section keeps, stated exactly, because a weaker version of it
+was false here:
+
+* where **no** entity renders the lines it was given, the loader returns an
+  `LErr` and never picks a nearby state;
+* where **more than one** entity renders them, the loader does not pick either.
+  It asks the documents which line is the tombstone, and if they do not say, it
+  returns `LErr.ambiguousDemotion`.
+
+The second clause is not hypothetical: it is the whole two-line demotion form.
+`demote` renders `[-]` at *both* sites, so both orientations of a `[-]`/`[-]`
+pair are entities that render exactly those two lines, and a loader that tries
+one and then the other resolves a real ambiguity by argument order — which is
+the order the host listed the files in.  Swapping two documents in the request
+then moved which file a `drop` marked.
+
+What breaks the tie is the domain, not the argument order: the tombstone stays
+in the horizon that was **closed** and the live line goes to the one the close
+filed into, which is strictly after it (`demotion_target_follows_the_closed_region`,
+Grain.lean).  So a `Placement` carries its document's horizon, `orientPair` is a
+function of the pair and not of its order (`orientPair_comm`), and
+`demotionsOriented` (Plan.lean) makes "the tombstone is behind the live line" a
+fact about every accepted plan, so no command can write a pair the loader would
+then have to guess at. -/
 
 structure Placement where
-  doc   : DocIx
-  rank  : Nat
-  id    : Id
-  glyph : Glyph
-  item  : RawItem
+  doc    : DocIx
+  rank   : Nat
+  id     : Id
+  glyph  : Glyph
+  item   : RawItem
+  /-- the horizon of the document this line was read from; `none` is backlog -/
+  region : Option Region
 deriving DecidableEq, Repr, Inhabited
 
-def placementsOfDoc (k : DocIx) (d : DocSplit) : List Placement :=
-  d.items.map (fun p => ⟨k, p.1, p.2.1, p.2.2.1, p.2.2.2⟩)
+def placementsOfDoc (k : DocIx) (reg : Option Region) (d : DocSplit) : List Placement :=
+  d.items.map (fun p => ⟨k, p.1, p.2.1, p.2.2.1, p.2.2.2, reg⟩)
 
 def dedupIds : List Id → List Id
   | []        => []
@@ -202,19 +234,90 @@ def loneEntity (i : Id) (q : Placement) : Except LErr Entity :=
   | some st => .ok ⟨⟨⟨q.doc, q.rank⟩, none, st, q.item, []⟩, rfl⟩
   | none    => .error (.orphanDemotion i)
 
+/-- **Which line is the tombstone, decided by the files.**  The closed horizon
+comes first; `horizonPrecedes` is antisymmetric, so at most one of the two
+orientations is a demotion and the answer does not depend on which line was
+listed first.  `none` — the two documents declare no order — is the ambiguity,
+and it is reported rather than resolved. -/
+def orientPair (a b : Placement) : Option (Placement × Placement) :=
+  if horizonPrecedes a.region b.region then some (a, b)
+  else if horizonPrecedes b.region a.region then some (b, a)
+  else none
+
+/-- **The loader's answer is a function of the two lines, not of their order.**
+This is the defect this section exists to remove, as a theorem. -/
+theorem orientPair_comm (a b : Placement) : orientPair a b = orientPair b a := by
+  unfold orientPair
+  by_cases hab : horizonPrecedes a.region b.region = true
+  · rw [if_pos hab, if_neg (by simp [horizonPrecedes_asymm hab]), if_pos hab]
+  · simp only [Bool.not_eq_true] at hab
+    by_cases hba : horizonPrecedes b.region a.region = true
+    · rw [if_neg (by simp [hab]), if_pos hba, if_pos hba]
+    · simp only [Bool.not_eq_true] at hba
+      rw [if_neg (by simp [hab]), if_neg (by simp [hba]), if_neg (by simp [hba]),
+        if_neg (by simp [hab])]
+
+theorem orientPair_cases {a b arch live : Placement} (h : orientPair a b = some (arch, live)) :
+    ((arch = a ∧ live = b) ∨ (arch = b ∧ live = a)) ∧
+      horizonPrecedes arch.region live.region = true := by
+  unfold orientPair at h
+  split at h
+  · rename_i hab
+    simp only [Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨h1, h2⟩ := h
+    subst h1; subst h2
+    exact ⟨Or.inl ⟨rfl, rfl⟩, hab⟩
+  · split at h
+    · rename_i hba
+      simp only [Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨h1, h2⟩ := h
+      subst h1; subst h2
+      exact ⟨Or.inr ⟨rfl, rfl⟩, hba⟩
+    · simp at h
+
 /-- Two lines of one id: the only entity that renders both is a half-finished
-demotion, in either orientation.  Anything else is rejected — including the two
-lines in one file, which is the invariant itself. -/
+demotion, and *which* half-finished demotion is settled by the two documents'
+horizons before any glyph is looked at.  Anything else is rejected — including
+the two lines in one file, which is the invariant itself, and the pair whose
+horizons do not order it, which is the one the previous version silently
+resolved by argument order. -/
 def pairedEntity (i : Id) (a b : Placement) : Except LErr Entity :=
   if a.doc == b.doc then .error (.dupId i)
   else if a.item != b.item then .error (.splitLine i)
   else
-    match pairEntity a b with
-    | some e => .ok e
-    | none   =>
-      match pairEntity b a with
+    match orientPair a b with
+    | none => .error (.ambiguousDemotion i)
+    | some (arch, live) =>
+      match pairEntity arch live with
       | some e => .ok e
       | none   => .error (.notADemotion i)
+
+/-- **The whole defect, refuted.**  Listing the two documents the other way
+round is the same request: the loader's answer — the entity, or the named error
+— does not move. -/
+theorem pairedEntity_order_independent (i : Id) (a b : Placement) :
+    pairedEntity i a b = pairedEntity i b a := by
+  have hdoc : (b.doc == a.doc) = (a.doc == b.doc) := by
+    rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq]; exact eq_comm
+  have hitem : (b.item != a.item) = (a.item != b.item) := by
+    rw [Bool.eq_iff_iff, bne_iff_ne, bne_iff_ne]; exact ne_comm
+  unfold pairedEntity
+  rw [hdoc, hitem, orientPair_comm b a]
+
+/-- **The ambiguity is named, not resolved.**  Two lines of one id whose
+documents declare no order between them — two backlog files, one file with no
+declared region, two files claiming the same week — are rejected by name.  The
+`[-]`/`[-]` pair this is really about is the one `demote` writes, and the
+kernel's own output can never be in this state: `demotionsOriented` is part of
+`planWf`, so `mapAt` refuses to produce it (`mapAt_rejects_unoriented`). -/
+theorem unordered_horizons_are_rejected (i : Id) (a b : Placement)
+    (hd : a.doc ≠ b.doc) (hi : a.item = b.item)
+    (hab : horizonPrecedes a.region b.region = false)
+    (hba : horizonPrecedes b.region a.region = false) :
+    pairedEntity i a b = .error (.ambiguousDemotion i) := by
+  unfold pairedEntity orientPair
+  rw [if_neg (by simpa using hd), if_neg (by simp [hi]), if_neg (by simp [hab]),
+    if_neg (by simp [hba])]
 
 /-- The whole inverse, for one id's lines. -/
 def buildEntity (i : Id) : List Placement → Except LErr Entity
@@ -279,13 +382,21 @@ theorem pairEntity_renders_back (arch live : Placement) (e : Entity)
   · simp at h
 
 /-- **The two-line form a `demote` writes is read back as the entity that wrote
-it.**  Both boxes come back as they were found, so the kernel can now round-trip
-its own output — which the first version could not: it rejected two lines of one
-id outright. -/
+it, and there is exactly one such entity.**  Both boxes come back as they were
+found, so the kernel can round-trip its own output — which the first version
+could not: it rejected two lines of one id outright.
+
+The orientation is `orientPair a b`, a function of the two lines that is
+symmetric in them (`orientPair_comm`), so this conclusion is determinate: the
+tombstone is the line in the closed horizon, whichever order the host listed the
+documents in.  The previous statement of this theorem was a disjunction over the
+two orientations, which is what an honest theorem about a loader that picked one
+by argument order had to look like. -/
 theorem paired_placement_renders_back (i : Id) (a b : Placement) (e : Entity)
     (he : pairedEntity i a b = .ok e) :
     ∃ arch live : Placement,
-      ((arch = a ∧ live = b) ∨ (arch = b ∧ live = a)) ∧
+      orientPair a b = some (arch, live) ∧
+      horizonPrecedes arch.region live.region = true ∧
       e.val.live = ⟨live.doc, live.rank⟩ ∧ e.val.archive = some ⟨arch.doc, arch.rank⟩ ∧
       e.val.line = live.item ∧ a.item = b.item ∧ arch.glyph = Glyph.demoted ∧
       glyphAt e.val e.val.live = live.glyph ∧
@@ -298,17 +409,14 @@ theorem paired_placement_renders_back (i : Id) (a b : Placement) (e : Entity)
     · rename_i hitem
       simp only [bne_iff_ne, ne_eq, Decidable.not_not] at hitem
       split at he
-      · rename_i x hx
-        injection he with he
-        subst he
-        obtain ⟨h1, h2, h3, h4, h5, h6⟩ := pairEntity_renders_back a b x hx
-        exact ⟨a, b, Or.inl ⟨rfl, rfl⟩, h1, h2, h3, hitem, h4, h5, h6⟩
-      · split at he
+      · simp at he
+      · rename_i arch live hor
+        split at he
         · rename_i x hx
           injection he with he
           subst he
-          obtain ⟨h1, h2, h3, h4, h5, h6⟩ := pairEntity_renders_back b a x hx
-          exact ⟨b, a, Or.inr ⟨rfl, rfl⟩, h1, h2, h3, hitem, h4, h5, h6⟩
+          obtain ⟨h1, h2, h3, h4, h5, h6⟩ := pairEntity_renders_back arch live x hx
+          exact ⟨arch, live, hor, (orientPair_cases hor).2, h1, h2, h3, hitem, h4, h5, h6⟩
         · simp at he
 
 /-- **The line round trip through the pipeline the FFI actually runs**, for a
@@ -317,10 +425,10 @@ line the loader takes on its own.  Parse the bytes, build the entity, ask
 counterexample to this statement and not to `serialize_parse`, which is why it
 survived. -/
 theorem load_render_line (cs : List Char) (i : Id) (g : Glyph) (r : RawItem)
-    (k rk : Nat) (e : Entity) (hp : parseItem cs = .ok (i, g, r))
-    (he : loneEntity i ⟨k, rk, i, g, r⟩ = .ok e) :
+    (k rk : Nat) (reg : Option Region) (e : Entity) (hp : parseItem cs = .ok (i, g, r))
+    (he : loneEntity i ⟨k, rk, i, g, r, reg⟩ = .ok e) :
     serializeItem i (glyphAt e.val e.val.live) e.val.line = cs := by
-  obtain ⟨_, hline, hglyph⟩ := lone_placement_renders_back i ⟨k, rk, i, g, r⟩ e he
+  obtain ⟨_, hline, hglyph⟩ := lone_placement_renders_back i ⟨k, rk, i, g, r, reg⟩ e he
   rw [hglyph, hline]
   exact serialize_parse cs i g r hp
 
@@ -334,8 +442,9 @@ theorem paired_renders_each_placement (i : Id) (a b : Placement) (e : Entity)
     (he : pairedEntity i a b = .ok e) :
     glyphAt e.val ⟨a.doc, a.rank⟩ = a.glyph ∧ glyphAt e.val ⟨b.doc, b.rank⟩ = b.glyph ∧
       e.val.line = a.item ∧ e.val.line = b.item := by
-  obtain ⟨arch, live, hor, hlive, _, hln, hitem, hag, hg, hd⟩ :=
+  obtain ⟨arch, live, hor0, _, hlive, _, hln, hitem, hag, hg, hd⟩ :=
     paired_placement_renders_back i a b e he
+  have hor := (orientPair_cases hor0).1
   rcases hor with ⟨ha, hb⟩ | ⟨ha, hb⟩
   · subst ha; subst hb
     refine ⟨by rw [hd, hag], ?_, ?_, hln⟩
@@ -359,10 +468,6 @@ def renderDocAt (p : PlanCore) (k : DocIx) (d : Doc) : List (List Char) :=
   weave (sortByRank d.prose)
     (sortByRank ((p.lines.filter (fun l => l.site.doc == k)).map
       (fun l => (l.site.rank, l.text))))
-
-/-- Every document a request produces holds prose only, by construction. -/
-def mkDocs (ds : List (List Char × List (Nat × List Char))) : List Doc :=
-  ds.map (fun d => ⟨d.1, d.2⟩)
 
 /-! ## JSON -/
 
@@ -501,7 +606,10 @@ theorem move_out_and_back_is_not_the_inverse (p : WfPlan) (i : Id) (e a : Entity
 
 /-- Every relocating command resolves its destination against `docs` first, so
 the `Nat` off the wire never reaches a `Site`.  An index past the end of `docs`
-is `badHorizon` — before this, it deleted the item and returned `ok`. -/
+is `badHorizon` — before this, it deleted the item and returned `ok`.  A
+destination that exists but is not ahead of the item's tombstone is `badHorizon`
+too, from `mapAt`'s re-check rather than from `resolveDest`: it is a fact about
+the item, not about the index. -/
 def applyCmd (c : ReqCmd) (p : WfPlan) : Except KErr WfPlan :=
   match c with
   | .move i d       =>
@@ -550,9 +658,18 @@ def lerrJson : LErr → Json
   | .orphanDemotion i => Json.mkObj [("orphanDemotion", Json.str (String.ofList i))]
   | .splitLine i      => Json.mkObj [("splitLine", Json.str (String.ofList i))]
   | .notADemotion i   => Json.mkObj [("notADemotion", Json.str (String.ofList i))]
+  | .ambiguousDemotion i => Json.mkObj [("ambiguousDemotion", Json.str (String.ofList i))]
   | .duplicatePath pa => Json.mkObj [("duplicatePath", Json.str (String.ofList pa))]
   | .badLine pa n w   => Json.mkObj [("badLine", Json.mkObj
       [("path", Json.str (String.ofList pa)), ("line", Json.num n), ("why", Json.str (toString (repr w)))])]
+
+/-- Name the id whose two lines the documents do not order, for the diagnostic.
+Every diagnostic names the id or the path it is about. -/
+def firstUnoriented (p : PlanCore) : Option Id :=
+  p.store.dom.find? (fun i =>
+    match p.store.get i with
+    | none   => false
+    | some e => !demotionOriented p e)
 
 /-- Name the path two documents share, for the diagnostic. -/
 def firstDupPath : List (List Char) → Option (List Char)
@@ -569,6 +686,15 @@ theorem firstDupPath_none (l : List (List Char)) (h : firstDupPath l = none) : l
       · rename_i hc
         exact List.nodup_cons.2 ⟨hc, ih h⟩
 
+/-- A document's horizon, in the shape `parseRegion` reads back.  The response
+carries it because the request does: a demotion's two lines are told apart by
+the regions of their files, so a response that dropped them would be a response
+the kernel could not read (`the_kernel_reads_back_what_it_writes`). -/
+def regionJson (r : Option Region) : List (String × Json) :=
+  match r with
+  | none   => []
+  | some g => [("grain", Json.num g.grain.val), ("ix", Json.num g.ix)]
+
 /-- Apply the request's commands and render every document back to text. -/
 def runPlan (plan : WfPlan) (cmds : List ReqCmd) : Except Json Json := do
   let plan' ←
@@ -577,9 +703,9 @@ def runPlan (plan : WfPlan) (cmds : List ReqCmd) : Except Json Json := do
     | .error k => throw (Json.mkObj [("err", Json.mkObj [("kernel", Json.str (kerrName k))])])
   let outDocs := (plan'.val.docs.zipIdx.map (fun p =>
     Json.mkObj
-      [("path", Json.str (String.ofList p.1.path)),
-       ("lines", Json.arr ((renderDocAt plan'.val p.2 p.1).map
-          (fun l => Json.str (String.ofList l))).toArray)]))
+      ([("path", Json.str (String.ofList p.1.path)),
+        ("lines", Json.arr ((renderDocAt plan'.val p.2 p.1).map
+          (fun l => Json.str (String.ofList l))).toArray)] ++ regionJson p.1.region)))
   return Json.mkObj [("ok", Json.mkObj [("docs", Json.arr outDocs.toArray)])]
 
 def run (j : Json) : Except Json Json := do
@@ -607,16 +733,17 @@ def run (j : Json) : Except Json Json := do
     match scanLines d.path.toList 0 d.lines with
     | .ok _    => pure ()
     | .error e => throw (Json.mkObj [("err", lerrJson e)])
-  -- parse every document
-  let splits := docs.map (fun d => splitDoc 0 d.lines)
-  let places := (splits.zipIdx.map (fun p => placementsOfDoc p.2 p.1)).flatten
+  -- parse every document.  A placement carries its document's horizon, which is
+  -- what says which line of a demotion is the tombstone.
+  let splits := docs.map (fun d => (splitDoc 0 d.lines, d.reg))
+  let places := (splits.zipIdx.map (fun p => placementsOfDoc p.2 p.1.2 p.1.1)).flatten
   let items ←
     match buildEntities places with
     | .ok s => pure s
     | .error e => throw (Json.mkObj [("err", lerrJson e)])
   let store := loadStore items
   let planDocs : List Doc :=
-    docs.map (fun d => ⟨d.path.toList, (splitDoc 0 d.lines).prose⟩)
+    docs.map (fun d => ⟨d.path.toList, (splitDoc 0 d.lines).prose, d.reg⟩)
   -- the document half is established **by construction**: prose is exactly what
   -- did not parse as an item, so there is no separate validator to drift.
   let hdocs : docsWf ⟨planDocs, store⟩ = true := by
@@ -627,16 +754,23 @@ def run (j : Json) : Except Json Json := do
     simp only [List.all_eq_true]
     intro q hq
     simp [splitDoc_prose_not_item 0 x.lines q hq]
-  -- the other two halves are decidable checks at the boundary, in the same
+  -- the other three parts are decidable checks at the boundary, in the same
   -- place and of the same kind as `Grain.ofNat?`.  `pathsDistinct` is the one
-  -- that stops two documents claiming one file (Plan.lean); `sitesInRange` can
-  -- only fail on a request whose documents were built inconsistently, and is
-  -- checked rather than assumed because "cannot happen" is what the shipped
-  -- `move_to` also said.
+  -- that stops two documents claiming one file (Plan.lean); `sitesInRange` and
+  -- `demotionsOriented` can only fail on a request whose documents were built
+  -- inconsistently with the placements they produced -- `orientPair` establishes
+  -- the second one for every entity it builds -- and both are checked rather
+  -- than assumed because "cannot happen" is what the shipped `move_to` also
+  -- said.  Turning either into a construction needs the same `zipIdx` bound
+  -- lemma; that gap is recorded in the README rather than papered over.
   if hpath : pathsDistinct (⟨planDocs, store⟩ : PlanCore) = true then
     if hsites : sitesInRange (⟨planDocs, store⟩ : PlanCore) = true then
-      let plan : WfPlan := ⟨⟨planDocs, store⟩, planWf_of_parts hdocs hsites hpath⟩
-      runPlan plan cmds
+      if hor : demotionsOriented (⟨planDocs, store⟩ : PlanCore) = true then
+        let plan : WfPlan := ⟨⟨planDocs, store⟩, planWf_of_parts hdocs hsites hpath hor⟩
+        runPlan plan cmds
+      else
+        throw (Json.mkObj [("err", lerrJson (.ambiguousDemotion
+          ((firstUnoriented ⟨planDocs, store⟩).getD [])))])
     else
       throw (Json.mkObj [("err", Json.mkObj [("kernel", Json.str "siteOutOfRange")])])
   else

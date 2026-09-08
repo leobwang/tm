@@ -24,7 +24,7 @@ def moveCheat2 (t : Site) (e : Entity) : Entity :=
    line to the destination file**.  In this kernel a document holds prose only,
    and `planWf` says none of it parses as an item, so an appended item line is
    a plan that cannot be constructed. -/
-def appendLine (l : List Char) (d : Doc) : Doc := ⟨d.path, d.prose ++ [(0, l)]⟩
+def appendLine (l : List Char) (d : Doc) : Doc := ⟨d.path, d.prose ++ [(0, l)], d.region⟩
 
 def moveCheat3 (i : Id) (g : Glyph) (r : RawItem) (k : DocIx) (p : WfPlan) : WfPlan :=
   ⟨⟨p.val.docs.modify k (appendLine (serializeItem i g r)), p.val.store⟩, p.property⟩
@@ -56,5 +56,15 @@ def destCheat (n : Nat) (p : WfPlan) : Dest p.val := ⟨n, by omega⟩
    function, and `statusOfGlyph .demoted` is `none` for a reason. -/
 def loneDemotedCheat (q : Placement) : Entity :=
   ⟨⟨⟨q.doc, q.rank⟩, none, (statusOfGlyph q.glyph).get rfl, q.item, []⟩, rfl⟩
+
+/- CHEAT 8 — build the plan without answering which of a demotion's two `[-]`
+   lines is the tombstone.  Deciding it by the order the host listed the
+   documents was this, with the assertion hidden in a `match` that tried one
+   orientation and then the other: three of `planWf`'s four parts discharged and
+   the fourth waved through. -/
+def loadCheat (planDocs : List Doc) (store : Store)
+    (h1 : docsWf ⟨planDocs, store⟩ = true) (h2 : sitesInRange ⟨planDocs, store⟩ = true)
+    (h3 : pathsDistinct ⟨planDocs, store⟩ = true) : WfPlan :=
+  ⟨⟨planDocs, store⟩, planWf_of_parts h1 h2 h3 rfl⟩
 
 end Tm

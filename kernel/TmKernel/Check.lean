@@ -14,6 +14,8 @@ open Tm
 #print axioms Tm.closeTo_target_is_open
 #print axioms Tm.impl_day_rule_disagrees
 #print axioms Tm.containing_can_target_a_closed_region
+#print axioms Tm.horizonPrecedes_asymm
+#print axioms Tm.demotion_target_follows_the_closed_region
 
 -- entity versus observation
 #print axioms Tm.archive_elsewhere
@@ -27,6 +29,7 @@ open Tm
 #print axioms Tm.prose_is_never_an_item
 #print axioms Tm.no_two_lines_of_one_id_in_one_path
 #print axioms Tm.no_line_is_lost
+#print axioms Tm.the_tombstone_is_behind_the_live_line
 #print axioms Tm.transform_closed
 
 -- the grammar
@@ -62,7 +65,9 @@ open Tm
 #print axioms Tm.demoteEst_conserves
 #print axioms Tm.demoteEst_respects_user
 #print axioms Tm.mapAt_ok_of_inRange
+#print axioms Tm.mapAt_rejects_unoriented
 #print axioms Tm.cmdMove_succeeds
+#print axioms Tm.demote_into_a_horizon_that_does_not_follow_is_rejected
 #print axioms Tm.resolveDest_rejects
 
 -- the glyph is a function of placement, and the loader is its inverse
@@ -73,6 +78,9 @@ open Tm
 -- the boundary
 #print axioms Tm.grain_rejects_99
 #print axioms Tm.lone_placement_renders_back
+#print axioms Tm.orientPair_comm
+#print axioms Tm.pairedEntity_order_independent
+#print axioms Tm.unordered_horizons_are_rejected
 #print axioms Tm.paired_placement_renders_back
 #print axioms Tm.paired_renders_each_placement
 #print axioms Tm.load_render_line
