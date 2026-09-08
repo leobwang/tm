@@ -1258,6 +1258,79 @@ theorem parseDT_clock_none (t : Clock) : parseDT (renderClock t) = none := by
   rw [hns]
   rfl
 
+
+/-! ### `due:` — a date or a date-time
+
+§4.1's table: `due:2026-09-11` or `due:2026-09-11T23:59`.  The two are distinct
+values and the grammar keeps them apart, because which one was written is what
+gets written back. -/
+
+inductive Moment
+  | date     (d : Nat)
+  | dateTime (d : Nat) (t : Clock)
+deriving DecidableEq, Repr, Inhabited
+
+def Moment.day : Moment → Nat
+  | .date d       => d
+  | .dateTime d _ => d
+
+def Moment.wf : Moment → Bool
+  | .date d       => dayWf d
+  | .dateTime d _ => dayWf d
+
+def renderMoment : Moment → List Char
+  | .date d       => renderDate d
+  | .dateTime d t => renderDate d ++ 'T' :: renderClock t
+
+def parseMomentDT (w : List Char) : Option Moment :=
+  (splitFirst 'T' w).bind (fun p =>
+    (parseDate p.1).bind (fun d => (parseClock p.2).map (fun t => Moment.dateTime d t)))
+
+def parseMoment (w : List Char) : Option Moment :=
+  match parseMomentDT w with
+  | some m => some m
+  | none   => (parseDate w).map Moment.date
+
+/-- **The `due:` round trip**, in both forms. -/
+theorem parse_render_moment (m : Moment) (h : m.wf = true) :
+    parseMoment (renderMoment m) = some m := by
+  cases m with
+  | date d =>
+      have hd : dayWf d = true := h
+      have hnone : parseMomentDT (renderDate d) = none := by
+        unfold parseMomentDT
+        rw [splitFirst_none 'T' (renderDate d) (renderDate_avoid d 'T' rfl (by decide))]
+        rfl
+      show parseMoment (renderDate d) = _
+      unfold parseMoment
+      rw [hnone]
+      show (parseDate (renderDate d)).map Moment.date = _
+      rw [parse_render_date d hd]
+      rfl
+  | dateTime d t =>
+      have hd : dayWf d = true := h
+      have hsome : parseMomentDT (renderDate d ++ 'T' :: renderClock t)
+          = some (Moment.dateTime d t) := by
+        unfold parseMomentDT
+        rw [splitFirst_append 'T' (renderDate d) (renderClock t)
+              (renderDate_avoid d 'T' rfl (by decide))]
+        simp only [Option.bind_some]
+        rw [parse_render_date d hd]
+        simp only [Option.bind_some]
+        rw [parse_render_clock t]
+        rfl
+      show parseMoment (renderDate d ++ 'T' :: renderClock t) = _
+      unfold parseMoment
+      rw [hsome]
+
+theorem moment_date_form :
+    parseMoment ['2','0','2','6','-','0','9','-','1','1']
+      = some (.date (Cal.toDay ⟨2026, 9, 11⟩)) := by decide
+
+theorem moment_datetime_form :
+    parseMoment ['2','0','2','6','-','0','9','-','1','1','T','2','3',':','5','9']
+      = some (.dateTime (Cal.toDay ⟨2026, 9, 11⟩) ⟨1439, by decide⟩) := by decide
+
 /-- The short end form: a bare `HH:MM` on the start's day, rolled forward when
 it precedes the start (`parse_interval`). -/
 def parseEndShort (s : DT) (b : List Char) : Option DT :=
@@ -2286,27 +2359,43 @@ inductive TokKind
   | unparsed (w : List Char)
 deriving DecidableEq, Repr, Inhabited
 
+/-- `!k` in token position: a priority, or a word the parser cannot classify. -/
+def classifyBang (w : List Char) : TokKind :=
+  match parsePrio w with
+  | some k => .prio k
+  | none   => .unparsed w
+
+/-- A word that begins with one of `@ # ! ^`.  A **lone** sigil is punctuation
+("Meet Kun @ 7pm"), not a broken token — §4.1, and `classify`'s first arm. -/
+def classifySigil (c : Char) (w : List Char) : TokKind :=
+  if w.length = 1 then .title w
+  else if c = '@' then .parent w.tail
+  else if c = '#' then .tag w.tail
+  else if c = '!' then classifyBang w
+  else if isName w.tail then .id w.tail else .unparsed w
+
+/-- A `key:value` word.  An unrecognised key becomes `.extra`, which is kept
+verbatim and reported — never dropped. -/
+def classifyKeyed (k : List Char) (w : List Char) : TokKind :=
+  match Key.ofName? k with
+  | some kk => .key kk ((keyValue w).getD [])
+  | none    => .extra k ((keyValue w).getD [])
+
+/-- A bare word in token position: a flag, or title text. -/
+def classifyPlain (w : List Char) : TokKind :=
+  match Flag.ofName? w with
+  | some f => .flag f
+  | none   => .title w
+
 /-- Classify a word in token position (`classify`). -/
 def classifyWord (w : List Char) : TokKind :=
   match sigilOf w with
-  | some c =>
-    if w.length = 1 then .title w
-    else if c = '@' then .parent w.tail
-    else if c = '#' then .tag w.tail
-    else if c = '!' then (match parsePrio w with
-                          | some k => .prio k
-                          | none   => .unparsed w)
-    else (if isName w.tail then .id w.tail else .unparsed w)
-  | none =>
+  | some c => classifySigil c w
+  | none   =>
     match keyPrefix w with
-    | some k =>
-      (match Key.ofName? k with
-       | some kk => .key kk ((keyValue w).getD [])
-       | none    => .extra k ((keyValue w).getD []))
-    | none =>
-      (match Flag.ofName? w with
-       | some f => .flag f
-       | none   => .title w)
+    | some k => classifyKeyed k w
+    | none   => classifyPlain w
+
 
 def classifyPhase3 : List Tok → List TokKind
   | []      => []
@@ -2711,6 +2800,403 @@ theorem classifyPhase0_suffix (a : List Tok) (u : Tok) (b : List Tok)
           rw [hc]
           show TokKind.ci c :: classifyPhase1 (a' ++ u :: b) = _
           rw [hks]; rfl
+
+
+/-! ### The views
+
+Every field is a `filterMap` or a `lookup` over `kinds`.  There is exactly one
+function per field and it is the only thing that reads that field, which is the
+whole point: §4.1 gives `est` two syntactic slots and `ci` two, and a *second*
+reader is how `tm edit est=` came to report success and change nothing. -/
+
+def kpOne : TokKind → Option (Key × List Char)
+  | .key k v => some (k, v)
+  | _        => none
+
+def rawKeyPair (w : List Char) : Option (Key × List Char) :=
+  (keyOf w).bind (fun k => (keyValue w).map (fun v => (k, v)))
+
+def keyPairs (r : RawItem) : List (Key × List Char) := (kinds r).filterMap kpOne
+
+def lookupKey (k : Key) (r : RawItem) : Option (List Char) := List.lookup k (keyPairs r)
+
+def extraPairs (r : RawItem) : List (List Char × List Char) :=
+  (kinds r).filterMap (fun x => match x with | .extra k v => some (k, v) | _ => none)
+
+def unparsedWords (r : RawItem) : List (List Char) :=
+  (kinds r).filterMap (fun x => match x with | .unparsed w => some w | _ => none)
+
+def titleSegment (r : RawItem) : List (List Char) :=
+  (kinds r).filterMap (fun x => match x with | .title w => some w | _ => none)
+
+/-- §4.1: "tokens the parser cannot classify stay in the title". -/
+def titleWords (r : RawItem) : List (List Char) :=
+  (kinds r).filterMap (fun x => match x with
+    | .title w => some w | .unparsed w => some w | _ => none)
+
+def tagWords (r : RawItem) : List (List Char) :=
+  (kinds r).filterMap (fun x => match x with | .tag t => some t | _ => none)
+
+def flagsOf (r : RawItem) : List Flag :=
+  (kinds r).filterMap (fun x => match x with | .flag f => some f | _ => none)
+
+def parentRef (r : RawItem) : Option (List Char) :=
+  (kinds r).findSome? (fun x => match x with | .parent p => some p | _ => none)
+
+def prioOf (r : RawItem) : Option (Fin 4) :=
+  (kinds r).findSome? (fun x => match x with | .prio k => some k | _ => none)
+
+def idWordOf (r : RawItem) : Option (List Char) :=
+  (kinds r).findSome? (fun x => match x with | .id i => some i | _ => none)
+
+def ciSlotOf (r : RawItem) : Option (Fin 6) :=
+  (kinds r).findSome? (fun x => match x with | .ci c => some c | _ => none)
+
+def estLeadOf (r : RawItem) : Option Dur :=
+  (kinds r).findSome? (fun x => match x with | .est d => some d | _ => none)
+
+/-! ### One view per key -/
+
+def viewDue       (r : RawItem) : Option Moment       := (lookupKey .due r).bind parseMoment
+def viewAt        (r : RawItem) : Option (DT × DT)    := (lookupKey .interval r).bind parseInterval
+def viewWin       (r : RawItem) : Option WindowRange  := (lookupKey .window r).bind parseWindow
+def viewDur       (r : RawItem) : Option Dur          := (lookupKey .dur r).bind parseDurND
+def viewPref      (r : RawItem) : Option Pref         := (lookupKey .pref r).bind parsePref
+def viewEvery     (r : RawItem) : Option Rule         := (lookupKey .every r).bind parseRule
+def viewAfterDone (r : RawItem) : Option AfterDone    := (lookupKey .afterDone r).bind parseAfterDone
+def viewOnEvent   (r : RawItem) : Option OnEvent      := (lookupKey .onEvent r).bind parseOnEvent
+def viewOnMiss    (r : RawItem) : Option OnMiss       := (lookupKey .onMiss r).bind parseOnMiss
+def viewMin       (r : RawItem) : Option Rate         := (lookupKey .floor r).bind parseRate
+def viewMax       (r : RawItem) : Option Rate         := (lookupKey .cap r).bind parseRate
+def viewAfter     (r : RawItem) : Option (List Dep)   := (lookupKey .after r).bind parseDeps
+def viewLoc       (r : RawItem) : Option Loc          := (lookupKey .loc r).bind parseLoc
+def viewEstKey    (r : RawItem) : Option Dur          := (lookupKey .est r).bind parseDurND
+def viewDemoted   (r : RawItem) : Option (List Stamp) := (lookupKey .demoted r).bind parseStamps
+def viewWaiting   (r : RawItem) : Option Nat          := (lookupKey .waiting r).bind parseDate
+def viewBuffer    (r : RawItem) : Option Dur          := (lookupKey .buffer r).bind parseDur
+def viewCiKey     (r : RawItem) : Option (Fin 6)      := (lookupKey .ci r).bind parseCi
+
+/-- **C2, as one function.**  `ci:` overrides the positional digit — the rule
+`--unset ci` could not see, because it read only one of the two slots. -/
+def viewCi (r : RawItem) : Option (Fin 6) :=
+  match viewCiKey r with
+  | some c => some c
+  | none   => ciSlotOf r
+
+/-- **C1, as one function.**  §4.1: `est:` overrides the leading estimate. -/
+def viewRemainingDur (r : RawItem) : Option Dur :=
+  match viewEstKey r with
+  | some d => some d
+  | none   => estLeadOf r
+
+/-! ### The shape and the recurrence are derived, not stored
+
+§4.1 gives three shape keys and three recurrence keys, and `build_item` states
+a precedence between them.  Here that precedence is a *function*, so there is
+one answer and it is the same answer everywhere. -/
+
+inductive Shape
+  | none
+  | point    (m : Moment)
+  | interval (start finish : DT)
+  | window   (range : WindowRange) (dur : Dur)
+deriving DecidableEq, Repr, Inhabited
+
+def viewShape (r : RawItem) : Shape :=
+  match viewAt r with
+  | some se => .interval se.1 se.2
+  | none    =>
+    match viewWin r with
+    | some rg =>
+      (match viewDur r with
+       | some d => .window rg d
+       | none   => .none)
+    | none    =>
+      (match viewDue r with
+       | some m => .point m
+       | none   => .none)
+
+inductive Recur
+  | none
+  | calendar  (rule : Rule)
+  | afterDone (a : AfterDone)
+  | onEvent   (e : OnEvent)
+deriving DecidableEq, Repr, Inhabited
+
+def viewRecur (r : RawItem) : Recur :=
+  match viewEvery r with
+  | some rl => .calendar rl
+  | none    =>
+    match viewAfterDone r with
+    | some a => .afterDone a
+    | none   =>
+      match viewOnEvent r with
+      | some e => .onEvent e
+      | none   => .none
+
+/-- `at:` wins, whatever else the line says (`build_item`: "conflicting shape
+keys (at: wins)"). -/
+theorem shape_at_wins (r : RawItem) (s e : DT) (h : viewAt r = some (s, e)) :
+    viewShape r = .interval s e := by
+  unfold viewShape; rw [h]
+
+/-- `win:` without `dur:` is not a window — §4.1 needs both, and `build_item`
+records it as a problem rather than inventing a duration. -/
+theorem shape_win_needs_dur (r : RawItem) (rg : WindowRange)
+    (h1 : viewAt r = none) (h2 : viewWin r = some rg) (h3 : viewDur r = none) :
+    viewShape r = .none := by
+  unfold viewShape
+  rw [h1]
+  show (match viewWin r with
+        | some rg => (match viewDur r with | some d => Shape.window rg d | none => Shape.none)
+        | none => (match viewDue r with | some m => Shape.point m | none => Shape.none)) = _
+  rw [h2]
+  show (match viewDur r with | some d => Shape.window rg d | none => Shape.none) = _
+  rw [h3]
+
+/-- `due:` is the shape only when neither `at:` nor `win:` claims it. -/
+theorem shape_due_is_last (r : RawItem) (m : Moment)
+    (h1 : viewAt r = none) (h2 : viewWin r = none) (h3 : viewDue r = some m) :
+    viewShape r = .point m := by
+  unfold viewShape
+  rw [h1]
+  show (match viewWin r with
+        | some rg => (match viewDur r with | some d => Shape.window rg d | none => Shape.none)
+        | none => (match viewDue r with | some m => Shape.point m | none => Shape.none)) = _
+  rw [h2]
+  show (match viewDue r with | some m => Shape.point m | none => Shape.none) = _
+  rw [h3]
+
+/-- `every:` outranks `after-done:` outranks `on-event:`. -/
+theorem recur_every_wins (r : RawItem) (rl : Rule) (h : viewEvery r = some rl) :
+    viewRecur r = .calendar rl := by
+  unfold viewRecur; rw [h]
+
+theorem recur_afterDone_beats_onEvent (r : RawItem) (a : AfterDone)
+    (h1 : viewEvery r = none) (h2 : viewAfterDone r = some a) :
+    viewRecur r = .afterDone a := by
+  unfold viewRecur
+  rw [h1]
+  show (match viewAfterDone r with
+        | some a => Recur.afterDone a
+        | none => (match viewOnEvent r with | some e => Recur.onEvent e | none => Recur.none)) = _
+  rw [h2]
+
+/-! ### §4.1's two preservation rules
+
+An unknown `key:` is kept **and reported**; a word the classifier cannot place
+stays in the title.  Both are properties of `kinds`, so they hold of every
+line, not of the ones a test happened to try. -/
+
+inductive Problem
+  | unknownKey   (k v : List Char)
+  | unclassified (w : List Char)
+deriving DecidableEq, Repr
+
+/-- What `tm check` reports about one line. -/
+def problems (r : RawItem) : List Problem :=
+  (kinds r).filterMap (fun x => match x with
+    | .extra k v  => some (Problem.unknownKey k v)
+    | .unparsed w => some (Problem.unclassified w)
+    | _           => none)
+
+theorem unparsed_sub_title : ∀ (ks : List TokKind) (w : List Char),
+    w ∈ ks.filterMap (fun x => match x with | .unparsed w => some w | _ => none) →
+    w ∈ ks.filterMap (fun x => match x with
+      | .title w => some w | .unparsed w => some w | _ => none) := by
+  intro ks
+  induction ks with
+  | nil => intro w hw; simp at hw
+  | cons x xs ih =>
+      intro w hw
+      cases x <;>
+        first
+        | (simp only [List.filterMap_cons] at hw ⊢; exact ih w hw)
+        | (simp only [List.filterMap_cons, List.mem_cons] at hw ⊢
+           exact Or.inr (ih w hw))
+        | (simp only [List.filterMap_cons, List.mem_cons] at hw ⊢
+           rcases hw with rfl | hw
+           · exact Or.inl rfl
+           · exact Or.inr (ih w hw))
+
+/-- **§4.1: a token the parser cannot classify stays in the title.** -/
+theorem unclassified_token_stays_in_the_title (r : RawItem) :
+    ∀ w ∈ unparsedWords r, w ∈ titleWords r :=
+  fun w hw => unparsed_sub_title (kinds r) w hw
+
+theorem extra_sub_problems : ∀ (ks : List TokKind) (p : List Char × List Char),
+    p ∈ ks.filterMap (fun x => match x with | .extra k v => some (k, v) | _ => none) →
+    Problem.unknownKey p.1 p.2 ∈ ks.filterMap (fun x => match x with
+      | .extra k v  => some (Problem.unknownKey k v)
+      | .unparsed w => some (Problem.unclassified w)
+      | _           => none) := by
+  intro ks
+  induction ks with
+  | nil => intro p hp; simp at hp
+  | cons x xs ih =>
+      intro p hp
+      cases x <;>
+        first
+        | (simp only [List.filterMap_cons] at hp ⊢; exact ih p hp)
+        | (simp only [List.filterMap_cons, List.mem_cons] at hp ⊢
+           exact Or.inr (ih p hp))
+        | (simp only [List.filterMap_cons, List.mem_cons] at hp ⊢
+           rcases hp with rfl | hp
+           · exact Or.inl rfl
+           · exact Or.inr (ih p hp))
+
+/-- **§4.1: an unknown `key:` is preserved *and* reported**, never dropped. -/
+theorem unknown_key_is_reported (r : RawItem) :
+    ∀ p ∈ extraPairs r, Problem.unknownKey p.1 p.2 ∈ problems r :=
+  fun p hp => extra_sub_problems (kinds r) p hp
+
+
+theorem classifySigil_ne_extra (c : Char) (w : List Char) (k v : List Char) :
+    classifySigil c w ≠ TokKind.extra k v := by
+  unfold classifySigil
+  by_cases h1 : w.length = 1
+  · rw [if_pos h1]; simp
+  · rw [if_neg h1]
+    by_cases h2 : c = '@'
+    · rw [if_pos h2]; simp
+    · rw [if_neg h2]
+      by_cases h3 : c = '#'
+      · rw [if_pos h3]; simp
+      · rw [if_neg h3]
+        by_cases h4 : c = '!'
+        · rw [if_pos h4]
+          unfold classifyBang
+          cases parsePrio w <;> simp
+        · rw [if_neg h4]
+          by_cases h5 : isName w.tail = true
+          · rw [if_pos h5]; simp
+          · rw [if_neg h5]; simp
+
+theorem classifyPlain_ne_extra (w : List Char) (k v : List Char) :
+    classifyPlain w ≠ TokKind.extra k v := by
+  unfold classifyPlain
+  cases Flag.ofName? w <;> simp
+
+theorem kpOne_classifyBang (w : List Char) : kpOne (classifyBang w) = none := by
+  unfold classifyBang; cases parsePrio w <;> rfl
+
+theorem kpOne_classifySigil (c : Char) (w : List Char) : kpOne (classifySigil c w) = none := by
+  unfold classifySigil
+  by_cases h1 : w.length = 1
+  · rw [if_pos h1]; rfl
+  · rw [if_neg h1]
+    by_cases h2 : c = '@'
+    · rw [if_pos h2]; rfl
+    · rw [if_neg h2]
+      by_cases h3 : c = '#'
+      · rw [if_pos h3]; rfl
+      · rw [if_neg h3]
+        by_cases h4 : c = '!'
+        · rw [if_pos h4]; exact kpOne_classifyBang w
+        · rw [if_neg h4]
+          by_cases h5 : isName w.tail = true
+          · rw [if_pos h5]; rfl
+          · rw [if_neg h5]; rfl
+
+theorem kpOne_classifyPlain (w : List Char) : kpOne (classifyPlain w) = none := by
+  unfold classifyPlain; cases Flag.ofName? w <;> rfl
+
+theorem keyValue_isSome {w k : List Char} (h : keyPrefix w = some k) :
+    ∃ v, keyValue w = some v := by
+  unfold keyPrefix at h
+  cases hsp : splitFirst ':' w with
+  | none => rw [hsp] at h; simp at h
+  | some p => exact ⟨p.2, by unfold keyValue; rw [hsp]; rfl⟩
+
+/-- A `key:` token is read the same way wherever it sits. -/
+theorem kpOne_classifyWord (w : List Char) : kpOne (classifyWord w) = rawKeyPair w := by
+  unfold classifyWord rawKeyPair keyOf
+  cases hs : sigilOf w with
+  | some c =>
+      have hk : keyPrefix w = none :=
+        keyPrefix_none_of (headSat_false_of sigil_not_key w (sigilOf_head hs))
+      rw [hk]
+      show kpOne (classifySigil c w) = none
+      exact kpOne_classifySigil c w
+  | none =>
+      cases hk : keyPrefix w with
+      | none =>
+          show kpOne (classifyPlain w) = none
+          exact kpOne_classifyPlain w
+      | some k =>
+          obtain ⟨v, hv⟩ := keyValue_isSome hk
+          show kpOne (classifyKeyed k w)
+            = (Key.ofName? k).bind (fun kk => (keyValue w).map (fun x => (kk, x)))
+          unfold classifyKeyed
+          rw [hv]
+          cases hn : Key.ofName? k with
+          | none => rfl
+          | some kk => rfl
+
+/-- And it is never silently promoted: the `.extra` kind is produced only where
+`Key.ofName?` said no. -/
+theorem extra_key_is_unknown (w k v : List Char) (h : classifyWord w = .extra k v) :
+    Key.ofName? k = none := by
+  unfold classifyWord at h
+  cases hs : sigilOf w with
+  | some c =>
+      rw [hs] at h
+      have : classifySigil c w = TokKind.extra k v := h
+      exact absurd this (classifySigil_ne_extra c w k v)
+  | none =>
+      rw [hs] at h
+      cases hk : keyPrefix w with
+      | none =>
+          rw [hk] at h
+          have : classifyPlain w = TokKind.extra k v := h
+          exact absurd this (classifyPlain_ne_extra w k v)
+      | some k' =>
+          rw [hk] at h
+          have h' : classifyKeyed k' w = TokKind.extra k v := h
+          unfold classifyKeyed at h'
+          cases hn : Key.ofName? k' with
+          | none =>
+              rw [hn] at h'
+              have : k' = k := by
+                simp only [TokKind.extra.injEq] at h'
+                exact h'.1
+              rw [← this]; exact hn
+          | some kk => rw [hn] at h'; simp at h'
+
+/-! ### The key views need no positional reasoning
+
+A word with a known `key:` prefix is a key token wherever it sits: it is
+neither a ci digit (one character, 0–5), nor a duration (it starts with a
+letter), nor a word that keeps the title open (it ends it).  So `lookupKey`
+is a plain scan of the token vector, and that is what makes the setters
+below provable by list induction rather than by re-deriving the phases. -/
+
+theorem rawKeyPair_none_of_keyPrefix {w : List Char} (h : keyPrefix w = none) :
+    rawKeyPair w = none := by
+  unfold rawKeyPair keyOf; rw [h]; rfl
+
+theorem rawKeyPair_none_of_digit {w : List Char} (h : headSat isDigitC w = true) :
+    rawKeyPair w = none :=
+  rawKeyPair_none_of_keyPrefix (keyPrefix_none_of (headSat_false_of digit_not_key w h))
+
+theorem rawKeyPair_none_of_notStarts {w : List Char} (h : startsToken w = false) :
+    rawKeyPair w = none := by
+  refine rawKeyPair_none_of_keyPrefix ?_
+  unfold startsToken at h
+  simp only [Bool.or_eq_false_iff] at h
+  cases hk : keyPrefix w with
+  | none => rfl
+  | some k => rw [hk] at h; simp at h
+
+/-- **The key views are a plain scan.**  One instance of the token-grammar
+induction; it is the theorem the setters rest on. -/
+theorem keyPairs_raw (r : RawItem) :
+    keyPairs r = r.toks.filterMap (fun t => rawKeyPair t.word) :=
+  extract_phase0 kpOne rawKeyPair kpOne_classifyWord
+    (fun _ w h => ⟨rfl, rawKeyPair_none_of_digit (ciSlot_head h)⟩)
+    (fun _ w h => ⟨rfl, rawKeyPair_none_of_digit (estSlot_head h)⟩)
+    (fun w h => ⟨rfl, rawKeyPair_none_of_notStarts h⟩)
+    r.toks
 
 end Field
 end Tm
