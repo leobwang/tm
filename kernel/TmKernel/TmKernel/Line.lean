@@ -629,7 +629,6 @@ whose scrutinee is a rewritten term does not reduce under `rw`, and the proofs
 below rewrite scrutinees constantly; `bind` keeps every one of them a one-step
 `Option.bind_some`.
 -/
-namespace Tm
 namespace Field
 
 /-! ## Character classes
@@ -5860,6 +5859,58 @@ theorem render_round_trip (i : Id) (g : Glyph) (f : Fields)
     simp only [Fields.canonicalWf, Bool.and_eq_true] at h; exact h.1
   exact ⟨parse_serialize i g (renderItem i f) (renderItem_canonical i f h),
     field_round_trip i f hwf⟩
+
+
+
+/-! ### `Fields.wf` is satisfiable, and richly
+
+A precondition nothing satisfies makes a round trip vacuous, so here is an item
+that satisfies it with **every** slot filled: both positional slots, a title, a
+parent, a tag, a priority, six keys, an unknown key, an unclassifiable word and
+a flag.  `demo_wf` is `decide`d, so the kernel checks it. -/
+
+def demoFields : Fields :=
+  { ci        := some ⟨4, by decide⟩
+    estLead   := some (.simple 2 .blocks)
+    title     := [['E','x','e','r','c','i','s','e','s'], ['5','.','3','-','5','.','5']]
+    parent    := some ['m','1']
+    tags      := [['l','e','a','n']]
+    prio      := some ⟨0, by decide⟩
+    due       := some (.dateTime (Cal.toDay ⟨2026, 9, 11⟩) ⟨23 * 60 + 59, by decide⟩)
+    cap       := some ⟨.simple 2 .blocks, .day⟩
+    every     := some (.everyNWeeks 2 .sunday)
+    after     := some [.item ['k','7','q','2'], .event ['v','i','s','a']]
+    loc       := some (.named ['z','o','o','m'])
+    est       := some (.simple 1 .blocks)
+    demoted   := some [.week 36, .week 37]
+    waiting   := some (Cal.toDay ⟨2026, 9, 5⟩)
+    buffer    := some (.simple 2 .hours)
+    extra     := [(['n','o','t','e'], ['x','y','z'])]
+    unparsed  := [['!','9']]
+    flags     := [.openEnded, .hot] }
+
+theorem demo_wf : Fields.canonicalWf ['t','3'] demoFields = true := by decide
+
+/-- Round trip B on a concrete, fully populated item. -/
+theorem demo_round_trips : viewFields (renderItem ['t','3'] demoFields) = demoFields :=
+  field_round_trip _ _ (by decide)
+
+/-- And its line is one the kernel reads back byte for byte. -/
+theorem demo_line_reparses :
+    parseItem (serializeItem ['t','3'] Glyph.todo (renderItem ['t','3'] demoFields))
+      = .ok (['t','3'], Glyph.todo, renderItem ['t','3'] demoFields) :=
+  parse_serialize _ _ _ (renderItem_canonical _ _ demo_wf)
+
+set_option maxRecDepth 20000
+
+/-- The bytes it writes, spelled out — the `^id` leads the token run, `cap:`
+has normalised to `max:`, and the two positional slots come first. -/
+theorem demo_line_bytes :
+    serializeItem ['t','3'] Glyph.todo (renderItem ['t','3'] demoFields) =
+      ("- [ ] 4 2b Exercises 5.3-5.5 ^t3 @m1 #lean !1 due:2026-09-11T23:59 " ++
+       "every:2w:Sun max:2b/d after:^k7q2,event:visa loc:zoom est:1b demoted:W36,W37 " ++
+       "waiting:2026-09-05 buffer:2h note:xyz !9 open hot").toList := by
+  decide
 
 end Field
 end Tm

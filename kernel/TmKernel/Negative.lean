@@ -225,4 +225,51 @@ def weekdayCheat (n : Nat) : Cal.Weekday := Cal.Weekday.ofIndex (n % 7 + 1)
 
 theorem cheat_weekday_1970 : weekdayCheat (Cal.toDay ⟨1970, 1, 1⟩) = .thursday := by decide
 
+
+/- ======================================================================
+   §4.1's field grammar — cheats added with the field grammar (Line.lean,
+   Text.lean).  Every block below is a plausible claim about the grammar
+   that is FALSE, and Lean says so.
+   ====================================================================== -/
+
+/- CHEAT A — drop `Rule.wf` from the `every:` round trip.  `every:0d` renders
+   as `0d` and `grammar.rs` rejects `n == 0`, so `.everyNDays 0` does not come
+   back; the side condition is load-bearing and `rfl` cannot supply it. -/
+theorem every_needs_no_side_condition (r : Field.Rule) :
+    Field.parseRule (Field.renderRule r) = some r :=
+  Field.parse_render_rule r rfl
+
+/- CHEAT B — the shipped `tm edit est=` bug, stated as a law: read the
+   remaining estimate off the *leading* slot.  §4.1 says `est:` overrides it,
+   and `spec_line_remaining` is the counterexample. -/
+theorem leading_estimate_is_the_remaining_estimate (r : RawItem) :
+    Field.viewRemainingDur r = Field.estLeadOf r := rfl
+
+/- CHEAT C — accept a date that is not zero-padded.  `parse_date` checks the
+   width (`s.len() != 10`) and so does this kernel. -/
+theorem date_accepts_unpadded :
+    Field.parseDate ['2','0','2','6','-','9','-','1','1'] ≠ none := by decide
+
+/- CHEAT D — treat a flag word inside the title as a flag.  §4.1 reads a flag
+   only after a `@ # ! ^ key:` token, which is why `setFlag` inserts after the
+   `^id` and why it returns `none` when there is no id. -/
+theorem flag_word_in_the_title_is_a_flag :
+    Field.flagsOf (Field.itemOf Field.flagInTitleLine) = [Field.Flag.openEnded] := by decide
+
+/- CHEAT E — give `cap:` a field of its own.  It is an alias of `max:`; two
+   places for one budget is the defect class this kernel exists to remove. -/
+theorem cap_is_its_own_field :
+    Field.Key.ofName? ['c','a','p'] ≠ Field.Key.ofName? ['m','a','x'] := by decide
+
+/- CHEAT F — drop `slotGuard` from round trip B.  A title beginning with `5`
+   is eaten by the empty ci slot, so the fields do not come back: the line
+   reads as `ci = 5` with a one-word title.  This is `grammar.rs`'s
+   `EditError::Ambiguous`, and refusing to write the line is the fix. -/
+def ambiguousFields : Field.Fields :=
+  { title := [['5'], ['a','p','p','l','e','s']] }
+
+theorem the_slot_guard_is_unnecessary :
+    Field.viewFields (Field.renderItem ['t','3'] ambiguousFields) = ambiguousFields := by
+  decide
+
 end Tm
