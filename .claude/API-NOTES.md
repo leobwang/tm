@@ -376,7 +376,7 @@ All documented at the top of recur.rs under "Deviations from the scope":
 4. `WaitingState` has a fifth field `arrived: Option<DateTime<FixedOffset>>` (the `tm event` that already resolved the wait) so the Necessities screen can tell "still waiting" from "arrived, flip the line"; it is also what lets `instances()` produce a pending instance for a resolved-but-not-yet-rewritten `[?]` line.
 5. Added `done_instance()` beside `skip_instance()` (`tm routine done` needs the symmetric constructor).
 6. Two rules the spec left to me, both documented in the module docs: (a) `Rule::Weeks(n)` (`every:week`, not in the spec's `Rule` enum but added by model.rs) yields one instance per qualifying ISO week keyed by its Monday with a window spanning the whole week — that is what makes "laundry any day, mandatory Sunday, persists into next week" work; (b) `is_mandatory` refines §5.2's "on_miss ≠ expire" with "once the window has closed, only a `persist` instance stays mandatory" (an expire or next window whose close `now` has passed is over), and an `after-done:` item with no `~validity` never counts as a last chance since no day is its last.
-7. `today_instances` bounds the persist carry at `CARRY_LOOKBACK_DAYS = 60` and yields **at most one instance per item**: carried instances collapse to the most recent one, and a surviving carried instance stands for the current occurrence too (§5.3's persisted instance *is* the item's pending one until it is done or skipped). So a long-neglected persist routine cannot flood the planner, and a routine is never placed twice in a day. `instances` still reports every occurrence with its own status, and `week_instances` still puts this week's on §12.3's grid.
+7. `today_instances` bounds the persist carry at `CARRY_LOOKBACK_DAYS = 60` and collapses carried instances to the most recent one per item, so a long-neglected daily persist routine cannot flood the planner.
 
 # energy (layer 2)
 ## tm_core::energy
@@ -394,7 +394,7 @@ pub struct Model { pub energy: BTreeMap<String, Vec<u8>>,   // curve name -> 12 
                    pub fitted: Option<NaiveDate>, pub n_obs: u32 }
 ```
 - `Model::default()` (empty = fall back to config priors), `is_empty()`, `is_fitted()`, `from_config(&Config)`.
-- `energy_at(curve, hsw) -> Option<u8>`, `sleep_shift(&Config) -> f64`, `p_lounge_on(Weekday,&Config) -> f64`, `expected_arrival_on(Weekday,&Config) -> NaiveTime`, `wake_or_expected(Option<NaiveTime>, Weekday, &Config) -> NaiveTime` (the one fallback for a day with no `wake`: the weekday's expected arrival, §8.4/§16 — planner.rs and cli/ctx.rs both read it from here).
+- `energy_at(curve, hsw) -> Option<u8>`, `sleep_shift(&Config) -> f64`, `p_lounge_on(Weekday,&Config) -> f64`, `expected_arrival_on(Weekday,&Config) -> NaiveTime`.
 - `from_json(&str)`, `to_json() -> String` (pretty, arrays inline, trailing newline), `load(&Path) -> Result<Option<Model>>`, `load_or_default(&Path)`, `save(&Path)`. `Model` is plain serde, so `store.read_json::<Model>(store::MODEL_PATH)` / `write_json` also work.
 - `WeekdayMap<T>`: `new/get(Weekday)/set/iter()/len/is_empty`, `FromIterator<(Weekday,T)>`; serializes as a Mon..Sun object with missing days omitted. `Hhmm(pub NaiveTime)` serializes as "HH:MM". `weekday_key(Weekday)`, `parse_weekday_key(&str)`.
 
@@ -699,7 +699,7 @@ Notes for callers:
 - `DayPlan::block_minutes()` covers the whole day, the replayed morning included; use `planned_block_minutes(now)` for the budget check.
 - `SegKind::Batch(ids)` segments have `item == None`; use `Segment::items()`.
 - `diagnostics.blocked` holds only dep-blocked items (`Vec<(Id, Vec<Dep>)>`); waiting and cap-exhausted items are in `waiting` / `dropped_tail`, and `priority::blocked(&cands)` still has the full reason list.
-- `plan()` builds its own candidates and lookahead unless `with_candidates` / `with_caps` are given; `DayPlan::priorities` is one `(Id, Prio)` per candidate, in candidate order (`recur::today_instances` gives an item one instance a day, so ids do not repeat unless the caller's own candidate list repeats them; `priorities_for_state` keeps the lowest `p` per id either way).
+- `plan()` builds its own candidates and lookahead unless `with_candidates` / `with_caps` are given; `DayPlan::priorities` is one `(Id, Prio)` per candidate, in candidate order (two entries can share an id — a carried persist instance and today's).
 - Test helpers live in `tm-core/tests/planner_common/mod.rs` (`load`, `load_with_log`, `BASIC_LOG`, `basic_state`, `timeline`, `diagnostics`) and are reusable by emit.rs / CLI tests via `mod planner_common;`.
 
 ## Deviations (planner)
@@ -895,3 +895,232 @@ cli/day.rs, cli/items.rs, cli/lifecycle.rs, cli/init.rs — one `pub fn <verb>(&
 13. **Usage errors exit 1**, not clap's default 2 (§13 reserves 2 for validation problems); `--help`/`--version` exit 0.
 14. `est:` written by `stop`/`extend`/`done --partial` uses whole blocks when the minutes divide evenly, mirroring `horizon.rs`'s private `est_dur` so a stop and a day close write the same text.
 15. The **exit-3 conflict path is unit-tested** in `cli/out.rs`, not integration-tested: the §1.3 race needs a writer between the store's read and its verified write (`FsStore::with_before_write_hook`), which cannot be provoked from outside the process — as the scope anticipated.
+
+# tui-today (layer 5)
+`tm` is a bin crate, so nothing is importable; what the queue agent (screens 2–5) needs is the module tree and the seams. Every file opens with an "API overview" doc comment.
+
+crate::tui (tm/src/tui/mod.rs)
+- `pub mod app; pub mod daybar; pub mod prompts; pub mod theme; pub mod today;` plus a marked slot `// screens 2-5: added by the queue agent — pub mod queue; pub mod necessities; pub mod inbox;`
+- `pub fn run(g: &cli::ctx::Globals) -> Result<i32, CliError>` — the whole frontend. Private helpers: `setup/restore/resume/install_panic_hook`, `load/reload/data_of/now_of`, `watch/is_watched`, `event_loop`, `mouse`, `perform`, `verb`, `editor`; `const DEBOUNCE = 200ms`, `POLL = 200ms`, `INTERACTIVE_VERBS = ["start"]`.
+
+crate::tui::app — pure, no terminal/store/clock
+```rust
+pub enum Screen { Today, Queue, Necessities, Review, Inbox }   // Copy+Default(Today)+Eq+Hash
+impl Screen { const ALL: [Screen;5]; fn from_digit(char)->Option<Screen>; fn number()->u8; fn title()->&'static str }
+pub enum Mode { Normal, BreakWhere, Energy, Command, Input(InputKind), Help }   // Clone+Default+Eq
+pub enum InputKind { Note, Location }              // + label()
+pub enum BreakPlace { Walk, Seat, Bed, Phone }     // + as_str(), from_key(char)
+pub enum Answer { Extend, Stop, Done, Later, Work, Break, Routine, Interrupt, Leak }
+pub enum Action { None, Screen(Screen), Help, CommandLine, Quit, Edit, Replan, ReplanOrResume,
+                  Sync, Done, Extend, Stop, Break, BreakWhere(BreakPlace), Interrupt,
+                  EnergyPrompt, Energy(u8), Location, SkipRoutine, Note, Pause,
+                  SelectNext, SelectPrev, Open, Cancel, Submit, Input(char), Backspace,
+                  Answer(Answer) }                 // Clone+Debug+Eq
+pub enum Effect { Verb(Vec<String>), Editor{file: String, line: usize}, Note(String),
+                  SetLocation(String), Quit }      // Clone+Debug+Eq
+pub struct Overtime { id, title, est: String, multiplier: Option<f64>, planned_min, elapsed_min,
+                      drops: Vec<String>, stays: String, reprompt_min }
+pub struct Idle { minutes: u32 }
+pub enum Prompt { Overtime(Overtime), Idle(Idle) }  // + kind() -> PromptKind
+pub enum PromptKind { Overtime, Idle }
+pub struct TimelineRow { text: String, segment: Option<usize> }   // segment None = the ─── divider
+pub struct Hover { col: usize, text: String }
+pub struct Milestone { id, title, done_min, planned_min, done: bool, hot: bool }
+pub struct HotRow { id, title, note }   pub struct WaitRow { id, title, note }
+pub struct WeekPane { week: Option<IsoWeek>, done_blocks, planned_blocks, milestones, hot, waiting, diagnostics }
+pub struct EnergyPane { hours: Vec<u32>, pred: Vec<u8>, rep: Vec<Option<u8>> }
+pub struct AppData { cfg: Config, model: Model, state: RuntimeState, tree: Tree, log: Log,
+                     replay: Replay, now: DateTime<Tz> }
+pub struct App {
+    // data
+    pub cfg, model, state, tree, log, replay, posterior: Posterior, now: DateTime<Tz>, today: NaiveDate,
+    pub plan: DayPlan, pub ghost: Option<DayPlan>,
+    // digests refresh() recomputes
+    pub rows: Vec<TimelineRow>, pub status: StatusLine, pub head: StatusHead,
+    pub week: WeekPane, pub energy: EnergyPane,
+    // UI
+    pub screen: Screen, pub mode: Mode, pub selection: usize, pub selected_item: Option<Id>,
+    pub input: String, pub message: Option<String>, pub hover: Option<Hover>,
+    pub prompt: Option<Prompt>, pub prompt_at: Option<DateTime<Tz>>, pub quit: bool,
+}
+impl App {
+    pub fn new(AppData) -> App;                       // plans from `now`
+    pub fn with_plan(AppData, DayPlan, Option<DayPlan>) -> App;   // the tests' constructor
+    pub fn adopt(&mut self, AppData);                 // after a write/file change; keeps the UI state
+    pub fn replan(&mut self);  pub fn refresh(&mut self);
+    pub fn tick(&mut self, now) -> bool;              // replans on a minute change, raises prompts
+    pub fn timeline_rows(&self, title_w: usize) -> Vec<TimelineRow>;
+    pub fn wake(&self) -> DateTime<Tz>;  pub fn loc(&self) -> Loc;
+    pub fn predicted_energy(&self, at) -> u8;
+    pub fn title_of(&Id) -> String;  pub fn priority_of(&Id) -> Option<u8>;
+    pub fn selected_segment(&self) -> Option<usize>;  pub fn selected_location(&self) -> Option<(String, usize)>;
+    pub fn select(&mut self, delta: isize);           // RELATIVE
+    pub fn select_segment(&mut self, segment: usize);
+    pub fn active_elapsed_min(&self) -> Option<u32>;
+    pub fn overtime_due(&self) -> Option<Overtime>;  pub fn idle_due(&self) -> Option<Idle>;
+    pub fn raise_prompt(&mut self) -> bool;
+    pub fn action_for(&self, KeyEvent) -> Action;     // = resolve(screen, mode, prompt, key)
+    pub fn apply(&mut self, Action) -> Vec<Effect>;
+}
+pub fn resolve(Screen, Mode, Option<PromptKind>, KeyEvent) -> Action;
+pub fn split_args(&str) -> Result<Vec<String>, String>;   // quote-aware `:` splitting
+```
+
+crate::tui::today
+```rust
+pub fn draw(f: &mut Frame, app: &App);                       // the whole frame, all screens
+pub fn is_wide(&App, Rect) -> bool;  pub fn bar_area(&App, Rect) -> Rect;   // mouse hit-testing
+pub fn status_line(&App, width) -> Line;  pub fn week_fold(&App, width) -> Line;
+pub fn timeline_lines(&App, width, height) -> Vec<Line>;
+pub fn now_lines(&App, width) -> Vec<Line>;
+pub fn energy_lines(&App, width) -> Vec<Line>;
+pub fn week_lines(&App, width) -> Vec<Line>;  pub fn week_title(&App) -> String;
+pub fn hint_line(&App, width) -> Line;
+```
+
+crate::tui::daybar
+```rust
+pub const LABEL_W: u16 = 14;                 // right-hand `▲ 10:42` / `plan @07:00` gutter
+pub fn bar_width(Rect) -> usize;  pub fn bar(&App, cols) -> emit::DayBar;
+pub fn draw(f, Rect, &App);  pub fn draw_tooltip(f, Rect, &Hover);
+pub fn hit(Rect, column: u16, row: u16) -> Option<usize>;
+pub fn tooltip(&DayBar, col) -> Option<String>;  pub fn segment_at(&DayBar, col) -> Option<usize>;
+```
+
+crate::tui::prompts
+```rust
+pub fn overtime_lines(&Overtime) -> Vec<Line>;  pub fn overtime_title(&Overtime) -> String;
+pub fn idle_lines(&Idle) -> Vec<Line>;          pub fn idle_title(&Idle) -> String;
+pub fn lines(&Prompt) -> (String, Vec<Line>);   pub fn help_lines() -> Vec<Line>;
+pub fn centred(Rect, w, h) -> Rect;             pub fn draw(f, Rect, &Prompt);  pub fn draw_help(f, Rect);
+```
+
+crate::tui::theme
+```rust
+pub const STATUS, HINT, ACCENT, WARN, DIM, SELECTED, OVERLAY, CURSOR, TOOLTIP: Style;
+pub fn pane(&str) -> Block;  pub fn pane_focused(&str) -> Block;
+pub fn cell_glyph(&emit::Cell) -> char;  pub fn cell_style(&emit::Cell, &Config, ghost: bool) -> Style;
+```
+
+Hooks left for the queue agent, each marked `// screens 2-5: added by the queue agent`: the `mod` list in mod.rs, the `Action` enum (their §12.6 rows become variants), `normal_key`'s per-screen dispatch in app.rs (`_ => …` currently gives them the global row and `r` = Replan), `Action::Open`'s drill in `App::apply` (sets `screen = Queue` with `selected_item`), and the screen match in `today::draw`. `Screen` already has all five variants and `App` is shared, so their code compiles against it today.
+
+Test harness reuse: `tm/tests/tui_common/mod.rs` pulls the five pure modules in with `#[path = "../../src/tui/<file>.rs"]` (a bin crate has no lib target, so `use tm::…` is impossible) and offers `config()`, `tree(&cfg)`, `log(&cfg)`, `state()`, `day_plan(&cfg)`, `ghost_plan(&cfg)`, `app()`, `app_at(h, m)`, `overtime_app(h, m, est_min)`, `tight_overtime_app()`, `idle_app(h, m)`, `render(&App, w, h)`, `render_lines(&[Line], w)`, `lines(&[Line])`, `prio(id, p, class)`, `seg(...)`, `at(&cfg, h, m)`. It deliberately does NOT include `mod.rs`, so adding `pub mod queue;` there cannot break these tests.
+
+# tui-queue (layer 5)
+All three modules are self-contained: they depend only on tm-core, ratatui, crossterm and chrono. Shared plumbing lives in `queue.rs`; the other two do `use super::queue::{...}`, which resolves identically whether they sit under `tui/` or at a test crate's root.
+
+SHARED (tm::tui::queue)
+```rust
+pub struct View<'a> { tree: &Tree, files: &PlanFiles, cfg: &Config, replay: &Replay,
+                      candidates: &[Candidate], prios: &[Prio], caps: &[DayCapacity],
+                      today: NaiveDate, now: DateTime<Tz>, /* private done map */ }
+impl View<'a> { fn new(tree, files, cfg, replay, candidates, prios, caps, today, now) -> View<'a>;
+                fn week() -> IsoWeek; fn month() -> YearMonth; fn block_min() -> u32;
+                fn prio(&Id) -> Option<&Prio>; fn candidate(&Id) -> Option<&Candidate>;
+                fn done_minutes() -> &HashMap<Id,u32>; fn progress(&Id) -> Option<f64> }
+
+pub enum Action { Ignored, Redraw, Note(String), Edit(Id), Prompt(Prompt), Mutate(Mutation) }
+pub enum Prompt { Add{file: String, section: Option<String>}, Ci(Id), Estimate(Id), Priority(Id) }
+pub enum Mutation { Reorder{id: Id, delta: i32}, Demote(Id), Readopt(Id), Drop(Id),
+                    Skip{item: Id, instance: InstanceKey}, Event{name: String, id: Option<Id>},
+                    Capture{text: String, file: String, section: Option<String>, from_inbox: Option<usize>},
+                    DropInboxLine{line: usize} }
+
+pub fn width(&str)->usize; pub fn truncate(&str, usize)->String; pub fn pad(&str, usize)->String;
+pub fn fmt_u(Option<f64>)->String;                       // "u=0.6" | "u=∞" | ""
+pub fn fmt_fits(&Prio, remaining_min: u32, block_min: u32)->String;   // "fits 6/6"; "" for pure-rank
+pub fn bar(Option<f64>, cells: usize)->String;           // "▓▓▓░░░"
+pub fn due_text(NaiveDate, today: NaiveDate)->String;    // "due today"|"due Fri"|"due Oct 20"
+pub fn est_text(&View, &Id)->String;
+pub fn edit_command(&Config, &Tree, &Id)->Option<String>;// "code -g week/2026-W37.md:8"
+pub fn reorder(&dyn Store, &Id, delta: i32)->Result<bool, StoreError>;  // J/K, byte-faithful
+```
+
+SCREEN 2 (queue.rs)
+```rust
+pub enum Pane { Month, Week, Tasks }   // .left() .right()
+pub struct QueueState { pane, month_sel, week_sel, task_sel, anchor: Pane, focus: Option<Id> }
+impl QueueState { fn new(); fn parent(&View)->Option<Id>; fn selected(&View)->Option<Id> }
+pub struct MonthRow { id, priority: Option<u8>, title, bar, demoted: bool, stamps }
+pub struct WeekRow  { id, p: Option<u8>, hysteresis: bool, ci, est, title, parent, due, u, fits,
+                      bar, done: bool, wall: bool }
+pub struct TaskRow  { id, p: Option<u8>, ci, est, title, blocked: Option<String>, done: bool }
+pub fn month_rows(&View)->Vec<MonthRow>;
+pub fn week_rows(&View)->Vec<WeekRow>;
+pub fn task_rows(&View, parent: Option<&Id>)->Vec<TaskRow>;
+pub fn fits_footer(&View, &[TaskRow])->String;           // "fits this week: 6b of 6b"
+pub const KEYMAP: &str; pub const KEYMAP_NARROW: &str;
+pub fn render(&QueueState, &View, &mut Frame, Rect);
+pub fn on_key(&mut QueueState, &View, KeyEvent) -> Action;
+```
+
+SCREEN 3 (necessities.rs)
+```rust
+pub enum Cell { Free, Window, Wall, Conflict }           // .glyph() .style()
+pub const FIRST_HOUR: u32 = 6; LAST_HOUR: u32 = 24; MAX_WINDOW_HOURS: i64 = 12; GRID_WIDTH: u16 = 33;
+pub struct Grid { days: [NaiveDate;7], cells: Vec<[Cell;7]>, conflicts: Vec<(Id,Id)> }
+pub fn grid(&View) -> Grid;
+pub enum Section { Impossible, Dated, Waiting, Necessary }   // .title(); Ord = display order
+pub struct Row { section, id, title, p: Option<u8>, need, capacity, u, detail,
+                 instance: Option<InstanceKey>, event: Option<String> }
+pub fn rows(&View) -> Vec<Row>;
+pub struct NecessitiesState { sel: usize }               // ::new(), .selected(&View)
+pub const KEYMAP: &str;
+pub fn render(&NecessitiesState, &View, &mut Frame, Rect);
+pub fn on_key(&mut NecessitiesState, &View, KeyEvent) -> Action;
+```
+
+SCREEN 5 (inbox.rs)
+```rust
+pub const CLAUDE_TRIAGE: &str;                           // the `C` command line
+pub struct Target { file: String, section: Option<String> }  // ::new, .is_bare(), Display "f.md #Sec"
+pub fn targets(&View) -> Vec<Target>;                    // the Tab ring, 5 entries
+pub struct Normalized { ci: Option<u8>, est: Option<String>, title: String,
+                        tokens: Vec<String>, problem: Option<String> }
+pub fn normalize(&str, &Config, today: NaiveDate) -> Normalized;
+pub struct Capture { raw, line: String, target: Target, target_index: usize, problem: Option<String> }
+pub fn capture(input: &str, &View, target: Option<usize>) -> Capture;
+pub fn preview_text(&Capture) -> String;                 // "parsed  <line>  → <target>"
+pub struct InboxLine { line: usize, raw: String, parsed: String, problem: Option<String> }
+pub fn inbox_lines(&View) -> Vec<InboxLine>;
+pub struct CaptureState { buffer, editing: bool, target: Option<usize>, sel, triaging: Option<usize>,
+                          note: Option<String> }         // ::new(), .capture(&View)
+pub const KEYMAP_EDITING: &str; pub const KEYMAP_LIST: &str;
+pub fn render(&CaptureState, &View, &mut Frame, Rect);
+pub fn on_key(&mut CaptureState, &View, KeyEvent) -> Action;
+```
+
+MERGE (three `mod` lines in tui/mod.rs + one arm each):
+```rust
+mod queue; mod necessities; mod inbox;
+Screen::Queue       => queue::render(&app.queue, &app.view(), frame, area),
+Screen::Necessities => necessities::render(&app.necessities, &app.view(), frame, area),
+Screen::Inbox       => inbox::render(&app.capture, &app.view(), frame, area),
+// key dispatch: queue::on_key(&mut app.queue, &app.view(), key) -> Action, etc.
+```
+`App` needs three fields (`queue: QueueState`, `necessities: NecessitiesState`, `capture: CaptureState`) and one `fn view(&self) -> queue::View<'_>` built from its already-loaded tree/files/cfg/replay/candidates/prios/caps. Each `render` draws its own §12.6 keymap row on the last line of the area it is given (as the mock does); pass a one-line-shorter area to suppress it.
+
+# init (layer 5)
+`tm` is a bin crate, so this is the module seam, not an importable API. New private-to-the-binary module `tm::init` (declared as `mod init;` in tm/src/main.rs, sibling of `cli`):
+
+Constants (all embedded from tm/templates/ with include_str!):
+- `pub const CLAUDE_MD: &str` — §14's rules, verbatim.
+- `pub const SETTINGS_JSON: &str` — .claude/settings.json.
+- `pub const PRE_COMMIT: &str` — .githooks/pre-commit.
+- `pub const GITIGNORE: &str` — the runtime-state ignore block.
+- `pub const SKILLS: &[(&str, &str)]` — 8 (name, SKILL.md) pairs in §14 table order.
+- `pub const DIRS: &[&str] = &["calendar", ".tm"]`, `pub const HOOKS_DIR: &str = ".githooks"`.
+
+Types:
+- `pub struct Options { pub today: NaiveDate, pub example: bool, pub force: bool }` + `Options::new(today) -> Options` (today is injected; no clock in the module).
+- `pub enum Mode { Managed, Executable, Merge }` — how one file is written (Merge = user-owned, appended to, never rewritten).
+- `pub struct InitFile { pub path: String, pub text: String, pub mode: Mode }`.
+- `pub struct Written { pub created: Vec<String>, pub unchanged: Vec<String> }`.
+- `pub enum InitError { NotEmpty { dir: String }, Io { path: String, source: io::Error } }` (thiserror).
+
+Functions:
+- `pub fn files(&Options) -> Vec<InitFile>` — the whole tree, pure, in write order (snapshot-friendly, no I/O).
+- `pub fn write(root: &Path, &Options) -> Result<Written, InitError>` — creates root, DIRS and every file; refuses a non-empty root unless `force`; sets 0o755 on the hook (unix); merges an existing .gitignore.
+- `pub fn hook_hint(root: &Path) -> String` — "git config core.hooksPath <root>/.githooks".
+
+CLI seam (unchanged for callers): `cli::init::run(&Globals, &InitArgs) -> Result<i32, CliError>` and `cli::init::InitOut { dir, created, skipped, hook_hint }` keep their names, fields and JSON shape; the TUI or another verb can reuse `crate::init::files()` to preview or re-emit any generated file (e.g. to refresh CLAUDE.md or a SKILL.md after an upgrade) without re-running init.
