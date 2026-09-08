@@ -1,0 +1,22 @@
+---
+source: tm/tests/tui_today_prompts.rs
+expression: "overlay_sized(84, 18, |f| prompts::draw_help(f, f.area()))"
+---
+"                                                                                    "
+"┌ Keys — tm-spec §12.6 ───────────────────────────────────────────────────────────┐ "
+"│  1–5          screens: Today · Queue · Necessities · Review · Inbox             │ "
+"│  ?            this help  ·  :  command line (any tm verb)  ·  q  quit           │ "
+"│  e / Enter    open the selected line in the editor / drill into it              │ "
+"│  r / R        replan (resume, when interrupted) · sync calendar + replan        │ "
+"│  j / k        move the selection  ·  mouse: hover the day bar, click to select  │ "
+"│  d / x / s    done · extend one block · stop, the remainder re-competes         │ "
+"│  b + w/s/b/p  break: walk · seat · bed · phone                                  │ "
+"│  i / r        interruption starts / ends                                        │ "
+"│  0 then 0–5   report energy now (1–5 alone switch screens)                      │ "
+"│  l / K / n    location · skip the selected routine · note                       │ "
+"│  Space        pause or unpause the timer                                        │ "
+"│                                                                                 │ "
+"│  overtime     x extend · s stop · d done · anything else: ask again             │ "
+"│  idle         w work · b break · t routine · i interruption · l leak            │ "
+"└─────────────────────────────────────────────────────────────────────────────────┘ "
+"                                                                                    "

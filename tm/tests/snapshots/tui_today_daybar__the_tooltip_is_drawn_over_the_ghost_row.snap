@@ -1,0 +1,6 @@
+---
+source: tm/tests/tui_today_daybar.rs
+expression: term.backend().to_string()
+---
+"    █████████░░░███████▒▒▓▓▓▓▓████░░▓▓▓▓░░        ▒▒▒∙∙∙∙∙          ███                                     ▲ 10:42     "
+"    █████████░░█████ Exercises 5.3–5.5 · 1h48m · ci4 · p1 · @O1                                             plan @07:00 "

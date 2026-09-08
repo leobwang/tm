@@ -1,0 +1,31 @@
+---
+source: tm/tests/tui_today_keys.rs
+expression: table
+---
+1      Screen(Today)
+2      Screen(Queue)
+3      Screen(Necessities)
+4      Screen(Review)
+5      Screen(Inbox)
+?      Help
+:      CommandLine
+q      Quit
+e      Edit
+r      ReplanOrResume
+R      Sync
+d      Done
+x      Extend
+s      Stop
+b      Break
+i      Interrupt
+0      EnergyPrompt
+l      Location
+K      SkipRoutine
+n      Note
+Space  Pause
+j      SelectNext
+k      SelectPrev
+Down   SelectNext
+Up     SelectPrev
+Enter  Open
+Esc    Cancel

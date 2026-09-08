@@ -661,8 +661,7 @@ pub fn check(g: &Globals, args: &super::CheckArgs) -> Result<i32, CliError> {
     Ok(code)
 }
 
-/// `tm tui` — §12's terminal UI; a later milestone fills it in.
-pub fn tui() -> Result<i32, CliError> {
-    eprintln!("tm tui: not built yet");
-    Ok(1)
+/// `tm tui` — §12's terminal UI (see [`crate::tui`]).
+pub fn tui(g: &Globals) -> Result<i32, CliError> {
+    crate::tui::run(g)
 }

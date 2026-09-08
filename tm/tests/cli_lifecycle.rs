@@ -315,11 +315,15 @@ fn help_succeeds_and_a_usage_error_exits_with_one() {
 }
 
 #[test]
-fn tui_is_not_built_yet() {
+fn tui_needs_a_terminal() {
+    // §12's TUI is built (see `tm/src/tui/`), but this harness pipes stdout,
+    // so `tm tui` refuses rather than putting a pipe into raw mode. The
+    // screen itself is tested with `ratatui`'s `TestBackend` in
+    // `tui_today_*.rs` (§17 M6).
     let tm = Tm::new();
     let out = tm.run(&["tui"]);
     assert_eq!(out.code, 1);
-    assert!(out.stderr.contains("not built yet"), "{}", out.stderr);
+    assert!(out.stderr.contains("needs a terminal"), "{}", out.stderr);
 }
 
 #[test]
