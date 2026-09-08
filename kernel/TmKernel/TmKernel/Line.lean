@@ -3925,5 +3925,679 @@ theorem setFlag_needs_a_boundary (f : Flag) (r : RawItem)
   rw [insertAfterId_none (Flag.name f) r.toks h]
   rfl
 
+
+/-! ## Round trip B, at the level of fields
+
+Round trip A is `serialize_parse`: the token vector *is* the bytes, so a line
+the parser accepts writes back byte for byte.  Round trip B is the other
+direction and it is the one the plan calls the stage's biggest unknown:
+**everything the kernel writes, it reads back as the same fields**.
+
+The statement is `viewFields (renderItem i f) = f` on `Fields.wf`, and the
+proof is an induction over the token grammar: `renderToks` lays a `Fields` out
+as `[ci] [est] title… ^id @parent #tags !k key:value… extra… flag…`, and the
+four-phase classifier is run over exactly that shape.
+
+**Two layout choices are load-bearing and are choices, not accidents.**
+
+* The `^id` **leads the token run**, right after the title.  §4.1 says tokens
+  come in any order; putting the id first makes "the title ended here" true by
+  construction, because the id is the one token that is always present.  With
+  the id last, the first token could be any of seven blocks and the proof would
+  be a seven-way case analysis of something that has no reason to be a case
+  analysis.  It is also what makes a trailing flag safe (§4.1 reads a flag only
+  after a `@ # ! ^ key:` token) with no side condition at all.
+* The **title word guard** is `Fields.wf`'s `slotGuard`, and it is `grammar.rs`'s
+  `EditError::Ambiguous` written as a precondition: a title that begins with
+  `5` would be eaten by the empty ci slot, and one that begins with `2h` by the
+  empty estimate slot.  The kernel refuses to write such a line rather than
+  writing one that reads back differently. -/
+
+structure Fields where
+  ci        : Option (Fin 6)                := Option.none
+  estLead   : Option Dur                    := Option.none
+  title     : List (List Char)              := []
+  parent    : Option (List Char)            := Option.none
+  tags      : List (List Char)              := []
+  prio      : Option (Fin 4)                := Option.none
+  due       : Option Moment                 := Option.none
+  interval  : Option (DT × DT)              := Option.none
+  window    : Option WindowRange            := Option.none
+  dur       : Option Dur                    := Option.none
+  pref      : Option Pref                   := Option.none
+  every     : Option Rule                   := Option.none
+  afterDone : Option AfterDone              := Option.none
+  onEvent   : Option OnEvent                := Option.none
+  onMiss    : Option OnMiss                 := Option.none
+  floor     : Option Rate                   := Option.none
+  cap       : Option Rate                   := Option.none
+  after     : Option (List Dep)             := Option.none
+  loc       : Option Loc                    := Option.none
+  est       : Option Dur                    := Option.none
+  demoted   : Option (List Stamp)           := Option.none
+  waiting   : Option Nat                    := Option.none
+  buffer    : Option Dur                    := Option.none
+  ciKey     : Option (Fin 6)                := Option.none
+  extra     : List (List Char × List Char)  := []
+  unparsed  : List (List Char)              := []
+  flags     : List Flag                     := []
+deriving DecidableEq, Repr, Inhabited
+
+/-- §4.1's table order, as data.  Every `key:` the kernel writes is one row of
+this list, so "which keys exist" is a fact about one value. -/
+def kvList (f : Fields) : List (Key × Option (List Char)) :=
+  [(Key.due,       f.due.map renderMoment),
+   (Key.interval,  f.interval.map (fun p => renderInterval p.1 p.2)),
+   (Key.window,    f.window.map renderWindow),
+   (Key.dur,       f.dur.map renderDur),
+   (Key.pref,      f.pref.map renderPref),
+   (Key.every,     f.every.map renderRule),
+   (Key.afterDone, f.afterDone.map renderAfterDone),
+   (Key.onEvent,   f.onEvent.map renderOnEvent),
+   (Key.onMiss,    f.onMiss.map renderOnMiss),
+   (Key.floor,     f.floor.map renderRate),
+   (Key.cap,       f.cap.map renderRate),
+   (Key.after,     f.after.map renderDeps),
+   (Key.loc,       f.loc.map renderLoc),
+   (Key.est,       f.est.map renderDur),
+   (Key.demoted,   f.demoted.map renderStamps),
+   (Key.waiting,   f.waiting.map renderDate),
+   (Key.buffer,    f.buffer.map renderDur),
+   (Key.ci,        f.ciKey.map renderCi)]
+
+def kvOf (f : Fields) : List (Key × List Char) :=
+  (kvList f).filterMap (fun p => p.2.map (fun v => (p.1, v)))
+
+def tokOf (w : List Char) : Tok := ⟨[' '], w⟩
+
+def keyToks   (f : Fields) : List Tok := (kvOf f).map (fun p => tokOf (keyWord p.1 p.2))
+def extraToks (f : Fields) : List Tok := f.extra.map (fun p => tokOf (p.1 ++ ':' :: p.2))
+def unparsedToks (f : Fields) : List Tok := f.unparsed.map tokOf
+def flagToks  (f : Fields) : List Tok := f.flags.map (fun fl => tokOf (Flag.name fl))
+def tagToks   (f : Fields) : List Tok := f.tags.map (fun t => tokOf ('#' :: t))
+def titleToks (f : Fields) : List Tok := f.title.map tokOf
+
+def parentToks (f : Fields) : List Tok := (f.parent.map (fun p => tokOf ('@' :: p))).toList
+def prioToks   (f : Fields) : List Tok := (f.prio.map (fun k => tokOf (renderPrio k))).toList
+def ciToks     (f : Fields) : List Tok := (f.ci.map (fun c => tokOf (renderCi c))).toList
+def estToks    (f : Fields) : List Tok := (f.estLead.map (fun d => tokOf (renderDur d))).toList
+
+/-- The token run after the title.  The `^id` leads it — see the header. -/
+def midToks (i : Id) (f : Fields) : List Tok :=
+  tokOf ('^' :: i) ::
+    (parentToks f ++ tagToks f ++ prioToks f ++ keyToks f ++ extraToks f
+      ++ unparsedToks f ++ flagToks f)
+
+def renderToks (i : Id) (f : Fields) : List Tok :=
+  ciToks f ++ estToks f ++ titleToks f ++ midToks i f
+
+def renderItem (i : Id) (f : Fields) : RawItem := ⟨[], renderToks i f⟩
+
+/-! ### The key half: every `key:` renders and parses back
+
+`keyPairs` is a plain scan (`keyPairs_raw`), so this half needs no phase
+reasoning at all — only that no other block of the layout writes a token with
+a known key prefix. -/
+
+theorem filterMap_map_none' {α β : Type} (g : α → Tok) (fv : Tok → Option β)
+    (h : ∀ a, fv (g a) = none) : ∀ l : List α, (l.map g).filterMap fv = [] := by
+  intro l
+  induction l with
+  | nil => rfl
+  | cons a t ih => rw [List.map_cons, filterMap_cons_none' fv (g a) _ (h a), ih]
+
+theorem filterMap_map_id' {α β : Type} (g : α → Tok) (fv : Tok → Option β) (k : α → β)
+    (h : ∀ a, fv (g a) = some (k a)) : ∀ l : List α, (l.map g).filterMap fv = l.map k := by
+  intro l
+  induction l with
+  | nil => rfl
+  | cons a t ih =>
+      rw [List.map_cons, filterMap_cons_some' fv (g a) (k a) _ (h a), ih, List.map_cons]
+
+theorem filterMap_opt_none {α β : Type} (x : Option α) (g : α → Tok) (fv : Tok → Option β)
+    (h : ∀ a, fv (g a) = none) : ((x.map g).toList).filterMap fv = [] := by
+  cases x with
+  | none => rfl
+  | some a =>
+      show ([g a] : List Tok).filterMap fv = []
+      rw [filterMap_cons_none' fv (g a) [] (h a)]
+      rfl
+
+/-- The characters a key's own token starts with: a lower-case letter. -/
+theorem rawKeyPair_tokOf_sigil (c : Char) (w : List Char)
+    (h : sigilOf w = some c) : rawKeyPair w = none :=
+  rawKeyPair_none_of_keyPrefix
+    (keyPrefix_none_of (headSat_false_of sigil_not_key w (sigilOf_head h)))
+
+theorem sigilOf_cons (c : Char) (t : List Char)
+    (h : (c == '@' || c == '#' || c == '!' || c == '^') = true) : sigilOf (c :: t) = some c := by
+  show (if (c == '@' || c == '#' || c == '!' || c == '^') = true then some c else none) = _
+  rw [if_pos h]
+
+theorem rawKeyPair_at (p : List Char) : rawKeyPair ('@' :: p) = none :=
+  rawKeyPair_tokOf_sigil '@' _ (sigilOf_cons '@' p (by decide))
+
+theorem rawKeyPair_hash (p : List Char) : rawKeyPair ('#' :: p) = none :=
+  rawKeyPair_tokOf_sigil '#' _ (sigilOf_cons '#' p (by decide))
+
+theorem rawKeyPair_caret (p : List Char) : rawKeyPair ('^' :: p) = none :=
+  rawKeyPair_tokOf_sigil '^' _ (sigilOf_cons '^' p (by decide))
+
+theorem rawKeyPair_prio (k : Fin 4) : rawKeyPair (renderPrio k) = none :=
+  rawKeyPair_tokOf_sigil '!' _ (sigilOf_cons '!' _ (by decide))
+
+theorem renderCi_head (c : Fin 6) : headSat isDigitC (renderCi c) = true := by
+  show isDigitC (digitChar c.val) = true
+  simp [isDigitC, digit_roundtrip c.val (by omega)]
+
+theorem rawKeyPair_ci (c : Fin 6) : rawKeyPair (renderCi c) = none :=
+  rawKeyPair_none_of_digit (renderCi_head c)
+
+theorem renderDur_headSat (d : Dur) : headSat isDigitC (renderDur d) = true := by
+  obtain ⟨c, hc, hd⟩ := renderDur_head_digit d
+  cases hw : renderDur d with
+  | nil => rw [hw] at hc; simp at hc
+  | cons a t =>
+      rw [hw] at hc
+      simp only [List.head?_cons, Option.some.injEq] at hc
+      subst hc
+      show isDigitC a = true
+      exact hd
+
+theorem rawKeyPair_estWordD (d : Dur) : rawKeyPair (renderDur d) = none :=
+  rawKeyPair_none_of_digit (renderDur_headSat d)
+
+theorem keyPrefix_flag (fl : Flag) : keyPrefix (Flag.name fl) = none := by
+  unfold keyPrefix
+  rw [splitFirst_none ':' (Flag.name fl) (flag_name_no_colon fl)]
+  rfl
+
+theorem rawKeyPair_flag (fl : Flag) : rawKeyPair (Flag.name fl) = none :=
+  rawKeyPair_none_of_keyPrefix (keyPrefix_flag fl)
+
+/-- A word `k:v` whose `k` is a well-formed key spelling the kernel does not
+know is an `.extra`: its key is read, and `Key.ofName?` refuses it. -/
+def extraPairWf (p : List Char × List Char) : Bool :=
+  wordWf (p.1 ++ ':' :: p.2) && !p.1.isEmpty && p.1.all isKeyC && (Key.ofName? p.1).isNone
+
+theorem keyPrefix_extra {p : List Char × List Char} (h : extraPairWf p = true) :
+    keyPrefix (p.1 ++ ':' :: p.2) = some p.1 := by
+  simp only [extraPairWf, Bool.and_eq_true, Bool.not_eq_true'] at h
+  obtain ⟨⟨⟨_, hne⟩, hall⟩, _⟩ := h
+  unfold keyPrefix
+  rw [splitFirst_append ':' p.1 p.2 (by
+    intro c hc hcc
+    subst hcc
+    have := List.all_eq_true.1 hall ':' hc
+    exact Bool.noConfusion this)]
+  simp only [Option.bind_some]
+  rw [if_pos (by simp [hne, hall])]
+
+theorem rawKeyPair_extra {p : List Char × List Char} (h : extraPairWf p = true) :
+    rawKeyPair (p.1 ++ ':' :: p.2) = none := by
+  have hkn : Key.ofName? p.1 = none := by
+    simp only [extraPairWf, Bool.and_eq_true] at h
+    cases hn : Key.ofName? p.1 with
+    | none => rfl
+    | some k => rw [hn] at h; simp at h
+  unfold rawKeyPair keyOf
+  rw [keyPrefix_extra h]
+  show ((Key.ofName? p.1).bind
+      (fun k => (keyValue (p.1 ++ ':' :: p.2)).map (fun v => (k, v)))) = none
+  rw [hkn]
+  rfl
+
+/-! ### Well-formedness of a `Fields`
+
+Twenty decidable conjuncts.  Eight are about the *tokens* the layout will
+write (a title word must not end the title, an unknown key must really be
+unknown, a value must be one word) and twelve are the value-level side
+conditions the round trips above already carry. -/
+
+def titleWordWf (w : List Char) : Bool := wordWf w && !startsToken w
+
+def unparsedWordWf (w : List Char) : Bool := wordWf w && (classifyWord w == TokKind.unparsed w)
+
+def optWf {α : Type} (p : α → Bool) : Option α → Bool
+  | none   => true
+  | some a => p a
+
+/-- `grammar.rs`'s `EditError::Ambiguous`, as a precondition: with the ci slot
+empty a title beginning with `5` would be eaten, and with the estimate slot
+empty one beginning with `2h` would be. -/
+def slotGuard (f : Fields) : Bool :=
+  match f.title.head? with
+  | none   => true
+  | some w =>
+    (match f.estLead with
+     | some _ => true
+     | none   => (estSlot w).isNone) &&
+    (match f.ci with
+     | some _ => true
+     | none   =>
+       match f.estLead with
+       | some _ => true
+       | none   => (ciSlot w).isNone)
+
+def Fields.wf (i : Id) (f : Fields) : Bool :=
+  isName i
+  && f.title.all titleWordWf
+  && f.unparsed.all unparsedWordWf
+  && f.extra.all extraPairWf
+  && optWf (fun p => wordWf p && !p.isEmpty) f.parent
+  && f.tags.all (fun t => wordWf t && !t.isEmpty)
+  && (kvOf f).all (fun p => wordWf p.2)
+  && slotGuard f
+  && optWf Dur.noDays f.estLead
+  && optWf Moment.wf f.due
+  && optWf (fun p => intervalWf p.1 p.2) f.interval
+  && optWf windowWf f.window
+  && optWf Dur.noDays f.dur
+  && optWf Rule.wf f.every
+  && optWf OnEvent.wf f.onEvent
+  && optWf depsWf f.after
+  && optWf Loc.wf f.loc
+  && optWf Dur.noDays f.est
+  && optWf (fun ss => !List.isEmpty ss) f.demoted
+  && optWf dayWf f.waiting
+
+/-! ### The key half of round trip B -/
+
+theorem filterMap_map_none_mem {α β : Type} (g : α → Tok) (fv : Tok → Option β) :
+    ∀ l : List α, (∀ a ∈ l, fv (g a) = none) → (l.map g).filterMap fv = [] := by
+  intro l
+  induction l with
+  | nil => intro _; rfl
+  | cons a t ih =>
+      intro h
+      rw [List.map_cons, filterMap_cons_none' fv (g a) _ (h a (by simp)),
+        ih (fun x hx => h x (by simp [hx]))]
+
+theorem classifyWord_unparsed_sigil {w w' : List Char} (h : classifyWord w = TokKind.unparsed w') :
+    ∃ c, sigilOf w = some c := by
+  cases hs : sigilOf w with
+  | some c => exact ⟨c, rfl⟩
+  | none =>
+      exfalso
+      unfold classifyWord at h
+      rw [hs] at h
+      cases hk : keyPrefix w with
+      | some k =>
+          rw [hk] at h
+          have h' : classifyKeyed k w = TokKind.unparsed w' := h
+          unfold classifyKeyed at h'
+          cases hn : Key.ofName? k with
+          | none => rw [hn] at h'; simp at h'
+          | some kk => rw [hn] at h'; simp at h'
+      | none =>
+          rw [hk] at h
+          have h' : classifyPlain w = TokKind.unparsed w' := h
+          unfold classifyPlain at h'
+          cases hn : Flag.ofName? w with
+          | none => rw [hn] at h'; simp at h'
+          | some fl => rw [hn] at h'; simp at h'
+
+theorem rawKeyPair_unparsed {w : List Char} (h : unparsedWordWf w = true) :
+    rawKeyPair w = none := by
+  simp only [unparsedWordWf, Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨c, hc⟩ := classifyWord_unparsed_sigil h.2
+  exact rawKeyPair_tokOf_sigil c w hc
+
+/-- **The key half of round trip B.**  Only the key block writes key tokens, so
+the eighteen `key:` fields are exactly what `kvOf` says they are. -/
+theorem keyPairs_render (i : Id) (f : Fields)
+    (htitle : f.title.all titleWordWf = true)
+    (hunp : f.unparsed.all unparsedWordWf = true)
+    (hextra : f.extra.all extraPairWf = true) :
+    keyPairs (renderItem i f) = kvOf f := by
+  have RKc : ∀ (c : Fin 6), (fun t : Tok => rawKeyPair t.word) (tokOf (renderCi c)) = none :=
+    fun c => rawKeyPair_ci c
+  rw [keyPairs_raw]
+  show ((ciToks f ++ estToks f ++ titleToks f ++ midToks i f).filterMap
+        (fun t : Tok => rawKeyPair t.word)) = kvOf f
+  rw [List.filterMap_append, List.filterMap_append, List.filterMap_append]
+  rw [show (ciToks f).filterMap (fun t : Tok => rawKeyPair t.word) = [] from
+        filterMap_opt_none f.ci (fun c => tokOf (renderCi c)) _ RKc]
+  rw [show (estToks f).filterMap (fun t : Tok => rawKeyPair t.word) = [] from
+        filterMap_opt_none f.estLead (fun d => tokOf (renderDur d)) _
+          (fun d => rawKeyPair_estWordD d)]
+  rw [show (titleToks f).filterMap (fun t : Tok => rawKeyPair t.word) = [] from
+        filterMap_map_none_mem tokOf _ f.title
+          (fun w hw => rawKeyPair_none_of_notStarts (by
+            have := List.all_eq_true.1 htitle w hw
+            simp only [titleWordWf, Bool.and_eq_true, Bool.not_eq_true'] at this
+            exact this.2))]
+  show ([] ++ [] ++ [] ++ (midToks i f).filterMap (fun t : Tok => rawKeyPair t.word)) = _
+  simp only [List.nil_append]
+  show ((tokOf ('^' :: i) :: (parentToks f ++ tagToks f ++ prioToks f ++ keyToks f
+        ++ extraToks f ++ unparsedToks f ++ flagToks f)).filterMap
+        (fun t : Tok => rawKeyPair t.word)) = _
+  rw [filterMap_cons_none' (fun t : Tok => rawKeyPair t.word) _ _ (rawKeyPair_caret i)]
+  rw [List.filterMap_append, List.filterMap_append, List.filterMap_append,
+    List.filterMap_append, List.filterMap_append, List.filterMap_append]
+  rw [show (parentToks f).filterMap (fun t : Tok => rawKeyPair t.word) = [] from
+        filterMap_opt_none f.parent (fun p => tokOf ('@' :: p)) _ (fun p => rawKeyPair_at p)]
+  rw [show (tagToks f).filterMap (fun t : Tok => rawKeyPair t.word) = [] from
+        filterMap_map_none_mem (fun t => tokOf ('#' :: t)) _ f.tags
+          (fun t _ => rawKeyPair_hash t)]
+  rw [show (prioToks f).filterMap (fun t : Tok => rawKeyPair t.word) = [] from
+        filterMap_opt_none f.prio (fun k => tokOf (renderPrio k)) _ (fun k => rawKeyPair_prio k)]
+  rw [show (extraToks f).filterMap (fun t : Tok => rawKeyPair t.word) = [] from
+        filterMap_map_none_mem (fun p => tokOf (p.1 ++ ':' :: p.2)) _ f.extra
+          (fun p hp => rawKeyPair_extra (List.all_eq_true.1 hextra p hp))]
+  rw [show (unparsedToks f).filterMap (fun t : Tok => rawKeyPair t.word) = [] from
+        filterMap_map_none_mem tokOf _ f.unparsed
+          (fun w hw => rawKeyPair_unparsed (List.all_eq_true.1 hunp w hw))]
+  rw [show (flagToks f).filterMap (fun t : Tok => rawKeyPair t.word) = [] from
+        filterMap_map_none_mem (fun fl => tokOf (Flag.name fl)) _ f.flags
+          (fun fl _ => rawKeyPair_flag fl)]
+  rw [show (keyToks f).filterMap (fun t : Tok => rawKeyPair t.word) = kvOf f from
+        (filterMap_map_id' (fun p => tokOf (keyWord p.1 p.2)) _ (fun p => p)
+          (fun p => rawKeyPair_keyWord p.1 p.2) (kvOf f)).trans (List.map_id _)]
+  simp
+
+/-! ### The assoc-list lookup
+
+`kvList` is the §4.1 table as data and its keys are distinct, so a lookup in
+the rendered line is a lookup in the table. -/
+
+theorem lookup_pair_self {β : Type} (p : Key × β) (l : List (Key × β)) :
+    List.lookup p.1 (p :: l) = some p.2 := by
+  show (match p.1 == p.1 with | true => some p.2 | false => List.lookup p.1 l) = _
+  rw [show (p.1 == p.1) = true from by simp]
+
+theorem lookup_pair_ne {β : Type} (k : Key) (p : Key × β) (l : List (Key × β))
+    (h : ¬ (k = p.1)) : List.lookup k (p :: l) = List.lookup k l := by
+  show (match k == p.1 with | true => some p.2 | false => List.lookup k l) = _
+  rw [show (k == p.1) = false from by simpa using h]
+
+theorem lookup_filterMap_notMem {β : Type} (k : Key) : ∀ l : List (Key × Option β),
+    k ∉ l.map Prod.fst →
+    List.lookup k (l.filterMap (fun p => p.2.map (fun v => (p.1, v)))) = none := by
+  intro l
+  induction l with
+  | nil => intro _; rfl
+  | cons p t ih =>
+      intro h
+      simp only [List.map_cons, List.mem_cons, not_or] at h
+      cases hv : p.2 with
+      | none =>
+          rw [filterMap_cons_none' _ p t (by rw [hv]; rfl)]
+          exact ih h.2
+      | some v =>
+          rw [filterMap_cons_some' _ p (p.1, v) t (by rw [hv]; rfl)]
+          rw [lookup_pair_ne k (p.1, v) _ h.1]
+          exact ih h.2
+
+theorem lookup_filterMap_pairs {β : Type} (k : Key) : ∀ l : List (Key × Option β),
+    (l.map Prod.fst).Nodup →
+    List.lookup k (l.filterMap (fun p => p.2.map (fun v => (p.1, v))))
+      = (List.lookup k l).join := by
+  intro l
+  induction l with
+  | nil => intro _; rfl
+  | cons p t ih =>
+      intro hnd
+      simp only [List.map_cons, List.nodup_cons] at hnd
+      by_cases hk : k = p.1
+      · rw [hk, lookup_pair_self p t]
+        cases hv : p.2 with
+        | none =>
+            rw [filterMap_cons_none' _ p t (by rw [hv]; rfl)]
+            rw [lookup_filterMap_notMem p.1 t hnd.1]
+            rfl
+        | some v =>
+            rw [filterMap_cons_some' _ p (p.1, v) t (by rw [hv]; rfl)]
+            rw [lookup_pair_self (p.1, v) _]
+            rfl
+      · rw [lookup_pair_ne k p t hk]
+        cases hv : p.2 with
+        | none =>
+            rw [filterMap_cons_none' _ p t (by rw [hv]; rfl)]
+            exact ih hnd.2
+        | some v =>
+            rw [filterMap_cons_some' _ p (p.1, v) t (by rw [hv]; rfl)]
+            rw [lookup_pair_ne k (p.1, v) _ hk]
+            exact ih hnd.2
+
+theorem kvList_keys (f : Fields) :
+    (kvList f).map Prod.fst =
+      [Key.due, Key.interval, Key.window, Key.dur, Key.pref, Key.every, Key.afterDone,
+       Key.onEvent, Key.onMiss, Key.floor, Key.cap, Key.after, Key.loc, Key.est,
+       Key.demoted, Key.waiting, Key.buffer, Key.ci] := rfl
+
+theorem kvList_nodup (f : Fields) : ((kvList f).map Prod.fst).Nodup := by
+  rw [kvList_keys]; decide
+
+theorem lookupKey_render (i : Id) (f : Fields) (k : Key)
+    (htitle : f.title.all titleWordWf = true)
+    (hunp : f.unparsed.all unparsedWordWf = true)
+    (hextra : f.extra.all extraPairWf = true) :
+    lookupKey k (renderItem i f) = (List.lookup k (kvList f)).join := by
+  unfold lookupKey
+  rw [keyPairs_render i f htitle hunp hextra]
+  exact lookup_filterMap_pairs k (kvList f) (kvList_nodup f)
+
+theorem bind_map_render {α : Type} (x : Option α) (rend : α → List Char)
+    (prs : List Char → Option α) (h : ∀ a, x = some a → prs (rend a) = some a) :
+    (x.map rend).bind prs = x := by
+  cases x with
+  | none => rfl
+  | some a =>
+      show prs (rend a) = some a
+      exact h a rfl
+
+theorem optWf_some {α : Type} {p : α → Bool} {x : Option α} {a : α}
+    (h : optWf p x = true) (hx : x = some a) : p a = true := by
+  rw [hx] at h; exact h
+
+
+/-! ### One theorem per key: what the layout writes, the view reads back
+
+Eighteen corollaries of `lookupKey_render`, one per `key:` in §4.1's table.
+The `cap:` alias has no row of its own because it has no field of its own: it
+is `Key.cap`, written `max`. -/
+
+theorem kv_due (f : Fields) :
+    (List.lookup Key.due (kvList f)).join = f.due.map renderMoment := rfl
+
+theorem kv_interval (f : Fields) :
+    (List.lookup Key.interval (kvList f)).join = f.interval.map (fun p => renderInterval p.1 p.2) := rfl
+
+theorem kv_window (f : Fields) :
+    (List.lookup Key.window (kvList f)).join = f.window.map renderWindow := rfl
+
+theorem kv_dur (f : Fields) :
+    (List.lookup Key.dur (kvList f)).join = f.dur.map renderDur := rfl
+
+theorem kv_pref (f : Fields) :
+    (List.lookup Key.pref (kvList f)).join = f.pref.map renderPref := rfl
+
+theorem kv_every (f : Fields) :
+    (List.lookup Key.every (kvList f)).join = f.every.map renderRule := rfl
+
+theorem kv_afterDone (f : Fields) :
+    (List.lookup Key.afterDone (kvList f)).join = f.afterDone.map renderAfterDone := rfl
+
+theorem kv_onEvent (f : Fields) :
+    (List.lookup Key.onEvent (kvList f)).join = f.onEvent.map renderOnEvent := rfl
+
+theorem kv_onMiss (f : Fields) :
+    (List.lookup Key.onMiss (kvList f)).join = f.onMiss.map renderOnMiss := rfl
+
+theorem kv_floor (f : Fields) :
+    (List.lookup Key.floor (kvList f)).join = f.floor.map renderRate := rfl
+
+theorem kv_cap (f : Fields) :
+    (List.lookup Key.cap (kvList f)).join = f.cap.map renderRate := rfl
+
+theorem kv_after (f : Fields) :
+    (List.lookup Key.after (kvList f)).join = f.after.map renderDeps := rfl
+
+theorem kv_loc (f : Fields) :
+    (List.lookup Key.loc (kvList f)).join = f.loc.map renderLoc := rfl
+
+theorem kv_est (f : Fields) :
+    (List.lookup Key.est (kvList f)).join = f.est.map renderDur := rfl
+
+theorem kv_demoted (f : Fields) :
+    (List.lookup Key.demoted (kvList f)).join = f.demoted.map renderStamps := rfl
+
+theorem kv_waiting (f : Fields) :
+    (List.lookup Key.waiting (kvList f)).join = f.waiting.map renderDate := rfl
+
+theorem kv_buffer (f : Fields) :
+    (List.lookup Key.buffer (kvList f)).join = f.buffer.map renderDur := rfl
+
+theorem kv_ci (f : Fields) :
+    (List.lookup Key.ci (kvList f)).join = f.ciKey.map renderCi := rfl
+
+section KeyRoundTrip
+variable (i : Id) (f : Fields)
+  (htitle : f.title.all titleWordWf = true)
+  (hunp : f.unparsed.all unparsedWordWf = true)
+  (hextra : f.extra.all extraPairWf = true)
+
+include htitle hunp hextra in
+theorem view_render_due
+    (hv : optWf Moment.wf f.due = true) :
+    viewDue (renderItem i f) = f.due := by
+  unfold viewDue
+  rw [lookupKey_render i f Key.due htitle hunp hextra, kv_due f]
+  exact bind_map_render f.due renderMoment parseMoment (fun a hx => parse_render_moment a (optWf_some hv hx))
+
+include htitle hunp hextra in
+theorem view_render_interval
+    (hv : optWf (fun p => intervalWf p.1 p.2) f.interval = true) :
+    viewAt (renderItem i f) = f.interval := by
+  unfold viewAt
+  rw [lookupKey_render i f Key.interval htitle hunp hextra, kv_interval f]
+  refine bind_map_render f.interval (fun p => renderInterval p.1 p.2) parseInterval ?_
+  intro a hx
+  have hwf := optWf_some (p := fun p : DT × DT => intervalWf p.1 p.2) hv hx
+  exact parse_render_interval a.1 a.2 hwf
+
+include htitle hunp hextra in
+theorem view_render_window
+    (hv : optWf windowWf f.window = true) :
+    viewWin (renderItem i f) = f.window := by
+  unfold viewWin
+  rw [lookupKey_render i f Key.window htitle hunp hextra, kv_window f]
+  exact bind_map_render f.window renderWindow parseWindow (fun a hx => parse_render_window a (optWf_some hv hx))
+
+include htitle hunp hextra in
+theorem view_render_dur
+    (hv : optWf Dur.noDays f.dur = true) :
+    viewDur (renderItem i f) = f.dur := by
+  unfold viewDur
+  rw [lookupKey_render i f Key.dur htitle hunp hextra, kv_dur f]
+  exact bind_map_render f.dur renderDur parseDurND (fun a hx => parse_render_durND a (optWf_some hv hx))
+
+include htitle hunp hextra in
+theorem view_render_pref :
+    viewPref (renderItem i f) = f.pref := by
+  unfold viewPref
+  rw [lookupKey_render i f Key.pref htitle hunp hextra, kv_pref f]
+  exact bind_map_render f.pref renderPref parsePref (fun a _ => parse_render_pref a)
+
+include htitle hunp hextra in
+theorem view_render_every
+    (hv : optWf Rule.wf f.every = true) :
+    viewEvery (renderItem i f) = f.every := by
+  unfold viewEvery
+  rw [lookupKey_render i f Key.every htitle hunp hextra, kv_every f]
+  exact bind_map_render f.every renderRule parseRule (fun a hx => parse_render_rule a (optWf_some hv hx))
+
+include htitle hunp hextra in
+theorem view_render_afterDone :
+    viewAfterDone (renderItem i f) = f.afterDone := by
+  unfold viewAfterDone
+  rw [lookupKey_render i f Key.afterDone htitle hunp hextra, kv_afterDone f]
+  exact bind_map_render f.afterDone renderAfterDone parseAfterDone (fun a _ => parse_render_afterDone a)
+
+include htitle hunp hextra in
+theorem view_render_onEvent
+    (hv : optWf OnEvent.wf f.onEvent = true) :
+    viewOnEvent (renderItem i f) = f.onEvent := by
+  unfold viewOnEvent
+  rw [lookupKey_render i f Key.onEvent htitle hunp hextra, kv_onEvent f]
+  exact bind_map_render f.onEvent renderOnEvent parseOnEvent (fun a hx => parse_render_onEvent a (optWf_some hv hx))
+
+include htitle hunp hextra in
+theorem view_render_onMiss :
+    viewOnMiss (renderItem i f) = f.onMiss := by
+  unfold viewOnMiss
+  rw [lookupKey_render i f Key.onMiss htitle hunp hextra, kv_onMiss f]
+  exact bind_map_render f.onMiss renderOnMiss parseOnMiss (fun a _ => parse_render_onMiss a)
+
+include htitle hunp hextra in
+theorem view_render_floor :
+    viewMin (renderItem i f) = f.floor := by
+  unfold viewMin
+  rw [lookupKey_render i f Key.floor htitle hunp hextra, kv_floor f]
+  exact bind_map_render f.floor renderRate parseRate (fun a _ => parse_render_rate a)
+
+include htitle hunp hextra in
+theorem view_render_cap :
+    viewMax (renderItem i f) = f.cap := by
+  unfold viewMax
+  rw [lookupKey_render i f Key.cap htitle hunp hextra, kv_cap f]
+  exact bind_map_render f.cap renderRate parseRate (fun a _ => parse_render_rate a)
+
+include htitle hunp hextra in
+theorem view_render_after
+    (hv : optWf depsWf f.after = true) :
+    viewAfter (renderItem i f) = f.after := by
+  unfold viewAfter
+  rw [lookupKey_render i f Key.after htitle hunp hextra, kv_after f]
+  exact bind_map_render f.after renderDeps parseDeps (fun a hx => parse_render_deps a (optWf_some hv hx))
+
+include htitle hunp hextra in
+theorem view_render_loc
+    (hv : optWf Loc.wf f.loc = true) :
+    viewLoc (renderItem i f) = f.loc := by
+  unfold viewLoc
+  rw [lookupKey_render i f Key.loc htitle hunp hextra, kv_loc f]
+  exact bind_map_render f.loc renderLoc parseLoc (fun a hx => parse_render_loc a (optWf_some hv hx))
+
+include htitle hunp hextra in
+theorem view_render_est
+    (hv : optWf Dur.noDays f.est = true) :
+    viewEstKey (renderItem i f) = f.est := by
+  unfold viewEstKey
+  rw [lookupKey_render i f Key.est htitle hunp hextra, kv_est f]
+  exact bind_map_render f.est renderDur parseDurND (fun a hx => parse_render_durND a (optWf_some hv hx))
+
+include htitle hunp hextra in
+theorem view_render_demoted
+    (hv : optWf (fun ss => !List.isEmpty ss) f.demoted = true) :
+    viewDemoted (renderItem i f) = f.demoted := by
+  unfold viewDemoted
+  rw [lookupKey_render i f Key.demoted htitle hunp hextra, kv_demoted f]
+  exact bind_map_render f.demoted renderStamps parseStamps (fun a hx => parse_render_stamps a (by simpa using optWf_some hv hx))
+
+include htitle hunp hextra in
+theorem view_render_waiting
+    (hv : optWf dayWf f.waiting = true) :
+    viewWaiting (renderItem i f) = f.waiting := by
+  unfold viewWaiting
+  rw [lookupKey_render i f Key.waiting htitle hunp hextra, kv_waiting f]
+  exact bind_map_render f.waiting renderDate parseDate (fun a hx => parse_render_date a (optWf_some hv hx))
+
+include htitle hunp hextra in
+theorem view_render_buffer :
+    viewBuffer (renderItem i f) = f.buffer := by
+  unfold viewBuffer
+  rw [lookupKey_render i f Key.buffer htitle hunp hextra, kv_buffer f]
+  exact bind_map_render f.buffer renderDur parseDur (fun a _ => parse_render_dur a)
+
+include htitle hunp hextra in
+theorem view_render_ci :
+    viewCiKey (renderItem i f) = f.ciKey := by
+  unfold viewCiKey
+  rw [lookupKey_render i f Key.ci htitle hunp hextra, kv_ci f]
+  exact bind_map_render f.ciKey renderCi parseCi (fun a _ => parse_render_ci a)
+
+end KeyRoundTrip
 end Field
 end Tm
