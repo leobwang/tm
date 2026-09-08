@@ -126,6 +126,88 @@ fn close_month_can_drop_an_outcome() {
     assert_eq!(tm.state()["closed"]["month"], "2026-09");
 }
 
+/// §6.3 + §13: the month close auto-runs from `Ctx::load` before the verb
+/// body, with no drop list — so once the month has ended, `tm close month
+/// --drop ^id` used to find the line already carried into the next month and
+/// do nothing at all, printing a success line. An explicit `--drop` is never
+/// discarded: the line comes back and is dropped.
+#[test]
+fn close_month_drops_an_outcome_the_auto_close_already_carried() {
+    let tm = Tm::new();
+    let json = tm.json_at(
+        "2026-10-01T09:00:00-05:00",
+        &["close", "month", "--drop", "^O3"],
+    );
+    assert_eq!(json["key"], "2026-09", "the month that ended");
+    let report = &json["report"];
+    let dropped: Vec<&str> = report["dropped"]
+        .as_array()
+        .expect("dropped")
+        .iter()
+        .map(|d| d.as_str().expect("id"))
+        .collect();
+    assert_eq!(dropped, vec!["O3"], "{report}");
+
+    // The line is `[~]` back in the month it was an outcome of, not open in
+    // the next one — where a `--drop` before the auto-close leaves it too.
+    assert!(tm.line("month/2026-09.md", "O3").starts_with("- [~]"));
+    assert!(
+        !tm.read("month/2026-10.md").contains("^O3"),
+        "{}",
+        tm.read("month/2026-10.md")
+    );
+
+    // …and the report describes that tree: the carry the drop undid is not
+    // counted as a carry.
+    let moved: Vec<&str> = report["moved"]
+        .as_array()
+        .expect("moved")
+        .iter()
+        .map(|m| m["id"].as_str().expect("id"))
+        .collect();
+    assert!(!moved.contains(&"O3"), "{report}");
+    assert!(moved.contains(&"O1"), "the rest still carried: {report}");
+}
+
+/// A `--drop` naming something this close cannot act on fails loudly (§13's
+/// exit code 1) rather than being dropped on the floor.
+#[test]
+fn close_month_refuses_a_drop_it_cannot_honour() {
+    let tm = Tm::new();
+    let out = tm.run_at(
+        "2026-09-30T21:00:00-05:00",
+        &["close", "month", "--drop", "^nope"],
+    );
+    assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains("^nope"), "{}", out.stderr);
+
+    // ^a1 exists, but in `backlog.md` — not this close's business.
+    let out = tm.run_at(
+        "2026-09-30T21:00:00-05:00",
+        &["close", "month", "--drop", "^a1"],
+    );
+    assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains("tm drop"), "{}", out.stderr);
+
+    // Neither run closed the month: nothing was carried and nothing dropped.
+    assert!(!tm.exists("month/2026-10.md"));
+    assert!(!tm.read("month/2026-09.md").contains("- [~]"));
+    assert!(tm.line("backlog.md", "a1").starts_with("- [ ]"));
+}
+
+/// §6.3 gives `--drop` to the month close alone; a day or week close that
+/// quietly ignored it discarded what the user asked for.
+#[test]
+fn close_day_and_week_refuse_a_drop_list() {
+    let tm = Tm::new();
+    for period in ["day", "week"] {
+        let out = tm.run_at("2026-09-07T21:00:00-05:00", &["close", period, "--drop", "^p1"]);
+        assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+        assert!(out.stderr.contains("tm close month"), "{}", out.stderr);
+        assert!(!tm.exists(".tm/state.json"), "nothing ran");
+    }
+}
+
 #[test]
 fn the_first_command_after_a_period_ends_closes_it() {
     // §6.3: "runs automatically on the first command after the period ends".

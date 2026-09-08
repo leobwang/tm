@@ -16,8 +16,8 @@ use chrono::{DateTime, FixedOffset, NaiveDate};
 use chrono_tz::Tz;
 use tempfile::TempDir;
 use tm_core::horizon::{
-    auto_close, churn, close_day, close_month, close_week, pending_closes, Ctx, MIN_REMAINING_MIN,
-    REVIEW_PLACEHOLDER,
+    auto_close, churn, close_day, close_month, close_week, pending_closes, CloseReport, Ctx,
+    HorizonError, Moved, MIN_REMAINING_MIN, REVIEW_PLACEHOLDER,
 };
 use tm_core::log::{replay, Event, Log, LogEntry, Replay};
 use tm_core::model::{Id, IsoWeek, Period, Stamp, State, YearMonth};
@@ -770,6 +770,132 @@ fn a_second_stamp_becomes_a_cut_proposal() {
     assert_eq!(report.notes.len(), 1);
     assert!(report.notes[0].contains("^m2"), "{:?}", report.notes);
     assert!(report.notes[0].contains("2 demotion stamps"), "{:?}", report.notes);
+}
+
+/// The item lines of a file, headings and blank lines dropped.
+fn item_lines(text: &str) -> Vec<&str> {
+    text.lines().filter(|l| l.trim_start().starts_with("- [")).collect()
+}
+
+/// The whole tree after one `close_month(month, drops)` on a fresh fixture.
+fn month_closed_once(drops: &[Id]) -> BTreeMap<String, String> {
+    let (_dir, store) = plan();
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    let cx = Ctx::new(&store, &files, &tree, at("2026-10-01T08:00:00-05:00"));
+    close_month(&cx, YearMonth::new(2026, 9), drops).unwrap();
+    tree_text(&store)
+}
+
+#[test]
+fn a_drop_still_lands_after_the_close_already_carried_the_line() {
+    // §6.3's month close auto-runs on the first command after the month ends
+    // (`Ctx::load` → `auto_close`) with no drop list, so by the time anyone
+    // types `tm close month --drop ^id` the carry has usually happened and
+    // the line is in the *next* month's file. An explicit `--drop` is never
+    // discarded: the line comes back and is dropped, leaving exactly the tree
+    // the one-shot close would have left.
+    let want = month_closed_once(&[id("O3")]);
+
+    let (_dir, store) = plan();
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    let cx = Ctx::new(&store, &files, &tree, at("2026-10-01T08:00:00-05:00"));
+    close_month(&cx, YearMonth::new(2026, 9), &[]).unwrap();
+    assert!(line_of(&store, NEXT_MONTH, "O3").is_some(), "carried first");
+
+    // The snapshot is stale after a close; re-read, as `auto_close` does.
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    let cx = Ctx::new(&store, &files, &tree, at("2026-10-01T08:01:00-05:00"));
+    let report = close_month(&cx, YearMonth::new(2026, 9), &[id("O3")]).unwrap();
+
+    assert_eq!(report.dropped, vec![id("O3")]);
+    assert!(report.moved.is_empty(), "{:?}", report.moved);
+    assert!(line_of(&store, NEXT_MONTH, "O3").is_none(), "pulled back");
+    assert_eq!(
+        line_of(&store, MONTH, "O3").unwrap(),
+        "- [~] 2 !3 Winter course selection + admin done        ^O3"
+    );
+    assert_eq!(tree_text(&store), want, "the two orders converge");
+
+    // The report of the two runs together says what the tree says.
+    let mut merged = report;
+    merged.absorb(CloseReport {
+        period: Some(Period::Month),
+        key: "2026-09".to_string(),
+        moved: vec![
+            Moved { id: id("O1"), from: MONTH.into(), to: NEXT_MONTH.into() },
+            Moved { id: id("O3"), from: MONTH.into(), to: NEXT_MONTH.into() },
+        ],
+        ..CloseReport::default()
+    });
+    let moved: Vec<String> = merged.moved.iter().map(|m| m.id.to_string()).collect();
+    assert_eq!(moved, vec!["O1"], "the carry the drop undid is not reported");
+    assert_eq!(merged.dropped, vec![id("O3")]);
+}
+
+#[test]
+fn a_demoted_line_can_be_dropped_after_it_carried() {
+    // The same, for a `# Demoted` line: it goes back into `# Demoted`.
+    let want = month_closed_once(&[id("m2")]);
+
+    let (_dir, store) = plan();
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    let cx = Ctx::new(&store, &files, &tree, at("2026-10-01T08:00:00-05:00"));
+    close_month(&cx, YearMonth::new(2026, 9), &[]).unwrap();
+
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    let cx = Ctx::new(&store, &files, &tree, at("2026-10-01T08:01:00-05:00"));
+    let report = close_month(&cx, YearMonth::new(2026, 9), &[id("m2")]).unwrap();
+
+    assert_eq!(report.dropped, vec![id("m2")]);
+    assert!(report.demoted.is_empty(), "a dropped line is not carried");
+    assert!(line_of(&store, NEXT_MONTH, "m2").is_none());
+
+    // The two orders converge on the same lines. (The carry-then-pull-back
+    // leaves the `# Demoted` heading it created behind in the next month —
+    // an empty section, like the ones a close leaves in the month it just
+    // emptied.)
+    let after = tree_text(&store);
+    for (path, want_text) in &want {
+        assert_eq!(
+            item_lines(after.get(path).unwrap_or(&String::new())),
+            item_lines(want_text),
+            "{path}"
+        );
+    }
+    assert_eq!(
+        text(&store, MONTH),
+        want[MONTH],
+        "the closed month is byte-identical either way"
+    );
+}
+
+#[test]
+fn a_drop_that_cannot_be_honoured_fails_without_writing() {
+    // A `--drop` that names nothing this close can act on is an error, not a
+    // silent no-op — and it fails before the first write (§6.3 closes decide
+    // from the snapshot, then apply).
+    let (_dir, store) = plan();
+    let before = tree_text(&store);
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    let cx = Ctx::new(&store, &files, &tree, at("2026-10-01T08:00:00-05:00"));
+
+    let err = close_month(&cx, YearMonth::new(2026, 9), &[id("nope")]).unwrap_err();
+    assert!(matches!(err, HorizonError::NotFound(ref i) if *i == id("nope")), "{err}");
+
+    // An item that exists, but not in this month or where this close put it.
+    let err = close_month(&cx, YearMonth::new(2026, 9), &[id("m1")]).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("^m1"), "{msg}");
+    assert!(msg.contains("tm drop"), "{msg}");
+
+    assert_eq!(tree_text(&store), before, "nothing was written");
+    assert_eq!(log_events(&store), Vec::new(), "nothing was logged");
 }
 
 // ---------------------------------------------------------------------------
