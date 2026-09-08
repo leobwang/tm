@@ -47,6 +47,70 @@ fn add_to_a_state_less_file_keeps_the_convention() {
     assert!(!text.contains("- [ ] stretch"), "routines carry no state");
 }
 
+/// §13 + §4.1: `tm add` takes the line as written, `- [ ] ` prefix and all —
+/// the natural thing to do is copy a line out of a `.md` file, which is what
+/// `plan/CLAUDE.md` tells Claude Code to do. clap read the leading `- ` as a
+/// flag and exited 1 with `unexpected argument '- ' found`, and the `--`
+/// escape it suggests then swallowed `--to`.
+#[test]
+fn add_accepts_a_line_with_its_grammar_prefix() {
+    let tm = Tm::new();
+    for (line, to, want) in [
+        (
+            "- [ ] 4 2b Write the release notes @m1 #soundcode",
+            "week",
+            "- [ ] 4 2b Write the release notes @m1 #soundcode",
+        ),
+        ("- [ ] 2 30m Call the bank", "backlog", "- [ ] 2 30m Call the bank"),
+        (
+            "- meditate win:06:00-08:00 dur:15m every:day",
+            "routines",
+            "- meditate win:06:00-08:00 dur:15m every:day",
+        ),
+    ] {
+        let out = tm.run(&["add", line, "--to", to]);
+        assert_eq!(out.code, 0, "`{line}`: {}{}", out.stdout, out.stderr);
+        assert!(out.stdout.contains(want), "`{line}` → {}", out.stdout);
+    }
+    // The un-prefixed form still works, and the two do not stack prefixes.
+    let out = tm.run(&["add", "2 30m Call the vet", "--to", "backlog"]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    let backlog = tm.read("backlog.md");
+    assert!(!backlog.contains("- - "), "{backlog}");
+    assert!(!backlog.contains("- [ ] - "), "{backlog}");
+    assert_eq!(tm.run(&["check"]).code, 0);
+}
+
+/// §1.3 + §6.3: after a demotion the id names two `[-]` lines — the archive
+/// in the week file and the stamped copy under `month/…# Demoted`. `tm edit`
+/// read one and wrote its text over the other, so the week archive silently
+/// gained the month copy's `est:` and `demoted:` tokens while the record kept
+/// its old `ci`, and `tm drop` picked the other copy again.
+#[test]
+fn editing_a_demoted_item_rewrites_the_line_it_read() {
+    let tm = Tm::new();
+    tm.ok(&["demote", "^m1"]);
+    let week_before = tm.line("week/2026-W37.md", "m1");
+    let month_before = tm.line("month/2026-09.md", "m1");
+    assert!(week_before.starts_with("- [-] "), "{week_before}");
+    assert!(month_before.contains("demoted:W37"), "{month_before}");
+
+    tm.ok(&["edit", "^m1", "ci=2"]);
+    assert_eq!(
+        tm.line("week/2026-W37.md", "m1"),
+        week_before,
+        "the week archive was rewritten from the other copy"
+    );
+    let month_after = tm.line("month/2026-09.md", "m1");
+    assert!(month_after.starts_with("- [-] 2 "), "{month_after}");
+    assert!(month_after.contains("demoted:W37"), "{month_after}");
+
+    // `tm drop` addresses the same copy.
+    tm.ok(&["drop", "^m1"]);
+    assert_eq!(tm.line("week/2026-W37.md", "m1"), week_before);
+    assert!(tm.line("month/2026-09.md", "m1").starts_with("- [~] "));
+}
+
 #[test]
 fn edit_changes_fields_byte_faithfully_and_logs_each_one() {
     let tm = Tm::new();

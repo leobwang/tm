@@ -144,3 +144,29 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 fn key(c: char) -> KeyEvent {
     KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
 }
+
+/// §12.2–§12.5: pressing `2`–`5` in the shipped `tm tui` draws those screens,
+/// not a placeholder. The three modules were implemented but never added to
+/// the binary's `mod` list, so `today::draw` fell through to
+/// "screen N — … is not built yet" for every screen but Today, and only the
+/// M7 tests (which `#[path]`-include the modules) ever exercised them.
+#[test]
+fn screens_two_to_five_draw_their_own_panes() {
+    use tui_common::app::Screen;
+
+    for (screen, want) in [
+        (Screen::Queue, "Month"),
+        (Screen::Necessities, "Waiting"),
+        (Screen::Review, "adherence"),
+        (Screen::Inbox, "Capture"),
+    ] {
+        let mut app = app();
+        app.screen = screen;
+        let out = render(&app, 120, 30);
+        assert!(
+            !out.contains("not built yet"),
+            "{screen:?} is still the placeholder:\n{out}"
+        );
+        assert!(out.contains(want), "{screen:?} has no `{want}`:\n{out}");
+    }
+}

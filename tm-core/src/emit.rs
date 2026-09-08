@@ -60,7 +60,7 @@
 //! |---|---|---|---|
 //! | time | 0 | 5 | `HH:MM` |
 //! | ci | 7 | 2 | slot energy (else the item's `ci`) + `↓`; or the row glyph `·` `⏰` `○` `🌙` |
-//! | p | 9 | 2 | `p3` — `Block`/`Batch` rows only |
+//! | p | 9 | 2 | `p3` — budgeted work, and the Window *tasks* of §4.3's `1 p0 ⚠ Pick up package` |
 //! | mark | 12 | 1 | `✓` done · `▶` current · `⚠` HOT |
 //! | title | 14 | 27 ([`Layout::title_w`]) | truncated with `…` |
 //! | @parent | 43 | 3 | the item's written `@parent` |
@@ -384,9 +384,21 @@ fn minutes_between(from: &DateTime<Tz>, to: &DateTime<Tz>) -> u32 {
 // Per-segment display values
 // ---------------------------------------------------------------------------
 
-/// Does this kind print its `ci` and `p`, or a glyph?
+/// Does this kind spend the day's budget? (`Block`, `Batch` — what the
+/// `window ends` divider counts.)
 fn is_work(kind: &SegKind) -> bool {
     matches!(kind, SegKind::Block | SegKind::Batch(_))
+}
+
+/// Does this row print its `ci` and `pN`, or the kind's glyph?
+///
+/// Budgeted work always does. So does a Window-shaped *task* placed by §8.2
+/// step 2 — §4.3's `15:10  1 p0 ⚠  Pick up package  20m  due today`: it is a
+/// `Routine` segment because that is how the planner places a window, but it
+/// is on §7's scale. The planner marks it by giving the segment an `energy`;
+/// a `routines.md` line (`11:20  ·  lunch 30m`) has none.
+fn shows_scale(seg: &Segment) -> bool {
+    is_work(&seg.kind) || (matches!(seg.kind, SegKind::Routine) && seg.energy.is_some())
 }
 
 /// The glyph a non-work row puts in the `ci` column.
@@ -407,10 +419,13 @@ fn glyph_of(kind: &SegKind) -> char {
 ///
 /// times `×multiplier` when the planner sized the block with one.
 fn est_cell(seg: &Segment, tree: &Tree, cfg: &Config) -> String {
-    if !matches!(
-        seg.kind,
-        SegKind::Block | SegKind::Batch(_) | SegKind::Wall | SegKind::Optional
-    ) {
+    let scheduled_window = matches!(seg.kind, SegKind::Routine) && shows_scale(seg);
+    if !scheduled_window
+        && !matches!(
+            seg.kind,
+            SegKind::Block | SegKind::Batch(_) | SegKind::Wall | SegKind::Optional
+        )
+    {
         return String::new();
     }
     let item = seg.item.as_ref().and_then(|id| tree.get(id));
@@ -424,7 +439,7 @@ fn est_cell(seg: &Segment, tree: &Tree, cfg: &Config) -> String {
             };
             fmt_blocks(unscaled, cfg.block_min())
         }
-        (None, None) if matches!(seg.kind, SegKind::Wall | SegKind::Optional) => {
+        (None, None) if matches!(seg.kind, SegKind::Wall | SegKind::Optional) || scheduled_window => {
             fmt_dur(seg.minutes())
         }
         (None, None) => String::new(),
@@ -458,6 +473,8 @@ fn title_cell(seg: &Segment, tree: &Tree, cfg: &Config) -> String {
             format!("batch: {} ({})", names.join(" · "), names.len())
         }
         SegKind::Break => format!("break {}", fmt_dur(planned)),
+        // A window *task* puts its length in the est column instead (§4.3).
+        SegKind::Routine if shows_scale(seg) => name("—"),
         SegKind::Routine => format!("{} {}", name("routine"), fmt_dur(planned)),
         SegKind::Sleep => format!("{} {}", name("sleep"), fmt_dur(planned)),
         SegKind::Rest => format!("rest {}", fmt_dur(planned)),
@@ -611,7 +628,10 @@ fn due_date(tree: &Tree, id: &Id, today: NaiveDate) -> Option<NaiveDate> {
 }
 
 /// The mark column: done beats current beats hot.
-fn mark_of(seg: &Segment) -> char {
+///
+/// `' '` when the row carries none — §4.3's `✓ ▶ ⚠`, and nothing else: the
+/// glyphs (`· ⏰ ○ 🌙`) belong to the `ci` column, not here.
+pub fn mark_of(seg: &Segment) -> char {
     if seg.flags.done {
         MARK_DONE
     } else if seg.flags.current {
@@ -646,6 +666,14 @@ pub fn render_plan_section(
     now: DateTime<Tz>,
 ) -> (String, String) {
     render_plan_section_with(plan, tree, cfg, now, &Layout::default())
+}
+
+/// One segment's §4.3 row — the same text [`render_plan_section`] writes for
+/// it, for callers that need the rows one at a time (`tm plan --json`, which
+/// hands Claude Code the row beside the fields it was built from, §14).
+pub fn render_segment_row(seg: &Segment, plan: &DayPlan, tree: &Tree, cfg: &Config) -> String {
+    let prios: HashMap<&Id, u8> = plan.priorities.iter().map(|(id, p)| (id, p.p)).collect();
+    render_row(seg, plan, tree, cfg, &prios, &Layout::default())
 }
 
 /// [`render_plan_section`] with an explicit title width.
@@ -726,7 +754,7 @@ fn render_row(
     layout: &Layout,
 ) -> String {
     let item = seg.item.as_ref().and_then(|id| tree.get(id));
-    let work = is_work(&seg.kind);
+    let work = shows_scale(seg);
 
     let ci_cell = if work {
         let level = seg

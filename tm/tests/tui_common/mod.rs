@@ -39,6 +39,22 @@ pub mod prompts;
 #[path = "../../src/tui/today.rs"]
 pub mod today;
 
+#[allow(dead_code, unused_imports)]
+#[path = "../../src/tui/queue.rs"]
+pub mod queue;
+
+#[allow(dead_code, unused_imports)]
+#[path = "../../src/tui/necessities.rs"]
+pub mod necessities;
+
+#[allow(dead_code, unused_imports)]
+#[path = "../../src/tui/inbox.rs"]
+pub mod inbox;
+
+#[allow(dead_code, unused_imports)]
+#[path = "../../src/tui/review.rs"]
+pub mod review;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -53,7 +69,7 @@ use tm_core::log::{Event, Log, LogEntry, Replay};
 use tm_core::model::{Dep, Id, InstanceKey};
 use tm_core::planner::{DayPlan, Diagnostics, SegFlags, SegKind, Segment};
 use tm_core::priority::{Prio, PrioClass};
-use tm_core::store::{ActiveBlock, RuntimeState};
+use tm_core::store::{ActiveBlock, MemStore, PlanFiles, RuntimeState, Store};
 use tm_core::tree::Tree;
 
 use app::{App, AppData, ArrivalBlock};
@@ -127,6 +143,14 @@ pub fn tree(cfg: &Config) -> Tree {
         .map(|(p, t)| (p.as_str(), t.as_str()))
         .collect();
     Tree::from_texts(&refs, cfg)
+}
+
+/// The fixture's parsed files — what §12.2's Queue and §12.5's Inbox read.
+pub fn plan_files() -> PlanFiles {
+    MemStore::from_dir(fixture_dir())
+        .expect("fixture readable")
+        .read_tree()
+        .expect("fixture parses")
 }
 
 /// The day's log, as §4.3's `## Log` records it.
@@ -511,6 +535,10 @@ pub fn app_with(now: DateTime<Tz>, state: RuntimeState, log: Log) -> App {
         log,
         replay,
         arrival: arrival(),
+        files: plan_files(),
+        candidates: Vec::new(),
+        prios: Vec::new(),
+        caps: Vec::new(),
         now,
         cfg,
     };

@@ -1,9 +1,16 @@
 //! The §4.3 example day, hand-built: the tree it refers to and the
 //! [`DayPlan`] whose rows are the day file's generated section.
 //!
-//! `planner::plan` is still a stub (M4), so the plan here is written out by
-//! hand. It is the day of `tests/fixtures/plan-basic` on Monday 2026-09-07,
-//! planned at 10:42 with the window 07:00–16:00 and a budget of 6 blocks.
+//! The plan here is written out **by hand** on purpose: it reproduces §4.3's
+//! printed timeline row for row, which is what makes the emit snapshots
+//! readable against the spec in a diff. It is the day of
+//! `tests/fixtures/plan-basic` on Monday 2026-09-07, planned at 10:42 with
+//! the window 07:00–16:00 and a budget of 6 blocks.
+//!
+//! Because it is hand-built it cannot catch a *disagreement* between the
+//! planner and the renderer — change a field `planner.rs` sets on a `Segment`
+//! and every snapshot here still passes. `emit_planner.rs` covers that: the
+//! same three §17 M4 fixture days, through `planner::plan`.
 //!
 //! One deliberate artefact: the three finished segments start on the planned
 //! grid (07:00, 08:00, 09:00) but last as long as the log says they did (67m,

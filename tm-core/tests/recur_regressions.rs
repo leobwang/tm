@@ -359,6 +359,12 @@ fn a_window_that_has_already_closed_is_not_a_last_chance() {
 /// same obligation, not a second load of laundry: `today_instances` used to
 /// hand the planner both, which placed the routine twice in one day (§5.2
 /// gives a window instance one position, §7.2 gives an item one `p`).
+///
+/// The one instance is keyed on the **newest** occurrence and carries the
+/// miss's overdue and mandatory flags, and a completion settles every
+/// occurrence behind it. Keying it on the oldest miss instead made the
+/// obligation undischargeable: `tm routine done laundry` logged a
+/// two-month-old key and the next command surfaced the next-oldest miss.
 #[test]
 fn a_missed_persist_routine_and_this_weeks_occurrence_are_one_instance() {
     let item = routine("- laundry win:09:00-21:00 dur:30m every:week on-miss:persist");
@@ -412,21 +418,51 @@ fn a_missed_persist_routine_and_this_weeks_occurrence_are_one_instance() {
         ]
     );
 
-    // … but the planner is handed one: last week's miss, §5.3's overdue and
-    // mandatory instance, and not this week's occurrence beside it.
+    // … but the planner is handed one: this week's occurrence, wearing §5.3's
+    // overdue and mandatory badge for the miss it stands in for.
     let live = recur::today_instances([&item], today, now, &kept_up, &cfg());
-    assert_eq!(keys(&live), vec!["2026-08-31"]);
+    assert_eq!(keys(&live), vec!["2026-09-07"]);
     assert!(live[0].1.mandatory && live[0].1.overdue);
+    assert_eq!(live[0].1.carried_from, Some(date("2026-09-06")));
 
-    // Wash it, and this week's occurrence is what is left to do — nothing was
-    // lost by the collapse, and it is not overdue.
+    // Wash it once and the carry is discharged with it: nothing is left to do
+    // today, and the next command does not surface 2026-08-31 again.
     let washed_today = replay_of(&format!(
         "{}\n{}",
         washed(&KEPT_UP),
-        washed(&["2026-08-31"])
+        washed(&["2026-09-07"])
     ));
     let after =
         recur::today_instances([&item], today, dt("2026-09-07T11:30"), &washed_today, &cfg());
-    assert_eq!(keys(&after), vec!["2026-09-07"]);
-    assert!(!after[0].1.overdue && !after[0].1.mandatory);
+    assert!(after.is_empty(), "{:?}", keys(&after));
+}
+
+/// The backwards half of the same collapse, on its own: a routine that has
+/// never been logged has a whole `CARRY_LOOKBACK_DAYS` of missed occurrences
+/// behind it, and doing it once has to settle all of them. It used to walk
+/// backwards one occurrence per `tm routine done`, ten invocations before it
+/// reached today and one stacked `✓ laundry` row per invocation.
+#[test]
+fn one_completion_discharges_the_whole_persist_backlog() {
+    let item = routine("- laundry win:09:00-21:00 dur:30m every:week on-miss:persist");
+    let today = date("2026-09-07");
+    let now = dt("2026-09-07T07:00");
+    let empty = replay_of("");
+
+    let live = recur::today_instances([&item], today, now, &empty, &cfg());
+    assert_eq!(
+        live.iter().map(|(i, _)| i.key.to_string()).collect::<Vec<_>>(),
+        vec!["2026-09-07"],
+        "one obligation, and it is today's"
+    );
+
+    let done = replay_of(
+        "{\"t\":\"2026-09-07T07:30:00-05:00\",\"ev\":\"routine\",\"item\":\"laundry\",         \"inst\":\"2026-09-07\",\"status\":\"done\",\"actual_min\":30}",
+    );
+    let after = recur::today_instances([&item], today, dt("2026-09-07T08:00"), &done, &cfg());
+    assert!(
+        after.is_empty(),
+        "the two months of misses behind it went with it: {:?}",
+        after.iter().map(|(i, _)| i.key.to_string()).collect::<Vec<_>>()
+    );
 }

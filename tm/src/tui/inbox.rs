@@ -54,7 +54,8 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 use tm_core::config::Config;
-use tm_core::grammar::{self, ParseCtx};
+use tm_core::grammar::{self, ParseCtx, ParsedFile};
+use tm_core::store::{edit, Store, StoreError};
 use tm_core::model::{
     self, Dep, Dur, Horizon, Rate, Rule, WindowRange,
 };
@@ -421,6 +422,7 @@ pub struct Capture {
 ///
 /// The returned [`Capture::line`] is what `tm add "<line>" --to <file>` writes,
 /// modulo the `^id` the CLI appends.
+#[allow(dead_code)] // §17 M7's `tui_queue_capture.rs` drives it directly.
 pub fn capture(input: &str, view: &View<'_>, target: Option<usize>) -> Capture {
     capture_from(input, view, target, false)
 }
@@ -619,6 +621,29 @@ pub fn inbox_lines(view: &View<'_>) -> Vec<InboxLine> {
     }
     out
 }
+
+/// Remove one raw line from `inbox.md` — [`Mutation::DropInboxLine`] and the
+/// tail of a triaged [`Mutation::Capture`] (§12.5: `t` gets the line *out* of
+/// the inbox).
+///
+/// `line` is 1-based, as [`InboxLine::line`] and `tm triage` number them. A
+/// line number the file no longer has is a no-op rather than an error: the
+/// file may have been edited since the screen was drawn.
+pub fn drop_line(store: &dyn Store, line: usize) -> Result<bool, StoreError> {
+    let mut removed = false;
+    store.modify_file(INBOX_FILE, &mut |parsed: &ParsedFile| {
+        removed = false;
+        let Some(idx) = parsed.lines.iter().position(|l| l.number == line) else {
+            return Ok(None);
+        };
+        removed = true;
+        Ok(Some(edit::remove_line(parsed, idx).0))
+    })?;
+    Ok(removed)
+}
+
+/// The capture file §2 and §12.5 name.
+pub const INBOX_FILE: &str = "inbox.md";
 
 // ---------------------------------------------------------------------------
 // State and keys

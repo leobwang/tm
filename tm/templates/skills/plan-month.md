@@ -15,8 +15,8 @@ tm review week --json          # the last week, for the trend
 <!-- json fields -->
 
 ```
-tm review month --json → key blocks block_min days[].date days[].blocks days[].done estimates[].tag estimates[].multiplier churn
-tm review week --json → key blocks block_min days[].blocks churn
+tm review month --json → key review.outcomes[].id review.outcomes[].title review.outcomes[].k review.outcomes[].done review.outcomes[].progress review.done_count review.demoted review.churn review.carry_over review.cuts
+tm review week --json → key review.blocks_done review.block_min review.carry_out_min review.churn
 ```
 
 Plus `month/<last month>.md`: the outcomes, everything under `# Demoted`, and

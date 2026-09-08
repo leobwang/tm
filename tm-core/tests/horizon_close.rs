@@ -516,26 +516,37 @@ fn a_future_wall_and_its_prep_are_carried_not_demoted() {
         .contains(&id("x1")));
 }
 
-/// Closing the week you are still in has nowhere to carry a wall to, so it
-/// stays where it is — `[ ]`, untouched.
+/// Closing the week you are still in — `tm close week` on the Sunday, the
+/// verb's documented default — archives that file, so its walls have to go
+/// to the *following* week rather than staying in an archive the planner no
+/// longer reads (§6.2, §6.3, §0 principle 6).
 #[test]
-fn closing_the_week_from_inside_it_leaves_the_wall_in_place() {
+fn closing_the_week_from_inside_it_carries_the_wall_to_the_next_week() {
     let (_dir, store) = plan();
+    let before = text(&store, WEEK);
     let files = store.read_tree().unwrap();
     let tree = files.tree();
     let cx = Ctx::new(&store, &files, &tree, at("2026-09-13T20:00:00-05:00"));
     let report = close_week(&cx, IsoWeek::new(2026, 37)).unwrap();
 
     assert_eq!(report.carried, vec![id("x1"), id("x2")]);
-    assert!(!store.exists(NEXT_WEEK), "no week file was invented");
-    assert_eq!(
-        line_of(&store, WEEK, "x1").unwrap(),
-        "- [ ] 5 2h Midterm                      @O3 at:2026-10-20T10:00/12:00 loc:JCL ^x1"
-    );
-    assert_eq!(
-        line_of(&store, WEEK, "x2").unwrap(),
-        "- [ ] 5 8b Midterm review               @x1 ^x2"
-    );
+    assert!(line_of(&store, WEEK, "x1").is_none(), "^x1 left the archive");
+    assert!(line_of(&store, WEEK, "x2").is_none(), "^x2 left the archive");
+    for wall in ["x1", "x2"] {
+        let line = line_of(&store, NEXT_WEEK, wall).unwrap();
+        assert!(line.starts_with("- [ ] "), "{line}");
+        assert_eq!(
+            Some(line.as_str()),
+            before.lines().find(|l| l.ends_with(&format!("^{wall}"))),
+            "^{wall} did not cross byte for byte"
+        );
+    }
+    // The exam is still a candidate on its own day (§6.2).
+    let files = store.read_tree().unwrap();
+    let tree = files.tree();
+    assert!(tree
+        .day_candidate_ids(d("2026-10-20"), IsoWeek::new(2026, 38))
+        .contains(&id("x1")));
 }
 
 /// A wall that is already over carries nothing forward — its instance
@@ -847,13 +858,16 @@ fn churn_lists_the_repeatedly_demoted_items() {
     assert!(churn(&tree, 2).is_empty());
 }
 
+/// A tree with no close history behind it has no backlog to catch up on:
+/// the first sweep closes the last period of each kind and stamps the rest.
 #[test]
-fn auto_close_only_closes_the_last_unclosed_period() {
+fn auto_close_without_history_only_closes_the_last_period() {
     let (_dir, store) = plan();
     let mut state = store.load_state().unwrap();
-    // Three weeks later: W37 is not the last unclosed week any more, so the
-    // week close does not touch it (its file is an archive of a planned week
-    // nobody closed; `tm close week --week 2026-W37` is the way back).
+    // Three weeks later, and `state.closed.week` is None: W37 is not the last
+    // unclosed week, and there is no record saying it was ever live, so the
+    // week close does not touch it (`tm close week --date 2026-W37` is the
+    // way back).
     let ran = auto_close(
         &store,
         &mut state,
@@ -872,4 +886,70 @@ fn auto_close_only_closes_the_last_unclosed_period() {
     // The month that ended is closed, though.
     assert_eq!(state.closed.month, Some(YearMonth::new(2026, 9)));
     assert!(store.exists(NEXT_MONTH));
+}
+
+/// §6.3 + §0 principle 6: skipping a week must not strand its unfinished
+/// milestones. Every period between the last recorded close and the last
+/// complete one is closed, oldest first — stamping them closed without
+/// running would leave their lines `[ ]` in a file nothing plans from.
+#[test]
+fn auto_close_catches_up_on_every_skipped_period() {
+    let (_dir, store) = plan();
+    let mut state = store.load_state().unwrap();
+    // W37 closed on time; W38 gets a milestone and is then skipped entirely.
+    state.closed.week = Some(IsoWeek::new(2026, 37));
+    state.closed.day = Some(d("2026-09-13"));
+    state.closed.month = Some(YearMonth::new(2026, 8));
+    store.save_state(&state).unwrap();
+    store
+        .write_file(
+            NEXT_WEEK,
+            "---\nweek: 2026-W38\n---\n# Milestones\n- [ ] 5 6b Important milestone ^zzz1\n",
+        )
+        .unwrap();
+
+    // Two weeks on, nothing has been run since.
+    let ran = auto_close(
+        &store,
+        &mut state,
+        d("2026-09-28"),
+        at("2026-09-28T07:00:00-05:00"),
+        None,
+    )
+    .unwrap();
+
+    let weeks: Vec<String> = ran
+        .iter()
+        .filter(|c| c.period == Period::Week)
+        .map(|c| c.key.clone())
+        .collect();
+    assert_eq!(weeks, vec!["2026-W38".to_string()], "W38 was actually closed");
+    assert_eq!(state.closed.week, Some(IsoWeek::new(2026, 39)));
+    // The milestone is demoted, not orphaned (§6.3).
+    assert!(line_of(&store, NEXT_WEEK, "zzz1").unwrap().starts_with("- [-] "));
+    let month = text(&store, "month/2026-09.md");
+    assert!(month.contains("demoted:W38"), "{month}");
+}
+
+/// The catch-up is bounded: a tree left alone for years does not spend its
+/// first command closing every week since, but it still stamps them.
+#[test]
+fn auto_close_catch_up_is_capped() {
+    let (_dir, store) = plan();
+    let mut state = store.load_state().unwrap();
+    state.closed.week = Some(IsoWeek::new(2020, 1));
+    state.closed.day = Some(d("2026-09-13"));
+    state.closed.month = Some(YearMonth::new(2026, 8));
+    store.save_state(&state).unwrap();
+
+    auto_close(
+        &store,
+        &mut state,
+        d("2026-09-21"),
+        at("2026-09-21T07:00:00-05:00"),
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(state.closed.week, Some(IsoWeek::new(2026, 38)));
 }

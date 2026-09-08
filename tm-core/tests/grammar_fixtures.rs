@@ -54,6 +54,82 @@ fn every_fixture_round_trips_byte_identically() {
     }
 }
 
+/// §17 M1's DoD is "parse→serialize is byte-identical for **every**
+/// fixture", not just `plan-basic`: §17.1 lists five trees, and the one whose
+/// lines are most likely to lose bytes on a rewrite is `plan-conflicts`,
+/// whose whole point is malformed values (`due:tomorrow`, `!9`, `ci:7`, `^%`,
+/// a leading `7 2b` that stays in the title).
+#[test]
+fn every_file_of_every_fixture_round_trips_byte_identically() {
+    let mut checked = 0usize;
+    for dir in fixture_dirs() {
+        let cfg = Config::load(dir.join("config.toml")).unwrap_or_default();
+        for path in markdown_files(&dir) {
+            let rel = path
+                .strip_prefix(&dir)
+                .expect("under the fixture")
+                .to_string_lossy()
+                .replace('\\', "/");
+            let text = std::fs::read_to_string(&path).expect("readable");
+            let parsed = parse_file(&rel, &text, &cfg);
+            assert_eq!(
+                serialize_file(&parsed),
+                text,
+                "{}/{rel} did not round-trip",
+                dir.file_name().unwrap_or_default().to_string_lossy()
+            );
+            for item in parsed.items() {
+                assert_eq!(
+                    item.line_text(),
+                    parsed.lines[item.src.line - 1].text(),
+                    "{}/{rel}",
+                    dir.file_name().unwrap_or_default().to_string_lossy()
+                );
+            }
+            checked += 1;
+        }
+    }
+    assert!(checked >= 30, "only {checked} files were round-tripped");
+}
+
+/// §17.1's fixture trees.
+fn fixture_dirs() -> Vec<PathBuf> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let mut out: Vec<PathBuf> = std::fs::read_dir(&root)
+        .expect("fixtures/ readable")
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.is_dir() && p.join("config.toml").is_file())
+        .collect();
+    out.sort();
+    assert!(out.len() >= 5, "§17.1 lists five fixture trees: {out:?}");
+    out
+}
+
+/// Every `.md` under `dir`, outside `.tm/`, sorted.
+fn markdown_files(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            if path.is_dir() {
+                if !name.starts_with('.') {
+                    stack.push(path);
+                }
+            } else if path.extension().is_some_and(|e| e == "md") {
+                out.push(path);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
 #[test]
 fn every_fixture_item_has_a_unique_id_except_open_files() {
     // `tm close week` *copies* a line into `month/…#Demoted` keeping its id

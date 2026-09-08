@@ -4,20 +4,20 @@ expression: timeline(&day)
 ---
 date 2026-09-07 · window 09:00–18:00 · budget 6b
 07:30-08:00 routine      · breakfast  ✓    
-09:00-09:20 routine      · a3         !    Pick up package
+09:00-09:20 routine      1 a3         ⚠!   
 09:20-10:20 block        3 t4              
 10:20-11:20 block        3 m4              
-11:30-12:00 routine      · lunch      !    lunch
+11:30-12:00 routine      · lunch      !    
 12:00-12:50 block        3 m4              
 12:50-13:50 wall         · g1              
 13:50-14:50 block        3 m4              
 14:50-15:10 break        · ·               
 15:10-16:00 block        3 a1              
-16:00-17:00 routine      · workout    !    workout
+16:00-17:00 routine      · workout    !    
 17:00-17:30 block        2 p1              
-17:30-18:00 routine      · dinner     !    dinner
-18:00-18:45 routine      · groceries  ~    groceries
-18:45-19:15 routine      · laundry    ~    laundry
-19:15-20:15 optional     · Severance S3E4      Severance S3E4
-21:30-22:00 wind-down    · ·               wind-down · bed 22:00
+17:30-18:00 routine      · dinner     !    
+18:00-18:45 routine      · groceries  ~    
+18:45-19:15 routine      · laundry    ~    
+19:15-20:15 optional     · Severance S3E4      
+21:30-22:00 wind-down    · ·               
 22:00-00:00 sleep        · sleep

@@ -141,9 +141,9 @@ fn plan_basic_priorities_and_order() {
 
     // `laundry` is `on-miss:persist` and the fixture has no log, so last
     // week's window was missed and carries into today (§5.3: overdue,
-    // mandatory, `p = 0` by §7.2). It is the routine's *only* candidate: while
-    // it is open it is the laundry's pending instance, so this week's
-    // occurrence is not a second load to plan today.
+    // mandatory, `p = 0` by §7.2). It is the routine's *only* candidate: the
+    // carried miss and this week's occurrence are one obligation, keyed on
+    // the newest occurrence so that doing it once discharges the carry.
     let laundry: Vec<(&str, u8)> = cands
         .iter()
         .zip(&prios)
@@ -151,14 +151,14 @@ fn plan_basic_priorities_and_order() {
         .map(|(c, p)| {
             (
                 match c.instance {
-                    Some(k) if k.to_string() == "2026-08-31" => "carried",
-                    _ => "this week",
+                    Some(k) if k.to_string() == "2026-09-07" => "this week",
+                    _ => "carried",
                 },
                 p.p,
             )
         })
         .collect();
-    assert_eq!(laundry, vec![("carried", 0)]);
+    assert_eq!(laundry, vec![("this week", 0)]);
 
     let queue = priority::sorted(&prios, &cands);
     let order: Vec<&str> = queue.iter().map(Id::as_str).collect();

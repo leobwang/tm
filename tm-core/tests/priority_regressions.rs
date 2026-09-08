@@ -517,10 +517,11 @@ fn priorities_for_state_keeps_the_most_urgent_of_two_instances() {
 
     let prios = priority::compute(&cands, &flat(7, 5, 240), &empty(), &cfg, date(MONDAY));
     let ps: Vec<u8> = prios.iter().map(|p| p.p).collect();
-    // Never logged, so last week's window is the carried one: overdue and
-    // mandatory, §7.2's `p = 0`.
+    // Never logged, so last week's window is still owed: overdue and
+    // mandatory, §7.2's `p = 0`. The one candidate is keyed on *this* week's
+    // occurrence — the newest — so doing it once discharges the carry.
     assert_eq!(ps, vec![0]);
-    assert_eq!(cands[0].instance.map(|k| k.to_string()).as_deref(), Some("2026-08-31"));
+    assert_eq!(cands[0].instance.map(|k| k.to_string()).as_deref(), Some(MONDAY));
 
     // Two rows for one id, only `p` differing, as a caller-supplied candidate
     // list could still hold.

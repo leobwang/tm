@@ -28,6 +28,7 @@ use tm_core::priority::{self, Prio};
 use tm_core::store::Store;
 
 use super::ctx::{Ctx, Globals, StoredPlan, StoredSegment};
+use super::ghost;
 use super::out::{emit, CliError};
 use super::render;
 
@@ -134,7 +135,11 @@ pub fn build(ctx: &Ctx, allow_home: bool) -> (DayPlan, Vec<Prio>) {
         ctx.now_tz,
     )
     .with_caps(&caps)
-    .with_candidates(&cands);
+    .with_candidates(&cands)
+    // §8.2 step 3: `--allow-home` lifts `home_max_ci`; the planner cuts its
+    // own slots, so the flag has to reach `PlanInput` too, not only the
+    // lookahead `ctx.priorities` sizes.
+    .with_allow_home(allow_home);
     let mut plan = planner::plan(&input);
     if plan.priorities.is_empty() {
         plan.priorities = prios
@@ -259,7 +264,7 @@ pub fn write_plan(ctx: &mut Ctx, plan: &DayPlan, prios: &[Prio]) -> Result<Vec<S
     let previous = ctx.last_plan();
     let mut wrote = Vec::new();
 
-    let body = render::timeline(plan, &ctx.tree, &ctx.cfg);
+    let body = render::timeline(plan, &ctx.tree, &ctx.cfg, ctx.now_tz);
     // §4.3: a day file the CLI creates gets the whole skeleton, not just the
     // front matter — `# Pinned`, `## Log` and `## Notes` are the human half.
     let day_path = super::dayfile::ensure(ctx, plan.date)?;
@@ -267,9 +272,22 @@ pub fn write_plan(ctx: &mut Ctx, plan: &DayPlan, prios: &[Prio]) -> Result<Vec<S
     ctx.store
         .replace_generated_stamped(&day_path, "plan", Some(&stamp), &body)?;
     wrote.push(day_path);
+    // §12.1: the same renderer draws the bar and writes the file, ghost row
+    // and all — `.tm/arrival_plan.json` is what the ghost is rebuilt from.
+    let blocks = ghost::blocks(ctx);
+    let ghost_plan = ghost::plan(&blocks, &ctx.cfg, &ctx.model, &ctx.tree, &ctx.state, plan);
     let svg_path = format!("day/{}.svg", plan.date);
-    ctx.store
-        .write_file(&svg_path, &render::svg(plan, &ctx.tree, &ctx.cfg))?;
+    ctx.store.write_file(
+        &svg_path,
+        &render::svg(
+            plan,
+            ghost_plan.as_ref(),
+            &ctx.tree,
+            &ctx.cfg,
+            ctx.wake_dt(),
+            ctx.now_tz,
+        ),
+    )?;
     wrote.push(svg_path);
 
     // §10.1: log a `plan` only when the day actually moved.
@@ -341,18 +359,22 @@ pub fn plan(g: &Globals, args: &super::PlanArgs) -> Result<i32, CliError> {
             if let Some(e) = &explain {
                 return e.clone();
             }
-            let body = render::timeline(&plan, &ctx.tree, &ctx.cfg);
+            let body = render::timeline(&plan, &ctx.tree, &ctx.cfg, ctx.now_tz);
             s.push_str(&format!(
                 "{} · window {}–{} · budget {} blocks\n",
                 plan.date, out.window[0], out.window[1], plan.budget_blocks
             ));
             s.push_str(&body);
-            for (id, need, by) in &plan.diagnostics.impossible {
-                s.push_str(&format!(
-                    "IMPOSSIBLE {}: needs {}m more by {by}\n",
-                    id.token(),
-                    need
-                ));
+            // §8.2 step 8 and §11: what the day cannot say in its rows — the
+            // under-used slots, the blocked and waiting items, and the "plan
+            // honesty" warning §11 asks `tm plan` for.
+            for note in render::diagnostics(&plan, &ctx.tree, &ctx.cfg) {
+                s.push_str(&format!("· {note}\n"));
+            }
+            // §7.3: the banner names the item and the shortfall — "needs 8b,
+            // 5b available by Fri" — not raw minutes.
+            for banner in tm_core::emit::render_banners(&plan, &ctx.tree, &ctx.cfg) {
+                s.push_str(&format!("IMPOSSIBLE {banner}\n"));
             }
             if let Some(d) = &diff_out {
                 s.push_str(&format!(
@@ -494,8 +516,16 @@ pub fn now(g: &Globals) -> Result<i32, CliError> {
                 )),
                 None => s.push_str("nothing running\n"),
             }
-            for seg in &out.next {
-                s.push_str(&format!("{} {} {}\n", seg.start, seg.kind, seg.text));
+            // §13: the current block and the next three, rendered by the
+            // §4.3 renderer so `tm now` and the day file agree.
+            s.push_str(&tm_core::emit::render_now_with(
+                &plan,
+                &ctx.tree,
+                &ctx.cfg,
+                ctx.now_tz,
+            ));
+            if !s.ends_with('\n') {
+                s.push('\n');
             }
             s.push_str(&format!(
                 "{}/{} blocks",

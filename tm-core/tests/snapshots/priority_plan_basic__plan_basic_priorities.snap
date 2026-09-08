@@ -25,7 +25,7 @@ lunch             0 mandatory    3   1      -    -    39m     0b          - 2026
 dinner            0 mandatory    3   1      -    -    39m     0b          - 2026-09-07  dinner
 workout           0 mandatory    3   1      -    -   1.3b     0b          - 2026-09-07  workout
 shower            5 rank         3   1      -    -    26m     0b          - #1          shower
-laundry           0 overdue      3   1      -    -    39m     0b          - 2026-08-31  laundry
+laundry           0 overdue      3   1      -    -    39m     0b          - 2026-09-07  laundry
 groceries         5 rank         3   1      -    -    59m     0b          - 2026-09-07  groceries
 Severance S3E4    5 optional     3   0      -    -   1.3b     0b          - -           Severance S3E4
 Factorio          5 optional     3   0      -    -   2.6b     0b          - -           Factorio

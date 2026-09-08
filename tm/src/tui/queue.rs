@@ -166,6 +166,7 @@ impl<'a> View<'a> {
     }
 
     /// Logged block minutes per item (§6.4's `done_minutes` input).
+    #[allow(dead_code)] // Read by §17 M7's screen tests.
     pub fn done_minutes(&self) -> &HashMap<Id, u32> {
         &self.done
     }

@@ -41,6 +41,69 @@ fn close_week_archives_into_the_month() {
     assert!(tm.events().contains(&"close".to_string()));
 }
 
+/// §6.3 + §13: the close "runs automatically on the first command after the
+/// period ends", and `Ctx::load` runs it — so `tm close week` on the Monday
+/// after found its own work done and printed an all-empty report over a tree
+/// it had in fact rewritten. It now names the week the auto-close closed and
+/// reports what that run did (and does not archive the week you are one day
+/// into).
+#[test]
+fn close_after_the_period_ended_reports_what_the_auto_close_did() {
+    let tm = Tm::new();
+    let json = tm.json_at("2026-09-14T09:00:00-05:00", &["close", "week"]);
+    assert_eq!(json["key"], "2026-W37", "the week that ended, not W38");
+    let report = &json["report"];
+    let demoted: Vec<&str> = report["demoted"]
+        .as_array()
+        .expect("demoted")
+        .iter()
+        .map(|d| d["id"].as_str().expect("id"))
+        .collect();
+    assert_eq!(demoted, vec!["m1", "m2", "m3", "m4"], "{report}");
+    let moved: Vec<&str> = report["moved"]
+        .as_array()
+        .expect("moved")
+        .iter()
+        .map(|m| m["id"].as_str().expect("id"))
+        .collect();
+    assert_eq!(moved, vec!["x1", "x2", "d1"], "{report}");
+    assert_eq!(report["carried"].as_array().expect("carried").len(), 2);
+    assert_eq!(
+        report["overdue_to_backlog"]
+            .as_array()
+            .expect("overdue")
+            .len(),
+        1
+    );
+    // W38 is the live week the walls moved into, not an archive.
+    assert!(!tm.read("week/2026-W38.md").contains("closed:"));
+    assert!(tm.read("week/2026-W38.md").contains("^x1"));
+
+    // And the human line of the same run counts the same work.
+    let fresh = Tm::new();
+    let out = fresh.run_at("2026-09-14T09:00:00-05:00", &["close", "week"]);
+    assert_eq!(
+        out.stdout.trim(),
+        "closed week 2026-W37 · 3 moved · 4 demoted · 0 reopened · 0 dropped",
+        "{}",
+        out.stderr
+    );
+}
+
+/// The same for a day: run on the next morning, `tm close day` closes
+/// yesterday and says what moved.
+#[test]
+fn close_day_after_midnight_reports_yesterday() {
+    let tm = Tm::new();
+    let json = tm.json_at("2026-09-08T09:00:00-05:00", &["close", "day"]);
+    assert_eq!(json["key"], "2026-09-07");
+    assert!(
+        !json["report"]["moved"].as_array().expect("moved").is_empty(),
+        "^p1 moved to the week: {json}"
+    );
+    assert!(tm.read("week/2026-W37.md").contains("demoted:D07"));
+}
+
 #[test]
 fn close_month_can_drop_an_outcome() {
     let tm = Tm::new();
@@ -70,26 +133,56 @@ fn the_first_command_after_a_period_ends_closes_it() {
     assert_eq!(closed["month"], "2026-08");
 }
 
+/// §11 and §12.4: `tm review day` reports the monitors `tm_core::review`
+/// computes — not a second, thinner set assembled in the CLI. The verb used
+/// to have its own `blocks / leak / lost / MAE / estimates` summary, so the
+/// shipped review had no adherence, break integrity, rest debt, sleep panel
+/// or plan honesty at all, and §17 M8's hand-computed values validated code
+/// the binary never ran.
 #[test]
 fn review_day_reports_the_monitors_and_can_write_them() {
     let tm = Tm::new();
     tm.ok(&["wake", "06:05", "--slept", "8h10m"]);
+    tm.run_at("2026-09-07T07:00:00-05:00", &["arrive", "lounge"]);
     tm.ok(&["start", "^t4", "--energy", "4"]);
     tm.ok_at("2026-09-07T10:00:00-05:00", &["done", "--went", "1"]);
 
     let json = tm.json_at("2026-09-07T21:00:00-05:00", &["review", "day"]);
     assert_eq!(json["period"], "day");
     assert_eq!(json["key"], "2026-09-07");
-    assert_eq!(json["blocks"], 1);
-    assert_eq!(json["block_min"], 60);
-    assert_eq!(json["days"][0]["done"][0], "t4");
+    let r = &json["review"];
+    assert_eq!(r["blocks_done"], 1);
+    assert_eq!(r["block_min"], 60);
+    assert_eq!(r["done"][0], "t4");
+    // §11's monitors the old CLI summary had no room for.
+    for key in [
+        "adherence",
+        "breaks",
+        "rest_debt_min",
+        "slept_min",
+        "plan_honesty",
+        "mix",
+        "leak",
+        "energy",
+    ] {
+        assert!(r.get(key).is_some(), "missing review.{key} in {r}");
+    }
+    // The ghost row `tm arrive` recorded is the adherence denominator (§11).
+    assert!(
+        r["adherence"]["planned"].as_u64().unwrap_or(0) > 0,
+        "no adherence denominator: {r}"
+    );
+    assert_eq!(r["slept_min"], 490);
     insta::assert_json_snapshot!("review_day_schema", schema(&json));
 
     let written = tm.json_at("2026-09-07T21:01:00-05:00", &["review", "day", "--write"]);
     assert_eq!(written["wrote"], "day/2026-09-07.md");
     let day = tm.read("day/2026-09-07.md");
     assert!(day.contains("<!-- tm:review start -->"), "{day}");
-    assert!(day.contains("1 blocks"), "{day}");
+    // §12.4's rows, in the file.
+    assert!(day.contains("adherence"), "{day}");
+    assert!(day.contains("\n breaks    "), "{day}");
+    assert!(day.contains("\n sleep     "), "{day}");
 }
 
 #[test]

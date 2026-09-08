@@ -345,18 +345,26 @@ pub fn is_mandatory(item: &Item, inst: &Instance, today: NaiveDate, now: NaiveDa
 /// has already passed only stays under `on-miss:persist`. A wholly future
 /// occurrence is left out, and items in a closed state are skipped.
 ///
-/// **One instance per item.** A `persist` instance that was missed is still
-/// the item's pending instance (§5.3: it "stays Pending", mandatory and
-/// overdue), so while it is open the occurrence that has since come round is
-/// not a second obligation: today's laundry is *the* laundry, whether it is
-/// last week's window still owed or this week's. Carried instances therefore
-/// collapse to the most recent one, and a surviving carried instance stands
-/// for the current occurrence too — which is what keeps a routine out of the
-/// day twice (§5.2 places a window instance at one position; §7.2 gives an
-/// item one `p`, stored per id in §10.2's map). Nothing is lost by the
-/// collapse: the moment the carried instance is done or skipped, the current
-/// occurrence is what this returns, and the untouched occurrence keeps its own
-/// date on §12.3's week grid ([`week_instances`]) meanwhile.
+/// **One instance per item, and doing it clears the carry.** A `persist`
+/// instance that was missed is still the item's pending instance (§5.3: it
+/// "stays Pending", mandatory and overdue), so while it is open the
+/// occurrence that has since come round is not a second obligation: today's
+/// laundry is *the* laundry, whether it is last week's window still owed or
+/// this week's. That collapse has two halves, and both are needed for the
+/// obligation to be dischargeable:
+///
+/// * **Forwards.** The instance returned is the *newest* actionable
+///   occurrence — today's, when today has one — carrying the overdue badge
+///   and `carried_from` date of the older miss it stands for. `tm routine
+///   done laundry` therefore logs today's key, not a two-month-old one.
+/// * **Backwards.** A `done` or `skip` settles every occurrence that closed
+///   at or before it, so the backlog behind it disappears in one go instead
+///   of surfacing the next-oldest miss on the next command.
+///
+/// One instance is also what keeps a routine out of the day twice (§5.2
+/// places a window instance at one position; §7.2 gives an item one `p`,
+/// stored per id in §10.2's map). Occurrences that this collapses keep their
+/// own dates on §12.3's week grid ([`week_instances`]) meanwhile.
 pub fn today_instances<'a, I>(
     items: I,
     today: NaiveDate,
@@ -375,24 +383,44 @@ where
         if item.state.is_closed() {
             continue;
         }
-        let mine: Vec<(Instance, InstanceInfo)> =
-            instances_with_info(item, (from, today), today, now, replay, cfg)
-                .into_iter()
-                .filter(|(i, _)| {
-                    is_actionable(i.status)
-                        && start_of(i).is_none_or(|s| s.date() <= today)
-                        && (item.on_miss == OnMiss::Persist
-                            || close_of(i).is_none_or(|c| c >= now))
-                })
-                .collect();
+        let all = instances_with_info(item, (from, today), today, now, replay, cfg);
+        // The latest occurrence the log has settled: everything at or before
+        // it is discharged, however many misses are stacked behind it.
+        let settled: Option<NaiveDateTime> = all
+            .iter()
+            .filter(|(i, _)| matches!(i.status, InstanceStatus::Done | InstanceStatus::Skipped))
+            .filter_map(|(i, _)| close_of(i).or_else(|| start_of(i)))
+            .max();
+        let mine: Vec<(Instance, InstanceInfo)> = all
+            .into_iter()
+            .filter(|(i, _)| {
+                is_actionable(i.status)
+                    && start_of(i).is_none_or(|s| s.date() <= today)
+                    && (item.on_miss == OnMiss::Persist || close_of(i).is_none_or(|c| c >= now))
+                    && settled.is_none_or(|s| {
+                        close_of(i).or_else(|| start_of(i)).is_none_or(|c| c > s)
+                    })
+            })
+            .collect();
         let (carried, current): (Vec<_>, Vec<_>) = mine
             .into_iter()
             .partition(|(i, _)| close_of(i).is_some_and(|c| c.date() < today));
-        match carried.into_iter().max_by_key(|(i, _)| close_of(i)) {
-            // The carried instance *is* the item's pending one; the occurrence
-            // that came round while it stayed open adds nothing to do today.
-            Some(latest) => out.push(latest),
-            None => out.extend(current),
+        let carried = carried.into_iter().max_by_key(|(i, _)| close_of(i));
+        match current.into_iter().max_by_key(|(i, _)| close_of(i)) {
+            // Today's occurrence is the one to work on; the older miss it
+            // stands for lends it §5.3's overdue badge.
+            Some((inst, mut info)) => {
+                if let Some((older, older_info)) = carried {
+                    info.overdue = true;
+                    info.mandatory = info.mandatory || older_info.mandatory;
+                    info.carried_from = older_info
+                        .carried_from
+                        .or_else(|| close_of(&older).map(|c| c.date()));
+                }
+                out.push((inst, info));
+            }
+            // No occurrence today: the carried instance is the obligation.
+            None => out.extend(carried),
         }
     }
     out

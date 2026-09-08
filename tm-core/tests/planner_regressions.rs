@@ -883,7 +883,9 @@ fn a_persisted_routine_is_not_planned_twice_in_one_day() {
         .collect();
     assert_eq!(laundry.len(), 1, "one laundry: {laundry:?}\n{}", timeline(&day));
 
-    // The one that survives is last week's missed window: §5.3's overdue,
+    // The one that survives is keyed on *today's* occurrence — the newest,
+    // so `tm routine done laundry` discharges the whole carry in one go —
+    // while carrying last week's missed window with it: §5.3's overdue,
     // mandatory instance, which §7.2 puts at `p = 0`.
     let seg = day
         .segments
@@ -892,8 +894,9 @@ fn a_persisted_routine_is_not_planned_twice_in_one_day() {
         .expect("laundry is placed");
     assert_eq!(
         seg.instance.map(|k| k.to_string()).as_deref(),
-        Some("2026-08-31")
+        Some("2026-09-07")
     );
+    assert!(seg.flags.mandatory, "still §5.2 mandatory: {:?}", seg.flags);
     let ps: Vec<u8> = day
         .priorities
         .iter()
@@ -908,4 +911,67 @@ fn a_persisted_routine_is_not_planned_twice_in_one_day() {
 fn the_fixtures_plan_in_the_configured_zone() {
     let fx = load("plan-home-day");
     assert_eq!(fx.cfg.tz, TZ);
+}
+
+// ---------------------------------------------------------------------------
+// §5.1 / §8.2 steps 2 and 6: a routine stays inside its daily window
+// ---------------------------------------------------------------------------
+
+/// `win:HH:MM-HH:MM` is the daily window on the date (§5.1). An occurrence
+/// that spans several days — `every:week`, `after-done:2d~1d` — reports one
+/// span covering all of them (`2026-09-07T10:00 .. 2026-09-13T20:00` for the
+/// weekly groceries), and the planner used to clip that to today alone, which
+/// leaves 00:00–24:00: the routine was then placed anywhere left in the day.
+#[test]
+fn a_multi_day_occurrence_keeps_its_daily_hours() {
+    let fx = load_with_log("plan-basic", Some(BASIC_LOG));
+    let state = basic_state();
+
+    // 20:00, after `groceries win:10:00-20:00 every:week` has closed for the
+    // day: it must not be placed at all, never at 20:20.
+    let evening = planner::plan(&fx.input(&state, at("2026-09-07", 20, 0)));
+    for seg in &evening.segments {
+        if seg.item.as_ref() == Some(&Id::new("groceries")) {
+            panic!(
+                "groceries placed outside its 10:00–20:00 window\n{}",
+                timeline(&evening)
+            );
+        }
+    }
+
+    // Earlier the same evening, `laundry win:09:00-21:00` may still be placed
+    // — but only before 21:00.
+    let late = planner::plan(&fx.input(&state, at("2026-09-07", 17, 50)));
+    for seg in &late.segments {
+        if seg.item.as_ref() == Some(&Id::new("laundry")) {
+            assert!(
+                seg.end <= at("2026-09-07", 21, 0),
+                "laundry ends after its window closes\n{}",
+                timeline(&late)
+            );
+        }
+    }
+
+    // And a window that has not opened yet still holds the routine back:
+    // `vitamins win:07:00-11:00 after-done:2d` at 05:00.
+    let recur = load("plan-recur");
+    let early_state = RuntimeState {
+        date: Some(date("2026-09-07")),
+        wake: Some(time(4, 30)),
+        arrival: Some(time(5, 0)),
+        loc: Some("lounge".to_string()),
+        window: Some((time(5, 0), time(14, 0))),
+        budget: Some(6),
+        ..RuntimeState::default()
+    };
+    let dawn = planner::plan(&recur.input(&early_state, at("2026-09-07", 5, 0)));
+    for seg in &dawn.segments {
+        if seg.item.as_ref() == Some(&Id::new("vitamins")) {
+            assert!(
+                seg.start >= at("2026-09-07", 7, 0),
+                "vitamins placed before its window opens\n{}",
+                timeline(&dawn)
+            );
+        }
+    }
 }

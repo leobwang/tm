@@ -27,7 +27,7 @@ expression: schema(&json)
   "next": [
     {
       "end": "string",
-      "energy": "null",
+      "energy": "integer",
       "item": "string",
       "kind": "string",
       "mark": "string",

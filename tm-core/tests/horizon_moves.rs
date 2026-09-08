@@ -359,6 +359,48 @@ fn readopt_defaults_to_the_current_week() {
     assert!(line_of(&store, NEXT_WEEK, "m2").unwrap().starts_with("- [ ] "));
 }
 
+/// §4.1: ids are global. `tm readopt ^m2` into the week that already holds a
+/// live `^m2` — the shape §4.3's own example tree ships, a `[ ]` milestone
+/// beside its `[-]` archive copy under `month/…# Demoted` — used to move the
+/// copy in anyway, leaving the id twice in one file and `tm check` at exit 2.
+#[test]
+fn readopt_into_a_week_that_already_has_the_item_absorbs_the_archive_copy() {
+    let (_dir, store) = plan();
+    let before_week = text(&store, WEEK);
+    let (files, tree) = snapshot(&store);
+    // 2026-09-07 is in W37, the week the live `^m2` is in.
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-07T09:00:00-05:00"));
+    let moved = readopt(&cx, &id("m2"), None).unwrap();
+
+    assert_eq!(moved.from, MONTH);
+    assert_eq!(moved.to, WEEK);
+    // One `^m2` in the week …
+    assert_eq!(text(&store, WEEK).matches("^m2").count(), 1);
+    // … carrying the stamp the archive copy held (§11's demotion churn).
+    let line = line_of(&store, WEEK, "m2").unwrap();
+    assert!(line.starts_with("- [ ] "), "{line}");
+    assert!(line.contains("demoted:W37"), "{line}");
+    // … and the archive copy is gone, its heading kept.
+    assert!(line_of(&store, MONTH, "m2").is_none());
+    assert!(text(&store, MONTH).contains("# Demoted"));
+    assert_eq!(log_events(&store), vec![("readopt".to_string(), "m2".to_string())]);
+
+    // The rest of the week file is untouched.
+    let after = text(&store, WEEK);
+    for line in before_week.lines().filter(|l| !l.contains("^m2")) {
+        assert!(after.contains(line), "lost `{line}`");
+    }
+
+    // And the tree has one node for the id: `tm check` is clean.
+    let (files, tree) = snapshot(&store);
+    assert_eq!(
+        files.items().filter(|i| Tree::key_of(i) == id("m2")).count(),
+        1
+    );
+    assert_eq!(tree.get(&id("m2")).unwrap().state, State::Todo);
+    assert!(tree.problems().is_empty(), "{:?}", tree.problems());
+}
+
 // ---------------------------------------------------------------------------
 // drop / rank (§13)
 // ---------------------------------------------------------------------------
@@ -374,6 +416,46 @@ fn drop_sets_the_state_where_the_line_lives() {
     assert_eq!(line_of(&store, WEEK, "t5").as_deref(), Some(line.as_str()));
     only_changed(&before, &tree_text(&store), &[WEEK]);
     assert_eq!(log_events(&store), vec![("drop".to_string(), "t5".to_string())]);
+}
+
+/// §1.3: writers address items by id, and the line a reader resolves an id to
+/// must be the line a writer rewrites.
+///
+/// After a demotion the id names two `[-]` lines — the archive in the week
+/// file and the stamped copy under `month/…# Demoted`. `Tree::get` ranked the
+/// most-stamped copy as the record while `Store::write_line` took the first
+/// match outside a `# Demoted` section, so `tm edit ^id` read the month copy
+/// and wrote its text into the week line, which then gained the month copy's
+/// `est:` and `demoted:` tokens while the record itself stayed unchanged.
+#[test]
+fn a_demoted_id_reads_and_writes_the_same_copy() {
+    let (_dir, store) = plan();
+    let (files, tree) = snapshot(&store);
+    let cx = Ctx::new(&store, &files, &tree, at("2026-09-08T09:00:00-05:00"));
+    demote(&cx, &id("m1")).unwrap();
+
+    let week_before = line_of(&store, WEEK, "m1").unwrap();
+    let month_before = line_of(&store, MONTH, "m1").unwrap();
+    assert!(week_before.starts_with("- [-] "), "{week_before}");
+    assert!(month_before.contains("demoted:W37"), "{month_before}");
+
+    // The record — what a reader resolves `^m1` to.
+    let (files, tree) = snapshot(&store);
+    let record = tree.get(&id("m1")).unwrap().line_text();
+    assert_eq!(record, month_before, "the month copy is the record");
+
+    // An id-addressed write — `Store::write_line`, with no file named, which
+    // is what every `tm edit ^id` goes through — rewrites *that* line.
+    let edited = record.replace("- [-] 5 ", "- [-] 2 ");
+    assert_ne!(edited, record);
+    store.write_line(&id("m1"), &edited).unwrap();
+    assert_eq!(
+        line_of(&store, WEEK, "m1").as_deref(),
+        Some(week_before.as_str()),
+        "the week archive was rewritten from the other copy"
+    );
+    assert_eq!(line_of(&store, MONTH, "m1").as_deref(), Some(edited.as_str()));
+    let _ = &files;
 }
 
 #[test]

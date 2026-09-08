@@ -148,7 +148,7 @@ use crate::capacity::{self, DayCapacity, EnergyCtx, Slot, Wall, WallsByDate};
 use crate::config::Config;
 use crate::energy::{self, Model, Posterior};
 use crate::log::{Log, Replay, SegmentKind};
-use crate::model::{Dep, Id, InstanceKey, Loc, Pref, Shape};
+use crate::model::{Dep, Horizon, Id, InstanceKey, Loc, Pref, Shape};
 use crate::priority::{self, Candidate, Ineligible, Prio};
 use crate::store::RuntimeState;
 use crate::tree::Tree;
@@ -389,6 +389,13 @@ pub struct SegFlags {
     pub multiplier: Option<f64>,
     /// Free text for the timeline's trailing note (`due today`, `↓ slot 4,
     /// item 3`).
+    ///
+    /// It is the **note column** only, so it never repeats what another
+    /// column of §4.3's row already prints: not the item's title (that is the
+    /// title cell, and `emit` builds `lunch 30m` / `wind-down · bed 22:00`
+    /// from the segment itself) and not a finished block's actual (that is
+    /// the `(actual)` cell). A renderer prints it verbatim, so a title here
+    /// shows up twice on the row.
     pub note: Option<String>,
 }
 
@@ -698,7 +705,6 @@ struct WallSeg {
 #[derive(Clone, Debug)]
 struct RoutineInst {
     id: Id,
-    title: String,
     instance: Option<InstanceKey>,
     /// The span it may be placed in.
     span: (DateTime<Tz>, DateTime<Tz>),
@@ -1220,15 +1226,28 @@ impl<'a> Planner<'a> {
             // in the day (§5.3: it is still mandatory today) — but a `win:`
             // with a daily range keeps its hours: laundry carried from last
             // week is still a 09:00–21:00 job.
+            //
+            // So does an occurrence that has *not* closed. §5.1: `win:` is the
+            // daily window on the date. An occurrence that spans several days
+            // (`every:week`, `after-done:2d~1d`) reports one span covering all
+            // of them — 2026-09-07T09:00..2026-09-13T21:00 for a weekly
+            // 09:00–21:00 chore — and clipping that to today alone would leave
+            // 00:00–24:00, letting §8.2 steps 2 and 6 place the routine hours
+            // outside its stated window.
+            let hours = self.daily_window(&c.id);
             let span = if we <= self.now {
-                let (a, b) = self.daily_window(&c.id).unwrap_or((self.day_start, self.day_end));
+                let (a, b) = hours.unwrap_or((self.day_start, self.day_end));
                 (a.max(self.now).max(self.day_start), b.max(self.now))
             } else {
-                (ws.max(self.day_start), we.min(self.day_end))
+                let (mut a, mut b) = (ws.max(self.day_start), we.min(self.day_end));
+                if let Some((ha, hb)) = hours {
+                    a = a.max(ha);
+                    b = b.min(hb);
+                }
+                (a, b)
             };
             let inst = RoutineInst {
                 id: c.id.clone(),
-                title: c.title.clone(),
                 instance: c.instance,
                 span,
                 dur_min,
@@ -1683,21 +1702,37 @@ impl<'a> Planner<'a> {
             });
         }
 
-        // Routines.
+        // Routines — and the Window-shaped *tasks* step 2 places the same way.
+        //
+        // §4.3 draws the two differently: a `routines.md` / `optional.md` line
+        // is the day's furniture and takes the `·` glyph (`11:20 ·  lunch
+        // 30m`), while `^a3`'s `Pick up package win:… dur:20m` is a backlog
+        // item on §7's scale and keeps its `ci`, its `pN` and its `⚠`
+        // (`15:10  1 p0 ⚠  Pick up package  20m  due today`). The segment says
+        // which by carrying an `energy` (and `hot` at `p = 0`) or not.
         for r in routines {
             let Some((start, end)) = r.placed else { continue };
+            let item = self.input.tree.get(&r.id);
+            let scheduled =
+                item.is_some_and(|i| !matches!(i.horizon, Horizon::Routine | Horizon::Optional));
+            let energy = if scheduled { item.map(|i| i.ci) } else { None };
+            let hot = scheduled
+                && cands
+                    .iter()
+                    .position(|c| c.id == r.id)
+                    .is_some_and(|i| prios[i].p == 0);
             out.push(Segment {
                 start,
                 end,
                 kind: SegKind::Routine,
-                energy: None,
+                energy,
                 item: Some(r.id.clone()),
                 instance: r.instance,
                 flags: SegFlags {
                     mandatory: r.mandatory,
                     deferred: r.deferred,
+                    hot,
                     planned_min: Some(r.dur_min),
-                    note: Some(r.title.clone()),
                     ..SegFlags::default()
                 },
             });
@@ -1798,7 +1833,6 @@ impl<'a> Planner<'a> {
                 instance: c.instance,
                 flags: SegFlags {
                     planned_min: Some(want),
-                    note: Some(c.title.clone()),
                     ..SegFlags::default()
                 },
             });
@@ -1838,10 +1872,7 @@ impl<'a> Planner<'a> {
                 energy: None,
                 item: None,
                 instance: None,
-                flags: SegFlags {
-                    note: Some(format!("wind-down · bed {}", self.cfg.day.bed.format("%H:%M"))),
-                    ..SegFlags::default()
-                },
+                flags: SegFlags::default(),
             });
         }
         let sleep_start = self.bed.max(self.now).min(self.day_end);
@@ -1914,14 +1945,10 @@ impl<'a> Planner<'a> {
             if end <= start {
                 continue;
             }
-            let minutes = (end - start).num_minutes().max(0) as u32;
             let (kind, item, instance, note) = match &seg.kind {
-                SegmentKind::Block { id } => (
-                    SegKind::Block,
-                    Some(Id::new(id.clone())),
-                    None,
-                    Some(format!("{minutes}m")),
-                ),
+                SegmentKind::Block { id } => {
+                    (SegKind::Block, Some(Id::new(id.clone())), None, None)
+                }
                 SegmentKind::Pause { id } => (
                     SegKind::Lost,
                     Some(Id::new(id.clone())),
@@ -2170,6 +2197,12 @@ fn occupied_now(
 /// itself inserted is not a context switch, and counting it as one would make
 /// every `atomic` item longer than `break_after_blocks × block_min`
 /// unplaceable on any day.
+///
+/// The test is the spec's, and only the spec's: **free slots**, not slots the
+/// day's remaining budget can pay for. Bounding the run by the budget instead
+/// would break §8.3's tail-drop invariant — shrinking the budget by one block
+/// makes a non-splittable item skip its slot and a *different* candidate take
+/// it, which is a re-shuffle rather than the removal of a suffix.
 fn contiguous_fits(
     slots: &[Slot],
     assign: &[Option<usize>],

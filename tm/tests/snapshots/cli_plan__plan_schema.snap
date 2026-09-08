@@ -51,7 +51,7 @@ expression: schema(&json)
   "segments": [
     {
       "end": "string",
-      "energy": "null",
+      "energy": "integer",
       "item": "string",
       "kind": "string",
       "mark": "string",

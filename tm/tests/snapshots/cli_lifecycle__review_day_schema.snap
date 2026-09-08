@@ -3,34 +3,108 @@ source: tm/tests/cli_lifecycle.rs
 expression: schema(&json)
 ---
 {
-  "block_min": "integer",
-  "blocks": "integer",
-  "churn": [],
-  "days": [
-    {
-      "block_min": "integer",
-      "blocks": "integer",
-      "date": "string",
-      "done": [
+  "key": "string",
+  "period": "string",
+  "review": {
+    "adherence": {
+      "completed": "integer",
+      "completed_pct": "integer",
+      "missed": [
         "string"
       ],
-      "leak_min": "integer",
-      "load": "number",
-      "lost_min": "integer"
-    }
-  ],
-  "energy_bias": "number",
-  "energy_mae": "number",
-  "estimates": [
-    {
-      "multiplier": "number",
-      "n": "integer",
-      "tag": "string"
-    }
-  ],
-  "key": "string",
-  "leak_min": "integer",
-  "lost_min": "integer",
-  "period": "string",
+      "planned": "integer",
+      "started_on_time": "integer",
+      "started_pct": "integer"
+    },
+    "arrive_to_start_min": "integer",
+    "block_len_min": "integer",
+    "block_min": "integer",
+    "blocks_done": "integer",
+    "breaks": {
+      "actual_min": "integer",
+      "breaks": [],
+      "by_where": {},
+      "over_count": "integer",
+      "over_share": "null",
+      "planned_min": "integer"
+    },
+    "budget": "integer",
+    "date": "string",
+    "demoted": [],
+    "done": [
+      "string"
+    ],
+    "drift_min": "integer",
+    "energy": {
+      "bias": "number",
+      "by_hour": [
+        [
+          "integer"
+        ]
+      ],
+      "flip_hour": "null",
+      "hours": [
+        {
+          "hour": "integer",
+          "pred": "integer",
+          "rep": "integer"
+        }
+      ],
+      "mae": "number",
+      "mae_learned": "number",
+      "mae_prior": "number",
+      "n": "integer"
+    },
+    "estimates": [
+      {
+        "mean_ratio": "number",
+        "multiplier": "number",
+        "n": "integer",
+        "recent_ratio": "number",
+        "tag": "string"
+      }
+    ],
+    "leak": {
+      "attributed_min": "integer",
+      "gap_min": "integer",
+      "longest_min": "integer",
+      "total_min": "integer"
+    },
+    "load": "number",
+    "load_blocks": "number",
+    "loc": "string",
+    "lost_min": "integer",
+    "lost_note": "null",
+    "mix": {
+      "budget_min": "integer",
+      "high_min": "integer",
+      "high_share": "integer",
+      "minutes_by_ci": [
+        "integer"
+      ],
+      "total_min": "integer",
+      "underused": "integer"
+    },
+    "onset_min": "null",
+    "optional": {
+      "cap_min": "null",
+      "minutes": "integer",
+      "outside_rest_min": "integer"
+    },
+    "plan_honesty": "number",
+    "replans": "integer",
+    "rest_debt_min": "integer",
+    "slept_min": "integer",
+    "tomorrow": [
+      {
+        "id": "string",
+        "note": "string"
+      }
+    ],
+    "wake_to_arrive_min": "integer",
+    "window": [
+      "string"
+    ]
+  },
   "wrote": "null"
 }

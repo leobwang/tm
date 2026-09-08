@@ -17,7 +17,7 @@ tm check --json                # the tree must be clean before you propose anyth
 
 ```
 tm plan --week --json → week days[].date days[].total days[].minutes_at_level grid
-tm review week --json → key blocks block_min leak_min lost_min days[].date days[].blocks days[].done estimates[].tag estimates[].multiplier energy_mae churn
+tm review week --json → key review.blocks_done review.block_min review.load review.blocks_per_day[] review.hit review.demoted review.planned_blocks review.carry_in_min review.carry_out_min review.mix.high_share review.estimates[].tag review.estimates[].multiplier review.deadline_health.min_slack_days review.deadline_health.hot review.deadline_health.impossible review.lounge.overall
 ```
 
 Then read, in this order: `month/<this month>.md` (outcomes with `!k`, and

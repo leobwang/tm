@@ -18,9 +18,11 @@
 //!   [`App::new`] plans from `now`; [`App::with_plan`] takes a plan as given
 //!   (tests); [`App::replan`] recomputes it — §9's "one keystroke changes one
 //!   fact, `plan()` reruns from `now`".
-//! * [`Screen`] — §12's five screens. Screens 2–5 are the queue agent's;
-//!   this module defines the enum and routes their keys to their own
-//!   `Action`s so both halves compile against one `App`.
+//! * [`Screen`] — §12's five screens. Screens 2–5 live in their own modules
+//!   ([`super::queue`], [`super::necessities`], [`super::review`],
+//!   [`super::inbox`]); this module owns the enum, holds each screen's cursor
+//!   and hands them §12.6's keys ([`Action::ScreenKey`]), turning what they
+//!   ask for into [`Effect`]s.
 //! * [`Mode`] — what the next keystroke means: normal, the `b` break-where
 //!   chord, the `0` energy report, the `:` command line, a one-line text
 //!   input (`n` note, `l` location) or the `?` help overlay.
@@ -54,7 +56,7 @@ use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveTime, Timelike};
 use chrono_tz::Tz;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use tm_core::capacity::{self, EnergyCtx};
+use tm_core::capacity::{self, DayCapacity, EnergyCtx};
 use tm_core::config::Config;
 use tm_core::emit;
 use tm_core::energy::{self, Model, Posterior};
@@ -62,11 +64,16 @@ use tm_core::horizon::MIN_REMAINING_MIN;
 use tm_core::log::{Log, Replay};
 use tm_core::model::{Id, IsoWeek, Loc, Recur};
 use tm_core::planner::{self, DayPlan, PlanInput, PlanOverrides, SegFlags, SegKind, Segment};
-use tm_core::priority::PrioClass;
+use tm_core::priority::{Candidate, Prio, PrioClass};
 use tm_core::recur;
 use tm_core::review::{self, PlannedBlock, StatusHead, StatusLine};
-use tm_core::store::RuntimeState;
+use tm_core::store::{PlanFiles, RuntimeState};
 use tm_core::tree::Tree;
+
+use super::inbox;
+use super::necessities;
+use super::queue;
+use super::review as review_screen;
 
 /// §12's five screens.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -136,20 +143,27 @@ pub enum Mode {
 }
 
 /// What a [`Mode::Input`] is collecting.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InputKind {
     /// `n` — a note for the day file's `## Log` and the §10.1 `note` event.
     Note,
     /// `l` — the current location (§9: `runtime.loc`, §16's `home_max_ci`).
     Location,
+    /// A value one of §12.6's screen keys asked for: `a` add, `c` ci, `E`
+    /// estimate, `P` priority (§12.2).
+    Screen(queue::Prompt),
 }
 
 impl InputKind {
     /// The prompt shown in front of the input.
-    pub fn label(self) -> &'static str {
+    pub fn label(&self) -> &'static str {
         match self {
             InputKind::Note => "note",
             InputKind::Location => "location",
+            InputKind::Screen(queue::Prompt::Add { .. }) => "add",
+            InputKind::Screen(queue::Prompt::Ci(_)) => "ci 0-5",
+            InputKind::Screen(queue::Prompt::Estimate(_)) => "est",
+            InputKind::Screen(queue::Prompt::Priority(_)) => "!k",
         }
     }
 }
@@ -274,8 +288,15 @@ pub enum Action {
     Backspace,
     /// An answer to the pending prompt (§9.1, §9.2).
     Answer(Answer),
-    // screens 2-5: added by the queue agent — their rows of §12.6 (`h`/`l`
-    // panes, `J`/`K` reorder, `a c E P D A x t`) become variants here.
+    /// A key for the screen in front of the Today screen: §12.6's `queue`
+    /// row (`h l j k J K Enter`, `a c E P D A x`), its `necessities` row
+    /// (`E t k e`), §12.4's `h l j k w c` and §12.5's capture line.
+    ///
+    /// The screen modules own those keys and their state, so the key itself
+    /// travels and [`App::apply`] hands it to the module. A key the module
+    /// does not want comes back as [`queue::Action::Ignored`] and falls
+    /// through to the global row.
+    ScreenKey(KeyEvent),
 }
 
 /// A side effect the driver performs (§12: "every action goes through the
@@ -295,6 +316,10 @@ pub enum Effect {
     Note(String),
     /// Set `runtime.loc` (§9's location change, §12.6's `l`).
     SetLocation(String),
+    /// A §12.2/§12.5 file change the shell performs directly: `J`/`K`'s
+    /// byte-faithful reorder ([`queue::apply_reorder`]) and the `inbox.md`
+    /// line a triaged capture consumes.
+    Mutate(Box<queue::Mutation>),
     /// Leave the TUI.
     Quit,
 }
@@ -450,7 +475,8 @@ pub struct EnergyPane {
 /// adherence denominator).
 ///
 /// The record holds a start and an item per block and nothing else, which is
-/// why the ghost blocks are sized from the tree when the row is built.
+/// why the ghost blocks are sized from the tree when the row is built
+/// ([`crate::cli::ghost`], which both frontends draw their ghost with).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ArrivalBlock {
     /// When the block was planned to start (local, on `state.date`).
@@ -476,6 +502,15 @@ pub struct AppData {
     /// `.tm/arrival_plan.json` — the block starts as `tm arrive` recorded
     /// them (§12.1's ghost row). Empty when the day has no record yet.
     pub arrival: Vec<ArrivalBlock>,
+    /// The parsed files behind the tree — §12.2's Queue reads front matter
+    /// and `inbox.md`'s raw lines through them.
+    pub files: PlanFiles,
+    /// Today's candidates (§6.2), in `priority::collect_candidates` order.
+    pub candidates: Vec<Candidate>,
+    /// Their priorities (§7), 1:1 with `candidates`.
+    pub prios: Vec<Prio>,
+    /// The §8.4 lookahead the EDF pass ran on.
+    pub caps: Vec<DayCapacity>,
     /// The instant the TUI is at, in `cfg.tz`.
     pub now: DateTime<Tz>,
 }
@@ -496,6 +531,14 @@ pub struct App {
     pub replay: Replay,
     /// The plan as `tm arrive` recorded it (`.tm/arrival_plan.json`).
     pub arrival: Vec<ArrivalBlock>,
+    /// The parsed files (§12.2's Queue and §12.5's Inbox read them).
+    pub files: PlanFiles,
+    /// Today's candidates (§6.2).
+    pub candidates: Vec<Candidate>,
+    /// Their priorities (§7).
+    pub prios: Vec<Prio>,
+    /// The §8.4 lookahead.
+    pub caps: Vec<DayCapacity>,
     /// Today's energy reports as §8.5's posterior correction.
     pub posterior: Posterior,
     /// `now`, in `cfg.tz` (§17.2: injected, never read from a clock here).
@@ -530,6 +573,14 @@ pub struct App {
     pub message: Option<String>,
     /// The day-bar tooltip (§12.1's hover).
     pub hover: Option<Hover>,
+    /// Screen 2's cursor (§12.2).
+    pub queue: queue::QueueState,
+    /// Screen 3's cursor (§12.3).
+    pub necessities: necessities::NecessitiesState,
+    /// Screen 4's cursor (§12.4).
+    pub review: review_screen::ReviewState,
+    /// Screen 5's capture buffer (§12.5).
+    pub capture: inbox::CaptureState,
     /// The open prompt (§9.1, §9.2).
     pub prompt: Option<Prompt>,
     /// When the overtime prompt was last raised or answered — §9.1's own
@@ -578,6 +629,10 @@ impl App {
             log: data.log,
             replay: data.replay,
             arrival: data.arrival,
+            files: data.files,
+            candidates: data.candidates,
+            prios: data.prios,
+            caps: data.caps,
             posterior,
             now: data.now,
             today,
@@ -597,6 +652,10 @@ impl App {
             week: WeekPane::default(),
             energy: EnergyPane::default(),
             screen: Screen::Today,
+            queue: queue::QueueState::new(),
+            necessities: necessities::NecessitiesState::new(),
+            review: review_screen::ReviewState::new(),
+            capture: inbox::CaptureState::new(),
             mode: Mode::Normal,
             selection: 0,
             selected_item: None,
@@ -1071,6 +1130,10 @@ impl App {
         self.log = data.log;
         self.replay = data.replay;
         self.arrival = data.arrival;
+        self.files = data.files;
+        self.candidates = data.candidates;
+        self.prios = data.prios;
+        self.caps = data.caps;
         self.now = data.now;
         self.today = data.now.date_naive();
         self.replan();
@@ -1413,8 +1476,8 @@ impl App {
                 Vec::new()
             }
             Action::Open => {
-                // screens 2-5: added by the queue agent — the Queue screen
-                // opens on `selected_item`.
+                // §12.2: `Enter` on a Today row drills into the Queue, whose
+                // panes open on the selected item.
                 if self.selected_item.is_some() {
                     self.screen = Screen::Queue;
                 }
@@ -1439,6 +1502,241 @@ impl App {
             }
             Action::Submit => self.submit(),
             Action::Answer(answer) => self.answer(answer),
+            Action::ScreenKey(key) => self.screen_key(key),
+        }
+    }
+
+    /// A [`queue::View`] over the current state — what §12.2, §12.3 and
+    /// §12.5 render from.
+    pub fn view(&self) -> queue::View<'_> {
+        App::view_of(
+            &self.tree,
+            &self.files,
+            &self.cfg,
+            &self.replay,
+            &self.candidates,
+            &self.prios,
+            &self.caps,
+            self.today,
+            self.now,
+        )
+    }
+
+    /// §12.4's three reviews, computed from the log the way `tm review` does
+    /// (§11 lives in `tm_core::review`, never here).
+    pub fn reviews(&self) -> review_screen::Reviews {
+        let extras = review::DayExtras {
+            plan_at_arrival: self.arrival_blocks(),
+            underused: self.plan.diagnostics.underused.len(),
+            budget: self.state.budget,
+            ..review::DayExtras::default()
+        };
+        review_screen::Reviews {
+            day: review::day_review(
+                &self.tree,
+                &self.replay,
+                &self.cfg,
+                &self.model,
+                self.today,
+                self.cfg.tz,
+                &extras,
+            ),
+            week: review::week_review(
+                &self.tree,
+                &self.replay,
+                &self.cfg,
+                &self.model,
+                IsoWeek::from_date(self.today),
+                self.cfg.tz,
+                &review::WeekExtras::default(),
+            ),
+            month: review::month_review(
+                &self.tree,
+                &self.replay,
+                &self.cfg,
+                tm_core::model::YearMonth::from_date(self.today),
+                self.cfg.tz,
+                &review::MonthExtras::default(),
+            ),
+        }
+    }
+
+    /// Hand a keystroke to the screen in front (§12.2–§12.5), then translate
+    /// what it asks for into [`Effect`]s. A key the screen ignores falls
+    /// through to §12.6's global row.
+    fn screen_key(&mut self, key: KeyEvent) -> Vec<Effect> {
+        let (action, selected) = match self.screen {
+            Screen::Queue => {
+                let view = App::view_of(
+                    &self.tree,
+                    &self.files,
+                    &self.cfg,
+                    &self.replay,
+                    &self.candidates,
+                    &self.prios,
+                    &self.caps,
+                    self.today,
+                    self.now,
+                );
+                let action = queue::on_key(&mut self.queue, &view, key);
+                // §12.2's cursor is what `e` and the Today screen pick up.
+                let selected = self.queue.selected(&view);
+                (action, selected)
+            }
+            Screen::Necessities => {
+                let view = App::view_of(
+                    &self.tree,
+                    &self.files,
+                    &self.cfg,
+                    &self.replay,
+                    &self.candidates,
+                    &self.prios,
+                    &self.caps,
+                    self.today,
+                    self.now,
+                );
+                let action = necessities::on_key(&mut self.necessities, &view, key);
+                let selected = self.necessities.selected(&view).map(|r| r.id);
+                (action, selected)
+            }
+            Screen::Inbox => {
+                let view = App::view_of(
+                    &self.tree,
+                    &self.files,
+                    &self.cfg,
+                    &self.replay,
+                    &self.candidates,
+                    &self.prios,
+                    &self.caps,
+                    self.today,
+                    self.now,
+                );
+                (inbox::on_key(&mut self.capture, &view, key), None)
+            }
+            Screen::Review => {
+                let reviews = self.reviews();
+                (review_screen::on_key(&mut self.review, &reviews, key), None)
+            }
+            Screen::Today => (queue::Action::Ignored, None),
+        };
+        if let Some(id) = selected {
+            self.selected_item = Some(id);
+        }
+        self.screen_action(action, key)
+    }
+
+    /// [`queue::View::new`] over borrowed parts, so a caller can keep a
+    /// disjoint `&mut` on the screen state beside it.
+    #[allow(clippy::too_many_arguments)]
+    fn view_of<'a>(
+        tree: &'a Tree,
+        files: &'a PlanFiles,
+        cfg: &'a Config,
+        replay: &'a Replay,
+        candidates: &'a [Candidate],
+        prios: &'a [Prio],
+        caps: &'a [DayCapacity],
+        today: NaiveDate,
+        now: DateTime<Tz>,
+    ) -> queue::View<'a> {
+        queue::View::new(tree, files, cfg, replay, candidates, prios, caps, today, now)
+    }
+
+    /// Turn one screen [`queue::Action`] into the shell's effects.
+    fn screen_action(&mut self, action: queue::Action, key: KeyEvent) -> Vec<Effect> {
+        match action {
+            queue::Action::Ignored => {
+                let global = match key.code {
+                    // §12.6: `r` is "replan" everywhere but the Today screen.
+                    KeyCode::Char('r') => Action::Replan,
+                    _ => global_key(key),
+                };
+                if global == Action::None {
+                    Vec::new()
+                } else {
+                    self.apply(global)
+                }
+            }
+            queue::Action::Redraw => Vec::new(),
+            queue::Action::Note(text) => self.note_msg(&text),
+            queue::Action::Edit { id, file } => {
+                match queue::edit_command(&self.cfg, &self.tree, &id, file.as_deref()) {
+                    Some(_) => match self.location_of(&id, file.as_deref()) {
+                        Some((file, line)) => vec![Effect::Editor { file, line }],
+                        None => self.note_msg("no line to open"),
+                    },
+                    None => self.note_msg("no line to open"),
+                }
+            }
+            queue::Action::Prompt(prompt) => {
+                self.mode = Mode::Input(InputKind::Screen(prompt));
+                self.input.clear();
+                Vec::new()
+            }
+            queue::Action::Mutate(m) => self.mutate(m),
+        }
+    }
+
+    /// The `file:line` of one item, preferring the copy the row was read from
+    /// (§6.3: a `# Demoted` archive line shares its id with the live one).
+    fn location_of(&self, id: &Id, file: Option<&str>) -> Option<(String, usize)> {
+        let node = self.tree.node(id)?;
+        match file {
+            Some(want) => self
+                .files
+                .files
+                .iter()
+                .find(|f| f.path == want)
+                .and_then(|f| {
+                    f.items()
+                        .find(|i| Tree::key_of(i) == *id)
+                        .map(|i| (f.path.clone(), i.src.line))
+                })
+                .or(Some((node.item.src.file.clone(), node.item.src.line))),
+            None => Some((node.item.src.file.clone(), node.item.src.line)),
+        }
+    }
+
+    /// §12.6's file-changing keys, each one a §13 verb (except `J`/`K`, whose
+    /// byte-faithful rewrite `queue::apply_reorder` performs).
+    fn mutate(&mut self, m: queue::Mutation) -> Vec<Effect> {
+        match m {
+            queue::Mutation::Reorder { .. } => vec![Effect::Mutate(Box::new(m))],
+            queue::Mutation::Demote(id) => {
+                vec![Effect::Verb(vec!["demote".into(), id.token()])]
+            }
+            queue::Mutation::Readopt(id) => {
+                vec![Effect::Verb(vec!["readopt".into(), id.token()])]
+            }
+            queue::Mutation::Drop(id) => vec![Effect::Verb(vec!["drop".into(), id.token()])],
+            queue::Mutation::Skip { item, .. } => {
+                vec![Effect::Verb(vec!["skip".into(), item.to_string()])]
+            }
+            queue::Mutation::Event { name, id } => {
+                let mut args = vec!["event".into(), name];
+                if let Some(id) = id {
+                    args.push(id.token());
+                }
+                vec![Effect::Verb(args)]
+            }
+            queue::Mutation::Capture {
+                ref text,
+                ref file,
+                ref section,
+                from_inbox,
+            } => {
+                let mut args = vec!["add".into(), text.clone(), "--to".into(), file.clone()];
+                if let Some(s) = section {
+                    args.push("--section".into());
+                    args.push(s.clone());
+                }
+                let mut out = vec![Effect::Verb(args)];
+                if from_inbox.is_some() {
+                    out.push(Effect::Mutate(Box::new(m)));
+                }
+                out
+            }
+            queue::Mutation::DropInboxLine { .. } => vec![Effect::Mutate(Box::new(m))],
         }
     }
 
@@ -1474,6 +1772,32 @@ impl App {
             }
             Mode::Input(InputKind::Note) if !text.is_empty() => vec![Effect::Note(text)],
             Mode::Input(InputKind::Location) if !text.is_empty() => vec![Effect::SetLocation(text)],
+            // §12.2's `a c E P`: each is one §13 verb with the typed value.
+            Mode::Input(InputKind::Screen(p)) if !text.is_empty() => match p {
+                queue::Prompt::Add { file, section } => {
+                    let mut args = vec!["add".into(), text, "--to".into(), file];
+                    if let Some(s) = section {
+                        args.push("--section".into());
+                        args.push(s);
+                    }
+                    vec![Effect::Verb(args)]
+                }
+                queue::Prompt::Ci(id) => vec![Effect::Verb(vec![
+                    "edit".into(),
+                    id.token(),
+                    format!("ci={text}"),
+                ])],
+                queue::Prompt::Estimate(id) => vec![Effect::Verb(vec![
+                    "edit".into(),
+                    id.token(),
+                    format!("est={text}"),
+                ])],
+                queue::Prompt::Priority(id) => vec![Effect::Verb(vec![
+                    "edit".into(),
+                    id.token(),
+                    format!("p={text}"),
+                ])],
+            },
             _ => Vec::new(),
         }
     }
@@ -1616,6 +1940,12 @@ fn text_key(key: KeyEvent) -> Action {
 }
 
 /// §12.6's global row plus the row of the screen in front.
+///
+/// The first five keys are the ones no screen may take (`1`–`5` `?` `:` `q`
+/// `R`). Everything else on screens 2–5 is offered to that screen first — its
+/// `h l j k J K Enter a c E P D A x t w` rows would otherwise be swallowed by
+/// the global `j`/`k`/`Enter`/`e` — and comes back through
+/// [`Action::ScreenKey`] to the global row when the screen does not want it.
 fn normal_key(screen: Screen, key: KeyEvent) -> Action {
     match key.code {
         KeyCode::Char(c @ '1'..='5') => {
@@ -1624,22 +1954,30 @@ fn normal_key(screen: Screen, key: KeyEvent) -> Action {
         KeyCode::Char('?') => return Action::Help,
         KeyCode::Char(':') => return Action::CommandLine,
         KeyCode::Char('q') => return Action::Quit,
-        KeyCode::Char('e') => return Action::Edit,
         KeyCode::Char('R') => return Action::Sync,
-        KeyCode::Char('j') | KeyCode::Down => return Action::SelectNext,
-        KeyCode::Char('k') | KeyCode::Up => return Action::SelectPrev,
-        KeyCode::Enter => return Action::Open,
-        KeyCode::Esc => return Action::Cancel,
         _ => {}
     }
-    match screen {
-        Screen::Today => today_key(key),
-        // screens 2-5: added by the queue agent — one `fn <screen>_key` each,
-        // dispatched here; `r` falls back to the global replan meanwhile.
-        _ => match key.code {
-            KeyCode::Char('r') => Action::Replan,
-            _ => Action::None,
-        },
+    if screen != Screen::Today {
+        return Action::ScreenKey(key);
+    }
+    match global_key(key) {
+        Action::None => today_key(key),
+        action => action,
+    }
+}
+
+/// §12.6's `global` row, minus the five keys [`normal_key`] resolves first
+/// and minus `r`, which the Today screen reads as "resume when interrupted"
+/// ([`today_key`]) and every other screen as the global replan
+/// ([`App::screen_action`]).
+fn global_key(key: KeyEvent) -> Action {
+    match key.code {
+        KeyCode::Char('e') => Action::Edit,
+        KeyCode::Char('j') | KeyCode::Down => Action::SelectNext,
+        KeyCode::Char('k') | KeyCode::Up => Action::SelectPrev,
+        KeyCode::Enter => Action::Open,
+        KeyCode::Esc => Action::Cancel,
+        _ => Action::None,
     }
 }
 

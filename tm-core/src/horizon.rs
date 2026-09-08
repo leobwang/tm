@@ -66,7 +66,9 @@
 //!   with `on_miss = persist` move to `backlog.md#Overdue` instead of being
 //!   demoted, exactly as written; dated intervals that are *not* past due —
 //!   the walls of §7.2: exams, meetings — are never demoted either (§6.3,
-//!   §5.3) and move, with their prep children, into the current week.
+//!   §5.3) and move, with their prep children, into the live planning week
+//!   (today's, or the week after the one being closed when that close is
+//!   running inside its own week).
 //!   Recurring items are never touched (§5.3), and neither are `[x] [-] [~]
 //!   [?]` lines.
 //! * **month**: unfinished outcomes and everything under `# Demoted` move to
@@ -335,8 +337,8 @@ pub struct CloseReport {
     /// (their remaining folded into that parent's `est:`).
     pub dropped_children: Vec<Id>,
     /// Walls — dated intervals (§7.2) — and their prep children, which a
-    /// week close never demotes (§6.3): they stay `[ ]` and, unless the week
-    /// being closed is the current one, move into it.
+    /// week close never demotes (§6.3): they stay `[ ]` and move into the
+    /// live planning week.
     pub carried: Vec<Id>,
     /// Items dropped by `tm close month --drop ^id`.
     pub dropped: Vec<Id>,
@@ -354,6 +356,29 @@ impl CloseReport {
             ..CloseReport::default()
         }
     }
+    /// Fold `earlier` in front of this report.
+    ///
+    /// §6.3's closes are idempotent, which means the *second* run of one
+    /// reports nothing. `Ctx::load` runs the §6.3 auto-close on the way in,
+    /// so an explicit `tm close week` for a period that has already ended
+    /// finds the work done and would otherwise print an all-empty report.
+    /// Absorbing what the auto-close did makes `tm close` say what the close
+    /// actually did, whichever run performed it.
+    pub fn absorb(&mut self, earlier: CloseReport) {
+        fn prepend<T>(mine: &mut Vec<T>, mut theirs: Vec<T>) {
+            theirs.append(mine);
+            *mine = theirs;
+        }
+        prepend(&mut self.moved, earlier.moved);
+        prepend(&mut self.demoted, earlier.demoted);
+        prepend(&mut self.reopened, earlier.reopened);
+        prepend(&mut self.dropped_children, earlier.dropped_children);
+        prepend(&mut self.carried, earlier.carried);
+        prepend(&mut self.dropped, earlier.dropped);
+        prepend(&mut self.overdue_to_backlog, earlier.overdue_to_backlog);
+        prepend(&mut self.notes, earlier.notes);
+    }
+
     /// True when nothing at all was written apart from the `close` event.
     pub fn is_empty(&self) -> bool {
         self.moved.is_empty()
@@ -936,11 +961,71 @@ fn write_demoted_copy(
 /// (the one under `month/…# Demoted`, else wherever the line is) into `to`
 /// — the current week by default — turning `[-]` back into `[ ]` and keeping
 /// its stamps. Logs `readopt`.
+///
+/// When the target already holds a **live** line with that id — the shape
+/// §4.3's own example tree ships, a `[ ]` week milestone beside its `[-]`
+/// archive copy under `month/…# Demoted` — moving the copy in would make the
+/// id a duplicate (§4.1: ids are global) and break `tm check`. The item is
+/// already where readopt wants it, so the archive copy is *absorbed*
+/// instead: its `demoted:` stamps join the live line and the copy is
+/// removed.
 pub fn readopt(cx: &Ctx, id: &Id, to: Option<&Horizon>) -> Result<Moved, HorizonError> {
     let current = Horizon::Week(IsoWeek::from_date(cx.today()));
     let to = to.unwrap_or(&current);
     let (from, item) = demoted_copy(cx, id)?;
+    let to_path = to.path();
+    let is_copy = item.state == State::Demoted || in_section(item, DEMOTED_SECTION);
+    if is_copy && from != to_path {
+        if let Some(moved) = absorb_into_live(cx, &from, &to_path, id, item)? {
+            return Ok(moved);
+        }
+    }
     move_line(cx, &from, id, item, to, None, true)
+}
+
+/// Fold the archive copy of `key` into the live line `to_path` already has,
+/// if it has one: the copy's stamps are merged onto that line and the copy is
+/// deleted. `None` when the target has no live line with that id, which is
+/// the ordinary readopt.
+fn absorb_into_live(
+    cx: &Ctx,
+    from: &str,
+    to_path: &str,
+    key: &Id,
+    copy: &Item,
+) -> Result<Option<Moved>, HorizonError> {
+    if !cx.store.exists(to_path) {
+        return Ok(None);
+    }
+    let parsed = cx.store.read_file(to_path)?;
+    let Some(live) = parsed.items().find(|i| {
+        Tree::key_of(i) == *key && i.state != State::Demoted && !in_section(i, DEMOTED_SECTION)
+    }) else {
+        return Ok(None);
+    };
+    let mut stamps: Vec<Stamp> = Vec::new();
+    for st in copy.stamps.demoted.iter().chain(&live.stamps.demoted) {
+        if !stamps.contains(st) {
+            stamps.push(*st);
+        }
+    }
+    if !stamps.is_empty() && stamps != live.stamps.demoted {
+        let value = stamp_value(&stamps);
+        let text = rewrite(live, key, |l| {
+            l.set_token("demoted", &value);
+            Ok(())
+        })?;
+        cx.store.write_line_in(Some(to_path), key, &text)?;
+    }
+    cx.store.remove_line_in(Some(from), key)?;
+    cx.log(Event::Readopt {
+        id: key.to_string(),
+    })?;
+    Ok(Some(Moved {
+        id: key.clone(),
+        from: from.to_string(),
+        to: to_path.to_string(),
+    }))
 }
 
 /// The copy of `id` to readopt: a `# Demoted` line in a month file if there
@@ -1266,12 +1351,20 @@ pub fn close_week(cx: &Ctx, week: IsoWeek) -> Result<CloseReport, HorizonError> 
         cx.store.remove_line_in(Some(week_path.as_str()), key)?;
         report.dropped_children.push(key.clone());
     }
-    // 3. Walls stay `[ ]` (§5.3) and move into the current week, which is the
-    //    horizon the planner still reads (§6.2) — unless that *is* this week.
-    let live = IsoWeek::from_date(cx.today());
+    // 3. Walls stay `[ ]` (§5.3) and move into the live planning week — the
+    //    horizon the planner still reads (§6.2). Closing *this* week (the
+    //    verb's documented default: `tm close week` on the Sunday) still
+    //    archives this file, so the walls go to the following week rather
+    //    than staying behind in an archive nothing plans from.
+    let today_week = IsoWeek::from_date(cx.today());
+    let live = if today_week.monday() > week.monday() {
+        today_week
+    } else {
+        week.next()
+    };
     for (key, _) in open.iter().filter(|(k, _)| carried.contains(k)) {
         report.carried.push(key.clone());
-        if live == week || !carry_forward.contains(key) {
+        if !carry_forward.contains(key) {
             continue;
         }
         let to_path = move_to(cx, &week_path, key, &Horizon::Week(live), None)?;
@@ -1506,18 +1599,30 @@ pub fn close_month(
 // auto_close (§13 "auto-run when overdue", §10.2 `state.closed`)
 // ---------------------------------------------------------------------------
 
+/// How many periods of one kind a single [`auto_close`] sweep will catch up
+/// on. A tree that has not been opened for a year should not spend the first
+/// command closing 365 days one at a time; the sweep closes the most recent
+/// [`AUTO_CLOSE_CATCHUP`] periods that still have a file and stamps the rest
+/// as closed. Wide enough for an ordinary holiday (two months of days, a
+/// quarter of weeks) — the case the stamp-without-running bug used to lose.
+pub const AUTO_CLOSE_CATCHUP: usize = 16;
+
 /// Run the closes that are due and have not run yet (§6.3: "runs
 /// automatically on the first command after the period ends; idempotent;
 /// recorded in `state.json`").
 ///
-/// Only the **last** unclosed period of each kind is closed — yesterday, the
-/// week before this one, the month before this one — never a backlog of
-/// them: closing a two-week-old week after this week's has been planned
-/// would demote lines that were readopted long ago, and the file it would
-/// write into is not the current one any more. A period whose file does not
-/// exist is recorded as closed without running. The three run finest-first
-/// (day, week, month) so a pinned item that lands in the week can still be
-/// demoted to the month in the same sweep; the tree is re-read between them.
+/// Every unclosed period of each kind is closed, oldest first — skip a week
+/// and its unfinished milestones are still demoted into the month, which is
+/// §0's "demotion, not deletion"; stamping a period closed without running
+/// it would strand them in a file the planner no longer reads. A period
+/// whose file does not exist is recorded as closed without running, and a
+/// first run (nothing in `state.closed`) closes only the last period of each
+/// kind — there is no history behind it to catch up on. The catch-up is
+/// capped at [`AUTO_CLOSE_CATCHUP`] periods per kind.
+///
+/// The kinds run finest-first (day, week, month) so a pinned item that lands
+/// in the week can still be demoted to the month in the same sweep; the tree
+/// is re-read before every close.
 ///
 /// `state.closed` is updated and `.tm/state.json` saved whenever anything
 /// ran, which is what makes the next command a no-op.
@@ -1531,9 +1636,10 @@ pub fn auto_close(
     let mut ran: Vec<ClosedPeriod> = Vec::new();
     let mut dirty = false;
 
-    // -- day: yesterday ------------------------------------------------------
-    if let Some(day) = today.pred_opt() {
-        if state.closed.day.is_none_or(|d| d < day) {
+    // -- day: every unclosed day up to yesterday -----------------------------
+    if let Some(last_day) = today.pred_opt() {
+        let due = catch_up(state.closed.day, last_day, |d| d.succ_opt());
+        for day in due {
             let week_path = Horizon::Week(IsoWeek::from_date(day)).path();
             let day_path = Horizon::Day(day).path();
             if store.exists(&day_path) || store.exists(&week_path) {
@@ -1553,39 +1659,39 @@ pub fn auto_close(
         }
     }
 
-    // -- week: the week before this one --------------------------------------
+    // -- week: every unclosed week up to the one before this ------------------
     let last_week = IsoWeek::from_date(today).prev();
-    if state.closed.week.is_none_or(|w| w < last_week) {
-        if store.exists(&Horizon::Week(last_week).path()) {
+    for week in catch_up(state.closed.week, last_week, |w| Some(w.next())) {
+        if store.exists(&Horizon::Week(week).path()) {
             let files = store.read_tree()?;
             let tree = files.tree();
             let cx = Ctx::new(store, &files, &tree, now);
-            let report = close_week(&cx, last_week)?;
+            let report = close_week(&cx, week)?;
             ran.push(ClosedPeriod {
                 period: Period::Week,
-                key: last_week.to_string(),
+                key: week.to_string(),
                 report,
             });
         }
-        state.closed.week = Some(last_week);
+        state.closed.week = Some(week);
         dirty = true;
     }
 
-    // -- month: the month before this one ------------------------------------
+    // -- month: every unclosed month up to the one before this ----------------
     let last_month = YearMonth::from_date(today).prev();
-    if state.closed.month.is_none_or(|m| m < last_month) {
-        if store.exists(&Horizon::Month(last_month).path()) {
+    for month in catch_up(state.closed.month, last_month, |m| Some(m.next())) {
+        if store.exists(&Horizon::Month(month).path()) {
             let files = store.read_tree()?;
             let tree = files.tree();
             let cx = Ctx::new(store, &files, &tree, now);
-            let report = close_month(&cx, last_month, &[])?;
+            let report = close_month(&cx, month, &[])?;
             ran.push(ClosedPeriod {
                 period: Period::Month,
-                key: last_month.to_string(),
+                key: month.to_string(),
                 report,
             });
         }
-        state.closed.month = Some(last_month);
+        state.closed.month = Some(month);
         dirty = true;
     }
 
@@ -1593,6 +1699,36 @@ pub fn auto_close(
         store.save_state(state)?;
     }
     Ok(ran)
+}
+
+/// The periods still to close, oldest first: everything after `closed` up to
+/// and including `last`, capped at the most recent [`AUTO_CLOSE_CATCHUP`].
+///
+/// `None` in `closed` is a tree with no close history — only `last` is due.
+/// An empty result means nothing is overdue.
+fn catch_up<T: Copy + Ord>(closed: Option<T>, last: T, next: impl Fn(T) -> Option<T>) -> Vec<T> {
+    let Some(closed) = closed else {
+        return vec![last];
+    };
+    if closed >= last {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut cur = closed;
+    while let Some(n) = next(cur) {
+        if n > last {
+            break;
+        }
+        out.push(n);
+        cur = n;
+    }
+    if out.len() > AUTO_CLOSE_CATCHUP {
+        // The oldest are dropped, not run: their files are long stale. They
+        // are still stamped closed by the loop that follows the last one it
+        // does run, because `state.closed` only ever moves forward.
+        out.drain(..out.len() - AUTO_CLOSE_CATCHUP);
+    }
+    out
 }
 
 /// The periods [`auto_close`] would close right now, without writing

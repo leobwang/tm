@@ -19,7 +19,7 @@ itself — you never write a timeline. These are the fields you may quote:
 
 ```
 tm plan --diff --json → date window budget_blocks blocks_done segments[].start segments[].kind segments[].item diff.had_previous diff.added diff.removed diff.moved diff.drift_min diagnostics.dropped_tail diagnostics.deferred diagnostics.impossible diagnostics.hot diagnostics.underused diagnostics.a_capacity_lost diagnostics.blocked diagnostics.waiting diagnostics.conflicts diagnostics.plan_honesty diagnostics.rest_debt_min diagnostics.notes
-tm review day --json → leak_min lost_min blocks
+tm review day --json → review.leak.total_min review.lost_min review.blocks_done
 ```
 
 ## 2. Say two sentences

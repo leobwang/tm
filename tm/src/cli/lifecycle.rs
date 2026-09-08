@@ -8,17 +8,21 @@
 //! * [`sync_cal`] / [`sync_calendar`] — §15: fetch the configured feeds and
 //!   write `calendar/<week>.md` for the three weeks of the window, keeping
 //!   `manual` lines. `tm arrive` calls [`sync_calendar`] directly.
-//! * [`review`] — §11's monitors for a day, week or month, computed from the
-//!   log replay; `--write` puts the text in the file's `tm:review` section.
-//!   (`review.rs` is still a stub, so the numbers are assembled here from
-//!   `log::Replay` and `energy.rs`; the JSON shape is the review's.)
+//! * [`review`] — §12.4's day, week and month reviews: every §11 monitor,
+//!   computed by `tm_core::review` and rendered by its `render_day` /
+//!   `render_week` / `render_month`, so the CLI, the §12.4 screen and §17
+//!   M8's hand-computed values are one set of numbers. `--write` puts the
+//!   same text in the file's `tm:review` section. The plan-dependent
+//!   monitors (adherence, the under-used count, the optional quota) need
+//!   today's plan and `.tm/arrival_plan.json`, so they are filled in only for
+//!   today ([`day_extras`]).
 //! * [`model`] — `--fit` rewrites `.tm/model.json` from the log, `--show`
 //!   prints it, `--compare` scores the stored model against a fresh fit
 //!   (§8.5).
 //! * [`log`] — `--tail`, `--since`, `--item` over `.tm/log.jsonl`.
 //! * [`undo`] — the compensating event and the reverted edit (§13).
 //! * [`check`] — `check.rs`, exit code 2 when the tree has errors.
-//! * [`tui`] — the §12 terminal UI, not built yet.
+//! * [`tui`] — the §12 terminal UI (all five screens).
 
 use chrono::{Duration, NaiveDate};
 use serde::Serialize;
@@ -28,13 +32,17 @@ use tm_core::energy::{self, Model};
 use tm_core::horizon::{self, CloseReport, REVIEW_BLOCK};
 use tm_core::ics;
 use tm_core::log::LogEntry;
+use tm_core::priority;
+use tm_core::review as core_review;
 use tm_core::model::{parse_date, Horizon, Id, IsoWeek, Period, YearMonth};
 use tm_core::store::{Store, MODEL_PATH};
 use tm_core::tree::Tree;
 
 use super::ctx::{Ctx, Globals};
+use super::ghost;
 use super::items::id_gen;
 use super::out::{emit, CliError};
+use super::planning;
 use super::undo as undo_stack;
 
 /// `tm close --json`.
@@ -53,11 +61,22 @@ pub fn close(g: &Globals, args: &super::CloseArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
     let period: Period = args.period.into();
     let rec = undo_stack::Recorder::start(&ctx, "close")?;
-    let (key, report) = match period {
+    // §6.3: the close "runs automatically on the first command after the
+    // period ends" — and this is that command. When the auto-close in
+    // `Ctx::load` has just closed a period of this kind, that is the period
+    // `tm close <kind>` means: closing today's week on the Monday after the
+    // last one ended would archive the week you are one day into.
+    let auto = ctx
+        .closed
+        .iter()
+        .find(|c| c.period == period)
+        .map(|c| c.key.clone());
+    let (key, mut report) = match period {
         Period::Day => {
-            let date = match &args.date {
-                Some(d) => parse_date(d)?,
-                None => ctx.today,
+            let date = match (&args.date, auto.as_deref()) {
+                (Some(d), _) => parse_date(d)?,
+                (None, Some(k)) => parse_date(k).unwrap_or(ctx.today),
+                (None, None) => ctx.today,
             };
             let r = horizon::close_day(&ctx.hz(), date)?;
             if ctx.state.closed.day.is_none_or(|d| d < date) {
@@ -66,9 +85,12 @@ pub fn close(g: &Globals, args: &super::CloseArgs) -> Result<i32, CliError> {
             (date.to_string(), r)
         }
         Period::Week => {
-            let week = match &args.date {
-                Some(d) => IsoWeek::parse(d)?,
-                None => IsoWeek::from_date(ctx.today),
+            let week = match (&args.date, auto.as_deref()) {
+                (Some(d), _) => IsoWeek::parse(d)?,
+                (None, Some(k)) => {
+                    IsoWeek::parse(k).unwrap_or_else(|_| IsoWeek::from_date(ctx.today))
+                }
+                (None, None) => IsoWeek::from_date(ctx.today),
             };
             let r = horizon::close_week(&ctx.hz(), week)?;
             if ctx.state.closed.week.is_none_or(|w| w < week) {
@@ -77,9 +99,12 @@ pub fn close(g: &Globals, args: &super::CloseArgs) -> Result<i32, CliError> {
             (week.to_string(), r)
         }
         Period::Month => {
-            let month = match &args.date {
-                Some(d) => YearMonth::parse(d)?,
-                None => YearMonth::from_date(ctx.today),
+            let month = match (&args.date, auto.as_deref()) {
+                (Some(d), _) => YearMonth::parse(d)?,
+                (None, Some(k)) => {
+                    YearMonth::parse(k).unwrap_or_else(|_| YearMonth::from_date(ctx.today))
+                }
+                (None, None) => YearMonth::from_date(ctx.today),
             };
             let drops: Vec<Id> = args.drop.iter().map(|d| Ctx::key(d)).collect();
             let r = horizon::close_month(&ctx.hz(), month, &drops)?;
@@ -89,6 +114,19 @@ pub fn close(g: &Globals, args: &super::CloseArgs) -> Result<i32, CliError> {
             (month.to_string(), r)
         }
     };
+    // §6.3's closes are idempotent and `Ctx::load` ran the auto-close on the
+    // way in, so a `tm close <period>` for a period that has already ended
+    // usually finds its own work already done. Report what that run did:
+    // otherwise the verb prints `0 moved · 0 demoted` over a tree it did in
+    // fact rewrite, and `--json` hands §14's Claude Code an empty report.
+    if let Some(auto) = ctx
+        .closed
+        .iter()
+        .find(|c| c.period == period && c.key == key)
+        .cloned()
+    {
+        report.absorb(auto.report);
+    }
     ctx.save_state()?;
     ctx.reload()?;
     rec.finish(&ctx, format!("close {} {key}", horizon::period_name(period)))?;
@@ -210,23 +248,19 @@ pub fn sync_cal(g: &Globals) -> Result<i32, CliError> {
     Ok(0)
 }
 
-/// One day's numbers in a review (§11, §12.4).
-#[derive(Clone, Debug, Default, Serialize)]
-pub struct ReviewDay {
-    /// The date.
-    pub date: String,
-    /// Blocks done.
-    pub blocks: u32,
-    /// Block minutes.
-    pub block_min: u32,
-    /// Σ block_min × ci / 5 (§11).
-    pub load: f64,
-    /// Minutes attributed `leak`.
-    pub leak_min: u32,
-    /// Minutes lost to interruptions.
-    pub lost_min: u32,
-    /// Items finished.
-    pub done: Vec<String>,
+/// `tm review --json`: the §12.4 review itself, whichever period was asked
+/// for. Untagged, so the JSON is the [`DayReview`]/[`WeekReview`]/
+/// [`MonthReview`] object §14's `/review-day` and `/review-week` skills read;
+/// `period` beside it says which.
+#[derive(Clone, Debug, Serialize)]
+#[serde(untagged)]
+pub enum ReviewBody {
+    /// §12.4's day review.
+    Day(Box<core_review::DayReview>),
+    /// §12.4's week review.
+    Week(Box<core_review::WeekReview>),
+    /// §12.4's month review.
+    Month(Box<core_review::MonthReview>),
 }
 
 /// `tm review --json`.
@@ -234,144 +268,189 @@ pub struct ReviewDay {
 pub struct ReviewOut {
     /// `day`, `week` or `month`.
     pub period: String,
-    /// The period reviewed.
+    /// The period reviewed (`2026-09-07`, `2026-W37`, `2026-09`).
     pub key: String,
-    /// Per-day numbers (one row for a day review).
-    pub days: Vec<ReviewDay>,
-    /// Blocks done over the period.
-    pub blocks: u32,
-    /// Block minutes over the period.
-    pub block_min: u32,
-    /// Leak minutes over the period (§11's ledger).
-    pub leak_min: u32,
-    /// Lost minutes over the period.
-    pub lost_min: u32,
-    /// Energy calibration: MAE and bias of the logged predictions (§11).
-    pub energy_mae: Option<f64>,
-    /// Bias (mean `rep − pred`).
-    pub energy_bias: Option<f64>,
-    /// Estimate calibration per tag (§11).
-    pub estimates: Vec<TagOut>,
-    /// Items with ≥ 2 demotion stamps (§11's churn; month review).
-    pub churn: Vec<String>,
+    /// Every §11 monitor with a surface on that period.
+    pub review: ReviewBody,
     /// The file `--write` wrote to.
     pub wrote: Option<String>,
 }
 
-/// One tag's estimate calibration.
-#[derive(Clone, Debug, Serialize)]
-pub struct TagOut {
-    /// The tag.
-    pub tag: String,
-    /// How many observations.
-    pub n: usize,
-    /// The learned multiplier.
-    pub multiplier: f64,
+/// The plan-dependent half of §11's day monitors (adherence, the under-used
+/// count, tomorrow's first candidates, the optional quota, the budget).
+///
+/// Only *today* has a plan to read them from: §12.1's ghost row is
+/// `.tm/arrival_plan.json`, which is written at `tm arrive` and is for the
+/// current day only. Reviewing an earlier day gives what the log alone knows
+/// — `day_review` treats an empty `plan_at_arrival` as "no adherence
+/// denominator" rather than as 0%.
+fn day_extras(ctx: &Ctx, date: NaiveDate) -> core_review::DayExtras {
+    let mut extras = core_review::DayExtras {
+        budget: ctx.state.budget.filter(|_| ctx.state.date == Some(date)),
+        // §12.4's `lost 55m (call)` names what the day was lost *to*, which
+        // §10.1's `interrupt` event does not record (it carries the
+        // interrupted item, not the reason). Left unset rather than guessed.
+        lost_note: None,
+        ..core_review::DayExtras::default()
+    };
+    if date != ctx.today {
+        return extras;
+    }
+    let blocks = ghost::blocks(ctx);
+    extras.plan_at_arrival = blocks
+        .iter()
+        .filter_map(|b| {
+            Some(core_review::PlannedBlock::new(
+                b.id.clone()?,
+                tm_core::capacity::local_dt(ctx.cfg.tz, date, b.start),
+            ))
+        })
+        .collect();
+    let (plan, prios) = planning::build(ctx, false);
+    let (cands, _, _) = ctx.priorities(false);
+    extras.underused = plan.diagnostics.underused.len();
+    extras.optional = Some(optional_quota(&plan, &ctx.tree));
+    // §12.4's `tomorrow  first candidate t5 (after t4) · d1 p1 u=0.6`: the
+    // top-ranked candidates the day did not get to, with the reason each is
+    // where it is.
+    let planned: Vec<&Id> = plan.segments.iter().filter_map(|s| s.item.as_ref()).collect();
+    extras.tomorrow_first = priority::sorted(&prios, &cands)
+        .into_iter()
+        .filter(|id| !planned.contains(&id) && !ctx.replay.is_done(id.as_str()))
+        .take(3)
+        .map(|id| {
+            let note = prios.iter().find(|p| p.id == id).map(|p| match p.u {
+                Some(u) => format!("p{} u={u:.2}", p.p),
+                None => format!("p{}", p.p),
+            });
+            core_review::TomorrowCandidate::new(id, note.as_deref())
+        })
+        .collect();
+    extras
 }
 
-/// The dates a review covers.
-fn review_range(ctx: &Ctx, period: Period, date: Option<&str>) -> Result<(String, Vec<NaiveDate>), CliError> {
-    Ok(match period {
-        Period::Day => {
-            let d = match date {
-                Some(s) => parse_date(s)?,
-                None => ctx.today,
-            };
-            (d.to_string(), vec![d])
+/// §11's optional quota for a day: minutes the plan gives `optional.md`
+/// items, their `max:` cap, and how many of those minutes are outside a Rest
+/// slot (§8.2 step 7 puts optionals in Rest).
+fn optional_quota(plan: &tm_core::planner::DayPlan, tree: &Tree) -> core_review::OptionalQuota {
+    let mut quota = core_review::OptionalQuota::default();
+    let rest: Vec<(_, _)> = plan
+        .segments
+        .iter()
+        .filter(|s| matches!(s.kind, tm_core::planner::SegKind::Rest))
+        .map(|s| (s.start, s.end))
+        .collect();
+    for seg in plan
+        .segments
+        .iter()
+        .filter(|s| matches!(s.kind, tm_core::planner::SegKind::Optional))
+    {
+        quota.minutes += seg.minutes();
+        if !rest.iter().any(|(a, b)| *a <= seg.start && seg.end <= *b) {
+            quota.outside_rest_min += seg.minutes();
         }
-        Period::Week => {
-            let w = match date {
-                Some(s) => IsoWeek::parse(s)?,
-                None => IsoWeek::from_date(ctx.today),
-            };
-            (w.to_string(), w.dates().to_vec())
+        if let Some(cap) = seg
+            .item
+            .as_ref()
+            .and_then(|id| tree.get(id))
+            .and_then(|i| i.budget.cap.as_ref())
+        {
+            quota.cap_min = Some(quota.cap_min.unwrap_or(0) + cap.amount.minutes);
         }
-        Period::Month => {
-            let m = match date {
-                Some(s) => YearMonth::parse(s)?,
-                None => YearMonth::from_date(ctx.today),
-            };
-            let (from, to) = m.range();
-            let mut days = Vec::new();
-            let mut d = from;
-            while d <= to {
-                days.push(d);
-                d += Duration::days(1);
-            }
-            (m.to_string(), days)
-        }
-    })
+    }
+    quota
 }
 
 /// `tm review <day|week|month> [--write] [--date …]` (§11, §12.4).
+///
+/// The numbers are `tm_core::review`'s — the module §17 M8's hand-computed
+/// monitors verify — so the CLI, the §12.4 Review screen and the tests all
+/// report one set of monitors.
 pub fn review(g: &Globals, args: &super::ReviewArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
     let period: Period = args.period.into();
-    let (key, dates) = review_range(&ctx, period, args.date.as_deref())?;
-
-    let mut days = Vec::new();
-    for date in &dates {
-        let Some(d) = ctx.replay.day(*date) else {
-            continue;
-        };
-        days.push(ReviewDay {
-            date: date.to_string(),
-            blocks: d.blocks_done,
-            block_min: d.block_min,
-            load: (d.load * 100.0).round() / 100.0,
-            leak_min: d.leak_min,
-            lost_min: d.lost_min,
-            done: d.done.clone(),
-        });
-    }
-    let obs: Vec<_> = dates
-        .iter()
-        .flat_map(|d| ctx.replay.energy_on(*d).cloned())
-        .collect();
-    let cal = energy::calibration(&ctx.cfg, &obs);
-    let durations: Vec<_> = dates
-        .iter()
-        .flat_map(|d| ctx.replay.durations_on(*d).cloned())
-        .collect();
-    let estimates: Vec<TagOut> = energy::estimate_calibration(&ctx.cfg, &durations, ctx.today)
-        .into_iter()
-        .map(|t| TagOut {
-            tag: t.tag,
-            n: t.n,
-            multiplier: (t.multiplier * 100.0).round() / 100.0,
-        })
-        .collect();
-    let churn = if period == Period::Month {
-        horizon::churn(&ctx.tree, 2)
-            .into_iter()
-            .map(|(id, _)| id.to_string())
-            .collect()
-    } else {
-        Vec::new()
+    let (key, body, path) = match period {
+        Period::Day => {
+            let date = match &args.date {
+                Some(d) => parse_date(d)?,
+                None => ctx.today,
+            };
+            let extras = day_extras(&ctx, date);
+            let r = core_review::day_review(
+                &ctx.tree,
+                &ctx.replay,
+                &ctx.cfg,
+                &ctx.model,
+                date,
+                ctx.cfg.tz,
+                &extras,
+            );
+            (
+                date.to_string(),
+                ReviewBody::Day(Box::new(r)),
+                Horizon::Day(date).path(),
+            )
+        }
+        Period::Week => {
+            let week = match &args.date {
+                Some(d) => IsoWeek::parse(d)?,
+                None => IsoWeek::from_date(ctx.today),
+            };
+            let extras = core_review::WeekExtras {
+                deadline_health: week.contains(ctx.today).then(|| {
+                    let (cands, prios, _) = ctx.priorities(false);
+                    priority::deadline_health(&prios, &cands, ctx.today)
+                }),
+                ..core_review::WeekExtras::default()
+            };
+            let r = core_review::week_review(
+                &ctx.tree,
+                &ctx.replay,
+                &ctx.cfg,
+                &ctx.model,
+                week,
+                ctx.cfg.tz,
+                &extras,
+            );
+            (
+                week.to_string(),
+                ReviewBody::Week(Box::new(r)),
+                Horizon::Week(week).path(),
+            )
+        }
+        Period::Month => {
+            let month = match &args.date {
+                Some(d) => YearMonth::parse(d)?,
+                None => YearMonth::from_date(ctx.today),
+            };
+            let r = core_review::month_review(
+                &ctx.tree,
+                &ctx.replay,
+                &ctx.cfg,
+                month,
+                ctx.cfg.tz,
+                &core_review::MonthExtras::default(),
+            );
+            (
+                month.to_string(),
+                ReviewBody::Month(Box::new(r)),
+                Horizon::Month(month).path(),
+            )
+        }
     };
 
+    let text = match &body {
+        ReviewBody::Day(r) => core_review::render_day(r),
+        ReviewBody::Week(r) => core_review::render_week(r),
+        ReviewBody::Month(r) => core_review::render_month(r),
+    };
     let mut out = ReviewOut {
         period: horizon::period_name(period).to_string(),
         key: key.clone(),
-        blocks: days.iter().map(|d| d.blocks).sum(),
-        block_min: days.iter().map(|d| d.block_min).sum(),
-        leak_min: days.iter().map(|d| d.leak_min).sum(),
-        lost_min: days.iter().map(|d| d.lost_min).sum(),
-        days,
-        energy_mae: (cal.n > 0).then(|| (cal.mae * 100.0).round() / 100.0),
-        energy_bias: (cal.n > 0).then(|| (cal.bias * 100.0).round() / 100.0),
-        estimates,
-        churn,
+        review: body,
         wrote: None,
     };
-
-    let text = review_text(&out);
     if args.write {
-        let path = match period {
-            Period::Day => Horizon::Day(dates[0]).path(),
-            Period::Week => Horizon::Week(IsoWeek::parse(&key)?).path(),
-            Period::Month => Horizon::Month(YearMonth::parse(&key)?).path(),
-        };
         let rec = undo_stack::Recorder::start(&ctx, "review")?;
         ctx.store.replace_generated(&path, REVIEW_BLOCK, &text)?;
         out.wrote = Some(path.clone());
@@ -379,41 +458,8 @@ pub fn review(g: &Globals, args: &super::ReviewArgs) -> Result<i32, CliError> {
         rec.finish(&ctx, format!("review {} {key}", out.period))?;
     }
 
-    emit(ctx.json, || text.clone(), &out)?;
+    emit(ctx.json, || text.trim_end().to_string(), &out)?;
     Ok(0)
-}
-
-/// The §12.4 review, as text.
-fn review_text(r: &ReviewOut) -> String {
-    let mut s = format!(
-        "{} {} · {} blocks · {}m · leak {}m · lost {}m",
-        r.period, r.key, r.blocks, r.block_min, r.leak_min, r.lost_min
-    );
-    if let (Some(mae), Some(bias)) = (r.energy_mae, r.energy_bias) {
-        s.push_str(&format!("\nenergy    MAE {mae}  bias {bias}"));
-    }
-    if !r.estimates.is_empty() {
-        let tags: Vec<String> = r
-            .estimates
-            .iter()
-            .map(|t| format!("{} ×{} (n={})", t.tag, t.multiplier, t.n))
-            .collect();
-        s.push_str(&format!("\nestimates {}", tags.join("   ")));
-    }
-    for d in &r.days {
-        if r.days.len() > 1 {
-            s.push_str(&format!(
-                "\n{}  {} blocks  {}m  load {}",
-                d.date, d.blocks, d.block_min, d.load
-            ));
-        } else if !d.done.is_empty() {
-            s.push_str(&format!("\ndone      {}", d.done.join(" ")));
-        }
-    }
-    if !r.churn.is_empty() {
-        s.push_str(&format!("\nchurn     {}", r.churn.join(" ")));
-    }
-    s
 }
 
 /// `tm model --json`.

@@ -94,7 +94,7 @@ use thiserror::Error;
 use crate::config::{hhmm, Config, ConfigError};
 use crate::grammar::{parse_file, ItemLine, ParsedFile, Problem};
 use crate::model::{Horizon, Id, IsoWeek, Item, YearMonth};
-use crate::tree::Tree;
+use crate::tree::{self, Tree};
 
 /// `config.toml`, relative to the plan root.
 pub const CONFIG_PATH: &str = "config.toml";
@@ -386,19 +386,28 @@ impl PlanFiles {
 }
 
 /// The preferred `(file index, line index)` for `id` among several parsed
-/// files: the first match outside a `# Demoted` section, else the first
-/// match.
+/// files: the **record** copy, ranked by [`tree::record_rank`] — the live
+/// line, else the archive copy with the most `demoted:` stamps, else the
+/// `month/…# Demoted` copy — with ties going to the file that comes first.
+///
+/// This is deliberately the rank `Tree::get` resolves an id with. When the
+/// two disagree, `tm edit ^id` reads one copy of a duplicated id and writes
+/// its text over the other (§1.3: writers address items by id).
 fn choose<'a>(files: impl Iterator<Item = (usize, &'a ParsedFile)>, id: &Id) -> Option<(usize, usize)> {
-    let mut fallback = None;
+    let mut best: Option<(tree::RecordRank, (usize, usize))> = None;
     for (fi, f) in files {
-        if let Some(li) = edit::find_line(f, id) {
-            if !edit::is_demoted(f, li) {
-                return Some((fi, li));
-            }
-            fallback.get_or_insert((fi, li));
+        let Some(li) = edit::find_line(f, id) else {
+            continue;
+        };
+        let Some(item) = f.lines[li].item() else {
+            continue;
+        };
+        let rank = tree::record_rank(item);
+        if best.as_ref().is_none_or(|(b, _)| rank < *b) {
+            best = Some((rank, (fi, li)));
         }
     }
-    fallback
+    best.map(|(_, loc)| loc)
 }
 
 // ---------------------------------------------------------------------------
@@ -1388,7 +1397,8 @@ impl FsStore {
                 return Err(StoreError::NotFound(id.clone()));
             }
         }
-        let mut fallback: Option<(String, Snapshot, ParsedFile, usize)> = None;
+        // The record copy, by the same rank `choose` (and `Tree::get`) use.
+        let mut best: Option<(tree::RecordRank, (String, Snapshot, ParsedFile, usize))> = None;
         for rel in self.list_files()? {
             // A file that is not valid UTF-8, or that vanished since the
             // listing, holds no addressable line: skip it rather than failing
@@ -1399,16 +1409,19 @@ impl FsStore {
                 Err(e) => return Err(e),
             };
             let parsed = parse_file(&rel, &snap.text, cfg);
-            if let Some(i) = edit::find_line(&parsed, id) {
-                if !edit::is_demoted(&parsed, i) {
-                    return Ok((rel, snap, parsed, i));
-                }
-                if fallback.is_none() {
-                    fallback = Some((rel, snap, parsed, i));
-                }
+            let Some(i) = edit::find_line(&parsed, id) else {
+                continue;
+            };
+            let Some(item) = parsed.lines[i].item() else {
+                continue;
+            };
+            let rank = tree::record_rank(item);
+            if best.as_ref().is_none_or(|(b, _)| rank < *b) {
+                best = Some((rank, (rel, snap, parsed, i)));
             }
         }
-        fallback.ok_or_else(|| StoreError::NotFound(id.clone()))
+        best.map(|(_, found)| found)
+            .ok_or_else(|| StoreError::NotFound(id.clone()))
     }
 }
 

@@ -215,10 +215,9 @@ fn week_instances_cover_the_whole_week() {
         .filter(|(i, _)| i.item.as_str() == "laundry")
         .map(|(i, info)| format!("{} overdue={}", i.key, info.overdue))
         .collect();
-    // …and surfaces it *alone*: §5.3's persisted instance is the laundry's
-    // pending instance until it is done or skipped, so the occurrence that
-    // came round this week is not a second load to do today. It is on the
-    // grid above, where §12.3 wants it, and it becomes what
-    // `today_instances` returns the moment 2026-08-31 is closed.
-    assert_eq!(carried, vec!["2026-08-31 overdue=true".to_string()]);
+    // …and surfaces it *alone*, keyed on this week's occurrence and carrying
+    // last week's overdue badge: §5.3's persisted miss and the occurrence
+    // that came round while it stayed open are one obligation, so there is
+    // one row and doing it once discharges the whole carry.
+    assert_eq!(carried, vec!["2026-09-07 overdue=true".to_string()]);
 }

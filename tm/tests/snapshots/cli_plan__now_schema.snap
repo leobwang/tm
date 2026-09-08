@@ -8,7 +8,7 @@ expression: schema(&idle)
   "budget_blocks": "integer",
   "current": {
     "end": "string",
-    "energy": "null",
+    "energy": "integer",
     "item": "string",
     "kind": "string",
     "mark": "string",

@@ -20,7 +20,7 @@ Report nothing that is not here:
 <!-- json fields -->
 
 ```
-tm review week --json → period key blocks block_min leak_min lost_min energy_mae energy_bias days[].date days[].blocks days[].block_min days[].load days[].done estimates[].tag estimates[].n estimates[].multiplier churn
+tm review week --json → period key review.blocks_done review.block_min review.load review.blocks_per_day[] review.hit review.demoted review.mix.high_share review.breaks.planned_min review.breaks.actual_min review.latency[] review.sleep[].date review.sleep[].slept_min review.mae_per_day[] review.estimates[].tag review.estimates[].n review.estimates[].multiplier review.curves[].curve review.lounge.overall review.lounge.streak review.planned_blocks review.deadline_health.min_slack_days review.carry_in_min review.carry_out_min
 tm model --show --json → model.duration model.p_lounge model.expected_arrival model.n_obs
 tm model --compare --json → comparison.n comparison.mae_a comparison.mae_b comparison.bias_a comparison.bias_b comparison.b_is_better
 ```

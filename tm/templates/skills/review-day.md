@@ -19,7 +19,7 @@ not exist, so do not report it:
 <!-- json fields -->
 
 ```
-tm review day --json → period key blocks block_min leak_min lost_min energy_mae energy_bias days[].date days[].blocks days[].block_min days[].load days[].leak_min days[].lost_min days[].done estimates[].tag estimates[].n estimates[].multiplier churn
+tm review day --json → period key review.date review.loc review.blocks_done review.budget review.load review.block_min review.lost_min review.leak.total_min review.leak.longest_min review.adherence.started_pct review.adherence.completed_pct review.adherence.missed review.rest_debt_min review.breaks.planned_min review.breaks.actual_min review.mix.high_share review.energy.mae review.energy.bias review.estimates[].tag review.estimates[].n review.estimates[].multiplier review.slept_min review.done review.tomorrow[].id review.tomorrow[].note review.plan_honesty review.replans review.drift_min
 tm plan --json → date budget_blocks blocks_done diagnostics.rest_debt_min diagnostics.plan_honesty diagnostics.dropped_tail diagnostics.impossible
 ```
 

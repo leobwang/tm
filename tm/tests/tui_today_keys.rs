@@ -12,7 +12,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tui_common::app::{
     resolve, Action, Answer, BreakPlace, Effect, InputKind, Mode, PromptKind, Screen,
 };
-use tui_common::{app, app_at};
+use tui_common::{app, app_at, review};
 
 /// A plain keystroke.
 fn k(code: KeyCode) -> KeyEvent {
@@ -395,16 +395,89 @@ fn q_quits() {
 }
 
 #[test]
-fn screens_two_to_five_keep_the_global_row() {
-    // The queue agent adds their own rows; until then the global keys work
-    // on every screen and `r` is the global replan.
-    for screen in [Screen::Queue, Screen::Necessities, Screen::Review] {
-        assert_eq!(
-            resolve(screen, Mode::Normal, None, c('r')),
-            Action::Replan,
-            "{screen:?}"
-        );
+fn screens_two_to_five_own_their_keys_and_keep_the_global_row() {
+    // §12.6: screens 2–5 have their own rows (`h l j k J K Enter a c E P D A
+    // x`, `E t k e`), which the global `j`/`k`/`Enter`/`e` would otherwise
+    // swallow — so every key but the five that can never be taken is offered
+    // to the screen first.
+    for screen in [Screen::Queue, Screen::Necessities, Screen::Review, Screen::Inbox] {
+        for key in ['r', 'j', 'k', 'J', 'K', 'h', 'l', 'a', 'c', 'E', 'P', 'D', 'A', 'x', 't'] {
+            assert_eq!(
+                resolve(screen, Mode::Normal, None, c(key)),
+                Action::ScreenKey(c(key)),
+                "{screen:?} {key}"
+            );
+        }
+        // The five the screens may not take.
         assert_eq!(resolve(screen, Mode::Normal, None, c('1')), Action::Screen(Screen::Today));
         assert_eq!(resolve(screen, Mode::Normal, None, c('?')), Action::Help);
+        assert_eq!(resolve(screen, Mode::Normal, None, c(':')), Action::CommandLine);
+        assert_eq!(resolve(screen, Mode::Normal, None, c('q')), Action::Quit);
+        assert_eq!(resolve(screen, Mode::Normal, None, c('R')), Action::Sync);
     }
+
+    // A key the screen ignores falls through to the global row: `r` replans.
+    let mut app = app_at(10, 42);
+    app.screen = Screen::Review;
+    let action = app.action_for(c('r'));
+    assert_eq!(
+        app.apply(action),
+        vec![Effect::Verb(vec!["plan".to_string()])]
+    );
+}
+
+/// §12.6's `queue` row reaches `queue::on_key` from the shipped binary: `J`
+/// asks for the byte-faithful reorder, `D`/`A`/`x` for their §13 verbs and
+/// `a c E P` for the value prompt. They used to resolve to `Action::None`,
+/// because the module was not in the binary's `mod` list at all.
+#[test]
+fn the_queue_row_reaches_the_queue_screen() {
+    let mut app = app_at(10, 42);
+    app.screen = Screen::Queue;
+    // `l` moves to the Tasks pane, `j` down a row — the screen's own keys.
+    for key in ['l', 'j'] {
+        let action = app.action_for(c(key));
+        assert!(app.apply(action).is_empty(), "{key} produced an effect");
+    }
+    assert!(app.selected_item.is_some(), "the queue cursor selects an item");
+
+    // `D` is `tm demote ^id`.
+    let action = app.action_for(c('D'));
+    let effects = app.apply(action);
+    assert!(
+        effects.iter().any(|e| matches!(e, Effect::Verb(a) if a[0] == "demote"))
+            || app.message.is_some(),
+        "D did nothing: {effects:?}"
+    );
+
+    // `c` opens the ci prompt (§12.6's `c ci`).
+    app.screen = Screen::Queue;
+    let action = app.action_for(c('c'));
+    assert!(app.apply(action).is_empty());
+    assert!(
+        matches!(app.mode, Mode::Input(InputKind::Screen(_))),
+        "{:?}",
+        app.mode
+    );
+}
+
+/// Screen 4 exists and answers §12.4's own keys.
+#[test]
+fn the_review_screen_shows_the_monitors() {
+    let mut app = app_at(10, 42);
+    app.screen = Screen::Review;
+    let reviews = app.reviews();
+    assert!(
+        reviews.text(review::Period::Day).contains("adherence"),
+        "{}",
+        reviews.text(review::Period::Day)
+    );
+    // `l` moves Day → Week.
+    let action = app.action_for(c('l'));
+    assert!(app.apply(action).is_empty());
+    assert_eq!(app.review.period, review::Period::Week);
+    // `w` offers §12.4's "write to day file".
+    let action = app.action_for(c('w'));
+    assert!(app.apply(action).is_empty());
+    assert_eq!(app.message.as_deref(), Some("review week --write"));
 }

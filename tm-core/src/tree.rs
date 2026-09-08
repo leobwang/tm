@@ -301,7 +301,7 @@ impl Tree {
         for (key, members) in &groups {
             let primary = *members
                 .iter()
-                .min_by_key(|&&i| copy_rank(&nodes[i]))
+                .min_by_key(|&&i| record_rank(&nodes[i].item))
                 .expect("a group has at least one member");
             index.insert(key.clone(), primary);
             if members.len() == 1 {
@@ -1135,8 +1135,8 @@ fn line_key(item: &Item) -> Id {
 }
 
 /// A `month/…# Demoted` line: the copy `tm close week` writes (§6.3).
-fn in_month_demoted(n: &Node) -> bool {
-    matches!(n.item.horizon, Horizon::Month(_)) && n.item.src.section.as_deref() == Some("Demoted")
+pub fn in_month_demoted(item: &Item) -> bool {
+    matches!(item.horizon, Horizon::Month(_)) && item.src.section.as_deref() == Some("Demoted")
 }
 
 /// An **archive copy**: a line the §6.3 lifecycle leaves behind carrying an
@@ -1147,10 +1147,14 @@ fn in_month_demoted(n: &Node) -> bool {
 /// `month/…# Demoted`. A `[-]` line anywhere else (backlog, day, a month
 /// section that is not `# Demoted`) is not something a close produces, so it
 /// still counts as a live copy and collides.
-fn is_archive_copy(n: &Node) -> bool {
-    n.item.state == State::Demoted
-        && (matches!(n.item.horizon, Horizon::Week(_)) || in_month_demoted(n))
+pub fn is_archive_copy(item: &Item) -> bool {
+    item.state == State::Demoted
+        && (matches!(item.horizon, Horizon::Week(_)) || in_month_demoted(item))
 }
+
+/// The sort key [`record_rank`] returns: `(is an archive copy, most stamps
+/// first, is not the `month/…# Demoted` copy)`.
+pub type RecordRank = (bool, std::cmp::Reverse<usize>, bool);
 
 /// Which of several lines carrying one id is the record (smallest wins; ties
 /// go to the earlier line): the live line — anything that is not an archive
@@ -1158,11 +1162,16 @@ fn is_archive_copy(n: &Node) -> bool {
 /// week` appends a stamp to the copy it writes and never to the line it
 /// archives, so the most-stamped copy is the newest record (the one carrying
 /// the folded `est:`); else the `month/…# Demoted` copy.
-fn copy_rank(n: &Node) -> (bool, std::cmp::Reverse<usize>, bool) {
+///
+/// `store::choose` ranks with this too, so the line a reader resolves an id
+/// to (`Tree::get`) is the line a writer rewrites (`Store::write_line`): a
+/// disagreement here means `tm edit ^id` reads one copy and overwrites the
+/// other (§1.3 "writers address items by id").
+pub fn record_rank(item: &Item) -> RecordRank {
     (
-        is_archive_copy(n),
-        std::cmp::Reverse(n.item.stamps.demoted.len()),
-        !in_month_demoted(n),
+        is_archive_copy(item),
+        std::cmp::Reverse(item.stamps.demoted.len()),
+        !in_month_demoted(item),
     )
 }
 
@@ -1176,7 +1185,7 @@ fn is_real_duplicate(nodes: &[Node], members: &[usize]) -> bool {
         if !files.insert(nodes[i].file) {
             return true;
         }
-        if !is_archive_copy(&nodes[i]) {
+        if !is_archive_copy(&nodes[i].item) {
             live += 1;
         }
     }

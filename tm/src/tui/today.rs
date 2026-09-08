@@ -30,7 +30,8 @@ use tm_core::planner::{SegKind, Segment};
 use tm_core::review;
 
 use super::app::{App, Mode, Screen};
-use super::{daybar, prompts, theme};
+use super::review as review_screen;
+use super::{daybar, inbox, necessities, prompts, queue, theme};
 
 /// Rows the day bar takes (§12.1: plan row plus ghost row).
 const BAR_ROWS: u16 = 2;
@@ -451,7 +452,17 @@ pub fn hint_line(app: &App, width: usize) -> Line<'static> {
         (_, Some(msg)) => msg.clone(),
         _ => ":".to_string(),
     };
-    let right = "j/k move · Enter open · e edit · r replan · R sync · ? help";
+    // The Today row of §12.6; the other screens print their own key row
+    // inside their pane, so this one names where you are instead.
+    let right = match app.screen {
+        Screen::Today => "j/k move · Enter open · e edit · r replan · R sync · ? help".to_string(),
+        other => format!(
+            "screen {} {} · 1–5 screens · : command · ? help",
+            other.number(),
+            other.title()
+        ),
+    };
+    let right = right.as_str();
     let left = clip(&left, width);
     let lw = emit::display_width(&left);
     let rw = emit::display_width(right);
@@ -461,7 +472,7 @@ pub fn hint_line(app: &App, width: usize) -> Line<'static> {
     Line::from(vec![
         Span::styled(left, theme::ACCENT),
         Span::styled(" ".repeat(width - lw - rw), theme::HINT),
-        Span::styled(right, theme::HINT),
+        Span::styled(right.to_string(), theme::HINT),
     ])
 }
 
@@ -524,22 +535,11 @@ pub fn draw(f: &mut Frame, app: &App) {
                 draw_narrow(f, body, app);
             }
         }
-        // screens 2-5: added by the queue agent — one arm each, drawing into
-        // `body`; until then the screen says what will live there.
-        other => {
-            f.render_widget(
-                Paragraph::new(vec![
-                    Line::from(String::new()),
-                    Line::from(Span::styled(
-                        format!("  screen {} — {} is not built yet", other.number(), other.title()),
-                        theme::DIM,
-                    )),
-                    Line::from(Span::styled("  press 1 for Today".to_string(), theme::HINT)),
-                ])
-                .block(theme::pane(other.title())),
-                body,
-            );
-        }
+        // §12.2–§12.5: each screen owns its own body.
+        Screen::Queue => queue::render(&app.queue, &app.view(), f, body),
+        Screen::Necessities => necessities::render(&app.necessities, &app.view(), f, body),
+        Screen::Review => review_screen::render(&app.review, &app.reviews(), f, body),
+        Screen::Inbox => inbox::render(&app.capture, &app.view(), f, body),
     }
 
     f.render_widget(Paragraph::new(hint_line(app, width)), hint);

@@ -22,26 +22,30 @@
 //!   no verb of their own — `n` note and `l` location — are written here, and
 //!   through the same [`crate::cli::undo::Recorder`] every verb uses, so
 //!   `tm undo` keeps working across them.
-//! * [`arrival_blocks`] reads `.tm/arrival_plan.json`, the record §12.1's
-//!   ghost row and §11's adherence are measured against.
+//! * [`crate::cli::ghost`] reads `.tm/arrival_plan.json`, the record §12.1's
+//!   ghost row and §11's adherence are measured against — the same reader
+//!   `tm plan` writes the SVG's ghost row from.
 //!
-//! Screens 2–5 (§12.2–§12.5) are a separate module set; this file leaves the
-//! `mod` list and the screen dispatch marked for them.
+//! Screens 2–5 (§12.2–§12.5) are the modules [`queue`], [`necessities`],
+//! [`review`] and [`inbox`]. [`app`] dispatches their §12.6 key rows and
+//! [`today::draw`] gives each of them the body area.
 
 pub mod app;
 pub mod daybar;
+pub mod inbox;
+pub mod necessities;
 pub mod prompts;
+pub mod queue;
+pub mod review;
 pub mod theme;
 pub mod today;
-// screens 2-5: added by the queue agent —
-//   pub mod queue;  pub mod necessities;  pub mod inbox;
 
 use std::io::{self, IsTerminal, Stdout};
 use std::path::{Component, Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration as StdDuration, Instant};
 
-use chrono::{DateTime, Local, NaiveTime};
+use chrono::{DateTime, Local};
 use chrono_tz::Tz;
 use clap::Parser;
 use crossterm::event::{
@@ -59,15 +63,13 @@ use ratatui::Terminal;
 
 use tm_core::config::Config;
 use tm_core::log::Event as LogEvent;
-use tm_core::model::Id;
-use tm_core::store::Store;
 
-use crate::cli::ctx::{resolve_dir, Ctx, Globals, ARRIVAL_PLAN_PATH};
-use crate::cli::day::ArrivalPlan;
+use crate::cli::ctx::{resolve_dir, Ctx, Globals};
+use crate::cli::ghost;
 use crate::cli::out::CliError;
 use crate::cli::{dayfile, undo, Cli, Command};
 
-use app::{App, AppData, ArrivalBlock, Effect, Hover};
+use app::{App, AppData, Effect, Hover};
 
 /// §17.2: "`notify` debounce 200 ms".
 const DEBOUNCE: StdDuration = StdDuration::from_millis(200);
@@ -157,6 +159,8 @@ fn now_of(g: &Globals, cfg: &Config) -> DateTime<Tz> {
 
 /// Read the plan directory into the shape [`App`] wants.
 fn data_of(ctx: &Ctx) -> AppData {
+    // §12.2/§12.3 read §7's numbers; they are the same pass `tm plan` runs.
+    let (cands, prios, caps) = ctx.priorities(false);
     AppData {
         cfg: ctx.cfg.clone(),
         model: ctx.model.clone(),
@@ -164,34 +168,15 @@ fn data_of(ctx: &Ctx) -> AppData {
         tree: ctx.tree.clone(),
         log: ctx.log.clone(),
         replay: ctx.replay.clone(),
-        arrival: arrival_blocks(ctx),
+        arrival: ghost::blocks(ctx),
+        files: ctx.files.clone(),
+        candidates: cands,
+        prios,
+        caps,
         now: ctx.now_tz,
     }
 }
 
-/// `.tm/arrival_plan.json` as [`App`] reads it — the plan the day started
-/// with, for §12.1's ghost row and §11's adherence. Empty when there is no
-/// record, or when the record is for another day (§10.2: the day rolls).
-fn arrival_blocks(ctx: &Ctx) -> Vec<ArrivalBlock> {
-    let Ok(text) = ctx.store.read_text(ARRIVAL_PLAN_PATH) else {
-        return Vec::new();
-    };
-    let Ok(plan) = serde_json::from_str::<ArrivalPlan>(&text) else {
-        return Vec::new();
-    };
-    if plan.date != ctx.today.to_string() {
-        return Vec::new();
-    }
-    plan.blocks
-        .iter()
-        .filter_map(|b| {
-            Some(ArrivalBlock {
-                start: NaiveTime::parse_from_str(&b.start, "%H:%M").ok()?,
-                id: b.id.as_deref().map(Id::new),
-            })
-        })
-        .collect()
-}
 
 /// Load the plan directory and plan today (§6.3's auto-close runs first, as
 /// for every other verb).
@@ -391,8 +376,41 @@ fn perform(
             reload(app, g)?;
             app.message = Some(format!("location {loc}"));
         }
+        Effect::Mutate(m) => {
+            let message = mutate(g, &m)?;
+            reload(app, g)?;
+            app.message = Some(message);
+        }
     }
     Ok(())
+}
+
+/// §12.2's `J`/`K` and §12.5's inbox line: the two screen mutations that are
+/// not one of §13's verbs. Both go through an [`undo::Recorder`], like every
+/// verb, so `tm undo` keeps working across them.
+fn mutate(g: &Globals, m: &queue::Mutation) -> Result<String, CliError> {
+    let mut ctx = Ctx::load(g, false)?;
+    let rec = undo::Recorder::start(&ctx, "tui")?;
+    let message = match m {
+        queue::Mutation::Reorder { id, .. } => match queue::apply_reorder(&ctx.store, m) {
+            Some(Ok(true)) => format!("moved ^{id}"),
+            Some(Ok(false)) => format!("^{id} is already at the end of its section"),
+            Some(Err(e)) => format!("^{id}: {e}"),
+            None => String::new(),
+        },
+        queue::Mutation::Capture {
+            from_inbox: Some(line),
+            ..
+        }
+        | queue::Mutation::DropInboxLine { line } => {
+            inbox::drop_line(&ctx.store, *line)?;
+            format!("inbox line {line} removed")
+        }
+        _ => String::new(),
+    };
+    ctx.reload()?;
+    rec.finish(&ctx, format!("tui {}", message.trim()))?;
+    Ok(message)
 }
 
 /// §12.6's `n`: a §10.1 `note` event and a `## Log` line.

@@ -363,6 +363,30 @@ fn allow_home_lifts_the_home_energy_cap() {
     };
     assert_eq!(high(&capped), 0, "the home cap holds without the flag");
     assert!(high(&free) > 0, "--allow-home lifts it: {free}");
+
+    // And the *day* is re-cut too: `build()` never passed the flag into
+    // `PlanInput`, so the flag lifted only the lookahead the EDF pass sizes
+    // and `tm plan --allow-home` returned a byte-identical segment list.
+    let energies = |v: &serde_json::Value| -> Vec<u64> {
+        v["segments"]
+            .as_array()
+            .expect("segments")
+            .iter()
+            .filter_map(|s| s["energy"].as_u64())
+            .collect()
+    };
+    let day_capped = tm.json(&["plan"]);
+    let day_free = tm.json(&["plan", "--allow-home"]);
+    assert!(
+        energies(&day_capped).iter().all(|e| *e <= 3),
+        "the home cap holds on the day: {:?}",
+        energies(&day_capped)
+    );
+    assert!(
+        energies(&day_free).iter().any(|e| *e > 3),
+        "--allow-home lifts it on the day too: {:?}",
+        energies(&day_free)
+    );
 }
 
 #[test]
@@ -371,4 +395,112 @@ fn plan_needs_a_plan_directory() {
     let out = tm.run(&["plan"]);
     assert_eq!(out.code, 1);
     assert!(out.stderr.contains("config.toml"), "{}", out.stderr);
+}
+
+/// §4.3's row grid, written by the §1.2 renderer.
+///
+/// `tm plan` used to write the day file with a private stand-in in
+/// `cli/render.rs`: no `pN` column, no `(actual)` cell, no `───  window ends`
+/// divider, the estimate already multiplied, the title repeated in the note
+/// column — and a text that disagreed with what `tm tui` drew for the same
+/// `DayPlan`. Both now go through `tm_core::emit`.
+#[test]
+fn the_generated_section_is_the_spec_4_3_grid() {
+    let tm = Tm::new();
+    tm.ok(&["wake", "06:05", "--slept", "8h10m"]);
+    tm.run_at("2026-09-07T07:00:00-05:00", &["arrive", "lounge"]);
+    tm.run_at("2026-09-07T07:02:00-05:00", &["start", "^t1", "--energy", "5"]);
+    tm.run_at("2026-09-07T08:09:00-05:00", &["done"]);
+    let out = tm.run_at("2026-09-07T10:42:00-05:00", &["plan"]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+
+    let day = tm.read("day/2026-09-07.md");
+    let section: Vec<&str> = day
+        .lines()
+        .skip_while(|l| !l.starts_with("<!-- tm:plan start"))
+        .skip(1)
+        .take_while(|l| !l.starts_with("<!-- tm:plan end"))
+        .collect();
+    let body = section.join("\n");
+
+    // The finished block: `ci`, `pN`, `✓`, `@parent`, the *written* estimate
+    // and the actual in its own parenthesised cell.
+    let done = section
+        .iter()
+        .find(|l| l.contains("Read ch.6 §1–2"))
+        .unwrap_or_else(|| panic!("no finished row in\n{body}"));
+    assert_eq!(
+        *done, "07:02  5    ✓ Read ch.6 §1–2               @m3  1b  (67m)",
+        "\n{body}"
+    );
+
+    // §4.3's `15:10  1 p0 ⚠  Pick up package  20m  due today`: a Window-shaped
+    // task is placed like a routine but keeps its `ci`, `pN` and `⚠`.
+    let hot = section
+        .iter()
+        .find(|l| l.contains("Pick up package"))
+        .unwrap_or_else(|| panic!("no ^a3 row in\n{body}"));
+    assert!(hot.contains(" 1 p0 ⚠ "), "{hot}");
+    assert!(hot.ends_with("due today"), "{hot}");
+
+    // The divider where the budget runs out.
+    assert!(
+        section.iter().any(|l| l.contains("───") && l.contains("window ends")),
+        "no window-ends divider in\n{body}"
+    );
+
+    // A routine names itself once — the title cell, never the note column.
+    let lunch = section
+        .iter()
+        .find(|l| l.contains("lunch"))
+        .unwrap_or_else(|| panic!("no lunch row in\n{body}"));
+    assert_eq!(lunch.matches("lunch").count(), 1, "{lunch}");
+    let wind = section
+        .iter()
+        .find(|l| l.contains("wind-down"))
+        .unwrap_or_else(|| panic!("no wind-down row in\n{body}"));
+    assert_eq!(wind.matches("wind-down").count(), 1, "{wind}");
+
+    // Columns line up: every `@parent` starts at the same display column.
+    // Counted in `char`s, not bytes — `§`, `–` and `✓` are multi-byte and one
+    // column wide, and no row with an `@parent` carries a wide glyph.
+    let parents: Vec<usize> = section
+        .iter()
+        .filter_map(|l| l.char_indices().position(|(i, c)| c == '@' && i > 0))
+        .collect();
+    assert!(!parents.is_empty());
+    assert!(
+        parents.windows(2).all(|w| w[0] == w[1]),
+        "the @parent column drifts: {parents:?}\n{body}"
+    );
+
+    // §12.1: the SVG is the day bar, 24 h wake-to-wake with the ghost row.
+    let svg = tm.read("day/2026-09-07.svg");
+    assert!(svg.contains("aria-label=\"day bar 2026-09-07\""), "{svg}");
+    assert!(svg.contains("id=\"tm-lost\""), "hatch patterns are missing");
+    assert!(svg.contains("class=\"ghost\""), "no ghost row");
+    assert!(
+        svg.contains("· ci5 · @O1</title>"),
+        "§12.1's `title · duration · ci · p · @root` tooltip is missing:\n{svg}"
+    );
+}
+
+/// §11: "Plan honesty … warning at `tm plan` when > 1.1". The number was in
+/// `--json` but the human run said nothing.
+#[test]
+fn plan_warns_when_the_day_is_planned_above_a_realistic_budget() {
+    let tm = Tm::new();
+    tm.ok(&["wake", "06:05", "--slept", "8h10m"]);
+    tm.run_at("2026-09-07T07:00:00-05:00", &["arrive", "lounge"]);
+    let out = tm.run_at("2026-09-07T07:10:00-05:00", &["plan"]);
+    let honesty = tm.run_at("2026-09-07T07:10:00-05:00", &["--json", "plan"]).json()
+        ["diagnostics"]["plan_honesty"]
+        .as_f64()
+        .expect("plan_honesty");
+    assert!(honesty > 1.1, "the fixture day is meant to be over-planned: {honesty}");
+    assert!(
+        out.stdout.contains("plan honesty"),
+        "no §11 warning in\n{}",
+        out.stdout
+    );
 }

@@ -25,6 +25,7 @@
 pub mod ctx;
 pub mod day;
 pub mod dayfile;
+pub mod ghost;
 pub mod init;
 pub mod items;
 pub mod lifecycle;
@@ -276,6 +277,10 @@ pub struct IdleArgs {
 #[derive(Debug, Args)]
 pub struct AddArgs {
     /// The line, in the §4.1 grammar (the `- [ ] ` prefix is optional).
+    ///
+    /// `allow_hyphen_values`: a pasted line starts `- [ ] …` (§4.1), which
+    /// clap would otherwise read as a flag.
+    #[arg(allow_hyphen_values = true)]
     pub line: String,
     /// Where: a path (`week/2026-W37.md`) or a horizon word (`backlog`,
     /// `week`, `month`, `day`, `inbox`, `routines`, `optional`).
