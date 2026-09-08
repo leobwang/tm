@@ -1144,12 +1144,13 @@ pub fn readopt(cx: &Ctx, id: &Id, to: Option<&Horizon>) -> Result<Moved, Horizon
 /// count only breaks ties between two archive copies), so `Tree::get` and
 /// `store::choose` both resolve the id to the live line, and that is the
 /// line `tm edit`, `tm stop` and `tm done --partial` read and rewrite. Only
-/// the §6.3 lifecycle writes an archive copy, and only by replacing it
-/// whole: the next demotion of the live line has [`demote_one`] overwrite
-/// this copy with a remaining measured from that line, and delete it where
-/// it sits in an older month. Either way nothing ever carries the number
-/// *off* the copy and onto the live line — so a readopt that deletes the
-/// copy has to take its remaining with it, or the measurement goes with the
+/// the §6.3 lifecycle writes an archive copy, and only ever as a whole
+/// record: the next demotion of the live line has [`demote_one`] overwrite
+/// this copy with a remaining measured from that line and delete the stale
+/// one in an older month, and [`close_month`]'s carry folds a copy into one
+/// the destination file already holds. None of those carries the number
+/// *off* a copy and onto the live line — so a readopt that deletes the copy
+/// has to take its remaining with it, or the measurement goes with the
 /// line. A copy that carries no estimate at all leaves the live line's own
 /// alone.
 fn absorb_into_live(

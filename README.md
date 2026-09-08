@@ -1002,8 +1002,9 @@ of October's close as `est:4b demoted:W37,W41`, not as the bare line it had
 shrunk to.
 
 What that floor never does is argue with **you**. An estimate on the line
-itself is yours — the leading estimate is what `tm edit ^id est=…` writes, and
-`est:` is what `tm stop` and `tm done --partial` leave — and both land on the
+itself is yours — `tm edit ^id est=…` writes the `est:` token when the line
+already carries one and the leading estimate when it does not, and `est:` is
+also what `tm stop` and `tm done --partial` leave — and all of them land on the
 live line, never on the archive copy. Re-scope that parent to `1b` and October
 records `est:1b`: a number you wrote wins over a number an older close
 measured, downwards as well as upwards. The floor applies only where the line
