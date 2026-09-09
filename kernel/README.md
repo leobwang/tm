@@ -1819,3 +1819,30 @@ the Rust-side evidence, and `main` as oracle remains unrun.
 tests, so Linux test binaries find the toolchain's bundled `libc++`/`libunwind`
 the way macOS's embedded `install_name` always did. `check.sh` is 7/7 on this
 machine with it.
+
+<!-- #### Stage-3 session 2026-09-09 (second block): gap 16's loader pair discharged.
+     Whoever merges: this block adds no gap numbers; gap 16 itself narrows. -->
+
+**Gap 16, two of three discharged (2026-09-09).** `the_loader_builds_sites_in_range`
+and `the_loader_builds_oriented_demotions` are theorems in `Boundary.lean`,
+proved from `buildEntities_spec` by casing the per-id filter list in the shape
+`buildEntity_renders` started — no entity the loader builds can carry a site
+outside `docs`, and no pair it builds can be oriented against its documents'
+regions, because both facts are read off the placements the documents themselves
+produced. Supporting lemmas proved alongside, all audited: `placement_doc_lt`,
+`docRegion_loadCore_placement`, `siteInRange_loadCore`, `placement_bounds_pair`,
+`entityInRange_loadEntity`, `demotionOriented_loadEntity`. `siteOutOfRange` and a
+mis-oriented demotion are now unreachable *by proof* rather than by checking,
+which is what gap 16 asked for on those two conjuncts.
+
+What gap 16 still owes is the rank half — `the_loader_builds_a_normalized_plan`
+stays in `Goals.lean`. It is not blocked in the sense gaps 37–39 are: the chain
+runs from `buildEntities_spec` through `splitDoc` handing each line index to
+exactly one of prose and items into the `(docRanks p k).Nodup` that the `decide`
+in `normalized` eats, and it is ordinary List work sized at one sitting. It was
+left standing so this block ships green.
+
+Audit moves 1007 → 1015 with the eight new names; §6.3's three counts
+(1015 audit lines / 1015 distinct names / 1015 attr-aware theorem declarations)
+reconcile. Check 7's burn-down moves 51 → 49. `check.sh` 7/7; corpus unchanged at
+`33/37 files and 4/5 whole plans`.

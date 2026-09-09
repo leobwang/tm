@@ -1924,6 +1924,196 @@ theorem the_spec_demotion_pair_round_trips (p : WfPlan)
   ⟨(the_kernel_reads_back_what_it_writes specDemotionRequest p h 0 specWeekDoc rfl).2,
    (the_kernel_reads_back_what_it_writes specDemotionRequest p h 1 specMonthDoc rfl).2⟩
 
+/-! ### The loader's `planWf` conjuncts, discharged (README gap 16)
+
+`sitesInRange` and `demotionsOriented` are re-checked by `mapAt` on every
+post-state, and `loadPlan` refuses a request before they could fail — but
+between `loadCore` and the first command they sit between the loader and a
+proof.  The converse direction was already cashed for one of the three
+(`loadCore_docsWf`, and the pair-fidelity section's
+`the_kernel_can_read_the_pairs_it_writes` for orientation); these are the two
+that were `P*`.  `normalized` remains: it needs the `splitDoc` rank
+distinctness chain, not a new idea, and is named in the README as the third
+of gap 16.
+
+The shape both proofs share is the one `buildEntity_renders` started:
+`buildEntities_spec` turns the accepted list into a per-id
+`buildEntity i (filter) = .ok e`, the `match` on the filter list discharges
+`nil` and `3+` by noConfusion, and the two surviving arms read the entity's
+places off `loneEntity` / `paired_placement_renders_back` — so nothing here
+reasons about parsing at all, only about indices and orientation. -/
+
+/-- Sites the walk builds are indices into the list it walked. -/
+theorem placement_doc_lt {docs : List ReqDoc} {q : Placement}
+    (hq : q ∈ placementsOf 0 docs) : q.doc < docs.length := by
+  obtain ⟨j, d, hd, hqj⟩ := (mem_placementsOf q 0 docs).1 hq
+  obtain ⟨it, _, hqe⟩ := mem_placementsOfDoc.1 hqj
+  subst hqe
+  obtain ⟨hjlt, _⟩ := List.getElem?_eq_some_iff.1 hd
+  simpa using hjlt
+
+/-- On a loaded plan, `docRegion` reads back the region the placement declared. -/
+theorem docRegion_loadCore_placement (docs : List ReqDoc) (items : List (Id × Entity))
+    {q : Placement} (hq : q ∈ placementsOf 0 docs) :
+    docRegion (loadCore docs items) q.doc = q.region := by
+  obtain ⟨j, d, hd, hqj⟩ := (mem_placementsOf q 0 docs).1 hq
+  obtain ⟨it, _, hqe⟩ := mem_placementsOfDoc.1 hqj
+  rw [hqe, Nat.zero_add]
+  suffices h : (docs.map mkDoc)[j]? = some (mkDoc d) by
+    show (match (docs.map mkDoc)[j]? with
+      | none => none
+      | some dd => dd.region) = d.reg
+    rw [h]
+    rfl
+  rw [List.getElem?_map, hd]
+  rfl
+
+/-- A site naming an existing document is in range on the loaded plan. -/
+theorem siteInRange_loadCore (docs : List ReqDoc) (items : List (Id × Entity))
+    (s : Site) (h : s.doc < docs.length) :
+    siteInRange (loadCore docs items) s = true := by
+  unfold siteInRange
+  exact decide_eq_true (by simpa [loadCore, List.length_map] using h)
+
+/-- Both placements an orienter chose come from the pair it was given. -/
+theorem placement_bounds_pair {ps : List Placement} {a b arch live : Placement}
+    (ha : a ∈ ps) (hb : b ∈ ps)
+    (hor : (arch = a ∧ live = b) ∨ (arch = b ∧ live = a)) :
+    arch ∈ ps ∧ live ∈ ps := by
+  obtain ⟨he1, he2⟩ | ⟨he1, he2⟩ := hor
+  · rw [he1, he2]; exact ⟨ha, hb⟩
+  · rw [he1, he2]; exact ⟨hb, ha⟩
+
+/-- An entity `buildEntity` accepts has both of its sites in range on the
+loaded plan.  The lone arm reads `live` off `loneEntity` and takes the empty
+archive branch; the pair arm reads `live` and the tombstone's site off
+`paired_placement_renders_back`, whose `orientPair` witness says the two are
+the two placements it was given. -/
+theorem entityInRange_loadEntity {docs : List ReqDoc} {items : List (Id × Entity)}
+    {qs : List Placement} {i : Id} {e : Entity}
+    (hsub : ∀ q ∈ qs, q ∈ placementsOf 0 docs)
+    (h : buildEntity i qs = .ok e) :
+    entityInRange (loadCore docs items) e = true := by
+  match qs with
+  | [] => simp [buildEntity] at h
+  | [q] =>
+      have h' : e = loneEntity q := by
+        have this : Except.ok (loneEntity q) = (.ok e : Except LErr Entity) := h
+        injection this with this
+        exact this.symm
+      rw [h']
+      show (siteInRange (loadCore docs items) ⟨q.doc, q.rank⟩
+          && match (none : Option Site) with
+            | none => true
+            | some r => siteInRange (loadCore docs items) r) = true
+      rw [Bool.and_eq_true]
+      exact ⟨siteInRange_loadCore docs items ⟨q.doc, q.rank⟩
+               (placement_doc_lt (hsub q (by simp))), rfl⟩
+  | [a, b] =>
+      have h' : pairedEntity i a b = .ok e := h
+      obtain ⟨arch, live, hor, _hcond, hllive, harch, _hline, _hag, hglive, _hgarch⟩ :=
+        paired_placement_renders_back i a b e h'
+      obtain ⟨har, hal⟩ := placement_bounds_pair (hsub a (by simp)) (hsub b (by simp))
+        (orientPair_cases hor).1
+      show (siteInRange (loadCore docs items) e.val.live
+          && match e.val.archiveSite with
+            | none => true
+            | some r => siteInRange (loadCore docs items) r) = true
+      rw [hllive, Core.archiveSite_some harch]
+      rw [Bool.and_eq_true]
+      exact ⟨siteInRange_loadCore docs items ⟨live.doc, live.rank⟩ (placement_doc_lt hal),
+             siteInRange_loadCore docs items ⟨arch.doc, arch.rank⟩ (placement_doc_lt har)⟩
+
+/-- An entity `buildEntity` accepts is an oriented demotion on the loaded
+plan: the lone has no archive record, and in a pair the box guard's fact is
+`orientPair`'s third conjunct read through `glyphAt_live`, with both regions
+read back at the placements' own declared values.  This is the loader half of
+gap 16's `demotionsOriented`; the command half is
+`the_kernel_can_read_the_pairs_it_writes`. -/
+theorem demotionOriented_loadEntity {docs : List ReqDoc} {items : List (Id × Entity)}
+    {qs : List Placement} {i : Id} {e : Entity}
+    (hsub : ∀ q ∈ qs, q ∈ placementsOf 0 docs)
+    (h : buildEntity i qs = .ok e) :
+    demotionOriented (loadCore docs items) e = true := by
+  match qs with
+  | [] => simp [buildEntity] at h
+  | [q] =>
+      have h' : e = loneEntity q := by
+        have this : Except.ok (loneEntity q) = (.ok e : Except LErr Entity) := h
+        injection this with this
+        exact this.symm
+      rw [h']
+      show demotionOriented (loadCore docs items) (loneEntity q) = true
+      rfl
+  | [a, b] =>
+      have h' : pairedEntity i a b = .ok e := h
+      obtain ⟨arch, live, hor, hcond, hllive, harch, _hline, _hag, hglive, _hgarch⟩ :=
+        paired_placement_renders_back i a b e h'
+      obtain ⟨har, hal⟩ := placement_bounds_pair (hsub a (by simp)) (hsub b (by simp))
+        (orientPair_cases hor).1
+      have hgoal : demotionOriented (loadCore docs items) e =
+          (if glyphOfStatus e.val.status = Glyph.demoted then
+              horizonPrecedes (docRegion (loadCore docs items) arch.doc)
+                (docRegion (loadCore docs items) live.doc)
+            else true) := by
+        unfold demotionOriented
+        rw [harch, hllive]
+      rw [hgoal]
+      by_cases hd : glyphOfStatus e.val.status = Glyph.demoted
+      · have h2 : glyphAt e.val e.val.live = Glyph.demoted := by
+          have hl := glyphAt_live e.val e.property
+          rw [hl]
+          exact hd
+        have : live.glyph = Glyph.demoted := by rw [← hglive]; exact h2
+        rw [if_pos hd, docRegion_loadCore_placement docs items har,
+          docRegion_loadCore_placement docs items hal]
+        exact hcond this
+      · rw [if_neg hd]
+
+/-- **The loader builds sites in range** (stage 3, README gap 16).  Every site
+in every entity the loader builds names a document the request actually
+carried — `siteOutOfRange`, the only `err` the loader itself can emit, is
+unreachable by proof, not by a check.  The check still runs (`loadPlan` calls
+`sitesInRange` before asking `planWf`); this theorem says what that check was
+always bound to answer. -/
+theorem the_loader_builds_sites_in_range (docs : List ReqDoc) (items : List (Id × Entity))
+    (h : buildEntities (placementsOf 0 docs) = .ok items) :
+    sitesInRange (loadCore docs items) = true := by
+  obtain hall := (buildEntities_spec (placementsOf 0 docs) items h).2
+  show (loadStore items).dom.all
+    (fun i => match (loadStore items).get i with
+      | none => true
+      | some e => entityInRange (loadCore docs items) e) = true
+  rw [List.all_eq_true]
+  intro i hi
+  cases g : (loadStore items).get i with
+  | none => rfl
+  | some e =>
+      exact entityInRange_loadEntity (fun q hq => (List.mem_filter.1 hq).1)
+        (hall (i, e) (loadStore_get_some items i e g))
+
+/-- **The loader builds oriented demotions** (stage 3, README gap 16, the
+third conjunct).  Every entity the loader builds satisfies
+`demotionsOriented` at the loaded plan's regions — the orientation the box
+decided and `orientPair` fixed is the orientation `planWf` will re-check.
+With `the_kernel_can_read_the_pairs_it_writes` this is both directions
+between what the loader reads and what the invariant demands. -/
+theorem the_loader_builds_oriented_demotions (docs : List ReqDoc) (items : List (Id × Entity))
+    (h : buildEntities (placementsOf 0 docs) = .ok items) :
+    demotionsOriented (loadCore docs items) = true := by
+  obtain hall := (buildEntities_spec (placementsOf 0 docs) items h).2
+  show (loadStore items).dom.all
+    (fun i => match (loadStore items).get i with
+      | none => true
+      | some e => demotionOriented (loadCore docs items) e) = true
+  rw [List.all_eq_true]
+  intro i hi
+  cases g : (loadStore items).get i with
+  | none => rfl
+  | some e =>
+      exact demotionOriented_loadEntity (fun q hq => (List.mem_filter.1 hq).1)
+        (hall (i, e) (loadStore_get_some items i e g))
+
 /-! ### README gap 6: the `String`/`List Char` edge, closed
 
 Every `ReqDoc` line crosses `String → List Char` on the way in and

@@ -1103,3 +1103,12 @@ open Tm
 
 -- APPENDED 2026-09-09 (stage-3 boundary session)
 #print axioms Tm.the_char_edge_round_trips
+-- APPENDED 2026-09-09 (stage-3 loader session: gap 16's loader pair)
+#print axioms Tm.placement_doc_lt
+#print axioms Tm.docRegion_loadCore_placement
+#print axioms Tm.siteInRange_loadCore
+#print axioms Tm.placement_bounds_pair
+#print axioms Tm.entityInRange_loadEntity
+#print axioms Tm.demotionOriented_loadEntity
+#print axioms Tm.the_loader_builds_sites_in_range
+#print axioms Tm.the_loader_builds_oriented_demotions
