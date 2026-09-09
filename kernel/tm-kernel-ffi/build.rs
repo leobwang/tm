@@ -45,6 +45,13 @@ fn main() {
         println!("cargo:rustc-link-lib=static={l}");
     }
     println!("cargo:rustc-link-lib=dylib=c++");
+
+    // Linux needs a runtime search path: libc++/libc++abi/libunwind ship in the
+    // toolchain's lib/ and the test binaries load them at run time (macOS
+    // embeds an install_name instead).  -arg-tests covers the test binaries.
+    let rpath = format!("-Wl,-rpath,{}", prefix.join("lib").display());
+    println!("cargo:rustc-link-arg={rpath}");
+    println!("cargo:rustc-link-arg-tests={rpath}");
 }
 
 fn which(bin: &str) -> PathBuf {
