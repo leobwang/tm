@@ -76,7 +76,7 @@ stage then has to fight.
   it, because a `close` that reads a global table needs no policy argument;
   the table itself is stage 4's to design.
 * **R7 — how future-day capacity mixes lounge and home by `p_lounge`**
-  (`Arith.lean`'s own gap 14).  Whether the planner floors the mixture per
+  (README gap 26, in the `Arith.lean` block).  Whether the planner floors the mixture per
   level, per day, or carries it exact into the EDF pass is a **decision** the
   planner has to make and state.  A decision is not a proof obligation.
 * **Stage 5's parity harness** — kernel versus the Rust `f64` path over the

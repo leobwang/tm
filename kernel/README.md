@@ -2,8 +2,8 @@
 
 This is the first stage of the `rebuild-on-lean` kernel described in
 `../PLAN-lean-kernel.md`. It is small on purpose. Everything it claims below
-is compiled, and the acceptance script re-checks every claim in about four
-seconds.
+is compiled, and the acceptance script re-checks every claim in about a
+second.
 
 ```
 kernel/
@@ -19,7 +19,7 @@ kernel/
     Check.lean               axiom audit, one line per theorem
     Negative.lean            MUST FAIL to compile — the demonstration
     Goals.lean               stages 3-6 as unproved statements; imported by nothing
-  tm-kernel-ffi/       Rust: the C shim, build.rs, and 26 tests that call Lean
+  tm-kernel-ffi/       Rust: the C shim, build.rs, and 32 tests that call Lean
   check.sh             stage-one acceptance
   totality.py          the kernel must be total; this enforces it
 ```
@@ -27,7 +27,7 @@ kernel/
 ## Build and check
 
 ```bash
-./check.sh                     # everything below, ~4 s
+./check.sh                     # everything below, ~1.1 s warm
 ```
 
 or by hand:
@@ -42,7 +42,7 @@ cd ../tm-kernel-ffi && cargo test                               # Rust -> C -> L
 
 Measured on an M-series Mac: `lake build TmKernel:static` from clean **1.6 s**;
 `cargo test` from clean, driving lake and linking the Lean runtime, **3.6 s**;
-the linkable archive is **497 KB** and the test binary **3.9 MB**.
+the linkable archive is **1.7 MB** (1,759,720 bytes at `c8f3a38`).
 
 **No Mathlib.** Everything used — `Fin`, `Nat`, `Option`, `Except`, `Subtype`,
 `List`, `omega`, `decide`, `simp`, `Lean.Data.Json` — is core toolchain.
@@ -181,7 +181,7 @@ has type
 but is expected to have type
   horizonPrecedes (docRegion p.val r.doc) (docRegion p.val e.val.live.doc) = true
 
-Negative.lean:71:51: error: Application type mismatch: The argument
+Negative.lean:75:51: error: Application type mismatch: The argument
   rfl
 has type
   ?m.11 = ?m.11
@@ -190,7 +190,7 @@ but is expected to have type
 in the application
   planWf_of_parts h1 h2 h3 ?m.9 rfl
 
-Negative.lean:251:2: error: Type mismatch
+Negative.lean:306:2: error: Type mismatch
   sorted_ext_by_key fun x => x.fst
 has type
   ∀ (l₁ l₂ : List (Nat × List Char)),
@@ -927,6 +927,12 @@ fn move_into_the_tombstones_file_is_refused() {
 Stated plainly, because a small thing that compiles is worth more than a large
 sketch, and because the gaps are where the next stage's cost lives.
 
+**One gap sequence, 1–36, in three places.** Gaps 1–23 are here; 24–29 are in
+the `Arith.lean` block below; 30–36 are in the acceptance-evidence block below
+that. "Gap N" therefore names exactly one paragraph, and a cross-reference from
+any block to any other is unambiguous. Number new gaps from 37 and keep the
+sequence.
+
 1. **The plan-level round trip is proved now — and what is left is the JSON
    edge, which is gap 6.** Proved: round trips A and B for a line
    (`serialize_parse`, `parse_serialize`), across an edit
@@ -996,7 +1002,7 @@ sketch, and because the gaps are where the next stage's cost lives.
    partial inverse `statusOfGlyphDemoted` survived this fix — "while a
    tombstone stands, the live line reads `[-]`, never `[ ]`" — and it was the
    same mistake one step further on: §6.3's `readopt` reopens the record while
-   the archive stands. It is deleted; see gap 19 and CHEAT 37.)* The two-line
+   the archive stands. It is deleted; see gap 31 and CHEAT 37.)* The two-line
    form loads and round trips, in both its shapes and whether or not the two
    lines' bytes agree — provided that, where both boxes read `[-]`, the request
    says which horizon each file is. Two such lines in two
@@ -1196,7 +1202,7 @@ sketch, and because the gaps are where the next stage's cost lives.
     unreachable from a well-formed request.** `siteOutOfRange`, the plan-level
     `ambiguousDemotion` that `firstUnoriented` names, `itemCheck:
     rankCollision`, and — since the orientation became lexicographic — the
-    *inner* `notADemotion` in `pairedEntity` (gap 19) cannot fire on anything
+    *inner* `notADemotion` in `pairedEntity` (gap 31) cannot fire on anything
     the loader itself builds — and, since
     `move_at_freshRank_normalized` and its siblings, `rankCollision` cannot fire
     on an `applyCmd` post-state either. They are kept because "cannot happen" is
@@ -1311,7 +1317,7 @@ sketch, and because the gaps are where the next stage's cost lives.
       and the `dupId` guard gives distinct documents, which are the only two
       ways `pairEntity` fails. Before this change that branch was the *live*
       one — it is how a `[ ]` record was refused. It stays for totality; it
-      joins gap 10's list of checks no input can fail.
+      joins gap 16's list of checks no input can fail.
 
     **What is *not* closed, and it is a real divergence from the oracle.**
     `tree.rs`'s `is_archive_copy` also constrains *where* a `[-]` line may be
@@ -1348,15 +1354,17 @@ sketch, and because the gaps are where the next stage's cost lives.
 <!-- ===================================================================
      THE EXACT-ARITHMETIC LAYER (`TmKernel/Arith.lean`), added on its own
      branch.  Appended as a block so the three stage-one branches merge.
+     Its gaps were renumbered into the single 1-36 sequence at c8f3a38;
+     they were 12-17 before that.
      =================================================================== -->
 
 ## The exact-arithmetic layer (`TmKernel/Arith.lean`)
 
-1,078 lines, 91 theorems, no `Float`, no fixed point, no `Rat`. §7 and §8 are
-written in decimals; every one of those decimals is a *comparison*, and a
-comparison of ratios cross-multiplies into `Nat`. `u = need/avail` is never
-formed: `u ≥ p/q` is `q·need ≥ p·avail`, and a scale constant folds into the
-same product, so §7.1's safety-1.3 test against an edge is
+1,079 lines, 90 theorems (measured at `c8f3a38`), no `Float`, no fixed point,
+no `Rat`. §7 and §8 are written in decimals; every one of those decimals is a
+*comparison*, and a comparison of ratios cross-multiplies into `Nat`.
+`u = need/avail` is never formed: `u ≥ p/q` is `q·need ≥ p·avail`, and a scale
+constant folds into the same product, so §7.1's safety-1.3 test against an edge is
 `13·rem·q ≥ 10·avail·p` — three multiplications and one `≤`.
 
 What is proved: `Q.le` (cross-multiplication) is reflexive, transitive on
@@ -1372,20 +1380,26 @@ intervals, derived rather than sampled. Rounding is three named rules
 a proof that it is within one minute of the exact value; R1, R2, R4 and R5 are
 built on them and R3 is eliminated by typing the window in minutes.
 
-Gap 5 above says "no exact-arithmetic layer"; that clause is superseded. The
-rest of gap 5 — no `close`, no `ClosePolicy`, no planner, no priority, no
+Gap 11 above says "no exact-arithmetic layer"; that clause is superseded. The
+rest of gap 11 — no `close`, no `ClosePolicy`, no planner, no priority, no
 recurrence, and tail-drop and stability unattempted — still stands.
 
 ### What it does **not** cover
 
-12. **`Check.lean` does not audit these 91 theorems.** The file is outside this
-    branch's scope, so the acceptance run's "axiom audit (70 theorems)" is the
-    pre-existing list. The audit was run by hand over all 91 and every one
-    depends only on `propext` / `Quot.sound` / `Classical.choice`; ten depend on
-    no axioms at all. Whoever merges the three stage-one branches should append
-    the `Arith` names to `Check.lean` so CI covers them too.
+*Gaps 24–29, continuing the single sequence that starts at "What this does not
+cover" above.*
 
-13. **`0/0` is a decision, not a derivation.** §7.1 says "capacity 0 → `u = ∞`",
+24. **~~`Check.lean` does not audit these 91 theorems~~ — closed.** It did not
+    when this block was written: the acceptance run's audit was the pre-existing
+    list and the `Arith` names were checked by hand. They were appended at
+    `58ee343` and the generator's name-stripping bug was repaired at `e7b816c`.
+    Measured at `c8f3a38`: `grep -cE '^\s*(@\[[^]]*\][[:space:]]*)?theorem '
+    TmKernel/Arith.lean` is 90 and `grep -c '^#print axioms Tm.Arith' Check.lean`
+    is 90 — every theorem in this module is audited by CI, and none depends on
+    anything but `propext` / `Quot.sound` / `Classical.choice`; ten depend on no
+    axioms at all.
+
+25. **`0/0` is a decision, not a derivation.** §7.1 says "capacity 0 → `u = ∞`",
     with no exception for zero need, so `utilGe 0 0 e` is `true` and an item
     with nothing left to do and no capacity comes out HOT. An `f64`
     implementation gets `NaN` there, every comparison is false, and it falls off
@@ -1395,13 +1409,13 @@ recurrence, and tail-drop and stability unattempted — still stands.
     takes the spec's sentence literally and says so
     (`util_zero_over_zero_is_undefined`, `util_zero_over_zero_is_hot`).
 
-14. **R7 is open.** §8.4's future-day capacity mixes the lounge and home
+26. **R7 is open.** §8.4's future-day capacity mixes the lounge and home
     capacities by `p_lounge`, which is a rational weight over two integer
     minute-counts. Nothing in this layer rounds it; whether the planner floors
     the mixture per level, per day, or carries it exact into the EDF pass is a
     decision the planner has to make and state, and it is not made here.
 
-15. **`ladder_eq_rungs` needs the edges sorted; `rungs_antitone` does not.**
+27. **`ladder_eq_rungs` needs the edges sorted; `rungs_antitone` does not.**
     That asymmetry is deliberate — antitonicity is the property the list
     actually supports — but it means a misconfigured `priority.bins` (not
     descending) still produces a well-defined, antitone bin that is *not* the
@@ -1410,14 +1424,14 @@ recurrence, and tail-drop and stability unattempted — still stands.
     branch's file. `binsWf` and `descending` are the two decidable predicates a
     loader should run.
 
-16. **The energy posterior is arithmetic here, not statistics.** `ramp`,
+28. **The energy posterior is arithmetic here, not statistics.** `ramp`,
     `posteriorNum` and `energyAfter` implement §8.5's *correction*, exactly and
     over `Int`. Fitting the model, `exp(−age/decay)`, the shrinkage means and
     `p_lounge` stay in Rust, as §3.6 says. `energyAfter` also has no monotonicity
     theorem in `δ`: it is a clamp composed with a rounding, both monotone, but
     the composition was not needed by anything yet and was not proved.
 
-17. **Nothing consumes this layer.** Priority and the planner are stages 5 and 6.
+29. **Nothing consumes this layer.** Priority and the planner are stages 5 and 6.
     `needMin`, `budgetBlocks`, `plannedMin` and `energyAfter` are the four sites
     §7 and §8 will call; until they exist, the parity harness against the Rust
     `f64` path (§3.5's 0/2,251,500 and 135/150,600 measurements) cannot be re-run
@@ -1427,8 +1441,8 @@ recurrence, and tail-drop and stability unattempted — still stands.
 <!-- ===================================================================
      THE ACCEPTANCE EVIDENCE (`kernel/corpus/`, the corpus harness and the
      differential oracle), added on its own branch.  Appended as a block so
-     the stage-two branches merge.  Gaps numbered from 18 provisionally;
-     whoever merges renumbers.
+     the stage-two branches merge.  Its gaps were renumbered into the single
+     1-36 sequence at c8f3a38; they were 18-24 before that.
      =================================================================== -->
 
 ## The acceptance evidence: the fixture corpus, and the Rust as an oracle
@@ -1474,7 +1488,7 @@ that exists to make `tm check` print, and each refusal names a defect
 | `plan-conflicts/week/2026-W37.md` | `badLine: manyIds` | line 23, `^%` beside `^q7` — "an odd token `^%`, two ids on one line"; the same file's `danglingDep` catches "a dangling `after:^t9`" and "a two-item `after:` cycle" |
 
 Before the field wiring the count was 26/37: four `calendar/*.md` refused with
-`itemCheck: fileKindShape` (gap 18) and four `month/2026-09.md` refused with
+`itemCheck: fileKindShape` (gap 30) and four `month/2026-09.md` refused with
 `orphanDemotion: m2` (gap 2), both of them kernel defects and both now fixed.
 The one `plan-conflicts` calendar refusal that remains is the *right* one, and
 it is the wiring working: eight calendar lines, one refused.
@@ -1482,7 +1496,7 @@ it is the wiring working: eight calendar lines, one refused.
 **Four of the five whole plans load and round-trip**, up from one. `plan-basic`,
 `plan-home-day` and `plan-travel-day` were `splitLine: m2` until the demotion
 model changed — one entity, one token vector, and a tombstone chosen by horizon
-order — which is gap 19 and is now closed; `plan-recur`, the one fixture tree
+order — which is gap 31 and is now closed; `plan-recur`, the one fixture tree
 with no demoted line, always loaded. The fifth is `plan-conflicts`, whose four
 refusals are the four rows above and are what that fixture exists to have.
 
@@ -1505,20 +1519,28 @@ which makes the loader name the id it parsed); and does `tm edit est=` produce
 the same line.
 
 ```
-corpus lines     138 compared, 129 with nothing to report
-generated       2048 compared,  479 with nothing to report
+corpus lines     138 compared, 126 with nothing to report
+generated       2048 compared,  481 with nothing to report
 ```
+
+Measured at `c8f3a38` with `run-oracle.sh <scratch> 512 4`, run twice and
+byte-identical both times. The counts are deterministic for a fixed seed count —
+they move when the *kernel* moves, not between runs. They were 129 and 479
+before the demotion model changed at `8eea3d6`.
 
 **Byte faithfulness holds on both sides everywhere.** 2,186 lines, and neither
 implementation ever returned a line different from the one it was given. That is
 the strongest single result in this section, and it is the property stage 2 is
 named after.
 
-The disagreements are gaps 18–21.
+The disagreements are gaps 30–33.
 
 ### What this does **not** cover
 
-18. **~~`shapeWfFor`'s `.calendar` clause is unsatisfiable~~ — fixed; this is
+*Gaps 30–36, continuing the single sequence that starts at "What this does not
+cover" near the top of this file.*
+
+30. **~~`shapeWfFor`'s `.calendar` clause is unsatisfiable~~ — fixed; this is
     what it was.** The corpus harness found it: **every one of the 20 calendar
     item lines in the corpus was refused**, including the ones written exactly
     as §4.1 writes an interval (`at:2026-09-07T12:50/13:50`), because the
@@ -1532,7 +1554,7 @@ The disagreements are gaps 18–21.
     is `plan-conflicts`' `- [ ] 3 Office hours  loc:JCL ^g7` — "a calendar
     entry with no time", which that fixture exists to have refused.
 
-19. **~~The kernel's demotion is two byte-identical `[-]` lines; tm's is
+31. **~~The kernel's demotion is two byte-identical `[-]` lines; tm's is
     not~~ — fixed; this is what it was.** Every `month/2026-09.md` in the
     corpus carries
     `- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2` in
@@ -1568,7 +1590,7 @@ The disagreements are gaps 18–21.
     both load. `the_spec_demotion_pair_loads` is §4.3's own two lines
     `decide`d, so the kernel rechecks the acceptance on every build.
 
-20. **A tab is not a separator, and neither is a second space.**
+32. **A tab is not a separator, and neither is a second space.**
     `Text.lean`'s `isSp c := c == ' '`, but §4.1 says "whitespace-separated
     words" and `tm-core::grammar` splits on a whitespace run. Measured on the
     2,048 generated lines:
@@ -1593,7 +1615,7 @@ The disagreements are gaps 18–21.
     Otherwise the `est` edit agrees exactly: 132 corpus lines and 44 generated
     lines, one disagreement, the one above.
 
-21. **Every `^`-leading word is an id.** `isIdWord w := w.head? == some '^'`,
+33. **Every `^`-leading word is an id.** `isIdWord w := w.head? == some '^'`,
     where §4.1 says a token the parser cannot classify stays in the title, and
     the Rust keeps `^`, `^%` and `^é` there with a `tm check` problem. So a bare
     `^` names an entity whose id is the empty list — and two lines ending in `^`
@@ -1603,7 +1625,7 @@ The disagreements are gaps 18–21.
     `plan-conflicts/week/2026-W37.md:23`, which the shipped parser reads with id
     `q7`. CHEAT 29.
 
-22. **Gap 6 is measured, not closed.** `split_lines`/`join_lines` are
+34. **Gap 6 is measured, not closed.** `split_lines`/`join_lines` are
     `str::split('\n')` and `join("\n")`, the identity on every `String`, and
     `split_join_is_identity` checks that on all 37 corpus files (the line count
     is exactly the newline count plus one) and on the shapes that break naive
@@ -1614,7 +1636,7 @@ The disagreements are gaps 18–21.
     is a harness written in the same language as one half of the boundary. It is
     a much better measurement than none; it is not a proof.
 
-23. **The oracle compares four things, and the item has twenty-two fields.**
+35. **The oracle compares four things, and the item has twenty-two fields.**
     Title, `ci`, `!k`, `@parent`, `#tags`, shape, recurrence, budget, `loc:`,
     `buffer:` and the flags have no observable counterpart at stage 1, because
     the kernel keeps those tokens verbatim and does not interpret them (gap 3).
@@ -1625,7 +1647,7 @@ The disagreements are gaps 18–21.
     invalid-interval problems on lines the kernel accepts without comment. Those
     are not disagreements yet; they are the list of checks the kernel still owes.
 
-24. **The oracle is not in `check.sh`.** It needs a Rust build of `main` in a
+36. **The oracle is not in `check.sh`.** It needs a Rust build of `main` in a
     scratch directory outside the repository, which is the wrong dependency for
     an acceptance script that must run on this branch alone. Run it by hand:
     `tm-kernel-ffi/examples/oracle/run-oracle.sh`. The corpus harness, which
@@ -1643,13 +1665,13 @@ defect-by-defect verdicts, and in the gap list above. Prose can be skimmed past,
 and an agent or a contributor who cannot build a thing can quietly leave it out,
 at which point the gap becomes invisible.
 
-`TmKernel/Goals.lean` makes the remainder a **verifiable artefact**: 51
+`TmKernel/Goals.lean` makes the remainder a **verifiable artefact**: 52
 outstanding obligations, each a Lean `theorem` whose statement elaborates
 against the real kernel and whose proof is `sorry`.
 
 | stage | goals | what they are |
 |---|---|---|
-| **3** | 11 | `rank` and `add` (L20, L21); L22's expected refutation; the JSON/string/newline edge (gaps 6 and 12); gap 16's two by-construction proofs; gap 4's one estimate reader |
+| **3** | 12 | `rank` and `add` (L20, L21); L22's expected refutation; the JSON/string/newline edge (gaps 6 and 12); gap 16's two by-construction proofs; gap 4's one estimate reader |
 | **4** | 11 | L16–L19 and L27: `close` idempotent, `autoClose` catching up in one step, `ClosePolicy`'s wall exemption, the conservation fold; F1, F2, F4, B1–B3 |
 | **5** | 14 | §6.4's rollups, §5.4's series head (gap 18), §7.2's priority and §7.4's hysteresis, §7.3's EDF pass over §8.4's capacity |
 | **6** | 15 | §8.3's single-run invariants (L26), E1, E2, E5, E7's window fixed point, and L24/L25 stated but recommended for the proptest |
@@ -1676,7 +1698,7 @@ attempted:
 
 1. **Nothing imports it.** `TmKernel.lean` does not, and no module of the
    library does. Its `sorry`s therefore cannot reach a proved theorem, and
-   check 3 — the axiom audit over `Check.lean`'s 983 theorems — is what enforces
+   check 3 — the axiom audit over `Check.lean`'s 1,006 names — is what enforces
    that. A `sorryAx` there means `Goals.lean` leaked.
 2. **`totality.py` names it, and only it.** The exemption is `EXEMPT =
    {"Goals.lean"}`, one filename, not a loosened pattern: a `sorry` added to any
