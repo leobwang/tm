@@ -18,6 +18,7 @@ kernel/
     TmKernel/Boundary.lean   String -> String; one @[export]
     Check.lean               axiom audit, one line per theorem
     Negative.lean            MUST FAIL to compile — the demonstration
+    Goals.lean               stages 3-6 as unproved statements; imported by nothing
   tm-kernel-ffi/       Rust: the C shim, build.rs, and 21 tests that call Lean
   check.sh             stage-one acceptance
   totality.py          the kernel must be total; this enforces it
@@ -35,6 +36,7 @@ or by hand:
 cd TmKernel && ~/.elan/bin/lake build TmKernel:static
 LEAN_PATH=.lake/build/lib/lean ~/.elan/bin/lean Check.lean     # axiom audit
 LEAN_PATH=.lake/build/lib/lean ~/.elan/bin/lean Negative.lean   # MUST print errors
+LEAN_PATH=.lake/build/lib/lean ~/.elan/bin/lean Goals.lean      # `sorry` warnings, no errors
 cd ../tm-kernel-ffi && cargo test                               # Rust -> C -> Lean
 ```
 
@@ -1410,3 +1412,94 @@ The disagreements are gaps 18–21.
     an acceptance script that must run on this branch alone. Run it by hand:
     `tm-kernel-ffi/examples/oracle/run-oracle.sh`. The corpus harness, which
     needs nothing but this branch, *is* check 6.
+
+<!-- ===================================================================
+     THE BURN-DOWN (`TmKernel/Goals.lean`, `check.sh` check 7).
+     =================================================================== -->
+
+## The burn-down: `TmKernel/Goals.lean`
+
+Everything above this line is compiled. Everything stages 3 to 6 still owe was,
+until now, **prose** — in `PLAN-lean-kernel.md` §3.3's law table, in §4's
+defect-by-defect verdicts, and in the gap list above. Prose can be skimmed past,
+and an agent or a contributor who cannot build a thing can quietly leave it out,
+at which point the gap becomes invisible.
+
+`TmKernel/Goals.lean` makes the remainder a **verifiable artefact**: 51
+outstanding obligations, each a Lean `theorem` whose statement elaborates
+against the real kernel and whose proof is `sorry`.
+
+| stage | goals | what they are |
+|---|---|---|
+| **3** | 11 | `rank` and `add` (L20, L21); L22's expected refutation; the JSON/string/newline edge (gaps 6 and 12); gap 16's two by-construction proofs; gap 4's one estimate reader |
+| **4** | 11 | L16–L19 and L27: `close` idempotent, `autoClose` catching up in one step, `ClosePolicy`'s wall exemption, the conservation fold; F1, F2, F4, B1–B3 |
+| **5** | 14 | §6.4's rollups, §5.4's series head (gap 18), §7.2's priority and §7.4's hysteresis, §7.3's EDF pass over §8.4's capacity |
+| **6** | 15 | §8.3's single-run invariants (L26), E1, E2, E5, E7's window fixed point, and L24/L25 stated but recommended for the proptest |
+
+### Why a statement that only typechecks is worth something
+
+A statement that elaborates is **guaranteed to be well-formed and to name real
+definitions**. A goal nobody can state precisely is a goal nobody has
+understood, and finding that out now costs a session; finding it out in stage 6
+costs the stage. Writing these produced three findings before any proof was
+attempted:
+
+* §8.3's "monotone rank" cannot be stated over §7's `p` yet, because `p` needs
+  stage 5's EDF capacity — so the goal stands in `rootPrio` and `effectiveCi`
+  and says so at the declaration;
+* §5.4's series head and §6.4's rollups turned out to be *fully* stateable over
+  vocabulary that already exists, which moves them out of "stage 5 is a big
+  unknown" and into "stage 5 has thirteen named lemmas";
+* B3 (`close_week` folding a dropped child's remaining into its parent) cannot
+  **fire** until gap 22's decision about `Core.parent` is taken. That is now a
+  visible precondition of stage 4 rather than a surprise inside it.
+
+### The rules that make it safe
+
+1. **Nothing imports it.** `TmKernel.lean` does not, and no module of the
+   library does. Its `sorry`s therefore cannot reach a proved theorem, and
+   check 3 — the axiom audit over `Check.lean`'s 983 theorems — is what enforces
+   that. A `sorryAx` there means `Goals.lean` leaked.
+2. **`totality.py` names it, and only it.** The exemption is `EXEMPT =
+   {"Goals.lean"}`, one filename, not a loosened pattern: a `sorry` added to any
+   real module is still a check-2 failure. Check 2 now scans the package root as
+   well as the library, so the exemption is load-bearing rather than decorative.
+3. **It elaborates on its own**, exactly as `Check.lean` does. Check 7 runs it
+   and fails on an *error*; the `sorry` warnings are the point.
+
+### How to burn it down
+
+The count in check 7's line is a **burn-down, not a score**. A stage that
+discharges a goal:
+
+1. proves it in the module it belongs to (`Cmd.lean` for a command law,
+   `Plan.lean` for a plan-level one, and so on);
+2. appends its name to `Check.lean`, so the axiom audit covers it;
+3. **deletes it from `Goals.lean`**, and the number drops.
+
+Removing a provisional `def … := sorry` is the same move: it is replaced by the
+real definition in the real module. A goal that turns out to be **false** is a
+finding, not a failure — rename it to the negation, prove that, and record it
+the way `move_last_wins_refuted_globally` and `demote_not_idem` are recorded.
+Four goals are already marked **R\*** (expected refutation) at their doc
+comments: L17 (`close_week_and_close_month_commute`), L22
+(`move_has_an_inverse_command`), L27 (`lifecycle_commands_commute`) and
+`joining_lines_is_injective`. A fifth, `the_json_edge_round_trips`, is flagged
+as likely needing *narrowing* to the fragment the kernel emits rather than
+refuting outright — and if it does not hold there either, that is a finding.
+
+The number rises only when a new debt is admitted, which is a thing worth
+noticing in a diff.
+
+### What is deliberately *not* in it
+
+`Goals.lean`'s header carries the list, with what would have to exist first for
+each. In summary: the recurrence denotation (D1, D2) and `close day`'s
+double-count (F6) all need a parsed `LogEvent`, and `PlanCore.log` is
+`List String` held verbatim; `ClosePolicy`'s five rows are stage 4's to design;
+generated-block ownership (F3, G1) is §4's **A** verdict — architecture, not
+type theory, and the plan says not to credit the compiler for it; R7's capacity
+mixing is a decision, not a proof obligation; and §7.1's bin ladder is left
+alone on purpose, because three of its four edges are halvings and the fourth is
+1/10, so the only property it supports is antitonicity and that is already
+proved (`Arith.rungs_antitone`).

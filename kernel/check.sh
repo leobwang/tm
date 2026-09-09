@@ -13,7 +13,10 @@ say() { printf '%-46s %s\n' "$1" "$2"; }
 
 # 2. Totality and boundary discipline.  A Lean panic returns Inhabited.default
 #    with exit code 0 -- a silent wrong answer -- so the kernel must be total.
-if python3 totality.py TmKernel/TmKernel; then
+#    Both directories: the library, and the package root, which holds Check.lean,
+#    Negative.lean and Goals.lean.  Goals.lean is the one exemption and
+#    totality.py names it explicitly; see the comment there.
+if python3 totality.py TmKernel/TmKernel TmKernel; then
   say "totality check" "ok"
 else
   say "totality check" "FAILED"; fail=1
@@ -61,6 +64,29 @@ if [ $rc -eq 0 ]; then
 else
   say "corpus round trip" "FAILED"; fail=1
   printf '%s\n' "$out" | tail -40
+fi
+
+# 7. The outstanding goals of stages 3-6 elaborate.  TmKernel/Goals.lean states
+#    every remaining obligation as a theorem with a `sorry` proof: a statement
+#    that typechecks is guaranteed to be well-formed and to name real
+#    definitions, so a goal nobody can state is visible now rather than in
+#    stage 6.  `sorry` warnings are the point here; ERRORS are not, and that is
+#    what this checks.
+#
+#    The count is a BURN-DOWN, not a score.  A stage that discharges a goal
+#    moves the theorem into its real module and deletes it from Goals.lean, and
+#    the number drops.  It rises only when a new debt is admitted.
+#
+#    Nothing imports Goals.lean, so its `sorry`s cannot reach a proved theorem;
+#    check 3 above is what enforces that -- a sorryAx there means it leaked.
+out=$( cd TmKernel && LEAN_PATH=.lake/build/lib/lean "$LEAN" Goals.lean 2>&1 )
+rc=$?
+goals=$( grep -c '^theorem ' TmKernel/Goals.lean )
+if [ $rc -eq 0 ] && ! printf '%s\n' "$out" | grep -q 'error'; then
+  say "stage goals" "ok  ($goals outstanding, stages 3-6)"
+else
+  say "stage goals" "FAILED"; fail=1
+  printf '%s\n' "$out" | grep -v 'declaration uses' | head -40
 fi
 
 exit $fail
