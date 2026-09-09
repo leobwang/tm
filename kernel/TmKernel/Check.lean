@@ -1094,3 +1094,9 @@ open Tm
 -- the two `ofPair?` lemmas the earlier generator cut at the `?`
 #print axioms Tm.Arith.ofPair?_zero
 #print axioms Tm.Arith.ofPair?_some
+
+-- added by the demotion-orientation revision
+#print axioms Tm.demote_ok
+#print axioms Tm.readopt_ok
+#print axioms Tm.Core.archiveSite_none
+#print axioms Tm.Core.archiveSite_some
