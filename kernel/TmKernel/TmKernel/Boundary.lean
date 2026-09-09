@@ -2114,6 +2114,256 @@ theorem the_loader_builds_oriented_demotions (docs : List ReqDoc) (items : List 
       exact demotionOriented_loadEntity (fun q hq => (List.mem_filter.1 hq).1)
         (hall (i, e) (loadStore_get_some items i e g))
 
+/-- The two (or one) lines an entity renders are distinct.  They can only
+collide if the archive site **is** the live site, and `wf` forbids exactly
+that (`archive_elsewhere`). -/
+theorem render_nodup (i : Id) (e : Entity) : (render i e).Nodup := by
+  unfold render renderCore
+  cases h : e.val.archive with
+  | none => simp
+  | some t =>
+      refine List.nodup_cons.2 ⟨?_, by simp⟩
+      intro hx
+      simp at hx
+      obtain ⟨hsite, _⟩ := hx
+      exact absurd (congrArg Site.doc hsite)
+        (Ne.symm (archive_elsewhere e t.site (Core.archiveSite_some h)))
+
+/-- Reading distinct ids out of one store yields distinct lines: every line
+carries its id's bytes in its own rendering, so a collision would name one id
+twice in the domain. -/
+theorem flatMap_nodup_store (p : PlanCore) :
+    ∀ (ls : List Id), ls.Nodup →
+      (ls.flatMap (fun i =>
+        match p.store.get i with | none => [] | some e => render i e)).Nodup := by
+  intro ls
+  induction ls with
+  | nil => intro _; simp
+  | cons x t ih =>
+      intro hnd
+      obtain ⟨hx, ht⟩ := List.nodup_cons.1 hnd
+      refine List.nodup_append.2 ⟨?_, ih ht, ?_⟩
+      · match g : p.store.get x with
+        | none => simp [g]
+        | some e => simpa [g] using render_nodup x e
+      · intro a ha b hb hab
+        match g : p.store.get x with
+        | none => simp [g] at ha
+        | some e =>
+            have hai : a.id = x := render_all_same_id x e a (by simpa [g] using ha)
+            obtain ⟨j, hj, hb'⟩ := List.mem_flatMap.1 hb
+            match g' : p.store.get j with
+            | none => simp [g'] at hb'
+            | some e' =>
+                have hbi : b.id = j := render_all_same_id j e' b (by simpa [g'] using hb')
+                have hxj : x = j := calc x = a.id := hai.symm
+                  _ = b.id := congrArg Line.id hab
+                  _ = j := hbi
+                exact hx (by rw [hxj]; exact hj)
+
+/-- **A well-formed store renders distinct lines.**  `p.lines` walks the domain
+and renders; both sides of the fold keep the lines apart — distinct ids
+(`domNodup`) and `render_nodup` within one entity. -/
+theorem store_lines_nodup (p : PlanCore) (hn : p.store.dom.Nodup) : p.lines.Nodup :=
+  flatMap_nodup_store p _ hn
+
+/-- The domain after an insert, stated as data: the new id goes in front, or
+nothing changes. -/
+theorem Store.insert_dom (s : Store) (i : Id) (e : Entity) :
+    (s.insert i e).dom = if i ∈ s.dom then s.dom else i :: s.dom := by
+  unfold Store.insert
+  split <;> rfl
+
+/-- Folding inserts over **any** list keeps a `Nodup` domain nodup: the member
+case changes nothing; the absent case conses a fresh head.  No freshness
+hypothesis is needed because a re-insert collapses instead of duplicating. -/
+theorem foldl_insert_dom_nodup : ∀ (items : List (Id × Entity)) (s : Store),
+    s.dom.Nodup → ((items.foldl (fun s p => s.insert p.1 p.2) s)).dom.Nodup := by
+  intro items
+  induction items with
+  | nil => intro s hs; exact hs
+  | cons x t ih =>
+      intro s hs
+      simp only [List.foldl_cons]
+      refine ih (s.insert x.1 x.2) ?_
+      by_cases hm : x.1 ∈ s.dom
+      · rw [Store.insert_dom, if_pos hm]; exact hs
+      · rw [Store.insert_dom, if_neg hm, List.nodup_cons]
+        exact ⟨fun h => absurd h hm, hs⟩
+
+/-- Tag every rank of a distinct list with one fixed document index and the
+pairs are distinct. -/
+theorem slots_nodup_of_nodup (k : Nat) :
+    ∀ (l : List (Nat × (Id × Glyph × RawItem))),
+    (l.map Prod.fst).Nodup → (l.map (fun p => (k, p.1))).Nodup := by
+  intro l
+  induction l with
+  | nil => intro _; simp
+  | cons a t ih =>
+      intro hn
+      obtain ⟨hnm, hnt⟩ := List.nodup_cons.1 hn
+      rw [List.map_cons]
+      refine List.nodup_cons.2 ⟨?_, ?_⟩
+      · intro h
+        obtain ⟨y, hy, heq⟩ := List.mem_map.1 h
+        exact hnm (List.mem_map.2 ⟨y, hy, congrArg Prod.snd heq⟩)
+      · exact ih hnt
+
+/-- **No two placements of a request occupy the same slot.**  `(doc, rank)`
+pairs of `placementsOf k docs` are distinct: within one file by
+`splitDoc_items_nodup`, across files because each file's placements carry the
+index of their own file.  This is the structural fact behind `normalized`: no
+command had to be run for it — it holds of the request itself. -/
+theorem placements_slot_nodup :
+    ∀ (docs : List ReqDoc) (k : Nat),
+    ((placementsOf k docs).map (fun q => (q.doc, q.rank))).Nodup := by
+  intro docs
+  induction docs with
+  | nil => intro k; simp [placementsOf]
+  | cons d rest ih =>
+      intro k
+      show ((placementsOfDoc k d.reg (splitDoc 0 d.lines) ++
+          placementsOf (k + 1) rest).map (fun q => (q.doc, q.rank))).Nodup
+      rw [List.map_append, List.nodup_append]
+      refine ⟨?_, ih (k + 1), ?_⟩
+      · have hmap : (placementsOfDoc k d.reg (splitDoc 0 d.lines)).map
+            (fun q => (q.doc, q.rank)) =
+          ((splitDoc 0 d.lines).items.map fun it => (k, it.1)) := by
+          simp only [placementsOfDoc]
+          rw [List.map_map]
+          rfl
+        rw [hmap]
+        exact slots_nodup_of_nodup k _ (splitDoc_items_nodup 0 d.lines)
+      · intro a ha b hb hab
+        obtain ⟨qa, hqam, hra⟩ := List.mem_map.1 ha
+        obtain ⟨qb, hqbm, hrb⟩ := List.mem_map.1 hb
+        obtain ⟨it, hit, hqa⟩ := mem_placementsOfDoc.1 hqam
+        obtain ⟨j, d2, hd2, hq0⟩ := (mem_placementsOf qb (k + 1) rest).1 hqbm
+        obtain ⟨it2, hit2, hqb'⟩ := mem_placementsOfDoc.1 hq0
+        have hp : (qa.doc, qa.rank) = (qb.doc, qb.rank) :=
+          hra.trans (hab.trans hrb.symm)
+        have h1 : qa.doc = qb.doc := congrArg Prod.fst hp
+        have hqadoc : qa.doc = (k : Nat) := by rw [hqa]
+        have hqbdoc : qb.doc = (k + 1 + j : Nat) := by rw [hqb']
+        have h2 : (k : Nat) = k + 1 + j :=
+          calc (k : Nat) = qa.doc := hqadoc.symm
+            _ = qb.doc := h1
+            _ = k + 1 + j := hqbdoc
+        exact absurd h2 (by omega)
+
+/-- If every line of a list names a placement slot, and distinct lines name
+placements whose slots are distinct, then the lines of any one document have
+distinct ranks: an equal rank in one document would make two lines equal. -/
+theorem ranksIn_nodup_lines {docs : List ReqDoc}
+    (hpl : ((placementsOf 0 docs).map (fun q => (q.doc, q.rank))).Nodup) :
+    ∀ (ls : List Line), (∀ l ∈ ls, ∃ q ∈ placementsOf 0 docs, l = placementLine q) →
+    ls.Nodup → ∀ k, (ranksIn k ls).Nodup := by
+  intro ls
+  induction ls with
+  | nil => intro _ _ _; simp [ranksIn]
+  | cons x t ih =>
+      intro hH hN k
+      have hHt : ∀ l ∈ t, ∃ q ∈ placementsOf 0 docs, l = placementLine q :=
+        fun l hl => hH l (List.mem_cons_of_mem x hl)
+      obtain ⟨hn1, hn2⟩ := List.nodup_cons.1 hN
+      by_cases hd : (x.site.doc == k) = true
+      · rw [ranksIn, List.filter_cons, if_pos hd, List.map_cons, List.nodup_cons]
+        refine ⟨fun hr => ?_, ih hHt hn2 k⟩
+        have hxd : x.site.doc = k := by simpa using hd
+        obtain ⟨m, hm, hmd, hmr⟩ := mem_ranksIn.1 hr
+        obtain ⟨ql, hql, hlq⟩ := hH x (by simp)
+        obtain ⟨qm, hqm, hmq⟩ := hH m (List.mem_cons.2 (Or.inr hm))
+        have e1 : x.site = ⟨ql.doc, ql.rank⟩ := by rw [hlq]; rfl
+        have e2 : m.site = ⟨qm.doc, qm.rank⟩ := by rw [hmq]; rfl
+        have hdom : ql.doc = qm.doc := calc ql.doc = x.site.doc :=
+            (congrArg Site.doc e1).symm
+          _ = k := hxd
+          _ = m.site.doc := hmd.symm
+          _ = qm.doc := congrArg Site.doc e2
+        have hrank : ql.rank = qm.rank := calc ql.rank = x.site.rank :=
+            (congrArg Site.rank e1).symm
+          _ = m.site.rank := hmr.symm
+          _ = qm.rank := congrArg Site.rank e2
+        have : ql = qm := nodup_map_inj hpl _ hql _ hqm (Prod.ext hdom hrank)
+        subst this
+        have hxm : x = m := hlq.trans hmq.symm
+        rw [← hxm] at hm
+        exact hn1 hm
+      · rw [ranksIn, List.filter_cons, if_neg hd]
+        exact ih hHt hn2 k
+
+/-- An index below a list's length has a value there. -/
+theorem getElem?_eq_some_of_lt {α : Type} : ∀ (l : List α) {i : Nat},
+    i < l.length → ∃ a, l[i]? = some a := by
+  intro l
+  induction l with
+  | nil => intro i h; exact absurd h (Nat.not_lt_zero i)
+  | cons x t ih =>
+      intro i h
+      match i with
+      | 0 => exact ⟨x, rfl⟩
+      | n + 1 => exact ih (by simpa using h)
+
+/-- **The loader builds a normalized plan** (stage 3, README gap 16, closing
+it).  `normalized` is the conjunct `rankCollision` reads; this says the
+`itemCheck: rankCollision` fault is unreachable from a request that loaded at
+all.  Three facts assemble it: each file's prose ranks are distinct, each
+file's item ranks are distinct (`splitDoc` is a partition of the line
+indices — `splitDoc_prose_nodup`, `splitDoc_items_nodup`,
+`splitDoc_slots_separated`), and every stored line names a placement slot of
+the request, slots of one file being pairwise distinct
+(`placements_slot_nodup`, `loadCore_lines_mem`).  No command was run: this is
+the shape of a request, held constant across all of them. -/
+theorem the_loader_builds_a_normalized_plan (docs : List ReqDoc) (items : List (Id × Entity))
+    (h : buildEntities (placementsOf 0 docs) = .ok items) :
+    normalized (loadCore docs items) = true := by
+  obtain ⟨hmap, hall⟩ := buildEntities_spec _ _ h
+  have hnd : (items.map Prod.fst).Nodup := by rw [hmap]; exact dedupIds_nodup _
+  simp only [normalized, List.all_eq_true, decide_eq_true_eq]
+  intro k hk
+  have hkl : k < docs.length := by simpa [loadCore] using hk
+  obtain ⟨rd, hrd⟩ := getElem?_eq_some_of_lt docs hkl
+  have hpr : proseRanks (loadCore docs items) k = (splitDoc 0 rd.lines).prose.map Prod.fst := by
+    unfold proseRanks
+    rw [show (loadCore docs items).docs = docs.map mkDoc from rfl]
+    have hmk : (docs.map mkDoc)[k]? = some (mkDoc rd) := by
+      rw [List.getElem?_map, hrd]; rfl
+    rw [hmk]
+    rfl
+  rw [docRanks_eq, hpr]
+  show ((splitDoc 0 rd.lines).prose.map Prod.fst ++
+    ranksIn k (loadCore docs items).lines).Nodup
+  refine List.nodup_append.2 ⟨?_, ?_, ?_⟩
+  · exact splitDoc_prose_nodup 0 rd.lines
+  · refine ranksIn_nodup_lines (placements_slot_nodup docs 0) (loadCore docs items).lines
+      (fun l hl => (loadCore_lines_mem docs items h l).mp hl) ?_ k
+    exact store_lines_nodup (loadCore docs items)
+      (by unfold loadCore; exact foldl_insert_dom_nodup items emptyStore (by simp [emptyStore]))
+  · intro rp hrp r hri hne
+    obtain ⟨m, hm, hmd, hmr⟩ := mem_ranksIn.1 hri
+    obtain ⟨q, hq, he⟩ := (loadCore_lines_mem docs items h m).mp hm
+    obtain ⟨j, d2, hd2, hq0⟩ := (mem_placementsOf q 0 docs).1 hq
+    obtain ⟨it, hit, hqe⟩ := mem_placementsOfDoc.1 hq0
+    have hsite : m.site = ⟨q.doc, q.rank⟩ := by rw [he]; exact rfl
+    have hqk : q.doc = k :=
+      (congrArg Site.doc hsite).symm.trans hmd
+    have h0 : (0 + j : Nat) = q.doc := by rw [hqe]
+    have hjk : j = k := calc (j : Nat) = 0 + j := (Nat.zero_add j).symm
+      _ = q.doc := h0
+      _ = k := hqk
+    have hd2rd : d2 = rd := by
+      have he2 : some d2 = some rd := by rw [← hd2, hjk, hrd]
+      exact Option.some.inj he2
+    have hrpItem : rp ∈ ((splitDoc 0 rd.lines).items.map Prod.fst) := by
+      refine List.mem_map.2 ⟨it, ?_, ?_⟩
+      · rw [← hd2rd]; exact hit
+      · have hr1 : m.site.rank = (q.rank : Nat) := congrArg Site.rank hsite
+        calc (it.1 : Nat) = q.rank := (by rw [hqe] : (q.rank : Nat) = it.1).symm
+          _ = m.site.rank := hr1.symm
+          _ = r := hmr
+          _ = rp := hne.symm
+    exact splitDoc_slots_separated 0 rd.lines rp hrp hrpItem
+
 /-! ### README gap 6: the `String`/`List Char` edge, closed
 
 Every `ReqDoc` line crosses `String → List Char` on the way in and

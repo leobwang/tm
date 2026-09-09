@@ -1112,3 +1112,18 @@ open Tm
 #print axioms Tm.demotionOriented_loadEntity
 #print axioms Tm.the_loader_builds_sites_in_range
 #print axioms Tm.the_loader_builds_oriented_demotions
+
+-- APPENDED 2026-09-09 (stage-3 loader session 2: the normalized third, gap 16 closed)
+#print axioms Tm.render_nodup
+#print axioms Tm.flatMap_nodup_store
+#print axioms Tm.store_lines_nodup
+#print axioms Tm.Store.insert_dom
+#print axioms Tm.foldl_insert_dom_nodup
+#print axioms Tm.slots_nodup_of_nodup
+#print axioms Tm.placements_slot_nodup
+#print axioms Tm.ranksIn_nodup_lines
+#print axioms Tm.getElem?_eq_some_of_lt
+#print axioms Tm.splitDoc_prose_nodup
+#print axioms Tm.splitDoc_items_nodup
+#print axioms Tm.splitDoc_slots_separated
+#print axioms Tm.the_loader_builds_a_normalized_plan

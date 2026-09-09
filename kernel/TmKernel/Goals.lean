@@ -202,24 +202,17 @@ line, or escape it. -/
 theorem joining_lines_is_injective :
     ∀ ls : List String, ("\n".intercalate ls).splitOn "\n" = ls := sorry
 
-/-! ## Plan.lean / Boundary.lean — README gap 16: checked, not constructed
+/-! ## Plan.lean / Boundary.lean — README gap 16: CLOSED 2026-09-09
 
-Two of the trio are discharged as of 2026-09-09 in `Boundary.lean`:
-`the_loader_builds_sites_in_range` and `the_loader_builds_oriented_demotions`.
-Both read per-entity facts off `buildEntities_spec` and case on the filter
-list in the shape `buildEntity_renders` started.  What remains is the rank
-half: `splitDoc` hands each line index to exactly one of prose and items, so
-`itemCheck: rankCollision` is unreachable from a request — but the chain from
-the rank assignment to the per-document `(docRanks p k).Nodup` under the
-`decide` is unwritten. -/
-
-/-- **P\*, stage 3, README gap 16.**  Ranks within a document are distinct in
-every plan the loader builds, because `splitDoc` hands each line index to
-exactly one of prose and items.  Discharging it makes `itemCheck:
-rankCollision` unreachable from a request. -/
-theorem the_loader_builds_a_normalized_plan (docs : List ReqDoc) (items : List (Id × Entity))
-    (h : buildEntities (placementsOf 0 docs) = .ok items) :
-    normalized (loadCore docs items) = true := sorry
+All three loader conjuncts are discharged in `Boundary.lean`:
+`the_loader_builds_sites_in_range`, `the_loader_builds_oriented_demotions`,
+`the_loader_builds_a_normalized_plan`.  The sites and orientation halves read
+per-entity facts off `buildEntities_spec` and case on the filter list in the
+shape `buildEntity_renders` started.  `normalized` assembles three facts —
+`splitDoc_prose_nodup`/`splitDoc_items_nodup`/`splitDoc_slots_separated`
+(the index partition), `placements_slot_nodup` (no two request lines name one
+slot), and `store_lines_nodup` (the store renders each line once) — so
+`itemCheck: rankCollision` is now unreachable from a request that loaded. -/
 
 /-- **P\*, stage 3, README gap 4.**  Two readers of `est:` still coexist on the
 command path: `Cmd.setEstE` and the `est` request go through the stage-one

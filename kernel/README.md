@@ -1846,3 +1846,38 @@ Audit moves 1007 → 1015 with the eight new names; §6.3's three counts
 (1015 audit lines / 1015 distinct names / 1015 attr-aware theorem declarations)
 reconcile. Check 7's burn-down moves 51 → 49. `check.sh` 7/7; corpus unchanged at
 `33/37 files and 4/5 whole plans`.
+
+<!-- #### Stage-3 session 2026-09-09 (third block): gap 16 CLOSED.
+     Whoever merges: this block adds no gap numbers. -->
+
+**Gap 16 closed (2026-09-09).** The third conjunct, `the_loader_builds_a_normalized_plan`,
+is a theorem in `Boundary.lean`: every plan the loader builds has distinct ranks
+within each document, so `itemCheck: rankCollision` is now unreachable from a
+request that loaded at all — a precondition by proof, not a fault to observe.
+Three facts assemble it, all proved and audited:
+`splitDoc_prose_nodup` / `splitDoc_items_nodup` / `splitDoc_slots_separated`
+(`Plan.lean` — `splitDoc` hands each line index to exactly one reader);
+`placements_slot_nodup` (`Boundary.lean` — no two request lines name one
+(doc, rank) slot, by induction on the document list against the strict rank
+order `splitDoc` maintains); and `store_lines_nodup` (`Boundary.lean` — the
+store renders at most one line per slot: a lone entity renders one line, a pair
+straddles two documents because `pairedEntity` refuses same-document pairs, and
+`archive_elsewhere` is what makes the refusal the right fact). Supporting
+infrastructure along the way: `render_nodup`, `flatMap_nodup_store`,
+`Store.insert_dom`, `foldl_insert_dom_nodup`, `slots_nodup_of_nodup`,
+`ranksIn_nodup_lines`, `getElem?_eq_some_of_lt`.
+
+Audit moves 1015 → 1028 with thirteen new names; §6.3's three counts
+(1028 / 1028 / 1028) reconcile. Check 7's burn-down moves 49 → 48.
+`check.sh` 7/7; corpus unchanged at `33/37 files and 4/5 whole plans`.
+
+The remaining STAGE 3 goals stand where the blockers record them: the two
+`String.splitOn` laws on gap 38 (the legacy splitter does not reduce in the
+kernel, and the negation witness needs the same bridge); the JSON edge on gap
+39 (no `Lean.Json.parse`/`compress` round-trip lemma in core v4.33.1); the
+gap-4 `est` goal on gap 37 (`Key.ofName?` is not invertible in the
+`some`-direction — deterministic `isDefEq` timeout at nineteen literal branches,
+and `Char` equality is opaque so even closed words fail `decide`); `cmdRank`/
+`freshId` and their three laws, which are new commands rather than unproved
+facts about existing ones; and `move_has_an_inverse_command`, whose expected
+refutation waits on a `freshRank` analysis of what `move` writes.

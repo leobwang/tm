@@ -1045,6 +1045,79 @@ theorem splitDoc_items_sorted : ∀ (k : Nat) (ls : List (List Char)),
           rw [splitDoc_cons_error k l rest e hp]
           exact ih (k + 1)
 
+/-- The prose ranks of one file are distinct.  Same induction as the sortedness
+lemmas: an item line contributes nothing to prose; a prose line claims **its
+own index**, which is one below everything the tail may still claim. -/
+theorem splitDoc_prose_nodup : ∀ (k : Nat) (ls : List (List Char)),
+    ((splitDoc k ls).prose.map Prod.fst).Nodup := by
+  intro k ls
+  induction ls generalizing k with
+  | nil => simp [splitDoc]
+  | cons l rest ih =>
+      match h : parseItem l with
+      | .ok t =>
+          obtain ⟨i, g, r⟩ := t
+          rw [splitDoc_cons_ok k l rest i g r h]
+          exact ih (k + 1)
+      | .error pe =>
+          rw [splitDoc_cons_error k l rest pe h, List.map_cons, List.nodup_cons]
+          refine ⟨fun hy => ?_, ih (k + 1)⟩
+          obtain ⟨w, hw, heq⟩ := List.mem_map.1 hy
+          have hge := splitDoc_prose_ge (k + 1) rest w hw
+          omega
+
+/-- The item ranks of one file are distinct — each index is handed to at most
+one line. -/
+theorem splitDoc_items_nodup : ∀ (k : Nat) (ls : List (List Char)),
+    ((splitDoc k ls).items.map Prod.fst).Nodup := by
+  intro k ls
+  induction ls generalizing k with
+  | nil => simp [splitDoc]
+  | cons l rest ih =>
+      match h : parseItem l with
+      | .ok t =>
+          obtain ⟨i, g, r⟩ := t
+          rw [splitDoc_cons_ok k l rest i g r h, List.map_cons, List.nodup_cons]
+          refine ⟨fun hy => ?_, ih (k + 1)⟩
+          obtain ⟨w, hw, heq⟩ := List.mem_map.1 hy
+          have hge := splitDoc_items_ge (k + 1) rest w hw
+          omega
+      | .error pe =>
+          rw [splitDoc_cons_error k l rest pe h]
+          exact ih (k + 1)
+
+/-- **Each line index is handed to exactly one reader.**  A rank is never both
+a prose line's and an item's: `splitDoc` is a partition of the indices, and
+this lemma says so.  It is the third of the three facts that make a loaded
+plan's `docRanks` distinct (`splitDoc_prose_nodup`, `splitDoc_items_nodup` and
+this one). -/
+theorem splitDoc_slots_separated : ∀ (k : Nat) (ls : List (List Char)) (r : Nat),
+    r ∈ ((splitDoc k ls).prose.map Prod.fst) →
+    r ∈ ((splitDoc k ls).items.map Prod.fst) → False := by
+  intro k ls
+  induction ls generalizing k with
+  | nil => intro r h1 _; simp [splitDoc] at h1
+  | cons l rest ih =>
+      intro r h1 h2
+      match h : parseItem l with
+      | .ok t =>
+          obtain ⟨i, g, r'⟩ := t
+          have key := splitDoc_cons_ok k l rest i g r' h
+          rw [key] at h1 h2
+          rcases List.mem_cons.1 h2 with hr | h2t
+          · obtain ⟨w, hw, heq⟩ := List.mem_map.1 h1
+            have hge := splitDoc_prose_ge (k + 1) rest w hw
+            omega
+          · exact ih (k + 1) r h1 h2t
+      | .error pe =>
+          have key := splitDoc_cons_error k l rest pe h
+          rw [key] at h1 h2
+          rcases List.mem_cons.1 h1 with hr | h1t
+          · obtain ⟨w, hw, heq⟩ := List.mem_map.1 h2
+            have hge := splitDoc_items_ge (k + 1) rest w hw
+            omega
+          · exact ih (k + 1) r h1t h2
+
 /-- Strict order out of a weak one and distinct keys.  The weak order is what
 insertion sort gives; the distinctness is `Normalized`. -/
 theorem pairwise_lt_of_le_ne {α : Type} (key : α → Nat) : ∀ {l : List α},
