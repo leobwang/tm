@@ -62,13 +62,16 @@ def Store.insert (s : Store) (i : Id) (e : Entity) : Store :=
 inductive LErr
   /-- more lines of one id than any entity can render, or two in one file -/
   | dupId (i : Id)
-  /-- two lines of one id whose bytes differ.  An entity owns one token vector,
-      so there is no value that renders both. -/
-  | splitLine (i : Id)
-  /-- two lines of one id, in two files, with the same bytes, whose boxes are
-      not a demotion: `render` writes a second line only as a tombstone, and a
-      tombstone is `[-]`.  Nothing renders these two, so they are rejected
-      rather than approximated. -/
+  /-- two lines of one id, in two files, neither of which is a tombstone:
+      `render` writes a second line only as a tombstone, and a tombstone is
+      `[-]`.  Nothing renders these two, so they are rejected rather than
+      approximated.
+
+      There is no `splitLine` beside this one any more.  It said "two lines of
+      one id whose bytes differ", and §6.3's own week close writes exactly
+      that — the month copy carries `est:` = remaining and a `demoted:` stamp
+      the week line does not.  A tombstone that holds its own bytes renders
+      the pair, so the error had nothing left to refuse. -/
   | notADemotion (i : Id)
   /-- two lines of one id in two documents whose **horizons do not order them**,
       so nothing in the files says which line is the tombstone.  `demote` writes
@@ -212,17 +215,21 @@ theorem dedupIds_nodup (l : List Id) : (dedupIds l).Nodup := by
       · rw [if_pos h]; exact ih
       · rw [if_neg h]; exact List.nodup_cons.2 ⟨h, ih⟩
 
-/-- Build the entity whose live line is `live` and whose tombstone is `arch`.
-`none` means no entity renders that pair — the caller rejects. -/
+/-- Build the entity whose record is `live` and whose tombstone is `arch`.
+`none` means no entity renders that pair — the caller rejects.
+
+Two things changed with the demotion model.  The tombstone keeps **its own
+bytes** (`arch.item`), so a pair whose two lines differ — which is what §6.3's
+close writes, `est:` and a stamp on the copy — is representable; and the
+record's status is `statusOfGlyph live.glyph`, which is total, so a `[ ]`
+record beside a standing archive is read as what it is instead of refused. -/
 def pairEntity (arch live : Placement) : Option Entity :=
   match arch.glyph with
   | .demoted =>
-    match statusOfGlyphDemoted live.glyph with
-    | none    => none
-    | some st =>
-      if h : wf ({ live := ⟨live.doc, live.rank⟩, archive := some ⟨arch.doc, arch.rank⟩,
-                   status := st, line := live.item } : Core) = true
-      then some ⟨_, h⟩ else none
+    if h : wf ({ live := ⟨live.doc, live.rank⟩,
+                 archive := some ⟨⟨arch.doc, arch.rank⟩, arch.item⟩,
+                 status := statusOfGlyph live.glyph, line := live.item } : Core) = true
+    then some ⟨_, h⟩ else none
   | _ => none
 
 /-- One line on its own: the entity that renders exactly it.  **Total**, and
@@ -240,56 +247,107 @@ def loneEntity (q : Placement) : Entity :=
   ⟨{ live := ⟨q.doc, q.rank⟩, archive := none, status := statusOfGlyph q.glyph,
      line := q.item }, rfl⟩
 
-/-- **Which line is the tombstone, decided by the files.**  The closed horizon
-comes first; `horizonPrecedes` is antisymmetric, so at most one of the two
-orientations is a demotion and the answer does not depend on which line was
-listed first.  `none` — the two documents declare no order — is the ambiguity,
-and it is reported rather than resolved. -/
+/-- **Which line is the tombstone: the box first, then the files.**
+
+§6.3 gives the archive record two marks and the loader uses them in that order,
+because §3.1 stores one of them and derives the other (see `demotionsOriented`,
+Plan.lean, for the argument):
+
+* an archive record is `[-]` — the close writes it that way and only
+  `tm readopt` reopens a box, and what it reopens is the record.  So a line
+  that is not `[-]` is not the tombstone, whichever file it is in.  This
+  clause is what reads §4.3's own pair: a `[ ]` in `week/2026-W37.md` beside
+  the `[-]` in `month/2026-09.md # Demoted`;
+* where both lines are `[-]` — the snapshot straight after a close — the box
+  says nothing and the files say it instead: the tombstone stays in the region
+  that was **closed** and the record goes to `closeTo`, which is strictly
+  after it (`demotion_target_follows_the_closed_region`).
+
+`horizonPrecedes` is antisymmetric, so the second clause has at most one
+answer, and neither clause reads the argument order (`orientPair_comm`).
+`none` is the genuine ambiguity — two `[-]` lines whose documents declare no
+order — and it is reported rather than resolved.  Two lines *neither* of which
+is `[-]` is also `none` here; the caller names that one `notADemotion`, which
+is what it is. -/
 def orientPair (a b : Placement) : Option (Placement × Placement) :=
-  if horizonPrecedes a.region b.region then some (a, b)
-  else if horizonPrecedes b.region a.region then some (b, a)
-  else none
+  match a.glyph == Glyph.demoted, b.glyph == Glyph.demoted with
+  | true,  false => some (a, b)
+  | false, true  => some (b, a)
+  | false, false => none
+  | true,  true  =>
+    if horizonPrecedes a.region b.region then some (a, b)
+    else if horizonPrecedes b.region a.region then some (b, a)
+    else none
 
 /-- **The loader's answer is a function of the two lines, not of their order.**
 This is the defect this section exists to remove, as a theorem. -/
 theorem orientPair_comm (a b : Placement) : orientPair a b = orientPair b a := by
   unfold orientPair
-  by_cases hab : horizonPrecedes a.region b.region = true
-  · rw [if_pos hab, if_neg (by simp [horizonPrecedes_asymm hab]), if_pos hab]
-  · simp only [Bool.not_eq_true] at hab
-    by_cases hba : horizonPrecedes b.region a.region = true
-    · rw [if_neg (by simp [hab]), if_pos hba, if_pos hba]
-    · simp only [Bool.not_eq_true] at hba
-      rw [if_neg (by simp [hab]), if_neg (by simp [hba]), if_neg (by simp [hba]),
-        if_neg (by simp [hab])]
+  cases ha : a.glyph == Glyph.demoted <;> cases hb : b.glyph == Glyph.demoted <;>
+    simp only [] <;>
+    first
+      | rfl
+      | (by_cases hab : horizonPrecedes a.region b.region = true
+         · rw [if_pos hab, if_neg (by simp [horizonPrecedes_asymm hab]), if_pos hab]
+         · simp only [Bool.not_eq_true] at hab
+           by_cases hba : horizonPrecedes b.region a.region = true
+           · rw [if_neg (by simp [hab]), if_pos hba, if_pos hba]
+           · simp only [Bool.not_eq_true] at hba
+             rw [if_neg (by simp [hab]), if_neg (by simp [hba]), if_neg (by simp [hba]),
+               if_neg (by simp [hab])])
 
+/-- What an orientation guarantees: the tombstone is one of the two lines given,
+its box is `[-]`, and — **when the record's box is `[-]` too** — the files order
+them.  The third conjunct is the one that weakened, and it weakened exactly
+where the second is enough on its own. -/
 theorem orientPair_cases {a b arch live : Placement} (h : orientPair a b = some (arch, live)) :
     ((arch = a ∧ live = b) ∨ (arch = b ∧ live = a)) ∧
-      horizonPrecedes arch.region live.region = true := by
+      arch.glyph = Glyph.demoted ∧
+      (live.glyph = Glyph.demoted →
+        horizonPrecedes arch.region live.region = true) := by
   unfold orientPair at h
-  split at h
-  · rename_i hab
-    simp only [Option.some.injEq, Prod.mk.injEq] at h
+  cases ha : a.glyph == Glyph.demoted <;> cases hb : b.glyph == Glyph.demoted <;>
+      rw [ha, hb] at h <;> simp only [] at h
+  · simp at h
+  · simp only [Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨h1, h2⟩ := h
     subst h1; subst h2
-    exact ⟨Or.inl ⟨rfl, rfl⟩, hab⟩
+    refine ⟨Or.inr ⟨rfl, rfl⟩, by simpa using hb, ?_⟩
+    intro hc; rw [hc] at ha; simp at ha
+  · simp only [Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨h1, h2⟩ := h
+    subst h1; subst h2
+    refine ⟨Or.inl ⟨rfl, rfl⟩, by simpa using ha, ?_⟩
+    intro hc; rw [hc] at hb; simp at hb
   · split at h
-    · rename_i hba
+    · rename_i hab
       simp only [Option.some.injEq, Prod.mk.injEq] at h
       obtain ⟨h1, h2⟩ := h
       subst h1; subst h2
-      exact ⟨Or.inr ⟨rfl, rfl⟩, hba⟩
-    · simp at h
+      exact ⟨Or.inl ⟨rfl, rfl⟩, by simpa using ha, fun _ => hab⟩
+    · split at h
+      · rename_i hba
+        simp only [Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨h1, h2⟩ := h
+        subst h1; subst h2
+        exact ⟨Or.inr ⟨rfl, rfl⟩, by simpa using hb, fun _ => hba⟩
+      · simp at h
 
-/-- Two lines of one id: the only entity that renders both is a half-finished
-demotion, and *which* half-finished demotion is settled by the two documents'
-horizons before any glyph is looked at.  Anything else is rejected — including
-the two lines in one file, which is the invariant itself, and the pair whose
-horizons do not order it, which is the one the previous version silently
-resolved by argument order. -/
+/-- Two lines of one id: the only entity that renders both is a demotion pair,
+and *which* line is the tombstone is settled by `orientPair` — the box, then
+the files — before any entity is built.  Anything else is rejected: the two
+lines in one file, which is the invariant itself; the pair in which neither
+line is `[-]`, which no `render` writes; and the `[-]`/`[-]` pair whose files
+do not order it, which the first version silently resolved by argument order.
+
+**`splitLine` is gone from here**, and that is the model change: the two lines
+of §6.3's pair are *supposed* to differ — the copy carries `est:` = remaining
+and a stamp — and an entity whose tombstone holds its own bytes renders both.
+Refusing them was a rule about a model that had one token vector, and it
+refused three of the five fixture plans. -/
 def pairedEntity (i : Id) (a b : Placement) : Except LErr Entity :=
   if a.doc == b.doc then .error (.dupId i)
-  else if a.item != b.item then .error (.splitLine i)
+  else if a.glyph != Glyph.demoted && b.glyph != Glyph.demoted then .error (.notADemotion i)
   else
     match orientPair a b with
     | none => .error (.ambiguousDemotion i)
@@ -305,25 +363,30 @@ theorem pairedEntity_order_independent (i : Id) (a b : Placement) :
     pairedEntity i a b = pairedEntity i b a := by
   have hdoc : (b.doc == a.doc) = (a.doc == b.doc) := by
     rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq]; exact eq_comm
-  have hitem : (b.item != a.item) = (a.item != b.item) := by
-    rw [Bool.eq_iff_iff, bne_iff_ne, bne_iff_ne]; exact ne_comm
+  have hgl : (b.glyph != Glyph.demoted && a.glyph != Glyph.demoted)
+      = (a.glyph != Glyph.demoted && b.glyph != Glyph.demoted) := Bool.and_comm _ _
   unfold pairedEntity
-  rw [hdoc, hitem, orientPair_comm b a]
+  rw [hdoc, hgl, orientPair_comm b a]
 
-/-- **The ambiguity is named, not resolved.**  Two lines of one id whose
+/-- **The ambiguity is named, not resolved.**  Two `[-]` lines of one id whose
 documents declare no order between them — two backlog files, one file with no
-declared region, two files claiming the same week — are rejected by name.  The
-`[-]`/`[-]` pair this is really about is the one `demote` writes, and the
-kernel's own output can never be in this state: `demotionsOriented` is part of
-`planWf`, so `mapAt` refuses to produce it (`mapAt_rejects_unoriented`). -/
+declared region, two files claiming the same week — are rejected by name.  This
+is the `[-]`/`[-]` pair `demote` writes, and the kernel's own output can never
+be in this state: `demotionsOriented` is part of `planWf`, so `mapAt` refuses to
+produce it (`mapAt_rejects_unoriented`).
+
+The two glyph hypotheses are what the statement gained, and they are exactly
+right: with one of the boxes open there is nothing ambiguous about the pair and
+the loader reads it without asking a file. -/
 theorem unordered_horizons_are_rejected (i : Id) (a b : Placement)
-    (hd : a.doc ≠ b.doc) (hi : a.item = b.item)
+    (hd : a.doc ≠ b.doc) (hga : a.glyph = Glyph.demoted) (hgb : b.glyph = Glyph.demoted)
     (hab : horizonPrecedes a.region b.region = false)
     (hba : horizonPrecedes b.region a.region = false) :
     pairedEntity i a b = .error (.ambiguousDemotion i) := by
   unfold pairedEntity orientPair
-  rw [if_neg (by simpa using hd), if_neg (by simp [hi]), if_neg (by simp [hab]),
-    if_neg (by simp [hba])]
+  rw [if_neg (by simpa using hd), if_neg (by simp [hga, hgb])]
+  simp only [hga, hgb, beq_self_eq_true]
+  rw [if_neg (by simp [hab]), if_neg (by simp [hba])]
 
 /-- The whole inverse, for one id's lines. -/
 def buildEntity (i : Id) : List Placement → Except LErr Entity
@@ -349,6 +412,11 @@ one.  The `[-]` bug lived in exactly that gap: `serialize_parse` stayed true
 while a `[-]` line came back `[ ]`.  These close it — they are stated about the
 entity the loader builds, which is what the FFI renders from. -/
 
+/-- The line a placement was read from: its site, and the bytes `serializeItem`
+writes back for the id, box and token vector the parser returned. -/
+def placementLine (q : Placement) : Line :=
+  ⟨q.id, ⟨q.doc, q.rank⟩, serializeItem q.id q.glyph q.item⟩
+
 theorem lone_placement_renders_back (q : Placement) :
     (loneEntity q).val.live = ⟨q.doc, q.rank⟩ ∧ (loneEntity q).val.line = q.item ∧
       glyphAt (loneEntity q).val (loneEntity q).val.live = q.glyph :=
@@ -356,7 +424,8 @@ theorem lone_placement_renders_back (q : Placement) :
 
 theorem pairEntity_renders_back (arch live : Placement) (e : Entity)
     (h : pairEntity arch live = some e) :
-    e.val.live = ⟨live.doc, live.rank⟩ ∧ e.val.archive = some ⟨arch.doc, arch.rank⟩ ∧
+    e.val.live = ⟨live.doc, live.rank⟩ ∧
+      e.val.archive = some ⟨⟨arch.doc, arch.rank⟩, arch.item⟩ ∧
       e.val.line = live.item ∧ arch.glyph = Glyph.demoted ∧
       glyphAt e.val e.val.live = live.glyph ∧
       glyphAt e.val ⟨arch.doc, arch.rank⟩ = Glyph.demoted := by
@@ -364,40 +433,40 @@ theorem pairEntity_renders_back (arch live : Placement) (e : Entity)
   split at h
   · rename_i harch
     split at h
+    · rename_i hwf
+      injection h with h
+      subst h
+      have hne : (⟨arch.doc, arch.rank⟩ : Site) ≠ ⟨live.doc, live.rank⟩ := by
+        intro hc
+        simp only [wf_eq, Core.archiveSite, Option.map_some, wfPair_some,
+          bne_iff_ne, ne_eq] at hwf
+        exact hwf (congrArg Site.doc hc)
+      exact ⟨rfl, rfl, rfl, harch,
+        glyphAt_statusOfGlyph_paired live.glyph _ _ hne _ _,
+        archive_line_is_demoted _ _ rfl⟩
     · simp at h
-    · rename_i st hst
-      split at h
-      · rename_i hwf
-        injection h with h
-        subst h
-        have hne : (⟨arch.doc, arch.rank⟩ : Site) ≠ ⟨live.doc, live.rank⟩ := by
-          intro hc
-          simp only [wf, wfPair, bne_iff_ne, ne_eq] at hwf
-          exact hwf (congrArg Site.doc hc)
-        exact ⟨rfl, rfl, rfl, harch,
-          glyphAt_statusOfGlyphDemoted hst _ _ hne _,
-          archive_line_is_demoted _ _ rfl⟩
-      · simp at h
   · simp at h
 
-/-- **The two-line form a `demote` writes is read back as the entity that wrote
-it, and there is exactly one such entity.**  Both boxes come back as they were
-found, so the kernel can round-trip its own output — which the first version
-could not: it rejected two lines of one id outright.
+/-- **The two-line form §6.3 writes is read back as the entity that wrote it,
+and there is exactly one such entity.**  Both boxes come back as they were
+found and — this is what the tombstone's own bytes buy — so do both *token
+vectors*, so the kernel can round-trip its own output and §4.3's pair, which
+the first version could not: it rejected two lines of one id outright, and the
+second rejected any pair whose bytes differed.
 
 The orientation is `orientPair a b`, a function of the two lines that is
-symmetric in them (`orientPair_comm`), so this conclusion is determinate: the
-tombstone is the line in the closed horizon, whichever order the host listed the
-documents in.  The previous statement of this theorem was a disjunction over the
-two orientations, which is what an honest theorem about a loader that picked one
-by argument order had to look like. -/
+symmetric in them (`orientPair_comm`), so this conclusion is determinate,
+whichever order the host listed the documents in.  What it is a function *of*
+changed: the tombstone is the `[-]` line, and only where both lines are `[-]`
+is it the line in the closed horizon. -/
 theorem paired_placement_renders_back (i : Id) (a b : Placement) (e : Entity)
     (he : pairedEntity i a b = .ok e) :
     ∃ arch live : Placement,
       orientPair a b = some (arch, live) ∧
-      horizonPrecedes arch.region live.region = true ∧
-      e.val.live = ⟨live.doc, live.rank⟩ ∧ e.val.archive = some ⟨arch.doc, arch.rank⟩ ∧
-      e.val.line = live.item ∧ a.item = b.item ∧ arch.glyph = Glyph.demoted ∧
+      (live.glyph = Glyph.demoted → horizonPrecedes arch.region live.region = true) ∧
+      e.val.live = ⟨live.doc, live.rank⟩ ∧
+      e.val.archive = some ⟨⟨arch.doc, arch.rank⟩, arch.item⟩ ∧
+      e.val.line = live.item ∧ arch.glyph = Glyph.demoted ∧
       glyphAt e.val e.val.live = live.glyph ∧
       glyphAt e.val ⟨arch.doc, arch.rank⟩ = Glyph.demoted := by
   unfold pairedEntity at he
@@ -405,9 +474,7 @@ theorem paired_placement_renders_back (i : Id) (a b : Placement) (e : Entity)
   · simp at he
   · split at he
     · simp at he
-    · rename_i hitem
-      simp only [bne_iff_ne, ne_eq, Decidable.not_not] at hitem
-      split at he
+    · split at he
       · simp at he
       · rename_i arch live hor
         split at he
@@ -415,7 +482,7 @@ theorem paired_placement_renders_back (i : Id) (a b : Placement) (e : Entity)
           injection he with he
           subst he
           obtain ⟨h1, h2, h3, h4, h5, h6⟩ := pairEntity_renders_back arch live x hx
-          exact ⟨arch, live, hor, (orientPair_cases hor).2, h1, h2, h3, hitem, h4, h5, h6⟩
+          exact ⟨arch, live, hor, (orientPair_cases hor).2.2, h1, h2, h3, h4, h5, h6⟩
         · simp at he
 
 /-- **The line round trip through the pipeline the FFI actually runs**, for a
@@ -432,28 +499,108 @@ theorem load_render_line (cs : List Char) (i : Id) (g : Glyph) (r : RawItem)
   rw [hglyph, hline]
   exact serialize_parse cs i g r hp
 
-/-- **Both lines of a demotion come back as they were found.**  Whichever of
-the two the loader made the tombstone, each site renders the box that was in the
-file at that site and the bytes are the entity's one token vector — so with
-`serialize_parse` each line is byte-identical to its input.  The first version
-of the loader could not even *load* this shape: two lines of one id were
-rejected outright, so the kernel could not read its own `demote` output. -/
+/-- **Both lines of a demotion come back as they were found — box *and*
+bytes.**  Whichever of the two the loader made the tombstone, each site renders
+the box that was in the file at that site and the token vector that was in the
+file at that site, so with `serialize_parse` each line is byte-identical to its
+input.  This is the statement the one-token-vector entity could not make: it had
+to add `a.item = b.item` as a hypothesis, and `pairedEntity` enforced it by
+refusing every pair that failed it — which is every pair §6.3's close writes.
+
+`renderCore` is spelled out rather than left as two glyph facts, because the
+bytes are the thing the corpus measures. -/
 theorem paired_renders_each_placement (i : Id) (a b : Placement) (e : Entity)
     (he : pairedEntity i a b = .ok e) :
-    glyphAt e.val ⟨a.doc, a.rank⟩ = a.glyph ∧ glyphAt e.val ⟨b.doc, b.rank⟩ = b.glyph ∧
-      e.val.line = a.item ∧ e.val.line = b.item := by
-  obtain ⟨arch, live, hor0, _, hlive, _, hln, hitem, hag, hg, hd⟩ :=
+    render i e = [⟨i, ⟨a.doc, a.rank⟩, serializeItem i a.glyph a.item⟩,
+                  ⟨i, ⟨b.doc, b.rank⟩, serializeItem i b.glyph b.item⟩] ∨
+    render i e = [⟨i, ⟨b.doc, b.rank⟩, serializeItem i b.glyph b.item⟩,
+                  ⟨i, ⟨a.doc, a.rank⟩, serializeItem i a.glyph a.item⟩] := by
+  obtain ⟨arch, live, hor0, _, hlive, harch, hln, hag, hg, hd⟩ :=
     paired_placement_renders_back i a b e he
-  have hor := (orientPair_cases hor0).1
-  rcases hor with ⟨ha, hb⟩ | ⟨ha, hb⟩
-  · subst ha; subst hb
-    refine ⟨by rw [hd, hag], ?_, ?_, hln⟩
-    · rw [← hlive] at *; exact hg
-    · rw [hln, hitem]
-  · subst ha; subst hb
-    refine ⟨?_, by rw [hd, hag], hln, ?_⟩
-    · rw [← hlive] at *; exact hg
-    · rw [hln, ← hitem]
+  have hgl : glyphAt e.val ⟨live.doc, live.rank⟩ = live.glyph := by rw [← hlive]; exact hg
+  have hda : glyphAt e.val ⟨arch.doc, arch.rank⟩ = arch.glyph := by rw [hd, hag]
+  have hr : render i e = [⟨i, ⟨live.doc, live.rank⟩, serializeItem i live.glyph live.item⟩,
+                          ⟨i, ⟨arch.doc, arch.rank⟩, serializeItem i arch.glyph arch.item⟩] := by
+    unfold render renderCore
+    rw [harch]
+    simp only
+    rw [hlive, hgl, hln, hda]
+  rcases (orientPair_cases hor0).1 with ⟨h1, h2⟩ | ⟨h1, h2⟩
+  · subst h1; subst h2; exact Or.inr hr
+  · subst h1; subst h2; exact Or.inl hr
+
+/-! ### Closure: the kernel can read back every pair it writes
+
+The two halves above are about a pair the *host* sent.  This is the other
+direction and it is what `demotionsOriented` exists for: take a pair out of an
+accepted plan — the two lines it denotes, at the placements it holds them, with
+the regions its own documents declare — and hand them back to the loader.  The
+loader returns the entity they came from.
+
+That is the sentence "the kernel never writes a demotion it would then have to
+guess at", and it is now a theorem rather than an argument.  It is also where
+the orientation rule earns the shape it has: the proof splits on whether the
+record's box is `[-]`, and takes the horizon from `planWf` only in the branch
+where the boxes tie.  In the other branch there is nothing to take. -/
+
+/-- The line a plan denotes at one of an entity's placements, as the loader
+would read it back: the site, the box, the bytes, and the region the plan's own
+document declares. -/
+def placementIn (p : PlanCore) (i : Id) (s : Site) (g : Glyph) (r : RawItem) : Placement :=
+  ⟨s.doc, s.rank, i, g, r, docRegion p s.doc⟩
+
+/-- **The kernel can read back every pair it writes.**  For an entity of an
+accepted plan that carries a tombstone, `pairedEntity` on the two lines the plan
+denotes returns that entity — same record, same tombstone, same bytes at both
+sites, same status.
+
+The two `placementIn`s **are** the plan's own two lines: `glyphAt_live` (with
+`wf`) says the box at the record is `glyphOfStatus status`, and
+`archive_line_is_demoted` says the box at the tombstone is `[-]`; the bytes and
+the sites are read straight off `renderCore`, and the regions off the plan's
+own documents.
+
+`hpar` is `parent`, the one §3.1 field still stored and still always `none`
+(README gap 22): the loader has no way to set it, so it is a hypothesis every
+entity the boundary builds satisfies, and the moment `parent` is derived off
+the line it disappears.  It is not doing any other work — with a `parent` set,
+the loader's answer differs from `e` in exactly that field and in nothing
+else. -/
+theorem the_kernel_can_read_the_pairs_it_writes (p : WfPlan) (i : Id) (e : Entity) (t : Tomb)
+    (hget : p.val.store.get i = some e) (harch : e.val.archive = some t)
+    (hpar : e.val.parent = Option.none) :
+    pairedEntity i (placementIn p.val i t.site Glyph.demoted t.line)
+                   (placementIn p.val i e.val.live (glyphOfStatus e.val.status) e.val.line)
+      = .ok e := by
+  have hsite : e.val.archiveSite = some t.site := Core.archiveSite_some harch
+  have hne : t.site.doc ≠ e.val.live.doc := archive_elsewhere e t.site hsite
+  have hcore : ({ live := e.val.live, archive := some ⟨t.site, t.line⟩,
+                  status := statusOfGlyph (glyphOfStatus e.val.status),
+                  line := e.val.line } : Core) = e.val := by
+    rw [statusOfGlyph_glyphOfStatus]
+    show ({ live := e.val.live, archive := some t, status := e.val.status,
+            line := e.val.line, parent := Option.none } : Core) = e.val
+    rw [← harch, ← hpar]
+  have hwf : wf ({ live := e.val.live, archive := some ⟨t.site, t.line⟩,
+                   status := statusOfGlyph (glyphOfStatus e.val.status),
+                   line := e.val.line } : Core) = true := by rw [hcore]; exact e.property
+  have hor : orientPair (placementIn p.val i t.site Glyph.demoted t.line)
+                        (placementIn p.val i e.val.live (glyphOfStatus e.val.status) e.val.line)
+      = some (placementIn p.val i t.site Glyph.demoted t.line,
+              placementIn p.val i e.val.live (glyphOfStatus e.val.status) e.val.line) := by
+    unfold orientPair placementIn
+    simp only [beq_self_eq_true]
+    cases hg : glyphOfStatus e.val.status == Glyph.demoted
+    · rfl
+    · simp only []
+      rw [if_pos (the_tombstone_is_behind_the_live_line p i e t.site hget hsite (by simpa using hg))]
+  unfold pairedEntity
+  rw [if_neg (by simpa [placementIn] using hne), if_neg (by simp [placementIn]), hor]
+  unfold pairEntity placementIn
+  simp only
+  rw [dif_pos hwf]
+  have hent : (⟨_, hwf⟩ : Entity) = e := Subtype.ext hcore
+  rw [hent]
 
 /-! ## Rendering a plan back to text -/
 
@@ -682,10 +829,11 @@ def parseCmd (j : Json) : Except String ReqCmd := do
   | _ => throw s!"unknown op {op}"
 
 def kerrName : KErr → String
-  | .occupied   => "occupied"
-  | .noSuchId   => "noSuchId"
-  | .notDemoted => "notDemoted"
-  | .badHorizon => "badHorizon"
+  | .occupied       => "occupied"
+  | .noSuchId       => "noSuchId"
+  | .notDemoted     => "notDemoted"
+  | .alreadyDemoted => "alreadyDemoted"
+  | .badHorizon     => "badHorizon"
 
 /-- Fresh rank in the destination document: strictly greater than every rank
 already there, so a move can never collide on a rank either.  `freshRank_gt`
@@ -805,7 +953,6 @@ theorem applyAll_closed (cs : List ReqCmd) (p : WfPlan) (q : PlanCore)
 
 def lerrJson : LErr → Json
   | .dupId i          => Json.mkObj [("dupId", Json.str (String.ofList i))]
-  | .splitLine i      => Json.mkObj [("splitLine", Json.str (String.ofList i))]
   | .notADemotion i   => Json.mkObj [("notADemotion", Json.str (String.ofList i))]
   | .ambiguousDemotion i => Json.mkObj [("ambiguousDemotion", Json.str (String.ofList i))]
   | .duplicatePath pa => Json.mkObj [("duplicatePath", Json.str (String.ofList pa))]
@@ -1041,11 +1188,6 @@ line survive.  This says the *list* does: nothing extra is emitted and nothing
 is dropped.  It is the step that turns a fact about one line into a fact about a
 document. -/
 
-/-- The line a placement was read from: its site, and the bytes `serializeItem`
-writes back for the id, box and token vector the parser returned. -/
-def placementLine (q : Placement) : Line :=
-  ⟨q.id, ⟨q.doc, q.rank⟩, serializeItem q.id q.glyph q.item⟩
-
 theorem loneEntity_archive (q : Placement) : (loneEntity q).val.archive = none := rfl
 
 theorem buildEntity_renders (i : Id) (qs : List Placement) (e : Entity)
@@ -1071,13 +1213,9 @@ theorem buildEntity_renders (i : Id) (qs : List Placement) (e : Entity)
       have h' : pairedEntity i a b = .ok e := h
       have ha : a.id = i := hid a (by simp)
       have hb : b.id = i := hid b (by simp)
-      obtain ⟨arch, live, hor, _, hlive, harch, hline, hitem, hag, hg, hd⟩ :=
+      obtain ⟨arch, live, hor, _, hlive, harch, hline, hag, hg, hd⟩ :=
         paired_placement_renders_back i a b e h'
       have hcases := (orientPair_cases hor).1
-      have hAitem : arch.item = live.item := by
-        rcases hcases with ⟨e1, e2⟩ | ⟨e1, e2⟩
-        · rw [e1, e2]; exact hitem
-        · rw [e1, e2]; exact hitem.symm
       have hAid : arch.id = i := by
         rcases hcases with ⟨e1, _⟩ | ⟨e1, _⟩
         · rw [e1]; exact ha
@@ -1094,7 +1232,7 @@ theorem buildEntity_renders (i : Id) (qs : List Placement) (e : Entity)
       have hr : render i e = [placementLine live, placementLine arch] := by
         unfold render renderCore placementLine
         simp only [harch]
-        rw [hd, hg, hline, hlive, hLid, hAid, hag, hAitem]
+        rw [hd, hg, hline, hlive, hLid, hAid, hag]
       rw [hr]
       constructor
       · intro hl
@@ -1435,9 +1573,9 @@ theorem docProseMax_ge (p : PlanCore) (k : DocIx) (d : Doc) (hd : p.docs[k]? = s
   rw [hd]
   exact le_foldl_max_gen Prod.fst q d.prose 0 hq
 
-theorem archive_line_mem (i : Id) (e : Entity) (r : Site) (h : e.val.archive = some r) :
-    ∃ m ∈ render i e, m.site = r := by
-  refine ⟨⟨i, r, serializeItem i (glyphAt e.val r) e.val.line⟩, ?_, rfl⟩
+theorem archive_line_mem (i : Id) (e : Entity) (t : Tomb) (h : e.val.archive = some t) :
+    ∃ m ∈ render i e, m.site = t.site := by
+  refine ⟨⟨i, t.site, serializeItem i (glyphAt e.val t.site) t.line⟩, ?_, rfl⟩
   unfold render renderCore
   rw [h]
   simp
@@ -1491,13 +1629,18 @@ new entity carries is one the old entity already had a line at. -/
 theorem normalized_after_relocation (p : WfPlan) (i : Id) (e a : Entity) (k : DocIx)
     (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e)
     (hlive : a.val.live = ⟨k, freshRank p.val k⟩)
-    (harch : ∀ r, a.val.archive = some r → ∃ m ∈ render i e, m.site = r) :
+    (harch : ∀ t, a.val.archive = some t → ∃ m ∈ render i e, m.site = t.site) :
     normalized { p.val with store := p.val.store.set i a hs } = true := by
   refine normalized_of_fresh_or_old p i e a k hs hget ?_
   intro l hl
   rcases render_site i a l hl with h | h
   · exact Or.inl (by rw [h, hlive])
-  · exact Or.inr (harch l.site h)
+  · cases ht : a.val.archive with
+    | none => rw [Core.archiveSite_none ht] at h; simp at h
+    | some t =>
+        rw [Core.archiveSite_some ht] at h
+        obtain ⟨m, hm, hms⟩ := harch t ht
+        exact Or.inr ⟨m, hm, by rw [hms, Option.some.inj h]⟩
 
 /-- An edit that moves nothing: both placements are where they were, so there is
 nothing to check at all.  This is `drop` and `est`. -/
@@ -1510,7 +1653,12 @@ theorem normalized_after_edit (p : WfPlan) (i : Id) (e a : Entity)
   refine Or.inr ?_
   rcases render_site i a l hl with h | h
   · rw [h, hlive]; exact live_line_site_mem i e
-  · exact archive_line_mem i e l.site (by rw [← harch]; exact h)
+  · cases ht : a.val.archive with
+    | none => rw [Core.archiveSite_none ht] at h; simp at h
+    | some t =>
+        rw [Core.archiveSite_some ht] at h
+        obtain ⟨m, hm, hms⟩ := archive_line_mem i e t (by rw [← harch]; exact ht)
+        exact ⟨m, hm, by rw [hms, Option.some.inj h]⟩
 
 /-- **`move` at the boundary's own rank keeps ranks distinct.** -/
 theorem move_at_freshRank_normalized (p : WfPlan) (i : Id) (e a : Entity) (k : DocIx)
@@ -1518,9 +1666,9 @@ theorem move_at_freshRank_normalized (p : WfPlan) (i : Id) (e a : Entity) (k : D
     (hva : a.val = { e.val with live := ⟨k, freshRank p.val k⟩ }) :
     normalized { p.val with store := p.val.store.set i a hs } = true := by
   refine normalized_after_relocation p i e a k hs hget (by rw [hva]) ?_
-  intro r hr
+  intro t hr
   rw [hva] at hr
-  exact archive_line_mem i e r hr
+  exact archive_line_mem i e t hr
 
 theorem moveTo_freshRank_normalized (p : WfPlan) (i : Id) (e a : Entity) (k : DocIx)
     (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e)
@@ -1535,11 +1683,11 @@ theorem demote_at_freshRank_normalized (p : WfPlan) (i : Id) (e a : Entity) (k :
     (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e)
     (ha : demote ⟨k, freshRank p.val k⟩ st e = .ok a) :
     normalized { p.val with store := p.val.store.set i a hs } = true := by
-  have hv := lift_roundtrips _ _ ha
+  have hv := demote_roundtrips _ _ _ _ ha
   refine normalized_after_relocation p i e a k hs hget (by rw [hv]) ?_
-  intro r hr
+  intro t hr
   rw [hv] at hr
-  have hh : (some e.val.live : Option Site) = some r := hr
+  have hh : (some ⟨e.val.live, e.val.line⟩ : Option Tomb) = some t := hr
   rw [← Option.some.inj hh]
   exact live_line_site_mem i e
 
@@ -1547,12 +1695,16 @@ theorem demote_at_freshRank_normalized (p : WfPlan) (i : Id) (e a : Entity) (k :
 is fresh. -/
 theorem readopt_at_freshRank_normalized (p : WfPlan) (i : Id) (e a : Entity) (k : DocIx)
     (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e)
-    (ha : a = readopt ⟨k, freshRank p.val k⟩ e) :
+    (ha : readopt ⟨k, freshRank p.val k⟩ e = .ok a) :
     normalized { p.val with store := p.val.store.set i a hs } = true := by
-  subst ha
-  refine normalized_after_relocation p i e _ k hs hget rfl ?_
-  intro r hr
-  exact absurd hr (by simp [readopt])
+  rw [readopt] at ha
+  split at ha
+  · injection ha with ha
+    subst ha
+    refine normalized_after_relocation p i e _ k hs hget rfl ?_
+    intro r hr
+    exact absurd hr (by simp)
+  · simp at ha
 
 theorem drop_normalized (p : WfPlan) (i : Id) (e : Entity)
     (hs : (p.val.store.get i).isSome = true) (hget : p.val.store.get i = some e) :
@@ -1585,7 +1737,7 @@ it passes `freshRank`, and `move_at_freshRank_normalized` discharges the
 move can genuinely violate. -/
 theorem applyCmd_move_succeeds (p : WfPlan) (i : Id) (e : Entity) (n : Nat) (d : Dest p.val)
     (hn : resolveDest p.val n = .ok d) (hget : p.val.store.get i = some e)
-    (hfree : ∀ r, e.val.archive = some r →
+    (hfree : ∀ r, e.val.archiveSite = some r →
       horizonPrecedes (docRegion p.val r.doc) (docRegion p.val d.ix) = true)
     (hrest : ∀ a : Entity, a.val = { e.val with live := d.site (freshRank p.val d.ix) } →
       ∀ hs : (p.val.store.get i).isSome = true,
@@ -1698,6 +1850,79 @@ theorem the_round_trip_fires (p : WfPlan) (h : loadPlan sampleRequest = .ok p) :
     renderDocAt p.val 0 (mkDoc sampleWeekDoc)
       = ["# Tasks".toList, "- [ ] 5 6b Finish the report ^m1".toList] :=
   (the_kernel_reads_back_what_it_writes sampleRequest p h 0 sampleWeekDoc rfl).2
+
+/-! ### §4.3's own demotion pair, loaded and rendered back
+
+The two documents above have one line between them.  These two are the pair the
+orientation rule is about, taken **verbatim** from §4.3 and from every
+`plan-basic`-shaped tree in the corpus: the record live in the week, the archive
+copy under `month/…# Demoted`, and — the half that is not about orientation at
+all — two lines of one id whose bytes are different, because §6.3's close puts
+`est:` = remaining and a `demoted:` stamp on the copy and a smaller leading
+estimate came with it.
+
+Both refusals this branch removes are refutable here by `decide`, so the kernel
+rechecks them on every build: the loader accepts the pair, and each document
+comes back byte for byte. -/
+
+def specWeekDoc : ReqDoc :=
+  ⟨"week/2026-W37.md", some ⟨week, 35⟩,
+    ["# Milestones".toList,
+     "- [ ] 4 6b Rollback path passes tests   @O2 ^m2".toList]⟩
+
+def specMonthDoc : ReqDoc :=
+  ⟨"month/2026-09.md", some ⟨month, 8⟩,
+    ["# Demoted".toList,
+     "- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2".toList]⟩
+
+def specDemotionRequest : List ReqDoc := [specWeekDoc, specMonthDoc]
+
+/-- The single entity the loader builds from that request, if it builds one. -/
+def specPairEntity : Option Entity :=
+  match buildEntities (placementsOf 0 specDemotionRequest) with
+  | .ok [(_, e)] => some e
+  | _            => none
+
+set_option maxRecDepth 40000 in
+/-- **The two lines become one entity, and it has a tombstone.**  Not two
+entities, not one line dropped: the pair is read as the demotion it is. -/
+theorem the_spec_pair_is_one_entity_with_a_tombstone :
+    specPairEntity.map (fun e => e.val.archive.isSome) = some true := by decide
+
+set_option maxRecDepth 40000 in
+/-- **And this is the orientation decision itself, decided.**  Document 0 is
+`week/2026-W37.md` and document 1 is `month/2026-09.md`: the **record** is the
+week line and the **tombstone** is the month line, which is the answer the box
+gives and the exact opposite of the one horizon order gives — the week is the
+earlier horizon.  The old rule made the week line the tombstone, read `[ ]`
+there, and returned `notADemotion`.
+
+Nothing else in this package pins the choice this directly, so it is `decide`d
+and the kernel rechecks it on every build. -/
+theorem the_spec_pair_puts_the_tombstone_in_the_month :
+    specPairEntity.map (fun e => (e.val.live.doc, e.val.archiveSite.map Site.doc))
+      = some (0, some 1) := by decide
+
+set_option maxRecDepth 40000 in
+/-- **The pair loads.**  Under the old orientation the tombstone was the line in
+the earlier horizon — the week — which reads `[ ]`, so this request was
+`notADemotion`; under the old entity the two lines' bytes differ, so it was
+`splitLine` first.  Both are gone and the acceptance is decided here. -/
+theorem the_spec_demotion_pair_loads : loadsOk specDemotionRequest = true := by decide
+
+/-- **And both of its documents come back byte for byte** — including the
+month copy, whose `est:3b demoted:W37` no rendering off the week line could have
+produced. -/
+theorem the_spec_demotion_pair_round_trips (p : WfPlan)
+    (h : loadPlan specDemotionRequest = .ok p) :
+    renderDocAt p.val 0 (mkDoc specWeekDoc)
+        = ["# Milestones".toList,
+           "- [ ] 4 6b Rollback path passes tests   @O2 ^m2".toList] ∧
+      renderDocAt p.val 1 (mkDoc specMonthDoc)
+        = ["# Demoted".toList,
+           "- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2".toList] :=
+  ⟨(the_kernel_reads_back_what_it_writes specDemotionRequest p h 0 specWeekDoc rfl).2,
+   (the_kernel_reads_back_what_it_writes specDemotionRequest p h 1 specMonthDoc rfl).2⟩
 
 /-- Total: every path returns a `String`.  No `panic!`, no `!`, no `partial`. -/
 def call (input : String) : String :=

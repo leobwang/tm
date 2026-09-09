@@ -16,7 +16,9 @@ clear about which is which is the whole point of the bottom section.
   written yet.
 * **Not free.** That every placement names a file that exists, that no two
   files share a path, and that a tombstone sits in a horizon strictly before the
-  live line it was left by, are decidable predicates `WfPlan.mapAt`
+  record it was left by **whenever the record's box is `[-]` too** — the case
+  in which the two lines are otherwise indistinguishable — are decidable
+  predicates `WfPlan.mapAt`
   re-establishes by computation on the post-state of every command — `lift`, at
   the plan level.  `mapAt_ok_of_inRange` and `cmdMove_succeeds` are the proofs
   that the commands can discharge them, so the check is an obligation and not a
@@ -35,9 +37,17 @@ inductive KErr
   | occupied          -- the destination file already holds this id's other line
   | noSuchId
   | notDemoted
+  /-- the item already carries a tombstone, so there is no second one to write.
+      §6.3 gives an item **one** archive record: the week close creates it, and
+      `tm close month` then *moves* the record ("moves them to the next month
+      file", touching nothing else) rather than demoting it again.  Both ways
+      of proceeding here lose a line — overwrite the standing tombstone and its
+      file's line vanishes; keep it and the line the record is leaving does. -/
+  | alreadyDemoted
   /-- the destination is not a horizon this item may occupy: either not a
-      document of this plan at all, or — while a tombstone stands — not ahead of
-      the file that tombstone is in.  Both are "the post-state fails `planWf`". -/
+      document of this plan at all, or — while a tombstone stands and the record
+      still reads `[-]` — not ahead of the file that tombstone is in.  Both are
+      "the post-state fails `planWf`". -/
   | badHorizon
 deriving DecidableEq, Repr
 
@@ -65,22 +75,104 @@ def drop (e : Entity) : Entity :=
 def setEstE (v : Nat) (e : Entity) : Entity :=
   ⟨{ e.val with line := setEst v e.val.line }, e.property⟩
 
-/-- `close`/`demote`: the live line moves to the coarser file, a tombstone
-stays behind in the file that was closed, and §6.3's `demoted:` stamp is
-appended **to the line**.
+/-- `close`/`demote`, §6.3's week row, as one entity transform.  Read the row
+literally and it says three things, and this writes all three:
 
-The stamp used to be a slot beside the line, and `renderCore` prints the line —
-so `demote` recorded a stamp that no file ever saw, and `tm close month`'s
-"≥ 2 stamps" cut list was reading a number the kernel never wrote.  There is
-one place a stamp can live now and this writes it. -/
+* "`[ ]`/`[>]` → `[-]` in the week file" — the tombstone keeps the **bytes it
+  had**, box excepted, and `renderCore` writes `[-]` over any archive
+  placement.  So the tombstone is `⟨e.live, e.line⟩`: where it was, saying what
+  it said;
+* "the line is copied to `month/<current>#Demoted` … with `demoted:W37`
+  appended" — the copy is the record, it goes to `target`, and the stamp goes
+  on **its** line and not on the tombstone's.  Before the tombstone carried its
+  own bytes there was one token vector for both sites, so the stamp appeared
+  in the week file too, which §6.3 does not say and `tm` does not do;
+* the record's own box is `[-]` as well until something reopens it, and that is
+  now an explicit `status := .demoted` rather than a positional effect of the
+  archive being present.  `readopt` is what turns it back to `[ ]`.
+
+(§6.3 also says the copy carries `est:` = remaining.  That needs the rollup,
+which is stage 4 — README gap 20 — so it is not written here; the caller's
+`demoteEst` is the piece that exists.)
+
+**And it is the week close, once.**  §6.3 gives an item one archive record;
+the *month* close "moves them to the next month file", which is `move`, not a
+second demotion.  So an item that already carries a tombstone is refused, and
+that refusal is what makes the tombstone's bytes safe: overwrite the standing
+one and its file's line disappears from the render with the kernel returning
+`ok` — the failure `no_line_is_lost` is named after, reached through the one
+field that theorem cannot see, since the entity still has two placements and
+both are in range.  Keeping the standing one instead loses the line the record
+is *leaving*, which is the line §6.3's week row says must stay behind as `[-]`.
+Neither is §6.3, so neither is written. -/
 def demote (target : Site) (s : Stamp) (e : Entity) : Except KErr Entity :=
-  lift { e.val with live := target, archive := some e.val.live,
-                    line := Field.setDemoted (e.val.stamps ++ [s]) e.val.line }
+  if e.val.archive.isSome then .error .alreadyDemoted
+  else lift { e.val with live := target, archive := some ⟨e.val.live, e.val.line⟩,
+                         status := .demoted,
+                         line := Field.setDemoted (e.val.stamps ++ [s]) e.val.line }
+
+/-- **A second demotion is refused, and no line is dropped.**  The state this
+rules out is `tm close month` written as a demote; the verb for that is
+`move`. -/
+theorem demote_on_a_standing_tombstone_is_refused (t : Site) (s : Stamp) (e : Entity)
+    (h : e.val.archive.isSome = true) : demote t s e = .error .alreadyDemoted := by
+  simp [demote, h]
+
+theorem demote_ok (t : Site) (s : Stamp) (e : Entity) (h : e.val.archive = Option.none) :
+    demote t s e = lift { e.val with live := t, archive := some ⟨e.val.live, e.val.line⟩,
+                                     status := .demoted,
+                                     line := Field.setDemoted (e.val.stamps ++ [s]) e.val.line } := by
+  simp [demote, h]
+
+/-- What `demote` produces where it succeeds — `lift_roundtrips` through the
+precondition. -/
+theorem demote_roundtrips (t : Site) (st : Stamp) (e a : Entity) (h : demote t st e = .ok a) :
+    a.val = { e.val with live := t, archive := some ⟨e.val.live, e.val.line⟩,
+                         status := .demoted,
+                         line := Field.setDemoted (e.val.stamps ++ [st]) e.val.line } := by
+  rw [demote] at h
+  split at h
+  · simp at h
+  · exact lift_roundtrips _ _ h
+
+/-- Where it succeeds, the item had no tombstone. -/
+theorem demote_archive_none (t : Site) (st : Stamp) (e a : Entity)
+    (h : demote t st e = .ok a) : e.val.archive = Option.none := by
+  rw [demote] at h
+  split at h
+  · simp at h
+  · rename_i hn; simpa using hn
 
 /-- `readopt` **consumes** the tombstone, which is why it cannot leave a second
-line in the file the stale one was in (bug 5). -/
-def readopt (t : Site) (e : Entity) : Entity :=
-  ⟨{ live := t, archive := none, status := .live .free, line := e.val.line }, rfl⟩
+line in the file the stale one was in (bug 5).  §6.3's "`[-]` → `[ ]`" is the
+status going back to `live free`; the record's bytes, stamp and all, are kept.
+
+**And it is a demoted line or it is nothing**, which is the precondition §6.3
+states in the same sentence: "moves a *demoted line* into the current week
+(`[-]` → `[ ]`, stamp kept)".  Without it `readopt` is data loss on the very
+pair this kernel was changed to admit — §4.3's fixture, where the record is
+already `[ ]` and the tombstone is the line carrying `est:` = remaining and
+`demoted:W37`.  Consuming that tombstone throws both away and returns `ok`,
+and "stamp kept" is exactly what is lost.  There is no demoted line to reopen
+there; the item is already adopted, and the stale record is a `drop`'s job.
+
+`KErr.notDemoted` was a constructor no function produced.  This is what it is
+for. -/
+def readopt (t : Site) (e : Entity) : Except KErr Entity :=
+  if e.val.status = Status.demoted
+  then .ok ⟨{ live := t, archive := none, status := .live .free, line := e.val.line }, rfl⟩
+  else .error .notDemoted
+
+/-- **Reopening a line that is not demoted is refused**, so the bytes the
+tombstone carries can never be dropped on the floor. -/
+theorem readopt_of_a_live_record_is_refused (t : Site) (e : Entity)
+    (h : e.val.status ≠ Status.demoted) : readopt t e = .error .notDemoted := by
+  simp [readopt, h]
+
+theorem readopt_ok (t : Site) (e : Entity) (h : e.val.status = Status.demoted) :
+    readopt t e = .ok ⟨{ live := t, archive := none, status := .live .free,
+                         line := e.val.line }, rfl⟩ := by
+  simp [readopt, h]
 
 /-! ## Plan-level commands -/
 
@@ -278,7 +370,7 @@ def cmdDemote (i : Id) (rank : Nat) (s : Stamp) : Relocation :=
   fun p d => p.mapAt i (demote (d.site rank) s)
 /-- `tm readopt`. -/
 def cmdReadopt (i : Id) (rank : Nat) : Relocation :=
-  fun p d => p.mapAt i (fun e => .ok (readopt (d.site rank) e))
+  fun p d => p.mapAt i (readopt (d.site rank))
 
 /-! ## Where a horizon *name* is resolved, and why not here
 
@@ -310,15 +402,16 @@ the file the tombstone occupies is *rejected*, not silently duplicated.  This
 is the single missing check behind 426 violating command pairs that are
 still reachable at tm HEAD. -/
 theorem move_into_archive_file_is_rejected (e : Entity) (t r : Site)
-    (h : e.val.archive = some r) (hd : r.doc = t.doc) : moveTo t e = .error .occupied := by
+    (h : e.val.archiveSite = some r) (hd : r.doc = t.doc) : moveTo t e = .error .occupied := by
   unfold moveTo lift
-  have hbad : ¬ (wfPair t e.val.archive = true) := by simp [h, hd]
-  simp [hbad]
+  have hh : ({ e.val with live := t } : Core).archiveSite = some r := h
+  have hbad : ¬ (wf { e.val with live := t } = true) := by simp [wf_eq, hh, hd]
+  rw [dif_neg hbad]
 
 /-- The same at the plan level: the command fails, the plan is unchanged. -/
 theorem plan_move_into_archive_file_is_rejected (p : WfPlan) (i : Id) (e : Entity)
     (d : Dest p.val) (rank : Nat) (r : Site)
-    (hget : p.val.store.get i = some e) (h : e.val.archive = some r) (hd : r.doc = d.ix) :
+    (hget : p.val.store.get i = some e) (h : e.val.archiveSite = some r) (hd : r.doc = d.ix) :
     cmdMove i rank p d = .error .occupied := by
   unfold cmdMove WfPlan.mapAt
   split
@@ -332,12 +425,19 @@ theorem plan_move_into_archive_file_is_rejected (p : WfPlan) (i : Id) (e : Entit
 /-- **The other half of the same story, and the reason the plan-level check is
 not a trapdoor.**  A move to a destination that exists and is *ahead of* this
 id's tombstone — which for an item with no tombstone is every destination —
-succeeds, and the item is where the user asked for it.  Both hypotheses are
-used; drop either and the conclusion is false.
+succeeds, and the item is where the user asked for it.  Every hypothesis is
+used; drop any one and the conclusion is false.
 
 `hfree` subsumes the older "the destination does not hold the tombstone": a
 horizon does not precede itself (`horizonPrecedes_irrefl`), so a destination
 ahead of the tombstone is in particular not the tombstone's own file.
+
+It is a **sufficient** condition and no longer a tight one, and that is the
+orientation change showing through: `demotionsOriented` asks for the horizon
+order only when the record's box is `[-]`, so a record that has been reopened
+can in fact be moved anywhere.  This theorem does not cover that case and does
+not need to — its job is to show the check can be discharged, and the wider
+domain is recorded in the README rather than proved here.
 
 `hrank` is the third, and it is the price of `Normalized` joining `planWf`
 (Plan.lean): `rank` is a `Nat` the caller chose, and a move onto a rank another
@@ -350,7 +450,7 @@ than on a theorem.  That gap is README 11, and it is recorded rather than
 papered over. -/
 theorem cmdMove_succeeds (p : WfPlan) (i : Id) (e : Entity) (d : Dest p.val) (rank : Nat)
     (hget : p.val.store.get i = some e)
-    (hfree : ∀ r, e.val.archive = some r →
+    (hfree : ∀ r, e.val.archiveSite = some r →
       horizonPrecedes (docRegion p.val r.doc) (docRegion p.val d.ix) = true)
     (hrank : ∀ a : Entity, a.val = { e.val with live := d.site rank } →
       ∀ hs : (p.val.store.get i).isSome = true,
@@ -359,18 +459,19 @@ theorem cmdMove_succeeds (p : WfPlan) (i : Id) (e : Entity) (d : Dest p.val) (ra
       (∃ e', q.val.store.get i = some e' ∧ e'.val.live = d.site rank) := by
   have hrange := entityInRange_of_mem p i e hget
   simp only [entityInRange, Bool.and_eq_true] at hrange
-  have hne : ∀ r, e.val.archive = some r → r.doc ≠ d.ix := by
+  have hne : ∀ r, e.val.archiveSite = some r → r.doc ≠ d.ix := by
     intro r hr hc
     have h1 := hfree r hr
     rw [hc, horizonPrecedes_irrefl] at h1
     simp at h1
   have hwf : wf { e.val with live := d.site rank } = true := by
     cases ha : e.val.archive with
-    | none => simp [wf, ha]
-    | some r =>
-        have := hne r ha
-        simp [wf, ha, Dest.site]
-        omega
+    | none => simp [wf, Core.archiveSite, ha]
+    | some t =>
+        have := hne t.site (Core.archiveSite_some ha)
+        simp only [wf_eq, Core.archiveSite, ha, Option.map_some, wfPair_some, Dest.site,
+          bne_iff_ne, ne_eq]
+        exact this
   have hf : moveTo (d.site rank) e = .ok ⟨_, hwf⟩ := by
     unfold moveTo lift; simp only [dif_pos hwf]
   have hin : entityInRange p.val (⟨_, hwf⟩ : Entity) = true := by
@@ -382,7 +483,12 @@ theorem cmdMove_succeeds (p : WfPlan) (i : Id) (e : Entity) (d : Dest p.val) (ra
     unfold demotionOriented
     cases ha : e.val.archive with
     | none => simp [ha]
-    | some r => simpa [ha, Dest.site] using hfree r ha
+    | some t =>
+        have := hfree t.site (Core.archiveSite_some ha)
+        simp only [ha, Dest.site]
+        split
+        · exact this
+        · rfl
   obtain ⟨q, hq, hqi, _⟩ := mapAt_ok_of_inRange p i (moveTo (d.site rank)) e _ hget hf hin hor
     (fun hs => hrank ⟨_, hwf⟩ rfl hs)
   exact ⟨q, hq, _, hqi, rfl⟩
@@ -392,29 +498,37 @@ files leftovers into `closeTo`, which is never itself closed
 (`closeTo_target_is_open`), so the tombstone's horizon always precedes the live
 line's.  A `demote` whose destination is not ahead of the file the item is in
 would write two `[-]` lines that no reader could tell apart; it is refused
-instead.  Both hypotheses are load-bearing: with `e.val.live.doc = d.ix` the
-entity-level `wf` fires first and the error is `occupied`. -/
+instead.  Every hypothesis is load-bearing: with `e.val.live.doc = d.ix` the
+entity-level `wf` fires first and the error is `occupied`, and with a tombstone
+already standing `demote` refuses before any of this
+(`demote_on_a_standing_tombstone_is_refused`) — which is why `harch` is here
+and is the subdomain §6.3's week close is on. -/
 theorem demote_into_a_horizon_that_does_not_follow_is_rejected (p : WfPlan) (i : Id) (e : Entity)
     (d : Dest p.val) (rank : Nat) (st : Stamp) (hget : p.val.store.get i = some e)
+    (harch : e.val.archive = Option.none)
     (hne : e.val.live.doc ≠ d.ix)
-    (hbad : horizonPrecedes (docRegion p.val e.val.live.doc) (docRegion p.val d.ix) = false) :
+    (hbad : horizonPrecedes (docRegion p.val e.val.live.doc)
+              (docRegion p.val d.ix) = false) :
     cmdDemote i rank st p d = .error .badHorizon := by
-  have hwf : wf { e.val with live := d.site rank, archive := some e.val.live,
+  have hwf : wf { e.val with live := d.site rank,
+                             archive := some ⟨e.val.live, e.val.line⟩,
+                             status := .demoted,
                              line := Field.setDemoted (e.val.stamps ++ [st]) e.val.line }
                = true := by
-    simp only [wf, wfPair, Dest.site, bne_iff_ne, ne_eq]
+    simp only [wf_eq, Core.archiveSite, Option.map_some, wfPair_some, Dest.site,
+      bne_iff_ne, ne_eq]
     exact hne
   have hf : demote (d.site rank) st e = .ok ⟨_, hwf⟩ := by
-    unfold demote lift; simp only [dif_pos hwf]
+    rw [demote_ok _ _ _ harch]; unfold lift; simp only [dif_pos hwf]
   refine mapAt_rejects_unoriented p i _ e _ hget hf ?_
-  simpa [demotionOriented, Dest.site] using hbad
+  simpa [demotionOriented, Dest.site, glyphOfStatus] using hbad
 
 /-- **L1 (P).**  `move` is idempotent on the subdomain where it succeeds. -/
 theorem move_idem (t : Site) (e e' : Entity) (h : moveTo t e = .ok e') :
     (moveTo t e').map Subtype.val = .ok e'.val := by
   have hv : e'.val = { e.val with live := t } := lift_roundtrips _ _ h
   have hlive : e'.val.live = t := by rw [hv]
-  have hp : wfPair e'.val.live e'.val.archive = true := by have := e'.property; simpa using this
+  have hp : wfPair e'.val.live e'.val.archiveSite = true := by have := e'.property; simpa using this
   unfold moveTo lift
   rw [← hlive]; simp [hp, Except.map]
 
@@ -432,7 +546,7 @@ theorem move_last_wins_refuted_globally :
     ∃ (t t' : Site) (e : Entity),
       ((moveTo t e).bind (moveTo t')).map Subtype.val ≠ (moveTo t' e).map Subtype.val := by
   refine ⟨⟨1, 0⟩, ⟨2, 0⟩,
-    ⟨{ live := ⟨0, 0⟩, archive := some ⟨1, 0⟩, status := .live .free,
+    ⟨{ live := ⟨0, 0⟩, archive := some ⟨⟨1, 0⟩, ⟨[], []⟩⟩, status := .live .free,
        line := ⟨[], []⟩ }, rfl⟩, ?_⟩
   simp [moveTo, lift, Except.map, Except.bind]
 
@@ -485,15 +599,30 @@ theorem settled_absorbing (e : Entity) : (drop e).val.status = .settled .dropped
 /-- **L8 (P).**  Bug 2 — `tm close month --drop` marking the *archive copy*
 `[~]`, so both lines read as live — is `rfl` here, because archive-ness is
 positional and not a stored glyph. -/
-theorem drop_preserves_archive_glyph (e : Entity) (r : Site) (h : e.val.archive = some r) :
-    glyphAt (drop e).val r = Glyph.demoted := by simp [glyphAt, drop, h]
+theorem drop_preserves_archive_glyph (e : Entity) (r : Site) (h : e.val.archiveSite = some r) :
+    glyphAt (drop e).val r = Glyph.demoted := by
+  have hh : ((drop e).val).archiveSite = some r := h
+  simp [glyphAt, hh]
 
 /-- §6.3's "readopt: `[-]` → `[ ]`, stamp kept" is **derived** from clearing
 the archive, not written down as a rule a writer can forget. -/
-theorem readopt_clears_archive (t : Site) (e : Entity) : (readopt t e).val.archive = none := rfl
-theorem readopt_reopens (t : Site) (e : Entity) : glyphAt (readopt t e).val t = Glyph.todo := rfl
-theorem readopt_keeps_stamps (t : Site) (e : Entity) :
-    (readopt t e).val.stamps = e.val.stamps := rfl
+theorem readopt_clears_archive (t : Site) (e a : Entity) (h : readopt t e = .ok a) :
+    a.val.archive = none := by
+  rw [readopt] at h; split at h
+  · injection h with h; rw [← h]
+  · simp at h
+theorem readopt_reopens (t : Site) (e a : Entity) (h : readopt t e = .ok a) :
+    glyphAt a.val t = Glyph.todo := by
+  rw [readopt] at h; split at h
+  · injection h with h; rw [← h]; rfl
+  · simp at h
+/-- §6.3's "stamp kept", and now it really is kept: `readopt` only fires on a
+demoted record, which is the line the stamp is on. -/
+theorem readopt_keeps_stamps (t : Site) (e a : Entity) (h : readopt t e = .ok a) :
+    a.val.stamps = e.val.stamps := by
+  rw [readopt] at h; split at h
+  · injection h with h; rw [← h]; rfl
+  · simp at h
 
 /-- **L9 (P).**  `tm edit ^id est=v` writes the slot the view reads.  In the
 Rust it wrote the other slot, reported success, and changed nothing. -/
@@ -509,35 +638,59 @@ theorem set_last_wins (bm v v' : Nat) (e : Entity) :
 
 theorem demote_stamps (t : Site) (st : Stamp) (e a : Entity) (h : demote t st e = .ok a) :
     a.val.stamps = e.val.stamps ++ [st] := by
-  have hv := lift_roundtrips _ _ h
+  have hv := demote_roundtrips _ _ _ _ h
   show (Field.viewDemoted a.val.line).getD [] = _
   rw [hv]
   show (Field.viewDemoted (Field.setDemoted (e.val.stamps ++ [st]) e.val.line)).getD [] = _
   rw [Field.view_set_demoted _ _ (by simp)]
   rfl
 
-/-- **L11 (R).**  `demote` is **not** idempotent, and that is correct: stamps
-accumulate deliberately, to drive the month review's "≥ 2 stamps" cut list.
-Idempotence holds only *modulo* `stamps`, and the kernel must say which it
-means rather than leave two readings of §6.3 available. -/
-theorem demote_not_idem (t t' : Site) (st : Stamp) (e a b : Entity)
-    (h1 : demote t st e = .ok a) (h2 : demote t' st a = .ok b) :
-    b.val.stamps ≠ a.val.stamps := by
+/-! ### L11: `demote` is not idempotent, and *why* is not what it was
+
+The old statement was `demote t st e = .ok a → demote t' st a = .ok b →
+b.stamps ≠ a.stamps`, and it is **withdrawn because it became vacuous**: a
+`demote` leaves a tombstone and `demote` now refuses an item that has one, so
+`h2` has no witness and the theorem says nothing.  A vacuous refutation is
+worse than none — it reads as a proof that the composite behaves, when the
+composite does not exist.
+
+What is true, and is what §6.3 actually describes, is that stamps accumulate
+across the **cycle**: an item demoted at the close of W36, readopted into W37,
+and demoted again at the close of W37 carries `demoted:W36,W37`, which is the
+list the month review's "≥ 2 stamps" cut runs on.  That is stated below, and it
+is a stronger claim than the `≠` it replaces — it names the list rather than
+saying two of them differ. -/
+
+/-- **L11a (P).**  §6.3's `demoted:W36,W37`: two closes with a readopt between
+them leave both stamps, in order, on the record's line. -/
+theorem stamps_accumulate_across_readopt (t r t' : Site) (st st' : Stamp)
+    (e a b c : Entity) (h1 : demote t st e = .ok a) (h2 : readopt r a = .ok b)
+    (h3 : demote t' st' b = .ok c) :
+    c.val.stamps = e.val.stamps ++ [st, st'] := by
   have ha := demote_stamps t st e a h1
-  have hb := demote_stamps t' st a b h2
-  rw [hb, ha]
-  intro hc
-  have := congrArg List.length hc
-  simp at this
+  have hb : b.val.stamps = a.val.stamps := readopt_keeps_stamps _ a b h2
+  have hc := demote_stamps t' st' b c h3
+  rw [hc, hb, ha]
+  simp
+
+/-- **L11b (R).**  And the reason the old L11 went vacuous, as a theorem: the
+second close of a *single* demotion is not a `demote` at all.  §6.3's month
+close "moves them to the next month file", and `move` is the verb for that. -/
+theorem demote_twice_is_not_a_thing (t t' : Site) (st : Stamp) (e a : Entity)
+    (h1 : demote t st e = .ok a) : demote t' st a = .error .alreadyDemoted := by
+  refine demote_on_a_standing_tombstone_is_refused _ _ a ?_
+  rw [demote_roundtrips _ _ _ _ h1]
+  rfl
 
 /-- **L12 (R).**  `readopt ∘ demote ≠ id` on the nose, because `demote` stamps.
 §6.3's own wording ("stamp kept") already admits this; here the admission is a
 theorem. -/
-theorem readopt_demote_not_id (t : Site) (st : Stamp) (e a : Entity)
-    (h : demote t st e = .ok a) : (readopt e.val.live a).val.stamps ≠ e.val.stamps := by
+theorem readopt_demote_not_id (t : Site) (st : Stamp) (e a b : Entity)
+    (h : demote t st e = .ok a) (hr : readopt e.val.live a = .ok b) :
+    b.val.stamps ≠ e.val.stamps := by
   have ha := demote_stamps t st e a h
-  show a.val.stamps ≠ e.val.stamps
-  rw [ha]
+  have hb : b.val.stamps = a.val.stamps := readopt_keeps_stamps _ a b hr
+  rw [hb, ha]
   intro hc
   have := congrArg List.length hc
   simp at this
@@ -553,18 +706,32 @@ in with that token appended — spelled out here rather than left as a `≠`.  W
 the stamp was a slot beside the line the fourth conjunct read
 `… = e.val.line`, and it was true only because nothing ever wrote the stamp
 into the file. -/
-theorem readopt_demote_id_mod_stamps (t : Site) (st : Stamp) (e a : Entity)
+theorem readopt_demote_id_mod_stamps (t : Site) (st : Stamp) (e a b : Entity)
     (harch : e.val.archive = none) (hst : e.val.status = .live .free)
+    (h : demote t st e = .ok a) (hr : readopt e.val.live a = .ok b) :
+    b.val.live = e.val.live ∧
+    b.val.archive = e.val.archive ∧
+    b.val.status = e.val.status ∧
+    b.val.line = Field.setDemoted (e.val.stamps ++ [st]) e.val.line := by
+  have hv := demote_roundtrips _ _ _ _ h
+  rw [readopt] at hr
+  split at hr
+  · injection hr with hr
+    subst hr
+    refine ⟨rfl, by rw [harch], by rw [hst], ?_⟩
+    show a.val.line = _
+    rw [hv]
+  · simp at hr
+
+/-- The round trip is **reachable**: `demote` leaves a `[-]` record, which is
+exactly `readopt`'s precondition, so the pair of hypotheses above is satisfied
+by every close. -/
+theorem readopt_after_demote_succeeds (t : Site) (st : Stamp) (e a : Entity)
     (h : demote t st e = .ok a) :
-    (readopt e.val.live a).val.live = e.val.live ∧
-    (readopt e.val.live a).val.archive = e.val.archive ∧
-    (readopt e.val.live a).val.status = e.val.status ∧
-    (readopt e.val.live a).val.line
-      = Field.setDemoted (e.val.stamps ++ [st]) e.val.line := by
-  have hv := lift_roundtrips _ _ h
-  refine ⟨rfl, by rw [harch]; rfl, by rw [hst]; rfl, ?_⟩
-  show a.val.line = _
-  rw [hv]
+    readopt e.val.live a = .ok ⟨{ live := e.val.live, archive := none,
+                                  status := .live .free, line := a.val.line }, rfl⟩ := by
+  have hv := demote_roundtrips _ _ _ _ h
+  exact readopt_ok _ a (by rw [hv])
 
 /-! ## Conservation: the invariant three Rust commits tried to enforce -/
 

@@ -19,7 +19,7 @@ file	plan-basic/month/2026-09.md	ok
 file	plan-basic/optional.md	ok	
 file	plan-basic/routines.md	ok	
 file	plan-basic/week/2026-W37.md	ok	
-plan	plan-basic	reject	{"splitLine":"m2"}
+plan	plan-basic	ok	
 file	plan-conflicts/backlog.md	reject	{"dupId":"a1"}
 file	plan-conflicts/calendar/2026-W37.md	reject	{"itemCheck":"fileKindShape"}
 file	plan-conflicts/day/2026-09-07.md	reject	{"itemCheck":"sectionDiscipline"}
@@ -37,7 +37,7 @@ file	plan-home-day/month/2026-09.md	ok
 file	plan-home-day/optional.md	ok	
 file	plan-home-day/routines.md	ok	
 file	plan-home-day/week/2026-W37.md	ok	
-plan	plan-home-day	reject	{"splitLine":"m2"}
+plan	plan-home-day	ok	
 file	plan-recur/backlog.md	ok	
 file	plan-recur/month/2026-09.md	ok	
 file	plan-recur/optional.md	ok	
@@ -52,4 +52,4 @@ file	plan-travel-day/month/2026-09.md	ok
 file	plan-travel-day/optional.md	ok	
 file	plan-travel-day/routines.md	ok	
 file	plan-travel-day/week/2026-W37.md	ok	
-plan	plan-travel-day	reject	{"splitLine":"m2"}
+plan	plan-travel-day	ok	

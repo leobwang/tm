@@ -50,16 +50,17 @@ theorem lead_set_is_not_silent (bm : Nat) (w : List Char) (r : RawItem) :
    `Nat` decoded from JSON cannot supply the second field. -/
 def destCheat (n : Nat) (p : WfPlan) : Dest p.val := ⟨n, by omega⟩
 
-/- CHEAT 7 — read the **live** line of a half-finished demotion as an ordinary
-   open item, which is what the first loader did to every `[-]`: it sent the
-   glyph to `live free` and `glyphAt` rendered `[ ]`.  A lone `[-]` is now a
-   state (`Status.demoted`, §6.3's archive copy), so `statusOfGlyph` is total;
-   what stays partial is the *paired* inverse, because while a tombstone stands
-   the live line reads `[-]` and never `[ ]`.  `statusOfGlyphDemoted .todo` is
-   `none` for that reason. -/
-def pairedTodoCheat (arch : Site) (q : Placement) : Entity :=
-  ⟨{ live := ⟨q.doc, q.rank⟩, archive := some arch,
-     status := (statusOfGlyphDemoted Glyph.todo).get rfl, line := q.item }, rfl⟩
+/- CHEAT 7 — **withdrawn, and its replacements are CHEAT 36-40.**  It read: a
+   record beside a standing tombstone may not be `[ ]`, so
+   `statusOfGlyphDemoted .todo` is `none` and the entity below cannot be built.
+   §6.3 refutes it — `tm readopt` is "`[-]` → `[ ]`, stamp kept", and §4.3's
+   own fixture pair is a `[ ]` in `week/2026-W37.md` beside the `[-]` in
+   `month/2026-09.md # Demoted`.  The kernel now reads that pair, so the cheat
+   asserted a restriction the model no longer has and could not stay: a
+   negative test that refuses something legitimate is a trapdoor, not a check.
+   What replaces it is the rule that is genuinely gone (CHEAT 37), the type
+   that makes a byte-less tombstone unwritable (CHEAT 36), and the
+   unconditional horizon rule (CHEAT 38). -/
 
 /- CHEAT 8 — build the plan without answering which of a demotion's two `[-]`
    lines is the tombstone.  Deciding it by the order the host listed the
@@ -434,5 +435,76 @@ theorem demote_leaves_the_line_alone (t : Site) (st : Field.Stamp) (e a : Entity
    group of size one without looking for a partner.  `orphanDemotion` was the
    loader saying otherwise, and it is not a diagnostic any more. -/
 def orphanDemotionCheat (i : Id) : LErr := .orphanDemotion i
+
+-- ===========================================================================
+-- APPENDED: the demotion pair — which line is the tombstone, and the bytes
+-- that stand at it (State.lean / Plan.lean / Boundary.lean).
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 36 — a tombstone that is a placement and nothing else.  This is the
+   entity the whole corpus foundered on: one token vector, rendered at two
+   sites, so §6.3's pair — the week line as it stood and the month copy with
+   `est:` = remaining and `demoted:W37` appended — had no value that denotes
+   it, and the loader called it `splitLine`.  A `Tomb` is a site **and** the
+   bytes standing there, in one field, so "the archive has a placement but no
+   text" is not a state that exists. -/
+def tomblessArchiveCheat (live arch : Site) (st : Status) (r : RawItem) : Core :=
+  { live := live, archive := some arch, status := st, line := r }
+
+/- CHEAT 37 — the rule that made §4.3's fixture unreadable: force `[-]` on the
+   record whenever a tombstone stands.  It was defensible as a reading of the
+   *post-close* snapshot and it is false of every readopted item; the box at a
+   live site is now the status and nothing else (`glyphAt_live`). -/
+theorem a_record_beside_a_tombstone_always_reads_demoted
+    (live arch : Site) (a l : RawItem) :
+    glyphAt { live := live, archive := some ⟨arch, a⟩, status := .live .free, line := l } live
+      = Glyph.demoted := rfl
+
+/- CHEAT 38 — demand the horizon order of every demotion pair, not only of the
+   ones whose boxes tie.  This is `demotionsOriented` as it was, and it is what
+   refused three of the five fixture plans: §4.3's pair has its record live in
+   a **week** and its archive in a **month**, so the archive's horizon does not
+   precede the record's and never had to — the boxes settle that pair without
+   consulting a file. -/
+theorem every_tombstone_is_behind_its_record (p : WfPlan) (i : Id) (e : Entity) (r : Site)
+    (hget : p.val.store.get i = some e) (harch : e.val.archiveSite = some r) :
+    horizonPrecedes (docRegion p.val r.doc) (docRegion p.val e.val.live.doc) = true :=
+  the_tombstone_is_behind_the_live_line p i e r hget harch
+
+/- CHEAT 39 — refuse a pair whose two lines differ.  `LErr.splitLine` said "an
+   entity owns one token vector, so there is no value that renders both", which
+   was true of the model and never of the data: §6.3's close writes the two
+   lines differently on purpose.  The constructor is gone. -/
+def splitLineCheat (i : Id) : LErr := .splitLine i
+
+/- CHEAT 40 — `demote` that writes one token vector to both sites, which is
+   what it did before the tombstone carried its own bytes: the `demoted:` stamp
+   §6.3 appends to the **copy** appeared in the week file too, and the week
+   line the close was supposed to leave alone came back changed. -/
+theorem demote_writes_one_token_vector (t : Site) (st : Field.Stamp) (e a : Entity)
+    (h : demote t st e = .ok a) :
+    a.val.archive = some ⟨e.val.live, a.val.line⟩ := by
+  rw [demote_roundtrips _ _ _ _ h]
+
+/- CHEAT 41 — `readopt` that reopens anything.  §6.3 says it "moves a *demoted
+   line* into the current week (`[-]` → `[ ]`, stamp kept)", and run on a
+   record that is already `[ ]` it consumes a tombstone whose bytes carry the
+   `est:` and the stamp — so "stamp kept" is precisely what it loses, on the
+   very pair this kernel was changed to admit.  `readopt` returns an `Except`
+   now, and `KErr.notDemoted` is what it returns. -/
+def readoptAnythingCheat (t : Site) (e : Entity) : Entity := readopt t e
+
+/- CHEAT 42 — the assumption the withdrawn `demote_not_idem` rested on: that a
+   second `demote` can succeed at all.  It is how the standing tombstone got
+   overwritten and its file's line dropped from the render with the kernel
+   returning `ok`.  §6.3 gives an item one archive record and the month close
+   *moves* it, so the composite is `alreadyDemoted`
+   (`demote_twice_is_not_a_thing`) — and a refutation whose second hypothesis
+   has no witness is vacuous, which is why that law is withdrawn rather than
+   kept.  `stamps_accumulate_across_readopt` is what replaces it. -/
+theorem demote_twice_succeeds (t t' : Site) (st : Field.Stamp) (e a : Entity)
+    (h1 : demote t st e = .ok a) : ∃ b, demote t' st a = .ok b :=
+  ⟨_, rfl⟩
 
 end Tm

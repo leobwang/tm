@@ -205,6 +205,97 @@ fn two_demoted_lines_with_no_horizons_are_rejected_by_name() {
     assert_eq!(out, r##"{"err":{"ambiguousDemotion":"m1"}}"##, "{out}");
 }
 
+/// §4.3's own demotion pair — the record live in the week, the archive copy
+/// under `month/…# Demoted`, and **two lines whose bytes differ**, because
+/// §6.3's close puts `est:` = remaining and a `demoted:` stamp on the copy.
+/// This was `splitLine: m2` (one entity, one token vector) and then
+/// `notADemotion: m2` (the tombstone was taken to be the line in the earlier
+/// horizon, which is the week line, which reads `[ ]`). It is the pair that
+/// kept three of the five fixture trees from a whole-plan round trip.
+#[test]
+fn the_spec_demotion_pair_round_trips() {
+    let out = call(
+        r##"{"docs":[{"path":"week/2026-W37.md","grain":1,"ix":35,
+              "lines":["# Milestones","- [ ] 4 6b Rollback path passes tests   @O2 ^m2"]},
+             {"path":"month/2026-09.md","grain":2,"ix":8,
+              "lines":["# Demoted","- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2"]}],
+             "cmds":[]}"##,
+    )
+    .unwrap();
+    assert!(out.contains(r#"- [ ] 4 6b Rollback path passes tests   @O2 ^m2"#), "{out}");
+    assert!(
+        out.contains(r#"- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2"#),
+        "{out}"
+    );
+}
+
+/// §6.3 gives an item **one** archive record. `demote` is the week close; the
+/// month close "moves them to the next month file", which is `move`. So a
+/// second `demote` is refused rather than picking one of the two lines to
+/// drop — overwrite the standing tombstone and `w.md` comes back empty with
+/// `ok`; keep it and the line the record is leaving disappears instead.
+#[test]
+fn a_second_demotion_is_refused_rather_than_dropping_a_line() {
+    let out = call(
+        r##"{"docs":[{"path":"w.md","grain":1,"ix":35,"lines":["- [-] 5 6b Old work ^m1"]},
+              {"path":"m.md","grain":2,"ix":8,"lines":["- [-] 5 6b Old work ^m1"]},
+              {"path":"n.md","grain":2,"ix":9,"lines":[]}],
+             "cmds":[{"op":"demote","id":"m1","doc":2,"period":38}]}"##,
+    )
+    .unwrap();
+    assert_eq!(out, r##"{"err":{"kernel":"alreadyDemoted"}}"##, "{out}");
+}
+
+/// §6.3's week close, whole: the week line stays where it was and becomes
+/// `[-]` with its bytes untouched, and the copy filed into the month carries
+/// the `demoted:` stamp. The stamp is on the **copy** only — one token vector
+/// for both sites put it in the week file too, which §6.3 does not say.
+#[test]
+fn a_close_stamps_the_copy_and_leaves_the_week_line_alone() {
+    let out = call(
+        r##"{"docs":[{"path":"w.md","grain":1,"ix":35,"lines":["- [ ] 5 6b Work ^m1"]},
+              {"path":"m.md","grain":2,"ix":8,"lines":[]}],
+             "cmds":[{"op":"demote","id":"m1","doc":1,"period":37}]}"##,
+    )
+    .unwrap();
+    let week = out.split("{\"grain\"").find(|s| s.contains("w.md")).unwrap();
+    assert!(week.contains("- [-] 5 6b Work ^m1"), "no stamp in the week file: {out}");
+    assert!(out.contains("- [-] 5 6b Work demoted:W37 ^m1"), "{out}");
+}
+
+/// **`readopt` is a demoted line or it is nothing** (§6.3: "moves a *demoted
+/// line* into the current week, `[-]` -> `[ ]`, stamp kept"). Run on §4.3's
+/// fixture — where the record is already `[ ]` and the tombstone is the line
+/// carrying `est:` = remaining and the stamp — consuming the tombstone threw
+/// both away and returned `ok`. "Stamp kept" was exactly what was lost.
+#[test]
+fn readopt_of_a_live_record_is_refused_rather_than_losing_the_stamp() {
+    let out = call(
+        r##"{"docs":[{"path":"week/2026-W37.md","grain":1,"ix":35,
+              "lines":["- [ ] 4 6b Rollback path passes tests   @O2 ^m2"]},
+             {"path":"month/2026-09.md","grain":2,"ix":8,
+              "lines":["# Demoted","- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2"]}],
+             "cmds":[{"op":"readopt","id":"m2","doc":0}]}"##,
+    )
+    .unwrap();
+    assert_eq!(out, r##"{"err":{"kernel":"notDemoted"}}"##, "{out}");
+}
+
+/// ...and on a record that really is `[-]` it works, and §6.3's "stamp kept"
+/// is kept: the tombstone is consumed, the record moves, `demoted:W37` stays.
+#[test]
+fn readopt_of_a_demoted_record_keeps_the_stamp() {
+    let out = call(
+        r##"{"docs":[{"path":"w.md","grain":1,"ix":35,"lines":["- [-] 5 6b Old work ^m1"]},
+              {"path":"m.md","grain":2,"ix":8,"lines":["- [-] 5 6b Old work demoted:W37 ^m1"]},
+              {"path":"n.md","grain":1,"ix":36,"lines":[]}],
+             "cmds":[{"op":"readopt","id":"m1","doc":2}]}"##,
+    )
+    .unwrap();
+    assert!(out.contains("- [ ] 5 6b Old work demoted:W37 ^m1"), "{out}");
+    assert_eq!(out.matches("Old work").count(), 1, "the tombstone is consumed: {out}");
+}
+
 /// The other half of the same rule: the kernel may not *write* a pair it could
 /// not read. A demotion files work forward — §6.3's close targets a region that
 /// is not yet closed — so a `demote` into a finer file, and a `move` that would

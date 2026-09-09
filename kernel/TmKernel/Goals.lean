@@ -214,9 +214,10 @@ consequence the README states is that two diagnostics cannot fire on any
 well-formed request — "a checker that no input can fail is a checker whose bite
 is a proof and not a test".  These two goals are that proof.
 
-(`demotionsOriented` is the third of gap 16's trio and is deliberately **not**
-stated here: the demotion-orientation model is being revised, and a goal
-written against the current `orientPair` would be stale before it was read.) -/
+(`demotionsOriented` is the third of gap 16's trio.  It was deliberately left
+unstated while the demotion-orientation model was being revised; that revision
+has landed — the box decides, the horizon breaks the tie — so the goal is
+stated below against the settled `orientPair`.) -/
 
 /-- **P\*, stage 3, README gap 16.**  Every site the loader builds names a
 document that exists, because `placementsOf` takes the index from the same walk
@@ -233,6 +234,22 @@ rankCollision` unreachable from a request. -/
 theorem the_loader_builds_a_normalized_plan (docs : List ReqDoc) (items : List (Id × Entity))
     (h : buildEntities (placementsOf 0 docs) = .ok items) :
     normalized (loadCore docs items) = true := sorry
+
+/-- **P\*, stage 3, README gap 16.**  Every entity the loader builds is
+oriented, because `orientPair` consults the horizon in exactly the case
+`demotionOriented` demands it — when both lines read `[-]` — and takes each
+placement's region from the same document it takes the index from.
+Discharging it makes the plan-level `ambiguousDemotion` that `firstUnoriented`
+names unreachable *by proof*; the load-time one `pairedEntity` raises is a
+different diagnostic and stays reachable
+(`two_demoted_lines_with_no_horizons_are_rejected_by_name`).
+
+`the_kernel_can_read_the_pairs_it_writes` (Boundary.lean) is the converse and
+is proved: it goes from an accepted plan to the loader.  This one goes from the
+loader to `planWf`, and it is the direction that is still a runtime check. -/
+theorem the_loader_builds_oriented_demotions (docs : List ReqDoc) (items : List (Id × Entity))
+    (h : buildEntities (placementsOf 0 docs) = .ok items) :
+    demotionsOriented (loadCore docs items) = true := sorry
 
 /-- **P\*, stage 3, README gap 4.**  Two readers of `est:` still coexist on the
 command path: `Cmd.setEstE` and the `est` request go through the stage-one

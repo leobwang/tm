@@ -30,6 +30,8 @@ open Tm
 #print axioms Tm.no_two_lines_of_one_id_in_one_path
 #print axioms Tm.no_line_is_lost
 #print axioms Tm.the_tombstone_is_behind_the_live_line
+#print axioms Tm.a_backwards_demotion_is_refused
+#print axioms Tm.a_reopened_record_needs_no_horizon
 #print axioms Tm.transform_closed
 
 -- the grammar
@@ -58,9 +60,15 @@ open Tm
 #print axioms Tm.readopt_reopens
 #print axioms Tm.set_is_not_silent
 #print axioms Tm.set_last_wins
-#print axioms Tm.demote_not_idem
+#print axioms Tm.stamps_accumulate_across_readopt
+#print axioms Tm.demote_twice_is_not_a_thing
+#print axioms Tm.demote_on_a_standing_tombstone_is_refused
+#print axioms Tm.demote_roundtrips
+#print axioms Tm.demote_archive_none
 #print axioms Tm.readopt_demote_not_id
 #print axioms Tm.readopt_demote_id_mod_stamps
+#print axioms Tm.readopt_of_a_live_record_is_refused
+#print axioms Tm.readopt_after_demote_succeeds
 #print axioms Tm.floor_and_respect_are_incompatible
 #print axioms Tm.demoteEst_conserves
 #print axioms Tm.demoteEst_respects_user
@@ -71,9 +79,13 @@ open Tm
 #print axioms Tm.resolveDest_rejects
 
 -- the glyph is a function of placement, and the loader is its inverse
+#print axioms Tm.glyphOfStatus_statusOfGlyph
+#print axioms Tm.statusOfGlyph_glyphOfStatus
+#print axioms Tm.glyphAt_live
 #print axioms Tm.glyphAt_statusOfGlyph
-#print axioms Tm.glyphAt_statusOfGlyphDemoted
+#print axioms Tm.glyphAt_statusOfGlyph_paired
 #print axioms Tm.every_glyph_has_a_state
+#print axioms Tm.a_differing_demotion_pair_renders_back
 
 -- the boundary
 #print axioms Tm.grain_rejects_99
@@ -83,6 +95,7 @@ open Tm
 #print axioms Tm.unordered_horizons_are_rejected
 #print axioms Tm.paired_placement_renders_back
 #print axioms Tm.paired_renders_each_placement
+#print axioms Tm.the_kernel_can_read_the_pairs_it_writes
 #print axioms Tm.load_render_line
 #print axioms Tm.scanLines_prose
 #print axioms Tm.freshRank_gt
@@ -554,6 +567,10 @@ open Tm
 #print axioms Tm.runPlan_renders_the_input
 #print axioms Tm.the_round_trip_is_not_vacuous
 #print axioms Tm.the_round_trip_fires
+#print axioms Tm.the_spec_demotion_pair_loads
+#print axioms Tm.the_spec_pair_is_one_entity_with_a_tombstone
+#print axioms Tm.the_spec_pair_puts_the_tombstone_in_the_month
+#print axioms Tm.the_spec_demotion_pair_round_trips
 
 -- Cmd.lean
 

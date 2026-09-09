@@ -95,6 +95,33 @@ structure Site where
   rank : Nat
 deriving DecidableEq, Repr, Inhabited
 
+/-! ## The tombstone carries its own bytes
+
+§6.3's week close does not write one line twice.  It marks the week line `[-]`
+and **copies** it into `month/<current>#Demoted` "with `est:` = remaining and
+`demoted:W37` appended", so the pair the spec's own lifecycle produces has two
+lines that differ in their bytes — and §4.3's fixture pair differs in the
+leading estimate (`4 6b` against `4 3b`) as well.
+
+An entity that owned one token vector could not render both, and the loader
+said so: `LErr.splitLine`, on every whole plan of the corpus that carried a
+demotion.  That error was a rule about the model, not about the data.
+
+So a tombstone is a **site and the bytes standing at it**, in one field, and
+the two cannot come apart: there is no value with a placement and no text, or
+text and no placement.  What this is *not* is a second copy of §3.1's fields —
+those are views of `Core.line`, the record, and `the_fields_are_the_line` still
+quantifies over that one vector.  The archive's bytes are a frozen
+**observation** the close left in a file nobody edits again; no view reads
+them, and the only thing that consumes them is `renderCore`, which writes them
+back where it found them. -/
+structure Tomb where
+  /-- where the archive record sits -/
+  site : Site
+  /-- the bytes standing there, verbatim -/
+  line : RawItem
+deriving DecidableEq, Repr, Inhabited
+
 /-! ## The states a box can be in
 
 §6.3's `[-]` is **two** things and the first version of this module saw only
@@ -220,7 +247,7 @@ vector** (§4.2), which is where every one of §3.1's item fields lives.  See th
 module header for why `parent` is the exception. -/
 structure Core where
   live      : Site
-  archive   : Option Site      -- at most one tombstone a close left behind
+  archive   : Option Tomb      -- at most one tombstone a close left behind
   status    : Status
   line      : RawItem
   /-- §3.1 `parent`.  Not yet read off the line — README gap 22, and the module
@@ -229,11 +256,28 @@ structure Core where
   parent    : Option Id := Option.none
 deriving DecidableEq, Repr
 
+/-- Where the tombstone is, forgetting what it says.  Almost everything that
+asks about the archive asks about the *placement* — `wf`, `Normalized`, the
+horizon order, the section rules — and this is the projection they use. -/
+def Core.archiveSite (c : Core) : Option Site := c.archive.map Tomb.site
+
+@[simp] theorem Core.archiveSite_none {c : Core} (h : c.archive = none) :
+    c.archiveSite = none := by simp [Core.archiveSite, h]
+
+@[simp] theorem Core.archiveSite_some {c : Core} {t : Tomb} (h : c.archive = some t) :
+    c.archiveSite = some t.site := by simp [Core.archiveSite, h]
+
 /-! ## §3.1's item fields, as views of the line
 
 One function per field, and it is the only thing that reads that field.  Each
 is §4.1's view of the same bytes, so there is nothing for a second reader to
-disagree with. -/
+disagree with.
+
+They read `Core.line` — the **record**, the line an id resolves to (§1.3
+"writers address items by id").  §6.3 says which line that is: the copy the
+close files forward, carrying `est:` = remaining and the stamp, which is also
+the line `tm readopt` reopens.  The tombstone's bytes are not a second reading
+of any of these fields; nothing below looks at them. -/
 
 /-- All twenty-seven of §4.1's fields at once — the same value `renderItem`
 round-trips (`field_round_trip`, Line.lean). -/
@@ -441,9 +485,9 @@ def wfPair (live : Site) (arch : Option Site) : Bool :=
 @[simp] theorem wfPair_none (l : Site) : wfPair l none = true := rfl
 @[simp] theorem wfPair_some (l r : Site) : wfPair l (some r) = (r.doc != l.doc) := rfl
 
-def wf (c : Core) : Bool := wfPair c.live c.archive
+def wf (c : Core) : Bool := wfPair c.live c.archiveSite
 
-@[simp] theorem wf_eq (c : Core) : wf c = wfPair c.live c.archive := rfl
+@[simp] theorem wf_eq (c : Core) : wf c = wfPair c.live c.archiveSite := rfl
 
 /-- **Widening the entity does not touch the tier structure**, and this is the
 whole reason the design is `Bool` + `Subtype`.  `wf` reads `live` and `archive`;
@@ -501,19 +545,44 @@ theorem effectiveOnMiss_default (c : Core) (h : c.onMiss = Option.none) :
 
 /-! ## The glyph, and the loader that inverts it -/
 
+/-- The box a status puts in a file.  Six states, six glyphs, and it is a
+bijection — `statusOfGlyph` below is its inverse both ways round. -/
+def glyphOfStatus : Status → Glyph
+  | .settled .done    => Glyph.done
+  | .settled .dropped => Glyph.dropped
+  | .demoted          => Glyph.demoted
+  | .live .self       => Glyph.active
+  | .live .world      => Glyph.waiting
+  | .live .free       => Glyph.todo
+
 /-- The glyph is a **function of placement and status**, not a stored field.
 This single change kills four of the six duplicate-id bugs: `--drop` cannot
 turn an archive copy into a live line, because "archive copy" is not something
-the glyph records. -/
+the glyph records.
+
+The tombstone's box is `[-]` because it is a tombstone — that is what a line in
+`month/…# Demoted` *is*.  The record's box is its status, **and nothing else**:
+the previous version also forced `[-]` on a `live free` record whenever a
+tombstone stood, on the reading that "a demotion writes `[-]` at both sites".
+That reading is §6.3's *post-close* snapshot only.  `tm readopt` turns the
+record back to `[ ]` and the archive stands (§6.3: "`[-]` → `[ ]`, stamp
+kept"), which is the shape §4.3's own fixture ships — a `[ ]` in
+`week/2026-W37.md` beside the `[-]` in `month/2026-09.md # Demoted`.  Forcing
+the box made that pair unreadable and made `[ ]` a glyph with no preimage. -/
 def glyphAt (c : Core) (s : Site) : Glyph :=
-  if c.archive = some s then Glyph.demoted
-  else match c.status with
-    | .settled .done    => Glyph.done
-    | .settled .dropped => Glyph.dropped
-    | .demoted          => Glyph.demoted
-    | .live .self       => Glyph.active
-    | .live .world      => Glyph.waiting
-    | .live .free       => if c.archive.isSome then Glyph.demoted else Glyph.todo
+  if c.archiveSite = some s then Glyph.demoted else glyphOfStatus c.status
+
+/-- At the live site the box is the status, whatever the archive is doing. -/
+theorem glyphAt_live (c : Core) (h : wf c = true) :
+    glyphAt c c.live = glyphOfStatus c.status := by
+  have : c.archiveSite ≠ some c.live := by
+    cases ha : c.archiveSite with
+    | none => simp
+    | some r =>
+        simp only [wf_eq, ha, wfPair_some, bne_iff_ne, ne_eq] at h
+        intro hc
+        exact h (congrArg Site.doc (Option.some.inj hc))
+  simp [glyphAt, this]
 
 /-- One observation: an id, a site, and the bytes that appear in the file. -/
 structure Line where
@@ -522,11 +591,15 @@ structure Line where
   text : List Char
 deriving DecidableEq, Repr
 
+/-- The lines an entity denotes: the record at its live placement, and — when a
+close left one — the tombstone at its own placement, in **its own bytes**.
+Rendering both sites from one token vector is what could not reproduce §6.3's
+pair; the archive's text is the text the close froze there. -/
 def renderCore (i : Id) (c : Core) : List Line :=
   ⟨i, c.live, serializeItem i (glyphAt c c.live) c.line⟩ ::
     (match c.archive with
      | none   => []
-     | some r => [⟨i, r, serializeItem i (glyphAt c r) c.line⟩])
+     | some t => [⟨i, t.site, serializeItem i (glyphAt c t.site) t.line⟩])
 
 def render (i : Id) (e : Entity) : List Line := renderCore i e.val
 
@@ -537,7 +610,7 @@ theorem render_all_same_id (i : Id) (e : Entity) : ∀ l ∈ render i e, l.id = 
   unfold render renderCore; cases e.val.archive <;> simp
 
 /-- Read straight off `wf`: the archive line is in a different file. -/
-theorem archive_elsewhere (e : Entity) (r : Site) (h : e.val.archive = some r) :
+theorem archive_elsewhere (e : Entity) (r : Site) (h : e.val.archiveSite = some r) :
     r.doc ≠ e.val.live.doc := by
   have := e.property
   rw [wf_eq, h] at this
@@ -550,8 +623,8 @@ theorem one_line_per_file (i : Id) (e : Entity) :
   unfold render renderCore
   cases h : e.val.archive with
   | none => simp [h]
-  | some r =>
-      have hne := archive_elsewhere e r h
+  | some t =>
+      have hne := archive_elsewhere e t.site (Core.archiveSite_some h)
       simp only [h, List.mem_cons, List.not_mem_nil, or_false]
       rintro l₁ (rfl | rfl) l₂ (rfl | rfl) hd <;> simp_all
 
@@ -562,13 +635,13 @@ theorem exactly_one_live (i : Id) (e : Entity) :
   unfold render renderCore
   cases h : e.val.archive with
   | none => simp [h]
-  | some r =>
-      have hne := archive_elsewhere e r h
-      have : ¬ (r = e.val.live) := fun hc => hne (by rw [hc])
+  | some t =>
+      have hne := archive_elsewhere e t.site (Core.archiveSite_some h)
+      have : ¬ (t.site = e.val.live) := fun hc => hne (by rw [hc])
       simp [h, this]
 
 /-- The tombstone always renders as `[-]`, whatever the status says. -/
-theorem archive_line_is_demoted (c : Core) (r : Site) (h : c.archive = some r) :
+theorem archive_line_is_demoted (c : Core) (r : Site) (h : c.archiveSite = some r) :
     glyphAt c r = Glyph.demoted := by simp [glyphAt, h]
 
 /-! ## Reading a glyph back: the inverse of `glyphAt`
@@ -579,21 +652,20 @@ it wrong silently rewrites the user's file with no command run at all.  That is
 what the first version of `entitiesOfDoc` did: it mapped `[-]` to `live free`
 with no archive, and `glyphAt` rendered `[ ]`.
 
-So the inverse is written down and its halves are theorems.  There are two of
-them because the *live* line of a half-finished demotion is read differently
-from a line standing alone:
+So the inverse is written down and it is one function, not two.  The previous
+version had a second, *partial* inverse for the live line of a pair, on the
+reading that "a demotion writes `[-]` at both sites, so `[ ]` has no preimage
+while a tombstone stands".  §6.3 refutes it in one sentence: `tm readopt` is
+"`[-]` → `[ ]`, stamp kept", and what it reopens is the record, so a `[ ]`
+record beside a standing `[-]` archive is a shape the lifecycle produces —
+§4.3's own fixture pair.  With the box no longer forced at the live site the
+inverse is `statusOfGlyph`, total, paired or not, and the six-way
+`Status ≃ Glyph` correspondence is a bijection with no side conditions. -/
 
-* standing alone, every glyph has a preimage, `[-]` included — that is
-  `Status.demoted`, §6.3's archive copy, and it is why a month file's
-  `# Demoted` section loads;
-* with an archive placement, `[ ]` has **no** preimage: while a tombstone
-  stands, the live line reads `[-]`, never `[ ]`.
--/
-
-/-- The inverse of `glyphAt` at the live site of an entity with **no** archive
-placement.  Total: §6.3's `[-]` archive copy is a state, so there is no glyph a
-file can carry that this refuses.  `orphanDemotion` — the loader error that
-refused every `# Demoted` section in the corpus — has no source any more. -/
+/-- The inverse of `glyphOfStatus`, and so of `glyphAt` at a live site.
+Total: §6.3's `[-]` archive copy is a state, so there is no glyph a file can
+carry that this refuses.  `orphanDemotion` — the loader error that refused
+every `# Demoted` section in the corpus — has no source any more. -/
 def statusOfGlyph : Glyph → Status
   | .todo    => .live .free
   | .active  => .live .self
@@ -602,16 +674,16 @@ def statusOfGlyph : Glyph → Status
   | .waiting => .live .world
   | .demoted => .demoted
 
-/-- The inverse of `glyphAt` at the live site of an entity that **does** have an
-archive placement.  `[ ]` has no preimage here: while a tombstone stands, the
-live line reads `[-]`. -/
-def statusOfGlyphDemoted : Glyph → Option Status
-  | .demoted => some (.live .free)
-  | .active  => some (.live .self)
-  | .done    => some (.settled .done)
-  | .dropped => some (.settled .dropped)
-  | .waiting => some (.live .world)
-  | .todo    => none
+/-- **The box determines the state.** -/
+theorem glyphOfStatus_statusOfGlyph (g : Glyph) : glyphOfStatus (statusOfGlyph g) = g := by
+  cases g <;> rfl
+
+/-- **And the state determines the box** — so nothing is collapsed on the way
+in, and a loader cannot read two different files into one status. -/
+theorem statusOfGlyph_glyphOfStatus (s : Status) : statusOfGlyph (glyphOfStatus s) = s := by
+  match s with
+  | .settled .done | .settled .dropped | .demoted
+  | .live .self | .live .world | .live .free => rfl
 
 /-- **Fidelity, unpaired.**  The entity a loader builds from a glyph renders
 that same glyph back — for **every** glyph, with no side condition, which is
@@ -620,16 +692,19 @@ theorem glyphAt_statusOfGlyph (g : Glyph) (site : Site) (l : RawItem) :
     glyphAt (coreOfLine site (statusOfGlyph g) l) site = g := by
   cases g <;> rfl
 
-/-- **Fidelity, paired.**  Same, for the two-line form a demotion leaves: the
-live site renders the glyph it was read with, and the tombstone renders `[-]`
-(`archive_line_is_demoted`). -/
-theorem glyphAt_statusOfGlyphDemoted {g : Glyph} {s : Status}
-    (h : statusOfGlyphDemoted g = some s) (live arch : Site) (hne : arch ≠ live)
-    (l : RawItem) :
-    glyphAt { live := live, archive := some arch, status := s, line := l } live = g := by
+/-- **Fidelity, paired**, and now with no side condition on the glyph.  For the
+two-line form §6.3 leaves: the record renders the box it was read with —
+`[ ]` included, which is the case the partial inverse could not express — and
+the tombstone renders `[-]` (`archive_line_is_demoted`) in its **own** bytes.
+
+This is the theorem `statusOfGlyphDemoted` used to state for five of the six
+glyphs; the sixth was not an exclusion the spec asked for. -/
+theorem glyphAt_statusOfGlyph_paired (g : Glyph) (live arch : Site) (hne : arch ≠ live)
+    (l a : RawItem) :
+    glyphAt { live := live, archive := some ⟨arch, a⟩, status := statusOfGlyph g, line := l }
+        live = g := by
   have harch : ¬ ((some arch : Option Site) = some live) := by simpa using hne
-  cases g <;> simp only [statusOfGlyphDemoted, Option.some.injEq, reduceCtorEq] at h <;>
-    first | (subst h; simp [glyphAt, harch]) | simp [glyphAt, harch]
+  cases g <;> simp [glyphAt, Core.archiveSite, harch, glyphOfStatus, statusOfGlyph]
 
 /-- Whichever box is in the file, **there is a state that renders it**, and now
 there is one for a `[-]` standing on its own — §4.3's month `# Demoted` record.
@@ -646,5 +721,25 @@ above, spelled out because it is the fix: the loader used to send this glyph to
 kernel accepted and handed back with different bytes. -/
 theorem a_lone_demotion_renders_back (site : Site) (l : RawItem) :
     glyphAt (coreOfLine site .demoted l) site = Glyph.demoted := rfl
+
+/-- **A demotion pair whose two lines differ in their bytes renders both of
+them.**  §6.3's week close writes the record with `est:` = remaining and a
+`demoted:` stamp and leaves the week line as it stood, so `l ≠ a` is the
+*normal* case and not a corner.  The entity that owns one token vector renders
+`serializeItem i g l` twice; this one renders the record's bytes at the record
+and the archive's bytes at the archive, which is what the corpus's whole plans
+need and what `LErr.splitLine` used to refuse.
+
+Both hypotheses are load-bearing: `hne` is `wf`, and without it the two lines
+are one file's and `one_line_per_file` is false. -/
+theorem a_differing_demotion_pair_renders_back (i : Id) (g : Glyph) (live arch : Site)
+    (hne : arch ≠ live) (l a : RawItem) :
+    renderCore i { live := live, archive := some ⟨arch, a⟩, status := statusOfGlyph g,
+                   line := l }
+      = [⟨i, live, serializeItem i g l⟩, ⟨i, arch, serializeItem i Glyph.demoted a⟩] := by
+  have harch : ¬ ((some arch : Option Site) = some live) := by simpa using hne
+  unfold renderCore
+  rw [glyphAt_statusOfGlyph_paired g live arch hne l a]
+  simp [glyphAt, Core.archiveSite]
 
 end Tm

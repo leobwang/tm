@@ -131,9 +131,13 @@ Two further corrections from the same audit belong with it, because both are the
 - `glyphAt` is the only writer of a state box, and the loader is its inverse.
   The first loader mapped `Glyph.demoted` to `live free` with no archive, so a
   `[-]` line came back `[ ]` **with no command run at all** — the shipped bug 2,
-  reproduced inside the verified kernel. The inverse is now written down as a
-  partial function with `glyphAt_statusOfGlyph` / `glyphAt_statusOfGlyphDemoted`
-  as its two halves, and where it is `none` the loader rejects.
+  reproduced inside the verified kernel. The inverse is now written down as
+  `statusOfGlyph`, and `glyphAt_statusOfGlyph` / `glyphAt_statusOfGlyph_paired`
+  say it renders the glyph back at a live site whether or not a tombstone
+  stands. *(It was a partial function for a while, excluding `[ ]` at the live
+  site of a pair. §6.3's `readopt` reopens the record while the archive stands,
+  so that exclusion was wrong and is withdrawn — kernel/README.md, "which line
+  of a demotion pair is the tombstone".)*
 
 **And a correction to that correction, from the audit after it**, because it is
 the *same* defect one level up: an inverse can fail by having no value and it
@@ -152,6 +156,21 @@ is antisymmetric, and "the tombstone's horizon precedes the live line's" joins
 `planWf` as a fourth conjunct, so no command can write a pair the loader would
 have to guess at. Where two documents genuinely do not order a pair, the loader
 returns `LErr.ambiguousDemotion` rather than choosing.
+
+**And a third correction, from the corpus**, which is where this argument was
+one step too broad. `demote` renders `[-]` at both sites *straight after a
+close*, and that is the only time. §6.3's `readopt` is "`[-]` → `[ ]`, stamp
+kept" and what it reopens is the record, so §4.3's own fixture pair is a `[ ]`
+in the week beside the `[-]` in `month/…# Demoted` — where the horizon order
+names the *week* line as the tombstone and the week line is not `[-]`. Three
+of the five fixture trees failed to load whole on it. The orientation is now
+lexicographic — the box first, the horizon only where the boxes tie — and
+`demotionsOriented` demands the horizon order only in that same case. The
+second half of the same fix: §6.3's close writes the copy with `est:` =
+remaining and a stamp, so the pair's two lines legitimately differ, and an
+entity with one token vector cannot render both; `Core.archive` is a `Tomb`,
+a placement **and** the bytes standing at it. See kernel/README.md, "which
+line of a demotion pair is the tombstone".
 
 Two second-order facts from the same spike, both of which the design has to answer:
 

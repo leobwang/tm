@@ -19,7 +19,7 @@ kernel/
     Check.lean               axiom audit, one line per theorem
     Negative.lean            MUST FAIL to compile — the demonstration
     Goals.lean               stages 3-6 as unproved statements; imported by nothing
-  tm-kernel-ffi/       Rust: the C shim, build.rs, and 21 tests that call Lean
+  tm-kernel-ffi/       Rust: the C shim, build.rs, and 26 tests that call Lean
   check.sh             stage-one acceptance
   totality.py          the kernel must be total; this enforces it
 ```
@@ -137,7 +137,7 @@ has type
 but is expected to have type
   wf (let __src := e.val;
       { live := t, archive := __src.archive, status := __src.status,
-        line := __src.line, stamps := __src.stamps }) = true
+        line := __src.line, parent := __src.parent }) = true
 
 Negative.lean:30:74: error: Application type mismatch: The argument
   p.property
@@ -160,14 +160,26 @@ is not definitionally equal to the right-hand side
 Negative.lean:51:60: error: omega could not prove the goal:
 No usable constraints found.        -- `Dest p.val` wants `n < p.val.docs.length`
 
-Negative.lean:58:55: error: Application type mismatch: The argument
-  rfl
+Negative.lean:453:34: error: Application type mismatch: The argument
+  arch
 has type
-  ?m.6 = ?m.6
+  Site
 but is expected to have type
-  (statusOfGlyph q.glyph).isSome = true
-in the application
-  (statusOfGlyph q.glyph).get ⋯
+  Tomb                            -- a tombstone with no bytes is not a value
+
+Negative.lean:459:0: error: Not a definitional equality: the left-hand side
+  glyphAt { live := live, archive := some { site := arch, line := a },
+            status := Status.live Holder.free, line := l } live
+is not definitionally equal to the right-hand side
+  Glyph.demoted                   -- a reopened record is `[ ]`, not `[-]`
+
+Negative.lean:473:2: error: Type mismatch
+  the_tombstone_is_behind_the_live_line p i e r hget harch
+has type
+  glyphOfStatus e.val.status = Glyph.demoted ->
+    horizonPrecedes (docRegion p.val r.doc) (docRegion p.val e.val.live.doc) = true
+but is expected to have type
+  horizonPrecedes (docRegion p.val r.doc) (docRegion p.val e.val.live.doc) = true
 
 Negative.lean:71:51: error: Application type mismatch: The argument
   rfl
@@ -201,7 +213,7 @@ Every cheat, one compile error:
 | 4 | a close that zeroes the estimate it just measured | the conservation obligation is not dischargeable |
 | 5 | export `setLeadWord` as "edit the estimate" — what `tm edit est=` did | the `view ∘ set = id` obligation every setter must discharge cannot be discharged for it |
 | 6 | take a relocation's destination straight off the wire, which is what let `move ^m1 7` delete the item from a one-document plan | a `Dest` is an index **plus a proof it is a document of this plan**, and a `Nat` decoded from JSON cannot supply the second field |
-| 7 | read a lone `[-]` back as an ordinary open item, which is what the first loader did | the inverse of `glyphAt` is a *partial* function and `statusOfGlyph .demoted` is `none`; `.get` needs a proof there is something there |
+| 7 | *withdrawn* — it said a record beside a standing tombstone may not be `[ ]`, and §6.3's `readopt` produces exactly that | it refused a shape the spec writes; replaced by 36–42, and the withdrawal is recorded in `Negative.lean` where the cheat was |
 | 8 | build the plan without answering which of a demotion's two `[-]` lines is the tombstone — deciding it by document order was this, with the assertion hidden in a `match` | `planWf` has five parts; `rfl` is not a proof of any of them |
 | 9 | wave the **item half** of the plan-level tier through, which is what "cycles are only a `tm check` warning" amounts to once `tm check` and the acceptance rule are one function | `itemsWf` is a part of `planWf` like the other four |
 | 10 | claim a transform that lands in range and keeps its tombstone behind it always succeeds | since `Normalized` and `after:` acyclicity joined `planWf`, `mapAt_ok_of_inRange` carries a fifth obligation and will not apply without it |
@@ -214,6 +226,13 @@ Every cheat, one compile error:
 | 19 | derive §7.1's bin edges instead of tabulating them | three of four are halvings, so `1/2^i` looks generative; it disagrees with the spec at every `u` in `[0.1, 0.125)` |
 | 20 | guard the division by zero, as `is_finite()` does | §7.1 says capacity zero makes `u = ∞`, so it reaches every edge; the guard inverts the rule exactly where the item cannot be finished |
 | 21 | hand a date through as valid, which is how `Feb 30` reaches a calendar | `ValidDate` is a `Subtype` over a *decidable* predicate, and `Date.valid ⟨2024,2,30⟩` computes to `false` |
+| 36 | a tombstone that is a placement and nothing else | `Core.archive` is a `Tomb` — a site **and** the bytes standing there — so "an archive with no text" is not a value |
+| 37 | force `[-]` on the record whenever a tombstone stands, which is what made §4.3's fixture unreadable | the box at a live site is the status and nothing else (`glyphAt_live`); a reopened record is `[ ]` |
+| 38 | demand the horizon order of *every* demotion pair, not only the ones whose boxes tie | `the_tombstone_is_behind_the_live_line` now carries the glyph hypothesis, and without it the statement is false of §4.3's own pair |
+| 39 | refuse a pair whose two lines differ, which is what `LErr.splitLine` said | §6.3's close writes them differently on purpose; the constructor is gone |
+| 40 | `demote` that writes one token vector to both sites, so the stamp reaches the week file too | the tombstone is `⟨e.live, e.line⟩` and the record's line is the stamped one; they are not equal |
+| 41 | `readopt` that reopens anything, which loses the `est:` and the stamp the tombstone carries | §6.3 reopens a *demoted line*; `readopt` returns an `Except` and answers `notDemoted` |
+| 42 | assume a second `demote` can succeed — the assumption the withdrawn `demote_not_idem` rested on | §6.3 gives an item one archive record and the month close *moves* it; the composite is `alreadyDemoted` |
 | 22 | number weeks inside the civil year — "week 1 starts January 1st" — and call it the ISO week | at 2027-01-01 the naive rule says week 1 and ISO says 2026-W53 |
 | 23 | name a week's month without naming a tie-break, by assuming the week determines it | the rewrite has nothing to rewrite; `week_does_not_refine_month` is the counterexample |
 | 24 | declare `horizon.rs:1543`'s "month of today" stable | the same week files into August or September depending on the day you run it |
@@ -329,6 +348,65 @@ into the month containing `now`, which is right because a close happens at a
 time; the tie-break names the month a week *belongs* to, which must not depend
 on when you asked. They are different functions and they differ.
 
+### Which line of a demotion pair is the tombstone, which is a choice
+
+§6.3 marks the archive record twice and the two marks can disagree, so the
+kernel has to say which one governs. **Chosen: the box first, the files
+second.**
+
+* **The box.** §6.3's week close marks the week line `[-]` and files a `[-]`
+  copy into `month/<current>#Demoted`. The only thing that reopens a box is
+  `tm readopt` ("`[-]` → `[ ]`, stamp kept"), and what it reopens is the
+  record. So a line that is not `[-]` is never an archive copy, whichever file
+  it is in.
+* **The files.** The record goes to `closeTo`, which is strictly after the
+  region that was closed (`demotion_target_follows_the_closed_region`).
+
+They agree wherever both speak, and each is silent where the other is not. The
+box is silent straight after a close, when both lines read `[-]`. The files are
+silent — and *wrong* — on the readopted pair, which leaves the reopened record
+in a **week** and the standing archive in a **month**: §4.3's own fixture,
+which `check_fixtures.rs` asserts `tm` reports with zero problems. There the
+file order names the week line as the tombstone and the week line reads `[ ]`.
+
+**Why that order and not the other**, from §3.1 rather than from either
+implementation: `state` is a **stored** field of an item and `horizon` is
+"derived from file path". A derived fact may break a tie the stored one leaves;
+it may not overrule it. §6.3 supplies both the stored mark and the tie-break,
+and using them in that order is the only reading that accepts every pair the
+lifecycle writes.
+
+`tree.rs`'s `record_rank` — `(is_archive_copy, ↓stamps, ¬in_month_demoted)`,
+smallest wins — has the same shape, and the kernel reaches it from §6.3 rather
+than from the Rust. The one difference: where the Rust breaks a tie among
+archive copies by **stamp count**, the kernel breaks it by **horizon**. They
+agree on every pair §6.3 writes, because the close appends `demoted:` to the
+copy it files forward and to nothing else, so the record always has strictly
+more stamps *and* sits in the later region; the horizon is the one of the two
+the kernel can also *check* on a command's post-state
+(`demotion_target_follows_the_closed_region`), which is what makes
+`demotionsOriented` a proof obligation rather than a heuristic.
+
+**Rejected: horizon order alone**, which is what this package did until now. It
+was proved correct for the case both lines render `[-]` and it is wrong on the
+other one; the kernel picked the week line as the tombstone, saw `[ ]`, and
+returned `notADemotion`. Three of the five fixture trees failed to load whole
+because of it.
+
+**What the choice costs.** `demotionsOriented` is weaker: it demands the
+horizon order only when the record's own box is `[-]`. It still bites —
+`demote` writes a `[-]` record, so every demotion a close performs discharges
+it, and `demote_into_a_horizon_that_does_not_follow_is_rejected` and
+`mapAt_rejects_unoriented` are the proofs — and what it stopped demanding is a
+condition no reader ever needed. Both halves are `decide`d over one plan:
+`a_backwards_demotion_is_refused` (a `[-]` record with its tombstone in a later
+horizon is not a plan) and `a_reopened_record_needs_no_horizon` (reopen the
+same record and it is). Relax the conjunct to `true` and the first fails;
+restore the unconditional demand and the second fails. One recorded behaviour restriction goes with
+it: while a tombstone stands, a **reopened** live line may now be moved
+anywhere, because its box says which line it is. A live line that is still
+`[-]` may not, and that is the case the check exists for.
+
 ### Entity versus observation
 
 An id names an entity; a line is an observation of it at a site. The glyph is a
@@ -362,13 +440,31 @@ by the corpus, which refused every `# Demoted` section in the fixture trees
 - `lines_per_id_le_two` — and no plan has three lines of one id.
 - `prose_is_never_an_item` — a document's prose contains nothing that parses as
   an item, so the only item lines a file emits are the ones its entities render.
-- `glyphAt_statusOfGlyph`, `glyphAt_statusOfGlyphDemoted`,
+- `glyphAt_statusOfGlyph`, `glyphAt_statusOfGlyph_paired`,
   `every_glyph_has_a_state`, `a_lone_demotion_renders_back` — `glyphAt` is the
   only writer of a state box, and these are its **inverse**: the entity a loader
-  builds from a glyph renders that same glyph back. Unpaired the inverse is
-  *total* — there is no box a file can carry that the loader has to refuse —
-  and paired it is partial in exactly one place, `[ ]`, because while a
-  tombstone stands the live line reads `[-]`.
+  builds from a glyph renders that same glyph back. The inverse is `statusOfGlyph`
+  and it is **total, paired or not**: `glyphOfStatus_statusOfGlyph` and
+  `statusOfGlyph_glyphOfStatus` make `Status ≃ Glyph` a bijection with no side
+  condition, and `glyphAt_live` says the box at a live site is the status and
+  nothing else. *(This is a change. The previous version had a second, partial
+  inverse `statusOfGlyphDemoted` excluding `[ ]`, on the reading that a demotion
+  writes `[-]` at both sites. §6.3's `readopt` is "`[-]` → `[ ]`, stamp kept",
+  and what it reopens is the record, so a `[ ]` beside a standing archive is a
+  shape the lifecycle produces — §4.3's own fixture pair. The partial inverse
+  and its theorem are **deleted**; `Negative.lean`'s CHEAT 37 is the rule
+  itself, refused.)*
+- `a_differing_demotion_pair_renders_back` — **the pair's two lines may
+  differ, and both come back.** §6.3's close writes the record with `est:` =
+  remaining and a `demoted:` stamp and leaves the week line as it stood, so two
+  lines of one id with different bytes is the *normal* case. `Core.archive` is
+  a `Tomb` — a placement and the bytes standing at it, in one field, so a
+  tombstone with no text is not a value — and `renderCore` writes the record's
+  bytes at the record and the archive's at the archive. `LErr.splitLine`, which
+  said "an entity owns one token vector, so there is no value that renders
+  both", was a rule about the model and not about the data; it is gone, and
+  `Negative.lean`'s CHEAT 36 and CHEAT 39 are the two ways of bringing it
+  back.
 - `the_fields_are_the_line`, `coreOfLine_shape` and its siblings — §3.1's item
   fields are **views of the token vector**, so two records carrying the same
   line carry the same fields and there is no second copy for a command to leave
@@ -379,13 +475,32 @@ by the corpus, which refused every `# Demoted` section in the fixture trees
   §4.3's and §4.1's own lines, read as §3.1's fields and `decide`d, so the
   kernel rechecks them on every build. The first is the line the corpus refused
   before the wiring.
-- `the_tombstone_is_behind_the_live_line` — and where the inverse is not a
-  function of the glyphs at all, because a demotion writes `[-]` at both sites,
-  it is a function of the two **files**: in every accepted plan an entity's
-  archive placement sits in a horizon strictly before its live one. That is a
-  fourth conjunct of `planWf`, so `mapAt` re-establishes it on the post-state of
-  every command (`mapAt_rejects_unoriented`), which is what stops the kernel
-  writing a pair it would then have to guess at.
+- `the_tombstone_is_behind_the_live_line` — and **where the glyphs tie**, the
+  inverse is a function of the two **files**: in an accepted plan, an entity
+  whose record also reads `[-]` has its archive placement in a horizon strictly
+  before the record's. That is a conjunct of `planWf`, so `mapAt` re-establishes
+  it on the post-state of every command (`mapAt_rejects_unoriented`), which is
+  what stops the kernel writing a pair it would then have to guess at. The
+  glyph hypothesis is load-bearing and it is what this theorem gained: drop it
+  and the statement is false of §4.3's own pair, whose record is a `[ ]` in a
+  **week** and whose archive is a `[-]` in a **month**. See "which line is the
+  tombstone" below for why that is the right order to consult them in.
+- `the_kernel_can_read_the_pairs_it_writes` — **closure, and the reason
+  `demotionsOriented` is in `planWf` at all.** Take a pair out of an accepted
+  plan — the two lines it denotes, at the placements it holds them, with the
+  regions its own documents declare — and hand them back to the loader: it
+  returns the entity they came from. The proof splits on whether the record's
+  box is `[-]` and reaches for the horizon only in the branch where the boxes
+  tie, which is exactly the branch the conjunct covers.
+  `the_spec_demotion_pair_loads` and `the_spec_demotion_pair_round_trips` are
+  §4.3's own two lines, `decide`d, so the kernel rechecks on every build that
+  the pair it used to refuse loads and comes back byte for byte — and
+  `the_spec_pair_puts_the_tombstone_in_the_month` is **the choice itself**,
+  `decide`d: the record is the week line and the tombstone is the month line,
+  which is the answer the box gives and the exact opposite of the one horizon
+  order gives. `the_spec_pair_is_one_entity_with_a_tombstone` is the other half
+  of the same reading — two lines, one entity, not two entities and not one
+  line dropped.
 
 ### Closure, and what is not free
 
@@ -445,10 +560,12 @@ byte for byte and not interpreted.
   serialise, and get the same bytes. The `[-]` regression is a counterexample to
   *this* statement and not to `serialize_parse`, which is exactly why it
   survived a package with a round-trip theorem in it.
-- `paired_renders_each_placement` — and for the two-line form a `demote` writes,
-  each site renders the box that was in the file at that site. The kernel can
-  now read back its own output; the first loader rejected two lines of one id
-  outright.
+- `paired_renders_each_placement` — and for the two-line form §6.3 writes, each
+  site renders the box **and the token vector** that were in the file at that
+  site: the theorem now pins the whole two-line list, which is the version the
+  differing-bytes pair needs. It used to carry `a.item = b.item` as a
+  hypothesis, and `pairedEntity` enforced it by refusing every pair that failed
+  it — which is every pair a close writes.
 - `paired_placement_renders_back` — **and it reads it back as one entity, not as
   whichever of two the argument order happened to reach first.** The orientation
   is `orientPair a b`, symmetric in its arguments (`orientPair_comm`), so the
@@ -456,8 +573,12 @@ byte for byte and not interpreted.
   ways the pair could be read — which is what this theorem's conclusion used to
   be, and was the honest shape for a loader that decided by list order.
   `pairedEntity_order_independent` is the same claim about the loader step
-  itself, and `unordered_horizons_are_rejected` is what happens when the two
-  documents do not settle it.
+  itself, and `unordered_horizons_are_rejected` is what happens when two `[-]`
+  lines' documents do not settle it.
+- `the_kernel_can_read_the_pairs_it_writes` — the other direction, and the one
+  that makes `demotionsOriented` earn its place in `planWf`: the two lines an
+  accepted plan denotes, handed back to the loader, come back as the entity
+  they came from.
 - `scanLines_prose` — every prose line of an accepted document failed to parse
   **because it is not an item line**, not because it is a broken one. A line
   with an item's shape that does not parse is now an `LErr.badLine`, which was
@@ -610,8 +731,11 @@ Five commands, each a `Transform = WfPlan → Except KErr WfPlan`.
 | a demotion files work forward, or it does not happen | **P** | `demote_into_a_horizon_that_does_not_follow_is_rejected`, `mapAt_rejects_unoriented` |
 | `drop` is idempotent; `settled` absorbing | **P** | `drop_idem`, `settled_absorbing` |
 | `drop` preserves the archive line's glyph | **P** | `drop_preserves_archive_glyph` |
+| a second demotion is refused, not resolved | **P** | `demote_on_a_standing_tombstone_is_refused`, `demote_twice_is_not_a_thing` |
+| `readopt` reopens a **demoted** line or nothing | **P** | `readopt_of_a_live_record_is_refused`, `readopt_after_demote_succeeds` |
+| stamps accumulate across demote → readopt → demote | **P** | `stamps_accumulate_across_readopt` |
 | `edit est=v` ⟹ the view reads `v` | **P** | `set_is_not_silent`, `set_last_wins` |
-| `demote` is idempotent | **R** | `demote_not_idem` |
+| `demote` is idempotent | *withdrawn* | see below |
 | `readopt ∘ demote = id` on the nose | **R** | `readopt_demote_not_id` |
 | `readopt ∘ demote = id` modulo stamps | **P** | `readopt_demote_id_mod_stamps` |
 | conservation: floor `remaining` at the recorded value | **R** | `floor_and_respect_are_incompatible` |
@@ -637,6 +761,36 @@ The refutations are the point, not decoration:
   deliberately, to drive the month review's "≥ 2 stamps" cut list. Idempotence
   holds only modulo `stamps`, and the kernel has to say which it means rather
   than leave two readings of §6.3 available.
+- **`demote` is the week close, once, and `demote_not_idem` is withdrawn
+  because it went vacuous.** §6.3 gives an item **one** archive record: the week
+  close creates it, and the month close "moves them to the next month file",
+  which is `move`. So `demote` refuses an item that already carries a tombstone,
+  and the old refutation's second hypothesis has no witness. A vacuous
+  refutation is worse than none — it reads as a proof that the composite
+  behaves, when the composite does not exist. `stamps_accumulate_across_readopt`
+  replaces it and is stronger: it names the list (`demoted:W36,W37`) rather than
+  saying two of them differ, and it is §6.3's actual cycle — close, readopt,
+  close.
+
+  The refusal is also what makes the tombstone's bytes safe, and both ways of
+  *not* refusing lose a line. Overwrite the standing tombstone and its file's
+  line vanishes from the render with the kernel returning `ok` — the failure
+  `no_line_is_lost` is named after, reached through the one field that theorem
+  cannot see, since the entity still has two placements and both are in range.
+  Keep it instead and the line the record is **leaving** disappears, which is
+  the line §6.3's week row says must stay behind as `[-]`. Both were reachable
+  from a request; `a_second_demotion_is_refused_rather_than_dropping_a_line` is
+  the FFI test.
+- **`readopt` reopens a demoted line or nothing**, which is §6.3's own
+  precondition ("moves a *demoted line* into the current week, `[-]` → `[ ]`,
+  stamp kept"). Without it, `readopt` on §4.3's fixture — where the record is
+  already `[ ]` and the **tombstone** is the line carrying `est:` = remaining
+  and `demoted:W37` — consumed the tombstone, threw both away and returned
+  `ok`. "Stamp kept" was precisely what was lost, and `readopt_keeps_stamps`
+  did not catch it because it reads the *record's* line. This was invisible
+  until this branch: `splitLine` used to force the two lines' bytes to be
+  equal, so the record carried the stamp too. `KErr.notDemoted` was a
+  constructor no function produced; this is what it is for.
 - **The conservation law that three separate Rust commits tried to enforce is
   false.** `floor_and_respect_are_incompatible` proves that **no** rule can
   both floor `remaining` at the value a close recorded and leave a deliberate
@@ -805,7 +959,7 @@ sketch, and because the gaps are where the next stage's cost lives.
      particular a request line containing a literal newline round trips as one
      line here and becomes two lines on disk, and nothing in the kernel notices;
    * **requests the loader rejects.** Every theorem here is conditioned on
-     `loadPlan docs = .ok p`. `badLine`, `dupId`, `splitLine`, `notADemotion`,
+     `loadPlan docs = .ok p`. `badLine`, `dupId`, `notADemotion`,
      `ambiguousDemotion`, `duplicatePath` and the `itemCheck`
      faults have theorems of their own where they have any (`scanLines_prose`,
      `unordered_horizons_are_rejected`, `a_shapeless_calendar_line_is_rejected`,
@@ -838,21 +992,27 @@ sketch, and because the gaps are where the next stage's cost lives.
    predicate on **one** item, and `Tree::build` short-circuits a key group of
    size one before any pairing is attempted (`tree.rs`). So `Status` has six
    cases, not five; `statusOfGlyph` is total; `glyphAt_statusOfGlyph` holds
-   with no side condition; and `LErr.orphanDemotion` is gone. What stays
-   partial is the *paired* inverse (`statusOfGlyphDemoted`): while a tombstone
-   stands, the live line reads `[-]`, never `[ ]`. The two-line form loads and
-   round trips — provided the request says which horizon each file is. Two `[-]` lines in two
+   with no side condition; and `LErr.orphanDemotion` is gone. *(A second,
+   partial inverse `statusOfGlyphDemoted` survived this fix — "while a
+   tombstone stands, the live line reads `[-]`, never `[ ]`" — and it was the
+   same mistake one step further on: §6.3's `readopt` reopens the record while
+   the archive stands. It is deleted; see gap 19 and CHEAT 37.)* The two-line
+   form loads and round trips, in both its shapes and whether or not the two
+   lines' bytes agree — provided that, where both boxes read `[-]`, the request
+   says which horizon each file is. Two such lines in two
    documents with no declared region, or with the same one, are
    `LErr.ambiguousDemotion`: the kernel's own output is never in that state
    (`demotionsOriented` is part of `planWf`), so this is a diagnostic for a host
    that dropped the regions, and the same `Repair` argument applies to it.
 
-   **Which is also a behaviour restriction, recorded rather than decided.** While
-   a tombstone stands, the item's live line may only be moved to a horizon after
-   the tombstone's — `readopt` consumes the tombstone and then the item can go
-   anywhere. `tm` today allows `tm move ^id day` on a demoted item and leaves the
-   stale `[-]` behind, which is the state `drop_stale_demotion` exists to repair.
-   Refusing it is what makes the two-line form readable at all, so it is a
+   **Which is also a behaviour restriction, recorded rather than decided —
+   and it shrank.** While a tombstone stands and the live line still reads
+   `[-]`, that line may only be moved to a horizon after the tombstone's. Once
+   the line has been reopened — `tm readopt`, or any other status — the box says
+   which line it is and the move is unrestricted. `tm` today allows
+   `tm move ^id day` on a demoted item and leaves the stale `[-]` behind, which
+   is the state `drop_stale_demotion` exists to repair. Refusing it *for the
+   `[-]`/`[-]` case* is what makes that form readable at all, so it is a
    consequence of the fix and not an independent choice; it is still a change a
    user has to assent to.
 
@@ -867,7 +1027,8 @@ sketch, and because the gaps are where the next stage's cost lives.
    import order permits it, because `State.lean` imports `Line.lean` and can
    name what it declares. And §3.1's item fields are **views of `line`**, not
    slots beside it: `Core` stores four things (`live`, `archive`, `status`,
-   `line`) and `Core.shape`, `Core.recur`, `Core.budget`, `Core.after`,
+   `line`) — `archive` being a `Tomb`, a placement and the frozen bytes standing
+   at it, which are an *observation* and not a second copy of any field and `Core.shape`, `Core.recur`, `Core.budget`, `Core.after`,
    `Core.loc`, `Core.buffer`, `Core.stamps`, `Core.waiting`, `Core.tags`,
    `Core.ci`, `Core.prio`, `Core.flags`, `Core.scope`, `Core.splittable`,
    `Core.extra`, `Core.title` and `Core.est` read it. `the_fields_are_the_line`
@@ -997,7 +1158,7 @@ sketch, and because the gaps are where the next stage's cost lives.
    taken.
 
 14. **Nothing in the shipped `tm` binary calls this yet.** Stage 3 wires it in.
-   The Rust crate here is a bridge and nine tests, not an integration.
+   The Rust crate here is a bridge and its test suites, not an integration.
 
 15. **`CanonicalItem` excludes a line with trailing whitespace**, because the
    tokenizer emits a final token with an empty word for it and `Tok.wf` requires
@@ -1011,7 +1172,10 @@ sketch, and because the gaps are where the next stage's cost lives.
     rather than established by construction.** The loader takes document indices
     from `placementsOf`'s counter, so every site it builds is in range; it takes
     each placement's region from the same document it takes the index from, so
-    `orientPair` establishes the orientation for every entity it builds; and
+    `orientPair` establishes the orientation for every entity it builds (it
+    consults the horizon exactly when `demotionOriented` demands it, which is
+    what `the_kernel_can_read_the_pairs_it_writes` says in the other
+    direction); and
     `splitDoc` hands each line index to exactly one of prose and items, so ranks
     within a document are distinct. All three are therefore true of every plan
     the loader builds, and none of the three is *proved* that way. The boundary
@@ -1021,11 +1185,19 @@ sketch, and because the gaps are where the next stage's cost lives.
     lemma the first two would be built from; the third would additionally need
     `PlanCore.lines` of a loaded plan to be `Nodup`, which
     `loadCore_lines_mem` gives as a membership statement and not as a list.)
+    `Goals.lean` states all three — `the_loader_builds_sites_in_range`,
+    `the_loader_builds_a_normalized_plan` and
+    `the_loader_builds_oriented_demotions`. The last was held back while the
+    orientation model was in flux ("a goal written against the current
+    `orientPair` would be stale before it was read"); it is settled now, so the
+    goal is written.
 
-    **The consequence, stated rather than hidden: three diagnostics are
+    **The consequence, stated rather than hidden: four diagnostics are
     unreachable from a well-formed request.** `siteOutOfRange`, the plan-level
-    `ambiguousDemotion` that `firstUnoriented` names, and `itemCheck:
-    rankCollision` cannot fire on anything the loader itself builds — and, since
+    `ambiguousDemotion` that `firstUnoriented` names, `itemCheck:
+    rankCollision`, and — since the orientation became lexicographic — the
+    *inner* `notADemotion` in `pairedEntity` (gap 19) cannot fire on anything
+    the loader itself builds — and, since
     `move_at_freshRank_normalized` and its siblings, `rankCollision` cannot fire
     on an `applyCmd` post-state either. They are kept because "cannot happen" is
     exactly what the shipped `move_to` also said, and because a hand-written
@@ -1106,10 +1278,56 @@ sketch, and because the gaps are where the next stage's cost lives.
     `effectiveShape` prep rule, `effectiveCi` inheritance and `rootPrio` are
     proved and cannot fire on anything the boundary builds.
 
-23. **The demotion pair is still one token vector, and `orientPair` still
-    orders by horizon.** This is gap 19 restated after the wiring, because the
-    wiring did not touch it and the whole-plan loads still fail on it. See gap
-    19 for the measurement and the two-part diagnosis.
+23. **~~The demotion pair is still one token vector, and `orientPair` still
+    orders by horizon~~ — fixed; this is what is left of it.** Both halves are
+    closed: `Core.archive` is a `Tomb` (a placement *and* the bytes standing
+    there), and `orientPair` is lexicographic — the `[-]` line is the
+    tombstone, and horizon order is the tie-break when both lines are `[-]`.
+    The measurement moved from 1/5 to 4/5 whole plans, and `plan-conflicts`,
+    the remaining refusal, is the fixture that exists to be refused. See "which
+    line of a demotion pair is the tombstone" above for the spec argument and
+    what the choice costs.
+
+    **Two things this opened that are recorded rather than closed.**
+
+    * **The tombstone's bytes are checked by the parser and by nothing else.**
+      `itemsWf`'s field-derived conjuncts — `afterTotal`, `afterAcyclic`,
+      `shapesWf` — all read `Core.line`, the record. So a line the kernel
+      refuses standing alone is accepted verbatim as the archive half of a
+      pair: `- [-] 1 1b T after:^m1 ^m1` is `itemCheck: depCycle` alone and
+      `ok` as a tombstone. This is a direct consequence of deleting
+      `splitLine`, which used to force the two lines' bytes to be equal.
+      For the dependency half it is also what `tree.rs` does — `dangling_parents`
+      and the child/root walk are `n.primary` only, so tm does not check
+      archive copies either — and it is the behaviour you want: an archive is a
+      frozen record in a file the lifecycle no longer edits, and making a later
+      unrelated edit retroactively invalidate it would be worse. `shapesWf`'s
+      file-kind rule is the one where the argument is weaker. Recorded rather
+      than decided.
+    * **`LErr.notADemotion` has two producers and one of them is now dead.**
+      The outer guard in `pairedEntity` — neither line is `[-]` — is reachable
+      and is the one that matters. The inner one, `pairEntity` returning
+      `none`, cannot fire: `orientPair_cases` gives `arch.glyph = Glyph.demoted`
+      and the `dupId` guard gives distinct documents, which are the only two
+      ways `pairEntity` fails. Before this change that branch was the *live*
+      one — it is how a `[ ]` record was refused. It stays for totality; it
+      joins gap 10's list of checks no input can fail.
+
+    **What is *not* closed, and it is a real divergence from the oracle.**
+    `tree.rs`'s `is_archive_copy` also constrains *where* a `[-]` line may be
+    an archive copy: a week file, or a `month/…# Demoted` section, and nothing
+    else — "a `[-]` line anywhere else (backlog, day, a month section that is
+    not `# Demoted`) is not something a close produces, so it still counts as a
+    live copy and collides". The kernel asks only whether the box is `[-]`. So
+    a `[-]` in `backlog.md` paired with a `[ ]` in a week file loads here as a
+    demotion and is a duplicate id to `tm`. Nothing in the corpus is in that
+    state and no command the kernel has can reach it — `demote`'s tombstone is
+    always the file the record left, which is a horizon strictly before the
+    destination — but `planWf` is supposed to be no weaker than `tm check`, and
+    on this one predicate it is. Closing it needs the *section* of a placement
+    to reach the plan tier, which is `sectionsWf`'s machinery pointed at a new
+    question; it is a small change and it is a behaviour change, so it is
+    recorded rather than taken.
 
 ## Standing rules, each earned by something that went wrong in a spike
 
@@ -1229,7 +1447,7 @@ and it reaches two steps round trip B cannot: the split of a file's bytes into
 lines and back (gap 6), and the JSON escaping on both sides of the FFI.
 
 ```
-CORPUS: 33/37 files and 1/5 whole plans round-trip byte-identically
+CORPUS: 33/37 files and 4/5 whole plans round-trip byte-identically
 ```
 
 **Nothing in the corpus is silently rewritten.** Not one file is accepted and
@@ -1239,7 +1457,10 @@ unconditionally, with no baseline and no exemption; `corpus_round_trip` is a
 ratchet against `corpus/round-trip.expected`, so a file that stops
 round-tripping fails the build and a file that starts round-tripping does not.
 Re-measure with `TM_CORPUS_BLESS=1 cargo test --test corpus`; the table, and the
-minimal set of lines behind each refusal, print under `-- --nocapture`.
+minimal set of lines behind each refusal, print under `-- --nocapture`. The
+baseline is re-blessed when a fix lands, so the four whole plans are recorded
+`ok` and a regression to `splitLine` fails the build rather than passing
+quietly.
 
 **The four files that do not round-trip are all `plan-conflicts/`**, the fixture
 that exists to make `tm check` print, and each refusal names a defect
@@ -1258,10 +1479,12 @@ Before the field wiring the count was 26/37: four `calendar/*.md` refused with
 The one `plan-conflicts` calendar refusal that remains is the *right* one, and
 it is the wiring working: eight calendar lines, one refused.
 
-The whole-plan loads are unchanged: `plan-basic`, `plan-home-day` and
-`plan-travel-day` are `splitLine: m2` — gap 19, the one remaining
-kernel-versus-tm disagreement in the corpus. `plan-recur`, the one fixture tree
-with no demoted line, loads and round-trips whole.
+**Four of the five whole plans load and round-trip**, up from one. `plan-basic`,
+`plan-home-day` and `plan-travel-day` were `splitLine: m2` until the demotion
+model changed — one entity, one token vector, and a tombstone chosen by horizon
+order — which is gap 19 and is now closed; `plan-recur`, the one fixture tree
+with no demoted line, always loaded. The fifth is `plan-conflicts`, whose four
+refusals are the four rows above and are what that fixture exists to have.
 
 ### 2. The differential oracle (`examples/oracle/`, `examples/oracle-compare.rs`)
 
@@ -1309,45 +1532,41 @@ The disagreements are gaps 18–21.
     is `plan-conflicts`' `- [ ] 3 Office hours  loc:JCL ^g7` — "a calendar
     entry with no time", which that fixture exists to have refused.
 
-19. **The kernel's demotion is two byte-identical `[-]` lines; tm's is not.**
-    Every `month/2026-09.md` in the corpus carries
+19. **~~The kernel's demotion is two byte-identical `[-]` lines; tm's is
+    not~~ — fixed; this is what it was.** Every `month/2026-09.md` in the
+    corpus carries
     `- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2` in
     `# Demoted`, and the matching `week/2026-W37.md` carries
-    `- [ ] 4 6b Rollback path passes tests   @O2 ^m2`. Alone, the month line
-    loads now (gap 2). **Together they are still `splitLine`**, and that is the
-    only thing standing between three of the five fixture trees and a whole-plan
-    round trip. The diagnosis has two halves and neither is a fixture defect:
+    `- [ ] 4 6b Rollback path passes tests   @O2 ^m2`. Together they were
+    `splitLine`, and that was the only thing between three of the five fixture
+    trees and a whole-plan round trip. The diagnosis had two halves and neither
+    was a fixture defect; both are closed.
 
     * **The two lines legitimately differ.** §6.3 says the copy filed into the
       month carries "`est:` = remaining" and a `demoted:` stamp, so the spec's
-      own demotion pair has two lines with different bytes, and an `Entity`
-      owning one token vector cannot render both. `pairedEntity`'s
-      `a.item != b.item → splitLine` is therefore a rule about the model, not
-      about the data. The fix is a second `RawItem` on `Core` for the
-      tombstone (`renderCore` would read `archiveLine.getD line` at the archive
-      site), which `demote` sets and `readopt` clears.
+      own demotion pair has two lines with different bytes, and an entity
+      owning one token vector cannot render both. `Core.archive` is now a
+      `Tomb` — the placement and the bytes standing at it, in one field, so
+      there is no value with a tombstone and no text — `renderCore` writes the
+      archive's own bytes at the archive site, `demote` freezes the line it is
+      leaving there and puts the stamp on the copy, and `readopt` discards it.
+      `LErr.splitLine` had nothing left to refuse and is deleted.
     * **The orientation is by horizon, and for this pair it is by glyph.**
-      `orientPair` makes the *earlier* horizon the tombstone
-      (`demotion_target_follows_the_closed_region`), so here it would pick the
-      week line — which is `[ ]`, giving `notADemotion`. The Rust oracle ranks
-      by `record_rank = (is_archive_copy, ↓stamps, ¬in_month_demoted)`
-      (`tree.rs`), i.e. **the live line wins and the `[-]` one is the archive,
-      whichever file each is in**; the horizon order is only the tie-break when
-      both are `[-]`, and there it agrees with `orientPair`. So `orientPair`
-      needs a glyph clause, and `demotionsOriented` — which is part of `planWf`
-      and asserts the archive's horizon precedes the live one — has to change
-      with it, because the pre-close pair has the archive in the *month* and
-      the live line in the *week*.
+      `orientPair` is lexicographic now: a `[-]` line beats a live one, and
+      horizon order is consulted only when both are `[-]`. `demotionsOriented`
+      demands the horizon order only in that same case. The argument is from
+      §6.3 and §3.1, not from `tree.rs`, and it is written out under "which
+      line of a demotion pair is the tombstone" above, with what the choice
+      costs and what stays open (gap 23).
 
-    The oracle also settles what these two lines are: `check_fixtures.rs`
+    The oracle also settled what these two lines are: `check_fixtures.rs`
     asserts `plan-basic` is clean with **zero** problems, warnings included, and
     `invariant_common/mod.rs` names `^m2` "the one sanctioned pair" — §4.3's
     example carried live in `week/2026-W37` and as the `[-]` archive copy in
     `month/2026-09 # Demoted`. It is the **pre-close** shape; the post-close
-    shape is `[-]`/`[-]`, which this kernel already reads. Both are legal.
-    The change is a revision of the demotion model across `Boundary`, `Plan`
-    and `Cmd` with four Check.lean-named theorems in its path, so it is
-    recorded here rather than folded into the field wiring.
+    shape is `[-]`/`[-]`, which this kernel already read. Both are legal and
+    both load. `the_spec_demotion_pair_loads` is §4.3's own two lines
+    `decide`d, so the kernel rechecks the acceptance on every build.
 
 20. **A tab is not a separator, and neither is a second space.**
     `Text.lean`'s `isSp c := c == ' '`, but §4.1 says "whitespace-separated

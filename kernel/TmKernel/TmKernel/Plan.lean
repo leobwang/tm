@@ -205,7 +205,7 @@ def siteInRange (p : PlanCore) (s : Site) : Bool := s.doc < p.docs.length
 
 def entityInRange (p : PlanCore) (e : Entity) : Bool :=
   siteInRange p e.val.live &&
-    (match e.val.archive with
+    (match e.val.archiveSite with
      | none   => true
      | some r => siteInRange p r)
 
@@ -226,21 +226,47 @@ and `no_two_lines_of_one_id_in_one_file` is restated over paths below. -/
 
 def pathsDistinct (p : PlanCore) : Bool := decide ((p.docs.map Doc.path).Nodup)
 
-/-! ### The fourth: a tombstone is behind the line it left
+/-! ### The fourth: where the boxes tie, the files must not
 
-The two lines of a demotion render the *same* box — `demote` writes `[-]` at
-both sites — so nothing in the bytes says which is the tombstone.  What says it
-is the pair of files: the tombstone stays in the region that was **closed** and
-the live line goes to the region the close filed into, which is strictly after
-it in `horizonPrecedes` (`demotion_target_follows_the_closed_region`, Grain).
+**Which line of a demotion pair is the tombstone, and how the kernel decides.**
+Two answers are available and §6.3 supplies both, so the question is which one
+governs when they disagree.
 
-Left as a fact about how the pair *arose*, that is not checkable — the loader
-sees two files, not a history.  So it joins the decidable plan-level checker
-instead, and then it is a fact about every accepted plan: the loader can invert
-it (`orientPair`, Boundary), and no command can leave a plan in which it fails,
-because `mapAt` re-establishes `planWf` on every post-state.  In particular a
-`demote` whose destination is not after the file it came from, and a `move` that
-would carry a demoted line back behind its own tombstone, are `badHorizon`. -/
+* **The box.** §6.3's archive record is written `[-]` and stays `[-]`: the week
+  close marks the week line `[-]` and files a `[-]` copy into
+  `month/<current>#Demoted`, and the only thing that reopens a box is
+  `tm readopt`, which reopens *the record*.  So a line that is not `[-]` is
+  never an archive copy.
+* **The files.** The record goes to `closeTo`, which is strictly after the
+  region that was closed (`demotion_target_follows_the_closed_region`, Grain).
+
+They agree everywhere they both speak, and each is silent where the other is
+not.  The box is silent immediately after a close, when both lines read `[-]`.
+The files are silent — and worse, *wrong* — after `tm readopt ^id --to week`
+("`[-]` → `[ ]`, stamp kept"), which leaves the reopened record in a **week**
+and the standing archive in a **month**: §4.3's own fixture pair, and the shape
+`check_fixtures.rs` asserts has zero problems.  There the file order says the
+week line is the tombstone and the week line reads `[ ]`.
+
+So the rule is lexicographic — **box first, files second** — and §3.1 is why
+that order and not the other: `state` is a *stored* field of an item and
+`horizon` is "derived from file path".  A derived fact may break a tie the
+stored one leaves; it may not overrule it.  (This is the shape of `tree.rs`'s
+`record_rank` too, which ranks `is_archive_copy` ahead of everything else; the
+kernel reaches it from §6.3 rather than from the Rust, and uses the horizon
+where the Rust uses the stamp count.  The two tie-breaks agree on every pair
+§6.3 writes, because the close appends `demoted:` to the copy it files forward
+and to nothing else.)
+
+The consequence for this conjunct: the horizon obligation applies **exactly
+when the boxes tie**, which is when the record's own status is `demoted`.  The
+previous version demanded it unconditionally, and that is what refused every
+whole plan in the corpus that carried §4.3's pair.  It is still a real check —
+`demote` writes a `[-]` record, so every demotion a close performs has to
+discharge it — and it is still what stops the kernel writing a pair the loader
+would then have to guess at (`mapAt_rejects_unoriented`,
+`demote_into_a_horizon_that_does_not_follow_is_rejected`).  What it no longer
+does is refuse the readopted pair, which no reader ever had trouble with. -/
 
 def docRegion (p : PlanCore) (k : DocIx) : Option Region :=
   match p.docs[k]? with
@@ -250,13 +276,53 @@ def docRegion (p : PlanCore) (k : DocIx) : Option Region :=
 def demotionOriented (p : PlanCore) (e : Entity) : Bool :=
   match e.val.archive with
   | none   => true
-  | some r => horizonPrecedes (docRegion p r.doc) (docRegion p e.val.live.doc)
+  | some t =>
+    if glyphOfStatus e.val.status = Glyph.demoted then
+      horizonPrecedes (docRegion p t.site.doc) (docRegion p e.val.live.doc)
+    else true
 
 def demotionsOriented (p : PlanCore) : Bool :=
   p.store.dom.all (fun i =>
     match p.store.get i with
     | none   => true
     | some e => demotionOriented p e)
+
+/-! ### The conjunct still bites, and the weakening is real
+
+Two decided witnesses over one plan — a week file and a month file, one entity
+whose tombstone is in the **month** and whose record is in the **week**, which
+is backwards for the horizon order and is §4.3's own shape.
+
+They are here rather than in a test because they are the two halves of the
+change and each is the thing a later simplification would break: relax the
+conjunct to `true` and the first fails; restore the unconditional horizon
+demand and the second fails. -/
+
+private def orientDocs : List Doc :=
+  [⟨['w'], [], some ⟨week, 35⟩⟩, ⟨['m'], [], some ⟨month, 8⟩⟩]
+
+private def orientCore (st : Status) : Core :=
+  { live := ⟨0, 0⟩, archive := some ⟨⟨1, 0⟩, ⟨[], []⟩⟩, status := st, line := ⟨[], []⟩ }
+
+private def orientPlan (st : Status) : PlanCore :=
+  ⟨orientDocs,
+   { get := fun j => if j = ['m','2'] then some ⟨orientCore st, rfl⟩ else none
+     dom := [['m','2']]
+     domSpec := by intro j; by_cases h : j = ['m','2'] <;> simp [h, Option.isSome]
+     domNodup := by simp }⟩
+
+/-- **It bites.**  A record that still reads `[-]` with its tombstone in a
+later horizon is not a plan: the loader could not tell the two lines apart, so
+`planWf` refuses it and `mapAt` refuses to produce it. -/
+theorem a_backwards_demotion_is_refused : demotionsOriented (orientPlan .demoted) = false := by
+  decide
+
+/-- **And the weakening is real, not a hole.**  Reopen the record — §6.3's
+`readopt`, "`[-]` → `[ ]`, stamp kept" — and the same two placements are a
+plan, because the boxes now say which line is which and no file has to.  This
+is the pair §4.3 ships and the one the unconditional rule refused. -/
+theorem a_reopened_record_needs_no_horizon :
+    demotionsOriented (orientPlan (.live .free)) = true := by decide
 
 /-! ### The rest of the plan-level tier: §3.1's item fields
 
@@ -493,7 +559,7 @@ def sectionsWf (p : PlanCore) : Bool :=
     match p.store.get i with
     | none   => true
     | some e => placementSectionWf p e.val.live &&
-        (match e.val.archive with
+        (match e.val.archiveSite with
          | none   => true
          | some r => placementSectionWf p r))
 
@@ -622,19 +688,19 @@ theorem pathsDistinct_store (p : PlanCore) (s : Store) :
 
 /-- A rendered line sits at one of the entity's own two placements. -/
 theorem render_site (i : Id) (e : Entity) (l : Line) (h : l ∈ render i e) :
-    l.site = e.val.live ∨ e.val.archive = some l.site := by
+    l.site = e.val.live ∨ e.val.archiveSite = some l.site := by
   unfold render renderCore at h
   cases ha : e.val.archive with
   | none =>
       rw [ha] at h
       simp only [List.mem_cons, List.not_mem_nil, or_false] at h
       subst h; left; rfl
-  | some r =>
+  | some t =>
       rw [ha] at h
       simp only [List.mem_cons, List.not_mem_nil, or_false] at h
       rcases h with rfl | rfl
       · left; rfl
-      · right; rfl
+      · right; exact Core.archiveSite_some ha
 
 theorem lines_mem (p : PlanCore) (l : Line) (h : l ∈ p.lines) :
     ∃ i e, p.store.get i = some e ∧ i ∈ p.store.dom ∧ l ∈ render i e := by
@@ -689,18 +755,31 @@ theorem no_two_lines_of_one_id_in_one_path (p : WfPlan) (l₁ l₂ : Line)
   exact no_two_lines_of_one_id_in_one_file p.val l₁ l₂ h₁ h₂ hid hk
 
 /-- **Which of a demotion's two lines is the tombstone is a fact about the
-plan, not a guess.**  In every accepted plan, an entity's archive placement sits
-in a horizon strictly before its live one — so the two are never
-interchangeable, even though `demote` renders `[-]` at both.  This is what the
-loader inverts, and `horizonPrecedes_asymm` is why the inversion has one
-answer. -/
+plan, not a guess** — and where the boxes do not say, the files do.  In every
+accepted plan, an entity whose record *also* reads `[-]` has its archive
+placement in a horizon strictly before the record's, so the two are never
+interchangeable.  This is what the loader inverts when the glyphs tie, and
+`horizonPrecedes_asymm` is why the inversion has one answer.
+
+`hglyph` is the hypothesis this theorem gained and it is load-bearing: drop it
+and the statement is false of §4.3's own fixture, where the record is a `[ ]`
+in `week/2026-W37.md` and the archive a `[-]` in `month/2026-09.md`.  There the
+conclusion fails and nothing is wrong — the boxes settle that pair without
+consulting a file. -/
 theorem the_tombstone_is_behind_the_live_line (p : WfPlan) (i : Id) (e : Entity) (r : Site)
-    (hget : p.val.store.get i = some e) (harch : e.val.archive = some r) :
+    (hget : p.val.store.get i = some e) (harch : e.val.archiveSite = some r)
+    (hglyph : glyphOfStatus e.val.status = Glyph.demoted) :
     horizonPrecedes (docRegion p.val r.doc) (docRegion p.val e.val.live.doc) = true := by
   have hdom : i ∈ p.val.store.dom := (p.val.store.domSpec i).mpr (by rw [hget]; rfl)
   have hall := List.all_eq_true.1 (planWf_parts p.property).2.2.2.1 i hdom
   rw [hget] at hall
-  simpa [demotionOriented, harch] using hall
+  cases ha : e.val.archive with
+  | none => rw [Core.archiveSite_none ha] at harch; simp at harch
+  | some t =>
+      rw [Core.archiveSite_some ha] at harch
+      simp only [Option.some.injEq] at harch
+      subst harch
+      simpa [demotionOriented, ha, hglyph] using hall
 
 /-! ## Documents: splitting text into prose and items, and putting it back -/
 
@@ -1487,13 +1566,13 @@ theorem render_filter_doc_len (i : Id) (e : Entity) (k : DocIx) :
   | none =>
       simp only
       by_cases hk : e.val.live.doc = k <;> simp [hk]
-  | some r =>
-      have hne := archive_elsewhere e r h
+  | some t =>
+      have hne := archive_elsewhere e t.site (Core.archiveSite_some h)
       simp only
       by_cases hk : e.val.live.doc = k
-      · have hrk : ¬ (r.doc = k) := fun hc => hne (by rw [hc, hk])
+      · have hrk : ¬ (t.site.doc = k) := fun hc => hne (by rw [hc, hk])
         simp [hk, hrk]
-      · by_cases hrk : r.doc = k <;> simp [hk, hrk]
+      · by_cases hrk : t.site.doc = k <;> simp [hk, hrk]
 
 theorem ranksIn_render_nodup (i : Id) (e : Entity) (k : DocIx) :
     (ranksIn k (render i e)).Nodup := by
