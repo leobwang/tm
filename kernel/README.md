@@ -227,8 +227,7 @@ Every cheat, one compile error:
 
 ## What is proved
 
-Every theorem across nine modules. `Check.lean`'s axiom audit covers all of them
-and shows only `propext` / `Classical.choice` / `Quot.sound`, **never
+Every theorem across nine modules. `Check.lean`'s axiom audit names every one of them and shows only `propext` / `Classical.choice` / `Quot.sound`, **never
 `sorryAx`**; a handful depend on no axioms at all. (`check.sh` prints the count
 it actually audited, so the number is in the run and not in this file.)
 

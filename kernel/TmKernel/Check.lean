@@ -172,22 +172,9 @@ open Tm
 -- ==========================================================================
 
 -- Arith.lean
-#print axioms Tm.Arith.Q
 #print axioms Tm.Arith.denPos
 #print axioms Tm.Arith.mkPos_num
 #print axioms Tm.Arith.mkPos_den
-#print axioms Tm.Arith.Q
-#print axioms Tm.Arith.Q
-#print axioms Tm.Arith.Q
-#print axioms Tm.Arith.Q
-#print axioms Tm.Arith.Q
-#print axioms Tm.Arith.Q
-#print axioms Tm.Arith.Q
-#print axioms Tm.Arith.Q
-#print axioms Tm.Arith.Q
-#print axioms Tm.Arith.Q
-#print axioms Tm.Arith.Q
-#print axioms Tm.Arith.Q
 #print axioms Tm.Arith.le_agrees_with_exact_division
 #print axioms Tm.Arith.utilGe_eq_le
 #print axioms Tm.Arith.utilGe_capacity_zero
@@ -442,9 +429,6 @@ open Tm
 #print axioms Tm.canonical_iff
 
 -- Plan.lean
-#print axioms Tm.Store
-#print axioms Tm.Store
-#print axioms Tm.Store
 #print axioms Tm.filter_flatMap
 #print axioms Tm.render_filter_other
 #print axioms Tm.render_filter_self
@@ -487,8 +471,6 @@ open Tm
 #print axioms Tm.clock_accepts_2330
 #print axioms Tm.dedupTags_mem
 #print axioms Tm.dedupTags_nodup
-#print axioms Tm.TagSet
-#print axioms Tm.TagSet
 #print axioms Tm.wfPair_none
 #print axioms Tm.wfPair_some
 #print axioms Tm.wf_eq
@@ -1069,3 +1051,29 @@ open Tm
 #print axioms Tm.splitFirst_none
 #print axioms Tm.stripPre_append
 #print axioms Tm.stripPre_head_ne
+
+-- ==========================================================================
+-- Dotted theorem names the earlier generator truncated (Q.le_refl became Q).
+-- ==========================================================================
+#print axioms Tm.Arith.Q.ok_defined
+#print axioms Tm.Arith.Q.le_of
+#print axioms Tm.Arith.Q.le_elim
+#print axioms Tm.Arith.Q.lt_iff_not_le
+#print axioms Tm.Arith.Q.le_refl
+#print axioms Tm.Arith.Q.lt_irrefl
+#print axioms Tm.Arith.Q.le_total
+#print axioms Tm.Arith.Q.le_antisymm
+#print axioms Tm.Arith.Q.le_trans
+#print axioms Tm.Arith.Q.le_congr_left
+#print axioms Tm.Arith.Q.le_congr_right
+#print axioms Tm.Arith.Q.equiv_scale
+#print axioms Tm.Arith.Q.le_scale_left
+#print axioms Tm.Store.insert_get
+#print axioms Tm.Store.get_set_self
+#print axioms Tm.Store.get_set_other
+#print axioms Tm.Store.dom_set
+#print axioms Tm.WfPlan.items
+
+-- the two `ofPair?` lemmas the earlier generator cut at the `?`
+#print axioms Tm.Arith.ofPair?_zero
+#print axioms Tm.Arith.ofPair?_some
