@@ -187,10 +187,6 @@ statement restricted to the fragment `run` emits (objects, arrays, strings and
 theorem the_json_edge_round_trips (j : Lean.Json) :
     Lean.Json.parse j.compress = .ok j := sorry
 
-/-- **P\*, stage 3, README gap 6.**  The `String`/`List Char` edge, which every
-`ReqDoc` line crosses twice per call. -/
-theorem the_char_edge_round_trips (s : String) : String.ofList s.toList = s := sorry
-
 /-- **P\*, stage 3, README gap 12.**  A file's bytes split into lines and joined
 back are the same bytes.  This is the host's half of the document round trip
 and the kernel's theorems assume it. -/

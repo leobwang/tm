@@ -1924,6 +1924,24 @@ theorem the_spec_demotion_pair_round_trips (p : WfPlan)
   ⟨(the_kernel_reads_back_what_it_writes specDemotionRequest p h 0 specWeekDoc rfl).2,
    (the_kernel_reads_back_what_it_writes specDemotionRequest p h 1 specMonthDoc rfl).2⟩
 
+/-! ### README gap 6: the `String`/`List Char` edge, closed
+
+Every `ReqDoc` line crosses `String → List Char` on the way in and
+`List Char → String` on the way out, twice per call.  The general statement
+discharges for free: it *is* core's `String.ofList_toList` (`Init` carries the
+round trip as a `@[reducible]` theorem, so it holds definitionally at the
+kernel's Char-list representation).  That settles the char half of gap 6.
+
+The JSON half (`Lean.Json.parse j.compress = .ok j` for arbitrary `j`) and the
+legacy `String.splitOn` half stay open in gap 12, and both for the *same kind*
+of reason found while attempting them on 2026-09-09: `Json.parse`'s and
+`splitOnAux`'s recursion does not reduce symbolically, so neither general
+statement is provable by `rfl`/`decide`, and `native_decide` is banned (R3).
+Neither was found false — they were found *not machine-checkable as stated*,
+which is what the narrowing sentence in the original goal asked for. -/
+theorem the_char_edge_round_trips (s : String) : String.ofList s.toList = s :=
+  @String.ofList_toList s
+
 /-- Total: every path returns a `String`.  No `panic!`, no `!`, no `partial`. -/
 def call (input : String) : String :=
   match Json.parse input with

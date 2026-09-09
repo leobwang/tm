@@ -1743,3 +1743,79 @@ mixing is a decision, not a proof obligation; and §7.1's bin ladder is left
 alone on purpose, because three of its four edges are halvings and the fourth is
 1/10, so the only property it supports is antitonicity and that is already
 proved (`Arith.rungs_antitone`).
+
+<!-- ===================================================================
+     APPENDED 2026-09-09 (stage-3 boundary session, rebuild-on-lean).
+     Whoever merges: gap numbers 37-39 below continue the single
+     sequence (30-36 are in the acceptance-evidence block above).
+     =================================================================== -->
+
+## Stage-3 session 2026-09-09: one goal discharged, three blockers recorded
+
+**Discharged.** `the_char_edge_round_trips` (stage 3, gap 6) is now
+`Boundary.lean`'s `theorem the_char_edge_round_trips (s : String) :
+String.ofList s.toList = s := @String.ofList_toList s`, audited in
+`Check.lean`. The general statement is core's own — no narrowing was needed
+after all. The burn-down moved 52 → 51. What gap 6 still owes is the JSON half
+and the newline half, and this session established *why they are hard*, which
+is recorded as gaps 37–39 rather than left as unpriced prose.
+
+37. **`Key.ofName?` is not invertible by the tactics that remain.** Gap 4's
+    collapse — `the_command_path_writes_what_the_field_path_reads` — needs the
+    shape inversion "`Field.Key.ofName? w = some k` → `w` is the literal
+    spelling of `k`", because the skip branch of `setEstIn`'s induction
+    (`viewEstKey` reading the *first* `.est` key) must show a non-`est:` word
+    yields no `.est` key pair. Every route this session tried fails:
+    `unfold at h` + `split at h` runs the deterministic `isDefEq` heartbeat
+    budget (200 000 — `maxHeartbeats` does not raise it); a ten-deep `cases w`
+    over the first character leaves false branches where `simp` makes no
+    progress, because equality of the opaque `Char` constructor against a
+    symbolic tail does not reduce. The in-package `cases hn : Key.ofName? k`
+    uses all discharge the **none** direction from Bool hypotheses; none ever
+    inverts the `some` direction. What closing this looks like — an explicit
+    `ofName?` equation set, a `Decidable` instance over the 19 spellings with a
+    proved characterization, or restructuring the induction so the skip branch
+    never needs the word's shape — is a design choice with cost; gap 4's goal
+    stays in `Goals.lean` and says so. No new gap is open for it: it is gap 4's
+    blocker, named.
+
+38. **Legacy `String.splitOn` does not reduce in the kernel, which prices
+    gap 12's two goals.** `"a\nb".splitOn "\n"` is stuck to `rfl` and to
+    `decide` (its `splitOnAux` walks `String.utf8BytePos`/`extract` over
+    runtime-only byte offsets); `decide` on
+    `"\n".intercalate ("a\nb".splitOn "\n") = "a\nb"` fails for the same
+    reason, and `native_decide` is banned (R3). The modern `String.split c`
+    *does* carry lemmas — `String.toList_split_intercalate` and friends prove
+    the intercalate/split round trip down at the `toList` level — but the
+    kernel's boundary uses `splitOn` nowhere today, so gap 12's honest closure
+    is either stating both goals over `String.split '\n'` (a wire change the
+    host must make too) or porting the `List (List Char)` version of that
+    lemma to `splitOn` through a toList bridge nobody has written. This is the
+    reason `joining_lines_is_injective`'s *refutation* is not a one-liner
+    through `["a\nb"]` either: the negation quantifies over the same
+    non-reducing function, so even a witness needs the bridge. `#eval` says
+    what the VM computes; no kernel-level tactic does.
+
+39. **`Lean.Json.parse ∘ compress` has no core lemma in either
+    direction.** Probe against v4.33.1's environment: no
+    `Lean.Json.parse_compress`, `compress_parse`, or equivalent exists
+    (`unknownIdentifier`). So the JSON half of gap 6's goal — the fragment
+    restriction `Goals.lean` anticipated — does not fall out of core the way
+    the char half did; it needs the parser and printer reasoned about
+    directly (a real, bounded job), or a proof carried in from upstream.
+    Recorded so the next session does not re-probe for it.
+
+**Owed by name (unchanged, and unchanged in kind).** The Rust/CLI half of
+stage 3's acceptance — `cargo build` from clean over the restored workspace,
+"full suite green", the CLI-level panic probe — is still owed, because this
+checkout's `origin` carries only `rebuild-on-lean`: `git checkout main --
+tm-core Cargo.toml Cargo.lock` is impossible here, `main`@`557a3d2` being
+unreachable from this remote. On this branch the FFI suite (26 tests) and the
+corpus ratchet (6 tests, `33/37 files and 4/5 whole plans`) are the whole of
+the Rust-side evidence, and `main` as oracle remains unrun.
+
+**One environment fix landed this session** (`0c3aaf7`): `tm-kernel-ffi`'s
+`build.rs` now emits `-Wl,-rpath,<toolchain>/lib` for the binary and its
+tests, so Linux test binaries find the toolchain's bundled `libc++`/`libunwind`
+the way macOS's embedded `install_name` always did. `check.sh` is 7/7 on this
+machine with it.

@@ -1100,3 +1100,6 @@ open Tm
 #print axioms Tm.readopt_ok
 #print axioms Tm.Core.archiveSite_none
 #print axioms Tm.Core.archiveSite_some
+
+-- APPENDED 2026-09-09 (stage-3 boundary session)
+#print axioms Tm.the_char_edge_round_trips
