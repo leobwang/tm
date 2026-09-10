@@ -406,3 +406,44 @@ fn the_duplicate_diagnostic_names_the_duplicate() {
     .unwrap();
     assert!(out.contains("bb") && !out.contains("aa"), "{out}");
 }
+
+/// `tm rank ^id n` moves a line *within* its own file — the verb `move` cannot
+/// express.  `freshRank` never reuses a rank, so the user-specified rank has to
+/// be free; rank 10 is past the last line of the week file.
+#[test]
+fn rank_moves_a_line_within_its_own_file() {
+    let out = call(&req(r#"[{"op":"rank","id":"m1","rank":10}]"#)).unwrap();
+    assert!(out.starts_with(r#"{"ok":"#), "{out}");
+    let week = out.split(r#""lines":"#).nth(1).unwrap();
+    // the line is byte-identical, and it left no copy behind...
+    assert!(week.contains(r#""- [ ] 5 6b Finish ch.5 exercises        @O1 ^m1""#), "{out}");
+    // ...but it now sits below the generated-block comment, which sat below it
+    let moved = week.find("^m1").unwrap();
+    let comment = week.find("tm:plan").unwrap();
+    assert!(comment < moved, "m1 must have moved *down* the file: {week}");
+}
+
+/// A rank an existing line already owns is not free: a document's ranks are
+/// the prose ranks and the item ranks in one list, so `rank m1 5` would put
+/// two lines at index 5 and dies at `mapAt`'s planWf re-check as `badHorizon`
+/// — with the file untouched (error responses carry no docs at all).
+#[test]
+fn rank_onto_a_taken_rank_is_refused_and_writes_nothing() {
+    let out = call(&req(r#"[{"op":"rank","id":"m1","rank":5}]"#)).unwrap();
+    assert!(out.contains(r#""kernel":"badHorizon""#), "{out}");
+    // and nothing was written at all: an error response carries no documents
+    assert!(!out.contains("lines"), "error response must not rewrite anything: {out}");
+}
+
+/// The wire form of L20a (`rank_is_idempotent`): the same `rank` twice is
+/// byte-identical to the same `rank` once, so `tm rank` is not a source of
+/// spurious diffs.
+#[test]
+fn rank_twice_is_byte_identical_to_rank_once() {
+    let once = call(&req(r#"[{"op":"rank","id":"m1","rank":10}]"#)).unwrap();
+    let twice =
+        call(&req(r#"[{"op":"rank","id":"m1","rank":10},{"op":"rank","id":"m1","rank":10}]"#))
+            .unwrap();
+    assert!(once.starts_with(r#"{"ok":"#) && twice.starts_with(r#"{"ok":"#));
+    assert_eq!(once, twice);
+}

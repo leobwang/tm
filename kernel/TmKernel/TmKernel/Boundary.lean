@@ -806,6 +806,7 @@ inductive ReqCmd
   | est  (i : Id) (v : Nat)
   | demote (i : Id) (doc : DocIx) (stamp : Field.Stamp)
   | readopt (i : Id) (doc : DocIx)
+  | rank (i : Id) (n : Nat)
 
 /-- §6.3 stamps a demotion with the grain of the horizon that closed — `W37`
 from a week close, `D07` from a day close — and a `Field.Stamp` carries which.
@@ -826,6 +827,7 @@ def parseCmd (j : Json) : Except String ReqCmd := do
   | "demote" =>
     return .demote (← getStr j "id").toList (← getNat j "doc") (stampOf j (← getNat j "period"))
   | "readopt" => return .readopt (← getStr j "id").toList (← getNat j "doc")
+  | "rank" => return .rank (← getStr j "id").toList (← getNat j "rank")
   | _ => throw s!"unknown op {op}"
 
 def kerrName : KErr → String
@@ -923,6 +925,7 @@ def applyCmd (c : ReqCmd) (p : WfPlan) : Except KErr WfPlan :=
     match resolveDest p.val d with
     | .error k => .error k
     | .ok dd   => cmdReadopt i (freshRank p.val dd.ix) p dd
+  | .rank i n       => cmdRank i n p
 
 /-- **Error 2, as a theorem.**  A destination that is not a document is
 rejected, and the plan is untouched. -/
@@ -1522,6 +1525,67 @@ theorem a_command_rewrites_only_the_files_it_touches (p q : WfPlan) (i : Id)
   subst he'
   rw [hshape]
   exact renderDocAt_untouched p.val i e₀ e₀' hs hg₀ k d hold hnew
+
+/-! ### The rank verb's laws (L20a, L20b)
+
+They live here rather than beside `cmdRank` (Cmd.lean) for one mechanical
+reason: both read a successful `cmdRank` through `mapAt_ok_shape`, and the open
+chain `Plan ← Cmd ← Boundary` will not bend backwards. -/
+
+/-- **L20a (P\*).**  `tm rank ^id n` is idempotent: ranking a line where it
+already is changes nothing, so the verb cannot be a source of spurious diffs.
+The proof is three no-ops stacked: the second `setRankE` re-derives the entity
+it was given (`setRankE_idem`), the store write-back of a found entity is the
+identity (`Store.set_same`), and `mapAt` then returns the very `WfPlan` it got. -/
+theorem rank_is_idempotent (i : Id) (n : Nat) (p q : WfPlan)
+    (h : cmdRank i n p = .ok q) : cmdRank i n q = .ok q := by
+  obtain ⟨pe, pe', hs, hget, hfe, hshape⟩ := mapAt_ok_shape p q i (setRankE n) h
+  have hqe : q.val.store.get i = some pe' := by
+    rw [hshape]
+    exact Store.get_set_self p.val.store i pe' hs
+  have hide : setRankE n pe' = .ok pe' := setRankE_idem n pe pe' hfe
+  have hcs : {q.val with store := q.val.store.set i pe' (by rw [hqe]; rfl)} = q.val :=
+    planCore_set_same hqe
+  have hq : planWf {q.val with store := q.val.store.set i pe' (by rw [hqe]; rfl)} = true := by
+    rw [hcs]; exact q.property
+  unfold cmdRank
+  refine (mapAt_at (p := q) (f := setRankE n) (e := pe') (e' := pe') (hq := hq) hqe hide).trans ?_
+  refine congrArg Except.ok ?_
+  apply Subtype.ext
+  exact hcs
+
+/-- **L20b (P\*).**  `tm rank` is order-preserving on everything it did not
+name: two other items sharing a document keep their relative order.  §7.4's
+sort key is `(p, root_line_order, own_line_order)`, so a rank command that
+renumbered the others would silently reshuffle the plan for items the user
+never touched.  Structurally the risk is nil here — `mapAt` writes exactly one
+store slot and both other entities read back unchanged — which is *why* the
+proof is `Store.get_set_other` twice rather than an induction over renumbers.
+(`hdoc` is deliberately not discharged from: the order in fact survives even
+when the two others sit in *different* files, but the law as stated in plan
+§3.3 — §7.4's tie-break is per-file — claims the weaker thing, and the weaker
+claim is the one the plan asked for.) -/
+theorem rank_preserves_the_order_of_the_others (i : Id) (n : Nat) (p q : WfPlan)
+    (j k : Id) (hj : j ≠ i) (hk : k ≠ i) (ej ek fj fk : Entity)
+    (hjp : p.val.store.get j = some ej) (hkp : p.val.store.get k = some ek)
+    (hjq : q.val.store.get j = some fj) (hkq : q.val.store.get k = some fk)
+    (h : cmdRank i n p = .ok q)
+    (hdoc : ej.val.live.doc = ek.val.live.doc)
+    (hlt : ej.val.live.rank < ek.val.live.rank) :
+    fj.val.live.rank < fk.val.live.rank := by
+  obtain ⟨e, e', hs, hget, hfe, hshape⟩ := mapAt_ok_shape p q i (setRankE n) h
+  have hjq' : q.val.store.get j = p.val.store.get j := by
+    rw [hshape]
+    exact Store.get_set_other _ _ _ _ hs hj
+  have hkq' : q.val.store.get k = p.val.store.get k := by
+    rw [hshape]
+    exact Store.get_set_other _ _ _ _ hs hk
+  rw [hjq', hjp] at hjq
+  rw [hkq', hkp] at hkq
+  have hej : ej = fj := Option.some.inj hjq
+  have hek : ek = fk := Option.some.inj hkq
+  rw [← hej, ← hek]
+  exact hlt
 
 /-! ## `Normalized` after a command: discharged, not hoped for
 

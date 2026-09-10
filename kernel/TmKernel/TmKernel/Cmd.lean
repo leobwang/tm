@@ -62,6 +62,12 @@ theorem lift_roundtrips (c : Core) (e : Entity) (h : lift c = .ok e) : e.val = c
   · injection h with h; exact congrArg Subtype.val h.symm
   · exact absurd h (by simp)
 
+/-- The positive half of the same reading: a `Core` that passes `wf` lifts to
+exactly the entity with that proof. -/
+theorem lift_ok_of_wf (c : Core) (hc : wf c = true) : lift c = .ok ⟨c, hc⟩ := by
+  unfold lift
+  exact dif_pos hc
+
 /-! ## Entity-level transforms -/
 
 /-- `tm move ^id <horizon>`.  **There is no append**: the destination replaces
@@ -74,6 +80,44 @@ def drop (e : Entity) : Entity :=
 
 def setEstE (v : Nat) (e : Entity) : Entity :=
   ⟨{ e.val with line := setEst v e.val.line }, e.property⟩
+
+/-- `tm rank ^id n`.  Rank moves an item **within its own file**: the wire
+carries no destination, and there is no `Dest` proof because no file changes —
+which is what separates it from `move` and why it cannot reuse `Relocation`.
+The new rank is the caller's, verbatim; `mapAt` re-checks the post-state, so a
+rank that collides with another line of this file dies there as `badHorizon`
+rather than silently renumbering the file.  A `cmdRank_succeeds` mirroring
+`cmdMove_succeeds` still waits on README gap 11 (the store-update replacement
+lemma for `itemsWf`), so this stage proves the conditional laws L20a/L20b and
+not the success form. -/
+def setRankE (n : Nat) (e : Entity) : Except KErr Entity :=
+  lift { e.val with live := ⟨e.val.live.doc, n⟩ }
+
+/-- `wf` speaks only of *which files* hold an id's lines, never of where inside
+a file a line sits — so rewriting a live rank leaves `wf` unchanged.  This is
+the reason `lift` below can refuse a genuine collision yet never refuse for a
+reason it was not designed for. -/
+theorem wf_setRank (c : Core) (n : Nat) :
+    wf { c with live := ⟨c.live.doc, n⟩ } = wf c := by
+  cases c with
+  | mk live archive status line parent =>
+      unfold wf wfPair Core.archiveSite
+      cases archive <;> rfl
+
+/-- **L20a at entity level.**  Re-ranking a line to the rank it already has is
+a no-op: the second `lift` sees the same `Core` the first produced. -/
+theorem setRankE_idem (n : Nat) (e e' : Entity) (h : setRankE n e = .ok e') :
+    setRankE n e' = .ok e' := by
+  have hv : e'.val = { e.val with live := ⟨e.val.live.doc, n⟩ } := by
+    unfold setRankE at h
+    exact lift_roundtrips _ _ h
+  unfold setRankE
+  have hlive : e'.val.live = ⟨e'.val.live.doc, n⟩ := by rw [hv]
+  have hupd : { e'.val with live := ⟨e'.val.live.doc, n⟩ } = e'.val := by
+    rw [hlive.symm]
+  have hwf : wf e'.val = true := by rw [hv, wf_setRank]; exact e.property
+  rw [hupd]
+  exact lift_ok_of_wf _ hwf
 
 /-- `close`/`demote`, §6.3's week row, as one entity transform.  Read the row
 literally and it says three things, and this writes all three:
@@ -331,6 +375,44 @@ theorem mapAt_ok_of_inRange (p : WfPlan) (i : Id) (f : Entity → Except KErr En
       simp only [dif_pos hq]
   · exact Store.get_set_self p.val.store i e' hsome
 
+/-- Forward success form, with the refinement kept: the post-state is exactly
+`⟨_, hq⟩`, so a law stated over `q.val` can talk about `(mapAt i f)` without
+inverting the subtype.  (`mapAt_ok_shape`, Boundary.lean, is the inverse
+reading — it forgets `hq` and exists so a law can *decompose* a given `ok`.) -/
+theorem mapAt_at {p : WfPlan} {i : Id} {f : Entity → Except KErr Entity} {e e' : Entity}
+    (hget : p.val.store.get i = some e) (hfe : f e = .ok e')
+    (hq : planWf { p.val with store := p.val.store.set i e' (by rw [hget]; rfl) } = true) :
+    p.mapAt i f = .ok ⟨_, hq⟩ := by
+  unfold WfPlan.mapAt
+  split
+  · rename_i hn
+    rw [hget] at hn
+    simp at hn
+  · rename_i a hget'
+    rw [hget] at hget'
+    injection hget' with hget'
+    subst hget'
+    rw [hfe]
+    simp only [dif_pos hq]
+
+/-- **Storing back the entity that was already there does nothing.**  The
+dependent `isSome` proof rides along — `Store.set` is a `funext` away from the
+identity once the replaced value equals the found value. -/
+theorem Store.set_same (s : Store) (i : Id) (e : Entity) (h : (s.get i).isSome = true)
+    (hget : s.get i = some e) : s.set i e h = s := by
+  have hfun : (fun j => if j = i then some e else s.get j) = s.get := by
+    funext j
+    by_cases hji : j = i <;> simp_all
+  cases s
+  simp [Store.set, hfun]
+
+/-- ...and so is re-writing a `PlanCore` whose only change was writing back
+the entity it already held. -/
+theorem planCore_set_same {p : PlanCore} {i : Id} {e : Entity}
+    (hget : p.store.get i = some e) :
+    { p with store := p.store.set i e (by rw [hget]; rfl) } = p := by
+  rw [Store.set_same _ _ _ _ hget]
+
 /-- **And the check bites.**  A transform whose result would leave a tombstone
 in a horizon the live line does not follow is refused, and nothing is written.
 This is the half that keeps the loader honest: the kernel cannot emit a pair of
@@ -371,6 +453,12 @@ def cmdDemote (i : Id) (rank : Nat) (s : Stamp) : Relocation :=
 /-- `tm readopt`. -/
 def cmdReadopt (i : Id) (rank : Nat) : Relocation :=
   fun p d => p.mapAt i (readopt (d.site rank))
+/-- `tm rank ^id n`.  Note the type: a plain `Transform`, not a `Relocation`.
+No `Dest` is demanded because rank is not a relocation — no file changes, and
+§6.3's "line order is your rank within a priority class" (§7.4) is a fact about
+indices *inside one file*.  §13's verb list calls it, and until this line the
+kernel answered with `unknown op rank`. -/
+def cmdRank (i : Id) (n : Nat) : Transform := (·.mapAt i (setRankE n))
 
 /-! ## Where a horizon *name* is resolved, and why not here
 

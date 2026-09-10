@@ -1127,3 +1127,13 @@ open Tm
 #print axioms Tm.splitDoc_items_nodup
 #print axioms Tm.splitDoc_slots_separated
 #print axioms Tm.the_loader_builds_a_normalized_plan
+
+-- APPENDED 2026-09-09 (stage-3 rank-verb session)
+#print axioms Tm.lift_ok_of_wf
+#print axioms Tm.wf_setRank
+#print axioms Tm.setRankE_idem
+#print axioms Tm.mapAt_at
+#print axioms Tm.Store.set_same
+#print axioms Tm.planCore_set_same
+#print axioms Tm.rank_is_idempotent
+#print axioms Tm.rank_preserves_the_order_of_the_others

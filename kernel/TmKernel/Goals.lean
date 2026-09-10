@@ -107,19 +107,14 @@ open Field (Shape Recur Dur DurUnit DT Stamp Flag)
 # STAGE 3 — the boundary: `dispatch`, and the text path's last unproved step
 
 Plan §5: "`shim.c`, `build.rs`, `dispatch` for `move`/`demote`/`readopt`/`drop`/
-`edit`/`rank`/`add`".  Five of those seven are `ReqCmd` constructors already
-(`move`, `drop`, `est`, `demote`, `readopt`); `rank` and `add` are not, and are
-the two provisional signatures this stage needs.
+`edit`/`rank`/`add`".  Six of those seven are `ReqCmd` constructors now:
+`rank` landed 2026-09-09 — the wire op `rank{id,rank}`, `cmdRank` in Cmd.lean,
+with L20a/L20b discharged (`rank_is_idempotent`, `rank_preserves_the_order_of_the_others`).
+`add` remains the one provisional signature (`freshId` below), and README gap 13
+says its `Id` type is a human decision before it can be written.
 ############################################################################ -/
 
 /-! ## Cmd.lean / Boundary.lean — the two missing verbs -/
-
-/-- **Provisional (stage 3).**  `tm rank ^id <n>` (§13's verb list; §7.4 "line
-order is your rank within a priority class").  A `Transform` is the settled
-shape: the plan value in, a plan value or a structured `KErr` out.  It takes no
-`Dest`, because §6.3's `rank` moves a line *within* its own file — that is what
-distinguishes it from `move`, and it is why it cannot reuse `Relocation`. -/
-def cmdRank (i : Id) (n : Nat) : Transform := sorry
 
 /-- **Provisional (stage 3).**  `tm add`'s id generator.  §3.1 wants "4 chars of
 `[a-z0-9]`" and README gap 13 records that `Id` is `List Char` instead, so the
@@ -134,26 +129,6 @@ duplicate-id class re-entering through the *creation* path after
 `no_two_lines_of_one_id_in_one_path` closed it on the mutation path. -/
 theorem add_assigns_a_fresh_id (seed : Nat) (existing : List Id) :
     freshId seed existing ∉ existing := sorry
-
-/-- **L20a (P\*), stage 3.**  `tm rank ^id n` is idempotent: ranking a line
-where it already is changes nothing.  Rules out a rank command that renumbers
-on every invocation and so makes `tm rank` a source of spurious diffs. -/
-theorem rank_is_idempotent (i : Id) (n : Nat) (p q : WfPlan)
-    (h : cmdRank i n p = .ok q) : cmdRank i n q = .ok q := sorry
-
-/-- **L20b (P\*), stage 3.**  `tm rank` is order-preserving on everything it did
-not name: two other items sharing a document keep their relative order.  Rules
-out the renumbering that would silently reshuffle §7.4's tie-break — the sort
-key is `(p, root_line_order, own_line_order)`, so a rank command that permutes
-the others changes the plan for items the user never touched. -/
-theorem rank_preserves_the_order_of_the_others (i : Id) (n : Nat) (p q : WfPlan)
-    (j k : Id) (hj : j ≠ i) (hk : k ≠ i) (ej ek fj fk : Entity)
-    (hjp : p.val.store.get j = some ej) (hkp : p.val.store.get k = some ek)
-    (hjq : q.val.store.get j = some fj) (hkq : q.val.store.get k = some fk)
-    (h : cmdRank i n p = .ok q)
-    (hdoc : ej.val.live.doc = ek.val.live.doc)
-    (hlt : ej.val.live.rank < ek.val.live.rank) :
-    fj.val.live.rank < fk.val.live.rank := sorry
 
 /-- **L22 (R\*), stage 3 — expected refutation.**  "`undo ∘ cmd = id` on the
 nose."  Plan §3.3: a move assigns a *fresh* rank in the destination, so no

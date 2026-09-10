@@ -1913,3 +1913,64 @@ past the surviving ranks, so it reaches neither the old rank (back) nor the old
 document's index arithmetic (forwards). The general negation stays in
 `Goals.lean` until that sweep is written; `move_out_and_back_is_not_the_inverse`
 remains the compiled composite for the one shape it was stated about.
+
+<!-- #### Stage-3 session 2026-09-09 (fifth block): the `rank` verb kernel-backed;
+     L20a/L20b discharged; burn-down 48 → 46.
+
+The sixth of §13's seven verbs is now real.  `tm rank ^id n` (§7.4: "line
+order is your rank within a priority class") moves a line **within its own
+file** — the verb `move` cannot express that, and the type says so: `cmdRank :
+Id → Nat → Transform`, not a `Relocation`, because no `Dest` is demanded and no
+file changes.  On the wire: `{"op":"rank","id":"m1","rank":10}`; the ops list
+is now `move{id,doc} drop{id} est{id,min} demote{id,doc,period,grain?}
+readopt{id,doc} rank{id,rank}` — six ops, `add{id? seed}` still owed.
+
+New in `Cmd.lean`: `setRankE` (the entity transform — `lift` with the live rank
+rewritten in place), `wf_setRank` (rank is invisible to `wf`: the predicate
+speaks of *which files* hold an id's lines, never where inside a file a line
+sits), `setRankE_idem` (L20a at entity level), `lift_ok_of_wf`, `mapAt_at`
+(the forward success form of `mapAt` with the refinement kept — the inverse
+reading is `mapAt_ok_shape`), `Store.set_same` and `planCore_set_same` (writing
+back a found entity is the identity — the two no-ops L20a stacks).
+
+New in `Boundary.lean`: `ReqCmd.rank`, its `parseCmd` case (wire field
+`"rank"`), its `applyCmd` case (no `resolveDest` — there is no destination to
+resolve), and the two laws themselves. They live in Boundary even though the
+verb lives in `Cmd` for one mechanical reason: both read a successful
+`cmdRank` through `mapAt_ok_shape`, and the import chain `Plan ← Cmd ←
+Boundary` will not bend backwards.
+
+- `rank_is_idempotent` (L20a). Ranking a line where it already is changes
+  nothing: three stacked no-ops — `setRankE_idem`, `Store.set_same`, and
+  `mapAt` handing back the very `WfPlan` it got.
+- `rank_preserves_the_order_of_the_others` (L20b). Two items the command did
+  not name read back entity-identical (`Store.get_set_other` twice), so their
+  relative order survives automatically. The `hdoc` hypothesis is carried but
+  never consumed: the order actually survives *across* files too, but the law
+  plan §3.3 asked for is the per-file one, and proving less than the statement
+  uses is honest where proving more than it states would not be.
+
+**A success form is still owed.** There is no `cmdRank_succeeds` mirroring
+`cmdMove_succeeds`: the wire `rank` is a user-chosen `Nat` (unlike `move`'s
+`freshRank`), and discharging `itemsWf` of the post-state needs the
+`PlanCore.lines` replacement lemma — README gap 11, unchanged. Both laws are
+therefore *conditional* on `.ok`, which is exactly what `add_assigns_a_fresh_id`
+does not need and `cmdRank_succeeds` does.
+
+**Negative tests at the FFI** (`kernel.rs`: 26 → 29): a rank past the last line
+relocates the line verbatim down the file; a rank already taken (the prose and
+item ranks of a file share one index space — `rank m1 5` collides with the
+item at 5) is refused `{"kernel":"badHorizon"}` with no documents in the
+response at all, i.e. nothing was written; and `rank` twice is byte-identical
+to `rank` once (the wire L20a).
+
+`Check.lean`: 8 names under a fourth APPENDED banner; audit 1028 → 1036;
+zero `sorryAx`. `Goals.lean`: the `cmdRank` provisional def and the two law
+goals deleted; STAGE 3's header rewritten to record six of seven verbs and the
+one provisional signature (`freshId`) left.  `Negative.lean` untouched.
+
+Note for whoever writes the L22 negation sweep next: the `ReqCmd` shape list
+in the fourth block ("five shapes") is stale as of this commit — `.rank` makes
+it six. The freshRank argument covers `.rank` the same way: `rank` also cannot
+restore a rank `freshRank` vacated, and it cannot restore a *document* either.
+-->
