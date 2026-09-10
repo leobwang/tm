@@ -1881,3 +1881,35 @@ and `Char` equality is opaque so even closed words fail `decide`); `cmdRank`/
 `freshId` and their three laws, which are new commands rather than unproved
 facts about existing ones; and `move_has_an_inverse_command`, whose expected
 refutation waits on a `freshRank` analysis of what `move` writes.
+
+<!-- #### Stage-3 session 2026-09-09 (fourth block): the L22 `freshRank` analysis,
+     done; the refutation itself still stands in `Goals.lean`.
+     Whoever merges: this block adds no gap numbers. -->
+
+**L22, analysed (2026-09-09).** `move_has_an_inverse_command` waits on a
+`freshRank` analysis of what `move` writes. The analysis is done and it has one
+finding worth more than the remaining proof work. **The witness for the
+refutation must have a line surviving in the origin file above the moved
+item's rank.** `freshRank` is the maximum rank left in the file plus one, so on
+a one-item file the vacated rank *reproduces itself*: move the item out, and
+fresh rank of the origin is exactly the rank it left; a re-`move` back lands on
+it and the composite *is* an inverse — entity bytes untouched by `move`, site
+restored, docs field unchanged, so the plan equals the original. The
+refutation therefore needs two item lines (or an item below any surviving
+prose line) — which is exactly the fact `move_out_and_back_is_not_the_inverse`
+already depends on, read from the other side: `freshRank_gt` is what makes the
+fresh rank strictly greater, and it needs the surviving line. An undo built as
+"apply the inverse command" is wrong on trees, but it would be *accidentally
+right on some plans*, which is a worse thing to build against than an
+unconditional no.
+
+The remaining proof work is mechanical once framed: `inv (.move i n)` evaluates
+to one of five command shapes, and each fails in one line of entity-level
+argument — `drop`/`est`/`demote` change the status bytes or horizon of whatever
+id they touch; a command touching a different id cannot restore the moved
+site, because `Store.get` is a function and site equality injects out of the
+`some`; and a `move` lands on `freshRank`, which `freshRank_gt` pushes strictly
+past the surviving ranks, so it reaches neither the old rank (back) nor the old
+document's index arithmetic (forwards). The general negation stays in
+`Goals.lean` until that sweep is written; `move_out_and_back_is_not_the_inverse`
+remains the compiled composite for the one shape it was stated about.
