@@ -1974,3 +1974,34 @@ in the fourth block ("five shapes") is stale as of this commit — `.rank` makes
 it six. The freshRank argument covers `.rank` the same way: `rank` also cannot
 restore a rank `freshRank` vacated, and it cannot restore a *document* either.
 -->
+
+<!-- #### Stage-3 session 2026-09-09 (sixth block): `freshId` landed with L21
+     proved; burn-down 46 → 45. Gap 13 annotated, unchanged in substance.
+
+The last provisional signature of stage 3 is now a definition.  `freshId` and
+its freshness law live in `Text.lean` next to the numeral round trip they
+depend on — `digitsOf_injective` is `readNat_digitsOf` read backwards, and it
+is what makes a search over rendered numerals a search over *numbers*: no two
+candidates collide (`candidates_nodup`).
+
+`freshId seed existing` takes the first of `digitsOf seed`, `digitsOf (seed+1)`,
+… that no existing item claims.  §8.1's rule — "freshness must be a theorem,
+not a retry loop" — is what the proof below satisfies: among
+`existing.length + 1` distinct candidates, at least one escapes a filter over
+`existing.length` claimed ids, so the `[]` branch of the `match` is
+**unreachable by a consistent pair of inputs** and stands only because a
+`match` must be total.  `add_assigns_a_fresh_id` runs the pigeonhole through
+`List.Nodup.length_le_of_subset` for exactly that case split.
+
+What this does **not** do is decide gap 13: §3.1 wants ids to be four
+`[a-z0-9]` characters and the kernel's type does not say so.  The generator
+emits digits, so it is consistent with the recorded resolution (weaken the
+spec — digits are a subset of `[a-z0-9]`) and with no other; the shape choice
+is still the human's.  An `add` verb — the `Seed`/`Repair` round trip, the
+wire fields, the insert as a command — is therefore still owed, and its
+success form would lean on gap 11 like `cmdRank_succeeds` does.
+
+`Check.lean`: 3 names under a fifth APPENDED banner; audit 1036 → 1039; zero
+`sorryAx`.  `Goals.lean`: the `freshId` provisional def and the L21 goal
+deleted.  `Negative.lean` untouched.
+-->

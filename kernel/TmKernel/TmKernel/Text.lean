@@ -199,6 +199,97 @@ theorem readNat_digitsOf (n : Nat) : readNat (digitsOf n) = some n := by
   simp only [Bool.false_eq_true, if_false, readNatAux]
   rw [readNatAux_of_digits 0 _ (digitsOf_all_digits n), natStep_digitsOf]
 
+/-- **Distinct numbers render distinctly.**  `readNat` is a left inverse of
+`digitsOf`, so the two are in bijection — the no-leading-zeros spelling is
+unique.  This is what makes a search over `digitsOf` a search over *numbers*:
+no two candidates collide. -/
+theorem digitsOf_injective {a b : Nat} (h : digitsOf a = digitsOf b) : a = b := by
+  have := congrArg readNat h
+  rw [readNat_digitsOf, readNat_digitsOf] at this
+  exact Option.some.inj this
+
+/-! ## Fresh ids (`tm add`, stage 3, README gap 13)
+
+Plan §3.4 has Rust supply the seed and the kernel return the id; L21
+(§3.3) demands freshness.  §8.1's rule — "freshness must be a theorem, not a
+retry loop" — is satisfied here: the generator *proves itself* fresh, and the
+pigeonhole makes the fallback below unreachable rather than merely unlikely.
+
+What this generator does **not** decide is gap 13's actual question — whether
+ids are forced to the §3.1 shape of four `[a-z0-9]` characters — which is a
+human decision.  Its output is digits, so it is consistent with the weaken-the-
+spec reading ("digits ⊂ `[a-z0-9]`") and with no other; choosing the shape is
+still open. -/
+
+/-- The `n` numerals starting at `seed` render to **distinct** ids:
+`digitsOf` is injective. -/
+theorem candidates_nodup (seed : Nat) : ∀ n : Nat,
+    (List.map digitsOf (List.range' seed n)).Nodup
+  | 0 => by simp
+  | n + 1 => by
+      rw [List.range'_succ]
+      simp only [List.map_cons, List.nodup_cons]
+      refine ⟨fun hx => ?_, candidates_nodup (seed + 1) n⟩
+      rcases List.mem_map.1 hx with ⟨m, hm, he⟩
+      have hms : m = seed := digitsOf_injective he
+      have hmr := (List.mem_range').1 hm
+      omega
+
+/-- `seed`, `seed+1`, … rendered and filtered to those not already claimed. -/
+def freshCandidates (seed : Nat) (existing : List Id) : List Id :=
+  List.filter (fun x => (x ∈ existing) == false)
+    (List.map digitsOf (List.range' seed (existing.length + 1)))
+
+/-- **`tm add`'s id generator.**  The first numeral `digitsOf seed`,
+`digitsOf (seed+1)`, … that no existing item claims.  There is always one —
+`existing.length + 1` distinct candidates against `existing.length` claimed
+ids — so the `[]` branch below cannot be reached by a consistent pair of
+inputs; it stands only because a `match` must be total. -/
+def freshId (seed : Nat) (existing : List Id) : Id :=
+  match freshCandidates seed existing with
+  | x :: _ => x
+  | [] => digitsOf (seed + existing.length)
+
+/-- **L21 (P\*).**  `tm add` assigns an id no item already has.  Either some
+candidate survives the filter — and every survivor is fresh by construction —
+or the filter empties the whole list, `existing` contains every candidate, and
+distinct candidates cannot all fit into a shorter list: pigeonhole,
+`List.Nodup.length_le_of_subset`.  Freshness is a theorem here, not a retry
+loop that might one day spin. -/
+theorem add_assigns_a_fresh_id (seed : Nat) (existing : List Id) :
+    freshId seed existing ∉ existing := by
+  have hsub : ∀ y ∈ freshCandidates seed existing, y ∉ existing := by
+    intro y hy
+    rcases List.mem_filter.1 hy with ⟨_, hp⟩
+    simp at hp
+    exact hp
+  match hc : freshCandidates seed existing with
+  | x :: rest =>
+      have hx : x ∈ freshCandidates seed existing := by
+        rw [hc]
+        simp
+      have hres : freshId seed existing = x := by
+        unfold freshId; rw [hc]
+      rw [hres]
+      exact hsub x hx
+  | [] =>
+      intro hin
+      have hall : ∀ y ∈ List.map digitsOf (List.range' seed (existing.length + 1)),
+          y ∈ existing := by
+        intro y hy
+        by_cases hny : y ∈ existing
+        · exact hny
+        · have hyC : y ∈ freshCandidates seed existing := by
+            unfold freshCandidates
+            refine List.mem_filter.2 ⟨hy, ?_⟩
+            simpa using hny
+          rw [hc] at hyC
+          exact absurd hyC (by simp)
+      have hnd := candidates_nodup seed (existing.length + 1)
+      have hlen := List.Nodup.length_le_of_subset hnd hall
+      rw [List.length_map, List.length_range'] at hlen
+      omega
+
 /-! ## Tokens
 
 A token is the verbatim separator that preceded it plus the verbatim word.

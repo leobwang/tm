@@ -1137,3 +1137,8 @@ open Tm
 #print axioms Tm.planCore_set_same
 #print axioms Tm.rank_is_idempotent
 #print axioms Tm.rank_preserves_the_order_of_the_others
+
+-- APPENDED 2026-09-09 (stage-3 fresh-id session)
+#print axioms Tm.digitsOf_injective
+#print axioms Tm.candidates_nodup
+#print axioms Tm.add_assigns_a_fresh_id

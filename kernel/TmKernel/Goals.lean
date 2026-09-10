@@ -110,25 +110,11 @@ Plan §5: "`shim.c`, `build.rs`, `dispatch` for `move`/`demote`/`readopt`/`drop`
 `edit`/`rank`/`add`".  Six of those seven are `ReqCmd` constructors now:
 `rank` landed 2026-09-09 — the wire op `rank{id,rank}`, `cmdRank` in Cmd.lean,
 with L20a/L20b discharged (`rank_is_idempotent`, `rank_preserves_the_order_of_the_others`).
-`add` remains the one provisional signature (`freshId` below), and README gap 13
-says its `Id` type is a human decision before it can be written.
+`add` remains the one verb not on the wire.  Its id generator landed
+2026-09-09 — `freshId` in Text.lean with L21 proved (`add_assigns_a_fresh_id`,
+pigeonhole over `digitsOf`-rendered candidates, not a retry loop) — but README
+gap 13 says `Id`'s *shape* is a human decision before `tm add` itself ships.
 ############################################################################ -/
-
-/-! ## Cmd.lean / Boundary.lean — the two missing verbs -/
-
-/-- **Provisional (stage 3).**  `tm add`'s id generator.  §3.1 wants "4 chars of
-`[a-z0-9]`" and README gap 13 records that `Id` is `List Char` instead, so the
-*type* is not settled — but the **signature** is: the boundary already carries a
-`seed` on the wire (plan §3.4), and freshness is a question about the ids that
-exist.  Stage 3 may narrow the return type; the goal below survives it. -/
-def freshId (seed : Nat) (existing : List Id) : Id := sorry
-
-/-- **L21 (P\*), stage 3.**  `tm add` assigns an id no item already has —
-`assigned ∩ existing = ∅` in plan §3.3.  Rules out the shipped
-duplicate-id class re-entering through the *creation* path after
-`no_two_lines_of_one_id_in_one_path` closed it on the mutation path. -/
-theorem add_assigns_a_fresh_id (seed : Nat) (existing : List Id) :
-    freshId seed existing ∉ existing := sorry
 
 /-- **L22 (R\*), stage 3 — expected refutation.**  "`undo ∘ cmd = id` on the
 nose."  Plan §3.3: a move assigns a *fresh* rank in the destination, so no
