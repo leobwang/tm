@@ -31,7 +31,7 @@ theorem whose command argument was unused.  It is withdrawn.
 -/
 namespace Tm
 
-open Field (Stamp)
+open Field (Stamp Dur DurUnit)
 
 inductive KErr
   | occupied          -- the destination file already holds this id's other line
@@ -78,7 +78,30 @@ def moveTo (t : Site) (e : Entity) : Except KErr Entity := lift { e.val with liv
 def drop (e : Entity) : Entity :=
   ⟨{ e.val with status := .settled .dropped }, e.property⟩
 
+/-- `tm edit ^id est=v`.  This is now the **field** setter (`Field.setEst`
+over `setKey`), the same reader pair `Core.est` consumes — gap 4's two
+readers are collapsed on the command path, and the stage-one `Nat` setter
+below survives only as the fold arithmetic `demoteEst` still shares.  The
+written token is byte-identical to the stage one's
+(`the_two_est_setters_write_the_same_token`), so no wire behaviour moves. -/
 def setEstE (v : Nat) (e : Entity) : Entity :=
+  ⟨{ e.val with line := Field.setEst (Dur.simple v DurUnit.minutes) e.val.line },
+    e.property⟩
+
+/-- **Gap 4, closed: the command path writes what the field path reads.**
+The `est` request lands on `setEstE`; `Core.est` is
+`Field.viewRemainingDur`; `view_set_remaining` says the second reads the
+first verbatim, with no hypothesis on the entity's other bytes. -/
+theorem the_command_path_writes_what_the_field_path_reads (v : Nat) (e : Entity) :
+    (setEstE v e).val.est = some (Dur.simple v DurUnit.minutes) :=
+  Field.view_set_remaining (Dur.simple v DurUnit.minutes) e.val.line (by rfl)
+
+/-- The stage-one `Nat` entity setter, in its own name now: the body `setEstE`
+carried until gap 4 closed.  It survives as **fold arithmetic** — `demoteEst`
+is its only user, the close floor that reads `remainingOf` and writes the same
+`Nat` view back — and it is deliberately *not* on the request path anymore, so
+a command line is never read through one reader and written through another. -/
+def setEstFoldE (v : Nat) (e : Entity) : Entity :=
   ⟨{ e.val with line := setEst v e.val.line }, e.property⟩
 
 /-- `tm rank ^id n`.  Rank moves an item **within its own file**: the wire
@@ -713,13 +736,17 @@ theorem readopt_keeps_stamps (t : Site) (e a : Entity) (h : readopt t e = .ok a)
   · simp at h
 
 /-- **L9 (P).**  `tm edit ^id est=v` writes the slot the view reads.  In the
-Rust it wrote the other slot, reported success, and changed nothing. -/
+Rust it wrote the other slot, reported success, and changed nothing.  The
+statement is kept for the **fold** setter, whose law it always was; the
+request path gained the stronger field-view law
+`the_command_path_writes_what_the_field_path_reads` when gap 4 closed. -/
 theorem set_is_not_silent (bm v : Nat) (e : Entity) :
-    viewRemaining bm (setEstE v e).val.line = some v := view_set_is_not_silent bm v e.val.line
+    viewRemaining bm (setEstFoldE v e).val.line = some v :=
+  view_set_is_not_silent bm v e.val.line
 
 /-- **L10 (P).** -/
 theorem set_last_wins (bm v v' : Nat) (e : Entity) :
-    viewRemaining bm (setEstE v' (setEstE v e)).val.line = some v' :=
+    viewRemaining bm (setEstFoldE v' (setEstFoldE v e)).val.line = some v' :=
   view_set_is_not_silent bm v' _
 
 /-! ## demote / readopt: the stamp laws -/
@@ -855,9 +882,7 @@ cannot silently forget to ask whether the user set an estimate since. -/
 def demoteEst (bm : Nat) (userSet : Bool) (rec : Nat) (e : Entity) : Entity :=
   match userSet with
   | true  => e
-  | false =>
-    (⟨{ e.val with line := setEst (max (remainingOf bm e.val.line) rec) e.val.line },
-      e.property⟩ : Entity)
+  | false => setEstFoldE (max (remainingOf bm e.val.line) rec) e
 
 /-- **L15a (P).**  When the user has not set an estimate, the close's
 measurement is a floor. -/

@@ -175,16 +175,12 @@ shape `buildEntity_renders` started.  `normalized` assembles three facts —
 slot), and `store_lines_nodup` (the store renders each line once) — so
 `itemCheck: rankCollision` is now unreachable from a request that loaded. -/
 
-/-- **P\*, stage 3, README gap 4.**  Two readers of `est:` still coexist on the
-command path: `Cmd.setEstE` and the `est` request go through the stage-one
-`Nat`-valued `viewRemaining`, while the entity reads the field-level
-`viewRemainingDur`.  They do not disagree about the bytes
-(`the_two_est_setters_write_the_same_token`), but they are not one function,
-and "two readers of one slot" is the exact shape of the defect this kernel
-exists to remove.  This goal says the command path writes what the field path
-reads; discharging it, or collapsing the two functions, closes gap 4. -/
-theorem the_command_path_writes_what_the_field_path_reads (v : Nat) (e : Entity) :
-    (setEstE v e).val.est = some (Dur.simple v DurUnit.minutes) := sorry
+/- **Gap 4 is closed.**  `Cmd.setEstE` now writes through the field setter
+`Field.setEst`, so the request path and `Core.est` share one reader pair, and
+the law `the_command_path_writes_what_the_field_path_reads` is a theorem of
+`Cmd.lean` — discharged from this file, audited in `Check.lean`.  The
+stage-one `Nat` setter survives as `Cmd.setEstFoldE`, fold arithmetic used
+only by `demoteEst`; the stage-4 rollup goals may read either view. -/
 
 /-! ############################################################################
 # STAGE 4 — `close`, `autoClose`, `ClosePolicy`; laws L16–L19, L27

@@ -1142,3 +1142,6 @@ open Tm
 #print axioms Tm.digitsOf_injective
 #print axioms Tm.candidates_nodup
 #print axioms Tm.add_assigns_a_fresh_id
+
+-- APPENDED 2026-09-10 (stage-3 gap-4 session: the est command path writes what Core.est reads)
+#print axioms Tm.the_command_path_writes_what_the_field_path_reads
