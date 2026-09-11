@@ -807,6 +807,13 @@ inductive ReqCmd
   | demote (i : Id) (doc : DocIx) (stamp : Field.Stamp)
   | readopt (i : Id) (doc : DocIx)
   | rank (i : Id) (n : Nat)
+  /-- `tm add`.  The **seed** is supplied by the host — Lean has no randomness
+      — and `freshId` (L21) turns it plus the store's domain into an id no item
+      claims; freshness is a theorem, not a retry.  The title is plain text: a
+      newline, a tab, a `^`, or a title of only spaces is refused at the parser
+      with a named message rather than rendering bytes no loader can take back. -/
+  | add (seed : Nat) (doc : DocIx) (title : List Char)
+  deriving DecidableEq
 
 /-- §6.3 stamps a demotion with the grain of the horizon that closed — `W37`
 from a week close, `D07` from a day close — and a `Field.Stamp` carries which.
@@ -828,6 +835,25 @@ def parseCmd (j : Json) : Except String ReqCmd := do
     return .demote (← getStr j "id").toList (← getNat j "doc") (stampOf j (← getNat j "period"))
   | "readopt" => return .readopt (← getStr j "id").toList (← getNat j "doc")
   | "rank" => return .rank (← getStr j "id").toList (← getNat j "rank")
+  | "add" =>
+    let title ← getStr j "title"
+    let cs := title.toList
+    -- Gap 32's discipline at the parser: the title becomes item tokens, so a
+    -- newline would split the line, a tab is not a separator this kernel can
+    -- read, and a `^` in the title would read back as a second id (`manyIds`).
+    -- The loader must never pick between two readings (§5.6), so these are
+    -- refused by name rather than laundered into tokens.  The checks run on
+    -- the `List Char` reading the command actually carries.
+    if '\n' ∈ cs then throw "titleNewline"
+    if '\t' ∈ cs then throw "titleTab"
+    if '^' ∈ cs then throw "titleId"
+    if cs.all (fun c => c == ' ') then throw "titleBlank"
+    -- A leading or trailing space would ride into the token vector as a token
+    -- whose word is empty (or keeps the space), and the rendered line would
+    -- re-tokenize differently than it was built — the loader must read back
+    -- exactly what the command wrote, so the title must be trimmed by the host.
+    if cs.head? == some ' ' || cs.getLast? == some ' ' then throw "titleEdge"
+    return .add (← getNat j "seed") (← getNat j "doc") cs
   | _ => throw s!"unknown op {op}"
 
 def kerrName : KErr → String
@@ -836,6 +862,7 @@ def kerrName : KErr → String
   | .notDemoted     => "notDemoted"
   | .alreadyDemoted => "alreadyDemoted"
   | .badHorizon     => "badHorizon"
+  | .badItem        => "badItem"
 
 /-- Fresh rank in the destination document: strictly greater than every rank
 already there, so a move can never collide on a rank either.  `freshRank_gt`
@@ -903,6 +930,41 @@ theorem move_out_and_back_is_not_the_inverse (p : WfPlan) (i : Id) (e a : Entity
     freshRank_gt p.val e.val.live.doc _ (live_line_mem p.val i e hget) rfl
   omega
 
+/-- `tm add`'s token vector.  Words tokenize exactly as the loader would
+tokenize the file line later — the one representation, seen from the command
+side.  The head token's separator is forced to a single space because
+`serializeItem`'s prefix ends at `]` and the first token supplies the gap that
+the fixture style `- [ ] 5 6b … ^m1` writes; the id token's word is `'^' :: i`
+so a later load reads back the store key exactly (§5.3's one-reader rule, seen
+from the other end). -/
+def addTitleToks (title : List Char) (i : Id) : List Tok :=
+  match tokenize title with
+  | []      => [{ sep := [' '], word := '^' :: i }]
+  | t :: ts => { t with sep := [' '] } :: ts ++ [{ sep := [' '], word := '^' :: i }]
+
+/-- The `Core` a fresh `add` writes: open in the resolved destination at
+`freshRank`, no tombstone, `live free` (the `[ ]` box), `parent none` like every
+line the kernel writes until gap 22 lands. -/
+def addCore (p : PlanCore) (dd : Dest p) (i : Id) (title : List Char) : Core :=
+  { live := dd.site (freshRank p dd.ix), archive := none, status := .live .free,
+    line := { indent := [], toks := addTitleToks title i }, parent := none }
+
+/-- `wf` of an `add`'s core is `wfPair _ none`: there is no tombstone to be in
+the wrong file.  The freshness argument is elsewhere — L21 for the id,
+`freshRank_gt` for the rank, and `insertFresh`'s `planWf` re-check for the rest. -/
+def addEntity (p : PlanCore) (dd : Dest p) (i : Id) (title : List Char) : Entity :=
+  ⟨addCore p dd i title, by unfold wf Core.archiveSite; exact wfPair_none _⟩
+
+/-- L21's freshness, restated in the shape `Store.insertFresh` demands.  The
+store already answers for itself: an id outside `dom` has no entry, because
+`domSpec` makes membership and a `some` answer the same statement. -/
+theorem store_get_isNone_of_not_mem {p : PlanCore} {i : Id} (h : i ∉ p.store.dom) :
+    (p.store.get i).isNone = true := by
+  rcases hget : p.store.get i with _ | e
+  · simp [hget]
+  · have hsome : (p.store.get i).isSome = true := by simp [hget]
+    exact absurd ((p.store.domSpec i).mpr hsome) h
+
 /-- Every relocating command resolves its destination against `docs` first, so
 the `Nat` off the wire never reaches a `Site`.  An index past the end of `docs`
 is `badHorizon` — before this, it deleted the item and returned `ok`.  A
@@ -926,6 +988,13 @@ def applyCmd (c : ReqCmd) (p : WfPlan) : Except KErr WfPlan :=
     | .error k => .error k
     | .ok dd   => cmdReadopt i (freshRank p.val dd.ix) p dd
   | .rank i n       => cmdRank i n p
+  | .add seed d title =>
+    match resolveDest p.val d with
+    | .error k => .error k
+    | .ok dd =>
+      p.insertFresh (freshId seed p.val.store.dom)
+        (addEntity p.val dd (freshId seed p.val.store.dom) title)
+        (store_get_isNone_of_not_mem (add_assigns_a_fresh_id seed _))
 
 /-- **Error 2, as a theorem.**  A destination that is not a document is
 rejected, and the plan is untouched. -/
@@ -937,6 +1006,79 @@ theorem demote_to_a_document_that_does_not_exist_is_rejected (p : WfPlan) (i : I
     (st : Field.Stamp)
     (h : ¬ n < p.val.docs.length) : applyCmd (.demote i n st) p = .error .badHorizon := by
   simp [applyCmd, resolveDest, h]
+
+/-! ### What an `add` does — acceptance, and the check that bites -/
+
+theorem WfPlan.insertFresh_rejects (p : WfPlan) (i : Id) (e : Entity)
+    (hfresh : (p.val.store.get i).isNone = true)
+    (h : planWf { p.val with store := p.val.store.insertFresh i e hfresh } = false) :
+    p.insertFresh i e hfresh = .error .badItem := by
+  simp [WfPlan.insertFresh, h]
+
+/-- The wire form refuses a title that would not read back as the item it
+pretends to be.  These refusals live in `parseCmd` — the `Except String` path,
+so the host's `match` sees the free-text `{"err":"…"}`, not a kernel name —
+because each names a different reason the bytes would lie about the plan. -/
+theorem parseCmd_rejects_add_title_variants :
+    parseCmd (Json.mkObj [("op", Json.str "add"), ("seed", Json.num 7),
+        ("doc", Json.num 0), ("title", Json.str "a\nb")]) = .error "titleNewline" ∧
+    parseCmd (Json.mkObj [("op", Json.str "add"), ("seed", Json.num 7),
+        ("doc", Json.num 0), ("title", Json.str "a\tb")]) = .error "titleTab" ∧
+    parseCmd (Json.mkObj [("op", Json.str "add"), ("seed", Json.num 7),
+        ("doc", Json.num 0), ("title", Json.str "steal ^m1")]) = .error "titleId" ∧
+    parseCmd (Json.mkObj [("op", Json.str "add"), ("seed", Json.num 7),
+        ("doc", Json.num 0), ("title", Json.str "")]) = .error "titleBlank" ∧
+    parseCmd (Json.mkObj [("op", Json.str "add"), ("seed", Json.num 7),
+        ("doc", Json.num 0), ("title", Json.str " padded ")]) = .error "titleEdge" :=
+  ⟨rfl, rfl, rfl, rfl, rfl⟩
+
+/-- **`add` inserts.**  Whenever the command succeeds, the store of the
+post-state holds the new entity under exactly the id L21's `freshId` names. -/
+theorem cmdAdd_inserts (p : WfPlan) (seed : Nat) (n : Nat) (title : List Char)
+    (q : WfPlan) (hq : applyCmd (.add seed n title) p = .ok q) :
+    (q.val.store.get (freshId seed p.val.store.dom)).isSome = true := by
+  cases hd : resolveDest p.val n with
+  | error k =>
+      simp only [applyCmd, hd] at hq
+      exact absurd hq (by simp)
+  | ok dd =>
+      simp only [applyCmd, hd] at hq
+      have hget := WfPlan.insertFresh_get p _ _ _ _ hq
+      rw [hget]; simp
+
+/-- **`add` lands at `freshRank`** — the one rank that beats every line already
+in the file.  This is what says a second `add` into the same document does not
+collide with the first: the first is a line of the file the second's
+`freshRank_gt` sees.  The entity arrives as an extra argument because the wire
+carries an id, not a rank; `cmdAdd_inserts` says that id names something here. -/
+theorem cmdAdd_rank (p : WfPlan) (seed : Nat) (n : Nat) (title : List Char)
+    (q : WfPlan) (e : Entity) (hq : applyCmd (.add seed n title) p = .ok q)
+    (he : q.val.store.get (freshId seed p.val.store.dom) = some e) :
+    e.val.live = ⟨n, freshRank p.val n⟩ := by
+  cases hd : resolveDest p.val n with
+  | error k =>
+      simp only [applyCmd, hd] at hq
+      exact absurd hq (by simp)
+  | ok dd =>
+      simp only [applyCmd, hd] at hq
+      have hget := WfPlan.insertFresh_get p _ _ _ _ hq
+      rw [hget] at he
+      cases he
+      simp [addEntity, addCore, Dest.site, resolveDest_ix hd]
+
+/-- **`add` touches nothing else.**  Every other id keeps its entity exactly. -/
+theorem cmdAdd_other_untouched (p : WfPlan) (seed : Nat) (n : Nat) (title : List Char)
+    (q : WfPlan) (hq : applyCmd (.add seed n title) p = .ok q) (j : Id)
+    (hij : freshId seed p.val.store.dom ≠ j) :
+    q.val.store.get j = p.val.store.get j := by
+  cases hd : resolveDest p.val n with
+  | error k =>
+      simp only [applyCmd, hd] at hq
+      exact absurd hq (by simp)
+  | ok dd =>
+      simp only [applyCmd, hd] at hq
+      exact WfPlan.insertFresh_other p _ j _ _ _ hq
+        (fun hji => absurd hji.symm hij)
 
 def applyAll : List ReqCmd → WfPlan → Except KErr WfPlan
   | [],      p => .ok p

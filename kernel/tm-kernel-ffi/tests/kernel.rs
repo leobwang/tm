@@ -27,8 +27,14 @@ fn round_trip_is_byte_faithful() {
     // every line comes back exactly as it went in, including front matter,
     // headings, the blank line, the two-space indent, the column padding and
     // the generated-block comment
-    assert!(out.contains(r#""- [ ] 5 6b Finish ch.5 exercises        @O1 ^m1""#), "{out}");
-    assert!(out.contains(r#""  - [?] 2 15m Ask Prof. Lee  on-event:reply/7d waiting:2026-09-05 ^a4""#), "{out}");
+    assert!(
+        out.contains(r#""- [ ] 5 6b Finish ch.5 exercises        @O1 ^m1""#),
+        "{out}"
+    );
+    assert!(
+        out.contains(r#""  - [?] 2 15m Ask Prof. Lee  on-event:reply/7d waiting:2026-09-05 ^a4""#),
+        "{out}"
+    );
     assert!(out.contains(r#""<!-- tm:plan -->""#), "{out}");
     assert!(out.contains(r#""week: 2026-W37""#), "{out}");
     assert!(out.starts_with(r#"{"ok":"#), "{out}");
@@ -38,9 +44,15 @@ fn round_trip_is_byte_faithful() {
 fn move_relocates_the_line_verbatim() {
     let out = call(&req(r#"[{"op":"move","id":"m1","doc":1}]"#)).unwrap();
     let month = out.split(r#""lines":"#).nth(2).unwrap();
-    assert!(month.contains("Finish ch.5 exercises        @O1 ^m1"), "{out}");
+    assert!(
+        month.contains("Finish ch.5 exercises        @O1 ^m1"),
+        "{out}"
+    );
     let week = out.split(r#""lines":"#).nth(1).unwrap();
-    assert!(!week.contains("^m1"), "the line must leave the week file: {out}");
+    assert!(
+        !week.contains("^m1"),
+        "the line must leave the week file: {out}"
+    );
 }
 
 /// The response carries each document's horizon back, because the request
@@ -86,7 +98,10 @@ fn edit_est_actually_changes_what_the_kernel_reads() {
     assert!(out.contains("est:45m"), "{out}");
     assert!(!out.contains("est:1b"), "{out}");
     // and nothing else on the line moved
-    assert!(out.contains("- [>] 4 2b Exercises 5.3-5.5            @m1 est:45m ^t3"), "{out}");
+    assert!(
+        out.contains("- [>] 4 2b Exercises 5.3-5.5            @m1 est:45m ^t3"),
+        "{out}"
+    );
 }
 
 /// `tm check`'s `dup-id` is an acceptance rule, not a diagnostic that runs
@@ -140,8 +155,7 @@ fn a_lone_demoted_line_round_trips() {
     let out = call(r##"{"docs":[{"path":"w.md","lines":["- [-] 5 6b Old work ^m1"]}],"cmds":[]}"##)
         .unwrap();
     assert_eq!(
-        out,
-        r##"{"ok":{"docs":[{"lines":["- [-] 5 6b Old work ^m1"],"path":"w.md"}]}}"##,
+        out, r##"{"ok":{"docs":[{"lines":["- [-] 5 6b Old work ^m1"],"path":"w.md"}]}}"##,
         "{out}"
     );
 }
@@ -185,10 +199,19 @@ fn which_line_is_the_tombstone_does_not_depend_on_the_document_order() {
     .unwrap();
     // the live line is the one in the month file, and it is the one that drops
     for out in [&forwards, &backwards] {
-        let month = out.split(r#""lines":"#).find(|s| s.contains("m.md")).unwrap();
-        let week = out.split(r#""lines":"#).find(|s| s.contains("w.md")).unwrap();
+        let month = out
+            .split(r#""lines":"#)
+            .find(|s| s.contains("m.md"))
+            .unwrap();
+        let week = out
+            .split(r#""lines":"#)
+            .find(|s| s.contains("w.md"))
+            .unwrap();
         assert!(month.contains("- [~] 5 6b Old work ^m1"), "{out}");
-        assert!(week.contains("- [-] 5 6b Old work ^m1"), "the tombstone stays: {out}");
+        assert!(
+            week.contains("- [-] 5 6b Old work ^m1"),
+            "the tombstone stays: {out}"
+        );
     }
 }
 
@@ -222,7 +245,10 @@ fn the_spec_demotion_pair_round_trips() {
              "cmds":[]}"##,
     )
     .unwrap();
-    assert!(out.contains(r#"- [ ] 4 6b Rollback path passes tests   @O2 ^m2"#), "{out}");
+    assert!(
+        out.contains(r#"- [ ] 4 6b Rollback path passes tests   @O2 ^m2"#),
+        "{out}"
+    );
     assert!(
         out.contains(r#"- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2"#),
         "{out}"
@@ -258,8 +284,14 @@ fn a_close_stamps_the_copy_and_leaves_the_week_line_alone() {
              "cmds":[{"op":"demote","id":"m1","doc":1,"period":37}]}"##,
     )
     .unwrap();
-    let week = out.split("{\"grain\"").find(|s| s.contains("w.md")).unwrap();
-    assert!(week.contains("- [-] 5 6b Work ^m1"), "no stamp in the week file: {out}");
+    let week = out
+        .split("{\"grain\"")
+        .find(|s| s.contains("w.md"))
+        .unwrap();
+    assert!(
+        week.contains("- [-] 5 6b Work ^m1"),
+        "no stamp in the week file: {out}"
+    );
     assert!(out.contains("- [-] 5 6b Work demoted:W37 ^m1"), "{out}");
 }
 
@@ -293,7 +325,11 @@ fn readopt_of_a_demoted_record_keeps_the_stamp() {
     )
     .unwrap();
     assert!(out.contains("- [ ] 5 6b Old work demoted:W37 ^m1"), "{out}");
-    assert_eq!(out.matches("Old work").count(), 1, "the tombstone is consumed: {out}");
+    assert_eq!(
+        out.matches("Old work").count(),
+        1,
+        "the tombstone is consumed: {out}"
+    );
 }
 
 /// The other half of the same rule: the kernel may not *write* a pair it could
@@ -326,9 +362,14 @@ fn a_demotion_may_not_file_work_backwards() {
 fn the_kernel_reads_back_what_it_writes() {
     let start = r##"{"docs":[{"path":"w.md","grain":1,"ix":35,"lines":["# Tasks","- [ ] 5 6b Old work ^m1"]},{"path":"m.md","grain":2,"ix":8,"lines":["# Outcomes"]}],"cmds":[{"op":"demote","id":"m1","doc":1,"period":37}]}"##;
     let once = call(start).unwrap();
-    let docs = once.trim_start_matches(r##"{"ok":{"docs":"##).trim_end_matches("}}");
+    let docs = once
+        .trim_start_matches(r##"{"ok":{"docs":"##)
+        .trim_end_matches("}}");
     let twice = call(&format!(r##"{{"docs":{docs},"cmds":[]}}"##)).unwrap();
-    assert_eq!(once, twice, "the kernel must be able to read its own output");
+    assert_eq!(
+        once, twice,
+        "the kernel must be able to read its own output"
+    );
 }
 
 /// **Error 2.** `move` to a document index that does not exist deleted the
@@ -385,15 +426,21 @@ fn a_malformed_item_line_is_rejected_not_treated_as_prose() {
         (r##"["- [ ] two ids ^a1 ^a2"]"##, "manyIds"),
         (r##"["- [Z] bad box ^a1"]"##, "badState"),
     ] {
-        let out = call(&format!(r##"{{"docs":[{{"path":"w.md","lines":{lines}}}],"cmds":[]}}"##))
-            .unwrap();
+        let out = call(&format!(
+            r##"{{"docs":[{{"path":"w.md","lines":{lines}}}],"cmds":[]}}"##
+        ))
+        .unwrap();
         assert!(out.contains("badLine"), "{out}");
         assert!(out.contains(why), "{out}");
     }
     // a line that is not an item at all is still prose, and survives verbatim
-    let out = call(r###"{"docs":[{"path":"w.md","lines":["## A heading","  plain text"]}],"cmds":[]}"###)
-        .unwrap();
-    assert!(out.contains("## A heading") && out.contains("plain text"), "{out}");
+    let out =
+        call(r###"{"docs":[{"path":"w.md","lines":["## A heading","  plain text"]}],"cmds":[]}"###)
+            .unwrap();
+    assert!(
+        out.contains("## A heading") && out.contains("plain text"),
+        "{out}"
+    );
 }
 
 /// …and `dupId` named the wrong id: it reported the head of the id list
@@ -416,11 +463,17 @@ fn rank_moves_a_line_within_its_own_file() {
     assert!(out.starts_with(r#"{"ok":"#), "{out}");
     let week = out.split(r#""lines":"#).nth(1).unwrap();
     // the line is byte-identical, and it left no copy behind...
-    assert!(week.contains(r#""- [ ] 5 6b Finish ch.5 exercises        @O1 ^m1""#), "{out}");
+    assert!(
+        week.contains(r#""- [ ] 5 6b Finish ch.5 exercises        @O1 ^m1""#),
+        "{out}"
+    );
     // ...but it now sits below the generated-block comment, which sat below it
     let moved = week.find("^m1").unwrap();
     let comment = week.find("tm:plan").unwrap();
-    assert!(comment < moved, "m1 must have moved *down* the file: {week}");
+    assert!(
+        comment < moved,
+        "m1 must have moved *down* the file: {week}"
+    );
 }
 
 /// A rank an existing line already owns is not free: a document's ranks are
@@ -432,7 +485,10 @@ fn rank_onto_a_taken_rank_is_refused_and_writes_nothing() {
     let out = call(&req(r#"[{"op":"rank","id":"m1","rank":5}]"#)).unwrap();
     assert!(out.contains(r#""kernel":"badHorizon""#), "{out}");
     // and nothing was written at all: an error response carries no documents
-    assert!(!out.contains("lines"), "error response must not rewrite anything: {out}");
+    assert!(
+        !out.contains("lines"),
+        "error response must not rewrite anything: {out}"
+    );
 }
 
 /// The wire form of L20a (`rank_is_idempotent`): the same `rank` twice is
@@ -441,9 +497,85 @@ fn rank_onto_a_taken_rank_is_refused_and_writes_nothing() {
 #[test]
 fn rank_twice_is_byte_identical_to_rank_once() {
     let once = call(&req(r#"[{"op":"rank","id":"m1","rank":10}]"#)).unwrap();
-    let twice =
-        call(&req(r#"[{"op":"rank","id":"m1","rank":10},{"op":"rank","id":"m1","rank":10}]"#))
-            .unwrap();
+    let twice = call(&req(
+        r#"[{"op":"rank","id":"m1","rank":10},{"op":"rank","id":"m1","rank":10}]"#,
+    ))
+    .unwrap();
     assert!(once.starts_with(r#"{"ok":"#) && twice.starts_with(r#"{"ok":"#));
     assert_eq!(once, twice);
+}
+
+/// `tm add` through the whole FFI: the host supplies a seed, L21's `freshId`
+/// names an id nothing claims, and the new line arrives in the requested file
+/// rendered like every other item — a box and a trailing id, nothing else.
+#[test]
+fn add_inserts_a_fresh_id_into_the_requested_file() {
+    let out = call(
+        r##"{"docs":[{"path":"week/2026-W37.md","grain":1,"ix":35,"lines":["# Tasks"]}],
+             "cmds":[{"op":"add","seed":9,"doc":0,"title":"Buy paint"}]}"##,
+    )
+    .unwrap();
+    assert!(out.starts_with(r#"{"ok":"#), "{out}");
+    assert!(out.contains(r#""- [ ] Buy paint ^9""#), "{out}");
+    assert!(
+        out.contains(r#""grain":1,"ix":35"#),
+        "the response must carry the document's region back: {out}"
+    );
+}
+
+/// The `add` bite (§5.8): a day file's items must sit under `# Pinned`, and an
+/// add into `# Tasks` builds a post-state that fails `planWf`'s `sectionsWf`.
+/// `insertFresh` refuses by name rather than writing a broken tree — the same
+/// rule that gives `plan-conflicts/` its `sectionDiscipline` fault.  The
+/// response carries no documents at all; nothing was written.
+#[test]
+fn add_outside_a_day_files_pinned_section_is_refused_by_name() {
+    let out = call(
+        r##"{"docs":[{"path":"day/2026-09-07.md","lines":["# Tasks"]}],
+             "cmds":[{"op":"add","seed":3,"doc":0,"title":"Buy paint"}]}"##,
+    )
+    .unwrap();
+    assert!(out.contains(r#""kernel":"badItem""#), "{out}");
+    assert!(
+        !out.contains("lines"),
+        "error response must not rewrite anything: {out}"
+    );
+}
+
+/// Sequential adds must not collide: each `add` reads the store the previous
+/// one inserted into, so both ids (L21) and ranks (`freshRank`) grow between
+/// the two commands.
+#[test]
+fn two_adds_in_one_request_get_two_ids_and_two_ranks() {
+    let out = call(
+        r##"{"docs":[{"path":"week/2026-W37.md","grain":1,"ix":35,"lines":["# Tasks"]}],
+             "cmds":[{"op":"add","seed":9,"doc":0,"title":"A"},{"op":"add","seed":9,"doc":0,"title":"B"}]}"##,
+    )
+    .unwrap();
+    assert!(out.starts_with(r#"{"ok":"#), "{out}");
+    assert!(out.contains(r#""- [ ] A ^9""#), "{out}");
+    assert!(
+        out.contains(r#""- [ ] B ^10""#),
+        "the second add must not reuse the first's id: {out}"
+    );
+}
+
+/// The five named title refusals ride the free-text `err`, not a kernel name —
+/// the bytes would not render back, so the parser refuses before any plan
+/// exists.  (Lean-side the same five are `parseCmd_rejects_add_title_variants`.)
+#[test]
+fn add_titles_are_refused_by_name() {
+    for (title, why) in [
+        (r"a\nb", "titleNewline"),
+        (r"a\tb", "titleTab"),
+        ("steal ^m1", "titleId"),
+        ("", "titleBlank"),
+        (" padded ", "titleEdge"),
+    ] {
+        let out = call(&format!(
+            r#"{{"docs":[],"cmds":[{{"op":"add","seed":1,"doc":0,"title":"{title}"}}]}}"#
+        ))
+        .unwrap();
+        assert!(out.contains(why), "{title}: {out}");
+    }
 }

@@ -1145,3 +1145,16 @@ open Tm
 
 -- APPENDED 2026-09-10 (stage-3 gap-4 session: the est command path writes what Core.est reads)
 #print axioms Tm.the_command_path_writes_what_the_field_path_reads
+
+-- APPENDED 2026-09-10 (stage-3 add session: fresh id, insert, badItem)
+#print axioms Tm.Store.get_insertFresh_self
+#print axioms Tm.Store.get_insertFresh_other
+#print axioms Tm.Store.dom_insertFresh
+#print axioms Tm.WfPlan.insertFresh_get
+#print axioms Tm.WfPlan.insertFresh_other
+#print axioms Tm.WfPlan.insertFresh_rejects
+#print axioms Tm.store_get_isNone_of_not_mem
+#print axioms Tm.parseCmd_rejects_add_title_variants
+#print axioms Tm.cmdAdd_inserts
+#print axioms Tm.cmdAdd_rank
+#print axioms Tm.cmdAdd_other_untouched

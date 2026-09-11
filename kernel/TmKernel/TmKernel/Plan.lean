@@ -65,6 +65,48 @@ def Store.set (s : Store) (i : Id) (e : Entity) (h : (s.get i).isSome = true) : 
 @[simp] theorem Store.dom_set (s : Store) (i : Id) (e : Entity) (h) :
     (s.set i e h).dom = s.dom := rfl
 
+/-- **Insert a fresh id.**  The proof argument is the whole design of `tm add`:
+an id that already names an item cannot be inserted, so freshness comes from
+the type and not from a retry loop (L21, `Text.add_assigns_a_fresh_id`).
+Unlike `set` this extends `dom`, and the freshness hypothesis is exactly what
+keeps that enumeration duplicate-free.  The loader keeps its own `insert` with
+no freshness proof (§5.6: the load pipeline rejects duplicate ids before this
+stage, by `dedupIds`); this is the command-path door, and only one door needs
+the lock. -/
+def Store.insertFresh (s : Store) (i : Id) (e : Entity) (h : (s.get i).isNone = true) : Store where
+  get := fun j => if j = i then some e else s.get j
+  dom := i :: s.dom
+  domSpec := by
+    intro j
+    by_cases hj : j = i
+    · subst hj
+      simp
+    · rw [if_neg hj]
+      constructor
+      · intro hmem
+        cases List.mem_cons.mp hmem with
+        | inl heq => exact absurd heq hj
+        | inr hm  => exact (s.domSpec j).mp hm
+      · intro hsome
+        exact List.mem_cons.mpr (Or.inr ((s.domSpec j).mpr hsome))
+  domNodup := by
+    refine List.nodup_cons.mpr ⟨fun hin => ?_, s.domNodup⟩
+    have hsome := (s.domSpec i).mp hin
+    cases hget : s.get i
+    · rw [hget] at hsome
+      exact absurd hsome (by simp)
+    · rw [hget] at h
+      exact absurd h (by simp)
+
+@[simp] theorem Store.get_insertFresh_self (s : Store) (i : Id) (e : Entity) (h) :
+    (s.insertFresh i e h).get i = some e := by simp [Store.insertFresh]
+
+@[simp] theorem Store.get_insertFresh_other (s : Store) (i j : Id) (e : Entity) (h) (hj : j ≠ i) :
+    (s.insertFresh i e h).get j = s.get j := by simp [Store.insertFresh, hj]
+
+@[simp] theorem Store.dom_insertFresh (s : Store) (i : Id) (e : Entity) (h) :
+    (s.insertFresh i e h).dom = i :: s.dom := rfl
+
 /-- A document body: **prose only**.  Item lines are holes filled by `render`,
 which is why `move` has no `append` to be missing a precondition on.
 

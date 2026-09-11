@@ -49,6 +49,12 @@ inductive KErr
       still reads `[-]` — not ahead of the file that tombstone is in.  Both are
       "the post-state fails `planWf`". -/
   | badHorizon
+  /-- an **insertion** whose post-state fails `planWf` for an item reason: a
+      title carrying a dangling `after:^…`, a day file whose placement is not
+      `# Pinned`, an `optional` line saying no duration.  Kept distinct from
+      `badHorizon` because that fault is about *relocation* and the host prints
+      different advice for each; `firstItemFault` names which conjunct failed. -/
+  | badItem
 deriving DecidableEq, Repr
 
 /-- The only way to make an `Entity`.  Both cheats are compile errors:
@@ -321,6 +327,38 @@ theorem mapAt_get (p q : WfPlan) (i : Id) (f : Entity → Except KErr Entity) (e
         injection he with he
         rw [ha, he]
       · simp at hq
+
+/-- **Inserting a fresh entity re-runs the whole of `planWf` on the post-state,
+by computation** — exactly the contract `mapAt` enforces for replacement, and
+the reason `add` cannot forget the check.  A title that parses as a dangling
+`after:^…` or lands a day-file item outside `# Pinned` is refused with the
+named `badItem`; the host prints `firstItemFault` alongside it (§5.7).  The
+freshness hypothesis is what makes the insert legal at all (§L21); a
+non-fresh id is a type error here, not a runtime overwrite. -/
+def WfPlan.insertFresh (p : WfPlan) (i : Id) (e : Entity)
+    (hfresh : (p.val.store.get i).isNone = true) : Except KErr WfPlan :=
+  if hq : planWf { p.val with store := p.val.store.insertFresh i e hfresh } = true then
+    .ok ⟨_, hq⟩
+  else .error .badItem
+
+theorem WfPlan.insertFresh_get (p : WfPlan) (i : Id) (e : Entity)
+    (hfresh : (p.val.store.get i).isNone = true) (q : WfPlan)
+    (hq : p.insertFresh i e hfresh = .ok q) : q.val.store.get i = some e := by
+  unfold WfPlan.insertFresh at hq
+  split at hq
+  · cases hq
+    exact Store.get_insertFresh_self p.val.store i e hfresh
+  · simp at hq
+
+theorem WfPlan.insertFresh_other (p : WfPlan) (i j : Id) (e : Entity)
+    (hfresh : (p.val.store.get i).isNone = true) (q : WfPlan)
+    (hq : p.insertFresh i e hfresh = .ok q) (hij : j ≠ i) :
+    q.val.store.get j = p.val.store.get j := by
+  unfold WfPlan.insertFresh at hq
+  split at hq
+  · cases hq
+    exact Store.get_insertFresh_other p.val.store i j e hfresh hij
+  · simp at hq
 
 /-! ### That the plan-level check is a proof obligation, not a trapdoor
 

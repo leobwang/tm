@@ -507,4 +507,14 @@ theorem demote_twice_succeeds (t t' : Site) (st : Field.Stamp) (e a : Entity)
     (h1 : demote t st e = .ok a) : ∃ b, demote t' st a = .ok b :=
   ⟨_, rfl⟩
 
+/- CHEAT 43 — insert an item over a standing one.  `Store.set` demands
+   `(get i).isSome = true`, `Store.insertFresh` demands the dual
+   `(get i).isNone = true`, and handing the first proof to the second is a
+   type error — which is the whole point: the two doors are complementary and
+   there is no third door that takes neither proof.  Freshness for `add` is
+   L21's theorem, not a runtime retry. -/
+def insertOver (s : Store) (i : Id) (e : Entity) (h : (s.get i).isSome = true) :
+    Store :=
+  s.insertFresh i e h
+
 end Tm
