@@ -1335,3 +1335,14 @@ open Tm
 #print axioms Tm.jparseWith_refuses_when_the_fuel_runs_out
 #print axioms Tm.the_jval_jemit_hypotheses_are_satisfiable
 #print axioms Tm.the_jval_jemit_digit_guard_bites
+
+-- ============================================================================
+-- APPENDED 2026-09-12 (stage-3, J-route step 3: J5 -- the kernel's own JSON on
+-- the wire).  Response side first: Boundary.lean builds every response as a
+-- JVal and `call` emits it with `jemit` (key order is now build order).
+-- `jescape_eq_jescapeTR` is the @[csimp] twin that keeps a long line off the
+-- stack; the other two pin the new byte order at the builders the FFI calls.
+-- ============================================================================
+#print axioms Tm.jescape_eq_jescapeTR
+#print axioms Tm.the_response_shapes_emit_in_build_order
+#print axioms Tm.the_bad_line_diagnostic_keys_in_build_order

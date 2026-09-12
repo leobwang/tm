@@ -14,8 +14,9 @@ let agreement with the *host's* reader (serde_json, which is the only reader
 these bytes ever had in production) stay corpus and FFI evidence rather than a
 theorem.
 
-**Nothing here is on the wire yet.**  `Boundary.lean` still builds `Lean.Json`.
-J5 moves it; until then this module is foundations with its own tests.
+**On the wire since J5 (response side).**  `Boundary.lean` builds every response
+as a `JVal` and `call` writes it with `jemit`; `jescapeTR` is the one runtime
+twin that move needed (a `@[csimp]` theorem, see there).
 
 ## The three decisions this module takes, stated rather than left implicit
 
@@ -268,6 +269,26 @@ def escOf (c : Char) : List Char :=
 def jescape : List Char → List Char
   | [] => []
   | c :: cs => escOf c ++ jescape cs
+
+/-- **`jescape`'s runtime twin (J5).**  Compiled as written, `jescape` takes one
+stack frame per character — it is structural, not tail-recursive — and on the
+wire that was measured, not guessed: a single 100 000-character line overflowed
+a 2 MiB thread through `call`, where `Lean.Json`'s printer (a work loop) wrote a
+1 000 000-character line on the same stack.  `List.flatMap` runs as core's
+`flatMapTR`, so this twin writes any line in constant stack.  The proofs never
+see it: `jescape_eq_jescapeTR` is a `@[csimp]` theorem, so the compiler's
+substitution is itself proved — the opposite of an `@[implemented_by]` promise
+(R4) — and every `decide`/`rfl` above and below still reduces `jescape`. -/
+def jescapeTR (cs : List Char) : List Char := cs.flatMap escOf
+
+@[csimp] theorem jescape_eq_jescapeTR : @jescape = @jescapeTR := by
+  funext cs
+  induction cs with
+  | nil => rfl
+  | cons c t ih =>
+    show escOf c ++ jescape t = (c :: t).flatMap escOf
+    rw [List.flatMap_cons, ih]
+    rfl
 
 /-- Why `junescape` refused.  §5.7: every diagnostic is named. -/
 inductive JEsc
@@ -739,6 +760,11 @@ theorem jfuel_le_jemit (v : JVal) : jfuel v ≤ 2 * (jemit v).length := by
       show ('"' :: (jescape k ++ '"' :: ':' :: jemit v)).length = _
       simp; omega
     rw [hf, hl]; omega
+
+/-- **A one-key object** — the shape of every `err` response, of the `ok`
+wrapper and of its `docs` field (J5).  The key is spelled as a `String` at the
+call site and crosses as the `List Char` a `JVal` carries. -/
+def jone (k : String) (v : JVal) : JVal := .obj [(k.toList, v)]
 
 /-! ## J4 — the parser
 

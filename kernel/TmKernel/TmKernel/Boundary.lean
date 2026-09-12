@@ -1,4 +1,5 @@
 import TmKernel.Cmd
+import TmKernel.Json
 import Lean.Data.Json
 /-!
 # The boundary: `String → String`, and nothing else
@@ -756,7 +757,7 @@ theorem sortByRank_strict (l : List (Nat × List Char))
 
 /-! ## JSON -/
 
-def jsonErr (s : String) : Json := Json.mkObj [("err", Json.str s)]
+def jsonErr (s : String) : JVal := jone "err" (.str s.toList)
 
 def getStr (j : Json) (k : String) : Except String String := j.getObjValAs? String k
 def getNat (j : Json) (k : String) : Except String Nat := j.getObjValAs? Nat k
@@ -1126,13 +1127,13 @@ theorem applyAll_closed (cs : List ReqCmd) (p : WfPlan) (q : PlanCore)
       subst h
       exact r.property
 
-def lerrJson : LErr → Json
-  | .dupId i          => Json.mkObj [("dupId", Json.str (String.ofList i))]
-  | .notADemotion i   => Json.mkObj [("notADemotion", Json.str (String.ofList i))]
-  | .ambiguousDemotion i => Json.mkObj [("ambiguousDemotion", Json.str (String.ofList i))]
-  | .duplicatePath pa => Json.mkObj [("duplicatePath", Json.str (String.ofList pa))]
-  | .badLine pa n w   => Json.mkObj [("badLine", Json.mkObj
-      [("path", Json.str (String.ofList pa)), ("line", Json.num n), ("why", Json.str (toString (repr w)))])]
+def lerrJson : LErr → JVal
+  | .dupId i          => jone "dupId" (.str i)
+  | .notADemotion i   => jone "notADemotion" (.str i)
+  | .ambiguousDemotion i => jone "ambiguousDemotion" (.str i)
+  | .duplicatePath pa => jone "duplicatePath" (.str pa)
+  | .badLine pa n w   => jone "badLine" (.obj
+      [("path".toList, .str pa), ("line".toList, .num n), ("why".toList, .str (toString (repr w)).toList)])
 
 /-- Name the id whose two lines the documents do not order, for the diagnostic.
 Every diagnostic names the id or the path it is about. -/
@@ -1161,10 +1162,10 @@ theorem firstDupPath_none (l : List (List Char)) (h : firstDupPath l = none) : l
 carries it because the request does: a demotion's two lines are told apart by
 the regions of their files, so a response that dropped them would be a response
 the kernel could not read (`the_kernel_reads_back_what_it_writes`). -/
-def regionJson (r : Option Region) : List (String × Json) :=
+def regionJson (r : Option Region) : List (List Char × JVal) :=
   match r with
   | none   => []
-  | some g => [("grain", Json.num g.grain.val), ("ix", Json.num g.ix)]
+  | some g => [("grain".toList, .num g.grain.val), ("ix".toList, .num g.ix)]
 
 /-! ## The plan-level round trip
 
@@ -1561,9 +1562,9 @@ theorem renderDocAt_loadCore (docs : List ReqDoc) (items : List (Id × Entity))
 /-- Build the plan from a parsed request: one entity per id, one `Doc` per
 request document, and then the four decidable plan-level checks, each returning
 the diagnostic it is named by. -/
-def loadPlan (docs : List ReqDoc) : Except Json WfPlan :=
+def loadPlan (docs : List ReqDoc) : Except JVal WfPlan :=
   match buildEntities (placementsOf 0 docs) with
-  | .error e => .error (Json.mkObj [("err", lerrJson e)])
+  | .error e => .error (jone "err" (lerrJson e))
   | .ok items =>
     if hpath : pathsDistinct (loadCore docs items) = true then
       if hsites : sitesInRange (loadCore docs items) = true then
@@ -1572,16 +1573,16 @@ def loadPlan (docs : List ReqDoc) : Except Json WfPlan :=
             .ok ⟨loadCore docs items,
               planWf_of_parts (loadCore_docsWf docs items) hsites hpath hor hitems⟩
           else
-            .error (Json.mkObj [("err", Json.mkObj
-              [("itemCheck", Json.str (firstItemFault (loadCore docs items)))])])
+            .error (jone "err"
+              (jone "itemCheck" (.str (firstItemFault (loadCore docs items)).toList)))
         else
-          .error (Json.mkObj [("err", lerrJson (.ambiguousDemotion
-            ((firstUnoriented (loadCore docs items)).getD [])))])
+          .error (jone "err" (lerrJson (.ambiguousDemotion
+            ((firstUnoriented (loadCore docs items)).getD []))))
       else
-        .error (Json.mkObj [("err", Json.mkObj [("kernel", Json.str "siteOutOfRange")])])
+        .error (jone "err" (jone "kernel" (.str "siteOutOfRange".toList)))
     else
-      .error (Json.mkObj [("err", lerrJson (.duplicatePath
-        ((firstDupPath (docs.map (fun d => d.path.toList))).getD [])))])
+      .error (jone "err" (lerrJson (.duplicatePath
+        ((firstDupPath (docs.map (fun d => d.path.toList))).getD []))))
 
 theorem loadPlan_spec (docs : List ReqDoc) (p : WfPlan) (h : loadPlan docs = .ok p) :
     ∃ items, buildEntities (placementsOf 0 docs) = .ok items ∧ p.val = loadCore docs items := by
@@ -2012,19 +2013,19 @@ theorem runPlan_renders_the_input (docs : List ReqDoc) (p : WfPlan)
       exact ⟨rd, rfl, hget'.symm, by rw [← hget']; exact hr⟩
 
 /-- Apply the request's commands and render every document back to text. -/
-def runPlan (plan : WfPlan) (cmds : List ReqCmd) : Except Json Json := do
+def runPlan (plan : WfPlan) (cmds : List ReqCmd) : Except JVal JVal := do
   let plan' ←
     match applyAll cmds plan with
     | .ok q => pure q
-    | .error k => throw (Json.mkObj [("err", Json.mkObj [("kernel", Json.str (kerrName k))])])
-  let outDocs := (plan'.val.docs.zipIdx.map (fun p =>
-    Json.mkObj
-      ([("path", Json.str (String.ofList p.1.path)),
-        ("lines", Json.arr ((renderDocAt plan'.val p.2 p.1).map
-          (fun l => Json.str (String.ofList l))).toArray)] ++ regionJson p.1.region)))
-  return Json.mkObj [("ok", Json.mkObj [("docs", Json.arr outDocs.toArray)])]
+    | .error k => throw (jone "err" (jone "kernel" (.str (kerrName k).toList)))
+  let outDocs := plan'.val.docs.zipIdx.map (fun p =>
+    JVal.obj
+      ([("path".toList, .str p.1.path),
+        ("lines".toList, .arr ((renderDocAt plan'.val p.2 p.1).map JVal.str))]
+        ++ regionJson p.1.region))
+  return jone "ok" (jone "docs" (.arr outDocs))
 
-def run (j : Json) : Except Json Json := do
+def run (j : Json) : Except JVal JVal := do
   let docsJ ←
     match getArr j "docs" with
     | .ok a => pure a
@@ -2048,7 +2049,7 @@ def run (j : Json) : Except Json Json := do
   for d in docs do
     match scanLines d.path.toList 0 d.lines with
     | .ok _    => pure ()
-    | .error e => throw (Json.mkObj [("err", lerrJson e)])
+    | .error e => throw (jone "err" (lerrJson e))
   -- build the plan and run the request.  `loadPlan` is the whole loader as one
   -- function, which is what makes `the_kernel_reads_back_what_it_writes` a
   -- theorem about the code the FFI runs rather than about a copy of it.
@@ -2621,11 +2622,11 @@ theorem the_char_edge_round_trips (s : String) : String.ofList s.toList = s :=
 /-- Total: every path returns a `String`.  No `panic!`, no `!`, no `partial`. -/
 def call (input : String) : String :=
   match Json.parse input with
-  | .error e => Json.compress (jsonErr s!"bad json: {e}")
+  | .error e => String.ofList (jemit (jsonErr s!"bad json: {e}"))
   | .ok j =>
     match run j with
-    | .error e => Json.compress e
-    | .ok r    => Json.compress r
+    | .error e => String.ofList (jemit e)
+    | .ok r    => String.ofList (jemit r)
 
 @[export tm_kernel_call]
 def callExport (input : String) : String := call input
@@ -3354,5 +3355,38 @@ theorem parseCmd_reads_the_keyed_edit_forms :
         ("key", Json.str "est"), ("value", Json.str "")]) with
       | .ok (.unset i k) => i == "t3".toList && k.val == Field.Key.est
       | _ => false)) = true := by decide
+
+/-! ## J5, the response side: `call` writes the kernel's own `JVal` with `jemit`
+
+Every response builder above (`jsonErr`, `lerrJson`, `regionJson`, `loadPlan`'s
+refusals, `runPlan`) now returns a `JVal`, and `call` emits it with
+`String.ofList ∘ jemit` — `Json.compress` is gone from the response path.  The
+one wire-visible byte change is **key order**: an assoc list keeps build order,
+where `Json.mkObj` sorted.  The shapes and every other byte are unchanged; the
+README's J5 block carries the differential measurement.  These two pin the new
+order at the builders the FFI calls, so a reorder is a proof failure and not
+only a Rust-test failure. -/
+
+/-- **The response shapes, byte for byte, in build order.**  The free-text
+`err`, a `kernel` refusal, and an `ok` document — `path`, then `lines`, then the
+region's `grain` and `ix` — with a quote in the line so the escaping is on the
+path being pinned.  Small by design (the Json.lean memory rule): emission is
+evaluated, never a parser run. -/
+theorem the_response_shapes_emit_in_build_order :
+    jemit (jsonErr "unknown op fly") = "{\"err\":\"unknown op fly\"}".toList ∧
+    jemit (jone "err" (jone "kernel" (.str "noSuchId".toList)))
+      = "{\"err\":{\"kernel\":\"noSuchId\"}}".toList ∧
+    jemit (jone "ok" (jone "docs" (.arr [.obj ([("path".toList, .str "w.md".toList),
+        ("lines".toList, .arr [.str "- [ ] a \"q\" ^x1".toList])] ++ regionJson (some ⟨1, 35⟩))])))
+      = "{\"ok\":{\"docs\":[{\"path\":\"w.md\",\"lines\":[\"- [ ] a \\\"q\\\" ^x1\"],\"grain\":1,\"ix\":35}]}}".toList := by
+  decide
+
+/-- `badLine`'s three keys go out as `path`, `line`, `why` — the order written
+in `lerrJson`, not `mkObj`'s `line`, `path`, `why`.  Stated for every diagnostic
+rather than by evaluation, because `why` is a `repr` the kernel does not reduce
+cheaply. -/
+theorem the_bad_line_diagnostic_keys_in_build_order (pa : List Char) (n : Nat) (w : PErr) :
+    lerrJson (.badLine pa n w) = jone "badLine" (.obj [("path".toList, .str pa),
+      ("line".toList, .num n), ("why".toList, .str (toString (repr w)).toList)]) := rfl
 
 end Tm

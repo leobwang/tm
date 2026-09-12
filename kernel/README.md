@@ -3150,3 +3150,75 @@ unchanged; the FFI suite **46 tests** (40 kernel + 6 corpus), unchanged.  Gap
 43 and CHEAT 47 are taken; new gaps start at 44 and new cheats at 48.  Edited:
 `TmKernel/Json.lean`, `Check.lean` (one banner plus 85 lines), `Negative.lean`
 (one banner plus CHEAT 47) and this file.
+
+**J5, the response side: every byte `call` writes is `jemit`'s.**  Same
+2026-09-12 session, J-route step 3, first of its two commits.  `Boundary.lean`'s
+response builders — `jsonErr`, `lerrJson`, `regionJson`, `loadPlan`'s four
+refusals, `runPlan` — now return a `JVal`, and `call` emits every response with
+`String.ofList ∘ jemit`; `Json.compress` is off the wire.  A one-key helper,
+`jone`, joined `Json.lean`, and `Boundary.lean`'s edits were kept line-neutral
+past the import block (+1 line for `import TmKernel.Json`), so the ledger's
+`Boundary.lean:N` citations shift by exactly one until the request side lands.
+**The request side is untouched at this commit**: `call` still reads with
+`Json.parse`, and the readers `getStr`/`getNat`/`getArr`/`strLines`/
+`parseRegion`/`parseDoc`/`stampOf`/`parseCmd` still take `Lean.Json`.
+
+*What moved on the wire — measured, not inferred.*  A differential harness ran
+79 requests through the kernel at `3c2621c` and through this tree (every corpus
+Markdown file alone, each of the five corpus plans whole, 22 command requests
+over the W37/September fixture covering all seven verbs — `readopt` and a
+day-grain `demote` included — and their parse-tier and kernel refusals, and 15 hand-written requests covering every `err` shape, `\u` control
+bytes, a surrogate pair, `\/`, `\b`, `\f`, `null` grain, missing `cmds`, host
+whitespace and malformed JSON).  For all 79, the two responses parse to **equal
+values**, and the old bytes equal the new value re-emitted with keys sorted under
+`jescape`'s classes — so **key order is the only byte change**.  22 responses
+are byte-identical (every one-key `err` shape: free text, `kernel`, `dupId`,
+`ambiguousDemotion`, `duplicatePath`, `itemCheck`); 57 moved by key order only:
+every `ok` document (`path`, `lines`, then `grain`, `ix` — was `grain`, `ix`,
+`lines`, `path`) and `badLine` (`path`, `line`, `why` — was `line`, `path`,
+`why`).  Two theorems pin the new order at the builders the FFI calls:
+`the_response_shapes_emit_in_build_order` (bytes, `decide`, small) and
+`the_bad_line_diagnostic_keys_in_build_order` (every `badLine`, `rfl`).  Both
+readers of these bytes — `kernel_bridge.rs`'s serde_json and the corpus
+harness's hand-written codec — look keys up by name, so the shipped Rust is
+untouched; three FFI tests compared or split bytes by key position and were
+repaired to the new order, and a fourth was restated: `a_lone_demoted_line_round_trips` (an exact
+`assert_eq!`), `which_line_is_the_tombstone_does_not_depend_on_the_document_order`
+(split on `"lines":`, which with the new order attributed each document's lines
+to its neighbour and failed), and
+`a_close_stamps_the_copy_and_leaves_the_week_line_alone` (split on `{"grain"`,
+which **still passed** under the new order — but over the whole response rather
+than the week document, the separator no longer occurring — and is recorded
+here because a test that silently weakened without failing is §9.2's disguise);
+all three now split on `{"path":`, which opens
+every document object.  The fourth, `the_response_carries_each_documents_horizon`,
+was restated to the new order rather than loosened.
+
+*A stack finding, and a proved twin rather than a gap.*  `jescape` is structural
+and not tail-recursive, so compiled as written it takes a stack frame per
+character.  Measured through the FFI (`examples/oneshot`, `ulimit -s`, 8 GB
+memory cap): after the switch a single 100 000-character line **overflowed a
+2 MiB stack** (a 60 000-character one did not; 8 MiB failed between 200 000 and
+400 000), where `3c2621c` wrote a 1 000 000-character line on 2 MiB.  The fix is
+`jescapeTR := List.flatMap escOf` (core's `flatMapTR` at runtime) with
+**`jescape_eq_jescapeTR : @jescape = @jescapeTR` as a `@[csimp]` theorem**: the
+compiler substitutes the twin and the substitution is proved, so R4's
+`@[implemented_by]` ban is not touched, and every `decide` still reduces the
+structural `jescape`.  After it, 1 000 000 plain characters and 1 000 000
+characters of quote/backslash/tab/non-ASCII/control-byte mix both emit on 2 MiB.
+Per-**line** depth did not move: base and new both return 20 000 prose lines and
+both overflow at 22 500 on 2 MiB — that bound is the kernel's pipeline, not the
+codec, and it predates this route (recorded under the request side's gap
+paragraph, next commit, once the parser's own per-element recursion is measured
+too).
+
+Re-measured at this commit, from the committed harness (§5.11):
+`kernel/check.sh` **7/7 ok**; axiom audit **1210 theorems** (was 1207; +3 under
+a new `APPENDED 2026-09-12 (stage-3, J-route step 3 …)` banner), and §6.3's
+three counts agree at 1210; every new theorem's axioms are within `propext`,
+`Quot.sound`, `Classical.choice`; `Negative.lean`'s transcript is byte-identical
+to `3c2621c`'s; corpus **33/37 files and 4/5 whole plans**, unchanged;
+`Goals.lean` burn-down **41**, unchanged — the goal waits for the request side;
+`cargo test --workspace` **983 passed / 0 failed / 0 ignored across 64
+binaries**; the FFI suite **46 tests** (40 kernel + 6 corpus), four of them
+edited as above.  Takes no gap and no cheat number.

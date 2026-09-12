@@ -62,8 +62,13 @@ fn move_relocates_the_line_verbatim() {
 #[test]
 fn the_response_carries_each_documents_horizon() {
     let out = call(&req("[]")).unwrap();
-    assert!(out.contains(r#"{"grain":1,"ix":35,"lines":"#), "{out}");
-    assert!(out.contains(r#"{"grain":2,"ix":8,"lines":"#), "{out}");
+    // Key order is the kernel's build order since J5 (`jemit` over an assoc
+    // list: path, lines, grain, ix) — `Json.mkObj` used to sort them.  The
+    // region still closes each document object.
+    assert!(out.contains(r#"{"path":"week/2026-W37.md","lines":["#), "{out}");
+    assert!(out.contains(r#"],"grain":1,"ix":35}"#), "{out}");
+    assert!(out.contains(r#"{"path":"month/2026-09.md","lines":["#), "{out}");
+    assert!(out.contains(r#"],"grain":2,"ix":8}"#), "{out}");
 }
 
 #[test]
@@ -154,8 +159,9 @@ fn malformed_json_does_not_panic_the_host() {
 fn a_lone_demoted_line_round_trips() {
     let out = call(r##"{"docs":[{"path":"w.md","lines":["- [-] 5 6b Old work ^m1"]}],"cmds":[]}"##)
         .unwrap();
+    // Byte for byte, in the kernel's build order (J5: `path` before `lines`).
     assert_eq!(
-        out, r##"{"ok":{"docs":[{"lines":["- [-] 5 6b Old work ^m1"],"path":"w.md"}]}}"##,
+        out, r##"{"ok":{"docs":[{"path":"w.md","lines":["- [-] 5 6b Old work ^m1"]}]}}"##,
         "{out}"
     );
 }
@@ -197,15 +203,17 @@ fn which_line_is_the_tombstone_does_not_depend_on_the_document_order() {
              "cmds":[{"op":"drop","id":"m1"}]}"##,
     )
     .unwrap();
-    // the live line is the one in the month file, and it is the one that drops
+    // the live line is the one in the month file, and it is the one that drops.
+    // Each document object opens with its path (J5's build order), so a
+    // segment after `{"path":` is exactly one document.
     for out in [&forwards, &backwards] {
         let month = out
-            .split(r#""lines":"#)
-            .find(|s| s.contains("m.md"))
+            .split(r#"{"path":"#)
+            .find(|s| s.starts_with(r#""m.md""#))
             .unwrap();
         let week = out
-            .split(r#""lines":"#)
-            .find(|s| s.contains("w.md"))
+            .split(r#"{"path":"#)
+            .find(|s| s.starts_with(r#""w.md""#))
             .unwrap();
         assert!(month.contains("- [~] 5 6b Old work ^m1"), "{out}");
         assert!(
@@ -285,8 +293,8 @@ fn a_close_stamps_the_copy_and_leaves_the_week_line_alone() {
     )
     .unwrap();
     let week = out
-        .split("{\"grain\"")
-        .find(|s| s.contains("w.md"))
+        .split(r#"{"path":"#)
+        .find(|s| s.starts_with(r#""w.md""#))
         .unwrap();
     assert!(
         week.contains("- [-] 5 6b Work ^m1"),
