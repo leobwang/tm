@@ -6050,8 +6050,10 @@ theorem intervalWf_is_satisfiable :
 /-- **The two `est:` writers agree on the bytes.**  `Text.lean`'s stage-one
 `estWord` and this half's `keyWord Key.est` produce the *same token* for a
 minutes value, so the stage-one `viewRemaining` reads what the field-level
-setter writes.  The two views are not yet one function — see the README's gap
-list — but they do not disagree about what a write puts on the line. -/
+setter writes.  Gap 4 is closed on the strength of this: the command path now
+writes through `Field.setEst` (`the_command_path_writes_what_the_field_path_reads`,
+Cmd.lean), and the stage-one reader survives only as fold arithmetic
+(`setEstFoldE`), off the wire. -/
 theorem the_two_est_setters_write_the_same_token (v : Nat) :
     keyWord Key.est (renderDur (.simple v .minutes)) = estWord v := rfl
 

@@ -553,10 +553,18 @@ fn two_adds_in_one_request_get_two_ids_and_two_ranks() {
     )
     .unwrap();
     assert!(out.starts_with(r#"{"ok":"#), "{out}");
-    assert!(out.contains(r#""- [ ] A ^9""#), "{out}");
+    let a = out.find(r#""- [ ] A ^9""#);
+    let b = out.find(r#""- [ ] B ^10""#);
+    assert!(a.is_some(), "{out}");
     assert!(
-        out.contains(r#""- [ ] B ^10""#),
+        b.is_some(),
         "the second add must not reuse the first's id: {out}"
+    );
+    // The "two ranks" half of this test's name, asserted directly: the second
+    // add's freshRank is strictly larger, so its line renders below the first's.
+    assert!(
+        a.unwrap() < b.unwrap(),
+        "the second add's higher rank must render after the first's line: {out}"
     );
 }
 

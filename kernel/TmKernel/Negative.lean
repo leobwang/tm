@@ -507,6 +507,13 @@ theorem demote_twice_succeeds (t t' : Site) (st : Field.Stamp) (e a : Entity)
     (h1 : demote t st e = .ok a) : ∃ b, demote t' st a = .ok b :=
   ⟨_, rfl⟩
 
+-- ===========================================================================
+-- APPENDED: the `add` verb's freshness door (Plan.lean / Boundary.lean).
+-- CHEAT 43 landed with the add session (9840ea8) but rode under the
+-- demotion-pair banner above; this banner was added 2026-09-12 to say why
+-- the block exists.  Everything below must FAIL to compile.
+-- ===========================================================================
+
 /- CHEAT 43 — insert an item over a standing one.  `Store.set` demands
    `(get i).isSome = true`, `Store.insertFresh` demands the dual
    `(get i).isNone = true`, and handing the first proof to the second is a

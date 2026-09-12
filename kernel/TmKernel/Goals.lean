@@ -107,13 +107,18 @@ open Field (Shape Recur Dur DurUnit DT Stamp Flag)
 # STAGE 3 — the boundary: `dispatch`, and the text path's last unproved step
 
 Plan §5: "`shim.c`, `build.rs`, `dispatch` for `move`/`demote`/`readopt`/`drop`/
-`edit`/`rank`/`add`".  Six of those seven are `ReqCmd` constructors now:
-`rank` landed 2026-09-09 — the wire op `rank{id,rank}`, `cmdRank` in Cmd.lean,
-with L20a/L20b discharged (`rank_is_idempotent`, `rank_preserves_the_order_of_the_others`).
-`add` remains the one verb not on the wire.  Its id generator landed
-2026-09-09 — `freshId` in Text.lean with L21 proved (`add_assigns_a_fresh_id`,
-pigeonhole over `digitsOf`-rendered candidates, not a retry loop) — but README
-gap 13 says `Id`'s *shape* is a human decision before `tm add` itself ships.
+`edit`/`rank`/`add`".  All seven verbs are on the wire now: `rank` landed
+2026-09-09 (L20a/L20b — `rank_is_idempotent`,
+`rank_preserves_the_order_of_the_others`), and `add` landed at 9840ea8 —
+`ReqCmd.add` (Boundary.lean:815), its `parseCmd` case (:838) and its
+`applyCmd` case (:991) — built on `freshId` with L21 proved
+(`add_assigns_a_fresh_id`, pigeonhole over `digitsOf`-rendered candidates,
+not a retry loop).  What remains of stage 3 is the four goals below: the L22
+refutation sweep and the three JSON/newline edge laws.  README gap 13 —
+`Id`'s *shape* — is STILL a human decision: `add` shipped digit ids,
+consistent with the recorded resolution (weaken the spec — digits are a
+subset of `[a-z0-9]`) and with no other, but the decision itself remains owed
+to the human.
 ############################################################################ -/
 
 /-- **L22 (R\*), stage 3 — expected refutation.**  "`undo ∘ cmd = id` on the

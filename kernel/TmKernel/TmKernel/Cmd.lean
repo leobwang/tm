@@ -52,8 +52,11 @@ inductive KErr
   /-- an **insertion** whose post-state fails `planWf` for an item reason: a
       title carrying a dangling `after:^…`, a day file whose placement is not
       `# Pinned`, an `optional` line saying no duration.  Kept distinct from
-      `badHorizon` because that fault is about *relocation* and the host prints
-      different advice for each; `firstItemFault` names which conjunct failed. -/
+      `badHorizon` because that fault is about *relocation* and the two names
+      let the host give different advice.  On the command path the name is all
+      the wire carries — `{"err":{"kernel":"badItem"}}`; `firstItemFault` is
+      the *loader's* diagnostic (the `itemCheck` field) and never accompanies
+      a command refusal. -/
   | badItem
 deriving DecidableEq, Repr
 
@@ -116,9 +119,10 @@ which is what separates it from `move` and why it cannot reuse `Relocation`.
 The new rank is the caller's, verbatim; `mapAt` re-checks the post-state, so a
 rank that collides with another line of this file dies there as `badHorizon`
 rather than silently renumbering the file.  A `cmdRank_succeeds` mirroring
-`cmdMove_succeeds` still waits on README gap 11 (the store-update replacement
-lemma for `itemsWf`), so this stage proves the conditional laws L20a/L20b and
-not the success form. -/
+`cmdMove_succeeds` is still owed — the replacement lemma it would lean on
+exists (`lines_set`, Plan.lean; README gap 17) — so this stage proves the
+conditional laws L20a/L20b, and the success form is recorded work, not
+blocked work. -/
 def setRankE (n : Nat) (e : Entity) : Except KErr Entity :=
   lift { e.val with live := ⟨e.val.live.doc, n⟩ }
 
@@ -332,7 +336,9 @@ theorem mapAt_get (p q : WfPlan) (i : Id) (f : Entity → Except KErr Entity) (e
 by computation** — exactly the contract `mapAt` enforces for replacement, and
 the reason `add` cannot forget the check.  A title that parses as a dangling
 `after:^…` or lands a day-file item outside `# Pinned` is refused with the
-named `badItem`; the host prints `firstItemFault` alongside it (§5.7).  The
+named `badItem` — the name is all the wire carries on the command path;
+`firstItemFault` is the loader's `itemCheck` diagnostic, not a command-path
+field (§5.7).  The
 freshness hypothesis is what makes the insert legal at all (§L21); a
 non-fresh id is a type error here, not a runtime overwrite. -/
 def WfPlan.insertFresh (p : WfPlan) (i : Id) (e : Entity)

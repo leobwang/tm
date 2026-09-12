@@ -2574,9 +2574,9 @@ theorem the_loader_builds_a_normalized_plan (docs : List ReqDoc) (items : List (
 
 Every `ReqDoc` line crosses `String → List Char` on the way in and
 `List Char → String` on the way out, twice per call.  The general statement
-discharges for free: it *is* core's `String.ofList_toList` (`Init` carries the
-round trip as a `@[reducible]` theorem, so it holds definitionally at the
-kernel's Char-list representation).  That settles the char half of gap 6.
+discharges for free: it *is* core's `String.ofList_toList` (`Init` proves the
+round trip as a `@[simp]` theorem — a propositional lemma this theorem applies
+by name, not a definitional unfolding).  That settles the char half of gap 6.
 
 The JSON half (`Lean.Json.parse j.compress = .ok j` for arbitrary `j`) and the
 legacy `String.splitOn` half stay open in gap 12, and both for the *same kind*

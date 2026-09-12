@@ -243,6 +243,7 @@ Every cheat, one compile error:
 | 29 | read a file back without asking whether ranks are distinct | `renderDocAt_loadCore` takes `normalized`; without it, which of two lines at one rank comes first depends on the order the host listed its documents |
 | 30 | relocate to rank 0 rather than `freshRank` | `move_at_freshRank_normalized` is about `freshRank` and nothing else; rank 0 is exactly the collision `Normalized` forbids |
 | 31 | check a rank is free by looking only at the item lines | a document's ranks are its prose ranks **and** its item ranks in one list (`weave` orders them against each other), so `SitesFree` has two clauses |
+| 43 | insert an item over a standing one — hand `Store.insertFresh` the proof that the id is *taken* | `insertFresh` demands `(get i).isNone = true`, the dual of `Store.set`'s `isSome`, and there is no third door that takes neither proof; freshness for `add` is L21's theorem, not a runtime retry |
 
 ## What is proved
 
@@ -1915,7 +1916,7 @@ document's index arithmetic (forwards). The general negation stays in
 remains the compiled composite for the one shape it was stated about.
 
 <!-- #### Stage-3 session 2026-09-09 (fifth block): the `rank` verb kernel-backed;
-     L20a/L20b discharged; burn-down 48 → 46.
+     L20a/L20b discharged; burn-down 48 → 46. -->
 
 The sixth of §13's seven verbs is now real.  `tm rank ^id n` (§7.4: "line
 order is your rank within a priority class") moves a line **within its own
@@ -1973,10 +1974,9 @@ Note for whoever writes the L22 negation sweep next: the `ReqCmd` shape list
 in the fourth block ("five shapes") is stale as of this commit — `.rank` makes
 it six. The freshRank argument covers `.rank` the same way: `rank` also cannot
 restore a rank `freshRank` vacated, and it cannot restore a *document* either.
--->
 
 <!-- #### Stage-3 session 2026-09-09 (sixth block): `freshId` landed with L21
-     proved; burn-down 46 → 45. Gap 13 annotated, unchanged in substance.
+     proved; burn-down 46 → 45. Gap 13 annotated, unchanged in substance. -->
 
 The last provisional signature of stage 3 is now a definition.  `freshId` and
 its freshness law live in `Text.lean` next to the numeral round trip they
@@ -2004,4 +2004,92 @@ success form would lean on gap 11 like `cmdRank_succeeds` does.
 `Check.lean`: 3 names under a fifth APPENDED banner; audit 1036 → 1039; zero
 `sorryAx`.  `Goals.lean`: the `freshId` provisional def and the L21 goal
 deleted.  `Negative.lean` untouched.
--->
+
+<!-- ===================================================================
+     APPENDED 2026-09-12 (stage-3 continuation session, rebuild-on-lean).
+     Ledger repair after a 22-agent audit of 0c3aaf7..9840ea8: the proofs
+     were confirmed sound and the prose stale.  Adds no gap numbers;
+     supersedes earlier paragraphs by name, never by editing them.
+     =================================================================== -->
+
+## Stage-3 continuation 2026-09-12: the ledger repaired
+
+**Gap 4 CLOSED (7af7f1a).** `Cmd.setEstE` is rewritten through the field
+setter `Field.setEst` — the "restructure the induction so the skip branch
+never needs the word's shape" escape route that gap 37 itself priced — so the
+request path and `Core.est` share one reader pair, and
+`the_command_path_writes_what_the_field_path_reads` is a theorem of
+`Cmd.lean`, discharged from `Goals.lean` and audited.  The stage-one `Nat`
+body survives as `setEstFoldE`, fold arithmetic off the wire (`demoteEst` is
+its only caller), and L9/L10 — `set_is_not_silent`, `set_last_wins` — are
+restated over `setEstFoldE`.  This supersedes, by name: the live gap-4
+paragraph above ("Two readers of `est:` coexist … a live S2" — the command
+path no longer reads through the stage-one reader, so the S2 is retired);
+gap 37's closing clause ("gap 4's goal stays in `Goals.lean` and says so" —
+it no longer does); and the law-table row "`edit est=v` ⟹ the view reads
+`v`", whose cited theorems now state the *fold* setter's law — the wire law
+is `the_command_path_writes_what_the_field_path_reads`.
+
+**`add` LANDED (9840ea8).** All seven of §13's verbs are on the wire — `move
+drop est demote readopt rank add` — with `kernel.rs` at 26 → 33 tests and
+`Negative.lean` CHEAT 43 (the freshness door; its banner, missed at landing,
+now stands over it).  Two corrections to that commit's message: `kerrName`
+carries **six** strings (`occupied noSuchId notDemoted alreadyDemoted
+badHorizon badItem`), not seven; and a command-path `badItem` reaches the
+wire as `{"err":{"kernel":"badItem"}}` **only** — `firstItemFault` is a
+loader-path field (the `itemCheck` diagnostic), so the host cannot print it
+for a command refusal.  Also recorded here because it was documented nowhere:
+the seed landed as a **per-add wire field** (`{"op":"add","seed":n,…}`)
+rather than PLAN §3.4's request-level `Seed`/`Repair` round trip — a
+deliberate, narrower shape.
+
+**Owed theorems, by name.** `cmdRank_succeeds` and a Lean-level rank
+*rejection* theorem — the taken-rank refusal ("the check bites", §5.8)
+exists only as a Rust test today — and `cmdAdd_succeeds`: `add`'s three laws
+are all conditional on `.ok`, and where `rank`'s omission was recorded in the
+fifth block, `add`'s was not, until here.  CORRECTION to the fifth block's
+pointer (the sixth repeats it): the "`PlanCore.lines` replacement lemma" it
+says is missing **exists** — `lines_set` at Plan.lean:1588, landed
+pre-baseline — and the right cross-reference is gap 17, not gap 11.  The
+success forms are unpriced work, not blocked work.
+
+**Gap 38, mechanism corrected.** `splitOnAux` (toolchain
+Init/Data/String/Legacy.lean:61) is defined by **well-founded recursion** —
+`termination_by` over byte distances — and WF fixpoints are stuck at
+`Acc.rec` in the kernel; that is why nothing reduces.  `String.utf8BytePos`,
+which gap 38 cites, does not exist in v4.33.1.  And a **third** closure route
+gap 38 did not price: the kernel's own structural `Tm.splitOn` (Text.lean:659)
+with `splitOn_joinWith` (Text.lean:706) already proved and already on the
+wire path — Line.lean rewrites through it at 1789/2127/2234 — so gap 12's
+goals can be stated over the kernel's splitter with no wire change and no
+toList bridge.
+
+**Gap 39, addendum.** The general statement is also suspect at `Json.obj`:
+`Json` equality is structural over the underlying `RBNode` and `parse`
+rebuilds objects by insertion, so `parse (compress j)` can return a
+differently-shaped, semantically-equal tree.  The honest narrowing of
+`the_json_edge_round_trips` is the run-emitted fragment or an
+up-to-equivalence relation — not only the `JsonNumber` restriction its doc
+comment anticipated.
+
+**L22, analysis corrected (supersedes that part of the fourth block).**
+`move_out_and_back_is_not_the_inverse` computes `freshRank` on the
+**pre-move** plan and feeds `freshRank_gt` the moved item's **own** line
+(Boundary.lean:925–931) — it needs no surviving line in the origin file.  The
+fourth block's "the witness must have a line surviving above the moved item's
+rank" is therefore wrong of the compiled composite: the surviving-line
+witness is **sufficient, not necessary** (sparse ranks also break the
+accidental inverse), and "a one-item file reproduces the vacated rank" holds
+only when that rank is exactly `docProseMax + 1`.  The negation sweep is
+still the remaining work, and its shape count is seven now — `.add` cannot
+restore a moved site either, since it may only insert a fresh id.
+
+**Gap 13 stands open.** `add` shipped digit ids — consistent with the
+recorded resolution (weaken the spec: digits are a subset of `[a-z0-9]`) and
+with no other — but the id-*shape* decision is still the human's; nothing in
+this session or the two before it takes it.
+
+Measured at this commit: burn-down 44 (`grep -c ^theorem Goals.lean`); audit
+1051 lines / 1051 distinct names / 1051 attr-aware theorem declarations
+(§6.3's three counts reconcile); `kernel.rs` 33 tests; no goal discharged and
+no theorem added by this block — it is a documentation repair.
