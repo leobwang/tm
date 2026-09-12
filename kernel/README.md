@@ -2889,3 +2889,132 @@ writers do — stage 4 (`close`), stage 6 (`plan`), and gap 5's id-less lines
 are the remaining callers. Also repaired at this commit:
 `kernel_bridge.rs`'s module-doc verb list, which still enumerated five
 verbs after `rank`, `add` and the keyed `edit` joined [`apply`].
+
+**The J-route's first step: the kernel owns a JSON value, its escaping and its
+numerals — and the escaping round trip is a theorem.**  Same 2026-09-12
+session, J-route step 1.  "Gap 39 REPRICED" above measured that `Lean.Json`'s
+printer and parser are `partial def`s — opaque constants with no equation
+lemmas — and priced the replacement as J0–J6.  This lands **J0–J2** in a new
+module, `TmKernel/Json.lean` (imported in `TmKernel/TmKernel.lean` at the same
+commit, between `Text` and `Line`; §2.3's silent failure was checked for, not
+assumed).  **No wire change**: `Boundary.lean` still builds `Lean.Json`, the
+Rust is untouched, and `Goals.lean` is untouched — `the_json_edge_round_trips`
+stands until J6, exactly as that paragraph says it should.
+
+*J0, the type.*  `JVal` is `null | bool Bool | num Nat | str (List Char) |
+arr (List JVal) | obj (List (List Char × JVal))` — objects an **ordered assoc
+list**, so `Json.mkObj`'s sorted-`TreeMap` rebuild hazard vanishes by
+construction and `jval_objects_keep_their_order` says the order is in the
+value.  Two things measured rather than assumed.  (a) **The numerals are `Nat`
+because the wire has no others**: every number the boundary emits is
+`lerrJson`'s `badLine` line count, `regionJson`'s `grain` (a `Fin 4` value) and
+`regionJson`'s `ix`, all `Nat`; every number it ingests goes through
+`Boundary.getNat`.  No negative, no exponent, no `JsonNumber` — so a site that
+ever needs one must widen `JVal.num`, visibly, in a diff.  (b) **`deriving
+DecidableEq` fails on `JVal`** — v4.33.1 answers *"None of the deriving
+handlers for class `DecidableEq` applied to `JVal`"*, because the recursion is
+*nested* (through `List`), not mutual.  The escape hatch a search engine offers
+is `termination_by sizeOf`, and §5.10 says why that is the wrong one here: a
+well-founded definition does not reduce in the kernel, so every `decide` in
+this module would stop working.  The instance is instead three **mutually
+structural** `Bool` functions (`jbeq`/`jbeqL`/`jbeqO`) with `jbeq_sound`,
+`jbeq_refl` and `jbeq_iff` — proved through the **four-motive `JVal.rec`** that
+the nested inductive generates (motives for `JVal`, `List JVal`,
+`List (List Char × JVal)` and the pair).  That eliminator is the one J4's
+`jparse_jemit` will need, so this section is a rehearsal for it as much as it
+is J0; the working shape is `refine JVal.rec (motive_2 := …) (motive_3 := …)
+(motive_4 := …) ?null … ?pair a`, because the `induction … using` form leaves
+motives 2–4 as metavariables and auto-introduces binders unevenly.
+
+*J1, the crux, landed.*  `junescape_jescape : ∀ cs, junescape (jescape cs) =
+.ok cs` — **unconditional**, no fragment restriction, no hypothesis.  That is
+the theorem `Lean.Json`'s `partial def`s make unstatable, and the kernel's doc
+lines are arbitrary user bytes, so anything weaker would be §5.4's boundary
+hole with a proof attached.  The case analysis lives in `junescape_escOf` (one
+character at a time, so the round trip itself is an induction with no cases);
+the `\uXXXX` branch turns on `hexQuad_escOf` and core's `Char.ofNat_toNat`.
+Everything is structural — `jescape`, `junescape` (whose `\u` branch recurses
+six characters in, still on a proper tail), `jdigits`, `jbeq` — so no fuel and
+no well-founded recursion, and every byte-level claim below is `rfl` or
+`decide`.
+
+*The three decisions J1 takes, stated rather than left implicit, each with a
+theorem.*  (1) **Emit narrow, accept wide.**  `jescape` emits exactly what
+Lean's own printer emits — `\"`, `\\`, `\n`, `\r`, a lowercase `\u00xx` quad
+for every other character below `0x20`, everything at or above `0x20`
+verbatim, non-ASCII and `DEL` included (`the_emitted_escape_classes`,
+`jescape_keeps_high_bytes_verbatim`).  `junescape` *additionally accepts*
+`\/`, `\t`, `\b`, `\f` and either-case hex quads, because serde_json emits all
+of those and serde_json is the only reader and writer these bytes ever had
+(`junescape_accepts_the_host_short_escapes`); the asymmetry is itself a
+theorem, `the_accepted_escapes_exceed_the_emitted_ones`.  (2) **Raw bytes that
+RFC 8259 forbids in string content are refused**, not passed through: a raw `"`
+is `JEsc.rawQuote` and a raw character below `0x20` is `JEsc.rawControl`
+(§5.7 — every diagnostic is named), so when J4's scanner hands `junescape` the
+bytes between two quotes the refusals restate the scanner's guarantees.
+(3) **A lone surrogate escape is refused by name** — gap 42 below.  Six
+refusals are theorems, each naming its own constructor:
+`junescape_refuses_a_truncated_escape`, `…_a_truncated_hex_quad`,
+`…_a_bad_hex_quad`, `…_an_unknown_escape`, `…_a_raw_quote`,
+`…_a_raw_control`, plus `junescape_refuses_a_lone_surrogate` and its
+non-vacuity partner `the_surrogate_guard_is_not_vacuous` (the quads just below
+and just above the surrogate block are accepted, so the guard is not swallowing
+the whole `\u` branch).  §5.2's witnesses are `demoEscLine` — a line carrying a
+quote, a backslash and a tab — pinned byte-for-byte by `demo_jescape_bytes`,
+read back by `demo_junescape_bytes`, and shown to be moved at all by
+`the_escaping_is_not_vacuous` (the round trip alone is true of `jescape = id`).
+
+*J2, numerals, and §5.3 taken seriously.*  There is **no second numeral
+grammar**: `jrenderNat` is an `abbrev` for `Text.lean`'s `digitsOf`
+(`jrenderNat_is_digitsOf` is `rfl`), so `readNat_digitsOf` and
+`digitsOf_injective` apply to it unchanged.  The only new thing is the
+**next-byte guard**, which is what a numeral inside a larger document needs and
+a numeral alone does not: `jparseNat_jrenderNat (n) (rest) (h : notDigitStart
+rest = true) : jparseNat (jrenderNat n ++ rest) = some (n, rest)`, over
+`jdigits_append`.  Both directions, per §5.8: `the_next_byte_guard_bites` shows
+the conclusion is **false** without the guard — `1` followed by `2` reads as
+`(12, [])`, not `(1, ['2'])` — and `the_next_byte_guard_is_satisfiable` shows
+the guard holds of every byte a numeral is actually followed by (`,`, `]`, `}`,
+a space, end of input), so §7.4 item 2's vacuity trap is closed by exhibition
+rather than by assertion.
+
+**Gap 42 — `junescape` refuses a surrogate-pair escape instead of recombining
+it.**  (1) *What is not done*: a two-escape surrogate pair (`\ud83d` followed by
+`\ude00`) is not joined into the one astral character it spells; the first
+half is refused with `JEsc.surrogateEscape`.
+(2) *Why — a decision, not time*: Lean's `Char` is a Unicode **scalar** value,
+so `0xd800`–`0xdfff` is not a `Char` and `jescape` can never emit one; a
+recombination branch would therefore be code that `junescape_jescape` does not
+cover — untested logic inside the one function this module exists to prove.
+(3) *What it costs*: a host that escapes astral characters as pairs — which
+JavaScript's `JSON.stringify` does and **serde_json does not**, since it writes
+them as UTF-8 bytes — is refused, by name, rather than mis-decoded.  Today it
+costs nothing at all, because `Lean.Json` is still the reader on the wire.
+(4) *Which stage clears it*: J5, and only if a non-serde host is ever put on
+the other end; the refusal is the right behaviour otherwise.
+
+**What this step did not do, by name.**  J3 (`jemit`), J4 (the fuel-structural
+`jparse` and `jparse_jemit`, still the route's largest single proof), J5 (the
+wire change in `Boundary.lean`'s response builders, plus the byte re-measure
+the "Gap 39 REPRICED" paragraph demands — `mkObj` sorts keys, an assoc list
+keeps build order) and J6 (the discharge of `the_json_edge_round_trips`) are
+all untouched and unchanged in price.  The burn-down therefore **stays at 41**:
+this step discharges no goal, adds no goal, and that is the intended shape —
+the goal is discharged at J6 or not at all.  `Negative.lean` is untouched and
+this block **takes no cheat numbers**: nothing here introduces a bounded type
+or a smart constructor, and the surrogate and control-byte bounds are runtime
+refusals with named errors rather than type-level doors.  R10's doors arrive
+with J3/J5.
+
+Re-measured at this landing, every number from the committed harness (§5.11):
+`kernel/check.sh` **7/7 ok**; axiom audit **1122 theorems** (was 1090; +32, the
+whole of `Json.lean`), and §6.3's three counts agree at 1122 — `grep -c '^#print
+axioms' Check.lean` = 1122, distinct names = 1122, and
+`grep -hcE '^(@\[[^]]*\][[:space:]]*)?theorem ' TmKernel/*.lean` summed = 1122
+(the two cancelling off-by-ones §6.3 documents are unchanged, since every name
+added here is a plain `theorem` and the delta is +32 on all three); corpus
+**33/37 files and 4/5 whole plans**, unchanged; `Goals.lean` burn-down **41**,
+unchanged; `cargo test --workspace` **983 passed / 0 failed**, unchanged; the
+FFI suite **46 tests** (40 kernel + 6 corpus), unchanged.  Nothing outside
+`TmKernel/Json.lean`, `TmKernel/TmKernel.lean` (one import line) and
+`Check.lean` (one banner plus 32 lines) was edited.

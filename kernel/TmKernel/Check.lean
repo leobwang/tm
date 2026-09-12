@@ -1202,3 +1202,42 @@ open Tm
 #print axioms Tm.applyCmd_unset_succeeds
 #print axioms Tm.parseCmd_rejects_edit_variants
 #print axioms Tm.parseCmd_reads_the_keyed_edit_forms
+
+-- ===========================================================================
+-- APPENDED 2026-09-12 (stage-3, J-route step 1: the JSON fragment's
+-- foundations).  Every theorem of TmKernel/Json.lean, in declaration order.
+-- Nothing here is on the wire yet -- Boundary.lean still builds Lean.Json --
+-- so these audit the replacement, not the crossing.
+-- ===========================================================================
+#print axioms Tm.jbeq_sound
+#print axioms Tm.jbeq_refl
+#print axioms Tm.jbeq_iff
+#print axioms Tm.jval_objects_keep_their_order
+#print axioms Tm.demo_jval_is_decidable
+#print axioms Tm.hexDigit_hexChar
+#print axioms Tm.hexQuad_escOf
+#print axioms Tm.junescape_escOf
+#print axioms Tm.junescape_jescape
+#print axioms Tm.demo_jescape_bytes
+#print axioms Tm.demo_junescape_bytes
+#print axioms Tm.the_escaping_is_not_vacuous
+#print axioms Tm.the_emitted_escape_classes
+#print axioms Tm.jescape_keeps_high_bytes_verbatim
+#print axioms Tm.junescape_accepts_the_host_short_escapes
+#print axioms Tm.the_accepted_escapes_exceed_the_emitted_ones
+#print axioms Tm.junescape_refuses_a_truncated_escape
+#print axioms Tm.junescape_refuses_a_truncated_hex_quad
+#print axioms Tm.junescape_refuses_a_bad_hex_quad
+#print axioms Tm.junescape_refuses_an_unknown_escape
+#print axioms Tm.junescape_refuses_a_raw_quote
+#print axioms Tm.junescape_refuses_a_raw_control
+#print axioms Tm.junescape_refuses_a_lone_surrogate
+#print axioms Tm.the_surrogate_guard_is_not_vacuous
+#print axioms Tm.jrenderNat_is_digitsOf
+#print axioms Tm.jdigits_append
+#print axioms Tm.jparseNat_jrenderNat
+#print axioms Tm.demo_jparseNat
+#print axioms Tm.the_next_byte_guard_bites
+#print axioms Tm.the_next_byte_guard_is_satisfiable
+#print axioms Tm.jparseNat_refuses_a_non_numeral
+#print axioms Tm.jparseNat_reads_a_bare_numeral
