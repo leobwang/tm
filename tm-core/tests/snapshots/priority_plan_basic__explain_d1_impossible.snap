@@ -1,0 +1,5 @@
+---
+source: tm-core/tests/priority_plan_basic.rs
+expression: text
+---
+p = 0 (IMPOSSIBLE: needs 7.8b, 2.5b available by 2026-09-11); deps ok; cap 2b/d: 0b used

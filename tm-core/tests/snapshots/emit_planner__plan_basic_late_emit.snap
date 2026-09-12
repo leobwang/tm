@@ -1,0 +1,49 @@
+---
+source: tm-core/tests/emit_planner.rs
+expression: "rendered(&day, &fx.tree, &fx.cfg, 10, 30)"
+---
+<!-- tm:plan start 10:30 -->
+06:10  ·    ✓ breakfast 30m                         (30m)
+10:30  1 p0 ⚠ Pick up package                   20m     due today
+10:50  5 p3   Finish ch.5 exercises        @O1  6b
+11:30  ·      lunch 30m
+12:00  5 p3   Finish ch.5 exercises        @O1  6b
+12:50  ⏰     Meeting w/ host                   1h
+13:50  5 p3   Finish ch.5 exercises        @O1  6b
+14:50  ·      break 20m
+15:10  4 p3   Exercises 5.3–5.5            @m1  2b
+16:00  ·      workout 1h
+17:00  3 p3   Claude Code drafts tests     @m2  1b
+17:30  ·      dinner 30m
+18:00  3 p3   Claude Code drafts tests     @m2  1b
+19:00  ·      groceries 45m
+19:30  ───    window ends 19:30
+19:45  ·      laundry 30m
+20:15  ·      shower 20m
+21:30  🌙     wind-down · bed 22:00
+22:00  ·      sleep 8h30m
+<!-- tm:plan end -->
+
+svg
+  <defs>: yes
+  class="plan": yes
+  id="tm-lost": yes
+  class="cursor": yes
+  breakfast · 30m · ci1
+  Pick up package · 20m · ci1 · p0
+  Finish ch.5 exercises · 40m · ci5 · p3 · @O1
+  lunch · 30m · ci1 · p0
+  Finish ch.5 exercises · 50m · ci5 · p3 · @O1
+  Meeting w/ host · 1h · ci3 · p0
+  Finish ch.5 exercises · 1h · ci5 · p3 · @O1
+  break · 20m
+  Exercises 5.3–5.5 · 50m · ci4 · p3 · @O1
+  workout · 1h · ci1 · p0
+  Claude Code drafts tests · 30m · ci3 · p3 · @O2
+  dinner · 30m · ci1 · p0
+  Claude Code drafts tests · 1h · ci3 · p3 · @O2
+  groceries · 45m · ci1 · p5
+  laundry · 30m · ci1 · p5
+  shower · 20m · ci1 · p5
+  wind-down · 30m
+  sleep · 2h · ci0 · p5

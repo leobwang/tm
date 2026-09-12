@@ -1,0 +1,5 @@
+---
+source: tm-core/tests/priority_plan_basic.rs
+expression: text
+---
+p = k(3) + bin(u=0.43 → +1) = 4; need 7.8b, avail 18b by 2026-09-11; deps ok; cap 2b/d: 0b used

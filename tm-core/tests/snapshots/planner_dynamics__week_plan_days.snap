@@ -1,0 +1,11 @@
+---
+source: tm-core/tests/planner_dynamics.rs
+expression: "week.days.iter().map(|d|\nformat!(\"{} cap {:>4}m planned {:>4}m ({}b): {}\", d.date, d.capacity_min,\nd.planned_min, d.blocks,\nd.items.iter().map(|(i, m)|\nformat!(\"{}:{m}m\",\ni.as_str())).collect::<Vec<_>>().join(\" \"))).collect::<Vec<_>>().join(\"\\n\")"
+---
+2026-09-07 cap  400m planned  350m (6b): t3:60m m1:180m m2:110m
+2026-09-08 cap  360m planned  360m (6b): m1:180m m2:180m
+2026-09-09 cap  360m planned  360m (6b): m3:180m m2:70m t4:60m d1:50m
+2026-09-10 cap  360m planned  360m (6b): t1:60m d2:120m d1:70m m4:110m
+2026-09-11 cap  360m planned  360m (6b): d2:180m m4:10m a1:30m c2:140m
+2026-09-12 cap  360m planned  180m (3b): d2:60m c2:100m p1:20m
+2026-09-13 cap  360m planned    0m (0b):

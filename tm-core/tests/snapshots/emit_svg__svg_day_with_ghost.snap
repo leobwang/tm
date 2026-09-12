@@ -1,0 +1,72 @@
+---
+source: tm-core/tests/emit_svg.rs
+expression: out
+---
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="60" viewBox="0 0 480 60" role="img" aria-label="day bar 2026-09-07">
+<defs>
+<pattern id="tm-lost" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#fdecd9"/><line x1="0" y1="0" x2="0" y2="6" stroke="#f58231" stroke-width="3"/></pattern>
+<pattern id="tm-interrupt" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#fadfe5"/><line x1="0" y1="0" x2="0" y2="6" stroke="#e6194b" stroke-width="3"/></pattern>
+</defs>
+<rect x="0" y="0" width="480" height="60" fill="#f7f7f7"/>
+<g class="plan">
+<rect x="18.33" y="0" width="22.33" height="31.7" fill="#3cb44b"><title>Read ch.6 §1–2 · 1h7m · ci5 · p1 · @O1</title></rect>
+<rect x="38.33" y="0" width="19.33" height="31.7" fill="#3cb44b"><title>Read ch.6 §3 · 58m · ci5 · p1 · @O1</title></rect>
+<rect x="58.33" y="0" width="8" height="31.7" fill="#d2d2d2"><title>break · 24m</title></rect>
+<rect x="65" y="0" width="40" height="31.7" fill="#30903c"><title>Exercises 5.3–5.5 · 2h · ci4 · p1 · @O1</title></rect>
+<rect x="105" y="0" width="10" height="31.7" fill="#8a8a8a"><title>lunch · 30m · ci1</title></rect>
+<rect x="115" y="0" width="20" height="31.7" fill="#57126c"><title>Claude Code drafts tests · 1h · ci3 · p3 · @O2</title></rect>
+<rect x="135" y="0" width="20" height="31.7" fill="#333844"><title>Meeting w/ host · 1h · ci3</title></rect>
+<rect x="155" y="0" width="6.67" height="31.7" fill="#d2d2d2"><title>break · 20m</title></rect>
+<rect x="161.67" y="0" width="20" height="31.7" fill="#57126c"><title>Review the drafts · 1h · ci3 · p3 · @O2</title></rect>
+<rect x="181.67" y="0" width="6.67" height="31.7" fill="#0d2a31"><title>Pick up package · 20m · ci1 · p0</title></rect>
+<rect x="228.33" y="0" width="10" height="31.7" fill="#8a8a8a"><title>dinner · 30m · ci1</title></rect>
+<rect x="238.33" y="0" width="20" height="31.7" fill="#7a8a99" stroke="#5b6670" stroke-width="1" stroke-dasharray="2 2"><title>Severance S3E4 · 1h · ci0</title></rect>
+<rect x="308.33" y="0" width="10" height="31.7" fill="#1b1f2a"><title>wind-down · 30m</title></rect>
+</g>
+<g class="ghost">
+<rect x="15" y="33.7" width="25" height="13.1" fill="#3cb44b"><title>Read ch.6 §1–2 · 1h · ci5 · p1 · @O1</title></rect>
+<rect x="40" y="33.7" width="20" height="13.1" fill="#3cb44b"><title>Read ch.6 §3 · 1h · ci5 · p1 · @O1</title></rect>
+<rect x="60" y="33.7" width="5" height="13.1" fill="#d2d2d2"><title>break · 20m</title></rect>
+<rect x="65" y="33.7" width="40" height="13.1" fill="#30903c"><title>Exercises 5.3–5.5 · 2h · ci4 · p1 · @O1</title></rect>
+<rect x="105" y="33.7" width="10" height="13.1" fill="#8a8a8a"><title>lunch · 30m · ci1</title></rect>
+<rect x="115" y="33.7" width="20" height="13.1" fill="#57126c"><title>Claude Code drafts tests · 1h · ci3 · p3 · @O2</title></rect>
+<rect x="135" y="33.7" width="20" height="13.1" fill="#333844"><title>Meeting w/ host · 1h · ci3</title></rect>
+<rect x="155" y="33.7" width="20" height="13.1" fill="#57126c"><title>Review the drafts · 1h · ci3 · p3 · @O2</title></rect>
+</g>
+<g class="ticks" font-family="monospace" font-size="9" fill="#666">
+<line x1="18.33" y1="0" x2="18.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<line x1="38.33" y1="0" x2="38.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<line x1="58.33" y1="0" x2="58.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<text x="58.33" y="58" text-anchor="middle">09</text>
+<line x1="78.33" y1="0" x2="78.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<line x1="98.33" y1="0" x2="98.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<line x1="118.33" y1="0" x2="118.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<text x="118.33" y="58" text-anchor="middle">12</text>
+<line x1="138.33" y1="0" x2="138.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<line x1="158.33" y1="0" x2="158.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<line x1="178.33" y1="0" x2="178.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<text x="178.33" y="58" text-anchor="middle">15</text>
+<line x1="198.33" y1="0" x2="198.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<line x1="218.33" y1="0" x2="218.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<line x1="238.33" y1="0" x2="238.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<text x="238.33" y="58" text-anchor="middle">18</text>
+<line x1="258.33" y1="0" x2="258.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<line x1="278.33" y1="0" x2="278.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<line x1="298.33" y1="0" x2="298.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<text x="298.33" y="58" text-anchor="middle">21</text>
+<line x1="318.33" y1="0" x2="318.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<line x1="338.33" y1="0" x2="338.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<line x1="358.33" y1="0" x2="358.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<text x="358.33" y="58" text-anchor="middle">00</text>
+<line x1="378.33" y1="0" x2="378.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<line x1="398.33" y1="0" x2="398.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<line x1="418.33" y1="0" x2="418.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<text x="418.33" y="58" text-anchor="middle">03</text>
+<line x1="438.33" y1="0" x2="438.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<line x1="458.33" y1="0" x2="458.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<line x1="478.33" y1="0" x2="478.33" y2="31.7" stroke="#000" stroke-opacity="0.12" stroke-width="1"/>
+<text x="478.33" y="58" text-anchor="middle">06</text>
+</g>
+<line class="cursor" x1="92.33" y1="0" x2="92.33" y2="46.8" stroke="#111" stroke-width="1.5"/>
+<text class="cursor-label" x="95.33" y="15.85" font-family="monospace" font-size="9" fill="#111">10:42</text>
+</svg>

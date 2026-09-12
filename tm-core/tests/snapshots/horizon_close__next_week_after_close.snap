@@ -1,0 +1,10 @@
+---
+source: tm-core/tests/horizon_close.rs
+expression: "text(&store, NEXT_WEEK)"
+---
+---
+week: 2026-W38
+window: 2026-09-14..2026-09-20
+---
+- [ ] 5 2h Midterm                      @O3 at:2026-10-20T10:00/12:00 loc:JCL ^x1
+- [ ] 5 8b Midterm review               @x1 ^x2

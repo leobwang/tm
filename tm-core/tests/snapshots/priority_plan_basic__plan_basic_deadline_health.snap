@@ -1,0 +1,10 @@
+---
+source: tm-core/tests/priority_plan_basic.rs
+expression: health
+---
+{
+  "min_slack_days": 2.2666666666666666,
+  "hot": 0,
+  "impossible": 0,
+  "overdue": 1
+}

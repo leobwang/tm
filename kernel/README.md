@@ -2420,3 +2420,25 @@ will not be pushed to this remote (`origin` carries `rebuild-on-lean` alone;
   from now on.
 - AGENTS.md's "`main` is the oracle" instructions are historical from this
   block forward; this paragraph supersedes them by name.
+
+**The workspace is restored — stage 3 scope item 1, landed 2026-09-12.** Per
+the `main`-discard decision above, the restore ran as that block prescribes:
+`git checkout 4748911 -- tm-core Cargo.toml Cargo.lock`. The branch's `tm/`
+differed from the fork point only by its own `DORMANT.md`, whose text now says
+the workspace is restored and the rewiring is underway; every other file is
+byte-identical to `4748911`. On this Linux machine the root workspace builds
+clean and needed **zero portability fixes**: `cargo test --workspace` is
+**943 passed / 0 failed / 0 ignored across 61 test binaries** — no semantic
+exceptions, so no `#[ignore]` was spent (`main@557a3d2`'s advertised 957
+included the post-fork sweep harness this clone no longer holds). The binary
+runs: `tm init --example` writes 22 files and exits 0; `tm check` on that tree
+prints `no problems` and exits 0. **The restored binary is pre-stage-0**: as
+recorded above, its `move_to` lacks the destination/occupied precondition, so
+A6 is open in Rust until the kernel-backed `move`/`readopt` wiring lands —
+that wiring, not a Rust patch, is the fix. The root workspace (members
+`tm-core`, `tm`) and `kernel/tm-kernel-ffi` coexist without exclusion —
+the ffi crate's own `[workspace]` table keeps the deliberate separation
+(AGENTS 2.2), and cargo raised no nesting complaint. No new external
+dependency entered (R7): every crate in the restored lockfile is the fork
+point's own. `check.sh` re-measured after the restore: **7/7 ok**, corpus
+33/37 files and 4/5 whole plans, unchanged.

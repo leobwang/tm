@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc bd06d74cd0fba4ad3d19483d17aefebed5e261a5419f6f65d5195f8db962cb63 # shrinks to (text, stateful) = ("- [ ] A @ open", true), words = ["a"]
+cc 2f087741a41e5a93e3002297768ff38d6b2305474466f8f3ae973d71ba7f298b # shrinks to (text, stateful) = ("- [ ] a @a @A", true)
+cc 089c7b5cd67f00752000f58f886bb83dd4c870ea53e6b9c3fd41199e81d4f46d # shrinks to (text, stateful) = ("- [ ] a @A  a zz:0 @A", true)

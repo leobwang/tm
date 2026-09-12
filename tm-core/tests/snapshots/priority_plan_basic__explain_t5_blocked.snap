@@ -1,0 +1,5 @@
+---
+source: tm-core/tests/priority_plan_basic.rs
+expression: t5
+---
+p = k(1) + 2 (no due, no floor) = 3; blocked by ^t4

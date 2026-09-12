@@ -1,0 +1,28 @@
+---
+source: tm-core/tests/priority_plan_basic.rs
+expression: "batched.join(\"\\n\")"
+---
+      ci3 0m: g1
+      ci1 20m: a3
+      ci1 30m: lunch
+      ci1 30m: dinner
+      ci1 60m: workout
+      ci1 30m: laundry
+      ci5 360m: m1
+      ci5 180m: m3
+      ci5 60m: t1
+      ci4 60m: t3
+      ci4 360m: m2
+      ci3 60m: t4
+      ci5 600m: d2
+      ci4 360m: d1
+      ci2 120m: m4
+      ci5 480m: x2
+      ci2 30m: a1
+      ci4 240m: c2
+      ci0 510m: sleep
+      ci1 20m: shower
+      ci1 45m: groceries
+      ci0 60m: Severance S3E4
+      ci0 120m: Factorio
+      ci2 20m: p1
