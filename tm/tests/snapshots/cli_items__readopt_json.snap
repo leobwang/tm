@@ -1,9 +1,0 @@
----
-source: tm/tests/cli_items.rs
-expression: json
----
-{
-  "from": "month/2026-09.md",
-  "id": "m2",
-  "to": "week/2026-W37.md"
-}

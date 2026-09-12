@@ -146,7 +146,9 @@ fn edit_changes_fields_byte_faithfully_and_logs_each_one() {
 #[test]
 fn edit_est_reaches_a_line_with_no_positional_slot() {
     // §4.3: a `routines.md` line has no state, so it has no leading-estimate
-    // slot; `est:` is where the value goes.
+    // slot; `est:` is where the value goes. Id-less, so it rides the old
+    // Rust path (gap 5: the kernel cannot address a line without `^id` —
+    // kernel/README.md, 2026-09-12 "the five lifecycle verbs" block).
     let tm = Tm::new();
     tm.ok(&["edit", "lunch", "est=45m"]);
     let text = tm.read("routines.md");
@@ -154,10 +156,15 @@ fn edit_est_reaches_a_line_with_no_positional_slot() {
     assert!(text.contains("est:45m"), "{text}");
     assert_eq!(tm.run(&["check"]).code, 0);
 
-    // A line without a leading estimate gains one.
+    // Kernel-backed `est=`: the value lands as the canonical `est:` token
+    // (in minutes) and the leading slot is never invented — the old path
+    // wrote a leading estimate here (kernel/README.md, 2026-09-12 block:
+    // `tm edit est=` is the kernel's est op, one reader end to end).
     tm.ok(&["edit", "^a3", "est=1b"]);
     let a3 = tm.line("backlog.md", "a3");
-    assert!(a3.starts_with("- [ ] 1 1b Pick up package"), "{a3}");
+    assert!(a3.starts_with("- [ ] 1 Pick up package"), "{a3}");
+    assert!(a3.contains("est:60m"), "{a3}");
+    assert_eq!(tm.run(&["check"]).code, 0);
 }
 
 /// The minutes `tm plan` gave an item, summed over its segments.
@@ -190,8 +197,11 @@ fn edit_est_moves_the_remaining_estimate_not_the_one_as_written() {
     assert_eq!(json["changes"][0]["from"], "1b");
     assert_eq!(json["changes"][0]["to"], "3b");
 
+    // Kernel-backed: the kernel writes the field's canonical rendering of
+    // the parsed value — minutes, so `3b` lands as `est:180m`
+    // (kernel/README.md, 2026-09-12 "the five lifecycle verbs" block).
     let after = tm.line("week/2026-W37.md", "t3");
-    assert!(after.contains("est:3b"), "the remainder moved: {after}");
+    assert!(after.contains("est:180m"), "the remainder moved: {after}");
     assert!(!after.contains("est:1b"), "and only once: {after}");
     assert!(
         after.starts_with("- [>] 4 2b Exercises"),
@@ -326,12 +336,14 @@ fn edit_unset_removes_a_key() {
     assert!(!tm.line("week/2026-W37.md", "t3").contains("est:"));
 
     // Dropping the remainder hands `remaining` back to the leading estimate
-    // (§3.1's `est_original`), which is how `est=` reaches that one on a line
-    // that carried an `est:` token.
+    // (§3.1's `est_original`, gap 41's fallback). A later `est=` writes the
+    // `est:` token again — kernel-backed, the est op always writes the one
+    // slot `remaining` reads first, never the leading history
+    // (kernel/README.md, 2026-09-12 "the five lifecycle verbs" block).
     tm.ok(&["edit", "^t3", "est=4b"]);
     let after = tm.line("week/2026-W37.md", "t3");
-    assert!(after.starts_with("- [>] 4 4b Exercises"), "{after}");
-    assert!(!after.contains("est:"), "{after}");
+    assert!(after.starts_with("- [>] 4 2b Exercises"), "{after}");
+    assert!(after.contains("est:240m"), "{after}");
 }
 
 #[test]
@@ -369,14 +381,24 @@ fn move_takes_a_line_between_horizon_files() {
     insta::assert_json_snapshot!("move_json", json);
 }
 
+/// Kernel-backed move places the line itself, at a fresh rank — the end of
+/// the destination file — and re-checks the whole plan. §6.2 constrains a
+/// day file's items to `# Pinned`, and the shipped day file ends with
+/// `## Log`/`## Notes`, so the landing site fails the check and the move is
+/// refused **by name** (`badHorizon`) with nothing written — where the old
+/// path appended into `# Pinned` by section name (kernel/README.md,
+/// 2026-09-12 "the five lifecycle verbs" block records the change).
 #[test]
-fn move_to_a_day_pins_the_line() {
+fn move_to_a_day_is_refused_by_name() {
     let tm = Tm::new();
-    tm.ok(&["move", "^a3", "day"]);
-    let day = tm.read("day/2026-09-07.md");
-    let pinned = day.split("## Log").next().unwrap_or_default();
-    assert!(pinned.contains("^a3"), "{day}");
-    assert!(pinned.contains("# Pinned"), "{day}");
+    let day_before = tm.read("day/2026-09-07.md");
+    let backlog_before = tm.read("backlog.md");
+    let out = tm.run(&["move", "^a3", "day"]);
+    assert_ne!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains("badHorizon"), "{}", out.stderr);
+    assert_eq!(tm.read("day/2026-09-07.md"), day_before);
+    assert_eq!(tm.read("backlog.md"), backlog_before);
+    assert!(tm.events().is_empty(), "{:?}", tm.events());
 }
 
 #[test]
@@ -413,45 +435,54 @@ fn demote_copies_the_line_into_the_month_archive() {
     insta::assert_json_snapshot!("demote_json", json);
 }
 
+/// A real demote-then-readopt round trip, into a different week: the kernel
+/// takes the record into the destination, flips `[-]` back to `[ ]` keeping
+/// its stamps, and removes the tombstone (kernel/README.md, 2026-09-12
+/// "the five lifecycle verbs" block).
 #[test]
 fn readopt_brings_a_demoted_line_back() {
     let tm = Tm::new();
-    let json = tm.json(&["readopt", "^m2"]);
-    assert_eq!(json["from"], "month/2026-09.md");
-    assert_eq!(json["to"], "week/2026-W37.md");
+    tm.ok(&["demote", "^m4"]);
+    let json = tm.json_at("2026-09-07T09:01:00-05:00", &["readopt", "^m4", "--to", "week/2026-W38.md"]);
+    assert_eq!(json["id"], "m4");
+    assert_eq!(json["to"], "week/2026-W38.md");
+    let line = tm.line("week/2026-W38.md", "m4");
+    assert!(line.starts_with("- [ ] "), "{line}");
+    assert!(line.contains("demoted:W37"), "the stamp is kept: {line}");
+    // One line in the whole tree: the tombstone and the record both went.
+    assert!(!tm.read("week/2026-W37.md").contains("^m4"));
+    assert!(!tm.read("month/2026-09.md").contains("^m4"));
+    let check = tm.run(&["check"]);
+    assert_eq!(check.code, 0, "{}{}", check.stdout, check.stderr);
     let last = tm.last();
     assert_eq!(last["ev"], "readopt");
-    assert_eq!(last["id"], "m2");
-    insta::assert_json_snapshot!("readopt_json", json);
+    assert_eq!(last["id"], "m4");
 }
 
-/// §4.1 + §17.2: ids are global and unique, so no verb may leave one `^id`
-/// on two live lines. `^m2` ships live in `week/2026-W37.md` beside its
-/// `[-]` archive copy under `month/…# Demoted`; readopting it into *another*
-/// horizon used to carry the copy across and report success, leaving `^m2`
-/// live twice and `tm check` at `error[dup-id]`, exit 2 (§17 M9: the tree
-/// must pass `tm check`).
+/// §4.3 ships `^m2` **live** in `week/2026-W37.md` beside its `[-]` record
+/// under `month/…# Demoted`. To the kernel that pair is one entity whose
+/// live line is `[ ]` — not demoted — so readopt is refused **by name**
+/// (`notDemoted`) and nothing is written, where the old Rust path absorbed
+/// the record into the live line and moved it (kernel/README.md, 2026-09-12
+/// "the five lifecycle verbs" block records the change). The §4.1/§17.2
+/// guarantee this test used to check — no verb leaves one id on two live
+/// lines — now holds by refusal.
 #[test]
 fn readopt_into_another_horizon_leaves_the_tree_valid() {
     for to in ["week/2026-W38.md", "day"] {
         let tm = Tm::new();
-        let json = tm.json(&["readopt", "^m2", "--to", to]);
-        assert_eq!(json["from"], "month/2026-09.md");
+        let week_before = tm.read("week/2026-W37.md");
+        let month_before = tm.read("month/2026-09.md");
+        let out = tm.run(&["readopt", "^m2", "--to", to]);
+        assert_ne!(out.code, 0, "{to}: {}{}", out.stdout, out.stderr);
+        assert!(out.stderr.contains("notDemoted"), "{to}: {}", out.stderr);
 
+        // Nothing was written, no event was logged, the tree is untouched.
+        assert_eq!(tm.read("week/2026-W37.md"), week_before);
+        assert_eq!(tm.read("month/2026-09.md"), month_before);
+        assert!(tm.events().is_empty(), "{:?}", tm.events());
         let check = tm.run(&["check"]);
         assert_eq!(check.code, 0, "{to}: {}{}", check.stdout, check.stderr);
-
-        // Exactly one live line, in the horizon that was asked for, and the
-        // archive copy is gone.
-        let dest = json["to"].as_str().expect("a destination").to_string();
-        assert_eq!(tm.read(&dest).matches("^m2").count(), 1, "{}", tm.read(&dest));
-        assert!(!tm.read("week/2026-W37.md").contains("^m2 "));
-        assert!(!tm.read("week/2026-W37.md").ends_with("^m2\n"));
-        assert!(!tm.read("month/2026-09.md").contains("^m2"));
-        // … carrying the stamp the copy held (§11's demotion churn).
-        let line = tm.line(&dest, "m2");
-        assert!(line.starts_with("- [ ] "), "{line}");
-        assert!(line.contains("demoted:W37"), "{line}");
     }
 }
 
@@ -467,6 +498,85 @@ fn readopt_refuses_an_item_that_was_never_demoted() {
     assert!(out.stderr.contains("not demoted"), "{}", out.stderr);
     assert_eq!(tm.read("week/2026-W37.md"), before);
     assert!(tm.events().is_empty(), "{:?}", tm.events());
+}
+
+/// **A6, closed in the shipped binary** (kernel/README.md, 2026-09-12
+/// "the five lifecycle verbs" block). `^m2`'s `[-]` record stands in
+/// `month/…# Demoted`; the pre-stage-0 `move_to` appended the week line
+/// beside it without ever asking whether the destination already held the
+/// id — the hole all 426 violations of the depth-2 sweep reached, 400 of
+/// them through exactly this verb. The kernel refuses **by name**
+/// (`occupied`), and nothing is written.
+#[test]
+fn move_into_the_tombstones_file_is_refused_by_name() {
+    let tm = Tm::new();
+    let week_before = tm.read("week/2026-W37.md");
+    let month_before = tm.read("month/2026-09.md");
+    let out = tm.run(&["move", "^m2", "month"]);
+    assert_ne!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains("occupied"), "{}", out.stderr);
+    assert_eq!(tm.read("week/2026-W37.md"), week_before);
+    assert_eq!(tm.read("month/2026-09.md"), month_before);
+    assert!(tm.events().is_empty(), "{:?}", tm.events());
+}
+
+/// A second demotion of an id with a standing archive record used to
+/// overwrite that record silently; §6.3 gives an item **one** record, so
+/// the kernel refuses by name (`alreadyDemoted`) — kernel/README.md,
+/// 2026-09-12 "the five lifecycle verbs" block.
+#[test]
+fn demote_with_a_standing_record_is_refused_by_name() {
+    let tm = Tm::new();
+    let month_before = tm.read("month/2026-09.md");
+    let out = tm.run(&["demote", "^m2"]);
+    assert_ne!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains("alreadyDemoted"), "{}", out.stderr);
+    assert_eq!(tm.read("month/2026-09.md"), month_before);
+    assert!(tm.events().is_empty(), "{:?}", tm.events());
+}
+
+/// Gap 32's guard, in the shipped binary: a tab is a word character to the
+/// kernel and whitespace to the old Rust tokenizer, so an `est=` written
+/// against a tabbed line could land on the wrong token. The kernel refuses
+/// the whole edit path by name (`tabbedLine`) instead — kernel/README.md,
+/// 2026-09-12 "the five lifecycle verbs" block.
+#[test]
+fn est_edit_of_a_tabbed_line_is_refused_by_name() {
+    let tm = Tm::new();
+    let path = tm.plan.join("backlog.md");
+    let text = std::fs::read_to_string(&path)
+        .expect("read backlog")
+        .replace("Insurance claim", "Insurance\tclaim");
+    std::fs::write(&path, &text).expect("write backlog");
+    let out = tm.run(&["edit", "^a1", "est=45m"]);
+    assert_ne!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains("tabbedLine"), "{}", out.stderr);
+    assert_eq!(std::fs::read_to_string(&path).expect("re-read"), text);
+}
+
+/// Kernel-backed verbs demand a loadable tree: a corrupted id **anywhere**
+/// refuses the verb by name, even when the verb's own target is a different
+/// item in a different file — where the old Rust path edited its one line
+/// and left the corruption standing (kernel/README.md, 2026-09-12 block).
+/// Two live lines with one id in one file are `dupId`; two live lines with
+/// one id in two files are `notADemotion` (the loader tries to read them as
+/// a demotion pair and refuses when they are not one).
+#[test]
+fn a_kernel_backed_verb_refuses_an_unloadable_tree_by_name() {
+    for (extra, refusal, target) in [
+        ("- [ ] 3 1b A second line claiming a1 ^a1\n", "dupId", "^t1"),
+        ("- [ ] 3 1b A second line claiming t1 ^t1\n", "notADemotion", "^a1"),
+    ] {
+        let tm = Tm::new();
+        let path = tm.plan.join("backlog.md");
+        let mut text = std::fs::read_to_string(&path).expect("read backlog");
+        text.push_str(extra);
+        std::fs::write(&path, &text).expect("write backlog");
+        let out = tm.run(&["drop", target]);
+        assert_ne!(out.code, 0, "{}{}", out.stdout, out.stderr);
+        assert!(out.stderr.contains(refusal), "{}", out.stderr);
+        assert_eq!(std::fs::read_to_string(&path).expect("re-read"), text);
+    }
 }
 
 #[test]

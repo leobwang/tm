@@ -28,6 +28,7 @@ pub mod dayfile;
 pub mod ghost;
 pub mod init;
 pub mod items;
+pub mod kernel_bridge;
 pub mod lifecycle;
 pub mod out;
 pub mod planning;

@@ -1,6 +1,12 @@
 [workspace]
 resolver = "2"
 members = ["tm-core", "tm"]
+# tm-kernel-ffi is a PATH DEPENDENCY of `tm`, not a member: it stays its own
+# cargo workspace on purpose (it drives `lake` and links the Lean runtime;
+# kernel/README.md, AGENTS §2.2). Once `tm` depends on it by path, cargo
+# insists the separation be spelled out here — two workspace roots may not
+# nest silently.
+exclude = ["kernel/tm-kernel-ffi"]
 
 [workspace.package]
 version = "0.1.0"

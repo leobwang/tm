@@ -2442,3 +2442,120 @@ the ffi crate's own `[workspace]` table keeps the deliberate separation
 dependency entered (R7): every crate in the restored lockfile is the fork
 point's own. `check.sh` re-measured after the restore: **7/7 ok**, corpus
 33/37 files and 4/5 whole plans, unchanged.
+
+**The five lifecycle verbs are kernel-backed — A6 is dead in the shipped
+binary (same 2026-09-12 session, stage-3 wiring block).**  `tm move`,
+`tm drop`, `tm edit est=` (the est op, alone on the command line),
+`tm demote` and `tm readopt` now run through the Lean kernel; everything
+else (`close`, `plan`, `review`, `recur`, `check`, the TUI's own screens,
+`rank`, `add`, the keyed `edit`/unset forms) stays on the old Rust path this
+step.  The wiring is **one choke point**, `tm/src/cli/kernel_bridge.rs`:
+read every plan file through the store with its §1.3 guard
+(`FsStore::read_guarded`, new in `tm-core/src/store.rs`) → resolve horizon
+words to paths and generate each document's `grain`/`ix` **in the host**
+(gap 10's recorded stance; the numbers are the kernel's own — 2026-W37 is
+`(1, 105695)`, month `12·(year−1)+month−1`, day = days since 0001-01-01 — a
+compiled test, `regions_are_the_kernels_numbers`) → one
+`{"docs":[{path,grain,ix,lines}],"cmds":[…]}` request → one
+`tm_kernel_ffi::call` → write only the changed documents back atomically
+with the read-time guard still enforced (`FsStore::write_guarded`: mtime +
+content hash, no retry — a racing writer is the §1.3 conflict, exit 3,
+nothing clobbered).  The response's `grain`/`ix` are **carried, not
+dropped** (AGENTS 8.1's named trap): every returned document's region is
+kept on the bridge's `BridgeDoc` and verified against what was declared, and
+an echo that dropped or moved one refuses to write at all.  Every kernel
+refusal reaches the user **by name** — `occupied noSuchId notDemoted
+alreadyDemoted badHorizon badItem tabbedLine keyAbsent siteOutOfRange dupId
+notADemotion ambiguousDemotion duplicatePath badLine itemCheck`, re-derived
+from `Boundary.lean` (note `kerrName` now carries **eight** strings; the
+2026-09-12 ledger's "six" predates the edit widening's `tabbedLine` and
+`keyAbsent`) — in the human line (`tm: kernel refusal: occupied — …`) and
+in the `--json` document (`kind:"kernel"`, `detail.refusal:"occupied"`;
+exit code 1, the CLI's ordinary-error discipline — this CLI reserves 2 for
+`tm check`'s return and 3 for write conflicts, so refusals are 1 on
+purpose).  R7: `tm` gained `tm-kernel-ffi = { path = "../kernel/tm-kernel-ffi" }`
+— **in-repo, not a new external dependency**; the root lockfile's only new
+entry is the path crate itself (its `cc` build-dep was already present).
+Two build-system facts, recorded: the root `Cargo.toml` now carries
+`exclude = ["kernel/tm-kernel-ffi"]` — once the path dependency exists,
+cargo refuses two nested workspace roots, so this **supersedes, by name**,
+the restore paragraph's "coexist without exclusion … no nesting complaint"
+sentence; and `tm/build.rs` (new) adds the Lean toolchain `lib/` rpath to
+the `tm` binary and test harnesses, because a dependency's
+`cargo:rustc-link-arg` does not propagate (without it the binary dies at
+startup on `libc++.so.1`).  What stays old-path *inside* the five verbs, by
+name: id-less routine/optional/inbox lines (the kernel cannot address a
+line with no `^id` — gap 5), and `tm edit` invocations that are not exactly
+one `est=` pair.
+
+**Behaviour changes, each observable and each refused loudly — recorded,
+not absorbed** (the tests updated to the new behaviour cite this block):
+
+- *(a) Kernel-backed verbs demand a loadable tree.*  A duplicate id, an
+  itemish line that does not parse, an unordered demotion pair, or a
+  non-UTF-8 plan file anywhere in the tree refuses the verb by name
+  (`dupId`/`notADemotion`/`badLine`/`itemCheck`/`ambiguousDemotion`…), even
+  when the verb's target is a different item in a different file — the old
+  path edited its one line and left the corruption standing.  Compiled:
+  `a_kernel_backed_verb_refuses_an_unloadable_tree_by_name` (two same-file
+  duplicates are `dupId`; two cross-file live lines are `notADemotion`, the
+  loader refusing to read them as a demotion).
+- *(b) The headline: `move`/`readopt` refuse tombstone collisions —
+  `occupied` — so the duplicate-id class (six catalogued defects, five
+  patched entrances, one hole) is dead in the shipped binary.*  On a fresh
+  `tm init --example` tree, `tm move ^m2 month` — the demoted milestone
+  into its own record's file, the single-command A6 reproduction — now
+  exits 1 with `occupied` and writes nothing, where the restored
+  pre-stage-0 `move_to` silently appended the second line.  Compiled:
+  `move_into_the_tombstones_file_is_refused_by_name`,
+  `a_kernel_refusal_is_a_named_document`.  Three siblings of the same
+  shape: `tm readopt` of §4.3's shipped live-beside-record pair (`^m2`) is
+  `notDemoted` where the old path *absorbed* the record into the live line
+  (`readopt_into_another_horizon_leaves_the_tree_valid` now asserts the
+  refusal; the dup-id hazard it used to guard is gone by refusal); a second
+  `tm demote` of an id with a standing record is `alreadyDemoted` where the
+  old path overwrote the record
+  (`demote_with_a_standing_record_is_refused_by_name`); and a real
+  demote-then-readopt round trip removes the tombstone, so the same-week
+  readopt leaves one line with no CLI-side stale-copy cleanup
+  (`readopt_brings_a_demoted_line_back`, rewritten over a real demotion).
+- *(c) `tm edit est=` refuses tabbed lines by name* (`tabbedLine`, gap 32's
+  guard, recorded kernel-side in the edit-widening block above — now it
+  reaches the shipped binary: `est_edit_of_a_tabbed_line_is_refused_by_name`).
+- *(d) Placement and rendering drift the suite caught, kept as designed and
+  the tests updated to cite this block.*  (1) The kernel places a relocated
+  line itself, at a fresh rank — the end of the destination file; there is
+  no section parameter on the wire, so `tm move --section` is refused with
+  a message pointing here, and `tm move ^id day` is refused `badHorizon`
+  whenever `# Pinned` is not the day file's last section (§6.2 constrains
+  day items to `# Pinned`; the shipped day file ends `## Log`/`## Notes`) —
+  `move_to_a_day_is_refused_by_name`, was `move_to_a_day_pins_the_line`.
+  (2) `tm demote` writes the copy at the end of the month file (inside the
+  fixture's trailing `# Demoted`; a *bare* month file gets the copy with no
+  heading created) and **no longer computes a remaining onto the copy** —
+  the copy carries the line's own `est:`/leading estimate, and `est_min`
+  now reports exactly that (fixture values unchanged: `^m4` → 120, post-edit
+  `^t3` → 180).  (3) The est op always writes the **`est:` token** in the
+  field's canonical minutes rendering (`est=3b` → `est:180m`; a line
+  without `est:` gains one — the old path rewrote the *leading* estimate
+  there, and the leading slot is now never invented or rewritten:
+  `edit_est_moves_the_remaining_estimate_not_the_one_as_written`,
+  `edit_est_reaches_a_line_with_no_positional_slot`,
+  `edit_unset_removes_a_key`).  (4) `tm/templates/skills/plan-week.md`'s
+  fenced `tm readopt ^m2 --to week` example moved to prose with the
+  `notDemoted` rule stated, since on the example tree it is now a refusal
+  (`every_documented_command_runs` enforces fenced commands run), and its
+  snapshot `init_tree__skill_plan_week` was re-blessed;
+  `cli_items__readopt_json` (a snapshot of the absorb behaviour) is
+  deleted with its test's rewrite.
+
+Re-measured at this landing: `cargo test --workspace` **950 passed / 0
+failed / 0 ignored across 61 binaries** (was 943 at the restore; the delta
+is the new bridge/refusal tests net of the rewrites); `kernel/check.sh`
+**7/7 ok**, corpus 33/37 files and 4/5 whole plans, burn-down **41**, audit
+1090 — all unchanged (no Lean source was touched).  Still owed from stage
+3's scope, by name: the CLI wiring of `rank` and `add` and the keyed
+`edit`/unset ops onto the same choke point (the kernel wire already carries
+all of them); the panic probe (layer 3 exists in `lib.rs`; the probe and
+the layer-2 stderr `dup2` do not); and the four integration-bug
+countermeasures of AGENTS 8.1 item 7.

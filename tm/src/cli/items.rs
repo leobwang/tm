@@ -40,6 +40,7 @@ use tm_core::store::{edit as text_edit, Store};
 use tm_core::tree::Tree;
 
 use super::ctx::{Ctx, Globals};
+use super::kernel_bridge::{self, Cmd as KCmd};
 use super::out::{emit, CliError};
 use super::undo::Recorder;
 
@@ -394,6 +395,21 @@ pub fn edit(g: &Globals, args: &super::EditArgs) -> Result<i32, CliError> {
     if args.pairs.is_empty() && args.set.is_empty() && args.unset.is_empty() {
         return Err(CliError::msg("nothing to change (try `tm edit ^id ci=4`)"));
     }
+    // The `est` op — a bare `tm edit ^id est=<v>` — is kernel-backed
+    // (kernel/README.md, 2026-09-12 "the five lifecycle verbs"): the kernel
+    // writes the `est:` token through its one proven reader/setter pair, and
+    // refuses a tabbed line by name (`tabbedLine`, the gap-32 guard). Mixed
+    // edits, `--set`/`--unset`, and id-less lines (gap 5) stay on the old
+    // path, recorded in that README block.
+    if args.set.is_empty()
+        && args.unset.is_empty()
+        && args.pairs.len() == 1
+        && item.has_id()
+    {
+        if let Some(("est", value)) = args.pairs[0].split_once('=') {
+            return edit_est_kernel(&mut ctx, &id, &item, value);
+        }
+    }
     let rec = Recorder::start(&ctx, "edit")?;
     let block_min = ctx.block_min();
     let mut line = ctx.line(&id)?;
@@ -462,6 +478,68 @@ pub fn edit(g: &Globals, args: &super::EditArgs) -> Result<i32, CliError> {
     Ok(0)
 }
 
+/// The kernel-backed `est` op: `tm edit ^id est=<v>`, alone.
+///
+/// The value is parsed by the CLI's own grammar first (`Dur::parse_no_days`,
+/// so `est=zzz` is the same `invalid` document as before), then handed to
+/// the kernel as minutes; the kernel writes the canonical `est:` token
+/// through the one proven setter. Two observable changes from the old Rust
+/// path, both recorded in kernel/README.md's 2026-09-12 wiring block: a line
+/// that carried no `est:` token gains one (the old path rewrote the
+/// *leading* estimate instead), and a line whose raw bytes contain a tab is
+/// refused by name (`tabbedLine` — the gap-32 guard).
+fn edit_est_kernel(
+    ctx: &mut Ctx,
+    id: &Id,
+    item: &tm_core::model::Item,
+    value: &str,
+) -> Result<i32, CliError> {
+    let d = Dur::parse_no_days(value, ctx.block_min())?;
+    // The value being replaced: whichever of the two slots `remaining`
+    // reads — the `est:` token when the line carries one, else the leading
+    // estimate (§4.1) — same as the old path's report.
+    let from = match item.line().get("est") {
+        Some(v) => v.to_string(),
+        None => item
+            .est_original
+            .as_ref()
+            .map(|x| x.to_string())
+            .unwrap_or_default(),
+    };
+    let rec = Recorder::start(ctx, "edit")?;
+    let applied = kernel_bridge::apply(
+        ctx,
+        &[KCmd::Est {
+            id: id.to_string(),
+            min: d.as_minutes(),
+        }],
+    )?;
+    ctx.append_event(Event::Edit {
+        id: id.to_string(),
+        field: "est".to_string(),
+        from: from.clone(),
+        to: value.to_string(),
+    })?;
+    let line = applied
+        .line_of(id.as_str())
+        .map(|(_, l)| l)
+        .unwrap_or_else(|| item.line().to_string());
+    ctx.reload()?;
+    rec.finish(ctx, format!("edit {}", id.token()))?;
+
+    let out = EditOut {
+        id: id.clone(),
+        changes: vec![FieldChange {
+            field: "est".to_string(),
+            from,
+            to: value.to_string(),
+        }],
+        line,
+    };
+    emit(ctx.json, || out.line.clone(), &out)?;
+    Ok(0)
+}
+
 /// `tm move --json` / `tm readopt --json`.
 #[derive(Debug, Serialize)]
 pub struct MoveOut {
@@ -474,25 +552,75 @@ pub struct MoveOut {
 }
 
 /// `tm move ^id <backlog|month|week|day>`.
+///
+/// Kernel-backed (kernel/README.md, 2026-09-12 "the five lifecycle verbs"):
+/// the whole tree goes through [`kernel_bridge::apply`], and a destination
+/// file that already holds a line with this id — a standing `[-]` tombstone
+/// included — is refused by name (`occupied`) instead of silently gaining a
+/// second copy. That refusal is A6 closed in the shipped binary: the
+/// pre-stage-0 `move_to` appended without ever asking.
+///
+/// An id-less routine/optional line is invisible to the kernel (gap 5), so
+/// those stay on the old Rust path, by name in the README block.
 pub fn move_item(g: &Globals, args: &super::MoveArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
     let id = Ctx::key(&args.id);
-    ctx.item(&id)?;
+    let item = ctx.item(&id)?.clone();
     let to = horizon_arg(&ctx, &args.to)?;
-    let section = args.section.clone().or_else(|| match to {
-        // §6.2: a day file's items live under `# Pinned`.
-        Horizon::Day(_) => Some(horizon::PINNED_SECTION.to_string()),
-        _ => None,
-    });
+    if !item.has_id() {
+        // Old path: the kernel cannot address a line without a `^id`.
+        let section = args.section.clone().or_else(|| match to {
+            Horizon::Day(_) => Some(horizon::PINNED_SECTION.to_string()),
+            _ => None,
+        });
+        let rec = Recorder::start(&ctx, "move")?;
+        let moved = horizon::move_item(&ctx.hz(), &id, &to, section.as_deref())?;
+        ctx.reload()?;
+        rec.finish(&ctx, format!("move {} → {}", id.token(), moved.to))?;
+        let out = MoveOut {
+            id: moved.id,
+            from: moved.from,
+            to: moved.to,
+        };
+        emit(
+            ctx.json,
+            || format!("{} {} → {}", out.id.token(), out.from, out.to),
+            &out,
+        )?;
+        return Ok(0);
+    }
+    // The kernel places a moved line itself (at a fresh rank in the
+    // destination); it has no section parameter, so `--section` cannot be
+    // honoured on the kernel path and is refused rather than ignored
+    // (kernel/README.md, 2026-09-12 block).
+    if args.section.is_some() {
+        return Err(CliError::msg(
+            "--section is not supported by the kernel-backed move: the kernel places the \
+             line itself (kernel/README.md, stage-3 wiring block)",
+        ));
+    }
+    let to_path = to.path();
+    let from = item.src.file.clone();
     let rec = Recorder::start(&ctx, "move")?;
-    let moved = horizon::move_item(&ctx.hz(), &id, &to, section.as_deref())?;
+    kernel_bridge::apply(
+        &ctx,
+        &[KCmd::Move {
+            id: id.to_string(),
+            to: to_path.clone(),
+        }],
+    )?;
+    ctx.append_event(Event::Move {
+        id: id.to_string(),
+        from: from.clone(),
+        to: to_path.clone(),
+    })?;
     ctx.reload()?;
-    rec.finish(&ctx, format!("move {} → {}", id.token(), moved.to))?;
+    rec.finish(&ctx, format!("move {} → {}", id.token(), to_path))?;
 
     let out = MoveOut {
-        id: moved.id,
-        from: moved.from,
-        to: moved.to,
+        id: id.clone(),
+        from,
+        to: to_path,
     };
     emit(
         ctx.json,
@@ -554,19 +682,54 @@ pub struct DemoteOut {
 }
 
 /// `tm demote ^id` (§6.3).
+///
+/// Kernel-backed (kernel/README.md, 2026-09-12 "the five lifecycle verbs").
+/// The host resolves the destination — `month/<current>` — and the stamp
+/// period (the item's week number); the kernel writes the tombstone and the
+/// stamped copy, and refuses by name: `alreadyDemoted` when a standing
+/// archive record exists (the old path silently overwrote it), `badHorizon`
+/// when the copy cannot land where the month file's sections allow.
 pub fn demote(g: &Globals, args: &super::IdArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
     let id = Ctx::key(&args.id);
-    ctx.item(&id)?;
+    let item = ctx.item(&id)?.clone();
+    let Horizon::Week(week) = item.horizon else {
+        // The same refusal the old path raised: only week items demote.
+        return Err(CliError::Horizon(horizon::HorizonError::Horizon {
+            id: id.clone(),
+            horizon: item.horizon.to_string(),
+            message: "only week items are demoted (use `tm move`)".to_string(),
+        }));
+    };
+    let month = YearMonth::from_date(ctx.today);
+    let month_path = Horizon::Month(month).path();
     let rec = Recorder::start(&ctx, "demote")?;
-    let d = horizon::demote(&ctx.hz(), &id)?;
+    let applied = kernel_bridge::apply(
+        &ctx,
+        &[KCmd::Demote {
+            id: id.to_string(),
+            to: month_path.clone(),
+            period: week.week,
+        }],
+    )?;
+    // The copy the kernel wrote carries the record: its `est:` (or, when it
+    // has none, its leading estimate) is the remaining the demotion
+    // carries, and its `demoted:` value is the stamp list.
+    let copy = applied.line_in(&month_path, id.as_str()).unwrap_or_default();
+    let (est_min, stamps) = demote_record(&ctx, &copy);
+    ctx.append_event(Event::Demote {
+        id: id.to_string(),
+        from: week.to_string(),
+        to: month.to_string(),
+        est_min,
+    })?;
     ctx.reload()?;
     rec.finish(&ctx, format!("demote {}", id.token()))?;
 
     let out = DemoteOut {
-        id: d.id,
-        est_min: d.est_min,
-        stamps: d.stamps.iter().map(|s| s.to_string()).collect(),
+        id: id.clone(),
+        est_min,
+        stamps,
     };
     emit(
         ctx.json,
@@ -581,6 +744,28 @@ pub fn demote(g: &Globals, args: &super::IdArgs) -> Result<i32, CliError> {
         &out,
     )?;
     Ok(0)
+}
+
+/// What the archive copy the kernel wrote records: the remaining estimate
+/// it carries (`est:`, else the leading estimate — `est:` overrides the
+/// leading one, §4.1) in minutes, and its `demoted:` stamps. Read through
+/// the same §4.1 parser the tree uses, so there is one reader.
+fn demote_record(ctx: &Ctx, copy: &str) -> (u32, Vec<String>) {
+    let pctx = ParseCtx {
+        horizon: Horizon::Month(YearMonth::from_date(ctx.today)),
+        ..ParseCtx::new("month", ctx.block_min())
+    };
+    match grammar::parse_line(copy, &pctx) {
+        Ok(item) => (
+            item.est
+                .as_ref()
+                .or(item.est_original.as_ref())
+                .map(|d| d.as_minutes())
+                .unwrap_or(0),
+            item.stamps.demoted.iter().map(|s| s.to_string()).collect(),
+        ),
+        Err(_) => (0, Vec::new()),
+    }
 }
 
 /// Remove the `[-]` line a `tm demote` left behind when the readopt has just
@@ -626,24 +811,65 @@ fn drop_stale_demotion(ctx: &Ctx, id: &Id, path: &str) -> Result<(), CliError> {
 }
 
 /// `tm readopt ^id [--to week]` (§6.3).
+///
+/// Kernel-backed (kernel/README.md, 2026-09-12 "the five lifecycle verbs"):
+/// the kernel takes the demoted record into `to`, flips `[-]` back to `[ ]`
+/// keeping its stamps, and removes the tombstone — so the same-week readopt
+/// leaves one line without the old path's stale-copy cleanup. An id whose
+/// live line is not demoted — including §4.3's shipped `[ ]`-beside-`[-]`
+/// pair, which the old path *absorbed* — is refused by name (`notDemoted`),
+/// and nothing is written.
 pub fn readopt(g: &Globals, args: &super::ReadoptArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
     let id = Ctx::key(&args.id);
+    let item = ctx.item(&id)?.clone();
     let to = match &args.to {
-        Some(s) => Some(horizon_arg(&ctx, s)?),
-        None => None,
+        Some(s) => horizon_arg(&ctx, s)?,
+        None => Horizon::Week(IsoWeek::from_date(ctx.today)),
     };
+    if !item.has_id() {
+        // Old path: the kernel cannot address a line without a `^id`.
+        let rec = Recorder::start(&ctx, "readopt")?;
+        let moved = horizon::readopt(&ctx.hz(), &id, Some(&to))?;
+        ctx.reload()?;
+        drop_stale_demotion(&ctx, &id, &moved.to)?;
+        ctx.reload()?;
+        rec.finish(&ctx, format!("readopt {}", id.token()))?;
+        let out = MoveOut {
+            id: moved.id,
+            from: moved.from,
+            to: moved.to,
+        };
+        emit(
+            ctx.json,
+            || format!("readopted {} → {}", out.id.token(), out.to),
+            &out,
+        )?;
+        return Ok(0);
+    }
+    let to_path = to.path();
     let rec = Recorder::start(&ctx, "readopt")?;
-    let moved = horizon::readopt(&ctx.hz(), &id, to.as_ref())?;
-    ctx.reload()?;
-    drop_stale_demotion(&ctx, &id, &moved.to)?;
+    let applied = kernel_bridge::apply(
+        &ctx,
+        &[KCmd::Readopt {
+            id: id.to_string(),
+            to: to_path.clone(),
+        }],
+    )?;
+    // The file the record left: the changed document that lost the id (the
+    // dest may lose the tombstone and gain the live line, so it still
+    // carries the id and is skipped).
+    let from = applied
+        .lost_id(id.as_str(), &to_path)
+        .unwrap_or_else(|| item.src.file.clone());
+    ctx.append_event(Event::Readopt { id: id.to_string() })?;
     ctx.reload()?;
     rec.finish(&ctx, format!("readopt {}", id.token()))?;
 
     let out = MoveOut {
-        id: moved.id,
-        from: moved.from,
-        to: moved.to,
+        id: id.clone(),
+        from,
+        to: to_path,
     };
     emit(
         ctx.json,
@@ -663,12 +889,25 @@ pub struct DropOut {
 }
 
 /// `tm drop ^id`.
+///
+/// Kernel-backed (kernel/README.md, 2026-09-12 "the five lifecycle verbs"):
+/// the kernel rewrites the item's live line to `[~]` and refuses an
+/// unloadable tree by name. Id-less lines stay on the old path (gap 5).
 pub fn drop_item(g: &Globals, args: &super::IdArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
     let id = Ctx::key(&args.id);
-    ctx.item(&id)?;
+    let item = ctx.item(&id)?.clone();
     let rec = Recorder::start(&ctx, "drop")?;
-    let line = horizon::drop_item(&ctx.hz(), &id)?;
+    let line = if item.has_id() {
+        let applied = kernel_bridge::apply(&ctx, &[KCmd::Drop { id: id.to_string() }])?;
+        ctx.append_event(Event::Drop { id: id.to_string() })?;
+        applied
+            .line_of(id.as_str())
+            .map(|(_, l)| l)
+            .unwrap_or_else(|| item.line().to_string())
+    } else {
+        horizon::drop_item(&ctx.hz(), &id)?
+    };
     ctx.reload()?;
     rec.finish(&ctx, format!("drop {}", id.token()))?;
 

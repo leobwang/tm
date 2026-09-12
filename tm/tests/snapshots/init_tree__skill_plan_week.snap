@@ -54,9 +54,10 @@ bare line (a leading `- [ ] ` would be read as a flag):
 
 ```
 tm add "5 6b Finish ch.5 exercises @O1" --to week/<next week>.md --section Milestones
-tm readopt ^m2 --to week          # for each pre-selected demoted item
 tm check
 ```
 
+For each pre-selected demoted item, `tm readopt ^id --to week` — a live id
+is refused by name (`notDemoted`); a live line moves with `tm move`.
 Use `tm add` (it assigns the `^id`) rather than writing lines by hand. Report
 what was written and what was deliberately left out.

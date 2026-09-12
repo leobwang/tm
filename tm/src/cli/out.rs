@@ -81,6 +81,29 @@ pub enum CliError {
     /// JSON output or a `.tm/` sidecar.
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+    /// The Lean kernel refused a kernel-backed verb, or the FFI faulted.
+    /// Every kernel refusal is **named** (`occupied`, `noSuchId`,
+    /// `notDemoted`, `alreadyDemoted`, `badHorizon`, `badItem`,
+    /// `tabbedLine`, `keyAbsent`, `siteOutOfRange`, `dupId`, `notADemotion`,
+    /// `ambiguousDemotion`, `duplicatePath`, `badLine`, `itemCheck`) and the
+    /// name reaches both the human line and the `--json` document verbatim —
+    /// AGENTS §8.1: a refusal you can name is a finding, one swallowed into
+    /// free text is not.
+    #[error("{}", .0.message)]
+    Kernel(KernelIssue),
+}
+
+/// One named kernel refusal (or FFI fault), as the kernel bridge mapped it
+/// from the response's `err` shape (`kernel/TmKernel/TmKernel/Boundary.lean`).
+#[derive(Debug)]
+pub struct KernelIssue {
+    /// The refusal's name, exactly as the wire carries it.
+    pub name: String,
+    /// The human sentence; always contains `name`.
+    pub message: String,
+    /// The structured payload (`refusal`, plus the id/path/line the shape
+    /// carries), for the `--json` document's `detail`.
+    pub detail: Map<String, Value>,
 }
 
 impl CliError {
@@ -227,6 +250,16 @@ impl CliError {
                 "io"
             }
             CliError::Json(_) => "json",
+            CliError::Kernel(issue) => {
+                for (k, v) in &issue.detail {
+                    d.insert(k.clone(), v.clone());
+                }
+                // The refusal's name is the load-bearing datum: guaranteed
+                // present even if a mapper forgot to put it in the detail.
+                d.entry("refusal".to_string())
+                    .or_insert_with(|| Value::String(issue.name.clone()));
+                "kernel"
+            }
         }
     }
 
@@ -315,7 +348,9 @@ pub struct ErrorOut {
     pub ok: bool,
     /// A stable slug for what went wrong: `not-found`, `conflict`,
     /// `invalid`, `usage`, `parse`, `edit`, `horizon`, `io`, `json`,
-    /// `config`, `log`, `calendar`, `model`, or `error` for anything else.
+    /// `config`, `log`, `calendar`, `model`, `kernel` (a named Lean-kernel
+    /// refusal; `detail.refusal` carries the name), or `error` for anything
+    /// else.
     pub kind: &'static str,
     /// The same sentence the human path prints after `tm: `.
     pub message: String,

@@ -1284,6 +1284,31 @@ struct Snapshot {
     hash: u64,
 }
 
+/// A witness of one file's state at read time, for a write that happens
+/// later in the same command: the §1.3 guard (mtime + content hash), carried
+/// across the gap between [`FsStore::read_guarded`] and
+/// [`FsStore::write_guarded`]. Opaque on purpose — the only thing to do with
+/// one is hand it back to the store that issued it.
+#[derive(Clone, Debug)]
+pub struct FileGuard {
+    mtime: Option<SystemTime>,
+    hash: u64,
+    existed: bool,
+}
+
+impl FileGuard {
+    /// The guard for a file that did not exist at read time: the matching
+    /// [`FsStore::write_guarded`] succeeds only while the file is *still*
+    /// absent, so two racing creators cannot silently clobber each other.
+    pub fn absent() -> FileGuard {
+        FileGuard {
+            mtime: None,
+            hash: 0,
+            existed: false,
+        }
+    }
+}
+
 impl Snapshot {
     fn read(path: &Path, rel: &str) -> Result<Snapshot, StoreError> {
         let bytes = fs::read(path).map_err(|e| io_err(rel, e))?;
@@ -1380,6 +1405,53 @@ impl FsStore {
     pub fn with_before_write_hook(mut self, hook: BeforeWriteHook) -> FsStore {
         self.before_write = Some(hook);
         self
+    }
+
+    /// Read `rel` together with its §1.3 guard: the file's text plus the
+    /// mtime + content hash [`FsStore::write_guarded`] verifies before it
+    /// writes. This is the read half of the whole-tree edit the kernel
+    /// bridge performs (read every file → one kernel call → write the
+    /// changed files back): the write happens well after the read, so the
+    /// guard has to travel with the text instead of living inside one
+    /// `modify_file` call.
+    pub fn read_guarded(&self, rel: &str) -> Result<(String, FileGuard), StoreError> {
+        let snap = Snapshot::read(&self.abs(rel)?, rel)?;
+        let guard = FileGuard {
+            mtime: snap.mtime,
+            hash: snap.hash,
+            existed: true,
+        };
+        Ok((snap.text, guard))
+    }
+
+    /// Write `text` to `rel` atomically, but only when the file still
+    /// matches `guard` — byte-for-byte (content hash) and by mtime, the same
+    /// two checks [`FsStore::modify_file`] runs. A file that changed since
+    /// the guarded read — or that appeared where [`FileGuard::absent`] said
+    /// none was — is §1.3's write race: [`StoreError::Conflict`] with both
+    /// texts, and nothing is written. There is no retry, deliberately: the
+    /// caller's edit was computed from the guarded text (by the kernel),
+    /// so re-running it on the racing writer's text is the caller's call.
+    pub fn write_guarded(&self, rel: &str, guard: &FileGuard, text: &str) -> Result<(), StoreError> {
+        let path = self.abs(rel)?;
+        let now: Option<Snapshot> = if path.is_file() {
+            Some(Snapshot::read(&path, rel)?)
+        } else {
+            None
+        };
+        let settled = match &now {
+            Some(n) => guard.existed && n.mtime == guard.mtime && n.hash == guard.hash,
+            None => !guard.existed,
+        };
+        if settled {
+            return write_atomic(&path, rel, text);
+        }
+        Err(StoreError::Conflict {
+            id: Id::default(),
+            file: rel.to_string(),
+            ours: text.to_string(),
+            theirs: now.map(|n| n.text).unwrap_or_default(),
+        })
     }
 
     /// Locate `id` with the snapshot of the file it lives in. With a hint

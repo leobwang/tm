@@ -1532,6 +1532,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.20",
  "tm-core",
+ "tm-kernel-ffi",
  "toml",
 ]
 
@@ -1552,6 +1553,13 @@ dependencies = [
  "thiserror 2.0.20",
  "toml",
  "ureq",
+]
+
+[[package]]
+name = "tm-kernel-ffi"
+version = "0.1.0"
+dependencies = [
+ "cc",
 ]
 
 [[package]]

@@ -10,6 +10,11 @@ path = "src/main.rs"
 
 [dependencies]
 tm-core = { path = "../tm-core" }
+# The Lean kernel bridge (stage 3). In-repo, its own cargo workspace on
+# purpose (kernel/README.md, AGENTS §2.2) — a path dependency, not a new
+# external dependency, so R7 holds: every crates.io entry in the lockfile is
+# the fork point's own plus tm-kernel-ffi's pre-existing `cc`.
+tm-kernel-ffi = { path = "../kernel/tm-kernel-ffi" }
 chrono.workspace = true
 chrono-tz.workspace = true
 serde.workspace = true

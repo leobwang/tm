@@ -83,6 +83,29 @@ fn a_write_conflict_is_a_document_with_exit_three_and_both_texts() {
     assert_eq!(std::fs::read_to_string(&path).expect("read week"), text);
 }
 
+/// A kernel refusal under `--json` is a document whose `kind` is `kernel`
+/// and whose `detail.refusal` carries the kernel's own name for it — the
+/// name reaches the machine reader verbatim, never only as prose
+/// (kernel/README.md, 2026-09-12 "the five lifecycle verbs" block).
+#[test]
+fn a_kernel_refusal_is_a_named_document() {
+    let tm = Tm::new();
+    let out = tm.run(&["--json", "move", "^m2", "month"]);
+    assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+    let doc = err_doc(&out.stderr);
+    assert_eq!(doc["ok"], Value::Bool(false));
+    assert_eq!(doc["kind"], "kernel");
+    assert_eq!(doc["exit_code"], 1);
+    assert_eq!(doc["detail"]["refusal"], "occupied");
+    assert!(
+        doc["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("occupied"),
+        "{doc}"
+    );
+}
+
 #[test]
 fn a_usage_error_is_a_document_too() {
     // The verb never ran, but a caller driving `tm` still gets a document
