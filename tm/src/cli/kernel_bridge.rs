@@ -33,8 +33,10 @@
 //! `occupied`, `noSuchId`, `notDemoted`, `alreadyDemoted`, `badHorizon`,
 //! `badItem`, `tabbedLine`, `keyAbsent`, `siteOutOfRange`, `dupId`,
 //! `notADemotion`, `ambiguousDemotion`, `duplicatePath`, `badLine`,
-//! `itemCheck` — re-derived from `Boundary.lean`'s one `ok` and eight `err`
-//! shapes, not guessed. A refusal writes nothing.
+//! `itemCheck`, plus `parseCmd`'s parse-tier names riding the free-text
+//! `err` (`badValue <k>`, `keyNotWired <k>`, `unknownKey <k>`, and `add`'s
+//! five `title…` refusals) — re-derived from `Boundary.lean`'s one `ok` and
+//! eight `err` shapes, not guessed. A refusal writes nothing.
 
 use serde_json::{json, Map, Value};
 
@@ -58,14 +60,32 @@ pub enum Cmd {
     Demote { id: String, to: String, period: u32 },
     /// `{"op":"readopt","id":…,"doc":…}`.
     Readopt { id: String, to: String },
+    /// `{"op":"rank","id":…,"rank":…}` — the raw kernel rank: a document's
+    /// line index. The kernel refuses a taken rank (`badHorizon`), so the
+    /// caller ([`crate::cli::items::rank`]) rotates lines through the one
+    /// always-free rank past the end of the file.
+    Rank { id: String, rank: u64 },
+    /// `{"op":"add","seed":…,"doc":…,"title":…}` — the host supplies the
+    /// seed (Lean has no randomness); `freshId` (L21) makes freshness a
+    /// theorem, and the id comes back on the rendered line.
+    Add { seed: u64, to: String, title: String },
+    /// `{"op":"edit","id":…,"key":…,"value":…}` — the keyed edit for the
+    /// nine wired keys. An **empty** `value` is the unset form
+    /// (`tm edit ^id <key>=`). The value rides raw: the kernel parses it
+    /// with the key's own field grammar and refuses `badValue <k>` by name.
+    EditKey { id: String, key: String, value: String },
 }
 
 impl Cmd {
-    /// The destination path the command relocates into, if any.
+    /// The destination path the command relocates into (or adds into), if
+    /// any.
     fn dest(&self) -> Option<&str> {
         match self {
-            Cmd::Move { to, .. } | Cmd::Demote { to, .. } | Cmd::Readopt { to, .. } => Some(to),
-            Cmd::Drop { .. } | Cmd::Est { .. } => None,
+            Cmd::Move { to, .. }
+            | Cmd::Demote { to, .. }
+            | Cmd::Readopt { to, .. }
+            | Cmd::Add { to, .. } => Some(to),
+            Cmd::Drop { .. } | Cmd::Est { .. } | Cmd::Rank { .. } | Cmd::EditKey { .. } => None,
         }
     }
 }
@@ -223,6 +243,13 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
                 json!({"op":"demote","id":id,"doc":doc_ix(to),"period":period})
             }
             Cmd::Readopt { id, to } => json!({"op":"readopt","id":id,"doc":doc_ix(to)}),
+            Cmd::Rank { id, rank } => json!({"op":"rank","id":id,"rank":rank}),
+            Cmd::Add { seed, to, title } => {
+                json!({"op":"add","seed":seed,"doc":doc_ix(to),"title":title})
+            }
+            Cmd::EditKey { id, key, value } => {
+                json!({"op":"edit","id":id,"key":key,"value":value})
+            }
         })
         .collect();
     let request = json!({ "docs": docs_json, "cmds": cmds_json }).to_string();
@@ -328,10 +355,43 @@ fn refusal(err: &Value) -> KernelIssue {
         detail.insert(k.to_string(), Value::String(v));
     };
     let (name, message): (String, String) = if let Some(s) = err.as_str() {
-        // jsonErr: bad JSON, bad doc, unknown op — a host-side bug by the
-        // time it appears here, since this module builds every request.
-        put("error", s.to_string());
-        ("request".into(), format!("the kernel refused the request: {s}"))
+        // The free-text `err`. `parseCmd`'s named parse-tier refusals ride
+        // it (Boundary.lean: `unknownKey`/`keyNotWired`/`badValue` for the
+        // keyed edit, the five `title…` refusals for `add`), and since the
+        // keyed edit forwards the user's raw value, these reach real users —
+        // so they are mapped to their names, not swallowed as "request".
+        if let Some(k) = s.strip_prefix("badValue ") {
+            put("key", k.to_string());
+            ("badValue".into(), format!(
+                "kernel refusal: badValue — {k:?} refuses this value (the key's own field grammar, one reader end to end)"
+            ))
+        } else if let Some(k) = s.strip_prefix("keyNotWired ") {
+            put("key", k.to_string());
+            ("keyNotWired".into(), format!(
+                "kernel refusal: keyNotWired — {k:?} is not on the kernel's edit path yet (kernel/README.md gap 40 names the deferred keys)"
+            ))
+        } else if let Some(k) = s.strip_prefix("unknownKey ") {
+            put("key", k.to_string());
+            ("unknownKey".into(), format!(
+                "kernel refusal: unknownKey — {k:?} is not a §4.1 key"
+            ))
+        } else if s.starts_with("title") && !s.contains(' ') {
+            let why = match s {
+                "titleNewline" => "the title carries a newline, which would split the line",
+                "titleTab" => "the title carries a tab, which this kernel cannot read as a separator (gap 32)",
+                "titleId" => "the title carries a `^`, which would read back as a second id",
+                "titleBlank" => "the title is empty or only spaces",
+                "titleEdge" => "the title starts or ends with a space, which would not re-tokenize as written",
+                _ => "an unlisted title refusal — see Boundary.lean's parseCmd",
+            };
+            (s.to_string(), format!("kernel refusal: {s} — {why}"))
+        } else {
+            // jsonErr: bad JSON, bad doc, unknown op — a host-side bug by
+            // the time it appears here, since this module builds every
+            // request.
+            put("error", s.to_string());
+            ("request".into(), format!("the kernel refused the request: {s}"))
+        }
     } else if let Some(name) = err.get("kernel").and_then(Value::as_str) {
         let why = match name {
             "occupied" => "the destination file already holds a line with this id, so the move would write the id twice (the duplicate-id class, refused by name)",
@@ -430,6 +490,16 @@ mod tests {
                 "badLine",
             ),
             (serde_json::json!({"itemCheck":"depCycle"}), "itemCheck"),
+            // The parse-tier free-text refusals the keyed edit and `add`
+            // forward from real user input (Boundary.lean's parseCmd).
+            (serde_json::json!("badValue ci"), "badValue"),
+            (serde_json::json!("keyNotWired due"), "keyNotWired"),
+            (serde_json::json!("unknownKey size"), "unknownKey"),
+            (serde_json::json!("titleNewline"), "titleNewline"),
+            (serde_json::json!("titleTab"), "titleTab"),
+            (serde_json::json!("titleId"), "titleId"),
+            (serde_json::json!("titleBlank"), "titleBlank"),
+            (serde_json::json!("titleEdge"), "titleEdge"),
         ] {
             let issue = refusal(&payload);
             assert_eq!(issue.name, name);

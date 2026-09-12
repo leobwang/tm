@@ -7,3 +7,4 @@
 cc bd06d74cd0fba4ad3d19483d17aefebed5e261a5419f6f65d5195f8db962cb63 # shrinks to (text, stateful) = ("- [ ] A @ open", true), words = ["a"]
 cc 2f087741a41e5a93e3002297768ff38d6b2305474466f8f3ae973d71ba7f298b # shrinks to (text, stateful) = ("- [ ] a @a @A", true)
 cc 089c7b5cd67f00752000f58f886bb83dd4c870ea53e6b9c3fd41199e81d4f46d # shrinks to (text, stateful) = ("- [ ] a @A  a zz:0 @A", true)
+cc ead46373616f74bcabbabcb14a2074025c0de52b7a7425851336818ca1743a56 # shrinks to (text, stateful) = ("- [ ] A @A atomic due:2026-01-01 open @A ^a", true)

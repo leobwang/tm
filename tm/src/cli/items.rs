@@ -159,10 +159,121 @@ fn insert(
     }
 }
 
+/// True when a kernel-backed `tm add` can express this request on the wire
+/// (kernel/README.md, 2026-09-12 "rank, add and the keyed edit" block). The
+/// wire carries a plain title only — the kernel renders `- [ ] <title> ^id`
+/// at the end of the file — so everything else stays on the old Rust path,
+/// each carve-out by name:
+///
+/// * a `--section` (the kernel places the line itself; no section on the
+///   wire — the same rule as `tm move --section`),
+/// * an id-less destination (`routines.md`/`optional.md`/`inbox.md` — the
+///   kernel renders a box and an id, gap 5's mirror image),
+/// * an explicit `^id` in the text (the kernel's ids are `freshId`'s own;
+///   `parseCmd` refuses a `^` in a title),
+/// * a state other than `[ ]` (the wire has no box parameter),
+/// * a destination whose **last** heading is a `## series:` section — §5.4:
+///   the kernel appends at the end of the file, where the line would become
+///   a silent, invisible non-head of the series; the old path's series-skip
+///   is host placement logic the wire does not carry.
+fn kernel_addable(ctx: &Ctx, path: &str, horizon: Horizon, text: &str) -> bool {
+    if horizon.allows_missing_state() {
+        return false;
+    }
+    let Some(title) = text.strip_prefix("- [ ] ") else {
+        return false;
+    };
+    if title.is_empty()
+        || title.contains(['^', '\t', '\n'])
+        || title.starts_with(' ')
+        || title.ends_with(' ')
+    {
+        return false;
+    }
+    if ctx.store.exists(path) {
+        if let Ok(parsed) = ctx.store.read_file(path) {
+            if text_edit::headings(&parsed)
+                .last()
+                .is_some_and(|h| is_series(&h.text))
+            {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// The kernel-backed `tm add`: one `{"op":"add","seed":…,"doc":…,"title":…}`
+/// through the choke point. The seed comes from the same entropy source the
+/// old id generator used ([`id_gen`]'s hasher over `--now` and the text), so
+/// `--now` still pins the id (§17.2) and nothing new is stored; the id
+/// itself is the kernel's — `freshId` renders the seed as digits and bumps
+/// past every taken id, freshness by theorem (L21), so the id shape is
+/// digits now, not the old four-character base-32 (gap 13's recorded
+/// resolution: digits are a subset of `[a-z0-9]`).
+fn add_kernel(
+    ctx: &mut Ctx,
+    path: &str,
+    title: &str,
+    raw: &str,
+) -> Result<i32, CliError> {
+    let mut h = DefaultHasher::new();
+    ctx.now.timestamp_millis().hash(&mut h);
+    raw.hash(&mut h);
+    // Four digits to start with, the old id length; freshId may walk past.
+    let seed = 1000 + (h.finish() % 9000);
+    let rec = Recorder::start(ctx, "add")?;
+    let applied = kernel_bridge::apply(
+        ctx,
+        &[KCmd::Add {
+            seed,
+            to: path.to_string(),
+            title: title.to_string(),
+        }],
+    )?;
+    // The added line is the one the destination gained; the kernel returns
+    // the id on the rendered line (a trailing `^<digits>` token).
+    let doc = applied
+        .doc(path)
+        .ok_or_else(|| CliError::msg(format!("{path}: not in the kernel response")))?;
+    let sent: Vec<&str> = doc.sent.lines().collect();
+    let line = doc
+        .returned
+        .lines()
+        .find(|l| !sent.contains(l))
+        .unwrap_or_default()
+        .to_string();
+    let id = Id::new(
+        line.split_whitespace()
+            .rev()
+            .find_map(|w| w.strip_prefix('^'))
+            .unwrap_or_default(),
+    );
+    ctx.append_event(Event::Edit {
+        id: id.to_string(),
+        field: "add".to_string(),
+        from: String::new(),
+        to: line.clone(),
+    })?;
+    ctx.reload()?;
+    rec.finish(ctx, format!("add {path}"))?;
+
+    let out = AddOut {
+        section: ctx
+            .tree
+            .get(&id)
+            .and_then(|i| i.src.section.clone()),
+        id,
+        file: path.to_string(),
+        line,
+    };
+    emit(ctx.json, || format!("{} → {}", out.line, out.file), &out)?;
+    Ok(0)
+}
+
 /// `tm add "<line>" [--to <file>] [--section <name>]`.
 pub fn add(g: &Globals, args: &super::AddArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
-    let rec = Recorder::start(&ctx, "add")?;
     let path = target_path(&ctx, args.to.as_deref())?;
     let horizon = Horizon::from_path(&path).unwrap_or(Horizon::Backlog);
 
@@ -181,6 +292,15 @@ pub fn add(g: &Globals, args: &super::AddArgs) -> Result<i32, CliError> {
     grammar::parse_line(&text, &pctx)
         .map_err(|e| CliError::msg(format!("{e}: {text:?}")))?;
 
+    // Kernel-backed when the wire can carry it (kernel/README.md, 2026-09-12
+    // "rank, add and the keyed edit" block); the carve-outs stay on the old
+    // Rust path, each named on [`kernel_addable`].
+    if args.section.is_none() && kernel_addable(&ctx, &path, horizon, &text) {
+        let title = text.strip_prefix("- [ ] ").expect("checked").to_string();
+        return add_kernel(&mut ctx, &path, &title, raw);
+    }
+
+    let rec = Recorder::start(&ctx, "add")?;
     let mut line = ItemLine::parse(&text).map_err(|e| CliError::msg(e.to_string()))?;
     let mut id = line.id().unwrap_or_default();
     let mut taken = ctx.taken_ids();
@@ -395,19 +515,21 @@ pub fn edit(g: &Globals, args: &super::EditArgs) -> Result<i32, CliError> {
     if args.pairs.is_empty() && args.set.is_empty() && args.unset.is_empty() {
         return Err(CliError::msg("nothing to change (try `tm edit ^id ci=4`)"));
     }
-    // The `est` op — a bare `tm edit ^id est=<v>` — is kernel-backed
-    // (kernel/README.md, 2026-09-12 "the five lifecycle verbs"): the kernel
-    // writes the `est:` token through its one proven reader/setter pair, and
-    // refuses a tabbed line by name (`tabbedLine`, the gap-32 guard). Mixed
-    // edits, `--set`/`--unset`, and id-less lines (gap 5) stay on the old
-    // path, recorded in that README block.
-    if args.set.is_empty()
-        && args.unset.is_empty()
-        && args.pairs.len() == 1
-        && item.has_id()
-    {
-        if let Some(("est", value)) = args.pairs[0].split_once('=') {
-            return edit_est_kernel(&mut ctx, &id, &item, value);
+    // The keyed edit — kernel-backed for the nine wired keys
+    // (kernel/README.md, 2026-09-12 "rank, add and the keyed edit" block,
+    // superseding the est-only routing of "the five lifecycle verbs"): the
+    // kernel parses the value with the key's own field grammar, writes it
+    // through the one proven setter, and refuses by name (`badValue`,
+    // `keyAbsent`, `tabbedLine`). What stays on the old Rust path, by name:
+    // id-less lines (gap 5), `--set` (documented as a raw verbatim token,
+    // which the kernel would canonicalize), the typed non-key edits
+    // (`title`, `p`, `state`), `--unset ci`/`--unset p` (positional-slot
+    // surgery the wire does not carry — gap 41), and the nine deferred keys
+    // gap 40 names (`due at win every on-event after loc waiting`, plus
+    // `demoted` excluded by policy).
+    if item.has_id() && args.set.is_empty() {
+        if let Some(cmds) = kernel_edit_cmds(&ctx, &id, args)? {
+            return edit_kernel(&mut ctx, &id, &item, args, cmds);
         }
     }
     let rec = Recorder::start(&ctx, "edit")?;
@@ -478,62 +600,147 @@ pub fn edit(g: &Globals, args: &super::EditArgs) -> Result<i32, CliError> {
     Ok(0)
 }
 
-/// The kernel-backed `est` op: `tm edit ^id est=<v>`, alone.
+/// The keys the kernel's edit path is wired for (kernel/README.md,
+/// edit-widening block: `Field.Key.ofName?` spellings, `cap` and `max` one
+/// key). `ci` sets ride the wire; `--unset ci` does not — the wire clears
+/// the `ci:` key slot only, and a complete unset has to clear the positional
+/// digit too (gap 41), which stays the old path's line surgery.
+const KERNEL_EDIT_KEYS: &[&str] = &[
+    "est", "dur", "buffer", "pref", "on-miss", "after-done", "min", "max", "cap", "ci",
+];
+
+/// The wire commands for a `tm edit` invocation, when **every** requested
+/// change is one the kernel path carries — else `None`, and the old Rust
+/// path takes the whole edit. An `est=` pair is sent as the `est` op in
+/// canonical minutes (the CLI's own `Dur` grammar still reads the value, so
+/// `est=2b` keeps its block arithmetic and `est=zzz` its old message; the
+/// kernel proves the op *is* the keyed est edit). Every other wired pair
+/// rides raw — the kernel's field grammar is the one reader — and an empty
+/// value (or `--unset <key>`) is the wire's unset form.
+fn kernel_edit_cmds(
+    ctx: &Ctx,
+    id: &Id,
+    args: &super::EditArgs,
+) -> Result<Option<Vec<KCmd>>, CliError> {
+    let line = ctx.line(id)?;
+    // `ci=` rides the wire only when the line's ci already lives in the
+    // `ci:` key slot — the kernel writes that slot, and on a line whose ci
+    // is the positional digit the write would leave both slots populated
+    // (`tm check`: "ci given twice"). The positional digit is §4.1 line
+    // surgery the wire does not carry (gap 41's recorded stance), so those
+    // edits stay on the old Rust path.
+    let wired_set = |k: &str| {
+        KERNEL_EDIT_KEYS.contains(&k) && (k != "ci" || line.get("ci").is_some())
+    };
+    let wired_unset = |k: &str| KERNEL_EDIT_KEYS.contains(&k) && k != "ci";
+    for pair in &args.pairs {
+        let (k, v) = split_pair(pair)?;
+        if !(if v.is_empty() { wired_unset(k) } else { wired_set(k) }) {
+            return Ok(None);
+        }
+    }
+    if !args.unset.iter().all(|k| wired_unset(k)) {
+        return Ok(None);
+    }
+    let mut cmds = Vec::new();
+    for pair in &args.pairs {
+        let (k, v) = split_pair(pair)?;
+        cmds.push(if k == "est" && !v.is_empty() {
+            KCmd::Est {
+                id: id.to_string(),
+                min: Dur::parse_no_days(v, ctx.block_min())?.as_minutes(),
+            }
+        } else {
+            KCmd::EditKey {
+                id: id.to_string(),
+                key: k.to_string(),
+                value: v.to_string(),
+            }
+        });
+    }
+    for k in &args.unset {
+        cmds.push(KCmd::EditKey {
+            id: id.to_string(),
+            key: k.clone(),
+            value: String::new(),
+        });
+    }
+    Ok(Some(cmds))
+}
+
+/// The kernel-backed keyed edit: every wired `k=v` and `--unset k` of one
+/// `tm edit` invocation in one request through the choke point.
 ///
-/// The value is parsed by the CLI's own grammar first (`Dur::parse_no_days`,
-/// so `est=zzz` is the same `invalid` document as before), then handed to
-/// the kernel as minutes; the kernel writes the canonical `est:` token
-/// through the one proven setter. Two observable changes from the old Rust
-/// path, both recorded in kernel/README.md's 2026-09-12 wiring block: a line
-/// that carried no `est:` token gains one (the old path rewrote the
-/// *leading* estimate instead), and a line whose raw bytes contain a tab is
-/// refused by name (`tabbedLine` — the gap-32 guard).
-fn edit_est_kernel(
+/// Observable changes from the old Rust path, recorded in kernel/README.md's
+/// 2026-09-12 blocks: the accepted value lands as the field's **canonical
+/// rendering** (`est=045m` → `est:45m`, `cap=2b/d` → `max:…`); `ci=` writes
+/// the `ci:` key token — which both readers give precedence — instead of
+/// rewriting the positional digit; a line with no `est:` token gains one
+/// (the leading estimate is never invented or rewritten); a bad value, an
+/// unset of an absent key, and a tabbed line are refused **by name**
+/// (`badValue <k>`, `keyAbsent`, `tabbedLine`) where the old path wrote
+/// silently or raised its own free text.
+fn edit_kernel(
     ctx: &mut Ctx,
     id: &Id,
     item: &tm_core::model::Item,
-    value: &str,
+    args: &super::EditArgs,
+    cmds: Vec<KCmd>,
 ) -> Result<i32, CliError> {
-    let d = Dur::parse_no_days(value, ctx.block_min())?;
-    // The value being replaced: whichever of the two slots `remaining`
-    // reads — the `est:` token when the line carries one, else the leading
-    // estimate (§4.1) — same as the old path's report.
-    let from = match item.line().get("est") {
-        Some(v) => v.to_string(),
-        None => item
-            .est_original
-            .as_ref()
-            .map(|x| x.to_string())
-            .unwrap_or_default(),
+    let line_before = item.line();
+    // What each change replaces: `est` reads whichever of the two slots
+    // `remaining` reads (the `est:` token, else the leading estimate —
+    // §4.1); `ci` reads the item's effective ci; every other key its token.
+    let from_of = |k: &str| -> String {
+        match k {
+            "est" => match line_before.get("est") {
+                Some(v) => v.to_string(),
+                None => item
+                    .est_original
+                    .as_ref()
+                    .map(|x| x.to_string())
+                    .unwrap_or_default(),
+            },
+            "ci" => item.ci.to_string(),
+            other => line_before.get(other).unwrap_or_default().to_string(),
+        }
     };
+    let mut changes = Vec::new();
+    for pair in &args.pairs {
+        let (k, v) = split_pair(pair)?;
+        changes.push(FieldChange {
+            field: k.to_string(),
+            from: from_of(k),
+            to: v.to_string(),
+        });
+    }
+    for k in &args.unset {
+        changes.push(FieldChange {
+            field: k.clone(),
+            from: from_of(k),
+            to: String::new(),
+        });
+    }
     let rec = Recorder::start(ctx, "edit")?;
-    let applied = kernel_bridge::apply(
-        ctx,
-        &[KCmd::Est {
+    let applied = kernel_bridge::apply(ctx, &cmds)?;
+    for c in &changes {
+        ctx.append_event(Event::Edit {
             id: id.to_string(),
-            min: d.as_minutes(),
-        }],
-    )?;
-    ctx.append_event(Event::Edit {
-        id: id.to_string(),
-        field: "est".to_string(),
-        from: from.clone(),
-        to: value.to_string(),
-    })?;
+            field: c.field.clone(),
+            from: c.from.clone(),
+            to: c.to.clone(),
+        })?;
+    }
     let line = applied
         .line_of(id.as_str())
         .map(|(_, l)| l)
-        .unwrap_or_else(|| item.line().to_string());
+        .unwrap_or_else(|| line_before.to_string());
     ctx.reload()?;
     rec.finish(ctx, format!("edit {}", id.token()))?;
 
     let out = EditOut {
         id: id.clone(),
-        changes: vec![FieldChange {
-            field: "est".to_string(),
-            from,
-            to: value.to_string(),
-        }],
+        changes,
         line,
     };
     emit(ctx.json, || out.line.clone(), &out)?;
@@ -641,11 +848,146 @@ pub struct RankOut {
     pub moved: bool,
 }
 
+/// The rotation a kernel-backed `tm rank ^id n` compiles to: a sequence of
+/// `rank{id,rank}` wire ops (kernel ranks are line indices; the kernel
+/// refuses a taken one, `badHorizon`). `None` when a line in the rotation
+/// carries no `^id` the kernel can address (gap 5 — the old path takes the
+/// whole reorder); `Some(vec![])` when the item already sits at the clamped
+/// position (the old path's `moved: false`).
+fn rank_cmds(
+    ctx: &Ctx,
+    id: &Id,
+    path: &str,
+    n: usize,
+) -> Result<Option<Vec<KCmd>>, CliError> {
+    let parsed = ctx.store.read_file(path)?;
+    let idx = text_edit::find_line(&parsed, id)
+        .ok_or_else(|| CliError::NotFound(id.clone()))?;
+    let (start, end) = text_edit::section_range(&parsed, idx);
+    // The section's item slots, as kernel ranks: a parsed line's index *is*
+    // its rank (the loader assigns rank = line index; front matter and
+    // prose included).
+    let slots: Vec<usize> = (start..end)
+        .filter(|&i| parsed.lines[i].item().is_some())
+        .collect();
+    let pos = slots
+        .iter()
+        .position(|&i| i == idx)
+        .ok_or_else(|| CliError::NotFound(id.clone()))?;
+    let target = n.max(1).min(slots.len()) - 1;
+    if target == pos {
+        return Ok(Some(Vec::new()));
+    }
+    let id_at = |i: usize| -> Option<String> {
+        parsed.lines[i]
+            .item()
+            .filter(|it| it.has_id())
+            .map(|it| it.id.to_string())
+    };
+    let chain: Vec<usize> = if target < pos {
+        (target..pos).collect()
+    } else {
+        (pos + 1..=target).collect()
+    };
+    let mut ids = Vec::with_capacity(chain.len());
+    for &j in &chain {
+        match id_at(slots[j]) {
+            Some(i) => ids.push(i),
+            None => return Ok(None),
+        }
+    }
+    // Past every possible rank: a file of L parsed lines splits into at
+    // most L+1 kernel lines (the trailing newline's empty segment), so
+    // ranks 0..=L can be taken and L+2 never is.
+    let temp = (parsed.lines.len() + 2) as u64;
+    let mut cmds = vec![KCmd::Rank {
+        id: id.to_string(),
+        rank: temp,
+    }];
+    if target < pos {
+        // Moving up: each item between steps down into the rank its lower
+        // neighbour just vacated, highest first.
+        for (k, j) in chain.iter().enumerate().rev() {
+            cmds.push(KCmd::Rank {
+                id: ids[k].clone(),
+                rank: slots[j + 1] as u64,
+            });
+        }
+    } else {
+        // Moving down: each item between steps up, lowest first.
+        for (k, j) in chain.iter().enumerate() {
+            cmds.push(KCmd::Rank {
+                id: ids[k].clone(),
+                rank: slots[j - 1] as u64,
+            });
+        }
+    }
+    cmds.push(KCmd::Rank {
+        id: id.to_string(),
+        rank: slots[target] as u64,
+    });
+    Ok(Some(cmds))
+}
+
 /// `tm rank ^id <n>` — rank is line order (§7.4).
+///
+/// Kernel-backed (kernel/README.md, 2026-09-12 "rank, add and the keyed
+/// edit" block). The wire op is `rank{id,rank}` with a **raw document
+/// rank** (a line index), and the kernel refuses a taken rank
+/// (`badHorizon`) rather than renumbering the file — so the host rotates:
+/// the moved line goes to the one always-free rank past the end of the
+/// file, the items between old and new position each step into the rank
+/// their neighbour just vacated, and the moved line takes the freed target
+/// rank, all in one atomic request. Observable changes from the old Rust
+/// path, recorded in that README block: items rotate through the section's
+/// *item* slots while interleaved prose keeps its own line (the old path
+/// reinserted the line and shifted the prose); and a file whose sections
+/// refuse an item at the end of the file (a day file whose `# Pinned` is
+/// not last) refuses the whole reorder `badHorizon`, because the rotation's
+/// temporary rank sits there. Id-less lines — the moved one or any line it
+/// must rotate through — stay on the old path (gap 5).
 pub fn rank(g: &Globals, args: &super::RankArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
     let id = Ctx::key(&args.id);
-    ctx.item(&id)?;
+    let item = ctx.item(&id)?.clone();
+    if item.has_id() {
+        if let Some(cmds) = rank_cmds(&ctx, &id, &item.src.file, args.n)? {
+            if cmds.is_empty() {
+                // Already at the requested position — the old path's
+                // `moved: false`: no kernel call, nothing written, but the
+                // undo entry still recorded, exactly as before.
+                let rec = Recorder::start(&ctx, "rank")?;
+                ctx.reload()?;
+                rec.finish(&ctx, format!("rank {} {}", id.token(), args.n))?;
+                let out = RankOut {
+                    id: id.clone(),
+                    n: args.n,
+                    moved: false,
+                };
+                emit(
+                    ctx.json,
+                    || format!("{} already at position {}", out.id.token(), out.n),
+                    &out,
+                )?;
+                return Ok(0);
+            }
+            let rec = Recorder::start(&ctx, "rank")?;
+            kernel_bridge::apply(&ctx, &cmds)?;
+            ctx.reload()?;
+            rec.finish(&ctx, format!("rank {} {}", id.token(), args.n))?;
+            let out = RankOut {
+                id: id.clone(),
+                n: args.n,
+                moved: true,
+            };
+            emit(
+                ctx.json,
+                || format!("{} → position {}", out.id.token(), out.n),
+                &out,
+            )?;
+            return Ok(0);
+        }
+    }
     let rec = Recorder::start(&ctx, "rank")?;
     let moved = horizon::rank(&ctx.hz(), &id, args.n)?;
     ctx.reload()?;

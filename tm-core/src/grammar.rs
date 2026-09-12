@@ -518,15 +518,24 @@ impl ItemLine {
         let Some(&first) = orphans.first() else {
             return Ok(());
         };
-        let Some(id) = self.index_of(&TokenKind::Id) else {
+        // `boundary_before` is monotone (a boundary at `i` covers everything
+        // after it), so the orphans are exactly the flags before the line's
+        // *first* boundary token. Move them, as a group and in order, to
+        // just after that boundary: moving them after the `^id` instead
+        // reordered them past any flag that already sat between (`A @A
+        // atomic due:… open @A ^a` came back `… open … atomic`).
+        let Some(boundary) = (0..self.tokens.len())
+            .find(|&i| self.tokens[i].kind != TokenKind::Title && starts_token(&self.tokens[i].text))
+        else {
             return Err(EditError::FlagNeedsBoundary {
                 flag: self.tokens[first].text.clone(),
             });
         };
-        // Every orphan precedes the id (the id itself is a boundary).
         let mut moved: Vec<Token> = orphans.iter().rev().map(|&i| self.tokens.remove(i)).collect();
         moved.reverse();
-        let mut at = id - orphans.len() + 1;
+        // Every orphan sat before `boundary`, which is now shifted left by
+        // their count; insert right after it.
+        let mut at = boundary - orphans.len() + 1;
         for mut t in moved {
             t.lead = " ".to_string();
             self.tokens.insert(at, t);

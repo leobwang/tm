@@ -2559,3 +2559,120 @@ is the new bridge/refusal tests net of the rewrites); `kernel/check.sh`
 all of them); the panic probe (layer 3 exists in `lib.rs`; the probe and
 the layer-2 stderr `dup2` do not); and the four integration-bug
 countermeasures of AGENTS 8.1 item 7.
+
+**Rank, add and the keyed edit are kernel-backed — the seven-verb surface is
+complete (same 2026-09-12 session, stage-3 wiring block; this is the "rank,
+add and the keyed edit" block other paragraphs cite).**  All three ride the
+same choke point (`kernel_bridge::apply`); nothing else changed shape.  What
+each wiring is, and what it changed observably — recorded, never absorbed:
+
+- *`tm rank ^id n`.*  The wire op is `rank{id,rank}` with a **raw document
+  rank** (a line index — a parsed line's index is the rank `splitDoc`
+  assigns), and the kernel refuses a taken rank (`badHorizon`,
+  `rank_onto_a_taken_rank_is_refused`) rather than renumbering — so the host
+  compiles the position into a **rotation**, one atomic request: the moved
+  line to the always-free rank past the end of the file, each item between
+  old and new position into the rank its neighbour just vacated, the moved
+  line into the freed target rank.  Every line is byte-identical afterwards;
+  only the order changes (`rank_down_rotates_the_section_and_keeps_every_
+  byte`).  Changes: (1) items rotate through the section's *item* slots, so
+  prose interleaved in a section keeps its own line — the old path reinserted
+  the line and shifted the prose with it; (2) a day file whose `# Pinned` is
+  not the last section refuses the whole reorder `badHorizon`, because the
+  rotation's temporary rank sits past the last section — the same family as
+  the recorded move-to-day refusal; (3) a no-op rank (already at the clamped
+  position) makes no kernel call, writes nothing, and still records its undo
+  entry, as before.  Id-less lines — the moved one or any line the rotation
+  passes through — keep the old path (gap 5).
+- *`tm add`.*  `{"op":"add","seed":…,"doc":…,"title":…}`: the seed comes
+  from the same hasher `id_gen` seeds (`--now` + the text, §17.2 — nothing
+  new is stored), sized to four digits; the id is the kernel's own —
+  `freshId` renders the seed as digits and bumps past every taken id,
+  freshness by L21 — so **assigned ids are digit strings now**, not the old
+  four-character base-32 (gap 13's recorded resolution: digits are a subset
+  of `[a-z0-9]`; the shape decision stays the human's).  The kernel places
+  the line at `freshRank` — the end of the file.  What stays on the old Rust
+  path, each carve-out by name on `kernel_addable`: `--section` (no section
+  on the wire — the recorded move rule), id-less destinations
+  (`routines.md`/`optional.md`/`inbox.md`, gap 5's mirror), an explicit
+  `^id` in the text (`parseCmd` refuses `^` in a title; the old taken-id
+  check still guards the explicit form), a state other than `[ ]` (no box
+  on the wire), and a destination whose **last** heading is a `## series:`
+  section — §5.4: the kernel would append the line as a silent, invisible
+  non-head, which is exactly what the old path's series-skip exists to
+  prevent, so that placement logic stays host-side.  Change: `tm add --to
+  day` on the shipped day file (ends `## Log`/`## Notes`) is refused
+  `badItem` with nothing written, where the old path appended an
+  out-of-section line §6.2 forbids (`add_to_a_day_outside_pinned_is_
+  refused_by_name`; the FFI twin is `add_outside_a_day_files_pinned_
+  section_is_refused_by_name`).
+- *The keyed `edit`/unset.*  `tm edit ^id k=v … [--unset k …]` rides the
+  wire when **every** requested change is a wired key — `est dur buffer
+  pref on-miss after-done min max cap` (`cap` and `max` one key; the write
+  lands `max:`, `set_max_writes_max`) — as `{"op":"edit","id","key","value"}`
+  per change, the raw value text on the wire, in one request; an `est=`
+  pair goes as the `est` op in canonical minutes (the CLI's `Dur` grammar
+  still reads it, so `est=2b` keeps its block arithmetic and `est=zzz` its
+  old message; `the_est_op_is_the_keyed_est_edit` pins the equivalence).
+  An **empty value** (`tm edit ^id pref=`) is the wire's unset form and now
+  works from the CLI.  Changes: values land as the field's canonical
+  rendering; a bad value is `badValue <k>` **by name** in the human line
+  and the `--json` document (the free-text `err` is mapped, not swallowed:
+  `badValue`/`keyNotWired`/`unknownKey`/the five `title…` names each reach
+  `detail.refusal`); an unset of a key the line does not carry is
+  `keyAbsent` where the old path reported success and removed nothing; a
+  tabbed line refuses the whole edit (`tabbedLine`, gap 32's guard, now on
+  every wired key).  What stays on the old Rust path, by name: id-less
+  lines (gap 5); `--set` (documented as a raw verbatim token — the kernel
+  would canonicalize it); the typed non-key edits `title`/`p`/`state`; the
+  deferred keys gap 40 names (`due at win every on-event after loc
+  waiting`, plus `demoted` excluded by policy — the wire refusal is
+  `keyNotWired`, named); `--unset ci` (the wire clears the `ci:` slot only
+  and gap 41 wants both slots); and — gap 41's mirror, decided here —
+  **`ci=` rides the wire only when the line's ci already lives in the
+  `ci:` key slot**: on a line whose ci is the positional digit the kernel
+  write would leave both slots populated (`tm check`: "ci given twice"),
+  and the positional digit is §4.1 line surgery the wire does not carry,
+  so those edits keep the old positional rewrite.
+
+**The bare-`tm init` tree was unloadable to the kernel — a landmine standing
+since the five-verb landing, found and defused here.**  The starter
+templates' guidance comments carried example item lines (`- [ ] … ^m1`,
+`after:^t4`), and this kernel has **no HTML-comment awareness**: `scanLines`
+reads any `- [c] …` line as an item wherever it stands, so a fresh `tm init`
+tree refused *every* kernel-backed verb — `itemCheck: danglingDep` on ids
+that exist only inside `<!-- -->` guidance (`tm init && tm add … --to week`
+exited 1).  The five-verb landing never saw it because every test tree was
+the `plan-basic` fixture or `--example`, whose comments carry no itemish
+lines.  Host-side fix, taken: the three starter templates with itemish
+guidance (`week-body.md`, `month-body.md`, `backlog.md`) now bullet their
+examples `• [ ]` instead of `- [ ]` — prose to both readers, byte-visible in
+`tm init`'s output, and a copy-paste of one is a loud non-item rather than a
+silent live line.  Kernel-side, **owed by name** (a Lean change this step
+may not take): comment-awareness in `scanLines`/`splitDoc` — the loader
+should read `<!-- … -->` spans as prose the way the shipped Rust parser
+does; until it lands, any hand-written plan file with itemish bytes inside a
+comment refuses every kernel-backed verb by whatever name the comment's
+content earns (`dupId`, `danglingDep`, `badLine`…), loudly but surprisingly.
+
+**A fork-point tm-core defect, found by the restored proptest harness and
+fixed: `fix_flag_boundaries` reordered flags.**  `grammar_proptest`'s
+`add_flag_and_remove_parent_keep_flags` (running fresh cases, as L24/L25
+kept it alive to do) shrank to `- [ ] A @A atomic due:2026-01-01 open @A ^a`:
+`set_parent(None)` removes both `@A` tokens, orphaning `atomic` against the
+title, and the old repair moved every orphan after the `^id` — past `open` —
+so the flags came back `open atomic` where the line said `atomic open`.
+Since `boundary_before` is monotone, the orphans are exactly the flags
+before the line's *first* boundary token; they now move, as a group and in
+order, to just after **that** token instead.  The shrunk case is persisted
+in `grammar_proptest.proptest-regressions` (fourth `cc` entry), so it
+replays deterministically from here on.
+
+Re-measured at this landing: `cargo test --workspace` **955 passed / 0
+failed / 0 ignored across 61 binaries** (was 950; +5 CLI tests for the three
+wirings, the tm-core fix and template change cost nothing); `kernel/check.sh`
+**7/7 ok**, corpus 33/37 files and 4/5 whole plans, burn-down **41**, audit
+**1090** — all unchanged (no Lean source was touched).  Still owed from
+stage 3's scope, by name: the panic probe and the layer-2 stderr `dup2`
+(next in this session), and the four integration-bug countermeasures of
+AGENTS 8.1 item 7.

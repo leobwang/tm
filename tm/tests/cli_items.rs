@@ -416,6 +416,137 @@ fn rank_moves_a_line_within_its_section() {
     insta::assert_json_snapshot!("rank_json", json);
 }
 
+/// Kernel-backed `tm rank` (kernel/README.md, 2026-09-12 "rank, add and the
+/// keyed edit" block): the host compiles the position into a rotation of
+/// `rank{id,rank}` wire ops — every line byte-identical, only the order
+/// changed, and the whole plan re-checked by the kernel.
+#[test]
+fn rank_down_rotates_the_section_and_keeps_every_byte() {
+    let tm = Tm::new();
+    let before = tm.read("week/2026-W37.md");
+    let json = tm.json(&["rank", "^t1", "4"]);
+    assert_eq!(json["moved"], true);
+    let after = tm.read("week/2026-W37.md");
+    let tasks: Vec<&str> = after
+        .lines()
+        .skip_while(|l| !l.starts_with("# Tasks"))
+        .filter(|l| l.starts_with("- "))
+        .collect();
+    let ids: Vec<&str> = tasks
+        .iter()
+        .map(|l| l.rsplit('^').next().unwrap_or_default())
+        .collect();
+    assert_eq!(ids, ["t3", "t4", "t5", "t1"], "{tasks:?}");
+    // The same lines, byte for byte: a reorder is a permutation, never a
+    // rewrite.
+    let mut sorted_before: Vec<&str> = before.lines().collect();
+    let mut sorted_after: Vec<&str> = after.lines().collect();
+    sorted_before.sort_unstable();
+    sorted_after.sort_unstable();
+    assert_eq!(sorted_before, sorted_after);
+    assert_eq!(tm.run(&["check"]).code, 0);
+
+    // The old path's clamp and no-op report survive the wiring: position 99
+    // clamps to the last slot, where ^t1 already is.
+    let json = tm.json(&["rank", "^t1", "99"]);
+    assert_eq!(json["moved"], false);
+    assert_eq!(tm.read("week/2026-W37.md"), after);
+}
+
+/// Kernel-backed `tm add`: the id is the kernel's own (`freshId` renders the
+/// host's seed as digits and bumps past every taken id — freshness is L21,
+/// a theorem, not a retry loop), the line lands at the end of the file, and
+/// the §10.1 `edit{field:"add"}` event still carries it.
+#[test]
+fn add_through_the_kernel_assigns_a_digit_id() {
+    let tm = Tm::new();
+    let json = tm.json(&["add", "4 2b Write the release notes", "--to", "week"]);
+    let id = json["id"].as_str().expect("an id").to_string();
+    assert!(
+        !id.is_empty() && id.chars().all(|c| c.is_ascii_digit()),
+        "kernel ids are freshId's digits (gap 13's recorded resolution): {id}"
+    );
+    assert_eq!(json["file"], "week/2026-W37.md");
+    let week = tm.read("week/2026-W37.md");
+    assert!(
+        week.contains(&format!("- [ ] 4 2b Write the release notes ^{id}")),
+        "{week}"
+    );
+    let last = tm.last();
+    assert_eq!(last["ev"], "edit");
+    assert_eq!(last["field"], "add");
+    assert_eq!(last["id"], id.as_str());
+    assert_eq!(tm.run(&["check"]).code, 0);
+}
+
+/// The `add` bite reaches the shipped binary (§5.8; the FFI twin is
+/// `add_outside_a_day_files_pinned_section_is_refused_by_name`): the kernel
+/// appends at the end of the file, §6.2 constrains a day file's items to
+/// `# Pinned`, and the shipped day file ends `## Log`/`## Notes` — so the
+/// add is refused **by name** with nothing written, where the old path
+/// appended an out-of-section line (kernel/README.md, 2026-09-12 "rank, add
+/// and the keyed edit" block records the change).
+#[test]
+fn add_to_a_day_outside_pinned_is_refused_by_name() {
+    let tm = Tm::new();
+    let before = tm.read("day/2026-09-07.md");
+    let out = tm.run(&["add", "2 20m Buy stamps", "--to", "day"]);
+    assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains("badItem"), "{}", out.stderr);
+    assert_eq!(tm.read("day/2026-09-07.md"), before);
+    assert!(tm.events().is_empty(), "{:?}", tm.events());
+}
+
+/// The keyed edit, kernel-backed for the nine wired keys (kernel/README.md,
+/// 2026-09-12 "rank, add and the keyed edit" block): the value is parsed by
+/// the key's own field grammar and written as its canonical rendering —
+/// `cap` and `max` are one key and the write lands as `max:`
+/// (`set_max_writes_max`) — and an empty value is the wire's unset form.
+#[test]
+fn edit_keyed_writes_the_fields_canonical_rendering() {
+    let tm = Tm::new();
+    let json = tm.json(&["edit", "^t1", "pref=07:30"]);
+    assert_eq!(json["changes"][0]["field"], "pref");
+    let line = tm.line("week/2026-W37.md", "t1");
+    assert!(line.contains("pref:07:30"), "{line}");
+
+    tm.ok(&["edit", "^t1", "cap=2b/d"]);
+    let line = tm.line("week/2026-W37.md", "t1");
+    assert!(line.contains("max:2b/d"), "cap writes max: — {line}");
+    assert!(!line.contains("cap:"), "{line}");
+
+    // `tm edit ^id <key>=` — the unset form the wire documents.
+    tm.ok(&["edit", "^t1", "pref="]);
+    let line = tm.line("week/2026-W37.md", "t1");
+    assert!(!line.contains("pref:"), "{line}");
+    assert_eq!(tm.run(&["check"]).code, 0);
+}
+
+/// The keyed edit's refusals arrive **by name**, in the human line and the
+/// `--json` document — `badValue <k>` is the key's field grammar biting
+/// through the wire (R10), `keyAbsent` an unset of a key the line does not
+/// carry (the old path reported success and removed nothing; recorded in
+/// the same README block).
+#[test]
+fn edit_keyed_refusals_are_named() {
+    let tm = Tm::new();
+    let before = tm.read("week/2026-W37.md");
+    let out = tm.run(&["--json", "edit", "^t1", "dur=zzz"]);
+    assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+    let doc: serde_json::Value = serde_json::from_str(&out.stderr).expect("json");
+    assert_eq!(doc["kind"], "kernel");
+    assert_eq!(doc["detail"]["refusal"], "badValue");
+    assert_eq!(doc["detail"]["key"], "dur");
+
+    let out = tm.run(&["--json", "edit", "^t1", "--unset", "buffer"]);
+    assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+    let doc: serde_json::Value = serde_json::from_str(&out.stderr).expect("json");
+    assert_eq!(doc["detail"]["refusal"], "keyAbsent");
+
+    assert_eq!(tm.read("week/2026-W37.md"), before);
+    assert!(tm.events().is_empty(), "{:?}", tm.events());
+}
+
 #[test]
 fn demote_copies_the_line_into_the_month_archive() {
     let tm = Tm::new();
