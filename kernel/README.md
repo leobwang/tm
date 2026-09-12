@@ -2389,3 +2389,34 @@ Check.lean); burn-down **41**, unchanged — this scope item owned no standing
 goal and admits no new one; Negative.lean takes CHEATS **44–46** (Fin 6
 bypass, unwired-key bypass, day-carrying `NdDur`) under their own banner;
 FFI 33 → **40** tests, corpus 33/37 files and 4/5 whole plans, unchanged.
+
+**`main` DISCARDED — an owner decision, recorded 2026-09-12.** The owner has
+ruled `main` obsolete — its Rust kernel is superseded by the Lean one — and it
+will not be pushed to this remote (`origin` carries `rebuild-on-lean` alone;
+`main@557a3d2` was never here). What that discards and what survives, by name:
+
+- **Survives, in this clone's own history.** `rebuild-on-lean` forked from
+  `main`, so the pre-fork workspace stands at `4748911` (the parent of
+  `6d9b1ba` "Remove the Rust kernel in favour of the Lean one"): all seventeen
+  `tm-core` modules, the root `Cargo.toml`/`Cargo.lock`, and the full test
+  suite — `grammar_proptest.rs` and `planner_invariants.rs` included, the two
+  harnesses the L24/L25 recommendation keeps. Stage 3's restore instruction
+  becomes `git checkout 4748911 -- tm-core Cargo.toml Cargo.lock`.
+- **Discarded: stage 0's fix.** `4748911` predates the `move_to` precondition
+  (`fn destination` — zero hits there), so the restored Rust carries the A6
+  hole. The two verbs the 426-pair sweep proved reach it — `move` (400) and
+  `readopt` (26) — are exactly the verbs stage 3 kernel-backs, where
+  `occupied` is a constructor obligation; until that wiring lands, the
+  restored binary is pre-stage-0 and must not be driven as if it were `main`.
+- **Discarded: `invariant_exhaustive.rs`.** The 199-command sweep harness
+  lived only on post-fork `main`. §9.1's depth-3 gate is now gated on a
+  harness that must be rebuilt, not merely run; the depth-2 numbers
+  (426/39,601) stay historical, measured on a commit this repository no
+  longer holds.
+- **Degraded: the oracle.** §7.3's `run-oracle.sh` extracts `main`; it must
+  move to `4748911`, and stage 5's parity acceptance compares against the
+  fork-point grammar — the named delta to `557a3d2` is stage 0 alone, as far
+  as this repository can know. "No disagreement" claims quote the fork point
+  from now on.
+- AGENTS.md's "`main` is the oracle" instructions are historical from this
+  block forward; this paragraph supersedes them by name.
