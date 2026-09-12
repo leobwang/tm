@@ -100,10 +100,20 @@ pub fn run(g: &Globals) -> Result<i32, CliError> {
     let mut app = load(g)?;
     let (watcher, changes) = watch(&root)?;
     install_panic_hook();
+    // Panic layer 2 (AGENTS 8.1): while the TUI owns the screen, every
+    // kernel call runs with Lean's stderr dup2'd to a pipe, so a runtime
+    // backtrace cannot shred the alternate screen — it rides the fault's
+    // detail instead, and the fault path below prints it after the terminal
+    // is restored.
+    crate::cli::kernel_bridge::capture_kernel_stderr(true);
     let mut term = setup()?;
     let result = event_loop(&mut term, &mut app, g, &root, &watch_root, &changes);
     restore();
+    crate::cli::kernel_bridge::capture_kernel_stderr(false);
     drop(watcher);
+    // A kernel fault propagates out of the loop (layer 3, integrated): the
+    // terminal is already restored above, and the caller prints the fault —
+    // captured stderr included — and exits 1. Loud and recoverable.
     result?;
     Ok(0)
 }
@@ -352,7 +362,7 @@ fn perform(
             if interactive {
                 restore();
             }
-            let message = verb(g, &args);
+            let message = verb(g, &args)?;
             if interactive {
                 resume()?;
             }
@@ -446,21 +456,29 @@ fn set_location(g: &Globals, loc: &str) -> Result<(), CliError> {
 
 /// Run one §13 verb through the same clap tree and the same dispatcher the
 /// command line uses, and describe what happened in one line.
-fn verb(g: &Globals, args: &[String]) -> String {
+///
+/// A verb's ordinary failure — a kernel *refusal* included — is a status
+/// message, and the session keeps running. A kernel **fault**
+/// (`KernelFault`, or a response that is not a response) is the one error
+/// that propagates: [`run`] restores the terminal on the way out, the fault
+/// is printed as a bug report (captured stderr included), and the process
+/// exits 1 — loud and recoverable, never a shredded screen or a silent
+/// wrong answer (AGENTS 8.1, panic layers 2 and 3).
+fn verb(g: &Globals, args: &[String]) -> Result<String, CliError> {
     let argv = std::iter::once("tm".to_string()).chain(args.iter().cloned());
     let cli = match Cli::try_parse_from(argv) {
         Ok(cli) => cli,
         Err(e) => {
-            return e
+            return Ok(e
                 .to_string()
                 .lines()
                 .next()
                 .unwrap_or("bad command")
-                .to_string()
+                .to_string())
         }
     };
     if matches!(cli.command, Command::Tui) {
-        return "already in the TUI".to_string();
+        return Ok("already in the TUI".to_string());
     }
     // The TUI's own directory and instant win: `--dir` and `--now` are how
     // *this* session was started.
@@ -470,11 +488,12 @@ fn verb(g: &Globals, args: &[String]) -> String {
         now: g.now,
     };
     let name = args.first().cloned().unwrap_or_default();
-    match crate::cli::run(&globals, cli.command) {
+    Ok(match crate::cli::run(&globals, cli.command) {
         Ok(0) => format!("{name}: ok"),
         Ok(code) => format!("{name}: exit {code}"),
+        Err(e) if e.is_kernel_fault() => return Err(e),
         Err(e) => format!("{name}: {e}"),
-    }
+    })
 }
 
 /// Open a file at a line in `cfg.tui.editor` (§16's `code -g {file}:{line}`).
@@ -576,6 +595,36 @@ mod tests {
             Path::new("/other"),
             Path::new("/p/week/.#x.md")
         ));
+    }
+
+    /// Layer 3, integrated at the TUI's one verb seam: a kernel **fault**
+    /// propagates out of [`verb`] as an error — [`run`] then restores the
+    /// terminal before it returns, and the caller prints the bug report and
+    /// exits 1 — while a kernel *refusal* stays a status-line message and
+    /// the session keeps running. The probe is the constructed one
+    /// (`TM_KERNEL_FAULT_PROBE`, AGENTS 8.1's named trap): the real kernel
+    /// call still runs; only the response bytes are replaced.
+    #[test]
+    fn a_kernel_fault_propagates_and_a_refusal_stays_a_message() {
+        let (_tmp, g) = fixture();
+        std::env::set_var("TM_KERNEL_FAULT_PROBE", "1");
+        let out = verb(
+            &g,
+            &["edit".to_string(), "^t3".to_string(), "est=45m".to_string()],
+        );
+        std::env::remove_var("TM_KERNEL_FAULT_PROBE");
+        let err = out.expect_err("a fault must propagate, never become a status message");
+        assert!(err.is_kernel_fault(), "{err}");
+        assert_eq!(err.exit_code(), 1);
+
+        // The single-command A6 reproduction is a *refusal*: named, shown,
+        // survivable — the TUI keeps running.
+        let msg = verb(
+            &g,
+            &["move".to_string(), "^m2".to_string(), "month".to_string()],
+        )
+        .expect("a refusal is a message, not an exit");
+        assert!(msg.contains("occupied"), "{msg}");
     }
 
     #[test]

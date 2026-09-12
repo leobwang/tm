@@ -78,19 +78,31 @@ impl Tm {
 
     /// Run the binary with an explicit instant.
     pub fn run_at(&self, now: &str, args: &[&str]) -> Out {
-        let out = Command::new(env!("CARGO_BIN_EXE_tm"))
-            .arg("--dir")
+        self.run_env_at(now, &[], args)
+    }
+
+    /// Run with extra environment variables (the panic probe's hook).
+    pub fn run_env_at(&self, now: &str, envs: &[(&str, &str)], args: &[&str]) -> Out {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_tm"));
+        cmd.arg("--dir")
             .arg(&self.plan)
             .arg("--now")
             .arg(now)
-            .args(args)
-            .output()
-            .expect("run tm");
+            .args(args);
+        for (k, v) in envs {
+            cmd.env(k, v);
+        }
+        let out = cmd.output().expect("run tm");
         Out {
             code: out.status.code().unwrap_or(-1),
             stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
         }
+    }
+
+    /// Run at [`NOW`] with extra environment variables.
+    pub fn run_env(&self, envs: &[(&str, &str)], args: &[&str]) -> Out {
+        self.run_env_at(NOW, envs, args)
     }
 
     /// Run at [`NOW`].

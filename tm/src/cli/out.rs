@@ -106,10 +106,26 @@ pub struct KernelIssue {
     pub detail: Map<String, Value>,
 }
 
+impl KernelIssue {
+    /// True for an FFI-level **fault** (`kernelFault`) — the kernel returned
+    /// nothing usable — as opposed to a named refusal, which is the kernel
+    /// working as designed. A fault is loud and recoverable, never a wrong
+    /// answer: the TUI exits for one (terminal restored, bug report printed,
+    /// exit 1) where a refusal stays a status-line message.
+    pub fn is_fault(&self) -> bool {
+        self.name == "kernelFault"
+    }
+}
+
 impl CliError {
     /// A message error from anything displayable.
     pub fn msg(m: impl Into<String>) -> CliError {
         CliError::Msg(m.into())
+    }
+
+    /// True when this is a kernel **fault** (see [`KernelIssue::is_fault`]).
+    pub fn is_kernel_fault(&self) -> bool {
+        matches!(self, CliError::Kernel(issue) if issue.is_fault())
     }
 
     /// An I/O error against a named path.
@@ -272,6 +288,23 @@ impl CliError {
             return;
         }
         eprintln!("tm: {}", self.message());
+        // A kernel fault is a bug report, not a plan problem: print whatever
+        // layer 2 captured off the kernel's stderr (the backtrace the
+        // terminal never saw), and say where to send it.
+        if let CliError::Kernel(issue) = self {
+            if issue.is_fault() {
+                eprintln!("  please report this — nothing was written to the plan");
+                if let Some(Value::String(s)) = issue.detail.get("stderr") {
+                    if !s.trim().is_empty() {
+                        eprintln!("  --- captured kernel stderr ---");
+                        for l in s.lines() {
+                            eprintln!("  {l}");
+                        }
+                        eprintln!("  ------------------------------");
+                    }
+                }
+            }
+        }
         if let Some(StoreError::Conflict {
             id,
             file,

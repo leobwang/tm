@@ -38,6 +38,8 @@
 //! five `title…` refusals) — re-derived from `Boundary.lean`'s one `ok` and
 //! eight `err` shapes, not guessed. A refusal writes nothing.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use serde_json::{json, Map, Value};
 
 use tm_core::model::Horizon;
@@ -45,6 +47,108 @@ use tm_core::store::{self, FileGuard, Store};
 
 use super::ctx::Ctx;
 use super::out::{CliError, KernelIssue};
+
+// ---------------------------------------------------------------------------
+// Panic layer 2: Lean's stderr, captured (AGENTS 8.1 scope item 6)
+// ---------------------------------------------------------------------------
+
+/// Whether kernel calls run with fd 2 redirected to a pipe. The TUI turns
+/// this on for its whole run: layer 1 is totality (CI-enforced) and layer 3
+/// is `lean_set_exit_on_panic(false)` + `KernelFault` in the ffi crate, but
+/// neither stops a runtime backtrace *printed to stderr* from shredding the
+/// ratatui alternate screen — layer 2 does. Whatever is captured rides the
+/// fault's detail instead of the terminal.
+static CAPTURE_STDERR: AtomicBool = AtomicBool::new(false);
+
+/// Turn layer-2 stderr capture on or off for every subsequent kernel call
+/// in this process. The TUI owns this switch.
+pub fn capture_kernel_stderr(on: bool) {
+    CAPTURE_STDERR.store(on, Ordering::SeqCst);
+}
+
+/// One capture window: fd 2 `dup2`'d to a pipe, a thread draining the read
+/// end (so a large backtrace cannot fill the pipe and block the writer),
+/// the original fd restored on [`StderrCapture::finish`].
+///
+/// The libc calls are declared here rather than through the `libc` crate —
+/// R7: no new external dependency, and the symbols are in the C library
+/// every Unix binary already links.
+#[cfg(unix)]
+struct StderrCapture {
+    saved: i32,
+    reader: std::thread::JoinHandle<Vec<u8>>,
+}
+
+#[cfg(unix)]
+extern "C" {
+    fn pipe(fds: *mut i32) -> i32;
+    fn dup(fd: i32) -> i32;
+    fn dup2(oldfd: i32, newfd: i32) -> i32;
+    fn close(fd: i32) -> i32;
+}
+
+#[cfg(unix)]
+impl StderrCapture {
+    /// Start capturing fd 2, when the TUI asked for it. `None` when capture
+    /// is off or any step fails — a failed capture must never fail the
+    /// verb, it only loses the cosmetic protection.
+    fn start() -> Option<StderrCapture> {
+        if !CAPTURE_STDERR.load(Ordering::SeqCst) {
+            return None;
+        }
+        let (read_fd, saved) = unsafe {
+            let mut fds = [0i32; 2];
+            if pipe(fds.as_mut_ptr()) != 0 {
+                return None;
+            }
+            let saved = dup(2);
+            if saved < 0 || dup2(fds[1], 2) < 0 {
+                if saved >= 0 {
+                    close(saved);
+                }
+                close(fds[0]);
+                close(fds[1]);
+                return None;
+            }
+            close(fds[1]);
+            (fds[0], saved)
+        };
+        let reader = std::thread::spawn(move || {
+            use std::io::Read;
+            use std::os::unix::io::FromRawFd;
+            let mut f = unsafe { std::fs::File::from_raw_fd(read_fd) };
+            let mut buf = Vec::new();
+            let _ = f.read_to_end(&mut buf);
+            buf
+        });
+        Some(StderrCapture { saved, reader })
+    }
+
+    /// Put fd 2 back and return whatever was written while it was ours.
+    fn finish(self) -> String {
+        unsafe {
+            dup2(self.saved, 2);
+            close(self.saved);
+        }
+        // fd 2 no longer points at the pipe and the write end is closed, so
+        // the drain thread sees EOF.
+        let bytes = self.reader.join().unwrap_or_default();
+        String::from_utf8_lossy(&bytes).into_owned()
+    }
+}
+
+#[cfg(not(unix))]
+struct StderrCapture;
+
+#[cfg(not(unix))]
+impl StderrCapture {
+    fn start() -> Option<StderrCapture> {
+        None
+    }
+    fn finish(self) -> String {
+        String::new()
+    }
+}
 
 /// One kernel-backed command, already resolved by the verb: ids are bare
 /// (no `^`), destinations are plan-relative file paths.
@@ -254,24 +358,43 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
         .collect();
     let request = json!({ "docs": docs_json, "cmds": cmds_json }).to_string();
 
-    // 3. One call.
-    let raw = tm_kernel_ffi::call(&request).map_err(|f| {
-        CliError::Kernel(fault_issue(&format!("{f:?}")))
+    // 3. One call — with Lean's stderr captured while it runs when the TUI
+    // asked for it (panic layer 2), so a backtrace lands in the fault's
+    // detail, never on the alternate screen.
+    let capture = StderrCapture::start();
+    let called = tm_kernel_ffi::call(&request);
+    let stderr = capture.map(StderrCapture::finish).unwrap_or_default();
+    // The constructed panic probe (AGENTS 8.1's named trap: the kernel is
+    // total by CI, so a reachable panic does not exist — the probe injects
+    // the fault at the host's own seam, the response bytes, and the tests
+    // assert the HOST's reaction: named fault, non-zero exit, nothing
+    // written, terminal restored). The real call still runs first.
+    let called = if std::env::var_os("TM_KERNEL_FAULT_PROBE").is_some() {
+        called.map(|_| "*** panic probe: a deliberately non-JSON response (TM_KERNEL_FAULT_PROBE) ***".to_string())
+    } else {
+        called
+    };
+    let raw = called.map_err(|f| {
+        CliError::Kernel(fault_issue(&format!("{f:?}"), &stderr))
     })?;
-    let resp: Value = serde_json::from_str(&raw)
-        .map_err(|e| CliError::Kernel(fault_issue(&format!("unparseable response ({e})"))))?;
+    let resp: Value = serde_json::from_str(&raw).map_err(|e| {
+        CliError::Kernel(fault_issue(&format!("unparseable response ({e})"), &stderr))
+    })?;
     if let Some(err) = resp.get("err") {
         return Err(CliError::Kernel(refusal(err)));
     }
     let out_docs = resp["ok"]["docs"]
         .as_array()
-        .ok_or_else(|| CliError::Kernel(fault_issue("response carries neither ok nor err")))?;
+        .ok_or_else(|| CliError::Kernel(fault_issue("response carries neither ok nor err", &stderr)))?;
     if out_docs.len() != paths.len() {
-        return Err(CliError::Kernel(fault_issue(&format!(
-            "response has {} documents for a {}-document request",
-            out_docs.len(),
-            paths.len()
-        ))));
+        return Err(CliError::Kernel(fault_issue(
+            &format!(
+                "response has {} documents for a {}-document request",
+                out_docs.len(),
+                paths.len()
+            ),
+            &stderr,
+        )));
     }
 
     // 4. Read the documents back; the response's grain/ix are carried, and
@@ -280,21 +403,23 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
     for (i, od) in out_docs.iter().enumerate() {
         let path = od["path"].as_str().unwrap_or_default().to_string();
         if path != paths[i] {
-            return Err(CliError::Kernel(fault_issue(&format!(
-                "response document {i} is {path:?}, request sent {:?}",
-                paths[i]
-            ))));
+            return Err(CliError::Kernel(fault_issue(
+                &format!("response document {i} is {path:?}, request sent {:?}", paths[i]),
+                &stderr,
+            )));
         }
         let lines = od["lines"]
             .as_array()
-            .ok_or_else(|| CliError::Kernel(fault_issue(&format!("{path}: no lines array"))))?;
+            .ok_or_else(|| {
+                CliError::Kernel(fault_issue(&format!("{path}: no lines array"), &stderr))
+            })?;
         let mut returned = String::new();
         for (j, l) in lines.iter().enumerate() {
             if j > 0 {
                 returned.push('\n');
             }
             returned.push_str(l.as_str().ok_or_else(|| {
-                CliError::Kernel(fault_issue(&format!("{path}: line {j} is not a string")))
+                CliError::Kernel(fault_issue(&format!("{path}: line {j} is not a string"), &stderr))
             })?);
         }
         let region = match (od.get("grain").and_then(Value::as_u64), od.get("ix").and_then(Value::as_u64)) {
@@ -314,13 +439,16 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
     // that stopped carrying it would fail here before it failed a demotion.
     for doc in &docs {
         if doc.region != region_of(&doc.path) {
-            return Err(CliError::Kernel(fault_issue(&format!(
-                "{}: the response dropped or moved the document's grain/ix \
-                 (declared {:?}, returned {:?}) — refusing to write from it",
-                doc.path,
-                region_of(&doc.path),
-                doc.region
-            ))));
+            return Err(CliError::Kernel(fault_issue(
+                &format!(
+                    "{}: the response dropped or moved the document's grain/ix \
+                     (declared {:?}, returned {:?}) — refusing to write from it",
+                    doc.path,
+                    region_of(&doc.path),
+                    doc.region
+                ),
+                &stderr,
+            )));
         }
     }
 
@@ -334,14 +462,22 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
 }
 
 /// An FFI-level fault (no usable response). Loud and recoverable, never a
-/// wrong answer — and nothing has been written when it is raised.
-fn fault_issue(what: &str) -> KernelIssue {
+/// wrong answer — and nothing has been written when it is raised. `stderr`
+/// is whatever layer 2 captured off fd 2 during the call (empty outside the
+/// TUI); it rides the detail so the bug report carries the backtrace the
+/// terminal never saw.
+fn fault_issue(what: &str, stderr: &str) -> KernelIssue {
     let mut detail = Map::new();
     detail.insert("refusal".into(), Value::String("kernelFault".into()));
     detail.insert("what".into(), Value::String(what.to_string()));
+    if !stderr.is_empty() {
+        detail.insert("stderr".into(), Value::String(stderr.to_string()));
+    }
     KernelIssue {
         name: "kernelFault".into(),
-        message: format!("kernel fault: {what} — nothing was written"),
+        message: format!(
+            "kernel fault: {what} — nothing was written; this is a bug in tm, not a plan problem"
+        ),
         detail,
     }
 }
@@ -467,6 +603,48 @@ mod tests {
         assert_eq!(region_of("backlog.md"), None);
         assert_eq!(region_of("calendar/2026-W37.md"), None);
         assert_eq!(region_of("inbox.md"), None);
+    }
+
+    /// Panic layer 2's machinery, tested at the host level: while a capture
+    /// window is open, bytes written to fd 2 land in the capture (not the
+    /// terminal), and after `finish` the original stderr is back. Raw
+    /// `Stderr::write_all` bypasses libtest's thread-local capture, so this
+    /// really exercises the `dup2`.
+    #[test]
+    #[cfg(unix)]
+    fn stderr_capture_takes_fd2_and_gives_it_back() {
+        use std::io::Write;
+        // Off by default: no window opens.
+        assert!(StderrCapture::start().is_none());
+        capture_kernel_stderr(true);
+        let cap = StderrCapture::start().expect("capture window");
+        std::io::stderr()
+            .write_all(b"a lean backtrace would land here\n")
+            .expect("write");
+        let seen = cap.finish();
+        capture_kernel_stderr(false);
+        assert!(
+            seen.contains("a lean backtrace would land here"),
+            "{seen:?}"
+        );
+        // And the captured text rides the fault's detail for the bug report.
+        let issue = fault_issue("probe", &seen);
+        assert_eq!(issue.name, "kernelFault");
+        assert!(issue.detail["stderr"]
+            .as_str()
+            .is_some_and(|s| s.contains("backtrace")));
+        // fd 2 is restored: this write must not panic (and lands on the
+        // real stderr, which libtest owns again).
+        std::io::stderr().write_all(b"").expect("stderr is back");
+    }
+
+    #[test]
+    fn a_fault_without_captured_stderr_has_no_stderr_key() {
+        let issue = fault_issue("no response", "");
+        assert_eq!(issue.name, "kernelFault");
+        assert!(issue.is_fault());
+        assert!(!issue.detail.contains_key("stderr"));
+        assert!(issue.message.contains("nothing was written"), "{}", issue.message);
     }
 
     #[test]

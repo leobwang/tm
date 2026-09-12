@@ -106,6 +106,49 @@ fn a_kernel_refusal_is_a_named_document() {
     );
 }
 
+/// The constructed panic probe (AGENTS 8.1's named trap: the kernel is
+/// total by CI, so a reachable panic does not exist — the probe must be
+/// built, and it must test the **host's** reaction, not the kernel's).
+/// `TM_KERNEL_FAULT_PROBE` makes the bridge treat the kernel's response as
+/// non-JSON bytes after the real call ran; the host must then fault **by
+/// name** (`kernelFault`), exit non-zero, print no success, and write
+/// nothing — never a silent exit 0 (`lib.rs`'s layer-3 contract: "a fault
+/// is loud and recoverable; it is never a wrong answer").
+#[test]
+fn the_panic_probe_faults_loudly_and_writes_nothing() {
+    let tm = Tm::new();
+    let before = tm.read("week/2026-W37.md");
+    let out = tm.run_env(&[("TM_KERNEL_FAULT_PROBE", "1")], &["edit", "^t3", "est=45m"]);
+    assert_eq!(out.code, 1, "a fault must not exit 0: {}{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains("kernel fault"), "{}", out.stderr);
+    assert!(
+        out.stderr.contains("nothing was written"),
+        "{}",
+        out.stderr
+    );
+    assert!(
+        !out.stdout.contains("est"),
+        "no success output on a fault: {}",
+        out.stdout
+    );
+    assert_eq!(
+        tm.read("week/2026-W37.md"),
+        before,
+        "a fault writes nothing"
+    );
+    // …and the same fault under `--json` is a named document.
+    let out = tm.run_env(
+        &[("TM_KERNEL_FAULT_PROBE", "1")],
+        &["--json", "edit", "^t3", "est=45m"],
+    );
+    assert_eq!(out.code, 1);
+    let doc = err_doc(&out.stderr);
+    assert_eq!(doc["kind"], "kernel");
+    assert_eq!(doc["detail"]["refusal"], "kernelFault");
+    assert_eq!(doc["exit_code"], 1);
+    assert_eq!(tm.read("week/2026-W37.md"), before);
+}
+
 #[test]
 fn a_usage_error_is_a_document_too() {
     // The verb never ran, but a caller driving `tm` still gets a document

@@ -2676,3 +2676,61 @@ wirings, the tm-core fix and template change cost nothing); `kernel/check.sh`
 stage 3's scope, by name: the panic probe and the layer-2 stderr `dup2`
 (next in this session), and the four integration-bug countermeasures of
 AGENTS 8.1 item 7.
+
+**Panic layers 2 and 3, landed — AGENTS 8.1 scope item 6, and the
+constructed probe (same 2026-09-12 session, stage-3 wiring block).**  Layer
+1 is totality (CI-enforced) and layer 3 stood in the ffi crate
+(`lean_set_exit_on_panic(false)` in `shim.c`; `KernelFault` in `lib.rs`,
+"loud and recoverable, never a wrong answer") but nothing integrated it and
+layer 2 did not exist.  Now:
+
+- *Layer 2 — the stderr `dup2`.*  While `tm tui` owns the screen
+  (`kernel_bridge::capture_kernel_stderr(true)` for the whole session),
+  every kernel call runs with fd 2 redirected to a pipe drained by its own
+  thread (so a backtrace longer than the pipe buffer cannot block the
+  writer), the original fd restored right after the call — a Lean runtime
+  backtrace can no longer shred the ratatui alternate screen.  Whatever was
+  captured rides the fault's `detail.stderr`.  The `pipe`/`dup`/`dup2`/
+  `close` symbols are declared `extern "C"` in `kernel_bridge.rs` itself —
+  no `libc` crate entry, R7 untouched; on non-Unix the capture is a no-op.
+  A failed capture never fails the verb.
+- *Layer 3, integrated.*  A kernel **fault** (`KernelFault`, an unparseable
+  response, a wrong-shaped echo — everything `fault_issue` names
+  `kernelFault`) is now distinguished from a named *refusal* everywhere:
+  `KernelIssue::is_fault` / `CliError::is_kernel_fault`.  In the TUI a
+  refusal stays a status-line message and the session keeps running; a
+  fault propagates out of the one verb seam (`tui::verb` returns it), the
+  event loop unwinds, **the terminal is restored on the way out**, and the
+  fault prints as a bug report — "please report this — nothing was written
+  to the plan", plus the captured kernel stderr, indented, when layer 2
+  caught any — with exit 1.  On the plain CLI the same fault prints the
+  same report (no capture window, so no stderr block) and exits 1; under
+  `--json` it is the standard failure document, `kind:"kernel"`,
+  `detail.refusal:"kernelFault"`.
+- *The probe, constructed — the trap by name ("a panic probe needs
+  something that can panic").*  The kernel is total by CI, so there is no
+  reachable panic; the probe injects the fault at the host's own seam:
+  with `TM_KERNEL_FAULT_PROBE` set, the bridge makes the real kernel call
+  and then replaces the response bytes with a non-JSON marker.  The tests
+  assert the **host's** reaction, not the kernel's:
+  `the_panic_probe_faults_loudly_and_writes_nothing` (cli_errors.rs — exit
+  1, `kernel fault` named on stderr, no success output, the plan file
+  byte-identical, and the `--json` document carrying
+  `detail.refusal:"kernelFault"`) and
+  `a_kernel_fault_propagates_and_a_refusal_stays_a_message` (tui — the
+  fault propagates out of the verb seam where `run` restores the terminal;
+  the `occupied` refusal on the same tree stays a message).  The `dup2`
+  machinery itself is host-tested
+  (`stderr_capture_takes_fd2_and_gives_it_back`: bytes written to fd 2
+  inside a window land in the capture and fd 2 comes back).
+
+Re-measured at this landing: `cargo test --workspace` **959 passed / 0
+failed / 0 ignored across 61 binaries** (was 955; +4 — the two capture/fault
+unit tests, the CLI probe, the TUI seam test); `kernel/check.sh` **7/7 ok**,
+corpus 33/37 files and 4/5 whole plans, burn-down **41**, audit **1090** —
+all unchanged (no Lean source was touched).  Still owed from stage 3's
+scope, by name: the four integration-bug countermeasures of AGENTS 8.1 item
+7 (the one-renderer test, the exhaustive screen router, the `--help`-vs-
+runtime conformance test, the verb × {success, error} × {plain, `--json`}
+matrix); and, recorded above, the kernel-side HTML-comment awareness in
+`scanLines`/`splitDoc`.
