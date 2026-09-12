@@ -2129,6 +2129,15 @@ were convention debt, never `Goals.lean` entries; audit 1061 lines / 1061
 distinct names / 1061 attr-aware declarations (ten new under Check.lean's
 `APPENDED 2026-09-12` banner: the three owed forms, the wire wrapper, and six
 supporting lemmas); `check.sh` 7/7; `kernel.rs` 33 tests, unchanged.
+One §5.8 direction for `add` stays generic, and is owed **by name** rather
+than by implication: the compiled bites are `insertFresh_rejects` (the
+`planWf`-level refusal) and the five parse-level title refusals; the
+command-shaped `itemsWf` bite — `applyCmd (.add …)` on a day file outside
+`# Pinned` is `.error .badItem` — has no Lean theorem, and its evidence
+today is the Rust test `add_outside_a_day_files_pinned_section_is_refused_by_name`.
+Read d0aced9's subject line ("bite and success, both directions") with that
+scope: both directions are compiled for `rank`; for `add` the bite is
+parse-level and `planWf`-generic only.
 
 **L22 DISCHARGED — refuted, and the sweep is compiled.**  The `Goals.lean`
 entry `move_has_an_inverse_command` (an expected refutation) is **renamed to
