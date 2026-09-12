@@ -946,7 +946,7 @@ def parseCmd (j : JVal) : Except String ReqCmd := do
   | "edit" =>
     -- The keyed edit.  §5.7: three refusals, each named — a spelling that is
     -- not a key at all (`unknownKey`), a key the edit path is not wired for
-    -- yet (`keyNotWired`, README gap 40 names them), and a value the key's
+    -- (`keyNotWired`: only `demoted` since gap 40's bridges), and a value the key's
     -- own field grammar refuses (`badValue`).  An empty value is the unset
     -- form, `tm edit ^id <key>=`.
     let i ← getStr j "id"
@@ -973,7 +973,7 @@ def kerrName : KErr → String
   | .badHorizon     => "badHorizon"
   | .badItem        => "badItem"
   | .tabbedLine     => "tabbedLine"
-  | .keyAbsent      => "keyAbsent"
+  | .keyAbsent      => "keyAbsent" | .danglingDep => "danglingDep" | .depCycle => "depCycle"
 
 /-- Fresh rank in the destination document: strictly greater than every rank
 already there, so a move can never collide on a rank either.  `freshRank_gt`
@@ -1089,7 +1089,7 @@ def applyCmd (c : ReqCmd) (p : WfPlan) : Except KErr WfPlan :=
     | .error k => .error k
     | .ok dd   => cmdMove i (freshRank p.val dd.ix) p dd
   | .drop i         => cmdDrop i p
-  | .est i v        => cmdSetEst v i p
+  | .est i v        => nameEditFault p i (.est ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩) (cmdSetEst v i p)
   | .demote i d st =>
     match resolveDest p.val d with
     | .error k => .error k
@@ -1099,7 +1099,7 @@ def applyCmd (c : ReqCmd) (p : WfPlan) : Except KErr WfPlan :=
     | .error k => .error k
     | .ok dd   => cmdReadopt i (freshRank p.val dd.ix) p dd
   | .rank i n       => cmdRank i n p
-  | .edit i v       => cmdEdit v i p
+  | .edit i v       => nameEditFault p i v (cmdEdit v i p)
   | .unset i k      => cmdUnset k i p
   | .add seed d title =>
     match resolveDest p.val d with
@@ -3277,7 +3277,7 @@ theorem move_has_no_inverse_command :
     | est i' v' =>
       rw [hcmd] at hcon
       simp only [applyCmd, cmdSetEst, cmdEdit] at hcon
-      have h := hback i' _ hcon
+      have h := hback i' _ (nameEditFault_ok hcon)
       unfold editE at h
       split at h
       · injection h
@@ -3288,7 +3288,7 @@ theorem move_has_no_inverse_command :
     | edit i' v' =>
       rw [hcmd] at hcon
       simp only [applyCmd, cmdEdit] at hcon
-      have h := hback i' _ hcon
+      have h := hback i' _ (nameEditFault_ok hcon)
       unfold editE at h
       split at h
       · injection h
@@ -3373,15 +3373,17 @@ value, and nothing is written. -/
 theorem edit_of_a_tabbed_line_is_refused (p : WfPlan) (i : Id) (e : Entity) (v : EditVal)
     (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = true) :
     applyCmd (.edit i v) p = .error .tabbedLine := by
-  show p.mapAt i (editE v) = .error .tabbedLine
-  unfold WfPlan.mapAt
-  split
-  · rename_i hn; rw [hget] at hn; simp at hn
-  · rename_i a hget'
-    rw [hget] at hget'
-    injection hget' with hget'
-    subst hget'
-    rw [editE_refuses_a_tabbed_line v _ htab]
+  show nameEditFault p i v (p.mapAt i (editE v)) = .error .tabbedLine
+  have hm : p.mapAt i (editE v) = .error .tabbedLine := by
+    unfold WfPlan.mapAt
+    split
+    · rename_i hn; rw [hget] at hn; simp at hn
+    · rename_i a hget'
+      rw [hget] at hget'
+      injection hget' with hget'
+      subst hget'
+      rw [editE_refuses_a_tabbed_line v _ htab]
+  rw [hm]; rfl
 
 /-- **And the `est` op is behind the same guard.**  This is the one behaviour
 change to a shipped op, taken deliberately and on the refusal side only: the
@@ -3461,7 +3463,9 @@ theorem applyCmd_edit_succeeds (p : WfPlan) (i : Id) (e : Entity) (v : EditVal)
   obtain ⟨q, hq, hqi, _⟩ := mapAt_ok_of_inRange p i (editE v) e _ hget hf hin hor
     (fun hs => itemsWf_of_normalized _
       (normalized_after_edit p i e _ hs hget rfl rfl) (hrest hs))
-  exact ⟨q, hq, hqi⟩
+  refine ⟨q, ?_, hqi⟩
+  show nameEditFault p i v (p.mapAt i (editE v)) = .ok q
+  rw [hq]; rfl
 
 /-- The same, for the standing `est` op — the success form it never had. -/
 theorem applyCmd_est_succeeds (p : WfPlan) (i : Id) (e : Entity) (v : Nat)
@@ -3497,14 +3501,14 @@ theorem applyCmd_unset_succeeds (p : WfPlan) (i : Id) (e : Entity) (k : EditKey)
   exact ⟨q, hq, hqi⟩
 
 /-- §5.7's parse-tier refusals for the keyed edit, each by name: a spelling
-that is no key, a key not yet wired (README gap 40), and two values the field
+that is no key, the one key kept off the wire (`demoted`, README gap 40), and two values the field
 grammars refuse — `ci:7` is the `Fin 6` smart constructor biting (R10), and
 `est=3d` is `NdDur` refusing a day-carrying estimate. -/
 theorem parseCmd_rejects_edit_variants :
     parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
         ("key".toList, .str "size".toList), ("value".toList, .str "3".toList)]) = .error "unknownKey size" ∧
     parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
-        ("key".toList, .str "due".toList), ("value".toList, .str "2026-09-20".toList)]) = .error "keyNotWired due" ∧
+        ("key".toList, .str "demoted".toList), ("value".toList, .str "W37".toList)]) = .error "keyNotWired demoted" ∧
     parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
         ("key".toList, .str "ci".toList), ("value".toList, .str "7".toList)]) = .error "badValue ci" ∧
     parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
@@ -3710,5 +3714,196 @@ theorem an_unterminated_comment_is_refused :
         ["# Tasks".toList, "<!--".toList, "- [ ] 3 x ^t1".toList] =
       .error (.unterminatedComment "week/2026-W37.md".toList 1) :=
   rfl
+
+
+/-! ## Gap 40's bridges on the wire (stage 3, step 5)
+
+Eight more keys reach `parseCmd` — `due`, `at`, `win`, `every`, `on-event`,
+`loc`, `waiting`, `after` — each through its Line.lean bridge (`parseDate_dayWf`
+and its heirs) and `guardWf`, so the table's refusals are the loader parser's
+own (Cmd.lean's `editValOf_*_refuses_only_*`).  `demoted` stays excluded by
+policy (`keyNotWired demoted`, Negative.lean CHEAT 45).  `after` additionally
+meets the plan tier: its post-state can dangle or cycle, and those refusals are
+named (`danglingDep`, `depCycle`) instead of `mapAt`'s `badHorizon`. -/
+
+/-- §5.7 at the parse tier, one named refusal per bridged key — a value the
+key's grammar rejects (Feb 30, an end before its start, hour 25, a zero period,
+a name with a space, an unpadded date, an empty id), `loc:`'s word bound (a
+space), and `at:`'s one false bridge (the year-9999 rollover the loader
+reads). -/
+theorem parseCmd_refuses_the_bridged_keys_bad_values :
+    parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "due".toList), ("value".toList, .str "2026-02-30".toList)]) = .error "badValue due" ∧
+    parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "at".toList), ("value".toList, .str "2026-09-07T13:50/2026-09-06T12:00".toList)]) = .error "badValue at" ∧
+    parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "at".toList), ("value".toList, .str "9999-12-31T23:00/01:00".toList)]) = .error "badValue at" ∧
+    parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "win".toList), ("value".toList, .str "25:00-13:00".toList)]) = .error "badValue win" ∧
+    parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "every".toList), ("value".toList, .str "0d".toList)]) = .error "badValue every" ∧
+    parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "on-event".toList), ("value".toList, .str "re ply".toList)]) = .error "badValue on-event" ∧
+    parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "loc".toList), ("value".toList, .str "a b".toList)]) = .error "badValue loc" ∧
+    parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "waiting".toList), ("value".toList, .str "2026-9-20".toList)]) = .error "badValue waiting" ∧
+    parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "after".toList), ("value".toList, .str "^".toList)]) = .error "badValue after" :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- The positive parse forms (§5.8's other direction): each bridged key's spec
+value lands as `.edit` carrying that key. -/
+theorem parseCmd_reads_the_bridged_keys :
+    ((match parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "due".toList), ("value".toList, .str "2026-09-11".toList)]) with
+      | .ok (.edit i v) => i == "t3".toList && v.key == Field.Key.due
+      | _ => false) &&
+     (match parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "at".toList), ("value".toList, .str "2026-09-07T12:50/13:50".toList)]) with
+      | .ok (.edit i v) => i == "t3".toList && v.key == Field.Key.interval
+      | _ => false) &&
+     (match parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "win".toList), ("value".toList, .str "11:30-13:30".toList)]) with
+      | .ok (.edit i v) => i == "t3".toList && v.key == Field.Key.window
+      | _ => false) &&
+     (match parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "every".toList), ("value".toList, .str "Mon,Wed,Fri".toList)]) with
+      | .ok (.edit i v) => i == "t3".toList && v.key == Field.Key.every
+      | _ => false) &&
+     (match parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "on-event".toList), ("value".toList, .str "reply/7d".toList)]) with
+      | .ok (.edit i v) => i == "t3".toList && v.key == Field.Key.onEvent
+      | _ => false) &&
+     (match parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "loc".toList), ("value".toList, .str "lounge".toList)]) with
+      | .ok (.edit i v) => i == "t3".toList && v.key == Field.Key.loc
+      | _ => false) &&
+     (match parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "waiting".toList), ("value".toList, .str "2026-09-20".toList)]) with
+      | .ok (.edit i v) => i == "t3".toList && v.key == Field.Key.waiting
+      | _ => false) &&
+     (match parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "after".toList), ("value".toList, .str "^m1".toList)]) with
+      | .ok (.edit i v) => i == "t3".toList && v.key == Field.Key.after
+      | _ => false)) = true := by decide
+
+/-- The post-state `mapAt` re-checks is `editPost` — so when it fails `planWf`,
+the name the wire carries is `editFault` read off that same plan. -/
+theorem applyCmd_edit_names_the_plan_tier_fault (p : WfPlan) (i : Id) (e : Entity)
+    (v : EditVal) (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = false)
+    (hbad : ∀ hs, planWf (editPost p i e v hs) = false) :
+    applyCmd (.edit i v) p = .error (editFault p i v) := by
+  show nameEditFault p i v (p.mapAt i (editE v)) = _
+  have hm : p.mapAt i (editE v) = .error .badHorizon := by
+    unfold WfPlan.mapAt
+    split
+    · rename_i hn; rw [hget] at hn; simp at hn
+    · rename_i a hget'
+      rw [hget] at hget'
+      injection hget' with hget'
+      subst hget'
+      rw [editE_ok_of_tabless v _ htab]
+      simp only
+      rw [dif_neg]
+      intro hc
+      have := hbad (by rw [hget]; rfl)
+      unfold editPost at this
+      rw [hc] at this
+      exact Bool.noConfusion this
+  rw [hm]; rfl
+
+theorem editFault_of_get (p : WfPlan) (i : Id) (e : Entity) (v : EditVal)
+    (hget : p.val.store.get i = some e) :
+    editFault p i v =
+      (if !afterTotal (editPost p i e v (by rw [hget]; rfl)) then .danglingDep
+       else if !afterAcyclic (editPost p i e v (by rw [hget]; rfl)) then .depCycle
+       else .badHorizon) := by
+  unfold editFault
+  split
+  · rename_i hn; rw [hget] at hn; simp at hn
+  · rename_i a hget'
+    rw [hget] at hget'
+    injection hget' with hget'
+    subst hget'
+    rfl
+
+/-- **A dangling `after:` is refused by name** (§5.8, the bite): an edit whose
+post-state names an id no item carries is `danglingDep`, not `badHorizon`. -/
+theorem edit_of_a_dangling_after_is_refused_by_name (p : WfPlan) (i : Id) (e : Entity)
+    (ds : WfDeps) (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = false)
+    (hdang : ∀ hs, afterTotal (editPost p i e (.after ds) hs) = false) :
+    applyCmd (.edit i (.after ds)) p = .error .danglingDep := by
+  rw [applyCmd_edit_names_the_plan_tier_fault p i e _ hget htab (fun hs => by
+    cases hw : planWf (editPost p i e (.after ds) hs) with
+    | false => rfl
+    | true =>
+        have := (itemsWf_parts (planWf_parts hw).2.2.2.2).2.2.2.1
+        rw [hdang hs] at this; exact Bool.noConfusion this)]
+  rw [editFault_of_get p i e _ hget, hdang]
+  rfl
+
+/-- **A cyclic `after:` is refused by name**: a post-state whose dependencies
+are all present but deadlock (§5.5) is `depCycle`. -/
+theorem edit_of_a_cyclic_after_is_refused_by_name (p : WfPlan) (i : Id) (e : Entity)
+    (ds : WfDeps) (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = false)
+    (htot : ∀ hs, afterTotal (editPost p i e (.after ds) hs) = true)
+    (hcyc : ∀ hs, afterAcyclic (editPost p i e (.after ds) hs) = false) :
+    applyCmd (.edit i (.after ds)) p = .error .depCycle := by
+  rw [applyCmd_edit_names_the_plan_tier_fault p i e _ hget htab (fun hs => by
+    cases hw : planWf (editPost p i e (.after ds) hs) with
+    | false => rfl
+    | true =>
+        have := (itemsWf_parts (planWf_parts hw).2.2.2.2).2.2.2.2.1
+        rw [hcyc hs] at this; exact Bool.noConfusion this)]
+  rw [editFault_of_get p i e _ hget, htot, hcyc]
+  rfl
+
+/-- **…and the honest success form** (§5.8, no over-bite): with the two
+dependency conjuncts holding of the post-state — the ones an `after:` edit
+exists to change — and the four conjuncts an edit can break by other means
+(`parentsTotal`, `parentsAcyclic`, `sectionsWf`, `shapesWf`), the edit lands,
+and the stored item's `Core.after` is exactly the parsed list. -/
+theorem applyCmd_after_succeeds (p : WfPlan) (i : Id) (e : Entity) (ds : WfDeps)
+    (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = false)
+    (hdeps : ∀ hs, afterTotal (editPost p i e (.after ds) hs) = true ∧
+      afterAcyclic (editPost p i e (.after ds) hs) = true)
+    (hrest : ∀ hs, (parentsTotal (editPost p i e (.after ds) hs) &&
+      parentsAcyclic (editPost p i e (.after ds) hs) &&
+      sectionsWf (editPost p i e (.after ds) hs) && shapesWf (editPost p i e (.after ds) hs)) = true) :
+    ∃ q : WfPlan, applyCmd (.edit i (.after ds)) p = .ok q ∧
+      ∃ a : Entity, q.val.store.get i = some a ∧ a.val.after = ds.val := by
+  obtain ⟨q, hq, hqi⟩ := applyCmd_edit_succeeds p i e (.after ds) hget htab (fun hs => by
+    have h1 := hdeps hs
+    have h2 := hrest hs
+    simp only [Bool.and_eq_true] at h2
+    show itemsWfButRanks (editPost p i e (.after ds) hs) = true
+    simp [itemsWfButRanks, h1.1, h1.2, h2.1.1.1, h2.1.1.2, h2.1.2, h2.2])
+  refine ⟨q, hq, _, hqi, ?_⟩
+  exact the_edit_path_writes_what_the_field_path_reads (.after ds) e _
+    (editE_ok_of_tabless _ e htab)
+
+/-- The three `after` outcomes, decided on a loaded plan — so neither refusal
+theorem's hypothesis is vacuous and the success form is reachable: a dangling
+id, a two-item cycle, a self-dependency, and an `event:` dependency that
+lands. -/
+def depWitnessRequest : List ReqDoc :=
+  [⟨"week/2026-W37.md", some ⟨week, 35⟩,
+    ["# Tasks".toList, "- [ ] 3 1b Draft ^a1".toList, "- [ ] 3 1b Send after:^a1 ^b1".toList]⟩,
+   ⟨"month/2026-09.md", some ⟨month, 8⟩, ["# Outcomes".toList]⟩]
+
+def depWitnessOutcome (i : String) (k : Field.Key) (w : String) : Option (Option KErr) :=
+  match loadPlan depWitnessRequest, editValOf k w.toList with
+  | .ok p, some v =>
+    match applyCmd (.edit i.toList v) p with
+    | .ok _ => some none
+    | .error e => some (some e)
+  | _, _ => none
+
+theorem the_after_refusals_are_named_on_a_loaded_plan :
+    depWitnessOutcome "a1" .after "^zz" = some (some .danglingDep) ∧
+    depWitnessOutcome "a1" .after "^b1" = some (some .depCycle) ∧
+    depWitnessOutcome "b1" .after "^b1" = some (some .depCycle) ∧
+    depWitnessOutcome "a1" .after "event:visa" = some none := by decide
 
 end Tm

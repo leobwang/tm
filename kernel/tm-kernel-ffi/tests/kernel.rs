@@ -654,7 +654,7 @@ fn edit_with_an_empty_value_unsets_the_key() {
 fn edit_refusals_are_named() {
     for (key, value, why) in [
         ("size", "3", r#"{"err":"unknownKey size"}"#),
-        ("due", "2026-09-20", r#"{"err":"keyNotWired due"}"#),
+        ("demoted", "W37", r#"{"err":"keyNotWired demoted"}"#),
         ("ci", "7", r#"{"err":"badValue ci"}"#),
         ("est", "3d", r#"{"err":"badValue est"}"#),
     ] {
@@ -663,6 +663,120 @@ fn edit_refusals_are_named() {
         )))
         .unwrap();
         assert_eq!(out, why, "{key}={value}: {out}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Gap 40's bridges: eight more keys on the wire — due, at, win, every,
+// on-event, loc, waiting, after. Lean-side twins:
+// the_eight_bridged_keys_accept_their_spec_values,
+// parseCmd_refuses_the_bridged_keys_bad_values, parseCmd_reads_the_bridged_keys,
+// edit_of_a_dangling_after_is_refused_by_name,
+// edit_of_a_cyclic_after_is_refused_by_name, applyCmd_after_succeeds,
+// the_year_9999_rollover_parses_but_the_edit_refuses_it.
+// ---------------------------------------------------------------------------
+
+/// One keyed edit against the fixture, asserting the whole rewritten line.
+fn edit_writes(id: &str, key: &str, value: &str, line: &str) {
+    let out = call(&req(&format!(
+        r#"[{{"op":"edit","id":"{id}","key":"{key}","value":"{value}"}}]"#
+    )))
+    .unwrap();
+    assert!(
+        out.contains(&format!("\"{line}\"")),
+        "{key}={value} should write {line:?}: {out}"
+    );
+}
+
+#[test]
+fn edit_keyed_due_writes_both_forms() {
+    edit_writes("t3", "due", "2026-09-11", "- [>] 4 2b Exercises 5.3-5.5            @m1 est:1b due:2026-09-11 ^t3");
+    edit_writes("t3", "due", "2026-09-11T23:59", "- [>] 4 2b Exercises 5.3-5.5            @m1 est:1b due:2026-09-11T23:59 ^t3");
+}
+
+#[test]
+fn edit_keyed_at_writes_the_short_end() {
+    edit_writes("t3", "at", "2026-09-07T12:50/13:50", "- [>] 4 2b Exercises 5.3-5.5            @m1 est:1b at:2026-09-07T12:50/13:50 ^t3");
+    // A long end on the start's own day is written back in the short form.
+    edit_writes("t3", "at", "2026-09-07T12:50/2026-09-07T13:50", "- [>] 4 2b Exercises 5.3-5.5            @m1 est:1b at:2026-09-07T12:50/13:50 ^t3");
+}
+
+#[test]
+fn edit_keyed_win_writes_the_overnight_window() {
+    edit_writes("t3", "win", "22:00-02:00", "- [>] 4 2b Exercises 5.3-5.5            @m1 est:1b win:22:00-02:00 ^t3");
+}
+
+#[test]
+fn edit_keyed_every_writes_the_canonical_rule() {
+    // `daily` is read and `day` is written — the field's canonical rendering.
+    edit_writes("t3", "every", "daily", "- [>] 4 2b Exercises 5.3-5.5            @m1 est:1b every:day ^t3");
+    edit_writes("t3", "every", "Mon,Wed,Fri", "- [>] 4 2b Exercises 5.3-5.5            @m1 est:1b every:Mon,Wed,Fri ^t3");
+}
+
+#[test]
+fn edit_keyed_on_event_replaces_in_place() {
+    edit_writes("a4", "on-event", "reply", "  - [?] 2 15m Ask Prof. Lee  on-event:reply waiting:2026-09-05 ^a4");
+}
+
+#[test]
+fn edit_keyed_loc_writes_a_name_and_an_enum() {
+    edit_writes("t3", "loc", "lounge", "- [>] 4 2b Exercises 5.3-5.5            @m1 est:1b loc:lounge ^t3");
+    edit_writes("t3", "loc", "library", "- [>] 4 2b Exercises 5.3-5.5            @m1 est:1b loc:library ^t3");
+}
+
+#[test]
+fn edit_keyed_waiting_replaces_in_place() {
+    edit_writes("a4", "waiting", "2026-09-20", "  - [?] 2 15m Ask Prof. Lee  on-event:reply/7d waiting:2026-09-20 ^a4");
+}
+
+#[test]
+fn edit_keyed_after_writes_a_dependency_the_plan_holds() {
+    edit_writes("t3", "after", "^m1,event:visa", "- [>] 4 2b Exercises 5.3-5.5            @m1 est:1b after:^m1,event:visa ^t3");
+}
+
+/// `after` meets the plan tier, and both refusals are named: an id no item
+/// carries is `danglingDep`, a dependency on itself (or a two-item loop) is
+/// `depCycle` — never `badHorizon`, and nothing is written.
+#[test]
+fn edit_keyed_after_refuses_a_dangling_or_cyclic_dependency_by_name() {
+    for (id, value, why) in [
+        ("t3", "^zz", r#"{"err":{"kernel":"danglingDep"}}"#),
+        ("t3", "^t3", r#"{"err":{"kernel":"depCycle"}}"#),
+    ] {
+        let out = call(&req(&format!(
+            r#"[{{"op":"edit","id":"{id}","key":"after","value":"{value}"}}]"#
+        )))
+        .unwrap();
+        assert_eq!(out, why, "after={value}: {out}");
+    }
+    let out = call(&req(
+        r#"[{"op":"edit","id":"m1","key":"after","value":"^t3"},{"op":"edit","id":"t3","key":"after","value":"^m1"}]"#,
+    ))
+    .unwrap();
+    assert_eq!(out, r#"{"err":{"kernel":"depCycle"}}"#, "{out}");
+}
+
+/// A value each bridged key's own grammar refuses is `badValue <k>`, by name —
+/// and so are `loc:`'s word bound (a space) and `at:`'s one false bridge, the
+/// year-9999 short end the loader reads but no four-digit year can write.
+#[test]
+fn the_bridged_keys_refuse_bad_values_by_name() {
+    for (key, value) in [
+        ("due", "2026-02-30"),
+        ("at", "2026-09-07T13:50/2026-09-06T12:00"),
+        ("at", "9999-12-31T23:00/01:00"),
+        ("win", "25:00-13:00"),
+        ("every", "0d"),
+        ("on-event", "re ply"),
+        ("loc", "a b"),
+        ("waiting", "2026-9-20"),
+        ("after", "^"),
+    ] {
+        let out = call(&req(&format!(
+            r#"[{{"op":"edit","id":"t3","key":"{key}","value":"{value}"}}]"#
+        )))
+        .unwrap();
+        assert_eq!(out, format!(r#"{{"err":"badValue {key}"}}"#), "{key}={value}: {out}");
     }
 }
 

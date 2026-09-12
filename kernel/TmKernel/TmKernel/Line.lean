@@ -6188,5 +6188,307 @@ flag it writes is the flag the view reports. -/
 theorem setFlag_on_the_spec_line :
     (setFlag .hot specItem).map flagsOf = some [Flag.hot] := by decide
 
+
+/-! ## Parse ⇒ wf: the bridges gap 40 owed (stage 3, step 5)
+
+Every `view_set_*` for `due`, `at`, `win`, `every`, `on-event`, `after`,
+`loc` and `waiting` carries a wf hypothesis, and the keyed edit could not
+expose those setters until a value the loader's own parser accepts was shown
+to satisfy it.  These are those bridges, one per parser, stated as
+implications out of the parser the view binds — so a wire value is bounded by
+the grammar the loader reads and nothing else.
+
+The date-carrying ones reduce to **one** fact, proved once
+(`readNat_lt_pow_length`): a numeral read from `k` characters is below
+`10 ^ k`.  `parseDate` demands a four-character year, `mkDate?` demands a
+valid date, and `Cal.ofDay_toDay` hands the year back — so every parsed date
+is `dayWf` (`parseDate_dayWf`), and `due`, `waiting` and both ends of a long
+`at:` inherit it.
+
+**One bridge is false, and its failure is stated exactly.**  `at:`'s short end
+rolls a clock that precedes the start onto the next day (`parseEndShort`), and
+on 9999-12-31 the next day has a five-digit year no `renderDate` can write
+back: `at:9999-12-31T23:00/01:00` parses, and `intervalWf` refuses it.
+`parseInterval_wf_unless_rollover` says that is the *only* way a parsed
+interval fails `intervalWf`; `parseWindow_wf_unless_rollover` carries it to
+`win:`'s absolute form. -/
+
+theorem readNat_foldl_none (l : List Char) :
+    l.foldl (fun acc c => match acc, charDigit c with
+                          | some a, some d => some (a * 10 + d)
+                          | _, _ => none) (none : Option Nat) = none := by
+  induction l with
+  | nil => rfl
+  | cons c t ih => simpa using ih
+
+theorem charDigit_lt {c : Char} {d : Nat} (h : charDigit c = some d) : d < 10 := by
+  unfold charDigit at h
+  split at h <;> simp_all <;> omega
+
+theorem readNat_foldl_lt (l : List Char) : ∀ (a b : Nat),
+    l.foldl (fun acc c => match acc, charDigit c with
+                          | some a, some d => some (a * 10 + d)
+                          | _, _ => none) (some a) = some b →
+      b < (a + 1) * 10 ^ l.length := by
+  induction l with
+  | nil => intro a b h; simp at h; subst h; simp
+  | cons c t ih =>
+      intro a b h
+      cases hcd : charDigit c with
+      | none =>
+          simp only [List.foldl_cons, hcd] at h
+          rw [readNat_foldl_none] at h; simp at h
+      | some d =>
+          simp only [List.foldl_cons, hcd] at h
+          have hd := charDigit_lt hcd
+          have := ih _ _ h
+          have hle : (a * 10 + d + 1) ≤ (a + 1) * 10 := by omega
+          calc b < (a * 10 + d + 1) * 10 ^ t.length := this
+            _ ≤ ((a + 1) * 10) * 10 ^ t.length := Nat.mul_le_mul_right _ hle
+            _ = (a + 1) * 10 ^ (c :: t).length := by
+                simp [List.length_cons, Nat.pow_succ]; rw [Nat.mul_assoc, Nat.mul_comm 10]
+
+/-- **The one width fact** gap 40 names: a numeral read from `k` characters is
+below `10 ^ k`. -/
+theorem readNat_lt_pow_length {l : List Char} {n : Nat} (h : readNat l = some n) :
+    n < 10 ^ l.length := by
+  unfold readNat at h
+  split at h
+  · simp at h
+  · have := readNat_foldl_lt l 0 n h
+    simpa using this
+
+theorem mkDate?_some {y m d n : Nat} (h : mkDate? y m d = some n) :
+    Cal.Date.valid ⟨y, m, d⟩ = true ∧ n = Cal.toDay ⟨y, m, d⟩ := by
+  unfold mkDate? at h
+  split at h
+  · rename_i hv; simp at h; exact ⟨hv, h.symm⟩
+  · simp at h
+
+theorem parseDate_dayWf {w : List Char} {n : Nat} (h : parseDate w = some n) :
+    dayWf n = true := by
+  unfold parseDate at h
+  simp only [Option.bind_eq_some_iff] at h
+  obtain ⟨p, _, q, _, h⟩ := h
+  split at h
+  · rename_i hlen
+    simp only [Option.bind_eq_some_iff] at h
+    obtain ⟨y, hy, m, _, d, _, hmk⟩ := h
+    obtain ⟨hv, hn⟩ := mkDate?_some hmk
+    rw [hn]
+    have hyl := readNat_lt_pow_length hy
+    rw [hlen.1] at hyl
+    have hp : (10 : Nat) ^ 4 = 10000 := rfl
+    rw [hp] at hyl
+    have hy' : (Cal.ofDay (Cal.toDay ⟨y, m, d⟩)).year < 10000 := by
+      rw [Cal.ofDay_toDay _ hv]; exact hyl
+    exact decide_eq_true hy'
+  · simp at h
+
+
+theorem parseDT_wf {w : List Char} {x : DT} (h : parseDT w = some x) : x.wf = true := by
+  unfold parseDT at h
+  simp only [Option.bind_eq_some_iff, Option.map_eq_some_iff] at h
+  obtain ⟨p, _, d, hd, t, _, hx⟩ := h
+  rw [← hx]
+  exact parseDate_dayWf hd
+
+theorem parseMoment_wf {w : List Char} {m : Moment} (h : parseMoment w = some m) :
+    m.wf = true := by
+  unfold parseMoment at h
+  split at h
+  · rename_i m' hdt
+    simp only [Option.some.injEq] at h
+    rw [← h]
+    unfold parseMomentDT at hdt
+    simp only [Option.bind_eq_some_iff, Option.map_eq_some_iff] at hdt
+    obtain ⟨p, _, d, hd, t, _, hm⟩ := hdt
+    rw [← hm]
+    exact parseDate_dayWf hd
+  · simp only [Option.map_eq_some_iff] at h
+    obtain ⟨d, hd, hm⟩ := h
+    rw [← hm]
+    exact parseDate_dayWf hd
+
+theorem parseEnd_spec {s e : DT} {b : List Char} (hs : s.wf = true) (h : parseEnd s b = some e) :
+    s.abs ≤ e.abs ∧ (e.wf = true ∨ e.day = s.day + 1) := by
+  unfold parseEnd at h
+  split at h
+  · rename_i e' he'
+    split at h
+    · rename_i hle
+      simp only [Option.some.injEq] at h
+      rw [← h]
+      exact ⟨hle, Or.inl (parseDT_wf he')⟩
+    · simp at h
+  · unfold parseEndShort at h
+    simp only [Option.map_eq_some_iff] at h
+    obtain ⟨t, _, ht⟩ := h
+    have hst := s.time.isLt
+    have htt := t.isLt
+    split at ht
+    · rename_i hlt
+      rw [← ht]
+      refine ⟨?_, Or.inr rfl⟩
+      unfold DT.abs; simp only [Nat.add_mul]; omega
+    · rename_i hge
+      rw [← ht]
+      refine ⟨?_, Or.inl hs⟩
+      unfold DT.abs; dsimp only; omega
+
+/-- **The `at:` bridge, and exactly where it fails.** -/
+theorem parseInterval_spec {w : List Char} {s e : DT} (h : parseInterval w = some (s, e)) :
+    s.wf = true ∧ s.abs ≤ e.abs ∧ (e.wf = true ∨ e.day = s.day + 1) := by
+  unfold parseInterval at h
+  simp only [Option.bind_eq_some_iff, Option.map_eq_some_iff] at h
+  obtain ⟨p, _, s', hs', e', he', hse⟩ := h
+  simp only [Prod.mk.injEq] at hse
+  obtain ⟨rfl, rfl⟩ := hse
+  have hsw := parseDT_wf hs'
+  exact ⟨hsw, parseEnd_spec hsw he'⟩
+
+theorem parseInterval_wf_unless_rollover {w : List Char} {s e : DT}
+    (h : parseInterval w = some (s, e)) (hbad : intervalWf s e = false) :
+    e.day = s.day + 1 ∧ dayWf (s.day + 1) = false := by
+  obtain ⟨hs, hle, hor⟩ := parseInterval_spec h
+  rcases hor with he | hd
+  · simp [intervalWf, hs, he, hle] at hbad
+  · refine ⟨hd, ?_⟩
+    cases hw : dayWf (s.day + 1) with
+    | false => rfl
+    | true =>
+        have he : e.wf = true := by unfold DT.wf; rw [hd]; exact hw
+        simp [intervalWf, hs, he, hle] at hbad
+
+theorem parseWindow_wf_unless_rollover {w : List Char} {g : WindowRange}
+    (h : parseWindow w = some g) (hbad : windowWf g = false) :
+    ∃ s e, g = .absolute s e ∧ e.day = s.day + 1 ∧ dayWf (s.day + 1) = false := by
+  unfold parseWindow at h
+  split at h
+  · rename_i se hse
+    simp only [Option.some.injEq] at h
+    rw [← h] at hbad ⊢
+    exact ⟨se.1, se.2, rfl, parseInterval_wf_unless_rollover hse hbad⟩
+  · unfold parseWindowDaily at h
+    simp only [Option.bind_eq_some_iff, Option.map_eq_some_iff] at h
+    obtain ⟨p, _, a, _, b, _, hg⟩ := h
+    rw [← hg] at hbad
+    simp [windowWf] at hbad
+
+theorem parseRule_wf {w : List Char} {u : Rule} (h : parseRule w = some u) : u.wf = true := by
+  unfold parseRule at h
+  split at h
+  · simp at h; rw [← h]; rfl
+  split at h
+  · simp at h; rw [← h]; rfl
+  split at h
+  · simp at h; rw [← h]; rfl
+  split at h
+  · simp at h; rw [← h]; rfl
+  split at h
+  · simp at h; rw [← h]; rfl
+  split at h
+  · simp at h; rw [← h]; rfl
+  unfold parseRuleTail at h
+  split at h
+  · unfold parseMonthDay at h
+    simp only [Option.bind_eq_some_iff] at h
+    obtain ⟨d, _, hd⟩ := h
+    split at hd
+    · rename_i hr; simp at hd; rw [← hd]; simpa [Rule.wf] using hr
+    · simp at hd
+  · split at h
+    · unfold parseNumRule at h
+      simp only [Option.bind_eq_some_iff] at h
+      obtain ⟨n, _, hn⟩ := h
+      split at hn
+      · simp at hn
+      · rename_i h0
+        split at hn
+        · simp at hn; rw [← hn]; simp [Rule.wf]; omega
+        · split at hn
+          · simp at hn; rw [← hn]; simp [Rule.wf]; omega
+          · simp only [Option.bind_eq_some_iff, Option.map_eq_some_iff] at hn
+            obtain ⟨wd, _, d, _, hu⟩ := hn
+            rw [← hu]; simp [Rule.wf]; omega
+    · unfold parseWeeklyList at h
+      simp only [Option.bind_eq_some_iff] at h
+      obtain ⟨ds, _, hds⟩ := h
+      split at hds
+      · simp at hds
+      · rename_i hne
+        simp at hds; rw [← hds]; simpa [Rule.wf] using hne
+
+theorem parseOnEvent_wf {w : List Char} {e : OnEvent} (h : parseOnEvent w = some e) :
+    e.wf = true := by
+  unfold parseOnEvent at h
+  split at h
+  · split at h
+    · rename_i p _ hn
+      simp only [Option.map_eq_some_iff] at h
+      obtain ⟨t, _, he⟩ := h
+      rw [← he]; exact hn
+    · simp at h
+  · split at h
+    · rename_i hn; simp at h; rw [← h]; exact hn
+    · simp at h
+
+theorem parseDep_wf {w : List Char} {d : Dep} (h : parseDep w = some d) : d.wf = true := by
+  unfold parseDep at h
+  split at h
+  · split at h
+    · rename_i hn; simp at h; rw [← h]; exact hn
+    · simp at h
+  · unfold parseDepBare at h
+    dsimp only at h
+    by_cases hi : isName (if w.head? = some '^' then w.tail else w) = true
+    · rw [if_pos hi] at h; simp only [Option.some.injEq] at h; rw [← h]; exact hi
+    · rw [if_neg hi] at h; simp at h
+
+theorem mapOpt_all {α β : Type} (f : α → Option β) (p : β → Bool)
+    (hf : ∀ a b, f a = some b → p b = true) :
+    ∀ (l : List α) (r : List β), mapOpt f l = some r → r.all p = true := by
+  intro l
+  induction l with
+  | nil => intro r h; simp [mapOpt] at h; subst h; rfl
+  | cons a t ih =>
+      intro r h
+      simp only [mapOpt, Option.bind_eq_some_iff, Option.map_eq_some_iff] at h
+      obtain ⟨b, hb, r', hr', hr⟩ := h
+      rw [← hr]
+      simp [hf a b hb, ih r' hr']
+
+theorem parseDeps_wf {w : List Char} {ds : List Dep} (h : parseDeps w = some ds) :
+    depsWf ds = true := by
+  unfold parseDeps at h
+  simp only [Option.bind_eq_some_iff] at h
+  obtain ⟨ds', hm, hds⟩ := h
+  split at hds
+  · simp at hds
+  · rename_i hne
+    simp only [Option.some.injEq] at hds
+    rw [← hds]
+    have hall := mapOpt_all parseDep Dep.wf (fun _ _ hb => parseDep_wf hb) _ _ hm
+    simp [depsWf, hall]
+    simpa using hne
+
+theorem parseLoc_wf {w : List Char} {c : Loc} (h : parseLoc w = some c) : c.wf = true := by
+  unfold parseLoc at h
+  split at h
+  · simp at h
+  split at h
+  · simp at h; rw [← h]; rfl
+  split at h
+  · simp at h; rw [← h]; rfl
+  split at h
+  · simp at h; rw [← h]; rfl
+  split at h
+  · simp at h; rw [← h]; rfl
+  rename_i h0 h1 h2 h3 h4
+  simp only [Option.some.injEq] at h
+  rw [← h]
+  simp [Loc.wf, h1, h2, h3, h4]
+  simpa using h0
+
 end Field
 end Tm

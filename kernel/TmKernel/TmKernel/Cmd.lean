@@ -71,6 +71,14 @@ inductive KErr
       no token to remove, and reporting success would be the "success
       reported, nothing changed" shape C1 died of. -/
   | keyAbsent
+  /-- a keyed `after:` edit whose post-state names an id no item of the plan
+      carries (`afterTotal` fails).  Before gap 40's `after` wiring the only
+      name a plan-tier edit refusal had was `badHorizon`, which is advice about
+      relocation; an edit moves nothing (`nameEditFault`). -/
+  | danglingDep
+  /-- a keyed `after:` edit whose post-state has a dependency cycle
+      (`afterAcyclic` fails, §5.5) — a self-dependency included. -/
+  | depCycle
 deriving DecidableEq, Repr
 
 /-- The only way to make an `Entity`.  Both cheats are compile errors:
@@ -535,14 +543,17 @@ discipline is §5.3's one-reader rule, in both directions:
   is the field's canonical rendering of the parsed value, so re-loading reads
   back exactly what the command wrote.
 
-Nine of the eighteen `Field.Key`s are wired: `est`, `dur`, `buffer`, `pref`,
-`on-miss`, `after-done`, `min`, `max` (spelled `cap` or `max` on the wire,
-written as `max:` — `set_max_writes_max`), `ci`.  The other nine are recorded
-by name in the README (gap 40): each either lacks the `parse ⇒ wf` bridge its
-`view_set_*` hypothesis needs, or — `demoted` — is lifecycle state that
-`demote`/`readopt` own and `edit` must not forge.  R10: the two bounded value
-classes crossing here, day-free durations and `Fin 6`, go through the smart
-constructors their decoders use (`ndDur?`, `parseCi`). -/
+Seventeen of the eighteen `Field.Key`s are wired.  The edit widening wired
+nine: `est`, `dur`, `buffer`, `pref`, `on-miss`, `after-done`, `min`, `max`
+(spelled `cap` or `max` on the wire, written as `max:` — `set_max_writes_max`),
+`ci`.  Stage 3's step 5 wired eight more — `due`, `at`, `win`, `every`,
+`on-event`, `loc`, `waiting`, `after` — once Line.lean's `parse ⇒ wf` bridges
+existed for the hypotheses their `view_set_*` proofs carry (README gap 40 and
+its step-5 successor paragraph).  The eighteenth, `demoted`, is lifecycle
+state that `demote`/`readopt` own and `edit` must not forge.  R10: the bounded value
+classes crossing here — day-free durations, `Fin 6`, and the eight wf-bounded
+subtypes (`WfMoment` … `WfDeps`, and `WordLoc`) — go through the smart
+constructors their decoders use (`ndDur?`, `parseCi`, `guardWf`). -/
 
 /-- Gap 32's guard: a tab anywhere in the raw bytes the line renders from —
 indent, any separator, any word.  `toksWf` keeps separators space-only, so on
@@ -571,6 +582,57 @@ theorem ndDur?_is_parseDurND (w : List Char) :
       simp only [Option.bind_some]
       by_cases h : d.noDays = true <;> simp [h]
 
+/-- R10's smart constructor for every wf-bounded value class the widened edit
+carries: the parser's answer, kept only with its wf proof.  The bridges in
+Line.lean (`parseDate_dayWf`, `parseMoment_wf`, …) are what make the guard
+refuse nothing the parser accepted — `guardWf_isSome` — except where a bridge
+is honestly false (`at:`/`win:`'s year-9999 rollover). -/
+def guardWf {α : Type} (p : α → Bool) (o : Option α) : Option { a : α // p a = true } :=
+  o.bind (fun a => if h : p a = true then some ⟨a, h⟩ else none)
+
+theorem guardWf_isSome {α : Type} (p : α → Bool) (o : Option α)
+    (hb : ∀ a, o = some a → p a = true) : (guardWf p o).isSome = o.isSome := by
+  unfold guardWf
+  cases ho : o with
+  | none => rfl
+  | some a =>
+      simp only [Option.bind_some]
+      rw [dif_pos (hb a ho)]
+      rfl
+
+theorem guardWf_none_iff {α : Type} (p : α → Bool) (o : Option α) :
+    guardWf p o = none ↔ ∀ a, o = some a → p a = false := by
+  unfold guardWf
+  cases o with
+  | none => simp
+  | some a =>
+      by_cases h : p a = true
+      · simp [h]
+      · simp only [Bool.not_eq_true] at h; simp [h]
+
+/-- A `loc:` name is free text to `parseLoc`, so unlike every other value it
+could carry a byte that is not a word: a space would split the token when the
+line is read back, a newline would split the line, and a tab is gap 32's
+unreadable separator.  The edit path writes `loc:` only for a value made of
+characters that are none of those — no space and no C0 control byte.  A
+loaded line's `loc:` word can never hold a space or a newline, so this narrows
+the loader's reading only by the control bytes, which are recorded (gap 40's
+successor paragraph). -/
+def locWordOk (w : List Char) : Bool := w.all (fun c => c != ' ' && decide (32 ≤ c.toNat))
+
+/-- The bound a `loc:` value carries onto the line: the enum's own wf, and a
+rendering the tokenizer reads back as one word. -/
+def locOk (c : Field.Loc) : Bool := c.wf && locWordOk (Field.renderLoc c)
+
+abbrev WfMoment   := { m : Field.Moment // m.wf = true }
+abbrev WfInterval := { se : Field.DT × Field.DT // Field.intervalWf se.1 se.2 = true }
+abbrev WfWindow   := { g : Field.WindowRange // Field.windowWf g = true }
+abbrev WfRule     := { u : Field.Rule // u.wf = true }
+abbrev WfOnEvent  := { e : Field.OnEvent // e.wf = true }
+abbrev WordLoc    := { c : Field.Loc // locOk c = true }
+abbrev WfDay      := { n : Nat // Field.dayWf n = true }
+abbrev WfDeps     := { ds : List Field.Dep // Field.depsWf ds = true }
+
 /-- One wire value, already parsed and bounded.  One constructor per wired
 key, carrying the same type the loader's view for that key produces. -/
 inductive EditVal
@@ -583,6 +645,14 @@ inductive EditVal
   | floor     (q : Field.Rate)
   | cap       (q : Field.Rate)
   | ci        (c : Fin 6)
+  | due       (m : WfMoment)
+  | interval  (se : WfInterval)
+  | window    (g : WfWindow)
+  | every     (u : WfRule)
+  | onEvent   (e : WfOnEvent)
+  | loc       (c : WordLoc)
+  | waiting   (n : WfDay)
+  | after     (ds : WfDeps)
 deriving DecidableEq
 
 /-- The key each value writes. -/
@@ -590,6 +660,9 @@ def EditVal.key : EditVal → Field.Key
   | .est _ => .est | .dur _ => .dur | .buffer _ => .buffer
   | .pref _ => .pref | .onMiss _ => .onMiss | .afterDone _ => .afterDone
   | .floor _ => .floor | .cap _ => .cap | .ci _ => .ci
+  | .due _ => .due | .interval _ => .interval | .window _ => .window
+  | .every _ => .every | .onEvent _ => .onEvent | .loc _ => .loc
+  | .waiting _ => .waiting | .after _ => .after
 
 /-- The token body the setter writes: the field's own renderer, per key. -/
 def EditVal.rendered : EditVal → List Char
@@ -602,6 +675,14 @@ def EditVal.rendered : EditVal → List Char
   | .floor q => Field.renderRate q
   | .cap q => Field.renderRate q
   | .ci c => Field.renderCi c
+  | .due m => Field.renderMoment m.val
+  | .interval se => Field.renderInterval se.val.1 se.val.2
+  | .window g => Field.renderWindow g.val
+  | .every u => Field.renderRule u.val
+  | .onEvent e => Field.renderOnEvent e.val
+  | .loc c => Field.renderLoc c.val
+  | .waiting n => Field.renderDate n.val
+  | .after ds => Field.renderDeps ds.val
 
 /-- One write path: every branch is the Line.lean setter that carries its
 `view ∘ set = id` proof, and nothing else is exported as a setter (R11). -/
@@ -615,6 +696,14 @@ def setVal : EditVal → RawItem → RawItem
   | .floor q, r => Field.setMin q r
   | .cap q, r => Field.setMax q r
   | .ci c, r => Field.setCi c r
+  | .due m, r => Field.setDue m.val r
+  | .interval se, r => Field.setAt se.val.1 se.val.2 r
+  | .window g, r => Field.setWin g.val r
+  | .every u, r => Field.setEvery u.val r
+  | .onEvent e, r => Field.setOnEvent e.val r
+  | .loc c, r => Field.setLoc c.val r
+  | .waiting n, r => Field.setWaiting n.val r
+  | .after ds, r => Field.setAfter ds.val r
 
 /-- Whatever key the command writes, the token that lands is read back as that
 key with the rendered value — `lookupKey_setKey`, once, for all nine, which is
@@ -624,9 +713,11 @@ theorem setVal_writes_the_token_the_loader_reads (v : EditVal) (r : RawItem) :
   cases v <;> exact Field.lookupKey_setKey _ _ _
 
 /-- Which keys the wire can edit today.  `editValOf` is defined on exactly
-these (`editValOf_refuses_unwired_keys`); the README's gap 40 names the rest. -/
+these (`editValOf_refuses_unwired_keys`); the one key left out, `demoted`, is
+excluded by policy (README gap 40). -/
 def keyEditable : Field.Key → Bool
   | .est | .dur | .buffer | .pref | .onMiss | .afterDone | .floor | .cap | .ci => true
+  | .due | .interval | .window | .every | .onEvent | .loc | .waiting | .after => true
   | _ => false
 
 /-- An unset can only name a key the edit path is wired for; the proof rides
@@ -648,6 +739,15 @@ def editValOf : Field.Key → List Char → Option EditVal
   | .floor, w => (Field.parseRate w).map .floor
   | .cap, w => (Field.parseRate w).map .cap
   | .ci, w => (Field.parseCi w).map .ci
+  | .due, w => (guardWf Field.Moment.wf (Field.parseMoment w)).map .due
+  | .interval, w =>
+      (guardWf (fun se => Field.intervalWf se.1 se.2) (Field.parseInterval w)).map .interval
+  | .window, w => (guardWf Field.windowWf (Field.parseWindow w)).map .window
+  | .every, w => (guardWf Field.Rule.wf (Field.parseRule w)).map .every
+  | .onEvent, w => (guardWf Field.OnEvent.wf (Field.parseOnEvent w)).map .onEvent
+  | .loc, w => (guardWf locOk (Field.parseLoc w)).map .loc
+  | .waiting, w => (guardWf Field.dayWf (Field.parseDate w)).map .waiting
+  | .after, w => (guardWf Field.depsWf (Field.parseDeps w)).map .after
   | _, _ => none
 
 /-- The table and the exposure predicate agree, downward: a key outside the
@@ -688,6 +788,164 @@ theorem editValOf_key (k : Field.Key) (w : List Char) (v : EditVal)
     first
       | exact key_of_map h (fun _ => rfl)
       | exact absurd h (by simp)
+
+/-! ### Gap 40's bridges, at the table
+
+The eight keys wired in stage 3's step 5 each go through `guardWf`, and each
+gets the theorem that the guard is not a second grammar: what `editValOf`
+refuses is what the loader's parser refuses — exactly, for `due`, `every`,
+`on-event`, `waiting` and `after`; up to the word bound for `loc`; and up to
+the one stated rollover for `at` and `win`. -/
+
+theorem editValOf_due_refuses_only_what_parseMoment_refuses (w : List Char) :
+    (editValOf .due w).isSome = (Field.parseMoment w).isSome := by
+  show ((guardWf _ _).map _).isSome = _
+  rw [Option.isSome_map, guardWf_isSome _ _ (fun _ h => Field.parseMoment_wf h)]
+
+theorem editValOf_every_refuses_only_what_parseRule_refuses (w : List Char) :
+    (editValOf .every w).isSome = (Field.parseRule w).isSome := by
+  show ((guardWf _ _).map _).isSome = _
+  rw [Option.isSome_map, guardWf_isSome _ _ (fun _ h => Field.parseRule_wf h)]
+
+theorem editValOf_onEvent_refuses_only_what_parseOnEvent_refuses (w : List Char) :
+    (editValOf .onEvent w).isSome = (Field.parseOnEvent w).isSome := by
+  show ((guardWf _ _).map _).isSome = _
+  rw [Option.isSome_map, guardWf_isSome _ _ (fun _ h => Field.parseOnEvent_wf h)]
+
+theorem editValOf_after_refuses_only_what_parseDeps_refuses (w : List Char) :
+    (editValOf .after w).isSome = (Field.parseDeps w).isSome := by
+  show ((guardWf _ _).map _).isSome = _
+  rw [Option.isSome_map, guardWf_isSome _ _ (fun _ h => Field.parseDeps_wf h)]
+
+theorem editValOf_waiting_refuses_only_what_parseDate_refuses (w : List Char) :
+    (editValOf .waiting w).isSome = (Field.parseDate w).isSome := by
+  show ((guardWf _ _).map _).isSome = _
+  rw [Option.isSome_map, guardWf_isSome _ _ (fun _ h => Field.parseDate_dayWf h)]
+
+/-- `parseLoc` hands back the word it read: the enum's four spellings are
+exactly themselves, and a name is the word. -/
+theorem renderLoc_parseLoc {w : List Char} {c : Field.Loc} (h : Field.parseLoc w = some c) :
+    Field.renderLoc c = w := by
+  unfold Field.parseLoc at h
+  split at h
+  · simp at h
+  split at h
+  · rename_i hw; simp only [Option.some.injEq] at h; rw [← h, hw]; rfl
+  split at h
+  · rename_i hw; simp only [Option.some.injEq] at h; rw [← h, hw]; rfl
+  split at h
+  · rename_i hw; simp only [Option.some.injEq] at h; rw [← h, hw]; rfl
+  split at h
+  · rename_i hw; simp only [Option.some.injEq] at h; rw [← h, hw]; rfl
+  simp only [Option.some.injEq] at h
+  rw [← h]; rfl
+
+/-- `loc:`'s table entry refuses what `parseLoc` refuses, and a value that is
+not one word (`locWordOk`) — nothing else. -/
+theorem editValOf_loc_refuses_only_a_bad_or_unworded_value (w : List Char) :
+    (editValOf .loc w).isSome = ((Field.parseLoc w).isSome && locWordOk w) := by
+  show ((guardWf _ _).map _).isSome = _
+  rw [Option.isSome_map]
+  unfold guardWf
+  cases hp : Field.parseLoc w with
+  | none => rfl
+  | some c =>
+      simp only [Option.bind_some, Option.isSome_some, Bool.true_and]
+      have hwf := Field.parseLoc_wf hp
+      have hr := renderLoc_parseLoc hp
+      by_cases hw : locWordOk w = true
+      · have hok : locOk c = true := by
+          show (c.wf && locWordOk (Field.renderLoc c)) = true
+          rw [hwf, hr, hw]; rfl
+        rw [hw, dif_pos hok]; rfl
+      · simp only [Bool.not_eq_true] at hw
+        have hok : ¬ locOk c = true := by
+          show ¬ (c.wf && locWordOk (Field.renderLoc c)) = true
+          rw [hwf, hr, hw]; decide
+        rw [hw, dif_neg hok]; rfl
+
+/-- **`at:`'s table entry refuses what `parseInterval` refuses — and one more
+thing, by name**: a short end that rolls past 9999-12-31 onto a day no
+four-digit year can write. -/
+theorem editValOf_interval_refuses_only_a_bad_value_or_the_rollover (w : List Char)
+    (h : editValOf .interval w = none) :
+    Field.parseInterval w = none ∨
+      ∃ s e, Field.parseInterval w = some (s, e) ∧ e.day = s.day + 1 ∧
+        Field.dayWf (s.day + 1) = false := by
+  have hg : guardWf (fun se : Field.DT × Field.DT => Field.intervalWf se.1 se.2)
+      (Field.parseInterval w) = none := by
+    have h' : ((guardWf (fun se : Field.DT × Field.DT => Field.intervalWf se.1 se.2)
+        (Field.parseInterval w)).map EditVal.interval) = none := h
+    simpa using h'
+  cases hp : Field.parseInterval w with
+  | none => exact Or.inl rfl
+  | some se =>
+      refine Or.inr ⟨se.1, se.2, rfl, ?_⟩
+      have hbad := (guardWf_none_iff _ _).1 hg se hp
+      exact Field.parseInterval_wf_unless_rollover (s := se.1) (e := se.2) hp hbad
+
+/-- The same for `win:`, whose absolute form is an `at:` interval. -/
+theorem editValOf_window_refuses_only_a_bad_value_or_the_rollover (w : List Char)
+    (h : editValOf .window w = none) :
+    Field.parseWindow w = none ∨
+      ∃ s e, Field.parseWindow w = some (.absolute s e) ∧ e.day = s.day + 1 ∧
+        Field.dayWf (s.day + 1) = false := by
+  have hg : guardWf Field.windowWf (Field.parseWindow w) = none := by
+    have h' : ((guardWf Field.windowWf (Field.parseWindow w)).map EditVal.window) = none := h
+    simpa using h'
+  cases hp : Field.parseWindow w with
+  | none => exact Or.inl rfl
+  | some g =>
+      have hbad := (guardWf_none_iff _ _).1 hg g hp
+      obtain ⟨s, e, hge, hd⟩ := Field.parseWindow_wf_unless_rollover hp hbad
+      exact Or.inr ⟨s, e, by rw [hge], hd⟩
+
+/-- …and upward: the eight bridged keys each accept their §4.1 spec value —
+both `due:` forms, `at:`'s short end, a daily `win:`, a weekday list, an
+`on-event:` with a timeout, one of `loc:`'s four enum names, a `waiting:`
+date, and §4.1's mixed `after:` list. -/
+theorem the_eight_bridged_keys_accept_their_spec_values :
+    ((editValOf .due "2026-09-11".toList).isSome &&
+     (editValOf .due "2026-09-11T23:59".toList).isSome &&
+     (editValOf .interval "2026-09-07T12:50/13:50".toList).isSome &&
+     (editValOf .window "11:30-13:30".toList).isSome &&
+     (editValOf .every "Mon,Wed,Fri".toList).isSome &&
+     (editValOf .onEvent "reply/7d".toList).isSome &&
+     (editValOf .loc "lounge".toList).isSome &&
+     (editValOf .waiting "2026-09-20".toList).isSome &&
+     (editValOf .after "^k7q2,event:visa".toList).isSome) = true := by decide
+
+/-- **The one bridge that is false, as a witness.**  The loader reads
+`at:9999-12-31T23:00/01:00` — the short end rolls onto 10000-01-01 — and the
+edit path refuses it, because `renderDate` cannot write a five-digit year back
+(`intervalWf`).  The day before is not refused: the bite is exactly the
+rollover `editValOf_interval_refuses_only_a_bad_value_or_the_rollover` names. -/
+theorem the_year_9999_rollover_parses_but_the_edit_refuses_it :
+    (Field.parseInterval "9999-12-31T23:00/01:00".toList).isSome = true ∧
+    editValOf .interval "9999-12-31T23:00/01:00".toList = none ∧
+    (editValOf .interval "9999-12-30T23:00/01:00".toList).isSome = true := by decide
+
+/-- What `loc:` writes is one word, so the written line reparses to the same
+tokens (`Field.setKey_line_reparses`'s `wordWf` hypothesis, discharged). -/
+theorem wordLoc_renders_a_word (c : WordLoc) : Field.wordWf (Field.renderLoc c.val) = true := by
+  have h := c.property
+  simp only [locOk, Bool.and_eq_true] at h
+  obtain ⟨hwf, hw⟩ := h
+  have hne : Field.renderLoc c.val ≠ [] := by
+    cases hc : c.val with
+    | named n =>
+        rw [hc] at hwf
+        simp only [Field.Loc.wf, Bool.and_eq_true, Bool.not_eq_true'] at hwf
+        intro hn; simp only [Field.renderLoc] at hn; rw [hn] at hwf; simp at hwf
+    | _ => simp [Field.renderLoc]
+  simp only [Field.wordWf, Bool.and_eq_true, Bool.not_eq_true']
+  refine ⟨by cases hr : Field.renderLoc c.val with
+            | nil => exact absurd hr hne
+            | cons a t => rfl, ?_⟩
+  simp only [locWordOk, List.all_eq_true, Bool.and_eq_true, bne_iff_ne, ne_eq] at hw
+  simp only [List.all_eq_true]
+  intro x hx
+  simpa [isSp] using (hw x hx).1
 
 /-! ### The entity transforms, behind gap 32's guard -/
 
@@ -735,7 +993,15 @@ theorem the_edit_path_writes_what_the_field_path_reads (v : EditVal) (e a : Enti
     | .afterDone x => Field.viewAfterDone a.val.line = some x
     | .floor q => Field.viewMin a.val.line = some q
     | .cap q => Field.viewMax a.val.line = some q
-    | .ci c => a.val.ci = some c := by
+    | .ci c => a.val.ci = some c
+    | .due m => Field.viewDue a.val.line = some m.val
+    | .interval se => Field.viewAt a.val.line = some se.val
+    | .window g => Field.viewWin a.val.line = some g.val
+    | .every u => Field.viewEvery a.val.line = some u.val
+    | .onEvent x => Field.viewOnEvent a.val.line = some x.val
+    | .loc c => Field.viewLoc a.val.line = some c.val
+    | .waiting n => Field.viewWaiting a.val.line = some n.val
+    | .after ds => a.val.after = ds.val := by
   unfold editE at h
   split at h
   · injection h
@@ -751,6 +1017,19 @@ theorem the_edit_path_writes_what_the_field_path_reads (v : EditVal) (e a : Enti
     | floor q => exact Field.view_set_min q e.val.line
     | cap q => exact Field.view_set_max q e.val.line
     | ci c => exact Field.view_set_ci c e.val.line
+    | due m => exact Field.view_set_due m.val e.val.line m.property
+    | interval se => exact Field.view_set_at se.val.1 se.val.2 e.val.line se.property
+    | window g => exact Field.view_set_win g.val e.val.line g.property
+    | every u => exact Field.view_set_every u.val e.val.line u.property
+    | onEvent x => exact Field.view_set_onEvent x.val e.val.line x.property
+    | loc c =>
+        have hc : c.val.wf = true := by
+          have h := c.property; simp only [locOk, Bool.and_eq_true] at h; exact h.1
+        exact Field.view_set_loc c.val e.val.line hc
+    | waiting n => exact Field.view_set_waiting n.val e.val.line n.property
+    | after ds =>
+        show (Field.viewAfter (Field.setAfter ds.val e.val.line)).getD [] = ds.val
+        rw [Field.view_set_after ds.val e.val.line ds.property]; rfl
 
 /-- The unset guard bites like the edit guard. -/
 theorem unsetE_refuses_a_tabbed_line (k : EditKey) (e : Entity)
@@ -793,6 +1072,43 @@ def cmdDrop (i : Id) : Transform := (·.mapAt i (fun e => .ok (drop e)))
 /-- `tm edit ^id <key>=<value>` — the keyed form, on the wire since the edit
 widening. -/
 def cmdEdit (v : EditVal) (i : Id) : Transform := (·.mapAt i (editE v))
+/-- The plan an edit of `i` to `v` proposes, when `i` is an item.  Exactly the
+store `WfPlan.mapAt` re-checks for `cmdEdit`, so a fault read off it is the
+fault that refused the command. -/
+def editPost (p : WfPlan) (i : Id) (e : Entity) (v : EditVal)
+    (hs : (p.val.store.get i).isSome = true) : PlanCore :=
+  { p.val with store := p.val.store.set i ⟨{ e.val with line := setVal v e.val.line }, e.property⟩ hs }
+
+/-- Which plan-tier refusal an edit met: the dependency conjuncts by name, and
+`badHorizon` — `mapAt`'s standing name — for everything else. -/
+def editFault (p : WfPlan) (i : Id) (v : EditVal) : KErr :=
+  match h : p.val.store.get i with
+  | none => .badHorizon
+  | some e =>
+    if !afterTotal (editPost p i e v (by rw [h]; rfl)) then .danglingDep
+    else if !afterAcyclic (editPost p i e v (by rw [h]; rfl)) then .depCycle
+    else .badHorizon
+
+/-- Gap 40's `after` refusal, named at the plan tier: an edit whose post-state
+fails `planWf` used to surface as `mapAt`'s `badHorizon` whatever broke; now a
+dangling or cyclic `after:` is `danglingDep` / `depCycle`, and every other
+plan-tier edit refusal keeps the name it had.  Nothing but the name changes —
+`.ok` and every other error pass through untouched. -/
+def nameEditFault (p : WfPlan) (i : Id) (v : EditVal) :
+    Except KErr WfPlan → Except KErr WfPlan
+  | .error .badHorizon => .error (editFault p i v)
+  | r => r
+
+/-- Naming a fault never manufactures a success: an `.ok` out is the `.ok` in. -/
+theorem nameEditFault_ok {p : WfPlan} {i : Id} {v : EditVal} {r : Except KErr WfPlan}
+    {q : WfPlan} (h : nameEditFault p i v r = .ok q) : r = .ok q := by
+  unfold nameEditFault at h
+  split at h
+  · simp at h
+  · exact h
+
+theorem nameEditFault_ok_of {p : WfPlan} {i : Id} {v : EditVal} {q : WfPlan} :
+    nameEditFault p i v (.ok q) = .ok q := rfl
 /-- `tm edit ^id <key>=` — remove the key's tokens. -/
 def cmdUnset (k : EditKey) (i : Id) : Transform := (·.mapAt i (unsetE k))
 /-- `tm edit ^id est=v`.  Since the edit widening this **is** the keyed edit at

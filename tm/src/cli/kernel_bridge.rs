@@ -63,7 +63,8 @@
 //!
 //! Every kernel refusal reaches the caller **by name** ([`refusal`]):
 //! `occupied`, `noSuchId`, `notDemoted`, `alreadyDemoted`, `badHorizon`,
-//! `badItem`, `tabbedLine`, `keyAbsent`, `siteOutOfRange`, `dupId`,
+//! `badItem`, `tabbedLine`, `keyAbsent`, `danglingDep`, `depCycle`,
+//! `siteOutOfRange`, `dupId`,
 //! `notADemotion`, `ambiguousDemotion`, `duplicatePath`, `badLine`,
 //! `unterminatedComment`, `itemCheck`, plus `parseCmd`'s parse-tier names riding the free-text
 //! `err` (`badValue <k>`, `keyNotWired <k>`, `unknownKey <k>`, and `add`'s
@@ -555,7 +556,7 @@ fn refusal(err: &Value) -> KernelIssue {
         } else if let Some(k) = s.strip_prefix("keyNotWired ") {
             put("key", k.to_string());
             ("keyNotWired".into(), format!(
-                "kernel refusal: keyNotWired — {k:?} is not on the kernel's edit path yet (kernel/README.md gap 40 names the deferred keys)"
+                "kernel refusal: keyNotWired — {k:?} is not on the kernel's edit path (kernel/README.md gap 40: `demoted` is lifecycle state that demote/readopt own)"
             ))
         } else if let Some(k) = s.strip_prefix("unknownKey ") {
             put("key", k.to_string());
@@ -589,6 +590,8 @@ fn refusal(err: &Value) -> KernelIssue {
             "badItem" => "the rewritten item fails the kernel's item check",
             "tabbedLine" => "the line carries a tab, which this kernel does not read as a separator; the edit is refused rather than written against the wrong token (gap 32)",
             "keyAbsent" => "the line does not carry that key",
+            "danglingDep" => "the edited `after:` names an id no item in the plan carries",
+            "depCycle" => "the edited `after:` makes the dependencies cycle (§5.5)",
             "siteOutOfRange" => "a placement points at a document the plan does not hold",
             _ => "an unlisted kernel refusal — see kernel/TmKernel/TmKernel/Boundary.lean",
         };
@@ -717,6 +720,8 @@ mod tests {
             (serde_json::json!({"kernel":"badItem"}), "badItem"),
             (serde_json::json!({"kernel":"tabbedLine"}), "tabbedLine"),
             (serde_json::json!({"kernel":"keyAbsent"}), "keyAbsent"),
+            (serde_json::json!({"kernel":"danglingDep"}), "danglingDep"),
+            (serde_json::json!({"kernel":"depCycle"}), "depCycle"),
             (serde_json::json!({"kernel":"siteOutOfRange"}), "siteOutOfRange"),
             (serde_json::json!({"dupId":"m1"}), "dupId"),
             (serde_json::json!({"notADemotion":"m1"}), "notADemotion"),
@@ -734,7 +739,7 @@ mod tests {
             // The parse-tier free-text refusals the keyed edit and `add`
             // forward from real user input (Boundary.lean's parseCmd).
             (serde_json::json!("badValue ci"), "badValue"),
-            (serde_json::json!("keyNotWired due"), "keyNotWired"),
+            (serde_json::json!("keyNotWired demoted"), "keyNotWired"),
             (serde_json::json!("unknownKey size"), "unknownKey"),
             (serde_json::json!("titleNewline"), "titleNewline"),
             (serde_json::json!("titleTab"), "titleTab"),

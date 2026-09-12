@@ -524,9 +524,11 @@ pub fn edit(g: &Globals, args: &super::EditArgs) -> Result<i32, CliError> {
     // id-less lines (gap 5), `--set` (documented as a raw verbatim token,
     // which the kernel would canonicalize), the typed non-key edits
     // (`title`, `p`, `state`), `--unset ci`/`--unset p` (positional-slot
-    // surgery the wire does not carry — gap 41), and the nine deferred keys
-    // gap 40 names (`due at win every on-event after loc waiting`, plus
-    // `demoted` excluded by policy).
+    // surgery the wire does not carry — gap 41), `demoted` (excluded from
+    // the wire by policy, gap 40), and the eight keys the kernel wires since
+    // gap 40's bridges (`due at win every on-event after loc waiting`) but
+    // this host does not route yet — kernel/README.md's step-5 paragraph
+    // names that as the host's remaining half.
     if item.has_id() && args.set.is_empty() {
         if let Some(cmds) = kernel_edit_cmds(&ctx, &id, args)? {
             return edit_kernel(&mut ctx, &id, &item, args, cmds);

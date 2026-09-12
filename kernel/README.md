@@ -3599,3 +3599,207 @@ inside a comment; the four refusals are `plan-conflicts`' deliberate ones);
 `every_kernel_backed_verb_works_on_a_bare_init_tree`); the FFI suite **53
 tests** (47 kernel + 6 corpus; two new).  Gaps 45–47 are taken; new gaps start
 at 48, new cheats at 48.
+
+**Gap 40's bridges — stage 3 step 5: eight more keys reach the wire (same
+2026-09-12 session).**  Supersedes, by name, the list in "**Gap 40 (edit): nine
+of the eighteen keys are deliberately not wired**" (`due`, `at`, `win`,
+`every`, `on-event`, `after`, `loc`, `waiting` — every one of them is wired
+now) and the edit-widening paragraph's "Wired keys … `est`, `dur`, `buffer`,
+`pref`, `on-miss`, `after-done`, `min`, `max`, `ci`" as the complete set.  Its
+**`demoted` exclusion stands unchanged**: `keyEditable .demoted` is still
+`false`, the wire still answers `keyNotWired demoted`, and Negative.lean CHEAT
+45 is still the door staying shut.  **Gap 40's status now: 17 of 18
+`Field.Key`s are on the kernel's edit path; the one left is `demoted`, by
+policy; no key is blocked by a missing bridge.**
+
+*The shared fact (§5.3), proved once.*  `Field.readNat_lt_pow_length`: a
+numeral `readNat` reads from `k` characters is below `10 ^ k` (by
+`readNat_foldl_lt`, the fold's own induction, and `charDigit_lt`).
+`parseDate` demands a four-character year and `mkDate?` a valid date
+(`mkDate?_some`), and `Cal.ofDay_toDay` hands that year back, so
+**`parseDate_dayWf`**: every parsed date is `dayWf`.  `due`
+(`parseMoment_wf`, both forms), `waiting` (`parseDate_dayWf` itself) and both
+ends of a long `at:` (`parseDT_wf`) inherit it; no second width argument
+exists.
+
+*The other bridges, one per parser the view binds* (Line.lean, end of file,
+under "Parse ⇒ wf"): `parseRule_wf` (the six literal forms, `month:` in 1–31,
+a non-zero `Nd`/`Nw`/`Nw:Day` period, a non-empty weekday list),
+`parseOnEvent_wf`, `parseDep_wf` → `parseDeps_wf` (through `mapOpt_all`),
+`parseLoc_wf`.  Each is an implication out of the parser, so the wire value is
+bounded by the loader's grammar and nothing else.
+
+*The one bridge that is false, and the decision.*  `parseEndShort` rolls a
+short end that precedes the start onto the next day, and on 9999-12-31 that day
+has a five-digit year `renderDate` cannot write back: the loader reads
+`at:9999-12-31T23:00/01:00` and `intervalWf` refuses it.  Stated exactly
+rather than weakened (§3.1 item 4): `parseInterval_spec` /
+`parseInterval_wf_unless_rollover` say the rollover is the **only** way a parsed
+interval fails `intervalWf`, and `parseWindow_wf_unless_rollover` carries it to
+`win:`'s absolute form.  **Decision: the edit path refuses it, by name**
+(`badValue at`), because writing it would put bytes on the line no loader reads
+back.  Witness: `the_year_9999_rollover_parses_but_the_edit_refuses_it`
+(`decide`; the day before, 9999-12-30, is accepted — the bite is exactly the
+rollover).
+
+*`loc:`'s word bound — the one value that is free text.*  `parseLoc` accepts
+any non-empty word, so a wire value could carry a byte no loaded token can: a
+space splits the token on re-read (`loc:a b` reads back as `loc:a` and a title
+word), a newline splits the line, a tab is gap 32's.  `WordLoc` bounds it in the
+type: `locOk c := c.wf && locWordOk (renderLoc c)`, `locWordOk` = no space and
+no C0 control byte.  `editValOf_loc_refuses_only_a_bad_or_unworded_value` says
+that is all it adds to `parseLoc` (via `renderLoc_parseLoc`: the parser hands
+back the word it read), and `wordLoc_renders_a_word` discharges
+`setKey_line_reparses`'s `wordWf` hypothesis for every written `loc:`.
+Measured through `examples/oneshot`: `loc=café` writes `loc:café` and re-reads
+byte-identically; a name carrying the byte U+0001 is `badValue loc`.
+
+*The table (Cmd.lean).*  Eight `EditVal` constructors, each carrying the
+wf-bounded subtype its setter's `view_set_*` needs (`WfMoment`, `WfInterval`,
+`WfWindow`, `WfRule`, `WfOnEvent`, `WordLoc`, `WfDay`, `WfDeps`), built by one
+R10 smart constructor, `guardWf` (the parser's answer kept only with its wf
+proof).  That the guard is not a second grammar is a theorem per key, off the
+bridges and `guardWf_isSome`: `editValOf_due_refuses_only_what_parseMoment_refuses`,
+`editValOf_every_refuses_only_what_parseRule_refuses`,
+`editValOf_onEvent_refuses_only_what_parseOnEvent_refuses`,
+`editValOf_waiting_refuses_only_what_parseDate_refuses`,
+`editValOf_after_refuses_only_what_parseDeps_refuses` (all exact), the `loc`
+one above, and `editValOf_interval_refuses_only_a_bad_value_or_the_rollover` /
+`editValOf_window_refuses_only_a_bad_value_or_the_rollover`.  Write side:
+`setVal`'s eight new arms are `setDue`/`setAt`/`setWin`/`setEvery`/
+`setOnEvent`/`setLoc`/`setWaiting`/`setAfter`, and
+**`the_edit_path_writes_what_the_field_path_reads` keeps its name and gains
+eight arms** (the `after` arm is stated on `Core.after` itself);
+`setVal_writes_the_token_the_loader_reads` covered them with no change to its
+proof.  Upward: `the_eight_bridged_keys_accept_their_spec_values`.
+
+*`after` meets the plan tier, and its refusals are named.*  An `after:` edit
+can dangle or cycle, and `mapAt`'s only name for a post-state failing `planWf`
+was `badHorizon` — advice about relocation.  Two `KErr` constructors,
+`danglingDep` and `depCycle`, and one renaming step: `applyCmd` routes `.edit`
+(and the standing `.est` op, so `the_est_op_is_the_keyed_est_edit` is still
+`rfl`) through `nameEditFault`, which rewrites `.error .badHorizon` into
+`editFault` — `danglingDep` if `afterTotal` fails of `editPost` (exactly the
+store `mapAt` re-checked), else `depCycle` if `afterAcyclic` does, else
+`badHorizon` as before — and passes everything else through
+(`nameEditFault_ok`: it never manufactures a success).  §5.8 both ways:
+`edit_of_a_dangling_after_is_refused_by_name`,
+`edit_of_a_cyclic_after_is_refused_by_name` (both through
+`applyCmd_edit_names_the_plan_tier_fault` and `editFault_of_get`), and the
+honest success form `applyCmd_after_succeeds` — the two dependency conjuncts of
+the post-state as hypotheses, plus the four an edit can break by other means,
+concluding the stored item's `Core.after` is the parsed list.  Not vacuous:
+`the_after_refusals_are_named_on_a_loaded_plan` decides, on a loaded
+two-item week, `^zz` → `danglingDep`, a two-item loop and a self-dependency →
+`depCycle`, `event:visa` → success.  **Behaviour of the shipped ops is
+unchanged**: `after` was `keyNotWired` before, and for every other key the
+rename cannot fire on a well-formed plan, since a setter of another key leaves
+the `after:` token — and so both dependency conjuncts — as they were (argued
+from `setKey`'s per-key replace/insert, **not** a theorem; the FFI suite's 47
+pre-existing kernel tests pass, one of them with its `keyNotWired` witness
+moved from `due` to `demoted`).  Proof-side, the three existing theorems that
+unfolded `applyCmd`'s edit arm (`edit_of_a_tabbed_line_is_refused`,
+`applyCmd_edit_succeeds`, and the `est`/`edit` arms of
+`move_has_no_inverse_command`) keep their statements and gained one step each.
+Host side, `kernel_bridge::refusal` maps the two names (table test extended);
+the `keyNotWired` message no longer points at deferred keys.
+
+*Parse tier, by name (§5.7).*  `parseCmd_refuses_the_bridged_keys_bad_values`:
+`due=2026-02-30`, `at=2026-09-07T13:50/2026-09-06T12:00` (an end before its
+start), `at=9999-12-31T23:00/01:00` (the rollover), `win=25:00-13:00`,
+`every=0d`, `on-event=re ply`, `loc=a b`, `waiting=2026-9-20`, `after=^` —
+each `badValue <k>`, by `rfl`.  `parseCmd_reads_the_bridged_keys` is the
+positive form.  `parseCmd_rejects_edit_variants` keeps its name; its
+`keyNotWired` witness is now `demoted` (was `due`).
+
+*FFI, end to end* (kernel.rs, "Gap 40's bridges" block; success bytes asserted
+as the whole rewritten line): `edit_keyed_due_writes_both_forms`,
+`edit_keyed_at_writes_the_short_end` (a same-day long end is written short),
+`edit_keyed_win_writes_the_overnight_window`,
+`edit_keyed_every_writes_the_canonical_rule` (`daily` → `every:day`),
+`edit_keyed_on_event_replaces_in_place`, `edit_keyed_loc_writes_a_name_and_an_enum`,
+`edit_keyed_waiting_replaces_in_place`,
+`edit_keyed_after_writes_a_dependency_the_plan_holds`,
+`edit_keyed_after_refuses_a_dangling_or_cyclic_dependency_by_name` (`^zz`,
+`^t3` on `^t3`, and a two-command loop), and
+`the_bridged_keys_refuse_bad_values_by_name` (the nine refusals above);
+`edit_refusals_are_named` now asserts `keyNotWired demoted`.  Measured by hand
+through `examples/oneshot`, each key's written line fed back with no commands
+re-reads byte-identically (`due:2026-09-11T23:59`,
+`at:2026-09-07T23:50/2026-09-08T00:10` — a rolled short end is written long —
+`win:22:00-02:00`, `every:2w:Sun`, `on-event:reply/7d`, `loc:café`,
+`waiting:2024-02-29`, `after:^b1,event:visa`).
+
+*Negative.lean*, new banner "APPENDED 2026-09-12 (stage-3, step 5: gap 40's
+bridges)": **CHEAT 48** (an empty `after:` payload, `rfl` against
+`depsWf [] = true`) and **CHEAT 49** (a `WordLoc` with a space, `rfl` against
+`locOk`), each with a compiling control checked first; the transcript is
+`a4ccd9c`'s with exactly those two errors appended (diffed against the committed
+file run on this build).
+
+**Gap 48 — the host does not route the eight newly wired keys.**  (1) *What is
+not done*: `tm/src/cli/items.rs`'s `KERNEL_EDIT_KEYS` still lists the nine; `tm
+edit ^id due=…` (and `at`, `win`, `every`, `on-event`, `loc`, `waiting`,
+`after`) still goes through the old Rust path.  (2) *Why*: this step's scope is
+the kernel's edit path; routing changes shipped behaviour (canonical rendering —
+`every=daily` would write `every:day`, a same-day long `at:` end would be
+written short — and the named refusals), which wants its own `cli_items.rs`
+coverage and the 30-minute drive (§5.13).  (3) *What it costs*: the shipped
+binary's behaviour for those keys is the fork-point Rust's, unverified; the
+kernel's answers are evidenced by the FFI suite only.  (4) *Which stage*: the
+next stage-3 host step — add the eight to `KERNEL_EDIT_KEYS`, and extend
+`edit_refuses_a_value_its_own_check_would_reject` (it already drives
+`due=notadate` and `due=2026-09-11T23:59`).
+
+**Gap 49 — the edit path is narrower than the loader in two named places.**
+(1) *What is not done*: the edit refuses (a) an `at:`/`win:` value whose short
+end rolls past 9999-12-31 and (b) a `loc:` name carrying a C0 control byte —
+both values the loader reads from a file.  (2) *Why, a decision*: (a) no
+four-digit year can write the rolled end back, so accepting it would write bytes
+no loader re-reads; (b) the tokenizer cannot carry a newline and gap 32 refuses
+tabs, and the bound was taken at "no control byte" rather than enumerating the
+safe ones.  (3) *What it costs*: an item that already carries such a value
+loads and round-trips verbatim, but `tm edit` cannot set that value; nothing is
+misread.  (4) *Which stage*: none needed for (a) before year 9999; (b) widens
+if a real `loc:` name ever needs a control byte.
+
+**Gap 50 — every other plan-tier edit refusal is still `badHorizon`.**  (1)
+*What is not done*: `editFault` names only the two dependency conjuncts; an
+edit whose post-state fails `shapesWf` (or any other `itemsWf` conjunct) is
+refused as `badHorizon`.  (2) *Why*: `after` is the key whose plan-tier failure
+this step owed by name; `firstItemFault` could name them all, but the `KErr`
+vocabulary for commands is a host-visible decision.  (3) *What it costs*,
+measured through `examples/oneshot`: `{"op":"edit","id":"O1","key":"due",
+"value":"2026-09-11"}` on a month outcome (§4.3: a month item has no shape)
+answers `{"err":{"kernel":"badHorizon"}}`, and so does `at=…` — the refusal is
+real and nothing is written, but the host's message ("a destination that is not
+in the plan …") is advice about moves.  Pre-existing for `dur`/`after-done`.
+(4) *Which stage*: the host step that clears gap 48, since `due`/`at`/`win` on
+a month item is where users will meet it.
+
+**Gap 51 — the edit path's re-read is a theorem for `loc:` only among the
+wired values.**  (1) *What is not done*: `wordWf v.rendered` is proved for
+`loc:` (`wordLoc_renders_a_word`) and for the `est:`/`ci:` renderings
+(`wordWf_renderDur`, `wordWf_renderCi`), not for `due`/`at`/`win`/`every`/
+`on-event`/`waiting`/`after` nor for the edit widening's `pref`/`on-miss`/
+`after-done`/`min`/`max` renderings, so `setKey_line_reparses` is not
+instantiated over every `EditVal`.  (2) *Why*: each is a character-class lemma
+over its renderer (`renderDate_chars`, `renderClock_chars` and `isName_avoids`
+already exist); time, not a decision.  (3) *What it costs*: "the line an edit
+writes re-reads to the same tokens" is evidenced for those keys by the FFI
+suite and the oneshot re-read above, not proved.  (4) *Which stage*: stage 3's
+closing step, as one theorem `∀ v : EditVal, wordWf v.rendered = true`.
+
+*Goals and ledger.*  No `Goals.lean` goal states a keyed-edit property, so none
+is discharged and none is added.  Re-measured at this commit, from the committed
+harness (§5.11): `kernel/check.sh` **7/7 ok**; axiom audit **1299 theorems**
+(was 1257; +42 under `APPENDED 2026-09-12 (stage-3, step 5: gap 40's bridges)`:
+18 in Line.lean, 16 in Cmd.lean, 8 in Boundary.lean), §6.3's three counts agree
+at 1299, and every audited axiom is `propext`, `Quot.sound` or
+`Classical.choice` (no `sorryAx`); corpus **33/37 files and 4/5 whole plans**,
+unchanged; **`Goals.lean` burn-down 40**, unchanged; `cargo test --workspace`
+**984 passed / 0 failed / 0 ignored across 64 binaries**, unchanged (the host's
+refusal-table test grew two rows inside one test); the FFI suite **63 tests**
+(57 kernel + 6 corpus; ten new).  Every new `decide` witness was probed first
+under an 8 GB cap (each probe file ran in under a second).  Gaps 48–51 are
+taken; new gaps start at 52, new cheats at 50.

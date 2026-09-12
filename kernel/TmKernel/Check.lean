@@ -1412,3 +1412,58 @@ open Tm
 #print axioms Tm.a_commented_heading_is_no_section
 #print axioms Tm.an_item_line_outside_a_comment_is_still_an_item
 #print axioms Tm.an_unterminated_comment_is_refused
+
+-- ============================================================================
+-- APPENDED 2026-09-12 (stage-3, step 5: gap 40's bridges).  Line.lean's
+-- parse => wf bridges (one shared readNat width bound under every date), the
+-- edit table's guardWf and its no-second-grammar theorems for the eight keys
+-- wired now (due at win every on-event loc waiting after), the year-9999
+-- rollover where the at:/win: bridge is false, and after's plan-tier refusals
+-- named danglingDep / depCycle with their success form.  Statements CHANGED in
+-- place, names kept: the_edit_path_writes_what_the_field_path_reads (eight more
+-- match arms), parseCmd_rejects_edit_variants (the keyNotWired witness is now
+-- `demoted`), edit_of_a_tabbed_line_is_refused / applyCmd_edit_succeeds
+-- (proofs only: applyCmd routes edits through nameEditFault).
+-- ============================================================================
+#print axioms Tm.Field.readNat_foldl_none
+#print axioms Tm.Field.charDigit_lt
+#print axioms Tm.Field.readNat_foldl_lt
+#print axioms Tm.Field.readNat_lt_pow_length
+#print axioms Tm.Field.mkDate?_some
+#print axioms Tm.Field.parseDate_dayWf
+#print axioms Tm.Field.parseDT_wf
+#print axioms Tm.Field.parseMoment_wf
+#print axioms Tm.Field.parseEnd_spec
+#print axioms Tm.Field.parseInterval_spec
+#print axioms Tm.Field.parseInterval_wf_unless_rollover
+#print axioms Tm.Field.parseWindow_wf_unless_rollover
+#print axioms Tm.Field.parseRule_wf
+#print axioms Tm.Field.parseOnEvent_wf
+#print axioms Tm.Field.parseDep_wf
+#print axioms Tm.Field.mapOpt_all
+#print axioms Tm.Field.parseDeps_wf
+#print axioms Tm.Field.parseLoc_wf
+#print axioms Tm.guardWf_isSome
+#print axioms Tm.guardWf_none_iff
+#print axioms Tm.editValOf_due_refuses_only_what_parseMoment_refuses
+#print axioms Tm.editValOf_every_refuses_only_what_parseRule_refuses
+#print axioms Tm.editValOf_onEvent_refuses_only_what_parseOnEvent_refuses
+#print axioms Tm.editValOf_after_refuses_only_what_parseDeps_refuses
+#print axioms Tm.editValOf_waiting_refuses_only_what_parseDate_refuses
+#print axioms Tm.renderLoc_parseLoc
+#print axioms Tm.editValOf_loc_refuses_only_a_bad_or_unworded_value
+#print axioms Tm.editValOf_interval_refuses_only_a_bad_value_or_the_rollover
+#print axioms Tm.editValOf_window_refuses_only_a_bad_value_or_the_rollover
+#print axioms Tm.the_eight_bridged_keys_accept_their_spec_values
+#print axioms Tm.the_year_9999_rollover_parses_but_the_edit_refuses_it
+#print axioms Tm.wordLoc_renders_a_word
+#print axioms Tm.nameEditFault_ok
+#print axioms Tm.nameEditFault_ok_of
+#print axioms Tm.parseCmd_refuses_the_bridged_keys_bad_values
+#print axioms Tm.parseCmd_reads_the_bridged_keys
+#print axioms Tm.applyCmd_edit_names_the_plan_tier_fault
+#print axioms Tm.editFault_of_get
+#print axioms Tm.edit_of_a_dangling_after_is_refused_by_name
+#print axioms Tm.edit_of_a_cyclic_after_is_refused_by_name
+#print axioms Tm.applyCmd_after_succeeds
+#print axioms Tm.the_after_refusals_are_named_on_a_loaded_plan

@@ -568,4 +568,25 @@ theorem sevenThenSevenReadsAsSeven :
     jval 4 (jemit (JVal.num 7) ++ ['7']) = .ok (.num 7, ['7']) :=
   jval_jemit (.num 7) 4 ['7'] (by decide) rfl
 
+-- ===========================================================================
+-- APPENDED 2026-09-12 (stage-3, step 5: gap 40's bridges).  The eight keys
+-- wired through `guardWf` carry wf-bounded subtypes, so the bound is in the
+-- type (R10), not in a comment.  The controls — `⟨[.item "m1".toList], rfl⟩`
+-- and `⟨.named "ab".toList, rfl⟩` — were checked to compile, so each failure
+-- below is the bound and not `rfl` giving up.  Everything below must FAIL to
+-- compile.
+-- ===========================================================================
+
+/- CHEAT 48 — an `after:` with no dependencies.  §4.1 has no empty `after:`
+   (`depsWf` demands a non-empty list of well-formed deps), and `parseDeps`
+   never yields one; building the payload by hand is `rfl` against
+   `depsWf [] = true`, an application type mismatch. -/
+def emptyAfter : EditVal := .after ⟨[], rfl⟩
+
+/- CHEAT 49 — a `loc:` name that is not one word.  `WordLoc` demands
+   `locOk`, whose `locWordOk` conjunct refuses a space: written, `loc:a b`
+   would read back as `loc:a` and a title word `b`.  The wire refuses it as
+   `badValue loc`; here it is `rfl` against `locOk (.named "a b") = true`. -/
+def spacedLoc : WordLoc := ⟨.named "a b".toList, rfl⟩
+
 end Tm
