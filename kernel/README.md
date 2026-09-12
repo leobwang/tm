@@ -2734,3 +2734,68 @@ scope, by name: the four integration-bug countermeasures of AGENTS 8.1 item
 runtime conformance test, the verb × {success, error} × {plain, `--json`}
 matrix); and, recorded above, the kernel-side HTML-comment awareness in
 `scanLines`/`splitDoc`.
+
+**Three of the four integration-bug countermeasures, landed — AGENTS 8.1
+scope item 7 (same 2026-09-12 session, stage-3 wiring block; supersedes the
+"still owed" list of the panic-layers paragraph above for these three).**
+PLAN §4's last table names four; the three that are CLI-surface work are
+stage 3's, all built as tests against the **built binary**
+(`CARGO_BIN_EXE_tm`), never the clap tree:
+
+- *The `--help`-vs-runtime conformance test (G2/G4's class)* —
+  `tm/tests/cli_conformance.rs`.  The walk discovers the verb tree from the
+  binary's own help output (top level, `tm close`'s custom `Periods:`
+  heading, `tm routine`'s verbs — **38 pages**, re-measured: 34 §13 verbs +
+  3 close periods + `routine done`), extracts every advertised long flag
+  from each `Options:` section, and asserts the runtime accepts it: `tm
+  <verb…> --<flag> [dummy] --help` must not die with clap's `unexpected
+  argument` (an "invalid value" on the dummy is acceptance — the flag was
+  recognised; `unexpected argument` is G4).  Every page must also advertise
+  the globals `--json`/`--dir` (G2's shadowing died there).  A probe floor
+  (≥100 flag probes) keeps a silently-empty parser from passing vacuously.
+- *The verb × {success, error} × {plain, `--json`} matrix (G3's class)* —
+  `tm/tests/cli_json_matrix.rs`.  Table-driven over all 34 §13 verbs, four
+  legs each, a fresh `plan-basic` copy per leg: success/plain exits 0;
+  success/json is one JSON document on stdout; error/plain is the `tm: …`
+  line on stderr with the expected exit code and an empty stdout;
+  error/json is the `ErrorDoc` document on stderr (`ok:false`, `kind`,
+  `message`, `exit_code`).  A size assertion pins the table at 32 rows +
+  `init` + `check` so it cannot shrink silently.  **Named exceptions, not
+  skips**: `tm tui` has no headless success leg (it needs a tty; that
+  refusal *is* its error leg, both renderings), and a failed `tm check`
+  reports its problem document on **stdout** with exit 2 — §13 reserves 2
+  for validation problems and the stderr document for the verb itself
+  failing — so `check` (dep-cycle poison, `error[dep-cycle]`) and `init`
+  (no plan directory exists yet; "not empty" is the error) carry their own
+  four-legged tests beside the table.
+- *The exhaustive screen router* — the compile-time half **already stood**
+  in the restored-and-rewired source and is hereby recorded rather than
+  rebuilt: `tui/app.rs`'s `Screen` is an enum and every dispatch on it
+  (`App::screen_key`, `today.rs`'s body match, `Screen::title`) is a
+  `match` with no `_` arm, so an unrouted screen is a compile error.  What
+  was missing was the runtime half, now `tm/tests/tui_screen_router.rs`:
+  for every screen, press its §12.6 digit through the binary's own
+  `action_for` → `apply` path (the same one `tui/mod.rs`'s event loop
+  drives), draw the full frame into a ratatui `TestBackend`, and assert a
+  non-empty body **distinct from every other screen's** — a screen that
+  routes but draws another's pane fails.  The test's own `digit_of` match
+  has no `_` arm either, so a new `Screen` variant refuses to compile until
+  it gets a key and a smoke case; digits `0`, `6`–`9` are asserted to route
+  nowhere.
+
+*The fourth countermeasure is not this stage's, by name*: the one-renderer
+test (G1 — day-section text byte-identical across the file, `tm now`, `tm
+tui` and `tm plan --json`) belongs to **stage 6**, whose PLAN §4 acceptance
+row names it next to `tm plan` being kernel-backed; it stays owed there,
+not here.
+
+No shipped-binary behaviour changed in this landing — it is tests only —
+and the matrix legs were each probed by hand against the built binary
+before being pinned, so every expected exit code in the table is a
+measurement, not a guess.  Re-measured: `cargo test` **980 passed / 0
+failed / 0 ignored across 64 binaries** (was 959/61; +21 across the three
+new test binaries — 2 conformance, 5 matrix, and the router binary's 14,
+twelve of which are the `#[path]`-included TUI modules' own unit tests
+compiled into it); `kernel/check.sh` **7/7 ok**, corpus 33/37 files and 4/5
+whole plans, burn-down **41**, audit **1090** — all unchanged (no Lean
+source was touched).
