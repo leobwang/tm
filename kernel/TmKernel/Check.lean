@@ -1346,3 +1346,22 @@ open Tm
 #print axioms Tm.jescape_eq_jescapeTR
 #print axioms Tm.the_response_shapes_emit_in_build_order
 #print axioms Tm.the_bad_line_diagnostic_keys_in_build_order
+-- Request side (same banner, second commit): `call` reads with `jparse` and
+-- every field through `jget`; no kernel module imports Lean.Data.Json.  The
+-- @[csimp] twins keep a long string off the stack on the way in.
+-- GOAL DISCHARGED: Goals.lean's `the_json_edge_round_trips` (stated over
+-- Lean.Json, unprovable there) is renamed `the_response_call_emits_parses_back`
+-- -- the round trip at the exported function -- and deleted from Goals.lean.
+#print axioms Tm.junescapeTR_step
+#print axioms Tm.junescapeTR_go
+#print axioms Tm.junescape_eq_junescapeTR
+#print axioms Tm.jscanTR_go
+#print axioms Tm.jscan_eq_jscanTR
+#print axioms Tm.jget_reads_the_one_pair
+#print axioms Tm.jget_refuses_a_duplicate_key
+#print axioms Tm.jget_ignores_a_duplicate_it_does_not_read
+#print axioms Tm.parseCmd_refuses_a_duplicate_field
+#print axioms Tm.run_refuses_cmds_that_are_not_an_array
+#print axioms Tm.respond_names_a_parse_refusal
+#print axioms Tm.the_response_call_emits_parses_back
+#print axioms Tm.call_refuses_the_real_duplicate_id_request

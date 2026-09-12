@@ -3222,3 +3222,183 @@ to `3c2621c`'s; corpus **33/37 files and 4/5 whole plans**, unchanged;
 `cargo test --workspace` **983 passed / 0 failed / 0 ignored across 64
 binaries**; the FFI suite **46 tests** (40 kernel + 6 corpus), four of them
 edited as above.  Takes no gap and no cheat number.
+
+**J5, the request side, and J6: the JSON edge is the kernel's both ways, and
+`the_json_edge_round_trips` is discharged.**  Same 2026-09-12 session, J-route
+step 3, second commit.  `call` now reads the request with `jparse` over
+`input.toList` and every field through a new reader, `jget` (`Json.lean`, J5
+section); `respond : List Char → JVal` is the response value and `call` is
+`String.ofList ∘ jemit ∘ respond ∘ String.toList`.  The readers
+`getStr`/`getNat`/`getArr`/`strLines`/`parseRegion`/`parseDoc`/`stampOf`/
+`parseCmd`/`run` take a `JVal`, and field strings arrive as the `List Char`
+`jparse` decoded (ids and titles no longer take a `String` hop).  **What is now
+kernel-owned: the whole JSON edge** — scanning, un-escaping, numerals, the
+value, field lookup, escaping and emission — each structural, each with its
+round trip or refusal proved in `Json.lean`.
+
+*Whether any `Lean.Json` survives on the wire path: none.*  `import
+Lean.Data.Json` is gone from `Boundary.lean`, the only module that had it, so no
+kernel module imports it (`grep -rn '^import ' kernel/TmKernel --include=*.lean`,
+`.lake` excluded, shows only `import TmKernel…`).  The sites that used it, by name: `call` (was `Json.parse` and
+`Json.compress`), `jsonErr`/`lerrJson`/`regionJson`/`loadPlan`/`runPlan` (were
+`Json.mkObj`, previous commit), `getStr`/`getNat` (were `getObjValAs?`),
+`getArr`/`strLines`/`parseRegion`/`parseDoc` (were `getObjVal?`/`getArr?`/
+`getStr?`/`getNat?`), and the three witness theorems
+`parseCmd_rejects_add_title_variants`, `parseCmd_rejects_edit_variants` and
+`parseCmd_reads_the_keyed_edit_forms` (were stated over `Json.mkObj`; restated
+over `JVal` literals with their names, conjuncts and expected values unchanged,
+each probed under an 8 GB cap first).  What remains are doc-comment mentions
+(`Json.lean`'s header and J5 notes, `Boundary.lean`'s gap-6 docstring and J5
+sections), all historical.
+
+*Three reading rules changed, each to a named refusal, and every message change
+measured.*  The differential harness from the previous paragraph, extended to 91
+requests with 12 hostile or non-serde requests, against `3c2621c`: 78 requests
+— every corpus file and plan, every command, every `err` shape, and the
+hand-written escape, whitespace and `null` cases — still parse to equal values
+with key order the only byte change; 13 changed value, and every one is a
+request `kernel_bridge.rs` never builds.  (1) **A duplicate key that is read is refused**, `duplicateKey <k>`:
+`jparse` keeps both pairs, and `Lean.Json` (like serde_json's `Value`) had
+silently kept the last — `{"op":"drop","id":"a","id":"b"}` used to read as a
+drop of `b`.
+Only the key being read is checked (`jget_ignores_a_duplicate_it_does_not_read`),
+and it bites both orders (`jget_refuses_a_duplicate_key`,
+`parseCmd_refuses_a_duplicate_field`).  This settles the duplicate-key question
+step 2 left for J5, by §5.6 rather than by host imitation.  (2) **A `cmds` that
+is present but not an array is refused**, `array expected`: the old reader's
+`.error _ => pure #[]` read `"cmds":3` as a request with no commands and
+answered `ok` (`run_refuses_cmds_that_are_not_an_array`); an absent `cmds` is
+still a read.  (3) **A `grain` carried twice** on a document or a `demote` is
+refused, where the old reader silently took the last (measured:
+`"grain":1,"grain":2` loaded as grain 2).
+Message changes, all on malformed input: an absent field is `property not found:
+<k>` (was `String expected` / `Natural number expected`, `getObjValAs?` reading
+a missing key as `null`); a parse refusal is `bad json: ` plus `jerrText`'s
+constructor name (was Lean's offset text — `{ not json` is now `bad json:
+expectedKey n`, `respond_names_a_parse_refusal`); a negative or fractional
+number is refused at parse (`notAValue -`, `expectedCommaOrBrace .`) rather than
+at the field (`Natural number expected`).  Gaps 42 and 43 became live here —
+see the supersessions below.
+
+*The host-agreement obligation — serde_json ≈ `jparse`/`jemit` — is evidenced,
+not proved*, exactly the framing gap 12 took for Rust's `split('\n')` against
+`Tm.splitOn`: nothing in Lean can mention serde_json.  The evidence, re-run at
+this commit: the FFI suite's 45 kernel tests (five new —
+`the_request_reads_every_escape_a_host_writes` sends a quote, a backslash,
+serde's short `\t`/`\b`/`\f`, `\/`, a control byte as a lowercase quad, `é` as
+an uppercase and a lowercase quad, raw two- and four-byte UTF-8, and pins the
+kernel's spelling of the response byte for byte;
+`a_duplicate_field_is_refused_by_name`, `cmds_that_are_not_an_array_are_refused`,
+`a_parse_refusal_names_its_reason`, and
+`a_million_character_line_does_not_exhaust_the_stack`); the corpus harness,
+whose hand-written codec writes serde's short escapes over every corpus file;
+`cargo test --workspace`, whose CLI suites drive every kernel-backed verb
+through `kernel_bridge.rs`'s serde_json; the 91-request differential; and a
+drive of the shipped `tm` binary — `init`, `add` of titles carrying quotes, a
+backslash, `é` and U+2615, `edit est=`, `move`, `drop`, `check` — against a
+tree whose `inbox.md` carried a tab, `DEL`, three control bytes, a quote, a
+backslash, U+2028 and a 100 000-character line, which the kernel read on every
+call and which stayed byte-identical (sha256).
+
+*The escaping decisions step 1 took, now binding on real requests.*  Emit narrow
+(Lean's printer's classes: `\"`, `\\`, `\n`, `\r`, a lowercase quad below
+`0x20`, everything else verbatim), accept wide (serde's `\/`, `\t`, `\b`, `\f`,
+either-case quads); a raw `"` or raw control byte inside a string is refused by
+name; a surrogate-pair escape is refused (gap 42).  Numerals are `Text.lean`'s
+`digitsOf`; leading zeros are accepted (gap 43).  **R10's stated width for
+`JVal.num`**, owed since step 2: unbounded `Nat` on both sides of the kernel,
+with no bound to enforce — the host writes and reads `u64` (`as_u64` in
+`kernel_bridge.rs`), every number the kernel emits is either a `Fin 3` grain,
+an echo of a host-sent `ix`, or a `badLine` index below a line count, so no
+emitted number exceeds what the host can read; the one bounded field on the
+way in, `grain`, keeps its smart constructor `Grain.ofNat?`.
+
+*A stack finding, closed for characters and recorded for elements.*  The
+request-side character recursions got the same treatment as `jescape`:
+`junescapeTR`/`junescape_eq_junescapeTR` and `jscanTR`/`jscan_eq_jscanTR`,
+`@[csimp]` theorems over accumulator twins, proved by strong induction on the
+input length (`junescapeTR_go`, `jscanTR_go`).  Measured through the FFI on
+2 MiB: 1 000 000 characters, plain or escape-dense, read and write back; `gdb`
+on an element-depth overflow shows the twin (`junescapeTR.go`) as the running
+frame, so the substitution is real in the linked archive.  The per-element
+recursion is gap 44, next.
+
+**Gap 44 — `jparse`'s and `jemit`'s per-element recursion has no runtime twin.**
+(1) *What is not done*: `jarr`/`jtail`, `jobj`/`jotail` and
+`jemitTail`/`jemitOTail` recurse once per array element or object pair, not in
+tail position.  Measured through `examples/oneshot` (`ulimit -s`, 8 GB cap), on a
+request refused right after parsing: 21 500 one-line strings in one array read
+and 22 000 abort on a 2 MiB stack (`gdb`: `jtail` frames); 80 000 read and
+90 000 abort on 8 MiB.  (2) *Why — a decision*: the character twins were single
+functions provable by strong induction; the element twin is an accumulator
+restatement of six mutually fuel-structural functions (one six-conjunct fuel
+induction, the shape `jparser_fuel` already has) plus a well-founded emitter twin
+proved against the four-motive `JVal.rec` — about a session — and for the
+dimension that matters, lines per document, the bound is **one the kernel
+already had**: `3c2621c` aborts in `splitDoc` (`gdb`) in exactly the same bands,
+21 500 / 22 000 on 2 MiB and 80 000 / 90 000 on 8 MiB.  (3) *What it costs*: a
+document of more than ~21 500 lines on a 2 MiB thread, or ~80 000 on tm's 8 MiB
+main thread, aborts the process loudly (a stack-overflow abort, never a wrong
+answer) — unchanged; **newly**, so does a request with that many *documents*:
+25 000 one-line documents abort on 2 MiB where `3c2621c` answered (in 16.6 s).
+No real plan tree is within two orders of magnitude of either.  (4) *Which
+stage clears it*: whichever makes the kernel's per-line recursions tail-recursive
+(`splitDoc` first); the codec's element twin alone moves no user-visible bound.
+
+**Goal discharged: `the_json_edge_round_trips` → `the_response_call_emits_parses_back`.**
+`theorem the_response_call_emits_parses_back (input : String) : jparse (call
+input).toList = .ok (respond input.toList)` — in `Boundary.lean`, audited in
+`Check.lean`, and the goal is **deleted from `Goals.lean`**, whose section note
+now records the rename.  Whatever bytes `call` returns, for any input, the
+kernel's own parser reads back to exactly the value `respond` built; with
+`jparse_jemit` (every `JVal`, unconditionally) it is the route the goal's own doc
+comment named — "a kernel-owned emitter and fuel-structural parser over the
+emitted fragment, round-tripped unconditionally, put on the wire in `call`, with
+serde_json agreement … staying corpus evidence".  §7.4, answered: the one binder
+is used and there is no hypothesis; the name says what it states; it is about
+`call`, which `callExport` is (item 5), and about the whole response string the
+host receives (item 6); it is not vacuous — `respond` is not constant
+(`respond_names_a_parse_refusal` gives two values) and
+`call_refuses_the_real_duplicate_id_request` is the FFI test
+`duplicate_ids_are_rejected_at_load` as a theorem: `call (String.ofList
+demoRequestBytes) = String.ofList demoResponseBytes`, the parse by
+`the_real_request_bytes_round_trip` (no parser run over a literal), the loader's
+refusal evaluated by `rfl`, the emission by `the_real_response_bytes_round_trip`.
+The honest limit, stated once more: the theorem cannot say that serde_json reads
+what `jemit` writes; that is the evidence paragraph above.  I judge the goal
+honestly discharged by this — the narrowing is the one licensed in writing, and
+the unprovable original (over `partial def`s) quantified over code no kernel
+path runs any more.
+
+*Supersessions, by name.*  **"Gap 39 REPRICED"**: its conclusion that
+`the_json_edge_round_trips` "can be neither proved nor refuted here" stands for
+the `Lean.Json` statement, which is not restated; its residue — the goal
+standing in `Goals.lean` "until J6", and every "`Boundary.lean` still builds
+`Lean.Json`" in the J-route step 1 and step 2 paragraphs — is superseded: J5 and
+J6 are landed and the goal is discharged under the rename above.  **Gap 42**,
+part (3): "Today it costs nothing at all, because `Lean.Json` is still the reader
+on the wire" is no longer true — `jparse` is the reader, and a surrogate-pair
+escape that `Lean.Json` recombined is now refused, measured as `bad json:
+badEscape surrogateEscape 55357` (FFI `a_parse_refusal_names_its_reason`); the
+cost is otherwise as stated (serde_json never writes one).  **Gap 43**, parts
+(3)–(4): the acceptance is now live — `"x":007` in a command, which
+`Lean.Json` refused at parse, now reads (measured in the differential) — and J5
+landed **without** the strict guard, by decision: no host this kernel has writes
+a leading zero.  **The previous paragraph's** "recorded under the request side's
+gap paragraph, next commit" is this gap 44.  **`Boundary.lean`'s gap-6
+docstring** above `the_char_edge_round_trips` ("The JSON half … stay open in gap
+12") was rewritten in place to point here, and `Json.lean`'s header now says the
+module is on the wire both ways.  Line numbers: `Boundary.lean` is line-aligned
+with `3c2621c` through `run`, so the ledger's citations (`ReqCmd.add` at 815,
+`move_out_and_back_is_not_the_inverse`'s 925–931) are exact again.
+
+Re-measured at this commit, from the committed harness (§5.11):
+`kernel/check.sh` **7/7 ok**; axiom audit **1223 theorems** (was 1210; +13 under
+the same `APPENDED 2026-09-12 (stage-3, J-route step 3 …)` banner: 8 in
+`Json.lean`, 5 in `Boundary.lean`), and §6.3's three counts agree at 1223; every
+new theorem's axioms are within `propext`, `Quot.sound`, `Classical.choice`;
+`Negative.lean`'s transcript is byte-identical to `3c2621c`'s; corpus **33/37
+files and 4/5 whole plans**, unchanged; **`Goals.lean` burn-down 40** (was 41;
+one goal discharged, none added); `cargo test --workspace` **983 passed / 0
+failed / 0 ignored across 64 binaries**; the FFI suite **51 tests** (45 kernel +
+6 corpus; five new).  Gap 44 is taken; new gaps start at 45, new cheats at 48.

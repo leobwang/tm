@@ -1,6 +1,5 @@
 import TmKernel.Cmd
 import TmKernel.Json
-import Lean.Data.Json
 /-!
 # The boundary: `String → String`, and nothing else
 
@@ -755,50 +754,50 @@ theorem sortByRank_strict (l : List (Nat × List Char))
     (sortByRank_distinct l (pairwise_ne_of_nodup_keys (fun a : Nat × List Char => a.1) h))
 
 
-/-! ## JSON -/
+/-! ## JSON — every field read through `jget`, over the `JVal` `jparse` built -/
 
 def jsonErr (s : String) : JVal := jone "err" (.str s.toList)
+def getStr (j : JVal) (k : String) : Except String (List Char) := do
+  match ← jget j k with
+  | some (.str s) => return s | some _ => throw "String expected"
+  | none => throw s!"property not found: {k}"
 
-def getStr (j : Json) (k : String) : Except String String := j.getObjValAs? String k
-def getNat (j : Json) (k : String) : Except String Nat := j.getObjValAs? Nat k
+def getNat (j : JVal) (k : String) : Except String Nat := do
+  match ← jget j k with
+  | some (.num n) => return n | some _ => throw "Natural number expected"
+  | none => throw s!"property not found: {k}"
 
-def getArr (j : Json) (k : String) : Except String (Array Json) := do
-  let v ← j.getObjVal? k
-  v.getArr?
+def getArr (j : JVal) (k : String) : Except String (List JVal) := do
+  match ← jget j k with
+  | some (.arr xs) => return xs | some _ => throw "array expected"
+  | none => throw s!"property not found: {k}"
 
-def strLines (j : Json) : Except String (List (List Char)) := do
-  let a ← j.getArr?
-  let mut out : List (List Char) := []
-  for x in a do
-    let s ← x.getStr?
-    out := out ++ [s.toList]
-  return out
+/-- Every element a string, or the request is refused — never a skipped line. -/
+def strLines (xs : List JVal) : Except String (List (List Char)) :=
+  xs.mapM (fun x => match x with | .str s => .ok s | _ => .error "String expected")
 
 structure ReqDoc where
   path  : String
   reg   : Option Region
   lines : List (List Char)
 
-def parseRegion (j : Json) : Except String (Option Region) := do
-  match j.getObjVal? "grain" with
-  | .error _ => return none
-  | .ok gv =>
-    match gv with
-    | .null => return none
-    | _ =>
-      let gn ← gv.getNat?
+def parseRegion (j : JVal) : Except String (Option Region) := do
+  -- Absent or `null` is no region; a duplicate is `jget`'s refusal, never `none`.
+  match ← jget j "grain" with
+  | none | some .null => return none
+  | some gv =>
+      let gn ← match gv with | .num n => pure n | _ => throw "Natural number expected"
       match Grain.ofNat? gn with
       | none   => throw s!"grain {gn} out of range (0..{grainCount - 1})"
       | some g =>
         let ix ← getNat j "ix"
         return some ⟨g, ix⟩
 
-def parseDoc (j : Json) : Except String ReqDoc := do
+def parseDoc (j : JVal) : Except String ReqDoc := do
   let path ← getStr j "path"
   let reg ← parseRegion j
-  let lv ← j.getObjVal? "lines"
-  let lines ← strLines lv
-  return ⟨path, reg, lines⟩
+  let lines ← strLines (← getArr j "lines")
+  return ⟨String.ofList path, reg, lines⟩
 
 /-- One command as the UI sends it. -/
 inductive ReqCmd
@@ -826,25 +825,25 @@ inductive ReqCmd
 from a week close, `D07` from a day close — and a `Field.Stamp` carries which.
 The wire sends the period number; the optional `grain` says the letter, and a
 request that omits it means a week, which is the close §6.3 attaches a
-`demoted:` stamp to.  Reading it this way keeps every existing request valid. -/
-def stampOf (j : Json) (n : Nat) : Field.Stamp :=
-  match getStr j "grain" with
-  | .ok g    => if g == "d" then .day n else .week n
-  | .error _ => .week n
+`demoted:` stamp to.  A `grain` carried twice is refused (`jget`). -/
+def stampOf (j : JVal) (n : Nat) : Except String Field.Stamp := do
+  match ← jget j "grain" with
+  | some (.str g) => return if g == ['d'] then .day n else .week n
+  | _             => return .week n
 
-def parseCmd (j : Json) : Except String ReqCmd := do
+def parseCmd (j : JVal) : Except String ReqCmd := do
   let op ← getStr j "op"
-  match op with
-  | "move" => return .move (← getStr j "id").toList (← getNat j "doc")
-  | "drop" => return .drop (← getStr j "id").toList
-  | "est"  => return .est (← getStr j "id").toList (← getNat j "min")
+  match String.ofList op with
+  | "move" => return .move (← getStr j "id") (← getNat j "doc")
+  | "drop" => return .drop (← getStr j "id")
+  | "est"  => return .est (← getStr j "id") (← getNat j "min")
   | "demote" =>
-    return .demote (← getStr j "id").toList (← getNat j "doc") (stampOf j (← getNat j "period"))
-  | "readopt" => return .readopt (← getStr j "id").toList (← getNat j "doc")
-  | "rank" => return .rank (← getStr j "id").toList (← getNat j "rank")
+    return .demote (← getStr j "id") (← getNat j "doc") (← stampOf j (← getNat j "period"))
+  | "readopt" => return .readopt (← getStr j "id") (← getNat j "doc")
+  | "rank" => return .rank (← getStr j "id") (← getNat j "rank")
   | "add" =>
-    let title ← getStr j "title"
-    let cs := title.toList
+    -- The title arrives as the `List Char` `jparse` decoded: no `String` hop.
+    let cs ← getStr j "title"
     -- Gap 32's discipline at the parser: the title becomes item tokens, so a
     -- newline would split the line, a tab is not a separator this kernel can
     -- read, and a `^` in the title would read back as a second id (`manyIds`).
@@ -870,18 +869,18 @@ def parseCmd (j : Json) : Except String ReqCmd := do
     let i ← getStr j "id"
     let ks ← getStr j "key"
     let vs ← getStr j "value"
-    match Field.Key.ofName? ks.toList with
-    | none => throw s!"unknownKey {ks}"
+    match Field.Key.ofName? ks with
+    | none => throw s!"unknownKey {String.ofList ks}"
     | some k =>
       if h : keyEditable k = true then
         if vs.isEmpty then
-          return .unset i.toList ⟨k, h⟩
+          return .unset i ⟨k, h⟩
         else
-          match editValOf k vs.toList with
-          | some v => return .edit i.toList v
-          | none   => throw s!"badValue {ks}"
-      else throw s!"keyNotWired {ks}"
-  | _ => throw s!"unknown op {op}"
+          match editValOf k vs with
+          | some v => return .edit i v
+          | none   => throw s!"badValue {String.ofList ks}"
+      else throw s!"keyNotWired {String.ofList ks}"
+  | _ => throw s!"unknown op {String.ofList op}"
 
 def kerrName : KErr → String
   | .occupied       => "occupied"
@@ -1051,16 +1050,16 @@ pretends to be.  These refusals live in `parseCmd` — the `Except String` path,
 so the host's `match` sees the free-text `{"err":"…"}`, not a kernel name —
 because each names a different reason the bytes would lie about the plan. -/
 theorem parseCmd_rejects_add_title_variants :
-    parseCmd (Json.mkObj [("op", Json.str "add"), ("seed", Json.num 7),
-        ("doc", Json.num 0), ("title", Json.str "a\nb")]) = .error "titleNewline" ∧
-    parseCmd (Json.mkObj [("op", Json.str "add"), ("seed", Json.num 7),
-        ("doc", Json.num 0), ("title", Json.str "a\tb")]) = .error "titleTab" ∧
-    parseCmd (Json.mkObj [("op", Json.str "add"), ("seed", Json.num 7),
-        ("doc", Json.num 0), ("title", Json.str "steal ^m1")]) = .error "titleId" ∧
-    parseCmd (Json.mkObj [("op", Json.str "add"), ("seed", Json.num 7),
-        ("doc", Json.num 0), ("title", Json.str "")]) = .error "titleBlank" ∧
-    parseCmd (Json.mkObj [("op", Json.str "add"), ("seed", Json.num 7),
-        ("doc", Json.num 0), ("title", Json.str " padded ")]) = .error "titleEdge" :=
+    parseCmd (.obj [("op".toList, .str "add".toList), ("seed".toList, .num 7),
+        ("doc".toList, .num 0), ("title".toList, .str "a\nb".toList)]) = .error "titleNewline" ∧
+    parseCmd (.obj [("op".toList, .str "add".toList), ("seed".toList, .num 7),
+        ("doc".toList, .num 0), ("title".toList, .str "a\tb".toList)]) = .error "titleTab" ∧
+    parseCmd (.obj [("op".toList, .str "add".toList), ("seed".toList, .num 7),
+        ("doc".toList, .num 0), ("title".toList, .str "steal ^m1".toList)]) = .error "titleId" ∧
+    parseCmd (.obj [("op".toList, .str "add".toList), ("seed".toList, .num 7),
+        ("doc".toList, .num 0), ("title".toList, .str "".toList)]) = .error "titleBlank" ∧
+    parseCmd (.obj [("op".toList, .str "add".toList), ("seed".toList, .num 7),
+        ("doc".toList, .num 0), ("title".toList, .str " padded ".toList)]) = .error "titleEdge" :=
   ⟨rfl, rfl, rfl, rfl, rfl⟩
 
 /-- **`add` inserts.**  Whenever the command succeeds, the store of the
@@ -2025,7 +2024,7 @@ def runPlan (plan : WfPlan) (cmds : List ReqCmd) : Except JVal JVal := do
         ++ regionJson p.1.region))
   return jone "ok" (jone "docs" (.arr outDocs))
 
-def run (j : Json) : Except JVal JVal := do
+def run (j : JVal) : Except JVal JVal := do
   let docsJ ←
     match getArr j "docs" with
     | .ok a => pure a
@@ -2036,9 +2035,13 @@ def run (j : Json) : Except JVal JVal := do
     | .ok d => docs := docs ++ [d]
     | .error e => throw (jsonErr e)
   let cmdsJ ←
-    match getArr j "cmds" with
-    | .ok a => pure a
-    | .error _ => pure #[]
+    -- Absent `cmds` is a read with no commands; a `cmds` that is present but
+    -- not an array is refused (it used to be swallowed as no commands, §5.7).
+    match jget j "cmds" with
+    | .ok none => pure []
+    | .ok (some (.arr a)) => pure a
+    | .ok (some _) => throw (jsonErr "array expected")
+    | .error e => throw (jsonErr e)
   let mut cmds : List ReqCmd := []
   for cj in cmdsJ do
     match parseCmd cj with
@@ -2609,24 +2612,31 @@ discharges for free: it *is* core's `String.ofList_toList` (`Init` proves the
 round trip as a `@[simp]` theorem — a propositional lemma this theorem applies
 by name, not a definitional unfolding).  That settles the char half of gap 6.
 
-The JSON half (`Lean.Json.parse j.compress = .ok j` for arbitrary `j`) and the
-legacy `String.splitOn` half stay open in gap 12, and both for the *same kind*
-of reason found while attempting them on 2026-09-09: `Json.parse`'s and
-`splitOnAux`'s recursion does not reduce symbolically, so neither general
-statement is provable by `rfl`/`decide`, and `native_decide` is banned (R3).
-Neither was found false — they were found *not machine-checkable as stated*,
-which is what the narrowing sentence in the original goal asked for. -/
+The JSON half was `Lean.Json.parse j.compress = .ok j`, which the toolchain's
+`partial def`s make neither provable nor refutable (README "Gap 39 REPRICED").
+**Closed by replacement at J5–J6, 2026-09-12**: `call` below reads with the
+kernel's own `jparse` and writes with `jemit`, and
+`the_response_call_emits_parses_back` (end of file) is the round trip at the
+exported function.  The legacy `String.splitOn` half was restated over the
+kernel's structural `Tm.splitOn` and discharged (README gap 12's block). -/
 theorem the_char_edge_round_trips (s : String) : String.ofList s.toList = s :=
   @String.ofList_toList s
 
-/-- Total: every path returns a `String`.  No `panic!`, no `!`, no `partial`. -/
-def call (input : String) : String :=
-  match Json.parse input with
-  | .error e => String.ofList (jemit (jsonErr s!"bad json: {e}"))
+/-- **The response value for a request's bytes.**  Every path returns one: a
+parse refusal is `bad json: ` and `jerrText`'s name for it, never a default.
+`call` is this, emitted — split out so that
+`the_response_call_emits_parses_back` is about the exported function's bytes. -/
+def respond (input : List Char) : JVal :=
+  match jparse input with
+  | .error e => jsonErr s!"bad json: {jerrText e}"
   | .ok j =>
     match run j with
-    | .error e => String.ofList (jemit e)
-    | .ok r    => String.ofList (jemit r)
+    | .error e => e
+    | .ok r    => r
+
+/-- Total: every path returns a `String`.  No `panic!`, no `!`, no `partial`.
+No `Lean.Json` either: `jparse` in, `jemit` out (J5). -/
+def call (input : String) : String := String.ofList (jemit (respond input.toList))
 
 @[export tm_kernel_call]
 def callExport (input : String) : String := call input
@@ -3334,25 +3344,25 @@ that is no key, a key not yet wired (README gap 40), and two values the field
 grammars refuse — `ci:7` is the `Fin 6` smart constructor biting (R10), and
 `est=3d` is `NdDur` refusing a day-carrying estimate. -/
 theorem parseCmd_rejects_edit_variants :
-    parseCmd (Json.mkObj [("op", Json.str "edit"), ("id", Json.str "t3"),
-        ("key", Json.str "size"), ("value", Json.str "3")]) = .error "unknownKey size" ∧
-    parseCmd (Json.mkObj [("op", Json.str "edit"), ("id", Json.str "t3"),
-        ("key", Json.str "due"), ("value", Json.str "2026-09-20")]) = .error "keyNotWired due" ∧
-    parseCmd (Json.mkObj [("op", Json.str "edit"), ("id", Json.str "t3"),
-        ("key", Json.str "ci"), ("value", Json.str "7")]) = .error "badValue ci" ∧
-    parseCmd (Json.mkObj [("op", Json.str "edit"), ("id", Json.str "t3"),
-        ("key", Json.str "est"), ("value", Json.str "3d")]) = .error "badValue est" :=
+    parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "size".toList), ("value".toList, .str "3".toList)]) = .error "unknownKey size" ∧
+    parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "due".toList), ("value".toList, .str "2026-09-20".toList)]) = .error "keyNotWired due" ∧
+    parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "ci".toList), ("value".toList, .str "7".toList)]) = .error "badValue ci" ∧
+    parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "est".toList), ("value".toList, .str "3d".toList)]) = .error "badValue est" :=
   ⟨rfl, rfl, rfl, rfl⟩
 
 /-- The positive parse forms are not vacuous: a keyed value lands as `.edit`
 with the key it named, and an empty value is the unset form. -/
 theorem parseCmd_reads_the_keyed_edit_forms :
-    ((match parseCmd (Json.mkObj [("op", Json.str "edit"), ("id", Json.str "t3"),
-        ("key", Json.str "pref"), ("value", Json.str "07:30")]) with
+    ((match parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "pref".toList), ("value".toList, .str "07:30".toList)]) with
       | .ok (.edit i v) => i == "t3".toList && v.key == Field.Key.pref
       | _ => false) &&
-     (match parseCmd (Json.mkObj [("op", Json.str "edit"), ("id", Json.str "t3"),
-        ("key", Json.str "est"), ("value", Json.str "")]) with
+     (match parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "t3".toList),
+        ("key".toList, .str "est".toList), ("value".toList, .str "".toList)]) with
       | .ok (.unset i k) => i == "t3".toList && k.val == Field.Key.est
       | _ => false)) = true := by decide
 
@@ -3388,5 +3398,82 @@ cheaply. -/
 theorem the_bad_line_diagnostic_keys_in_build_order (pa : List Char) (n : Nat) (w : PErr) :
     lerrJson (.badLine pa n w) = jone "badLine" (.obj [("path".toList, .str pa),
       ("line".toList, .num n), ("why".toList, .str (toString (repr w)).toList)]) := rfl
+
+/-! ## J5, the request side, and J6: the JSON edge is the kernel's, both ways
+
+`call` reads the request with `jparse` over `input.toList`, and every field
+through `jget`; no kernel module imports `Lean.Data.Json` any more.  Reading
+over the kernel's own value changed three rules, each now a named refusal rather
+than a silent choice: a **duplicate key** that is read (`jget`, §5.6 — the old
+reader, like serde_json, kept the last); a **`cmds` that is present but not an
+array** (the old reader swallowed it as no commands, §5.7); and a **`grain`
+carried twice** on a document or a `demote`.  A parse refusal is `bad json: `
+plus `jerrText`'s constructor name.  `respond` is the response *value* and
+`call` is `respond`, emitted — which is what makes the last two theorems below
+statements about the exported function's bytes. -/
+
+/-- **A field read twice is refused by name**, whichever field it is, and the
+same command with the field once reads.  §5.8: the rule bites and does not
+over-bite. -/
+theorem parseCmd_refuses_a_duplicate_field :
+    parseCmd (.obj [("op".toList, .str "drop".toList), ("id".toList, .str "a".toList),
+        ("id".toList, .str "b".toList)]) = .error "duplicateKey id" ∧
+    parseCmd (.obj [("op".toList, .str "drop".toList), ("op".toList, .str "move".toList),
+        ("id".toList, .str "a".toList)]) = .error "duplicateKey op" ∧
+    parseCmd (.obj [("op".toList, .str "drop".toList), ("id".toList, .str "a".toList)])
+      = .ok (.drop "a".toList) :=
+  ⟨rfl, rfl, rfl⟩
+
+/-- **A `cmds` that is not an array is refused**, not read as a request with no
+commands — which would answer `ok` with every document unchanged, and let the
+host believe a command it sent had applied. -/
+theorem run_refuses_cmds_that_are_not_an_array :
+    run (.obj [("docs".toList, .arr []), ("cmds".toList, .num 3)])
+      = .error (jsonErr "array expected") := rfl
+
+/-- **A parse refusal reaches the host by name** — here `expectedKey` and the
+surrogate escape README gap 42 refuses — over explicit `List Char` inputs (the
+Json.lean memory rule: a parser run is small and never over a string literal's
+`toList`). -/
+theorem respond_names_a_parse_refusal :
+    respond ['{', ' ', 'n'] = jsonErr "bad json: expectedKey n" ∧
+    respond ['"', '\\', 'u', 'd', '8', '3', 'd', '"']
+      = jsonErr "bad json: badEscape surrogateEscape 55357" :=
+  ⟨rfl, rfl⟩
+
+/-- **P\*, stage 3, README gap 6: the JSON edge round-trips — at the exported
+function.**  Whatever bytes `call` hands the host, the kernel's own parser reads
+back to exactly the response value `respond` built: no fragment restriction and
+no hypothesis on the input, well-formed or not.  This **discharges Goals.lean's
+`the_json_edge_round_trips` by the narrowing its doc comment licensed**: that
+goal was stated over `Lean.Json.parse ∘ Lean.Json.compress`, whose `partial
+def`s make it neither provable nor refutable (README "Gap 39 REPRICED"), and
+whose own route was "a kernel-owned emitter and fuel-structural parser …
+round-tripped unconditionally, put on the wire in `call`".  Both halves of that
+are now true: `jparse_jemit` is the unconditional round trip over every `JVal`,
+and this is its instance at the code `callExport` runs.  What it does not say,
+and nothing here can: that the **host's** reader (serde_json in
+`kernel_bridge.rs`, the hand-written codec in the corpus harness) agrees with
+`jparse` — that is corpus and FFI evidence, the framing gap 12 took for Rust's
+`split('\n')`. -/
+theorem the_response_call_emits_parses_back (input : String) :
+    jparse (call input).toList = .ok (respond input.toList) := by
+  unfold call
+  rw [String.toList_ofList]
+  exact jparse_jemit _
+
+/-- **Not vacuous, and end to end: the FFI test `duplicate_ids_are_rejected_at_load`
+as a theorem about `call`.**  The request bytes are the test's, verbatim
+(`demoRequestBytes`); the response is the bytes the test asserts
+(`demoResponseBytes`).  The parse is `the_real_request_bytes_round_trip` (an
+instance of `jparse_jemit`, not a parser run over a literal), the loader's
+refusal is evaluated, and the emission is `the_real_response_bytes_round_trip`. -/
+theorem call_refuses_the_real_duplicate_id_request :
+    call (String.ofList demoRequestBytes) = String.ofList demoResponseBytes := by
+  have hrun : run demoRequest = .error demoResponse := rfl
+  unfold call respond
+  rw [String.toList_ofList, the_real_request_bytes_round_trip.2]
+  simp only [hrun]
+  rw [the_real_response_bytes_round_trip.1]
 
 end Tm

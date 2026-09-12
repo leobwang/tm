@@ -14,9 +14,11 @@ let agreement with the *host's* reader (serde_json, which is the only reader
 these bytes ever had in production) stay corpus and FFI evidence rather than a
 theorem.
 
-**On the wire since J5 (response side).**  `Boundary.lean` builds every response
-as a `JVal` and `call` writes it with `jemit`; `jescapeTR` is the one runtime
-twin that move needed (a `@[csimp]` theorem, see there).
+**On the wire since J5, both ways.**  `Boundary.call` reads the request with
+`jparse` and every field with `jget` (end of this module), and writes every
+response as a `JVal` with `jemit`; no kernel module imports `Lean.Data.Json`.
+The per-character recursions run as proved `@[csimp]` twins (`jescapeTR`,
+`junescapeTR`, `jscanTR`); the per-element ones do not yet (README gap 44).
 
 ## The three decisions this module takes, stated rather than left implicit
 
@@ -332,6 +334,137 @@ def junescape : List Char → Except JEsc (List Char)
       if c = '"' then .error .rawQuote
       else if c.toNat < 32 then .error (.rawControl c.toNat)
       else (junescape rest).map (fun t => c :: t)
+
+/-! ### `junescape`'s runtime twin (J5)
+
+Structural and not tail-recursive, `junescape` compiled as written takes a
+stack frame per character of every string the request carries — the same
+defect `jescapeTR` fixed on the response side, now on the request side.  The
+twin carries the reversed output in an accumulator, and `@[csimp]` makes the
+compiler run it; `junescape_eq_junescapeTR` is the proof that the substitution
+changes nothing.  Every theorem in this module is still about `junescape`. -/
+
+/-- The accumulator form.  The same patterns, in the same order, as
+`junescape`; only the recursive calls move into tail position. -/
+def junescapeTR.go : List Char → List Char → Except JEsc (List Char)
+  | [], acc => .ok acc.reverse
+  | '\\' :: '"'  :: rest, acc => junescapeTR.go rest ('"' :: acc)
+  | '\\' :: '\\' :: rest, acc => junescapeTR.go rest ('\\' :: acc)
+  | '\\' :: '/'  :: rest, acc => junescapeTR.go rest ('/' :: acc)
+  | '\\' :: 'n'  :: rest, acc => junescapeTR.go rest ('\n' :: acc)
+  | '\\' :: 'r'  :: rest, acc => junescapeTR.go rest ('\r' :: acc)
+  | '\\' :: 't'  :: rest, acc => junescapeTR.go rest ('\t' :: acc)
+  | '\\' :: 'b'  :: rest, acc => junescapeTR.go rest (bsChar :: acc)
+  | '\\' :: 'f'  :: rest, acc => junescapeTR.go rest (ffChar :: acc)
+  | '\\' :: 'u'  :: a :: b :: c :: d :: rest, acc =>
+      match hexQuad a b c d with
+      | none => .error (.badHexQuad a b c d)
+      | some v =>
+        if 0xd800 ≤ v && v ≤ 0xdfff then .error (.surrogateEscape v)
+        else junescapeTR.go rest (Char.ofNat v :: acc)
+  | '\\' :: 'u' :: _, _ => .error .truncatedEscape
+  | '\\' :: e :: _, _ => .error (.unknownEscape e)
+  | '\\' :: [], _ => .error .truncatedEscape
+  | c :: rest, acc =>
+      if c = '"' then .error .rawQuote
+      else if c.toNat < 32 then .error (.rawControl c.toNat)
+      else junescapeTR.go rest (c :: acc)
+termination_by structural l => l
+
+def junescapeTR (l : List Char) : Except JEsc (List Char) := junescapeTR.go l []
+
+/-- Consing onto the result is pushing onto the accumulator. -/
+theorem junescapeTR_step (x : Except JEsc (List Char)) (acc : List Char) (c : Char) :
+    Except.map (fun t => acc.reverse ++ t) (Except.map (fun t => c :: t) x)
+      = Except.map (fun t => (c :: acc).reverse ++ t) x := by
+  cases x <;> simp [Except.map]
+
+set_option linter.unusedSimpArgs false in
+/-- The accumulator invariant, by strong induction on the input's length (the
+`\uXXXX` branch recurses six characters in).  One case per `junescape`
+pattern. -/
+theorem junescapeTR_go (n : Nat) : ∀ (l acc : List Char), l.length ≤ n →
+    junescapeTR.go l acc = (junescape l).map (fun t => acc.reverse ++ t) := by
+  induction n with
+  | zero =>
+    intro l acc h
+    cases l with
+    | nil => simp [junescapeTR.go, junescape, Except.map]
+    | cons c t => simp at h
+  | succ n ih =>
+    intro l acc h
+    cases l with
+    | nil => simp [junescapeTR.go, junescape, Except.map]
+    | cons c rest =>
+      simp only [List.length_cons] at h
+      by_cases hb : c = '\\'
+      · subst hb
+        cases rest with
+        | nil => simp [junescapeTR.go, junescape, Except.map]
+        | cons e r =>
+          simp only [List.length_cons] at h
+          have ihr := ih r
+          by_cases h1 : e = '"'
+          · subst h1; simp only [junescapeTR.go, junescape]
+            rw [ihr _ (by omega), junescapeTR_step]
+          by_cases h2 : e = '\\'
+          · subst h2; simp only [junescapeTR.go, junescape]
+            rw [ihr _ (by omega), junescapeTR_step]
+          by_cases h3 : e = '/'
+          · subst h3; simp only [junescapeTR.go, junescape]
+            rw [ihr _ (by omega), junescapeTR_step]
+          by_cases h4 : e = 'n'
+          · subst h4; simp only [junescapeTR.go, junescape]
+            rw [ihr _ (by omega), junescapeTR_step]
+          by_cases h5 : e = 'r'
+          · subst h5; simp only [junescapeTR.go, junescape]
+            rw [ihr _ (by omega), junescapeTR_step]
+          by_cases h6 : e = 't'
+          · subst h6; simp only [junescapeTR.go, junescape]
+            rw [ihr _ (by omega), junescapeTR_step]
+          by_cases h7 : e = 'b'
+          · subst h7; simp only [junescapeTR.go, junescape]
+            rw [ihr _ (by omega), junescapeTR_step]
+          by_cases h8 : e = 'f'
+          · subst h8; simp only [junescapeTR.go, junescape]
+            rw [ihr _ (by omega), junescapeTR_step]
+          by_cases h9 : e = 'u'
+          · subst h9
+            match r with
+            | a :: b :: c :: d :: r' =>
+              simp only [List.length_cons] at h
+              simp only [junescapeTR.go, junescape]
+              cases hx : hexQuad a b c d with
+              | none => simp [Except.map]
+              | some v =>
+                simp only
+                by_cases hs : (0xd800 ≤ v && v ≤ 0xdfff) = true
+                · simp [hs, Except.map]
+                · rw [if_neg hs, if_neg hs, ih r' _ (by omega), junescapeTR_step]
+            | [] => simp [junescapeTR.go, junescape, Except.map]
+            | [_] => simp [junescapeTR.go, junescape, Except.map]
+            | [_, _] => simp [junescapeTR.go, junescape, Except.map]
+            | [_, _, _] => simp [junescapeTR.go, junescape, Except.map]
+          · have e1 : junescapeTR.go ('\\' :: e :: r) acc = .error (.unknownEscape e) := by
+              simp [junescapeTR.go, h1, h2, h3, h4, h5, h6, h7, h8, h9]
+            have e2 : junescape ('\\' :: e :: r) = .error (.unknownEscape e) := by
+              simp [junescape, h1, h2, h3, h4, h5, h6, h7, h8, h9]
+            rw [e1, e2]; rfl
+      · by_cases hq : c = '"'
+        · subst hq; simp [junescapeTR.go, junescape, Except.map]
+        by_cases hc : c.toNat < 32
+        · simp [junescapeTR.go, junescape, Except.map, hb, hq, hc]
+        · have e1 : junescapeTR.go (c :: rest) acc = junescapeTR.go rest (c :: acc) := by
+            simp [junescapeTR.go, hb, hq, hc]
+          have e2 : junescape (c :: rest) = (junescape rest).map (fun t => c :: t) := by
+            simp [junescape, hb, hq, hc]
+          rw [e1, e2, ih rest _ (by omega), junescapeTR_step]
+
+/-- **The compiler runs the twin, and this is why that is sound.** -/
+@[csimp] theorem junescape_eq_junescapeTR : @junescape = @junescapeTR := by
+  funext l
+  rw [junescapeTR, junescapeTR_go l.length l [] (Nat.le_refl _)]
+  cases junescape l <;> simp [Except.map]
 
 /-! ### The crux -/
 
@@ -854,6 +987,64 @@ def jscan : List Char → Option (List Char × List Char)
       match jscan rest with
       | none => none
       | some (s, r) => some (c :: s, r)
+
+/-- **`jscan`'s runtime twin (J5)** — the scanner recursed once per byte of a
+string, like `junescape`.  The accumulator holds the scanned bytes reversed. -/
+def jscanTR.go : List Char → List Char → Option (List Char × List Char)
+  | [], _ => none
+  | c :: rest, acc =>
+    if c = '"' then some (acc.reverse, rest)
+    else if c = '\\' then
+      match rest with
+      | [] => none
+      | e :: rest' => jscanTR.go rest' (e :: '\\' :: acc)
+    else jscanTR.go rest (c :: acc)
+
+def jscanTR (l : List Char) : Option (List Char × List Char) := jscanTR.go l []
+
+/-- The accumulator invariant, by strong induction on the length (the escape
+branch recurses two bytes in). -/
+theorem jscanTR_go (n : Nat) : ∀ (l acc : List Char), l.length ≤ n →
+    jscanTR.go l acc = (jscan l).map (fun p => (acc.reverse ++ p.1, p.2)) := by
+  induction n with
+  | zero =>
+    intro l acc h
+    cases l with
+    | nil => rfl
+    | cons c t => simp at h
+  | succ n ih =>
+    intro l acc h
+    cases l with
+    | nil => rfl
+    | cons c rest =>
+      rw [jscanTR.go.eq_def, jscan.eq_def]
+      simp only
+      by_cases hq : c = '"'
+      · simp [hq]
+      by_cases hb : c = '\\'
+      · simp only [if_neg hq, if_pos hb]
+        cases rest with
+        | nil => rfl
+        | cons e rest' =>
+          simp only [List.length_cons] at h
+          simp only
+          rw [ih rest' _ (by omega)]
+          cases hs : jscan rest' with
+          | none => rfl
+          | some p => simp
+      · simp only [List.length_cons] at h
+        simp only [if_neg hq, if_neg hb]
+        rw [ih rest _ (by omega)]
+        cases hs : jscan rest with
+        | none => rfl
+        | some p => simp
+
+@[csimp] theorem jscan_eq_jscanTR : @jscan = @jscanTR := by
+  funext l
+  rw [jscanTR, jscanTR_go l.length l [] (Nat.le_refl _)]
+  cases jscan l with
+  | none => rfl
+  | some p => rfl
 
 /-- Read a string body: scan to the closing quote, then un-escape with J1's
 `junescape`, whose refusals become `JErr.badEscape`. -/
@@ -2372,5 +2563,79 @@ theorem the_jval_jemit_digit_guard_bites :
   refine ⟨by decide, h, ?_⟩
   rw [h]
   nofun
+
+
+/-! ## J5 — reading a request
+
+`Boundary.call` now reads the request with `jparse` and the fields out of the
+`JVal` with `jget`; nothing of `Lean.Json` is on the wire.  Two things a reader
+needs that the codec itself does not: a name for every parse refusal, so the
+host's `{"err":"bad json: …"}` carries a diagnostic rather than a default
+(§5.7), and **one rule for a duplicate key**. -/
+
+/-- A `JEsc` as the text the host sees.  Every constructor by name. -/
+def jescText : JEsc → String
+  | .truncatedEscape => "truncatedEscape"
+  | .unknownEscape c => s!"unknownEscape {c}"
+  | .badHexQuad a b c d => s!"badHexQuad {a}{b}{c}{d}"
+  | .surrogateEscape v => s!"surrogateEscape {v}"
+  | .rawQuote => "rawQuote"
+  | .rawControl v => s!"rawControl {v}"
+
+/-- A `JErr` as the text the host sees.  Every constructor by name. -/
+def jerrText : JErr → String
+  | .outOfFuel => "outOfFuel"
+  | .emptyInput => "emptyInput"
+  | .notAValue c => s!"notAValue {c}"
+  | .badNumber => "badNumber"
+  | .unterminatedString => "unterminatedString"
+  | .badEscape e => s!"badEscape {jescText e}"
+  | .unterminatedArray => "unterminatedArray"
+  | .expectedCommaOrBracket c => s!"expectedCommaOrBracket {c}"
+  | .unterminatedObject => "unterminatedObject"
+  | .expectedCommaOrBrace c => s!"expectedCommaOrBrace {c}"
+  | .expectedColon c => s!"expectedColon {c}"
+  | .expectedKey c => s!"expectedKey {c}"
+  | .trailingGarbage c => s!"trailingGarbage {c}"
+
+/-- **The one way a request field is read.**  `none` is an absent key and
+`some v` the value of the **only** pair carrying it.  A key carried twice is
+refused, by name: `jparse` keeps both pairs (an object is an ordered assoc
+list, J0), and taking either would be the reader picking between two readings
+— §5.6's defect class, one layer out.  `Lean.Json`'s parser and serde_json's
+`Value` both silently keep the last; the kernel does not guess.  Only the key
+being read is checked, so a duplicate the kernel never reads is not a reading
+it picks.  A non-object has no fields and is refused too. -/
+def jget (j : JVal) (k : String) : Except String (Option JVal) :=
+  match j with
+  | .obj kvs =>
+    match kvs.filter (fun kv => kv.1 == k.toList) with
+    | [] => .ok none
+    | [(_, v)] => .ok (some v)
+    | _ => .error s!"duplicateKey {k}"
+  | _ => .error "object expected"
+
+/-- A key carried once reads as its value; an absent key reads as `none`. -/
+theorem jget_reads_the_one_pair :
+    jget (.obj [(['i', 'd'], .str ['m', '1']), (['d', 'o', 'c'], .num 1)]) "doc"
+      = .ok (some (.num 1)) ∧
+    jget (.obj [(['i', 'd'], .str ['m', '1'])]) "doc" = .ok none :=
+  ⟨rfl, rfl⟩
+
+/-- **The duplicate-key rule bites** — both orders, so neither the first nor the
+last pair is quietly preferred — and a non-object has no fields. -/
+theorem jget_refuses_a_duplicate_key :
+    jget (.obj [(['i', 'd'], .str ['a']), (['i', 'd'], .str ['b'])]) "id"
+      = .error "duplicateKey id" ∧
+    jget (.obj [(['i', 'd'], .str ['b']), (['i', 'd'], .str ['a'])]) "id"
+      = .error "duplicateKey id" ∧
+    jget (.arr []) "id" = .error "object expected" :=
+  ⟨rfl, rfl, rfl⟩
+
+/-- A duplicate the kernel does not read is not a reading it picks: the other
+key still reads. -/
+theorem jget_ignores_a_duplicate_it_does_not_read :
+    jget (.obj [(['x'], .num 1), (['x'], .num 2), (['i', 'd'], .str ['a'])]) "id"
+      = .ok (some (.str ['a'])) := rfl
 
 end Tm

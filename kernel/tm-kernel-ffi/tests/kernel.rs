@@ -697,3 +697,85 @@ fn unset_of_a_key_the_line_does_not_carry_is_refused() {
     let out = call(&req(r#"[{"op":"edit","id":"t3","key":"pref","value":""}]"#)).unwrap();
     assert_eq!(out, r#"{"err":{"kernel":"keyAbsent"}}"#, "{out}");
 }
+
+// ---------------------------------------------------------------------------
+// J5, the request side: the kernel reads every request with its own `jparse`
+// and every field through `jget` — no `Lean.Json` on the wire.  Lean-side
+// twins: junescape_accepts_the_host_short_escapes,
+// parseCmd_refuses_a_duplicate_field, run_refuses_cmds_that_are_not_an_array,
+// respond_names_a_parse_refusal, the_response_call_emits_parses_back.
+// ---------------------------------------------------------------------------
+
+/// Every spelling a JSON host may use inside a line reads to the characters it
+/// spells: a quote and a backslash, serde_json's short escapes (`\t`, `\b`,
+/// `\f`) and `\/`, a control byte as a lowercase quad, `é` as an uppercase
+/// and a lowercase quad, and raw UTF-8 (a two-byte letter, a four-byte emoji).
+/// The response spells them the kernel's way (`jescape`: short forms only for
+/// quote, backslash, `\n`, `\r`; a quad for every other control byte).  This
+/// is the host-agreement obligation, evidenced rather than proved.
+#[test]
+fn the_request_reads_every_escape_a_host_writes() {
+    let emoji = '\u{1F600}';
+    let out = call(&format!(
+        r#"{{"docs":[{{"path":"w.md","lines":["q\"b\\s\tt\u0001c\/s\bb\ff\u00E9\u00e9 {}{emoji}"]}}],"cmds":[]}}"#,
+        '\u{e9}'
+    ))
+    .unwrap();
+    assert_eq!(
+        out,
+        format!(
+            r#"{{"ok":{{"docs":[{{"path":"w.md","lines":["q\"b\\s\u0009t\u0001c/s\u0008b\u000cf{e}{e} {e}{emoji}"]}}]}}}}"#,
+            e = '\u{e9}'
+        ),
+        "{out}"
+    );
+}
+
+/// A field sent twice is refused by name.  `Lean.Json`'s parser and
+/// serde_json's `Value` both keep the last pair silently; the kernel reads
+/// neither, because picking one is picking between two readings (§5.6).
+#[test]
+fn a_duplicate_field_is_refused_by_name() {
+    let out = call(&req(r#"[{"op":"drop","id":"t3","id":"m1"}]"#)).unwrap();
+    assert_eq!(out, r#"{"err":"duplicateKey id"}"#, "{out}");
+    let out = call(r#"{"docs":[],"docs":[],"cmds":[]}"#).unwrap();
+    assert_eq!(out, r#"{"err":"duplicateKey docs"}"#, "{out}");
+}
+
+/// A `cmds` that is present but not an array used to read as "no commands" —
+/// an `ok` with nothing changed, for a request that asked for a change.  An
+/// absent `cmds` is still a read.
+#[test]
+fn cmds_that_are_not_an_array_are_refused() {
+    let out = call(&req("3")).unwrap();
+    assert_eq!(out, r#"{"err":"array expected"}"#, "{out}");
+    let out = call(r#"{"docs":[]}"#).unwrap();
+    assert_eq!(out, r#"{"ok":{"docs":[]}}"#, "{out}");
+}
+
+/// A malformed request is refused with the parser's own name for the reason —
+/// and a surrogate-pair escape is refused rather than recombined (README gap
+/// 42; serde_json writes astral characters as raw UTF-8, never as a pair).
+#[test]
+fn a_parse_refusal_names_its_reason() {
+    assert_eq!(call("{ not json").unwrap(), r#"{"err":"bad json: expectedKey n"}"#);
+    assert_eq!(call(r#"{"docs":[]"#).unwrap(), r#"{"err":"bad json: unterminatedObject"}"#);
+    assert_eq!(
+        call(r#"{"docs":[{"path":"w.md","lines":["\ud83d\ude00"]}]}"#).unwrap(),
+        r#"{"err":"bad json: badEscape surrogateEscape 55357"}"#
+    );
+}
+
+/// The codec's per-character recursions run as their `@[csimp]` twins
+/// (`jescape_eq_jescapeTR`, `jscan_eq_jscanTR`, `junescape_eq_junescapeTR`).
+/// Without them a single 100 000-character line overflowed a 2 MiB stack —
+/// the size of this test thread — and aborted the whole process.  A line of a
+/// million request bytes, every other character a quote escaped on the way in
+/// and on the way out, reads and writes back byte for byte.
+#[test]
+fn a_million_character_line_does_not_exhaust_the_stack() {
+    let line = "a\\\"".repeat(333_334);
+    let out = call(&format!(r#"{{"docs":[{{"path":"w.md","lines":["{line}"]}}],"cmds":[]}}"#))
+        .unwrap();
+    assert_eq!(out, format!(r#"{{"ok":{{"docs":[{{"path":"w.md","lines":["{line}"]}}]}}}}"#));
+}
