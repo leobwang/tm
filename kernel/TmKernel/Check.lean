@@ -1172,3 +1172,6 @@ open Tm
 #print axioms Tm.cmdAdd_succeeds
 #print axioms Tm.the_undo_witness_loads
 #print axioms Tm.move_has_no_inverse_command
+#print axioms Tm.joinWith_splitOn
+#print axioms Tm.a_file_splits_into_the_lines_it_was_joined_from_char
+#print axioms Tm.joining_lines_is_not_injective_char

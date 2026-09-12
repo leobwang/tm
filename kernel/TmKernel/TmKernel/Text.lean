@@ -728,6 +728,64 @@ theorem splitOn_joinWith (c : Char) : ∀ gs : List (List Char), gs ≠ [] →
               hrest]
           simp
 
+/-- **The other composition, and it is unconditional.**  `splitOn_joinWith`
+needs the no-separator hypothesis because a separator hidden in a group is
+lost at the join; splitting *first* manufactures groups that cannot hide the
+separator, so joining them back needs no hypothesis at all.  Structural
+induction; every step reduces because `splitOn` is structural (README gap 38
+is exactly that the legacy `String.splitOn` is not). -/
+theorem joinWith_splitOn (c : Char) : ∀ cs : List Char, joinWith c (splitOn c cs) = cs := by
+  intro cs
+  induction cs with
+  | nil => rfl
+  | cons x xs ih =>
+      unfold splitOn
+      by_cases hx : (x == c) = true
+      · rw [if_pos hx]
+        have hxc : x = c := by simpa using hx
+        cases hs : splitOn c xs with
+        | nil => exact absurd hs (splitOn_ne_nil c xs)
+        | cons g gs =>
+            rw [hs] at ih
+            show joinWith c ([] :: g :: gs) = x :: xs
+            simp [joinWith, hxc, ih]
+      · rw [if_neg hx]
+        cases hs : splitOn c xs with
+        | nil => exact absurd hs (splitOn_ne_nil c xs)
+        | cons g gs =>
+            rw [hs] at ih
+            cases gs with
+            | nil =>
+                show joinWith c [x :: g] = x :: xs
+                have hg : g = xs := by simpa [joinWith] using ih
+                simp [joinWith, hg]
+            | cons g2 gs' =>
+                show joinWith c ((x :: g) :: g2 :: gs') = x :: xs
+                simp only [joinWith, List.cons_append] at ih ⊢
+                rw [ih]
+
+/-- **README gap 12, discharged at the char representation.**  A file's
+characters split into lines and joined back are the same characters —
+unconditional, over the kernel's own structural splitter, which is the
+splitter on the wire path (`mkDoc`/`renderDocAt` operate at `List Char`).
+The `String.splitOn` form of this statement is kernel-stuck (gap 38); the
+host-agreement half — Rust's `split('\n')` computes what `Tm.splitOn '\n'`
+computes, empty segments included — is evidenced by the FFI corpus, not
+provable from inside. -/
+theorem a_file_splits_into_the_lines_it_was_joined_from_char (cs : List Char) :
+    joinWith '\n' (splitOn '\n' cs) = cs :=
+  joinWith_splitOn '\n' cs
+
+/-- **README gap 12's expected refutation, landed as the negation.**  Joining
+lines is *not* injective: a group hiding a literal newline round trips as one
+line in memory and becomes two lines on disk.  Witness `[['a','\n','b']]`,
+which joins to `a\nb` and re-splits to `[['a'],['b']]`.  This is the reason
+gap 12 is a gap: nothing in the kernel refuses such a group, and the boundary
+must reject or escape it (`splitOn_joinWith`'s no-separator hypothesis is the
+side condition that makes join/split honest). -/
+theorem joining_lines_is_not_injective_char :
+    ∃ gs : List (List Char), splitOn '\n' (joinWith '\n' gs) ≠ gs :=
+  ⟨[['a', '\n', 'b']], by decide⟩
 
 theorem zeros_length (k : Nat) : (zeros k).length = k := by
   induction k with

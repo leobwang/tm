@@ -2156,3 +2156,44 @@ from `Goals.lean` per §3.2.  Re-measured at this landing: burn-down **43**
 banner: `the_undo_witness_loads`, `move_has_no_inverse_command`);
 `check.sh` 7/7 (corpus 33/37 files, 4/5 whole plans, unchanged);
 `kernel.rs` 33 tests, unchanged.  Adds no gap numbers.
+
+**Gap 12's two goals DISCHARGED — at the char representation.**  The
+`Goals.lean` pair quantified over legacy `String.splitOn`, which is
+kernel-stuck (gap 38, with this block's mechanism correction), and the
+audited third route above is the one taken: the kernel's own structural
+`Tm.splitOn` with the join it already owns.  Two theorems land at the end of
+`Text.lean`'s splitter section, both audited under Check.lean's `APPENDED
+2026-09-12` banner.  `a_file_splits_into_the_lines_it_was_joined_from_char`
+(via the general `joinWith_splitOn`): `joinWith '\n' (splitOn '\n' cs) = cs`,
+**unconditional**, by structural induction — note it is the *other*
+composition than `splitOn_joinWith`, which needs the no-separator hypothesis;
+split-then-join needs none because splitting manufactures groups that cannot
+hide the separator.  `joining_lines_is_not_injective_char` is the expected
+refutation **renamed to its negation** per §3.2: `∃ gs, splitOn '\n'
+(joinWith '\n' gs) ≠ gs`, witness `[['a','\n','b']]`, closed by `decide`
+since everything is structural.  The ledger move, loudly (§3.1 item 4): the
+`String.splitOn`-level statements are **deleted from `Goals.lean` and not
+restated** — the legacy splitter does not reduce in the kernel and no kernel
+code path consumes it, so a String-level goal would defend a function the
+kernel neither runs nor can compute with; the char level is where
+`mkDoc`/`renderDocAt` actually operate.  What that leaves as an obligation is
+**host agreement**, named: Rust's `split('\n')` in `tm-kernel-ffi` must
+compute what `Tm.splitOn '\n'` computes, and the FFI corpus tests are its
+evidence, not a proof.  Edge semantics were checked, not assumed (all by
+`#eval` against the built library): `Tm.splitOn '\n' [] = [[]]`, agreeing
+with Rust's `"".split('\n')` = `[""]` — **no disagreement at the empty
+file** — and leading / trailing / double newlines produce the same empty
+segments on both sides (`"\na"` → `[[],['a']]`, `"a\n"` → `[['a'],[]]`,
+`"a\n\nb"` → `[['a'],[],['b']]`).  The one asymmetry worth a sentence:
+`joinWith '\n' [] = [] = joinWith '\n' [[]]`, so `joinWith` conflates the
+zero-group list with the one-empty-group list — harmless because `[]` is
+outside `splitOn`'s image (`splitOn_ne_nil`) and no host `lines` result is
+empty.  The boundary decision gap 12's refutation has always pointed at —
+reject or escape a request line carrying a literal newline — is still open
+and still gap 12's live remainder; this discharge prices it, it does not
+take it.  Re-measured at this landing: burn-down **41** (`grep -c '^theorem'
+Goals.lean`); audit 1066 lines / 1066 distinct names / 1066 attr-aware
+declarations (three new: `joinWith_splitOn`,
+`a_file_splits_into_the_lines_it_was_joined_from_char`,
+`joining_lines_is_not_injective_char`); `check.sh` 7/7; `kernel.rs` 33
+tests, unchanged.  Adds no gap numbers.

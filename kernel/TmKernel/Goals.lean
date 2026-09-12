@@ -129,8 +129,9 @@ to the human.
 The theorems of stage 2 begin at `ReqDoc` (a `List (List Char)`) and end at
 `renderDocAt`'s `List (List Char)`.  `Json.parse`, `Json.compress`,
 `String.toList`/`String.ofList` and the newline split sit between that and the
-wire, and none of them is proved.  Since gap 1 closed, this is the **only**
-unproved step on the text path. -/
+wire.  The newline split's two goals are discharged at the char representation
+(see the block below, 2026-09-12); the rest is not proved.  Since gap 1
+closed, this is the **only** unproved step on the text path. -/
 
 /-- **P\*, stage 3, README gap 6.**  A value the kernel emits survives its own
 serializer.  Rules out `call` returning text the host cannot read back — the
@@ -145,20 +146,17 @@ statement restricted to the fragment `run` emits (objects, arrays, strings and
 theorem the_json_edge_round_trips (j : Lean.Json) :
     Lean.Json.parse j.compress = .ok j := sorry
 
-/-- **P\*, stage 3, README gap 12.**  A file's bytes split into lines and joined
-back are the same bytes.  This is the host's half of the document round trip
-and the kernel's theorems assume it. -/
-theorem a_file_splits_into_the_lines_it_was_joined_from (s : String) :
-    "\n".intercalate (s.splitOn "\n") = s := sorry
-
-/-- **R\*, stage 3, README gap 12 — expected refutation, and the reason gap 12
-is a gap.**  The *other* composition fails: a request line containing a literal
-newline round trips as one line inside the kernel and becomes two lines on
-disk, and nothing in the kernel notices.  Discharging this means proving the
-negation and then deciding what the boundary does about it — reject such a
-line, or escape it. -/
-theorem joining_lines_is_injective :
-    ∀ ls : List String, ("\n".intercalate ls).splitOn "\n" = ls := sorry
+/- **Gap 12's two goals are discharged at the char representation
+(2026-09-12).**  `a_file_splits_into_the_lines_it_was_joined_from_char`
+(unconditional round trip over the kernel's own structural `Tm.splitOn`, the
+splitter on the wire path) and `joining_lines_is_not_injective_char` (the
+expected refutation, renamed to its negation and proved by `decide` on the
+witness `[['a','\n','b']]`) are theorems of `Text.lean`, audited in
+`Check.lean`.  The `String.splitOn`-level statements that stood here are not
+restated: the legacy splitter is kernel-stuck (README gap 38) and no kernel
+code path consumes it; the host-agreement obligation — Rust's `split('\n')`
+computes what `Tm.splitOn '\n'` computes, empty segments included — is what
+the FFI corpus tests evidence.  See the 2026-09-12 README block. -/
 
 /-! ## Plan.lean / Boundary.lean — README gap 16: CLOSED 2026-09-09
 
