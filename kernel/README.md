@@ -2197,3 +2197,86 @@ declarations (three new: `joinWith_splitOn`,
 `a_file_splits_into_the_lines_it_was_joined_from_char`,
 `joining_lines_is_not_injective_char`); `check.sh` 7/7; `kernel.rs` 33
 tests, unchanged.  Adds no gap numbers.
+
+**Gap 39 REPRICED — the JSON edge is opaque, not hard, and both routes the
+ledger priced are closed.**  Probed v4.33.1's own source ahead of the
+attempt (`Lean/Data/Json/{Printer,Parser,Basic}.lean` in the toolchain
+tree): `Json.compress` and `Json.render` are `partial def`s, and so is
+every recursive worker of `Json.parse` — `Parser.strCore`, `natCore`,
+`natCoreNumDigits`, `arrayCore`, `objectCore`, `anyCore` — plus
+`JsonNumber.countDigits` and even `Json`'s `BEq` worker `beq'`.  That is
+not gap 38's kind of stuck: a well-founded definition still carries
+propositional equation lemmas the kernel accepts, while a `partial def`
+elaborates to an opaque constant whose logical value is *unconstrained by
+the compiled code* — no equations, nothing to unfold, nothing
+`simp`/`decide`/induction can touch.  Measured, not assumed (probes against
+the built library, transcripts paraphrased per §5.11): `rfl` fails on
+`Json.compress Json.null = "null"` — the simplest possible instance — with
+`compress` stuck as a term; `Json.compress.eq_def` exists but rewrites one
+step to the **private** partial worker `compress.go`, a daggered name this
+package cannot even mention, beneath which no equation exists;
+`Json.Parser.strCore.eq_def` is an unknown constant; `simp [Json.parse]`
+stalls at Parsec iteration over `String.Iterator` byte offsets — gap 38's
+mechanism, one level down.  Consequence, stated plainly: **the goal
+`the_json_edge_round_trips` can be neither proved nor refuted here** — the
+behaviour of `Json.parse ∘ Json.compress` is a property of compiled code,
+exactly the layer R3 exists to distrust, and `native_decide`, the one
+tactic that can see that layer, is banned.  Every narrowing still worded
+over the toolchain pair inherits the same fate: the fragment restriction
+the goal's doc comment anticipated, and the up-to-equivalence variant this
+block's own addendum priced.  This supersedes, by name: gap 39's closing
+route ("it needs the parser and printer reasoned about directly (a real,
+bounded job)" — there is nothing to reason about; that route is
+impossible, not bounded), and one detail of this block's "Gap 39,
+addendum": v4.33.1's `Json.obj` carries a `Std.TreeMap.Raw String Json`,
+not an `RBNode` — the insertion-rebuild hazard it describes survives with
+the structure renamed.  Two VM-level facts sharpen the picture, and
+neither can be promoted to a theorem (all by `#eval` against the built
+library): the general statement is **false** — `Json.num ⟨100, 2⟩` (the
+number 1.00) compresses to `"1"` and re-parses as `⟨1, 0⟩`, structurally
+distinct — while the emitted fragment looks healthy (`Nat` literals and
+the `ok`/`err` object shapes with an escaped-string payload re-parse
+`beq`-equal).  So §3.2's rename-to-negation route is closed too: the
+refutation quantifies over the same opaque constants.  **The honest route
+is gap 12's pattern one level up**, priced now so the next session starts
+at the lemma list, not the probe: (J0) a kernel-owned fragment type
+`JVal` — `str (List Char) | num Nat | arr (List JVal) | obj (List ((List
+Char) × JVal))`, objects as ordered assoc lists, so the tree-rebuild
+hazard vanishes by construction; (J1) structural `jescape`/`junescape` at
+the char level, mirroring the printer's escape classes (`"`, `\`, `\n`,
+`\r`, `< 0x20` as `\uXXXX`, all else verbatim), with `junescape_jescape :
+junescape (jescape s ++ '"' :: rest) = some (s, rest)` — the crux:
+induction on `s`, one case per class, carrying a hex-quad render/parse
+round trip in `digitsOf`'s reducing style (Text.lean owns the technique);
+(J2) `parseNat (renderNat n ++ rest) = some (n, rest)` for `rest` not
+opening with a digit — a real guard, discharged at each use site, where
+the next byte is `,`, `]` or `}`; (J3) `jemit : JVal → List Char`,
+compress-shaped; (J4) a fuel-structural `jparse` with fuel := input
+length so it reduces, and `jparse_jemit : jparse (jemit v ++ rest) = some
+(v, rest)` for **all** `v`, by the nested induction `JVal` needs under
+its `List`s; (J5) the wire change — `run` builds `JVal` and `call`
+returns `String.ofList (jemit r)`, after which Lean's `compress` leaves
+the output path the way legacy `String.splitOn` left the split path.
+Byte note for J5, measured: `mkObj` emits keys sorted (`compress` of a
+`b`-then-`a` build prints `a` first), an assoc list keeps build order —
+so either list fields pre-sorted and keep today's bytes, or accept a
+reorder that serde_json-level assertions (kernel.rs asserts through
+parsed values) never see; measured at J5, not assumed.  (J6) the
+discharge, `the_response_run_emits_parses_back`, unconditional over
+`JVal` — the narrowing lives in the type, which is the license the
+goal's doc comment grants.  What stays evidence rather than proof is host
+agreement, and it is the *only* agreement that was ever real: serde_json —
+not Lean's `parse`, which never sees `call`'s output in production — is
+the reader of these bytes, and kernel.rs's 33 tests plus the corpus's 6
+exercise exactly that.  Size, priced against the splitter work: J1 is
+Text.lean's splitter section again (≈300–500 lines with the `\u` branch),
+J4 the largest single proof (≈400–700), J2/J3/J6 small, J5 touches
+Boundary.lean's response builders plus an FFI re-measure — two to three
+sessions, not one.  The goal therefore **stands** in `Goals.lean` (§3.1
+item 6; its doc comment now points here), no predicate was weakened, no
+theorem lands, `Check.lean` is untouched — the omission is this
+sentence — and `Negative.lean` is untouched.  Re-measured at this landing:
+burn-down **41**, unchanged (`grep -c '^theorem ' Goals.lean`); audit 1066
+lines / 1066 distinct names / 1066 attr-aware declarations, unchanged;
+`check.sh` 7/7 (corpus 33/37 files, 4/5 whole plans, unchanged).  Adds no
+gap numbers; takes no cheat numbers.

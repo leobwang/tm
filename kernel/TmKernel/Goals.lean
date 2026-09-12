@@ -142,7 +142,25 @@ all stop one layer inside this one.
 `JsonNumber` with an exponent, and the general statement may be false at
 representations the kernel never builds.  The honest discharge is the same
 statement restricted to the fragment `run` emits (objects, arrays, strings and
-`Nat` literals); if it does not hold there either, that is a finding. -/
+`Nat` literals); if it does not hold there either, that is a finding.
+
+**2026-09-12: repriced — opaque, not hard.  See the README block of that
+date ("Gap 39 REPRICED").**  `Json.compress` and every recursive worker of
+`Json.parse` are `partial def`s in v4.33.1: opaque constants with no
+equation lemmas, whose logical values are unconstrained by the compiled
+code.  As stated — and under ANY narrowing still worded over the toolchain
+pair, including the fragment restriction above — this goal can be neither
+proved nor refuted; even `Json.compress Json.null = "null"` is not `rfl`,
+and `native_decide`, the one tactic that sees the compiled layer, is
+R3-banned.  At the VM level the general statement is false (`Json.num
+⟨100, 2⟩` compresses to `"1"` and re-parses as `⟨1, 0⟩`) and the emitted
+fragment looks healthy; neither fact promotes to a theorem.  The honest
+discharge route is gap 12's pattern one level up — a kernel-owned emitter
+and fuel-structural parser over the emitted fragment, round-tripped
+unconditionally, put on the wire in `call`, with serde_json agreement (the
+only parser these bytes ever meet in production) staying corpus evidence.
+Priced in the README at two to three sessions; the goal stands per §3.1
+item 6. -/
 theorem the_json_edge_round_trips (j : Lean.Json) :
     Lean.Json.parse j.compress = .ok j := sorry
 
