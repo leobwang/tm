@@ -2289,3 +2289,103 @@ burn-down **41**, unchanged (`grep -c '^theorem ' Goals.lean`); audit 1066
 lines / 1066 distinct names / 1066 attr-aware declarations, unchanged;
 `check.sh` 7/7 (corpus 33/37 files, 4/5 whole plans, unchanged).  Adds no
 gap numbers; takes no cheat numbers.
+
+**The edit verb widened: nine keyed fields on the wire, one reader end to
+end.**  Same 2026-09-12 session, edit-widening block.  The wire gains one op:
+`{"op":"edit","id":"t3","key":"pref","value":"07:30"}` — `key` is any spelling
+`Field.Key.ofName?` accepts (so `cap` and `max` are one key, and the write
+always lands as `max:` — `set_max_writes_max`), `value` is the raw text of the
+field's value exactly as it would stand on the line, and an **empty** `value`
+is the unset form `tm edit ^id <key>=`.  The standing `est` op is untouched on
+the wire and is now *definitionally* the keyed edit at `est`
+(`the_est_op_is_the_keyed_est_edit := rfl`), so the two can never drift.
+§5.3's discipline, in both directions: the value is parsed by the same
+`Field` parser the loader's view for that key binds (`editValOf`, one table;
+`ndDur?_is_parseDurND` pins the est/dur branch to the loader's own
+`parseDurND`), and the accepted value is written by the same Line.lean setter
+whose `view ∘ set = id` proof stands (R11) — so what lands on the line is the
+field's **canonical rendering** of the parsed value (`est=045m` writes
+`est:45m`; a value that only round-trips up to normalisation is normalised at
+the write, never re-encoded by a second grammar).  Wired keys, chosen by
+value-grammar simplicity and §4.1 usage: `est`, `dur`, `buffer`, `pref`,
+`on-miss`, `after-done`, `min`, `max`, `ci`.  Refusals are named at the tier
+they occur (§5.7): `unknownKey <k>` / `keyNotWired <k>` / `badValue <k>` ride
+`parseCmd`'s free-text `err` exactly as `add`'s five title refusals do
+(`parseCmd_rejects_edit_variants` — `badValue ci` at `7` is the `Fin 6` smart
+constructor biting through the wire, `badValue est` at `3d` is `NdDur`
+refusing a day-carrying estimate, both R10); `tabbedLine` and `keyAbsent` are
+new `KErr` names on the command path.  Both §5.8 directions at every tier:
+entity (`editE_ok_of_tabless` / `editE_refuses_a_tabbed_line`,
+`unsetE_ok_of_present` / `unset_of_a_key_the_line_does_not_carry_is_refused`),
+dispatch (`applyCmd_edit_succeeds` / `applyCmd_est_succeeds` /
+`applyCmd_unset_succeeds`, each with the honest `itemsWfButRanks` hypothesis
+`cmdRank_succeeds` modelled, and `Normalized` discharged outright by
+`normalized_after_edit` since an edit moves no placement), and the gap-4 shape
+generalised: `the_edit_path_writes_what_the_field_path_reads` — one theorem
+over all nine constructors, `Core.est` for C1's slot pair, `Core.ci` for
+C2's, no hypothesis on the entity's other bytes;
+`the_unset_path_removes_what_the_field_path_reads` is the removal half; and
+the dispatch table itself cannot hide a C1 (`setVal_writes_the_token_the_
+loader_reads` and `editValOf_key`, both generic over keys).
+
+**Gap 32, narrowed on the whole edit path — and the est op's standing
+exposure repaired.**  `Text.isSp` is space-only, so a tab is a word character
+to this kernel and whitespace to the shipped Rust tokenizer: on a line with a
+tab before a repeated `est:`, Rust's `tm edit est=45m` writes the *first*
+`est:` and this kernel would write the *second* — the S2 shape, in the one
+shipped operation.  The sanctioned narrow route is taken: **every** edit-path
+command (`edit`, unset, and the already-shipped `est` op) refuses a line whose
+raw bytes contain a tab — indent, any separator, any word (`lineHasTab`) —
+loudly and by name, `{"err":{"kernel":"tabbedLine"}}`.  The check bites
+(`edit_of_a_tabbed_line_is_refused`, `est_of_a_tabbed_line_is_refused`,
+`unset_of_a_tabbed_line_is_refused`), it is not vacuous
+(`the_tab_guard_is_not_vacuous`: a week file whose item line carries a tab
+inside a word loads whole and trips the guard, by decision), and the
+complement holds (a tabless line is never refused on that ground —
+`editE_ok_of_tabless` and the three `applyCmd_*_succeeds` forms).  Routing
+the `est` op through the guard is a **behaviour change to a shipped op, on
+the refusal side only**, recorded here loudly: before, `est` on a tabbed line
+wrote against the wrong token reading; now it refuses.  Re-measured after the
+change: corpus ratchet unmoved (check 6: 33/37 files, 4/5 whole plans — the
+corpus is tabless, as check 6's stability confirms), and all 33 pre-existing
+FFI tests pass unchanged (40 total now; the 7 new ones are kernel.rs's
+edit-widening block, `edit_keyed_pref_writes_through_the_field_grammar`
+through `unset_of_a_key_the_line_does_not_carry_is_refused`).  Gap 32 itself — `isSp`, the 1,049 of 2,048 generated lines that
+are silently prose — **stays open**: widening `isSp` is a grammar-wide
+behaviour change and remains plan-tier.
+
+**Gap 40 (edit): nine of the eighteen keys are deliberately not wired.**
+Continues the single gap sequence; 37–39 are above.  `keyEditable` is false,
+`editValOf` parses nothing (`editValOf_refuses_unwired_keys`), and the wire
+refusal is `keyNotWired <k>`, for: `due`, `at`, `win`, `every`, `on-event`,
+`after`, `loc`, `waiting` — each has its setter and `view ∘ set = id` proof
+in Line.lean, but that proof carries a wf hypothesis (`Moment.wf`,
+`intervalWf`, `windowWf`, `Rule.wf`, `OnEvent.wf`, `depsWf`, `Loc.wf`,
+`dayWf` respectively) and the **parse ⇒ wf bridge lemma does not exist yet**
+(for the date-carrying ones it reduces to a `readNat` width bound threaded
+through `mkDate?`/`ofDay_toDay`; for `after` it also owes an honest success
+form against `afterTotal`/`afterAcyclic`, which a dangling `after:^…` really
+does break).  Exposing one without its bridge would mean either shipping the
+setter with no success theorem or re-encoding the value grammar at the
+boundary — the two failure modes this widening exists to rule out.  And
+`demoted` is not deferred but **excluded by policy**: `demoted:` stamps are
+lifecycle state that `demote`/`readopt` own (`demote_stamps`,
+`readopt_keeps_stamps`); an edit that could forge or strip a stamp would
+bypass the demotion story, so `EditKey`'s bound keeps it off the wire
+(Negative.lean CHEAT 45 is that door staying shut).
+
+**Gap 41 (edit): unset of `est` or `ci` clears the key slot only.**  `est:`
+overrides the leading estimate and `ci:` the positional digit (C1/C2), so
+after `{"key":"est","value":""}` the view falls back to the leading estimate,
+and after unsetting `ci:` to the positional digit — Line.lean states both
+rather than fixing them (`unset_ci_key_leaves_the_positional_digit`, and
+`viewRemainingDur`'s fallback).  A host that means "no estimate at all" must
+know the lead slot survives; a complete `--unset` has to clear both slots,
+and that is a decision about line surgery on the *positional* grammar, not
+taken here.  Numbers, re-measured at this landing: `check.sh` 7/7; audit
+**1090** lines / 1090 distinct names / 1090 attr-aware declarations (was
+1066; +24, all under the 2026-09-12 banner's edit-widening block in
+Check.lean); burn-down **41**, unchanged — this scope item owned no standing
+goal and admits no new one; Negative.lean takes CHEATS **44–46** (Fin 6
+bypass, unwired-key bypass, day-carrying `NdDur`) under their own banner;
+FFI 33 → **40** tests, corpus 33/37 files and 4/5 whole plans, unchanged.

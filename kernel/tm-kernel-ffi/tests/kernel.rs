@@ -587,3 +587,105 @@ fn add_titles_are_refused_by_name() {
         assert!(out.contains(why), "{title}: {out}");
     }
 }
+
+// ---------------------------------------------------------------------------
+// The widened edit: {"op":"edit","id","key","value"} — keyed set, empty value
+// = unset — plus gap 32's tab guard on the whole edit path, est op included.
+// Lean-side twins: the_edit_path_writes_what_the_field_path_reads,
+// parseCmd_rejects_edit_variants, edit_of_a_tabbed_line_is_refused,
+// est_of_a_tabbed_line_is_refused, unset_of_an_absent_key_is_refused.
+// ---------------------------------------------------------------------------
+
+/// A keyed edit goes through the same field grammar the loader reads: the
+/// value is parsed by the key's own parser, written by the key's own setter,
+/// and the whole line's other bytes are untouched.
+#[test]
+fn edit_keyed_pref_writes_through_the_field_grammar() {
+    let out = call(&req(
+        r#"[{"op":"edit","id":"t3","key":"pref","value":"07:30"}]"#,
+    ))
+    .unwrap();
+    assert!(
+        out.contains(r#""- [>] 4 2b Exercises 5.3-5.5            @m1 est:1b pref:07:30 ^t3""#),
+        "{out}"
+    );
+}
+
+/// The standing est op and the keyed est edit are one path (Lean:
+/// the_est_op_is_the_keyed_est_edit, definitional) — same bytes out.
+#[test]
+fn edit_keyed_est_matches_the_est_op() {
+    let keyed = call(&req(
+        r#"[{"op":"edit","id":"t3","key":"est","value":"45m"}]"#,
+    ))
+    .unwrap();
+    let op = call(&req(r#"[{"op":"est","id":"t3","min":45}]"#)).unwrap();
+    assert_eq!(keyed, op, "keyed:\n{keyed}\nop:\n{op}");
+    assert!(
+        keyed.contains(r#""- [>] 4 2b Exercises 5.3-5.5            @m1 est:45m ^t3""#),
+        "{keyed}"
+    );
+}
+
+/// An empty value is the unset form: the key's token is removed, separator
+/// and all, and nothing else on the line moves.
+#[test]
+fn edit_with_an_empty_value_unsets_the_key() {
+    let out = call(&req(r#"[{"op":"edit","id":"t3","key":"est","value":""}]"#)).unwrap();
+    assert!(
+        out.contains(r#""- [>] 4 2b Exercises 5.3-5.5            @m1 ^t3""#),
+        "{out}"
+    );
+    assert!(!out.contains("est:1b"), "{out}");
+}
+
+/// The three parse-tier refusals, each by name: not a key, a key the edit
+/// path is not wired for (README gap 40), a value the field grammar refuses.
+/// `ci:7` is the Fin 6 smart constructor biting through the wire (R10).
+#[test]
+fn edit_refusals_are_named() {
+    for (key, value, why) in [
+        ("size", "3", r#"{"err":"unknownKey size"}"#),
+        ("due", "2026-09-20", r#"{"err":"keyNotWired due"}"#),
+        ("ci", "7", r#"{"err":"badValue ci"}"#),
+        ("est", "3d", r#"{"err":"badValue est"}"#),
+    ] {
+        let out = call(&req(&format!(
+            r#"[{{"op":"edit","id":"t3","key":"{key}","value":"{value}"}}]"#
+        )))
+        .unwrap();
+        assert_eq!(out, why, "{key}={value}: {out}");
+    }
+}
+
+/// Gap 32, refused loudly instead of shipped wrong: `Text.isSp` is space-only,
+/// so a tab hides tokens from this kernel — on such a line Rust's edit and a
+/// kernel edit could write two different `est:` slots.  Any edit addressed to
+/// a line whose raw bytes carry a tab is `tabbedLine`, by name.
+#[test]
+fn edit_of_a_tabbed_line_is_refused_loudly() {
+    let out = call(
+        r#"{"docs":[{"path":"w.md","lines":["- [ ] 2b Fix\tthe bug ^m1"]}],"cmds":[{"op":"edit","id":"m1","key":"est","value":"45m"}]}"#,
+    )
+    .unwrap();
+    assert_eq!(out, r#"{"err":{"kernel":"tabbedLine"}}"#, "{out}");
+}
+
+/// ...and the standing est op sits behind the same guard — the one behaviour
+/// change to a shipped op from this widening, on the refusal side only.
+#[test]
+fn the_est_op_refuses_the_same_tabbed_line() {
+    let out = call(
+        r#"{"docs":[{"path":"w.md","lines":["- [ ] 2b Fix\tthe bug ^m1"]}],"cmds":[{"op":"est","id":"m1","min":45}]}"#,
+    )
+    .unwrap();
+    assert_eq!(out, r#"{"err":{"kernel":"tabbedLine"}}"#, "{out}");
+}
+
+/// Unsetting a key the line does not carry is a named refusal, not a success
+/// that removed nothing.
+#[test]
+fn unset_of_a_key_the_line_does_not_carry_is_refused() {
+    let out = call(&req(r#"[{"op":"edit","id":"t3","key":"pref","value":""}]"#)).unwrap();
+    assert_eq!(out, r#"{"err":{"kernel":"keyAbsent"}}"#, "{out}");
+}

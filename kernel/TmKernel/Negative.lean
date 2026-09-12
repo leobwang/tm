@@ -524,4 +524,31 @@ def insertOver (s : Store) (i : Id) (e : Entity) (h : (s.get i).isSome = true) :
     Store :=
   s.insertFresh i e h
 
+-- ===========================================================================
+-- APPENDED 2026-09-12 (stage-3 edit-widening session): the keyed edit's
+-- bounded doors.  R10 says every bounded type crossing the wire goes through
+-- the smart constructor its decoder uses; these are the three doors staying
+-- shut when the smart constructor is bypassed.  Everything below must FAIL
+-- to compile.
+-- ===========================================================================
+
+/- CHEAT 44 — a `ci` above the bound.  `EditVal.ci` carries `Fin 6`, so the
+   wire value `7` cannot become a payload: `parseCi` is the smart constructor
+   (`if h : n < 6`), and building the `Fin` by hand fails because `decide`
+   cannot prove `7 < 6`. -/
+def sneakCi : EditVal := .ci ⟨7, by decide⟩
+
+/- CHEAT 45 — unset a key the edit path is not wired for.  `EditKey` demands
+   `keyEditable k = true`, and `keyEditable .demoted` is `false` — `demoted:`
+   is lifecycle state that `demote`/`readopt` own, and `rfl` here is a type
+   error, not a policy comment.  The only door is `parseCmd`'s `dif`, which
+   never opens for an unwired key. -/
+def unsetDemoted : EditKey := ⟨.demoted, rfl⟩
+
+/- CHEAT 46 — a day-carrying estimate.  `NdDur` demands `noDays = true`, and
+   `(Dur.simple 3 .days).noDays` is `false`: `est=3d` dies in `ndDur?` on the
+   wire, and here at `rfl`.  The value class is bounded in the type, not in a
+   comment. -/
+def dayEst : NdDur := ⟨Field.Dur.simple 3 Field.DurUnit.days, rfl⟩
+
 end Tm

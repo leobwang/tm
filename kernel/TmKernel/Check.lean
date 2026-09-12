@@ -1175,3 +1175,30 @@ open Tm
 #print axioms Tm.joinWith_splitOn
 #print axioms Tm.a_file_splits_into_the_lines_it_was_joined_from_char
 #print axioms Tm.joining_lines_is_not_injective_char
+
+-- (same session, edit-widening block: the keyed edit, gap 32's guard, and
+-- the est op routed through it)
+#print axioms Tm.ndDur?_is_parseDurND
+#print axioms Tm.setVal_writes_the_token_the_loader_reads
+#print axioms Tm.editValOf_refuses_unwired_keys
+#print axioms Tm.the_nine_wired_keys_accept_their_spec_values
+#print axioms Tm.key_of_map
+#print axioms Tm.editValOf_key
+#print axioms Tm.editE_refuses_a_tabbed_line
+#print axioms Tm.editE_ok_of_tabless
+#print axioms Tm.the_edit_path_writes_what_the_field_path_reads
+#print axioms Tm.unsetE_refuses_a_tabbed_line
+#print axioms Tm.unset_of_a_key_the_line_does_not_carry_is_refused
+#print axioms Tm.unsetE_ok_of_present
+#print axioms Tm.the_unset_path_removes_what_the_field_path_reads
+#print axioms Tm.the_est_op_is_the_keyed_est_edit
+#print axioms Tm.edit_of_a_tabbed_line_is_refused
+#print axioms Tm.est_of_a_tabbed_line_is_refused
+#print axioms Tm.unset_of_a_tabbed_line_is_refused
+#print axioms Tm.unset_of_an_absent_key_is_refused
+#print axioms Tm.the_tab_guard_is_not_vacuous
+#print axioms Tm.applyCmd_edit_succeeds
+#print axioms Tm.applyCmd_est_succeeds
+#print axioms Tm.applyCmd_unset_succeeds
+#print axioms Tm.parseCmd_rejects_edit_variants
+#print axioms Tm.parseCmd_reads_the_keyed_edit_forms

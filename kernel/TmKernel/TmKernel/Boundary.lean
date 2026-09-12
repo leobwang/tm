@@ -813,6 +813,12 @@ inductive ReqCmd
       newline, a tab, a `^`, or a title of only spaces is refused at the parser
       with a named message rather than rendering bytes no loader can take back. -/
   | add (seed : Nat) (doc : DocIx) (title : List Char)
+  /-- `tm edit ^id <key>=<value>`, keyed.  The payload is already parsed and
+      bounded: `parseCmd` runs the key's own field grammar (`editValOf`), so a
+      raw value string never rides past the boundary. -/
+  | edit (i : Id) (v : EditVal)
+  /-- `tm edit ^id <key>=` — unset.  The key carries its exposure proof. -/
+  | unset (i : Id) (k : EditKey)
   deriving DecidableEq
 
 /-- §6.3 stamps a demotion with the grain of the horizon that closed — `W37`
@@ -854,6 +860,26 @@ def parseCmd (j : Json) : Except String ReqCmd := do
     -- exactly what the command wrote, so the title must be trimmed by the host.
     if cs.head? == some ' ' || cs.getLast? == some ' ' then throw "titleEdge"
     return .add (← getNat j "seed") (← getNat j "doc") cs
+  | "edit" =>
+    -- The keyed edit.  §5.7: three refusals, each named — a spelling that is
+    -- not a key at all (`unknownKey`), a key the edit path is not wired for
+    -- yet (`keyNotWired`, README gap 40 names them), and a value the key's
+    -- own field grammar refuses (`badValue`).  An empty value is the unset
+    -- form, `tm edit ^id <key>=`.
+    let i ← getStr j "id"
+    let ks ← getStr j "key"
+    let vs ← getStr j "value"
+    match Field.Key.ofName? ks.toList with
+    | none => throw s!"unknownKey {ks}"
+    | some k =>
+      if h : keyEditable k = true then
+        if vs.isEmpty then
+          return .unset i.toList ⟨k, h⟩
+        else
+          match editValOf k vs.toList with
+          | some v => return .edit i.toList v
+          | none   => throw s!"badValue {ks}"
+      else throw s!"keyNotWired {ks}"
   | _ => throw s!"unknown op {op}"
 
 def kerrName : KErr → String
@@ -863,6 +889,8 @@ def kerrName : KErr → String
   | .alreadyDemoted => "alreadyDemoted"
   | .badHorizon     => "badHorizon"
   | .badItem        => "badItem"
+  | .tabbedLine     => "tabbedLine"
+  | .keyAbsent      => "keyAbsent"
 
 /-- Fresh rank in the destination document: strictly greater than every rank
 already there, so a move can never collide on a rank either.  `freshRank_gt`
@@ -988,6 +1016,8 @@ def applyCmd (c : ReqCmd) (p : WfPlan) : Except KErr WfPlan :=
     | .error k => .error k
     | .ok dd   => cmdReadopt i (freshRank p.val dd.ix) p dd
   | .rank i n       => cmdRank i n p
+  | .edit i v       => cmdEdit v i p
+  | .unset i k      => cmdUnset k i p
   | .add seed d title =>
     match resolveDest p.val d with
     | .error k => .error k
@@ -3078,12 +3108,39 @@ theorem move_has_no_inverse_command :
       simp at hdoc
     | est i' v' =>
       rw [hcmd] at hcon
-      simp only [applyCmd, cmdSetEst] at hcon
+      simp only [applyCmd, cmdSetEst, cmdEdit] at hcon
       have h := hback i' _ hcon
-      have he : setEstE v' e1 = e := Except.ok.inj h
-      have hdoc : e.val.live.doc = e1.val.live.doc := by rw [← he]; rfl
-      rw [hml, he1live] at hdoc
-      simp at hdoc
+      unfold editE at h
+      split at h
+      · injection h
+      · have hdoc : e.val.live.doc = e1.val.live.doc := by
+          rw [← Except.ok.inj h]
+        rw [hml, he1live] at hdoc
+        simp at hdoc
+    | edit i' v' =>
+      rw [hcmd] at hcon
+      simp only [applyCmd, cmdEdit] at hcon
+      have h := hback i' _ hcon
+      unfold editE at h
+      split at h
+      · injection h
+      · have hdoc : e.val.live.doc = e1.val.live.doc := by
+          rw [← Except.ok.inj h]
+        rw [hml, he1live] at hdoc
+        simp at hdoc
+    | unset i' k' =>
+      rw [hcmd] at hcon
+      simp only [applyCmd, cmdUnset] at hcon
+      have h := hback i' _ hcon
+      unfold unsetE at h
+      split at h
+      · injection h
+      · split at h
+        · have hdoc : e.val.live.doc = e1.val.live.doc := by
+            rw [← Except.ok.inj h]
+          rw [hml, he1live] at hdoc
+          simp at hdoc
+        · injection h
     | demote i' d' st' =>
       rw [hcmd] at hcon
       cases hrd' : resolveDest q.val d' with
@@ -3128,5 +3185,174 @@ theorem move_has_no_inverse_command :
           rw [hqdom] at hdl
           omega
         · simp at hcon
+
+/-! ## §5.8 for the widened `edit` — the wire forms, both directions
+
+The keyed edit's entity-level laws live in Cmd.lean next to `editE`; these are
+the same claims about the code the FFI runs — `applyCmd` on `ReqCmd.edit` /
+`ReqCmd.unset` / the standing `ReqCmd.est` — plus the named parse-tier
+refusals, `parseCmd_rejects_add_title_variants`-style. -/
+
+/-- The standing `est` op **is** the keyed edit at `.est` — one path, one
+guard, one reader.  Definitional, so the two can never drift apart. -/
+theorem the_est_op_is_the_keyed_est_edit (i : Id) (v : Nat) (p : WfPlan) :
+    applyCmd (.est i v) p
+      = applyCmd (.edit i (.est ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩)) p := rfl
+
+/-- **Gap 32's check bites on the wire**: a keyed edit addressed to a line
+whose raw bytes carry a tab is refused as `tabbedLine`, whatever the key and
+value, and nothing is written. -/
+theorem edit_of_a_tabbed_line_is_refused (p : WfPlan) (i : Id) (e : Entity) (v : EditVal)
+    (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = true) :
+    applyCmd (.edit i v) p = .error .tabbedLine := by
+  show p.mapAt i (editE v) = .error .tabbedLine
+  unfold WfPlan.mapAt
+  split
+  · rename_i hn; rw [hget] at hn; simp at hn
+  · rename_i a hget'
+    rw [hget] at hget'
+    injection hget' with hget'
+    subst hget'
+    rw [editE_refuses_a_tabbed_line v _ htab]
+
+/-- **And the `est` op is behind the same guard.**  This is the one behaviour
+change to a shipped op, taken deliberately and on the refusal side only: the
+un-guarded `est` was the kernel writing the *second* `est:` of a line whose
+tab hid the first — the S2 shape, in the shipped operation (gap 32). -/
+theorem est_of_a_tabbed_line_is_refused (p : WfPlan) (i : Id) (e : Entity) (v : Nat)
+    (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = true) :
+    applyCmd (.est i v) p = .error .tabbedLine :=
+  edit_of_a_tabbed_line_is_refused p i e
+    (.est ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩) hget htab
+
+/-- The unset guard, on the wire. -/
+theorem unset_of_a_tabbed_line_is_refused (p : WfPlan) (i : Id) (e : Entity) (k : EditKey)
+    (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = true) :
+    applyCmd (.unset i k) p = .error .tabbedLine := by
+  show p.mapAt i (unsetE k) = .error .tabbedLine
+  unfold WfPlan.mapAt
+  split
+  · rename_i hn; rw [hget] at hn; simp at hn
+  · rename_i a hget'
+    rw [hget] at hget'
+    injection hget' with hget'
+    subst hget'
+    rw [unsetE_refuses_a_tabbed_line k _ htab]
+
+/-- §5.7 at the wire: unsetting a key the line does not carry is `keyAbsent`,
+not a success that removed nothing. -/
+theorem unset_of_an_absent_key_is_refused (p : WfPlan) (i : Id) (e : Entity) (k : EditKey)
+    (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = false)
+    (hkey : Field.hasKeyTok k.val e.val.line = false) :
+    applyCmd (.unset i k) p = .error .keyAbsent := by
+  show p.mapAt i (unsetE k) = .error .keyAbsent
+  unfold WfPlan.mapAt
+  split
+  · rename_i hn; rw [hget] at hn; simp at hn
+  · rename_i a hget'
+    rw [hget] at hget'
+    injection hget' with hget'
+    subst hget'
+    rw [unset_of_a_key_the_line_does_not_carry_is_refused k _ htab hkey]
+
+/-- **The tab hypothesis is satisfiable on this kernel's own loader** — the
+guard is a check something real can fail, not decoration.  A week file whose
+item line carries a tab inside a word loads whole (`Text.isSp` is space-only,
+so the tab is a word character), and the loaded entity trips `lineHasTab`. -/
+def tabbedWitnessDoc : ReqDoc :=
+  ⟨"week/2026-W37.md", some ⟨week, 35⟩,
+    ["# Tasks".toList, "- [ ] 5 6b Finish\tthe report ^m1".toList]⟩
+
+theorem the_tab_guard_is_not_vacuous :
+    (match loadPlan [tabbedWitnessDoc] with
+     | .ok p => (p.val.store.get "m1".toList).map (fun e => lineHasTab e.val.line)
+     | .error _ => none) = some true := by decide
+
+/-- **The complement (§5.8): a tabless line is not refused on that ground.**
+`cmdMove_succeeds`' mirror for the keyed edit: the edit moves no placement, so
+`normalized_after_edit` discharges the rank conjunct outright and what stays a
+hypothesis is `itemsWfButRanks` — the six conjuncts an edit can genuinely
+break (a `min:` whose rate re-parses is still subject to `shapesWf`, say).
+Combined with `the_edit_path_writes_what_the_field_path_reads` (Cmd.lean) the
+post-state's field view reads exactly the value the wire carried. -/
+theorem applyCmd_edit_succeeds (p : WfPlan) (i : Id) (e : Entity) (v : EditVal)
+    (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = false)
+    (hrest : ∀ hs : (p.val.store.get i).isSome = true,
+      itemsWfButRanks { p.val with store := p.val.store.set i (⟨{ e.val with line := setVal v e.val.line }, e.property⟩ : Entity) hs } = true) :
+    ∃ q : WfPlan, applyCmd (.edit i v) p = .ok q ∧
+      q.val.store.get i = some ⟨{ e.val with line := setVal v e.val.line }, e.property⟩ := by
+  have hf := editE_ok_of_tabless v e htab
+  have hdom : i ∈ p.val.store.dom := (p.val.store.domSpec i).mpr (by rw [hget]; rfl)
+  have hore := List.all_eq_true.1 (planWf_parts p.property).2.2.2.1 i hdom
+  rw [hget] at hore
+  have hor : demotionOriented p.val
+      (⟨{ e.val with line := setVal v e.val.line }, e.property⟩ : Entity) = true := hore
+  have hin : entityInRange p.val
+      (⟨{ e.val with line := setVal v e.val.line }, e.property⟩ : Entity) = true :=
+    entityInRange_of_mem p i e hget
+  obtain ⟨q, hq, hqi, _⟩ := mapAt_ok_of_inRange p i (editE v) e _ hget hf hin hor
+    (fun hs => itemsWf_of_normalized _
+      (normalized_after_edit p i e _ hs hget rfl rfl) (hrest hs))
+  exact ⟨q, hq, hqi⟩
+
+/-- The same, for the standing `est` op — the success form it never had. -/
+theorem applyCmd_est_succeeds (p : WfPlan) (i : Id) (e : Entity) (v : Nat)
+    (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = false)
+    (hrest : ∀ hs : (p.val.store.get i).isSome = true,
+      itemsWfButRanks { p.val with store := p.val.store.set i (⟨{ e.val with line := setVal (.est ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩) e.val.line }, e.property⟩ : Entity) hs } = true) :
+    ∃ q : WfPlan, applyCmd (.est i v) p = .ok q ∧
+      q.val.store.get i = some ⟨{ e.val with line := setVal (.est ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩) e.val.line }, e.property⟩ :=
+  applyCmd_edit_succeeds p i e _ hget htab hrest
+
+/-- And the unset success form: present key, tabless line, the removal lands
+and the store holds exactly the filtered line. -/
+theorem applyCmd_unset_succeeds (p : WfPlan) (i : Id) (e : Entity) (k : EditKey)
+    (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = false)
+    (hkey : Field.hasKeyTok k.val e.val.line = true)
+    (hrest : ∀ hs : (p.val.store.get i).isSome = true,
+      itemsWfButRanks { p.val with store := p.val.store.set i (⟨{ e.val with line := Field.unsetKey k.val e.val.line }, e.property⟩ : Entity) hs } = true) :
+    ∃ q : WfPlan, applyCmd (.unset i k) p = .ok q ∧
+      q.val.store.get i = some ⟨{ e.val with line := Field.unsetKey k.val e.val.line }, e.property⟩ := by
+  have hf := unsetE_ok_of_present k e htab hkey
+  have hdom : i ∈ p.val.store.dom := (p.val.store.domSpec i).mpr (by rw [hget]; rfl)
+  have hore := List.all_eq_true.1 (planWf_parts p.property).2.2.2.1 i hdom
+  rw [hget] at hore
+  have hor : demotionOriented p.val
+      (⟨{ e.val with line := Field.unsetKey k.val e.val.line }, e.property⟩ : Entity) = true :=
+    hore
+  have hin : entityInRange p.val
+      (⟨{ e.val with line := Field.unsetKey k.val e.val.line }, e.property⟩ : Entity) = true :=
+    entityInRange_of_mem p i e hget
+  obtain ⟨q, hq, hqi, _⟩ := mapAt_ok_of_inRange p i (unsetE k) e _ hget hf hin hor
+    (fun hs => itemsWf_of_normalized _
+      (normalized_after_edit p i e _ hs hget rfl rfl) (hrest hs))
+  exact ⟨q, hq, hqi⟩
+
+/-- §5.7's parse-tier refusals for the keyed edit, each by name: a spelling
+that is no key, a key not yet wired (README gap 40), and two values the field
+grammars refuse — `ci:7` is the `Fin 6` smart constructor biting (R10), and
+`est=3d` is `NdDur` refusing a day-carrying estimate. -/
+theorem parseCmd_rejects_edit_variants :
+    parseCmd (Json.mkObj [("op", Json.str "edit"), ("id", Json.str "t3"),
+        ("key", Json.str "size"), ("value", Json.str "3")]) = .error "unknownKey size" ∧
+    parseCmd (Json.mkObj [("op", Json.str "edit"), ("id", Json.str "t3"),
+        ("key", Json.str "due"), ("value", Json.str "2026-09-20")]) = .error "keyNotWired due" ∧
+    parseCmd (Json.mkObj [("op", Json.str "edit"), ("id", Json.str "t3"),
+        ("key", Json.str "ci"), ("value", Json.str "7")]) = .error "badValue ci" ∧
+    parseCmd (Json.mkObj [("op", Json.str "edit"), ("id", Json.str "t3"),
+        ("key", Json.str "est"), ("value", Json.str "3d")]) = .error "badValue est" :=
+  ⟨rfl, rfl, rfl, rfl⟩
+
+/-- The positive parse forms are not vacuous: a keyed value lands as `.edit`
+with the key it named, and an empty value is the unset form. -/
+theorem parseCmd_reads_the_keyed_edit_forms :
+    ((match parseCmd (Json.mkObj [("op", Json.str "edit"), ("id", Json.str "t3"),
+        ("key", Json.str "pref"), ("value", Json.str "07:30")]) with
+      | .ok (.edit i v) => i == "t3".toList && v.key == Field.Key.pref
+      | _ => false) &&
+     (match parseCmd (Json.mkObj [("op", Json.str "edit"), ("id", Json.str "t3"),
+        ("key", Json.str "est"), ("value", Json.str "")]) with
+      | .ok (.unset i k) => i == "t3".toList && k.val == Field.Key.est
+      | _ => false)) = true := by decide
 
 end Tm

@@ -58,6 +58,19 @@ inductive KErr
       the *loader's* diagnostic (the `itemCheck` field) and never accompanies
       a command refusal. -/
   | badItem
+  /-- the line's raw bytes contain a tab.  `Text.isSp` is space-only (gap 32),
+      so a tab is a *word* character to this kernel while it is whitespace to
+      the shipped Rust tokenizer: on a line with a tab before a repeated
+      `est:`, `tm edit` writes the first occurrence and the kernel would
+      write the second.  An edit routed through two token readings is the S2
+      shape, so the edit path refuses such a line loudly instead of shipping
+      a wrong write.  Widening `isSp` is a grammar-wide behaviour change and
+      stays plan-tier; this refusal is the sanctioned narrow route. -/
+  | tabbedLine
+  /-- `tm edit ^id <key>=` (unset) of a key the line does not carry: there is
+      no token to remove, and reporting success would be the "success
+      reported, nothing changed" shape C1 died of. -/
+  | keyAbsent
 deriving DecidableEq, Repr
 
 /-- The only way to make an `Entity`.  Both cheats are compile errors:
@@ -507,12 +520,289 @@ theorem mapAt_rejects_unoriented (p : WfPlan) (i : Id) (f : Entity → Except KE
     rw [hf]
     simp only [dif_neg hq]
 
+/-! ## The keyed edit — §4.1's other fields through gap 4's collapsed path
+
+`tm edit ^id <key>=<value>`, generalised from the single `est` shape.  The
+discipline is §5.3's one-reader rule, in both directions:
+
+* **read**: the value arriving on the wire is parsed by the *same* `Field`
+  value parser the loader's view for that key calls — `editValOf` below names
+  one parser per key and every one of them is the view's own.  There is no
+  boundary re-encoding of any value grammar.
+* **write**: the accepted value goes through the *same* per-key setter whose
+  `view ∘ set = id` proof stands in Line.lean (`setDur`, `setPref`, … — all
+  of them `setKey` under one name, R11's condition).  What lands on the line
+  is the field's canonical rendering of the parsed value, so re-loading reads
+  back exactly what the command wrote.
+
+Nine of the eighteen `Field.Key`s are wired: `est`, `dur`, `buffer`, `pref`,
+`on-miss`, `after-done`, `min`, `max` (spelled `cap` or `max` on the wire,
+written as `max:` — `set_max_writes_max`), `ci`.  The other nine are recorded
+by name in the README (gap 40): each either lacks the `parse ⇒ wf` bridge its
+`view_set_*` hypothesis needs, or — `demoted` — is lifecycle state that
+`demote`/`readopt` own and `edit` must not forge.  R10: the two bounded value
+classes crossing here, day-free durations and `Fin 6`, go through the smart
+constructors their decoders use (`ndDur?`, `parseCi`). -/
+
+/-- Gap 32's guard: a tab anywhere in the raw bytes the line renders from —
+indent, any separator, any word.  `toksWf` keeps separators space-only, so on
+a loaded line a tab can only hide inside a word, but the guard checks all
+three so it is a fact about the bytes and not about a parse. -/
+def lineHasTab (r : RawItem) : Bool :=
+  r.indent.any (· == '\t') ||
+    r.toks.any (fun t => t.sep.any (· == '\t') || t.word.any (· == '\t'))
+
+/-- A day-free duration — `est:`/`dur:` refuse `3d`.  The bound lives in the
+type so a days-carrying `Dur` cannot reach `setEst`/`setDur` from the wire at
+all (R10); `Negative.lean` CHEAT 46 is the door staying shut. -/
+abbrev NdDur := { d : Dur // d.noDays = true }
+
+/-- R10's smart constructor for `NdDur`, and it is the loader's own grammar:
+`ndDur?_is_parseDurND` says accepting and bounding here *is* `parseDurND`. -/
+def ndDur? (w : List Char) : Option NdDur :=
+  (Field.parseDur w).bind (fun d => if h : d.noDays = true then some ⟨d, h⟩ else none)
+
+theorem ndDur?_is_parseDurND (w : List Char) :
+    (ndDur? w).map Subtype.val = Field.parseDurND w := by
+  unfold ndDur? Field.parseDurND
+  cases Field.parseDur w with
+  | none => rfl
+  | some d =>
+      simp only [Option.bind_some]
+      by_cases h : d.noDays = true <;> simp [h]
+
+/-- One wire value, already parsed and bounded.  One constructor per wired
+key, carrying the same type the loader's view for that key produces. -/
+inductive EditVal
+  | est       (d : NdDur)
+  | dur       (d : NdDur)
+  | buffer    (d : Dur)
+  | pref      (p : Field.Pref)
+  | onMiss    (m : Field.OnMiss)
+  | afterDone (a : Field.AfterDone)
+  | floor     (q : Field.Rate)
+  | cap       (q : Field.Rate)
+  | ci        (c : Fin 6)
+deriving DecidableEq
+
+/-- The key each value writes. -/
+def EditVal.key : EditVal → Field.Key
+  | .est _ => .est | .dur _ => .dur | .buffer _ => .buffer
+  | .pref _ => .pref | .onMiss _ => .onMiss | .afterDone _ => .afterDone
+  | .floor _ => .floor | .cap _ => .cap | .ci _ => .ci
+
+/-- The token body the setter writes: the field's own renderer, per key. -/
+def EditVal.rendered : EditVal → List Char
+  | .est d => Field.renderDur d.val
+  | .dur d => Field.renderDur d.val
+  | .buffer d => Field.renderDur d
+  | .pref p => Field.renderPref p
+  | .onMiss m => Field.renderOnMiss m
+  | .afterDone a => Field.renderAfterDone a
+  | .floor q => Field.renderRate q
+  | .cap q => Field.renderRate q
+  | .ci c => Field.renderCi c
+
+/-- One write path: every branch is the Line.lean setter that carries its
+`view ∘ set = id` proof, and nothing else is exported as a setter (R11). -/
+def setVal : EditVal → RawItem → RawItem
+  | .est d, r => Field.setEst d.val r
+  | .dur d, r => Field.setDur d.val r
+  | .buffer d, r => Field.setBuffer d r
+  | .pref p, r => Field.setPref p r
+  | .onMiss m, r => Field.setOnMiss m r
+  | .afterDone a, r => Field.setAfterDone a r
+  | .floor q, r => Field.setMin q r
+  | .cap q, r => Field.setMax q r
+  | .ci c, r => Field.setCi c r
+
+/-- Whatever key the command writes, the token that lands is read back as that
+key with the rendered value — `lookupKey_setKey`, once, for all nine, which is
+what makes a tenth key unable to be the odd one out. -/
+theorem setVal_writes_the_token_the_loader_reads (v : EditVal) (r : RawItem) :
+    Field.lookupKey v.key (setVal v r) = some v.rendered := by
+  cases v <;> exact Field.lookupKey_setKey _ _ _
+
+/-- Which keys the wire can edit today.  `editValOf` is defined on exactly
+these (`editValOf_refuses_unwired_keys`); the README's gap 40 names the rest. -/
+def keyEditable : Field.Key → Bool
+  | .est | .dur | .buffer | .pref | .onMiss | .afterDone | .floor | .cap | .ci => true
+  | _ => false
+
+/-- An unset can only name a key the edit path is wired for; the proof rides
+in the type, so `unsetKey .demoted` cannot be reached from the wire at all
+(`Negative.lean` CHEAT 45). -/
+abbrev EditKey := { k : Field.Key // keyEditable k = true }
+
+/-- **The one value-grammar table (§5.3).**  Each branch is the parser the
+loader's view for that key binds — `viewDur` is `parseDurND`, `viewPref` is
+`parsePref`, and so on — so a value accepted here is a value the loader reads,
+and a value the loader would refuse never reaches a setter. -/
+def editValOf : Field.Key → List Char → Option EditVal
+  | .est, w => (ndDur? w).map .est
+  | .dur, w => (ndDur? w).map .dur
+  | .buffer, w => (Field.parseDur w).map .buffer
+  | .pref, w => (Field.parsePref w).map .pref
+  | .onMiss, w => (Field.parseOnMiss w).map .onMiss
+  | .afterDone, w => (Field.parseAfterDone w).map .afterDone
+  | .floor, w => (Field.parseRate w).map .floor
+  | .cap, w => (Field.parseRate w).map .cap
+  | .ci, w => (Field.parseCi w).map .ci
+  | _, _ => none
+
+/-- The table and the exposure predicate agree, downward: a key outside the
+wired nine parses nothing, whatever the bytes. -/
+theorem editValOf_refuses_unwired_keys (k : Field.Key) (w : List Char)
+    (h : keyEditable k = false) : editValOf k w = none := by
+  cases k <;> first | rfl | exact absurd h (by decide)
+
+/-- …and upward: the exposure is not vacuous — each wired key accepts its
+§4.1 spec value.  (`cap` is parsed under its written spelling `max`;
+`Key.ofName?` maps both spellings to `.cap`.) -/
+theorem the_nine_wired_keys_accept_their_spec_values :
+    ((editValOf .est "1b".toList).isSome &&
+     (editValOf .dur "45m".toList).isSome &&
+     (editValOf .buffer "3d".toList).isSome &&
+     (editValOf .pref "wake+2h".toList).isSome &&
+     (editValOf .onMiss "persist".toList).isSome &&
+     (editValOf .afterDone "2d~1d".toList).isSome &&
+     (editValOf .floor "2b/w".toList).isSome &&
+     (editValOf .cap "6b/w".toList).isSome &&
+     (editValOf .ci "3".toList).isSome) = true := by decide
+
+theorem key_of_map {α : Type} {f : α → EditVal} {k : Field.Key} {o : Option α} {v : EditVal}
+    (h : o.map f = some v) (hf : ∀ x, (f x).key = k) : v.key = k := by
+  cases o with
+  | none => exact absurd h (by simp)
+  | some x =>
+      simp only [Option.map_some, Option.some.injEq] at h
+      rw [← h]
+      exact hf x
+
+/-- The table never answers for a different key than it was asked — the
+"one setter out of a family writing the wrong slot" shape (C1) cannot hide in
+the dispatch table either. -/
+theorem editValOf_key (k : Field.Key) (w : List Char) (v : EditVal)
+    (h : editValOf k w = some v) : v.key = k := by
+  cases k <;> simp only [editValOf] at h <;>
+    first
+      | exact key_of_map h (fun _ => rfl)
+      | exact absurd h (by simp)
+
+/-! ### The entity transforms, behind gap 32's guard -/
+
+/-- `tm edit ^id <key>=<value>` at the entity: refuse a tabbed line by name,
+otherwise write through the field setter.  `wf` never reads the line's bytes,
+so the standing proof rides along — an edit cannot move a placement. -/
+def editE (v : EditVal) (e : Entity) : Except KErr Entity :=
+  if lineHasTab e.val.line then .error .tabbedLine
+  else .ok ⟨{ e.val with line := setVal v e.val.line }, e.property⟩
+
+/-- `tm edit ^id <key>=` at the entity: same guard, then remove the key's
+tokens — or refuse by name if there is nothing to remove. -/
+def unsetE (k : EditKey) (e : Entity) : Except KErr Entity :=
+  if lineHasTab e.val.line then .error .tabbedLine
+  else if Field.hasKeyTok k.val e.val.line then
+    .ok ⟨{ e.val with line := Field.unsetKey k.val e.val.line }, e.property⟩
+  else .error .keyAbsent
+
+/-- **The gap-32 check bites** (§5.8): a line carrying a tab anywhere in its
+raw bytes is refused, whatever the key and value. -/
+theorem editE_refuses_a_tabbed_line (v : EditVal) (e : Entity)
+    (h : lineHasTab e.val.line = true) : editE v e = .error .tabbedLine := by
+  unfold editE; rw [if_pos h]
+
+/-- **…and does not over-bite**: a tabless line is never refused on that
+ground — the edit goes through, to exactly the field-setter write. -/
+theorem editE_ok_of_tabless (v : EditVal) (e : Entity)
+    (h : lineHasTab e.val.line = false) :
+    editE v e = .ok ⟨{ e.val with line := setVal v e.val.line }, e.property⟩ := by
+  unfold editE; rw [if_neg (by simp [h])]
+
+/-- **Gap 4's collapse, generalised over the wired keys.**  Whatever keyed
+value the command path accepts, the field path — the very view the loader and
+`Core`'s readers consume — reads back exactly that value.  The `est` case is
+`Core.est` itself (C1's slot pair), the `ci` case is `Core.ci` (C2's), and no
+hypothesis is asked about the entity's other bytes. -/
+theorem the_edit_path_writes_what_the_field_path_reads (v : EditVal) (e a : Entity)
+    (h : editE v e = .ok a) :
+    match v with
+    | .est d => a.val.est = some d.val
+    | .dur d => Field.viewDur a.val.line = some d.val
+    | .buffer d => a.val.buffer = some d
+    | .pref p => Field.viewPref a.val.line = some p
+    | .onMiss m => a.val.onMiss = some m
+    | .afterDone x => Field.viewAfterDone a.val.line = some x
+    | .floor q => Field.viewMin a.val.line = some q
+    | .cap q => Field.viewMax a.val.line = some q
+    | .ci c => a.val.ci = some c := by
+  unfold editE at h
+  split at h
+  · injection h
+  · injection h with h
+    subst h
+    cases v with
+    | est d => exact Field.view_set_remaining d.val e.val.line d.property
+    | dur d => exact Field.view_set_dur d.val e.val.line d.property
+    | buffer d => exact Field.view_set_buffer d e.val.line
+    | pref p => exact Field.view_set_pref p e.val.line
+    | onMiss m => exact Field.view_set_onMiss m e.val.line
+    | afterDone x => exact Field.view_set_afterDone x e.val.line
+    | floor q => exact Field.view_set_min q e.val.line
+    | cap q => exact Field.view_set_max q e.val.line
+    | ci c => exact Field.view_set_ci c e.val.line
+
+/-- The unset guard bites like the edit guard. -/
+theorem unsetE_refuses_a_tabbed_line (k : EditKey) (e : Entity)
+    (h : lineHasTab e.val.line = true) : unsetE k e = .error .tabbedLine := by
+  unfold unsetE; rw [if_pos h]
+
+/-- **The absence check bites** (§5.7): unsetting a key the line does not
+carry is `keyAbsent`, by name, not a reported success that removed nothing. -/
+theorem unset_of_a_key_the_line_does_not_carry_is_refused (k : EditKey) (e : Entity)
+    (ht : lineHasTab e.val.line = false) (hk : Field.hasKeyTok k.val e.val.line = false) :
+    unsetE k e = .error .keyAbsent := by
+  unfold unsetE
+  rw [if_neg (by simp [ht]), if_neg (by simp [hk])]
+
+/-- …and does not over-bite: present key, tabless line, the removal goes
+through. -/
+theorem unsetE_ok_of_present (k : EditKey) (e : Entity)
+    (ht : lineHasTab e.val.line = false) (hk : Field.hasKeyTok k.val e.val.line = true) :
+    unsetE k e = .ok ⟨{ e.val with line := Field.unsetKey k.val e.val.line }, e.property⟩ := by
+  unfold unsetE
+  rw [if_neg (by simp [ht]), if_pos hk]
+
+/-- What the unset removes, the field path stops seeing — `lookupKey_unsetKey`
+carried through the command path. -/
+theorem the_unset_path_removes_what_the_field_path_reads (k : EditKey) (e a : Entity)
+    (h : unsetE k e = .ok a) : Field.lookupKey k.val a.val.line = none := by
+  unfold unsetE at h
+  split at h
+  · injection h
+  · split at h
+    · injection h with h
+      subst h
+      exact Field.lookupKey_unsetKey k.val e.val.line
+    · injection h
+
 /-- `tm move`.  The destination is a `Dest`, not a `Nat`. -/
 def cmdMove (i : Id) (rank : Nat) : Relocation := fun p d => p.mapAt i (moveTo (d.site rank))
 /-- `tm drop`. -/
 def cmdDrop (i : Id) : Transform := (·.mapAt i (fun e => .ok (drop e)))
-/-- `tm edit ^id est=v`. -/
-def cmdSetEst (v : Nat) (i : Id) : Transform := (·.mapAt i (fun e => .ok (setEstE v e)))
+/-- `tm edit ^id <key>=<value>` — the keyed form, on the wire since the edit
+widening. -/
+def cmdEdit (v : EditVal) (i : Id) : Transform := (·.mapAt i (editE v))
+/-- `tm edit ^id <key>=` — remove the key's tokens. -/
+def cmdUnset (k : EditKey) (i : Id) : Transform := (·.mapAt i (unsetE k))
+/-- `tm edit ^id est=v`.  Since the edit widening this **is** the keyed edit at
+`.est` — one path, one guard, one reader — so the wire behaviour of the
+standing `est` op moves in exactly one respect: a tabbed line is now refused
+as `tabbedLine` where it was silently edited against the wrong token reading
+(gap 32).  The written token is unchanged: `renderDur (Dur.simple v minutes)`,
+the same bytes `setEstE` wrote. -/
+def cmdSetEst (v : Nat) (i : Id) : Transform :=
+  cmdEdit (.est ⟨Dur.simple v DurUnit.minutes, rfl⟩) i
 /-- `tm demote`. -/
 def cmdDemote (i : Id) (rank : Nat) (s : Stamp) : Relocation :=
   fun p d => p.mapAt i (demote (d.site rank) s)
