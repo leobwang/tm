@@ -2874,3 +2874,18 @@ dead-code-warned in the binary crate, but a clean `cargo check -p tm
 --all-targets` today emits **zero warnings** — it is live at
 `tm/src/tui/mod.rs` (the fault-vs-refusal fork at the verb seam) and
 exercised by `a_kernel_fault_propagates_and_a_refusal_stays_a_message`.
+
+**Two write paths, two newline conventions — recorded, by name.** The
+byte-level re-verification of the bridge fix found the divergence it
+implies: the bridge normalizes every file it rewrites to newline-terminated
+(the convention above), while the **legacy** non-bridge writers —
+`store.insert_line` and whatever else still rewrites files on the old Rust
+path (reached today by `tm add`'s series carve-out, and by every verb the
+kernel does not yet back) — rewrite a non-newline-terminated file **as-is**.
+No recorded claim is broken (the convention is bridge-scoped everywhere it
+is written) and neither path corrupts bytes; but the same tree can now be
+touched by both conventions, and the divergence retires only as the legacy
+writers do — stage 4 (`close`), stage 6 (`plan`), and gap 5's id-less lines
+are the remaining callers. Also repaired at this commit:
+`kernel_bridge.rs`'s module-doc verb list, which still enumerated five
+verbs after `rank`, `add` and the keyed `edit` joined [`apply`].

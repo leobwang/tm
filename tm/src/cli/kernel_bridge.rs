@@ -1,9 +1,10 @@
 //! The single choke point between the CLI and the Lean kernel (stage 3).
 //!
-//! Every kernel-backed verb — `move`, `drop`, `edit est=`, `demote`,
-//! `readopt` — goes through [`apply`], and nothing else talks to
-//! `tm-kernel-ffi`: one place builds the request, one place reads the
-//! response, one place writes files, so the wire format cannot fork.
+//! Every kernel-backed verb — `move`, `drop`, `demote`, `readopt`, `rank`,
+//! `add`, and the keyed `edit`/unset (`est=` included) — goes through
+//! [`apply`], and nothing else talks to `tm-kernel-ffi`: one place builds
+//! the request, one place reads the response, one place writes files, so
+//! the wire format cannot fork.
 //!
 //! The shape, end to end:
 //!
