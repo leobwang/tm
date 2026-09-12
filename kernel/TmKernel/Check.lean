@@ -1241,3 +1241,97 @@ open Tm
 #print axioms Tm.the_next_byte_guard_is_satisfiable
 #print axioms Tm.jparseNat_refuses_a_non_numeral
 #print axioms Tm.jparseNat_reads_a_bare_numeral
+
+-- ===========================================================================
+-- APPENDED 2026-09-12 (stage-3, J-route step 2: the emitter, the parser and
+-- the round trip).  Every theorem TmKernel/Json.lean gained at J3-J4, in
+-- declaration order: jemit, the fuel bound, the scanner, the parser's step
+-- equations, jval_jemit / jparse_jemit, the fuel-sufficiency induction ending
+-- in jparse_never_runs_out, and the witnesses.  Still not on the wire --
+-- Boundary.lean builds Lean.Json until J5.
+-- ===========================================================================
+#print axioms Tm.one_le_jemitTail
+#print axioms Tm.one_le_jemitOTail
+#print axioms Tm.jemitTail_le_jemitArr
+#print axioms Tm.jemitOTail_le_jemitObj
+#print axioms Tm.jfuel_le_jemit
+#print axioms Tm.skipWs_cons_of_not_ws
+#print axioms Tm.jscan_cons_plain
+#print axioms Tm.jscan_cons_esc
+#print axioms Tm.hexChar_ne_quote_or_backslash
+#print axioms Tm.jscan_escOf
+#print axioms Tm.jscan_jescape
+#print axioms Tm.jstring_jescape
+#print axioms Tm.charDigit_cases
+#print axioms Tm.charDigit_not_ws
+#print axioms Tm.charDigit_ne_closers
+#print axioms Tm.jemit_head
+#print axioms Tm.notDigitStart_jemitTail
+#print axioms Tm.notDigitStart_jemitOTail
+#print axioms Tm.jval_null
+#print axioms Tm.jval_true
+#print axioms Tm.jval_false
+#print axioms Tm.jval_string
+#print axioms Tm.jval_lbracket
+#print axioms Tm.jval_lbrace
+#print axioms Tm.jval_digit
+#print axioms Tm.jarr_empty
+#print axioms Tm.jarr_value
+#print axioms Tm.jarr_of_jemit
+#print axioms Tm.jtail_end
+#print axioms Tm.jtail_comma
+#print axioms Tm.jobj_empty
+#print axioms Tm.jobj_pair
+#print axioms Tm.jobj_of_jemitPair
+#print axioms Tm.jotail_end
+#print axioms Tm.jotail_comma
+#print axioms Tm.jpair_key
+#print axioms Tm.jval_jemit
+#print axioms Tm.jparse_jemit
+#print axioms Tm.skipWs_length_le
+#print axioms Tm.jscan_length
+#print axioms Tm.jstring_length
+#print axioms Tm.jstring_ne_outOfFuel
+#print axioms Tm.jdigits_length
+#print axioms Tm.jparseNat_length
+#print axioms Tm.jdigits_fst_digits
+#print axioms Tm.jparseNat_some_of_digit
+#print axioms Tm.jval_consumes_step
+#print axioms Tm.jarr_consumes_step
+#print axioms Tm.jtail_consumes_step
+#print axioms Tm.jobj_consumes_step
+#print axioms Tm.jpair_consumes_step
+#print axioms Tm.jotail_consumes_step
+#print axioms Tm.jparser_consumes
+#print axioms Tm.jval_fuel_step
+#print axioms Tm.jarr_fuel_step
+#print axioms Tm.jtail_fuel_step
+#print axioms Tm.jobj_fuel_step
+#print axioms Tm.jpair_fuel_step
+#print axioms Tm.jotail_fuel_step
+#print axioms Tm.jparser_fuel
+#print axioms Tm.jparse_never_runs_out
+#print axioms Tm.demo_jemit_bytes
+#print axioms Tm.the_emitter_keeps_build_order
+#print axioms Tm.the_emitter_is_compress_shaped
+#print axioms Tm.the_json_round_trip_is_not_vacuous
+#print axioms Tm.the_real_request_bytes_round_trip
+#print axioms Tm.the_real_response_bytes_round_trip
+#print axioms Tm.jparse_accepts_host_whitespace
+#print axioms Tm.the_round_trip_survives_duplicate_keys
+#print axioms Tm.jparse_accepts_leading_zeros
+#print axioms Tm.jparse_refuses_empty_input
+#print axioms Tm.jparse_refuses_an_unterminated_string
+#print axioms Tm.jparse_refuses_trailing_garbage
+#print axioms Tm.jparse_refuses_a_bad_escape
+#print axioms Tm.jparse_refuses_a_raw_control_byte
+#print axioms Tm.jparse_refuses_a_trailing_comma
+#print axioms Tm.jparse_refuses_an_unterminated_array
+#print axioms Tm.jparse_refuses_a_missing_separator
+#print axioms Tm.jparse_refuses_a_bare_key
+#print axioms Tm.jparse_refuses_a_missing_colon
+#print axioms Tm.jparse_refuses_an_unterminated_object
+#print axioms Tm.jparse_refuses_what_the_fragment_has_no_type_for
+#print axioms Tm.jparseWith_refuses_when_the_fuel_runs_out
+#print axioms Tm.the_jval_jemit_hypotheses_are_satisfiable
+#print axioms Tm.the_jval_jemit_digit_guard_bites

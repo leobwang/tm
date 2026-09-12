@@ -551,4 +551,21 @@ def unsetDemoted : EditKey := ⟨.demoted, rfl⟩
    comment. -/
 def dayEst : NdDur := ⟨Field.Dur.simple 3 Field.DurUnit.days, rfl⟩
 
+-- ===========================================================================
+-- APPENDED 2026-09-12 (stage-3, J-route step 2): the JSON round trip's one
+-- hypothesis door.  `jval_jemit` is the induction under `jparse_jemit`, and
+-- the numeral is the one value whose end is decided by the byte after it, so
+-- the lemma demands `notDigitStart rest = true`.  This block is that door
+-- staying shut.  Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 47 — read a numeral that is followed by a digit as if it stopped.
+   `jval_jemit` would give `7` then `7` reading back as `(7, "7")`; the guard
+   is `notDigitStart ['7'] = true`, which is `false`, so `rfl` is an
+   application type mismatch.  The evaluated truth is
+   `the_jval_jemit_digit_guard_bites`: those bytes read as `77`. -/
+theorem sevenThenSevenReadsAsSeven :
+    jval 4 (jemit (JVal.num 7) ++ ['7']) = .ok (.num 7, ['7']) :=
+  jval_jemit (.num 7) 4 ['7'] (by decide) rfl
+
 end Tm

@@ -3018,3 +3018,135 @@ unchanged; `cargo test --workspace` **983 passed / 0 failed**, unchanged; the
 FFI suite **46 tests** (40 kernel + 6 corpus), unchanged.  Nothing outside
 `TmKernel/Json.lean`, `TmKernel/TmKernel.lean` (one import line) and
 `Check.lean` (one banner plus 32 lines) was edited.
+
+**The J-route's second step: `jparse ∘ jemit` is the identity on `JVal`, and
+`jparse` never refuses for fuel.**  Same 2026-09-12 session, J-route step 2
+(J3–J4), landed in `TmKernel/Json.lean` (already imported; no new module).
+**No wire change**: `Boundary.lean` still builds `Lean.Json`, the Rust is
+untouched, and `Goals.lean` is untouched — `the_json_edge_round_trips` stands
+until J6.  A first attempt at this step was killed mid-build by the OOM killer
+and left its work uncommitted; it was diagnosed under memory caps and salvaged,
+not redone — the emitter, the parser, `jval_jemit` and `jparse_jemit` are its
+work, and what changed is listed below.
+
+*J3, the emitter.*  `jemit` is six mutually structural functions, one per
+parser entry point (`jemitArr`/`jemitTail` differ only in the separator, as
+`jarr`/`jtail` do), compress-shaped and in **assoc-list order**:
+`demo_jemit_bytes` pins the bytes, `the_emitter_keeps_build_order` shows they
+are not `mkObj`'s sorted ones, `the_emitter_is_compress_shaped` that no
+whitespace is written and none inside a string is dropped.  `jfuel` counts the
+parser frames reading `jemit v` opens, and `jfuel_le_jemit : jfuel v ≤ 2 *
+(jemit v).length` is why the parser takes its fuel from the bytes.
+
+*J4, the parser and the theorem.*  `jparse l := jparseWith (2 * l.length + 2)
+l` over six mutually **fuel-structural** entry points (`jval`, `jarr`,
+`jtail`, `jobj`, `jpair`, `jotail`) — no well-founded recursion, so small
+witnesses still evaluate — refusing in `Except JErr`, thirteen named
+constructors (§5.7).  **`jparse_jemit (v : JVal) : jparse (jemit v) = .ok v`**,
+unconditional: no fragment restriction and **no duplicate-key side condition**,
+because an object is an ordered assoc list and `{"a":1,"a":2}` reads back as
+both pairs in order (`the_round_trip_survives_duplicate_keys`).  It rests on
+`jval_jemit`, the four-motive `JVal.rec` step 1 rehearsed, with each list motive
+a conjunction (one component per entry point); on `jstring_jescape`, which is
+J1's `junescape_jescape` plus `jscan_jescape` (the scanner stops at exactly the
+quote the emitter wrote, one `escOf` class at a time); and on J2's next-byte
+guard, discharged at every numeral site by `notDigitStart_jemitTail`/`…OTail`
+rather than assumed.  **Supersedes, by name, two details of "Gap 39
+REPRICED"'s J4 pricing**: it wrote `jparse_jemit : jparse (jemit v ++ rest) =
+some (v, rest)` with fuel := input length.  The prefix form cannot hold for
+every `rest` — a numeral followed by a digit reads as a longer numeral — so it
+is `jval_jemit`, under `notDigitStart rest = true` and `jfuel v ≤ f`, and the
+headline is the whole-document form in `Except JErr`; and the fuel is `2 *
+length + 2`, because `n` arrays nested around a numeral open `3n+1` frames for
+`2n+1` bytes.
+
+*Beyond the pricing: the derived fuel is enough for every input.*  J5 will hand
+`jparse` **host** bytes, which are not `jemit` images, so `jfuel_le_jemit`
+alone would leave `JErr.outOfFuel` as a possible spurious refusal of a real
+request.  `jparse_never_runs_out (l : List Char) : jparse l ≠ .error
+.outOfFuel` closes it for all `l`, by two inductions on the fuel over all six
+entry points: `jparser_consumes` (every successful frame consumes a byte, at any
+fuel) and `jparser_fuel` (a frame given twice its input's length, plus one or
+two by entry point, never runs out).  Likewise `jparseNat_some_of_digit` makes
+the `JErr.badNumber` doc comment's "unreachable through `jval`" a theorem.  Both
+were docstring claims in the salvaged draft; neither is one now.
+
+*Both directions, and §7.4.*  It bites, each refusal by its own constructor
+over small `List Char` inputs: `jparse_refuses_empty_input`,
+`…_an_unterminated_string`, `…_trailing_garbage`, `…_a_bad_escape`,
+`…_a_raw_control_byte`, `…_a_trailing_comma` (array and object),
+`…_an_unterminated_array`, `…_a_missing_separator`, `…_a_bare_key`,
+`…_a_missing_colon`, `…_an_unterminated_object`,
+`…_what_the_fragment_has_no_type_for` (`-3`, `1.5`, `1e3`), and
+`jparseWith_refuses_when_the_fuel_runs_out`.  It does not over-bite:
+`the_real_request_bytes_round_trip` and `…_response_…` take `kernel.rs`'s
+`duplicate_ids_are_rejected_at_load` bytes verbatim, `jparse_accepts_host_whitespace`
+puts all four RFC 8259 whitespace bytes at every token boundary a host may use
+and reads the value whose compressed bytes the kernel emits, and
+`the_json_round_trip_is_not_vacuous` shows the parser is not constant.  §7.4:
+every binder is used; both `jval_jemit` hypotheses are satisfiable
+(`jparse_jemit` discharges them for every `v`) and the digit guard bites —
+`the_jval_jemit_digit_guard_bites` by evaluation (`7` then `7` reads as `77`)
+and **`Negative.lean` CHEAT 47** as a type error, under a new end-of-file
+banner, failing as an *application type mismatch* at `notDigitStart ['7'] =
+true` (checked against the transcript, not just "the file failed").  Item 5 is
+answered honestly: none of this is on the FFI path until J5.  The salvaged
+draft's orphan `deriving instance DecidableEq for Except` — which did not even
+parse, a doc comment preceding `deriving instance` — is **removed**, per step
+1's house decision: every `Except` witness is `rfl` or a tuple of `rfl`s, and
+every `≠` is `nofun` after rewriting.
+
+**The memory-bomb finding, and the rule it implies.**  Evaluating the parser
+by `decide`/`rfl` directly over `"…".toList` of a string literal grows without
+bound — `{"a":1 "b":2}` passed an 8 GB cap in 15 s, `{"a" 1}` hit the
+200000-heartbeat `whnf` limit at ~2 GB, and uncapped the draft's ~85-byte
+request exhausted the machine twice — so **a byte-level `decide` over a parser
+run must be small and spelled as a `List Char` literal, and a realistic input is
+an instance of the round-trip theorem, not an evaluation** (`jemit v = bytes`
+is decided, `jparse bytes = .ok v` is `jparse_jemit`).  Measured under caps,
+the cost is the *combination*: `toList` alone decides instantly, and so does
+the parser over the same bytes as a `List Char` literal — a 92-byte request by
+`rfl` in ~0.5 s at ~520 MB — so the literal's decoding is what the parser run
+re-forces.  The heartbeat timeout on `jparse_refuses_a_missing_colon` was the
+same bomb with a budget, fixed by the spelling and **not** by raising
+`maxHeartbeats`.  The whole of `Json.lean` now elaborates in ~2.3 s at ~0.97 GB
+peak under an 8 GB cap.
+
+**Gap 43 — `jparse` accepts leading zeros.**  (1) *What is not done*: RFC
+8259's `int = zero / ( digit1-9 *DIGIT )` is not enforced on input; `007` reads
+as `JVal.num 7` (`jparse_accepts_leading_zeros`).  (2) *Why — a decision*: J2
+took "no second numeral grammar" — `jparseNat` is `readNat` over the digit run —
+and a leading-zero refusal would be read-side logic `jparse_jemit` never
+exercises, since `digitsOf` never emits one; the reading stays unique (two
+spellings, one value, like `\t` and `	`), so §5.6 is not broken.  (3)
+*What it costs*: `jparse` is a left inverse of `jemit` and not a right one —
+already true of whitespace and the short escapes — and a non-RFC host numeral
+is accepted rather than refused; serde_json never writes one, so no production
+byte is affected.  (4) *Which stage clears it*: J5, only if strict input
+conformance is ever required — one guard in `jval`'s digit branch plus a
+`digitsOf` leading-digit lemma to keep `jval_jemit` closing.
+
+**What this step did not do, by name.**  J5 — the wire change in
+`Boundary.lean`'s response builders, the byte re-measure "Gap 39 REPRICED"
+demands, and two things this step surfaced for it: the rule the `Boundary`
+readers take for a duplicate key (this parser keeps both pairs, while a
+`serde_json::Value` map keeps only one), and R10's stated width for
+`JVal.num`, which is an unbounded `Nat` here — and J6, the discharge of
+`the_json_edge_round_trips`, are untouched.  The burn-down therefore **stays at
+41**, the intended shape: no goal discharged, none added.
+
+Re-measured at this landing, every number from the committed harness (§5.11):
+`kernel/check.sh` **7/7 ok**; axiom audit **1207 theorems** (was 1122; +85, all
+of them `Json.lean`'s J3–J4 theorems, under one new `APPENDED 2026-09-12
+(stage-3, J-route step 2 …)` banner), and §6.3's three counts agree at 1207 —
+`grep -c '^#print axioms' Check.lean` = 1207, distinct names = 1207, and the
+attr-aware `theorem` grep over `TmKernel/*.lean` = 1207 (+85 on all three; one
+docstring line that would have put `theorem` at column 0 was reflowed so the
+third count gains no new off-by-one); every new theorem's axioms are within
+`propext`, `Quot.sound`, `Classical.choice`; corpus **33/37 files and 4/5 whole
+plans**, unchanged; `Goals.lean` burn-down **41**, unchanged; `cargo test
+--workspace` **983 passed / 0 failed / 0 ignored across 64 binaries**,
+unchanged; the FFI suite **46 tests** (40 kernel + 6 corpus), unchanged.  Gap
+43 and CHEAT 47 are taken; new gaps start at 44 and new cheats at 48.  Edited:
+`TmKernel/Json.lean`, `Check.lean` (one banner plus 85 lines), `Negative.lean`
+(one banner plus CHEAT 47) and this file.
