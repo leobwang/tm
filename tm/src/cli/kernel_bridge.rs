@@ -29,6 +29,37 @@
 //!    ([`FsStore::write_guarded`]): a racing writer between our read and our
 //!    write is §1.3's conflict, exit code 3, nothing clobbered.
 //!
+//! ## The newline convention (the file edge, gap 6's host half)
+//!
+//! The kernel works over a list of lines and never sees the final newline.
+//! A newline-terminated file split naively on `'\n'` grows a trailing empty
+//! segment, which the kernel would read as a ranked prose line — and its
+//! append (`freshRank`) would land *after* it, writing `…^p1\n\n- [ ] … ^a1`
+//! with no final newline (the 2026-09-12 drive-verification defect). So the
+//! bridge normalizes at the edge, both ways:
+//!
+//! * **request build**: split on `'\n'`, then strip exactly one trailing
+//!   empty segment iff the file ends with `'\n'` — the lines the kernel
+//!   sees are the file's real lines, none phantom;
+//! * **write-back**: a *rewritten* file is `lines.join("\n") + "\n"` —
+//!   newline-terminated, exactly one `'\n'` between any two lines.
+//!
+//! The recorded convention for a source file that does **not** end in a
+//! newline: it is read as-is (no strip — there is no trailing empty
+//! segment), an *untouched* one is never written (stays byte-identical),
+//! and a *rewritten* one comes back newline-terminated — the bridge
+//! normalizes rewritten files to the POSIX text-file shape rather than
+//! propagating a missing EOF newline. `changed` is therefore judged on the
+//! kernel's line lists, not on reconstructed bytes, so the normalization
+//! itself never counts as a change.
+//!
+//! (The corpus harness — `kernel/tm-kernel-ffi/tests/harness/mod.rs`,
+//! check 6 — keeps the naive identity `split('\n')`/`join('\n')` including
+//! the trailing empty segment. That is byte-faithful for its read-only,
+//! no-commands round trip, but wrong for a host that lets the kernel
+//! append; the two conventions agree on every file the kernel does not
+//! change.)
+//!
 //! Every kernel refusal reaches the caller **by name** ([`refusal`]):
 //! `occupied`, `noSuchId`, `notDemoted`, `alreadyDemoted`, `badHorizon`,
 //! `badItem`, `tabbedLine`, `keyAbsent`, `siteOutOfRange`, `dupId`,
@@ -199,15 +230,19 @@ impl Cmd {
 pub struct BridgeDoc {
     /// Plan-relative path.
     pub path: String,
-    /// The text sent (for a file the tree did not hold yet: its horizon's
-    /// initial text).
+    /// The text read from disk (for a file the tree did not hold yet: its
+    /// horizon's initial text) — original bytes, before the request-build
+    /// newline normalization.
     pub sent: String,
-    /// The text the kernel returned.
+    /// The text as written back: for a changed document the kernel's lines
+    /// joined and newline-terminated (the module-level newline convention);
+    /// for an untouched one, `sent` verbatim.
     pub returned: String,
     /// The document's region as the **response** carried it back — kept, not
     /// dropped (the stage-3 trap by name).
     pub region: Option<(u64, u64)>,
-    /// Whether `returned` differs from `sent` (and was therefore written).
+    /// Whether the kernel's returned line list differs from the one sent
+    /// (and the file was therefore written).
     pub changed: bool,
 }
 
@@ -321,12 +356,19 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
         }
     }
 
-    // 2. The request: regions are generated here (gap 10), lines split the
-    // way the kernel joins them (`Tm.splitOn '\n'` — the recorded host
-    // agreement).
+    // 2. The request: regions are generated here (gap 10), lines split on
+    // '\n' with exactly one trailing empty segment stripped iff the file
+    // ends with '\n' (the module-level newline convention) — otherwise the
+    // final newline's phantom line becomes a ranked prose line and the
+    // kernel's append lands after it.
     let mut docs_json = Vec::new();
+    let mut sent_joined: Vec<String> = Vec::new();
     for (rel, text) in paths.iter().zip(&texts) {
-        let lines: Vec<&str> = text.split('\n').collect();
+        let mut lines: Vec<&str> = text.split('\n').collect();
+        if text.ends_with('\n') {
+            lines.pop();
+        }
+        sent_joined.push(lines.join("\n"));
         let mut doc = json!({ "path": rel, "lines": lines });
         if let Some((g, ix)) = region_of(rel) {
             doc["grain"] = json!(g);
@@ -413,12 +455,12 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
             .ok_or_else(|| {
                 CliError::Kernel(fault_issue(&format!("{path}: no lines array"), &stderr))
             })?;
-        let mut returned = String::new();
+        let mut joined = String::new();
         for (j, l) in lines.iter().enumerate() {
             if j > 0 {
-                returned.push('\n');
+                joined.push('\n');
             }
-            returned.push_str(l.as_str().ok_or_else(|| {
+            joined.push_str(l.as_str().ok_or_else(|| {
                 CliError::Kernel(fault_issue(&format!("{path}: line {j} is not a string"), &stderr))
             })?);
         }
@@ -426,7 +468,15 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
             (Some(g), Some(ix)) => Some((g, ix)),
             _ => None,
         };
-        let changed = returned != texts[i];
+        // `changed` is a statement about the kernel's line lists, so the
+        // write-back normalization below never counts as a change: an
+        // untouched file — final newline or not — stays byte-identical on
+        // disk because it is never written at all.
+        let changed = joined != sent_joined[i];
+        // A rewritten file is newline-terminated with exactly one '\n'
+        // between lines (the module-level newline convention); an untouched
+        // one keeps its original bytes.
+        let returned = if changed { joined + "\n" } else { texts[i].clone() };
         docs.push(BridgeDoc {
             path,
             sent: texts[i].clone(),

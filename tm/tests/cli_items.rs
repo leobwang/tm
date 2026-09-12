@@ -836,3 +836,113 @@ fn triage_skips_the_guidance_comment_tm_init_writes() {
     assert_eq!(lines.len(), 1, "{json}");
     assert_eq!(lines[0]["raw"], "- a real capture");
 }
+
+// ---------------------------------------------------------------------------
+// The bridge's newline convention, pinned at the byte level (the 2026-09-12
+// drive-verification defect: a kernel-path append into a newline-terminated
+// file landed after the trailing empty split segment — `…^p1\n\n- [ ] … ^a1`
+// with no final newline). These four tests are full-file byte compares, not
+// contains-checks: they fail on one wrong byte at either end of the file.
+// The convention itself is recorded on `tm/src/cli/kernel_bridge.rs`'s
+// module docs (and kernel/README.md's 2026-09-12 block).
+// ---------------------------------------------------------------------------
+
+/// (a) `move` into a newline-terminated file: exactly one `\n` between the
+/// old last line and the appended line, the file still ends `\n`, the source
+/// file is the same bytes minus the moved line — and (d) every file the verb
+/// did not change is byte-identical, not just similar.
+#[test]
+fn move_appends_newline_faithfully_full_byte_compare() {
+    let tm = Tm::new();
+    let week_before = tm.read("week/2026-W37.md");
+    let backlog_before = tm.read("backlog.md");
+    assert!(week_before.ends_with('\n'), "fixture week file is newline-terminated");
+    assert!(backlog_before.ends_with('\n'), "fixture backlog is newline-terminated");
+    let moved_line = backlog_before
+        .lines()
+        .find(|l| l.ends_with("^a1"))
+        .expect("^a1 in backlog")
+        .to_string();
+    let untouched = [
+        "month/2026-09.md",
+        "day/2026-09-07.md",
+        "calendar/2026-W37.md",
+        "inbox.md",
+        "optional.md",
+        "routines.md",
+    ];
+    let untouched_before: Vec<String> = untouched.iter().map(|p| tm.read(p)).collect();
+
+    tm.ok(&["move", "^a1", "week"]);
+
+    assert_eq!(
+        tm.read("week/2026-W37.md"),
+        format!("{week_before}{moved_line}\n"),
+        "the appended line follows the old last line after exactly one newline, \
+         and the file keeps its final newline"
+    );
+    assert_eq!(
+        tm.read("backlog.md"),
+        backlog_before.replace(&format!("{moved_line}\n"), ""),
+        "the source file is the original bytes minus the moved line"
+    );
+    for (p, before) in untouched.iter().zip(&untouched_before) {
+        assert_eq!(&tm.read(p), before, "{p} was not part of the move and must not change");
+    }
+}
+
+/// (b) kernel-path `add --to week`: the file grows exactly the rendered line
+/// plus one final newline, byte for byte.
+#[test]
+fn add_appends_newline_faithfully_full_byte_compare() {
+    let tm = Tm::new();
+    let before = tm.read("week/2026-W37.md");
+    assert!(before.ends_with('\n'), "fixture week file is newline-terminated");
+    let json = tm.json(&["add", "4 2b Write the release notes", "--to", "week"]);
+    let id = json["id"].as_str().expect("an id");
+    assert_eq!(
+        tm.read("week/2026-W37.md"),
+        format!("{before}- [ ] 4 2b Write the release notes ^{id}\n")
+    );
+}
+
+/// (c) the recorded convention for a source file that does NOT end in a
+/// newline (kernel_bridge module docs): untouched, it is never written and
+/// stays byte-identical — missing EOF newline included; rewritten, it comes
+/// back newline-terminated (normalized to the POSIX text-file shape).
+#[test]
+fn a_file_without_a_final_newline_follows_the_recorded_convention() {
+    let tm = Tm::new();
+    let week_path = tm.plan.join("week/2026-W37.md");
+    let stripped = tm
+        .read("week/2026-W37.md")
+        .strip_suffix('\n')
+        .expect("fixture ends with a newline")
+        .to_string();
+    std::fs::write(&week_path, &stripped).expect("strip the final newline");
+
+    // A kernel-backed verb that changes only backlog.md: the week file is
+    // untouched and must keep its exact bytes, missing final newline and all
+    // (the write-changed-docs-only rule, asserted at the byte level).
+    tm.ok(&["edit", "^a1", "ci=4"]);
+    assert_eq!(
+        tm.read("week/2026-W37.md"),
+        stripped,
+        "an untouched file is never rewritten, so its missing final newline survives"
+    );
+
+    // A verb that rewrites it: the appended line still lands after exactly
+    // one newline, and the rewritten file is newline-terminated.
+    let moved_line = tm
+        .read("backlog.md")
+        .lines()
+        .find(|l| l.ends_with("^a1"))
+        .expect("^a1 in backlog")
+        .to_string();
+    tm.ok(&["move", "^a1", "week"]);
+    assert_eq!(
+        tm.read("week/2026-W37.md"),
+        format!("{stripped}\n{moved_line}\n"),
+        "a rewritten file is normalized to newline-terminated"
+    );
+}
