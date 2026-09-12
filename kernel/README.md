@@ -2799,3 +2799,78 @@ twelve of which are the `#[path]`-included TUI modules' own unit tests
 compiled into it); `kernel/check.sh` **7/7 ok**, corpus 33/37 files and 4/5
 whole plans, burn-down **41**, audit **1090** — all unchanged (no Lean
 source was touched).
+
+**The bridge writes newline-faithful files — the read-only drive
+verification's one major defect, fixed (same 2026-09-12 session, stage-3
+wiring block).**  Observed at the byte level: before `tm move ^a1 week` the
+week file ended `…^p1\n`; after, it ended `…^p1\n\n- [ ] 2 30m Insurance
+claim … ^a1` — a blank line before the appended item and **no final
+newline** — and `tm add --to <file>` appended likewise.  The mechanism was
+the split/join convention at the choke point (`tm/src/cli/kernel_bridge.rs`):
+a newline-terminated file split naively on `'\n'` grows a trailing empty
+segment, which the kernel reads as a ranked prose line; `freshRank` appends
+**after** it (the blank line), and the join back emits no final newline (the
+lost EOF byte).  The fix is host-side only, at the bridge, both directions:
+
+- *request build*: split on `'\n'`, then strip **exactly one** trailing
+  empty segment iff the file ends with `'\n'` — the kernel sees the file's
+  real lines, none phantom;
+- *write-back*: a rewritten file is `lines.join("\n") + "\n"` —
+  newline-terminated, exactly one `'\n'` between any two lines;
+- *the recorded convention for a file that does NOT end in a newline*: read
+  as-is (there is no trailing empty segment to strip); untouched, it is
+  never written and stays byte-identical, missing EOF newline included;
+  rewritten, it comes back **newline-terminated** — the bridge normalizes
+  rewritten files to the POSIX text-file shape rather than propagating a
+  missing final newline.  `changed` is judged on the kernel's line lists,
+  not reconstructed bytes, so the normalization itself never triggers a
+  write.
+
+This *supersedes, for the bridge only*, the bridge's own recorded
+convention (its module docs' former "lines split the way the kernel joins
+them — `Tm.splitOn '\n'`, the recorded host agreement", now rewritten in
+place): the corpus harness's naive identity `split('\n')`/`join('\n')`
+(`tests/harness/mod.rs`, check 6) remains correct for its read-only,
+no-commands round trip — the two conventions agree byte-for-byte on every
+document the kernel does not change — but a host that lets the kernel
+*append* must not send the phantom line, and the bridge now does not.  The
+gap-12 **host agreement** paragraph above is untouched: it names
+`tm-kernel-ffi`'s harness split, which is unchanged.
+Pinned by four byte-level tests in `tm/tests/cli_items.rs` (full-file byte
+compares, not contains-checks): `move` into a newline-terminated file gains
+exactly the moved line plus one final `'\n'` and the source loses exactly
+that line; `add` likewise; the no-final-newline convention above, both
+halves; and the write-changed-docs-only rule asserted byte-for-byte on
+every file the verb did not touch.
+
+**Correction to the countermeasures paragraph above, by name.**  The
+"Three of the four integration-bug countermeasures, landed" paragraph says
+all three run against the built binary (`CARGO_BIN_EXE_tm`), never the clap
+tree — that is true of `cli_conformance.rs` and `cli_json_matrix.rs`, but
+`tm/tests/tui_screen_router.rs` is in-process (a ratatui `TestBackend` over
+the binary's own modules pulled in by `#[path]` includes), not a spawned
+binary.
+
+**Recorded, not fixed here: on a stale tree the fork-point day-close
+catch-up/rollover runs before command dispatch, so its writes precede — and
+survive — a kernel refusal of the command itself.**  Observed on a fresh
+`init --example` tree dated five days back: five close-day events and a
+demote were written by the catch-up before the command's own A6 `occupied`
+refusal arrived, so "a refusal writes nothing" holds for the *command's*
+kernel call but not for the housekeeping that ran ahead of it.  This is
+pre-existing fork-point behaviour (`Ctx` housekeeping, §6.3 auto-close /
+§5.1 timeouts, predates the kernel wiring) and stage-4 territory by PLAN's
+own row — `close`/`autoClose` move into the kernel there — so it is
+recorded here by name rather than patched around.
+
+Re-measured at this landing: `cargo test --workspace` **983 passed / 0
+failed / 0 ignored across 64 binaries** (was 980; +3 — the three byte-level
+newline tests, the untouched-files assertion riding the move test);
+`kernel/check.sh` **7/7 ok**, corpus 33/37 files and 4/5 whole plans,
+burn-down **41**, audit **1090** — all unchanged (no Lean source was
+touched; the corpus harness was read, not modified).  One drive-verification
+minor needed no change: `cli/out.rs`'s `is_kernel_fault` was reported
+dead-code-warned in the binary crate, but a clean `cargo check -p tm
+--all-targets` today emits **zero warnings** — it is live at
+`tm/src/tui/mod.rs` (the fault-vs-refusal fork at the verb seam) and
+exercised by `a_kernel_fault_propagates_and_a_refusal_stays_a_message`.
