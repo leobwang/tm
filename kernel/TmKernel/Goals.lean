@@ -113,24 +113,16 @@ Plan §5: "`shim.c`, `build.rs`, `dispatch` for `move`/`demote`/`readopt`/`drop`
 `ReqCmd.add` (Boundary.lean:815), its `parseCmd` case (:838) and its
 `applyCmd` case (:991) — built on `freshId` with L21 proved
 (`add_assigns_a_fresh_id`, pigeonhole over `digitsOf`-rendered candidates,
-not a retry loop).  What remains of stage 3 is the four goals below: the L22
-refutation sweep and the three JSON/newline edge laws.  README gap 13 —
+not a retry loop), and the L22 refutation sweep is done —
+`move_has_an_inverse_command` was refuted as `move_has_no_inverse_command`
+(Boundary.lean), general over the seven `ReqCmd` shapes at the two-item
+witness.  What remains of stage 3 is the three JSON/newline edge laws below.
+README gap 13 —
 `Id`'s *shape* — is STILL a human decision: `add` shipped digit ids,
 consistent with the recorded resolution (weaken the spec — digits are a
 subset of `[a-z0-9]`) and with no other, but the decision itself remains owed
 to the human.
 ############################################################################ -/
-
-/-- **L22 (R\*), stage 3 — expected refutation.**  "`undo ∘ cmd = id` on the
-nose."  Plan §3.3: a move assigns a *fresh* rank in the destination, so no
-command can restore the old one; `move_out_and_back_is_not_the_inverse`
-(Boundary.lean) already shows it for one composite, and this is the general
-form — **no** command whatever inverts a move.  Discharging it means proving
-the negation, and the consequence is already written in the plan: **`tm undo`
-must replay the log, never apply an inverse.** -/
-theorem move_has_an_inverse_command :
-    ∃ inv : ReqCmd → ReqCmd, ∀ (p q : WfPlan) (i : Id) (n : Nat),
-      applyCmd (.move i n) p = .ok q → applyCmd (inv (.move i n)) q = .ok p := sorry
 
 /-! ## Boundary.lean — README gap 6 and gap 12: the JSON/string edge
 

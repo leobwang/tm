@@ -1170,3 +1170,5 @@ open Tm
 #print axioms Tm.sitesInRange_insertFresh
 #print axioms Tm.demotionsOriented_insertFresh
 #print axioms Tm.cmdAdd_succeeds
+#print axioms Tm.the_undo_witness_loads
+#print axioms Tm.move_has_no_inverse_command

@@ -2129,3 +2129,30 @@ were convention debt, never `Goals.lean` entries; audit 1061 lines / 1061
 distinct names / 1061 attr-aware declarations (ten new under Check.lean's
 `APPENDED 2026-09-12` banner: the three owed forms, the wire wrapper, and six
 supporting lemmas); `check.sh` 7/7; `kernel.rs` 33 tests, unchanged.
+
+**L22 DISCHARGED — refuted, and the sweep is compiled.**  The `Goals.lean`
+entry `move_has_an_inverse_command` (an expected refutation) is **renamed to
+its negation** and proved: `move_has_no_inverse_command` (end of
+Boundary.lean) — there is no `inv : ReqCmd → ReqCmd` that maps every
+successful `move`'s post-plan back to its pre-plan, quantifier for
+quantifier the negation of the stated law.  This supersedes, by name, the
+fourth block's closing sentence ("the general negation stays in `Goals.lean`
+until that sweep is written" — it no longer does) and compiles the corrected
+analysis above: the witness (`undoWitnessRequest`/`undoWitnessPlan`, a
+decided `loadPlan` witness like `sampleRequest`) carries `^m2` surviving at
+rank 2 above the rank 1 that `^m1` vacates, and `inv`'s single answer to
+`.move ^m1 1` is cased over all **seven** `ReqCmd` shapes, each refuted on
+one observable — off-target ids leave the moved site standing (`Store.get`
+is a function); `drop`/`est` keep the moved site; `rank` keeps the document;
+`readopt` refuses a live record (`notDemoted`); `demote` writes a tombstone
+the pre-plan does not carry; `add` grows `store.dom` by one; and a `move`
+back lands on `freshRank`, pushed past `^m2`'s rank by `freshRank_gt`
+(2 < 1, absurd).  The consequence is the one the plan already words: **`tm
+undo` must replay the log, never apply an inverse command** — and it is now
+a theorem, not a policy.  No predicate was weakened; the goal is deleted
+from `Goals.lean` per §3.2.  Re-measured at this landing: burn-down **43**
+(`grep -c '^theorem' Goals.lean`); audit 1063 lines / 1063 distinct names /
+1063 attr-aware declarations (two new under the `APPENDED 2026-09-12`
+banner: `the_undo_witness_loads`, `move_has_no_inverse_command`);
+`check.sh` 7/7 (corpus 33/37 files, 4/5 whole plans, unchanged);
+`kernel.rs` 33 tests, unchanged.  Adds no gap numbers.

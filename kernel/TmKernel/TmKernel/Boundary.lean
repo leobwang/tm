@@ -2934,4 +2934,199 @@ theorem cmdAdd_succeeds (p : WfPlan) (seed n : Nat) (title : List Char) (d : Des
     · show (⟨d.ix, freshRank p.val d.ix⟩ : Site) = ⟨n, freshRank p.val n⟩
       rw [resolveDest_ix hn]
 
+/-! ### L22, refuted: no command inverts a move
+
+`move_out_and_back_is_not_the_inverse` above refuted one composite — move out,
+move back.  The plan's stronger claim (L22, "undo ∘ cmd = id on the nose") is
+that *some* function of the request could serve as `tm undo`; the refutation
+below is general over that function.  The witness is the corrected 2026-09-12
+analysis, compiled: two items in the week file, so `^m2`'s line survives above
+the rank `^m1` vacates.  After `move ^m1 1`, whatever single command `inv`
+answers with fails on one observable per shape — a command at another id
+leaves `^m1`'s moved site standing, because `Store.get` is a function;
+`drop`/`est` keep the moved site while the original plan has it elsewhere;
+`rank` keeps the document; `readopt` refuses a live record outright; `demote`
+leaves a tombstone the original does not carry; `add` grows the store's
+domain; and a `move` back lands on `freshRank`, which `freshRank_gt` pushes
+strictly past `^m2`'s surviving rank.  Consequence, in the plan's own words:
+**`tm undo` must replay the log, never apply an inverse command.** -/
+
+def undoWitnessRequest : List ReqDoc :=
+  [⟨"week/2026-W37.md", some ⟨week, 35⟩,
+      ["# Tasks".toList, "- [ ] 5 6b Finish the report ^m1".toList,
+       "- [ ] 5 6b Write the tests ^m2".toList]⟩,
+   ⟨"month/2026-09.md", some ⟨month, 8⟩, ["# Outcomes".toList]⟩]
+
+theorem the_undo_witness_loads : loadsOk undoWitnessRequest = true := by decide
+
+/-- The loaded witness plan.  Total by `the_undo_witness_loads`: the error
+branch is refuted, not defaulted. -/
+def undoWitnessPlan : WfPlan :=
+  match h : loadPlan undoWitnessRequest with
+  | .ok p => p
+  | .error _ => absurd the_undo_witness_loads (by simp [loadsOk, h])
+
+/-- **L22 (R\*), refuted at the witness.**  There is no `inv : ReqCmd → ReqCmd`
+with `applyCmd (inv (.move i n)) ∘ applyCmd (.move i n) = id` wherever the move
+succeeded — the exact negation of the stated law, quantifier for quantifier. -/
+theorem move_has_no_inverse_command :
+    ¬ ∃ inv : ReqCmd → ReqCmd, ∀ (p q : WfPlan) (i : Id) (n : Nat),
+      applyCmd (.move i n) p = .ok q → applyCmd (inv (.move i n)) q = .ok p := by
+  rintro ⟨inv, hinv⟩
+  -- the witness move fires: `^m1` leaves `⟨0, 1⟩` for `⟨1, freshRank _ 1⟩`
+  have hb : (match applyCmd (.move "m1".toList 1) undoWitnessPlan with
+             | .ok _ => true | .error _ => false) = true := by decide
+  cases hmv : applyCmd (.move "m1".toList 1) undoWitnessPlan with
+  | error k => rw [hmv] at hb; simp at hb
+  | ok q =>
+    have hcon := hinv undoWitnessPlan q "m1".toList 1 hmv
+    -- decompose the move: one entity replaced, everything else untouched
+    have hlen : 1 < undoWitnessPlan.val.docs.length := by decide
+    have hrd : resolveDest undoWitnessPlan.val 1 = .ok ⟨1, hlen⟩ := by
+      unfold resolveDest; exact dif_pos hlen
+    simp only [applyCmd, hrd, cmdMove, Dest.site] at hmv
+    obtain ⟨e, e1, hs, hgetE, hfE, hshape⟩ :=
+      mapAt_ok_shape undoWitnessPlan q "m1".toList _ hmv
+    unfold moveTo at hfE
+    have he1v := lift_roundtrips _ _ hfE
+    -- the pre-move entity, in concrete bytes
+    have hml : e.val.live = ⟨0, 1⟩ := by
+      have h := (by decide : (undoWitnessPlan.val.store.get "m1".toList).map
+        (fun x : Entity => x.val.live) = some ⟨0, 1⟩)
+      rw [hgetE] at h; simpa using h
+    have hst : e.val.status = Status.live .free := by
+      have h := (by decide : (undoWitnessPlan.val.store.get "m1".toList).map
+        (fun x : Entity => x.val.status) = some (Status.live .free))
+      rw [hgetE] at h; simpa using h
+    have har : e.val.archive = none := by
+      have h := (by decide : (undoWitnessPlan.val.store.get "m1".toList).map
+        (fun x : Entity => x.val.archive) = some none)
+      rw [hgetE] at h; simpa using h
+    -- the post-move entity and store
+    have he1live : e1.val.live = ⟨1, freshRank undoWitnessPlan.val 1⟩ := by rw [he1v]
+    have he1st : e1.val.status = Status.live .free := by rw [he1v]; exact hst
+    have hq1 : q.val.store.get "m1".toList = some e1 := by
+      rw [hshape]; exact Store.get_set_self _ _ _ hs
+    have hqdom : q.val.store.dom = undoWitnessPlan.val.store.dom := by
+      rw [hshape]; exact Store.dom_set _ _ _ hs
+    have hne : "m2".toList ≠ "m1".toList := by decide
+    have hq2eq : q.val.store.get "m2".toList
+        = undoWitnessPlan.val.store.get "m2".toList := by
+      rw [hshape]; exact Store.get_set_other _ _ _ _ hs hne
+    -- any single-slot command mapping `q` back must rewrite `^m1` from `e1` to `e`
+    have hback : ∀ (i' : Id) (f : Entity → Except KErr Entity),
+        q.mapAt i' f = .ok undoWitnessPlan → f e1 = .ok e := by
+      intro i' f hap
+      obtain ⟨a, a', hs', hga, hfa, hsh⟩ := mapAt_ok_shape q undoWitnessPlan i' f hap
+      by_cases hii : "m1".toList = i'
+      · subst hii
+        rw [hq1] at hga
+        have hpa : undoWitnessPlan.val.store.get "m1".toList = some a' := by
+          rw [hsh]; exact Store.get_set_self _ _ _ hs'
+        rw [hgetE] at hpa
+        rw [(Option.some.inj hga).symm, (Option.some.inj hpa).symm] at hfa
+        exact hfa
+      · exfalso
+        have hgg : undoWitnessPlan.val.store.get "m1".toList
+            = q.val.store.get "m1".toList := by
+          rw [hsh]; exact Store.get_set_other _ _ _ _ hs' hii
+        rw [hgetE, hq1] at hgg
+        have hdoc : e.val.live.doc = e1.val.live.doc := by
+          rw [Option.some.inj hgg]
+        rw [hml, he1live] at hdoc
+        simp at hdoc
+    -- seven shapes, one refuted observable each
+    cases hcmd : inv (.move "m1".toList 1) with
+    | move i' d' =>
+      rw [hcmd] at hcon
+      cases hrd' : resolveDest q.val d' with
+      | error k' => simp only [applyCmd, hrd'] at hcon; simp at hcon
+      | ok dd =>
+        simp only [applyCmd, hrd', cmdMove] at hcon
+        have h := hback i' _ hcon
+        unfold moveTo at h
+        have hev := lift_roundtrips _ _ h
+        have hsl : e.val.live = ⟨dd.ix, freshRank q.val dd.ix⟩ := by rw [hev]; rfl
+        rw [hml] at hsl
+        have hdix : (0 : Nat) = dd.ix := congrArg Site.doc hsl
+        have hrk : (1 : Nat) = freshRank q.val dd.ix := congrArg Site.rank hsl
+        rw [← hdix] at hrk
+        -- but `^m2`'s line survives in document 0 at rank 2, so freshRank ≥ 3
+        cases hg2 : undoWitnessPlan.val.store.get "m2".toList with
+        | none =>
+          have h2 := (by decide :
+            (undoWitnessPlan.val.store.get "m2".toList).isSome = true)
+          rw [hg2] at h2; simp at h2
+        | some e2 =>
+          have hm2 : e2.val.live = ⟨0, 2⟩ := by
+            have h2 := (by decide : (undoWitnessPlan.val.store.get "m2".toList).map
+              (fun x : Entity => x.val.live) = some ⟨0, 2⟩)
+            rw [hg2] at h2; simpa using h2
+          have hq2 : q.val.store.get "m2".toList = some e2 := by rw [hq2eq, hg2]
+          have hlt := freshRank_gt q.val 0 _
+            (live_line_mem q.val "m2".toList e2 hq2) (by rw [hm2])
+          have hlt2 : e2.val.live.rank < freshRank q.val 0 := hlt
+          rw [hm2, ← hrk] at hlt2
+          simp at hlt2
+    | drop i' =>
+      rw [hcmd] at hcon
+      simp only [applyCmd, cmdDrop] at hcon
+      have h := hback i' _ hcon
+      have he : drop e1 = e := Except.ok.inj h
+      have hdoc : e.val.live.doc = e1.val.live.doc := by rw [← he]; rfl
+      rw [hml, he1live] at hdoc
+      simp at hdoc
+    | est i' v' =>
+      rw [hcmd] at hcon
+      simp only [applyCmd, cmdSetEst] at hcon
+      have h := hback i' _ hcon
+      have he : setEstE v' e1 = e := Except.ok.inj h
+      have hdoc : e.val.live.doc = e1.val.live.doc := by rw [← he]; rfl
+      rw [hml, he1live] at hdoc
+      simp at hdoc
+    | demote i' d' st' =>
+      rw [hcmd] at hcon
+      cases hrd' : resolveDest q.val d' with
+      | error k' => simp only [applyCmd, hrd'] at hcon; simp at hcon
+      | ok dd =>
+        simp only [applyCmd, hrd', cmdDemote] at hcon
+        have h := hback i' _ hcon
+        have hev := demote_roundtrips _ _ _ _ h
+        have hae : e.val.archive = some ⟨e1.val.live, e1.val.line⟩ := by rw [hev]
+        rw [har] at hae
+        simp at hae
+    | readopt i' d' =>
+      rw [hcmd] at hcon
+      cases hrd' : resolveDest q.val d' with
+      | error k' => simp only [applyCmd, hrd'] at hcon; simp at hcon
+      | ok dd =>
+        simp only [applyCmd, hrd', cmdReadopt] at hcon
+        have h := hback i' _ hcon
+        rw [readopt_of_a_live_record_is_refused _ _
+          (by rw [he1st]; decide)] at h
+        simp at h
+    | rank i' n' =>
+      rw [hcmd] at hcon
+      simp only [applyCmd, cmdRank] at hcon
+      have h := hback i' _ hcon
+      unfold setRankE at h
+      have hev := lift_roundtrips _ _ h
+      have hdoc : e.val.live.doc = e1.val.live.doc := by rw [hev]
+      rw [hml, he1live] at hdoc
+      simp at hdoc
+    | add s' d' t' =>
+      rw [hcmd] at hcon
+      cases hrd' : resolveDest q.val d' with
+      | error k' => simp only [applyCmd, hrd'] at hcon; simp at hcon
+      | ok dd =>
+        simp only [applyCmd, hrd'] at hcon
+        unfold WfPlan.insertFresh at hcon
+        split at hcon
+        · injection hcon with hcon
+          have hdl := congrArg (fun w : WfPlan => w.val.store.dom.length) hcon
+          simp only [Store.dom_insertFresh, List.length_cons] at hdl
+          rw [hqdom] at hdl
+          omega
+        · simp at hcon
+
 end Tm
