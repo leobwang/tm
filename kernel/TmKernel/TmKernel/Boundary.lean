@@ -2600,4 +2600,338 @@ def call (input : String) : String :=
 @[export tm_kernel_call]
 def callExport (input : String) : String := call input
 
+/-! ## §5.8 for `rank` and `add` — the owed forms, landed
+
+The 2026-09-12 README block records three owed theorems by name: a Lean-level
+rank *rejection* (the taken-rank refusal existed only as the Rust test
+`rank_onto_a_taken_rank_is_refused_and_writes_nothing`), `cmdRank_succeeds`,
+and `cmdAdd_succeeds`.  All three land here, at the end of the file, so every
+Boundary.lean line number the ledger cites above stays true. -/
+
+/-- **The check bites (§5.8), and it is the one the FFI observes.**  Ranking an
+item onto a rank another line of its document already occupies is refused as
+`badHorizon` and nothing is written.  `setRankE` itself cannot fail — `wf`
+never speaks of ranks (`wf_setRank`) — so the refusal is `mapAt`'s `planWf`
+re-check finding `Normalized` false on the post-state: the occupant survives
+the single-entity swap (`lines_set`) and collides with the rewritten live
+line.  The occupant is quantified as a member of `p.val.lines` — the lines the
+plan renders to disk (§5.9).  The wire witness is the W37 fixture's `^t3` at
+rank 5. -/
+theorem rank_onto_a_taken_rank_is_refused (p : WfPlan) (i : Id) (e : Entity) (n : Nat)
+    (m : Line) (hget : p.val.store.get i = some e) (hm : m ∈ p.val.lines)
+    (hmi : m.id ≠ i) (hsite : m.site = ⟨e.val.live.doc, n⟩) :
+    applyCmd (.rank i n) p = .error .badHorizon := by
+  have hs : (p.val.store.get i).isSome = true := by rw [hget]; rfl
+  have hwf : wf { e.val with live := ⟨e.val.live.doc, n⟩ } = true := by
+    rw [wf_setRank]; exact e.property
+  have hf : setRankE n e = .ok ⟨_, hwf⟩ := by
+    unfold setRankE; exact lift_ok_of_wf _ hwf
+  have hq : ¬ planWf { p.val with
+      store := (p.val.store.set i (⟨_, hwf⟩ : Entity) hs) } = true := by
+    intro hc
+    obtain ⟨A, C, hp, hp', hA, hC⟩ := lines_set p.val i e (⟨_, hwf⟩ : Entity) hs hget
+    have hmnotr : m ∉ render i e := fun hr => hmi (render_all_same_id i e m hr)
+    have hmAC : m ∈ A ∨ m ∈ C := by
+      rw [hp] at hm
+      rcases List.mem_append.1 hm with h1 | h1
+      · exact Or.inl h1
+      · rcases List.mem_append.1 h1 with h2 | h2
+        · exact absurd h2 hmnotr
+        · exact Or.inr h2
+    obtain ⟨l₀, hl₀, hl₀s⟩ := live_line_site_mem i (⟨_, hwf⟩ : Entity)
+    have hk : e.val.live.doc < p.val.docs.length := by
+      have h0 := entityInRange_of_mem p i e hget
+      simp only [entityInRange, Bool.and_eq_true, siteInRange, decide_eq_true_eq] at h0
+      exact h0.1
+    have hnorm := (itemsWf_parts (planWf_parts hc).2.2.2.2).1
+    simp only [normalized, List.all_eq_true, decide_eq_true_eq] at hnorm
+    have hnd := hnorm e.val.live.doc (List.mem_range.2 hk)
+    rw [docRanks_eq, hp', ranksIn_append, ranksIn_append] at hnd
+    have hnr : n ∈ ranksIn e.val.live.doc (render i (⟨_, hwf⟩ : Entity)) :=
+      mem_ranksIn.2 ⟨l₀, hl₀, by rw [hl₀s], by rw [hl₀s]⟩
+    have h1 := List.nodup_append.1 hnd
+    have h2 := List.nodup_append.1 h1.2.1
+    rcases hmAC with hin | hin
+    · exact h2.2.2 n (mem_ranksIn.2 ⟨m, hin, by rw [hsite], by rw [hsite]⟩) n
+        (List.mem_append.2 (Or.inl hnr)) rfl
+    · have h3 := List.nodup_append.1 h2.2.1
+      exact h3.2.2 n hnr n (mem_ranksIn.2 ⟨m, hin, by rw [hsite], by rw [hsite]⟩) rfl
+  show cmdRank i n p = .error .badHorizon
+  unfold cmdRank WfPlan.mapAt
+  split
+  · rename_i hn'; rw [hget] at hn'; simp at hn'
+  · rename_i e' hget'
+    rw [hget] at hget'
+    injection hget' with hget'
+    subst hget'
+    rw [hf]
+    simp only [dif_neg hq]
+
+/-- The `SitesFree` obligation of a rank rewrite whose target rank nothing else
+holds: the live line lands on the free site, and any tombstone stays exactly
+where it was — a site the old entity already occupied. -/
+theorem setRank_sitesFree (p : WfPlan) (i : Id) (e a : Entity) (n : Nat)
+    (hget : p.val.store.get i = some e)
+    (hva : a.val = { e.val with live := ⟨e.val.live.doc, n⟩ })
+    (hlines : ∀ m ∈ p.val.lines, m.site = (⟨e.val.live.doc, n⟩ : Site) → m ∈ render i e)
+    (hprose : ∀ d, p.val.docs[e.val.live.doc]? = some d → ∀ q ∈ d.prose, q.1 ≠ n) :
+    SitesFree p.val i e a := by
+  intro l hl
+  rcases render_site i a l hl with hlive | harch
+  · have hsl : l.site = (⟨e.val.live.doc, n⟩ : Site) := by rw [hlive, hva]
+    constructor
+    · intro m hm hms
+      exact hlines m hm (by rw [hms, hsl])
+    · intro d hd q hq hqr
+      have hldoc : l.site.doc = e.val.live.doc := by rw [hsl]
+      have hlrank : l.site.rank = n := by rw [hsl]
+      have hd2 : p.val.docs[e.val.live.doc]? = some d := by rw [← hldoc]; exact hd
+      exact hprose d hd2 q hq (hqr.trans hlrank)
+  · have harchdef : a.val.archive = e.val.archive := by rw [hva]
+    cases hta : a.val.archive with
+    | none => rw [Core.archiveSite_none hta] at harch; simp at harch
+    | some t =>
+        have hts : t.site = l.site :=
+          Option.some.inj ((Core.archiveSite_some hta).symm.trans harch)
+        have hte : e.val.archive = some t := by rw [← harchdef]; exact hta
+        obtain ⟨m0, hm0, hm0s⟩ := archive_line_mem i e t hte
+        have hm0l : m0 ∈ p.val.lines := mem_lines_of_render p.val i e m0 hget hm0
+        constructor
+        · intro m hm hms
+          have hmm : m = m0 := site_names_one_line p m m0 hm hm0l (by rw [hms, hm0s, hts])
+          rw [hmm]; exact hm0
+        · intro d hd q hq
+          have hd' : p.val.docs[m0.site.doc]? = some d := by rw [hm0s, hts]; exact hd
+          have hne := no_prose_line_shares_a_rank p m0 hm0l d hd' q hq
+          rw [hm0s, hts] at hne
+          exact hne
+
+/-- **`cmdMove_succeeds`' mirror for the rank verb — the owed success form
+(§5.8's other direction).**  Every hypothesis is load-bearing and honest:
+`hlines` says the target rank is free among the document's item lines — any
+plan line already at `⟨doc, n⟩` is one of this item's own, which is what makes
+L20a's idempotent re-rank a success rather than a refusal; `hprose` says no
+heading or prose line owns the rank (`Normalized` counts both in one list);
+`hrest` is the six `itemsWf` conjuncts a rank rewrite can genuinely break —
+a day-file line ranked out of `# Pinned` is a legitimate `sectionsWf` refusal
+(`add_outside_a_day_files_pinned_section_is_refused_by_name` shows the same
+discipline biting on the wire).  `Normalized` is discharged, not assumed:
+`lines_set`/`normalized_set` (Plan.lean) turn the two freshness hypotheses into
+the re-check's rank conjunct.  Satisfiability: kernel.rs's
+`rank_moves_a_line_within_its_own_file` (rank 10 in the W37 fixture) is a wire
+witness for every hypothesis at once. -/
+theorem cmdRank_succeeds (p : WfPlan) (i : Id) (e : Entity) (n : Nat)
+    (hget : p.val.store.get i = some e)
+    (hlines : ∀ m ∈ p.val.lines, m.site = (⟨e.val.live.doc, n⟩ : Site) → m ∈ render i e)
+    (hprose : ∀ d, p.val.docs[e.val.live.doc]? = some d → ∀ q ∈ d.prose, q.1 ≠ n)
+    (hrest : ∀ a : Entity, a.val = { e.val with live := ⟨e.val.live.doc, n⟩ } →
+      ∀ hs : (p.val.store.get i).isSome = true,
+      itemsWfButRanks { p.val with store := p.val.store.set i a hs } = true) :
+    ∃ q : WfPlan, cmdRank i n p = .ok q ∧
+      ∃ e', q.val.store.get i = some e' ∧ e'.val.live = ⟨e.val.live.doc, n⟩ := by
+  have hwf : wf { e.val with live := ⟨e.val.live.doc, n⟩ } = true := by
+    rw [wf_setRank]; exact e.property
+  have hf : setRankE n e = .ok ⟨_, hwf⟩ := by
+    unfold setRankE; exact lift_ok_of_wf _ hwf
+  have hin : entityInRange p.val (⟨_, hwf⟩ : Entity) = true :=
+    entityInRange_of_mem p i e hget
+  have hdom : i ∈ p.val.store.dom := (p.val.store.domSpec i).mpr (by rw [hget]; rfl)
+  have hore := List.all_eq_true.1 (planWf_parts p.property).2.2.2.1 i hdom
+  rw [hget] at hore
+  have hor : demotionOriented p.val (⟨_, hwf⟩ : Entity) = true := hore
+  obtain ⟨q, hq, hqi, _⟩ := mapAt_ok_of_inRange p i (setRankE n) e _ hget hf hin hor
+    (fun hs => itemsWf_of_normalized _
+      (normalized_set p.val i e _ hs hget (itemsWf_parts p.items).1
+        (setRank_sitesFree p i e _ n hget rfl hlines hprose))
+      (hrest ⟨_, hwf⟩ rfl hs))
+  exact ⟨q, hq, _, hqi, rfl⟩
+
+/-- The same at the wire verb: `applyCmd (.rank i n)` **is** `cmdRank i n`, so
+the success form holds of the request path under the same hypotheses. -/
+theorem applyCmd_rank_succeeds (p : WfPlan) (i : Id) (e : Entity) (n : Nat)
+    (hget : p.val.store.get i = some e)
+    (hlines : ∀ m ∈ p.val.lines, m.site = (⟨e.val.live.doc, n⟩ : Site) → m ∈ render i e)
+    (hprose : ∀ d, p.val.docs[e.val.live.doc]? = some d → ∀ q ∈ d.prose, q.1 ≠ n)
+    (hrest : ∀ a : Entity, a.val = { e.val with live := ⟨e.val.live.doc, n⟩ } →
+      ∀ hs : (p.val.store.get i).isSome = true,
+      itemsWfButRanks { p.val with store := p.val.store.set i a hs } = true) :
+    ∃ q : WfPlan, applyCmd (.rank i n) p = .ok q ∧
+      ∃ e', q.val.store.get i = some e' ∧ e'.val.live = ⟨e.val.live.doc, n⟩ :=
+  cmdRank_succeeds p i e n hget hlines hprose hrest
+
+/-! ### `add` succeeds — the insert-shaped replacement lemma, then the theorem
+
+`lines_set` covers a store whose domain does not move.  `add` extends the
+domain, so it needs the insert-shaped analogue: the new plan's line list is the
+new entity's lines in front of the old list, verbatim.  Everything after that
+is the `freshRank` arithmetic already on file. -/
+
+theorem lines_insertFresh (p : PlanCore) (i : Id) (e : Entity)
+    (hfresh : (p.store.get i).isNone = true) :
+    PlanCore.lines { p with store := p.store.insertFresh i e hfresh } =
+      render i e ++ p.lines := by
+  show (p.store.insertFresh i e hfresh).dom.flatMap _ = _
+  rw [Store.dom_insertFresh, List.flatMap_cons]
+  simp only [Store.get_insertFresh_self]
+  congr 1
+  show p.store.dom.flatMap _ = p.store.dom.flatMap _
+  refine flatMap_congr _ _ _ (fun j hj => ?_)
+  have hji : j ≠ i := by
+    intro hc
+    rw [hc] at hj
+    have h1 := (p.store.domSpec i).mp hj
+    cases hg : p.store.get i with
+    | none => rw [hg] at h1; exact absurd h1 (by simp)
+    | some a => rw [hg] at hfresh; exact absurd hfresh (by simp)
+  rw [Store.get_insertFresh_other _ _ _ _ _ hji]
+
+/-- **`Normalized` survives an insert whose every line sits at `freshRank`.**
+The insert-shaped sibling of `normalized_of_fresh_or_old`: the new block meets
+nothing — `freshRank_gt` beats the item lines, `docProseMax_ge` the prose. -/
+theorem normalized_insertFresh_of_fresh (p : WfPlan) (i : Id) (e : Entity) (k : DocIx)
+    (hfresh : (p.val.store.get i).isNone = true)
+    (hsites : ∀ l ∈ render i e, l.site = (⟨k, freshRank p.val k⟩ : Site)) :
+    normalized { p.val with store := p.val.store.insertFresh i e hfresh } = true := by
+  have hl := lines_insertFresh p.val i e hfresh
+  simp only [normalized, List.all_eq_true, decide_eq_true_eq]
+  intro j hj
+  have hold : (docRanks p.val j).Nodup := by
+    have hn := (itemsWf_parts p.items).1
+    simp only [normalized, List.all_eq_true, decide_eq_true_eq] at hn
+    exact hn j hj
+  rw [docRanks_eq, hl, ranksIn_append]
+  rw [docRanks_eq] at hold
+  have holdp := List.nodup_append.1 hold
+  refine List.nodup_append.2 ⟨holdp.1,
+    List.nodup_append.2 ⟨ranksIn_render_nodup i e j, holdp.2.1, ?_⟩, ?_⟩
+  · intro x hx y hy hxy
+    obtain ⟨l, hl', hld, hlr⟩ := mem_ranksIn.1 hx
+    have hsl := hsites l hl'
+    have hjk : j = k := by rw [← hld, hsl]
+    have hx' : x = freshRank p.val k := by rw [← hlr, hsl]
+    obtain ⟨m, hm, hmd, hmr⟩ := mem_ranksIn.1 hy
+    have hlt := freshRank_gt p.val k m hm (by rw [hmd, hjk])
+    omega
+  · intro x hx y hy hxy
+    rcases List.mem_append.1 hy with hy' | hy'
+    · obtain ⟨l, hl', hld, hlr⟩ := mem_ranksIn.1 hy'
+      have hsl := hsites l hl'
+      have hjk : j = k := by rw [← hld, hsl]
+      have hy2 : y = freshRank p.val k := by rw [← hlr, hsl]
+      obtain ⟨d, hd, q, hq, hqr⟩ := mem_proseRanks hx
+      have h1 : q.1 ≤ docProseMax p.val j := docProseMax_ge p.val j d hd q hq
+      have h2 : docProseMax p.val k < freshRank p.val k :=
+        Nat.lt_succ_of_le (Nat.le_max_left _ _)
+      subst hjk
+      omega
+    · exact holdp.2.2 x hx y hy' hxy
+
+/-- An `add`'s entity renders exactly one line, and it is at `freshRank`. -/
+theorem add_at_freshRank_normalized (p : WfPlan) (i : Id) (d : Dest p.val)
+    (title : List Char) (hfresh : (p.val.store.get i).isNone = true) :
+    normalized { p.val with
+      store := (p.val.store.insertFresh i (addEntity p.val d i title) hfresh) } = true := by
+  refine normalized_insertFresh_of_fresh p i _ d.ix hfresh ?_
+  intro l hl
+  rcases render_site i _ l hl with h | h
+  · rw [h]; rfl
+  · rw [Core.archiveSite_none rfl] at h; simp at h
+
+/-- The domain grew by one entity whose placements are in range, so
+`sitesInRange` — a `planWf` conjunct outside `itemsWf` — is re-established. -/
+theorem sitesInRange_insertFresh (p : WfPlan) (i : Id) (e : Entity)
+    (hfresh : (p.val.store.get i).isNone = true)
+    (hin : entityInRange p.val e = true) :
+    sitesInRange { p.val with store := p.val.store.insertFresh i e hfresh } = true := by
+  have hnotmem : i ∉ p.val.store.dom := by
+    intro hc
+    have h1 := (p.val.store.domSpec i).mp hc
+    cases hg : p.val.store.get i with
+    | none => rw [hg] at h1; exact absurd h1 (by simp)
+    | some a => rw [hg] at hfresh; exact absurd hfresh (by simp)
+  simp only [sitesInRange, Store.dom_insertFresh, List.all_cons, Bool.and_eq_true]
+  constructor
+  · simp only [Store.get_insertFresh_self]
+    exact hin
+  · simp only [List.all_eq_true]
+    intro j hj
+    have hji : j ≠ i := fun hc => hnotmem (hc ▸ hj)
+    rw [Store.get_insertFresh_other _ _ _ _ _ hji]
+    exact List.all_eq_true.1 (planWf_parts p.property).2.1 j hj
+
+/-- ...and so is `demotionsOriented`, the other one. -/
+theorem demotionsOriented_insertFresh (p : WfPlan) (i : Id) (e : Entity)
+    (hfresh : (p.val.store.get i).isNone = true)
+    (hor : demotionOriented p.val e = true) :
+    demotionsOriented { p.val with store := p.val.store.insertFresh i e hfresh } = true := by
+  have hnotmem : i ∉ p.val.store.dom := by
+    intro hc
+    have h1 := (p.val.store.domSpec i).mp hc
+    cases hg : p.val.store.get i with
+    | none => rw [hg] at h1; exact absurd h1 (by simp)
+    | some a => rw [hg] at hfresh; exact absurd hfresh (by simp)
+  simp only [demotionsOriented, Store.dom_insertFresh, List.all_cons, Bool.and_eq_true]
+  constructor
+  · simp only [Store.get_insertFresh_self]
+    exact hor
+  · simp only [List.all_eq_true]
+    intro j hj
+    have hji : j ≠ i := fun hc => hnotmem (hc ▸ hj)
+    rw [Store.get_insertFresh_other _ _ _ _ _ hji]
+    exact List.all_eq_true.1 (planWf_parts p.property).2.2.2.1 j hj
+
+/-- **`cmdAdd_succeeds` — the owed success form for `add` (§5.8), completing
+its three conditional laws.**  `insertFresh`'s `planWf` re-check is discharged
+conjunct by conjunct: `docsWf` and `pathsDistinct` read only `docs`, which the
+insert does not touch; the new entity's placement is in range because a `Dest`
+carries the proof; a fresh `add` has no tombstone to orient; and `Normalized`
+is the `freshRank` argument (`add_at_freshRank_normalized`).  What stays a
+hypothesis is `itemsWfButRanks` of the post-state — the six conjuncts an `add`
+can genuinely violate, and does: a day-file `add` outside `# Pinned` is
+refused through exactly this check
+(`add_outside_a_day_files_pinned_section_is_refused_by_name`, kernel.rs), so
+discharging it outright would prove a false theorem.  Satisfiability of every
+hypothesis at once: `add_inserts_a_fresh_id_into_the_requested_file` and
+`two_adds_in_one_request_get_two_ids_and_two_ranks` (kernel.rs) are wire
+witnesses.  The conclusion names what reaches the disk: the id L21 generated,
+stored, at `freshRank` in the requested document (§5.9). -/
+theorem cmdAdd_succeeds (p : WfPlan) (seed n : Nat) (title : List Char) (d : Dest p.val)
+    (hn : resolveDest p.val n = .ok d)
+    (hrest : ∀ hfresh : (p.val.store.get (freshId seed p.val.store.dom)).isNone = true,
+      itemsWfButRanks { p.val with
+        store := (p.val.store.insertFresh (freshId seed p.val.store.dom)
+          (addEntity p.val d (freshId seed p.val.store.dom) title) hfresh) } = true) :
+    ∃ q : WfPlan, applyCmd (.add seed n title) p = .ok q ∧
+      ∃ e, q.val.store.get (freshId seed p.val.store.dom) = some e ∧
+        e.val.live = ⟨n, freshRank p.val n⟩ := by
+  have hfresh : (p.val.store.get (freshId seed p.val.store.dom)).isNone = true :=
+    store_get_isNone_of_not_mem (add_assigns_a_fresh_id seed _)
+  have hinr : entityInRange p.val
+      (addEntity p.val d (freshId seed p.val.store.dom) title) = true := by
+    simp only [entityInRange, Bool.and_eq_true]
+    refine ⟨?_, rfl⟩
+    simp only [siteInRange, addEntity, addCore, Dest.site]
+    exact decide_eq_true d.ok
+  have hpw : planWf { p.val with
+      store := (p.val.store.insertFresh (freshId seed p.val.store.dom)
+        (addEntity p.val d (freshId seed p.val.store.dom) title) hfresh) } = true :=
+    planWf_of_parts (planWf_parts p.property).1
+      (sitesInRange_insertFresh p _ _ hfresh hinr)
+      (planWf_parts p.property).2.2.1
+      (demotionsOriented_insertFresh p _ _ hfresh rfl)
+      (itemsWf_of_normalized _
+        (add_at_freshRank_normalized p (freshId seed p.val.store.dom) d title hfresh)
+        (hrest hfresh))
+  refine ⟨⟨_, hpw⟩, ?_, ?_⟩
+  · simp only [applyCmd, hn]
+    unfold WfPlan.insertFresh
+    split
+    · exact congrArg Except.ok (Subtype.ext rfl)
+    · rename_i hq2
+      exact absurd hpw hq2
+  · refine ⟨addEntity p.val d (freshId seed p.val.store.dom) title, ?_, ?_⟩
+    · exact Store.get_insertFresh_self p.val.store _ _ hfresh
+    · show (⟨d.ix, freshRank p.val d.ix⟩ : Site) = ⟨n, freshRank p.val n⟩
+      rw [resolveDest_ix hn]
+
 end Tm

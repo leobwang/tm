@@ -1158,3 +1158,15 @@ open Tm
 #print axioms Tm.cmdAdd_inserts
 #print axioms Tm.cmdAdd_rank
 #print axioms Tm.cmdAdd_other_untouched
+
+-- APPENDED 2026-09-12 (stage-3 continuation session)
+#print axioms Tm.rank_onto_a_taken_rank_is_refused
+#print axioms Tm.setRank_sitesFree
+#print axioms Tm.cmdRank_succeeds
+#print axioms Tm.applyCmd_rank_succeeds
+#print axioms Tm.lines_insertFresh
+#print axioms Tm.normalized_insertFresh_of_fresh
+#print axioms Tm.add_at_freshRank_normalized
+#print axioms Tm.sitesInRange_insertFresh
+#print axioms Tm.demotionsOriented_insertFresh
+#print axioms Tm.cmdAdd_succeeds

@@ -118,11 +118,10 @@ carries no destination, and there is no `Dest` proof because no file changes —
 which is what separates it from `move` and why it cannot reuse `Relocation`.
 The new rank is the caller's, verbatim; `mapAt` re-checks the post-state, so a
 rank that collides with another line of this file dies there as `badHorizon`
-rather than silently renumbering the file.  A `cmdRank_succeeds` mirroring
-`cmdMove_succeeds` is still owed — the replacement lemma it would lean on
-exists (`lines_set`, Plan.lean; README gap 17) — so this stage proves the
-conditional laws L20a/L20b, and the success form is recorded work, not
-blocked work. -/
+rather than silently renumbering the file.  Both §5.8 directions are theorems
+now (end of Boundary.lean): `rank_onto_a_taken_rank_is_refused` is the
+collision refusal, and `cmdRank_succeeds` mirrors `cmdMove_succeeds` on the
+replacement lemma (`lines_set`/`normalized_set`, Plan.lean). -/
 def setRankE (n : Nat) (e : Entity) : Except KErr Entity :=
   lift { e.val with live := ⟨e.val.live.doc, n⟩ }
 

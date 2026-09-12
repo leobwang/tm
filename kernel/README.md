@@ -2093,3 +2093,39 @@ Measured at this commit: burn-down 44 (`grep -c ^theorem Goals.lean`); audit
 1051 lines / 1051 distinct names / 1051 attr-aware theorem declarations
 (§6.3's three counts reconcile); `kernel.rs` 33 tests; no goal discharged and
 no theorem added by this block — it is a documentation repair.
+
+**Owed theorems, LANDED (supersedes "Owed theorems, by name" above).**  All
+three sit at the end of Boundary.lean, so every Boundary line number this
+block cites stays true.  §5.8's bite for `rank` is
+`rank_onto_a_taken_rank_is_refused`: an occupant of `⟨doc, n⟩` anywhere in
+`p.val.lines` (what reaches the disk, §5.9) carrying another id survives the
+single-entity swap (`lines_set`) and collides with the rewritten live line, so
+`mapAt`'s re-check finds `Normalized` false and the verb is `.error
+.badHorizon` with nothing written — the Lean form of kernel.rs's
+`rank_onto_a_taken_rank_is_refused_and_writes_nothing` (`^t3`'s rank 5).
+`cmdRank_succeeds` (plus the wire wrapper `applyCmd_rank_succeeds`) mirrors
+`cmdMove_succeeds` on `lines_set`/`normalized_set`, exactly as the corrected
+pointer above says it could: the honest hypotheses are the two freshness facts
+(`hlines` — any plan line already at the target site is the item's own, which
+keeps L20a's re-rank a success; `hprose` — no prose line owns the rank) and
+`itemsWfButRanks` of the post-state, because a rank rewrite can genuinely
+break `sectionsWf` by ranking a day-file line out of `# Pinned`.
+`cmdAdd_succeeds` needed the insert-shaped replacement lemma `lines_set`
+cannot supply — `lines_insertFresh` (the domain grows; the new render block
+lands in front, verbatim) — plus `normalized_insertFresh_of_fresh`,
+`add_at_freshRank_normalized`, `sitesInRange_insertFresh` and
+`demotionsOriented_insertFresh`; `docsWf` and `pathsDistinct` transfer because
+the insert does not touch `docs`.  What stays a hypothesis is
+`itemsWfButRanks` of the inserted state — the day-file refusal
+(`add_outside_a_day_files_pinned_section_is_refused_by_name`) goes through
+exactly that check, so discharging it outright would prove a false theorem.
+Satisfiability of each hypothesis set is a running FFI test:
+`rank_moves_a_line_within_its_own_file` (rank 10),
+`add_inserts_a_fresh_id_into_the_requested_file`,
+`two_adds_in_one_request_get_two_ids_and_two_ranks`.  The stale "still owed"
+sentence in `cmdRank`'s doc comment (Cmd.lean) now points at the landed pair
+instead.  Re-measured after this landing: burn-down 44, unchanged — these
+were convention debt, never `Goals.lean` entries; audit 1061 lines / 1061
+distinct names / 1061 attr-aware declarations (ten new under Check.lean's
+`APPENDED 2026-09-12` banner: the three owed forms, the wire wrapper, and six
+supporting lemmas); `check.sh` 7/7; `kernel.rs` 33 tests, unchanged.
