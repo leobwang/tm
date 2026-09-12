@@ -3402,3 +3402,200 @@ files and 4/5 whole plans**, unchanged; **`Goals.lean` burn-down 40** (was 41;
 one goal discharged, none added); `cargo test --workspace` **983 passed / 0
 failed / 0 ignored across 64 binaries**; the FFI suite **51 tests** (45 kernel +
 6 corpus; five new).  Gap 44 is taken; new gaps start at 45, new cheats at 48.
+
+**A comment is prose — stage 3 step 4, the HTML-comment landmine, cleared
+kernel-side (same 2026-09-12 session).**  Supersedes, by name, the kernel-side
+"**owed by name**" sentence of the paragraph "The bare-`tm init` tree was
+unloadable to the kernel" and the matching "recorded above, the kernel-side
+HTML-comment awareness in `scanLines`/`splitDoc`" item of the panic-layers
+paragraph's still-owed list; both are landed here.  That paragraph's claim that
+the loader should read comments "the way the shipped Rust parser does" is
+**corrected**: see the oracle, next.
+
+*The oracle, read first.*  The fork-point `tm-core/src/grammar.rs` has **no
+general comment awareness**.  `parse_file` treats exactly one comment form
+specially — the generated range `<!-- tm:<name> start … -->` …
+`<!-- tm:<name> end -->`, whose lines are `Verbatim` (an unterminated one is a
+`Problem` and runs to end of file) — and `ItemLine::parse` demands `- ` at
+column 0, so the starter templates' four-space-indented examples were prose to
+it by indentation, not by comment.  `tm-spec-v1.md` §3 says only that "lines not
+beginning with `- ` are prose/headings/comments and are kept verbatim".  This
+kernel's `parseItem` accepts any run of leading spaces, which is how those
+indented examples became live items to it.  So there is no shipped behaviour to
+match: the kernel's comment reading is a **behaviour change** (§4's last row),
+separated from the comment-blind reader it replaces by
+`a_commented_item_line_loads_as_prose` — the example line `isItemLine`s `true`
+and the splitter files it as prose.
+
+*The rule (Plan.lean, `opensComment`/`closesComment`/`commentAfter`)* is
+CommonMark's HTML block type 2 and nothing wider: a comment opens on a line
+whose first non-space characters are `<!--`, and closes on the first line — the
+opener included — that contains `-->` anywhere; every line from opener to closer
+is prose, verbatim.  An inline `<!--` mid-line opens nothing
+(`an_item_line_outside_a_comment_is_still_an_item`, second conjunct), so **an
+item line can never open a comment** (`item_lines_open_no_comment`): an edit to
+an item cannot change how any other line of its file reads.  The generated
+markers (`<!-- tm:plan start 10:42 -->`) open and close on their own line, so
+the corpus day files read exactly as before.  `commentAfter` is the one step
+function; the splitter, the scan, the section derivation and the placement
+check all read comments through it (§5.3).
+
+*What changed, by name.*
+- **`splitDoc`** is now `splitDocC false`, a splitter carrying the comment state:
+  a line read while a comment is open is prose whatever its bytes.  The
+  induction lemmas moved to `splitDocC` (`splitDocC_cons`, `_prose_ge`,
+  `_items_ge`, `_prose_strict`, `_items_strict`, `_slots_separated`,
+  `renderSplit_splitDocC`) and every old `splitDoc_*` name that is still true
+  keeps its statement (`splitDoc_prose_ge`, `_items_ge`, `_nil`, `_cons_ok`,
+  `_prose_sorted`, `_items_sorted`, `_prose_nodup`, `_items_nodup`,
+  `_slots_separated`, `renderSplit_splitDoc`).  `splitDoc_cons_error` is
+  **restated without a new hypothesis**: its tail is `splitDocC (commentAfter
+  false l)`, which is `splitDoc` unless the line opened a comment.
+- **`splitDocC_reads_comments`** is the bridge a `Doc` needs, since a `Doc` keeps
+  only prose: read back off the prose alone (`commentOpenFrom`/`inComment`), a
+  prose line with no comment open is not an item line, and no item sits where a
+  comment is open.
+- **`docWf`** is now `ranksAscend d.prose && prose.all (!isItemLine ∨ inComment)`.
+  The second conjunct is the feature (a commented item line is admitted); the
+  first is a strengthening, so that `inComment`'s list-order reading is the
+  rendered file's order on every accepted document (`loadCore_docsWf` discharges
+  it from `splitDoc_prose_strict`; `prose_ranks_ascend` reads it back).
+- **Three proved theorems narrowed, renamed, and their old `Check.lean` lines
+  removed** (the unconditional forms are false of a commented item line):
+  `prose_is_never_an_item` → `prose_outside_a_comment_is_never_an_item`,
+  `splitDoc_prose_not_item` → `splitDoc_prose_outside_a_comment_not_item`,
+  `scanLines_prose` → `scanLines_prose_outside_a_comment`; each gained exactly
+  the hypothesis `inComment … = false`.  The old reading is recovered exactly
+  where no comment exists: `comment_free_prose_is_never_an_item`.
+- **A heading inside a comment is no heading**: `liveHeading`, read by
+  `headingsWf` and `lastHeadingBefore` (so by `sectionAt`/`sectionKindAt` and
+  §4.2's derivation).  `a_demoted_section_is_a_month_section` and
+  `a_pinned_section_is_a_day_section` keep their names and **gain the
+  hypothesis** `inComment d.prose q.1 = false` — a `# Demoted` inside a week
+  file's comment is not a misplaced section, and the unhypothesised statements
+  are false of one.  Witness: `a_commented_heading_is_no_section`.
+- **`placementSectionWf` gains `!commentAt p s`** — an item rendered inside a
+  comment would read back as prose and vanish from the plan with the file still
+  holding it.  Both directions (§5.8): `no_item_sits_in_a_comment` (every
+  `WfPlan`, live and archive sites), `an_item_in_a_comment_is_rejected` (the
+  bite), and `the_loader_places_no_item_in_a_comment` (the over-bite guard at
+  the loader: the conjunct passes every placement `loadPlan` itself read, via
+  `commentAt_loadCore_placement` and `entityUncommented_loadEntity`, the shape
+  of `entityInRange_loadEntity`).  `firstItemFault` names it
+  `sectionDiscipline`; see gap 47 for what that bite can reach.
+- **`scanLines`** is `scanLinesFrom path none`: a line inside a comment is not
+  scanned, so a broken example shape (`- [Z] …`, an id-less example) in a
+  guidance comment is not `badLine`.
+
+*The unterminated-comment decision: refused, by name.*  `LErr.unterminatedComment
+path n`, on the wire `{"err":{"unterminatedComment":{"path":…,"line":n}}}`, `n` the
+opener's 0-based index (`badLine`'s convention).  Why not CommonMark's
+run-to-end-of-document: a stray `<!--` at the start of a line would silently
+drop every item below it from the plan — the over-bite §5.8 warns is worse than
+the bug — where a named refusal is loud and names the line to fix.  As a
+theorem: `scanLines_accepts_only_closed_comments` (every accepted document
+leaves `commentAfter`'s state closed); witnessed by
+`an_unterminated_comment_is_refused` and the FFI test
+`an_unterminated_comment_is_refused_by_name`.  The scan is linear, so a
+`badLine` above the opener is reported first.  The host maps the refusal by
+name (`kernel_bridge::refusal`, table test extended); driven on the shipped
+binary: `tm add` on a tree whose `backlog.md` ended in an open comment exited 1
+with `kernel refusal: unterminatedComment — the HTML comment opened at
+backlog.md:17 …`, `--json` carrying `detail.refusal:"unterminatedComment"`, the
+file's sha256 unchanged; closing the comment made the same `add` succeed.
+
+*The decided witnesses* (Boundary.lean, "A comment is prose — the witnesses"),
+each probed under an 8 GB cap first (the probe file ran all of them in 1.3 s,
+800 MB peak): one seven-line week document whose comment holds an example
+carrying the live item's **own id**, a broken shape and a `# Demoted` — each of
+which would refuse the file if read — `a_commented_item_line_loads_as_prose`,
+`the_commented_request_loads` (scan `rfl`, `loadsOk` by `decide`),
+`the_commented_request_round_trips` (an instance of
+`the_kernel_reads_back_what_it_writes`, whose statement is unchanged),
+`a_commented_heading_is_no_section`, `an_item_line_outside_a_comment_is_still_an_item`
+(the markers removed: `dupId` again), `an_unterminated_comment_is_refused`.
+
+*Host side — the templates' natural bullets restored.*  `week-body.md`,
+`month-body.md` and `backlog.md` carry their `- [ ]` examples again (exactly
+`bd61f11^`'s bytes), superseding that paragraph's "Host-side fix, taken".  The
+guard is `init_tree.rs`'s `every_kernel_backed_verb_works_on_a_bare_init_tree`:
+a fresh `tm init`, asserting the landmine is armed (`@m2 after:^t4 ^t5` inside
+the week comment), then `add` ×2, the keyed `edit est=`, `rank`, `move`,
+`demote`, `readopt`, `drop` — every kernel-backed verb — each exit 0, every
+guidance comment byte-identical after, and `tm check` clean.  Measured to bite:
+with this step's two Lean files stashed (kernel at `b7f504d`), the test fails on
+its first `add` with `kernel refusal: itemCheck — … (danglingDep)`.  FFI:
+`an_item_line_inside_a_comment_is_prose` (load, byte-identical echo, an `est` on
+`^m1` changes the live line and not the example, and the uncommented pair is
+`dupId`).
+
+*Cost, measured.*  A 3 800-line week document (200 headings, 2 000 items)
+through `examples/oneshot` with one `est` command: 1.34 s at `b7f504d`, 1.37 s
+here; with 200 three-line comments added, 1.42 s.
+
+**Gap 45 — `tm-core`'s parser is comment-blind, so the host's old-path readers
+disagree with the kernel about a column-0 item line inside a comment.**
+(1) *What is not done*: `tm_core::grammar::parse_file` (and so `tm check`, the
+planner, the TUI's today screen, every verb still on the old path) reads
+`- [ ] … ^id` at column 0 inside `<!-- … -->` as a live item.  (2) *Why*: this
+step's scope is the kernel; teaching the fork-point parser the same rule is
+host work, and the templates no longer depend on it (their examples are
+indented, which `ItemLine::parse` already reads as prose).  (3) *What it
+costs*, driven: with `<!--`, `- [ ] 2 30m Hidden ^h1`, `-->` appended to a fresh
+tree's `backlog.md`, `tm plan` schedules `Hidden` at 09:00 while `tm drop ^h1`
+is refused `noSuchId`, and `tm check` reports no problems.  A commented id that
+collides with a live one is a `tm check` dup-id while the kernel accepts the
+tree.  Nothing is written wrongly — the kernel-backed verbs never see the
+commented line — but the two readers answer differently.  (4) *Which stage
+clears it*: whichever retires `parse_file` for kernel reads (stage 7's
+cut-over), or a host change that calls `commentAfter`'s rule in Rust with a
+differential test against the kernel.
+
+**Gap 46 — the comment rule's edges, decided narrowly and not widened.**
+(1) *What is not done*: the kernel does **not** read the lines *between* a
+generated range's markers (`<!-- tm:plan start -->` … `<!-- tm:plan end -->`)
+as verbatim, which the fork-point Rust does; each marker is a one-line comment
+to it, so a `- [ ] … ^id` row inside a generated block is live.  The opener
+accepts **any** number of leading spaces (CommonMark: at most three; four is an
+indented code block) and no tabs (`isSp` is the space alone).  (2) *Why*: the
+generated block's rows are timeline text (`emit.rs`'s `render_row`), never
+`- [ ]` lines, so the range rule buys nothing today and would be a second state
+machine; the indentation latitude matches `parseItem`'s own.  (3) *What it
+costs*: a hand-edited item line pasted into a `tm:plan` block is read as an
+item (in §4.3's day file, whose block precedes `# Pinned`, a
+`sectionDiscipline` refusal — loud);
+a four-space-indented `<!--` opens a comment a CommonMark renderer would show as
+code.  (4) *Which stage*: stage 6, if the planner's block ever carries item
+lines.
+
+**Gap 47 — `placementSectionWf`'s comment conjunct is unreachable through
+`run`; its bite is a proof, not a test.**  (1) *What is not done*: no wire
+request can make it refuse.  (2) *Why*: prose never changes after load, and on a
+loaded document the only free ranks are vacated item ranks (outside every
+comment, by `splitDocC_reads_comments`) and ranks past the last line, where the
+state is closed once `scanLines` has accepted the file — so a command ranking a
+line into a comment is `rankCollision` first.  It stays because `planWf` is a
+claim about `PlanCore`, not about `run`: `loadPlan` alone does not scan, and a
+plan it accepts with a trailing open comment would take an append into it
+(`an_item_in_a_comment_is_rejected` is that bite).  (3) *What it costs*: a
+checker no wire input can fail, written down per §9.2; and when it does bite it
+is named `sectionDiscipline`, not something more specific.  (4) *Which stage*:
+none needed unless a command ever writes prose.
+
+*Goals and ledger.*  No `Goals.lean` goal states this property, so none is
+discharged and none is added; `Negative.lean` is untouched and its transcript
+is byte-identical to `b7f504d`'s (compared by stashing the two Lean files and
+rebuilding); no cheat is added.
+
+Re-measured at this commit, from the committed harness (§5.11):
+`kernel/check.sh` **7/7 ok**; axiom audit **1257 theorems** (was 1223; +37 names
+under the new `APPENDED 2026-09-12 (stage-3, step 4: a comment is prose)` banner,
+−3 renamed away), and §6.3's three counts agree at 1257; every new theorem's
+axioms are within `propext`, `Quot.sound`, `Classical.choice`; corpus **33/37
+files and 4/5 whole plans**, unchanged (no corpus file carries an item line
+inside a comment; the four refusals are `plan-conflicts`' deliberate ones);
+**`Goals.lean` burn-down 40**, unchanged; `cargo test --workspace` **984 passed
+/ 0 failed / 0 ignored across 64 binaries** (was 983; +1,
+`every_kernel_backed_verb_works_on_a_bare_init_tree`); the FFI suite **53
+tests** (47 kernel + 6 corpus; two new).  Gaps 45–47 are taken; new gaps start
+at 48, new cheats at 48.

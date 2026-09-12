@@ -85,7 +85,8 @@ pub enum CliError {
     /// Every kernel refusal is **named** (`occupied`, `noSuchId`,
     /// `notDemoted`, `alreadyDemoted`, `badHorizon`, `badItem`,
     /// `tabbedLine`, `keyAbsent`, `siteOutOfRange`, `dupId`, `notADemotion`,
-    /// `ambiguousDemotion`, `duplicatePath`, `badLine`, `itemCheck`) and the
+    /// `ambiguousDemotion`, `duplicatePath`, `badLine`, `unterminatedComment`,
+    /// `itemCheck`) and the
     /// name reaches both the human line and the `--json` document verbatim —
     /// AGENTS §8.1: a refusal you can name is a finding, one swallowed into
     /// free text is not.

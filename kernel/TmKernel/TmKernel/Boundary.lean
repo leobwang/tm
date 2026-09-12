@@ -85,6 +85,10 @@ inductive LErr
   | badLine (path : List Char) (n : Nat) (why : PErr)
   /-- two documents with one path: they are one file on disk -/
   | duplicatePath (path : List Char)
+  /-- an HTML comment opened on line `n` (0-based, as `badLine`) is still open at
+      the end of the file.  Everything after the opener would be prose, and the
+      kernel does not guess where the writer meant the comment to stop. -/
+  | unterminatedComment (path : List Char) (n : Nat)
 deriving Repr
 
 /-! ### Rejection is real
@@ -96,43 +100,122 @@ whole contract of a boundary, so the scan below is run before anything is
 built, and only `PErr.notAnItem` — the line does not have an item's shape at
 all — counts as prose. -/
 
-def scanLines (path : List Char) : Nat → List (List Char) → Except LErr Unit
-  | _, []      => .ok ()
-  | k, l :: rest =>
+/-- The scan, from comment state `o` — `some n` while a comment opened on line
+`n` is open.  A line read inside a comment is prose whatever its bytes, so a
+broken example item in a guidance comment is not a `badLine`; a comment still
+open at the end of the file is `unterminatedComment`, naming its opener. -/
+def scanLinesFrom (path : List Char) : Option Nat → Nat → List (List Char) → Except LErr Unit
+  | none,   _, []      => .ok ()
+  | some n, _, []      => .error (.unterminatedComment path n)
+  | o, k, l :: rest =>
+    let o' := if commentAfter o.isSome l then some (o.getD k) else none
+    if o.isSome then scanLinesFrom path o' (k + 1) rest else
     match parseItem l with
-    | .ok _             => scanLines path (k + 1) rest
-    | .error .notAnItem => scanLines path (k + 1) rest
+    | .ok _             => scanLinesFrom path o' (k + 1) rest
+    | .error .notAnItem => scanLinesFrom path o' (k + 1) rest
     | .error e          => .error (.badLine path k e)
 
-/-- What acceptance buys: every prose line of an accepted document failed to
-parse **because it is not an item line**, not because it is a broken one. -/
-theorem scanLines_prose (path : List Char) (k : Nat) (ls : List (List Char))
-    (h : scanLines path k ls = .ok ()) :
-    ∀ q ∈ (splitDoc k ls).prose, parseItem q.2 = .error .notAnItem := by
-  induction ls generalizing k with
-  | nil => intro q hq; simp [splitDoc] at hq
-  | cons l rest ih =>
-      intro q hq
-      unfold splitDoc at hq
-      simp only at hq
-      unfold scanLines at h
-      cases hpl : parseItem l with
-      | ok trip =>
-          rw [hpl] at hq h
-          simp only at h
-          exact ih (k + 1) h q hq
+def scanLines (path : List Char) (k : Nat) (ls : List (List Char)) : Except LErr Unit :=
+  scanLinesFrom path none k ls
+
+theorem scan_state_isSome (b : Bool) (n : Nat) :
+    (if b then some n else none).isSome = b := by
+  cases b <;> rfl
+
+/-- One step of an accepted scan: the tail is accepted from the state the line
+leaves, and a line read with no comment open is prose-shaped or an item. -/
+theorem scanLinesFrom_cons_ok (path : List Char) (o : Option Nat) (k : Nat) (l : List Char)
+    (rest : List (List Char)) (h : scanLinesFrom path o k (l :: rest) = .ok ()) :
+    scanLinesFrom path (if commentAfter o.isSome l then some (o.getD k) else none) (k + 1) rest
+        = .ok () ∧
+      (o.isSome = false → parseItem l = .error .notAnItem ∨ isItemLine l = true) := by
+  cases o with
+  | some n =>
+      refine ⟨?_, fun hs => by simp at hs⟩
+      simpa [scanLinesFrom] using h
+  | none =>
+      simp only [scanLinesFrom, Option.isSome_none, Bool.false_eq_true, if_false] at h
+      cases hp : parseItem l with
+      | ok t =>
+          rw [hp] at h
+          exact ⟨h, fun _ => Or.inr (by simp [isItemLine, hp])⟩
       | error e =>
           cases e with
-          | notAnItem =>
-              rw [hpl] at hq h
-              simp only at h
-              simp only [List.mem_cons] at hq
-              rcases hq with rfl | hq
-              · exact hpl
-              · exact ih (k + 1) h q hq
-          | badState c => rw [hpl] at h; simp at h
-          | noId       => rw [hpl] at h; simp at h
-          | manyIds    => rw [hpl] at h; simp at h
+          | notAnItem => rw [hp] at h; exact ⟨h, fun _ => Or.inl rfl⟩
+          | badState c => rw [hp] at h; simp at h
+          | noId       => rw [hp] at h; simp at h
+          | manyIds    => rw [hp] at h; simp at h
+
+theorem scanLinesFrom_prose (path : List Char) (o : Option Nat) (k : Nat)
+    (ls : List (List Char)) (h : scanLinesFrom path o k ls = .ok ()) :
+    ∀ q ∈ (splitDocC o.isSome k ls).prose,
+      commentOpenFrom o.isSome (splitDocC o.isSome k ls).prose q.1 = false →
+      parseItem q.2 = .error .notAnItem := by
+  induction ls generalizing o k with
+  | nil => intro q hq; simp [splitDocC] at hq
+  | cons l rest ih =>
+      obtain ⟨hrest, hhead⟩ := scanLinesFrom_cons_ok path o k l rest h
+      have ihr := ih _ (k + 1) hrest
+      rw [scan_state_isSome] at ihr
+      intro q hq hco
+      rcases splitDocC_cons o.isSome k l rest with ⟨hs, hor⟩ | ⟨i, g, r, hc, hp, hs⟩
+      · rw [hs] at hq hco
+        dsimp only at hq hco
+        have hge := splitDocC_prose_ge (commentAfter o.isSome l) (k + 1) rest
+        rcases List.mem_cons.1 hq with hqe | hq'
+        · subst hqe
+          rw [commentOpenFrom_none_below _ _ k (by
+            intro x hx
+            rcases List.mem_cons.1 hx with hxe | hx'
+            · subst hxe; exact Nat.le_refl _
+            · have := hge x hx'; omega)] at hco
+          rcases hhead hco with h1 | h1
+          · exact h1
+          · rcases hor with h2 | h2
+            · rw [hco] at h2; exact absurd h2 (by decide)
+            · rw [h1] at h2; exact absurd h2 (by decide)
+        · have hk : k < q.1 := by have := hge q hq'; omega
+          rw [commentOpenFrom_cons_below _ k l _ q.1 hk] at hco
+          exact ihr q hq' hco
+      · rw [hs] at hq hco
+        dsimp only at hq hco
+        have hc' : commentAfter false l = false :=
+          commentAfter_false_of_item l (by simp [isItemLine, hp])
+        simp only [hc, hc'] at hco ihr hq
+        exact ihr q hq hco
+
+/-- What acceptance buys: every prose line of an accepted document that is
+**not inside a comment** failed to parse because it is not an item line, not
+because it is a broken one.  (Supersedes `scanLines_prose`, 2026-09-12: a line
+inside a comment is prose whatever its bytes, broken item shapes included.) -/
+theorem scanLines_prose_outside_a_comment (path : List Char) (k : Nat) (ls : List (List Char))
+    (h : scanLines path k ls = .ok ()) :
+    ∀ q ∈ (splitDoc k ls).prose,
+      inComment (splitDoc k ls).prose q.1 = false → parseItem q.2 = .error .notAnItem :=
+  scanLinesFrom_prose path none k ls h
+
+theorem scanLinesFrom_closes (path : List Char) (o : Option Nat) (k : Nat)
+    (ls : List (List Char)) (h : scanLinesFrom path o k ls = .ok ()) :
+    ls.foldl commentAfter o.isSome = false := by
+  induction ls generalizing o k with
+  | nil =>
+      cases o with
+      | none => rfl
+      | some n => simp [scanLinesFrom] at h
+  | cons l rest ih =>
+      obtain ⟨hrest, _⟩ := scanLinesFrom_cons_ok path o k l rest h
+      have := ih _ (k + 1) hrest
+      rw [scan_state_isSome] at this
+      simpa [List.foldl_cons] using this
+
+/-- **The unterminated-comment decision, as a theorem.**  Every document the
+scan accepts ends with no comment open: reading its lines through
+`commentAfter` from the top leaves the state closed.  The refusal it rules in is
+`LErr.unterminatedComment`, witnessed by `an_unterminated_comment_is_refused`. -/
+theorem scanLines_accepts_only_closed_comments (path : List Char) (k : Nat)
+    (ls : List (List Char)) (h : scanLines path k ls = .ok ()) :
+    ls.foldl commentAfter false = false :=
+  scanLinesFrom_closes path none k ls h
 
 /-! ### The loader is the inverse of `render`, and where the inverse is not
 unique it rejects
@@ -1133,6 +1216,8 @@ def lerrJson : LErr → JVal
   | .duplicatePath pa => jone "duplicatePath" (.str pa)
   | .badLine pa n w   => jone "badLine" (.obj
       [("path".toList, .str pa), ("line".toList, .num n), ("why".toList, .str (toString (repr w)).toList)])
+  | .unterminatedComment pa n => jone "unterminatedComment" (.obj
+      [("path".toList, .str pa), ("line".toList, .num n)])
 
 /-- Name the id whose two lines the documents do not order, for the diagnostic.
 Every diagnostic names the id or the path it is about. -/
@@ -1435,10 +1520,16 @@ theorem loadCore_docsWf (docs : List ReqDoc) (items : List (Id × Entity)) :
   show List.all (docs.map mkDoc) docWf = true
   simp only [List.all_eq_true, List.mem_map]
   rintro d ⟨x, _, rfl⟩
-  show List.all (splitDoc 0 x.lines).prose (fun q => !isItemLine q.2) = true
+  show (ranksAscend (splitDoc 0 x.lines).prose &&
+      List.all (splitDoc 0 x.lines).prose
+        (fun q => !isItemLine q.2 || inComment (splitDoc 0 x.lines).prose q.1)) = true
+  rw [Bool.and_eq_true]
+  refine ⟨ranksAscend_of_pairwise _ (splitDoc_prose_strict 0 x.lines), ?_⟩
   simp only [List.all_eq_true]
   intro q hq
-  simp [splitDoc_prose_not_item 0 x.lines q hq]
+  cases hc : inComment (splitDoc 0 x.lines).prose q.1 with
+  | true => simp
+  | false => simp [splitDoc_prose_outside_a_comment_not_item 0 x.lines q hq hc]
 
 /-- **The plan's line list is exactly the request's item lines.**  The store's
 enumeration order has dropped out entirely: nothing the loader built renders a
@@ -2353,6 +2444,72 @@ theorem the_loader_builds_oriented_demotions (docs : List ReqDoc) (items : List 
   | some e =>
       exact demotionOriented_loadEntity (fun q hq => (List.mem_filter.1 hq).1)
         (hall (i, e) (loadStore_get_some items i e g))
+
+/-- On a loaded plan, no placement the walk built sits inside a comment of its
+document — `splitDoc_items_outside_comments`, read through `mkDoc`. -/
+theorem commentAt_loadCore_placement (docs : List ReqDoc) (items : List (Id × Entity))
+    {q : Placement} (hq : q ∈ placementsOf 0 docs) :
+    commentAt (loadCore docs items) ⟨q.doc, q.rank⟩ = false := by
+  obtain ⟨j, d, hd, hqj⟩ := (mem_placementsOf q 0 docs).1 hq
+  obtain ⟨it, hit, hqe⟩ := mem_placementsOfDoc.1 hqj
+  rw [hqe, Nat.zero_add]
+  suffices h : (docs.map mkDoc)[j]? = some (mkDoc d) by
+    show (match (docs.map mkDoc)[j]? with
+      | none => false
+      | some dd => inComment dd.prose it.1) = false
+    rw [h]
+    exact splitDoc_items_outside_comments 0 d.lines it hit
+  rw [List.getElem?_map, hd]
+  rfl
+
+/-- An entity `buildEntity` accepts has neither of its sites inside a comment on
+the loaded plan — the same two arms as `entityInRange_loadEntity`. -/
+theorem entityUncommented_loadEntity {docs : List ReqDoc} {items : List (Id × Entity)}
+    {qs : List Placement} {i : Id} {e : Entity}
+    (hsub : ∀ q ∈ qs, q ∈ placementsOf 0 docs)
+    (h : buildEntity i qs = .ok e) :
+    commentAt (loadCore docs items) e.val.live = false ∧
+      (∀ r, e.val.archiveSite = some r → commentAt (loadCore docs items) r = false) := by
+  match qs with
+  | [] => simp [buildEntity] at h
+  | [q] =>
+      have h' : e = loneEntity q := by
+        have this : Except.ok (loneEntity q) = (.ok e : Except LErr Entity) := h
+        injection this with this
+        exact this.symm
+      rw [h']
+      refine ⟨commentAt_loadCore_placement docs items (hsub q (by simp)), fun r hr => ?_⟩
+      have hnone : (loneEntity q).val.archiveSite = none := rfl
+      rw [hnone] at hr
+      cases hr
+  | [a, b] =>
+      have h' : pairedEntity i a b = .ok e := h
+      obtain ⟨arch, live, hor, _hcond, hllive, harch, _hline, _hag, _hglive, _hgarch⟩ :=
+        paired_placement_renders_back i a b e h'
+      obtain ⟨har, hal⟩ := placement_bounds_pair (hsub a (by simp)) (hsub b (by simp))
+        (orientPair_cases hor).1
+      refine ⟨?_, fun r hr => ?_⟩
+      · rw [hllive]
+        exact commentAt_loadCore_placement docs items hal
+      · rw [Core.archiveSite_some harch] at hr
+        simp only [Option.some.injEq] at hr
+        rw [← hr]
+        exact commentAt_loadCore_placement docs items har
+  | _ :: _ :: _ :: _ => simp [buildEntity] at h
+
+/-- **The loader places no item inside a comment** — the over-bite guard for the
+comment conjunct of `placementSectionWf`: the check `loadPlan` runs can refuse
+a *command's* post-state that ranks a line into a comment, and is bound to pass
+every placement the loader itself read (a line inside a comment was never read
+as an item in the first place). -/
+theorem the_loader_places_no_item_in_a_comment (docs : List ReqDoc)
+    (items : List (Id × Entity)) (h : buildEntities (placementsOf 0 docs) = .ok items)
+    (i : Id) (e : Entity) (hget : (loadStore items).get i = some e) :
+    commentAt (loadCore docs items) e.val.live = false ∧
+      (∀ r, e.val.archiveSite = some r → commentAt (loadCore docs items) r = false) :=
+  entityUncommented_loadEntity (fun q hq => (List.mem_filter.1 hq).1)
+    ((buildEntities_spec (placementsOf 0 docs) items h).2 (i, e)
+      (loadStore_get_some items i e hget))
 
 /-- The two (or one) lines an entity renders are distinct.  They can only
 collide if the archive site **is** the live site, and `wf` forbids exactly
@@ -3475,5 +3632,83 @@ theorem call_refuses_the_real_duplicate_id_request :
   rw [String.toList_ofList, the_real_request_bytes_round_trip.2]
   simp only [hrun]
   rw [the_real_response_bytes_round_trip.1]
+
+/-! ## A comment is prose — the witnesses (stage 3, 2026-09-12)
+
+The defect, driven out of the shipped binary: the starter templates' guidance
+comments held example item lines, so a bare `tm init` tree refused every
+kernel-backed verb (`itemCheck: danglingDep` on ids that exist only inside
+`<!-- -->`).  The reading is `commentAfter`'s (Plan.lean).  The general theorems
+are `splitDocC_reads_comments`, `the_loader_places_no_item_in_a_comment`,
+`scanLines_prose_outside_a_comment` and `scanLines_accepts_only_closed_comments`;
+these are the small decided instances, each probed under an 8 GB cap first.
+
+The witness document holds, inside one comment, an example item carrying the
+**same id** as the live item below it, a broken item shape, and a `# Demoted`
+heading — a month-only section in a week file.  Each of the three would refuse
+the file if it were read (`dupId`, `badLine`, `sectionDiscipline`). -/
+
+def commentedWeekDoc : ReqDoc :=
+  ⟨"week/2026-W37.md", some ⟨week, 35⟩,
+    ["# Tasks".toList, "<!-- e.g.".toList, "- [ ] 3 1b Example ^m1".toList,
+     "- [Z] broken".toList, "# Demoted".toList, "-->".toList,
+     "- [ ] 5 6b Finish the report ^m1".toList]⟩
+
+def commentedRequest : List ReqDoc :=
+  [commentedWeekDoc, ⟨"month/2026-09.md", some ⟨month, 8⟩, ["# Outcomes".toList]⟩]
+
+/-- **The behaviour change, separated.**  The commented example line *is* an item
+line — the comment-blind reader this replaces took it as one — and the
+splitter now files it, the broken shape and the heading as prose: lines 0–5 are
+prose and line 6 is the one item. -/
+theorem a_commented_item_line_loads_as_prose :
+    isItemLine "- [ ] 3 1b Example ^m1".toList = true ∧
+      (splitDoc 0 commentedWeekDoc.lines).items.map Prod.fst = [6] ∧
+      (splitDoc 0 commentedWeekDoc.lines).prose.map Prod.fst = [0, 1, 2, 3, 4, 5] := by
+  decide
+
+/-- And the whole boundary accepts it: the scan (no `badLine` for the broken
+example) and the loader (no `dupId` for the repeated `^m1`, no
+`sectionDiscipline` for the commented `# Demoted`). -/
+theorem the_commented_request_loads :
+    scanLines "week/2026-W37.md".toList 0 commentedWeekDoc.lines = .ok () ∧
+      loadsOk commentedRequest = true :=
+  ⟨rfl, by decide⟩
+
+/-- The round trip is unaffected: the loaded document comes back byte for byte,
+comment included. -/
+theorem the_commented_request_round_trips (p : WfPlan) (h : loadPlan commentedRequest = .ok p) :
+    renderDocAt p.val 0 (mkDoc commentedWeekDoc) = commentedWeekDoc.lines :=
+  (the_kernel_reads_back_what_it_writes commentedRequest p h 0 commentedWeekDoc rfl).2
+
+/-- A heading inside a comment is not a section: the section of the live item is
+`# Tasks`, not the commented `# Demoted`. -/
+theorem a_commented_heading_is_no_section :
+    lastHeadingBefore (mkDoc commentedWeekDoc) 6 = some (0, "# Tasks".toList) := by
+  decide
+
+/-- **The over-bite guard, decided.**  The same example and live item with the
+comment markers gone are two items again, and the loader refuses the repeated
+id; and an inline `<!--` that does not start its line opens nothing, so the
+item after it is still an item. -/
+def uncommentedRequest : List ReqDoc :=
+  [⟨"week/2026-W37.md", some ⟨week, 35⟩,
+    ["# Tasks".toList, "- [ ] 3 1b Example ^m1".toList,
+     "- [ ] 5 6b Finish the report ^m1".toList]⟩,
+   ⟨"month/2026-09.md", some ⟨month, 8⟩, ["# Outcomes".toList]⟩]
+
+theorem an_item_line_outside_a_comment_is_still_an_item :
+    loadsOk uncommentedRequest = false ∧
+      (splitDoc 0 ["see <!-- inline".toList, "- [ ] 2 30m Live ^t3".toList]).items.length = 1 := by
+  decide
+
+/-- **The unterminated-comment decision, witnessed**: a comment open at the end
+of a file is refused by name, at its opener's line, and the item line after the
+opener is not read. -/
+theorem an_unterminated_comment_is_refused :
+    scanLines "week/2026-W37.md".toList 0
+        ["# Tasks".toList, "<!--".toList, "- [ ] 3 x ^t1".toList] =
+      .error (.unterminatedComment "week/2026-W37.md".toList 1) :=
+  rfl
 
 end Tm

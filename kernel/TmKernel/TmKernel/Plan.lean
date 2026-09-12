@@ -225,7 +225,105 @@ over the whole value, discharged once at the boundary.
 the invariant — the class of bug where three `^m2` lines across two month files
 pass `tm check` at exit 0. -/
 
-def docWf (d : Doc) : Bool := d.prose.all (fun q => !isItemLine q.2)
+/-! ### An HTML comment is prose (stage 3, 2026-09-12)
+
+A `- [ ] … ^id` line written *inside* `<!-- … -->` — an example in a guidance
+comment, a line commented out — is not an item: the Markdown preview the user
+reads hides it, and the kernel used to read it as live, so a fresh `tm init`
+tree whose templates carried such examples refused every kernel-backed verb.
+
+The reading is CommonMark's HTML block, type 2, and nothing wider: a comment
+**opens** on a line whose first non-space characters are `<!--`, and it
+**closes** on the first line, the opening line included, that contains `-->`
+anywhere.  Every line from the opener to the closer is prose, verbatim.  An
+inline `<!--` in the middle of a line opens nothing, so an item line can never
+open a comment (`item_lines_open_no_comment`) — which is why an edit to an item
+cannot change how any other line of its file reads.  A comment still open at the
+end of a file is refused by the loader, by name (`scanLines`, Boundary.lean):
+the kernel does not guess where the writer meant it to stop.
+
+`commentAfter` is the one step function; the splitter, the scan, the section
+derivation and the placement check all read comments through it. -/
+
+/-- The line opens a comment: `<!--` after leading spaces. -/
+def opensComment (cs : List Char) : Bool :=
+  match cs.dropWhile isSp with
+  | '<' :: '!' :: '-' :: '-' :: _ => true
+  | _                             => false
+
+/-- The line contains `-->` somewhere. -/
+def closesComment : List Char → Bool
+  | []     => false
+  | c :: t =>
+    (match c :: t with
+     | '-' :: '-' :: '>' :: _ => true
+     | _                      => false) || closesComment t
+
+/-- Whether a comment is open **after** a line, given whether one was open
+before it.  A line that both closes and would reopen is impossible: the opener
+must start the line and the closer ends it, so `(c || opens) && !closes` is the
+whole automaton. -/
+def commentAfter (c : Bool) (cs : List Char) : Bool :=
+  (c || opensComment cs) && !closesComment cs
+
+/-- Whether a comment is open just before rank `r`, reading the prose lines
+below `r` in list order from state `c`.  Items are not consulted, because an
+item line opens nothing (`item_lines_open_no_comment`); list order is rank order
+on every document `docWf` accepts (`ranksAscend`). -/
+def commentOpenFrom (c : Bool) (ps : List (Nat × List Char)) (r : Nat) : Bool :=
+  (ps.filter (fun q => decide (q.1 < r))).foldl (fun s q => commentAfter s q.2) c
+
+/-- A document's comment state just before rank `r`. -/
+def inComment (ps : List (Nat × List Char)) (r : Nat) : Bool := commentOpenFrom false ps r
+
+/-- Prose ranks strictly ascend in list order.  A linear check, so the comment
+state the list order reads is the state the rendered file has. -/
+def ranksAscend : List (Nat × List Char) → Bool
+  | a :: b :: t => decide (a.1 < b.1) && ranksAscend (b :: t)
+  | _           => true
+
+theorem item_lines_open_no_comment (l : List Char) (h : isItemLine l = true) :
+    opensComment l = false := by
+  unfold isItemLine parseItem at h
+  unfold opensComment
+  cases hd : l.dropWhile isSp with
+  | nil => rfl
+  | cons c t =>
+      rw [hd] at h
+      by_cases hc : c = '<'
+      · subst hc; simp [parseBody] at h
+      · split
+        · rename_i heq; simp at heq; exact absurd heq.1 hc
+        · rfl
+
+theorem commentAfter_false_of_item (l : List Char) (h : isItemLine l = true) :
+    commentAfter false l = false := by
+  simp [commentAfter, item_lines_open_no_comment l h]
+
+theorem ranksAscend_of_pairwise : ∀ (l : List (Nat × List Char)),
+    l.Pairwise (fun a b => a.1 < b.1) → ranksAscend l = true
+  | [], _ => rfl
+  | [_], _ => rfl
+  | a :: b :: t, h => by
+      rw [List.pairwise_cons] at h
+      simp only [ranksAscend, Bool.and_eq_true, decide_eq_true_eq]
+      exact ⟨h.1 b (by simp), ranksAscend_of_pairwise (b :: t) h.2⟩
+
+/-- Reading past a line ranked below everything still to be read. -/
+theorem commentOpenFrom_cons_below (c : Bool) (k : Nat) (l : List Char)
+    (ps : List (Nat × List Char)) (r : Nat) (hkr : k < r) :
+    commentOpenFrom c ((k, l) :: ps) r = commentOpenFrom (commentAfter c l) ps r := by
+  simp [commentOpenFrom, List.filter_cons, hkr]
+
+/-- Nothing below `r` has been read: the state is the one we started in. -/
+theorem commentOpenFrom_none_below (c : Bool) (ps : List (Nat × List Char)) (r : Nat)
+    (h : ∀ q ∈ ps, r ≤ q.1) : commentOpenFrom c ps r = c := by
+  unfold commentOpenFrom
+  rw [List.filter_eq_nil_iff.2 (fun q hq => by have := h q hq; simp; omega)]
+  rfl
+
+def docWf (d : Doc) : Bool :=
+  ranksAscend d.prose && d.prose.all (fun q => !isItemLine q.2 || inComment d.prose q.1)
 
 def docsWf (p : PlanCore) : Bool := p.docs.all docWf
 
@@ -449,10 +547,15 @@ def secKind (cs : List Char) : SecKind :=
   else if hasPrefix "series:".toList b then .series (b.drop 7)
   else .organisational
 
-/-- The heading with the greatest rank strictly below `rank`. -/
+/-- A heading line that is not inside a comment.  A `# Pinned` in a guidance
+comment is not a section, and a `# Demoted` there is not a misplaced one. -/
+def liveHeading (d : Doc) (q : Nat × List Char) : Bool :=
+  isHeading q.2 && !inComment d.prose q.1
+
+/-- The live heading with the greatest rank strictly below `rank`. -/
 def lastHeadingBefore (d : Doc) (rank : Nat) : Option (Nat × List Char) :=
   d.prose.foldl (fun acc q =>
-    if isHeading q.2 && decide (q.1 < rank) then
+    if decide (q.1 < rank) && liveHeading d q then
       match acc with
       | none   => some q
       | some b => if b.1 < q.1 then some q else some b
@@ -578,22 +681,31 @@ def Deadlocked (p : PlanCore) (c : List Id) : Prop :=
 reads like a rule. -/
 def headingsWf (kind : DocKind) (d : Doc) : Bool :=
   d.prose.all (fun q =>
-    if isHeading q.2 then
+    if liveHeading d q then
       match secKind q.2 with
       | .demoted => kind == DocKind.month
       | .pinned  => kind == DocKind.day
       | _        => true
     else true)
 
+/-- Whether a placement sits inside an HTML comment of its document.  An item
+rendered there would read back as prose, so a command that ranks a line into a
+comment is refused (`placementSectionWf`) rather than written. -/
+def commentAt (p : PlanCore) (s : Site) : Bool :=
+  match p.docs[s.doc]? with
+  | none   => false
+  | some d => inComment d.prose s.rank
+
 /-- §4.3's day file: its item lines are the `# Pinned` ones.  Everything else in
 a day file — the generated plan block, `## Log`, `## Notes` — is prose, which is
 why `# Pinned` is the one section a day file can put an item in. -/
 def placementSectionWf (p : PlanCore) (s : Site) : Bool :=
-  match docKindAt p s.doc with
-  | .day => (match sectionKindAt p s with
-             | some .pinned => true
-             | _            => false)
-  | _    => true
+  (match docKindAt p s.doc with
+   | .day => (match sectionKindAt p s with
+              | some .pinned => true
+              | _            => false)
+   | _    => true) &&
+  !commentAt p s
 
 def sectionsWf (p : PlanCore) : Bool :=
   p.docs.all (fun d => headingsWf (docKind d) d) &&
@@ -708,14 +820,26 @@ def WfPlan := { p : PlanCore // planWf p = true }
 `no_line_is_lost` rules out for any site a plan actually denotes. -/
 def pathAt (p : PlanCore) (k : DocIx) : Option (List Char) := (p.docs[k]?).map Doc.path
 
-/-- **No prose line is an item line.**  So the only item lines a document emits
-are the ones its entities render, and `no_two_lines_of_one_id_in_one_file`
-covers all of them. -/
-theorem prose_is_never_an_item (p : WfPlan) (d : Doc) (hd : d ∈ p.val.docs)
-    (q : Nat × List Char) (hq : q ∈ d.prose) : isItemLine q.2 = false := by
+/-- **No prose line outside a comment is an item line.**  So the only *live*
+item lines a document emits are the ones its entities render, and
+`no_two_lines_of_one_id_in_one_file` covers all of them.  (Supersedes
+`prose_is_never_an_item`, 2026-09-12: a `- [ ] … ^id` line inside `<!-- … -->`
+is prose and parses as an item, so the unconditional statement is false of the
+templates' own guidance comments; `hc` is exactly that carve-out.) -/
+theorem prose_outside_a_comment_is_never_an_item (p : WfPlan) (d : Doc) (hd : d ∈ p.val.docs)
+    (q : Nat × List Char) (hq : q ∈ d.prose) (hc : inComment d.prose q.1 = false) :
+    isItemLine q.2 = false := by
   have h1 : docWf d = true := List.all_eq_true.1 (planWf_parts p.property).1 d hd
-  have h2 := List.all_eq_true.1 h1 q hq
-  simpa using h2
+  simp only [docWf, Bool.and_eq_true] at h1
+  have h2 := List.all_eq_true.1 h1.2 q hq
+  simpa [hc] using h2
+
+/-- And a document's prose is in rank order, so `inComment` reads the file. -/
+theorem prose_ranks_ascend (p : WfPlan) (d : Doc) (hd : d ∈ p.val.docs) :
+    ranksAscend d.prose = true := by
+  have h1 : docWf d = true := List.all_eq_true.1 (planWf_parts p.property).1 d hd
+  simp only [docWf, Bool.and_eq_true] at h1
+  exact h1.1
 
 /-- Changing the store cannot change the *document* half of the invariant, which
 reads `docs` only.  The other two halves are not free of the store — that is the
@@ -830,16 +954,24 @@ structure DocSplit where
   items : List (Nat × (Id × Glyph × RawItem))
 deriving Repr, Inhabited
 
-/-- Read a file.  Rank = line index, so ranks are distinct by construction and
-`Normalized` is not a predicate anyone has to maintain. -/
-def splitDoc (k : Nat) (ls : List (List Char)) : DocSplit :=
+/-- Read a file from comment state `c`.  Rank = line index, so ranks are
+distinct by construction and `Normalized` is not a predicate anyone has to
+maintain.  A line read while a comment is open is prose whatever its bytes;
+otherwise a line that parses is an item and anything else is prose.  The state
+after every line is `commentAfter`'s — an item line opens nothing, so reading
+it leaves the state closed. -/
+def splitDocC (c : Bool) (k : Nat) (ls : List (List Char)) : DocSplit :=
   match ls with
   | []      => ⟨[], []⟩
   | l :: rest =>
-    let d := splitDoc (k + 1) rest
+    let d := splitDocC (commentAfter c l) (k + 1) rest
+    if c then ⟨(k, l) :: d.prose, d.items⟩ else
     match parseItem l with
     | .ok (i, g, r) => ⟨d.prose, (k, i, g, r) :: d.items⟩
     | .error _      => ⟨(k, l) :: d.prose, d.items⟩
+
+/-- Read a file: from the top, no comment open. -/
+def splitDoc (k : Nat) (ls : List (List Char)) : DocSplit := splitDocC false k ls
 
 /-- Merge two rank-ordered lists of lines. -/
 def weave (ps is : List (Nat × List Char)) : List (List Char) :=
@@ -883,89 +1015,199 @@ theorem weave_prose_first (b : Nat) (x : List Char) (ps is : List (Nat × List C
       rw [weave]
       simp only [hbc, if_true]
 
-theorem splitDoc_prose_ge (k : Nat) (ls : List (List Char)) :
-    ∀ p ∈ (splitDoc k ls).prose, k ≤ p.1 := by
-  induction ls generalizing k with
-  | nil => intro p hp; simp [splitDoc] at hp
+/-- `splitDocC` one line at a time, as the two shapes a step can take: the line
+is prose (and then either a comment was open or it is not an item line), or it
+is an item read with no comment open. -/
+theorem splitDocC_cons (c : Bool) (k : Nat) (l : List Char) (rest : List (List Char)) :
+    (splitDocC c k (l :: rest) =
+        ⟨(k, l) :: (splitDocC (commentAfter c l) (k + 1) rest).prose,
+         (splitDocC (commentAfter c l) (k + 1) rest).items⟩ ∧
+      (c = true ∨ isItemLine l = false)) ∨
+    (∃ i g r, c = false ∧ parseItem l = .ok (i, g, r) ∧
+      splitDocC c k (l :: rest) =
+        ⟨(splitDocC (commentAfter c l) (k + 1) rest).prose,
+         (k, i, g, r) :: (splitDocC (commentAfter c l) (k + 1) rest).items⟩) := by
+  cases c with
+  | true => exact Or.inl ⟨by simp [splitDocC], Or.inl rfl⟩
+  | false =>
+      cases hp : parseItem l with
+      | ok t =>
+          obtain ⟨i, g, r⟩ := t
+          exact Or.inr ⟨i, g, r, rfl, rfl, by simp [splitDocC, hp]⟩
+      | error e =>
+          exact Or.inl ⟨by simp [splitDocC, hp], Or.inr (by simp [isItemLine, hp])⟩
+
+theorem splitDocC_prose_ge (c : Bool) (k : Nat) (ls : List (List Char)) :
+    ∀ p ∈ (splitDocC c k ls).prose, k ≤ p.1 := by
+  induction ls generalizing c k with
+  | nil => intro p hp; simp [splitDocC] at hp
   | cons l rest ih =>
       intro p hp
-      unfold splitDoc at hp
-      simp only at hp
-      split at hp
-      · have := ih (k + 1) p hp; omega
-      · simp only [List.mem_cons] at hp
-        rcases hp with rfl | hp
+      rcases splitDocC_cons c k l rest with ⟨h, _⟩ | ⟨i, g, r, _, _, h⟩
+      · rw [h] at hp
+        rcases List.mem_cons.1 hp with rfl | hp
         · simp
-        · have := ih (k + 1) p hp; omega
+        · have := ih _ (k + 1) p hp; omega
+      · rw [h] at hp
+        have := ih _ (k + 1) p hp; omega
+
+theorem splitDocC_items_ge (c : Bool) (k : Nat) (ls : List (List Char)) :
+    ∀ p ∈ (splitDocC c k ls).items, k ≤ p.1 := by
+  induction ls generalizing c k with
+  | nil => intro p hp; simp [splitDocC] at hp
+  | cons l rest ih =>
+      intro p hp
+      rcases splitDocC_cons c k l rest with ⟨h, _⟩ | ⟨i, g, r, _, _, h⟩
+      · rw [h] at hp
+        have := ih _ (k + 1) p hp; omega
+      · rw [h] at hp
+        rcases List.mem_cons.1 hp with rfl | hp
+        · simp
+        · have := ih _ (k + 1) p hp; omega
+
+theorem splitDoc_prose_ge (k : Nat) (ls : List (List Char)) :
+    ∀ p ∈ (splitDoc k ls).prose, k ≤ p.1 :=
+  splitDocC_prose_ge false k ls
 
 theorem splitDoc_items_ge (k : Nat) (ls : List (List Char)) :
-    ∀ p ∈ (splitDoc k ls).items, k ≤ p.1 := by
-  induction ls generalizing k with
-  | nil => intro p hp; simp [splitDoc] at hp
-  | cons l rest ih =>
-      intro p hp
-      unfold splitDoc at hp
-      simp only at hp
-      split at hp
-      · simp only [List.mem_cons] at hp
-        rcases hp with rfl | hp
-        · simp
-        · have := ih (k + 1) p hp; omega
-      · have := ih (k + 1) p hp; omega
+    ∀ p ∈ (splitDoc k ls).items, k ≤ p.1 :=
+  splitDocC_items_ge false k ls
 
-/-- Prose is what did **not** parse as an item, so a loaded document satisfies
-`docWf` by construction — `parse`'s success value is a `WfPlan`, not a value
-that a separate validator later blesses. -/
-theorem splitDoc_prose_not_item (k : Nat) (ls : List (List Char)) :
+/-- **The splitter and the comment state agree.**  Read back off the prose
+alone, from the state the read started in: a prose line at which no comment is
+open is not an item line, and no item line sits where a comment is open.  So
+`inComment` over a document's prose — which is all a `Doc` keeps — says exactly
+what the splitter decided while it still had the item lines in hand. -/
+theorem splitDocC_reads_comments (c : Bool) (k : Nat) (ls : List (List Char)) :
+    (∀ q ∈ (splitDocC c k ls).prose,
+        commentOpenFrom c (splitDocC c k ls).prose q.1 = false → isItemLine q.2 = false) ∧
+    (∀ it ∈ (splitDocC c k ls).items,
+        commentOpenFrom c (splitDocC c k ls).prose it.1 = false) := by
+  induction ls generalizing c k with
+  | nil => simp [splitDocC]
+  | cons l rest ih =>
+      rcases splitDocC_cons c k l rest with ⟨h, hor⟩ | ⟨i, g, r, hc, hp, h⟩
+      · obtain ⟨ihP, ihI⟩ := ih (commentAfter c l) (k + 1)
+        have hge := splitDocC_prose_ge (commentAfter c l) (k + 1) rest
+        have hgeI := splitDocC_items_ge (commentAfter c l) (k + 1) rest
+        rw [h]
+        dsimp only
+        refine ⟨?_, ?_⟩
+        · intro q hq hco
+          rcases List.mem_cons.1 hq with hqe | hq'
+          · subst hqe
+            have hself : commentOpenFrom c
+                ((k, l) :: (splitDocC (commentAfter c l) (k + 1) rest).prose) k = c := by
+              refine commentOpenFrom_none_below c _ k ?_
+              intro x hx
+              rcases List.mem_cons.1 hx with hxe | hx'
+              · subst hxe; exact Nat.le_refl _
+              · have := hge x hx'; omega
+            dsimp only at hco
+            rw [hself] at hco
+            subst hco
+            rcases hor with h1 | h1
+            · exact absurd h1 (by decide)
+            · exact h1
+          · have hk : k < q.1 := by have := hge q hq'; omega
+            rw [commentOpenFrom_cons_below c k l _ q.1 hk] at hco
+            exact ihP q hq' hco
+        · intro it hit
+          have hk : k < it.1 := by have := hgeI it hit; omega
+          rw [commentOpenFrom_cons_below c k l _ it.1 hk]
+          exact ihI it hit
+      · subst hc
+        have hc' : commentAfter false l = false :=
+          commentAfter_false_of_item l (by simp [isItemLine, hp])
+        rw [hc'] at h
+        obtain ⟨ihP, ihI⟩ := ih false (k + 1)
+        have hge := splitDocC_prose_ge false (k + 1) rest
+        rw [h]
+        dsimp only
+        refine ⟨fun q hq hco => ihP q hq hco, ?_⟩
+        intro it hit
+        rcases List.mem_cons.1 hit with hite | hit'
+        · subst hite
+          exact commentOpenFrom_none_below false _ k (fun x hx => by have := hge x hx; omega)
+        · exact ihI it hit'
+
+/-- Prose is what did **not** parse as an item **outside a comment**, so a
+loaded document satisfies `docWf` by construction — `parse`'s success value is
+a `WfPlan`, not a value that a separate validator later blesses.  (Supersedes
+`splitDoc_prose_not_item`, 2026-09-12: a commented item line is prose and
+parses, so the unconditional form is false.) -/
+theorem splitDoc_prose_outside_a_comment_not_item (k : Nat) (ls : List (List Char)) :
+    ∀ q ∈ (splitDoc k ls).prose,
+      inComment (splitDoc k ls).prose q.1 = false → isItemLine q.2 = false :=
+  (splitDocC_reads_comments false k ls).1
+
+/-- **No item the splitter reads sits inside a comment** — the over-bite guard's
+half at the file level: `commentAt`'s placement check never refuses a line the
+splitter itself called an item. -/
+theorem splitDoc_items_outside_comments (k : Nat) (ls : List (List Char)) :
+    ∀ it ∈ (splitDoc k ls).items, inComment (splitDoc k ls).prose it.1 = false :=
+  (splitDocC_reads_comments false k ls).2
+
+/-- **The over-bite guard at the file level.**  On a file with no comment
+opener, the comment-aware splitter is the comment-blind one: no prose line is an
+item line — `prose_is_never_an_item`'s old unconditional reading, recovered
+exactly where no comment exists. -/
+theorem comment_free_prose_is_never_an_item (k : Nat) (ls : List (List Char))
+    (h : ∀ l ∈ ls, opensComment l = false) :
     ∀ q ∈ (splitDoc k ls).prose, isItemLine q.2 = false := by
   induction ls generalizing k with
-  | nil => intro q hq; simp [splitDoc] at hq
+  | nil => intro q hq; simp [splitDoc, splitDocC] at hq
   | cons l rest ih =>
+      have hl : opensComment l = false := h l (by simp)
+      have hc' : commentAfter false l = false := by simp [commentAfter, hl]
+      have ihr := ih (k + 1) (fun x hx => h x (by simp [hx]))
       intro q hq
-      unfold splitDoc at hq
-      simp only at hq
-      split at hq
-      · exact ih (k + 1) q hq
-      · rename_i e he
-        simp only [List.mem_cons] at hq
-        rcases hq with rfl | hq
-        · simp [isItemLine, he]
-        · exact ih (k + 1) q hq
+      rcases splitDocC_cons false k l rest with ⟨hs, hor⟩ | ⟨i, g, r, _, _, hs⟩
+      · have hq' : q ∈ (splitDocC false k (l :: rest)).prose := hq
+        rw [hs, hc'] at hq'
+        rcases List.mem_cons.1 hq' with hqe | hq''
+        · subst hqe
+          rcases hor with h1 | h1
+          · exact absurd h1 (by decide)
+          · exact h1
+        · exact ihr q hq''
+      · have hq' : q ∈ (splitDocC false k (l :: rest)).prose := hq
+        rw [hs, hc'] at hq'
+        exact ihr q hq'
+
+theorem renderSplit_splitDocC (c : Bool) (k : Nat) (ls : List (List Char)) :
+    renderSplit (splitDocC c k ls) = ls := by
+  induction ls generalizing c k with
+  | nil => simp [renderSplit, splitDocC, weave]
+  | cons l rest ih =>
+      have ihr := ih (commentAfter c l) (k + 1)
+      unfold renderSplit at ihr
+      rcases splitDocC_cons c k l rest with ⟨h, _⟩ | ⟨i, g, r, _, hp, h⟩
+      · rw [h]
+        simp only [renderSplit]
+        rw [weave_prose_first _ _ _ _ ?_]
+        · rw [ihr]
+        · intro q hq
+          simp only [List.mem_map] at hq
+          obtain ⟨w, hw, rfl⟩ := hq
+          have := splitDocC_items_ge _ (k + 1) rest w hw
+          simp only
+          omega
+      · rw [h]
+        simp only [renderSplit, List.map_cons]
+        rw [weave_item_first _ k _ _ ?_]
+        · rw [serialize_parse l i g r hp, ihr]
+        · intro q hq
+          have := splitDocC_prose_ge _ (k + 1) rest q hq
+          omega
 
 /-- **Round trip over a whole file.**  Splitting a document into prose and
 items and putting it back reproduces the file byte for byte — including every
-item line, whose state box and `^id` were *regenerated* rather than copied. -/
+item line, whose state box and `^id` were *regenerated* rather than copied, and
+every commented line, which was kept verbatim. -/
 theorem renderSplit_splitDoc (k : Nat) (ls : List (List Char)) :
-    renderSplit (splitDoc k ls) = ls := by
-  induction ls generalizing k with
-  | nil => simp [renderSplit, splitDoc, weave]
-  | cons l rest ih =>
-      unfold splitDoc
-      simp only
-      cases hp : parseItem l with
-      | ok trip =>
-          obtain ⟨i, g, r⟩ := trip
-          simp only [renderSplit, List.map_cons]
-          rw [weave_item_first _ k _ _ ?_]
-          · rw [serialize_parse l i g r hp]
-            have := ih (k + 1)
-            unfold renderSplit at this
-            rw [this]
-          · intro q hq
-            have := splitDoc_prose_ge (k + 1) rest q hq
-            omega
-      | error e =>
-          simp only [renderSplit]
-          rw [weave_prose_first _ _ _ _ ?_]
-          · have := ih (k + 1)
-            unfold renderSplit at this
-            rw [this]
-          · intro q hq
-            simp only [List.mem_map] at hq
-            obtain ⟨w, hw, rfl⟩ := hq
-            have := splitDoc_items_ge (k + 1) rest w hw
-            simp only
-            omega
+    renderSplit (splitDoc k ls) = ls :=
+  renderSplit_splitDocC false k ls
 
 
 /-! ## Rank order: the three lemmas the *plan-level* round trip needs
@@ -999,13 +1241,22 @@ theorem splitDoc_cons_ok (k : Nat) (l : List Char) (rest : List (List Char))
     (i : Id) (g : Glyph) (r : RawItem) (h : parseItem l = .ok (i, g, r)) :
     splitDoc k (l :: rest) =
       ⟨(splitDoc (k + 1) rest).prose, (k, i, g, r) :: (splitDoc (k + 1) rest).items⟩ := by
-  simp only [splitDoc, h]
+  have hc' : commentAfter false l = false :=
+    commentAfter_false_of_item l (by simp [isItemLine, h])
+  simp only [splitDoc, splitDocC, h, hc']
+  rfl
 
+/-- A prose line read with no comment open.  The tail is read from the state the
+line leaves — which is still `splitDoc` unless the line opened a comment.
+(Restated 2026-09-12: the tail was `splitDoc (k + 1) rest`, which is false of a
+line that opens a comment.) -/
 theorem splitDoc_cons_error (k : Nat) (l : List Char) (rest : List (List Char))
     (e : PErr) (h : parseItem l = .error e) :
     splitDoc k (l :: rest) =
-      ⟨(k, l) :: (splitDoc (k + 1) rest).prose, (splitDoc (k + 1) rest).items⟩ := by
-  simp only [splitDoc, h]
+      ⟨(k, l) :: (splitDocC (commentAfter false l) (k + 1) rest).prose,
+       (splitDocC (commentAfter false l) (k + 1) rest).items⟩ := by
+  simp only [splitDoc, splitDocC, h]
+  rfl
 
 /-- **A list ordered strictly by a key is determined by its members.**  Two
 strictly ordered lists with the same elements are the same list — so "sort the
@@ -1048,85 +1299,97 @@ theorem sorted_ext_by_key {α : Type} (key : α → Nat) : ∀ (l₁ l₂ : List
           rw [ih s h₁.2 h₂.2 hmem]
 
 /-- Prose comes out of a file in rank order, because a rank **is** a line
-index. -/
+index — **strictly**, which is what `docWf`'s `ranksAscend` asks of it. -/
+theorem splitDocC_prose_strict (c : Bool) (k : Nat) (ls : List (List Char)) :
+    (splitDocC c k ls).prose.Pairwise (fun a b => a.1 < b.1) := by
+  induction ls generalizing c k with
+  | nil => simp [splitDocC]
+  | cons l rest ih =>
+      rcases splitDocC_cons c k l rest with ⟨h, _⟩ | ⟨i, g, r, _, _, h⟩
+      · rw [h]
+        refine List.pairwise_cons.2 ⟨?_, ih _ (k + 1)⟩
+        intro q hq
+        have := splitDocC_prose_ge _ (k + 1) rest q hq
+        omega
+      · rw [h]
+        exact ih _ (k + 1)
+
+theorem splitDocC_items_strict (c : Bool) (k : Nat) (ls : List (List Char)) :
+    (splitDocC c k ls).items.Pairwise (fun a b => a.1 < b.1) := by
+  induction ls generalizing c k with
+  | nil => simp [splitDocC]
+  | cons l rest ih =>
+      rcases splitDocC_cons c k l rest with ⟨h, _⟩ | ⟨i, g, r, _, _, h⟩
+      · rw [h]
+        exact ih _ (k + 1)
+      · rw [h]
+        refine List.pairwise_cons.2 ⟨?_, ih _ (k + 1)⟩
+        intro q hq
+        have := splitDocC_items_ge _ (k + 1) rest q hq
+        omega
+
+theorem splitDoc_prose_strict (k : Nat) (ls : List (List Char)) :
+    (splitDoc k ls).prose.Pairwise (fun a b => a.1 < b.1) :=
+  splitDocC_prose_strict false k ls
+
 theorem splitDoc_prose_sorted : ∀ (k : Nat) (ls : List (List Char)),
     (splitDoc k ls).prose.Pairwise (fun a b => a.1 ≤ b.1) := by
   intro k ls
-  induction ls generalizing k with
-  | nil => simp [splitDoc_nil]
-  | cons l rest ih =>
-      cases hp : parseItem l with
-      | ok trip =>
-          obtain ⟨i, g, r⟩ := trip
-          rw [splitDoc_cons_ok k l rest i g r hp]
-          exact ih (k + 1)
-      | error e =>
-          rw [splitDoc_cons_error k l rest e hp]
-          refine List.pairwise_cons.2 ⟨?_, ih (k + 1)⟩
-          intro q hq
-          have := splitDoc_prose_ge (k + 1) rest q hq
-          omega
+  exact (splitDoc_prose_strict k ls).imp (fun h => Nat.le_of_lt h)
 
 /-- And the item lines come out **strictly** ordered, which is what
 `sorted_ext_by_key` needs on the file's side of the round trip. -/
 theorem splitDoc_items_sorted : ∀ (k : Nat) (ls : List (List Char)),
-    (splitDoc k ls).items.Pairwise (fun a b => a.1 < b.1) := by
-  intro k ls
-  induction ls generalizing k with
-  | nil => simp [splitDoc_nil]
-  | cons l rest ih =>
-      cases hp : parseItem l with
-      | ok trip =>
-          obtain ⟨i, g, r⟩ := trip
-          rw [splitDoc_cons_ok k l rest i g r hp]
-          refine List.pairwise_cons.2 ⟨?_, ih (k + 1)⟩
-          intro q hq
-          have := splitDoc_items_ge (k + 1) rest q hq
-          omega
-      | error e =>
-          rw [splitDoc_cons_error k l rest e hp]
-          exact ih (k + 1)
+    (splitDoc k ls).items.Pairwise (fun a b => a.1 < b.1) :=
+  fun k ls => splitDocC_items_strict false k ls
 
-/-- The prose ranks of one file are distinct.  Same induction as the sortedness
-lemmas: an item line contributes nothing to prose; a prose line claims **its
-own index**, which is one below everything the tail may still claim. -/
+theorem nodup_map_fst_of_strict {β : Type} : ∀ {l : List (Nat × β)},
+    l.Pairwise (fun a b => a.1 < b.1) → (l.map Prod.fst).Nodup := by
+  intro l h
+  induction l with
+  | nil => simp
+  | cons a t ih =>
+      rw [List.pairwise_cons] at h
+      rw [List.map_cons, List.nodup_cons]
+      refine ⟨fun hy => ?_, ih h.2⟩
+      obtain ⟨w, hw, heq⟩ := List.mem_map.1 hy
+      have := h.1 w hw
+      omega
+
+/-- The prose ranks of one file are distinct: a prose line claims **its own
+index**, which is one below everything the tail may still claim. -/
 theorem splitDoc_prose_nodup : ∀ (k : Nat) (ls : List (List Char)),
-    ((splitDoc k ls).prose.map Prod.fst).Nodup := by
-  intro k ls
-  induction ls generalizing k with
-  | nil => simp [splitDoc]
-  | cons l rest ih =>
-      match h : parseItem l with
-      | .ok t =>
-          obtain ⟨i, g, r⟩ := t
-          rw [splitDoc_cons_ok k l rest i g r h]
-          exact ih (k + 1)
-      | .error pe =>
-          rw [splitDoc_cons_error k l rest pe h, List.map_cons, List.nodup_cons]
-          refine ⟨fun hy => ?_, ih (k + 1)⟩
-          obtain ⟨w, hw, heq⟩ := List.mem_map.1 hy
-          have hge := splitDoc_prose_ge (k + 1) rest w hw
-          omega
+    ((splitDoc k ls).prose.map Prod.fst).Nodup :=
+  fun k ls => nodup_map_fst_of_strict (splitDoc_prose_strict k ls)
 
 /-- The item ranks of one file are distinct — each index is handed to at most
 one line. -/
 theorem splitDoc_items_nodup : ∀ (k : Nat) (ls : List (List Char)),
-    ((splitDoc k ls).items.map Prod.fst).Nodup := by
-  intro k ls
-  induction ls generalizing k with
-  | nil => simp [splitDoc]
+    ((splitDoc k ls).items.map Prod.fst).Nodup :=
+  fun k ls => nodup_map_fst_of_strict (splitDoc_items_sorted k ls)
+
+theorem splitDocC_slots_separated (c : Bool) (k : Nat) (ls : List (List Char)) (r : Nat) :
+    r ∈ ((splitDocC c k ls).prose.map Prod.fst) →
+    r ∈ ((splitDocC c k ls).items.map Prod.fst) → False := by
+  induction ls generalizing c k with
+  | nil => intro h1 _; simp [splitDocC] at h1
   | cons l rest ih =>
-      match h : parseItem l with
-      | .ok t =>
-          obtain ⟨i, g, r⟩ := t
-          rw [splitDoc_cons_ok k l rest i g r h, List.map_cons, List.nodup_cons]
-          refine ⟨fun hy => ?_, ih (k + 1)⟩
-          obtain ⟨w, hw, heq⟩ := List.mem_map.1 hy
-          have hge := splitDoc_items_ge (k + 1) rest w hw
+      intro h1 h2
+      rcases splitDocC_cons c k l rest with ⟨h, _⟩ | ⟨i, g, r', _, _, h⟩
+      · rw [h] at h1 h2
+        rcases List.mem_cons.1 h1 with hr | h1t
+        · obtain ⟨w, hw, heq⟩ := List.mem_map.1 h2
+          have hge := splitDocC_items_ge _ (k + 1) rest w hw
+          simp only at hr
           omega
-      | .error pe =>
-          rw [splitDoc_cons_error k l rest pe h]
-          exact ih (k + 1)
+        · exact ih _ (k + 1) h1t h2
+      · rw [h] at h1 h2
+        rcases List.mem_cons.1 h2 with hr | h2t
+        · obtain ⟨w, hw, heq⟩ := List.mem_map.1 h1
+          have hge := splitDocC_prose_ge _ (k + 1) rest w hw
+          simp only at hr
+          omega
+        · exact ih _ (k + 1) h1 h2t
 
 /-- **Each line index is handed to exactly one reader.**  A rank is never both
 a prose line's and an item's: `splitDoc` is a partition of the indices, and
@@ -1135,30 +1398,8 @@ plan's `docRanks` distinct (`splitDoc_prose_nodup`, `splitDoc_items_nodup` and
 this one). -/
 theorem splitDoc_slots_separated : ∀ (k : Nat) (ls : List (List Char)) (r : Nat),
     r ∈ ((splitDoc k ls).prose.map Prod.fst) →
-    r ∈ ((splitDoc k ls).items.map Prod.fst) → False := by
-  intro k ls
-  induction ls generalizing k with
-  | nil => intro r h1 _; simp [splitDoc] at h1
-  | cons l rest ih =>
-      intro r h1 h2
-      match h : parseItem l with
-      | .ok t =>
-          obtain ⟨i, g, r'⟩ := t
-          have key := splitDoc_cons_ok k l rest i g r' h
-          rw [key] at h1 h2
-          rcases List.mem_cons.1 h2 with hr | h2t
-          · obtain ⟨w, hw, heq⟩ := List.mem_map.1 h1
-            have hge := splitDoc_prose_ge (k + 1) rest w hw
-            omega
-          · exact ih (k + 1) r h1 h2t
-      | .error pe =>
-          have key := splitDoc_cons_error k l rest pe h
-          rw [key] at h1 h2
-          rcases List.mem_cons.1 h1 with hr | h1t
-          · obtain ⟨w, hw, heq⟩ := List.mem_map.1 h2
-            have hge := splitDoc_items_ge (k + 1) rest w hw
-            omega
-          · exact ih (k + 1) r h1t h2
+    r ∈ ((splitDoc k ls).items.map Prod.fst) → False :=
+  fun k ls r => splitDocC_slots_separated false k ls r
 
 /-- Strict order out of a weak one and distinct keys.  The weak order is what
 insertion sort gives; the distinctness is `Normalized`. -/
@@ -1960,23 +2201,27 @@ theorem no_deadlocked_set (p : WfPlan) (c : List Id)
 written. -/
 theorem a_demoted_section_is_a_month_section (p : WfPlan) (d : Doc) (hd : d ∈ p.val.docs)
     (q : Nat × List Char) (hq : q ∈ d.prose) (hh : isHeading q.2 = true)
+    (hc : inComment d.prose q.1 = false)
     (hk : secKind q.2 = SecKind.demoted) : docKind d = DocKind.month := by
   have hsec := (itemsWf_parts p.items).2.2.2.2.2.1
   simp only [sectionsWf, Bool.and_eq_true] at hsec
   have h1 := List.all_eq_true.1 hsec.1 d hd
   have h2 := List.all_eq_true.1 h1 q hq
-  simp only [hh, if_true, hk, beq_iff_eq] at h2
+  simp only [liveHeading, hh, hc, Bool.not_false, Bool.and_self, if_true, hk,
+    beq_iff_eq] at h2
   exact h2
 
 /-- §4.2: and a `# Pinned` section is a day-file section (§6.2). -/
 theorem a_pinned_section_is_a_day_section (p : WfPlan) (d : Doc) (hd : d ∈ p.val.docs)
     (q : Nat × List Char) (hq : q ∈ d.prose) (hh : isHeading q.2 = true)
+    (hc : inComment d.prose q.1 = false)
     (hk : secKind q.2 = SecKind.pinned) : docKind d = DocKind.day := by
   have hsec := (itemsWf_parts p.items).2.2.2.2.2.1
   simp only [sectionsWf, Bool.and_eq_true] at hsec
   have h1 := List.all_eq_true.1 hsec.1 d hd
   have h2 := List.all_eq_true.1 h1 q hq
-  simp only [hh, if_true, hk, beq_iff_eq] at h2
+  simp only [liveHeading, hh, hc, Bool.not_false, Bool.and_self, if_true, hk,
+    beq_iff_eq] at h2
   exact h2
 
 /-- §4.3's day file: the item lines it holds are the `# Pinned` ones.  The
@@ -1993,7 +2238,8 @@ theorem a_day_file_holds_only_pinned_items (p : WfPlan) (i : Id) (e : Entity)
   rw [hget] at h1
   simp only [Bool.and_eq_true] at h1
   have h2 := h1.1
-  simp only [placementSectionWf, hday] at h2
+  simp only [placementSectionWf, hday, Bool.and_eq_true] at h2
+  replace h2 := h2.1
   cases hsk : sectionKindAt p.val e.val.live with
   | none => rw [hsk] at h2; simp at h2
   | some k =>
@@ -2144,5 +2390,46 @@ theorem an_unpinned_day_item_is_rejected (p : PlanCore) (i : Id) (e : Entity)
       simp only [Bool.and_eq_true] at hall
       have h2 := hall.1
       simp [placementSectionWf, hday, hsec] at h2
+
+/-! ### A comment holds no placement — both directions (stage 3, 2026-09-12)
+
+`placementSectionWf` refuses a site inside a comment, because the line rendered
+there would read back as prose and the item would be gone from the plan with
+the file still holding it.  It is discharged for every plan (below), and it
+bites (the second theorem); that the loader never trips it is
+`the_loader_places_no_item_in_a_comment` (Boundary.lean). -/
+
+theorem no_item_sits_in_a_comment (p : WfPlan) (i : Id) (e : Entity)
+    (hget : p.val.store.get i = some e) :
+    commentAt p.val e.val.live = false ∧
+      (∀ r, e.val.archiveSite = some r → commentAt p.val r = false) := by
+  have hdom : i ∈ p.val.store.dom := (p.val.store.domSpec i).mpr (by rw [hget]; rfl)
+  have hsec := (itemsWf_parts p.items).2.2.2.2.2.1
+  simp only [sectionsWf, Bool.and_eq_true] at hsec
+  have h1 := List.all_eq_true.1 hsec.2 i hdom
+  rw [hget] at h1
+  simp only [Bool.and_eq_true] at h1
+  refine ⟨?_, ?_⟩
+  · have h2 := h1.1
+    simp only [placementSectionWf, Bool.and_eq_true, Bool.not_eq_true'] at h2
+    exact h2.2
+  · intro r hr
+    have h3 := h1.2
+    rw [hr] at h3
+    simp only [placementSectionWf, Bool.and_eq_true, Bool.not_eq_true'] at h3
+    exact h3.2
+
+theorem an_item_in_a_comment_is_rejected (p : PlanCore) (i : Id) (e : Entity)
+    (hdom : i ∈ p.store.dom) (hget : p.store.get i = some e)
+    (hc : commentAt p e.val.live = true) : sectionsWf p = false := by
+  cases hb : sectionsWf p with
+  | false => rfl
+  | true =>
+      simp only [sectionsWf, Bool.and_eq_true] at hb
+      have hall := List.all_eq_true.1 hb.2 i hdom
+      rw [hget] at hall
+      simp only [Bool.and_eq_true] at hall
+      have h2 := hall.1
+      simp [placementSectionWf, hc] at h2
 
 end Tm

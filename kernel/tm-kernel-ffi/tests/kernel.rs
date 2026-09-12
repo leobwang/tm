@@ -779,3 +779,50 @@ fn a_million_character_line_does_not_exhaust_the_stack() {
         .unwrap();
     assert_eq!(out, format!(r#"{{"ok":{{"docs":[{{"path":"w.md","lines":["{line}"]}}]}}}}"#));
 }
+
+/// **A comment is prose** (step 4, kernel/README.md 2026-09-12).  A starter
+/// template's guidance comment held example item lines, so a fresh `tm init`
+/// tree refused every kernel-backed verb.  Inside `<!-- … -->` an example
+/// carrying the live item's own id, a broken item shape and a month-only
+/// heading are all prose: the tree loads, comes back byte for byte, and a
+/// command on `^m1` changes the live line and not the example.
+#[test]
+fn an_item_line_inside_a_comment_is_prose() {
+    let doc = r##"{"path":"week/2026-W37.md","grain":1,"ix":35,"lines":["# Tasks","<!-- e.g.","    - [ ] 3 1b Example ^m1","- [Z] broken","# Demoted","-->","- [ ] 5 6b Finish the report ^m1"]}"##;
+    let out = call(&format!(r#"{{"docs":[{doc}],"cmds":[]}}"#)).unwrap();
+    assert!(out.starts_with(r#"{"ok":"#), "{out}");
+    assert!(
+        out.contains(r##"["# Tasks","<!-- e.g.","    - [ ] 3 1b Example ^m1","- [Z] broken","# Demoted","-->","- [ ] 5 6b Finish the report ^m1"]"##),
+        "{out}"
+    );
+    let out = call(&format!(
+        r#"{{"docs":[{doc}],"cmds":[{{"op":"est","id":"m1","min":90}}]}}"#
+    ))
+    .unwrap();
+    assert!(out.contains(r#""    - [ ] 3 1b Example ^m1""#), "{out}");
+    assert!(out.contains("est:90m"), "{out}");
+    assert_eq!(out.matches("est:90m").count(), 1, "{out}");
+    // The over-bite guard: with the markers gone the example is an item
+    // again, and the repeated id is refused.
+    let out = call(
+        r##"{"docs":[{"path":"w.md","lines":["    - [ ] 3 1b Example ^m1","- [ ] 5 6b Finish the report ^m1"]}],"cmds":[]}"##,
+    )
+    .unwrap();
+    assert_eq!(out, r#"{"err":{"dupId":"m1"}}"#, "{out}");
+}
+
+/// A comment still open at the end of a file is refused by name, at its
+/// opener's line (0-based, as `badLine`), rather than silently swallowing
+/// every item below it.
+#[test]
+fn an_unterminated_comment_is_refused_by_name() {
+    let out = call(
+        r##"{"docs":[{"path":"w.md","lines":["# Tasks","<!-- todo","- [ ] 3 x ^t1"]}],"cmds":[]}"##,
+    )
+    .unwrap();
+    assert_eq!(
+        out,
+        r#"{"err":{"unterminatedComment":{"path":"w.md","line":1}}}"#,
+        "{out}"
+    );
+}

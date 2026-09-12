@@ -65,10 +65,10 @@
 //! `occupied`, `noSuchId`, `notDemoted`, `alreadyDemoted`, `badHorizon`,
 //! `badItem`, `tabbedLine`, `keyAbsent`, `siteOutOfRange`, `dupId`,
 //! `notADemotion`, `ambiguousDemotion`, `duplicatePath`, `badLine`,
-//! `itemCheck`, plus `parseCmd`'s parse-tier names riding the free-text
+//! `unterminatedComment`, `itemCheck`, plus `parseCmd`'s parse-tier names riding the free-text
 //! `err` (`badValue <k>`, `keyNotWired <k>`, `unknownKey <k>`, and `add`'s
 //! five `title…` refusals) — re-derived from `Boundary.lean`'s one `ok` and
-//! eight `err` shapes, not guessed. A refusal writes nothing.
+//! nine `err` shapes, not guessed. A refusal writes nothing.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -623,6 +623,14 @@ fn refusal(err: &Value) -> KernelIssue {
         ("badLine".into(), format!(
             "kernel refusal: badLine — {path}:{line} looks like an item but does not parse ({why}); the kernel refuses a tree it cannot load whole"
         ))
+    } else if let Some(b) = err.get("unterminatedComment") {
+        let path = b["path"].as_str().unwrap_or_default().to_string();
+        let line = b["line"].as_u64().unwrap_or_default();
+        put("path", path.clone());
+        detail.insert("line".into(), Value::from(line));
+        ("unterminatedComment".into(), format!(
+            "kernel refusal: unterminatedComment — the HTML comment opened at {path}:{line} is never closed with `-->`; everything after it would be prose, so the kernel refuses a tree it cannot load whole"
+        ))
     } else if let Some(f) = err.get("itemCheck").and_then(Value::as_str) {
         put("fault", f.to_string());
         ("itemCheck".into(), format!(
@@ -717,6 +725,10 @@ mod tests {
             (
                 serde_json::json!({"badLine":{"path":"a.md","line":3,"why":"noId"}}),
                 "badLine",
+            ),
+            (
+                serde_json::json!({"unterminatedComment":{"path":"a.md","line":1}}),
+                "unterminatedComment",
             ),
             (serde_json::json!({"itemCheck":"depCycle"}), "itemCheck"),
             // The parse-tier free-text refusals the keyed edit and `add`

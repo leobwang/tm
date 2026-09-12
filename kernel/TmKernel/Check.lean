@@ -26,7 +26,6 @@ open Tm
 -- the plan as one object
 #print axioms Tm.no_two_lines_of_one_id_in_one_file
 #print axioms Tm.lines_per_id_le_two
-#print axioms Tm.prose_is_never_an_item
 #print axioms Tm.no_two_lines_of_one_id_in_one_path
 #print axioms Tm.no_line_is_lost
 #print axioms Tm.the_tombstone_is_behind_the_live_line
@@ -41,7 +40,6 @@ open Tm
 #print axioms Tm.serialize_parse
 #print axioms Tm.parse_serialize
 #print axioms Tm.renderSplit_splitDoc
-#print axioms Tm.splitDoc_prose_not_item
 #print axioms Tm.view_set_is_not_silent
 #print axioms Tm.lead_edit_is_silent
 #print axioms Tm.setEst_canonical
@@ -97,7 +95,6 @@ open Tm
 #print axioms Tm.paired_renders_each_placement
 #print axioms Tm.the_kernel_can_read_the_pairs_it_writes
 #print axioms Tm.load_render_line
-#print axioms Tm.scanLines_prose
 #print axioms Tm.freshRank_gt
 #print axioms Tm.move_out_and_back_is_not_the_inverse
 #print axioms Tm.move_to_a_document_that_does_not_exist_is_rejected
@@ -1365,3 +1362,53 @@ open Tm
 #print axioms Tm.respond_names_a_parse_refusal
 #print axioms Tm.the_response_call_emits_parses_back
 #print axioms Tm.call_refuses_the_real_duplicate_id_request
+
+-- ============================================================================
+-- APPENDED 2026-09-12 (stage-3, step 4: a comment is prose).  An item line
+-- inside <!-- --> is prose: splitDoc reads through commentAfter's state, the
+-- scan skips commented lines and refuses an unterminated comment by name,
+-- headings inside a comment are no sections, and placementSectionWf refuses a
+-- placement inside a comment.  RENAMED (statements narrowed to lines outside a
+-- comment; the unconditional forms are false of commented item lines), and
+-- their old lines above removed: prose_is_never_an_item ->
+-- prose_outside_a_comment_is_never_an_item; splitDoc_prose_not_item ->
+-- splitDoc_prose_outside_a_comment_not_item; scanLines_prose ->
+-- scanLines_prose_outside_a_comment.
+-- ============================================================================
+#print axioms Tm.item_lines_open_no_comment
+#print axioms Tm.commentAfter_false_of_item
+#print axioms Tm.ranksAscend_of_pairwise
+#print axioms Tm.commentOpenFrom_cons_below
+#print axioms Tm.commentOpenFrom_none_below
+#print axioms Tm.prose_outside_a_comment_is_never_an_item
+#print axioms Tm.prose_ranks_ascend
+#print axioms Tm.splitDocC_cons
+#print axioms Tm.splitDocC_prose_ge
+#print axioms Tm.splitDocC_items_ge
+#print axioms Tm.splitDocC_reads_comments
+#print axioms Tm.splitDoc_prose_outside_a_comment_not_item
+#print axioms Tm.splitDoc_items_outside_comments
+#print axioms Tm.comment_free_prose_is_never_an_item
+#print axioms Tm.renderSplit_splitDocC
+#print axioms Tm.splitDocC_prose_strict
+#print axioms Tm.splitDocC_items_strict
+#print axioms Tm.splitDoc_prose_strict
+#print axioms Tm.nodup_map_fst_of_strict
+#print axioms Tm.splitDocC_slots_separated
+#print axioms Tm.no_item_sits_in_a_comment
+#print axioms Tm.an_item_in_a_comment_is_rejected
+#print axioms Tm.scan_state_isSome
+#print axioms Tm.scanLinesFrom_cons_ok
+#print axioms Tm.scanLinesFrom_prose
+#print axioms Tm.scanLines_prose_outside_a_comment
+#print axioms Tm.scanLinesFrom_closes
+#print axioms Tm.scanLines_accepts_only_closed_comments
+#print axioms Tm.commentAt_loadCore_placement
+#print axioms Tm.entityUncommented_loadEntity
+#print axioms Tm.the_loader_places_no_item_in_a_comment
+#print axioms Tm.a_commented_item_line_loads_as_prose
+#print axioms Tm.the_commented_request_loads
+#print axioms Tm.the_commented_request_round_trips
+#print axioms Tm.a_commented_heading_is_no_section
+#print axioms Tm.an_item_line_outside_a_comment_is_still_an_item
+#print axioms Tm.an_unterminated_comment_is_refused

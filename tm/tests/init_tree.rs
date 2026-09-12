@@ -547,3 +547,64 @@ fn the_example_templates_are_the_plan_basic_fixture() {
         assert_eq!(ours, theirs, "{t} has drifted from {f}");
     }
 }
+
+/// **The bare-`tm init` landmine, cleared at the kernel** (kernel/README.md,
+/// 2026-09-12 "a comment is prose" block).  The starter templates' guidance
+/// comments carry their natural `- [ ]` example lines again — ids, an
+/// `@parent` and an `after:` dependency on ids that exist only inside
+/// `<!-- -->` — and a fresh tree still loads: every kernel-backed verb
+/// (`add`, the keyed `edit`, `rank`, `move`, `demote`, `readopt`, `drop`)
+/// succeeds on it, and every comment comes back byte for byte.  Before the
+/// kernel read comments as prose, the first of these exited 1 with
+/// `itemCheck: danglingDep`.
+#[test]
+fn every_kernel_backed_verb_works_on_a_bare_init_tree() {
+    let tm = init();
+    let week = tm.read("week/2026-W37.md");
+    assert!(
+        week.contains("    - [ ] 3 1b Review the drafts            @m2 after:^t4 ^t5"),
+        "the landmine must be armed for this test to mean anything: {week}"
+    );
+    assert!(
+        tm.read("month/2026-09.md")
+            .contains("    - [ ] 5 !1 Lean: through ch.8 of the tutorial          ^O1")
+    );
+    assert!(tm
+        .read("backlog.md")
+        .contains("    - [ ] 2 30m Insurance claim for the bike  ^a1"));
+    let comment = |text: &str| -> String {
+        let start = text.find("<!--").expect("a comment");
+        let end = text.find("-->").expect("closed") + 3;
+        text[start..end].to_string()
+    };
+    let before: Vec<(&str, String)> = ["week/2026-W37.md", "month/2026-09.md", "backlog.md"]
+        .into_iter()
+        .map(|f| (f, comment(&tm.read(f))))
+        .collect();
+
+    let first = tm.json(&["add", "4 2b Write the release notes", "--to", "week"]);
+    let first = first["id"].as_str().expect("an id").to_string();
+    let second = tm.json(&["add", "3 1b Second task", "--to", "week"]);
+    let second = second["id"].as_str().expect("an id").to_string();
+    let (first, second) = (format!("^{first}"), format!("^{second}"));
+
+    tm.ok(&["edit", &first, "est=3b"]);
+    assert!(tm.read("week/2026-W37.md").contains("est:180m"));
+    assert_eq!(tm.json(&["rank", &second, "1"])["moved"], true);
+    tm.ok(&["move", &second, "backlog"]);
+    assert!(tm.read("backlog.md").contains(&second));
+    tm.ok(&["demote", &first]);
+    tm.ok_at(
+        "2026-09-07T09:01:00-05:00",
+        &["readopt", &first, "--to", "week/2026-W38.md"],
+    );
+    assert!(tm.read("week/2026-W38.md").contains(&first));
+    tm.ok(&["drop", &second]);
+    assert!(tm.read("backlog.md").contains("- [~] 3 1b Second task"));
+
+    for (f, c) in before {
+        assert_eq!(comment(&tm.read(f)), c, "{f}'s guidance comment changed");
+    }
+    let check = tm.run(&["check"]);
+    assert_eq!(check.code, 0, "{}{}", check.stdout, check.stderr);
+}
