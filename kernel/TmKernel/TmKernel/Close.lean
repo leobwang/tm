@@ -941,7 +941,8 @@ theorem skelAfter_doc (g : Grain) (r : Region) (k : DocIx) (s : Skel) :
   | copy => cases closeStamp g r.ix <;> simp
 
 /-- **Narrowed L18** (`close_leaves_no_live_line_in_a_closed_region`, which is
-stated over every line and so over the `[x]` lines §6.3 leaves in an archive).
+stated over every line and so over the `[x]` lines §6.3 leaves in an archive;
+refuted as `close_leaves_live_lines_in_a_closed_region`, Boundary.lean).
 After a close, no line is one the same close would take: every line still in a
 closed region of grain `g` is settled, recurring, a wall, or of a box the row
 does not take. -/
@@ -1045,7 +1046,8 @@ theorem stepSkel_line (g : Grain) (now : Day) (p : PlanCore) (s : Skel) :
 
 /-- **Narrowed B1–B3** (`close_writes_every_estimate_through_demoteEst`, which
 equates the whole line with `demoteEst`'s and so forbids the `demoted:` stamp
-§6.3 appends).  A close rewrites a line's bytes in one way only: it sets the
+§6.3 appends; refuted as `close_writes_a_line_demoteEst_does_not`, Boundary.lean).
+A close rewrites a line's bytes in one way only: it sets the
 `demoted:` token.  It writes no estimate at all — `est:` = remaining beyond the
 line's own reading needs the log and the rollup, which `close` does not have —
 so no measurement standing on the line is replaced. -/
@@ -1058,8 +1060,23 @@ theorem close_rewrites_a_line_only_by_stamping_it {g : Grain} {now : Day} {p q :
   rw [← hsk] at this
   exact this
 
+/-- **The estimate half of narrowed B1–B3.**  Whatever a close does to a line, its
+remaining estimate is the one it had, at every block length: the only rewrite is
+the `demoted:` stamp (`close_rewrites_a_line_only_by_stamping_it`) and a stamp is
+invisible to `remainingOf` (`Field.remainingOf_setDemoted`).  So a close is the
+identity on estimates — exactly `demoteEst bm true`'s reading, and never a
+replacement of a measurement standing on the line. -/
+theorem close_keeps_every_remaining_estimate {g : Grain} {now : Day} {p q : WfPlan}
+    (h : close g now p = .ok q) (i : Id) (e f : Entity)
+    (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f) (bm : Nat) :
+    remainingOf bm f.val.line = remainingOf bm e.val.line := by
+  rcases close_rewrites_a_line_only_by_stamping_it h i e f hp hq with hl | ⟨ss, hl⟩
+  · rw [hl]
+  · rw [hl, Field.remainingOf_setDemoted]
+
 /-- **Narrowed F4** (`close_never_demotes_a_wall`, whose `f.val = e.val` forbids
-the carry — and the rank shift a landing inside a section performs).  A
+the carry — and the rank shift a landing inside a section performs; refuted as
+`close_does_not_leave_every_wall_as_it_was`, Boundary.lean).  A
 recurring line or a wall keeps its box, its bytes and its tombstone through
 every close; the one thing that may change is the file its record is in. -/
 theorem close_never_demotes_a_wall_but_may_carry_it {g : Grain} {now : Day} {p q : WfPlan}

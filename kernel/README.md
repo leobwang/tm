@@ -5145,3 +5145,81 @@ close ahead of it, and the TUI's verb-running unit tests share a lock, because
 the probe is a process-wide variable and every fresh tree's first verb now calls
 the kernel); FFI suite **67** (unchanged).  Gaps run to 59 (new gaps
 start at 60); cheats to 54 (new cheats start at 55).
+
+## Stage 4 step 7, 2026-09-13: three goals stated stronger than §6.3 — refuted, with the narrowed laws beside them
+
+Stage 4's pricing found three `Goals.lean` goals that no correct close can
+satisfy, and step 2 proved the narrowed neighbour of each.  This step discharges
+all three by refute-and-rename (AGENTS §3.2): each is renamed to the negation of
+its statement **exactly as written**, quantifier for quantifier, and proved in
+`Boundary.lean` on step 2's loaded week witness (`closeWeekWitness`, 2026-W36
+closed at Monday 2026-09-07).  One `decide` per sighting, probed under an 8 GB
+cap first (AGENTS §5.10a): the three decide in about 4 s at a 1.3 GB peak, imports
+included.  No definition changed; nothing a close does is different.
+
+**`close_leaves_no_live_line_in_a_closed_region` → `close_leaves_live_lines_in_a_closed_region`.**
+*Why the written law is false:* it says no live line of any kind remains in a
+closed region of the closed grain, but §6.3 leaves settled, recurring and wall
+lines where they are, so every close that succeeds on such a line breaks it — `^t1`,
+`[x]`, and `^r1`, recurring, are still in the closed 2026-W36
+(`the_week_close_leaves_r1_and_t1_in_the_closed_week`).  *What holds instead:*
+`close_leaves_no_line_it_would_take` — after a close no line is one that same close
+would take, and `close_leaves_no_unfinished_line_in_a_closed_region` unpacks that
+as: a line of the grain's file kind, of a box the row takes, neither recurring nor
+a wall, is not in a closed region of that grain.
+
+**`close_never_demotes_a_wall` → `close_does_not_leave_every_wall_as_it_was`.**
+*Why the written law is false:* its conclusion `f.val = e.val` forbids any change
+at all, and §6.3's exemption requires a wall still ahead to be carried into the
+live week, which changes the file its record is in — `^x1` moves from document 0
+(2026-W36) to document 1 (2026-W37) (`the_week_close_carries_the_wall_x1_to_another_file`);
+the rank shift a section landing performs is a second counterexample, not needed
+here.  *What holds instead:* `close_never_demotes_a_wall_but_may_carry_it` — a
+recurring line or a wall keeps its box, its bytes and its tombstone through every
+close, and the only thing that may change is its file (with
+`close_carries_a_wall_that_is_still_ahead` saying where it lands).
+
+**`close_writes_every_estimate_through_demoteEst` → `close_writes_a_line_demoteEst_does_not`.**
+*Why the written law is false:* it equates the whole line after a close with a
+line `demoteEst` writes, and the `demoted:` stamp §6.3 appends is not
+`demoteEst`'s to write — `^m2`'s stamped record is neither its old line (the
+`userSet = true` case) nor any line with an `est:` key (the `false` case: `setEst`
+always leaves one, `hasEst_setEst`) (`the_week_close_stamps_m2_and_writes_no_estimate`).
+*What holds instead:* `close_rewrites_a_line_only_by_stamping_it` — a close
+changes a line's bytes only by setting `demoted:` — and, new here,
+`close_keeps_every_remaining_estimate`: at every block length, a line's
+`remainingOf` after a close is exactly what it was before, so no measurement
+standing on a line is replaced (which is `demoteEst bm true`'s reading).
+
+**The lemma step 2 owed: `Field.remainingOf_setDemoted`** (Line.lean) — setting
+`demoted:` leaves `remainingOf` unchanged, on every line, in both of `setKey`'s
+branches.  The reader is restated over the line's words (`viewRemaining_words`),
+and every word the write touches — the new `demoted:` token, a `demoted:` token it
+replaces, the `^id` it is inserted before — is `Neutral`: not an `est:` key, not a
+positional estimate, not a `ci` digit.  `close_keeps_every_remaining_estimate`
+(Close.lean) is that lemma composed with `close_rewrites_a_line_only_by_stamping_it`.
+
+**What this does not buy.**  Gap 54 stands as recorded: a close still writes no
+`est:`, so a `[>]` item worked during the closed day keeps its pre-work estimate.
+The new theorem says the close does not *lose* an estimate; it does not say the
+estimate is the §6.3 remaining, which needs the log (F6, stage 5).  The B3 goal
+`close_week_folds_a_dropped_child_into_its_parent` stands, blocked on gap 22,
+which is the owner's.
+
+**Superseded by name.**  Step 5's owed item (2), "the refute-and-renames of
+`close_leaves_no_live_line_in_a_closed_region`, `close_never_demotes_a_wall` and
+`close_writes_every_estimate_through_demoteEst`" — done.  Gap 54's (3), "`close_writes_every_estimate_through_demoteEst`
+stays a goal", and its (4), "its refute-and-rename is step 3's" — refuted here, at step 7; the rest of gap 54
+stands.  Step 2's note in `Goals.lean`, "Not yet proved, and needed for the
+estimate half: that setting `demoted:` leaves `remainingOf` unchanged" — proved,
+`Field.remainingOf_setDemoted`.  The narrowed neighbours' names were checked
+against their statements and none overclaims, so none is renamed:
+`close_never_demotes_a_wall_but_may_carry_it` covers recurring lines as well as
+walls, which is narrower in its name than in its content, not wider.
+
+Re-measured after this step, every command under the 40 GB cap: `check.sh`
+**7/7** — axiom audit **1466 theorems** (+22: 13 in Line.lean, 1 in Close.lean,
+8 in Boundary.lean), corpus **33/37 files and 4/5 whole plans**, `Goals.lean`
+burn-down **30** (−3); `cargo test --workspace` **995 passed / 0 failed / 0
+ignored across 65 binaries** (unchanged: no Rust touched).  Gaps run to 59 (new
+gaps start at 60); cheats to 54 (new cheats start at 55).

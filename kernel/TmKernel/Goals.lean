@@ -62,8 +62,9 @@ stage then has to fight.
   theorem: there is nothing to state until §5 says what the epoch is.
 * **F6 — `close day` double-counted `est:` against logged minutes.**  Needs
   `done_minutes` (§6.4), which is a replay of `.tm/log.jsonl`.  Same blocker as
-  D1.  What *is* stated is `close_writes_every_estimate_through_demoteEst`,
-  which is the half that does not need the log.
+  D1.  What *was* stated, `close_writes_every_estimate_through_demoteEst`, is
+  refuted (stage 4 step 6); the half that does not need the log is
+  `close_keeps_every_remaining_estimate` (Close.lean).
 * **F3 and G1 — generated-block ownership.**  "The kernel owns the bytes of
   every generated block" is §4's **A** verdict — single ownership, architecture
   rather than type theory, and the plan says not to credit the compiler for an
@@ -209,22 +210,13 @@ over-strong L18: the second run's candidate set is empty.  Its doc comment says
 which idempotence it is — the fold on `WfPlan` at one `g` and one `now`, not
 §6.3's `state.json` one. -/
 
-/-- **L18 at plan level (P\*), stage 4.**  `closeTo_target_is_open` (Grain.lean)
-says the *target region* is open; this says the *fold's output* is.  It is the
-engine of L16, and it is what the derived close target buys: with
-`targetContaining` the fold's own output can land back in scope and neither
-this nor idempotence goes through (plan §3.2(a) — one of the two behaviour
-changes that need assent before stage 4). -/
-theorem close_leaves_no_live_line_in_a_closed_region
-    (g : Grain) (now : Day) (p q : WfPlan) (h : close g now p = .ok q)
-    (i : Id) (e : Entity) (hget : q.val.store.get i = some e) (r : Region)
-    (hr : docRegion q.val e.val.live.doc = some r) (hg : r.grain = g) :
-    ¬ Closed r now := sorry
-/- Status (2026-09-12, stage 4 step 2): stated over every line, so a `[x]` line
-§6.3 leaves in the archive is a counterexample to any close that succeeds on it;
-the refute-and-rename is owed (step 3).  The narrowed form is proved in
-`Close.lean`: `close_leaves_no_line_it_would_take` and its unpacked reading
-`close_leaves_no_unfinished_line_in_a_closed_region`. -/
+/- **`close_leaves_no_live_line_in_a_closed_region` (L18 at plan level) is refuted
+(2026-09-13, stage 4 step 6)** — renamed to its negation
+`close_leaves_live_lines_in_a_closed_region` and proved in `Boundary.lean` on the
+loaded week witness, audited in `Check.lean`.  It was stated over every line, and
+§6.3 leaves settled, recurring and wall lines in a closed file (`^t1`, `[x]`).
+The narrowed law is `close_leaves_no_line_it_would_take` (Close.lean), with its
+unpacked reading `close_leaves_no_unfinished_line_in_a_closed_region`. -/
 
 /- **`close_week_and_close_month_commute` (L17) is refuted (2026-09-12, stage 4
 step 3)** — renamed to its negation `close_week_and_close_month_do_not_commute`
@@ -247,40 +239,18 @@ loaded plan three months stale.  Its narrowing is `autoClose_strands_no_unfinish
 (Close.lean): no line any close would take survives, at any grain.  The F1
 double stamp is `autoClose_stamps_each_line_at_most_once`. -/
 
-/-- **F4 (P\*), stage 4 — `ClosePolicy`'s exemptions.**  §6.3's last sentence:
-"Recurring items and calendar intervals are never demoted — their instances
-expire or persist per §5.3."  `close_week` demoted walls instead of carrying
-them; this rules that out.  The hypothesis reads the *line*, so there is no
-second copy of "is this a wall" for a policy to disagree with. -/
-theorem close_never_demotes_a_wall (g : Grain) (now : Day) (p q : WfPlan)
-    (h : close g now p = .ok q) (i : Id) (e f : Entity)
-    (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f)
-    (hw : e.val.recur ≠ Recur.none ∨ ∃ a b : DT, e.val.shape = Shape.interval a b) :
-    f.val = e.val := sorry
-/- Status (2026-09-12, stage 4 step 2): the table carries walls (`walls :=
-.carried`, F4), so a wall still ahead changes `live` and this `f.val = e.val`
-is expected to be refuted (step 3), as is a line whose rank a landing shift
-moves.  Proved beside it in `Close.lean`:
-`close_never_demotes_a_wall_but_may_carry_it` (box, bytes and tombstone kept)
-and `close_carries_a_wall_that_is_still_ahead` (the carry lands in the live
-week). -/
-
-/-- **B1–B3 (P\*), stage 4.**  "A close's measurement is not lost", at the fold
-level.  L15 (`demoteEst_conserves`, `demoteEst_respects_user`) is proved for one
-entity; what is owed is that `close` is the only thing that writes an estimate
-and it writes every one of them *through* `demoteEst`.  Rules out the three
-shipped paths that threw a measurement away — `readopt`'s absorb, `demote_one`'s
-supersede, and `close_week` failing to fold children — by leaving no other
-writer for them to be. -/
-theorem close_writes_every_estimate_through_demoteEst (g : Grain) (now : Day) (bm : Nat)
-    (p q : WfPlan) (h : close g now p = .ok q) (i : Id) (e f : Entity)
-    (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f) :
-    ∃ (userSet : Bool) (rec : Nat), f.val.line = (demoteEst bm userSet rec e).val.line := sorry
-/- Status (2026-09-12, stage 4 step 2): equates the whole line, so the
-`demoted:` stamp a close appends is a counterexample; the refute-and-rename is
-owed (step 3).  Proved beside it in `Close.lean`:
-`close_rewrites_a_line_only_by_stamping_it`.  Not yet proved, and needed for the
-estimate half: that setting `demoted:` leaves `remainingOf` unchanged. -/
+/- **`close_never_demotes_a_wall` (F4) and
+`close_writes_every_estimate_through_demoteEst` (B1–B3) are refuted (2026-09-13,
+stage 4 step 6)** — renamed to their negations
+`close_does_not_leave_every_wall_as_it_was` and
+`close_writes_a_line_demoteEst_does_not`, proved in `Boundary.lean` on the loaded
+week witness, audited in `Check.lean`.  F4's `f.val = e.val` forbade the carry
+of a wall still ahead (`^x1`); B1–B3 equated the whole line and so forbade the
+`demoted:` stamp (`^m2`).  The narrowed laws, in `Close.lean`:
+`close_never_demotes_a_wall_but_may_carry_it` (box, bytes and tombstone kept;
+only the file may change), `close_rewrites_a_line_only_by_stamping_it`, and the
+estimate half step 2 owed, `close_keeps_every_remaining_estimate`, built on
+`Field.remainingOf_setDemoted` (Line.lean). -/
 
 /- **`close_day_stamps_a_day_stamp` is discharged (2026-09-12, stage 4 step
 2)** — proved as stated in `Close.lean`, audited in `Check.lean`.  D1 kept the

@@ -1668,6 +1668,9 @@ Plus the corpus ratchet, plus 30 minutes driving whatever binary exists (§5.13)
   equates the whole line and so forbids the `demoted:` stamp;
   `close_never_demotes_a_wall` forbids the carry fork-point `close_week` performs.
   Priced, with L17's and L27's expectations, in the README's stage-4 block.
+  *All four refuted and renamed: `autoClose_runs_every_period_it_passes` at step
+  4, the other three at step 7 (README "Stage 4 step 7"), each on a loaded plan
+  with its narrowed law beside it.*
 - **`demote` must learn to target a *section*** (gap 20). §6.3 files the
   copy into `month/<current>#Demoted`; today `demote` lands it at `freshRank`.
   This changes `demote`, its `normalized`-preservation lemma, and `sectionsWf`.

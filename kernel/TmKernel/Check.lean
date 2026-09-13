@@ -1637,3 +1637,29 @@ open Tm
 #print axioms Tm.the_day_close_reports_each_line
 #print axioms Tm.the_month_close_reports_each_line
 #print axioms Tm.a_close_entry_emits_in_build_order
+-- Stage 4 step 6 (same session, same banner): the three goals stated stronger
+-- than §6.3 — L18 at plan level, F4 and B1–B3 — refuted and renamed on the loaded
+-- week witness in Boundary.lean; the estimate half of narrowed B1–B3 in
+-- Close.lean, on `remainingOf_setDemoted` in Line.lean.
+#print axioms Tm.hasEst_setEst
+#print axioms Tm.Field.viewRemaining_words
+#print axioms Tm.Field.readNat_none_of_mem
+#print axioms Tm.Field.unitValue_none_of_mem
+#print axioms Tm.Field.neutral_of_mem
+#print axioms Tm.Field.neutral_keyWord_demoted
+#print axioms Tm.Field.neutral_of_demoted_tok
+#print axioms Tm.Field.neutral_of_id_word
+#print axioms Tm.Field.leadWords_append_neutral
+#print axioms Tm.Field.remainingWords_append_neutral
+#print axioms Tm.Field.setKeyIn_split
+#print axioms Tm.Field.insertBeforeId_split
+#print axioms Tm.Field.remainingOf_setDemoted
+#print axioms Tm.close_keeps_every_remaining_estimate
+#print axioms Tm.the_close_week_witness_loads
+#print axioms Tm.the_week_close_leaves_r1_and_t1_in_the_closed_week
+#print axioms Tm.the_week_close_carries_the_wall_x1_to_another_file
+#print axioms Tm.the_week_close_stamps_m2_and_writes_no_estimate
+#print axioms Tm.mem_closedLiveIdsOfGrain
+#print axioms Tm.close_leaves_live_lines_in_a_closed_region
+#print axioms Tm.close_does_not_leave_every_wall_as_it_was
+#print axioms Tm.close_writes_a_line_demoteEst_does_not

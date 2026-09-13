@@ -332,6 +332,24 @@ theorem view_set_is_not_silent (bm v : Nat) (r : RawItem) :
         simp only [this]
         exact unitValue_estWord bm v
 
+/-- `setEst` always leaves an `est:` key on the line — the insert branch and the
+replace branch alike.  Refuting the whole-line B1–B3 goal reads this: a line
+with no `est:` key is not a line `demoteEst` wrote. -/
+theorem hasEst_setEst (v : Nat) (r : RawItem) : hasEst (setEst v r) = true := by
+  have key : ∀ ts : List Tok, (ts.find? (fun t => isEstKey t.word)).map Tok.word = some (estWord v) →
+      ts.any (fun t => isEstKey t.word) = true := by
+    intro ts h
+    cases hf : ts.find? (fun t => isEstKey t.word) with
+    | none => rw [hf] at h; simp at h
+    | some t => exact List.any_eq_true.2 ⟨t, List.mem_of_find?_eq_some hf, by simpa using List.find?_some hf⟩
+  unfold setEst
+  by_cases h : hasEst r = true
+  · rw [if_pos h]
+    exact key _ (find_setEstIn v r.toks (by simpa [hasEst] using h))
+  · rw [if_neg h]
+    simp only [Bool.not_eq_true] at h
+    exact key _ (find_insertBeforeId (estWord v) r.toks (isEstKey_estWord v) (by simpa [hasEst] using h))
+
 /-- Replace the *leading* estimate token's word — the slot `tm edit est=`
 actually wrote. -/
 def setLeadWord (w : List Char) (r : RawItem) : RawItem :=
@@ -6489,6 +6507,241 @@ theorem parseLoc_wf {w : List Char} {c : Loc} (h : parseLoc w = some c) : c.wf =
   rw [← h]
   simp [Loc.wf, h1, h2, h3, h4]
   simpa using h0
+
+/-! ### Setting `demoted:` leaves `remainingOf` unchanged (stage-4 step 6)
+
+The estimate half of narrowed B1–B3.  `close` rewrites a line only by setting
+`demoted:` (`close_rewrites_a_line_only_by_stamping_it`, Close.lean); this is
+the lemma that says the rewrite is invisible to the one estimate reader.  The
+reader is restated over the line's words (`remainingWords`), and every word a
+`demoted:` write touches — the new `demoted:` token, the one it replaces, the
+`^id` it is inserted before — is `Neutral`: not an `est:` key, not a positional
+estimate, not a `ci` digit. -/
+
+/-- `leadEstTok`, over words. -/
+def leadWords (bm : Nat) : List (List Char) → Option Nat
+  | []        => none
+  | w :: rest => if isCiWord w then rest.head?.bind (unitValue bm) else unitValue bm w
+
+/-- `viewRemaining`, over words. -/
+def remainingWords (bm : Nat) (ws : List (List Char)) : Option Nat :=
+  match ws.find? isEstKey with
+  | some w => unitValue bm (w.drop 4)
+  | none   => leadWords bm ws
+
+theorem viewRemaining_words (bm : Nat) (r : RawItem) :
+    viewRemaining bm r = remainingWords bm (r.toks.map Tok.word) := by
+  unfold viewRemaining estKeyTok leadEstTok remainingWords
+  rw [List.find?_map]
+  cases hf : r.toks.find? (fun t => isEstKey t.word) with
+  | some t =>
+    have hf' : r.toks.find? (isEstKey ∘ Tok.word) = some t := hf
+    simp only [hf', Option.map_some]
+  | none =>
+    have hf' : r.toks.find? (isEstKey ∘ Tok.word) = none := hf
+    simp only [hf', Option.map_none]
+    cases r.toks with
+    | nil => rfl
+    | cons t ts =>
+      simp only [leadWords, List.map_cons]
+      cases isCiWord t.word
+      · rfl
+      · cases ts <;> rfl
+
+/-- A word no estimate reader can see. -/
+def Neutral (w : List Char) : Prop :=
+  isEstKey w = false ∧ (∀ bm, unitValue bm w = none) ∧ isCiWord w = false
+
+theorem readNat_none_of_mem {x : Char} (hd : charDigit x = none) :
+    ∀ (l : List Char), x ∈ l → readNat l = none := by
+  intro l hx
+  unfold readNat
+  cases l with
+  | nil => rfl
+  | cons y t =>
+    simp only [List.isEmpty_cons, Bool.false_eq_true, if_false]
+    unfold readNatAux
+    have gen : ∀ (l : List Char) (a : Nat), x ∈ l →
+        l.foldl (fun acc c => match acc, charDigit c with
+                              | some a, some d => some (a * 10 + d)
+                              | _, _ => none) (some a) = none := by
+      intro l
+      induction l with
+      | nil => intro a h; simp at h
+      | cons y t ih =>
+        intro a h
+        simp only [List.foldl_cons]
+        cases hy : charDigit y with
+        | none => exact readNat_foldl_none t
+        | some d =>
+          rcases List.mem_cons.1 h with rfl | h
+          · rw [hd] at hy; cases hy
+          · exact ih _ h
+    exact gen _ 0 hx
+
+theorem unitValue_none_of_mem (bm : Nat) {w : List Char} {x : Char} (hx : x ∈ w)
+    (hd : charDigit x = none) (hb : x ≠ 'b') (hm : x ≠ 'm') (hh : x ≠ 'h') :
+    unitValue bm w = none := by
+  have hr : x ∈ w.reverse := List.mem_reverse.2 hx
+  unfold unitValue
+  generalize w.reverse = l at hr ⊢
+  cases l with
+  | nil => rfl
+  | cons c ds =>
+    split
+    · rename_i ds' heq
+      obtain ⟨rfl, rfl⟩ := List.cons.inj heq
+      rcases List.mem_cons.1 hr with h | h
+      · exact absurd h hb
+      · simp [readNat_none_of_mem hd _ (List.mem_reverse.2 h)]
+    · rename_i ds' heq
+      obtain ⟨rfl, rfl⟩ := List.cons.inj heq
+      rcases List.mem_cons.1 hr with h | h
+      · exact absurd h hm
+      · simp [readNat_none_of_mem hd _ (List.mem_reverse.2 h)]
+    · rename_i ds' heq
+      obtain ⟨rfl, rfl⟩ := List.cons.inj heq
+      rcases List.mem_cons.1 hr with h | h
+      · exact absurd h hh
+      · simp [readNat_none_of_mem hd _ (List.mem_reverse.2 h)]
+    · rfl
+
+/-- A word holding `:` or `^` is never a `ci` digit and never a positional
+estimate; unless it is an `est:` key, it is `Neutral`. -/
+theorem neutral_of_mem {w : List Char} {x : Char} (hx : x ∈ w) (hc : x = ':' ∨ x = '^')
+    (hest : isEstKey w = false) : Neutral w := by
+  have hd : charDigit x = none := by rcases hc with rfl | rfl <;> rfl
+  have hb : x ≠ 'b' := by rcases hc with rfl | rfl <;> decide
+  have hm : x ≠ 'm' := by rcases hc with rfl | rfl <;> decide
+  have hh : x ≠ 'h' := by rcases hc with rfl | rfl <;> decide
+  refine ⟨hest, fun bm => unitValue_none_of_mem bm hx hd hb hm hh, ?_⟩
+  unfold isCiWord
+  cases w with
+  | nil => rfl
+  | cons c t =>
+    cases t with
+    | cons _ _ => rfl
+    | nil =>
+      have : x = c := List.mem_singleton.1 hx
+      subst this
+      rcases hc with rfl | rfl <;> decide
+
+theorem neutral_keyWord_demoted (v : List Char) : Neutral (keyWord .demoted v) :=
+  neutral_of_mem (x := ':') (by simp [keyWord, Key.name]) (Or.inl rfl) rfl
+
+theorem neutral_of_demoted_tok {t : Tok} (h : isKeyTok .demoted t = true) : Neutral t.word := by
+  have hk : keyOf t.word = some .demoted := by simpa [isKeyTok] using h
+  have hcolon : ':' ∈ t.word := by
+    unfold keyOf keyPrefix at hk
+    cases hs : splitFirst ':' t.word with
+    | none => rw [hs] at hk; simp at hk
+    | some p =>
+      rw [splitFirst_sound ':' t.word p.1 p.2 hs]
+      simp
+  refine neutral_of_mem hcolon (Or.inl rfl) ?_
+  cases he : isEstKey t.word with
+  | false => rfl
+  | true =>
+    exfalso
+    have htake : t.word.take 4 = ['e', 's', 't', ':'] := by simpa [isEstKey] using he
+    have hw : t.word = keyWord .est (t.word.drop 4) := by
+      conv => lhs; rw [← List.take_append_drop 4 t.word]
+      rw [htake]; rfl
+    have := keyOf_keyWord .est (t.word.drop 4)
+    rw [← hw, hk] at this
+    exact Key.noConfusion (Option.some.inj this)
+
+theorem neutral_of_id_word {w : List Char} (h : isIdWord w = true) : Neutral w := by
+  cases w with
+  | nil => simp [isIdWord] at h
+  | cons c t =>
+    have hc : c = '^' := by simpa [isIdWord] using h
+    subst hc
+    exact neutral_of_mem (x := '^') (by simp) (Or.inr rfl) rfl
+
+theorem leadWords_append_neutral (bm : Nat) (a r : List (List Char)) {x : List Char}
+    (hx : Neutral x) : leadWords bm (a ++ x :: r) = leadWords bm a := by
+  match a with
+  | [] => simp [leadWords, hx.2.2, hx.2.1]
+  | [c] => by_cases hc : isCiWord c = true <;> simp [leadWords, hc, hx.2.1]
+  | c :: d :: a' => simp [leadWords]
+
+theorem remainingWords_append_neutral (bm : Nat) (a r : List (List Char)) {x : List Char}
+    (hx : Neutral x) :
+    remainingWords bm (a ++ x :: r) =
+      match (a ++ r).find? isEstKey with
+      | some w => unitValue bm (w.drop 4)
+      | none   => leadWords bm a := by
+  unfold remainingWords
+  have hf : (a ++ x :: r).find? isEstKey = (a ++ r).find? isEstKey := by
+    simp [List.find?_append, hx.1]
+  rw [hf, leadWords_append_neutral bm a r hx]
+
+theorem setKeyIn_split (k : Key) (v : List Char) : ∀ ts : List Tok, ts.any (isKeyTok k) = true →
+    ∃ a t b, ts = a ++ t :: b ∧ isKeyTok k t = true ∧
+      setKeyIn k v ts = a ++ ⟨t.sep, keyWord k v⟩ :: b := by
+  intro ts
+  induction ts with
+  | nil => intro h; simp at h
+  | cons t ts ih =>
+    intro h
+    by_cases hk : isKeyTok k t = true
+    · exact ⟨[], t, ts, rfl, hk, setKeyIn_cons_pos k v t ts hk⟩
+    · simp only [Bool.not_eq_true] at hk
+      simp only [List.any_cons, hk, Bool.false_or] at h
+      obtain ⟨a, u, b, h1, h2, h3⟩ := ih h
+      exact ⟨t :: a, u, b, by rw [h1]; rfl, h2, by rw [setKeyIn_cons_neg k v t ts hk, h3]; rfl⟩
+
+theorem insertBeforeId_split (w : List Char) : ∀ ts : List Tok,
+    (∃ (a : List (List Char)) (u : List Char) (b : List (List Char)), isIdWord u = true ∧
+        ts.map Tok.word = a ++ u :: b ∧ (insertBeforeId w ts).map Tok.word = a ++ w :: u :: b) ∨
+      (insertBeforeId w ts).map Tok.word = ts.map Tok.word ++ [w] := by
+  intro ts
+  induction ts with
+  | nil => exact Or.inr rfl
+  | cons u us ih =>
+    by_cases hid : isIdWord u.word = true
+    · refine Or.inl ⟨[], u.word, us.map Tok.word, hid, rfl, ?_⟩
+      by_cases hs : u.sep.isEmpty = true
+      · rw [insertBeforeId_id_nosep w u us hid hs]; rfl
+      · simp only [Bool.not_eq_true] at hs
+        rw [insertBeforeId_id_sep w u us hid hs]; rfl
+    · simp only [Bool.not_eq_true] at hid
+      rw [insertBeforeId_other w u us hid]
+      rcases ih with ⟨a, x, b, h1, h2, h3⟩ | h
+      · exact Or.inl ⟨u.word :: a, x, b, h1, by simp [h2], by simp [h3]⟩
+      · exact Or.inr (by simp [h])
+
+/-- **Setting `demoted:` leaves `remainingOf` unchanged** — the estimate half of
+narrowed B1–B3.  The token a close writes is neither an `est:` key nor a
+positional estimate nor a `ci` digit, whether it replaces a `demoted:` token or
+is inserted before the `^id`. -/
+theorem remainingOf_setDemoted (bm : Nat) (ss : List Stamp) (r : RawItem) :
+    remainingOf bm (setDemoted ss r) = remainingOf bm r := by
+  unfold remainingOf
+  rw [viewRemaining_words, viewRemaining_words]
+  unfold setDemoted setKey
+  by_cases h : hasKeyTok .demoted r = true
+  · rw [if_pos h]
+    obtain ⟨a, t, b, hts, hk, hset⟩ :=
+      setKeyIn_split .demoted (renderStamps ss) r.toks (by simpa [hasKeyTok] using h)
+    show (remainingWords bm ((setKeyIn _ _ r.toks).map Tok.word)).getD 0 = _
+    rw [hset, hts]
+    simp only [List.map_append, List.map_cons]
+    rw [remainingWords_append_neutral bm _ _ (neutral_keyWord_demoted _),
+      remainingWords_append_neutral bm _ _ (neutral_of_demoted_tok hk)]
+  · rw [if_neg h]
+    show (remainingWords bm ((insertBeforeId _ r.toks).map Tok.word)).getD 0 = _
+    rcases insertBeforeId_split (keyWord .demoted (renderStamps ss)) r.toks with
+      ⟨a, u, b, hid, hts, hins⟩ | hins
+    · rw [hins, hts, remainingWords_append_neutral bm _ _ (neutral_keyWord_demoted _),
+        remainingWords_append_neutral bm _ _ (neutral_of_id_word hid)]
+      simp [List.find?_append, (neutral_of_id_word hid).1]
+    · rw [hins]
+      conv => rhs; rw [← List.append_nil (r.toks.map Tok.word)]
+      rw [remainingWords_append_neutral bm _ _ (neutral_keyWord_demoted _)]
+      unfold remainingWords
+      simp only [List.append_nil]
 
 end Field
 end Tm

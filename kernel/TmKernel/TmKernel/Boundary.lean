@@ -4848,4 +4848,202 @@ theorem a_close_entry_emits_in_build_order :
       = "{\"id\":\"O7\",\"grain\":2,\"did\":\"move\",\"from\":0,\"to\":1,\"stamp\":null,\"min\":null}".toList := by
   decide
 
+/-! ## Three stage-4 goals stated stronger than §6.3, refuted (stage-4 step 6)
+
+`close_leaves_no_live_line_in_a_closed_region`, `close_never_demotes_a_wall` and
+`close_writes_every_estimate_through_demoteEst` each forbid something §6.3
+requires a close to do, so each is refuted here by its negation, quantifier for
+quantifier, on the loaded week witness of step 2 (`closeWeekWitness`, closed at
+Monday 2026-09-07).  One witness, three sightings:
+
+* `^t1`, a `[x]` line of 2026-W36, stays in that closed week — §6.3 leaves
+  settled lines where they are (and `^r1`, a recurring one, beside it);
+* `^x1`, a wall still ahead, is carried out of 2026-W36 into 2026-W37 — F4's
+  carry, which changes its `live` and so its `Core`;
+* `^m2`'s record is written with `demoted:W36` and no `est:` key — a line
+  `demoteEst` never writes, since `setEst` always leaves one (`hasEst_setEst`).
+
+The narrowed laws that do hold sit beside each goal's old statement in
+`Close.lean`: `close_leaves_no_line_it_would_take`,
+`close_never_demotes_a_wall_but_may_carry_it`,
+`close_rewrites_a_line_only_by_stamping_it` and
+`close_keeps_every_remaining_estimate`.  Probed under an 8 GB cap first (AGENTS
+§5.10a): the three observations decide in about 4 s at a 1.3 GB peak, imports
+included. -/
+
+theorem the_close_week_witness_loads : loadsOk closeWeekWitness = true := by decide
+
+/-- The loaded week witness.  Total by `the_close_week_witness_loads`: the error
+branch is refuted, not defaulted. -/
+def closeWeekPlan : WfPlan :=
+  match h : loadPlan closeWeekWitness with
+  | .ok p => p
+  | .error _ => absurd the_close_week_witness_loads (by simp [loadsOk, h])
+
+/-- The ids whose record sits in a file of grain `g` whose region is closed at
+`now` — `closedLiveIds` with the goal's `r.grain = g` added. -/
+def closedLiveIdsOfGrain (g : Grain) (now : Day) (q : WfPlan) : List Id :=
+  q.val.store.dom.filter (fun i =>
+    match q.val.store.get i with
+    | none   => false
+    | some e =>
+      match docRegion q.val e.val.live.doc with
+      | none   => false
+      | some r => r.grain == g && decide (Closed r now))
+
+/-- The week witness after `close week closeNow`, observed. -/
+def weekClosed {α : Type} (obs : WfPlan → α) : Option α :=
+  match close week closeNow closeWeekPlan with
+  | .ok q    => some (obs q)
+  | .error _ => none
+
+/-- One id's entity before and after the week close, observed together. -/
+def beforeAfterWeekClose {α : Type} (i : Id) (obs : Entity → Entity → α) (q : WfPlan) : Option α :=
+  match closeWeekPlan.val.store.get i, q.val.store.get i with
+  | some e, some f => some (obs e f)
+  | _, _ => none
+
+/-- A line of `at:` shape — a wall. -/
+def isIntervalLine (e : Entity) : Bool :=
+  match e.val.shape with
+  | .interval _ _ => true
+  | _ => false
+
+set_option maxRecDepth 40000 in
+/-- After the week close, the recurring `^r1` and the done `^t1` are still in
+2026-W36, a closed week. -/
+theorem the_week_close_leaves_r1_and_t1_in_the_closed_week :
+    weekClosed (closedLiveIdsOfGrain week closeNow) =
+      some ["r1".toList, "t1".toList] := by decide
+set_option maxRecDepth 40000 in
+/-- `^x1` is an `at:` line in document 0 (2026-W36) before the close and in
+document 1 (2026-W37) after it. -/
+theorem the_week_close_carries_the_wall_x1_to_another_file :
+    weekClosed (beforeAfterWeekClose "x1".toList
+      (fun e f => (isIntervalLine e, e.val.live.doc, f.val.live.doc))) =
+      some (some (true, 0, 1)) := by decide
+set_option maxRecDepth 40000 in
+/-- `^m2`'s line after the close differs from its line before (the stamp), and
+carries no `est:` key. -/
+theorem the_week_close_stamps_m2_and_writes_no_estimate :
+    weekClosed (beforeAfterWeekClose "m2".toList
+      (fun e f => (decide (f.val.line = e.val.line), hasEst f.val.line))) =
+      some (some (false, false)) := by decide
+
+theorem mem_closedLiveIdsOfGrain {g : Grain} {now : Day} {q : WfPlan} {i : Id}
+    (h : i ∈ closedLiveIdsOfGrain g now q) :
+    ∃ e r, q.val.store.get i = some e ∧ docRegion q.val e.val.live.doc = some r ∧
+      r.grain = g ∧ Closed r now := by
+  unfold closedLiveIdsOfGrain at h
+  have hf := (List.mem_filter.1 h).2
+  revert hf
+  cases hg : q.val.store.get i with
+  | none => simp
+  | some e =>
+    cases hr : docRegion q.val e.val.live.doc with
+    | none => simp [hr]
+    | some r =>
+      simp only [hr, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq]
+      exact fun ⟨hgr, hc⟩ => ⟨e, r, rfl, hr, hgr, hc⟩
+
+/-- **L18 at plan level (P\*), refuted — discharged from `Goals.lean` by
+refute-and-rename.**  The negation of `close_leaves_no_live_line_in_a_closed_region`,
+quantifier for quantifier.  §6.3 leaves settled, recurring and wall lines in a
+closed file, so a close that succeeds can leave a live line in a closed region of
+its own grain: `^t1`, `[x]` in 2026-W36.  What holds is
+`close_leaves_no_line_it_would_take` (Close.lean): no line the close would take
+survives it. -/
+theorem close_leaves_live_lines_in_a_closed_region :
+    ¬ ∀ (g : Grain) (now : Day) (p q : WfPlan), close g now p = .ok q →
+      ∀ (i : Id) (e : Entity), q.val.store.get i = some e →
+        ∀ (r : Region), docRegion q.val e.val.live.doc = some r → r.grain = g →
+          ¬ Closed r now := by
+  intro hall
+  have hw := the_week_close_leaves_r1_and_t1_in_the_closed_week
+  unfold weekClosed at hw
+  cases h : close week closeNow closeWeekPlan with
+  | error x => rw [h] at hw; simp at hw
+  | ok q =>
+    rw [h] at hw
+    simp only [Option.some.injEq] at hw
+    have hm : "t1".toList ∈ closedLiveIdsOfGrain week closeNow q := by rw [hw]; decide
+    obtain ⟨e, r, hg, hr, hgr, hc⟩ := mem_closedLiveIdsOfGrain hm
+    exact hall week closeNow closeWeekPlan q h _ e hg r hr hgr hc
+
+/-- **F4 (P\*), refuted — discharged from `Goals.lean` by refute-and-rename.**
+The negation of `close_never_demotes_a_wall`, quantifier for quantifier.  Its
+conclusion `f.val = e.val` forbids the carry §6.3's exemptions require (and the
+rank shift a landing performs): `^x1`, a wall still ahead, leaves 2026-W36 for
+2026-W37.  What holds is `close_never_demotes_a_wall_but_may_carry_it`
+(Close.lean): a wall or recurring line keeps its box, bytes and tombstone, and
+only its file may change. -/
+theorem close_does_not_leave_every_wall_as_it_was :
+    ¬ ∀ (g : Grain) (now : Day) (p q : WfPlan), close g now p = .ok q →
+      ∀ (i : Id) (e f : Entity), p.val.store.get i = some e → q.val.store.get i = some f →
+        (e.val.recur ≠ Field.Recur.none ∨ ∃ a b : Field.DT, e.val.shape = Field.Shape.interval a b) →
+        f.val = e.val := by
+  intro hall
+  have hw := the_week_close_carries_the_wall_x1_to_another_file
+  unfold weekClosed beforeAfterWeekClose at hw
+  cases h : close week closeNow closeWeekPlan with
+  | error x => rw [h] at hw; simp at hw
+  | ok q =>
+    rw [h] at hw
+    simp only [Option.some.injEq] at hw
+    cases he : closeWeekPlan.val.store.get "x1".toList with
+    | none => rw [he] at hw; simp at hw
+    | some e =>
+      cases hf : q.val.store.get "x1".toList with
+      | none => rw [he, hf] at hw; simp at hw
+      | some f =>
+        rw [he, hf] at hw
+        simp only [Option.some.injEq, Prod.mk.injEq] at hw
+        obtain ⟨hwall, he0, hf1⟩ := hw
+        have hsh : ∃ a b : Field.DT, e.val.shape = Field.Shape.interval a b := by
+          unfold isIntervalLine at hwall
+          split at hwall
+          · rename_i a b hs; exact ⟨a, b, hs⟩
+          · exact absurd hwall (by simp)
+        have heq := congrArg (fun c => c.live.doc) (hall week closeNow closeWeekPlan q h _ e f he hf (Or.inr hsh))
+        simp only [he0, hf1] at heq
+        exact absurd heq (by decide)
+
+/-- **B1–B3 (P\*), refuted — discharged from `Goals.lean` by refute-and-rename.**
+The negation of `close_writes_every_estimate_through_demoteEst`, quantifier for
+quantifier.  It equates the whole line, and §6.3's `demoted:` stamp is not
+`demoteEst`'s to write: `^m2`'s stamped record is neither its old line
+(`userSet = true`) nor any line with an `est:` key (`userSet = false`, by
+`hasEst_setEst`), at a 50-minute block.  What holds is
+`close_rewrites_a_line_only_by_stamping_it` and, for the estimate itself,
+`close_keeps_every_remaining_estimate` (Close.lean). -/
+theorem close_writes_a_line_demoteEst_does_not :
+    ¬ ∀ (g : Grain) (now : Day) (bm : Nat) (p q : WfPlan), close g now p = .ok q →
+      ∀ (i : Id) (e f : Entity), p.val.store.get i = some e → q.val.store.get i = some f →
+        ∃ (userSet : Bool) (rec : Nat), f.val.line = (demoteEst bm userSet rec e).val.line := by
+  intro hall
+  have hw := the_week_close_stamps_m2_and_writes_no_estimate
+  unfold weekClosed beforeAfterWeekClose at hw
+  cases h : close week closeNow closeWeekPlan with
+  | error x => rw [h] at hw; simp at hw
+  | ok q =>
+    rw [h] at hw
+    simp only [Option.some.injEq] at hw
+    cases he : closeWeekPlan.val.store.get "m2".toList with
+    | none => rw [he] at hw; simp at hw
+    | some e =>
+      cases hf : q.val.store.get "m2".toList with
+      | none => rw [he, hf] at hw; simp at hw
+      | some f =>
+        rw [he, hf] at hw
+        simp only [Option.some.injEq, Prod.mk.injEq, decide_eq_false_iff_not] at hw
+        obtain ⟨hne, hnoest⟩ := hw
+        obtain ⟨u, rec, hl⟩ := hall week closeNow 50 closeWeekPlan q h _ e f he hf
+        cases u with
+        | true => exact hne hl
+        | false =>
+          have : hasEst f.val.line = true := by
+            rw [hl]; exact hasEst_setEst _ _
+          rw [hnoest] at this
+          exact Bool.noConfusion this
+
 end Tm
