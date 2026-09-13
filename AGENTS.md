@@ -480,6 +480,7 @@ that needs the user's assent, not an agent's judgment.
 | `Store` is an interface (`get`/`dom`/`domSpec`/`domNodup`), not a concrete map | `Std.HashMap` internals are opaque to `decide` and `rfl`; a fast checker and a provable checker may be two artifacts, and the proofs live on the interface |
 | Six `Status` cases, not five | a lone `[-]` is a *state*: `close month` carries a `# Demoted` copy forward without touching its partner, which may be in a file the host never hands over |
 | The week→month tie-break is `monthOfIsoWeek` (the civil month of the week's Thursday) | total, and a function of the week alone; "the month of today" is refuted by `monthOfWeekByToday_is_not_stable` |
+| `close day` targets the week containing *now* (`closeTo`), not the week the closed day belonged to; the stamp stays `demoted:D<dd>` | the owner drove stale trees (D1, 2026-09-12): the closed day's own week double-stamped a skipped weekend off Monday's plan, deleted a child whose parent was in the closing week, and stranded a close more than 16 days late in a sealed file |
 | Behaviour changes are recorded next to the rule they replace, with a theorem separating them — never taken silently | *"this is a bug" vs "this is an undocumented deliberate choice" is a judgment reading cannot settle* |
 
 ---
@@ -1562,26 +1563,31 @@ Plus the corpus ratchet, plus 30 minutes driving whatever binary exists (§5.13)
 
 **Named traps.**
 
-- **Two behaviour changes need human assent BEFORE this stage.** (a) `close_day`
-  targets the week containing *now*, not the week containing the closed day;
-  (b) week→month is the civil month of week `w`'s Thursday, not "the month of
-  today". Both were read off line citations and **not observed by running the
-  binary**, and `auto_close`'s grain-ordered catch-up masks both. The plan's
-  instruction is literal: **construct a stale tree and close it before
-  deciding.** The generalised statements are already compiled —
-  `impl_rule_disagrees_iff` and `containing_targets_a_closed_region_iff` say the
-  two rules differ, and the Rust's target is already closed, **exactly when the
-  coarser period rolled over in between** — so this is a fact about closing late,
-  not one witness.
-  *Status at `bf7cc63`, recorded here as a pointer and not as the repair:*
-  **(a) is decided** by the owner (§10.5 q1, D1) — `close day` targets the week
-  containing *now*, the kernel's `closeTo`; the stamp stays `demoted:D<dd>`, and
-  `AUTO_CLOSE_CATCHUP = 16` collapses to one step per grain. **(b) is withdrawn**:
-  it describes a behaviour change that does not exist — `horizon::close_week`
-  already computes `closeTo week now`, and `monthOfIsoWeek` is a naming tie-break,
-  not the close rule (`Grain.lean` says so). This paragraph, §10.5 q1's second
-  half, `Cal.lean`'s header and the README's "month of today" row and tie-break
-  section frame it otherwise; **stage 4's first step repairs those sites.**
+- **One close behaviour change, decided; the second one never existed.**
+  PLAN §3.2 and §6.2 q1 named two, both read off line citations and not observed
+  by running the binary. **(a) `close day`'s target is decided** (D1, 2026-09-12,
+  after the owner drove stale trees with the restored binary): the week
+  containing *now* — the kernel's `closeTo day now` — not the week the closed day
+  belonged to (`targetContaining`, fork-point `horizon::close_day`). The stamp
+  stays `demoted:D<dd>`, and `AUTO_CLOSE_CATCHUP = 16`'s period-by-period
+  iteration collapses to one step per grain. The generalised statements are
+  compiled — `impl_rule_disagrees_iff` and
+  `containing_targets_a_closed_region_iff` say the two rules differ, and the
+  Rust's target is already closed, **exactly when the coarser period rolled over
+  in between** — so this is a fact about closing late, not one witness.
+  **(b), "week→month is the Thursday's month, not the month of today", is not a
+  behaviour change and is withdrawn:** fork-point `horizon::close_week` files its
+  `# Demoted` copy into `YearMonth::from_date(cx.today())`, which **is**
+  `closeTo week now` (checked by `decide` on four dates, stage 4 step 1), and
+  `closeTo week now` is even `rfl`-equal to `monthOfWeekByToday w now` — one
+  month in two roles, right as a close destination and wrong as a name.
+  `monthOfIsoWeek` / `monthOfWeek` is a naming tie-break with **no consumer**,
+  and `Grain.closeTo_week_is_not_monthOfWeek` keeps the roles apart. Do not
+  reopen (b) as a close-rule change. The residual, smaller question — *which
+  month file a week's `# Demoted` record belongs in* — has no consumer either and
+  is **deferred out of stage 4** by name (README stage-4 block). Repaired at
+  stage 4 step 1: this bullet, §10.5 q1, `Cal.lean`'s header; the README
+  supersedes its own cheat row 24 and tie-break section by name.
 - **If assent is refused, L16 may not be provable.** The idempotence argument is:
   after the fold, no entity's live site is in a closed region of grain `g`, so
   the second run folds over the empty set — which is `closeTo_target_is_open`.
@@ -1591,6 +1597,14 @@ Plus the corpus ratchet, plus 30 minutes driving whatever binary exists (§5.13)
   L16 gets.*
 - **L17 is an expected refutation, and a refutation is a deliverable.**
   `close week ∘ close month` is not expected to commute.
+- **Four stage-4 goals are stated stronger than §6.3 allows**, and the repair is
+  refute-and-rename (§3.2), never a weakened predicate:
+  `close_leaves_no_live_line_in_a_closed_region` and
+  `autoClose_runs_every_period_it_passes` quantify over settled, recurring and
+  wall lines §6.3 leaves in place; `close_writes_every_estimate_through_demoteEst`
+  equates the whole line and so forbids the `demoted:` stamp;
+  `close_never_demotes_a_wall` forbids the carry fork-point `close_week` performs.
+  Priced, with L17's and L27's expectations, in the README's stage-4 block.
 - **`demote` must learn to target a *section*** (gap 20). §6.3 files the
   copy into `month/<current>#Demoted`; today `demote` lands it at `freshRank`.
   This changes `demote`, its `normalized`-preservation lemma, and `sectionsWf`.
@@ -2048,7 +2062,7 @@ Check these before you quote them.
 | "`lake build` from clean 1.6 s; `cargo test` from clean 3.6 s" | `kernel/README.md` header | not re-measured at `c8f3a38` or `bf7cc63`, and certainly not true of today's 20,902-line kernel. The warm numbers in §10.1 are, plus `cargo build -p tm` into an empty target directory with the archive built: 18.1 s |
 | "Five separate Rust code paths" / "six entrances to one hole" | in circulation, and in an earlier version of this document | **six catalogued defects (PLAN §4.A rows A1–A6), five of them patched entrances, one hole, one precondition.** §1 settles which number means what; the harness says *five* entrances |
 | "943 tests" | in circulation | not sourced anywhere **as a claim about proofs**. 943 is `horizon.rs:943`, the line of `move_line`. The documented figure is line counts: tm-core has 19,298 test lines (re-measured on the restored tree: still 19,298), of which the kernel-area files are 9,497 (49%) — *"the tests proofs substantially replace"*. **A second, real 943 now exists and must not be confused with it:** `cargo test --workspace` passed 943 tests at the restore, `835d960` (984 at `bf7cc63`) |
-| "a week→month behaviour change" needing assent; "the month of today" as `horizon.rs:1543`'s rejected rule | AGENTS §8.2 trap (b), §10.5 q1's second half; `Cal.lean`'s header; `kernel/README.md`'s "month of today" row (24) and its week → month tie-break section — all from `6f67873` | **there is no such behaviour change.** `horizon::close_week` already computes `closeTo week now`; `monthOfIsoWeek` names the month a week belongs to and is not the close rule, as `Grain.lean` says. q1's second half is **withdrawn** (§10.5); stage 4's first step repairs these sites |
+| "a week→month behaviour change" needing assent; "the month of today" as `horizon.rs:1543`'s rejected rule | AGENTS §8.2 trap (b), §10.5 q1's second half; `Cal.lean`'s header; `kernel/README.md`'s "month of today" row (24) and its week → month tie-break section — all from `6f67873` | **there is no such behaviour change.** `horizon::close_week` already computes `closeTo week now`; `monthOfIsoWeek` names the month a week belongs to and is not the close rule, as `Grain.lean` says. q1's second half is **withdrawn** (§10.5). **Repaired at stage 4 step 1:** §8.2's trap, §10.5 q1 and `Cal.lean`'s header corrected; the README supersedes its row 24 and "Rejected" paragraph by name in its stage-4 block. Left as history, and to be read as wrong on this point: `Negative.lean`'s `CHEAT 24` banner (§6.2), and the origin, PLAN §3.2(b), with PLAN §6.2 q1's and stage-4 row's "two behaviour changes" (quoted in `Goals.lean`'s `# STAGE 4` header) — there is one, D1 |
 | `main` is the oracle; `git checkout main -- tm-core Cargo.toml Cargo.lock`; `git show main:…` | earlier versions of this document; `tm/DORMANT.md`'s old text; `kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh` (comments and `git archive main`); README gap 36 | `main` is discarded (`f386c56`). The oracle is `4748911`; the restore ran from it (`835d960`); the oracle scripts still say `main` and fail (§7.3) |
 | "The branch has no Rust kernel"; "there is currently no binary to drive"; README gap 14 "Nothing in the shipped `tm` binary calls this yet" | earlier versions of §2.2 and §5.13; `kernel/README.md` gap 14 | the workspace is restored and the `tm` binary calls the kernel for seven verbs (`d8e8d4d`, `bd61f11`) |
 | `tm/DORMANT.md`: the rewiring "is underway", A6 open "until the kernel-backed wiring lands" | `tm/DORMANT.md` | the wiring landed; the file is superseded by the README's 2026-09-12 block |
@@ -2105,7 +2119,7 @@ they are settled, and changing one needs the owner again.
 
 | # | question | due | status at `bf7cc63` |
 |---|---|---|---|
-| 1 | The two close behaviour changes — and by **constructing a stale tree and closing it**, not by reading | before stage 4 | **First half ANSWERED 2026-09-12 (D1):** `close day` targets the week containing *now* — the kernel's `closeTo` — decided after driving stale trees with the restored binary (skipping a weekend double-stamped leftovers onto the month cut list and dropped them off Monday's plan; a day closed more than 16 days late stranded work in a sealed file). Package: the stamp stays `demoted:D<dd>`; `AUTO_CLOSE_CATCHUP = 16` collapses to one step per grain. **Second half WITHDRAWN:** the week→month "behaviour change" does not exist — `horizon::close_week` already computes `closeTo week now` (§10.2's row; §8.2's trap). Stage 4's first step repairs the four sites that describe it |
+| 1 | The two close behaviour changes — and by **constructing a stale tree and closing it**, not by reading | before stage 4 | **First half ANSWERED 2026-09-12 (D1):** `close day` targets the week containing *now* — the kernel's `closeTo` — decided after driving stale trees with the restored binary (skipping a weekend double-stamped leftovers onto the month cut list and dropped them off Monday's plan; an item whose parent was in the closing week was deleted, its minutes silently absorbed; a day closed more than 16 days late stranded work in a sealed file). Package: the stamp stays `demoted:D<dd>`; `AUTO_CLOSE_CATCHUP = 16` collapses to one step per grain. Evidence and mechanism: `kernel/README.md`'s stage-4 block (D1). **Second half WITHDRAWN:** the week→month "behaviour change" does not exist — `horizon::close_week` already computes `closeTo week now` (checked by `decide` on four dates; `rfl`-equal to `monthOfWeekByToday`) (§10.2's row; §8.2's trap). The sites were repaired at stage 4 step 1; the residual "which month file holds a week's `# Demoted` record" is README gap 52, **deferred** out of stage 4 (no consumer) |
 | 2 | `Id`'s shape — the recorded resolution is weaken the spec, not tighten the data | stage 3 | **ANSWERED 2026-09-12 (D2):** ids stay digits (`freshId`'s `^9`, `^10`); spec §3.1's "4 chars of `[a-z0-9]`" width sentence is weakened to match. Closes gap 13 |
 | 3 | `parent`: derive the field and demote `parentsTotal` to a report, or keep it stored and have no hierarchy (gap 22) | **before stage 5, blocking** | **open** — also what B3 needs to fire in stage 4 |
 | 4 | Which side replays the log | before stage 5 | **open** — and `move_has_no_inverse_command` makes replay the only correct `tm undo` |

@@ -3910,3 +3910,226 @@ else referenced them.  Re-measured: `check.sh` 7/7 — axiom audit **1299**
 (unchanged: two removed, two added), corpus 33/37 files and 4/5 whole plans,
 `Goals.lean` burn-down **40** (unchanged); `cargo test --workspace` **984
 passed / 0 failed** across 64 binaries (unchanged).
+
+<!-- ===================================================================
+     APPENDED 2026-09-12 (stage-4 session, rebuild-on-lean).  Opens stage 4.
+     Step 1 is documentation only: the owner's decisions D1–D4, the week→month contradiction repaired, the stage priced.  Takes gap 52; no cheat numbers.
+     =================================================================== -->
+
+## Stage 4 opens 2026-09-12: the owner's decisions, one contradiction repaired, the stage priced
+
+Baseline re-measured at `a8bb800` before this block, every command under the 40 GB
+memory cap (AGENTS §5.10a): `kernel/check.sh` **7/7 ok** — axiom audit **1299
+theorems**, corpus **33/37 files and 4/5 whole plans**, `Goals.lean` burn-down
+**40** (0/11/14/15 across stages 3–6); `cargo test --workspace` **984 passed / 0
+failed / 0 ignored across 64 binaries**.
+
+**The owner's decisions, taken 2026-09-12 after driving stale trees with the
+restored binary.**  Settled in the AGENTS §4 sense: build on them, and changing
+one needs the owner again.  The stage-3 handover paragraph above named them in
+one sentence each; this is their record, with the evidence.
+
+- **D1 — `close day` targets the week containing *now*.**  The kernel's derived
+  `closeTo day now`, not `targetContaining day closedDay` (the week the closed day
+  belonged to, which is what fork-point `horizon::close_day` does via
+  `IsoWeek::from_date(date)`).  Decided on four driven scenarios; the owner drove
+  them, and the mechanism given for each is read off the fork-point
+  `close_day` / `close_week` / `auto_close` (`4748911`, identical to the restored
+  `tm-core/src/horizon.rs`), not re-driven in this step:
+  1. *Skipping a weekend double-stamps the leftovers.*  Monday's first command
+     closes Saturday and Sunday one day at a time, each moving still-open
+     `# Pinned` items into the week containing *that* day with `demoted:D<dd>`, and
+     the week close in the same sweep demotes them again with `demoted:W<nn>` — two
+     stamps, which is `/plan-month`'s "≥ 2 stamps" cut list.
+  2. *…and drops them off Monday's plan.*  The same leftovers end in
+     `month/<current>#Demoted`, and §6.2 says month items are not day-planner
+     candidates, so work that was pinned on Friday is invisible on Monday.
+  3. *An item whose parent is in the closing week is deleted, its minutes silently
+     absorbed.*  A pinned child moved by `close_day` into the week being closed is,
+     at `close_week`, an "unfinished child of a demoted item", so it is removed
+     from the week file and its remaining folded into the parent's `est:` with no
+     line left to say it existed.
+  4. *A day closed more than 16 days late strands work in a sealed file.*
+     `catch_up` returns only the most recent `AUTO_CLOSE_CATCHUP = 16` days; older
+     days are recorded closed in `state.json` without running, so their pinned items
+     stay in a day file the planner never reads again.
+
+  **What D1 settles.**  (i) The target is `closeTo` at every grain, so
+  `closeTo_target_is_open` is the argument L16 gets (AGENTS §8.2's "if assent is
+  refused" trap is moot).  (ii) The stamp stays `demoted:D<dd>` — the day is the
+  fact; the week was only the destination — so `close_day_stamps_a_day_stamp`
+  keeps its statement.  (iii) `AUTO_CLOSE_CATCHUP = 16`'s period-by-period
+  iteration collapses to one step per grain (`autoClose_is_each_grain_once`), which
+  is what removes scenarios 1 and 4 at the root; scenario 3 goes because the child
+  lands in the open current week, never in the week being closed.  (iv) It is the
+  precondition for L16.
+- **D2 — ids stay digits.**  `freshId` is proved and ships `^9`, `^10`; the recorded
+  resolution of gap 13 was always "weaken the spec, not the data", and digits are a
+  subset of `[a-z0-9]`.  **Settles:** gap 13 **CLOSED** (supersedes, by name, "Gap
+  13 stands open." in the 2026-09-12 stage-3 continuation block) and AGENTS §10.5 q2.  **Owed, not
+  done here:** the spec text itself still says "4 chars" at `tm-spec-v1.md` §3.1's
+  `Item` listing and §17.2's "Ids:" bullet; weakening those sentences is a
+  one-line spec edit nobody has made.
+- **D3 — the close `report` carries a per-item list.**  For each item: its id, what
+  happened to it (the disposition), where it went (the destination), which stamp it
+  gained, and its minutes as an integer numerator/denominator pair.  Decided
+  against *counts only*, because the month review would then re-derive per-item
+  history from the files — a second reader of one fact, the defect class this
+  rebuild removes — and against stage 6's full diagnostics surface, which is not
+  due yet.  **Settles:** AGENTS §10.5 q8.  AGENTS §8.2's four report rules (under
+  `ok`, bounded fields with smart constructors, named entries, no division) still
+  govern the shape.  No code exists.
+- **D4 — `main` is discarded** (`f386c56`; recorded in full in the stage-3 block
+  above).  The oracle is the in-clone fork point `4748911`; the restored Rust is
+  pre-stage-0 in `move_to` only.
+
+**The week→month "behaviour change" does not exist — the contradiction repaired.**
+Four sites disagreed about `horizon::close_week`, all landed in `6f67873`:
+AGENTS §8.2's named trap (b) and §10.5 q1's second half called it a pending
+behaviour change needing assent; the cheat table's row 24 ("declare
+`horizon.rs:1543`'s 'month of today' stable") and this README's section "The
+week → month tie-break, which is a choice" ("**Rejected:** 'the month of today',
+which is what `horizon.rs:1543` does"), with `Cal.lean`'s header, framed that Rust
+line as the rejected alternative; and `Grain.lean`'s
+`closeTo_week_is_not_monthOfWeek` docstring ("The tie-break is not the close rule,
+and must not be confused with it") said the opposite.  **`Grain.lean` is right.**
+Checked in this step, writing nothing into the repo:
+
+- fork-point `horizon::close_week` sets `let month = YearMonth::from_date(cx.today())`
+  and hands it to `demote_one`, which is where the `# Demoted` copy goes — spec
+  §6.3's `month/<current>#Demoted`;
+- a scratch file importing the built `TmKernel.Grain` proved, by `decide` under an
+  8 GB cap (well under a second), `closeTo week now = ⟨month, 12·(y−1) + (m−1)⟩` —
+  the Rust's `(year, month)` of `now` as a month ordinal — at `now` = 2026-09-07
+  (closing W36, Aug 31–Sep 6), 2026-08-31 (the straddle's own Monday), 2027-01-04
+  (closing 2026-W53) and 2026-10-15 (a late close);
+- and `(closeTo week now).ix = Cal.monthOfWeekByToday w now` holds by **`rfl`**.
+  The "rejected alternative" *is* the close rule's month: one function in two
+  roles, right as a destination (a close happens at a time) and wrong as a *name*
+  for a week's month (a name must not depend on when you asked).  The
+  `#eval`s show the two roles differ exactly where `Grain.lean` says: at `now` =
+  2026-08-31 `closeTo` gives August while `monthOfWeek` names W36 September; at
+  2027-01-04 `closeTo` gives January 2027 while `monthOfWeek` names 2026-W53
+  December 2026.
+
+So the Rust already computes `closeTo week now`, no behaviour change is pending at
+the week grain, and §10.5 q1's second half is **withdrawn**.  Repaired sites:
+AGENTS §8.2's trap (rewritten to state the above) and §10.5 q1 and §10.2's row;
+`Cal.lean`'s module header and `monthOfWeekByToday`'s docstring (comments only —
+no statement, definition or proof changed).  **Superseded here, by name, and not
+edited:** the cheat table's row 24 — cheat 24 still fails to compile and still
+stands as a cheat against the tie-break, but its attribution to `horizon.rs:1543`
+is wrong; the "**Rejected:**" paragraph of "The week → month tie-break, which is a
+choice", whose first sentence is wrong for the same reason (its closing paragraph,
+`closeTo_week_is_not_monthOfWeek`, was right all along); and `Negative.lean`'s
+`CHEAT 24` banner, which carries the same attribution and stays unedited under
+AGENTS §6.2.  The origin is **`PLAN-lean-kernel.md` §3.2(b)** ("horizon.rs:1543
+breaks it silently by taking the month of *today*"), which contradicts PLAN's own
+§2.1 ("`close_week` the block containing now (:1543)"), and PLAN §6.2 q1 and its
+stage-4 acceptance row ("the two behaviour changes landed with assent", quoted
+again in `Goals.lean`'s `# STAGE 4` header); PLAN is plan-tier and is left as
+history.  Read "the two behaviour changes" there as **one**, D1.
+
+**Gap 52 — which month file a week's `# Demoted` record belongs in is not
+decided; DEFERRED out of stage 4.**  (1) *Not done:* when a week is closed after
+its month has ended, its archive record is filed by the close rule into
+`month/<month of now>#Demoted` (spec §6.3's `<current>`, the Rust's, and
+`closeTo`'s), while the tie-break would name the week's own month
+(`monthOfIsoWeek`, the Thursday's); nothing says whether a *record about* week `w`
+should instead sit in the month `w` belongs to.  (2) *Why deferred:* it has **no
+consumer** — `monthOfIsoWeek` / `monthOfWeek` is defined, proved
+(`monthOfIsoWeek_is_met`, `_mono`, `_W35`, `_W36`) and used by nothing in the
+kernel, the FFI or the host; stage 4's fold needs only a destination, and
+`closeTo` is it.  (3) *Cost:* none to the close fold or its theorems; a
+per-month history reader (the month review, or a report grouped by month) would
+find a late-closed week's record under the month it was closed in, not the month
+it belongs to.  (4) *Clears:* whenever a consumer appears — stage 6's review
+surface at the earliest — and it is a product decision for the owner, not a
+proof.
+
+**Pricing stage 4 against AGENTS §8.2's eleven goals.**  Read against spec §6.3's
+three rows and the goals' statements as they stand in `Goals.lean`; each price is
+an expectation, to be confirmed or corrected by the step that takes it.  Four of
+the eleven are stated *stronger than §6.3 allows*, and the §3.2 protocol for that
+is refute-and-rename — prove the negation of the as-stated form under a renamed
+name, prove the narrowed statement beside it, record both — never a silently
+weakened predicate.
+
+*Expected to discharge as stated (4):*
+- `close_is_idempotent` (L16) — the second run's candidate set is empty; the
+  engine is `closeTo_target_is_open`, which D1 makes the argument.
+- `autoClose_is_each_grain_once` (L19a) — close to definitional once `autoClose`
+  is written as day, week, month.
+- `autoClose_catches_up_in_one_step` (L19b) — from L16 per grain plus "a later
+  grain's close adds nothing to an earlier grain's closed regions" (its targets are
+  month regions, open by `closeTo_target_is_open`).
+- `close_day_stamps_a_day_stamp` — D1 keeps `demoted:D<dd>`; `Field.Stamp` already
+  separates `D07` from `W37`.
+
+*Expected to discharge only through a recorded refute-and-rename (4):*
+- `close_leaves_no_live_line_in_a_closed_region` and
+  `autoClose_runs_every_period_it_passes` quantify over **every** entity whose live
+  site is in a closed region, but §6.3 leaves settled lines ("the week file becomes
+  an archive"), recurring items and calendar intervals where they are.  `live` is a
+  `Core` field, so a `[x]` line in a closed week is a counterexample to any `close`
+  that succeeds on that plan — and a `close` that *refused* such plans would
+  satisfy both vacuously, which is a cheat.  Expected: the negation on a one-`[x]`
+  witness, and the narrowed statement over open, non-exempt entities (which is what
+  L16's argument actually uses).
+- `close_writes_every_estimate_through_demoteEst` equates the whole `line` with
+  `demoteEst`'s, but `demoteEst` writes only `est:` while §6.3 appends a `demoted:`
+  stamp to the same token vector (`Core.stamps` is `viewDemoted c.line`) — so as
+  stated it forbids the stamp `close_day_stamps_a_day_stamp` requires.  Expected:
+  restated over the estimate view (`remainingOf`), or over the line modulo the one
+  `demoted:` token.
+- `close_never_demotes_a_wall` concludes `f.val = e.val`, which forbids moving the
+  wall; fork-point `close_week` *carries* walls and their prep into the current
+  week.  Whether the kernel leaves them in place (the goal holds, and they are
+  exempt from the narrowed goals above) or carries them (the goal is restated over
+  status and line, and `live` changes) is a `ClosePolicy` row stage 4 must choose
+  and record with a separating theorem (AGENTS §4's last row).
+
+*Expected refutations (2):*
+- `close_week_and_close_month_commute` (L17) — a caution on the price: the
+  expected reason was destinations, and with `closeTo` both orders file week and
+  month leftovers into the *same* open month (month close adds no stamp), so a
+  refutation, if it comes, is through rank or placement order in the shared
+  destination.  If no witness exists it is proved as stated, and that is recorded
+  as the finding.  Any witness is built from proved lemmas, not a `decide` over a
+  whole plan (AGENTS §5.10a).
+- `lifecycle_commands_commute` (L27) — independent of `close`: `applyAll` over two
+  existing `ReqCmd`s already refutes it (e.g. a demote/readopt pair, where
+  `readopt` first answers `notDemoted`), again from proved lemmas rather than
+  evaluation.  The deliverable after the negation is §10.5 q7's *decision*, which
+  stays the owner's (stage 6).
+
+*Expected to stand (1):*
+- `close_week_folds_a_dropped_child_into_its_parent` (B3).  Its hypothesis
+  `parentStep p.val j = some i` reads `Core.parent`, which every loader-built plan
+  sets to `none` (gap 22).  A proof over hand-built parents would satisfy check 7
+  while no plan that reaches the disk could fire it — AGENTS §5.9's question, and
+  §9.2's "a precondition nothing can satisfy".  It waits on §10.5 q3, an owner
+  decision due before stage 5; **stage 4 does not take it.**  §6.3's child-folding
+  clause is therefore scoped out of stage 4's close by name, alongside §6.3's
+  "dated items past due with `persist` → `backlog.md#Overdue`" (needs §5.3's
+  `on_miss`, stage 5) and F3 (the day file's review section, stage 6).
+
+Two further prices the goals do not show.  **The day row's first clause** —
+`[>]` → `[ ]` with `est:` = remaining **in the week file** — is not "a live site in
+a closed *day* region", so the one-fold-at-three-grains shape does not reach it;
+`ClosePolicy`'s day row has to say where it lives.  **The month row** — fork-point
+`close_month` carries into `month.next()`, the successor, not `closeTo month now`;
+the two agree for an on-time close and, because a month close adds no stamp, the
+Rust's month-by-month catch-up ends at the same file as one `closeTo` step.  That
+is the one-step-per-grain collapse D1's package names, not a further behaviour
+change — read off the code here, to be confirmed by the stage's drive.
+
+So stage 4 expects to take **10 of its 11** goals out of `Goals.lean` (4 as stated,
+4 by refute-and-rename with a narrowed theorem beside each, 2 as refutations — one
+of which may instead prove), leaving **B3** and a burn-down of **30** if nothing
+new is admitted; plus the two provisional `def … := sorry`s (`close`, `autoClose`)
+replaced by real definitions.
+
+Re-measured after this block (documentation and comments only): see the commit
+message.  Gaps run to 52 (new gaps start at 53); cheats to 49 (new cheats start at
+50).

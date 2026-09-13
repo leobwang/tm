@@ -48,18 +48,26 @@ stability is structural rather than a theorem: `monthOfIsoWeek : Nat → Nat` ha
 no `now` in its type, so there is no second argument two callers could differ
 on.
 
-**Rejected: "the month of today"**, which is what `horizon.rs:1543` does.  It
-is written here as `monthOfWeekByToday`, whose first argument is unused — the
-answer does not depend on the week at all — and
-`monthOfWeekByToday_is_not_stable` exhibits one week filed into two different
-months depending on the day the command runs.  That is the *same* witness as
-the non-refinement, because it is the same fact seen twice.  A file name that
-depends on when you looked is not a file name.
+**Rejected, as a name: "the month of today".**  It is written here as
+`monthOfWeekByToday`, whose first argument is unused — the answer does not
+depend on the week at all — and `monthOfWeekByToday_is_not_stable` exhibits one
+week named by two different months depending on the day the command runs.
+That is the *same* witness as the non-refinement, because it is the same fact
+seen twice.  A file name that depends on when you looked is not a file name.
 
-Note what this tie-break is **not** for.  `closeTo g now` files leftovers into
-the coarser region containing `now`, and that is right: a close happens at a
-time, and `now` is the honest input.  The tie-break answers a different
-question — *name the month a given week belongs to* — which has no `now` in it.
+**What this tie-break is not: the close rule.**  `closeTo g now` files a close's
+leftovers into the coarser region containing `now`, and that is right: a close
+happens at a time, and `now` is the honest input.  `closeTo week now` and
+`monthOfWeekByToday w now` are the same month (`rfl`) — one function in two
+roles, right as a destination and wrong as a name.  Fork-point
+`horizon::close_week` computes exactly that destination
+(`YearMonth::from_date(cx.today())`, the `month/<current>#Demoted` of spec §6.3),
+so the Rust **agrees** with the kernel's close rule and nothing about it is a
+behaviour change.  *(Corrected 2026-09-12, stage 4 step 1: this header used to
+call that Rust line the rejected alternative; see `kernel/README.md`'s stage-4
+block and `Grain.closeTo_week_is_not_monthOfWeek`.)*  The tie-break answers a
+different question — *name the month a given week belongs to* — which has no
+`now` in it, and which nothing in the kernel yet asks.
 -/
 -- The exhaustive `decide` lemmas over the month table run over 731 days and 416
 -- (month, day) pairs.  They are checked by the **kernel** (`decide`),
@@ -787,8 +795,10 @@ theorem a_week_can_straddle_two_civil_months :
 There is no `now` in the type, which is what "stable" means here. -/
 def monthOfIsoWeek (w : Nat) : Nat := monthOrdinal (thursdayOf w)
 
-/-- **The rejected alternative**, written down: `horizon.rs:1543` takes the month
-of *today*.  The week argument is unused, which is already the whole objection. -/
+/-- **The rejected alternative, as a name for a week's month**, written down: the
+month of *today*.  The week argument is unused, which is already the whole
+objection.  (As a close *destination* the same month is right — it is
+`closeTo week now`, and what `horizon::close_week` computes; see the header.) -/
 def monthOfWeekByToday (_w : Nat) (now : Day) : Nat := monthOrdinal now
 
 /-- And here it is failing: one week, two days inside it, two different months.
