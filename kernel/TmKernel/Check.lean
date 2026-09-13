@@ -1727,3 +1727,71 @@ open Tm
 #print axioms Tm.demote_verb_is_cmdDemote_at_freshRank_without_a_shift
 #print axioms Tm.the_demote_verb_files_into_demoted_ahead_of_the_next_section
 #print axioms Tm.the_demote_verb_lands_at_the_end_of_a_month_without_demoted
+-- ===================================================================
+-- APPENDED 2026-09-13 (stage-4 hardening).  Step 1: README gap 62 — the fast
+-- checker behind the same interface.  Every `@[csimp]` equality below lets the
+-- compiler run a twin in place of a definition the proofs are about; the
+-- lemmas beside them are what the equalities rest on.  No relational law.
+-- ===================================================================
+-- Fast.lean: `planWf`'s hot conjuncts, the store's table, the response's buckets
+#print axioms Tm.render_keys
+#print axioms Tm.lines_keys
+#print axioms Tm.proseKeys_at
+#print axioms Tm.ranksIn_keys
+#print axioms Tm.docRanks_keys
+#print axioms Tm.docRanks_eq_docRanksFast
+#print axioms Tm.nodup_pairs_iff
+#print axioms Tm.normalized_iff_keys
+#print axioms Tm.keyLe_trans
+#print axioms Tm.keyLe_total
+#print axioms Tm.keyLt_trans
+#print axioms Tm.strictAsc_iff
+#print axioms Tm.strictAsc_iff_nodup
+#print axioms Tm.normalized_eq_normalizedFast
+#print axioms Tm.IdMap.size_empty
+#print axioms Tm.IdMap.size_insert
+#print axioms Tm.IdMap.slot_insert
+#print axioms Tm.IdMap.get_empty
+#print axioms Tm.IdMap.get_insert
+#print axioms Tm.Store.ext_of
+#print axioms Tm.compactStep_fold
+#print axioms Tm.Store.compact_eq
+#print axioms Tm.Store.set_eq_setFast
+#print axioms Tm.pathsFresh_iff
+#print axioms Tm.pathsDistinct_eq_pathsDistinctFast
+#print axioms Tm.parentsAcyclic_eq_parentsAcyclicFast
+#print axioms Tm.sitesInRange_eq_sitesInRangeFast
+#print axioms Tm.foldl_commentAfter_false
+#print axioms Tm.inComment_of_clean
+#print axioms Tm.docFacts_live
+#print axioms Tm.docFacts_heads
+#print axioms Tm.foldl_if_and_filter
+#print axioms Tm.lastHeadingBefore_facts
+#print axioms Tm.all_if_filter
+#print axioms Tm.headingsWfF_docFacts
+#print axioms Tm.docFacts_kind
+#print axioms Tm.docFacts_doc
+#print axioms Tm.facts_get
+#print axioms Tm.kindAtF_eq
+#print axioms Tm.placementSectionWfF_eq
+#print axioms Tm.sectionsWf_eq_sectionsWfFast
+#print axioms Tm.shapesWf_eq_shapesWfFast
+#print axioms Tm.itemsWf_eq_itemsWfFast
+#print axioms Tm.planWf_eq_planWfFast
+#print axioms Tm.firstItemFault_eq_firstItemFaultFast
+#print axioms Tm.bucketByDoc_get
+#print axioms Tm.linesByDoc_get
+-- Close.lean: a shifted store is compacted
+#print axioms Tm.Store.mapEntities_eq_mapEntitiesFast
+-- Boundary.lean: the loader's grouping, dedup and store; the response renders once
+#print axioms Tm.dedupStep_eq
+#print axioms Tm.dedupStep_fold
+#print axioms Tm.dedupIds_eq_dedupIdsFast
+#print axioms Tm.groupStep_fold
+#print axioms Tm.foldlM_snoc_eq_mapM
+#print axioms Tm.buildEntities_eq_buildEntitiesFast
+#print axioms Tm.loadStep_eq
+#print axioms Tm.loadStep_fold
+#print axioms Tm.loadStore_eq_loadStoreFast
+#print axioms Tm.renderDocAt_eq_renderDocFrom
+#print axioms Tm.runPlan_eq_runPlanFast

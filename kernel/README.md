@@ -5979,3 +5979,219 @@ Re-measured after this block, every command under the 40 GB cap: `check.sh`
 plans**, burn-down **30** (no Lean statement touched); `cargo test --workspace`
 **998 passed / 0 failed / 0 ignored across 65 binaries** (+1, the upgrade test).
 Gaps run to 63 (new gaps start at 64); cheats to 54 (new cheats start at 55).
+
+<!-- ===================================================================
+     APPENDED 2026-09-13 (stage-4 hardening).  Step 1: the kernel call was too slow to use — a fast checker behind the same interface, by `@[csimp]`.
+     Closes gap 62; takes gaps 64 and 65; takes cheat 55.  Supersedes, by name, gap 62's "Not profiled here", gap 63's "(gap 62's minute)", and AGENTS §8.4's stage-6 trap sentence "the recorded answer, if it ever matters, is a fast implementation behind the same interface" as a statement about the future.
+     No Lean statement changed: every new theorem is an equality between a definition and its runtime twin, or a lemma one of those rests on.
+     =================================================================== -->
+
+## Stage 4 hardening, 2026-09-13: the checker renders a plan once
+
+Baseline, as recorded at `7d49779` (tree clean): `check.sh` **7/7** — axiom audit
+**1520 theorems**, corpus **33/37 files and 4/5 whole plans**, burn-down **30**;
+`cargo test --workspace` **998 passed / 0 failed across 65 binaries**.  Every
+command below ran under `systemd-run --user --scope -p MemoryMax=40G -p
+MemorySwapMax=0` (8 GB for `valgrind` and scratch elaboration), every run of the
+binary under `timeout`, on Linux x86-64 (32 cores, 123 GB).
+
+**What was slow, measured before touching anything.**  The owner's session had
+timed one `tm drop ^a1` on generated trees and sampled the 12-second case with
+`gdb` (13 samples, all in `PlanCore.lines`).  Re-run here with the same generators
+and commands — `tm init --example`'s tree plus N backlog lines, or D day files of
+K `[x]` lines, swept first with `tm --now 2026-09-14T09:00:00-05:00 now`, then
+one `tm drop ^a1` timed — the numbers reproduced within 0.1 s (0.951 s at 827
+items in 9 files against the session's 0.97 s; 12.10 s over 209 files against 12.18 s).  `valgrind --tool=callgrind` on one
+kernel call (`examples/oneshot`, 827 items) then named the cost exactly: **95 % of
+8.7 G instructions were `List Char` equality inside `Store.insert`'s closure**.
+The loader folds `Store.insert` over the items and each insert wraps `get` in one
+more `fun j => if j = i then … else s.get j`, so every lookup walks every item
+inserted before it; `PlanCore.lines` does one lookup per id, `normalized` calls it
+once per **document** (`docRanks`), and `runPlan` once more per document to render
+the response.  So a call cost documents × items × items.  On gap 62's shape —
+190 day files of eight `[x]` lines, 27 week files of twenty, six month files of
+ten outcomes, 300 backlog lines, on the example tree: 232 files, 2,926 lines —
+the sweep took **62.2 s** and the drop **127.3 s**.  Each later round was profiled
+the same way before it was written; what each found is the "stops doing" column
+below.
+
+**The fix: sixteen `@[csimp]` twins.**  AGENTS §4's settled-decisions table
+says the `Store` is an interface so that "a fast checker and a provable checker
+may be two artifacts, and the proofs live on the interface"; this takes it.  A
+new module, `TmKernel/Fast.lean` (imported by `Cmd.lean`, so by every module that
+runs a command, a close or a load), holds eleven of them; `Close.lean` and
+`Boundary.lean` hold the five that must sit beside their definitions.
+
+| definition (module) | twin | what the twin stops doing | the equality rests on |
+|---|---|---|---|
+| `normalized` (Plan) | `normalizedFast` | rendering every line's bytes once per document, then `Nodup` on `List Nat` | `(doc, rank)` keys read off the sites once, `List.mergeSort`, neighbours compared: `normalized_iff_keys`, `nodup_pairs_iff`, `strictAsc_iff_nodup` |
+| `docRanks` (Plan) | `docRanksFast` | rendering the plan's bytes for one document's ranks (a close's `endRank`, every landing) | `ranksIn_keys` |
+| `pathsDistinct` (Plan) | `pathsDistinctFast` | `D²/2` path comparisons | `pathsFresh_iff`, over an `IdMap` |
+| `parentsAcyclic` (Plan) | `parentsAcyclicFast` | measuring the domain once per id (`fuel p` inside the lambda) | `rfl` |
+| `sitesInRange` (Plan) | `sitesInRangeFast` | measuring `docs` once per site | `rfl` |
+| `sectionsWf`, `shapesWf` (Plan) | `sectionsWfFast`, `shapesWfFast` | per placement: a list index, five path prefixes, a heading fold that asks `inComment` per heading, and one more comment fold | `DocFacts` once per document — kind, whether any line leaves a comment open, the live headings: `placementSectionWfF_eq`, `headingsWfF_docFacts`, `kindAtF_eq`, `inComment_of_clean` |
+| `itemsWf`, `planWf`, `firstItemFault` (Plan) | `…Fast` | calling the slow conjuncts, because they were compiled before `Fast.lean` | `rfl`: word-for-word bodies, compiled after the conjuncts' lemmas |
+| `Store.set` (Plan) | `Store.setFast` | a closure layer per landing, in front of every later lookup | `Store.compact_eq`: the same store rebuilt as one table |
+| `Store.mapEntities` (Close) | `Store.mapEntitiesFast` | a closure layer, and an `Entity.shiftIn`, per lookup | `Store.compact_eq` |
+| `dedupIds` (Boundary) | `dedupIdsFast` | a membership scan per id | `dedupStep_fold` |
+| `buildEntities` (Boundary) | `buildEntitiesFast` | filtering every placement per id, and a snoc per entity | `groupStep_fold`, `foldlM_snoc_eq_mapM` |
+| `loadStore` (Boundary) | `loadStoreFast` | the chain of one closure per item | `loadStep_fold`, a simulation of `Store.insert` by an `IdMap` |
+| `runPlan` (Boundary) | `runPlanFast` | re-rendering the plan for every document of the response | `linesByDoc_get`, `renderDocAt_eq_renderDocFrom` |
+
+`IdMap` is a hash table of buckets (`Array (List (Id × α))`); its one fact is
+`IdMap.get_insert`, and the hash only chooses which bucket is searched, so no
+property of the hash is assumed.  Two twins (`dedupStep`, `loadStep`) take their
+accumulator apart and decide the lookup before touching the table, because
+callgrind showed the first version copying the whole array on every insert.
+
+**Why `@[csimp]` is admissible where `@[implemented_by]` is not.**  R4 bans
+`@[implemented_by]` because it tells the compiler to run a different function and
+asks for no evidence that it is the same one — the compiled program could be
+anything, and every proof would be about a function nobody runs.  `@[csimp]`
+accepts only a **theorem** `@f = @g`, checked by the kernel like any other: the
+compiled program is provably the definition the proofs are about.  The kernel
+itself never uses the substitution — every theorem, and every `decide`/`rfl`
+witness the kernel evaluates by unfolding, still reads `f` — so no proof got
+easier or harder, and the only thing trusted beyond the kernel is the compiler's
+substitution of one constant for another, inside the compiler already trusted to
+run every definition.  It is not new to the repository: `Json.lean`'s J5 twins
+(`jescape_eq_jescapeTR`, `junescape_eq_junescapeTR`, `jscan_eq_jscanTR`, "A stack
+finding, and a proved twin rather than a gap" above) set the precedent, and core
+uses it for `List.mergeSort`.  Checked, not assumed: no AGENTS rule names
+`csimp`; `totality.py` scans `Fast.lean` like any module and finds nothing (the
+twins are structural, and read arrays with `[k]?`); the axiom audit prints all
+59 new theorems and none reaches past `propext`, `Classical.choice`,
+`Quot.sound`.  Two disciplines come with it, both visible in `Fast.lean`'s
+header: a `csimp` lemma rewrites only code compiled *after* it, which is why the
+three `rfl` twins exist; and a twin is compiled before its own lemma, so it
+calls the original and cannot loop.  **Cheat 55** (`Negative.lean`) is the
+guardrail: a `@[csimp]` swap of `normalized` for a function that always says yes
+does not compile, because its equality has no proof.
+
+**Evidence the bytes did not move.**  The `csimp` proofs are the argument; these
+are the sightings.  Through `examples/oneshot`, every response byte-identical to
+the `7d49779` kernel's: read, drop and `autoClose` on four trees (303 to 2,926
+lines), the 500-item read and drop, the latency tree's drop, two closes that
+**land lines** (47 lines in 2.41 s → 0.021 s; 77 lines in 57.5 s → 0.100 s), and
+one document of 20,000 item lines.  Through the built binary, four verbs (`now`,
+`drop ^a1`, `done ^c2`, `drop ^m1`) on a closable 30-day tree: every plan file,
+`.tm/state.json`, `.tm/log.jsonl` and every verb's stdout and stderr identical
+(`diff -r`; 6.88 s → 0.15 s for the four).  Plus `check.sh`'s corpus and the
+whole Rust suite, below.  The per-line stack bound is unchanged: on a 2 MiB stack
+20,000 prose lines return and 22,500 overflow, before and after.
+
+**Measured after**, same generators and commands (before: one run; after: the
+median of five):
+
+| `tm drop ^a1`, swept first | files | lines | before | after |
+|---|---:|---:|---:|---:|
+| example + 0 backlog lines (27 items) | 9 | 103 | 0.013 s | 0.010 s |
+| + 200 (227 items) | 9 | 303 | 0.075 s | 0.014 s |
+| + 473 (500 items) | 9 | 576 | 0.355 s | 0.021 s |
+| + 800 (827 items) | 9 | 903 | 0.951 s | 0.028 s |
+| + 1,600 (1,627 items) | 9 | 1,703 | 3.895 s | 0.050 s |
+| 100 day files × 8 (827 items) | 109 | 1,003 | 6.519 s | 0.031 s |
+| 200 day files × 4 (827 items) | 209 | 1,103 | 12.099 s | 0.036 s |
+| **gap 62's shape** | **232** | **2,926** | **127.3 s** (sweep 62.2 s) | **0.071 s** (sweep 0.05 s) |
+| the same, day files with a real day's prose | 232 | 8,436 | — | 0.095 s |
+| the latency test's tree (no example) | 226 | 2,839 | 57.97 s (sweep 39.25 s) | 0.050 s (sweep 0.04 s) |
+| the same with 120 open lines to close | 226 | 2,959 | — (hours) | 0.052 s (**sweep 0.55 s**) |
+
+Every example-based row's verb retries a close the kernel refuses (gap 53), so
+each is two whole-tree kernel calls.  The doubling is gone: 827 → 1,627 items
+went 0.95 → 3.90 s before and 0.028 → 0.050 s after, and 9 → 209 files at 827
+items went 0.95 → 12.1 s before and 0.028 → 0.036 s after.
+
+One kernel call, through `examples/oneshot` (a process: Lean's init included),
+before → after: 827 items read 0.223 → 0.008 s, drop 0.360 → 0.009 s; 827 items
+over 109 files read 2.108 → 0.008 s, drop 3.115 → 0.008 s; gap 62's shape read
+39.07 → 0.019 s, drop 59.39 → 0.022 s, `autoClose` (refused) 20.08 → 0.016 s.
+
+**Against the TUI budget (AGENTS §9.1: 5 ms per call at 500 items).**  In-process
+(a scratch binary linking `tm-kernel-ffi`, after init and one warm-up call,
+median of 20): **500 items, 9 files — read 3.45 ms, drop 3.86 ms, a refused
+`autoClose` 3.16 ms**: inside the budget, by 1.1-1.8 ms, on this machine.  (Before:
+0.083 s and 0.130 s through `oneshot`.)  Larger trees for scale: 2,926 lines 16-19
+ms a call; a close that lands 120-132 lines on 2,959-8,162 lines 0.39-0.50 s,
+which no frame budget admits and gap 64 prices.  The budget is stage 6's gate,
+not this step's; the number is recorded so the owner does not have to rerun it.
+
+**The latency acceptance.**  `tm/tests/cli_latency.rs`,
+`a_verb_on_a_tree_with_months_of_history_takes_well_under_a_second`: a generated
+tree of 226 files and 2,959 lines (190 day files, 27 week files, six month files,
+300 backlog lines; two open lines in each of the last 40 days and five in each of
+the last 8 weeks, so the verb's automatic close lands 120 lines, one plan check per
+landing).  The first `tm drop ^a1` — the unswept close, then the drop — must finish
+within **5 s** (measured 0.59-0.63 s in the test's own debug-profile binary: **8x**
+headroom); a second drop on the swept tree, one kernel call, within **1 s**
+(measured 0.05 s: 20x).  The bounds are wide so a loaded machine does not flake,
+and still far below the regression they guard: the child is killed at the bound,
+so a quadratic kernel fails the test in seconds instead of hanging it.  It also
+asserts the work happened (80 day lines in W38, 40 week records in September's
+`# Demoted`, the tree swept).  **Mutation check:** with `target/debug/tm` swapped
+for the `7d49779` binary, the test binary fails in 5.01 s; restored, it passes.
+
+| acceptance row | bound | measured | test |
+|---|---|---|---|
+| one kernel-backed verb on 226 files / 2,959 lines, its automatic close landing 120 lines | 5 s | 0.59-0.63 s | `cli_latency.rs` |
+| a later verb on the same, swept tree | 1 s | 0.05 s | `cli_latency.rs` |
+
+**Gap 62 — closed.**  Its (1) asked for "a profile of one call … and either a
+sub-linear fix in the kernel or a host that sends only the documents a request
+can touch … plus a latency row in the acceptance": the profile is above, the fix
+is the kernel-side one (no wire change, no host change, no theorem about untouched
+documents needed), and the row is in the table above.  Its cost (3), a refused
+automatic close retried on every command, now costs that command 0.02 s when the
+refusal comes early (the example tree) and 0.41-0.53 s when it comes after
+the fold has landed lines (gap 64).  **Superseded by name:** gap 62's "Not profiled
+here"; gap 63's "asking it is a full kernel call (gap 62's minute)" — the call is
+0.02 s on a history-sized tree now, so gap 63's clearing condition "once gap 62
+makes a call cheap" is met, and the query itself is still owed; AGENTS §8.4's
+stage-6 note that `planWf` is quadratic and `mapAt` runs all of it — `mapAt` still
+runs all of it, but all of it is now near-linear.
+
+**Gap 64 — a close still checks the whole plan at every landing.**  (1) *Not
+done:* `close`'s fold lands each line through `WfPlan.mapAt` (and `shiftAt`), and
+each re-runs `planWf` on the whole post-state and compacts the store: O(lines
+landed × plan size).  Measured in-process: 120 lines on 2,959 lines 0.39 s; 132
+lines on 8,162 lines with a real day's prose in every day file 0.50 s; a close
+the kernel refuses (`badHorizon`, gap 55) after it has landed the day grain's
+lines, 0.41 s on 3,036 lines and 0.53 s on 8,546 — paid again by every command
+until the refusal is fixed by hand.  (2) *Why:* the only faithful shortcut
+is an incremental check — a theorem that a landing leaves every conjunct of
+`planWf` true of the lines it did not touch — which is a relational law, and the
+proof-to-definition stop condition has fired (AGENTS §9.1); a fold that checks
+once at the end is not equal to the fold that checks at each step (it would accept
+a sequence whose middle state fails), so no `csimp` lemma can state it.  (3)
+*Cost:* a catch-up after weeks away is a one-time half second; a history tree
+whose close is refused after landing pays it per command.  (4) *Clears:* per-
+conjunct preservation lemmas for `landAt`, if stage 5's ratio decision admits
+them; or the refusal fixes (gaps 53, 55), which remove the retry.
+
+**Gap 65 — the fast path's remaining linear-but-repeated costs, by name.**  (1)
+*Not done*, each measured as secondary at 3,000 lines and left as found: the
+loader splits each document's lines twice (`mkDoc` and `placementsOf` both call
+`splitDoc`) after `scanLines` has scanned them once; `depsOf` re-parses a line's
+tokens (`Field.viewAfter`) in both `afterTotal` and `afterAcyclic` (about a fifth
+of a landing's check); `normalizedFast` re-sorts every key of the plan at every
+landing; `sortByRank` is an insertion sort, quadratic in one document's lines when
+the store enumerates them in reverse (a 1,600-line backlog: measurable, not
+dominant); `Store.insertFresh` (`add`) and `demotionsOriented`'s `docRegion` are
+not twinned.  (2) *Why:* each is a constant factor on a now-linear call, and each
+twin is one more equality to carry.  (3) *Cost:* none of them moves a verb on a
+history-sized tree past a tenth of a second.  (4) *Clears:* whoever needs the TUI
+budget on a larger tree than 500 items; `sortByRank` has the shortest proof
+(core's `mergeSort_cons` characterises stable insertion).
+
+The proof-to-definition ratio, by the same script (`/tmp/claude-1000/proof_ratio.py`):
+**4.41 : 1** over the library (15,117 : 3,429), from 4.49 : 1; this step added 501
+proof lines to 177 definition lines (2.83 : 1), 366 : 135 of them in `Fast.lean`.
+Every one is an equality of a single-run function with its twin or a lemma under
+one; no relational law, so §9.1's fired condition is not engaged.
+
+Re-measured after this block, every command under the 40 GB cap: `check.sh`
+**7/7** — axiom audit **1579 theorems** (+59), corpus **33/37 files and 4/5 whole
+plans**, burn-down **30** (no goal touched); `cargo test --workspace` **999 passed
+/ 0 failed / 0 ignored across 66 binaries** (+1, `cli_latency.rs`); the FFI suite
+**68 passed**.  Gaps run to 65 (new gaps start at 66); cheats to 55 (new cheats
+start at 56).

@@ -420,6 +420,14 @@ def Store.mapEntities (s : Store) (f : Entity → Entity) : Store where
     cases s.get j <;> rfl
   domNodup := s.domNodup
 
+/-- `mapEntities`, compacted: `f` runs once per id when the store is built, not
+once per lookup, and the store it hands on is one table (`Store.compact`,
+Fast.lean). -/
+def Store.mapEntitiesFast (s : Store) (f : Entity → Entity) : Store := (s.mapEntities f).compact
+
+@[csimp] theorem Store.mapEntities_eq_mapEntitiesFast : @Store.mapEntities = @Store.mapEntitiesFast := by
+  funext s f; exact (Store.compact_eq _).symm
+
 def Doc.shiftFrom (n0 : Nat) (d : Doc) : Doc :=
   { d with prose := d.prose.map (fun q => (shiftRank n0 q.1, q.2)) }
 

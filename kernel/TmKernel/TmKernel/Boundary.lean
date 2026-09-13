@@ -298,6 +298,63 @@ theorem dedupIds_nodup (l : List Id) : (dedupIds l).Nodup := by
       · rw [if_pos h]; exact ih
       · rw [if_neg h]; exact List.nodup_cons.2 ⟨h, ih⟩
 
+/-! ### `dedupIds` with a seen-set (`@[csimp]`)
+
+`dedupIds` asks `i ∈ dedupIds rest` for every id, a scan of the list so far: `n²/2`
+`List Char` comparisons.  `dedupIdsFast` runs the same right fold and answers the
+membership question from an `IdMap` of the ids already seen; `dedupStep_fold` is
+the simulation, and the equality is the `csimp` lemma. -/
+
+/-- One step of the right fold.  The pair is taken apart and the lookup is the
+`match`'s scrutinee, so the table reaches `insert` with no other reference and
+is updated in place rather than copied (`dedupStep_eq` is the plain reading). -/
+def dedupStep : Id → IdMap Unit × List Id → IdMap Unit × List Id
+  | i, (t, out) =>
+    match (t.get i).isSome with
+    | true  => (t, out)
+    | false => (t.insert i (), i :: out)
+
+theorem dedupStep_eq (i : Id) (acc : IdMap Unit × List Id) :
+    dedupStep i acc = if (acc.1.get i).isSome then acc else (acc.1.insert i (), i :: acc.2) := by
+  rcases acc with ⟨t, out⟩
+  simp only [dedupStep]
+  cases (t.get i).isSome <;> rfl
+
+theorem dedupStep_fold (n : Nat) : ∀ (l : List Id),
+    0 < (l.foldr dedupStep (IdMap.empty n, [])).1.buckets.size ∧
+    (∀ j, ((l.foldr dedupStep (IdMap.empty n, [])).1.get j).isSome = decide (j ∈ l)) ∧
+    (l.foldr dedupStep (IdMap.empty n, [])).2 = dedupIds l
+  | [] => ⟨IdMap.size_empty n, fun j => by simp [IdMap.get_empty], rfl⟩
+  | i :: rest => by
+    obtain ⟨hp, hg, hd⟩ := dedupStep_fold n rest
+    simp only [List.foldr_cons]
+    generalize List.foldr dedupStep (IdMap.empty n, []) rest = acc at hp hg hd
+    have hmem : i ∈ dedupIds rest ↔ i ∈ rest := mem_dedupIds rest i
+    rw [dedupStep_eq]
+    by_cases hc : (acc.1.get i).isSome = true
+    · have hi : i ∈ rest := by simpa [hg i] using hc
+      simp only [hc, if_true]
+      refine ⟨hp, fun j => ?_, ?_⟩
+      · rw [hg j]
+        by_cases hj : j = i
+        · subst hj; simp [hi]
+        · simp [hj]
+      · rw [dedupIds_cons, if_pos (hmem.2 hi), hd]
+    · have hi : i ∉ rest := by
+        intro h; exact hc (by simpa [hg i] using h)
+      simp only [hc, if_false, Bool.false_eq_true]
+      refine ⟨by simpa [IdMap.size_insert] using hp, fun j => ?_, ?_⟩
+      · rw [IdMap.get_insert _ _ _ _ hp]
+        by_cases hj : j = i
+        · subst hj; simp
+        · simp [hj, hg j]
+      · rw [dedupIds_cons, if_neg (fun h => hi (hmem.1 h)), hd]
+
+def dedupIdsFast (l : List Id) : List Id := (l.foldr dedupStep (IdMap.empty l.length, [])).2
+
+@[csimp] theorem dedupIds_eq_dedupIdsFast : @dedupIds = @dedupIdsFast := by
+  funext l; exact (dedupStep_fold l.length l).2.2.symm
+
 /-- Build the entity whose record is `live` and whose tombstone is `arch`.
 `none` means no entity renders that pair — the caller rejects.
 
@@ -484,8 +541,132 @@ def buildEntities (ps : List Placement) : Except LErr (List (Id × Entity)) :=
       pure (acc ++ [(i, e)]))
     []
 
+/-! ### `buildEntities` from one grouping pass (`@[csimp]`)
+
+`buildEntities` filters every placement once per id (`n²`) and appends each entity
+to the end of its accumulator (`n²` again).  `buildEntitiesFast` groups the
+placements by id in one right fold, in their original order (`groupStep_fold`),
+and maps over the ids; `foldlM_snoc_eq_mapM` says the snoc-fold is that map. -/
+
+def groupStep (q : Placement) (t : IdMap (List Placement)) : IdMap (List Placement) :=
+  t.insert q.id (q :: (t.get q.id).getD [])
+
+theorem groupStep_fold (n : Nat) : ∀ (ps : List Placement),
+    0 < (ps.foldr groupStep (IdMap.empty n)).buckets.size ∧
+    ∀ i, ((ps.foldr groupStep (IdMap.empty n)).get i).getD [] = ps.filter (fun q => q.id == i)
+  | [] => ⟨IdMap.size_empty n, fun i => by simp [IdMap.get_empty]⟩
+  | q :: rest => by
+    obtain ⟨hp, hg⟩ := groupStep_fold n rest
+    simp only [List.foldr_cons]
+    generalize List.foldr groupStep (IdMap.empty n) rest = t at hp hg
+    refine ⟨by simpa [groupStep, IdMap.size_insert] using hp, fun i => ?_⟩
+    simp only [groupStep, IdMap.get_insert _ _ _ _ hp, List.filter_cons]
+    by_cases hi : i = q.id
+    · subst hi; simp [hg]
+    · have : (q.id == i) = false := by simpa using Ne.symm hi
+      simp [hi, hg i, this]
+
+def buildEntitiesFast (ps : List Placement) : Except LErr (List (Id × Entity)) :=
+  let g := ps.foldr groupStep (IdMap.empty ps.length)
+  (dedupIds (ps.map Placement.id)).mapM (fun i => do
+    let e ← buildEntity i ((g.get i).getD [])
+    pure (i, e))
+
+theorem foldlM_snoc_eq_mapM (F : Id → Except LErr Entity) : ∀ (ids : List Id) (acc : List (Id × Entity)),
+    ids.foldlM (fun acc i => do let e ← F i; pure (acc ++ [(i, e)])) acc =
+      (do let r ← ids.mapM (fun i => do let e ← F i; pure (i, e)); pure (acc ++ r))
+  | [], acc => by simp
+  | i :: rest, acc => by
+    simp only [List.foldlM_cons, List.mapM_cons]
+    cases F i with
+    | error x => rfl
+    | ok e =>
+      show rest.foldlM _ (acc ++ [(i, e)]) = _
+      rw [foldlM_snoc_eq_mapM F rest (acc ++ [(i, e)])]
+      cases rest.mapM (fun i => do let e ← F i; pure (i, e)) with
+      | error x => rfl
+      | ok r =>
+        show (Except.ok (acc ++ [(i, e)] ++ r) : Except LErr _) = Except.ok (acc ++ (i, e) :: r)
+        simp
+
+@[csimp] theorem buildEntities_eq_buildEntitiesFast : @buildEntities = @buildEntitiesFast := by
+  funext ps
+  have hg := (groupStep_fold ps.length ps).2
+  simp only [buildEntities, buildEntitiesFast, hg]
+  refine (foldlM_snoc_eq_mapM (fun i => buildEntity i (ps.filter (fun q => q.id == i))) _ []).trans ?_
+  cases (dedupIds (ps.map Placement.id)).mapM
+      (fun i => do let e ← buildEntity i (ps.filter (fun q => q.id == i)); pure (i, e)) with
+  | error x => rfl
+  | ok r => simp
+
 def loadStore (items : List (Id × Entity)) : Store :=
   items.foldl (fun s p => s.insert p.1 p.2) emptyStore
+
+/-! ### The loader's store, with its lookup built once (`@[csimp]`)
+
+`loadStore` is the definition the loader's theorems read; its `get` is a chain
+of one closure per item, so every lookup walks the chain.  `loadStoreFast` is the
+same store — the same `dom`, list for list, and a `get` equal at every id — with
+the lookups answered from an `IdMap` filled by the same fold
+(`loadStep_fold` is the simulation).  The `csimp` lemma makes the compiled
+loader build that one; no theorem about `loadStore` changes (Fast.lean's header
+says why this is not `implemented_by`). -/
+
+/-- One step of the loader's fold, over a table and the domain so far.  As in
+`dedupStep`, the lookup is decided before the table is touched, so the table is
+updated in place; `loadStep_eq` is the plain reading. -/
+def loadStep : IdMap Entity × List Id → Id × Entity → IdMap Entity × List Id
+  | (t, dom), (i, e) =>
+    match (t.get i).isSome with
+    | true  => (t.insert i e, dom)
+    | false => (t.insert i e, i :: dom)
+
+theorem loadStep_eq (acc : IdMap Entity × List Id) (q : Id × Entity) :
+    loadStep acc q = (acc.1.insert q.1 q.2, if (acc.1.get q.1).isSome then acc.2 else q.1 :: acc.2) := by
+  rcases acc with ⟨t, dom⟩; rcases q with ⟨i, e⟩
+  simp only [loadStep]
+  cases (t.get i).isSome <;> rfl
+
+theorem loadStep_fold : ∀ (items : List (Id × Entity)) (s : Store) (acc : IdMap Entity × List Id),
+    0 < acc.1.buckets.size → (∀ j, acc.1.get j = s.get j) → acc.2 = s.dom →
+    0 < (items.foldl loadStep acc).1.buckets.size ∧
+      (∀ j, (items.foldl loadStep acc).1.get j = (items.foldl (fun s p => s.insert p.1 p.2) s).get j) ∧
+      (items.foldl loadStep acc).2 = (items.foldl (fun s p => s.insert p.1 p.2) s).dom
+  | [], _, _, hp, hg, hd => ⟨hp, hg, hd⟩
+  | q :: rest, s, acc, hp, hg, hd => by
+    simp only [List.foldl_cons]
+    apply loadStep_fold rest (s.insert q.1 q.2) (loadStep acc q)
+    · simpa [loadStep_eq, IdMap.size_insert] using hp
+    · intro j
+      have h1 : (s.insert q.1 q.2).get j = if j = q.1 then some q.2 else s.get j := by
+        unfold Store.insert; split <;> rfl
+      simp only [loadStep_eq, IdMap.get_insert _ _ _ _ hp, h1, hg]
+    · have h1 : (s.insert q.1 q.2).dom = if q.1 ∈ s.dom then s.dom else q.1 :: s.dom := by
+        unfold Store.insert; split <;> rfl
+      have h2 : (acc.1.get q.1).isSome = decide (q.1 ∈ s.dom) := by
+        rw [hg q.1]
+        cases h : (s.get q.1).isSome
+        · exact (decide_eq_false (fun hm => by rw [(s.domSpec q.1).1 hm] at h; cases h)).symm
+        · exact (decide_eq_true ((s.domSpec q.1).2 h)).symm
+      simp only [loadStep_eq, h1, h2, hd]
+      by_cases hm : q.1 ∈ s.dom <;> simp [hm]
+
+/-- The loader's store, with the lookup table built once. -/
+def loadStoreFast (items : List (Id × Entity)) : Store :=
+  let r := items.foldl loadStep (IdMap.empty items.length, [])
+  have hsim := loadStep_fold items emptyStore (IdMap.empty items.length, [])
+    (by simp [IdMap.empty]) (fun j => IdMap.get_empty _ j) rfl
+  { get := r.1.get
+    dom := r.2
+    domSpec := fun i => by
+      rw [hsim.2.2, hsim.2.1 i]; exact (loadStore items).domSpec i
+    domNodup := by rw [hsim.2.2]; exact (loadStore items).domNodup }
+
+@[csimp] theorem loadStore_eq_loadStoreFast : @loadStore = @loadStoreFast := by
+  funext items
+  have hsim := loadStep_fold items emptyStore (IdMap.empty items.length, [])
+    (by simp [IdMap.empty]) (fun j => IdMap.get_empty _ j) rfl
+  exact Store.ext_of (fun j => (hsim.2.1 j).symm) hsim.2.2.symm
 
 /-! ### Fidelity: what the loader builds renders the line it was read from
 
@@ -2282,6 +2463,56 @@ def runPlan (plan : WfPlan) (cmds : List ReqCmd) : Except JVal JVal := do
         ++ regionJson p.1.region))
   -- The report is built on this path only: a refusal above carries none.
   return jone "ok" (.obj [("docs".toList, .arr outDocs), ("report".toList, reportJson report)])
+
+/-! ### The response renders the plan once (`@[csimp]`)
+
+`runPlan` asks `renderDocAt` for every document, and each call filters a fresh
+render of the whole plan.  `runPlanFast` is the same response with the lines
+bucketed once (`linesByDoc`, Fast.lean); `renderDocAt_eq_renderDocFrom` is the
+per-document equality, needing only that a `zipIdx` index is in range. -/
+
+def renderDocFrom (ls : List Line) (d : Doc) : List (List Char) :=
+  weave (sortByRank d.prose) (sortByRank (ls.map (fun l => (l.site.rank, l.text))))
+
+theorem renderDocAt_eq_renderDocFrom (p : PlanCore) (k : DocIx) (d : Doc) (hk : k < p.docs.length) :
+    renderDocAt p k d = renderDocFrom (((linesByDoc p)[k]?).getD []) d := by
+  rw [linesByDoc_get p k hk]; rfl
+
+def runPlanFast (plan : WfPlan) (cmds : List ReqCmd) : Except JVal JVal := do
+  let (plan', report) ←
+    match applyAllR cmds plan with
+    | .ok qr => pure qr
+    | .error k => throw (jone "err" (jone "kernel" (.str (kerrName k).toList)))
+  let byDoc := linesByDoc plan'.val
+  let outDocs := plan'.val.docs.zipIdx.map (fun p =>
+    JVal.obj
+      ([("path".toList, .str p.1.path),
+        ("lines".toList, .arr ((renderDocFrom ((byDoc[p.2]?).getD []) p.1).map JVal.str))]
+        ++ regionJson p.1.region))
+  return jone "ok" (.obj [("docs".toList, .arr outDocs), ("report".toList, reportJson report)])
+
+@[csimp] theorem runPlan_eq_runPlanFast : @runPlan = @runPlanFast := by
+  funext plan cmds
+  unfold runPlan runPlanFast
+  cases applyAllR cmds plan with
+  | error k => rfl
+  | ok qr =>
+    obtain ⟨q, r⟩ := qr
+    have : (q.val.docs.zipIdx.map (fun p =>
+        JVal.obj
+          ([("path".toList, .str p.1.path),
+            ("lines".toList, .arr ((renderDocAt q.val p.2 p.1).map JVal.str))]
+            ++ regionJson p.1.region))) =
+        q.val.docs.zipIdx.map (fun p =>
+        JVal.obj
+          ([("path".toList, .str p.1.path),
+            ("lines".toList, .arr ((renderDocFrom (((linesByDoc q.val)[p.2]?).getD []) p.1).map JVal.str))]
+            ++ regionJson p.1.region)) := by
+      apply List.map_congr_left
+      intro x hx
+      rw [renderDocAt_eq_renderDocFrom q.val x.2 x.1 (List.mem_zipIdx' hx).1]
+    simp only [pure_bind]
+    rw [this]
 
 def run (j : JVal) : Except JVal JVal := do
   let docsJ ←

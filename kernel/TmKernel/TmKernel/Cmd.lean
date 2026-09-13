@@ -1,4 +1,4 @@
-import TmKernel.Plan
+import TmKernel.Fast
 /-!
 # The command algebra
 

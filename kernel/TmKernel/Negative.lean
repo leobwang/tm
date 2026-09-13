@@ -640,4 +640,15 @@ theorem movedDecodesAsMove : CloseDid.ofName? "moved".toList = some .move := by
    `ReqCmd` at all, so a host-side default has nowhere to hide. -/
 def closeWithoutNow : ReqCmd := .close week
 
+/- CHEAT 55 — a fast checker that is not the checker.  `@[csimp]` lets the
+   compiler run a twin in place of a definition, and Fast.lean uses it for every
+   hot conjunct of `planWf` (README gap 62); the licence is the equality.  The
+   fastest `normalized` there is skips the rank check, and it has no proof of
+   being `normalized`, so the swap never reaches the compiled kernel —
+   `@[implemented_by]` would have taken it on trust (R4). -/
+def normalizedSkip (_ : PlanCore) : Bool := true
+
+@[csimp] theorem normalized_eq_normalizedSkip : @normalized = @normalizedSkip := by
+  funext p; rfl
+
 end Tm

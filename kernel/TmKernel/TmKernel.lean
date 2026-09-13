@@ -6,6 +6,7 @@ import TmKernel.Json
 import TmKernel.Line
 import TmKernel.State
 import TmKernel.Plan
+import TmKernel.Fast
 import TmKernel.Cmd
 import TmKernel.Close
 import TmKernel.Report
