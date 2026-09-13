@@ -1147,6 +1147,29 @@ theorem store_get_isNone_of_not_mem {p : PlanCore} {i : Id} (h : i ∉ p.store.d
   · have hsome : (p.store.get i).isSome = true := by simp [hget]
     exact absurd ((p.store.domSpec i).mpr hsome) h
 
+/-- **Where the `demote` verb files its record (gap 20's remainder, stage 4 step 9).**
+§6.3: "copies it into `month/<current>#Demoted`".  The spot is the week close's
+own — `landingSpot` at `Landing.demotedSection`, the end of the first `# Demoted`
+and ahead of the heading after it, with `landAt`'s shift making room — so the
+verb and the close cannot disagree about where a record lands
+(`demoteSpot_is_the_week_close_landing`).  A destination with no `# Demoted` is
+the one place they differ: the close refuses `noSection` (gap 56) and the verb
+lands at the end of the file as it always has, because refusing a `[-]` outside
+`# Demoted` is AGENTS §10.5 q9, the owner's (README gap 60). -/
+def demoteSpot (p : PlanCore) (k : DocIx) : Option Nat :=
+  match landingSpot p k .demotedSection none with
+  | .ok spot => spot
+  | .error _ => none
+
+/-- The verb's landing is the week close's landing wherever the close has one. -/
+theorem demoteSpot_is_the_week_close_landing (p : PlanCore) (k : DocIx)
+    (src : Option (List Char)) (spot : Option Nat)
+    (h : landingSpot p k (closePolicy week).landing src = .ok spot) : demoteSpot p k = spot := by
+  unfold demoteSpot
+  have hl : (closePolicy week).landing = .demotedSection := rfl
+  rw [hl, landingSpot_src p k (by decide) src none] at h
+  rw [h]
+
 /-- Every relocating command resolves its destination against `docs` first, so
 the `Nat` off the wire never reaches a `Site`.  An index past the end of `docs`
 is `badHorizon` — before this, it deleted the item and returned `ok`.  A
@@ -1164,7 +1187,7 @@ def applyCmd (c : ReqCmd) (p : WfPlan) : Except KErr WfPlan :=
   | .demote i d st =>
     match resolveDest p.val d with
     | .error k => .error k
-    | .ok dd   => cmdDemote i (freshRank p.val dd.ix) st p dd
+    | .ok dd   => landAt p dd.ix (demoteSpot p.val dd.ix) i (fun t e => demote t st e)
   | .readopt i d    =>
     match resolveDest p.val d with
     | .error k => .error k
@@ -3503,7 +3526,18 @@ theorem move_has_no_inverse_command :
       cases hrd' : resolveDest q.val d' with
       | error k' => simp only [applyCmd, hrd'] at hcon; simp at hcon
       | ok dd =>
-        simp only [applyCmd, hrd', cmdDemote] at hcon
+        simp only [applyCmd, hrd'] at hcon
+        -- neither witness file has a `# Demoted`, so the verb lands at the end
+        -- of the file (gap 20's fallback) and is one `mapAt`
+        have hdocs : q.val.docs = undoWitnessPlan.val.docs := by rw [hshape]
+        have hnone : demoteSpot q.val dd.ix = none := by
+          have hk : dd.ix < 2 := by
+            have := dd.ok; rw [hdocs] at this; exact this
+          have hall : ∀ k, k < 2 → demoteSpot undoWitnessPlan.val k = none := by decide
+          rw [← hall dd.ix hk]
+          unfold demoteSpot landingSpot
+          rw [hdocs]
+        rw [hnone] at hcon
         have h := hback i' _ hcon
         have hev := demote_roundtrips _ _ _ _ h
         have hae : e.val.archive = some ⟨e1.val.live, e1.val.line⟩ := by rw [hev]
@@ -5154,6 +5188,69 @@ is the report order (`closeReport_ids`). -/
 theorem the_week_close_reports_in_source_order :
     (closedReport week closeOrderWeekWitness).map (fun es => es.map CloseEntry.id) =
       some ["m1".toList, "m2".toList] := by
+  decide
+
+/-! ## Gap 20's remainder: the `demote` verb files into `# Demoted` (stage 4 step 9)
+
+`applyCmd (.demote …)` now lands through `landAt` at `demoteSpot` — the week
+close's `Landing.demotedSection` spot, with the close's shift — instead of at
+`freshRank`.  Where no shift happens the verb is exactly the stage-3 command
+(`demote_verb_is_cmdDemote_at_freshRank_without_a_shift`), so every law about
+`cmdDemote` at `freshRank` still describes it there; where the month's `# Demoted`
+is followed by another section the record now lands inside it.  The witness
+below decides two demotes landing in the order they ran; that is a sighting, not
+a law — no theorem here quantifies over command sequences.  Probed under an 8 GB
+cap first (AGENTS §5.10a). -/
+
+/-- Where no shift happens, the verb is the stage-3 command at `freshRank`. -/
+theorem demote_verb_is_cmdDemote_at_freshRank_without_a_shift (p : WfPlan) (i : Id) (n : Nat)
+    (st : Field.Stamp) (dd : Dest p.val) (hrd : resolveDest p.val n = .ok dd)
+    (h : demoteSpot p.val dd.ix = none) :
+    applyCmd (.demote i n st) p = cmdDemote i (freshRank p.val dd.ix) st p dd := by
+  simp only [applyCmd, hrd, h, landAt, cmdDemote, Dest.site, endRank_is_freshRank]
+
+/-- Each file's lines after running `cs` on a loaded request, if both succeed. -/
+def cmdsFileLines (cs : List ReqCmd) (docs : List ReqDoc) : Option (List (List (List Char))) :=
+  (loadedPlan? docs).bind (fun p => closeResultLines (applyAll cs p))
+
+/-- Two open lines of the live 2026-W37, and a September whose `# Demoted` is
+followed by `# Notes`. -/
+def demoteSectionWitness : List ReqDoc :=
+  [⟨"week/2026-W37.md", some closeW37,
+     ["# Tasks".toList, "- [ ] 2 1b Draft the outline ^m1".toList,
+      "- [ ] 3 2b Rollback path passes tests ^m2".toList]⟩,
+   ⟨"month/2026-09.md", some closeM09,
+     ["# Outcomes".toList, "# Demoted".toList, "# Notes".toList]⟩]
+
+set_option maxRecDepth 40000 in
+/-- **§6.3's "copies it into `month/<current>#Demoted`", by the verb.**  Both
+records land at the end of `# Demoted`, ahead of `# Notes`, in the order they
+were demoted; before this step both landed after `# Notes`, under the wrong
+heading. -/
+theorem the_demote_verb_files_into_demoted_ahead_of_the_next_section :
+    cmdsFileLines [.demote "m1".toList 1 (.week 37), .demote "m2".toList 1 (.week 37)]
+        demoteSectionWitness = some
+      [["# Tasks".toList, "- [-] 2 1b Draft the outline ^m1".toList,
+        "- [-] 3 2b Rollback path passes tests ^m2".toList],
+       ["# Outcomes".toList, "# Demoted".toList,
+        "- [-] 2 1b Draft the outline demoted:W37 ^m1".toList,
+        "- [-] 3 2b Rollback path passes tests demoted:W37 ^m2".toList, "# Notes".toList]] := by
+  decide
+
+/-- A September with no `# Demoted`. -/
+def demoteNoSectionWitness : List ReqDoc :=
+  [⟨"week/2026-W37.md", some closeW37,
+     ["# Tasks".toList, "- [ ] 2 1b Draft the outline ^m1".toList]⟩,
+   ⟨"month/2026-09.md", some closeM09, ["# Outcomes".toList]⟩]
+
+set_option maxRecDepth 40000 in
+/-- **The one difference from the close, decided (README gap 60).**  With no
+`# Demoted` in the destination the week close refuses `noSection`; the verb lands
+the record at the end of the file, as it did at stage 3. -/
+theorem the_demote_verb_lands_at_the_end_of_a_month_without_demoted :
+    cmdsFileLines [.demote "m1".toList 1 (.week 37)] demoteNoSectionWitness = some
+      [["# Tasks".toList, "- [-] 2 1b Draft the outline ^m1".toList],
+       ["# Outcomes".toList, "- [-] 2 1b Draft the outline demoted:W37 ^m1".toList]] := by
   decide
 
 end Tm

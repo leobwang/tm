@@ -617,6 +617,20 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
     // create a file (gap 56).
     let closing = cmds.iter().any(Cmd::closes);
     let month_now = Horizon::Month(YearMonth::from_date(ctx.today)).path();
+    // The months whose §4.3 sections the host hands over (below): the month
+    // containing now for a close, and a `demote`'s destination, whose record
+    // the kernel files at the end of `# Demoted` exactly as the week close
+    // does (`demoteSpot`, kernel/README.md gap 20's remainder, stage 4 step 9).
+    let mut sectioned: Vec<String> = cmds
+        .iter()
+        .filter_map(|c| match c {
+            Cmd::Demote { to, .. } => Some(to.clone()),
+            _ => None,
+        })
+        .collect();
+    if closing {
+        sectioned.push(month_now.clone());
+    }
     let mut dests: Vec<String> = cmds.iter().filter_map(|c| c.dest().map(str::to_string)).collect();
     if closing {
         dests.push(Horizon::Week(IsoWeek::from_date(ctx.today)).path());
@@ -650,9 +664,12 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
         // heading it stood under, and the kernel refuses `noSection` rather
         // than choose where a heading goes (AGENTS §5.6). So the host hands
         // over the month containing now with §4.3's two month sections,
-        // appended at its end when missing. Prose only; written only if a
-        // line lands in the file (an untouched document is never written).
-        if closing && *rel == month_now {
+        // appended at its end when missing — and a `demote`'s month too, so
+        // the verb's record lands under `# Demoted` rather than at the end
+        // of a month that lacks one (the kernel's fallback, gap 60). Prose
+        // only; written only if a line lands in the file (an untouched
+        // document is never written).
+        if sectioned.iter().any(|m| m == rel) {
             for (name, heading) in MONTH_SECTIONS {
                 if !lines.iter().any(|l| heading_body(l) == Some(name)) {
                     lines.push(heading);

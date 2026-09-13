@@ -303,6 +303,25 @@ fn a_close_stamps_the_copy_and_leaves_the_week_line_alone() {
     assert!(out.contains("- [-] 5 6b Work demoted:W37 ^m1"), "{out}");
 }
 
+/// **The `demote` verb files its record into `# Demoted`** (kernel/README.md
+/// gap 20's remainder, stage 4 step 9): at the end of the section, ahead of the
+/// heading after it — the week close's landing (`demoteSpot`), not the end of
+/// the file where stage 3 put it. `Boundary.lean`'s
+/// `the_demote_verb_files_into_demoted_ahead_of_the_next_section`, at the FFI.
+#[test]
+fn demote_files_the_record_at_the_end_of_demoted() {
+    let out = call(
+        r##"{"docs":[{"path":"week/2026-W37.md","grain":1,"ix":35,"lines":["# Tasks","- [ ] 2 1b Draft the outline ^m1","- [ ] 3 2b Rollback path passes tests ^m2"]},
+              {"path":"month/2026-09.md","grain":2,"ix":8,"lines":["# Outcomes","# Demoted","# Notes"]}],
+             "cmds":[{"op":"demote","id":"m1","doc":1,"period":37},{"op":"demote","id":"m2","doc":1,"period":37}]}"##,
+    )
+    .unwrap();
+    assert!(
+        out.contains(r##"{"path":"month/2026-09.md","lines":["# Outcomes","# Demoted","- [-] 2 1b Draft the outline demoted:W37 ^m1","- [-] 3 2b Rollback path passes tests demoted:W37 ^m2","# Notes"]"##),
+        "{out}"
+    );
+}
+
 /// **`readopt` is a demoted line or it is nothing** (§6.3: "moves a *demoted
 /// line* into the current week, `[-]` -> `[ ]`, stamp kept"). Run on §4.3's
 /// fixture — where the record is already `[ ]` and the tombstone is the line

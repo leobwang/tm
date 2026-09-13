@@ -1718,3 +1718,12 @@ open Tm
 #print axioms Tm.the_day_close_keeps_source_order_at_the_end_of_the_week
 #print axioms Tm.the_month_close_orders_lines_by_the_destination_sections
 #print axioms Tm.the_week_close_reports_in_source_order
+-- ===================================================================
+-- APPENDED 2026-09-13 (stage-4 session, rebuild-on-lean).  Step 9: gap 20's
+-- remainder — the `demote` verb files into `# Demoted` through the close's
+-- landing (Boundary.lean).
+-- ===================================================================
+#print axioms Tm.demoteSpot_is_the_week_close_landing
+#print axioms Tm.demote_verb_is_cmdDemote_at_freshRank_without_a_shift
+#print axioms Tm.the_demote_verb_files_into_demoted_ahead_of_the_next_section
+#print axioms Tm.the_demote_verb_lands_at_the_end_of_a_month_without_demoted

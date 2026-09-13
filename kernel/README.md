@@ -5341,3 +5341,89 @@ failed / 0 ignored across 65 binaries** (+1, the new CLI order test); FFI suite
 **67** (unchanged in count, two tests' expectations re-decided).  Twelve
 modules, 25,703 lines.  Gaps run to 59 (new gaps start at 60); cheats to 54
 (new cheats start at 55).
+
+<!-- ===================================================================
+     APPENDED 2026-09-13 (stage-4 session, rebuild-on-lean).  Step 9: gap 20's remainder — the `demote` verb files into `# Demoted` through the close's landing.
+     Takes gap 60; no cheat.  Supersedes, by name, step 8's gap-20 status paragraph and step 2's "Gap 20" item (a).
+     =================================================================== -->
+
+## Stage 4 step 9, 2026-09-13: the `demote` verb files into `# Demoted` — one landing for the verb and the close
+
+Baseline: step 8's numbers at `ea08382`, measured there under the 40 GB cap
+(`check.sh` **7/7**, audit **1516**, corpus **33/37 and 4/5**, burn-down **30**;
+`cargo test --workspace` **996 / 0 / 0 across 65 binaries**).
+
+**Gap 20's remainder, landed.**  `applyCmd (.demote i d st)` no longer calls
+`cmdDemote i (freshRank p dd.ix) st`; it calls
+`landAt p dd.ix (demoteSpot p dd.ix) i (demote · st ·)`, where `demoteSpot` is
+`landingSpot … .demotedSection` — the week close's own landing and `landAt`'s own
+shift, not a second one (AGENTS §5.3).  `demoteSpot_is_the_week_close_landing`
+pins it: wherever the week close has a landing spot in a file, the verb's spot is
+that spot.  `demote_verb_is_cmdDemote_at_freshRank_without_a_shift` says that
+where no shift happens (no `# Demoted`, or a `# Demoted` that is the last
+section) the verb **is** the stage-3 command, so every law about `cmdDemote` at
+`freshRank` still describes it there.  Decided on loaded plans:
+`the_demote_verb_files_into_demoted_ahead_of_the_next_section` (two demotes into a
+September whose `# Demoted` is followed by `# Notes`: both records land inside
+`# Demoted`, in order; before this step both landed after `# Notes`) and
+`the_demote_verb_lands_at_the_end_of_a_month_without_demoted` (gap 60's fallback).
+The one stage-3 proof that unfolded the verb, `move_has_no_inverse_command`
+(L22's refutation), now first shows `demoteSpot` is `none` on its witness — it
+has no `# Demoted` — and is otherwise unchanged; `lifecycle_commands_do_not_commute`
+re-decided unchanged.  Probed under an 8 GB cap first: the two witnesses decide in
+1.35 s at a 0.91 GB peak, imports included; whole `Boundary.lean` now elaborates
+in 39.8 s at a 3.21 GB peak.
+
+**The host half.**  `kernel_bridge::apply` hands a `demote`'s destination month
+over with §4.3's `# Outcomes`/`# Demoted` appended when missing — the block gap 56
+added for a close's month, now keyed on a list of months (the month of now for a
+close, each `demote`'s destination) — so the binary always reaches the section
+landing and never the fallback.
+
+**Changed in the shipped binary, by name.**  (1) `tm demote ^id` into a month whose
+`# Demoted` is followed by another heading lands the record at the end of
+`# Demoted`, not after that heading at the end of the file.  (2) `tm demote ^id`
+into a month with no `# Demoted` (a month file created by the demote itself, whose
+initial text is front matter only, included) now writes the missing section
+headings — `# Outcomes` when absent, then `# Demoted` — with the record under
+`# Demoted`, exactly as a close's month is given them.  A month that already ends
+in `# Demoted` is byte-for-byte unchanged, which is why no existing test moved.
+New tests: `cli_items.rs`'s `demote_files_the_record_at_the_end_of_the_demoted_section`
+(both halves) and the FFI's `demote_files_the_record_at_the_end_of_demoted`.
+
+**Gap 60 — the `demote` verb falls back to the end of the file where the close
+refuses.**  (1) *Not done:* on a destination with no `# Demoted` the week close
+refuses `noSection` (gap 56), but the `demote` verb lands the record at the end
+of the file (`demoteSpot`'s `error` branch is `none`), under whatever heading is
+last.  The shipped binary never reaches this — its host hands the section over —
+but any other wire caller can.  (2) *Why:* whether a `[-]` may stand outside a
+week file or `month/…# Demoted` is AGENTS §10.5 **q9**, the owner's, recorded as
+"now due when stage 4 gives `demote` a section target" — which this step does;
+refusing here would decide q9 for new writes, so the verb keeps its stage-3
+answer until the owner gives one.  (3) *Cost:* one question, "where does a record
+go when the month has no `# Demoted`", has two kernel answers — the close's
+refusal and the verb's append — and a wire caller that skips the hand-over
+writes a `[-]` record under `# Outcomes` that loads here and that `tm check`'s
+`tree.rs` would not accept as an archive copy (gap 31, the same q9 gap).
+(4) *Clears:* the owner's q9.  If `[-]` outside `# Demoted` is refused, the
+verb's fallback becomes the refusal — one line in `demoteSpot`, plus the FFI
+fixtures and `undoWitnessRequest` that demote into a month with only
+`# Outcomes`, which would gain a `# Demoted`; if it is accepted, the close's
+`noSection` for `Landing.demotedSection` can fall back the same way, and the two
+answers become one either way.
+
+**Superseded by name.**  Step 8's paragraph "Gap 20, status at this step: the
+`demote` verb still lands at `freshRank`" — landed here.  Step 2's "Gap 20 —
+landed for `close`; not for the `demote` verb" item (a), "the standalone `demote`
+wire verb still lands at `freshRank`" — landed; its (b), `sectionsWf` not
+demanding that a `[-]` sit under `# Demoted`, stands as q9 and now as gap 60; its
+(c), the §6.2 warning needing `Core.parent`, stands on gap 22.
+
+Re-measured after this step, every command under the 40 GB cap: `check.sh`
+**7/7** — axiom audit **1520 theorems** (+4, all in Boundary.lean; the three
+counts of AGENTS §6.3 agree at 1520), corpus **33/37 files and 4/5 whole plans**
+(unchanged), `Goals.lean` burn-down **30** (unchanged); `cargo test --workspace`
+**997 passed / 0 failed / 0 ignored across 65 binaries** (+1, the CLI demote
+test); FFI suite **68** (62 kernel + 6 corpus; +1).  Twelve modules, 25,799
+lines.  Gaps run to 60 (new gaps start at 61); cheats to 54 (new cheats start at
+55).

@@ -566,6 +566,44 @@ fn demote_copies_the_line_into_the_month_archive() {
     insta::assert_json_snapshot!("demote_json", json);
 }
 
+/// Gap 20's remainder (kernel/README.md, stage 4 step 9): `tm demote` files the
+/// record at the end of the month's `# Demoted` — ahead of a heading that
+/// follows it, where it used to land after that heading, at the end of the
+/// file — and a month without `# Demoted` is handed the section with the record,
+/// as a close's month is (gap 56).
+#[test]
+fn demote_files_the_record_at_the_end_of_the_demoted_section() {
+    let tm = Tm::new();
+    let path = tm.plan.join("month/2026-09.md");
+    let month = std::fs::read_to_string(&path).expect("month");
+    std::fs::write(&path, format!("{month}\n# Notes\nKeep the review short.\n")).expect("write");
+    tm.ok(&["demote", "^m4"]);
+    let after = tm.read("month/2026-09.md");
+    let (demoted, notes) = after.split_once("# Notes").expect("notes kept");
+    assert!(demoted.contains("demoted:W37 ^m2"), "{after}");
+    assert!(demoted.contains("demoted:W37 ^m4"), "{after}");
+    assert!(
+        demoted.find("^m2").unwrap_or(usize::MAX) < demoted.find("^m4").unwrap_or(0),
+        "the new record follows the standing one: {after}"
+    );
+    assert!(!notes.contains("^m4"), "{after}");
+    assert_eq!(tm.run(&["check"]).code, 0);
+
+    // No `# Demoted` at all: the host hands the section over and the record
+    // lands under it.
+    let tm = Tm::new();
+    let path = tm.plan.join("month/2026-09.md");
+    let month = std::fs::read_to_string(&path).expect("month");
+    let head = month.split("# Demoted").next().expect("head").to_string();
+    std::fs::write(&path, &head).expect("write");
+    tm.ok(&["demote", "^m4"]);
+    let after = tm.read("month/2026-09.md");
+    assert!(after.starts_with(&head), "{after}");
+    let tail = &after[head.len()..];
+    assert!(tail.starts_with("# Demoted\n- [-] 2 2b Pick winter courses"), "{after}");
+    assert!(tail.trim_end().ends_with("demoted:W37 ^m4"), "{after}");
+}
+
 /// A real demote-then-readopt round trip, into a different week: the kernel
 /// takes the record into the destination, flips `[-]` back to `[ ]` keeping
 /// its stamps, and removes the tombstone (kernel/README.md, 2026-09-12
