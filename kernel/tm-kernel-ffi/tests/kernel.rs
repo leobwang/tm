@@ -243,13 +243,18 @@ fn two_demoted_lines_with_no_horizons_are_rejected_by_name() {
 /// `notADemotion: m2` (the tombstone was taken to be the line in the earlier
 /// horizon, which is the week line, which reads `[ ]`). It is the pair that
 /// kept three of the five fixture trees from a whole-plan round trip.
+///
+/// Since the owner's D6 the month carries `^O2`, the outcome both lines name
+/// (§4.3's own month file): without it the request is refused
+/// `itemCheck: danglingParent` (kernel/README.md gap 22, closed at stage 4 final
+/// step 3). The fixture was fixed, not the check.
 #[test]
 fn the_spec_demotion_pair_round_trips() {
     let out = call(
         r##"{"docs":[{"path":"week/2026-W37.md","grain":1,"ix":35,
               "lines":["# Milestones","- [ ] 4 6b Rollback path passes tests   @O2 ^m2"]},
              {"path":"month/2026-09.md","grain":2,"ix":8,
-              "lines":["# Demoted","- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2"]}],
+              "lines":["# Outcomes","- [ ] 4 !1 Soundcode: end-to-end demo runs             ^O2","# Demoted","- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2"]}],
              "cmds":[]}"##,
     )
     .unwrap();
@@ -330,13 +335,14 @@ fn demote_files_the_record_at_the_end_of_demoted() {
 /// fixture — where the record is already `[ ]` and the tombstone is the line
 /// carrying `est:` = remaining and the stamp — consuming the tombstone threw
 /// both away and returned `ok`. "Stamp kept" was exactly what was lost.
+/// (The month carries `^O2` since D6, as above: the fixture's `@O2` resolves.)
 #[test]
 fn readopt_of_a_live_record_is_refused_rather_than_losing_the_stamp() {
     let out = call(
         r##"{"docs":[{"path":"week/2026-W37.md","grain":1,"ix":35,
               "lines":["- [ ] 4 6b Rollback path passes tests   @O2 ^m2"]},
              {"path":"month/2026-09.md","grain":2,"ix":8,
-              "lines":["# Demoted","- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2"]}],
+              "lines":["# Outcomes","- [ ] 4 !1 Soundcode: end-to-end demo runs             ^O2","# Demoted","- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2"]}],
              "cmds":[{"op":"readopt","id":"m2","doc":0}]}"##,
     )
     .unwrap();
@@ -1164,4 +1170,62 @@ fn a_three_month_stale_tree_catches_up_in_one_call_and_reports_each_line() {
     ))
     .unwrap();
     assert_eq!(twice, format!(r#"{{"ok":{{"docs":{docs},"report":{{"closes":[]}}}}}}"#));
+}
+
+/// **D6 on the wire: a parent is read off its line, and the tree is refused whole
+/// when a link dangles** (kernel/README.md gap 22, closed at stage 4 final step 3;
+/// `Boundary.lean`'s `a_typod_parent_refuses_the_whole_tree_by_name`). A week line
+/// naming `@O9`, which no line carries, refuses every request by name — a command
+/// included, which never runs, so there is nothing to write — and the same tree
+/// with the typo fixed loads and round-trips.
+#[test]
+fn a_dangling_parent_refuses_the_whole_tree_by_name() {
+    let typo = WEEK.replace("@O1 ^m1", "@O9 ^m1");
+    assert_ne!(typo, WEEK, "the fixture no longer carries the line this test edits");
+    for cmds in ["[]", r#"[{"op":"drop","id":"t3"}]"#] {
+        let out = call(&format!("{{\"docs\":[{typo},{MONTH}],\"cmds\":{cmds}}}")).unwrap();
+        assert_eq!(out, r##"{"err":{"itemCheck":"danglingParent"}}"##, "{cmds}: {out}");
+    }
+    let out = call(&req("[]")).unwrap();
+    assert!(out.starts_with(r#"{"ok":"#), "{out}");
+}
+
+/// **A parent cycle refuses the whole tree, by its own name** — `parentCycle`,
+/// not `danglingParent`: both links of `plan-conflicts`' ouroboros resolve.
+/// `Boundary.lean`'s `a_parent_cycle_refuses_the_whole_tree_by_name`.
+#[test]
+fn a_parent_cycle_refuses_the_whole_tree_by_name() {
+    let cyclic = WEEK.replace(
+        r##""","# Tasks","##,
+        r##""","# Tasks","- [ ] 3 1b Ouroboros head @y2 ^y1","- [ ] 3 1b Ouroboros tail @y1 ^y2","##,
+    );
+    assert_ne!(cyclic, WEEK, "the fixture no longer carries the heading this test edits");
+    let out = call(&format!("{{\"docs\":[{cyclic},{MONTH}],\"cmds\":[]}}")).unwrap();
+    assert_eq!(out, r##"{"err":{"itemCheck":"parentCycle"}}"##, "{out}");
+}
+
+/// **A parent resolves against the whole tree, and only there.** The week's
+/// `@O1` names the month's outcome: handed over with the month, the week loads;
+/// handed over alone, it is refused `danglingParent`. This is why the corpus
+/// harness loads whole trees only (the owner's D6; AGENTS §7.1 check 6), and why
+/// the host sends every file of the plan with every request.
+#[test]
+fn a_parent_in_another_file_resolves_only_in_the_whole_tree() {
+    let whole = call(&req("[]")).unwrap();
+    assert!(whole.starts_with(r#"{"ok":"#), "{whole}");
+    let alone = call(&format!("{{\"docs\":[{WEEK}],\"cmds\":[]}}")).unwrap();
+    assert_eq!(alone, r##"{"err":{"itemCheck":"danglingParent"}}"##, "{alone}");
+}
+
+/// **`add` links a parent its title names** — the title's `@O1` is read off the
+/// line the kernel writes, like every field (D6) — and a title naming an id the
+/// tree does not carry is refused `badItem` by the post-state's whole-plan check
+/// rather than written.
+#[test]
+fn add_reads_a_parent_off_its_title_and_refuses_a_dangling_one() {
+    let ok = call(&req(r#"[{"op":"add","seed":9,"doc":0,"title":"Read ch.7 @O1"}]"#)).unwrap();
+    assert!(ok.starts_with(r#"{"ok":"#), "{ok}");
+    assert!(ok.contains("Read ch.7 @O1 ^"), "{ok}");
+    let bad = call(&req(r#"[{"op":"add","seed":9,"doc":0,"title":"Read ch.7 @O9"}]"#)).unwrap();
+    assert_eq!(bad, r##"{"err":{"kernel":"badItem"}}"##, "{bad}");
 }

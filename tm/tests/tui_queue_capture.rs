@@ -233,22 +233,26 @@ fn a_taken_id_is_refused_exactly_as_tm_add_refuses_it() {
     assert!(state.editing, "a refused save keeps the line open");
 }
 
-/// A `@parent` or `after:^id` that names nothing is what `tm check` calls
-/// dangling. `tm add` writes such a line, so the capture does too — but the
-/// preview says so instead of showing a clean parse.
+/// An `after:^id` that names nothing is what `tm check` calls dangling.
+/// `tm add` writes such a line, so the capture does too — but the preview says
+/// so instead of showing a clean parse. A `@parent` that names nothing is
+/// refused instead, since the owner's D6: `tm add` refuses it (a tree with one
+/// refuses every kernel-backed verb, kernel/README.md gap 22), so the preview
+/// blocks `Enter` exactly as it does for a taken `^id`. (Until D6 this test
+/// asserted the parent half was a warning too, as `a_dangling_reference_is_a_
+/// warning_not_a_refusal`.)
 #[test]
-fn a_dangling_reference_is_a_warning_not_a_refusal() {
+fn a_dangling_dependency_is_a_warning_and_a_dangling_parent_a_refusal() {
     let w = world_from(&tui_queue_common::fixture("plan-basic"));
     let view = w.view();
 
     let cap = inbox::capture("read ch.9 @nosuch 1b", &view, Some(0));
-    assert_eq!(cap.line, "- [ ] 1b read ch.9 @nosuch");
-    assert_eq!(cap.problem, None, "`tm add` writes this line");
+    assert_eq!(cap.line, "", "a refused capture has no line to save");
     assert_eq!(
-        cap.warning.as_deref(),
-        Some("parent @nosuch does not exist")
+        cap.problem.as_deref(),
+        Some("parent @nosuch does not exist — `tm add` refuses a dangling parent")
     );
-    assert!(inbox::preview_text(&cap).contains("⚠ parent @nosuch does not exist"));
+    assert_eq!(cap.warning, None);
 
     let cap = inbox::capture("ship it after:^zzzq", &view, Some(0));
     assert_eq!(cap.problem, None);

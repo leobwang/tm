@@ -36,7 +36,9 @@ else: **`main` is gone** — the owner discarded it on 2026-09-12 (`f386c56`,
 what that means, and what is still owed by name), and stage 4 is unblocked
 (§10.5). *Since 2026-09-13 stage 4 is closed with its debts named (§8.2), and
 stage 5 is blocked on two owner decisions: q3 / gap 22 (§10.5) and the
-proof-to-definition stop condition, which fired (§9.1).*
+proof-to-definition stop condition, which fired (§9.1).* *Both were taken the same
+day (D5, D6), and D6 landed at stage 4 final step 3: `@parent` is read off the line
+and gap 22 is closed (README "Stage 4 final", step 3).*
 
 ---
 
@@ -587,7 +589,12 @@ it exists to remove. Do not inherit either silently.
 `Cmd.setEstE` writes through the field setter, and
 `the_command_path_writes_what_the_field_path_reads` — generalised by the edit
 widening to `the_edit_path_writes_what_the_field_path_reads`, over every wired
-key — is the theorem. `parent` (gap 22) is the one that stands. A new instance
+key — is the theorem. `parent` (gap 22) is the one that stands. *Status at stage 4
+final step 3: none stands.* `parent` is a view since the owner's D6 —
+`Core.parent c := Field.parentRef c.line`, and `the_fields_are_the_line` gains its
+conjunct — and gap 22 is closed. The one reader is also the fast one: a `@[csimp]`
+twin skips the classification for a line with no `@` word
+(`parentRef_eq_parentRefFast`). A new instance
 of the class, recorded rather than hidden, is between the kernel and the host:
 `tm-core`'s fork-point parser is comment-blind while the kernel reads a comment
 as prose (gap 45), so two readers of one file disagree about a commented item.
@@ -1054,6 +1061,28 @@ review, not a test invocation, and never rebless downward.
 
 The two targets are 57 + 6 = 63 tests at `bf7cc63` (26 + 6 = 32 at `c8f3a38`).
 
+**Whole trees only, since the owner's D6 (stage 4 final step 3).** A parent is read
+off its line, and a link to an id the request does not carry refuses the whole
+tree (`itemCheck: danglingParent`); a `week/*.md` or `backlog.md` naming a month
+outcome therefore cannot load on its own, and the owner accepted that the harness
+changes with it. Each plan is loaded **once**, and a `file` row is **that file
+inside its plan's whole-tree load**: `ok` when the plan loads and the file comes
+back byte for byte, `differs` when the plan loads and the file changed (still the
+absolute failure — `no_file_is_silently_rewritten` is unchanged), `reject` carrying
+the plan's refusal when the plan does not load. A file is never loaded alone. **The
+score moved 33/37 → 29/37 and means something different:** until D6 four of
+`plan-conflicts/`'s nine files (`inbox`, `month`, `optional`, `routines`) scored
+`ok` on their own while their plan was refused; inside the plan's load they are
+refused with it. No file outside `plan-conflicts/` changed, and the whole-plan
+score stays 4/5. `corpus/round-trip.expected` was reblessed **for that
+redefinition and nothing else**. For a refused plan the `--nocapture` report now
+peels its refusals from the whole tree one at a time — the fewest item lines that
+still reproduce each named refusal, removed with the lines that name them so no
+`danglingParent` is manufactured — and `plan-conflicts` reports nine, the `@ghost`
+parent's `danglingParent` and the ouroboros' `parentCycle` among them
+(`the_conflicts_plan_refuses_its_parent_defects_by_name`). 8 tests in the corpus
+target, 67 in the kernel target, at stage 4 final step 3.
+
 **7 — the outstanding goals of stages 3–6 elaborate.**
 
 ```bash
@@ -1096,6 +1125,13 @@ unchanged since `c8f3a38` through all of stage 3.
 All four failing files are `plan-conflicts/`, and each refusal names a defect
 `PROVENANCE.md` lists as deliberate: `dupId: a1`, `itemCheck: fileKindShape`,
 `itemCheck: sectionDiscipline`, `badLine: manyIds`.
+
+*Since D6 (stage 4 final step 3) the score is `29/37 files and 4/5 whole plans`:
+a file is scored inside its plan's whole-tree load (§7.1, check 6), so all nine of
+`plan-conflicts/`'s files carry that plan's refusal, and the four that scored `ok`
+alone no longer do. The per-file refusals above are still reproduced — by name,
+with each of the plan's other deliberate defects — in the report's whole-tree
+peel.*
 
 The whole-plan number is the one carrying information, and it moved: `1/5 → 4/5`
 when the demotion model landed at `8eea3d6`. `plan-basic`, `plan-home-day` and
@@ -1316,6 +1352,8 @@ suites of §7.5 (both capped): `check.sh` 7/7 and `cargo test --workspace` green
 with the panic probe and the seven verbs' refusal-by-name tests inside the
 latter. Plus, unchanged: check 6 must not regress, and
 `corpus/round-trip.expected` must move forward and never be reblessed downward.
+(The one authorised exception: D6's redefinition of a `file` row as the file
+inside its plan's whole-tree load, stage 4 final step 3 — §7.1, check 6.)
 The Rust half is no longer owed; the items under "Still owed" below are.
 
 **Goals this stage owned — all twelve gone from `Goals.lean`, each by a named
@@ -1761,6 +1799,9 @@ Plus the corpus ratchet, plus 30 minutes driving whatever binary exists (§5.13)
   *Status (step 2): scoped out, and visible in the table itself — the week row's
   `overdue := .stage5OnMiss` and `children := .gap22Parent`.*
   **Open by name at the stage's close:** stage 5 (`on_miss`) and gap 22 (B3).
+  *Stage 4 final: the overdue row landed at step 2 (D7) and `parent` at step 3
+  (D6, gap 22 closed; the column is `children := .childFoldB3`). B3's fold is what
+  is left.*
 - **F3 is missed until stage 6.** `close day` replacing a written review with
   `review pending` needs generated-block ownership. Stage 4 covers F1, F2, F4, F6
   — do not claim §6.3 complete.
@@ -1874,7 +1915,12 @@ refuse every `week/*.md` and `backlog.md` in the fixture corpus with
 and cannot fire on anything the boundary builds**. §6.4 rollups, §7.1's
 `k = root_priority`, tag inheritance and prep-due derivation all need it. Derive
 the field and demote `parentsTotal` to a report, or keep it stored and have no
-hierarchy — a plan-tier decision nobody has taken.
+hierarchy — a plan-tier decision nobody has taken. *Taken 2026-09-13 (D6: derive
+it, and keep `parentsTotal` a load precondition) and landed at stage 4 final step
+3: the prep rule, `effectiveCi` and `rootPrio` fire on loaded plans
+(`the_prep_rule_fires_on_a_loaded_plan`, `effectiveCi_inherits_on_a_loaded_plan`,
+`rootPrio_reads_the_root_on_a_loaded_plan`). The close's overdue route does not
+yet read the effective shape (README gap 68).*
 
 **Acceptance.** The parity harness. **Its exception list is longer than the six
 rounding sites**; extend the existing oracle scaffolding rather than writing a
@@ -2241,7 +2287,7 @@ Check these before you quote them.
 | "scaling `Core` from five fields to the real `Item`'s twenty-two" as remaining stage-1 work | PLAN §5 | it did not happen and will not. `Core` has five fields; the item fields are views over the token vector (§5.1, §5.3) |
 | "`moved`/`dropped`/`tags` are sets" in the structural tier | PLAN §3, and it is what earns E3/E4 their **U** | only `tags` exists. `moved`/`dropped` are Rust `state.json` fields with no kernel counterpart (§1) |
 | the oracle's "129" and "479" clean counts | `kernel/README.md` | 126 and 481 at `c8f3a38`, twice, byte-identical, against `main`. Deterministic for a fixed seed count; they move when the kernel moves — and it has moved a great deal since. **Unreproducible in this clone** until the oracle is moved to `4748911` (§7.3) |
-| "`Core` stores four things" | `kernel/README.md` prose | five. `parent` is still a stored slot; gap 22 says why |
+| "`Core` stores four things" | `kernel/README.md` prose | four again since stage 4 final step 3 (D6): `parent` is a view of the line. Between the tombstone's landing and that step it was five, `parent` a stored `none` (gap 22, closed) |
 | "`lake build` from clean 1.6 s; `cargo test` from clean 3.6 s" | `kernel/README.md` header | not re-measured at `c8f3a38` or `bf7cc63`, and certainly not true of today's 20,902-line kernel. The warm numbers in §10.1 are, plus `cargo build -p tm` into an empty target directory with the archive built: 18.1 s |
 | "Five separate Rust code paths" / "six entrances to one hole" | in circulation, and in an earlier version of this document | **six catalogued defects (PLAN §4.A rows A1–A6), five of them patched entrances, one hole, one precondition.** §1 settles which number means what; the harness says *five* entrances |
 | "943 tests" | in circulation | not sourced anywhere **as a claim about proofs**. 943 is `horizon.rs:943`, the line of `move_line`. The documented figure is line counts: tm-core has 19,298 test lines (re-measured on the restored tree: still 19,298), of which the kernel-area files are 9,497 (49%) — *"the tests proofs substantially replace"*. **A second, real 943 now exists and must not be confused with it:** `cargo test --workspace` passed 943 tests at the restore, `835d960` (984 at `bf7cc63`) |
@@ -2304,7 +2350,7 @@ they are settled, and changing one needs the owner again.
 |---|---|---|---|
 | 1 | The two close behaviour changes — and by **constructing a stale tree and closing it**, not by reading | before stage 4 | **First half ANSWERED 2026-09-12 (D1):** `close day` targets the week containing *now* — the kernel's `closeTo` — decided after driving stale trees with the restored binary (skipping a weekend double-stamped leftovers onto the month cut list and dropped them off Monday's plan; an item whose parent was in the closing week was deleted, its minutes silently absorbed; a day closed more than 16 days late stranded work in a sealed file). Package: the stamp stays `demoted:D<dd>`; `AUTO_CLOSE_CATCHUP = 16` collapses to one step per grain. Evidence and mechanism: `kernel/README.md`'s stage-4 block (D1). **Second half WITHDRAWN:** the week→month "behaviour change" does not exist — `horizon::close_week` already computes `closeTo week now` (checked by `decide` on four dates; `rfl`-equal to `monthOfWeekByToday`) (§10.2's row; §8.2's trap). The sites were repaired at stage 4 step 1; the residual "which month file holds a week's `# Demoted` record" is README gap 52, **deferred** out of stage 4 (no consumer) |
 | 2 | `Id`'s shape — the recorded resolution is weaken the spec, not tighten the data | stage 3 | **ANSWERED 2026-09-12 (D2):** ids stay digits (`freshId`'s `^9`, `^10`); spec §3.1's "4 chars of `[a-z0-9]`" width sentence is weakened to match. Closes gap 13. *The spec edit landed at stage 4's closing docs commit* (§3.1's `Item` listing, §17.2's "Ids:" bullet); the host's old generator still mints base-32 ids on `tm add`'s carve-outs and `--fix-ids` (README gap 61) |
-| 3 | `parent`: derive the field and demote `parentsTotal` to a report, or keep it stored and have no hierarchy (gap 22) | **before stage 5, blocking** | **ANSWERED 2026-09-13 (D6):** derive it, strictly — `@parent` is a view over the token vector, `parentsTotal` and `parentsAcyclic` stay load preconditions (`danglingParent`, `parentCycle` refuse the whole tree), and the corpus harness loads whole trees only; B3 is unblocked (README "Stage 4 final"). *As it stood at stage 4's close:* **open — the one question in this table that blocks stage 5.** B3 (`close_week_folds_a_dropped_child_into_its_parent`) stands in `Goals.lean` on it at stage 4's close, and §6.3's child-folding clause is scoped out of the close on it (`children := .gap22Parent`) |
+| 3 | `parent`: derive the field and demote `parentsTotal` to a report, or keep it stored and have no hierarchy (gap 22) | **before stage 5, blocking** | **ANSWERED 2026-09-13 (D6):** derive it, strictly — `@parent` is a view over the token vector, `parentsTotal` and `parentsAcyclic` stay load preconditions (`danglingParent`, `parentCycle` refuse the whole tree), and the corpus harness loads whole trees only; B3 is unblocked (README "Stage 4 final"). *As it stood at stage 4's close:* **open — the one question in this table that blocks stage 5.** B3 (`close_week_folds_a_dropped_child_into_its_parent`) stands in `Goals.lean` on it at stage 4's close, and §6.3's child-folding clause is scoped out of the close on it (`children := .gap22Parent`). **LANDED at stage 4 final step 3:** `Core.parent` is `Field.parentRef` of the line; a dangling or cyclic link refuses by name; the column is renamed `childFoldB3` |
 | 4 | Which side replays the log | before stage 5 | **open** — and `move_has_no_inverse_command` makes replay the only correct `tm undo` |
 | 5 | R7: where the `p_lounge` capacity mixture rounds (gap 26) | stage 5, consumed by 6 | **open** |
 | 6 | L24 / L25: prove, or keep the 882-line proptest and say so | **before stage 6 starts** | **ANSWERED 2026-09-13 (D5), by the ratio decision:** prove them; the proptest stays beside the proofs, never in place of them. *As it stood at stage 4's close:* **open**; the proptest is restored and runs (`tm-core/tests/planner_invariants.rs`) |
@@ -2329,4 +2375,5 @@ decision (before stage 5), **q4** (before stage 5, not blocking), **q5** (stage
 stage 5 any longer. Gap 55's two halves are decided (D7: past-due dated lines to
 `backlog.md # Overdue`; D8: not-yet-due ones demoted with their `due:`). Still owed
 to the human: **q4** (before stage 5, not blocking), **q5** (stage 5), **q7**
-(stage 6), **q9** (gap 60), and the §5.13 drives.
+(stage 6), **q9** (gap 60), and the §5.13 drives. *D7 and D8 landed at stage 4
+final step 2, D6 at step 3 (gap 22 closed).*

@@ -168,7 +168,7 @@ reason it was not designed for. -/
 theorem wf_setRank (c : Core) (n : Nat) :
     wf { c with live := ⟨c.live.doc, n⟩ } = wf c := by
   cases c with
-  | mk live archive status line parent =>
+  | mk live archive status line =>
       unfold wf wfPair Core.archiveSite
       cases archive <;> rfl
 

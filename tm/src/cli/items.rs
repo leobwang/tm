@@ -289,8 +289,24 @@ pub fn add(g: &Globals, args: &super::AddArgs) -> Result<i32, CliError> {
         horizon,
         ..ParseCtx::new(&path, ctx.block_min())
     };
-    grammar::parse_line(&text, &pctx)
+    let parsed = grammar::parse_line(&text, &pctx)
         .map_err(|e| CliError::msg(format!("{e}: {text:?}")))?;
+
+    // The owner's D6 (kernel/README.md gap 22, closed at stage 4 final step
+    // 3): a parent is read off its line, and a tree whose `@parent` names no
+    // item refuses every kernel-backed verb by name (`danglingParent`). The
+    // kernel's own `add` refuses such a title (`badItem`, its post-state
+    // check); the carve-outs below write without the kernel, so without this
+    // they would write the one line that then refuses every later verb. So
+    // both paths refuse it here, first, by the kernel's name.
+    if let Some(parent) = &parsed.parent {
+        if !ctx.tree.contains(&parent.to_id()) {
+            return Err(CliError::msg(format!(
+                "danglingParent — {} names no item in the tree, and the kernel refuses a tree whose parent link dangles; nothing was written: {text:?}",
+                parent.token()
+            )));
+        }
+    }
 
     // Kernel-backed when the wire can carry it (kernel/README.md, 2026-09-12
     // "rank, add and the keyed edit" block); the carve-outs stay on the old

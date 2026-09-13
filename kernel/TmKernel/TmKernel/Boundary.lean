@@ -824,15 +824,14 @@ The two `placementIn`s **are** the plan's own two lines: `glyphAt_live` (with
 the sites are read straight off `renderCore`, and the regions off the plan's
 own documents.
 
-`hpar` is `parent`, the one §3.1 field still stored and still always `none`
-(README gap 22): the loader has no way to set it, so it is a hypothesis every
-entity the boundary builds satisfies, and the moment `parent` is derived off
-the line it disappears.  It is not doing any other work — with a `parent` set,
-the loader's answer differs from `e` in exactly that field and in nothing
-else. -/
+It used to take a fourth hypothesis, `hpar : e.val.parent = none`: `parent` was
+the one §3.1 field still stored, the loader had no way to set it, and with it set
+the loader's answer differed from `e` in exactly that slot.  Since D6 `parent` is
+a view of the line (README gap 22, closed), the loader's record carries the
+line's `@parent` because it carries the line, and the hypothesis is gone — the
+statement is strictly stronger under the same name. -/
 theorem the_kernel_can_read_the_pairs_it_writes (p : WfPlan) (i : Id) (e : Entity) (t : Tomb)
-    (hget : p.val.store.get i = some e) (harch : e.val.archive = some t)
-    (hpar : e.val.parent = Option.none) :
+    (hget : p.val.store.get i = some e) (harch : e.val.archive = some t) :
     pairedEntity i (placementIn p.val i t.site Glyph.demoted t.line)
                    (placementIn p.val i e.val.live (glyphOfStatus e.val.status) e.val.line)
       = .ok e := by
@@ -843,8 +842,8 @@ theorem the_kernel_can_read_the_pairs_it_writes (p : WfPlan) (i : Id) (e : Entit
                   line := e.val.line } : Core) = e.val := by
     rw [statusOfGlyph_glyphOfStatus]
     show ({ live := e.val.live, archive := some t, status := e.val.status,
-            line := e.val.line, parent := Option.none } : Core) = e.val
-    rw [← harch, ← hpar]
+            line := e.val.line } : Core) = e.val
+    rw [← harch]
   have hwf : wf ({ live := e.val.live, archive := some ⟨t.site, t.line⟩,
                    status := statusOfGlyph (glyphOfStatus e.val.status),
                    line := e.val.line } : Core) = true := by rw [hcore]; exact e.property
@@ -1306,11 +1305,13 @@ def addTitleToks (title : List Char) (i : Id) : List Tok :=
   | t :: ts => { t with sep := [' '] } :: ts ++ [{ sep := [' '], word := '^' :: i }]
 
 /-- The `Core` a fresh `add` writes: open in the resolved destination at
-`freshRank`, no tombstone, `live free` (the `[ ]` box), `parent none` like every
-line the kernel writes until gap 22 lands. -/
+`freshRank`, no tombstone, `live free` (the `[ ]` box).  Its parent is whatever
+`@parent` the title's words carry, read off the line like every field (D6): a
+title naming an id the tree does not carry is refused by the post-state's
+`planWf` (`danglingParent`), not written. -/
 def addCore (p : PlanCore) (dd : Dest p) (i : Id) (title : List Char) : Core :=
   { live := dd.site (freshRank p dd.ix), archive := none, status := .live .free,
-    line := { indent := [], toks := addTitleToks title i }, parent := none }
+    line := { indent := [], toks := addTitleToks title i } }
 
 /-- `wf` of an `add`'s core is `wfPair _ none`: there is no tombstone to be in
 the wrong file.  The freshness argument is elsewhere — L21 for the id,
@@ -2600,7 +2601,13 @@ estimate came with it.
 
 Both refusals this branch removes are refutable here by `decide`, so the kernel
 rechecks them on every build: the loader accepts the pair, and each document
-comes back byte for byte. -/
+comes back byte for byte.
+
+**Since D6 the month document carries `^O2`**, the outcome both lines name with
+`@O2` — §4.3's own month file, whose `# Outcomes` stands above its `# Demoted`.
+Without it the request is refused `itemCheck: danglingParent` (README gap 22,
+closed), as every tree whose parent link names an id it does not carry is; so
+the entity list has two members, the outcome and the pair. -/
 
 def specWeekDoc : ReqDoc :=
   ⟨"week/2026-W37.md", some ⟨week, 35⟩,
@@ -2609,20 +2616,25 @@ def specWeekDoc : ReqDoc :=
 
 def specMonthDoc : ReqDoc :=
   ⟨"month/2026-09.md", some ⟨month, 8⟩,
-    ["# Demoted".toList,
+    ["# Outcomes".toList,
+     "- [ ] 4 !1 Soundcode: end-to-end demo runs             ^O2".toList,
+     "# Demoted".toList,
      "- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2".toList]⟩
 
 def specDemotionRequest : List ReqDoc := [specWeekDoc, specMonthDoc]
 
-/-- The single entity the loader builds from that request, if it builds one. -/
+/-- The entity the loader builds for `^m2` from that request, if it builds exactly
+two — `^m2` and its parent `^O2`. -/
 def specPairEntity : Option Entity :=
   match buildEntities (placementsOf 0 specDemotionRequest) with
-  | .ok [(_, e)] => some e
-  | _            => none
+  | .ok items =>
+    if items.length = 2 then (items.find? (fun q => q.1 == "m2".toList)).map Prod.snd else none
+  | .error _ => none
 
 set_option maxRecDepth 40000 in
 /-- **The two lines become one entity, and it has a tombstone.**  Not two
-entities, not one line dropped: the pair is read as the demotion it is. -/
+entities, not one line dropped: the pair is read as the demotion it is (the
+request's second entity is the outcome `^O2`). -/
 theorem the_spec_pair_is_one_entity_with_a_tombstone :
     specPairEntity.map (fun e => e.val.archive.isSome) = some true := by decide
 
@@ -2656,7 +2668,9 @@ theorem the_spec_demotion_pair_round_trips (p : WfPlan)
         = ["# Milestones".toList,
            "- [ ] 4 6b Rollback path passes tests   @O2 ^m2".toList] ∧
       renderDocAt p.val 1 (mkDoc specMonthDoc)
-        = ["# Demoted".toList,
+        = ["# Outcomes".toList,
+           "- [ ] 4 !1 Soundcode: end-to-end demo runs             ^O2".toList,
+           "# Demoted".toList,
            "- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2".toList] :=
   ⟨(the_kernel_reads_back_what_it_writes specDemotionRequest p h 0 specWeekDoc rfl).2,
    (the_kernel_reads_back_what_it_writes specDemotionRequest p h 1 specMonthDoc rfl).2⟩
@@ -4525,25 +4539,28 @@ def closeNoLiveWeekWitness : List ReqDoc :=
   closeWeekWitness.filter (fun d => d.path != "week/2026-W37.md")
 
 /-- §4.3's own pair — the `[ ]` record in a week, its `[-]` copy under the month's
-`# Demoted` — with the week moved to 2026-W36 so that Monday closes it. -/
+`# Demoted` — with the week moved to 2026-W36 so that Monday closes it, and the
+outcome `^O2` both lines name above the month's `# Demoted` (D6: without it the
+request does not load, `danglingParent`). -/
 def closePreClosePairWitness : List ReqDoc :=
   [⟨"week/2026-W36.md", some closeW36,
      ["# Milestones".toList, "- [ ] 4 6b Rollback path passes tests   @O2 ^m2".toList]⟩,
    ⟨"month/2026-09.md", some closeM09,
-     ["# Demoted".toList,
+     ["# Outcomes".toList, "- [ ] 4 !1 Soundcode: end-to-end demo runs             ^O2".toList, "# Demoted".toList,
       "- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2".toList]⟩]
 
 def closeW35 : Region := ⟨week, Cal.weekOrdinal (Cal.toDay ⟨2026, 8, 24⟩)⟩
 
 /-- 2026-W35, closed, holding `^m4`'s `[-]` line — not a `# Demoted` record —
 beside the open `^m4` line of 2026-W36 (a hand edit: `readopt` removes both lines),
-and a September with an empty `# Demoted`. -/
+and a September with an empty `# Demoted` under the outcome `^O3` both lines name
+(D6). -/
 def closeStrayTombWitness : List ReqDoc :=
   [⟨"week/2026-W35.md", some closeW35,
      ["# Milestones".toList, "- [-] 2 Pick winter courses @O3 demoted:W34 ^m4".toList]⟩,
    ⟨"week/2026-W36.md", some closeW36,
      ["# Milestones".toList, "- [ ] 2 Pick winter courses @O3 ^m4".toList]⟩,
-   ⟨"month/2026-09.md", some closeM09, ["# Demoted".toList]⟩]
+   ⟨"month/2026-09.md", some closeM09, ["# Outcomes".toList, "- [ ] 2 !3 Winter course selection + admin done        ^O3".toList, "# Demoted".toList]⟩]
 
 /-- `closeDatedWitness` with a backlog that has no `# Overdue` section. -/
 def closeOverdueNoSectionWitness : List ReqDoc :=
@@ -4589,9 +4606,12 @@ theorem a_dated_line_no_longer_refuses_the_week_close_as_badHorizon :
   cases h1
 
 set_option maxRecDepth 40000 in
-/-- §4.3's pre-close pair closes: no refusal. -/
+/-- §4.3's pre-close pair loads and closes: no refusal.  The first conjunct is new
+at D6: `closeRefusal` is `none` for a request that does not load too, and with
+`@O2` dangling this statement held for that reason alone. -/
 theorem the_pre_close_pair_closes_on_a_loaded_plan :
-    closeRefusal week closePreClosePairWitness = none := by decide
+    loadsOk closePreClosePairWitness = true ∧
+      closeRefusal week closePreClosePairWitness = none := by decide
 
 /-- **`the_close_refusals_are_named_on_loaded_plans`, as it stood before gap 53,
 refuted.** -/
@@ -4603,7 +4623,7 @@ theorem the_pre_close_pair_is_not_a_named_refusal :
       closeRefusal week closePreClosePairWitness = some .alreadyDemoted) := by
   intro h
   have h5 := h.2.2.2.2
-  rw [the_pre_close_pair_closes_on_a_loaded_plan] at h5
+  rw [the_pre_close_pair_closes_on_a_loaded_plan.2] at h5
   cases h5
 
 /-! ## L17, refuted: `close week` and `close month` do not commute (stage-4 step 3)
@@ -5585,7 +5605,7 @@ Probed under an 8 GB cap first (AGENTS §5.10a): the six decisions below take 8.
 at a 2.0 GB peak, imports included. -/
 
 /-- 2026-W36 with three open lines, each with a `[-]` record already standing in
-September's `# Demoted`. -/
+September's `# Demoted`, below the outcome `^O2` two of them name (D6). -/
 def closeMergeWitness : List ReqDoc :=
   [⟨"week/2026-W36.md", some closeW36,
      ["# Milestones".toList,
@@ -5593,7 +5613,7 @@ def closeMergeWitness : List ReqDoc :=
       "- [ ] 4 Write the rollback notes @O2 ^m5".toList,
       "- [ ] 3 1b Tidy the fixtures ^m6".toList]⟩,
    ⟨"month/2026-09.md", some closeM09,
-     ["# Demoted".toList,
+     ["# Outcomes".toList, "- [ ] 4 !1 Soundcode: end-to-end demo runs             ^O2".toList, "# Demoted".toList,
       "- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2".toList,
       "- [-] 4 Write the rollback notes @O2 est:3b demoted:W35 ^m5".toList,
       "- [-] 3 1b Tidy the fixtures demoted:W36 ^m6".toList]⟩]
@@ -5607,7 +5627,8 @@ theorem the_week_close_merges_each_standing_record :
     closedFileLines week closeMergeWitness = some
       [["# Milestones".toList, "- [-] 4 6b Rollback path passes tests   @O2 ^m2".toList,
         "- [-] 4 Write the rollback notes @O2 ^m5".toList, "- [-] 3 1b Tidy the fixtures ^m6".toList],
-       ["# Demoted".toList, "- [-] 4 6b Rollback path passes tests   @O2 demoted:W37,W36 ^m2".toList,
+       ["# Outcomes".toList, "- [ ] 4 !1 Soundcode: end-to-end demo runs             ^O2".toList,
+        "# Demoted".toList, "- [-] 4 6b Rollback path passes tests   @O2 demoted:W37,W36 ^m2".toList,
         "- [-] 4 Write the rollback notes @O2 est:3b demoted:W35,W36 ^m5".toList,
         "- [-] 3 1b Tidy the fixtures demoted:W36 ^m6".toList]] := by
   decide
@@ -5630,7 +5651,8 @@ theorem the_demote_verb_merges_into_a_standing_record :
     cmdsFileLines [.demote "m5".toList 1 (.week 36)] closeMergeWitness = some
       [["# Milestones".toList, "- [ ] 4 6b Rollback path passes tests   @O2 ^m2".toList,
         "- [-] 4 Write the rollback notes @O2 ^m5".toList, "- [ ] 3 1b Tidy the fixtures ^m6".toList],
-       ["# Demoted".toList, "- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2".toList,
+       ["# Outcomes".toList, "- [ ] 4 !1 Soundcode: end-to-end demo runs             ^O2".toList,
+        "# Demoted".toList, "- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2".toList,
         "- [-] 3 1b Tidy the fixtures demoted:W36 ^m6".toList,
         "- [-] 4 Write the rollback notes @O2 est:3b demoted:W35,W36 ^m5".toList]] := by
   decide
@@ -6223,6 +6245,218 @@ theorem the_example_week_closes_with_d1_in_the_backlog_overdue :
         "- [ ] 4 4b Cell Biology vol. 3 ^c3".toList,
         "# Overdue".toList,
         "- [ ] 4 6b CS 234 pset 2                @O3 due:2026-09-11T23:59 max:2b/d ^d1".toList]] := by
+  decide
+
+/-! ## Stage 4 final, step 3: a parent is read off its line (the owner's D6)
+
+`Core.parent` was the one §3.1 field stored beside the line, and it was `none` on
+every record the boundary built — so `parentsTotal` and `parentsAcyclic` sat in
+`planWf` unable to fire, and §3.2's `effectiveShape` prep rule, `effectiveCi`
+inheritance and `rootPrio` were proved about a hierarchy no loaded plan had
+(README gap 22, AGENTS §5.2).  Since D6 it is `Field.parentRef` of the line
+(State.lean), and both checks are whole-tree refusals by name.
+
+Everything below is decided on requests the loader really reads.  The refusals are
+stated on the wire's own value (`loadPlan … = .error …itemCheck…`), but what is
+**decided** is booleans — the conjuncts `loadPlan` tests, in its order — and the
+name is read off them by `loadPlan_itemCheck`, not by evaluating a `String` (the
+8 GB probe that deciding an emitted string does not fit, README "Stage 4 final",
+step 2). -/
+
+/-- **`loadPlan`'s item refusal, as a lemma.**  When the entities build and the
+three plan conjuncts before `itemsWf` hold, a failing `itemsWf` is refused with
+`itemCheck` and `firstItemFault`'s name — nothing else. -/
+theorem loadPlan_itemCheck (docs : List ReqDoc) (items : List (Id × Entity))
+    (hb : buildEntities (placementsOf 0 docs) = .ok items)
+    (h1 : pathsDistinct (loadCore docs items) = true)
+    (h2 : sitesInRange (loadCore docs items) = true)
+    (h3 : demotionsOriented (loadCore docs items) = true)
+    (h4 : itemsWf (loadCore docs items) = false) :
+    loadPlan docs = .error (jone "err"
+      (jone "itemCheck" (.str (firstItemFault (loadCore docs items)).toList))) := by
+  unfold loadPlan
+  split
+  · rename_i e he; rw [hb] at he; cases he
+  · rename_i its hits
+    rw [hb] at hits
+    cases hits
+    rw [dif_pos h1, dif_pos h2, dif_pos h3, dif_neg (by rw [h4]; simp)]
+
+/-- The whole-tree facts `loadPlan` tests before `itemsWf`, then the first three of
+`itemsWf`'s seven: `pathsDistinct`, `sitesInRange`, `demotionsOriented`,
+`normalized`, `parentsTotal`, `parentsAcyclic`. -/
+def parentFactsOf (docs : List ReqDoc) : Option (List Bool) :=
+  match buildEntities (placementsOf 0 docs) with
+  | .ok items =>
+    let c := loadCore docs items
+    some [pathsDistinct c, sitesInRange c, demotionsOriented c, normalized c, parentsTotal c,
+      parentsAcyclic c]
+  | .error _ => none
+
+/-- **A dangling parent refuses the whole tree, by name.**  Read off the facts:
+the plan conjuncts and the rank check pass and `parentsTotal` fails, so
+`firstItemFault` is `danglingParent` whatever follows it. -/
+theorem loadPlan_refuses_a_dangling_parent (docs : List ReqDoc) (b : Bool)
+    (h : parentFactsOf docs = some [true, true, true, true, false, b]) :
+    loadPlan docs = .error (jone "err" (jone "itemCheck" (.str "danglingParent".toList))) := by
+  unfold parentFactsOf at h
+  split at h
+  · rename_i items hb
+    simp only [Option.some.injEq, List.cons.injEq, and_true] at h
+    obtain ⟨h1, h2, h3, h4, h5, _⟩ := h
+    rw [loadPlan_itemCheck docs items hb h1 h2 h3 (by simp [itemsWf, h5])]
+    simp [firstItemFault, h4, h5]
+  · simp at h
+
+/-- **A parent cycle refuses the whole tree, by name** — `parentCycle`, not
+`danglingParent`: every link resolves and the walk does not end. -/
+theorem loadPlan_refuses_a_parent_cycle (docs : List ReqDoc)
+    (h : parentFactsOf docs = some [true, true, true, true, true, false]) :
+    loadPlan docs = .error (jone "err" (jone "itemCheck" (.str "parentCycle".toList))) := by
+  unfold parentFactsOf at h
+  split at h
+  · rename_i items hb
+    simp only [Option.some.injEq, List.cons.injEq, and_true] at h
+    obtain ⟨h1, h2, h3, h4, h5, h6⟩ := h
+    rw [loadPlan_itemCheck docs items hb h1 h2 h3 (by simp [itemsWf, h6])]
+    simp [firstItemFault, h4, h5, h6]
+  · simp at h
+
+/-- §4.3's hierarchy, in five lines: two September outcomes with explicit
+priorities; a milestone `^m1` under `^O1` that writes **no** `ci` digit; the midterm
+wall `^x1` under `^O3` and its shapeless prep child `^x2`; and `^t1`, a task under
+`^m1`, with no `ci` and no `!k` of its own.  Every link resolves inside the request
+— a week line's `@O1` against the month file it came with, which is why the host
+hands the kernel whole trees. -/
+def parentTreeWitness : List ReqDoc :=
+  [⟨"week/2026-W37.md", some closeW37,
+     ["# Milestones".toList,
+      "- [ ] 6b Finish ch.5 exercises        @O1 ^m1".toList,
+      "- [ ] 5 2h Midterm                      @O3 at:2026-10-20T10:00/12:00 loc:JCL ^x1".toList,
+      "- [ ] 5 8b Midterm review               @x1 ^x2".toList,
+      "# Tasks".toList,
+      "- [ ] 1b Read ch.6 §1–2               @m1 ^t1".toList]⟩,
+   ⟨"month/2026-09.md", some closeM09,
+     ["# Outcomes".toList,
+      "- [ ] 5 !1 Lean: through ch.8 of the tutorial          ^O1".toList,
+      "- [ ] 2 !3 Winter course selection + admin done        ^O3".toList]⟩]
+
+/-- The same tree with one typo: `^m1` names `@O9`, which no line carries. -/
+def parentTypoWitness : List ReqDoc :=
+  [⟨"week/2026-W37.md", some closeW37,
+     ["# Milestones".toList,
+      "- [ ] 6b Finish ch.5 exercises        @O9 ^m1".toList,
+      "- [ ] 5 2h Midterm                      @O3 at:2026-10-20T10:00/12:00 loc:JCL ^x1".toList,
+      "- [ ] 5 8b Midterm review               @x1 ^x2".toList,
+      "# Tasks".toList,
+      "- [ ] 1b Read ch.6 §1–2               @m1 ^t1".toList]⟩,
+   ⟨"month/2026-09.md", some closeM09,
+     ["# Outcomes".toList,
+      "- [ ] 5 !1 Lean: through ch.8 of the tutorial          ^O1".toList,
+      "- [ ] 2 !3 Winter course selection + admin done        ^O3".toList]⟩]
+
+/-- The same tree with `plan-conflicts`' ouroboros added: `^y1` under `^y2` and
+`^y2` under `^y1`.  Both links resolve. -/
+def parentCycleWitness : List ReqDoc :=
+  [⟨"week/2026-W37.md", some closeW37,
+     ["# Milestones".toList,
+      "- [ ] 6b Finish ch.5 exercises        @O1 ^m1".toList,
+      "- [ ] 5 2h Midterm                      @O3 at:2026-10-20T10:00/12:00 loc:JCL ^x1".toList,
+      "- [ ] 5 8b Midterm review               @x1 ^x2".toList,
+      "# Tasks".toList,
+      "- [ ] 1b Read ch.6 §1–2               @m1 ^t1".toList,
+      "- [ ] 3 1b Ouroboros head               @y2 ^y1".toList,
+      "- [ ] 3 1b Ouroboros tail               @y1 ^y2".toList]⟩,
+   ⟨"month/2026-09.md", some closeM09,
+     ["# Outcomes".toList,
+      "- [ ] 5 !1 Lean: through ch.8 of the tutorial          ^O1".toList,
+      "- [ ] 2 !3 Winter course selection + admin done        ^O3".toList]⟩]
+
+set_option maxRecDepth 40000 in
+/-- **A tree whose links all resolve loads.** -/
+theorem the_parent_tree_loads : loadsOk parentTreeWitness = true := by decide
+
+set_option maxRecDepth 40000 in
+/-- **§4.3's literal example tree loads with its parents read** — every `@O1`,
+`@m2`, `@x1` of `tm init --example`'s week, month and backlog resolves inside the
+request (the witness `the_example_week_closes_with_d1_in_the_backlog_overdue`
+closes; this is the load alone, decided). -/
+theorem the_example_tree_loads_with_its_parents : loadsOk exampleWeekWitness = true := by decide
+
+set_option maxRecDepth 40000 in
+/-- The typo'd tree's facts: every conjunct before `parentsTotal` holds, and
+`parentsTotal` does not. -/
+theorem the_typo_tree_fails_parentsTotal_only :
+    parentFactsOf parentTypoWitness = some [true, true, true, true, false, true] := by decide
+
+set_option maxRecDepth 40000 in
+/-- The cycle tree's facts: every link resolves, and `parentsAcyclic` fails. -/
+theorem the_cycle_tree_fails_parentsAcyclic_only :
+    parentFactsOf parentCycleWitness = some [true, true, true, true, true, false] := by decide
+
+/-- **D6, one direction: a typo'd `@O9` refuses the whole tree, by name** —
+`{"err":{"itemCheck":"danglingParent"}}`, and no plan is built, so no command runs
+and nothing is written. -/
+theorem a_typod_parent_refuses_the_whole_tree_by_name :
+    loadPlan parentTypoWitness =
+      .error (jone "err" (jone "itemCheck" (.str "danglingParent".toList))) :=
+  loadPlan_refuses_a_dangling_parent _ true the_typo_tree_fails_parentsTotal_only
+
+/-- **D6, the other refusal: a two-line parent cycle refuses the whole tree, by
+name** — `{"err":{"itemCheck":"parentCycle"}}`. -/
+theorem a_parent_cycle_refuses_the_whole_tree_by_name :
+    loadPlan parentCycleWitness =
+      .error (jone "err" (jone "itemCheck" (.str "parentCycle".toList))) :=
+  loadPlan_refuses_a_parent_cycle _ the_cycle_tree_fails_parentsAcyclic_only
+
+/-- The loaded parent tree.  Total by `the_parent_tree_loads`: the error branch is
+refuted, not defaulted. -/
+def parentTreePlan : WfPlan :=
+  match h : loadPlan parentTreeWitness with
+  | .ok p => p
+  | .error _ => absurd the_parent_tree_loads (by simp [loadsOk, h])
+
+/-- What `effectiveShape_prep` assumes of an id, read off a plan: its own shape,
+its parent, and the parent's shape. -/
+def prepHypsAt (p : PlanCore) (i : Id) : Option (Field.Shape × Option Id × Option Field.Shape) :=
+  (p.store.get i).map (fun e => (e.val.shape, e.val.parent, e.val.parent.map (shapeOf p)))
+
+set_option maxRecDepth 40000 in
+/-- **§3.2's prep rule fires on a loaded plan.**  `^x2` writes no date and its
+parent `^x1` is the midterm interval, so `effectiveShape_prep`'s hypotheses hold and
+its effective shape is a point due at the exam's start, 2026-10-20 10:00.  Before
+D6 its parent was `none` and the same call answered `Shape.none`. -/
+theorem the_prep_rule_fires_on_a_loaded_plan :
+    prepHypsAt parentTreePlan.val "x2".toList =
+        some (Field.Shape.none, some "x1".toList,
+          some (Field.Shape.interval ⟨Cal.toDay ⟨2026, 10, 20⟩, ⟨10 * 60, by decide⟩⟩
+                               ⟨Cal.toDay ⟨2026, 10, 20⟩, ⟨12 * 60, by decide⟩⟩)) ∧
+      effectiveShape parentTreePlan.val "x2".toList =
+        Field.Shape.point (Field.Moment.dateTime (Cal.toDay ⟨2026, 10, 20⟩) ⟨10 * 60, by decide⟩) := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **§3.1's `ci` default fires on a loaded plan: "the parent's, else 3".**  `^t1`
+and its parent `^m1` write no `ci`, and `^O1` writes `5`, so `^t1`'s effective ci is
+`5` through two inherited links (`effectiveCi_inherits`, twice).  Before D6 the walk
+stopped at `^t1` and answered the default `3`. -/
+theorem effectiveCi_inherits_on_a_loaded_plan :
+    (parentTreePlan.val.store.get "t1".toList).map (fun e => (e.val.ci, e.val.parent)) =
+        some (none, some "m1".toList) ∧
+      (parentTreePlan.val.store.get "m1".toList).map (fun e => (e.val.ci, e.val.parent)) =
+        some (none, some "O1".toList) ∧
+      effectiveCi parentTreePlan.val "t1".toList = 5 := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **§3.2's `root_priority` fires on a loaded plan — §7.1's `k = root_priority`.**
+`^t1` and `^m1` carry no `!k`; the walk climbs to `^O1` and reads `!1` there (held
+zero-based, `0`), and `^x2` climbs through `^x1` to `^O3`'s `!3` (`2`).  Before D6
+every record was its own root and `rootPrio` read `^t1`'s own `none`. -/
+theorem rootPrio_reads_the_root_on_a_loaded_plan :
+    (parentTreePlan.val.store.get "t1".toList).map (fun e => e.val.prio) = some none ∧
+      rootPrio parentTreePlan.val "t1".toList = some ⟨0, by decide⟩ ∧
+      rootPrio parentTreePlan.val "x2".toList = some ⟨2, by decide⟩ := by
   decide
 
 end Tm

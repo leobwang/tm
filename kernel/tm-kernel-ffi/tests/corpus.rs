@@ -33,9 +33,25 @@
 //!   passing fails the build, and a file that starts passing does not. The
 //!   number can only go up, and the report says what it is.
 //!
+//! ## Whole trees only (the owner's D6, 2026-09-13)
+//!
+//! Every request is a **whole plan tree**, which is how the host loads it. A
+//! parent is read off its line since D6, and a link to an id the request does not
+//! carry refuses the tree (`itemCheck: danglingParent`); a week file's `@O2` names
+//! a month outcome, so a week file handed over alone no longer loads. The owner
+//! accepted that the harness changes with it. So each plan is loaded **once**, and
+//! a `file` row is **that file inside its plan's whole-tree load**: `ok` when the
+//! plan loads and the file comes back byte for byte, `differs` when the plan loads
+//! and the file's bytes changed, and `reject` — carrying the plan's refusal — when
+//! the plan does not load. Until D6 a `file` row loaded the file on its own, so a
+//! file of a refused plan could score `ok`; four of `plan-conflicts/`'s nine did,
+//! and the score moved 33/37 → 29/37 with no file outside `plan-conflicts/` changing
+//! (kernel/README.md, "Stage 4 final", step 3).
+//!
 //! Run `cargo test --test corpus -- --nocapture` for the file-by-file table,
-//! including, for each file that does not load, the minimal set of lines that
-//! reproduces the refusal.
+//! including, for each plan that does not load, its refusals peeled one at a
+//! time: the smallest set of item lines across the tree that still reproduces a
+//! refusal, named, then removed, until the tree loads.
 
 #[path = "harness/mod.rs"]
 mod harness;
@@ -75,10 +91,39 @@ impl Outcome {
     }
 }
 
-/// Push a document set through the boundary and compare byte for byte.
-fn round_trip(docs: &[Doc], originals: &[String]) -> Outcome {
+/// One document's bytes against what came back for it.
+fn compare(doc: &str, original: &str, back: &[String]) -> Outcome {
+    let out = join_lines(back);
+    if out == original {
+        return Outcome::Ok;
+    }
+    let a: Vec<&str> = original.split('\n').collect();
+    let b: Vec<&str> = out.split('\n').collect();
+    let n = a.len().min(b.len());
+    for i in 0..n {
+        if a[i] != b[i] {
+            return Outcome::Differs {
+                doc: doc.to_string(),
+                line: i + 1,
+                went_in: a[i].to_string(),
+                came_out: b[i].to_string(),
+            };
+        }
+    }
+    Outcome::Differs {
+        doc: doc.to_string(),
+        line: n + 1,
+        went_in: a.get(n).unwrap_or(&"<end of file>").to_string(),
+        came_out: b.get(n).unwrap_or(&"<end of file>").to_string(),
+    }
+}
+
+/// Push a document set through the boundary **once** and compare each document
+/// byte for byte: one outcome per document, every one of them the plan's refusal
+/// when the set does not load.
+fn round_trip_each(docs: &[Doc], originals: &[String]) -> Vec<Outcome> {
     match ask(docs) {
-        Reply::Err(e) => Outcome::Reject(e),
+        Reply::Err(e) => docs.iter().map(|_| Outcome::Reject(e.clone())).collect(),
         Reply::Docs(back) => {
             assert_eq!(
                 back.len(),
@@ -87,39 +132,21 @@ fn round_trip(docs: &[Doc], originals: &[String]) -> Outcome {
                 back.len(),
                 docs.len()
             );
-            for (k, lines) in back.iter().enumerate() {
-                let out = join_lines(lines);
-                if out != originals[k] {
-                    let a: Vec<&str> = originals[k].split('\n').collect();
-                    let b: Vec<&str> = out.split('\n').collect();
-                    let n = a.len().min(b.len());
-                    let doc = docs[k].path.clone();
-                    for i in 0..n {
-                        if a[i] != b[i] {
-                            return Outcome::Differs {
-                                doc,
-                                line: i + 1,
-                                went_in: a[i].to_string(),
-                                came_out: b[i].to_string(),
-                            };
-                        }
-                    }
-                    return Outcome::Differs {
-                        doc,
-                        line: n + 1,
-                        went_in: a.get(n).unwrap_or(&"<end of file>").to_string(),
-                        came_out: b.get(n).unwrap_or(&"<end of file>").to_string(),
-                    };
-                }
-            }
-            Outcome::Ok
+            back.iter()
+                .enumerate()
+                .map(|(k, lines)| compare(&docs[k].path, &originals[k], lines))
+                .collect()
         }
     }
 }
 
-fn round_trip_file(rel: &str, text: &str) -> Outcome {
-    let d = doc_of(rel, text);
-    round_trip(&[d], std::slice::from_ref(&text.to_string()))
+/// The whole set's outcome: its refusal, or its first rewritten document, or `Ok`.
+fn round_trip(docs: &[Doc], originals: &[String]) -> Outcome {
+    let each = round_trip_each(docs, originals);
+    each.iter()
+        .find(|o| **o != Outcome::Ok)
+        .cloned()
+        .unwrap_or(Outcome::Ok)
 }
 
 // ---------------------------------------------------------------------------
@@ -137,68 +164,180 @@ fn looks_like_item(l: &str) -> bool {
     c.len() == 5 && c[0] == '-' && c[1] == ' ' && c[2] == '[' && c[4] == ']'
 }
 
-/// Why a file was refused, in the form that is actually useful to whoever has
-/// to fix it.
-struct Diagnosis {
-    /// how many item lines the file has
-    items: usize,
-    /// every item line that is refused **on its own**, with all prose kept, and
-    /// the diagnostic it produces. A file where this is the whole item list is
-    /// one the grammar cannot read at all; a file where it is empty is refused
-    /// by a *combination* of lines.
-    singly: Vec<(usize, String, String)>,
-    /// the smallest set of item lines that still reproduces the refusal — the
-    /// pair, when the fault is a pair (a duplicate id, a cycle, a demotion)
-    minimal: Vec<usize>,
-    minimal_err: String,
+/// One refusal of a refused plan: the item lines that reproduce it, as
+/// (file, 1-based line, text), the kernel's name for it, the parents they need,
+/// and the lines struck out with it because they name an id only it carried.
+#[derive(Debug, Clone)]
+struct Fault {
+    lines: Vec<(String, usize, String)>,
+    err: String,
+    /// the parents those lines name, kept so the refusal is the file's and not one
+    /// a missing parent manufactured
+    context: Vec<(String, usize, String)>,
+    struck_with_it: Vec<(String, usize, String)>,
 }
 
-fn diagnose(rel: &str, text: &str) -> Option<Diagnosis> {
-    let all: Vec<String> = split_lines(text);
-    let item_ix: Vec<usize> = (0..all.len()).filter(|&i| looks_like_item(&all[i])).collect();
+/// The ids a line carries: its `^id` words.
+fn ids_of(l: &str) -> Vec<String> {
+    l.split_whitespace()
+        .filter_map(|w| w.strip_prefix('^'))
+        .filter(|w| !w.is_empty())
+        .map(str::to_string)
+        .collect()
+}
 
-    // prose is context: a heading decides a section, and §4.2's section
-    // discipline is checked against it, so prose is never removed.
-    let attempt = |keep: &[usize]| -> Option<String> {
-        let lines: Vec<String> = (0..all.len())
-            .filter(|i| !looks_like_item(&all[*i]) || keep.contains(i))
-            .map(|i| all[i].clone())
+/// The ids a line names: its `@parent` and its `after:^id` dependencies.
+fn names_of(l: &str) -> Vec<String> {
+    let mut v = Vec::new();
+    for w in l.split_whitespace() {
+        if let Some(p) = w.strip_prefix('@') {
+            if !p.is_empty() {
+                v.push(p.to_string());
+            }
+        }
+        if let Some(d) = w.strip_prefix("after:") {
+            v.extend(d.split(',').filter_map(|x| x.strip_prefix('^')).map(str::to_string));
+        }
+    }
+    v
+}
+
+/// What a refusal *is*, for deciding whether a smaller tree still reproduces it:
+/// the kernel's answer, except that a `badLine`'s line number is dropped — striking
+/// an item line above it renumbers the line and does not change the refusal.
+fn refusal_key(e: &str) -> String {
+    match parse_json(e) {
+        Ok(j) => match j.get("badLine") {
+            Some(b) => format!(
+                "badLine {} {}",
+                b.get("path").and_then(J::str).unwrap_or_default(),
+                b.get("why").and_then(J::str).unwrap_or_default()
+            ),
+            None => e.to_string(),
+        },
+        Err(_) => e.to_string(),
+    }
+}
+
+/// **Why a whole plan was refused, one refusal at a time.** Only item lines are
+/// ever removed — prose is context (a heading decides a section, and §4.2's
+/// section discipline is checked against it) — and every request is the whole
+/// tree (D6).
+///
+/// Repeatedly: take the refusal the tree gives now, and shrink the item lines still
+/// standing until nothing more can be removed with **that** refusal surviving
+/// (delta-debugging to a fixed point). A line is removed **together with every
+/// kept line that names it**, transitively (`@parent`, `after:^id`): removing a
+/// parent alone would manufacture a `danglingParent` the file does not have. What
+/// is left is the refusal's lines and the parents they need. Strike out the lines
+/// no other kept line names (the whole set, for a cycle, where every line is named)
+/// — with every standing line that names an id only they carried, for the same
+/// reason — and ask again, until the tree loads or a refusal survives with no item
+/// line left.
+fn peel_faults(files: &[(String, String)]) -> Vec<Fault> {
+    let split: Vec<Vec<String>> = files.iter().map(|(_, t)| split_lines(t)).collect();
+    let text = |q: (usize, usize)| split[q.0][q.1].as_str();
+    // `q` and every line of `among` that names it, transitively
+    let closure = |q: (usize, usize), among: &[(usize, usize)]| -> Vec<(usize, usize)> {
+        let mut set = vec![q];
+        loop {
+            let ids: Vec<String> = set.iter().flat_map(|&x| ids_of(text(x))).collect();
+            let more: Vec<(usize, usize)> = among
+                .iter()
+                .copied()
+                .filter(|o| !set.contains(o) && names_of(text(*o)).iter().any(|n| ids.contains(n)))
+                .collect();
+            if more.is_empty() {
+                return set;
+            }
+            set.extend(more);
+        }
+    };
+    let named = |q: (usize, usize), among: &[(usize, usize)]| {
+        ids_of(text(q))
+            .iter()
+            .any(|id| among.iter().any(|&o| o != q && names_of(text(o)).contains(id)))
+    };
+    let attempt = |keep: &[(usize, usize)]| -> Option<String> {
+        let docs: Vec<Doc> = files
+            .iter()
+            .enumerate()
+            .map(|(f, (rel, _))| Doc {
+                path: rel.clone(),
+                lines: (0..split[f].len())
+                    .filter(|&i| !looks_like_item(&split[f][i]) || keep.contains(&(f, i)))
+                    .map(|i| split[f][i].clone())
+                    .collect(),
+                region: region_of(rel),
+            })
             .collect();
-        let d = Doc { path: rel.to_string(), lines, region: region_of(rel) };
-        match ask(&[d]) {
+        match ask(&docs) {
             Reply::Err(e) => Some(e),
             Reply::Docs(_) => None,
         }
     };
+    let cite = |qs: &[(usize, usize)]| -> Vec<(String, usize, String)> {
+        qs.iter().map(|&(f, i)| (files[f].0.clone(), i + 1, split[f][i].clone())).collect()
+    };
 
-    let whole = attempt(&item_ix)?;
-
-    let singly: Vec<(usize, String, String)> = item_ix
+    let mut standing: Vec<(usize, usize)> = split
         .iter()
-        .filter_map(|&i| attempt(&[i]).map(|e| (i + 1, all[i].clone(), e)))
+        .enumerate()
+        .flat_map(|(f, ls)| (0..ls.len()).filter(|&i| looks_like_item(&ls[i])).map(move |i| (f, i)))
         .collect();
-
-    // greedy delta-debug: drop an item line whenever the refusal survives
-    let mut keep = item_ix.clone();
-    let mut err = whole;
-    let mut i = 0;
-    while i < keep.len() {
-        let mut trial = keep.clone();
-        trial.remove(i);
-        match attempt(&trial) {
-            Some(e) => {
-                keep = trial;
-                err = e;
+    let mut faults = Vec::new();
+    while let Some(first) = attempt(&standing) {
+        let key = refusal_key(&first);
+        let mut keep = standing.clone();
+        let mut err = first;
+        loop {
+            let mut changed = false;
+            let mut i = 0;
+            while i < keep.len() {
+                let gone = closure(keep[i], &keep);
+                let trial: Vec<(usize, usize)> = keep.iter().copied().filter(|q| !gone.contains(q)).collect();
+                match attempt(&trial) {
+                    Some(e) if refusal_key(&e) == key => {
+                        keep = trial;
+                        err = e;
+                        changed = true;
+                    }
+                    _ => i += 1,
+                }
             }
-            None => i += 1,
+            if !changed {
+                break;
+            }
         }
+        if keep.is_empty() {
+            faults.push(Fault { lines: vec![], err, context: vec![], struck_with_it: vec![] });
+            break;
+        }
+        let leaves: Vec<(usize, usize)> = keep.iter().copied().filter(|&q| !named(q, &keep)).collect();
+        let mut struck = if leaves.is_empty() { keep.clone() } else { leaves.clone() };
+        let own = struck.clone();
+        loop {
+            let rest: Vec<(usize, usize)> = standing.iter().copied().filter(|q| !struck.contains(q)).collect();
+            let gone: Vec<String> = struck
+                .iter()
+                .flat_map(|&q| ids_of(text(q)))
+                .filter(|id| !rest.iter().any(|&o| ids_of(text(o)).contains(id)))
+                .collect();
+            let more: Vec<(usize, usize)> = rest
+                .into_iter()
+                .filter(|&o| names_of(text(o)).iter().any(|n| gone.contains(n)))
+                .collect();
+            if more.is_empty() {
+                break;
+            }
+            struck.extend(more);
+        }
+        standing.retain(|q| !struck.contains(q));
+        let context: Vec<(usize, usize)> = keep.iter().copied().filter(|q| !own.contains(q)).collect();
+        let also: Vec<(usize, usize)> = struck.iter().copied().filter(|q| !own.contains(q)).collect();
+        faults.push(Fault { lines: cite(&own), err, context: cite(&context), struck_with_it: cite(&also) });
     }
-    Some(Diagnosis {
-        items: item_ix.len(),
-        singly,
-        minimal: keep.iter().map(|i| i + 1).collect(),
-        minimal_err: err,
-    })
+    faults
 }
 
 // ---------------------------------------------------------------------------
@@ -245,19 +384,18 @@ fn measure() -> Vec<Row> {
         let files = markdown_files(&plan);
         assert!(!files.is_empty(), "{} holds no .md files", plan.display());
 
-        for (rel, text) in &files {
-            rows.push(Row {
-                kind: "file",
-                name: format!("{plan_name}/{rel}"),
-                outcome: round_trip_file(rel, text),
-            });
-        }
-
-        // the whole plan at once, which is how the host loads it: cross-file
-        // duplicate ids and the two lines of a demotion are only visible here
+        // the whole plan at once, which is how the host loads it and the only
+        // request this harness makes (D6): a week line's `@O2` resolves against
+        // the month file it came with, and cross-file duplicate ids and the two
+        // lines of a demotion are only visible here
         let docs: Vec<Doc> = files.iter().map(|(rel, text)| doc_of(rel, text)).collect();
         let originals: Vec<String> = files.iter().map(|(_, t)| t.clone()).collect();
-        rows.push(Row { kind: "plan", name: plan_name, outcome: round_trip(&docs, &originals) });
+        let each = round_trip_each(&docs, &originals);
+        let whole = each.iter().find(|o| **o != Outcome::Ok).cloned().unwrap_or(Outcome::Ok);
+        for ((rel, _), outcome) in files.iter().zip(each) {
+            rows.push(Row { kind: "file", name: format!("{plan_name}/{rel}"), outcome });
+        }
+        rows.push(Row { kind: "plan", name: plan_name, outcome: whole });
     }
     rows
 }
@@ -290,39 +428,29 @@ fn report(rows: &[Row]) {
         }
     }
 
-    // for every file that did not load, the minimal set of lines that does it
+    // for every plan that did not load, its refusals peeled one at a time
     let mut printed_header = false;
-    for r in rows.iter().filter(|r| r.kind == "file" && matches!(r.outcome, Outcome::Reject(_))) {
+    for r in rows.iter().filter(|r| r.kind == "plan" && matches!(r.outcome, Outcome::Reject(_))) {
         if !printed_header {
-            println!("\n  why each file was refused (minimal failing lines, prose kept)\n");
+            println!("\n  why each plan was refused (its refusals one at a time: the fewest item lines across the tree that still fail, prose kept)\n");
             printed_header = true;
         }
-        let (plan, rel) = r.name.split_once('/').unwrap();
-        let path = corpus_root().join(plan).join(rel);
-        let text = std::fs::read_to_string(&path).unwrap();
-        match diagnose(rel, &text) {
-            None => println!("  {} — not reproducible line by line", r.name),
-            Some(d) => {
-                println!("  {}", r.name);
-                println!(
-                    "      {} of {} item lines are refused on their own:",
-                    d.singly.len(),
-                    d.items
-                );
-                for (n, text, err) in &d.singly {
-                    println!("        line {n:<3} {err}");
-                    println!("                 {text}");
-                }
-                if d.singly.len() != d.items {
-                    let all: Vec<String> = split_lines(&text);
-                    println!("      smallest set that still fails: {}", d.minimal_err);
-                    if d.minimal.is_empty() {
-                        println!("        (none; the document itself is refused)");
-                    }
-                    for n in &d.minimal {
-                        println!("        line {n:<3} {}", all[n - 1]);
-                    }
-                }
+        let files = markdown_files(&corpus_root().join(&r.name));
+        let faults = peel_faults(&files);
+        println!("  {} — {} refusal(s)", r.name, faults.len());
+        for f in &faults {
+            println!("      {}", f.err);
+            if f.lines.is_empty() {
+                println!("        (no item line; the documents themselves are refused)");
+            }
+            for (rel, n, text) in &f.lines {
+                println!("        {rel}:{n:<3} {text}");
+            }
+            for (rel, n, text) in &f.context {
+                println!("          (kept, a line above names it) {rel}:{n} {text}");
+            }
+            for (rel, n, text) in &f.struck_with_it {
+                println!("          (struck with it, it names an id only the lines above carry) {rel}:{n} {text}");
             }
         }
     }
@@ -346,6 +474,11 @@ fn bless(rows: &[Row]) {
         "# Measured, not written by hand: `TM_CORPUS_BLESS=1 cargo test --test corpus`.\n\
          #\n\
          # kind \\t name \\t outcome \\t detail\n\
+         #\n\
+         # Whole trees only (the owner's D6): each plan is loaded once, and a `file`\n\
+         # row is that file inside its plan's whole-tree load -- `ok` when the plan\n\
+         # loads and the file comes back byte for byte, `reject` with the plan's\n\
+         # refusal when it does not.  A file is never loaded on its own.\n\
          #\n\
          # `corpus_round_trip` asserts only that every row recorded `ok` is still\n\
          # `ok`.  A row that starts passing is reported, not failed: the grammar is\n\
@@ -552,5 +685,54 @@ fn the_corpus_is_present() {
     assert!(
         Path::new(&root.join("PROVENANCE.md")).is_file(),
         "kernel/corpus/PROVENANCE.md records where these files came from; it is missing"
+    );
+}
+
+/// **Why a file is never loaded on its own any more** (the owner's D6). `plan-basic`'s
+/// week file names the month's outcomes (`@O1`, `@O2`, `@O3`): handed over alone it
+/// is refused `danglingParent`, inside its whole tree it round-trips. Before D6 the
+/// parent was never read, and the file loaded both ways.
+#[test]
+fn a_week_file_names_its_parents_in_another_file() {
+    let plan = corpus_root().join("plan-basic");
+    let files = markdown_files(&plan);
+    let (rel, text) = files
+        .iter()
+        .find(|(rel, _)| rel == "week/2026-W37.md")
+        .expect("plan-basic/week/2026-W37.md is missing");
+    assert!(text.contains("@O2 ^m2"), "the fixture no longer names a month outcome");
+    match round_trip(&[doc_of(rel, text)], std::slice::from_ref(text)) {
+        Outcome::Reject(e) => assert_eq!(e, r#"{"itemCheck":"danglingParent"}"#),
+        other => panic!("a week file naming month outcomes loaded alone: {other:?}"),
+    }
+    let docs: Vec<Doc> = files.iter().map(|(r, t)| doc_of(r, t)).collect();
+    let originals: Vec<String> = files.iter().map(|(_, t)| t.clone()).collect();
+    assert_eq!(round_trip(&docs, &originals), Outcome::Ok);
+}
+
+/// **`plan-conflicts/`'s parent defects refuse the whole plan, each by its own
+/// name** — which is what the fixture exists for (`PROVENANCE.md`: "a `@ghost`
+/// parent", "a two-item `@parent` cycle"). Before D6 neither could fire: the
+/// kernel never read a parent. Peeled from the whole tree, prose kept, the
+/// `@ghost` line alone reproduces `danglingParent` and the ouroboros pair alone
+/// reproduces `parentCycle`.
+#[test]
+fn the_conflicts_plan_refuses_its_parent_defects_by_name() {
+    let files = markdown_files(&corpus_root().join("plan-conflicts"));
+    let faults = peel_faults(&files);
+    let has = |err: &str, want: &[&str]| {
+        faults.iter().any(|f| {
+            f.err == err
+                && f.lines.len() == want.len()
+                && f.lines.iter().zip(want).all(|((rel, _, text), w)| rel == "week/2026-W37.md" && text.contains(w))
+        })
+    };
+    assert!(
+        has(r#"{"itemCheck":"danglingParent"}"#, &["@ghost ^q1"]),
+        "the @ghost parent is not refused by name on its own: {faults:#?}"
+    );
+    assert!(
+        has(r#"{"itemCheck":"parentCycle"}"#, &["@y2 ^y1", "@y1 ^y2"]),
+        "the @parent cycle is not refused by name on its own: {faults:#?}"
     );
 }

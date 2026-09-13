@@ -45,7 +45,10 @@ fi
 
 # 6. Stage two's acceptance evidence: every Markdown file of the fixture corpus
 #    goes through the String -> String boundary with NO COMMANDS and comes back
-#    byte-identical.  This is the only check that covers the split of bytes into
+#    byte-identical -- inside its plan's WHOLE-TREE load, the only request the
+#    harness makes since the owner's D6 (a parent is read off its line, so a week
+#    file naming month outcomes cannot load alone; README "Stage 4 final", step
+#    3).  A file of a refused plan scores `reject`.  This is the only check that covers the split of bytes into
 #    lines and back, which happens outside the kernel (README gap 6), and the
 #    JSON escaping on both sides of the FFI.
 #

@@ -195,7 +195,8 @@ second, "week→month is the month of today", was never a behaviour change —
 fork-point `horizon::close_week` already computes `closeTo week now` — and was
 withdrawn at stage 4 step 1 (README "Stage 4 opens", AGENTS §10.2).
 §4's F1, F2 and F4 are discharged here; B1–B3 are re-owed at the fold level.
-At stage 4's close one goal of this section stands: B3, below, on gap 22.
+At stage 4's close one goal of this section stands: B3, below, on gap 22 (closed
+at stage 4 final step 3, D6; B3 now waits on nothing but its proof).
 ############################################################################ -/
 
 /- **`close` is real (2026-09-12, stage 4 step 2).**  The provisional
@@ -291,7 +292,13 @@ carries `6b`, not `7b`.  The spec-settled law is fork-point `horizon.rs`'s
 module-doc choice "Folding children" (applied by `horizon::demote_est`): the parent
 carries `max(remaining(parent), Σ own remaining of the children dropped with it)`.
 The repair is refute-and-rename (AGENTS §3.2), with the max law proved beside the
-negation; README "Stage 4 final, 2026-09-13".  The statement is unchanged here. -/
+negation; README "Stage 4 final, 2026-09-13".  The statement is unchanged here.
+
+**D6 landed at stage 4 final step 3**: `Core.parent` is `Field.parentRef` of the
+line, so `parentStep` reads the `@parent` a loaded file carries and this goal's
+hypotheses can be met on a plan the boundary builds (`the_parent_tree_loads`,
+`effectiveCi_inherits_on_a_loaded_plan`).  The paragraph above about "always
+`none`" describes the kernel before that step. -/
 theorem close_week_folds_a_dropped_child_into_its_parent (now : Day) (bm : Nat)
     (p q : WfPlan) (h : close week now p = .ok q) (i j : Id) (ec ep fp fc : Entity)
     (hchild : parentStep p.val j = some i)

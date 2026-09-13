@@ -757,6 +757,116 @@ fn a_kernel_backed_verb_refuses_an_unloadable_tree_by_name() {
     }
 }
 
+/// Every Markdown file of the plan, by path — what a refused verb must leave
+/// byte-identical.
+fn plan_md(tm: &Tm) -> std::collections::BTreeMap<String, String> {
+    fn walk(dir: &std::path::Path, prefix: &str, out: &mut std::collections::BTreeMap<String, String>) {
+        let Ok(rd) = std::fs::read_dir(dir) else { return };
+        for e in rd {
+            let path = e.expect("entry").path();
+            let name = path.file_name().expect("name").to_string_lossy().to_string();
+            if name.starts_with('.') {
+                continue;
+            }
+            let rel = format!("{prefix}{name}");
+            if path.is_dir() {
+                walk(&path, &format!("{rel}/"), out);
+            } else if rel.ends_with(".md") {
+                out.insert(rel, std::fs::read_to_string(&path).expect("read"));
+            }
+        }
+    }
+    let mut out = std::collections::BTreeMap::new();
+    walk(&tm.plan, "", &mut out);
+    out
+}
+
+/// **A typo'd `@parent` refuses a kernel-backed verb by name, and nothing is
+/// written** — the owner's D6 (kernel/README.md gap 22, closed at stage 4 final
+/// step 3). A parent is read off its line, and a link to an id no line of the
+/// tree carries refuses the **whole** tree: here `^m1`'s `@O1` in the week file
+/// becomes `@O9`, and `tm drop ^a1` — an item in another file, with a parent
+/// of its own that is fine — exits 1 with `itemCheck` / `danglingParent` in the
+/// error document, and every file and the log are as they were. Stricter than
+/// fork-point `tm check`, which reported the `@ghost` and let every other
+/// command run; the owner chose it knowingly. A parent cycle (`^m1` under `^t3`,
+/// which is under `^m1`) is refused the same way as `parentCycle`. Fixing the
+/// line is all it takes: the same verb then runs.
+#[test]
+fn a_typod_parent_refuses_a_kernel_backed_verb_by_name_and_writes_nothing() {
+    for (to, fault) in [("@O9 ^m1", "danglingParent"), ("@t3 ^m1", "parentCycle")] {
+        let tm = Tm::new();
+        let path = tm.plan.join("week/2026-W37.md");
+        let text = std::fs::read_to_string(&path).expect("read week");
+        let broken = text.replace("@O1 ^m1", to);
+        assert_ne!(broken, text, "the fixture no longer carries `@O1 ^m1`");
+        std::fs::write(&path, &broken).expect("write week");
+        let before = plan_md(&tm);
+        let events = tm.events();
+
+        let out = tm.run(&["--json", "drop", "^a1"]);
+        assert_eq!(out.code, 1, "{fault}: {}{}", out.stdout, out.stderr);
+        // The automatic close ahead of the verb meets the same tree and prints
+        // the same refusal as prose first; the verb's document follows it.
+        let at = out.stderr.find("\n{").map(|k| k + 1).unwrap_or(0);
+        let doc: serde_json::Value = serde_json::from_str(out.stderr[at..].trim())
+            .unwrap_or_else(|e| panic!("{fault}: stderr does not end in a document ({e}): {:?}", out.stderr));
+        assert!(
+            out.stderr[..at].is_empty() || out.stderr[..at].contains(fault),
+            "{fault}: the automatic close's prose does not name the fault: {:?}",
+            out.stderr
+        );
+        assert_eq!(doc["kind"], "kernel", "{doc}");
+        assert_eq!(doc["detail"]["refusal"], "itemCheck", "{doc}");
+        assert_eq!(doc["detail"]["fault"], fault, "{doc}");
+        assert!(doc["message"].as_str().unwrap_or_default().contains(fault), "{doc}");
+        assert_eq!(plan_md(&tm), before, "{fault}: a refused verb wrote a file");
+        assert_eq!(tm.events(), events, "{fault}: a refused verb logged an event");
+        assert!(tm.read("backlog.md").contains("^a1"));
+        assert!(!tm.line("backlog.md", "a1").starts_with("- [~]"));
+
+        std::fs::write(&path, &text).expect("restore week");
+        let fixed = tm.run(&["drop", "^a1"]);
+        assert_eq!(fixed.code, 0, "{fault}, fixed: {}{}", fixed.stdout, fixed.stderr);
+        assert!(tm.line("backlog.md", "a1").starts_with("- [~]"));
+    }
+}
+
+/// **`tm add` refuses a line whose `@parent` names no item, on both of its
+/// paths, and writes nothing** — the owner's D6. The kernel-backed add would
+/// refuse the title by its post-state check; the carve-outs (`--section`, a
+/// series-last file, an explicit `^id`) write without the kernel, and before
+/// this step they wrote the line and exited 0, leaving a tree every
+/// kernel-backed verb then refused `danglingParent` (driven at `6c2dacb`'s
+/// successor, kernel/README.md "Stage 4 final", step 3). A parent that resolves
+/// is written on both paths.
+#[test]
+fn add_refuses_a_dangling_parent_on_both_paths_and_writes_nothing() {
+    for section in [None, Some("Tasks")] {
+        let tm = Tm::new();
+        let before = plan_md(&tm);
+        let mut args = vec!["add", "3 1b Subtask of nothing @O9", "--to", "week/2026-W37.md"];
+        if let Some(s) = section {
+            args.extend(["--section", s]);
+        }
+        let out = tm.run(&args);
+        assert_eq!(out.code, 1, "{section:?}: {}{}", out.stdout, out.stderr);
+        assert!(out.stderr.contains("danglingParent"), "{section:?}: {}", out.stderr);
+        assert!(out.stderr.contains("@O9"), "{section:?}: {}", out.stderr);
+        assert_eq!(plan_md(&tm), before, "{section:?}: a refused add wrote a file");
+
+        let mut args = vec!["add", "3 1b Subtask of the midterm @x1", "--to", "week/2026-W37.md"];
+        if let Some(s) = section {
+            args.extend(["--section", s]);
+        }
+        let ok = tm.run(&args);
+        assert_eq!(ok.code, 0, "{section:?}: {}{}", ok.stdout, ok.stderr);
+        assert!(tm.read("week/2026-W37.md").contains("Subtask of the midterm @x1 ^"));
+        let later = tm.run(&["drop", "^a1"]);
+        assert_eq!(later.code, 0, "{section:?}: {}{}", later.stdout, later.stderr);
+    }
+}
+
 #[test]
 fn drop_marks_the_line_dropped() {
     let tm = Tm::new();

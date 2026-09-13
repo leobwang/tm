@@ -688,4 +688,36 @@ theorem monthRowRoutesOverdue_routes_only_at_week :
 theorem overdueToBacklogDecodes : CloseDid.ofName? "overdue_to_backlog".toList = some .moveOverdue := by
   decide
 
+-- ===========================================================================
+-- APPENDED 2026-09-13 (stage-4 final, step 3: README gap 22 closed — the owner's
+-- D6).  `Core.parent` is a view of the line, and a dangling or cyclic `@parent`
+-- refuses the whole tree by name.  Each cheat below is a door the step closed;
+-- the controls, which compile, are `Core.parent` and `coreOfLine_parent` (59),
+-- `the_parent_tree_loads` and `a_typod_parent_refuses_the_whole_tree_by_name`
+-- (60), and `a_parent_cycle_refuses_the_whole_tree_by_name` (61).
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 59 — the stored slot, back.  A `parent` field beside the line is a second
+   reader of `@O2` (AGENTS §5.3), and before D6 it disagreed with every file that
+   carried one: it was `none` while the line said `@O2`.  There is no slot for a
+   record update to set; the parent is what the bytes say. -/
+def parentSlotCheat (c : Core) (j : Id) : Core := { c with parent := some j }
+
+/- CHEAT 60 — a typo'd parent loads.  Fork-point `tm check` reported an `@ghost`
+   parent and let every other command run; D6 refuses the tree, by name.  `decide`
+   evaluates the loader and proves the equation false. -/
+set_option maxRecDepth 40000 in
+theorem typoParentLoads : loadsOk parentTypoWitness = true := by
+  decide
+
+/- CHEAT 61 — a cycle reported as a dangling link.  Both links of the ouroboros
+   resolve, so the name is `parentCycle`: the dangling lemma's hypothesis is false
+   at the cycle witness, and the two refusals cannot be confused. -/
+set_option maxRecDepth 40000 in
+theorem cycleIsDangling :
+    loadPlan parentCycleWitness =
+      .error (jone "err" (jone "itemCheck" (.str "danglingParent".toList))) :=
+  loadPlan_refuses_a_dangling_parent _ true (by decide)
+
 end Tm

@@ -1022,8 +1022,16 @@ fn refusal(err: &Value) -> KernelIssue {
         ))
     } else if let Some(f) = err.get("itemCheck").and_then(Value::as_str) {
         put("fault", f.to_string());
+        // The owner's D6 (kernel/README.md gap 22, closed at stage 4 final
+        // step 3): a parent is read off its line, and a dangling or cyclic
+        // link refuses the whole tree — so these two say what to fix.
+        let hint = match f {
+            "danglingParent" => " — an `@parent` names an id no line of the tree carries (a typo, or a parent whose line is gone); fix or remove the link (`tm check` names the line)",
+            "parentCycle" => " — the `@parent` links form a cycle, so no item on it has a root; break the cycle (`tm check` names the lines)",
+            _ => "",
+        };
         ("itemCheck".into(), format!(
-            "kernel refusal: itemCheck — the tree fails the kernel's item invariant ({f}); the kernel refuses a tree it cannot load whole"
+            "kernel refusal: itemCheck — the tree fails the kernel's item invariant ({f}){hint}; the kernel refuses a tree it cannot load whole"
         ))
     } else {
         put("error", err.to_string());
@@ -1144,6 +1152,19 @@ mod tests {
             assert_eq!(issue.name, name);
             assert!(issue.message.contains(name), "{}", issue.message);
             assert_eq!(issue.detail["refusal"], name);
+        }
+    }
+
+    /// The owner's D6: a dangling or cyclic `@parent` refuses the whole tree as
+    /// `itemCheck`, and the message carries the fault's name and what to fix.
+    #[test]
+    fn the_parent_faults_are_named_with_what_to_fix() {
+        for (fault, says) in [("danglingParent", "names an id no line"), ("parentCycle", "form a cycle")] {
+            let issue = refusal(&serde_json::json!({ "itemCheck": fault }));
+            assert_eq!(issue.name, "itemCheck");
+            assert_eq!(issue.detail["fault"], fault);
+            assert!(issue.message.contains(fault), "{}", issue.message);
+            assert!(issue.message.contains(says), "{}", issue.message);
         }
     }
     /// The report decoder, end to end against the real kernel: a week close

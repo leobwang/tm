@@ -47,3 +47,15 @@ refusal anywhere else is a finding.
 Every `.md` file is pushed through the kernel's `String -> String` boundary with
 no commands and the bytes that come back are compared with the bytes that went
 in.
+
+**Since 2026-09-13 (the owner's D6), only whole plan trees are pushed through.**
+A parent is read off its line, and a link to an id the request does not carry
+refuses the tree (`itemCheck: danglingParent`), so a week file whose lines name
+the month's outcomes cannot load on its own. Each plan is loaded once and each of
+its files is compared inside that load; a file of a refused plan is `reject`,
+carrying the plan's refusal. `plan-conflicts/` is therefore refused whole, and
+check 6's `--nocapture` report names each of its defects by peeling them from the
+whole tree one at a time — the `@ghost` parent as `danglingParent` and the
+two-item `@parent` cycle as `parentCycle` among them
+(`the_conflicts_plan_refuses_its_parent_defects_by_name`). See
+`kernel/README.md`, "Stage 4 final", step 3.

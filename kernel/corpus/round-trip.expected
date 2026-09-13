@@ -2,6 +2,11 @@
 #
 # kind \t name \t outcome \t detail
 #
+# Whole trees only (the owner's D6): each plan is loaded once, and a `file`
+# row is that file inside its plan's whole-tree load -- `ok` when the plan
+# loads and the file comes back byte for byte, `reject` with the plan's
+# refusal when it does not.  A file is never loaded on its own.
+#
 # `corpus_round_trip` asserts only that every row recorded `ok` is still
 # `ok`.  A row that starts passing is reported, not failed: the grammar is
 # being extended on other branches and this number may only rise.  The
@@ -20,15 +25,15 @@ file	plan-basic/optional.md	ok
 file	plan-basic/routines.md	ok	
 file	plan-basic/week/2026-W37.md	ok	
 plan	plan-basic	ok	
-file	plan-conflicts/backlog.md	reject	{"dupId":"a1"}
-file	plan-conflicts/calendar/2026-W37.md	reject	{"itemCheck":"fileKindShape"}
-file	plan-conflicts/day/2026-09-07.md	reject	{"itemCheck":"sectionDiscipline"}
-file	plan-conflicts/inbox.md	ok	
-file	plan-conflicts/month/2026-09.md	ok	
-file	plan-conflicts/optional.md	ok	
-file	plan-conflicts/routines.md	ok	
-file	plan-conflicts/week/2026-W37.md	reject	{"badLine":{"line":22,"path":"week/2026-W37.md","why":"Tm.PErr.manyIds"}}
-plan	plan-conflicts	reject	{"badLine":{"line":22,"path":"week/2026-W37.md","why":"Tm.PErr.manyIds"}}
+file	plan-conflicts/backlog.md	reject	{"badLine":{"path":"week/2026-W37.md","line":22,"why":"Tm.PErr.manyIds"}}
+file	plan-conflicts/calendar/2026-W37.md	reject	{"badLine":{"path":"week/2026-W37.md","line":22,"why":"Tm.PErr.manyIds"}}
+file	plan-conflicts/day/2026-09-07.md	reject	{"badLine":{"path":"week/2026-W37.md","line":22,"why":"Tm.PErr.manyIds"}}
+file	plan-conflicts/inbox.md	reject	{"badLine":{"path":"week/2026-W37.md","line":22,"why":"Tm.PErr.manyIds"}}
+file	plan-conflicts/month/2026-09.md	reject	{"badLine":{"path":"week/2026-W37.md","line":22,"why":"Tm.PErr.manyIds"}}
+file	plan-conflicts/optional.md	reject	{"badLine":{"path":"week/2026-W37.md","line":22,"why":"Tm.PErr.manyIds"}}
+file	plan-conflicts/routines.md	reject	{"badLine":{"path":"week/2026-W37.md","line":22,"why":"Tm.PErr.manyIds"}}
+file	plan-conflicts/week/2026-W37.md	reject	{"badLine":{"path":"week/2026-W37.md","line":22,"why":"Tm.PErr.manyIds"}}
+plan	plan-conflicts	reject	{"badLine":{"path":"week/2026-W37.md","line":22,"why":"Tm.PErr.manyIds"}}
 file	plan-home-day/backlog.md	ok	
 file	plan-home-day/calendar/2026-W37.md	ok	
 file	plan-home-day/day/2026-09-07.md	ok	

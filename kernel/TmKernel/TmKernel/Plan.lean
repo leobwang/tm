@@ -1655,6 +1655,30 @@ theorem self_parent_is_rejected (p : PlanCore) (i : Id) (hi : i ∈ p.store.dom)
       rw [key (fuel p)] at hall
       simp at hall
 
+/-- **`parentsTotal`, both directions** (AGENTS §5.8): the check accepts exactly the
+plans in which every record's `@parent` names an item of the plan.  Since the
+owner's D6 `Core.parent` is read off the line, so this is a statement about the
+`@O2` a file carries — before D6 every record's parent was `none` and the right
+side held of every plan. -/
+theorem parentsTotal_iff (p : PlanCore) :
+    parentsTotal p = true ↔
+      ∀ (i j : Id) (e : Entity), p.store.get i = some e → e.val.parent = some j →
+        (p.store.get j).isSome = true := by
+  unfold parentsTotal
+  rw [List.all_eq_true]
+  constructor
+  · intro h i j e hg hp
+    have hi : i ∈ p.store.dom := (p.store.domSpec i).mpr (by rw [hg]; rfl)
+    have := h i hi
+    simpa [parentStep, hg, hp] using this
+  · intro h i _
+    cases hg : p.store.get i with
+    | none => simp [parentStep, hg]
+    | some e =>
+      cases hp : e.val.parent with
+      | none => simp [parentStep, hg, hp]
+      | some j => simpa [parentStep, hg, hp] using h i j e hg hp
+
 /-! ### `after:`: the peel, and the deadlocked set -/
 
 theorem peelN_nil (p : PlanCore) : ∀ n, peelN p n [] = [] := by

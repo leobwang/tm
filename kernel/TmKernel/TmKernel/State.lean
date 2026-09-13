@@ -48,8 +48,8 @@ two types but the absence of the second type:
   status, and the token vector — and `Core.shape`, `Core.recur`, `Core.budget`,
   `Core.after`, `Core.loc`, `Core.buffer`, `Core.stamps`, `Core.waiting`,
   `Core.tags`, `Core.ci`, `Core.prio`, `Core.flags`, `Core.scope`,
-  `Core.splittable`, `Core.extra`, `Core.title` and `Core.est` are functions
-  that read it.  This is what `est` already did (§3.1's
+  `Core.splittable`, `Core.extra`, `Core.title`, `Core.est` and (since D6)
+  `Core.parent` are functions that read it.  This is what `est` already did (§3.1's
   `est`/`est_original` are one slot and a reader, because two stored copies of
   one estimate is the shipped `tm edit est=` bug); every other field now does
   the same.  A stored field can drift from the bytes it was read from.  A view
@@ -67,15 +67,17 @@ Four of §3.1's twenty-two fields are still absent, each for a stated reason:
 * `series` (§3.1: "from the `## series:<name>` section") and `effective_shape`
   (§3.2) are facts about the document and the tree, derived in Plan.lean.
 
-`parent` is the **one** field still stored, and always `none`.  Deriving it
-from the line's `@parent` is a two-line change and it is deliberately not made
-here: §6.1 says "a week item may be a child of a month item", `parentsTotal`
-(Plan.lean) is a *load precondition* rather than `tm check`'s `@ghost` report
-(§17.2), and so the moment `@O2` on a week line is read, a document set that is
-one file stops loading.  Every week and backlog file of the corpus would go
-from `ok` to `danglingParent`.  Which of the two moves — deriving the field, or
-demoting `parentsTotal` to a report — is the right one is a question about the
-plan tier, not about this module; it is README gap 22.
+**`parent` is a view too, since the owner's D6 (2026-09-13).**  It was the last
+stored slot, always `none`, because reading `@O2` off a week line makes a
+document set that is one file stop loading (`parentsTotal` is a load
+precondition, and §6.1 lets a week item be a child of a month item) — README gap
+22.  The owner chose to derive it and keep the precondition strict: `Core.parent`
+is `Field.parentRef` of the line, like every other field here, a link to an id
+the tree does not carry refuses the whole tree (`danglingParent`), and a cycle
+refuses (`parentCycle`).  The host hands the kernel whole trees, so a week line's
+`@O2` resolves against the month file it came with.  `@parent` is still an `Id`,
+not §3.1's `Ref` (`@id` **or `@label`**, README gap 19): a label is read as the
+id it spells, and refuses as dangling unless an item carries that id.
 -/
 namespace Tm
 
@@ -243,17 +245,13 @@ theorem TagSet.no_duplicates (s : TagSet) : s.val.Nodup := s.property
 
 /-- The observable content of one entity.  Four slots: where the live line is,
 where the tombstone is if there is one, the status, and the **verbatim token
-vector** (§4.2), which is where every one of §3.1's item fields lives.  See the
-module header for why `parent` is the exception. -/
+vector** (§4.2), which is where every one of §3.1's item fields lives —
+`parent` included, since D6 (the module header). -/
 structure Core where
   live      : Site
   archive   : Option Tomb      -- at most one tombstone a close left behind
   status    : Status
   line      : RawItem
-  /-- §3.1 `parent`.  Not yet read off the line — README gap 22, and the module
-  header says why.  Totality and acyclicity are **plan-level** (Plan.lean):
-  they are facts about the whole store, not about one record. -/
-  parent    : Option Id := Option.none
 deriving DecidableEq, Repr
 
 /-- Where the tombstone is, forgetting what it says.  Almost everything that
@@ -286,6 +284,129 @@ def Core.fields (c : Core) : Fields := Field.viewFields c.line
 /-- §3.1 `title`: the title segment plus §4.1's unclassifiable words, which
 "stay in the title". -/
 def Core.title (c : Core) : List (List Char) := Field.titleWords c.line
+
+/-! ### `parentRef` looks for an `@` before it classifies
+
+Since D6 every plan check reads every record's parent, and `Field.parentRef`
+classifies all of a line's tokens to find it.  A `.parent` kind only ever comes
+from a word that begins with `@` (`kParent_classifyWord`, through the four
+classifier phases), so a line with no such word has no parent and the
+classification can be skipped.  `parentRef_eq_parentRefFast` is the `@[csimp]`
+equality (Fast.lean's device); it sits here, ahead of `Core.parent`, because a
+`csimp` lemma rewrites only the code compiled after it. -/
+
+namespace Field
+
+/-- A word that begins with `@`. -/
+def atWord (w : List Char) : Bool := w.head? == some '@'
+
+theorem kParent_classifyWord (w : List Char) (h : atWord w = false) :
+    kParent (classifyWord w) = none := by
+  unfold classifyWord
+  cases hs : sigilOf w with
+  | none =>
+    simp only
+    split
+    · unfold classifyKeyed; split <;> rfl
+    · unfold classifyPlain; split <;> rfl
+  | some c =>
+    simp only
+    have hc : c ≠ '@' := by
+      intro hc
+      subst hc
+      cases w with
+      | nil => simp [sigilOf] at hs
+      | cons a t =>
+        have ha : a = '@' := by
+          simp only [sigilOf] at hs
+          split at hs
+          · cases hs; rfl
+          · cases hs
+        subst ha
+        simp [atWord] at h
+    unfold classifySigil
+    by_cases h1 : w.length = 1
+    · rw [if_pos h1]; rfl
+    · rw [if_neg h1, if_neg hc]
+      by_cases h2 : c = '#'
+      · rw [if_pos h2]; rfl
+      · rw [if_neg h2]
+        by_cases h3 : c = '!'
+        · rw [if_pos h3]; unfold classifyBang; cases parsePrio w <;> rfl
+        · rw [if_neg h3]; split <;> rfl
+
+theorem findSome_kParent_phase3 : ∀ (ts : List Tok), ts.all (fun t => !atWord t.word) = true →
+    (classifyPhase3 ts).findSome? kParent = none
+  | [], _ => rfl
+  | t :: ts, h => by
+    simp only [List.all_cons, Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at h
+    show (classifyWord t.word :: classifyPhase3 ts).findSome? kParent = none
+    rw [findSome_cons_none _ _ _ (kParent_classifyWord _ h.1)]
+    exact findSome_kParent_phase3 ts h.2
+
+theorem findSome_kParent_phase2 : ∀ (ts : List Tok), ts.all (fun t => !atWord t.word) = true →
+    (classifyPhase2 ts).findSome? kParent = none
+  | [], _ => rfl
+  | t :: ts, h => by
+    show (if startsToken t.word then classifyPhase3 (t :: ts)
+          else TokKind.title t.word :: classifyPhase2 ts).findSome? kParent = none
+    split
+    · exact findSome_kParent_phase3 (t :: ts) h
+    · simp only [List.all_cons, Bool.and_eq_true] at h
+      rw [findSome_cons_none _ _ _ rfl]
+      exact findSome_kParent_phase2 ts h.2
+
+theorem findSome_kParent_phase1 (ts : List Tok) (h : ts.all (fun t => !atWord t.word) = true) :
+    (classifyPhase1 ts).findSome? kParent = none := by
+  cases ts with
+  | nil => rfl
+  | cons t ts =>
+    show (match estSlot t.word with
+          | some d => TokKind.est d :: classifyPhase2 ts
+          | none   => classifyPhase2 (t :: ts)).findSome? kParent = none
+    split
+    · simp only [List.all_cons, Bool.and_eq_true] at h
+      rw [findSome_cons_none _ _ _ rfl]
+      exact findSome_kParent_phase2 ts h.2
+    · exact findSome_kParent_phase2 (t :: ts) h
+
+/-- **A line with no `@` word has no parent.** -/
+theorem parentRef_of_no_at (r : RawItem) (h : r.toks.all (fun t => !atWord t.word) = true) :
+    parentRef r = none := by
+  unfold parentRef kinds
+  cases hr : r.toks with
+  | nil => rfl
+  | cons t ts =>
+    rw [hr] at h
+    show (match ciSlot t.word with
+          | some c => TokKind.ci c :: classifyPhase1 ts
+          | none   => classifyPhase1 (t :: ts)).findSome? kParent = none
+    split
+    · simp only [List.all_cons, Bool.and_eq_true] at h
+      rw [findSome_cons_none _ _ _ rfl]
+      exact findSome_kParent_phase1 ts h.2
+    · exact findSome_kParent_phase1 (t :: ts) h
+
+/-- `parentRef`, classifying only a line that has an `@` word. -/
+def parentRefFast (r : RawItem) : Option (List Char) :=
+  if r.toks.all (fun t => !atWord t.word) then none else (kinds r).findSome? kParent
+
+@[csimp] theorem parentRef_eq_parentRefFast : @parentRef = @parentRefFast := by
+  funext r
+  unfold parentRefFast
+  split
+  · rename_i h; exact parentRef_of_no_at r h
+  · rfl
+
+end Field
+
+/-- §3.1 `parent`: the line's `@parent` token (§4.1), read by the one reader
+`Field.parentRef`.  A view, not a slot (the owner's D6, 2026-09-13; README gap
+22): a stored parent could disagree with the `@O2` the file carries, and before
+D6 it did — it was `none` on every record while the line said `@O2`.  Totality
+and acyclicity are **plan-level** (Plan.lean's `parentsTotal`,
+`parentsAcyclic`): they are facts about the whole store, not about one record. -/
+def Core.parent (c : Core) : Option Id := Field.parentRef c.line
 
 /-- §3.1 `ci: u8` — min-energy 0–5.  **`Option`, because §3.1's rule is
 "default: parent's, else 3"**: a stored 3 cannot be told from an inherited one,
@@ -377,13 +498,13 @@ theorem the_fields_are_the_line (c d : Core) (h : c.line = d.line) :
       c.shape = d.shape ∧ c.recur = d.recur ∧ c.onMiss = d.onMiss ∧
       c.budget = d.budget ∧ c.after = d.after ∧ c.loc = d.loc ∧ c.buffer = d.buffer ∧
       c.stamps = d.stamps ∧ c.waiting = d.waiting ∧ c.tags = d.tags ∧
-      c.extra = d.extra ∧ c.est = d.est := by
-  obtain ⟨_, _, _, ln, _⟩ := c
-  obtain ⟨_, _, _, ln', _⟩ := d
+      c.extra = d.extra ∧ c.est = d.est ∧ c.parent = d.parent := by
+  obtain ⟨_, _, _, ln⟩ := c
+  obtain ⟨_, _, _, ln'⟩ := d
   have hl : ln = ln' := h
   subst hl
   exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
-    rfl, rfl⟩
+    rfl, rfl, rfl⟩
 
 /-! ### The fields the loader reads are §4.1's views of the bytes it read
 
@@ -409,6 +530,11 @@ theorem coreOfLine_recur (site : Site) (st : Status) (r : RawItem) :
     (coreOfLine site st r).recur = Field.viewRecur r := rfl
 theorem coreOfLine_stamps (site : Site) (st : Status) (r : RawItem) :
     (coreOfLine site st r).stamps = (Field.viewDemoted r).getD [] := rfl
+/-- The loader's record carries the `@parent` its line carries — the view the
+plan-level `parentsTotal` and `parentsAcyclic` read (D6).  Before D6 the right
+side was `none` whatever the line said. -/
+theorem coreOfLine_parent (site : Site) (st : Status) (r : RawItem) :
+    (coreOfLine site st r).parent = Field.parentRef r := rfl
 
 set_option maxRecDepth 8000 in
 /-- **§4.3's own calendar line, read.**  This is the line the corpus refused:
@@ -500,8 +626,8 @@ recorded and the architecture spike reproduced in eight places.
 It is a **stronger** statement than the thirteen-binder version it replaces:
 that one listed the fields it was safe to set, and this one covers every field
 there is, because there is only one left to set. -/
-theorem wf_ignores_the_item_fields (c : Core) (l : RawItem) (pa : Option Id) :
-    wf { c with line := l, parent := pa } = wf c := rfl
+theorem wf_ignores_the_item_fields (c : Core) (l : RawItem) :
+    wf { c with line := l } = wf c := rfl
 
 /-- **The entity.**  You cannot make one without discharging `wf`. -/
 def Entity := { c : Core // wf c = true }

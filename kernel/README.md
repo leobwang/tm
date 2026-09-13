@@ -6972,3 +6972,266 @@ kernel + 6 corpus; +1).  Proof : definition **4.63 : 1** (16,989 : 3,672; this s
 1,113 : 160), 8.85 : 1 in `Close.lean`, 6.46 : 1 in `Report.lean`, by the stage-4
 script (`/tmp/claude-1000/proof_ratio.py kernel/TmKernel/TmKernel`).  Gaps run to 67
 (new gaps start at 68); cheats to 58 (new cheats start at 59).
+
+<!-- ===================================================================
+     APPENDED 2026-09-13 (stage-4 final).  Step 3: README gap 22 closed — the owner's D6.  `@parent` is a view of the line; a dangling or cyclic link refuses the whole tree by name; §3.2's prep rule, `effectiveCi` and `rootPrio` fire on loaded plans; check 6 loads whole trees only.
+     Closes gap 22; takes gaps 68–71; takes cheats 59–61.  Retires no theorem name; five kept names changed statement (listed below).
+     Supersedes, by name: gap 22 (whole); gap 19's consequence as a description of what a label does (the kernel still takes ids only; a label now refuses `danglingParent`); stage 4 final step 1's D6 costs (ii) "check 6's per-file count … is re-based on whole plans in the step that lands D6" and (iv) (both done, below); step 2's "Owed (2)"; step 2's difference (b) "Clears with D6" (it does not: gap 68); AGENTS §5.3's "`parent` (gap 22) is the one that stands", §7.1 check 6's and §7.2's per-file score `33/37` as a description of check 6, §10.2's "five. `parent` is still a stored slot"; `State.lean`'s module header paragraph "`parent` is the **one** field still stored"; `Close.lean`'s `Owed.gap22Parent` (renamed `childFoldB3`); `Boundary.lean`'s `hpar` paragraph on `the_kernel_can_read_the_pairs_it_writes`; `addCore`'s "`parent none` like every line the kernel writes until gap 22 lands"; `Fast.lean`'s "the two bodies are the same term up to that `let`, so the equality is `rfl`" for `parentsAcyclic`; `tui/inbox.rs`'s "`tm add` writes such a line" for a dangling `@parent`, and the test `a_dangling_reference_is_a_warning_not_a_refusal` (split and renamed).
+     =================================================================== -->
+
+## Stage 4 final, step 3, 2026-09-13: a parent is read off its line
+
+Baseline re-measured at `6c2dacb` (tree clean), every command under `systemd-run --user
+--scope -p MemoryMax=40G -p MemorySwapMax=0` (8 GB and `timeout 120` for every new
+`decide` probe; every run of the binary under `timeout`): `check.sh` **7/7** — axiom
+audit **1691 theorems**, corpus **33/37 files and 4/5 whole plans**, burn-down **30**;
+FFI suite **69** (63 kernel + 6 corpus); `cargo test --workspace` in a scratch worktree
+of `6c2dacb`: 1003 passed / **1 failed** across 66 binaries — the failure is gap 71, a
+random-seeded `tm-core` proptest, not this step's; six reruns of it on this step's tree
+pass, and the full workspace below is green.
+
+**The change.**  `Core` loses its last stored §3.1 slot: `Core.parent c :=
+Field.parentRef c.line` (State.lean), the reader `Line.lean` already had for `@O2`, so
+`parentStep`, `parentsTotal`, `parentsAcyclic`, `effectiveShape`, `effectiveCi` and
+`rootPrio` read the `@parent` a loaded file carries.  Nothing else constructs a parent:
+the loader's `coreOfLine`, `addCore` and every close copy or refile carry the line, so
+they carry its parent (`coreOfLine_parent`, `rfl`).  A `tm add` title's `@word` is the
+new line's parent.  The store's domain never shrinks under any command (no command
+removes an entity), so no command can make a resolved parent dangle; an edit cannot add
+an `@` word (the wired keys write `key:value` tokens).
+
+**Where a proof relied on `parent = none`, and what replaced it.**  One theorem took it
+as a hypothesis: `the_kernel_can_read_the_pairs_it_writes` had `hpar : e.val.parent =
+none`, needed because the loader's record differed from `e` in exactly that slot; it
+is gone and the statement is strictly stronger.  One witness was silently vacuous:
+`the_pre_close_pair_closes_on_a_loaded_plan` said `closeRefusal week
+closePreClosePairWitness = none`, and `closeRefusal` is `none` for a request that does
+not load — which, with `@O2` dangling, it did not; the build stayed green.  It gains
+`loadsOk … = true` and its witness gains the outcome.  Four decided witnesses built from
+§4.3's lines named `@O2`/`@O3` with no outcome in the request and failed to decide; each
+**fixture was fixed, not the check** — the month document gained the outcome its lines
+name, verbatim from §4.3's month file: `specMonthDoc` (`^O2`), `closePreClosePairWitness`
+(`^O2`), `closeStrayTombWitness` (`^O3`), `closeMergeWitness` (`^O2`).  Every theorem over
+them is re-decided under its own name, with the expected month lines gaining those two
+lines where a file is rendered.  The FFI suite had the same two fixtures
+(`the_spec_demotion_pair_round_trips`, `readopt_of_a_live_record_is_refused_rather_than_losing_the_stamp`),
+fixed the same way.  No CLI fixture dangled: `tm-core/tests/fixtures/plan-basic` resolves
+every link, and so do both `tm init` templates — the example tree's `@O1`–`@O3`, `@m1`–`@m3`
+and `@x1` name lines of its own week and month, and the starter's `@O1`/`@O2`/`@O3`/`@m2`/`@m3`
+stand inside HTML comments, which are prose.  Driven: a fresh `tm init` and `tm init
+--example` each take a `tm add` at 2026-09-08 and a `tm now` at 2026-09-14 with no refusal,
+and `tm check` reports no problems.
+
+**Gap 19, re-read: `Ref` is not needed here.**  §3.1's `Ref` is `@id` or `@label`.  Every
+`@` word on an item line in spec §4.1/§4.3, in the five corpus trees and in both templates
+is an id (`O1`–`O3`, `m1`–`m3`, `x1`, and `plan-conflicts`' deliberate `ghost`, `y1`,
+`y2`); no label appears.  So the kernel keeps reading `@parent` as an `Id`, and a label is
+read as the id it spells: `tm add "3 1b Label parent @Lean"` is refused `danglingParent`
+(driven).  Gap 19 stands otherwise unchanged.
+
+**Theorems, both directions (AGENTS §5.8).**
+
+| claim | theorem |
+|---|---|
+| `parentsTotal` accepts exactly the plans whose every `@parent` names an item | `parentsTotal_iff` (new); with `parent_names_an_item` (on `WfPlan`) |
+| `parentsAcyclic` means what it says, and the bound is enough | `parentsAcyclic_sound`, `parentsAcyclic_complete`, `self_parent_is_rejected` (unchanged, now about the line) |
+| a typo'd `@O9` refuses the whole tree, by name, on the wire's value | `a_typod_parent_refuses_the_whole_tree_by_name` (`loadPlan … = .error {"err":{"itemCheck":"danglingParent"}}`), from `the_typo_tree_fails_parentsTotal_only` (decided) through `loadPlan_refuses_a_dangling_parent` ← `loadPlan_itemCheck` |
+| a two-line cycle refuses, as `parentCycle` and not as dangling | `a_parent_cycle_refuses_the_whole_tree_by_name` from `the_cycle_tree_fails_parentsAcyclic_only` through `loadPlan_refuses_a_parent_cycle`; cheat 61 |
+| a tree whose links all resolve loads | `the_parent_tree_loads`; `the_example_tree_loads_with_its_parents` (§4.3's literal week, month and backlog) |
+| the stored slot is gone; a typo'd tree does not load | cheats 59, 60 |
+
+The refusals are stated on `loadPlan`'s value but decided on booleans — the conjuncts
+`loadPlan` tests, in its order — and the name is read off them by a lemma, not by
+evaluating a `String` (step 2's 8 GB lesson).
+
+**What now fires (AGENTS §5.2)** — each on the loaded `parentTreeWitness` (§4.3's
+hierarchy: `^O1 !1` and `^O3 !3` in September; `^m1` under `^O1` with no `ci` digit; the
+wall `^x1` under `^O3` and its prep child `^x2`; `^t1` under `^m1` with no `ci` and no
+`!k`), and each answer differs from the one the same call gave before D6:
+
+| rule | witness | before D6 |
+|---|---|---|
+| §3.2 prep: a shapeless child of an interval is due at its start — `effectiveShape_prep`'s hypotheses hold | `the_prep_rule_fires_on_a_loaded_plan`: `^x2` ↦ point 2026-10-20 10:00 | `Shape.none` |
+| §3.1 `ci`: "the parent's, else 3", through two links | `effectiveCi_inherits_on_a_loaded_plan`: `^t1` ↦ `5` | `3` |
+| §3.2 `root_priority`, §7.1's `k` | `rootPrio_reads_the_root_on_a_loaded_plan`: `^t1` ↦ `!1`, `^x2` ↦ `!3` | `^t1`'s own `none` |
+
+**The cost, measured, and the two twins that paid it back.**  With the view alone the
+checker classified every record's tokens twice per plan check (`parentsTotal`, then each
+link of `parentsAcyclic`'s walk), and a close runs the check once per landing.
+`cli_latency.rs`'s history tree (226 files, 2,959 lines, no parent links) went from
+**602 / 606 / 602 ms** at `6c2dacb` to **754 / 754 / 744 ms** for its first verb (three
+runs each, debug binaries, one machine), and a 2,000-link chain from 249 to 1,368 ms.
+Two `@[csimp]` twins, each a proved equality:
+
+* `Field.parentRef_eq_parentRefFast` (State.lean, ahead of `Core.parent`): a line with no
+  word beginning `@` has no parent (`parentRef_of_no_at`, through the four classifier
+  phases, `kParent_classifyWord`), so its tokens are not classified.
+* Fast.lean: `parentTable` classifies each record's parent once into an `IdMap`
+  (`parentTable_get`, by the generic `tableStep_fold` that `Store.compact`'s fold is an
+  instance of); `ancIn` walks it (`anc_eq_ancIn`); `itemsWfFast` and
+  `firstItemFaultFast` share one table between `parentsTotalIn` and `parentsAcyclicIn`
+  (`parentsTotalIn_eq`, `parentsAcyclicIn_eq`).  `parentsAcyclic_eq_parentsAcyclicFast`,
+  `itemsWf_eq_itemsWfFast` and `firstItemFault_eq_firstItemFaultFast` keep their names;
+  their proofs are no longer `rfl`.
+
+After both: `cli_latency.rs` first verb **602 / 608 / 617 ms**, later verb **55.8 ms**
+(55.7–60.7 at `6c2dacb`) — the regression is gone.  A kernel-backed `tm edit ^a1
+est=45m` on `tm init --example` plus `n` synthetic backlog lines (median of 5 fresh
+runs, `6c2dacb` → this step):
+
+| tree | n = 500 | n = 1,000 | n = 2,000 |
+|---|---|---|---|
+| no parent links | 14.4 → 14.3 ms | 23.6 → 22.6 ms | 41.7 → 42.1 ms |
+| every line under a week milestone (depth 3) | 15.8 → 15.9 ms | 24.8 → 25.4 ms | 45.2 → 46.8 ms |
+| one chain `n` links deep | 32.6 → 36.6 ms | 72.5 → 102.3 ms | 249.4 → 395.9 ms |
+
+Linear where §4.3's trees live; quadratic in the depth of a single chain — on a host
+path that was already superlinear there — which is gap 69.
+
+**The corpus, whole trees only (the owner's D6; check 6).**  `corpus.rs` loads each plan
+once and scores each file inside that load: `ok` when the plan loads and the file comes
+back byte for byte, `differs` when it loads and the file changed (the absolute assertion,
+`no_file_is_silently_rewritten`, unchanged), `reject` with the plan's refusal when it does
+not load.  **The number moved from 33/37 to 29/37, and it means something different**:
+until D6 a file was loaded alone, so four of `plan-conflicts/`'s nine files (`inbox`,
+`month`, `optional`, `routines`) scored `ok` while their plan was refused; each week and
+backlog file of the other four trees would now be refused alone (`danglingParent`), and
+inside its tree it round-trips.  **No file outside `plan-conflicts/` changed; the
+whole-plan score is 4/5.**  `round-trip.expected` was reblessed for this redefinition
+only (its four `ok` → `reject` rows, and its header).  `plan-conflicts/`'s `@ghost`
+fixture now refuses the whole plan, which is what it exists to do: the report's new
+whole-tree peel (`peel_faults`) names its nine refusals one at a time — `badLine manyIds`
+(`^% … ^q7`), `badLine noId`, `dupId a1`, **`danglingParent` (`@ghost ^q1`)**,
+**`parentCycle` (`^y1`, `^y2`)**, `danglingDep` (`after:^t9`), `depCycle` (`^z1`, `^z2`),
+`sectionDiscipline` (`^p2`), `fileKindShape` (`^g7`) — each reproduced by its own lines
+with every prose line kept, a line removed only together with the lines that name it.
+`the_conflicts_plan_refuses_its_parent_defects_by_name` asserts the two parent faults;
+`a_week_file_names_its_parents_in_another_file` pins why a file is no longer loaded alone.
+AGENTS §7.1 check 6, §7.2, `check.sh`'s comment and `corpus/PROVENANCE.md` say so.
+
+**The host.**  The CLI already sends whole trees (`kernel_bridge::apply` reads the plan
+tree).  `refusal` gives `itemCheck: danglingParent` and `parentCycle` a sentence saying
+what to fix (`the_parent_faults_are_named_with_what_to_fix`).  CLI
+`a_typod_parent_refuses_a_kernel_backed_verb_by_name_and_writes_nothing`: `^m1`'s `@O1`
+becomes `@O9` in the week file, `tm --json drop ^a1` (another file) exits 1 with
+`detail.refusal = itemCheck`, `detail.fault = danglingParent`, the automatic close's prose
+naming it too, every file and the log unchanged; the cycle `^m1 → ^t3 → ^m1` the same as
+`parentCycle`; the line fixed, the verb runs.  **Driven on this step's binary before the
+host fix, a finding:** `tm add "3 1b Subtask @O9" --to week/2026-W37.md --section Tasks`
+wrote the line and exited 0 — `--section` is one of `add`'s carve-outs, written without the
+kernel — and the next `tm drop ^a1` was refused `danglingParent`: a host path could write
+the one line that refuses every later verb.  `tm add` now refuses a dangling `@parent`
+before either path writes, by the kernel's name (`add_refuses_a_dangling_parent_on_both_paths_and_writes_nothing`),
+and the TUI capture preview, which promised that save as a warning, refuses it as a
+problem (`a_dangling_dependency_is_a_warning_and_a_dangling_parent_a_refusal`; §17 M7, the
+preview matches `tm add`).  The same carve-out still writes a dangling `after:^id` — gap 70.
+FFI: `a_dangling_parent_refuses_the_whole_tree_by_name` (with a command, which never runs),
+`a_parent_cycle_refuses_the_whole_tree_by_name`, `a_parent_in_another_file_resolves_only_in_the_whole_tree`,
+`add_reads_a_parent_off_its_title_and_refuses_a_dangling_one`.
+
+**Observable behaviour changes, each next to the rule it replaces** (AGENTS §4's last row).
+
+| # | the rule it replaces | now | decision | separated by |
+|---|---|---|---|---|
+| 24 | gap 22: `Core.parent` stored, always `none`; a tree whose `@parent` names no item loads, and every kernel-backed verb runs | the tree is refused, `{"err":{"itemCheck":"danglingParent"}}`; every kernel-backed verb exits 1 naming it and writes nothing; the automatic close prints it and closes nothing | D6 | `a_typod_parent_refuses_the_whole_tree_by_name`; FFI `a_dangling_parent_refuses_the_whole_tree_by_name`; CLI `a_typod_parent_refuses_a_kernel_backed_verb_by_name_and_writes_nothing`; cheat 60 |
+| 25 | a parent cycle loads | refused whole, `itemCheck: parentCycle` | D6 | `a_parent_cycle_refuses_the_whole_tree_by_name`; cheat 61 |
+| 26 | a request of one `week/*.md` naming month outcomes loads | refused `danglingParent`: a parent resolves inside the whole tree only | D6 | FFI `a_parent_in_another_file_resolves_only_in_the_whole_tree`; corpus `a_week_file_names_its_parents_in_another_file` |
+| 27 | a kernel `add` title's `@word` was a token nothing read | the new line's parent: linked when it resolves, refused `badItem` when it does not | D6 | FFI `add_reads_a_parent_off_its_title_and_refuses_a_dangling_one` |
+| 28 | `tm add` (both paths; the carve-outs without the kernel) wrote a line with a dangling `@parent`, exit 0 | refused before writing, exit 1, `danglingParent` named | D6 | CLI `add_refuses_a_dangling_parent_on_both_paths_and_writes_nothing` |
+| 29 | TUI capture: a dangling `@parent` was a warning and `Enter` saved it | a problem: `Enter` is blocked, "parent @x does not exist — `tm add` refuses a dangling parent" | D6, §17 M7 | `a_dangling_dependency_is_a_warning_and_a_dangling_parent_a_refusal` |
+| 30 | §3.2's prep rule, `effectiveCi`, `rootPrio` answered as if every item were a root | they read the tree | D6 | the three `…_on_a_loaded_plan` witnesses |
+| 31 | check 6: a `file` row was the file loaded alone (33/37) | the file inside its plan's whole-tree load (29/37) | D6 (the owner accepted the harness change) | `corpus.rs`; `round-trip.expected` reblessed for this redefinition only |
+| 32 | an `@label` on a line was never read | read as the id it spells; refused `danglingParent` unless an item carries it | D6; gap 19 unchanged | row 24's theorems (a label is an id nobody carries) |
+
+**Kept names whose statements changed**, recorded: `the_fields_are_the_line` (gains `c.parent
+= d.parent`); `wf_ignores_the_item_fields` (the `parent :=` binder went with the slot);
+`the_kernel_can_read_the_pairs_it_writes` (hypothesis `hpar` removed);
+`the_pre_close_pair_closes_on_a_loaded_plan` (gains `loadsOk … = true`);
+`closePolicy_owes_only_the_child_fold` (its constructor renamed `gap22Parent` → `childFoldB3`,
+the same table).  No name retired.
+
+**The two-run laws (D5).**  None broke.  `close_is_idempotent` (L16), `close_keeps_source_order`
+and `close_keeps_source_order_iff`, the L19 theorems (`autoClose_is_each_grain_once`,
+`autoClose_catches_up_in_one_step`, `autoClose_strands_no_unfinished_line`,
+`autoClose_takes_each_line_at_most_once`, `autoClose_appends_at_most_one_stamp_or_merges_each_line`),
+`closeReport_agrees_with_close_stamping_or_merging`, `move_has_no_inverse_command`,
+`two_closes_at_one_instant_commute_on_skeletons`, `close_week_and_close_month_do_not_commute`
+and `lifecycle_commands_do_not_commute` build unchanged, statement and proof, against the
+derived field: none of them reads `Core.parent`, and a close never changes a line's `@`
+words.  The refutations over the four fixed witnesses (`a_merged_record_is_rewritten_beyond_its_stamp`,
+`a_merged_record_changes_a_remaining_estimate`, `autoClose_merges_a_line_beyond_one_appended_stamp`,
+the stray-tombstone and merge-hypothesis instantiations) are re-checked on the new witnesses
+under their own names.
+
+**Probes, under the 8 GB cap first** (each alone in a scratch copy whose `Boundary.lean` had
+the changed decisions `sorry`ed, imports included; `timeout 120`):
+`the_example_tree_loads_with_its_parents` 8.4 s / 2.23 GB;
+`the_week_close_merges_each_standing_record` 3.4 s / 1.31 GB;
+`the_close_refusals_left_after_d7_are_named_on_loaded_plans` 2.7 s / 1.12 GB;
+`the_demote_verb_merges_into_a_standing_record` 2.6 s / 1.15 GB;
+`the_cycle_tree_fails_parentsAcyclic_only` 2.6 s / 1.14 GB;
+`the_prep_rule_fires_on_a_loaded_plan`, `rootPrio_reads_the_root_on_a_loaded_plan`,
+`effectiveCi_inherits_on_a_loaded_plan`, `the_parent_tree_loads`,
+`the_typo_tree_fails_parentsTotal_only`, `autoClose_merges_m2s_stamps`,
+`the_week_close_floors_m5_at_its_record`, `the_week_close_reports_each_merge`,
+`the_week_close_merges_m2s_stamps_and_reports_one`, `the_merge_hypotheses_hold_together`,
+`the_close_merge_witness_loads` 2.0–2.2 s / 1.0–1.06 GB each; the spec-pair,
+pre-close-pair and stray-tombstone decisions 0.9–1.2 s / 0.75–0.81 GB each; cheats 60 and
+61 together 1.5 s / 0.86 GB, each failing for its stated reason (`decide` proved the
+proposition false).  None was killed.  **Build cost:** `Boundary.lean` 70.8 s at
+`6c2dacb` → **92 s**; the whole `lake build TmKernel:static` **96.4 s at a 7.83 GB peak**
+(73 s / 7.10 GB at `6c2dacb`).
+
+**Gap 22 — closed** at this step, by the owner's D6: `Core.parent` is a view
+(`coreOfLine_parent`, `the_fields_are_the_line`), `parentsTotal` and `parentsAcyclic` fire as
+named whole-tree refusals (`a_typod_parent_refuses_the_whole_tree_by_name`,
+`a_parent_cycle_refuses_the_whole_tree_by_name`), and the rules it said could not fire do
+(`the_prep_rule_fires_on_a_loaded_plan`, `effectiveCi_inherits_on_a_loaded_plan`,
+`rootPrio_reads_the_root_on_a_loaded_plan`).
+
+68. **The week close's overdue route reads the line's own shape, not §3.2's effective
+    shape** (step 2's difference (b), which said "clears with D6"; it does not by itself).
+    `effectiveShape` fires on loaded plans now, but `Core.skel_overdue` reads `c.shape`, so
+    a shapeless prep child whose parent's interval is over is demoted like any open line
+    rather than moved to `# Overdue`, where fork-point `overdue_at` read the effective
+    shape.  Wiring it makes `closeAct`'s input a fact about the tree rather than the
+    entity's skeleton, which re-opens `close_spec`, L16 and the L19 theorems (D5): owed
+    beside B3, not attempted here.
+69. **`parentsAcyclic` walks one chain per record.**  The parent table makes each link a
+    hash lookup rather than a line classification, but the walk is still `n·d` lookups:
+    linear for §4.3's trees (depth ≤ 3), quadratic in the depth of a single chain (the
+    table above: a 2,000-link chain costs 396 ms per verb, 249 ms at `6c2dacb`).  A
+    memoised walk is linear; its `csimp` equality needs the pigeonhole bound without
+    `parentsTotal` (a chain may leave the domain).  Not attempted.
+70. **A host write path can still leave a tree the kernel refuses: a dangling `after:^id`.**
+    `tm add`'s carve-outs write without the kernel.  This step makes both paths refuse a
+    dangling `@parent` (row 28), but `tm add "3 1b Waits on nothing after:^zzzq" --to
+    week/2026-W37.md --section Tasks` still writes the line and exits 0, and the next `tm
+    drop ^a1` is refused `itemCheck: danglingDep` (driven on this step's binary); the TUI
+    capture calls it a warning.  It predates D6 — `afterTotal` has been a load
+    precondition since stage 1 — and is recorded, not fixed.
+71. **`tm-core`'s `grammar_proptest` failed once at `6c2dacb`**:
+    `set_state_and_tag_and_priority`, minimal input `(text, stateful) = ("- 0 ci:0 ci:0",
+    false)` (left `""`, right `"0"`, `tm-core/tests/grammar_proptest.rs:277`), in one full
+    `cargo test --workspace` of a scratch worktree; six reruns on this step's tree passed.
+    The proptest is random-seeded over fork-point `tm-core`, which this step does not
+    touch, so the workspace acceptance can flake on it until the latent case is fixed or
+    pinned.
+
+**Owed, by name (not attempted in this step).**  (1) B3,
+`close_week_folds_a_dropped_child_into_its_parent`, stays in `Goals.lean` (burn-down 30):
+it is unblocked and is the next step, refute-and-rename with the `max` law.  (2) Gaps
+68–71 above.  (3) Gap 19's labels.  (4) The human's 30-minute drive (AGENTS §5.13).
+
+**Re-measured after this step**, every command under the 40 GB cap: `check.sh` **7/7** —
+axiom audit **1717 theorems** (1691 + 26 new, none retired; `grep -c '^#print axioms'
+Check.lean`, its distinct names and the declared theorem count agree), corpus **29/37
+files and 4/5 whole plans** (redefined, above), burn-down **30** (no goal touched; B3's doc
+comment only); `cargo test --workspace` **1007 passed / 0 failed / 0 ignored across 66
+binaries** (+3: `a_typod_parent_refuses_a_kernel_backed_verb_by_name_and_writes_nothing`,
+`add_refuses_a_dangling_parent_on_both_paths_and_writes_nothing`,
+`the_parent_faults_are_named_with_what_to_fix`; one TUI test split and renamed),
+`cli_latency.rs` green; FFI suite **75** (67 kernel + 8 corpus; +6).  Proof : definition
+**4.60 : 1** (17,250 : 3,750; this step 261 : 78), by the stage-4 script
+(`/tmp/claude-1000/proof_ratio.py kernel/TmKernel/TmKernel`).  Gaps run to 71 (new gaps
+start at 72); cheats to 61 (new cheats start at 62).

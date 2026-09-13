@@ -1951,3 +1951,55 @@ open Tm
 #print axioms Tm.a_dated_record_loads_and_a_dated_outcome_does_not
 #print axioms Tm.a_dated_demoted_record_is_a_month_item_with_a_date
 #print axioms Tm.the_example_week_closes_with_d1_in_the_backlog_overdue
+-- ===========================================================================
+-- APPENDED 2026-09-13 (stage-4 final).  Step 3: README gap 22 closed — the owner's
+-- D6.  `Core.parent` is a view of the line (`Field.parentRef`), not a stored slot;
+-- a dangling `@parent` refuses the whole tree `itemCheck: danglingParent`, a cycle
+-- `itemCheck: parentCycle`; §3.2's prep rule, `effectiveCi` inheritance and
+-- `rootPrio` fire on loaded plans.  No name retired.  Kept names whose statements
+-- changed, recorded (README "Stage 4 final", step 3): `the_fields_are_the_line`
+-- (gains `c.parent = d.parent`), `wf_ignores_the_item_fields` (the `parent :=`
+-- binder is gone with the slot), `the_kernel_can_read_the_pairs_it_writes` (its
+-- `parent = none` hypothesis is gone — strictly stronger),
+-- `the_pre_close_pair_closes_on_a_loaded_plan` (gains `loadsOk … = true`: without
+-- it the statement held of a request that no longer loads), and
+-- `closePolicy_owes_only_the_child_fold` (the column's constructor renamed
+-- `gap22Parent` -> `childFoldB3`).  Four close witnesses gained the outcome their
+-- lines name (`specMonthDoc`, `closePreClosePairWitness`, `closeStrayTombWitness`,
+-- `closeMergeWitness`); every theorem over them is re-decided under its own name,
+-- and their audit lines above stand.  No two-run theorem's statement or proof
+-- changed: L16, source order, L19, the report agreement, `move_has_no_inverse_command`
+-- and the commute refutations build unchanged against the derived field.
+-- State.lean / Plan.lean: the view, and `parentsTotal` both ways
+#print axioms Tm.coreOfLine_parent
+#print axioms Tm.parentsTotal_iff
+-- State.lean: `parentRef` skips a line with no `@` word (a new csimp twin, D6's cost)
+#print axioms Tm.Field.kParent_classifyWord
+#print axioms Tm.Field.findSome_kParent_phase3
+#print axioms Tm.Field.findSome_kParent_phase2
+#print axioms Tm.Field.findSome_kParent_phase1
+#print axioms Tm.Field.parentRef_of_no_at
+#print axioms Tm.Field.parentRef_eq_parentRefFast
+-- Fast.lean: one parent table per check, shared by the two parent conjuncts
+-- (`parentsAcyclic_eq_parentsAcyclicFast`, `itemsWf_eq_itemsWfFast` and
+-- `firstItemFault_eq_firstItemFaultFast` keep their names and audit lines above;
+-- their twins now read the table, so their proofs are no longer `rfl`)
+#print axioms Tm.tableStep_fold
+#print axioms Tm.parentStep_of_not_mem
+#print axioms Tm.parentTable_get
+#print axioms Tm.anc_eq_ancIn
+#print axioms Tm.parentsAcyclicIn_eq
+#print axioms Tm.parentsTotalIn_eq
+-- Boundary.lean: the refusals by name, the loads, and the derived fields firing
+#print axioms Tm.loadPlan_itemCheck
+#print axioms Tm.loadPlan_refuses_a_dangling_parent
+#print axioms Tm.loadPlan_refuses_a_parent_cycle
+#print axioms Tm.the_parent_tree_loads
+#print axioms Tm.the_example_tree_loads_with_its_parents
+#print axioms Tm.the_typo_tree_fails_parentsTotal_only
+#print axioms Tm.the_cycle_tree_fails_parentsAcyclic_only
+#print axioms Tm.a_typod_parent_refuses_the_whole_tree_by_name
+#print axioms Tm.a_parent_cycle_refuses_the_whole_tree_by_name
+#print axioms Tm.the_prep_rule_fires_on_a_loaded_plan
+#print axioms Tm.effectiveCi_inherits_on_a_loaded_plan
+#print axioms Tm.rootPrio_reads_the_root_on_a_loaded_plan

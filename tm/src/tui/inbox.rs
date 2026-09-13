@@ -30,10 +30,11 @@
 //!   and it is never the *automatic* target of a line that came from
 //!   `inbox.md`, because triage is meant to get the line out of there.
 //! * [`Capture::problem`] is what `tm add` would refuse (a line that does not
-//!   parse, an `^id` that is taken); [`Capture::warning`] is what `tm check`
-//!   would then complain about (a `@parent` or `after:^id` that names
-//!   nothing). The first blocks `Enter`, the second only colours the preview —
-//!   which is exactly what `tm add` does with the same input.
+//!   parse, an `^id` that is taken, and — since the owner's D6 — a `@parent`
+//!   that names nothing); [`Capture::warning`] is what `tm check` would then
+//!   complain about (an `after:^id` that names nothing). The first blocks
+//!   `Enter`, the second only colours the preview — which is exactly what
+//!   `tm add` does with the same input.
 //!
 //! Below the box, [`inbox_lines`] lists `inbox.md` with the same preview per
 //! line; `t` loads one into the capture line, `x` drops it, and `C` prints the
@@ -412,9 +413,10 @@ pub struct Capture {
     /// makes (a line that does not parse, an `^id` that is already taken).
     pub problem: Option<String>,
     /// A `tm check` problem the line *would* create once saved: a dependency
-    /// or a `@parent` that names nothing (§5.5, §6.1). `tm add` writes such a
-    /// line, so the capture does too — but it says so instead of showing a
-    /// clean green parse.
+    /// that names nothing (§5.5). `tm add` writes such a line, so the capture
+    /// does too — but it says so instead of showing a clean green parse. (A
+    /// `@parent` that names nothing is a [`Capture::problem`] since the
+    /// owner's D6: `tm add` refuses it.)
     pub warning: Option<String>,
 }
 
@@ -516,6 +518,12 @@ fn build(
     if !item.problems.is_empty() {
         return Err(item.problems.join("; "));
     }
+    // The owner's D6: `tm add` refuses a line whose `@parent` names no item
+    // (a tree with one refuses every kernel-backed verb), so the preview
+    // refuses it too rather than promise a save that cannot happen.
+    if let Some(e) = dangling_parent(&item, view) {
+        return Err(e);
+    }
     // §4.1: ids are global across the tree, and `tm add` refuses a line whose
     // `^id` is taken (exit 1) rather than writing a `tm check` duplicate. The
     // preview has to refuse it too, or it promises a save that cannot happen.
@@ -532,16 +540,20 @@ fn build(
     Ok((grammar::format_item_line(&item).map_err(|e| e.to_string())?, dangling(&item, view)))
 }
 
-/// The `tm check` problem the line would create: a `@parent` or an `after:^id`
-/// that names nothing in the tree (§5.5, §6.1). `tm add` writes the line
-/// anyway, so this is a warning, not a refusal.
+/// A `@parent` that names nothing in the tree (§6.1): refused by `tm add` since
+/// the owner's D6 (kernel/README.md gap 22, closed at stage 4 final step 3).
+fn dangling_parent(item: &model::Item, view: &View<'_>) -> Option<String> {
+    let p = item.parent.as_ref()?;
+    (!view.tree.contains(&p.to_id())).then(|| {
+        format!("parent {} does not exist — `tm add` refuses a dangling parent", p.token())
+    })
+}
+
+/// The `tm check` problem the line would create: an `after:^id` that names
+/// nothing in the tree (§5.5). `tm add`'s carve-out path writes the line
+/// anyway, so this is a warning, not a refusal. (A `@parent` that names nothing
+/// is a refusal since the owner's D6 — [`dangling_parent`].)
 fn dangling(item: &model::Item, view: &View<'_>) -> Option<String> {
-    if let Some(p) = &item.parent {
-        let id = p.to_id();
-        if !view.tree.contains(&id) {
-            return Some(format!("parent {} does not exist", p.token()));
-        }
-    }
     for dep in &item.after {
         if let Dep::Item(id) = dep {
             if !view.tree.contains(id) {

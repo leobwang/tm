@@ -38,7 +38,8 @@ same close would take again.  Everything else is read off it.
 **Scoped out of this module, by name** (README stage-4 step-2 block, with gaps
 53–57 for what the fold does refuse or does not write): §6.3's week-row
 "unfinished children are dropped, their remaining folded into the parent's
-`est:`" (needs `Core.parent`, README gap 22 — the `children` column), the day
+`est:`" (the `children` column: `Core.parent` is read off the line since the
+owner's D6, README gap 22 closed, and the fold itself is goal B3), the day
 file's review section (F3, stage 6), and `est:` = remaining beyond the line's
 own reading (the log's minutes and the rollup).  The one estimate a close does
 write is L15's floor from a standing record it merges into (README gap 53,
@@ -114,8 +115,11 @@ comment nobody reads.  (It had a `stage5OnMiss` case for the overdue column
 until the owner's D7 made that column real — `OverdueRule`.) -/
 inductive Owed
   | nothing
-  /-- needs `Core.parent` read off the line — README gap 22, an owner decision -/
-  | gap22Parent
+  /-- the week row's child fold, §6.4's `max` law — goal B3 (`Goals.lean`).  It was
+  `gap22Parent` while `Core.parent` was a stored `none`; since the owner's D6
+  (README gap 22, closed) the parent is read off the line, and what is owed is the
+  fold alone. -/
+  | childFoldB3
 deriving DecidableEq, Repr
 
 /-- What a row does with a dated line that is past due with `on_miss = persist`
@@ -166,7 +170,7 @@ def closePolicy : Grain → ClosePolicy
   | ⟨1, _⟩ => { takes := Status.isOpenBox, disposition := .copy,
                 landing := .demotedSection, stamp := .isoWeek,
                 recurring := .stays, walls := .carried,
-                overdue := .toBacklogOverdue, children := .gap22Parent }
+                overdue := .toBacklogOverdue, children := .childFoldB3 }
   | _      => { takes := Status.isUnsettled, disposition := .move,
                 landing := .sameSection, stamp := .none,
                 recurring := .stays, walls := .carried,
@@ -264,10 +268,11 @@ theorem closePolicy_exemptions :
 
 /-- **The one scope-out left in the table** (restates `closePolicy_owes`, which
 also named the overdue column `stage5OnMiss` until the owner's D7 made it real).
-The week row owes its child fold to gap 22, and no other row owes anything. -/
+The week row owes its child fold (B3; `childFoldB3`, named `gap22Parent` until D6
+closed gap 22), and no other row owes anything. -/
 theorem closePolicy_owes_only_the_child_fold :
-    ∀ g : Grain, ((closePolicy g).children = .gap22Parent ↔ g = week) ∧
-      ((closePolicy g).children = .nothing ∨ (closePolicy g).children = .gap22Parent) := by
+    ∀ g : Grain, ((closePolicy g).children = .childFoldB3 ↔ g = week) ∧
+      ((closePolicy g).children = .nothing ∨ (closePolicy g).children = .childFoldB3) := by
   decide
 
 /-- **D7's column, bridged.**  Only §6.3's week row routes a past-due `persist`

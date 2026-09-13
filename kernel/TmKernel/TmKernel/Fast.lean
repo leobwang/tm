@@ -454,18 +454,129 @@ def pathsDistinctFast (p : PlanCore) : Bool :=
   rw [pathsDistinctFast, pathsFresh_iff _ _ (IdMap.size_empty _)]
   simp [pathsDistinct, IdMap.get_empty]
 
-/-! ## `parentsAcyclic` counts its fuel once
+/-! ## `parentsAcyclic` counts its fuel once, and reads each `@parent` once
 
 `parentsAcyclic` computes `fuel p` — the length of the domain — inside the
 lambda, so once per id: `n²` list steps before a single parent is read.  The twin
-binds it once; the two bodies are the same term up to that `let`, so the
-equality is `rfl`. -/
+binds it once.
 
-def parentsAcyclicFast (p : PlanCore) : Bool :=
+**Since the owner's D6 the walk reads lines.**  `parentStep` was a lookup of a
+stored `none`; it is now a lookup and a classification of the record's tokens
+(`Field.parentRef`), and `anc` takes one step per link, so a record under a
+chain of `d` parents classified `d` lines.  `parentTable` classifies every
+record once into an `IdMap` (`parentTable_get` is its specification, by the same
+fold `Store.compact` uses), and the walk reads the table (`anc_eq_ancIn`).  The
+walk is still one per record: a tree whose chains are `d` links deep costs `n·d`
+table lookups, which is linear for every tree §4.3 describes (outcome, milestone,
+task: `d ≤ 3`) and quadratic only in the depth of one chain (README "Stage 4
+final", step 3, measures both). -/
+
+/-- One step of a table fold: file `f j` under `j` when there is one. -/
+def tableStep {α : Type} (f : Id → Option α) (t : IdMap α) (j : Id) : IdMap α :=
+  match f j with
+  | none   => t
+  | some a => t.insert j a
+
+theorem tableStep_fold {α : Type} (f : Id → Option α) : ∀ (L A : List Id) (t : IdMap α),
+    0 < t.buckets.size → (∀ j, t.get j = if j ∈ A then f j else none) →
+    0 < (L.foldl (tableStep f) t).buckets.size ∧
+      ∀ j, (L.foldl (tableStep f) t).get j = if j ∈ A ∨ j ∈ L then f j else none
+  | [], A, t, hp, hg => ⟨hp, fun j => by simpa using hg j⟩
+  | x :: L, A, t, hp, hg => by
+    simp only [List.foldl_cons]
+    have hp' : 0 < (tableStep f t x).buckets.size := by
+      unfold tableStep; split
+      · exact hp
+      · simpa [IdMap.size_insert] using hp
+    have hg' : ∀ j, (tableStep f t x).get j = if j ∈ x :: A then f j else none := by
+      intro j
+      unfold tableStep
+      split
+      · rename_i hx
+        rw [hg j]
+        by_cases hj : j = x
+        · subst hj; simp [hx]
+        · simp [hj]
+      · rename_i a hx
+        rw [IdMap.get_insert _ _ _ _ hp, hg j]
+        by_cases hj : j = x
+        · subst hj; simp [hx]
+        · simp [hj]
+    obtain ⟨h1, h2⟩ := tableStep_fold f L (x :: A) _ hp' hg'
+    refine ⟨h1, fun j => ?_⟩
+    rw [h2 j]
+    by_cases hjx : j = x
+    · subst hjx; simp
+    · simp [hjx, or_comm]
+
+/-- Every record's parent, classified once. -/
+def parentTable (p : PlanCore) : IdMap Id :=
+  p.store.dom.foldl (tableStep (parentStep p)) (IdMap.empty p.store.dom.length)
+
+theorem parentStep_of_not_mem (p : PlanCore) (j : Id) (h : j ∉ p.store.dom) :
+    parentStep p j = none := by
+  unfold parentStep
+  cases hg : p.store.get j with
+  | none => rfl
+  | some e => exact absurd ((p.store.domSpec j).2 (by simp [hg])) h
+
+theorem parentTable_get (p : PlanCore) (j : Id) : (parentTable p).get j = parentStep p j := by
+  obtain ⟨_, h⟩ := tableStep_fold (parentStep p) p.store.dom [] (IdMap.empty p.store.dom.length)
+    (IdMap.size_empty _) (fun j => by simp [IdMap.get_empty])
+  unfold parentTable
+  rw [h j]
+  by_cases hj : j ∈ p.store.dom
+  · simp [hj]
+  · simp [hj, parentStep_of_not_mem p j hj]
+
+/-- `anc`, walking the table. -/
+def ancIn (t : IdMap Id) : Nat → Id → Option Id
+  | 0,     i => some i
+  | n + 1, i => match t.get i with
+                | none   => none
+                | some j => ancIn t n j
+
+theorem anc_eq_ancIn (p : PlanCore) : ∀ (n : Nat) (i : Id), anc p n i = ancIn (parentTable p) n i
+  | 0,     _ => rfl
+  | n + 1, i => by
+    show (match parentStep p i with
+          | none   => none
+          | some j => anc p n j) = (match (parentTable p).get i with
+          | none   => none
+          | some j => ancIn (parentTable p) n j)
+    rw [parentTable_get]
+    cases parentStep p i with
+    | none => rfl
+    | some j => exact anc_eq_ancIn p n j
+
+/-- `parentsAcyclic`, walking a given table. -/
+def parentsAcyclicIn (t : IdMap Id) (p : PlanCore) : Bool :=
   let n := fuel p
-  p.store.dom.all (fun i => (anc p n i).isNone)
+  p.store.dom.all (fun i => (ancIn t n i).isNone)
 
-@[csimp] theorem parentsAcyclic_eq_parentsAcyclicFast : @parentsAcyclic = @parentsAcyclicFast := rfl
+theorem parentsAcyclicIn_eq (p : PlanCore) : parentsAcyclicIn (parentTable p) p = parentsAcyclic p := by
+  show _ = p.store.dom.all (fun i => (anc p (fuel p) i).isNone)
+  simp only [parentsAcyclicIn, anc_eq_ancIn]
+
+/-- `parentsTotal`, reading a given table. -/
+def parentsTotalIn (t : IdMap Id) (p : PlanCore) : Bool :=
+  p.store.dom.all (fun i =>
+    match t.get i with
+    | none   => true
+    | some j => (p.store.get j).isSome)
+
+theorem parentsTotalIn_eq (p : PlanCore) : parentsTotalIn (parentTable p) p = parentsTotal p := by
+  unfold parentsTotalIn parentsTotal
+  congr 1
+  funext i
+  rw [parentTable_get]
+  cases parentStep p i <;> rfl
+
+def parentsAcyclicFast (p : PlanCore) : Bool := parentsAcyclicIn (parentTable p) p
+
+@[csimp] theorem parentsAcyclic_eq_parentsAcyclicFast : @parentsAcyclic = @parentsAcyclicFast := by
+  funext p
+  exact (parentsAcyclicIn_eq p).symm
 
 /-! ## `sitesInRange` counts the documents once
 
@@ -685,12 +796,18 @@ def shapesWfFast (p : PlanCore) : Bool :=
 
 /-! ## The fold's twins: the same bodies, compiled after the fast conjuncts -/
 
-/-- `itemsWf`, word for word. -/
+/-- `itemsWf`, word for word — but for the two parent conjuncts, which read one
+`parentTable` between them (D6: each record's line is classified for its
+`@parent` once per check, not once per conjunct). -/
 def itemsWfFast (p : PlanCore) : Bool :=
-  normalized p && parentsTotal p && parentsAcyclic p && afterTotal p && afterAcyclic p &&
-    sectionsWf p && shapesWf p
+  normalized p &&
+    (let t := parentTable p
+     parentsTotalIn t p && parentsAcyclicIn t p) &&
+    afterTotal p && afterAcyclic p && sectionsWf p && shapesWf p
 
-@[csimp] theorem itemsWf_eq_itemsWfFast : @itemsWf = @itemsWfFast := rfl
+@[csimp] theorem itemsWf_eq_itemsWfFast : @itemsWf = @itemsWfFast := by
+  funext p
+  simp only [itemsWf, itemsWfFast, parentsTotalIn_eq, parentsAcyclicIn_eq, Bool.and_assoc]
 
 /-- `planWf`, word for word. -/
 def planWfFast (p : PlanCore) : Bool :=
@@ -698,17 +815,22 @@ def planWfFast (p : PlanCore) : Bool :=
 
 @[csimp] theorem planWf_eq_planWfFast : @planWf = @planWfFast := rfl
 
-/-- `firstItemFault`, word for word. -/
+/-- `firstItemFault`, word for word — the two parent conjuncts sharing one
+`parentTable`, as in `itemsWfFast`. -/
 def firstItemFaultFast (p : PlanCore) : String :=
   if !normalized p then "rankCollision"
-  else if !parentsTotal p then "danglingParent"
-  else if !parentsAcyclic p then "parentCycle"
-  else if !afterTotal p then "danglingDep"
-  else if !afterAcyclic p then "depCycle"
-  else if !sectionsWf p then "sectionDiscipline"
-  else "fileKindShape"
+  else
+    let t := parentTable p
+    if !parentsTotalIn t p then "danglingParent"
+    else if !parentsAcyclicIn t p then "parentCycle"
+    else if !afterTotal p then "danglingDep"
+    else if !afterAcyclic p then "depCycle"
+    else if !sectionsWf p then "sectionDiscipline"
+    else "fileKindShape"
 
-@[csimp] theorem firstItemFault_eq_firstItemFaultFast : @firstItemFault = @firstItemFaultFast := rfl
+@[csimp] theorem firstItemFault_eq_firstItemFaultFast : @firstItemFault = @firstItemFaultFast := by
+  funext p
+  simp only [firstItemFault, firstItemFaultFast, parentsTotalIn_eq, parentsAcyclicIn_eq]
 
 /-! ## Every document's lines, bucketed in one pass
 
