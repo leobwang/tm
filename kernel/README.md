@@ -5427,3 +5427,436 @@ counts of AGENTS §6.3 agree at 1520), corpus **33/37 files and 4/5 whole plans*
 test); FFI suite **68** (62 kernel + 6 corpus; +1).  Twelve modules, 25,799
 lines.  Gaps run to 60 (new gaps start at 61); cheats to 54 (new cheats start at
 55).
+
+<!-- ===================================================================
+     APPENDED 2026-09-13 (stage-4 session, rebuild-on-lean).  Stage 4 closed: the proof-to-definition ratio measured, the spec's id sentences match D2, `Goals.lean`'s `# STAGE 4` header corrected.
+     Takes gap 61; no cheat.  Supersedes, by name, the opening block's D2 "Owed, not done here" sentence, step 6's owed items (1)'s scope, (3) and (6)'s status, and step 2's owed "proof-to-definition ratio".
+     =================================================================== -->
+
+## Stage 4 closed, 2026-09-13: the ratio measured, the spec matches D2
+
+Baseline re-measured at `10bae51` before this block, every command under the
+40 GB cap: `check.sh` **7/7** — axiom audit **1520 theorems**, corpus **33/37
+files and 4/5 whole plans**, burn-down **30**; `cargo test --workspace` **997
+passed / 0 failed / 0 ignored across 65 binaries**.  This block changes no Lean
+statement, definition or proof and no Rust: the spec's two id sentences,
+`Goals.lean`'s `# STAGE 4` header comment, AGENTS.md, and this README.
+
+**The proof-to-definition ratio (AGENTS §8.2's "one thing stage 4 owes stage 5").
+The §9.1 stop condition FIRES.**  Proof : definition exceeds 3 : 1 over the whole
+library, in both of stage 4's new modules, and over everything stage 4 added, on
+every reading below.  §9.1's action — stop proving relational laws, keep decidable
+checkers plus the existing proptests — is **the owner's to decide before stage 5
+starts**; no agent takes it or waives it.
+
+*The split, defined before counting.*  The unit is the physical line of the twelve
+library modules `kernel/TmKernel/TmKernel/*.lean` (not `Check.lean`,
+`Negative.lean`, `Goals.lean` or `TmKernel.lean`, which are the audit, the cheats,
+the unproved goals and the imports).  Every line lands in exactly one bucket:
+
+- **blank** — whitespace only;
+- **comment** — no character outside a comment (`--`, `/- -/`, docstrings
+  `/-- -/`, module docs `/-! -/`; nesting and string literals are lexed, so a
+  `"--"` inside a string is code).  A line with code *and* a trailing comment is
+  code;
+- **proof** — a code line of a `theorem`/`lemma`/`example`, its statement **and**
+  its body;
+- **definition** — a code line of a `def`/`abbrev`/`inductive`/`structure`/
+  `instance`/`class`, its signature and its body, `deriving` and
+  `termination_by` included;
+- **scaffold** — `import`, `namespace`, `section`, `end`, `open`, `variable`,
+  `mutual`, a bare `set_option` (67 lines in all; a `set_option … in` or `@[…]`
+  line counts for the declaration it prefixes).
+
+A declaration runs from its keyword at column 0 to the next column-0 command.
+**Decided witnesses stay on the proof side** in the headline, because they are
+theorems; so that nobody has to take that on trust, two sub-buckets are also
+counted and the ratio is given without them: a **witness** is a proof whose
+statement has no binder before its `:` and no `∀`, and whose body uses `decide` or
+`rfl` and no `intro`/`induction`/`cases` (a decided sighting on a concrete value);
+a **fixture** is a `def` with no binder and no arrow in its type, not `@[export]`,
+referenced only by theorems and other fixtures (the data a witness decides on,
+`closeWeekWitness` and its kind).  The reconciliation a skeptic can check: the
+script's proof declarations number 1,520, which is the axiom audit's count (1,519
+audited theorems plus the unaudited `private theorem cancelR`; the audit's
+1,520th name is the `def` `WfPlan`, AGENTS §6.3).
+
+*The command*, from the repository root, with the script below saved as
+`/tmp/claude-1000/proof_ratio.py` (the stage-4 baseline is `a8bb800`, the commit
+the stage opened on; the Lean of `d615bd1` differs from it in `Cal.lean` comments
+only):
+
+```bash
+mkdir -p /tmp/claude-1000/ratio-a8bb800
+for f in $(git ls-tree --name-only a8bb800 kernel/TmKernel/TmKernel/); do
+  git show a8bb800:$f > /tmp/claude-1000/ratio-a8bb800/$(basename $f); done
+python3 /tmp/claude-1000/proof_ratio.py kernel/TmKernel/TmKernel /tmp/claude-1000/ratio-a8bb800
+```
+
+It prints three tables: HEAD, `a8bb800`, and HEAD minus `a8bb800` per module.
+Columns: `raw` = proof / definition; `net` = (proof − witness) / (definition −
+fixture); `+doc` = (proof + its comments) / (definition + its comments), where a
+comment line is attributed to the declaration it stands directly above — a
+sensitivity reading for the objection "the definitions are the documented half",
+not the measurement.
+
+*At `10bae51` (HEAD), per module:*
+
+| module | proof | witness | definition | fixture | comment | blank | raw | net | +doc |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `Arith` | 550 | 36 | 76 | 5 | 281 | 171 | 7.24 | 7.24 | 3.49 |
+| `Boundary` | 2,873 | 445 | 697 | 122 | 1,235 | 447 | 4.12 | 4.22 | 3.13 |
+| `Cal` | 405 | 50 | 75 | 1 | 214 | 134 | 5.40 | 4.80 | 3.12 |
+| `Close` | 1,767 | 4 | 275 | 1 | 423 | 235 | **6.43** | 6.43 | 4.57 |
+| `Cmd` | 698 | 31 | 209 | 0 | 542 | 166 | 3.34 | 3.19 | 1.98 |
+| `Grain` | 95 | 17 | 30 | 0 | 126 | 57 | 3.17 | 2.60 | 1.99 |
+| `Json` | 1,555 | 205 | 388 | 28 | 459 | 228 | 4.01 | 3.75 | 3.01 |
+| `Line` | 4,362 | 159 | 903 | 25 | 627 | 843 | 4.83 | 4.79 | 3.97 |
+| `Plan` | 1,261 | 4 | 359 | 0 | 530 | 288 | 3.51 | 3.50 | 2.42 |
+| `Report` | 332 | 5 | 59 | 0 | 117 | 57 | **5.63** | 5.54 | 4.11 |
+| `State` | 176 | 38 | 102 | 0 | 339 | 124 | 1.73 | 1.35 | 0.99 |
+| `Text` | 542 | 3 | 79 | 0 | 137 | 97 | 6.86 | 6.82 | 4.80 |
+| **library** | **14,616** | 997 | **3,252** | 182 | 5,030 | 2,847 | **4.49** | 4.44 | 3.18 |
+
+(Blank lines include one per file for the text after its final newline; the
+buckets sum to `wc -l`'s 25,800 plus those 12.)
+
+*What it says, in plain words.*
+
+- **The whole library: 4.49 : 1** (14,616 : 3,252); 4.44 : 1 with witnesses and
+  fixtures removed from both sides; 3.18 : 1 even with every docstring counted
+  for the declaration it documents.  **Above 3 : 1 on all three readings.**
+- **Stage 4's new modules on their own: `Close.lean` 6.43 : 1, `Report.lean`
+  5.63 : 1, together 6.28 : 1** (2,099 : 334).  Neither is a witness file — 9
+  witness lines between them — so this is relational proof.  `Close.lean` is the
+  highest-ratio module stage 4 touched and the third-highest in the library,
+  after `Arith.lean` (7.24) and `Text.lean` (6.86).
+- **Everything stage 4 added (HEAD minus `a8bb800`): 4.56 : 1** (2,875 : 630);
+  4.70 : 1 net; 3.39 : 1 with docstrings.
+- **The stage-4 additions to `Boundary.lean`, separated by the same subtraction:
+  2.00 : 1** (570 : 285), and **1.39 : 1 net** — half of those proof lines (285)
+  are decided witnesses on loaded plans and 80 of the definition lines are their
+  fixtures.  This is the one place stage 4 stayed under 3 : 1, and it is under
+  because it is mostly sightings, not laws.  `Line.lean`'s addition
+  (`Field.remainingOf_setDemoted` and its lemmas, step 7) is 206 : 9 — a proof
+  about an existing definition, which is what a ratio cannot price.
+- **It did not cross 3 : 1 in stage 4; it was already over when stage 4 opened.**
+  At `a8bb800` the library measured **4.48 : 1** (11,741 : 2,622; 4.38 net, 3.13
+  with docstrings), and every module but `State.lean` was over 3 : 1 raw.  Stage
+  4's additions, at 4.56 : 1, moved the library from 4.48 to 4.49.  The plan's **1.09 : 1** (222 : 241) was
+  a stage-1 first-slice figure on a package this repository does not hold
+  (`TmArch`, PLAN §2.5), by a method nowhere written down, so the two are not
+  like for like — but no reading of this kernel is near it, and the planning
+  number of 3 : 1 is exceeded by half.
+- **Where the ratio is under 3 : 1:** `State.lean` (1.73 raw), and `Grain.lean`
+  net of its witnesses (2.60).  Nowhere else, on the raw or the net reading.
+
+*What firing means, stated for the owner, not decided here.*  §9.1: "stop proving
+relational laws; keep decidable checkers plus the existing proptests, and say so
+in the README rather than letting the ratio quietly eat the schedule."  Stage 5's
+14 goals are mostly relational (`remaining_sums_the_children`, the priority and
+hysteresis laws, `edf_*`), and stage 6's 15 are the planner's laws.  The trigger
+does not say the proofs so far were wasted, and it does not say which of stage 5's
+goals are checkers in disguise; it says the owner chooses before stage 5 starts.
+
+<details>
+<summary>The script, <code>/tmp/claude-1000/proof_ratio.py</code>, verbatim</summary>
+
+```python
+#!/usr/bin/env python3
+"""Proof : definition line ratio for the tm Lean kernel (AGENTS 8.2 / 9.1).
+
+usage: proof_ratio.py DIR [DIR_OLD]   -- DIR holds TmKernel/*.lean (the library only)
+
+Every physical line is put in exactly one bucket:
+  blank    - whitespace only
+  comment  - no code outside a comment: `--`, `/- -/`, `/-- -/` docstrings, `/-! -/`
+  proof    - a code line of a `theorem`/`lemma`/`example` declaration, statement AND body
+  def      - a code line of a `def`/`abbrev`/`inductive`/`structure`/`instance`/`class`
+             declaration, signature AND body (`deriving`, `termination_by` included)
+  scaffold - `import`, `namespace`, `section`, `end`, `open`, `variable`, `mutual`,
+             a bare `set_option` (a `set_option ... in` or `@[...]` line counts for the
+             declaration it prefixes)
+A declaration runs from its keyword line at column 0 to the next column-0 command.
+Ratios: raw = proof / def.  net = (proof - witness) / (def - fixture).
++doc = (proof + cproof) / (def + cdef), where cproof/cdef are the comment lines
+standing directly before a proof/def (its docstring and any comment above it) --
+a sensitivity reading only; the split above is the measurement.
+Two sub-buckets, so the ratio can be read with and without them:
+  witness  - a proof whose statement has no binders before its `:` and no `∀`, and
+             whose body uses `decide` or `rfl` and no `intro`/`induction`/`cases`:
+             a decided sighting on a concrete value
+  fixture  - a def with no binders and no arrow in its type, not @[export], referenced
+             only by theorems and other fixtures: data for witnesses
+"""
+import re, sys, pathlib, collections
+
+PROOF = {"theorem", "lemma", "example"}
+DEF = {"def", "abbrev", "inductive", "structure", "instance", "class"}
+SCAF = {"import", "namespace", "section", "end", "open", "variable", "mutual",
+        "set_option", "universe", "attribute"}
+MODS = r"(?:(?:private|protected|noncomputable|partial|unsafe)\s+)*"
+HEAD = re.compile(r"^(?:@\[[^\]]*\]\s*)*" + MODS + r"([a-z_]+)\b")
+
+def code_mask(text):
+    """Per line: does it hold any character outside comments (strings are code)?"""
+    has_code, depth, i, n, line = [False], 0, 0, len(text), 0
+    in_str = False
+    while i < n:
+        c = text[i]
+        if c == "\n":
+            has_code.append(False); line += 1; i += 1; continue
+        if in_str:
+            if c == "\\": i += 2; continue
+            if c == '"': in_str = False
+            i += 1; continue
+        if depth:
+            if text.startswith("/-", i): depth += 1; i += 2
+            elif text.startswith("-/", i): depth -= 1; i += 2
+            else: i += 1
+            continue
+        if text.startswith("--", i):
+            j = text.find("\n", i); i = n if j < 0 else j; continue
+        if text.startswith("/-", i): depth = 1; i += 2; continue
+        if c == "'" and (i == 0 or not (text[i-1].isalnum() or text[i-1] in "_'.")):
+            m = re.match(r"'(\\.[^']*|[^\\'])'", text[i:])
+            if m:
+                has_code[line] = True; i += len(m.group(0)); continue
+        if c == '"': in_str = True
+        if not c.isspace(): has_code[line] = True
+        i += 1
+    assert depth == 0 and not in_str, "unbalanced comment or string"
+    return has_code
+
+def decls(path):
+    text = path.read_text()
+    lines, mask = text.split("\n"), code_mask(text)
+    out, cur, prefix = [], None, []   # cur = [kind, name, [line indices]]
+    for k, l in enumerate(lines):
+        if not l.strip():
+            continue
+        if not mask[k]:
+            out.append(("comment", None, [k])); continue
+        m = HEAD.match(l) if not l[0].isspace() else None
+        kw = m.group(1) if m else None
+        if l.startswith("set_option") and l.rstrip().endswith(" in"):
+            prefix.append(k); continue
+        if re.match(r"^@\[[^\]]*\]\s*$", l):
+            prefix.append(k); continue
+        if kw in PROOF or kw in DEF or kw in SCAF:
+            kind = "proof" if kw in PROOF else "def" if kw in DEF else "scaffold"
+            nm = re.match(r"^(?:@\[[^\]]*\]\s*)*" + MODS + kw + r"\s+([^\s:({\[⦃]+)", l)
+            cur = [kind, nm.group(1) if nm and kind != "scaffold" else None, prefix + [k]]
+            prefix = []
+            out.append(cur); continue
+        if cur is None:
+            raise SystemExit(f"{path}:{k+1}: code before any declaration: {l!r}")
+        cur[2].append(k)
+    return lines, out
+
+def main(root):
+    files = sorted(pathlib.Path(root).glob("*.lean"))
+    parsed = {f.stem: decls(f) for f in files}
+    alltext = {f.stem: parsed[f.stem] for f in files}
+    # fixtures: parameterless, non-export defs used only by proofs and other fixtures
+    body = lambda ls, d: "\n".join(ls[k] for k in d[2])
+    defs = {}
+    for mod, (ls, ds) in alltext.items():
+        for d in ds:
+            if d[0] == "def" and d[1]:
+                t = body(ls, d)
+                head = t.split(":=")[0]
+                hdr = head.split(d[1], 1)[1] if d[1] in head else head
+                if ("@[export" not in t and not re.search(r"[({\[⦃]", hdr.split(":")[0])
+                        and "→" not in hdr and "->" not in hdr):
+                    defs.setdefault(d[1], []).append((mod, id(d)))
+    fixtures = set(defs)
+    users = collections.defaultdict(set)   # name -> kinds/names of referencing decls
+    for mod, (ls, ds) in alltext.items():
+        for d in ds:
+            if d[0] not in ("def", "proof"): continue
+            toks = set(re.findall(r"[A-Za-z_][A-Za-z0-9_'.]*", body(ls, d)))
+            for nm in defs:
+                if nm != d[1] and (nm in toks or nm.split(".")[-1] in toks):
+                    users[nm].add((d[0], d[1]))
+    changed = True
+    while changed:
+        changed = False
+        for nm in list(fixtures):
+            if any(k == "def" and u not in fixtures for k, u in users[nm]):
+                fixtures.discard(nm); changed = True
+    rows = {}
+    for mod, (ls, ds) in alltext.items():
+        c = collections.Counter()
+        c["blank"] = sum(1 for l in ls if not l.strip())
+        pending = 0                       # comment lines waiting for the next declaration
+        for d in ds:
+            if d[0] == "comment":
+                pending += 1
+            elif d[0] in ("proof", "def"):
+                c["c" + d[0]] += pending; pending = 0
+            else:
+                pending = 0
+            n = len(d[2]); c[d[0]] += n
+            if d[0] == "proof":
+                t = body(ls, d); stmt = t.split(":=")[0]
+                hdr = stmt.split(d[1], 1)[1] if d[1] and d[1] in stmt else stmt
+                pf = t.split(":=", 1)[-1]
+                if (hdr.lstrip().startswith(":") and "∀" not in stmt
+                        and re.search(r"\b(decide|rfl)\b", pf)
+                        and not re.search(r"\b(intro|intros|induction|cases)\b", pf)):
+                    c["witness"] += n
+            if d[0] == "def" and d[1] in fixtures:
+                c["fixture"] += n
+        rows[mod] = c
+    return rows
+
+def show(rows, label):
+    keys = ["proof", "witness", "def", "fixture", "comment", "cproof", "cdef", "blank", "scaffold"]
+    print(f"== {label}")
+    print(f"{'module':<10}" + "".join(f"{k:>9}" for k in keys) + f"{'raw':>8}{'net':>8}{'+doc':>8}")
+    tot = collections.Counter()
+    for mod, c in sorted(rows.items()):
+        tot.update(c)
+        print(f"{mod:<10}" + "".join(f"{c[k]:>9}" for k in keys) + fmt(c))
+    print(f"{'TOTAL':<10}" + "".join(f"{tot[k]:>9}" for k in keys) + fmt(tot))
+    return tot
+
+def fmt(c):
+    raw = c["proof"] / c["def"] if c["def"] else float("inf")
+    d = c["def"] - c["fixture"]
+    net = (c["proof"] - c["witness"]) / d if d else float("inf")
+    dd = c["def"] + c["cdef"]
+    doc = (c["proof"] + c["cproof"]) / dd if dd else float("inf")
+    return f"{raw:>8.2f}{net:>8.2f}{doc:>8.2f}"
+
+if __name__ == "__main__":
+    now = show(main(sys.argv[1]), sys.argv[1])
+    if len(sys.argv) > 2:
+        old = main(sys.argv[2]); new = main(sys.argv[1])
+        show(old, sys.argv[2])
+        delta = {m: collections.Counter({k: new[m][k] - old.get(m, collections.Counter())[k]
+                 for k in new[m]}) for m in new}
+        show(delta, "delta (DIR minus DIR_OLD)")
+```
+
+</details>
+
+**The spec, for D2.**  `tm-spec-v1.md` §3.1's `Item` listing and §17.2's "Ids:"
+bullet no longer say 4 characters of `[a-z0-9]`.  §3.1: `// alphanumeric, stored
+as ^id; new ids are digits (the kernel's freshId); assigned on first parse`.
+§17.2: new ids are decimal numerals generated by the kernel's proved `freshId`
+(the first numeral from a seed upward that no id in the tree claims, so
+uniqueness is a theorem, L21), and ids already in real files are alphanumeric and
+remain valid — the earlier 4-character ids and §4.3's `^O1` alike; the rest of the
+bullet (assign on first parse, behind `--fix-ids` or the TUI's first load) is
+unchanged.  Nothing else in the spec was touched.  **Supersedes, by name,** the
+opening block's D2 sentence "**Owed, not done here:** the spec text itself still
+says '4 chars' … a one-line spec edit nobody has made" — made.
+
+**Gap 61 — the host's old id generator still mints base-32 ids.**  (1) *Not done:*
+`tm add` goes through the kernel's `freshId` only when `kernel_addable` holds; its
+carve-outs (a `--section`, a non-`[ ]` box, a destination whose last heading is a
+`## series:` section) and `tm check --fix-ids` still call the fork-point
+`IdGen::next_id`, which mints 4-character base-32 ids.  So D2's "ids stay digits"
+holds for the kernel path, not for every id the binary writes.  (2) *Why:* the
+wire's `add` carries a plain title at the end of the file, and `--fix-ids` has no
+kernel verb; routing them through the kernel is the carve-outs' own debt (the
+2026-09-12 "rank, add and the keyed edit" block), not a stage-4 item.  (3) *Cost:*
+none to correctness — both shapes are valid under the weakened spec and
+uniqueness is checked against the tree on both paths — but freshness is a theorem
+only on the kernel path, and the spec's "new ids are decimal numerals" is true of
+`tm add`'s common case, not of every write.  (4) *Clears:* when the carve-outs
+reach the wire (a section on `add`, a box parameter), and `--fix-ids` either
+calls `freshId` or is retired; no owner decision is needed, since D2 already says
+digits.
+
+**`Goals.lean`'s `# STAGE 4` header.**  It quoted PLAN's acceptance row, "the two
+behaviour changes landed with assent", with nothing beside it.  The header comment
+now keeps the quotation and says to read it as **one**, D1, with the withdrawn
+week→month change and where that is recorded, and that one goal of the section
+stands at the stage's close (B3).  No goal statement changed; burn-down 30.  **Left
+as found, and recorded here instead:** two of the section's status notes date the
+refute-and-renames of `close_leaves_no_live_line_in_a_closed_region`,
+`close_never_demotes_a_wall` and `close_writes_every_estimate_through_demoteEst`
+"stage 4 step 6"; this README records them at step 7 (`210daad`).  The notes'
+content is right; the step number is not.
+
+**AGENTS.md, re-measured.**  §8.2's status is rewritten for the stage's close (what
+landed by step and commit, what the acceptance measures clause by clause, what
+remains by name), each named trap is marked with the theorem or commit that closed
+it or with what keeps it open, and "one thing stage 4 owes stage 5" carries the
+ratio and the fired trigger; §9.1 records the firing; §10.1's package table is
+re-measured at `10bae51`; §10.5 marks q8 landed, q2's spec edit done, q9 come due
+(gap 60), and names **q3 / gap 22 as the one open question blocking stage 5**, with
+the §9.1 decision beside it.
+
+**Stage 4's status, in one paragraph.**  Stage 4 is **closed with its debts
+named**.  All four scope items landed: `close` is one fold at three grains over a
+tabulated `ClosePolicy` (`Close.lean`), `autoClose` is one step per grain, `now`
+is on the wire, and D3's per-item report is under `ok.report.closes`
+(`Report.lean`); the shipped `tm close` and the automatic close both go through
+the kernel, and the sixteen-period loop is deleted.  Ten of the stage's eleven
+goals left `Goals.lean` with a proof of what they state or of their negation (four
+as stated, four by refute-and-rename with the narrowed law beside each, two as
+expected refutations), and the stage also closed gap 59 (a close keeps source
+order) and gap 20 for both writers.  The acceptance holds as written at library
+and CLI level — idempotence is `close_is_idempotent` and a zero-byte second close
+through the binary; the three-month-stale tree catches up in one call losing no id
+and no minute in the kernel, over the FFI and through the binary — with one
+behaviour change, D1, taken with the owner's assent.  It does **not** hold for
+§4.3's own example week, which still refuses its week close (gaps 53, 55), and a
+close still writes no `est:` (gap 54).  The proof-to-definition ratio is **4.49 :
+1** and the stop condition has fired.  Re-measured at the end of this block,
+every command under the 40 GB cap: `check.sh` **7/7** — axiom audit **1520
+theorems**, corpus **33/37 files and 4/5 whole plans**, burn-down **30** (0/1/14/15
+across stages 3–6); `cargo test --workspace` **997 passed / 0 failed / 0 ignored
+across 65 binaries**; FFI suite **68** (62 kernel + 6 corpus); twelve modules,
+25,800 lines; archive 4,450,200 bytes.  Gaps run to 61 (new gaps start at 62);
+cheats to 54 (new cheats start at 55).
+
+**Still owed at stage 4's close, each with what it waits on.**
+
+- **The human's 30-minute drive of the shipped binary** (AGENTS §5.13) — of
+  stage 4's `tm close` and automatic close on a real stale tree, and still of
+  stage 3's verbs; no agent drive substitutes for it.  With it, the owner's look
+  at step 6's table of seventeen observable behaviour changes, of which only rows
+  1–2 (D1) and 16 (D3) rest on an owner decision.
+- **The §9.1 decision on the fired ratio trigger** — the owner's, before stage 5.
+- **B3, `close_week_folds_a_dropped_child_into_its_parent`** — waits on gap 22,
+  AGENTS §10.5 q3, the owner's; it is also what blocks stage 5.  §6.3's
+  child-folding clause (`children := .gap22Parent`) and the §6.2 "outcome with an
+  estimate" warning wait on the same decision.
+- **Gap 52** — which month file a late-closed week's `# Demoted` record belongs
+  in; deferred, no consumer (stage 6's review surface at the earliest; the
+  owner's).
+- **Gap 53** — `close week` refuses an item with a standing `# Demoted` record
+  (`alreadyDemoted`); waits on the close's measurement inputs — the block length is
+  on the wire since step 5, the user-set flag and the standing record's remaining
+  are not — from the host or from stage 5's log replay.
+- **Gap 54** — a close writes no `est:` = remaining; stage 5, with the log (F6).
+- **Gap 55** — a dated week line refuses the week close (`badHorizon`); stage 5
+  for the past-due half, an owner decision for the not-yet-due half.
+- **Gap 56** — the kernel half: it cannot create a file or section a close needs
+  (the host half landed at step 6); waits on gap 10's path grammar.
+- **Gap 57** — "still ahead" is day resolution; waits on gap 10.
+- **Gap 58** — `blockMin` is a top-level request field; stage 5's `cfg`.
+- **Gap 60** — the `demote` verb falls back to the end of the file where the close
+  refuses `noSection`; waits on AGENTS §10.5 q9, the owner's.
+- **Gap 61** — the host's old id generator on `tm add`'s carve-outs and
+  `--fix-ids`; waits on those reaching the wire.
+- **§6.3's overdue routing** (`overdue := .stage5OnMiss`) — stage 5 (`on_miss`).
+- **F3**, the closed day file's review section — stage 6.
+- **The month review's churn and cut list onto a report history** (step 6's owed
+  item (6)) — waits on a persisted report history in the log; stage 5 or 6.
+- **AGENTS §10.5 q4, q5, q6, q7** — the owner's, due before stage 5, in stage 5,
+  before stage 6 and in stage 6 respectively.
+
+**Superseded by name.**  Step 6's owed items: (1) "the human's 30-minute drive" —
+still owed, now listed above as stage 4's as well as stage 3's; (3) "the
+proof-to-definition ratio AGENTS §8.2 owes stage 5" — measured above; (6) "moving
+the month review's churn and cut list onto a report history" — still owed, listed
+above.  Step 2's owed "the proof-to-definition ratio AGENTS §8.2 asks for at the
+stage's end" — measured.  The opening block's D2 "Owed, not done here" sentence —
+done.  The opening block's expectation "stage 4 expects to take 10 of its 11 goals
+out of `Goals.lean` … leaving B3 and a burn-down of 30" — met exactly.

@@ -186,7 +186,13 @@ only by `demoteEst`; the stage-4 rollup goals may read either view. -/
 
 Plan §5: "close idempotent at library *and* CLI level; a 3-month-stale tree
 catches up losing nothing; the two behaviour changes landed with assent".
+Read "the two behaviour changes" as **one**: D1, `close day` targets the week
+containing *now* (`closeTo`), taken with the owner's assent on 2026-09-12.  The
+second, "week→month is the month of today", was never a behaviour change —
+fork-point `horizon::close_week` already computes `closeTo week now` — and was
+withdrawn at stage 4 step 1 (README "Stage 4 opens", AGENTS §10.2).
 §4's F1, F2 and F4 are discharged here; B1–B3 are re-owed at the fold level.
+At stage 4's close one goal of this section stands: B3, below, on gap 22.
 ############################################################################ -/
 
 /- **`close` is real (2026-09-12, stage 4 step 2).**  The provisional

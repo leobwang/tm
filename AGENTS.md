@@ -23,6 +23,9 @@ directory the document names; paths are written for the original checkout,
 `/Users/psixyzt/code/planner` — translate them to your clone's root. A figure
 that is a snapshot of another commit says so where it appears. Re-measure before
 quoting a number in a commit message; §10.4 says how.
+*Stage 4's close (2026-09-13, `10bae51`):* §10.1's package table, §8.2's status
+and §10.5 are re-measured there; numbers elsewhere in this document that cite
+`bf7cc63` are that snapshot and say so.
 
 **Nothing is in flight.** `git worktree list` shows the one checkout and no
 other; the `stage-goals`, `orient-demotion` and `wire-fields` worktrees this
@@ -31,7 +34,9 @@ clone. `git branch -a` shows `rebuild-on-lean` and its remote twin and nothing
 else: **`main` is gone** — the owner discarded it on 2026-09-12 (`f386c56`,
 §2.2). Stage 3 is closed out as far as its scope reaches (§8.1 says exactly
 what that means, and what is still owed by name), and stage 4 is unblocked
-(§10.5).
+(§10.5). *Since 2026-09-13 stage 4 is closed with its debts named (§8.2), and
+stage 5 is blocked on two owner decisions: q3 / gap 22 (§10.5) and the
+proof-to-definition stop condition, which fired (§9.1).*
 
 ---
 
@@ -792,7 +797,8 @@ a binary on this branch again, and stage 3's own drives earned their keep: the
 bare-`tm init` tree that no kernel-backed verb could load, the bridge's phantom
 blank line and lost final newline (`e5d38b8`), and gap 45's two readers were all
 found by driving it, not by a proof. The human's 30-minute drive of the stage-3
-binary is still owed (§8.1).
+binary is still owed (§8.1), and so is the stage-4 binary's — `tm close` and the
+automatic close on a real stale tree (§8.2).
 
 ---
 
@@ -1487,44 +1493,52 @@ and the stage's own 40–51 as their paragraphs price them.
 > Cost: 2–3 wk. Worth alone: §6.3 becomes one operation at three grains;
 > F1–F4 and F6 covered.
 
-**Status at stage 4 step 2 (2026-09-12).** Scope items 1 and 2 are landed in
-`TmKernel/Close.lean` (`ClosePolicy`, `close`, `close_spec`); items 3 and 4
-(`autoClose`, `now` on the wire) are not. `close_day_stamps_a_day_stamp` is
-discharged (burn-down 39); narrowed forms of three over-strong goals are proved
-beside them and their refute-and-renames are owed; gaps 53–57 are the step's
-debts. Read kernel/README.md's stage-4 step-2 block before taking the next step.
-*Step 3 (2026-09-12):* `close_is_idempotent` (L16) is discharged as stated, and
-L17 and L27 are refuted and renamed (`close_week_and_close_month_do_not_commute`,
-`lifecycle_commands_do_not_commute`); burn-down 36. L17's orders differ only in
-rank — every line's skeleton commutes (`two_closes_at_one_instant_commute_on_skeletons`).
-README stage-4 step-3 block.
-*Step 4 (2026-09-12):* scope item 3 is landed — `autoClose` is each grain's
-close once, coarsest last (`Close.lean`); L19a and L19b are discharged as
-stated, L19c is refuted and renamed (`autoClose_leaves_lines_in_periods_it_passes`)
-beside its narrowing `autoClose_strands_no_unfinished_line`, and a loaded
-three-month-stale plan is decided catching up with every id kept, one stamp at
-most per line and its summed estimate unchanged; burn-down 33. The shipped
-binary still runs the sixteen-period loop until `close` reaches the wire.
-README stage-4 step-4 block.
-*Step 5 (2026-09-12):* scope item 4 is landed and the report has its shape —
-new module `Report.lean`, D3's named per-item list under `ok.report.closes`,
-tied to the close's result by `closeReport_ids` and
-`closeReport_agrees_with_close`; `now` and `blockMin` are request fields,
-required by the new `close`/`autoClose` ops and refused by name
-(`nowAbsent`, `badNow`, …); the stale-tree acceptance is now also an FFI
-witness. The host decodes and checks every report but sends no close yet
-(step 6). README stage-4 step-5 block.
-*Step 6 (2026-09-12):* the CLI half of the acceptance is landed — `tm close`
-and the automatic close go through `kernel_bridge::apply` (`tm/src/cli/closing.rs`),
-`AUTO_CLOSE_CATCHUP = 16` and `horizon::auto_close` are deleted, and the human
-line, `--json` and the log are read off the kernel's per-item report. Ten
-binary-level tests (`tm/tests/cli_close_kernel.rs`): closing twice changes zero
-bytes, the three-month-stale tree catches up losing nothing (1005 minutes before
-and after), the fourteen-day case stamps once, and the owner's four D1 scenarios.
-Seventeen observable behaviour changes are tabled next to the rules they replace;
-the costs of gaps 53 and 55 are now in the shipped binary (§4.3's own tree refuses
-its week close); new gap 59 (a close lands lines in reverse source order). No
-Lean touched. README stage-4 step-6 block.
+**Status at stage 4's close (2026-09-13, `10bae51` plus the closing docs commit).**
+All four scope items are landed and the stage is closed with debts, by name.
+*What landed, by step:* (2, `50f11e3`) `Close.lean` — `ClosePolicy` tabulated by
+`Grain`, `close` as one fold into `closeTo g now`, `close_spec`;
+`close_day_stamps_a_day_stamp` discharged. (3, `b605bfe`) `close_is_idempotent`
+(L16) as stated; L17 and L27 refuted and renamed
+(`close_week_and_close_month_do_not_commute`, `lifecycle_commands_do_not_commute`).
+(4, `41792e8`) `autoClose` is each grain's close once, coarsest last; L19a and L19b
+as stated, L19c refuted (`autoClose_leaves_lines_in_periods_it_passes`) beside
+`autoClose_strands_no_unfinished_line`. (5, `d7487b2`) `Report.lean` — D3's
+per-item list under `ok.report.closes`, tied to the close by `closeReport_ids` and
+`closeReport_agrees_with_close`; `now` and `blockMin` on the wire. (6, `5557713`)
+`tm close` and the automatic close are kernel-backed (`tm/src/cli/closing.rs`);
+`AUTO_CLOSE_CATCHUP = 16` is deleted. (7, `210daad`) the last three over-strong
+goals refuted and renamed, each with its narrowed law
+(`close_leaves_no_line_it_would_take`, `close_never_demotes_a_wall_but_may_carry_it`,
+`close_rewrites_a_line_only_by_stamping_it`, `close_keeps_every_remaining_estimate`).
+(8, `ea08382`) gap 59 closed — `close_keeps_source_order`. (9, `10bae51`) gap 20's
+remainder — the `demote` verb files into `# Demoted` through the close's landing;
+new gap 60. Ten of the stage's eleven goals are gone from `Goals.lean`, each with a
+proof of its statement or of its negation; burn-down 40 → **30**.
+
+*What the acceptance measures, clause by clause:* "close idempotent at library
+level" is `close_is_idempotent` on `WfPlan`; "at CLI level" is
+`closing_twice_changes_zero_bytes_the_second_time` through the built binary
+(`tm/tests/cli_close_kernel.rs`); "a 3-month-stale tree catches up losing
+nothing" is `autoClose_catches_up_in_one_step` in general, decided on a loaded
+plan (`the_stale_tree_catches_up_in_one_call`), pushed through `String → String`
+(`a_three_month_stale_tree_catches_up_in_one_call_and_reports_each_line`) and
+through the binary (`a_three_month_stale_tree_catches_up_losing_nothing`, 1005
+minutes before and after); "the two behaviour changes landed with assent" is one
+change, D1, taken by the owner after driving stale trees. *What it does not
+measure:* §4.3's own example week still refuses its week close (gaps 53, 55); a
+close writes no `est:` (gap 54); the human's 30-minute drive (§5.13) has not
+happened.
+
+*What remains, by name:* B3 `close_week_folds_a_dropped_child_into_its_parent`
+(waits on §10.5 q3 / gap 22, the owner's); gaps 52 (deferred, no consumer), 53, 54
+(stage 5), 55 (stage 5 and an owner decision), 56 (kernel half: gap 10), 57
+(gap 10), 58 (stage 5's `cfg`), 60 (q9, the owner's), 61 (the host's old id
+generator); §6.3's overdue routing (stage 5) and F3 (stage 6); the human drive.
+**The proof-to-definition ratio is measured, and the §9.1 stop condition fires:**
+4.49 : 1 over the library, 6.43 : 1 in `Close.lean`, 5.63 : 1 in `Report.lean`,
+4.56 : 1 over everything stage 4 added — the owner decides before stage 5 whether
+to stop proving relational laws. Method, script and every figure: README
+"Stage 4 closed".
 
 **Scope, concretely.**
 
@@ -1587,7 +1601,8 @@ It is open question 8 in §10.5, because "what a close reports" is a product
 decision, not a proof. *Answered 2026-09-12 (§10.5 q8): a per-item list — id,
 disposition, destination, stamp, minutes as integer numerator/denominator — not
 counts only, and not stage 6's full diagnostics surface yet.* The four rules
-above still govern its shape.
+above still govern its shape. **Landed:** `Report.lean`, `d7487b2` (`closeReport_ids`,
+`closeReport_agrees_with_close`).
 
 **Depends on.** Stage 1, all built and compiled: `coarsen_month = rfl`,
 `closeTo_target_is_open`, `demotion_target_follows_the_closed_region`,
@@ -1647,6 +1662,9 @@ Plus the corpus ratchet, plus 30 minutes driving whatever binary exists (§5.13)
   is **deferred out of stage 4** by name (README stage-4 block). Repaired at
   stage 4 step 1: this bullet, §10.5 q1, `Cal.lean`'s header; the README
   supersedes its own cheat row 24 and tie-break section by name.
+  **Closed:** D1 recorded at `d615bd1`, built at `50f11e3` (`close` targets
+  `closeTo` at every grain), shipped at `5557713`; `Goals.lean`'s `# STAGE 4`
+  header reads "two" as one since the stage's closing docs commit.
 - **If assent is refused, L16 may not be provable.** The idempotence argument is:
   after the fold, no entity's live site is in a closed region of grain `g`, so
   the second run folds over the empty set — which is `closeTo_target_is_open`.
@@ -1656,10 +1674,12 @@ Plus the corpus ratchet, plus 30 minutes driving whatever binary exists (§5.13)
   L16 gets.* *Proved at step 3. For one grain the old rule would have broken it
   at month only; at day and week it breaks across grains (L19b) — README
   stage-4 step-3 block, read off the definitions.*
+  **Closed:** `close_is_idempotent`, `b605bfe`.
 - **L17 is an expected refutation, and a refutation is a deliverable.**
   `close week ∘ close month` is not expected to commute. *Refuted at step 3 —
   through rank in the shared `# Demoted`, not through one close seeing the
   other's output, which D1 rules out.*
+  **Closed:** `close_week_and_close_month_do_not_commute`, `b605bfe`.
 - **Four stage-4 goals are stated stronger than §6.3 allows**, and the repair is
   refute-and-rename (§3.2), never a weakened predicate:
   `close_leaves_no_live_line_in_a_closed_region` and
@@ -1671,6 +1691,7 @@ Plus the corpus ratchet, plus 30 minutes driving whatever binary exists (§5.13)
   *All four refuted and renamed: `autoClose_runs_every_period_it_passes` at step
   4, the other three at step 7 (README "Stage 4 step 7"), each on a loaded plan
   with its narrowed law beside it.*
+  **Closed:** `41792e8` and `210daad`.
 - **`demote` must learn to target a *section*** (gap 20). §6.3 files the
   copy into `month/<current>#Demoted`; today `demote` lands it at `freshRank`.
   This changes `demote`, its `normalized`-preservation lemma, and `sectionsWf`.
@@ -1679,6 +1700,10 @@ Plus the corpus ratchet, plus 30 minutes driving whatever binary exists (§5.13)
   *Status (step 2): landed for `close`'s week row (a rank shift makes room in
   `# Demoted`); the `demote` wire verb still lands at `freshRank`, `sectionsWf`
   is unchanged (§10.5 q9), and the warning still needs `parent` (gap 22).*
+  **Closed for both writers:** the close's week row at `50f11e3`, the `demote`
+  verb at `10bae51` (`demoteSpot_is_the_week_close_landing`). Still open, by
+  name: `sectionsWf` does not demand a `[-]` sit under `# Demoted` (q9, gap 60),
+  and the §6.2 warning waits on gap 22.
 - **Stage 4 *is* the code that writes the legitimately-differing pair**
   (gap 31). The named fix is a second `RawItem` on `Core` for the
   tombstone, set by `demote` and cleared by `readopt`, with `renderCore` reading
@@ -1687,11 +1712,14 @@ Plus the corpus ratchet, plus 30 minutes driving whatever binary exists (§5.13)
   *Status (step 2): subsumed — that `RawItem` is `Tomb.line`; `close` writes the
   differing pair through `demote`, and neither `orientPair` nor
   `demotionsOriented` changed.*
+  **Closed:** subsumed at `50f11e3`.
 - **Backlog orientation is fine, and here is why.** `horizonPrecedes (some _)
   none = true`, so every bounded region precedes backlog: a close that files
   overdue work into `backlog.md#Overdue` leaves the tombstone (in the week)
   legitimately preceding the live line (in backlog). `demotionsOriented` will not
   refuse it. Worth knowing because the opposite is the natural guess.
+  *Not exercised at stage 4:* no close files into backlog yet, because the
+  overdue routing is scoped out to stage 5 (next trap).
 - **Two rows of §6.3 need things stage 5 owns.** "Dated items past due with
   `persist` → `backlog.md#Overdue`" needs `due:` evaluation and §5.3's `on_miss`;
   "unfinished children are dropped, their remaining folded into the parent's
@@ -1699,24 +1727,48 @@ Plus the corpus ratchet, plus 30 minutes driving whatever binary exists (§5.13)
   pull them forward or scope them out **by name** in the README.
   *Status (step 2): scoped out, and visible in the table itself — the week row's
   `overdue := .stage5OnMiss` and `children := .gap22Parent`.*
+  **Open by name at the stage's close:** stage 5 (`on_miss`) and gap 22 (B3).
 - **F3 is missed until stage 6.** `close day` replacing a written review with
   `review pending` needs generated-block ownership. Stage 4 covers F1, F2, F4, F6
   — do not claim §6.3 complete.
+  **Still open:** F3 is stage 6's. F6 is covered only in part: a close loses
+  no estimate (`close_keeps_every_remaining_estimate`, `210daad`), but writes no
+  `est:` = remaining (gap 54, stage 5).
 - **Recurring items and calendar intervals are never demoted** (§6.3's last
   paragraph). That is a `ClosePolicy` exemption.
+  **Closed:** `closePolicy_exemptions` (`50f11e3`) and
+  `close_never_demotes_a_wall_but_may_carry_it` (`210daad`), which covers
+  recurring lines as well as walls.
 - **`demote` is deliberately not idempotent**, because the month review's cut
   list is "≥ 2 stamps" and stamps accumulate on purpose. The stamp must reach the
   file — see §5.3 for the bug where it did not.
+  **Closed:** `close_day_stamps_a_day_stamp` (`50f11e3`) and
+  `close_rewrites_a_line_only_by_stamping_it`; within one catch-up,
+  `autoClose_stamps_each_line_at_most_once` (`41792e8`).
 - **Two idempotences must not be conflated.** §6.3's "runs automatically on the
   first command after the period ends (idempotent; recorded in `state.json`)" is
   a Rust fact about a `closed` map. L16's `close g` idempotence is a fact about
   the fold on `WfPlan`. Only the second is a kernel theorem.
+  **Kept apart:** L16 is `close_is_idempotent` (`b605bfe`); the Rust half is the
+  binary test `closing_twice_changes_zero_bytes_the_second_time` (`5557713`), a
+  test and not a theorem.
 
-**Inherited debt.** Gaps 2, 3, 16, 17, 20, 22, 31.
+**Inherited debt.** Gaps 2, 3, 16, 17, 20, 22, 31. *At the stage's close:* 20
+closed for both writers (`50f11e3`, `10bae51`), its `sectionsWf` half now gap 60;
+31 subsumed (`50f11e3`); 22 still the owner's (q3).
 
 **One thing stage 4 owes stage 5.** Measure the proof-to-definition ratio at the
 end of this stage and write it in the README. It is a stop-condition trigger
 (§9.1) and stage 5 needs it before it starts.
+**Measured at stage 4's close, and the trigger FIRES** (README "Stage 4 closed",
+with the script): proof : definition is **4.49 : 1** over the twelve library
+modules (4.44 : 1 with decided witnesses and their fixture data taken out of both
+sides), **6.43 : 1** in `Close.lean`, **5.63 : 1** in `Report.lean`, and
+**4.56 : 1** over every line stage 4 added. It was already **4.48 : 1** when stage
+4 opened (`a8bb800`), so the plan's 1.09 : 1 had not described the kernel for some
+time. §9.1's action is not an agent's to take quietly: the owner decides, before
+stage 5 starts, whether stage 5 stops proving relational laws and keeps decidable
+checkers plus the existing proptests.
 
 ---
 
@@ -2014,6 +2066,12 @@ Named in advance so that stopping is a decision and not a capitulation.
 | Two consecutive Lean upgrades each cost more than a day of proof repair | any | freeze the toolchain and treat the kernel as a fixed artifact, or fall back to a design-time model |
 | After stage 3: a clean exhaustive **depth-3** sweep, plus 60 days of use with no new defect in the covered class | 3 | **the bug class is gone.** Stages 5–6 then buy uniformity, not soundness. *"That is a legitimate reason to stop, and it should be stated out loud if it happens"* |
 
+**The first row fired at stage 4's close (2026-09-13):** 4.49 : 1 over the
+library, 6.43 : 1 in `Close.lean`, 5.63 : 1 in `Report.lean`, measured by a
+script a skeptic can rerun (README "Stage 4 closed"). The action is the owner's
+to take before stage 5 starts; nothing in stage 5 should begin by proving a
+relational law until it is taken.
+
 That last row has the most leverage and the least infrastructure behind it
 (§8.1's last trap) — and since `main`'s discard, no harness at all:
 `invariant_exhaustive.rs` went with it, so the sweep must be rebuilt against the
@@ -2070,41 +2128,51 @@ as 'tm becomes verified' is overstating it by a factor of three."*
 
 ## 10. Reference
 
-### 10.1 The package, measured at `bf7cc63` on 2026-09-12
+### 10.1 The package, re-measured at `10bae51` on 2026-09-13 (stage 4's close)
 
 The theorem column counts declarations including `@[simp] theorem`, which is what
-§6.3's third command counts and what reconciles with the audit. The `c8f3a38`
-column is the previous stamp, kept so the growth is visible.
+§6.3's third command counts and what reconciles with the audit. The `bf7cc63`
+column is the previous stamp (stage 3's close), kept so stage 4's growth is
+visible. Rows stage 4 did not touch are unchanged from that stamp and marked so.
 
-| module | lines | theorem declarations | at `c8f3a38` (lines / theorems) |
+| module | lines | theorem declarations | at `bf7cc63` (lines / theorems) |
 |---|---:|---:|---:|
-| `Line.lean` | 6,494 | 481 | 6,190 / 463 |
-| `Boundary.lean` | 3,909 | 161 | 1,939 / 82 |
-| `Json.lean` | 2,641 | 126 | — (new, `c2ad8f6`) |
-| `Plan.lean` | 2,435 | 132 | 2,033 / 106 |
-| `Cmd.lean` | 1,609 | 82 | 847 / 44 |
-| `Arith.lean` | 1,079 | 90 | 1,079 / 90 |
-| `Text.lean` | 857 | 46 | 708 / 40 |
-| `Cal.lean` | 823 | 105 | 823 / 105 |
-| `State.lean` | 745 | 46 | 745 / 46 |
-| `Grain.lean` | 310 | 30 | 310 / 30 |
-| **ten modules** | **20,902** | **1,299** (1,298 real; one is a docstring line) | 14,674 / 1,006 (nine modules) |
-| `TmKernel.lean` | 10 | — (the ten imports; §2.3) | 9 |
-| `Check.lean` | 1,469 | — (1,299 `#print axioms` lines, 1,299 distinct names, 16 `APPENDED` banners) | 1,102 |
-| `Negative.lean` | 592 | — (cheats 1–49 plus a letter block A–F, 27–30 duplicated) | 510 |
-| `Goals.lean` | 751 | — (40 goals with `sorry`, 0/11/14/15 by stage; not imported) | 834 |
-| **total** | **23,724** | | 17,129 |
+| `Line.lean` | 6,747 | 494 | 6,494 / 481 |
+| `Boundary.lean` | 5,256 | 215 | 3,909 / 161 |
+| `Close.lean` | 2,703 | 130 | — (new, `50f11e3`) |
+| `Json.lean` | 2,641 | 126 | 2,641 / 126 (unchanged) |
+| `Plan.lean` | 2,442 | 132 | 2,435 / 132 |
+| `Cmd.lean` | 1,618 | 82 | 1,609 / 82 |
+| `Arith.lean` | 1,079 | 90 | 1,079 / 90 (unchanged) |
+| `Text.lean` | 857 | 46 | 857 / 46 (unchanged) |
+| `Cal.lean` | 833 | 105 | 823 / 105 (comments only) |
+| `State.lean` | 745 | 46 | 745 / 46 (unchanged) |
+| `Report.lean` | 569 | 24 | — (new, `d7487b2`) |
+| `Grain.lean` | 310 | 30 | 310 / 30 (unchanged) |
+| **twelve modules** | **25,800** | **1,520** (one is a docstring line in `Cmd.lean`; the grep skips `Arith.lean`'s `private theorem cancelR`) | 20,902 / 1,299 (ten modules) |
+| `TmKernel.lean` | 12 | — (the twelve imports; §2.3) | 10 |
+| `Check.lean` | 1,729 | — (1,520 `#print axioms` lines, 1,520 distinct names — 1,519 theorems plus `WfPlan`, §6.3 — and 20 `APPENDED` banners) | 1,469 |
+| `Negative.lean` | 643 | — (cheats 1–54 plus a letter block A–F, 27–30 duplicated) | 592 |
+| `Goals.lean` | 717 | — (30 goals with `sorry`, 0/1/14/15 by stage; not imported) | 751 |
+| **total** | **28,901** | | 23,724 |
 
-Archive: `libTmKernel_TmKernel.a`, 3,704,386 bytes (1,759,720 at `c8f3a38`).
-FFI crate: `shim.c` 66 + `build.rs` 69 + `src/lib.rs` 57 = 192 lines (185 at
-`c8f3a38`; `build.rs` gained the Linux rpath, `0c3aaf7`); tests `kernel.rs` 942
-lines and `corpus.rs` 556 plus `tests/harness/mod.rs` 486. FFI tests: 57 + 6 = 63
-(26 + 6 = 32 at `c8f3a38`). Host side: `tm/src/cli/kernel_bridge.rs` 756 lines,
-`tm/build.rs` 40. `check.sh`: **seven** checks, 1.1 s warm (1.13/1.11/1.10/1.10 s
-over four consecutive capped runs). `cargo test --workspace`: **984 passed / 0
-failed / 0 ignored across 64 test binaries**, 4.9 s warm, capped (§7.5).
-`cargo build -p tm` into an empty target directory, Lean archive already built:
-18.1 s, capped.
+Proof : definition, by the line-classification script in the README's "Stage 4
+closed" block: **4.49 : 1** over the twelve modules (14,616 proof lines : 3,252
+definition lines), 6.43 : 1 in `Close.lean`, 5.63 : 1 in `Report.lean` — above
+§9.1's 3 : 1, so that trigger has fired.
+
+Archive: `libTmKernel_TmKernel.a`, 4,450,200 bytes (3,704,386 at `bf7cc63`).
+FFI crate: `shim.c` 66 + `build.rs` 69 + `src/lib.rs` 57 = 192 lines (unchanged
+since `bf7cc63`); tests `kernel.rs` 1,108 lines and `corpus.rs` 556 plus
+`tests/harness/mod.rs` 486. FFI tests: 62 + 6 = **68** (57 + 6 = 63 at
+`bf7cc63`). Host side: `tm/src/cli/kernel_bridge.rs` 1,181 lines (756),
+`tm/src/cli/closing.rs` 524 (new, `5557713`), `tm/tests/cli_close_kernel.rs` 613
+(new), `tm/build.rs` 40. `check.sh`: **seven** checks, 1.1 s warm (1.13/1.15 s
+over two consecutive capped warm runs after a 1.99 s run that re-elaborated
+`Goals.lean`). `cargo test --workspace`: **997 passed / 0 failed / 0 ignored
+across 65 test binaries**, capped (§7.5). Not re-measured at stage 4's close, and
+still quoted from `bf7cc63`: `cargo build -p tm` into an empty target directory,
+18.1 s.
 
 `build.rs` runs `lean --print-prefix` **inside** the Lean package so it honours
 `lean-toolchain`, then `lake build TmKernel:static`, then compiles `shim.c`, and
@@ -2136,7 +2204,7 @@ Check these before you quote them.
 | "`lake build` from clean 1.6 s; `cargo test` from clean 3.6 s" | `kernel/README.md` header | not re-measured at `c8f3a38` or `bf7cc63`, and certainly not true of today's 20,902-line kernel. The warm numbers in §10.1 are, plus `cargo build -p tm` into an empty target directory with the archive built: 18.1 s |
 | "Five separate Rust code paths" / "six entrances to one hole" | in circulation, and in an earlier version of this document | **six catalogued defects (PLAN §4.A rows A1–A6), five of them patched entrances, one hole, one precondition.** §1 settles which number means what; the harness says *five* entrances |
 | "943 tests" | in circulation | not sourced anywhere **as a claim about proofs**. 943 is `horizon.rs:943`, the line of `move_line`. The documented figure is line counts: tm-core has 19,298 test lines (re-measured on the restored tree: still 19,298), of which the kernel-area files are 9,497 (49%) — *"the tests proofs substantially replace"*. **A second, real 943 now exists and must not be confused with it:** `cargo test --workspace` passed 943 tests at the restore, `835d960` (984 at `bf7cc63`) |
-| "a week→month behaviour change" needing assent; "the month of today" as `horizon.rs:1543`'s rejected rule | AGENTS §8.2 trap (b), §10.5 q1's second half; `Cal.lean`'s header; `kernel/README.md`'s "month of today" row (24) and its week → month tie-break section — all from `6f67873` | **there is no such behaviour change.** `horizon::close_week` already computes `closeTo week now`; `monthOfIsoWeek` names the month a week belongs to and is not the close rule, as `Grain.lean` says. q1's second half is **withdrawn** (§10.5). **Repaired at stage 4 step 1:** §8.2's trap, §10.5 q1 and `Cal.lean`'s header corrected; the README supersedes its row 24 and "Rejected" paragraph by name in its stage-4 block. Left as history, and to be read as wrong on this point: `Negative.lean`'s `CHEAT 24` banner (§6.2), and the origin, PLAN §3.2(b), with PLAN §6.2 q1's and stage-4 row's "two behaviour changes" (quoted in `Goals.lean`'s `# STAGE 4` header) — there is one, D1 |
+| "a week→month behaviour change" needing assent; "the month of today" as `horizon.rs:1543`'s rejected rule | AGENTS §8.2 trap (b), §10.5 q1's second half; `Cal.lean`'s header; `kernel/README.md`'s "month of today" row (24) and its week → month tie-break section — all from `6f67873` | **there is no such behaviour change.** `horizon::close_week` already computes `closeTo week now`; `monthOfIsoWeek` names the month a week belongs to and is not the close rule, as `Grain.lean` says. q1's second half is **withdrawn** (§10.5). **Repaired at stage 4 step 1:** §8.2's trap, §10.5 q1 and `Cal.lean`'s header corrected; the README supersedes its row 24 and "Rejected" paragraph by name in its stage-4 block. Left as history, and to be read as wrong on this point: `Negative.lean`'s `CHEAT 24` banner (§6.2), and the origin, PLAN §3.2(b), with PLAN §6.2 q1's and stage-4 row's "two behaviour changes" (quoted in `Goals.lean`'s `# STAGE 4` header, which since stage 4's closing docs commit says to read it as one) — there is one, D1 |
 | `main` is the oracle; `git checkout main -- tm-core Cargo.toml Cargo.lock`; `git show main:…` | earlier versions of this document; `tm/DORMANT.md`'s old text; `kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh` (comments and `git archive main`); README gap 36 | `main` is discarded (`f386c56`). The oracle is `4748911`; the restore ran from it (`835d960`); the oracle scripts still say `main` and fail (§7.3) |
 | "The branch has no Rust kernel"; "there is currently no binary to drive"; README gap 14 "Nothing in the shipped `tm` binary calls this yet" | earlier versions of §2.2 and §5.13; `kernel/README.md` gap 14 | the workspace is restored and the `tm` binary calls the kernel for seven verbs (`d8e8d4d`, `bd61f11`) |
 | `tm/DORMANT.md`: the rewiring "is underway", A6 open "until the kernel-backed wiring lands" | `tm/DORMANT.md` | the wiring landed; the file is superseded by the README's 2026-09-12 block |
@@ -2191,22 +2259,26 @@ Carry these forward; none is yours to settle alone. Answers the owner has given
 are recorded here, with the date and the evidence they were taken on; per §4
 they are settled, and changing one needs the owner again.
 
-| # | question | due | status at `bf7cc63` |
+| # | question | due | status at stage 4's close (`10bae51`, 2026-09-13) |
 |---|---|---|---|
 | 1 | The two close behaviour changes — and by **constructing a stale tree and closing it**, not by reading | before stage 4 | **First half ANSWERED 2026-09-12 (D1):** `close day` targets the week containing *now* — the kernel's `closeTo` — decided after driving stale trees with the restored binary (skipping a weekend double-stamped leftovers onto the month cut list and dropped them off Monday's plan; an item whose parent was in the closing week was deleted, its minutes silently absorbed; a day closed more than 16 days late stranded work in a sealed file). Package: the stamp stays `demoted:D<dd>`; `AUTO_CLOSE_CATCHUP = 16` collapses to one step per grain. Evidence and mechanism: `kernel/README.md`'s stage-4 block (D1). **Second half WITHDRAWN:** the week→month "behaviour change" does not exist — `horizon::close_week` already computes `closeTo week now` (checked by `decide` on four dates; `rfl`-equal to `monthOfWeekByToday`) (§10.2's row; §8.2's trap). The sites were repaired at stage 4 step 1; the residual "which month file holds a week's `# Demoted` record" is README gap 52, **deferred** out of stage 4 (no consumer) |
-| 2 | `Id`'s shape — the recorded resolution is weaken the spec, not tighten the data | stage 3 | **ANSWERED 2026-09-12 (D2):** ids stay digits (`freshId`'s `^9`, `^10`); spec §3.1's "4 chars of `[a-z0-9]`" width sentence is weakened to match. Closes gap 13 |
-| 3 | `parent`: derive the field and demote `parentsTotal` to a report, or keep it stored and have no hierarchy (gap 22) | **before stage 5, blocking** | **open** — also what B3 needs to fire in stage 4 |
+| 2 | `Id`'s shape — the recorded resolution is weaken the spec, not tighten the data | stage 3 | **ANSWERED 2026-09-12 (D2):** ids stay digits (`freshId`'s `^9`, `^10`); spec §3.1's "4 chars of `[a-z0-9]`" width sentence is weakened to match. Closes gap 13. *The spec edit landed at stage 4's closing docs commit* (§3.1's `Item` listing, §17.2's "Ids:" bullet); the host's old generator still mints base-32 ids on `tm add`'s carve-outs and `--fix-ids` (README gap 61) |
+| 3 | `parent`: derive the field and demote `parentsTotal` to a report, or keep it stored and have no hierarchy (gap 22) | **before stage 5, blocking** | **open — the one question in this table that blocks stage 5.** B3 (`close_week_folds_a_dropped_child_into_its_parent`) stands in `Goals.lean` on it at stage 4's close, and §6.3's child-folding clause is scoped out of the close on it (`children := .gap22Parent`) |
 | 4 | Which side replays the log | before stage 5 | **open** — and `move_has_no_inverse_command` makes replay the only correct `tm undo` |
 | 5 | R7: where the `p_lounge` capacity mixture rounds (gap 26) | stage 5, consumed by 6 | **open** |
 | 6 | L24 / L25: prove, or keep the 882-line proptest and say so | **before stage 6 starts** | **open**; the proptest is restored and runs (`tm-core/tests/planner_invariants.rs`) |
 | 7 | Lifecycle commutation (R7 in the law list) — L27 surfaces it and does not answer it | stage 6 | **open** — L27 is refuted (stage 4 step 3) by a demote/readopt precondition pair, which does not bear on whether pairs that both succeed should commute |
-| 8 | What `report` carries, and therefore its shape (§8.2). Nothing in the kernel names it today | before stage 4 writes one | **ANSWERED 2026-09-12 (D3):** a per-item list — id, disposition, destination, stamp, minutes as integer numerator/denominator. Not counts only (the month review would re-derive per-item history from the files, a second reader of one fact), and not stage 6's full diagnostics surface yet. No code exists |
-| 9 | Whether the kernel should refuse a `[-]` outside a week file or `month/…# Demoted`, as `tree.rs` does — a behaviour change (gap 31, §8.1) | stage 3 | **open**, not taken in stage 3; now due when stage 4 gives `demote` a section target |
+| 8 | What `report` carries, and therefore its shape (§8.2). Nothing in the kernel names it today | before stage 4 writes one | **ANSWERED 2026-09-12 (D3):** a per-item list — id, disposition, destination, stamp, minutes as integer numerator/denominator. Not counts only (the month review would re-derive per-item history from the files, a second reader of one fact), and not stage 6's full diagnostics surface yet. **Landed** at `d7487b2` (`Report.lean`, `ok.report.closes`) and read by the shipped binary since `5557713` |
+| 9 | Whether the kernel should refuse a `[-]` outside a week file or `month/…# Demoted`, as `tree.rs` does — a behaviour change (gap 31, §8.1) | stage 3 | **open**, not taken in stage 3 or 4. It came due when `demote` got a section target (`10bae51`), and the kernel now gives two answers to one question — the close refuses `noSection`, the verb falls back to the end of the file — recorded as README gap 60 until the owner answers |
 | — | `main`: keep it as the oracle, or discard it | — | **DECIDED 2026-09-12 (D4):** discarded (`f386c56`); the fork point `4748911` is the restore source and the oracle; stage 0's fix, `invariant_exhaustive.rs` and the ability to reproduce anything measured on `main` went with it (§2.2) |
 
-**Stage 4 is unblocked.** Its two gating decisions (q1, q8) are answered and its
-binary exists. What it still cannot do without the human is fire B3
-(`close_week_folds_a_dropped_child_into_its_parent`), which waits on q3. Still
-owed to the human, in the order they block: **q3** (blocks stage 5, and B3), **q4**
-(before stage 5), **q5** (stage 5), **q6** (before stage 6), **q7** (stage 6), and
-**q9** — plus the 30-minute drive of the stage-3 binary (§5.13).
+**Stage 4 is closed (2026-09-13); stage 5 is blocked.** Stage 4's gating
+decisions (q1, q8) were answered and both landed. **q3 / gap 22 (`parent`) is the
+one question in this table that blocks stage 5**, and B3 stands on it. Separately
+from this table, §9.1's proof-to-definition trigger **fired** at stage 4's close
+(4.49 : 1 over the library), and its action — whether stage 5 keeps proving
+relational laws — is also the owner's to take before stage 5 starts. Still owed
+to the human, in the order they block: **q3** (blocks stage 5, and B3), the §9.1
+decision (before stage 5), **q4** (before stage 5, not blocking), **q5** (stage
+5), **q6** (before stage 6), **q7** (stage 6), and **q9** (gap 60) — plus the
+30-minute drives of the stage-3 and stage-4 binaries (§5.13).
