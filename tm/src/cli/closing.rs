@@ -11,7 +11,11 @@
 //!   any grain, **one** `autoClose` call at now closes every ended region of
 //!   every grain, whatever its age — no catch-up loop and no window. The
 //!   fork-point `AUTO_CLOSE_CATCHUP = 16` day-by-day iteration is gone (the
-//!   owner's D1 package; `autoClose_catches_up_in_one_step`, L19b).
+//!   owner's D1 package; `autoClose_catches_up_in_one_step`, L19b). It also
+//!   runs, once, when `state.closed.swept` is unset although the stamps are
+//!   current — a tree the fork-point binary last wrote, whose catch-up
+//!   stamped periods closed that it never ran and left their lines stranded
+//!   (see [`due`]).
 //! * [`last_day`] / [`last_week`] / [`last_month`] / [`last_ended_key`] — the
 //!   last period of each grain that has ended at `today`. That is
 //!   `state.closed`'s stamp (§10.2's `closed` map stays Rust's) and the key
@@ -86,6 +90,18 @@ pub fn behind(closed: &Closed, today: NaiveDate) -> bool {
     closed.day.is_none_or(|d| d < last_day(today))
         || closed.week.is_none_or(|w| w < last_week(today))
         || closed.month.is_none_or(|m| m < last_month(today))
+}
+
+/// Whether the automatic close must call the kernel: `state.closed` is
+/// [`behind`], **or** no kernel `autoClose` has swept the tree since its
+/// stamps were last written by a binary that did not know `swept` — the
+/// fork-point binary, whose sixteen-period catch-up stamped older periods
+/// closed without running them (kernel/README.md stage 4 step 6's table,
+/// row 2). Current stamps alone say which periods have ended, not that
+/// nothing live is left in them; a successful sweep is what says that
+/// (`autoClose_catches_up_in_one_step`), so it is what sets `swept`.
+pub fn due(closed: &Closed, today: NaiveDate) -> bool {
+    !closed.swept || behind(closed, today)
 }
 
 /// Move `state.closed`'s stamp for `grain` up to the last ended period —
@@ -303,15 +319,22 @@ pub fn run(ctx: &mut Ctx, which: Which, drops: &[Id]) -> Result<ReportOut, CliEr
         // The explicit close always records itself (it is what `tm undo`
         // reopens); the automatic one records a grain only when the report
         // names a line that grain's close took — §10.1 logs what happened,
-        // and a close of nothing happened to nothing.
-        let advanced = advance(&mut ctx.state.closed, g, today);
+        // and a close of nothing happened to nothing. A sweep of an
+        // upgraded tree can take lines without moving a stamp (see [`due`]),
+        // and it happened too, so the stamp's movement does not decide.
+        advance(&mut ctx.state.closed, g, today);
         let took = report.closes.iter().any(|c| c.grain == g.name());
-        if which != Which::All || (advanced && took) {
+        if which != Which::All || took {
             ctx.append_event(Event::Close {
                 period: g.name().to_string(),
                 key: last_ended_key(g, today),
             })?;
         }
+    }
+    if which == Which::All {
+        // Every ended region of every grain has been closed by the kernel:
+        // the stamps are now trustworthy as "nothing live left behind".
+        ctx.state.closed.swept = true;
     }
     ctx.save_state()?;
     if applied.docs.iter().any(|d| d.changed) {
@@ -321,8 +344,9 @@ pub fn run(ctx: &mut Ctx, which: Which, drops: &[Id]) -> Result<ReportOut, CliEr
 }
 
 /// §6.3's automatic close, run by [`Ctx::load`] ahead of every verb that
-/// asks for housekeeping. One kernel call when `state.closed` is behind —
-/// see the module docs.
+/// asks for housekeeping. One kernel call when it is [`due`] — `state.closed`
+/// is behind, or no kernel sweep has run since a binary that did not know
+/// `swept` wrote the stamps — see the module docs.
 ///
 /// A **refusal** does not fail the verb it runs ahead of: nothing has been
 /// written and nothing is stamped closed, so the close is tried again on the
@@ -332,7 +356,7 @@ pub fn run(ctx: &mut Ctx, which: Which, drops: &[Id]) -> Result<ReportOut, CliEr
 /// unusable except by hand. A kernel **fault**, a write conflict or an I/O
 /// error still fails the verb.
 pub fn auto_close(ctx: &mut Ctx) -> Result<Option<ReportOut>, CliError> {
-    if !behind(&ctx.state.closed, ctx.today) {
+    if !due(&ctx.state.closed, ctx.today) {
         return Ok(None);
     }
     match run(ctx, Which::All, &[]) {
@@ -418,6 +442,13 @@ mod tests {
             assert!(advance(&mut closed, g, today));
         }
         assert!(!behind(&closed, today));
+        // Current stamps a sweep has not vouched for are still due (a tree
+        // the fork-point binary last wrote); once swept, they are not.
+        assert!(due(&closed, today));
+        closed.swept = true;
+        assert!(!due(&closed, today));
+        // A period ending makes it due again, swept or not.
+        assert!(due(&closed, d("2026-09-15")));
         // Never back.
         assert!(!advance(&mut closed, Grain::Week, d("2026-09-01")));
         assert_eq!(closed.week, Some(IsoWeek::new(2026, 37)));

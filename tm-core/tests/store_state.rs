@@ -44,6 +44,7 @@ fn spec_state() -> RuntimeState {
             day: Some(NaiveDate::from_ymd_opt(2026, 9, 6).unwrap()),
             week: Some(IsoWeek::new(2026, 36)),
             month: Some(YearMonth::new(2026, 8)),
+            swept: false,
         },
     }
 }

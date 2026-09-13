@@ -1916,6 +1916,20 @@ pub struct Closed {
     /// Last month closed (`2026-08`).
     #[serde(with = "opt_str")]
     pub month: Option<YearMonth>,
+    /// Whether the kernel's `autoClose` has run to success over this tree
+    /// since the stamps above were last written by a binary that did not
+    /// know this field. The stamps say which periods have *ended* at the
+    /// last close; only a kernel sweep makes them also say that nothing live
+    /// is left in those periods. The fork-point binary stamped periods closed
+    /// that its sixteen-period catch-up never ran (kernel/README.md, stage 4
+    /// step 6's table, row 2), so a tree it last touched carries current
+    /// stamps over stranded lines; this field's absence is how the automatic
+    /// close tells such a tree apart and sweeps it once. It is written only
+    /// when set, so §10.2's documented shape is unchanged, and a binary that
+    /// does not know it drops it on its next write — which is exactly the
+    /// writer whose stamps cannot be trusted.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub swept: bool,
 }
 
 /// `.tm/state.json` (§10.2) — runtime, not committed:

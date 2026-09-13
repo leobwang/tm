@@ -63,7 +63,7 @@ stage then has to fight.
 * **F6 — `close day` double-counted `est:` against logged minutes.**  Needs
   `done_minutes` (§6.4), which is a replay of `.tm/log.jsonl`.  Same blocker as
   D1.  What *was* stated, `close_writes_every_estimate_through_demoteEst`, is
-  refuted (stage 4 step 6); the half that does not need the log is
+  refuted (stage 4 step 7, `210daad`); the half that does not need the log is
   `close_keeps_every_remaining_estimate` (Close.lean).
 * **F3 and G1 — generated-block ownership.**  "The kernel owns the bytes of
   every generated block" is §4's **A** verdict — single ownership, architecture
@@ -217,7 +217,7 @@ which idempotence it is — the fold on `WfPlan` at one `g` and one `now`, not
 §6.3's `state.json` one. -/
 
 /- **`close_leaves_no_live_line_in_a_closed_region` (L18 at plan level) is refuted
-(2026-09-13, stage 4 step 6)** — renamed to its negation
+(2026-09-13, stage 4 step 7, `210daad`)** — renamed to its negation
 `close_leaves_live_lines_in_a_closed_region` and proved in `Boundary.lean` on the
 loaded week witness, audited in `Check.lean`.  It was stated over every line, and
 §6.3 leaves settled, recurring and wall lines in a closed file (`^t1`, `[x]`).
@@ -247,7 +247,7 @@ double stamp is `autoClose_stamps_each_line_at_most_once`. -/
 
 /- **`close_never_demotes_a_wall` (F4) and
 `close_writes_every_estimate_through_demoteEst` (B1–B3) are refuted (2026-09-13,
-stage 4 step 6)** — renamed to their negations
+stage 4 step 7, `210daad`)** — renamed to their negations
 `close_does_not_leave_every_wall_as_it_was` and
 `close_writes_a_line_demoteEst_does_not`, proved in `Boundary.lean` on the loaded
 week witness, audited in `Check.lean`.  F4's `f.val = e.val` forbade the carry

@@ -462,6 +462,62 @@ fn d1_a_day_closed_more_than_sixteen_days_late_is_not_stranded() {
     assert_eq!(tm.state()["closed"]["day"], "2026-09-11");
 }
 
+/// The upgrade path. A tree the fork-point binary last touched: its
+/// catch-up stamped every period closed (row 2 of kernel/README.md stage 4
+/// step 6's table, "older periods stamped closed unrun"), so `state.closed`
+/// is **current** while `^p1` sits in a sealed day file. Stamps alone would
+/// gate the automatic close off and leave it stranded under a clean `tm
+/// check`; a `state.closed` no kernel sweep has vouched for (no `swept`) is
+/// swept once, and then — the other direction — the gate holds again: the
+/// next command does not call the kernel at all.
+#[test]
+fn an_upgraded_tree_whose_stamps_are_current_is_swept_once() {
+    const AT: &str = "2026-09-12T09:00:00-05:00";
+    let tm = tree(
+        &[
+            ("day/2026-08-20.md", "# Pinned\n- [>] 2 20m Call the bank ^p1\n"),
+            ("week/2026-W37.md", "# Tasks\n- [ ] 3 1b Review ^t5\n"),
+            ("month/2026-09.md", "# Outcomes\n# Demoted\n"),
+        ],
+        // Exactly what the fork-point binary wrote at its last command.
+        Some(("2026-09-11", "2026-W36", "2026-08")),
+    );
+    tm.ok_at(AT, &["now"]);
+    let files = md_files(&tm);
+    let after = lines(&files);
+    assert!(!files["day/2026-08-20.md"].contains("^p1"), "stranded in the day file");
+    assert_eq!(after["p1"].len(), 1);
+    assert_eq!(after["p1"][0].path, "week/2026-W37.md");
+    assert_eq!(after["p1"][0].text, "- [ ] 2 20m Call the bank demoted:D20 ^p1");
+    let state = tm.state();
+    assert_eq!(state["closed"]["day"], "2026-09-11");
+    assert_eq!(state["closed"]["swept"], true, "{state}");
+    let evs = events(&tm);
+    assert!(evs.contains(&("demote".to_string(), "p1".to_string())), "{evs:?}");
+    assert!(tm.log().iter().any(|e| e["ev"] == "close" && e["period"] == "day"), "{:?}", tm.log());
+
+    // Swept and current: the gate holds, so a kernel fault probe set for the
+    // next housekeeping verb is never reached and the verb succeeds.
+    let before = md_files(&tm);
+    let out = tm.run_env_at(AT, &[("TM_KERNEL_FAULT_PROBE", "1")], &["now"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert_eq!(md_files(&tm), before);
+
+    // A writer that does not know `swept` (the fork-point binary) drops it,
+    // and the next command sweeps again — here, over nothing.
+    fs::write(
+        tm.plan.join(".tm/state.json"),
+        r#"{"closed":{"day":"2026-09-11","week":"2026-W36","month":"2026-08"}}"#,
+    )
+    .expect("state");
+    let out = tm.run_env_at(AT, &[("TM_KERNEL_FAULT_PROBE", "1")], &["now"]);
+    assert_eq!(out.code, 1, "an unswept tree must call the kernel: {}{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains("kernel fault"), "{}", out.stderr);
+    tm.ok_at(AT, &["now"]);
+    assert_eq!(md_files(&tm), before, "a sweep of a swept tree changed plan bytes");
+    assert_eq!(tm.state()["closed"]["swept"], true);
+}
+
 // ---------------------------------------------------------------------------
 // Both directions: the close bites, by name, and writes nothing
 // ---------------------------------------------------------------------------

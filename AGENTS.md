@@ -1533,7 +1533,13 @@ happened.
 (waits on §10.5 q3 / gap 22, the owner's); gaps 52 (deferred, no consumer), 53, 54
 (stage 5), 55 (stage 5 and an owner decision), 56 (kernel half: gap 10), 57
 (gap 10), 58 (stage 5's `cfg`), 60 (q9, the owner's), 61 (the host's old id
-generator); §6.3's overdue routing (stage 5) and F3 (stage 6); the human drive.
+generator), 62 (a kernel call over a history-sized tree takes about a minute —
+the automatic close's gate is load-bearing) and 63 (`tm check` does not name a
+line a close would take); §6.3's overdue routing (stage 5) and F3 (stage 6); the
+human drive. *Repaired after the close* (README "Stage 4 repair"): the automatic
+close's gate was `state.closed` alone, so a tree the fork-point binary had stamped
+current kept its stranded lines; it is now `closing::due` — behind, or no kernel
+sweep yet (`state.closed.swept`, which the fork-point binary drops on write).
 **The proof-to-definition ratio is measured, and the §9.1 stop condition fires:**
 4.49 : 1 over the library, 6.43 : 1 in `Close.lean`, 5.63 : 1 in `Report.lean`,
 4.56 : 1 over everything stage 4 added — the owner decides before stage 5 whether

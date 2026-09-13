@@ -13,7 +13,8 @@
 //!   both `FixedOffset` (log timestamps) and `cfg.tz` (everything else).
 //!   [`Ctx::load`] runs the housekeeping of §6.3 (the automatic close —
 //!   one kernel `autoClose` call, [`super::closing::auto_close`], when a
-//!   period has ended since `state.closed`) and §5.1 (waiting items whose
+//!   period has ended since `state.closed` or no kernel sweep has vouched
+//!   for its stamps yet, [`super::closing::due`]) and §5.1 (waiting items whose
 //!   timeout has elapsed) unless the verb opts out, and rolls the day-scoped
 //!   fields of `state.json` when the date has moved on ([`roll_day`]).
 //!   [`Ctx::load_for_close`] is the same minus the automatic close, for

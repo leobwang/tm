@@ -5860,3 +5860,122 @@ above.  Step 2's owed "the proof-to-definition ratio AGENTS §8.2 asks for at th
 stage's end" — measured.  The opening block's D2 "Owed, not done here" sentence —
 done.  The opening block's expectation "stage 4 expects to take 10 of its 11 goals
 out of `Goals.lean` … leaving B3 and a burn-down of 30" — met exactly.
+
+<!-- ===================================================================
+     APPENDED 2026-09-13 (stage-4 session, rebuild-on-lean).  Stage 4 repair: an independent read-only verification of stage 4 found two defects; both reproduced and both repaired.
+     Takes gaps 62 and 63; no cheat.  Supersedes, by name, step 6's heading claim "nothing is stranded" (as a claim about every tree) and its choice list's silence on the upgrade path, and the "Stage 4 closed" block's "Left as found" note on `Goals.lean`'s step numbers.
+     =================================================================== -->
+
+## Stage 4 repair, 2026-09-13: a tree the fork-point binary stamped is swept once
+
+Baseline re-measured at `30919c1` before this block (the verifier's figures, and
+the same here), every command under the 40 GB cap: `check.sh` **7/7** — axiom
+audit **1520 theorems**, corpus **33/37 files and 4/5 whole plans**, burn-down
+**30**; `cargo test --workspace` **997 passed / 0 failed / 0 ignored across 65
+binaries**.
+
+**Defect 1 (major), reproduced: the automatic close left the fork-point binary's
+stranded lines stranded.**  `closing::auto_close` returned early unless
+`state.closed` was behind the last ended day, week or month.  Step 6's table, row
+2, says the fork-point catch-up "stamped older periods closed unrun", so a tree
+that binary last touched has **current** stamps over lines still sitting in sealed
+files — the owner's real tree, not the stale fixtures step 6 tested, all of which
+had stamps behind.  Reproduced at `30919c1` on a fresh copy of the verifier's
+tree: `day/2026-08-20.md` holding `- [>] 2 20m Call the bank ^p1`, `state.closed`
+= `{2026-09-11, 2026-W36, 2026-08}`; `tm --now 2026-09-12T09:00:00-05:00 now`
+exited 0 without calling the kernel, `^p1` stayed in the day file, and `tm check`
+printed `no problems` (rc 0).  Step 6's heading, "nothing is stranded", held only
+for trees whose stamps were behind.
+
+**The repair (Rust only; no Lean, no wire change).**  `state.closed` gains
+`swept: bool` (`tm-core/src/store.rs`, `Closed`): whether a kernel `autoClose`
+has run to success over the tree since its stamps were last written by a binary
+that did not know the field.  The gate is now `closing::due` = `!swept ||
+behind`; a successful `Which::All` run sets `swept`; an explicit `tm close
+<grain>` does not (it closes one grain, and says nothing about the other two).
+The field is written only when set, so §10.2's documented `state.json` and both
+`store_state` snapshots are unchanged, and the spec example still round-trips.
+Two properties make the marker exactly the right one rather than a version
+number: unknown fields are ignored on load and not written back, so **the
+fork-point binary drops `swept` on its next write** — the one writer whose stamps
+cannot be trusted is the one that clears it; and a sweep of an already-closed
+tree is the identity (`close_is_idempotent`, L16, and step 6's zero-byte test),
+so sweeping once more than necessary costs time and no bytes.  One logging
+consequence, taken on purpose: the automatic close now records a grain's `close`
+event whenever the report names a line that grain took, not only when the stamp
+moved — a sweep of an upgraded tree takes lines without moving a stamp, and
+§10.1 logs what happened.
+
+**Evidence, both directions** (`tm/tests/cli_close_kernel.rs`,
+`an_upgraded_tree_whose_stamps_are_current_is_swept_once`): the verifier's tree
+with current, unswept stamps — the first `tm now` moves `^p1` to
+`week/2026-W37.md` as `- [ ] 2 20m Call the bank demoted:D20 ^p1`, logs its
+`demote` and a day `close`, keeps `closed.day` at 2026-09-11 and sets `swept`;
+the next `tm now` with `TM_KERNEL_FAULT_PROBE` set exits 0 and changes nothing,
+so the swept gate does not call the kernel; a `state.json` rewritten without
+`swept` (what the fork-point binary writes) makes the same probed verb exit 1
+with `kernel fault`, so an unswept gate does call it; and the sweep that follows
+changes zero plan bytes.  Mutation check: with the gate put back to `behind`, the
+test fails at "stranded in the day file".  The unit test
+`the_gate_is_behind_until_every_grain_is_stamped` gains the three `due` cases.
+Re-driven through the built binary on a fresh copy of the verifier's tree: `^p1`
+in W37 as `demoted:D20`, `state.closed` `{2026-09-11, 2026-W36, 2026-08, swept:
+true}`, log `demote p1` then `close day 2026-09-11`, `tm check` `no problems`.
+
+**Gap 62 — a kernel call over a tree with months of history takes about a
+minute, and nothing records it.**  (1) *Not done:* measured while pricing this
+repair (always calling `autoClose`, no gate, was the first candidate): on a
+synthetic tree of **2,753 plan lines** — `tm init --example` plus 190 day files of
+eight `[x]` lines, 27 week files of twenty, six month files of ten outcomes and 300
+backlog lines — one `autoClose` that takes nothing ran **59.3 s** alone (63.3 s
+under concurrent `cargo test`), a `tm drop` through `kernel_bridge::apply` ran
+**82.9 s** (under a concurrent `check.sh`), and the gated `tm now` **0.02 s**; peak
+RSS about 40 MB, so this is time, not memory.  The cost is the whole-tree
+request, not the close: every kernel-backed verb pays it.  Not profiled here.
+(2) *Why:* outside a repair's scope; no stage has had a latency acceptance, and
+the corpus trees are small enough that no test notices.  (3) *Cost:* the gate
+is load-bearing — without it every housekeeping verb would take a minute — and
+two paths still pay it per command on a real-sized tree: the upgrade sweep (once),
+and **a refused automatic close, which is retried on every command** (step 6's
+choice 1) — so §4.3's week refusal (gaps 53, 55) on a history-sized tree would
+make every housekeeping verb take about a minute until fixed by hand.  Every
+kernel-backed stage-3 verb pays it once per invocation.  (4) *Clears:* a profile
+of one call (loader, `parseCmd`, the fold, the JSON printer) and either a
+sub-linear fix in the kernel or a host that sends only the documents a request
+can touch — which needs a theorem that the others are unchanged; plus a latency
+row in the acceptance.
+
+**Gap 63 — `tm check` does not name a line a close would take.**  (1) *Not
+done:* `tm check` loads without housekeeping and validates the tree; it does not
+know whether an ended region holds a line the kernel's close would take, so on
+an unswept tree it still prints `no problems` until any housekeeping verb runs the
+sweep.  (2) *Why:* the only faithful answer is the kernel's candidate set
+(`closeCands`), and asking it is a full kernel call (gap 62's minute); a host-side
+scan for open boxes in dated files would be a second reader of `ClosePolicy`
+(AGENTS §5.3), wrong on the lines §6.3 leaves on purpose
+(`close_leaves_live_lines_in_a_closed_region`) and on the ones a refusal leaves.
+(3) *Cost:* small since this repair — the pre-commit hook's `tm check` can pass
+on an upgraded tree once, before the first ordinary command sweeps it.  (4)
+*Clears:* a read-only kernel query for the close's candidates, once gap 62 makes
+a call cheap.
+
+**Defect 2 (minor), reproduced and corrected.**  `Goals.lean`'s status notes
+dated the refute-and-renames of `close_leaves_no_live_line_in_a_closed_region`,
+`close_never_demotes_a_wall` and `close_writes_every_estimate_through_demoteEst`
+"stage 4 step 6" (three sites: the F6 bullet of the header, and the two status
+comments); they landed at step 7, `210daad`.  All three now read "stage 4 step 7,
+`210daad`".  Comments only: no statement changed, burn-down 30.  **Supersedes, by
+name,** the "Stage 4 closed" block's "Left as found, and recorded here instead"
+sentence.
+
+**Superseded by name.**  Step 6's heading claim "nothing is stranded" — true now
+for an upgraded tree too, once its first housekeeping verb runs (and for a tree
+the kernel refuses, nothing is written until the refusal is fixed, as before).
+Step 6's description of the gate ("the gate asks whether `state.closed` is behind
+the last ended day, week or month") — it also asks whether `swept` is set.
+
+Re-measured after this block, every command under the 40 GB cap: `check.sh`
+**7/7** — axiom audit **1520 theorems**, corpus **33/37 files and 4/5 whole
+plans**, burn-down **30** (no Lean statement touched); `cargo test --workspace`
+**998 passed / 0 failed / 0 ignored across 65 binaries** (+1, the upgrade test).
+Gaps run to 63 (new gaps start at 64); cheats to 54 (new cheats start at 55).
