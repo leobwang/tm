@@ -161,7 +161,7 @@ fn a_lone_demoted_line_round_trips() {
         .unwrap();
     // Byte for byte, in the kernel's build order (J5: `path` before `lines`).
     assert_eq!(
-        out, r##"{"ok":{"docs":[{"path":"w.md","lines":["- [-] 5 6b Old work ^m1"]}]}}"##,
+        out, r##"{"ok":{"docs":[{"path":"w.md","lines":["- [-] 5 6b Old work ^m1"]}],"report":{"closes":[]}}}"##,
         "{out}"
     );
 }
@@ -372,7 +372,7 @@ fn the_kernel_reads_back_what_it_writes() {
     let once = call(start).unwrap();
     let docs = once
         .trim_start_matches(r##"{"ok":{"docs":"##)
-        .trim_end_matches("}}");
+        .trim_end_matches(r##","report":{"closes":[]}}}"##);
     let twice = call(&format!(r##"{{"docs":{docs},"cmds":[]}}"##)).unwrap();
     assert_eq!(
         once, twice,
@@ -838,7 +838,7 @@ fn the_request_reads_every_escape_a_host_writes() {
     assert_eq!(
         out,
         format!(
-            r#"{{"ok":{{"docs":[{{"path":"w.md","lines":["q\"b\\s\u0009t\u0001c/s\u0008b\u000cf{e}{e} {e}{emoji}"]}}]}}}}"#,
+            r#"{{"ok":{{"docs":[{{"path":"w.md","lines":["q\"b\\s\u0009t\u0001c/s\u0008b\u000cf{e}{e} {e}{emoji}"]}}],"report":{{"closes":[]}}}}}}"#,
             e = '\u{e9}'
         ),
         "{out}"
@@ -864,7 +864,7 @@ fn cmds_that_are_not_an_array_are_refused() {
     let out = call(&req("3")).unwrap();
     assert_eq!(out, r#"{"err":"array expected"}"#, "{out}");
     let out = call(r#"{"docs":[]}"#).unwrap();
-    assert_eq!(out, r#"{"ok":{"docs":[]}}"#, "{out}");
+    assert_eq!(out, r#"{"ok":{"docs":[],"report":{"closes":[]}}}"#, "{out}");
 }
 
 /// A malformed request is refused with the parser's own name for the reason —
@@ -891,7 +891,7 @@ fn a_million_character_line_does_not_exhaust_the_stack() {
     let line = "a\\\"".repeat(333_334);
     let out = call(&format!(r#"{{"docs":[{{"path":"w.md","lines":["{line}"]}}],"cmds":[]}}"#))
         .unwrap();
-    assert_eq!(out, format!(r#"{{"ok":{{"docs":[{{"path":"w.md","lines":["{line}"]}}]}}}}"#));
+    assert_eq!(out, format!(r#"{{"ok":{{"docs":[{{"path":"w.md","lines":["{line}"]}}],"report":{{"closes":[]}}}}}}"#));
 }
 
 /// **A comment is prose** (step 4, kernel/README.md 2026-09-12).  A starter
@@ -939,4 +939,136 @@ fn an_unterminated_comment_is_refused_by_name() {
         r#"{"err":{"unterminatedComment":{"path":"w.md","line":1}}}"#,
         "{out}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Stage 4 step 5 (2026-09-12): `close` and `autoClose` on the wire, `now` and
+// `blockMin` in the request, and the per-item `report` under `ok` (D3).
+
+/// The week close of `Boundary.lean`'s `closeWeekWitness`, closed on Monday
+/// 2026-09-07: regions are the kernel's real calendar numbers.
+const CLOSE_WEEK_DOCS: &str = r##"[{"path":"week/2026-W36.md","grain":1,"ix":105694,"lines":["# Tasks","- [ ] 4 6b Rollback path passes tests ^m2","- [x] 2 1b Send the draft ^t1","- [ ] 5 2h Midterm at:2026-10-20T10:00/12:00 ^x1","- [ ] 1 15m Standup every:day ^r1"]},{"path":"week/2026-W37.md","grain":1,"ix":105695,"lines":["# Tasks"]},{"path":"month/2026-09.md","grain":2,"ix":24308,"lines":["# Outcomes","- [ ] 5 !1 Lean through ch.8 ^O1","# Demoted","# Notes"]}]"##;
+
+/// **The report is populated on a real close, through `String -> String`.**
+/// The same lines `the_week_close_copies_carries_and_leaves_the_rest` decides,
+/// and the same entries `the_week_close_reports_each_line` decides: the wall
+/// carried from document 0 into the live week, unstamped, 120 minutes; the open
+/// line copied into the month, stamped `W36`, 300 minutes at a 50-minute block.
+/// Minutes are a numerator and a denominator — the kernel never divides.
+#[test]
+fn a_week_close_reports_each_line_it_touched() {
+    let out = call(&format!(
+        r#"{{"now":"2026-09-07","blockMin":50,"docs":{CLOSE_WEEK_DOCS},"cmds":[{{"op":"close","grain":1}}]}}"#
+    ))
+    .unwrap();
+    assert_eq!(
+        out,
+        concat!(
+            r##"{"ok":{"docs":["##,
+            r##"{"path":"week/2026-W36.md","lines":["# Tasks","- [-] 4 6b Rollback path passes tests ^m2","- [x] 2 1b Send the draft ^t1","- [ ] 1 15m Standup every:day ^r1"],"grain":1,"ix":105694},"##,
+            r##"{"path":"week/2026-W37.md","lines":["# Tasks","- [ ] 5 2h Midterm at:2026-10-20T10:00/12:00 ^x1"],"grain":1,"ix":105695},"##,
+            r##"{"path":"month/2026-09.md","lines":["# Outcomes","- [ ] 5 !1 Lean through ch.8 ^O1","# Demoted","- [-] 4 6b Rollback path passes tests demoted:W36 ^m2","# Notes"],"grain":2,"ix":24308}],"##,
+            r##""report":{"closes":["##,
+            r##"{"id":"x1","grain":1,"did":"carry","from":0,"to":1,"stamp":null,"min":{"num":120,"den":1}},"##,
+            r##"{"id":"m2","grain":1,"did":"copy","from":0,"to":2,"stamp":"W36","min":{"num":300,"den":1}}"##,
+            r##"]}}}"##
+        ),
+        "{out}"
+    );
+    // L16 at the wire: the kernel's own output, closed again at the same
+    // instant, changes nothing and reports nothing.
+    let docs = out
+        .trim_start_matches(r##"{"ok":{"docs":"##)
+        .split(r##","report":"##)
+        .next()
+        .unwrap();
+    let twice = call(&format!(
+        r#"{{"now":"2026-09-07","blockMin":50,"docs":{docs},"cmds":[{{"op":"close","grain":1}}]}}"#
+    ))
+    .unwrap();
+    assert_eq!(twice, format!(r#"{{"ok":{{"docs":{docs},"report":{{"closes":[]}}}}}}"#));
+}
+
+/// **`now` is never invented, and a malformed clock is refused by name.**  A
+/// close without `now` is `nowAbsent`; without `blockMin`, `blockMinAbsent`; a
+/// `now` that is not a real date is `badNow` — even on a request with no close;
+/// a zero block is `badBlockMin`.  None of them writes anything.
+#[test]
+fn the_clock_is_refused_by_name() {
+    let close = r#"[{"op":"close","grain":1}]"#;
+    let out = call(&format!(r#"{{"blockMin":50,"docs":{CLOSE_WEEK_DOCS},"cmds":{close}}}"#)).unwrap();
+    assert_eq!(out, r#"{"err":"nowAbsent"}"#);
+    let out = call(&format!(r#"{{"now":"2026-09-07","docs":{CLOSE_WEEK_DOCS},"cmds":[{{"op":"autoClose"}}]}}"#)).unwrap();
+    assert_eq!(out, r#"{"err":"blockMinAbsent"}"#);
+    let out = call(&format!(r#"{{"now":"2026-02-30","blockMin":50,"docs":{CLOSE_WEEK_DOCS},"cmds":{close}}}"#)).unwrap();
+    assert_eq!(out, r#"{"err":"badNow"}"#);
+    let out = call(&format!(r#"{{"now":"2026-9-7","docs":{CLOSE_WEEK_DOCS},"cmds":[]}}"#)).unwrap();
+    assert_eq!(out, r#"{"err":"badNow"}"#);
+    let out = call(&format!(r#"{{"now":739870,"docs":{CLOSE_WEEK_DOCS},"cmds":[]}}"#)).unwrap();
+    assert_eq!(out, r#"{"err":"badNow"}"#);
+    let out = call(&format!(r#"{{"now":"2026-09-07","blockMin":0,"docs":{CLOSE_WEEK_DOCS},"cmds":{close}}}"#)).unwrap();
+    assert_eq!(out, r#"{"err":"badBlockMin"}"#);
+    let out = call(&format!(r#"{{"now":"2026-09-07","blockMin":50,"docs":{CLOSE_WEEK_DOCS},"cmds":[{{"op":"close","grain":3}}]}}"#)).unwrap();
+    assert_eq!(out, r#"{"err":"grain 3 out of range (0..2)"}"#);
+    // a request that closes nothing still needs no clock
+    let out = call(&format!(r#"{{"docs":{CLOSE_WEEK_DOCS},"cmds":[]}}"#)).unwrap();
+    assert!(out.starts_with(r#"{"ok":"#), "{out}");
+}
+
+/// A close refusal reaches the host by name, and carries no report: without
+/// the month file the week close has nowhere to file its record.
+#[test]
+fn a_refused_close_is_named_and_reports_nothing() {
+    let docs = CLOSE_WEEK_DOCS.split(r##",{"path":"month/2026-09.md""##).next().unwrap().to_string() + "]";
+    let out = call(&format!(
+        r#"{{"now":"2026-09-07","blockMin":50,"docs":{docs},"cmds":[{{"op":"close","grain":1}}]}}"#
+    ))
+    .unwrap();
+    assert_eq!(out, r#"{"err":{"kernel":"noTarget"}}"#);
+}
+
+/// `Boundary.lean`'s `staleWitness`: a tree last closed in June, caught up on
+/// Saturday 2026-09-12.
+const STALE_DOCS: &str = r##"[{"path":"day/2026-06-12.md","grain":0,"ix":739778,"lines":["# Pinned","- [>] 2 20m Call the bank ^p1","- [x] 1 10m Water the plants ^p2"]},{"path":"day/2026-08-29.md","grain":0,"ix":739856,"lines":["# Pinned","- [>] 3 1h Draft the letter ^p3"]},{"path":"week/2026-W24.md","grain":1,"ix":105682,"lines":["# Tasks","- [ ] 4 6b Rollback path passes tests ^m2","- [x] 2 1b Send the draft ^t1","- [ ] 1 15m Standup every:day ^r1"]},{"path":"week/2026-W35.md","grain":1,"ix":105693,"lines":["# Tasks","- [ ] 3 2b Read chapter four ^m3","- [ ] 5 2h Midterm at:2026-10-20T10:00/12:00 ^x1"]},{"path":"week/2026-W37.md","grain":1,"ix":105695,"lines":["# Tasks","- [ ] 3 1b Review the drafts ^t5"]},{"path":"month/2026-06.md","grain":2,"ix":24305,"lines":["# Outcomes","- [ ] 5 !1 Old outcome ^O7","- [x] 3 !2 Done outcome ^O8","# Demoted","- [-] 4 3b Carried record est:3b demoted:W22 ^m9"]},{"path":"month/2026-09.md","grain":2,"ix":24308,"lines":["# Outcomes","- [ ] 5 !1 Lean through ch.8 ^O1","# Demoted"]}]"##;
+
+/// **AGENTS §8.2's acceptance clause at the FFI: a three-month-stale tree
+/// catches up in one call, losing nothing — and the report says so, per item.**
+/// Owed by step 4 ("the FFI-level witness waits on the wire step").  The files
+/// are the ones `the_stale_catch_up_observed` decides; the report names seven
+/// lines, each once (`autoCloseR_names_each_line_at_most_once`), each with at
+/// most one stamp; a second `autoClose` at the same instant changes nothing
+/// and reports nothing (L19b).
+#[test]
+fn a_three_month_stale_tree_catches_up_in_one_call_and_reports_each_line() {
+    let out = call(&format!(
+        r#"{{"now":"2026-09-12","blockMin":50,"docs":{STALE_DOCS},"cmds":[{{"op":"autoClose"}}]}}"#
+    ))
+    .unwrap();
+    let (docs, report) = out
+        .trim_start_matches(r##"{"ok":{"docs":"##)
+        .split_once(r##","report":"##)
+        .unwrap_or_else(|| panic!("{out}"));
+    assert_eq!(
+        report,
+        concat!(
+            r##"{"closes":["##,
+            r##"{"id":"p3","grain":0,"did":"moveReopening","from":1,"to":4,"stamp":"D29","min":{"num":60,"den":1}},"##,
+            r##"{"id":"p1","grain":0,"did":"moveReopening","from":0,"to":4,"stamp":"D12","min":{"num":20,"den":1}},"##,
+            r##"{"id":"x1","grain":1,"did":"carry","from":3,"to":4,"stamp":null,"min":{"num":120,"den":1}},"##,
+            r##"{"id":"m3","grain":1,"did":"copy","from":3,"to":6,"stamp":"W35","min":{"num":100,"den":1}},"##,
+            r##"{"id":"m2","grain":1,"did":"copy","from":2,"to":6,"stamp":"W24","min":{"num":300,"den":1}},"##,
+            r##"{"id":"m9","grain":2,"did":"move","from":5,"to":6,"stamp":null,"min":{"num":150,"den":1}},"##,
+            r##"{"id":"O7","grain":2,"did":"move","from":5,"to":6,"stamp":null,"min":null}"##,
+            r##"]}}}"##
+        ),
+        "{out}"
+    );
+    assert!(docs.contains(r#""- [ ] 2 20m Call the bank demoted:D12 ^p1""#), "{out}");
+    assert!(docs.contains(r#""- [-] 4 6b Rollback path passes tests demoted:W24 ^m2""#), "{out}");
+    assert!(!docs.contains("demoted:D12,") && !docs.contains("demoted:D29,"), "{out}");
+    let twice = call(&format!(
+        r#"{{"now":"2026-09-12","blockMin":50,"docs":{docs},"cmds":[{{"op":"autoClose"}}]}}"#
+    ))
+    .unwrap();
+    assert_eq!(twice, format!(r#"{{"ok":{{"docs":{docs},"report":{{"closes":[]}}}}}}"#));
 }

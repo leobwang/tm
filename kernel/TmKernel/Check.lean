@@ -1596,3 +1596,44 @@ open Tm
 #print axioms Tm.the_stale_catch_up_leaves_only_settled_and_recurring_lines
 #print axioms Tm.autoClose_leaves_lines_in_periods_it_passes
 #print axioms Tm.the_stale_catch_up_refusals_are_named
+-- Stage 4 step 5 (same session, same banner): what a close reports — the new
+-- module Report.lean (D3's named per-item list, `closeR`/`autoCloseR`, and the
+-- kind lemmas that widen L22 to the close commands); `now` and `blockMin` on
+-- the wire, the close ops, and the report under `ok` in Boundary.lean.
+#print axioms Tm.BlockMin.ofNat?_zero
+#print axioms Tm.BlockMin.ofNat?_pos
+#print axioms Tm.CloseDid.ofName?_name
+#print axioms Tm.CloseDid.ofName?_refuses
+#print axioms Tm.closeR_plan
+#print axioms Tm.foldlM_closeStepR_plan
+#print axioms Tm.autoCloseR_plan
+#print axioms Tm.filterMap_ids
+#print axioms Tm.closeReport_ids
+#print axioms Tm.mem_closeReport
+#print axioms Tm.skelAfter_stamps
+#print axioms Tm.close_found_the_target
+#print axioms Tm.closeReport_agrees_with_close
+#print axioms Tm.closeReport_names_the_region_of_now
+#print axioms Tm.closeReport_stamp_names_its_grain
+#print axioms Tm.autoCloseR_ok
+#print axioms Tm.mem_closeCands
+#print axioms Tm.not_mem_closeCands_of_stay
+#print axioms Tm.close_takes_a_line_out_of_every_close
+#print axioms Tm.close_keeps_a_line_untaken
+#print axioms Tm.autoCloseR_names_each_line_at_most_once
+#print axioms Tm.closeAct_carry_is_a_wall
+#print axioms Tm.closedRegionOf_of_closeAct
+#print axioms Tm.stepSkel_doc_kinds
+#print axioms Tm.except_map_pair_fst
+#print axioms Tm.applyCmdR_plan
+#print axioms Tm.applyAllR_plan
+#print axioms Tm.the_clock_reads_now_and_blockMin
+#print axioms Tm.the_clock_refuses_a_malformed_value_by_name
+#print axioms Tm.parseCmdAt_reads_the_close_ops_and_refuses_without_the_clock
+#print axioms Tm.parseCmdAt_is_parseCmd
+#print axioms Tm.run_names_the_clock_refusals
+#print axioms Tm.runPlan_refusal_carries_no_report
+#print axioms Tm.the_week_close_reports_each_line
+#print axioms Tm.the_day_close_reports_each_line
+#print axioms Tm.the_month_close_reports_each_line
+#print axioms Tm.a_close_entry_emits_in_build_order

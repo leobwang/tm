@@ -621,4 +621,23 @@ theorem monthRowCopies_copies_only_below_month :
     ∀ g : Grain, (monthRowCopies g).disposition = .copy → g ≠ month := by
   decide
 
+/- CHEAT 52 — minutes with a zero denominator.  The report emits an integer
+   numerator and denominator and the host divides (AGENTS §8.2 rule 4); an
+   `Arith.Pos` whose denominator is `0` would hand the host a division by zero
+   inside a verified report.  `Q.ok ⟨300, 0⟩` is `false`, so `rfl` cannot prove
+   it `true`. -/
+def reportMinutesOverZero : CloseEntry :=
+  ⟨"m2".toList, week, .copy, 0, 2, some (.week 36), some ⟨⟨300, 0⟩, rfl⟩⟩
+
+/- CHEAT 53 — a disposition decoded from a near-miss name.  `CloseDid.ofName?`
+   accepts exactly the four constructor names; reading `moved` as `move` is a
+   host silently defaulting an unknown variant, which rule 2 exists to stop. -/
+theorem movedDecodesAsMove : CloseDid.ofName? "moved".toList = some .move := by
+  decide
+
+/- CHEAT 54 — a close that invents its instant.  `ReqCmd.close` takes the
+   request's `now` and `blockMin`; a command built without them is not a
+   `ReqCmd` at all, so a host-side default has nowhere to hide. -/
+def closeWithoutNow : ReqCmd := .close week
+
 end Tm

@@ -1,4 +1,4 @@
-import TmKernel.Close
+import TmKernel.Report
 import TmKernel.Json
 /-!
 # The boundary: `String → String`, and nothing else
@@ -902,6 +902,12 @@ inductive ReqCmd
   | edit (i : Id) (v : EditVal)
   /-- `tm edit ^id <key>=` — unset.  The key carries its exposure proof. -/
   | unset (i : Id) (k : EditKey)
+  /-- §6.3's close of one grain, at the request's instant, reporting minutes at
+      the request's block length.  Both come from the request (`ReqClock`) and
+      never from a default: a command that closes cannot be built without them. -/
+  | close (g : Grain) (now : Day) (bm : BlockMin)
+  /-- §6.3's automatic close — each grain once, coarsest last (`autoClose`). -/
+  | autoClose (now : Day) (bm : BlockMin)
   deriving DecidableEq
 
 /-- §6.3 stamps a demotion with the grain of the horizon that closed — `W37`
@@ -964,6 +970,70 @@ def parseCmd (j : JVal) : Except String ReqCmd := do
           | none   => throw s!"badValue {String.ofList ks}"
       else throw s!"keyNotWired {String.ofList ks}"
   | _ => throw s!"unknown op {String.ofList op}"
+
+/-! ### The request's instant and block length
+
+**`now` enters the request** (AGENTS §8.2 scope item 4).  A kernel that invented
+`now` would close the wrong region silently, so there is no default: `now` is a
+`Day` read by the kernel's own date grammar (`Field.parseDate`, whose smart
+constructor is `mkDate?` and whose round trip is `parse_render_date`), written
+`"now":"2026-09-12"`.  `blockMin` is what `Nb` means in minutes, for the
+report's minutes, read through `BlockMin.ofNat?`.
+
+Each is **optional at the request and required by the command that reads it**:
+a request that carries neither can still `move` or `drop`, and a `close` or an
+`autoClose` in a request that omits one is refused by name — `nowAbsent`,
+`blockMinAbsent` — before any document is loaded.  A value that is present and
+malformed is refused whatever the commands — `badNow` (not a string, or not a
+real `YYYY-MM-DD` date), `badBlockMin` (not a number, or `0`) — never ignored
+because nothing happened to read it.  Carried twice, either is `jget`'s
+`duplicateKey`. -/
+structure ReqClock where
+  now      : Option Day
+  blockMin : Option BlockMin
+
+def parseClock (j : JVal) : Except String ReqClock := do
+  let now ←
+    match ← jget j "now" with
+    | none => pure none
+    | some (.str s) =>
+      match Field.parseDate s with
+      | some d => pure (some d)
+      | none   => throw "badNow"
+    | some _ => throw "badNow"
+  let bm ←
+    match ← jget j "blockMin" with
+    | none => pure none
+    | some (.num n) =>
+      match BlockMin.ofNat? n with
+      | some b => pure (some b)
+      | none   => throw "badBlockMin"
+    | some _ => throw "badBlockMin"
+  return ⟨now, bm⟩
+
+def ReqClock.needNow (c : ReqClock) : Except String Day :=
+  match c.now with
+  | some d => .ok d
+  | none   => .error "nowAbsent"
+
+def ReqClock.needBlockMin (c : ReqClock) : Except String BlockMin :=
+  match c.blockMin with
+  | some b => .ok b
+  | none   => .error "blockMinAbsent"
+
+/-- **One command, with the request's clock.**  The two ops that read the clock
+are read here; every other op is `parseCmd`'s, unchanged
+(`parseCmdAt_is_parseCmd`). -/
+def parseCmdAt (c : ReqClock) (j : JVal) : Except String ReqCmd := do
+  let op ← getStr j "op"
+  match String.ofList op with
+  | "close" =>
+    let gn ← getNat j "grain"
+    match Grain.ofNat? gn with
+    | none   => throw s!"grain {gn} out of range (0..{grainCount - 1})"
+    | some g => return .close g (← c.needNow) (← c.needBlockMin)
+  | "autoClose" => return .autoClose (← c.needNow) (← c.needBlockMin)
+  | _ => parseCmd j
 
 def kerrName : KErr → String
   | .occupied       => "occupied"
@@ -1109,6 +1179,8 @@ def applyCmd (c : ReqCmd) (p : WfPlan) : Except KErr WfPlan :=
       p.insertFresh (freshId seed p.val.store.dom)
         (addEntity p.val dd (freshId seed p.val.store.dom) title)
         (store_get_isNone_of_not_mem (add_assigns_a_fresh_id seed _))
+  | .close g now _   => close g now p
+  | .autoClose now _ => autoClose now p
 
 /-- **Error 2, as a theorem.**  A destination that is not a document is
 rejected, and the plan is untouched. -/
@@ -1209,6 +1281,77 @@ theorem applyAll_closed (cs : List ReqCmd) (p : WfPlan) (q : PlanCore)
       simp only [Except.map, Except.ok.injEq] at h
       subst h
       exact r.property
+
+/-! ### A request's report
+
+`applyCmdR` is `applyCmd` with each command's report beside the plan: a close
+reports its entries (`closeR`, `autoCloseR`), every other command reports
+nothing.  `applyAllR_plan` says the reporting form writes exactly what
+`applyAll` writes, so every theorem about `applyAll` is a theorem about the plan
+the FFI hands back. -/
+def applyCmdR (c : ReqCmd) (p : WfPlan) : Except KErr (WfPlan × Report) :=
+  match c with
+  | .close g now bm   => closeR g now bm p
+  | .autoClose now bm => autoCloseR now bm p
+  | c                 => (applyCmd c p).map (fun q => (q, Report.empty))
+
+def applyAllR : List ReqCmd → WfPlan → Except KErr (WfPlan × Report)
+  | [],      p => .ok (p, Report.empty)
+  | c :: cs, p => (applyCmdR c p).bind (fun qr =>
+      (applyAllR cs qr.1).map (fun qr' => (qr'.1, qr.2.append qr'.2)))
+
+theorem except_map_pair_fst {α β ε : Type} (x : Except ε α) (b : β) :
+    (x.map (fun a => (a, b))).map Prod.fst = x := by
+  cases x <;> rfl
+
+theorem applyCmdR_plan (c : ReqCmd) (p : WfPlan) : (applyCmdR c p).map Prod.fst = applyCmd c p := by
+  cases c with
+  | close g now bm => exact closeR_plan g now bm p
+  | autoClose now bm => exact autoCloseR_plan now bm p
+  | _ => exact except_map_pair_fst _ _
+
+/-- **Reporting changes nothing a request writes.** -/
+theorem applyAllR_plan : ∀ (cs : List ReqCmd) (p : WfPlan),
+    (applyAllR cs p).map Prod.fst = applyAll cs p := by
+  intro cs
+  induction cs with
+  | nil => intro p; rfl
+  | cons c rest ih =>
+    intro p
+    have hc := applyCmdR_plan c p
+    show ((applyCmdR c p).bind _).map Prod.fst = (applyCmd c p).bind (applyAll rest)
+    cases hr : applyCmdR c p with
+    | error x => rw [hr] at hc; rw [← hc]; rfl
+    | ok qr =>
+      rw [hr] at hc
+      have hq : applyCmd c p = .ok qr.1 := hc.symm
+      rw [hq]
+      show ((applyAllR rest qr.1).map _).map Prod.fst = applyAll rest qr.1
+      rw [← ih qr.1]
+      cases applyAllR rest qr.1 <;> rfl
+
+/-- A stamp on the wire: `D07` / `W37`, the bytes `demoted:` carries, or `null`. -/
+def stampJson : Option Field.Stamp → JVal
+  | none   => .null
+  | some s => .str (Field.renderStamp s)
+
+/-- Minutes on the wire: an integer numerator and a positive denominator, or
+`null` for a line with no estimate.  The kernel never divides. -/
+def minutesJson : Option Arith.Pos → JVal
+  | none   => .null
+  | some q => .obj [("num".toList, .num q.val.num), ("den".toList, .num q.val.den)]
+
+/-- One entry, keys in build order. -/
+def closeEntryJson (x : CloseEntry) : JVal :=
+  .obj [("id".toList, .str x.id), ("grain".toList, .num x.grain.val),
+        ("did".toList, .str x.did.name.toList), ("from".toList, .num x.src),
+        ("to".toList, .num x.dst), ("stamp".toList, stampJson x.stamp),
+        ("min".toList, minutesJson x.minutes)]
+
+/-- The report object: one key per family, `closes` first.  Stage 6's families
+are further keys after it. -/
+def reportJson (r : Report) : JVal :=
+  .obj [("closes".toList, .arr (r.closes.map closeEntryJson))]
 
 def lerrJson : LErr → JVal
   | .dupId i          => jone "dupId" (.str i)
@@ -2105,16 +2248,17 @@ theorem runPlan_renders_the_input (docs : List ReqDoc) (p : WfPlan)
 
 /-- Apply the request's commands and render every document back to text. -/
 def runPlan (plan : WfPlan) (cmds : List ReqCmd) : Except JVal JVal := do
-  let plan' ←
-    match applyAll cmds plan with
-    | .ok q => pure q
+  let (plan', report) ←
+    match applyAllR cmds plan with
+    | .ok qr => pure qr
     | .error k => throw (jone "err" (jone "kernel" (.str (kerrName k).toList)))
   let outDocs := plan'.val.docs.zipIdx.map (fun p =>
     JVal.obj
       ([("path".toList, .str p.1.path),
         ("lines".toList, .arr ((renderDocAt plan'.val p.2 p.1).map JVal.str))]
         ++ regionJson p.1.region))
-  return jone "ok" (jone "docs" (.arr outDocs))
+  -- The report is built on this path only: a refusal above carries none.
+  return jone "ok" (.obj [("docs".toList, .arr outDocs), ("report".toList, reportJson report)])
 
 def run (j : JVal) : Except JVal JVal := do
   let docsJ ←
@@ -2134,9 +2278,15 @@ def run (j : JVal) : Except JVal JVal := do
     | .ok (some (.arr a)) => pure a
     | .ok (some _) => throw (jsonErr "array expected")
     | .error e => throw (jsonErr e)
+  -- the clock: present-and-malformed is refused here, absent is refused only
+  -- by a command that reads it (`parseCmdAt`)
+  let clock ←
+    match parseClock j with
+    | .ok c => pure c
+    | .error e => throw (jsonErr e)
   let mut cmds : List ReqCmd := []
   for cj in cmdsJ do
-    match parseCmd cj with
+    match parseCmdAt clock cj with
     | .ok c => cmds := cmds ++ [c]
     | .error e => throw (jsonErr e)
   -- reject before building: a line with an item's shape that does not parse is
@@ -3234,8 +3384,46 @@ theorem move_has_no_inverse_command :
           rw [Option.some.inj hgg]
         rw [hml, he1live] at hdoc
         simp at hdoc
-    -- seven shapes, one refuted observable each
+    -- the two close commands (stage 4 step 5): a close moves `^m1` only out of
+    -- a file of its own grain's kind — the month file, so a month close — and
+    -- only into a month file or, for a wall, the week; `^m1` is no wall, and
+    -- document 0 is a week file
+    have hnoclose : ∀ (g : Grain) (now : Day),
+        stepSkel g now q.val e1.val.skel ≠ e.val.skel := by
+      intro g now heq
+      have hd0 : (stepSkel g now q.val e1.val.skel).doc = 0 := by
+        rw [heq]; exact congrArg Site.doc hml
+      have hd1 : e1.val.skel.doc = 1 := congrArg Site.doc he1live
+      have hk := stepSkel_doc_kinds g now q.val e1.val.skel (by rw [hd0, hd1]; decide)
+      have hk0 : docKindAt q.val 0 = .week := by
+        rw [hshape]; exact (by decide : docKindAt undoWitnessPlan.val 0 = .week)
+      have hk1 : docKindAt q.val 1 = .month := by
+        rw [hshape]; exact (by decide : docKindAt undoWitnessPlan.val 1 = .month)
+      rw [hd0, hk0, hd1, hk1] at hk
+      have hg : g = month := by
+        match g, hk.1 with
+        | ⟨2, _⟩, _ => rfl
+      subst hg
+      rcases hk.2 with hc | ⟨⟨b, hw⟩, _⟩
+      · exact absurd hc (by decide)
+      · have hshp := (by decide : (undoWitnessPlan.val.store.get "m1".toList).map
+          (fun x : Entity => match Field.viewShape x.val.line with
+            | .interval _ _ => true | _ => false) = some false)
+        rw [hgetE] at hshp
+        have hl : e1.val.line = e.val.line := by rw [he1v]
+        simp only [Skel.wallAhead, Core.skel, hl, Option.map_some, Option.some.injEq] at hw hshp
+        split at hw
+        · rename_i hi; rw [hi] at hshp; simp at hshp
+        · simp at hw
+    -- nine shapes, one refuted observable each
     cases hcmd : inv (.move "m1".toList 1) with
+    | close g now bm =>
+      rw [hcmd] at hcon
+      exact hnoclose g now (close_skel hcon hq1 hgetE).symm
+    | autoClose now bm =>
+      rw [hcmd] at hcon
+      obtain ⟨g, hg⟩ := autoClose_takes_each_line_at_most_once hcon hq1 hgetE
+      exact hnoclose g now hg.symm
     | move i' d' =>
       rw [hcmd] at hcon
       cases hrd' : resolveDest q.val d' with
@@ -4522,6 +4710,142 @@ theorem the_stale_catch_up_refusals_are_named :
         some .noTarget ∧
       autoCloseRefusal (staleWitness.filter (fun d => d.path != "month/2026-09.md")) =
         some .noTarget := by
+  decide
+
+/-! ## What a close reports, and `now` on the wire (stage-4 step 5)
+
+The owner's D3 on the wire: `ok` carries `report` beside `docs`, and a close's
+entries name each line it touched (Report.lean).  `now` and `blockMin` enter
+the request (`ReqClock`), and the two close ops read them.  Both directions
+(AGENTS §5.8), on the code `run` calls: the clock and the close ops are read,
+and a missing or malformed value is refused by name; the report is populated on
+three loaded plans, one per grain, and a refusal carries none. -/
+
+/-- **The clock reads.** -/
+theorem the_clock_reads_now_and_blockMin :
+    (parseClock (.obj [("now".toList, .str "2026-09-12".toList), ("blockMin".toList, .num 50)])).map
+      (fun c => (c.now, c.blockMin.map Subtype.val)) = .ok (some (Cal.toDay ⟨2026, 9, 12⟩), some 50) :=
+  rfl
+
+/-- **The clock bites, by name.**  Absent is absent — a request with no clock
+still reads — but a present value is never ignored: 30 February, an unpadded
+month, a number, and `null` are `badNow`; `0` and a string are `badBlockMin`;
+a `now` carried twice is `duplicateKey now`. -/
+theorem the_clock_refuses_a_malformed_value_by_name :
+    (parseClock (.obj [])).map (fun c => (c.now, c.blockMin.map Subtype.val)) = .ok (none, none) ∧
+    (parseClock (.obj [("now".toList, .str "2026-02-30".toList)])).map (fun c => c.now) = .error "badNow" ∧
+    (parseClock (.obj [("now".toList, .str "2026-9-12".toList)])).map (fun c => c.now) = .error "badNow" ∧
+    (parseClock (.obj [("now".toList, .num 739870)])).map (fun c => c.now) = .error "badNow" ∧
+    (parseClock (.obj [("now".toList, .null)])).map (fun c => c.now) = .error "badNow" ∧
+    (parseClock (.obj [("blockMin".toList, .num 0)])).map (fun c => c.now) = .error "badBlockMin" ∧
+    (parseClock (.obj [("blockMin".toList, .str "50".toList)])).map (fun c => c.now) = .error "badBlockMin" ∧
+    (parseClock (.obj [("now".toList, .str "2026-09-12".toList),
+        ("now".toList, .str "2026-09-13".toList)])).map (fun c => c.now) = .error "duplicateKey now" :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+def clockAbsent : ReqClock := ⟨none, none⟩
+def clockNowOnly : ReqClock := ⟨some closeNow, none⟩
+def blockMin50 : BlockMin := ⟨50, by decide⟩
+def clockBoth : ReqClock := ⟨some closeNow, some blockMin50⟩
+
+/-- **The close ops read the clock, and never invent it.**  Without `now` a
+close and an autoClose are `nowAbsent`; with `now` and no `blockMin`,
+`blockMinAbsent`; a grain out of range is refused as a document's is; with both,
+the commands carry the request's own instant and block length; and an op that
+reads no clock parses without one. -/
+theorem parseCmdAt_reads_the_close_ops_and_refuses_without_the_clock :
+    parseCmdAt clockAbsent (.obj [("op".toList, .str "close".toList), ("grain".toList, .num 1)])
+      = .error "nowAbsent" ∧
+    parseCmdAt clockNowOnly (.obj [("op".toList, .str "close".toList), ("grain".toList, .num 1)])
+      = .error "blockMinAbsent" ∧
+    parseCmdAt clockAbsent (.obj [("op".toList, .str "autoClose".toList)]) = .error "nowAbsent" ∧
+    parseCmdAt clockBoth (.obj [("op".toList, .str "close".toList), ("grain".toList, .num 3)])
+      = .error "grain 3 out of range (0..2)" ∧
+    parseCmdAt clockBoth (.obj [("op".toList, .str "close".toList), ("grain".toList, .num 1)])
+      = .ok (.close week closeNow blockMin50) ∧
+    parseCmdAt clockBoth (.obj [("op".toList, .str "autoClose".toList)])
+      = .ok (.autoClose closeNow blockMin50) ∧
+    parseCmdAt clockAbsent (.obj [("op".toList, .str "drop".toList), ("id".toList, .str "a".toList)])
+      = .ok (.drop "a".toList) :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- **Every other op is `parseCmd`'s**, whatever the clock — so each parse
+result stated about `parseCmd` is one about what `run` reads. -/
+theorem parseCmdAt_is_parseCmd (c : ReqClock) (j : JVal) (op : List Char)
+    (h1 : getStr j "op" = .ok op) (h2 : String.ofList op ≠ "close")
+    (h3 : String.ofList op ≠ "autoClose") : parseCmdAt c j = parseCmd j := by
+  unfold parseCmdAt
+  simp only [h1, bind, Except.bind]
+
+/-- **On the request, before anything loads**: a close in a request that omits
+`now` is `nowAbsent`, and a malformed `now` is `badNow` even when no command
+reads it; a request whose clock is whole reports under `ok`. -/
+theorem run_names_the_clock_refusals :
+    run (.obj [("docs".toList, .arr []), ("cmds".toList,
+        .arr [.obj [("op".toList, .str "close".toList), ("grain".toList, .num 1)]])])
+      = .error (jsonErr "nowAbsent") ∧
+    run (.obj [("docs".toList, .arr []), ("now".toList, .str "2026-02-30".toList),
+        ("cmds".toList, .arr [])])
+      = .error (jsonErr "badNow") ∧
+    run (.obj [("docs".toList, .arr []), ("now".toList, .str "2026-09-07".toList),
+        ("blockMin".toList, .num 50), ("cmds".toList, .arr [.obj [("op".toList, .str "autoClose".toList)]])])
+      = .ok (jone "ok" (.obj [("docs".toList, .arr []), ("report".toList, reportJson Report.empty)])) :=
+  ⟨rfl, rfl, rfl⟩
+
+/-- **Rule 1: a host that gets `err` gets no report.**  A refused request's
+response is the refusal, and nothing beside it. -/
+theorem runPlan_refusal_carries_no_report (p : WfPlan) (cs : List ReqCmd) (k : KErr)
+    (h : applyAllR cs p = .error k) :
+    runPlan p cs = .error (jone "err" (jone "kernel" (.str (kerrName k).toList))) := by
+  unfold runPlan
+  simp only [h, bind, Except.bind]
+  rfl
+
+/-- A close's report on a loaded plan, if it loads and the close succeeds. -/
+def closedReport (g : Grain) (docs : List ReqDoc) : Option (List CloseEntry) :=
+  (loadedPlan? docs).bind (fun p =>
+    match closeR g closeNow blockMin50 p with
+    | .ok qr    => some qr.2.closes
+    | .error _ => none)
+
+set_option maxRecDepth 40000 in
+/-- **The report is populated on a real close — the week row.**  On
+`the_week_close_copies_carries_and_leaves_the_rest`'s plan: the wall still
+ahead is `carry` from `week/2026-W36.md` (document 0) into the live week
+(document 1), unstamped, 2 h; the open line is `copy` into the month
+(document 2), stamped `W36`, 6 blocks at 50 minutes.  The done and recurring
+lines are not named. -/
+theorem the_week_close_reports_each_line :
+    closedReport week closeWeekWitness = some
+      [⟨"x1".toList, week, .carry, 0, 1, none, some (Arith.posOfNat 120)⟩,
+       ⟨"m2".toList, week, .copy, 0, 2, some (.week 36), some (Arith.posOfNat 300)⟩] := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **The day row**: the pinned `[>]` is `moveReopening` into 2026-W37
+(document 2, the week of *now*, D1), stamped `D04`, 20 minutes. -/
+theorem the_day_close_reports_each_line :
+    closedReport day closeDayWitness = some
+      [⟨"p1".toList, day, .moveReopening, 0, 2, some (.day 4), some (Arith.posOfNat 20)⟩] := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **The month row**: the `[-]` record and the open outcome are `move`,
+unstamped; the record reports `est:3b` as 150 minutes, and the outcome, which
+carries no estimate, reports `null` — never `0`. -/
+theorem the_month_close_reports_each_line :
+    closedReport month closeMonthWitness = some
+      [⟨"m9".toList, month, .move, 0, 1, none, some (Arith.posOfNat 150)⟩,
+       ⟨"O7".toList, month, .move, 0, 1, none, none⟩] := by
+  decide
+
+/-- **An entry on the wire, byte for byte, in build order**: minutes as an
+integer numerator and denominator, never a quotient. -/
+theorem a_close_entry_emits_in_build_order :
+    jemit (closeEntryJson ⟨"m2".toList, week, .copy, 0, 2, some (.week 36), some (Arith.posOfNat 300)⟩)
+      = "{\"id\":\"m2\",\"grain\":1,\"did\":\"copy\",\"from\":0,\"to\":2,\"stamp\":\"W36\",\"min\":{\"num\":300,\"den\":1}}".toList ∧
+    jemit (closeEntryJson ⟨"O7".toList, month, .move, 0, 1, none, none⟩)
+      = "{\"id\":\"O7\",\"grain\":2,\"did\":\"move\",\"from\":0,\"to\":1,\"stamp\":null,\"min\":null}".toList := by
   decide
 
 end Tm

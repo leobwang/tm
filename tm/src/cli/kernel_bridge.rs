@@ -64,12 +64,18 @@
 //! Every kernel refusal reaches the caller **by name** ([`refusal`]):
 //! `occupied`, `noSuchId`, `notDemoted`, `alreadyDemoted`, `badHorizon`,
 //! `badItem`, `tabbedLine`, `keyAbsent`, `danglingDep`, `depCycle`,
-//! `siteOutOfRange`, `dupId`,
+//! `siteOutOfRange`, `noTarget`, `noSection`, `dupId`,
 //! `notADemotion`, `ambiguousDemotion`, `duplicatePath`, `badLine`,
 //! `unterminatedComment`, `itemCheck`, plus `parseCmd`'s parse-tier names riding the free-text
 //! `err` (`badValue <k>`, `keyNotWired <k>`, `unknownKey <k>`, and `add`'s
-//! five `title…` refusals) — re-derived from `Boundary.lean`'s one `ok` and
-//! nine `err` shapes, not guessed. A refusal writes nothing.
+//! five `title…` refusals) and the request clock's four (`nowAbsent`,
+//! `badNow`, `blockMinAbsent`, `badBlockMin`) — re-derived from
+//! `Boundary.lean`'s one `ok` and nine `err` shapes, not guessed. A refusal
+//! writes nothing.
+//!
+//! Every `ok` carries `report` beside `docs` (stage 4 step 5, the owner's
+//! D3): [`decode_report`] reads it through smart constructors on every call,
+//! and since no verb here sends a close yet, a non-empty report is a fault.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -246,6 +252,171 @@ pub struct BridgeDoc {
     /// Whether the kernel's returned line list differs from the one sent
     /// (and the file was therefore written).
     pub changed: bool,
+}
+
+/// A grain on the wire: `0` day, `1` week, `2` month — `Fin 3` in the
+/// kernel, and nothing else decodes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Grain {
+    Day,
+    Week,
+    Month,
+}
+
+impl Grain {
+    /// The decoder's smart constructor: exactly `0..=2`.
+    pub fn from_wire(n: u64) -> Option<Grain> {
+        match n {
+            0 => Some(Grain::Day),
+            1 => Some(Grain::Week),
+            2 => Some(Grain::Month),
+            _ => None,
+        }
+    }
+}
+
+/// What a close did to one line — `Report.lean`'s `CloseDid`, by its
+/// constructor's name. An unknown name is refused, never read as a default:
+/// a variant the kernel adds later must fail loudly here, not fall through.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CloseDid {
+    /// moved unchanged (§6.3's month row)
+    Move,
+    /// moved, `[>]` reopened, stamped (§6.3's day row)
+    MoveReopening,
+    /// `[-]` left behind, the stamped record filed forward (§6.3's week row)
+    Copy,
+    /// a wall still ahead, moved undemoted into the live week
+    Carry,
+}
+
+impl CloseDid {
+    pub fn from_wire(s: &str) -> Option<CloseDid> {
+        match s {
+            "move" => Some(CloseDid::Move),
+            "moveReopening" => Some(CloseDid::MoveReopening),
+            "copy" => Some(CloseDid::Copy),
+            "carry" => Some(CloseDid::Carry),
+            _ => None,
+        }
+    }
+}
+
+/// A stamp the close appended: `D<dd>` or `W<ww>`, the bytes `demoted:`
+/// carries.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stamp {
+    Day(u32),
+    Week(u32),
+}
+
+impl Stamp {
+    /// `Field.parseStamp`'s grammar: a `D` or `W` and at least two digits.
+    pub fn from_wire(s: &str) -> Option<Stamp> {
+        let (tag, digits) = s.split_at_checked(1)?;
+        if digits.len() < 2 || !digits.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let n: u32 = digits.parse().ok()?;
+        match tag {
+            "D" => Some(Stamp::Day(n)),
+            "W" => Some(Stamp::Week(n)),
+            _ => None,
+        }
+    }
+}
+
+/// Minutes as the kernel emits them: an integer numerator and a positive
+/// denominator (`Arith.Pos`). The kernel never divides; the screen does.
+/// Width: both fit `u64` or the report is refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Minutes {
+    num: u64,
+    den: std::num::NonZeroU64,
+}
+
+impl Minutes {
+    /// The smart constructor: a zero denominator is refused, not repaired.
+    pub fn new(num: u64, den: u64) -> Option<Minutes> {
+        Some(Minutes { num, den: std::num::NonZeroU64::new(den)? })
+    }
+    #[allow(dead_code)] // Read by the kernel-backed close verb (stage 4 step 6).
+    pub fn num(self) -> u64 {
+        self.num
+    }
+    #[allow(dead_code)] // Read by the kernel-backed close verb (stage 4 step 6).
+    pub fn den(self) -> u64 {
+        self.den.get()
+    }
+}
+
+/// One line a close touched (the owner's D3): its id, what happened, from
+/// which document to which (indices into the response's `docs`), the stamp
+/// it gained, and its minutes afterwards (`None`: the line has no estimate).
+#[allow(dead_code)] // Read by the kernel-backed close verb (stage 4 step 6); decoded now so every response is checked.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CloseEntry {
+    pub id: String,
+    pub grain: Grain,
+    pub did: CloseDid,
+    pub from: usize,
+    pub to: usize,
+    pub stamp: Option<Stamp>,
+    pub minutes: Option<Minutes>,
+}
+
+/// Decode `ok.report` with the smart constructors above. Every refusal names
+/// the field; a family this reader does not know (stage 6's) is ignored by
+/// design — families are looked up by name — but a malformed `closes` entry
+/// is never skipped.
+pub fn decode_report(report: &Value, ndocs: usize) -> Result<Vec<CloseEntry>, String> {
+    let closes = report
+        .get("closes")
+        .and_then(Value::as_array)
+        .ok_or("report: no closes array")?;
+    closes
+        .iter()
+        .enumerate()
+        .map(|(k, e)| {
+            let field = |name: &str| e.get(name).ok_or(format!("report.closes[{k}]: no {name}"));
+            let id = field("id")?.as_str().ok_or(format!("report.closes[{k}]: id is not a string"))?;
+            let grain = field("grain")?
+                .as_u64()
+                .and_then(Grain::from_wire)
+                .ok_or(format!("report.closes[{k}]: grain out of range"))?;
+            let did = field("did")?
+                .as_str()
+                .and_then(CloseDid::from_wire)
+                .ok_or(format!("report.closes[{k}]: unknown did"))?;
+            let doc = |name: &str| -> Result<usize, String> {
+                field(name)?
+                    .as_u64()
+                    .and_then(|n| usize::try_from(n).ok())
+                    .filter(|&n| n < ndocs)
+                    .ok_or(format!("report.closes[{k}]: {name} is not a document of this response"))
+            };
+            let (from, to) = (doc("from")?, doc("to")?);
+            let stamp = match field("stamp")? {
+                Value::Null => None,
+                v => Some(
+                    v.as_str()
+                        .and_then(Stamp::from_wire)
+                        .ok_or(format!("report.closes[{k}]: bad stamp"))?,
+                ),
+            };
+            let minutes = match field("min")? {
+                Value::Null => None,
+                v => Some(
+                    match (v.get("num").and_then(Value::as_u64), v.get("den").and_then(Value::as_u64)) {
+                        (Some(n), Some(d)) => Minutes::new(n, d),
+                        _ => None,
+                    }
+                    .ok_or(format!("report.closes[{k}]: min is not an integer pair with a positive denominator"))?,
+                ),
+            };
+            Ok(CloseEntry { id: id.to_string(), grain, did, from, to, stamp, minutes })
+        })
+        .collect()
 }
 
 /// What one kernel call did to the tree.
@@ -430,6 +601,17 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
     let out_docs = resp["ok"]["docs"]
         .as_array()
         .ok_or_else(|| CliError::Kernel(fault_issue("response carries neither ok nor err", &stderr)))?;
+    // The report (D3) rides every `ok`. No verb here sends a close yet, so a
+    // well-formed report must name nothing; either failure is a named fault,
+    // and nothing has been written.
+    let report = decode_report(&resp["ok"]["report"], out_docs.len())
+        .map_err(|e| CliError::Kernel(fault_issue(&e, &stderr)))?;
+    if !report.is_empty() {
+        return Err(CliError::Kernel(fault_issue(
+            &format!("the response reports {} closed lines for a request that closed nothing", report.len()),
+            &stderr,
+        )));
+    }
     if out_docs.len() != paths.len() {
         return Err(CliError::Kernel(fault_issue(
             &format!(
@@ -573,6 +755,16 @@ fn refusal(err: &Value) -> KernelIssue {
                 _ => "an unlisted title refusal — see Boundary.lean's parseCmd",
             };
             (s.to_string(), format!("kernel refusal: {s} — {why}"))
+        } else if matches!(s, "nowAbsent" | "badNow" | "blockMinAbsent" | "badBlockMin") {
+            // The request's clock (stage 4 step 5): the kernel never invents
+            // `now`, so a close without one is refused by name.
+            let why = match s {
+                "nowAbsent" => "a close was sent without `now`; the kernel never invents the instant it closes at",
+                "badNow" => "`now` is not a YYYY-MM-DD date",
+                "blockMinAbsent" => "a close was sent without `blockMin`, which its report's minutes need",
+                _ => "`blockMin` is not a positive number of minutes",
+            };
+            (s.to_string(), format!("kernel refusal: {s} — {why}"))
         } else {
             // jsonErr: bad JSON, bad doc, unknown op — a host-side bug by
             // the time it appears here, since this module builds every
@@ -593,6 +785,8 @@ fn refusal(err: &Value) -> KernelIssue {
             "danglingDep" => "the edited `after:` names an id no item in the plan carries",
             "depCycle" => "the edited `after:` makes the dependencies cycle (§5.5)",
             "siteOutOfRange" => "a placement points at a document the plan does not hold",
+            "noTarget" => "a close has no file to put a line in — the host must hand over the destination week or month file (kernel/README.md gap 56)",
+            "noSection" => "a close's destination file has no section to land the line in (`# Demoted`, or the heading it stood under; gap 56)",
             _ => "an unlisted kernel refusal — see kernel/TmKernel/TmKernel/Boundary.lean",
         };
         (name.to_string(), format!("kernel refusal: {name} — {why}"))
@@ -746,11 +940,82 @@ mod tests {
             (serde_json::json!("titleId"), "titleId"),
             (serde_json::json!("titleBlank"), "titleBlank"),
             (serde_json::json!("titleEdge"), "titleEdge"),
+            // stage 4 step 5: the close refusals and the request's clock
+            (serde_json::json!({"kernel":"noTarget"}), "noTarget"),
+            (serde_json::json!({"kernel":"noSection"}), "noSection"),
+            (serde_json::json!("nowAbsent"), "nowAbsent"),
+            (serde_json::json!("badNow"), "badNow"),
+            (serde_json::json!("blockMinAbsent"), "blockMinAbsent"),
+            (serde_json::json!("badBlockMin"), "badBlockMin"),
         ] {
             let issue = refusal(&payload);
             assert_eq!(issue.name, name);
             assert!(issue.message.contains(name), "{}", issue.message);
             assert_eq!(issue.detail["refusal"], name);
+        }
+    }
+    /// The report decoder, end to end against the real kernel: a week close
+    /// sent through `tm_kernel_ffi::call` comes back with the per-item list
+    /// `Boundary.lean`'s `the_week_close_reports_each_line` decides, and every
+    /// field decodes through its smart constructor.
+    #[test]
+    fn a_real_close_report_decodes_through_the_smart_constructors() {
+        let request = r##"{"now":"2026-09-07","blockMin":50,"docs":[{"path":"week/2026-W36.md","grain":1,"ix":105694,"lines":["# Tasks","- [ ] 4 6b Rollback path passes tests ^m2","- [x] 2 1b Send the draft ^t1","- [ ] 5 2h Midterm at:2026-10-20T10:00/12:00 ^x1"]},{"path":"week/2026-W37.md","grain":1,"ix":105695,"lines":["# Tasks"]},{"path":"month/2026-09.md","grain":2,"ix":24308,"lines":["# Outcomes","# Demoted"]}],"cmds":[{"op":"close","grain":1}]}"##;
+        let raw = tm_kernel_ffi::call(request).expect("kernel call");
+        let resp: Value = serde_json::from_str(&raw).expect("json");
+        let n = resp["ok"]["docs"].as_array().expect("docs").len();
+        let report = decode_report(&resp["ok"]["report"], n).expect("report decodes");
+        assert_eq!(
+            report,
+            vec![
+                CloseEntry {
+                    id: "x1".into(),
+                    grain: Grain::Week,
+                    did: CloseDid::Carry,
+                    from: 0,
+                    to: 1,
+                    stamp: None,
+                    minutes: Minutes::new(120, 1),
+                },
+                CloseEntry {
+                    id: "m2".into(),
+                    grain: Grain::Week,
+                    did: CloseDid::Copy,
+                    from: 0,
+                    to: 2,
+                    stamp: Some(Stamp::Week(36)),
+                    minutes: Minutes::new(300, 1),
+                },
+            ],
+            "{raw}"
+        );
+    }
+
+    /// The decoder bites, by field, and does not over-bite: an empty report
+    /// and an unknown family beside `closes` decode.
+    #[test]
+    fn the_report_decoder_refuses_each_malformed_field_by_name() {
+        let ok = serde_json::json!({"id":"m2","grain":1,"did":"copy","from":0,"to":2,"stamp":"W36","min":{"num":300,"den":1}});
+        let with = |k: &str, v: Value| {
+            let mut e = ok.clone();
+            e[k] = v;
+            serde_json::json!({ "closes": [e] })
+        };
+        assert_eq!(decode_report(&serde_json::json!({"closes":[]}), 3), Ok(vec![]));
+        assert!(decode_report(&serde_json::json!({"closes":[],"diagnostics":[]}), 3).is_ok());
+        assert!(decode_report(&serde_json::json!({ "closes": [ok.clone()] }), 3).is_ok());
+        for (report, why) in [
+            (serde_json::json!({}), "no closes"),
+            (with("did", serde_json::json!("moved")), "unknown did"),
+            (with("grain", serde_json::json!(3)), "grain out of range"),
+            (with("to", serde_json::json!(3)), "to is not a document"),
+            (with("stamp", serde_json::json!("M09")), "bad stamp"),
+            (with("stamp", serde_json::json!("W3")), "bad stamp"),
+            (with("min", serde_json::json!({"num":300,"den":0})), "positive denominator"),
+            (with("min", serde_json::json!(6.0)), "positive denominator"),
+        ] {
+            let err = decode_report(&report, 3).expect_err(why);
+            assert!(err.contains(why), "{err} / {why}");
         }
     }
 }

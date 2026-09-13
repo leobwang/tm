@@ -194,16 +194,17 @@ citations no longer resolve (§10.2).
 ### 2.3 The module map, in one line each
 
 ```
-Cal ──▶ Grain ──▶ Text ──▶ Line ──▶ State ──▶ Plan ──▶ Cmd ──▶ Close ──▶ Boundary
-                   │                                                      ▲
-                   └──▶ Json ─────────────────────────────────────────────┘
-Arith                       (standalone: nothing imports it but the root)
+Cal ──▶ Grain ──▶ Text ──▶ Line ──▶ State ──▶ Plan ──▶ Cmd ──▶ Close ──▶ Report ──▶ Boundary
+                   │                                                  ▲          ▲
+                   └──▶ Json ─────────────────────────────────────────┼──────────┘
+Arith ────────────────────────────────────────────────────────────────┘
 ```
 
 Root import order (`cat TmKernel.lean`): `Arith Cal Grain Text Json Line State
-Plan Cmd Close Boundary`. `Json` imports `Text` only; `Close` imports `Cmd`;
-`Boundary` imports `Close` and `Json` (stage 4 step 2 — it imported `Cmd`
-before). **No module imports `Lean.Data.Json` any more** — the wire is the
+Plan Cmd Close Report Boundary`. `Json` imports `Text` only; `Close` imports `Cmd`;
+`Report` imports `Close` and `Arith` (stage 4 step 5 — the first consumer of
+`Arith`); `Boundary` imports `Report` and `Json` (it imported `Cmd` before stage 4
+step 2, and `Close` before step 5). **No module imports `Lean.Data.Json` any more** — the wire is the
 kernel's own (§2.4).
 
 - `Cal` — the calendar. Days since 0001-01-01, proleptic Gregorian. ISO weeks.
@@ -214,17 +215,18 @@ kernel's own (§2.4).
 - `State` — entity versus observation. `Core`, `wf`, `Entity`, `render`.
 - `Plan` — `Store`, `Doc`, `PlanCore`, `planWf`, `WfPlan`, and the comment rule (`commentAfter`).
 - `Cmd` — `lift`, `Transform`, `Dest`, `WfPlan.mapAt`, `KErr`, the commands (`cmdMove cmdDrop cmdSetEst cmdDemote cmdReadopt cmdRank cmdEdit cmdUnset`, and `WfPlan.insertFresh` for `add`), the `EditVal` table.
-- `Close` — §6.3's lifecycle as one fold at three grains: the `ClosePolicy` table and its bridges, `close`, the landing rank shift, `close_spec`. Not on the wire yet (kernel/README.md, stage-4 step-2 block).
+- `Close` — §6.3's lifecycle as one fold at three grains: the `ClosePolicy` table and its bridges, `close`, the landing rank shift, `close_spec`, `autoClose`. On the wire since stage 4 step 5, as the `close` and `autoClose` ops.
+- `Report` — what a close reports (the owner's D3): `CloseEntry`, `Report`, `closeReport`, `closeR`/`autoCloseR`, and the theorems tying each entry to the close's result. kernel/README.md, stage-4 step-5 block.
 - `Boundary` — `String → String`: the request readers, `parseCmd`, the loader, `respond`, `call`, `callExport`.
-- `Arith` — exact rational arithmetic. Nothing consumes it yet.
+- `Arith` — exact rational arithmetic. Its one consumer so far is `Report` (minutes as an `Arith.Pos`).
 
 **A new module is not built until it is imported.** `kernel/TmKernel/TmKernel.lean`
-is eleven `import TmKernel.<Mod>` lines and nothing else; `lakefile.toml` names one
+is twelve `import TmKernel.<Mod>` lines and nothing else; `lakefile.toml` names one
 `lean_lib TmKernel` and no module list. So a `.lean` file dropped into
 `TmKernel/TmKernel/` that nobody imports is **not compiled by check 1**, is not in
 `libTmKernel_TmKernel.a`, and is therefore invisible to the Rust — while
 `check.sh` still prints seven `ok`s. Stage 3 added one (`Json`, imported at
-`c2ad8f6` in the same commit), stage 4 added `Close` (imported in the commit
+`c2ad8f6` in the same commit), stage 4 added `Close` and `Report` (each imported in the commit
 that created it), and the remaining stages propose more (§8.3, §8.4). Add the `import` line in the same commit as the file:
 
 ```bash
@@ -258,15 +260,17 @@ keys up by name.
 
 ```jsonc
 // request
-{"docs":[{"path":"week/2026-W37.md","grain":1,"ix":105695,
+{"now":"2026-09-12","blockMin":50,     // both optional; required by close/autoClose (stage 4 step 5)
+ "docs":[{"path":"week/2026-W37.md","grain":1,"ix":105695,
           "lines":["# Tasks","- [ ] 5 6b Finish the report ^m1"]}],
  "cmds":[{"op":"move","id":"m1","doc":0}]}
 // doc: path, lines (every element a string); grain ∈ 0..2 (day week month) or
 //      null/absent = no region; ix required when grain is present
-// ops, nine:
+// ops, ten:
 //   move{id,doc}  drop{id}  est{id,min}  demote{id,doc,period,grain?}
 //   readopt{id,doc}  rank{id,rank}  add{seed,doc,title}
 //   edit{id,key,value}            // value "" is the unset form
+//   close{grain}  autoClose{}     // grain 0..2; both read the request's now and blockMin
 // demote's grain is a STRING: "d" stamps D<period>, anything else or absent W<period>
 // rank is a raw document rank (a line index); add's id is the kernel's (freshId)
 ```
@@ -276,7 +280,10 @@ as if it were the taxonomy is how a host ends up with a `match` that falls
 through. All ten, from `Boundary.lean`, keys in the order they are emitted:
 
 ```jsonc
-{"ok":{"docs":[{"path":…,"lines":[…],"grain":…,"ix":…}]}}   // grain/ix only if the request declared a region
+{"ok":{"docs":[{"path":…,"lines":[…],"grain":…,"ix":…}],     // grain/ix only if the request declared a region
+       "report":{"closes":[{"id":…,"grain":…,"did":…,"from":…,"to":…,"stamp":…,"min":{"num":…,"den":…}}]}}}
+                                               // report on every ok (empty closes when nothing closed);
+                                               // did: move|moveReopening|copy|carry; stamp/min may be null
 {"err":"<free text>"}                          // jsonErr: see below
 {"err":{"kernel":"<name>"}}                    // see below
 {"err":{"dupId":"<id>"}}
@@ -289,8 +296,9 @@ through. All ten, from `Boundary.lean`, keys in the order they are emitted:
                                                // parentCycle danglingDep depCycle sectionDiscipline fileKindShape
 ```
 
-`"kernel"` carries **eleven** strings, and ten of them are `KErr`, from
-`kerrName`: `occupied`, `noSuchId`, `notDemoted`, **`alreadyDemoted`**,
+`"kernel"` carries **thirteen** strings, and twelve of them are `KErr`, from
+`kerrName` — `noTarget` and `noSection` (a close with no destination file or
+section, kernel/README.md gap 56) reach the wire since stage 4 step 5, beside: `occupied`, `noSuchId`, `notDemoted`, **`alreadyDemoted`**,
 `badHorizon`, `badItem` (an `add` whose post-state fails `itemsWf`),
 `tabbedLine` and `keyAbsent` (the edit path), `danglingDep` and `depCycle` (an
 `after:` edit, renamed out of `badHorizon` by `nameEditFault`). The eleventh,
@@ -305,9 +313,11 @@ The free-text `err` is not one thing either. It carries: `bad json: <JErr>` (the
 parser's thirteen names, `jerrText`); `property not found: <k>`, `String
 expected`, `Natural number expected`, `array expected`, `object expected`,
 `duplicateKey <k>`, `grain <n> out of range (0..2)`, `unknown op <op>`; `add`'s
-five title refusals `titleNewline titleTab titleId titleBlank titleEdge`; and
+five title refusals `titleNewline titleTab titleId titleBlank titleEdge`;
 the edit's `unknownKey <k>`, `keyNotWired <k>` (only `demoted` today, by policy)
-and `badValue <k>`. The host (`kernel_bridge::refusal`) maps these names to
+and `badValue <k>`; and the request clock's four (stage 4 step 5): `nowAbsent`
+and `blockMinAbsent` (a close op in a request without one), `badNow` and
+`badBlockMin` (present and malformed, refused whatever the commands). The host (`kernel_bridge::refusal`) maps these names to
 `detail.refusal`. Re-derive the list rather than trusting this block:
 
 ```bash
@@ -316,7 +326,10 @@ grep -n '"err"\|"kernel"\|jsonErr\|lerrJson\|throw\|kerrName' Boundary.lean
 grep -n 'def jget' -A 8 Json.lean
 ```
 
-There is **no `now`, no `log`, no `cfg`, no `model`, no `seed`** in the request,
+*Stage 4 step 5 (2026-09-12) added `now` and `blockMin` to the request and
+`report` to the response; the paragraph below is the pre-step-5 record, kept for
+its history — the full shape of record is kernel/README.md's stage-4 step-5
+block.*  There is **no `now`, no `log`, no `cfg`, no `model`, no `seed`** in the request,
 and **no `events`, no `report`, no `repairs`** in the response. Stages 4–6 need
 all of them; §8 says which stage adds what — and §8.2 gives `report` the shape it
 does not yet have (the owner has since decided what it carries, §10.5 q8, but no
@@ -1491,6 +1504,14 @@ three-month-stale plan is decided catching up with every id kept, one stamp at
 most per line and its summed estimate unchanged; burn-down 33. The shipped
 binary still runs the sixteen-period loop until `close` reaches the wire.
 README stage-4 step-4 block.
+*Step 5 (2026-09-12):* scope item 4 is landed and the report has its shape —
+new module `Report.lean`, D3's named per-item list under `ok.report.closes`,
+tied to the close's result by `closeReport_ids` and
+`closeReport_agrees_with_close`; `now` and `blockMin` are request fields,
+required by the new `close`/`autoClose` ops and refused by name
+(`nowAbsent`, `badNow`, …); the stale-tree acceptance is now also an FFI
+witness. The host decodes and checks every report but sends no close yet
+(step 6). README stage-4 step-5 block.
 
 **Scope, concretely.**
 

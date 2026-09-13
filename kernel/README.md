@@ -4667,3 +4667,235 @@ Elaborating `Boundary.lean` alone now takes 27.5 s at a 2.9 GB peak, against
 (4.1 GB before the observations were merged into one decision); a `lake build
 TmKernel:static` rebuilding `Close` and `Boundary` peaked at 3.0 GB.  Gaps run to 57
 (new gaps start at 58); cheats to 51 (new cheats start at 52).
+
+<!-- ===================================================================
+     APPENDED 2026-09-12 (stage-4 session, rebuild-on-lean).  Step 5: what a close reports, and `now` on the wire — new module `Report.lean`.
+     Takes gap 58 and cheats 52–54.  Supersedes, by name, AGENTS §2.4's "no `now` … no `report`" and step 4's "not a wire op" (sequencing item 2).
+     =================================================================== -->
+
+## Stage 4 step 5, 2026-09-12: what a close reports — a named per-item list, and `now` on the wire
+
+Baseline re-measured at `41792e8` before this step, every command under the 40 GB
+cap: `check.sh` **7/7** — axiom audit **1407**, corpus **33/37 files and 4/5
+whole plans**, burn-down **33**; `cargo test --workspace` **984 passed / 0 failed
+/ 0 ignored across 64 binaries**.
+
+**What landed.**  `TmKernel/Report.lean`, a new module (imports `Close` and
+`Arith` — `Arith`'s first consumer), imported in the same commit by
+`TmKernel.lean` (between `Close` and `Boundary`) and by `Boundary.lean` (in place
+of its `Close` import, which `Report` re-exports).  `Boundary.lean` gains the
+request clock, the `close` and `autoClose` ops, and `report` under `ok`.  The
+Rust host decodes every report.  No goal is discharged — none was stated for the
+report — so the burn-down stays **33**.
+
+**The report's shape (the owner's D3), and the four AGENTS §8.2 rules.**  A
+`Report` is a record of named families; stage 4 ships one, `closes :
+List CloseEntry`.  An entry is the item's `id`; the `grain` of the close that
+took it (`Fin 3`); `did`, what happened, a `CloseDid` —
+`move` (§6.3's month row), `moveReopening` (day row: `[>]`→`[ ]`, stamped),
+`copy` (week row: `[-]` left behind, stamped record filed forward), `carry` (a
+wall still ahead, moved undemoted into the live week); `src` and `dst`,
+document indices into the response's `docs` — the wire's own addressing, the
+`doc` a command names; the `stamp` gained (`Field.Stamp` or none); and
+`minutes`, an `Arith.Pos` or none.
+(1) *Under `ok`, beside `docs`:* `runPlan` builds it on the success path only
+(`runPlan_refusal_carries_no_report`).  (2) *Bounded, with smart constructors
+the decoders use:* `Grain` is `Fin 3`; `CloseDid.ofName?` accepts exactly the
+four constructor names (`CloseDid.ofName?_name`, `CloseDid.ofName?_refuses`); a
+stamp is `Field.Stamp` (`parseStamp`); minutes are `Arith.Pos`, built by
+`Arith.posOfNat`, decoded by `Arith.ofPair?`, which refuses `den = 0`; the block
+length is `BlockMin`, `BlockMin.ofNat?` refusing `0`.  The host's decoder
+(`kernel_bridge::decode_report`) mirrors each: `Grain::from_wire`,
+`CloseDid::from_wire`, `Stamp::from_wire`, `Minutes::new` over `NonZeroU64`, and a
+document index below the response's `docs` length — every malformed field
+refused by name, never skipped.  (3) *Named:* `did` by constructor name, as
+`kerrName` names a `KErr`.  (4) *Integer pairs, no division:* `min` is
+`{"num":…,"den":…}` (every stage-4 denominator is `1`; stage 5's exact arithmetic
+is what makes the pair necessary), and the host divides on screen.
+
+**One definition, not a second reader.**  An entry is not collected by watching
+the fold; `closeEntry` reads it off the three functions the fold runs —
+`closeAct` (taken, and how), `stepSkel` (where the line ends up, with what
+bytes), `closeStamp` (which stamp) — against the plan the close was handed.  The
+theorems tie that to the close's *result*:
+`closeReport_ids` — the report's ids are exactly `closeCands`, in fold order, so
+no line the close acts on is missing and no line it leaves is named;
+`closeReport_agrees_with_close` — under a successful close, for every entry the
+item is in the plan before and after, `src` is its file before, `dst` its file
+after, its stamps after are its stamps before with `stamp` appended, and
+`minutes` is its estimate after; `closeReport_names_the_region_of_now` — a filed
+entry's `dst` has region `closeTo g now` and a carried one's the week of *now*
+(D1, in the report); `closeReport_stamp_names_its_grain`.  For `autoClose`,
+`autoCloseR` folds the same `autoCloseOrder`, each grain's entries against the
+plan that grain's close was handed (`autoCloseR_ok`), and
+`autoCloseR_names_each_line_at_most_once` is the owner's double-stamp failure
+ruled out on the report the month review will read.  `closeR_plan`,
+`autoCloseR_plan` and `applyAllR_plan` say reporting writes exactly what the
+non-reporting forms write, so every theorem about `close`, `autoClose` and
+`applyAll` is about the plan the FFI hands back.
+
+**Minutes.**  An entry's minutes are the estimate view `Core.est` reads
+(`Field.viewRemainingDur`: `est:` over the leading estimate) at block length
+`blockMin`, the same reading step 4's stale-tree ledger summed — **`null` when the
+line carries no estimate, never `0`** (the month witness's outcome `^O7`).  A
+block estimate has no minutes without a block length, and the request had none,
+so **`blockMin` enters the request beside `now`** — gap 58 prices where it lives.
+
+**How stage 6 extends it without reshaping.**  Diagnostics families and plan
+segments become further fields of `Report`, each its own list of named entries,
+emitted as further keys of the `report` object after `closes`.  Readers look
+families up by name — the host's decoder already ignores a family it does not
+know and refuses a malformed `closes` entry — so nothing stage 4 ships changes
+shape, and no `CloseEntry` field moves.
+
+**`now` on the wire (AGENTS §8.2 scope item 4).**  `now` is a string
+`"YYYY-MM-DD"` read by the kernel's own date grammar, `Field.parseDate` (smart
+constructor `mkDate?`, round trip `parse_render_date`); `blockMin` is a positive
+number.  **Each is optional at the request and required by the command that
+reads it**: `parseCmdAt` builds `ReqCmd.close g now bm` / `ReqCmd.autoClose now
+bm` only from the request's own values, so a close whose request omits `now` is
+refused **`nowAbsent`** (and `blockMinAbsent`) before any document loads — there
+is no default, and a command that closes cannot be constructed without an
+instant (CHEAT 54).  A value that is present and malformed is refused **whatever
+the commands**: `badNow` (not a string, `null`, not a real date — 30 February,
+an unpadded month), `badBlockMin` (not a number, or `0`); carried twice, either
+is `duplicateKey`.  Read order in `run`: `docs`, the `cmds` array, the clock,
+each command, the comment scan, the loader.  *The alternative, and why not now:*
+requiring `now` on every request would refuse `move`/`drop`/`add` requests that
+read no instant, and change every host call and FFI fixture for no reader;
+when stage 5's `due:` evaluation or stage 6's planner reads `now` on every
+request, those ops get the same refusal by construction.  §10.2's `closed` map
+stays Rust's.
+
+**The wire, of record (supersedes AGENTS §2.4's request and `ok` blocks where they
+differ).**
+
+```jsonc
+// request — keys looked up by name; each read key at most once (duplicateKey)
+{"now":"2026-09-07",          // optional; "YYYY-MM-DD"; required by close/autoClose
+ "blockMin":50,               // optional; positive; required by close/autoClose
+ "docs":[{"path":"week/2026-W36.md","grain":1,"ix":105694,"lines":["# Tasks","…"]}, …],
+ "cmds":[{"op":"close","grain":1}]}
+// ops, ten: move{id,doc} drop{id} est{id,min} demote{id,doc,period,grain?}
+//   readopt{id,doc} rank{id,rank} add{seed,doc,title} edit{id,key,value}
+//   close{grain}      grain 0|1|2 = day|week|month; out of range: "grain n out of range (0..2)"
+//   autoClose{}       each grain once, day then week then month
+// response, ok — keys in build order: docs, then report
+{"ok":{"docs":[{"path":"week/2026-W36.md","lines":[…],"grain":1,"ix":105694}, …],
+       "report":{"closes":[
+         {"id":"x1","grain":1,"did":"carry","from":0,"to":1,"stamp":null,"min":{"num":120,"den":1}},
+         {"id":"m2","grain":1,"did":"copy","from":0,"to":2,"stamp":"W36","min":{"num":300,"den":1}}]}}}
+// report is on EVERY ok; "closes":[] when the request closed nothing.
+// entries: one per line a close acted on, in fold order, a request's closes concatenated in
+//   command order; did ∈ move|moveReopening|copy|carry; stamp "D<dd>"|"W<ww>"|null;
+//   min {num,den} with den > 0, or null for a line with no estimate.
+// response, err — the nine shapes of AGENTS §2.4, plus: "kernel" now also names
+//   noTarget and noSection; the free-text err now also carries nowAbsent,
+//   blockMinAbsent, badNow, badBlockMin.  No err carries a report.
+```
+
+**Both directions (AGENTS §5.8).**  *It succeeds, and the report is populated on
+real closes:* decided on loaded plans, one per grain —
+`the_week_close_reports_each_line` (`x1` carry 0→1, unstamped, 120/1; `m2` copy
+0→2, `W36`, 300/1), `the_day_close_reports_each_line` (`p1` moveReopening into
+2026-W37, `D04`, 20/1), `the_month_close_reports_each_line` (`m9` move, 150/1;
+`O7` move, `null`); `a_close_entry_emits_in_build_order` pins the bytes;
+`the_clock_reads_now_and_blockMin`;
+`parseCmdAt_reads_the_close_ops_and_refuses_without_the_clock` (its success
+half); `parseCmdAt_is_parseCmd` (every other op is `parseCmd`'s, whatever the
+clock).  Through `String → String` (FFI, `tests/kernel.rs`):
+`a_week_close_reports_each_line_it_touched` asserts the whole response, byte for
+byte, and that closing the kernel's own output again at the same instant changes
+nothing and reports nothing (L16 at the wire); and
+`a_three_month_stale_tree_catches_up_in_one_call_and_reports_each_line` — **step
+4's owed FFI witness**: `staleWitness` through `autoClose`, seven entries each
+naming its line once (`p3` `D29` 60, `p1` `D12` 20, `x1` carry 120, `m3` `W35`
+100, `m2` `W24` 300, `m9` 150, `O7` null), no double stamp, and a second call
+that changes and reports nothing (L19b at the wire).  In the host,
+`a_real_close_report_decodes_through_the_smart_constructors` sends a week close
+through `tm_kernel_ffi::call` and decodes it into typed entries.
+*It bites:* `the_clock_refuses_a_malformed_value_by_name` (seven refusals, and
+an empty clock reads),
+`parseCmdAt_reads_the_close_ops_and_refuses_without_the_clock` (`nowAbsent`,
+`blockMinAbsent`, grain 3), `run_names_the_clock_refusals` (on `run`, before
+loading), `runPlan_refusal_carries_no_report`; FFI
+`the_clock_is_refused_by_name` (seven refusals, and a clockless request with no
+close still reads) and `a_refused_close_is_named_and_reports_nothing`
+(`{"err":{"kernel":"noTarget"}}`); host
+`the_report_decoder_refuses_each_malformed_field_by_name`, and the refusal map
+now names `noTarget`, `noSection` and the clock's four.  **CHEAT 52** (minutes
+over a zero denominator), **CHEAT 53** (`moved` decoded as `move`) and **CHEAT
+54** (a `close` command built without `now`) fail to compile; their controls are
+`closeReport_agrees_with_close`, `CloseDid.ofName?_refuses` and
+`parseCmdAt_reads_the_close_ops_and_refuses_without_the_clock`.
+
+**L22 widened to the new commands.**  `ReqCmd` gained two constructors, so
+`move_has_no_inverse_command` — quantified over every `ReqCmd` — had to show that
+no close undoes the witness move.  It does, from a general fact now proved,
+`stepSkel_doc_kinds`: a close moves a line only out of a file of its own grain's
+kind, and only into a file of the next coarser grain's kind or, for a wall
+(`closeAct_carry_is_a_wall`), the week.  `^m1` moved into the month file, so only
+a month close could move it, and only into a month file — never back to the week
+file it came from.  `lifecycle_commands_do_not_commute` (L27) is an existential
+witness and is unchanged.
+
+**The host.**  `kernel_bridge::apply` decodes `ok.report` on every call; since no
+verb sends a close yet, a non-empty report is a named `kernelFault`, and nothing
+is written.  The typed entries have no consumer until the close verb lands (the
+struct carries `#[allow(dead_code)]` with that reason, the crate's existing
+precedent).
+
+**Choices this step took, each with what separates it (AGENTS §4's last row).**
+None relitigates D1–D4.
+1. **Document indices, not paths, in `from`/`to`** — the addressing commands
+   already use; the host reads the path off `docs[k]`.  Bounded by the response,
+   checked by the host decoder.
+2. **`report` on every `ok`, not only when something closed** — one `ok` shape a
+   host cannot fall through; it changed five FFI tests' exact bytes.
+3. **A close op's `grain` is the documents' number (`0..2`), not `demote`'s
+   `"d"` string** — one grain decoder, `Grain.ofNat?`, and its refusal text.
+4. **Minutes are the line's estimate after the close** (the file's bytes), not
+   before; for every stage-4 row they are equal on the witnesses, and the general
+   statement is still gap 54's (`setDemoted` leaving the estimate reading alone
+   is not proved).
+
+**Gap 58 — `blockMin` is a top-level request field, not configuration.**  (1)
+*Not done:* the block length the report's minutes need rides the request as
+`"blockMin"`, beside `now`, rather than inside a `cfg` object.  (2) *Why:* there
+is no `cfg` on the wire (AGENTS §2.4), and its shape is stage 5's to settle with
+the rest of §5.3's configuration; inventing it here for one field would pre-empt
+that.  (3) *Cost:* if stage 5 moves the block length into `cfg`, the wire changes
+for the two close ops — one line in `kernel_bridge.rs`'s request build, the FFI
+fixtures that send a close, and `parseClock`; nothing in the report changes.
+(4) *Clears:* stage 5's `cfg`, which either absorbs `blockMin` (and this
+paragraph records the move) or keeps it top-level by name.
+
+**Owed by the stage, not attempted in this step (sequencing, not gaps).**  (1)
+**The shipped binary still does not call `close`**: fork-point `auto_close` with
+`AUTO_CLOSE_CATCHUP = 16` still runs as housekeeping ahead of every command, and
+the host decodes reports but sends no close op.  Wiring the host's automatic
+close to `autoClose` (with `now` and `blockMin` from its clock and config), the
+CLI half of the acceptance ("a 3-month-stale tree catches up losing nothing"
+through the binary) and the 30-minute drive (AGENTS §5.13) are step 6's.  (2)
+The refute-and-renames of `close_leaves_no_live_line_in_a_closed_region`,
+`close_never_demotes_a_wall` and `close_writes_every_estimate_through_demoteEst`.
+(3) The proof-to-definition ratio AGENTS §8.2 owes stage 5.  (4) The `demote`
+wire verb still lands at `freshRank` (step 2's gap-20 status, unchanged).
+**Superseded by name:** step 4's sequencing item (2), "the FFI-level witness waits
+on the same wire step", is done (the stale-tree FFI test above); AGENTS §2.4's
+"no `now` … no `report`" paragraph is marked as the pre-step-5 record there.
+
+Re-measured after this step, every command under the 40 GB cap: `check.sh`
+**7/7** — axiom audit **1444 theorems** (37 new: 24 in `Report.lean`, 13 in
+`Boundary.lean`; the three counts of AGENTS §6.3 agree at 1444, a prose line
+that would have made the third 1445 reflowed), corpus **33/37 files and 4/5
+whole plans** (unchanged), `Goals.lean` burn-down **33** (unchanged);
+`cargo test --workspace` **986 passed / 0 failed / 0 ignored across 64
+binaries** (+2, the host's report decoder); FFI suite **67** (61 kernel + 6
+corpus; +4).  Every new `decide`/`rfl` witness was probed first under an 8 GB
+cap: the three report witnesses and the emission witness decided together in
+2.5 s at a 1.1 GB peak, imports included, and the clock and parse witnesses
+(all `rfl`) in under a second.  Elaborating
+`Boundary.lean` alone now takes 30.9 s at a 2.8 GB peak (27.5 s at 2.9 GB at
+step 4).  Twelve modules, 24,256 lines.  Gaps run to 58 (new gaps start at 59);
+cheats to 54 (new cheats start at 55).
