@@ -227,7 +227,7 @@ theorem closeReport_ids (g : Grain) (now : Day) (bm : BlockMin) (p : PlanCore) :
   unfold closeReport
   apply filterMap_ids
   intro i hi
-  have hf := (List.mem_filter.1 hi).2
+  have hf := (List.mem_filter.1 (mem_closeCands_iff.1 hi)).2
   revert hf
   cases hg : p.store.get i with
   | none => simp
@@ -438,7 +438,7 @@ theorem autoCloseR_ok {now : Day} {bm : BlockMin} {p q : WfPlan} {r : Report}
 
 theorem mem_closeCands {g : Grain} {now : Day} {p : PlanCore} {i : Id} (h : i ∈ closeCands g now p) :
     ∃ e, p.store.get i = some e ∧ closeAct g now p e.val.skel ≠ .stay := by
-  have hf := (List.mem_filter.1 h).2
+  have hf := (List.mem_filter.1 (mem_closeCands_iff.1 h)).2
   revert hf
   cases hg : p.store.get i with
   | none => simp

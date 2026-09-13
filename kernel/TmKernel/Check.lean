@@ -1663,3 +1663,58 @@ open Tm
 #print axioms Tm.close_leaves_live_lines_in_a_closed_region
 #print axioms Tm.close_does_not_leave_every_wall_as_it_was
 #print axioms Tm.close_writes_a_line_demoteEst_does_not
+-- ===================================================================
+-- APPENDED 2026-09-13 (stage-4 session, rebuild-on-lean).  Step 8: gap 59 —
+-- closeCands in source order, and close_keeps_source_order (Close.lean), with
+-- its sightings on loaded plans (Boundary.lean).  Gap 20's demote verb: see README.
+-- ===================================================================
+#print axioms Tm.siteLe_iff
+#print axioms Tm.siteLe_total
+#print axioms Tm.siteLe_trans
+#print axioms Tm.insertBySite_perm
+#print axioms Tm.sortBySite_perm
+#print axioms Tm.insertBySite_sorted
+#print axioms Tm.sortBySite_sorted
+#print axioms Tm.closeCands_perm
+#print axioms Tm.closeCands_sorted
+#print axioms Tm.mem_closeCands_iff
+#print axioms Tm.shiftRank_lt_iff
+#print axioms Tm.rankBump_lt_iff
+#print axioms Tm.shiftRank_min
+#print axioms Tm.Site.bump_doc
+#print axioms Tm.Site.bump_rank_of_doc
+#print axioms Tm.Site.bump_of_ne
+#print axioms Tm.Site.bump_none
+#print axioms Tm.Site.bump_lt
+#print axioms Tm.inComment_shiftFrom
+#print axioms Tm.liveHeading_shiftFrom
+#print axioms Tm.firstHeadingAbove_eq
+#print axioms Tm.loOk_shift
+#print axioms Tm.foldl_fhaStep_shift
+#print axioms Tm.firstHeadingAbove_bump
+#print axioms Tm.landingSpot_bump
+#print axioms Tm.landingSpot_src
+#print axioms Tm.le_foldl_max_nat
+#print axioms Tm.live_rank_lt_endRank
+#print axioms Tm.docs_shiftIn_getElem?
+#print axioms Tm.landAt_moves
+#print axioms Tm.closeAct_closed
+#print axioms Tm.closeOne_moves
+#print axioms Tm.carryTarget_frame
+#print axioms Tm.closeTarget_frame
+#print axioms Tm.landingSpot_docs
+#print axioms Tm.sectionAt_docs
+#print axioms Tm.get_of_map_eq_some
+#print axioms Tm.closeOne_keeps_untaken
+#print axioms Tm.fold_keeps_order_both
+#print axioms Tm.closeAct_skel_frame
+#print axioms Tm.fold_keeps_order_after_first
+#print axioms Tm.fold_keeps_order
+#print axioms Tm.sublist_pair_or
+#print axioms Tm.close_keeps_source_order
+#print axioms Tm.close_keeps_source_order_iff
+#print axioms Tm.the_week_close_keeps_source_order_in_demoted
+#print axioms Tm.the_month_close_keeps_source_order_in_its_section
+#print axioms Tm.the_day_close_keeps_source_order_at_the_end_of_the_week
+#print axioms Tm.the_month_close_orders_lines_by_the_destination_sections
+#print axioms Tm.the_week_close_reports_in_source_order

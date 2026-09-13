@@ -513,8 +513,10 @@ def closeOne (g : Grain) (now : Day) (i : Id) : Transform := fun p =>
         | .error x => .error x
         | .ok spot => landAt p k spot i (fileE g r)
 
-/-- The ids a close of grain `g` at `now` acts on, in store order. -/
-def closeCands (g : Grain) (now : Day) (p : PlanCore) : List Id :=
+/-- The ids a close of grain `g` at `now` acts on, in store order — which is
+**not** file order: the loader builds `dom` in reverse, so folding this list
+landed the lines it took in reverse of their source order (README gap 59). -/
+def closeCandSet (g : Grain) (now : Day) (p : PlanCore) : List Id :=
   p.store.dom.filter (fun i =>
     match p.store.get i with
     | none   => false
@@ -522,6 +524,124 @@ def closeCands (g : Grain) (now : Day) (p : PlanCore) : List Id :=
       match closeAct g now p e.val.skel with
       | .stay => false
       | _     => true)
+
+/-! ### Source order (README gap 59)
+
+A line landing at the end of a file, or at the end of a section, lands after
+every line already there — so the fold must take the lines of one source file
+in rank order for them to keep it.  The order is a structural insertion sort on
+(document, rank): it reduces under `decide` (AGENTS §5.10), and `sortBySite_perm`
+makes it a permutation, so every statement about *which* ids a close takes is
+unchanged. -/
+
+/-- Source order on placements: document, then rank. -/
+def siteLe (a b : Site) : Bool :=
+  decide (a.doc < b.doc) || (decide (a.doc = b.doc) && decide (a.rank ≤ b.rank))
+
+theorem siteLe_iff (a b : Site) : siteLe a b = true ↔ a.doc < b.doc ∨ (a.doc = b.doc ∧ a.rank ≤ b.rank) := by
+  simp [siteLe]
+
+theorem siteLe_total (a b : Site) : siteLe a b = false → siteLe b a = true := by
+  intro h
+  have h' : ¬ (a.doc < b.doc ∨ (a.doc = b.doc ∧ a.rank ≤ b.rank)) := by
+    rw [← siteLe_iff]; simp [h]
+  rw [siteLe_iff]
+  obtain ⟨d1, r1⟩ := a
+  obtain ⟨d2, r2⟩ := b
+  simp only at h' ⊢
+  have h1 : ¬ (d1 < d2) := fun hc => h' (Or.inl hc)
+  have h2 : ¬ (d1 = d2 ∧ r1 ≤ r2) := fun hc => h' (Or.inr hc)
+  rcases Nat.lt_or_ge d2 d1 with hl | hl
+  · exact Or.inl hl
+  · have hd : d1 = d2 := Nat.le_antisymm hl (Nat.not_lt.1 h1)
+    exact Or.inr ⟨hd.symm, Nat.le_of_lt (Nat.not_le.1 (fun hr => h2 ⟨hd, hr⟩))⟩
+
+theorem siteLe_trans (a b c : Site) : siteLe a b = true → siteLe b c = true → siteLe a c = true := by
+  simp only [siteLe_iff]
+  obtain ⟨d1, r1⟩ := a
+  obtain ⟨d2, r2⟩ := b
+  obtain ⟨d3, r3⟩ := c
+  simp only
+  intro h1 h2
+  rcases h1 with h1 | ⟨rfl, h1⟩ <;> rcases h2 with h2 | ⟨rfl, h2⟩
+  · exact Or.inl (Nat.lt_trans h1 h2)
+  · exact Or.inl h1
+  · exact Or.inl h2
+  · exact Or.inr ⟨rfl, Nat.le_trans h1 h2⟩
+
+/-- The live placement an id has in plan `p` (`⟨0, 0⟩` for an id it lacks,
+which no candidate is). -/
+def liveSiteOf (p : PlanCore) (i : Id) : Site :=
+  match p.store.get i with
+  | none   => ⟨0, 0⟩
+  | some e => e.val.live
+
+def insertBySite (key : Id → Site) (x : Id) : List Id → List Id
+  | []      => [x]
+  | y :: ys => if siteLe (key x) (key y) then x :: y :: ys else y :: insertBySite key x ys
+
+def sortBySite (key : Id → Site) : List Id → List Id
+  | []      => []
+  | x :: xs => insertBySite key x (sortBySite key xs)
+
+theorem insertBySite_perm (key : Id → Site) (x : Id) :
+    ∀ l : List Id, List.Perm (insertBySite key x l) (x :: l) := by
+  intro l
+  induction l with
+  | nil => exact List.Perm.refl _
+  | cons y ys ih =>
+    unfold insertBySite
+    split
+    · exact List.Perm.refl _
+    · exact ((List.Perm.cons y ih).trans (List.Perm.swap x y ys))
+
+theorem sortBySite_perm (key : Id → Site) : ∀ l : List Id, List.Perm (sortBySite key l) l := by
+  intro l
+  induction l with
+  | nil => exact List.Perm.refl _
+  | cons x xs ih => exact (insertBySite_perm key x _).trans (List.Perm.cons x ih)
+
+theorem insertBySite_sorted (key : Id → Site) (x : Id) :
+    ∀ l : List Id, l.Pairwise (fun a b => siteLe (key a) (key b) = true) →
+      (insertBySite key x l).Pairwise (fun a b => siteLe (key a) (key b) = true) := by
+  intro l
+  induction l with
+  | nil => intro _; exact List.pairwise_singleton _ _
+  | cons y ys ih =>
+    intro h
+    have hy := List.pairwise_cons.1 h
+    unfold insertBySite
+    split
+    · rename_i hxy
+      refine List.pairwise_cons.2 ⟨fun z hz => ?_, h⟩
+      rcases List.mem_cons.1 hz with hz | hz
+      · rw [hz]; exact hxy
+      · exact siteLe_trans _ _ _ hxy (hy.1 z hz)
+    · rename_i hxy
+      have hyx := siteLe_total _ _ (by simpa using hxy)
+      refine List.pairwise_cons.2 ⟨fun z hz => ?_, ih hy.2⟩
+      rcases List.mem_cons.1 ((insertBySite_perm key x ys).mem_iff.1 hz) with hz | hz
+      · rw [hz]; exact hyx
+      · exact hy.1 z hz
+
+theorem sortBySite_sorted (key : Id → Site) :
+    ∀ l : List Id, (sortBySite key l).Pairwise (fun a b => siteLe (key a) (key b) = true) := by
+  intro l
+  induction l with
+  | nil => exact List.Pairwise.nil
+  | cons x xs ih => exact insertBySite_sorted key x _ ih
+/-- The ids a close of grain `g` at `now` acts on, **in source order**: by
+document, then by rank. -/
+def closeCands (g : Grain) (now : Day) (p : PlanCore) : List Id :=
+  sortBySite (liveSiteOf p) (closeCandSet g now p)
+
+theorem closeCands_perm (g : Grain) (now : Day) (p : PlanCore) :
+    List.Perm (closeCands g now p) (closeCandSet g now p) :=
+  sortBySite_perm _ _
+
+theorem closeCands_sorted (g : Grain) (now : Day) (p : PlanCore) :
+    (closeCands g now p).Pairwise (fun a b => siteLe (liveSiteOf p a) (liveSiteOf p b) = true) :=
+  sortBySite_sorted _ _
 
 /-- **§6.3's lifecycle at one grain**: fold `closeOne` over the candidates.
 The provisional `Goals.close` signature, made real — the grain, the instant,
@@ -834,7 +954,11 @@ theorem foldlM_closeOne_spec (g : Grain) (now : Day) (p0 : WfPlan) :
             · exact Or.inr hj
 
 theorem closeCands_nodup (g : Grain) (now : Day) (p : PlanCore) : (closeCands g now p).Nodup :=
-  p.store.domNodup.filter _
+  (closeCands_perm g now p).nodup_iff.2 (p.store.domNodup.filter _)
+
+theorem mem_closeCands_iff {g : Grain} {now : Day} {p : PlanCore} {i : Id} :
+    i ∈ closeCands g now p ↔ i ∈ closeCandSet g now p :=
+  (closeCands_perm g now p).mem_iff
 
 theorem closeAct_of_not_mem_closeCands {g : Grain} {now : Day} {p : PlanCore} {j : Id} {e : Entity}
     (hj : j ∉ closeCands g now p) (hget : p.store.get j = some e) :
@@ -843,11 +967,11 @@ theorem closeAct_of_not_mem_closeCands {g : Grain} {now : Day} {p : PlanCore} {j
   | stay => rfl
   | carry =>
     exfalso; apply hj
-    refine List.mem_filter.2 ⟨(p.store.domSpec j).2 (by rw [hget]; rfl), ?_⟩
+    refine mem_closeCands_iff.2 <| List.mem_filter.2 ⟨(p.store.domSpec j).2 (by rw [hget]; rfl), ?_⟩
     rw [hget]; simp only [hact]
   | file r =>
     exfalso; apply hj
-    refine List.mem_filter.2 ⟨(p.store.domSpec j).2 (by rw [hget]; rfl), ?_⟩
+    refine mem_closeCands_iff.2 <| List.mem_filter.2 ⟨(p.store.domSpec j).2 (by rw [hget]; rfl), ?_⟩
     rw [hget]; simp only [hact]
 
 /-- **The denotation of `close`.**  A successful close keeps every file's kind
@@ -1317,12 +1441,16 @@ no candidates for it. -/
 theorem closeCands_eq_nil_of_stay {g : Grain} {now : Day} {p : PlanCore}
     (h : ∀ i f, p.store.get i = some f → closeAct g now p f.val.skel = .stay) :
     closeCands g now p = [] := by
-  unfold closeCands
-  rw [List.filter_eq_nil_iff]
-  intro i _
-  cases hg : p.store.get i with
-  | none => simp
-  | some e => simp [h i e hg]
+  have hs : closeCandSet g now p = [] := by
+    unfold closeCandSet
+    rw [List.filter_eq_nil_iff]
+    intro i _
+    cases hg : p.store.get i with
+    | none => simp
+    | some e => simp [h i e hg]
+  have hp := closeCands_perm g now p
+  rw [hs] at hp
+  exact hp.eq_nil
 
 /-- **L16 (discharged from `Goals.lean`, as stated): `close g now` is
 idempotent.**  Closing grain `g` twice at the same instant `now` is closing it
@@ -1830,5 +1958,746 @@ theorem autoClose_stamps_each_line_at_most_once {now : Day} {p q : WfPlan}
   obtain ⟨g, hg⟩ := autoClose_takes_each_line_at_most_once h hp hq
   rw [← Core.skel_stamps, ← Core.skel_stamps, hg]
   exact stepSkel_stamps g now p.val e.val.skel
+
+/-! ## Gap 59: a close keeps source order (stage 4 step 8)
+
+`closeCands` used to be `dom` filtered, and the loader builds `dom` in reverse,
+so the fold took the lower of two lines first and the higher one landed after it
+— every close inverted the rank of the lines it carried into one file or one
+section (README gap 59).  `closeCands` now sorts by (document, rank), and this
+section proves what that buys: `close_keeps_source_order`.
+
+**The shape of the proof.**  One step moves the id it takes and, for a landing
+inside a section, shifts every rank of the destination at or after the landing
+spot up by one (`closeOne_moves`: every other line's placement is `Site.bump`ed,
+the destination's prose is `Doc.bump`ed, the files a close takes from are not
+touched).  A shift is strictly monotone (`shiftRank_lt_iff`), so it never
+reorders two lines of one file (`fold_keeps_order_both`); it moves a section's
+next heading with the lines below it (`landingSpot_bump`), so a line that landed
+at the end of a section stays above the spot the next line of that section is
+given (`fold_keeps_order_after_first`); and a line landing at the end of a file
+is above nothing (`live_rank_lt_endRank`).  The fold takes the higher line first
+because the candidate list is sorted (`closeCands_sorted`), which is the only
+place the sort is used. -/
+
+def rankBump : Option Nat → Nat → Nat
+  | none,   r => r
+  | some n, r => shiftRank n r
+
+theorem shiftRank_lt_iff (n a b : Nat) : shiftRank n a < shiftRank n b ↔ a < b := by
+  unfold shiftRank; split <;> split <;> omega
+
+theorem rankBump_lt_iff (o : Option Nat) (a b : Nat) : rankBump o a < rankBump o b ↔ a < b := by
+  cases o with
+  | none => exact Iff.rfl
+  | some n => exact shiftRank_lt_iff n a b
+
+theorem shiftRank_min (n a b : Nat) : Nat.min (shiftRank n a) (shiftRank n b) = shiftRank n (Nat.min a b) := by
+  unfold shiftRank
+  simp only [Nat.min_def]
+  repeat' split
+  all_goals omega
+
+def Site.bump (k : DocIx) (o : Option Nat) (s : Site) : Site :=
+  if s.doc = k then ⟨s.doc, rankBump o s.rank⟩ else s
+
+theorem Site.bump_doc (k : DocIx) (o : Option Nat) (s : Site) : (s.bump k o).doc = s.doc := by
+  unfold Site.bump; split <;> rfl
+
+theorem Site.bump_rank_of_doc {k : DocIx} (o : Option Nat) {s : Site} (h : s.doc = k) :
+    (s.bump k o).rank = rankBump o s.rank := by
+  unfold Site.bump; rw [if_pos h]
+
+theorem Site.bump_of_ne {k : DocIx} (o : Option Nat) {s : Site} (h : s.doc ≠ k) : s.bump k o = s := by
+  unfold Site.bump; rw [if_neg h]
+
+theorem Site.bump_none (k : DocIx) (s : Site) : s.bump k none = s := by
+  unfold Site.bump; split <;> rfl
+
+theorem Site.bump_lt {k : DocIx} (o : Option Nat) {s t : Site} (h : s.doc = t.doc) :
+    (s.bump k o).rank < (t.bump k o).rank ↔ s.rank < t.rank := by
+  by_cases hs : s.doc = k
+  · rw [Site.bump_rank_of_doc o hs, Site.bump_rank_of_doc o (h ▸ hs)]
+    exact rankBump_lt_iff o _ _
+  · rw [Site.bump_of_ne o hs, Site.bump_of_ne o (h ▸ hs)]
+
+def Doc.bump : Option Nat → Doc → Doc
+  | none,   d => d
+  | some n, d => d.shiftFrom n
+
+theorem inComment_shiftFrom (n : Nat) (ps : List (Nat × List Char)) (r : Nat) :
+    inComment (ps.map (fun q => (shiftRank n q.1, q.2))) (shiftRank n r) = inComment ps r := by
+  unfold inComment commentOpenFrom
+  rw [List.filter_map, List.foldl_map]
+  congr 1
+  apply List.filter_congr
+  intro q _
+  simp only [Function.comp, decide_eq_decide]
+  exact shiftRank_lt_iff n q.1 r
+
+theorem liveHeading_shiftFrom (n : Nat) (d : Doc) (q : Nat × List Char) :
+    liveHeading (d.shiftFrom n) (shiftRank n q.1, q.2) = liveHeading d q := by
+  unfold liveHeading Doc.shiftFrom
+  simp only
+  rw [inComment_shiftFrom]
+
+def loOk : Option Nat → Nat → Bool
+  | none,   _ => true
+  | some l, r => decide (l < r)
+
+def fhaStep (live : Nat × List Char → Bool) (want : List Char → Bool) (lo : Option Nat)
+    (acc : Option Nat) (q : Nat × List Char) : Option Nat :=
+  if live q && want q.2 && loOk lo q.1 then
+    match acc with
+    | none   => some q.1
+    | some b => some (Nat.min b q.1)
+  else acc
+
+theorem firstHeadingAbove_eq (d : Doc) (lo : Option Nat) (want : List Char → Bool) :
+    firstHeadingAbove d lo want = d.prose.foldl (fhaStep (liveHeading d) want lo) none := by
+  cases lo <;> rfl
+
+theorem loOk_shift (n : Nat) (lo : Option Nat) (r : Nat) :
+    loOk (lo.map (shiftRank n)) (shiftRank n r) = loOk lo r := by
+  cases lo with
+  | none => rfl
+  | some l => simp only [Option.map_some, loOk, decide_eq_decide]; exact shiftRank_lt_iff n l r
+
+theorem foldl_fhaStep_shift (n : Nat) (live live' : Nat × List Char → Bool)
+    (hl : ∀ q, live' (shiftRank n q.1, q.2) = live q) (want : List Char → Bool) (lo : Option Nat) :
+    ∀ (ps : List (Nat × List Char)) (acc : Option Nat),
+      (ps.map (fun q => (shiftRank n q.1, q.2))).foldl (fhaStep live' want (lo.map (shiftRank n)))
+          (acc.map (shiftRank n)) =
+        (ps.foldl (fhaStep live want lo) acc).map (shiftRank n) := by
+  intro ps
+  induction ps with
+  | nil => intro acc; rfl
+  | cons q t ih =>
+    intro acc
+    simp only [List.map_cons, List.foldl_cons]
+    rw [← ih]
+    congr 1
+    unfold fhaStep
+    have hc : (live' (shiftRank n q.1, q.2) && want q.2 && loOk (lo.map (shiftRank n)) (shiftRank n q.1)) =
+        (live q && want q.2 && loOk lo q.1) := by rw [hl, loOk_shift]
+    simp only at hc ⊢
+    rw [hc]
+    by_cases hb : (live q && want q.2 && loOk lo q.1) = true
+    · rw [if_pos hb, if_pos hb]
+      cases acc with
+      | none => rfl
+      | some b => simp only [Option.map_some, shiftRank_min]
+    · rw [if_neg hb, if_neg hb]
+
+theorem firstHeadingAbove_bump (o : Option Nat) (d : Doc) (lo : Option Nat) (want : List Char → Bool) :
+    firstHeadingAbove (Doc.bump o d) (lo.map (rankBump o)) want =
+      (firstHeadingAbove d lo want).map (rankBump o) := by
+  cases o with
+  | none =>
+    have h1 : ∀ x : Option Nat, x.map (rankBump none) = x := fun x => by cases x <;> rfl
+    rw [h1, h1]; rfl
+  | some n =>
+    rw [firstHeadingAbove_eq, firstHeadingAbove_eq]
+    exact foldl_fhaStep_shift n (liveHeading d) (liveHeading (d.shiftFrom n))
+      (liveHeading_shiftFrom n d) want lo d.prose none
+
+theorem landingSpot_bump {p q : PlanCore} {k : DocIx} (o : Option Nat)
+    (hd : q.docs[k]? = (p.docs[k]?).map (Doc.bump o)) (l : Landing) (src : Option (List Char)) :
+    landingSpot q k l src = (landingSpot p k l src).map (Option.map (rankBump o)) := by
+  have h0 : ∀ (d : Doc) (w : List Char → Bool),
+      firstHeadingAbove (Doc.bump o d) none w = (firstHeadingAbove d none w).map (rankBump o) :=
+    fun d w => firstHeadingAbove_bump o d none w
+  have h1 : ∀ (d : Doc) (h : Nat) (w : List Char → Bool),
+      firstHeadingAbove (Doc.bump o d) (some (rankBump o h)) w =
+        (firstHeadingAbove d (some h) w).map (rankBump o) :=
+    fun d h w => firstHeadingAbove_bump o d (some h) w
+  unfold landingSpot
+  rw [hd]
+  cases p.docs[k]? with
+  | none => rfl
+  | some d =>
+    simp only [Option.map_some]
+    cases l with
+    | fileEnd => rfl
+    | demotedSection =>
+      simp only
+      rw [h0]
+      cases firstHeadingAbove d none (fun h => secKind h == SecKind.demoted) with
+      | none => rfl
+      | some h => simp only [Option.map_some]; rw [h1]; rfl
+    | sameSection =>
+      simp only
+      cases src with
+      | none => simp only; rw [h0]; rfl
+      | some s =>
+        simp only
+        rw [h0]
+        cases firstHeadingAbove d none (fun h => headingBody h == headingBody s) with
+        | none => rfl
+        | some h => simp only [Option.map_some]; rw [h1]; rfl
+
+theorem landingSpot_src (p : PlanCore) (k : DocIx) {l : Landing} (hl : l ≠ .sameSection)
+    (s s' : Option (List Char)) : landingSpot p k l s = landingSpot p k l s' := by
+  unfold landingSpot
+  cases p.docs[k]? with
+  | none => rfl
+  | some d =>
+    cases l with
+    | fileEnd => rfl
+    | demotedSection => rfl
+    | sameSection => exact absurd rfl hl
+
+theorem le_foldl_max_nat : ∀ (xs : List Nat) (a x : Nat), x ∈ xs → x ≤ xs.foldl Nat.max a := by
+  intro xs
+  induction xs with
+  | nil => intro a x h; simp at h
+  | cons y t ih =>
+    intro a x h
+    simp only [List.foldl_cons]
+    rcases List.mem_cons.1 h with rfl | h
+    · have : ∀ (ys : List Nat) (b : Nat), b ≤ ys.foldl Nat.max b := by
+        intro ys; induction ys with
+        | nil => intro b; exact Nat.le_refl b
+        | cons z u ihu => intro b; exact Nat.le_trans (Nat.le_max_left b z) (ihu _)
+      exact Nat.le_trans (Nat.le_max_right a x) (this t _)
+    · exact ih _ x h
+
+theorem live_rank_lt_endRank {p : PlanCore} {i : Id} {e : Entity} (h : p.store.get i = some e) :
+    e.val.live.rank < endRank p e.val.live.doc := by
+  have hl : (⟨i, e.val.live, serializeItem i (glyphAt e.val e.val.live) e.val.line⟩ : Line) ∈ p.lines := by
+    unfold PlanCore.lines
+    refine List.mem_flatMap.2 ⟨i, (p.store.domSpec i).mpr (by rw [h]; rfl), ?_⟩
+    rw [h]
+    simp [render, renderCore]
+  have hm : e.val.live.rank ∈ docRanks p e.val.live.doc := by
+    unfold docRanks
+    refine List.mem_append_right _ (List.mem_map.2 ⟨_, List.mem_filter.2 ⟨hl, by simp⟩, rfl⟩)
+  exact Nat.lt_succ_of_le (le_foldl_max_nat _ 0 _ hm)
+
+
+theorem docs_shiftIn_getElem? (p : PlanCore) (k n d : Nat) :
+    (p.shiftIn k n).docs[d]? = if d = k then (p.docs[d]?).map (Doc.shiftFrom n) else p.docs[d]? := by
+  unfold PlanCore.shiftIn
+  simp only [List.getElem?_modify]
+  by_cases h : d = k
+  · subst h; simp
+  · have h' : ¬ k = d := fun hc => h hc.symm
+    simp [h', h]
+
+/-- A file no close at `now` takes a line from. -/
+def docOpenAt (now : Day) (p : PlanCore) (k : DocIx) : Prop :=
+  ∀ r, docRegion p k = some r → ¬ Closed r now
+
+theorem landAt_moves {p q : WfPlan} {k : DocIx} {spot : Option Nat} {i : Id}
+    {f : Site → Entity → Except KErr Entity} (hf : ∀ t e e', f t e = .ok e' → e'.val.live = t)
+    (h : landAt p k spot i f = .ok q) :
+    (∀ j, j ≠ i → (q.val.store.get j).map (fun e => e.val.live) =
+        (p.val.store.get j).map (fun e => e.val.live.bump k spot)) ∧
+      (∀ d, q.val.docs[d]? = if d = k then (p.val.docs[d]?).map (Doc.bump spot) else p.val.docs[d]?) ∧
+      ∃ f', q.val.store.get i = some f' ∧ f'.val.live = ⟨k, spot.getD (endRank p.val k)⟩ := by
+  cases spot with
+  | none =>
+    unfold landAt at h
+    obtain ⟨hd, hj, e, e', _, hfe, hq⟩ := WfPlan.mapAt_spec h
+    refine ⟨fun j hji => ?_, fun d => ?_, e', hq, hf _ _ _ hfe⟩
+    · rw [hj j hji]
+      cases p.val.store.get j with
+      | none => rfl
+      | some x => simp only [Option.map_some, Site.bump_none]
+    · rw [hd]
+      split
+      · cases p.val.docs[d]? <;> rfl
+      · rfl
+  | some n =>
+    unfold landAt at h
+    simp only at h
+    cases h1 : p.shiftAt k n with
+    | error x => simp [h1] at h
+    | ok q1 =>
+      simp only [h1] at h
+      have hv := WfPlan.shiftAt_val h1
+      obtain ⟨hd, hj, e1, e', _, hfe, hq⟩ := WfPlan.mapAt_spec h
+      refine ⟨fun j hji => ?_, fun d => ?_, e', hq, hf _ _ _ hfe⟩
+      · rw [hj j hji, hv]
+        show ((p.val.store.get j).map (Entity.shiftIn k n)).map _ = _
+        cases p.val.store.get j with
+        | none => rfl
+        | some x => rfl
+      · rw [hd, hv, docs_shiftIn_getElem?]
+        rfl
+
+theorem closeAct_closed {g : Grain} {now : Day} {p : PlanCore} {s : Skel}
+    (h : closeAct g now p s ≠ .stay) : ∃ r, docRegion p s.doc = some r ∧ Closed r now := by
+  unfold closeAct closedRegionOf at h
+  cases hr : docRegion p s.doc with
+  | none => rw [hr] at h; exact absurd rfl h
+  | some r =>
+    rw [hr] at h
+    by_cases hc : docKindAt p s.doc = kindOfGrain g ∧ r.grain = g ∧ Closed r now
+    · exact ⟨r, rfl, hc.2.2⟩
+    · simp only at h
+      rw [if_neg hc] at h; exact absurd rfl h
+
+theorem closeOne_moves {g : Grain} {now : Day} {i : Id} {p q : WfPlan}
+    (h : closeOne g now i p = .ok q) :
+    (q = p ∧ ∀ e, p.val.store.get i = some e → closeAct g now p.val e.val.skel = .stay) ∨
+    ∃ e k spot, p.val.store.get i = some e ∧ docOpenAt now p.val k ∧
+      (∀ j, j ≠ i → (q.val.store.get j).map (fun e => e.val.live) =
+          (p.val.store.get j).map (fun e => e.val.live.bump k spot)) ∧
+      (∀ d, q.val.docs[d]? = if d = k then (p.val.docs[d]?).map (Doc.bump spot) else p.val.docs[d]?) ∧
+      (∃ f', q.val.store.get i = some f' ∧ f'.val.live = ⟨k, spot.getD (endRank p.val k)⟩) ∧
+      (closeAct g now p.val e.val.skel = .carry → carryTarget now p.val = some k ∧ spot = none) ∧
+      (∀ r, closeAct g now p.val e.val.skel = .file r → closeTarget g now p.val = some k ∧
+          landingSpot p.val k (closePolicy g).landing (sectionAt p.val e.val.live) = .ok spot) := by
+  unfold closeOne at h
+  split at h
+  · simp at h
+  · rename_i e hget
+    split at h
+    · rename_i hact
+      injection h with h
+      subst h
+      exact Or.inl ⟨rfl, fun e' he' => by rw [hget] at he'; injection he' with he'; subst he'; exact hact⟩
+    · rename_i hact
+      split at h
+      · simp at h
+      · rename_i k hk
+        obtain ⟨hj, hd, hi⟩ := landAt_moves (fun t e e' hm => moveTo_live hm) h
+        refine Or.inr ⟨e, k, none, hget, ?_, hj, hd, hi, fun _ => ⟨hk, rfl⟩, fun r hr => ?_⟩
+        · obtain ⟨_, _, hreg⟩ := findDocIx_spec hk
+          intro r hr
+          rw [hreg] at hr
+          injection hr with hr
+          subst hr
+          exact regionOf_is_open week now
+        · rw [hact] at hr; exact absurd hr (by simp)
+    · rename_i r hact
+      split at h
+      · simp at h
+      · rename_i k hk
+        split at h
+        · simp at h
+        · rename_i spot hspot
+          obtain ⟨hj, hd, hi⟩ := landAt_moves (fun t e e' hm => (fileE_skel hm).2) h
+          refine Or.inr ⟨e, k, spot, hget, ?_, hj, hd, hi, fun hc => ?_, fun r' hr => ⟨hk, hspot⟩⟩
+          · obtain ⟨_, _, hreg⟩ := findDocIx_spec hk
+            intro r hr
+            rw [hreg] at hr
+            injection hr with hr
+            subst hr
+            exact closeTo_target_is_open g now
+          · rw [hact] at hc; exact absurd hc (by simp)
+
+
+theorem carryTarget_frame {p q : PlanCore} (hf : Frame p q) (now : Day) :
+    carryTarget now q = carryTarget now p := by
+  unfold carryTarget; exact findDocIx_frame hf _ _
+
+theorem closeTarget_frame {p q : PlanCore} (hf : Frame p q) (g : Grain) (now : Day) :
+    closeTarget g now q = closeTarget g now p := by
+  unfold closeTarget; exact findDocIx_frame hf _ _
+
+theorem landingSpot_docs {p q : PlanCore} {k : DocIx} (h : q.docs[k]? = p.docs[k]?)
+    (l : Landing) (src : Option (List Char)) : landingSpot q k l src = landingSpot p k l src := by
+  unfold landingSpot; rw [h]
+
+theorem sectionAt_docs {p q : PlanCore} {s : Site} (h : q.docs[s.doc]? = p.docs[s.doc]?) :
+    sectionAt q s = sectionAt p s := by
+  unfold sectionAt; rw [h]
+
+theorem get_of_map_eq_some {q : WfPlan} {j : Id} {β : Type} {F : Entity → β} {x : β}
+    (h : (q.val.store.get j).map F = some x) : ∃ b, q.val.store.get j = some b ∧ F b = x := by
+  cases hq : q.val.store.get j with
+  | none => rw [hq] at h; simp at h
+  | some b => rw [hq] at h; simp only [Option.map_some, Option.some.injEq] at h; exact ⟨b, rfl, h⟩
+
+/-- The docs no close at `now` takes from are untouched between `p0` and `P`. -/
+def ClosedDocsKept (now : Day) (p0 P : PlanCore) : Prop :=
+  ∀ d r, docRegion p0 d = some r → Closed r now → P.docs[d]? = p0.docs[d]?
+
+/-- One step, seen from a line it did not take and whose file is closed. -/
+theorem closeOne_keeps_untaken {g : Grain} {now : Day} {c : Id} {p0 P P1 : WfPlan}
+    (h1 : closeOne g now c P = .ok P1) (hfr : Frame p0.val P.val) (hcd : ClosedDocsKept now p0.val P.val)
+    {x : Id} (hx : x ≠ c) {ex b : Entity} (hb : P.val.store.get x = some b) (hbs : b.val.skel = ex.val.skel)
+    (hbl : b.val.live = ex.val.live) {r : Region} (hr : docRegion p0.val ex.val.live.doc = some r)
+    (hc : Closed r now) :
+    Frame p0.val P1.val ∧ ClosedDocsKept now p0.val P1.val ∧
+      ∃ b', P1.val.store.get x = some b' ∧ b'.val.skel = ex.val.skel ∧ b'.val.live = ex.val.live := by
+  obtain ⟨hf1, hsk, _⟩ := closeOne_spec h1
+  have hfr1 := hfr.trans hf1
+  rcases closeOne_moves h1 with ⟨rfl, _⟩ | ⟨e, k, spot, _, hopen, hjs, hds, _, _, _⟩
+  · exact ⟨hfr, hcd, b, hb, hbs, hbl⟩
+  · have hne : ∀ d r, docRegion p0.val d = some r → Closed r now → d ≠ k := by
+      intro d r hr hc hdk
+      subst hdk
+      exact hopen r (by rw [hfr.2.2]; exact hr) hc
+    refine ⟨hfr1, fun d r hr hc => ?_, ?_⟩
+    · rw [hds d, if_neg (hne d r hr hc)]; exact hcd d r hr hc
+    · have hs := hsk x hx
+      rw [hb] at hs
+      obtain ⟨b', hb', hb's⟩ := get_of_map_eq_some hs
+      refine ⟨b', hb', hb's.trans hbs, ?_⟩
+      have hl := hjs x hx
+      rw [hb, hb'] at hl
+      simp only [Option.map_some, Option.some.injEq] at hl
+      rw [hl, hbl]
+      exact Site.bump_of_ne spot (hne _ r hr hc)
+
+theorem fold_keeps_order_both (g : Grain) (now : Day) (i j : Id) :
+    ∀ (l : List Id) (P Q : WfPlan), l.foldlM (fun q c => closeOne g now c q) P = .ok Q →
+      i ∉ l → j ∉ l →
+      (∃ a b, P.val.store.get i = some a ∧ P.val.store.get j = some b ∧
+        a.val.live.doc = b.val.live.doc ∧ a.val.live.rank < b.val.live.rank) →
+      ∃ a b, Q.val.store.get i = some a ∧ Q.val.store.get j = some b ∧
+        a.val.live.doc = b.val.live.doc ∧ a.val.live.rank < b.val.live.rank := by
+  intro l
+  induction l with
+  | nil =>
+    intro P Q h _ _ hab
+    simp only [List.foldlM_nil] at h
+    injection h with h
+    subst h
+    exact hab
+  | cons c rest ih =>
+    intro P Q h hi hj hab
+    simp only [List.foldlM_cons] at h
+    cases h1 : closeOne g now c P with
+    | error x => rw [h1] at h; simp [bind, Except.bind] at h
+    | ok P1 =>
+      rw [h1] at h
+      simp only [bind, Except.bind] at h
+      have hci : i ≠ c := fun hc => hi (hc ▸ List.mem_cons_self ..)
+      have hcj : j ≠ c := fun hc => hj (hc ▸ List.mem_cons_self ..)
+      refine ih P1 Q h (fun hm => hi (List.mem_cons_of_mem _ hm)) (fun hm => hj (List.mem_cons_of_mem _ hm)) ?_
+      obtain ⟨a, b, ha, hb, hd, hr⟩ := hab
+      rcases closeOne_moves h1 with ⟨rfl, _⟩ | ⟨e, k, spot, _, _, hjs, _, _, _, _⟩
+      · exact ⟨a, b, ha, hb, hd, hr⟩
+      · have hli := hjs i hci
+        have hlj := hjs j hcj
+        rw [ha] at hli
+        rw [hb] at hlj
+        obtain ⟨a', ha', hal⟩ := get_of_map_eq_some hli
+        obtain ⟨b', hb', hbl⟩ := get_of_map_eq_some hlj
+        refine ⟨a', b', ha', hb', ?_, ?_⟩
+        · simp only at hal hbl
+          rw [hal, hbl, Site.bump_doc, Site.bump_doc, hd]
+        · simp only at hal hbl
+          rw [hal, hbl]
+          exact (Site.bump_lt spot hd).2 hr
+
+
+theorem closeAct_skel_frame {g : Grain} {now : Day} {p0 P : PlanCore} (hfr : Frame p0 P) {b ex : Entity}
+    (hbs : b.val.skel = ex.val.skel) : closeAct g now P b.val.skel = closeAct g now p0 ex.val.skel := by
+  rw [closeAct_frame hfr, hbs]
+
+/-- **The fold, after the earlier line `i` has landed and before `j` does.**
+`i` sits in the destination `K`, strictly before any rank `j`'s own landing
+spot would name. -/
+theorem fold_keeps_order_after_first (g : Grain) (now : Day) (p0 : WfPlan) (i j : Id) (ej : Entity)
+    (K : DocIx) (hact : closeAct g now p0.val ej.val.skel ≠ .stay)
+    (hcarry : closeAct g now p0.val ej.val.skel = .carry → carryTarget now p0.val = some K)
+    (hfile : ∀ r, closeAct g now p0.val ej.val.skel = .file r → closeTarget g now p0.val = some K) :
+    ∀ (l : List Id) (P Q : WfPlan), l.foldlM (fun q c => closeOne g now c q) P = .ok Q →
+      l.Nodup → i ∉ l → j ∈ l → Frame p0.val P.val → ClosedDocsKept now p0.val P.val →
+      (∃ b, P.val.store.get j = some b ∧ b.val.skel = ej.val.skel ∧ b.val.live = ej.val.live) →
+      (∃ a, P.val.store.get i = some a ∧ a.val.live.doc = K ∧
+        ∀ r, closeAct g now p0.val ej.val.skel = .file r → ∀ spot,
+          landingSpot P.val K (closePolicy g).landing (sectionAt p0.val ej.val.live) = .ok spot →
+          ∀ n, spot = some n → a.val.live.rank < n) →
+      ∃ a b, Q.val.store.get i = some a ∧ Q.val.store.get j = some b ∧
+        a.val.live.doc = b.val.live.doc ∧ a.val.live.rank < b.val.live.rank := by
+  obtain ⟨r0, hr0, hc0⟩ := closeAct_closed hact
+  intro l
+  induction l with
+  | nil => intro _ _ _ _ _ hj; simp at hj
+  | cons c rest ih =>
+    intro P Q h hnd hi hj hfr hcd hb ha
+    simp only [List.foldlM_cons] at h
+    cases h1 : closeOne g now c P with
+    | error x => rw [h1] at h; simp [bind, Except.bind] at h
+    | ok P1 =>
+      rw [h1] at h
+      simp only [bind, Except.bind] at h
+      have hnd' := List.nodup_cons.1 hnd
+      have hci : i ≠ c := fun hc => hi (hc ▸ List.mem_cons_self ..)
+      obtain ⟨b, hPb, hbs, hbl⟩ := hb
+      obtain ⟨a, hPa, had, hspot⟩ := ha
+      obtain ⟨hf1, _, _⟩ := closeOne_spec h1
+      have hfr1 := hfr.trans hf1
+      by_cases hjc : j = c
+      · -- the step that lands `j`
+        subst hjc
+        refine fold_keeps_order_both g now i j rest P1 Q h
+          (fun hm => hi (List.mem_cons_of_mem _ hm)) hnd'.1 ?_
+        have hactP := closeAct_skel_frame (g := g) (now := now) hfr hbs
+        rcases closeOne_moves h1 with ⟨_, hst⟩ | ⟨e, k, spot, hPe, _, hjs, _, ⟨f', hf', hlive⟩, hcar, hfil⟩
+        · exact absurd ((hactP.symm.trans (hst b hPb))) hact
+        · rw [hPb] at hPe
+          injection hPe with hPe
+          subst hPe
+          have hli := hjs i hci
+          rw [hPa] at hli
+          obtain ⟨a', ha', hal⟩ := get_of_map_eq_some hli
+          simp only at hal
+          refine ⟨a', f', ha', hf', ?_, ?_⟩
+          · rw [hal, Site.bump_doc, hlive, had]
+            cases hA : closeAct g now p0.val ej.val.skel with
+            | stay => exact absurd hA hact
+            | carry =>
+              have := (hcar (hactP.trans hA)).1
+              rw [carryTarget_frame hfr, hcarry hA] at this
+              injection this
+            | file r =>
+              have := (hfil r (hactP.trans hA)).1
+              rw [closeTarget_frame hfr, hfile r hA] at this
+              injection this
+          · rw [hal, hlive]
+            simp only
+            cases hA : closeAct g now p0.val ej.val.skel with
+            | stay => exact absurd hA hact
+            | carry =>
+              obtain ⟨hk, hsp⟩ := hcar (hactP.trans hA)
+              rw [carryTarget_frame hfr, hcarry hA] at hk
+              injection hk with hk
+              subst hk hsp
+              rw [Site.bump_none, ← had]
+              exact live_rank_lt_endRank hPa
+            | file r =>
+              obtain ⟨hk, hsp⟩ := hfil r (hactP.trans hA)
+              rw [closeTarget_frame hfr, hfile r hA] at hk
+              injection hk with hk
+              subst hk
+              have hsec : sectionAt P.val b.val.live = sectionAt p0.val ej.val.live := by
+                rw [hbl]; exact sectionAt_docs (hcd _ r0 hr0 hc0)
+              rw [hsec] at hsp
+              cases spot with
+              | none =>
+                rw [Site.bump_none, ← had]
+                exact live_rank_lt_endRank hPa
+              | some m =>
+                have hlt := hspot r hA (some m) hsp m rfl
+                rw [Site.bump_rank_of_doc _ had]
+                show shiftRank m a.val.live.rank < m
+                unfold shiftRank
+                rw [if_neg (Nat.not_le.2 hlt)]
+                exact hlt
+      · -- a step that lands some other line
+        have hjr : j ∈ rest := (List.mem_cons.1 hj).resolve_left hjc
+        obtain ⟨_, hcd1, b', hb', hb's, hb'l⟩ :=
+          closeOne_keeps_untaken h1 hfr hcd hjc hPb hbs hbl hr0 hc0
+        refine ih P1 Q h hnd'.2 (fun hm => hi (List.mem_cons_of_mem _ hm)) hjr hfr1 hcd1
+          ⟨b', hb', hb's, hb'l⟩ ?_
+        rcases closeOne_moves h1 with ⟨rfl, _⟩ | ⟨e, k, spot, _, hopen, hjs, hds, _, _, _⟩
+        · exact ⟨a, hPa, had, hspot⟩
+        · have hli := hjs i hci
+          rw [hPa] at hli
+          obtain ⟨a', ha', hal⟩ := get_of_map_eq_some hli
+          simp only at hal
+          refine ⟨a', ha', by rw [hal, Site.bump_doc, had], fun r hA spot' hsp' n hn => ?_⟩
+          by_cases hK : K = k
+          · subst hK
+            have hdk : P1.val.docs[K]? = (P.val.docs[K]?).map (Doc.bump spot) := by
+              rw [hds K, if_pos rfl]
+            rw [landingSpot_bump spot hdk] at hsp'
+            cases hs0 : landingSpot P.val K (closePolicy g).landing (sectionAt p0.val ej.val.live) with
+            | error x => rw [hs0] at hsp'; simp [Except.map] at hsp'
+            | ok s0 =>
+              rw [hs0] at hsp'
+              simp only [Except.map, Except.ok.injEq] at hsp'
+              rw [hn] at hsp'
+              cases s0 with
+              | none => simp at hsp'
+              | some n0 =>
+                simp only [Option.map_some, Option.some.injEq] at hsp'
+                rw [← hsp', hal, Site.bump_rank_of_doc _ had]
+                exact (rankBump_lt_iff spot _ _).2 (hspot r hA (some n0) hs0 n0 rfl)
+          · have hdk : P1.val.docs[K]? = P.val.docs[K]? := by rw [hds K, if_neg hK]
+            rw [landingSpot_docs hdk] at hsp'
+            rw [hal, Site.bump_of_ne spot (by rw [had]; exact hK)]
+            exact hspot r hA spot' hsp' n hn
+
+
+/-- **The fold, before either line has landed.** -/
+theorem fold_keeps_order (g : Grain) (now : Day) (p0 : WfPlan) (i j : Id) (ei ej : Entity)
+    (hne : closeAct g now p0.val ei.val.skel ≠ .stay)
+    (hact : closeAct g now p0.val ej.val.skel = closeAct g now p0.val ei.val.skel)
+    (hsec : closeAct g now p0.val ei.val.skel ≠ .carry → (closePolicy g).landing = .sameSection →
+      sectionAt p0.val ei.val.live = sectionAt p0.val ej.val.live) :
+    ∀ (l : List Id) (P Q : WfPlan), l.foldlM (fun q c => closeOne g now c q) P = .ok Q →
+      l.Nodup → [i, j].Sublist l → Frame p0.val P.val → ClosedDocsKept now p0.val P.val →
+      (∃ a, P.val.store.get i = some a ∧ a.val.skel = ei.val.skel ∧ a.val.live = ei.val.live) →
+      (∃ b, P.val.store.get j = some b ∧ b.val.skel = ej.val.skel ∧ b.val.live = ej.val.live) →
+      ∃ a b, Q.val.store.get i = some a ∧ Q.val.store.get j = some b ∧
+        a.val.live.doc = b.val.live.doc ∧ a.val.live.rank < b.val.live.rank := by
+  have hnej : closeAct g now p0.val ej.val.skel ≠ .stay := by rw [hact]; exact hne
+  obtain ⟨ri, hri, hci⟩ := closeAct_closed hne
+  obtain ⟨rj, hrj, hcj⟩ := closeAct_closed hnej
+  intro l
+  induction l with
+  | nil => intro _ _ _ _ hs; simp at hs
+  | cons c rest ih =>
+    intro P Q h hnd hs hfr hcd ha hb
+    simp only [List.foldlM_cons] at h
+    cases h1 : closeOne g now c P with
+    | error x => rw [h1] at h; simp [bind, Except.bind] at h
+    | ok P1 =>
+      rw [h1] at h
+      simp only [bind, Except.bind] at h
+      have hnd' := List.nodup_cons.1 hnd
+      have hij : i ≠ j := by
+        have := (hnd.sublist hs)
+        simp at this
+        exact this
+      obtain ⟨a, hPa, has, hal⟩ := ha
+      obtain ⟨b, hPb, hbs, hbl⟩ := hb
+      obtain ⟨hf1, _, _⟩ := closeOne_spec h1
+      have hfr1 := hfr.trans hf1
+      rcases List.sublist_cons_iff.1 hs with hs' | ⟨r, hr, hs'⟩
+      · -- neither line is this step's
+        have hir : i ∈ rest := hs'.subset (List.mem_cons_self ..)
+        have hjr : j ∈ rest := hs'.subset (List.mem_cons_of_mem _ (List.mem_cons_self ..))
+        have hic : i ≠ c := fun hc => hnd'.1 (hc ▸ hir)
+        have hjc : j ≠ c := fun hc => hnd'.1 (hc ▸ hjr)
+        obtain ⟨_, hcd1, a', ha', ha's, ha'l⟩ :=
+          closeOne_keeps_untaken h1 hfr hcd hic hPa has hal hri hci
+        obtain ⟨_, _, b', hb', hb's, hb'l⟩ :=
+          closeOne_keeps_untaken h1 hfr hcd hjc hPb hbs hbl hrj hcj
+        exact ih P1 Q h hnd'.2 hs' hfr1 hcd1 ⟨a', ha', ha's, ha'l⟩ ⟨b', hb', hb's, hb'l⟩
+      · -- this step lands `i`
+        injection hr with hci' hr
+        subst hci'
+        subst hr
+        have hjr : j ∈ rest := List.singleton_sublist.1 hs'
+        have hactP := closeAct_skel_frame (g := g) (now := now) hfr has
+        obtain ⟨_, hcd1, b', hb', hb's, hb'l⟩ :=
+          closeOne_keeps_untaken h1 hfr hcd (Ne.symm hij) hPb hbs hbl hrj hcj
+        rcases closeOne_moves h1 with ⟨_, hst⟩ | ⟨e, k, spot, hPe, _, _, hds, ⟨f', hf', hlive⟩, hcar, hfil⟩
+        · exact absurd (hactP.symm.trans (hst a hPa)) hne
+        · rw [hPa] at hPe
+          injection hPe with hPe
+          subst hPe
+          refine fold_keeps_order_after_first g now p0 i j ej k hnej
+            (fun hA => ?_) (fun r hA => ?_) rest P1 Q h hnd'.2 hnd'.1 hjr hfr1 hcd1
+            ⟨b', hb', hb's, hb'l⟩ ⟨f', hf', by rw [hlive], fun r hA spot' hsp' n hn => ?_⟩
+          · rw [← carryTarget_frame hfr]; exact (hcar (hactP.trans (hact ▸ hA))).1
+          · rw [← closeTarget_frame hfr]; exact (hfil r (hactP.trans (hact ▸ hA))).1
+          · have hAi : closeAct g now p0.val ei.val.skel = .file r := hact ▸ hA
+            have hsp := (hfil r (hactP.trans hAi)).2
+            have hsrc : sectionAt P.val a.val.live = sectionAt p0.val ei.val.live := by
+              rw [hal]; exact sectionAt_docs (hcd _ ri hri hci)
+            rw [hsrc] at hsp
+            have hsp2 : landingSpot P.val k (closePolicy g).landing (sectionAt p0.val ej.val.live) =
+                .ok spot := by
+              by_cases hl : (closePolicy g).landing = .sameSection
+              · rw [← hsec (by rw [hAi]; simp) hl]; exact hsp
+              · rw [landingSpot_src P.val k hl _ (sectionAt p0.val ei.val.live)]; exact hsp
+            have hdk : P1.val.docs[k]? = (P.val.docs[k]?).map (Doc.bump spot) := by
+              rw [hds k, if_pos rfl]
+            rw [landingSpot_bump spot hdk, hsp2] at hsp'
+            simp only [Except.map, Except.ok.injEq] at hsp'
+            rw [hn] at hsp'
+            rw [hlive]
+            cases spot with
+            | none => simp at hsp'
+            | some m =>
+              simp only [Option.map_some, Option.some.injEq] at hsp'
+              rw [← hsp']
+              show m < shiftRank m m
+              unfold shiftRank
+              rw [if_pos (Nat.le_refl m)]
+              exact Nat.lt_succ_self m
+
+theorem sublist_pair_or {i j : Id} (hij : i ≠ j) :
+    ∀ l : List Id, i ∈ l → j ∈ l → [i, j].Sublist l ∨ [j, i].Sublist l := by
+  intro l
+  induction l with
+  | nil => intro h; simp at h
+  | cons c t ih =>
+    intro hi hj
+    rcases List.mem_cons.1 hi with rfl | hi'
+    · have hjt : j ∈ t := (List.mem_cons.1 hj).resolve_left (Ne.symm hij)
+      exact Or.inl ((List.singleton_sublist.2 hjt).cons_cons _)
+    · rcases List.mem_cons.1 hj with rfl | hj'
+      · exact Or.inr ((List.singleton_sublist.2 hi').cons_cons _)
+      · rcases ih hi' hj' with h | h
+        · exact Or.inl (h.cons _)
+        · exact Or.inr (h.cons _)
+
+/-- **Gap 59's law: a close keeps source order.**  Two lines one close takes
+from the same file, by the same action — both carried, or both filed — land in
+the same destination file in the order they had: the one above stays above.
+When the row lands a line in the section it came from (§6.3's month row) the two
+must have stood under the same heading, because the destination's sections are
+ordered by the destination file, not the source (the one hypothesis that is not
+about the fold).
+
+Before `closeCands` sorted its candidates by (document, rank) this was false on
+every loaded plan with two such lines: the loader builds `dom` in reverse, so the
+fold took the lower line first and the higher one landed after it. -/
+theorem close_keeps_source_order {g : Grain} {now : Day} {p q : WfPlan} (h : close g now p = .ok q)
+    {i j : Id} {ei ej : Entity} (hi : p.val.store.get i = some ei) (hj : p.val.store.get j = some ej)
+    (htaken : closeAct g now p.val ei.val.skel ≠ .stay)
+    (hact : closeAct g now p.val ej.val.skel = closeAct g now p.val ei.val.skel)
+    (hdoc : ei.val.live.doc = ej.val.live.doc)
+    (hsec : closeAct g now p.val ei.val.skel ≠ .carry → (closePolicy g).landing = .sameSection →
+      sectionAt p.val ei.val.live = sectionAt p.val ej.val.live)
+    (hlt : ei.val.live.rank < ej.val.live.rank) :
+    ∃ fi fj, q.val.store.get i = some fi ∧ q.val.store.get j = some fj ∧
+      fi.val.live.doc = fj.val.live.doc ∧ fi.val.live.rank < fj.val.live.rank := by
+  have hmi : i ∈ closeCands g now p.val := by
+    by_cases hc : i ∈ closeCands g now p.val
+    · exact hc
+    · exact absurd (closeAct_of_not_mem_closeCands hc hi) htaken
+  have hmj : j ∈ closeCands g now p.val := by
+    by_cases hc : j ∈ closeCands g now p.val
+    · exact hc
+    · exact absurd (hact.symm.trans (closeAct_of_not_mem_closeCands hc hj)) htaken
+  have hij : i ≠ j := by
+    intro he; subst he; rw [hi] at hj; injection hj with hj; subst hj; exact Nat.lt_irrefl _ hlt
+  have hsub : [i, j].Sublist (closeCands g now p.val) := by
+    rcases sublist_pair_or hij _ hmi hmj with hs | hs
+    · exact hs
+    · exfalso
+      have hle := List.pairwise_pair.1 ((closeCands_sorted g now p.val).sublist hs)
+      have hsj : liveSiteOf p.val j = ej.val.live := by unfold liveSiteOf; rw [hj]
+      have hsi : liveSiteOf p.val i = ei.val.live := by unfold liveSiteOf; rw [hi]
+      rw [hsj, hsi, siteLe_iff] at hle
+      rcases hle with hle | ⟨_, hle⟩
+      · rw [hdoc] at hle; exact Nat.lt_irrefl _ hle
+      · exact Nat.lt_irrefl _ (Nat.lt_of_lt_of_le hlt hle)
+  exact fold_keeps_order g now p i j ei ej htaken hact hsec (closeCands g now p.val) p q h
+    (closeCands_nodup g now p.val) hsub (Frame.refl _) (fun _ _ _ _ => rfl)
+    ⟨ei, hi, rfl, rfl⟩ ⟨ej, hj, rfl, rfl⟩
+
+/-- **Both directions** (AGENTS §5.8): for two such lines at distinct ranks, the
+one above in the source is the one above in the destination, and conversely. -/
+theorem close_keeps_source_order_iff {g : Grain} {now : Day} {p q : WfPlan} (h : close g now p = .ok q)
+    {i j : Id} {ei ej fi fj : Entity} (hi : p.val.store.get i = some ei) (hj : p.val.store.get j = some ej)
+    (hqi : q.val.store.get i = some fi) (hqj : q.val.store.get j = some fj)
+    (htaken : closeAct g now p.val ei.val.skel ≠ .stay)
+    (hact : closeAct g now p.val ej.val.skel = closeAct g now p.val ei.val.skel)
+    (hdoc : ei.val.live.doc = ej.val.live.doc)
+    (hsec : closeAct g now p.val ei.val.skel ≠ .carry → (closePolicy g).landing = .sameSection →
+      sectionAt p.val ei.val.live = sectionAt p.val ej.val.live)
+    (hrank : ei.val.live.rank ≠ ej.val.live.rank) :
+    ei.val.live.rank < ej.val.live.rank ↔ fi.val.live.rank < fj.val.live.rank := by
+  constructor
+  · intro hlt
+    obtain ⟨fi', fj', hqi', hqj', _, hr⟩ := close_keeps_source_order h hi hj htaken hact hdoc hsec hlt
+    rw [hqi] at hqi'; injection hqi' with hqi'
+    rw [hqj] at hqj'; injection hqj' with hqj'
+    subst hqi' hqj'
+    exact hr
+  · intro hq
+    rcases Nat.lt_or_gt_of_ne hrank with hlt | hgt
+    · exact hlt
+    · exfalso
+      have htj : closeAct g now p.val ej.val.skel ≠ .stay := by rw [hact]; exact htaken
+      obtain ⟨fj', fi', hqj', hqi', _, hr⟩ := close_keeps_source_order h hj hi htj hact.symm hdoc.symm
+        (fun hc hl => (hsec (by rw [← hact]; exact hc) hl).symm) hgt
+      rw [hqi] at hqi'; injection hqi' with hqi'
+      rw [hqj] at hqj'; injection hqj' with hqj'
+      subst hqi' hqj'
+      exact Nat.lt_asymm hq hr
 
 end Tm

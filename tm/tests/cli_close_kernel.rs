@@ -160,13 +160,14 @@ fn closing_twice_changes_zero_bytes_the_second_time() {
         .collect();
     assert_eq!(
         got,
+        // Source order (kernel/README.md gap 59): `^m2` above `^x1` in W36.
         vec![
-            ("x1", "carry", "week/2026-W37.md", "-"),
             ("m2", "copy", "month/2026-09.md", "W36"),
+            ("x1", "carry", "week/2026-W37.md", "-"),
         ],
         "{first}"
     );
-    assert_eq!(closes[1]["min"], serde_json::json!({"num": 360, "den": 1}));
+    assert_eq!(closes[0]["min"], serde_json::json!({"num": 360, "den": 1}));
     let after_first = md_files(&tm);
     assert_ne!(after_first["week/2026-W36.md"], "# Tasks\n- [ ] 4 6b Rollback path passes tests ^m2\n- [x] 2 1b Send the draft ^t1\n- [ ] 5 2h Midterm at:2026-10-20T10:00/12:00 ^x1\n");
     let events_first = events(&tm);
@@ -309,7 +310,8 @@ fn a_three_month_stale_tree_catches_up_losing_nothing() {
     assert_eq!(state["closed"]["week"], "2026-W36");
     assert_eq!(state["closed"]["month"], "2026-08");
     let demotes: Vec<String> = events(&tm).into_iter().filter(|(e, _)| e == "demote").map(|(_, i)| i).collect();
-    assert_eq!(demotes, vec!["p3", "p1", "m3", "m2"]);
+    // Source order (gap 59): the June day before the August day, W24 before W35.
+    assert_eq!(demotes, vec!["p1", "p3", "m2", "m3"]);
 
     // And the next command at a later hour changes nothing (L19b, and the gate).
     tm.ok_at("2026-09-12T17:00:00-05:00", &["now"]);
@@ -465,9 +467,13 @@ fn d1_a_day_closed_more_than_sixteen_days_late_is_not_stranded() {
 // ---------------------------------------------------------------------------
 
 /// §4.3's own example tree, the Monday after its week: the kernel's week
-/// close refuses it — `^d1 due:` is an open dated line whose record a
-/// month's `# Demoted` may not hold (gap 55). The explicit verb exits 1 with
-/// the refusal's name and writes nothing; the automatic close ahead of an
+/// close refuses it. Two of its lines are refusals — `^m2` already has a
+/// `[-]` record in September's `# Demoted` (`alreadyDemoted`, gap 53) and
+/// `^d1 due:` is an open dated line whose record a month's `# Demoted` may not
+/// hold (`badHorizon`, gap 55) — and a close names the first in source order,
+/// `^m2`, three lines above `^d1`. (Until kernel/README.md gap 59 closed the
+/// fold ran bottom-up and named `^d1`.) The explicit verb exits 1 with the
+/// refusal's name and writes nothing; the automatic close ahead of an
 /// unrelated verb prints the same name and lets the verb run, stamping
 /// nothing closed so it is tried again.
 #[test]
@@ -479,8 +485,8 @@ fn a_refused_close_is_named_and_writes_nothing() {
 
     let out = tm.run_at(AT, &["close", "week"]);
     assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
-    assert!(out.stderr.contains("badHorizon"), "{}", out.stderr);
-    assert!(out.stderr.contains("gap 55"), "{}", out.stderr);
+    assert!(out.stderr.contains("alreadyDemoted"), "{}", out.stderr);
+    assert!(out.stderr.contains("gap 53"), "{}", out.stderr);
     assert_eq!(tm.read("week/2026-W37.md"), week);
     assert_eq!(tm.read("month/2026-09.md"), month);
     assert!(!tm.exists("week/2026-W38.md"));
@@ -489,12 +495,12 @@ fn a_refused_close_is_named_and_writes_nothing() {
     let json = tm.run_at(AT, &["--json", "close", "week"]);
     assert_eq!(json.code, 1);
     let doc: serde_json::Value = serde_json::from_str(json.stderr.trim()).expect("error document");
-    assert_eq!(doc["detail"]["refusal"], "badHorizon", "{doc}");
+    assert_eq!(doc["detail"]["refusal"], "alreadyDemoted", "{doc}");
 
     let out = tm.run_at(AT, &["now"]);
     assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
     assert!(out.stderr.contains("automatic close"), "{}", out.stderr);
-    assert!(out.stderr.contains("badHorizon"), "{}", out.stderr);
+    assert!(out.stderr.contains("alreadyDemoted"), "{}", out.stderr);
     assert_eq!(tm.read("week/2026-W37.md"), week);
     assert_eq!(tm.read("month/2026-09.md"), month);
     assert!(tm.state()["closed"]["week"].is_null(), "{}", tm.state());
@@ -532,6 +538,60 @@ fn the_host_hands_over_the_sections_a_close_needs_and_writes_them_only_when_used
         format!("{month}# Demoted\n- [-] 3 2b Read chapter four demoted:W36 ^m3\n")
     );
     assert_eq!(busy.read("week/2026-W36.md"), "# Tasks\n- [-] 3 2b Read chapter four ^m3\n");
+}
+
+/// Kernel/README.md gap 59, through the binary: a close keeps the order of the
+/// lines it carries. September's two open outcomes — `!1` above `!2` — land
+/// in October's `# Outcomes` in that order, after the outcome October already
+/// has; its two `# Demoted` records land in October's `# Demoted` in their
+/// order too. Until the kernel sorted its candidates by (document, rank) both
+/// pairs arrived reversed, and the `!1` outcome ranked below the `!2` one
+/// until `tm rank` restored it (§7.4: rank is priority within a class).
+#[test]
+fn a_close_keeps_the_order_of_the_lines_it_carries() {
+    const AT: &str = "2026-10-01T09:00:00-05:00";
+    let tm = tree(
+        &[
+            (
+                "month/2026-09.md",
+                "---\nmonth: 2026-09\n---\n# Outcomes\n\
+                 - [ ] 5 !1 Lean through ch.8 ^O1\n\
+                 - [ ] 4 !2 Soundcode demo runs ^O2\n\
+                 - [x] 2 !3 Winter courses done ^O3\n\
+                 # Demoted\n\
+                 - [-] 4 3b Rollback path passes tests est:3b demoted:W37 ^m2\n\
+                 - [-] 3 2b Read chapter four est:2b demoted:W38 ^m3\n",
+            ),
+            (
+                "month/2026-10.md",
+                "---\nmonth: 2026-10\n---\n# Outcomes\n- [ ] 3 !2 Already here ^O4\n# Demoted\n",
+            ),
+        ],
+        None,
+    );
+    let json = tm.json_at(AT, &["close", "month"]);
+    assert_eq!(json["key"], "2026-09", "{json}");
+    let moved: Vec<&str> = json["report"]["closes"]
+        .as_array()
+        .expect("closes")
+        .iter()
+        .map(|c| c["id"].as_str().expect("id"))
+        .collect();
+    assert_eq!(moved, vec!["O1", "O2", "m2", "m3"], "{json}");
+    assert_eq!(
+        tm.read("month/2026-10.md"),
+        "---\nmonth: 2026-10\n---\n# Outcomes\n\
+         - [ ] 3 !2 Already here ^O4\n\
+         - [ ] 5 !1 Lean through ch.8 ^O1\n\
+         - [ ] 4 !2 Soundcode demo runs ^O2\n\
+         # Demoted\n\
+         - [-] 4 3b Rollback path passes tests est:3b demoted:W37 ^m2\n\
+         - [-] 3 2b Read chapter four est:2b demoted:W38 ^m3\n"
+    );
+    assert_eq!(
+        tm.read("month/2026-09.md"),
+        "---\nmonth: 2026-09\n---\n# Outcomes\n- [x] 2 !3 Winter courses done ^O3\n# Demoted\n"
+    );
 }
 
 /// A refusal of the automatic close lets the verb run; a kernel **fault**

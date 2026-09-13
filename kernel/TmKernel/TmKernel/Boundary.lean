@@ -4534,7 +4534,11 @@ def catchUpView (now : Day) (q : WfPlan) : CatchUpView :=
 set_option maxRecDepth 40000 in
 /-- The stale plan after one `autoClose`: each file's lines, the item ledger, and
 the ids left in closed files — decided together; the three theorems below read
-their halves off it. -/
+their halves off it.  Since gap 59's fix the lines one close lands in one file
+arrive in source order — documents in request order, then rank: `^p1` (the June
+day) ahead of `^p3` (the August day) in 2026-W37, and `^m2` (2026-W24) ahead of
+`^m3` (2026-W35) in the month's `# Demoted`; before it both pairs were
+reversed. -/
 theorem the_stale_catch_up_observed :
     staleCaughtUp (catchUpView staleNow) = some
       ⟨[["# Pinned".toList, "- [x] 1 10m Water the plants ^p2".toList],
@@ -4543,14 +4547,14 @@ theorem the_stale_catch_up_observed :
         "- [x] 2 1b Send the draft ^t1".toList, "- [ ] 1 15m Standup every:day ^r1".toList],
        ["# Tasks".toList, "- [-] 3 2b Read chapter four ^m3".toList],
        ["# Tasks".toList, "- [ ] 3 1b Review the drafts ^t5".toList,
-        "- [ ] 3 1h Draft the letter demoted:D29 ^p3".toList,
         "- [ ] 2 20m Call the bank demoted:D12 ^p1".toList,
+        "- [ ] 3 1h Draft the letter demoted:D29 ^p3".toList,
         "- [ ] 5 2h Midterm at:2026-10-20T10:00/12:00 ^x1".toList],
        ["# Outcomes".toList, "- [x] 3 !2 Done outcome ^O8".toList, "# Demoted".toList],
        ["# Outcomes".toList, "- [ ] 5 !1 Lean through ch.8 ^O1".toList,
         "- [ ] 5 !1 Old outcome ^O7".toList, "# Demoted".toList,
-        "- [-] 3 2b Read chapter four demoted:W35 ^m3".toList,
         "- [-] 4 6b Rollback path passes tests demoted:W24 ^m2".toList,
+        "- [-] 3 2b Read chapter four demoted:W35 ^m3".toList,
         "- [-] 4 3b Carried record est:3b demoted:W22 ^m9".toList]],
        [("O1".toList, "month/2026-09.md".toList, 0, 0),
        ("m9".toList, "month/2026-09.md".toList, 1, 150),
@@ -4591,14 +4595,14 @@ theorem the_stale_tree_catches_up_in_one_call :
         "- [x] 2 1b Send the draft ^t1".toList, "- [ ] 1 15m Standup every:day ^r1".toList],
        ["# Tasks".toList, "- [-] 3 2b Read chapter four ^m3".toList],
        ["# Tasks".toList, "- [ ] 3 1b Review the drafts ^t5".toList,
-        "- [ ] 3 1h Draft the letter demoted:D29 ^p3".toList,
         "- [ ] 2 20m Call the bank demoted:D12 ^p1".toList,
+        "- [ ] 3 1h Draft the letter demoted:D29 ^p3".toList,
         "- [ ] 5 2h Midterm at:2026-10-20T10:00/12:00 ^x1".toList],
        ["# Outcomes".toList, "- [x] 3 !2 Done outcome ^O8".toList, "# Demoted".toList],
        ["# Outcomes".toList, "- [ ] 5 !1 Lean through ch.8 ^O1".toList,
         "- [ ] 5 !1 Old outcome ^O7".toList, "# Demoted".toList,
-        "- [-] 3 2b Read chapter four demoted:W35 ^m3".toList,
         "- [-] 4 6b Rollback path passes tests demoted:W24 ^m2".toList,
+        "- [-] 3 2b Read chapter four demoted:W35 ^m3".toList,
         "- [-] 4 3b Carried record est:3b demoted:W22 ^m9".toList]] :=
   (staleCaughtUp_map CatchUpView.lines).trans (by rw [the_stale_catch_up_observed]; rfl)
 
@@ -4814,11 +4818,12 @@ set_option maxRecDepth 40000 in
 ahead is `carry` from `week/2026-W36.md` (document 0) into the live week
 (document 1), unstamped, 2 h; the open line is `copy` into the month
 (document 2), stamped `W36`, 6 blocks at 50 minutes.  The done and recurring
-lines are not named. -/
+lines are not named.  The entries come in fold order, which is source order
+since gap 59's fix: `^m2` (rank 1) before `^x1` (rank 3). -/
 theorem the_week_close_reports_each_line :
     closedReport week closeWeekWitness = some
-      [⟨"x1".toList, week, .carry, 0, 1, none, some (Arith.posOfNat 120)⟩,
-       ⟨"m2".toList, week, .copy, 0, 2, some (.week 36), some (Arith.posOfNat 300)⟩] := by
+      [⟨"m2".toList, week, .copy, 0, 2, some (.week 36), some (Arith.posOfNat 300)⟩,
+       ⟨"x1".toList, week, .carry, 0, 1, none, some (Arith.posOfNat 120)⟩] := by
   decide
 
 set_option maxRecDepth 40000 in
@@ -4832,11 +4837,12 @@ theorem the_day_close_reports_each_line :
 set_option maxRecDepth 40000 in
 /-- **The month row**: the `[-]` record and the open outcome are `move`,
 unstamped; the record reports `est:3b` as 150 minutes, and the outcome, which
-carries no estimate, reports `null` — never `0`. -/
+carries no estimate, reports `null` — never `0`.  Source order (gap 59): the
+outcome at rank 1 before the record at rank 4. -/
 theorem the_month_close_reports_each_line :
     closedReport month closeMonthWitness = some
-      [⟨"m9".toList, month, .move, 0, 1, none, some (Arith.posOfNat 150)⟩,
-       ⟨"O7".toList, month, .move, 0, 1, none, none⟩] := by
+      [⟨"O7".toList, month, .move, 0, 1, none, none⟩,
+       ⟨"m9".toList, month, .move, 0, 1, none, some (Arith.posOfNat 150)⟩] := by
   decide
 
 /-- **An entry on the wire, byte for byte, in build order**: minutes as an
@@ -5045,5 +5051,109 @@ theorem close_writes_a_line_demoteEst_does_not :
             rw [hl]; exact hasEst_setEst _ _
           rw [hnoest] at this
           exact Bool.noConfusion this
+
+/-! ## Gap 59 on loaded plans: a close keeps source order (stage 4 step 8)
+
+`close_keeps_source_order` (Close.lean) is the law; these are its sightings on
+plans the loader built, one per landing the table names, each with **two** lines
+landing in one place — the shape every earlier close witness lacked, which is
+how the reversal went unwitnessed.  Before `closeCands` sorted, each of the first
+three decided with the pair the other way round.  The fourth is why the law
+carries its section hypothesis: a month close files each line under the heading
+it stood under, and the destination orders its sections itself.  Probed under an
+8 GB cap first (AGENTS §5.10a). -/
+
+/-- Two open lines of the closed 2026-W36, and a month whose `# Demoted` is
+followed by another section. -/
+def closeOrderWeekWitness : List ReqDoc :=
+  [⟨"week/2026-W36.md", some closeW36,
+     ["# Tasks".toList, "- [ ] 2 1b Draft the outline ^m1".toList,
+      "- [ ] 3 2b Rollback path passes tests ^m2".toList]⟩,
+   ⟨"week/2026-W37.md", some closeW37, ["# Tasks".toList]⟩,
+   ⟨"month/2026-09.md", some closeM09,
+     ["# Outcomes".toList, "# Demoted".toList, "# Notes".toList]⟩]
+
+set_option maxRecDepth 40000 in
+/-- **The week row keeps source order in `# Demoted`.**  `^m1` stood above `^m2`
+in 2026-W36; its record lands above `^m2`'s at the end of the month's
+`# Demoted`, both ahead of `# Notes` (gap 59: the fold used to land `^m2`
+first). -/
+theorem the_week_close_keeps_source_order_in_demoted :
+    closedFileLines week closeOrderWeekWitness = some
+      [["# Tasks".toList, "- [-] 2 1b Draft the outline ^m1".toList,
+        "- [-] 3 2b Rollback path passes tests ^m2".toList],
+       ["# Tasks".toList],
+       ["# Outcomes".toList, "# Demoted".toList,
+        "- [-] 2 1b Draft the outline demoted:W36 ^m1".toList,
+        "- [-] 3 2b Rollback path passes tests demoted:W36 ^m2".toList, "# Notes".toList]] := by
+  decide
+
+/-- Two open outcomes of the closed August, and September's `# Outcomes` with a
+line already in it. -/
+def closeOrderMonthWitness : List ReqDoc :=
+  [⟨"month/2026-08.md", some closeM08,
+     ["# Outcomes".toList, "- [ ] 5 !1 First outcome ^O6".toList,
+      "- [ ] 3 !2 Second outcome ^O7".toList, "# Demoted".toList]⟩,
+   ⟨"month/2026-09.md", some closeM09,
+     ["# Outcomes".toList, "- [ ] 5 !1 Lean through ch.8 ^O1".toList, "# Demoted".toList]⟩]
+
+set_option maxRecDepth 40000 in
+/-- **The month row keeps source order in the section a line came from.**  Both
+outcomes land after the line September already has, in August's order, ahead of
+`# Demoted` (gap 59: `^O7` used to land above `^O6`). -/
+theorem the_month_close_keeps_source_order_in_its_section :
+    closedFileLines month closeOrderMonthWitness = some
+      [["# Outcomes".toList, "# Demoted".toList],
+       ["# Outcomes".toList, "- [ ] 5 !1 Lean through ch.8 ^O1".toList,
+        "- [ ] 5 !1 First outcome ^O6".toList, "- [ ] 3 !2 Second outcome ^O7".toList,
+        "# Demoted".toList]] := by
+  decide
+
+/-- Two pinned `[>]` lines of Friday 2026-09-04, closed on the Monday after. -/
+def closeOrderDayWitness : List ReqDoc :=
+  [⟨"day/2026-09-04.md", some ⟨day, Cal.toDay ⟨2026, 9, 4⟩⟩,
+     ["# Pinned".toList, "- [>] 2 20m Call the bank ^p1".toList,
+      "- [>] 1 10m Book the room ^p2".toList]⟩,
+   ⟨"week/2026-W37.md", some closeW37,
+     ["# Tasks".toList, "- [ ] 3 1b Review the drafts ^t5".toList]⟩]
+
+set_option maxRecDepth 40000 in
+/-- **The day row keeps source order at the end of the week.**  `^p1` then `^p2`,
+after the line the week already has (gap 59: `^p2` used to land first). -/
+theorem the_day_close_keeps_source_order_at_the_end_of_the_week :
+    closedFileLines day closeOrderDayWitness = some
+      [["# Pinned".toList],
+       ["# Tasks".toList, "- [ ] 3 1b Review the drafts ^t5".toList,
+        "- [ ] 2 20m Call the bank demoted:D04 ^p1".toList,
+        "- [ ] 1 10m Book the room demoted:D04 ^p2".toList]] := by
+  decide
+
+/-- August's two outcomes under two different headings, and a September that
+orders those headings the other way. -/
+def closeOrderSectionsWitness : List ReqDoc :=
+  [⟨"month/2026-08.md", some closeM08,
+     ["# Reading".toList, "- [ ] 2 !2 Read the paper ^O6".toList,
+      "# Writing".toList, "- [ ] 3 !2 Draft the essay ^O7".toList]⟩,
+   ⟨"month/2026-09.md", some closeM09, ["# Writing".toList, "# Reading".toList]⟩]
+
+set_option maxRecDepth 40000 in
+/-- **Why `close_keeps_source_order` asks for one heading at the month grain.**
+`^O6` stood above `^O7` in August, under `# Reading`; it lands below `^O7` in
+September, because September's `# Reading` follows its `# Writing`.  §6.3's
+"each into the section it came from" decides this, not the fold's order, so the
+law without the section hypothesis is false and stays unstated. -/
+theorem the_month_close_orders_lines_by_the_destination_sections :
+    closedFileLines month closeOrderSectionsWitness = some
+      [["# Reading".toList, "# Writing".toList],
+       ["# Writing".toList, "- [ ] 3 !2 Draft the essay ^O7".toList,
+        "# Reading".toList, "- [ ] 2 !2 Read the paper ^O6".toList]] := by
+  decide
+
+/-- The report names two lines of one file in source order too: the fold order
+is the report order (`closeReport_ids`). -/
+theorem the_week_close_reports_in_source_order :
+    (closedReport week closeOrderWeekWitness).map (fun es => es.map CloseEntry.id) =
+      some ["m1".toList, "m2".toList] := by
+  decide
 
 end Tm

@@ -95,7 +95,8 @@ fn close_week_archives_into_the_month() {
 /// The report is the kernel's per-item list (the owner's D3), and the human
 /// line is read off the same list. On the Monday after, `tm close week`
 /// closes the week that ended — not the one you are one day into — and
-/// reports every line it took, in the kernel's order.
+/// reports every line it took, in the kernel's order — source order since
+/// kernel/README.md gap 59: `# Milestones` top to bottom, then `# Tasks`.
 #[test]
 fn close_on_the_monday_after_reports_each_line_it_took() {
     let tm = closable_week();
@@ -109,16 +110,16 @@ fn close_on_the_monday_after_reports_each_line_it_took() {
     assert_eq!(
         taken,
         vec![
-            ("t5", "copy"),
-            ("t4", "copy"),
-            ("t3", "copy"),
-            ("t1", "copy"),
-            ("x2", "copy"),
-            ("x1", "carry"),
-            ("m4", "copy"),
-            ("m3", "copy"),
-            ("m2", "copy"),
             ("m1", "copy"),
+            ("m2", "copy"),
+            ("m3", "copy"),
+            ("m4", "copy"),
+            ("x1", "carry"),
+            ("x2", "copy"),
+            ("t1", "copy"),
+            ("t3", "copy"),
+            ("t4", "copy"),
+            ("t5", "copy"),
         ],
         "{json}"
     );
@@ -127,10 +128,10 @@ fn close_on_the_monday_after_reports_each_line_it_took() {
         assert_eq!(c["from"], "week/2026-W37.md");
         assert!(c["min"]["den"].as_u64().is_some_and(|d| d > 0), "{c}");
     }
-    assert_eq!(closes[9]["stamp"], "W37");
-    assert_eq!(closes[9]["to"], "month/2026-09.md");
-    assert_eq!(closes[5]["stamp"], serde_json::Value::Null);
-    assert_eq!(closes[5]["to"], "week/2026-W38.md");
+    assert_eq!(closes[0]["stamp"], "W37");
+    assert_eq!(closes[0]["to"], "month/2026-09.md");
+    assert_eq!(closes[4]["stamp"], serde_json::Value::Null);
+    assert_eq!(closes[4]["to"], "week/2026-W38.md");
 
     // And the human line of the same close counts the same entries.
     let fresh = closable_week();
@@ -185,9 +186,10 @@ fn close_month_can_drop_an_outcome() {
 /// Once September has ended, `tm close month --drop ^O3` settles `^O3` in
 /// September and carries the other unfinished outcomes into October's
 /// `# Outcomes` — a file the host creates with §4.3's two month sections.
-/// **Changed from the fork-point close, by name**: the carried lines land in
-/// the kernel's fold order (gap 59), and an id the automatic close already
-/// carried would be dropped where it stands, not brought back.
+/// The carried lines keep September's order (kernel/README.md gap 59, closed:
+/// until the kernel sorted its candidates they landed `^O2` above `^O1`).
+/// **Changed from the fork-point close, by name**: an id the automatic close
+/// already carried would be dropped where it stands, not brought back.
 #[test]
 fn close_month_drops_an_outcome_and_carries_the_rest() {
     let tm = Tm::new();
@@ -204,7 +206,7 @@ fn close_month_drops_an_outcome_and_carries_the_rest() {
         .iter()
         .map(|c| c["id"].as_str().expect("id"))
         .collect();
-    assert_eq!(moved, vec!["O2", "O1"], "{report}");
+    assert_eq!(moved, vec!["O1", "O2"], "{report}");
 
     assert!(tm.line("month/2026-09.md", "O3").starts_with("- [~]"));
     let october = tm.read("month/2026-10.md");
@@ -212,8 +214,8 @@ fn close_month_drops_an_outcome_and_carries_the_rest() {
     assert_eq!(
         october,
         "---\nmonth: 2026-10\n---\n# Outcomes\n\
-         - [ ] 4 !1 Soundcode: end-to-end demo runs             ^O2\n\
-         - [ ] 5 !1 Lean: through ch.8 of the tutorial          ^O1\n# Demoted\n"
+         - [ ] 5 !1 Lean: through ch.8 of the tutorial          ^O1\n\
+         - [ ] 4 !1 Soundcode: end-to-end demo runs             ^O2\n# Demoted\n"
     );
 
     // After the automatic close has carried `^O3` into October, the drop

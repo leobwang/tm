@@ -1106,18 +1106,11 @@ mod tests {
         let resp: Value = serde_json::from_str(&raw).expect("json");
         let n = resp["ok"]["docs"].as_array().expect("docs").len();
         let report = decode_report(&resp["ok"]["report"], n).expect("report decodes");
+        // Source order (kernel/README.md gap 59): `^m2` at rank 1 before `^x1`
+        // at rank 3.
         assert_eq!(
             report,
             vec![
-                CloseEntry {
-                    id: "x1".into(),
-                    grain: Grain::Week,
-                    did: CloseDid::Carry,
-                    from: 0,
-                    to: 1,
-                    stamp: None,
-                    minutes: Minutes::new(120, 1),
-                },
                 CloseEntry {
                     id: "m2".into(),
                     grain: Grain::Week,
@@ -1126,6 +1119,15 @@ mod tests {
                     to: 2,
                     stamp: Some(Stamp::Week(36)),
                     minutes: Minutes::new(300, 1),
+                },
+                CloseEntry {
+                    id: "x1".into(),
+                    grain: Grain::Week,
+                    did: CloseDid::Carry,
+                    from: 0,
+                    to: 1,
+                    stamp: None,
+                    minutes: Minutes::new(120, 1),
                 },
             ],
             "{raw}"

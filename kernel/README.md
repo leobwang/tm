@@ -5223,3 +5223,121 @@ Re-measured after this step, every command under the 40 GB cap: `check.sh`
 burn-down **30** (−3); `cargo test --workspace` **995 passed / 0 failed / 0
 ignored across 65 binaries** (unchanged: no Rust touched).  Gaps run to 59 (new
 gaps start at 60); cheats to 54 (new cheats start at 55).
+
+<!-- ===================================================================
+     APPENDED 2026-09-13 (stage-4 session, rebuild-on-lean).  Step 8: gap 59 closed — a close keeps source order.
+     Takes no gap and no cheat.  Supersedes, by name, gap 59 (step 6), row 15 of step 6's changed-behaviour table, and step 6's owed item (5).
+     =================================================================== -->
+
+## Stage 4 step 8, 2026-09-13: a close keeps source order — the reversed `dom` no longer decides rank
+
+Baseline re-measured at `210daad` before this step, every command under the 40 GB
+cap: `check.sh` **7/7** — axiom audit **1466**, corpus **33/37 files and 4/5
+whole plans**, burn-down **30**; `cargo test --workspace` **995 passed / 0 failed
+/ 0 ignored across 65 binaries**.
+
+**Gap 59, closed: `close_keeps_source_order` (Close.lean).**  The law that was
+silently false, stated and proved: after a successful `close g now p = .ok q`,
+for two lines `i`, `j` the close takes from **the same source file** by **the
+same action** (both carried, or both filed), `i` above `j` there
+(`ei.live.rank < ej.live.rank`), both land in one destination file with `i` still
+above `j`.  `close_keeps_source_order_iff` is both directions (AGENTS §5.8): at
+distinct source ranks, above in the source iff above in the destination.
+
+- **The fix is one definition.**  `closeCandSet` is the old `closeCands` — `dom`
+  filtered, in store order, which the loader builds in reverse — and `closeCands`
+  is now `sortBySite (liveSiteOf p) (closeCandSet …)`: a structural insertion sort
+  on (document, rank) (`siteLe`), so it reduces under `decide` (AGENTS §5.10).
+  `sortBySite_perm` makes it a permutation, so every statement about *which*
+  ids a close takes survives unchanged: `closeCands_nodup`,
+  `closeAct_of_not_mem_closeCands`, `closeCands_eq_nil_of_stay` and Report.lean's
+  `closeReport_ids` and `mem_closeCands` were each re-proved through
+  `closeCands_perm`/`mem_closeCands_iff` in a line or two; `close_spec`, L16
+  (`close_is_idempotent`), the L19 theorems and every report theorem did not
+  change at all.  `closeCands_sorted` is the only place the order is used.
+- **The proof.**  `closeOne_moves` says what one step does to placements: the id
+  it takes lands at `⟨k, spot.getD (endRank p k)⟩` in a file `k` no close takes
+  from; every other line is `Site.bump`ed (the section-landing shift, or nothing);
+  file `k`'s prose is `Doc.bump`ed; no other file changes.  A shift is strictly
+  monotone (`shiftRank_lt_iff`) and moves headings with the lines below them, so
+  it moves every section's landing spot the same way (`landingSpot_bump`, from
+  `firstHeadingAbove_bump` and `inComment_shiftFrom`).  The fold is then three
+  phases on the sorted list: neither line landed (`fold_keeps_order`), the upper
+  one landed and sits strictly above the spot the lower one will get
+  (`fold_keeps_order_after_first` — `live_rank_lt_endRank` for a file-end landing,
+  the section invariant otherwise), both landed (`fold_keeps_order_both`).
+- **The one hypothesis that is not about the fold.**  At the month grain a line
+  lands "into the section it came from", and the destination orders its own
+  sections — so the law asks the two lines to have stood under one heading when
+  the row's landing is `sameSection` and the act is not a carry.
+  `the_month_close_orders_lines_by_the_destination_sections` (Boundary.lean) is
+  the decided counterexample without it: August's `# Reading` line above its
+  `# Writing` line lands **below** it in a September whose `# Writing` comes first.
+  That is §6.3's rule doing its job, not a fold order, and it is recorded here so
+  nobody states the unconditioned law.
+- **Sightings on loaded plans (Boundary.lean), each with two lines landing in one
+  place** — the shape no earlier close witness had, which is how the reversal was
+  never decided: `the_week_close_keeps_source_order_in_demoted` (two records at
+  the end of a `# Demoted` followed by `# Notes`, the shift exercised twice),
+  `the_month_close_keeps_source_order_in_its_section`,
+  `the_day_close_keeps_source_order_at_the_end_of_the_week`, and
+  `the_week_close_reports_in_source_order`.  Probed under an 8 GB cap first: the
+  five decide together in 2.55 s at a 1.18 GB peak, imports included.
+
+**Re-decided, because their bytes changed (every changed expectation now shows
+source order, and each says so, citing gap 59).**  Boundary.lean:
+`the_stale_catch_up_observed` and `the_stale_tree_catches_up_in_one_call`
+(`^p1` now above `^p3` in 2026-W37; `^m2`'s record above `^m3`'s in 2026-09's
+`# Demoted`), `the_week_close_reports_each_line` (`^m2` before `^x1`),
+`the_month_close_reports_each_line` (`^O7` before `^m9`).  The three
+single-line-per-destination file witnesses (`the_week_close_copies_carries_and_leaves_the_rest`,
+`the_day_close_files_into_the_week_of_now`, `the_month_close_moves_each_line_into_its_section`)
+did not change, which is the point above.  Whole `Boundary.lean` elaborates in
+36.6 s at a 3.47 GB peak under the 8 GB cap (30.9 s at 2.8 GB at step 5).  FFI
+(`tests/kernel.rs`): `a_week_close_reports_each_line_it_touched` and
+`a_three_month_stale_tree_catches_up_in_one_call_and_reports_each_line` (report
+order, plus two new assertions that the files keep it).  Host:
+`kernel_bridge.rs`'s `a_real_close_report_decodes_through_the_smart_constructors`.
+
+**Changed in the shipped binary, by name.**  `tm close` and the automatic close
+land carried outcomes, `# Demoted` records and pinned items in source order, and
+report them in that order (`cli_lifecycle.rs`: `close_month_drops_an_outcome_and_carries_the_rest`
+now pins `^O1` above `^O2` in October, `close_on_the_monday_after_reports_each_line_it_took`
+pins `# Milestones` then `# Tasks`; `cli_close_kernel.rs`:
+`closing_twice_changes_zero_bytes_the_second_time`,
+`a_three_month_stale_tree_catches_up_losing_nothing`'s log order).  New:
+`a_close_keeps_the_order_of_the_lines_it_carries` — two open September outcomes,
+`!1` above `!2`, and two `# Demoted` records, closed into an October that already
+has an outcome: all four arrive in September's order.  **One refusal changed its
+name**: a close refuses what its first failing step refuses
+(`close_refuses_what_its_first_step_refuses`), and the first step is now the
+highest line.  §4.3's own example week holds two refusals, `^m2` (a standing
+`# Demoted` record, `alreadyDemoted`, gap 53) above `^d1` (`due:`, `badHorizon`,
+gap 55); the close used to name `^d1` and now names `^m2`
+(`a_refused_close_is_named_and_writes_nothing`).  Both gaps' costs stand as priced.
+
+**Gap 20, status at this step: the `demote` verb still lands at `freshRank`.**
+Unchanged by this step, and still recorded as in step 2's paragraph ("Gap 20 —
+landed for `close`; not for the `demote` verb").  The section-landing machinery
+it would reuse — `landingSpot` with `Landing.demotedSection`, `landAt`'s shift —
+is now the best-understood code in Close.lean (`closeOne_moves`,
+`landingSpot_bump`), so the change itself is small; what it is not is
+behaviour-neutral, and that is priced in step 9 if it lands and in its own gap
+if it does not.
+
+**Superseded by name.**  Gap 59 (step 6) — closed, by `close_keeps_source_order`.
+Step 6's changed-behaviour table, row 15, "they land in reverse of their source
+order" — no longer true; carried lines keep their order.  Step 6's owed item (5),
+"Gap 59's kernel fix" — done.  `cli_lifecycle.rs`'s doc comment "the carried
+lines land in the kernel's fold order (gap 59)" — rewritten to say they keep
+September's order.
+
+Re-measured after this step, every command under the 40 GB cap: `check.sh`
+**7/7** — axiom audit **1516 theorems** (+50: 45 in Close.lean, 5 in
+Boundary.lean; the three counts of AGENTS §6.3 agree at 1516), corpus **33/37
+files and 4/5 whole plans** (unchanged), `Goals.lean` burn-down **30**
+(unchanged: no goal stated this law); `cargo test --workspace` **996 passed / 0
+failed / 0 ignored across 65 binaries** (+1, the new CLI order test); FFI suite
+**67** (unchanged in count, two tests' expectations re-decided).  Twelve
+modules, 25,703 lines.  Gaps run to 59 (new gaps start at 60); cheats to 54
+(new cheats start at 55).

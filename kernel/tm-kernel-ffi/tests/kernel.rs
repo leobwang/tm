@@ -969,8 +969,10 @@ fn a_week_close_reports_each_line_it_touched() {
             r##"{"path":"week/2026-W37.md","lines":["# Tasks","- [ ] 5 2h Midterm at:2026-10-20T10:00/12:00 ^x1"],"grain":1,"ix":105695},"##,
             r##"{"path":"month/2026-09.md","lines":["# Outcomes","- [ ] 5 !1 Lean through ch.8 ^O1","# Demoted","- [-] 4 6b Rollback path passes tests demoted:W36 ^m2","# Notes"],"grain":2,"ix":24308}],"##,
             r##""report":{"closes":["##,
-            r##"{"id":"x1","grain":1,"did":"carry","from":0,"to":1,"stamp":null,"min":{"num":120,"den":1}},"##,
-            r##"{"id":"m2","grain":1,"did":"copy","from":0,"to":2,"stamp":"W36","min":{"num":300,"den":1}}"##,
+            // Source order (kernel/README.md gap 59): `^m2` at rank 1 before
+            // `^x1` at rank 3 — the fold used to take them the other way round.
+            r##"{"id":"m2","grain":1,"did":"copy","from":0,"to":2,"stamp":"W36","min":{"num":300,"den":1}},"##,
+            r##"{"id":"x1","grain":1,"did":"carry","from":0,"to":1,"stamp":null,"min":{"num":120,"den":1}}"##,
             r##"]}}}"##
         ),
         "{out}"
@@ -1051,16 +1053,29 @@ fn a_three_month_stale_tree_catches_up_in_one_call_and_reports_each_line() {
     assert_eq!(
         report,
         concat!(
+            // Each grain's entries in source order — document, then rank
+            // (kernel/README.md gap 59; before it every pair below was the
+            // other way round).
             r##"{"closes":["##,
-            r##"{"id":"p3","grain":0,"did":"moveReopening","from":1,"to":4,"stamp":"D29","min":{"num":60,"den":1}},"##,
             r##"{"id":"p1","grain":0,"did":"moveReopening","from":0,"to":4,"stamp":"D12","min":{"num":20,"den":1}},"##,
-            r##"{"id":"x1","grain":1,"did":"carry","from":3,"to":4,"stamp":null,"min":{"num":120,"den":1}},"##,
-            r##"{"id":"m3","grain":1,"did":"copy","from":3,"to":6,"stamp":"W35","min":{"num":100,"den":1}},"##,
+            r##"{"id":"p3","grain":0,"did":"moveReopening","from":1,"to":4,"stamp":"D29","min":{"num":60,"den":1}},"##,
             r##"{"id":"m2","grain":1,"did":"copy","from":2,"to":6,"stamp":"W24","min":{"num":300,"den":1}},"##,
-            r##"{"id":"m9","grain":2,"did":"move","from":5,"to":6,"stamp":null,"min":{"num":150,"den":1}},"##,
-            r##"{"id":"O7","grain":2,"did":"move","from":5,"to":6,"stamp":null,"min":null}"##,
+            r##"{"id":"m3","grain":1,"did":"copy","from":3,"to":6,"stamp":"W35","min":{"num":100,"den":1}},"##,
+            r##"{"id":"x1","grain":1,"did":"carry","from":3,"to":4,"stamp":null,"min":{"num":120,"den":1}},"##,
+            r##"{"id":"O7","grain":2,"did":"move","from":5,"to":6,"stamp":null,"min":null},"##,
+            r##"{"id":"m9","grain":2,"did":"move","from":5,"to":6,"stamp":null,"min":{"num":150,"den":1}}"##,
             r##"]}}}"##
         ),
+        "{out}"
+    );
+    // And the files keep it: the June day's `^p1` above the August day's `^p3`
+    // in 2026-W37, and W24's record above W35's in September's `# Demoted`.
+    assert!(
+        docs.contains(r#""- [ ] 2 20m Call the bank demoted:D12 ^p1","- [ ] 3 1h Draft the letter demoted:D29 ^p3""#),
+        "{out}"
+    );
+    assert!(
+        docs.contains(r#""- [-] 4 6b Rollback path passes tests demoted:W24 ^m2","- [-] 3 2b Read chapter four demoted:W35 ^m3""#),
         "{out}"
     );
     assert!(docs.contains(r#""- [ ] 2 20m Call the bank demoted:D12 ^p1""#), "{out}");
