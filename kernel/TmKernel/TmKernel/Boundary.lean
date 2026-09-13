@@ -4229,4 +4229,299 @@ theorem lifecycle_commands_do_not_commute :
   rw [heq, h2] at h1
   exact absurd h1 (by simp)
 
+/-! ## `autoClose` on a tree three months stale (stage-4 step 4)
+
+The owner drove the shipped Rust over stale trees (2026-09-12).  Three months
+stale, fork-point `auto_close` caught up the week and month grains but ran
+**zero** day closes — `catch_up` looked at the sixteen most recent days, none of
+which had a file — so every pinned item older than sixteen days stayed in its
+sealed day file while `tm check` reported no problems.  Fourteen days stale, the
+opposite: a day's leftovers were filed into a week the next iteration closed,
+and each gained two stamps.
+
+The witness below has both shapes in one tree, closed at Saturday 2026-09-12:
+a pinned `[>]` of 2026-06-12 (three months) and one of 2026-08-29 (fourteen
+days, in 2026-W35), open week lines in 2026-W24 and 2026-W35, a wall still ahead
+in 2026-W35, a June month file with an open outcome and a `[-]` record, and the
+live week and month.  One `autoClose` call files every unfinished line into a
+region containing *now*, each with **at most one** new stamp, keeps every id and
+the summed estimate, and leaves behind in closed files exactly the lines §6.3
+leaves: a done day item, a done week item, a recurring line and a done outcome.
+Probed under an 8 GB cap first (AGENTS §5.10a): the three observations decide in
+about 8 s at a 1.7 GB peak, imports included. -/
+
+def staleNow : Day := Cal.toDay ⟨2026, 9, 12⟩
+def staleW24 : Region := ⟨week, Cal.weekOrdinal (Cal.toDay ⟨2026, 6, 8⟩)⟩
+def staleW35 : Region := ⟨week, Cal.weekOrdinal (Cal.toDay ⟨2026, 8, 24⟩)⟩
+def staleW37 : Region := ⟨week, Cal.weekOrdinal staleNow⟩
+def staleM06 : Region := ⟨month, Cal.monthOrdinal (Cal.toDay ⟨2026, 6, 1⟩)⟩
+def staleM09 : Region := ⟨month, Cal.monthOrdinal staleNow⟩
+
+/-- A tree last closed in June, with the two stale shapes the owner measured. -/
+def staleWitness : List ReqDoc :=
+  [⟨"day/2026-06-12.md", some ⟨day, Cal.toDay ⟨2026, 6, 12⟩⟩,
+     ["# Pinned".toList, "- [>] 2 20m Call the bank ^p1".toList,
+      "- [x] 1 10m Water the plants ^p2".toList]⟩,
+   ⟨"day/2026-08-29.md", some ⟨day, Cal.toDay ⟨2026, 8, 29⟩⟩,
+     ["# Pinned".toList, "- [>] 3 1h Draft the letter ^p3".toList]⟩,
+   ⟨"week/2026-W24.md", some staleW24,
+     ["# Tasks".toList,
+      "- [ ] 4 6b Rollback path passes tests ^m2".toList,
+      "- [x] 2 1b Send the draft ^t1".toList,
+      "- [ ] 1 15m Standup every:day ^r1".toList]⟩,
+   ⟨"week/2026-W35.md", some staleW35,
+     ["# Tasks".toList,
+      "- [ ] 3 2b Read chapter four ^m3".toList,
+      "- [ ] 5 2h Midterm at:2026-10-20T10:00/12:00 ^x1".toList]⟩,
+   ⟨"week/2026-W37.md", some staleW37,
+     ["# Tasks".toList, "- [ ] 3 1b Review the drafts ^t5".toList]⟩,
+   ⟨"month/2026-06.md", some staleM06,
+     ["# Outcomes".toList, "- [ ] 5 !1 Old outcome ^O7".toList,
+      "- [x] 3 !2 Done outcome ^O8".toList,
+      "# Demoted".toList, "- [-] 4 3b Carried record est:3b demoted:W22 ^m9".toList]⟩,
+   ⟨"month/2026-09.md", some staleM09,
+     ["# Outcomes".toList, "- [ ] 5 !1 Lean through ch.8 ^O1".toList, "# Demoted".toList]⟩]
+
+theorem the_stale_witness_loads : loadsOk staleWitness = true := by decide
+
+/-- The loaded stale plan.  Total by `the_stale_witness_loads`: the error branch
+is refuted, not defaulted. -/
+def stalePlan : WfPlan :=
+  match h : loadPlan staleWitness with
+  | .ok p => p
+  | .error _ => absurd the_stale_witness_loads (by simp [loadsOk, h])
+
+/-- One row per item, in store order: its id, the path of the file its record is
+in, how many stamps it carries, and its estimate in minutes at a 50-minute block
+(0 when it has none). -/
+def itemLedger (q : WfPlan) : List (Id × List Char × Nat × Nat) :=
+  q.val.store.dom.filterMap (fun i => (q.val.store.get i).map (fun e =>
+    (i, ((q.val.docs[e.val.live.doc]?).map Doc.path).getD [], e.val.stamps.length,
+     (e.val.est.map (Field.Dur.minutes 50)).getD 0)))
+
+/-- The summed estimate of a ledger, in minutes. -/
+def ledgerMinutes (l : List (Id × List Char × Nat × Nat)) : Nat := (l.map (fun r => r.2.2.2)).sum
+
+/-- The ids whose record sits in a file whose region is closed at `now`. -/
+def closedLiveIds (now : Day) (q : WfPlan) : List Id :=
+  q.val.store.dom.filter (fun i =>
+    match q.val.store.get i with
+    | none   => false
+    | some e =>
+      match docRegion q.val e.val.live.doc with
+      | none   => false
+      | some r => decide (Closed r now))
+
+theorem mem_closedLiveIds {now : Day} {q : WfPlan} {i : Id} (h : i ∈ closedLiveIds now q) :
+    ∃ e r, q.val.store.get i = some e ∧ docRegion q.val e.val.live.doc = some r ∧ Closed r now := by
+  unfold closedLiveIds at h
+  have hf := (List.mem_filter.1 h).2
+  revert hf
+  cases hg : q.val.store.get i with
+  | none => simp
+  | some e =>
+    cases hr : docRegion q.val e.val.live.doc with
+    | none => simp [hr]
+    | some r =>
+      simp only [hr, decide_eq_true_eq]
+      exact fun hc => ⟨e, r, rfl, hr, hc⟩
+
+/-- The stale plan after one `autoClose`, observed three ways. -/
+def staleCaughtUp {α : Type} (obs : WfPlan → α) : Option α :=
+  match autoClose staleNow stalePlan with
+  | .ok q    => some (obs q)
+  | .error _ => none
+
+/-- The three observations of a caught-up plan, as one value, so that the stale
+plan is closed once per decision rather than once per observation. -/
+structure CatchUpView where
+  lines    : List (List (List Char))
+  ledger   : List (Id × List Char × Nat × Nat)
+  stranded : List Id
+deriving DecidableEq
+
+def catchUpView (now : Day) (q : WfPlan) : CatchUpView :=
+  ⟨fileLinesOf q, itemLedger q, closedLiveIds now q⟩
+
+set_option maxRecDepth 40000 in
+/-- The stale plan after one `autoClose`: each file's lines, the item ledger, and
+the ids left in closed files — decided together; the three theorems below read
+their halves off it. -/
+theorem the_stale_catch_up_observed :
+    staleCaughtUp (catchUpView staleNow) = some
+      ⟨[["# Pinned".toList, "- [x] 1 10m Water the plants ^p2".toList],
+       ["# Pinned".toList],
+       ["# Tasks".toList, "- [-] 4 6b Rollback path passes tests ^m2".toList,
+        "- [x] 2 1b Send the draft ^t1".toList, "- [ ] 1 15m Standup every:day ^r1".toList],
+       ["# Tasks".toList, "- [-] 3 2b Read chapter four ^m3".toList],
+       ["# Tasks".toList, "- [ ] 3 1b Review the drafts ^t5".toList,
+        "- [ ] 3 1h Draft the letter demoted:D29 ^p3".toList,
+        "- [ ] 2 20m Call the bank demoted:D12 ^p1".toList,
+        "- [ ] 5 2h Midterm at:2026-10-20T10:00/12:00 ^x1".toList],
+       ["# Outcomes".toList, "- [x] 3 !2 Done outcome ^O8".toList, "# Demoted".toList],
+       ["# Outcomes".toList, "- [ ] 5 !1 Lean through ch.8 ^O1".toList,
+        "- [ ] 5 !1 Old outcome ^O7".toList, "# Demoted".toList,
+        "- [-] 3 2b Read chapter four demoted:W35 ^m3".toList,
+        "- [-] 4 6b Rollback path passes tests demoted:W24 ^m2".toList,
+        "- [-] 4 3b Carried record est:3b demoted:W22 ^m9".toList]],
+       [("O1".toList, "month/2026-09.md".toList, 0, 0),
+       ("m9".toList, "month/2026-09.md".toList, 1, 150),
+       ("O8".toList, "month/2026-06.md".toList, 0, 0),
+       ("O7".toList, "month/2026-09.md".toList, 0, 0),
+       ("t5".toList, "week/2026-W37.md".toList, 0, 50),
+       ("x1".toList, "week/2026-W37.md".toList, 0, 120),
+       ("m3".toList, "month/2026-09.md".toList, 1, 100),
+       ("r1".toList, "week/2026-W24.md".toList, 0, 15),
+       ("t1".toList, "week/2026-W24.md".toList, 0, 50),
+       ("m2".toList, "month/2026-09.md".toList, 1, 300),
+       ("p3".toList, "week/2026-W37.md".toList, 1, 60),
+       ("p2".toList, "day/2026-06-12.md".toList, 0, 10),
+       ("p1".toList, "week/2026-W37.md".toList, 1, 20)],
+       ["O8".toList, "r1".toList, "t1".toList, "p2".toList]⟩ := by
+  decide
+
+/-- Reading one field of the decided view. -/
+theorem staleCaughtUp_map {α : Type} (obs : CatchUpView → α) :
+    staleCaughtUp (fun q => obs (catchUpView staleNow q)) =
+      (staleCaughtUp (catchUpView staleNow)).map obs := by
+  unfold staleCaughtUp
+  cases autoClose staleNow stalePlan <;> rfl
+
+/-- **A three-month-stale tree catches up in one call** (AGENTS §8.2's
+acceptance, the library half).  Both pinned items — the three-month one and the
+fourteen-day one — reopen and land in **2026-W37**, the week containing *now*,
+with one day stamp each (`D12`, `D29`); both open week lines leave `[-]`
+tombstones and land in 2026-09's `# Demoted` with one week stamp each (`W24`,
+`W35`); the wall still ahead is carried into 2026-W37 unstamped; June's open
+outcome and its `[-]` record move into 2026-09's sections unchanged.  What stays
+in a closed file is done, recurring, or a tombstone. -/
+theorem the_stale_tree_catches_up_in_one_call :
+    staleCaughtUp fileLinesOf = some
+      [["# Pinned".toList, "- [x] 1 10m Water the plants ^p2".toList],
+       ["# Pinned".toList],
+       ["# Tasks".toList, "- [-] 4 6b Rollback path passes tests ^m2".toList,
+        "- [x] 2 1b Send the draft ^t1".toList, "- [ ] 1 15m Standup every:day ^r1".toList],
+       ["# Tasks".toList, "- [-] 3 2b Read chapter four ^m3".toList],
+       ["# Tasks".toList, "- [ ] 3 1b Review the drafts ^t5".toList,
+        "- [ ] 3 1h Draft the letter demoted:D29 ^p3".toList,
+        "- [ ] 2 20m Call the bank demoted:D12 ^p1".toList,
+        "- [ ] 5 2h Midterm at:2026-10-20T10:00/12:00 ^x1".toList],
+       ["# Outcomes".toList, "- [x] 3 !2 Done outcome ^O8".toList, "# Demoted".toList],
+       ["# Outcomes".toList, "- [ ] 5 !1 Lean through ch.8 ^O1".toList,
+        "- [ ] 5 !1 Old outcome ^O7".toList, "# Demoted".toList,
+        "- [-] 3 2b Read chapter four demoted:W35 ^m3".toList,
+        "- [-] 4 6b Rollback path passes tests demoted:W24 ^m2".toList,
+        "- [-] 4 3b Carried record est:3b demoted:W22 ^m9".toList]] :=
+  (staleCaughtUp_map CatchUpView.lines).trans (by rw [the_stale_catch_up_observed]; rfl)
+
+set_option maxRecDepth 40000 in
+/-- The stale plan's items before the call: thirteen ids, 875 minutes. -/
+theorem the_stale_ledger_before_catch_up :
+    itemLedger stalePlan =
+      [("O1".toList, "month/2026-09.md".toList, 0, 0),
+       ("m9".toList, "month/2026-06.md".toList, 1, 150),
+       ("O8".toList, "month/2026-06.md".toList, 0, 0),
+       ("O7".toList, "month/2026-06.md".toList, 0, 0),
+       ("t5".toList, "week/2026-W37.md".toList, 0, 50),
+       ("x1".toList, "week/2026-W35.md".toList, 0, 120),
+       ("m3".toList, "week/2026-W35.md".toList, 0, 100),
+       ("r1".toList, "week/2026-W24.md".toList, 0, 15),
+       ("t1".toList, "week/2026-W24.md".toList, 0, 50),
+       ("m2".toList, "week/2026-W24.md".toList, 0, 300),
+       ("p3".toList, "day/2026-08-29.md".toList, 0, 60),
+       ("p2".toList, "day/2026-06-12.md".toList, 0, 10),
+       ("p1".toList, "day/2026-06-12.md".toList, 0, 20)] := by
+  decide
+
+/-- The same items after one `autoClose`: every id still there, every estimate
+the same, four lines with exactly one new stamp and none with two. -/
+theorem the_stale_ledger_after_catch_up :
+    staleCaughtUp itemLedger = some
+      [("O1".toList, "month/2026-09.md".toList, 0, 0),
+       ("m9".toList, "month/2026-09.md".toList, 1, 150),
+       ("O8".toList, "month/2026-06.md".toList, 0, 0),
+       ("O7".toList, "month/2026-09.md".toList, 0, 0),
+       ("t5".toList, "week/2026-W37.md".toList, 0, 50),
+       ("x1".toList, "week/2026-W37.md".toList, 0, 120),
+       ("m3".toList, "month/2026-09.md".toList, 1, 100),
+       ("r1".toList, "week/2026-W24.md".toList, 0, 15),
+       ("t1".toList, "week/2026-W24.md".toList, 0, 50),
+       ("m2".toList, "month/2026-09.md".toList, 1, 300),
+       ("p3".toList, "week/2026-W37.md".toList, 1, 60),
+       ("p2".toList, "day/2026-06-12.md".toList, 0, 10),
+       ("p1".toList, "week/2026-W37.md".toList, 1, 20)] :=
+  (staleCaughtUp_map CatchUpView.ledger).trans (by rw [the_stale_catch_up_observed]; rfl)
+
+/-- **"A 3-month-stale tree catches up losing nothing"**, at library level: the
+same ids in the same order, the summed estimate unchanged at 875 minutes, and no
+item's stamp count up by more than one. -/
+theorem the_stale_tree_catches_up_losing_nothing :
+    staleCaughtUp (fun q => (itemLedger q).map (fun r => r.1)) =
+        some ((itemLedger stalePlan).map (fun r => r.1)) ∧
+      staleCaughtUp (fun q => ledgerMinutes (itemLedger q)) =
+        some (ledgerMinutes (itemLedger stalePlan)) ∧
+      ledgerMinutes (itemLedger stalePlan) = 875 ∧
+      staleCaughtUp (fun q => ((itemLedger q).zip (itemLedger stalePlan)).all
+        (fun ab => ab.1.2.2.1 ≤ ab.2.2.2.1 + 1)) = some true := by
+  have hb := the_stale_ledger_before_catch_up
+  have ha := the_stale_ledger_after_catch_up
+  unfold staleCaughtUp at ha ⊢
+  cases h : autoClose staleNow stalePlan with
+  | error x => rw [h] at ha; simp at ha
+  | ok q =>
+    rw [h] at ha
+    simp only [Option.some.injEq] at ha ⊢
+    rw [ha, hb]
+    decide
+
+/-- What one `autoClose` leaves in closed files: the done day item, the done
+and recurring week items, and the done outcome — the lines §6.3 leaves. -/
+theorem the_stale_catch_up_leaves_only_settled_and_recurring_lines :
+    staleCaughtUp (closedLiveIds staleNow) =
+      some ["O8".toList, "r1".toList, "t1".toList, "p2".toList] :=
+  (staleCaughtUp_map CatchUpView.stranded).trans (by rw [the_stale_catch_up_observed]; rfl)
+
+/-- **L19c (P\*), refuted — discharged from `Goals.lean` by refute-and-rename.**
+The negation of `autoClose_runs_every_period_it_passes`, quantifier for
+quantifier: it is not the case that after every successful `autoClose` no live
+line sits in a closed region.  `^t1`, a `[x]` line of the closed 2026-W24, is
+where §6.3 leaves it.  What does hold is `autoClose_strands_no_unfinished_line`
+(Close.lean): nothing a close takes is left behind, at any grain. -/
+theorem autoClose_leaves_lines_in_periods_it_passes :
+    ¬ ∀ (now : Day) (p q : WfPlan), autoClose now p = .ok q →
+      ∀ (i : Id) (e : Entity), q.val.store.get i = some e →
+        ∀ (r : Region), docRegion q.val e.val.live.doc = some r → ¬ Closed r now := by
+  intro hall
+  have hw := the_stale_catch_up_leaves_only_settled_and_recurring_lines
+  unfold staleCaughtUp at hw
+  cases h : autoClose staleNow stalePlan with
+  | error x => rw [h] at hw; simp at hw
+  | ok q =>
+    rw [h] at hw
+    simp only [Option.some.injEq] at hw
+    have hm : "t1".toList ∈ closedLiveIds staleNow q := by rw [hw]; decide
+    obtain ⟨e, r, hg, hr, hc⟩ := mem_closedLiveIds hm
+    exact hall staleNow stalePlan q h _ e hg r hr hc
+
+/-- An `autoClose` refusal, if the request loads and the call refuses. -/
+def autoCloseRefusal (docs : List ReqDoc) : Option KErr :=
+  (loadedPlan? docs).bind (fun p =>
+    match autoClose staleNow p with
+    | .ok _    => none
+    | .error k => some k)
+
+set_option maxRecDepth 40000 in
+/-- **The check bites, on loaded plans.**  The stale tree without the live week
+has nowhere to file its day leftovers — `noTarget`, at the day grain; without
+the open month, nowhere to file its week records — `noTarget`, at the week grain,
+after the day close succeeded.  Either way the call refuses whole
+(`autoClose_refuses_what_a_grain_refuses`): no grain is run and reported done
+while another strands its lines. -/
+theorem the_stale_catch_up_refusals_are_named :
+    autoCloseRefusal (staleWitness.filter (fun d => d.path != "week/2026-W37.md")) =
+        some .noTarget ∧
+      autoCloseRefusal (staleWitness.filter (fun d => d.path != "month/2026-09.md")) =
+        some .noTarget := by
+  decide
+
 end Tm

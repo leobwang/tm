@@ -1565,3 +1565,34 @@ open Tm
 #print axioms Tm.close_week_and_close_month_do_not_commute
 #print axioms Tm.demote_then_readopt_succeeds_and_the_reverse_is_refused
 #print axioms Tm.lifecycle_commands_do_not_commute
+-- Stage 4 step 4 (same session, same banner): `autoClose` in Close.lean — L19a
+-- and L19b discharged as stated, L19c's narrowing and the one-stamp theorem;
+-- L19c refuted and renamed on a loaded three-month-stale plan in Boundary.lean.
+#print axioms Tm.autoCloseOrder_is_the_chain
+#print axioms Tm.autoCloseOrder_names_each_grain_once
+#print axioms Tm.autoCloseOrder_is_coarsest_last
+#print axioms Tm.autoClose_is_each_grain_once
+#print axioms Tm.autoClose_ok
+#print axioms Tm.autoClose_refuses_what_a_grain_refuses
+#print axioms Tm.autoClose_refuses_a_refused_day_close
+#print axioms Tm.close_keeps_nothing_to_close
+#print axioms Tm.autoClose_leaves_nothing_to_close
+#print axioms Tm.autoClose_catches_up_in_one_step
+#print axioms Tm.autoClose_strands_no_unfinished_line
+#print axioms Tm.close_skel_after
+#print axioms Tm.autoClose_skel
+#print axioms Tm.stepSkel_three_is_one
+#print axioms Tm.autoClose_takes_each_line_at_most_once
+#print axioms Tm.stepSkel_stamps
+#print axioms Tm.autoClose_stamps_each_line_at_most_once
+#print axioms Tm.the_stale_witness_loads
+#print axioms Tm.mem_closedLiveIds
+#print axioms Tm.the_stale_catch_up_observed
+#print axioms Tm.staleCaughtUp_map
+#print axioms Tm.the_stale_tree_catches_up_in_one_call
+#print axioms Tm.the_stale_ledger_before_catch_up
+#print axioms Tm.the_stale_ledger_after_catch_up
+#print axioms Tm.the_stale_tree_catches_up_losing_nothing
+#print axioms Tm.the_stale_catch_up_leaves_only_settled_and_recurring_lines
+#print axioms Tm.autoClose_leaves_lines_in_periods_it_passes
+#print axioms Tm.the_stale_catch_up_refusals_are_named

@@ -1496,4 +1496,322 @@ theorem two_closes_at_one_instant_commute_on_skeletons {g g' : Grain} {now : Day
     | none => rfl
     | some e => simp only [Option.map_some, stepSkel_comm g g' now]
 
+/-! ## `autoClose`: catch-up is one step per grain (stage 4 step 4)
+
+§6.3: close "runs automatically on the first command after the period ends".
+Fork-point `auto_close` ran it period by period, day by day, for at most
+`AUTO_CLOSE_CATCHUP = 16` periods, each one filing into the successor of the
+period it closed — so a tree more than sixteen days stale left its older day
+files **unrun** (and the host's `closed` map said they were done), and a tree
+fourteen days stale filed a day's leftovers into a week that the next iteration
+then closed, stamping them twice.
+
+With D1's target, every close files into a region containing *now*, which no
+close at that instant takes from (`stepSkel_lands_outside_every_closed_region`).
+So one close per grain takes **every** closed period of that grain at once —
+`close g now` already folds over all of them — and nothing one grain files is
+work for another.  There is no iteration count to get wrong: `autoClose` is the
+three closes, finest first and coarsest last, and a refusal anywhere refuses the
+whole call, so a period is never marked done without being run.
+
+Which order is not a correctness choice: at one instant the grains commute on
+every line's skeleton (`two_closes_at_one_instant_commute_on_skeletons`) and
+differ only in the rank of lines landing in a shared section
+(`close_week_and_close_month_do_not_commute`).  Coarsest last puts a week's
+records ahead of the older month's carried ones in the open month's
+`# Demoted` — the newer leftovers first. -/
+
+/-- The grains `autoClose` closes, in the order it closes them. -/
+def autoCloseOrder : List Grain := [day, week, month]
+
+/-- The order is the containment chain walked up from its finest grain. -/
+theorem autoCloseOrder_is_the_chain :
+    autoCloseOrder = [day, coarsen day, coarsen (coarsen day)] := rfl
+
+/-- Each grain once — not sixteen times, not zero times. -/
+theorem autoCloseOrder_names_each_grain_once : ∀ g : Grain, autoCloseOrder.count g = 1 := by
+  decide
+
+/-- Finest first, coarsest last. -/
+theorem autoCloseOrder_is_coarsest_last : autoCloseOrder.Pairwise (fun a b => a.val < b.val) := by
+  decide
+
+/-- **§6.3's automatic close, at one instant**: each grain's close once, in
+`autoCloseOrder`.  The provisional `Goals.autoClose` signature, made real. -/
+def autoClose (now : Day) : Transform := fun p =>
+  autoCloseOrder.foldlM (fun q g => close g now q) p
+
+/-- **L19a (discharged from `Goals.lean`, as stated).**  `autoClose` is exactly
+"close each grain once, coarsest last": no loop, no bound, and no
+`none`-versus-`some` case anywhere but inside each close's own candidate set. -/
+theorem autoClose_is_each_grain_once (now : Day) (p : WfPlan) :
+    autoClose now p
+      = (close day now p).bind (fun q => (close week now q).bind (close month now)) := by
+  show ([day, week, month] : List Grain).foldlM (fun q g => close g now q) p = _
+  simp only [List.foldlM_cons, List.foldlM_nil]
+  cases h1 : close day now p with
+  | error x => rfl
+  | ok q1 =>
+    show (close week now q1 >>= fun q => close month now q >>= fun q' => pure q') =
+      (close week now q1).bind (close month now)
+    cases h2 : close week now q1 with
+    | error x => rfl
+    | ok q2 =>
+      show (close month now q2 >>= fun q' => pure q') = close month now q2
+      cases close month now q2 <;> rfl
+
+/-- A successful `autoClose`, unpacked into its three closes. -/
+theorem autoClose_ok {now : Day} {p q : WfPlan} (h : autoClose now p = .ok q) :
+    ∃ q1 q2, close day now p = .ok q1 ∧ close week now q1 = .ok q2 ∧ close month now q2 = .ok q := by
+  rw [autoClose_is_each_grain_once] at h
+  cases h1 : close day now p with
+  | error x => rw [h1] at h; exact absurd h (by simp [Except.bind])
+  | ok q1 =>
+    rw [h1] at h
+    cases h2 : close week now q1 with
+    | error x =>
+      have h' : (close week now q1).bind (close month now) = .ok q := h
+      rw [h2] at h'; exact absurd h' (by simp [Except.bind])
+    | ok q2 =>
+      have h' : (close week now q1).bind (close month now) = .ok q := h
+      rw [h2] at h'
+      exact ⟨q1, q2, rfl, h2, h'⟩
+
+/-- **The check bites: a refusal refuses the whole call.**  If any of the three
+closes refuses, `autoClose` returns that refusal — there is no plan in which
+some grain was run and the rest were stamped done. -/
+theorem autoClose_refuses_what_a_grain_refuses {now : Day} {p : WfPlan} {x : KErr}
+    (h : autoClose now p = .error x) :
+    close day now p = .error x ∨
+      ∃ q1, close day now p = .ok q1 ∧
+        (close week now q1 = .error x ∨
+          ∃ q2, close week now q1 = .ok q2 ∧ close month now q2 = .error x) := by
+  rw [autoClose_is_each_grain_once] at h
+  cases h1 : close day now p with
+  | error y => rw [h1] at h; exact Or.inl h
+  | ok q1 =>
+    rw [h1] at h
+    refine Or.inr ⟨q1, rfl, ?_⟩
+    have h' : (close week now q1).bind (close month now) = .error x := h
+    cases h2 : close week now q1 with
+    | error y => rw [h2] at h'; exact Or.inl h'
+    | ok q2 => rw [h2] at h'; exact Or.inr ⟨q2, rfl, h'⟩
+
+/-- Every close refusal reaches `autoClose` unchanged when it is the day's. -/
+theorem autoClose_refuses_a_refused_day_close {now : Day} {p : WfPlan} {x : KErr}
+    (h : close day now p = .error x) : autoClose now p = .error x := by
+  rw [autoClose_is_each_grain_once, h]
+  rfl
+
+/-- No line of the plan is one a close of grain `g` at `now` would take. -/
+def NothingToClose (g : Grain) (now : Day) (p : WfPlan) : Prop :=
+  ∀ i f, p.val.store.get i = some f → closeAct g now p.val f.val.skel = .stay
+
+/-- **A close of any grain leaves nothing new for a close of any other.**  What
+the close moved lands outside every closed region, and what it did not move
+kept its skeleton against unchanged files. -/
+theorem close_keeps_nothing_to_close {g g' : Grain} {now : Day} {p q : WfPlan}
+    (h : close g' now p = .ok q) (hp : NothingToClose g now p) : NothingToClose g now q := by
+  intro i f hq
+  obtain ⟨hfr, hall⟩ := close_spec h
+  have hm := (hall i).1
+  rw [hq] at hm
+  cases hpi : p.val.store.get i with
+  | none => rw [hpi] at hm; simp at hm
+  | some e =>
+    rw [hpi] at hm
+    simp only [Option.map_some, Option.some.injEq] at hm
+    rw [closeAct_frame hfr, hm]
+    rcases stepSkel_lands_outside_every_closed_region g' g now p.val e.val.skel with ht | ht
+    · rw [ht]; exact hp i e hpi
+    · exact closeAct_of_closedRegionOf_none ht
+
+/-- After a successful `autoClose`, no line is one a close of **any** grain at
+that instant would take. -/
+theorem autoClose_leaves_nothing_to_close {now : Day} {p q : WfPlan}
+    (h : autoClose now p = .ok q) (g : Grain) : NothingToClose g now q := by
+  obtain ⟨q1, q2, h1, h2, h3⟩ := autoClose_ok h
+  have d1 : NothingToClose day now q1 := close_leaves_no_line_it_would_take h1
+  have w2 : NothingToClose week now q2 := close_leaves_no_line_it_would_take h2
+  have m3 : NothingToClose month now q := close_leaves_no_line_it_would_take h3
+  have d3 := close_keeps_nothing_to_close h3 (close_keeps_nothing_to_close h2 d1)
+  have w3 := close_keeps_nothing_to_close h3 w2
+  rcases g with ⟨_ | _ | _ | n, hn⟩
+  · exact d3
+  · exact w3
+  · exact m3
+  · omega
+
+/-- **F1 / L19b (discharged from `Goals.lean`, as stated).**  A tree however
+stale catches up in one call and stays caught up: a second `autoClose` at the
+same instant returns the plan unchanged.  There is no sixteen-period bound for
+the first call to fall short of, and no "closed" record to get out of step with
+the work — whether a period still needs closing is read off the plan.
+
+This is the fold on `WfPlan` at one `now`, like L16 (`close_is_idempotent`), and
+not §6.3's host-side `state.json` idempotence across invocations.
+`the_stale_tree_catches_up_in_one_call` (Boundary.lean) satisfies the
+hypothesis on a loaded plan three months stale. -/
+theorem autoClose_catches_up_in_one_step (now : Day) (p q : WfPlan)
+    (h : autoClose now p = .ok q) : autoClose now q = .ok q := by
+  have hs := autoClose_leaves_nothing_to_close h
+  rw [autoClose_is_each_grain_once,
+    close_without_candidates_is_the_identity (closeCands_eq_nil_of_stay (hs day))]
+  show (close week now q).bind (close month now) = _
+  rw [close_without_candidates_is_the_identity (closeCands_eq_nil_of_stay (hs week))]
+  exact close_without_candidates_is_the_identity (closeCands_eq_nil_of_stay (hs month))
+
+/-- **Narrowed L19c** (`autoClose_runs_every_period_it_passes`, which says no
+live line of any kind stays in a closed region, and is refuted in Boundary.lean
+by the `[x]`, recurring and done-outcome lines §6.3 leaves behind).  After
+`autoClose`, a line in a closed region of its file's own grain is settled or of
+a box that grain's row does not take, recurring, or a wall that is already over:
+**nothing unfinished is stranded, at any grain, however stale the tree** — the
+owner's three-month case, where fork-point `auto_close` ran no day close at all. -/
+theorem autoClose_strands_no_unfinished_line {now : Day} {p q : WfPlan}
+    (h : autoClose now p = .ok q) (i : Id) (f : Entity)
+    (hq : q.val.store.get i = some f) (r : Region)
+    (hr : docRegion q.val f.val.live.doc = some r)
+    (hkind : docKindAt q.val f.val.live.doc = kindOfGrain r.grain)
+    (htakes : (closePolicy r.grain).takes f.val.status = true)
+    (hrec : f.val.recur = Recur.none)
+    (hwall : ∀ a b : DT, f.val.shape = Shape.interval a b → now ≤ b.day) :
+    ¬ Closed r now := by
+  intro hc
+  have hst := autoClose_leaves_nothing_to_close h r.grain i f hq
+  have hreg : closedRegionOf r.grain now q.val f.val.skel.doc = some r := by
+    show closedRegionOf r.grain now q.val f.val.live.doc = some r
+    unfold closedRegionOf
+    rw [hr]
+    simp [hkind, hc]
+  have hrec' : f.val.skel.recurring = false := by
+    show decide (Field.viewRecur f.val.line ≠ Recur.none) = false
+    have : Field.viewRecur f.val.line = Recur.none := hrec
+    simp [this]
+  have htakes' : (closePolicy r.grain).takes f.val.skel.status = true := htakes
+  have hwalls := (closePolicy_exemptions r.grain).2
+  unfold closeAct at hst
+  rw [hreg] at hst
+  simp only [htakes', hrec'] at hst
+  have hsh : ∀ a b : DT, Field.viewShape f.val.line = Shape.interval a b → now ≤ b.day := hwall
+  revert hst
+  show (match (match Field.viewShape f.val.line with
+          | .interval _ b => some (decide (now ≤ b.day))
+          | _ => none) with
+        | some ahead => exemptAct (closePolicy r.grain).walls ahead
+        | none => CloseAct.file r) = CloseAct.stay → False
+  cases hv : Field.viewShape f.val.line with
+  | interval a b =>
+    have := hsh a b hv
+    simp [this, hwalls, exemptAct]
+  | none => simp
+  | point _ => simp
+  | window _ _ => simp
+
+/-- Two closes' worth of skeleton bookkeeping, generalised: if every id's
+skeleton is `F` of its skeleton in `p0`, one more close at grain `g` makes it
+`stepSkel g` of that, read against `p0`'s files. -/
+theorem close_skel_after {g : Grain} {now : Day} {p0 p q : WfPlan} (F : Skel → Skel)
+    (hf0 : Frame p0.val p.val)
+    (hpre : ∀ j, (p.val.store.get j).map (fun e => e.val.skel) =
+      (p0.val.store.get j).map (fun e => F e.val.skel))
+    (h : close g now p = .ok q) :
+    Frame p0.val q.val ∧ ∀ j, (q.val.store.get j).map (fun e => e.val.skel) =
+      (p0.val.store.get j).map (fun e => stepSkel g now p0.val (F e.val.skel)) := by
+  obtain ⟨hfr, hall⟩ := close_spec h
+  refine ⟨Frame.trans hf0 hfr, fun j => ?_⟩
+  rw [(hall j).1]
+  have e1 := hpre j
+  cases hp : p.val.store.get j with
+  | none =>
+    rw [hp] at e1
+    cases hp0 : p0.val.store.get j with
+    | none => rfl
+    | some _ => rw [hp0] at e1; simp at e1
+  | some e =>
+    rw [hp] at e1
+    cases hp0 : p0.val.store.get j with
+    | none => rw [hp0] at e1; simp at e1
+    | some e0 =>
+      rw [hp0] at e1
+      simp only [Option.map_some, Option.some.injEq] at e1 ⊢
+      rw [stepSkel_frame hf0, e1]
+
+/-- **`autoClose`, per id**: three steps against the starting plan's files. -/
+theorem autoClose_skel {now : Day} {p q : WfPlan} (h : autoClose now p = .ok q)
+    {i : Id} {e f : Entity} (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f) :
+    f.val.skel = stepSkel month now p.val (stepSkel week now p.val (stepSkel day now p.val e.val.skel)) := by
+  obtain ⟨q1, q2, h1, h2, h3⟩ := autoClose_ok h
+  have s1 := close_skel_after (p0 := p) id (Frame.refl _) (fun _ => rfl) h1
+  have s2 := close_skel_after (fun s => stepSkel day now p.val s) s1.1 s1.2 h2
+  have s3 := close_skel_after (fun s => stepSkel week now p.val (stepSkel day now p.val s)) s2.1 s2.2 h3
+  have := s3.2 i
+  rw [hp, hq] at this
+  simpa using this
+
+/-- Three grains' steps on one line are one grain's step: whichever step moves
+the line puts it where no later grain takes it from. -/
+theorem stepSkel_three_is_one (now : Day) (P : PlanCore) (s : Skel) :
+    ∃ g : Grain, stepSkel month now P (stepSkel week now P (stepSkel day now P s)) =
+      stepSkel g now P s := by
+  rcases stepSkel_lands_outside_every_closed_region day week now P s with h1 | h1
+  · rw [h1]
+    rcases stepSkel_lands_outside_every_closed_region week month now P s with h2 | h2
+    · rw [h2]; exact ⟨month, rfl⟩
+    · rw [stepSkel_of_stay (closeAct_of_closedRegionOf_none h2)]; exact ⟨week, rfl⟩
+  · rw [stepSkel_of_stay (closeAct_of_closedRegionOf_none h1)]
+    rcases stepSkel_lands_outside_every_closed_region day month now P s with h3 | h3
+    · rw [h3]; exact ⟨month, rfl⟩
+    · rw [stepSkel_of_stay (closeAct_of_closedRegionOf_none h3)]; exact ⟨day, rfl⟩
+
+/-- **Each line is taken at most once by `autoClose`.**  Its skeleton afterwards
+is one grain's step of what it was — never a day close's filing re-filed by the
+week close, the fork-point double take of a tree fourteen days stale. -/
+theorem autoClose_takes_each_line_at_most_once {now : Day} {p q : WfPlan}
+    (h : autoClose now p = .ok q) {i : Id} {e f : Entity}
+    (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f) :
+    ∃ g : Grain, f.val.skel = stepSkel g now p.val e.val.skel := by
+  obtain ⟨g, hg⟩ := stepSkel_three_is_one now p.val e.val.skel
+  exact ⟨g, (autoClose_skel h hp hq).trans hg⟩
+
+/-- One step appends at most one stamp, at any grain. -/
+theorem stepSkel_stamps (g : Grain) (now : Day) (p : PlanCore) (s : Skel) :
+    (stepSkel g now p s).stamps = s.stamps ∨
+      ∃ st, (stepSkel g now p s).stamps = s.stamps ++ [st] := by
+  have hset : ∀ st : Stamp,
+      (Field.viewDemoted (Field.setDemoted (s.stamps ++ [st]) s.line)).getD [] = s.stamps ++ [st] := by
+    intro st
+    rw [Field.view_set_demoted _ _ (by simp)]
+    rfl
+  unfold stepSkel
+  split
+  · exact Or.inl rfl
+  · split <;> exact Or.inl rfl
+  · rename_i r _
+    split
+    · unfold skelAfter
+      cases (closePolicy g).disposition with
+      | move => exact Or.inl rfl
+      | moveReopening =>
+        simp only
+        unfold stampedLine
+        cases closeStamp g r.ix with
+        | none => exact Or.inl rfl
+        | some st => exact Or.inr ⟨st, hset st⟩
+      | copy =>
+        cases closeStamp g r.ix with
+        | none => exact Or.inl rfl
+        | some st => exact Or.inr ⟨st, hset st⟩
+    · exact Or.inl rfl
+
+/-- **F1's double stamp, ruled out.**  Across one `autoClose`, however stale the
+tree, a line gains at most one stamp. -/
+theorem autoClose_stamps_each_line_at_most_once {now : Day} {p q : WfPlan}
+    (h : autoClose now p = .ok q) {i : Id} {e f : Entity}
+    (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f) :
+    f.val.stamps = e.val.stamps ∨ ∃ st, f.val.stamps = e.val.stamps ++ [st] := by
+  obtain ⟨g, hg⟩ := autoClose_takes_each_line_at_most_once h hp hq
+  rw [← Core.skel_stamps, ← Core.skel_stamps, hg]
+  exact stepSkel_stamps g now p.val e.val.skel
+
 end Tm

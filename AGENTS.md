@@ -1483,6 +1483,14 @@ L17 and L27 are refuted and renamed (`close_week_and_close_month_do_not_commute`
 `lifecycle_commands_do_not_commute`); burn-down 36. L17's orders differ only in
 rank — every line's skeleton commutes (`two_closes_at_one_instant_commute_on_skeletons`).
 README stage-4 step-3 block.
+*Step 4 (2026-09-12):* scope item 3 is landed — `autoClose` is each grain's
+close once, coarsest last (`Close.lean`); L19a and L19b are discharged as
+stated, L19c is refuted and renamed (`autoClose_leaves_lines_in_periods_it_passes`)
+beside its narrowing `autoClose_strands_no_unfinished_line`, and a loaded
+three-month-stale plan is decided catching up with every id kept, one stamp at
+most per line and its summed estimate unchanged; burn-down 33. The shipped
+binary still runs the sixteen-period loop until `close` reaches the wire.
+README stage-4 step-4 block.
 
 **Scope, concretely.**
 

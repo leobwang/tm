@@ -197,11 +197,10 @@ table indexed by `Grain` rather than passed.  Every goal below that names
 denotation; the README's stage-4 step-2 block records what it does and what it
 scopes out. -/
 
-/-- **Provisional (stage 4).**  §6.3's "runs automatically on the first command
-after the period ends".  Plan §3.3: because `closeTo` targets *now* rather than
-the successor, catch-up is one step and `auto_close`'s sixteen-period iteration
-collapses to "close each grain once, coarsest last". -/
-def autoClose (now : Day) : Transform := sorry
+/- **`autoClose` is real (2026-09-12, stage 4 step 4).**  The provisional
+`def autoClose (now : Day) : Transform := sorry` that stood here is replaced by
+`Tm.autoClose` in `TmKernel/Close.lean`, with the signature it declared: each
+grain's close once, in `autoCloseOrder = [day, week, month]` — coarsest last. -/
 
 /- **`close_is_idempotent` (L16) is discharged (2026-09-12, stage 4 step 3)** —
 proved as stated in `Close.lean`, audited in `Check.lean`.  The engine was the
@@ -237,30 +236,16 @@ whenever both orders succeed.  The orders differ only in rank — both land a li
 the open month's `# Demoted`.  So the order the next goal fixes decides line
 order inside a shared section, and nothing else. -/
 
-/-- **L19a (P\*), stage 4.**  `autoClose` is exactly "close each grain once,
-coarsest last" — plan §3.3.  Rules out F1's shape at the root: the sixteen-
-period loop is gone, so there is no iteration bound to get wrong and no
-`none`-versus-`some` case scattered through it. -/
-theorem autoClose_is_each_grain_once (now : Day) (p : WfPlan) :
-    autoClose now p
-      = (close day now p).bind (fun q => (close week now q).bind (close month now)) := sorry
-
-/-- **F1 / L19b (P\*), stage 4.**  A tree three months stale catches up in one
-call and stays caught up.  Rules out `auto_close` stamping skipped periods
-closed *unrun* — here there is no stamp to get out of step with the work,
-because "closed" is read off the plan and not off `state.json`. -/
-theorem autoClose_catches_up_in_one_step (now : Day) (p q : WfPlan)
-    (h : autoClose now p = .ok q) : autoClose now q = .ok q := sorry
-
-/-- **F1 / L19c (P\*), stage 4.**  "Every period *run*", stated as its
-observable consequence: after `autoClose` no live line sits in a closed region
-at **any** grain.  This is the sentence "a 3-month-stale tree catches up losing
-nothing" turns into. -/
-theorem autoClose_runs_every_period_it_passes (now : Day) (p q : WfPlan)
-    (h : autoClose now p = .ok q) (i : Id) (e : Entity)
-    (hget : q.val.store.get i = some e) (r : Region)
-    (hr : docRegion q.val e.val.live.doc = some r) :
-    ¬ Closed r now := sorry
+/- **L19a–c are gone (2026-09-12, stage 4 step 4)**, each with a proof of what
+it states or of its negation, audited in `Check.lean`:
+`autoClose_is_each_grain_once` (L19a) and `autoClose_catches_up_in_one_step`
+(F1 / L19b) are proved as stated in `Close.lean`; `autoClose_runs_every_period_it_passes`
+(F1 / L19c) is refuted — it quantified over the `[x]`, recurring and done-outcome
+lines §6.3 leaves in a closed file — renamed to its negation
+`autoClose_leaves_lines_in_periods_it_passes` and proved in `Boundary.lean` on a
+loaded plan three months stale.  Its narrowing is `autoClose_strands_no_unfinished_line`
+(Close.lean): no line any close would take survives, at any grain.  The F1
+double stamp is `autoClose_stamps_each_line_at_most_once`. -/
 
 /-- **F4 (P\*), stage 4 — `ClosePolicy`'s exemptions.**  §6.3's last sentence:
 "Recurring items and calendar intervals are never demoted — their instances

@@ -4513,3 +4513,157 @@ one process); elaborating `Boundary.lean` alone takes 12.4 s at 2.2 GB against
 9.2 s at 1.8 GB for `50f11e3`'s copy against the same `Close`, so this step's
 witnesses cost about 3 s and 0.4 GB.  Gaps run to 57 (new gaps start at 58);
 cheats to 51 (new cheats start at 52).
+
+<!-- ===================================================================
+     APPENDED 2026-09-12 (stage-4 session, rebuild-on-lean).  Step 4: `autoClose` is one step per grain; L19a and L19b proved, L19c refuted and renamed.
+     Takes no gap and no cheat numbers.  Supersedes nothing above by rewrite.
+     =================================================================== -->
+
+## Stage 4 step 4, 2026-09-12: `autoClose` is one step per grain
+
+Baseline re-measured at `b605bfe` before this step, every command under the 40 GB
+cap: `check.sh` **7/7** — axiom audit **1379**, corpus **33/37 files and 4/5
+whole plans**, burn-down **36**; `cargo test --workspace` **984 passed / 0 failed
+/ 0 ignored across 64 binaries**.
+
+**What landed (`Close.lean`).**  `autoCloseOrder := [day, week, month]`, pinned by
+three decided facts — it is the containment chain walked up from `day`
+(`autoCloseOrder_is_the_chain`), it names each grain exactly once
+(`autoCloseOrder_names_each_grain_once`), and it is coarsest last
+(`autoCloseOrder_is_coarsest_last`) — and `autoClose now := autoCloseOrder.foldlM
+(close · now)`, replacing `Goals.lean`'s provisional `def autoClose … := sorry`
+with the signature it declared.  There is no iteration count anywhere: each
+`close g now` already folds over **every** closed region of grain `g`, whatever
+its age, so the fork-point `AUTO_CLOSE_CATCHUP = 16` day-by-day loop
+(`tm-core/src/horizon.rs:2003`) has nothing to do.
+
+**Why one step per grain is enough, in one sentence: every close files into a
+region containing *now*, and no close at that instant takes a line from such a
+region** (`stepSkel_lands_outside_every_closed_region`, step 3).  Two
+consequences, each a theorem: a close of any grain leaves nothing new for a close
+of any other (`close_keeps_nothing_to_close`), so after the three closes no line
+is one a close of **any** grain would take (`autoClose_leaves_nothing_to_close`);
+and the three steps a line goes through collapse to one grain's step
+(`stepSkel_three_is_one`), so a line is taken at most once per call
+(`autoClose_takes_each_line_at_most_once`).  This is D1 doing the work: with
+`targetContaining`, a day close's output lands in a closed week the week close
+then takes — the owner's double stamp.
+
+**Goals discharged from `Goals.lean`.**
+
+- **`autoClose_is_each_grain_once` (L19a), as stated** — the fold unfolds to
+  `(close day now p).bind (fun q => (close week now q).bind (close month now))`.
+- **`autoClose_catches_up_in_one_step` (F1 / L19b), as stated** — a second
+  `autoClose` at the same instant returns the plan unchanged: each grain's
+  candidate set is empty (`closeCands_eq_nil_of_stay`) and an empty close is the
+  identity.  Like L16, this is the fold on `WfPlan` at one `now`, not §6.3's
+  host-side `state.json` idempotence; a later `now` closes more
+  (`closed_is_stable_in_time`).
+- **`autoClose_runs_every_period_it_passes` (F1 / L19c) — refuted, renamed to
+  its negation `autoClose_leaves_lines_in_periods_it_passes` and proved**
+  (`Boundary.lean`), exactly as AGENTS §8.2's trap priced it: it quantified over
+  every live line, and §6.3 leaves `[x]` lines, recurring lines, done outcomes
+  and walls already over in their closed files.  The witness is `^t1`, a `[x]` line of the
+  closed 2026-W24, after a successful `autoClose` of the stale tree below.
+  **The narrowing, proved:** `autoClose_strands_no_unfinished_line` — after
+  `autoClose`, a line in a closed region of its file's own grain is not of a box
+  that grain's row takes, or is recurring, or is a wall already over.  The wall
+  clause is sharper than step 2's single-grain narrowing (a wall *still ahead*
+  is excluded, because it is carried), and the grain is the region's own, not a
+  parameter.
+
+Burn-down **36 → 33**.  No goal added.
+
+**The owner's two measured failures, as theorems and on one decided plan.**  On
+the shipped Rust (D1's evidence): a tree **three months stale** ran zero day
+closes — `catch_up` looked only at the sixteen most recent days, none of which
+had a file — stranding every older pinned item under a clean `tm check`; a tree
+**fourteen days stale** stamped every stale pinned item twice.  Here the first is
+`autoClose_strands_no_unfinished_line` and the second is
+`autoClose_stamps_each_line_at_most_once` (a line gains no stamp or exactly one
+across one call, via `stepSkel_stamps`, which generalises step 2's day-only
+`stepSkel_day_stamps` to every grain).
+
+**The acceptance clause, library half: "a 3-month-stale tree catches up losing
+nothing"** (`Boundary.lean`, closed at Saturday 2026-09-12).  `staleWitness`
+loads (`the_stale_witness_loads`) and holds both failure shapes: a pinned `[>]`
+of 2026-06-12 and one of 2026-08-29 (in 2026-W35), open lines in 2026-W24 and
+2026-W35 beside a `[x]` and a recurring line, a wall still ahead in 2026-W35, a
+June month file with an open outcome, a done outcome and a `[-]` record, and the
+live week and month.  One call, decided:
+
+- `the_stale_tree_catches_up_in_one_call` — both pinned items reopen and land in
+  **2026-W37** with `demoted:D12` and `demoted:D29` (one stamp each; the fourteen-day
+  item is *not* re-taken by the week close); both week lines leave `[-]` tombstones
+  and land in 2026-09's `# Demoted` with `W24` and `W35`; the wall is carried
+  into 2026-W37 unstamped; June's open outcome moves into 2026-09's `# Outcomes`
+  by a shift, and its `[-]` record into `# Demoted`, both unchanged.
+- `the_stale_ledger_before_catch_up` / `the_stale_ledger_after_catch_up` — the
+  per-item ledger (id, file path, stamp count, estimate in minutes at a 50-minute
+  block): thirteen ids before and after; four lines gain exactly one stamp
+  (`p1`, `p3`, `m2`, `m3`), none gains two.
+- `the_stale_tree_catches_up_losing_nothing` — the same ids in the same order,
+  the summed estimate **875 minutes** before and after, no stamp count up by
+  more than one.
+- `the_stale_catch_up_leaves_only_settled_and_recurring_lines` — the ids still in
+  closed files are exactly `O8` (done outcome), `r1` (recurring), `t1` (done),
+  `p2` (done): the lines §6.3 leaves.
+
+The three observations are decided **once**, as one `CatchUpView` value
+(`the_stale_catch_up_observed`), and read off by `staleCaughtUp_map`: deciding
+them separately closed the stale plan three times.  **Probed under an 8 GB cap
+before committing** (AGENTS §5.10a): the scratch probe decided all three in 8 s
+at a 1.7 GB peak, imports included.  **Not proved in general**, as step 2
+already recorded: that setting `demoted:` leaves `remainingOf` unchanged — the
+875 is a fact about this plan, and the general estimate half stays with gap 54.
+
+**Both directions (AGENTS §5.8).**  *It succeeds:* the witness above; the
+hypothesis of every `autoClose` theorem is satisfied by it.  *It bites:*
+`autoClose_refuses_what_a_grain_refuses` (a refusal of any grain's close is the
+call's refusal, with the earlier grains' successes named) and
+`autoClose_refuses_a_refused_day_close`; decided on loaded plans,
+`the_stale_catch_up_refusals_are_named` — the stale tree without
+`week/2026-W37.md` is `noTarget` at the day grain, and without
+`month/2026-09.md` it is `noTarget` at the week grain, after the day close
+succeeded.  Every close step already re-runs `planWf` by computation
+(`WfPlan.mapAt`, `WfPlan.shiftAt`); `autoClose` adds no write of its own.
+
+**A choice this step took, with the theorem that separates it.**  A refusal at
+any grain refuses the **whole** call (`autoClose_refuses_what_a_grain_refuses`):
+the day close's successful work is not returned when the week close refuses.
+The alternative — return what ran — is the fork-point shape in which a period
+could be recorded as done while another stayed unrun, which is F1.  The cost,
+priced: with gap 56 (the kernel cannot create a file or section), one missing
+destination blocks the catch-up of every grain until the host hands it over.
+The grain order is not a correctness choice (step 3: the grains commute on
+skeletons and differ only in rank); coarsest last puts a closed week's records
+ahead of an older month's carried ones in the open month's `# Demoted`.  Within
+one grain, lines land in store order — `m3` (W35) above `m2` (W24) in the
+witness — which no statement fixes and no consumer reads yet.
+
+**What this step does not do, by name (sequencing, not gaps).**
+(1) **The shipped binary still loops.**  The sixteen-period iteration is gone
+from the kernel, not from `tm`: fork-point `auto_close` with `AUTO_CLOSE_CATCHUP
+= 16` (`tm-core/src/horizon.rs:2003`) still runs as housekeeping ahead of every
+command, and will until `close`/`autoClose` reach the wire with `now` in the
+request (AGENTS §8.2 scope item 4) and the host calls them.  (2) **The FFI-level
+witness** waits on the same wire step: `autoClose` is not a wire op, so the stale
+tree is decided in `Boundary.lean`, not pushed through `String → String`.
+(3) **The CLI half of the acceptance** ("a 3-month-stale tree catches up losing
+nothing" through the binary) and the 30-minute drive (AGENTS §5.13) are step 6's.
+(4) Still owed by the stage from step 3's list: the refute-and-renames of
+`close_leaves_no_live_line_in_a_closed_region`, `close_never_demotes_a_wall` and
+`close_writes_every_estimate_through_demoteEst`; D3's per-item report on the
+wire; the proof-to-definition ratio.
+
+Re-measured after this step, every command under the 40 GB cap: `check.sh`
+**7/7** — axiom audit **1407 theorems** (28 new: 17 in `Close.lean`, 11 in
+`Boundary.lean`; the three counts of AGENTS §6.3 agree at 1407), corpus **33/37
+files and 4/5 whole plans** (unchanged), `Goals.lean` burn-down **33**;
+`cargo test --workspace` **984 passed / 0 failed / 0 ignored across 64
+binaries** (unchanged); FFI suite 63 (57 kernel + 6 corpus, unchanged).
+Elaborating `Boundary.lean` alone now takes 27.5 s at a 2.9 GB peak, against
+12.4 s at 2.2 GB at step 3 — this step's witnesses cost about 15 s and 0.7 GB
+(4.1 GB before the observations were merged into one decision); a `lake build
+TmKernel:static` rebuilding `Close` and `Boundary` peaked at 3.0 GB.  Gaps run to 57
+(new gaps start at 58); cheats to 51 (new cheats start at 52).
