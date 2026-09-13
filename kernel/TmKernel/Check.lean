@@ -165,8 +165,6 @@ open Tm
 #print axioms Tm.rootPrio_walks_past_the_child
 
 -- §4.2's sections and §4.3's per-file-kind shapes
-#print axioms Tm.a_demoted_section_is_a_month_section
-#print axioms Tm.a_pinned_section_is_a_day_section
 #print axioms Tm.a_day_file_holds_only_pinned_items
 #print axioms Tm.month_items_are_outcomes
 #print axioms Tm.calendar_lines_are_intervals
@@ -1467,3 +1465,10 @@ open Tm
 #print axioms Tm.edit_of_a_cyclic_after_is_refused_by_name
 #print axioms Tm.applyCmd_after_succeeds
 #print axioms Tm.the_after_refusals_are_named_on_a_loaded_plan
+
+-- APPENDED 2026-09-12 (stage-3, verification repair).  Two theorems narrowed
+-- in a4ccd9c (they gained `inComment d.prose q.1 = false`) kept their old names;
+-- renamed so the name matches the statement (AGENTS §7.4 item 3).  Old lines above
+-- removed; statements and proofs unchanged.
+#print axioms Tm.a_demoted_section_outside_a_comment_is_a_month_section
+#print axioms Tm.a_pinned_section_outside_a_comment_is_a_day_section

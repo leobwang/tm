@@ -3889,3 +3889,24 @@ measured runs" rather than "the kernel has no budget".
   `p_lounge` rounding; **q6** L24/L25 prove or keep the proptest; **q7**
   lifecycle commutation; **q9** the `[-]` placement rule; and the 30-minute drive
   of the stage-3 binary (AGENTS §5.13).  **Stage 4 is unblocked.**
+
+**Verification repair — two narrowings renamed (same 2026-09-12 session).**
+This supersedes, by name, step 4's sentence "`a_demoted_section_is_a_month_section`
+and `a_pinned_section_is_a_day_section` keep their names and gain the hypothesis
+`inComment d.prose q.1 = false`", and the §4.2 row of the "section discipline"
+table, which cites the old names.  An independent read-only verification of stage
+3's close found the names and the demoted docstring ("wherever it is written")
+still describing the unhypothesised statement, which is false of a commented
+heading (`a_commented_heading_is_no_section`), against AGENTS §7.4 item 3 ("does the name
+match the statement?") and against the treatment of their three siblings
+in the same commit.  Renamed, statements and proofs unchanged:
+`a_demoted_section_is_a_month_section` →
+`a_demoted_section_outside_a_comment_is_a_month_section`,
+`a_pinned_section_is_a_day_section` →
+`a_pinned_section_outside_a_comment_is_a_day_section`; both docstrings now name
+the comment exclusion and the witness.  Old `Check.lean` lines removed, the new
+ones appended under `APPENDED 2026-09-12 (stage-3, verification repair)`; nothing
+else referenced them.  Re-measured: `check.sh` 7/7 — axiom audit **1299**
+(unchanged: two removed, two added), corpus 33/37 files and 4/5 whole plans,
+`Goals.lean` burn-down **40** (unchanged); `cargo test --workspace` **984
+passed / 0 failed** across 64 binaries (unchanged).

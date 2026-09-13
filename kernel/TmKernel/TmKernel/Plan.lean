@@ -2197,9 +2197,13 @@ theorem no_deadlocked_set (p : WfPlan) (c : List Id)
     (hc : ∀ x ∈ c, x ∈ p.val.store.dom) : ¬ Deadlocked p.val c :=
   afterAcyclic_sound p.val (itemsWf_parts p.items).2.2.2.2.1 c hc
 
-/-- §4.2: a `# Demoted` section is a month-file section (§6.3), wherever it is
-written. -/
-theorem a_demoted_section_is_a_month_section (p : WfPlan) (d : Doc) (hd : d ∈ p.val.docs)
+/-- §4.2: a `# Demoted` heading outside a comment opens a month-file section
+(§6.3), wherever in the file it is written.  A heading inside an HTML comment is
+no heading (`liveHeading`) and names no section, so the hypothesis
+`inComment d.prose q.1 = false` is load-bearing: the unhypothesised statement is
+false of a week file whose guidance comment mentions `# Demoted`
+(`a_commented_heading_is_no_section`). -/
+theorem a_demoted_section_outside_a_comment_is_a_month_section (p : WfPlan) (d : Doc) (hd : d ∈ p.val.docs)
     (q : Nat × List Char) (hq : q ∈ d.prose) (hh : isHeading q.2 = true)
     (hc : inComment d.prose q.1 = false)
     (hk : secKind q.2 = SecKind.demoted) : docKind d = DocKind.month := by
@@ -2211,8 +2215,11 @@ theorem a_demoted_section_is_a_month_section (p : WfPlan) (d : Doc) (hd : d ∈ 
     beq_iff_eq] at h2
   exact h2
 
-/-- §4.2: and a `# Pinned` section is a day-file section (§6.2). -/
-theorem a_pinned_section_is_a_day_section (p : WfPlan) (d : Doc) (hd : d ∈ p.val.docs)
+/-- §4.2: and a `# Pinned` heading outside a comment opens a day-file section
+(§6.2).  The same narrowing as
+`a_demoted_section_outside_a_comment_is_a_month_section`: a commented heading
+names no section. -/
+theorem a_pinned_section_outside_a_comment_is_a_day_section (p : WfPlan) (d : Doc) (hd : d ∈ p.val.docs)
     (q : Nat × List Char) (hq : q ∈ d.prose) (hh : isHeading q.2 = true)
     (hc : inComment d.prose q.1 = false)
     (hk : secKind q.2 = SecKind.pinned) : docKind d = DocKind.day := by
