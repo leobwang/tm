@@ -13,21 +13,25 @@ been rewritten as the kernel learned things, and several of its statements are
 now stale in ways §10.2 lists by name. This document is the authority on
 *process* only: rules, conventions, verification, stop conditions.
 
-**Measurement date.** Every number here was measured on `rebuild-on-lean` at
-`c8f3a38` on 2026-09-08, with a clean working tree. Every command shown was
-run, from the directory the document names. A figure that is a snapshot of
-another commit says so where it appears. Re-measure before quoting a number in a
-commit message; §10.4 says how.
+**Measurement date.** Every number here was re-measured on `rebuild-on-lean` at
+`bf7cc63` on 2026-09-12, with a clean working tree, every build and test command
+run under the memory cap §5.10a requires. (The previous stamp was `c8f3a38`,
+2026-09-08; everything between — OpenCode's nine commits `0c3aaf7..9840ea8` and
+the 2026-09-12 session `7f7d6d2..bf7cc63` — is recorded in `kernel/README.md`'s
+2026-09-09 and 2026-09-12 blocks.) Every command shown was run, from the
+directory the document names; paths are written for the original checkout,
+`/Users/psixyzt/code/planner` — translate them to your clone's root. A figure
+that is a snapshot of another commit says so where it appears. Re-measure before
+quoting a number in a commit message; §10.4 says how.
 
-**Nothing is in flight.** `git worktree list` shows worktrees for `stage-goals`,
-`orient-demotion` and `wire-fields`; all three are merged into `rebuild-on-lean`
-(`git merge-base --is-ancestor <branch> HEAD` succeeds for each), and the
-worktrees are stale checkouts, not work in progress. In particular the
-demotion-orientation model **landed** at `8eea3d6`/`c8f3a38`: `LErr.splitLine`
-is deleted, `Core.archive` is a `Tomb` carrying its own bytes, `orientPair` is
-lexicographic, and the corpus went `1/5` → `4/5` whole plans. What that left
-open for stage 3 is §8.1's first trap — which is a *different* trap from the one
-it used to be, so read it again rather than remembering it.
+**Nothing is in flight.** `git worktree list` shows the one checkout and no
+other; the `stage-goals`, `orient-demotion` and `wire-fields` worktrees this
+paragraph used to list belonged to the original machine and do not exist in this
+clone. `git branch -a` shows `rebuild-on-lean` and its remote twin and nothing
+else: **`main` is gone** — the owner discarded it on 2026-09-12 (`f386c56`,
+§2.2). Stage 3 is closed out as far as its scope reaches (§8.1 says exactly
+what that means, and what is still owed by name), and stage 4 is unblocked
+(§10.5).
 
 ---
 
@@ -55,7 +59,8 @@ appends the line without ever asking whether `to_path` already holds `key`.
 
 - **Five** is the harness's number and it is about *patched bugs*. Five
   duplicate-id bugs were patched separately over the project's history, and
-  `invariant_exhaustive.rs` on `main` says what the phrase "five code paths"
+  `invariant_exhaustive.rs` on `main` (discarded 2026-09-12, harness and all —
+  the quotation is historical) says what the phrase "five code paths"
   turned out to mean: *"five entrances to one hole"*. The sweep's own evidence is
   that all 426 violations ended in a `move` (400) or a `readopt` (26) — the
   **two verbs** that reach `move_to`.
@@ -69,8 +74,11 @@ precondition.** Never write "six entrances"; the sixth row is not an entrance.
 
 The measurement behind A6: 426 of 39,601 ordered depth-2 command pairs on the
 committed 199-command alphabet, one of them reachable by a *single* command on a
-fresh `tm init --example` tree. (That is stage 0, and it has landed: `main` now
-carries the precondition. See §10.2.)
+fresh `tm init --example` tree. (Stage 0 landed that precondition on `main`, and
+`main` has since been discarded with it: the restored Rust is the pre-stage-0
+fork point `4748911`. What closes A6 in the shipped binary now is the kernel —
+`move` and `readopt` run through it, and `tm move ^m2 month` on that tree is
+refused `occupied` with nothing written, `d8e8d4d`. See §2.2 and §10.2.)
 
 The finding cuts both ways, and the honest reading is in `PLAN-lean-kernel.md`
 §6.1: a cheap proptest would have caught *this* class. The kernel is not sold as
@@ -96,8 +104,9 @@ needs, and that lemma is the step the whole plan-level round trip rests on.
 it.** `PLAN-lean-kernel.md` §3's structural row also lists "`moved`/`dropped` are
 sets, not `Vec`+`dedup`", which is what earns E3/E4 their **U** verdict in §4.
 Neither exists here: from `/Users/psixyzt/code/planner`,
-`grep -rn 'moved\|dropped' kernel/TmKernel/TmKernel/` returns 26 lines, all of
-them `Outcome.dropped` — a `Status` constructor — or prose. They are Rust
+`grep -rn 'moved\|dropped' kernel/TmKernel/TmKernel/` returns 31 lines at
+`bf7cc63` (26 at `c8f3a38`), all of them `dropped` as a constructor — of
+`Outcome` or `Glyph` — or prose. They are Rust
 `state.json` fields (`diff()`'s moved list, `resume`'s dropped list) with no
 kernel counterpart, so E3/E4 are verdicts the kernel has not yet cashed. The
 rest of that row is real: `Core.tags : TagSet`, `Core.ci : Option (Fin 6)` and
@@ -111,12 +120,23 @@ which is the shape §5.3 settled on.
 ### 2.1 The one command
 
 ```bash
-/Users/psixyzt/code/planner/kernel/check.sh
+cd /Users/psixyzt/code/planner/kernel
+systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet ./check.sh
 ```
 
-**Seven** checks, exit 0, warm wall time 1.1 s (three consecutive warm runs at
-`c8f3a38`: 1.15, 1.14, 1.11 s). It is the acceptance script, it is short, and you
-should read it before claiming any of its checks. Note it is `set -uo pipefail`
+**Run it under a memory cap.** The prefix is the Linux form; on a machine with no
+swap it is not optional, and it applies equally to `lake`, `lean` and
+`cargo` run on their own — §5.10a says why (a `decide` exhausted 123 GB
+twice). A command killed at the cap (exit 137 or 143) is a finding about a proof,
+not a flaky run: never retry it uncapped. (The macOS machine the earlier stamps
+were taken on has no `systemd-run`; there, cap by other means or keep every
+`decide` small, §5.10a.)
+
+**Seven** checks, exit 0, warm wall time 1.1 s (four consecutive capped runs at
+`bf7cc63`: 1.13, 1.11, 1.10, 1.10 s; `c8f3a38`'s were 1.15, 1.14, 1.11 s). It is
+the kernel's acceptance script, it is short, and you should read it before
+claiming any of its checks — and since 2026-09-12 it is **not the whole
+acceptance**: `cargo test --workspace` stands beside it (§7.5). Note it is `set -uo pipefail`
 and **not** `-e`: all seven run regardless, so one failure does not hide the
 others. §7 says what each one proves.
 
@@ -130,26 +150,42 @@ theorems with `sorry` proofs. Its number is a **burn-down** (§3.2), not a score
 |---|---|
 | `/Users/psixyzt/code/planner/PLAN-lean-kernel.md` | the decision document. §3 architecture, §4 defect-by-defect verdicts, §5 the stage table, §6 risks/open questions/stop conditions, §7 standing rules |
 | `/Users/psixyzt/code/planner/tm-spec-v1.md` | the spec the kernel implements |
-| `/Users/psixyzt/code/planner/kernel/README.md` | what is built, what is proved, and **one gap list, 1–36, in three places** (§6.4) |
-| `/Users/psixyzt/code/planner/kernel/TmKernel/TmKernel/` | the nine modules (§10.1) |
-| `/Users/psixyzt/code/planner/kernel/TmKernel/TmKernel.lean` | the root module: nine `import` lines and nothing else. **A module not listed here is not built** (§2.3) |
+| `/Users/psixyzt/code/planner/kernel/README.md` | what is built, what is proved, and **one gap list, 1–51, in five places** (§6.4) |
+| `/Users/psixyzt/code/planner/kernel/TmKernel/TmKernel/` | the ten modules (§10.1) |
+| `/Users/psixyzt/code/planner/kernel/TmKernel/TmKernel.lean` | the root module: ten `import` lines and nothing else. **A module not listed here is not built** (§2.3) |
 | `/Users/psixyzt/code/planner/kernel/TmKernel/Check.lean` | the axiom audit: `#print axioms`, one line per theorem |
 | `/Users/psixyzt/code/planner/kernel/TmKernel/Negative.lean` | the cheats. **Must fail to compile** |
-| `/Users/psixyzt/code/planner/kernel/TmKernel/Goals.lean` | stages 3–6 as 52 unproved statements. The one place a `sorry` may appear (§3.2) |
+| `/Users/psixyzt/code/planner/kernel/TmKernel/Goals.lean` | stages 4–6 as 40 unproved statements (stage 3's section holds none any more). The one place a `sorry` may appear (§3.2) |
 | `/Users/psixyzt/code/planner/kernel/totality.py` | the totality/boundary-discipline linter |
-| `/Users/psixyzt/code/planner/kernel/corpus/` | 37 fixture Markdown files, copied verbatim from `main@557a3d2`; provenance in `corpus/PROVENANCE.md` |
-| `/Users/psixyzt/code/planner/kernel/tm-kernel-ffi/` | the Rust bridge: `shim.c` 66, `build.rs` 62, `src/lib.rs` 57 lines; its own cargo workspace on purpose |
-| `/Users/psixyzt/code/planner/kernel/tm-kernel-ffi/examples/oracle/` | the differential oracle against `main` (§7.3) |
-| `/Users/psixyzt/code/planner/tm/` | dormant frontend source. `tm/DORMANT.md` explains |
+| `/Users/psixyzt/code/planner/kernel/corpus/` | 37 fixture Markdown files, copied verbatim from `main@557a3d2` (a commit this clone no longer holds); provenance in `corpus/PROVENANCE.md` |
+| `/Users/psixyzt/code/planner/kernel/tm-kernel-ffi/` | the Rust bridge: `shim.c` 66, `build.rs` 69, `src/lib.rs` 57 lines; its own cargo workspace on purpose (the root `Cargo.toml` `exclude`s it), and a **path dependency** of `tm` |
+| `/Users/psixyzt/code/planner/kernel/tm-kernel-ffi/examples/oracle/` | the differential oracle — **broken in this clone**: its scripts extract `main`, which no longer exists (§7.3) |
+| `/Users/psixyzt/code/planner/kernel/tm-kernel-ffi/examples/oneshot.rs` | reads one request on stdin and prints the kernel's response; how the README's by-hand stack and cost measurements were taken |
+| `/Users/psixyzt/code/planner/Cargo.toml`, `Cargo.lock`, `tm-core/` | the Rust workspace (members `tm-core`, `tm`), **restored** from the fork point `4748911` at `835d960`. `tm-core` is the fork-point library: the old grammar, planner, store and the harnesses `grammar_proptest.rs` and `planner_invariants.rs` |
+| `/Users/psixyzt/code/planner/tm/` | the live CLI/TUI frontend. `tm/DORMANT.md` is **superseded** — it still calls the kernel rewiring "underway" and A6 open; the README's 2026-09-12 block is the record |
+| `/Users/psixyzt/code/planner/tm/src/cli/kernel_bridge.rs` | the one choke point through which all seven kernel-backed verbs reach the kernel: read with the §1.3 guard, resolve horizon words and regions in the host, one request, write back only changed documents |
 
-**The branch has no Rust kernel.** `tm-core/` and the root `Cargo.toml` are
-deleted from `rebuild-on-lean` on purpose. The only buildable Rust here is
-`kernel/tm-kernel-ffi`. `main` still carries the whole working Rust `tm` and is
-the oracle:
+**`main` is discarded; the Rust is back, and part of it is the kernel's host.**
+The owner ruled `main` obsolete on 2026-09-12 (`f386c56`): `git rev-parse main`
+fails in this clone, and `origin` carries `rebuild-on-lean` alone. What survived
+is the fork point, `4748911` — the parent of `6d9b1ba` "Remove the Rust kernel
+in favour of the Lean one" — and the workspace was restored from it
+(`git checkout 4748911 -- tm-core Cargo.toml Cargo.lock`, `835d960`). So the
+sentence this section used to open with — "the branch has no Rust kernel" — is
+false in the way that matters: `cargo test --workspace` builds and runs the whole
+of `tm`, **and the `tm` binary calls the Lean kernel** for `move`, `drop`,
+`demote`, `readopt`, `rank`, `add` and the keyed `edit` (`d8e8d4d`, `bd61f11`).
+What is true is narrower: `tm-core`'s own lifecycle functions are still the
+fork-point Rust, **pre-stage-0** (its `move_to` has no destination check), and
+every verb the kernel does not yet back — `close`, `plan`, `review`, `recur`,
+`check`, id-less lines — still runs on them.
+
+The oracle is the fork point, not `main`, and the delta between them is stage
+0's fix, as far as this repository can know:
 
 ```bash
 cd /Users/psixyzt/code/planner
-git show main:tm-core/src/horizon.rs | grep -n 'fn move_to'
+git show 4748911:tm-core/src/horizon.rs | grep -n 'fn move_to'
 ```
 
 Cite the oracle **by function name, never by line number** — the plan's line
@@ -159,27 +195,35 @@ citations no longer resolve (§10.2).
 
 ```
 Cal ──▶ Grain ──▶ Text ──▶ Line ──▶ State ──▶ Plan ──▶ Cmd ──▶ Boundary
-          └──────────────────────────────────┘              (+ Lean.Data.Json)
+                   │                                            ▲
+                   └──▶ Json ───────────────────────────────────┘
 Arith                       (standalone: nothing imports it but the root)
 ```
 
+Root import order (`cat TmKernel.lean`): `Arith Cal Grain Text Json Line State
+Plan Cmd Boundary`. `Json` imports `Text` only; `Boundary` imports `Cmd` and
+`Json`. **No module imports `Lean.Data.Json` any more** — the wire is the
+kernel's own (§2.4).
+
 - `Cal` — the calendar. Days since 0001-01-01, proleptic Gregorian. ISO weeks.
 - `Grain` — the horizon order, all of it derived from `coarsen`.
-- `Text` — tokens, numerals, list surgery. A token carries its own separator.
-- `Line` — the item line and the whole of §4.1's field grammar. 6,190 lines.
+- `Text` — tokens, numerals, list surgery, `freshId`, the structural `splitOn`/`joinWith`. A token carries its own separator.
+- `Json` — the kernel-owned JSON fragment: `JVal`, `jescape`/`junescape`, `jemit`, the fuel-structural `jparse`, `jget`, and `jparse_jemit`. 2,641 lines.
+- `Line` — the item line and the whole of §4.1's field grammar, with the parse ⇒ wf bridges. 6,494 lines.
 - `State` — entity versus observation. `Core`, `wf`, `Entity`, `render`.
-- `Plan` — `Store`, `Doc`, `PlanCore`, `planWf`, `WfPlan`.
-- `Cmd` — `lift`, `Transform`, `Dest`, `WfPlan.mapAt`, the five commands.
-- `Boundary` — `String → String`, JSON, the loader, `callExport`.
+- `Plan` — `Store`, `Doc`, `PlanCore`, `planWf`, `WfPlan`, and the comment rule (`commentAfter`).
+- `Cmd` — `lift`, `Transform`, `Dest`, `WfPlan.mapAt`, `KErr`, the commands (`cmdMove cmdDrop cmdSetEst cmdDemote cmdReadopt cmdRank cmdEdit cmdUnset`, and `WfPlan.insertFresh` for `add`), the `EditVal` table.
+- `Boundary` — `String → String`: the request readers, `parseCmd`, the loader, `respond`, `call`, `callExport`.
 - `Arith` — exact rational arithmetic. Nothing consumes it yet.
 
 **A new module is not built until it is imported.** `kernel/TmKernel/TmKernel.lean`
-is nine `import TmKernel.<Mod>` lines and nothing else; `lakefile.toml` names one
+is ten `import TmKernel.<Mod>` lines and nothing else; `lakefile.toml` names one
 `lean_lib TmKernel` and no module list. So a `.lean` file dropped into
 `TmKernel/TmKernel/` that nobody imports is **not compiled by check 1**, is not in
 `libTmKernel_TmKernel.a`, and is therefore invisible to the Rust — while
-`check.sh` still prints seven `ok`s. Three of the four remaining stages add a
-module (§8.2, §8.3, §8.4). Add the `import` line in the same commit as the file:
+`check.sh` still prints seven `ok`s. Stage 3 added one (`Json`, imported at
+`c2ad8f6` in the same commit), and three of the remaining stages propose more
+(§8.2, §8.3, §8.4). Add the `import` line in the same commit as the file:
 
 ```bash
 cd /Users/psixyzt/code/planner/kernel/TmKernel && cat TmKernel.lean
@@ -194,48 +238,88 @@ repository, better than the README.
 
 ### 2.4 The wire format today
 
+Re-derived from `Boundary.lean` and `Json.lean` at `bf7cc63`.
+
+**The wire is the kernel's own JSON, both ways.** `call` is `String.ofList ∘
+jemit ∘ respond ∘ String.toList`: the request is read by `jparse` and every field
+through `jget`, and every response byte is written by `jemit` (J5, `51f83a8` and
+`b7f504d`). **`Lean.Json` does not touch the wire** — no kernel module imports
+`Lean.Data.Json`, and `the_response_call_emits_parses_back` is the round trip at
+the exported function. Four reading rules follow from owning it, each a named
+refusal: a field key carried twice is refused `duplicateKey <k>` (only for a key
+the kernel reads); a present `cmds` that is not an array is `array expected`
+(absent `cmds` is a read with no commands); a number is a `Nat` — `-3`, `1.5`,
+`1e3` are refused at parse; and a surrogate-pair escape is refused (gap 42),
+while leading zeros are accepted (gap 43). Keys are emitted in **build order**,
+not sorted (`the_response_shapes_emit_in_build_order`); both Rust readers look
+keys up by name.
+
 ```jsonc
 // request
-{"docs":[{"path":"week/2026-W37.md","grain":1,"ix":35,
+{"docs":[{"path":"week/2026-W37.md","grain":1,"ix":105695,
           "lines":["# Tasks","- [ ] 5 6b Finish the report ^m1"]}],
  "cmds":[{"op":"move","id":"m1","doc":0}]}
-// ops: move{id,doc} drop{id} est{id,min} demote{id,doc,period,grain?} readopt{id,doc}
+// doc: path, lines (every element a string); grain ∈ 0..2 (day week month) or
+//      null/absent = no region; ix required when grain is present
+// ops, nine:
+//   move{id,doc}  drop{id}  est{id,min}  demote{id,doc,period,grain?}
+//   readopt{id,doc}  rank{id,rank}  add{seed,doc,title}
+//   edit{id,key,value}            // value "" is the unset form
+// demote's grain is a STRING: "d" stamps D<period>, anything else or absent W<period>
+// rank is a raw document rank (a line index); add's id is the kernel's (freshId)
 ```
 
-**The response has one `ok` shape and eight `err` shapes.** Quoting one of them
+**The response has one `ok` shape and nine `err` shapes.** Quoting one of them
 as if it were the taxonomy is how a host ends up with a `match` that falls
-through. All nine, from `Boundary.lean`:
+through. All ten, from `Boundary.lean`, keys in the order they are emitted:
 
 ```jsonc
 {"ok":{"docs":[{"path":…,"lines":[…],"grain":…,"ix":…}]}}   // grain/ix only if the request declared a region
-{"err":"<free text>"}                          // jsonErr: bad JSON, bad doc, unknown op
+{"err":"<free text>"}                          // jsonErr: see below
 {"err":{"kernel":"<name>"}}                    // see below
 {"err":{"dupId":"<id>"}}
 {"err":{"notADemotion":"<id>"}}
 {"err":{"ambiguousDemotion":"<id>"}}
 {"err":{"duplicatePath":"<path>"}}
-{"err":{"badLine":{"path":…,"line":…,"why":…}}}   // why is a PErr: notAnItem|badState|noId|manyIds
+{"err":{"badLine":{"path":…,"line":…,"why":…}}}   // why is repr of a PErr: notAnItem|badState|noId|manyIds
+{"err":{"unterminatedComment":{"path":…,"line":…}}}   // line = the opener's 0-based index (a4ccd9c)
 {"err":{"itemCheck":"<fault>"}}                // firstItemFault, 7 values: rankCollision danglingParent
                                                // parentCycle danglingDep depCycle sectionDiscipline fileKindShape
 ```
 
-`"kernel"` carries **six** strings, and only five of them are `KErr`:
-`occupied`, `noSuchId`, `notDemoted`, **`alreadyDemoted`** and `badHorizon` come
-from `kerrName`; `siteOutOfRange` is emitted directly by `loadPlan` and has no
-`KErr` constructor. `alreadyDemoted` is the one most often left out — §6.3 gives
-an item **one** archive record, so a second `demote` is refused rather than
-overwriting a standing tombstone. Re-derive the list rather than trusting this
-block:
+`"kernel"` carries **eleven** strings, and ten of them are `KErr`, from
+`kerrName`: `occupied`, `noSuchId`, `notDemoted`, **`alreadyDemoted`**,
+`badHorizon`, `badItem` (an `add` whose post-state fails `itemsWf`),
+`tabbedLine` and `keyAbsent` (the edit path), `danglingDep` and `depCycle` (an
+`after:` edit, renamed out of `badHorizon` by `nameEditFault`). The eleventh,
+`siteOutOfRange`, is emitted directly by `loadPlan` and has no `KErr`
+constructor. `alreadyDemoted` is the one most often left out — §6.3 gives an item
+**one** archive record, so a second `demote` is refused rather than overwriting a
+standing tombstone. Note that `danglingDep`/`depCycle` appear under **both**
+`kernel` (a command) and `itemCheck` (the loader): a host must not match on the
+string alone.
+
+The free-text `err` is not one thing either. It carries: `bad json: <JErr>` (the
+parser's thirteen names, `jerrText`); `property not found: <k>`, `String
+expected`, `Natural number expected`, `array expected`, `object expected`,
+`duplicateKey <k>`, `grain <n> out of range (0..2)`, `unknown op <op>`; `add`'s
+five title refusals `titleNewline titleTab titleId titleBlank titleEdge`; and
+the edit's `unknownKey <k>`, `keyNotWired <k>` (only `demoted` today, by policy)
+and `badValue <k>`. The host (`kernel_bridge::refusal`) maps these names to
+`detail.refusal`. Re-derive the list rather than trusting this block:
 
 ```bash
 cd /Users/psixyzt/code/planner/kernel/TmKernel/TmKernel
-grep -n '"err"\|"kernel"\|jsonErr\|lerrJson' Boundary.lean
+grep -n '"err"\|"kernel"\|jsonErr\|lerrJson\|throw\|kerrName' Boundary.lean
+grep -n 'def jget' -A 8 Json.lean
 ```
 
 There is **no `now`, no `log`, no `cfg`, no `model`, no `seed`** in the request,
 and **no `events`, no `report`, no `repairs`** in the response. Stages 4–6 need
 all of them; §8 says which stage adds what — and §8.2 gives `report` the shape it
-does not yet have. It has none today: `grep -rn '"report"\|Report'
+does not yet have (the owner has since decided what it carries, §10.5 q8, but no
+code exists). Stage 3's scope listed `now` for itself (§8.1 item 5) and did not
+add it; it is owed to stage 4 by name. `report` has no code today: `grep -rn '"report"\|Report'
 kernel/TmKernel/TmKernel/` returns nothing, so there is no JSON key, no type and
 no constructor for it anywhere in the kernel.
 
@@ -274,12 +358,12 @@ which is exempted **by filename** (`EXEMPT = {"Goals.lean"}` in `totality.py`),
 not by a loosened pattern. That is what makes the exemption reviewable: it is one
 line in a diff, and a `sorry` added to any other file is still a check-2 failure.
 The exemption is doing real work: the directory it scans contains a file with
-seventy `sorry`s in it and the scan is clean.
+fifty-six `sorry`s in it and the scan is clean.
 
 ```bash
 cd /Users/psixyzt/code/planner/kernel
 python3 totality.py TmKernel        # exit 0 — the root: Check, Negative, Goals
-grep -c 'sorry' TmKernel/Goals.lean # 70 — 52 goals plus the provisional defs
+grep -c 'sorry' TmKernel/Goals.lean # 56 at bf7cc63 — 40 goals plus the provisional defs and prose (70 at c8f3a38)
 ```
 
 ### 3.1 What to do when a proof will not close
@@ -320,9 +404,10 @@ guardrail weaker; the right one is to satisfy it or to say you could not.
 
 `kernel/TmKernel/Goals.lean` holds every remaining obligation of stages 3–6 that
 *can* be written down, as a Lean `theorem` whose statement elaborates against the
-real kernel and whose proof is `sorry`. **52 at `c8f3a38`**, grouped by stage
-inside the file, with provisional `def … := sorry` signatures only where the spec
-settles the signature.
+real kernel and whose proof is `sorry`. **40 at `bf7cc63`** (52 at `c8f3a38`;
+stage 3's twelve are all gone — discharged, refuted, or renamed to a narrowing,
+each recorded in the README), grouped by stage inside the file, with provisional
+`def … := sorry` signatures only where the spec settles the signature.
 
 Three properties make it safe, and all three are checked:
 
@@ -353,10 +438,14 @@ stage 4 rather than a surprise inside it.
 Removing a provisional `def … := sorry` is the same move: it is replaced by the
 real definition in the real module. A goal that turns out **false** is a finding
 of equal weight (§3.1 item 3) — rename it to the negation, prove that, and record
-it. Five are already flagged as expected refutations or expected narrowings at
-their doc comments: `close_week_and_close_month_commute` (L17),
-`move_has_an_inverse_command` (L22), `lifecycle_commands_commute` (L27),
-`joining_lines_is_injective`, and `the_json_edge_round_trips`.
+it. Five were flagged as expected refutations or expected narrowings at their
+doc comments, and three of them have gone exactly that way:
+`move_has_an_inverse_command` (L22) was refuted as `move_has_no_inverse_command`
+(`378fdf9`); `joining_lines_is_injective` as `joining_lines_is_not_injective_char`
+(`a6dcc96`); and `the_json_edge_round_trips` was narrowed, as its doc comment
+licensed, to `the_response_call_emits_parses_back` (`b7f504d`). The two still
+standing are `close_week_and_close_month_commute` (L17) and
+`lifecycle_commands_commute` (L27).
 
 **The number rises only when a new debt is deliberately admitted**, and that is a
 thing worth noticing in a diff. It is not progress; it is a decision. Say in your
@@ -468,13 +557,25 @@ still coexist on the command path (gap 4), which the README labels *"a
 live S2"* — by its own accounting the kernel contains one instance of the class
 it exists to remove. Do not inherit either silently.
 
+*Status at `bf7cc63`: one exception left.* Gap 4 is **closed** (`7af7f1a`):
+`Cmd.setEstE` writes through the field setter, and
+`the_command_path_writes_what_the_field_path_reads` — generalised by the edit
+widening to `the_edit_path_writes_what_the_field_path_reads`, over every wired
+key — is the theorem. `parent` (gap 22) is the one that stands. A new instance
+of the class, recorded rather than hidden, is between the kernel and the host:
+`tm-core`'s fork-point parser is comment-blind while the kernel reads a comment
+as prose (gap 45), so two readers of one file disagree about a commented item.
+
 ### 5.4 The boundary is where the holes are.
 
 **Prevents under-budgeting.** Stage 1's core was right and its edge was not: an
 audit took the package from 799 lines to 2,981, and the repair was *almost
 entirely boundary code and its proofs*. Carry the cost signal, not the numbers —
-the nine modules are 14,674 lines at `c8f3a38`, 17,129 with the root module,
-`Check.lean`, `Negative.lean` and `Goals.lean` (§10.1).
+the ten modules are 20,902 lines at `bf7cc63`, 23,724 with the root module,
+`Check.lean`, `Negative.lean` and `Goals.lean` (§10.1). (At `c8f3a38`: nine
+modules, 14,674 and 17,129.) Stage 3 bore the lesson out again: most of its
+growth is `Json.lean` (2,641 lines) and `Boundary.lean` (1,939 → 3,909), the
+edge.
 
 The same lesson at the theorem level: **is the theorem about the code the FFI
 actually runs?** A `[-]` line failed to survive a read with no commands at all
@@ -579,12 +680,15 @@ A panic returns `Inhabited.default` with **exit code 0**. That is why
 `totality.py` exists, why `.toOption` is banned alongside it (it is how the FFI
 spike silently turned `est: -3` into `est: null`, reproducing tm's own
 estimate-loss bug inside the boundary code of a verified kernel), and why stage 3
-owes the host a fault probe.
+owed the host a fault probe — landed at `dd89bc6` as a constructed probe
+(`TM_KERNEL_FAULT_PROBE`) whose tests assert the host's reaction:
+`the_panic_probe_faults_loudly_and_writes_nothing`.
 
 `decide` is the workhorse and it runs out. `set_option maxRecDepth` is live in
 `Cal.lean` (20000 file-scoped, with `maxHeartbeats 1000000`), `Line.lean` (20000
-file-scoped), `Boundary.lean` (40000, three scoped uses), `State.lean` (8000,
-four scoped uses) and `Negative.lean` (10000). The
+from its line 5904 to the end of the file), `Boundary.lean` (40000, three scoped
+uses), `State.lean` (8000, four scoped uses), `Json.lean` (4000 file-scoped) and
+`Negative.lean` (10000). The
 `Negative.lean` one carries its reason and it is a review point in itself:
 *"Only so the failures below are the type errors they claim to be, and not an
 elaborator budget running out first."* A negative test that fails for the wrong
@@ -594,7 +698,49 @@ Related: `digitsOf` is structural with `n` as its own fuel **deliberately**. A
 well-founded definition (`n / 10 < n`) is also total but does not reduce in the
 kernel, so `decide` could not evaluate anything that renders a number — and every
 theorem pinning down what the kernel *writes* is exactly such a statement. Copy
-that trick when you need a reducing recursion.
+that trick when you need a reducing recursion. `Json.lean`'s `jparse` copies it
+one level up: fuel derived from the input's length (`2 * length + 2`), so small
+witnesses reduce, and `jparse_never_runs_out` proves the fuel never refuses a
+real input.
+
+### 5.10a `decide`'s budget is heartbeats, and heartbeats are not memory.
+
+*The rule.* Treat the memory a `decide` or `rfl` evaluation can take as
+**unbounded**. Byte-level `decide` witnesses over a parser or renderer run stay
+**small**, spelled as `List Char` literals; a realistic-size input is an
+**instance of the round-trip theorem, not an evaluation** (decide `jemit v =
+bytes`, then `jparse bytes = .ok v` is `jparse_jemit`); never reach for
+`decide +kernel` on a large computation — it removes the one budget there is;
+and on any machine without swap, run `lake`, `lean`, `cargo` and `check.sh`
+under a memory cap, so that a blowup kills the command and not the machine. On
+Linux:
+
+```bash
+systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet <cmd>
+```
+
+Before committing a new `decide`/`rfl` witness over a computation, probe it in a
+scratch copy under a tighter cap (8 GB and `timeout 120` is what stage 3 used).
+A command killed at the cap (exit 137/143) is a **finding about that proof**:
+shrink the input or derive the fact from a proved theorem; never retry uncapped,
+and never answer a heartbeat timeout by raising `maxHeartbeats` — the timeout
+was the same bomb, with a budget.
+
+*The failure it prevents.* During stage 3's J-route (2026-09-12) a decided
+witness running the kernel's JSON parser over an ~85-character request string
+consumed **all 123 GB** of the build machine, which has no swap, and the OOM
+killer ended the agent session and the owner's terminal — **twice**. Measured
+afterwards under caps (README, "The memory-bomb finding"): `{"a":1 "b":2}` passed
+an 8 GB cap in 15 s without any timeout; `{"a" 1}` did stop, at the
+200000-heartbeat `whnf` limit, at ~2 GB; and the same parser over a 92-byte
+request spelled as a `List Char` literal decides by `rfl` in ~0.5 s at ~520 MB —
+the cost was the string literal's decoding re-forced inside the parser run.
+Precisely what the budget is: `maxHeartbeats` counts allocations, not bytes, and
+the elaborator's `whnf` is where the measured timeout came from; v4.33.1 does
+pass `maxHeartbeats` to kernel checking (`addDeclCore` in the toolchain's
+`Lean/Environment.lean`), so do not read this lesson as "the kernel has no
+limit" — read it as "no limit is in bytes, and none stopped the measured runs".
+The rule does not depend on which layer ran out.
 
 ### 5.11 Quote one measurement per number, from the committed harness.
 
@@ -624,8 +770,12 @@ not a test, and that is worth writing down."*
 ### 5.13 Each stage ends with 30 minutes of driving the shipped binary.
 
 Eleven of 39 catalogued defects came from that and from nothing else, and all
-four integration bugs did. No kernel proof reaches them. Note that on this branch
-there is currently no binary to drive — which is itself a stage-3 finding (§8.1).
+four integration bugs did. No kernel proof reaches them. Since `835d960` there is
+a binary on this branch again, and stage 3's own drives earned their keep: the
+bare-`tm init` tree that no kernel-backed verb could load, the bridge's phantom
+blank line and lost final newline (`e5d38b8`), and gap 45's two readers were all
+found by driving it, not by a proof. The human's 30-minute drive of the stage-3
+binary is still owed (§8.1).
 
 ---
 
@@ -642,7 +792,8 @@ cd /Users/psixyzt/code/planner && git worktree list
 
 They live under `/Users/psixyzt/code/planner/.claude/worktrees/<name>`, which is
 gitignored. Your checkout is stable while others work; do not rebase onto a
-branch that has not landed.
+branch that has not landed. (At `bf7cc63` this clone has no worktrees: stage 3's
+2026-09-12 steps ran sequentially on `rebuild-on-lean` itself.)
 
 Before you write anything, name in your handover the files you own.
 
@@ -675,14 +826,15 @@ renumbers.**
 Earned by: three stage-one branches each appended cheats starting at 9, so the
 file carried three CHEAT 9s.
 
-**The renumber is outstanding at HEAD.** Measured at `c8f3a38`: the file is 510
-lines, banners run to `CHEAT 42`, `CHEAT 27`, `28`, `29` and `30` each appear
-**twice as banners**, and there is a letter-labelled block `CHEAT A`–`F`. (36, 37
-and 38 look duplicated to a naive grep; they are not — `CHEAT 7`'s withdrawal
-note cites them.) The README's cheat table lists only the first set of 27–30
-while README gaps cite the second set by the same numbers. **Start from a number
-nobody has used — 43 today — say which numbers you took in your handover, and do
-not assume the renumber was done.**
+**The renumber is outstanding at HEAD.** Measured at `bf7cc63`: the file is 592
+lines (510 at `c8f3a38`), 59 `/- CHEAT` banners run to `CHEAT 49`, `CHEAT 27`,
+`28`, `29` and `30` each still appear **twice as banners**, and there is a
+letter-labelled block `CHEAT A`–`F`. (36, 37 and 38 look duplicated to a naive
+grep; they are not — `CHEAT 7`'s withdrawal note cites them.) The README's cheat
+table lists only the first set of 27–30 while README gaps cite the second set by
+the same numbers. Stage 3 took 43–49, each under its own end-of-file banner.
+**Start from a number nobody has used — 50 today — say which numbers you took in
+your handover, and do not assume the renumber was done.**
 
 ```bash
 cd /Users/psixyzt/code/planner/kernel/TmKernel
@@ -699,16 +851,17 @@ implied it covered the kernel**.
 
 So: append under your own end-of-file banner, **or** record the omission by name
 in your README block. One of the two, explicitly. Current practice is visible in
-the file — it carries three `APPENDED …` banners.
+the file — it carries sixteen `APPENDED …` banners at `bf7cc63` (three at
+`c8f3a38`).
 
 **The check that makes this safe**, because the append step is manual and has
 demonstrably lost names:
 
 ```bash
 cd /Users/psixyzt/code/planner/kernel/TmKernel
-grep -c '^#print axioms' Check.lean                                     # 1006
-grep '^#print axioms' Check.lean | awk '{print $3}' | sort -u | wc -l   # 1006
-grep -hcE '^(@\[[^]]*\][[:space:]]*)?theorem ' TmKernel/*.lean | awk '{s+=$1} END {print s}'   # 1006
+grep -c '^#print axioms' Check.lean                                     # 1299 (1006 at c8f3a38)
+grep '^#print axioms' Check.lean | awk '{print $3}' | sort -u | wc -l   # 1299
+grep -hcE '^(@\[[^]]*\][[:space:]]*)?theorem ' TmKernel/*.lean | awk '{s+=$1} END {print s}'   # 1299
 ```
 
 **These told an inconsistent story and were repaired at `e7b816c`; the trap that
@@ -718,23 +871,25 @@ whose final dotted segment was dropped audits the *type* and cheerfully reports
 "does not depend on any axioms". That is how 21 theorems came to be unaudited
 while the count looked healthy.
 
-At `c8f3a38` the three numbers agree — and the agreement is two off-by-ones
-cancelling, which you should know before you quote it:
+At `bf7cc63` the three numbers agree at 1299 — and the agreement is still the
+same two off-by-ones cancelling, which you should know before you quote it
+(re-checked by diffing declared short names against audited last segments; the
+only mismatches are dotted declaration names such as `Q.le_refl`, the prose line
+and the `def` below):
 
-- 1006 audit lines, 1006 **distinct** names: no name is audited twice.
-- Every theorem declared in the nine modules is audited. `^theorem` alone misses
-  the 13 declared `@[simp] theorem`, which is why the grep above allows an
+- 1299 audit lines, 1299 **distinct** names: no name is audited twice.
+- Every theorem declared in the ten modules is audited. `^theorem` alone misses
+  the declared `@[simp] theorem`s, which is why the grep above allows an
   attribute prefix.
-- The third number's 1006 counts one prose line — `Cmd.lean`'s header contains
-  *"theorem whose command argument was unused"* at column 0 — so there are 1005
-  real declarations under 1004 distinct short names (`clock_rejects_minute_60`
-  exists in two namespaces).
-- 1004 short names → 1005 fully-qualified, **plus one non-theorem**: `Tm.WfPlan`,
-  a `def`, is still audited at `Check.lean:478`. That is the last instance of the
-  pattern the repair removed. Leave it or delete it deliberately; do not let it
-  breed.
+- The third number counts one prose line — `Cmd.lean`'s header contains
+  *"theorem whose command argument was unused"* at column 0 — so there are 1298
+  real declarations, under one fewer distinct short name
+  (`clock_rejects_minute_60` exists in two namespaces).
+- **Plus one non-theorem** in the audit: `Tm.WfPlan`, a `def`, is still audited,
+  now at `Check.lean:475`. That is the last instance of the pattern the repair
+  removed. Leave it or delete it deliberately; do not let it breed.
 
-So the honest sentence is *"every theorem in the nine modules is audited, and the
+So the honest sentence is *"every theorem in the ten modules is audited, and the
 audit names one definition as well"* — not *"every theorem"* with nothing after
 it. `check.sh` reports the audit size by grepping its own output, so its printed
 number is the audit's, not the package's.
@@ -744,22 +899,25 @@ number is the audit's, not the package's.
 Same convention: append your stage's material as a block under an HTML comment
 banner, and number your gaps from whatever is free.
 
-**There is now one gap list, 1–36, and "gap N" means exactly one paragraph.** It
-lives in three places, because the material does: gaps 1–23 under "What this does
+**There is now one gap list, 1–51, and "gap N" means exactly one paragraph.** It
+lives in five places, because the material does: gaps 1–23 under "What this does
 not cover", 24–29 in the `Arith.lean` block, 30–36 in the acceptance-evidence
-block. Each of the three carries a header line saying where in the sequence it
-sits.
+block, 37–39 in the 2026-09-09 stage-3 block, and 40–51 as bold-headed
+`**Gap N …**` paragraphs inside the 2026-09-12 stage-3 block (42–51 in §9.2's
+numbered four-part form; 40 and 41 in prose). The first three carry a header line saying where in
+the sequence they sit; the later two say it in their banners and closing
+"new gaps start at" sentences.
 
 Until `c8f3a38` these were three lists each starting from its own number — 1–23,
 12–17 and 18–24 — so 12–17 and 18–23 each named **two** different gaps, and four
 cross-references landed in the wrong one. That is fixed. **Number your new gaps
-from 37 and keep one sequence**; if you cannot, say in your banner which range is
-yours and fix it at the merge (§6.5).
+from 52 (37 at `c8f3a38`) and keep one sequence**; if you cannot, say in your
+banner which range is yours and fix it at the merge (§6.5).
 
 ### 6.5 What a merge owes
 
 1. Renumber `Negative.lean`'s cheats into one sequence and update the README's
-   cheat table to match. (Outstanding at `c8f3a38`; §6.2.)
+   cheat table to match. (Outstanding at `c8f3a38`, and still at `bf7cc63`; §6.2.)
 2. Keep the README's gap numbering one sequence, and fix any cross-reference the
    merge moved. (Done at `c8f3a38`; §6.4.)
 3. Append every branch's new theorem names to `Check.lean` — then run the three
@@ -768,7 +926,8 @@ yours and fix it at the merge (§6.5).
 4. Delete from `Goals.lean` every goal the branches discharged, and check that
    check 7's number went **down** by exactly that many (§3.2).
 5. Confirm every new module is imported in `TmKernel/TmKernel.lean` (§2.3).
-6. Run `check.sh`. All **seven** checks, exit 0.
+6. Run `check.sh`, capped (§2.1). All **seven** checks, exit 0 — and
+   `cargo test --workspace` green beside it (§7.5).
 
 ---
 
@@ -776,7 +935,10 @@ yours and fix it at the merge (§6.5).
 
 ### 7.1 The seven checks, and what each one proves
 
-Run them together with `kernel/check.sh`. Each also runs alone:
+Run them together with `kernel/check.sh`. Each also runs alone. **Every command
+in this section runs under the memory cap** — prefix it with
+`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet` on
+Linux (§2.1, §5.10a); the bare forms below are what goes after the prefix.
 
 **1 — the kernel builds, including the linkable archive.**
 
@@ -786,11 +948,12 @@ cd /Users/psixyzt/code/planner/kernel/TmKernel && ~/.elan/bin/lake build TmKerne
 
 Proves only that a proof that does not compile is not a proof. The `:static`
 facet matters: plain `lake build` produces `.olean` + C IR but not the archive
-Rust links (`.lake/build/lib/libTmKernel_TmKernel.a`, 1,759,720 bytes at
-`c8f3a38`). The build emits `linter.unusedSimpArgs` hints; they are warnings.
+Rust links (`.lake/build/lib/libTmKernel_TmKernel.a`, 3,704,386 bytes at
+`bf7cc63`; 1,759,720 at `c8f3a38`). The build emits `linter.unusedSimpArgs`
+hints; they are warnings.
 
 **It proves nothing about a module nobody imports.** `lake` builds the `TmKernel`
-library, which is `TmKernel/TmKernel.lean`'s nine imports; an unimported file in
+library, which is `TmKernel/TmKernel.lean`'s ten imports; an unimported file in
 that directory is not compiled and this check still says `ok` (§2.3).
 
 **2 — totality and boundary discipline.**
@@ -831,8 +994,10 @@ inverts the sense: if this ever compiles, the build fails.
 cd /Users/psixyzt/code/planner/kernel/tm-kernel-ffi && cargo test --quiet --test kernel
 ```
 
-26 tests through `Rust → C shim → Lean` at `c8f3a38`. Proves the export is
-reachable and the wire format is what both sides think it is.
+57 tests through `Rust → C shim → Lean` at `bf7cc63` (26 at `c8f3a38`). Proves
+the export is reachable and the wire format is what both sides think it is —
+and, since J5, it is the main evidence for the one agreement no theorem can
+state: that serde_json reads what `jemit` writes and writes what `jparse` reads.
 
 **6 — the corpus round trip.**
 
@@ -840,9 +1005,14 @@ reachable and the wire format is what both sides think it is.
 cd /Users/psixyzt/code/planner/kernel/tm-kernel-ffi && cargo test --quiet --test corpus -- --nocapture
 ```
 
-6 tests; prints the per-file table and a `CORPUS:` score line. This is the only
-check covering the two steps no theorem reaches: splitting a file's bytes into
-lines and back, and the JSON escaping on both sides of the FFI.
+6 tests; prints the per-file table and a `CORPUS:` score line. It was written as
+the only check covering the two steps no theorem reached: splitting a file's
+bytes into lines and back, and the JSON escaping on both sides of the FFI. Both
+kernel halves are theorems now — `a_file_splits_into_the_lines_it_was_joined_from_char`
+over `Tm.splitOn`, and `jparse_jemit` / `the_response_call_emits_parses_back` for
+the JSON — so what this check still uniquely covers is the **host's** half: the
+harness's `split('\n')` and its hand-written JSON codec agreeing with the kernel's
+over every corpus file.
 
 **Its two assertions are different in kind and both matter.**
 `no_file_is_silently_rewritten` is **absolute** — a document the kernel *accepts*
@@ -855,14 +1025,14 @@ total `ok` count may not fall. The baseline is regenerated by setting
 sees it — which **rewrites a committed file**, so treat it as an edit under
 review, not a test invocation, and never rebless downward.
 
-The two targets are 26 + 6 = 32 tests at `c8f3a38`.
+The two targets are 57 + 6 = 63 tests at `bf7cc63` (26 + 6 = 32 at `c8f3a38`).
 
 **7 — the outstanding goals of stages 3–6 elaborate.**
 
 ```bash
 cd /Users/psixyzt/code/planner/kernel/TmKernel
 LEAN_PATH=.lake/build/lib/lean ~/.elan/bin/lean Goals.lean        # exit 0, sorry warnings
-grep -c '^theorem ' Goals.lean                                    # 52
+grep -c '^theorem ' Goals.lean                                    # 40 at bf7cc63 (52 at c8f3a38)
 ```
 
 `Goals.lean` states every remaining obligation of stages 3–6 that can be written
@@ -872,8 +1042,8 @@ so a goal nobody can state is visible now rather than in stage 6. The check fail
 on an *error*; the `sorry` warnings are the point, and `check.sh` filters
 `declaration uses 'sorry'` out of the failure dump for exactly that reason.
 
-**Its count is a burn-down, not a score.** 52 at `c8f3a38`, 12/11/14/15 across
-stages 3/4/5/6. A stage that discharges a goal moves the theorem into its real
+**Its count is a burn-down, not a score.** 40 at `bf7cc63`, 0/11/14/15 across
+stages 3/4/5/6 (52 at `c8f3a38`, 12/11/14/15). A stage that discharges a goal moves the theorem into its real
 module and deletes it here, and the number drops; it rises only when a new debt
 is deliberately admitted. §3.2 is the procedure, and it is the check stages 3–6
 should watch most closely — checks 1–6 say the kernel is still sound, check 7
@@ -894,7 +1064,8 @@ cycles, a calendar entry with no time, a day-file item outside `# Pinned`.
 **A refusal in `plan-conflicts/` is the fixture doing its job. A refusal anywhere
 else is a finding.** Do not "fix" a corpus refusal without reading PROVENANCE.
 
-The score at `c8f3a38` is `33/37 files and 4/5 whole plans`, printed by check 6.
+The score at `bf7cc63` is `33/37 files and 4/5 whole plans`, printed by check 6 —
+unchanged since `c8f3a38` through all of stage 3.
 All four failing files are `plan-conflicts/`, and each refusal names a defect
 `PROVENANCE.md` lists as deliberate: `dupId: a1`, `itemCheck: fileKindShape`,
 `itemCheck: sectionDiscipline`, `badLine: manyIds`.
@@ -907,6 +1078,14 @@ left for it to refuse. The fifth plan is `plan-conflicts`, which exists to be
 refused. Do not quote `1/5`, and do not look for `splitLine` — it is gone.
 
 ### 7.3 The differential oracle (not in `check.sh`)
+
+**Broken in this clone, and owed.** `build-oracle.sh` runs `git archive main`,
+and `main` was discarded on 2026-09-12 (§2.2), so the script fails before it
+builds anything. Its source must move to the fork point `4748911` — the README's
+"`main` DISCARDED" paragraph says so — and every "no disagreement" it prints from
+then on is against the fork-point grammar, whose delta to `main@557a3d2` is stage
+0's fix. The numbers below were measured against `main` at `c8f3a38` and cannot
+be reproduced here. What the paragraphs below say about its method stands.
 
 ```bash
 cd /Users/psixyzt/code/planner/kernel/tm-kernel-ffi
@@ -964,6 +1143,38 @@ Go through this before you claim anything.
    the kernel does. Note that at least one cheat fails as
    `error(lean.unknownIdentifier)`, which a naive `grep 'error:'` misses.
 11. **Did you re-measure every number you wrote down?** §5.11.
+12. **Is every new `decide`/`rfl` witness small, and was it probed under a
+   cap?** §5.10a.
+
+### 7.5 Two suites are acceptance now, because the Rust calls the kernel
+
+Until stage 3, `check.sh` was the whole acceptance: the only Rust on the branch
+was `kernel/tm-kernel-ffi`, and checks 5 and 6 already ran it. **That is no longer
+true.** Since `d8e8d4d` the shipped `tm` binary calls the kernel for seven verbs
+through `tm/src/cli/kernel_bridge.rs`, so a kernel change can break the product
+while all seven checks stay green — a renamed refusal the bridge maps by name, a
+reordered response key a test splits on, a wire field the host sends that the
+kernel now refuses. And a host change can break the kernel's contract without
+touching Lean. So before **any** commit that touches the kernel or the Rust, both
+of these, capped, from their own directories:
+
+```bash
+cd /Users/psixyzt/code/planner/kernel
+systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet ./check.sh
+#   seven ok lines, exit 0
+cd /Users/psixyzt/code/planner
+systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet cargo test --workspace
+#   984 passed / 0 failed / 0 ignored across 64 test binaries at bf7cc63, 4.9 s warm
+```
+
+They do not overlap: the root workspace `exclude`s `kernel/tm-kernel-ffi`, so
+`cargo test --workspace` does **not** run the FFI crate's own 63 tests (checks 5
+and 6 do), and `check.sh` does not run the CLI, TUI, `tm-core` or proptest
+suites. The FFI crate's `build.rs` re-drives `lake` when any file under
+`TmKernel/` changes, and `tm` depends on that crate, so the workspace run also
+rebuilds the kernel it links (`tm/build.rs` only adds the toolchain `lib/` rpath). A green
+`check.sh` with the workspace unrun is half an acceptance; say which half in
+the commit if it is all you have.
 
 ---
 
@@ -974,8 +1185,8 @@ quoted below; the corrections and traps are what this document adds.
 
 Four facts cut across all four stages.
 
-**Your stage already owns a set of named goals.** `Goals.lean` groups its 52
-statements by stage under `# STAGE n` banners, and each stage section below lists
+**Your stage already owns a set of named goals.** `Goals.lean` groups its 40
+statements (52 at `c8f3a38`) by stage under `# STAGE n` banners, and each stage section below lists
 its own. Read them before you read the plan's prose: they are the same
 obligations, already stated precisely enough to elaborate. Discharging one is
 §3.2's three-step move, and check 7's number is how the stage is measured.
@@ -1004,81 +1215,139 @@ over a greedy fold. Classify every law you are given before you start.
 > Worth alone: half the lifecycle verbs are structurally sound in the shipped
 > binary; the id class is dead in production.
 
-**Scope, concretely.**
+**Status at `bf7cc63` (2026-09-12): stage 3's scope is landed, its twelve goals
+are gone from `Goals.lean`, and a named list is still owed.** The honest one-line
+reading of the plan acceptance: the seven verbs are kernel-backed in the shipped
+binary and the id class is dead there (`tm move ^m2 month` on a fresh `tm init
+--example` tree is refused `occupied`, nothing written — `d8e8d4d`); the fault
+probe returns a named `kernelFault`, never exit 0 (`dd89bc6`); both suites are
+green (§7.5); and `cargo build -p tm` into an empty target directory built and
+linked in 18.1 s at `bf7cc63` with the Lean archive already built — a from-clean
+`lake` build was not re-measured. What the acceptance does **not** yet cover is
+listed under "Still owed", below, and it is not small.
 
-1. **Restore the Rust workspace first.** `tm-core/`, root `Cargo.toml` and
-   `Cargo.lock` do not exist on this branch. `tm/DORMANT.md` gives the
-   restoration as `git checkout main -- tm-core Cargo.toml Cargo.lock`. The plan
-   does not price this. **Stage 3 is "restore, then wire", not "wire".**
-2. **Two verbs do not exist in Lean at all.** `rank` — `main` has
-   `horizon::rank`; ranks are the `normalized` conjunct, so `rank` is the one new
-   command that edits exactly the thing `normalized_set` protects. `add` — needs
-   `Seed`, and **`Seed` and `Repair` do not exist anywhere in the kernel**, so
-   §3.4's whole id/repair story is unbuilt. Freshness must be a theorem, not a
-   retry loop; Rust supplies the seed and stores the returned one.
-3. **`edit` is one keyed field of eighteen.** `Field.Key` has eighteen
-   constructors (`grep -n -A 4 'inductive Key' Line.lean`), and the boundary
-   exposes `est` only, as a bare `Nat` of minutes. `Line.lean` has the setters
-   and their `view ∘ set` proofs for all of §4.1. The dispatch does not.
-4. **Horizon *names*.** The wire form takes a document **index**. `tm move ^id
-   week` needs word → file, and the kernel cannot produce or read the string
-   `week/2026-W37.md` at all. Decide: resolve in Rust, or add a decimal renderer
-   and its inverse in Lean (`Text.lean` has both halves). Either is fine; leaving
-   it unstated is not.
-5. **Schema.** Add what the seven verbs need — and add `now`, because stage 4
-   needs it the moment it lands.
-6. **Panic layers 2 and 3.** Layer 1 (totality) is enforced. Layer 3 exists:
-   `lean_set_exit_on_panic(false)` in `shim.c` and
-   `KernelFault{InitFailed,NulInRequest,NoResponse,NotUtf8}` in `lib.rs`, whose
-   doc comment states the contract: *"A fault is loud and recoverable; it is
-   never a wrong answer."* **Layer 2 — Rust `dup2`-ing Lean's stderr to a pipe in
-   TUI mode — does not exist.** Without it a Lean backtrace shreds the ratatui
-   screen.
-7. **The four integration-bug countermeasures** (plan §4's last table): the
-   one-renderer test, the exhaustive screen router, the `--help`-vs-runtime CLI
-   conformance test, the verb × {success, error} × {plain, `--json`} matrix.
-   Three of the four are CLI-surface work and this is the stage that touches it.
+**Scope, concretely — what each item became.** Each item's heading follows the
+original's; the text after it is what became of it (the original text is in `git show
+3d2959b:AGENTS.md`).
+
+1. **Restore the Rust workspace first.** *Landed, `835d960`* — not from `main`,
+   which the owner discarded (`f386c56`), but from the in-clone fork point:
+   `git checkout 4748911 -- tm-core Cargo.toml Cargo.lock`. Zero portability
+   fixes; 943 tests passed at the restore. The restored `tm-core` is pre-stage-0.
+2. **Two verbs did not exist in Lean at all.** *Both landed.* `rank`: `cmdRank`,
+   L20a/L20b proved (`1d4fc14`), both §5.8 directions
+   (`rank_onto_a_taken_rank_is_refused`, `cmdRank_succeeds`, `d0aced9`); the host
+   compiles a position into a rotation of raw ranks (`bd61f11`). `add`: `freshId`
+   with L21 proved by pigeonhole, not a retry loop (`dcf35dc`), the verb
+   (`9840ea8`), `cmdAdd_succeeds` (`d0aced9`). The seed landed as a **per-`add`
+   wire field**, not PLAN §3.4's request-level `Seed`/`Repair` round trip —
+   `Repair` still does not exist anywhere. `add`'s command-shaped `itemsWf` bite
+   has no Lean theorem (README, `1a85e25`).
+3. **`edit` was one keyed field of eighteen.** *Now seventeen of eighteen on the
+   kernel's edit path*: nine at `a2e0dc2` (`est dur buffer pref on-miss
+   after-done min max ci`), eight more at `bf7cc63` once their parse ⇒ wf bridges
+   were proved (`due at win every on-event after loc waiting`). The eighteenth,
+   `demoted`, is excluded **by policy** (`keyNotWired demoted`, CHEAT 45). The
+   host routes only the first nine — gap 48.
+4. **Horizon *names*.** *Decided: resolved in Rust.* `kernel_bridge.rs` maps
+   words to paths and generates each document's `grain`/`ix` from the kernel's
+   own numbering (`regions_are_the_kernels_numbers`: 2026-W37 is `(1, 105695)`).
+   The kernel still believes whatever region it is sent (gap 10).
+5. **Schema.** *The seven verbs' fields landed* (§2.4). **`now` was not added** —
+   owed to stage 4, which needs it first.
+6. **Panic layers 2 and 3.** *Landed, `dd89bc6`*: the stderr `dup2` while the TUI
+   owns the screen, fault-versus-refusal at the verb seam with the terminal
+   restored, and the constructed probe `TM_KERNEL_FAULT_PROBE`.
+7. **The four integration-bug countermeasures.** *Three landed, `f4d0ec5`*:
+   `cli_conformance.rs` (`--help` versus runtime, 38 pages), `cli_json_matrix.rs`
+   (34 verbs × four legs), `tui_screen_router.rs` (runtime half; the compile-time
+   half already stood). The fourth, the one-renderer test, belongs to **stage 6**
+   by PLAN §4's own row.
+
+Beyond the scope list, stage 3 also made the JSON edge the kernel's own (J0–J6,
+`c2ad8f6`..`b7f504d`, a new module, `Json.lean`), taught the loader that an HTML
+comment is prose (`a4ccd9c`, `LErr.unterminatedComment`), and fixed the bridge's
+newline handling (`e5d38b8`).
 
 **Spec sections.** §13 (CLI), §12 (TUI wiring only), §4.1/§4.3 as far as the
 loader already reads, §6.3's `move`/`readopt`/`demote`/`drop` rows, §17.2.
 
-**Modules touched.** `Boundary.lean` (dispatch, `ReqCmd`, `parseCmd`, `run`,
-schema), `Cmd.lean` (`rank`, `add`, wider `edit`), `Plan.lean` (`normalized`
-preservation for `rank`), `Check.lean`, `Negative.lean` and `Goals.lean` by the
-conventions in §6.2/§6.3/§3.2, all of `kernel/tm-kernel-ffi/`, plus the restored
-`tm-core/` and `tm/`. **No new module** — but if you add one, §2.3.
-
-**Goals this stage owns** — 12 in `Goals.lean` under `# STAGE 3`, plus the two
-provisional signatures `cmdRank` and `freshId` it must replace:
-`add_assigns_a_fresh_id` (L21), `rank_is_idempotent`,
-`rank_preserves_the_order_of_the_others`, `move_has_an_inverse_command` (L22,
-expected refutation), `the_json_edge_round_trips`, `the_char_edge_round_trips`,
-`a_file_splits_into_the_lines_it_was_joined_from`, `joining_lines_is_injective`
-(expected refutation), `the_loader_builds_sites_in_range`,
-`the_loader_builds_a_normalized_plan`, `the_loader_builds_oriented_demotions`,
-`the_command_path_writes_what_the_field_path_reads`. The last one is gap 4's two
-`est` readers; the middle four are gaps 6 and 12.
+**Modules touched, as it turned out.** `Boundary.lean` (dispatch, `ReqCmd`,
+`parseCmd`, `run`, `respond`, schema), `Cmd.lean` (`rank`, `add`'s
+`insertFresh`, the keyed `edit`), `Plan.lean` (`normalized` preservation, the
+comment rule), `Line.lean` (the parse ⇒ wf bridges), `Text.lean` (`freshId`,
+`joinWith_splitOn`), **one new module, `Json.lean`** (imported at `c2ad8f6`, §2.3),
+`Check.lean`, `Negative.lean` and `Goals.lean` by the conventions, all of
+`kernel/tm-kernel-ffi/`, and the restored `tm-core/` and `tm/` (the bridge, the
+CLI tests, the templates).
 
 **Depends on.** Stage 1's `WfPlan`/`mapAt`/`resolveDest`/`Dest`; stage 2's parser
-and `loadPlan`. Nothing in stage 4 blocks it — but see the first trap.
+and `loadPlan`. Nothing in stage 4 blocks it.
 
-**Acceptance, and how to satisfy it on this branch.** The plan's acceptance names
-`cargo build`, "full suite green" and a CLI-level panic probe, none of which
-exist here: `tm-core/` and the root `Cargo.toml`/`Cargo.lock` are deleted from
-`rebuild-on-lean` on purpose. **This is not a blocker; it is scope item 1.**
-Every one of those clauses is satisfied *after* the restore, on this branch:
-
-```bash
-cd /Users/psixyzt/code/planner
-git checkout main -- tm-core Cargo.toml Cargo.lock   # tm/DORMANT.md's own instruction
-```
-
-`main` is the oracle and it is at `557a3d2`. Until the restore lands, the Rust
-half of the acceptance is **owed, by name, in the README** — not silently skipped
-and not declared met by the Lean half. Plus: check 6 must not regress, and
+**Acceptance, as it now stands.** The plan's clauses are measured by the two
+suites of §7.5 (both capped): `check.sh` 7/7 and `cargo test --workspace` green,
+with the panic probe and the seven verbs' refusal-by-name tests inside the
+latter. Plus, unchanged: check 6 must not regress, and
 `corpus/round-trip.expected` must move forward and never be reblessed downward.
+The Rust half is no longer owed; the items under "Still owed" below are.
 
-**Named traps.**
+**Goals this stage owned — all twelve gone from `Goals.lean`, each by a named
+route, plus the two provisional signatures replaced** (`cmdRank`, `freshId`):
+`add_assigns_a_fresh_id` (L21) proved, `dcf35dc`; `rank_is_idempotent` and
+`rank_preserves_the_order_of_the_others` proved, `1d4fc14`;
+`move_has_an_inverse_command` (L22) **refuted** as `move_has_no_inverse_command`,
+`378fdf9`; `the_json_edge_round_trips` **narrowed**, as its doc comment licensed,
+to `the_response_call_emits_parses_back`, `b7f504d` (the original was stated over
+`Lean.Json`'s `partial def`s and could be neither proved nor refuted);
+`the_char_edge_round_trips` proved, `d61fece`;
+`a_file_splits_into_the_lines_it_was_joined_from` restated over the kernel's own
+`Tm.splitOn` and proved as `…_char`, and `joining_lines_is_injective` **refuted**
+as `joining_lines_is_not_injective_char`, both `a6dcc96`;
+`the_loader_builds_sites_in_range` and `the_loader_builds_oriented_demotions`
+proved, `9812dd9`; `the_loader_builds_a_normalized_plan` proved, `6f32f41`;
+`the_command_path_writes_what_the_field_path_reads` proved, `7af7f1a`. Where a
+statement was restated rather than proved as written, the README block says why
+by name; the host-agreement obligations those restatements leave (Rust's
+`split('\n')` and serde_json agreeing with the kernel) are **evidence** — the FFI,
+corpus and CLI suites — never a theorem.
+
+**Still owed from stage 3, by name** — each recorded in `kernel/README.md`:
+
+- **Gap 48** — the host's `KERNEL_EDIT_KEYS` (`tm/src/cli/items.rs`) does not
+  route the eight newly wired keys; `tm edit ^id due=…` still runs the fork-point
+  Rust. The next host step, with **gap 50** (every other plan-tier edit refusal
+  is still `badHorizon`) beside it.
+- **Gap 51** — `∀ v : EditVal, wordWf v.rendered = true` is proved for `loc`,
+  `est`, `ci` only; the edit's re-read is evidence for the rest. Priced as stage
+  3's closing theorem.
+- **Gap 49** (the edit is narrower than the loader in two named places), **gap
+  41** (unset of `est`/`ci` clears the key slot only), **gaps 42 and 43**
+  (surrogate pairs refused, leading zeros accepted), **gap 47** (a `planWf`
+  conjunct no wire input can fail) — decisions recorded, no stage named as
+  owing work unless a host or a user needs it.
+- **Gap 44** — `jparse`'s and `jemit`'s per-element recursion has no runtime
+  twin; the ~21 500-element bound on a 2 MiB stack is the one `splitDoc` already
+  had, but a request with that many *documents* newly aborts.
+- **Gap 45** — `tm-core`'s parser is comment-blind, so `tm check`/`tm plan` and
+  the kernel disagree about a column-0 item inside `<!-- -->`; **gap 46** — the
+  comment rule's narrow edges (generated-block interiors, indentation).
+- **`now` in the request** — stage 3's item 5; stage 4 adds it.
+- **The oracle** — `examples/oracle/` still extracts `main`; it must move to
+  `4748911` (§7.3).
+- **The depth-3 sweep** — `invariant_exhaustive.rs` lived only on `main` and was
+  discarded with it; §9.1's most consequential gate now needs a harness rebuilt,
+  not merely run.
+- **The human's 30-minute drive** of the stage-3 binary (§5.13).
+- **Housekeeping writes precede a kernel refusal** — on a stale tree the
+  fork-point day-close catch-up writes before the command's own kernel call is
+  refused; stage 4 territory, recorded not fixed.
+- **Two newline conventions** — the bridge normalizes rewritten files to a final
+  newline, legacy writers do not; retires as stages 4 and 6 and gap 5 retire the
+  legacy writers.
+- **The `Negative.lean` renumber** (§6.2, §6.5) and **`tm/DORMANT.md`**, whose
+  text still says the rewiring is "underway".
+
+**Named traps — kept, each with its status at `bf7cc63`.**
 
 - **The old blocker is gone; read the new one.** Until `8eea3d6` three of five
   fixture trees failed to load whole with `splitLine: m2`, and this trap said so.
@@ -1087,6 +1356,8 @@ and not declared met by the Lean half. Plus: check 6 must not regress, and
   `[-]` line is the tombstone and horizon order is the tie-break only when both
   are `[-]` — and `LErr.splitLine` is deleted. The corpus went `1/5` → `4/5`.
   A binary kernel-backed for the lifecycle verbs can now load a real tree.
+  *Status: closed before this stage began, and confirmed by the shipped binary
+  loading real trees.*
 - **What that opened, and it is stage 3's to decide: the kernel asks only whether
   the box is `[-]`** (gap 31). `tree.rs`'s `is_archive_copy` also constrains
   *where* a `[-]` may be an archive copy — a week file, or a `month/…# Demoted`
@@ -1096,35 +1367,45 @@ and not declared met by the Lean half. Plus: check 6 must not regress, and
   `planWf` is supposed to be no weaker than `tm check` and on this predicate it
   is. Closing it needs a placement's *section* to reach the plan tier. It is a
   behaviour change, so it is recorded rather than taken — and stage 3 is where a
-  real host starts sending real trees.
+  real host starts sending real trees. *Status: **open**, not decided this
+  stage; §10.5 q9 carries it to the human.*
 - **A tombstone's bytes are checked by the parser and by nothing else** (gap 31,
   second half). `itemsWf`'s field-derived conjuncts all read `Core.line`, so
   `- [-] 1 1b T after:^m1 ^m1` is `itemCheck: depCycle` standing alone and `ok`
   as the archive half of a pair. That matches `tree.rs`, which walks `n.primary`
   only, and it is the behaviour you want for a frozen record — but know it before
-  a user reports it.
+  a user reports it. *Status: open, unchanged.*
 - **`tm undo` must replay the log.** L4b is refuted by
   `move_back_at_a_fresh_rank_is_not_the_inverse`: the wire form carries a
   document, not a rank, and the rank is generated fresh. An undo built as "apply
-  the inverse command" is wrong by a compiled theorem.
+  the inverse command" is wrong by a compiled theorem. *Status: now general —
+  `move_has_no_inverse_command` (`378fdf9`) refutes every inverse over all seven
+  command shapes. Which side replays the log is still §10.5 q4.*
 - **The response must carry each document's region back.** A host that drops
   `grain`/`ix` on the way back makes its own next request unloadable
   (`ambiguousDemotion`). The FFI test
-  `the_response_carries_each_documents_horizon` guards it.
+  `the_response_carries_each_documents_horizon` guards it. *Status: closed
+  host-side, `d8e8d4d` — the bridge keeps every returned region on `BridgeDoc`,
+  checks it against what it declared, and refuses to write on a mismatch.*
 - **Nothing ties a `Doc`'s declared region to its path** (gap 10). A
   host may send `{"path":"week/2026-W37.md","grain":1,"ix":35}` and the kernel
   believes it, while the true ISO week ordinal of 2026-W37 is 105695 — and the
   FFI fixtures do exactly this. The gap names it "the obvious place for the next
   boundary bug", and stage 3 is where the host starts generating those numbers
-  for real.
+  for real. *Status: mitigated, not closed — the host generates the kernel's own
+  numbers and a compiled test pins them (`regions_are_the_kernels_numbers`), but
+  the kernel still checks nothing.*
 - **A panic probe needs something that can panic.** The kernel is total by CI, so
   there is no reachable panic. The probe must be constructed — a deliberately
   faulting build, or a shim-level injection returning a non-JSON string — and it
-  must test the *host's* reaction, not the kernel's.
+  must test the *host's* reaction, not the kernel's. *Status: closed, `dd89bc6` —
+  `the_panic_probe_faults_loudly_and_writes_nothing` and
+  `a_kernel_fault_propagates_and_a_refusal_stays_a_message`.*
 - **Two `est` readers sit on exactly the command path** (gap 4).
   `Core.est` is the field-level `viewRemainingDur`; `Cmd.setEstE` and the
   boundary's `est` go through the stage-one `Nat` reader `viewRemaining`, which
   does not read `NhMm` or `Nd`. This is the S2 shape, in the code stage 3 ships.
+  *Status: closed, `7af7f1a` — `the_command_path_writes_what_the_field_path_reads`.*
 - **A tab is not a separator, and neither is a second space**
   (gap 32). `Text.isSp c := c == ' '`. Measured: 1,049 of 2,048
   generated lines are silently prose to the kernel. And it already reaches a
@@ -1133,32 +1414,50 @@ and not declared met by the Lean half. Plus: check 6 must not regress, and
   occurrence wins) and the *second* in the kernel, because the kernel cannot see
   the first. **The kernel is on the wrong side of the bug the rebuild exists to
   make impossible, in the same operation.** Do not ship kernel-backed `edit`
-  without fixing this or refusing tabbed lines loudly.
+  without fixing this or refusing tabbed lines loudly. *Status: the edit hazard is
+  closed by refusal, `a2e0dc2` — every edit-path command refuses a tabbed line as
+  `tabbedLine` (`edit_of_a_tabbed_line_is_refused`,
+  `the_tab_guard_is_not_vacuous`); `add` refuses a tab in a title. Gap 32 itself
+  (`isSp`) stays open and plan-tier.*
 - **Every `^`-leading word is an id** (gap 33). A bare `^` names
   the empty id; `^%` names `%`; a corpus line is refused as `manyIds` where the
-  shipped parser reads `q7`.
+  shipped parser reads `q7`. *Status: open, unchanged.*
 - **Routines and optional items are invisible** (gap 5). §4.1 says
   `routines.md` and `optional.md` omit the state box; `parseItem` requires
   `- [<glyph>]`, so those lines are prose. The seven verbs cannot address them.
   Fixing it needs a `RawItem` that records whether the box was there — a type
-  change across `State`/`Plan`/`Cmd`/`Boundary`.
+  change across `State`/`Plan`/`Cmd`/`Boundary`. *Status: open; the host keeps
+  every id-less line on the old Rust path, by name.*
 - **`Id`'s shape is a human decision** (gap 13, plan §6.2 q2). §3.1 says
   4 chars of `[a-z0-9]`; the Rust enforces nothing; the spec's own fixtures ship
   `^O1`. The recorded resolution is *weaken the spec, not tighten the data* — but
   only a human can tell that case from the case where the type is right.
+  *Status: **decided** by the owner, 2026-09-12 (§10.5 q2): ids stay digits, and
+  spec §3.1's width sentence is weakened.*
 - **The JSON/string edge is the only unproved step on the text path**
   (gap 12; gap 34 measures it and does not close it).
   A request line containing a literal newline round trips as one line in the
-  kernel and becomes two on disk, and nothing notices.
+  kernel and becomes two on disk, and nothing notices. *Status: both kernel
+  halves are theorems — the split at the char level (`a6dcc96`) and the JSON edge
+  (`b7f504d`, with `Lean.Json` off the wire). What remains is host agreement,
+  evidenced, and gap 12's live remainder: the kernel still accepts a doc line
+  carrying a literal newline (the bridge never sends one — it splits on `'\n'` —
+  and `add` refuses one in a title).*
 - **The depth-3 sweep in the stop condition does not exist and may not be
   affordable.** `invariant_exhaustive.rs` has depth 1 (199 commands) and depth 2
   (39,601 pairs, `#[ignore]`d at ~10 minutes). Depth 3 over the same alphabet is
   7,880,599 triples — ~199× the depth-2 work, order tens of hours. This is the
   most consequential decision gate in the whole plan (§9.1) and it is gated on a
   harness nobody has costed. Narrow the alphabet, or state a different gate.
+  *Status: worse — the harness itself was discarded with `main`; it must be
+  rebuilt before it can be costed.*
 
-**Inherited debt.** Gaps 4, 5, 6, 7, 9, 10, 12, 13, 14, 15, 16, 17, 31, 32,
-33, 34, 35, 36.
+**Inherited debt, re-sorted.** Closed during stage 3: gaps 4, 13 (by decision),
+14 (the shipped binary calls the kernel), 16, and the kernel halves of 12 and 34;
+37–39 were blockers or pricings of those and are superseded by name in the
+README. Still open and inherited by later stages: 5, 6, 7, 9, 10, 12's newline
+remainder, 15, 17, 31, 32, 33, 34's host half, 35, 36 (the oracle, now broken),
+and the stage's own 40–51 as their paragraphs price them.
 
 ---
 
@@ -1227,7 +1526,10 @@ stage 6 inherit an accident:
 4. it emits integer numerator/denominator pairs and never divides (§8.4).
 
 It is open question 8 in §10.5, because "what a close reports" is a product
-decision, not a proof.
+decision, not a proof. *Answered 2026-09-12 (§10.5 q8): a per-item list — id,
+disposition, destination, stamp, minutes as integer numerator/denominator — not
+counts only, and not stage 6's full diagnostics surface yet.* The four rules
+above still govern its shape.
 
 **Depends on.** Stage 1, all built and compiled: `coarsen_month = rfl`,
 `closeTo_target_is_open`, `demotion_target_follows_the_closed_region`,
@@ -1238,21 +1540,23 @@ stage 3 only to *ship*, not to prove.
 **Acceptance, and how to satisfy it on this branch.** The plan's acceptance is
 *"close idempotent at library **and CLI** level; a 3-month-stale tree catches up
 losing nothing; the two behaviour changes landed with assent"*. Two of those
-three clauses need a binary, and this branch has none — `tm-core/` and the root
-`Cargo.toml` are deleted on purpose (§2.2). Split it, and do not let the split
-become an excuse:
+three clauses need a binary. When this was written the branch had none; since
+`835d960` it has one (§2.2), so the split below is now a sequencing, not a
+blocker. Do not let it become an excuse:
 
 - **Library level, here, now.** `close_is_idempotent` on `WfPlan` is the L16
   goal. The stale-tree clause becomes a corpus-shaped fixture pushed through the
   `String → String` boundary by a `tm-kernel-ffi` test — the same instrument as
   check 6 — asserting the item count and the summed `est:` are unchanged.
-- **CLI level, after stage 3's restore.** `git checkout main -- tm-core
-  Cargo.toml Cargo.lock` (§8.1). If stage 3 has not landed when this stage
-  finishes, the CLI clause is **owed by name in the README**, with which fixture
-  would demonstrate it. Do not restate the library result as the CLI one.
+- **CLI level.** The restore this clause waited on has landed (from `4748911`,
+  not `main`, §8.1), so the CLI clause is owed **in this stage**, through the
+  bridge, against a stale fixture tree — and until `close` is kernel-backed the
+  fork-point Rust close still runs as housekeeping ahead of every command (§8.1's
+  "Still owed"). Do not restate the library result as the CLI one.
 - **The behaviour changes need a human**, and the plan's instruction is literal:
-  construct a stale tree and close it before deciding. That needs the binary too,
-  so it is gated on the restore as well — see the first trap.
+  construct a stale tree and close it before deciding. *Done 2026-09-12*: the
+  owner drove stale trees with the restored binary and decided (a); (b) turned
+  out not to be a behaviour change at all — see the first trap and §10.5 q1.
 
 Plus the corpus ratchet, plus 30 minutes driving whatever binary exists (§5.13).
 
@@ -1269,11 +1573,22 @@ Plus the corpus ratchet, plus 30 minutes driving whatever binary exists (§5.13)
   two rules differ, and the Rust's target is already closed, **exactly when the
   coarser period rolled over in between** — so this is a fact about closing late,
   not one witness.
+  *Status at `bf7cc63`, recorded here as a pointer and not as the repair:*
+  **(a) is decided** by the owner (§10.5 q1, D1) — `close day` targets the week
+  containing *now*, the kernel's `closeTo`; the stamp stays `demoted:D<dd>`, and
+  `AUTO_CLOSE_CATCHUP = 16` collapses to one step per grain. **(b) is withdrawn**:
+  it describes a behaviour change that does not exist — `horizon::close_week`
+  already computes `closeTo week now`, and `monthOfIsoWeek` is a naming tie-break,
+  not the close rule (`Grain.lean` says so). This paragraph, §10.5 q1's second
+  half, `Cal.lean`'s header and the README's "month of today" row and tie-break
+  section frame it otherwise; **stage 4's first step repairs those sites.**
 - **If assent is refused, L16 may not be provable.** The idempotence argument is:
   after the fold, no entity's live site is in a closed region of grain `g`, so
   the second run folds over the empty set — which is `closeTo_target_is_open`.
   With `targetContaining`, the fold's own output can be back in scope and the
   proof does not go through. Record it as a stop point, not a surprise.
+  *Status: assent was given for (a) (D1), so the `closeTo` argument is the one
+  L16 gets.*
 - **L17 is an expected refutation, and a refutation is a deliverable.**
   `close week ∘ close month` is not expected to commute.
 - **`demote` must learn to target a *section*** (gap 20). §6.3 files the
@@ -1390,7 +1705,9 @@ hierarchy — a plan-tier decision nobody has taken.
 
 **Acceptance.** The parity harness. **Its exception list is longer than the six
 rounding sites**; extend the existing oracle scaffolding rather than writing a
-new one.
+new one — after first moving it off `main`, which no longer exists, to the fork
+point `4748911` (§7.3). Stage 5's parity is therefore against the fork-point
+Rust.
 
 **Named traps.**
 
@@ -1401,6 +1718,13 @@ new one.
   `{mantissa : Int, exponent : Nat}` — an exact decimal — so `0.75` arrives as
   `75 / 10^2` with no `Float` anywhere. Use that route, or have Rust send num/den
   pairs. What must not happen is a `Float` appearing "to read the config".
+  *Stale route, as of `b7f504d`:* `Lean.Json` is off the wire, and the kernel's
+  own `JVal.num` is a `Nat` — `jparse` refuses `0.75` at parse
+  (`jparse_refuses_what_the_fragment_has_no_type_for`). So the `JsonNumber`
+  route is gone; the remaining routes are Rust sending numerator/denominator
+  pairs as two `Nat`s, or widening `JVal` with an exact decimal constructor —
+  **visibly, in a diff**, with its escaping/numeral round trip extended so
+  `jparse_jemit` still holds. The last sentence stands unchanged.
 - **`binsWf` and `descending` are two decidable checks a loader should run**
   (gap 27). `ladder_eq_rungs` needs the edges sorted;
   `rungs_antitone` does not. A misconfigured `priority.bins` still produces a
@@ -1530,15 +1854,16 @@ section byte-identical across the file, `tm now`, `tm tui` and `tm plan --json`.
 - **L24 (tail-drop) and L25 (stability) are RELATIONAL, and the recorded
   recommendation is to keep the proptest.** Tail-drop compares `plan(budget)` to
   `plan(budget − Δ)`; stability compares `plan(t)` to `plan(t′ > t)`. Both relate
-  two runs of a greedy fold: real inductions, not `decide`. `tm-core/tests/planner_invariants.rs`
-  on `main` is 882 lines at 256 cases with explicit `--- tail-drop ---` and
+  two runs of a greedy fold: real inductions, not `decide`.
+  `tm-core/tests/planner_invariants.rs` (on `main` then; restored from the fork
+  point now) is 882 lines at 256 cases with explicit `--- tail-drop ---` and
   `--- stability ---` sections, and it has empirically caught things.
   **The decision is due before stage 6 starts**, and the recorded recommendation
   is: keep the proptest, state the law in Lean, prove it last or never — *"decide
   that deliberately now rather than discover it in month six."*
 - **Aim the proptest through the FFI rather than rewriting it.** The plan's
   acceptance says exactly that, and the same pattern applies to `grammar_proptest.rs`
-  (395 lines on `main`).
+  (395 lines, restored from the fork point).
 - **L27 is expected-refuted and R7 is an open *decision*, not an open *proof*.**
   Lifecycle commands do not commute: `demote ^m1 ; move ^m1 week` breaks a tree
   the reverse order does not, and nobody has decided whether they should. L27
@@ -1602,7 +1927,9 @@ Named in advance so that stopping is a decision and not a capitulation.
 | After stage 3: a clean exhaustive **depth-3** sweep, plus 60 days of use with no new defect in the covered class | 3 | **the bug class is gone.** Stages 5–6 then buy uniformity, not soundness. *"That is a legitimate reason to stop, and it should be stated out loud if it happens"* |
 
 That last row has the most leverage and the least infrastructure behind it
-(§8.1's last trap).
+(§8.1's last trap) — and since `main`'s discard, no harness at all:
+`invariant_exhaustive.rs` went with it, so the sweep must be rebuilt against the
+kernel-backed binary before depth 3 can even be costed.
 
 Evidence that core Lean suffices for the hard parts, so the Mathlib trigger is
 not a formality: `parentsAcyclic_complete`'s pigeonhole is core's
@@ -1655,38 +1982,51 @@ as 'tm becomes verified' is overstating it by a factor of three."*
 
 ## 10. Reference
 
-### 10.1 The package, measured at `c8f3a38` on 2026-09-08
+### 10.1 The package, measured at `bf7cc63` on 2026-09-12
 
 The theorem column counts declarations including `@[simp] theorem`, which is what
-§6.3's third command counts and what reconciles with the audit.
+§6.3's third command counts and what reconciles with the audit. The `c8f3a38`
+column is the previous stamp, kept so the growth is visible.
 
-| module | lines | theorem declarations |
-|---|---:|---:|
-| `Line.lean` | 6,190 | 463 |
-| `Plan.lean` | 2,033 | 106 |
-| `Boundary.lean` | 1,939 | 82 |
-| `Arith.lean` | 1,079 | 90 |
-| `Cal.lean` | 823 | 105 |
-| `Cmd.lean` | 847 | 44 |
-| `State.lean` | 745 | 46 |
-| `Text.lean` | 708 | 40 |
-| `Grain.lean` | 310 | 30 |
-| **nine modules** | **14,674** | **1,006** (1,005 real; one is a docstring line) |
-| `TmKernel.lean` | 9 | — (the nine imports; §2.3) |
-| `Check.lean` | 1,102 | — (1,006 `#print axioms` lines, 1,006 distinct names) |
-| `Negative.lean` | 510 | — (cheats 1–42 plus a letter block A–F, 27–30 duplicated) |
-| `Goals.lean` | 834 | — (52 goals with `sorry`; not imported) |
-| **total** | **17,129** | |
+| module | lines | theorem declarations | at `c8f3a38` (lines / theorems) |
+|---|---:|---:|---:|
+| `Line.lean` | 6,494 | 481 | 6,190 / 463 |
+| `Boundary.lean` | 3,909 | 161 | 1,939 / 82 |
+| `Json.lean` | 2,641 | 126 | — (new, `c2ad8f6`) |
+| `Plan.lean` | 2,435 | 132 | 2,033 / 106 |
+| `Cmd.lean` | 1,609 | 82 | 847 / 44 |
+| `Arith.lean` | 1,079 | 90 | 1,079 / 90 |
+| `Text.lean` | 857 | 46 | 708 / 40 |
+| `Cal.lean` | 823 | 105 | 823 / 105 |
+| `State.lean` | 745 | 46 | 745 / 46 |
+| `Grain.lean` | 310 | 30 | 310 / 30 |
+| **ten modules** | **20,902** | **1,299** (1,298 real; one is a docstring line) | 14,674 / 1,006 (nine modules) |
+| `TmKernel.lean` | 10 | — (the ten imports; §2.3) | 9 |
+| `Check.lean` | 1,469 | — (1,299 `#print axioms` lines, 1,299 distinct names, 16 `APPENDED` banners) | 1,102 |
+| `Negative.lean` | 592 | — (cheats 1–49 plus a letter block A–F, 27–30 duplicated) | 510 |
+| `Goals.lean` | 751 | — (40 goals with `sorry`, 0/11/14/15 by stage; not imported) | 834 |
+| **total** | **23,724** | | 17,129 |
 
-Archive: `libTmKernel_TmKernel.a`, 1,759,720 bytes. FFI: `shim.c` 66 +
-`build.rs` 62 + `src/lib.rs` 57 = 185 lines. FFI tests: 26 + 6 = 32. `check.sh`:
-**seven** checks, 1.1 s warm (1.15/1.14/1.11 s over three consecutive runs).
+Archive: `libTmKernel_TmKernel.a`, 3,704,386 bytes (1,759,720 at `c8f3a38`).
+FFI crate: `shim.c` 66 + `build.rs` 69 + `src/lib.rs` 57 = 192 lines (185 at
+`c8f3a38`; `build.rs` gained the Linux rpath, `0c3aaf7`); tests `kernel.rs` 942
+lines and `corpus.rs` 556 plus `tests/harness/mod.rs` 486. FFI tests: 57 + 6 = 63
+(26 + 6 = 32 at `c8f3a38`). Host side: `tm/src/cli/kernel_bridge.rs` 756 lines,
+`tm/build.rs` 40. `check.sh`: **seven** checks, 1.1 s warm (1.13/1.11/1.10/1.10 s
+over four consecutive capped runs). `cargo test --workspace`: **984 passed / 0
+failed / 0 ignored across 64 test binaries**, 4.9 s warm, capped (§7.5).
+`cargo build -p tm` into an empty target directory, Lean archive already built:
+18.1 s, capped.
 
 `build.rs` runs `lean --print-prefix` **inside** the Lean package so it honours
 `lean-toolchain`, then `lake build TmKernel:static`, then compiles `shim.c`, and
 emits two `-L` search paths (`lib/lean` *and* `lib` — gmp/uv/ssl/crypto live in
 the latter). It has `rerun-if-changed` on every file under `TmKernel/`, so
-editing Lean re-drives lake on the next `cargo test`.
+editing Lean re-drives lake on the next `cargo test`. Since `0c3aaf7` it also
+emits `-Wl,-rpath,<toolchain>/lib` for the crate's binaries and tests, so Linux
+finds the toolchain's bundled `libc++`; because a dependency's link args do not
+propagate, `tm/build.rs` repeats that rpath for the `tm` binary and its test
+harnesses.
 
 ### 10.2 Statements in the other documents that are stale
 
@@ -1694,20 +2034,29 @@ Check these before you quote them.
 
 | stale statement | where | what is true |
 |---|---|---|
-| "`move` is open on `main`" / "426 pairs reachable on tm `main`" | PLAN §4 row A6; `kernel/README.md` | **Stage 0 landed.** `main` and `fix-move-precondition` are the same commit, `557a3d2`; `move_to` now calls `destination`, which returns `Err(occupied(...))`. The 426 were measured on pre-fix `main` |
-| Rust line citations (`horizon.rs:943`, `:958`, `:1323`, `:1543`, `:1792`) | PLAN §2.1, §3.2 | none resolve today. Measured offsets on `main`: `destination` 919, `occupied` 954, `move_to` 1061, `move_line` 1204, `demote_one` 1276, `readopt` 1389, `rank` 1640, `close_day` 1676, `close_week` 1901, `close_month` 2165, `auto_close` 2424. **Cite function names.** (`model.rs:686`, `priority.rs:349` and `planner.rs:323` do still resolve) |
+| "`move` is open on `main`" / "426 pairs reachable on tm `main`" | PLAN §4 row A6; `kernel/README.md` | Stage 0 landed on `main` (`557a3d2`, `move_to` calling `destination` → `Err(occupied(...))`), and **`main` was then discarded** (2026-09-12), stage 0's fix with it. The restored `tm-core` is the pre-stage-0 fork point, so its `move_to` has the hole again — but the shipped binary's `move`/`readopt` go through the kernel, where `occupied` is a constructor obligation, so **A6 is dead in the binary** (`d8e8d4d`). The 426 were measured on pre-fix `main`, by a harness this clone no longer holds |
+| Rust line citations (`horizon.rs:943`, `:958`, `:1323`, `:1543`, `:1792`) | PLAN §2.1, §3.2 | **they resolve again**, on the restored `tm-core/src/horizon.rs` (unchanged from `4748911`): `move_line` at 943, its `move_to` call at 958, and 1323/1543/1792 inside `close_day`/`close_week`/`close_month`. Fork-point offsets: `move_to` 819, `move_line` 943, `demote_one` 1005, `readopt` 1119, `rank` 1286, `close_day` 1322, `close_week` 1537, `close_month` 1782, `auto_close` 2032; `destination` and `occupied` do not exist there. The `main` offsets this row used to give are unreproducible. **Still cite function names.** `model.rs:686` (`default_on_miss`, Window → Expire), `priority.rs:349` and `planner.rs:323` (the two `round()` sites) still resolve |
 | "Five states, not six" | PLAN §2.4, §3.1 | six. `Status` is `settled o \| live h \| demoted`; a lone `[-]` is a state |
 | `PlanCore` has a `log` field | PLAN §3.1 | it is `{docs, store}`. Stages 5 and 6 need the log and it has nowhere to go |
 | `Doc = {path, frontRaw, secs, prose}` | PLAN §3.1 | it is `{path, prose, region}`. Headings and front matter are ranked verbatim prose; §4.2's section is *derived*, not stored |
-| The FFI is `tm-kernel-sys/`, ~250 lines | PLAN §5 | it is `kernel/tm-kernel-ffi/`, 185 lines — the one stage-3 number that moved in the good direction |
+| The FFI is `tm-kernel-sys/`, ~250 lines | PLAN §5 | it is `kernel/tm-kernel-ffi/`, 192 lines at `bf7cc63` (185 at `c8f3a38`) — still the one stage-3 number that moved in the good direction |
 | "2,981 lines, 7 modules, 497 KB archive, 148 theorems" | PLAN §5 | a stage-1 snapshot. §10.1 has today's |
 | "scaling `Core` from five fields to the real `Item`'s twenty-two" as remaining stage-1 work | PLAN §5 | it did not happen and will not. `Core` has five fields; the item fields are views over the token vector (§5.1, §5.3) |
 | "`moved`/`dropped`/`tags` are sets" in the structural tier | PLAN §3, and it is what earns E3/E4 their **U** | only `tags` exists. `moved`/`dropped` are Rust `state.json` fields with no kernel counterpart (§1) |
-| the oracle's "129" and "479" clean counts | `kernel/README.md` | 126 and 481 at `c8f3a38`, twice, byte-identical. They are deterministic for a fixed seed count and move when the kernel moves (§7.3) |
+| the oracle's "129" and "479" clean counts | `kernel/README.md` | 126 and 481 at `c8f3a38`, twice, byte-identical, against `main`. Deterministic for a fixed seed count; they move when the kernel moves — and it has moved a great deal since. **Unreproducible in this clone** until the oracle is moved to `4748911` (§7.3) |
 | "`Core` stores four things" | `kernel/README.md` prose | five. `parent` is still a stored slot; gap 22 says why |
-| "`lake build` from clean 1.6 s; `cargo test` from clean 3.6 s" | `kernel/README.md` header | not re-measured at `c8f3a38`. The warm numbers in §10.1 are |
+| "`lake build` from clean 1.6 s; `cargo test` from clean 3.6 s" | `kernel/README.md` header | not re-measured at `c8f3a38` or `bf7cc63`, and certainly not true of today's 20,902-line kernel. The warm numbers in §10.1 are, plus `cargo build -p tm` into an empty target directory with the archive built: 18.1 s |
 | "Five separate Rust code paths" / "six entrances to one hole" | in circulation, and in an earlier version of this document | **six catalogued defects (PLAN §4.A rows A1–A6), five of them patched entrances, one hole, one precondition.** §1 settles which number means what; the harness says *five* entrances |
-| "943 tests" | in circulation | not sourced anywhere. 943 is `horizon.rs:943`, the line of `move_line`. The documented figure is line counts: tm-core has 19,298 test lines, of which the kernel-area files are 9,497 (49%) — *"the tests proofs substantially replace"* |
+| "943 tests" | in circulation | not sourced anywhere **as a claim about proofs**. 943 is `horizon.rs:943`, the line of `move_line`. The documented figure is line counts: tm-core has 19,298 test lines (re-measured on the restored tree: still 19,298), of which the kernel-area files are 9,497 (49%) — *"the tests proofs substantially replace"*. **A second, real 943 now exists and must not be confused with it:** `cargo test --workspace` passed 943 tests at the restore, `835d960` (984 at `bf7cc63`) |
+| "a week→month behaviour change" needing assent; "the month of today" as `horizon.rs:1543`'s rejected rule | AGENTS §8.2 trap (b), §10.5 q1's second half; `Cal.lean`'s header; `kernel/README.md`'s "month of today" row (24) and its week → month tie-break section — all from `6f67873` | **there is no such behaviour change.** `horizon::close_week` already computes `closeTo week now`; `monthOfIsoWeek` names the month a week belongs to and is not the close rule, as `Grain.lean` says. q1's second half is **withdrawn** (§10.5); stage 4's first step repairs these sites |
+| `main` is the oracle; `git checkout main -- tm-core Cargo.toml Cargo.lock`; `git show main:…` | earlier versions of this document; `tm/DORMANT.md`'s old text; `kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh` (comments and `git archive main`); README gap 36 | `main` is discarded (`f386c56`). The oracle is `4748911`; the restore ran from it (`835d960`); the oracle scripts still say `main` and fail (§7.3) |
+| "The branch has no Rust kernel"; "there is currently no binary to drive"; README gap 14 "Nothing in the shipped `tm` binary calls this yet" | earlier versions of §2.2 and §5.13; `kernel/README.md` gap 14 | the workspace is restored and the `tm` binary calls the kernel for seven verbs (`d8e8d4d`, `bd61f11`) |
+| `tm/DORMANT.md`: the rewiring "is underway", A6 open "until the kernel-backed wiring lands" | `tm/DORMANT.md` | the wiring landed; the file is superseded by the README's 2026-09-12 block |
+| `Boundary.lean` "builds `Lean.Json`"; the JSON edge "unprovable"; check 6 covers "the JSON escaping on both sides" (README gap 6) | README J-route step 1 and 2 paragraphs, "Gap 39 REPRICED"; `kernel/check.sh`'s comment on check 6; AGENTS §2.3's old map `(+ Lean.Data.Json)` | `Lean.Json` is off the wire (`b7f504d`): `jparse` in, `jemit` out, `the_response_call_emits_parses_back` proved. Check 6 now covers only the host's half (§7.1). The README supersedes its own paragraphs by name; `check.sh`'s comment is unedited |
+| `kerrName` carries "six" / "eight" strings; the ops list is "six ops, `add` still owed" | README 2026-09-12 ledger repair; its five-verb paragraph; README 2026-09-09 fifth block | ten `KErr` names plus `siteOutOfRange` under `"kernel"`, and nine ops (§2.4) |
+| "What remains of stage 3 is the three JSON/newline edge laws below", with `Boundary.lean:815`-style citations | `Goals.lean`'s `# STAGE 3` header | stage 3's section holds **no** goals; its own notes below that header say each was discharged. The header sentence predates them |
+| "`the_json_edge_round_trips` stands in `Goals.lean`"; burn-down 41 or higher | README paragraphs before `b7f504d` | discharged under the rename; burn-down **40** |
+| q2 "`Id`'s shape" and q8 "what `report` carries" as open | earlier §10.5; README gap 13 ("stands open") | both decided by the owner, 2026-09-12 (§10.5) |
 | "`exp(−age/decay)` is replaceable by a rational base at a divergence under 0.007" | in circulation | unsupported by any file in this repository. What is documented: the transcendental is **outside the kernel entirely**; the measured float-parity figures are 0 / 2,251,500 on priority bins and 135 / 150,600 = 0.09% on planned minutes, every disagreement exactly one minute |
 
 ### 10.3 Reading order when you are handed a stage
@@ -1718,12 +2067,14 @@ Check these before you quote them.
    verdicts — and which are marked **A**, **~** or **M**, because those are not
    yours to prove).
 3. `kernel/README.md`: "What is proved" for the module you are extending, then
-   the gap list — one sequence, 1–36, in three places (§6.4).
+   the gap list — one sequence, 1–51, in five places (§6.4) — and the whole
+   2026-09-12 block, which is the freshest truth.
 4. The module header docstrings for every file you will touch. They name the
    rejected alternative.
 5. `kernel/check.sh`. It is the acceptance script and it is short.
 6. `tm-spec-v1.md` for the sections your stage implements.
-7. `main` as the oracle, by function name.
+7. The fork point `4748911` as the oracle, by function name (`main` is
+   discarded, §2.2).
 
 ### 10.4 Re-measuring before you quote
 
@@ -1734,28 +2085,40 @@ grep -cE '^(@\[[^]]*\][[:space:]]*)?theorem ' TmKernel/*.lean   # attr-aware; §
 grep -c '^#print axioms' Check.lean
 grep -c '^theorem ' Goals.lean                                  # what check 7 prints
 cat TmKernel.lean                                               # every module built
-cd /Users/psixyzt/code/planner && git worktree list && git log --oneline -1
+ls -l .lake/build/lib/libTmKernel_TmKernel.a                    # archive size
+cd /Users/psixyzt/code/planner && git worktree list && git branch -a && git log --oneline -1
+# and both suites, capped (§7.5): check.sh's seven lines, cargo test --workspace's totals
 ```
 
 A worktree in that listing is not evidence of work in flight; check whether its
-branch is already merged:
+branch is already merged (at `bf7cc63` there is none to check):
 
 ```bash
-cd /Users/psixyzt/code/planner && git merge-base --is-ancestor orient-demotion HEAD && echo merged
+cd /Users/psixyzt/code/planner && git merge-base --is-ancestor <branch> HEAD && echo merged
 ```
 
 ### 10.5 Open questions that need a human decision, not a proof
 
-Carry these forward; none is yours to settle alone.
+Carry these forward; none is yours to settle alone. Answers the owner has given
+are recorded here, with the date and the evidence they were taken on; per §4
+they are settled, and changing one needs the owner again.
 
-| # | question | due |
-|---|---|---|
-| 1 | The two close behaviour changes — and by **constructing a stale tree and closing it**, not by reading | before stage 4 |
-| 2 | `Id`'s shape — the recorded resolution is weaken the spec, not tighten the data | stage 3 |
-| 3 | `parent`: derive the field and demote `parentsTotal` to a report, or keep it stored and have no hierarchy | **before stage 5, blocking** |
-| 4 | Which side replays the log | before stage 5 |
-| 5 | R7: where the `p_lounge` capacity mixture rounds | stage 5, consumed by 6 |
-| 6 | L24 / L25: prove, or keep the 882-line proptest and say so | **before stage 6 starts** |
-| 7 | Lifecycle commutation (R7 in the law list) — L27 surfaces it and does not answer it | stage 6 |
-| 8 | What `report` carries, and therefore its shape (§8.2). Nothing in the kernel names it today | before stage 4 writes one |
-| 9 | Whether the kernel should refuse a `[-]` outside a week file or `month/…# Demoted`, as `tree.rs` does — a behaviour change (gap 31, §8.1) | stage 3 |
+| # | question | due | status at `bf7cc63` |
+|---|---|---|---|
+| 1 | The two close behaviour changes — and by **constructing a stale tree and closing it**, not by reading | before stage 4 | **First half ANSWERED 2026-09-12 (D1):** `close day` targets the week containing *now* — the kernel's `closeTo` — decided after driving stale trees with the restored binary (skipping a weekend double-stamped leftovers onto the month cut list and dropped them off Monday's plan; a day closed more than 16 days late stranded work in a sealed file). Package: the stamp stays `demoted:D<dd>`; `AUTO_CLOSE_CATCHUP = 16` collapses to one step per grain. **Second half WITHDRAWN:** the week→month "behaviour change" does not exist — `horizon::close_week` already computes `closeTo week now` (§10.2's row; §8.2's trap). Stage 4's first step repairs the four sites that describe it |
+| 2 | `Id`'s shape — the recorded resolution is weaken the spec, not tighten the data | stage 3 | **ANSWERED 2026-09-12 (D2):** ids stay digits (`freshId`'s `^9`, `^10`); spec §3.1's "4 chars of `[a-z0-9]`" width sentence is weakened to match. Closes gap 13 |
+| 3 | `parent`: derive the field and demote `parentsTotal` to a report, or keep it stored and have no hierarchy (gap 22) | **before stage 5, blocking** | **open** — also what B3 needs to fire in stage 4 |
+| 4 | Which side replays the log | before stage 5 | **open** — and `move_has_no_inverse_command` makes replay the only correct `tm undo` |
+| 5 | R7: where the `p_lounge` capacity mixture rounds (gap 26) | stage 5, consumed by 6 | **open** |
+| 6 | L24 / L25: prove, or keep the 882-line proptest and say so | **before stage 6 starts** | **open**; the proptest is restored and runs (`tm-core/tests/planner_invariants.rs`) |
+| 7 | Lifecycle commutation (R7 in the law list) — L27 surfaces it and does not answer it | stage 6 | **open** |
+| 8 | What `report` carries, and therefore its shape (§8.2). Nothing in the kernel names it today | before stage 4 writes one | **ANSWERED 2026-09-12 (D3):** a per-item list — id, disposition, destination, stamp, minutes as integer numerator/denominator. Not counts only (the month review would re-derive per-item history from the files, a second reader of one fact), and not stage 6's full diagnostics surface yet. No code exists |
+| 9 | Whether the kernel should refuse a `[-]` outside a week file or `month/…# Demoted`, as `tree.rs` does — a behaviour change (gap 31, §8.1) | stage 3 | **open**, not taken in stage 3; now due when stage 4 gives `demote` a section target |
+| — | `main`: keep it as the oracle, or discard it | — | **DECIDED 2026-09-12 (D4):** discarded (`f386c56`); the fork point `4748911` is the restore source and the oracle; stage 0's fix, `invariant_exhaustive.rs` and the ability to reproduce anything measured on `main` went with it (§2.2) |
+
+**Stage 4 is unblocked.** Its two gating decisions (q1, q8) are answered and its
+binary exists. What it still cannot do without the human is fire B3
+(`close_week_folds_a_dropped_child_into_its_parent`), which waits on q3. Still
+owed to the human, in the order they block: **q3** (blocks stage 5, and B3), **q4**
+(before stage 5), **q5** (stage 5), **q6** (before stage 6), **q7** (stage 6), and
+**q9** — plus the 30-minute drive of the stage-3 binary (§5.13).

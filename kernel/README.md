@@ -3803,3 +3803,89 @@ refusal-table test grew two rows inside one test); the FFI suite **63 tests**
 (57 kernel + 6 corpus; ten new).  Every new `decide` witness was probed first
 under an 8 GB cap (each probe file ran in under a second).  Gaps 48–51 are
 taken; new gaps start at 52, new cheats at 50.
+
+**Stage 3 closes here — the handover (same 2026-09-12 session, step 6; a
+documentation step: no Lean, no Rust, no gap or cheat numbers taken).**  Stage 3's
+scope is landed and its ledger is at rest.  The shipped `tm` binary calls the
+kernel for all seven verbs through one choke point, and the duplicate-id class is
+dead there (A6's single-command reproduction is refused `occupied` with nothing
+written); a kernel fault is a named `kernelFault` with the terminal restored,
+never exit 0; three of the four integration countermeasures stand, the fourth
+being stage 6's by PLAN's own row; the JSON edge is the kernel's own both ways
+(`jparse` in, `jemit` out, `the_response_call_emits_parses_back`); a comment is
+prose; seventeen of eighteen keys are on the kernel's edit path.  All twelve of
+stage 3's `Goals.lean` goals are gone — eight proved as stated, one restated
+over the kernel's own splitter and proved (the file split), two refuted under
+renamed negations (L22; joining lines, at the char level), one narrowed as its
+doc comment licensed (the JSON edge) — and no predicate was weakened for any of
+them.  What stage 3 did
+**not** do is as real, and is listed below.  Re-measured at `bf7cc63`, every
+command under the 40 GB memory cap: `kernel/check.sh` **7/7 ok** (1.10–1.13 s
+warm over four runs); axiom audit **1299 theorems**, §6.3's three counts agreeing
+at 1299 with the same two cancelling off-by-ones; `Goals.lean` burn-down **40**
+(0/11/14/15 across stages 3/4/5/6); corpus **33/37 files and 4/5 whole plans**,
+unchanged through the stage; `cargo test --workspace` **984 passed / 0 failed /
+0 ignored across 64 binaries** (4.9 s warm); the FFI suite **63 tests** (57
+kernel + 6 corpus); ten modules, 20,902 lines (23,724 with the root, `Check`,
+`Negative` and `Goals`); archive 3,704,386 bytes; `cargo build -p tm` into an
+empty target directory, the archive already built, 18.1 s.  Gaps run to 51 (new
+gaps start at 52) and cheats to 49 (new cheats start at 50).  `AGENTS.md` was
+re-measured at this commit — its every number predated OpenCode's nine commits
+and this session — with one lesson added (§5.10a, the memory cap), one
+subsection (§7.5, both suites are acceptance), and the owner's 2026-09-12
+decisions recorded in its §10.5, which this block had not carried: **D1** `close
+day` targets the week containing *now* (stamp `demoted:D<dd>`, the 16-period
+catch-up collapses to one step per grain); **D2** ids stay digits and spec §3.1's
+width sentence is weakened (gap 13 closed); **D3** the close `report` is a
+per-item list; **D4** `main` discarded (recorded above).  §10.5 q1's second half
+is **withdrawn**: the week→month behaviour change it and AGENTS §8.2 trap (b)
+describe does not exist — `horizon::close_week` already computes `closeTo week
+now` — and `Cal.lean`'s header, this README's "month of today" row and its
+week → month tie-break section frame it otherwise; stage 4's first step repairs
+those sites.  One wording note on the new lesson: v4.33.1 does hand
+`maxHeartbeats` to kernel checking (`addDeclCore`, `Lean/Environment.lean`), so
+§5.10a states the rule as "heartbeats are not memory, and no budget stopped the
+measured runs" rather than "the kernel has no budget".
+
+**Still owed at stage 3's close, by name.**
+
+- **Gap 48** — the host does not route the eight newly wired edit keys
+  (`KERNEL_EDIT_KEYS`); the next host step, with **gap 50** (every other
+  plan-tier edit refusal is `badHorizon`).
+- **Gap 51** — `∀ v : EditVal, wordWf v.rendered = true`, proved today for `loc`,
+  `est`, `ci` only; priced as stage 3's closing theorem.
+- **Gap 44** — `jparse`/`jemit` per-element recursion has no runtime twin;
+  cleared with `splitDoc`'s per-line recursion.
+- **Gap 45** — `tm-core`'s parser is comment-blind, so the old-path readers
+  disagree with the kernel; stage 7's cut-over or a host port of `commentAfter`.
+- **Gap 46** — the comment rule's generated-block and indentation edges; stage 6
+  if the planner's block ever carries item lines.
+- **Gaps 41, 42, 43, 47, 49** — decisions recorded (unset clears one slot;
+  surrogate pairs refused; leading zeros accepted; an unreachable `planWf`
+  conjunct; two narrow edit refusals); no work owed unless a host or user needs
+  it.
+- **`add`'s command-shaped `itemsWf` bite** has no Lean theorem (Rust test only,
+  `1a85e25`).
+- **`now` in the request** — stage 3's schema item, not done; stage 4 adds it.
+- **The differential oracle** still extracts `main` and fails; it must move to
+  `4748911`, and stage 5's parity is against the fork point.
+- **The depth-3 sweep harness** — `invariant_exhaustive.rs` was discarded with
+  `main`; rebuild before PLAN §6.3's most consequential gate can be costed.
+- **Housekeeping writes precede a kernel refusal** on a stale tree — stage 4,
+  when `close`/`autoClose` enter the kernel.
+- **Two newline conventions** (bridge versus legacy writers) — retire with
+  stages 4 and 6 and gap 5.
+- **Still-open inherited gaps**: 5 (id-less lines), 10 (the kernel believes any
+  declared region), 12's remainder (a doc line carrying a literal newline is
+  accepted), 22 (`parent`), 31 (a `[-]` anywhere is an archive copy; **§10.5
+  q9**), 32 (`isSp`, narrowed on the edit path only), 33 (every `^` word is an
+  id), 35, 36.
+- **Ledger hygiene**: `Negative.lean`'s 27–30 renumber (AGENTS §6.5);
+  `tm/DORMANT.md` and `Goals.lean`'s `# STAGE 3` header sentence, both stale
+  (AGENTS §10.2); `check.sh`'s check-6 comment still credits it with the JSON
+  escaping the kernel now proves.
+- **Waiting on the human** (AGENTS §10.5): **q3** `parent` — blocks stage 5 and
+  B3's firing in stage 4; **q4** which side replays the log; **q5** R7's
+  `p_lounge` rounding; **q6** L24/L25 prove or keep the proptest; **q7**
+  lifecycle commutation; **q9** the `[-]` placement rule; and the 30-minute drive
+  of the stage-3 binary (AGENTS §5.13).  **Stage 4 is unblocked.**
