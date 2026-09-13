@@ -1051,6 +1051,62 @@ fn a_refused_close_is_named_and_reports_nothing() {
     assert_eq!(out, r#"{"err":{"kernel":"noTarget"}}"#);
 }
 
+/// `Boundary.lean`'s `closeOverdueWitness`: 2026-W36 holding every dated case
+/// the owner's D7 and D8 route, closed on Monday 2026-09-07.
+const CLOSE_OVERDUE_DOCS: &str = r##"[{"path":"week/2026-W36.md","grain":1,"ix":105694,"lines":["# Tasks","- [ ] 4 2b Pset two due:2026-09-04 ^d1","- [ ] 3 1b Essay draft due:2026-09-20 ^d2","- [ ] 2 1b Quiz prep due:2026-09-03 on-miss:expire ^d3","- [ ] 5 2h Lab session at:2026-09-02T10:00/12:00 ^x2","- [ ] 1 1h Reading group at:2026-09-01T15:00/16:00 on-miss:next ^x3","- [ ] 2 1b Pset three due:2026-09-05T23:59 ^d4"]},{"path":"week/2026-W37.md","grain":1,"ix":105695,"lines":["# Tasks"]},{"path":"month/2026-09.md","grain":2,"ix":24308,"lines":["# Outcomes","- [ ] 5 !1 Lean through ch.8 ^O1","# Demoted"]},{"path":"backlog.md","lines":["# Untied","- [ ] 2 30m Insurance claim ^a1","# Overdue","# Later","- [ ] 1 1b Someday ^a2"]}]"##;
+
+/// **Gap 55 closed, at the wire** (the owner's D7 and D8).  The same lines
+/// `the_week_close_routes_dated_work_on_a_loaded_plan` decides and the same
+/// entries `the_week_close_reports_the_overdue_route` decides: the three lines
+/// past due with `persist` are `moveOverdue` into the backlog's `# Overdue`,
+/// unstamped and byte for byte; the not-yet-due line and the past-due
+/// `on-miss:expire` one are `copy` into `# Demoted`, keeping their `due:`; the
+/// wall that is over with `on-miss:next` stays.  Closed again at the same
+/// instant, nothing changes and nothing is reported (L16).
+#[test]
+fn a_week_close_routes_dated_work_on_the_wire() {
+    let out = call(&format!(
+        r#"{{"now":"2026-09-07","blockMin":50,"docs":{CLOSE_OVERDUE_DOCS},"cmds":[{{"op":"close","grain":1}}]}}"#
+    ))
+    .unwrap();
+    assert_eq!(
+        out,
+        concat!(
+            r##"{"ok":{"docs":["##,
+            r##"{"path":"week/2026-W36.md","lines":["# Tasks","- [-] 3 1b Essay draft due:2026-09-20 ^d2","- [-] 2 1b Quiz prep due:2026-09-03 on-miss:expire ^d3","- [ ] 1 1h Reading group at:2026-09-01T15:00/16:00 on-miss:next ^x3"],"grain":1,"ix":105694},"##,
+            r##"{"path":"week/2026-W37.md","lines":["# Tasks"],"grain":1,"ix":105695},"##,
+            r##"{"path":"month/2026-09.md","lines":["# Outcomes","- [ ] 5 !1 Lean through ch.8 ^O1","# Demoted","- [-] 3 1b Essay draft due:2026-09-20 demoted:W36 ^d2","- [-] 2 1b Quiz prep due:2026-09-03 on-miss:expire demoted:W36 ^d3"],"grain":2,"ix":24308},"##,
+            r##"{"path":"backlog.md","lines":["# Untied","- [ ] 2 30m Insurance claim ^a1","# Overdue","- [ ] 4 2b Pset two due:2026-09-04 ^d1","- [ ] 5 2h Lab session at:2026-09-02T10:00/12:00 ^x2","- [ ] 2 1b Pset three due:2026-09-05T23:59 ^d4","# Later","- [ ] 1 1b Someday ^a2"]}],"##,
+            r##""report":{"closes":["##,
+            r##"{"id":"d1","grain":1,"did":"moveOverdue","from":0,"to":3,"stamp":null,"min":{"num":100,"den":1}},"##,
+            r##"{"id":"d2","grain":1,"did":"copy","from":0,"to":2,"stamp":"W36","min":{"num":50,"den":1}},"##,
+            r##"{"id":"d3","grain":1,"did":"copy","from":0,"to":2,"stamp":"W36","min":{"num":50,"den":1}},"##,
+            r##"{"id":"x2","grain":1,"did":"moveOverdue","from":0,"to":3,"stamp":null,"min":{"num":120,"den":1}},"##,
+            r##"{"id":"d4","grain":1,"did":"moveOverdue","from":0,"to":3,"stamp":null,"min":{"num":50,"den":1}}"##,
+            r##"]}}}"##
+        ),
+        "{out}"
+    );
+    // Without `# Overdue` the backlog is `noSection`: the kernel never
+    // chooses where a heading goes (kernel/README.md gap 56).
+    let no_section = CLOSE_OVERDUE_DOCS.replace(r##""# Overdue","##, "");
+    let refused = call(&format!(
+        r#"{{"now":"2026-09-07","blockMin":50,"docs":{no_section},"cmds":[{{"op":"close","grain":1}}]}}"#
+    ))
+    .unwrap();
+    assert_eq!(refused, r#"{"err":{"kernel":"noSection"}}"#);
+    let docs = out
+        .trim_start_matches(r##"{"ok":{"docs":"##)
+        .split(r##","report":"##)
+        .next()
+        .unwrap();
+    let twice = call(&format!(
+        r#"{{"now":"2026-09-07","blockMin":50,"docs":{docs},"cmds":[{{"op":"close","grain":1}}]}}"#
+    ))
+    .unwrap();
+    assert_eq!(twice, format!(r#"{{"ok":{{"docs":{docs},"report":{{"closes":[]}}}}}}"#));
+}
+
 /// `Boundary.lean`'s `staleWitness`: a tree last closed in June, caught up on
 /// Saturday 2026-09-12.
 const STALE_DOCS: &str = r##"[{"path":"day/2026-06-12.md","grain":0,"ix":739778,"lines":["# Pinned","- [>] 2 20m Call the bank ^p1","- [x] 1 10m Water the plants ^p2"]},{"path":"day/2026-08-29.md","grain":0,"ix":739856,"lines":["# Pinned","- [>] 3 1h Draft the letter ^p3"]},{"path":"week/2026-W24.md","grain":1,"ix":105682,"lines":["# Tasks","- [ ] 4 6b Rollback path passes tests ^m2","- [x] 2 1b Send the draft ^t1","- [ ] 1 15m Standup every:day ^r1"]},{"path":"week/2026-W35.md","grain":1,"ix":105693,"lines":["# Tasks","- [ ] 3 2b Read chapter four ^m3","- [ ] 5 2h Midterm at:2026-10-20T10:00/12:00 ^x1"]},{"path":"week/2026-W37.md","grain":1,"ix":105695,"lines":["# Tasks","- [ ] 3 1b Review the drafts ^t5"]},{"path":"month/2026-06.md","grain":2,"ix":24305,"lines":["# Outcomes","- [ ] 5 !1 Old outcome ^O7","- [x] 3 !2 Done outcome ^O8","# Demoted","- [-] 4 3b Carried record est:3b demoted:W22 ^m9"]},{"path":"month/2026-09.md","grain":2,"ix":24308,"lines":["# Outcomes","- [ ] 5 !1 Lean through ch.8 ^O1","# Demoted"]}]"##;

@@ -651,4 +651,41 @@ def normalizedSkip (_ : PlanCore) : Bool := true
 @[csimp] theorem normalized_eq_normalizedSkip : @normalized = @normalizedSkip := by
   funext p; rfl
 
+-- ===========================================================================
+-- APPENDED 2026-09-13 (stage-4 final, step 2: gap 55 closed — the owner's D7 and
+-- D8).  A past-due `persist` line at a week close moves to `backlog.md # Overdue`,
+-- and the month rule "an outcome carries no date" reads outcomes only.  Each cheat
+-- below is a door the step narrowed or opened, restated over what it must not
+-- admit; the controls are `a_dated_record_loads_and_a_dated_outcome_does_not` and
+-- `a_dated_month_outcome_is_rejected` (56), `closePolicy_routes_overdue_only_at_week`
+-- (57) and `CloseDid.ofName?_refuses_near_overdue` (58), which compile.
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 56 — a dated outcome loads.  D8 exempted `# Demoted` records from the
+   month rule and nothing else: a month file whose `# Outcomes` line carries a
+   `due:` is still refused, `itemCheck: fileKindShape`.  `decide` evaluates the
+   loader and proves the equation false. -/
+theorem datedOutcomeLoads : loadsOk datedOutcomeWitness = true := by
+  decide
+
+/- CHEAT 57 — a month close that routes overdue lines.  D7 is §6.3's week row
+   ("moved to `backlog.md#Overdue` instead"); a month row with the same column
+   would pull a dated `# Demoted` record out of the month review into the backlog,
+   which no clause of §6.3 says.  The bridge's statement over the corrupted table
+   is false at `month`. -/
+def monthRowRoutesOverdue (g : Grain) : ClosePolicy :=
+  if g = month then { closePolicy g with overdue := .toBacklogOverdue } else closePolicy g
+
+theorem monthRowRoutesOverdue_routes_only_at_week :
+    ∀ g : Grain, (monthRowRoutesOverdue g).overdue = .toBacklogOverdue ↔ g = week := by
+  decide
+
+/- CHEAT 58 — the fork-point report's name decoded as the kernel's.  The Rust
+   `CloseReport` listed `overdue_to_backlog`; the wire's name is the constructor's,
+   `moveOverdue`, and `CloseDid.ofName?` accepts exactly the six.  A host reading
+   the old name as the new would be defaulting an unknown variant (rule 2). -/
+theorem overdueToBacklogDecodes : CloseDid.ofName? "overdue_to_backlog".toList = some .moveOverdue := by
+  decide
+
 end Tm

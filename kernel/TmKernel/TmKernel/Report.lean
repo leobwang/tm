@@ -28,8 +28,8 @@ line went somewhere it did not.
    success path, so a host that gets `err` gets no report;
 2. every field is a bounded type with a smart constructor its decoder uses —
    `Grain` is `Fin 3`, the disposition is `CloseDid` (five constructors since
-   README gap 53 added `copyMerging`; `CloseDid.ofName?` refuses every other
-   spelling), a stamp is `Field.Stamp`
+   README gap 53 added `copyMerging`, six since D7 added `moveOverdue`;
+   `CloseDid.ofName?` refuses every other spelling), a stamp is `Field.Stamp`
    (whose parser is `parseStamp`), minutes are `Arith.Pos` (`den > 0`, built by
    `Arith.posOfNat`, decoded by `Arith.ofPair?`, which refuses `den = 0`), and
    the block length is `BlockMin` (`BlockMin.ofNat?` refuses `0`);
@@ -68,7 +68,7 @@ theorem BlockMin.ofNat?_pos {n : Nat} (h : 0 < n) : BlockMin.ofNat? n = some ⟨
 /-- **What a close did to one line, by name.**  The first three are the
 `ClosePolicy` row's `Disposition`; the fourth is the week row's copy of a line whose
 item already had a `# Demoted` record, merged into it (README gap 53); the fifth is
-the wall exemption's carry. -/
+the wall exemption's carry; the sixth is the week row's overdue route (D7). -/
 inductive CloseDid
   /-- moved, unchanged (§6.3's month row) -/
   | move
@@ -82,6 +82,9 @@ inductive CloseDid
   | copyMerging
   /-- a wall still ahead, moved undemoted into the live week -/
   | carry
+  /-- past due with `persist`: moved undemoted, unstamped, leaving no tombstone,
+      to the end of `backlog.md`'s `# Overdue` (§6.3's week row; the owner's D7) -/
+  | moveOverdue
 deriving DecidableEq, Repr
 
 def CloseDid.ofDisposition : Disposition → CloseDid
@@ -98,6 +101,10 @@ def CloseDid.ofStep : Disposition → Bool → CloseDid
 theorem CloseDid.ofStep_ne_carry (d : Disposition) (b : Bool) : CloseDid.ofStep d b ≠ .carry := by
   cases d <;> cases b <;> simp [CloseDid.ofStep, CloseDid.ofDisposition]
 
+theorem CloseDid.ofStep_ne_moveOverdue (d : Disposition) (b : Bool) :
+    CloseDid.ofStep d b ≠ .moveOverdue := by
+  cases d <;> cases b <;> simp [CloseDid.ofStep, CloseDid.ofDisposition]
+
 /-- The name on the wire: the constructor's own. -/
 def CloseDid.name : CloseDid → String
   | .move          => "move"
@@ -105,14 +112,16 @@ def CloseDid.name : CloseDid → String
   | .copy          => "copy"
   | .copyMerging   => "copyMerging"
   | .carry         => "carry"
+  | .moveOverdue   => "moveOverdue"
 
-/-- The decoder's smart constructor: exactly the five names, nothing else. -/
+/-- The decoder's smart constructor: exactly the six names, nothing else. -/
 def CloseDid.ofName? (s : List Char) : Option CloseDid :=
   if s = "move".toList then some .move
   else if s = "moveReopening".toList then some .moveReopening
   else if s = "copy".toList then some .copy
   else if s = "copyMerging".toList then some .copyMerging
   else if s = "carry".toList then some .carry
+  else if s = "moveOverdue".toList then some .moveOverdue
   else none
 
 theorem CloseDid.ofName?_name : ∀ d : CloseDid, CloseDid.ofName? d.name.toList = some d := by
@@ -123,6 +132,13 @@ string are refused. -/
 theorem CloseDid.ofName?_refuses :
     CloseDid.ofName? "moved".toList = none ∧ CloseDid.ofName? "Copy".toList = none ∧
       CloseDid.ofName? "copymerging".toList = none ∧ CloseDid.ofName? [] = none := by
+  decide
+
+/-- D7's name bites too: the Rust report's `overdue_to_backlog` and a case change
+are not `moveOverdue`. -/
+theorem CloseDid.ofName?_refuses_near_overdue :
+    CloseDid.ofName? "overdue".toList = none ∧ CloseDid.ofName? "overdue_to_backlog".toList = none ∧
+      CloseDid.ofName? "moveoverdue".toList = none := by
   decide
 
 /-- **An item's minutes**, as the kernel reads them: the estimate view
@@ -170,6 +186,8 @@ def closeEntry (g : Grain) (now : Day) (bm : BlockMin) (p : PlanCore) (i : Id) (
                      estMinutes bm (stepSkel g now p s).line⟩
   | .file r => some ⟨i, g, .ofStep (closePolicy g).disposition s.archLine.isSome, s.doc,
                      (stepSkel g now p s).doc, closeStamp g r.ix,
+                     estMinutes bm (stepSkel g now p s).line⟩
+  | .overdue => some ⟨i, g, .moveOverdue, s.doc, (stepSkel g now p s).doc, none,
                      estMinutes bm (stepSkel g now p s).line⟩
 
 /-- **The report of `close g now` on plan `p`**: one entry per candidate, in the
@@ -257,6 +275,7 @@ theorem closeReport_ids (g : Grain) (now : Day) (bm : BlockMin) (p : PlanCore) :
     | stay => simp only [hact] at hf; exact absurd hf (by simp)
     | carry => exact ⟨_, rfl, rfl⟩
     | file r => exact ⟨_, rfl, rfl⟩
+    | overdue => exact ⟨_, rfl, rfl⟩
 
 theorem mem_closeReport {g : Grain} {now : Day} {bm : BlockMin} {p : PlanCore} {x : CloseEntry}
     (hx : x ∈ closeReport g now bm p) :
@@ -324,12 +343,14 @@ theorem close_found_the_target {g : Grain} {now : Day} {p q : WfPlan}
       ∃ k, carryTarget now p.val = some k ∧ stepSkel g now p.val e.val.skel = { e.val.skel with doc := k }) ∧
     (∀ r, closeAct g now p.val e.val.skel = .file r →
       ∃ k, closeTarget g now p.val = some k ∧
-        stepSkel g now p.val e.val.skel = skelAfter g r k e.val.skel) := by
+        stepSkel g now p.val e.val.skel = skelAfter g r k e.val.skel) ∧
+    (closeAct g now p.val e.val.skel = .overdue →
+      ∃ k, overdueTarget p.val = some k ∧ stepSkel g now p.val e.val.skel = { e.val.skel with doc := k }) := by
   obtain ⟨hfr, hall⟩ := close_spec h
   have hsk := close_skel h hp hq
   have hst := (hall i).2 f hq
   rw [closeAct_frame hfr, hsk] at hst
-  refine ⟨fun hact => ?_, fun r hact => ?_⟩
+  refine ⟨fun hact => ?_, fun r hact => ?_, fun hact => ?_⟩
   · cases hk : carryTarget now p.val with
     | none =>
       have hstep : stepSkel g now p.val e.val.skel = e.val.skel := by
@@ -338,6 +359,13 @@ theorem close_found_the_target {g : Grain} {now : Day} {p q : WfPlan}
       exact absurd hst (by simp)
     | some k => exact ⟨k, rfl, by unfold stepSkel; simp only [hact, hk]⟩
   · cases hk : closeTarget g now p.val with
+    | none =>
+      have hstep : stepSkel g now p.val e.val.skel = e.val.skel := by
+        unfold stepSkel; simp only [hact, hk]
+      rw [hstep, hact] at hst
+      exact absurd hst (by simp)
+    | some k => exact ⟨k, rfl, by unfold stepSkel; simp only [hact, hk]⟩
+  · cases hk : overdueTarget p.val with
     | none =>
       have hstep : stepSkel g now p.val e.val.skel = e.val.skel := by
         unfold stepSkel; simp only [hact, hk]
@@ -393,7 +421,7 @@ theorem closeReport_agrees_with_close_stamping_or_merging {g : Grain} {now : Day
       rw [hact] at hx
       injection hx with hx
       subst hx
-      obtain ⟨k, _, hstep⟩ := ht.2 r hact
+      obtain ⟨k, _, hstep⟩ := ht.2.1 r hact
       refine ⟨rfl, e, f, hp, hq, rfl, ?_, fun hm => ?_, fun hm => ?_, ?_⟩
       · show f.val.live.doc = (stepSkel g now p.val e.val.skel).doc
         rw [← hsk]; rfl
@@ -408,15 +436,31 @@ theorem closeReport_agrees_with_close_stamping_or_merging {g : Grain} {now : Day
           rfl
       · show estMinutes bm (stepSkel g now p.val e.val.skel).line = estMinutes bm f.val.line
         rw [← hsk]; rfl
+    | overdue =>
+      rw [hact] at hx
+      injection hx with hx
+      subst hx
+      obtain ⟨k, _, hstep⟩ := ht.2.2 hact
+      have hf : f.val.skel = { e.val.skel with doc := k } := hsk.trans hstep
+      refine ⟨rfl, e, f, hp, hq, rfl, ?_, fun _ => ?_, fun hc => absurd hc (by simp), ?_⟩
+      · show f.val.live.doc = (stepSkel g now p.val e.val.skel).doc
+        rw [← hsk]; rfl
+      · rw [← Core.skel_stamps, ← Core.skel_stamps, hf]; simp [Skel.stamps]
+      · show estMinutes bm (stepSkel g now p.val e.val.skel).line = estMinutes bm f.val.line
+        rw [← hsk]; rfl
 
-/-- **D1, in the report.**  A filed entry's destination is `closeTo g now`, in a
-file of the next coarser grain's kind; a carried entry's is the week containing
-*now*.  The report names the region the owner decided, not the one the closed
-line belonged to. -/
-theorem closeReport_names_the_region_of_now {g : Grain} {now : Day} {bm : BlockMin} {p q : WfPlan}
+/-- **D1 and D7, in the report.**  A filed entry's destination is `closeTo g now`,
+in a file of the next coarser grain's kind; a carried entry's is the week
+containing *now*; an overdue entry's is the backlog, a file with no region.  The
+report names the destination the owner decided, not the one the closed line
+belonged to.  (Restates `closeReport_names_the_region_of_now`, whose second clause
+— every entry that is not a carry lands in `closeTo g now` — a `moveOverdue` entry
+falsifies since D7.) -/
+theorem closeReport_names_the_destination_of_now {g : Grain} {now : Day} {bm : BlockMin} {p q : WfPlan}
     (h : close g now p = .ok q) {x : CloseEntry} (hx : x ∈ closeReport g now bm p.val) :
     (x.did = .carry → docRegion q.val x.dst = some (regionOf week now)) ∧
-      (x.did ≠ .carry → docRegion q.val x.dst = some (closeTo g now)) := by
+      (x.did = .moveOverdue → docKindAt q.val x.dst = .backlog ∧ docRegion q.val x.dst = none) ∧
+      (x.did ≠ .carry → x.did ≠ .moveOverdue → docRegion q.val x.dst = some (closeTo g now)) := by
   obtain ⟨i, e, hp, hx⟩ := mem_closeReport hx
   obtain ⟨hfr, hall⟩ := close_spec h
   have hm := (hall i).1
@@ -435,7 +479,7 @@ theorem closeReport_names_the_region_of_now {g : Grain} {now : Day} {bm : BlockM
       subst hx
       obtain ⟨k, hk, hstep⟩ := ht.1 hact
       obtain ⟨_, _, hreg⟩ := findDocIx_spec hk
-      refine ⟨fun _ => ?_, fun hc => absurd rfl hc⟩
+      refine ⟨fun _ => ?_, fun hc => absurd hc (by simp), fun hc => absurd rfl hc⟩
       show docRegion q.val (stepSkel g now p.val e.val.skel).doc = _
       rw [hstep, hfr.2.2]; exact hreg
     | file r =>
@@ -443,10 +487,21 @@ theorem closeReport_names_the_region_of_now {g : Grain} {now : Day} {bm : BlockM
       injection hx with hx
       subst hx
       have hd := (close_files_a_taken_line_into_closeTo h hp hq hact).1
-      refine ⟨fun hc => ?_, fun _ => ?_⟩
+      refine ⟨fun hc => ?_, fun hc => ?_, fun _ _ => ?_⟩
       · exact absurd hc (CloseDid.ofStep_ne_carry _ _)
+      · exact absurd hc (CloseDid.ofStep_ne_moveOverdue _ _)
       · show docRegion q.val (stepSkel g now p.val e.val.skel).doc = _
         rw [← hsk]; exact hd
+    | overdue =>
+      rw [hact] at hx
+      injection hx with hx
+      subst hx
+      obtain ⟨k, hk, hstep⟩ := ht.2.2 hact
+      obtain ⟨_, hkind, hreg⟩ := overdueTarget_spec hk
+      refine ⟨fun hc => absurd hc (by simp), fun _ => ?_, fun _ hc => absurd rfl hc⟩
+      show docKindAt q.val (stepSkel g now p.val e.val.skel).doc = _ ∧
+        docRegion q.val (stepSkel g now p.val e.val.skel).doc = _
+      rw [hstep, hfr.2.2, hfr.2.1]; exact ⟨hkind, hreg⟩
 
 /-- **A stamp in the report names the grain that closed**, so the month review
 reading `D` and `W` stamps off the report cannot miscount (the row bridge
@@ -462,6 +517,7 @@ theorem closeReport_stamp_names_its_grain {g : Grain} {now : Day} {bm : BlockMin
   · rename_i r _
     injection hx with hx; subst hx
     exact closeStamp_names_the_closed_grain g r.ix st hs
+  · injection hx with hx; subst hx; simp at hs
 
 /-! ## `autoClose`'s report names each line at most once
 
@@ -588,8 +644,41 @@ theorem closeAct_carry_is_a_wall {g : Grain} {now : Day} {p : PlanCore} {s : Ske
     · split at h
       · rw [(closePolicy_exemptions g).1] at h; simp [exemptAct] at h
       · split at h
-        · rename_i ahead hw; exact ⟨ahead, hw⟩
         · simp at h
+        · split at h
+          · rename_i ahead hw; exact ⟨ahead, hw⟩
+          · simp at h
+
+/-- **An overdue action is D7's, and only D7's**: the week row, over a line past
+due with `persist` that is not recurring. -/
+theorem closeAct_overdue_iff {g : Grain} {now : Day} {p : PlanCore} {s : Skel} :
+    closeAct g now p s = .overdue ↔
+      (∃ r, closedRegionOf g now p s.doc = some r) ∧ (closePolicy g).takes s.status = true ∧
+        s.recurring = false ∧ g = week ∧ s.overdue now = true := by
+  constructor
+  · intro h
+    unfold closeAct at h
+    split at h
+    · simp at h
+    · rename_i r hr
+      split at h
+      · simp at h
+      · rename_i htk
+        split at h
+        · rw [(closePolicy_exemptions g).1] at h; simp [exemptAct] at h
+        · rename_i hrec
+          split at h
+          · rename_i hc
+            exact ⟨⟨r, hr⟩, by simpa using htk, by simpa using hrec,
+              (closePolicy_routes_overdue_only_at_week g).1 hc.1, hc.2⟩
+          · split at h
+            · rename_i b _; cases b <;> simp [(closePolicy_exemptions g).2, exemptAct] at h
+            · simp at h
+  · rintro ⟨⟨r, hr⟩, htk, hrec, hg, hov⟩
+    unfold closeAct
+    rw [hr]
+    simp only [htk, hrec, Bool.true_eq_false, Bool.false_eq_true, if_false]
+    rw [if_pos ⟨(closePolicy_routes_overdue_only_at_week g).2 hg, hov⟩]
 
 theorem closedRegionOf_of_closeAct {g : Grain} {now : Day} {p : PlanCore} {s : Skel}
     (h : closeAct g now p s ≠ .stay) : ∃ r, closedRegionOf g now p s.doc = some r := by
@@ -602,12 +691,13 @@ theorem stepSkel_doc_kinds (g : Grain) (now : Day) (p : PlanCore) (s : Skel)
     (h : (stepSkel g now p s).doc ≠ s.doc) :
     docKindAt p s.doc = kindOfGrain g ∧
       (docKindAt p (stepSkel g now p s).doc = kindOfGrain (coarsen g) ∨
-        ((∃ b, s.wallAhead now = some b) ∧ docKindAt p (stepSkel g now p s).doc = .week)) := by
+        ((∃ b, s.wallAhead now = some b) ∧ docKindAt p (stepSkel g now p s).doc = .week) ∨
+        (s.overdue now = true ∧ docKindAt p (stepSkel g now p s).doc = .backlog)) := by
   cases hact : closeAct g now p s with
   | stay => rw [stepSkel_of_stay hact] at h; exact absurd rfl h
   | carry =>
     obtain ⟨r, hr⟩ := closedRegionOf_of_closeAct (by rw [hact]; simp)
-    refine ⟨(closedRegionOf_spec hr).2.1, Or.inr ⟨closeAct_carry_is_a_wall hact, ?_⟩⟩
+    refine ⟨(closedRegionOf_spec hr).2.1, Or.inr (Or.inl ⟨closeAct_carry_is_a_wall hact, ?_⟩)⟩
     cases hk : carryTarget now p with
     | none =>
       have hs : stepSkel g now p s = s := by unfold stepSkel; simp only [hact, hk]
@@ -628,5 +718,15 @@ theorem stepSkel_doc_kinds (g : Grain) (now : Day) (p : PlanCore) (s : Skel)
       rcases skelAfter_doc g r k s with hd | hd
       · rw [hd]; exact (findDocIx_spec hk).2.1
       · rw [hd] at h; exact absurd rfl h
+  | overdue =>
+    obtain ⟨r, hr⟩ := closedRegionOf_of_closeAct (by rw [hact]; simp)
+    refine ⟨(closedRegionOf_spec hr).2.1, Or.inr (Or.inr ⟨(closeAct_overdue_iff.1 hact).2.2.2.2, ?_⟩)⟩
+    cases hk : overdueTarget p with
+    | none =>
+      have hs : stepSkel g now p s = s := by unfold stepSkel; simp only [hact, hk]
+      rw [hs] at h; exact absurd rfl h
+    | some k =>
+      have hs : stepSkel g now p s = { s with doc := k } := by unfold stepSkel; simp only [hact, hk]
+      rw [hs]; exact (overdueTarget_spec hk).2.1
 
 end Tm

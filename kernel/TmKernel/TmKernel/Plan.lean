@@ -745,6 +745,9 @@ def declaredDur (c : Core) : Option Dur :=
 * **calendar**: "generated intervals".
 * **month**: "roots carry explicit priority … they are outcomes, not work"
   (§6.2) — an outcome carries no date, so a month item's shape is `none`.
+  **Outcomes only** (the owner's D8, 2026-09-13): a line placed under a month
+  file's `# Demoted` is a work item a close filed forward, not an outcome, and
+  `shapesWf` does not read this clause for it (`demotedRecordPlacement`).
 
 Every other kind — backlog, week, day, and any path outside §2's layout — has
 no shape rule, which is what §4.3 says about them. -/
@@ -764,11 +767,25 @@ def shapeWfFor : DocKind → Core → Bool
   | .month,    c => (c.shape == Shape.none)
   | _,         _ => true
 
+/-- **A placement that is a `# Demoted` record**: a month file, under a `# Demoted`
+heading.  The owner's D8 (2026-09-13) — a deliberate narrowing of what a plan is,
+recorded in the README's "Stage 4 final" block beside the rule it replaces: §6.3
+calls these records work items ("the line is **copied** to
+`month/<current>#Demoted`"), a not-yet-due dated line demoted at a week close keeps
+its `due:`, and fork-point `check.rs` has no date rule for month items at all; so
+§6.2's "an outcome carries no date" is read for the outcomes of a month file and
+not for its `# Demoted` records.  (`headingsWf` admits a live `# Demoted` heading
+only in a month file, so the month clause is the only rule this exempts from.) -/
+def demotedRecordPlacement (p : PlanCore) (s : Site) : Bool :=
+  decide (docKindAt p s.doc = .month) && decide (sectionKindAt p s = some .demoted)
+
+/-- §4.3's file-kind rules over every live placement — the month rule for the
+outcomes only (`demotedRecordPlacement`, D8). -/
 def shapesWf (p : PlanCore) : Bool :=
   p.store.dom.all (fun i =>
     match p.store.get i with
     | none   => true
-    | some e => shapeWfFor (docKindAt p e.val.live.doc) e.val)
+    | some e => shapeWfFor (docKindAt p e.val.live.doc) e.val || demotedRecordPlacement p e.val.live)
 
 /-- The item half of the plan-level tier, in one Bool. -/
 def itemsWf (p : PlanCore) : Bool :=
@@ -2256,27 +2273,47 @@ theorem a_day_file_holds_only_pinned_items (p : WfPlan) (i : Id) (e : Entity)
       | series n => rw [hsk] at h2; simp at h2
       | organisational => rw [hsk] at h2; simp at h2
 
-theorem shapeWf_of_mem (p : WfPlan) (i : Id) (e : Entity) (hget : p.val.store.get i = some e) :
-    shapeWfFor (docKindAt p.val e.val.live.doc) e.val = true := by
+/-- Every live placement meets its file kind's rule, or is a `# Demoted` record
+(D8). -/
+theorem shapeWf_or_record_of_mem (p : WfPlan) (i : Id) (e : Entity)
+    (hget : p.val.store.get i = some e) :
+    shapeWfFor (docKindAt p.val e.val.live.doc) e.val = true ∨
+      demotedRecordPlacement p.val e.val.live = true := by
   have hdom : i ∈ p.val.store.dom := (p.val.store.domSpec i).mpr (by rw [hget]; rfl)
   have hall := List.all_eq_true.1 (itemsWf_parts p.items).2.2.2.2.2.2 i hdom
   rw [hget] at hall
-  exact hall
+  simpa using hall
 
-/-- §6.2: "month items are outcomes, not work" — an outcome carries no date. -/
-theorem month_items_are_outcomes (p : WfPlan) (i : Id) (e : Entity)
+/-- A placement in a file that is not a month file meets its kind's rule.
+(Restates `shapeWf_of_mem`, which had no `hk` and read the month rule for every
+month placement; D8 exempts `# Demoted` records — `shapeWf_or_record_of_mem`.) -/
+theorem shapeWf_of_mem (p : WfPlan) (i : Id) (e : Entity) (hget : p.val.store.get i = some e)
+    (hk : docKindAt p.val e.val.live.doc ≠ DocKind.month) :
+    shapeWfFor (docKindAt p.val e.val.live.doc) e.val = true := by
+  rcases shapeWf_or_record_of_mem p i e hget with h | h
+  · exact h
+  · simp [demotedRecordPlacement, hk] at h
+
+/-- **§6.2 at D8: a month file's outcomes carry no date.**  A month placement that
+is not under `# Demoted` has shape `none`.  (Restates `month_items_are_outcomes`,
+which said it of every month placement and is refuted since D8 by a dated
+`# Demoted` record that loads — `a_dated_demoted_record_is_a_month_item_with_a_date`,
+Boundary.lean.) -/
+theorem month_items_outside_demoted_are_undated (p : WfPlan) (i : Id) (e : Entity)
     (hget : p.val.store.get i = some e)
-    (hm : docKindAt p.val e.val.live.doc = DocKind.month) : e.val.shape = Shape.none := by
-  have h := shapeWf_of_mem p i e hget
-  rw [hm] at h
-  simpa [shapeWfFor] using h
+    (hm : docKindAt p.val e.val.live.doc = DocKind.month)
+    (hout : sectionKindAt p.val e.val.live ≠ some SecKind.demoted) : e.val.shape = Shape.none := by
+  rcases shapeWf_or_record_of_mem p i e hget with h | h
+  · rw [hm] at h
+    simpa [shapeWfFor] using h
+  · simp [demotedRecordPlacement, hout] at h
 
 /-- §4.3's `calendar/`: "generated intervals". -/
 theorem calendar_lines_are_intervals (p : WfPlan) (i : Id) (e : Entity)
     (hget : p.val.store.get i = some e)
     (hc : docKindAt p.val e.val.live.doc = DocKind.calendar) :
     ∃ a b, e.val.shape = Shape.interval a b := by
-  have h := shapeWf_of_mem p i e hget
+  have h := shapeWf_of_mem p i e hget (by rw [hc]; decide)
   rw [hc] at h
   simp only [shapeWfFor] at h
   cases hsh : e.val.shape with
@@ -2291,7 +2328,7 @@ theorem routine_lines_are_open (p : WfPlan) (i : Id) (e : Entity)
     (hget : p.val.store.get i = some e)
     (hr : docKindAt p.val e.val.live.doc = DocKind.routines) :
     e.val.scope = Scope.openEnded := by
-  have h := shapeWf_of_mem p i e hget
+  have h := shapeWf_of_mem p i e hget (by rw [hr]; decide)
   rw [hr] at h
   simp only [shapeWfFor, Bool.and_eq_true, beq_iff_eq] at h
   exact h.1
@@ -2300,7 +2337,7 @@ theorem routine_lines_have_a_window_or_after_done (p : WfPlan) (i : Id) (e : Ent
     (hget : p.val.store.get i = some e)
     (hr : docKindAt p.val e.val.live.doc = DocKind.routines) :
     (∃ r d, e.val.shape = Shape.window r d) ∨ (∃ a, e.val.recur = Recur.afterDone a) := by
-  have h := shapeWf_of_mem p i e hget
+  have h := shapeWf_of_mem p i e hget (by rw [hr]; decide)
   rw [hr] at h
   simp only [shapeWfFor, Bool.and_eq_true] at h
   have h2 := h.2
@@ -2334,7 +2371,7 @@ theorem optional_items_declare_a_duration (p : WfPlan) (i : Id) (e : Entity)
     (hget : p.val.store.get i = some e)
     (ho : docKindAt p.val e.val.live.doc = DocKind.optional) :
     e.val.scope = Scope.openEnded ∧ ∃ dv, declaredDur e.val = some dv ∧ durPositive dv = true := by
-  have h := shapeWf_of_mem p i e hget
+  have h := shapeWf_of_mem p i e hget (by rw [ho]; decide)
   rw [ho] at h
   simp only [shapeWfFor, Bool.and_eq_true, beq_iff_eq] at h
   refine ⟨h.1, ?_⟩
@@ -2382,7 +2419,22 @@ theorem a_shapeless_calendar_line_is_rejected (p : PlanCore) (i : Id) (e : Entit
   | true =>
       have hall := List.all_eq_true.1 hb i hdom
       rw [hget] at hall
-      simp [hc, shapeWfFor, hsh] at hall
+      simp [hc, shapeWfFor, hsh, demotedRecordPlacement] at hall
+
+/-- **D8's narrowing still bites** (AGENTS §5.8, the other direction): a month
+placement outside `# Demoted` — an outcome — that carries a date is not a plan.
+Only the `# Demoted` records were exempted. -/
+theorem a_dated_month_outcome_is_rejected (p : PlanCore) (i : Id) (e : Entity)
+    (hdom : i ∈ p.store.dom) (hget : p.store.get i = some e)
+    (hm : docKindAt p e.val.live.doc = DocKind.month)
+    (hout : sectionKindAt p e.val.live ≠ some SecKind.demoted) (hsh : e.val.shape ≠ Shape.none) :
+    shapesWf p = false := by
+  cases hb : shapesWf p with
+  | false => rfl
+  | true =>
+      have hall := List.all_eq_true.1 hb i hdom
+      rw [hget] at hall
+      simp [hm, shapeWfFor, hsh, demotedRecordPlacement, hout] at hall
 
 theorem an_unpinned_day_item_is_rejected (p : PlanCore) (i : Id) (e : Entity)
     (hdom : i ∈ p.store.dom) (hget : p.store.get i = some e)

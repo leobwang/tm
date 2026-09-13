@@ -3641,8 +3641,8 @@ theorem move_has_no_inverse_command :
         simp at hdoc
     -- the two close commands (stage 4 step 5): a close moves `^m1` only out of
     -- a file of its own grain's kind — the month file, so a month close — and
-    -- only into a month file or, for a wall, the week; `^m1` is no wall, and
-    -- document 0 is a week file
+    -- only into a month file, or, for a wall, the week, or, past due (D7), the
+    -- backlog; `^m1` is no wall, and document 0 is a week file
     have hnoclose : ∀ (g : Grain) (now : Day),
         stepSkel g now q.val e1.val.skel ≠ e.val.skel := by
       intro g now heq
@@ -3659,7 +3659,7 @@ theorem move_has_no_inverse_command :
         match g, hk.1 with
         | ⟨2, _⟩, _ => rfl
       subst hg
-      rcases hk.2 with hc | ⟨⟨b, hw⟩, _⟩
+      rcases hk.2 with hc | ⟨⟨b, hw⟩, _⟩ | ⟨_, hc⟩
       · exact absurd hc (by decide)
       · have hshp := (by decide : (undoWitnessPlan.val.store.get "m1".toList).map
           (fun x : Entity => match Field.viewShape x.val.line with
@@ -3670,6 +3670,7 @@ theorem move_has_no_inverse_command :
         split at hw
         · rename_i hi; rw [hi] at hshp; simp at hshp
         · simp at hw
+      · exact absurd hc (by decide)
     -- nine shapes, one refuted observable each
     cases hcmd : inv (.move "m1".toList 1) with
     | close g now bm =>
@@ -4544,25 +4545,48 @@ def closeStrayTombWitness : List ReqDoc :=
      ["# Milestones".toList, "- [ ] 2 Pick winter courses @O3 ^m4".toList]⟩,
    ⟨"month/2026-09.md", some closeM09, ["# Demoted".toList]⟩]
 
+/-- `closeDatedWitness` with a backlog that has no `# Overdue` section. -/
+def closeOverdueNoSectionWitness : List ReqDoc :=
+  closeDatedWitness ++
+    [⟨"backlog.md", none, ["# Untied".toList, "- [ ] 2 30m Insurance claim ^a1".toList]⟩]
+
 set_option maxRecDepth 40000 in
-/-- **The check bites, by name, on loaded plans.**  A dated line whose record the
-month file cannot hold (§4.3: month items are outcomes, shape `none`) is
-`badHorizon` — the post-state re-check; a week close with no month file is
-`noTarget`, and so is one with a wall to carry and no live week; a month file
-with no `# Demoted` is `noSection`; an open line whose item's tombstone is a `[-]`
-line in an earlier week rather than a `# Demoted` record is `alreadyDemoted`
-(`closeOne_never_merges_into_a_stray_tomb`).  None of them is a close that
-silently skipped a line.  (Restates `the_close_refusals_are_named_on_loaded_plans`:
-its fifth conjunct was §4.3's pre-close pair ↦ `alreadyDemoted`, false since gap 53
-— `the_pre_close_pair_is_not_a_named_refusal` — and it kept its name over the
-four others until the stage-4 hardening repair.) -/
-theorem each_close_refusal_is_named_on_a_loaded_plan :
-    closeRefusal week closeDatedWitness = some .badHorizon ∧
+/-- **The check bites, by name, on loaded plans** — the refusals a week close has
+left since the owner's D7 and D8.  A past-due dated line with no backlog in the
+request is `noTarget`, and one whose backlog has no `# Overdue` is `noSection`
+(the kernel does not create a section; the host hands it over, README gap 56); a
+week close with no month file is `noTarget`, and so is one with a wall to carry
+and no live week; a month file with no `# Demoted` is `noSection`; an open line
+whose item's tombstone is a `[-]` line in an earlier week rather than a `# Demoted`
+record is `alreadyDemoted` (`closeOne_never_merges_into_a_stray_tomb`).  None of
+them is a close that silently skipped a line.  (Restates
+`each_close_refusal_is_named_on_a_loaded_plan`, whose first conjunct — the dated
+line ↦ `badHorizon`, README gap 55 — is false since D7:
+`a_dated_line_no_longer_refuses_the_week_close_as_badHorizon`.) -/
+theorem the_close_refusals_left_after_d7_are_named_on_loaded_plans :
+    closeRefusal week closeDatedWitness = some .noTarget ∧
+      closeRefusal week closeOverdueNoSectionWitness = some .noSection ∧
       closeRefusal week closeNoMonthWitness = some .noTarget ∧
       closeRefusal week closeNoLiveWeekWitness = some .noTarget ∧
       closeRefusal week closeNoDemotedWitness = some .noSection ∧
       closeRefusal week closeStrayTombWitness = some .alreadyDemoted := by
   decide
+
+/-- **`each_close_refusal_is_named_on_a_loaded_plan`, refuted since D7** (README gap
+55, closed).  Its first conjunct said an open dated line in an ended week refuses
+the week close `badHorizon`, because its record broke the month rule; the line is
+now routed — past due to the backlog (D7), not yet due into `# Demoted` with its
+date (D8) — and the one refusal left for it is a missing destination. -/
+theorem a_dated_line_no_longer_refuses_the_week_close_as_badHorizon :
+    ¬ (closeRefusal week closeDatedWitness = some .badHorizon ∧
+      closeRefusal week closeNoMonthWitness = some .noTarget ∧
+      closeRefusal week closeNoLiveWeekWitness = some .noTarget ∧
+      closeRefusal week closeNoDemotedWitness = some .noSection ∧
+      closeRefusal week closeStrayTombWitness = some .alreadyDemoted) := by
+  intro h
+  have h1 := h.1
+  rw [the_close_refusals_left_after_d7_are_named_on_loaded_plans.1] at h1
+  cases h1
 
 set_option maxRecDepth 40000 in
 /-- §4.3's pre-close pair closes: no refusal. -/
@@ -5903,5 +5927,302 @@ theorem closeReport_agrees_with_close_is_refuted_by_a_merge :
       rw [h1, h2, hxs] at hst
       exact absurd hst (by decide)
     · simp at hw
+
+/-! ## Gap 55 closed: dated work routes itself (the owner's D7 and D8; stage 4 final, step 2)
+
+§4.3's own week refused its automatic close on every command a week after `tm init
+--example`: `^d1 due:2026-09-11T23:59` was filed into `# Demoted` like any open line,
+and the month rule "an outcome carries no date" refused its record (`badHorizon`,
+README gap 55).  The owner decided both halves on 2026-09-13: past due with
+`persist`, the line moves to `backlog.md # Overdue` (D7); otherwise it is demoted
+and keeps its date, which a `# Demoted` record may now carry (D8).  The witnesses
+below are loaded plans, closed at Monday 2026-09-07 (`closeNow`) and, for §4.3's
+literal files, at Monday 2026-09-14.
+
+Probed under an 8 GB cap first (AGENTS §5.10a); the timings are in the README's
+"Stage 4 final" step-2 block. -/
+
+/-- 2026-W36 holding every dated case: `^d1` and `^d4` past due with `persist` (the
+default; `^d4` a date-time), `^d2` not yet due, `^d3` past due with
+`on-miss:expire`, `^x2` a wall that is over (`persist`), `^x3` a wall that is over
+with `on-miss:next`; a backlog whose `# Overdue` is followed by another section, so
+the landing shifts to make room. -/
+def closeOverdueWitness : List ReqDoc :=
+  [⟨"week/2026-W36.md", some closeW36,
+     ["# Tasks".toList,
+      "- [ ] 4 2b Pset two due:2026-09-04 ^d1".toList,
+      "- [ ] 3 1b Essay draft due:2026-09-20 ^d2".toList,
+      "- [ ] 2 1b Quiz prep due:2026-09-03 on-miss:expire ^d3".toList,
+      "- [ ] 5 2h Lab session at:2026-09-02T10:00/12:00 ^x2".toList,
+      "- [ ] 1 1h Reading group at:2026-09-01T15:00/16:00 on-miss:next ^x3".toList,
+      "- [ ] 2 1b Pset three due:2026-09-05T23:59 ^d4".toList]⟩,
+   ⟨"week/2026-W37.md", some closeW37, ["# Tasks".toList]⟩,
+   ⟨"month/2026-09.md", some closeM09,
+     ["# Outcomes".toList, "- [ ] 5 !1 Lean through ch.8 ^O1".toList, "# Demoted".toList]⟩,
+   ⟨"backlog.md", none,
+     ["# Untied".toList, "- [ ] 2 30m Insurance claim ^a1".toList, "# Overdue".toList,
+      "# Later".toList, "- [ ] 1 1b Someday ^a2".toList]⟩]
+
+set_option maxRecDepth 40000 in
+/-- **§6.3's week row routes dated work, on a loaded plan.**  The three lines past
+due with `persist` — two points and a wall that is over — leave the week file with
+no `[-]` behind and land, as they were, unstamped and in source order, at the end
+of the backlog's `# Overdue`, ahead of `# Later` (D7).  The not-yet-due `^d2` and
+the past-due `on-miss:expire` `^d3` are demoted like any open line, their records
+stamped `W36` and keeping their `due:` in `# Demoted` (D8).  The wall that is over
+with `on-miss:next` stays where it is, as fork-point `close_week` leaves it. -/
+theorem the_week_close_routes_dated_work_on_a_loaded_plan :
+    closedFileLines week closeOverdueWitness = some
+      [["# Tasks".toList, "- [-] 3 1b Essay draft due:2026-09-20 ^d2".toList,
+        "- [-] 2 1b Quiz prep due:2026-09-03 on-miss:expire ^d3".toList,
+        "- [ ] 1 1h Reading group at:2026-09-01T15:00/16:00 on-miss:next ^x3".toList],
+       ["# Tasks".toList],
+       ["# Outcomes".toList, "- [ ] 5 !1 Lean through ch.8 ^O1".toList, "# Demoted".toList,
+        "- [-] 3 1b Essay draft due:2026-09-20 demoted:W36 ^d2".toList,
+        "- [-] 2 1b Quiz prep due:2026-09-03 on-miss:expire demoted:W36 ^d3".toList],
+       ["# Untied".toList, "- [ ] 2 30m Insurance claim ^a1".toList, "# Overdue".toList,
+        "- [ ] 4 2b Pset two due:2026-09-04 ^d1".toList,
+        "- [ ] 5 2h Lab session at:2026-09-02T10:00/12:00 ^x2".toList,
+        "- [ ] 2 1b Pset three due:2026-09-05T23:59 ^d4".toList, "# Later".toList,
+        "- [ ] 1 1b Someday ^a2".toList]] := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **The report names the route.**  Each overdue line is `moveOverdue` from
+document 0 into the backlog (document 3), with no stamp; the demoted ones are `copy`
+into the month (document 2), stamped `W36`; minutes at a 50-minute block. -/
+theorem the_week_close_reports_the_overdue_route :
+    closedReport week closeOverdueWitness = some
+      [⟨"d1".toList, week, .moveOverdue, 0, 3, none, some (Arith.posOfNat 100)⟩,
+       ⟨"d2".toList, week, .copy, 0, 2, some (.week 36), some (Arith.posOfNat 50)⟩,
+       ⟨"d3".toList, week, .copy, 0, 2, some (.week 36), some (Arith.posOfNat 50)⟩,
+       ⟨"x2".toList, week, .moveOverdue, 0, 3, none, some (Arith.posOfNat 120)⟩,
+       ⟨"d4".toList, week, .moveOverdue, 0, 3, none, some (Arith.posOfNat 50)⟩] := by
+  decide
+
+theorem the_close_overdue_witness_loads : loadsOk closeOverdueWitness = true := by decide
+
+/-- The loaded overdue witness.  Total by `the_close_overdue_witness_loads`: the
+error branch is refuted, not defaulted. -/
+def closeOverduePlan : WfPlan :=
+  match h : loadPlan closeOverdueWitness with
+  | .ok p => p
+  | .error _ => absurd the_close_overdue_witness_loads (by simp [loadsOk, h])
+
+/-- For one id: the action the week close at `closeNow` takes, whether the line is
+past due with `persist`, and — if the close succeeds — whether its bytes, box and
+tombstone survived and which kind of file it ends in. -/
+def overdueHypsAt (i : Id) : Option (CloseAct × Bool × Bool × DocKind) :=
+  match close week closeNow closeOverduePlan with
+  | .ok q =>
+    match closeOverduePlan.val.store.get i, q.val.store.get i with
+    | some e, some f =>
+      some (closeAct week closeNow closeOverduePlan.val e.val.skel, e.val.skel.overdue closeNow,
+        decide (f.val.line = e.val.line ∧ f.val.status = e.val.status ∧
+          f.val.archive.map Tomb.line = e.val.archive.map Tomb.line),
+        docKindAt q.val f.val.live.doc)
+    | _, _ => none
+  | .error _ => none
+
+set_option maxRecDepth 40000 in
+/-- **The D7 and D8 laws are not vacuous.**  On the loaded plan the week close
+succeeds, `^d1` meets every hypothesis of
+`close_moves_a_past_due_persist_line_to_the_backlog` and ends in the backlog with
+its bytes, box and tombstone unchanged; `^d2` meets those of
+`close_week_files_a_dated_line_keeping_its_date` (filed, not past due) and ends in
+the month file; `^x3`, a wall that is over with `on-miss:next`, is left alone. -/
+theorem the_dated_route_hypotheses_hold_on_a_loaded_plan :
+    overdueHypsAt "d1".toList = some (.overdue, true, true, .backlog) ∧
+      overdueHypsAt "d2".toList = some (.file closeW36, false, false, .month) ∧
+      overdueHypsAt "x3".toList = some (.stay, false, true, .week) := by
+  decide
+
+/-- A month file whose `# Demoted` holds a record with a `due:` — what a week close
+writes for a not-yet-due line since D8. -/
+def datedRecordWitness : List ReqDoc :=
+  [⟨"month/2026-09.md", some closeM09,
+     ["# Outcomes".toList, "- [ ] 5 !1 Lean through ch.8 ^O1".toList, "# Demoted".toList,
+      "- [-] 3 1b Essay draft due:2026-09-20 demoted:W36 ^d2".toList]⟩]
+
+/-- The same month with the date on the **outcome** instead. -/
+def datedOutcomeWitness : List ReqDoc :=
+  [⟨"month/2026-09.md", some closeM09,
+     ["# Outcomes".toList, "- [ ] 5 !1 Lean through ch.8 due:2026-09-30 ^O1".toList,
+      "# Demoted".toList]⟩]
+
+/-- The six item conjuncts of a request's loaded core that come before the file-kind
+check, and that check — `firstItemFault` names the first that fails, so `(true,
+false)` is the refusal `itemCheck: fileKindShape`.  Booleans, not the emitted
+string: deciding a `String` through `jemit` does not fit the 8 GB probe. -/
+def shapeFaultOf (docs : List ReqDoc) : Option (Bool × Bool) :=
+  match buildEntities (placementsOf 0 docs) with
+  | .ok items =>
+    let c := loadCore docs items
+    some (normalized c && parentsTotal c && parentsAcyclic c && afterTotal c && afterAcyclic c &&
+      sectionsWf c, shapesWf c)
+  | .error _ => none
+
+set_option maxRecDepth 40000 in
+/-- **D8, both directions, on loaded requests** (AGENTS §5.8).  A dated `# Demoted`
+record loads; a dated outcome outside `# Demoted` does not, and the one item check
+it fails is the file-kind check — `itemCheck: fileKindShape` on the wire.  The
+narrowing exempted the records and nothing else (`a_dated_month_outcome_is_rejected`,
+Plan.lean). -/
+theorem a_dated_record_loads_and_a_dated_outcome_does_not :
+    loadsOk datedRecordWitness = true ∧ loadsOk datedOutcomeWitness = false ∧
+      shapeFaultOf datedOutcomeWitness = some (true, false) := by
+  decide
+
+/-- The loaded dated-record witness. -/
+def datedRecordPlan : WfPlan :=
+  match h : loadPlan datedRecordWitness with
+  | .ok p => p
+  | .error _ => absurd a_dated_record_loads_and_a_dated_outcome_does_not.1 (by simp [loadsOk, h])
+
+set_option maxRecDepth 40000 in
+/-- **`month_items_are_outcomes`, refuted since D8.**  Its statement, quantifier for
+quantifier — every month placement has shape `none` — is false of a loaded plan: the
+`# Demoted` record `^d2` sits in a month file with a `due:`.  What holds is
+`month_items_outside_demoted_are_undated` (Plan.lean). -/
+theorem a_dated_demoted_record_is_a_month_item_with_a_date :
+    ¬ ∀ (p : WfPlan) (i : Id) (e : Entity), p.val.store.get i = some e →
+      docKindAt p.val e.val.live.doc = DocKind.month → e.val.shape = Field.Shape.none := by
+  intro hall
+  have hw : (datedRecordPlan.val.store.get "d2".toList).map (fun e =>
+      (decide (docKindAt datedRecordPlan.val e.val.live.doc = DocKind.month),
+        decide (e.val.shape = Field.Shape.none))) = some (true, false) := by decide
+  cases hg : datedRecordPlan.val.store.get "d2".toList with
+  | none => rw [hg] at hw; cases hw
+  | some e =>
+    rw [hg] at hw
+    simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq, decide_eq_true_eq,
+      decide_eq_false_iff_not] at hw
+    exact hw.2 (hall _ _ e hg hw.1)
+
+def exampleNow : Day := Cal.toDay ⟨2026, 9, 14⟩
+def exampleW38 : Region := ⟨week, Cal.weekOrdinal exampleNow⟩
+
+/-- §4.3's example week, month and backlog **byte for byte** (`tm/templates/example/`,
+what `tm init --example` writes), with the backlog's `# Overdue` appended at its end
+and the live week 2026-W38 as its initial text — the two things the host hands over
+for a close (README gap 56's host half). -/
+def exampleWeekWitness : List ReqDoc :=
+  [⟨"week/2026-W37.md", some closeW37,
+     ["---".toList,
+      "week: 2026-W37".toList,
+      "window: 2026-09-07..2026-09-13".toList,
+      "budget: 25".toList,
+      "planned: 20".toList,
+      "---".toList,
+      "# Milestones".toList,
+      "- [ ] 5 6b Finish ch.5 exercises        @O1 ^m1".toList,
+      "- [ ] 4 6b Rollback path passes tests   @O2 ^m2".toList,
+      "- [ ] 5 3b Read ch.6                    @O1 ^m3".toList,
+      "- [ ] 2 2b Pick winter courses          @O3 ^m4".toList,
+      "- [ ] 4 6b CS 234 pset 2                @O3 due:2026-09-11T23:59 max:2b/d ^d1".toList,
+      "- [ ] 5 2h Midterm                      @O3 at:2026-10-20T10:00/12:00 loc:JCL ^x1".toList,
+      "- [ ] 5 8b Midterm review               @x1 ^x2".toList,
+      "".toList,
+      "# Tasks".toList,
+      "- [ ] 5 1b Read ch.6 §1–2               @m3 ^t1".toList,
+      "- [>] 4 2b Exercises 5.3–5.5            @m1 est:1b ^t3".toList,
+      "- [ ] 3 1b Claude Code drafts tests     @m2 ^t4".toList,
+      "- [ ] 3 1b Review the drafts            @m2 after:^t4 ^t5".toList]⟩,
+   ⟨"week/2026-W38.md", some exampleW38,
+     ["---".toList,
+      "week: 2026-W38".toList,
+      "window: 2026-09-14..2026-09-20".toList,
+      "---".toList]⟩,
+   ⟨"month/2026-09.md", some closeM09,
+     ["---".toList,
+      "month: 2026-09".toList,
+      "---".toList,
+      "# Outcomes".toList,
+      "- [ ] 5 !1 Lean: through ch.8 of the tutorial          ^O1".toList,
+      "- [ ] 4 !1 Soundcode: end-to-end demo runs             ^O2".toList,
+      "- [ ] 2 !3 Winter course selection + admin done        ^O3".toList,
+      "".toList,
+      "# Demoted".toList,
+      "- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2".toList]⟩,
+   ⟨"backlog.md", none,
+     ["# Untied".toList,
+      "- [ ] 2 30m Insurance claim for the bike  ^a1".toList,
+      "- [ ] 1 Pick up package  win:2026-09-07T09:00/21:00 dur:20m ^a3".toList,
+      "- [?] 2 15m Ask Prof. Lee about the reading group  on-event:reply/7d waiting:2026-09-05 ^a4".toList,
+      "".toList,
+      "# Dated, far out".toList,
+      "- [ ] 5 10b Workshop paper draft  @O2 due:2026-11-20 #soundcode ^d2".toList,
+      "".toList,
+      "## series:cell-bio".toList,
+      "- [x] 4 4b Cell Biology vol. 1 ^c1".toList,
+      "- [ ] 4 4b Cell Biology vol. 2 ^c2".toList,
+      "- [ ] 4 4b Cell Biology vol. 3 ^c3".toList,
+      "# Overdue".toList]⟩]
+
+set_option maxRecDepth 100000 in
+/-- **§4.3's example week closes a week after init** (README gap 55, closed).  At
+Monday 2026-09-14: every open line of 2026-W37 is left behind as `[-]`; `^d1`
+(`due:2026-09-11T23:59`, past due, `persist`) is not among them — it sits at the end
+of the backlog's `# Overdue`, `[ ]`, its `due:` and every byte kept; `^m2` is **one**
+merged record in `# Demoted` (README gap 53); the midterm wall is carried into
+2026-W38; no refusal. -/
+theorem the_example_week_closes_with_d1_in_the_backlog_overdue :
+    (loadedPlan? exampleWeekWitness).bind (fun p => closeResultLines (close week exampleNow p)) = some
+      [["---".toList,
+        "week: 2026-W37".toList,
+        "window: 2026-09-07..2026-09-13".toList,
+        "budget: 25".toList,
+        "planned: 20".toList,
+        "---".toList,
+        "# Milestones".toList,
+        "- [-] 5 6b Finish ch.5 exercises        @O1 ^m1".toList,
+        "- [-] 4 6b Rollback path passes tests   @O2 ^m2".toList,
+        "- [-] 5 3b Read ch.6                    @O1 ^m3".toList,
+        "- [-] 2 2b Pick winter courses          @O3 ^m4".toList,
+        "- [-] 5 8b Midterm review               @x1 ^x2".toList,
+        "".toList,
+        "# Tasks".toList,
+        "- [-] 5 1b Read ch.6 §1–2               @m3 ^t1".toList,
+        "- [-] 4 2b Exercises 5.3–5.5            @m1 est:1b ^t3".toList,
+        "- [-] 3 1b Claude Code drafts tests     @m2 ^t4".toList,
+        "- [-] 3 1b Review the drafts            @m2 after:^t4 ^t5".toList],
+       ["---".toList,
+        "week: 2026-W38".toList,
+        "window: 2026-09-14..2026-09-20".toList,
+        "---".toList,
+        "- [ ] 5 2h Midterm                      @O3 at:2026-10-20T10:00/12:00 loc:JCL ^x1".toList],
+       ["---".toList,
+        "month: 2026-09".toList,
+        "---".toList,
+        "# Outcomes".toList,
+        "- [ ] 5 !1 Lean: through ch.8 of the tutorial          ^O1".toList,
+        "- [ ] 4 !1 Soundcode: end-to-end demo runs             ^O2".toList,
+        "- [ ] 2 !3 Winter course selection + admin done        ^O3".toList,
+        "".toList,
+        "# Demoted".toList,
+        "- [-] 5 6b Finish ch.5 exercises        @O1 demoted:W37 ^m1".toList,
+        "- [-] 4 6b Rollback path passes tests   @O2 demoted:W37 ^m2".toList,
+        "- [-] 5 3b Read ch.6                    @O1 demoted:W37 ^m3".toList,
+        "- [-] 2 2b Pick winter courses          @O3 demoted:W37 ^m4".toList,
+        "- [-] 5 8b Midterm review               @x1 demoted:W37 ^x2".toList,
+        "- [-] 5 1b Read ch.6 §1–2               @m3 demoted:W37 ^t1".toList,
+        "- [-] 4 2b Exercises 5.3–5.5            @m1 est:1b demoted:W37 ^t3".toList,
+        "- [-] 3 1b Claude Code drafts tests     @m2 demoted:W37 ^t4".toList,
+        "- [-] 3 1b Review the drafts            @m2 after:^t4 demoted:W37 ^t5".toList],
+       ["# Untied".toList,
+        "- [ ] 2 30m Insurance claim for the bike  ^a1".toList,
+        "- [ ] 1 Pick up package  win:2026-09-07T09:00/21:00 dur:20m ^a3".toList,
+        "- [?] 2 15m Ask Prof. Lee about the reading group  on-event:reply/7d waiting:2026-09-05 ^a4".toList,
+        "".toList,
+        "# Dated, far out".toList,
+        "- [ ] 5 10b Workshop paper draft  @O2 due:2026-11-20 #soundcode ^d2".toList,
+        "".toList,
+        "## series:cell-bio".toList,
+        "- [x] 4 4b Cell Biology vol. 1 ^c1".toList,
+        "- [ ] 4 4b Cell Biology vol. 2 ^c2".toList,
+        "- [ ] 4 4b Cell Biology vol. 3 ^c3".toList,
+        "# Overdue".toList,
+        "- [ ] 4 6b CS 234 pset 2                @O3 due:2026-09-11T23:59 max:2b/d ^d1".toList]] := by
+  decide
 
 end Tm

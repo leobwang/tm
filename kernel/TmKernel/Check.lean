@@ -166,7 +166,6 @@ open Tm
 
 -- §4.2's sections and §4.3's per-file-kind shapes
 #print axioms Tm.a_day_file_holds_only_pinned_items
-#print axioms Tm.month_items_are_outcomes
 #print axioms Tm.calendar_lines_are_intervals
 #print axioms Tm.routine_lines_are_open
 #print axioms Tm.routine_lines_have_a_window_or_after_done
@@ -1491,7 +1490,6 @@ open Tm
 #print axioms Tm.closePolicy_copy_stamps
 #print axioms Tm.closePolicy_move_is_unstamped
 #print axioms Tm.closePolicy_exemptions
-#print axioms Tm.closePolicy_owes
 #print axioms Tm.Core.skel_stamps
 #print axioms Tm.Frame.refl
 #print axioms Tm.Frame.trans
@@ -1519,7 +1517,6 @@ open Tm
 #print axioms Tm.close_spec
 #print axioms Tm.close_skel
 #print axioms Tm.exemptAct_cases
-#print axioms Tm.closeAct_of_exempt
 #print axioms Tm.stepSkel_of_exempt
 #print axioms Tm.skelAfter_doc
 #print axioms Tm.close_leaves_no_line_it_would_take
@@ -1605,7 +1602,6 @@ open Tm
 #print axioms Tm.closeReport_ids
 #print axioms Tm.mem_closeReport
 #print axioms Tm.close_found_the_target
-#print axioms Tm.closeReport_names_the_region_of_now
 #print axioms Tm.closeReport_stamp_names_its_grain
 #print axioms Tm.autoCloseR_ok
 #print axioms Tm.mem_closeCands
@@ -1856,7 +1852,6 @@ open Tm
 #print axioms Tm.closeReport_agrees_with_close_stamping_or_merging
 -- Boundary.lean: the refusals by name, the stray tombstone at both entry points,
 -- three refutations, the merge laws not vacuous
-#print axioms Tm.each_close_refusal_is_named_on_a_loaded_plan
 #print axioms Tm.the_pre_close_pair_closes_on_a_loaded_plan
 #print axioms Tm.the_pre_close_pair_is_not_a_named_refusal
 #print axioms Tm.the_stray_tomb_witness_loads
@@ -1870,3 +1865,89 @@ open Tm
 #print axioms Tm.refile_merge_laws_are_not_vacuous
 #print axioms Tm.a_close_can_refuse_alreadyDemoted
 #print axioms Tm.closeReport_agrees_with_close_is_refuted_by_a_merge
+-- ===========================================================================
+-- APPENDED 2026-09-13 (stage-4 final).  Step 2: README gap 55 closed — the owner's
+-- D7 (a past-due `persist` line at a week close moves to `backlog.md # Overdue`,
+-- box, bytes and tombstone kept) and D8 (a `# Demoted` record may carry a date;
+-- the month rule reads outcomes only).  Five names above were retired with the
+-- statements they carried and restated here (README "Stage 4 final", step 2):
+-- `month_items_are_outcomes` -> `month_items_outside_demoted_are_undated` (old
+-- statement refuted: `a_dated_demoted_record_is_a_month_item_with_a_date`);
+-- `closePolicy_owes` -> `closePolicy_owes_only_the_child_fold` beside
+-- `closePolicy_routes_overdue_only_at_week`; `closeAct_of_exempt` ->
+-- `closeAct_never_files_an_exempt_line`; `closeReport_names_the_region_of_now` ->
+-- `closeReport_names_the_destination_of_now`;
+-- `each_close_refusal_is_named_on_a_loaded_plan` ->
+-- `the_close_refusals_left_after_d7_are_named_on_loaded_plans` (old statement
+-- refuted: `a_dated_line_no_longer_refuses_the_week_close_as_badHorizon`).  The
+-- two-run laws this breaks are re-proved in place under their own names (D5):
+-- `close_is_idempotent`, `close_keeps_source_order`(`_iff`) through
+-- `closeOne_moves`/`fold_keeps_order`(`_after_first`), the L19 `autoClose_*`
+-- theorems, `closeReport_agrees_with_close_stamping_or_merging` and
+-- `move_has_no_inverse_command`; their audit lines above stand.
+-- Plan.lean / Fast.lean: D8's narrowing and its csimp twin
+#print axioms Tm.shapeWf_or_record_of_mem
+#print axioms Tm.month_items_outside_demoted_are_undated
+#print axioms Tm.a_dated_month_outcome_is_rejected
+#print axioms Tm.secKindAtF_eq
+#print axioms Tm.demotedRecordPlacementF_eq
+-- Close.lean: the table's new column, the fourth action, the laws
+#print axioms Tm.closePolicy_owes_only_the_child_fold
+#print axioms Tm.closePolicy_routes_overdue_only_at_week
+#print axioms Tm.Core.skel_onMiss
+#print axioms Tm.Skel.overdue_of_wallAhead
+#print axioms Tm.overdueTarget_frame
+#print axioms Tm.overdueTarget_spec
+#print axioms Tm.closeAct_of_regionless
+#print axioms Tm.closeAct_never_files_an_exempt_line
+#print axioms Tm.spot_bound_after_step
+#print axioms Tm.rank_lt_landing
+#print axioms Tm.landed_rank_lt_next_spot
+#print axioms Tm.Field.lookup_filterMap_cons_congr
+#print axioms Tm.Field.isKeyTok_of_keyOf_ne
+#print axioms Tm.Field.lookup_setKeyIn_other
+#print axioms Tm.Field.lookup_insertBeforeId_other
+#print axioms Tm.Field.lookupKey_setKey_other
+#print axioms Tm.Field.isEstKey_keyOf
+#print axioms Tm.Field.viewShape_congr
+#print axioms Tm.lookupKey_carryEst_other
+#print axioms Tm.viewShape_refiledLine
+#print axioms Tm.refiledLine_stamps_mem
+#print axioms Tm.Core.skel_overdue_iff
+#print axioms Tm.kindOfGrain_is_never_backlog
+#print axioms Tm.pairwise_of_ranksAscend
+#print axioms Tm.prose_eq_of_rank
+#print axioms Tm.foldl_congr_mem
+#print axioms Tm.lastHeadingBefore_shiftFrom
+#print axioms Tm.lastHeadingBefore_eq_foldl
+#print axioms Tm.foldl_lhbStep_some
+#print axioms Tm.foldl_lhbStep_ne_none
+#print axioms Tm.lastHeadingBefore_eq_of_max
+#print axioms Tm.foldl_fhaStep_some
+#print axioms Tm.foldl_fhaStep_none
+#print axioms Tm.prose_rank_lt_endRank
+#print axioms Tm.landingSpot_overdue_is_under_overdue
+#print axioms Tm.closeOne_lands_an_overdue_line_under_overdue
+#print axioms Tm.fold_keeps_an_overdue_line_under_overdue
+#print axioms Tm.fold_lands_an_overdue_line_under_overdue
+#print axioms Tm.close_lands_every_overdue_line_under_overdue
+#print axioms Tm.close_moves_a_past_due_persist_line_to_the_backlog
+#print axioms Tm.close_week_files_a_dated_line_keeping_its_date
+#print axioms Tm.Skel.overdue_of_not_yet_due
+#print axioms Tm.close_week_demotes_a_not_yet_due_line_keeping_its_date
+#print axioms Tm.close_week_moves_a_past_due_persist_line_to_the_backlog
+-- Report.lean: the sixth disposition
+#print axioms Tm.CloseDid.ofStep_ne_moveOverdue
+#print axioms Tm.CloseDid.ofName?_refuses_near_overdue
+#print axioms Tm.closeReport_names_the_destination_of_now
+#print axioms Tm.closeAct_overdue_iff
+-- Boundary.lean: the refusals left, the loaded witnesses, two refutations
+#print axioms Tm.the_close_refusals_left_after_d7_are_named_on_loaded_plans
+#print axioms Tm.a_dated_line_no_longer_refuses_the_week_close_as_badHorizon
+#print axioms Tm.the_week_close_routes_dated_work_on_a_loaded_plan
+#print axioms Tm.the_week_close_reports_the_overdue_route
+#print axioms Tm.the_close_overdue_witness_loads
+#print axioms Tm.the_dated_route_hypotheses_hold_on_a_loaded_plan
+#print axioms Tm.a_dated_record_loads_and_a_dated_outcome_does_not
+#print axioms Tm.a_dated_demoted_record_is_a_month_item_with_a_date
+#print axioms Tm.the_example_week_closes_with_d1_in_the_backlog_overdue

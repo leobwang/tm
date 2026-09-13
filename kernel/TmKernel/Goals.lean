@@ -77,7 +77,9 @@ stage then has to fight.
   `Tm.closePolicy : Grain → ClosePolicy` in `Close.lean`, read by `close`
   rather than passed to it, each row pinned by a bridge theorem; the overdue
   target and the child fold are `Owed` columns (stage 5, gap 22), not
-  behaviour.
+  behaviour.  *Since 2026-09-13 (the owner's D7, stage 4 final step 2)* the overdue
+  target is behaviour — `OverdueRule`, the week row's `toBacklogOverdue`, bridged by
+  `closePolicy_routes_overdue_only_at_week` — and only the child fold is `Owed`.
 * **R7 — how future-day capacity mixes lounge and home by `p_lounge`**
   (README gap 26, in the `Arith.lean` block).  Whether the planner floors the mixture per
   level, per day, or carries it exact into the EDF pass is a **decision** the

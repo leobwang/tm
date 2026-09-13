@@ -32,10 +32,13 @@
 //! does either (each recorded by name in kernel/README.md's stage-4 step-6
 //! block, next to the rule it replaces): the day file's `review pending`
 //! placeholder (F3, stage 6); a closed week's `closed:` front matter; `est:`
-//! = remaining and the day's logged minutes (gap 54); overdue dated items
-//! into `backlog.md#Overdue` (stage 5) and the folding of children into their
-//! parent (gap 22); and reopening a week file's `[>]` at a day close (the
-//! day row takes lines from day files only).
+//! = remaining and the day's logged minutes (gap 54); the folding of children
+//! into their parent (gap 22); and reopening a week file's `[>]` at a day
+//! close (the day row takes lines from day files only). Overdue dated items
+//! **do** go into `backlog.md#Overdue` again since the owner's D7 (stage 4
+//! final, kernel/README.md gap 55): the kernel's week close moves a past-due
+//! `persist` line there (`moveOverdue`), and a not-yet-due one is demoted
+//! keeping its `due:` (D8).
 
 use chrono::NaiveDate;
 use serde::Serialize;
@@ -181,7 +184,8 @@ pub struct ClosedLine {
     /// `moveReopening`, `copy` (a `[-]` left behind and a stamped record
     /// filed forward), `copyMerging` (the same, rewriting the item's standing
     /// `# Demoted` record — kernel/README.md gap 53), `carry` (a wall still
-    /// ahead, moved unstamped).
+    /// ahead, moved unstamped), `moveOverdue` (past due with `persist`, moved
+    /// unstamped to `backlog.md # Overdue` — the owner's D7).
     pub did: &'static str,
     /// The file it was taken from.
     pub from: String,
@@ -208,7 +212,7 @@ pub struct ReportOut {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Summary {
     /// Lines that left their file for another: `move`, `moveReopening`,
-    /// `carry` — not the two copies, which leave a `[-]` behind.
+    /// `carry`, `moveOverdue` — not the two copies, which leave a `[-]` behind.
     pub moved: usize,
     /// Lines that gained a stamp.
     pub demoted: usize,
@@ -358,9 +362,10 @@ pub fn run(ctx: &mut Ctx, which: Which, drops: &[Id]) -> Result<ReportOut, CliEr
 /// written and nothing is stamped closed, so the close is tried again on the
 /// next command, and the refusal is printed by name on stderr (except inside
 /// the TUI, whose screen stderr would shred). Refusing every verb instead
-/// would leave a tree the kernel cannot close — §4.3's own example week,
-/// whose open dated `^d1` is gap 55 — unusable except by hand. A kernel **fault**, a write conflict or an I/O
-/// error still fails the verb.
+/// would leave a tree the kernel cannot close unusable except by hand (§4.3's
+/// own example week was one, on its open dated `^d1`, until the owner's D7
+/// and D8 closed kernel/README.md gap 55). A kernel **fault**, a write
+/// conflict or an I/O error still fails the verb.
 pub fn auto_close(ctx: &mut Ctx) -> Result<Option<ReportOut>, CliError> {
     if !due(&ctx.state.closed, ctx.today) {
         return Ok(None);
@@ -394,12 +399,15 @@ pub fn explain(issue: &KernelIssue) -> String {
              remove one of the two lines by hand",
         ),
         "badHorizon" => Some(
-            "for a close this is most often an open dated (`due:`) line in an ended week, whose \
-             record a month's `# Demoted` may not hold (kernel/README.md gap 55)",
+            "for a close this is a rewritten tree the kernel's whole-plan check refuses — a line \
+             landing where its file may not hold it; an open dated line in an ended week no \
+             longer does this: past due it moves to `backlog.md # Overdue`, otherwise it is \
+             demoted keeping its `due:` (the owner's D7 and D8, kernel/README.md gap 55)",
         ),
         "noSection" => Some(
             "for a close this is a line of an ended month under a heading the current month file \
-             does not have; the host adds only `# Outcomes` and `# Demoted` (gap 56)",
+             does not have; the host adds only the month's `# Outcomes` and `# Demoted` and the \
+             backlog's `# Overdue` (gap 56)",
         ),
         _ => None,
     };

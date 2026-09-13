@@ -50,9 +50,11 @@ fn close_day_moves_the_pinned_item_into_the_week_of_now_and_stamps_the_state() {
     assert!(out.stderr.contains("periodNotEnded"), "{}", out.stderr);
 }
 
-/// `plan-basic` without `^d1 due:`, the shape the kernel's week close refuses
-/// (gap 55), so the week row itself can be exercised; `cli_close_kernel.rs`'s
-/// `a_refused_close_is_named_and_writes_nothing` covers the refusal. `^m2`'s
+/// `plan-basic` without `^d1 due:`, so these tests exercise the week row's
+/// plain `copy` alone: `^d1` was the shape the kernel's week close refused
+/// (gap 55) until the owner's D7 and D8, and its route to `backlog.md
+/// # Overdue` is covered by `cli_close_kernel.rs`'s
+/// `the_literal_example_tree_closes_on_its_first_command_a_week_after_its_week`. `^m2`'s
 /// standing `# Demoted` record was the second refusal until kernel/README.md
 /// gap 53 closed; it is still removed here so these tests keep exercising a
 /// plain `copy`, and the merge is covered by `cli_close_kernel.rs`'s

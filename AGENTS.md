@@ -1562,6 +1562,17 @@ unfinished line, `due:` kept; `shapesWf`'s month rule covers outcomes only). D5
 means each landing re-proves the two-run laws it breaks (L16, the L19 theorems,
 `close_keeps_source_order`, the report agreement) in the same step.
 
+**Gap 55 closed (stage 4 final, step 2; README "Stage 4 final, step 2").**  The week
+row's fourth action moves a past-due `persist` line to `backlog.md # Overdue`, box,
+bytes and tombstone kept, under the heading (`close_week_moves_a_past_due_persist_line_to_the_backlog`,
+`close_lands_every_overdue_line_under_overdue`); a not-yet-due one is demoted keeping its
+`due:` (`close_week_demotes_a_not_yet_due_line_keeping_its_date`) over D8's
+`demotedRecordPlacement`.  The host hands over `backlog.md` with `# Overdue` appended
+when absent (gap 56's overdue half, closed).  L16, `close_keeps_source_order`, the L19
+theorems, the report agreement and `move_has_no_inverse_command` are re-proved with
+their statements unchanged.  §4.3's literal tree closes on its first command a week
+after its week.  Stage 4 has B3 left, and B3 waits on D6.
+
 **Scope, concretely.**
 
 1. **One fold, three grains.** Fold over

@@ -645,16 +645,43 @@ def sectionsWfFast (p : PlanCore) : Bool :=
   (simp only [sectionsWf, sectionsWfFast, placementSectionWfF_eq, List.all_map, Function.comp_def,
     headingsWfF_docFacts]) <;> rfl
 
+/-- `sectionKindAt`, off the per-document facts: the one live-heading fold,
+without re-asking `inComment` on a clean file. -/
+def secKindAtF (a : Array DocFacts) (s : Site) : Option SecKind :=
+  match a[s.doc]? with
+  | none   => none
+  | some f => (f.heads.foldl (headStep s.rank) none).map (fun q => secKind q.2)
+
+theorem secKindAtF_eq (p : PlanCore) (s : Site) :
+    secKindAtF (p.docs.map docFacts).toArray s = sectionKindAt p s := by
+  unfold secKindAtF sectionKindAt sectionAt
+  rw [facts_get]
+  cases hd : p.docs[s.doc]? with
+  | none => rfl
+  | some d => simp only [Option.map_some, lastHeadingBefore_facts, Option.map_map, Function.comp_def]
+
+/-- `demotedRecordPlacement` (D8), off the per-document facts. -/
+def demotedRecordPlacementF (a : Array DocFacts) (s : Site) : Bool :=
+  decide (kindAtF a s.doc = .month) && decide (secKindAtF a s = some .demoted)
+
+theorem demotedRecordPlacementF_eq (p : PlanCore) (s : Site) :
+    demotedRecordPlacementF (p.docs.map docFacts).toArray s = demotedRecordPlacement p s := by
+  unfold demotedRecordPlacementF demotedRecordPlacement
+  rw [kindAtF_eq, secKindAtF_eq]
+
+/-- `shapesWf`, off the per-document facts.  The `# Demoted` exemption (D8) is the
+right operand of a short-circuit `||`, so it is computed only for a placement
+whose kind's rule fails — a dated month line, which is rare. -/
 def shapesWfFast (p : PlanCore) : Bool :=
   let a := (p.docs.map docFacts).toArray
   p.store.dom.all (fun i =>
     match p.store.get i with
     | none   => true
-    | some e => shapeWfFor (kindAtF a e.val.live.doc) e.val)
+    | some e => shapeWfFor (kindAtF a e.val.live.doc) e.val || demotedRecordPlacementF a e.val.live)
 
 @[csimp] theorem shapesWf_eq_shapesWfFast : @shapesWf = @shapesWfFast := by
   funext p
-  (simp only [shapesWf, shapesWfFast, kindAtF_eq]) <;> rfl
+  (simp only [shapesWf, shapesWfFast, kindAtF_eq, demotedRecordPlacementF_eq]) <;> rfl
 
 /-! ## The fold's twins: the same bodies, compiled after the fast conjuncts -/
 

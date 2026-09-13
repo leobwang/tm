@@ -37,14 +37,25 @@ same close would take again.  Everything else is read off it.
 
 **Scoped out of this module, by name** (README stage-4 step-2 block, with gaps
 53–57 for what the fold does refuse or does not write): §6.3's week-row
-"dated items past due with `persist` → `backlog.md#Overdue`" (needs §5.3's
-`on_miss` against `due:`, stage 5 — the `overdue` column says so), its
 "unfinished children are dropped, their remaining folded into the parent's
 `est:`" (needs `Core.parent`, README gap 22 — the `children` column), the day
 file's review section (F3, stage 6), and `est:` = remaining beyond the line's
 own reading (the log's minutes and the rollup).  The one estimate a close does
 write is L15's floor from a standing record it merges into (README gap 53,
 `close_week_merges_a_standing_record`).
+
+**Dated work routes itself (the owner's D7 and D8, 2026-09-13; README gap 55).**
+The week row's "dated items past due with `persist` → moved to
+`backlog.md#Overdue` instead" is performed: a line whose `due:` day (or an
+interval's end day) is before `now`'s, with §5.3's `on_miss` resolving to
+`persist`, is a fourth action, `CloseAct.overdue` — moved to the end of the backlog's
+`# Overdue` with its box, its bytes and its tombstone as they were, no stamp and
+no tombstone left (`close_moves_a_past_due_persist_line_to_the_backlog`).  Day
+resolution, as the wall carry's (README gap 57).  A backlog has no region, so no
+close ever takes a line from it again (`stepSkel_lands_outside_every_closed_region`,
+L16).  A not-yet-due dated line is filed like any other and keeps its `due:` in
+its `# Demoted` record, which `shapesWf` admits since D8
+(`close_week_demotes_a_not_yet_due_line_keeping_its_date`).
 -/
 namespace Tm
 
@@ -73,6 +84,9 @@ inductive Landing
   /-- at the end of the section with the heading it stood under (§6.3's month
       row: "each into the section it came from" is `horizon.rs`'s reading) -/
   | sameSection
+  /-- at the end of `backlog.md`'s `# Overdue` section (§6.3's week row, fork-point
+      `OVERDUE_SECTION`; the owner's D7) -/
+  | overdueSection
 deriving DecidableEq, Repr
 
 /-- Which stamp a taken line gains.  The *number* is derived from the closed
@@ -96,13 +110,23 @@ deriving DecidableEq, Repr
 
 /-- A §6.3 clause the fold does **not** perform, and what it waits on.  A column
 of this type is how a scope-out stays visible in the table instead of in a
-comment nobody reads. -/
+comment nobody reads.  (It had a `stage5OnMiss` case for the overdue column
+until the owner's D7 made that column real — `OverdueRule`.) -/
 inductive Owed
   | nothing
-  /-- needs §5.3's `on_miss` evaluated against `due:` — stage 5 -/
-  | stage5OnMiss
   /-- needs `Core.parent` read off the line — README gap 22, an owner decision -/
   | gap22Parent
+deriving DecidableEq, Repr
+
+/-- What a row does with a dated line that is past due with `on_miss = persist`
+(§5.3: the default of a point and an interval; `on-miss:` overrides it). -/
+inductive OverdueRule
+  /-- nothing of its own: the line is taken, or not, like any other line -/
+  | asAnyLine
+  /-- moved to the end of `backlog.md`'s `# Overdue`, box, bytes and tombstone
+      kept (§6.3's week row, "moved to `backlog.md#Overdue` instead"; the owner's
+      D7, pulled forward from stage 5) -/
+  | toBacklogOverdue
 deriving DecidableEq, Repr
 
 /-- **§6.3's residue.**  Everything the three close rows do not share. -/
@@ -117,7 +141,7 @@ structure ClosePolicy where
   /-- walls — dated intervals: §6.3's "calendar intervals are never demoted" -/
   walls       : Exemption
   /-- the week row's "dated items past due with `persist` → `backlog.md#Overdue`" -/
-  overdue     : Owed
+  overdue     : OverdueRule
   /-- the week row's "unfinished children are dropped … folded into the parent's `est:`" -/
   children    : Owed
 
@@ -138,15 +162,15 @@ def closePolicy : Grain → ClosePolicy
   | ⟨0, _⟩ => { takes := Status.isOpenBox, disposition := .moveReopening,
                 landing := .fileEnd, stamp := .dayOfMonth,
                 recurring := .stays, walls := .carried,
-                overdue := .nothing, children := .nothing }
+                overdue := .asAnyLine, children := .nothing }
   | ⟨1, _⟩ => { takes := Status.isOpenBox, disposition := .copy,
                 landing := .demotedSection, stamp := .isoWeek,
                 recurring := .stays, walls := .carried,
-                overdue := .stage5OnMiss, children := .gap22Parent }
+                overdue := .toBacklogOverdue, children := .gap22Parent }
   | _      => { takes := Status.isUnsettled, disposition := .move,
                 landing := .sameSection, stamp := .none,
                 recurring := .stays, walls := .carried,
-                overdue := .nothing, children := .nothing }
+                overdue := .asAnyLine, children := .nothing }
 
 /-- The file kind a grain names — §2's layout, derived: a grain's blocks are
 the `day/`, `week/` and `month/` files.  (`calendar/` files share week regions
@@ -238,13 +262,20 @@ theorem closePolicy_exemptions :
     ∀ g : Grain, (closePolicy g).recurring = .stays ∧ (closePolicy g).walls = .carried := by
   decide
 
-/-- **The two scope-outs are in the table.**  The week row owes §6.3's overdue
-routing to stage 5 and its child fold to gap 22; no other row owes either. -/
-theorem closePolicy_owes :
-    ∀ g : Grain, ((closePolicy g).overdue = .stage5OnMiss ↔ g = week) ∧
-      ((closePolicy g).children = .gap22Parent ↔ g = week) ∧
-      ((closePolicy g).overdue = .nothing ∨ (closePolicy g).overdue = .stage5OnMiss) ∧
+/-- **The one scope-out left in the table** (restates `closePolicy_owes`, which
+also named the overdue column `stage5OnMiss` until the owner's D7 made it real).
+The week row owes its child fold to gap 22, and no other row owes anything. -/
+theorem closePolicy_owes_only_the_child_fold :
+    ∀ g : Grain, ((closePolicy g).children = .gap22Parent ↔ g = week) ∧
       ((closePolicy g).children = .nothing ∨ (closePolicy g).children = .gap22Parent) := by
+  decide
+
+/-- **D7's column, bridged.**  Only §6.3's week row routes a past-due `persist`
+line to the backlog — the day row's pinned leftovers go to the week of now, and
+the month row carries its records forward, dated or not (README "Stage 4 final",
+D8's cost (ii)). -/
+theorem closePolicy_routes_overdue_only_at_week :
+    ∀ g : Grain, (closePolicy g).overdue = .toBacklogOverdue ↔ g = week := by
   decide
 
 /-! ## The skeleton an entity keeps through a close
@@ -282,6 +313,49 @@ def Skel.wallAhead (now : Day) (s : Skel) : Option Bool :=
   | .interval _ b => some (decide (now ≤ b.day))
   | _             => none
 
+/-- §5.3's `on_miss`, read off the bytes: the `on-miss:` token if the line carries
+one, else the shape's default (`effectiveOnMiss` of any core with these bytes). -/
+def Skel.onMiss (s : Skel) : Field.OnMiss :=
+  (Field.viewOnMiss s.line).getD (defaultOnMiss (Field.viewShape s.line))
+
+theorem Core.skel_onMiss (c : Core) : c.skel.onMiss = effectiveOnMiss c := rfl
+
+/-- The day a dated line falls due, read off the bytes: a point's `due:` day, an
+interval's end day.  `none` for every other shape — a window is a chance that
+passes, never overdue (fork-point `overdue_at`'s `_ => false`). -/
+def Skel.dueDay (s : Skel) : Option Nat :=
+  match Field.viewShape s.line with
+  | .point m      => some m.day
+  | .interval _ b => some b.day
+  | _             => none
+
+/-- **Past due at `now`, with `persist`** — fork-point `horizon::overdue_at` (a
+point: `due.end_of_day() < now`; an interval: `end < now`; only when `on_miss` is
+`persist`), at **day resolution**: the due day is strictly before `now`'s day.
+The kernel's `now` is a `Day` (README gap 57, the wall carry's rule), so a line
+due at 08:00 on the day a close runs at 09:00 is not yet past due here and is
+demoted with its date instead (README "Stage 4 final", step 2's recorded
+difference).  A bare date and a date-time on one day agree with the Rust, which
+reads a bare date as 23:59. -/
+def Skel.overdue (now : Day) (s : Skel) : Bool :=
+  match s.dueDay with
+  | some d => decide (d < now) && decide (s.onMiss = .persist)
+  | none   => false
+
+/-- A wall still ahead is not past due: the two rules read one end day. -/
+theorem Skel.overdue_of_wallAhead {now : Day} {s : Skel} (h : s.wallAhead now = some true) :
+    s.overdue now = false := by
+  unfold Skel.wallAhead at h
+  unfold Skel.overdue Skel.dueDay
+  cases hv : Field.viewShape s.line with
+  | interval a b =>
+    rw [hv] at h
+    simp only [Option.some.injEq, decide_eq_true_eq] at h
+    simp [Nat.not_lt.2 h]
+  | none => simp [hv] at h
+  | point m => simp [hv] at h
+  | window r d => simp [hv] at h
+
 /-- The files' kinds and regions, which no step of a close changes. -/
 def Frame (p q : PlanCore) : Prop :=
   q.docs.length = p.docs.length ∧ (∀ k, docKindAt q k = docKindAt p k) ∧
@@ -307,6 +381,8 @@ inductive CloseAct
   | carry
   /-- filed forward, out of the closed region `r` -/
   | file (r : Region)
+  /-- past due with `persist`: moved, undemoted, to `backlog.md # Overdue` (D7) -/
+  | overdue
 deriving DecidableEq, Repr
 
 def exemptAct : Exemption → Bool → CloseAct
@@ -316,14 +392,19 @@ def exemptAct : Exemption → Bool → CloseAct
 
 /-- **The candidate set and the action, as one function of the plan's files
 and the line's skeleton.**  A line not in a closed region of grain `g` stays; so
-does one whose box the row does not take.  A recurring line and a wall get their
-exemption; everything else is filed. -/
+does one whose box the row does not take.  A recurring line gets its exemption; a
+line past due with `persist`, at a row that routes it, goes to the backlog's
+`# Overdue` (D7 — before the wall test, as fork-point `close_week` classifies
+`overdue` before `carried_walls`, so a wall that is over with `persist` is overdue
+and one with `on-miss:expire`/`next` stays); a wall gets its exemption; everything
+else is filed. -/
 def closeAct (g : Grain) (now : Day) (p : PlanCore) (s : Skel) : CloseAct :=
   match closedRegionOf g now p s.doc with
   | none   => .stay
   | some r =>
     if (closePolicy g).takes s.status = false then .stay
     else if s.recurring then exemptAct (closePolicy g).recurring true
+    else if (closePolicy g).overdue = .toBacklogOverdue ∧ s.overdue now = true then .overdue
     else match s.wallAhead now with
       | some ahead => exemptAct (closePolicy g).walls ahead
       | none       => .file r
@@ -342,6 +423,14 @@ def closeTarget (g : Grain) (now : Day) (p : PlanCore) : Option DocIx :=
 the planner still reads (§6.2). -/
 def carryTarget (now : Day) (p : PlanCore) : Option DocIx :=
   findDocIx p .week (regionOf week now)
+
+/-- **Where a past-due `persist` line goes (D7)**: the backlog — the document of
+kind `backlog` with no region, "the **absence** of a bound" (`Doc.region`).  The
+kernel cannot create it (README gap 56), so a request without one refuses
+`noTarget`; and a backlog declared with a region is not one (`pathsDistinct`
+allows one `backlog.md`, and the host declares none). -/
+def overdueTarget (p : PlanCore) : Option DocIx :=
+  (List.range p.docs.length).find? (fun k => decide (docKindAt p k = .backlog ∧ docRegion p k = none))
 
 /-- §6.3's day row: `[>]` → `[ ]`. -/
 def reopen : Status → Status
@@ -378,6 +467,10 @@ def stepSkel (g : Grain) (now : Day) (p : PlanCore) (s : Skel) : Skel :=
   | .file r =>
     match closeTarget g now p with
     | some k => skelAfter g r k s
+    | none   => s
+  | .overdue =>
+    match overdueTarget p with
+    | some k => { s with doc := k }
     | none   => s
 
 /-! ## Landing: the rank a line takes, and the shift that makes room
@@ -480,6 +573,10 @@ def landingSpot (p : PlanCore) (k : DocIx) (l : Landing) (src : Option (List Cha
         match firstHeadingAbove d none (fun h => headingBody h == headingBody s) with
         | none   => .error .noSection
         | some h => .ok (firstHeadingAbove d (some h) (fun _ => true))
+    | .overdueSection =>
+      match firstHeadingAbove d none (fun h => headingBody h == "Overdue".toList) with
+      | none   => .error .noSection
+      | some h => .ok (firstHeadingAbove d (some h) (fun _ => true))
 
 /-- Relocate `i` into document `k` at the landing spot, through `f`. -/
 def landAt (p : WfPlan) (k : DocIx) (spot : Option Nat) (i : Id)
@@ -583,6 +680,13 @@ def closeOne (g : Grain) (now : Day) (i : Id) : Transform := fun p =>
         match landingSpot p.val k (closePolicy g).landing (sectionAt p.val e.val.live) with
         | .error x => .error x
         | .ok spot => guardStray (copiesOverAStrayTomb g p.val e) (landAt p k spot i (fileE g r))
+    | .overdue =>
+      match overdueTarget p.val with
+      | none   => .error .noTarget
+      | some k =>
+        match landingSpot p.val k .overdueSection (sectionAt p.val e.val.live) with
+        | .error x => .error x
+        | .ok spot => landAt p k spot i moveTo
 
 /-- The ids a close of grain `g` at `now` acts on, in store order — which is
 **not** file order: the loader builds `dom` in reverse, so folding this list
@@ -862,10 +966,15 @@ theorem findDocIx_frame {p q : PlanCore} (hf : Frame p q) (kind : DocKind) (r : 
   rw [hf.1]
   simp only [hf.2.1, hf.2.2]
 
+theorem overdueTarget_frame {p q : PlanCore} (hf : Frame p q) : overdueTarget q = overdueTarget p := by
+  unfold overdueTarget
+  rw [hf.1]
+  simp only [hf.2.1, hf.2.2]
+
 theorem stepSkel_frame {p q : PlanCore} (hf : Frame p q) (g : Grain) (now : Day) (s : Skel) :
     stepSkel g now q s = stepSkel g now p s := by
   unfold stepSkel carryTarget closeTarget
-  rw [closeAct_frame hf, findDocIx_frame hf, findDocIx_frame hf]
+  rw [closeAct_frame hf, findDocIx_frame hf, findDocIx_frame hf, overdueTarget_frame hf]
 
 theorem findDocIx_spec {p : PlanCore} {kind : DocKind} {r : Region} {k : DocIx}
     (h : findDocIx p kind r = some k) :
@@ -875,6 +984,22 @@ theorem findDocIx_spec {p : PlanCore} {kind : DocKind} {r : Region} {k : DocIx}
   have hp := List.find?_some h
   simp only [decide_eq_true_eq] at hp
   exact ⟨List.mem_range.1 hm, hp.1, hp.2⟩
+
+theorem overdueTarget_spec {p : PlanCore} {k : DocIx} (h : overdueTarget p = some k) :
+    k < p.docs.length ∧ docKindAt p k = .backlog ∧ docRegion p k = none := by
+  unfold overdueTarget at h
+  have hm := List.mem_of_find?_eq_some h
+  have hp := List.find?_some h
+  simp only [decide_eq_true_eq] at hp
+  exact ⟨List.mem_range.1 hm, hp.1, hp.2⟩
+
+/-- **A line in a file with no region is not one any close takes** — the
+backlog, where D7's route files a line, above all: so what a close moved there is
+never taken again (L16's argument for the fourth action). -/
+theorem closeAct_of_regionless {p : PlanCore} {g : Grain} {now : Day} {s : Skel}
+    (hr : docRegion p s.doc = none) : closeAct g now p s = .stay := by
+  unfold closeAct closedRegionOf
+  rw [hr]
 
 /-- A line in a file whose region is open is not one any close takes. -/
 theorem closeAct_of_open {p : PlanCore} {g : Grain} {now : Day} {s : Skel} {r : Region}
@@ -938,6 +1063,27 @@ theorem closeOne_spec {g : Grain} {now : Day} {i : Id} {p q : WfPlan}
             refine closeAct_of_open (r := closeTo g now) ?_ (closeTo_target_is_open g now)
             show docRegion p.val f'.val.live.doc = _
             rw [hlive, htd]
+            exact hreg
+    · rename_i hact
+      split at h
+      · simp at h
+      · rename_i k hk
+        split at h
+        · simp at h
+        · obtain ⟨hfr, hj, e0, e', t, f', hget0, hsk, htd, hmv, hq⟩ := landAt_spec h
+          rw [hget] at hget0
+          injection hget0 with hget0
+          subst hget0
+          have hfs := moveTo_skel hmv
+          refine ⟨hfr, hj, e, f', hget, hq, ?_, ?_⟩
+          · rw [hfs, hsk, htd]
+            unfold stepSkel
+            rw [hact, hk]
+          · obtain ⟨_, _, hreg⟩ := overdueTarget_spec hk
+            refine closeAct_of_regionless ?_
+            rw [hfs]
+            simp only
+            rw [htd]
             exact hreg
 
 /-! ## The fold -/
@@ -1044,6 +1190,10 @@ theorem closeAct_of_not_mem_closeCands {g : Grain} {now : Day} {p : PlanCore} {j
     exfalso; apply hj
     refine mem_closeCands_iff.2 <| List.mem_filter.2 ⟨(p.store.domSpec j).2 (by rw [hget]; rfl), ?_⟩
     rw [hget]; simp only [hact]
+  | overdue =>
+    exfalso; apply hj
+    refine mem_closeCands_iff.2 <| List.mem_filter.2 ⟨(p.store.domSpec j).2 (by rw [hget]; rfl), ?_⟩
+    rw [hget]; simp only [hact]
 
 /-- **The denotation of `close`.**  A successful close keeps every file's kind
 and region, turns every id's skeleton into `stepSkel` of what it was, and leaves
@@ -1099,31 +1249,46 @@ theorem exemptAct_cases (x : Exemption) (b : Bool) :
     exemptAct x b = .stay ∨ exemptAct x b = .carry := by
   cases x <;> cases b <;> simp [exemptAct]
 
-/-- A recurring line and a wall are never *filed*: whatever the table's
-exemption column says, `exemptAct` has no `file` branch. -/
-theorem closeAct_of_exempt {g : Grain} {now : Day} {p : PlanCore} {s : Skel}
+/-- **A recurring line and a wall are never *filed*.**  Whatever the table's
+exemption column says, `exemptAct` has no `file` branch; and a wall that is over,
+with `persist`, is moved undemoted to the backlog's `# Overdue` at the week row
+(D7, fork-point `close_week`'s `overdue` before `carried_walls`).  (Restates
+`closeAct_of_exempt`, whose `stay ∨ carry` that wall falsifies since D7.) -/
+theorem closeAct_never_files_an_exempt_line {g : Grain} {now : Day} {p : PlanCore} {s : Skel}
     (hx : s.recurring = true ∨ ∃ b, s.wallAhead now = some b) :
-    closeAct g now p s = .stay ∨ closeAct g now p s = .carry := by
+    closeAct g now p s = .stay ∨ closeAct g now p s = .carry ∨ closeAct g now p s = .overdue := by
   unfold closeAct
   split
   · exact Or.inl rfl
   · split
     · exact Or.inl rfl
     · split
-      · exact exemptAct_cases _ _
+      · rcases exemptAct_cases (closePolicy g).recurring true with h | h
+        · exact Or.inl h
+        · exact Or.inr (Or.inl h)
       · rename_i hrec
-        rcases hx with hx | ⟨b, hb⟩
-        · exact absurd hx hrec
-        · rw [hb]; exact exemptAct_cases _ _
+        split
+        · exact Or.inr (Or.inr rfl)
+        · rcases hx with hx | ⟨b, hb⟩
+          · exact absurd hx hrec
+          · rw [hb]
+            rcases exemptAct_cases (closePolicy g).walls b with h | h
+            · exact Or.inl h
+            · exact Or.inr (Or.inl h)
 
+/-- A step that does not file a line keeps its skeleton but for the file.  (Its
+hypothesis gained the `overdue` action at D7; the statement is otherwise as
+before.) -/
 theorem stepSkel_of_exempt {g : Grain} {now : Day} {p : PlanCore} {s : Skel}
-    (hx : closeAct g now p s = .stay ∨ closeAct g now p s = .carry) :
+    (hx : closeAct g now p s = .stay ∨ closeAct g now p s = .carry ∨ closeAct g now p s = .overdue) :
     stepSkel g now p s = { s with doc := (stepSkel g now p s).doc } := by
   unfold stepSkel
-  rcases hx with hx | hx
+  rcases hx with hx | hx | hx
   · rw [hx]
   · rw [hx]
     cases carryTarget now p <;> rfl
+  · rw [hx]
+    cases overdueTarget p <;> rfl
 
 /-- Where `stepSkel` files a line, it names the line's new file — or it is the
 unreachable copy-without-a-stamp branch and leaves the skeleton alone. -/
@@ -1182,7 +1347,8 @@ theorem close_leaves_no_unfinished_line_in_a_closed_region {g : Grain} {now : Da
   have htakes' : (closePolicy g).takes f.val.skel.status = true := htakes
   unfold closeAct at hst
   rw [hreg] at hst
-  simp [htakes', hrec', hwall'] at hst
+  simp only [htakes', hrec', hwall', Bool.true_eq_false, Bool.false_eq_true, if_false] at hst
+  split at hst <;> simp at hst
 
 theorem stepSkel_day_stamps (now : Day) (p : PlanCore) (s : Skel) :
     (stepSkel day now p s).stamps = s.stamps ∨
@@ -1199,6 +1365,7 @@ theorem stepSkel_day_stamps (now : Day) (p : PlanCore) (s : Skel) :
       rw [Field.view_set_demoted _ _ (by simp)]
       rfl
     · exact Or.inl rfl
+  · split <;> exact Or.inl rfl
 
 /-- **§6.3's day row stamps a day stamp** (discharged from `Goals.lean`).  A day
 close that changes a line's stamps appends exactly one, and it is a `D` stamp —
@@ -1246,6 +1413,7 @@ theorem stepSkel_line_is_stamped_or_merged (g : Grain) (now : Day) (p : PlanCore
           | none => exact Or.inr (Or.inl ⟨_, rfl⟩)
           | some tl => exact Or.inr (Or.inr ⟨_, tl, rfl, rfl⟩)
     · exact Or.inl rfl
+  · split <;> exact Or.inl rfl
 
 /-- **Narrowed B1–B3, with gap 53's merge** (`close_writes_every_estimate_through_demoteEst`,
 which equates the whole line with `demoteEst`'s and so forbids the `demoted:` stamp
@@ -1340,7 +1508,7 @@ theorem close_never_demotes_a_wall_but_may_carry_it {g : Grain} {now : Day} {p q
             | _ => none) = _
       have : Field.viewShape e.val.line = Shape.interval a b := hs
       rw [this]
-  have := stepSkel_of_exempt (closeAct_of_exempt (g := g) (p := p.val) hx)
+  have := stepSkel_of_exempt (closeAct_never_files_an_exempt_line (g := g) (p := p.val) hx)
   rw [hsk]
   conv => lhs; rw [this]
   rw [← hsk]
@@ -1434,7 +1602,8 @@ theorem close_carries_a_wall_that_is_still_ahead {g : Grain} {now : Day} {p q : 
       rw [this]
       simp [hahead]
     have htakes' : (closePolicy g).takes e.val.skel.status = true := htakes
-    simp [htakes', hrec', hw, (closePolicy_exemptions g).2, exemptAct]
+    have hov : e.val.skel.overdue now = false := Skel.overdue_of_wallAhead hw
+    simp [htakes', hrec', hw, hov, (closePolicy_exemptions g).2, exemptAct]
   cases hk : carryTarget now p.val with
   | none =>
     have hstep : stepSkel g now p.val e.val.skel = e.val.skel := by
@@ -1588,6 +1757,9 @@ theorem landingSpot_error {p : PlanCore} {k : DocIx} {l : Landing} {src : Option
       · split at h
         · injection h with h; exact Or.inr h.symm
         · simp at h
+    · split at h
+      · injection h with h; exact Or.inr h.symm
+      · simp at h
 
 /-- The only filing transform that can answer `alreadyDemoted` is the week row's
 `refile`, and only for a line whose own box is `[-]`. -/
@@ -1665,6 +1837,17 @@ theorem closeOne_refuses_alreadyDemoted_only_over_a_stray_tomb {g : Grain} {now 
             | some t =>
               simp only [ha, Bool.not_eq_true'] at hs
               exact ⟨hcopy, e, t, hget, ha, hs⟩
+    · split at h
+      · simp at h
+      · split at h
+        · rename_i x hx
+          injection h with h; subst h
+          rcases landingSpot_error hx with h1 | h1 <;> simp at h1
+        · rcases landAt_error h with h1 | h1 | ⟨t, e', _, _, _, hf⟩
+          · simp at h1
+          · simp at h1
+          · simp only [moveTo, lift] at hf
+            split at hf <;> simp at hf
 
 /-- **The old law, where it still holds as stated**: a step over an item with no
 stray tombstone never answers `alreadyDemoted`. -/
@@ -1916,6 +2099,14 @@ theorem stepSkel_lands_outside_every_closed_region (g g' : Grain) (now : Day) (p
       rcases skelAfter_doc g r k s with hd | hd
       · right; rw [hd]; exact hopen k _ hreg (closeTo_target_is_open g now)
       · exact Or.inl hd
+    · exact Or.inl rfl
+  · split
+    · rename_i k hk
+      obtain ⟨_, _, hreg⟩ := overdueTarget_spec hk
+      right
+      unfold closedRegionOf
+      simp only
+      rw [hreg]
     · exact Or.inl rfl
 
 /-- One line's skeleton, closed at two grains against one plan's files, comes
@@ -2188,7 +2379,9 @@ theorem autoClose_strands_no_unfinished_line {now : Day} {p q : WfPlan}
   have hwalls := (closePolicy_exemptions r.grain).2
   unfold closeAct at hst
   rw [hreg] at hst
-  simp only [htakes', hrec'] at hst
+  simp only [htakes', hrec', Bool.true_eq_false, Bool.false_eq_true, if_false] at hst
+  split at hst
+  · cases hst
   have hsh : ∀ a b : DT, Field.viewShape f.val.line = Shape.interval a b → now ≤ b.day := hwall
   revert hst
   show (match (match Field.viewShape f.val.line with
@@ -2311,6 +2504,7 @@ theorem stepSkel_appends_at_most_one_stamp_or_merges (g : Grain) (now : Day) (p 
             exact Or.inr ⟨st, Or.inr ⟨tl, rfl, hset _ _
               (List.ne_nil_of_mem (((mergeStamps_spec _ _ _).2 st).2 (Or.inr (Or.inr rfl))))⟩⟩
     · exact Or.inl rfl
+  · split <;> exact Or.inl rfl
 
 /-- **F1's double stamp, ruled out** (restates
 `autoClose_stamps_each_line_at_most_once`, whose two disjuncts a merged record
@@ -2527,6 +2721,12 @@ theorem landingSpot_bump {p q : PlanCore} {k : DocIx} (o : Option Nat)
         cases firstHeadingAbove d none (fun h => headingBody h == headingBody s) with
         | none => rfl
         | some h => simp only [Option.map_some]; rw [h1]; rfl
+    | overdueSection =>
+      simp only
+      rw [h0]
+      cases firstHeadingAbove d none (fun h => headingBody h == "Overdue".toList) with
+      | none => rfl
+      | some h => simp only [Option.map_some]; rw [h1]; rfl
 
 theorem landingSpot_src (p : PlanCore) (k : DocIx) {l : Landing} (hl : l ≠ .sameSection)
     (s s' : Option (List Char)) : landingSpot p k l s = landingSpot p k l s' := by
@@ -2538,6 +2738,7 @@ theorem landingSpot_src (p : PlanCore) (k : DocIx) {l : Landing} (hl : l ≠ .sa
     | fileEnd => rfl
     | demotedSection => rfl
     | sameSection => exact absurd rfl hl
+    | overdueSection => rfl
 
 theorem le_foldl_max_nat : ∀ (xs : List Nat) (a x : Nat), x ∈ xs → x ≤ xs.foldl Nat.max a := by
   intro xs
@@ -2640,7 +2841,9 @@ theorem closeOne_moves {g : Grain} {now : Day} {i : Id} {p q : WfPlan}
       (∃ f', q.val.store.get i = some f' ∧ f'.val.live = ⟨k, spot.getD (endRank p.val k)⟩) ∧
       (closeAct g now p.val e.val.skel = .carry → carryTarget now p.val = some k ∧ spot = none) ∧
       (∀ r, closeAct g now p.val e.val.skel = .file r → closeTarget g now p.val = some k ∧
-          landingSpot p.val k (closePolicy g).landing (sectionAt p.val e.val.live) = .ok spot) := by
+          landingSpot p.val k (closePolicy g).landing (sectionAt p.val e.val.live) = .ok spot) ∧
+      (closeAct g now p.val e.val.skel = .overdue → overdueTarget p.val = some k ∧
+          landingSpot p.val k .overdueSection (sectionAt p.val e.val.live) = .ok spot) := by
   unfold closeOne at h
   split at h
   · simp at h
@@ -2655,7 +2858,7 @@ theorem closeOne_moves {g : Grain} {now : Day} {i : Id} {p q : WfPlan}
       · simp at h
       · rename_i k hk
         obtain ⟨hj, hd, hi⟩ := landAt_moves (fun t e e' hm => moveTo_live hm) h
-        refine Or.inr ⟨e, k, none, hget, ?_, hj, hd, hi, fun _ => ⟨hk, rfl⟩, fun r hr => ?_⟩
+        refine Or.inr ⟨e, k, none, hget, ?_, hj, hd, hi, fun _ => ⟨hk, rfl⟩, fun r hr => ?_, fun ho => ?_⟩
         · obtain ⟨_, _, hreg⟩ := findDocIx_spec hk
           intro r hr
           rw [hreg] at hr
@@ -2663,6 +2866,7 @@ theorem closeOne_moves {g : Grain} {now : Day} {i : Id} {p q : WfPlan}
           subst hr
           exact regionOf_is_open week now
         · rw [hact] at hr; exact absurd hr (by simp)
+        · rw [hact] at ho; exact absurd ho (by simp)
     · rename_i r hact
       split at h
       · simp at h
@@ -2671,7 +2875,8 @@ theorem closeOne_moves {g : Grain} {now : Day} {i : Id} {p q : WfPlan}
         · simp at h
         · rename_i spot hspot
           obtain ⟨hj, hd, hi⟩ := landAt_moves (fun t e e' hm => (fileE_skel hm).2) (guardStray_ok h).1
-          refine Or.inr ⟨e, k, spot, hget, ?_, hj, hd, hi, fun hc => ?_, fun r' hr => ⟨hk, hspot⟩⟩
+          refine Or.inr ⟨e, k, spot, hget, ?_, hj, hd, hi, fun hc => ?_, fun r' hr => ⟨hk, hspot⟩,
+            fun ho => ?_⟩
           · obtain ⟨_, _, hreg⟩ := findDocIx_spec hk
             intro r hr
             rw [hreg] at hr
@@ -2679,6 +2884,23 @@ theorem closeOne_moves {g : Grain} {now : Day} {i : Id} {p q : WfPlan}
             subst hr
             exact closeTo_target_is_open g now
           · rw [hact] at hc; exact absurd hc (by simp)
+          · rw [hact] at ho; exact absurd ho (by simp)
+    · rename_i hact
+      split at h
+      · simp at h
+      · rename_i k hk
+        split at h
+        · simp at h
+        · rename_i spot hspot
+          obtain ⟨hj, hd, hi⟩ := landAt_moves (fun t e e' hm => moveTo_live hm) h
+          refine Or.inr ⟨e, k, spot, hget, ?_, hj, hd, hi, fun hc => ?_, fun r hr => ?_,
+            fun _ => ⟨hk, hspot⟩⟩
+          · obtain ⟨_, _, hreg⟩ := overdueTarget_spec hk
+            intro r hr
+            rw [hreg] at hr
+            cases hr
+          · rw [hact] at hc; exact absurd hc (by simp)
+          · rw [hact] at hr; exact absurd hr (by simp)
 
 
 theorem carryTarget_frame {p q : PlanCore} (hf : Frame p q) (now : Day) :
@@ -2782,20 +3004,97 @@ theorem closeAct_skel_frame {g : Grain} {now : Day} {p0 P : PlanCore} (hfr : Fra
     (hbs : b.val.skel = ex.val.skel) : closeAct g now P b.val.skel = closeAct g now p0 ex.val.skel := by
   rw [closeAct_frame hfr, hbs]
 
+/-- One step's landing keeps an earlier line of file `K` strictly above every spot
+a later landing in `K` would name, at whichever landing that is. -/
+theorem spot_bound_after_step {P P1 : WfPlan} {K k : DocIx} {spot : Option Nat} {L : Landing}
+    {src : Option (List Char)} {a a' : Entity}
+    (hds : ∀ d, P1.val.docs[d]? = if d = k then (P.val.docs[d]?).map (Doc.bump spot) else P.val.docs[d]?)
+    (hal : a'.val.live = a.val.live.bump k spot) (had : a.val.live.doc = K)
+    (hspot : ∀ s0, landingSpot P.val K L src = .ok s0 → ∀ n, s0 = some n → a.val.live.rank < n) :
+    ∀ s1, landingSpot P1.val K L src = .ok s1 → ∀ n, s1 = some n → a'.val.live.rank < n := by
+  intro spot' hsp' n hn
+  by_cases hK : K = k
+  · subst hK
+    have hdk : P1.val.docs[K]? = (P.val.docs[K]?).map (Doc.bump spot) := by
+      rw [hds K, if_pos rfl]
+    rw [landingSpot_bump spot hdk] at hsp'
+    cases hs0 : landingSpot P.val K L src with
+    | error x => rw [hs0] at hsp'; simp [Except.map] at hsp'
+    | ok s0 =>
+      rw [hs0] at hsp'
+      simp only [Except.map, Except.ok.injEq] at hsp'
+      rw [hn] at hsp'
+      cases s0 with
+      | none => simp at hsp'
+      | some n0 =>
+        simp only [Option.map_some, Option.some.injEq] at hsp'
+        rw [← hsp', hal, Site.bump_rank_of_doc _ had]
+        exact (rankBump_lt_iff spot _ _).2 (hspot (some n0) hs0 n0 rfl)
+  · have hdk : P1.val.docs[K]? = P.val.docs[K]? := by rw [hds K, if_neg hK]
+    rw [landingSpot_docs hdk] at hsp'
+    rw [hal, Site.bump_of_ne spot (by rw [had]; exact hK)]
+    exact hspot spot' hsp' n hn
+
+/-- A line of file `K` above the spot a landing names stays above the line that
+lands there. -/
+theorem rank_lt_landing {P : WfPlan} {K : DocIx} {spot : Option Nat} {a : Entity} {i : Id}
+    (hPa : P.val.store.get i = some a) (had : a.val.live.doc = K)
+    (hlt : ∀ n, spot = some n → a.val.live.rank < n) :
+    (a.val.live.bump K spot).rank < spot.getD (endRank P.val K) := by
+  cases spot with
+  | none =>
+    rw [Site.bump_none, ← had]
+    exact live_rank_lt_endRank hPa
+  | some m =>
+    have hm := hlt m rfl
+    rw [Site.bump_rank_of_doc _ had]
+    show shiftRank m a.val.live.rank < m
+    unfold shiftRank
+    rw [if_neg (Nat.not_le.2 hm)]
+    exact hm
+
+/-- The line that landed at a spot is above every spot the next landing at the
+same landing names. -/
+theorem landed_rank_lt_next_spot {P P1 : WfPlan} {k : DocIx} {spot : Option Nat} {L : Landing}
+    {src : Option (List Char)}
+    (hds : ∀ d, P1.val.docs[d]? = if d = k then (P.val.docs[d]?).map (Doc.bump spot) else P.val.docs[d]?)
+    (hsp : landingSpot P.val k L src = .ok spot) :
+    ∀ s1, landingSpot P1.val k L src = .ok s1 → ∀ n, s1 = some n → spot.getD (endRank P.val k) < n := by
+  intro spot' hsp' n hn
+  have hdk : P1.val.docs[k]? = (P.val.docs[k]?).map (Doc.bump spot) := by
+    rw [hds k, if_pos rfl]
+  rw [landingSpot_bump spot hdk, hsp] at hsp'
+  simp only [Except.map, Except.ok.injEq] at hsp'
+  rw [hn] at hsp'
+  cases spot with
+  | none => simp at hsp'
+  | some m =>
+    simp only [Option.map_some, Option.some.injEq] at hsp'
+    rw [← hsp']
+    show m < shiftRank m m
+    unfold shiftRank
+    rw [if_pos (Nat.le_refl m)]
+    exact Nat.lt_succ_self m
+
 /-- **The fold, after the earlier line `i` has landed and before `j` does.**
 `i` sits in the destination `K`, strictly before any rank `j`'s own landing
-spot would name. -/
+spot would name — at the row's landing for a filed line, at `# Overdue` for an
+overdue one (D7). -/
 theorem fold_keeps_order_after_first (g : Grain) (now : Day) (p0 : WfPlan) (i j : Id) (ej : Entity)
     (K : DocIx) (hact : closeAct g now p0.val ej.val.skel ≠ .stay)
     (hcarry : closeAct g now p0.val ej.val.skel = .carry → carryTarget now p0.val = some K)
-    (hfile : ∀ r, closeAct g now p0.val ej.val.skel = .file r → closeTarget g now p0.val = some K) :
+    (hfile : ∀ r, closeAct g now p0.val ej.val.skel = .file r → closeTarget g now p0.val = some K)
+    (hover : closeAct g now p0.val ej.val.skel = .overdue → overdueTarget p0.val = some K) :
     ∀ (l : List Id) (P Q : WfPlan), l.foldlM (fun q c => closeOne g now c q) P = .ok Q →
       l.Nodup → i ∉ l → j ∈ l → Frame p0.val P.val → ClosedDocsKept now p0.val P.val →
       (∃ b, P.val.store.get j = some b ∧ b.val.skel = ej.val.skel ∧ b.val.live = ej.val.live) →
       (∃ a, P.val.store.get i = some a ∧ a.val.live.doc = K ∧
-        ∀ r, closeAct g now p0.val ej.val.skel = .file r → ∀ spot,
+        (∀ r, closeAct g now p0.val ej.val.skel = .file r → ∀ spot,
           landingSpot P.val K (closePolicy g).landing (sectionAt p0.val ej.val.live) = .ok spot →
-          ∀ n, spot = some n → a.val.live.rank < n) →
+          ∀ n, spot = some n → a.val.live.rank < n) ∧
+        (closeAct g now p0.val ej.val.skel = .overdue → ∀ spot,
+          landingSpot P.val K .overdueSection (sectionAt p0.val ej.val.live) = .ok spot →
+          ∀ n, spot = some n → a.val.live.rank < n)) →
       ∃ a b, Q.val.store.get i = some a ∧ Q.val.store.get j = some b ∧
         a.val.live.doc = b.val.live.doc ∧ a.val.live.rank < b.val.live.rank := by
   obtain ⟨r0, hr0, hc0⟩ := closeAct_closed hact
@@ -2813,7 +3112,7 @@ theorem fold_keeps_order_after_first (g : Grain) (now : Day) (p0 : WfPlan) (i j 
       have hnd' := List.nodup_cons.1 hnd
       have hci : i ≠ c := fun hc => hi (hc ▸ List.mem_cons_self ..)
       obtain ⟨b, hPb, hbs, hbl⟩ := hb
-      obtain ⟨a, hPa, had, hspot⟩ := ha
+      obtain ⟨a, hPa, had, hspot, hspotO⟩ := ha
       obtain ⟨hf1, _, _⟩ := closeOne_spec h1
       have hfr1 := hfr.trans hf1
       by_cases hjc : j = c
@@ -2822,7 +3121,8 @@ theorem fold_keeps_order_after_first (g : Grain) (now : Day) (p0 : WfPlan) (i j 
         refine fold_keeps_order_both g now i j rest P1 Q h
           (fun hm => hi (List.mem_cons_of_mem _ hm)) hnd'.1 ?_
         have hactP := closeAct_skel_frame (g := g) (now := now) hfr hbs
-        rcases closeOne_moves h1 with ⟨_, hst⟩ | ⟨e, k, spot, hPe, _, hjs, _, ⟨f', hf', hlive⟩, hcar, hfil⟩
+        rcases closeOne_moves h1 with ⟨_, hst⟩ |
+            ⟨e, k, spot, hPe, _, hjs, _, ⟨f', hf', hlive⟩, hcar, hfil, hovr⟩
         · exact absurd ((hactP.symm.trans (hst b hPb))) hact
         · rw [hPb] at hPe
           injection hPe with hPe
@@ -2831,82 +3131,49 @@ theorem fold_keeps_order_after_first (g : Grain) (now : Day) (p0 : WfPlan) (i j 
           rw [hPa] at hli
           obtain ⟨a', ha', hal⟩ := get_of_map_eq_some hli
           simp only at hal
-          refine ⟨a', f', ha', hf', ?_, ?_⟩
-          · rw [hal, Site.bump_doc, hlive, had]
-            cases hA : closeAct g now p0.val ej.val.skel with
-            | stay => exact absurd hA hact
-            | carry =>
-              have := (hcar (hactP.trans hA)).1
-              rw [carryTarget_frame hfr, hcarry hA] at this
-              injection this
-            | file r =>
-              have := (hfil r (hactP.trans hA)).1
-              rw [closeTarget_frame hfr, hfile r hA] at this
-              injection this
-          · rw [hal, hlive]
-            simp only
+          have hsec : sectionAt P.val b.val.live = sectionAt p0.val ej.val.live := by
+            rw [hbl]; exact sectionAt_docs (hcd _ r0 hr0 hc0)
+          have hkK : K = k ∧ ∀ n, spot = some n → a.val.live.rank < n := by
             cases hA : closeAct g now p0.val ej.val.skel with
             | stay => exact absurd hA hact
             | carry =>
               obtain ⟨hk, hsp⟩ := hcar (hactP.trans hA)
               rw [carryTarget_frame hfr, hcarry hA] at hk
               injection hk with hk
-              subst hk hsp
-              rw [Site.bump_none, ← had]
-              exact live_rank_lt_endRank hPa
+              exact ⟨hk, fun n hn => by rw [hsp] at hn; cases hn⟩
             | file r =>
               obtain ⟨hk, hsp⟩ := hfil r (hactP.trans hA)
               rw [closeTarget_frame hfr, hfile r hA] at hk
               injection hk with hk
-              subst hk
-              have hsec : sectionAt P.val b.val.live = sectionAt p0.val ej.val.live := by
-                rw [hbl]; exact sectionAt_docs (hcd _ r0 hr0 hc0)
-              rw [hsec] at hsp
-              cases spot with
-              | none =>
-                rw [Site.bump_none, ← had]
-                exact live_rank_lt_endRank hPa
-              | some m =>
-                have hlt := hspot r hA (some m) hsp m rfl
-                rw [Site.bump_rank_of_doc _ had]
-                show shiftRank m a.val.live.rank < m
-                unfold shiftRank
-                rw [if_neg (Nat.not_le.2 hlt)]
-                exact hlt
+              rw [hsec, ← hk] at hsp
+              exact ⟨hk, fun n hn => hspot r hA spot hsp n hn⟩
+            | overdue =>
+              obtain ⟨hk, hsp⟩ := hovr (hactP.trans hA)
+              rw [overdueTarget_frame hfr, hover hA] at hk
+              injection hk with hk
+              rw [hsec, ← hk] at hsp
+              exact ⟨hk, fun n hn => hspotO hA spot hsp n hn⟩
+          obtain ⟨hkK, hlt⟩ := hkK
+          refine ⟨a', f', ha', hf', ?_, ?_⟩
+          · rw [hal, Site.bump_doc, hlive, had, hkK]
+          · rw [hal, hlive]
+            rw [← hkK]
+            exact rank_lt_landing hPa had hlt
       · -- a step that lands some other line
         have hjr : j ∈ rest := (List.mem_cons.1 hj).resolve_left hjc
         obtain ⟨_, hcd1, b', hb', hb's, hb'l⟩ :=
           closeOne_keeps_untaken h1 hfr hcd hjc hPb hbs hbl hr0 hc0
         refine ih P1 Q h hnd'.2 (fun hm => hi (List.mem_cons_of_mem _ hm)) hjr hfr1 hcd1
           ⟨b', hb', hb's, hb'l⟩ ?_
-        rcases closeOne_moves h1 with ⟨rfl, _⟩ | ⟨e, k, spot, _, hopen, hjs, hds, _, _, _⟩
-        · exact ⟨a, hPa, had, hspot⟩
+        rcases closeOne_moves h1 with ⟨rfl, _⟩ | ⟨e, k, spot, _, hopen, hjs, hds, _, _, _, _⟩
+        · exact ⟨a, hPa, had, hspot, hspotO⟩
         · have hli := hjs i hci
           rw [hPa] at hli
           obtain ⟨a', ha', hal⟩ := get_of_map_eq_some hli
           simp only at hal
-          refine ⟨a', ha', by rw [hal, Site.bump_doc, had], fun r hA spot' hsp' n hn => ?_⟩
-          by_cases hK : K = k
-          · subst hK
-            have hdk : P1.val.docs[K]? = (P.val.docs[K]?).map (Doc.bump spot) := by
-              rw [hds K, if_pos rfl]
-            rw [landingSpot_bump spot hdk] at hsp'
-            cases hs0 : landingSpot P.val K (closePolicy g).landing (sectionAt p0.val ej.val.live) with
-            | error x => rw [hs0] at hsp'; simp [Except.map] at hsp'
-            | ok s0 =>
-              rw [hs0] at hsp'
-              simp only [Except.map, Except.ok.injEq] at hsp'
-              rw [hn] at hsp'
-              cases s0 with
-              | none => simp at hsp'
-              | some n0 =>
-                simp only [Option.map_some, Option.some.injEq] at hsp'
-                rw [← hsp', hal, Site.bump_rank_of_doc _ had]
-                exact (rankBump_lt_iff spot _ _).2 (hspot r hA (some n0) hs0 n0 rfl)
-          · have hdk : P1.val.docs[K]? = P.val.docs[K]? := by rw [hds K, if_neg hK]
-            rw [landingSpot_docs hdk] at hsp'
-            rw [hal, Site.bump_of_ne spot (by rw [had]; exact hK)]
-            exact hspot r hA spot' hsp' n hn
+          exact ⟨a', ha', by rw [hal, Site.bump_doc, had],
+            fun r hA => spot_bound_after_step hds hal had (hspot r hA),
+            fun hA => spot_bound_after_step hds hal had (hspotO hA)⟩
 
 
 /-- **The fold, before either line has landed.** -/
@@ -2963,41 +3230,39 @@ theorem fold_keeps_order (g : Grain) (now : Day) (p0 : WfPlan) (i j : Id) (ei ej
         have hactP := closeAct_skel_frame (g := g) (now := now) hfr has
         obtain ⟨_, hcd1, b', hb', hb's, hb'l⟩ :=
           closeOne_keeps_untaken h1 hfr hcd (Ne.symm hij) hPb hbs hbl hrj hcj
-        rcases closeOne_moves h1 with ⟨_, hst⟩ | ⟨e, k, spot, hPe, _, _, hds, ⟨f', hf', hlive⟩, hcar, hfil⟩
+        rcases closeOne_moves h1 with ⟨_, hst⟩ |
+            ⟨e, k, spot, hPe, _, _, hds, ⟨f', hf', hlive⟩, hcar, hfil, hovr⟩
         · exact absurd (hactP.symm.trans (hst a hPa)) hne
         · rw [hPa] at hPe
           injection hPe with hPe
           subst hPe
+          have hsrc : sectionAt P.val a.val.live = sectionAt p0.val ei.val.live := by
+            rw [hal]; exact sectionAt_docs (hcd _ ri hri hci)
           refine fold_keeps_order_after_first g now p0 i j ej k hnej
-            (fun hA => ?_) (fun r hA => ?_) rest P1 Q h hnd'.2 hnd'.1 hjr hfr1 hcd1
-            ⟨b', hb', hb's, hb'l⟩ ⟨f', hf', by rw [hlive], fun r hA spot' hsp' n hn => ?_⟩
+            (fun hA => ?_) (fun r hA => ?_) (fun hA => ?_) rest P1 Q h hnd'.2 hnd'.1 hjr hfr1 hcd1
+            ⟨b', hb', hb's, hb'l⟩ ⟨f', hf', by rw [hlive], fun r hA spot' hsp' n hn => ?_,
+              fun hA spot' hsp' n hn => ?_⟩
           · rw [← carryTarget_frame hfr]; exact (hcar (hactP.trans (hact ▸ hA))).1
           · rw [← closeTarget_frame hfr]; exact (hfil r (hactP.trans (hact ▸ hA))).1
+          · rw [← overdueTarget_frame hfr]; exact (hovr (hactP.trans (hact ▸ hA))).1
           · have hAi : closeAct g now p0.val ei.val.skel = .file r := hact ▸ hA
             have hsp := (hfil r (hactP.trans hAi)).2
-            have hsrc : sectionAt P.val a.val.live = sectionAt p0.val ei.val.live := by
-              rw [hal]; exact sectionAt_docs (hcd _ ri hri hci)
             rw [hsrc] at hsp
             have hsp2 : landingSpot P.val k (closePolicy g).landing (sectionAt p0.val ej.val.live) =
                 .ok spot := by
               by_cases hl : (closePolicy g).landing = .sameSection
               · rw [← hsec (by rw [hAi]; simp) hl]; exact hsp
               · rw [landingSpot_src P.val k hl _ (sectionAt p0.val ei.val.live)]; exact hsp
-            have hdk : P1.val.docs[k]? = (P.val.docs[k]?).map (Doc.bump spot) := by
-              rw [hds k, if_pos rfl]
-            rw [landingSpot_bump spot hdk, hsp2] at hsp'
-            simp only [Except.map, Except.ok.injEq] at hsp'
-            rw [hn] at hsp'
             rw [hlive]
-            cases spot with
-            | none => simp at hsp'
-            | some m =>
-              simp only [Option.map_some, Option.some.injEq] at hsp'
-              rw [← hsp']
-              show m < shiftRank m m
-              unfold shiftRank
-              rw [if_pos (Nat.le_refl m)]
-              exact Nat.lt_succ_self m
+            exact landed_rank_lt_next_spot hds hsp2 spot' hsp' n hn
+          · have hAi : closeAct g now p0.val ei.val.skel = .overdue := hact ▸ hA
+            have hsp := (hovr (hactP.trans hAi)).2
+            rw [hsrc] at hsp
+            have hsp2 : landingSpot P.val k .overdueSection (sectionAt p0.val ej.val.live) =
+                .ok spot := by
+              rw [landingSpot_src P.val k (by decide) _ (sectionAt p0.val ei.val.live)]; exact hsp
+            rw [hlive]
+            exact landed_rank_lt_next_spot hds hsp2 spot' hsp' n hn
 
 theorem sublist_pair_or {i j : Id} (hij : i ≠ j) :
     ∀ l : List Id, i ∈ l → j ∈ l → [i, j].Sublist l ∨ [j, i].Sublist l := by
@@ -3016,7 +3281,8 @@ theorem sublist_pair_or {i j : Id} (hij : i ≠ j) :
         · exact Or.inr (h.cons _)
 
 /-- **Gap 59's law: a close keeps source order.**  Two lines one close takes
-from the same file, by the same action — both carried, or both filed — land in
+from the same file, by the same action — both carried, both filed, or both moved to
+the backlog's `# Overdue` (D7, re-proved per D5 over the fourth action) — land in
 the same destination file in the order they had: the one above stays above.
 When the row lands a line in the section it came from (§6.3's month row) the two
 must have stood under the same heading, because the destination's sections are
@@ -3091,5 +3357,864 @@ theorem close_keeps_source_order_iff {g : Grain} {now : Day} {p q : WfPlan} (h :
       rw [hqj] at hqj'; injection hqj' with hqj'
       subst hqi' hqj'
       exact Nat.lt_asymm hq hr
+
+
+/-! ## Gap 55 closed: dated work routes itself (the owner's D7 and D8)
+
+Until the owner's decisions of 2026-09-13 a week line with `due:` was filed like any
+other, its `# Demoted` record broke the month rule "an outcome carries no date", and
+the whole week close refused `badHorizon` — §4.3's own example week, a week after
+`tm init --example`, refused its automatic close on every command (README gap 55).
+Now the week row routes the line by its date (`closeAct`'s fourth action):
+
+* **past due, `persist`** (D7): moved to the end of `backlog.md`'s `# Overdue`, box,
+  bytes and tombstone as they were — no stamp, no `[-]` left behind
+  (`close_moves_a_past_due_persist_line_to_the_backlog`);
+* **anything else dated** — not yet due, or past due with `on-miss:expire`/`next`
+  (D8): filed like any unfinished line, `[-]` left behind and a stamped record in
+  `# Demoted`, which keeps the line's date (`close_week_files_a_dated_line_keeping_its_date`),
+  and `shapesWf` admits that record since D8 (`demotedRecordPlacement`, Plan.lean).
+
+The two-run laws this re-proves in place (D5): `close_is_idempotent` (L16) — a backlog
+has no region, so nothing D7 moves is ever taken again (`closeAct_of_regionless`);
+`close_keeps_source_order` — two overdue lines of one week land in `# Overdue` in the
+order they had (`fold_keeps_order` over the fourth action); the L19 theorems, whose
+argument is `stepSkel_lands_outside_every_closed_region`; and, in Report.lean, the
+report agreement over the sixth disposition, `moveOverdue`. -/
+
+namespace Field
+
+theorem lookup_filterMap_cons_congr (k : Key) (t : Tok) {xs ys : List Tok}
+    (h : List.lookup k (xs.filterMap (fun x => rawKeyPair x.word)) =
+      List.lookup k (ys.filterMap (fun x => rawKeyPair x.word))) :
+    List.lookup k ((t :: xs).filterMap (fun x => rawKeyPair x.word)) =
+      List.lookup k ((t :: ys).filterMap (fun x => rawKeyPair x.word)) := by
+  cases hr : rawKeyPair t.word with
+  | none => rw [filterMap_cons_none' _ t xs hr, filterMap_cons_none' _ t ys hr]; exact h
+  | some p =>
+    rw [filterMap_cons_some' _ t p xs hr, filterMap_cons_some' _ t p ys hr]
+    obtain ⟨a, b⟩ := p
+    by_cases hk : k = a
+    · subst hk
+      rw [lookup_cons_self, lookup_cons_self]
+    · rw [lookup_cons_ne k a b _ hk, lookup_cons_ne k a b _ hk]; exact h
+
+theorem isKeyTok_of_keyOf_ne {k' : Key} {t : Tok} (h : keyOf t.word ≠ some k') : isKeyTok k' t = false := by
+  unfold isKeyTok
+  exact beq_false_of_ne h
+
+theorem lookup_setKeyIn_other {k k' : Key} (hne : k' ≠ k) (v : List Char) : ∀ ts : List Tok,
+    List.lookup k' ((setKeyIn k v ts).filterMap (fun x => rawKeyPair x.word)) =
+      List.lookup k' (ts.filterMap (fun x => rawKeyPair x.word))
+  | [] => rfl
+  | t :: ts => by
+    by_cases hk : isKeyTok k t = true
+    · have h1 : isKeyTok k' ⟨t.sep, keyWord k v⟩ = false :=
+        isKeyTok_of_keyOf_ne (by rw [keyOf_keyWord]; exact fun hc => hne (Option.some.inj hc).symm)
+      have h2 : isKeyTok k' t = false := by
+        apply isKeyTok_of_keyOf_ne
+        unfold isKeyTok at hk
+        rw [beq_iff_eq.1 hk]
+        exact fun hc => hne (Option.some.inj hc).symm
+      rw [setKeyIn_cons_pos k v t ts hk, lookup_cons_skip k' _ _ h1, lookup_cons_skip k' _ _ h2]
+    · simp only [Bool.not_eq_true] at hk
+      rw [setKeyIn_cons_neg k v t ts hk]
+      exact lookup_filterMap_cons_congr k' t (lookup_setKeyIn_other hne v ts)
+
+theorem lookup_insertBeforeId_other {k' : Key} {w : List Char} (hw : keyOf w ≠ some k') :
+    ∀ ts : List Tok,
+      List.lookup k' ((insertBeforeId w ts).filterMap (fun x => rawKeyPair x.word)) =
+        List.lookup k' (ts.filterMap (fun x => rawKeyPair x.word))
+  | [] => by
+    rw [insertBeforeId_nil, lookup_cons_skip k' _ _ (isKeyTok_of_keyOf_ne hw)]
+  | u :: us => by
+    by_cases hid : isIdWord u.word = true
+    · by_cases hs : u.sep.isEmpty = true
+      · rw [insertBeforeId_id_nosep w u us hid hs, lookup_cons_skip k' _ _ (isKeyTok_of_keyOf_ne hw)]
+        rfl
+      · simp only [Bool.not_eq_true] at hs
+        rw [insertBeforeId_id_sep w u us hid hs, lookup_cons_skip k' _ _ (isKeyTok_of_keyOf_ne hw)]
+    · simp only [Bool.not_eq_true] at hid
+      rw [insertBeforeId_other w u us hid]
+      exact lookup_filterMap_cons_congr k' u (lookup_insertBeforeId_other hw us)
+
+/-- **Setting one key leaves every other key's reading alone.** -/
+theorem lookupKey_setKey_other {k k' : Key} (hne : k' ≠ k) (v : List Char) (r : RawItem) :
+    lookupKey k' (setKey k v r) = lookupKey k' r := by
+  unfold lookupKey
+  rw [keyPairs_raw, keyPairs_raw]
+  unfold setKey
+  split
+  · exact lookup_setKeyIn_other hne v r.toks
+  · exact lookup_insertBeforeId_other
+      (by rw [keyOf_keyWord]; exact fun hc => hne (Option.some.inj hc).symm) r.toks
+
+theorem isEstKey_keyOf {w : List Char} (h : isEstKey w = true) : keyOf w = some .est := by
+  unfold isEstKey at h
+  match w, h with
+  | a :: b :: c :: d :: rest, h =>
+    simp only [List.take, beq_iff_eq, List.cons.injEq] at h
+    obtain ⟨rfl, rfl, rfl, rfl, _⟩ := h
+    rfl
+  | [], h => simp at h
+  | [_], h => simp at h
+  | [_, _], h => simp at h
+  | [_, _, _], h => simp at h
+
+/-- `viewShape` reads four keys, none of which a close writes. -/
+theorem viewShape_congr {r r' : RawItem}
+    (h : ∀ k : Key, k ≠ .demoted → k ≠ .est → lookupKey k r = lookupKey k r') :
+    viewShape r = viewShape r' := by
+  unfold viewShape viewAt viewWin viewDur viewDue
+  rw [h .interval (by decide) (by decide), h .window (by decide) (by decide),
+    h .dur (by decide) (by decide), h .due (by decide) (by decide)]
+
+end Field
+
+/-- Carrying a record's estimate onto a line writes an `est:` token and nothing
+else a key reads. -/
+theorem lookupKey_carryEst_other {k' : Field.Key} (hk : k' ≠ .est) (t line : RawItem) :
+    Field.lookupKey k' (carryEst t line) = Field.lookupKey k' line := by
+  unfold carryEst
+  split
+  · rfl
+  · split
+    · rename_i tok htok
+      unfold Field.lookupKey
+      rw [Field.keyPairs_raw, Field.keyPairs_raw]
+      have hw : isEstKey tok.word = true := by
+        have := List.find?_some htok
+        simpa using this
+      exact Field.lookup_insertBeforeId_other
+        (by rw [Field.isEstKey_keyOf hw]; exact fun hc => hk (Option.some.inj hc).symm) line.toks
+    · rfl
+
+/-- **A filed record keeps the line's date.**  The week row's record is the line
+with `demoted:` set over the carried estimate; neither token is one `viewShape`
+reads, so the `due:` (or `at:`, or `win:`) it had is the one it has. -/
+theorem viewShape_refiledLine (st : Stamp) (a : Option RawItem) (l : RawItem) :
+    Field.viewShape (refiledLine st a l) = Field.viewShape l := by
+  cases a with
+  | none =>
+    exact Field.viewShape_congr (fun k hd _ => Field.lookupKey_setKey_other hd _ _)
+  | some t =>
+    exact Field.viewShape_congr (fun k hd he =>
+      (Field.lookupKey_setKey_other hd _ _).trans (lookupKey_carryEst_other he t l))
+
+/-- A filed record carries the stamp its close appends — over a line with no
+standing record, and merged into one that has it (`mergeStamps_spec`). -/
+theorem refiledLine_stamps_mem (st : Stamp) (a : Option RawItem) (l : RawItem) :
+    st ∈ (Field.viewDemoted (refiledLine st a l)).getD [] := by
+  cases a with
+  | none =>
+    show st ∈ (Field.viewDemoted (Field.setDemoted (stampsOfLine l ++ [st]) l)).getD []
+    rw [Field.view_set_demoted _ _ (by simp)]
+    simp
+  | some t =>
+    show st ∈ (Field.viewDemoted (Field.setDemoted (mergeStamps (stampsOfLine t) (stampsOfLine l) st)
+      (carryEst t l))).getD []
+    have hm := ((mergeStamps_spec (stampsOfLine t) (stampsOfLine l) st).2 st).2 (Or.inr (Or.inr rfl))
+    rw [Field.view_set_demoted _ _ (List.ne_nil_of_mem hm)]
+    exact hm
+
+/-- **Past due with `persist`, in the core's own terms**: §5.3's effective
+`on_miss` is `persist`, and the line is a point due on a day before `now`'s or an
+interval that ended on one. -/
+theorem Core.skel_overdue_iff (c : Core) (now : Day) :
+    c.skel.overdue now = true ↔ effectiveOnMiss c = .persist ∧
+      ((∃ m, c.shape = Shape.point m ∧ m.day < now) ∨
+        (∃ a b, c.shape = Shape.interval a b ∧ b.day < now)) := by
+  show (match (match Field.viewShape c.line with
+          | .point m => some m.day | .interval _ b => some b.day | _ => none) with
+        | some d => decide (d < now) && decide (c.skel.onMiss = .persist)
+        | none => false) = true ↔ _
+  rw [Core.skel_onMiss]
+  have hs : c.shape = Field.viewShape c.line := rfl
+  rw [hs]
+  cases Field.viewShape c.line with
+  | none => simp
+  | point m =>
+    simp only [Shape.point.injEq, exists_eq_left', decide_eq_true_eq, Bool.and_eq_true]
+    exact ⟨fun ⟨h1, h2⟩ => ⟨h2, Or.inl h1⟩,
+      fun ⟨h2, h1⟩ => ⟨by simpa using h1, h2⟩⟩
+  | interval a b =>
+    simp only [Bool.and_eq_true, decide_eq_true_eq]
+    constructor
+    · exact fun ⟨h1, h2⟩ => ⟨h2, Or.inr ⟨a, b, rfl, h1⟩⟩
+    · rintro ⟨h2, ⟨m, hm, _⟩ | ⟨a', b', hab, h1⟩⟩
+      · cases hm
+      · injection hab with _ hb
+        subst hb
+        exact ⟨h1, h2⟩
+  | window r d => simp
+
+/-! ### Under `# Overdue`: where D7's route lands a line, it stays -/
+
+/-- No grain closes into a backlog: a close files into a week or a month file, and
+carries into a week. -/
+theorem kindOfGrain_is_never_backlog : ∀ g : Grain, kindOfGrain g ≠ .backlog := by
+  decide
+
+theorem pairwise_of_ranksAscend : ∀ (l : List (Nat × List Char)),
+    ranksAscend l = true → l.Pairwise (fun a b => a.1 < b.1)
+  | [], _ => List.Pairwise.nil
+  | [_], _ => List.pairwise_singleton _ _
+  | a :: b :: t, h => by
+    simp only [ranksAscend, Bool.and_eq_true, decide_eq_true_eq] at h
+    have ih := pairwise_of_ranksAscend (b :: t) h.2
+    refine List.pairwise_cons.2 ⟨fun x hx => ?_, ih⟩
+    rcases List.mem_cons.1 hx with rfl | hx
+    · exact h.1
+    · exact Nat.lt_trans h.1 (List.pairwise_cons.1 ih |>.1 x hx)
+
+/-- Two prose lines of one document at one rank are one line. -/
+theorem prose_eq_of_rank {l : List (Nat × List Char)} (h : ranksAscend l = true)
+    {a b : Nat × List Char} (ha : a ∈ l) (hb : b ∈ l) (hr : a.1 = b.1) : a = b := by
+  have hp := pairwise_of_ranksAscend l h
+  induction l with
+  | nil => simp at ha
+  | cons x t ih =>
+    have hp' := List.pairwise_cons.1 hp
+    have ht : ranksAscend t = true := ranksAscend_of_pairwise t hp'.2
+    rcases List.mem_cons.1 ha with hax | hat <;> rcases List.mem_cons.1 hb with hbx | hbt
+    · rw [hax, hbx]
+    · rw [hax] at hr; exact absurd hr (Nat.ne_of_lt (hp'.1 b hbt))
+    · rw [hbx] at hr; exact absurd hr.symm (Nat.ne_of_lt (hp'.1 a hat))
+    · exact ih ht hat hbt hp'.2
+
+theorem foldl_congr_mem {α β : Type} (f g : β → α → β) :
+    ∀ (l : List α) (acc : β), (∀ b x, x ∈ l → f b x = g b x) → l.foldl f acc = l.foldl g acc
+  | [], _, _ => rfl
+  | x :: t, acc, h => by
+    simp only [List.foldl_cons]
+    rw [h acc x (List.mem_cons_self ..)]
+    exact foldl_congr_mem f g t _ (fun b y hy => h b y (List.mem_cons_of_mem _ hy))
+
+/-- **A shift at `n` does not move the section of a rank at or below `n`.** -/
+theorem lastHeadingBefore_shiftFrom (d : Doc) {n r : Nat} (hr : r ≤ n) :
+    lastHeadingBefore (d.shiftFrom n) r = lastHeadingBefore d r := by
+  unfold lastHeadingBefore
+  show (d.prose.map (fun q => (shiftRank n q.1, q.2))).foldl _ none = _
+  rw [List.foldl_map]
+  apply foldl_congr_mem
+  intro acc q _
+  by_cases hq : q.1 < n
+  · have hs : shiftRank n q.1 = q.1 := by unfold shiftRank; rw [if_neg (Nat.not_le.2 hq)]
+    have hl := liveHeading_shiftFrom n d q
+    simp only [hs] at hl ⊢
+    rw [hl]
+  · have hs : shiftRank n q.1 = q.1 + 1 := by unfold shiftRank; rw [if_pos (Nat.not_lt.1 hq)]
+    have h1 : ¬ (q.1 + 1 < r) := by omega
+    have h2 : ¬ (q.1 < r) := by omega
+    simp only [hs, h1, h2, decide_false, Bool.false_and, Bool.false_eq_true, if_false]
+
+/-! #### The heading folds, characterised -/
+
+def lhbStep (d : Doc) (r : Nat) (acc : Option (Nat × List Char)) (q : Nat × List Char) :
+    Option (Nat × List Char) :=
+  if decide (q.1 < r) && liveHeading d q then
+    match acc with
+    | none   => some q
+    | some b => if b.1 < q.1 then some q else some b
+  else acc
+
+theorem lastHeadingBefore_eq_foldl (d : Doc) (r : Nat) :
+    lastHeadingBefore d r = d.prose.foldl (lhbStep d r) none := rfl
+
+theorem foldl_lhbStep_some (d : Doc) (r : Nat) : ∀ (l : List (Nat × List Char)) (acc : Option (Nat × List Char))
+    (x : Nat × List Char), l.foldl (lhbStep d r) acc = some x →
+      (acc = some x ∨ (x ∈ l ∧ x.1 < r ∧ liveHeading d x = true)) ∧
+      (∀ b, acc = some b → b.1 ≤ x.1) ∧
+      (∀ q ∈ l, q.1 < r → liveHeading d q = true → q.1 ≤ x.1)
+  | [], acc, x, h => by
+    simp only [List.foldl_nil] at h
+    subst h
+    exact ⟨Or.inl rfl, fun b hb => by injection hb with hb; subst hb; exact Nat.le_refl _, fun q hq => by simp at hq⟩
+  | q :: t, acc, x, h => by
+    simp only [List.foldl_cons] at h
+    obtain ⟨h1, h2, h3⟩ := foldl_lhbStep_some d r t _ x h
+    unfold lhbStep at h1 h2
+    by_cases he : (decide (q.1 < r) && liveHeading d q) = true
+    · simp only [Bool.and_eq_true, decide_eq_true_eq] at he
+      have he' : (decide (q.1 < r) && liveHeading d q) = true := by simp [he.1, he.2]
+      rw [if_pos he'] at h1 h2
+      cases acc with
+      | none =>
+        simp only at h1 h2
+        refine ⟨?_, fun b hb => absurd hb (by simp), fun q' hq' hlt hlive => ?_⟩
+        · rcases h1 with h1 | h1
+          · injection h1 with h1; subst h1
+            exact Or.inr ⟨List.mem_cons_self .., he.1, he.2⟩
+          · exact Or.inr ⟨List.mem_cons_of_mem _ h1.1, h1.2⟩
+        · rcases List.mem_cons.1 hq' with rfl | hq'
+          · exact h2 _ rfl
+          · exact h3 q' hq' hlt hlive
+      | some b =>
+        simp only at h1 h2
+        by_cases hbq : b.1 < q.1
+        · rw [if_pos hbq] at h1 h2
+          refine ⟨?_, fun b' hb' => ?_, fun q' hq' hlt hlive => ?_⟩
+          · rcases h1 with h1 | h1
+            · injection h1 with h1; subst h1
+              exact Or.inr ⟨List.mem_cons_self .., he.1, he.2⟩
+            · exact Or.inr ⟨List.mem_cons_of_mem _ h1.1, h1.2⟩
+          · injection hb' with hb'; subst hb'
+            exact Nat.le_trans (Nat.le_of_lt hbq) (h2 _ rfl)
+          · rcases List.mem_cons.1 hq' with rfl | hq'
+            · exact h2 _ rfl
+            · exact h3 q' hq' hlt hlive
+        · rw [if_neg hbq] at h1 h2
+          refine ⟨?_, fun b' hb' => ?_, fun q' hq' hlt hlive => ?_⟩
+          · rcases h1 with h1 | h1
+            · exact Or.inl h1
+            · exact Or.inr ⟨List.mem_cons_of_mem _ h1.1, h1.2⟩
+          · injection hb' with hb'; subst hb'
+            exact h2 _ rfl
+          · rcases List.mem_cons.1 hq' with rfl | hq'
+            · exact Nat.le_trans (Nat.not_lt.1 hbq) (h2 _ rfl)
+            · exact h3 q' hq' hlt hlive
+    · simp only [Bool.not_eq_true] at he
+      rw [if_neg (by simp [he])] at h1 h2
+      refine ⟨?_, h2, fun q' hq' hlt hlive => ?_⟩
+      · rcases h1 with h1 | h1
+        · exact Or.inl h1
+        · exact Or.inr ⟨List.mem_cons_of_mem _ h1.1, h1.2⟩
+      · rcases List.mem_cons.1 hq' with rfl | hq'
+        · simp [hlt, hlive] at he
+        · exact h3 q' hq' hlt hlive
+
+theorem foldl_lhbStep_ne_none (d : Doc) (r : Nat) : ∀ (l : List (Nat × List Char)) (acc : Option (Nat × List Char)),
+    (acc ≠ none ∨ ∃ q ∈ l, q.1 < r ∧ liveHeading d q = true) → l.foldl (lhbStep d r) acc ≠ none
+  | [], acc, h => by
+    rcases h with h | ⟨q, hq, _⟩
+    · exact h
+    · simp at hq
+  | q :: t, acc, h => by
+    simp only [List.foldl_cons]
+    apply foldl_lhbStep_ne_none d r t
+    by_cases he : (decide (q.1 < r) && liveHeading d q) = true
+    · left
+      unfold lhbStep
+      rw [if_pos he]
+      cases acc with
+      | none => simp
+      | some b => simp only; split <;> simp
+    · rcases h with h | ⟨q', hq', hlt, hlive⟩
+      · left
+        unfold lhbStep
+        rw [if_neg he]
+        exact h
+      · rcases List.mem_cons.1 hq' with rfl | hq'
+        · simp [hlt, hlive] at he
+        · right; exact ⟨q', hq', hlt, hlive⟩
+
+/-- **The section of a rank is the live heading of greatest rank below it.** -/
+theorem lastHeadingBefore_eq_of_max {d : Doc} {r : Nat} {q : Nat × List Char}
+    (hasc : ranksAscend d.prose = true) (hq : q ∈ d.prose) (hlt : q.1 < r) (hlive : liveHeading d q = true)
+    (hmax : ∀ q' ∈ d.prose, q'.1 < r → liveHeading d q' = true → q'.1 ≤ q.1) :
+    lastHeadingBefore d r = some q := by
+  rw [lastHeadingBefore_eq_foldl]
+  cases hx : d.prose.foldl (lhbStep d r) none with
+  | none => exact absurd hx (foldl_lhbStep_ne_none d r d.prose none (Or.inr ⟨q, hq, hlt, hlive⟩))
+  | some x =>
+    obtain ⟨h1, _, h3⟩ := foldl_lhbStep_some d r d.prose none x hx
+    rcases h1 with h1 | ⟨hxm, hxlt, hxlive⟩
+    · cases h1
+    · have hle1 := h3 q hq hlt hlive
+      have hle2 := hmax x hxm hxlt hxlive
+      exact congrArg some (prose_eq_of_rank hasc hxm hq (Nat.le_antisymm hle2 hle1))
+
+theorem foldl_fhaStep_some (live : Nat × List Char → Bool) (want : List Char → Bool) (lo : Option Nat) :
+    ∀ (l : List (Nat × List Char)) (acc : Option Nat) (x : Nat), l.foldl (fhaStep live want lo) acc = some x →
+      (acc = some x ∨ ∃ q ∈ l, live q = true ∧ want q.2 = true ∧ loOk lo q.1 = true ∧ q.1 = x) ∧
+      (∀ b, acc = some b → x ≤ b) ∧
+      (∀ q ∈ l, live q = true → want q.2 = true → loOk lo q.1 = true → x ≤ q.1)
+  | [], acc, x, h => by
+    simp only [List.foldl_nil] at h
+    subst h
+    exact ⟨Or.inl rfl, fun b hb => by injection hb with hb; subst hb; exact Nat.le_refl _, fun q hq => by simp at hq⟩
+  | q :: t, acc, x, h => by
+    simp only [List.foldl_cons] at h
+    obtain ⟨h1, h2, h3⟩ := foldl_fhaStep_some live want lo t _ x h
+    unfold fhaStep at h1 h2
+    by_cases he : (live q && want q.2 && loOk lo q.1) = true
+    · rw [if_pos he] at h1 h2
+      simp only [Bool.and_eq_true] at he
+      cases acc with
+      | none =>
+        simp only at h1 h2
+        refine ⟨?_, fun b hb => absurd hb (by simp), fun q' hq' hl hw ho => ?_⟩
+        · rcases h1 with h1 | ⟨q', hq', hl, hw, ho, hx⟩
+          · injection h1 with h1
+            exact Or.inr ⟨q, List.mem_cons_self .., he.1.1, he.1.2, he.2, h1⟩
+          · exact Or.inr ⟨q', List.mem_cons_of_mem _ hq', hl, hw, ho, hx⟩
+        · rcases List.mem_cons.1 hq' with rfl | hq'
+          · exact h2 _ rfl
+          · exact h3 q' hq' hl hw ho
+      | some b =>
+        simp only at h1 h2
+        refine ⟨?_, fun b' hb' => ?_, fun q' hq' hl hw ho => ?_⟩
+        · rcases h1 with h1 | ⟨q', hq', hl, hw, ho, hx⟩
+          · injection h1 with h1
+            have h1' : min b q.1 = x := h1
+            rcases Nat.le_total b q.1 with hbq | hbq
+            · left; rw [Nat.min_eq_left hbq] at h1'; rw [h1']
+            · right; rw [Nat.min_eq_right hbq] at h1'
+              exact ⟨q, List.mem_cons_self .., he.1.1, he.1.2, he.2, h1'⟩
+          · exact Or.inr ⟨q', List.mem_cons_of_mem _ hq', hl, hw, ho, hx⟩
+        · injection hb' with hb'; subst hb'
+          exact Nat.le_trans (h2 _ rfl) (Nat.min_le_left b q.1)
+        · rcases List.mem_cons.1 hq' with rfl | hq'
+          · exact Nat.le_trans (h2 _ rfl) (Nat.min_le_right b _)
+          · exact h3 q' hq' hl hw ho
+    · simp only [Bool.not_eq_true] at he
+      rw [if_neg (by simp [he])] at h1 h2
+      refine ⟨?_, h2, fun q' hq' hl hw ho => ?_⟩
+      · rcases h1 with h1 | ⟨q', hq', hl, hw, ho, hx⟩
+        · exact Or.inl h1
+        · exact Or.inr ⟨q', List.mem_cons_of_mem _ hq', hl, hw, ho, hx⟩
+      · rcases List.mem_cons.1 hq' with rfl | hq'
+        · simp [hl, hw, ho] at he
+        · exact h3 q' hq' hl hw ho
+
+theorem foldl_fhaStep_none (live : Nat × List Char → Bool) (want : List Char → Bool) (lo : Option Nat) :
+    ∀ (l : List (Nat × List Char)) (acc : Option Nat), l.foldl (fhaStep live want lo) acc = none →
+      acc = none ∧ ∀ q ∈ l, live q = true → want q.2 = true → loOk lo q.1 = true → False
+  | [], acc, h => ⟨h, fun q hq => by simp at hq⟩
+  | q :: t, acc, h => by
+    simp only [List.foldl_cons] at h
+    obtain ⟨h1, h2⟩ := foldl_fhaStep_none live want lo t _ h
+    unfold fhaStep at h1
+    by_cases he : (live q && want q.2 && loOk lo q.1) = true
+    · rw [if_pos he] at h1
+      cases acc <;> simp at h1
+    · rw [if_neg he] at h1
+      refine ⟨h1, fun q' hq' hl hw ho => ?_⟩
+      rcases List.mem_cons.1 hq' with rfl | hq'
+      · simp [hl, hw, ho] at he
+      · exact h2 q' hq' hl hw ho
+
+theorem prose_rank_lt_endRank {p : PlanCore} {k : DocIx} {d : Doc} (hd : p.docs[k]? = some d)
+    {q : Nat × List Char} (hq : q ∈ d.prose) : q.1 < endRank p k := by
+  have hm : q.1 ∈ docRanks p k := by
+    unfold docRanks
+    rw [hd]
+    exact List.mem_append_left _ (List.mem_map.2 ⟨q, hq, rfl⟩)
+  exact Nat.lt_succ_of_le (le_foldl_max_nat _ 0 _ hm)
+
+/-- **D7's landing is under `# Overdue`.**  Where `landingSpot` places a line for
+the overdue section — the end of the file after it, or the rank of the heading
+that follows it, which the shift frees — the live heading of greatest rank below
+that place, in the document as the landing leaves it, is named `Overdue`. -/
+theorem landingSpot_overdue_is_under_overdue {p : PlanCore} {k : DocIx} {d : Doc}
+    {src : Option (List Char)} {spot : Option Nat} (hd : p.docs[k]? = some d)
+    (hasc : ranksAscend d.prose = true)
+    (hsp : landingSpot p k .overdueSection src = .ok spot) :
+    ∃ hq, lastHeadingBefore (Doc.bump spot d) (spot.getD (endRank p k)) = some hq ∧
+      headingBody hq.2 = "Overdue".toList := by
+  unfold landingSpot at hsp
+  rw [hd] at hsp
+  simp only at hsp
+  cases hh : firstHeadingAbove d none (fun h => headingBody h == "Overdue".toList) with
+  | none => rw [hh] at hsp; cases hsp
+  | some h =>
+    rw [hh] at hsp
+    simp only [Except.ok.injEq] at hsp
+    rw [firstHeadingAbove_eq] at hh
+    obtain ⟨hh1, _, _⟩ := foldl_fhaStep_some _ _ _ d.prose none h hh
+    rcases hh1 with hh1 | ⟨qh, hqh, hlive, hwant, _, hqr⟩
+    · cases hh1
+    refine ⟨qh, ?_, by simpa using hwant⟩
+    rw [firstHeadingAbove_eq] at hsp
+    cases spot with
+    | none =>
+      obtain ⟨_, hnone⟩ := foldl_fhaStep_none _ _ _ d.prose none hsp
+      show lastHeadingBefore d (endRank p k) = some qh
+      refine lastHeadingBefore_eq_of_max hasc hqh (prose_rank_lt_endRank hd hqh) hlive
+        (fun q' hq' _ hl' => ?_)
+      rw [hqr]
+      exact Nat.not_lt.1 (fun hc => hnone q' hq' hl' rfl (by simpa [loOk] using hc))
+    | some n =>
+      obtain ⟨hn1, _, hn3⟩ := foldl_fhaStep_some _ _ _ d.prose none n hsp
+      rcases hn1 with hn1 | ⟨qn, hqn, _, _, hon, hqnr⟩
+      · cases hn1
+      have hhn : h < n := by rw [← hqnr]; simpa [loOk] using hon
+      show lastHeadingBefore (d.shiftFrom n) n = some qh
+      rw [lastHeadingBefore_shiftFrom d (Nat.le_refl n)]
+      refine lastHeadingBefore_eq_of_max hasc hqh (by rw [hqr]; exact hhn) hlive
+        (fun q' hq' hlt' hl' => ?_)
+      rw [hqr]
+      refine Nat.not_lt.1 (fun hc => ?_)
+      have := hn3 q' hq' hl' rfl (by simpa [loOk] using hc)
+      omega
+
+
+/-- **One step of D7's route lands the line under `# Overdue`.** -/
+theorem closeOne_lands_an_overdue_line_under_overdue {g : Grain} {now : Day} {i : Id} {p q : WfPlan}
+    (h : closeOne g now i p = .ok q) {e : Entity} (hp : p.val.store.get i = some e)
+    (hact : closeAct g now p.val e.val.skel = .overdue) :
+    ∃ f hd, q.val.store.get i = some f ∧ docKindAt q.val f.val.live.doc = .backlog ∧
+      sectionAt q.val f.val.live = some hd ∧ headingBody hd = "Overdue".toList := by
+  obtain ⟨hfr, _, _⟩ := closeOne_spec h
+  rcases closeOne_moves h with ⟨_, hst⟩ | ⟨e', k, spot, hpe, _, _, hds, ⟨f, hf, hlive⟩, _, _, hovr⟩
+  · exact absurd (hst e hp) (by rw [hact]; simp)
+  · rw [hp] at hpe
+    injection hpe with hpe
+    subst hpe
+    obtain ⟨hk, hsp⟩ := hovr hact
+    obtain ⟨hlen, hkind, _⟩ := overdueTarget_spec hk
+    obtain ⟨d, hd⟩ : ∃ d, p.val.docs[k]? = some d := ⟨_, List.getElem?_eq_getElem hlen⟩
+    have hasc := prose_ranks_ascend p d (List.mem_of_getElem? hd)
+    obtain ⟨hq, hlhb, hbody⟩ := landingSpot_overdue_is_under_overdue hd hasc hsp
+    have hqd : q.val.docs[k]? = some (Doc.bump spot d) := by rw [hds k, if_pos rfl, hd]; rfl
+    refine ⟨f, hq.2, hf, by rw [hlive, hfr.2.1]; exact hkind, ?_, hbody⟩
+    unfold sectionAt
+    rw [hlive]
+    simp only
+    rw [hqd]
+    simp only [hlhb, Option.map_some]
+
+/-- **After `i` has landed under `# Overdue`, it stays there.**  A later step lands
+a line in the backlog only by the same route (a carry goes to a week, a filing to a
+week or a month), at a spot above `i`, so neither `i`'s rank nor the heading above
+it moves; a step elsewhere does not touch the backlog. -/
+theorem fold_keeps_an_overdue_line_under_overdue (g : Grain) (now : Day) (p0 : WfPlan) (i : Id)
+    (K : DocIx) (hK : docKindAt p0.val K = .backlog) :
+    ∀ (l : List Id) (P Q : WfPlan), l.foldlM (fun q c => closeOne g now c q) P = .ok Q → i ∉ l →
+      Frame p0.val P.val →
+      (∃ a, P.val.store.get i = some a ∧ a.val.live.doc = K ∧
+        (∃ hd, sectionAt P.val a.val.live = some hd ∧ headingBody hd = "Overdue".toList) ∧
+        ∀ spot, landingSpot P.val K .overdueSection none = .ok spot → ∀ n, spot = some n →
+          a.val.live.rank < n) →
+      ∃ f hd, Q.val.store.get i = some f ∧ sectionAt Q.val f.val.live = some hd ∧
+        headingBody hd = "Overdue".toList := by
+  intro l
+  induction l with
+  | nil =>
+    intro P Q h _ _ ha
+    simp only [List.foldlM_nil] at h
+    injection h with h
+    subst h
+    obtain ⟨a, hPa, _, ⟨hd, hs, hb⟩, _⟩ := ha
+    exact ⟨a, hd, hPa, hs, hb⟩
+  | cons c rest ih =>
+    intro P Q h hi hfr ha
+    simp only [List.foldlM_cons] at h
+    cases h1 : closeOne g now c P with
+    | error x => rw [h1] at h; simp [bind, Except.bind] at h
+    | ok P1 =>
+      rw [h1] at h
+      simp only [bind, Except.bind] at h
+      have hci : i ≠ c := fun hc => hi (hc ▸ List.mem_cons_self ..)
+      obtain ⟨hf1, _, _⟩ := closeOne_spec h1
+      refine ih P1 Q h (fun hm => hi (List.mem_cons_of_mem _ hm)) (hfr.trans hf1) ?_
+      obtain ⟨a, hPa, had, ⟨hd, hs, hb⟩, hbound⟩ := ha
+      rcases closeOne_moves h1 with ⟨rfl, _⟩ | ⟨ec, k, spot, hPc, _, hjs, hds, _, hcar, hfil, hovr⟩
+      · exact ⟨a, hPa, had, ⟨hd, hs, hb⟩, hbound⟩
+      · have hli := hjs i hci
+        rw [hPa] at hli
+        obtain ⟨a', ha', hal⟩ := get_of_map_eq_some hli
+        simp only at hal
+        refine ⟨a', ha', by rw [hal, Site.bump_doc, had], ?_, spot_bound_after_step hds hal had hbound⟩
+        have hKP : docKindAt P.val K = .backlog := by rw [hfr.2.1]; exact hK
+        by_cases hKk : K = k
+        · cases hAc : closeAct g now P.val ec.val.skel with
+          | stay =>
+            have hP1 : closeOne g now c P = .ok P := by
+              unfold closeOne; simp only [hPc, hAc]
+            rw [hP1] at h1
+            injection h1 with h1
+            subst h1
+            rw [hPa] at ha'
+            injection ha' with ha'
+            subst ha'
+            exact ⟨hd, hs, hb⟩
+          | carry =>
+            obtain ⟨hk, _⟩ := hcar hAc
+            have := (findDocIx_spec hk).2.1
+            rw [← hKk, hKP] at this
+            cases this
+          | file r =>
+            obtain ⟨hk, _⟩ := hfil r hAc
+            have := (findDocIx_spec hk).2.1
+            rw [← hKk, hKP] at this
+            exact (kindOfGrain_is_never_backlog _ this.symm).elim
+          | overdue =>
+            obtain ⟨_, hsp⟩ := hovr hAc
+            rw [landingSpot_src P.val k (l := .overdueSection) (by decide) _ none, ← hKk] at hsp
+            have hlt := hbound spot hsp
+            have hsP := hs
+            unfold sectionAt at hsP
+            rw [had] at hsP
+            cases hdK : P.val.docs[K]? with
+            | none => rw [hdK] at hsP; cases hsP
+            | some d =>
+              rw [hdK] at hsP
+              simp only at hsP
+              have hP1K : P1.val.docs[K]? = some (Doc.bump spot d) := by
+                rw [hds K, if_pos hKk, hdK]; rfl
+              refine ⟨hd, ?_, hb⟩
+              unfold sectionAt
+              rw [hal, Site.bump_doc, had, hP1K]
+              simp only
+              cases spot with
+              | none => rw [Site.bump_none]; exact hsP
+              | some m =>
+                have hm := hlt m rfl
+                rw [Site.bump_rank_of_doc _ (had.trans hKk)]
+                show (lastHeadingBefore (d.shiftFrom m) (shiftRank m a.val.live.rank)).map Prod.snd = _
+                have hsr : shiftRank m a.val.live.rank = a.val.live.rank := by
+                  unfold shiftRank; rw [if_neg (Nat.not_le.2 hm)]
+                rw [hsr, lastHeadingBefore_shiftFrom d (Nat.le_of_lt hm)]
+                exact hsP
+        · refine ⟨hd, ?_, hb⟩
+          rw [hal, Site.bump_of_ne spot (by rw [had]; exact hKk)]
+          have hsd : sectionAt P1.val a.val.live = sectionAt P.val a.val.live :=
+            sectionAt_docs (by rw [hds _, if_neg (by rw [had]; exact hKk)])
+          rw [hsd]
+          exact hs
+
+
+/-- **The fold, before `i` has landed**: the step that lands it puts it under
+`# Overdue` with every later backlog landing above it, and the steps before it
+leave it where it is. -/
+theorem fold_lands_an_overdue_line_under_overdue (g : Grain) (now : Day) (p0 : WfPlan) (i : Id)
+    (ei : Entity) (hact : closeAct g now p0.val ei.val.skel = .overdue) :
+    ∀ (l : List Id) (P Q : WfPlan), l.foldlM (fun q c => closeOne g now c q) P = .ok Q →
+      l.Nodup → i ∈ l → Frame p0.val P.val → ClosedDocsKept now p0.val P.val →
+      (∃ a, P.val.store.get i = some a ∧ a.val.skel = ei.val.skel ∧ a.val.live = ei.val.live) →
+      ∃ f hd, Q.val.store.get i = some f ∧ sectionAt Q.val f.val.live = some hd ∧
+        headingBody hd = "Overdue".toList := by
+  obtain ⟨r0, hr0, hc0⟩ := closeAct_closed (g := g) (now := now) (p := p0.val) (s := ei.val.skel)
+    (by rw [hact]; simp)
+  intro l
+  induction l with
+  | nil => intro _ _ _ _ hi; simp at hi
+  | cons c rest ih =>
+    intro P Q h hnd hi hfr hcd ha
+    simp only [List.foldlM_cons] at h
+    cases h1 : closeOne g now c P with
+    | error x => rw [h1] at h; simp [bind, Except.bind] at h
+    | ok P1 =>
+      rw [h1] at h
+      simp only [bind, Except.bind] at h
+      have hnd' := List.nodup_cons.1 hnd
+      obtain ⟨a, hPa, has, hal⟩ := ha
+      obtain ⟨hf1, _, _⟩ := closeOne_spec h1
+      have hfr1 := hfr.trans hf1
+      by_cases hic : i = c
+      · -- the step that lands `i`
+        subst hic
+        have hactP := closeAct_skel_frame (g := g) (now := now) hfr has
+        rcases closeOne_moves h1 with ⟨_, hst⟩ |
+            ⟨e, k, spot, hPe, _, _, hds, ⟨f', hf', hlive⟩, _, _, hovr⟩
+        · exact absurd (hactP.trans hact) (by rw [hst a hPa]; simp)
+        · rw [hPa] at hPe
+          injection hPe with hPe
+          subst hPe
+          obtain ⟨hk, hsp⟩ := hovr (hactP.trans hact)
+          obtain ⟨hlen, hkind, _⟩ := overdueTarget_spec hk
+          obtain ⟨d, hd⟩ : ∃ d, P.val.docs[k]? = some d := ⟨_, List.getElem?_eq_getElem hlen⟩
+          have hasc := prose_ranks_ascend P d (List.mem_of_getElem? hd)
+          obtain ⟨hq, hlhb, hbody⟩ := landingSpot_overdue_is_under_overdue hd hasc hsp
+          have hqd : P1.val.docs[k]? = some (Doc.bump spot d) := by rw [hds k, if_pos rfl, hd]; rfl
+          have hK : docKindAt p0.val k = .backlog := by rw [← hfr.2.1]; exact hkind
+          refine fold_keeps_an_overdue_line_under_overdue g now p0 i k hK rest P1 Q h hnd'.1 hfr1
+            ⟨f', hf', by rw [hlive], ⟨hq.2, ?_, hbody⟩, ?_⟩
+          · unfold sectionAt
+            rw [hlive]
+            simp only
+            rw [hqd]
+            simp only [hlhb, Option.map_some]
+          · intro s1 hs1 n hn
+            rw [landingSpot_src P1.val k (l := .overdueSection) (by decide) none
+              (sectionAt P.val a.val.live)] at hs1
+            have := landed_rank_lt_next_spot hds hsp s1 hs1 n hn
+            rw [hlive]
+            exact this
+      · -- a step that lands some other line
+        have hir : i ∈ rest := (List.mem_cons.1 hi).resolve_left hic
+        obtain ⟨_, hcd1, a', ha', ha's, ha'l⟩ :=
+          closeOne_keeps_untaken h1 hfr hcd hic hPa has hal hr0 hc0
+        exact ih P1 Q h hnd'.2 hir hfr1 hcd1 ⟨a', ha', ha's, ha'l⟩
+
+
+/-- **D7's landing, for the whole close: a line the week row routes as overdue ends
+under the backlog's `# Overdue`.**  The heading it stands under — the live heading of
+greatest rank above it in the file — is named `Overdue`, however many other lines
+the same close lands in that section or elsewhere (`fold_lands_an_overdue_line_under_overdue`). -/
+theorem close_lands_every_overdue_line_under_overdue {g : Grain} {now : Day} {p q : WfPlan}
+    (h : close g now p = .ok q) {i : Id} {e f : Entity}
+    (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f)
+    (hact : closeAct g now p.val e.val.skel = .overdue) :
+    ∃ hd, sectionAt q.val f.val.live = some hd ∧ headingBody hd = "Overdue".toList := by
+  have hmi : i ∈ closeCands g now p.val := by
+    by_cases hc : i ∈ closeCands g now p.val
+    · exact hc
+    · exact absurd (closeAct_of_not_mem_closeCands hc hp) (by rw [hact]; simp)
+  obtain ⟨f', hd, hf', hs, hb⟩ := fold_lands_an_overdue_line_under_overdue g now p i e hact
+    (closeCands g now p.val) p q h (closeCands_nodup g now p.val) hmi (Frame.refl _)
+    (fun _ _ _ _ => rfl) ⟨e, hp, rfl, rfl⟩
+  rw [hq] at hf'
+  injection hf' with hf'
+  subst hf'
+  exact ⟨hd, hs, hb⟩
+
+/-- **D7: a past-due `persist` line is moved to the backlog's `# Overdue`, as it
+was.**  A week close that takes a line past due with `persist` puts it in the
+backlog — the file of kind `backlog` with no region, which no close ever takes a
+line from — under the heading `# Overdue` (`close_lands_every_overdue_line_under_overdue`),
+with its box, its bytes and its tombstone exactly as they were: no `demoted:`
+stamp, its `due:` intact, and no `[-]` left in the week file (§6.3: "moved to
+`backlog.md#Overdue` **instead**").  Decided on loaded plans in Boundary.lean
+(`the_week_close_routes_dated_work_on_a_loaded_plan`,
+`the_example_week_closes_with_d1_in_the_backlog_overdue`). -/
+theorem close_moves_a_past_due_persist_line_to_the_backlog {g : Grain} {now : Day} {p q : WfPlan}
+    (h : close g now p = .ok q) {i : Id} {e f : Entity}
+    (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f)
+    (hact : closeAct g now p.val e.val.skel = .overdue) :
+    docKindAt q.val f.val.live.doc = .backlog ∧ docRegion q.val f.val.live.doc = none ∧
+      (∃ hd, sectionAt q.val f.val.live = some hd ∧ headingBody hd = "Overdue".toList) ∧
+      f.val.line = e.val.line ∧ f.val.status = e.val.status ∧
+      f.val.archive.map Tomb.line = e.val.archive.map Tomb.line ∧
+      f.val.archive.map (fun t => t.site.doc) = e.val.archive.map (fun t => t.site.doc) := by
+  obtain ⟨hfr, hall⟩ := close_spec h
+  have hsk := close_skel h hp hq
+  have hst := (hall i).2 f hq
+  rw [closeAct_frame hfr] at hst
+  cases hk : overdueTarget p.val with
+  | none =>
+    have hstep : stepSkel g now p.val e.val.skel = e.val.skel := by
+      unfold stepSkel; simp only [hact, hk]
+    rw [hsk, hstep, hact] at hst
+    exact absurd hst (by simp)
+  | some k =>
+    have hstep : stepSkel g now p.val e.val.skel = { e.val.skel with doc := k } := by
+      unfold stepSkel; simp only [hact, hk]
+    rw [hstep] at hsk
+    have hdoc : f.val.live.doc = k := congrArg Skel.doc hsk
+    obtain ⟨_, hkind, hreg⟩ := overdueTarget_spec hk
+    refine ⟨by rw [hfr.2.1, hdoc]; exact hkind, by rw [hfr.2.2, hdoc]; exact hreg,
+      close_lands_every_overdue_line_under_overdue h hp hq hact,
+      congrArg Skel.line hsk, congrArg Skel.status hsk, congrArg Skel.archLine hsk,
+      congrArg Skel.archDoc hsk⟩
+
+/-- **D8: a dated line the week row files keeps its date.**  A week close that takes
+a point-dated line which is not past due with `persist` — not yet due, or past due
+with `on-miss:expire`/`next` — leaves the line behind as the `[-]` tombstone in its
+own bytes and files a `[-]` record into the month containing *now*, and the record's
+shape is the line's: the `due:` survives the stamp (and a merged estimate).  Fork-point
+`close_week` demotes such a line and `check.rs` has no date rule for a month record;
+since D8 `shapesWf` has none either (`demotedRecordPlacement`). -/
+theorem close_week_files_a_dated_line_keeping_its_date {now : Day} {p q : WfPlan}
+    (h : close week now p = .ok q) {i : Id} {e f : Entity}
+    (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f) {r : Region}
+    (hreg : closedRegionOf week now p.val e.val.live.doc = some r)
+    (htakes : (closePolicy week).takes e.val.status = true) (hrec : e.val.recur = Recur.none)
+    {m : Field.Moment} (hdue : e.val.shape = Shape.point m) (hnov : e.val.skel.overdue now = false) :
+    docRegion q.val f.val.live.doc = some (closeTo week now) ∧
+      docKindAt q.val f.val.live.doc = .month ∧
+      f.val.status = .demoted ∧ f.val.archive.map Tomb.line = some e.val.line ∧
+      Stamp.week (Cal.isoOf (7 * r.ix)).week ∈ f.val.stamps ∧
+      f.val.shape = e.val.shape := by
+  have hrec' : e.val.skel.recurring = false := by
+    show decide (Field.viewRecur e.val.line ≠ Recur.none) = false
+    have : Field.viewRecur e.val.line = Recur.none := hrec
+    simp [this]
+  have hwall : e.val.skel.wallAhead now = none := by
+    show (match Field.viewShape e.val.line with
+          | .interval _ b => some (decide (now ≤ b.day))
+          | _ => none) = none
+    have : Field.viewShape e.val.line = Shape.point m := hdue
+    rw [this]
+  have hact : closeAct week now p.val e.val.skel = .file r := by
+    unfold closeAct
+    show (match closedRegionOf week now p.val e.val.live.doc with
+          | none => CloseAct.stay
+          | some r => _) = _
+    rw [hreg]
+    have htakes' : (closePolicy week).takes e.val.skel.status = true := htakes
+    simp only [htakes', hrec', hnov, Bool.true_eq_false, Bool.false_eq_true, if_false, and_false,
+      hwall]
+  obtain ⟨hr, hk, hsk⟩ := close_files_a_taken_line_into_closeTo h hp hq hact
+  have hskel : skelAfter week r f.val.live.doc e.val.skel =
+      ⟨f.val.live.doc, some e.val.skel.doc, some e.val.skel.line, .demoted,
+        refiledLine (.week (Cal.isoOf (7 * r.ix)).week) e.val.skel.archLine e.val.skel.line⟩ := rfl
+  rw [hskel] at hsk
+  have hl : f.val.line = refiledLine (.week (Cal.isoOf (7 * r.ix)).week) e.val.skel.archLine
+      e.val.skel.line := congrArg Skel.line hsk
+  refine ⟨hr, hk, congrArg Skel.status hsk, congrArg Skel.archLine hsk, ?_, ?_⟩
+  · show _ ∈ (Field.viewDemoted f.val.line).getD []
+    rw [hl]
+    exact refiledLine_stamps_mem _ _ _
+  · show Field.viewShape f.val.line = Field.viewShape e.val.line
+    rw [hl]
+    exact viewShape_refiledLine _ _ _
+
+/-- **Not yet due is not overdue**: a point due on `now`'s day or later is filed by
+D8's rule, whatever its `on_miss`. -/
+theorem Skel.overdue_of_not_yet_due {now : Day} {c : Core} {m : Field.Moment}
+    (hdue : c.shape = Shape.point m) (hnot : now ≤ m.day) : c.skel.overdue now = false := by
+  cases hb : c.skel.overdue now with
+  | false => rfl
+  | true =>
+    obtain ⟨_, ⟨m', hm', hlt⟩ | ⟨a, b, hab, _⟩⟩ := (Core.skel_overdue_iff c now).1 hb
+    · rw [hdue] at hm'
+      injection hm' with hm'
+      subst hm'
+      exact absurd hlt (Nat.not_lt.2 hnot)
+    · rw [hdue] at hab; cases hab
+
+/-- **D8, as the owner put it: a not-yet-due dated task unfinished at a week close is
+demoted like any unfinished task and keeps its date.**  `[-]` stays behind in the
+week file in the line's own bytes; the record in the month containing *now* is
+`[-]`, carries the closed week's stamp, and its shape — the `due:` — is the line's.
+(`close_week_files_a_dated_line_keeping_its_date`, at a due day on or after `now`'s.) -/
+theorem close_week_demotes_a_not_yet_due_line_keeping_its_date {now : Day} {p q : WfPlan}
+    (h : close week now p = .ok q) {i : Id} {e f : Entity}
+    (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f) {r : Region}
+    (hreg : closedRegionOf week now p.val e.val.live.doc = some r)
+    (htakes : (closePolicy week).takes e.val.status = true) (hrec : e.val.recur = Recur.none)
+    {m : Field.Moment} (hdue : e.val.shape = Shape.point m) (hnot : now ≤ m.day) :
+    docRegion q.val f.val.live.doc = some (closeTo week now) ∧
+      docKindAt q.val f.val.live.doc = .month ∧
+      f.val.status = .demoted ∧ f.val.archive.map Tomb.line = some e.val.line ∧
+      Stamp.week (Cal.isoOf (7 * r.ix)).week ∈ f.val.stamps ∧
+      f.val.shape = e.val.shape :=
+  close_week_files_a_dated_line_keeping_its_date h hp hq hreg htakes hrec hdue
+    (Skel.overdue_of_not_yet_due hdue hnot)
+
+/-- **D7, as the owner put it: a past-due dated `persist` task unfinished at a week
+close goes to the backlog, as it was.**  The hypotheses in the core's own terms — a
+point due, or an interval ended, on a day before `now`'s, with §5.3's effective
+`on_miss` `persist` — for a line of a closed week whose box the week row takes and
+which is not recurring. -/
+theorem close_week_moves_a_past_due_persist_line_to_the_backlog {now : Day} {p q : WfPlan}
+    (h : close week now p = .ok q) {i : Id} {e f : Entity}
+    (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f) {r : Region}
+    (hreg : closedRegionOf week now p.val e.val.live.doc = some r)
+    (htakes : (closePolicy week).takes e.val.status = true) (hrec : e.val.recur = Recur.none)
+    (hpersist : effectiveOnMiss e.val = .persist)
+    (hpast : (∃ m, e.val.shape = Shape.point m ∧ m.day < now) ∨
+      (∃ a b, e.val.shape = Shape.interval a b ∧ b.day < now)) :
+    docKindAt q.val f.val.live.doc = .backlog ∧ docRegion q.val f.val.live.doc = none ∧
+      (∃ hd, sectionAt q.val f.val.live = some hd ∧ headingBody hd = "Overdue".toList) ∧
+      f.val.line = e.val.line ∧ f.val.status = e.val.status ∧
+      f.val.archive.map Tomb.line = e.val.archive.map Tomb.line ∧
+      f.val.archive.map (fun t => t.site.doc) = e.val.archive.map (fun t => t.site.doc) := by
+  refine close_moves_a_past_due_persist_line_to_the_backlog h hp hq ?_
+  have hrec' : e.val.skel.recurring = false := by
+    show decide (Field.viewRecur e.val.line ≠ Recur.none) = false
+    have : Field.viewRecur e.val.line = Recur.none := hrec
+    simp [this]
+  have hov : e.val.skel.overdue now = true := (Core.skel_overdue_iff e.val now).2 ⟨hpersist, hpast⟩
+  unfold closeAct
+  show (match closedRegionOf week now p.val e.val.live.doc with
+        | none => CloseAct.stay
+        | some r => _) = _
+  rw [hreg]
+  have htakes' : (closePolicy week).takes e.val.skel.status = true := htakes
+  simp only [htakes', hrec', hov, Bool.true_eq_false, Bool.false_eq_true, if_false]
+  rfl
 
 end Tm

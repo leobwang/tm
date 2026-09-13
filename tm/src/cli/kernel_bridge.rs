@@ -81,9 +81,10 @@
 //! one account of what the close did, which `tm close`, the automatic close
 //! and the log all read (stage 4 step 6, [`super::closing`]); anywhere else a
 //! non-empty report is a fault. A close request also carries the clock
-//! (`now`, `blockMin`) and the two destinations a close needs — the week and
-//! the month containing now, the month with §4.3's `# Outcomes`/`# Demoted`
-//! — because the kernel cannot create a file or a section (gap 56).
+//! (`now`, `blockMin`) and the three destinations a close needs — the week and
+//! the month containing now, the month with §4.3's `# Outcomes`/`# Demoted`,
+//! and `backlog.md` with `# Overdue` (the owner's D7) — because the kernel
+//! cannot create a file or a section (gap 56).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -352,6 +353,10 @@ pub enum CloseDid {
     CopyMerging,
     /// a wall still ahead, moved undemoted into the live week
     Carry,
+    /// past due with `persist`: moved, box and bytes kept, unstamped, leaving
+    /// no `[-]`, to the end of `backlog.md`'s `# Overdue` (§6.3's week row;
+    /// the owner's D7, kernel/README.md gap 55)
+    MoveOverdue,
 }
 
 impl CloseDid {
@@ -362,6 +367,7 @@ impl CloseDid {
             "copy" => Some(CloseDid::Copy),
             "copyMerging" => Some(CloseDid::CopyMerging),
             "carry" => Some(CloseDid::Carry),
+            "moveOverdue" => Some(CloseDid::MoveOverdue),
             _ => None,
         }
     }
@@ -375,6 +381,7 @@ impl CloseDid {
             CloseDid::Copy => "copy",
             CloseDid::CopyMerging => "copyMerging",
             CloseDid::Carry => "carry",
+            CloseDid::MoveOverdue => "moveOverdue",
         }
     }
 }
@@ -641,6 +648,10 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
     if closing {
         dests.push(Horizon::Week(IsoWeek::from_date(ctx.today)).path());
         dests.push(month_now.clone());
+        // The owner's D7: the week close moves a past-due `persist` line to
+        // `backlog.md # Overdue`, so the backlog is a close's third
+        // destination (kernel/README.md gap 55, `overdueTarget`).
+        dests.push(Horizon::Backlog.path());
     }
     for dest in &dests {
         if !paths.iter().any(|p| p == dest) {
@@ -680,6 +691,18 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
                 if !lines.iter().any(|l| heading_body(l) == Some(name)) {
                     lines.push(heading);
                 }
+            }
+        }
+        // The same rule for D7's section (kernel/README.md gap 56's overdue
+        // half, closed at stage 4 final step 2): a close request carries
+        // `backlog.md` with `# Overdue` as its **last line** when the file has
+        // no heading of that name — one fixed place, so the kernel never
+        // chooses where a heading goes (AGENTS §5.6), and written only if a
+        // line lands under it.
+        if closing && *rel == Horizon::Backlog.path() {
+            let (name, heading) = OVERDUE_SECTION;
+            if !lines.iter().any(|l| heading_body(l) == Some(name)) {
+                lines.push(heading);
             }
         }
         sent_joined.push(lines.join("\n"));
@@ -851,6 +874,11 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
 /// heading's name, and the line the host appends when a month lacks it.
 const MONTH_SECTIONS: [(&str, &str); 2] = [("Outcomes", "# Outcomes"), ("Demoted", "# Demoted")];
 
+/// The backlog section a week close moves a past-due `persist` line into
+/// (§6.3's week row, fork-point `OVERDUE_SECTION`; the owner's D7), with the
+/// heading the host appends when `backlog.md` has none.
+const OVERDUE_SECTION: (&str, &str) = ("Overdue", "# Overdue");
+
 /// The name of a heading line — `Plan.lean`'s `isHeading`/`headingBody`: a
 /// line whose first character is `#`, with its `#`s and the spaces after
 /// them stripped, so `# Demoted` and `## Demoted` are one name.
@@ -949,8 +977,8 @@ fn refusal(err: &Value) -> KernelIssue {
             "danglingDep" => "the edited `after:` names an id no item in the plan carries",
             "depCycle" => "the edited `after:` makes the dependencies cycle (§5.5)",
             "siteOutOfRange" => "a placement points at a document the plan does not hold",
-            "noTarget" => "a close has no file to put a line in — the host must hand over the destination week or month file (kernel/README.md gap 56)",
-            "noSection" => "a close's destination file has no section to land the line in (`# Demoted`, or the heading it stood under; gap 56)",
+            "noTarget" => "a close has no file to put a line in — the host must hand over the destination week, month or backlog file (kernel/README.md gap 56)",
+            "noSection" => "a close's destination file has no section to land the line in (`# Demoted`, the backlog's `# Overdue`, or the heading it stood under; gap 56)",
             _ => "an unlisted kernel refusal — see kernel/TmKernel/TmKernel/Boundary.lean",
         };
         (name.to_string(), format!("kernel refusal: {name} — {why}"))

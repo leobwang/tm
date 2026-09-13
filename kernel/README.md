@@ -6711,3 +6711,264 @@ plans**, burn-down **30** (B3's statement untouched; only its doc comment change
 `cargo test --workspace` **1001 passed / 0 failed / 0 ignored across 66 binaries**,
 `cli_latency.rs` green; FFI suite **68**.  Gaps run to 67 (new gaps start at 68);
 cheats to 55 (new cheats start at 56).
+
+<!-- ===================================================================
+     APPENDED 2026-09-13 (stage-4 final).  Step 2: gap 55 closed — dated work routes itself.  A past-due `persist` line at a week close moves to `backlog.md # Overdue` (D7); a not-yet-due one is demoted keeping its `due:` (D8); §4.3's literal example tree closes on its first command a week after its week.
+     Closes gap 55, and the overdue half of gap 56; takes no gap number; takes cheats 56–58.  Retires five theorem names and restates each beside its replacement (table below).
+     Supersedes, by name: stage-4 step 6's changed-behaviour row 10 ("not routed; an open `due:` line in an ended week refuses the whole close"); gap 55's (1)–(4) as a description of the kernel and of the binary; gap 56's (1) and (3) for the overdue destination (the host hands it over, below); stage-4 step 2's scope-out "dated items past due with `persist` → `backlog.md#Overdue` (needs §5.3's `on_miss` against `due:`, stage 5)" and its bridge `closePolicy_owes`; `Close.lean`'s module header sentence to the same effect; stage-4 hardening step 3's defect 1 ("`^d1` is the one blocker … not proved while the §9.1 trigger stands fired"); stage 4 final step 1's D7 cost (iii) "a tree whose `backlog.md` has no `# Overdue` section meets gap 56 … instead of `badHorizon`" (it meets the host's section rule instead) and D8 cost (i) "`month_items_are_outcomes` is retired and restated" (done, below); `closing.rs`'s and `kernel_bridge.rs`'s doc sentences naming gap 55 as a live refusal; the `a_refused_close_is_named_and_writes_nothing` test as it stood (it pinned the gap-55 refusal on the example tree).
+     =================================================================== -->
+
+## Stage 4 final, step 2, 2026-09-13: dated work routes itself — the example tree closes
+
+Baseline re-measured at `ccd1718` (tree clean), every command under `systemd-run --user
+--scope -p MemoryMax=40G -p MemorySwapMax=0` (8 GB with `timeout 120` for every new
+`decide` probe; every run of the binary under `timeout`): `check.sh` **7/7** — axiom
+audit **1634 theorems**, corpus **33/37 files and 4/5 whole plans**, burn-down **30**;
+`cargo test --workspace` **1001 passed / 0 failed across 66 binaries**,
+`cli_latency.rs` included; FFI suite **68** (62 kernel + 6 corpus).
+
+**The defect, reproduced on the `ccd1718` binary.**  `tm --now 2026-09-14T09:00:00-05:00 --dir T
+init --example`, then `tm now` twice at that instant: each prints "tm: the automatic
+close (§6.3) was refused, so no period was closed and nothing was written; it runs again
+on the next command. kernel refusal: badHorizon — …", exits 0 and writes nothing, and
+`^d1` stays `[ ]` in `week/2026-W37.md`.  On a fresh example tree at 2026-09-08 (inside
+the week), `tm demote ^d1` and `tm move ^d1 month` are each refused `badHorizon`.  The
+same drive on this step's binary: the first `tm now` closes (0.02 s) and prints nothing
+on stderr, the second skips the kernel (0.00 s), `^d1` is the last line of
+`backlog.md`, and both verbs succeed, the record and the moved line keeping `due:`.
+
+**What fork-point `horizon::close_week` does, read rather than remembered**
+(`git show 4748911:tm-core/src/horizon.rs`, `overdue_at`, `close_week`,
+`carried_walls`, `move_to`; `store.rs`'s `insert_line`/`edit::append_to_section`).
+(1) *Which lines:* the open (`[ ]`/`[>]`), non-recurring lines of the week file;
+`overdue_at` is `item.on_miss == Persist && item.recur == None` and, on the item's
+**effective** shape (a prep child reads its parent's interval), `Point { due } =>
+due.end_of_day() < now` (a bare date is 23:59 that day) or `Interval { end, .. } =>
+end < now`; windows and shapeless lines are never overdue; `now` is the tree's local
+naive instant.  (2) *Order:* `overdue` is computed **before** `carried_walls`, which
+excludes it, so a wall that is over with `persist` is overdue, a wall that is over
+with `on-miss:expire`/`next` is "carried" but not carried forward (it stays in the
+archive), and a wall still ahead is carried into the live week.  A past-due point
+with `on-miss:expire`/`next` is neither, so it is **demoted** like any open line.
+(3) *The move:* `move_to(cx, week_path, key, &Horizon::Backlog, Some("Overdue"))` —
+the file is created with its initial text (empty) if missing, the line is removed
+from the week **with no tombstone and no stamp**, and appended to `# Overdue`
+(after the section's last non-blank line), the section being created when missing at
+the end of the file **with a blank line above it** (unless directly under front
+matter); one `move` event per line, `from` the week, `to` `backlog.md`; and the
+report's `overdue_to_backlog` list.  The lines are moved in the week file's order.
+
+**The kernel's route (the owner's D7).**  `closeAct` gains a fourth action,
+`CloseAct.overdue`, taken after the box and recurring tests and before the wall test —
+the fork point's order — when the row's new `overdue` column says `toBacklogOverdue`
+(the week row only: `closePolicy_routes_overdue_only_at_week`) and the line is
+`Skel.overdue now`: its due day (a point's `due:` day, an interval's end day) is
+**strictly before `now`'s day** and its §5.3 `on_miss` (the `on-miss:` token, else
+`defaultOnMiss` of its shape) is `persist` (`Core.skel_overdue_iff`).  The target is
+`overdueTarget`: the first document of kind `backlog` **with no region** — "none is
+backlog, the absence of a bound" (`Doc.region`) — and the landing is
+`Landing.overdueSection`: the end of the first live `# Overdue` section, shifting the
+next heading down exactly as `# Demoted` does.  The transform is `moveTo`, so the
+skeleton is kept but for the file: box, bytes, tombstone.  The report entry is the
+sixth disposition, `moveOverdue`, unstamped.  `ClosePolicy.overdue` was an `Owed`
+column (`stage5OnMiss`); it is now `OverdueRule` (`asAnyLine | toBacklogOverdue`), and
+`Owed` keeps only `gap22Parent` (`closePolicy_owes_only_the_child_fold`).
+
+**Deliberate differences from the fork point, each with its reason.**
+(a) *Day resolution* (README gap 57, the wall carry's rule): the kernel's `now` is a
+`Day`, so a line due **at a time earlier than now on now's own day** is not yet past
+due here and is demoted with its date (D8) where the Rust moved it to the backlog;
+a bare date, and every due on an earlier day, agree.  Clears with gap 57.
+(b) *Effective shape:* the kernel reads the line's own shape; the Rust read a prep
+child's parent's interval.  Parents are not derived until D6 lands (gap 22), so a prep
+child without its own date is filed as any open line.  Clears with D6.
+(c) *Bytes of the section:* the host appends `# Overdue` as the backlog's last line
+with no blank line above it — the rule it already applies to the month's `# Outcomes`
+and `# Demoted` (gap 56's host half) — where the Rust inserted a blank line first; and
+the kernel lands a line at the rank of the heading after the section, i.e. after the
+section's trailing blank lines, where the Rust inserted after its last non-blank line
+(the same `landingSpot` rule `# Demoted` has had since stage 4 step 2).
+(d) *A backlog declared with a region is not a backlog* (`noTarget`); the host
+declares none (`region_of` returns `None` for `backlog.md`).
+
+**The missing section: option (b), a host precondition, chosen.**  The example tree's
+`backlog.md` has no `# Overdue`.  The kernel still does not create a section: with no
+live `# Overdue` in the backlog the close refuses `noSection`, by name
+(`the_close_refusals_left_after_d7_are_named_on_loaded_plans`, and at the wire in
+`a_week_close_routes_dated_work_on_the_wire`).  `kernel_bridge::apply` now hands over,
+with every close request, `backlog.md` — as its initial (empty) text when the tree has
+none — with the line `# Overdue` appended as its **last line** when no heading of that
+name is present, and writes the file only if the kernel landed a line in it (an
+untouched document is never written, and a created one's guard demands it still be
+absent).  Why (b) over (a), the kernel inserting the heading by a fixed rule: **one
+choke point for sections** — the host already creates the month's two sections at
+exactly this place for exactly this reason, and (a) would make the kernel the creator
+of one section and the host of the other two; and **the bytes stay provable** where
+the kernel writes them — given the heading, the kernel proves the line lands under it
+and stays there through the rest of the fold (`close_lands_every_overdue_line_under_overdue`,
+below), and the host's one appended line is pinned byte for byte by the literal
+acceptance test.  (a) would also have added a prose-inserting step to the fold, which
+`close_keeps_source_order`'s `Doc.bump` bookkeeping does not model.  **Gap 56's overdue
+half is closed** by this rule; what remains of gap 56 is unchanged (a heading of an
+ended month that the current month lacks is `noSection`; the kernel creates no file).
+
+**D8: the month rule reads outcomes, not `# Demoted` records.**  `shapesWf`'s
+placement test is now `shapeWfFor (docKindAt …) e || demotedRecordPlacement p live`,
+with `demotedRecordPlacement p s := kind month ∧ sectionKindAt p s = some .demoted`
+(Plan.lean) — the same placement test fork-point `tree.rs` uses to exempt a `# Demoted`
+line from `outcome-with-est` (`month_items_with_est_and_no_children`: `section !=
+"Demoted"`), and `headingsWf` admits a live `# Demoted` only in a month file, so the
+month clause is the only rule it exempts from.  **The 6.2 warning:** the kernel has no
+`outcome with an estimate` warning; the Rust `tm check` keeps its exemption for
+`# Demoted`, so a dated record raises neither an error nor that warning (`tm check`
+is clean in both new CLI tests).  The fast twin: `shapesWfFast` adds
+`demotedRecordPlacementF` over the per-document facts as the right operand of a
+short-circuit `||` (`secKindAtF_eq`, `demotedRecordPlacementF_eq`,
+`shapesWf_eq_shapesWfFast` re-proved); it runs only for a placement whose kind's rule
+fails.  This is the deliberate narrowing D8 directs, recorded as a behaviour change
+below; nothing else in `planWf` changed.
+
+**Observable behaviour changes, each next to the rule it replaces** (AGENTS §4's last
+row), with the decision that authorised it and the theorem separating it.
+
+| # | the rule it replaces | now | decision | separated by |
+|---|---|---|---|---|
+| 10′ | step 6's row 10: past-due `persist` dated lines "not routed; an open `due:` line in an ended week refuses the whole close (`badHorizon`)" | moved, `[ ]`, bytes kept, unstamped, no `[-]` left, to the end of `backlog.md # Overdue`; one `move` event | D7 | `close_week_moves_a_past_due_persist_line_to_the_backlog`; `a_dated_line_no_longer_refuses_the_week_close_as_badHorizon` |
+| 18 | a not-yet-due dated line (or a past-due one with `on-miss:expire`/`next`) in an ended week refused the whole close (`badHorizon`) | demoted like any open line; its `[-]` record keeps its `due:` | D8 | `close_week_demotes_a_not_yet_due_line_keeping_its_date`, `close_week_files_a_dated_line_keeping_its_date` |
+| 19 | `planWf`: every month placement has shape `none` (`month_items_are_outcomes`) | outcomes only; a `# Demoted` record may carry a date; a dated outcome is still refused (`itemCheck: fileKindShape`) | D8 | `a_dated_demoted_record_is_a_month_item_with_a_date`; `month_items_outside_demoted_are_undated`, `a_dated_month_outcome_is_rejected`, cheat 56 |
+| 20 | `tm demote ^id` of a dated line (and a `move` landing one under a month's `# Demoted`) refused `badHorizon` | files the record, `due:` kept | D8 | CLI `the_demote_verb_files_a_dated_line_keeping_its_date` |
+| 21 | step 2's F4: a wall that is over stays in the closed week, at every `on_miss` | at the week row, one that is over with `persist` (the default) moves to `# Overdue`; with `on-miss:expire`/`next` it stays — the fork point's behaviour | D7 | `closeAct_never_files_an_exempt_line` (restates `closeAct_of_exempt`); witness `^x2`/`^x3` |
+| 22 | a close request carried the week and month containing now | also `backlog.md`, with `# Overdue` appended when absent; written only if a line lands | D7, gap 56 host rule | CLI `the_host_hands_over_the_sections_a_close_needs_and_writes_them_only_when_used`, the literal acceptance test |
+| 23 | the report had five dispositions | six: `moveOverdue` (counted in the human line's `moved`) | D7, D3's per-item list | `closeReport_names_the_destination_of_now`; cheat 58 |
+
+**Theorems, both directions (AGENTS §5.8).**
+
+| claim | theorem |
+|---|---|
+| the fourth action is exactly D7's: the week row, a closed week's open non-recurring line, past due with `persist` | `closeAct_overdue_iff`, `Core.skel_overdue_iff`, `closePolicy_routes_overdue_only_at_week` |
+| a past-due `persist` line lands in the backlog (kind `backlog`, no region), **under `# Overdue`**, with its bytes, box and tombstone as they were — no stamp, no `[-]` | `close_moves_a_past_due_persist_line_to_the_backlog` (per action), `close_week_moves_a_past_due_persist_line_to_the_backlog` (in the core's own terms) |
+| it stays under `# Overdue` through the rest of the fold: a later backlog landing is only another overdue one, at a spot above it | `close_lands_every_overdue_line_under_overdue` ← `fold_lands_…`, `fold_keeps_an_overdue_line_under_overdue`, `closeOne_lands_an_overdue_line_under_overdue`, `landingSpot_overdue_is_under_overdue`, `lastHeadingBefore_shiftFrom`, `lastHeadingBefore_eq_of_max`, `foldl_lhbStep_some`, `foldl_fhaStep_some`/`_none`, `kindOfGrain_is_never_backlog` |
+| a not-yet-due dated line becomes a stamped `[-]` record in the month of now, keeping its `due:` (the shape survives the stamp and a merged estimate) | `close_week_demotes_a_not_yet_due_line_keeping_its_date`, `close_week_files_a_dated_line_keeping_its_date`, `viewShape_refiledLine`, `refiledLine_stamps_mem`, `Field.lookupKey_setKey_other`, `lookupKey_carryEst_other` |
+| a wall still ahead is not overdue; a line due on or after now's day is not | `Skel.overdue_of_wallAhead`, `Skel.overdue_of_not_yet_due` |
+| a dated outcome outside `# Demoted` is refused; a dated record loads | `a_dated_month_outcome_is_rejected`, `month_items_outside_demoted_are_undated`; loaded: `a_dated_record_loads_and_a_dated_outcome_does_not` |
+| on a loaded plan, every dated case at once: `^d1`, `^d4` (date-time) and the over wall `^x2` to `# Overdue` in source order ahead of `# Later`; `^d2` (not yet due) and `^d3` (past due, `expire`) demoted with `due:`; `^x3` (over, `next`) stays | `the_week_close_routes_dated_work_on_a_loaded_plan`, `the_week_close_reports_the_overdue_route`, `the_dated_route_hypotheses_hold_on_a_loaded_plan` (the laws' hypotheses are satisfiable) |
+| §4.3's literal week, month and backlog (with the host's `# Overdue`) close at 2026-09-14: `^d1` under `# Overdue`, `^m2` one merged record, the midterm carried | `the_example_week_closes_with_d1_in_the_backlog_overdue` |
+| the refusals left are named | `the_close_refusals_left_after_d7_are_named_on_loaded_plans` (past due with no backlog `noTarget`, no `# Overdue` `noSection`, and the four it had) |
+
+**Retired and restated** (five names; `Check.lean`'s step-2 block lists them too):
+`month_items_are_outcomes` → `month_items_outside_demoted_are_undated` (old statement
+refuted: `a_dated_demoted_record_is_a_month_item_with_a_date`); `closePolicy_owes` →
+`closePolicy_owes_only_the_child_fold` beside `closePolicy_routes_overdue_only_at_week`;
+`closeAct_of_exempt` (`stay ∨ carry`, false of an over wall with `persist`) →
+`closeAct_never_files_an_exempt_line` (`stay ∨ carry ∨ overdue`);
+`closeReport_names_the_region_of_now` (every non-carry entry lands in `closeTo g now`,
+false of `moveOverdue`) → `closeReport_names_the_destination_of_now`;
+`each_close_refusal_is_named_on_a_loaded_plan` → `the_close_refusals_left_after_d7_are_named_on_loaded_plans`
+(old statement refuted: `a_dated_line_no_longer_refuses_the_week_close_as_badHorizon`).
+Kept names whose statements gained only a hypothesis or a conjunct, recorded: 
+`shapeWf_of_mem` (now for non-month kinds; the disjunction is
+`shapeWf_or_record_of_mem`), `stepSkel_of_exempt` (its hypothesis admits `overdue`),
+`stepSkel_doc_kinds` (a third destination, the backlog), `close_found_the_target`,
+`closeOne_moves`, `fold_keeps_order_after_first` (an overdue clause each).
+
+**The two-run laws this step breaks, re-proved in the same step (D5).**  Every
+statement below is unchanged, word for word; each proof is re-checked against the
+fourth action.
+- **L16, `close_is_idempotent`** — the proof text is unchanged; what carries it is
+  `closeOne_spec`'s new overdue branch, whose "not taken again" is
+  `closeAct_of_regionless`: the backlog has no region, so no close of any grain takes a
+  line from it.  That is the argument the task names, now a theorem.
+- **`close_keeps_source_order`, `close_keeps_source_order_iff`** — two overdue lines of
+  one week land in `# Overdue` in the order they had: `closeOne_moves` gains an overdue
+  clause, `fold_keeps_order_after_first` a target hypothesis and a second spot bound,
+  `landingSpot_bump`/`landingSpot_src` the `overdueSection` case, and three helpers
+  factor the shift arithmetic (`spot_bound_after_step`, `rank_lt_landing`,
+  `landed_rank_lt_next_spot`).  Witnessed by `^d1`, `^x2`, `^d4`.
+- **The L19 theorems** (`autoClose_is_each_grain_once`, `autoClose_catches_up_in_one_step`,
+  `autoClose_strands_no_unfinished_line`, `autoClose_takes_each_line_at_most_once`,
+  `autoClose_appends_at_most_one_stamp_or_merges_each_line`) — through
+  `stepSkel_lands_outside_every_closed_region`, which gains the overdue case (regionless
+  destination); `autoClose_strands_no_unfinished_line`'s proof splits the new `if`.
+- **The report agreement, `closeReport_agrees_with_close_stamping_or_merging`** — its
+  statement already covers a sixth disposition: a `moveOverdue` entry's `src`, `dst`,
+  unchanged stamps and minutes are proved as the carry's are.
+- **`move_has_no_inverse_command`** — `stepSkel_doc_kinds`'s third disjunct (into a
+  backlog) is refuted at the witness, whose document 0 is a week file.
+- `two_closes_at_one_instant_commute_on_skeletons`, `close_week_and_close_month_do_not_commute`,
+  `lifecycle_commands_do_not_commute` — unchanged and re-checked.
+
+**Probes, under the 8 GB cap first** (each alone, imports included; the import alone is
+3.8 s at 1.1 GB): `the_week_close_routes_dated_work_on_a_loaded_plan` 6.8 s / 1.44 GB;
+`the_week_close_reports_the_overdue_route` 5.7 s / 1.45 GB;
+`the_close_overdue_witness_loads` 3.9 s / 1.14 GB;
+`the_dated_route_hypotheses_hold_on_a_loaded_plan` 5.5 s / 1.43 GB;
+`a_dated_record_loads_and_a_dated_outcome_does_not` 4.3 s / 1.17 GB;
+`a_dated_demoted_record_is_a_month_item_with_a_date` 4.1 s / 1.19 GB;
+`the_example_week_closes_with_d1_in_the_backlog_overdue` 15.5 s / 3.98 GB; cheat 56's
+computation (probed as its true form, `loadsOk datedOutcomeWitness = false`) 3.8 s /
+1.16 GB.  **Killed at the cap, not retried uncapped:** a first form of the D8
+load theorem that decided the emitted refusal string (`jemit` of
+`{"err":{"itemCheck":"fileKindShape"}}`) — 8.8 GB after 11.5 s; restated over the
+item conjuncts' booleans (`shapeFaultOf`); and the seven decisions in one file (8.8 GB
+after 12.6 s), which is why each was probed alone.  Not adopted: the literal **whole**
+example tree under `autoClose` decides too (20.1 s / 4.35 GB, but only with
+`maxHeartbeats 4000000`); the CLI acceptance test drives the whole tree instead.  The
+refusal restatement was built under the 40 GB cap before its probe (2.3 s / 1.0 GB).
+**Build cost:** `Boundary.lean` alone 52.0 s / 4.09 GB at `ccd1718` → 70.8 s /
+6.82 GB; the whole `lake build TmKernel:static` 73 s at a 7.10 GB peak — inside the
+40 GB cap, and recorded because it is the largest single step up the build has taken.
+
+**The host.**  `kernel_bridge.rs`: `CloseDid::MoveOverdue` (`moveOverdue`; an unknown
+name is still refused); the backlog as a close's third destination and the `# Overdue`
+rule above; the `noTarget`/`noSection` messages name the backlog.  `closing.rs`: module
+and `auto_close` docs no longer list the overdue route as undone; `explain`'s
+`badHorizon` hint no longer blames dated lines, and its `noSection` hint names
+`# Overdue`.  Log: an overdue entry is a `move` event (it has no stamp), as the fork
+point logged it.  Tests: `a_refused_close_is_named_and_writes_nothing` re-based on a
+month close refused `noSection` (it pinned gap 55's refusal on the example tree, D7/D8);
+new `the_literal_example_tree_closes_on_its_first_command_a_week_after_its_week` (the
+owner's acceptance: `tm --now 2026-09-14T09:00:00-05:00 --dir T init --example`, then
+`tm now` at the same instant — no refusal printed; `^d1` the one line in `backlog.md`,
+`[ ]`, `due:` kept, no stamp, the file's bytes the template plus `# Overdue` and `^d1`
+— and one change that is not the close's, `^a4`'s lapsed `waiting:`, which §5.1's
+timeout reopens in the same housekeeping; `^m2` one merged record; one `move` event;
+`tm check` clean; a second `tm now` does not reach the kernel, by fault probe);
+`a_not_yet_due_dated_task_is_demoted_keeping_its_date` (D8 beside D7, report
+dispositions `copy` and `moveOverdue`, `tm check` clean);
+`the_demote_verb_files_a_dated_line_keeping_its_date`; the idle half of
+`the_host_hands_over_the_sections…` now asserts `backlog.md` is not created.
+`cli_lifecycle.rs`'s `closable_week` comment re-cites D7/D8.  FFI:
+`a_week_close_routes_dated_work_on_the_wire` (the loaded witness byte for byte, L16 at
+the wire, `noSection` without the heading).  The literal acceptance test's commands, and the demote verb's and the move's,
+were driven on the `ccd1718` binary first (the defect above): there each refuses.
+
+**Gap 55 — closed** at this step, by the owner's D7 and D8: the past-due half by
+`close_week_moves_a_past_due_persist_line_to_the_backlog` (landing under `# Overdue`:
+`close_lands_every_overdue_line_under_overdue`), the not-yet-due half by
+`close_week_demotes_a_not_yet_due_line_keeping_its_date` over D8's
+`demotedRecordPlacement`; the refusal's refutation is
+`a_dated_line_no_longer_refuses_the_week_close_as_badHorizon`; on loaded plans
+`the_week_close_routes_dated_work_on_a_loaded_plan` and
+`the_example_week_closes_with_d1_in_the_backlog_overdue`; through the binary,
+`the_literal_example_tree_closes_on_its_first_command_a_week_after_its_week`.
+**Gap 56's overdue half — closed** by the host's `# Overdue` rule above; the kernel's
+`noSection`/`noTarget` for the backlog stand, by name.
+
+**Owed, by name (not attempted in this step).**  (1) B3,
+`close_week_folds_a_dropped_child_into_its_parent`, stays in `Goals.lean` (burn-down
+30): it waits on D6.  (2) D6 itself — `@parent` derived, `danglingParent`/`parentCycle`,
+the corpus re-based on whole trees — and with it difference (b), the effective shape.
+(3) A dated `# Demoted` record that falls past due inside a month is carried by the
+month close like any record, not routed (D8's cost (ii)); `on_miss` beyond the week row
+is stage 5's.  (4) Minute resolution for `due:` against `now` (gap 57, difference (a)).
+(5) The human's 30-minute drive (AGENTS §5.13).
+
+**Re-measured after this step**, every command under the 40 GB cap: `check.sh` **7/7** — axiom audit **1691 theorems** (1634 − 5 retired + 62 new),
+corpus **33/37 files and 4/5 whole plans** (unchanged), burn-down **30** (no goal
+touched; B3 waits on D6); `cargo test --workspace` **1004 passed / 0 failed / 0 ignored
+across 66 binaries** (+3: the literal acceptance test, the not-yet-due test, the
+demote-verb test; one test re-based), `cli_latency.rs` green; FFI suite **69** (63
+kernel + 6 corpus; +1).  Proof : definition **4.63 : 1** (16,989 : 3,672; this step
+1,113 : 160), 8.85 : 1 in `Close.lean`, 6.46 : 1 in `Report.lean`, by the stage-4
+script (`/tmp/claude-1000/proof_ratio.py kernel/TmKernel/TmKernel`).  Gaps run to 67
+(new gaps start at 68); cheats to 58 (new cheats start at 59).

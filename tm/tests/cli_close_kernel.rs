@@ -522,45 +522,205 @@ fn an_upgraded_tree_whose_stamps_are_current_is_swept_once() {
 // Both directions: the close bites, by name, and writes nothing
 // ---------------------------------------------------------------------------
 
-/// §4.3's own example tree, the Monday after its week: the kernel's week
-/// close refuses it. One of its lines is a refusal — `^d1 due:` is an open
-/// dated line whose record a month's `# Demoted` may not hold (`badHorizon`,
-/// kernel/README.md gap 55). (Until gap 53 closed, `^m2` — which already has a
-/// `[-]` record in September's `# Demoted` — was a second refusal three lines
-/// above it, `alreadyDemoted`, and the close named that one; `^m2` now merges
-/// into its record, `the_example_week_closes_a_week_after_init_merging_m2_into_its_record`.)
+/// A refused close is named and writes nothing — on a month close whose
+/// leftover outcome stands under a heading the current month file does not
+/// have (`noSection`: the host hands over only `# Outcomes` and `# Demoted`,
+/// kernel/README.md gap 56). This test pinned §4.3's own example tree, whose
+/// open dated `^d1` refused the week close `badHorizon` (gap 55), until the
+/// owner's D7 and D8 (2026-09-13) routed dated work — past due to
+/// `backlog.md # Overdue`, not yet due into `# Demoted` with its date — and
+/// that tree closes now
+/// (`the_literal_example_tree_closes_on_its_first_command_a_week_after_its_week`).
 /// The explicit verb exits 1 with the refusal's name and writes nothing; the
 /// automatic close ahead of an unrelated verb prints the same name and lets
 /// the verb run, stamping nothing closed so it is tried again.
 #[test]
 fn a_refused_close_is_named_and_writes_nothing() {
     const AT: &str = "2026-09-14T09:00:00-05:00";
-    let tm = Tm::new();
-    let week = tm.read("week/2026-W37.md");
-    let month = tm.read("month/2026-09.md");
+    let tm = tree(
+        &[
+            (
+                "month/2026-08.md",
+                "---\nmonth: 2026-08\n---\n# Goals\n- [ ] 5 !1 Old outcome ^O7\n# Demoted\n",
+            ),
+            ("month/2026-09.md", "---\nmonth: 2026-09\n---\n# Outcomes\n# Demoted\n"),
+            ("week/2026-W38.md", "# Tasks\n"),
+        ],
+        Some(("2026-09-13", "2026-W37", "2026-07")),
+    );
+    let before = md_files(&tm);
 
-    let out = tm.run_at(AT, &["close", "week"]);
+    let out = tm.run_at(AT, &["close", "month"]);
     assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
-    assert!(out.stderr.contains("badHorizon"), "{}", out.stderr);
-    assert!(out.stderr.contains("gap 55"), "{}", out.stderr);
-    assert_eq!(tm.read("week/2026-W37.md"), week);
-    assert_eq!(tm.read("month/2026-09.md"), month);
-    assert!(!tm.exists("week/2026-W38.md"));
-    assert!(!tm.events().iter().any(|e| e == "close" || e == "demote"), "{:?}", tm.events());
+    assert!(out.stderr.contains("noSection"), "{}", out.stderr);
+    assert!(out.stderr.contains("gap 56"), "{}", out.stderr);
+    assert_eq!(md_files(&tm), before);
+    assert!(!tm.events().iter().any(|e| e == "close" || e == "move"), "{:?}", tm.events());
 
-    let json = tm.run_at(AT, &["--json", "close", "week"]);
+    let json = tm.run_at(AT, &["--json", "close", "month"]);
     assert_eq!(json.code, 1);
     let doc: serde_json::Value = serde_json::from_str(json.stderr.trim()).expect("error document");
-    assert_eq!(doc["detail"]["refusal"], "badHorizon", "{doc}");
+    assert_eq!(doc["detail"]["refusal"], "noSection", "{doc}");
 
     let out = tm.run_at(AT, &["now"]);
     assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
     assert!(out.stderr.contains("automatic close"), "{}", out.stderr);
-    assert!(out.stderr.contains("badHorizon"), "{}", out.stderr);
-    assert_eq!(tm.read("week/2026-W37.md"), week);
-    assert_eq!(tm.read("month/2026-09.md"), month);
-    assert!(tm.state()["closed"]["week"].is_null(), "{}", tm.state());
-    assert!(!tm.exists("week/2026-W38.md"));
+    assert!(out.stderr.contains("noSection"), "{}", out.stderr);
+    assert_eq!(md_files(&tm), before);
+    assert_eq!(tm.state()["closed"]["month"], "2026-07", "{}", tm.state());
+}
+
+/// kernel/README.md gap 55, closed, through the binary — the owner's
+/// acceptance, on the **literal** tree: `tm init --example` run a week after
+/// §4.3's week, then `tm now`, both at Monday 2026-09-14 09:00. Until D7 and
+/// D8 every command printed the automatic close's `badHorizon` refusal and
+/// wrote nothing, because `^d1 due:2026-09-11T23:59` was filed into
+/// `# Demoted` like any open line and its record broke the month rule. Now
+/// the close runs on the first command and prints no refusal: `^d1` is past
+/// due with `persist` (§5.3's default for a point), so it is **moved** to the
+/// end of `backlog.md`'s `# Overdue` — which the host appends, the file had
+/// none (gap 56's overdue half) — as `[ ]`, every byte kept, no stamp, and no
+/// `[-]` left in the week; `^m2` merges into its standing record, one line in
+/// September; `tm check` is clean; and a second `tm now` does not call the
+/// kernel (a fault probe set for it is never reached).
+#[test]
+fn the_literal_example_tree_closes_on_its_first_command_a_week_after_its_week() {
+    const AT: &str = "2026-09-14T09:00:00-05:00";
+    const D1: &str = "- [ ] 4 6b CS 234 pset 2                @O3 due:2026-09-11T23:59 max:2b/d ^d1";
+    let tm = Tm::empty();
+    let init = tm.run_at(AT, &["init", "--example"]);
+    assert_eq!(init.code, 0, "{}{}", init.stdout, init.stderr);
+    let backlog_before = tm.read("backlog.md");
+    assert!(!backlog_before.contains("# Overdue"), "{backlog_before}");
+    assert!(tm.read("week/2026-W37.md").contains(D1));
+
+    let out = tm.run_at(AT, &["now"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(!out.stderr.contains("refused"), "{}", out.stderr);
+    assert!(!out.stderr.contains("badHorizon"), "{}", out.stderr);
+
+    let files = md_files(&tm);
+    let after = lines(&files);
+    let d1: Vec<(&str, &str, char)> =
+        after["d1"].iter().map(|l| (l.path.as_str(), l.text.as_str(), l.status)).collect();
+    assert_eq!(d1, vec![("backlog.md", D1, ' ')], "{d1:?}");
+    assert!(after["d1"][0].stamps.is_empty());
+    // The backlog is the template's bytes with `# Overdue` and `^d1` appended —
+    // and one change that is not the close's: `^a4`'s `waiting:2026-09-05` has
+    // lapsed (`on-event:reply/7d`), which §5.1's waiting timeout, run by the
+    // same housekeeping, reopens.
+    let a4_waiting = "- [?] 2 15m Ask Prof. Lee about the reading group  on-event:reply/7d waiting:2026-09-05 ^a4";
+    let a4_lapsed = "- [ ] 2 15m Ask Prof. Lee about the reading group  on-event:reply/7d ^a4";
+    assert!(backlog_before.contains(a4_waiting), "{backlog_before}");
+    assert_eq!(
+        files["backlog.md"],
+        format!("{}# Overdue\n{D1}\n", backlog_before.replace(a4_waiting, a4_lapsed))
+    );
+    assert!(!files["week/2026-W37.md"].contains("^d1"), "{}", files["week/2026-W37.md"]);
+
+    let m2: Vec<(&str, &str)> = after["m2"].iter().map(|l| (l.path.as_str(), l.text.as_str())).collect();
+    assert_eq!(
+        m2,
+        vec![
+            ("month/2026-09.md", "- [-] 4 6b Rollback path passes tests   @O2 demoted:W37 ^m2"),
+            ("week/2026-W37.md", "- [-] 4 6b Rollback path passes tests   @O2 ^m2"),
+        ]
+    );
+    assert_eq!(files["month/2026-09.md"].matches("^m2").count(), 1, "{}", files["month/2026-09.md"]);
+
+    let moves: Vec<serde_json::Value> =
+        tm.log().into_iter().filter(|e| e["ev"] == "move" && e["id"] == "d1").collect();
+    assert_eq!(moves.len(), 1, "{moves:?}");
+    assert_eq!(moves[0]["from"], "week/2026-W37.md");
+    assert_eq!(moves[0]["to"], "backlog.md");
+    assert!(!events(&tm).iter().any(|(ev, id)| ev == "demote" && id == "d1"), "{:?}", events(&tm));
+    let state = tm.state();
+    assert_eq!(state["closed"]["week"], "2026-W37", "{state}");
+    assert_eq!(state["closed"]["swept"], true, "{state}");
+    tm.ok_at(AT, &["check"]);
+
+    // Closed and swept: the next command skips the kernel.
+    let out = tm.run_env_at(AT, &[("TM_KERNEL_FAULT_PROBE", "1")], &["now"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(!out.stderr.contains("kernel fault"), "{}", out.stderr);
+    assert_eq!(md_files(&tm), files);
+}
+
+/// The owner's D8, through the binary, with D7 beside it for contrast: a week
+/// close demotes a **not-yet-due** dated task like any unfinished one — `[-]`
+/// left in the week file in its own bytes, a record in September's
+/// `# Demoted` stamped `W37` that **keeps its `due:`** (a `# Demoted` record
+/// is a work item, and the month rule "an outcome carries no date" reads
+/// outcomes only) — while the past-due one beside it moves to
+/// `backlog.md # Overdue`. The report names the two dispositions, `copy` and
+/// `moveOverdue`, and `tm check` accepts the dated record.
+#[test]
+fn a_not_yet_due_dated_task_is_demoted_keeping_its_date() {
+    const AT: &str = "2026-09-14T09:00:00-05:00";
+    let tm = tree(
+        &[
+            (
+                "week/2026-W37.md",
+                "# Tasks\n- [ ] 3 1b Essay draft due:2026-09-20 ^e1\n- [ ] 2 1b Pset due:2026-09-10 ^e2\n",
+            ),
+            (
+                "month/2026-09.md",
+                "---\nmonth: 2026-09\n---\n# Outcomes\n- [ ] 5 !1 Lean through ch.8 ^O1\n# Demoted\n",
+            ),
+            ("backlog.md", "# Untied\n- [ ] 2 30m Insurance claim ^a1\n"),
+        ],
+        None,
+    );
+    let json = tm.json_at(AT, &["close", "week"]);
+    let closes = json["report"]["closes"].as_array().expect("closes");
+    let did: Vec<(&str, &str, &str)> = closes
+        .iter()
+        .map(|c| (c["id"].as_str().unwrap(), c["did"].as_str().unwrap(), c["to"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        did,
+        vec![("e1", "copy", "month/2026-09.md"), ("e2", "moveOverdue", "backlog.md")],
+        "{json}"
+    );
+    assert_eq!(closes[0]["stamp"], "W37");
+    assert!(closes[1]["stamp"].is_null(), "{json}");
+
+    assert_eq!(
+        tm.read("month/2026-09.md"),
+        "---\nmonth: 2026-09\n---\n# Outcomes\n- [ ] 5 !1 Lean through ch.8 ^O1\n# Demoted\n\
+         - [-] 3 1b Essay draft due:2026-09-20 demoted:W37 ^e1\n"
+    );
+    assert_eq!(tm.read("week/2026-W37.md"), "# Tasks\n- [-] 3 1b Essay draft due:2026-09-20 ^e1\n");
+    assert_eq!(
+        tm.read("backlog.md"),
+        "# Untied\n- [ ] 2 30m Insurance claim ^a1\n# Overdue\n- [ ] 2 1b Pset due:2026-09-10 ^e2\n"
+    );
+    tm.ok_at(AT, &["check"]);
+}
+
+/// The owner's D8 reaches the `demote` verb too: `tm demote ^d1` on §4.3's
+/// dated line files a `[-]` record into September's `# Demoted` that keeps
+/// `due:2026-09-11T23:59`, and `tm check` accepts it. Until D8 the verb's
+/// post-state failed the month rule "an outcome carries no date" and was
+/// refused `badHorizon` with nothing written — the same rule that refused the
+/// week close (kernel/README.md gap 55).
+#[test]
+fn the_demote_verb_files_a_dated_line_keeping_its_date() {
+    const AT: &str = "2026-09-08T09:00:00-05:00";
+    let tm = Tm::empty();
+    let init = tm.run_at(AT, &["init", "--example"]);
+    assert_eq!(init.code, 0, "{}{}", init.stdout, init.stderr);
+    tm.ok_at(AT, &["demote", "^d1"]);
+    let after = lines(&md_files(&tm));
+    let d1: Vec<(&str, &str)> = after["d1"].iter().map(|l| (l.path.as_str(), l.text.as_str())).collect();
+    assert_eq!(
+        d1,
+        vec![
+            ("month/2026-09.md", "- [-] 4 6b CS 234 pset 2                @O3 due:2026-09-11T23:59 max:2b/d demoted:W37 ^d1"),
+            ("week/2026-W37.md", "- [-] 4 6b CS 234 pset 2                @O3 due:2026-09-11T23:59 max:2b/d ^d1"),
+        ]
+    );
+    tm.ok_at(AT, &["check"]);
 }
 
 /// kernel/README.md gap 53, closed, through the binary: §4.3's own example
@@ -573,8 +733,10 @@ fn a_refused_close_is_named_and_writes_nothing() {
 /// `W37`; the merge writes each stamp once), with the live line's own `6b` —
 /// the line owns an estimate, so the record's `est:3b` is not a floor over it
 /// (`ownsEstimate`, L15's user exception). `^d1` is finished before its week
-/// ends: an open dated line in an ended week is gap 55's refusal, not this
-/// gap's. The automatic close runs once and prints no refusal, `tm check` is
+/// ends, so this test is about the merge alone (an open `^d1` was gap 55's
+/// refusal until the owner's D7; it now moves to `backlog.md # Overdue` —
+/// `the_literal_example_tree_closes_on_its_first_command_a_week_after_its_week`).
+/// The automatic close runs once and prints no refusal, `tm check` is
 /// clean, and the next command does not call the kernel (the swept gate: a
 /// fault probe set for it is never reached).
 #[test]
@@ -674,6 +836,9 @@ fn the_host_hands_over_the_sections_a_close_needs_and_writes_them_only_when_used
     let json = idle.json_at(AT, &["close", "week"]);
     assert_eq!(json["report"]["closes"], serde_json::json!([]));
     assert_eq!(idle.read("month/2026-09.md"), month);
+    // …and the backlog `# Overdue` goes into (the owner's D7) is handed over
+    // too — created, with the heading, only if a line lands there.
+    assert!(!idle.exists("backlog.md"));
 
     // A record lands: the section it needed is written with it.
     let busy = tree(
