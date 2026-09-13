@@ -1289,5 +1289,211 @@ theorem close_without_candidates_is_the_identity {g : Grain} {now : Day} {p : Wf
   rw [h]
   rfl
 
+/-! ## L16: closing twice is closing once (stage 4 step 3)
+
+`close_spec` already says that after a successful close no line is one the same
+close would take; a candidate set is exactly the lines a close would take, so
+the second run's is empty, and an empty candidate set is the identity. -/
+
+/-- A plan in which no line is one a close of grain `g` at `now` would take has
+no candidates for it. -/
+theorem closeCands_eq_nil_of_stay {g : Grain} {now : Day} {p : PlanCore}
+    (h : ∀ i f, p.store.get i = some f → closeAct g now p f.val.skel = .stay) :
+    closeCands g now p = [] := by
+  unfold closeCands
+  rw [List.filter_eq_nil_iff]
+  intro i _
+  cases hg : p.store.get i with
+  | none => simp
+  | some e => simp [h i e hg]
+
+/-- **L16 (discharged from `Goals.lean`, as stated): `close g now` is
+idempotent.**  Closing grain `g` twice at the same instant `now` is closing it
+once: whatever plan a successful close returns, the same close returns it
+unchanged.
+
+**Which idempotence this is.**  It is the fold on `WfPlan` — a fact about the
+plan *value*, with `g` and `now` held fixed — and nothing else.  It is **not**
+§6.3's "runs automatically on the first command after the period ends
+(idempotent; recorded in `state.json`)": that one is a Rust fact about the
+`closed` map the host keeps across invocations and instants, and no kernel
+statement is about it.  Nor is it a claim across instants: a close at a later `now`
+may take lines this one left, because more regions are closed by then
+(`closed_is_stable_in_time`).
+
+**Why it holds.**  After the fold every line either stayed or was filed into
+`closeTo g now` or carried into the live week, and neither region is closed
+(`closeTo_target_is_open`, `regionOf_is_open`, read through
+`close_leaves_no_line_it_would_take`); so the second run's candidate set is
+empty and the fold is the identity (`close_without_candidates_is_the_identity`).
+That is the target D1 chose; see the README's stage-4 step-3 block for where the
+rule it replaced would and would not have broken this argument.
+
+**The hypothesis is satisfiable** on loaded plans at all three grains:
+`the_week_close_copies_carries_and_leaves_the_rest`,
+`the_day_close_files_into_the_week_of_now` and
+`the_month_close_moves_each_line_into_its_section` (Boundary.lean) each decide a
+successful close. -/
+theorem close_is_idempotent (g : Grain) (now : Day) (p q : WfPlan)
+    (h : close g now p = .ok q) : close g now q = .ok q :=
+  close_without_candidates_is_the_identity
+    (closeCands_eq_nil_of_stay (fun i f hq => close_leaves_no_line_it_would_take h i f hq))
+
+/-! ## L17's finding: at one instant, closes of distinct grains move every line alike
+
+L17 ("`close week` and `close month` commute") is false as written and is refuted
+on a loaded plan in `Boundary.lean` (`close_week_and_close_month_do_not_commute`).
+The reason is **not** the one its goal expected — that the week close's output
+becomes the month close's input in one order and not the other.  With D1's
+target, no close's output is ever in a closed region at the same `now`, so
+neither close sees the other's work; what differs is only *rank*, where both
+land a line at the end of one section of the one open month file.  This section
+proves the part that does commute: every line's rank-free skeleton. -/
+
+theorem stepSkel_of_stay {g : Grain} {now : Day} {p : PlanCore} {s : Skel}
+    (h : closeAct g now p s = .stay) : stepSkel g now p s = s := by
+  unfold stepSkel; rw [h]
+
+theorem closeAct_of_closedRegionOf_none {g : Grain} {now : Day} {p : PlanCore} {s : Skel}
+    (h : closedRegionOf g now p s.doc = none) : closeAct g now p s = .stay := by
+  unfold closeAct; rw [h]
+
+theorem closedRegionOf_spec {g : Grain} {now : Day} {p : PlanCore} {k : DocIx} {r : Region}
+    (h : closedRegionOf g now p k = some r) :
+    docRegion p k = some r ∧ docKindAt p k = kindOfGrain g ∧ r.grain = g ∧ Closed r now := by
+  unfold closedRegionOf at h
+  cases hr : docRegion p k with
+  | none => rw [hr] at h; simp at h
+  | some r0 =>
+    rw [hr] at h
+    simp only at h
+    split at h
+    · rename_i hc
+      injection h with h
+      subst h
+      exact ⟨rfl, hc.1, hc.2.1, hc.2.2⟩
+    · simp at h
+
+/-- A file is a closed region of at most one grain: a line one close acts on is
+a line every close of another grain leaves where it is. -/
+theorem closeAct_of_another_grain {g g' : Grain} {now : Day} {p : PlanCore} {s : Skel}
+    (hne : g ≠ g') (h : closeAct g now p s ≠ .stay) : closeAct g' now p s = .stay := by
+  apply closeAct_of_closedRegionOf_none
+  cases h1 : closedRegionOf g now p s.doc with
+  | none => exact absurd (closeAct_of_closedRegionOf_none h1) h
+  | some r =>
+    cases h2 : closedRegionOf g' now p s.doc with
+    | none => rfl
+    | some r' =>
+      obtain ⟨hr, _, hg, _⟩ := closedRegionOf_spec h1
+      obtain ⟨hr', _, hg', _⟩ := closedRegionOf_spec h2
+      rw [hr] at hr'
+      injection hr' with hrr
+      subst hrr
+      exact absurd (hg.symm.trans hg') hne
+
+/-- **Where a step puts a line, no close of any grain at the same instant takes
+it from.**  Either the step left the skeleton alone, or the file it now names is
+`closeTo g now` or the live week, and neither is closed — the D1 fact L16 and
+this section both run on, stated once for every pair of grains. -/
+theorem stepSkel_lands_outside_every_closed_region (g g' : Grain) (now : Day) (p : PlanCore)
+    (s : Skel) :
+    stepSkel g now p s = s ∨ closedRegionOf g' now p (stepSkel g now p s).doc = none := by
+  have hopen : ∀ k r, docRegion p k = some r → ¬ Closed r now →
+      closedRegionOf g' now p k = none := by
+    intro k r hr ho
+    unfold closedRegionOf
+    rw [hr]
+    simp [ho]
+  unfold stepSkel
+  split
+  · exact Or.inl rfl
+  · split
+    · rename_i k hk
+      obtain ⟨_, _, hreg⟩ := findDocIx_spec hk
+      exact Or.inr (hopen k _ hreg (regionOf_is_open week now))
+    · exact Or.inl rfl
+  · rename_i r _
+    split
+    · rename_i k hk
+      obtain ⟨_, _, hreg⟩ := findDocIx_spec hk
+      rcases skelAfter_doc g r k s with hd | hd
+      · right; rw [hd]; exact hopen k _ hreg (closeTo_target_is_open g now)
+      · exact Or.inl hd
+    · exact Or.inl rfl
+
+/-- One line's skeleton, closed at two grains against one plan's files, comes
+out the same in either order (at one grain the two sides are one expression). -/
+theorem stepSkel_comm (g g' : Grain) (now : Day) (p : PlanCore) (s : Skel) :
+    stepSkel g' now p (stepSkel g now p s) = stepSkel g now p (stepSkel g' now p s) := by
+  by_cases hne : g = g'
+  · rw [hne]
+  by_cases hg : closeAct g now p s = .stay
+  · rw [stepSkel_of_stay hg]
+    rcases stepSkel_lands_outside_every_closed_region g' g now p s with ht | ht
+    · rw [ht, stepSkel_of_stay hg]
+    · rw [stepSkel_of_stay (closeAct_of_closedRegionOf_none ht)]
+  · have hg' := closeAct_of_another_grain hne hg
+    rw [stepSkel_of_stay hg']
+    rcases stepSkel_lands_outside_every_closed_region g g' now p s with ht | ht
+    · rw [ht, stepSkel_of_stay hg']
+    · rw [stepSkel_of_stay (closeAct_of_closedRegionOf_none ht)]
+
+/-- Two closes in sequence, per id: the skeleton is the second grain's step of
+the first grain's step, both read against the *starting* plan's files. -/
+theorem close_bind_close_skel {g g' : Grain} {now : Day} {p q : WfPlan}
+    (h : (close g now p).bind (close g' now) = .ok q) (j : Id) :
+    (q.val.store.get j).map (fun e => e.val.skel) =
+      (p.val.store.get j).map
+        (fun e => stepSkel g' now p.val (stepSkel g now p.val e.val.skel)) := by
+  cases h1 : close g now p with
+  | error x => rw [h1] at h; exact absurd h (by simp [Except.bind])
+  | ok q1 =>
+    rw [h1] at h
+    have h2 : close g' now q1 = .ok q := h
+    obtain ⟨hf1, hs1⟩ := close_spec h1
+    have e2 := ((close_spec h2).2 j).1
+    have e1 := (hs1 j).1
+    rw [e2]
+    cases hq1 : q1.val.store.get j with
+    | none =>
+      rw [hq1] at e1
+      cases hp : p.val.store.get j with
+      | none => rfl
+      | some _ => rw [hp] at e1; simp at e1
+    | some f1 =>
+      rw [hq1] at e1
+      cases hp : p.val.store.get j with
+      | none => rw [hp] at e1; simp at e1
+      | some e =>
+        rw [hp] at e1
+        simp only [Option.map_some, Option.some.injEq] at e1 ⊢
+        rw [stepSkel_frame hf1, e1]
+
+/-- **L17's commuting half.**  Closing two grains at the same instant, in either
+order, leaves every id with the same skeleton — the same file, the same tombstone
+file and bytes, the same box and the same bytes — whenever both orders succeed.
+(For one grain twice the two orders are one expression; the content is at
+distinct grains.)  Neither order sees the other's output, because every
+destination is open (`stepSkel_lands_outside_every_closed_region`).  What this
+does **not** say, and what is false (`close_week_and_close_month_do_not_commute`),
+is that the two plans are equal: ranks in a shared destination depend on which
+close landed first.  `close_week_month_orders_both_succeed_and_differ`
+(Boundary.lean) exhibits both hypotheses, at week and month, on a loaded plan. -/
+theorem two_closes_at_one_instant_commute_on_skeletons {g g' : Grain} {now : Day}
+    {p q r : WfPlan}
+    (hgg : (close g now p).bind (close g' now) = .ok q)
+    (hgg' : (close g' now p).bind (close g now) = .ok r) (j : Id) :
+    (q.val.store.get j).map (fun e => e.val.skel) =
+      (r.val.store.get j).map (fun e => e.val.skel) := by
+  by_cases hne : g = g'
+  · subst hne
+    rw [hgg] at hgg'
+    injection hgg' with hqr
+    rw [hqr]
+  · rw [close_bind_close_skel hgg, close_bind_close_skel hgg']
+    cases p.val.store.get j with
+    | none => rfl
+    | some e => simp only [Option.map_some, stepSkel_comm g g' now]
 
 end Tm

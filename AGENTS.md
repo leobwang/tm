@@ -447,7 +447,8 @@ doc comments, and three of them have gone exactly that way:
 (`a6dcc96`); and `the_json_edge_round_trips` was narrowed, as its doc comment
 licensed, to `the_response_call_emits_parses_back` (`b7f504d`). The two still
 standing are `close_week_and_close_month_commute` (L17) and
-`lifecycle_commands_commute` (L27).
+`lifecycle_commands_commute` (L27) — *both refuted at stage 4 step 3, as
+`close_week_and_close_month_do_not_commute` and `lifecycle_commands_do_not_commute`.*
 
 **The number rises only when a new debt is deliberately admitted**, and that is a
 thing worth noticing in a diff. It is not progress; it is a decision. Say in your
@@ -1477,6 +1478,11 @@ and the stage's own 40–51 as their paragraphs price them.
 discharged (burn-down 39); narrowed forms of three over-strong goals are proved
 beside them and their refute-and-renames are owed; gaps 53–57 are the step's
 debts. Read kernel/README.md's stage-4 step-2 block before taking the next step.
+*Step 3 (2026-09-12):* `close_is_idempotent` (L16) is discharged as stated, and
+L17 and L27 are refuted and renamed (`close_week_and_close_month_do_not_commute`,
+`lifecycle_commands_do_not_commute`); burn-down 36. L17's orders differ only in
+rank — every line's skeleton commutes (`two_closes_at_one_instant_commute_on_skeletons`).
+README stage-4 step-3 block.
 
 **Scope, concretely.**
 
@@ -1603,9 +1609,13 @@ Plus the corpus ratchet, plus 30 minutes driving whatever binary exists (§5.13)
   With `targetContaining`, the fold's own output can be back in scope and the
   proof does not go through. Record it as a stop point, not a surprise.
   *Status: assent was given for (a) (D1), so the `closeTo` argument is the one
-  L16 gets.*
+  L16 gets.* *Proved at step 3. For one grain the old rule would have broken it
+  at month only; at day and week it breaks across grains (L19b) — README
+  stage-4 step-3 block, read off the definitions.*
 - **L17 is an expected refutation, and a refutation is a deliverable.**
-  `close week ∘ close month` is not expected to commute.
+  `close week ∘ close month` is not expected to commute. *Refuted at step 3 —
+  through rank in the shared `# Demoted`, not through one close seeing the
+  other's output, which D1 rules out.*
 - **Four stage-4 goals are stated stronger than §6.3 allows**, and the repair is
   refute-and-rename (§3.2), never a weakened predicate:
   `close_leaves_no_live_line_in_a_closed_region` and
@@ -2142,7 +2152,7 @@ they are settled, and changing one needs the owner again.
 | 4 | Which side replays the log | before stage 5 | **open** — and `move_has_no_inverse_command` makes replay the only correct `tm undo` |
 | 5 | R7: where the `p_lounge` capacity mixture rounds (gap 26) | stage 5, consumed by 6 | **open** |
 | 6 | L24 / L25: prove, or keep the 882-line proptest and say so | **before stage 6 starts** | **open**; the proptest is restored and runs (`tm-core/tests/planner_invariants.rs`) |
-| 7 | Lifecycle commutation (R7 in the law list) — L27 surfaces it and does not answer it | stage 6 | **open** |
+| 7 | Lifecycle commutation (R7 in the law list) — L27 surfaces it and does not answer it | stage 6 | **open** — L27 is refuted (stage 4 step 3) by a demote/readopt precondition pair, which does not bear on whether pairs that both succeed should commute |
 | 8 | What `report` carries, and therefore its shape (§8.2). Nothing in the kernel names it today | before stage 4 writes one | **ANSWERED 2026-09-12 (D3):** a per-item list — id, disposition, destination, stamp, minutes as integer numerator/denominator. Not counts only (the month review would re-derive per-item history from the files, a second reader of one fact), and not stage 6's full diagnostics surface yet. No code exists |
 | 9 | Whether the kernel should refuse a `[-]` outside a week file or `month/…# Demoted`, as `tree.rs` does — a behaviour change (gap 31, §8.1) | stage 3 | **open**, not taken in stage 3; now due when stage 4 gives `demote` a section target |
 | — | `main`: keep it as the oracle, or discard it | — | **DECIDED 2026-09-12 (D4):** discarded (`f386c56`); the fork point `4748911` is the restore source and the oracle; stage 0's fix, `invariant_exhaustive.rs` and the ability to reproduce anything measured on `main` went with it (§2.2) |

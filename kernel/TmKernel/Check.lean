@@ -1545,3 +1545,23 @@ open Tm
 #print axioms Tm.the_day_close_files_into_the_week_of_now
 #print axioms Tm.the_month_close_moves_each_line_into_its_section
 #print axioms Tm.the_close_refusals_are_named_on_loaded_plans
+-- Stage 4 step 3 (same session, same banner): L16 discharged as stated in
+-- Close.lean, with the skeleton half of L17 that does commute; L17 and L27
+-- refuted and renamed to their negations in Boundary.lean, on loaded plans.
+#print axioms Tm.closeCands_eq_nil_of_stay
+#print axioms Tm.close_is_idempotent
+#print axioms Tm.stepSkel_of_stay
+#print axioms Tm.closeAct_of_closedRegionOf_none
+#print axioms Tm.closedRegionOf_spec
+#print axioms Tm.closeAct_of_another_grain
+#print axioms Tm.stepSkel_lands_outside_every_closed_region
+#print axioms Tm.stepSkel_comm
+#print axioms Tm.close_bind_close_skel
+#print axioms Tm.two_closes_at_one_instant_commute_on_skeletons
+#print axioms Tm.the_close_commute_witness_loads
+#print axioms Tm.the_week_then_month_close_lands_the_week_record_first
+#print axioms Tm.the_month_then_week_close_lands_the_month_record_first
+#print axioms Tm.close_week_month_orders_both_succeed_and_differ
+#print axioms Tm.close_week_and_close_month_do_not_commute
+#print axioms Tm.demote_then_readopt_succeeds_and_the_reverse_is_refused
+#print axioms Tm.lifecycle_commands_do_not_commute

@@ -3954,15 +3954,22 @@ def loadedPlan? (docs : List ReqDoc) : Option WfPlan :=
   | .ok p    => some p
   | .error _ => none
 
+/-- Each file's lines in rank order: the prose and the item lines `renderDocAt`
+weaves, merged by rank.  The one observation every close witness reads. -/
+def fileLinesOf (q : WfPlan) : List (List (List Char)) :=
+  q.val.docs.zipIdx.map (fun dk =>
+    (sortByRank (dk.1.prose ++ (q.val.lines.filter (fun l => l.site.doc == dk.2)).map
+      (fun l => (l.site.rank, l.text)))).map Prod.snd)
+
+/-- A close's result, observed: each file's lines if it succeeded. -/
+def closeResultLines : Except KErr WfPlan → Option (List (List (List Char)))
+  | .ok q    => some (fileLinesOf q)
+  | .error _ => none
+
 /-- Each file's lines in rank order after `close g closeNow`, if the request
 loads and the close succeeds. -/
 def closedFileLines (g : Grain) (docs : List ReqDoc) : Option (List (List (List Char))) :=
-  (loadedPlan? docs).bind (fun p =>
-    match close g closeNow p with
-    | .ok q => some (q.val.docs.zipIdx.map (fun dk =>
-        (sortByRank (dk.1.prose ++ (q.val.lines.filter (fun l => l.site.doc == dk.2)).map
-          (fun l => (l.site.rank, l.text)))).map Prod.snd))
-    | .error _ => none)
+  (loadedPlan? docs).bind (fun p => closeResultLines (close g closeNow p))
 
 /-- The close's refusal, if the request loads and the close refuses. -/
 def closeRefusal (g : Grain) (docs : List ReqDoc) : Option KErr :=
@@ -4086,5 +4093,140 @@ theorem the_close_refusals_are_named_on_loaded_plans :
       closeRefusal week closeNoDemotedWitness = some .noSection ∧
       closeRefusal week closePreClosePairWitness = some .alreadyDemoted := by
   decide
+
+/-! ## L17, refuted: `close week` and `close month` do not commute (stage-4 step 3)
+
+**Why they differ, in one sentence:** both closes file into the one open month
+containing *now* and each lands its line at the end of that month's `# Demoted`,
+so whichever close runs second lands its line below the other's.
+
+The goal expected a different reason — that the week close's output becomes the
+month close's input in one order and not the other — and that reason is gone
+with D1: at one instant no close's output is in a closed region
+(`stepSkel_lands_outside_every_closed_region`), so the two orders agree on every
+line's file, box, bytes and tombstone (`two_closes_at_one_instant_commute_on_skeletons`,
+Close.lean) and differ **only in rank**.  For `autoClose` this means the order of
+the grains decides the order of lines inside a shared destination section, and
+nothing else.
+
+The witness: 2026-W36 with one open line, 2026-08 with one `[-]` record under
+`# Demoted`, and 2026-09 with an empty `# Demoted`, closed at Monday 2026-09-07
+(W36 and August both closed).  Probed under an 8 GB cap first: both orders and
+the L27 pair below decide together in under 3 s at a 1.1 GB peak. -/
+
+def closeCommuteWitness : List ReqDoc :=
+  [⟨"week/2026-W36.md", some closeW36,
+     ["# Tasks".toList, "- [ ] 4 6b Rollback path passes tests ^m2".toList]⟩,
+   ⟨"month/2026-08.md", some closeM08,
+     ["# Outcomes".toList,
+      "# Demoted".toList, "- [-] 4 3b Carried record est:3b demoted:W33 ^m9".toList]⟩,
+   ⟨"month/2026-09.md", some closeM09, ["# Outcomes".toList, "# Demoted".toList]⟩]
+
+theorem the_close_commute_witness_loads : loadsOk closeCommuteWitness = true := by decide
+
+/-- The loaded witness plan.  Total by `the_close_commute_witness_loads`: the
+error branch is refuted, not defaulted. -/
+def closeCommutePlan : WfPlan :=
+  match h : loadPlan closeCommuteWitness with
+  | .ok p => p
+  | .error _ => absurd the_close_commute_witness_loads (by simp [loadsOk, h])
+
+set_option maxRecDepth 40000 in
+/-- **Week, then month.**  `^m2`'s stamped record lands at the end of 2026-09's
+`# Demoted`; then the month close moves `^m9` there, below it. -/
+theorem the_week_then_month_close_lands_the_week_record_first :
+    closeResultLines ((close week closeNow closeCommutePlan).bind (close month closeNow)) = some
+      [["# Tasks".toList, "- [-] 4 6b Rollback path passes tests ^m2".toList],
+       ["# Outcomes".toList, "# Demoted".toList],
+       ["# Outcomes".toList, "# Demoted".toList,
+        "- [-] 4 6b Rollback path passes tests demoted:W36 ^m2".toList,
+        "- [-] 4 3b Carried record est:3b demoted:W33 ^m9".toList]] := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **Month, then week.**  The same lines in the same files, and `^m9` above
+`^m2`. -/
+theorem the_month_then_week_close_lands_the_month_record_first :
+    closeResultLines ((close month closeNow closeCommutePlan).bind (close week closeNow)) = some
+      [["# Tasks".toList, "- [-] 4 6b Rollback path passes tests ^m2".toList],
+       ["# Outcomes".toList, "# Demoted".toList],
+       ["# Outcomes".toList, "# Demoted".toList,
+        "- [-] 4 3b Carried record est:3b demoted:W33 ^m9".toList,
+        "- [-] 4 6b Rollback path passes tests demoted:W36 ^m2".toList]] := by
+  decide
+
+/-- Both orders succeed on one loaded plan at one instant, and their plans
+differ.  This is also the witness that the hypotheses of
+`two_closes_at_one_instant_commute_on_skeletons` are satisfiable at week and
+month. -/
+theorem close_week_month_orders_both_succeed_and_differ :
+    ∃ (now : Day) (p q r : WfPlan),
+      (close week now p).bind (close month now) = .ok q ∧
+        (close month now p).bind (close week now) = .ok r ∧ q ≠ r := by
+  have hwm := the_week_then_month_close_lands_the_week_record_first
+  have hmw := the_month_then_week_close_lands_the_month_record_first
+  cases h1 : (close week closeNow closeCommutePlan).bind (close month closeNow) with
+  | error x => rw [h1] at hwm; simp [closeResultLines] at hwm
+  | ok q =>
+    cases h2 : (close month closeNow closeCommutePlan).bind (close week closeNow) with
+    | error x => rw [h2] at hmw; simp [closeResultLines] at hmw
+    | ok r =>
+      refine ⟨closeNow, closeCommutePlan, q, r, h1, h2, fun hqr => ?_⟩
+      rw [h1, hqr] at hwm
+      rw [h2, hwm] at hmw
+      exact absurd hmw (by decide)
+
+/-- **L17 (R\*), refuted — discharged from `Goals.lean` by refute-and-rename.**
+The negation of `close_week_and_close_month_commute`, quantifier for quantifier:
+it is not the case that for every instant and every plan the two orders give the
+same result.  Why, and what does commute: this section's header. -/
+theorem close_week_and_close_month_do_not_commute :
+    ¬ ∀ (now : Day) (p : WfPlan),
+      (close week now p).bind (close month now) = (close month now p).bind (close week now) := by
+  intro hall
+  obtain ⟨now, p, q, r, h1, h2, hqr⟩ := close_week_month_orders_both_succeed_and_differ
+  rw [hall now p, h2] at h1
+  injection h1 with h
+  exact hqr h.symm
+
+/-! ## L27, refuted: lifecycle commands do not commute (stage-4 step 3)
+
+**Why, in one sentence:** `readopt` reopens only a demoted record
+(`readopt_of_a_live_record_is_refused`) and `demote` is what makes one, so the
+order of a demote/readopt pair at one id is observable as success against a
+named refusal.
+
+This refutes the law as written and answers nothing else.  Whether lifecycle
+pairs that **both succeed** ought to commute — `inventory`'s R7, `demote ^m1 ;
+move ^m1 week` against its reverse — is a product question, AGENTS §10.5 q7,
+the owner's, assigned to stage 6; a refutation by precondition does not bear on
+it.  The witness is `undoWitnessPlan` (L22's), unchanged. -/
+
+/-- A request's refusal, if `applyAll` refuses it. -/
+def cmdsRefusal (cs : List ReqCmd) (p : WfPlan) : Option KErr :=
+  match applyAll cs p with
+  | .ok _    => none
+  | .error k => some k
+
+/-- Demote `^m1` into the month, then readopt it into the week: both succeed.
+The reverse: `readopt` answers `notDemoted` and the demote never runs. -/
+theorem demote_then_readopt_succeeds_and_the_reverse_is_refused :
+    cmdsRefusal [.demote "m1".toList 1 (.week 37), .readopt "m1".toList 0] undoWitnessPlan = none ∧
+      cmdsRefusal [.readopt "m1".toList 0, .demote "m1".toList 1 (.week 37)] undoWitnessPlan =
+        some .notDemoted := by
+  decide
+
+/-- **L27 (R\*), refuted — discharged from `Goals.lean` by refute-and-rename.**
+The negation of `lifecycle_commands_commute`, quantifier for quantifier. -/
+theorem lifecycle_commands_do_not_commute :
+    ¬ ∀ (c d : ReqCmd) (p : WfPlan), applyAll [c, d] p = applyAll [d, c] p := by
+  intro hall
+  obtain ⟨h1, h2⟩ := demote_then_readopt_succeeds_and_the_reverse_is_refused
+  have heq : cmdsRefusal [.demote "m1".toList 1 (.week 37), .readopt "m1".toList 0] undoWitnessPlan
+      = cmdsRefusal [.readopt "m1".toList 0, .demote "m1".toList 1 (.week 37)] undoWitnessPlan := by
+    unfold cmdsRefusal
+    rw [hall]
+  rw [heq, h2] at h1
+  exact absurd h1 (by simp)
 
 end Tm

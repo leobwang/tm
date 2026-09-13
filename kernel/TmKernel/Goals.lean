@@ -203,13 +203,12 @@ the successor, catch-up is one step and `auto_close`'s sixteen-period iteration
 collapses to "close each grain once, coarsest last". -/
 def autoClose (now : Day) : Transform := sorry
 
-/-- **L16 (P\*), stage 4.**  `close g` is idempotent.  Plan §3.3 gives the proof
-shape: after the fold no entity's live site is in a closed region of grain `g`
-(the next goal), so the second run folds over the empty set.  Rules out F2 —
-`close month --drop ^id` doing nothing after auto-close — by making "already
-closed" a fact about the plan value rather than a flag in `state.json`. -/
-theorem close_is_idempotent (g : Grain) (now : Day) (p q : WfPlan)
-    (h : close g now p = .ok q) : close g now q = .ok q := sorry
+/- **`close_is_idempotent` (L16) is discharged (2026-09-12, stage 4 step 3)** —
+proved as stated in `Close.lean`, audited in `Check.lean`.  The engine was the
+narrowed neighbour below, `close_leaves_no_line_it_would_take`, not this file's
+over-strong L18: the second run's candidate set is empty.  Its doc comment says
+which idempotence it is — the fold on `WfPlan` at one `g` and one `now`, not
+§6.3's `state.json` one. -/
 
 /-- **L18 at plan level (P\*), stage 4.**  `closeTo_target_is_open` (Grain.lean)
 says the *target region* is open; this says the *fold's output* is.  It is the
@@ -228,14 +227,15 @@ the refute-and-rename is owed (step 3).  The narrowed form is proved in
 `Close.lean`: `close_leaves_no_line_it_would_take` and its unpacked reading
 `close_leaves_no_unfinished_line_in_a_closed_region`. -/
 
-/-- **L17 (R\*), stage 4 — expected refutation.**  "`close week ∘ close month`
-commutes."  It should not: a week close files into the month, so running the
-month close first sees a different set.  Discharging it means proving the
-negation and recording the order `autoClose` therefore has to use — which is
-the *reason* the next goal fixes an order rather than leaving one open. -/
-theorem close_week_and_close_month_commute (now : Day) (p : WfPlan) :
-    (close week now p).bind (close month now) = (close month now p).bind (close week now) :=
-  sorry
+/- **`close_week_and_close_month_commute` (L17) is refuted (2026-09-12, stage 4
+step 3)** — renamed to its negation `close_week_and_close_month_do_not_commute`
+and proved in `Boundary.lean` on a loaded plan, audited in `Check.lean`.  The
+reason this goal gave is wrong under D1: at one instant neither close sees the
+other's output, and `two_closes_at_one_instant_commute_on_skeletons`
+(`Close.lean`) proves every line's file, box, bytes and tombstone agree
+whenever both orders succeed.  The orders differ only in rank — both land a line at the end of
+the open month's `# Demoted`.  So the order the next goal fixes decides line
+order inside a shared section, and nothing else. -/
 
 /-- **L19a (P\*), stage 4.**  `autoClose` is exactly "close each grain once,
 coarsest last" — plan §3.3.  Rules out F1's shape at the root: the sixteen-
@@ -320,14 +320,12 @@ theorem close_week_folds_a_dropped_child_into_its_parent (now : Day) (bm : Nat)
     (hdropped : fc.val.status = .settled .dropped) :
     remainingOf bm ep.val.line + remainingOf bm ec.val.line ≤ remainingOf bm fp.val.line := sorry
 
-/-- **L27 (R\*), stage 4 — expected refutation, and an open product question.**
-"Any lifecycle pair commutes."  `inventory`'s R7 stands open: `demote ^m1 ;
-move ^m1 week` breaks a tree the reverse order does not, and nobody has decided
-whether it should.  L27 makes the kernel refuse to be silent about it; it does
-not answer it.  Discharging means proving the negation and then *deciding*
-(plan §6.2.3) — a decision, not a proof, is the deliverable. -/
-theorem lifecycle_commands_commute (c d : ReqCmd) (p : WfPlan) :
-    applyAll [c, d] p = applyAll [d, c] p := sorry
+/- **`lifecycle_commands_commute` (L27) is refuted (2026-09-12, stage 4 step 3)**
+— renamed to its negation `lifecycle_commands_do_not_commute` and proved in
+`Boundary.lean` (a demote/readopt pair at one id: `readopt` first answers
+`notDemoted`), audited in `Check.lean`.  The product question it surfaced is not
+answered by that: whether lifecycle pairs that both succeed *should* commute
+(R7's `demote ^m1 ; move ^m1 week`) is AGENTS §10.5 q7, the owner's, stage 6. -/
 
 /-! ############################################################################
 # STAGE 5 — recurrence, rollups, priority, capacity

@@ -4389,3 +4389,127 @@ Re-measured after this step, every command under the 40 GB cap: `check.sh`
 binaries** (unchanged); FFI suite 63 (57 kernel + 6 corpus, unchanged).  A full
 `lake build TmKernel:static` peaked at 1.8 GB.  Eleven modules, 22,400 lines.
 Gaps run to 57 (new gaps start at 58); cheats to 51 (new cheats start at 52).
+
+<!-- ===================================================================
+     APPENDED 2026-09-12 (stage-4 session, rebuild-on-lean).  Step 3: L16 proved; L17 and L27 refuted and renamed.
+     Takes no gap and no cheat numbers.  Supersedes nothing above by rewrite; corrects one framing of AGENTS §8.2 by name.
+     =================================================================== -->
+
+## Stage 4 step 3, 2026-09-12: closing twice is closing once; L17 and L27 refuted
+
+Baseline re-measured at `50f11e3` before this step, every command under the 40 GB
+cap: `check.sh` **7/7** — axiom audit **1362**, corpus **33/37 files and 4/5
+whole plans**, burn-down **39**; `cargo test --workspace` **984 passed / 0 failed
+/ 0 ignored across 64 binaries**.
+
+**L16 — `close_is_idempotent`, discharged as stated** (`Close.lean`).  After a
+successful `close g now`, the same close returns the plan unchanged.  The proof
+is four lines on top of step 2: `close_leaves_no_line_it_would_take` (read off
+`close_spec`) says no line of the output is one the close would take, so
+`closeCands` is empty (`closeCands_eq_nil_of_stay`), and
+`close_without_candidates_is_the_identity` finishes it.  The hypothesis is
+satisfiable at all three grains by step 2's decided witnesses.  **Which
+idempotence it is**, written in the theorem's own doc comment as AGENTS §8.2's
+last trap asks: the fold on `WfPlan` with `g` and `now` fixed.  It is *not* §6.3's
+"runs automatically on the first command after the period ends (idempotent;
+recorded in `state.json`)", which is a Rust fact about the host's `closed` map
+across invocations, and it is not a claim across instants — a later `now` closes
+more regions (`closed_is_stable_in_time`).
+
+**Where D1 is load-bearing for L16, stated precisely** (a correction of framing,
+not of any decision).  AGENTS §8.2's trap says that with `targetContaining` "the
+fold's own output can be back in scope and the proof does not go through".  Read
+off the definitions — `closedRegionOf` demands the grain's *own file kind*, and
+`coarsen month = month` — and **not proved here**: for a single grain that is
+true at **month** only, where `targetContaining month d` is the closed month
+itself (`containing_targets_a_closed_region_iff`), so the line would be retaken.
+At day and week the output lands in a file of a coarser kind, which a close of
+the same grain never takes, whatever its region.  Where the old rule breaks the
+day and week rows is **across grains** — the day close's output landing in a
+closed week that the week close then takes, the owner's scenario 1 (D1's first
+evidence) — which is L19b's business, not L16's.  The proof as written runs on
+openness at every grain (`closeOne_spec` uses `closeTo_target_is_open` and
+`regionOf_is_open`), so nothing above changes what was proved.
+
+**L17 — `close_week_and_close_month_commute` is false; renamed to
+`close_week_and_close_month_do_not_commute` and proved** (`Boundary.lean`).  The
+witness: `week/2026-W36.md` with one open line `^m2`, `month/2026-08.md` with one
+`[-]` record `^m9` under `# Demoted`, and `month/2026-09.md` with an empty
+`# Demoted`, closed at Monday 2026-09-07.  Week-then-month and month-then-week
+both succeed and write the same lines into the same files; 2026-09's `# Demoted`
+reads `^m2, ^m9` in one order and `^m9, ^m2` in the other
+(`the_week_then_month_close_lands_the_week_record_first`,
+`the_month_then_week_close_lands_the_month_record_first`,
+`close_week_month_orders_both_succeed_and_differ`).  **Why they differ, in one
+sentence: both closes file into the one open month containing *now*, and each
+lands its line at the end of that month's `# Demoted`, so whichever runs second
+lands below the other.**
+
+**The goal's own reason was wrong, and the finding is the commuting half.**  The
+goal expected the week close's output to become the month close's input in one
+order and not the other.  Under D1 that cannot happen at one instant, and it is
+proved: `stepSkel_lands_outside_every_closed_region` (wherever a step puts a
+line, no close of *any* grain at that instant takes it from) and
+`closeAct_of_another_grain` (a file is a closed region of at most one grain) give
+`two_closes_at_one_instant_commute_on_skeletons` — for **any** two grains, when
+both orders succeed, every id ends with the same skeleton: the same file, the
+same tombstone file and bytes, the same box, the same bytes.  The orders differ
+**only in rank**.  Step 1's pricing had cautioned exactly this ("a refutation, if
+it comes, is through rank or placement order in the shared destination").
+*Consequence for `autoClose`* (L19a, not yet written): the grain order it fixes
+decides the order of lines inside a shared destination section and nothing else
+— read off the table, the shared destinations are the open month's `# Demoted`
+(week record, month leftover from `# Demoted`) and the live week's end (a day
+close's line, any close's carried wall).  **Not proved, and nothing needs it
+yet:** that one order succeeds exactly when the other does, or that two refusing
+orders name the same refusal; `autoClose` runs one fixed order.  The witness is
+decided, not built from lemmas as step 1 suggested: it was probed under an 8 GB
+cap first (with the L27 witness, under 3 s at a 1.1 GB peak), and deriving a
+rank inequality from `landAt_spec` would have been a proof about ranks that
+`close_spec` deliberately does not track.
+
+**L27 — `lifecycle_commands_commute` is false; renamed to
+`lifecycle_commands_do_not_commute` and proved** (`Boundary.lean`).  On L22's
+`undoWitnessPlan`, `demote ^m1` into the month then `readopt ^m1` into the week
+succeeds; the reverse is refused `notDemoted` and the demote never runs
+(`demote_then_readopt_succeeds_and_the_reverse_is_refused`).  **Why, in one
+sentence: `readopt` reopens only a demoted record
+(`readopt_of_a_live_record_is_refused`) and `demote` is what makes one, so a
+demote/readopt pair's order is observable as success against a named refusal.**
+This is about `applyAll`, the code the FFI runs, on a plan that loads.  It
+refutes the law as written and **answers nothing about AGENTS §10.5 q7**: whether
+lifecycle pairs that *both succeed* ought to commute — `inventory`'s R7, `demote
+^m1 ; move ^m1 week` against its reverse — stays the owner's, at stage 6.
+
+**One observation for every close witness.**  `closedFileLines` (step 2) now
+reads through `fileLinesOf` and `closeResultLines`, which this step's witnesses
+use too, so there is one definition of "each file's lines in rank order"; step
+2's four decided witnesses re-decide unchanged.
+
+**Goals.**  Three deleted from `Goals.lean`, each with a proof of what it states
+or of its negation, each replaced by a status comment naming the theorem:
+`close_is_idempotent` (as stated), `close_week_and_close_month_commute` (refuted),
+`lifecycle_commands_commute` (refuted).  Burn-down **39 → 36**.  All five goals
+ever flagged as expected refutations or narrowings in their doc comments have now
+gone that way.  No goal added.  Seventeen theorems audited under the stage-4
+banner in `Check.lean` (10 in `Close.lean`, 7 in `Boundary.lean`); no cheat added.
+
+**Owed by the stage, not attempted in this step (sequencing, not gaps):**
+`autoClose` and L19a–c; the refute-and-renames of
+`close_leaves_no_live_line_in_a_closed_region`, `close_never_demotes_a_wall` and
+`close_writes_every_estimate_through_demoteEst`, whose narrowed neighbours and
+witnesses step 2 already proved; `close` on the wire with `now` and D3's report;
+the CLI-level acceptance, the 30-minute drive (AGENTS §5.13) and the
+proof-to-definition ratio.
+
+Re-measured after this step, every command under the 40 GB cap: `check.sh`
+**7/7** — axiom audit **1379 theorems** (17 new; the three counts of AGENTS §6.3
+agree at 1379), corpus **33/37 files and 4/5 whole plans** (unchanged),
+`Goals.lean` burn-down **36**; `cargo test --workspace` **984 passed / 0 failed /
+0 ignored across 64 binaries** (unchanged); FFI suite 63 (57 kernel + 6 corpus,
+unchanged).  A `lake build
+TmKernel:static` rebuilding `Close` and `Boundary` peaked at 2.5 GB (max RSS of
+one process); elaborating `Boundary.lean` alone takes 12.4 s at 2.2 GB against
+9.2 s at 1.8 GB for `50f11e3`'s copy against the same `Close`, so this step's
+witnesses cost about 3 s and 0.4 GB.  Gaps run to 57 (new gaps start at 58);
+cheats to 51 (new cheats start at 52).
