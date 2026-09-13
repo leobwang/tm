@@ -1368,7 +1368,8 @@ def applyCmd (c : ReqCmd) (p : WfPlan) : Except KErr WfPlan :=
   | .demote i d st =>
     match resolveDest p.val d with
     | .error k => .error k
-    | .ok dd   => landAt p dd.ix (demoteSpot p.val dd.ix) i (fun t e => refile t st e)
+    | .ok dd   => guardStray ((p.val.store.get i).any (hasAStrayTomb p.val))
+                    (landAt p dd.ix (demoteSpot p.val dd.ix) i (fun t e => refile t st e))
   | .readopt i d    =>
     match resolveDest p.val d with
     | .error k => .error k
@@ -3769,7 +3770,7 @@ theorem move_has_no_inverse_command :
           unfold demoteSpot landingSpot
           rw [hdocs]
         rw [hnone] at hcon
-        have h := hback i' _ hcon
+        have h := hback i' _ (guardStray_ok hcon).1
         have hev := refile_roundtrips _ _ _ _ h
         have hae : e.val.archive = some ⟨e1.val.live, e1.val.line⟩ := by rw [hev]
         rw [har] at hae
@@ -4531,22 +4532,55 @@ def closePreClosePairWitness : List ReqDoc :=
      ["# Demoted".toList,
       "- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2".toList]⟩]
 
+def closeW35 : Region := ⟨week, Cal.weekOrdinal (Cal.toDay ⟨2026, 8, 24⟩)⟩
+
+/-- 2026-W35, closed, holding `^m4`'s `[-]` line — not a `# Demoted` record —
+beside the open `^m4` line of 2026-W36 (a hand edit: `readopt` removes both lines),
+and a September with an empty `# Demoted`. -/
+def closeStrayTombWitness : List ReqDoc :=
+  [⟨"week/2026-W35.md", some closeW35,
+     ["# Milestones".toList, "- [-] 2 Pick winter courses @O3 demoted:W34 ^m4".toList]⟩,
+   ⟨"week/2026-W36.md", some closeW36,
+     ["# Milestones".toList, "- [ ] 2 Pick winter courses @O3 ^m4".toList]⟩,
+   ⟨"month/2026-09.md", some closeM09, ["# Demoted".toList]⟩]
+
 set_option maxRecDepth 40000 in
 /-- **The check bites, by name, on loaded plans.**  A dated line whose record the
 month file cannot hold (§4.3: month items are outcomes, shape `none`) is
 `badHorizon` — the post-state re-check; a week close with no month file is
 `noTarget`, and so is one with a wall to carry and no live week; a month file
-with no `# Demoted` is `noSection`.  None of them is a close that silently skipped
-a line.  (§4.3's pre-close pair was a fifth conjunct, `alreadyDemoted`, until
-README gap 53 closed: it now closes, merged —
-`the_week_close_merges_each_standing_record` — and no close refuses
-`alreadyDemoted`, `close_never_refuses_alreadyDemoted`.) -/
-theorem the_close_refusals_are_named_on_loaded_plans :
+with no `# Demoted` is `noSection`; an open line whose item's tombstone is a `[-]`
+line in an earlier week rather than a `# Demoted` record is `alreadyDemoted`
+(`closeOne_never_merges_into_a_stray_tomb`).  None of them is a close that
+silently skipped a line.  (Restates `the_close_refusals_are_named_on_loaded_plans`:
+its fifth conjunct was §4.3's pre-close pair ↦ `alreadyDemoted`, false since gap 53
+— `the_pre_close_pair_is_not_a_named_refusal` — and it kept its name over the
+four others until the stage-4 hardening repair.) -/
+theorem each_close_refusal_is_named_on_a_loaded_plan :
     closeRefusal week closeDatedWitness = some .badHorizon ∧
       closeRefusal week closeNoMonthWitness = some .noTarget ∧
       closeRefusal week closeNoLiveWeekWitness = some .noTarget ∧
-      closeRefusal week closeNoDemotedWitness = some .noSection := by
+      closeRefusal week closeNoDemotedWitness = some .noSection ∧
+      closeRefusal week closeStrayTombWitness = some .alreadyDemoted := by
   decide
+
+set_option maxRecDepth 40000 in
+/-- §4.3's pre-close pair closes: no refusal. -/
+theorem the_pre_close_pair_closes_on_a_loaded_plan :
+    closeRefusal week closePreClosePairWitness = none := by decide
+
+/-- **`the_close_refusals_are_named_on_loaded_plans`, as it stood before gap 53,
+refuted.** -/
+theorem the_pre_close_pair_is_not_a_named_refusal :
+    ¬ (closeRefusal week closeDatedWitness = some .badHorizon ∧
+      closeRefusal week closeNoMonthWitness = some .noTarget ∧
+      closeRefusal week closeNoLiveWeekWitness = some .noTarget ∧
+      closeRefusal week closeNoDemotedWitness = some .noSection ∧
+      closeRefusal week closePreClosePairWitness = some .alreadyDemoted) := by
+  intro h
+  have h5 := h.2.2.2.2
+  rw [the_pre_close_pair_closes_on_a_loaded_plan] at h5
+  cases h5
 
 /-! ## L17, refuted: `close week` and `close month` do not commute (stage-4 step 3)
 
@@ -5455,7 +5489,11 @@ theorem demote_verb_is_cmdDemote_at_freshRank_without_a_shift_or_a_record (p : W
     (h : demoteSpot p.val dd.ix = none)
     (hrec : ∀ e, p.val.store.get i = some e → e.val.archive = none) :
     applyCmd (.demote i n st) p = cmdDemote i (freshRank p.val dd.ix) st p dd := by
-  simp only [applyCmd, hrd, h, landAt, cmdDemote, Dest.site, endRank_is_freshRank]
+  have hs : (p.val.store.get i).any (hasAStrayTomb p.val) = false := by
+    cases hg : p.val.store.get i with
+    | none => rfl
+    | some e => simp [hasAStrayTomb, hrec e hg]
+  simp only [applyCmd, hrd, h, landAt, cmdDemote, Dest.site, endRank_is_freshRank, hs, guardStray_false]
   exact WfPlan.mapAt_congr (fun e he => refile_of_no_record _ _ e (hrec e he))
 
 /-- Each file's lines after running `cs` on a loaded request, if both succeed. -/
@@ -5654,8 +5692,8 @@ theorem a_merged_record_changes_a_remaining_estimate :
 /-- **`autoClose_stamps_each_line_at_most_once`, refuted since gap 53.**  `^m2`'s
 live line carries no stamp and its merged record carries two — the record's `W37`
 and the week's `W36` — which is neither "the same" nor "one appended".  What holds
-is `autoClose_adds_at_most_one_stamp_to_each_line` (Close.lean): one new stamp, over
-the record's history. -/
+is `autoClose_appends_at_most_one_stamp_or_merges_each_line` (Close.lean): keep, append one, or
+merge. -/
 theorem autoClose_merges_a_line_beyond_one_appended_stamp :
     ¬ ∀ (now : Day) (p q : WfPlan), autoClose now p = .ok q →
       ∀ (i : Id) (e f : Entity), p.val.store.get i = some e → q.val.store.get i = some f →
@@ -5676,6 +5714,194 @@ theorem autoClose_merges_a_line_beyond_one_appended_stamp :
       · rw [h1, h2] at hl
         have := congrArg List.length hl
         simp at this
+    · simp at hw
+
+/-! ## Stage-4 hardening repair: a stray tombstone is refused, and the merge laws are not vacuous
+
+`refile` merges into an item's tombstone and deletes its old placement, which is
+right only when that tombstone is the item's `# Demoted` record.  Fork-point
+`archived_record` reads a record only off a month file's `# Demoted`; a `[-]` line
+left in an earlier week is an archive, and merging into it deleted a line from a
+closed week file.  The close and the verb now refuse it, `alreadyDemoted`
+(`closeOne_never_merges_into_a_stray_tomb`, Close.lean).  Below: the refusal on a
+loaded plan at both entry points, the refutation of the laws that said no close
+answers `alreadyDemoted`, the report's old stamp clause refuted, and the merge laws'
+hypotheses instantiated together.  Probed under an 8 GB cap first (AGENTS §5.10a):
+6.1 s at a 1.7 GB peak, imports included. -/
+
+theorem the_stray_tomb_witness_loads : loadsOk closeStrayTombWitness = true := by decide
+
+/-- The loaded stray-tombstone witness.  Total by `the_stray_tomb_witness_loads`. -/
+def closeStrayTombPlan : WfPlan :=
+  match h : loadPlan closeStrayTombWitness with
+  | .ok p => p
+  | .error _ => absurd the_stray_tomb_witness_loads (by simp [loadsOk, h])
+
+set_option maxRecDepth 40000 in
+/-- **The week close refuses a stray tombstone, and writes nothing.** -/
+theorem a_stray_tomb_refuses_the_week_close :
+    (match close week closeNow closeStrayTombPlan with
+     | .ok _ => none
+     | .error k => some k) = some KErr.alreadyDemoted := by decide
+
+set_option maxRecDepth 40000 in
+/-- **So does the automatic close** — the one the binary runs. -/
+theorem a_stray_tomb_refuses_autoClose :
+    (match autoClose closeNow closeStrayTombPlan with
+     | .ok _ => none
+     | .error k => some k) = some KErr.alreadyDemoted := by decide
+
+set_option maxRecDepth 40000 in
+/-- **And the verb**: `tm demote ^m4` into September refuses rather than deleting
+the W35 line. -/
+theorem the_demote_verb_refuses_a_stray_tomb :
+    cmdsRefusal [.demote "m4".toList 2 (.week 36)] closeStrayTombPlan = some .alreadyDemoted := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- `^m2` under the week close of the merge witness: no stamps before, `W37,W36`
+after, and its report entry stamps `W36`. -/
+theorem the_week_close_merges_m2s_stamps_and_reports_one :
+    (match close week closeNow closeMergePlan with
+     | .ok q =>
+       match closeMergePlan.val.store.get "m2".toList, q.val.store.get "m2".toList with
+       | some e, some f => some (e.val.stamps, f.val.stamps,
+           ((closeReport week closeNow blockMin50 closeMergePlan.val).find?
+             (fun x => x.id == "m2".toList)).map CloseEntry.stamp)
+       | _, _ => none
+     | .error _ => none) = some ([], [.week 37, .week 36], some (some (.week 36))) := by
+  decide
+
+/-- What the merge laws assume of item `i`, read off a loaded plan `p` and a close's
+result `q`: taken by the week row with a tombstone standing; whether the live line
+owns an estimate; whether `refile` succeeds on it. -/
+def mergeHypsAt (p q : WfPlan) (i : Id) : Option (Bool × Bool × Bool) :=
+  match p.val.store.get i, q.val.store.get i with
+  | some e, some _ =>
+    some ((match closeAct week closeNow p.val e.val.skel with
+           | .file _ => true
+           | _       => false) && e.val.archive.isSome,
+          ownsEstimate e.val.line,
+          (match refile ⟨1, 99⟩ (.week 36) e with
+           | .ok _    => true
+           | .error _ => false))
+  | _, _ => none
+
+theorem mergeHypsAt_spec {p q : WfPlan} {i : Id} {b c : Bool}
+    (h : mergeHypsAt p q i = some (true, b, c)) :
+    ∃ e f r t, p.val.store.get i = some e ∧ q.val.store.get i = some f ∧
+      closeAct week closeNow p.val e.val.skel = .file r ∧ e.val.archive = some t ∧
+      ownsEstimate e.val.line = b ∧ (c = true → ∃ a, refile ⟨1, 99⟩ (.week 36) e = .ok a) := by
+  unfold mergeHypsAt at h
+  split at h
+  · rename_i e f he hf
+    simp only [Option.some.injEq, Prod.mk.injEq, Bool.and_eq_true] at h
+    obtain ⟨⟨hact, harch⟩, hb, hc⟩ := h
+    split at hact
+    · rename_i r hr
+      cases ha : e.val.archive with
+      | none => rw [ha] at harch; simp at harch
+      | some t =>
+        refine ⟨e, f, r, t, he, hf, hr, ha, hb, fun hc' => ?_⟩
+        subst hc'
+        split at hc
+        · rename_i a ha'; exact ⟨a, ha'⟩
+        · simp at hc
+    · simp at hact
+  · simp at h
+
+set_option maxRecDepth 40000 in
+/-- **The merge laws' hypotheses hold together on a loaded plan.**  Under the week
+close of `closeMergeWitness`, `^m2` (owns `6b`) and `^m5` (owns none) are each taken
+by the week row with a standing record, and `refile` succeeds on each. -/
+theorem the_merge_hypotheses_hold_together :
+    (match close week closeNow closeMergePlan with
+     | .ok q => [mergeHypsAt closeMergePlan q "m2".toList, mergeHypsAt closeMergePlan q "m5".toList]
+     | .error _ => []) = [some (true, true, true), some (true, false, true)] := by
+  decide
+
+/-- `close_week_merges_a_standing_record`'s hypotheses are satisfiable together, in
+both of its estimate branches. -/
+theorem close_week_merges_a_standing_record_is_not_vacuous (b : Bool) :
+    ∃ (now : Day) (p q : WfPlan) (i : Id) (e f : Entity) (r : Region) (t : Tomb),
+      close week now p = .ok q ∧ p.val.store.get i = some e ∧ q.val.store.get i = some f ∧
+        closeAct week now p.val e.val.skel = .file r ∧ e.val.archive = some t ∧
+        ownsEstimate e.val.line = b := by
+  have hw := the_merge_hypotheses_hold_together
+  cases h : close week closeNow closeMergePlan with
+  | error k => rw [h] at hw; simp at hw
+  | ok q =>
+    rw [h] at hw
+    simp only [List.cons.injEq] at hw
+    obtain ⟨h2, h5, -⟩ := hw
+    cases b
+    · obtain ⟨e, f, r, t, he, hf, hr, ht, hb, -⟩ := mergeHypsAt_spec h5
+      exact ⟨_, _, _, _, e, f, r, t, h, he, hf, hr, ht, hb⟩
+    · obtain ⟨e, f, r, t, he, hf, hr, ht, hb, -⟩ := mergeHypsAt_spec h2
+      exact ⟨_, _, _, _, e, f, r, t, h, he, hf, hr, ht, hb⟩
+
+/-- `refile_conserves` (`b = false`) and `refile_respects_user` (`b = true`) have
+satisfiable hypotheses: `^m5` and `^m2` of the loaded merge witness. -/
+theorem refile_merge_laws_are_not_vacuous (b : Bool) :
+    ∃ (t : Site) (st : Field.Stamp) (e a : Entity) (tb : Tomb),
+      e.val.archive = some tb ∧ ownsEstimate e.val.line = b ∧ refile t st e = .ok a := by
+  have hw := the_merge_hypotheses_hold_together
+  cases h : close week closeNow closeMergePlan with
+  | error k => rw [h] at hw; simp at hw
+  | ok q =>
+    rw [h] at hw
+    simp only [List.cons.injEq] at hw
+    obtain ⟨h2, h5, -⟩ := hw
+    cases b
+    · obtain ⟨e, _, _, t, _, _, _, ht, hb, hc⟩ := mergeHypsAt_spec h5
+      obtain ⟨a, ha⟩ := hc rfl
+      exact ⟨_, _, e, a, t, ht, hb, ha⟩
+    · obtain ⟨e, _, _, t, _, _, _, ht, hb, hc⟩ := mergeHypsAt_spec h2
+      obtain ⟨a, ha⟩ := hc rfl
+      exact ⟨_, _, e, a, t, ht, hb, ha⟩
+
+/-- **`close_never_refuses_alreadyDemoted`, refuted** on a loaded plan. -/
+theorem a_close_can_refuse_alreadyDemoted :
+    ¬ ∀ (g : Grain) (now : Day) (p : WfPlan), close g now p ≠ .error .alreadyDemoted := by
+  intro hall
+  have hw := a_stray_tomb_refuses_the_week_close
+  cases h : close week closeNow closeStrayTombPlan with
+  | ok q => rw [h] at hw; simp at hw
+  | error k =>
+    rw [h] at hw
+    simp only [Option.some.injEq] at hw
+    subst hw
+    exact hall _ _ _ h
+
+/-- **`closeReport_agrees_with_close`, as stated before gap 53, refuted.** -/
+theorem closeReport_agrees_with_close_is_refuted_by_a_merge :
+    ¬ ∀ (g : Grain) (now : Day) (bm : BlockMin) (p q : WfPlan), close g now p = .ok q →
+      ∀ x ∈ closeReport g now bm p.val,
+        x.grain = g ∧ ∃ e f, p.val.store.get x.id = some e ∧ q.val.store.get x.id = some f ∧
+          e.val.live.doc = x.src ∧ f.val.live.doc = x.dst ∧
+          f.val.stamps = e.val.stamps ++ x.stamp.toList ∧ x.minutes = estMinutes bm f.val.line := by
+  intro hall
+  have hw := the_week_close_merges_m2s_stamps_and_reports_one
+  cases h : close week closeNow closeMergePlan with
+  | error k => rw [h] at hw; simp at hw
+  | ok q =>
+    rw [h] at hw
+    simp only at hw
+    split at hw
+    · rename_i e f he hf
+      simp only [Option.some.injEq, Prod.mk.injEq] at hw
+      obtain ⟨h1, h2, h3⟩ := hw
+      obtain ⟨x, hx, hxs⟩ := Option.map_eq_some_iff.mp h3
+      have hmem := List.mem_of_find?_eq_some hx
+      have hid : x.id = "m2".toList := by simpa using List.find?_some hx
+      obtain ⟨_, e', f', he', hf', _, _, hst, _⟩ := hall _ _ _ _ _ h x hmem
+      rw [hid, he] at he'
+      rw [hid, hf] at hf'
+      injection he' with he'
+      injection hf' with hf'
+      subst he' hf'
+      rw [h1, h2, hxs] at hst
+      exact absurd hst (by decide)
     · simp at hw
 
 end Tm

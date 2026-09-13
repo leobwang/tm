@@ -1541,7 +1541,6 @@ open Tm
 #print axioms Tm.the_week_close_copies_carries_and_leaves_the_rest
 #print axioms Tm.the_day_close_files_into_the_week_of_now
 #print axioms Tm.the_month_close_moves_each_line_into_its_section
-#print axioms Tm.the_close_refusals_are_named_on_loaded_plans
 -- Stage 4 step 3 (same session, same banner): L16 discharged as stated in
 -- Close.lean, with the skeleton half of L17 that does commute; L17 and L27
 -- refuted and renamed to their negations in Boundary.lean, on loaded plans.
@@ -1606,7 +1605,6 @@ open Tm
 #print axioms Tm.closeReport_ids
 #print axioms Tm.mem_closeReport
 #print axioms Tm.close_found_the_target
-#print axioms Tm.closeReport_agrees_with_close
 #print axioms Tm.closeReport_names_the_region_of_now
 #print axioms Tm.closeReport_stamp_names_its_grain
 #print axioms Tm.autoCloseR_ok
@@ -1818,11 +1816,7 @@ open Tm
 #print axioms Tm.landAt_error
 #print axioms Tm.landingSpot_error
 #print axioms Tm.fileE_alreadyDemoted
-#print axioms Tm.closeOne_never_refuses_alreadyDemoted
-#print axioms Tm.close_never_refuses_alreadyDemoted
 #print axioms Tm.close_week_merges_a_standing_record
-#print axioms Tm.stepSkel_adds_at_most_one_stamp
-#print axioms Tm.autoClose_adds_at_most_one_stamp_to_each_line
 #print axioms Tm.autoClose_stamps_each_line_with_no_record_at_most_once
 -- Report.lean: the named disposition `copyMerging`
 #print axioms Tm.CloseDid.ofStep_ne_carry
@@ -1840,3 +1834,39 @@ open Tm
 #print axioms Tm.a_merged_record_is_rewritten_beyond_its_stamp
 #print axioms Tm.a_merged_record_changes_a_remaining_estimate
 #print axioms Tm.autoClose_merges_a_line_beyond_one_appended_stamp
+-- Step 3 (2026-09-13): repair of steps 1-2 after an independent verification.
+-- A week close (and the `demote` verb) refuses, `alreadyDemoted`, an item whose
+-- tombstone is not its `# Demoted` record instead of merging into it and deleting
+-- a `[-]` line from a closed week; two names narrowed in place at step 2 and two
+-- names that said more than their statements are retired and restated; the merge
+-- laws' hypotheses are instantiated together.  Six names above were retired (the
+-- README's step-3 block lists each beside its replacement); no relational law.
+-- Close.lean: the guard, where a close answers `alreadyDemoted`, the renames
+#print axioms Tm.guardStray_ok
+#print axioms Tm.guardStray_error
+#print axioms Tm.guardStray_of_error
+#print axioms Tm.guardStray_false
+#print axioms Tm.closeOne_refuses_alreadyDemoted_only_over_a_stray_tomb
+#print axioms Tm.closeOne_never_refuses_alreadyDemoted_without_a_stray_tomb
+#print axioms Tm.closeOne_never_merges_into_a_stray_tomb
+#print axioms Tm.close_answers_alreadyDemoted_only_at_a_copying_row
+#print axioms Tm.stepSkel_appends_at_most_one_stamp_or_merges
+#print axioms Tm.autoClose_appends_at_most_one_stamp_or_merges_each_line
+-- Report.lean: the report's agreement, under a name that matches its stamp clause
+#print axioms Tm.closeReport_agrees_with_close_stamping_or_merging
+-- Boundary.lean: the refusals by name, the stray tombstone at both entry points,
+-- three refutations, the merge laws not vacuous
+#print axioms Tm.each_close_refusal_is_named_on_a_loaded_plan
+#print axioms Tm.the_pre_close_pair_closes_on_a_loaded_plan
+#print axioms Tm.the_pre_close_pair_is_not_a_named_refusal
+#print axioms Tm.the_stray_tomb_witness_loads
+#print axioms Tm.a_stray_tomb_refuses_the_week_close
+#print axioms Tm.a_stray_tomb_refuses_autoClose
+#print axioms Tm.the_demote_verb_refuses_a_stray_tomb
+#print axioms Tm.the_week_close_merges_m2s_stamps_and_reports_one
+#print axioms Tm.mergeHypsAt_spec
+#print axioms Tm.the_merge_hypotheses_hold_together
+#print axioms Tm.close_week_merges_a_standing_record_is_not_vacuous
+#print axioms Tm.refile_merge_laws_are_not_vacuous
+#print axioms Tm.a_close_can_refuse_alreadyDemoted
+#print axioms Tm.closeReport_agrees_with_close_is_refuted_by_a_merge

@@ -505,6 +505,64 @@ def fileE (g : Grain) (r : Region) (t : Site) (e : Entity) : Except KErr Entity 
     | some st => refile t st e
     | none    => .error .badHorizon
 
+/-! ## A tombstone that is not a `# Demoted` record (stage-4 hardening, repair)
+
+`refile` merges a line into its item's tombstone and deletes the tombstone's old
+placement — right when the tombstone *is* the item's `# Demoted` record, as in
+§4.3's pre-close pair.  Fork-point `archived_record` and `stale_archive_copy` read
+a record only off an item **in a month file, in the `# Demoted` section**.  A
+tombstone anywhere else — a `[-]` line left in an earlier week file, beside an
+open line in a later week (a hand edit; `readopt` removes both lines) — is an
+archive, not a record, and merging into it deletes a line from a closed week
+without a word.  The kernel holds one tombstone per item, so it cannot keep that
+line *and* file a fresh record; the close refuses the item by the name it had
+before README gap 53 closed, `alreadyDemoted`, and writes nothing. -/
+
+/-- A placement that is an item's `# Demoted` record: a month file, under a
+`# Demoted` heading. -/
+def isDemotedRecord (p : PlanCore) (s : Site) : Bool :=
+  decide (docKindAt p s.doc = .month) && decide (sectionKindAt p s = some .demoted)
+
+/-- The item carries a tombstone that is not its `# Demoted` record. -/
+def hasAStrayTomb (p : PlanCore) (e : Entity) : Bool :=
+  match e.val.archive with
+  | none   => false
+  | some t => !isDemotedRecord p t.site
+
+/-- The week row's copy over an item with a stray tombstone: refused. -/
+def copiesOverAStrayTomb (g : Grain) (p : PlanCore) (e : Entity) : Bool :=
+  decide ((closePolicy g).disposition = .copy) && hasAStrayTomb p e
+
+/-- The refusal, after the landing: a step whose landing is refused keeps that
+refusal (`badHorizon` before `alreadyDemoted`), and one whose landing succeeds over
+a stray tombstone is refused and its post-state dropped. -/
+def guardStray (b : Bool) (x : Except KErr WfPlan) : Except KErr WfPlan :=
+  match x with
+  | .error y => .error y
+  | .ok q    => if b then .error .alreadyDemoted else .ok q
+
+theorem guardStray_ok {b : Bool} {x : Except KErr WfPlan} {q : WfPlan}
+    (h : guardStray b x = .ok q) : x = .ok q ∧ b = false := by
+  unfold guardStray at h
+  cases x with
+  | error y => simp at h
+  | ok q' => cases b <;> simp_all
+
+theorem guardStray_error {b : Bool} {x : Except KErr WfPlan} {y : KErr}
+    (h : guardStray b x = .error y) :
+    x = .error y ∨ (y = .alreadyDemoted ∧ b = true ∧ ∃ q, x = .ok q) := by
+  unfold guardStray at h
+  cases x with
+  | error y' => simp at h; exact Or.inl (by rw [h])
+  | ok q' => cases b <;> simp_all
+
+theorem guardStray_of_error {b : Bool} {x : Except KErr WfPlan} {y : KErr}
+    (h : x = .error y) : guardStray b x = .error y := by
+  subst h; rfl
+
+theorem guardStray_false (x : Except KErr WfPlan) : guardStray false x = x := by
+  cases x <;> rfl
+
 /-! ## `close` -/
 
 /-- **One step**: close id `i` of the plan it is handed. -/
@@ -524,7 +582,7 @@ def closeOne (g : Grain) (now : Day) (i : Id) : Transform := fun p =>
       | some k =>
         match landingSpot p.val k (closePolicy g).landing (sectionAt p.val e.val.live) with
         | .error x => .error x
-        | .ok spot => landAt p k spot i (fileE g r)
+        | .ok spot => guardStray (copiesOverAStrayTomb g p.val e) (landAt p k spot i (fileE g r))
 
 /-- The ids a close of grain `g` at `now` acts on, in store order — which is
 **not** file order: the loader builds `dom` in reverse, so folding this list
@@ -867,7 +925,7 @@ theorem closeOne_spec {g : Grain} {now : Day} {i : Id} {p q : WfPlan}
         split at h
         · simp at h
         · rename_i spot _
-          obtain ⟨hfr, hj, e0, e', t, f', hget0, hsk, htd, hfe, hq⟩ := landAt_spec h
+          obtain ⟨hfr, hj, e0, e', t, f', hget0, hsk, htd, hfe, hq⟩ := landAt_spec (guardStray_ok h).1
           rw [hget] at hget0
           injection hget0 with hget0
           subst hget0
@@ -1434,6 +1492,7 @@ theorem closeOne_refuses_an_ill_formed_post_state {g : Grain} {now : Day} {i : I
     closeOne g now i p = .error .badHorizon := by
   unfold closeOne
   simp only [hget, hact, hk, hspot]
+  apply guardStray_of_error
   unfold landAt
   simp only
   unfold WfPlan.mapAt
@@ -1451,10 +1510,14 @@ theorem closeOne_refuses_an_ill_formed_post_state {g : Grain} {now : Day} {i : I
 §4.3's own pre-close pair — a `[ ]` line in a week beside its `[-]` copy under a
 month's `# Demoted` — made the week close answer `alreadyDemoted` until the copy
 became `refile` (README gap 53, stage-4 hardening step 2).  The two directions:
-no close answers `alreadyDemoted` at all (`close_never_refuses_alreadyDemoted`),
-and what a week close writes for such a line is fork-point `demote_one`'s merge
-with L15's floor (`close_week_merges_a_standing_record`); the loaded-plan witnesses
-are in `Boundary.lean` (`the_week_close_merges_each_standing_record`). -/
+a close answers `alreadyDemoted` only at the week row, over an item whose tombstone
+is not its `# Demoted` record (`closeOne_refuses_alreadyDemoted_only_over_a_stray_tomb`,
+`closeOne_never_merges_into_a_stray_tomb` — the repair of step 2's
+`close_never_refuses_alreadyDemoted`, which let the merge delete a `[-]` line from a
+closed week), and what a week close writes for a line with a record is fork-point
+`demote_one`'s merge with L15's floor (`close_week_merges_a_standing_record`); the
+loaded-plan witnesses are in `Boundary.lean` (`the_week_close_merges_each_standing_record`,
+`a_stray_tomb_refuses_the_week_close`). -/
 
 theorem mapAt_error {p : WfPlan} {i : Id} {F : Entity → Except KErr Entity} {x : KErr}
     (h : p.mapAt i F = .error x) :
@@ -1547,10 +1610,14 @@ theorem fileE_alreadyDemoted {g : Grain} {r : Region} {t : Site} {e : Entity}
       simp only [hs] at h
       exact ⟨rfl, refile_refuses_only_a_record h⟩
 
-/-- **No step of a close answers `alreadyDemoted`.** -/
-theorem closeOne_never_refuses_alreadyDemoted (g : Grain) (now : Day) (i : Id) (p : WfPlan) :
-    closeOne g now i p ≠ .error .alreadyDemoted := by
-  intro h
+/-- **Which step answers `alreadyDemoted`** (restates
+`closeOne_never_refuses_alreadyDemoted`, false since the stage-4 hardening repair:
+a week close over a stray tombstone refuses).  Only a copying row, and only over
+an item whose tombstone is not its `# Demoted` record. -/
+theorem closeOne_refuses_alreadyDemoted_only_over_a_stray_tomb {g : Grain} {now : Day}
+    {i : Id} {p : WfPlan} (h : closeOne g now i p = .error .alreadyDemoted) :
+    (closePolicy g).disposition = .copy ∧ ∃ e t, p.val.store.get i = some e ∧
+      e.val.archive = some t ∧ isDemotedRecord p.val t.site = false := by
   unfold closeOne at h
   split at h
   · simp at h
@@ -1571,32 +1638,70 @@ theorem closeOne_never_refuses_alreadyDemoted (g : Grain) (now : Day) (i : Id) (
         · rename_i x hx
           injection h with h; subst h
           rcases landingSpot_error hx with h1 | h1 <;> simp at h1
-        · rcases landAt_error h with h1 | h1 | ⟨t, e', e0, he0, hst, hf⟩
-          · simp at h1
-          · simp at h1
-          · rw [hget] at he0
-            injection he0 with he0
-            subst he0
-            obtain ⟨hcopy, hdem⟩ := fileE_alreadyDemoted hf
-            have htakes : (closePolicy g).takes e'.val.status = true := by
-              rw [hst]
-              unfold closeAct at hact
-              split at hact
-              · simp at hact
-              · split at hact
+        · rcases guardStray_error h with hl | ⟨_, hb, _⟩
+          · rcases landAt_error hl with h1 | h1 | ⟨t, e', e0, he0, hst, hf⟩
+            · simp at h1
+            · simp at h1
+            · rw [hget] at he0
+              injection he0 with he0
+              subst he0
+              obtain ⟨hcopy, hdem⟩ := fileE_alreadyDemoted hf
+              have htakes : (closePolicy g).takes e'.val.status = true := by
+                rw [hst]
+                unfold closeAct at hact
+                split at hact
                 · simp at hact
-                · rename_i hn
-                  exact Bool.not_eq_false _ |>.mp hn
-            rw [hdem, closePolicy_takes_the_demoted_record_only_at_month] at htakes
-            exact closePolicy_copies_only_below_month g hcopy (by simpa using htakes)
+                · split at hact
+                  · simp at hact
+                  · rename_i hn
+                    exact Bool.not_eq_false _ |>.mp hn
+              rw [hdem, closePolicy_takes_the_demoted_record_only_at_month] at htakes
+              exact absurd (by simpa using htakes) (closePolicy_copies_only_below_month g hcopy)
+          · unfold copiesOverAStrayTomb hasAStrayTomb at hb
+            simp only [Bool.and_eq_true, decide_eq_true_eq] at hb
+            obtain ⟨hcopy, hs⟩ := hb
+            cases ha : e.val.archive with
+            | none => simp [ha] at hs
+            | some t =>
+              simp only [ha, Bool.not_eq_true'] at hs
+              exact ⟨hcopy, e, t, hget, ha, hs⟩
 
-/-- **A close never answers `alreadyDemoted`** — the refusal README gap 53
-recorded on §4.3's own example week is gone at every grain.  (It replaces
-`closeOne_week_refuses_a_standing_tombstone`, which said the week close refused
-such a line.) -/
-theorem close_never_refuses_alreadyDemoted (g : Grain) (now : Day) (p : WfPlan) :
-    close g now p ≠ .error .alreadyDemoted := by
-  show (closeCands g now p.val).foldlM (fun q i => closeOne g now i q) p ≠ _
+/-- **The old law, where it still holds as stated**: a step over an item with no
+stray tombstone never answers `alreadyDemoted`. -/
+theorem closeOne_never_refuses_alreadyDemoted_without_a_stray_tomb (g : Grain) (now : Day)
+    (i : Id) (p : WfPlan) (hs : ∀ e, p.val.store.get i = some e → hasAStrayTomb p.val e = false) :
+    closeOne g now i p ≠ .error .alreadyDemoted := by
+  intro h
+  obtain ⟨_, e, t, hget, ha, hr⟩ := closeOne_refuses_alreadyDemoted_only_over_a_stray_tomb h
+  have := hs e hget
+  simp [hasAStrayTomb, ha, hr] at this
+
+/-- **The repair's positive direction.**  A week-row step that takes a line whose
+item's tombstone is not its `# Demoted` record never succeeds: whatever its landing
+does, the record is not merged and the tombstone is not deleted. -/
+theorem closeOne_never_merges_into_a_stray_tomb {g : Grain} {now : Day} {i : Id}
+    {p q : WfPlan} {e : Entity} {t : Tomb} (hget : p.val.store.get i = some e)
+    (hcopy : (closePolicy g).disposition = .copy) (harch : e.val.archive = some t)
+    (hrec : isDemotedRecord p.val t.site = false) {r : Region}
+    (hact : closeAct g now p.val e.val.skel = .file r) : closeOne g now i p ≠ .ok q := by
+  intro h
+  unfold closeOne at h
+  simp only [hget, hact] at h
+  split at h
+  · simp at h
+  · split at h
+    · simp at h
+    · have hb := (guardStray_ok h).2
+      simp [copiesOverAStrayTomb, hasAStrayTomb, hcopy, harch, hrec] at hb
+
+/-- **Which close answers `alreadyDemoted`** (restates
+`close_never_refuses_alreadyDemoted`, refuted on a loaded plan by
+`a_stray_tomb_refuses_the_week_close`): only a copying row — §6.3's week row —
+and only at a step over a stray tombstone. -/
+theorem close_answers_alreadyDemoted_only_at_a_copying_row {g : Grain} {now : Day} {p : WfPlan}
+    (h : close g now p = .error .alreadyDemoted) : (closePolicy g).disposition = .copy := by
+  revert h
+  show (closeCands g now p.val).foldlM (fun q i => closeOne g now i q) p = _ → _
   generalize closeCands g now p.val = l
   induction l generalizing p with
   | nil => intro h; cases h
@@ -1607,8 +1712,8 @@ theorem close_never_refuses_alreadyDemoted (g : Grain) (now : Day) (p : WfPlan) 
       intro h
       injection h with h
       subst h
-      exact closeOne_never_refuses_alreadyDemoted g now i p h1
-    | ok q => exact ih q
+      exact (closeOne_refuses_alreadyDemoted_only_over_a_stray_tomb h1).1
+    | ok q => exact ih
 
 /-- **§4.3's pre-close pair closes, merged (README gap 53).**  A week close that
 takes a line whose item already has a `# Demoted` record rewrites that record: the
@@ -2165,10 +2270,13 @@ theorem autoClose_takes_each_line_at_most_once {now : Day} {p q : WfPlan}
   obtain ⟨g, hg⟩ := stepSkel_three_is_one now p.val e.val.skel
   exact ⟨g, (autoClose_skel h hp hq).trans hg⟩
 
-/-- One step adds at most one stamp, at any grain: it appends one, or — merging a
-line into its item's standing record (README gap 53) — it takes fork-point
-`merge_stamps` of the record's history, the line's and that one stamp. -/
-theorem stepSkel_adds_at_most_one_stamp (g : Grain) (now : Day) (p : PlanCore) (s : Skel) :
+/-- One step, at any grain, keeps a line's stamps, appends one, or — merging a
+line into its item's standing record (README gap 53) — writes fork-point
+`merge_stamps` of the record's history, the line's and that one stamp, which can
+put more than one stamp on a line that had none.  (Named
+`stepSkel_adds_at_most_one_stamp` until the stage-4 hardening repair; the name said
+more than the statement.) -/
+theorem stepSkel_appends_at_most_one_stamp_or_merges (g : Grain) (now : Day) (p : PlanCore) (s : Skel) :
     (stepSkel g now p s).stamps = s.stamps ∨
       ∃ st, (stepSkel g now p s).stamps = s.stamps ++ [st] ∨
         ∃ tl, s.archLine = some tl ∧
@@ -2206,18 +2314,22 @@ theorem stepSkel_adds_at_most_one_stamp (g : Grain) (now : Day) (p : PlanCore) (
 
 /-- **F1's double stamp, ruled out** (restates
 `autoClose_stamps_each_line_at_most_once`, whose two disjuncts a merged record
-falsifies).  Across one `autoClose`, however stale the tree, a line gains at most
-one stamp: it keeps its stamps, gains one, or is merged into its item's standing
-record — whose stamps are then the record's, the line's and that one stamp, each
-once (`mergeStamps_spec`), so no merge writes a stamp twice either. -/
-theorem autoClose_adds_at_most_one_stamp_to_each_line {now : Day} {p q : WfPlan}
+falsifies).  Across one `autoClose`, however stale the tree, a line keeps its
+stamps, has one appended, or is merged into its item's standing record — whose
+stamps are then the record's, the line's and that one stamp, each once
+(`mergeStamps_spec`), so no merge writes a stamp twice either.  A merge can add
+the record's history to the line (`autoClose_merges_m2s_stamps`: `[]` to
+`W37,W36`), so this is not "at most one stamp added to the line"; it was named
+`autoClose_adds_at_most_one_stamp_to_each_line` until the stage-4 hardening repair,
+and the name said more than the statement. -/
+theorem autoClose_appends_at_most_one_stamp_or_merges_each_line {now : Day} {p q : WfPlan}
     (h : autoClose now p = .ok q) {i : Id} {e f : Entity}
     (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f) :
     f.val.stamps = e.val.stamps ∨ ∃ st, f.val.stamps = e.val.stamps ++ [st] ∨
       ∃ t, e.val.archive = some t ∧ f.val.stamps = mergeStamps (stampsOfLine t.line) e.val.stamps st := by
   obtain ⟨g, hg⟩ := autoClose_takes_each_line_at_most_once h hp hq
   rw [← Core.skel_stamps, ← Core.skel_stamps, hg]
-  rcases stepSkel_adds_at_most_one_stamp g now p.val e.val.skel with h1 | ⟨st, h2 | ⟨tl, ha, h3⟩⟩
+  rcases stepSkel_appends_at_most_one_stamp_or_merges g now p.val e.val.skel with h1 | ⟨st, h2 | ⟨tl, ha, h3⟩⟩
   · exact Or.inl h1
   · exact Or.inr ⟨st, Or.inl h2⟩
   · refine Or.inr ⟨st, Or.inr ?_⟩
@@ -2234,7 +2346,7 @@ theorem autoClose_stamps_each_line_with_no_record_at_most_once {now : Day} {p q 
     (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f)
     (hrec : e.val.archive = none) :
     f.val.stamps = e.val.stamps ∨ ∃ st, f.val.stamps = e.val.stamps ++ [st] := by
-  rcases autoClose_adds_at_most_one_stamp_to_each_line h hp hq with h1 | ⟨st, h2 | ⟨t, ha, _⟩⟩
+  rcases autoClose_appends_at_most_one_stamp_or_merges_each_line h hp hq with h1 | ⟨st, h2 | ⟨t, ha, _⟩⟩
   · exact Or.inl h1
   · exact Or.inr ⟨st, h2⟩
   · rw [hrec] at ha; cases ha
@@ -2558,7 +2670,7 @@ theorem closeOne_moves {g : Grain} {now : Day} {i : Id} {p q : WfPlan}
         split at h
         · simp at h
         · rename_i spot hspot
-          obtain ⟨hj, hd, hi⟩ := landAt_moves (fun t e e' hm => (fileE_skel hm).2) h
+          obtain ⟨hj, hd, hi⟩ := landAt_moves (fun t e e' hm => (fileE_skel hm).2) (guardStray_ok h).1
           refine Or.inr ⟨e, k, spot, hget, ?_, hj, hd, hi, fun hc => ?_, fun r' hr => ⟨hk, hspot⟩⟩
           · obtain ⟨_, _, hreg⟩ := findDocIx_spec hk
             intro r hr

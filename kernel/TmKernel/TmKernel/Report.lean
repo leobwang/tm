@@ -19,7 +19,7 @@ and `closeStamp` (which stamp) — against the plan the close was handed.  The
 theorems below tie the list to the close's *result*: every id the close acts on
 is named once, in fold order (`closeReport_ids`), and under a successful close
 each entry's source, destination, stamp and minutes are exactly the item's
-before and after (`closeReport_agrees_with_close`).  So the report cannot say a
+before and after (`closeReport_agrees_with_close_stamping_or_merging`).  So the report cannot say a
 line went somewhere it did not.
 
 **AGENTS §8.2's four rules for the shape, each met here or in `Boundary.lean`:**
@@ -351,11 +351,12 @@ after; the entry's `src` is the file its live line was in and its `dst` the
 file it is in now; the stamps it carries now are the ones it carried with the
 entry's `stamp` appended — or, for a `copyMerging` entry (README gap 53), fork-point
 `merge_stamps` of its standing record's history, its own and the entry's stamp;
-and the entry's minutes are its estimate now.  (The stamp clause is per
-disposition since gap 53: no close before it could report a `copyMerging` entry —
-such a line was a refusal — so on every plan the earlier statement covered, this
-one says the same.) -/
-theorem closeReport_agrees_with_close {g : Grain} {now : Day} {bm : BlockMin} {p q : WfPlan}
+and the entry's minutes are its estimate now.  (Restates
+`closeReport_agrees_with_close`, whose stamp clause — `f.stamps = e.stamps ++
+x.stamp.toList` for every entry — a merge falsifies:
+`closeReport_agrees_with_close_is_refuted_by_a_merge`, Boundary.lean.  It kept its
+name at gap 53 over this narrower clause until the stage-4 hardening repair.) -/
+theorem closeReport_agrees_with_close_stamping_or_merging {g : Grain} {now : Day} {bm : BlockMin} {p q : WfPlan}
     (h : close g now p = .ok q) {x : CloseEntry} (hx : x ∈ closeReport g now bm p.val) :
     x.grain = g ∧ ∃ e f, p.val.store.get x.id = some e ∧ q.val.store.get x.id = some f ∧
       e.val.live.doc = x.src ∧ f.val.live.doc = x.dst ∧
@@ -465,7 +466,7 @@ theorem closeReport_stamp_names_its_grain {g : Grain} {now : Day} {bm : BlockMin
 /-! ## `autoClose`'s report names each line at most once
 
 The owner's second measured failure was a double stamp: a tree fourteen days
-stale stamped every stale pinned item twice.  `autoClose_adds_at_most_one_stamp_to_each_line`
+stale stamped every stale pinned item twice.  `autoClose_appends_at_most_one_stamp_or_merges_each_line`
 rules it out on the files; this is the same fact on the report, which the month
 review reads — an id appears in one grain's entries or in none. -/
 

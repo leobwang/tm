@@ -245,7 +245,7 @@ lines §6.3 leaves in a closed file — renamed to its negation
 loaded plan three months stale.  Its narrowing is `autoClose_strands_no_unfinished_line`
 (Close.lean): no line any close would take survives, at any grain.  The F1
 double stamp was `autoClose_stamps_each_line_at_most_once`, restated at README gap
-53 as `autoClose_adds_at_most_one_stamp_to_each_line` (Close.lean). -/
+53 as `autoClose_appends_at_most_one_stamp_or_merges_each_line` (Close.lean). -/
 
 /- **`close_never_demotes_a_wall` (F4) and
 `close_writes_every_estimate_through_demoteEst` (B1–B3) are refuted (2026-09-13,

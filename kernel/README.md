@@ -6425,3 +6425,176 @@ plans**, burn-down **30** (no goal touched); `cargo test --workspace` **1000 pas
 failed / 0 ignored across 66 binaries** (+1, the new CLI test); FFI suite **68**
 (unchanged).  Gaps run to 66 (new gaps start at 67); cheats to 55 (new cheats start at
 56).
+
+<!-- ===================================================================
+     APPENDED 2026-09-13 (stage-4 hardening).  Step 3: repair of steps 1-2 after an independent read-only verification — five defects, four fixed, one recorded.
+     Takes gap 67; takes no cheat number.  Retires six theorem names and restates each beside its replacement (table below).
+     Supersedes, by name: step 2's commit title "the example tree closes"; step 2's "Its cost (3) is gone: §4.3's own example week closes a week after `tm init --example` once its dated line is settled"; step 2's `refile` paragraph's "the old record's placement is gone"; step 2's theorem-table row "no close answers `alreadyDemoted`, at any grain — the refusal is gone"; step 2's "One record per item; a `[-]` record filed again is still `alreadyDemoted`" as the only remaining refusal; step 2's "Two statements kept under their names, changed, and why that is not a weakening".
+     =================================================================== -->
+
+## Stage 4 hardening, 2026-09-13: repair — a stray tombstone is refused, names match statements
+
+Baseline, as recorded at `0662977` (tree clean): `check.sh` **7/7** — axiom audit
+**1615 theorems**, corpus **33/37 files and 4/5 whole plans**, burn-down **30**;
+`cargo test --workspace` **1000 passed / 0 failed across 66 binaries**; FFI suite
+68.  Every command below ran under `systemd-run --user --scope -p MemoryMax=40G -p
+MemorySwapMax=0` (8 GB with `timeout 120` for every new `decide` probe), every run of
+the binary under `timeout`.  Each defect was reproduced before anything changed.
+
+### Defect 1 (major) — reproduced, **not fixed**: the literal example tree still refuses its close
+
+**Reproduced.**  `tm --now 2026-09-14T09:00:00-05:00 --dir T init --example`, then
+`tm --now 2026-09-14T09:00:00-05:00 --dir T now` three times: each prints "the
+automatic close (§6.3) was refused … kernel refusal: badHorizon … (kernel/README.md
+gap 55)", each takes 0.00-0.02 s, no plan byte changes, and `state.closed.week` stays
+`2026-W36`.  `^m2` is still two lines, the `[ ]` week line and the `[-] … est:3b
+demoted:W37` record.  So step 2's title, "the example tree closes", **overclaims**,
+and step 2's "Its cost (3) is gone" holds only for the tree with `^d1` settled (which
+is what its CLI test drives); both are superseded by this paragraph.  What step 2 did
+change on the literal tree is *which* line refuses: `^m2` no longer does.
+
+**The one remaining blocker, isolated.**  The same tree with only `^d1`'s
+`due:2026-09-11T23:59` token deleted closes on the first `tm now` — `state.closed.week`
+= `2026-W37`, swept, `^m2` merged to one record `demoted:W37`, `^d1` copied `demoted:W37`
+— so nothing but the dated line stands between §4.3's tree and its week close.
+
+**Why it is not fixed here.**  At 2026-09-14 `^d1` is past due, and §6.3's week row
+says a past-due `persist` line (a point's default, §5.3) is "moved to
+`backlog.md#Overdue` instead".  That routing is scoped out of the close by name —
+`ClosePolicy.overdue := .stage5OnMiss` (Close.lean), AGENTS §8.2 "§6.3's overdue routing
+(stage 5)", gap 55 (4) — and landing it is a new relational law of `close` (a fourth
+disposition, a backlog landing, `close_spec`, L16, L19 and the report restated),
+which this hardening does not prove while §9.1's ratio trigger stands fired.  The
+not-yet-due half of gap 55 (a dated record the month rule refuses) is an owner
+decision.  **Recorded by name:** gap 55 (3)'s cost is exactly this drive, unchanged;
+it clears with stage 5's overdue routing for this tree, and with the owner's month-rule
+decision for a dated line not yet due.
+
+### Defect 2 — reproduced, **fixed**: a merge deleted a `[-]` line from a closed week
+
+**Reproduced.**  Tree FE: `tm init --example` at 2026-09-07, `tm done ^d1` on
+2026-09-11, `tm now` at 2026-09-14 (W37 closes), then by hand: `^m4`'s September record
+deleted, its W37 line rewritten `- [-] 2 Pick winter courses @O3 demoted:W36 ^m4`, and
+`- [ ] 2 Pick winter courses @O3 ^m4` appended to `week/2026-W38.md`.  `tm check`: "no
+problems".  `tm --now 2026-09-21T09:00:00-05:00 now` with the `0662977` binary: the
+W37 line is **gone** (`diff` shows `11d10 < - [-] 2 Pick winter courses @O3 demoted:W36
+^m4`), W38's line is `[-]`, and September gains `- [-] 2 Pick winter courses @O3
+demoted:W36,W38 ^m4`.  Nothing was said.
+
+**The rule, read from fork-point.**  `horizon::archived_record` finds a record only
+`in_section(i, DEMOTED_SECTION)` of the month file, and `stale_archive_copy` only in a
+file whose horizon is `Horizon::Month`, in `# Demoted`.  A `[-]` left in a week file is
+an archive, not a record.  Step 2's `refile` cannot see placements, and nothing above it
+checked.
+
+**The fix.**  `isDemotedRecord p s` — the placement's document is a month file and its
+section kind is `demoted` — and `copiesOverAStrayTomb g p e` — the row copies and the
+item's tombstone is not such a record (Close.lean).  `closeOne` passes its landing
+through `guardStray`: a landing the kernel refuses keeps its own refusal (so
+`closeOne_refuses_an_ill_formed_post_state` holds with its statement untouched), and a
+landing that succeeds over a stray tombstone is refused `alreadyDemoted` and its
+post-state dropped.  The `demote` verb runs the same guard on the item it names.  The
+kernel holds one tombstone per item, so it cannot both keep the week line and file a
+fresh record; the refusal is the name the `7d49779` binary gave this tree.  `refile`
+itself is unchanged, and so are `close_spec`, L16, the L19 theorems,
+`close_keeps_source_order` and every merge witness of step 2 (their tombstones are
+`# Demoted` records).
+
+| claim | theorem |
+|---|---|
+| a step answers `alreadyDemoted` only at a copying row, over a stray tombstone | `closeOne_refuses_alreadyDemoted_only_over_a_stray_tomb` |
+| a week-row step over a stray tombstone never succeeds — no merge, no deletion | `closeOne_never_merges_into_a_stray_tomb` |
+| step 2's law, where it still holds as stated | `closeOne_never_refuses_alreadyDemoted_without_a_stray_tomb` |
+| a close answers `alreadyDemoted` only at a copying row (§6.3's week row) | `close_answers_alreadyDemoted_only_at_a_copying_row` |
+| the guard's four facts | `guardStray_ok`, `guardStray_error`, `guardStray_of_error`, `guardStray_false` |
+| on a loaded plan (2026-W35's `[-] … ^m4` beside 2026-W36's `[ ] … ^m4`): the week close, `autoClose` and `tm demote ^m4` each refuse `alreadyDemoted` | `a_stray_tomb_refuses_the_week_close`, `a_stray_tomb_refuses_autoClose`, `the_demote_verb_refuses_a_stray_tomb` (`the_stray_tomb_witness_loads`) |
+| step 2's `close_never_refuses_alreadyDemoted`, refuted | `a_close_can_refuse_alreadyDemoted` |
+
+**Through the binary.**  New `cli_close_kernel.rs::a_stray_week_tombstone_is_refused_by_the_close_and_the_verb_and_nothing_is_written`:
+FE's shape as three files; `tm check` passes; `tm demote ^m4` inside W38 exits non-zero
+naming `alreadyDemoted` with every plan byte unchanged; `tm now` at 2026-09-21, twice,
+exits 0 naming the refused automatic close and `alreadyDemoted`, every byte unchanged,
+`^m4` still two lines, `state.closed.week` still `2026-W37`.  **Mutation check:** with
+`target/debug/tm` swapped for the `0662977` binary the test fails (at the verb's exit
+code); restored, it passes.  FE itself, re-driven with this binary: the close and the
+verb both refuse and `diff -r` over the plan is empty.  The host's `alreadyDemoted`
+message (`kernel_bridge.rs`) and the close hint (`closing::explain`) name the stray
+tombstone; `tm demote`'s doc does.
+
+**Gap 67 — `tm check` accepts a tree whose close refuses a stray tombstone.**  (1) *Not
+done:* FE's shape reports "no problems", and its automatic close then refuses
+`alreadyDemoted` on every command until a line is removed by hand.  (2) *Why:* `tm
+check` is the host's fork-point checker, which does not relate an item's two lines; the
+kernel's refusal is the only reader of the shape, and a check rule is a new diagnostic
+beside gap 63's.  (3) *Cost:* a hand-edited tree retries a refused close on every
+command (FE: **4.4 ms** a command, median of 7 `tm now` at 2026-09-21 from one capped scope) with a message but no `tm check` line to point at.
+Reachable only by a hand edit: `readopt` removes both lines.  (4) *Clears:* with gap 63
+— a check that names what a close would refuse — or stage 6's diagnostics surface.
+
+### Defect 3 — reproduced, **fixed**: two statements narrowed in place under their names
+
+Reproduced by `git diff 78e6898 0662977`: `closeReport_agrees_with_close`'s stamp
+clause became per-disposition, and `the_close_refusals_are_named_on_loaded_plans` lost
+its fifth conjunct; `closePreClosePairWitness` was used by no theorem.  Step 2's
+paragraph "Two statements kept under their names, changed, and why that is not a
+weakening" is superseded: each is retired and restated, as the other eight were.
+
+| retired | why | replacement | refutation of the old statement |
+|---|---|---|---|
+| `closeReport_agrees_with_close` | a `copyMerging` entry's stamps are the merge, not `e.stamps ++ [stamp]` | `closeReport_agrees_with_close_stamping_or_merging` (statement as step 2 left it) | `closeReport_agrees_with_close_is_refuted_by_a_merge` — `^m2`: `[]` before, `W37,W36` after, its entry stamps `W36` (`the_week_close_merges_m2s_stamps_and_reports_one`) |
+| `the_close_refusals_are_named_on_loaded_plans` | its fifth conjunct (§4.3's pair ↦ `alreadyDemoted`) is false since gap 53 | `each_close_refusal_is_named_on_a_loaded_plan` — five conjuncts again, the fifth now the stray tombstone ↦ `alreadyDemoted` | `the_pre_close_pair_is_not_a_named_refusal`, from `the_pre_close_pair_closes_on_a_loaded_plan` (which uses `closePreClosePairWitness`) |
+| `closeOne_never_refuses_alreadyDemoted`, `close_never_refuses_alreadyDemoted` | defect 2's refusal | the rows of defect 2's table | `a_close_can_refuse_alreadyDemoted` |
+
+### Defect 4 — reproduced, **fixed**: "at most one stamp" names that said more than their statements
+
+Reproduced: `autoClose_merges_m2s_stamps` takes `^m2` from `[]` to `W37,W36`, which both
+statements allow through their merge disjunct.  Renamed, statements unchanged, old names
+retired: `stepSkel_adds_at_most_one_stamp` → `stepSkel_appends_at_most_one_stamp_or_merges`;
+`autoClose_adds_at_most_one_stamp_to_each_line` →
+`autoClose_appends_at_most_one_stamp_or_merges_each_line` (the docstrings, `Report.lean`'s
+section header, `Goals.lean`'s comment and the step-2 refutation's docstring follow).
+
+### Defect 5 — reproduced, **fixed**: the merge laws' hypotheses instantiated together
+
+Reproduced: no theorem instantiated `close_week_merges_a_standing_record`'s five
+hypotheses, or `refile_conserves` / `refile_respects_user`'s three, at once.  Now:
+`the_merge_hypotheses_hold_together` decides, under the week close of the step-2 merge
+witness, that `^m2` (owns an estimate) and `^m5` (owns none) are each taken by the week
+row with a tombstone standing and that `refile` succeeds on each (`mergeHypsAt`,
+`mergeHypsAt_spec`); `close_week_merges_a_standing_record_is_not_vacuous (b)` and
+`refile_merge_laws_are_not_vacuous (b)` then exhibit every hypothesis together, for both
+values of `ownsEstimate`.
+
+The eight new decisions were probed first under the 8 GB cap: **6.1 s at a 1.7 GB
+peak**, imports included.
+
+### Theorem accounting and latency
+
+25 names added, 6 retired: **1615 → 1634**; `grep -c '^#print axioms' Check.lean`, its
+distinct names and the declared `theorem` count agree at 1634 (AGENTS §6.3).  No
+relational law is new: the guard's facts, one refusal characterised in both directions,
+witnesses, refutations and renames.
+
+Latency, median of 7 fresh copies each, from one capped scope, `--now
+2026-09-14T09:00:00-05:00`, `0662977` binary → this binary (the verifier's `lat.py`:
+one sweeping `tm now`, then `tm drop ^a1` timed; trees from its `gen.py` / `gendays.py`
+over §4.3's example, whose close refuses on `^d1`, so these time a refused retry):
+27 items **10.1 → 10.4 ms**; 827 items **31.4 → 30.4 ms**; 1,627 items **57.3 → 57.9
+ms**; 827 items in 209 files **39.4 → 39.1 ms**; the 233-file, 3,119-line history tree
+**85.7 → 84.0 ms**.  The closing command on the example tree with `^d1` settled (the
+merge runs, `tm now` at 2026-09-14): **19.2 → 19.3 ms**.  The guard costs nothing
+measurable: it reads one section per taken line that has a tombstone.
+
+The proof-to-definition ratio, by the same script (`/tmp/claude-1000/proof_ratio.py`):
+**4.52 : 1** over the library (15,876 : 3,512), from 4.51 : 1; this step added 197
+proof lines (36 of them decided witnesses) to 35 definition lines (11 of them witness
+fixtures) — Close.lean +51 : +12, Boundary.lean +146 : +23.  Most of it is defect 3's
+and 5's refutations and instantiations, which an audit asked for; the owner should read
+the number with §9.1's fired trigger.
+
+Re-measured after this block, every command under the 40 GB cap: `check.sh` **7/7** —
+axiom audit **1634 theorems** (+25 new, −6 retired), corpus **33/37 files and 4/5 whole
+plans**, burn-down **30** (no goal touched); `cargo test --workspace` **1001 passed / 0
+failed / 0 ignored across 66 binaries** (+1, the stray-tombstone CLI test); FFI suite
+**68** (62 kernel + 6 corpus, unchanged).  Gaps run to 67 (new gaps start at 68); cheats
+to 55 (new cheats start at 56).

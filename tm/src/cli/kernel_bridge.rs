@@ -941,7 +941,7 @@ fn refusal(err: &Value) -> KernelIssue {
             "occupied" => "the destination file already holds a line with this id, so the move would write the id twice (the duplicate-id class, refused by name)",
             "noSuchId" => "no item in the plan carries this id",
             "notDemoted" => "the item is not demoted, so there is nothing to readopt (use `tm move`)",
-            "alreadyDemoted" => "the line is itself a `[-]` archive record; demoting a record again would overwrite its tombstone (a record is carried by the month close)",
+            "alreadyDemoted" => "the line is itself a `[-]` archive record, or the item's other line is a `[-]` outside a month's `# Demoted`; demoting again would overwrite that tombstone and delete its line (a record is carried by the month close)",
             "badHorizon" => "the rewritten plan fails the kernel's whole-plan check — a destination that is not in the plan, a line landing in a section it may not occupy, or a rank collision",
             "badItem" => "the rewritten item fails the kernel's item check",
             "tabbedLine" => "the line carries a tab, which this kernel does not read as a separator; the edit is refused rather than written against the wrong token (gap 32)",

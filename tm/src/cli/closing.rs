@@ -388,9 +388,10 @@ pub fn auto_close(ctx: &mut Ctx) -> Result<Option<ReportOut>, CliError> {
 pub fn explain(issue: &KernelIssue) -> String {
     let hint = match issue.name.as_str() {
         "alreadyDemoted" => Some(
-            "a `[-]` record demoted again: an open line with a standing `# Demoted` record is \
-             merged into it (kernel/README.md gap 53), but a record is moved by the month close, \
-             not demoted twice",
+            "for a close this is an open line whose item's `[-]` line is not under a month's \
+             `# Demoted` — a line with a `# Demoted` record is merged into it (kernel/README.md \
+             gap 53), but merging into a `[-]` left in a week file would delete that line; \
+             remove one of the two lines by hand",
         ),
         "badHorizon" => Some(
             "for a close this is most often an open dated (`due:`) line in an ended week, whose \

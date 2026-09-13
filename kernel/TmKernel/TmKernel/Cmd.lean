@@ -45,8 +45,10 @@ inductive KErr
       file's line vanishes; keep it and the line the record is leaving does.
       `demote` answers it for any standing tombstone; since README gap 53 the
       close and the verb run `refile`, which merges an open line into its record
-      and answers it only for a `[-]` record filed again
-      (`close_never_refuses_alreadyDemoted`). -/
+      and answers it for a `[-]` record filed again; the close and the verb also
+      answer it for an open line whose tombstone is not a `# Demoted` record — a
+      stray `[-]` line in an earlier week, which a merge would delete
+      (`closeOne_refuses_alreadyDemoted_only_over_a_stray_tomb`). -/
   | alreadyDemoted
   /-- the destination is not a horizon this item may occupy: either not a
       document of this plan at all, or — while a tombstone stands and the record
@@ -1699,7 +1701,10 @@ theorem refile_twice_is_not_a_thing (t t' : Site) (st st' : Stamp) (e a : Entity
   simp [refile, hv]
 
 /-- **The refusal is gone for open lines.**  `refile` answers `alreadyDemoted` only
-for a line whose own box is `[-]` — never for §4.3's pre-close pair. -/
+for a line whose own box is `[-]` — never for §4.3's pre-close pair.  (`refile`
+cannot see where its tombstone sits; the close and the verb refuse, before it
+merges, an item whose tombstone is not a `# Demoted` record — `guardStray`,
+Close.lean.) -/
 theorem refile_refuses_only_a_record {t : Site} {st : Stamp} {e : Entity}
     (h : refile t st e = .error .alreadyDemoted) : e.val.status = .demoted := by
   unfold refile at h

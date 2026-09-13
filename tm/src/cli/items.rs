@@ -1034,7 +1034,8 @@ pub struct DemoteOut {
 /// merged into it — stamps merged, the record's `est:` kept as a floor under a
 /// line with no estimate of its own — as fork-point `demote_one` did
 /// (kernel/README.md gap 53). It refuses by name: `alreadyDemoted` for a `[-]`
-/// record demoted again, `badHorizon` when the copy cannot land where the
+/// record demoted again or an item whose other line is a `[-]` outside a
+/// month's `# Demoted`, `badHorizon` when the copy cannot land where the
 /// month file's sections allow.
 pub fn demote(g: &Globals, args: &super::IdArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;

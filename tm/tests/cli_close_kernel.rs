@@ -619,6 +619,46 @@ fn the_example_week_closes_a_week_after_init_merging_m2_into_its_record() {
     assert_eq!(md_files(&tm), files);
 }
 
+/// The stage-4 hardening repair, through the binary: an open line whose
+/// item's other line is a `[-]` left in an earlier, already-closed week — not a
+/// `# Demoted` record — is not merged. Fork-point `archived_record` reads a
+/// record only off a month file's `# Demoted`; the kernel at `0662977` merged
+/// into the week line anyway and deleted it from `week/2026-W37.md` without a
+/// word. The shape is a hand edit (`readopt` removes both lines) that
+/// `tm check` accepts. Now the automatic close and `tm demote` both refuse
+/// `alreadyDemoted`, by name, and write nothing.
+#[test]
+fn a_stray_week_tombstone_is_refused_by_the_close_and_the_verb_and_nothing_is_written() {
+    let files: &[(&str, &str)] = &[
+        ("week/2026-W37.md", "# Milestones\n- [-] 2 Pick winter courses @O3 demoted:W36 ^m4\n"),
+        ("week/2026-W38.md", "# Milestones\n- [ ] 2 Pick winter courses @O3 ^m4\n"),
+        ("month/2026-09.md", "# Outcomes\n- [ ] 2 !3 Winter course selection ^O3\n\n# Demoted\n"),
+    ];
+
+    // The verb, inside 2026-W38.
+    let verb = tree(files, Some(("2026-09-15", "2026-W37", "2026-08")));
+    verb.ok_at("2026-09-16T09:00:00-05:00", &["check"]);
+    let before = md_files(&verb);
+    let out = verb.run_at("2026-09-16T09:00:00-05:00", &["demote", "^m4"]);
+    assert_ne!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains("alreadyDemoted"), "{}", out.stderr);
+    assert_eq!(md_files(&verb), before);
+
+    // The automatic close, a week later: 2026-W38 has ended.
+    let close = tree(files, Some(("2026-09-20", "2026-W37", "2026-08")));
+    let before = md_files(&close);
+    for _ in 0..2 {
+        let out = close.run_at("2026-09-21T09:00:00-05:00", &["now"]);
+        assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+        assert!(out.stderr.contains("automatic close"), "{}", out.stderr);
+        assert!(out.stderr.contains("alreadyDemoted"), "{}", out.stderr);
+        assert_eq!(md_files(&close), before);
+    }
+    let after = lines(&md_files(&close));
+    assert_eq!(after["m4"].len(), 2, "{:?}", after["m4"]);
+    assert_eq!(close.state()["closed"]["week"], "2026-W37", "{}", close.state());
+}
+
 /// Gap 56's host half: the kernel cannot create a file or a section, so a
 /// close request carries the month containing now with §4.3's `# Outcomes`
 /// and `# Demoted`, appended when missing — and the file is written only if
