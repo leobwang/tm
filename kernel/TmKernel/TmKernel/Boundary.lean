@@ -1,4 +1,4 @@
-import TmKernel.Cmd
+import TmKernel.Close
 import TmKernel.Json
 /-!
 # The boundary: `String → String`, and nothing else
@@ -974,6 +974,7 @@ def kerrName : KErr → String
   | .badItem        => "badItem"
   | .tabbedLine     => "tabbedLine"
   | .keyAbsent      => "keyAbsent" | .danglingDep => "danglingDep" | .depCycle => "depCycle"
+  | .noTarget       => "noTarget"  | .noSection => "noSection"
 
 /-- Fresh rank in the destination document: strictly greater than every rank
 already there, so a move can never collide on a rank either.  `freshRank_gt`
@@ -3905,5 +3906,185 @@ theorem the_after_refusals_are_named_on_a_loaded_plan :
     depWitnessOutcome "a1" .after "^b1" = some (some .depCycle) ∧
     depWitnessOutcome "b1" .after "^b1" = some (some .depCycle) ∧
     depWitnessOutcome "a1" .after "event:visa" = some none := by decide
+
+
+/-! ## Stage 4: `close`, on plans that reach the disk (2026-09-12, stage-4 step 2)
+
+`Close.lean` proves what a successful close does and names every refusal; this
+section shows both directions fire on **loaded** plans, by decision.  Each
+witness is a request `loadPlan` accepts, closed at Monday 2026-09-07 (the first
+day of 2026-W37), and observed as each file's lines in rank order — the prose
+and the item lines `renderDocAt` weaves, merged by rank.  (`weave` is
+well-founded and does not reduce under `decide`; that the renderer writes
+these lines is `the_kernel_reads_back_what_it_writes`'s business, not a close
+fact.)  Every witness was probed under an 8 GB cap first (AGENTS §5.10a): the
+seven together decide in about 3 s at a 1.2 GB peak. -/
+
+/-- The free rank at the end of a file is one number, whichever module names
+it: `endRank` (the close's landing) is `freshRank` (the relocating verbs'). -/
+theorem foldl_max_from (xs : List Nat) : ∀ a : Nat, xs.foldl Nat.max a = Nat.max a (xs.foldl Nat.max 0) := by
+  induction xs with
+  | nil => intro a; simp
+  | cons x t ih =>
+    intro a
+    simp only [List.foldl_cons]
+    rw [ih (Nat.max a x), ih (Nat.max 0 x)]
+    show max (max a x) _ = max a (max (max 0 x) _)
+    rw [Nat.zero_max, Nat.max_assoc]
+
+theorem endRank_is_freshRank (p : PlanCore) (k : DocIx) : endRank p k = freshRank p k := by
+  unfold endRank freshRank docRanks docProseMax docLineMax
+  rw [List.foldl_append, foldl_max_from]
+  congr 1
+  congr 1
+  · cases p.docs[k]? with
+    | none => rfl
+    | some d => simp [List.foldl_map]
+  · simp [List.foldl_map]
+
+def closeNow : Day := Cal.toDay ⟨2026, 9, 7⟩
+def closeW36 : Region := ⟨week, Cal.weekOrdinal (Cal.toDay ⟨2026, 8, 31⟩)⟩
+def closeW37 : Region := ⟨week, Cal.weekOrdinal closeNow⟩
+def closeM08 : Region := ⟨month, Cal.monthOrdinal (Cal.toDay ⟨2026, 8, 1⟩)⟩
+def closeM09 : Region := ⟨month, Cal.monthOrdinal closeNow⟩
+
+/-- The loaded plan of a request, if it loads. -/
+def loadedPlan? (docs : List ReqDoc) : Option WfPlan :=
+  match loadPlan docs with
+  | .ok p    => some p
+  | .error _ => none
+
+/-- Each file's lines in rank order after `close g closeNow`, if the request
+loads and the close succeeds. -/
+def closedFileLines (g : Grain) (docs : List ReqDoc) : Option (List (List (List Char))) :=
+  (loadedPlan? docs).bind (fun p =>
+    match close g closeNow p with
+    | .ok q => some (q.val.docs.zipIdx.map (fun dk =>
+        (sortByRank (dk.1.prose ++ (q.val.lines.filter (fun l => l.site.doc == dk.2)).map
+          (fun l => (l.site.rank, l.text)))).map Prod.snd))
+    | .error _ => none)
+
+/-- The close's refusal, if the request loads and the close refuses. -/
+def closeRefusal (g : Grain) (docs : List ReqDoc) : Option KErr :=
+  (loadedPlan? docs).bind (fun p =>
+    match close g closeNow p with
+    | .ok _    => none
+    | .error k => some k)
+
+/-- 2026-W36 with an open item, a done item, a wall still ahead and a recurring
+line; the live week; and a month file whose `# Demoted` is followed by another
+section, so the landing has to shift to make room. -/
+def closeWeekWitness : List ReqDoc :=
+  [⟨"week/2026-W36.md", some closeW36,
+     ["# Tasks".toList,
+      "- [ ] 4 6b Rollback path passes tests ^m2".toList,
+      "- [x] 2 1b Send the draft ^t1".toList,
+      "- [ ] 5 2h Midterm at:2026-10-20T10:00/12:00 ^x1".toList,
+      "- [ ] 1 15m Standup every:day ^r1".toList]⟩,
+   ⟨"week/2026-W37.md", some closeW37, ["# Tasks".toList]⟩,
+   ⟨"month/2026-09.md", some closeM09,
+     ["# Outcomes".toList, "- [ ] 5 !1 Lean through ch.8 ^O1".toList, "# Demoted".toList,
+      "# Notes".toList]⟩]
+
+set_option maxRecDepth 40000 in
+/-- **§6.3's week row, on a loaded plan.**  The open line stays behind as a `[-]`
+tombstone **in its own bytes** and its stamped record lands at the end of the
+month's `# Demoted`, ahead of `# Notes` — the legitimately-differing pair gap 31
+was about, written by the kernel.  The done line stays; the recurring line
+stays; the wall still ahead is carried, undemoted, into the live week (F4). -/
+theorem the_week_close_copies_carries_and_leaves_the_rest :
+    closedFileLines week closeWeekWitness = some
+      [["# Tasks".toList, "- [-] 4 6b Rollback path passes tests ^m2".toList,
+        "- [x] 2 1b Send the draft ^t1".toList, "- [ ] 1 15m Standup every:day ^r1".toList],
+       ["# Tasks".toList, "- [ ] 5 2h Midterm at:2026-10-20T10:00/12:00 ^x1".toList],
+       ["# Outcomes".toList, "- [ ] 5 !1 Lean through ch.8 ^O1".toList, "# Demoted".toList,
+        "- [-] 4 6b Rollback path passes tests demoted:W36 ^m2".toList, "# Notes".toList]] := by
+  decide
+
+/-- A day file of Friday 2026-09-04 — in 2026-W36 — closed on Monday: both
+weeks' files are handed over. -/
+def closeDayWitness : List ReqDoc :=
+  [⟨"day/2026-09-04.md", some ⟨day, Cal.toDay ⟨2026, 9, 4⟩⟩,
+     ["# Pinned".toList, "- [>] 2 20m Call the bank ^p1".toList,
+      "- [x] 1 10m Water the plants ^p2".toList]⟩,
+   ⟨"week/2026-W36.md", some closeW36, ["# Tasks".toList]⟩,
+   ⟨"week/2026-W37.md", some closeW37,
+     ["# Tasks".toList, "- [ ] 3 1b Review the drafts ^t5".toList]⟩]
+
+set_option maxRecDepth 40000 in
+/-- **§6.3's day row, and D1, on a loaded plan.**  The pinned `[>]` reopens to
+`[ ]`, gains `demoted:D04`, and moves to the week containing *now* — 2026-W37 —
+and not to 2026-W36, the week the closed day belonged to, whose file is right
+there.  The done line stays. -/
+theorem the_day_close_files_into_the_week_of_now :
+    closedFileLines day closeDayWitness = some
+      [["# Pinned".toList, "- [x] 1 10m Water the plants ^p2".toList],
+       ["# Tasks".toList],
+       ["# Tasks".toList, "- [ ] 3 1b Review the drafts ^t5".toList,
+        "- [ ] 2 20m Call the bank demoted:D04 ^p1".toList]] := by
+  decide
+
+def closeMonthWitness : List ReqDoc :=
+  [⟨"month/2026-08.md", some closeM08,
+     ["# Outcomes".toList, "- [ ] 5 !1 Old outcome ^O7".toList,
+      "- [x] 3 !2 Done outcome ^O8".toList,
+      "# Demoted".toList, "- [-] 4 3b Carried record est:3b demoted:W33 ^m9".toList]⟩,
+   ⟨"month/2026-09.md", some closeM09,
+     ["# Outcomes".toList, "- [ ] 5 !1 Lean through ch.8 ^O1".toList, "# Demoted".toList]⟩]
+
+set_option maxRecDepth 40000 in
+/-- **§6.3's month row, on a loaded plan.**  The open outcome moves into the next
+month's `# Outcomes` (a shift makes room ahead of `# Demoted`), keeping `!1`;
+the `[-]` record moves into its `# Demoted`, keeping its stamp and its `est:`;
+the done outcome stays. -/
+theorem the_month_close_moves_each_line_into_its_section :
+    closedFileLines month closeMonthWitness = some
+      [["# Outcomes".toList, "- [x] 3 !2 Done outcome ^O8".toList, "# Demoted".toList],
+       ["# Outcomes".toList, "- [ ] 5 !1 Lean through ch.8 ^O1".toList,
+        "- [ ] 5 !1 Old outcome ^O7".toList,
+        "# Demoted".toList, "- [-] 4 3b Carried record est:3b demoted:W33 ^m9".toList]] := by
+  decide
+
+def closeDatedWitness : List ReqDoc :=
+  [⟨"week/2026-W36.md", some closeW36,
+     ["# Tasks".toList, "- [ ] 4 2b Pset due:2026-09-04 ^d1".toList]⟩,
+   ⟨"month/2026-09.md", some closeM09, ["# Outcomes".toList, "# Demoted".toList]⟩]
+
+def closeNoMonthWitness : List ReqDoc :=
+  [⟨"week/2026-W36.md", some closeW36, ["# Tasks".toList, "- [ ] 4 2b Pset ^d1".toList]⟩]
+
+def closeNoDemotedWitness : List ReqDoc :=
+  [⟨"week/2026-W36.md", some closeW36, ["# Tasks".toList, "- [ ] 4 2b Pset ^d1".toList]⟩,
+   ⟨"month/2026-09.md", some closeM09, ["# Outcomes".toList]⟩]
+
+/-- The week witness without the live week's file: its wall has nowhere to be
+carried. -/
+def closeNoLiveWeekWitness : List ReqDoc :=
+  closeWeekWitness.filter (fun d => d.path != "week/2026-W37.md")
+
+/-- §4.3's own pair — the `[ ]` record in a week, its `[-]` copy under the month's
+`# Demoted` — with the week moved to 2026-W36 so that Monday closes it. -/
+def closePreClosePairWitness : List ReqDoc :=
+  [⟨"week/2026-W36.md", some closeW36,
+     ["# Milestones".toList, "- [ ] 4 6b Rollback path passes tests   @O2 ^m2".toList]⟩,
+   ⟨"month/2026-09.md", some closeM09,
+     ["# Demoted".toList,
+      "- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2".toList]⟩]
+
+set_option maxRecDepth 40000 in
+/-- **The check bites, by name, on loaded plans.**  A dated line whose record the
+month file cannot hold (§4.3: month items are outcomes, shape `none`) is
+`badHorizon` — the post-state re-check; a week close with no month file is
+`noTarget`, and so is one with a wall to carry and no live week; a month file
+with no `# Demoted` is `noSection`; and §4.3's pre-close pair is
+`alreadyDemoted` (README gap 53).  None of them is a close that silently skipped
+a line. -/
+theorem the_close_refusals_are_named_on_loaded_plans :
+    closeRefusal week closeDatedWitness = some .badHorizon ∧
+      closeRefusal week closeNoMonthWitness = some .noTarget ∧
+      closeRefusal week closeNoLiveWeekWitness = some .noTarget ∧
+      closeRefusal week closeNoDemotedWitness = some .noSection ∧
+      closeRefusal week closePreClosePairWitness = some .alreadyDemoted := by
+  decide
 
 end Tm

@@ -194,15 +194,16 @@ citations no longer resolve (§10.2).
 ### 2.3 The module map, in one line each
 
 ```
-Cal ──▶ Grain ──▶ Text ──▶ Line ──▶ State ──▶ Plan ──▶ Cmd ──▶ Boundary
-                   │                                            ▲
-                   └──▶ Json ───────────────────────────────────┘
+Cal ──▶ Grain ──▶ Text ──▶ Line ──▶ State ──▶ Plan ──▶ Cmd ──▶ Close ──▶ Boundary
+                   │                                                      ▲
+                   └──▶ Json ─────────────────────────────────────────────┘
 Arith                       (standalone: nothing imports it but the root)
 ```
 
 Root import order (`cat TmKernel.lean`): `Arith Cal Grain Text Json Line State
-Plan Cmd Boundary`. `Json` imports `Text` only; `Boundary` imports `Cmd` and
-`Json`. **No module imports `Lean.Data.Json` any more** — the wire is the
+Plan Cmd Close Boundary`. `Json` imports `Text` only; `Close` imports `Cmd`;
+`Boundary` imports `Close` and `Json` (stage 4 step 2 — it imported `Cmd`
+before). **No module imports `Lean.Data.Json` any more** — the wire is the
 kernel's own (§2.4).
 
 - `Cal` — the calendar. Days since 0001-01-01, proleptic Gregorian. ISO weeks.
@@ -213,17 +214,18 @@ kernel's own (§2.4).
 - `State` — entity versus observation. `Core`, `wf`, `Entity`, `render`.
 - `Plan` — `Store`, `Doc`, `PlanCore`, `planWf`, `WfPlan`, and the comment rule (`commentAfter`).
 - `Cmd` — `lift`, `Transform`, `Dest`, `WfPlan.mapAt`, `KErr`, the commands (`cmdMove cmdDrop cmdSetEst cmdDemote cmdReadopt cmdRank cmdEdit cmdUnset`, and `WfPlan.insertFresh` for `add`), the `EditVal` table.
+- `Close` — §6.3's lifecycle as one fold at three grains: the `ClosePolicy` table and its bridges, `close`, the landing rank shift, `close_spec`. Not on the wire yet (kernel/README.md, stage-4 step-2 block).
 - `Boundary` — `String → String`: the request readers, `parseCmd`, the loader, `respond`, `call`, `callExport`.
 - `Arith` — exact rational arithmetic. Nothing consumes it yet.
 
 **A new module is not built until it is imported.** `kernel/TmKernel/TmKernel.lean`
-is ten `import TmKernel.<Mod>` lines and nothing else; `lakefile.toml` names one
+is eleven `import TmKernel.<Mod>` lines and nothing else; `lakefile.toml` names one
 `lean_lib TmKernel` and no module list. So a `.lean` file dropped into
 `TmKernel/TmKernel/` that nobody imports is **not compiled by check 1**, is not in
 `libTmKernel_TmKernel.a`, and is therefore invisible to the Rust — while
 `check.sh` still prints seven `ok`s. Stage 3 added one (`Json`, imported at
-`c2ad8f6` in the same commit), and three of the remaining stages propose more
-(§8.2, §8.3, §8.4). Add the `import` line in the same commit as the file:
+`c2ad8f6` in the same commit), stage 4 added `Close` (imported in the commit
+that created it), and the remaining stages propose more (§8.3, §8.4). Add the `import` line in the same commit as the file:
 
 ```bash
 cd /Users/psixyzt/code/planner/kernel/TmKernel && cat TmKernel.lean
@@ -1469,6 +1471,13 @@ and the stage's own 40–51 as their paragraphs price them.
 > Cost: 2–3 wk. Worth alone: §6.3 becomes one operation at three grains;
 > F1–F4 and F6 covered.
 
+**Status at stage 4 step 2 (2026-09-12).** Scope items 1 and 2 are landed in
+`TmKernel/Close.lean` (`ClosePolicy`, `close`, `close_spec`); items 3 and 4
+(`autoClose`, `now` on the wire) are not. `close_day_stamps_a_day_stamp` is
+discharged (burn-down 39); narrowed forms of three over-strong goals are proved
+beside them and their refute-and-renames are owed; gaps 53–57 are the step's
+debts. Read kernel/README.md's stage-4 step-2 block before taking the next step.
+
 **Scope, concretely.**
 
 1. **One fold, three grains.** Fold over
@@ -1610,11 +1619,17 @@ Plus the corpus ratchet, plus 30 minutes driving whatever binary exists (§5.13)
   This changes `demote`, its `normalized`-preservation lemma, and `sectionsWf`.
   §6.2's "outcome with an estimate is a `tm check` warning" is unimplementable
   until then, because the two-line demotion form this kernel writes would trip it.
+  *Status (step 2): landed for `close`'s week row (a rank shift makes room in
+  `# Demoted`); the `demote` wire verb still lands at `freshRank`, `sectionsWf`
+  is unchanged (§10.5 q9), and the warning still needs `parent` (gap 22).*
 - **Stage 4 *is* the code that writes the legitimately-differing pair**
   (gap 31). The named fix is a second `RawItem` on `Core` for the
   tombstone, set by `demote` and cleared by `readopt`, with `renderCore` reading
   it at the archive site — and `orientPair` needs a glyph clause, with
   `demotionsOriented` changing alongside it because it is part of `planWf`.
+  *Status (step 2): subsumed — that `RawItem` is `Tomb.line`; `close` writes the
+  differing pair through `demote`, and neither `orientPair` nor
+  `demotionsOriented` changed.*
 - **Backlog orientation is fine, and here is why.** `horizonPrecedes (some _)
   none = true`, so every bounded region precedes backlog: a close that files
   overdue work into `backlog.md#Overdue` leaves the tombstone (in the week)
@@ -1625,6 +1640,8 @@ Plus the corpus ratchet, plus 30 minutes driving whatever binary exists (§5.13)
   "unfinished children are dropped, their remaining folded into the parent's
   `est:`" needs §6.4 rollups, which need `parent`, which is always `none`. Either
   pull them forward or scope them out **by name** in the README.
+  *Status (step 2): scoped out, and visible in the table itself — the week row's
+  `overdue := .stage5OnMiss` and `children := .gap22Parent`.*
 - **F3 is missed until stage 6.** `close day` replacing a written review with
   `review pending` needs generated-block ownership. Stage 4 covers F1, F2, F4, F6
   — do not claim §6.3 complete.

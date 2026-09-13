@@ -7,4 +7,5 @@ import TmKernel.Line
 import TmKernel.State
 import TmKernel.Plan
 import TmKernel.Cmd
+import TmKernel.Close
 import TmKernel.Boundary

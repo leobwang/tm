@@ -4133,3 +4133,259 @@ replaced by real definitions.
 Re-measured after this block (documentation and comments only): see the commit
 message.  Gaps run to 52 (new gaps start at 53); cheats to 49 (new cheats start at
 50).
+
+<!-- ===================================================================
+     APPENDED 2026-09-12 (stage-4 session, rebuild-on-lean).  Step 2: `close` is one fold at three grains — new module `Close.lean`.
+     Takes gaps 53–57 and cheats 50–51.  Supersedes nothing above; gaps 20 and 31 get status paragraphs below, not edits.
+     =================================================================== -->
+
+## Stage 4 step 2, 2026-09-12: `close` is one fold at three grains
+
+Baseline re-measured at `d615bd1` before this step, every command under the 40 GB
+cap: `check.sh` **7/7** — audit **1299**, corpus **33/37 files and 4/5 whole
+plans**, burn-down **40**; `cargo test --workspace` **984 passed / 0 failed / 0
+ignored across 64 binaries**.
+
+**What landed.**  `TmKernel/Close.lean`, a new module of 1,291 lines, imported
+in the same commit by `TmKernel.lean` (between `Cmd` and `Boundary`) and by
+`Boundary.lean` (in place of its `Cmd` import, which `Close` re-exports), so the
+step that puts `close` on the wire can reach it.  A module rather than an
+extension of `Cmd.lean`: `Cmd` is the algebra of one command at one id, and a
+close is a fold over many ids that brings its own table, its own rank-shift and
+57 theorems; it consumes `Cmd` (`lift`, `moveTo`, `demote`, `WfPlan.mapAt`) and
+nothing in `Cmd` consumes it.
+
+- **`ClosePolicy`, one row per `Grain`** — §6.3's residue, tabulated (AGENTS
+  §5.5).  What is derived is not in the table: the target region (`closeTo g
+  now`, D1), a grain's file kind (`kindOfGrain`), and a stamp's number (the civil
+  day of month, the ISO week of the closed region's index).
+
+  | column | day | week | month |
+  |---|---|---|---|
+  | `takes` | `[ ]` `[>]` | `[ ]` `[>]` | every unsettled box, `[-]` included |
+  | `disposition` | `moveReopening` (`[>]`→`[ ]`) | `copy` (`demote`) | `move` (`moveTo`) |
+  | `landing` | `fileEnd` | `demotedSection` | `sameSection` |
+  | `stamp` | `dayOfMonth` (`D04`) | `isoWeek` (`W36`) | `none` |
+  | `recurring` | `stays` | `stays` | `stays` |
+  | `walls` | `carried` | `carried` | `carried` |
+  | `overdue` | `nothing` | **`stage5OnMiss`** | `nothing` |
+  | `children` | `nothing` | **`gap22Parent`** | `nothing` |
+
+  Each row is pinned by a bridge that says something the row does not:
+  `closeStamp_names_the_closed_grain` (a stamp names the grain it closed —
+  `Field.Stamp` has no month), `close_never_takes_a_settled_line`,
+  `closePolicy_takes_the_demoted_record_only_at_month`,
+  `closePolicy_demoted_landing_is_in_a_month_file` (the landing and `closeTo`
+  agree), `closePolicy_copies_only_below_month`, `closePolicy_copy_stamps`,
+  `closePolicy_move_is_unstamped`, `closePolicy_exemptions`, `closePolicy_owes`.
+  **CHEAT 50** (a day row stamping `W`) and **CHEAT 51** (a month row that
+  copies) corrupt one row each and restate the bridge over the corrupted table;
+  both fail as "`decide` proved that the proposition … is false", and the controls
+  are the bridges themselves.
+- **`close g now`** folds `closeOne` over `closeCands g now` — the ids whose live
+  line is in a file of the grain's own kind whose region has grain `g` and is
+  `Closed` at `now` (`closedRegionOf`), and whose `closeAct` is not `stay`.
+  `closeAct` reads the row: a box the row does not take stays; a recurring line
+  gets `recurring`; a wall gets `walls` (carried only when still ahead); anything
+  else is filed.  A filed line goes to the first document of kind `kindOfGrain
+  (coarsen g)` whose region is `closeTo g now` (`closeTarget`), through the row's
+  disposition — `moveTo`, `lift` with the box reopened and the stamp set, or
+  `demote` — at the row's landing.  A carried wall goes to the week file whose
+  region is `regionOf week now` (`carryTarget`) through `moveTo`.  **Landing
+  inside a section** that another heading follows shifts every rank of the
+  destination file at or after that heading up by one (`PlanCore.shiftIn`) and
+  takes the freed rank; ranks come from line numbers, so a section that is not
+  the file's last has no free rank otherwise.  The shift and the relocation each
+  re-run `planWf` by computation (`WfPlan.shiftAt`, `WfPlan.mapAt`).
+  `endRank_is_freshRank` (Boundary.lean) says the close's end-of-file rank and
+  the verbs' `freshRank` are one number.
+- **Two named refusals**, `KErr.noTarget` (no document of the kind and region a
+  line must go to — the kernel has regions and no path grammar, gap 10, so it
+  cannot create the file) and `KErr.noSection` (no `# Demoted`, or no heading
+  matching the one the line stood under); `kerrName` names both.  Neither reaches
+  the wire yet: `close` is not a wire op, and the Rust bridge's refusal map would
+  print either as "an unlisted kernel refusal".
+
+**How it is proved.**  A shift moves ranks and nothing else, so the statements
+are made over a rank-free skeleton of each entity (`Skel`: its file, its
+tombstone's file and bytes, its box, its bytes) and over the files' kinds and
+regions (`Frame`), which no step changes.  `closeOne_spec` is one step;
+`foldlM_closeOne_spec` is the induction; **`close_spec` is the denotation** —
+after a successful close every id's skeleton is `stepSkel` of what it was, and
+no line is one the same close would take again, because the file it now sits in
+is `closeTo g now` or the live week and neither is closed
+(`closeTo_target_is_open`, `regionOf_is_open`).  The three standard axioms only.
+
+**Discharged from `Goals.lean`: `close_day_stamps_a_day_stamp`**, proved as
+stated.  The provisional `def close … := sorry` is replaced by `Tm.close` with
+the signature it declared (§3.2's same move).  Burn-down **40 → 39**.
+
+**Proved beside three goals whose refute-and-rename is owed (step 3).**  Each is
+stated stronger than §6.3 allows, exactly as the step-1 pricing said; the
+narrowed theorem is proved now, the negation of the goal as written is not, and
+the goal stays in `Goals.lean` with a status note naming its neighbour.
+
+| goal, as written | why it is expected false | proved beside it |
+|---|---|---|
+| `close_leaves_no_live_line_in_a_closed_region` | a `[x]` line §6.3 leaves in the archive | `close_leaves_no_line_it_would_take`, `close_leaves_no_unfinished_line_in_a_closed_region` |
+| `close_never_demotes_a_wall` (`f.val = e.val`) | a carried wall's `live` changes, and a landing shift moves other lines' ranks | `close_never_demotes_a_wall_but_may_carry_it` (box, bytes, tombstone kept), `close_carries_a_wall_that_is_still_ahead` |
+| `close_writes_every_estimate_through_demoteEst` (whole line) | the `demoted:` stamp | `close_rewrites_a_line_only_by_stamping_it` |
+
+The witness each refutation needs is already decided below
+(`the_week_close_copies_carries_and_leaves_the_rest` holds a `[x]`, a carried
+wall and a stamped record).  **Not proved, and needed for the estimate half:**
+that setting the `demoted:` token leaves `remainingOf` unchanged — the
+line-shape theorem says the stamp is the only rewrite, not that the estimate
+reading survives it.
+
+**D1 as theorems.**  `close_files_a_taken_line_into_closeTo`: a filed line lands
+in `closeTo g now`, in a file of kind `kindOfGrain (coarsen g)`, with the row's
+skeleton.  `close_day_files_into_the_week_of_now`: whenever the closed day's week
+is not now's, that region is not `targetContaining day` of the closed day — the
+separating theorem D1 owed, over `impl_rule_disagrees_iff`.
+
+**Both directions (AGENTS §5.8).**  *It succeeds:* `close_without_candidates_is_the_identity`,
+and three decided witnesses on **loaded** plans, closed at Monday 2026-09-07 —
+`the_week_close_copies_carries_and_leaves_the_rest` (the open line stays behind
+`[-]` in its own bytes, its record `…tests demoted:W36 ^m2` lands at the end of
+`# Demoted` ahead of `# Notes` by a shift, the done and recurring lines stay, the
+future `at:` wall is carried into 2026-W37), `the_day_close_files_into_the_week_of_now`
+(a pinned `[>]` of Friday 2026-09-04, in W36, reopens with `demoted:D04` and lands
+in **W37**, with W36's file handed over too), and
+`the_month_close_moves_each_line_into_its_section` (an open outcome into the next
+month's `# Outcomes` by a shift, keeping `!1`; the `[-]` record into `# Demoted`
+keeping `est:3b demoted:W33`; the done outcome stays).  *It bites:*
+`closeOne_refuses_a_missing_target`, `closeOne_refuses_a_carry_with_no_live_week`,
+`closeOne_refuses_a_missing_section`, `closeOne_refuses_an_ill_formed_post_state`,
+`closeOne_week_refuses_a_standing_tombstone`, `close_refuses_what_its_first_step_refuses`,
+and decided on loaded plans `the_close_refusals_are_named_on_loaded_plans` —
+`badHorizon`, `noTarget` twice, `noSection`, `alreadyDemoted`.  The witnesses
+observe each file's lines in rank order (the two lists `renderDocAt` weaves,
+merged by rank), not `renderDocAt`'s output: `weave` is well-founded and does not
+reduce under `decide`, which stuck the first attempt.  Every witness was probed
+under an 8 GB cap first; together they decide in about 3 s at a 1.2 GB peak.
+
+**Choices this step took, each with the theorem that separates it (AGENTS §4's
+last row).**  None relitigates D1–D4; the first two differ from fork-point
+behaviour and are flagged for the owner's drive rather than settled here.
+
+1. **Walls are carried at every grain, the day row included, and only while
+   still ahead.**  Fork-point `close_day` moves a pinned interval into the week
+   *with* `demoted:D<dd>`; the kernel carries it unstamped (§6.3's last
+   paragraph: intervals are never demoted), and a pinned or week wall that is
+   already over stays in the closed file.  `close_never_demotes_a_wall_but_may_carry_it`,
+   `close_carries_a_wall_that_is_still_ahead`.  "Ahead" is day resolution — gap 57.
+2. **The month row does not take a settled line under `# Demoted`.**  Fork-point
+   `close_month` carries every `# Demoted` line whatever its box; the kernel's
+   rows never take `[x]`/`[~]` (`close_never_takes_a_settled_line`), box first as
+   everywhere else in this kernel.
+3. **A section that is not a file's last is landed in by a rank shift, not
+   refused.**  The alternative made the month row unusable on §4.3's own month
+   file (`# Outcomes` before `# Demoted`); `the_month_close_moves_each_line_into_its_section`
+   and the week witness exercise the shift.
+4. **The destination is the first document of the right kind and region.**  Two
+   files of one kind claiming one region are distinct paths the loader accepts;
+   the close picks by index, deterministically, and says so here.
+
+**Gap 20 — landed for `close`; not for the `demote` verb; `sectionsWf` unchanged.**
+§6.3's week row now files its record into `month/<current>#Demoted` by
+computation (`Landing.demotedSection`, the shift), which is what gap 20 said a
+§6.2 "outcome with an estimate" warning needs.  Not changed, and why: (a) the
+standalone `demote` wire verb still lands at `freshRank` — its request carries a
+document and no section, and moving a shipped verb's landing is a wire behaviour
+change that belongs with the step that puts `close` (and `now`) on the wire;
+(b) `sectionsWf` does not demand that a `[-]` record sit under `# Demoted` —
+that is AGENTS §10.5 q9, an owner decision still open, and refusing loads on it
+is a behaviour change this step does not take; (c) the §6.2 warning itself is
+still unimplementable, because "an estimate **and no children**" needs
+`Core.parent` (gap 22).
+
+**Gap 31 — the named fix is subsumed; nothing on `Core` changes.**  The "second
+`RawItem` on `Core`, set by `demote`, cleared by `readopt`, read by `renderCore`
+at the archive site" is `Tomb.line` (`Core.archive : Option Tomb`, since
+`8eea3d6`): `demote` freezes the line it leaves there, `readopt` discards the
+tombstone, `renderCore` writes `t.line` at `t.site`.  This step is the first code
+that *writes* the differing pair through a close — the week witness shows the
+week line kept byte for byte beside the stamped record — and it does so through
+`demote`, so `orientPair`'s glyph clause and `demotionsOriented` are untouched.
+
+**Scoped out, by name, with the stage that clears each (brief item 7).**
+§6.3's week-row "dated items past due with `persist` → `backlog.md#Overdue`" is
+the table's `overdue := .stage5OnMiss` — it needs §5.3's `on_miss` evaluated
+against `due:`, stage 5.  Its "unfinished children are dropped, their remaining
+folded into the parent's `est:`" is `children := .gap22Parent` — it needs
+`Core.parent`, always `none` (gap 22, AGENTS §10.5 q3, owner, before stage 5);
+with it goes fork-point `close_week`'s carrying of a wall's prep children, which
+the kernel demotes as ordinary lines.  The day file's review section (F3) is
+stage 6.  B3 (`close_week_folds_a_dropped_child_into_its_parent`) stays in
+`Goals.lean` on the same precondition.
+
+**Owed by the stage and not attempted in this step (sequencing, not gaps):**
+`close` on the wire — `now` in the request, the close op, D3's per-item report
+with its four AGENTS §8.2 rules; `autoClose` (still a provisional `sorry`); L16,
+L17, L19a–c, L27 and the three refute-and-renames above; the CLI-level
+acceptance and the 30-minute drive (AGENTS §5.13); the proof-to-definition ratio
+AGENTS §8.2 asks for at the stage's end.
+
+**Gap 53 — `close week` refuses an item that already carries a tombstone.**  (1)
+*Not done:* §4.3's own pre-close pair — a `[ ]` record in a week beside its `[-]`
+copy under a month's `# Demoted` — makes the week close answer `alreadyDemoted`
+(`closeOne_week_refuses_a_standing_tombstone`, decided on a loaded plan).
+Fork-point `demote_one` rewrites the standing copy with merged stamps and takes
+its recorded `est:` as a floor.  (2) *Why:* doing that is `demoteEst bm userSet
+rec` — the block length, whether the user set an estimate since, and the
+standing copy's remaining — and none of the three is in `close g now`'s
+signature; replacing the copy without the floor is exactly B2's "supersede"
+defect.  (3) *Cost:* a whole week close refuses on any tree holding that shape,
+which the corpus's `plan-basic`-shaped trees do once their week is closed.
+(4) *Clears:* when `close` gains its measurement inputs — the wire step, where
+the host supplies them, or stage 5's log replay.
+
+**Gap 54 — `close` writes no `est:`.**  (1) *Not done:* §6.3's "`est:` =
+remaining" on the day row's reopened `[>]` and on the week row's record; the line
+carries the estimate it had (`close_rewrites_a_line_only_by_stamping_it`).
+(2) *Why:* remaining beyond the line's own reading is the log's minutes (F6,
+`done_minutes`, stage 5) and the rollup's children (gap 22); the kernel has
+neither, and writing the line's own reading back as a token would only change
+bytes.  (3) *Cost:* a `[>]` item worked on during the closed day keeps its
+pre-work estimate; `close_writes_every_estimate_through_demoteEst` stays a goal.
+(4) *Clears:* stage 5, with the log; its refute-and-rename is step 3's.
+
+**Gap 55 — a dated line refuses the week close.**  (1) *Not done:* a week line
+with `due:` (a point shape) is filed like any other, and its record then
+violates `shapesWf`'s month rule ("an outcome carries no date"), so the close is
+`badHorizon` (decided in `the_close_refusals_are_named_on_loaded_plans`).
+(2) *Why:* half of it is the scoped-out overdue routing (stage 5); the other half
+— a dated line not yet past due — has a record §6.3 says goes to `# Demoted` and
+a month rule that refuses it, and exempting `# Demoted` placements from the rule
+is a change to what a plan is, for the owner.  (3) *Cost:* §4.3's own
+`week/2026-W37.md` (`^d1 due:2026-09-11T23:59`) cannot be closed whole.
+(4) *Clears:* stage 5 for the past-due half; an owner decision for the rest.
+
+**Gap 56 — the kernel cannot create the file or the section a close needs.**
+(1) *Not done:* a close whose `month/<current>` (or live week, for a carry) is not
+in the request is `noTarget`; one whose month file has no `# Demoted` (or no
+heading matching the section a month-row line came from) is `noSection`.
+Fork-point `ensure_horizon_file` and `insert_line` create both.  (2) *Why:* a
+document here is a path, prose and a region, and there is no path grammar for a
+region (gap 10); a heading could be inserted as prose, but the kernel choosing
+where is the loader-picks-a-reading defect (§5.6).  (3) *Cost:* the host must
+hand over every destination file with its sections before calling `close`, or
+the close refuses whole.  (4) *Clears:* the wire step (host precondition) or
+gap 10's grammar.
+
+**Gap 57 — "still ahead" is day resolution.**  (1) *Not done:* a wall is carried
+when its end's day is on or after `now`, so a wall that ended at 10:00 on the day
+a close runs at 15:00 is carried although it is over.  (2) *Why:* `now` is a
+`Day`; the kernel has no time of day (gap 10).  (3) *Cost:* an over wall can be
+carried one day too long, into a week file the planner reads; never the other
+way — a wall still ahead is never stranded.  (4) *Clears:* gap 10.
+
+Re-measured after this step, every command under the 40 GB cap: `check.sh`
+**7/7** — axiom audit **1362 theorems** (63 new: 57 in `Close.lean`, 6 in
+`Boundary.lean`; the three counts of AGENTS §6.3 agree at 1362), corpus
+**33/37 files and 4/5 whole plans** (unchanged), `Goals.lean` burn-down **39**;
+`cargo test --workspace` **984 passed / 0 failed / 0 ignored across 64
+binaries** (unchanged); FFI suite 63 (57 kernel + 6 corpus, unchanged).  A full
+`lake build TmKernel:static` peaked at 1.8 GB.  Eleven modules, 22,400 lines.
+Gaps run to 57 (new gaps start at 58); cheats to 51 (new cheats start at 52).

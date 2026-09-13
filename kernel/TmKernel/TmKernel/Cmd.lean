@@ -79,6 +79,15 @@ inductive KErr
   /-- a keyed `after:` edit whose post-state has a dependency cycle
       (`afterAcyclic` fails, §5.5) — a self-dependency included. -/
   | depCycle
+  /-- a close has a line to file (or a wall to carry) and the plan holds no
+      document of the kind and region it goes to.  The kernel has regions and
+      no path grammar (README gap 10), so it cannot create the file; the host
+      must hand it over (Close.lean). -/
+  | noTarget
+  /-- a close's destination file has no section to receive the line: no
+      `# Demoted` for §6.3's week row, or no heading matching the one the line
+      stood under for its month row (Close.lean). -/
+  | noSection
 deriving DecidableEq, Repr
 
 /-- The only way to make an `Entity`.  Both cheats are compile errors:

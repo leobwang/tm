@@ -71,10 +71,11 @@ stage then has to fight.
   byte-identical across the file, `tm now`, `tm tui` and `tm plan --json`.
 * **`ClosePolicy`'s five rows** (plan §3.2's named residue): copy-versus-move
   disposition, the off-chain `backlog#Overdue` target, child-folding, stamp
-  accrual, exemptions.  The plan calls it "a typed table indexed by `Grain`"
-  and names the rows but not their types.  `close` below is declared without
-  it, because a `close` that reads a global table needs no policy argument;
-  the table itself is stage 4's to design.
+  accrual, exemptions.  *Landed 2026-09-12 (stage 4 step 2)* as
+  `Tm.closePolicy : Grain → ClosePolicy` in `Close.lean`, read by `close`
+  rather than passed to it, each row pinned by a bridge theorem; the overdue
+  target and the child fold are `Owed` columns (stage 5, gap 22), not
+  behaviour.
 * **R7 — how future-day capacity mixes lounge and home by `p_lounge`**
   (README gap 26, in the `Arith.lean` block).  Whether the planner floors the mixture per
   level, per day, or carries it exact into the EDF pass is a **decision** the
@@ -187,21 +188,14 @@ catches up losing nothing; the two behaviour changes landed with assent".
 §4's F1, F2 and F4 are discharged here; B1–B3 are re-owed at the fold level.
 ############################################################################ -/
 
-/-- **Provisional (stage 4).**  §6.3's lifecycle at one grain, as plan §3.3
-defines it: "fold over `{ i ∈ dom | live site is in a region of grain g Closed
-at now }`, applying `demoteEst` into `closeTo g now`, subject to
-`ClosePolicy g`".
-
-Three parts of the signature are settled and one is not.  Settled: the grain,
-the instant (a `Day`; the kernel is day-resolution, README gap 10), and
-`Transform` as the shape.  Not settled: `ClosePolicy`, which is why it is not an
-argument — the plan calls it a table *indexed by* `Grain`, so `close g` can read
-it without being handed it, and stage 4 stays free to design its rows.
-
-The destination is found by **region**, not by file name: `docRegion` gives each
-document's horizon and `closeTo g now` gives the target, so `close` needs
-nothing from README gap 10's missing file-name grammar. -/
-def close (g : Grain) (now : Day) : Transform := sorry
+/- **`close` is real (2026-09-12, stage 4 step 2).**  The provisional
+`def close (g : Grain) (now : Day) : Transform := sorry` that stood here is
+replaced by `Tm.close` in `TmKernel/Close.lean`, with the signature it declared:
+the grain, the instant, `Transform` as the shape, and `ClosePolicy` read from a
+table indexed by `Grain` rather than passed.  Every goal below that names
+`close` now elaborates against that definition.  `close_spec` is its
+denotation; the README's stage-4 step-2 block records what it does and what it
+scopes out. -/
 
 /-- **Provisional (stage 4).**  §6.3's "runs automatically on the first command
 after the period ends".  Plan §3.3: because `closeTo` targets *now* rather than
@@ -228,6 +222,11 @@ theorem close_leaves_no_live_line_in_a_closed_region
     (i : Id) (e : Entity) (hget : q.val.store.get i = some e) (r : Region)
     (hr : docRegion q.val e.val.live.doc = some r) (hg : r.grain = g) :
     ¬ Closed r now := sorry
+/- Status (2026-09-12, stage 4 step 2): stated over every line, so a `[x]` line
+§6.3 leaves in the archive is a counterexample to any close that succeeds on it;
+the refute-and-rename is owed (step 3).  The narrowed form is proved in
+`Close.lean`: `close_leaves_no_line_it_would_take` and its unpacked reading
+`close_leaves_no_unfinished_line_in_a_closed_region`. -/
 
 /-- **L17 (R\*), stage 4 — expected refutation.**  "`close week ∘ close month`
 commutes."  It should not: a week close files into the month, so running the
@@ -273,6 +272,13 @@ theorem close_never_demotes_a_wall (g : Grain) (now : Day) (p q : WfPlan)
     (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f)
     (hw : e.val.recur ≠ Recur.none ∨ ∃ a b : DT, e.val.shape = Shape.interval a b) :
     f.val = e.val := sorry
+/- Status (2026-09-12, stage 4 step 2): the table carries walls (`walls :=
+.carried`, F4), so a wall still ahead changes `live` and this `f.val = e.val`
+is expected to be refuted (step 3), as is a line whose rank a landing shift
+moves.  Proved beside it in `Close.lean`:
+`close_never_demotes_a_wall_but_may_carry_it` (box, bytes and tombstone kept)
+and `close_carries_a_wall_that_is_still_ahead` (the carry lands in the live
+week). -/
 
 /-- **B1–B3 (P\*), stage 4.**  "A close's measurement is not lost", at the fold
 level.  L15 (`demoteEst_conserves`, `demoteEst_respects_user`) is proved for one
@@ -285,16 +291,17 @@ theorem close_writes_every_estimate_through_demoteEst (g : Grain) (now : Day) (b
     (p q : WfPlan) (h : close g now p = .ok q) (i : Id) (e f : Entity)
     (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f) :
     ∃ (userSet : Bool) (rec : Nat), f.val.line = (demoteEst bm userSet rec e).val.line := sorry
+/- Status (2026-09-12, stage 4 step 2): equates the whole line, so the
+`demoted:` stamp a close appends is a counterexample; the refute-and-rename is
+owed (step 3).  Proved beside it in `Close.lean`:
+`close_rewrites_a_line_only_by_stamping_it`.  Not yet proved, and needed for the
+estimate half: that setting `demoted:` leaves `remainingOf` unchanged. -/
 
-/-- **P\*, stage 4, §6.3's day row.**  A day close stamps `demoted:D07`, a week
-close stamps `W37`, and `Field.Stamp` knows the difference — so this is
-checkable rather than a convention.  Rules out the month review's "≥ 2 stamps"
-cut list counting day stamps as week stamps. -/
-theorem close_day_stamps_a_day_stamp (now : Day) (p q : WfPlan)
-    (h : close day now p = .ok q) (i : Id) (e f : Entity)
-    (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f)
-    (hchanged : f.val.stamps ≠ e.val.stamps) :
-    ∃ n : Nat, f.val.stamps = e.val.stamps ++ [Stamp.day n] := sorry
+/- **`close_day_stamps_a_day_stamp` is discharged (2026-09-12, stage 4 step
+2)** — proved as stated in `Close.lean`, audited in `Check.lean`.  D1 kept the
+stamp `demoted:D<dd>`, and the table's day row names `StampRule.dayOfMonth`;
+`closeStamp_names_the_closed_grain` is the bridge that makes a day row stamping
+`W` a build failure. -/
 
 /-- **B3 (P\*), stage 4 — and it is blocked on README gap 22.**  §6.3's week
 row: "Unfinished children are dropped from the week file (their remaining is

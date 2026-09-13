@@ -1472,3 +1472,76 @@ open Tm
 -- removed; statements and proofs unchanged.
 #print axioms Tm.a_demoted_section_outside_a_comment_is_a_month_section
 #print axioms Tm.a_pinned_section_outside_a_comment_is_a_day_section
+
+-- ===========================================================================
+-- APPENDED 2026-09-12 (stage-4 session).  Stage 4 step 2: `close` is one fold at
+-- three grains.  Close.lean (new module, imported by TmKernel.lean and by
+-- Boundary.lean): the ClosePolicy table and its bridges, the fold, its
+-- denotation `close_spec`, the discharged goal `close_day_stamps_a_day_stamp`,
+-- the narrowed forms beside three goals left for step 3, D1 and the wall carry
+-- as theorems, and the named refusals.  Boundary.lean: `endRank_is_freshRank`
+-- and the loaded-plan witnesses of both directions.
+-- ===========================================================================
+#print axioms Tm.closeStamp_names_the_closed_grain
+#print axioms Tm.closeStamp_month
+#print axioms Tm.close_never_takes_a_settled_line
+#print axioms Tm.closePolicy_takes_the_demoted_record_only_at_month
+#print axioms Tm.closePolicy_demoted_landing_is_in_a_month_file
+#print axioms Tm.closePolicy_copies_only_below_month
+#print axioms Tm.closePolicy_copy_stamps
+#print axioms Tm.closePolicy_move_is_unstamped
+#print axioms Tm.closePolicy_exemptions
+#print axioms Tm.closePolicy_owes
+#print axioms Tm.Core.skel_stamps
+#print axioms Tm.Frame.refl
+#print axioms Tm.Frame.trans
+#print axioms Tm.Site.shiftIn_doc
+#print axioms Tm.wf_shiftIn
+#print axioms Tm.skel_shiftIn
+#print axioms Tm.WfPlan.mapAt_spec
+#print axioms Tm.WfPlan.shiftAt_val
+#print axioms Tm.frame_of_docs
+#print axioms Tm.frame_shiftIn
+#print axioms Tm.landAt_spec
+#print axioms Tm.moveTo_skel
+#print axioms Tm.moveTo_live
+#print axioms Tm.fileE_skel
+#print axioms Tm.closedRegionOf_frame
+#print axioms Tm.closeAct_frame
+#print axioms Tm.findDocIx_frame
+#print axioms Tm.stepSkel_frame
+#print axioms Tm.findDocIx_spec
+#print axioms Tm.closeAct_of_open
+#print axioms Tm.closeOne_spec
+#print axioms Tm.foldlM_closeOne_spec
+#print axioms Tm.closeCands_nodup
+#print axioms Tm.closeAct_of_not_mem_closeCands
+#print axioms Tm.close_spec
+#print axioms Tm.close_skel
+#print axioms Tm.exemptAct_cases
+#print axioms Tm.closeAct_of_exempt
+#print axioms Tm.stepSkel_of_exempt
+#print axioms Tm.skelAfter_doc
+#print axioms Tm.close_leaves_no_line_it_would_take
+#print axioms Tm.close_leaves_no_unfinished_line_in_a_closed_region
+#print axioms Tm.stepSkel_day_stamps
+#print axioms Tm.close_day_stamps_a_day_stamp
+#print axioms Tm.stepSkel_line
+#print axioms Tm.close_rewrites_a_line_only_by_stamping_it
+#print axioms Tm.close_never_demotes_a_wall_but_may_carry_it
+#print axioms Tm.close_files_a_taken_line_into_closeTo
+#print axioms Tm.close_day_files_into_the_week_of_now
+#print axioms Tm.close_carries_a_wall_that_is_still_ahead
+#print axioms Tm.closeOne_refuses_a_missing_target
+#print axioms Tm.closeOne_refuses_a_carry_with_no_live_week
+#print axioms Tm.closeOne_refuses_a_missing_section
+#print axioms Tm.closeOne_refuses_an_ill_formed_post_state
+#print axioms Tm.closeOne_week_refuses_a_standing_tombstone
+#print axioms Tm.close_refuses_what_its_first_step_refuses
+#print axioms Tm.close_without_candidates_is_the_identity
+#print axioms Tm.foldl_max_from
+#print axioms Tm.endRank_is_freshRank
+#print axioms Tm.the_week_close_copies_carries_and_leaves_the_rest
+#print axioms Tm.the_day_close_files_into_the_week_of_now
+#print axioms Tm.the_month_close_moves_each_line_into_its_section
+#print axioms Tm.the_close_refusals_are_named_on_loaded_plans

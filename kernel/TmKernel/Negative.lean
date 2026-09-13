@@ -589,4 +589,36 @@ def emptyAfter : EditVal := .after ⟨[], rfl⟩
    `badValue loc`; here it is `rfl` against `locOk (.named "a b") = true`. -/
 def spacedLoc : WordLoc := ⟨.named "a b".toList, rfl⟩
 
+-- ===========================================================================
+-- APPENDED 2026-09-12 (stage-4 session, step 2): `ClosePolicy` is a table, and a
+-- table is only as good as the check that a corrupted row fails.  Each cheat
+-- below corrupts one row and restates, over the corrupted table, the bridge
+-- Close.lean proves over the real one (`closeStamp_names_the_closed_grain`,
+-- `closePolicy_copies_only_below_month`).  The controls are those theorems,
+-- which compile.  Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 50 — a day close that stamps a week stamp.  Swap the day row's stamp
+   rule for `isoWeek` and the stamp it names is a week's, so the month review's
+   "≥ 2 stamps" cut list would count a day's leftovers as a week's.  `decide`
+   evaluates the corrupted row and proves the equation false. -/
+def dayRowStampsAWeek (g : Grain) : ClosePolicy :=
+  if g = day then { closePolicy g with stamp := .isoWeek } else closePolicy g
+
+theorem dayRowStampsAWeek_names_the_closed_grain :
+    (stampRuleOf (dayRowStampsAWeek day).stamp 0).map Field.Stamp.grain = some day := by
+  decide
+
+/- CHEAT 51 — a month close that leaves a tombstone.  Give the month row the
+   week row's `copy` and it would demote a record a second time, which §6.3's
+   month row does not do and `KErr.alreadyDemoted` refuses; the bridge's
+   statement over the corrupted table is false at `month`, and `decide` says
+   so. -/
+def monthRowCopies (g : Grain) : ClosePolicy :=
+  if g = month then { closePolicy g with disposition := .copy } else closePolicy g
+
+theorem monthRowCopies_copies_only_below_month :
+    ∀ g : Grain, (monthRowCopies g).disposition = .copy → g ≠ month := by
+  decide
+
 end Tm
