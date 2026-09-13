@@ -6598,3 +6598,116 @@ plans**, burn-down **30** (no goal touched); `cargo test --workspace` **1001 pas
 failed / 0 ignored across 66 binaries** (+1, the stray-tombstone CLI test); FFI suite
 **68** (62 kernel + 6 corpus, unchanged).  Gaps run to 67 (new gaps start at 68); cheats
 to 55 (new cheats start at 56).
+
+<!-- ===================================================================
+     APPENDED 2026-09-13 (stage-4 final).  Step 1 is documentation only: the owner's decisions D5–D8 recorded, and B3's child-fold semantics recorded as spec-settled.  No Lean statement, predicate or Rust behaviour changes; takes no gap and no cheat number.
+     Supersedes, by name: stage 4's closing block's "the owner decides before stage 5 whether to stop proving relational laws" (answered, D5); gap 22's "The choice — derive the field, or demote `parentsTotal` to a report the way `check.rs` has it — is a decision about the plan tier and is not taken here" (taken, D6); gap 55's (2) "exempting `# Demoted` placements from the rule is a change to what a plan is, for the owner" and (4) "stage 5 for the past-due half; an owner decision for the rest" (both halves decided, D7 and D8); stage-4 hardening step 3's defect-1 sentence "The not-yet-due half of gap 55 (a dated record the month rule refuses) is an owner decision" (decided, D8); stage-4 step 6's changed-behaviour rows 9 and 10, as statements of what stage 4 will keep (they are superseded when D6–D7 and B3 land, and each landing records its own row).
+     =================================================================== -->
+
+## Stage 4 final, 2026-09-13: the owner overrides the proof brake, turns parents on, and routes dated work
+
+Baseline re-measured at `c9ef6f0` before this block (tree clean), every command under
+`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`: `check.sh` **7/7** —
+axiom audit **1634 theorems**, corpus **33/37 files and 4/5 whole plans**, burn-down
+**30** (stage 4: one goal, B3); `cargo test --workspace` **1001 passed / 0 failed
+across 66 binaries**, `tm/tests/cli_latency.rs` included; FFI suite **68**.  The
+proof-to-definition ratio, by the stage-4 script (`proof_ratio.py
+kernel/TmKernel/TmKernel`): **4.52 : 1** over the library (15,876 : 3,512), 7.07 : 1 in
+`Close.lean`, 5.68 : 1 in `Report.lean`.
+
+**The owner's decisions, taken 2026-09-13 after a written explanation of each
+trade-off.**  Settled in the AGENTS §4 sense: build on them, and changing one needs
+the owner again.  D1–D4 are in the stage-4 opening block above.
+
+- **D5 — the §9.1 proof brake is overridden.**  The ratio trigger fired at stage 4's
+  close (4.49 : 1 then, **4.52 : 1** now, limit 3 : 1) and its action — "stop proving
+  relational laws; keep decidable checkers plus the existing proptests" — is **not
+  taken**.  **What it settles.**  (i) Relational (two-run) laws keep being proved,
+  L24 and L25 included when stage 6 arrives (AGENTS §10.5 q6, answered).  (ii) An
+  existing two-run theorem a change breaks is **re-proved** in the step that breaks
+  it — `close_is_idempotent` (L16), `close_keeps_source_order`, the L19 theorems
+  (`autoClose_is_each_grain_once`, `autoClose_catches_up_in_one_step`, and
+  `autoClose_strands_no_unfinished_line` beside L19c's refutation
+  `autoClose_leaves_lines_in_periods_it_passes`), the report agreement
+  (`closeReport_agrees_with_close_stamping_or_merging`),
+  `move_has_no_inverse_command`, and the commute refutations
+  (`close_week_and_close_month_do_not_commute`, `lifecycle_commands_do_not_commute`).
+  None is ever downgraded to a property test or deleted.  (iii) A step whose re-proof
+  does not close **is not done**: it says so and leaves the tree green at the previous
+  commit rather than committing a weaker statement.  **What it costs.**  The ratio
+  keeps rising (every landing below re-proves at least `close_spec`, L16 and the
+  report agreement), and the schedule absorbs it: §9.1's row stays in AGENTS as a rule
+  a later owner may re-impose, marked overridden, not deleted.  A step can now end
+  unfinished for want of a proof where it could previously have ended with a
+  property test.
+- **D6 — parents are on, strictly** (gap 22, AGENTS §10.5 q3).  `@parent` is read
+  from the line and derived exactly as the other fields are: a view over the token
+  vector, not a stored slot (AGENTS §5.3's one-reader rule), so `Core`'s last stored
+  field goes.  A link to a missing id **refuses the whole tree by name**
+  (`danglingParent`); a parent cycle refuses (`parentCycle`) — `parentsTotal` and
+  `parentsAcyclic` stay load preconditions inside `planWf`.  **What it settles.**
+  Gap 22's choice (derive, not demote to a report); §3.2's `effectiveShape` prep rule,
+  `effectiveCi` and `rootPrio` can fire on what the boundary builds; B3 can fire.
+  **What it costs.**  (i) It is stricter than the old Rust, whose `tm check` reports
+  an `@ghost` parent while every other command still runs; a tree with one dangling
+  `@O2` now refuses every kernel-backed command until the line is fixed — the owner
+  chose this knowingly.  (ii) The corpus harness must load **whole trees only**
+  (accepted by the owner): a `week/*.md` or `backlog.md` naming a month outcome
+  cannot load alone, so check 6's per-file count stops meaning what it meant and is
+  re-based on whole plans in the step that lands D6.  (iii) `planWf` gains real work
+  over parents, so its `@[csimp]` twin in `Fast.lean` and the latency acceptance test
+  must stay green through the change.  (iv) Every theorem stated over
+  `Core.parent = none` or over `parentStep` on stored data is re-read against the
+  derived field.
+- **D7 — past-due dated tasks at a week close go to `backlog.md # Overdue`, now.**
+  Spec §6.3's week row: "Dated items past due with `persist` → moved to
+  `backlog.md#Overdue` instead"; §5.3: `Point` and `Interval` default to `persist`,
+  and an overdue item stays `[ ]` until re-dated or dropped.  Pulled forward from
+  stage 5 so that `tm init --example`'s `^d1` (`due:2026-09-11T23:59`, in 2026-W37)
+  stops refusing the automatic close — the one blocker isolated in stage-4 hardening
+  step 3's defect 1.  **What it settles.**  Gap 55's past-due half, and the week row's
+  `overdue := .stage5OnMiss` becomes a real disposition: a *move* (the line keeps its
+  box, no stamp, no tombstone), not a demotion.  **What it costs.**  (i) A fourth
+  disposition in `close`, with a backlog landing, so `close_spec`, L16, the L19
+  theorems, `close_keeps_source_order` and the report agreement are restated and
+  re-proved (D5).  (ii) `due:` must be evaluated against `now` in the close, a piece
+  of stage 5 taken early; `on-miss:expire` / `next` stay stage 5's.  (iii) A tree
+  whose `backlog.md` has no `# Overdue` section meets gap 56 (the kernel cannot
+  create the file or the section a close needs) instead of `badHorizon`.  Orientation
+  is not a cost: `horizonPrecedes (some _) none = true` (AGENTS §8.2's backlog trap).
+- **D8 — a not-yet-due dated task unfinished at a week close is demoted like any
+  unfinished task, and keeps its `due:`.**  `[-]` in the week file, a copy to
+  `month/<current> # Demoted` with the stamp.  The kernel's shape rule "a month item is
+  an outcome and carries no date" (`shapeWfFor`'s month clause, `Plan.lean`) applies
+  to **outcomes only**, not to `# Demoted` records.  **Why this is not a silent
+  weakening:** it is a deliberate owner change to what a plan is, recorded here; spec
+  §6.3 describes `# Demoted` records as work items, and the old Rust's `check.rs` has
+  no date rule for month items at all.  **What it settles.**  Gap 55's other half.
+  **What it costs.**  (i) `shapesWf`'s month clause narrows to placements outside
+  `# Demoted`, so `month_items_are_outcomes` is retired and restated under a name that
+  says "outside `# Demoted`", with a witness that a dated `# Demoted` record loads.
+  (ii) The month close carries a dated record forward with its `due:`; a record that
+  falls past due inside a month is not routed by D7 (a month row has no overdue
+  clause) and waits for stage 5.
+
+**B3's child fold — spec-settled, not a decision.**  Spec §6.4:
+"`remaining(item)`: `est` if set, else `est_original`, else Σ over children."  A
+parent's own estimate therefore already covers its decomposition.  The old Rust's
+documented choice (`tm-core/src/horizon.rs`, module doc, "Folding children", applied
+through `horizon::demote_est`'s `folded` argument): a demoted parent carries
+`max(remaining(parent), Σ own remaining of the children dropped with it)`, "so a week
+close never removes work from the tree"; each dropped line counts once, and a child
+that stays (an overdue child filed in the backlog, a child in another file) is never
+folded in.  `Goals.lean`'s B3, `close_week_folds_a_dropped_child_into_its_parent`,
+states `remaining parent + remaining child ≤ remaining parent afterwards` — additive,
+which **double-counts** under §6.4 (a `6b` parent with a dropped `1b` child carries
+`6b`, not `7b`).  So B3 is expected to be **refuted and renamed**, with the max law
+proved beside it; its doc comment says so from this commit, its statement is
+unchanged.
+
+**Nothing moved.**  Re-measured after this block, every command under the 40 GB cap:
+`check.sh` **7/7** — axiom audit **1634 theorems**, corpus **33/37 files and 4/5 whole
+plans**, burn-down **30** (B3's statement untouched; only its doc comment changed);
+`cargo test --workspace` **1001 passed / 0 failed / 0 ignored across 66 binaries**,
+`cli_latency.rs` green; FFI suite **68**.  Gaps run to 67 (new gaps start at 68);
+cheats to 55 (new cheats start at 56).

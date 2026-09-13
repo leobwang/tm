@@ -502,6 +502,10 @@ that needs the user's assent, not an agent's judgment.
 | Six `Status` cases, not five | a lone `[-]` is a *state*: `close month` carries a `# Demoted` copy forward without touching its partner, which may be in a file the host never hands over |
 | The week→month tie-break is `monthOfIsoWeek` (the civil month of the week's Thursday) | total, and a function of the week alone; "the month of today" is refuted by `monthOfWeekByToday_is_not_stable` |
 | `close day` targets the week containing *now* (`closeTo`), not the week the closed day belonged to; the stamp stays `demoted:D<dd>` | the owner drove stale trees (D1, 2026-09-12): the closed day's own week double-stamped a skipped weekend off Monday's plan, deleted a child whose parent was in the closing week, and stranded a close more than 16 days late in a sealed file |
+| **D5** (2026-09-13): §9.1's proof : definition brake is overridden — relational (two-run) laws keep being proved, L24/L25 included; a two-run theorem a change breaks is re-proved in that step, never downgraded to a property test or deleted, and a step whose re-proof will not close is not done | the owner priced the ratio (4.52 : 1 at `c9ef6f0`) against losing the laws that caught stage 4's defects; README "Stage 4 final" |
+| **D6** (2026-09-13): parents are on, strictly — `@parent` is a view over the token vector, not a stored slot; a dangling link refuses the whole tree (`danglingParent`), a cycle refuses (`parentCycle`); the corpus harness loads whole trees only | one reader per field (§5.3), and a refusal by name over the old Rust's check-only `@ghost`; stricter than the Rust, chosen knowingly (gap 22, §10.5 q3) |
+| **D7** (2026-09-13): at a week close a past-due dated `persist` line (a point's or interval's default) moves to `backlog.md # Overdue`, staying `[ ]` — pulled forward from stage 5 | spec §6.3's week row and §5.3; §4.3's own example week (`^d1`) otherwise refuses its automatic close (gap 55) |
+| **D8** (2026-09-13): a not-yet-due dated line unfinished at a week close is demoted like any other and keeps its `due:`; the month rule "an outcome carries no date" covers outcomes, not `# Demoted` records — a deliberate owner narrowing of `shapesWf` | spec §6.3 calls `# Demoted` records work items, and fork-point `check.rs` has no date rule for month items (gap 55) |
 | Behaviour changes are recorded next to the rule they replace, with a theorem separating them — never taken silently | *"this is a bug" vs "this is an undocumented deliberate choice" is a judgment reading cannot settle* |
 
 ---
@@ -1546,6 +1550,18 @@ sweep yet (`state.closed.swept`, which the fork-point binary drops on write).
 to stop proving relational laws. Method, script and every figure: README
 "Stage 4 closed".
 
+**Status after the owner's decisions (2026-09-13, D5–D8; README "Stage 4 final").**
+Stage 4 is reopened for one goal and one gap. **B3 is unblocked:** D6 turns parents
+on, so `close_week_folds_a_dropped_child_into_its_parent` can fire; under spec §6.4
+its additive statement double-counts and is expected to be refuted and renamed, with
+fork-point `horizon.rs`'s `max(remaining(parent), Σ dropped children's own
+remaining)` proved beside it. **Gap 55's two halves are decided:** the past-due half
+by D7 (a move to `backlog.md # Overdue`, pulled forward from stage 5, the week row's
+`overdue := .stage5OnMiss` made real), the not-yet-due half by D8 (demoted like any
+unfinished line, `due:` kept; `shapesWf`'s month rule covers outcomes only). D5
+means each landing re-proves the two-run laws it breaks (L16, the L19 theorems,
+`close_keeps_source_order`, the report agreement) in the same step.
+
 **Scope, concretely.**
 
 1. **One fold, three grains.** Fold over
@@ -2066,11 +2082,19 @@ Named in advance so that stopping is a decision and not a capitulation.
 
 | trigger | fires in | action |
 |---|---|---|
-| Proof : definition exceeds **3 : 1**, measured at the end of stage 4 | 4 → 5 | stop proving relational laws; keep decidable checkers plus the existing proptests, and **say so in the README** rather than letting the ratio quietly eat the schedule |
+| Proof : definition exceeds **3 : 1**, measured at the end of stage 4 — **FIRED 2026-09-13, OVERRIDDEN by the owner (D5); see below** | 4 → 5 | stop proving relational laws; keep decidable checkers plus the existing proptests, and **say so in the README** rather than letting the ratio quietly eat the schedule |
 | Any needed proof requires **Mathlib** | any | **stop and re-price at that moment.** 9.7 GB on disk, a 118 MB binary, `Mathlib:static` on every linking machine, and — decisively — Mathlib chooses your Lean version, release candidates included. This is not a decision an agent takes |
 | A kernel call in the TUI exceeds **5 ms at 500 items** | 6 | try the session handle (`lean_mark_mt` + a mutex, UI thread only); if that is not enough, the runtime kernel is the wrong shape for the TUI |
 | Two consecutive Lean upgrades each cost more than a day of proof repair | any | freeze the toolchain and treat the kernel as a fixed artifact, or fall back to a design-time model |
 | After stage 3: a clean exhaustive **depth-3** sweep, plus 60 days of use with no new defect in the covered class | 3 | **the bug class is gone.** Stages 5–6 then buy uniformity, not soundness. *"That is a legitimate reason to stop, and it should be stated out loud if it happens"* |
+
+**The first row fired at stage 4's close (2026-09-13), and the owner OVERRODE it
+the same day (D5, §4):** relational (two-run) laws keep being proved, L24/L25
+included, and a two-run theorem a change breaks is re-proved, never downgraded or
+deleted. Re-measured at `c9ef6f0`: 4.52 : 1. The row stays, because a later owner
+may re-impose it; the decision and its cost are in README "Stage 4 final,
+2026-09-13". The paragraph that follows is its record as it stood before the
+override.
 
 **The first row fired at stage 4's close (2026-09-13):** 4.49 : 1 over the
 library, 6.43 : 1 in `Close.lean`, 5.63 : 1 in `Report.lean`, measured by a
@@ -2269,10 +2293,10 @@ they are settled, and changing one needs the owner again.
 |---|---|---|---|
 | 1 | The two close behaviour changes — and by **constructing a stale tree and closing it**, not by reading | before stage 4 | **First half ANSWERED 2026-09-12 (D1):** `close day` targets the week containing *now* — the kernel's `closeTo` — decided after driving stale trees with the restored binary (skipping a weekend double-stamped leftovers onto the month cut list and dropped them off Monday's plan; an item whose parent was in the closing week was deleted, its minutes silently absorbed; a day closed more than 16 days late stranded work in a sealed file). Package: the stamp stays `demoted:D<dd>`; `AUTO_CLOSE_CATCHUP = 16` collapses to one step per grain. Evidence and mechanism: `kernel/README.md`'s stage-4 block (D1). **Second half WITHDRAWN:** the week→month "behaviour change" does not exist — `horizon::close_week` already computes `closeTo week now` (checked by `decide` on four dates; `rfl`-equal to `monthOfWeekByToday`) (§10.2's row; §8.2's trap). The sites were repaired at stage 4 step 1; the residual "which month file holds a week's `# Demoted` record" is README gap 52, **deferred** out of stage 4 (no consumer) |
 | 2 | `Id`'s shape — the recorded resolution is weaken the spec, not tighten the data | stage 3 | **ANSWERED 2026-09-12 (D2):** ids stay digits (`freshId`'s `^9`, `^10`); spec §3.1's "4 chars of `[a-z0-9]`" width sentence is weakened to match. Closes gap 13. *The spec edit landed at stage 4's closing docs commit* (§3.1's `Item` listing, §17.2's "Ids:" bullet); the host's old generator still mints base-32 ids on `tm add`'s carve-outs and `--fix-ids` (README gap 61) |
-| 3 | `parent`: derive the field and demote `parentsTotal` to a report, or keep it stored and have no hierarchy (gap 22) | **before stage 5, blocking** | **open — the one question in this table that blocks stage 5.** B3 (`close_week_folds_a_dropped_child_into_its_parent`) stands in `Goals.lean` on it at stage 4's close, and §6.3's child-folding clause is scoped out of the close on it (`children := .gap22Parent`) |
+| 3 | `parent`: derive the field and demote `parentsTotal` to a report, or keep it stored and have no hierarchy (gap 22) | **before stage 5, blocking** | **ANSWERED 2026-09-13 (D6):** derive it, strictly — `@parent` is a view over the token vector, `parentsTotal` and `parentsAcyclic` stay load preconditions (`danglingParent`, `parentCycle` refuse the whole tree), and the corpus harness loads whole trees only; B3 is unblocked (README "Stage 4 final"). *As it stood at stage 4's close:* **open — the one question in this table that blocks stage 5.** B3 (`close_week_folds_a_dropped_child_into_its_parent`) stands in `Goals.lean` on it at stage 4's close, and §6.3's child-folding clause is scoped out of the close on it (`children := .gap22Parent`) |
 | 4 | Which side replays the log | before stage 5 | **open** — and `move_has_no_inverse_command` makes replay the only correct `tm undo` |
 | 5 | R7: where the `p_lounge` capacity mixture rounds (gap 26) | stage 5, consumed by 6 | **open** |
-| 6 | L24 / L25: prove, or keep the 882-line proptest and say so | **before stage 6 starts** | **open**; the proptest is restored and runs (`tm-core/tests/planner_invariants.rs`) |
+| 6 | L24 / L25: prove, or keep the 882-line proptest and say so | **before stage 6 starts** | **ANSWERED 2026-09-13 (D5), by the ratio decision:** prove them; the proptest stays beside the proofs, never in place of them. *As it stood at stage 4's close:* **open**; the proptest is restored and runs (`tm-core/tests/planner_invariants.rs`) |
 | 7 | Lifecycle commutation (R7 in the law list) — L27 surfaces it and does not answer it | stage 6 | **open** — L27 is refuted (stage 4 step 3) by a demote/readopt precondition pair, which does not bear on whether pairs that both succeed should commute |
 | 8 | What `report` carries, and therefore its shape (§8.2). Nothing in the kernel names it today | before stage 4 writes one | **ANSWERED 2026-09-12 (D3):** a per-item list — id, disposition, destination, stamp, minutes as integer numerator/denominator. Not counts only (the month review would re-derive per-item history from the files, a second reader of one fact), and not stage 6's full diagnostics surface yet. **Landed** at `d7487b2` (`Report.lean`, `ok.report.closes`) and read by the shipped binary since `5557713` |
 | 9 | Whether the kernel should refuse a `[-]` outside a week file or `month/…# Demoted`, as `tree.rs` does — a behaviour change (gap 31, §8.1) | stage 3 | **open**, not taken in stage 3 or 4. It came due when `demote` got a section target (`10bae51`), and the kernel now gives two answers to one question — the close refuses `noSection`, the verb falls back to the end of the file — recorded as README gap 60 until the owner answers |
@@ -2288,3 +2312,10 @@ to the human, in the order they block: **q3** (blocks stage 5, and B3), the §9.
 decision (before stage 5), **q4** (before stage 5, not blocking), **q5** (stage
 5), **q6** (before stage 6), **q7** (stage 6), and **q9** (gap 60) — plus the
 30-minute drives of the stage-3 and stage-4 binaries (§5.13).
+
+**Update 2026-09-13 (D5–D8, README "Stage 4 final").** q3 is answered (D6) and the
+§9.1 decision is taken (D5: keep proving), which also answers q6. Neither blocks
+stage 5 any longer. Gap 55's two halves are decided (D7: past-due dated lines to
+`backlog.md # Overdue`; D8: not-yet-due ones demoted with their `due:`). Still owed
+to the human: **q4** (before stage 5, not blocking), **q5** (stage 5), **q7**
+(stage 6), **q9** (gap 60), and the §5.13 drives.

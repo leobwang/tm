@@ -277,7 +277,19 @@ reading it off the line today would make every `week/*.md` in the corpus stop
 loading on `parentsTotal`.  So this goal cannot *fire* until gap 22's decision
 (derive the field, or demote `parentsTotal` to a report the way `check.rs` has
 it) is taken.  It is stated now so the decision is visibly a precondition of
-stage 4 and not a surprise inside it. -/
+stage 4 and not a surprise inside it.
+
+**Unblocked 2026-09-13 (owner decision D6: parents are on, derived from the
+line), and this statement is expected to be REFUTED.**  Spec §6.4 defines
+`remaining(item)` as its own `est` if set, else `est_original`, else the sum over
+its children, so a parent's own estimate already covers its decomposition.  The
+additive conclusion below (`remaining parent + remaining child ≤ remaining parent
+afterwards`) therefore double-counts: a `6b` parent with a dropped `1b` child
+carries `6b`, not `7b`.  The spec-settled law is fork-point `horizon.rs`'s
+module-doc choice "Folding children" (applied by `horizon::demote_est`): the parent
+carries `max(remaining(parent), Σ own remaining of the children dropped with it)`.
+The repair is refute-and-rename (AGENTS §3.2), with the max law proved beside the
+negation; README "Stage 4 final, 2026-09-13".  The statement is unchanged here. -/
 theorem close_week_folds_a_dropped_child_into_its_parent (now : Day) (bm : Nat)
     (p q : WfPlan) (h : close week now p = .ok q) (i j : Id) (ec ep fp fc : Entity)
     (hchild : parentStep p.val j = some i)
