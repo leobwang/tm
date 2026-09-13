@@ -523,15 +523,15 @@ fn an_upgraded_tree_whose_stamps_are_current_is_swept_once() {
 // ---------------------------------------------------------------------------
 
 /// §4.3's own example tree, the Monday after its week: the kernel's week
-/// close refuses it. Two of its lines are refusals — `^m2` already has a
-/// `[-]` record in September's `# Demoted` (`alreadyDemoted`, gap 53) and
-/// `^d1 due:` is an open dated line whose record a month's `# Demoted` may not
-/// hold (`badHorizon`, gap 55) — and a close names the first in source order,
-/// `^m2`, three lines above `^d1`. (Until kernel/README.md gap 59 closed the
-/// fold ran bottom-up and named `^d1`.) The explicit verb exits 1 with the
-/// refusal's name and writes nothing; the automatic close ahead of an
-/// unrelated verb prints the same name and lets the verb run, stamping
-/// nothing closed so it is tried again.
+/// close refuses it. One of its lines is a refusal — `^d1 due:` is an open
+/// dated line whose record a month's `# Demoted` may not hold (`badHorizon`,
+/// kernel/README.md gap 55). (Until gap 53 closed, `^m2` — which already has a
+/// `[-]` record in September's `# Demoted` — was a second refusal three lines
+/// above it, `alreadyDemoted`, and the close named that one; `^m2` now merges
+/// into its record, `the_example_week_closes_a_week_after_init_merging_m2_into_its_record`.)
+/// The explicit verb exits 1 with the refusal's name and writes nothing; the
+/// automatic close ahead of an unrelated verb prints the same name and lets
+/// the verb run, stamping nothing closed so it is tried again.
 #[test]
 fn a_refused_close_is_named_and_writes_nothing() {
     const AT: &str = "2026-09-14T09:00:00-05:00";
@@ -541,8 +541,8 @@ fn a_refused_close_is_named_and_writes_nothing() {
 
     let out = tm.run_at(AT, &["close", "week"]);
     assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
-    assert!(out.stderr.contains("alreadyDemoted"), "{}", out.stderr);
-    assert!(out.stderr.contains("gap 53"), "{}", out.stderr);
+    assert!(out.stderr.contains("badHorizon"), "{}", out.stderr);
+    assert!(out.stderr.contains("gap 55"), "{}", out.stderr);
     assert_eq!(tm.read("week/2026-W37.md"), week);
     assert_eq!(tm.read("month/2026-09.md"), month);
     assert!(!tm.exists("week/2026-W38.md"));
@@ -551,16 +551,72 @@ fn a_refused_close_is_named_and_writes_nothing() {
     let json = tm.run_at(AT, &["--json", "close", "week"]);
     assert_eq!(json.code, 1);
     let doc: serde_json::Value = serde_json::from_str(json.stderr.trim()).expect("error document");
-    assert_eq!(doc["detail"]["refusal"], "alreadyDemoted", "{doc}");
+    assert_eq!(doc["detail"]["refusal"], "badHorizon", "{doc}");
 
     let out = tm.run_at(AT, &["now"]);
     assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
     assert!(out.stderr.contains("automatic close"), "{}", out.stderr);
-    assert!(out.stderr.contains("alreadyDemoted"), "{}", out.stderr);
+    assert!(out.stderr.contains("badHorizon"), "{}", out.stderr);
     assert_eq!(tm.read("week/2026-W37.md"), week);
     assert_eq!(tm.read("month/2026-09.md"), month);
     assert!(tm.state()["closed"]["week"].is_null(), "{}", tm.state());
     assert!(!tm.exists("week/2026-W38.md"));
+}
+
+/// kernel/README.md gap 53, closed, through the binary: §4.3's own example
+/// week, a week after `tm init --example`, closes. `^m2` is §4.3's pre-close
+/// pair — the `[ ]` milestone beside its `[-]` record in September's
+/// `# Demoted` — and the week close used to refuse it (`alreadyDemoted`) and
+/// retry on every command. It now merges, as fork-point `demote_one` did: the
+/// week line stays behind as `[-]` in its own bytes, and September keeps
+/// **one** `^m2` record, `[-]`, stamped `W37` once (the record already said
+/// `W37`; the merge writes each stamp once), with the live line's own `6b` —
+/// the line owns an estimate, so the record's `est:3b` is not a floor over it
+/// (`ownsEstimate`, L15's user exception). `^d1` is finished before its week
+/// ends: an open dated line in an ended week is gap 55's refusal, not this
+/// gap's. The automatic close runs once and prints no refusal, `tm check` is
+/// clean, and the next command does not call the kernel (the swept gate: a
+/// fault probe set for it is never reached).
+#[test]
+fn the_example_week_closes_a_week_after_init_merging_m2_into_its_record() {
+    const AT: &str = "2026-09-14T09:00:00-05:00";
+    let tm = Tm::empty();
+    let init = tm.run_at("2026-09-07T09:00:00-05:00", &["init", "--example"]);
+    assert_eq!(init.code, 0, "{}{}", init.stdout, init.stderr);
+    tm.ok_at("2026-09-11T10:00:00-05:00", &["done", "^d1"]);
+    let before = lines(&md_files(&tm));
+    assert_eq!(before["m2"].len(), 2, "{:?}", before["m2"]);
+
+    let out = tm.ok_at(AT, &["now"]);
+    assert!(!out.stderr.contains("refused"), "{}", out.stderr);
+    let files = md_files(&tm);
+    let after = lines(&files);
+    let m2: Vec<(&str, &str)> = after["m2"].iter().map(|l| (l.path.as_str(), l.text.as_str())).collect();
+    assert_eq!(
+        m2,
+        vec![
+            ("month/2026-09.md", "- [-] 4 6b Rollback path passes tests   @O2 demoted:W37 ^m2"),
+            ("week/2026-W37.md", "- [-] 4 6b Rollback path passes tests   @O2 ^m2"),
+        ]
+    );
+    assert_eq!(files["month/2026-09.md"].matches("^m2").count(), 1, "{}", files["month/2026-09.md"]);
+    assert_eq!(after["m2"][0].stamps, vec!["W37".to_string()]);
+    assert_eq!(
+        events(&tm).iter().filter(|(ev, id)| ev == "demote" && id == "m2").count(),
+        1,
+        "{:?}",
+        events(&tm)
+    );
+    let state = tm.state();
+    assert_eq!(state["closed"]["week"], "2026-W37", "{state}");
+    assert_eq!(state["closed"]["swept"], true, "{state}");
+    tm.ok_at(AT, &["check"]);
+
+    // Closed and swept: the next command skips the kernel.
+    let out = tm.run_env_at(AT, &[("TM_KERNEL_FAULT_PROBE", "1")], &["now"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(!out.stderr.contains("kernel fault"), "{}", out.stderr);
+    assert_eq!(md_files(&tm), files);
 }
 
 /// Gap 56's host half: the kernel cannot create a file or a section, so a

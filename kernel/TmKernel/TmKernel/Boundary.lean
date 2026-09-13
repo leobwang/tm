@@ -1368,7 +1368,7 @@ def applyCmd (c : ReqCmd) (p : WfPlan) : Except KErr WfPlan :=
   | .demote i d st =>
     match resolveDest p.val d with
     | .error k => .error k
-    | .ok dd   => landAt p dd.ix (demoteSpot p.val dd.ix) i (fun t e => demote t st e)
+    | .ok dd   => landAt p dd.ix (demoteSpot p.val dd.ix) i (fun t e => refile t st e)
   | .readopt i d    =>
     match resolveDest p.val d with
     | .error k => .error k
@@ -3770,7 +3770,7 @@ theorem move_has_no_inverse_command :
           rw [hdocs]
         rw [hnone] at hcon
         have h := hback i' _ hcon
-        have hev := demote_roundtrips _ _ _ _ h
+        have hev := refile_roundtrips _ _ _ _ h
         have hae : e.val.archive = some ⟨e1.val.live, e1.val.line⟩ := by rw [hev]
         rw [har] at hae
         simp at hae
@@ -4536,15 +4536,16 @@ set_option maxRecDepth 40000 in
 month file cannot hold (§4.3: month items are outcomes, shape `none`) is
 `badHorizon` — the post-state re-check; a week close with no month file is
 `noTarget`, and so is one with a wall to carry and no live week; a month file
-with no `# Demoted` is `noSection`; and §4.3's pre-close pair is
-`alreadyDemoted` (README gap 53).  None of them is a close that silently skipped
-a line. -/
+with no `# Demoted` is `noSection`.  None of them is a close that silently skipped
+a line.  (§4.3's pre-close pair was a fifth conjunct, `alreadyDemoted`, until
+README gap 53 closed: it now closes, merged —
+`the_week_close_merges_each_standing_record` — and no close refuses
+`alreadyDemoted`, `close_never_refuses_alreadyDemoted`.) -/
 theorem the_close_refusals_are_named_on_loaded_plans :
     closeRefusal week closeDatedWitness = some .badHorizon ∧
       closeRefusal week closeNoMonthWitness = some .noTarget ∧
       closeRefusal week closeNoLiveWeekWitness = some .noTarget ∧
-      closeRefusal week closeNoDemotedWitness = some .noSection ∧
-      closeRefusal week closePreClosePairWitness = some .alreadyDemoted := by
+      closeRefusal week closeNoDemotedWitness = some .noSection := by
   decide
 
 /-! ## L17, refuted: `close week` and `close month` do not commute (stage-4 step 3)
@@ -5137,8 +5138,9 @@ Monday 2026-09-07).  One witness, three sightings:
 The narrowed laws that do hold sit beside each goal's old statement in
 `Close.lean`: `close_leaves_no_line_it_would_take`,
 `close_never_demotes_a_wall_but_may_carry_it`,
-`close_rewrites_a_line_only_by_stamping_it` and
-`close_keeps_every_remaining_estimate`.  Probed under an 8 GB cap first (AGENTS
+`close_rewrites_a_line_only_by_stamping_or_merging_it` and
+`close_reads_every_remaining_estimate_through_demoteEst` (the last two restated at
+README gap 53).  Probed under an 8 GB cap first (AGENTS
 §5.10a): the three observations decide in about 4 s at a 1.3 GB peak, imports
 included. -/
 
@@ -5285,8 +5287,8 @@ quantifier.  It equates the whole line, and §6.3's `demoted:` stamp is not
 `demoteEst`'s to write: `^m2`'s stamped record is neither its old line
 (`userSet = true`) nor any line with an `est:` key (`userSet = false`, by
 `hasEst_setEst`), at a 50-minute block.  What holds is
-`close_rewrites_a_line_only_by_stamping_it` and, for the estimate itself,
-`close_keeps_every_remaining_estimate` (Close.lean). -/
+`close_rewrites_a_line_only_by_stamping_or_merging_it` and, for the estimate itself,
+`close_reads_every_remaining_estimate_through_demoteEst` (Close.lean). -/
 theorem close_writes_a_line_demoteEst_does_not :
     ¬ ∀ (g : Grain) (now : Day) (bm : Nat) (p q : WfPlan), close g now p = .ok q →
       ∀ (i : Id) (e f : Entity), p.val.store.get i = some e → q.val.store.get i = some f →
@@ -5426,19 +5428,35 @@ theorem the_week_close_reports_in_source_order :
 `applyCmd (.demote …)` now lands through `landAt` at `demoteSpot` — the week
 close's `Landing.demotedSection` spot, with the close's shift — instead of at
 `freshRank`.  Where no shift happens the verb is exactly the stage-3 command
-(`demote_verb_is_cmdDemote_at_freshRank_without_a_shift`), so every law about
+(`demote_verb_is_cmdDemote_at_freshRank_without_a_shift_or_a_record`, which since
+README gap 53 also asks that the item have no standing record), so every law about
 `cmdDemote` at `freshRank` still describes it there; where the month's `# Demoted`
 is followed by another section the record now lands inside it.  The witness
 below decides two demotes landing in the order they ran; that is a sighting, not
 a law — no theorem here quantifies over command sequences.  Probed under an 8 GB
 cap first (AGENTS §5.10a). -/
 
-/-- Where no shift happens, the verb is the stage-3 command at `freshRank`. -/
-theorem demote_verb_is_cmdDemote_at_freshRank_without_a_shift (p : WfPlan) (i : Id) (n : Nat)
-    (st : Field.Stamp) (dd : Dest p.val) (hrd : resolveDest p.val n = .ok dd)
-    (h : demoteSpot p.val dd.ix = none) :
+theorem WfPlan.mapAt_congr {p : WfPlan} {i : Id} {F G : Entity → Except KErr Entity}
+    (h : ∀ e, p.val.store.get i = some e → F e = G e) : p.mapAt i F = p.mapAt i G := by
+  unfold WfPlan.mapAt
+  split
+  · rfl
+  · rename_i e he
+    rw [h e he]
+
+/-- Where no shift happens and the item has no standing record, the verb is the
+stage-3 command at `freshRank`.  (Restates
+`demote_verb_is_cmdDemote_at_freshRank_without_a_shift`: since README gap 53 the
+verb's transform is `refile`, which merges an item that has a `# Demoted` record
+where `cmdDemote`'s `demote` refuses it, so the two agree only on items with
+none — `refile_of_no_record`.) -/
+theorem demote_verb_is_cmdDemote_at_freshRank_without_a_shift_or_a_record (p : WfPlan) (i : Id)
+    (n : Nat) (st : Field.Stamp) (dd : Dest p.val) (hrd : resolveDest p.val n = .ok dd)
+    (h : demoteSpot p.val dd.ix = none)
+    (hrec : ∀ e, p.val.store.get i = some e → e.val.archive = none) :
     applyCmd (.demote i n st) p = cmdDemote i (freshRank p.val dd.ix) st p dd := by
   simp only [applyCmd, hrd, h, landAt, cmdDemote, Dest.site, endRank_is_freshRank]
+  exact WfPlan.mapAt_congr (fun e he => refile_of_no_record _ _ e (hrec e he))
 
 /-- Each file's lines after running `cs` on a loaded request, if both succeed. -/
 def cmdsFileLines (cs : List ReqCmd) (docs : List ReqDoc) : Option (List (List (List Char))) :=
@@ -5483,5 +5501,181 @@ theorem the_demote_verb_lands_at_the_end_of_a_month_without_demoted :
       [["# Tasks".toList, "- [-] 2 1b Draft the outline ^m1".toList],
        ["# Outcomes".toList, "- [-] 2 1b Draft the outline demoted:W37 ^m1".toList]] := by
   decide
+
+/-! ## Gap 53: §4.3's pre-close pair closes, merged (stage-4 hardening step 2)
+
+Until this step §4.3's own example week refused its week close: a `[ ]` line in the
+week beside its `[-]` record under the month's `# Demoted` is one item with an open
+live line and a standing tombstone, and the week row's `demote` answered
+`alreadyDemoted`.  The copy is `refile` now (Cmd.lean), fork-point `demote_one`'s
+merge with L15's floor, and the verb runs the same transform.  One witness, three
+items, closed at Monday 2026-09-07:
+
+* `^m2` owns an estimate (`6b`): its record keeps the line's bytes with the stamps
+  merged — the record's `W37`, then this close's `W36` — and does not take the
+  record's `est:3b` (`refile_respects_user`);
+* `^m5` owns none: its record takes the standing record's `est:3b`, verbatim, and
+  its stamps `W35,W36` (`refile_conserves`);
+* `^m6`'s record already says `W36`, the week this close stamps: the merge writes
+  it once (`mergeStamps_spec`), not `W36,W36`.
+
+Probed under an 8 GB cap first (AGENTS §5.10a): the six decisions below take 8.5 s
+at a 2.0 GB peak, imports included. -/
+
+/-- 2026-W36 with three open lines, each with a `[-]` record already standing in
+September's `# Demoted`. -/
+def closeMergeWitness : List ReqDoc :=
+  [⟨"week/2026-W36.md", some closeW36,
+     ["# Milestones".toList,
+      "- [ ] 4 6b Rollback path passes tests   @O2 ^m2".toList,
+      "- [ ] 4 Write the rollback notes @O2 ^m5".toList,
+      "- [ ] 3 1b Tidy the fixtures ^m6".toList]⟩,
+   ⟨"month/2026-09.md", some closeM09,
+     ["# Demoted".toList,
+      "- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2".toList,
+      "- [-] 4 Write the rollback notes @O2 est:3b demoted:W35 ^m5".toList,
+      "- [-] 3 1b Tidy the fixtures demoted:W36 ^m6".toList]⟩]
+
+set_option maxRecDepth 40000 in
+/-- **§6.3's week row over §4.3's pre-close pair, on a loaded plan.**  Each open
+line stays behind as a `[-]` tombstone in its own bytes; each item's standing record
+is gone from its old place and its merged record lands at the end of `# Demoted`,
+in source order — one record per item. -/
+theorem the_week_close_merges_each_standing_record :
+    closedFileLines week closeMergeWitness = some
+      [["# Milestones".toList, "- [-] 4 6b Rollback path passes tests   @O2 ^m2".toList,
+        "- [-] 4 Write the rollback notes @O2 ^m5".toList, "- [-] 3 1b Tidy the fixtures ^m6".toList],
+       ["# Demoted".toList, "- [-] 4 6b Rollback path passes tests   @O2 demoted:W37,W36 ^m2".toList,
+        "- [-] 4 Write the rollback notes @O2 est:3b demoted:W35,W36 ^m5".toList,
+        "- [-] 3 1b Tidy the fixtures demoted:W36 ^m6".toList]] := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **The report names the merge.**  Each entry is `copyMerging`, stamped `W36`,
+with its record's minutes afterwards at a 50-minute block: `6b` is 300, the carried
+`est:3b` is 150, `1b` is 50. -/
+theorem the_week_close_reports_each_merge :
+    closedReport week closeMergeWitness = some
+      [⟨"m2".toList, week, .copyMerging, 0, 1, some (.week 36), some (Arith.posOfNat 300)⟩,
+       ⟨"m5".toList, week, .copyMerging, 0, 1, some (.week 36), some (Arith.posOfNat 150)⟩,
+       ⟨"m6".toList, week, .copyMerging, 0, 1, some (.week 36), some (Arith.posOfNat 50)⟩] := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **The verb merges too.**  `tm demote ^m5` runs `refile`: the same record the
+close writes, landing at the end of `# Demoted`, the old record gone. -/
+theorem the_demote_verb_merges_into_a_standing_record :
+    cmdsFileLines [.demote "m5".toList 1 (.week 36)] closeMergeWitness = some
+      [["# Milestones".toList, "- [ ] 4 6b Rollback path passes tests   @O2 ^m2".toList,
+        "- [-] 4 Write the rollback notes @O2 ^m5".toList, "- [ ] 3 1b Tidy the fixtures ^m6".toList],
+       ["# Demoted".toList, "- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2".toList,
+        "- [-] 3 1b Tidy the fixtures demoted:W36 ^m6".toList,
+        "- [-] 4 Write the rollback notes @O2 est:3b demoted:W35,W36 ^m5".toList]] := by
+  decide
+
+theorem the_close_merge_witness_loads : loadsOk closeMergeWitness = true := by decide
+
+/-- The loaded merge witness.  Total by `the_close_merge_witness_loads`: the error
+branch is refuted, not defaulted. -/
+def closeMergePlan : WfPlan :=
+  match h : loadPlan closeMergeWitness with
+  | .ok p => p
+  | .error _ => absurd the_close_merge_witness_loads (by simp [loadsOk, h])
+
+set_option maxRecDepth 40000 in
+/-- `^m5`'s remaining at a 50-minute block: nothing before the week close, the
+standing record's 150 minutes after it. -/
+theorem the_week_close_floors_m5_at_its_record :
+    (match close week closeNow closeMergePlan with
+     | .ok q =>
+       match closeMergePlan.val.store.get "m5".toList, q.val.store.get "m5".toList with
+       | some e, some f => some (remainingOf 50 e.val.line, remainingOf 50 f.val.line)
+       | _, _ => none
+     | .error _ => none) = some (0, 150) := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- `^m2`'s stamps across `autoClose`: none on its live line before, the record's
+and the week's after. -/
+theorem autoClose_merges_m2s_stamps :
+    (match autoClose closeNow closeMergePlan with
+     | .ok q =>
+       match closeMergePlan.val.store.get "m2".toList, q.val.store.get "m2".toList with
+       | some e, some f => some (e.val.stamps, f.val.stamps)
+       | _, _ => none
+     | .error _ => none) = some ([], [.week 37, .week 36]) := by
+  decide
+
+/-- **`close_rewrites_a_line_only_by_stamping_it`, refuted since gap 53.**  Its
+statement, quantifier for quantifier, is false once a close merges: `^m5`'s record
+carries its standing record's `est:3b`, which no `demoted:` write adds.  What holds
+is `close_rewrites_a_line_only_by_stamping_or_merging_it` (Close.lean). -/
+theorem a_merged_record_is_rewritten_beyond_its_stamp :
+    ¬ ∀ (g : Grain) (now : Day) (p q : WfPlan), close g now p = .ok q →
+      ∀ (i : Id) (e f : Entity), p.val.store.get i = some e → q.val.store.get i = some f →
+        f.val.line = e.val.line ∨ ∃ ss, f.val.line = Field.setDemoted ss e.val.line := by
+  intro hall
+  have hw := the_week_close_floors_m5_at_its_record
+  cases h : close week closeNow closeMergePlan with
+  | error x => rw [h] at hw; simp at hw
+  | ok q =>
+    rw [h] at hw
+    simp only at hw
+    split at hw
+    · rename_i e f he hf
+      simp only [Option.some.injEq, Prod.mk.injEq] at hw
+      rcases hall week closeNow closeMergePlan q h _ e f he hf with hl | ⟨ss, hl⟩
+      · rw [hl] at hw; omega
+      · rw [hl, Field.remainingOf_setDemoted] at hw; omega
+    · simp at hw
+
+/-- **`close_keeps_every_remaining_estimate`, refuted since gap 53.**  `^m5`'s
+remaining goes from nothing to its standing record's 150 minutes — L15's floor,
+which a close that kept every estimate could not write.  What holds is
+`close_reads_every_remaining_estimate_through_demoteEst` (Close.lean). -/
+theorem a_merged_record_changes_a_remaining_estimate :
+    ¬ ∀ (g : Grain) (now : Day) (p q : WfPlan), close g now p = .ok q →
+      ∀ (i : Id) (e f : Entity), p.val.store.get i = some e → q.val.store.get i = some f →
+        ∀ bm, remainingOf bm f.val.line = remainingOf bm e.val.line := by
+  intro hall
+  have hw := the_week_close_floors_m5_at_its_record
+  cases h : close week closeNow closeMergePlan with
+  | error x => rw [h] at hw; simp at hw
+  | ok q =>
+    rw [h] at hw
+    simp only at hw
+    split at hw
+    · rename_i e f he hf
+      simp only [Option.some.injEq, Prod.mk.injEq] at hw
+      have := hall week closeNow closeMergePlan q h _ e f he hf 50
+      omega
+    · simp at hw
+
+/-- **`autoClose_stamps_each_line_at_most_once`, refuted since gap 53.**  `^m2`'s
+live line carries no stamp and its merged record carries two — the record's `W37`
+and the week's `W36` — which is neither "the same" nor "one appended".  What holds
+is `autoClose_adds_at_most_one_stamp_to_each_line` (Close.lean): one new stamp, over
+the record's history. -/
+theorem autoClose_merges_a_line_beyond_one_appended_stamp :
+    ¬ ∀ (now : Day) (p q : WfPlan), autoClose now p = .ok q →
+      ∀ (i : Id) (e f : Entity), p.val.store.get i = some e → q.val.store.get i = some f →
+        f.val.stamps = e.val.stamps ∨ ∃ st, f.val.stamps = e.val.stamps ++ [st] := by
+  intro hall
+  have hw := autoClose_merges_m2s_stamps
+  cases h : autoClose closeNow closeMergePlan with
+  | error x => rw [h] at hw; simp at hw
+  | ok q =>
+    rw [h] at hw
+    simp only at hw
+    split at hw
+    · rename_i e f he hf
+      simp only [Option.some.injEq, Prod.mk.injEq] at hw
+      obtain ⟨h1, h2⟩ := hw
+      rcases hall closeNow closeMergePlan q h _ e f he hf with hl | ⟨st, hl⟩
+      · rw [h1, h2] at hl; exact absurd hl (by decide)
+      · rw [h1, h2] at hl
+        have := congrArg List.length hl
+        simp at this
+    · simp at hw
 
 end Tm

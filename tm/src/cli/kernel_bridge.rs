@@ -346,6 +346,10 @@ pub enum CloseDid {
     MoveReopening,
     /// `[-]` left behind, the stamped record filed forward (§6.3's week row)
     Copy,
+    /// `[-]` left behind, and the item's standing `# Demoted` record rewritten
+    /// in its place — stamps merged, estimate floored per L15 (§6.3's week row
+    /// over §4.3's pre-close pair; kernel/README.md gap 53)
+    CopyMerging,
     /// a wall still ahead, moved undemoted into the live week
     Carry,
 }
@@ -356,6 +360,7 @@ impl CloseDid {
             "move" => Some(CloseDid::Move),
             "moveReopening" => Some(CloseDid::MoveReopening),
             "copy" => Some(CloseDid::Copy),
+            "copyMerging" => Some(CloseDid::CopyMerging),
             "carry" => Some(CloseDid::Carry),
             _ => None,
         }
@@ -368,6 +373,7 @@ impl CloseDid {
             CloseDid::Move => "move",
             CloseDid::MoveReopening => "moveReopening",
             CloseDid::Copy => "copy",
+            CloseDid::CopyMerging => "copyMerging",
             CloseDid::Carry => "carry",
         }
     }
@@ -935,7 +941,7 @@ fn refusal(err: &Value) -> KernelIssue {
             "occupied" => "the destination file already holds a line with this id, so the move would write the id twice (the duplicate-id class, refused by name)",
             "noSuchId" => "no item in the plan carries this id",
             "notDemoted" => "the item is not demoted, so there is nothing to readopt (use `tm move`)",
-            "alreadyDemoted" => "the item already has a standing archive record; demoting it again would overwrite that record",
+            "alreadyDemoted" => "the line is itself a `[-]` archive record; demoting a record again would overwrite its tombstone (a record is carried by the month close)",
             "badHorizon" => "the rewritten plan fails the kernel's whole-plan check — a destination that is not in the plan, a line landing in a section it may not occupy, or a rank collision",
             "badItem" => "the rewritten item fails the kernel's item check",
             "tabbedLine" => "the line carries a tab, which this kernel does not read as a separator; the edit is refused rather than written against the wrong token (gap 32)",
@@ -1167,6 +1173,7 @@ mod tests {
         for (report, why) in [
             (serde_json::json!({}), "no closes"),
             (with("did", serde_json::json!("moved")), "unknown did"),
+            (with("did", serde_json::json!("copymerging")), "unknown did"),
             (with("grain", serde_json::json!(3)), "grain out of range"),
             (with("to", serde_json::json!(3)), "to is not a document"),
             (with("stamp", serde_json::json!("M09")), "bad stamp"),

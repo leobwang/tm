@@ -1526,8 +1526,6 @@ open Tm
 #print axioms Tm.close_leaves_no_unfinished_line_in_a_closed_region
 #print axioms Tm.stepSkel_day_stamps
 #print axioms Tm.close_day_stamps_a_day_stamp
-#print axioms Tm.stepSkel_line
-#print axioms Tm.close_rewrites_a_line_only_by_stamping_it
 #print axioms Tm.close_never_demotes_a_wall_but_may_carry_it
 #print axioms Tm.close_files_a_taken_line_into_closeTo
 #print axioms Tm.close_day_files_into_the_week_of_now
@@ -1536,7 +1534,6 @@ open Tm
 #print axioms Tm.closeOne_refuses_a_carry_with_no_live_week
 #print axioms Tm.closeOne_refuses_a_missing_section
 #print axioms Tm.closeOne_refuses_an_ill_formed_post_state
-#print axioms Tm.closeOne_week_refuses_a_standing_tombstone
 #print axioms Tm.close_refuses_what_its_first_step_refuses
 #print axioms Tm.close_without_candidates_is_the_identity
 #print axioms Tm.foldl_max_from
@@ -1583,8 +1580,6 @@ open Tm
 #print axioms Tm.autoClose_skel
 #print axioms Tm.stepSkel_three_is_one
 #print axioms Tm.autoClose_takes_each_line_at_most_once
-#print axioms Tm.stepSkel_stamps
-#print axioms Tm.autoClose_stamps_each_line_at_most_once
 #print axioms Tm.the_stale_witness_loads
 #print axioms Tm.mem_closedLiveIds
 #print axioms Tm.the_stale_catch_up_observed
@@ -1610,7 +1605,6 @@ open Tm
 #print axioms Tm.filterMap_ids
 #print axioms Tm.closeReport_ids
 #print axioms Tm.mem_closeReport
-#print axioms Tm.skelAfter_stamps
 #print axioms Tm.close_found_the_target
 #print axioms Tm.closeReport_agrees_with_close
 #print axioms Tm.closeReport_names_the_region_of_now
@@ -1654,7 +1648,6 @@ open Tm
 #print axioms Tm.Field.setKeyIn_split
 #print axioms Tm.Field.insertBeforeId_split
 #print axioms Tm.Field.remainingOf_setDemoted
-#print axioms Tm.close_keeps_every_remaining_estimate
 #print axioms Tm.the_close_week_witness_loads
 #print axioms Tm.the_week_close_leaves_r1_and_t1_in_the_closed_week
 #print axioms Tm.the_week_close_carries_the_wall_x1_to_another_file
@@ -1724,7 +1717,6 @@ open Tm
 -- landing (Boundary.lean).
 -- ===================================================================
 #print axioms Tm.demoteSpot_is_the_week_close_landing
-#print axioms Tm.demote_verb_is_cmdDemote_at_freshRank_without_a_shift
 #print axioms Tm.the_demote_verb_files_into_demoted_ahead_of_the_next_section
 #print axioms Tm.the_demote_verb_lands_at_the_end_of_a_month_without_demoted
 -- ===================================================================
@@ -1795,3 +1787,56 @@ open Tm
 #print axioms Tm.loadStore_eq_loadStoreFast
 #print axioms Tm.renderDocAt_eq_renderDocFrom
 #print axioms Tm.runPlan_eq_runPlanFast
+-- Step 2 (2026-09-13): README gap 53 — a week close (and the `demote` verb)
+-- merges a line into its item's standing `# Demoted` record instead of refusing
+-- `alreadyDemoted`: fork-point `demote_one`'s merge, with L15's floor.  Eight
+-- names above were retired with the statements they carried (the README's step-2
+-- block lists each beside its replacement); their replacements are here.
+-- Cmd.lean: the merge, the stamps, the estimate through `demoteEst`
+#print axioms Tm.refile_roundtrips
+#print axioms Tm.refile_of_no_record
+#print axioms Tm.refile_twice_is_not_a_thing
+#print axioms Tm.refile_refuses_only_a_record
+#print axioms Tm.foldl_stampStep_mem
+#print axioms Tm.foldl_stampStep_nodup
+#print axioms Tm.foldl_stampStep_of_nodup
+#print axioms Tm.mergeStamps_of_nodup
+#print axioms Tm.mergeStamps_spec
+#print axioms Tm.unitValue_isSome
+#print axioms Tm.estKeyTok_of_hasEst
+#print axioms Tm.remainingOf_of_not_ownsEstimate
+#print axioms Tm.carryEst_reads_as_demoteEst
+#print axioms Tm.refile_conserves
+#print axioms Tm.refile_respects_user
+-- Close.lean: the restated laws, the refusal gone, the merge
+#print axioms Tm.stepSkel_line_is_stamped_or_merged
+#print axioms Tm.close_rewrites_a_line_only_by_stamping_or_merging_it
+#print axioms Tm.close_rewrites_a_line_with_no_record_only_by_stamping_it
+#print axioms Tm.close_reads_every_remaining_estimate_through_demoteEst
+#print axioms Tm.close_keeps_the_remaining_estimate_of_a_line_with_no_record
+#print axioms Tm.mapAt_error
+#print axioms Tm.landAt_error
+#print axioms Tm.landingSpot_error
+#print axioms Tm.fileE_alreadyDemoted
+#print axioms Tm.closeOne_never_refuses_alreadyDemoted
+#print axioms Tm.close_never_refuses_alreadyDemoted
+#print axioms Tm.close_week_merges_a_standing_record
+#print axioms Tm.stepSkel_adds_at_most_one_stamp
+#print axioms Tm.autoClose_adds_at_most_one_stamp_to_each_line
+#print axioms Tm.autoClose_stamps_each_line_with_no_record_at_most_once
+-- Report.lean: the named disposition `copyMerging`
+#print axioms Tm.CloseDid.ofStep_ne_carry
+#print axioms Tm.skelAfter_stamps_of_not_merging
+#print axioms Tm.skelAfter_stamps_merging
+-- Boundary.lean: the verb, the loaded-plan witnesses, three refutations
+#print axioms Tm.WfPlan.mapAt_congr
+#print axioms Tm.demote_verb_is_cmdDemote_at_freshRank_without_a_shift_or_a_record
+#print axioms Tm.the_week_close_merges_each_standing_record
+#print axioms Tm.the_week_close_reports_each_merge
+#print axioms Tm.the_demote_verb_merges_into_a_standing_record
+#print axioms Tm.the_close_merge_witness_loads
+#print axioms Tm.the_week_close_floors_m5_at_its_record
+#print axioms Tm.autoClose_merges_m2s_stamps
+#print axioms Tm.a_merged_record_is_rewritten_beyond_its_stamp
+#print axioms Tm.a_merged_record_changes_a_remaining_estimate
+#print axioms Tm.autoClose_merges_a_line_beyond_one_appended_stamp

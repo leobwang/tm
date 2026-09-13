@@ -265,9 +265,12 @@ fn the_spec_demotion_pair_round_trips() {
 
 /// §6.3 gives an item **one** archive record. `demote` is the week close; the
 /// month close "moves them to the next month file", which is `move`. So a
-/// second `demote` is refused rather than picking one of the two lines to
-/// drop — overwrite the standing tombstone and `w.md` comes back empty with
-/// `ok`; keep it and the line the record is leaving disappears instead.
+/// second `demote` of a `[-]` record is refused rather than picking one of the
+/// two lines to drop — overwrite the standing tombstone and `w.md` comes back
+/// empty with `ok`; keep it and the line the record is leaving disappears
+/// instead. (An *open* line with a standing record is not this case: since
+/// kernel/README.md gap 53 it is merged into the record, and the open line is
+/// what stays behind as the tombstone.)
 #[test]
 fn a_second_demotion_is_refused_rather_than_dropping_a_line() {
     let out = call(

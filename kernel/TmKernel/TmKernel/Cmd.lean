@@ -42,7 +42,11 @@ inductive KErr
       `tm close month` then *moves* the record ("moves them to the next month
       file", touching nothing else) rather than demoting it again.  Both ways
       of proceeding here lose a line — overwrite the standing tombstone and its
-      file's line vanishes; keep it and the line the record is leaving does. -/
+      file's line vanishes; keep it and the line the record is leaving does.
+      `demote` answers it for any standing tombstone; since README gap 53 the
+      close and the verb run `refile`, which merges an open line into its record
+      and answers it only for a `[-]` record filed again
+      (`close_never_refuses_alreadyDemoted`). -/
   | alreadyDemoted
   /-- the destination is not a horizon this item may occupy: either not a
       document of this plan at all, or — while a tombstone stands and the record
@@ -1560,6 +1564,344 @@ theorem demoteEst_conserves (bm rec : Nat) (e : Entity) :
 /-- **L15b (P).**  When the user has set one, it stands, byte for byte. -/
 theorem demoteEst_respects_user (bm rec : Nat) (e : Entity) :
     (demoteEst bm true rec e).val.line = e.val.line := rfl
+
+/-! ## A standing record is merged, not refused (README gap 53)
+
+§4.3's own pre-close pair — a `[ ]` line in a week beside its `[-]` copy under a
+month's `# Demoted` — loads as one item whose live line is open and whose
+tombstone is the record an earlier demotion filed.  `demote` refuses to demote it
+again (`alreadyDemoted`), and the week close used to refuse with it.  Fork-point
+`horizon::demote_one` does not refuse: it **rewrites the standing record** — the
+two lines' stamps merged (`merge_stamps`), the record's `est:` kept as a floor
+under a live line that states no estimate of its own (`demote_est`) — and the old
+copy is gone, so the id keeps the one archive record §6.3 gives it.  Replacing the
+record *without* the floor would be defect B2's "supersede"; `refile` is the merge
+with L15's floor in it (`carryEst_reads_as_demoteEst`, `refile_conserves`,
+`refile_respects_user`).
+
+Two of `demoteEst`'s three inputs come off the bytes here, and the third is not
+needed: `rec` is the standing record's own `est:` (`recordedEst`), `userSet` is
+`ownsEstimate` of the live line, and the block length only scales a reading —
+`carryEst` copies the record's token, so the rule holds at every `bm` at once. -/
+
+/-- The `demoted:` history a line carries — `Core.stamps` of any core with these
+bytes. -/
+def stampsOfLine (r : RawItem) : List Stamp := (Field.viewDemoted r).getD []
+
+/-- One step of fork-point `union_stamps`: keep a stamp already seen, append a new
+one. -/
+def stampStep (v : List Stamp) (s : Stamp) : List Stamp := if v.contains s then v else v ++ [s]
+
+/-- Fork-point `union_stamps a b`: the stamps of `a`, then of `b`, each once, in the
+order first found.  A stamp is `W37` or `D07` with no year, so there is no age
+order to sort by; the order is where each stamp was found. -/
+def unionStamps (a b : List Stamp) : List Stamp := (a ++ b).foldl stampStep []
+
+/-- Fork-point `merge_stamps prior own add`: the standing record's history, then
+what the live line adds, then this demotion's stamp — each once, so a second close
+in one period does not write `W37,W37` (fork-point `stamps_with`). -/
+def mergeStamps (prior own : List Stamp) (add : Stamp) : List Stamp :=
+  unionStamps (unionStamps prior own) [add]
+
+/-- **`userSet`, read off the bytes** — whether a user may have set an estimate since
+the standing record was written.  The log that would say so is stage 5's, so this
+reads the one line every estimate-writing verb lands on: the live one (`tm edit
+^id est=`, `tm stop` and `tm done --partial` all address the id's live line, never
+its record).  Fork-point `demote_est` drops the recorded floor exactly when
+`item.own_remaining()` — `est:`, else the leading estimate, else `dur:` — is
+`Some`.  This is that rule, widened to every estimate reader the kernel has: the
+stage-one `viewRemaining` (`est:` over the leading estimate), the field view
+`Field.viewRemainingDur` (the one `Core.est` reads), `dur:`, and an `est:` key of
+any value.  A disagreement between readers therefore falls on the user's side:
+the floor is skipped, never imposed over something a reader calls an estimate
+(L14, `floor_and_respect_are_incompatible`).
+
+**Known limit, shared with the Rust:** an estimate the live line carried before the
+record was written counts as the user's, so a recorded remaining larger than it —
+say an earlier close folded dropped children into the record — is not used as a
+floor, and the record's measurement is lost.  Rejected, with the reason: "the live
+reading differs from the recorded one" — it drops the floor on a line with no
+estimate (the case the Rust keeps it for) and imposes it on a line whose own
+estimate equals the record's. -/
+def ownsEstimate (r : RawItem) : Bool :=
+  hasEst r || (viewRemaining 0 r).isSome || (Field.viewRemainingDur r).isSome ||
+    (Field.viewDur r).isSome
+
+/-- **`rec`**: the remaining the standing record measured — its own `est:` token read
+at block length `bm` (fork-point `ArchivedRecord.est_min`), `0` when it has none.
+A leading estimate on the record is the item's original size, not a measurement,
+and the Rust does not read it either. -/
+def recordedEst (bm : Nat) (t : RawItem) : Nat :=
+  match estKeyTok t with
+  | some tok => (unitValue bm (tok.word.drop 4)).getD 0
+  | none     => 0
+
+/-- **The estimate the merged record carries.**  A live line that owns an estimate
+keeps its bytes (`demoteEst bm true`); one that owns none takes the standing
+record's `est:` token verbatim, inserted where `setEst` inserts one.  The reading
+is `demoteEst bm false`'s at every block length (`carryEst_reads_as_demoteEst`),
+and the bytes keep the unit the record was written in (§4.1: "including the
+original estimate unit"). -/
+def carryEst (t line : RawItem) : RawItem :=
+  if ownsEstimate line then line
+  else match estKeyTok t with
+    | some tok => ⟨line.indent, insertBeforeId tok.word line.toks⟩
+    | none     => line
+
+/-- The bytes a demotion files forward: with no standing record, `demote`'s; with
+one, the merged stamps over the carried estimate. -/
+def refiledLine (st : Stamp) : Option RawItem → RawItem → RawItem
+  | none,   l => Field.setDemoted (stampsOfLine l ++ [st]) l
+  | some t, l => Field.setDemoted (mergeStamps (stampsOfLine t) (stampsOfLine l) st) (carryEst t l)
+
+/-- **§6.3's week row, whatever stands.**  With no tombstone, `demote`.  With one,
+the item's live line is an open line whose record an earlier demotion filed:
+the record is rewritten — its tombstone becomes the line being left, its bytes the
+merged stamps over the carried estimate — and the old record's placement is gone,
+so the item still has one archive record.  A `[-]` record is refused as `demote`
+refuses it (`alreadyDemoted`): filing a record again is the month close's `move`,
+not a second demotion (`refile_twice_is_not_a_thing`). -/
+def refile (target : Site) (st : Stamp) (e : Entity) : Except KErr Entity :=
+  match e.val.archive with
+  | none   => demote target st e
+  | some t =>
+    if e.val.status = .demoted then .error .alreadyDemoted
+    else lift { e.val with live := target, archive := some ⟨e.val.live, e.val.line⟩,
+                           status := .demoted, line := refiledLine st (some t.line) e.val.line }
+
+/-- What `refile` produces where it succeeds. -/
+theorem refile_roundtrips (t : Site) (st : Stamp) (e a : Entity) (h : refile t st e = .ok a) :
+    a.val = { e.val with live := t, archive := some ⟨e.val.live, e.val.line⟩, status := .demoted,
+                         line := refiledLine st (e.val.archive.map Tomb.line) e.val.line } := by
+  unfold refile at h
+  cases ha : e.val.archive with
+  | none =>
+    simp only [ha] at h
+    rw [demote_roundtrips _ _ _ _ h]
+    rfl
+  | some tb =>
+    simp only [ha] at h
+    split at h
+    · simp at h
+    · rw [lift_roundtrips _ _ h]
+      rfl
+
+/-- With no standing record, `refile` is `demote`. -/
+theorem refile_of_no_record (t : Site) (st : Stamp) (e : Entity) (h : e.val.archive = none) :
+    refile t st e = demote t st e := by
+  simp [refile, h]
+
+/-- **L11b, for `refile`.**  A record `refile` wrote is `[-]` with a tombstone, so
+filing it again is refused. -/
+theorem refile_twice_is_not_a_thing (t t' : Site) (st st' : Stamp) (e a : Entity)
+    (h : refile t st e = .ok a) : refile t' st' a = .error .alreadyDemoted := by
+  have hv := refile_roundtrips _ _ _ _ h
+  simp [refile, hv]
+
+/-- **The refusal is gone for open lines.**  `refile` answers `alreadyDemoted` only
+for a line whose own box is `[-]` — never for §4.3's pre-close pair. -/
+theorem refile_refuses_only_a_record {t : Site} {st : Stamp} {e : Entity}
+    (h : refile t st e = .error .alreadyDemoted) : e.val.status = .demoted := by
+  unfold refile at h
+  cases ha : e.val.archive with
+  | none =>
+    simp only [ha, demote, Option.isSome_none, Bool.false_eq_true, if_false, lift] at h
+    split at h <;> simp at h
+  | some tb =>
+    simp only [ha] at h
+    split at h
+    · assumption
+    · unfold lift at h
+      split at h <;> simp at h
+
+/-! ### The merged stamps -/
+
+theorem foldl_stampStep_mem : ∀ (l v : List Stamp) (x : Stamp),
+    x ∈ l.foldl stampStep v ↔ x ∈ v ∨ x ∈ l := by
+  intro l
+  induction l with
+  | nil => intro v x; simp
+  | cons s l ih =>
+    intro v x
+    simp only [List.foldl_cons, ih, List.mem_cons]
+    unfold stampStep
+    by_cases hs : v.contains s = true
+    · have hm : s ∈ v := by simpa using hs
+      simp only [hs, if_true]
+      constructor
+      · rintro (h | h)
+        · exact Or.inl h
+        · exact Or.inr (Or.inr h)
+      · rintro (h | rfl | h)
+        · exact Or.inl h
+        · exact Or.inl hm
+        · exact Or.inr h
+    · simp only [Bool.not_eq_true] at hs
+      simp only [hs, Bool.false_eq_true, if_false, List.mem_append, List.mem_singleton]
+      constructor
+      · rintro ((h | h) | h)
+        · exact Or.inl h
+        · exact Or.inr (Or.inl h)
+        · exact Or.inr (Or.inr h)
+      · rintro (h | h | h)
+        · exact Or.inl (Or.inl h)
+        · exact Or.inl (Or.inr h)
+        · exact Or.inr h
+
+theorem foldl_stampStep_nodup : ∀ (l v : List Stamp), v.Nodup → (l.foldl stampStep v).Nodup := by
+  intro l
+  induction l with
+  | nil => intro v h; exact h
+  | cons s l ih =>
+    intro v h
+    apply ih
+    unfold stampStep
+    by_cases hs : v.contains s = true
+    · simp only [hs, if_true]; exact h
+    · simp only [Bool.not_eq_true] at hs
+      simp only [hs, Bool.false_eq_true, if_false]
+      exact List.nodup_append.2 ⟨h, List.pairwise_singleton _ s, fun a ha b hb hab => by
+        simp only [List.mem_singleton] at hb
+        subst hb hab
+        simp [ha] at hs⟩
+
+theorem foldl_stampStep_of_nodup : ∀ (l v : List Stamp), (v ++ l).Nodup → l.foldl stampStep v = v ++ l := by
+  intro l
+  induction l with
+  | nil => intro v _; simp
+  | cons s l ih =>
+    intro v h
+    have hs : v.contains s = false := by
+      have hd := (List.nodup_append.1 h).2.2
+      cases hc : v.contains s with
+      | false => rfl
+      | true => exact absurd rfl (hd s (by simpa using hc) s (List.mem_cons_self ..))
+    simp only [List.foldl_cons, stampStep, hs, Bool.false_eq_true, if_false]
+    rw [ih (v ++ [s]) (by simpa using h)]
+    simp
+
+/-- **The Rust's order.**  When the record's stamps, the live line's and the new one
+are all distinct, the merge is the record's history, then the live line's, then
+the new stamp — nothing reordered, nothing dropped. -/
+theorem mergeStamps_of_nodup (prior own : List Stamp) (add : Stamp)
+    (h : (prior ++ own ++ [add]).Nodup) : mergeStamps prior own add = prior ++ own ++ [add] := by
+  have h1 : (prior ++ own).Nodup := (List.nodup_append.1 h).1
+  have e1 : unionStamps prior own = prior ++ own := by
+    unfold unionStamps
+    exact foldl_stampStep_of_nodup _ [] (by simpa using h1)
+  unfold mergeStamps
+  rw [e1]
+  unfold unionStamps
+  exact foldl_stampStep_of_nodup _ [] (by simpa using h)
+
+/-- **Nothing lost, nothing invented, nothing twice.** -/
+theorem mergeStamps_spec (prior own : List Stamp) (add : Stamp) :
+    (mergeStamps prior own add).Nodup ∧
+      ∀ x, x ∈ mergeStamps prior own add ↔ x ∈ prior ∨ x ∈ own ∨ x = add := by
+  refine ⟨foldl_stampStep_nodup _ _ List.nodup_nil, fun x => ?_⟩
+  unfold mergeStamps
+  have hu : ∀ a b : List Stamp, x ∈ unionStamps a b ↔ x ∈ a ∨ x ∈ b := by
+    intro a b
+    unfold unionStamps
+    rw [foldl_stampStep_mem]
+    simp
+  rw [hu, hu]
+  simp [or_assoc]
+
+/-! ### The merged estimate: L15 through the merge -/
+
+theorem unitValue_isSome (bm : Nat) (w : List Char) :
+    (unitValue bm w).isSome = (unitValue 0 w).isSome := by
+  unfold unitValue
+  split <;> simp
+
+theorem estKeyTok_of_hasEst {r : RawItem} (h : hasEst r = false) : estKeyTok r = none := by
+  unfold estKeyTok
+  unfold hasEst at h
+  exact List.find?_eq_none.2 (fun t ht => by simpa using List.any_eq_false.1 h t ht)
+
+theorem remainingOf_of_not_ownsEstimate (bm : Nat) {r : RawItem} (h : ownsEstimate r = false) :
+    remainingOf bm r = 0 := by
+  simp only [ownsEstimate, Bool.or_eq_false_iff] at h
+  obtain ⟨⟨⟨h1, h2⟩, _⟩, _⟩ := h
+  have hv : viewRemaining bm r = none := by
+    unfold viewRemaining at h2 ⊢
+    rw [estKeyTok_of_hasEst h1] at h2 ⊢
+    cases hl : leadEstTok r with
+    | none => rfl
+    | some t =>
+      simp only [hl, Option.bind_some] at h2 ⊢
+      rw [← Option.not_isSome_iff_eq_none, unitValue_isSome]
+      simpa using h2
+  unfold remainingOf
+  rw [hv]
+  rfl
+
+/-- **The merged record reads as `demoteEst` wrote it, at every block length.** -/
+theorem carryEst_reads_as_demoteEst (bm : Nat) (t : RawItem) (e : Entity) :
+    remainingOf bm (carryEst t e.val.line) =
+      remainingOf bm (demoteEst bm (ownsEstimate e.val.line) (recordedEst bm t) e).val.line := by
+  cases ho : ownsEstimate e.val.line with
+  | true => simp [carryEst, ho, demoteEst]
+  | false =>
+    have h0 := remainingOf_of_not_ownsEstimate bm ho
+    have hset : ∀ v, remainingOf bm (setEst v e.val.line) = v := by
+      intro v
+      unfold remainingOf
+      rw [view_set_is_not_silent]
+      rfl
+    have hr : remainingOf bm (demoteEst bm false (recordedEst bm t) e).val.line = recordedEst bm t := by
+      show remainingOf bm (setEst (max (remainingOf bm e.val.line) (recordedEst bm t)) e.val.line) = _
+      rw [hset, h0]
+      simp
+    rw [hr]
+    have hno : hasEst e.val.line = false := by
+      simp only [ownsEstimate, Bool.or_eq_false_iff] at ho
+      exact ho.1.1.1
+    unfold carryEst recordedEst
+    simp only [ho, Bool.false_eq_true, if_false]
+    cases hk : estKeyTok t with
+    | none => exact h0
+    | some tok =>
+      simp only
+      have hkey : isEstKey tok.word = true := by
+        unfold estKeyTok at hk
+        have := List.find?_some hk
+        simpa using this
+      have hf := find_insertBeforeId tok.word e.val.line.toks hkey (by simpa [hasEst] using hno)
+      unfold remainingOf viewRemaining estKeyTok
+      simp only
+      cases hff : (insertBeforeId tok.word e.val.line.toks).find? (fun u => isEstKey u.word) with
+      | none => rw [hff] at hf; simp at hf
+      | some u =>
+        rw [hff] at hf
+        simp only [Option.map_some, Option.some.injEq] at hf
+        simp [hf]
+
+/-- **L15a, through the merge.**  When the live line owns no estimate, the standing
+record's measured remaining is a floor, and so is the line's own reading. -/
+theorem refile_conserves (bm : Nat) {t : Site} {st : Stamp} {e a : Entity} {tb : Tomb}
+    (harch : e.val.archive = some tb) (hu : ownsEstimate e.val.line = false)
+    (h : refile t st e = .ok a) :
+    recordedEst bm tb.line ≤ remainingOf bm a.val.line ∧
+      remainingOf bm e.val.line ≤ remainingOf bm a.val.line := by
+  have hv := refile_roundtrips _ _ _ _ h
+  have hl : remainingOf bm a.val.line =
+      remainingOf bm (demoteEst bm false (recordedEst bm tb.line) e).val.line := by
+    rw [hv, harch]
+    show remainingOf bm (Field.setDemoted _ (carryEst tb.line e.val.line)) = _
+    rw [Field.remainingOf_setDemoted, carryEst_reads_as_demoteEst, hu]
+  rw [hl]
+  exact demoteEst_conserves bm _ e
+
+/-- **L15b, through the merge.**  When the live line owns an estimate, it stands byte
+for byte: the record is the live line with only the merged stamps set. -/
+theorem refile_respects_user {t : Site} {st : Stamp} {e a : Entity} {tb : Tomb}
+    (harch : e.val.archive = some tb) (hu : ownsEstimate e.val.line = true)
+    (h : refile t st e = .ok a) :
+    a.val.line = Field.setDemoted (mergeStamps (stampsOfLine tb.line) e.val.stamps st) e.val.line := by
+  rw [refile_roundtrips _ _ _ _ h, harch]
+  simp [refiledLine, carryEst, hu, Core.stamps, stampsOfLine]
 
 /-! ## What is actually structural, and what is proved
 

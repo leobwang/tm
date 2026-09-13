@@ -42,8 +42,9 @@ same close would take again.  Everything else is read off it.
 "unfinished children are dropped, their remaining folded into the parent's
 `est:`" (needs `Core.parent`, README gap 22 — the `children` column), the day
 file's review section (F3, stage 6), and `est:` = remaining beyond the line's
-own reading (the log's minutes and the rollup; `demoteEst`'s inputs are not in
-`close`'s signature).
+own reading (the log's minutes and the rollup).  The one estimate a close does
+write is L15's floor from a standing record it merges into (README gap 53,
+`close_week_merges_a_standing_record`).
 -/
 namespace Tm
 
@@ -58,7 +59,8 @@ inductive Disposition
   /-- the line leaves and its box reopens: `[>]` → `[ ]` (§6.3's day row) -/
   | moveReopening
   /-- `[-]` stays behind as the tombstone and the stamped record is filed
-      forward (§6.3's week row — `demote`) -/
+      forward (§6.3's week row — `refile`: `demote`, or a merge into the item's
+      standing `# Demoted` record, README gap 53) -/
   | copy
 deriving DecidableEq, Repr
 
@@ -212,7 +214,8 @@ theorem closePolicy_demoted_landing_is_in_a_month_file :
   decide
 
 /-- **Only a grain below month leaves a tombstone.**  §6.3's month row *moves*
-the record, and a second tombstone is `KErr.alreadyDemoted`. -/
+the record; the week row over an item that already has one merges into it
+(`refile`, README gap 53), and a `[-]` record filed again is `KErr.alreadyDemoted`. -/
 theorem closePolicy_copies_only_below_month :
     ∀ g : Grain, (closePolicy g).disposition = .copy → g ≠ month := by
   decide
@@ -359,7 +362,7 @@ def skelAfter (g : Grain) (r : Region) (k : DocIx) (s : Skel) : Skel :=
                                line := stampedLine (closeStamp g r.ix) s }
   | .copy          =>
     match closeStamp g r.ix with
-    | some st => ⟨k, some s.doc, some s.line, .demoted, Field.setDemoted (s.stamps ++ [st]) s.line⟩
+    | some st => ⟨k, some s.doc, some s.line, .demoted, refiledLine st s.archLine s.line⟩
     | none    => s
 
 /-- **The denotation of one step, on a skeleton.**  The branches with no
@@ -489,7 +492,9 @@ def landAt (p : WfPlan) (k : DocIx) (spot : Option Nat) (i : Id)
     | .ok q    => q.mapAt i (f ⟨k, n⟩)
 
 /-- The entity transform filing a line out of region `r` of grain `g`: the
-table's disposition, through the command algebra's own transforms. -/
+table's disposition, through the command algebra's own transforms.  The copy is
+`refile`, so a line with a standing `# Demoted` record is merged into it (README
+gap 53) rather than refused. -/
 def fileE (g : Grain) (r : Region) (t : Site) (e : Entity) : Except KErr Entity :=
   match (closePolicy g).disposition with
   | .move          => moveTo t e
@@ -497,7 +502,7 @@ def fileE (g : Grain) (r : Region) (t : Site) (e : Entity) : Except KErr Entity 
                                         line := stampedLine (closeStamp g r.ix) e.val.skel }
   | .copy          =>
     match closeStamp g r.ix with
-    | some st => demote t st e
+    | some st => refile t st e
     | none    => .error .badHorizon
 
 /-! ## `close` -/
@@ -779,7 +784,7 @@ theorem fileE_skel {g : Grain} {r : Region} {t : Site} {e f : Entity}
     | none => simp [hs] at h
     | some st =>
       simp only [hs] at h ⊢
-      have hv := demote_roundtrips _ _ _ _ h
+      have hv := refile_roundtrips _ _ _ _ h
       rw [hv]
       exact ⟨rfl, rfl⟩
 
@@ -1152,9 +1157,14 @@ theorem close_day_stamps_a_day_stamp (now : Day) (p q : WfPlan)
   · obtain ⟨n, hn⟩ := hs
     exact ⟨n, by rw [← Core.skel_stamps, hsk, hn]; rfl⟩
 
-theorem stepSkel_line (g : Grain) (now : Day) (p : PlanCore) (s : Skel) :
+/-- A step rewrites a line's bytes in one of two ways, or not at all: it sets
+`demoted:`, or — a week copy of a line whose item already has a `# Demoted` record
+(README gap 53) — it sets `demoted:` over the record's estimate, carried. -/
+theorem stepSkel_line_is_stamped_or_merged (g : Grain) (now : Day) (p : PlanCore) (s : Skel) :
     (stepSkel g now p s).line = s.line ∨
-      ∃ ss, (stepSkel g now p s).line = Field.setDemoted ss s.line := by
+      (∃ ss, (stepSkel g now p s).line = Field.setDemoted ss s.line) ∨
+      ∃ ss tl, s.archLine = some tl ∧
+        (stepSkel g now p s).line = Field.setDemoted ss (carryEst tl s.line) := by
   unfold stepSkel
   split
   · exact Or.inl rfl
@@ -1169,42 +1179,85 @@ theorem stepSkel_line (g : Grain) (now : Day) (p : PlanCore) (s : Skel) :
         unfold stampedLine
         cases closeStamp g r.ix with
         | none => exact Or.inl rfl
-        | some st => exact Or.inr ⟨_, rfl⟩
+        | some st => exact Or.inr (Or.inl ⟨_, rfl⟩)
       | copy =>
         cases closeStamp g r.ix with
         | none => exact Or.inl rfl
-        | some st => exact Or.inr ⟨_, rfl⟩
+        | some st =>
+          cases s.archLine with
+          | none => exact Or.inr (Or.inl ⟨_, rfl⟩)
+          | some tl => exact Or.inr (Or.inr ⟨_, tl, rfl, rfl⟩)
     · exact Or.inl rfl
 
-/-- **Narrowed B1–B3** (`close_writes_every_estimate_through_demoteEst`, which
-equates the whole line with `demoteEst`'s and so forbids the `demoted:` stamp
-§6.3 appends; refuted as `close_writes_a_line_demoteEst_does_not`, Boundary.lean).
-A close rewrites a line's bytes in one way only: it sets the
-`demoted:` token.  It writes no estimate at all — `est:` = remaining beyond the
-line's own reading needs the log and the rollup, which `close` does not have —
-so no measurement standing on the line is replaced. -/
-theorem close_rewrites_a_line_only_by_stamping_it {g : Grain} {now : Day} {p q : WfPlan}
+/-- **Narrowed B1–B3, with gap 53's merge** (`close_writes_every_estimate_through_demoteEst`,
+which equates the whole line with `demoteEst`'s and so forbids the `demoted:` stamp
+§6.3 appends, is refuted as `close_writes_a_line_demoteEst_does_not`, Boundary.lean;
+this restates `close_rewrites_a_line_only_by_stamping_it`, whose two disjuncts a
+merged record falsifies — `a_merged_record_is_rewritten_beyond_its_stamp`,
+Boundary.lean).  A close rewrites a line's bytes in two ways only: it sets the
+`demoted:` token; or, filing a line whose item already has a `# Demoted` record, it
+sets `demoted:` over that record's estimate carried onto the line (`carryEst`),
+which writes an `est:` only where the line owns none.  Nothing else is written, so
+no measurement standing on the line is replaced. -/
+theorem close_rewrites_a_line_only_by_stamping_or_merging_it {g : Grain} {now : Day} {p q : WfPlan}
     (h : close g now p = .ok q) (i : Id) (e f : Entity)
     (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f) :
-    f.val.line = e.val.line ∨ ∃ ss, f.val.line = Field.setDemoted ss e.val.line := by
+    f.val.line = e.val.line ∨ (∃ ss, f.val.line = Field.setDemoted ss e.val.line) ∨
+      ∃ ss t, e.val.archive = some t ∧ f.val.line = Field.setDemoted ss (carryEst t.line e.val.line) := by
   have hsk := close_skel h hp hq
-  have := stepSkel_line g now p.val e.val.skel
+  have := stepSkel_line_is_stamped_or_merged g now p.val e.val.skel
   rw [← hsk] at this
-  exact this
+  rcases this with h1 | h2 | ⟨ss, tl, ha, hl⟩
+  · exact Or.inl h1
+  · exact Or.inr (Or.inl h2)
+  · refine Or.inr (Or.inr ?_)
+    cases he : e.val.archive with
+    | none => simp [Core.skel, he] at ha
+    | some t =>
+      have ht : t.line = tl := by simpa [Core.skel, he] using ha
+      exact ⟨ss, t, rfl, by rw [ht]; exact hl⟩
 
-/-- **The estimate half of narrowed B1–B3.**  Whatever a close does to a line, its
-remaining estimate is the one it had, at every block length: the only rewrite is
-the `demoted:` stamp (`close_rewrites_a_line_only_by_stamping_it`) and a stamp is
-invisible to `remainingOf` (`Field.remainingOf_setDemoted`).  So a close is the
-identity on estimates — exactly `demoteEst bm true`'s reading, and never a
-replacement of a measurement standing on the line. -/
-theorem close_keeps_every_remaining_estimate {g : Grain} {now : Day} {p q : WfPlan}
-    (h : close g now p = .ok q) (i : Id) (e f : Entity)
+/-- **The old law, where it still holds as stated**: a line whose item has no
+standing record is rewritten only by its stamp. -/
+theorem close_rewrites_a_line_with_no_record_only_by_stamping_it {g : Grain} {now : Day}
+    {p q : WfPlan} (h : close g now p = .ok q) (i : Id) (e f : Entity)
+    (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f)
+    (hrec : e.val.archive = none) :
+    f.val.line = e.val.line ∨ ∃ ss, f.val.line = Field.setDemoted ss e.val.line := by
+  rcases close_rewrites_a_line_only_by_stamping_or_merging_it h i e f hp hq with h1 | h2 | ⟨_, t, ha, _⟩
+  · exact Or.inl h1
+  · exact Or.inr h2
+  · rw [hrec] at ha; cases ha
+
+/-- **The estimate half of narrowed B1–B3, with gap 53's merge** (restates
+`close_keeps_every_remaining_estimate`).  At every block length, a close either
+leaves a line's remaining estimate as it was — `demoteEst bm true`'s reading — or,
+merging the line into its item's standing record, gives it exactly the reading
+`demoteEst` writes with `userSet := ownsEstimate` of the line and `rec :=
+recordedEst` of the record: L15's floor, with its user exception
+(`close_week_merges_a_standing_record` unpacks both). -/
+theorem close_reads_every_remaining_estimate_through_demoteEst {g : Grain} {now : Day}
+    {p q : WfPlan} (h : close g now p = .ok q) (i : Id) (e f : Entity)
     (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f) (bm : Nat) :
+    remainingOf bm f.val.line = remainingOf bm e.val.line ∨
+      ∃ t, e.val.archive = some t ∧ remainingOf bm f.val.line =
+        remainingOf bm (demoteEst bm (ownsEstimate e.val.line) (recordedEst bm t.line) e).val.line := by
+  rcases close_rewrites_a_line_only_by_stamping_or_merging_it h i e f hp hq with
+    hl | ⟨ss, hl⟩ | ⟨ss, t, ha, hl⟩
+  · exact Or.inl (by rw [hl])
+  · exact Or.inl (by rw [hl, Field.remainingOf_setDemoted])
+  · exact Or.inr ⟨t, ha, by rw [hl, Field.remainingOf_setDemoted, carryEst_reads_as_demoteEst]⟩
+
+/-- **The old estimate law, where it still holds as stated**: a line whose item
+has no standing record keeps its remaining estimate at every block length. -/
+theorem close_keeps_the_remaining_estimate_of_a_line_with_no_record {g : Grain} {now : Day}
+    {p q : WfPlan} (h : close g now p = .ok q) (i : Id) (e f : Entity)
+    (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f)
+    (hrec : e.val.archive = none) (bm : Nat) :
     remainingOf bm f.val.line = remainingOf bm e.val.line := by
-  rcases close_rewrites_a_line_only_by_stamping_it h i e f hp hq with hl | ⟨ss, hl⟩
-  · rw [hl]
-  · rw [hl, Field.remainingOf_setDemoted]
+  rcases close_reads_every_remaining_estimate_through_demoteEst h i e f hp hq bm with h1 | ⟨t, ha, _⟩
+  · exact h1
+  · rw [hrec] at ha; cases ha
 
 /-- **Narrowed F4** (`close_never_demotes_a_wall`, whose `f.val = e.val` forbids
 the carry — and the rank shift a landing inside a section performs; refuted as
@@ -1393,31 +1446,216 @@ theorem closeOne_refuses_an_ill_formed_post_state {g : Grain} {now : Day} {i : I
     rw [hf]
     simp only [dif_neg hbad]
 
-/-- **A second demotion is refused by the close, too.**  §6.3's week row on an
-item that already carries a tombstone — §4.3's own pre-close pair, a `[ ]`
-record in a week beside its `[-]` copy in a month — is `alreadyDemoted`:
-re-filing it needs `demoteEst`'s floor over the standing copy's `est:`, whose
-inputs `close` does not have (README gap 53). -/
-theorem closeOne_week_refuses_a_standing_tombstone {now : Day} {i : Id} {p : WfPlan}
-    {e : Entity} {r : Region} {k : DocIx} (hget : p.val.store.get i = some e)
-    (hact : closeAct week now p.val e.val.skel = .file r) (hk : closeTarget week now p.val = some k)
-    (hspot : landingSpot p.val k .demotedSection (sectionAt p.val e.val.live) = .ok none)
-    (harch : e.val.archive.isSome = true) : closeOne week now i p = .error .alreadyDemoted := by
-  have hl : (closePolicy week).landing = .demotedSection := rfl
-  have hfe : fileE week r ⟨k, endRank p.val k⟩ e = .error .alreadyDemoted :=
-    demote_on_a_standing_tombstone_is_refused _ _ e harch
-  unfold closeOne
-  simp only [hget, hact, hk, hl, hspot]
-  unfold landAt
-  simp only
-  unfold WfPlan.mapAt
-  split
-  · rename_i hn; rw [hget] at hn; simp at hn
-  · rename_i a hget'
-    rw [hget] at hget'
-    injection hget' with hget'
-    subst hget'
-    rw [hfe]
+/-! ### Gap 53: a standing record is merged, and the close no longer refuses it
+
+§4.3's own pre-close pair — a `[ ]` line in a week beside its `[-]` copy under a
+month's `# Demoted` — made the week close answer `alreadyDemoted` until the copy
+became `refile` (README gap 53, stage-4 hardening step 2).  The two directions:
+no close answers `alreadyDemoted` at all (`close_never_refuses_alreadyDemoted`),
+and what a week close writes for such a line is fork-point `demote_one`'s merge
+with L15's floor (`close_week_merges_a_standing_record`); the loaded-plan witnesses
+are in `Boundary.lean` (`the_week_close_merges_each_standing_record`). -/
+
+theorem mapAt_error {p : WfPlan} {i : Id} {F : Entity → Except KErr Entity} {x : KErr}
+    (h : p.mapAt i F = .error x) :
+    x = .noSuchId ∨ x = .badHorizon ∨ ∃ e, p.val.store.get i = some e ∧ F e = .error x := by
+  unfold WfPlan.mapAt at h
+  split at h
+  · injection h with h; exact Or.inl h.symm
+  · rename_i e hget
+    split at h
+    · rename_i k hk
+      injection h with h; subst h
+      exact Or.inr (Or.inr ⟨e, hget, hk⟩)
+    · split at h
+      · simp at h
+      · injection h with h; exact Or.inr (Or.inl h.symm)
+
+/-- `landAt` refuses as `shiftAt` and `mapAt` do, or with the transform's own
+refusal of the entity at `i` — ranks shifted, box unchanged. -/
+theorem landAt_error {p : WfPlan} {k : DocIx} {spot : Option Nat} {i : Id}
+    {f : Site → Entity → Except KErr Entity} {x : KErr} (h : landAt p k spot i f = .error x) :
+    x = .noSuchId ∨ x = .badHorizon ∨ ∃ t e e0, p.val.store.get i = some e0 ∧
+      e.val.status = e0.val.status ∧ f t e = .error x := by
+  cases spot with
+  | none =>
+    rcases mapAt_error h with h1 | h1 | ⟨e, he, hf⟩
+    · exact Or.inl h1
+    · exact Or.inr (Or.inl h1)
+    · exact Or.inr (Or.inr ⟨_, e, e, he, rfl, hf⟩)
+  | some n =>
+    unfold landAt at h
+    simp only at h
+    cases h1 : p.shiftAt k n with
+    | error y =>
+      rw [h1] at h
+      injection h with h
+      unfold WfPlan.shiftAt at h1
+      split at h1
+      · simp at h1
+      · injection h1 with h1; exact Or.inr (Or.inl (h.symm.trans h1.symm))
+    | ok q =>
+      rw [h1] at h
+      rcases mapAt_error h with h2 | h2 | ⟨e, he, hf⟩
+      · exact Or.inl h2
+      · exact Or.inr (Or.inl h2)
+      · have hv := WfPlan.shiftAt_val h1
+        have hg : q.val.store.get i = (p.val.store.get i).map (Entity.shiftIn k n) := by rw [hv]; rfl
+        rw [hg] at he
+        cases hp : p.val.store.get i with
+        | none => rw [hp] at he; simp at he
+        | some e0 =>
+          rw [hp] at he
+          simp only [Option.map_some, Option.some.injEq] at he
+          subst he
+          exact Or.inr (Or.inr ⟨_, Entity.shiftIn k n e0, e0, rfl, rfl, hf⟩)
+
+theorem landingSpot_error {p : PlanCore} {k : DocIx} {l : Landing} {src : Option (List Char)}
+    {x : KErr} (h : landingSpot p k l src = .error x) : x = .noTarget ∨ x = .noSection := by
+  unfold landingSpot at h
+  split at h
+  · injection h with h; exact Or.inl h.symm
+  · split at h
+    · simp at h
+    · split at h
+      · injection h with h; exact Or.inr h.symm
+      · simp at h
+    · split at h
+      · simp at h
+      · split at h
+        · injection h with h; exact Or.inr h.symm
+        · simp at h
+
+/-- The only filing transform that can answer `alreadyDemoted` is the week row's
+`refile`, and only for a line whose own box is `[-]`. -/
+theorem fileE_alreadyDemoted {g : Grain} {r : Region} {t : Site} {e : Entity}
+    (h : fileE g r t e = .error .alreadyDemoted) :
+    (closePolicy g).disposition = .copy ∧ e.val.status = .demoted := by
+  unfold fileE at h
+  cases hd : (closePolicy g).disposition with
+  | move =>
+    simp only [hd, moveTo, lift] at h
+    split at h <;> simp at h
+  | moveReopening =>
+    simp only [hd, lift] at h
+    split at h <;> simp at h
+  | copy =>
+    simp only [hd] at h
+    cases hs : closeStamp g r.ix with
+    | none => simp [hs] at h
+    | some st =>
+      simp only [hs] at h
+      exact ⟨rfl, refile_refuses_only_a_record h⟩
+
+/-- **No step of a close answers `alreadyDemoted`.** -/
+theorem closeOne_never_refuses_alreadyDemoted (g : Grain) (now : Day) (i : Id) (p : WfPlan) :
+    closeOne g now i p ≠ .error .alreadyDemoted := by
+  intro h
+  unfold closeOne at h
+  split at h
+  · simp at h
+  · rename_i e hget
+    split at h
+    · simp at h
+    · split at h
+      · simp at h
+      · rcases landAt_error h with h1 | h1 | ⟨t, e', _, _, _, hf⟩
+        · simp at h1
+        · simp at h1
+        · simp only [moveTo, lift] at hf
+          split at hf <;> simp at hf
+    · rename_i r hact
+      split at h
+      · simp at h
+      · split at h
+        · rename_i x hx
+          injection h with h; subst h
+          rcases landingSpot_error hx with h1 | h1 <;> simp at h1
+        · rcases landAt_error h with h1 | h1 | ⟨t, e', e0, he0, hst, hf⟩
+          · simp at h1
+          · simp at h1
+          · rw [hget] at he0
+            injection he0 with he0
+            subst he0
+            obtain ⟨hcopy, hdem⟩ := fileE_alreadyDemoted hf
+            have htakes : (closePolicy g).takes e'.val.status = true := by
+              rw [hst]
+              unfold closeAct at hact
+              split at hact
+              · simp at hact
+              · split at hact
+                · simp at hact
+                · rename_i hn
+                  exact Bool.not_eq_false _ |>.mp hn
+            rw [hdem, closePolicy_takes_the_demoted_record_only_at_month] at htakes
+            exact closePolicy_copies_only_below_month g hcopy (by simpa using htakes)
+
+/-- **A close never answers `alreadyDemoted`** — the refusal README gap 53
+recorded on §4.3's own example week is gone at every grain.  (It replaces
+`closeOne_week_refuses_a_standing_tombstone`, which said the week close refused
+such a line.) -/
+theorem close_never_refuses_alreadyDemoted (g : Grain) (now : Day) (p : WfPlan) :
+    close g now p ≠ .error .alreadyDemoted := by
+  show (closeCands g now p.val).foldlM (fun q i => closeOne g now i q) p ≠ _
+  generalize closeCands g now p.val = l
+  induction l generalizing p with
+  | nil => intro h; cases h
+  | cons i rest ih =>
+    simp only [List.foldlM_cons]
+    cases h1 : closeOne g now i p with
+    | error x =>
+      intro h
+      injection h with h
+      subst h
+      exact closeOne_never_refuses_alreadyDemoted g now i p h1
+    | ok q => exact ih q
+
+/-- **§4.3's pre-close pair closes, merged (README gap 53).**  A week close that
+takes a line whose item already has a `# Demoted` record rewrites that record: the
+line it leaves is the tombstone, the record's box is `[-]`, its stamps are
+fork-point `merge_stamps` — the record's history, then the line's, then the closed
+week's, each once (`mergeStamps_spec`, `mergeStamps_of_nodup`) — and its estimate is
+L15's: when the line owns an estimate it stands byte for byte, with only the stamps
+set (`demoteEst_respects_user`); when it owns none, the record's measured remaining
+is a floor, and so is the line's own reading (`demoteEst_conserves`). -/
+theorem close_week_merges_a_standing_record {now : Day} {p q : WfPlan}
+    (h : close week now p = .ok q) {i : Id} {e f : Entity}
+    (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f) {r : Region}
+    (hact : closeAct week now p.val e.val.skel = .file r) {t : Tomb}
+    (harch : e.val.archive = some t) :
+    f.val.archive.map Tomb.line = some e.val.line ∧ f.val.status = .demoted ∧
+      f.val.stamps = mergeStamps (stampsOfLine t.line) e.val.stamps
+        (.week (Cal.isoOf (7 * r.ix)).week) ∧
+      (ownsEstimate e.val.line = true → f.val.line = Field.setDemoted f.val.stamps e.val.line) ∧
+      ∀ bm, ownsEstimate e.val.line = false →
+        recordedEst bm t.line ≤ remainingOf bm f.val.line ∧
+          remainingOf bm e.val.line ≤ remainingOf bm f.val.line := by
+  obtain ⟨_, _, hsk⟩ := close_files_a_taken_line_into_closeTo h hp hq hact
+  have hskel : skelAfter week r f.val.live.doc e.val.skel =
+      ⟨f.val.live.doc, some e.val.skel.doc, some e.val.skel.line, .demoted,
+        refiledLine (.week (Cal.isoOf (7 * r.ix)).week) e.val.skel.archLine e.val.skel.line⟩ := rfl
+  rw [hskel] at hsk
+  have harchL : e.val.skel.archLine = some t.line := by simp [Core.skel, harch]
+  have hline : f.val.line = Field.setDemoted
+      (mergeStamps (stampsOfLine t.line) e.val.stamps (.week (Cal.isoOf (7 * r.ix)).week))
+      (carryEst t.line e.val.line) := by
+    have := congrArg Skel.line hsk
+    rw [harchL] at this
+    exact this
+  have hst : f.val.stamps = mergeStamps (stampsOfLine t.line) e.val.stamps
+      (.week (Cal.isoOf (7 * r.ix)).week) := by
+    show (Field.viewDemoted f.val.line).getD [] = _
+    rw [hline, Field.view_set_demoted _ _
+      (List.ne_nil_of_mem (((mergeStamps_spec _ _ _).2 _).2 (Or.inr (Or.inr rfl))))]
+    rfl
+  refine ⟨congrArg Skel.archLine hsk, congrArg Skel.status hsk, hst, fun hu => ?_, fun bm hu => ?_⟩
+  · rw [hline, hst]
+    simp [carryEst, hu]
+  · have hl : remainingOf bm f.val.line =
+        remainingOf bm (demoteEst bm false (recordedEst bm t.line) e).val.line := by
+      rw [hline, Field.remainingOf_setDemoted, carryEst_reads_as_demoteEst, hu]
+    rw [hl]
+    exact demoteEst_conserves bm _ e
 
 /-- **A refusal is the close's refusal.**  The fold does not skip a step that
 fails: the first candidate's refusal is the whole close's answer, and no later
@@ -1927,14 +2165,18 @@ theorem autoClose_takes_each_line_at_most_once {now : Day} {p q : WfPlan}
   obtain ⟨g, hg⟩ := stepSkel_three_is_one now p.val e.val.skel
   exact ⟨g, (autoClose_skel h hp hq).trans hg⟩
 
-/-- One step appends at most one stamp, at any grain. -/
-theorem stepSkel_stamps (g : Grain) (now : Day) (p : PlanCore) (s : Skel) :
+/-- One step adds at most one stamp, at any grain: it appends one, or — merging a
+line into its item's standing record (README gap 53) — it takes fork-point
+`merge_stamps` of the record's history, the line's and that one stamp. -/
+theorem stepSkel_adds_at_most_one_stamp (g : Grain) (now : Day) (p : PlanCore) (s : Skel) :
     (stepSkel g now p s).stamps = s.stamps ∨
-      ∃ st, (stepSkel g now p s).stamps = s.stamps ++ [st] := by
-  have hset : ∀ st : Stamp,
-      (Field.viewDemoted (Field.setDemoted (s.stamps ++ [st]) s.line)).getD [] = s.stamps ++ [st] := by
-    intro st
-    rw [Field.view_set_demoted _ _ (by simp)]
+      ∃ st, (stepSkel g now p s).stamps = s.stamps ++ [st] ∨
+        ∃ tl, s.archLine = some tl ∧
+          (stepSkel g now p s).stamps = mergeStamps (stampsOfLine tl) s.stamps st := by
+  have hset : ∀ (ss : List Stamp) (l : RawItem), ss ≠ [] →
+      (Field.viewDemoted (Field.setDemoted ss l)).getD [] = ss := by
+    intro ss l hne
+    rw [Field.view_set_demoted _ _ hne]
     rfl
   unfold stepSkel
   split
@@ -1950,22 +2192,52 @@ theorem stepSkel_stamps (g : Grain) (now : Day) (p : PlanCore) (s : Skel) :
         unfold stampedLine
         cases closeStamp g r.ix with
         | none => exact Or.inl rfl
-        | some st => exact Or.inr ⟨st, hset st⟩
+        | some st => exact Or.inr ⟨st, Or.inl (hset _ _ (by simp))⟩
       | copy =>
         cases closeStamp g r.ix with
         | none => exact Or.inl rfl
-        | some st => exact Or.inr ⟨st, hset st⟩
+        | some st =>
+          cases ha : s.archLine with
+          | none => exact Or.inr ⟨st, Or.inl (hset _ _ (by simp))⟩
+          | some tl =>
+            exact Or.inr ⟨st, Or.inr ⟨tl, rfl, hset _ _
+              (List.ne_nil_of_mem (((mergeStamps_spec _ _ _).2 st).2 (Or.inr (Or.inr rfl))))⟩⟩
     · exact Or.inl rfl
 
-/-- **F1's double stamp, ruled out.**  Across one `autoClose`, however stale the
-tree, a line gains at most one stamp. -/
-theorem autoClose_stamps_each_line_at_most_once {now : Day} {p q : WfPlan}
+/-- **F1's double stamp, ruled out** (restates
+`autoClose_stamps_each_line_at_most_once`, whose two disjuncts a merged record
+falsifies).  Across one `autoClose`, however stale the tree, a line gains at most
+one stamp: it keeps its stamps, gains one, or is merged into its item's standing
+record — whose stamps are then the record's, the line's and that one stamp, each
+once (`mergeStamps_spec`), so no merge writes a stamp twice either. -/
+theorem autoClose_adds_at_most_one_stamp_to_each_line {now : Day} {p q : WfPlan}
     (h : autoClose now p = .ok q) {i : Id} {e f : Entity}
     (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f) :
-    f.val.stamps = e.val.stamps ∨ ∃ st, f.val.stamps = e.val.stamps ++ [st] := by
+    f.val.stamps = e.val.stamps ∨ ∃ st, f.val.stamps = e.val.stamps ++ [st] ∨
+      ∃ t, e.val.archive = some t ∧ f.val.stamps = mergeStamps (stampsOfLine t.line) e.val.stamps st := by
   obtain ⟨g, hg⟩ := autoClose_takes_each_line_at_most_once h hp hq
   rw [← Core.skel_stamps, ← Core.skel_stamps, hg]
-  exact stepSkel_stamps g now p.val e.val.skel
+  rcases stepSkel_adds_at_most_one_stamp g now p.val e.val.skel with h1 | ⟨st, h2 | ⟨tl, ha, h3⟩⟩
+  · exact Or.inl h1
+  · exact Or.inr ⟨st, Or.inl h2⟩
+  · refine Or.inr ⟨st, Or.inr ?_⟩
+    cases he : e.val.archive with
+    | none => simp [Core.skel, he] at ha
+    | some t =>
+      have ht : t.line = tl := by simpa [Core.skel, he] using ha
+      exact ⟨t, rfl, by rw [ht]; exact h3⟩
+
+/-- **The old law, where it still holds as stated**: a line whose item has no
+standing record gains at most one stamp, appended. -/
+theorem autoClose_stamps_each_line_with_no_record_at_most_once {now : Day} {p q : WfPlan}
+    (h : autoClose now p = .ok q) {i : Id} {e f : Entity}
+    (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f)
+    (hrec : e.val.archive = none) :
+    f.val.stamps = e.val.stamps ∨ ∃ st, f.val.stamps = e.val.stamps ++ [st] := by
+  rcases autoClose_adds_at_most_one_stamp_to_each_line h hp hq with h1 | ⟨st, h2 | ⟨t, ha, _⟩⟩
+  · exact Or.inl h1
+  · exact Or.inr ⟨st, h2⟩
+  · rw [hrec] at ha; cases ha
 
 /-! ## Gap 59: a close keeps source order (stage 4 step 8)
 

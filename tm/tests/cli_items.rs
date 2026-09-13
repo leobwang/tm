@@ -689,19 +689,28 @@ fn move_into_the_tombstones_file_is_refused_by_name() {
     assert!(tm.events().is_empty(), "{:?}", tm.events());
 }
 
-/// A second demotion of an id with a standing archive record used to
-/// overwrite that record silently; §6.3 gives an item **one** record, so
-/// the kernel refuses by name (`alreadyDemoted`) — kernel/README.md,
-/// 2026-09-12 "the five lifecycle verbs" block.
+/// Demoting an id that already has a standing `# Demoted` record merges into
+/// that record, as fork-point `demote_one` did: §6.3 gives an item **one**
+/// record, so the month keeps one `^m2` line — the live line's bytes, `[-]`,
+/// its stamps merged with the record's (`W37` once) — and the week line stays
+/// behind as `[-]`. Until kernel/README.md gap 53 closed the kernel refused
+/// this by name (`alreadyDemoted`, 2026-09-12 "the five lifecycle verbs"
+/// block), which kept the record safe from a silent overwrite but also from
+/// the demotion; the merge keeps its stamps and, under a line with no estimate
+/// of its own, its `est:`.
 #[test]
-fn demote_with_a_standing_record_is_refused_by_name() {
+fn demote_with_a_standing_record_merges_into_it() {
     let tm = Tm::new();
-    let month_before = tm.read("month/2026-09.md");
     let out = tm.run(&["demote", "^m2"]);
-    assert_ne!(out.code, 0, "{}{}", out.stdout, out.stderr);
-    assert!(out.stderr.contains("alreadyDemoted"), "{}", out.stderr);
-    assert_eq!(tm.read("month/2026-09.md"), month_before);
-    assert!(tm.events().is_empty(), "{:?}", tm.events());
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    let month = tm.read("month/2026-09.md");
+    assert_eq!(month.matches("^m2").count(), 1, "{month}");
+    assert_eq!(
+        tm.line("month/2026-09.md", "m2"),
+        "- [-] 4 6b Rollback path passes tests   @O2 demoted:W37 ^m2"
+    );
+    assert_eq!(tm.line("week/2026-W37.md", "m2"), "- [-] 4 6b Rollback path passes tests   @O2 ^m2");
+    assert_eq!(tm.events(), vec!["demote".to_string()]);
 }
 
 /// Gap 32's guard, in the shipped binary: a tab is a word character to the

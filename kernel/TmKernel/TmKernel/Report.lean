@@ -27,8 +27,9 @@ line went somewhere it did not.
 1. it is a value under `ok`, beside `docs` — `runPlan` builds it only on the
    success path, so a host that gets `err` gets no report;
 2. every field is a bounded type with a smart constructor its decoder uses —
-   `Grain` is `Fin 3`, the disposition is `CloseDid` (four constructors,
-   `CloseDid.ofName?` refuses every other spelling), a stamp is `Field.Stamp`
+   `Grain` is `Fin 3`, the disposition is `CloseDid` (five constructors since
+   README gap 53 added `copyMerging`; `CloseDid.ofName?` refuses every other
+   spelling), a stamp is `Field.Stamp`
    (whose parser is `parseStamp`), minutes are `Arith.Pos` (`den > 0`, built by
    `Arith.posOfNat`, decoded by `Arith.ofPair?`, which refuses `den = 0`), and
    the block length is `BlockMin` (`BlockMin.ofNat?` refuses `0`);
@@ -65,7 +66,9 @@ theorem BlockMin.ofNat?_pos {n : Nat} (h : 0 < n) : BlockMin.ofNat? n = some ⟨
   simp [BlockMin.ofNat?, h]
 
 /-- **What a close did to one line, by name.**  The first three are the
-`ClosePolicy` row's `Disposition`; the fourth is the wall exemption's carry. -/
+`ClosePolicy` row's `Disposition`; the fourth is the week row's copy of a line whose
+item already had a `# Demoted` record, merged into it (README gap 53); the fifth is
+the wall exemption's carry. -/
 inductive CloseDid
   /-- moved, unchanged (§6.3's month row) -/
   | move
@@ -73,6 +76,10 @@ inductive CloseDid
   | moveReopening
   /-- `[-]` left behind, the stamped record filed forward (§6.3's week row) -/
   | copy
+  /-- `[-]` left behind, and the item's standing `# Demoted` record rewritten in
+      its place: stamps merged, estimate floored per L15 (§6.3's week row over
+      §4.3's pre-close pair, fork-point `demote_one`; README gap 53) -/
+  | copyMerging
   /-- a wall still ahead, moved undemoted into the live week -/
   | carry
 deriving DecidableEq, Repr
@@ -82,18 +89,29 @@ def CloseDid.ofDisposition : Disposition → CloseDid
   | .moveReopening => .moveReopening
   | .copy          => .copy
 
+/-- The name of a filing step: the row's disposition, and `copyMerging` for a copy
+of a line whose item has a standing record (`merging`). -/
+def CloseDid.ofStep : Disposition → Bool → CloseDid
+  | .copy, true => .copyMerging
+  | d,     _    => .ofDisposition d
+
+theorem CloseDid.ofStep_ne_carry (d : Disposition) (b : Bool) : CloseDid.ofStep d b ≠ .carry := by
+  cases d <;> cases b <;> simp [CloseDid.ofStep, CloseDid.ofDisposition]
+
 /-- The name on the wire: the constructor's own. -/
 def CloseDid.name : CloseDid → String
   | .move          => "move"
   | .moveReopening => "moveReopening"
   | .copy          => "copy"
+  | .copyMerging   => "copyMerging"
   | .carry         => "carry"
 
-/-- The decoder's smart constructor: exactly the four names, nothing else. -/
+/-- The decoder's smart constructor: exactly the five names, nothing else. -/
 def CloseDid.ofName? (s : List Char) : Option CloseDid :=
   if s = "move".toList then some .move
   else if s = "moveReopening".toList then some .moveReopening
   else if s = "copy".toList then some .copy
+  else if s = "copyMerging".toList then some .copyMerging
   else if s = "carry".toList then some .carry
   else none
 
@@ -104,7 +122,7 @@ theorem CloseDid.ofName?_name : ∀ d : CloseDid, CloseDid.ofName? d.name.toList
 string are refused. -/
 theorem CloseDid.ofName?_refuses :
     CloseDid.ofName? "moved".toList = none ∧ CloseDid.ofName? "Copy".toList = none ∧
-      CloseDid.ofName? [] = none := by
+      CloseDid.ofName? "copymerging".toList = none ∧ CloseDid.ofName? [] = none := by
   decide
 
 /-- **An item's minutes**, as the kernel reads them: the estimate view
@@ -150,7 +168,7 @@ def closeEntry (g : Grain) (now : Day) (bm : BlockMin) (p : PlanCore) (i : Id) (
   | .stay   => none
   | .carry  => some ⟨i, g, .carry, s.doc, (stepSkel g now p s).doc, none,
                      estMinutes bm (stepSkel g now p s).line⟩
-  | .file r => some ⟨i, g, .ofDisposition (closePolicy g).disposition, s.doc,
+  | .file r => some ⟨i, g, .ofStep (closePolicy g).disposition s.archLine.isSome, s.doc,
                      (stepSkel g now p s).doc, closeStamp g r.ix,
                      estMinutes bm (stepSkel g now p s).line⟩
 
@@ -254,8 +272,10 @@ theorem mem_closeReport {g : Grain} {now : Day} {bm : BlockMin} {p : PlanCore} {
 
 /-! ## Under a successful close, each entry is what happened -/
 
-/-- A step's stamps: the row's stamp for the closed region, appended. -/
-theorem skelAfter_stamps (g : Grain) (r : Region) (k : DocIx) (s : Skel) :
+/-- A step's stamps, where it does not merge: the row's stamp for the closed
+region, appended. -/
+theorem skelAfter_stamps_of_not_merging (g : Grain) (r : Region) (k : DocIx) (s : Skel)
+    (hm : CloseDid.ofStep (closePolicy g).disposition s.archLine.isSome ≠ .copyMerging) :
     (skelAfter g r k s).stamps = s.stamps ++ (closeStamp g r.ix).toList := by
   have hset : ∀ st : Stamp,
       (Field.viewDemoted (Field.setDemoted (s.stamps ++ [st]) s.line)).getD [] = s.stamps ++ [st] := by
@@ -264,8 +284,35 @@ theorem skelAfter_stamps (g : Grain) (r : Region) (k : DocIx) (s : Skel) :
     rfl
   match g with
   | ⟨0, _⟩ => exact hset _
-  | ⟨1, _⟩ => exact hset _
+  | ⟨1, _⟩ =>
+    cases ha : s.archLine with
+    | none =>
+      show (Field.viewDemoted (refiledLine _ s.archLine s.line)).getD [] = _
+      rw [ha]
+      exact hset _
+    | some tl => rw [ha] at hm; exact absurd rfl hm
   | ⟨2, _⟩ => simp [skelAfter, closePolicy, closeStamp, stampRuleOf, Skel.stamps]
+
+/-- A step's stamps, where it merges (README gap 53): fork-point `merge_stamps` of
+the standing record's history, the line's, and the row's stamp. -/
+theorem skelAfter_stamps_merging (g : Grain) (r : Region) (k : DocIx) (s : Skel)
+    (hm : CloseDid.ofStep (closePolicy g).disposition s.archLine.isSome = .copyMerging) :
+    ∃ tl st, s.archLine = some tl ∧ closeStamp g r.ix = some st ∧
+      (skelAfter g r k s).stamps = mergeStamps (stampsOfLine tl) s.stamps st := by
+  match g with
+  | ⟨0, _⟩ => simp [closePolicy, CloseDid.ofStep, CloseDid.ofDisposition] at hm
+  | ⟨2, _⟩ => simp [closePolicy, CloseDid.ofStep, CloseDid.ofDisposition] at hm
+  | ⟨1, _⟩ =>
+    cases ha : s.archLine with
+    | none => rw [ha] at hm; simp [closePolicy, CloseDid.ofStep, CloseDid.ofDisposition] at hm
+    | some tl =>
+      refine ⟨tl, _, rfl, rfl, ?_⟩
+      show (Field.viewDemoted (refiledLine _ s.archLine s.line)).getD [] = _
+      rw [ha]
+      show (Field.viewDemoted (Field.setDemoted _ _)).getD [] = _
+      rw [Field.view_set_demoted _ _
+        (List.ne_nil_of_mem (((mergeStamps_spec _ _ _).2 _).2 (Or.inr (Or.inr rfl))))]
+      rfl
 
 /-- **Under a successful close, a taken line's step found its target** — the
 branches of `stepSkel` in which the close would have refused are not the ones
@@ -302,12 +349,19 @@ theorem close_found_the_target {g : Grain} {now : Day} {p q : WfPlan}
 close's report: it names the close's grain; the item is in the plan before and
 after; the entry's `src` is the file its live line was in and its `dst` the
 file it is in now; the stamps it carries now are the ones it carried with the
-entry's `stamp` appended; and the entry's minutes are its estimate now. -/
+entry's `stamp` appended — or, for a `copyMerging` entry (README gap 53), fork-point
+`merge_stamps` of its standing record's history, its own and the entry's stamp;
+and the entry's minutes are its estimate now.  (The stamp clause is per
+disposition since gap 53: no close before it could report a `copyMerging` entry —
+such a line was a refusal — so on every plan the earlier statement covered, this
+one says the same.) -/
 theorem closeReport_agrees_with_close {g : Grain} {now : Day} {bm : BlockMin} {p q : WfPlan}
     (h : close g now p = .ok q) {x : CloseEntry} (hx : x ∈ closeReport g now bm p.val) :
     x.grain = g ∧ ∃ e f, p.val.store.get x.id = some e ∧ q.val.store.get x.id = some f ∧
       e.val.live.doc = x.src ∧ f.val.live.doc = x.dst ∧
-      f.val.stamps = e.val.stamps ++ x.stamp.toList ∧
+      (x.did ≠ .copyMerging → f.val.stamps = e.val.stamps ++ x.stamp.toList) ∧
+      (x.did = .copyMerging → ∃ t st, e.val.archive = some t ∧ x.stamp = some st ∧
+        f.val.stamps = mergeStamps (stampsOfLine t.line) e.val.stamps st) ∧
       x.minutes = estMinutes bm f.val.line := by
   obtain ⟨i, e, hp, hx⟩ := mem_closeReport hx
   -- the id is still in the plan: a close relocates, it never removes
@@ -328,7 +382,7 @@ theorem closeReport_agrees_with_close {g : Grain} {now : Day} {bm : BlockMin} {p
       subst hx
       obtain ⟨k, _, hstep⟩ := ht.1 hact
       have hf : f.val.skel = { e.val.skel with doc := k } := hsk.trans hstep
-      refine ⟨rfl, e, f, hp, hq, rfl, ?_, ?_, ?_⟩
+      refine ⟨rfl, e, f, hp, hq, rfl, ?_, fun _ => ?_, fun hc => absurd hc (by simp), ?_⟩
       · show f.val.live.doc = (stepSkel g now p.val e.val.skel).doc
         rw [← hsk]; rfl
       · rw [← Core.skel_stamps, ← Core.skel_stamps, hf]; simp [Skel.stamps]
@@ -339,10 +393,18 @@ theorem closeReport_agrees_with_close {g : Grain} {now : Day} {bm : BlockMin} {p
       injection hx with hx
       subst hx
       obtain ⟨k, _, hstep⟩ := ht.2 r hact
-      refine ⟨rfl, e, f, hp, hq, rfl, ?_, ?_, ?_⟩
+      refine ⟨rfl, e, f, hp, hq, rfl, ?_, fun hm => ?_, fun hm => ?_, ?_⟩
       · show f.val.live.doc = (stepSkel g now p.val e.val.skel).doc
         rw [← hsk]; rfl
-      · rw [← Core.skel_stamps, ← Core.skel_stamps, hsk, hstep, skelAfter_stamps]
+      · rw [← Core.skel_stamps, ← Core.skel_stamps, hsk, hstep, skelAfter_stamps_of_not_merging _ _ _ _ hm]
+      · obtain ⟨tl, st, ha, hs, hst⟩ := skelAfter_stamps_merging g r k e.val.skel hm
+        cases he : e.val.archive with
+        | none => simp [Core.skel, he] at ha
+        | some t =>
+          have htl : t.line = tl := by simpa [Core.skel, he] using ha
+          refine ⟨t, st, rfl, hs, ?_⟩
+          rw [← Core.skel_stamps, hsk, hstep, hst, htl]
+          rfl
       · show estMinutes bm (stepSkel g now p.val e.val.skel).line = estMinutes bm f.val.line
         rw [← hsk]; rfl
 
@@ -381,7 +443,7 @@ theorem closeReport_names_the_region_of_now {g : Grain} {now : Day} {bm : BlockM
       subst hx
       have hd := (close_files_a_taken_line_into_closeTo h hp hq hact).1
       refine ⟨fun hc => ?_, fun _ => ?_⟩
-      · exact absurd hc (by cases (closePolicy g).disposition <;> simp [CloseDid.ofDisposition])
+      · exact absurd hc (CloseDid.ofStep_ne_carry _ _)
       · show docRegion q.val (stepSkel g now p.val e.val.skel).doc = _
         rw [← hsk]; exact hd
 
@@ -403,7 +465,7 @@ theorem closeReport_stamp_names_its_grain {g : Grain} {now : Day} {bm : BlockMin
 /-! ## `autoClose`'s report names each line at most once
 
 The owner's second measured failure was a double stamp: a tree fourteen days
-stale stamped every stale pinned item twice.  `autoClose_stamps_each_line_at_most_once`
+stale stamped every stale pinned item twice.  `autoClose_adds_at_most_one_stamp_to_each_line`
 rules it out on the files; this is the same fact on the report, which the month
 review reads — an id appears in one grain's entries or in none. -/
 

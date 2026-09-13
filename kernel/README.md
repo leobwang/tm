@@ -6195,3 +6195,233 @@ plans**, burn-down **30** (no goal touched); `cargo test --workspace` **999 pass
 / 0 failed / 0 ignored across 66 binaries** (+1, `cli_latency.rs`); the FFI suite
 **68 passed**.  Gaps run to 65 (new gaps start at 66); cheats to 55 (new cheats
 start at 56).
+
+<!-- ===================================================================
+     APPENDED 2026-09-13 (stage-4 hardening).  Step 2: gap 53 closed — a week close (and the `demote` verb) merges a line into its item's standing `# Demoted` record.
+     Closes gap 53; takes gap 66; takes no cheat number.  Retires eight theorem names and restates each beside its replacement (table below).
+     Supersedes, by name: stage-4 step 6's changed-behaviour row 11; step 8's "the close used to name `^d1` and now names `^m2`"; stage 4's closing paragraph's "(gaps 53, 55)" and its owed-list entry for gap 53; step 1's gap-62 retry-cost sentence and gap 64's "(gaps 53, 55)"; step 1's "every example-based row's verb retries a close the kernel refuses (gap 53)"; AGENTS §8.2's mentions of gap 53 as open.
+     =================================================================== -->
+
+## Stage 4 hardening, 2026-09-13: a week close merges into a standing record
+
+Baseline, as recorded at `78e6898` (tree clean): `check.sh` **7/7** — axiom audit
+**1579 theorems**, corpus **33/37 files and 4/5 whole plans**, burn-down **30**;
+`cargo test --workspace` **999 passed / 0 failed across 66 binaries**; FFI suite
+68.  Every command below ran under `systemd-run --user --scope -p MemoryMax=40G -p
+MemorySwapMax=0` (8 GB, with `timeout 120`, for every new `decide` probe), every run
+of the binary under `timeout`.
+
+**The defect, reproduced.**  `tm --now 2026-09-14T09:00:00-05:00 --dir T init
+--example`, then any command at that instant, printed "the automatic close (§6.3)
+was refused … kernel refusal: alreadyDemoted" on every command, a week after the
+example tree was created.  The pair is `^m2`, §4.3's own: `- [ ] 4 6b Rollback path
+passes tests   @O2 ^m2` in `week/2026-W37.md` beside `- [-] 4 3b Rollback path passes
+tests @O2 est:3b demoted:W37 ^m2` under September's `# Demoted`.  The kernel loads the
+two lines as one item whose live line is the open week line and whose tombstone is
+the month record; the week row's `demote` refused an item with a tombstone.
+
+**What fork-point `horizon::demote_one` does, read rather than remembered.**  It
+does not refuse.  (1) *Stamps:* `merge_stamps(prior, own, add)` =
+`union_stamps(union_stamps(prior, own), [add])`, where `union_stamps` walks `a` then
+`b` and keeps each stamp the first time it is seen — so the record's history first
+(`prior`, a stale copy in another month before the one in this month), then the
+live line's, then the closed week's, **each once** (`stamps_with` says why: "a second
+close in the same period does not write `W37,W37`").  (2) *Estimate:* `recorded` is
+the record's explicit `est:` in minutes (`ArchivedRecord.est_min`), and
+`demote_est` drops it exactly when `item.own_remaining()` — `est:`, else the leading
+estimate, else `dur:` — is `Some`; otherwise it is a floor.  (3) *Bytes:* the copy is
+the live line rewritten (`[-]`, `est:` from `demote_est`, `demoted:` from the merge);
+`write_demoted_copy` replaces the month's record **in place**; a stale record in
+another month is deleted; the week line is rewritten `[-]` in its own bytes.
+
+**The kernel's merge: `refile` (Cmd.lean).**  With no tombstone it is `demote`.
+With one, an open line is refiled: the tombstone becomes the line being left, the
+record's bytes are `Field.setDemoted (mergeStamps (stampsOfLine record) (stampsOfLine
+line) st) (carryEst record line)`, and the old record's placement is gone — the item
+still has **one** archive record (§6.3), a `Tomb` replacement and never a second one.
+A `[-]` record filed again is still `alreadyDemoted` (`refile_twice_is_not_a_thing`):
+that is the month close's `move`.  Gap 53's three missing inputs, one by one:
+
+- **`bm`**, the block length: not needed.  `carryEst` copies the record's `est:`
+  token onto the line verbatim (inserted where `setEst` inserts one), so its reading
+  is `demoteEst`'s at **every** block length (`carryEst_reads_as_demoteEst`), and the
+  bytes keep the unit the record was written in (§4.1).  `close g now` keeps its
+  signature, and no theorem about it gains a parameter.
+- **`rec`**, the record's remaining: `recordedEst bm t` — the tombstone's own
+  `est:` token read at `bm`, `0` when it has none (`Core.archive` is a `Tomb`
+  carrying its line).  A leading estimate on the record is not read, as the Rust
+  does not read it.
+- **`userSet`**: `ownsEstimate line` — see the next paragraph.
+
+**`userSet`, the rule and its limit.**  The log that would say whether a user set an
+estimate since the record was written is stage 5's, so the rule reads the one line
+every estimate-writing verb lands on — the live one (`tm edit ^id est=`, `tm stop`,
+`tm done --partial` all address the id's live line, never its record).
+`ownsEstimate r := hasEst r || (viewRemaining 0 r).isSome ||
+(Field.viewRemainingDur r).isSome || (Field.viewDur r).isSome`: the fork-point rule
+(`own_remaining` is `Some`) widened to every estimate reader the kernel has — the
+stage-one reader, the field view `Core.est` reads, `dur:`, and an `est:` key of any
+value — so a disagreement between readers falls on the user's side: the floor is
+skipped, never imposed over something a reader calls an estimate (L14's lesson,
+`floor_and_respect_are_incompatible`).  **Known limit, shared with the Rust:** an
+estimate the live line carried *before* the record was written counts as the user's,
+so a recorded remaining larger than it (an earlier close that folded dropped
+children into the record, once gap 22 lands) is not used as a floor and is lost.
+**Rejected, with the reason:** the candidate "the user set an estimate iff the live
+reading differs from the record's" — it drops the floor on a line with no estimate
+(0 differs from `est:3b`), exactly the case the Rust keeps it for, and imposes it on
+a line whose own estimate happens to equal the record's, where the Rust leaves the
+line alone.  Its premise that `readopt` produced the live line is also false for
+§4.3's pair, whose week line no `readopt` wrote.
+
+**Theorems, both directions (AGENTS §5.8).**  All in the step's `Check.lean` block
+(44 new names, 8 retired: 1579 → 1615, the three counts of AGENTS §6.3 agree).
+
+| claim | theorem |
+|---|---|
+| no close answers `alreadyDemoted`, at any grain — the refusal is gone | `close_never_refuses_alreadyDemoted` (and `closeOne_…`, via `fileE_alreadyDemoted`, `landAt_error`, `mapAt_error`, `landingSpot_error`) |
+| a week close over a standing record: tombstone = the line left, box `[-]`, stamps = the Rust's merge, estimate per L15 (the line's own stands byte for byte; else `rec` and the line's reading are floors) | `close_week_merges_a_standing_record` |
+| the merge is the Rust's order when nothing repeats; nothing lost, nothing invented, nothing twice | `mergeStamps_of_nodup`, `mergeStamps_spec` |
+| L15 through the merge, at entity level | `refile_conserves` (`demoteEst_conserves`), `refile_respects_user` (`demoteEst_respects_user`), `carryEst_reads_as_demoteEst` |
+| §4.3's pair closes on a loaded plan: `^m2` (owns `6b`) → `demoted:W37,W36`, no `est:3b`; `^m5` (owns none) → `est:3b demoted:W35,W36`; `^m6` (record already `W36`) → `demoted:W36` once; each old record gone, each new one at the end of `# Demoted` in source order | `the_week_close_merges_each_standing_record` |
+| the report names it | `the_week_close_reports_each_merge` (`copyMerging`, `W36`, 300 / 150 / 50 minutes at a 50-minute block) |
+| the verb merges too | `the_demote_verb_merges_into_a_standing_record` |
+
+The witness moves §4.3's week to 2026-W36 so that Monday 2026-09-07 closes it (as
+`closePreClosePairWitness` did), which is why `^m2` carries both stamps there; on the
+example tree itself the record already says `W37` and the close stamps `W37`, so the
+merge writes `W37` once — the binary test below pins that.  The six new decisions
+were probed first under the 8 GB cap: 8.5 s at a 2.0 GB peak, imports included.
+L16 (`close_is_idempotent`), `close_spec`, the L19 theorems
+(`autoClose_is_each_grain_once`, `autoClose_catches_up_in_one_step`,
+`autoClose_strands_no_unfinished_line`, `autoClose_takes_each_line_at_most_once`),
+`close_keeps_source_order` and the report theorems hold with their statements
+untouched and their proofs unchanged, except the two named in the next table.
+
+**Retired names, each restated beside its replacement.**  Each old statement is false
+once a close merges, so the name is retired rather than kept over a weaker formula;
+where the old statement still holds as stated for items with no standing record, that
+narrowing is a theorem of its own; the three that were public laws are refuted on the
+loaded merge witness.
+
+| retired | why false now | replacement (full law) | the old law, narrowed | refutation |
+|---|---|---|---|---|
+| `closeOne_week_refuses_a_standing_tombstone` | the week close merges | `close_never_refuses_alreadyDemoted`, `close_week_merges_a_standing_record` | — | (its negation is the first) |
+| `close_rewrites_a_line_only_by_stamping_it` | a merged record gains the record's `est:` | `close_rewrites_a_line_only_by_stamping_or_merging_it` | `close_rewrites_a_line_with_no_record_only_by_stamping_it` | `a_merged_record_is_rewritten_beyond_its_stamp` |
+| `close_keeps_every_remaining_estimate` | L15's floor changes a remaining | `close_reads_every_remaining_estimate_through_demoteEst` | `close_keeps_the_remaining_estimate_of_a_line_with_no_record` | `a_merged_record_changes_a_remaining_estimate` |
+| `autoClose_stamps_each_line_at_most_once` | a merged record carries the record's stamps | `autoClose_adds_at_most_one_stamp_to_each_line` | `autoClose_stamps_each_line_with_no_record_at_most_once` | `autoClose_merges_a_line_beyond_one_appended_stamp` |
+| `stepSkel_line` (lemma) | as above | `stepSkel_line_is_stamped_or_merged` | — | — |
+| `stepSkel_stamps` (lemma) | as above | `stepSkel_adds_at_most_one_stamp` | — | — |
+| `skelAfter_stamps` (Report, lemma) | as above | `skelAfter_stamps_merging` | `skelAfter_stamps_of_not_merging` | — |
+| `demote_verb_is_cmdDemote_at_freshRank_without_a_shift` | the verb runs `refile`, which merges where `cmdDemote` refuses | — | `demote_verb_is_cmdDemote_at_freshRank_without_a_shift_or_a_record` | — |
+
+**Two statements kept under their names, changed, and why that is not a weakening.**
+`closeReport_agrees_with_close`'s stamp clause is now per disposition: for an entry
+that is not `copyMerging`, exactly the old clause; for a `copyMerging` entry, the
+merge.  No close before this step could report a `copyMerging` entry — the line was a
+refusal — so on every plan the old statement covered, the new one says the same.
+`the_close_refusals_are_named_on_loaded_plans` loses its fifth conjunct
+(`closePreClosePairWitness` ↦ `alreadyDemoted`), which is false now; its four other
+refusals are unchanged, and the pair's positive is `the_week_close_merges_each_standing_record`.
+
+**The report: a named disposition, bounded (D3).**  `CloseDid` gains a fifth
+constructor, `copyMerging` — "`[-]` left behind, and the item's standing `# Demoted`
+record rewritten in its place" — so a host and the month review can tell a new
+record from a rewritten one without re-reading files.  The name is the constructor's;
+`CloseDid.ofName?` accepts exactly the five names and still refuses `moved`, `Copy`
+and now `copymerging` (`CloseDid.ofName?_refuses`); cheat 53 still bites.
+`closeEntry` names a step `CloseDid.ofStep disposition merging`, `copyMerging` only
+for the week row's copy of a line with a tombstone.
+
+**The host.**  `kernel_bridge::CloseDid::CopyMerging` decodes `copyMerging` (an
+unknown name is still refused: with the kernel changed and the host not yet, the
+binary's first close of the example tree was a *kernel fault*, "report.closes[1]:
+unknown did", nothing written — the decoder failing loudly as designed); the human line counts it as demoted, not
+moved.  `explain`'s `alreadyDemoted` hint and the bridge's message now describe the
+one case that remains (a `[-]` record demoted again).  The `tm demote` doc names the
+merge.  Tests, through the binary:
+
+- **new** `cli_close_kernel.rs::the_example_week_closes_a_week_after_init_merging_m2_into_its_record`:
+  `tm init --example` at 2026-09-07, `tm done ^d1` on 2026-09-11 (gap 55's line,
+  settled before its week ends), then `tm now` at 2026-09-14: exit 0, no refusal on
+  stderr; `^m2` is exactly two lines — `- [-] 4 6b Rollback path passes tests   @O2
+  demoted:W37 ^m2`, the only `^m2` in `month/2026-09.md`, and the week's `[-]` line in
+  its own bytes; one `demote` event for `^m2`; `state.closed.week` = `2026-W37`,
+  swept; `tm check` clean; and the next `tm now` with `TM_KERNEL_FAULT_PROBE=1` exits
+  0 with every plan byte unchanged — the kernel is not called.
+- **changed** `cli_items.rs::demote_with_a_standing_record_is_refused_by_name` →
+  `demote_with_a_standing_record_merges_into_it` (gap 53): `tm demote ^m2` on the
+  fixture exits 0, one `^m2` record in September, `demoted:W37`, the week line `[-]`.
+- **changed** `cli_close_kernel.rs::a_refused_close_is_named_and_writes_nothing`
+  (gap 53): §4.3's literal tree now refuses on `^d1`, `badHorizon`, gap 55 — the name
+  the close gave before gap 59's fix, for the reason recorded there.
+- `cli_lifecycle.rs::closable_week`'s comment: it still removes `^m2`'s record, so
+  those tests keep exercising a plain `copy`; the merge is the new test's.
+- **Mutation check:** with `target/debug/tm` swapped for the `78e6898` binary, all
+  three tests fail; restored, all three pass.
+
+**Deliberate differences from fork-point `demote_one`, each observable.**
+
+| # | fork-point `demote_one` | the kernel now | why |
+|---|---|---|---|
+| 1 | the rewritten record stays where the old one stood in the month file | the old record's line is gone and the merged record lands at the end of `# Demoted` (in source order with the close's other records) | a landing is the close's one rule (`landingSpot`); an in-place landing would put a later source line above an earlier one and break `close_keeps_source_order` |
+| 2 | writes `est:` = the line's rollup (own remaining, floored at 5 min, children folded) onto every copy | writes no `est:` when the line owns an estimate; copies the record's `est:` when it owns none | gap 54 (stage 5, the log) and gap 22 (children), unchanged; the floor is the only estimate this step writes |
+| 3 | re-renders the floor with `est_dur` (`1b` for 90 minutes at a 90-minute block) | the record's token verbatim (`est:90m` stays `90m`) | §4.1: "including the original estimate unit"; the reading is the same at every block length |
+| 4 | a record `est:3m` is floored at `MIN_REMAINING_MIN` = 5 (`est:5m`); a record `est:0m` writes nothing | `est:3m` and `est:0m` are carried as they are | the clamp is the rollup's (§6.4), not L15's; a zero record is carried rather than guessed away |
+| 5 | an `est:` whose value does not parse is a `tm check` problem and reads as no estimate, so the floor is written over that token | counts as the user's estimate (`ownsEstimate`), so nothing is carried over it | a reader disagreement falls on the user's side |
+
+**Gap 53 — closed.**  Its (1) "fork-point `demote_one` rewrites the standing copy
+with merged stamps and takes its recorded `est:` as a floor" is what the week close
+and the verb do (`refile`, `close_week_merges_a_standing_record`,
+`close_never_refuses_alreadyDemoted`); its (2)'s three missing inputs are
+`recordedEst` (from the tombstone's bytes), `ownsEstimate` (the rule above, with its
+limit) and no `bm` at all (`carryEst_reads_as_demoteEst` holds at every block
+length); replacing the record without the floor (B2's "supersede") is not what is
+written — `refile_conserves`.  Its cost (3) is gone: §4.3's own example week closes a
+week after `tm init --example` once its dated line is settled, and `plan-basic`-shaped
+trees close.  Its clearing condition (4) is superseded: neither the wire step nor
+stage 5 was needed.
+
+**What a refused close's retry costs now.**  §4.3's literal example tree, a week
+later, still refuses its automatic close on every command — on `^d1` now,
+`badHorizon`, gap 55 (the past-due half waits on stage 5's `on_miss`, the rest on the
+owner).  Measured from one capped scope (a script timing each child; median of six
+`tm now` at 2026-09-14T09:00): the `78e6898` binary retrying `alreadyDemoted` **4.2
+ms** a command; this binary retrying `badHorizon` **4.3 ms** — the refusal now comes
+after four landings instead of one, and the call is the same size.  With `^d1` done
+before its week ends, the `78e6898` binary still refused on every command (4.0 ms
+each); this binary closes once (**18.9 ms**, the command that writes) and every later
+command skips the kernel (**2.5 ms**).  So a retry on the example tree costs about 2 ms
+over a swept command.  On a history-sized tree whose close is refused after the fold
+has landed lines, gap 64's in-process measurement stands — **0.41 s** on 3,036 lines
+and **0.53 s** on 8,546, per command — unchanged by this step, which touches neither
+the fold's order nor its per-landing check.
+
+**Gap 66 — a plain week copy appends a stamp the line already carries.**  (1) *Not
+done:* a line with no standing record is copied by `demote`, which appends the closed
+week's stamp without looking: a week line already carrying `demoted:W37` — `tm demote`
+then `tm readopt` inside 2026-W37, then the week close — files `demoted:W37,W37`
+(evaluated on a loaded plan: `- [ ] 2 1b Draft the outline demoted:W37 ^m1` closed at
+2026-09-14).  Fork-point `stamps_with` writes `W37` once; the merge above does too.
+(2) *Why:* making the plain copy dedup restates `demote`'s stamp laws
+(`demote_stamps`, `stamps_accumulate_across_readopt`, L11/L12), `skelAfter_stamps_of_not_merging`
+and the report's stamp clause for `copy` entries — a behaviour change beyond this
+step's gap.  (3) *Cost:* the month review's "≥ 2 stamps" cut list counts such an item
+as demoted twice; reachable only through a same-week demote-and-readopt.  (4) *Clears:*
+routing the plain copy through `mergeStamps [] own st` too, with those laws restated.
+
+The proof-to-definition ratio, by the same script (`/tmp/claude-1000/proof_ratio.py`):
+**4.51 : 1** over the library (15,679 : 3,477), from 4.41 : 1; this step added 562
+proof lines to 48 definition lines (Close.lean +217 : 0, Cmd.lean +200 : +27,
+Boundary.lean +108 : +15 with 43 witness lines, Report.lean +37 : +6).  The new
+theorems are the merge's own facts, the restatements of the retired laws (each old
+statement proved false and its narrowing proved beside it), and the refusal's removal;
+none is a new relational law between commands, but the ratio moved against the fired
+§9.1 condition and the owner should read the number with the rest.
+
+Re-measured after this block, every command under the 40 GB cap: `check.sh` **7/7** —
+axiom audit **1615 theorems** (+44 new, −8 retired), corpus **33/37 files and 4/5 whole
+plans**, burn-down **30** (no goal touched); `cargo test --workspace` **1000 passed / 0
+failed / 0 ignored across 66 binaries** (+1, the new CLI test); FFI suite **68**
+(unchanged).  Gaps run to 66 (new gaps start at 67); cheats to 55 (new cheats start at
+56).

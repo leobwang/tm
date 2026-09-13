@@ -50,10 +50,13 @@ fn close_day_moves_the_pinned_item_into_the_week_of_now_and_stamps_the_state() {
     assert!(out.stderr.contains("periodNotEnded"), "{}", out.stderr);
 }
 
-/// `plan-basic` without the two shapes the kernel's week close refuses —
-/// `^d1 due:` (gap 55) and `^m2`'s standing `# Demoted` record (gap 53) —
-/// so the week row itself can be exercised; `cli_close_kernel.rs`'s
-/// `a_refused_close_is_named_and_writes_nothing` covers the refusal.
+/// `plan-basic` without `^d1 due:`, the shape the kernel's week close refuses
+/// (gap 55), so the week row itself can be exercised; `cli_close_kernel.rs`'s
+/// `a_refused_close_is_named_and_writes_nothing` covers the refusal. `^m2`'s
+/// standing `# Demoted` record was the second refusal until kernel/README.md
+/// gap 53 closed; it is still removed here so these tests keep exercising a
+/// plain `copy`, and the merge is covered by `cli_close_kernel.rs`'s
+/// `the_example_week_closes_a_week_after_init_merging_m2_into_its_record`.
 fn closable_week() -> Tm {
     let tm = Tm::new();
     for (rel, id) in [("week/2026-W37.md", "^d1"), ("month/2026-09.md", "^m2")] {

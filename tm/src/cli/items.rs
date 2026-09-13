@@ -1030,9 +1030,12 @@ pub struct DemoteOut {
 /// Kernel-backed (kernel/README.md, 2026-09-12 "the five lifecycle verbs").
 /// The host resolves the destination — `month/<current>` — and the stamp
 /// period (the item's week number); the kernel writes the tombstone and the
-/// stamped copy, and refuses by name: `alreadyDemoted` when a standing
-/// archive record exists (the old path silently overwrote it), `badHorizon`
-/// when the copy cannot land where the month file's sections allow.
+/// stamped copy. An item that already has a standing `# Demoted` record is
+/// merged into it — stamps merged, the record's `est:` kept as a floor under a
+/// line with no estimate of its own — as fork-point `demote_one` did
+/// (kernel/README.md gap 53). It refuses by name: `alreadyDemoted` for a `[-]`
+/// record demoted again, `badHorizon` when the copy cannot land where the
+/// month file's sections allow.
 pub fn demote(g: &Globals, args: &super::IdArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
     let id = Ctx::key(&args.id);

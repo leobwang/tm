@@ -63,8 +63,9 @@ stage then has to fight.
 * **F6 — `close day` double-counted `est:` against logged minutes.**  Needs
   `done_minutes` (§6.4), which is a replay of `.tm/log.jsonl`.  Same blocker as
   D1.  What *was* stated, `close_writes_every_estimate_through_demoteEst`, is
-  refuted (stage 4 step 7, `210daad`); the half that does not need the log is
-  `close_keeps_every_remaining_estimate` (Close.lean).
+  refuted (stage 4 step 7, `210daad`); the half that does not need the log was
+  `close_keeps_every_remaining_estimate`, restated at README gap 53 as
+  `close_reads_every_remaining_estimate_through_demoteEst` (Close.lean).
 * **F3 and G1 — generated-block ownership.**  "The kernel owns the bytes of
   every generated block" is §4's **A** verdict — single ownership, architecture
   rather than type theory, and the plan says not to credit the compiler for an
@@ -243,7 +244,8 @@ lines §6.3 leaves in a closed file — renamed to its negation
 `autoClose_leaves_lines_in_periods_it_passes` and proved in `Boundary.lean` on a
 loaded plan three months stale.  Its narrowing is `autoClose_strands_no_unfinished_line`
 (Close.lean): no line any close would take survives, at any grain.  The F1
-double stamp is `autoClose_stamps_each_line_at_most_once`. -/
+double stamp was `autoClose_stamps_each_line_at_most_once`, restated at README gap
+53 as `autoClose_adds_at_most_one_stamp_to_each_line` (Close.lean). -/
 
 /- **`close_never_demotes_a_wall` (F4) and
 `close_writes_every_estimate_through_demoteEst` (B1–B3) are refuted (2026-09-13,
@@ -256,7 +258,10 @@ of a wall still ahead (`^x1`); B1–B3 equated the whole line and so forbade the
 `close_never_demotes_a_wall_but_may_carry_it` (box, bytes and tombstone kept;
 only the file may change), `close_rewrites_a_line_only_by_stamping_it`, and the
 estimate half step 2 owed, `close_keeps_every_remaining_estimate`, built on
-`Field.remainingOf_setDemoted` (Line.lean). -/
+`Field.remainingOf_setDemoted` (Line.lean).  The last two were restated at README
+gap 53, when a close began merging into a standing record:
+`close_rewrites_a_line_only_by_stamping_or_merging_it` and
+`close_reads_every_remaining_estimate_through_demoteEst`. -/
 
 /- **`close_day_stamps_a_day_stamp` is discharged (2026-09-12, stage 4 step
 2)** — proved as stated in `Close.lean`, audited in `Check.lean`.  D1 kept the

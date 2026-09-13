@@ -179,7 +179,9 @@ pub struct ClosedLine {
     pub grain: &'static str,
     /// What happened to it, by the kernel's constructor name: `move`,
     /// `moveReopening`, `copy` (a `[-]` left behind and a stamped record
-    /// filed forward), `carry` (a wall still ahead, moved unstamped).
+    /// filed forward), `copyMerging` (the same, rewriting the item's standing
+    /// `# Demoted` record — kernel/README.md gap 53), `carry` (a wall still
+    /// ahead, moved unstamped).
     pub did: &'static str,
     /// The file it was taken from.
     pub from: String,
@@ -206,7 +208,7 @@ pub struct ReportOut {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Summary {
     /// Lines that left their file for another: `move`, `moveReopening`,
-    /// `carry`.
+    /// `carry` — not the two copies, which leave a `[-]` behind.
     pub moved: usize,
     /// Lines that gained a stamp.
     pub demoted: usize,
@@ -220,7 +222,11 @@ impl ReportOut {
     /// The counts of the human line.
     pub fn summary(&self) -> Summary {
         Summary {
-            moved: self.closes.iter().filter(|c| c.did != CloseDid::Copy.name()).count(),
+            moved: self
+                .closes
+                .iter()
+                .filter(|c| c.did != CloseDid::Copy.name() && c.did != CloseDid::CopyMerging.name())
+                .count(),
             demoted: self.closes.iter().filter(|c| c.stamp.is_some()).count(),
             carried: self.closes.iter().filter(|c| c.did == CloseDid::Carry.name()).count(),
             dropped: self.dropped.len(),
@@ -352,8 +358,8 @@ pub fn run(ctx: &mut Ctx, which: Which, drops: &[Id]) -> Result<ReportOut, CliEr
 /// written and nothing is stamped closed, so the close is tried again on the
 /// next command, and the refusal is printed by name on stderr (except inside
 /// the TUI, whose screen stderr would shred). Refusing every verb instead
-/// would leave a tree the kernel cannot close — §4.3's own example, gap 53 —
-/// unusable except by hand. A kernel **fault**, a write conflict or an I/O
+/// would leave a tree the kernel cannot close — §4.3's own example week,
+/// whose open dated `^d1` is gap 55 — unusable except by hand. A kernel **fault**, a write conflict or an I/O
 /// error still fails the verb.
 pub fn auto_close(ctx: &mut Ctx) -> Result<Option<ReportOut>, CliError> {
     if !due(&ctx.state.closed, ctx.today) {
@@ -382,9 +388,9 @@ pub fn auto_close(ctx: &mut Ctx) -> Result<Option<ReportOut>, CliError> {
 pub fn explain(issue: &KernelIssue) -> String {
     let hint = match issue.name.as_str() {
         "alreadyDemoted" => Some(
-            "for a close this is an open line of an ended week that already has a `[-]` record \
-             under a month's `# Demoted` (§4.3's pre-close pair): the kernel's week close refuses \
-             rather than overwrite the record (kernel/README.md gap 53)",
+            "a `[-]` record demoted again: an open line with a standing `# Demoted` record is \
+             merged into it (kernel/README.md gap 53), but a record is moved by the month close, \
+             not demoted twice",
         ),
         "badHorizon" => Some(
             "for a close this is most often an open dated (`due:`) line in an ended week, whose \
@@ -539,17 +545,18 @@ mod tests {
                 line("p1", CloseDid::MoveReopening, Some("D11")),
                 line("x1", CloseDid::Carry, None),
                 line("m1", CloseDid::Copy, Some("W37")),
+                line("m2", CloseDid::CopyMerging, Some("W37")),
                 line("O1", CloseDid::Move, None),
             ],
             dropped: vec!["O3".into()],
         };
         assert_eq!(
             report.summary(),
-            Summary { moved: 3, demoted: 2, carried: 1, dropped: 1 }
+            Summary { moved: 3, demoted: 3, carried: 1, dropped: 1 }
         );
         assert_eq!(
             report.line("week", "2026-W37"),
-            "closed week 2026-W37 · 3 moved · 2 demoted · 1 carried · 1 dropped"
+            "closed week 2026-W37 · 3 moved · 3 demoted · 1 carried · 1 dropped"
         );
     }
 }
