@@ -11,10 +11,13 @@
 //!   [`PlanFiles`] and their [`Tree`], the [`Log`] and its [`Replay`], the
 //!   learned [`Model`] and `.tm/state.json` ([`RuntimeState`]), plus `now` in
 //!   both `FixedOffset` (log timestamps) and `cfg.tz` (everything else).
-//!   [`Ctx::load`] runs the housekeeping of §6.3 (auto-close of the last
-//!   unclosed day/week/month) and §5.1 (waiting items whose timeout has
-//!   elapsed) unless the verb opts out, and rolls the day-scoped fields of
-//!   `state.json` when the date has moved on ([`roll_day`]).
+//!   [`Ctx::load`] runs the housekeeping of §6.3 (the automatic close —
+//!   one kernel `autoClose` call, [`super::closing::auto_close`], when a
+//!   period has ended since `state.closed`) and §5.1 (waiting items whose
+//!   timeout has elapsed) unless the verb opts out, and rolls the day-scoped
+//!   fields of `state.json` when the date has moved on ([`roll_day`]).
+//!   [`Ctx::load_for_close`] is the same minus the automatic close, for
+//!   `tm close`, which *is* the close.
 //! * Helpers the verbs share: [`Ctx::append_event`] (§10.1),
 //!   [`Ctx::save_state`] (§10.2), [`Ctx::item`] / [`Ctx::line`] /
 //!   [`Ctx::write_line`] (byte-faithful edits through
@@ -39,7 +42,7 @@ use tm_core::capacity::{self, DayCapacity, EnergyCtx, Slot, Wall, WallsByDate};
 use tm_core::config::Config;
 use tm_core::energy::{Model, Posterior};
 use tm_core::grammar::ItemLine;
-use tm_core::horizon::{self, ClosedPeriod};
+use tm_core::horizon;
 use tm_core::log::{Event, Log, LogEntry, Replay};
 use tm_core::model::{Id, Item, Loc, Shape, State};
 use tm_core::priority::{self, Candidate, Prio};
@@ -180,17 +183,27 @@ pub struct Ctx {
     pub replay: Replay,
     /// `.tm/model.json` (§8.5).
     pub model: Model,
-    /// What the §6.3 auto-close closed on the way in.
-    pub closed: Vec<ClosedPeriod>,
     /// Items whose `on-event:` timeout elapsed and went back to `[ ]` (§5.1).
     pub timed_out: Vec<Id>,
 }
 
 impl Ctx {
     /// Load the plan directory named by `g`. `housekeeping` runs §6.3's
-    /// auto-close and §5.1's waiting timeouts first (every verb but `init`,
-    /// `check`, `log`, `undo` and `tui`).
+    /// automatic close and §5.1's waiting timeouts first (every verb but
+    /// `init`, `check`, `log`, `undo` and `tui`).
     pub fn load(g: &Globals, housekeeping: bool) -> Result<Ctx, CliError> {
+        Ctx::load_with(g, housekeeping, housekeeping)
+    }
+
+    /// [`Ctx::load`] with housekeeping but without the automatic close — for
+    /// `tm close`, whose own kernel call is the close: running the automatic
+    /// one first would leave the verb reporting an empty close over a tree it
+    /// had just rewritten.
+    pub fn load_for_close(g: &Globals) -> Result<Ctx, CliError> {
+        Ctx::load_with(g, true, false)
+    }
+
+    fn load_with(g: &Globals, housekeeping: bool, auto_close: bool) -> Result<Ctx, CliError> {
         let dir = resolve_dir(g.dir.as_deref())?;
         if !dir.join(store::CONFIG_PATH).is_file() {
             return Err(CliError::msg(format!(
@@ -207,12 +220,8 @@ impl Ctx {
         let log = read_log(&store)?;
         let replay = log.replay(None, cfg.tz);
 
-        let mut closed = Vec::new();
-        if housekeeping {
-            if roll_day(&mut state, today) {
-                store.save_state(&state)?;
-            }
-            closed = horizon::auto_close(&store, &mut state, today, now, Some(&replay))?;
+        if housekeeping && roll_day(&mut state, today) {
+            store.save_state(&state)?;
         }
 
         let files = store.read_tree()?;
@@ -231,12 +240,16 @@ impl Ctx {
             log,
             replay,
             model,
-            closed,
             timed_out: Vec::new(),
         };
+        if auto_close {
+            // Writes, logs, stamps `state.closed` and reloads when it closed
+            // anything; a refusal is printed and the verb goes on.
+            super::closing::auto_close(&mut cx)?;
+        }
         if housekeeping {
             cx.timed_out = cx.resolve_timeouts()?;
-            if !cx.timed_out.is_empty() || !cx.closed.is_empty() {
+            if !cx.timed_out.is_empty() {
                 cx.reload()?;
             }
         }

@@ -192,11 +192,16 @@ fn undo_of_a_close_reopens_the_period() {
     // files are back would strand it — it would never be closed again.
     let tm = Tm::new();
     let week = tm.read("week/2026-W37.md");
-    tm.ok_at("2026-09-07T21:00:00-05:00", &["close", "day"]);
+    // The first command stamps the periods that ended before the fixture's
+    // day; the next morning's `tm close day` closes that day (stage 4 step 6:
+    // a close takes only periods that have ended).
+    tm.ok_at("2026-09-07T21:00:00-05:00", &["now"]);
+    assert_eq!(tm.state()["closed"]["day"], "2026-09-06");
+    tm.ok_at("2026-09-08T09:00:00-05:00", &["close", "day"]);
     assert_eq!(tm.state()["closed"]["day"], "2026-09-07");
     assert!(tm.read("week/2026-W37.md").contains("^p1"));
 
-    tm.ok_at("2026-09-07T21:01:00-05:00", &["undo"]);
+    tm.ok_at("2026-09-08T09:01:00-05:00", &["undo"]);
     assert_eq!(tm.read("week/2026-W37.md"), week);
     // The auto-close of *earlier* periods stands; this day is open again.
     assert_eq!(tm.state()["closed"]["day"], "2026-09-06");

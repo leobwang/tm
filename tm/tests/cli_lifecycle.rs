@@ -5,31 +5,75 @@ mod cli_common;
 
 use cli_common::{schema, scrub, Tm};
 
+/// §6.3's day row through the kernel (stage 4 step 6): the morning after,
+/// the pinned item of the day that ended moves into the week containing now
+/// with `demoted:D07`, and `state.closed` records the day. **Changed from the
+/// fork-point close, by name** (kernel/README.md stage-4 step-6 block): `tm
+/// close day` no longer closes the day you are in (a close takes only days
+/// that have ended), and a week file's `[>]` is not reopened — the kernel's
+/// day row takes lines from day files only.
 #[test]
-fn close_day_reopens_active_lines_and_stamps_the_state() {
+fn close_day_moves_the_pinned_item_into_the_week_of_now_and_stamps_the_state() {
     let tm = Tm::new();
-    let json = tm.json_at("2026-09-07T21:00:00-05:00", &["close", "day"]);
+    let json = tm.json_at("2026-09-08T09:00:00-05:00", &["close", "day"]);
     assert_eq!(json["period"], "day");
     assert_eq!(json["key"], "2026-09-07");
 
-    // §6.3: `[>]` → `[ ]` with the remaining estimate.
-    let t3 = tm.line("week/2026-W37.md", "t3");
-    assert!(t3.starts_with("- [ ]"), "{t3}");
-    // The pinned item moved to the week with a day stamp.
-    assert!(tm.read("week/2026-W37.md").contains("^p1"));
-    assert!(tm.read("week/2026-W37.md").contains("demoted:D07"));
+    assert_eq!(
+        tm.line("week/2026-W37.md", "p1"),
+        "- [ ] 2 20m Call the bank about the card demoted:D07  ^p1"
+    );
+    assert!(!tm.read("day/2026-09-07.md").contains("^p1"));
+    // The week file's `[>]` is the week's, not the day's.
+    assert!(tm.line("week/2026-W37.md", "t3").starts_with("- [>]"));
 
     assert!(tm.events().contains(&"close".to_string()));
+    assert!(tm.events().contains(&"demote".to_string()));
     assert_eq!(tm.state()["closed"]["day"], "2026-09-07");
     insta::assert_json_snapshot!("close_day_schema", schema(&json));
+
+    // The day you are in is not closed: at 21:00 the same day there is
+    // nothing a close may take, and a `--date` naming it is refused by name.
+    let tm = Tm::new();
+    let json = tm.json_at("2026-09-07T21:00:00-05:00", &["close", "day"]);
+    assert_eq!(json["key"], "2026-09-06");
+    assert_eq!(json["report"]["closes"], serde_json::json!([]));
+    assert!(tm.read("day/2026-09-07.md").contains("^p1"));
+    let out = tm.ok_at("2026-09-07T21:00:00-05:00", &["close", "day"]);
+    assert_eq!(
+        out.stdout,
+        "closed day 2026-09-06 · 0 moved · 0 demoted · 0 carried · 0 dropped\n\
+         day 2026-09-07 is still running; it is closed on the first command after it ends\n"
+    );
+    let out = tm.run_at("2026-09-07T21:00:00-05:00", &["close", "day", "--date", "2026-09-07"]);
+    assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains("periodNotEnded"), "{}", out.stderr);
+}
+
+/// `plan-basic` without the two shapes the kernel's week close refuses —
+/// `^d1 due:` (gap 55) and `^m2`'s standing `# Demoted` record (gap 53) —
+/// so the week row itself can be exercised; `cli_close_kernel.rs`'s
+/// `a_refused_close_is_named_and_writes_nothing` covers the refusal.
+fn closable_week() -> Tm {
+    let tm = Tm::new();
+    for (rel, id) in [("week/2026-W37.md", "^d1"), ("month/2026-09.md", "^m2")] {
+        let path = tm.plan.join(rel);
+        let text = std::fs::read_to_string(&path).expect("read");
+        let kept: String = text
+            .lines()
+            .filter(|l| !l.split_whitespace().any(|w| w == id))
+            .map(|l| format!("{l}\n"))
+            .collect();
+        std::fs::write(&path, kept).expect("write");
+    }
+    tm
 }
 
 #[test]
 fn close_week_archives_into_the_month() {
-    let tm = Tm::new();
-    let json = tm.json_at("2026-09-13T21:00:00-05:00", &["close", "week"]);
+    let tm = closable_week();
+    let json = tm.json_at("2026-09-14T09:00:00-05:00", &["close", "week"]);
     assert_eq!(json["key"], "2026-W37");
-    assert!(!json["report"]["demoted"].as_array().unwrap().is_empty());
 
     // §6.3: the week file becomes an archive, the month keeps the copies.
     assert!(tm.line("week/2026-W37.md", "m1").starts_with("- [-]"));
@@ -37,78 +81,91 @@ fn close_week_archives_into_the_month() {
     let demoted = month.split("# Demoted").nth(1).unwrap_or_default();
     assert!(demoted.contains("^m1"), "{month}");
     assert!(demoted.contains("demoted:W37"), "{month}");
+    // The wall still ahead is carried, unstamped, into the week of now.
+    assert_eq!(
+        tm.line("week/2026-W38.md", "x1"),
+        "- [ ] 5 2h Midterm                      @O3 at:2026-10-20T10:00/12:00 loc:JCL ^x1"
+    );
     assert_eq!(tm.state()["closed"]["week"], "2026-W37");
     assert!(tm.events().contains(&"close".to_string()));
+    // Changed from the fork-point close, by name: no `closed:` front matter.
+    assert!(!tm.read("week/2026-W37.md").contains("closed:"));
 }
 
-/// §6.3 + §13: the close "runs automatically on the first command after the
-/// period ends", and `Ctx::load` runs it — so `tm close week` on the Monday
-/// after found its own work done and printed an all-empty report over a tree
-/// it had in fact rewritten. It now names the week the auto-close closed and
-/// reports what that run did (and does not archive the week you are one day
-/// into).
+/// The report is the kernel's per-item list (the owner's D3), and the human
+/// line is read off the same list. On the Monday after, `tm close week`
+/// closes the week that ended — not the one you are one day into — and
+/// reports every line it took, in the kernel's order.
 #[test]
-fn close_after_the_period_ended_reports_what_the_auto_close_did() {
-    let tm = Tm::new();
+fn close_on_the_monday_after_reports_each_line_it_took() {
+    let tm = closable_week();
     let json = tm.json_at("2026-09-14T09:00:00-05:00", &["close", "week"]);
     assert_eq!(json["key"], "2026-W37", "the week that ended, not W38");
-    let report = &json["report"];
-    let demoted: Vec<&str> = report["demoted"]
-        .as_array()
-        .expect("demoted")
+    let closes = json["report"]["closes"].as_array().expect("closes");
+    let taken: Vec<(&str, &str)> = closes
         .iter()
-        .map(|d| d["id"].as_str().expect("id"))
+        .map(|c| (c["id"].as_str().expect("id"), c["did"].as_str().expect("did")))
         .collect();
-    // ^p1 is there because the same sweep closed the days it skipped first:
-    // `day/2026-09-07#Pinned` moved into the week with `demoted:D07` (§6.3's
-    // day row) and the week close then demoted it to the month. Before the
-    // catch-up covered a tree with no close history, only 2026-09-13 was
-    // closed and ^p1 was left behind in the day file.
-    assert_eq!(demoted, vec!["m1", "m2", "m3", "m4", "p1"], "{report}");
-    let moved: Vec<&str> = report["moved"]
-        .as_array()
-        .expect("moved")
-        .iter()
-        .map(|m| m["id"].as_str().expect("id"))
-        .collect();
-    assert_eq!(moved, vec!["x1", "x2", "d1"], "{report}");
-    assert_eq!(report["carried"].as_array().expect("carried").len(), 2);
     assert_eq!(
-        report["overdue_to_backlog"]
-            .as_array()
-            .expect("overdue")
-            .len(),
-        1
+        taken,
+        vec![
+            ("t5", "copy"),
+            ("t4", "copy"),
+            ("t3", "copy"),
+            ("t1", "copy"),
+            ("x2", "copy"),
+            ("x1", "carry"),
+            ("m4", "copy"),
+            ("m3", "copy"),
+            ("m2", "copy"),
+            ("m1", "copy"),
+        ],
+        "{json}"
     );
-    // W38 is the live week the walls moved into, not an archive.
-    assert!(!tm.read("week/2026-W38.md").contains("closed:"));
-    assert!(tm.read("week/2026-W38.md").contains("^x1"));
+    for c in closes {
+        assert_eq!(c["grain"], "week");
+        assert_eq!(c["from"], "week/2026-W37.md");
+        assert!(c["min"]["den"].as_u64().is_some_and(|d| d > 0), "{c}");
+    }
+    assert_eq!(closes[9]["stamp"], "W37");
+    assert_eq!(closes[9]["to"], "month/2026-09.md");
+    assert_eq!(closes[5]["stamp"], serde_json::Value::Null);
+    assert_eq!(closes[5]["to"], "week/2026-W38.md");
 
-    // And the human line of the same run counts the same work.
-    let fresh = Tm::new();
+    // And the human line of the same close counts the same entries.
+    let fresh = closable_week();
     let out = fresh.run_at("2026-09-14T09:00:00-05:00", &["close", "week"]);
     assert_eq!(
         out.stdout.trim(),
-        "closed week 2026-W37 · 3 moved · 5 demoted · 0 reopened · 0 dropped",
+        "closed week 2026-W37 · 1 moved · 9 demoted · 1 carried · 0 dropped",
         "{}",
         out.stderr
     );
 }
 
 /// The same for a day: run on the next morning, `tm close day` closes
-/// yesterday and says what moved.
+/// yesterday, and its entry names the line, the files, the stamp and the
+/// minutes as an integer pair.
 #[test]
 fn close_day_after_midnight_reports_yesterday() {
     let tm = Tm::new();
     let json = tm.json_at("2026-09-08T09:00:00-05:00", &["close", "day"]);
     assert_eq!(json["key"], "2026-09-07");
-    assert!(
-        !json["report"]["moved"].as_array().expect("moved").is_empty(),
-        "^p1 moved to the week: {json}"
+    assert_eq!(
+        json["report"]["closes"],
+        serde_json::json!([{
+            "id": "p1", "grain": "day", "did": "moveReopening",
+            "from": "day/2026-09-07.md", "to": "week/2026-W37.md",
+            "stamp": "D07", "min": {"num": 20, "den": 1}
+        }]),
+        "{json}"
     );
     assert!(tm.read("week/2026-W37.md").contains("demoted:D07"));
 }
 
+/// `--drop` settles the line before the close runs, in the same kernel
+/// request, so the close leaves it where it stands. On the last evening of
+/// September the month has not ended, so nothing is carried.
 #[test]
 fn close_month_can_drop_an_outcome() {
     let tm = Tm::new();
@@ -117,22 +174,22 @@ fn close_month_can_drop_an_outcome() {
         &["close", "month", "--drop", "^O3"],
     );
     assert_eq!(json["period"], "month");
-    assert_eq!(json["key"], "2026-09");
-    assert!(json["report"]["dropped"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|d| d == "O3"));
-    assert_eq!(tm.state()["closed"]["month"], "2026-09");
+    assert_eq!(json["key"], "2026-08", "September has not ended");
+    assert_eq!(json["report"]["dropped"], serde_json::json!(["O3"]));
+    assert_eq!(json["report"]["closes"], serde_json::json!([]));
+    assert!(tm.line("month/2026-09.md", "O3").starts_with("- [~]"));
+    assert_eq!(tm.state()["closed"]["month"], "2026-08");
+    assert!(tm.events().contains(&"drop".to_string()));
 }
 
-/// §6.3 + §13: the month close auto-runs from `Ctx::load` before the verb
-/// body, with no drop list — so once the month has ended, `tm close month
-/// --drop ^id` used to find the line already carried into the next month and
-/// do nothing at all, printing a success line. An explicit `--drop` is never
-/// discarded: the line comes back and is dropped.
+/// Once September has ended, `tm close month --drop ^O3` settles `^O3` in
+/// September and carries the other unfinished outcomes into October's
+/// `# Outcomes` — a file the host creates with §4.3's two month sections.
+/// **Changed from the fork-point close, by name**: the carried lines land in
+/// the kernel's fold order (gap 59), and an id the automatic close already
+/// carried would be dropped where it stands, not brought back.
 #[test]
-fn close_month_drops_an_outcome_the_auto_close_already_carried() {
+fn close_month_drops_an_outcome_and_carries_the_rest() {
     let tm = Tm::new();
     let json = tm.json_at(
         "2026-10-01T09:00:00-05:00",
@@ -140,33 +197,37 @@ fn close_month_drops_an_outcome_the_auto_close_already_carried() {
     );
     assert_eq!(json["key"], "2026-09", "the month that ended");
     let report = &json["report"];
-    let dropped: Vec<&str> = report["dropped"]
+    assert_eq!(report["dropped"], serde_json::json!(["O3"]));
+    let moved: Vec<&str> = report["closes"]
         .as_array()
-        .expect("dropped")
+        .expect("closes")
         .iter()
-        .map(|d| d.as_str().expect("id"))
+        .map(|c| c["id"].as_str().expect("id"))
         .collect();
-    assert_eq!(dropped, vec!["O3"], "{report}");
+    assert_eq!(moved, vec!["O2", "O1"], "{report}");
 
-    // The line is `[~]` back in the month it was an outcome of, not open in
-    // the next one — where a `--drop` before the auto-close leaves it too.
     assert!(tm.line("month/2026-09.md", "O3").starts_with("- [~]"));
-    assert!(
-        !tm.read("month/2026-10.md").contains("^O3"),
-        "{}",
-        tm.read("month/2026-10.md")
+    let october = tm.read("month/2026-10.md");
+    assert!(!october.contains("^O3"), "{october}");
+    assert_eq!(
+        october,
+        "---\nmonth: 2026-10\n---\n# Outcomes\n\
+         - [ ] 4 !1 Soundcode: end-to-end demo runs             ^O2\n\
+         - [ ] 5 !1 Lean: through ch.8 of the tutorial          ^O1\n# Demoted\n"
     );
 
-    // …and the report describes that tree: the carry the drop undid is not
-    // counted as a carry.
-    let moved: Vec<&str> = report["moved"]
-        .as_array()
-        .expect("moved")
-        .iter()
-        .map(|m| m["id"].as_str().expect("id"))
-        .collect();
-    assert!(!moved.contains(&"O3"), "{report}");
-    assert!(moved.contains(&"O1"), "the rest still carried: {report}");
+    // After the automatic close has carried `^O3` into October, the drop
+    // settles it there — the line it names, where it stands.
+    let tm = closable_week();
+    tm.ok_at("2026-10-01T09:00:00-05:00", &["now"]);
+    assert!(tm.line("month/2026-10.md", "O3").starts_with("- [ ]"));
+    let json = tm.json_at(
+        "2026-10-01T09:05:00-05:00",
+        &["close", "month", "--drop", "^O3"],
+    );
+    assert_eq!(json["report"]["closes"], serde_json::json!([]), "{json}");
+    assert!(tm.line("month/2026-10.md", "O3").starts_with("- [~]"));
+    assert!(!tm.read("month/2026-09.md").contains("^O3"));
 }
 
 /// A `--drop` naming something this close cannot act on fails loudly (§13's
@@ -227,16 +288,19 @@ fn plan_files(tm: &Tm) -> Vec<(String, String)> {
 /// they are the *same* close: same `--json` report, same bytes on disk.
 #[test]
 fn close_takes_its_flags_on_either_side_of_the_period() {
-    // The instant each close does real work at, and the period it names.
-    let cases = [
-        ("day", "2026-09-07", "2026-09-07T21:00:00-05:00"),
-        ("week", "2026-W37", "2026-09-13T21:00:00-05:00"),
-        ("month", "2026-09", "2026-09-30T21:00:00-05:00"),
+    // The instant each close does real work at, and the period it names —
+    // one that has ended (a `--date` naming a running period is refused,
+    // `close_day_moves_the_pinned_item_into_the_week_of_now_and_stamps_the_state`).
+    let cases: [(&str, &str, &str, fn() -> Tm); 3] = [
+        ("day", "2026-09-07", "2026-09-08T09:00:00-05:00", Tm::new),
+        ("week", "2026-W37", "2026-09-14T09:00:00-05:00", closable_week),
+        ("month", "2026-09", "2026-10-01T09:00:00-05:00", Tm::new),
     ];
-    for (period, date, now) in cases {
-        let flag_first = Tm::new();
+    for (period, date, now, fixture) in cases {
+        let flag_first = fixture();
         let a = flag_first.json_at(now, &["close", "--date", date, period]);
-        let period_first = Tm::new();
+        assert_ne!(a["report"]["closes"], serde_json::json!([]), "{period}: {a}");
+        let period_first = fixture();
         let b = period_first.json_at(now, &["close", period, "--date", date]);
         assert_eq!(a, b, "`tm close --date {date} {period}` reported something else");
         assert_eq!(
@@ -342,7 +406,7 @@ fn the_first_command_after_a_period_ends_closes_it() {
 /// unreachable afterwards because `state.closed` only moves forward.
 #[test]
 fn a_first_command_two_weeks_late_closes_the_skipped_periods() {
-    let tm = Tm::new();
+    let tm = closable_week();
     assert!(!tm.exists(".tm/state.json"), "a fresh tree has no close history");
 
     // Nothing has been run since the tree was made; today is a Monday in W39.
@@ -351,7 +415,6 @@ fn a_first_command_two_weeks_late_closes_the_skipped_periods() {
     // The week that was live when the tree was made is an archive now, and
     // its milestones are in the month, not stranded (§6.3).
     let week = tm.read("week/2026-W37.md");
-    assert!(week.contains("closed:"), "{week}");
     assert!(tm.line("week/2026-W37.md", "m1").starts_with("- [-]"), "{week}");
     let month = tm.read("month/2026-09.md");
     let demoted = month.split("# Demoted").nth(1).unwrap_or_default();
@@ -360,9 +423,15 @@ fn a_first_command_two_weeks_late_closes_the_skipped_periods() {
     }
     assert!(demoted.contains("demoted:W37"), "{month}");
 
-    // The day close ran too: `day/2026-09-07#Pinned` is in the week's archive
-    // with its `demoted:D07` stamp, and from there in the month.
-    assert!(demoted.contains("demoted:D07"), "{month}");
+    // The day close ran too — into the week containing now (D1), once. The
+    // fork-point sweep filed `day/2026-09-07#Pinned` into W37 and then
+    // demoted it with the week: `D07` in the month's `# Demoted`, off the
+    // plan.
+    assert_eq!(
+        tm.line("week/2026-W39.md", "p1"),
+        "- [ ] 2 20m Call the bank about the card demoted:D07  ^p1"
+    );
+    assert!(!month.contains("^p1"), "{month}");
 
     assert_eq!(tm.state()["closed"]["week"], "2026-W38");
     assert_eq!(tm.state()["closed"]["day"], "2026-09-20");

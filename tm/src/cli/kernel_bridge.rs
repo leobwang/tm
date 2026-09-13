@@ -1,7 +1,8 @@
 //! The single choke point between the CLI and the Lean kernel (stage 3).
 //!
 //! Every kernel-backed verb — `move`, `drop`, `demote`, `readopt`, `rank`,
-//! `add`, and the keyed `edit`/unset (`est=` included) — goes through
+//! `add`, the keyed `edit`/unset (`est=` included), and since stage 4 step 6
+//! `close` and the automatic close — goes through
 //! [`apply`], and nothing else talks to `tm-kernel-ffi`: one place builds
 //! the request, one place reads the response, one place writes files, so
 //! the wire format cannot fork.
@@ -74,14 +75,21 @@
 //! writes nothing.
 //!
 //! Every `ok` carries `report` beside `docs` (stage 4 step 5, the owner's
-//! D3): [`decode_report`] reads it through smart constructors on every call,
-//! and since no verb here sends a close yet, a non-empty report is a fault.
+//! D3): [`decode_report`] reads it through smart constructors on every call.
+//! Only a request carrying a close ([`Cmd::Close`], [`Cmd::AutoClose`]) may
+//! get a report that names lines — it comes back as [`Applied::closes`], the
+//! one account of what the close did, which `tm close`, the automatic close
+//! and the log all read (stage 4 step 6, [`super::closing`]); anywhere else a
+//! non-empty report is a fault. A close request also carries the clock
+//! (`now`, `blockMin`) and the two destinations a close needs — the week and
+//! the month containing now, the month with §4.3's `# Outcomes`/`# Demoted`
+//! — because the kernel cannot create a file or a section (gap 56).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde_json::{json, Map, Value};
 
-use tm_core::model::Horizon;
+use tm_core::model::{Horizon, IsoWeek, YearMonth};
 use tm_core::store::{self, FileGuard, Store};
 
 use super::ctx::Ctx;
@@ -103,6 +111,12 @@ static CAPTURE_STDERR: AtomicBool = AtomicBool::new(false);
 /// in this process. The TUI owns this switch.
 pub fn capture_kernel_stderr(on: bool) {
     CAPTURE_STDERR.store(on, Ordering::SeqCst);
+}
+
+/// Whether the TUI's capture is on — i.e. whether stderr belongs to a
+/// ratatui screen, so a host-side warning must not be printed to it.
+pub fn capturing_kernel_stderr() -> bool {
+    CAPTURE_STDERR.load(Ordering::SeqCst)
 }
 
 /// One capture window: fd 2 `dup2`'d to a pipe, a thread draining the read
@@ -217,6 +231,14 @@ pub enum Cmd {
     /// (`tm edit ^id <key>=`). The value rides raw: the kernel parses it
     /// with the key's own field grammar and refuses `badValue <k>` by name.
     EditKey { id: String, key: String, value: String },
+    /// `{"op":"close","grain":g}` — §6.3's close of one grain at the
+    /// request's `now`: every region of that grain that has ended, whatever
+    /// its age (stage 4, `Close.lean`). The request gains `now` and
+    /// `blockMin`, and the destinations the close needs (gap 56).
+    Close { grain: Grain },
+    /// `{"op":"autoClose"}` — each grain's close once, day then week then
+    /// month (`autoClose`, L19a/b): the §6.3 catch-up in one call.
+    AutoClose,
 }
 
 impl Cmd {
@@ -228,8 +250,19 @@ impl Cmd {
             | Cmd::Demote { to, .. }
             | Cmd::Readopt { to, .. }
             | Cmd::Add { to, .. } => Some(to),
-            Cmd::Drop { .. } | Cmd::Est { .. } | Cmd::Rank { .. } | Cmd::EditKey { .. } => None,
+            Cmd::Drop { .. }
+            | Cmd::Est { .. }
+            | Cmd::Rank { .. }
+            | Cmd::EditKey { .. }
+            | Cmd::Close { .. }
+            | Cmd::AutoClose => None,
         }
+    }
+
+    /// Whether the command is a close — the only commands that read the
+    /// request's clock and the only ones whose report may name lines.
+    fn closes(&self) -> bool {
+        matches!(self, Cmd::Close { .. } | Cmd::AutoClose)
     }
 }
 
@@ -273,6 +306,33 @@ impl Grain {
             _ => None,
         }
     }
+
+    /// The wire number, the inverse of [`Grain::from_wire`].
+    pub fn to_wire(self) -> u64 {
+        match self {
+            Grain::Day => 0,
+            Grain::Week => 1,
+            Grain::Month => 2,
+        }
+    }
+
+    /// The grain of a §13 period argument.
+    pub fn of_period(p: tm_core::model::Period) -> Grain {
+        match p {
+            tm_core::model::Period::Day => Grain::Day,
+            tm_core::model::Period::Week => Grain::Week,
+            tm_core::model::Period::Month => Grain::Month,
+        }
+    }
+
+    /// `day`, `week`, `month` — §13's period names.
+    pub fn name(self) -> &'static str {
+        match self {
+            Grain::Day => "day",
+            Grain::Week => "week",
+            Grain::Month => "month",
+        }
+    }
 }
 
 /// What a close did to one line — `Report.lean`'s `CloseDid`, by its
@@ -298,6 +358,17 @@ impl CloseDid {
             "copy" => Some(CloseDid::Copy),
             "carry" => Some(CloseDid::Carry),
             _ => None,
+        }
+    }
+
+    /// The constructor's name, as the wire spells it — the inverse of
+    /// [`CloseDid::from_wire`].
+    pub fn name(self) -> &'static str {
+        match self {
+            CloseDid::Move => "move",
+            CloseDid::MoveReopening => "moveReopening",
+            CloseDid::Copy => "copy",
+            CloseDid::Carry => "carry",
         }
     }
 }
@@ -326,6 +397,17 @@ impl Stamp {
     }
 }
 
+impl std::fmt::Display for Stamp {
+    /// The bytes `demoted:` carries: `D07`, `W37` (two digits at least, as
+    /// the kernel renders them).
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Stamp::Day(n) => write!(f, "D{n:02}"),
+            Stamp::Week(n) => write!(f, "W{n:02}"),
+        }
+    }
+}
+
 /// Minutes as the kernel emits them: an integer numerator and a positive
 /// denominator (`Arith.Pos`). The kernel never divides; the screen does.
 /// Width: both fit `u64` or the report is refused.
@@ -340,20 +422,22 @@ impl Minutes {
     pub fn new(num: u64, den: u64) -> Option<Minutes> {
         Some(Minutes { num, den: std::num::NonZeroU64::new(den)? })
     }
-    #[allow(dead_code)] // Read by the kernel-backed close verb (stage 4 step 6).
     pub fn num(self) -> u64 {
         self.num
     }
-    #[allow(dead_code)] // Read by the kernel-backed close verb (stage 4 step 6).
     pub fn den(self) -> u64 {
         self.den.get()
+    }
+    /// Whole minutes, rounded down — the one place the host divides
+    /// (§10.1's `est_min` is an integer; every stage-4 denominator is `1`).
+    pub fn whole(self) -> u32 {
+        u32::try_from(self.num / self.den.get()).unwrap_or(u32::MAX)
     }
 }
 
 /// One line a close touched (the owner's D3): its id, what happened, from
 /// which document to which (indices into the response's `docs`), the stamp
 /// it gained, and its minutes afterwards (`None`: the line has no estimate).
-#[allow(dead_code)] // Read by the kernel-backed close verb (stage 4 step 6); decoded now so every response is checked.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CloseEntry {
     pub id: String,
@@ -424,12 +508,23 @@ pub fn decode_report(report: &Value, ndocs: usize) -> Result<Vec<CloseEntry>, St
 pub struct Applied {
     /// Every document, in request order.
     pub docs: Vec<BridgeDoc>,
+    /// The report's `closes` (D3), in the kernel's fold order: one entry per
+    /// line a close acted on. Always empty for a request without a close —
+    /// a non-empty report there is refused as a fault before anything is
+    /// written. `from`/`to` index [`Applied::docs`].
+    pub closes: Vec<CloseEntry>,
 }
 
 impl Applied {
     /// The document at `path`.
     pub fn doc(&self, path: &str) -> Option<&BridgeDoc> {
         self.docs.iter().find(|d| d.path == path)
+    }
+
+    /// The path of the response's document `k` — how a report entry's
+    /// `from`/`to` are read (the decoder already bounded `k`).
+    pub fn path_of(&self, k: usize) -> &str {
+        self.docs.get(k).map(|d| d.path.as_str()).unwrap_or_default()
     }
 
     /// The line carrying `^id` in `path`'s returned text, verbatim.
@@ -516,16 +611,25 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
     // A destination the tree does not hold yet enters the request as its
     // horizon's initial text, and is created on write only if the kernel
     // put something there (its guard demands the file still be absent).
-    for cmd in cmds {
-        if let Some(dest) = cmd.dest() {
-            if !paths.iter().any(|p| p == dest) {
-                let initial = Horizon::from_path(dest)
-                    .map(|h| store::initial_text(&h))
-                    .unwrap_or_default();
-                paths.push(dest.to_string());
-                texts.push(initial);
-                guards.push(FileGuard::absent());
-            }
+    // A close names no destination of its own: it files into the week and
+    // the month containing *now* (D1, `closeTo`), so those two are its
+    // destinations — the host hands them over because the kernel cannot
+    // create a file (gap 56).
+    let closing = cmds.iter().any(Cmd::closes);
+    let month_now = Horizon::Month(YearMonth::from_date(ctx.today)).path();
+    let mut dests: Vec<String> = cmds.iter().filter_map(|c| c.dest().map(str::to_string)).collect();
+    if closing {
+        dests.push(Horizon::Week(IsoWeek::from_date(ctx.today)).path());
+        dests.push(month_now.clone());
+    }
+    for dest in &dests {
+        if !paths.iter().any(|p| p == dest) {
+            let initial = Horizon::from_path(dest)
+                .map(|h| store::initial_text(&h))
+                .unwrap_or_default();
+            paths.push(dest.to_string());
+            texts.push(initial);
+            guards.push(FileGuard::absent());
         }
     }
 
@@ -540,6 +644,20 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
         let mut lines: Vec<&str> = text.split('\n').collect();
         if text.ends_with('\n') {
             lines.pop();
+        }
+        // The other half of gap 56: a close lands a week's record at the end
+        // of the month's `# Demoted`, and a month's leftover under the
+        // heading it stood under, and the kernel refuses `noSection` rather
+        // than choose where a heading goes (AGENTS §5.6). So the host hands
+        // over the month containing now with §4.3's two month sections,
+        // appended at its end when missing. Prose only; written only if a
+        // line lands in the file (an untouched document is never written).
+        if closing && *rel == month_now {
+            for (name, heading) in MONTH_SECTIONS {
+                if !lines.iter().any(|l| heading_body(l) == Some(name)) {
+                    lines.push(heading);
+                }
+            }
         }
         sent_joined.push(lines.join("\n"));
         let mut doc = json!({ "path": rel, "lines": lines });
@@ -569,9 +687,20 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
             Cmd::EditKey { id, key, value } => {
                 json!({"op":"edit","id":id,"key":key,"value":value})
             }
+            Cmd::Close { grain } => json!({"op":"close","grain":grain.to_wire()}),
+            Cmd::AutoClose => json!({"op":"autoClose"}),
         })
         .collect();
-    let request = json!({ "docs": docs_json, "cmds": cmds_json }).to_string();
+    let mut request = json!({ "docs": docs_json, "cmds": cmds_json });
+    if closing {
+        // The request's clock (stage 4 step 5): `now` is the CLI's own
+        // instant as a local date — `--now` in tests, the real clock
+        // otherwise — and the kernel never invents one. Sent only with a
+        // close, the one op that reads it.
+        request["now"] = json!(ctx.today.format("%Y-%m-%d").to_string());
+        request["blockMin"] = json!(ctx.block_min());
+    }
+    let request = request.to_string();
 
     // 3. One call — with Lean's stderr captured while it runs when the TUI
     // asked for it (panic layer 2), so a backtrace lands in the fault's
@@ -601,12 +730,12 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
     let out_docs = resp["ok"]["docs"]
         .as_array()
         .ok_or_else(|| CliError::Kernel(fault_issue("response carries neither ok nor err", &stderr)))?;
-    // The report (D3) rides every `ok`. No verb here sends a close yet, so a
-    // well-formed report must name nothing; either failure is a named fault,
-    // and nothing has been written.
+    // The report (D3) rides every `ok`. A request without a close must get
+    // a report that names nothing; either failure is a named fault, and
+    // nothing has been written.
     let report = decode_report(&resp["ok"]["report"], out_docs.len())
         .map_err(|e| CliError::Kernel(fault_issue(&e, &stderr)))?;
-    if !report.is_empty() {
+    if !closing && !report.is_empty() {
         return Err(CliError::Kernel(fault_issue(
             &format!("the response reports {} closed lines for a request that closed nothing", report.len()),
             &stderr,
@@ -692,7 +821,19 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
             ctx.store.write_guarded(&doc.path, guard, &doc.returned)?;
         }
     }
-    Ok(Applied { docs })
+    Ok(Applied { docs, closes: report })
+}
+
+/// §4.3's month-file sections, the two a close lands lines under: each
+/// heading's name, and the line the host appends when a month lacks it.
+const MONTH_SECTIONS: [(&str, &str); 2] = [("Outcomes", "# Outcomes"), ("Demoted", "# Demoted")];
+
+/// The name of a heading line — `Plan.lean`'s `isHeading`/`headingBody`: a
+/// line whose first character is `#`, with its `#`s and the spaces after
+/// them stripped, so `# Demoted` and `## Demoted` are one name.
+fn heading_body(line: &str) -> Option<&str> {
+    line.starts_with('#')
+        .then(|| line.trim_start_matches('#').trim_start_matches(' '))
 }
 
 /// An FFI-level fault (no usable response). Loud and recoverable, never a

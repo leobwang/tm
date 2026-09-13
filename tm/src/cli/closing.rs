@@ -1,0 +1,524 @@
+//! §6.3's close, kernel-backed (stage 4 step 6).
+//!
+//! # API overview
+//!
+//! * [`run`] — one close request through [`kernel_bridge::apply`]. The
+//!   explicit `tm close <day|week|month>` (with the month's `--drop` list)
+//!   and the automatic close both come here, so there is one request shape,
+//!   one report, and one set of log events written from it.
+//! * [`auto_close`] — §6.3's "runs automatically on the first command after
+//!   the period ends": when `state.closed` is behind the last ended period of
+//!   any grain, **one** `autoClose` call at now closes every ended region of
+//!   every grain, whatever its age — no catch-up loop and no window. The
+//!   fork-point `AUTO_CLOSE_CATCHUP = 16` day-by-day iteration is gone (the
+//!   owner's D1 package; `autoClose_catches_up_in_one_step`, L19b).
+//! * [`last_day`] / [`last_week`] / [`last_month`] / [`last_ended_key`] — the
+//!   last period of each grain that has ended at `today`. That is
+//!   `state.closed`'s stamp (§10.2's `closed` map stays Rust's) and the key
+//!   `tm close` prints; it is the boundary of the kernel's `Closed`
+//!   (`Grain.lean`: a region is closed once `now`'s index has passed it),
+//!   cross-checked against the kernel itself in this module's tests; and
+//!   [`running_key`], the one period of a grain no close can take yet.
+//! * [`ReportOut`] — what a close did, as `tm close --json` prints it: the
+//!   kernel's per-item list (the owner's D3) with document indices read back
+//!   to paths, and [`ReportOut::summary`], the human line's counts, **read
+//!   off the same list** — the host recomputes nothing about the close.
+//!
+//! What the kernel's close does not do, and this host therefore no longer
+//! does either (each recorded by name in kernel/README.md's stage-4 step-6
+//! block, next to the rule it replaces): the day file's `review pending`
+//! placeholder (F3, stage 6); a closed week's `closed:` front matter; `est:`
+//! = remaining and the day's logged minutes (gap 54); overdue dated items
+//! into `backlog.md#Overdue` (stage 5) and the folding of children into their
+//! parent (gap 22); and reopening a week file's `[>]` at a day close (the
+//! day row takes lines from day files only).
+
+use chrono::NaiveDate;
+use serde::Serialize;
+
+use tm_core::log::Event;
+use tm_core::model::{Horizon, Id, IsoWeek, YearMonth};
+use tm_core::store::Closed;
+
+use super::ctx::Ctx;
+use super::kernel_bridge::{self, CloseDid, Cmd, Grain};
+use super::out::{CliError, KernelIssue};
+
+/// The last day that has ended at `today`: yesterday.
+pub fn last_day(today: NaiveDate) -> NaiveDate {
+    today.pred_opt().unwrap_or(today)
+}
+
+/// The last ISO week that has ended at `today`: the one before today's.
+pub fn last_week(today: NaiveDate) -> IsoWeek {
+    IsoWeek::from_date(today).prev()
+}
+
+/// The last calendar month that has ended at `today`: the one before today's.
+pub fn last_month(today: NaiveDate) -> YearMonth {
+    YearMonth::from_date(today).prev()
+}
+
+/// The key of the last period of `grain` that has ended at `today`
+/// (`2026-09-06`, `2026-W36`, `2026-08`).
+pub fn last_ended_key(grain: Grain, today: NaiveDate) -> String {
+    match grain {
+        Grain::Day => last_day(today).format("%Y-%m-%d").to_string(),
+        Grain::Week => last_week(today).to_string(),
+        Grain::Month => last_month(today).to_string(),
+    }
+}
+
+/// The key of the period of `grain` containing `today` — the one no close
+/// can take yet.
+pub fn running_key(grain: Grain, today: NaiveDate) -> String {
+    match grain {
+        Grain::Day => today.format("%Y-%m-%d").to_string(),
+        Grain::Week => IsoWeek::from_date(today).to_string(),
+        Grain::Month => YearMonth::from_date(today).to_string(),
+    }
+}
+
+/// Whether `state.closed` is behind the last ended period of any grain —
+/// the gate §6.3's "recorded in `state.json`" puts in front of the automatic
+/// close, so a command that follows a caught-up one does not call the kernel.
+pub fn behind(closed: &Closed, today: NaiveDate) -> bool {
+    closed.day.is_none_or(|d| d < last_day(today))
+        || closed.week.is_none_or(|w| w < last_week(today))
+        || closed.month.is_none_or(|m| m < last_month(today))
+}
+
+/// Move `state.closed`'s stamp for `grain` up to the last ended period —
+/// never back. Returns whether it moved.
+fn advance(closed: &mut Closed, grain: Grain, today: NaiveDate) -> bool {
+    match grain {
+        Grain::Day => {
+            let d = last_day(today);
+            let moved = closed.day.is_none_or(|c| c < d);
+            if moved {
+                closed.day = Some(d);
+            }
+            moved
+        }
+        Grain::Week => {
+            let w = last_week(today);
+            let moved = closed.week.is_none_or(|c| c < w);
+            if moved {
+                closed.week = Some(w);
+            }
+            moved
+        }
+        Grain::Month => {
+            let m = last_month(today);
+            let moved = closed.month.is_none_or(|c| c < m);
+            if moved {
+                closed.month = Some(m);
+            }
+            moved
+        }
+    }
+}
+
+/// `--date` on `tm close`: the kernel closes every ended region of the
+/// grain, so the flag no longer picks a period — it is kept for the
+/// spellings scripts hold, and it must name a period that has ended. A
+/// period still running is refused before anything is read: the kernel
+/// cannot close it (`closeTo_target_is_open`), and saying `closed` over it
+/// would be the silent wrong answer.
+pub fn check_date(grain: Grain, date: &str, today: NaiveDate) -> Result<(), CliError> {
+    let ended = match grain {
+        Grain::Day => tm_core::model::parse_date(date)? <= last_day(today),
+        Grain::Week => IsoWeek::parse(date)? <= last_week(today),
+        Grain::Month => YearMonth::parse(date)? <= last_month(today),
+    };
+    if ended {
+        Ok(())
+    } else {
+        Err(CliError::msg(format!(
+            "periodNotEnded — `tm close {g} --date {date}`: that {g} has not ended at {today}; \
+             a close takes only periods that have ended (the kernel's `Closed`, the owner's D1), \
+             and the last {g} that has is {last}",
+            g = grain.name(),
+            today = today.format("%Y-%m-%d"),
+            last = last_ended_key(grain, today),
+        )))
+    }
+}
+
+/// Minutes as the kernel emitted them: an integer pair, never divided here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct MinOut {
+    /// Numerator.
+    pub num: u64,
+    /// Denominator, positive.
+    pub den: u64,
+}
+
+/// One line a close acted on — one entry of the kernel's report (D3).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ClosedLine {
+    /// The item's id, bare.
+    pub id: String,
+    /// The grain of the close that took it: `day`, `week` or `month`.
+    pub grain: &'static str,
+    /// What happened to it, by the kernel's constructor name: `move`,
+    /// `moveReopening`, `copy` (a `[-]` left behind and a stamped record
+    /// filed forward), `carry` (a wall still ahead, moved unstamped).
+    pub did: &'static str,
+    /// The file it was taken from.
+    pub from: String,
+    /// The file it went to.
+    pub to: String,
+    /// The stamp it gained (`D07`, `W37`), if any.
+    pub stamp: Option<String>,
+    /// Its estimate in minutes afterwards, as `{num, den}`; `null` when the
+    /// line carries no estimate.
+    pub min: Option<MinOut>,
+}
+
+/// What a close did (`tm close --json`'s `report`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct ReportOut {
+    /// The kernel's per-item list, in its fold order.
+    pub closes: Vec<ClosedLine>,
+    /// The ids `tm close month --drop` dropped (the host's `drop` commands,
+    /// which the kernel ran ahead of the close in the same request).
+    pub dropped: Vec<String>,
+}
+
+/// The human line's counts, each read off the report.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Summary {
+    /// Lines that left their file for another: `move`, `moveReopening`,
+    /// `carry`.
+    pub moved: usize,
+    /// Lines that gained a stamp.
+    pub demoted: usize,
+    /// Walls carried into the live week.
+    pub carried: usize,
+    /// `--drop` ids.
+    pub dropped: usize,
+}
+
+impl ReportOut {
+    /// The counts of the human line.
+    pub fn summary(&self) -> Summary {
+        Summary {
+            moved: self.closes.iter().filter(|c| c.did != CloseDid::Copy.name()).count(),
+            demoted: self.closes.iter().filter(|c| c.stamp.is_some()).count(),
+            carried: self.closes.iter().filter(|c| c.did == CloseDid::Carry.name()).count(),
+            dropped: self.dropped.len(),
+        }
+    }
+
+    /// `closed week 2026-W37 · 1 moved · 5 demoted · 1 carried · 0 dropped`.
+    pub fn line(&self, period: &str, key: &str) -> String {
+        let s = self.summary();
+        format!(
+            "closed {period} {key} · {} moved · {} demoted · {} carried · {} dropped",
+            s.moved, s.demoted, s.carried, s.dropped
+        )
+    }
+}
+
+/// Which close a request carries.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Which {
+    /// `tm close <grain>`: that grain's close.
+    One(Grain),
+    /// The automatic close: every grain once, day then week then month.
+    All,
+}
+
+/// The period key of a plan path (`day/2026-09-07.md` → `2026-09-07`), the
+/// form §10.1's `demote` event carries; any other path as itself.
+fn period_key(path: &str) -> String {
+    match Horizon::from_path(path) {
+        Some(Horizon::Day(d)) => d.format("%Y-%m-%d").to_string(),
+        Some(Horizon::Week(w)) => w.to_string(),
+        Some(Horizon::Month(m)) => m.to_string(),
+        _ => path.to_string(),
+    }
+}
+
+/// Run one close through the kernel: the `--drop` list first (a dropped
+/// line is settled, and no close row takes a settled line), then the close,
+/// in **one** request. On success, log what the report names — a `demote`
+/// for every stamped entry and a `move` for every other, in the kernel's
+/// order — plus a `drop` per dropped id and a `close` per grain, advance
+/// `state.closed`, and return the report. On a refusal nothing has been
+/// written, logged or stamped.
+pub fn run(ctx: &mut Ctx, which: Which, drops: &[Id]) -> Result<ReportOut, CliError> {
+    let mut cmds: Vec<Cmd> = drops
+        .iter()
+        .map(|id| Cmd::Drop { id: id.to_string() })
+        .collect();
+    cmds.push(match which {
+        Which::One(grain) => Cmd::Close { grain },
+        Which::All => Cmd::AutoClose,
+    });
+    let applied = kernel_bridge::apply(ctx, &cmds)?;
+
+    let mut report = ReportOut {
+        closes: Vec::new(),
+        dropped: drops.iter().map(|d| d.to_string()).collect(),
+    };
+    for id in drops {
+        ctx.append_event(Event::Drop { id: id.to_string() })?;
+    }
+    for e in &applied.closes {
+        let (from, to) = (applied.path_of(e.from).to_string(), applied.path_of(e.to).to_string());
+        let min = e.minutes.map(|m| MinOut { num: m.num(), den: m.den() });
+        if e.stamp.is_some() {
+            ctx.append_event(Event::Demote {
+                id: e.id.clone(),
+                from: period_key(&from),
+                to: period_key(&to),
+                est_min: e.minutes.map_or(0, |m| m.whole()),
+            })?;
+        } else {
+            ctx.append_event(Event::Move {
+                id: e.id.clone(),
+                from: from.clone(),
+                to: to.clone(),
+            })?;
+        }
+        report.closes.push(ClosedLine {
+            id: e.id.clone(),
+            grain: e.grain.name(),
+            did: e.did.name(),
+            from,
+            to,
+            stamp: e.stamp.map(|s| s.to_string()),
+            min,
+        });
+    }
+
+    let today = ctx.today;
+    let grains = match which {
+        Which::One(g) => vec![g],
+        Which::All => vec![Grain::Day, Grain::Week, Grain::Month],
+    };
+    for g in grains {
+        // The explicit close always records itself (it is what `tm undo`
+        // reopens); the automatic one records a grain only when the report
+        // names a line that grain's close took — §10.1 logs what happened,
+        // and a close of nothing happened to nothing.
+        let advanced = advance(&mut ctx.state.closed, g, today);
+        let took = report.closes.iter().any(|c| c.grain == g.name());
+        if which != Which::All || (advanced && took) {
+            ctx.append_event(Event::Close {
+                period: g.name().to_string(),
+                key: last_ended_key(g, today),
+            })?;
+        }
+    }
+    ctx.save_state()?;
+    if applied.docs.iter().any(|d| d.changed) {
+        ctx.reload()?;
+    }
+    Ok(report)
+}
+
+/// §6.3's automatic close, run by [`Ctx::load`] ahead of every verb that
+/// asks for housekeeping. One kernel call when `state.closed` is behind —
+/// see the module docs.
+///
+/// A **refusal** does not fail the verb it runs ahead of: nothing has been
+/// written and nothing is stamped closed, so the close is tried again on the
+/// next command, and the refusal is printed by name on stderr (except inside
+/// the TUI, whose screen stderr would shred). Refusing every verb instead
+/// would leave a tree the kernel cannot close — §4.3's own example, gap 53 —
+/// unusable except by hand. A kernel **fault**, a write conflict or an I/O
+/// error still fails the verb.
+pub fn auto_close(ctx: &mut Ctx) -> Result<Option<ReportOut>, CliError> {
+    if !behind(&ctx.state.closed, ctx.today) {
+        return Ok(None);
+    }
+    match run(ctx, Which::All, &[]) {
+        Ok(report) => Ok(Some(report)),
+        Err(CliError::Kernel(issue)) if !issue.is_fault() => {
+            if !kernel_bridge::capturing_kernel_stderr() {
+                eprintln!(
+                    "tm: the automatic close (§6.3) was refused, so no period was closed and \
+                     nothing was written; it runs again on the next command. {}",
+                    explain(&issue)
+                );
+            }
+            Ok(None)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// A close refusal's message, with what the name most likely means for a
+/// close in particular — the two shapes the kernel's week close refuses on
+/// real trees are recorded gaps, and saying which one is cheaper than
+/// leaving the user to read `Boundary.lean`.
+pub fn explain(issue: &KernelIssue) -> String {
+    let hint = match issue.name.as_str() {
+        "alreadyDemoted" => Some(
+            "for a close this is an open line of an ended week that already has a `[-]` record \
+             under a month's `# Demoted` (§4.3's pre-close pair): the kernel's week close refuses \
+             rather than overwrite the record (kernel/README.md gap 53)",
+        ),
+        "badHorizon" => Some(
+            "for a close this is most often an open dated (`due:`) line in an ended week, whose \
+             record a month's `# Demoted` may not hold (kernel/README.md gap 55)",
+        ),
+        "noSection" => Some(
+            "for a close this is a line of an ended month under a heading the current month file \
+             does not have; the host adds only `# Outcomes` and `# Demoted` (gap 56)",
+        ),
+        _ => None,
+    };
+    match hint {
+        Some(h) => format!("{} ({h})", issue.message),
+        None => issue.message.clone(),
+    }
+}
+
+/// [`run`] for the explicit verb: a refusal's message gains [`explain`]'s
+/// hint, and keeps its name.
+pub fn run_explained(ctx: &mut Ctx, which: Which, drops: &[Id]) -> Result<ReportOut, CliError> {
+    run(ctx, which, drops).map_err(|e| match e {
+        CliError::Kernel(issue) if !issue.is_fault() => {
+            let message = explain(&issue);
+            CliError::Kernel(KernelIssue { message, ..issue })
+        }
+        other => other,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn d(s: &str) -> NaiveDate {
+        NaiveDate::parse_from_str(s, "%Y-%m-%d").expect("date")
+    }
+
+    #[test]
+    fn the_last_ended_periods() {
+        // Monday 2026-09-14: Sunday ended, W37 ended, August ended.
+        assert_eq!(last_ended_key(Grain::Day, d("2026-09-14")), "2026-09-13");
+        assert_eq!(last_ended_key(Grain::Week, d("2026-09-14")), "2026-W37");
+        assert_eq!(last_ended_key(Grain::Month, d("2026-09-14")), "2026-08");
+        // New year: ISO week 2027-W53 does not exist; 2026-12-28 is W53 of 2026.
+        assert_eq!(last_ended_key(Grain::Week, d("2027-01-04")), "2026-W53");
+        assert_eq!(last_ended_key(Grain::Month, d("2027-01-01")), "2026-12");
+    }
+
+    #[test]
+    fn the_gate_is_behind_until_every_grain_is_stamped() {
+        let today = d("2026-09-14");
+        let mut closed = Closed::default();
+        assert!(behind(&closed, today));
+        for g in [Grain::Day, Grain::Week, Grain::Month] {
+            assert!(advance(&mut closed, g, today));
+        }
+        assert!(!behind(&closed, today));
+        // Never back.
+        assert!(!advance(&mut closed, Grain::Week, d("2026-09-01")));
+        assert_eq!(closed.week, Some(IsoWeek::new(2026, 37)));
+    }
+
+    #[test]
+    fn date_must_name_an_ended_period() {
+        let today = d("2026-09-07");
+        assert!(check_date(Grain::Day, "2026-09-06", today).is_ok());
+        let e = check_date(Grain::Day, "2026-09-07", today).expect_err("today has not ended");
+        assert!(e.to_string().contains("periodNotEnded"), "{e}");
+        assert!(check_date(Grain::Week, "2026-W36", today).is_ok());
+        assert!(check_date(Grain::Week, "2026-W37", today).is_err());
+        assert!(check_date(Grain::Month, "2026-08", today).is_ok());
+        assert!(check_date(Grain::Month, "2026-09", today).is_err());
+    }
+
+    /// The host's "last ended period" is the kernel's `Closed` boundary, not
+    /// a second opinion of it: at each instant, a close of each grain takes
+    /// the line of the file for the last ended period and leaves the line of
+    /// the file for the period containing now.
+    #[test]
+    fn last_ended_is_the_kernels_closed_boundary() {
+        use serde_json::{json, Value};
+        for today in ["2026-09-07", "2026-09-13", "2026-09-14", "2026-10-01", "2027-01-04"] {
+            let today = d(today);
+            for grain in [Grain::Day, Grain::Week, Grain::Month] {
+                let (ended, open, section) = match grain {
+                    Grain::Day => (
+                        Horizon::Day(last_day(today)).path(),
+                        Horizon::Day(today).path(),
+                        "# Pinned",
+                    ),
+                    Grain::Week => (
+                        Horizon::Week(last_week(today)).path(),
+                        Horizon::Week(IsoWeek::from_date(today)).path(),
+                        "# Tasks",
+                    ),
+                    Grain::Month => (
+                        Horizon::Month(last_month(today)).path(),
+                        Horizon::Month(YearMonth::from_date(today)).path(),
+                        "# Outcomes",
+                    ),
+                };
+                let mut docs = Vec::new();
+                for (path, id) in [(&ended, "e1"), (&open, "o1")] {
+                    let (g, ix) = kernel_bridge::region_of(path).expect("a dated file");
+                    docs.push(json!({"path": path, "grain": g, "ix": ix,
+                        "lines": [section, format!("- [ ] 3 1b A line ^{id}")]}));
+                }
+                // The destinations a close of this grain needs.
+                let week_now = Horizon::Week(IsoWeek::from_date(today)).path();
+                let month_now = Horizon::Month(YearMonth::from_date(today)).path();
+                for (path, lines) in [(week_now, json!(["# Tasks"])), (month_now, json!(["# Outcomes", "# Demoted"]))] {
+                    if docs.iter().all(|doc| doc["path"] != path.as_str()) {
+                        let (g, ix) = kernel_bridge::region_of(&path).expect("dated");
+                        docs.push(json!({"path": path, "grain": g, "ix": ix, "lines": lines}));
+                    }
+                }
+                let request = json!({"now": today.format("%Y-%m-%d").to_string(), "blockMin": 60,
+                    "docs": docs, "cmds": [{"op": "close", "grain": grain.to_wire()}]});
+                let raw = tm_kernel_ffi::call(&request.to_string()).expect("kernel call");
+                let resp: Value = serde_json::from_str(&raw).expect("json");
+                let ids: Vec<&str> = resp["ok"]["report"]["closes"]
+                    .as_array()
+                    .unwrap_or_else(|| panic!("{today} {grain:?}: {raw}"))
+                    .iter()
+                    .filter_map(|e| e["id"].as_str())
+                    .collect();
+                assert_eq!(ids, vec!["e1"], "{today} {grain:?}: {raw}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_summary_is_read_off_the_report() {
+        let line = |id: &str, did: CloseDid, stamp: Option<&str>| ClosedLine {
+            id: id.into(),
+            grain: "week",
+            did: did.name(),
+            from: "week/2026-W37.md".into(),
+            to: "month/2026-09.md".into(),
+            stamp: stamp.map(str::to_string),
+            min: None,
+        };
+        let report = ReportOut {
+            closes: vec![
+                line("p1", CloseDid::MoveReopening, Some("D11")),
+                line("x1", CloseDid::Carry, None),
+                line("m1", CloseDid::Copy, Some("W37")),
+                line("O1", CloseDid::Move, None),
+            ],
+            dropped: vec!["O3".into()],
+        };
+        assert_eq!(
+            report.summary(),
+            Summary { moved: 3, demoted: 2, carried: 1, dropped: 1 }
+        );
+        assert_eq!(
+            report.line("week", "2026-W37"),
+            "closed week 2026-W37 · 3 moved · 2 demoted · 1 carried · 1 dropped"
+        );
+    }
+}

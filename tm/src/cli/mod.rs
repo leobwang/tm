@@ -18,10 +18,12 @@
 //!
 //! Housekeeping: every verb but `init`, `check`, `log`, `undo` and `tui`
 //! loads the plan directory through [`ctx::Ctx::load`], which first runs the
-//! §6.3 auto-close ("`tm close` runs automatically on the first command after
-//! the period ends") and flips `[?]` items whose `on-event:` timeout has
-//! elapsed back to `[ ]` (§5.1).
+//! §6.3 automatic close ("`tm close` runs automatically on the first command
+//! after the period ends" — one kernel `autoClose` call, [`closing`]) and
+//! flips `[?]` items whose `on-event:` timeout has elapsed back to `[ ]`
+//! (§5.1).
 
+pub mod closing;
 pub mod ctx;
 pub mod day;
 pub mod dayfile;

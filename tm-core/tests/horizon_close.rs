@@ -4,9 +4,11 @@
 //! `close_day` resets the active block's line and moves the pinned item into
 //! the week; `close_week` demotes, folds children away and sends the overdue
 //! pset to `backlog.md#Overdue` (snapshotted); `close_month` carries
-//! outcomes and demoted lines into the next month, honouring `--drop`; and
-//! `auto_close` runs each of them exactly once. Every test also asserts that
-//! the lines it did not name are byte-identical before and after.
+//! outcomes and demoted lines into the next month, honouring `--drop`. Every
+//! test also asserts that the lines it did not name are byte-identical
+//! before and after. (These are the fork-point library closes; since stage 4
+//! step 6 the shipped `tm close` and automatic close go through the kernel
+//! instead — see `tm-core/src/horizon.rs`'s module docs.)
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -16,7 +18,7 @@ use chrono::{DateTime, FixedOffset, NaiveDate};
 use chrono_tz::Tz;
 use tempfile::TempDir;
 use tm_core::horizon::{
-    auto_close, churn, close_day, close_month, close_week, pending_closes, CloseReport, Ctx,
+    churn, close_day, close_month, close_week, CloseReport, Ctx,
     HorizonError, Moved, MIN_REMAINING_MIN, REVIEW_PLACEHOLDER,
 };
 use tm_core::log::{replay, Event, Log, LogEntry, Replay};
@@ -1079,88 +1081,6 @@ fn re_running_a_drop_that_already_landed_is_not_an_error() {
     assert!(matches!(err, HorizonError::NotFound(ref i) if *i == id("nope")), "{err}");
 }
 
-// ---------------------------------------------------------------------------
-// One archive copy per id, however many periods a close catches up over
-// (§4.1, §6.3, §17.2)
-// ---------------------------------------------------------------------------
-
-/// The §4.3 example tree ships `^m2` twice: live in `week/2026-W37` and as
-/// the `[-]` archive copy under `month/2026-09#Demoted` (§6.3's one
-/// sanctioned copy). Come back in October and the sweep closes the week —
-/// which copies the live line into `month/<current>` = 2026-10 — and then
-/// the month, which carries September's `# Demoted` into that same file:
-/// three lines, one id, `tm check` at exit 2 for a tree nobody touched.
-/// §6.3's stamps accumulate on *one* line, so the week close moves the
-/// record it finds instead of writing a second one.
-#[test]
-fn a_catch_up_sweep_leaves_one_archive_copy_per_id() {
-    let (_dir, store) = plan();
-    let mut state = store.load_state().unwrap();
-    let ran = auto_close(
-        &store,
-        &mut state,
-        d("2026-10-05"),
-        at("2026-10-05T09:00:00-05:00"),
-        None,
-    )
-    .unwrap();
-
-    // The week close took September's record with it, so the month close
-    // that follows finds nothing of `^m2` to carry (and nothing to fold).
-    let month = ran
-        .iter()
-        .find(|c| c.period == Period::Month && c.key == "2026-09")
-        .expect("September was closed");
-    assert!(
-        !month.report.notes.iter().any(|n| n.contains("^m2")),
-        "{:?}",
-        month.report.notes
-    );
-    assert!(
-        !month.report.moved.iter().any(|m| m.id == id("m2")),
-        "{:?}",
-        month.report.moved
-    );
-
-    let files = store.read_tree().unwrap();
-    let tree = files.tree();
-    assert!(tree.duplicate_ids().is_empty(), "{:?}", tree.duplicate_ids());
-    // The archive copy is in the month the close ran in, with its stamp, and
-    // it is the only one anywhere.
-    assert_eq!(
-        line_of(&store, NEXT_MONTH, "m2").unwrap(),
-        "- [-] 4 6b Rollback path passes tests   @O2 est:6b demoted:W37 ^m2"
-    );
-    assert!(line_of(&store, MONTH, "m2").is_none());
-    let copies: usize = tree_text(&store)
-        .values()
-        .map(|t| t.matches("^m2").count())
-        .sum();
-    assert_eq!(copies, 2, "the `[-]` week line and one archive copy");
-
-    // And a sweep that catches up over three months does the same.
-    let (_dir, store) = plan();
-    let mut state = store.load_state().unwrap();
-    auto_close(
-        &store,
-        &mut state,
-        d("2026-12-14"),
-        at("2026-12-14T09:00:00-06:00"),
-        None,
-    )
-    .unwrap();
-    let files = store.read_tree().unwrap();
-    let tree = files.tree();
-    assert!(tree.duplicate_ids().is_empty(), "{:?}", tree.duplicate_ids());
-    assert_eq!(
-        line_of(&store, "month/2026-12.md", "m2").unwrap(),
-        "- [-] 4 6b Rollback path passes tests   @O2 est:6b demoted:W37 ^m2"
-    );
-    for month in [MONTH, NEXT_MONTH, "month/2026-11.md"] {
-        assert!(line_of(&store, month, "m2").is_none(), "{month}");
-    }
-}
-
 /// §6.3's week close writes `est:` = remaining onto the archive copy and
 /// never onto the line it archives, dropped children folded in ("their
 /// remaining is folded into the parent's `est:`", and their lines leave the
@@ -1361,87 +1281,6 @@ fn a_month_close_never_carries_an_id_a_file_already_has() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// auto_close (§13 "auto-run when overdue", §10.2)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn auto_close_runs_each_period_once() {
-    let (_dir, store) = plan();
-    let mut state = store.load_state().unwrap();
-    assert_eq!(state.closed.week, None);
-
-    let ran = auto_close(
-        &store,
-        &mut state,
-        d("2026-09-14"),
-        at("2026-09-14T09:00:00-05:00"),
-        None,
-    )
-    .unwrap();
-
-    // Every unclosed day of the week that has a file ran, oldest first, then
-    // the week; August has no file, so it is only recorded. (The tree has no
-    // `state.closed` — the state every tree is in until its first command —
-    // so §6.3's "runs automatically on the first command after the period
-    // ends" applies to all of them, bounded by `AUTO_CLOSE_CATCHUP`.)
-    let periods: Vec<(Period, String)> = ran.iter().map(|c| (c.period, c.key.clone())).collect();
-    assert_eq!(
-        periods,
-        vec![
-            (Period::Day, "2026-09-07".to_string()),
-            (Period::Day, "2026-09-08".to_string()),
-            (Period::Day, "2026-09-09".to_string()),
-            (Period::Day, "2026-09-10".to_string()),
-            (Period::Day, "2026-09-11".to_string()),
-            (Period::Day, "2026-09-12".to_string()),
-            (Period::Day, "2026-09-13".to_string()),
-            (Period::Week, "2026-W37".to_string()),
-        ]
-    );
-    assert_eq!(state.closed.day, Some(d("2026-09-13")));
-    assert_eq!(state.closed.week, Some(IsoWeek::new(2026, 37)));
-    assert_eq!(state.closed.month, Some(YearMonth::new(2026, 8)));
-    assert!(!store.exists("day/2026-09-13.md"), "no file is invented for an unplanned day");
-    assert!(text(&store, WEEK).contains("closed: 2026-09-14"));
-
-    // The state was persisted, so the next command starts from it …
-    let reloaded = store.load_state().unwrap();
-    assert_eq!(reloaded.closed.week, Some(IsoWeek::new(2026, 37)));
-
-    // … and running it again is a no-op: no writes, no events.
-    let snapshot = tree_text(&store);
-    let events = log_events(&store);
-    let mut state = reloaded;
-    let again = auto_close(
-        &store,
-        &mut state,
-        d("2026-09-14"),
-        at("2026-09-14T17:00:00-05:00"),
-        None,
-    )
-    .unwrap();
-    assert!(again.is_empty(), "{again:?}");
-    assert_eq!(tree_text(&store), snapshot);
-    assert_eq!(log_events(&store), events);
-}
-
-#[test]
-fn pending_closes_names_what_auto_close_would_run() {
-    let (_dir, store) = plan();
-    let mut state = store.load_state().unwrap();
-    let today = d("2026-09-14");
-    let pending = pending_closes(&store, &state, today);
-    assert!(pending.contains(&(Period::Day, "2026-09-13".to_string())));
-    assert!(pending.contains(&(Period::Week, "2026-W37".to_string())));
-    // Not just the last period of each kind: the list is what the sweep runs,
-    // catch-up included.
-    let ran = auto_close(&store, &mut state, today, at("2026-09-14T09:00:00-05:00"), None).unwrap();
-    let periods: Vec<(Period, String)> = ran.iter().map(|c| (c.period, c.key.clone())).collect();
-    assert_eq!(pending, periods);
-    assert!(pending_closes(&store, &state, today).is_empty());
-}
-
 #[test]
 fn churn_lists_the_repeatedly_demoted_items() {
     let (_dir, store) = plan();
@@ -1455,111 +1294,11 @@ fn churn_lists_the_repeatedly_demoted_items() {
     assert!(churn(&tree, 2).is_empty());
 }
 
-/// A tree with no close history behind it is caught up over the same
-/// bounded window as one that has history (§6.3: the close "runs
-/// automatically on the first command after the period ends"). `tm init`
-/// writes the week and day files and no `state.json`, so "no history" is the
-/// state every tree starts in — treating it as "nothing to catch up on"
-/// stamped the tree's own first week closed without running it and stranded
-/// every open line in it.
-///
-/// This test used to assert the opposite (`ran.iter().all(|c| c.period !=
-/// Period::Week)` and `!text(&store, WEEK).contains("closed:")`), which is
-/// the defect: §6.3 has no clause making a close conditional on a prior
-/// close being recorded.
-#[test]
-fn auto_close_without_history_catches_up_over_the_window() {
-    let (_dir, store) = plan();
-    let mut state = store.load_state().unwrap();
-    // Three weeks later, and `state.closed.week` is None. W37 is inside the
-    // catch-up window and has a file, so it is closed, not merely stamped.
-    let ran = auto_close(
-        &store,
-        &mut state,
-        d("2026-10-05"),
-        at("2026-10-05T09:00:00-05:00"),
-        None,
-    )
-    .unwrap();
-    let weeks: Vec<String> = ran
-        .iter()
-        .filter(|c| c.period == Period::Week)
-        .map(|c| c.key.clone())
-        .collect();
-    assert_eq!(weeks, vec!["2026-W37".to_string()]);
-    assert_eq!(state.closed.week, Some(IsoWeek::new(2026, 40)));
-    assert!(text(&store, WEEK).contains("closed:"));
-    // The unfinished milestones are demoted into the current month, not left
-    // `[ ]` in a file nothing plans from (§6.3, §0 principle 6).
-    assert!(line_of(&store, WEEK, "m1").unwrap().starts_with("- [-] "));
-    assert!(text(&store, NEXT_MONTH).contains("demoted:W37"));
-    // The month that ended is closed too.
-    assert_eq!(state.closed.month, Some(YearMonth::new(2026, 9)));
-    assert!(store.exists(NEXT_MONTH));
-}
-
-/// §6.3 + §0 principle 6: skipping a week must not strand its unfinished
-/// milestones. Every period between the last recorded close and the last
-/// complete one is closed, oldest first — stamping them closed without
-/// running would leave their lines `[ ]` in a file nothing plans from.
-#[test]
-fn auto_close_catches_up_on_every_skipped_period() {
-    let (_dir, store) = plan();
-    let mut state = store.load_state().unwrap();
-    // W37 closed on time; W38 gets a milestone and is then skipped entirely.
-    state.closed.week = Some(IsoWeek::new(2026, 37));
-    state.closed.day = Some(d("2026-09-13"));
-    state.closed.month = Some(YearMonth::new(2026, 8));
-    store.save_state(&state).unwrap();
-    store
-        .write_file(
-            NEXT_WEEK,
-            "---\nweek: 2026-W38\n---\n# Milestones\n- [ ] 5 6b Important milestone ^zzz1\n",
-        )
-        .unwrap();
-
-    // Two weeks on, nothing has been run since.
-    let ran = auto_close(
-        &store,
-        &mut state,
-        d("2026-09-28"),
-        at("2026-09-28T07:00:00-05:00"),
-        None,
-    )
-    .unwrap();
-
-    let weeks: Vec<String> = ran
-        .iter()
-        .filter(|c| c.period == Period::Week)
-        .map(|c| c.key.clone())
-        .collect();
-    assert_eq!(weeks, vec!["2026-W38".to_string()], "W38 was actually closed");
-    assert_eq!(state.closed.week, Some(IsoWeek::new(2026, 39)));
-    // The milestone is demoted, not orphaned (§6.3).
-    assert!(line_of(&store, NEXT_WEEK, "zzz1").unwrap().starts_with("- [-] "));
-    let month = text(&store, "month/2026-09.md");
-    assert!(month.contains("demoted:W38"), "{month}");
-}
-
-/// The catch-up is bounded: a tree left alone for years does not spend its
-/// first command closing every week since, but it still stamps them.
-#[test]
-fn auto_close_catch_up_is_capped() {
-    let (_dir, store) = plan();
-    let mut state = store.load_state().unwrap();
-    state.closed.week = Some(IsoWeek::new(2020, 1));
-    state.closed.day = Some(d("2026-09-13"));
-    state.closed.month = Some(YearMonth::new(2026, 8));
-    store.save_state(&state).unwrap();
-
-    auto_close(
-        &store,
-        &mut state,
-        d("2026-09-21"),
-        at("2026-09-21T07:00:00-05:00"),
-        None,
-    )
-    .unwrap();
-
-    assert_eq!(state.closed.week, Some(IsoWeek::new(2026, 38)));
-}
+// The fork-point `auto_close` tests (`auto_close_runs_each_period_once`,
+// `pending_closes_names_what_auto_close_would_run`,
+// `auto_close_without_history_catches_up_over_the_window`,
+// `auto_close_catches_up_on_every_skipped_period`,
+// `auto_close_catch_up_is_capped`, `a_catch_up_sweep_leaves_one_archive_copy_per_id`)
+// were deleted with the function at stage 4
+// step 6: the shipped automatic close is one kernel `autoClose` call per
+// command, tested through the binary in `tm/tests/cli_close_kernel.rs`.

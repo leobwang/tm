@@ -524,6 +524,17 @@ mod tests {
     use super::*;
     use crate::cli::WakeArgs;
 
+    /// Held by every test here that runs a verb. The fault probe is a
+    /// process-wide environment variable, and since stage 4 step 6 every
+    /// housekeeping verb on a fresh tree calls the kernel (the automatic
+    /// close) — so a verb running in a sibling test thread while the probe
+    /// is set would read it and fault.
+    static KERNEL_ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn kernel_env() -> std::sync::MutexGuard<'static, ()> {
+        KERNEL_ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     /// Copy a directory tree.
     fn copy_dir(from: &Path, to: &Path) {
         fs::create_dir_all(to).expect("create dir");
@@ -606,7 +617,11 @@ mod tests {
     /// call still runs; only the response bytes are replaced.
     #[test]
     fn a_kernel_fault_propagates_and_a_refusal_stays_a_message() {
+        let _env = kernel_env();
         let (_tmp, g) = fixture();
+        // The automatic close runs on the first housekeeping verb; let it
+        // run unprobed, so the probe faults the edit's own kernel call.
+        wake(&g);
         std::env::set_var("TM_KERNEL_FAULT_PROBE", "1");
         let out = verb(
             &g,
@@ -632,6 +647,7 @@ mod tests {
         // §13: `tm undo` restores the file bytes the last verb changed, and
         // refuses with a conflict when the file moved under it. A TUI write
         // outside the recorder is exactly such a move.
+        let _env = kernel_env();
         let (_tmp, g) = fixture();
         wake(&g);
         note(&g, "the printer is out of paper").expect("n note");
@@ -641,6 +657,7 @@ mod tests {
 
     #[test]
     fn a_location_set_in_the_tui_does_not_block_undo() {
+        let _env = kernel_env();
         let (_tmp, g) = fixture();
         wake(&g);
         set_location(&g, "home").expect("l home");

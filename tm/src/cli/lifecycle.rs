@@ -3,8 +3,9 @@
 //!
 //! # API overview
 //!
-//! * [`close`] — §6.3's lifecycle through `horizon.rs`, and the `closed`
-//!   stamp in `state.json` that stops the auto-close running it again.
+//! * [`close`] — §6.3's lifecycle through the kernel ([`closing`], stage 4
+//!   step 6), and the `closed` stamp in `state.json` that stops the
+//!   automatic close running it again.
 //! * [`sync_cal`] / [`sync_calendar`] — §15: fetch the configured feeds and
 //!   write `calendar/<week>.md` for the three weeks of the window, keeping
 //!   `manual` lines. `tm arrive` calls [`sync_calendar`] directly.
@@ -29,7 +30,7 @@ use serde::Serialize;
 
 use tm_core::check as validate;
 use tm_core::energy::{self, Model};
-use tm_core::horizon::{self, CloseReport, REVIEW_BLOCK};
+use tm_core::horizon::{self, REVIEW_BLOCK};
 use tm_core::ics;
 use tm_core::log::LogEntry;
 use tm_core::priority;
@@ -38,7 +39,9 @@ use tm_core::model::{parse_date, Horizon, Id, IsoWeek, Period, YearMonth};
 use tm_core::store::{Store, MODEL_PATH};
 use tm_core::tree::Tree;
 
+use super::closing;
 use super::ctx::{Ctx, Globals};
+use super::kernel_bridge::Grain;
 use super::ghost;
 use super::items::id_gen;
 use super::out::{emit, CliError};
@@ -50,13 +53,27 @@ use super::undo as undo_stack;
 pub struct CloseOut {
     /// `day`, `week` or `month`.
     pub period: String,
-    /// The period closed (`2026-09-07`, `2026-W37`, `2026-09`).
+    /// The last period of that grain that has ended (`2026-09-06`,
+    /// `2026-W36`, `2026-08`): the close takes every ended period of its
+    /// grain, whatever its age, so this is the one it closed *through*.
     pub key: String,
-    /// What the close did (§6.3).
-    pub report: CloseReport,
+    /// What the close did: the kernel's per-item list (D3).
+    pub report: closing::ReportOut,
 }
 
-/// `tm close <day|week|month> [--drop ^id …]` (§6.3).
+/// `tm close <day|week|month> [--drop ^id …]` (§6.3), kernel-backed (stage 4
+/// step 6).
+///
+/// One request through the kernel bridge: the month's `--drop` ids first,
+/// then `close <grain>` at the CLI's `now`, which takes every region of that
+/// grain that has ended and files each line into the week or month
+/// containing now (the owner's D1). The human line and `--json` are both
+/// read off the kernel's report; `state.closed` is advanced and the log
+/// written from it ([`closing::run`]). A refusal is named, writes nothing,
+/// and stamps nothing closed.
+///
+/// `tm close` loads without the automatic close ([`Ctx::load_for_close`]):
+/// the verb's own request is the close, so what it prints is what it did.
 pub fn close(g: &Globals, args: &super::CloseArgs) -> Result<i32, CliError> {
     let period = args.period();
     // §6.3 gives `--drop` to the month close alone: it is the exception to
@@ -73,95 +90,63 @@ pub fn close(g: &Globals, args: &super::CloseArgs) -> Result<i32, CliError> {
             horizon::period_name(period)
         )));
     }
-    let mut ctx = Ctx::load(g, true)?;
-    let rec = undo_stack::Recorder::start(&ctx, "close")?;
-    // §6.3: the close "runs automatically on the first command after the
-    // period ends" — and this is that command. When the auto-close in
-    // `Ctx::load` has just closed a period of this kind, that is the period
-    // `tm close <kind>` means: closing today's week on the Monday after the
-    // last one ended would archive the week you are one day into.
-    let auto = ctx
-        .closed
-        .iter()
-        .find(|c| c.period == period)
-        .map(|c| c.key.clone());
-    let (key, mut report) = match period {
-        Period::Day => {
-            let date = match (args.date(), auto.as_deref()) {
-                (Some(d), _) => parse_date(d)?,
-                (None, Some(k)) => parse_date(k).unwrap_or(ctx.today),
-                (None, None) => ctx.today,
-            };
-            let r = horizon::close_day(&ctx.hz(), date)?;
-            if ctx.state.closed.day.is_none_or(|d| d < date) {
-                ctx.state.closed.day = Some(date);
-            }
-            (date.to_string(), r)
-        }
-        Period::Week => {
-            let week = match (args.date(), auto.as_deref()) {
-                (Some(d), _) => IsoWeek::parse(d)?,
-                (None, Some(k)) => {
-                    IsoWeek::parse(k).unwrap_or_else(|_| IsoWeek::from_date(ctx.today))
-                }
-                (None, None) => IsoWeek::from_date(ctx.today),
-            };
-            let r = horizon::close_week(&ctx.hz(), week)?;
-            if ctx.state.closed.week.is_none_or(|w| w < week) {
-                ctx.state.closed.week = Some(week);
-            }
-            (week.to_string(), r)
-        }
-        Period::Month => {
-            let month = match (args.date(), auto.as_deref()) {
-                (Some(d), _) => YearMonth::parse(d)?,
-                (None, Some(k)) => {
-                    YearMonth::parse(k).unwrap_or_else(|_| YearMonth::from_date(ctx.today))
-                }
-                (None, None) => YearMonth::from_date(ctx.today),
-            };
-            let drops: Vec<Id> = args.drops().into_iter().map(Ctx::key).collect();
-            let r = horizon::close_month(&ctx.hz(), month, &drops)?;
-            if ctx.state.closed.month.is_none_or(|m| m < month) {
-                ctx.state.closed.month = Some(month);
-            }
-            (month.to_string(), r)
-        }
-    };
-    // §6.3's closes are idempotent and `Ctx::load` ran the auto-close on the
-    // way in, so a `tm close <period>` for a period that has already ended
-    // usually finds its own work already done. Report what that run did:
-    // otherwise the verb prints `0 moved · 0 demoted` over a tree it did in
-    // fact rewrite, and `--json` hands §14's Claude Code an empty report.
-    if let Some(auto) = ctx
-        .closed
-        .iter()
-        .find(|c| c.period == period && c.key == key)
-        .cloned()
-    {
-        report.absorb(auto.report);
+    let mut ctx = Ctx::load_for_close(g)?;
+    let grain = Grain::of_period(period);
+    if let Some(date) = args.date() {
+        closing::check_date(grain, date, ctx.today)?;
     }
-    ctx.save_state()?;
+    // A `--drop` names an item with a line in a month file — an unfinished
+    // outcome, or a record under `# Demoted` whose live line may be in a
+    // week (§4.3's own `^m2`; the kernel's `drop` settles the live line, as
+    // the fork-point close did) — and nothing else: anything else is refused
+    // before the kernel is called, never dropped on the floor or elsewhere.
+    let mut drops: Vec<Id> = Vec::new();
+    for arg in args.drops() {
+        let id = Ctx::key(arg);
+        let item = ctx.item(&id)?;
+        let in_a_month = ctx.files.files.iter().any(|f| {
+            matches!(Horizon::from_path(&f.path), Some(Horizon::Month(_)))
+                && f.items().any(|i| Tree::key_of(i) == id)
+        });
+        if !in_a_month {
+            return Err(CliError::msg(format!(
+                "{} has no line in a month file (it is in {}): `tm close month --drop` drops a \
+                 month's outcomes and carried records — use `tm drop {}`",
+                id.token(),
+                item.horizon.path(),
+                id.token()
+            )));
+        }
+        drops.push(id);
+    }
+    let key = closing::last_ended_key(grain, ctx.today);
+    let rec = undo_stack::Recorder::start(&ctx, "close")?;
+    let report = closing::run_explained(&mut ctx, closing::Which::One(grain), &drops)?;
     ctx.reload()?;
-    rec.finish(&ctx, format!("close {} {key}", horizon::period_name(period)))?;
+    rec.finish(&ctx, format!("close {} {key}", grain.name()))?;
 
     let out = CloseOut {
-        period: horizon::period_name(period).to_string(),
+        period: grain.name().to_string(),
         key,
         report,
     };
+    let running = closing::running_key(grain, ctx.today);
     emit(
         ctx.json,
         || {
-            format!(
-                "closed {} {} · {} moved · {} demoted · {} reopened · {} dropped",
-                out.period,
-                out.key,
-                out.report.moved.len(),
-                out.report.demoted.len(),
-                out.report.reopened.len(),
-                out.report.dropped.len()
-            )
+            let line = out.report.line(&out.period, &out.key);
+            // `tm close day` at night used to close the day you were in; a
+            // close now takes only periods that have ended, so an empty
+            // close says which period it could not take, and when that one
+            // will be closed.
+            if out.report.closes.is_empty() {
+                format!(
+                    "{line}\n{} {running} is still running; it is closed on the first command after it ends",
+                    out.period
+                )
+            } else {
+                line
+            }
         },
         &out,
     )?;

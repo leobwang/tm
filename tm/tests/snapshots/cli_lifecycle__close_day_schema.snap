@@ -6,34 +6,20 @@ expression: schema(&json)
   "key": "string",
   "period": "string",
   "report": {
-    "carried": [],
-    "demoted": [
+    "closes": [
       {
-        "est_min": "integer",
-        "id": "string",
-        "stamps": [
-          "string"
-        ]
-      }
-    ],
-    "dropped": [],
-    "dropped_children": [],
-    "key": "string",
-    "moved": [
-      {
+        "did": "string",
         "from": "string",
+        "grain": "string",
         "id": "string",
+        "min": {
+          "den": "integer",
+          "num": "integer"
+        },
+        "stamp": "string",
         "to": "string"
       }
     ],
-    "notes": [],
-    "overdue_to_backlog": [],
-    "period": "string",
-    "reopened": [
-      {
-        "est_min": "integer",
-        "id": "string"
-      }
-    ]
+    "dropped": []
   }
 }

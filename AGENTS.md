@@ -1357,7 +1357,9 @@ corpus and CLI suites — never a theorem.
 - **The human's 30-minute drive** of the stage-3 binary (§5.13).
 - **Housekeeping writes precede a kernel refusal** — on a stale tree the
   fork-point day-close catch-up writes before the command's own kernel call is
-  refused; stage 4 territory, recorded not fixed.
+  refused; stage 4 territory, recorded not fixed. *Status (stage 4 step 6): the
+  automatic close is one kernel call and writes nothing when refused; its
+  successful writes still precede the verb's own call.*
 - **Two newline conventions** — the bridge normalizes rewritten files to a final
   newline, legacy writers do not; retires as stages 4 and 6 and gap 5 retire the
   legacy writers.
@@ -1512,6 +1514,17 @@ required by the new `close`/`autoClose` ops and refused by name
 (`nowAbsent`, `badNow`, …); the stale-tree acceptance is now also an FFI
 witness. The host decodes and checks every report but sends no close yet
 (step 6). README stage-4 step-5 block.
+*Step 6 (2026-09-12):* the CLI half of the acceptance is landed — `tm close`
+and the automatic close go through `kernel_bridge::apply` (`tm/src/cli/closing.rs`),
+`AUTO_CLOSE_CATCHUP = 16` and `horizon::auto_close` are deleted, and the human
+line, `--json` and the log are read off the kernel's per-item report. Ten
+binary-level tests (`tm/tests/cli_close_kernel.rs`): closing twice changes zero
+bytes, the three-month-stale tree catches up losing nothing (1005 minutes before
+and after), the fourteen-day case stamps once, and the owner's four D1 scenarios.
+Seventeen observable behaviour changes are tabled next to the rules they replace;
+the costs of gaps 53 and 55 are now in the shipped binary (§4.3's own tree refuses
+its week close); new gap 59 (a close lands lines in reverse source order). No
+Lean touched. README stage-4 step-6 block.
 
 **Scope, concretely.**
 
@@ -1598,6 +1611,8 @@ blocker. Do not let it become an excuse:
   bridge, against a stale fixture tree — and until `close` is kernel-backed the
   fork-point Rust close still runs as housekeeping ahead of every command (§8.1's
   "Still owed"). Do not restate the library result as the CLI one.
+  *Status (step 6): landed — `close` is kernel-backed and the CLI clause is
+  tested through the built binary (`tm/tests/cli_close_kernel.rs`).*
 - **The behaviour changes need a human**, and the plan's instruction is literal:
   construct a stale tree and close it before deciding. *Done 2026-09-12*: the
   owner drove stale trees with the restored binary and decided (a); (b) turned

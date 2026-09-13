@@ -4899,3 +4899,249 @@ cap: the three report witnesses and the emission witness decided together in
 `Boundary.lean` alone now takes 30.9 s at a 2.8 GB peak (27.5 s at 2.9 GB at
 step 4).  Twelve modules, 24,256 lines.  Gaps run to 58 (new gaps start at 59);
 cheats to 54 (new cheats start at 55).
+
+<!-- ===================================================================
+     APPENDED 2026-09-12 (stage-4 session, rebuild-on-lean).  Step 6: `tm close` and the automatic close are kernel-backed in the shipped binary; the sixteen-period loop is deleted.
+     Takes gap 59; no cheat.  Supersedes, by name, step 4's sequencing items (1) and (3) and step 5's item (1); changes no Lean.
+     =================================================================== -->
+
+## Stage 4 step 6, 2026-09-12: close is kernel-backed — catch-up is one step and nothing is stranded
+
+Baseline re-measured at `d7487b2` before this step, every command under the 40 GB
+cap: `check.sh` **7/7** — axiom audit **1444**, corpus **33/37 files and 4/5
+whole plans**, burn-down **33**; `cargo test --workspace` **986 passed / 0 failed
+/ 0 ignored across 64 binaries**.
+
+**What landed (Rust only; no Lean, no wire change).**  The CLI half of AGENTS
+§8.2's acceptance.  `tm close day|week|month` and the automatic close ahead of
+every housekeeping verb now go through `kernel_bridge::apply`, the stage-3
+choke point, unchanged in shape: the whole tree read guarded, one request, one
+kernel call, only changed documents written back atomically, each document's
+region carried back and checked, every refusal by name.
+
+- `kernel_bridge.rs` gains `Cmd::Close { grain }` (`{"op":"close","grain":g}`)
+  and `Cmd::AutoClose` (`{"op":"autoClose"}`).  A request carrying either also
+  carries the clock — `now` is `ctx.today`, the CLI's own instant (the global
+  `--now` in tests, the real clock otherwise) as `YYYY-MM-DD`, and `blockMin` is
+  `config.day.block_min` — and the two destinations a close needs, the week and
+  the month containing now, entered as their horizon's initial text when the tree
+  lacks them and created only if a line lands (gap 56's host half, below).  The
+  report is decoded on every call as before; for a close it is returned as
+  `Applied::closes`, and anywhere else a non-empty report is still a fault.
+- `tm/src/cli/closing.rs`, new: `run` (one close request — the month's `--drop`
+  ids as kernel `drop` commands ahead of the close in the **same** request — then
+  the log written from the report, `state.closed` advanced), `auto_close` (the
+  gate and one `autoClose` call), `last_day`/`last_week`/`last_month`
+  (`state.closed`'s stamp and the key `tm close` prints), `check_date`, and
+  `ReportOut`, the report as the CLI prints it.
+- `Ctx::load` runs `closing::auto_close` on the loaded context instead of
+  `horizon::auto_close`; `Ctx::load_for_close` is housekeeping without it, for
+  `tm close`, whose own request is the close.
+- **Retired: `AUTO_CLOSE_CATCHUP = 16`**, with `horizon::auto_close`, its
+  `catch_up` day/week/month iteration, `pending_closes` (no caller outside its
+  test), `ClosedPeriod` and its `period_str` serde module — deleted, not left
+  dead; and the six `tm-core` tests of that loop
+  (`auto_close_runs_each_period_once`, `pending_closes_names_what_auto_close_would_run`,
+  `auto_close_without_history_catches_up_over_the_window`,
+  `auto_close_catches_up_on_every_skipped_period`, `auto_close_catch_up_is_capped`,
+  `a_catch_up_sweep_leaves_one_archive_copy_per_id`), named in a comment where
+  they stood.  The catch-up is one step per grain: the gate asks whether
+  `state.closed` is behind the last ended day, week or month, and if so the
+  kernel's `autoClose` at now closes every ended region of every grain, whatever
+  its age (L19b, `autoClose_catches_up_in_one_step`).
+- **Retained, unreached from the binary:** `horizon::close_day`, `close_week`,
+  `close_month` and `CloseReport`, with their `tm-core` tests — the fork-point
+  library record of the rows the kernel still owes (overdue routing, child
+  folding, `est:` = remaining, the review placeholder), exactly as stage 3 left
+  `horizon::demote` and `move_to` behind the kernel-backed verbs.  The module
+  doc says so.  Deleting them is not this step's; nothing calls them.
+
+**The report, rendered from the kernel's list (D3's single ownership).**  Nothing
+about a close is recomputed in Rust.  `tm close --json` prints
+`{"period","key","report":{"closes":[…],"dropped":[…]}}`, where each entry is the
+kernel's — `id`, `grain` (`day|week|month`), `did` (`move|moveReopening|copy|carry`),
+`from`/`to` (the response's document indices read back to paths), `stamp`
+(`D07`/`W37`/`null`), `min` (`{num,den}` or `null`) — in the kernel's fold order,
+and `dropped` is the `--drop` ids the same request dropped.  The human line's
+counts are read off the same entries: *moved* = entries whose `did` is not `copy`,
+*demoted* = entries with a stamp, *carried* = `carry`, *dropped* = the `--drop`
+ids.  The log is written from the report too: a `demote` event
+(`from`/`to` as period keys, `est_min` = `num / den` rounded down — the one
+division, and every stage-4 denominator is `1`) for each stamped entry, a `move`
+event for every other, a `drop` per dropped id, and a `close{period,key}` — always
+for the explicit verb (it is what `tm undo` reopens), and for the automatic close
+only for a grain whose close took a line.
+
+**The month review, answered as the brief asked.**  Its `carry_over` (minutes
+demoted out of each week) already reads `demote` events, which are now written
+from the report, so it reads the kernel's account of each close.  Its `churn`
+and `cuts` read the `demoted:` stamps off the files; those are the plan's
+accumulated state across every close and `tm demote`, not one close's per-item
+history, and a single call's report cannot replace them without a persisted
+report history the log does not yet carry in that shape.  **Not moved, by name:**
+`review::churn_rows` still reads the tree.
+
+**The acceptance, through the built binary** (`tm/tests/cli_close_kernel.rs`, 10
+tests, each against a temp tree and the real kernel).
+(a) `closing_twice_changes_zero_bytes_the_second_time` — a week close at
+Monday 2026-09-07 reports `x1` carry and `m2` copy `W36` with `min {360,1}`; the
+second `tm close week` at the same instant reports `[]`, logs only its own
+`close`, and changes **zero plan bytes**; and with `.tm/state.json` deleted (the
+host's gate removed) a housekeeping verb's `autoClose` over the closed tree
+changes zero bytes too — L16 and L19b at the CLI, not restated from the library.
+(b) `a_three_month_stale_tree_catches_up_losing_nothing` — the kernel's
+`staleWitness` as files, closed through 2026-06-11/W23/2026-05, first command
+Saturday 2026-09-12: every id kept; `p1` (a pinned `[>]` of 2026-06-12) and `p3`
+reopened in 2026-W37 with exactly `D12` and `D29`; `m2`/`m3` recorded under
+2026-09's `# Demoted` with exactly `W24`/`W35` beside their `[-]` tombstones; `x1`
+carried; `O7` and `m9` moved; `p2`, `t1`, `r1`, `O8` left; no line with two
+stamps; every line of every id carrying the minutes that id had, **1005 minutes**
+summed before and after; `state.closed` at 2026-09-11/W36/2026-08; the log's
+`demote`s `p3, p1, m3, m2`; and a later command changes nothing.  This is the
+exact place the fork-point Rust failed: its day catch-up looked at the sixteen
+most recent days, ran none for June, and stranded `p1` under a clean `tm check`.
+(c) `a_fourteen_day_late_close_stamps_once` — Saturday 2026-08-29's pinned `[>]`,
+first command fourteen days later: one line, in 2026-W37, `demoted:D29`, one
+`demote` event, and W35's own line still demoted by the week close.
+(d) The owner's four scenarios, each citing D1 and asserting the new behaviour:
+`d1_a_day_closed_late_within_its_week_files_into_the_week_of_now` (Tuesday's pin,
+Thursday: W37, `D08`); `d1_a_friday_closed_on_monday_lands_in_mondays_week_stamped_once`
+(W38, created by the host, `D11` only, absent from the month, while W37's own line
+is demoted); `d1_an_item_whose_parent_is_in_the_closing_week_is_kept_not_deleted`
+(the pinned child lands in W38 with its own 60 minutes, the parent is demoted and
+absorbs nothing); `d1_a_day_closed_more_than_sixteen_days_late_is_not_stranded`
+(23 days late: in W37, `D20`, gone from the sealed day file).
+Plus the other direction: `a_fault_in_the_automatic_close_fails_the_verb` (the constructed probe during the
+automatic close: exit 1, `kernel fault`, nothing written or stamped),
+`a_refused_close_is_named_and_writes_nothing` (§4.3's
+own tree the Monday after: `tm close week` exits 1 naming `badHorizon` with the
+gap-55 hint, in the human line and the `--json` document, nothing written; the
+automatic close ahead of `tm now` prints the same name, the verb exits 0, no
+file changes and `state.closed.week` stays unset), and
+`the_host_hands_over_the_sections_a_close_needs_and_writes_them_only_when_used`.
+In the host's unit tests (`closing.rs`): `last_ended_is_the_kernels_closed_boundary`
+sends, at five instants and three grains, a file of the last ended period and a
+file of the running one through `tm_kernel_ffi::call` and checks the kernel takes
+exactly the first — the host's "last ended" is the kernel's `Closed`, not a second
+opinion; plus the gate, `--date`, the key and the summary read off a report.  A
+mutation check: with the month-section hand-over disabled, the section test fails.
+
+**Choices this step took, each with what separates it (AGENTS §4's last row).**
+None relitigates D1–D4.
+1. **A refused automatic close does not fail the verb it runs ahead of.**
+   Nothing is written, nothing is stamped closed, so it is tried again on the next
+   command; the refusal is printed by name on stderr (with the gap hint), except
+   inside the TUI, whose screen stderr would shred.  The alternative — fork-point
+   shape, any close error fails every verb — would make every housekeeping verb
+   unusable on a tree the kernel cannot close, which since this step includes
+   §4.3's example tree from the Monday after its week (gaps 53, 55).  Separated by
+   `a_refused_close_is_named_and_writes_nothing`.  A kernel **fault**, a write
+   conflict and an I/O error still fail the verb.
+2. **`tm close` does not run the automatic close first** (`Ctx::load_for_close`),
+   so what it prints is what its own request did; the fork-point verb ran the
+   automatic close and absorbed its report.  Consequence: `tm close day` on a
+   Monday closes the day grain only, and the week and month follow on the next
+   command — the grains commute on skeletons (step 3), so only rank inside a shared
+   section can differ.
+3. **`--date` is kept as a guard**: it must name a period that has ended, or
+   `periodNotEnded` is refused before anything is read; the close always takes
+   every ended period of its grain, and the key printed is the last one.
+4. **The host hands over §4.3's two month sections and nothing else**: `#
+   Outcomes` and `# Demoted` appended to the month containing now when absent
+   (read by a one-line mirror of `Plan.lean`'s `headingBody`), written only with a
+   line.  A month-row line under any other heading is `noSection`, named.  A
+   heading the host sees inside an HTML comment is one the kernel does not, which
+   is also `noSection` (gap 45's comment-blindness, host side).
+5. **`--drop` accepts an id with a line in a month file** — an outcome, or a `#
+   Demoted` record whose live line is in a week (§4.3's `^m2`, which `/plan-month`'s
+   documented command names) — and the kernel's `drop` settles the item's live
+   line, as the fork-point close did.  Anything else is refused before the kernel is
+   called (`^nope` not found; `^a1` in the backlog → "use `tm drop`").
+6. **An empty close's human line names the period it could not take**: `day
+   2026-09-07 is still running; it is closed on the first command after it ends`.
+
+**Observable behaviour changes, each next to the rule it replaces.**  D1's are
+assented; every other is a consequence of the kernel's close as stages 4.2–4.5
+built it, written down here so none is taken silently, and flagged for the
+owner's drive.
+
+| # | the fork-point binary | the binary now | why |
+|---|---|---|---|
+| 1 | `close day` filed pinned work into the week of the closed day | the week containing **now** | D1 (assented) |
+| 2 | catch-up over the last 16 periods of each kind; older periods stamped closed unrun | one `autoClose`, no window, nothing stamped that did not run | D1's package (assented), L19b |
+| 3 | `tm close day` at 21:00 closed the day you were in; `--date` picked the period | a close takes only periods that have ended; the key is the last ended one; `--date` on a running period is `periodNotEnded` | the kernel's `Closed`; `closeTo_target_is_open` |
+| 4 | `tm close` absorbed the automatic close's report | `tm close` skips the automatic close and reports its own request | choice 2 |
+| 5 | a day close reopened every `[>]` of the day's week file | a week file's `[>]` stays until its week closes | the day row takes lines from day files only |
+| 6 | `est:` = remaining written, the day's logged minutes subtracted | the line keeps the estimate it had | gap 54 (stage 5) |
+| 7 | a closed day file gained `<!-- tm:review -->` `review pending` | nothing is written into the day file but the lines taken | F3, stage 6 |
+| 8 | a closed week file gained `closed: <date>` front matter | none (no reader in the tree) | not a kernel concern; recorded, not replaced |
+| 9 | unfinished children dropped, their minutes folded into the parent | each child demoted as its own record | gap 22 |
+| 10 | past-due `persist` dated lines to `backlog.md#Overdue` | not routed; **an open `due:` line in an ended week refuses the whole close** (`badHorizon`) | stage 5; gap 55 |
+| 11 | a week line with a standing `# Demoted` record had the record rewritten, stamps merged | the whole close refuses (`alreadyDemoted`) | gap 53 |
+| 12 | a failing close aborted the sweep after the earlier closes had already written | a refusal at any grain refuses the whole catch-up, and nothing is written | step 4's choice (F1) |
+| 13 | the month close carried every `# Demoted` line | a record whose item is still live in a week stays; lone records move | the month row reads an item's live line |
+| 14 | `--drop` of an id already carried brought it back into the closed month | it is settled where it stands | one request, drop before close |
+| 15 | carried lines kept their order | they land in reverse of their source order | **gap 59** |
+| 16 | the human line's `N reopened`; the JSON report's `moved/demoted/reopened/dropped_children/carried/overdue_to_backlog/notes`, cut notes for ≥ 2 stamps | `N carried`; `closes` (per item) and `dropped` | D3 |
+| 17 | pinned walls moved with `demoted:D<dd>` | carried unstamped while still ahead | step 2's choice 1, now visible |
+
+**Found by driving the binary** (an agent drive of `tm init --example` over a
+week, not the human's 30 minutes, which stay owed): on §4.3's own tree the
+Monday after, every housekeeping verb prints the gap-55 refusal; `tm drop ^d1`
+clears it and the next refusal is gap 53's `^m2`; `tm move ^m2 week` moves the
+live line into the running week, after which the automatic close runs, `tm check`
+is clean, and `tm review month` counts the carry-over from the logged report
+(1340 minutes).  The same drive showed row 15 in `month/2026-09.md`'s `# Demoted`
+and a legitimate `demoted:D07,W37` — two closes at two instants a week apart, the
+stamps §6.3 accumulates on purpose, not the one-call double stamp D1 removed.
+
+**Gap 59 — a close lands the lines it takes in reverse of their source order.**
+(1) *Not done:* `closeCands` filters `p.store.dom`, which the loader builds in
+reverse line order, so the lines one close files into one section arrive reversed
+— a month's carried outcomes, a week's `# Demoted` records, several days' pinned
+items (`O2` above `O1` in `close_month_drops_an_outcome_and_carries_the_rest`;
+`m1` last in `close_on_the_monday_after_reports_each_line_it_took`).  Step 4
+recorded the order as one "no statement fixes and no consumer reads yet"; the
+binary is now that consumer.  (2) *Why:* ordering `closeCands` by source site is a
+kernel change — `closeReport_ids` ("exactly `closeCands`, in fold order") and the
+decided report witnesses are stated over that list, and this step changes no
+Lean.  (3) *Cost:* §7.4 makes rank line order, so a close inverts the relative
+rank of the lines it carries into one section; a `!1` outcome first in September
+arrives last in October until `tm rank` restores it.  (4) *Clears:* a kernel step
+that sorts `closeCands` by (document, rank) — or builds `dom` in file order — with
+the report witnesses and FFI bytes re-decided; owed by stage 4 before its close,
+or by stage 6 at the latest, when the planner reads rank.
+
+**Gap 56, status: the host half landed.**  The host hands over the week and month
+containing now and the month's two §4.3 sections (choice 4); a close refuses
+`noTarget` only for a destination the host cannot name.  **Gaps 53 and 55, status:
+their costs are now in the shipped binary**, named in every refusal message a
+close prints, and priced above (rows 10–11) — the most user-visible debt this
+stage carries, for the owner.
+
+**Superseded by name.**  Step 4's sequencing item (1), "the shipped binary still
+loops", and item (3), the CLI half of the acceptance — done (the human drive still
+owed); step 5's owed item (1), "the shipped binary still does not call `close`" —
+done; AGENTS §8.1's "Housekeeping writes precede a kernel refusal" — the automatic
+close is itself one kernel call now and writes nothing when refused (its successful
+writes still precede the verb's own call, as housekeeping always did).
+
+**Owed by the stage, not attempted in this step (sequencing, not gaps).**  (1) The
+human's 30-minute drive (AGENTS §5.13).  (2) The refute-and-renames of
+`close_leaves_no_live_line_in_a_closed_region`, `close_never_demotes_a_wall` and
+`close_writes_every_estimate_through_demoteEst`.  (3) The proof-to-definition
+ratio AGENTS §8.2 owes stage 5.  (4) The `demote` wire verb still lands at
+`freshRank`.  (5) Gap 59's kernel fix.  (6) Moving the month review's churn and
+cut list onto a report history (above).
+
+Re-measured after this step, every command under the 40 GB cap: `check.sh`
+**7/7** — axiom audit **1444 theorems**, corpus **33/37 files and 4/5 whole
+plans**, `Goals.lean` burn-down **33** (all unchanged: no Lean touched);
+`cargo test --workspace` **995 passed / 0 failed / 0 ignored across 65 binaries**
+(+9: 10 in the new `cli_close_kernel` binary and 5 in `closing.rs`, less the 6
+deleted loop tests; the two fault-probe tests now run one housekeeping verb
+before setting the probe, so it faults the verb's own call and not the automatic
+close ahead of it, and the TUI's verb-running unit tests share a lock, because
+the probe is a process-wide variable and every fresh tree's first verb now calls
+the kernel); FFI suite **67** (unchanged).  Gaps run to 59 (new gaps
+start at 60); cheats to 54 (new cheats start at 55).

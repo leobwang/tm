@@ -117,6 +117,10 @@ fn a_kernel_refusal_is_a_named_document() {
 #[test]
 fn the_panic_probe_faults_loudly_and_writes_nothing() {
     let tm = Tm::new();
+    // Since stage 4 step 6 the first housekeeping verb of a fresh tree calls
+    // the kernel too (the automatic close); run one first, so the probe
+    // faults the verb's own call and not the close ahead of it.
+    tm.ok(&["now"]);
     let before = tm.read("week/2026-W37.md");
     let out = tm.run_env(&[("TM_KERNEL_FAULT_PROBE", "1")], &["edit", "^t3", "est=45m"]);
     assert_eq!(out.code, 1, "a fault must not exit 0: {}{}", out.stdout, out.stderr);
