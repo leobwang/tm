@@ -8572,3 +8572,56 @@ theorem was retired, weakened or deleted.
 
 `TmKernel.lean` holds sixteen imports, `Capacity` after `Priority`.  Gaps run to 81 (new gaps
 start at 82).  Cheats run to 90 (new cheats start at 91).
+
+## Stage 5 repair, 2026-09-14: every cheat is elaborated, and AGENTS names `Capacity`
+
+An independent read-only verification of stage 5's first tranche (steps 1–3, `6f2bd02`..`fea3f81`)
+reported three minor defects.  Each was reproduced before it was fixed.
+
+1. **`check.sh` check 4 never elaborated cheats 86–90.**  Reproduced: `lean Negative.lean` at
+   the default cap stops at `938:2: error: maximum number of errors (100 …) reached`, with 101
+   error lines.  With `-DmaxErrors=100000` it reports 105 errors on 104 distinct lines.  The file
+   still failed, so check 4 printed `ok` over five claims nobody checked.  Step 3's
+   `-DmaxErrors=100000` note (above) checked them by hand and did not change the script.
+   **Fixed in `check.sh`, which is stronger now.**  Check 4 runs Lean with
+   `-DmaxErrors=1000000`, and reaching the cap anyway is a FAILURE.  Every `/- CHEAT` block
+   (from its header to the next header, or to the end of the file) must now carry an error on
+   a line of its own.  A block whose header says `withdrawn` is exempt, because it states no
+   claim.  CHEAT 7 is the only such block today.  Probed both ways: on the committed file the
+   check passes, with all 99 claim-bearing blocks erroring.  On the same output with CHEAT
+   90's errors removed, it fails and names `CHEAT 90`.  A file that fails for any one reason
+   no longer passes for all 100 cheats.
+2. **`Negative.lean` had no step-3 banner.**  Reproduced: there were only two
+   `APPENDED 2026-09-14` banners, and cheats 84–90 sat under step 2's, whose list of controls
+   stops at 83.  Fixed: a step-3 banner before CHEAT 84 names the controls
+   (`reserve_takes_the_best_levels_earliest`,
+   `edf_spends_before_the_deadline_and_not_after_on_a_witness`,
+   `edf_serves_the_earlier_deadline_first_on_a_witness`,
+   `flooring_the_capacity_changes_the_verdict`, `denOf?_refuses_zero` and
+   `edf_serves_a_loaded_plans_needs_earliest_deadline_first`).  No cheat was renumbered or
+   changed.  The duplicate CHEAT numbers 27–30, 36–38 and 43 date from before `c2cf4dc` and
+   are left as they are.
+3. **AGENTS.md §2.3 did not name `Capacity`.**  Reproduced: `TmKernel.lean` holds sixteen
+   imports, with `Capacity` after `Priority`.  But §2.3's import-order line omitted it, its
+   module list had no entry for it, and it still said "fifteen … at stage 5 step 2".  Fixed:
+   all three places.  The new module entry names only definitions that exist in
+   `Capacity.lean`.  Also fixed: §10.5's R7 bullet had an unclosed italic before
+   "*Stage 5 step 3:*".  The code needed no change: the import was already present and built.
+
+**The verification's differential** against fork point `4748911` (`Tree::remaining` against
+`remainingMin`/`remainingOpt`, and `bin_of(utilization)` against `binOfQ`) agreed on every
+row reported.  t9's missing floor is `horizon::remaining_est`'s, already recorded as r1 / gap 73.
+
+**Observable behaviour changes: none.**  No `.lean` definition or theorem changed.
+**New theorems:** none.  **Goals:** none moved.  Gaps still run to 81 and cheats to 90.
+
+**Re-measured** (every command under the 40 GB cap, on the tree committed):
+
+| measurement | value |
+|---|---|
+| `check.sh` | **7/7**, 2.7 s on the built tree |
+| axiom audit | **2079 theorems** (unchanged) |
+| `Negative.lean` | 105 errors on 104 lines, cap not reached; 99 of 100 CHEAT blocks error, and the 100th is withdrawn |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **15** (stage 4: 0, stage 5: 0, stage 6: 15) |
+| `cargo test --workspace` | **1010 passed / 0 failed / 0 ignored across 66 binaries**, `cli_latency.rs` included |

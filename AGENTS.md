@@ -211,9 +211,10 @@ Arith ────────────────────────�
 ```
 
 Root import order (`cat TmKernel.lean`): `Arith Cal Grain Text Json Line State
-Plan Tree Priority Fast Cmd Close Report Boundary` (`Tree` since stage 5 step 1: it imports `Plan`
+Plan Tree Priority Capacity Fast Cmd Close Report Boundary` (`Tree` since stage 5 step 1: it imports `Plan`
 only, and `Boundary` imports it for its loaded-plan witnesses; `Priority` since stage 5 step 2: it
-imports `Plan` and `Arith`, and `Boundary` imports it likewise). `Json` imports `Text` only; `Close` imports `Cmd`;
+imports `Plan` and `Arith`, and `Boundary` imports it likewise; `Capacity` since stage 5 step 3: it
+imports `Priority` only, and `Boundary` imports it likewise). `Json` imports `Text` only; `Close` imports `Cmd`;
 `Report` imports `Close` and `Arith` (stage 4 step 5 — the first consumer of
 `Arith`); `Boundary` imports `Report` and `Json` (it imported `Cmd` before stage 4
 step 2, and `Close` before step 5). **No module imports `Lean.Data.Json` any more** — the wire is the
@@ -228,6 +229,7 @@ kernel's own (§2.4).
 - `Plan` — `Store`, `Doc`, `PlanCore`, `planWf`, `WfPlan`, and the comment rule (`commentAfter`).
 - `Tree` — §6.4's `remaining` (`remainingMin`, structural fuel, proved to be the one fixed point of its step) and §5.4's series head (`seriesHead`). Stage 5 step 1.
 - `Priority` — §7.1's `k` (`rootK`, `Tree::root_priority`) and `p` (`prio`), the bin ladder at an exact rational availability (`binOfQ`, `binOfScaledQ`; D10), gap 27's loader check (`binsOf?`, `binsOfPairs?`), §7.2's rule table (`rowOf`, `rowTable`, `rawPrio`, `finalPrio`) and §7.4's hysteresis (`hysteresis`, `applyHysteresis`, `hysteresisDays`). Stage 5 step 2.
+- `Capacity` — §7.3's EDF reservation pass over D10's exact capacity: `Den` (a positive denominator, `denOf?`), `DayCapacity` (a day and six level numerators, read over the pass's one `Den` by `minutesAt`), `Deadline`, `reserveRest`/`availUntil`, `sortDue`, `edf`/`edfGrants` and `Grant` (`avail`, `reserved`, `shortfall`, `hot`, `impossible`, `availQ`), and the lookahead's smart constructor `lookaheadOf?` (`Lookahead`, days ascending). The lookahead that produces the list is the D9/D10 tranche's. Stage 5 step 3.
 - `Cmd` — `lift`, `Transform`, `Dest`, `WfPlan.mapAt`, `KErr`, the commands (`cmdMove cmdDrop cmdSetEst cmdDemote cmdReadopt cmdRank cmdEdit cmdUnset`, and `WfPlan.insertFresh` for `add`), the `EditVal` table.
 - `Close` — §6.3's lifecycle as one fold at three grains: the `ClosePolicy` table and its bridges, `close`, the landing rank shift, `close_spec`, `autoClose`. On the wire since stage 4 step 5, as the `close` and `autoClose` ops.
 - `Report` — what a close reports (the owner's D3): `CloseEntry`, `Report`, `closeReport`, `closeR`/`autoCloseR`, and the theorems tying each entry to the close's result. kernel/README.md, stage-4 step-5 block.
@@ -235,7 +237,7 @@ kernel's own (§2.4).
 - `Arith` — exact rational arithmetic. Its consumers are `Report` (minutes as an `Arith.Pos`) and, since stage 5 step 2, `Priority` (the ladder, `safety`, a rational availability).
 
 **A new module is not built until it is imported.** `kernel/TmKernel/TmKernel.lean`
-is fifteen `import TmKernel.<Mod>` lines at stage 5 step 2 (fourteen at step 1) and nothing else; `lakefile.toml` names one
+is sixteen `import TmKernel.<Mod>` lines at stage 5 step 3 (fifteen at step 2, fourteen at step 1) and nothing else; `lakefile.toml` names one
 `lean_lib TmKernel` and no module list. So a `.lean` file dropped into
 `TmKernel/TmKernel/` that nobody imports is **not compiled by check 1**, is not in
 `libTmKernel_TmKernel.a`, and is therefore invisible to the Rust — while
@@ -2054,7 +2056,7 @@ Rust.
   carries the pair exact into the EDF pass is undecided. Decide it here and state
   it, or stage 6 inherits an unstated rounding. *Taken 2026-09-14 (D10): exact, carried
   as numerator/denominator pairs through the EDF pass, nothing rounded; fork-point
-  `capacity::lookahead`'s `p ≥ 0.5` threshold is a parity exception. *Stage 5 step 3: the EDF pass takes capacity as numerators over one positive
+  `capacity::lookahead`'s `p ≥ 0.5` threshold is a parity exception.* *Stage 5 step 3: the EDF pass takes capacity as numerators over one positive
   denominator (`Den`), so it grows no numerator/denominator pairs and rounds nothing.
   `flooring_the_capacity_changes_the_verdict` shows why a floor per level is wrong: it turns
   a HOT item IMPOSSIBLE.*

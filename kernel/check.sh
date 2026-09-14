@@ -33,10 +33,33 @@ fi
 
 # 4. The negative test MUST fail to compile.  It is the only test that checks
 #    the type system is still doing its job.
-if ( cd TmKernel && LEAN_PATH=.lake/build/lib/lean "$LEAN" Negative.lean >/dev/null 2>&1 ); then
+#
+#    Failing to compile is not enough: Lean stops elaborating a file after
+#    `maxErrors` (default 100) errors, so once the file held more than 100
+#    cheats the last ones were never looked at and the file still "failed".
+#    Stage 5 step 3's cheats 86-90 were in that state (README "Stage 5 repair").
+#    So the cap is lifted, hitting it anyway is a failure, and every `/- CHEAT`
+#    block must carry an error at a line of its own.  A block whose header
+#    says `withdrawn` holds no claim and is exempt.
+neg=$( cd TmKernel && LEAN_PATH=.lake/build/lib/lean "$LEAN" -DmaxErrors=1000000 Negative.lean 2>&1 )
+rc=$?
+if [ $rc -eq 0 ]; then
   say "Negative.lean compiles (must not)" "FAILED"; fail=1
-else
+elif printf '%s\n' "$neg" | grep -q 'maximum number of errors'; then
+  say "Negative.lean rejected" "FAILED (maxErrors reached)"; fail=1
+elif silent=$( printf '%s\n' "$neg" | python3 -c '
+import re, sys
+src = open("TmKernel/Negative.lean").read().split("\n")
+starts = [i + 1 for i, l in enumerate(src) if l.startswith("/- CHEAT")]
+errs = {int(m.group(1)) for m in re.finditer(r"^Negative\.lean:(\d+):\d+: error", sys.stdin.read(), re.M)}
+ends = starts[1:] + [len(src) + 1]
+bad = [src[s - 1][3:14].strip() for s, e in zip(starts, ends)
+       if "withdrawn" not in src[s - 1] and not any(s <= x < e for x in errs)]
+print(", ".join(bad)); sys.exit(1 if bad else 0)
+' ); then
   say "Negative.lean rejected" "ok"
+else
+  say "Negative.lean rejected" "FAILED (no error in: $silent)"; fail=1
 fi
 
 # 5. Rust calls the kernel and gets the right answers.

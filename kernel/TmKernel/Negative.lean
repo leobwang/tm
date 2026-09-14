@@ -917,6 +917,19 @@ set_option maxRecDepth 40000 in
 theorem theRootPriorityIsIgnored : rootK parentTreePlan.val specDefaultPrio "t1".toList = 3 := by
   decide
 
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5 step 3: §7.3's EDF reservation pass over D10's
+-- rational capacity).  Banner added by the stage-5 repair; cheats 84-90 were
+-- committed at fea3f81 under the step-2 banner above.  The controls, which
+-- compile, are in Capacity.lean and Boundary.lean:
+-- `reserve_takes_the_best_levels_earliest` (84),
+-- `edf_spends_before_the_deadline_and_not_after_on_a_witness` (85, 86),
+-- `edf_serves_the_earlier_deadline_first_on_a_witness` (87, 88),
+-- `flooring_the_capacity_changes_the_verdict` (89), `denOf?_refuses_zero` (90)
+-- and `edf_serves_a_loaded_plans_needs_earliest_deadline_first`.
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
 /- CHEAT 84 — `capacity::reserve`'s inner loop run upward: the lowest matching level
    spent first.  30 minutes at `ci ≥ 3` from `[0,0,0,60,60,60]` come off level 5. -/
 theorem theLowestMatchingLevelGoesFirst :
