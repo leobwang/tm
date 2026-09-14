@@ -1246,4 +1246,39 @@ theorem theBucketWithoutItsClamp :
       = Look.learnedLevel Look.fixtureEnergy Look.loungeKey 3000 := by
   decide
 
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D9 track, step B2: the log's timestamps in
+-- `Stamp.lean`).  The design's §16 gives B2 no cheat label, so 126 and 127 are
+-- taken above the highest number in this checkout (125, W-1's repair); the D10
+-- track numbers in parallel and the merge renumbers.  The controls, which
+-- compile, are in Stamp.lean: `renderStamp_is_fmt_timestamp` (126) and
+-- `a_leap_second_stamp_is_before_the_next_second` with `stampBefore_iff` (127).
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 126 — a UTC stamp written with `Z`.  The fork's `fmt_timestamp` is
+   `to_rfc3339_opts(SecondsFormat::Secs, false)`, and `use_z = false` writes
+   UTC as `+00:00` (`renderStamp_is_fmt_timestamp`).  Claiming the writer's
+   bytes for `2026-09-08T03:00:00Z` end in `Z` is false: `decide` refuses it. -/
+theorem aUtcStampWrittenWithZ :
+    LogStamp.renderStamp ⟨⟨63924433200, 0⟩, by decide⟩ ⟨⟨false, 0⟩, by decide⟩ =
+      ['2','0','2','6','-','0','9','-','0','8','T','0','3',':','0','0',':','0','0','Z'] := by
+  decide
+
+/- CHEAT 127 — stamps ordered by nanosecond counts.  chrono orders a
+   `DateTime<FixedOffset>` by its UTC `(secs, frac)`, and a leap second
+   `2016-12-31T23:59:60.5Z` is before `2017-01-01T00:00:00Z`
+   (`a_leap_second_stamp_is_before_the_next_second`).  An order by
+   `Instant.nanos` puts it after, so claiming that order agrees with
+   `stampBefore` on this pair is false (carried note 1): `decide` refuses it. -/
+def stampBeforeByNanos (a b : Cal.VInstant × Cal.VOffset) : Bool :=
+  decide (a.1.val.nanos < b.1.val.nanos)
+
+theorem stampsOrderedByNanoseconds :
+    stampBeforeByNanos (⟨⟨63618825599, 1500000000⟩, by decide⟩, ⟨⟨false, 0⟩, by decide⟩)
+        (⟨⟨63618825600, 0⟩, by decide⟩, ⟨⟨false, 0⟩, by decide⟩)
+      = LogStamp.stampBefore (⟨⟨63618825599, 1500000000⟩, by decide⟩, ⟨⟨false, 0⟩, by decide⟩)
+        (⟨⟨63618825600, 0⟩, by decide⟩, ⟨⟨false, 0⟩, by decide⟩) := by
+  decide
+
 end Tm

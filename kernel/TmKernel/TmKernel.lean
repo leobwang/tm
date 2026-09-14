@@ -4,6 +4,7 @@ import TmKernel.Grain
 import TmKernel.Text
 import TmKernel.Json
 import TmKernel.Line
+import TmKernel.Stamp
 import TmKernel.State
 import TmKernel.Plan
 import TmKernel.Tree

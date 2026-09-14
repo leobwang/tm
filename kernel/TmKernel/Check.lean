@@ -2809,3 +2809,32 @@ open Tm
 #print axioms Tm.Look.a_future_tuesday_keeps_its_budget
 #print axioms Tm.Look.the_learned_curve_moves_an_hour_on_sunday
 #print axioms Tm.Look.hours_since_wake_count_real_hours_across_the_fall_transition
+
+-- APPENDED 2026-09-14 (stage 5, D9 track).  Step B2 (design §14.2, §5.3): the log's timestamps,
+-- chrono's RFC 3339 reader and its fallback (`parseStamp`), `fmt_timestamp` (`renderStamp`), the
+-- `tm log` column (`displayStamp`) and chrono's stamp order (`stampBefore`).  Stamp.lean, namespace
+-- `Tm.LogStamp`.  22 theorems, including the in-step `parseStamp_renderStamp` (restated with a
+-- year bound; `parseStamp_renderStamp_fails_past_year_9999` refutes it as §15 writes it) and the
+-- order witness `stamp_order_is_the_instant_order`.
+#print axioms Tm.LogStamp.stampBefore_iff
+#print axioms Tm.LogStamp.stampBefore_ignores_the_offset
+#print axioms Tm.LogStamp.stampBefore_irrefl
+#print axioms Tm.LogStamp.renderOffset_length
+#print axioms Tm.LogStamp.rfcOffset_renderOffset
+#print axioms Tm.LogStamp.year_of_a_day_before_the_end
+#print axioms Tm.LogStamp.dateBase_renderDate
+#print axioms Tm.LogStamp.renderDate_length
+#print axioms Tm.LogStamp.localDateTod_spec
+#print axioms Tm.LogStamp.fracOf_renderOffset
+#print axioms Tm.LogStamp.rfc3339_renderStamp
+#print axioms Tm.LogStamp.parseStamp_renderStamp
+#print axioms Tm.LogStamp.parseStamp_renderStamp_fails_past_year_9999
+#print axioms Tm.LogStamp.renderStamp_is_fmt_timestamp
+#print axioms Tm.LogStamp.renderStamp_writes_a_leap_second_as_60
+#print axioms Tm.LogStamp.displayStamp_is_the_written_clock
+#print axioms Tm.LogStamp.the_origin_west_of_utc_is_year_zero
+#print axioms Tm.LogStamp.stamp_order_is_the_instant_order
+#print axioms Tm.LogStamp.a_leap_second_stamp_is_before_the_next_second
+#print axioms Tm.LogStamp.parseStamp_reads_the_rfc3339_spellings
+#print axioms Tm.LogStamp.parseStamp_reads_the_fallback
+#print axioms Tm.LogStamp.parseStamp_refuses_what_is_not_a_stamp

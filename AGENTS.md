@@ -210,8 +210,8 @@ Cal ──▶ Grain ──▶ Text ──▶ Line ──▶ State ──▶ Plan
 Arith ────────────────────────────────────────────────────────────────┘
 ```
 
-Root import order (`cat TmKernel.lean`): `Arith Cal Grain Text Json Line State
-Plan Tree Priority Capacity Lookahead Fast Cmd Close Report Boundary` (`Tree` since stage 5 step 1: it imports `Plan`
+Root import order (`cat TmKernel.lean`): `Arith Cal Grain Text Json Line Stamp State
+Plan Tree Priority Capacity Lookahead Fast Cmd Close Report Boundary` (`Stamp` since stage 5 D9 step B2: it imports `Cal` and `Line`, and nothing imports it yet; `Tree` since stage 5 step 1: it imports `Plan`
 only, and `Boundary` imports it for its loaded-plan witnesses; `Priority` since stage 5 step 2: it
 imports `Plan` and `Arith`, and `Boundary` imports it likewise; `Capacity` since stage 5 step 3: it
 imports `Priority` only, and `Boundary` imports it likewise; `Lookahead` since stage 5 D10 step L1: it imports `Capacity`, and `Cal` explicitly since step L2 (which `Capacity` already reached through `Priority` and `Plan`), and nothing imports it yet). `Json` imports `Text` only; `Close` imports `Cmd`;
@@ -227,6 +227,7 @@ kernel's own (§2.4).
 - `Line` — the item line and the whole of §4.1's field grammar, with the parse ⇒ wf bridges. 6,494 lines.
 - `State` — entity versus observation. `Core`, `wf`, `Entity`, `render`.
 - `Plan` — `Store`, `Doc`, `PlanCore`, `planWf`, `WfPlan`, and the comment rule (`commentAfter`).
+- `Stamp` — the log's `"t"` field, namespace `Tm.LogStamp` (never `Tm.Stamp`: `Field.Stamp` is the `demoted:` stamp; write the names qualified and never `open LogStamp` beside `Field`): `parseStamp` (chrono 0.4.45's `parse_rfc3339`, then the fork's `%Y-%m-%dT%H:%M%:z` fallback; `StampErr`), `renderStamp` (`fmt_timestamp`), `displayStamp` (the `tm log` column), `stampBefore` (chrono's order: the instant's, never `nanos`), and `parseStamp_renderStamp`. Stage 5 D9 step B2.
 - `Tree` — §6.4's `remaining` (`remainingMin`, structural fuel, proved to be the one fixed point of its step) and §5.4's series head (`seriesHead`). Stage 5 step 1.
 - `Priority` — §7.1's `k` (`rootK`, `Tree::root_priority`) and `p` (`prio`), the bin ladder at an exact rational availability (`binOfQ`, `binOfScaledQ`; D10), gap 27's loader check (`binsOf?`, `binsOfPairs?`), §7.2's rule table (`rowOf`, `rowTable`, `rawPrio`, `finalPrio`) and §7.4's hysteresis (`hysteresis`, `applyHysteresis`, `hysteresisDays`). Stage 5 step 2.
 - `Capacity` — §7.3's EDF reservation pass over D10's exact capacity: `Den` (a positive denominator, `denOf?`), `DayCapacity` (a day and six level numerators, read over the pass's one `Den` by `minutesAt`), `Deadline`, `reserveRest`/`availUntil`, `sortDue`, `edf`/`edfGrants` and `Grant` (`avail`, `reserved`, `shortfall`, `hot`, `impossible`, `availQ`), and the lookahead's smart constructor `lookaheadOf?` (`Lookahead`, days ascending). The lookahead that produces the list is the D9/D10 tranche's. Stage 5 step 3.
@@ -238,7 +239,7 @@ kernel's own (§2.4).
 - `Arith` — exact rational arithmetic. Its consumers are `Report` (minutes as an `Arith.Pos`) and, since stage 5 step 2, `Priority` (the ladder, `safety`, a rational availability).
 
 **A new module is not built until it is imported.** `kernel/TmKernel/TmKernel.lean`
-is seventeen `import TmKernel.<Mod>` lines at stage 5 D10 step L1 (sixteen at step 3, fifteen at step 2, fourteen at step 1) and nothing else; `lakefile.toml` names one
+is eighteen `import TmKernel.<Mod>` lines at stage 5 D9 step B2 (seventeen at D10 step L1, sixteen at step 3, fifteen at step 2, fourteen at step 1) and nothing else; `lakefile.toml` names one
 `lean_lib TmKernel` and no module list. So a `.lean` file dropped into
 `TmKernel/TmKernel/` that nobody imports is **not compiled by check 1**, is not in
 `libTmKernel_TmKernel.a`, and is therefore invisible to the Rust — while

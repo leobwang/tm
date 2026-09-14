@@ -10528,3 +10528,192 @@ refuted or added: none**, and the burn-down stays **13**. **New theorems: none**
 | `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored** |
 | FFI suite (`tm-kernel-ffi`) | **82 passed / 0 failed** (kernel 72, corpus 8, stack 2) |
 | `cli_latency.rs` | green (1 passed) |
+
+<!-- ===================================================================
+     APPENDED 2026-09-14 (stage 5, D9 track).  Step B2 (design §14.2 row B2, §5.3): the log's timestamps in Stamp.lean (new).
+     Takes cheats 126-127 (the design's §16 gives B2 no label; 125 was the highest in this checkout) and parity entry P23 (the design's
+     own number, free here).  No new gap.  The D10 track numbers in parallel; whoever merges renumbers (AGENTS §6.2, §6.4).
+     =================================================================== -->
+
+## Stage 5 B2, 2026-09-14: a log timestamp reads and renders — RFC 3339 with its offset, ordered as chrono orders it
+
+The D9 track's fifth step (design `kernel/design/stage5/stage5-D9-D10-design.md` §14.2 row B2, §5.3).
+A new module, `TmKernel/Stamp.lean`, imports `Cal` and `Line`, and `TmKernel.lean` imports it in the
+same commit, right after `Line` (**eighteen imports**; AGENTS §2.3 updated). Nothing in the binary
+calls it yet: B3's `Log.lean` reads a line's `"t"` with it, and B4 puts it on the wire.
+
+### What was built (`Stamp.lean`, namespace `Tm.LogStamp`)
+
+| piece | what it is |
+|---|---|
+| `StampErr` | `tooShort`, `badDate`, `badSeparator`, `badTime`, `badFraction`, `badOffset`, `tooLong`, `beforeOrigin`, `pastYear9999` |
+| `rfc3339` | chrono 0.4.45 `parse_rfc3339`, ported from its source: ≥ 19 characters; the date through `Field.parseDate` (or `0000-12-31`, below); `T`, `t` or a space; the clock through `Field.parseClock`; second `60` as 59 plus 10⁹ ns; `.` and ≥ 1 digit, nine counted and the rest skipped (`fracOf`); `Z`, `z` or a sign (`+`, `-`, **U+2212**, which chrono's `timezone_offset` accepts) with `HH:MM`, then the end (`rfcOffset`) |
+| `fallback` | chrono's generic `parse_from_str(s, "%Y-%m-%dT%H:%M%:z")`: Rust's Unicode whitespace (`isRustSpace`, `char::is_whitespace`) before each number and the offset; an unsigned year of 1–4 digits or a signed year of any length (`yearOf`); 1–2 digits for month, day, hour and minute in `Parsed`'s ranges (`numIn`); a literal `T`; any mix of `:` and whitespace inside the offset (`fallbackOffset`); no seconds |
+| `parseStamp` | the fork's `parse_timestamp`: `rfc3339`, else `fallback`; the error returned is `rfc3339`'s. **The one smart constructor for a stamp (R10)**: it yields a `Cal.VInstant` and a `Cal.VOffset`; `build` is B1's `utcSecAt` then `mkInstant?`, as B1's note asked |
+| `renderStamp` | `fmt_timestamp` (`to_rfc3339_opts(Secs, false)`): the local date and clock (`localDateTod`, chrono's `naive_local`), whole seconds, a leap second as `60`, the offset rounded to the minute with `+` at zero (`renderOffset`) |
+| `displayStamp` | the `tm log` column, `e.t.format("%Y-%m-%d %H:%M")` |
+| `stampBefore` | chrono's `DateTime<FixedOffset>` order: `Cal.Instant`'s `<` on the instants, the offsets never read (`stampBefore_iff`, `stampBefore_ignores_the_offset`, `stampBefore_irrefl`) |
+| `accepted` | a read as plain values, for decided witnesses (`Except` has no `DecidableEq`) |
+
+**Year 0 is ported.** chrono's proleptic year 0 exists and `Cal.Date` starts at year 1. The one
+year-0 date a representable instant can read is 0000-12-31 (west of UTC, in the origin's first day),
+so both readers read it as a base one day before `Day` 0 (`dateBase`, `build` in whole days from
+0000-12-31), and `renderStamp` writes it (`the_origin_west_of_utc_is_year_zero`). East of UTC in
+9999's last day, `renderStamp` writes `+10000-01-01`, as chrono does.
+
+**Carried note (4) resolved: the namespace is `Tm.LogStamp`.** `Tm.Field.Stamp` already exists, with
+`Field.parseStamp`, `Field.renderStamp`, `Field.parseStamps` and `Field.renderStamps`, and
+`Goals.lean` opens `Field (… Stamp …)`. `LogStamp` is a name nothing else in the kernel uses, so
+`LogStamp.parseStamp` resolves one way under any `open`. The short names keep the design's spelling
+(`parseStamp`, `renderStamp`, `displayStamp`, `StampErr`), so **callers write them qualified, and
+no file that opens `Field` may `open LogStamp`**. The module header says so. The design's
+`Stamp.parseStamp`, `Stamp.renderStamp` and `Stamp.StampErr` (§5.3, §5.5, §15) are these.
+
+**Carried note (1) honoured.** The stamp order compares the instant in `Cal.Instant`'s order, which
+is chrono's. It never compares `.nanos` (`a_leap_second_stamp_is_before_the_next_second`; cheat 127).
+
+### Goals (in-step; `Goals.lean` untouched)
+
+| §15 / §5.3 name | status |
+|---|---|
+| `parseStamp_renderStamp` | **refuted as §15 writes it, and restated under its name.** Without a year bound it is false: `parseStamp_renderStamp_fails_past_year_9999`. At UTC second 315,537,897,599 and `+00:01`, `fmt_timestamp` writes `+10000-01-01T00:00:59+00:01`. chrono does not read that back (its RFC 3339 year has four digits, and its fallback has no seconds), and the kernel does not either. The proved statement adds `hend : o.west = true ∨ i.sec + o.sec < yearEnd` and widens §15's `ns = 0` to `ns = 0 ∨ ns = 10⁹`: a leap second is written as `60` and read back exactly (D5: re-proved, never weakened). The proof is by position, through `rfc3339_renderStamp`, `localDateTod_spec`, `rfcOffset_renderOffset`, `Field.parse_render_date`, `Field.parse_render_clock` and `readNat_padTo` |
+| the order witness, `stamp_order_is_the_instant_order` | **proved, in chrono's order.** `2026-09-08T03:00:00+00:00` and `2026-09-07T22:00:00-05:00` read as UTC second 63,924,433,200 in two offsets, and `stampBefore` is false both ways |
+| `renderStamp_is_fmt_timestamp` (§5.3's list) | proved, with `2026-09-07T06:05:00-05:00` and the UTC `2026-09-08T03:00:00+00:00` |
+
+Beside them, all decided: `renderStamp_writes_a_leap_second_as_60`, `displayStamp_is_the_written_clock`,
+`the_origin_west_of_utc_is_year_zero`, `a_leap_second_stamp_is_before_the_next_second`,
+`parseStamp_reads_the_rfc3339_spellings` (`t`, a space, `z`, `-00:00` as UTC, U+2212, ten fraction
+digits) and `parseStamp_reads_the_fallback` (no seconds; spaces and one-digit fields). The R10
+rejection theorem is `parseStamp_refuses_what_is_not_a_stamp`, which refuses 2026-02-29, hour 24,
+second 61, `+24:00`, `+05:60`, text after the offset, an instant before the origin, and `+10000`
+through the fallback. **Burn-down stays 13.**
+
+### The scratch differential against the fork (evidence for this commit; not committed)
+
+A throwaway Rust crate under `/tmp/claude-1000/b2/rs` depended on `tm-core` by path and called the
+fork's own `log::parse_timestamp` and `log::fmt_timestamp`, and `format("%Y-%m-%d %H:%M")`. A scratch
+Lean file ran `LogStamp.parseStamp`, `renderStamp` and `displayStamp` on the same lines. Both printed
+the UTC second since 0001-01-01, the nanoseconds, the offset's sign and seconds, the render and the
+display, or `err`.
+
+| input | lines | result |
+|---|---|---|
+| every `"t"` of the seven corpus logs (`kernel/corpus/logs/*.jsonl`, `malformed.jsonl` included, and the three plans' `.tm/log.jsonl`) | 516 (389 distinct) | **identical, line for line** |
+| a crafted edge set: separators, 0–12 fraction digits, `:60`/`:61`, `-00:00`, `+24:00`, `+05:60`, U+2212, `0000`, `9999`, the fallback with spaces, tabs, U+00A0, U+3000, U+200A, one-digit fields, signed years, `+0500`, trailing text | 81 | 5 differences, below |
+| 4,000 random mutations of five seeds (Python `random.seed(7)`) | 4,000 (205 accepted by chrono) | 2 differences, below |
+
+The first pass also differed on `0000-12-31T23:00:00-05:00`, `0-12-31T23:00-05:00` and
+`-00-12-31T23:00+05:00`. That is what led to porting year 0 and the signed `-0` year. **The seven
+differences left are all stamps whose instant is outside `Cal.VInstant`'s range**, so no value of
+the kernel can hold them: `0000-01-01T00:00:00Z` (UTC second −31,622,400), `0001-01-01T00:00:00+00:01`
+(−60), `-2026-09-07T06:05-05:00`, `-00-12-31T23:00+05:00` (−21,600) and `0000-12-31T03:30:00-01:00`
+(−70,200) before the origin, and `9999-12-31T23:59:59-00:01` and `+10000-01-01T00:00+00:00` at or
+after 10000-01-01. They are P23's residue. **On every stamp chrono accepts inside the range, the
+kernel's instant, offset, render and display are chrono's.** T3 at B4 is the committed form of this
+comparison. The edge list above is a starting set for it.
+
+### Additions to the stage-5 parity exception list
+
+| # | site | the kernel | the fork point | authority |
+|---|---|---|---|---|
+| **P23** | a `"t"` whose instant is before 0001-01-01T00:00:00Z or at or after 10000-01-01T00:00:00Z (a year ≤ 0 other than a 0000-12-31 inside the range, a year ≥ 10000, `-00:01` on 9999-12-31T23:59:59) | refused, `beforeOrigin` / `pastYear9999` (a `badT` warning at B3) | chrono reads it | R10 (`Cal.Instant.wf`); design §5.3. Measured by the B2 differential, re-measured by T3 at B4 |
+
+The error class of a refused stamp (chrono's `TOO_SHORT`/`INVALID`/`OUT_OF_RANGE` and its message
+text, and the fork returning the fallback's error) is P15's named-diagnostic row, not a new entry.
+
+### Cheats (`Negative.lean`, appended)
+
+| # | label | cheat | fails because |
+|---|---|---|---|
+| **126** | B2-a | a UTC stamp written with `Z` (`use_z = true`) | `decide` proves `renderStamp` of `2026-09-08T03:00:00Z` ending in `Z` false (`renderStamp_is_fmt_timestamp`) |
+| **127** | B2-b | stamps ordered by nanosecond counts, claimed to agree with `stampBefore` on `2016-12-31T23:59:60.5Z` and `2017-01-01T00:00:00Z` | `decide` proves the agreement false (`a_leap_second_stamp_is_before_the_next_second`; carried note 1) |
+
+Each fails at its own line with `Tactic decide proved that the proposition … is false`
+(`-DmaxErrors=1000000` run under the 30 GB cap). `uniq -d` over the banners prints nothing.
+
+### Rule D9-21
+
+A `"t"` can be as long as a line. `List.length`, `take` and `takeWhile` compile through core's
+`@[csimp]` twins (`lengthTR`, `takeTR`, `takeWhileTR`). `drop`, `dropWhile` and `List.all` are tail
+recursive. `readNat` is a `foldl`, and every digit run is cut before it is read: 9 digits for a
+fraction, 4 for an unsigned year, 2 for a field. A signed year's run is read only after a run with
+more than four significant digits has been refused, so it holds at most four non-zero digits.
+`Field.parseDate` and `Field.parseClock` use `splitFirst`, which is not tail recursive, and they
+only ever see 10 and 5 characters. `renderStamp`'s `padTo` and `digitsOf` see numbers below 10,000.
+No new function recurses over a wire-sized list. **Gap 101 is untouched**: no decimal is re-emitted
+here, so it still clears at B3 or B4.
+
+### The `decide` budget (§14.0 item 4)
+
+**12 new decided witnesses**, within the budget of 20: the ten decided theorems above (counting
+`parseStamp_renderStamp_fails_past_year_9999`), and cheats 126 and 127. Beside them, three `decide`s
+on constants sit inside proofs: `Field.parseDate year0Dec31 = none`, `Cal.yearOfZ (3652058 + 366) =
+9999`, and a two-character comparison. There are no `Entry` values and no zone transitions. The
+longest literal is 31 characters (the ten-digit fraction), and instants are `Nat` literals. Each
+conjunction is decided one conjunct at a time (`⟨by decide, …⟩`). The first probe hit `maxRecDepth`
+in the elaborator on `renderStamp_is_fmt_timestamp` and `renderStamp_writes_a_leap_second_as_60`.
+The cause was the named constant `utc` inside a decided render: splitting the conjuncts alone did
+not clear it, and spelling the offset `⟨⟨false, 0⟩, _⟩` did. The budget was not raised. The small
+`by decide` proofs of `wf` on literal instants and offsets are not counted as witnesses. Probed first in a scratch copy
+under `MemoryMax=8G timeout 120`: the whole file took **0.82 s at a 678 MB peak**. The committed
+`Stamp.lean` takes **1.03 s at a 630 MB peak** under the same cap. No realistic-size input is
+evaluated. A kernel-checking trap is recorded in `rfc3339_renderStamp`'s docstring: `simp` deciding
+`x + 86400 < 86400` for a variable `x` produced `(kernel) deep recursion detected`, and the proof
+rewrites with `if_neg` instead.
+
+### Recorded disagreements between the design and the repo
+
+- **§15's `parseStamp_renderStamp`** is false without a year bound (above), and its `ns = 0` is
+  narrower than what holds.
+- **§5.3 step 1** ("`Cal.Date` validity, otherwise `badDate`") would refuse `0000-12-31`, which
+  chrono reads for a representable instant. Year 0 is ported (above).
+- **§5.3 step 5** lists `+`/`-` only. chrono's `parse_rfc3339` calls `timezone_offset` with
+  `allow_tz_minus_sign = true`, so U+2212 is accepted, and it is ported.
+- **§5.3 step 6** writes the fallback as a format string. chrono's generic parser is more tolerant
+  than the string suggests: whitespace before every numeric item and the offset, one-digit fields, a
+  signed year of any length, and any `:`/whitespace mix inside the offset. All of it is ported, and
+  the differential agrees on all of it. **This is a second reader of a date spelling (AGENTS §5.3), taken
+  deliberately for parity:** the fallback reads its year, month and day with chrono's numeric
+  rules, which are not `Field.parseDate`'s fixed widths. It shares `Cal.Date.valid` and `Cal.toDay`,
+  so there is no second calendar.
+- **§5.3 names two errors** (`badDate`, `beforeOrigin`). The other seven are named here, and
+  `pastYear9999` is new: `Cal.Instant.wf` bounds the year, and an instant past it is not "before the
+  origin".
+- **The error returned is `rfc3339`'s.** The fork's `or_else` returns the fallback's error, which
+  for a stamp with seconds names the wrong thing. Only acceptance and values are parity (P15).
+- **"At least 19 bytes"** is 19 characters here. The two agree on acceptance: the 19 leading
+  positions must be ASCII digits and separators in both.
+- **§5.3's `renderStamp` writes "±HH:MM".** A `VOffset` may carry seconds (pre-1972 zones), and
+  chrono rounds them to the nearest minute with the sign of the unrounded offset (`-00:00` for
+  −20 s). That is ported. Such an offset never reads back, which is why the round trip assumes
+  `sec % 60 = 0`.
+- **`stampBefore` and `accepted`** are not in the design. The first names the order the design's
+  witness is about. The second exists because `Except` has no `DecidableEq`.
+- **The namespace** is `Tm.LogStamp`, not the design's `Stamp` (carried note 4, above).
+
+**Label-to-number map:** cheats B2-a → **126**, B2-b → **127**; parity entry **P23**. No gaps. No
+behaviour rows: the binary does not call `Stamp` (it is linked into `libTmKernel`, unused).
+**Highest numbers after the step: gap 104, cheat 127, parity P27.**
+
+**New theorems: 22**, all in `Stamp.lean`, audited under an `APPENDED … Step B2` banner in
+`Check.lean`. §6.3's three counts agree at **2410** (2388 + 22). Axioms stay within `propext`,
+`Quot.sound` and `Classical.choice`, and there is no `sorryAx`.
+
+**For B3:** `Log.lean` calls `LogStamp.parseStamp` and never re-derives a stamp's parts. §5.5's
+`badT (e : Stamp.StampErr)` is `badT (e : LogStamp.StampErr)`. One fact is not proved here, and C2
+may want it: every accepted stamp's offset is a whole minute, so a leap second's UTC second is
+second 59. Both readers build offsets only through `offsetOf`, which multiplies whole minutes.
+
+**Re-measured** (every command capped at 30 GB, main worktree, on the tree committed):
+
+| measurement | value |
+|---|---|
+| `check.sh`, first run after the edit (`Stamp` and the static archive built) | **7/7**, 4.84 s wall, 1.98 GB peak |
+| `check.sh`, built tree | **7/7**, 2.79 / 2.77 / 3.18 s (3.06 s at W-1's repair, so within §14.0 item 4's 10%) |
+| axiom audit | **2410 theorems** (was 2388, +22) |
+| `Negative.lean` | check 4 ok; CHEATs 126 and 127 each fail at their own line with the `decide` refusal they claim |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged) |
+| `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (unchanged) |
+| FFI suite (`tm-kernel-ffi`) | **82 passed / 0 failed** (kernel 72, corpus 8, stack 2) |
+| `cli_latency.rs` | green: first verb 622.4 ms (226 files, 2,959 lines), later verb 60.7 ms |
