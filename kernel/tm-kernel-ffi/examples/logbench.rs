@@ -16,7 +16,9 @@
 //!   at 40 and 61 events a day.  `run` reads no `log` key, so the whole request
 //!   is parsed and an empty `ok` answers; the response is checked.
 //! - **(b)** FNV-1a-64 over 6.9 MiB of log text, in this process.
-//! - **(c)** the hourly zone probe for America/Chicago: B1's Rust half.
+//! - **(c)** the hourly zone probe for America/Chicago: pending.  The probe is
+//!   `tm/src/cli/tz_table.rs`, design §6.1, and that file is B4's (design §14.1
+//!   row B4), not B1's: B1 landed without it.  B4 adds the measurement (gap 103).
 //! - **(d)** RSS for a call carrying a 1 MiB and a 4 MiB line array (line
 //!   bytes, §9.7's chunk and resend caps).  **Gate:** at 4 MiB, above 256 MiB
 //!   means §9.7's resend cap is lowered before W3.
@@ -252,7 +254,7 @@ fn main() {
     );
 
     println!("\n(c) hourly zone probe, America/Chicago");
-    println!("PENDING: B1's Rust half (the tz.json probe, design §6.1) does not exist yet; B1 measures it");
+    println!("PENDING: the probe is tm/src/cli/tz_table.rs (design §6.1), which B4 adds; B4 measures it (gap 103)");
 
     println!("\n(d) RSS for one call carrying a line array (3y @61/day prefix)");
     println!(

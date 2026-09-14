@@ -53,3 +53,36 @@ fn a_200000_element_array_reads_on_a_2mib_thread() {
         assert_eq!(out, r#"{"err":"bad json: expectedCommaOrBracket }"}"#);
     });
 }
+
+/// **T0 (a), the object half at scale (W-1 audit repair).**  The test above
+/// sends 200,000 two-key objects, so `jotail` never runs past its second key.
+/// Here the per-key twin `jotail_eq_jotailAcc` runs at scale: one object of
+/// 200,000 keys, then 200,000 one-key objects, each on a 2 MiB thread, each in a
+/// key `run` never reads, so the whole request is parsed and an empty `ok`
+/// answers.  The same bytes with the object's closing `}` turned into `]` are
+/// refused by the parser at the last key, so the parse did reach the end.
+///
+/// The emit twin `jemitOTail_eq_jemitOTailAcc` is not run at scale here, and
+/// no wire request can run it: every object the kernel emits has a key list
+/// written out in the source (`runPlanFast`, `reportJson`, `regionJson`,
+/// `lerrJson`, `jone`), at most five keys, so `jemitOTail` never recurses more
+/// than five times from `call`.  Large *arrays* are what a response carries,
+/// and those are `jemitTail`, run by the test above.
+#[test]
+fn a_200000_key_object_reads_on_a_2mib_thread() {
+    const EMPTY_OK: &str = r#"{"ok":{"docs":[],"report":{"closes":[]}}}"#;
+    on_a_2mib_thread(|| {
+        let keys: Vec<String> = (0..200_000).map(|i| format!(r#""k{i}":{i}"#)).collect();
+        let keys = keys.join(",");
+        let out = call(&format!(r#"{{"docs":[],"cmds":[],"pad":{{{keys}}}}}"#)).unwrap();
+        assert_eq!(out, EMPTY_OK);
+        let out = call(&format!(r#"{{"docs":[],"cmds":[],"pad":{{{keys}]}}"#)).unwrap();
+        assert_eq!(out, r#"{"err":"bad json: expectedCommaOrBrace ]"}"#);
+    });
+    on_a_2mib_thread(|| {
+        let objs: Vec<String> = (0..200_000).map(|i| format!(r#"{{"k":{i}}}"#)).collect();
+        let objs = objs.join(",");
+        let out = call(&format!(r#"{{"docs":[],"cmds":[],"pad":[{objs}]}}"#)).unwrap();
+        assert_eq!(out, EMPTY_OK);
+    });
+}

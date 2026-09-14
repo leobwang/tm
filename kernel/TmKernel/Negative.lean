@@ -343,7 +343,8 @@ end Tm
 /- ===================================================================
    FOUND BY THE CORPUS HARNESS AND THE DIFFERENTIAL ORACLE, appended as a
    block so the stage-two branches merge.  Numbered from 27 provisionally;
-   whoever merges renumbers.
+   whoever merges renumbers.  Renumbered 27-30 -> 122-125 in the W-1 audit
+   repair (AGENTS 6.5 item 1): the rank block above keeps 27-30.
 
    Each one is an assumption a reader of §4.1 would make, that the shipped
    Rust makes, and that this kernel does not satisfy.  They are here rather
@@ -355,7 +356,7 @@ end Tm
    =================================================================== -/
 namespace Tm
 
-/- CHEAT 27 — §4.1 says an item line's tokens are "whitespace-separated
+/- CHEAT 122 — §4.1 says an item line's tokens are "whitespace-separated
    words", and `tm-core::grammar` splits on any whitespace run.  `Text.lean`'s
    separator is `isSp c := c == ' '`, so a tab is an ordinary word character:
    `a<TAB>b` is ONE token, not two.  Consequences the oracle found:
@@ -366,7 +367,7 @@ namespace Tm
 theorem tokens_are_whitespace_separated :
     (tokenize "a\tb".toList).length = 2 := by decide
 
-/- CHEAT 28 — the same rule at the head of the line.  `parseBody` matches the
+/- CHEAT 123 — the same rule at the head of the line.  `parseBody` matches the
    literal `- [`, so `- <TAB>[ ] …` and `-  [ ] …` (two spaces) are not item
    lines at all.  They are kept as prose and written back unchanged, so nothing
    reports anything: the item is simply invisible to every command, to ranks,
@@ -374,7 +375,7 @@ theorem tokens_are_whitespace_separated :
 theorem one_space_is_not_the_only_separator_after_the_bullet :
     isItemLine "-  [ ] 2 30m Spaced ^a1".toList = true := by decide
 
-/- CHEAT 29 — §4.1 says a token the parser cannot classify stays in the title,
+/- CHEAT 124 — §4.1 says a token the parser cannot classify stays in the title,
    and the Rust keeps `^`, `^%` and `^é` there and records a `tm check`
    problem.  `isIdWord w := w.head? == some '^'` makes every one of them an id
    token, so a bare `^` names an entity whose id is the empty list (and two such
@@ -384,7 +385,7 @@ theorem one_space_is_not_the_only_separator_after_the_bullet :
    id `q7`. -/
 theorem a_bare_caret_is_not_an_id : isIdWord ['^'] = false := by decide
 
-/- CHEAT 30 — §4.3's calendar rule ("generated intervals") waved through: hold
+/- CHEAT 125 — §4.3's calendar rule ("generated intervals") waved through: hold
    it of *every* line the loader builds.  It used to be `rfl`, and that is the
    defect this branch fixes.  Nothing joined §4.1's `at:` to §3.1's
    `Core.shape`, so the shape was `none` for every entity the boundary

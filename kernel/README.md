@@ -243,6 +243,10 @@ Every cheat, one compile error:
 | 29 | read a file back without asking whether ranks are distinct | `renderDocAt_loadCore` takes `normalized`; without it, which of two lines at one rank comes first depends on the order the host listed its documents |
 | 30 | relocate to rank 0 rather than `freshRank` | `move_at_freshRank_normalized` is about `freshRank` and nothing else; rank 0 is exactly the collision `Normalized` forbids |
 | 31 | check a rank is free by looking only at the item lines | a document's ranks are its prose ranks **and** its item ranks in one list (`weave` orders them against each other), so `SitesFree` has two clauses |
+| 122 | a tab separates tokens, as §4.1's "whitespace-separated words" says (numbered 27 until the W-1 audit repair) | the Rust splits on any whitespace run, but `decide` proves `(tokenize "a\tb").length = 2` false: the kernel's separator is a space alone (gap 32) |
+| 123 | the same rule at the head of the line: `-  [ ]` with two spaces is an item line (numbered 28 until the W-1 audit repair) | `decide` proves `isItemLine "-  [ ] 2 30m Spaced ^a1" = true` false: `parseBody` matches the literal `- [` (gap 32) |
+| 124 | a bare `^` is not an id, as the Rust reads it (numbered 29 until the W-1 audit repair) | `decide` proves `isIdWord ['^'] = false` false: every `^`-leading word is an id token (gap 33) |
+| 125 | every loaded line satisfies the calendar shape rule by `rfl` (numbered 30 until the W-1 audit repair) | `Core.shape` is a view of the line's bytes now, so `rfl` fails (gap 30) |
 | 43 | insert an item over a standing one — hand `Store.insertFresh` the proof that the id is *taken* | `insertFresh` demands `(get i).isNone = true`, the dual of `Store.set`'s `isSome`, and there is no third door that takes neither proof; freshness for `add` is L21's theorem, not a runtime retry |
 
 ## What is proved
@@ -1548,7 +1552,7 @@ cover" near the top of this file.*
     loader built every `Core` with `shape := Shape.none` and `.calendar`
     demands an interval. No line the boundary could construct satisfied that
     clause; it was a rule that could only ever say no. Gap 3's wiring closes
-    it, `Negative.lean`'s CHEAT 30 is the refutation of the assumption that
+    it, `Negative.lean`'s CHEAT 125 (numbered 30 until the W-1 audit repair) is the refutation of the assumption that
     made it invisible, and
     `State.lean`'s `the_spec_calendar_line_is_an_interval` is the `decide`d
     reading of the line that was refused. The one calendar line still refused
@@ -1611,7 +1615,7 @@ cover" near the top of this file.*
       the first. Re-read the kernel's line with the Rust and the estimate is
       `48h`, not `45m`. This is the shape of the bug the rebuild exists to make
       impossible, in the same operation, and the kernel is on the wrong side of
-      it. CHEAT 27 and CHEAT 28.
+      it. CHEAT 122 and CHEAT 123 (numbered 27 and 28 until the W-1 audit repair).
 
     Otherwise the `est` edit agrees exactly: 132 corpus lines and 44 generated
     lines, one disagreement, the one above.
@@ -1624,7 +1628,7 @@ cover" near the top of this file.*
     id and the kernel reads one), and a line carrying both `^%` and a real
     `^q7` is refused as `manyIds` (11 lines). The last of those is
     `plan-conflicts/week/2026-W37.md:23`, which the shipped parser reads with id
-    `q7`. CHEAT 29.
+    `q7`. CHEAT 124 (numbered 29 until the W-1 audit repair).
 
 34. **Gap 6 is measured, not closed.** `split_lines`/`join_lines` are
     `str::split('\n')` and `join("\n")`, the identity on every `String`, and
@@ -10473,3 +10477,54 @@ the two sides' own.
 and gap 104 (measured by L7's twin harness); the `Tm.Stamp` namespace note for B2; and L4's
 note that L5 should materialise each `dayHist`. **Owed next:** D9 B2 onward on `rebuild-on-lean`,
 and D10 L5 onward in the lookahead worktree.
+
+## Stage 5 W-1 audit repair, 2026-09-14: three minor defects — the harness text, the object half of T0 (a), the cheat renumber
+
+W-1's independent audit of `172d52a` found three minor defects. Each was reproduced at `172d52a`
+before it was fixed.
+
+1. **`logbench` credited the Chicago probe to B1.** Reproduced: `examples/logbench.rs:19` and the
+   printed (c) line both said B1 measures it. B1 landed without the probe, and the merge-in block
+   had already moved gap 103 to B4, whose file `tm/src/cli/tz_table.rs` is. The doc comment and the
+   printed line now name B4 and gap 103. Re-run capped (16 GB): (c) prints `PENDING: the probe is
+   tm/src/cli/tz_table.rs (design §6.1), which B4 adds; B4 measures it (gap 103)`, 8.4 s wall for
+   the whole harness. Gap 103 is unchanged and still clears at B4.
+2. **T0 (a) never ran `jotail` past two keys.** Reproduced: `tests/stack.rs` sent only two-key
+   objects. The new test `a_200000_key_object_reads_on_a_2mib_thread` sends a 200,000-key object
+   and 200,000 one-key objects, each on a 2 MiB thread and under a key `run` never reads. Both
+   answer the empty `ok`. The same 200,000-key bytes with `}` turned into `]` are refused as
+   `expectedCommaOrBrace ]`, so the parse reaches the last key. The test takes 0.31 s. **The emit
+   twin (`jemitOTail_eq_jemitOTailAcc`) is not run at scale, because no wire request can reach
+   it.** Every object the kernel emits has its key list written out in the source (`runPlanFast`,
+   `reportJson`, `regionJson`, `lerrJson`, `jone`), with at most five keys. A large response is
+   large in its arrays, which go through `jemitTail`, and the first T0 (a) test runs that. This
+   is not a gap. It is recorded here so nobody goes looking for the test.
+3. **AGENTS §6.5 item 1: `CHEAT 27`–`30` appeared twice.** Reproduced: `uniq -d` printed 27, 28,
+   29 and 30. The second set is the parser block that the corpus harness and the oracle found:
+   tabs, the two-space bullet, the bare `^` and the calendar `rfl`. It is renumbered **27 → 122,
+   28 → 123, 29 → 124, 30 → 125**, above the highest number in the checkout (121). The block's
+   banner says so. The rank block (26–31) keeps its numbers, since the README cheat table already
+   listed it under them. Cross-references are fixed per §6.5 item 2: gaps 30, 32 and 33 cite
+   the new numbers with the old ones in brackets, and the cheat table gains rows 122–125. Each
+   of the four still fails at its own line, checked with an uncapped-`maxErrors` run under the
+   30 GB cap: `decide` proves the three propositions false, and `rfl` is not a definitional
+   equality. `uniq -d` now prints nothing. **Not renumbered:** the letter block A–F, and the
+   design's unused reserved numbers 93–107 and 118. Renumbering those would shift every stage-5
+   label-to-number map already on record. AGENTS §6.2's "outstanding at HEAD" note gains a sentence saying the
+   banners are unique.
+
+**Label-to-number map:** cheats 122–125 (the renumbered 27–30). No new gaps or parity entries.
+**Highest numbers after the repair: gap 104, cheat 125, parity P27.**
+
+No Lean definition or theorem changed. Only `Negative.lean` comments changed. **Goals discharged,
+refuted or added: none**, and the burn-down stays **13**. **New theorems: none** (2388).
+**Parity entries: none. Behaviour rows: none.**
+
+**Re-measured** (every command capped at 30 GB, main worktree):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 3.06 s wall; audit **2388**; corpus 29/37 and 4/5; stage goals **13** |
+| `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored** |
+| FFI suite (`tm-kernel-ffi`) | **82 passed / 0 failed** (kernel 72, corpus 8, stack 2) |
+| `cli_latency.rs` | green (1 passed) |

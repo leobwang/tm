@@ -891,6 +891,11 @@ table lists only the first set of 27–30 while README gaps cite the second set 
 the same numbers. Stage 3 took 43–49, each under its own end-of-file banner.
 **Start from a number nobody has used — 50 today — say which numbers you took in
 your handover, and do not assume the renumber was done.**
+*Done for the banners since the W-1 audit repair (2026-09-14, README "Stage 5 W-1
+audit repair"): the second 27–30 (the parser block) are 122–125, and `grep -o '^/- CHEAT
+[0-9A-Z]*' Negative.lean | sort | uniq -d` prints nothing. The letter block A–F and the
+design's unused reserved numbers (93–107, 118) remain; a new cheat still starts above
+the highest number in the checkout — 125 after the repair.*
 
 ```bash
 cd /Users/psixyzt/code/planner/kernel/TmKernel
