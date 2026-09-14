@@ -8625,3 +8625,56 @@ row reported.  t9's missing floor is `horizon::remaining_est`'s, already recorde
 | corpus | **29/37 files and 4/5 whole plans** (unchanged) |
 | burn-down | **15** (stage 4: 0, stage 5: 0, stage 6: 15) |
 | `cargo test --workspace` | **1010 passed / 0 failed / 0 ignored across 66 binaries**, `cli_latency.rs` included |
+
+## Stage 5 D9/D10: the owner's answers, 2026-09-14
+
+The design `kernel/design/stage5/stage5-D9-D10-design.md` (committed at `f487899`) left nine
+questions for the owner (its §4). The owner answered all nine on 2026-09-14. They are recorded
+here as D11–D18 plus Q6's dispositions, in AGENTS §4's table and §10.5, and mapped question by
+question in the design's appended §22. Per AGENTS §4 they are settled; changing one needs the
+owner again. This block is documentation only: no `.lean`, Rust or test file changed.
+
+| decision | question | what it settles |
+|---|---|---|
+| **D11** | Q1 (price) | The priced D9 + D10 tranche (≈ 6,550 definition / ≈ 23,300 proof lines, design §14.9) is confirmed, and D9 and D10 run as **parallel tracks** (option (a), design §2.3): D9 (phases A, B, R, C, W, S, F) on `rebuild-on-lean`, D10 (steps L1–L9) in the worktree `.claude/worktrees/stage5-lookahead` on branch `stage5-lookahead`. No narrowing lever of Q1 (c) is taken. |
+| **D12** | Q2 (stage 6's pieces) | Stage 6's window (E7), the slot cut and future-day energy prediction with the home cap and budget limit are **pulled into stage 5** as L2–L4 (option (a)). The kernel computes both location histograms; Rust does not send `[u32; 6]` summaries, and Rust's wall reading stops being authoritative for capacity. Stage 6's price drops by the same ≈ 2 weeks. |
+| **D13** | Q3 (replay cache) | `.tm/cache/replay/` (`ckpt.json`, `sealed/YYYY-MM.g<gen>.json`, `tz.json`) is **allowed** as persistence of kernel output, not derivation (i). The kernel **may read a sealed record back** for a query naming an explicitly old date (ii). `tm init` **excludes `.tm/cache/` from sync** (writes the `.gitignore` line) (iii)(a). W1 may freeze the record formats. |
+| **D14** | Q7 (unread fields) | The ≈ 13 fork `Replay` fields nothing reads (`ItemReplay.{stops, extended_min, done_at, partial_done_at}`, `Replay.{closes, dropped_items, open_interrupt}`, `longest_leak` and the interrupts beyond lost/dropped minutes, `DayReplay.{replans_today, last_plan_hash, loc_changes, dropped}`) are **PORTED, not deleted** (option (b), against the design's recommendation (a)). R11 keeps them, the kernel derives them in phase C, and they go into the **sealed day records** (W1), not the checkpoint. P22 is not a deletion. |
+| **D15** | Q4 (`--json` capacity) | Capacity fields in `--json` (`days[].minutes_at_level`, `total`, `Prio.avail_min`, `allocation_min`, `shortfall_min`) **stay integer floors**, each with **`<field>_exact: {num, den}`** beside it (option (a)). `total` is `floor(Σ exact)`, and the documentation says `avail_min − allocation_min` may differ from `shortfall_min` by one. Governs L8. |
+| **D16** | Q5 (log writer) | The **kernel writes log lines**: appending verbs send typed events and the kernel returns the lines to append (option (b), against the design's recommendation (a)). It is a **new step immediately after the switch S**, no longer the optional F5. Until it lands, Rust's `LogEntry::to_json` stays the writer under T2. |
+| **D17** | Q8 (`p_lounge` precision) | **`capDen = 10^18`** (option (b)). A weight with more than 18 decimal places, or outside [0, 1], is refused by name (the host names file and key). Rust holds capacity units as **`u128`**, and unit counts cross the wire as **digit strings**. Governs L1 and L6. |
+| **D18** | Q9 (damaged log) | (i)(a): `tm check` lists each malformed log line as a **warning** (exit code unchanged); the kernel keeps up to 256 named warnings plus an overflow count. (ii)(a): `tm check` names lines dated **more than 2 days after `now`** as warnings. (iii)(a): a hand edit so far out of place that no rebuild windows around it within the 32,768-line / 4 MiB bound is a **named fault** (`reachTooFar`): every verb but `tm check` fails naming the line, and `tm check` reports it as an error. **The memory cap is never raised.** (iv): serde's float re-printing for hand-appended unknown events is not ported (P29 stands). Governs S. |
+| **Q6** | fork quirks | The seven quirks take the design's recommended dispositions: (a) two "first wake" rules — port faithfully, fix later; (b) two "latest" rules — **keep** (they answer different questions); (c) site R8's per-sub-segment truncation — port, fix later; (d) the silent-verb undo — port, **fix after the switch** (`of:"verb:<name>"`); (e) the multi-day wall — port, fix later; (f) housekeeping between a command and its undo — port, **fix after the switch** (a primary id `period:key` for `close`); (g) two definitions of "today" — keep until stage 6 moves `now` into the kernel, decide then. Each ported quirk keeps its separating theorem and gap; each later fix is a behaviour change with its own parity entry. |
+
+### Consequences for the step plan (design §14)
+
+- **R11 changes meaning (D14).** It no longer deletes the unread facts. It keeps them in Rust's
+  `Replay` (so T5 compares them), the kernel ports them in C3–C6, and W1's `DayRecord` carries
+  them. The design's R11 row and Q7 default (a) are superseded; its cost estimate for option (b)
+  (≈ 300 definition, ≈ 900 proof lines, 4–6 agent-days; sealed records ≈ 15% larger) now applies.
+- **A kernel-writer step follows S (D16).** Appending verbs send typed events; the kernel renders
+  the lines (`renderLine`, B3) and returns them to append. Acceptance includes
+  `the_log_reads_what_it_renders` end to end and T2's byte identity. The design priced it at
+  ≈ 1–1.5 weeks; F5 is no longer optional.
+- **L1 and L6 use `capDen = 10^18` (D17)**, with `u128` units in Rust and digit-string units on
+  the wire.
+- **S takes D18's defaults** and D13's `.gitignore` line; **L8 adds D15's `_exact` fields**;
+  **L2–L4 are in stage 5 (D12)**, and AGENTS §8.3/§8.4 move E7 when L2 lands.
+- Every "Blocks" gate of design §14.0 item 8 is now open.
+
+### Recorded disagreements
+
+- Design §14.0 item 3 caps runs at `MemoryMax=40G`. While the two tracks build at once, this
+  workflow caps every `lake`, `lean`, `cargo`, `check.sh` and `tm` run at **30G** (16G for
+  benchmarks and generators), so two concurrent builds stay under the machine's 123 GB with no
+  swap. The design is not edited (its earlier sections are frozen); the tighter cap is the one used.
+
+**Housekeeping.** The stale worktree `/tmp/claude-1000/b3/wt` (detached at `b2af1a8`) had no
+uncommitted changes and was removed with `git worktree remove`.
+
+**Observable behaviour changes: none. New theorems: none. Goals: none moved.** Gaps still run
+to 81, cheats to 90 and parity entries to P12.
+
+**Re-measured** (under the 30 GB cap, on the tree committed): `check.sh` **7/7**, 2.8 s on the
+built tree; axiom audit **2079 theorems**; corpus **29/37 files and 4/5 whole plans**; burn-down
+**15** (stage 5: 0, stage 6: 15). All unchanged, as a docs-only commit must leave them.

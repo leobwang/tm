@@ -3118,3 +3118,51 @@ reason.
 
 **Items the critique found adequate** were re-read after the revision and still hold. The one-reader
 invariant is now also stated for the fit (item 4) and the stamp reader (item 20).
+
+---
+
+## 22. Owner answers (2026-09-14)
+
+The owner answered §4's nine questions on 2026-09-14. They are recorded as decisions D11–D18
+(AGENTS §4, §10.5 rows 12–20; README "Stage 5 D9/D10: the owner's answers"). This section maps
+each question to its answer and states what changes in the plan. The sections above are left as
+written; where they disagree with this section, this section holds.
+
+| question | answer | decision | differs from §4's recommendation? |
+|---|---|---|---|
+| Q1 price | (a) confirmed; D9 and D10 run as parallel tracks (§2.3) | **D11** | no |
+| Q2 stage 6's pieces | (a) E7, the slot cut and future-day energy prediction are pulled into stage 5 as L2–L4 | **D12** | no |
+| Q3 replay cache | (i) yes, (ii) yes: the kernel may read a sealed record back for an explicitly old date, (iii)(a) `tm init` excludes `.tm/cache/` from sync | **D13** | no |
+| Q4 `--json` capacity | (a) integer floors, with `…_exact: {num, den}` beside each | **D15** | no |
+| Q5 log writer | (b) the kernel writes log lines, in a new step right after S | **D16** | **yes** (recommended (a)) |
+| Q6 fork quirks | the last column of Q6's table: (a), (c), (e) ported and fixed later; (b) kept; (d), (f) ported and fixed after the switch; (g) kept until stage 6 | (Q6) | no |
+| Q7 unread fields | (b) ported: R11 keeps them, the kernel derives them into the sealed day records | **D14** | **yes** (recommended (a)) |
+| Q8 `p_lounge` precision | (b) `capDen = 10^18`; more than 18 decimals or outside [0, 1] refused by name; `u128` units in Rust; digit strings on the wire | **D17** | no |
+| Q9 damaged log | (i)(a) `tm check` warnings, exit code unchanged; (ii)(a) lines more than 2 days after `now` named as warnings; (iii)(a) a named fault beyond the rebuild bound, the memory cap never raised; (iv) serde's re-printing not ported (P29) | **D18** | no |
+
+### 22.1 Consequences for §14's step plan
+
+- **R11 (§14.3), under D14.** R11 no longer deletes the unread facts. It keeps them in Rust's
+  `Replay`, so T5 compares them field by field. C3–C6 derive them in the kernel, W1's `DayRecord`
+  carries them (not `Ckpt`), and P22 records a port, not a deletion. Q7's option-(b) estimate
+  applies: ≈ 300 definition lines, ≈ 900 proof lines and witnesses, 4–6 agent-days; sealed records
+  ≈ 15% larger.
+- **A new step after S (§14.6), under D16.** Call it **S2, the kernel writer**. Appending verbs send
+  typed events; the kernel renders the lines with B3's `renderLine` and returns them for Rust to
+  append; `LogEntry::to_json` is deleted with its last caller. Acceptance: `the_log_reads_what_it_renders`
+  end to end, T2's byte identity on every writable `Event`, both suites green. Estimate from Q5:
+  ≈ 1–1.5 weeks. F5 (§14.7) is absorbed by it and is no longer optional.
+- **L1 and L6 (§14.8), under D17.** `capDen = 10^18`. L1's weight constructor refuses a weight
+  with more than 18 decimal places or outside [0, 1], with a rejection theorem (R10). L6 carries
+  units as digit strings, and `kernel_bridge.rs` holds them as `u128`.
+- **S (§14.6), under D18 and D13.** Item 7's defaults are the answer: `tm check` lists log warnings
+  and future-dated lines as warnings with the exit code unchanged, and `reachTooFar` is a named
+  fault. Item 6's `.gitignore` handling is Q3 (iii)(a).
+- **L8 (§14.8), under D15.** `cli_plan.rs` and `cli_json_matrix.rs` gain the `…_exact: {num, den}`
+  fields beside each integer floor.
+- **L2–L4, under D12,** stay in stage 5 as planned; AGENTS §8.3/§8.4 move E7 when L2 lands.
+- **§14.0 item 8's gates** are all open.
+- **Parallel tracks, under D11.** D10 builds in its own worktree on branch `stage5-lookahead`.
+  Shared files stay append-only under each step's banner, and the merge reconciles numbering
+  (AGENTS §6.2–§6.5). While both tracks build, every run is capped at `MemoryMax=30G` (16G for
+  benchmarks and generators), tighter than §14.0 item 3's 40G.

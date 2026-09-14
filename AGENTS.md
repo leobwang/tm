@@ -521,6 +521,14 @@ that needs the user's assent, not an agent's judgment.
 | **D8** (2026-09-13): a not-yet-due dated line unfinished at a week close is demoted like any other and keeps its `due:`; the month rule "an outcome carries no date" covers outcomes, not `# Demoted` records — a deliberate owner narrowing of `shapesWf` | spec §6.3 calls `# Demoted` records work items, and fork-point `check.rs` has no date rule for month items (gap 55) |
 | **D9** (2026-09-14): the Lean kernel replays `.tm/log.jsonl`, all of it — requests carry the log's events; the kernel derives every replay fact (minutes and blocks per item and per day, last completion, completion dates, routine instance status, undo masking, lost minutes) and hands energy and duration observations back to Rust, which keeps **only** the statistical fit (plan §3.6); the old Rust `log::replay` stops being a source of decision facts | one reader, and it is proved (§5.3); `move_has_no_inverse_command` already made replay the only correct `tm undo`. §10.5 q4; README "Stage 5 step 1" |
 | **D10** (2026-09-14): future-day capacity is an **exact weighted mixture** — expected minutes at each energy level = `p_lounge · lounge + (1 − p_lounge) · home`, carried as exact numerator/denominator pairs through the EDF pass with nothing rounded; this deliberately disagrees with fork-point `capacity::lookahead` (lounge iff `p ≥ 0.5`) and is on stage 5's parity exception list | no unstated rounding reaches stage 6 (R7, gap 26); a threshold throws away the weight §8.4 states. §10.5 q5; README "Stage 5 step 1" |
+| **D11** (2026-09-14): the D9/D10 design's price is confirmed (design Q1), and D9 and D10 run as **parallel tracks** — D9 on `rebuild-on-lean`, D10 (L1–L9) on `stage5-lookahead` | option (a) of `kernel/design/stage5/stage5-D9-D10-design.md` §4 Q1; no narrowing lever taken. README "Stage 5 D9/D10: the owner's answers" |
+| **D12** (2026-09-14): stage 6's window (E7), slot cut and future-day energy prediction (home cap, budget limit) are **pulled into stage 5** as L2–L4; the kernel computes both location histograms | one reader of walls; Rust's comment-blind wall parser (gap 45) never decides capacity. Design Q2 (a) |
+| **D13** (2026-09-14): `.tm/cache/replay/` is allowed as persistence of kernel output; the kernel may read a sealed record back for an explicitly old date; `tm init` excludes `.tm/cache/` from sync | the cache is derived and rebuildable (T9); a sealed record is trusted as the checkpoint is, and law 1 proves it equals the replay's. Design Q3 (i), (ii), (iii)(a) |
+| **D14** (2026-09-14): the ≈ 13 unread fork `Replay` fields are **ported, not deleted** — R11 keeps them, the kernel derives them into the sealed day records | D9 says "derives every replay fact"; restoring them after the switch would need a port plus a rebuild of every sealed record. Design Q7 (b), against its recommendation |
+| **D15** (2026-09-14): `--json` capacity fields stay **integer floors**, each with `<field>_exact: {num, den}` beside it; `total` is `floor(Σ exact)` | no breaking change for readers, and the exact value is visible. Design Q4 (a); governs L8 |
+| **D16** (2026-09-14): the **kernel writes log lines** — appending verbs send typed events and the kernel returns the lines, in a new step right after the switch S | one definition of the line format, not two held together by T2. Design Q5 (b), against its recommendation |
+| **D17** (2026-09-14): **`capDen = 10^18`**; a weight with more than 18 decimals, or outside [0, 1], is refused by name; Rust holds units as `u128`, and units cross the wire as digit strings | keeps the fork's acceptance of hand-edited `p_lounge` with no rounding anywhere. Design Q8 (b); governs L1, L6 |
+| **D18** (2026-09-14): `tm check` lists malformed log lines and lines dated more than 2 days after `now` as **warnings** (exit code unchanged); a hand edit beyond the rebuild bound is a **named fault**; the memory cap is never raised. Q6's seven fork quirks take the design's recommended dispositions | a corrupt line must not go from fatal to invisible, and raising the cap risks an OOM on a swapless machine. Design Q9 (i)(a), (ii)(a), (iii)(a); Q6's last column |
 | Behaviour changes are recorded next to the rule they replace, with a theorem separating them — never taken silently | *"this is a bug" vs "this is an undocumented deliberate choice" is a judgment reading cannot settle* |
 
 ---
@@ -1967,6 +1975,13 @@ statement verbatim at every denominator. The provisional `DayCapacity`, `Deadlin
 `edf_more_capacity_never_raises_a_shortfall` and
 `edf_a_later_deadline_takes_nothing_from_an_earlier_one`.*
 
+*Status 2026-09-14 (README "Stage 5 D9/D10: the owner's answers"). Stage 5's remaining work
+follows `kernel/design/stage5/stage5-D9-D10-design.md` §14 (the step plan; §14.0 holds the rules
+before any step), as amended by the owner's answers D11–D18 in its §22. D9 (phases A, B, R, C, W,
+the switch S, the kernel-writer step D16 adds after S, and F) runs on `rebuild-on-lean`; D10
+(L1–L9, with stage 6's E7, slot cut and energy prediction pulled in as L2–L4 under D12) runs in
+parallel on `stage5-lookahead` (D11).*
+
 *What stage 5 still owes waits on q4/q5, which the owner answered as D9 and D10. The next
 tranche builds it:*
 - *D9's log replay, with `done_minutes`, `progress`, and recurrence instance selection
@@ -2473,6 +2488,15 @@ they are settled, and changing one needs the owner again.
 | 9 | Whether the kernel should refuse a `[-]` outside a week file or `month/…# Demoted`, as `tree.rs` does — a behaviour change (gap 31, §8.1) | stage 3 | **open**, not taken in stage 3 or 4. It came due when `demote` got a section target (`10bae51`), and the kernel now gives two answers to one question — the close refuses `noSection`, the verb falls back to the end of the file — recorded as README gap 60 until the owner answers |
 | 10 | A child the week close drops (`[~]` in place, B3) keeps any standing `# Demoted` record where it stood, and the month close takes no settled item: should that record be carried to the next month like any record, merged into its root's record, or retired (README gap 72) | before a month review reads stamp history across months (stage 5–6) | **open** — raised at stage 4 final step 4. The fork point deleted the child's week line and carried the record; the kernel keeps both lines and carries neither. No work is lost (the child's minutes are in its root's record); the next month's review does not see the child's stamp history |
 | 11 | Whether `close_keeps_source_order`'s (and `_iff`'s) added hypothesis `hfold` ("the fold drops both lines or neither") is a change B3's spec-settled fold forced, and not a D5 downgrade | before stage 5's next re-proof of it, not blocking | **open**, raised at the stage-4 final repair (README "Stage 4 final, repair", defect 2). The statement without `hfold` is proved **false** (`a_dropped_child_and_its_filed_parent_part_ways`). The case `hfold` excludes, one line dropped and one filed, now has its own order law over the source-file sites (`close_keeps_source_order_across_the_fold`), so every pair one close takes from one file by one action is covered. Nothing was deleted or weakened in the repair |
+| 12 | D9/D10 design Q1: confirm the price, or narrow the scope | before the tranche | **ANSWERED 2026-09-14 (D11):** confirmed; D9 and D10 run as parallel tracks. Design §4 Q1, §22 |
+| 13 | D9/D10 design Q2: pull stage 6's window, slot cut and energy prediction into stage 5 | before L2 | **ANSWERED 2026-09-14 (D12):** pulled in as L2–L4. Design §4 Q2, §22 |
+| 14 | D9/D10 design Q3: the derived replay cache, reading it back, and sync | before W1 | **ANSWERED 2026-09-14 (D13):** allowed; the kernel may read a sealed record back for an explicitly old date; `tm init` excludes `.tm/cache/` from sync. Design §4 Q3, §22 |
+| 15 | D9/D10 design Q4: what `--json` shows for exact capacities | before L8 | **ANSWERED 2026-09-14 (D15):** integer floors plus `…_exact: {num, den}`. Design §4 Q4, §22 |
+| 16 | D9/D10 design Q5: who writes log lines | after S | **ANSWERED 2026-09-14 (D16):** the kernel, in a new step right after S. Design §4 Q5, §22 |
+| 17 | D9/D10 design Q6: the seven fork quirks | — | **ANSWERED 2026-09-14:** the design's recommended dispositions (fix later a, c, e; keep b; fix after the switch d, f; g kept until stage 6). Design §4 Q6, §22 |
+| 18 | D9/D10 design Q7: port or delete the unread `Replay` fields | before R11, W1 | **ANSWERED 2026-09-14 (D14):** ported; R11 keeps them and the kernel derives them into sealed day records. Design §4 Q7, §22 |
+| 19 | D9/D10 design Q8: how precise `p_lounge` may be | before L6 | **ANSWERED 2026-09-14 (D17):** `capDen = 10^18`, `u128` units, digit strings on the wire. Design §4 Q8, §22 |
+| 20 | D9/D10 design Q9: a damaged or hand-edited log | before S | **ANSWERED 2026-09-14 (D18):** `tm check` warnings for malformed and far-future lines, a named fault beyond the rebuild bound, the cap never raised. Design §4 Q9, §22 |
 | — | `main`: keep it as the oracle, or discard it | — | **DECIDED 2026-09-12 (D4):** discarded (`f386c56`); the fork point `4748911` is the restore source and the oracle; stage 0's fix, `invariant_exhaustive.rs` and the ability to reproduce anything measured on `main` went with it (§2.2) |
 
 **Stage 4 is closed (2026-09-13); stage 5 is blocked.** Stage 4's gating
@@ -2528,3 +2552,8 @@ numerators over one positive denominator. It follows fork-point `capacity::reser
 `Goals.lean`. What remains of the stage waits on the D9/D10 tranche: the replay, the
 lookahead, the floor pass and candidate selection. Still owed to the human: **q10**,
 **q11**, **q7**, **q9**, and the §5.13 drives.
+
+**Update 2026-09-14, the D9/D10 design's answers (README "Stage 5 D9/D10: the owner's
+answers").** The design's nine questions are answered as D11–D18 and Q6's dispositions (rows
+12–20 above; §4's table). Nothing in the design's step plan is blocked on the owner. Still owed
+to the human: **q10**, **q11**, **q7**, **q9**, and the §5.13 drives.
