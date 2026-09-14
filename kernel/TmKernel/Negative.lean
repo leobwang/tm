@@ -1004,4 +1004,35 @@ theorem oneThenAFractionReadsAsOne :
    exponent is a first digit and the rest, so the empty list is not an exponent. -/
 def aBareExponentMarker : JDec := ⟨false, 1, [], some (false, [])⟩
 
+
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D9 track, step B1: instants, offsets and the
+-- zone table in Cal.lean).  Numbered 91 and 92, the design's own labels for B1
+-- (its §16); nothing in this checkout had taken them.  The D10 track numbers in
+-- parallel and the merge renumbers.  The controls, which compile, are in
+-- Cal.lean: `chicago_2026_offsets` and `offsetAt_reads_the_last_transition`
+-- (91), `the_written_clock_is_not_the_instant_order` and `Instant.lt_irrefl`
+-- (92).  Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 91 — a zone transition applied one second early.  Chicago springs
+   forward at 2026-03-08T08:00:00Z; at 07:59:59Z the last transition at or before
+   the instant is none, so `offsetAt` reads the base −06:00
+   (`offsetAt_reads_the_last_transition`, `chicago_2026_offsets`), and claiming
+   −05:00 there is false: `decide` refuses it. -/
+theorem aTransitionAppliedOneSecondEarly :
+    Cal.offsetAt Cal.chicago ⟨63908553599, 0⟩ = ⟨true, 18000⟩ := by
+  decide
+
+/- CHEAT 92 — two stamps of one instant ordered by their written clocks.
+   `2026-09-07T22:00:00-05:00` reads earlier on the clock than
+   `2026-09-08T03:00:00+00:00`, but local time minus offset is one UTC second
+   for both (`the_written_clock_is_not_the_instant_order`), and no instant is
+   before itself (`Instant.lt_irrefl`): `decide` refuses the order. -/
+theorem twoStampsOfOneInstantOrderedByTheirClocks :
+    (⟨(Cal.utcSecAt ⟨true, 18000⟩ (Cal.toDay ⟨2026, 9, 7⟩ * 86400 + 22 * 3600)).getD 0, 0⟩ :
+        Cal.Instant)
+      < ⟨(Cal.utcSecAt Cal.Offset.utc (Cal.toDay ⟨2026, 9, 8⟩ * 86400 + 3 * 3600)).getD 0, 0⟩ := by
+  decide
+
 end Tm

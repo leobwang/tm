@@ -2536,3 +2536,73 @@ open Tm
 #print axioms Tm.the_jval_jemit_fraction_guard_bites
 #print axioms Tm.a_request_number_that_is_not_a_nat_is_refused_by_its_reader
 #print axioms Tm.respond_reads_a_decimal_and_a_surrogate_pair
+
+-- APPENDED 2026-09-14 (stage 5, D9 track).  Step B1 (design §14.2, §5.2, §6.1 kernel side, §6.3):
+-- instants, offsets and chrono's leap-second durations; the zone as a host-probed table
+-- (`offsetAt`, `localDate`); `instantOf`, the fork's `local_dt`.  Cal.lean.  64 theorems,
+-- including the two in-step goals of design §15 (`offsetAt_reads_the_last_transition`, restated
+-- in chrono's order, and `instantOf_is_local_dt_on_an_unambiguous_time`).
+#print axioms Tm.Cal.Instant.lt_iff
+#print axioms Tm.Cal.Instant.le_iff
+#print axioms Tm.Cal.Instant.lt_irrefl
+#print axioms Tm.Cal.Instant.lt_trans
+#print axioms Tm.Cal.Instant.not_lt
+#print axioms Tm.Cal.Instant.le_total
+#print axioms Tm.Cal.Instant.le_antisymm
+#print axioms Tm.Cal.the_instant_order_is_not_the_nanos_order
+#print axioms Tm.Cal.Instant.lt_iff_nanos_off_a_leap_second
+#print axioms Tm.Cal.localSecAt_utcSecAt
+#print axioms Tm.Cal.utcSecAt_localSecAt
+#print axioms Tm.Cal.minutesBetween_is_num_minutes_max_zero
+#print axioms Tm.Cal.subMinutes_zero
+#print axioms Tm.Cal.subMinutes_nanos
+#print axioms Tm.Cal.subMinutes_wf
+#print axioms Tm.Cal.durationBetween_across_a_leap_second
+#print axioms Tm.Cal.the_leap_second_counts_within_a_day_but_not_across_midnight
+#print axioms Tm.Cal.minutesBetween_truncates
+#print axioms Tm.Cal.secondsBetween_truncates_toward_zero
+#print axioms Tm.Cal.durationBetween_total
+#print axioms Tm.Cal.minutesBetween_zero_of_le
+#print axioms Tm.Cal.mkInstant?_isSome_iff
+#print axioms Tm.Cal.mkInstant?_refuses_a_bad_nanosecond
+#print axioms Tm.Cal.mkOffset?_isSome_iff
+#print axioms Tm.Cal.mkOffset?_refuses_a_whole_day
+#print axioms Tm.Cal.the_written_clock_is_not_the_instant_order
+#print axioms Tm.Cal.the_origin_second_is_not_unambiguous
+#print axioms Tm.Cal.transFrom_mem
+#print axioms Tm.Cal.transFrom_tail
+#print axioms Tm.Cal.Tz.transFrom
+#print axioms Tm.Cal.Tz.trans_ns
+#print axioms Tm.Cal.tz_transitions_strictly_increase
+#print axioms Tm.Cal.mkTz?_isSome_iff
+#print axioms Tm.Cal.mkTz?_refuses_a_long_key
+#print axioms Tm.Cal.mkTz?_refuses_too_many_transitions
+#print axioms Tm.Cal.mkTz?_refuses_an_unsorted_table
+#print axioms Tm.Cal.offsetFold_none
+#print axioms Tm.Cal.offsetFold_last
+#print axioms Tm.Cal.offsetAt_reads_the_last_transition
+#print axioms Tm.Cal.offsetAt_before_every_transition
+#print axioms Tm.Cal.offsetAt_at_a_transition
+#print axioms Tm.Cal.offsetAt_does_not_read_the_last_transition_by_nanos
+#print axioms Tm.Cal.offsetAt_wf
+#print axioms Tm.Cal.localDate_near_the_utc_date
+#print axioms Tm.Cal.foldl_offsetStep_congr
+#print axioms Tm.Cal.offsetAt_is_constant_between_transitions
+#print axioms Tm.Cal.localDate_mono_between_transitions
+#print axioms Tm.Cal.pushHit_reverse
+#print axioms Tm.Cal.hitFold
+#print axioms Tm.Cal.localHits_eq
+#print axioms Tm.Cal.spansFrom_lo
+#print axioms Tm.Cal.offsetFold_span
+#print axioms Tm.Cal.exists_span
+#print axioms Tm.Cal.localSec_of_mem_localHits
+#print axioms Tm.Cal.mem_localHits_of_localSec
+#print axioms Tm.Cal.localSec_instantOf
+#print axioms Tm.Cal.instantOf_is_local_dt_on_an_unambiguous_time
+#print axioms Tm.Cal.chicago2026_wf
+#print axioms Tm.Cal.the_witness_seconds_are_the_dates_they_name
+#print axioms Tm.Cal.chicago_2026_offsets
+#print axioms Tm.Cal.localDate_is_not_constant_between_transitions
+#print axioms Tm.Cal.instantOf_in_the_spring_gap
+#print axioms Tm.Cal.instantOf_in_the_fall_fold
+#print axioms Tm.Cal.instantOf_on_an_unambiguous_noon

@@ -9144,3 +9144,204 @@ and the merge step reconciles.
 | `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored** (was 1011; +2, `tm/tests/loggen.rs`) |
 | FFI suite (`cargo test` in `tm-kernel-ffi`, which also builds `examples/logbench.rs`) | **81 passed / 0 failed** (kernel 72, corpus 8, stack 1) |
 | `cli_latency.rs` | green: first verb 617.6 ms, later verb 55.8 ms |
+
+<!-- ===================================================================
+     APPENDED 2026-09-14 (stage 5, D9 track).  Step B1 (design §14.2 row B1, §5.2, §6.1 kernel side, §6.3): time and zone in Cal.lean.
+     Takes cheats 91-92 (the design's own B1 labels, free in this checkout) and parity entry P16 (the design's number; this checkout's highest was P12). No new gap.
+     The D10 track numbers in parallel; whoever merges renumbers (AGENTS §6.2, §6.4).
+     Supersedes, by name: gap 103's "When it clears: at B1" (it clears at B4; below).
+     =================================================================== -->
+
+## Stage 5 B1, 2026-09-14: the calendar learns instants and offsets — a zone is a table the host probes, never a database the kernel carries
+
+The D9 track's fourth step (design `kernel/design/stage5/stage5-D9-D10-design.md` §14.2 row B1,
+§5.2, §6.1's kernel side, §6.3). Only `Cal.lean` gained definitions: sections 8 and 9, appended,
+with a paragraph added to the module header. Nothing in the binary calls them yet. D10's L2 and
+L4 build on `instantOf` and `secondsBetween`.
+
+### What was built (`Cal.lean`)
+
+| piece | what it is |
+|---|---|
+| `Instant` (`sec`, `ns`), `Instant.wf`, `VInstant`, `mkInstant?` | UTC seconds since 0001-01-01T00:00:00Z (the origin of `Day`) and nanoseconds. `wf` is §5.2's: `ns < 2·10⁹`, at or above 10⁹ only on second 59 (chrono's leap second), year ≤ 9999 |
+| `LT`/`LE Instant`, `Instant.lt_iff`, `le_iff`, `lt_irrefl`, `lt_trans`, `not_lt`, `le_total`, `le_antisymm` | **chrono's order**: `(sec, ns)` lexicographically, as `DateTime`'s `Ord` compares its UTC `(secs, frac)`. `Instant.nanos` is kept, and it is not the order (below) |
+| `Offset` (`west`, `sec`), `Offset.wf` (`sec < 86400`), `VOffset`, `mkOffset?`, `Offset.utc` | a sign and seconds |
+| `localSecAt`, `utcSecAt` | the local clock of an instant at an offset (chrono's `naive_utc + offset`, whole seconds; west of UTC it saturates at the origin), and its inverse "local time minus offset", `none` before the origin. B2's `parseStamp` should reuse `utcSecAt` for its `beforeOrigin` rather than write a second conversion (AGENTS §5.3) |
+| `durationBetween a b` | `b.signed_duration_since(a)` as `(secs, nanos)`, a literal port of chrono 0.4.45's `NaiveDateTime`/`NaiveTime::signed_duration_since`: days times 86,400, the time-of-day difference, the ±1 s leap adjustment keyed on the **time of day**, then `div_euclid`/`rem_euclid` of the nanoseconds |
+| `secondsBetween`, `minutesBetween` | `num_seconds` (truncated toward zero) and `num_minutes().max(0)`; `minutesBetween_is_num_minutes_max_zero` ties the second to `Int.tdiv` |
+| `subMinutes` | `t − Duration::minutes(m)`, chrono's `overflowing_add_signed`: a leap second becomes the next second before subtracting, a zero delta leaves the instant untouched, and the result saturates at the origin |
+| `TzTable` (`key`, `base`, `trans`), `transFrom`, `TzTable.wf`, `Tz`, `mkTz?` | §6.1's table. `wf`: key ≤ 128 characters, base representable, ≤ 4,096 transitions, then `transFrom`: each transition a representable **whole second**, strictly increasing, with a representable offset |
+| `offsetStep`, `offsetAt`, `localSec`, `localDate` | chrono-tz's `offset_from_utc_datetime`: the last transition whose second is at or before `t.sec`, else the base, as a `foldl`. `localDate` is typed `Nat` (the `omega` trap) |
+| `Span`, `Span.holds`, `Span.hit`, `spansFrom`, `TzTable.spans` | the table as UTC spans `[lo, hi)` with their offsets; `spansFrom` is the specification the proofs read |
+| `pushHit`, `hitStep`, `hitFinish`, `localHits` | chrono-tz's `offset_from_local_datetime`: every UTC second whose local clock reads `l`, earliest first, as a `foldl` over the transitions (`localHits_eq` equates it with the spans) |
+| `gapHit`, `instantOf`, `unambiguousAt` | §6.3's `capacity::local_dt`: a single or earliest hit; in a gap, the first hit 1 to 180 minutes later; else the local time read as UTC |
+| `chicago2026`, `chicago` | a two-transition witness table: base −06:00, 2026-03-08T08:00:00Z to −05:00, 2026-11-01T07:00:00Z back to −06:00 |
+
+**Proved, against design §5.2's list:** `minutesBetween_truncates` (119 s gives 1; 119.999999999 s
+gives 1; backwards gives 0); `minutesBetween_zero_of_le`; `secondsBetween_truncates_toward_zero`
+(−59.5 s gives −59, +59.5 s gives 59); `mkInstant?_refuses_a_bad_nanosecond` (a leap nanosecond off
+second 59, two seconds of nanoseconds, year 10000; the edges accepted) with
+`mkInstant?_isSome_iff`; `durationBetween_across_a_leap_second`, all seven of chrono's documented
+leap-second examples for `signed_duration_since` (five `NaiveTime`, two `NaiveDateTime` around
+2015-06-30T23:59:60.5). Beside them: `durationBetween_total` (the duration is the nanosecond
+difference plus an adjustment of −1, 0 or +1 s, which is 0 when both instants share a second),
+`the_leap_second_counts_within_a_day_but_not_across_midnight`, `subMinutes_zero`,
+`subMinutes_nanos`, `subMinutes_wf`, `mkOffset?_isSome_iff`, `mkOffset?_refuses_a_whole_day`,
+`localSecAt_utcSecAt`, `utcSecAt_localSecAt` and `the_written_clock_is_not_the_instant_order`.
+**`Instant.lt_iff_nanos` is refuted** (below).
+
+**Against design §6.1's list:** `offsetAt_reads_the_last_transition` in both directions,
+`offsetAt_before_every_transition` and `offsetAt_at_a_transition`; `mkTz?_refuses_an_unsorted_table`
+(decreasing, repeated, fractional, an offset of a day, a base of a day; a sorted table accepted),
+with `mkTz?_refuses_a_long_key`, `mkTz?_refuses_too_many_transitions` and `mkTz?_isSome_iff`;
+`chicago_2026_offsets`: 07:59:59Z is −06:00 and 08:00:00Z is −05:00 on 2026-03-08,
+06:59:59Z is −05:00 and 07:00:00Z is −06:00 on 2026-11-01, and `2026-09-08T03:00:00+00:00` is
+2026-09-07. Beside them: `tz_transitions_strictly_increase` (in chrono's order), `offsetAt_wf`,
+`localDate_near_the_utc_date`, `offsetAt_is_constant_between_transitions` and
+`localDate_mono_between_transitions`. **`localDate_is_constant_between_transitions` is refuted**
+(below).
+
+**Against design §6.3's list:** `instantOf_is_local_dt_on_an_unambiguous_time` (the §15 goal, and
+the round trip §6.3 calls `instantOf_localSec`), with `localSec_instantOf` for the forward
+direction; `instantOf_in_the_spring_gap` (02:30 on 2026-03-08 has no instant, and `instantOf` gives
+03:00 CDT, 08:00:00Z); `instantOf_in_the_fall_fold` (01:30 on 2026-11-01 is both 06:30Z and 07:30Z,
+is not `unambiguousAt`, and `instantOf` gives 06:30Z); `instantOf_on_an_unambiguous_noon` (the
+goal's hypotheses are satisfiable: noon on 2026-09-07 is 17:00:00Z, and `unambiguousAt` holds).
+The route: `hitFold` and `localHits_eq` equate the run-time fold with the spans;
+`offsetFold_span` shows the offset fold reads a span's offset at every second the span holds;
+`exists_span` puts every second in a span; `localSec_of_mem_localHits` and
+`mem_localHits_of_localSec` are the two directions.
+
+### The two in-step goals (§15, B1)
+
+Neither entered `Goals.lean`: each is stated and proved in this step, so the burn-down does not move
+(§15's rule for in-step groups).
+
+| goal | status |
+|---|---|
+| `offsetAt_reads_the_last_transition` | **restated and proved in chrono's order.** As §15 writes it, over `Instant.nanos`, it is false: **`offsetAt_does_not_read_the_last_transition_by_nanos`**. A representable leap second at `…:59` plus 1.5 s has a nanosecond count past a transition at the next second, and chrono-tz reads the timestamp's whole second, so the offset is still the base. The proved statement has the same shape, with `i ≤ t`, `i < j` and `t < j` in the `Instant` order (§3.1 item 3; D5: re-proved, never weakened) |
+| `instantOf_is_local_dt_on_an_unambiguous_time` | **proved as stated**, with `c : Fin 1440` (below) |
+
+### Refuted and renamed (§3.1 item 3)
+
+| design §5.2 / §6.1 name | why it is false | now |
+|---|---|---|
+| `Instant.lt_iff_nanos` | §5.2 defines `LT Instant` by `nanos` and says chrono's lexicographic order is "equal here". It is not: `(59, 1.5·10⁹)` precedes `(60, 0)` in chrono and follows it in nanoseconds | **`the_instant_order_is_not_the_nanos_order`**, with the narrowing **`Instant.lt_iff_nanos_off_a_leap_second`**. `LT Instant` is chrono's order |
+| `offsetAt_reads_the_last_transition` over `nanos` | above | **`offsetAt_does_not_read_the_last_transition_by_nanos`**; the name now carries the chrono-order statement |
+| `localDate_is_constant_between_transitions` | a span lasts months, and the local date moves at every local midnight | **`localDate_is_not_constant_between_transitions`** (17:00:00Z on 2026-09-07 and 2026-09-08: one offset, two dates), with **`offsetAt_is_constant_between_transitions`** and **`localDate_mono_between_transitions`**, which hold |
+
+### Cheats (`Negative.lean`, appended)
+
+| # | label | cheat | fails because |
+|---|---|---|---|
+| **91** | B1-a | Chicago's spring transition applied at 07:59:59Z | `decide` proves `offsetAt chicago ⟨63908553599, 0⟩ = −05:00` false (`chicago_2026_offsets`, `offsetAt_reads_the_last_transition`) |
+| **92** | B1-b | `2026-09-07T22:00:00-05:00` ordered before `2026-09-08T03:00:00+00:00` by their written clocks | both are UTC second 63,924,433,200 (`the_written_clock_is_not_the_instant_order`), and `decide` proves the strict order false (`Instant.lt_irrefl`) |
+
+Each fails at its own line with `Tactic decide proved that the proposition … is false`.
+
+### Additions to the stage-5 parity exception list
+
+| # | site | the kernel | the fork point | authority |
+|---|---|---|---|---|
+| **P16** | an instant outside [1900, 2200) | the table's edge offset (`offsetAt` reads the base before the first transition and the last transition after it) | chrono-tz's value | design §6.1 |
+
+Not observable yet: nothing on the wire sends a table until B4. **Exact by design, and now proved of
+the kernel's side:** chrono's leap-second duration rule (`durationBetween_across_a_leap_second`,
+`the_leap_second_counts_within_a_day_but_not_across_midnight`) and the local-time lookup on
+DST days (`instantOf_in_the_spring_gap`, `instantOf_in_the_fall_fold`).
+
+### Rule D9-21
+
+B1's functions over lists: `offsetAt` is a `foldl` over at most 4,096 transitions, as §6.1 asks.
+`localHits` is a `foldl` (`hitStep`), then `List.reverse`, which is core's accumulator loop.
+`transFrom` is structural. Its recursive call is the tail of a `&&` chain, and `TzTable.wf` runs it
+only after the `length ≤ 4096` guard, which is `lengthTR` by core's `@[csimp]`. `gapHit` runs on fuel
+180, so an `instantOf` in a gap costs at most 181 scans of the table. `spansFrom` has no run-time
+caller: the proofs read it. The binary-search twin §6.1 names stays W4's lever, to be pulled if A3
+(c) or W5 shows the scans matter.
+
+### The `decide` budget (§14.0 item 4)
+
+18 new decided witnesses in `Cal.lean` and 2 cheats, 20 in all, which is the budget of 20. Each uses
+at most **2 zone transitions** and no `Entry` values. The instants are `Nat` literals, the longest
+literal is the 15-character key, and `the_witness_seconds_are_the_dates_they_name` ties each second
+to its date through `toDay`. The witnesses are `the_instant_order_is_not_the_nanos_order`,
+`durationBetween_across_a_leap_second`, `the_leap_second_counts_within_a_day_but_not_across_midnight`,
+`minutesBetween_truncates`, `secondsBetween_truncates_toward_zero`,
+`mkInstant?_refuses_a_bad_nanosecond`, `mkOffset?_refuses_a_whole_day`,
+`the_written_clock_is_not_the_instant_order`, `mkTz?_refuses_an_unsorted_table`,
+`offsetAt_does_not_read_the_last_transition_by_nanos`, `chicago2026_wf`,
+`the_witness_seconds_are_the_dates_they_name`, `chicago_2026_offsets`,
+`localDate_is_not_constant_between_transitions`, `instantOf_in_the_spring_gap`,
+`instantOf_in_the_fall_fold`, `instantOf_on_an_unambiguous_noon` and
+`the_origin_second_is_not_unambiguous`. The first 17 were probed together, before the edit, in a
+scratch copy of `Cal.lean` under `MemoryMax=8G timeout 120`. The whole file
+took **3.82 s at an 809 MB peak**, against 2.76 s and 815 MB for the file at `c2ebb8f`. The two
+cheats, on that copy, took 0.46 s at 495 MB, and `the_origin_second_is_not_unambiguous`, added
+last, 0.56 s at 494 MB. The committed `Cal.lean`, all 18 included, takes 3.36 s at an 817 MB peak
+under the same cap. No realistic-size input is evaluated.
+
+### Recorded disagreements
+
+- **The instant order** (above). §5.2's `LT` by `nanos` is not chrono's. **For C2 and W2:** §6.2
+  and §15 state `dayOf` and `a_wake_day_is_shorter_than_a_day` as `t.nanos < w.nanos + 86400·10⁹`
+  and sort wakes by `nanos`. The fork's `DayIndex::new` sorts by `DateTime`'s order, which is
+  `Instant`'s `<`, and `day_of` tests `t.signed_duration_since(w) < Duration::hours(24)`, which is
+  `durationBetween w t`. Near a leap second neither agrees with `nanos`, and the design counts day
+  attribution "leap seconds included" as exact by design. C2 chooses its statements; this step only
+  flags them.
+- **Whole-second transitions.** §6.1's `TzTable.wf` asks for representable, strictly increasing
+  transition instants. The kernel also requires `ns = 0`, because chrono-tz's spans are `i64`
+  seconds and the host bisects to the second. A fractional transition would have no chrono meaning,
+  and the requirement makes "at or before `t`" mean the same thing in chrono's order and in
+  chrono-tz's timestamp (`offsetAt_reads_the_last_transition`'s proof uses it). `mkTz?` refuses one
+  B4's decoder will refuse it as `badTz`.
+- **The Chicago witnesses.** §6.1 asks for "a four-transition Chicago table"; §14.0 item 4 caps a
+  witness at 2 zone transitions. `chicago2026` has 2026's two transitions, and every §6.1 and §6.3
+  witness lands on them.
+- **`instantOf`'s clock.** §6.3 types it `(c : Clock)`. `Clock` is `Field.Clock := Fin 1440` in
+  `Line.lean`, which imports `Cal` through `Text` and `Grain`, so `Cal.lean` cannot name it.
+  `instantOf` and `unambiguousAt` take `Fin 1440`, the type `Clock` abbreviates. A caller's `Clock`
+  passes unchanged, and §15's statement with `c : Clock` elaborates against these definitions.
+- **`unambiguousAt`** is named in §15 but not defined in the design. Here it means exactly one hit
+  and a local clock past the origin's first second. `localSec` saturates at the origin west of UTC,
+  so that second is the reading of every instant up to the offset, and the §15 statement is false
+  there without the second conjunct (`the_origin_second_is_not_unambiguous`: a table at −06:00,
+  UTC second 100). The origin lies outside every table's span (P16).
+- **The local lookup is a scan, not chrono-tz's binary search.** The two agree when at most two
+  local spans overlap and the local spans are in order. A table probed from a real zone meets both
+  conditions whenever each of its spans is longer than the offset changes around it. The section 9 header
+  states this assumption. T4 (d) at B4 checks every chrono-tz zone against chrono itself, and that
+  test would catch a zone that breaks it.
+- **`minutesBetween_zero_of_le`** assumes `b.wf`. The design gives no signature. Without the
+  assumption, a `b` whose `ns` is not representable makes `b − a` any size.
+- **`subMinutes` at zero minutes** leaves a leap second as it is, because chrono returns early.
+  §5.2 mentions only the saturation at the origin.
+- **Additions the design does not name:** `mkOffset?` (R10 for `VOffset`; §10.4's table starts
+  at B4), `localSecAt`/`utcSecAt`, `Span` and the proof lemmas above.
+- **Gap 103** (A3 (c), the Chicago hourly probe) says it clears at B1. Row B1 lists only
+  `Cal.lean`, and §6.1 and row B4 put `tz_table.rs` in B4. The gap stays open and clears at B4.
+- **For B2:** `Tm.Field.Stamp` already exists, and `Goals.lean` opens `Field (… Stamp …)`, so a
+  `Tm.Stamp` namespace for `Stamp.lean` will be ambiguous in `Goals.lean`'s STAGE 5 block.
+
+**Label-to-number map:** cheats B1-a → **91**, B1-b → **92**; parity entry **P16**. No gaps, no
+behaviour rows (the binary is unchanged).
+
+**Goals:** none added, discharged or refuted in `Goals.lean`, which is untouched (burn-down **15**).
+The two in-step goals are proved in `Cal.lean`, one restated (above). **New theorems: 64**, all in
+`Cal.lean`, audited under an `APPENDED … Step B1` banner in `Check.lean`. §6.3's three counts
+agree at 2207. Axioms stay within `propext`, `Quot.sound` and `Classical.choice`, and there is no
+`sorryAx`.
+
+**Re-measured** (under the 30 GB cap, on the tree committed):
+
+| measurement | value |
+|---|---|
+| `check.sh` | **7/7**, 2.65–2.71 s on the built tree (four runs) (2.73 s before, so within §14.0 item 4's 10%); the first run after the `Cal.lean` edit, rebuild of every module included, took 149.0 s |
+| axiom audit | **2207 theorems** (was 2143, +64) |
+| `Negative.lean` | check 4 ok; CHEATs 91 and 92 each fail at their own line with the `decide` refusal they claim |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **15** (unchanged) |
+| `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (unchanged) |
+| FFI suite (`cargo test` in `tm-kernel-ffi`) | **81 passed / 0 failed** (kernel 72, corpus 8, stack 1) |
+| `cli_latency.rs` | green: first verb 627.7 ms, later verb 50.7 ms |
