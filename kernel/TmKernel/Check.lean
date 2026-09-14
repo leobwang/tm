@@ -2861,3 +2861,84 @@ open Tm
 #print axioms Tm.the_look_wall_witness_loads
 #print axioms Tm.the_look_wall_calendar_indexes_one_wednesday_wall
 #print axioms Tm.a_loaded_wednesday_wall_moves_the_window_and_keeps_the_budget
+
+-- APPENDED 2026-09-14 (stage 5, D10 track).  Step L6 (design §13.6, §10.4, §14.8 row L6): capacity on
+-- the wire.  Lookahead.lean: every §13.6 bound mkInput? does not check, with its smart constructor and
+-- rejection theorems (mkDayCfg?, mkStep?, curveOk, priorOk, energyOk, homeMaxOk).  Boundary.lean: `run`
+-- split at runLoad, the `capacity` and `tz` readers (CapWire), runCap / respondCap / callCap with the
+-- export moved to them, the bridge to `run` and `call`, what an answered request satisfies, and the
+-- decided witnesses.  Gap 77 closed.
+#print axioms Tm.Look.mkDayCfg?_wf
+#print axioms Tm.Look.mkDayCfg?_of_wf
+#print axioms Tm.Look.mkDayCfg?_refuses_blockMin
+#print axioms Tm.Look.mkDayCfg?_refuses_breakMin
+#print axioms Tm.Look.mkDayCfg?_refuses_breakAfterBlocks
+#print axioms Tm.Look.mkDayCfg?_refuses_minLastBlockMin
+#print axioms Tm.Look.mkDayCfg?_refuses_windowHours
+#print axioms Tm.Look.mkDayCfg?_refuses_budgetRatio
+#print axioms Tm.Look.DayCfg.wf_window_le_a_day
+#print axioms Tm.Look.mkStep?_ok_iff
+#print axioms Tm.Look.mkStep?_refuses_a_zero_denominator
+#print axioms Tm.Look.mkStep?_refuses_a_wide_denominator
+#print axioms Tm.Look.mkStep?_refuses_past_48_hours
+#print axioms Tm.Look.mkStep?_refuses_an_empty_range
+#print axioms Tm.Look.mkStep?_refuses_a_level_above_five
+#print axioms Tm.Look.curveOk_refuses_too_many_ranges
+#print axioms Tm.Look.curveOk_refuses_a_bad_range
+#print axioms Tm.Look.curveOk_refuses_an_unsorted_curve
+#print axioms Tm.Look.priorOk_refuses_too_many_curves
+#print axioms Tm.Look.priorOk_refuses_a_long_key
+#print axioms Tm.Look.priorOk_refuses_a_key_twice
+#print axioms Tm.Look.priorOk_refuses_a_bad_curve
+#print axioms Tm.Look.energyOk_refuses_a_curve_not_of_12
+#print axioms Tm.Look.energyOk_refuses_an_entry_past_a_byte
+#print axioms Tm.Look.homeMaxOk_iff
+#print axioms Tm.Look.priorOk_widths
+#print axioms Tm.Look.priorOk_keys_in_the_exact_domain
+#print axioms Tm.Look.the_shipped_bounds_hold
+#print axioms Tm.run_is_runLoad_then_runPlan
+#print axioms Tm.capBind_ok_elim
+#print axioms Tm.runCap_without_capacity_is_run
+#print axioms Tm.respondCap_without_capacity_is_respond
+#print axioms Tm.callExport_without_capacity_is_call
+#print axioms Tm.the_exported_call_emits_parses_back
+#print axioms Tm.runCap_answers_with_the_lookahead
+#print axioms Tm.runCap_refuses_what_the_section_refuses
+#print axioms Tm.runPlan_ok_shape
+#print axioms Tm.runCap_answers_docs_report_lookahead
+#print axioms Tm.CapWire.unitsJson_reads_back
+#print axioms Tm.CapWire.lookaheadJson_days
+#print axioms Tm.CapWire.readWeight_ok
+#print axioms Tm.CapWire.readWeekAll_ok
+#print axioms Tm.CapWire.readWeekOpt_ok
+#print axioms Tm.CapWire.orErr_ok
+#print axioms Tm.CapWire.mapError_ok
+#print axioms Tm.CapWire.readModelTable_ok
+#print axioms Tm.CapWire.readTables_ok
+#print axioms Tm.CapWire.readEnergyCurve_ok
+#print axioms Tm.CapWire.readEnergy_ok
+#print axioms Tm.CapWire.readCurve_ok
+#print axioms Tm.CapWire.readPrior_ok
+#print axioms Tm.CapWire.readHomeMax_ok
+#print axioms Tm.CapWire.mkDayCfg?_blockMin
+#print axioms Tm.CapWire.readDay_ok
+#print axioms Tm.CapWire.readPriority_ok
+#print axioms Tm.CapWire.readSection_ok
+#print axioms Tm.CapWire.readCapacity_ok
+#print axioms Tm.CapWire.the_zone_texts_read_on_witnesses
+#print axioms Tm.CapWire.readTz_on_witnesses
+#print axioms Tm.CapWire.readWeight_on_witnesses
+#print axioms Tm.CapWire.readDay_on_witnesses
+#print axioms Tm.CapWire.readPrior_on_witnesses
+#print axioms Tm.CapWire.readEnergy_on_witnesses
+#print axioms Tm.CapWire.readPriority_on_witnesses
+#print axioms Tm.CapWire.the_capacity_section_reads_the_corpus_model
+#print axioms Tm.CapWire.the_lookahead_response_emits_in_build_order
+#print axioms Tm.CapWire.runCap_reads_the_corpus_request
+#print axioms Tm.CapWire.jget_pairJ
+#print axioms Tm.CapWire.natOfDigits_digitsOf
+#print axioms Tm.CapWire.pairWith_digits
+#print axioms Tm.CapWire.readWeight_reads_every_representable_weight
+#print axioms Tm.CapWire.readWeight_refuses_more_than_18_places
+#print axioms Tm.CapWire.readHomeMax_on_the_bound
+#print axioms Tm.CapWire.readTz_refuses_too_many_transitions

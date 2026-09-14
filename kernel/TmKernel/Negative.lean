@@ -1287,4 +1287,38 @@ theorem everyDayAtTodaysWeight :
     (dayOfAtTodaysWeight Look.specInput 6).numAt 5 = (Look.dayOf Look.specInput 6).numAt 5 := by
   decide
 
+
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D10 track).  Step L6 (design §13.6, §14.8 row
+-- L6): capacity on the wire.  Numbers 128, 129 and 130 are the next free
+-- numbers in this checkout (the highest was 127, L5's).  The D9 track numbers
+-- in parallel and the merge renumbers.  The controls, which compile, are
+-- `CapWire.readWeight_on_witnesses` and `readWeight_refuses_more_than_18_places`
+-- (128), `Look.curveOk_refuses_an_unsorted_curve` and `CapWire.readPrior_on_witnesses`
+-- (129), and `CapWire.the_lookahead_response_emits_in_build_order` (130), in
+-- Lookahead.lean and Boundary.lean.  Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 128 — a lounge weight of 19 decimal places accepted on the wire.  `10^-19` sent as
+   the digit strings `1` / `10000000000000000000` does not divide `capDen = 10^18` (D17), so
+   the wire refuses it `weightPrecision`; `decide` refuses the claim that it reads. -/
+theorem aWeightOf19PlacesReads :
+    (CapWire.readWeight .model .tuesday (CapWire.pairJ (.str ['1'])
+      (.str ['1', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']))).isOk
+      = true := by
+  decide
+
+/- CHEAT 129 — a prior curve accepted out of `from` order.  Fork `StepFn::from_pairs` sorts a
+   curve by its start, and `stepAt` reads it in that order; the wire refuses an unsorted curve
+   (`badStep`) rather than sorting it silently.  `4+` before `1-4`: `decide` refuses. -/
+theorem anUnsortedCurveIsAccepted :
+    Look.curveOk [Look.Step.from 4 3, Look.Step.range 1 4 4] = true := by
+  decide
+
+/- CHEAT 130 — a unit count as a JSON number a double holds exactly.  One hour at `capDen`
+   is `60 · 10^18` units, past `2^53`; that is why every unit count crosses as a digit string
+   (D17, `unitsJson`).  `decide` refuses the bound. -/
+theorem anHourOfUnitsFitsADouble : Look.capDen * 60 < 2 ^ 53 := by
+  decide
+
 end Tm

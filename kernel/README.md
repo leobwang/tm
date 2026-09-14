@@ -10830,3 +10830,340 @@ committed):
 | FFI suite (`tm-kernel-ffi`) | **82 passed / 0 failed** (kernel 72, corpus 8, stack 2) |
 | `cli_latency.rs` | green: first verb 632.1 / 637.6 / 657.4 ms (226 files, 2,959 lines), later verb 50.7 / 55.8 / 50.7 ms |
 | T0 (c), scratch harness, 2 MiB pthread | 3,660 days in 110 ms (no walls) and 135 ms (a wall a day), 9.3–9.5 MB peak RSS; the control overflows |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5, D10 track, step L6 (branch stage5-lookahead,
+     worktree .claude/worktrees/stage5-lookahead).  Built in parallel with the D9
+     track on rebuild-on-lean (D11).  Takes cheats 128-130, gaps 98 (the design's
+     label), 107-109, and parity entries P26 and P30 (the design's numbers).
+     Closes gaps 77 and 105.  Edits Boundary.lean mid-file in two places (`run`
+     split, the export moved): the merge reconciles them with the D9 track's B4.
+     Whoever merges renumbers (AGENTS §6.2, §6.4).
+     =========================================================================== -->
+
+## Stage 5 D10 L6, 2026-09-14: capacity crosses the wire — every bound named, units as digit strings, gap 77 closed
+
+**Starting point.**  The worktree at `dbed826` (L5) was clean: check.sh 7/7, audit 2434, corpus 29/37
+files and 4/5 whole plans, burn-down 13, `cargo test --workspace` 1013 / 0, FFI 82.  Every figure at
+the end of this block is re-measured in this worktree.
+
+**The plan executed** is design `kernel/design/stage5/stage5-D9-D10-design.md` §13.6, §10.1–§10.4 and
+§14.8's L6 row, under the owner's D10, D15 (not yet: `--json` is L8's), D17 (`capDen = 10^18`, digit
+strings, `u128` on the host) and the workflow's split of the row: **the kernel side only**; the host
+encoder `decimal_pair`, its proptest T15 and the CLI wiring are L8's (W-3).  Files: `Lookahead.lean`
+(a new section, "The capacity input's bounds", and the header), `Boundary.lean` (`run` split at
+`runLoad`, the export moved, and a new section at the end, "Stage 5 D10 L6"), `Check.lean`,
+`Negative.lean`, `kernel/tm-kernel-ffi/tests/kernel.rs` and `tests/stack.rs`, `tm/src/cli/kernel_bridge.rs`
+(the refusal names only), `AGENTS.md` (§2.3's `Lookahead` and `Boundary` entries).  No new module, so
+`TmKernel.lean` is unchanged at seventeen imports.  `Cal.lean` and every other D9 module are untouched.
+
+### What was built
+
+**`Lookahead.lean`: every bound `mkInput?` does not check** (R10), each with a smart constructor the wire
+decoder uses and rejection theorems:
+
+| value | bound | constructor | refusal on the wire |
+|---|---|---|---|
+| `[day]` `block_min` (the request's `blockMin`), `min_last_block_min` | `1..=1440` | `mkDayCfg?` (`DayKey`) | `badDay blockMin`, `badDay minLastBlockMin` |
+| `[day]` `break_min` | `≤ 1440` | `mkDayCfg?` | `badDay breakMin` |
+| `[day]` `break_after_blocks` | `≤ 64` | `mkDayCfg?` | `badDay breakAfterBlocks` |
+| `[day]` `window_hours` | `den ∈ [1, 10^6]`, `0 < num ≤ 24·den` | `mkDayCfg?` | `badDay windowHours` |
+| `[day]` `budget_ratio` | `den ∈ [1, 10^6]`, `num ≤ den` | `mkDayCfg?` | `badDay budgetRatio` |
+| a prior range | keys `den ∈ [1, 10^6]`, `num ≤ 48·den`, `from < to`; level `≤ 5` | `mkStep?` (`StepErr`) | `badStep prior.<curve>`, `badLevel prior.<curve>` |
+| a prior curve | `≤ 64` ranges, sorted by `from` (fork `StepFn::from_pairs`) | `curveOk` | `badStep prior.<curve>` |
+| the prior curves | `≤ 16`, keys `≤ 64` characters, no key twice, **every** curve (L4's disagreement 8) | `priorOk` | `badPrior prior.<curve>` |
+| a learned curve (`lounge`, `home`) | exactly 12 entries, each `< 256` | `energyOk` | `badCurve energy.<loc>` |
+| `home_max_ci` | `≤ 5` | `homeMaxOk` | `badCap homeMaxCi` |
+| all of the above | | `InputIn.boundsWf` | |
+
+**`Boundary.lean`, section "Stage 5 D10 L6": the wire.**
+
+| piece | what it is |
+|---|---|
+| `runLoad`, `run` | `run` split, unchanged in behaviour: `runLoad` is the documents, commands, clock, scan and loader; `run j = (runLoad j).bind …runPlan` (`run_is_runLoad_then_runPlan`, `rfl`); so `runCap` loads the plan once |
+| `CapWire.Refusal`, `.text`, `refusalJson` | the names, rendered `<name> <key>` and sent as `{"err":{"capacity":"…"}}` |
+| `need`, `opt`, `natAt`, `strAt`, `arrAt`, `pairAt`, `clockAt`, `orErr`, `pairWith`, `natOfDigits`, `clockOf` | the field readers: a key absent, carried twice, or of the wrong JSON type is the row's refusal; clocks through `Field.parseClock`, digit strings through `readNat` (at most 40 digits) |
+| `readWeight`, `readWeekOpt`, `readWeekAll`, `readModelTable`, `readTables`, `readArrival` | `pLounge` and `arrival`, both readings (D10-4); **every** weight pair sent is checked by L1's `mkWeight?`, the model's and the config's |
+| `readWake`, `readEnergyCurve`, `readEnergy`, `readStep`, `readCurve`, `readPriorEntry`, `readPriorObj`, `readPrior`, `readHomeMax`, `readDay`, `readDays`, `readDay0` | the section's other keys, each ending in its constructor |
+| `binsOfWire`, `safetyOfWire`, `readPriority` | **gap 77**: `[priority]` through step 2's `binsOfPairs?`, `safetyOf?`, `defaultPrioOf?` (at most 16 edges; denominators at most `10^18`; safety at most 1,000) |
+| `readOffsetText`, `readInstantText`, `transOf`, `readTrans`, `tzObj`, `readTz` | the zone table of §10.1 (`±HH:MM:SS`, `YYYY-MM-DDTHH:MM:SSZ`, at most 4,096 transitions checked before any is read), then B1's `Cal.mkTz?` |
+| `Section`, `readSection`, `Section.input`, `ofCapErr`, `lookaheadInCalendar`, `inCalendar`, `CapReq`, `readCapacity` | the whole request: `nowAbsent`, `blockMinAbsent`, the zone, the section, then L5's `mkInput?` over the loaded plan's walls (`wallIndex`, indexed once, `buffer:` in the request's blocks), then a lookahead that would run past year 9999 (`lookaheadTooLong`) |
+| `unitsJson`, `dayCapJson`, `maxEmittedDays`, `lookaheadJson`, `withLookahead` | the response: `den`, then the first `min(days, 7)` days (D10-8), each `day` a date and `numAt` six digit strings (D17) |
+| `runCap`, `respondCap`, `callCap`, **`@[export tm_kernel_call] callExport`** | the request with its capacity section; the export moved here from beside `call` (R9's one symbol is unchanged) |
+
+The wire, in one example (the section's header in `Boundary.lean` has it in full):
+
+```jsonc
+{"docs": [...], "now": "2026-09-07", "blockMin": 60,
+ "tz": {"key": "America/Chicago", "base": "-06:00:00", "then": [["2026-03-08T08:00:00Z", "-05:00:00"], …]},
+ "capacity": {"pLounge": {"model": {…}, "config": {"Mon": {"num": "9", "den": "10"}, … all 7}},
+              "arrival": {"model": {…}, "config": {"Mon": "07:00", … all 7}},
+              "wake": null | {"sec": 21900, "ns": 0}, "energy": {"lounge": [12], "home": [12]},
+              "prior": {"lounge": [{"from": {"num": 0, "den": 1}, "to": {"num": 1, "den": 1}, "level": 4}, …], …},
+              "homeMaxCi": 3, "day": {"breakMin": 20, "breakAfterBlocks": 2, "minLastBlockMin": 30,
+              "windowHours": {"num": 8, "den": 1}, "windowCap": "19:00", "budgetRatio": {"num": 75, "den": 100}},
+              "priority": {"bins": [{"num": 5, "den": 10}, …], "safety": {"num": 13, "den": 10}, "defaultPriority": 3},
+              "days": 7, "day0": [0, 0, 0, 60, 170, 180]}}
+// ok gains, after "report":
+"lookahead": {"den": "1000000000000000000", "days": [{"day": "2026-09-07", "numAt": ["0", "0", "0", "60000000000000000000", …]}, …]}
+```
+
+### The laws (in-step; nothing stood in `Goals.lean` for L6)
+
+| theorem | statement |
+|---|---|
+| **`callExport_without_capacity_is_call`**, `respondCap_without_capacity_is_respond`, `runCap_without_capacity_is_run` | a request without `capacity` is answered exactly as before, so every theorem stated about `call`, `respond` and `run` holds of the FFI for it |
+| **`the_exported_call_emits_parses_back`** | J5's round trip at the new exported function |
+| `runCap_answers_with_the_lookahead`, **`runCap_answers_docs_report_lookahead`**, `runPlan_ok_shape` | with `capacity`, the answer is `run`'s with `lookahead` after `docs` and `report` (design §10.2's build order) |
+| **`runCap_refuses_what_the_section_refuses`** | a refused section refuses the request by its name, whatever the commands |
+| **`readCapacity_ok`** | what every answered capacity request satisfies: its input is `mkInput?`'s, `InputIn.boundsWf` holds (every §13.6 bound), `now` is today, `blockMin` is `[day] block_min` and the walls' block, the walls are the loaded plan's `wallIndex`, every weight pair sent decodes exactly (config's for all seven days, model's where present), the lookahead ends by year 9999, and the ladder, safety and default came through step 2's decoders |
+| `readSection_ok`, `readTables_ok`, `readModelTable_ok`, `readWeekAll_ok`, `readWeekOpt_ok`, `readWeight_ok`, `readEnergy_ok`, `readEnergyCurve_ok`, `readPrior_ok`, `readCurve_ok`, `readHomeMax_ok`, `readDay_ok`, `readPriority_ok`, `mkDayCfg?_blockMin`, `orErr_ok`, `mapError_ok`, `capBind_ok_elim` | the per-reader lemmas it is assembled from |
+| **`readWeight_reads_every_representable_weight`** / **`readWeight_refuses_more_than_18_places`** | both directions on the host's digit strings: every pair in `[0, 1]` whose denominator divides `10^18` reads as itself; a denominator `10^k`, `18 < k < 40`, is `weightPrecision` whatever the numerator |
+| `readHomeMax_on_the_bound`, `readTz_refuses_too_many_transitions` | `homeMaxCi` reads exactly when `≤ 5`; more than 4,096 transitions is `badTz table` before any is read |
+| `unitsJson_reads_back`, `lookaheadJson_days` | every unit count is a string `readNat` reads back; the response carries `min(days, 7)` days |
+| `mkDayCfg?_wf`, **`mkDayCfg?_of_wf`**, `mkDayCfg?_refuses_<key>` (six), `DayCfg.wf_window_le_a_day` | `[day]` in both directions, one refusal theorem per key; an accepted window is at most 1,440 minutes |
+| `mkStep?_ok_iff`, `mkStep?_refuses_a_zero_denominator`, `_a_wide_denominator`, `_past_48_hours`, `_an_empty_range`, `_a_level_above_five` | a prior range |
+| `curveOk_refuses_too_many_ranges`, `_a_bad_range`, `_an_unsorted_curve`; `priorOk_refuses_too_many_curves`, `_a_long_key`, `_a_key_twice`, `_a_bad_curve`; `energyOk_refuses_a_curve_not_of_12`, `_an_entry_past_a_byte`; `homeMaxOk_iff` | the curves and `home_max_ci` |
+| **`priorOk_widths`**, **`priorOk_keys_in_the_exact_domain`** | R10's widths for `stepAt` and `curveKeyLt` (D9-21), and every accepted key in L4's exact domain (`den ≤ 10^6`) |
+
+**Audit (AGENTS §7.4).**  (1) Every binder is used; `readCapacity_ok` quantifies over every plan, clock and
+JSON value.  (2) Hypotheses are satisfiable: `runCap_reads_the_corpus_request` and the FFI spec week
+satisfy `readCapacity … = .ok c`; `readWeight_refuses_more_than_18_places` holds at `k = 19`
+(`readWeight_on_witnesses`).  (3) Names say what the statements say.  (4) Both directions: every
+constructor has acceptance (`mkDayCfg?_of_wf`, `mkStep?_ok_iff`, `readWeight_reads_every_representable_weight`,
+the shipped and corpus witnesses) and refusals.  (5) About the code the FFI runs: `callExport` is
+`callCap`, and the bridge theorems are stated about it.  (6) Units: unit counts over `capDen`, weights
+over their decimal denominators, UTC seconds for zone transitions, minutes for `[day]`.
+
+### Witnesses (decided or `rfl`; each probed under the 8 GB cap first)
+
+| theorem | what it pins |
+|---|---|
+| `Look.the_shipped_bounds_hold` | the shipped `[day]`, prior, L4's fixture curves and `home_max_ci` are accepted |
+| `the_zone_texts_read_on_witnesses` | `-06:00:00`, `+05:30:00`, `-05:50:36` (seconds kept); 2026-03-08T08:00:00Z is `63908553600`; `-06:00`, `+24:00:00`, a bad sign, Feb 30, second 60 and a missing `Z` refused |
+| `readTz_on_witnesses` | Chicago's two 2026 transitions read as B1's `chicago2026`; `tzAbsent`, `badTz shape`, `key`, `base`, `then`, `table` (out of order) |
+| `readWeight_on_witnesses` | 0.9 and 1 read; `10^-19` → `weightPrecision`; 1.2 → `weightAboveOne`; `9/0`, numbers, `-1` and 41 digits → `badWeight` |
+| `readDay_on_witnesses` | the shipped `[day]`; one refusal per key, a missing key, no `day` |
+| `readPrior_on_witnesses` | the shipped curves read as L4's `shippedPrior`; a wide key, an empty range, an unsorted curve, level 6, a key twice, a 65-character key, 17 curves, a non-object |
+| `readEnergy_on_witnesses` | the corpus model's two curves; absent; 11 entries, 256, a non-natural, a non-object |
+| `readPriority_on_witnesses` | the shipped `bins`, `safety`, `default_priority`; swapped edges, a `10^18 + 1` denominator, safety 0 and 1,001, default 0 and 5 |
+| **`the_capacity_section_reads_the_corpus_model`** | design §14.8's named theorem: `kernel/corpus/model.json`, hand-shrunk, over `plan-basic/config.toml`: the model's seven weights and two arrivals (Monday 07:10, Saturday 10:30), the config's tables, both learned curves, the prior, `home_max_ci`, seven days, day 0 |
+| `the_lookahead_response_emits_in_build_order` | the bytes: `den`'s 19-digit string, an empty `lookahead`, one day with `"60000000000000000000"` at level 5 |
+| **`runCap_reads_the_corpus_request`** | end to end at `runCap`: the corpus request for one day answers `docs`, `report`, `lookahead`; 3,661 days is `lookaheadTooLong`; no `tz` is `tzAbsent` |
+
+**The FFI** (`kernel.rs`, 5 new tests): `capacity_answers_the_spec_week_in_units` (L5's `specInput` over
+the wire: day 0 as handed in, Tuesday 36/162/162 and Sunday 72/192/48/48, the decided witnesses, and a
+170-minute count parsed as `u128` past `u64::MAX`); `capacity_emits_at_most_seven_days` (2, 10 and 0
+days); `a_calendar_wall_takes_its_hours_out_of_the_lookahead` (Wednesday at weight 1: the §4.3 meeting
+keeps `[0,0,0,0,180,180]`; a 07:00–19:00 wall extends the window past the cap by E7, so the free time
+is 19:00–03:00, 12.9 hours after the wake, and the budget lands at the prior's level 2:
+`[0,0,360,0,0,0]` — the test's first expectation of zeros was wrong, the kernel's value is L2's E7);
+`a_request_without_capacity_is_answered_as_before` (with `tz` and without); and
+**`every_capacity_refusal_is_named`**: 50 single edits of the spec request, one per name and key
+(`nowAbsent`, `blockMinAbsent`, `badDay blockMin`, `lookaheadTooLong` for 3,661 days and for
+9999-12-30, `tzAbsent`, `badTz shape/key/base/then/table`, `badCapacity capacity/pLounge/pLounge.model/pLounge.config/arrival/energy/prior/day/priority/days`,
+`weightPrecision`/`weightAboveOne`/`badWeight` (config and model), `badClock arrival.model/config`,
+`badWake` twice, `badCurve` twice, `badPrior`, `badLevel`, `badStep` three ways, `badCap`, every
+`badDay` key, `badClock day.windowCap`, `badBins`, `badSafety`, `badDefaultPriority`, `badDay0` twice), plus
+a `capacity` carried twice (`duplicateKey capacity`).  `kernel_bridge.rs` maps every name
+(`every_named_refusal_reaches_the_message_by_name` gains 20 rows; `a_capacity_refusal_carries_its_key`).
+
+### T0 (c), committed: 3,660 days on a 2 MiB thread (gap 105 closed)
+
+`stack.rs` **`a_3660_day_lookahead_runs_on_a_2mib_thread`**: through the wire, a zone table of 600
+transitions (a Chicago-shaped pair every year over [1900, 2200)), a calendar of 3,660 walls (12:50–13:50
+every day), a wake at 06:05:40.25, 3,660 days.  It answers on a 2 MiB thread, and its seven emitted days
+equal a seven-day request's.  **282 / 277 / 278 ms**; the same request for 7 days **128 / 127 / 127 ms**
+(the load and `wallIndex` over 3,660 walls; L5's scratch harness measured the lookahead alone at 135 ms
+with a wall a day).  L5's control (a non-tail recursion over 10^6 elements on the same stack size
+overflows) stands for the stack bound.
+
+### Cheats (`Negative.lean`, appended)
+
+| # | label | cheat | fails because |
+|---|---|---|---|
+| **128** | L6-a | a lounge weight of 19 decimal places reads on the wire | `10^-19`'s denominator does not divide `10^18`; `decide` refuses `isOk` (controls `readWeight_on_witnesses`, `readWeight_refuses_more_than_18_places`) |
+| **129** | L6-b | a prior curve out of `from` order is accepted | `curveOk` refuses `4+` before `1-4`; `decide` refuses (controls `curveOk_refuses_an_unsorted_curve`, `readPrior_on_witnesses`) |
+| **130** | L6-c | an hour of units fits a double (`capDen · 60 < 2^53`) | it is `6·10^19`; `decide` refuses (controls `the_lookahead_response_emits_in_build_order`: units are strings) |
+
+Each fails at its own line with `Tactic decide proved that the proposition … is false`.
+
+### Gap 77 — closed
+
+`binsOfPairs?`, `safetyOf?` and `defaultPrioOf?` are called by the wire (`binsOfWire`, `safetyOfWire`,
+`readPriority`) and their refusals reach the host by name (`badBins`, `badSafety`, `badDefaultPriority`;
+`readPriority_on_witnesses`, `readCapacity_ok`).  What gap 77 also listed, `yesterdayOf?`, decodes
+`state.json`'s stored priorities, not config: **it moves to gap 78**, with the writer it reads back
+(stage 6, `finalPrio` over the candidate list).  The decoded ladder, safety and default are held in
+`CapReq` and read by no response key until the priority wiring (gap 107).
+
+### Gap 105 — closed
+
+T0 (c) is a committed test (above).
+
+### Gap 106 — carried to L8, unchanged
+
+L6 does not call `edf` from the wire (no grants, gap 107), so step 3's closure-per-reservation read is
+still unexercised; it clears when L8's priority wiring first calls `edf`.
+
+### Gap 98 (new; the design's label) — the lookahead is capped at 3,660 days (P30)
+
+(1) *What is not done*: a `due:` more than 3,660 days ahead sees the capacity of the first 3,660 days;
+`days > 3660` is `lookaheadTooLong`, and a lookahead that would pass year 9999 is refused under the same
+name.  (2) *Why*: a decision (D10-13): R10 needs a bound, and it keeps every unit count within `u128`
+and every day count below `2^53`.  (3) *Cost*: an item due beyond ten years gets a shortfall computed
+against ten years of capacity; the fork runs its lookahead to the due date (parity P30).  (4) *When it
+clears*: never by default; L8's host must clamp `lookahead_days` to 3,660 (or the owner widens D10-13).
+
+### Gap 107 (new; label L6-a) — the response carries no grants, and the priority configuration reaches no answer
+
+(1) *What is not done*: design §13.6's response lists `lookahead.grants` (`id`, `avail`, `reserved`,
+`shortfall`, `bin`).  L6 emits `den` and `days` only; the decoded `priority` section is checked and held
+(`CapReq.bins`, `.safety`, `.dflt`) but read by nothing.  (2) *Why not now*: grants need the candidates
+that enter the EDF pass (gap 80: effective due, instance status, the placement-window exclusion) and
+step 3's pass at scale (gap 106); both are the priority wiring's, L8 in §13.8's table.  (3) *Cost*: no
+verb can get an availability or a bin from the kernel yet; a host that sends `priority` gets its
+refusals and nothing else.  (4) *When it clears*: L8, with gaps 80 and 106.
+
+### Gap 108 (new; label L6-b) — two readers of `tz` until the merge
+
+(1) *What is not done*: design §14.2 gives the `tz` request key to the D9 track's B4 (with `tz_table.rs`).
+L6 needs a zone for the lookahead and reads `tz` itself (`CapWire.readTz`, the fixed-width forms of
+§10.1's example: `±HH:MM:SS`, `YYYY-MM-DDTHH:MM:SSZ`), so when B4 lands there are two readers of one key
+(AGENTS §5.3).  (2) *Why not now*: B4 is being built in parallel and is not in this checkout; the D9
+track's `Stamp.lean` (B2) reads RFC 3339 but not `±HH:MM:SS`.  (3) *Cost*: until the merge, none on the
+wire (no verb sends `tz`); after it, two readers that could disagree on a spelling.  (4) *When it clears*:
+the merge that brings B4 and L6 together keeps one reader, and re-proves `readTz_on_witnesses` and
+`readTz_refuses_too_many_transitions` over it (D5).  The merge also reconciles the two mid-file edits of
+`Boundary.lean` (`run` split at `runLoad`; `callExport` moved to the end), since B4 composes `log` into
+the same response.
+
+### Gap 109 (new; label L6-c) — the lookahead reads the walls of the documents as sent, not after the request's commands
+
+(1) *What is not done*: `runCap` indexes walls from the loaded plan before `runPlan` applies the
+commands, so a request that both edits the calendar and asks for capacity answers the capacity of the
+unedited plan beside the edited documents.  (2) *Why not now*: `runPlan` does not expose the plan it
+builds, and no verb combines the two (capacity verbs are read verbs).  (3) *Cost*: a host that sent both
+would see a lookahead that disagrees with the documents in the same response.  (4) *When it clears*: L8,
+by building the capacity verbs without commands (and saying so in `kernel_bridge.rs`), or by threading
+the post-command plan out of `runPlan` if a verb needs both.
+
+### Parity entries (recorded before L7 measures them)
+
+| # | site | the kernel | the fork point | authority | step |
+|---|---|---|---|---|---|
+| **P26** | a weight or capacity value outside the exact domain: `p ∉ [0, 1]`, NaN, more than 18 decimal places, a prior key with `den > 10^6` or past 48 hours, an empty or out-of-order range, a level above 5, a learned entry ≥ 256, a curve not of 12 entries, more than 16 prior curves or a key over 64 characters, `home_max_ci > 5`, a `[day]` value outside §13.6's bounds, a ladder of more than 16 edges or a denominator above `10^18`, a safety above 1,000 | refused by name (`{"err":{"capacity":"<name> <key>"}}`); the host names the file (L8) | accepted (`p = 1.2` → lounge, NaN → home, a level clamped, a short curve falls to the prior) | R10; OWNER Q8 (D17) | L6 |
+| **P30** | a `due:` more than 3,660 days ahead | the deadline sees the capacity of the first 3,660 days (gap 98) | the lookahead runs to the due date | R10; D10-13 | L6 |
+
+§17's "exact by design" list gains **every weight the host can spell in at most 18 places, exactly
+(`readWeight_reads_every_representable_weight`), and every unit count as a string read back exactly
+(`unitsJson_reads_back`)**.
+
+### Rule D9-21
+
+Functions this step adds that walk a list the wire can make large, each behind its own length guard:
+`readTrans` (a `foldl`, after `xs.length ≤ 4096`); `readPriorObj` (core `mapM` after `kvs.length ≤ 16`);
+`readCurve` (`mapM` after `≤ 64`); `binsOfWire` (`mapM` after `≤ 16`); `readEnergyCurve` (`mapM` after
+`= 12`); `readDay0` (`mapM` after `≤ 6`); `curveOk`, `priorOk`, `energyOk` (core `length` first, then
+`all` and `sortedFrom` over the guarded list); `firstDupKey` (over at most 16 keys).  `readWeekOpt` and
+`readWeekAll` read seven keys.  `jget` is J5's.  `lookaheadJson` takes seven days.  Every length is core's
+tail-recursive `length`.  Proof-only: none.
+
+### The `decide` budget (§14.0 item 4)
+
+11 new decided or `rfl` witnesses (`Look.the_shipped_bounds_hold` and the ten in the table above) and 3
+cheats, **14 in all**, within the budget of 20.  They use at most Chicago's **2 zone transitions**, no
+`Entry` value, and `List Char` literals of at most 73 characters.  All were probed first in scratch
+files under `/tmp/claude-1000/l6probe/` against the built package, under `MemoryMax=8G` and `timeout 120`,
+before either module was edited: the whole section with its witnesses elaborated in 2.28 s at a 959 MB
+peak (0.98 s and 674 MB without the witnesses), the cheats in 0.13 s at 563 MB.  Wrong probes were
+refused and not committed: `tzAbsent` claimed as `badTz key`, `weightAboveOne` claimed as
+`weightPrecision`, and a day 0 of 181 minutes at level 5 in the end-to-end witness (refused by the
+elaborator's recursion depth, not a clean mismatch, which is why no cheat is built on that witness).  No
+realistic-size input is evaluated.  Committed: `Lookahead.lean` elaborates in **3.03 s at 882 MB** (L5:
+2.57–2.61 s, 874–895 MB); `Boundary.lean` alone in **130.7 s at 7.77 GB** under the 8 GB cap.
+
+### Recorded disagreements between the design and the repo
+
+1. **The host half of the L6 row is L8's** (the workflow's instruction): `decimal_pair`, T15, `u128`
+   parsing in `kernel_bridge.rs`.  Only the refusal names were added to `kernel_bridge.rs`.
+2. **`wake` is a time of day `{sec, ns}`** (L5's disagreement 1), not §13.6's `wake.today` stamp and
+   weekday wake tables: the fork's future days reuse today's wake clock.
+3. **`block_min` is the request's `blockMin`**, not `day.blockMin`: one reading of one config key
+   (AGENTS §5.6), required with `capacity` (`blockMinAbsent`) and bounded `≤ 1440` (`badDay blockMin`).
+   A `blockMin` inside `day` is ignored, as every unread key is.
+4. **`tz` is read here** (gap 108), though §14.2 gives it to B4.
+5. **`badTz subMinuteOffset` is not added** (§13.6's last row, left open by L2 and L3): the window, the
+   cut and the hours since wake are exact in whole seconds for every offset.
+6. **No `grants`** (gap 107).
+7. **Names beyond §13.6's table**: `badCapacity <part>` for the section's structure, `badPrior <curve>`
+   for the curve map, `badClock day.windowCap`; the clock and zone refusals ride the same
+   `{"err":{"capacity":…}}` shape (design §10.3 gives `{"err":{"log":…}}` to the log op and no shape to
+   capacity).  A duplicated `capacity` is `jget`'s `duplicateKey capacity`, as for every read key.
+8. **Bounds beyond the table** (P26 lists them): the prior's curve count, key length and `from` order
+   (L4's disagreement 8); at most 16 ladder edges with denominators at most `10^18`; a safety at most
+   1,000; digit strings of at most 40 digits; a lookahead that passes year 9999 (under
+   `lookaheadTooLong`, so every emitted date renders).
+9. **`days = 0` is accepted** (as L5 decided), where §13.6 says `1..=3660`; the answer is an empty `days`.
+10. **`energy` carries `lounge` and `home` only**, the two curves a future day reads; `prior` carries
+    every curve.
+11. **Every weight pair sent is checked**, the model's and the config's, where L5's `mkInput?` checks only
+    the one it picks: §13.2 has the host check both files at load, and the kernel is the authority.
+12. **`Boundary.lean` is edited mid-file twice** (`run` split; the export moved), against "a new section
+    at the end": the section needs the loaded plan once and the FFI must run it.  Both edits are small,
+    `run`'s behaviour is `rfl`-equal, and `callExport_without_capacity_is_call` carries every `call`
+    theorem to the export.  `the_response_call_emits_parses_back`'s doc comment gains one sentence.
+13. **`the_response_shapes_emit_in_build_order` is not edited** (§10.2 says "extended"):
+    `the_lookahead_response_emits_in_build_order` and `runCap_answers_docs_report_lookahead` are appended
+    instead, so the old theorem keeps its statement.
+14. **The walls are the documents as sent** (gap 109).
+15. **Gap 98 takes the design's label** (as L2 took 85); the other new gaps take the next free numbers.
+16. **Memory cap.**  Every run used the workflow's 30 GB cap (8 GB for probes and the module timing,
+    16 GB for the T0 (c) timing runs), not §14.0's 40 GB.
+
+**Carried notes honoured.**  No instant is compared (B1's order note).  No decimal is re-emitted: unit
+counts go out as `.str (digitsOf n)`, never a `dec` (gap 101).  Nothing assumes a 4 MiB request: T0
+(c)'s request is about 0.22 MiB (gap 102).  No `Stamp` name is added (the B2 note); the zone readers are
+`readOffsetText` and `readInstantText` in `Tm.CapWire`.
+
+**Label-to-number map:** cheats L6-a → **128**, L6-b → **129**, L6-c → **130**; gaps design 98 →
+**98**, L6-a → **107**, L6-b → **108**, L6-c → **109**; parity P26 → **P26**, P30 → **P30**.  Highest
+numbers in this checkout after the step: gap 109, cheat 130, parity P30.  (Read-only, for the merge: the
+D9 track's B2 on `rebuild-on-lean` took cheats 126–127 and parity P23 in parallel, so cheats 126–127
+collide with L5's.)
+
+**Observable behaviour changes: none in the binary.**  No verb sends `capacity` or `tz`, and a request
+without `capacity` is answered as before (`callExport_without_capacity_is_call`; the whole FFI suite and
+`cargo test --workspace` unchanged but for the new tests).  The FFI gains the `capacity` section and the
+`lookahead` key.  **Behaviour rows:** none now; §20's L6 row ("an out-of-domain `model.json` weight fails
+capacity verbs by file and key", P26, Q8) needs the host encoder and moves to L8.  **Goals:** discharged 0,
+refuted 0, added 0.  Burn-down **13** (unchanged).
+
+**New theorems: 74**: 28 in `Lookahead.lean` and 46 in `Boundary.lean`, audited under `Check.lean`'s new
+`APPENDED 2026-09-14 (stage 5, D10 track).  Step L6` banner.  AGENTS §6.3's three counts agree at
+**2508** (`grep -c '^#print axioms' Check.lean` 2508, 2508 distinct, 2508 declared by the
+attribute-aware grep).  About 600 definition lines and 930 proof and witness lines, docstrings included
+(ESTIMATE from the section files), against design §14.8's 150 / 400 for the row; the Rust is +277 test
+lines and +68 in `kernel_bridge.rs`.  No theorem was retired, weakened or deleted.  No existing two-run
+theorem was touched.
+
+**Owed, by name (the rest of the D10 track):** L7 (the parity twin through `Input.twin`; P1, P26, P27, P30,
+gaps 85 and 104).  L8 (`decimal_pair` and T15, `u128` unit parsing, the §20 behaviour row, grants with
+gaps 80, 106, 107, gap 109's rule, gap 98's clamp, T14, T16, the D15 `…_exact` fields).  L9 (day 0 in the
+kernel; gap 93).  The merge: gap 108.
+
+**Re-measured after this step** (every command under the 30 GB cap, in this worktree, on the tree
+committed):
+
+| measurement | value |
+|---|---|
+| `lake build TmKernel:static` after the edits | 135.7 s wall at a 7.89 GB peak (`Lookahead` then `Boundary`) |
+| `check.sh` | **7/7**; 134.5 s on its first run (the rename rebuilt `Boundary`), then 2.82 / 2.75 / 2.80 s on the built tree against L5's 2.73 / 2.72 / 2.78 s, +1.8% (§14.0 item 4 allows 10%) |
+| axiom audit | **2508 theorems** (2434 + 74); each new name prints its own line |
+| `Negative.lean` | check 4 ok; 126 errors (123 before); 120 `/- CHEAT` banners (117 before); CHEATs 128, 129 and 130 each fail at their own line |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (stage 3: 0, stage 4: 0, stage 5: 0, stage 6: 13) |
+| `cargo test --workspace` | **1014 passed / 0 failed / 0 ignored across 67 binaries** (1013 + `a_capacity_refusal_carries_its_key`) |
+| FFI suite (`tm-kernel-ffi`) | **88 passed / 0 failed** (kernel 77, corpus 8, stack 3) |
+| `cli_latency.rs` | green: first verb 627.5 / 607.3 / 617.7 ms (226 files, 2,959 lines), later verb 50.8 / 50.7 / 55.7 ms |
+| T0 (c), `stack.rs`, 2 MiB thread | 3,660 days with 600 transitions and 3,660 walls: 282 / 277 / 278 ms; the same request for 7 days: 128 / 127 / 127 ms |

@@ -4,7 +4,7 @@
 //! are megabytes each, so keeping them out keeps `check.sh`'s wall time inside
 //! design §14.0 item 4's 10% budget.  `cargo test` in this crate runs both.
 //!
-//! Stage 5 step A1 (gap 44 closed).  T0 (b) and (c) join this file at W3 and L5.
+//! Stage 5 step A1 (gap 44 closed).  T0 (c) joined at L6 (gap 105 closed); T0 (b) joins at W3.
 
 use tm_kernel_ffi::call;
 
@@ -84,5 +84,75 @@ fn a_200000_key_object_reads_on_a_2mib_thread() {
         let objs = objs.join(",");
         let out = call(&format!(r#"{{"docs":[],"cmds":[],"pad":[{objs}]}}"#)).unwrap();
         assert_eq!(out, EMPTY_OK);
+    });
+}
+
+/// `YYYY-MM-DD` of day `n` after 2026-09-07 (Howard Hinnant's `civil_from_days`,
+/// over days since 1970-01-01; 2026-09-07 is day 20,703).
+fn date_after_spec_monday(n: i64) -> String {
+    let z = 20_703 + n + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+/// **T0 (c), design §14.8's L5 row, committed at L6 (gap 105 closed).**  The
+/// lookahead of 3,660 days (`Look.maxLookaheadDays`) runs on a 2 MiB thread,
+/// through the wire: a zone table of 600 transitions (a Chicago-shaped pair every
+/// year over [1900, 2200)), and a calendar wall 12:50–13:50 on every one of the
+/// 3,660 days, each indexed once by `wallIndex` and filtered per day by
+/// `wallsOn`.  The day range is a `foldl` over core's `List.range`, each day held
+/// once (`dayOf_eq_dayOfFast`), and every day is computed before the first seven
+/// are emitted (Lean is strict).  The first seven days equal a seven-day request's.
+#[test]
+fn a_3660_day_lookahead_runs_on_a_2mib_thread() {
+    let mut then = Vec::new();
+    for y in 1900..2200 {
+        then.push(format!(r#"["{y}-03-08T08:00:00Z","-05:00:00"]"#));
+        then.push(format!(r#"["{y}-11-01T07:00:00Z","-06:00:00"]"#));
+    }
+    assert_eq!(then.len(), 600);
+    let tz = format!(r#""tz":{{"key":"Chicago-shaped|1900-2200","base":"-06:00:00","then":[{}]}}"#, then.join(","));
+    let walls: Vec<String> = (0..3660)
+        .map(|i| format!(r#""- [ ] 3 Meeting      at:{d}T12:50/13:50 ^w{i}""#, d = date_after_spec_monday(i)))
+        .collect();
+    let docs = format!(r#"{{"path":"calendar/walls.md","lines":[{}]}}"#, walls.join(","));
+    let capacity = |days: u32| {
+        format!(
+            concat!(
+                r#""capacity":{{"pLounge":{{"config":{{"Mon":{{"num":"9","den":"10"}},"Tue":{{"num":"9","den":"10"}},"Wed":{{"num":"9","den":"10"}},"Thu":{{"num":"9","den":"10"}},"Fri":{{"num":"8","den":"10"}},"Sat":{{"num":"5","den":"10"}},"Sun":{{"num":"4","den":"10"}}}}}},"#,
+                r#""arrival":{{"config":{{"Mon":"07:00","Tue":"07:00","Wed":"07:00","Thu":"07:00","Fri":"07:00","Sat":"10:00","Sun":"10:00"}}}},"#,
+                r#""wake":{{"sec":21940,"ns":250000000}},"#,
+                r#""prior":{{"lounge":[{{"from":{{"num":0,"den":1}},"to":{{"num":1,"den":1}},"level":4}},{{"from":{{"num":1,"den":1}},"to":{{"num":5,"den":1}},"level":5}},{{"from":{{"num":5,"den":1}},"to":{{"num":8,"den":1}},"level":4}},{{"from":{{"num":8,"den":1}},"to":{{"num":10,"den":1}},"level":3}},{{"from":{{"num":10,"den":1}},"level":2}}],"#,
+                r#""home":[{{"from":{{"num":0,"den":1}},"to":{{"num":1,"den":1}},"level":3}},{{"from":{{"num":1,"den":1}},"to":{{"num":4,"den":1}},"level":4}},{{"from":{{"num":4,"den":1}},"to":{{"num":8,"den":1}},"level":3}},{{"from":{{"num":8,"den":1}},"level":2}}]}},"#,
+                r#""homeMaxCi":3,"day":{{"breakMin":20,"breakAfterBlocks":2,"minLastBlockMin":30,"windowHours":{{"num":8,"den":1}},"windowCap":"19:00","budgetRatio":{{"num":75,"den":100}}}},"#,
+                r#""priority":{{"bins":[{{"num":5,"den":10}},{{"num":25,"den":100}},{{"num":1,"den":10}}],"safety":{{"num":13,"den":10}},"defaultPriority":3}},"#,
+                r#""days":{days},"day0":[0,0,0,60,170,180]}}"#
+            ),
+            days = days
+        )
+    };
+    let request = |days: u32| format!(r#"{{"docs":[{docs}],"now":"2026-09-07","blockMin":60,{tz},{}}}"#, capacity(days));
+    let long = request(3660);
+    let week = request(7);
+    on_a_2mib_thread(move || {
+        let t = std::time::Instant::now();
+        let out = call(&long).unwrap();
+        let ms = t.elapsed().as_millis();
+        assert!(out.starts_with(r#"{"ok":{"docs":[{"path":"calendar/walls.md""#), "{}", &out[..200.min(out.len())]);
+        let look = &out[out.find(r#""lookahead":"#).expect("lookahead key")..];
+        assert_eq!(look.matches(r#""day":"#).count(), 7, "{look}");
+        let t = std::time::Instant::now();
+        let short = call(&week).unwrap();
+        let short_ms = t.elapsed().as_millis();
+        let short_look = &short[short.find(r#""lookahead":"#).unwrap()..];
+        assert_eq!(look, short_look);
+        eprintln!("T0 (c): 3,660 days, 600 transitions, 3,660 walls: {ms} ms; the same request for 7 days: {short_ms} ms (2 MiB thread)");
     });
 }

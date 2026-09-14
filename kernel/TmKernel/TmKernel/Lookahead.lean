@@ -17,7 +17,9 @@ equal to L1's `limitHist`), so one location's future day is `dayHist`.  Step L5 
 runs the day range: `mkInput?` decodes the host's tables with the kernel's fallbacks, each
 future day's wake is today's wake clock through `local_dt` at second resolution
 (`wakeInstantOf`), and `lookahead` mixes the two locations' limited days at the weekday's
-weight, day 0 being the host's histogram until L9.
+weight, day 0 being the host's histogram until L9.  Step L6 (§13.6) bounds every other value the
+capacity wire carries (`mkDayCfg?`, `mkStep?`, `curveOk`, `priorOk`, `energyOk`, `homeMaxOk`),
+each with its rejection theorems; the wire itself is `Boundary.lean`'s.
 **Stage 6's `dayPlan` must reuse L2's `windowEnd`, `windowOn`, `wallIndex` and `wallsOn`,
 L3's `freeIntervals` and `cutSlots`, and L4's `hsw100`, `predictAt`, `capForLocation` and
 `energize`, never a second copy** (design §2.3).
@@ -70,17 +72,19 @@ caller).  L3's cut is listed in its section: `foldl`s, core's `append`, `map`, `
 theirs: core `map`, `foldl`s, and `limitSlots` compiled as its histogram form
 (`limitSlots_eq_limitSlotsFast`).  L5's day range is a `foldl` over core's `List.range`,
 then `reverse`, and each day is compiled with its histograms held
-(`dayOf_eq_dayOfFast`).
+(`dayOf_eq_dayOfFast`).  L6's bounds walk nothing longer than their own guards allow: `curveOk`
+checks a curve's length (core `length`, tail recursive) before `all` and `sortedFrom` walk its
+at most 64 ranges, and `priorOk` checks the curve count before its walks over at most 16 curves.
 
 ## Not here, by name
 
-* The wire for the curves (`Curves`, `Step`), the `[day]` keys (`DayCfg`), the weekday tables
-  and the wake, with their R10 bounds and rejection theorems: L6.
+* The wire (`capacity` and `lookahead`, digit strings, the refusal names): `Boundary.lean`'s L6
+  section.
 * Day 0's posterior correction, sleep-debt shift and `--allow-home` (L9).
-* The zone table's refusal of a sub-minute offset (`badTz subMinuteOffset`, §13.6): L6's.
-  L2's window and L3's cut count seconds, so neither needs such a refusal to be exact.
+* The zone table's refusal of a sub-minute offset (`badTz subMinuteOffset`, §13.6): not needed.
+  L2's window, L3's cut and L4's hours since wake count whole seconds, so each is the fork's for
+  every offset (the L6 section says so).
 * Day 0 (`ofHist` over the host's histogram until L9, gap 93 of the design).
-* The wire (`capacity`, `lookahead` sections, digit strings): L6.
 -/
 
 namespace Tm
@@ -3592,6 +3596,354 @@ theorem a_wednesday_wall_moves_the_window_and_keeps_the_budget :
     ((lookahead { specInput with walls := wednesdayWall }.twin)[2]?).map
         (fun c => (c.day, (List.finRange 6).map c.numAt))
       = some (739867, [0, 0, 0, 0, 180 * capDen, 180 * capDen]) := by
+  decide
+
+/-! ############################################################################
+## The capacity input's bounds (stage 5 D10 step L6; design §13.6, §10.4)
+
+Step L5's `mkInput?` checks the day count, the weights, the wake and day 0.  This section gives
+every other value the capacity wire carries its R10 bound, a smart constructor the wire decoder
+(`Boundary.lean`, section "Stage 5 D10 L6") actually uses, and a rejection theorem, with the names
+of design §13.6's table:
+
+| value | bound | constructor | refusal |
+|---|---|---|---|
+| `[day]` `block_min`, `min_last_block_min` | `1..=1440` | `mkDayCfg?` | `badDay <key>` |
+| `[day]` `break_min` | `0..=1440` | `mkDayCfg?` | `badDay breakMin` |
+| `[day]` `break_after_blocks` | `≤ 64` | `mkDayCfg?` | `badDay breakAfterBlocks` |
+| `[day]` `window_hours` | a pair, `den ∈ [1, 10^6]`, `0 < num ≤ 24·den` | `mkDayCfg?` | `badDay windowHours` |
+| `[day]` `budget_ratio` | a pair, `den ∈ [1, 10^6]`, `num ≤ den` | `mkDayCfg?` | `badDay budgetRatio` |
+| a prior range | keys `den ∈ [1, 10^6]`, `num ≤ 48·den`, `from < to`; level `≤ 5` | `mkStep?` | `badStep`, `badLevel` |
+| a prior curve | `≤ 64` ranges, each well formed, sorted by `from` as `StepFn::from_pairs` sorts | `curveOk` | `badStep` |
+| the prior curves | `≤ 16` curves, keys `≤ 64` characters, no key twice, **every** curve (L4's disagreement 8) | `priorOk` | `badPrior <key>` |
+| a learned curve (`lounge`, `home`) | exactly 12 entries, each `< 256` | `energyOk` | `badCurve <loc>` |
+| `home_max_ci` | `≤ 5` | `homeMaxOk` | `badCap homeMaxCi` |
+
+**Why these bounds and not wider ones.**  A range key with `den ≤ 10^6` is where L4 proved the
+kernel's exact comparison is the fork's `f64` one, so a wider key is parity entry P26's, refused.
+A level above 5, a learned entry of 256 or more, or a curve not of 12 entries is P26's too: the
+fork clamps or reads past the end, and the kernel refuses by name.  `curveKeyLt` recurses over one
+key's characters and `stepAt` over one curve, so the key length and the range count are R10's
+widths for rule D9-21.  The bounds the fork cannot violate (a `u32` minute count above 1,440, a
+`window_hours` above a day) are refused as host defects.
+
+**`badTz subMinuteOffset` is not needed** (design §13.6's last row, left to L6 by L2 and L3).
+L2's window and L3's cut count whole UTC seconds and are the fork's for every offset (L3's block,
+"Exact in whole seconds"), and L4's hours since wake read seconds (site R11).  So no zone table is
+refused for a sub-minute offset.
+-/
+
+/-! ### `[day]`: fork `DayConfig`, every key bounded -/
+
+/-- The `[day]` key a bound refused (design §13.6's `badDay <key>`). -/
+inductive DayKey where
+  | blockMin
+  | breakMin
+  | breakAfterBlocks
+  | minLastBlockMin
+  | windowHours
+  | budgetRatio
+deriving DecidableEq, Repr
+
+/-- A day's minutes: the widest `block_min`, `break_min` and `min_last_block_min`. -/
+def maxDayMin : Nat := 1440
+
+/-- The widest denominator of a `[day]` ratio or a prior range key: six decimal places. -/
+def maxKeyDen : Nat := 1000000
+
+/-- The most blocks between breaks. -/
+def maxBreakAfter : Nat := 64
+
+/-- **The smart constructor for `[day]`** (R10).  Checked in the order of §13.6's table:
+`blockMin`, `breakMin`, `breakAfterBlocks`, `minLastBlockMin`, `windowHours`, `budgetRatio`.
+`window_cap` is a `Field.Clock`, bounded by its type and read by the clock grammar. -/
+def mkDayCfg? (blockMin breakMin breakAfter minLast whNum whDen : Nat) (windowCap : Field.Clock)
+    (brNum brDen : Nat) : Except DayKey DayCfg :=
+  if ¬ (1 ≤ blockMin ∧ blockMin ≤ maxDayMin) then .error .blockMin
+  else if ¬ breakMin ≤ maxDayMin then .error .breakMin
+  else if ¬ breakAfter ≤ maxBreakAfter then .error .breakAfterBlocks
+  else if ¬ (1 ≤ minLast ∧ minLast ≤ maxDayMin) then .error .minLastBlockMin
+  else if hw : 1 ≤ whDen ∧ whDen ≤ maxKeyDen ∧ 0 < whNum ∧ whNum ≤ 24 * whDen then
+    if hb : 1 ≤ brDen ∧ brDen ≤ maxKeyDen ∧ brNum ≤ brDen then
+      .ok ⟨⟨blockMin, breakMin, breakAfter, minLast⟩, mkPos whNum whDen (by omega), windowCap,
+        mkPos brNum brDen (by omega)⟩
+    else .error .budgetRatio
+  else .error .windowHours
+
+/-- What an accepted `[day]` satisfies. -/
+def DayCfg.wf (c : DayCfg) : Bool :=
+  decide (1 ≤ c.cut.blockMin ∧ c.cut.blockMin ≤ maxDayMin) && decide (c.cut.breakMin ≤ maxDayMin) &&
+  decide (c.cut.breakAfter ≤ maxBreakAfter) &&
+  decide (1 ≤ c.cut.minLastBlockMin ∧ c.cut.minLastBlockMin ≤ maxDayMin) &&
+  decide (c.windowHours.val.den ≤ maxKeyDen ∧ 0 < c.windowHours.val.num ∧
+    c.windowHours.val.num ≤ 24 * c.windowHours.val.den) &&
+  decide (c.budgetRatio.val.den ≤ maxKeyDen ∧ c.budgetRatio.val.num ≤ c.budgetRatio.val.den)
+
+theorem mkDayCfg?_wf {bm br ba ml wn wd : Nat} {cap : Field.Clock} {rn rd : Nat} {c : DayCfg}
+    (h : mkDayCfg? bm br ba ml wn wd cap rn rd = .ok c) : c.wf = true := by
+  unfold mkDayCfg? at h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  split at h
+  · split at h
+    · rename_i h1 h2 h3 h4 hw hb
+      cases h
+      simp only [Decidable.not_not] at h1 h2 h3 h4
+      simp [DayCfg.wf, mkPos, h1, h2, h3, h4, hw.1, hw.2.1, hw.2.2.1, hw.2.2.2, hb.1, hb.2.1, hb.2.2]
+    · cases h
+  · cases h
+
+/-- **Both directions**: every well-formed `[day]` is accepted, as itself. -/
+theorem mkDayCfg?_of_wf (c : DayCfg) (h : c.wf = true) :
+    mkDayCfg? c.cut.blockMin c.cut.breakMin c.cut.breakAfter c.cut.minLastBlockMin
+      c.windowHours.val.num c.windowHours.val.den c.windowCap c.budgetRatio.val.num
+      c.budgetRatio.val.den = .ok c := by
+  simp only [DayCfg.wf, Bool.and_eq_true, decide_eq_true_eq] at h
+  have hwd := denPos c.windowHours
+  have hbd := denPos c.budgetRatio
+  unfold mkDayCfg?
+  rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega),
+    dif_pos (by omega), dif_pos (by omega)]
+  obtain ⟨⟨a, b, c', d⟩, ⟨⟨wn, wd⟩, hw⟩, cap, ⟨⟨rn, rd⟩, hr⟩⟩ := c
+  rfl
+
+theorem mkDayCfg?_refuses_blockMin {bm : Nat} (h : bm = 0 ∨ maxDayMin < bm) (br ba ml wn wd : Nat)
+    (cap : Field.Clock) (rn rd : Nat) : mkDayCfg? bm br ba ml wn wd cap rn rd = .error .blockMin := by
+  unfold mkDayCfg?; rw [if_pos (by omega)]
+
+theorem mkDayCfg?_refuses_breakMin {bm br : Nat} (h0 : 1 ≤ bm ∧ bm ≤ maxDayMin) (h : maxDayMin < br)
+    (ba ml wn wd : Nat) (cap : Field.Clock) (rn rd : Nat) :
+    mkDayCfg? bm br ba ml wn wd cap rn rd = .error .breakMin := by
+  unfold mkDayCfg?; rw [if_neg (by omega), if_pos (by omega)]
+
+theorem mkDayCfg?_refuses_breakAfterBlocks {bm br ba : Nat} (h0 : 1 ≤ bm ∧ bm ≤ maxDayMin)
+    (h1 : br ≤ maxDayMin) (h : maxBreakAfter < ba) (ml wn wd : Nat) (cap : Field.Clock) (rn rd : Nat) :
+    mkDayCfg? bm br ba ml wn wd cap rn rd = .error .breakAfterBlocks := by
+  unfold mkDayCfg?; rw [if_neg (by omega), if_neg (by omega), if_pos (by omega)]
+
+theorem mkDayCfg?_refuses_minLastBlockMin {bm br ba ml : Nat} (h0 : 1 ≤ bm ∧ bm ≤ maxDayMin)
+    (h1 : br ≤ maxDayMin) (h2 : ba ≤ maxBreakAfter) (h : ml = 0 ∨ maxDayMin < ml) (wn wd : Nat)
+    (cap : Field.Clock) (rn rd : Nat) :
+    mkDayCfg? bm br ba ml wn wd cap rn rd = .error .minLastBlockMin := by
+  unfold mkDayCfg?; rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_pos (by omega)]
+
+theorem mkDayCfg?_refuses_windowHours {bm br ba ml wn wd : Nat} (h0 : 1 ≤ bm ∧ bm ≤ maxDayMin)
+    (h1 : br ≤ maxDayMin) (h2 : ba ≤ maxBreakAfter) (h3 : 1 ≤ ml ∧ ml ≤ maxDayMin)
+    (h : ¬ (1 ≤ wd ∧ wd ≤ maxKeyDen ∧ 0 < wn ∧ wn ≤ 24 * wd)) (cap : Field.Clock) (rn rd : Nat) :
+    mkDayCfg? bm br ba ml wn wd cap rn rd = .error .windowHours := by
+  unfold mkDayCfg?; rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega),
+    dif_neg h]
+
+theorem mkDayCfg?_refuses_budgetRatio {bm br ba ml wn wd rn rd : Nat} (h0 : 1 ≤ bm ∧ bm ≤ maxDayMin)
+    (h1 : br ≤ maxDayMin) (h2 : ba ≤ maxBreakAfter) (h3 : 1 ≤ ml ∧ ml ≤ maxDayMin)
+    (h4 : 1 ≤ wd ∧ wd ≤ maxKeyDen ∧ 0 < wn ∧ wn ≤ 24 * wd) (h : ¬ (1 ≤ rd ∧ rd ≤ maxKeyDen ∧ rn ≤ rd))
+    (cap : Field.Clock) : mkDayCfg? bm br ba ml wn wd cap rn rd = .error .budgetRatio := by
+  unfold mkDayCfg?; rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega),
+    dif_pos h4, dif_neg h]
+
+/-- R10's width of an accepted `[day]`: the configured window is at most a day, and the budget at
+most the window. -/
+theorem DayCfg.wf_window_le_a_day {c : DayCfg} (h : c.wf = true) : windowMinOf c.windowHours ≤ 1440 := by
+  simp only [DayCfg.wf, Bool.and_eq_true, decide_eq_true_eq] at h
+  have hd := denPos c.windowHours
+  simp only [windowMinOf, halfUpQ, scale_num, scale_den]
+  have hlt : (2 * (c.windowHours.val.num * 60) + c.windowHours.val.den) / (2 * c.windowHours.val.den) < 1441 :=
+    Nat.div_lt_of_lt_mul (by omega)
+  omega
+
+/-! ### The prior curves: fork `StepFn`, `EnergyConfig::prior` -/
+
+/-- Why a prior range is refused (design §13.6's `badStep`, `badLevel`). -/
+inductive StepErr where
+  | badStep
+  | badLevel
+deriving DecidableEq, Repr
+
+/-- A range key `num / den` hours inside the exact domain: `den ∈ [1, 10^6]`, at most 48 hours. -/
+def keyOk (n d : Nat) : Bool := decide (1 ≤ d ∧ d ≤ maxKeyDen ∧ n ≤ 48 * d)
+
+/-- The range part of a step: both keys in the domain, and `from < to` for a closed range. -/
+def rangeOk (fromNum fromDen : Nat) : Option (Nat × Nat) → Bool
+  | none => keyOk fromNum fromDen
+  | some (n, d) => keyOk fromNum fromDen && keyOk n d && decide (fromNum * d < n * fromDen)
+
+/-- A well-formed prior range. -/
+def Step.wf (s : Step) : Bool := rangeOk s.fromNum s.fromDen s.toKey && decide (s.level ≤ 5)
+
+/-- **The smart constructor for a prior range** (R10): `badStep` for the keys, then `badLevel`. -/
+def mkStep? (fromNum fromDen : Nat) (toKey : Option (Nat × Nat)) (level : Nat) : Except StepErr Step :=
+  if rangeOk fromNum fromDen toKey = false then .error .badStep
+  else if level ≤ 5 then .ok ⟨fromNum, fromDen, toKey, level⟩
+  else .error .badLevel
+
+theorem mkStep?_ok_iff {fn fd : Nat} {t : Option (Nat × Nat)} {l : Nat} {s : Step} :
+    mkStep? fn fd t l = .ok s ↔ s = ⟨fn, fd, t, l⟩ ∧ s.wf = true := by
+  unfold mkStep?
+  constructor
+  · intro h
+    split at h
+    · cases h
+    · split at h
+      · cases h
+        rename_i h1 h2
+        refine ⟨rfl, ?_⟩
+        simp only [Step.wf, Bool.and_eq_true, decide_eq_true_eq]
+        exact ⟨by simpa using h1, h2⟩
+      · cases h
+  · rintro ⟨rfl, hw⟩
+    simp only [Step.wf, Bool.and_eq_true, decide_eq_true_eq] at hw
+    rw [if_neg (by simp [hw.1]), if_pos hw.2]
+
+theorem mkStep?_refuses_a_zero_denominator (fn : Nat) (t : Option (Nat × Nat)) (l : Nat) :
+    mkStep? fn 0 t l = .error .badStep := by
+  cases t <;> simp [mkStep?, rangeOk, keyOk]
+
+theorem mkStep?_refuses_a_wide_denominator {fd : Nat} (h : maxKeyDen < fd) (fn : Nat)
+    (t : Option (Nat × Nat)) (l : Nat) : mkStep? fn fd t l = .error .badStep := by
+  have : keyOk fn fd = false := by simp [keyOk]; omega
+  cases t with
+  | none => simp [mkStep?, rangeOk, this]
+  | some p => obtain ⟨n, d⟩ := p; simp [mkStep?, rangeOk, this]
+
+theorem mkStep?_refuses_past_48_hours {fn fd : Nat} (h : 48 * fd < fn) (t : Option (Nat × Nat)) (l : Nat) :
+    mkStep? fn fd t l = .error .badStep := by
+  have : keyOk fn fd = false := by simp [keyOk]; omega
+  cases t with
+  | none => simp [mkStep?, rangeOk, this]
+  | some p => obtain ⟨n, d⟩ := p; simp [mkStep?, rangeOk, this]
+
+theorem mkStep?_refuses_an_empty_range {fn fd tn td : Nat} (h : tn * fd ≤ fn * td) (l : Nat) :
+    mkStep? fn fd (some (tn, td)) l = .error .badStep := by
+  have : decide (fn * td < tn * fd) = false := by simp; omega
+  simp [mkStep?, rangeOk, this]
+
+theorem mkStep?_refuses_a_level_above_five {fn fd : Nat} {t : Option (Nat × Nat)} {l : Nat}
+    (hr : rangeOk fn fd t = true) (h : 5 < l) : mkStep? fn fd t l = .error .badLevel := by
+  simp only [mkStep?, hr]
+  rw [if_neg (by simp), if_neg (by omega)]
+
+/-- The most ranges in one curve, the most curves, and the longest curve key. -/
+def maxCurveSteps : Nat := 64
+def maxCurves : Nat := 16
+def maxCurveKey : Nat := 64
+
+/-- `a.from ≤ b.from`, cross-multiplied. -/
+def fromLe (a b : Step) : Bool := decide (a.fromNum * b.fromDen ≤ b.fromNum * a.fromDen)
+
+/-- Sorted by `from`, as fork `StepFn::from_pairs` leaves a curve (its sort is stable, so equal
+starts keep the order given). -/
+def sortedFrom : List Step → Bool
+  | a :: b :: t => fromLe a b && sortedFrom (b :: t)
+  | _ => true
+
+/-- **A prior curve on the wire**: at most 64 ranges, each well formed, sorted by `from`.  The
+length is checked first, so the walks below it never run over a longer list. -/
+def curveOk (steps : List Step) : Bool :=
+  decide (steps.length ≤ maxCurveSteps) && steps.all Step.wf && sortedFrom steps
+
+/-- **The prior curves on the wire**: at most 16, keys of at most 64 characters, no key twice,
+each curve `curveOk`. -/
+def priorOk (p : List (List Char × List Step)) : Bool :=
+  decide (p.length ≤ maxCurves) && p.all (fun e => decide (e.1.length ≤ maxCurveKey)) &&
+    decide (p.map Prod.fst).Nodup && p.all (fun e => curveOk e.2)
+
+/-- **A learned curve on the wire** (fork `model.json` `energy.<loc>`): exactly 12 entries, each a
+`u8`. -/
+def energyOk (c : List Nat) : Bool := c.length == 12 && c.all (fun n => decide (n < 256))
+
+/-- `[location] home_max_ci`: a level. -/
+def homeMaxOk (n : Nat) : Bool := decide (n ≤ 5)
+
+/-- The curves `predict` reads, as the wire may carry them: the prior curves `priorOk`, and the
+learned curves at most one `lounge` and one `home`, each `energyOk`. -/
+def Curves.wf (c : Curves) : Bool :=
+  priorOk c.prior && decide (c.energy.map Prod.fst).Nodup &&
+    c.energy.all (fun e => (e.1 == loungeKey || e.1 == homeKey) && energyOk e.2)
+
+/-- Every §13.6 bound `mkInput?` does not check. -/
+def InputIn.boundsWf (x : InputIn) : Bool := x.curves.wf && homeMaxOk x.homeMax && x.day.wf
+
+theorem curveOk_refuses_too_many_ranges {steps : List Step} (h : maxCurveSteps < steps.length) :
+    curveOk steps = false := by
+  simp [curveOk]; omega
+
+theorem curveOk_refuses_a_bad_range {steps : List Step} {s : Step} (hs : s ∈ steps) (h : s.wf = false) :
+    curveOk steps = false := by
+  have : steps.all Step.wf = false := by
+    rw [List.all_eq_false]; exact ⟨s, hs, by simp [h]⟩
+  simp [curveOk, this]
+
+theorem curveOk_refuses_an_unsorted_curve {a b : Step} {t : List Step} (h : fromLe a b = false) :
+    curveOk (a :: b :: t) = false := by
+  simp [curveOk, sortedFrom, h]
+
+theorem priorOk_refuses_too_many_curves {p : List (List Char × List Step)} (h : maxCurves < p.length) :
+    priorOk p = false := by
+  simp [priorOk]; omega
+
+theorem priorOk_refuses_a_long_key {p : List (List Char × List Step)} {e : List Char × List Step}
+    (he : e ∈ p) (h : maxCurveKey < e.1.length) : priorOk p = false := by
+  have : p.all (fun e => decide (e.1.length ≤ maxCurveKey)) = false := by
+    rw [List.all_eq_false]; exact ⟨e, he, by simp; omega⟩
+  simp [priorOk, this]
+
+theorem priorOk_refuses_a_key_twice {p : List (List Char × List Step)} (h : ¬ (p.map Prod.fst).Nodup) :
+    priorOk p = false := by
+  simp [priorOk, h]
+
+theorem priorOk_refuses_a_bad_curve {p : List (List Char × List Step)} {e : List Char × List Step}
+    (he : e ∈ p) (h : curveOk e.2 = false) : priorOk p = false := by
+  have : p.all (fun e => curveOk e.2) = false := by
+    rw [List.all_eq_false]; exact ⟨e, he, by simp [h]⟩
+  simp [priorOk, this]
+
+theorem energyOk_refuses_a_curve_not_of_12 {c : List Nat} (h : c.length ≠ 12) : energyOk c = false := by
+  simp [energyOk, h]
+
+theorem energyOk_refuses_an_entry_past_a_byte {c : List Nat} {n : Nat} (hn : n ∈ c) (h : 256 ≤ n) :
+    energyOk c = false := by
+  have : c.all (fun n => decide (n < 256)) = false := by
+    rw [List.all_eq_false]; exact ⟨n, hn, by simp; omega⟩
+  simp [energyOk, this]
+
+theorem homeMaxOk_iff (n : Nat) : homeMaxOk n = true ↔ n ≤ 5 := by simp [homeMaxOk]
+
+/-- **R10's width for `stepAt` and `curveKeyLt`** (rule D9-21): an accepted prior's walks are over
+at most 16 curves, 64 ranges and 64 key characters. -/
+theorem priorOk_widths {p : List (List Char × List Step)} (h : priorOk p = true) :
+    p.length ≤ maxCurves ∧ ∀ e ∈ p, e.1.length ≤ maxCurveKey ∧ e.2.length ≤ maxCurveSteps := by
+  simp only [priorOk, curveOk, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at h
+  exact ⟨h.1.1.1, fun e he => ⟨h.1.1.2 e he, (h.2 e he).1.1⟩⟩
+
+/-- **Exact against the fork on an accepted curve** (L4's domain): every key of every accepted
+range has a denominator of at most `10^6`, where L4's range comparisons are the fork's `f64` ones. -/
+theorem priorOk_keys_in_the_exact_domain {p : List (List Char × List Step)} (h : priorOk p = true)
+    {e : List Char × List Step} (he : e ∈ p) {s : Step} (hs : s ∈ e.2) :
+    s.fromDen ≤ maxKeyDen ∧ ∀ n d, s.toKey = some (n, d) → d ≤ maxKeyDen := by
+  simp only [priorOk, curveOk, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at h
+  have hw := (h.2 e he).1.2 s hs
+  obtain ⟨fn, fd, t, l⟩ := s
+  cases t with
+  | none =>
+    simp only [Step.wf, rangeOk, keyOk, Bool.and_eq_true, decide_eq_true_eq] at hw
+    exact ⟨hw.1.2.1, fun _ _ h => by cases h⟩
+  | some p =>
+    obtain ⟨n, d⟩ := p
+    simp only [Step.wf, rangeOk, keyOk, Bool.and_eq_true, decide_eq_true_eq] at hw
+    refine ⟨hw.1.1.1.2.1, fun n' d' h' => ?_⟩
+    simp only [Option.some.injEq, Prod.mk.injEq] at h'
+    obtain ⟨-, rfl⟩ := h'
+    exact hw.1.1.2.2.1
+
+/-- The shipped `[day]`, curves and `home_max_ci` are accepted. -/
+theorem the_shipped_bounds_hold :
+    DayCfg.shipped.wf = true ∧ Curves.shipped.wf = true ∧ Curves.fixture.wf = true ∧ homeMaxOk 3 = true := by
   decide
 
 end Look
