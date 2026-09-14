@@ -7434,4 +7434,46 @@ theorem edf_serves_a_loaded_plans_needs_earliest_deadline_first :
         (fun g => (g.deadline.need, g.avail, g.reserved, g.shortfall 1)) = [(39, 60, 39, 0), (59, 51, 51, 8)] := by
   decide
 
+/-! ## Stage 5 A2: a decimal on the wire is refused by its reader, not by the parser
+
+APPENDED 2026-09-14 (stage-5 D9 track, step A2; design §5.1).  `JVal` gained
+`dec`, so `jparse` reads `-3`, `1.5` and `1e3` (the refutation
+`jparse_reads_what_the_fragment_had_no_type_for` in `Json.lean`).  What keeps the
+request honest is the field's reader: every one wants `num`, and each match
+already ended in a wildcard arm, so no arm was added and the refusal texts are the
+ones a string or `null` already got — `getNat`'s `Natural number expected` for
+`doc`, `min`, `period`, `rank`, `seed`, `grain` and `ix`, and `badBlockMin` for
+`blockMin`.  Before A2 the same requests were `bad json: notAValue -`,
+`bad json: expectedCommaOrBrace .` and the like; that change of text is the
+behaviour row. -/
+
+/-- **A request number that is not a natural is refused by the field's reader**,
+and the same field carrying a natural reads (§5.8: bites, does not over-bite). -/
+theorem a_request_number_that_is_not_a_nat_is_refused_by_its_reader :
+    parseCmd (.obj [("op".toList, .str "est".toList), ("id".toList, .str "m1".toList),
+        ("min".toList, .dec ⟨⟨true, 3, [], none⟩, rfl⟩)]) = .error "Natural number expected" ∧
+    parseCmd (.obj [("op".toList, .str "move".toList), ("id".toList, .str "m1".toList),
+        ("doc".toList, .dec ⟨⟨false, 1, [5], none⟩, rfl⟩)]) = .error "Natural number expected" ∧
+    (parseClock (.obj [("blockMin".toList, .dec ⟨⟨false, 1, [5], none⟩, rfl⟩)])).map
+      (fun c => c.now) = .error "badBlockMin" ∧
+    parseRegion (.obj [("grain".toList, .dec ⟨⟨false, 1, [], some (false, 0, [])⟩, rfl⟩)])
+      = .error "Natural number expected" ∧
+    parseCmd (.obj [("op".toList, .str "est".toList), ("id".toList, .str "m1".toList),
+        ("min".toList, .num 3)]) = .ok (.est "m1".toList 3) :=
+  ⟨rfl, rfl, rfl, rfl, rfl⟩
+
+/-- **End to end at `respond`, over explicit `List Char` inputs** (the Json.lean
+memory rule): a decimal at a key no reader reads is accepted, where it used to be
+`bad json`; a leading zero is refused by name (gap 43); and a surrogate pair
+parses, so the refusal is the reader's `object expected` for a top-level string,
+not the parser's `surrogateEscape` (gap 42). -/
+theorem respond_reads_a_decimal_and_a_surrogate_pair :
+    respond ['{', '"', 'd', 'o', 'c', 's', '"', ':', '[', ']', ',', '"', 'x', '"', ':',
+             '-', '0', '.', '5', '}']
+      = jone "ok" (.obj [("docs".toList, .arr []), ("report".toList, jone "closes" (.arr []))]) ∧
+    respond ['0', '0', '7'] = jsonErr "bad json: leadingZero" ∧
+    respond ['"', '\\', 'u', 'd', '8', '3', 'd', '\\', 'u', 'd', 'e', '0', '0', '"']
+      = jsonErr "object expected" :=
+  ⟨rfl, rfl, rfl⟩
+
 end Tm

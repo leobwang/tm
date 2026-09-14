@@ -8792,3 +8792,209 @@ audited under an `APPENDED … Step A1` banner in `Check.lean`, with axioms with
 | burn-down | **15** (unchanged) |
 | `cargo test --workspace` | **1010 passed / 0 failed / 0 ignored across 66 binaries**, `cli_latency.rs` green |
 | FFI suite (`cargo test` in `tm-kernel-ffi`) | **77 passed / 0 failed** (kernel 68, corpus 8, the new `stack` 1, plus empty lib and doc-test runs; was 76) |
+
+<!-- ===================================================================
+     APPENDED 2026-09-14 (stage 5, D9 track).  Step A2 (design §14.1 row A2, §5.1): JSON gains an exact decimal; gaps 42 and 43 closed.
+     Takes gap 101 (label A2-a) and cheats 119-121 (labels A2-a..c), past the design's labelled ranges; the D10 track numbers in parallel and whoever merges renumbers (AGENTS §6.4).
+     Supersedes, by name: gap 42's and gap 43's stage-3 records (both closed below); `Json.lean`'s header decisions 1 and 3 as written at stage 3; AGENTS §8.3's config-decimal trap sentence "`JVal` is not widened" (a note is appended there).
+     =================================================================== -->
+
+## Stage 5 A2, 2026-09-14: JSON gains an exact decimal — gaps 42 and 43 read as serde reads, the round trip still unconditional
+
+The D9 track's second step (design `kernel/design/stage5/stage5-D9-D10-design.md` §14.1 row A2
+and §5.1). `JVal` gains a sixth constructor, `dec`, holding a `JDec`: the sign, the integer
+digits' value, the fraction digits and the exponent **digits**, never evaluated. `jparse` returns
+`num n` exactly for a numeral with no sign, fraction or exponent, and `dec` for every other one.
+A surrogate pair is read, a lone surrogate is still refused, and leading zeros are refused, each as
+serde_json does. **`jparse_jemit` is re-proved unconditionally** over the widened type, with its
+statement unchanged, and so is `the_response_call_emits_parses_back`, whose proof is untouched
+and compiles against the widened type (D5).
+
+### What was built (`Json.lean`)
+
+| piece | what it is |
+|---|---|
+| `JDec`, `JDec.plain`, `JVal.dec (d : {d : JDec // d.plain = false})` | the widening. `plain` excludes a bare natural, so `7` has one value (CHEAT 119) |
+| `JDec.render` (`renderU`, `renderFrac`, `renderExp`) | `-`, `digitsOf int`, `.` and the fraction digits, `e`, `-` and the exponent digits; `jemit (.dec d) = d.val.render` |
+| `digitFin`, `finChar`, `jfins` (+ `jfinsTR`) | a digit as a `Fin 10` through `charDigit`/`digitChar`: one reading of a digit |
+| `jfrac`, `jexpAfter`, `jexpDigits`, `jexp`, `jleadingZero`, `jreadDec`, `JVal.ofDec`, `jnumber` | the reader. The integer digits are `jparseNat`'s, so a natural numeral still has one reader (§5.3). `JVal.ofDec` is the one constructor from a read numeral to a value |
+| `jval` / `jvalAcc` | a digit calls `jnumber false`, and a `-` calls `jnumber true` |
+| `JErr.leadingZero`, `JErr.missingDigit c` | new named refusals, appended after `trailingGarbage`; `jerrText` names both |
+| `junescape` / `junescapeTR.go` | a high surrogate quad followed at once by a low one is `Char.ofNat (pairScalar hi lo)`; every other surrogate is `surrogateEscape` of the first quad; a high quad followed by a non-hex `\u` is that quad's `badHexQuad` |
+| `numEnd` | what may follow any numeral: not a digit, `.`, `e` or `E`. Its first conjunct is `notDigitStart` |
+
+**Design §5.1's table, as proved:** `jparse_jemit` (unconditional, re-proved);
+`jparse_reads_a_plain_numeral_as_num` (every `n`, by the round trip, plus `10` on bytes);
+`jparse_reads_a_signed_decimal_as_dec` (`-0.5`); `jparse_refuses_a_leading_zero` (`007`, `-01`,
+`00.5` refused; `0`, `-0`, `0.5` read); `junescape_reads_a_surrogate_pair` (`😀`, the
+uppercase `𐀀`, `􏿿`); `junescape_refuses_a_lone_surrogate` (restated: a low
+quad, a high quad at the end, followed by `x`, by `A`, or by a second high quad; and a high
+quad followed by `\uzzzz` is `badHexQuad`). Beside them: `jparse_reads_an_exponent_as_written` and
+`jparse_refuses_a_numeral_missing_a_digit`.
+
+**The route of the re-proof.** `jreadDec_renderU` shows the reader reads back what the renderer
+wrote, and stops where the numeral ends, whenever `numEnd` holds of what follows. It is a chain of
+rewrites through `jparseNat_jrenderNat`, `jleadingZero_digitsOf` (from `digitsOf_zero_head`: only
+`0` is written with a leading `0`), `jfrac_renderFrac`, `jexp_renderExp` and `jfins_append`.
+`jval_render` lifts it to `jval`, and `jval_jemit` gains a `dec` case beside the `num` case, both
+through `jval_render`. The fuel theorems gain one branch each (`jnumber_length`,
+`jnumber_ne_outOfFuel`). `jparserAcc`, `jparse_never_runs_out` and `junescape_jescape` needed no
+new argument beyond that.
+
+### Refuted and renamed (§3.1 item 3; D5: re-proved, never weakened)
+
+| stage-3 theorem | why it is false after A2 | now |
+|---|---|---|
+| `jparse_refuses_what_the_fragment_has_no_type_for` | `-3`, `1.5` and `1e3` parse | **`jparse_reads_what_the_fragment_had_no_type_for`**, with the reader-level law `a_request_number_that_is_not_a_nat_is_refused_by_its_reader` (`Boundary.lean`) beside it, as the design says. Its `Check.lean` line was renamed in place |
+| `jparse_accepts_leading_zeros` | `007` is refused (gap 43) | **`jparse_refuses_a_leading_zero`**; its `Check.lean` line was renamed in place |
+| `junescape_refuses_a_lone_surrogate`, third conjunct (a pair refused) | the pair is read (gap 42) | **`junescape_reads_a_surrogate_pair`**. The name `junescape_refuses_a_lone_surrogate` now carries only lone surrogates; its first two conjuncts are unchanged |
+| `jval_jemit` over `notDigitStart rest` | `1` followed by `.5` reads as the one numeral `1.5`: **`the_jval_jemit_fraction_guard_bites`** | `jval_jemit` over **`numEnd rest`**. `jparse_jemit` sits on it at `rest = []`, so its statement did not change. `jval_digit` (the equation of the digit branch) and `the_jval_jemit_hypotheses_are_satisfiable` are restated to match. CHEAT 47 still fails, now on `numEnd ['7'] = true` |
+
+### Both directions on the wire (`Boundary.lean`, appended)
+
+No arm was added to `Boundary.lean`: every `JVal` match there already ends in a wildcard, so a
+`dec` gets the refusal a string or `null` got. `a_request_number_that_is_not_a_nat_is_refused_by_its_reader`
+covers `min` `-3` and `doc` `1.5` (`Natural number expected`), `blockMin` `1.5` (`badBlockMin`) and
+`grain` `1e0` (`Natural number expected`); `min` `3` still reads.
+`respond_reads_a_decimal_and_a_surrogate_pair` runs end to end at `respond`: `-0.5` at an unread
+key answers `ok`; `007` gives `bad json: leadingZero`; and a top-level pair-escaped string parses,
+so the refusal is the reader's `object expected`.
+
+**FFI** (`kernel/tm-kernel-ffi/tests/kernel.rs`): `a_decimal_and_an_exponent_parse` (`-0.5`, `1e5`,
+`1E+05`, `2.50e-3`, `-0`), `a_leading_zero_is_refused_by_name` (`007`, `-01`, `1.`, `1e`, `-`; `0` and
+`0.5` read), `a_request_minus_three_is_refused_by_its_reader`, and
+`a_surrogate_pair_is_read_and_a_lone_surrogate_refused` (the line comes back as raw UTF-8). The
+existing `a_parse_refusal_names_its_reason` is split: its surrogate case is now a lone `\ud83d`.
+**Against serde** (`tm/src/cli/kernel_bridge.rs`,
+`the_kernel_reads_numerals_and_surrogates_as_serde_reads_them`): the FFI crate has no serde_json
+(R7), so this check lives in the host. For 16 numerals and 8 escapes, the kernel accepts a request
+exactly when `serde_json::from_str` does, and a line read through a pair equals serde's decoded
+string. A request `-3` is a number to serde and the reader's refusal to the kernel.
+
+### Behaviour rows (design §20's three, with the texts measured before and after)
+
+The old texts were evaluated on the stage-3 `Json.lean` (`43e6309`'s file) and the new texts on
+this commit's. The shipped `tm` builds every request itself, from `u32`/`usize` values and
+serde's UTF-8 strings, so none of these requests is one it sends.
+
+| request | before A2 | after A2 |
+|---|---|---|
+| a read field carrying `-3`, `1.5` or `1e3` (`min`, `doc`, `period`, `rank`, `seed`, `grain`, `ix`) | `bad json: notAValue -`, `bad json: expectedCommaOrBrace .`, `… e` | `Natural number expected` (the field's reader) |
+| `blockMin` carrying `1.5` | `bad json: expectedCommaOrBrace .` | `badBlockMin` |
+| a decimal, negative or exponent at a key no reader reads | `bad json: …` | accepted |
+| a leading zero (`007`, `-01`) — **gap 43** | `007` read as `7` | `bad json: leadingZero` |
+| a numeral that stops where a digit must follow (`-x`, `1.`, `1e`, `1e+`) | `notAValue -`, `expectedCommaOrBrace .`, `… e` | `bad json: missingDigit -`, `… .`, `… e`, `… +` |
+| a surrogate pair `😀` — **gap 42** | `bad json: badEscape surrogateEscape 55357` | read as U+1F600 and emitted as raw UTF-8 |
+| a high surrogate followed by `\uzzzz` | `badEscape surrogateEscape 55357` | `badEscape badHexQuad zzzz` |
+| a lone surrogate (`\ud83d`, `\ude00`, `\ud83dx`, `\ud83dA`) | `badEscape surrogateEscape …` | unchanged |
+
+### Gap 42 — closed
+
+A surrogate pair is read as serde_json reads it (`junescape_reads_a_surrogate_pair`, FFI, and the
+serde cross-check), and every lone surrogate is still refused by name. Stage 3's reason for leaving
+it, that a recombination branch would be logic `junescape_jescape` does not cover, is answered two
+ways. `junescapeTR_go` proves the runtime twin equal on the new branch, and the witnesses pin the
+branch's bytes. `junescape_jescape` still holds unchanged, because `jescape` never writes a
+surrogate.
+
+### Gap 43 — closed
+
+Leading zeros are refused with `JErr.leadingZero` (`jparse_refuses_a_leading_zero`, FFI, serde
+cross-check). Stage 3's price was "one guard in `jval`'s digit branch plus a `digitsOf`
+leading-digit lemma", and that is what it cost: `jleadingZero` and `digitsOf_zero_head`.
+
+### Gap 101 (new; label A2-a) — emitting a `dec` with a long integer part recurses per digit
+
+(1) *What is not done*: `JDec.render` writes the integer part with `digitsOf`, and `digitsAux`
+recurses once per digit and appends with `++`, so its stack depth grows with the digit count and
+its time is quadratic in it. `jemit (.num n)` has done the same since stage 3. (2) *Why not now*:
+no wire path at A2 emits a `dec`. The kernel echoes no request numeral, and the only emitted
+numerals are line numbers, grains and indices. The reading side is twinned (below). (3) *Cost*:
+nothing today, and not measured. A hand-edited log line may carry a numeral of up to 65,536
+characters once B3's `lineTooLong` bounds it. Re-emitting that numeral lexically (`hsw`, §5.4;
+`render` at B4) would reach this recursion. (4) *When it clears*: B3 or B4, whichever first emits
+a `dec` it read. It needs a `digitsOf` twin, or a T0 measurement on a 2 MiB thread at the line
+bound.
+
+### Rule D9-21
+
+A2's functions that recurse over wire-sized input: `jfins` runs as `jfinsTR.go` (a loop,
+`jfins_eq_jfinsTR`). `jdigits`, already on the wire under every numeral since J4 and untwinned
+until now, runs as `jdigitsTR.go` (`jdigits_eq_jdigitsTR`). `jdigitsTR` is declared **before**
+`jparseNat`, because `@[csimp]` rewrites only code compiled after it. The first placement, after
+`jparseNat`, left `jparseNat`'s C calling `jdigits`, and moving the twin fixed it: the generated
+`Json.c` shows `jparseNat` calling `jdigitsTR` and `jexpDigits` calling `jfinsTR`. The pair arm
+lives inside `junescape`, whose twin `junescapeTR.go` stays a loop. `jfrac`, `jexp`,
+`jexpAfter`, `jexpDigits`, `jreadDec` and `jnumber` do not recurse. `List.map finChar` is core's
+`mapTR`. `JDec.render`'s `digitsOf` is gap 101. Measured through `examples/oneshot` (release,
+`ulimit -s 2048`, `MemoryMax=16G`): a 100,000-digit integer at an unread key answers `ok` in
+0.30 s at 14.7 MB. A numeral with 1,000,000 fraction digits and 1,000,000 exponent digits answers
+in 0.04 s at 137 MB. A `min` of `-` and 20,000 digits is refused by its reader in 0.01 s.
+
+### The `decide` budget (§14.0 item 4)
+
+17 new or restated decided witnesses, each a small `List Char` literal of at most 20 characters,
+with no `Entry` values or zone transitions: `junescape_reads_a_surrogate_pair`,
+`junescape_refuses_a_lone_surrogate`, `digitFin_finChar`, `finChar_is_digit`, the `digitChar` table
+inside `digitsOf_zero_head`, `jexpAfter_digit`, `JVal.ofDec_plain`,
+`jparse_refuses_a_leading_zero`, `jparse_reads_a_plain_numeral_as_num`,
+`jparse_reads_a_signed_decimal_as_dec`, `jparse_reads_an_exponent_as_written`,
+`jparse_refuses_a_numeral_missing_a_digit`, `jparse_reads_what_the_fragment_had_no_type_for`,
+`the_jval_jemit_hypotheses_are_satisfiable`, `the_jval_jemit_fraction_guard_bites`,
+`a_request_number_that_is_not_a_nat_is_refused_by_its_reader` and
+`respond_reads_a_decimal_and_a_surrogate_pair`. They were probed together, in scratch copies,
+under `MemoryMax=8G timeout 120`. Whole `Json.lean`: **3.51 s, 1.04 GB peak** (2.96 s and 1.01 GB
+for the file at `43e6309`). The two Boundary witnesses, on the built library: 0.2 s, 0.59 GB. The
+realistic sizes are instances of `jparse_jemit` (`jparse_reads_a_plain_numeral_as_num`'s `∀ n`,
+the `1e0005` conjunct). `check.sh` wall time is unchanged (below).
+
+### Recorded disagreements
+
+- **The exponent's type.** §5.1 stores it as `Option (Bool × List (Fin 10))`. Over that type
+  `jparse_jemit` is **false**: `some (false, [])` emits `1e`, which no reader takes back
+  (`jparse_refuses_a_numeral_missing_a_digit`'s `1e` conjunct). The kernel stores
+  `Option (Bool × Fin 10 × List (Fin 10))`, a first digit and the rest, so the type forbids the
+  bare marker (§3.1 item 1; CHEAT 121). The constructor's subtype, `d.plain = false`, is the
+  design's. B3's `Num.dec` and `finiteF64` read the exponent's digit count as `1 + rest.length`.
+- **`1E+05`.** §5.1 says `1E+05` reads to the same `JDec` as `1e5`, and K18 says it re-emits as
+  `1e5`. Both contradict the same section's rule that the exponent keeps its digits and `1e0005`
+  re-emits as written. The kernel keeps the digits: `E` and `+` are dropped, so `1E+5` is `1e5`,
+  but `1E+05` is `1e05` (`jparse_reads_an_exponent_as_written`). K18's residue is `1E+05` →
+  `1e05`, still the same double.
+- **"Boundary.lean (new arms)".** No arm was needed (above). **"Refused by the field's name"**
+  is literal only for the clock fields (`badBlockMin`, `badNow`). The seven `getNat` fields refuse
+  with `Natural number expected`, which names no field. That text predates A2, a string at those
+  fields already got it, and renaming it would change requests A2 does not concern. §20's "refused
+  by the field's reader" is what holds.
+- **Where the tests live.** §5.1 says `kernel_bridge::refusal`'s tests pin `expectedKey`,
+  `unterminatedObject` and the surrogate refusal. They are in `kernel/tm-kernel-ffi/tests/kernel.rs`
+  (`a_parse_refusal_names_its_reason`), and were split there. The comparison with serde went into
+  `kernel_bridge.rs`, because the FFI crate may not depend on serde_json.
+- **A second new refusal.** §5.1 names only `JErr.leadingZero`. A numeral that stops where a digit
+  must follow (`-`, `1.`, `1e`, `1e+`) needed a name too. It is `JErr.missingDigit`, carrying the
+  byte after which the digit was wanted. `badNumber` keeps its stage-3 meaning (unreachable through
+  `jval`).
+- **`jval_jemit`'s hypothesis** is not in §5.1's list. It had to change (refuted above).
+
+**Label-to-number map:** gap A2-a → **101**; cheats A2-a, A2-b, A2-c → **119** (a bare natural built as a
+`dec`), **120** (`1` followed by `.5` read as `1`), **121** (an exponent marker with no digit). The
+design labels cheats 91–118 (§16) and gaps 82–99 (§20), and A1 took gap 100. **Parity entries:
+none.** Design §17 lists "leading zeros refused, as serde does" and "surrogate pairs read" as exact
+by design, not exceptions. The serde cross-check above is where that claim is tested.
+
+**Goals:** none added, discharged or refuted; `Goals.lean` is untouched (burn-down **15**).
+**New theorems: 42** (Json.lean 40, Boundary.lean 2), audited under an `APPENDED … Step A2` banner in
+`Check.lean`. Two stage-3 audit lines were renamed in place to their refutations. Axioms stay within
+`propext`, `Quot.sound` and `Classical.choice`, and there is no `sorryAx`.
+
+**Re-measured** (under the 30 GB cap, on the tree committed):
+
+| measurement | value |
+|---|---|
+| `check.sh` | **7/7**, 2.70–2.72 s on the built tree (2.7 s before, so within §14.0 item 4's 10%); a rebuild after the `Json.lean` edit takes 2 m 13 s |
+| axiom audit | **2143 theorems** (was 2101, +42); §6.3's three counts agree at 2143 |
+| `Negative.lean` | check 4 ok; CHEATs 119–121 each fail at their own line, with the error they claim (`….plain = false`, `numEnd ['.', '5'] = true`, `[]` is not `Fin 10 × List (Fin 10)`) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **15** (unchanged) |
+| `cargo test --workspace` | **1011 passed / 0 failed / 0 ignored across 66 binaries** (was 1010; +1, the serde cross-check); `cli_latency.rs` green |
+| FFI suite (`cargo test` in `tm-kernel-ffi`) | **81 passed / 0 failed** (kernel 72, corpus 8, stack 1; was 77) |

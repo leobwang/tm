@@ -971,4 +971,37 @@ theorem theMixtureMayBeFlooredForTheVerdict :
 theorem aZeroDenominatorIsAccepted : (denOf? 0).isSome = true := by
   decide
 
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D9 track, step A2: JSON gains an exact decimal;
+-- gaps 42 and 43).  Numbered 119-121 because the design labels cheats 91-118
+-- (its §16) and the D10 track numbers in parallel; the merge renumbers.  The
+-- controls, which compile, are in Json.lean: `JVal.ofDec_plain` and
+-- `jparse_reads_a_signed_decimal_as_dec` (119), `the_jval_jemit_fraction_guard_bites`
+-- and `jval_jemit` over `numEnd` (120), and `jparse_reads_an_exponent_as_written`
+-- (121).  CHEAT 47's guard is now `numEnd`, whose first conjunct is the
+-- `notDigitStart` its comment names; it still fails for that reason.
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 119 — a bare natural built as a decimal.  `7` would then have two values,
+   `num 7` and `dec 7`, and `jparse` could return only one of them, so
+   `jparse_jemit` would be false.  `JVal.dec` demands `d.plain = false`, and
+   `⟨false, 7, [], none⟩.plain` is `true`: `rfl` is a type error. -/
+def sevenAsADecimal : JVal := .dec ⟨⟨false, 7, [], none⟩, rfl⟩
+
+/- CHEAT 120 — read a numeral followed by a fraction as if it stopped.
+   `jval_jemit` would give `1` then `.5` reading back as `(1, ".5")`; the guard
+   is `numEnd ['.', '5'] = true`, which is `false`, so `rfl` is an application
+   type mismatch.  The old guard `notDigitStart` would have let it through;
+   the evaluated truth is `the_jval_jemit_fraction_guard_bites`: `1.5`. -/
+theorem oneThenAFractionReadsAsOne :
+    jval 4 (jemit (JVal.num 1) ++ ['.', '5']) = .ok (.num 1, ['.', '5']) :=
+  jval_jemit (.num 1) 4 ['.', '5'] (by decide) rfl
+
+/- CHEAT 121 — an exponent marker with no digit.  The design's `JDec` stored the
+   exponent as a sign and a digit list, where `some (false, [])` emits `1e`, which
+   no reader takes back (`jparse_refuses_a_numeral_missing_a_digit`).  Here the
+   exponent is a first digit and the rest, so the empty list is not an exponent. -/
+def aBareExponentMarker : JDec := ⟨false, 1, [], some (false, [])⟩
+
 end Tm

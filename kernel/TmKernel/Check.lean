@@ -1313,7 +1313,7 @@ open Tm
 #print axioms Tm.the_real_response_bytes_round_trip
 #print axioms Tm.jparse_accepts_host_whitespace
 #print axioms Tm.the_round_trip_survives_duplicate_keys
-#print axioms Tm.jparse_accepts_leading_zeros
+#print axioms Tm.jparse_refuses_a_leading_zero
 #print axioms Tm.jparse_refuses_empty_input
 #print axioms Tm.jparse_refuses_an_unterminated_string
 #print axioms Tm.jparse_refuses_trailing_garbage
@@ -1325,7 +1325,7 @@ open Tm
 #print axioms Tm.jparse_refuses_a_bare_key
 #print axioms Tm.jparse_refuses_a_missing_colon
 #print axioms Tm.jparse_refuses_an_unterminated_object
-#print axioms Tm.jparse_refuses_what_the_fragment_has_no_type_for
+#print axioms Tm.jparse_reads_what_the_fragment_had_no_type_for
 #print axioms Tm.jparseWith_refuses_when_the_fuel_runs_out
 #print axioms Tm.the_jval_jemit_hypotheses_are_satisfiable
 #print axioms Tm.the_jval_jemit_digit_guard_bites
@@ -2487,3 +2487,52 @@ open Tm
 #print axioms Tm.splitDocCAcc_go
 #print axioms Tm.splitDocC_eq_splitDocCAcc
 #print axioms Tm.splitDoc_eq_splitDocAcc
+
+-- APPENDED 2026-09-14 (stage 5, D9 track).  Step A2 (design §14.1, §5.1): JSON gains an
+-- exact decimal (`JVal.dec`), gaps 42 (surrogate pairs) and 43 (leading zeros) read as serde
+-- reads, `jparse_jemit` re-proved unconditionally.  Json.lean, then Boundary.lean.  42 theorems;
+-- two stage-3 lines above were renamed in place to their refutations
+-- (`jparse_accepts_leading_zeros` -> `jparse_refuses_a_leading_zero`,
+-- `jparse_refuses_what_the_fragment_has_no_type_for` -> `jparse_reads_what_the_fragment_had_no_type_for`).
+#print axioms Tm.junescape_reads_a_surrogate_pair
+#print axioms Tm.digitFin_finChar
+#print axioms Tm.digitFin_of_not_digit
+#print axioms Tm.finChar_is_digit
+#print axioms Tm.jfinsTR_go
+#print axioms Tm.jfins_eq_jfinsTR
+#print axioms Tm.jdigitsTR_go
+#print axioms Tm.jdigits_eq_jdigitsTR
+#print axioms Tm.jfins_append
+#print axioms Tm.notDigitStart_of_numEnd
+#print axioms Tm.JDec.renderU_ne_nil
+#print axioms Tm.digitsOf_zero_head
+#print axioms Tm.jleadingZero_digitsOf
+#print axioms Tm.numEnd_jemitTail
+#print axioms Tm.numEnd_jemitOTail
+#print axioms Tm.jval_minus
+#print axioms Tm.notDigitStart_renderExp
+#print axioms Tm.notDigitStart_renderFrac
+#print axioms Tm.jexpAfter_digit
+#print axioms Tm.jexp_renderExp
+#print axioms Tm.jfrac_renderFrac
+#print axioms Tm.jreadDec_renderU
+#print axioms Tm.jval_render
+#print axioms Tm.JVal.ofDec_plain
+#print axioms Tm.JVal.ofDec_dec
+#print axioms Tm.jemit_num_is_render
+#print axioms Tm.jdigits_split
+#print axioms Tm.jfins_length
+#print axioms Tm.jparseNat_consumes
+#print axioms Tm.jfrac_length
+#print axioms Tm.jexpDigits_length
+#print axioms Tm.jexp_length
+#print axioms Tm.jreadDec_length
+#print axioms Tm.jnumber_length
+#print axioms Tm.jnumber_ne_outOfFuel
+#print axioms Tm.jparse_reads_a_plain_numeral_as_num
+#print axioms Tm.jparse_reads_a_signed_decimal_as_dec
+#print axioms Tm.jparse_reads_an_exponent_as_written
+#print axioms Tm.jparse_refuses_a_numeral_missing_a_digit
+#print axioms Tm.the_jval_jemit_fraction_guard_bites
+#print axioms Tm.a_request_number_that_is_not_a_nat_is_refused_by_its_reader
+#print axioms Tm.respond_reads_a_decimal_and_a_surrogate_pair

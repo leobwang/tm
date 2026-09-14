@@ -23,13 +23,23 @@ The per-character recursions run as proved `@[csimp]` twins (`jescapeTR`,
 
 ## The three decisions this module takes, stated rather than left implicit
 
-1. **The numerals are `Nat`.**  Every number the boundary emits today is a
-   `Nat` — `lerrJson`'s `badLine` line number, `regionJson`'s `grain` (a `Fin 4`
-   value) and its `ix` — and every number it ingests goes through
-   `Boundary.getNat`.  There is no negative and no exponent anywhere on the
-   wire, so `JVal.num` carries a `Nat` and the fragment has no `JsonNumber`.
-   If a site ever needs a negative, it must widen this type, and that widening
-   is then visible in a diff.
+1. **A bare natural is `num`; every other numeral is `dec`, exactly as
+   written.**  Every number the boundary emits is a `Nat` — `lerrJson`'s
+   `badLine` line number, `regionJson`'s `grain` (a `Fin 4` value) and its
+   `ix` — and every number it ingests goes through `Boundary.getNat`, so until
+   stage 5 `JVal.num` carried a `Nat` and the fragment had no other numeral.
+   **Widened at stage 5 A2** (design §5.1), visibly, in this diff: D9's log
+   carries `hsw` decimals and hand-appended unknown numerals, so `JVal.dec`
+   holds a `JDec` — sign, integer digits' value, fraction digits and exponent
+   *digits*, never evaluated.  A wire reader still wants `num` and refuses a
+   `dec` by its own name (`Boundary.getNat`, `parseClock`).  Leading zeros are
+   refused as serde_json refuses them (README gap 43, closed).
+
+   One disagreement with the design, recorded in the README: §5.1 stores the
+   exponent as `Option (Bool × List (Fin 10))`, and over that type
+   `jparse_jemit` is **false** — `some (false, [])` would emit `1e`, which no
+   reader takes back.  The type here forbids it instead (§3.1 item 1): the
+   exponent is a first digit and the rest.
 
 2. **Emit narrow, accept wide.**  `jescape` emits exactly what Lean's own
    printer emits — `\"`, `\\`, `\n`, `\r`, a `\u00xx` hex quad (lowercase) for
@@ -39,13 +49,14 @@ The per-character recursions run as proved `@[csimp]` twins (`jescapeTR`,
    in either case.  `the_accepted_escapes_exceed_the_emitted_ones` states the
    asymmetry as a theorem rather than a comment.
 
-3. **A lone surrogate escape is refused by name.**  Lean's `Char` is a Unicode
-   *scalar* value, so `0xd800`–`0xdfff` is not a character and `jescape` can
-   never emit one; `junescape` refuses `\ud83d` with `JEsc.surrogateEscape`
-   rather than guessing at a pair.  serde_json never emits a surrogate pair (it
-   writes astral characters as UTF-8 bytes), so nothing the real host sends is
-   lost.  A non-serde host that escapes astral characters as pairs is refused,
-   by name — README gap 42.
+3. **A surrogate pair is read; a lone surrogate escape is refused by name.**
+   Lean's `Char` is a Unicode *scalar* value, so `0xd800`–`0xdfff` is not a
+   character and `jescape` can never emit one.  Since stage 5 A2 `junescape`
+   reads `😀` as the one character it stands for, as serde_json
+   does, and refuses every surrogate that is not the high half of such a pair
+   with `JEsc.surrogateEscape` (README gap 42, closed).  serde_json never
+   emits a pair itself (it writes astral characters as UTF-8 bytes), but a
+   hand-edited log line may carry one.
 
 `junescape` is also strict in the other direction: a raw `"` (`JEsc.rawQuote`)
 and a raw character below `0x20` (`JEsc.rawControl`) are refused, as RFC 8259
@@ -68,10 +79,31 @@ list keeps build order and has no rebuild hazard to reason about.  The byte
 consequence is measured at J5, not here.  Strings are `List Char` for the same
 reason `Id` is (see `Text.lean`'s header): the proofs stay off UTF-8. -/
 
+/-- **A JSON numeral that is not a bare natural, kept exactly as written.**
+Never evaluated (stage 5 A2, design §5.1).  `int` is the integer digits' value:
+leading zeros are refused (gap 43), so the digits are `digitsOf int` and nothing
+is lost.  `frac` is the fraction digits verbatim, `[]` exactly when no `.` was
+read.  `exp` is the exponent marker's sign and its **digits**, a first digit and
+the rest, never a value: no reader can build `10^e` from a short numeral by
+accident, and `1e0005` re-emits as written.  `E` and `+` are not kept, so `1E+5`
+and `1e5` are one value. -/
+structure JDec where
+  neg  : Bool
+  int  : Nat
+  frac : List (Fin 10)
+  exp  : Option (Bool × Fin 10 × List (Fin 10))
+deriving DecidableEq, Repr
+
+/-- A numeral with no sign, no fraction and no exponent: that is `JVal.num`,
+never `JVal.dec`, so one numeral has one value. -/
+def JDec.plain (d : JDec) : Bool := !d.neg && d.frac.isEmpty && d.exp.isNone
+
 inductive JVal
   | null
   | bool (b : Bool)
   | num (n : Nat)
+  /-- The stage-5 A2 widening (AGENTS §8.3: visibly, in a diff). -/
+  | dec (d : { d : JDec // d.plain = false })
   | str (s : List Char)
   | arr (xs : List JVal)
   | obj (kvs : List (List Char × JVal))
@@ -99,6 +131,7 @@ def jbeq : JVal → JVal → Bool
   | .null,   .null   => true
   | .bool a, .bool b => a == b
   | .num a,  .num b  => a == b
+  | .dec a,  .dec b  => a.val == b.val
   | .str a,  .str b  => a == b
   | .arr a,  .arr b  => jbeqL a b
   | .obj a,  .obj b  => jbeqO a b
@@ -123,13 +156,16 @@ theorem jbeq_sound (a : JVal) : ∀ b : JVal, jbeq a b = true → a = b := by
     (motive_3 := fun kvs => ∀ ls, jbeqO kvs ls = true → kvs = ls)
     (motive_4 := fun p => ∀ q : List Char × JVal,
         ((p.1 == q.1) && jbeq p.2 q.2) = true → p = q)
-    ?null ?bool ?num ?str ?arr ?obj ?lnil ?lcons ?onil ?ocons ?pair a
+    ?null ?bool ?num ?dec ?str ?arr ?obj ?lnil ?lcons ?onil ?ocons ?pair a
   case null =>
     intro b h; cases b <;> simp_all [jbeq]
   case bool =>
     intro x b h; cases b <;> simp_all [jbeq]
   case num =>
     intro x b h; cases b <;> simp_all [jbeq]
+  case dec =>
+    intro x b h; cases b <;> simp_all [jbeq]
+    exact Subtype.ext h
   case str =>
     intro x b h; cases b <;> simp_all [jbeq]
   case arr =>
@@ -172,7 +208,7 @@ theorem jbeq_refl (a : JVal) : jbeq a a = true := by
     (motive_2 := fun xs => jbeqL xs xs = true)
     (motive_3 := fun kvs => jbeqO kvs kvs = true)
     (motive_4 := fun p => ((p.1 == p.1) && jbeq p.2 p.2) = true)
-    ?null ?bool ?num ?str ?arr ?obj ?lnil ?lcons ?onil ?ocons ?pair a <;>
+    ?null ?bool ?num ?dec ?str ?arr ?obj ?lnil ?lcons ?onil ?ocons ?pair a <;>
     intros <;> simp_all [jbeq, jbeqL, jbeqO]
 
 /-- **Both directions** (§5.8): `jbeq` says yes exactly when the values are
@@ -301,7 +337,8 @@ inductive JEsc
   | unknownEscape (c : Char)
   /-- `\u` followed by four bytes that are not all hex. -/
   | badHexQuad (a b c d : Char)
-  /-- A quad in `0xd800`–`0xdfff`: not a Unicode scalar value.  Decision 3. -/
+  /-- A quad in `0xd800`–`0xdfff` that is not the high half of a surrogate pair:
+  not a Unicode scalar value.  Decision 3; since stage 5 A2 a pair is read. -/
   | surrogateEscape (v : Nat)
   /-- An unescaped `"` inside string content. -/
   | rawQuote
@@ -309,9 +346,23 @@ inductive JEsc
   | rawControl (v : Nat)
 deriving DecidableEq, Repr, Inhabited
 
+/-- The high half of a UTF-16 surrogate pair. -/
+def isHighSurrogate (v : Nat) : Bool := 0xd800 ≤ v && v ≤ 0xdbff
+/-- The low half. -/
+def isLowSurrogate (v : Nat) : Bool := 0xdc00 ≤ v && v ≤ 0xdfff
+/-- The scalar a high and a low surrogate stand for, as serde_json combines them. -/
+def pairScalar (hi lo : Nat) : Nat := 0x10000 + (hi - 0xd800) * 0x400 + (lo - 0xdc00)
+
 /-- Undo `jescape`.  Structural: every recursive call is on a proper tail, the
-`\uXXXX` branch six characters in.  No fuel, no well-founded recursion, so it
-reduces and `decide` can see it. -/
+`\uXXXX` branch six characters in and a surrogate pair twelve.  No fuel, no
+well-founded recursion, so it reduces and `decide` can see it.
+
+**A surrogate pair is read (stage 5 A2; README gap 42, closed)**, as serde_json
+reads it: a high surrogate quad followed at once by a low one is the one scalar
+`pairScalar` gives.  Every other surrogate — a low one, or a high one not
+followed by a low quad — is refused with `surrogateEscape` and the first quad's
+value; a high one followed by a `\u` whose four bytes are not hex is that
+quad's `badHexQuad`. -/
 def junescape : List Char → Except JEsc (List Char)
   | [] => .ok []
   | '\\' :: '"'  :: rest => (junescape rest).map (fun t => '"' :: t)
@@ -326,7 +377,16 @@ def junescape : List Char → Except JEsc (List Char)
       match hexQuad a b c d with
       | none => .error (.badHexQuad a b c d)
       | some v =>
-        if 0xd800 ≤ v && v ≤ 0xdfff then .error (.surrogateEscape v)
+        if isHighSurrogate v then
+          match rest with
+          | '\\' :: 'u' :: e :: f :: g :: h :: rest' =>
+            match hexQuad e f g h with
+            | none => .error (.badHexQuad e f g h)
+            | some w =>
+              if isLowSurrogate w then (junescape rest').map (fun t => Char.ofNat (pairScalar v w) :: t)
+              else .error (.surrogateEscape v)
+          | _ => .error (.surrogateEscape v)
+        else if isLowSurrogate v then .error (.surrogateEscape v)
         else (junescape rest).map (fun t => Char.ofNat v :: t)
   | '\\' :: 'u' :: _ => .error .truncatedEscape
   | '\\' :: e :: _ => .error (.unknownEscape e)
@@ -361,7 +421,16 @@ def junescapeTR.go : List Char → List Char → Except JEsc (List Char)
       match hexQuad a b c d with
       | none => .error (.badHexQuad a b c d)
       | some v =>
-        if 0xd800 ≤ v && v ≤ 0xdfff then .error (.surrogateEscape v)
+        if isHighSurrogate v then
+          match rest with
+          | '\\' :: 'u' :: e :: f :: g :: h :: rest' =>
+            match hexQuad e f g h with
+            | none => .error (.badHexQuad e f g h)
+            | some w =>
+              if isLowSurrogate w then junescapeTR.go rest' (Char.ofNat (pairScalar v w) :: acc)
+              else .error (.surrogateEscape v)
+          | _ => .error (.surrogateEscape v)
+        else if isLowSurrogate v then .error (.surrogateEscape v)
         else junescapeTR.go rest (Char.ofNat v :: acc)
   | '\\' :: 'u' :: _, _ => .error .truncatedEscape
   | '\\' :: e :: _, _ => .error (.unknownEscape e)
@@ -439,9 +508,23 @@ theorem junescapeTR_go (n : Nat) : ∀ (l acc : List Char), l.length ≤ n →
               | none => simp [Except.map]
               | some v =>
                 simp only
-                by_cases hs : (0xd800 ≤ v && v ≤ 0xdfff) = true
-                · simp [hs, Except.map]
-                · rw [if_neg hs, if_neg hs, ih r' _ (by omega), junescapeTR_step]
+                by_cases hh : isHighSurrogate v = true
+                · rw [if_pos hh, if_pos hh]
+                  split
+                  · next e f g k r'' =>
+                    simp only [List.length_cons] at h
+                    cases hy : hexQuad e f g k with
+                    | none => simp [Except.map]
+                    | some w =>
+                      simp only
+                      by_cases hlo : isLowSurrogate w = true
+                      · rw [if_pos hlo, if_pos hlo, ih r'' _ (by omega), junescapeTR_step]
+                      · simp [hlo, Except.map]
+                  · rfl
+                · rw [if_neg hh, if_neg hh]
+                  by_cases hl : isLowSurrogate v = true
+                  · simp [hl, Except.map]
+                  · rw [if_neg hl, if_neg hl, ih r' _ (by omega), junescapeTR_step]
             | [] => simp [junescapeTR.go, junescape, Except.map]
             | [_] => simp [junescapeTR.go, junescape, Except.map]
             | [_, _] => simp [junescapeTR.go, junescape, Except.map]
@@ -502,9 +585,11 @@ theorem junescape_escOf (c : Char) (t : List Char) :
     rw [junescape]
     rw [hexQuad_escOf c hc]
     dsimp only
-    have hs : ¬ (0xd800 ≤ c.toNat && c.toNat ≤ 0xdfff) = true := by
-      simp only [Bool.and_eq_true, decide_eq_true_eq]; omega
-    rw [if_neg hs, Char.ofNat_toNat]
+    have hs : ¬ isHighSurrogate c.toNat = true := by
+      simp only [isHighSurrogate, Bool.and_eq_true, decide_eq_true_eq]; omega
+    have hs' : ¬ isLowSurrogate c.toNat = true := by
+      simp only [isLowSurrogate, Bool.and_eq_true, decide_eq_true_eq]; omega
+    rw [if_neg hs, if_neg hs', Char.ofNat_toNat]
   · simp only [hq, hb, hn, hr, hc, if_false, List.cons_append, List.nil_append]
     simp [junescape, hq, hb, hc]
 
@@ -600,15 +685,34 @@ theorem junescape_refuses_a_raw_quote :
 theorem junescape_refuses_a_raw_control :
     junescape ['a', '\t'] = .error (.rawControl 9) := rfl
 
-/-- Decision 3, and README gap 42: a lone surrogate escape is refused rather
-than guessed at.  Both halves of a pair are refused, so the failure is the same
-whichever end a mis-encoding starts at. -/
+/-- **A surrogate pair is read** (stage 5 A2; README gap 42, closed): `\ud83d\ude00`
+is U+1F600, as serde_json reads it, and so is the uppercase spelling.  This is
+the refutation of stage 3's third conjunct of `junescape_refuses_a_lone_surrogate`,
+which refused this pair. -/
+theorem junescape_reads_a_surrogate_pair :
+    junescape ['\\', 'u', 'd', '8', '3', 'd', '\\', 'u', 'd', 'e', '0', '0']
+      = .ok [Char.ofNat 0x1f600] ∧
+    junescape ['a', '\\', 'u', 'D', '8', '0', '0', '\\', 'u', 'D', 'C', '0', '0', 'b']
+      = .ok ['a', Char.ofNat 0x10000, 'b'] ∧
+    junescape ['\\', 'u', 'd', 'b', 'f', 'f', '\\', 'u', 'd', 'f', 'f', 'f']
+      = .ok [Char.ofNat 0x10ffff] :=
+  ⟨rfl, rfl, rfl⟩
+
+/-- **Decision 3, restated at A2: a lone surrogate is refused by name** — a low
+one, a high one at the end, a high one followed by a character, by a non-surrogate
+escape, or by a second high one.  The refusal names the first quad.  (Stage 3's
+statement also refused a pair; its first two conjuncts stand here unchanged.) -/
 theorem junescape_refuses_a_lone_surrogate :
     junescape ['\\', 'u', 'd', '8', '3', 'd'] = .error (.surrogateEscape 0xd83d) ∧
     junescape ['\\', 'u', 'd', 'e', '0', '0'] = .error (.surrogateEscape 0xde00) ∧
-    junescape ['\\', 'u', 'd', '8', '3', 'd', '\\', 'u', 'd', 'e', '0', '0']
-      = .error (.surrogateEscape 0xd83d) :=
-  ⟨rfl, rfl, rfl⟩
+    junescape ['\\', 'u', 'd', '8', '3', 'd', 'x'] = .error (.surrogateEscape 0xd83d) ∧
+    junescape ['\\', 'u', 'd', '8', '3', 'd', '\\', 'u', '0', '0', '4', '1']
+      = .error (.surrogateEscape 0xd83d) ∧
+    junescape ['\\', 'u', 'd', '8', '3', 'd', '\\', 'u', 'd', '8', '3', 'd']
+      = .error (.surrogateEscape 0xd83d) ∧
+    junescape ['\\', 'u', 'd', '8', '3', 'd', '\\', 'u', 'z', 'z', 'z', 'z']
+      = .error (.badHexQuad 'z' 'z' 'z' 'z') :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- The surrogate guard is not swallowing the whole `\u` branch: the quads just
 below and just above the surrogate block are accepted. -/
@@ -645,6 +749,28 @@ def jdigits : List Char → List Char × List Char
       let p := jdigits cs
       (c :: p.1, p.2)
     else ([], c :: cs)
+
+/-- `jdigits`'s runtime twin (stage 5 A2, rule D9-21): every numeral on the wire runs
+through it.  Declared before `jparseNat`, because `@[csimp]` rewrites only what is
+compiled after it. -/
+def jdigitsTR.go : List Char → List Char → List Char × List Char
+  | [], acc => (acc.reverse, [])
+  | c :: cs, acc => if (charDigit c).isSome then jdigitsTR.go cs (c :: acc) else (acc.reverse, c :: cs)
+
+def jdigitsTR (l : List Char) : List Char × List Char := jdigitsTR.go l []
+
+theorem jdigitsTR_go (l : List Char) : ∀ acc : List Char,
+    jdigitsTR.go l acc = (acc.reverse ++ (jdigits l).1, (jdigits l).2) := by
+  induction l with
+  | nil => intro acc; simp [jdigitsTR.go, jdigits]
+  | cons c cs ih =>
+    intro acc
+    by_cases hc : (charDigit c).isSome = true
+    · simp [jdigitsTR.go, jdigits, hc, ih]
+    · simp [jdigitsTR.go, jdigits, hc]
+
+@[csimp] theorem jdigits_eq_jdigitsTR : @jdigits = @jdigitsTR := by
+  funext l; simp [jdigitsTR, jdigitsTR_go]
 
 /-- Read a numeral off the front of a document.  `none` when the front is not a
 digit — a JSON number is never empty. -/
@@ -725,6 +851,174 @@ theorem jparseNat_reads_a_bare_numeral :
     jparseNat (jrenderNat 0) = some (0, []) ∧
     jparseNat (jrenderNat 1000000) = some (1000000, []) := by decide
 
+/-! ### J2 for every numeral: the lexical decimal (stage 5 A2, design §5.1)
+
+APPENDED 2026-09-14 (stage-5 D9 track, step A2).  A `JDec` is written as its
+sign, `digitsOf` its integer value (the one natural numeral above, so §5.3 holds:
+no second integer grammar), the fraction digits after a `.`, and `e`, a `-` for a
+negative exponent, and the exponent digits.  Fraction and exponent digits are
+`Fin 10`, read by `jfins`, whose guard is `notDigitStart` again.  The readers
+that can refuse (`jfrac`, `jexp`, `jreadDec`) need `JErr` and live in J4. -/
+
+/-- A digit as the `Fin 10` it is, through `charDigit`: one reading of a digit. -/
+def digitFin (c : Char) : Option (Fin 10) :=
+  match charDigit c with
+  | some k => if h : k < 10 then some ⟨k, h⟩ else none
+  | none => none
+
+/-- A `Fin 10` digit's character, through `digitChar`. -/
+def finChar (d : Fin 10) : Char := digitChar d.val
+
+theorem digitFin_finChar : ∀ d : Fin 10, digitFin (finChar d) = some d := by decide
+
+theorem digitFin_of_not_digit (c : Char) (h : (charDigit c).isSome = false) :
+    digitFin c = none := by
+  unfold digitFin
+  cases hc : charDigit c with
+  | none => rfl
+  | some k => rw [hc] at h; cases h
+
+theorem finChar_is_digit (d : Fin 10) : (charDigit (finChar d)).isSome = true := by
+  revert d; decide
+
+/-- The maximal run of digits as `Fin 10`s, and what is left.  Structural; the
+compiler runs `jfinsTR`. -/
+def jfins : List Char → List (Fin 10) × List Char
+  | [] => ([], [])
+  | c :: cs =>
+    match digitFin c with
+    | some d => let p := jfins cs; (d :: p.1, p.2)
+    | none => ([], c :: cs)
+
+/-- `jfins`'s runtime twin (D9-21): the digits read so far, reversed. -/
+def jfinsTR.go : List Char → List (Fin 10) → List (Fin 10) × List Char
+  | [], acc => (acc.reverse, [])
+  | c :: cs, acc =>
+    match digitFin c with
+    | some d => jfinsTR.go cs (d :: acc)
+    | none => (acc.reverse, c :: cs)
+
+def jfinsTR (l : List Char) : List (Fin 10) × List Char := jfinsTR.go l []
+
+theorem jfinsTR_go (l : List Char) : ∀ acc : List (Fin 10),
+    jfinsTR.go l acc = (acc.reverse ++ (jfins l).1, (jfins l).2) := by
+  induction l with
+  | nil => intro acc; simp [jfinsTR.go, jfins]
+  | cons c cs ih =>
+    intro acc
+    simp only [jfinsTR.go, jfins]
+    cases digitFin c with
+    | none => simp
+    | some d => simp [ih]
+
+@[csimp] theorem jfins_eq_jfinsTR : @jfins = @jfinsTR := by
+  funext l; simp [jfinsTR, jfinsTR_go]
+
+/-- The `Fin 10` run of `fs ++ r` is `fs`, provided `r` does not start with a
+digit — `jdigits_append`'s statement, one type over. -/
+theorem jfins_append (fs : List (Fin 10)) (r : List Char) (h : notDigitStart r = true) :
+    jfins (fs.map finChar ++ r) = (fs, r) := by
+  induction fs with
+  | nil =>
+    cases r with
+    | nil => rfl
+    | cons c t =>
+      simp only [notDigitStart, Bool.not_eq_true'] at h
+      simp [jfins, digitFin_of_not_digit c h]
+  | cons x xs ih =>
+    simp [jfins, digitFin_finChar, ih]
+
+/-- **What may follow any numeral**: end of input, or a byte that neither
+continues its digits nor starts a fraction or an exponent.  `notDigitStart` was
+enough while every numeral was a natural; since A2 `1` followed by `.5` reads as
+one numeral (`the_jval_jemit_fraction_guard_bites`).  Its first conjunct is
+`notDigitStart`, so what held of that guard holds of this one. -/
+def numEnd : List Char → Bool
+  | [] => true
+  | c :: _ => !(charDigit c).isSome && c != '.' && c != 'e' && c != 'E'
+
+theorem notDigitStart_of_numEnd (l : List Char) (h : numEnd l = true) :
+    notDigitStart l = true := by
+  cases l with
+  | nil => rfl
+  | cons c t => simp only [numEnd, Bool.and_eq_true] at h; exact h.1.1.1
+
+/-- The fraction's bytes: nothing for no fraction, else `.` and the digits. -/
+def JDec.renderFrac : List (Fin 10) → List Char
+  | [] => []
+  | f :: fs => '.' :: (f :: fs).map finChar
+
+/-- The exponent's bytes: `e`, `-` if negative, the digits as written. -/
+def JDec.renderExp : Option (Bool × Fin 10 × List (Fin 10)) → List Char
+  | none => []
+  | some (false, x, xs) => 'e' :: (x :: xs).map finChar
+  | some (true, x, xs) => 'e' :: '-' :: (x :: xs).map finChar
+
+/-- The bytes after the sign. -/
+def JDec.renderU (d : JDec) : List Char :=
+  digitsOf d.int ++ (JDec.renderFrac d.frac ++ JDec.renderExp d.exp)
+
+/-- **A decimal's bytes**, exactly as it was read (up to `E` and `+`). -/
+def JDec.render (d : JDec) : List Char :=
+  if d.neg then '-' :: d.renderU else d.renderU
+
+theorem JDec.renderU_ne_nil (d : JDec) : ∃ c t, d.renderU = c :: t ∧ (charDigit c).isSome = true := by
+  unfold JDec.renderU
+  cases hd : digitsOf d.int with
+  | nil => exact absurd hd (digitsOf_ne_nil _)
+  | cons c t =>
+    exact ⟨c, _, rfl, digitsOf_all_digits d.int c (by rw [hd]; simp)⟩
+
+/-- **A leading zero.**  `0` followed by another digit; RFC 8259 and serde_json
+refuse it (gap 43).  One `0`, and `0.5`, are not. -/
+def jleadingZero : List Char → Bool
+  | '0' :: c :: _ => (charDigit c).isSome
+  | _ => false
+
+/-- The only natural whose digits start with `0` is `0` itself, written `0`. -/
+theorem digitsOf_zero_head : ∀ (n : Nat) (t : List Char), digitsOf n = '0' :: t → n = 0 ∧ t = [] := by
+  intro n
+  induction n using Nat.strongRecOn with
+  | ind n ih =>
+    intro t h
+    rw [digitsOf_eq] at h
+    by_cases hn : n < 10
+    · rw [if_pos hn] at h
+      simp only [List.cons.injEq] at h
+      obtain ⟨h1, h2⟩ := h
+      have key : ∀ k < 10, digitChar k = '0' → k = 0 := by decide
+      exact ⟨key n hn h1, h2.symm⟩
+    · rw [if_neg hn] at h
+      cases hd : digitsOf (n / 10) with
+      | nil => exact absurd hd (digitsOf_ne_nil _)
+      | cons a s =>
+        rw [hd] at h
+        simp only [List.cons_append, List.cons.injEq] at h
+        obtain ⟨h1, _⟩ := h
+        have := ih (n / 10) (by omega) s (by rw [hd, h1])
+        omega
+
+/-- **What the kernel writes has no leading zero**, whatever follows a `0`, as
+long as it is not a digit. -/
+theorem jleadingZero_digitsOf (n : Nat) (Y : List Char) (h : notDigitStart Y = true) :
+    jleadingZero (digitsOf n ++ Y) = false := by
+  cases hd : digitsOf n with
+  | nil => exact absurd hd (digitsOf_ne_nil _)
+  | cons c s =>
+    by_cases hc : c = '0'
+    · subst hc
+      obtain ⟨_, rfl⟩ := digitsOf_zero_head n s hd
+      cases Y with
+      | nil => rfl
+      | cons y t =>
+        simp only [notDigitStart, Bool.not_eq_true'] at h
+        simp [jleadingZero, h]
+    · simp only [List.cons_append]
+      unfold jleadingZero
+      split
+      · next heq => simp only [List.cons.injEq] at heq; exact absurd heq.1 hc
+      · rfl
+
 /-! ## J3 — the emitter
 
 Compress-shaped: no space, no newline, no indent.  Six mutually structural
@@ -746,6 +1040,7 @@ def jemit : JVal → List Char
   | .null => ['n', 'u', 'l', 'l']
   | .bool b => if b then ['t', 'r', 'u', 'e'] else ['f', 'a', 'l', 's', 'e']
   | .num n => jrenderNat n
+  | .dec d => d.val.render
   | .str s => '"' :: (jescape s ++ ['"'])
   | .arr xs => '[' :: jemitArr xs
   | .obj kvs => '{' :: jemitObj kvs
@@ -787,6 +1082,7 @@ def jemitRev : JVal → List Char → List Char
   | .null, acc => 'l' :: 'l' :: 'u' :: 'n' :: acc
   | .bool b, acc => if b then 'e' :: 'u' :: 'r' :: 't' :: acc else 'e' :: 's' :: 'l' :: 'a' :: 'f' :: acc
   | .num n, acc => List.reverseAux (jrenderNat n) acc
+  | .dec d, acc => List.reverseAux d.val.render acc
   | .str s, acc => '"' :: List.reverseAux (jescape s) ('"' :: acc)
   | .arr xs, acc => jemitArrAcc.go xs ('[' :: acc)
   | .obj kvs, acc => jemitObjAcc.go kvs ('{' :: acc)
@@ -821,10 +1117,11 @@ theorem jemitRev_eq (v : JVal) : ∀ acc, jemitRev v acc = (jemit v).reverse ++ 
     (motive_3 := fun kvs => (∀ acc, jemitObjAcc.go kvs acc = (jemitObj kvs).reverse ++ acc) ∧
                             (∀ acc, jemitOTailAcc.go kvs acc = (jemitOTail kvs).reverse ++ acc))
     (motive_4 := fun p => ∀ acc, jemitPairAcc.go p acc = (jemitPair p).reverse ++ acc)
-    ?null ?bool ?num ?str ?arr ?obj ?lnil ?lcons ?onil ?ocons ?pair v
+    ?null ?bool ?num ?dec ?str ?arr ?obj ?lnil ?lcons ?onil ?ocons ?pair v
   case null => intro acc; rfl
   case bool => intro b acc; cases b <;> rfl
   case num => intro n acc; simp [jemitRev, jemit, List.reverseAux_eq]
+  case dec => intro d acc; simp [jemitRev, jemit, List.reverseAux_eq]
   case str => intro s acc; simp [jemitRev, jemit, List.reverseAux_eq]
   case arr => intro xs ih acc; simp [jemitRev, jemit, ih.1]
   case obj => intro kvs ih acc; simp [jemitRev, jemit, ih.1]
@@ -905,6 +1202,7 @@ def jfuel : JVal → Nat
   | .null => 1
   | .bool _ => 1
   | .num _ => 1
+  | .dec _ => 1
   | .str _ => 1
   | .arr xs => 1 + jfuelL xs
   | .obj kvs => 1 + jfuelO kvs
@@ -946,7 +1244,7 @@ theorem jfuel_le_jemit (v : JVal) : jfuel v ≤ 2 * (jemit v).length := by
     (motive_2 := fun xs => jfuelL xs + 1 ≤ 2 * (jemitTail xs).length)
     (motive_3 := fun kvs => jfuelO kvs + 1 ≤ 2 * (jemitOTail kvs).length)
     (motive_4 := fun p => jfuelPair p ≤ 2 * (jemitPair p).length)
-    ?null ?bool ?num ?str ?arr ?obj ?lnil ?lcons ?onil ?ocons ?pair v
+    ?null ?bool ?num ?dec ?str ?arr ?obj ?lnil ?lcons ?onil ?ocons ?pair v
   case null => simp [jfuel, jemit]
   case bool => intro b; cases b <;> simp [jfuel, jemit]
   case num =>
@@ -959,6 +1257,14 @@ theorem jfuel_le_jemit (v : JVal) : jfuel v ≤ 2 * (jemit v).length := by
       | cons a t => simp
     have hf : jfuel (JVal.num n) = 1 := rfl
     rw [h, hf]; omega
+  case dec =>
+    intro d
+    have hf : jfuel (JVal.dec d) = 1 := rfl
+    obtain ⟨c, t, hu, _⟩ := d.val.renderU_ne_nil
+    have h : 1 ≤ (jemit (JVal.dec d)).length := by
+      show 1 ≤ d.val.render.length
+      unfold JDec.render; split <;> simp [hu]
+    rw [hf]; omega
   case str =>
     intro s
     have h : (jemit (JVal.str s)).length = (jescape s).length + 2 := by
@@ -1034,8 +1340,8 @@ inductive JErr
   | outOfFuel
   /-- End of input where a value was expected. -/
   | emptyInput
-  /-- A byte that starts no value of this fragment — `-` and `+` included, since
-  `JVal.num` is a `Nat`. -/
+  /-- A byte that starts no value — `+` included, which RFC 8259 does not allow
+  in front of a numeral.  (`-` starts a `dec` since stage 5 A2.) -/
   | notAValue (c : Char)
   /-- Digits that `readNat` would not fold.  Unreachable through `jval`, which
   only calls `jparseNat` on a digit (`jparseNat_some_of_digit`); kept so the
@@ -1059,6 +1365,12 @@ inductive JErr
   | expectedKey (c : Char)
   /-- A complete value, then a non-whitespace byte. -/
   | trailingGarbage (c : Char)
+  /-- `0` followed by another digit (stage 5 A2; README gap 43, closed): RFC 8259
+  forbids it and serde_json refuses it. -/
+  | leadingZero
+  /-- A numeral that stops where a digit must follow: after `-`, `.`, the
+  exponent's `e`/`E`, or its sign.  Carries that byte (stage 5 A2). -/
+  | missingDigit (c : Char)
 deriving DecidableEq, Repr, Inhabited
 
 /-! Core ships no `DecidableEq (Except ε α)`, and this module does **not** add
@@ -1169,6 +1481,69 @@ def jstring (l : List Char) : Except JErr (List Char × List Char) :=
     | .error e => .error (.badEscape e)
     | .ok cs => .ok (cs, r)
 
+/-! ### Reading a numeral (stage 5 A2, design §5.1)
+
+APPENDED 2026-09-14 (stage-5 D9 track, step A2).  None of these recurses except
+through `jparseNat` and `jfins`, whose per-digit loops run as `jdigitsTR` and
+`jfinsTR`.  The integer digits are `jparseNat`'s, so a natural numeral has one
+reader. -/
+
+/-- After `.`: at least one digit.  No `.`: no fraction, nothing consumed. -/
+def jfrac : List Char → Except JErr (List (Fin 10) × List Char)
+  | '.' :: r =>
+    match jfins r with
+    | ([], _) => .error (.missingDigit '.')
+    | (fs, r') => .ok (fs, r')
+  | l => .ok ([], l)
+
+/-- The exponent's digits, at least one, after the marker or sign `m`. -/
+def jexpDigits (neg : Bool) (m : Char) (l : List Char) :
+    Except JErr (Option (Bool × Fin 10 × List (Fin 10)) × List Char) :=
+  match jfins l with
+  | ([], _) => .error (.missingDigit m)
+  | (x :: xs, r) => .ok (some (neg, x, xs), r)
+
+/-- After `e`/`E` (`m`): an optional sign, then the digits. -/
+def jexpAfter (m : Char) : List Char →
+    Except JErr (Option (Bool × Fin 10 × List (Fin 10)) × List Char)
+  | '-' :: r => jexpDigits true '-' r
+  | '+' :: r => jexpDigits false '+' r
+  | l => jexpDigits false m l
+
+/-- `e`/`E` and an exponent, or no exponent and nothing consumed. -/
+def jexp : List Char → Except JErr (Option (Bool × Fin 10 × List (Fin 10)) × List Char)
+  | 'e' :: r => jexpAfter 'e' r
+  | 'E' :: r => jexpAfter 'E' r
+  | l => .ok (none, l)
+
+/-- **A numeral after its sign.**  `neg` says whether a `-` was read.  The integer
+digits are `jparseNat`'s, refused with a leading zero; then the fraction and the
+exponent.  `badNumber` is unreachable with `neg = false` from `jval`, which calls
+this only on a digit (`jparseNat_some_of_digit`). -/
+def jreadDec (neg : Bool) (l : List Char) : Except JErr (JDec × List Char) :=
+  match jparseNat l with
+  | none => .error (if neg then .missingDigit '-' else .badNumber)
+  | some (n, r1) =>
+    if jleadingZero l then .error .leadingZero
+    else
+      match jfrac r1 with
+      | .error e => .error e
+      | .ok (fs, r2) =>
+        match jexp r2 with
+        | .error e => .error e
+        | .ok (ex, r3) => .ok (⟨neg, n, fs, ex⟩, r3)
+
+/-- **The one smart constructor from a read numeral to a value**: a plain numeral
+is `num`, anything else `dec`.  So `7` is never `dec` and `jparse` has one answer. -/
+def JVal.ofDec (d : JDec) : JVal :=
+  if h : d.plain = true then .num d.int else .dec ⟨d, by simpa using h⟩
+
+/-- A numeral as a value: `jval`'s number branch. -/
+def jnumber (neg : Bool) (l : List Char) : Except JErr (JVal × List Char) :=
+  match jreadDec neg l with
+  | .error e => .error e
+  | .ok (d, r) => .ok (JVal.ofDec d, r)
+
 mutual
 /-- A value, with whatever whitespace precedes it. -/
 def jval : Nat → List Char → Except JErr (JVal × List Char)
@@ -1177,10 +1552,8 @@ def jval : Nat → List Char → Except JErr (JVal × List Char)
     match skipWs l with
     | [] => .error .emptyInput
     | c :: r =>
-      if (charDigit c).isSome then
-        match jparseNat (c :: r) with
-        | none => .error .badNumber
-        | some (n, r') => .ok (.num n, r')
+      if (charDigit c).isSome then jnumber false (c :: r)
+      else if c = '-' then jnumber true r
       else if c = '"' then
         match jstring r with
         | .error e => .error e
@@ -1307,10 +1680,8 @@ def jvalAcc : Nat → List Char → Except JErr (JVal × List Char)
     match skipWs l with
     | [] => .error .emptyInput
     | c :: r =>
-      if (charDigit c).isSome then
-        match jparseNat (c :: r) with
-        | none => .error .badNumber
-        | some (n, r') => .ok (.num n, r')
+      if (charDigit c).isSome then jnumber false (c :: r)
+      else if c = '-' then jnumber true r
       else if c = '"' then
         match jstring r with
         | .error e => .error e
@@ -1633,6 +2004,14 @@ theorem jemit_head (v : JVal) :
         digitsOf_all_digits n c (by rw [hd]; simp)
       exact ⟨c, t, hd, charDigit_not_ws c hc,
              (charDigit_ne_closers c hc).1, (charDigit_ne_closers c hc).2⟩
+  | dec d =>
+    obtain ⟨c, t, hu, hc⟩ := d.val.renderU_ne_nil
+    show ∃ c t, d.val.render = c :: t ∧ wsChar c = false ∧ c ≠ ']' ∧ c ≠ '}'
+    unfold JDec.render
+    split
+    · exact ⟨'-', _, rfl, by decide, by decide, by decide⟩
+    · exact ⟨c, t, hu, charDigit_not_ws c hc,
+             (charDigit_ne_closers c hc).1, (charDigit_ne_closers c hc).2⟩
   | str s => exact ⟨'"', jescape s ++ ['"'], rfl, by decide, by decide, by decide⟩
   | arr xs => exact ⟨'[', jemitArr xs, rfl, by decide, by decide, by decide⟩
   | obj kvs => exact ⟨'{', jemitObj kvs, rfl, by decide, by decide, by decide⟩
@@ -1640,6 +2019,14 @@ theorem jemit_head (v : JVal) :
 /-- A numeral inside a document is always followed by `]`, `}` or `,` — never by
 another digit.  This is the hypothesis `jparseNat_jrenderNat` needs, discharged
 at every site rather than assumed. -/
+theorem numEnd_jemitTail (xs : List JVal) (rest : List Char) :
+    numEnd (jemitTail xs ++ rest) = true := by
+  cases xs <;> rfl
+
+theorem numEnd_jemitOTail (kvs : List (List Char × JVal)) (rest : List Char) :
+    numEnd (jemitOTail kvs ++ rest) = true := by
+  cases kvs <;> rfl
+
 theorem notDigitStart_jemitTail (xs : List JVal) (rest : List Char) :
     notDigitStart (jemitTail xs ++ rest) = true := by
   cases xs <;> rfl
@@ -1681,12 +2068,130 @@ theorem jval_lbrace (f : Nat) (x : List Char) :
        | .error e => .error e
        | .ok (kvs, r) => .ok (JVal.obj kvs, r)) := rfl
 
+/-- A digit starts a numeral with no sign.  (Stage 5 A2 restated this equation:
+until then the branch read a `Nat` with `jparseNat` and nothing else.) -/
 theorem jval_digit (f : Nat) (c : Char) (r : List Char) (h : (charDigit c).isSome = true) :
-    jval (f + 1) (c :: r) =
-      (match jparseNat (c :: r) with
-       | none => .error .badNumber
-       | some (n, r') => .ok (JVal.num n, r')) := by
+    jval (f + 1) (c :: r) = jnumber false (c :: r) := by
   simp only [jval, skipWs_cons_of_not_ws c r (charDigit_not_ws c h), h, if_true]
+
+/-- A `-` starts a negative numeral (stage 5 A2). -/
+theorem jval_minus (f : Nat) (r : List Char) : jval (f + 1) ('-' :: r) = jnumber true r := rfl
+
+/-! ### The numeral round trip (stage 5 A2)
+
+`jreadDec` reads back what `JDec.render` wrote, and stops exactly where the
+numeral ends, whenever what follows satisfies `numEnd`.  Every step is a rewrite
+by a J2 lemma; nothing is evaluated. -/
+
+theorem notDigitStart_renderExp (ex : Option (Bool × Fin 10 × List (Fin 10))) (rest : List Char)
+    (h : numEnd rest = true) : notDigitStart (JDec.renderExp ex ++ rest) = true := by
+  rcases ex with _ | ⟨b, x, xs⟩
+  · exact notDigitStart_of_numEnd rest h
+  · cases b <;> rfl
+
+theorem notDigitStart_renderFrac (fs : List (Fin 10)) (ex : Option (Bool × Fin 10 × List (Fin 10)))
+    (rest : List Char) (h : numEnd rest = true) :
+    notDigitStart (JDec.renderFrac fs ++ (JDec.renderExp ex ++ rest)) = true := by
+  cases fs with
+  | nil => exact notDigitStart_renderExp ex rest h
+  | cons _ _ => rfl
+
+theorem jexpAfter_digit (m c : Char) (t : List Char) (hc : (charDigit c).isSome = true) :
+    jexpAfter m (c :: t) = jexpDigits false m (c :: t) := by
+  rcases charDigit_cases c hc with rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl <;> rfl
+
+theorem jexp_renderExp (ex : Option (Bool × Fin 10 × List (Fin 10))) (rest : List Char)
+    (h : numEnd rest = true) : jexp (JDec.renderExp ex ++ rest) = .ok (ex, rest) := by
+  rcases ex with _ | ⟨b, x, xs⟩
+  · cases rest with
+    | nil => rfl
+    | cons c t =>
+      simp only [numEnd, Bool.and_eq_true, bne_iff_ne, ne_eq] at h
+      obtain ⟨⟨⟨_, _⟩, he⟩, hE⟩ := h
+      show jexp (c :: t) = _
+      unfold jexp
+      split
+      · next heq => simp only [List.cons.injEq] at heq; exact absurd heq.1 he
+      · next heq => simp only [List.cons.injEq] at heq; exact absurd heq.1 hE
+      · rfl
+  · have hd : notDigitStart rest = true := notDigitStart_of_numEnd rest h
+    cases b with
+    | false =>
+      show jexpAfter 'e' (finChar x :: (xs.map finChar ++ rest)) = _
+      rw [jexpAfter_digit 'e' _ _ (finChar_is_digit x)]
+      unfold jexpDigits
+      have := jfins_append (x :: xs) rest hd
+      simp only [List.map_cons, List.cons_append] at this
+      rw [this]
+    | true =>
+      show jexpDigits true '-' ((x :: xs).map finChar ++ rest) = _
+      unfold jexpDigits
+      rw [jfins_append (x :: xs) rest hd]
+
+theorem jfrac_renderFrac (fs : List (Fin 10)) (ex : Option (Bool × Fin 10 × List (Fin 10)))
+    (rest : List Char) (h : numEnd rest = true) :
+    jfrac (JDec.renderFrac fs ++ (JDec.renderExp ex ++ rest)) = .ok (fs, JDec.renderExp ex ++ rest) := by
+  cases fs with
+  | cons f fs =>
+    show jfrac ('.' :: ((f :: fs).map finChar ++ (JDec.renderExp ex ++ rest))) = _
+    unfold jfrac
+    simp only [jfins_append (f :: fs) _ (notDigitStart_renderExp ex rest h)]
+  | nil =>
+    rcases ex with _ | ⟨b, x, xs⟩
+    · cases rest with
+      | nil => rfl
+      | cons c t =>
+        simp only [numEnd, Bool.and_eq_true, bne_iff_ne, ne_eq] at h
+        obtain ⟨⟨⟨_, hdot⟩, _⟩, _⟩ := h
+        show jfrac (c :: t) = _
+        unfold jfrac
+        split
+        · next heq => simp only [List.cons.injEq] at heq; exact absurd heq.1 hdot
+        · rfl
+    · cases b <;> rfl
+
+/-- **The reader reads the renderer**, after the sign. -/
+theorem jreadDec_renderU (d : JDec) (rest : List Char) (h : numEnd rest = true) :
+    jreadDec d.neg (d.renderU ++ rest) = .ok (d, rest) := by
+  obtain ⟨neg, n, fs, ex⟩ := d
+  have hY := notDigitStart_renderFrac fs ex rest h
+  have hn : jparseNat (digitsOf n ++ (JDec.renderFrac fs ++ (JDec.renderExp ex ++ rest)))
+      = some (n, JDec.renderFrac fs ++ (JDec.renderExp ex ++ rest)) :=
+    jparseNat_jrenderNat n _ hY
+  simp only [JDec.renderU, List.append_assoc]
+  unfold jreadDec
+  rw [hn]
+  simp only [jleadingZero_digitsOf n _ hY, Bool.false_eq_true, if_false]
+  rw [jfrac_renderFrac fs ex rest h]
+  simp only []
+  rw [jexp_renderExp ex rest h]
+
+/-- **`jval` reads every numeral the kernel writes** back to `JVal.ofDec` of it. -/
+theorem jval_render (d : JDec) (g : Nat) (rest : List Char) (h : numEnd rest = true) :
+    jval (g + 1) (d.render ++ rest) = .ok (JVal.ofDec d, rest) := by
+  have hr := jreadDec_renderU d rest h
+  unfold JDec.render
+  cases hn : d.neg
+  · rw [hn] at hr
+    simp only [Bool.false_eq_true, if_false]
+    obtain ⟨c, t, hu, hc⟩ := d.renderU_ne_nil
+    rw [hu, List.cons_append, jval_digit g c _ hc, ← List.cons_append, ← hu]
+    unfold jnumber
+    rw [hr]
+  · rw [hn] at hr
+    simp only [if_true]
+    rw [List.cons_append, jval_minus]
+    unfold jnumber
+    rw [hr]
+
+theorem JVal.ofDec_plain (n : Nat) : JVal.ofDec ⟨false, n, [], none⟩ = .num n := rfl
+
+theorem JVal.ofDec_dec (d : { d : JDec // d.plain = false }) : JVal.ofDec d.val = .dec d := by
+  unfold JVal.ofDec
+  rw [dif_neg (by simp [d.property])]
+
+theorem jemit_num_is_render (n : Nat) : jemit (.num n) = JDec.render ⟨false, n, [], none⟩ := by
+  simp [jemit, JDec.render, JDec.renderU, JDec.renderFrac, JDec.renderExp]
 
 theorem jarr_empty (f : Nat) (r : List Char) : jarr (f + 1) (']' :: r) = .ok ([], r) := rfl
 
@@ -1783,9 +2288,11 @@ The eliminator is the same four-motive `JVal.rec` J0 rehearsed on `jbeq_sound`,
 and the two list motives are **conjunctions**, one component per parser entry
 point: what follows `[` and what follows an element are different functions, and
 the emitter has a function for each.  `motive_1` and `motive_4` carry the
-`notDigitStart` hypothesis because a numeral is the one value whose end is
-decided by the byte after it; the list motives do not need it, because a list
-element is always followed by `,` or a closer.
+`numEnd` hypothesis because a numeral is the one value whose end is decided by
+the bytes after it; the list motives do not need it, because a list element is
+always followed by `,` or a closer.  (Until stage 5 A2 the hypothesis was
+`notDigitStart`, which a fraction or an exponent defeats:
+`the_jval_jemit_fraction_guard_bites`.)
 
 **No side condition, and in particular none about duplicate keys.**  A `JVal`
 object is an ordered assoc list (J0), so `{"a":1,"a":2}` is a value the kernel
@@ -1794,10 +2301,10 @@ can build, emit and read back unchanged — see
 object would have created here does not exist. -/
 
 theorem jval_jemit (v : JVal) : ∀ (f : Nat) (rest : List Char),
-    jfuel v ≤ f → notDigitStart rest = true →
+    jfuel v ≤ f → numEnd rest = true →
     jval f (jemit v ++ rest) = .ok (v, rest) := by
   refine JVal.rec
-    (motive_1 := fun v => ∀ f rest, jfuel v ≤ f → notDigitStart rest = true →
+    (motive_1 := fun v => ∀ f rest, jfuel v ≤ f → numEnd rest = true →
       jval f (jemit v ++ rest) = .ok (v, rest))
     (motive_2 := fun xs =>
       (∀ f rest, jfuelL xs ≤ f → jarr f (jemitArr xs ++ rest) = .ok (xs, rest)) ∧
@@ -1805,9 +2312,9 @@ theorem jval_jemit (v : JVal) : ∀ (f : Nat) (rest : List Char),
     (motive_3 := fun kvs =>
       (∀ f rest, jfuelO kvs ≤ f → jobj f (jemitObj kvs ++ rest) = .ok (kvs, rest)) ∧
       (∀ f rest, jfuelO kvs ≤ f → jotail f (jemitOTail kvs ++ rest) = .ok (kvs, rest)))
-    (motive_4 := fun p => ∀ f rest, jfuelPair p ≤ f → notDigitStart rest = true →
+    (motive_4 := fun p => ∀ f rest, jfuelPair p ≤ f → numEnd rest = true →
       jpair f (jemitPair p ++ rest) = .ok (p, rest))
-    ?null ?bool ?num ?str ?arr ?obj ?lnil ?lcons ?onil ?ocons ?pair v
+    ?null ?bool ?num ?dec ?str ?arr ?obj ?lnil ?lcons ?onil ?ocons ?pair v
   case null =>
     intro f rest hf _
     cases f with
@@ -1826,16 +2333,14 @@ theorem jval_jemit (v : JVal) : ∀ (f : Nat) (rest : List Char),
     cases f with
     | zero => have h : jfuel (JVal.num n) = 1 := rfl; omega
     | succ g =>
-      have hnum : jparseNat (digitsOf n ++ rest) = some (n, rest) :=
-        jparseNat_jrenderNat n rest hr
-      cases hd : digitsOf n with
-      | nil => exact absurd hd (digitsOf_ne_nil n)
-      | cons c t =>
-        have hc : (charDigit c).isSome = true :=
-          digitsOf_all_digits n c (by rw [hd]; simp)
-        rw [hd, List.cons_append] at hnum
-        show jval (g + 1) (digitsOf n ++ rest) = _
-        rw [hd, List.cons_append, jval_digit g c (t ++ rest) hc, hnum]
+      rw [jemit_num_is_render, jval_render _ g rest hr, JVal.ofDec_plain]
+  case dec =>
+    intro d f rest hf hr
+    cases f with
+    | zero => have h : jfuel (JVal.dec d) = 1 := rfl; omega
+    | succ g =>
+      show jval (g + 1) (d.val.render ++ rest) = _
+      rw [jval_render _ g rest hr, JVal.ofDec_dec]
   case str =>
     intro s f rest hf _
     cases f with
@@ -1885,7 +2390,7 @@ theorem jval_jemit (v : JVal) : ∀ (f : Nat) (rest : List Char),
         have h2 : jfuelL xs ≤ g := by omega
         show jarr (g + 1) ((jemit x ++ jemitTail xs) ++ rest) = _
         rw [List.append_assoc, jarr_of_jemit]
-        simp only [ihx g (jemitTail xs ++ rest) h1 (notDigitStart_jemitTail xs rest),
+        simp only [ihx g (jemitTail xs ++ rest) h1 (numEnd_jemitTail xs rest),
                    ihxs.2 g rest h2]
     · intro f rest hf
       cases f with
@@ -1895,7 +2400,7 @@ theorem jval_jemit (v : JVal) : ∀ (f : Nat) (rest : List Char),
         have h2 : jfuelL xs ≤ g := by omega
         show jtail (g + 1) ((',' :: (jemit x ++ jemitTail xs)) ++ rest) = _
         rw [List.cons_append, jtail_comma, List.append_assoc]
-        simp only [ihx g (jemitTail xs ++ rest) h1 (notDigitStart_jemitTail xs rest),
+        simp only [ihx g (jemitTail xs ++ rest) h1 (numEnd_jemitTail xs rest),
                    ihxs.2 g rest h2]
   case onil =>
     have he : jfuelO ([] : List (List Char × JVal)) = 1 := rfl
@@ -1920,7 +2425,7 @@ theorem jval_jemit (v : JVal) : ∀ (f : Nat) (rest : List Char),
         have h2 : jfuelO kvs ≤ g := by omega
         show jobj (g + 1) ((jemitPair kv ++ jemitOTail kvs) ++ rest) = _
         rw [List.append_assoc, jobj_of_jemitPair]
-        simp only [ihkv g (jemitOTail kvs ++ rest) h1 (notDigitStart_jemitOTail kvs rest),
+        simp only [ihkv g (jemitOTail kvs ++ rest) h1 (numEnd_jemitOTail kvs rest),
                    ihkvs.2 g rest h2]
     · intro f rest hf
       cases f with
@@ -1930,7 +2435,7 @@ theorem jval_jemit (v : JVal) : ∀ (f : Nat) (rest : List Char),
         have h2 : jfuelO kvs ≤ g := by omega
         show jotail (g + 1) ((',' :: (jemitPair kv ++ jemitOTail kvs)) ++ rest) = _
         rw [List.cons_append, jotail_comma, List.append_assoc]
-        simp only [ihkv g (jemitOTail kvs ++ rest) h1 (notDigitStart_jemitOTail kvs rest),
+        simp only [ihkv g (jemitOTail kvs ++ rest) h1 (numEnd_jemitOTail kvs rest),
                    ihkvs.2 g rest h2]
   case pair =>
     intro k v ihv f rest hf hr
@@ -2116,6 +2621,153 @@ theorem jparseNat_some_of_digit (c : Char) (r : List Char) (hc : (charDigit c).i
   rw [this]
   rfl
 
+/-! #### A numeral consumes a byte, and never refuses for fuel (stage 5 A2) -/
+
+theorem jdigits_split : ∀ l : List Char, (jdigits l).1 ++ (jdigits l).2 = l
+  | [] => rfl
+  | c :: cs => by
+    unfold jdigits
+    split
+    · simp [jdigits_split cs]
+    · rfl
+
+theorem jfins_length : ∀ l : List Char, (jfins l).2.length ≤ l.length
+  | [] => Nat.le_refl _
+  | c :: cs => by
+    unfold jfins
+    split
+    · exact Nat.le_succ_of_le (jfins_length cs)
+    · exact Nat.le_refl _
+
+theorem jparseNat_consumes (l r : List Char) (n : Nat) (h : jparseNat l = some (n, r)) :
+    r.length < l.length := by
+  unfold jparseNat at h
+  have hs := jdigits_split l
+  revert hs h
+  generalize jdigits l = p
+  obtain ⟨ds, rest⟩ := p
+  intro h hs
+  cases ds with
+  | nil => cases h
+  | cons d ds =>
+    simp only at h
+    cases hn : readNat (d :: ds) with
+    | none => rw [hn] at h; cases h
+    | some m =>
+      rw [hn] at h
+      simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨_, rfl⟩ := h
+      rw [← hs]; simp; omega
+
+theorem jfrac_length (l r : List Char) (fs : List (Fin 10)) (h : jfrac l = .ok (fs, r)) :
+    r.length ≤ l.length := by
+  unfold jfrac at h
+  split at h
+  · next r0 =>
+    have := jfins_length r0
+    revert this h
+    generalize jfins r0 = p
+    obtain ⟨fs', r'⟩ := p
+    intro h hl
+    cases fs' with
+    | nil => cases h
+    | cons _ _ =>
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨_, rfl⟩ := h
+      simp at hl ⊢; omega
+  · simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨_, rfl⟩ := h
+    exact Nat.le_refl _
+
+theorem jexpDigits_length (neg : Bool) (m : Char) (l r : List Char)
+    (ex : Option (Bool × Fin 10 × List (Fin 10))) (h : jexpDigits neg m l = .ok (ex, r)) :
+    r.length ≤ l.length := by
+  unfold jexpDigits at h
+  have := jfins_length l
+  revert this h
+  generalize jfins l = p
+  obtain ⟨fs', r'⟩ := p
+  intro h hl
+  cases fs' with
+  | nil => cases h
+  | cons _ _ =>
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨_, rfl⟩ := h
+    exact hl
+
+theorem jexp_length (l r : List Char) (ex : Option (Bool × Fin 10 × List (Fin 10)))
+    (h : jexp l = .ok (ex, r)) : r.length ≤ l.length := by
+  unfold jexp at h
+  split at h
+  · next r0 =>
+    unfold jexpAfter at h
+    split at h <;> (have := jexpDigits_length _ _ _ _ _ h; simp at this ⊢; omega)
+  · next r0 =>
+    unfold jexpAfter at h
+    split at h <;> (have := jexpDigits_length _ _ _ _ _ h; simp at this ⊢; omega)
+  · simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨_, rfl⟩ := h
+    exact Nat.le_refl _
+
+theorem jreadDec_length (neg : Bool) (l r : List Char) (d : JDec) (h : jreadDec neg l = .ok (d, r)) :
+    r.length < l.length := by
+  unfold jreadDec at h
+  split at h
+  · split at h <;> cases h
+  · next n r1 hn =>
+    have h1 := jparseNat_consumes l r1 n hn
+    split at h
+    · cases h
+    · split at h
+      · cases h
+      · next fs r2 hf =>
+        have h2 := jfrac_length r1 r2 fs hf
+        split at h
+        · cases h
+        · next ex r3 he =>
+          have h3 := jexp_length r2 r3 ex he
+          simp only [Except.ok.injEq, Prod.mk.injEq] at h
+          obtain ⟨_, rfl⟩ := h
+          omega
+
+theorem jnumber_length (neg : Bool) (l r : List Char) (v : JVal) (h : jnumber neg l = .ok (v, r)) :
+    r.length < l.length := by
+  unfold jnumber at h
+  split at h
+  · cases h
+  · next d r' hd =>
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨_, rfl⟩ := h
+    exact jreadDec_length neg l r' d hd
+
+theorem jnumber_ne_outOfFuel (neg : Bool) (l : List Char) : jnumber neg l ≠ .error .outOfFuel := by
+  unfold jnumber jreadDec
+  split
+  · next e he =>
+    split at he
+    · split at he <;> (simp only [Except.error.injEq] at he; subst he; nofun)
+    · split at he
+      · simp only [Except.error.injEq] at he; subst he; nofun
+      · split at he
+        · next e' hf =>
+          simp only [Except.error.injEq] at he; subst he
+          unfold jfrac at hf
+          split at hf
+          · split at hf <;> first | (simp only [Except.error.injEq] at hf; subst hf; nofun) | cases hf
+          · cases hf
+        · split at he
+          · next e' _ hx =>
+            simp only [Except.error.injEq] at he; subst he
+            unfold jexp at hx
+            split at hx
+            all_goals first
+              | cases hx
+              | (unfold jexpAfter jexpDigits at hx
+                 split at hx <;> split at hx <;>
+                   first | (simp only [Except.error.injEq] at hx; subst hx; nofun) | cases hx)
+          · cases he
+  · nofun
+
 /-! #### Every successful frame consumes a byte -/
 
 theorem jval_consumes_step (f : Nat)
@@ -2132,16 +2784,14 @@ theorem jval_consumes_step (f : Nat)
     simp only at h
     by_cases hd : (charDigit c).isSome = true
     · rw [if_pos hd] at h
-      cases hn : jparseNat (c :: t) with
-      | none => rw [hn] at h; cases h
-      | some p =>
-        obtain ⟨n, r'⟩ := p
-        rw [hn] at h
-        simp only [Except.ok.injEq, Prod.mk.injEq] at h
-        obtain ⟨_, rfl⟩ := h
-        have := jparseNat_length c t r' n hd hn
-        omega
+      have := jnumber_length false (c :: t) r v h
+      omega
     · rw [if_neg hd] at h
+      by_cases hm : c = '-'
+      · rw [if_pos hm] at h
+        have := jnumber_length true t r v h
+        simp only [List.length_cons] at hl; omega
+      rw [if_neg hm] at h
       by_cases hq : c = '"'
       · rw [if_pos hq] at h
         cases hj : jstring t with
@@ -2404,10 +3054,12 @@ theorem jval_fuel_step (f : Nat)
     simp only at h
     by_cases hd : (charDigit c).isSome = true
     · rw [if_pos hd] at h
-      cases hn : jparseNat (c :: t) with
-      | none => rw [hn] at h; cases h
-      | some p => obtain ⟨n, r'⟩ := p; rw [hn] at h; cases h
+      exact jnumber_ne_outOfFuel false (c :: t) h
     · rw [if_neg hd] at h
+      by_cases hm : c = '-'
+      · rw [if_pos hm] at h
+        exact jnumber_ne_outOfFuel true t h
+      rw [if_neg hm] at h
       by_cases hq : c = '"'
       · rw [if_pos hq] at h
         cases hj : jstring t with
@@ -2807,15 +3459,60 @@ theorem the_round_trip_survives_duplicate_keys :
       = .ok (.obj [(['a'], .num 1), (['a'], .num 2)]) :=
   ⟨by decide, jparse_jemit _, rfl⟩
 
-/-- **Two spellings, one value: leading zeros are accepted** (README gap 43).
-RFC 8259 forbids `007`; `jparseNat` folds it through `readNat`, which does not,
-and the kernel emits only the canonical `7`.  So `jparse` is a left inverse of
-`jemit` and not a right one — which whitespace and `\t` already made true. -/
-theorem jparse_accepts_leading_zeros :
-    jparse ['0', '0', '7'] = .ok (.num 7) ∧
-    jemit (.num 7) = ['7'] ∧
-    jparse ['0'] = .ok (.num 0) :=
-  ⟨rfl, by decide, rfl⟩
+/-- **Leading zeros are refused, as serde_json refuses them** (stage 5 A2;
+README gap 43, closed).  This is the refutation of stage 3's
+`jparse_accepts_leading_zeros`, which read `007` as `7`: RFC 8259 forbids the
+spelling, and a reader that took it would give one value two spellings the host
+never agrees to.  A lone `0`, `-0` and `0.5` are not leading zeros, so the
+refusal does not over-bite (§5.8). -/
+theorem jparse_refuses_a_leading_zero :
+    jparse ['0', '0', '7'] = .error .leadingZero ∧
+    jparse ['-', '0', '1'] = .error .leadingZero ∧
+    jparse ['0', '0', '.', '5'] = .error .leadingZero ∧
+    jparse ['0'] = .ok (.num 0) ∧
+    jparse ['-', '0'] = .ok (.dec ⟨⟨true, 0, [], none⟩, rfl⟩) ∧
+    jparse ['0', '.', '5'] = .ok (.dec ⟨⟨false, 0, [5], none⟩, rfl⟩) :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- **A bare natural is still `num`** — every one, by the round trip, and on bytes. -/
+theorem jparse_reads_a_plain_numeral_as_num :
+    (∀ n : Nat, jparse (jrenderNat n) = .ok (.num n)) ∧
+    jparse ['1', '0'] = .ok (.num 10) :=
+  ⟨fun n => jparse_jemit (.num n), rfl⟩
+
+/-- **A signed decimal is `dec`**, digit for digit (design §5.1's witness). -/
+theorem jparse_reads_a_signed_decimal_as_dec :
+    jparse ['-', '0', '.', '5'] = .ok (.dec ⟨⟨true, 0, [5], none⟩, rfl⟩) :=
+  rfl
+
+/-- **The exponent is kept as digits.**  `E` and `+` are spellings of `e` and of
+no sign, so `1E+5` is `1e5`; but `1e05` is not `1e5`, and `1e0005` is emitted
+as written — the emission evaluated, the read back `jparse_jemit`'s instance
+(design K18). -/
+theorem jparse_reads_an_exponent_as_written :
+    jparse ['1', 'E', '+', '5'] = .ok (.dec ⟨⟨false, 1, [], some (false, 5, [])⟩, rfl⟩) ∧
+    jparse ['1', 'e', '5'] = .ok (.dec ⟨⟨false, 1, [], some (false, 5, [])⟩, rfl⟩) ∧
+    jparse ['2', 'e', '-', '0', '5'] = .ok (.dec ⟨⟨false, 2, [], some (true, 0, [5])⟩, rfl⟩) ∧
+    jemit (.dec ⟨⟨false, 1, [], some (false, 0, [0, 0, 5])⟩, rfl⟩) = ['1', 'e', '0', '0', '0', '5'] ∧
+    jparse ['1', 'e', '0', '0', '0', '5']
+      = .ok (.dec ⟨⟨false, 1, [], some (false, 0, [0, 0, 5])⟩, rfl⟩) := by
+  have h : jemit (.dec ⟨⟨false, 1, [], some (false, 0, [0, 0, 5])⟩, rfl⟩)
+      = ['1', 'e', '0', '0', '0', '5'] := by decide
+  exact ⟨rfl, rfl, rfl, h, by rw [← h]; exact jparse_jemit _⟩
+
+/-- **A numeral stops where a digit must follow, by name.**  After `-`, `.`, the
+marker and its sign.  The `1e` conjunct is why the exponent's digits are a first
+digit and the rest: the design's `some (false, [])` would have emitted exactly
+these refused bytes, so over its type `jparse_jemit` was false (README). -/
+theorem jparse_refuses_a_numeral_missing_a_digit :
+    jparse ['-'] = .error (.missingDigit '-') ∧
+    jparse ['-', 'x'] = .error (.missingDigit '-') ∧
+    jparse ['1', '.'] = .error (.missingDigit '.') ∧
+    jparse ['1', '.', 'e', '5'] = .error (.missingDigit '.') ∧
+    jparse ['1', 'e'] = .error (.missingDigit 'e') ∧
+    jparse ['1', 'E', '+'] = .error (.missingDigit '+') ∧
+    jparse ['+', '1'] = .error (.notAValue '+') :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-! #### The refusals, each by its own name (§5.7, §5.8) -/
 
@@ -2857,14 +3554,18 @@ theorem jparse_refuses_a_missing_colon :
 theorem jparse_refuses_an_unterminated_object :
     jparse ['{', '"', 'a', '"', ':', '1'] = .error .unterminatedObject := rfl
 
-/-- **The fragment is narrow, and refuses by name rather than truncating.**
-`JVal.num` is a `Nat`, so a sign, a fraction and an exponent have no type here —
-and a reader that quietly dropped them is exactly the `.toOption` failure §5.10
-records. -/
-theorem jparse_refuses_what_the_fragment_has_no_type_for :
-    jparse ['-', '3'] = .error (.notAValue '-') ∧
-    jparse ['1', '.', '5'] = .error (.trailingGarbage '.') ∧
-    jparse ['1', 'e', '3'] = .error (.trailingGarbage 'e') :=
+/-- **Refutation and rename of stage 3's
+`jparse_refuses_what_the_fragment_has_no_type_for`** (stage 5 A2, design §5.1).
+That theorem said `-3`, `1.5` and `1e3` were refused because `JVal.num` was a
+`Nat`; after the widening each reads, exactly as written, so it is false.  What
+keeps the wire honest now is the reader, not the parser:
+`a_request_number_that_is_not_a_nat_is_refused_by_its_reader` in `Boundary.lean`.
+Nothing is truncated — the `.toOption` failure §5.10 records stays impossible,
+because a `dec` is not a `num` to any reader. -/
+theorem jparse_reads_what_the_fragment_had_no_type_for :
+    jparse ['-', '3'] = .ok (.dec ⟨⟨true, 3, [], none⟩, rfl⟩) ∧
+    jparse ['1', '.', '5'] = .ok (.dec ⟨⟨false, 1, [5], none⟩, rfl⟩) ∧
+    jparse ['1', 'e', '3'] = .ok (.dec ⟨⟨false, 1, [], some (false, 3, [])⟩, rfl⟩) :=
   ⟨rfl, rfl, rfl⟩
 
 /-- **Running out of fuel is a named refusal** (§5.7), and it is reachable only
@@ -2882,10 +3583,10 @@ theorem jparseWith_refuses_when_the_fuel_runs_out :
 `jparse_jemit` discharges them for every value, at `rest = []`. -/
 theorem the_jval_jemit_hypotheses_are_satisfiable :
     jfuel (JVal.num 7) ≤ 2 * (jemit (JVal.num 7)).length ∧
-    notDigitStart [] = true ∧
+    numEnd [] = true ∧ numEnd [','] = true ∧ numEnd [']'] = true ∧ numEnd ['}'] = true ∧
     jval (2 * (jemit (JVal.num 7)).length) (jemit (JVal.num 7) ++ [])
       = .ok (.num 7, []) :=
-  ⟨by decide, by decide, rfl⟩
+  ⟨by decide, by decide, by decide, by decide, by decide, rfl⟩
 
 /-- And the `notDigitStart` one **bites**: drop it and the conclusion is false,
 because a `7` written next to a `7` reads back as `77`.  This is the same guard
@@ -2897,6 +3598,23 @@ theorem the_jval_jemit_digit_guard_bites :
     jval 4 (jemit (JVal.num 7) ++ ['7']) ≠ .ok (.num 7, ['7']) := by
   have h : jval 4 (jemit (JVal.num 7) ++ ['7']) = .ok (.num 77, []) := rfl
   refine ⟨by decide, h, ?_⟩
+  rw [h]
+  nofun
+
+/-- **Why the guard is `numEnd` and not `notDigitStart`** (stage 5 A2).  With the
+old guard `jval_jemit` would be false: `.5` does not start with a digit, and `1`
+followed by `.5` reads as the one numeral `1.5`, not as `1` with `.5` left over.
+So stage 3's statement of `jval_jemit` is refuted by this witness and restated
+over `numEnd`; `jparse_jemit`, which sits on it at `rest = []`, is unchanged.
+`Negative.lean` CHEAT 120 is the same fact as a type error. -/
+theorem the_jval_jemit_fraction_guard_bites :
+    notDigitStart ['.', '5'] = true ∧
+    numEnd ['.', '5'] = false ∧
+    jval 4 (jemit (JVal.num 1) ++ ['.', '5']) = .ok (.dec ⟨⟨false, 1, [5], none⟩, rfl⟩, []) ∧
+    jval 4 (jemit (JVal.num 1) ++ ['.', '5']) ≠ .ok (.num 1, ['.', '5']) := by
+  have h : jval 4 (jemit (JVal.num 1) ++ ['.', '5'])
+      = .ok (.dec ⟨⟨false, 1, [5], none⟩, rfl⟩, []) := rfl
+  refine ⟨by decide, by decide, h, ?_⟩
   rw [h]
   nofun
 
@@ -2933,6 +3651,8 @@ def jerrText : JErr → String
   | .expectedColon c => s!"expectedColon {c}"
   | .expectedKey c => s!"expectedKey {c}"
   | .trailingGarbage c => s!"trailingGarbage {c}"
+  | .leadingZero => "leadingZero"
+  | .missingDigit c => s!"missingDigit {c}"
 
 /-- **The one way a request field is read.**  `none` is an absent key and
 `some v` the value of the **only** pair carrying it.  A key carried twice is

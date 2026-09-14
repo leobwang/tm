@@ -2035,7 +2035,11 @@ Rust.
   `jparse_jemit` still holds. The last sentence stands unchanged. *Route chosen at
   stage 5 step 1 (README "Stage 5 step 1"): Rust sends each configured rational as a
   numerator/denominator pair of `Nat`s, decoded by `Arith.ofPair?` (a zero denominator
-  refused); `JVal` is not widened. The wiring step inherits this.*
+  refused); `JVal` is not widened. The wiring step inherits this.* *Stage 5 A2
+  (D9 track, design §5.1): `JVal` **is** now widened, with `dec` holding an exact
+  lexical `JDec`, for D9's log; `jparse_jemit` still holds unconditionally. The config
+  route above is unchanged, because every wire reader wants `num` and refuses a `dec` by
+  its own name (`a_request_number_that_is_not_a_nat_is_refused_by_its_reader`).*
 - **`binsWf` and `descending` are two decidable checks a loader should run**
   (gap 27). `ladder_eq_rungs` needs the edges sorted;
   `rungs_antitone` does not. A misconfigured `priority.bins` still produces a
