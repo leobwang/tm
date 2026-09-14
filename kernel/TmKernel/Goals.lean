@@ -50,10 +50,15 @@ stage then has to fight.
 
 * **D1 and D2 — the recurrence denotation** (§5.1, plan §3.2).  The plan fixes
   the *shape*: one denotation `Log → Instant → Option Occurrence`, with the
-  four `Recur` constructors kept as syntax.  `Field.Recur` exists; `Log` does
-  not.  `PlanCore.log` is `List String`, JSONL held verbatim, and there is no
-  event type, no `done inst=…`, no `skip inst=…`.  Until a parsed `LogEvent`
-  exists, "exactly one pending instance" (§5.1's AfterDone rule, which is D1)
+  four `Recur` constructors kept as syntax.  `Field.Recur` exists, and since
+  stage 5 D9 step B3 so does the log's typed event: `Log.Event` and `Log.Entry`,
+  read by `Log.readLine`, with `routine{item, inst, status}`, `skip{item, inst}`
+  and `Log.parseInstanceStatus`.  (This note used to say "`PlanCore.log` is
+  `List String`"; `PlanCore` has no log field, and no commit on this branch gave
+  it one.)  What does not
+  exist yet is the replay that turns those events into instance states (stage 5
+  C1–C6, `Replay.lean`).  Until it does, "exactly one pending instance" (§5.1's
+  AfterDone rule, which is D1)
   and the classification pair `calendar_is_history_independent` /
   `afterDone_is_history_dependent` cannot be written at all.  Declaring an
   `Occurrence` here would fix the log model, which is stage 5's decision.

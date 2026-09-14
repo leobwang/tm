@@ -10717,3 +10717,227 @@ second 59. Both readers build offsets only through `offsetOf`, which multiplies 
 | `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (unchanged) |
 | FFI suite (`tm-kernel-ffi`) | **82 passed / 0 failed** (kernel 72, corpus 8, stack 2) |
 | `cli_latency.rs` | green: first verb 622.4 ms (226 files, 2,959 lines), later verb 60.7 ms |
+
+<!-- ===================================================================
+     APPENDED 2026-09-14 (stage 5, D9 track).  Step B3 (design §14.2 row B3, §5.4–§5.6): the typed event grammar in Log.lean (new),
+     and digitsOf's runtime twin in Text.lean (gap 101, closed).  Takes cheats 128–130 (the design's labels 93, 94 and 106 are among
+     its reserved-unused numbers; 127 was the highest in this checkout), gap 91 and parity entries P14, P15, P24 and P25 (the design's
+     own numbers, free here).  The D10 track numbers in parallel; whoever merges renumbers (AGENTS §6.2, §6.4).
+     =================================================================== -->
+
+## Stage 5 B3, 2026-09-14: the log has a grammar — 26 kinds, unknown tags kept, every bad line a named warning
+
+The D9 track's sixth step (design `kernel/design/stage5/stage5-D9-D10-design.md` §14.2 row B3, §5.4–§5.6).
+A new module, `TmKernel/Log.lean` (namespace `Tm.Log`, 2,523 lines), imports `Json` and `Stamp`, and
+`TmKernel.lean` imports it in the same commit, right after `Stamp` (**nineteen imports**; AGENTS §2.3
+updated). Nothing in the binary calls it yet: B4 puts `log` on the wire, and C1–C6 replay its entries.
+
+### What was built
+
+| piece | what it is |
+|---|---|
+| `Event`, `Entry`, `Num` | the **26** `define_events!` kinds (`wake` … `undo`, with the fork's field names and serde widths `U8 = Fin 256`, `U32 = Fin 2³²`) and `unknown tag rest`; `Entry` is `line`, `t`, `off`, `ev`; `Num` is `hsw` as written (`nat`, `dec`) |
+| `Kind.schema` | **the field table**: each kind's keys in declaration order with serde's type (`FTy`: `u8`, `u32`, defaulted `u32d`, `optU8`, `optU32`, `str`, `optStr`, `strs`, `flag`, `num`, `pair`). Data, not derivation (AGENTS §5.5) |
+| `readF`, `renderF` | the **one** reader and the **one** writer per field type; `readArgs`/`renderArgs` run a kind's schema through them, and `Kind.build`/`Event.split` are the two directions between a kind's fields (`Args`) and the typed event. No kind reads a field one way and writes it another |
+| `FR`, `FR.pair` | a field's verdict (`ok`, `missing k`, `bad k`); a type error anywhere beats a missing field, and among each the first in declaration order is named (`Known::field_error`) |
+| `finiteF64` | **serde_json 1.0.151's own "number out of range"**, ported step for step (`parse_integer`, `parse_long_integer`, `parse_decimal`, `parse_decimal_overflow`, `parse_exponent`, `parse_exponent_overflow`, `f64_from_parts`; `float_roundtrip` is off, `cargo tree -e features`): the significand keeps the digits that fit a `u64` (`capInt`, `capFrac`, `capOf`), the exponent's digits fold with an `i32` cut (`capExp`), and only `roundF sig * roundF 10^e ≥ 2¹⁰²⁴ − 2⁹⁷⁰` is refused (`fromPartsFinite`). `allFinite` applies it to every numeral of the line |
+| `readLine` | `Log::parse_bytes`' loop body: `none` → `invalidUtf8`; every trailing `\r` (`trimCR`); blank (`LogStamp.isRustSpace`, B2's `char::is_whitespace`); `lineTooLong` (> 65,536 characters); `lineTooDeep` (`depthOf`, a bracket scan outside strings, > 64); `jparse` → `notJson`; `numberOutOfRange`; `notAnObject`; `readT` (the first `t`: `noT`, `tNotString`, `badT`, and `duplicateT` for a second `t`); the last `ev` (`noEv`, `evNotString`); a known kind strictly (`missingField`, `badField`); any other tag `unknown` with `restOf` (every other key, sorted by serde's `String` order, `charsLe` over core's stable merge sort, the last of a repeated key kept) |
+| `renderLine` | `LogEntry::to_json`: `jemit` of `{"t":…,"ev":…,<fields>}`, fields in declaration order, `None` and `partial: false` skipped, `tags`/`dropped`/`hsw` always written; an absent `hsw` reads as `Num.zero`, `0.0`, which serde writes |
+| `Entry.canonical` | what `readLine` can return: the stamp round-trips (B2's hypotheses), `hsw` is finite, an unknown tag is not a known one with a finite, strictly sorted `rest` holding no `t`/`ev`, and the line is within both bounds |
+| §5.6 | `parseInstanceStatus`, `instDate?` (`parse_date`: 10 characters, chrono's `%Y-%m-%d` through B2's `yearOf`/`lit`/`numIn`), `stampFromKey` (`IsoWeek::parse` as `isoWeekOfKey`, split at the first `-W` by the loop `splitDashW.go`, Rust's integer readers, `Cal.isoWeeksIn` over the 400-year cycle; else a date's day) |
+| `Text.lean` | `digitsOfTR` and `@[csimp] digitsOf_eq_digitsOfTR` (gap 101, below) |
+
+### Goals: four added and discharged in this step (Goals.lean never held them)
+
+| §15 name | status |
+|---|---|
+| `the_log_reads_what_it_renders` | **proved as §15 states it**, for every entry with `e.canonical = true`. The proof is generic: `readArgs_of_agrees` and `agrees_renderArgs` over any schema, `readF_renderF` per field type, then `Kind.build_of_split`; `restOf_canonical` for `unknown` (`List.mergeSort_of_pairwise`); B2's `parseStamp_renderStamp` for `t`; `jparse_jemit` for the bytes |
+| `a_known_event_is_never_read_as_unknown` | proved as stated |
+| `an_unknown_tag_is_never_a_warning` | proved as stated. `isObjectWithStampAndTag` means the line parses to an object whose `readT` succeeds and whose last `ev` is a string. `jparse_not_blank`, `trimCR_prefix` and `depthOf_prefix` carry the bounds from `l` to the trimmed line |
+| `lineTooLong_bounds_every_string` | proved as stated. `jparser_strs` (a six-part induction on the fuel beside `jparser_consumes`, with `jscan_strlen` and `junescape_length`) shows every string `jparse` returns is shorter than its input; `readArgs_strs`, `restOf_sub` and `jstrsO_sub` carry every string of the event into the parsed object. `Event.strings` is written out per constructor, so the statement does not lean on the table |
+
+In-step beside them: `an_out_of_range_numeral_warns_even_in_an_unknown_event` (the line meets every
+other hypothesis of the unknown-tag law and is still a warning), `every_line_warning_is_reachable`
+(all fourteen `LWarn` constructors; `lineTooLong` by a 65,537-character line whose length is rewritten,
+never evaluated), `finiteF64_reads_only_the_sign_past_an_i32_exponent` (the cost bound), eleven
+per-line theorems over the fork's `malformed.jsonl` and `the_malformed_corpus_reads_as_the_fork_point_did`
+collecting them, `finiteF64_is_serdes_band`, `the_small_grammars_read_as_the_fork_does`, and the R10
+refusals `readF_refuses_a_u8_past_255`, `readF_refuses_a_u32_past_its_width`,
+`readF_refuses_a_decimal_at_an_integer_field` (with `readF_reads_hsw_as_written` beside it, §5.8),
+`readLine_refuses_a_line_past_the_bound`, `readLine_refuses_a_line_nested_past_the_bound` and
+`readLine_refuses_a_line_that_is_not_utf8`. **Refuted: none. Burn-down stays 13.**
+
+### The serde probe, before the grammar froze (evidence for this commit; not committed)
+
+A throwaway crate under `/tmp/claude-1000/d9b3/rs` called the fork's own `Log::parse_bytes` on each
+line and printed `LogEntry::to_json` or the warning text; a scratch Lean `main` printed `readLine`'s
+verdict and `renderLine`. Release build, `MemoryMax=16G`.
+
+| input | lines | result |
+|---|---|---|
+| the seven corpus logs (`kernel/corpus/logs/*.jsonl`, `malformed.jsonl` included, and the three plans' `.tm/log.jsonl`) | 520 | **every verdict agrees**; all **509 entries render byte-identically** to serde; the 7 warnings of `malformed.jsonl` are the same classes |
+| a crafted set: §5.4's numeric rows at `u32`, `u8` and `Option` fields (`-0`, `3.0`, `1e2`, `-1`, `null`, `"5"`, 2³², 2⁶⁴), `hsw` spellings, repeated known keys in both orders, repeated `t`, repeated `ev` in both orders, repeated and non-ASCII unknown keys, 28 numerals around serde's float band, nesting of 64–128 levels, two-defect lines, `\r\r`, NBSP, a BOM, bad `window`/`tags`/`partial`/`dropped`/`id`, an escaped `ev` key | 104 | 95 lines agree in verdict and class; the other 9 are the residue below. Of the 39 entries both read, 19 render byte-identically and 20 differ only in numerals written non-canonically by hand (P29's class) |
+
+What the probe fixed in the grammar: serde refuses a repeated `t` (`duplicate field`, hence
+`duplicateT`); a mistyped field is named before a missing one; `trim_end_matches` removes every `\r`;
+and the float band is serde's, not IEEE's: `1.7976931348623157e308` is finite and the 309-digit integer
+spelling of the same `f64` is refused (a `u64` significand, then two rounded doubles multiplied). All 28
+band values agree with the port, including `0e2147483648` (finite), `1e2147483647` (refused) and
+`0.0…01e700` (finite).
+
+### Additions to the stage-5 parity exception list
+
+| # | site | the kernel | the fork point | authority |
+|---|---|---|---|---|
+| **P14** | a line over 65,536 characters, or nested deeper than 64 levels | `lineTooLong` / `lineTooDeep` | parsed, up to serde's recursion limit: 127 levels read, 128 are refused (`recursion limit exceeded`) | R10; `jparse` recurses per nesting level. Measured: probe lines of 65, 66 and 127 levels (entries to serde); 128 and 129 levels are warnings to both, of different classes |
+| **P15** | a line warning's text, **and its class when a line has two defects** | named constructors, decided in §5.5's order (numerals before `t`, the whole line parsed first) | serde's message, for the first defect in stream order | AGENTS §5.7. Measured: `{"t":"bad","x":1e400}` (`numberOutOfRange` / `badT`), `[1,2,` (`notJson` / `notAnObject`: serde refuses a sequence before reading it), `{"t":…,"ev":"wake"} x` (`notJson` / `missingField`), `{"t":"bad","ev":"wake"` (`notJson` / `badT`), and the two deepest lines (`lineTooDeep` / recursion limit). Entry or warning never differs. C4 adds the replay warnings |
+| **P24** | numeric and duplicate-key edges at a known field | serde's verdict | serde | design §5.4. **Measured residue: none** on the crafted set (every row above, repeated keys in both orders, repeated `t`). T1 re-measures at B4 |
+| **P25** | a numeral in serde's float band, anywhere in a line | serde's algorithm, ported | serde_json without `float_roundtrip` | design §5.4. **Measured residue: none** on 28 band values. The one unported edge is `parse_long_integer`'s `i32` counter of dropped integer digits, which overflows only past 2³¹ digits, beyond the line bound |
+
+**P23's residue, extended by §5.6:** `instDate?` refuses a year-0 or negative-year date that
+`parse_date` reads (`0000-02-29`, `-001-01-01`), and `stampFromKey` gives no stamp for a negative-year
+date key (`-001-01-01` is `D1` in the fork). Everything else in a 32-key differential against
+`stamp_from_key`, `parse_date` and `parse_instance_status` agrees, including `+202-W05`, `-999-W05`,
+`2026-W+5` (all weeks to both), `2026-W53` and `0000-W52`, ` 2026-9-07` (day 739,865 to both), and
+`2026-9-07 ` (refused by both).
+
+### Gap 91 (the design's label) — `arrive.window` strings and `idle.attributed` are not validated
+
+(1) *What is not done*: `Event.arrive`'s `window` is any two strings and `Event.idle`'s `attributed` is
+any string; the reader checks only that they are strings, as `log.rs` does. (2) *Why*: parity. The fork
+validates neither, so a check would turn today's entries into warnings. (3) *Cost*: a hand-written
+`"window":["x","y"]` is an entry, and whatever reads `window` or `attributed` (Rust's
+`arrivals_from_replay` today, the replay's leak ledger at C4) meets strings it must refuse or ignore
+itself. (4) *When it clears*: only by an owner decision to validate the log; nothing in stage 5 needs it.
+
+### Gap 101 — closed
+
+`digitsOfTR.go` is a loop with the digits accumulated least significant last (`digitsOfTR_go`), and
+`@[csimp] digitsOf_eq_digitsOfTR` is declared in `Text.lean` right after `digitsOf`, before every caller
+is compiled. The generated C confirms it: `Text.c`'s `digitsOfTR_go` has no self-call and one
+`goto _start`, and no module's C calls `digitsAux` any more (`Json.c` calls `digitsOfTR` 5 times,
+`Line.c` 9, `Log.c` 2). The kernel still reduces `digitsAux`, so no decided witness changed. No wire path
+emits a decimal yet; B4's `render` is the first, and T0 there runs it at the line bound.
+
+### Cheats (`Negative.lean`, appended)
+
+| # | label | cheat | fails because |
+|---|---|---|---|
+| **128** | B3-a (design 93) | a reader that refuses unknown tags, claimed to keep `an_unknown_tag_is_never_a_warning` on the fixture's `mood` line | after `malformed_line_9_is_an_unknown_mood` is rewritten in, `decide` proves the claim false |
+| **129** | B3-b (design 94) | a reader that files a bad payload under `unknown`, claimed to keep `a_known_event_is_never_read_as_unknown` on line 5's value | `decide` proves the claim false (on the value, never the 96 characters) |
+| **130** | B3-c (design 106) | a reader that checks `finiteF64` only at `hsw`, claimed to warn on `{"t":…,"ev":"mood","x":1e400}` | `decide` proves the claim false (`an_out_of_range_numeral_warns_even_in_an_unknown_event`) |
+
+Each fails at its own line with `Tactic decide proved that the proposition … is false`
+(`-DmaxErrors=1000000`, 30 GB cap). None evaluates `restOf`: core's merge sort is well-founded and
+does not reduce, so every decided witness over an unknown event reaches it through
+`the_log_reads_what_it_renders` or through a constructor match. `uniq -d` over the banners prints
+nothing.
+
+### Rule D9-21
+
+Every function added here that walks a line-sized list is a `foldl` or a loop, **checked in the
+generated `Log.c`** (each has `goto _start` and no self-call): the `foldl`s in `lastVal`, `allStrs`
+(`strStep`), `depthOf` (`scanStep`), `capOf` (both), `finiteF64` (the exponent), `restOf`
+(`dedupStep`) and `digitsValue`; the tail-recursive `charsLe`, `charsLt`, `splitDashW.go`, `allFiniteL`
+and `allFiniteO` (the list call is the tail of `&&`); and core's `find?` (`readT`, `kindOf`),
+`countP.go`, `all`, `dropWhile`, `filterTR`, `mapTR`, `lengthTR`, `reverse` and `mergeSortTR₂`.
+`allFinite` recurses per nesting level (bounded at 64 by `lineTooDeep`). `readArgs` and `renderArgs`
+recurse over a schema of at most 8 keys. `jstrs`, `jstrsL`, `jstrsO`, `Agrees` and `digitsValue`'s
+laws are specifications no wire path calls. **No T0 run:** no wire path reaches `readLine` or
+`renderLine` until B4, whose T1/T0 runs them end to end on a 2 MiB thread.
+
+### The `decide` budget (§14.0 item 4)
+
+**18 new decided witness theorems**, within the budget of 20: the eleven per-line theorems,
+`an_out_of_range_numeral_warns_even_in_an_unknown_event`, `every_line_warning_is_reachable`,
+`finiteF64_is_serdes_band`, `the_small_grammars_read_as_the_fork_does`, and cheats 128–130. Each
+conjunction is decided conjunct by conjunct (38 decided literals in all). **3 `Entry` values**, no zone
+transitions. Beside them, `cases k <;> decide` over the 26 kinds' constant tables (`kindOf_tag`,
+`Kind.keys_nodup`, `Kind.no_t_key`, `Kind.no_ev_key`) and single-character checks sit inside proofs;
+they evaluate no line. The longest parsed literal is 69 characters (line 11). **Line 5 is 96
+characters**, over the 90-character limit, and it is not parsed: `malformedLine5 = jemit
+malformedValue5` is decided (an emission compared with the literal), `jparse_jemit` is the rewrite,
+and only the reading of the value is decided. The good lines 1, 9 and 11 are instances of
+`the_log_reads_what_it_renders`: on them `renderLine` and `Entry.canonical` are decided, and on line 9
+also the unknown-tag law's hypotheses, on the line's value after `jparse_jemit`. Two
+budgets were raised, neither a heartbeat or memory budget: `maxRecDepth 8000` for the witness section
+(Json.lean has 4000 file-wide, Negative.lean 10000), and `exponentiation.threshold 1100` for
+`finiteF64_is_serdes_band` alone, whose `10 ^ 292` the elaborator otherwise refuses to evaluate. Probed
+first in a scratch copy under `MemoryMax=8G timeout 120`: the whole of `Log.lean` elaborates in
+**4.08 s at a 1.52 GB peak**. No realistic-size input is evaluated.
+
+### Recorded disagreements between the design and the repo
+
+- **26 known tags, not 25** (§5.4, inventory §1, and this step's brief). `define_events!` has 26
+  (`grep -c '=> "'`); §5.4's own `Event` sketch lists 26 known constructors.
+- **§5.5 step 2** trims one trailing `\r`. The fork's `trim_end_matches('\r')` trims every one (probe
+  line 85, `\r\r`).
+- **§5.5's `LWarn`** has no constructor for a `t` that is not a string or for a repeated `t`. `badT`
+  takes a `StampErr`, so the first is `tNotString`; serde refuses a repeated `t` (`duplicate field`,
+  probe lines 29 and 98), so the second is `duplicateT`. The first `t` decides `badT`/`tNotString`,
+  as serde's stream does.
+- **§5.4's table** defaults an absent `hsw` to `nat 0`. serde's default is `0.0`, which it writes as
+  `0.0`, so the default is `Num.zero = dec 0.0`, and a line without `hsw` renders the fork's bytes.
+- **§5.4's `finiteF64` rule** (`k ≤ 308` finite, `k ≥ 310` not, `k = 309` exact against
+  `2¹⁰²⁴ − 2⁹⁷⁰`) is IEEE's reading of the decimal, and serde's differs inside the band (the 309-digit
+  spelling of `f64::MAX`). serde's algorithm is ported instead, and the design's
+  `finiteF64_reads_only_the_digit_counts_beyond_seven_exponent_digits` is restated for it as
+  `finiteF64_reads_only_the_sign_past_an_i32_exponent` (serde's cut is `i32::MAX`, not seven digits).
+  P25 records zero residue rather than the band.
+- **§5.4's check order** is kept, and serde's stream order differs on two-defect lines (P15 above).
+- **§5.5's corpus theorems over literals of at most 90 characters**: line 5 is 96 (above).
+- **§5.5's "`White_Space` table reached through `simp only [isWhite]`"**: B2's `isRustSpace` is a
+  comparison chain, not a table, and `all` evaluates it on one character of a non-blank witness (the
+  blank line has none), so no rewrite is needed.
+- **§14.0 item 4's "instants are `Nat` literals, never parsed text"**: §5.5 asks for per-line theorems
+  over the fixture's bytes, so the warning lines parse their stamps. Every `Entry` value is built from
+  `Nat` literals.
+- **§5.6's `stampFromKey` "through `Line.lean`'s existing week reader"**: there is none for a `YYYY-Www`
+  key (`Field.parseStamp` reads the `W37` of a `demoted:` field). `isoWeekOfKey` is the first and only
+  reader of that spelling in the kernel. The finding §5.6 asked for: `IsoWeek::parse` also accepts
+  `+202-W05`, `-999-W05` and `2026-W+5` (Rust's integer readers); they are ported and the differential
+  agrees.
+- **§5.6's `instDate?` "read through `Field.parseDate`"**: `parse_date` is chrono's generic parser and
+  reads ` 2026-9-07`, which `Field.parseDate` refuses. It reads through B2's chrono readers instead,
+  so no third date reader exists.
+- **The namespace** `Stamp` in §5.5 and §15 is B2's `LogStamp`.
+- **`maxLineChars` counts characters**, as §5.5 writes it; the host's bytes may be more. B4's wire
+  bound decides what the host sends.
+
+### Notes for B4 (not owed by B3)
+
+- **serde_json 1.0.151 writes a large or tiny `f64` with an explicit `+` in the exponent**
+  (`1e+308`, `1.8446744073709552e+19`; probe lines 19, 20), and `JDec` keeps no `+` (A2), so a serde
+  line with such an `hsw` re-renders as `1e308`. T2's proptest over arbitrary `f64` will meet it; the
+  fork's own writer never does (`hours_since_wake` rounds to 0.01). It is P20's residue or a `JDec`
+  widening.
+- The crafted probe set (`/tmp/claude-1000/d9b3/probe.jsonl`, generated by `gen.py` beside it) is a
+  starting set for T1's crafted lines.
+- Carried: gap 102 still gates W3; gap 103 clears at B4; B2's unproved note for C2 (an accepted stamp's
+  offset is a whole minute) is untouched.
+
+**Label-to-number map:** cheats B3-a → **128**, B3-b → **129**, B3-c → **130**; gap **91**; parity
+**P14**, **P15**, **P24**, **P25**. **Behaviour rows:** the design's B3 row (`lineTooLong` /
+`lineTooDeep` warnings, P14) is recorded for S, where the binary starts calling `readLine`; at B3 the
+binary's behaviour is unchanged (`Log` is linked into `libTmKernel`, unused). **Highest numbers after
+the step: gap 104, cheat 130, parity P27.**
+
+**New theorems: 107** (105 in `Log.lean`, 2 in `Text.lean`), audited under an `APPENDED … Step B3`
+banner in `Check.lean`. §6.3's three counts agree at **2517** (2410 + 107). Axioms stay within
+`propext`, `Quot.sound` and `Classical.choice`, and there is no `sorryAx`. `Goals.lean`'s header no
+longer says `PlanCore.log` is `List String` (inventory §7 item 7).
+
+**Re-measured** (every command capped at 30 GB, main worktree, on the tree committed):
+
+| measurement | value |
+|---|---|
+| `lake build TmKernel:static` after `Text.lean` changed (every module rebuilt) | 143.7 s wall |
+| `check.sh`, first run after the last edit | **7/7**, 8.16 s wall |
+| `check.sh`, built tree | **7/7**, 2.80 / 2.78 / 2.78 s (2.79 / 2.77 / 3.18 s at B2, so within §14.0 item 4's 10%) |
+| axiom audit | **2517 theorems** (was 2410, +107) |
+| `Negative.lean` | check 4 ok; CHEATs 128, 129 and 130 each fail at their own line with the `decide` refusal they claim |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged) |
+| `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (unchanged) |
+| FFI suite (`tm-kernel-ffi`) | **82 passed / 0 failed** (kernel 72, corpus 8, stack 2) |
+| `cli_latency.rs` | green: first verb 642.3 ms (226 files, 2,959 lines), later verb 60.8 ms |

@@ -5,6 +5,7 @@ import TmKernel.Text
 import TmKernel.Json
 import TmKernel.Line
 import TmKernel.Stamp
+import TmKernel.Log
 import TmKernel.State
 import TmKernel.Plan
 import TmKernel.Tree

@@ -1281,4 +1281,84 @@ theorem stampsOrderedByNanoseconds :
         (⟨⟨63618825600, 0⟩, by decide⟩, ⟨⟨false, 0⟩, by decide⟩) := by
   decide
 
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D9 track, step B3: the typed event grammar in
+-- `Log.lean`).  The design's §16 labels these 93, 94 and 106; those numbers are
+-- the design's reserved-unused ones (W-1's repair left them unused), so the
+-- block takes 128, 129 and 130, above the highest number in this checkout (127,
+-- B2).  The D10 track numbers in parallel and the merge renumbers.  The
+-- controls, which compile, are in Log.lean: `an_unknown_tag_is_never_a_warning`
+-- with `malformed_line_9_is_an_unknown_mood` (128),
+-- `a_known_event_is_never_read_as_unknown` with
+-- `malformed_line_5_is_a_done_with_est_min_sixty` (129), and
+-- `an_out_of_range_numeral_warns_even_in_an_unknown_event` (130).
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 128 — an unknown tag read as a warning.  A reader that refuses every
+   tag it does not know turns the fork's `{"ev":"mood","level":3}` (the fixture's
+   line 9, an `Event::Unknown`) into a warning.  Claiming that reader keeps
+   `an_unknown_tag_is_never_a_warning` on that line is false: once the kernel's
+   verdict is rewritten in (`malformed_line_9_is_an_unknown_mood`), `decide`
+   refuses it. -/
+def readLineRefusingUnknownTags (n : Nat) (seg : Option (List Char)) : Log.Verdict :=
+  match Log.readLine n seg with
+  | .entry ⟨_, _, _, .unknown _ _⟩ => .warn n .notAnObject
+  | v => v
+
+theorem anUnknownTagReadAsAWarning :
+    readLineRefusingUnknownTags 9 (some Log.malformedLine9) ≠ .warn 9 .notAnObject := by
+  simp only [readLineRefusingUnknownTags, Log.malformed_line_9_is_an_unknown_mood.1, Log.malformedEntry9]
+  decide
+
+/- CHEAT 129 — a known event with a bad field read as `unknown`.  serde's
+   derived `Known` never falls back: `est_min:"sixty"` on a `done` is the
+   warning `event "done": est_min: …`.  A reader that files a bad payload under
+   `unknown` instead reads the fixture's line 5 as an unknown event, so claiming
+   `a_known_event_is_never_read_as_unknown` of it is false: `decide` refuses it on
+   the line's value (never its 96 characters). -/
+def readObjectFallingThroughToUnknown (n : Nat) (kvs : List (List Char × JVal)) : Log.Verdict :=
+  match Log.readObject n kvs with
+  | .warn _ (.badField _) =>
+    match Log.readT kvs, Log.lastVal kvs Log.kEv with
+    | .ok (t, o), some (.str tag) => .entry ⟨n, t, o, .unknown tag []⟩
+    | _, _ => .warn n .noEv
+  | v => v
+
+def malformedPairs5 : List (List Char × JVal) :=
+  match Log.malformedValue5 with
+  | .obj kvs => kvs
+  | _ => []
+
+theorem aBadFieldReadAsUnknown :
+    (match readObjectFallingThroughToUnknown 5 malformedPairs5 with
+     | .entry e => e.ev.isUnknown
+     | _ => false) = false := by
+  decide
+
+/- CHEAT 130 — `finiteF64` applied only to `hsw` (CRIT 15).  The fork collects
+   the whole line as a `Map<String, Value>` before it reads a field, so `1e400`
+   under any key of any event fails the line.  A reader that checks only `hsw`
+   reads `{"t":…,"ev":"mood","x":1e400}` as an entry; claiming it warns
+   `numberOutOfRange` there, as
+   `an_out_of_range_numeral_warns_even_in_an_unknown_event` says the kernel does,
+   is false: `decide` refuses it. -/
+def readValueCheckingOnlyHsw (n : Nat) (v : JVal) : Log.Verdict :=
+  match v with
+  | .obj kvs =>
+    match Log.lastVal kvs ['h','s','w'] with
+    | some (.dec d) => if Log.finiteF64 d.val then Log.readObject n kvs else .warn n .numberOutOfRange
+    | _ => Log.readObject n kvs
+  | _ => .warn n .notAnObject
+
+def moodOutOfRangeValue : JVal :=
+  .obj [(Log.kT, .str ['2','0','2','6','-','0','9','-','0','7','T','0','8',':','0','0',':','0','0','-','0','5',':','0','0']),
+    (Log.kEv, .str ['m','o','o','d']), (['x'], .dec ⟨⟨false, 1, [], some (false, 4, [0, 0])⟩, rfl⟩)]
+
+theorem finiteF64CheckedOnlyAtHsw :
+    (match readValueCheckingOnlyHsw 1 moodOutOfRangeValue with
+     | .warn _ .numberOutOfRange => true
+     | _ => false) = true := by
+  decide
+
 end Tm
