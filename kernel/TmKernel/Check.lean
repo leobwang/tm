@@ -2250,3 +2250,102 @@ open Tm
 #print axioms Tm.remaining_is_not_the_est_key_on_a_settled_line
 #print axioms Tm.remaining_does_not_fall_back_to_the_leading_estimate_on_a_settled_line
 #print axioms Tm.remaining_does_not_sum_the_children_over_a_dur
+
+-- APPENDED 2026-09-14 (stage 5).  Step 2: §7.1's priority, §7.2's rule table and §7.4's
+-- hysteresis (kernel/README.md "Stage 5 step 2").  `Priority.lean` (new, imported after
+-- `Tree`): `prio` is `priority::clamp_p` over Arith's bin and `rootK` is
+-- `Tree::root_priority`; the ladder takes a rational availability by
+-- cross-multiplication (D10); `hysteresis` is `priority::apply_hysteresis`.  Goals
+-- discharged as stated: `prio_of_hot_is_zero`, `prio_is_clamped`,
+-- `prio_is_antitone_in_utilisation`, `hysteresis_improves_by_at_most_one_bin`,
+-- `hysteresis_worsens_freely`, `hysteresis_never_delays_hot`.  Gap 27's loader check
+-- has its smart constructor (`binsOf?`); the loader call waits for the config wiring.
+#print axioms Tm.defaultPrioOf?_refuses_zero
+#print axioms Tm.defaultPrioOf?_refuses_above_four
+#print axioms Tm.defaultPrioOf?_accepts
+#print axioms Tm.specDefaultPrio_is_three
+#print axioms Tm.rootK_pos
+#print axioms Tm.rootK_le_four
+#print axioms Tm.rootK_of_a_root_with_k
+#print axioms Tm.rootK_of_a_root_without_k
+#print axioms Tm.prio_plus
+#print axioms Tm.prio_of_hot_is_zero
+#print axioms Tm.prio_is_clamped
+#print axioms Tm.prio_mono_ix
+#print axioms Tm.prio_is_antitone_in_utilisation
+#print axioms Tm.prio_eq_zero_iff_hot
+#print axioms Tm.prio_clamp_is_silent_on_the_default_ladder
+#print axioms Tm.prio_clamp_fires_on_a_long_ladder
+#print axioms Tm.utilQGe_cross
+#print axioms Tm.utilQGe_eq_le
+#print axioms Tm.utilQGe_is_division
+#print axioms Tm.utilQGe_on_whole_minutes
+#print axioms Tm.cross_transfer
+#print axioms Tm.utilQGe_congr
+#print axioms Tm.utilGe_scaled_pair_congr
+#print axioms Tm.rungs_eq_of_utilGe_eq
+#print axioms Tm.binOfQ_ix
+#print axioms Tm.binOfScaledQ_ix
+#print axioms Tm.binOfQ_on_whole_minutes
+#print axioms Tm.utilScaledQGe_on_whole_minutes
+#print axioms Tm.binOfScaledQ_on_whole_minutes
+#print axioms Tm.utilScaledQGe_is_division
+#print axioms Tm.binOfQ_congr
+#print axioms Tm.binOfScaledQ_congr
+#print axioms Tm.binOfQ_capacity_zero
+#print axioms Tm.binOfScaledQ_capacity_zero
+#print axioms Tm.zero_need_on_zero_capacity_is_hot
+#print axioms Tm.binOfQ_anti_avail
+#print axioms Tm.prio_is_antitone_in_rational_utilisation
+#print axioms Tm.flooring_the_mixture_changes_the_bin
+#print axioms Tm.Bins.ladder_eq_rungs
+#print axioms Tm.binsOf?_isSome_iff
+#print axioms Tm.binsOf?_val
+#print axioms Tm.binsOf?_accepts_the_default
+#print axioms Tm.binsOf?_refuses_unsorted_edges
+#print axioms Tm.binsOf?_refuses_an_edge_above_hot
+#print axioms Tm.binsOf?_refuses_an_infinite_edge
+#print axioms Tm.binsOfPairs?_refuses_a_zero_denominator
+#print axioms Tm.the_spec_decimals_are_the_default_ladder
+#print axioms Tm.a_misconfigured_ladder_is_antitone_but_not_the_ladder
+#print axioms Tm.safetyOf?_refuses_zero
+#print axioms Tm.safetyOf?_refuses_a_zero_denominator
+#print axioms Tm.safetyOf?_reads_the_spec
+#print axioms Tm.hysteresis_cases
+#print axioms Tm.hysteresis_improves_by_at_most_one_bin
+#print axioms Tm.hysteresis_worsens_freely
+#print axioms Tm.hysteresis_never_delays_hot
+#print axioms Tm.hysteresis_never_raises_urgency
+#print axioms Tm.hysteresis_holds_one_step_back
+#print axioms Tm.hysteresis_le_max
+#print axioms Tm.yesterdayOf?_refuses_eight
+#print axioms Tm.yesterdayOf?_accepts
+#print axioms Tm.applyHysteresis_without_yesterday
+#print axioms Tm.applyHysteresis_disabled
+#print axioms Tm.applyHysteresis_enabled
+#print axioms Tm.applyHysteresis_zero
+#print axioms Tm.applyHysteresis_cases
+#print axioms Tm.hysteresisDays_closed_form
+#print axioms Tm.hysteresis_settles_on_a_steady_priority
+#print axioms Tm.hysteresis_holds_every_day_of_the_gap
+#print axioms Tm.hysteresisDays_of_hot
+#print axioms Tm.rawPrio_of_a_wall
+#print axioms Tm.rawPrio_of_an_optional
+#print axioms Tm.rawPrio_of_overdue
+#print axioms Tm.rawPrio_of_a_mandatory_instance
+#print axioms Tm.rawPrio_of_the_hot_flag
+#print axioms Tm.rawPrio_of_a_pass
+#print axioms Tm.rawPrio_of_pure_rank
+#print axioms Tm.rawPrio_is_clamped
+#print axioms Tm.rowOf_eq_wall_iff
+#print axioms Tm.rawPrio_isNone_iff
+#print axioms Tm.finalPrio_of_a_wall
+#print axioms Tm.finalPrio_of_an_optional
+#print axioms Tm.finalPrio_damps
+#print axioms Tm.finalPrio_never_delays_zero
+#print axioms Tm.finalPrio_is_clamped
+#print axioms Tm.finalPrio_improves_by_at_most_one_step
+#print axioms Tm.prio_reads_the_root_priority_on_a_loaded_plan
+#print axioms Tm.a_root_without_k_takes_the_default_on_a_loaded_plan
+#print axioms Tm.hot_is_zero_whatever_the_root_on_a_loaded_plan
+#print axioms Tm.the_rule_table_ranks_a_loaded_plan

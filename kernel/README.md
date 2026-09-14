@@ -7984,3 +7984,283 @@ relinked against the rebuilt archive), with `cli_latency.rs` green at first verb
 FFI suite is **76** (68 kernel + 8 corpus, unchanged).  `TmKernel.lean` holds fourteen imports,
 `Tree` after `Plan`.  Gaps run to 75 (new gaps start at 76); cheats run to 74 (new cheats
 start at 75).
+
+## Stage 5 step 2, 2026-09-14: priority is §7.1's ladder over the root, and hysteresis holds a bin
+
+**Starting point.**  The tree at `6f2bd02` was clean.  The baseline figures are the previous
+block's as committed (check.sh 7/7, audit 1891, corpus 29/37 files and 4/5 whole plans,
+burn-down 24, `cargo test --workspace` 1010 / 0 across 66 binaries, FFI 76); the figures at
+the end of this block are re-measured.
+
+One new module, `TmKernel/Priority.lean`, imported in `TmKernel.lean` after `Tree` (it
+imports `Plan` and `Arith`; `Boundary` imports it for the loaded-plan witnesses).  The oracle
+is fork-point `tm-core/src/priority.rs`, read by function name: `priority::compute`,
+`priority::clamp_p`, `priority::apply_hysteresis`, `priority::bin_of`,
+`priority::utilization`, and `Tree::root_priority` for `k`.
+
+### §7.1's `k`: `rootK`
+
+`Tree::root_priority(id)` reads the root's `!k`, else `config.default_priority`.  The kernel's
+`rootK p dflt i` is `rootPrio` (live since D6), else the default, as a number in `1..4`
+(`rootK_pos`, `rootK_le_four`, `rootK_of_a_root_with_k`, `rootK_of_a_root_without_k`).  The
+default enters as a `Fin 4` through `defaultPrioOf?`, which refuses `0` and anything above
+`4` (R10: `defaultPrioOf?_refuses_zero`, `defaultPrioOf?_refuses_above_four`, and the other
+direction `defaultPrioOf?_accepts`).  §16's shipped `3` is `specDefaultPrio`.
+
+### §7.2's arithmetic: `prio`
+
+`prio k b` is `0` at HOT and `min (k + n) 7` at `+n` (`priority::clamp_p`).  **The three
+goals are proved as stated:** `prio_of_hot_is_zero`, `prio_is_clamped`,
+`prio_is_antitone_in_utilisation` (on top of Arith's `binOf_antitone`, through
+`prio_mono_ix`).  Both directions (AGENTS §5.8): `prio_eq_zero_iff_hot` says that with `k` in
+`1..4`, `p = 0` is HOT and nothing else.  `prio_clamp_is_silent_on_the_default_ladder` says
+the clamp never fires with §16's edges; `prio_clamp_fires_on_a_long_ladder` shows it
+does fire on a five-edge ladder at `k = 4`.
+
+**R1, the ordering path.**  The bin reads the exact `remaining × safety`, never `needMin`:
+`binOfScaledQ bins s rem avail`, which on whole minutes *is* Arith's `utilScaledGe` ladder
+(`binOfScaledQ_on_whole_minutes`, `utilScaledQGe_on_whole_minutes`) and agrees with the
+comparison against `(rem × s) / avail` formed for real (`utilScaledQGe_is_division`).
+
+### D10's type: the ladder at an exact rational availability
+
+Availability until a deadline is a mixture of capacities, so it is an `Arith.Pos`, never a
+`Nat` (the previous block's type (a)).  Utilisation compares a `Nat` need against it **by
+cross-multiplication, never division** (type (b)): `u ≥ p/q` at `avail = a/b` is
+`p·a ≤ q·need·b` (`utilQGe_cross`), and that is the order on the pair `⟨need·b, a⟩`
+(`utilQGe_eq_le`) and the comparison against `need / avail` formed for real
+(`utilQGe_is_division`).
+
+- **It extends the `Nat` form, not a second reading of it.**  `binOfQ bins need avail` is
+  `binOf bins (need·b) a`, and at a whole number of minutes it is `binOf bins need a`
+  (`binOfQ_on_whole_minutes`, `utilQGe_on_whole_minutes`).
+- **It cannot see how the availability was written.**  `binOfQ_congr` and
+  `binOfScaledQ_congr` (through `cross_transfer`, `utilQGe_congr` and
+  `utilGe_scaled_pair_congr`) say two spellings of one rational give the same bin.  This is
+  the fact a later normalisation of the EDF pass's growing numerators and denominators needs
+  (previous block, D10 cost (ii)).
+- **Monotone in the right direction.**  More availability never worsens the bin
+  (`binOfQ_anti_avail`).  `prio` is antitone in utilisation at a rational availability
+  (`prio_is_antitone_in_rational_utilisation`).
+- **Why nothing is rounded.**  `flooring_the_mixture_changes_the_bin`: a 78-minute need
+  against `½·200 + ½·113 = 156½` minutes is bin `+1`, and against the floor `156` it is bin
+  `+0`.
+
+The EDF pass that produces the availability is the next step.  This step only fixes what
+the ladder consumes.
+
+### Gap 25, kept, and parity entry P2's fork-point column corrected
+
+`zero_need_on_zero_capacity_is_hot`: a zero need at a zero rational availability is HOT
+and `p = 0` (with `binOfQ_capacity_zero` and `binOfScaledQ_capacity_zero` at any need).
+**Correction to the previous block's P2 row, by name.**  The fork point does not produce a
+`NaN` there.  `priority::utilization` returns `0.0` whenever the need is `0` (its module
+doc's deviation 3, "a finished item is not reported HOT"), and `bin_of` puts `0.0` in the
+lowest bin.  The disagreement is the same (the kernel HOT, the fork point the lowest bin),
+only at capacity `0`, since at positive capacity both give the lowest bin.  The mechanism is
+the one named here.
+
+### Gap 27's loader check: `binsOk`, `Bins`, `binsOf?`, `binsOfPairs?`
+
+Gap 27 said `binsWf` and `descending` are two decidable checks a loader should run.  They
+now have a smart constructor: `binsOk bins = binsWf bins && descending (hotEdge :: bins)`,
+`Bins` its subtype, `binsOf?` the constructor.
+
+- **What the check buys:** `Bins.ladder_eq_rungs`, which says a configured ladder is §7.1's
+  ladder as written.
+- **Both directions:** `binsOf?_isSome_iff` and `binsOf?_accepts_the_default`.
+- **What it refuses:** `binsOf?_refuses_unsorted_edges`,
+  `binsOf?_refuses_an_edge_above_hot`, `binsOf?_refuses_an_infinite_edge` and
+  `binsOfPairs?_refuses_a_zero_denominator`.
+- **The misconfiguration, exhibited:** `a_misconfigured_ladder_is_antitone_but_not_the_ladder`.
+  Swapped edges `[1/10, 1/2]` fail the check and still give an antitone bin.  At
+  `u = 3/10` the ladder as written stops at rung 1 while the count says 2.
+
+**Config decimals, the route inherited from step 1:** pairs of `Nat`s through `Arith.ofPair?`
+(`pairsQ?`, `binsOfPairs?`, and `safetyOf?` for §16's `safety`, which also refuses `0`).
+`the_spec_decimals_are_the_default_ladder` says §16's `0.5, 0.25, 0.1`, sent as `5/10`,
+`25/100`, `1/10`, give `defaultBins`' bin at every need and availability.  `safetyOf? 13 10`
+is Arith's `safety` (`safetyOf?_reads_the_spec`).  No `Float`.  **The loader call is not
+made:** nothing on the wire reads a config yet (gap 77).
+
+### §7.2's rule table: tabulated (AGENTS §5.5)
+
+Which line of §7.2 applies is `priority::compute`'s cascade, in its order: wall, `optional.md`,
+overdue persist, mandatory instance, `hot` flag, a pass (EDF or floor), pure rank.  It is
+derived (`rowOf`).  What each row makes of `p`, and whether §7.4 may hold it, is data:
+`rowTable`, one row per `PrioRow` constructor, so the compiler checks the table is
+complete.  `rawPrio` reads the first column and `finalPrio` both.  The bridges state each
+row over the inputs, never over the table: `rawPrio_of_a_wall`, `rawPrio_of_an_optional`,
+`rawPrio_of_overdue`, `rawPrio_of_a_mandatory_instance`, `rawPrio_of_the_hot_flag`,
+`rawPrio_of_a_pass`, `rawPrio_of_pure_rank`.  Beside them: `rawPrio_is_clamped`,
+`rawPrio_isNone_iff` with `rowOf_eq_wall_iff` (off the scale is walls and nothing else),
+`finalPrio_of_a_wall`, `finalPrio_of_an_optional`, `finalPrio_damps`,
+`finalPrio_never_delays_zero`, `finalPrio_is_clamped` and
+`finalPrio_improves_by_at_most_one_step`.  Cheats 79 and 80 corrupt a row (rank as `k + 3`)
+and a column (`optional.md` damped).
+
+**The inputs are plain arguments** (the previous block's type (c)).  `RuleIn.overdue` (§5.3's
+persist), `RuleIn.mandatory` (§5.2's instance, from the replayed instance status) and
+`RuleIn.pass` (the EDF or floor pass's bin, from D10's lookahead and, for a floor, the
+replayed `done_this_period`) are `Bool`s and an `Option Bin`.  The D9/D10 tranche computes
+them.  `wall`, `optional` and `hotFlag` are read off the candidate by stage 6's candidate
+collection (fork-point `priority::collect_candidates`).
+
+**Batching (§7.5) is not built:** gap 76.
+
+### §7.4's hysteresis: a named tier
+
+**The tier** (AGENTS §8.3's named trap, not in L1..L27).  `hysteresis yesterday raw` is a
+function of two numbers.  `yesterday` is a given input, the host's `state.json`
+`priorities_yesterday` (§10.2), so the three goals are function laws.  The day-over-day
+reading, where today's output is tomorrow's yesterday, holds only under the host's contract
+to store today's `p`.  It is stated with that contract as the recursion `hysteresisDays`,
+under `Priority.lean`'s module doc.
+
+**The rule, read off the fork point.**  `priority::apply_hysteresis`: with
+`hysteresis = false` in the config, or a raw `0`, the raw `p` passes; with a yesterday `y`
+and `raw + 1 < y`, the answer is `y − 1`; otherwise `raw`.  An absent yesterday passes `raw`.
+`hysteresis` is the two-number core and `applyHysteresis` the switch and the `Option`
+(`applyHysteresis_without_yesterday`, `applyHysteresis_disabled`,
+`applyHysteresis_enabled`, `applyHysteresis_zero`, `applyHysteresis_cases`).
+
+**The three goals are proved as stated:** `hysteresis_improves_by_at_most_one_bin`,
+`hysteresis_worsens_freely`, `hysteresis_never_delays_hot`.  Beside them:
+`hysteresis_holds_one_step_back` is the other direction (the damping bites);
+`hysteresis_never_raises_urgency` and `hysteresis_le_max` are its bounds; and
+`hysteresis_settles_on_a_steady_priority` with `hysteresis_holds_every_day_of_the_gap` are
+the day-over-day law.  A steady raw `p` is reached within `yesterday − raw − 1` days and
+held, and not a day sooner (`hysteresisDays_closed_form`; `hysteresisDays_of_hot`).
+
+**Behaviour decisions, next to the rule.**
+
+- **(h1) One bin is one step of `p`**, as in `priority::apply_hysteresis`.  While `k` is
+  fixed and nothing clamps, the two are the same.  A row change (rank `k + 2` to dated
+  `k + 0`) is bounded in `p`, not in bins.
+- **(h2) Yesterday is a `Fin 8`**, decoded by `yesterdayOf?`, which refuses `8` and above
+  (`yesterdayOf?_refuses_eight`, `yesterdayOf?_accepts`).  A stored `p` is `0..7`.  The fork
+  point's `u8` takes anything, and a stored `9` would put today at `8`, past §7.2's clamp.
+  With the bound, `finalPrio_is_clamped` holds for every yesterday.  Parity entry P9.
+- **(h3) Damped rows:** every row except walls (off the scale) and `optional.md` (pinned at
+  `5`), matching `priority::compute`'s deviation 5.
+
+### Additions to the stage-5 parity exception list
+
+| # | site | the kernel | the fork point | authority |
+|---|---|---|---|---|
+| P7 | the bin's need | exact `remaining × safety` folded into the cross-multiplication (`binOfScaledQ`) | `need_min = round(remaining × safety)` over `avail_min` (`priority::safety_minutes`, `priority::utilization`) | R1; `rounding_the_need_changes_the_bin` |
+| P8 | configured priority values | `bins` refused unless every edge is a rational and they descend from `1`; `default_priority` refused outside `1..4`; `safety` refused at `0` or a zero denominator | any `Vec<f64>` and `u8` accepted; `safety_minutes` uses `1.0` for a non-positive safety | gap 27, R10 |
+| P9 | a stored yesterday above `7` | refused (`yesterdayOf?`) | a `u8` accepted; `y − 1` can exceed the clamp | (h2) |
+
+P2's fork-point column reads as corrected above.  None of P7–P9 is observable yet: nothing on
+the wire computes a priority or reads a config.
+
+### Both directions, on a loaded plan (`Boundary.lean`)
+
+`parentTreePlan` (D6's tree: `^t1` under `^m1` under `^O1 !1`, `^x2` under `^x1` under
+`^O3 !3`) and `treePlan` (`^a1`, a root with no `!k`), at a 60-minute remaining and §16's
+safety (a 78-minute need):
+
+- `prio_reads_the_root_priority_on_a_loaded_plan`: `k` is `1` and `3`.  At 200 minutes
+  available the bin is `+1`, so `p` is `2` and `4`.
+- `a_root_without_k_takes_the_default_on_a_loaded_plan`: `^a1`'s `k` is `3`.
+- `hot_is_zero_whatever_the_root_on_a_loaded_plan`: at 78 minutes available `^x2` is HOT,
+  `p = 0`, despite `k = 3`.
+- `the_rule_table_ranks_a_loaded_plan`:
+  - `^x2` dated at raw `4` is held at `5` by yesterday's `6`.
+  - `^t1` as pure rank is `3`.
+  - An optional is `5` over yesterday's `7`.
+  - An overdue line is `0`.
+  - A wall is off the scale.
+
+Cheats 75–83 (`Negative.lean`) invert them, each failing with "`decide` proved that the
+proposition … is false" at its own line (checked one by one, not only "the file failed"):
+
+| cheat | the false claim |
+|---|---|
+| 75 | HOT yields to a `!4` root |
+| 76 | hysteresis lets four steps through |
+| 77 | hysteresis delays HOT |
+| 78 | swapped bins accepted |
+| 79 | the rank row is `k + 3` |
+| 80 | an optional is damped |
+| 81 | `0/0` is the lowest bin |
+| 82 | the mixture may be floored |
+| 83 | the root's `!k` is ignored |
+
+**Probes, under the 8 GB cap first** (scratch files importing the built package with
+`Priority` compiled beside it, `timeout 120`):
+
+| probe | time | peak memory |
+|---|---|---|
+| `Priority.lean` alone | 0.59 s | 0.63 GB |
+| the four loaded-plan witnesses together | 4.57 s | 1.39 GB |
+| cheats 75–83 together | 1.47 s | 0.63 GB |
+
+### Gaps
+
+76. **§7.5's batching is not built.**  (1) Fork-point `priority::batches` groups candidates
+    with `remaining ≤ batch_max_min` and equal `ci` into a group of at most `block_min`
+    planned minutes, walking the sorted candidates and stopping at an equal-`ci` candidate
+    that cannot join (§8.3's monotone rank).  (2) Not a decision.  It reads the §7.4 sort
+    order, planned minutes (R4's `plannedMin`, whose multiplier is the Rust fit's), and
+    `block_min`, all stage 6's slot context.  (3) Cost: nothing in the kernel ranks or places
+    candidates yet, so no answer is wrong today.  Stage 6's planner cannot give the `+3` bin a
+    slot without it.  (4) Stage 6, with the sort key and §8.3's monotone rank.
+77. **The config decoders are not called.**  (1) `binsOfPairs?`, `safetyOf?`,
+    `defaultPrioOf?` and `yesterdayOf?` exist with their rejection theorems.  The wire carries
+    no config section and no `state.json` priorities, so nothing calls them.  Gap 27's
+    "a loader should run" is met by the constructor, not by a call.  (2) Not a decision: the
+    route (pairs through `ofPair?`) is chosen.  (3) Cost: none until a verb reads a priority.
+    The first such verb must decode through these, or it re-opens gap 27 and P8.  (4) The
+    D9/D10 tranche or stage 6's `PlanInput`, whichever first puts `cfg` on the wire.
+78. **§10.2's `priorities_yesterday` writer is not built.**  (1) Fork-point
+    `priority::priorities_for_state` keeps each id's lowest `p` (an item with two instances)
+    and leaves walls out.  The kernel takes the result as `applyHysteresis`'s argument and
+    does not produce it.  (2) Not a decision.  (3) Cost: the day-over-day law
+    (`hysteresis_settles_on_a_steady_priority`) assumes the host stores today's `p`.  A writer
+    that stored the raw `p`, or the last instance's, would void it without a failing check.
+    (4) Stage 6, with `finalPrio` over the candidate list.
+
+### Deliberate differences from the fork point, in one place
+
+These are P2 (0/0 HOT), P7 (exact scaled need in the bin), P8 (configured values refused
+rather than accepted or silently replaced), P9 (a stored yesterday above `7` refused), and
+(h1)'s unit, which is not a difference.  `hysteresis` applies to exactly the fork point's
+rows (h3).
+
+**Observable behaviour changes: none.**  Nothing on the wire calls `prio`, `finalPrio` or
+a decoder yet.  No two-run theorem was restated or re-proved, because none was touched.
+
+**New theorems** (89, audited under `Check.lean`'s new `APPENDED 2026-09-14 (stage 5)` step-2
+banner): 85 in `Priority.lean` and 4 in `Boundary.lean`.
+**Goals:** six deleted from `Goals.lean`, all proved as stated, and the provisional `prio`
+and `hysteresis` replaced by the real definitions with the signatures they declared.  No
+theorem was retired, weakened or deleted.
+
+**Owed, by name (not attempted in this step).**
+
+1. Gap 73's rewire of the close's fold onto `remainingMin`, with its D5 re-proofs.
+2. Gap 75, the implied `after:`.
+3. D9's replay and D10's lookahead: `done_minutes`, `progress`, recurrence instance
+   selection, and the rule inputs `overdue`, `mandatory` and `pass`.
+4. Stage 5's remaining three goals, `edf`'s, restated over rational minutes (the previous
+   block's type (a)).
+5. Gaps 76–78.
+6. §10.5 q7, q9, q10 and q11, and the human's 30-minute drives (AGENTS §5.13).
+
+**Re-measured after this step** (every command under the 40 GB cap, on the tree committed):
+
+| measurement | value |
+|---|---|
+| `check.sh` | **7/7**, in 2:13 |
+| axiom audit | **1980 theorems** (1891 + 89; `grep -c '^#print axioms' Check.lean` 1980, no duplicate) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **18** (stage 4: 0, stage 5: **3**, the `edf` goals; stage 6: 15) |
+| `cargo test --workspace` | **1010 passed / 0 failed / 0 ignored across 66 binaries** |
+| `cli_latency.rs`, first verb | **707.6 / 707.6 / 707.2 ms** (three serial runs, 226 files, 2,959 lines; step 1 measured 622 / 698 / 627 ms) |
+| `cli_latency.rs`, later verb | 55.7 / 60.8 / 55.8 ms |
+| FFI suite | **76** (68 kernel + 8 corpus, unchanged) |
+
+`TmKernel.lean` holds fifteen imports, `Priority` after `Tree`.  Gaps run to 78 (new gaps
+start at 79); cheats run to 83 (new cheats start at 84).

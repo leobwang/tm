@@ -334,52 +334,15 @@ children, so each is refuted as written on a loaded plan (`Boundary.lean`:
 `remaining_falls_back_to_the_leading_estimate_when_unsettled`,
 `remaining_sums_the_children_when_unsettled_with_no_dur`).  README "Stage 5 step 1". -/
 
-/-! ## §7's priority -/
-
-/-- **Provisional (stage 5).**  §7.2's arithmetic and nothing else: `p = k +
-bin(u)`, clamped to `0..=7`, with HOT at zero.  `Arith.Bin` and `Arith.binOf`
-already exist and are proved antitone, so this is the one function §7.2 adds on
-top of them.  It deliberately does **not** take the candidate: the special
-cases (`overdue with on_miss = persist`, a mandatory window instance, the `hot`
-flag, `optional.md` at `p = 5`) are selection rules, and they belong with the
-planner. -/
-def prio (k : Nat) (b : Arith.Bin) : Nat := sorry
-
-/-- **P\*, stage 5, §7.2.**  HOT is `p = 0`, whatever the root priority says.
-Rules out a `!4` root pushing a HOT item off the front of the queue. -/
-theorem prio_of_hot_is_zero (k : Nat) : prio k Arith.Bin.hot = 0 := sorry
-
-/-- **P\*, stage 5, §7.2.**  "clamp p to 0..=7".  Rules out a bin ladder longer
-than the default one silently producing a priority no screen can render. -/
-theorem prio_is_clamped (k : Nat) (b : Arith.Bin) : prio k b ≤ 7 := sorry
-
-/-- **P\*, stage 5, §7.1–7.2.**  More pressure is never lower priority: the bin
-is antitone in utilisation (`Arith.binOf_antitone`, proved) and `prio` must not
-undo it.  This is the monotonicity §8.3's "monotone rank" rests on. -/
-theorem prio_is_antitone_in_utilisation (bins : List Arith.Q) (k n₁ a₁ n₂ a₂ : Nat)
-    (hd : Arith.utilDefined n₁ a₁ = true)
-    (h : Arith.Q.le (Arith.util n₁ a₁) (Arith.util n₂ a₂) = true) :
-    prio k (Arith.binOf bins n₂ a₂) ≤ prio k (Arith.binOf bins n₁ a₁) := sorry
-
-/-- **P\*, stage 5, §7.4's hysteresis.**  "`p` may improve (decrease) by at most
-one bin per day relative to yesterday's stored `p` unless the new value is 0.
-It may worsen freely."  Two numbers in, one out — settled by that sentence, and
-it is the only part of §7.4 that is not already a sort. -/
-def hysteresis (yesterday raw : Nat) : Nat := sorry
-
-/-- **P\*, stage 5, §7.4.**  Improvement is capped at one step.  Rules out the
-day-to-day reshuffling pure utilisation causes — the reason the rule exists. -/
-theorem hysteresis_improves_by_at_most_one_bin (y r : Nat) (h : 0 < hysteresis y r) :
-    y ≤ hysteresis y r + 1 := sorry
-
-/-- **P\*, stage 5, §7.4.**  Worsening is free: nothing damps an item getting
-less urgent. -/
-theorem hysteresis_worsens_freely (y r : Nat) (h : y ≤ r) : hysteresis y r = r := sorry
-
-/-- **P\*, stage 5, §7.4.**  The stated exception: `p = 0` is never delayed.
-Rules out hysteresis holding a HOT item back for a day, which would make the
-damping rule the cause of the overrun it exists to prevent. -/
-theorem hysteresis_never_delays_hot (y : Nat) : hysteresis y 0 = 0 := sorry
+/- **§7's `prio` and §7.4's `hysteresis` are real (2026-09-14, stage 5 step 2).**
+The provisional `prio` and `hysteresis` that stood here are replaced by `Tm.prio` and
+`Tm.hysteresis` in `TmKernel/Priority.lean`, with the signatures they declared.  All six
+goals of this block are proved as stated there: `prio_of_hot_is_zero`,
+`prio_is_clamped`, `prio_is_antitone_in_utilisation`,
+`hysteresis_improves_by_at_most_one_bin`, `hysteresis_worsens_freely` and
+`hysteresis_never_delays_hot`.  `hysteresis` follows fork-point
+`priority::apply_hysteresis`, which passes a raw `0` before comparing.  README "Stage 5
+step 2". -/
 
 /-! ## §7.3's EDF pass and §8.4's capacity lookahead -/
 

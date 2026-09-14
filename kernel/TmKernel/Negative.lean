@@ -858,5 +858,63 @@ set_option maxRecDepth 40000 in
 theorem theSettledVolumeIsTheHead : seriesHead treePlan 0 "vols".toList = some "v1".toList := by
   decide
 
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5 step 2: §7.1's priority, §7.2's rule table and
+-- §7.4's hysteresis).  The controls, which compile, are in Priority.lean and
+-- Boundary.lean: `prio_of_hot_is_zero` (75), `hysteresis_holds_one_step_back` (76),
+-- `hysteresis_never_delays_hot` (77), `binsOf?_refuses_unsorted_edges` (78),
+-- `rawPrio_of_pure_rank` (79), `finalPrio_of_an_optional` (80),
+-- `zero_need_on_zero_capacity_is_hot` (81), `flooring_the_mixture_changes_the_bin`
+-- (82) and `prio_reads_the_root_priority_on_a_loaded_plan` (83).
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 75 — a `!4` root pushing a HOT item off the front.  §7.2: HOT is `p = 0`,
+   whatever `k` is. -/
+theorem hotYieldsToTheRootPriority : prio 4 Arith.Bin.hot = 4 := by
+  decide
+
+/- CHEAT 76 — hysteresis letting a four-step improvement through.  Yesterday `5`, raw
+   `1`: §7.4 holds it at `4`. -/
+theorem hysteresisLetsFourStepsThrough : hysteresis 5 1 = 1 := by
+  decide
+
+/- CHEAT 77 — hysteresis delaying HOT.  Yesterday `3`, raw `0`: "unless the new value
+   is 0", so `0`, not `2`. -/
+theorem hysteresisDelaysHot : hysteresis 3 0 = 2 := by
+  decide
+
+/- CHEAT 78 — gap 27's loader accepting swapped edges.  `[1/10, 1/2]` is antitone but
+   not §7.1's ladder; `binsOf?` refuses it. -/
+theorem swappedBinsAccepted : (binsOf? [⟨1, 10⟩, ⟨1, 2⟩]).isSome = true := by
+  decide
+
+/- CHEAT 79 — a corrupted row of §7.2's table: pure rank as `k + 3`.  The row is
+   `k + 2`. -/
+theorem theRankRowIsKPlusThree : (rowTable .rank).1 = .kPlus (.plus 3) := by
+  decide
+
+/- CHEAT 80 — a corrupted column of §7.2's table: `optional.md` damped by hysteresis.
+   §7.2 pins it at `5` (fork-point `priority::compute`'s deviation 5). -/
+theorem anOptionalIsDamped : (rowTable .optional).2 = true := by
+  decide
+
+/- CHEAT 81 — gap 25 decided the float's way.  `0/0` at a rational availability is
+   HOT, not the lowest bin. -/
+theorem zeroOverZeroIsTheLowestBin : binOfQ Arith.defaultBins 0 (Arith.posOfNat 0) = .plus 3 := by
+  decide
+
+/- CHEAT 82 — D10's mixture floored.  `156½` minutes and `156` put a 78-minute need in
+   different bins. -/
+theorem theMixtureMayBeFloored :
+    binOfScaledQ Arith.defaultBins Arith.safety 60 (Arith.mkPos 313 2 (by decide))
+      = binOfScaledQ Arith.defaultBins Arith.safety 60 (Arith.posOfNat 156) := by
+  decide
+
+/- CHEAT 83 — §7.1's `k` read as the default instead of the root's `!k`.  `^t1`'s root
+   `^O1` writes `!1`. -/
+set_option maxRecDepth 40000 in
+theorem theRootPriorityIsIgnored : rootK parentTreePlan.val specDefaultPrio "t1".toList = 3 := by
+  decide
 
 end Tm

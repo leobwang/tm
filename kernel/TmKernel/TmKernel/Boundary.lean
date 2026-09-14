@@ -1,6 +1,7 @@
 import TmKernel.Report
 import TmKernel.Json
 import TmKernel.Tree
+import TmKernel.Priority
 /-!
 # The boundary: `String → String`, and nothing else
 
@@ -7354,6 +7355,68 @@ theorem remaining_does_not_sum_the_children_over_a_dur :
   obtain ⟨⟨e, hg, hk, hl, -, -⟩, -, -⟩ := hw
   have h := hall 60 treePlan _ e hg hk hl
   revert h
+  decide
+
+/-! ## Stage 5 step 2: §7.1's `k` and `p`, §7.2's table and §7.4's hysteresis, on a loaded plan
+
+`rootK` is fork-point `Tree::root_priority` (`Priority.lean`): the root's written `!k`,
+else §16's `default_priority`.  Every decision below reads `k` off a plan the loader
+built — `parentTreePlan` (D6's tree: `^t1` under `^m1` under `^O1 !1`, `^x2` under the
+midterm `^x1` under `^O3 !3`) and `treePlan` (`^a1`, a root with no `!k`) — and the bin
+off Arith's ladder at a 60-minute remaining with §16's `safety = 13/10`, a need of 78
+minutes, never rounded (R1).  Each was probed alone under an 8 GB cap first (README
+"Stage 5 step 2"). -/
+
+set_option maxRecDepth 40000 in
+/-- **§7.1's `k = root_priority` feeds `p` on a loaded plan.**  `^t1` climbs to `^O1`'s
+`!1` and `^x2` to `^O3`'s `!3`; at 200 minutes available a need of 78 is `u = 0.39`, bin
+`+1`, so `p` is `1 + 1 = 2` and `3 + 1 = 4`. -/
+theorem prio_reads_the_root_priority_on_a_loaded_plan :
+    rootK parentTreePlan.val specDefaultPrio "t1".toList = 1 ∧
+      rootK parentTreePlan.val specDefaultPrio "x2".toList = 3 ∧
+      binOfScaledQ Arith.defaultBins Arith.safety 60 (Arith.posOfNat 200) = .plus 1 ∧
+      prio (rootK parentTreePlan.val specDefaultPrio "t1".toList)
+          (binOfScaledQ Arith.defaultBins Arith.safety 60 (Arith.posOfNat 200)) = 2 ∧
+      prio (rootK parentTreePlan.val specDefaultPrio "x2".toList)
+          (binOfScaledQ Arith.defaultBins Arith.safety 60 (Arith.posOfNat 200)) = 4 := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **A root with no `!k` takes the default, on a loaded plan** — the other direction:
+`^a1` has neither a parent nor a `!k`, and its `k` is §16's `3`. -/
+theorem a_root_without_k_takes_the_default_on_a_loaded_plan :
+    (treePlan.val.store.get "a1".toList).map (fun e => (e.val.prio, e.val.parent)) =
+        some (Option.none, Option.none) ∧
+      rootK treePlan.val specDefaultPrio "a1".toList = 3 := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **HOT is `p = 0` whatever the root says, on a loaded plan.**  At exactly 78 minutes
+available `u = 1`; `^x2`'s `k = 3` does not push it off the front. -/
+theorem hot_is_zero_whatever_the_root_on_a_loaded_plan :
+    binOfScaledQ Arith.defaultBins Arith.safety 60 (Arith.posOfNat 78) = .hot ∧
+      prio (rootK parentTreePlan.val specDefaultPrio "x2".toList)
+          (binOfScaledQ Arith.defaultBins Arith.safety 60 (Arith.posOfNat 78)) = 0 := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **§7.2's table and §7.4's hysteresis, on a loaded plan's `k`.**  `^x2` dated at bin
+`+1` is raw `4`; yesterday's `6` holds it at `5`.  `^t1` with no pass is pure rank,
+`1 + 2 = 3`, and no yesterday lets it through.  An optional is `5` whatever yesterday's
+`7`.  An overdue line is `0` over any yesterday.  A wall is off the scale. -/
+theorem the_rule_table_ranks_a_loaded_plan :
+    finalPrio true (yesterdayOf? 6) (rootK parentTreePlan.val specDefaultPrio "x2".toList)
+        ⟨false, false, false, false, false,
+          some (binOfScaledQ Arith.defaultBins Arith.safety 60 (Arith.posOfNat 200))⟩ = some 5 ∧
+      finalPrio true Option.none (rootK parentTreePlan.val specDefaultPrio "t1".toList)
+        ⟨false, false, false, false, false, Option.none⟩ = some 3 ∧
+      finalPrio true (yesterdayOf? 7) (rootK parentTreePlan.val specDefaultPrio "t1".toList)
+        ⟨false, true, false, false, false, Option.none⟩ = some 5 ∧
+      finalPrio true (yesterdayOf? 7) (rootK parentTreePlan.val specDefaultPrio "x2".toList)
+        ⟨false, false, true, false, false,
+          some (binOfScaledQ Arith.defaultBins Arith.safety 60 (Arith.posOfNat 200))⟩ = some 0 ∧
+      finalPrio true (yesterdayOf? 7) (rootK parentTreePlan.val specDefaultPrio "x2".toList)
+        ⟨true, false, false, false, false, Option.none⟩ = Option.none := by
   decide
 
 end Tm

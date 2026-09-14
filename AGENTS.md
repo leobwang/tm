@@ -211,8 +211,9 @@ Arith ────────────────────────�
 ```
 
 Root import order (`cat TmKernel.lean`): `Arith Cal Grain Text Json Line State
-Plan Tree Fast Cmd Close Report Boundary` (`Tree` since stage 5 step 1: it imports `Plan`
-only, and `Boundary` imports it for its loaded-plan witnesses). `Json` imports `Text` only; `Close` imports `Cmd`;
+Plan Tree Priority Fast Cmd Close Report Boundary` (`Tree` since stage 5 step 1: it imports `Plan`
+only, and `Boundary` imports it for its loaded-plan witnesses; `Priority` since stage 5 step 2: it
+imports `Plan` and `Arith`, and `Boundary` imports it likewise). `Json` imports `Text` only; `Close` imports `Cmd`;
 `Report` imports `Close` and `Arith` (stage 4 step 5 — the first consumer of
 `Arith`); `Boundary` imports `Report` and `Json` (it imported `Cmd` before stage 4
 step 2, and `Close` before step 5). **No module imports `Lean.Data.Json` any more** — the wire is the
@@ -226,14 +227,15 @@ kernel's own (§2.4).
 - `State` — entity versus observation. `Core`, `wf`, `Entity`, `render`.
 - `Plan` — `Store`, `Doc`, `PlanCore`, `planWf`, `WfPlan`, and the comment rule (`commentAfter`).
 - `Tree` — §6.4's `remaining` (`remainingMin`, structural fuel, proved to be the one fixed point of its step) and §5.4's series head (`seriesHead`). Stage 5 step 1.
+- `Priority` — §7.1's `k` (`rootK`, `Tree::root_priority`) and `p` (`prio`), the bin ladder at an exact rational availability (`binOfQ`, `binOfScaledQ`; D10), gap 27's loader check (`binsOf?`, `binsOfPairs?`), §7.2's rule table (`rowOf`, `rowTable`, `rawPrio`, `finalPrio`) and §7.4's hysteresis (`hysteresis`, `applyHysteresis`, `hysteresisDays`). Stage 5 step 2.
 - `Cmd` — `lift`, `Transform`, `Dest`, `WfPlan.mapAt`, `KErr`, the commands (`cmdMove cmdDrop cmdSetEst cmdDemote cmdReadopt cmdRank cmdEdit cmdUnset`, and `WfPlan.insertFresh` for `add`), the `EditVal` table.
 - `Close` — §6.3's lifecycle as one fold at three grains: the `ClosePolicy` table and its bridges, `close`, the landing rank shift, `close_spec`, `autoClose`. On the wire since stage 4 step 5, as the `close` and `autoClose` ops.
 - `Report` — what a close reports (the owner's D3): `CloseEntry`, `Report`, `closeReport`, `closeR`/`autoCloseR`, and the theorems tying each entry to the close's result. kernel/README.md, stage-4 step-5 block.
 - `Boundary` — `String → String`: the request readers, `parseCmd`, the loader, `respond`, `call`, `callExport`.
-- `Arith` — exact rational arithmetic. Its one consumer so far is `Report` (minutes as an `Arith.Pos`).
+- `Arith` — exact rational arithmetic. Its consumers are `Report` (minutes as an `Arith.Pos`) and, since stage 5 step 2, `Priority` (the ladder, `safety`, a rational availability).
 
 **A new module is not built until it is imported.** `kernel/TmKernel/TmKernel.lean`
-is fourteen `import TmKernel.<Mod>` lines at stage 5 step 1 and nothing else; `lakefile.toml` names one
+is fifteen `import TmKernel.<Mod>` lines at stage 5 step 2 (fourteen at step 1) and nothing else; `lakefile.toml` names one
 `lean_lib TmKernel` and no module list. So a `.lean` file dropped into
 `TmKernel/TmKernel/` that nobody imports is **not compiled by check 1**, is not in
 `libTmKernel_TmKernel.a`, and is therefore invisible to the Rust — while
@@ -2000,7 +2002,10 @@ Rust.
   (gap 27). `ladder_eq_rungs` needs the edges sorted;
   `rungs_antitone` does not. A misconfigured `priority.bins` still produces a
   well-defined antitone bin that is **not** §7.1's ladder, and there is no
-  `planWf` clause rejecting it, because config validation lives at the boundary.
+  `planWf` clause rejecting it, because config validation lives at the boundary. *Stage 5 step 2: `Priority.lean`'s `binsOk` / `binsOf?` / `binsOfPairs?` are the
+  smart constructor (pairs through `ofPair?`), with `Bins.ladder_eq_rungs` for what the check
+  buys and `a_misconfigured_ladder_is_antitone_but_not_the_ladder` for what it refuses; the
+  loader call waits for the config wiring (README gap 77).*
 - **`0/0` is a decided disagreement, not a rounding site** (gap 25).
   §7.1 says "capacity 0 → `u = ∞`" with no exception for zero need, so
   `utilGe 0 0 e = true` and an item with nothing left to do and no capacity comes
@@ -2008,14 +2013,20 @@ Rust.
   it falls into the *lowest* bin. Both are defensible. **The parity harness will
   report this and it is not one of the six stated sites** — add it to the
   exception list *before* running, or acceptance fails for a reason already
-  decided.
+  decided. *Stated at stage 5 step 2 over a rational availability as
+  `zero_need_on_zero_capacity_is_hot` (parity entry P2). The fork point's mechanism is
+  `priority::utilization`'s `need 0 → 0.0`, which `bin_of` puts in the lowest bin, not a
+  `NaN` (README "Stage 5 step 2").*
 - **R1 is a systematic disagreement, not a rare one.** §3.5 changes `need_min`
   from `round(rem × 1.3)` to **ceiling**, because a margin rounded down stops
   being a margin. The Rust computes it twice — `priority.rs:349` in
   `safety_minutes` and `planner.rs:323` inline — and both must move together or
   the harness sees two different Rust answers for one rule.
   `rounding_the_need_changes_the_bin` is why the ordering path uses
-  `utilScaledGe` and never `needMin`.
+  `utilScaledGe` and never `needMin`. *Stage 5 step 2: the ordering path is
+  `binOfScaledQ`, which is `utilScaledGe`'s ladder on whole minutes
+  (`binOfScaledQ_on_whole_minutes`) and takes a rational availability; the exact scaled
+  need in the bin is parity entry P7.*
 - **R7 is open and it is the planner's to decide** (gap 26). §8.4
   mixes lounge and home capacity by `p_lounge`, a rational weight over two
   integer minute counts. Whether the planner floors per level, per day, or
@@ -2035,7 +2046,10 @@ Rust.
 - **Hysteresis is a second relational-ish law and it is not in L1..L27.** §7.4:
   `p` may improve by at most one bin per day relative to yesterday's stored `p`,
   unless the new value is 0. It makes today's priorities depend on yesterday's
-  output. Name it and place it in a tier before writing it.
+  output. Name it and place it in a tier before writing it. *Named and placed at stage 5 step 2 (`Priority.lean`'s module
+  doc): a function law of two numbers whose `yesterday` is the host's `state.json` input
+  (`Fin 8`, `yesterdayOf?`), with the day-over-day reading proved over `hysteresisDays`
+  under the host's contract that today's `p` is stored as tomorrow's yesterday.*
 - **Time of day and tz are missing from the calendar, not from the grammar**
   (gap 10). `Line.lean` already has `Clock = Fin 1440`, `DT{day,time}`
   with `DT.abs` in minutes, and `Moment` — so the values parse. What is missing is
@@ -2473,4 +2487,10 @@ drives.
 **Update 2026-09-14, stage 5 step 1 (README "Stage 5 step 1").** q4 is answered (D9: the
 kernel replays the log, all of it) and q5 is answered (D10: the capacity mixture is exact).
 Neither is built yet; the step's types are shaped to take them. Still owed to the human:
+**q10**, **q11**, **q7**, **q9**, and the §5.13 drives.
+
+**Update 2026-09-14, stage 5 step 2 (README "Stage 5 step 2").** No question in this
+table was answered or raised. §7.1's priority, §7.2's rule table and §7.4's hysteresis are
+built in `Priority.lean` on D9's and D10's types: log-derived rule inputs are plain
+arguments, and the ladder takes an exact rational availability. Still owed to the human:
 **q10**, **q11**, **q7**, **q9**, and the §5.13 drives.
