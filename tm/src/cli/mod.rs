@@ -35,6 +35,11 @@ pub mod lifecycle;
 pub mod out;
 pub mod planning;
 pub mod render;
+// Stage 5 D9 B4: the zone table the kernel reads (design §6.1). Nothing in the
+// binary calls it until W3's `kernel_log.rs`; the tests, `examples/tzprobe.rs`
+// and logbench include it by path.
+#[allow(dead_code)]
+pub mod tz_table;
 pub mod undo;
 
 use std::path::PathBuf;

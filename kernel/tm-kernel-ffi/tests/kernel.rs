@@ -852,9 +852,11 @@ fn unset_of_a_key_the_line_does_not_carry_is_refused() {
 /// spells: a quote and a backslash, serde_json's short escapes (`\t`, `\b`,
 /// `\f`) and `\/`, a control byte as a lowercase quad, `é` as an uppercase
 /// and a lowercase quad, and raw UTF-8 (a two-byte letter, a four-byte emoji).
-/// The response spells them the kernel's way (`jescape`: short forms only for
-/// quote, backslash, `\n`, `\r`; a quad for every other control byte).  This
-/// is the host-agreement obligation, evidenced rather than proved.
+/// The response spells them the kernel's way, which is serde_json's since stage
+/// 5 D9 B4 (`jescape`: short forms for quote, backslash, `\b`, `\t`, `\n`,
+/// `\f`, `\r`; a lowercase quad for every other control byte; `\/` and
+/// uppercase quads are read, never written).  This is the host-agreement
+/// obligation, evidenced rather than proved.
 #[test]
 fn the_request_reads_every_escape_a_host_writes() {
     let emoji = '\u{1F600}';
@@ -866,7 +868,7 @@ fn the_request_reads_every_escape_a_host_writes() {
     assert_eq!(
         out,
         format!(
-            r#"{{"ok":{{"docs":[{{"path":"w.md","lines":["q\"b\\s\u0009t\u0001c/s\u0008b\u000cf{e}{e} {e}{emoji}"]}}],"report":{{"closes":[]}}}}}}"#,
+            r#"{{"ok":{{"docs":[{{"path":"w.md","lines":["q\"b\\s\tt\u0001c/s\bb\ff{e}{e} {e}{emoji}"]}}],"report":{{"closes":[]}}}}}}"#,
             e = '\u{e9}'
         ),
         "{out}"
@@ -1356,4 +1358,44 @@ fn add_reads_a_parent_off_its_title_and_refuses_a_dangling_one() {
     assert!(ok.contains("Read ch.7 @O1 ^"), "{ok}");
     let bad = call(&req(r#"[{"op":"add","seed":9,"doc":0,"title":"Read ch.7 @O9"}]"#)).unwrap();
     assert_eq!(bad, r##"{"err":{"kernel":"badItem"}}"##, "{bad}");
+}
+
+// ---------------------------------------------------------------------------
+// Stage 5 D9 B4: the `tz` and `log` sections of a request (Boundary.lean's
+// `runWithLog`).  Lean-side twins: the_log_op_reads_a_four_line_tail,
+// the_log_section_refuses_by_name, the_response_shapes_emit_in_build_order.
+// ---------------------------------------------------------------------------
+
+/// **The `log` op, by line.**  From line 7: a `drop` (a header with its id, and
+/// its rendering in serde's bytes with the `tm log` column), a blank line, a
+/// line that is not UTF-8 (`null`), and `{"ev":7}` (no `t`).  The answer comes
+/// after `report`; the lines are the Lean witness's, byte for byte.
+#[test]
+fn the_log_op_answers_by_line() {
+    let out = call(r#"{"docs":[],"tz":{"key":"UTC","base":"+00:00:00","then":[]},"log":{"ckpt":null,"from":7,"lines":["{\"t\":\"2026-09-07T09:00:00Z\",\"ev\":\"drop\",\"id\":\"a1\"}","",null,"{\"ev\":7}"],"terminated":true,"want":{"headersFrom":7,"render":[7,8]}}}"#).unwrap();
+    assert_eq!(
+        out,
+        r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":10,"warnings":[{"line":9,"w":"invalidUtf8"},{"line":10,"w":"noT"}],"headers":[[7,"drop","a1"]],"render":[[7,"{\"t\":\"2026-09-07T09:00:00+00:00\",\"ev\":\"drop\",\"id\":\"a1\"}","2026-09-07 09:00"],[8,null,null]]}}}"#
+    );
+}
+
+/// **The section's refusals, by name**, and a request without `tz` or `log`
+/// answered as before.
+#[test]
+fn the_log_section_refuses_by_name() {
+    let utc = r#"{"key":"UTC","base":"+00:00:00","then":[]}"#;
+    for (req, want) in [
+        (r#"{"docs":[],"log":{}}"#.to_string(), r#"{"err":{"log":"tzAbsent"}}"#),
+        (format!(r#"{{"docs":[],"tz":{utc},"log":{{"ckpt":{{}}}}}}"#), r#"{"err":{"log":{"badLogReq":"ckpt"}}}"#),
+        (format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":1,"lines":[],"terminated":true,"reseal":{{}}}}}}"#), r#"{"err":{"log":{"badLogReq":"reseal"}}}"#),
+        (format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":1,"lines":[],"terminated":true,"want":{{"facts":true}}}}}}"#), r#"{"err":{"log":{"badLogReq":"facts"}}}"#),
+        (format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":1,"lines":[7],"terminated":true}}}}"#), r#"{"err":{"log":{"badLogReq":"lines"}}}"#),
+        (format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":1,"lines":["x"],"terminated":true,"want":{{"render":[2]}}}}}}"#), r#"{"err":{"log":{"renderNotInTail":{"line":2}}}}"#),
+        (r#"{"docs":[],"tz":{"key":"UTC","base":"-00:00:00","then":[]}}"#.to_string(), r#"{"err":{"log":{"badTz":"base"}}}"#),
+        (r#"{"docs":[],"tz":{"key":"UTC","base":"+00:00:00","then":[["2026-03-08T08:00:00Z","+01:00:00"],["2026-03-08T08:00:00Z","+00:00:00"]]}}"#.to_string(), r#"{"err":{"log":{"badTz":"unsorted"}}}"#),
+        (r#"{"docs":[],"tz":{"key":"UTC","base":"+00:00:00","then":[["2026-03-08T02:00:00-06:00","+01:00:00"]]}}"#.to_string(), r#"{"err":{"log":{"badTz":"instant"}}}"#),
+        (format!(r#"{{"docs":[],"tz":{utc}}}"#), r#"{"ok":{"docs":[],"report":{"closes":[]}}}"#),
+    ] {
+        assert_eq!(call(&req).unwrap(), want, "{req}");
+    }
 }

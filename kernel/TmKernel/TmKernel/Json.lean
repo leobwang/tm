@@ -293,13 +293,20 @@ def hexQuad (a b c d : Char) : Option Nat :=
   | some x, some y, some z, some w => some (((x * 16 + y) * 16 + z) * 16 + w)
   | _, _, _, _ => none
 
-/-- One character's escaped spelling.  Exactly Lean's printer's classes:
-`"`, `\`, `\n`, `\r`, a `\u00xx` quad below `0x20`, everything else verbatim. -/
+/-- One character's escaped spelling: **serde_json's** (`ESCAPE` in serde_json 1.0.151's `ser.rs`):
+`"`, `\`, the short forms `\b`, `\t`, `\n`, `\f`, `\r`, a lowercase `\u00xx` quad for every
+other character below `0x20`, everything else verbatim.  Until stage 5 D9 B4 it was Lean's
+printer's classes (`\t`, `\b` and `\f` as quads); B4's T2 (`tm/tests/kernel_log_grammar.rs`)
+found the difference on a log line the Rust writer wrote, and the log's rendering must be the
+writer's bytes (design §14.2 row B4, P20).  Every host reads both spellings. -/
 def escOf (c : Char) : List Char :=
   if c = '"' then ['\\', '"']
   else if c = '\\' then ['\\', '\\']
   else if c = '\n' then ['\\', 'n']
   else if c = '\r' then ['\\', 'r']
+  else if c = '\t' then ['\\', 't']
+  else if c = bsChar then ['\\', 'b']
+  else if c = ffChar then ['\\', 'f']
   else if c.toNat < 32 then
     ['\\', 'u', '0', '0', hexChar (c.toNat / 16), hexChar (c.toNat % 16)]
   else [c]
@@ -580,8 +587,15 @@ theorem junescape_escOf (c : Char) (t : List Char) :
   · subst hn; simp [junescape]
   by_cases hr : c = '\r'
   · subst hr; simp [junescape]
+  by_cases ht : c = '\t'
+  · subst ht; simp [junescape]
+  by_cases hbs : c = bsChar
+  · subst hbs; simp [junescape, bsChar]
+  by_cases hff : c = ffChar
+  · subst hff; simp only [hq, hb, hn, hr, ht, hbs, if_false, if_true, List.cons_append, List.nil_append]
+    simp [junescape]
   by_cases hc : c.toNat < 32
-  · simp only [hq, hb, hn, hr, if_false, hc, if_true, List.cons_append, List.nil_append]
+  · simp only [hq, hb, hn, hr, ht, hbs, hff, if_false, hc, if_true, List.cons_append, List.nil_append]
     rw [junescape]
     rw [hexQuad_escOf c hc]
     dsimp only
@@ -590,7 +604,7 @@ theorem junescape_escOf (c : Char) (t : List Char) :
     have hs' : ¬ isLowSurrogate c.toNat = true := by
       simp only [isLowSurrogate, Bool.and_eq_true, decide_eq_true_eq]; omega
     rw [if_neg hs, if_neg hs', Char.ofNat_toNat]
-  · simp only [hq, hb, hn, hr, hc, if_false, List.cons_append, List.nil_append]
+  · simp only [hq, hb, hn, hr, ht, hbs, hff, hc, if_false, List.cons_append, List.nil_append]
     simp [junescape, hq, hb, hc]
 
 /-- **The round trip, unconditional.**  Every list of characters — every doc
@@ -613,7 +627,8 @@ against.  `junescape_jescape` is true of `jescape = id` too, so the witnesses
 below pin the actual bytes. -/
 
 /-- A doc line carrying a quote, a backslash and a tab — the minimum §5.2 asks
-for, in the shape a real `- [ ]` line would have. -/
+for, in the shape a real `- [ ]` line would have.  Since stage 5 D9 B4 the tab goes out as
+serde's `\t` (it was a quad). -/
 def demoEscLine : List Char :=
   ['-', ' ', 's', 'a', 'y', ' ', '"', 'h', 'i', '"', ' ', '\\', 'n', '\t', 'x']
 
@@ -621,7 +636,7 @@ def demoEscLine : List Char :=
 theorem demo_jescape_bytes :
     jescape demoEscLine =
       ['-', ' ', 's', 'a', 'y', ' ', '\\', '"', 'h', 'i', '\\', '"', ' ',
-       '\\', '\\', 'n', '\\', 'u', '0', '0', '0', '9', 'x'] := by decide
+       '\\', '\\', 'n', '\\', 't', 'x'] := by decide
 
 theorem demo_junescape_bytes : junescape (jescape demoEscLine) = .ok demoEscLine := rfl
 
@@ -629,14 +644,16 @@ theorem demo_junescape_bytes : junescape (jescape demoEscLine) = .ok demoEscLine
 would still pass if it were, so it is stated separately. -/
 theorem the_escaping_is_not_vacuous : jescape demoEscLine ≠ demoEscLine := by decide
 
-/-- A newline and a carriage return get the short escapes; every other control
-character gets a quad.  This is decision 2's emit half. -/
+/-- Backspace, tab, newline, form feed and carriage return get the short escapes; every other
+control character gets a lowercase quad.  This is decision 2's emit half, **serde_json's classes
+since stage 5 D9 B4** (before it, `\t`, `\b` and `\f` were quads, Lean's printer's classes). -/
 theorem the_emitted_escape_classes :
     jescape ['\n'] = ['\\', 'n'] ∧
     jescape ['\r'] = ['\\', 'r'] ∧
-    jescape ['\t'] = ['\\', 'u', '0', '0', '0', '9'] ∧
-    jescape [bsChar] = ['\\', 'u', '0', '0', '0', '8'] ∧
-    jescape [ffChar] = ['\\', 'u', '0', '0', '0', 'c'] ∧
+    jescape ['\t'] = ['\\', 't'] ∧
+    jescape [bsChar] = ['\\', 'b'] ∧
+    jescape [ffChar] = ['\\', 'f'] ∧
+    jescape [Char.ofNat 11] = ['\\', 'u', '0', '0', '0', 'b'] ∧
     jescape [Char.ofNat 0] = ['\\', 'u', '0', '0', '0', '0'] ∧
     jescape [Char.ofNat 31] = ['\\', 'u', '0', '0', '1', 'f'] := by decide
 
@@ -647,9 +664,10 @@ theorem jescape_keeps_high_bytes_verbatim :
     jescape [Char.ofNat 0xe9] = [Char.ofNat 0xe9] ∧
     jescape [Char.ofNat 0x1f600] = [Char.ofNat 0x1f600] := by decide
 
-/-- **Decision 2, as a theorem.**  `\t`, `\b`, `\f` and `\/` are read even
-though they are never written: serde_json emits all four, so a reader that
-refused them would be a boundary hole with a proof attached. -/
+/-- **Decision 2, as a theorem.**  `\t`, `\b`, `\f` and `\/` are read: serde_json emits the
+first three, and any JSON host may write the fourth, so a reader that refused them would be a
+boundary hole with a proof attached.  (Since stage 5 D9 B4 the kernel writes the first three
+too; it never writes `\/` or an uppercase quad.) -/
 theorem junescape_accepts_the_host_short_escapes :
     junescape ['\\', 't'] = .ok ['\t'] ∧
     junescape ['\\', 'b'] = .ok [bsChar] ∧
@@ -659,10 +677,12 @@ theorem junescape_accepts_the_host_short_escapes :
   ⟨rfl, rfl, rfl, rfl, rfl⟩
 
 /-- The asymmetry, stated where it cannot drift: the kernel's own spelling of a
-tab and the host's spelling of a tab read back to the same bytes. -/
+slash and a host's escaped slash read back to the same bytes.  **Restated at stage 5 D9 B4 on
+`/`**: it was stated on a tab, which the kernel now writes as serde does (`\t`), so the tab is no
+longer a witness of the asymmetry; `\/` still is. -/
 theorem the_accepted_escapes_exceed_the_emitted_ones :
-    junescape (jescape ['\t']) = junescape ['\\', 't'] ∧
-    jescape ['\t'] ≠ ['\\', 't'] :=
+    junescape (jescape ['/']) = junescape ['\\', '/'] ∧
+    jescape ['/'] ≠ ['\\', '/'] :=
   ⟨rfl, by decide⟩
 
 /-! ### The refusals, each by its own name (§5.7, §5.8) -/
@@ -1936,8 +1956,17 @@ theorem jscan_escOf (c : Char) (x a b : List Char) (h : jscan x = some (a, b)) :
   by_cases hr : c = '\r'
   · subst hr; simp only [if_neg hq, if_neg hbs, if_neg hn]
     simpa using jscan_cons_esc 'r' x a b h
+  by_cases ht : c = '\t'
+  · subst ht; simp only [if_neg hq, if_neg hbs, if_neg hn, if_neg hr]
+    simpa using jscan_cons_esc 't' x a b h
+  by_cases hb8 : c = bsChar
+  · subst hb8; simp only [if_neg hq, if_neg hbs, if_neg hn, if_neg hr, if_neg ht]
+    simpa using jscan_cons_esc 'b' x a b h
+  by_cases hff : c = ffChar
+  · subst hff; simp only [if_neg hq, if_neg hbs, if_neg hn, if_neg hr, if_neg ht, if_neg hb8]
+    simpa using jscan_cons_esc 'f' x a b h
   by_cases hc : c.toNat < 32
-  · simp only [if_neg hq, if_neg hbs, if_neg hn, if_neg hr, if_pos hc]
+  · simp only [if_neg hq, if_neg hbs, if_neg hn, if_neg hr, if_neg ht, if_neg hb8, if_neg hff, if_pos hc]
     have k1 : c.toNat / 16 < 16 := by omega
     have k2 : c.toNat % 16 < 16 := Nat.mod_lt _ (by omega)
     have p1 := hexChar_ne_quote_or_backslash _ k1
@@ -1947,7 +1976,7 @@ theorem jscan_escOf (c : Char) (x a b : List Char) (h : jscan x = some (a, b)) :
     have s0 := jscan_cons_plain '0' _ _ _ (by decide) (by decide) s1
     have s0' := jscan_cons_plain '0' _ _ _ (by decide) (by decide) s0
     simpa using jscan_cons_esc 'u' _ _ _ s0'
-  · simp only [if_neg hq, if_neg hbs, if_neg hn, if_neg hr, if_neg hc]
+  · simp only [if_neg hq, if_neg hbs, if_neg hn, if_neg hr, if_neg ht, if_neg hb8, if_neg hff, if_neg hc]
     simpa using jscan_cons_plain c x a b hq hbs h
 
 theorem jscan_jescape (s rest : List Char) :

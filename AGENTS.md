@@ -211,7 +211,7 @@ Arith ────────────────────────�
 ```
 
 Root import order (`cat TmKernel.lean`): `Arith Cal Grain Text Json Line Stamp Log State
-Plan Tree Priority Capacity Lookahead Fast Cmd Close Report Boundary` (`Log` since stage 5 D9 step B3: it imports `Json` and `Stamp`, and nothing imports it yet; `Stamp` since stage 5 D9 step B2: it imports `Cal` and `Line`, and `Log` imports it; `Tree` since stage 5 step 1: it imports `Plan`
+Plan Tree Priority Capacity Lookahead Fast Cmd Close Report Boundary` (`Log` since stage 5 D9 step B3: it imports `Json` and `Stamp`, and `Boundary` imports it since step B4 for the `log` op; `Stamp` since stage 5 D9 step B2: it imports `Cal` and `Line`, and `Log` imports it; `Tree` since stage 5 step 1: it imports `Plan`
 only, and `Boundary` imports it for its loaded-plan witnesses; `Priority` since stage 5 step 2: it
 imports `Plan` and `Arith`, and `Boundary` imports it likewise; `Capacity` since stage 5 step 3: it
 imports `Priority` only, and `Boundary` imports it likewise; `Lookahead` since stage 5 D10 step L1: it imports `Capacity`, and `Cal` explicitly since step L2 (which `Capacity` already reached through `Priority` and `Plan`), and nothing imports it yet). `Json` imports `Text` only; `Close` imports `Cmd`;
@@ -236,7 +236,7 @@ kernel's own (§2.4).
 - `Cmd` — `lift`, `Transform`, `Dest`, `WfPlan.mapAt`, `KErr`, the commands (`cmdMove cmdDrop cmdSetEst cmdDemote cmdReadopt cmdRank cmdEdit cmdUnset`, and `WfPlan.insertFresh` for `add`), the `EditVal` table.
 - `Close` — §6.3's lifecycle as one fold at three grains: the `ClosePolicy` table and its bridges, `close`, the landing rank shift, `close_spec`, `autoClose`. On the wire since stage 4 step 5, as the `close` and `autoClose` ops.
 - `Report` — what a close reports (the owner's D3): `CloseEntry`, `Report`, `closeReport`, `closeR`/`autoCloseR`, and the theorems tying each entry to the close's result. kernel/README.md, stage-4 step-5 block.
-- `Boundary` — `String → String`: the request readers, `parseCmd`, the loader, `respond`, `call`, `callExport`.
+- `Boundary` — `String → String`: the request readers, `parseCmd`, the loader, `respond`, `call`, `callExport`. Since stage 5 D9 step B4 `respond` runs `runWithLog`: the request's `tz` section (`readTz`, the zone table `tm/src/cli/tz_table.rs` probes, built only by `Cal.mkTz?`) and `log` section (`readLogReq`, `mkLogReq?`, `logAnswer`: every line read by `Log.readLine`, its warnings by name, headers `[line, tag, id]`, renderings), then `run`; a request with neither is `run`.
 - `Arith` — exact rational arithmetic. Its consumers are `Report` (minutes as an `Arith.Pos`) and, since stage 5 step 2, `Priority` (the ladder, `safety`, a rational availability).
 
 **A new module is not built until it is imported.** `kernel/TmKernel/TmKernel.lean`
@@ -276,6 +276,14 @@ the kernel reads); a present `cmds` that is not an array is `array expected`
 while leading zeros are accepted (gap 43). Keys are emitted in **build order**,
 not sorted (`the_response_shapes_emit_in_build_order`); both Rust readers look
 keys up by name.
+
+*Stage 5 D9 step B4 (2026-09-14; kernel/README.md "Stage 5 B4" is the record).* The request may
+carry `tz` (`{"key","base":"±HH:MM:SS","then":[[instant, offset], …]}`) and `log`
+(`{"ckpt":null,"from","lines":[string|null],"terminated","want":{"headersFrom","render"}}`); the
+`ok` object then gains `log` after `report` (`lines`, `warnings`, `headers`, `render`), and the
+section's refusals are `{"err":{"log":…}}` (`tzAbsent`, `badTz`, `tooManyLines`, `badLogReq`,
+`renderNotInTail`). A request with neither key is read as before. String escapes are
+**serde_json's** since B4 (`\b`, `\t`, `\f` short; other controls a lowercase quad).
 
 ```jsonc
 // request

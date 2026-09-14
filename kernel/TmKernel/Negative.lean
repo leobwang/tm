@@ -1361,4 +1361,32 @@ theorem finiteF64CheckedOnlyAtHsw :
      | _ => false) = true := by
   decide
 
+
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D9 track, step B4: the `tz` and `log` sections
+-- of the request, Boundary.lean).  The design's §16 names no B4 cheat; these two
+-- guard its R10 constructors.  They take 131 and 132, above the highest number in
+-- this checkout (130, B3); the D10 track numbers in parallel and the merge
+-- renumbers.  The controls, which compile, are in Boundary.lean:
+-- `readTz_refuses_by_name` (131) and
+-- `mkLogReq?_refuses_a_render_line_outside_the_tail` (132).
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 131 — a zone table built without `Cal.mkTz?`.  Rust sends the
+   transitions; a decoder that wraps them in a `Cal.Tz` by asserting the proof
+   would let two transitions out of order through, and `offsetAt` would read the
+   last one written rather than the last one in time.  `Cal.Tz` is a subtype of
+   `TzTable.wf = true`, so the assertion is a type error: `rfl` cannot prove
+   `false = true`. -/
+def unsortedZone : Cal.Tz :=
+  ⟨⟨['k'], ⟨false, 0⟩, [(⟨200, 0⟩, ⟨false, 3600⟩), (⟨100, 0⟩, ⟨false, 0⟩)]⟩, rfl⟩
+
+/- CHEAT 132 — a render line outside the tail answered.  A request whose tail is
+   line 2 alone asks for line 1; `mkLogReq?` refuses it `renderNotInTail`, so
+   claiming the request is accepted is false: `decide` refuses it. -/
+theorem aRenderLineOutsideTheTailAccepted :
+    (mkLogReq? ⟨2, [some ['x']], true, none, [1]⟩).toBool = true := by
+  decide
+
 end Tm

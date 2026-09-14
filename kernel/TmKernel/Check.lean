@@ -2953,3 +2953,40 @@ open Tm
 #print axioms Tm.Log.every_line_warning_is_reachable
 #print axioms Tm.Log.finiteF64_is_serdes_band
 #print axioms Tm.Log.the_small_grammars_read_as_the_fork_does
+
+-- APPENDED 2026-09-14 (stage 5, D9 track).  Step B4 (design §14.2 row B4, §6.1, §10): the `tz` and
+-- `log` sections of the request in Boundary.lean — `readTz` (the zone table Rust probes, built only
+-- by `Cal.mkTz?`), `readLogReq` and `mkLogReq?` (R10), `logAnswer` (lines, warnings, headers with tag
+-- and id, render) and `runWithLog`, which `respond` now calls.  31 theorems, all in Boundary.lean;
+-- `the_response_shapes_emit_in_build_order` is extended in place (already audited above).
+#print axioms Tm.run_ok_shape
+#print axioms Tm.runPlan_ok_shape
+#print axioms Tm.runWithLog_without_a_log_is_run
+#print axioms Tm.a_request_without_tz_or_log_is_read_as_before
+#print axioms Tm.runWithLog_refuses_a_log_section_first
+#print axioms Tm.runWithLog_puts_the_log_after_the_report
+#print axioms Tm.readStep_fold
+#print axioms Tm.logVerdicts_eq
+#print axioms Tm.mkLogReq?_ok_iff
+#print axioms Tm.mkLogReq?_keeps_the_request
+#print axioms Tm.mkLogReq?_error_is_the_fault
+#print axioms Tm.mkLogReq?_refuses_a_from_of_zero_or_past_2_40
+#print axioms Tm.mkLogReq?_refuses_too_many_lines
+#print axioms Tm.mkLogReq?_refuses_headersFrom_past_2_40
+#print axioms Tm.mkLogReq?_refuses_too_many_render_lines
+#print axioms Tm.LogReq.wf_bounds
+#print axioms Tm.mkLogReq?_refuses_a_render_line_outside_the_tail
+#print axioms Tm.readTz_refuses_a_long_key
+#print axioms Tm.readTz_refuses_too_many_transitions
+#print axioms Tm.readLogReq_refuses_more_lines_than_the_bound
+#print axioms Tm.lineStep_error
+#print axioms Tm.lineStep_fold
+#print axioms Tm.readLogReq_reads_the_lines_as_sent
+#print axioms Tm.LogReq.wf_render_in_tail
+#print axioms Tm.logAnswer_renders_the_line_at_its_number
+#print axioms Tm.readTzOffset_reads_the_table_spelling
+#print axioms Tm.readTzInstant_reads_utc_whole_seconds
+#print axioms Tm.readTz_reads_the_witness_table
+#print axioms Tm.readTz_refuses_by_name
+#print axioms Tm.the_log_op_reads_a_four_line_tail
+#print axioms Tm.the_log_section_refuses_by_name

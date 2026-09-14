@@ -3,6 +3,7 @@ import TmKernel.Json
 import TmKernel.Tree
 import TmKernel.Priority
 import TmKernel.Capacity
+import TmKernel.Log
 /-!
 # The boundary: `String → String`, and nothing else
 
@@ -2561,6 +2562,387 @@ def run (j : JVal) : Except JVal JVal := do
   | .error e   => throw e
   | .ok plan   => runPlan plan cmds
 
+/-! ## The `tz` and `log` sections (stage 5, D9 track, step B4)
+
+**INSERTED 2026-09-14 (stage 5, D9 track, step B4; design §6.1, §10.1–§10.4, §14.2 row B4).**
+The row puts this in "a new section, appended" to this module.  The definitions are here
+instead, right after `run`, because `respond` below is the one entry point and Lean defines
+before use: `respond` now calls `runWithLog`, which reads these two sections and then `run`.
+The theorems about them are appended at the end of the file (section "Stage 5 D9 B4").
+
+**The op is grammar only.**  A request carrying `log` gets every tail line read by
+`Log.readLine` (B3): the line warnings by name, a header `[line, tag, id]` for each entry at or
+after `want.headersFrom`, and `[line, rendering, display]` for each line of `want.render`.  There
+is no checkpoint, reseal or sealed record yet (W1–W3), and no fact (C6), so `ckpt`, `reseal` and
+`sealed` must be `null` or absent and `want.facts` `false` or absent; anything else is refused by
+the field's name.
+
+**A request without `tz` and `log` is read exactly as before** (`runWithLog_without_a_log_is_run`).
+A present `tz` is read and refused if malformed whether or not `log` is there (the request
+clock's rule); `log` without `tz` is `tzAbsent`.  Both sections are read before `run`, so their
+refusals come first. -/
+
+/-- Why a `tz` section is refused: `{"err":{"log":{"badTz":<why>}}}`. -/
+inductive TzWhy
+  /-- `tz` is not one object (not an object, or a repeated `tz` key) -/
+  | shape
+  /-- `key` is absent, repeated or not a string -/
+  | key
+  /-- `base` is absent, repeated, not a string or not `±HH:MM:SS` -/
+  | base
+  /-- `then` is absent, repeated or not an array -/
+  | then_
+  /-- an element of `then` is not a pair of strings -/
+  | transition
+  /-- a transition's instant is not a stamp at UTC in whole seconds -/
+  | instant
+  /-- a transition's offset is not `±HH:MM:SS` -/
+  | offset
+  /-- `key` is longer than 128 characters (`Cal.TzTable.wf`) -/
+  | keyTooLong
+  /-- more than 4,096 transitions (`Cal.TzTable.wf`) -/
+  | tooManyTransitions
+  /-- the transitions are not strictly increasing (`Cal.mkTz?` refuses) -/
+  | unsorted
+deriving DecidableEq, Repr
+
+def TzWhy.name : TzWhy → String
+  | .shape => "shape" | .key => "key" | .base => "base" | .then_ => "then"
+  | .transition => "transition" | .instant => "instant" | .offset => "offset"
+  | .keyTooLong => "keyTooLong" | .tooManyTransitions => "tooManyTransitions"
+  | .unsorted => "unsorted"
+
+/-- The `log` section's fields, as `badLogReq` names them. -/
+inductive LogField
+  | log | ckpt | from_ | lines | terminated | reseal | want | facts | headersFrom | render | sealed
+deriving DecidableEq, Repr
+
+def LogField.name : LogField → String
+  | .log => "log" | .ckpt => "ckpt" | .from_ => "from" | .lines => "lines"
+  | .terminated => "terminated" | .reseal => "reseal" | .want => "want" | .facts => "facts"
+  | .headersFrom => "headersFrom" | .render => "render" | .sealed => "sealed"
+
+/-- **The `log` op's refusals at B4** (design §10.3; W3 adds the checkpoint's).  None is a line of
+the log: a line never refuses a request, it is a warning. -/
+inductive LogRefusal
+  /-- `log` without `tz` -/
+  | tzAbsent
+  | badTz (why : TzWhy)
+  /-- more than 32,768 lines in one call -/
+  | tooManyLines
+  | badLogReq (field : LogField)
+  /-- a `want.render` line outside `[from, from + lines − 1]` -/
+  | renderNotInTail (line : Nat)
+deriving DecidableEq, Repr
+
+/-- Keys in build order: `{"err":{"log":…}}`. -/
+def LogRefusal.json : LogRefusal → JVal
+  | .tzAbsent => jone "err" (jone "log" (.str "tzAbsent".toList))
+  | .badTz w => jone "err" (jone "log" (jone "badTz" (.str w.name.toList)))
+  | .tooManyLines => jone "err" (jone "log" (.str "tooManyLines".toList))
+  | .badLogReq f => jone "err" (jone "log" (jone "badLogReq" (.str f.name.toList)))
+  | .renderNotInTail n => jone "err" (jone "log" (jone "renderNotInTail" (jone "line" (.num n))))
+
+/-! ### `tz`: the zone table Rust probes (design §6.1), read by the kernel's own readers -/
+
+/-- Two decimal digits. -/
+def digits2 (a b : Char) : Option Nat :=
+  match charDigit a, charDigit b with
+  | some x, some y => some (10 * x + y)
+  | _, _ => none
+
+/-- **A table offset, `±HH:MM:SS`**, the one spelling `tz_table.rs` writes: nine characters,
+`+` or `-`, hours ≤ 23, minutes and seconds ≤ 59, and `+` at zero (so UTC has one spelling).
+The smart constructor is `Cal.mkOffset?`. -/
+def readTzOffset : List Char → Option Cal.VOffset
+  | [sg, h1, h2, ':', m1, m2, ':', s1, s2] =>
+    match (if sg = '+' then some false else if sg = '-' then some true else none),
+        digits2 h1 h2, digits2 m1 m2, digits2 s1 s2 with
+    | some west, some h, some m, some s =>
+      if h ≤ 23 ∧ m ≤ 59 ∧ s ≤ 59 ∧ (west = false ∨ 0 < h * 3600 + m * 60 + s) then
+        Cal.mkOffset? west (h * 3600 + m * 60 + s)
+      else none
+    | _, _, _, _ => none
+  | _ => none
+
+/-- **A transition's instant**: a stamp `LogStamp.parseStamp` reads (B2), at UTC, in whole
+seconds.  `tz_table.rs` writes `YYYY-MM-DDTHH:MM:SSZ`. -/
+def readTzInstant (s : List Char) : Option Cal.Instant :=
+  match LogStamp.parseStamp s with
+  | .ok (i, o) => if o.val = Cal.Offset.utc ∧ i.val.ns = 0 then some i.val else none
+  | .error _ => none
+
+def readTransition : JVal → Except TzWhy (Cal.Instant × Cal.Offset)
+  | .arr [.str a, .str b] =>
+    match readTzInstant a, readTzOffset b with
+    | some i, some o => .ok (i, o.val)
+    | none, _ => .error .instant
+    | some _, none => .error .offset
+  | _ => .error .transition
+
+/-- One step of reading `then`, reversed; a `foldl` (D9-21), run only below the 4,096 bound. -/
+def transStep (acc : Except TzWhy (List (Cal.Instant × Cal.Offset))) (x : JVal) :
+    Except TzWhy (List (Cal.Instant × Cal.Offset)) :=
+  match acc, readTransition x with
+  | .ok ys, .ok p => .ok (p :: ys)
+  | .error e, _ => .error e
+  | .ok _, .error e => .error e
+
+/-- **The `tz` section**: `{"key": s, "base": "±HH:MM:SS", "then": [[instant, offset], …]}`.  The
+bounds are checked before `then`'s elements are read, and the table is built only through
+`Cal.mkTz?` (R10), whose one remaining refusal after the readers is an unsorted table. -/
+def readTz (j : JVal) : Except TzWhy Cal.Tz :=
+  match j with
+  | .obj _ =>
+    match jget j "key" with
+    | .ok (some (.str key)) =>
+      match jget j "base" with
+      | .ok (some (.str b)) =>
+        match readTzOffset b with
+        | some base =>
+          match jget j "then" with
+          | .ok (some (.arr xs)) =>
+            if 128 < key.length then .error .keyTooLong
+            else if 4096 < xs.length then .error .tooManyTransitions
+            else
+              match xs.foldl transStep (.ok []) with
+              | .error e => .error e
+              | .ok rev =>
+                match Cal.mkTz? ⟨key, base.val, rev.reverse⟩ with
+                | some z => .ok z
+                | none => .error .unsorted
+          | _ => .error .then_
+        | none => .error .base
+      | _ => .error .base
+    | _ => .error .key
+  | _ => .error .shape
+
+/-! ### `log`: the request (design §10.1) and its smart constructor `mkLogReq?` (§10.4) -/
+
+/-- What the B4 op reads of a `log` section. -/
+structure LogReq where
+  /-- the physical line number of `lines[0]` -/
+  from_ : Nat
+  /-- each line's characters, or `none` for a line the host found not to be UTF-8 -/
+  lines : List (Option (List Char))
+  /-- whether the last line had its `\n` (W3 never folds an unterminated one; B4 folds nothing) -/
+  terminated : Bool
+  headersFrom : Option Nat
+  render : List Nat
+deriving DecidableEq, Repr
+
+/-- Line numbers on the wire are below `2^40` (§10.4). -/
+def logLineBound : Nat := 1099511627776
+/-- Lines per call (§10.4; Rust also caps the bytes). -/
+def maxLogLines : Nat := 32768
+/-- Lines per `want.render` (§10.4). -/
+def maxRenderLines : Nat := 4096
+
+/-- **The first bound a request breaks, by name** (§10.4's rows for `from`, lines per call,
+`headersFrom` and `render`).  A `render` line must lie in the tail, which also puts it below
+`2^40 + 32,768`. -/
+def LogReq.fault (r : LogReq) : Option LogRefusal :=
+  if r.from_ = 0 ∨ logLineBound ≤ r.from_ then some (.badLogReq .from_)
+  else if maxLogLines < r.lines.length then some .tooManyLines
+  else if r.headersFrom.any (fun h => decide (logLineBound ≤ h)) then
+    some (.badLogReq .headersFrom)
+  else if maxRenderLines < r.render.length then some (.badLogReq .render)
+  else
+    match r.render.find? (fun n => n < r.from_ || r.from_ + r.lines.length ≤ n) with
+    | some n => some (.renderNotInTail n)
+    | none => none
+
+def LogReq.wf (r : LogReq) : Bool := r.fault.isNone
+
+abbrev VLogReq := { r : LogReq // r.wf = true }
+
+/-- **The only constructor the decoder uses (R10).** -/
+def mkLogReq? (r : LogReq) : Except LogRefusal VLogReq :=
+  match h : r.fault with
+  | some f => .error f
+  | none => .ok ⟨r, by simp [LogReq.wf, h]⟩
+
+/-- Absent or `null`: what B4 accepts for `ckpt`, `reseal` and `sealed`. -/
+def nullOrAbsent (j : JVal) (k : String) : Bool :=
+  match jget j k with
+  | .ok none => true
+  | .ok (some .null) => true
+  | _ => false
+
+/-- One step of reading `lines`, reversed; a `foldl` (D9-21), run only below the line bound. -/
+def lineStep (acc : Except LogRefusal (List (Option (List Char)))) (x : JVal) :
+    Except LogRefusal (List (Option (List Char))) :=
+  match acc, x with
+  | .ok ys, .str s => .ok (some s :: ys)
+  | .ok ys, .null => .ok (none :: ys)
+  | .ok _, _ => .error (.badLogReq .lines)
+  | .error e, _ => .error e
+
+/-- One step of reading `want.render`, reversed; a `foldl`, run only below its bound. -/
+def renderStep (acc : Except LogRefusal (List Nat)) (x : JVal) : Except LogRefusal (List Nat) :=
+  match acc, x with
+  | .ok ys, .num n => .ok (n :: ys)
+  | .ok _, _ => .error (.badLogReq .render)
+  | .error e, _ => .error e
+
+/-- `want`: `facts` absent or `false`, `headersFrom` absent, `null` or a number, `render` absent or
+an array of numbers.  An absent `want` wants nothing. -/
+def readWant (w : Option JVal) : Except LogRefusal (Option Nat × List Nat) :=
+  match w with
+  | none => .ok (none, [])
+  | some w@(.obj _) =>
+    match jget w "facts" with
+    | .ok none | .ok (some (.bool false)) =>
+      match jget w "headersFrom" with
+      | .ok none | .ok (some .null) =>
+        (readRender w).map (fun rs => (none, rs))
+      | .ok (some (.num h)) => (readRender w).map (fun rs => (some h, rs))
+      | _ => .error (.badLogReq .headersFrom)
+    | _ => .error (.badLogReq .facts)
+  | some _ => .error (.badLogReq .want)
+where
+  readRender (w : JVal) : Except LogRefusal (List Nat) :=
+    match jget w "render" with
+    | .ok none => .ok []
+    | .ok (some (.arr rs)) =>
+      if maxRenderLines < rs.length then .error (.badLogReq .render)
+      else (rs.foldl renderStep (.ok [])).map List.reverse
+    | _ => .error (.badLogReq .render)
+
+/-- **The `log` section**, field by field, then `mkLogReq?`.  `lines` is measured before its
+elements are read. -/
+def readLogReq (j : JVal) : Except LogRefusal VLogReq :=
+  match j with
+  | .obj _ =>
+    if !nullOrAbsent j "ckpt" then .error (.badLogReq .ckpt) else
+    match jget j "from" with
+    | .ok (some (.num from_)) =>
+      match jget j "lines" with
+      | .ok (some (.arr xs)) =>
+        if maxLogLines < xs.length then .error .tooManyLines else
+        match xs.foldl lineStep (.ok []) with
+        | .error e => .error e
+        | .ok rev =>
+          match jget j "terminated" with
+          | .ok (some (.bool term)) =>
+            if !nullOrAbsent j "reseal" then .error (.badLogReq .reseal)
+            else if !nullOrAbsent j "sealed" then .error (.badLogReq .sealed)
+            else
+              match jget j "want" with
+              | .ok w =>
+                match readWant w with
+                | .ok (hf, rs) => mkLogReq? ⟨from_, rev.reverse, term, hf, rs⟩
+                | .error e => .error e
+              | .error _ => .error (.badLogReq .want)
+          | _ => .error (.badLogReq .terminated)
+      | _ => .error (.badLogReq .lines)
+    | _ => .error (.badLogReq .from_)
+  | _ => .error (.badLogReq .log)
+
+/-! ### `log`: the answer (design §10.2, B4's part) -/
+
+def stampErrName : LogStamp.StampErr → String
+  | .tooShort => "tooShort" | .badDate => "badDate" | .badSeparator => "badSeparator"
+  | .badTime => "badTime" | .badFraction => "badFraction" | .badOffset => "badOffset"
+  | .tooLong => "tooLong" | .beforeOrigin => "beforeOrigin" | .pastYear9999 => "pastYear9999"
+
+/-- A line warning: `{"line":n,"w":name}`, with `key` for a field and `why` for a parse or a
+stamp. -/
+def lwarnJson (n : Nat) (w : Log.LWarn) : JVal :=
+  let at_ (name : String) (extra : List (List Char × JVal)) : JVal :=
+    .obj ([("line".toList, .num n), ("w".toList, .str name.toList)] ++ extra)
+  match w with
+  | .invalidUtf8 => at_ "invalidUtf8" []
+  | .lineTooLong => at_ "lineTooLong" []
+  | .lineTooDeep => at_ "lineTooDeep" []
+  | .notJson e => at_ "notJson" [("why".toList, .str (jerrText e).toList)]
+  | .numberOutOfRange => at_ "numberOutOfRange" []
+  | .notAnObject => at_ "notAnObject" []
+  | .noT => at_ "noT" []
+  | .tNotString => at_ "tNotString" []
+  | .badT e => at_ "badT" [("why".toList, .str (stampErrName e).toList)]
+  | .duplicateT => at_ "duplicateT" []
+  | .noEv => at_ "noEv" []
+  | .evNotString => at_ "evNotString" []
+  | .missingField k => at_ "missingField" [("key".toList, .str k)]
+  | .badField k => at_ "badField" [("key".toList, .str k)]
+
+/-- A header at B4: `[line, tag, id]` (`Event::name`, `Event::primary_id`).  C6 adds the day,
+the cancelled flag and the display. -/
+def headerJson (e : Log.Entry) : JVal :=
+  .arr [.num e.line, .str e.ev.tag,
+    match e.ev.primaryId with
+    | some i => .str i
+    | none => .null]
+
+/-- A rendering: `[line, renderLine, displayStamp]`, or `[line, null, null]` for a line that is
+blank or a warning. -/
+def renderJson (n : Nat) : Option Log.Verdict → JVal
+  | some (.entry e) =>
+    .arr [.num n, .str (Log.renderLine e), .str (LogStamp.displayStamp e.t e.off)]
+  | _ => .arr [.num n, .null, .null]
+
+def readStep (acc : List Log.Verdict × Nat) (seg : Option (List Char)) : List Log.Verdict × Nat :=
+  (Log.readLine acc.2 seg :: acc.1, acc.2 + 1)
+
+/-- **Every line of the tail, read by `Log.readLine` at its physical number.**  A `foldl`
+(`logVerdicts_eq`). -/
+def logVerdicts (r : LogReq) : List Log.Verdict := (r.lines.foldl readStep ([], r.from_)).1.reverse
+
+def warningOf : Log.Verdict → Option JVal
+  | .warn n w => some (lwarnJson n w)
+  | _ => none
+
+def headerOf (hf : Nat) : Log.Verdict → Option JVal
+  | .entry e => if hf ≤ e.line then some (headerJson e) else none
+  | _ => none
+
+/-- **The `log` answer**: `lines` (the last physical line seen), `warnings`, `headers`, `render`,
+keys in build order.  `render` looks its lines up in an array. -/
+def logAnswer (r : VLogReq) : JVal :=
+  let vs := logVerdicts r.val
+  let arr := vs.toArray
+  .obj [("lines".toList, .num (r.val.from_ + r.val.lines.length - 1)),
+        ("warnings".toList, .arr (vs.filterMap warningOf)),
+        ("headers".toList, .arr (match r.val.headersFrom with
+          | none => []
+          | some hf => vs.filterMap (headerOf hf))),
+        ("render".toList, .arr (r.val.render.map (fun n => renderJson n arr[n - r.val.from_]?)))]
+
+/-- **The two sections of a request.**  Not an object: nothing (`run` refuses it as before).
+`tz` is read when present; `log` needs it. -/
+def readLogSection (j : JVal) : Except JVal (Option VLogReq) :=
+  match j with
+  | .obj _ =>
+    match jget j "tz" with
+    | .error _ => .error (LogRefusal.badTz .shape).json
+    | .ok tz =>
+      match tz.map readTz with
+      | some (.error w) => .error (LogRefusal.badTz w).json
+      | _ =>
+        match jget j "log" with
+        | .ok none => .ok none
+        | .ok (some l) =>
+          if tz.isNone then .error LogRefusal.tzAbsent.json
+          else
+            match readLogReq l with
+            | .ok r => .ok (some r)
+            | .error e => .error e.json
+        | .error _ => .error (LogRefusal.badLogReq .log).json
+  | _ => .ok none
+
+/-- The `log` answer after `report` in the `ok` object. -/
+def withLog (a : JVal) : JVal → JVal
+  | .obj [(k, .obj kvs)] => .obj [(k, .obj (kvs ++ [("log".toList, a)]))]
+  | r => r
+
+/-- **The request, with its `log` section.**  Without one it is `run` (definitionally). -/
+def runWithLog (j : JVal) : Except JVal JVal :=
+  match readLogSection j with
+  | .error e => .error e
+  | .ok none => run j
+  | .ok (some r) => (run j).map (withLog (logAnswer r))
+
 
 /-! ### The round trip is not vacuous
 
@@ -3205,12 +3587,14 @@ theorem the_char_edge_round_trips (s : String) : String.ofList s.toList = s :=
 /-- **The response value for a request's bytes.**  Every path returns one: a
 parse refusal is `bad json: ` and `jerrText`'s name for it, never a default.
 `call` is this, emitted — split out so that
-`the_response_call_emits_parses_back` is about the exported function's bytes. -/
+`the_response_call_emits_parses_back` is about the exported function's bytes.  Since stage 5 D9
+B4 it runs `runWithLog`, which is `run` for a request without a `log` section
+(`runWithLog_without_a_log_is_run`). -/
 def respond (input : List Char) : JVal :=
   match jparse input with
   | .error e => jsonErr s!"bad json: {jerrText e}"
   | .ok j =>
-    match run j with
+    match runWithLog j with
     | .error e => e
     | .ok r    => r
 
@@ -4011,19 +4395,31 @@ README's J5 block carries the differential measurement.  These two pin the new
 order at the builders the FFI calls, so a reorder is a proof failure and not
 only a Rust-test failure. -/
 
+set_option maxRecDepth 8000 in
 /-- **The response shapes, byte for byte, in build order.**  The free-text
 `err`, a `kernel` refusal, and an `ok` document — `path`, then `lines`, then the
 region's `grain` and `ix` — with a quote in the line so the escaping is on the
 path being pinned.  Small by design (the Json.lean memory rule): emission is
-evaluated, never a parser run. -/
+evaluated, never a parser run.  Extended at stage 5 D9 B4 (design §10.2): three `log` refusals,
+a line warning, and a `log` answer after `report`. -/
 theorem the_response_shapes_emit_in_build_order :
     jemit (jsonErr "unknown op fly") = "{\"err\":\"unknown op fly\"}".toList ∧
     jemit (jone "err" (jone "kernel" (.str "noSuchId".toList)))
       = "{\"err\":{\"kernel\":\"noSuchId\"}}".toList ∧
     jemit (jone "ok" (jone "docs" (.arr [.obj ([("path".toList, .str "w.md".toList),
         ("lines".toList, .arr [.str "- [ ] a \"q\" ^x1".toList])] ++ regionJson (some ⟨1, 35⟩))])))
-      = "{\"ok\":{\"docs\":[{\"path\":\"w.md\",\"lines\":[\"- [ ] a \\\"q\\\" ^x1\"],\"grain\":1,\"ix\":35}]}}".toList := by
-  decide
+      = "{\"ok\":{\"docs\":[{\"path\":\"w.md\",\"lines\":[\"- [ ] a \\\"q\\\" ^x1\"],\"grain\":1,\"ix\":35}]}}".toList ∧
+    -- stage 5 D9 B4: the `log` refusals, and the `log` answer after `report`
+    jemit LogRefusal.tzAbsent.json = "{\"err\":{\"log\":\"tzAbsent\"}}".toList ∧
+    jemit (LogRefusal.badTz .unsorted).json = "{\"err\":{\"log\":{\"badTz\":\"unsorted\"}}}".toList ∧
+    jemit (LogRefusal.renderNotInTail 45101).json
+      = "{\"err\":{\"log\":{\"renderNotInTail\":{\"line\":45101}}}}".toList ∧
+    jemit (withLog (logAnswer ⟨⟨17, [none], true, some 17, [17]⟩, by decide⟩)
+        (jone "ok" (.obj [("docs".toList, .arr []), ("report".toList, reportJson Report.empty)])))
+      = "{\"ok\":{\"docs\":[],\"report\":{\"closes\":[]},\"log\":{\"lines\":17,\"warnings\":[{\"line\":17,\"w\":\"invalidUtf8\"}],\"headers\":[],\"render\":[[17,null,null]]}}}".toList ∧
+    jemit (lwarnJson 17 (.missingField ['s', 'l', 'e', 'p', 't', '_', 'm', 'i', 'n']))
+      = "{\"line\":17,\"w\":\"missingField\",\"key\":\"slept_min\"}".toList := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> decide
 
 /-- `badLine`'s three keys go out as `path`, `line`, `why` — the order written
 in `lerrJson`, not `mkObj`'s `line`, `path`, `why`.  Stated for every diagnostic
@@ -4104,7 +4500,7 @@ instance of `jparse_jemit`, not a parser run over a literal), the loader's
 refusal is evaluated, and the emission is `the_real_response_bytes_round_trip`. -/
 theorem call_refuses_the_real_duplicate_id_request :
     call (String.ofList demoRequestBytes) = String.ofList demoResponseBytes := by
-  have hrun : run demoRequest = .error demoResponse := rfl
+  have hrun : runWithLog demoRequest = .error demoResponse := rfl
   unfold call respond
   rw [String.toList_ofList, the_real_request_bytes_round_trip.2]
   simp only [hrun]
@@ -7475,5 +7871,389 @@ theorem respond_reads_a_decimal_and_a_surrogate_pair :
     respond ['"', '\\', 'u', 'd', '8', '3', 'd', '\\', 'u', 'd', 'e', '0', '0', '"']
       = jsonErr "object expected" :=
   ⟨rfl, rfl, rfl⟩
+
+
+/-! ## Stage 5 D9 B4: the `tz` and `log` sections — the laws
+
+APPENDED 2026-09-14 (stage 5, D9 track, step B4; design §6.1, §10, §14.2 row B4).  The definitions
+sit after `run` (section "The `tz` and `log` sections"), because `respond` calls them; these are
+their laws.
+
+* **The op is beside the plan, never inside it.**  A request without `tz` and `log` is `run`
+  (`a_request_without_tz_or_log_is_read_as_before`); a refused section refuses the request before
+  the plan is loaded (`runWithLog_refuses_a_log_section_first`); an answered one is the `ok` object
+  `run` built with `log` after `report` (`runWithLog_puts_the_log_after_the_report`, over
+  `run_ok_shape`, which reads every path of `run`).
+* **Every tail line is read by `Log.readLine` at its physical number** (`logVerdicts_eq`), the
+  lines being the host's, in order (`readLogReq_reads_the_lines_as_sent`), and a rendering is of
+  the line at its number (`logAnswer_renders_the_line_at_its_number`).
+* **R10.**  `mkLogReq?` is the only constructor of a `VLogReq`: it refuses by name a `from` of 0 or
+  past `2^40`, more than 32,768 lines, a `headersFrom` past `2^40`, more than 4,096 render lines
+  and a render line outside the tail, and an accepted request is inside every bound
+  (`LogReq.wf_bounds`).  The decoder measures `lines` before reading an element
+  (`readLogReq_refuses_more_lines_than_the_bound`).  `Cal.mkTz?` is the only constructor of a
+  zone; `readTz` refuses each defect by name, the bounds before `then`'s elements
+  (`readTz_refuses_a_long_key`, `readTz_refuses_too_many_transitions`, `readTz_refuses_by_name`).
+* **Witnesses** (each probed under `MemoryMax=8G timeout 120`; every string a parser reads is a
+  `List Char` literal, AGENTS §5.10a).  The first probe of the four-line tail spelled its lines as
+  escaped `String` literals under `.toList` and was **killed at the 8 GB cap** (exit 143): the
+  string-literal trap of §5.10a again.  Spelled as character lists, it takes under a second. -/
+
+section B4
+
+
+theorem runPlan_ok_shape (plan : WfPlan) (cmds : List ReqCmd) (r : JVal)
+    (h : runPlan plan cmds = .ok r) : ∃ kvs, r = jone "ok" (.obj kvs) := by
+  unfold runPlan at h
+  cases hA : applyAllR cmds plan with
+  | error k => simp [hA] at h; cases h
+  | ok qr =>
+    obtain ⟨q, rep⟩ := qr
+    simp only [hA] at h
+    exact ⟨_, (Except.ok.inj h).symm⟩
+
+theorem run_ok_shape (j : JVal) (r : JVal) (h : run j = .ok r) :
+    ∃ kvs, r = jone "ok" (.obj kvs) := by
+  simp only [run, bind, Except.bind, pure, Except.pure, throw, throwThe, MonadExceptOf.throw] at h
+  repeat' (split at h)
+  all_goals first
+    | (cases h; done)
+    | (exact runPlan_ok_shape _ _ _ h)
+
+theorem runWithLog_without_a_log_is_run (j : JVal) (h : readLogSection j = .ok none) :
+    runWithLog j = run j := by
+  simp [runWithLog, h]
+
+theorem a_request_without_tz_or_log_is_read_as_before (j : JVal)
+    (htz : jget j "tz" = .ok none) (hlog : jget j "log" = .ok none) : runWithLog j = run j := by
+  apply runWithLog_without_a_log_is_run
+  cases j <;> simp [readLogSection, htz, hlog]
+
+theorem runWithLog_refuses_a_log_section_first (j e : JVal) (h : readLogSection j = .error e) :
+    runWithLog j = .error e := by
+  simp [runWithLog, h]
+
+theorem runWithLog_puts_the_log_after_the_report (j v : JVal) (r : VLogReq)
+    (h : readLogSection j = .ok (some r)) (hrun : run j = .ok v) :
+    ∃ kvs, v = jone "ok" (.obj kvs) ∧
+      runWithLog j = .ok (jone "ok" (.obj (kvs ++ [("log".toList, logAnswer r)]))) := by
+  obtain ⟨kvs, rfl⟩ := run_ok_shape j v hrun
+  exact ⟨kvs, rfl, by simp [runWithLog, h, hrun, withLog, jone, Except.map]⟩
+
+theorem readStep_fold (l : List (Option (List Char))) :
+    ∀ (acc : List Log.Verdict) (n : Nat),
+      (l.foldl readStep (acc, n)) =
+        (((l.zipIdx n).map (fun p => Log.readLine p.2 p.1)).reverse ++ acc, n + l.length) := by
+  induction l with
+  | nil => intro acc n; simp
+  | cons seg rest ih =>
+    intro acc n
+    simp only [List.foldl_cons, readStep]
+    rw [ih]
+    simp [List.zipIdx_cons, Nat.add_assoc, Nat.add_comm 1]
+
+theorem logVerdicts_eq (r : LogReq) :
+    logVerdicts r = (r.lines.zipIdx r.from_).map (fun p => Log.readLine p.2 p.1) := by
+  simp [logVerdicts, readStep_fold]
+
+
+theorem mkLogReq?_ok_iff (r : LogReq) : (mkLogReq? r).toBool = r.wf := by
+  unfold mkLogReq? LogReq.wf
+  split <;> simp_all [Except.toBool]
+
+theorem mkLogReq?_keeps_the_request (r : LogReq) (v : VLogReq) (h : mkLogReq? r = .ok v) :
+    v.val = r := by
+  unfold mkLogReq? at h
+  split at h
+  · cases h
+  · cases h; rfl
+
+theorem mkLogReq?_error_is_the_fault (r : LogReq) (f : LogRefusal) :
+    mkLogReq? r = .error f ↔ r.fault = some f := by
+  unfold mkLogReq?
+  split <;> simp_all
+
+theorem mkLogReq?_refuses_a_from_of_zero_or_past_2_40 (r : LogReq)
+    (h : r.from_ = 0 ∨ logLineBound ≤ r.from_) : mkLogReq? r = .error (.badLogReq .from_) := by
+  rw [mkLogReq?_error_is_the_fault]; simp [LogReq.fault, h]
+
+theorem mkLogReq?_refuses_too_many_lines (r : LogReq) (h0 : 0 < r.from_)
+    (h1 : r.from_ < logLineBound) (h : maxLogLines < r.lines.length) :
+    mkLogReq? r = .error .tooManyLines := by
+  rw [mkLogReq?_error_is_the_fault]
+  simp [LogReq.fault, h, Nat.pos_iff_ne_zero.mp h0, Nat.not_le.mpr h1]
+
+theorem mkLogReq?_refuses_headersFrom_past_2_40 (r : LogReq) (h0 : 0 < r.from_)
+    (h1 : r.from_ < logLineBound) (h2 : r.lines.length ≤ maxLogLines) (hf : Nat)
+    (hh : r.headersFrom = some hf) (hb : logLineBound ≤ hf) :
+    mkLogReq? r = .error (.badLogReq .headersFrom) := by
+  rw [mkLogReq?_error_is_the_fault]
+  simp [LogReq.fault, Nat.pos_iff_ne_zero.mp h0, Nat.not_le.mpr h1, Nat.not_lt.mpr h2, hh, hb]
+
+theorem mkLogReq?_refuses_too_many_render_lines (r : LogReq) (h0 : 0 < r.from_)
+    (h1 : r.from_ < logLineBound) (h2 : r.lines.length ≤ maxLogLines)
+    (h3 : ∀ hf, r.headersFrom = some hf → hf < logLineBound) (h : maxRenderLines < r.render.length) :
+    mkLogReq? r = .error (.badLogReq .render) := by
+  rw [mkLogReq?_error_is_the_fault]
+  have h3' : r.headersFrom.any (fun h => decide (logLineBound ≤ h)) = false := by
+    cases hh : r.headersFrom with
+    | none => rfl
+    | some x => simp [Nat.not_le.mpr (h3 x hh)]
+  simp [LogReq.fault, Nat.pos_iff_ne_zero.mp h0, Nat.not_le.mpr h1, Nat.not_lt.mpr h2, h3', h]
+
+/-- Every accepted request is inside every bound. -/
+theorem LogReq.wf_bounds (r : LogReq) (h : r.wf = true) :
+    0 < r.from_ ∧ r.from_ < logLineBound ∧ r.lines.length ≤ maxLogLines ∧
+      (∀ hf, r.headersFrom = some hf → hf < logLineBound) ∧ r.render.length ≤ maxRenderLines ∧
+      ∀ n ∈ r.render, r.from_ ≤ n ∧ n < r.from_ + r.lines.length := by
+  unfold LogReq.wf LogReq.fault at h
+  split at h
+  · simp at h
+  rename_i ha
+  split at h
+  · simp at h
+  rename_i hb
+  split at h
+  · simp at h
+  rename_i hc
+  split at h
+  · simp at h
+  rename_i hd
+  split at h
+  · simp at h
+  rename_i he
+  refine ⟨by omega, by omega, by omega, ?_, by omega, ?_⟩
+  · intro hf hh; simp [hh] at hc; omega
+  · intro n hn
+    have := List.find?_eq_none.mp he n hn
+    simp at this; omega
+
+theorem mkLogReq?_refuses_a_render_line_outside_the_tail (r : LogReq) (h0 : 0 < r.from_)
+    (h1 : r.from_ < logLineBound) (h2 : r.lines.length ≤ maxLogLines)
+    (h3 : ∀ hf, r.headersFrom = some hf → hf < logLineBound) (h4 : r.render.length ≤ maxRenderLines)
+    (n : Nat) (hn : n ∈ r.render) (hout : n < r.from_ ∨ r.from_ + r.lines.length ≤ n) :
+    ∃ m, mkLogReq? r = .error (.renderNotInTail m) ∧ (m < r.from_ ∨ r.from_ + r.lines.length ≤ m) := by
+  have hwf : r.wf = false := by
+    cases hw : r.wf
+    · rfl
+    · have := (LogReq.wf_bounds r hw).2.2.2.2.2 n hn; omega
+  have h3' : r.headersFrom.any (fun h => decide (logLineBound ≤ h)) = false := by
+    cases hh : r.headersFrom with
+    | none => rfl
+    | some x => simp [Nat.not_le.mpr (h3 x hh)]
+  cases hf : r.render.find? (fun n => n < r.from_ || r.from_ + r.lines.length ≤ n) with
+  | none =>
+    have := List.find?_eq_none.mp hf n hn
+    simp at this; omega
+  | some m =>
+    refine ⟨m, ?_, ?_⟩
+    · rw [mkLogReq?_error_is_the_fault]
+      simp [LogReq.fault, Nat.pos_iff_ne_zero.mp h0, Nat.not_le.mpr h1, Nat.not_lt.mpr h2, h3',
+        Nat.not_lt.mpr h4, hf]
+    · have := List.find?_some hf
+      simpa using this
+
+
+theorem readTz_refuses_a_long_key (kvs : List (List Char × JVal)) (key b : List Char)
+    (xs : List JVal) (base : Cal.VOffset)
+    (hk : jget (.obj kvs) "key" = .ok (some (.str key)))
+    (hb : jget (.obj kvs) "base" = .ok (some (.str b))) (hbo : readTzOffset b = some base)
+    (ht : jget (.obj kvs) "then" = .ok (some (.arr xs))) (hl : 128 < key.length) :
+    readTz (.obj kvs) = .error .keyTooLong := by
+  simp [readTz, hk, hb, hbo, ht, hl]
+
+theorem readTz_refuses_too_many_transitions (kvs : List (List Char × JVal)) (key b : List Char)
+    (xs : List JVal) (base : Cal.VOffset)
+    (hk : jget (.obj kvs) "key" = .ok (some (.str key)))
+    (hb : jget (.obj kvs) "base" = .ok (some (.str b))) (hbo : readTzOffset b = some base)
+    (ht : jget (.obj kvs) "then" = .ok (some (.arr xs))) (hkl : key.length ≤ 128)
+    (hl : 4096 < xs.length) :
+    readTz (.obj kvs) = .error .tooManyTransitions := by
+  simp [readTz, hk, hb, hbo, ht, hl, Nat.not_lt.mpr hkl]
+
+theorem readLogReq_refuses_more_lines_than_the_bound (kvs : List (List Char × JVal)) (n : Nat)
+    (xs : List JVal) (hc : nullOrAbsent (.obj kvs) "ckpt" = true)
+    (hf : jget (.obj kvs) "from" = .ok (some (.num n)))
+    (hl : jget (.obj kvs) "lines" = .ok (some (.arr xs))) (hn : maxLogLines < xs.length) :
+    readLogReq (.obj kvs) = .error .tooManyLines := by
+  simp [readLogReq, hc, hf, hl, hn]
+
+/-- A line as the host sent it: a string, or `null` for a line that is not UTF-8. -/
+def segOf : JVal → Option (List Char)
+  | .str s => some s
+  | _ => none
+
+theorem lineStep_error (xs : List JVal) (e : LogRefusal) :
+    xs.foldl lineStep (.error e) = .error e := by
+  induction xs with
+  | nil => rfl
+  | cons x rest ih => simp only [List.foldl_cons, lineStep]; exact ih
+
+theorem lineStep_fold (xs : List JVal) : ∀ (acc ys : List (Option (List Char))),
+    xs.foldl lineStep (.ok acc) = .ok ys → ys = (xs.map segOf).reverse ++ acc := by
+  induction xs with
+  | nil => intro acc ys h; simp at h; simp [h]
+  | cons x rest ih =>
+    intro acc ys h
+    simp only [List.foldl_cons] at h
+    cases x with
+    | str s => have := ih _ _ h; simp [this, segOf]
+    | null => have := ih _ _ h; simp [this, segOf]
+    | _ => simp only [lineStep] at h; rw [lineStep_error] at h; cases h
+
+/-- **The op reads the lines the host sent, in order** (with `logVerdicts_eq`: line `from + k` is
+`Log.readLine` of the `k`-th element). -/
+theorem readLogReq_reads_the_lines_as_sent (j : JVal) (v : VLogReq) (h : readLogReq j = .ok v) :
+    ∃ xs, jget j "lines" = .ok (some (.arr xs)) ∧ v.val.lines = xs.map segOf := by
+  unfold readLogReq at h
+  repeat' (split at h)
+  all_goals first
+    | (cases h; done)
+    | skip
+  rename_i xs hl _ _ rev hfold _ _ _ _ _ _ _ _ _ _ _ _
+  refine ⟨xs, hl, ?_⟩
+  rw [mkLogReq?_keeps_the_request _ _ h, lineStep_fold xs [] rev hfold]
+  simp
+
+theorem LogReq.wf_render_in_tail (r : LogReq) (h : r.wf = true) (n : Nat) (hn : n ∈ r.render) :
+    r.from_ ≤ n ∧ n < r.from_ + r.lines.length := by
+  unfold LogReq.wf LogReq.fault at h
+  split at h; · simp at h
+  split at h; · simp at h
+  split at h; · simp at h
+  split at h; · simp at h
+  split at h; · simp at h
+  rename_i he
+  have := List.find?_eq_none.mp he n hn
+  simp at this; omega
+
+/-- **A rendering is of the line the host sent at that number**: for each `want.render` line `n`
+of an accepted request, the element `n − from` of `lines` is there, and the verdict the answer
+renders is `Log.readLine n` of it. -/
+theorem logAnswer_renders_the_line_at_its_number (r : VLogReq) (n : Nat) (hn : n ∈ r.val.render) :
+    ∃ seg, r.val.lines[n - r.val.from_]? = some seg ∧
+      (logVerdicts r.val).toArray[n - r.val.from_]? = some (Log.readLine n seg) := by
+  obtain ⟨h1, h2⟩ := LogReq.wf_render_in_tail r.val r.property n hn
+  have hlt : n - r.val.from_ < r.val.lines.length := by omega
+  refine ⟨r.val.lines[n - r.val.from_], by simp [hlt], ?_⟩
+  rw [List.getElem?_toArray, logVerdicts_eq, List.getElem?_map, List.getElem?_zipIdx]
+  simp [hlt, Nat.add_sub_cancel' h1]
+
+
+/-! ### Witnesses -/
+
+/-- `±HH:MM:SS`, read: west, east, seconds; `-00:00:00`, `+24:00:00`, a minute of 60, no seconds and
+a trailing sign refused. -/
+theorem readTzOffset_reads_the_table_spelling :
+    (readTzOffset ['-', '0', '6', ':', '0', '0', ':', '0', '0']).map Subtype.val = some ⟨true, 21600⟩ ∧
+    (readTzOffset ['+', '0', '5', ':', '4', '5', ':', '0', '0']).map Subtype.val = some ⟨false, 20700⟩ ∧
+    (readTzOffset ['-', '0', '0', ':', '4', '4', ':', '3', '0']).map Subtype.val = some ⟨true, 2670⟩ ∧
+    (readTzOffset ['+', '0', '0', ':', '0', '0', ':', '0', '0']).map Subtype.val = some ⟨false, 0⟩ ∧
+    readTzOffset ['-', '0', '0', ':', '0', '0', ':', '0', '0'] = none ∧
+    readTzOffset ['+', '2', '4', ':', '0', '0', ':', '0', '0'] = none ∧
+    readTzOffset ['+', '0', '5', ':', '6', '0', ':', '0', '0'] = none ∧
+    readTzOffset ['+', '0', '5', ':', '3', '0'] = none ∧
+    readTzOffset ['0', '5', ':', '3', '0', ':', '0', '0', '+'] = none :=
+  ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
+
+/-- A transition instant is a stamp at UTC in whole seconds: 2026-03-08T08:00:00Z is Chicago's
+spring transition (`Cal.chicago2026`); the same instant written at −06:00, and a half second,
+are refused. -/
+theorem readTzInstant_reads_utc_whole_seconds :
+    readTzInstant ['2', '0', '2', '6', '-', '0', '3', '-', '0', '8', 'T', '0', '8', ':', '0', '0', ':', '0', '0', 'Z'] = some ⟨63908553600, 0⟩ ∧
+    readTzInstant ['2', '0', '2', '6', '-', '0', '3', '-', '0', '8', 'T', '0', '2', ':', '0', '0', ':', '0', '0', '-', '0', '6', ':', '0', '0'] = none ∧
+    readTzInstant ['2', '0', '2', '6', '-', '0', '3', '-', '0', '8', 'T', '0', '8', ':', '0', '0', ':', '0', '0', '.', '5', 'Z'] = none :=
+  ⟨by decide, by decide, by decide⟩
+
+/-- A read table as a plain value, for decided witnesses (`Except` has no `DecidableEq`). -/
+def tzRead : Except TzWhy Cal.Tz → Sum TzWhy Cal.TzTable
+  | .ok z => .inr z.val
+  | .error w => .inl w
+
+/-- A `tz` section of Chicago's key, `base` and transitions `trans`. -/
+def tzWith (base : List Char) (trans : List (List Char × List Char)) : JVal :=
+  .obj [("key".toList, .str "America/Chicago".toList), ("base".toList, .str base),
+    ("then".toList, .arr (trans.map fun p => .arr [.str p.1, .str p.2]))]
+
+/-- **The witness table reads as `Cal.chicago2026`**, B1's two-transition Chicago table. -/
+theorem readTz_reads_the_witness_table :
+    tzRead (readTz (tzWith ['-', '0', '6', ':', '0', '0', ':', '0', '0'] [(['2', '0', '2', '6', '-', '0', '3', '-', '0', '8', 'T', '0', '8', ':', '0', '0', ':', '0', '0', 'Z'], ['-', '0', '5', ':', '0', '0', ':', '0', '0']), (['2', '0', '2', '6', '-', '1', '1', '-', '0', '1', 'T', '0', '7', ':', '0', '0', ':', '0', '0', 'Z'], ['-', '0', '6', ':', '0', '0', ':', '0', '0'])])) = .inr Cal.chicago2026 := by
+  decide
+
+/-- **Each defect by name**: two transitions out of order, two at one instant, an instant written
+at −06:00, an offset without its hour's zero, `-00:00:00` as the base, a transition that is not a
+pair, a key that is not a string, a section that is not an object. -/
+theorem readTz_refuses_by_name :
+    tzRead (readTz (tzWith ['-', '0', '6', ':', '0', '0', ':', '0', '0'] [(['2', '0', '2', '6', '-', '1', '1', '-', '0', '1', 'T', '0', '7', ':', '0', '0', ':', '0', '0', 'Z'], ['-', '0', '6', ':', '0', '0', ':', '0', '0']), (['2', '0', '2', '6', '-', '0', '3', '-', '0', '8', 'T', '0', '8', ':', '0', '0', ':', '0', '0', 'Z'], ['-', '0', '5', ':', '0', '0', ':', '0', '0'])])) = .inl .unsorted ∧
+    tzRead (readTz (tzWith ['-', '0', '6', ':', '0', '0', ':', '0', '0'] [(['2', '0', '2', '6', '-', '0', '3', '-', '0', '8', 'T', '0', '8', ':', '0', '0', ':', '0', '0', 'Z'], ['-', '0', '5', ':', '0', '0', ':', '0', '0']), (['2', '0', '2', '6', '-', '0', '3', '-', '0', '8', 'T', '0', '8', ':', '0', '0', ':', '0', '0', 'Z'], ['-', '0', '6', ':', '0', '0', ':', '0', '0'])])) = .inl .unsorted ∧
+    tzRead (readTz (tzWith ['-', '0', '6', ':', '0', '0', ':', '0', '0'] [(['2', '0', '2', '6', '-', '0', '3', '-', '0', '8', 'T', '0', '2', ':', '0', '0', ':', '0', '0', '-', '0', '6', ':', '0', '0'], ['-', '0', '5', ':', '0', '0', ':', '0', '0'])])) = .inl .instant ∧
+    tzRead (readTz (tzWith ['-', '0', '6', ':', '0', '0', ':', '0', '0'] [(['2', '0', '2', '6', '-', '0', '3', '-', '0', '8', 'T', '0', '8', ':', '0', '0', ':', '0', '0', 'Z'], ['-', '5', ':', '0', '0', ':', '0', '0'])])) = .inl .offset ∧
+    tzRead (readTz (tzWith ['-', '0', '0', ':', '0', '0', ':', '0', '0'] [])) = .inl .base ∧
+    tzRead (readTz (.obj [("key".toList, .str ['k']), ("base".toList, .str ['+', '0', '0', ':', '0', '0', ':', '0', '0']),
+        ("then".toList, .arr [.str ['x']])])) = .inl .transition ∧
+    tzRead (readTz (.obj [("key".toList, .num 1)])) = .inl .key ∧
+    tzRead (readTz (.arr [])) = .inl .shape :=
+  ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
+
+/-- A response as a plain value, for decided witnesses. -/
+def answered : Except JVal JVal → Sum JVal JVal
+  | .ok v => .inr v
+  | .error e => .inl e
+
+/-- The zone of the end-to-end witnesses: UTC, no transitions. -/
+def utcTzJson : JVal :=
+  .obj [("key".toList, .str ['U', 'T', 'C']), ("base".toList, .str ['+', '0', '0', ':', '0', '0', ':', '0', '0']), ("then".toList, .arr [])]
+
+/-- A `drop` line of 50 characters, spelled as characters (the parser reads it). -/
+def logWitnessLine : List Char :=
+  ['{', '"', 't', '"', ':', '"', '2', '0', '2', '6', '-', '0', '9', '-', '0', '7', 'T', '0', '9', ':', '0', '0', ':', '0', '0', 'Z', '"', ',', '"', 'e', 'v', '"', ':', '"', 'd', 'r', 'o', 'p', '"', ',', '"', 'i', 'd', '"', ':', '"', 'a', '1', '"', '}']
+
+def logWitnessRequest : JVal :=
+  .obj [("docs".toList, .arr []), ("tz".toList, utcTzJson),
+    ("log".toList, .obj [("ckpt".toList, .null), ("from".toList, .num 7),
+      ("lines".toList, .arr [.str logWitnessLine, .str [], .null, .str ['{', '"', 'e', 'v', '"', ':', '7', '}']]),
+      ("terminated".toList, .bool true),
+      ("want".toList, .obj [("headersFrom".toList, .num 7), ("render".toList, .arr [.num 7, .num 8])])])]
+
+def logWitnessAnswer : JVal :=
+  .obj [("lines".toList, .num 10),
+    ("warnings".toList, .arr [.obj [("line".toList, .num 9), ("w".toList, .str "invalidUtf8".toList)],
+                              .obj [("line".toList, .num 10), ("w".toList, .str "noT".toList)]]),
+    ("headers".toList, .arr [.arr [.num 7, .str "drop".toList, .str "a1".toList]]),
+    ("render".toList, .arr [.arr [.num 7, .str "{\"t\":\"2026-09-07T09:00:00+00:00\",\"ev\":\"drop\",\"id\":\"a1\"}".toList,
+                                  .str "2026-09-07 09:00".toList],
+                            .arr [.num 8, .null, .null]])]
+
+set_option maxRecDepth 8000 in
+/-- **The op end to end, on a tail of four lines from line 7**: a `drop` (a header with its id, and
+a rendering in serde's bytes with `+00:00` for UTC and the `tm log` column), a blank line, a line
+that is not UTF-8, and `{"ev":7}` (no `t`).  The `ok` object is `run`'s, with `log` after
+`report`. -/
+theorem the_log_op_reads_a_four_line_tail :
+    answered (runWithLog logWitnessRequest)
+      = .inr (jone "ok" (.obj [("docs".toList, .arr []), ("report".toList, reportJson Report.empty),
+          ("log".toList, logWitnessAnswer)])) := by
+  decide
+
+set_option maxRecDepth 8000 in
+/-- **The section's refusals reach the response by name**: `log` without `tz`; a checkpoint at B4;
+a render line past the tail; a malformed `tz` without `log`; a `tz` that is not an object. -/
+theorem the_log_section_refuses_by_name :
+    answered (runWithLog (.obj [("docs".toList, .arr []), ("log".toList, .obj [])]))
+      = .inl LogRefusal.tzAbsent.json ∧
+    answered (runWithLog (.obj [("docs".toList, .arr []), ("tz".toList, utcTzJson),
+        ("log".toList, .obj [("ckpt".toList, .obj [])])]))
+      = .inl (LogRefusal.badLogReq .ckpt).json ∧
+    answered (runWithLog (.obj [("docs".toList, .arr []), ("tz".toList, utcTzJson),
+        ("log".toList, .obj [("from".toList, .num 1), ("lines".toList, .arr [.null]),
+          ("terminated".toList, .bool false), ("want".toList, .obj [("render".toList, .arr [.num 2])])])]))
+      = .inl (LogRefusal.renderNotInTail 2).json ∧
+    answered (runWithLog (.obj [("docs".toList, .arr []), ("tz".toList, tzWith ['+', '2', '4', ':', '0', '0', ':', '0', '0'] [])]))
+      = .inl (LogRefusal.badTz .base).json ∧
+    answered (runWithLog (.obj [("docs".toList, .arr []), ("tz".toList, .num 3)]))
+      = .inl (LogRefusal.badTz .shape).json :=
+  ⟨by decide, by decide, by decide, by decide, by decide⟩
+
+end B4
 
 end Tm
