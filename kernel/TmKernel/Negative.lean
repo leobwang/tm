@@ -1191,4 +1191,58 @@ theorem theShortBlockDroppedAtMinLast :
   decide
 
 
+
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D10 track, step L4: energy and the budget limit
+-- in `Lookahead.lean`).  Numbers 114, 115 and 116 are the design's own L4 labels
+-- (its §16); nothing in this checkout had taken them.  The D9 track numbers in
+-- parallel and the merge renumbers.  Each cheat is the real function with one
+-- step changed, claimed to agree with the fork on a fork-test input.  The
+-- controls, which compile, are in Lookahead.lean: `futureEnergy_home_is_capped`
+-- and `energize_applies_the_home_cap` (114), `the_bucket_reads_seconds` and
+-- `the_bucket_reads_seconds_on_the_spec_day` (115), `buckets_clamp` and
+-- `predict_uses_the_learned_curve` (116).  Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 114 — no home cap: a future home day's slot energy is the prediction
+   itself.  At 08:00 on the spec day, woken at 06:05, the shipped home prior is
+   `1-4`'s 4, above `home_max_ci = 3`, which the fork's `cap_for_location` (and
+   `futureEnergy_home_is_capped`) forbid.  `decide` refuses the claim. -/
+def futureEnergyWithoutTheHomeCap (c : Look.Curves) (_homeMax : Nat) (loc : Look.Loc)
+    (wake t : Cal.Instant) : Fin 6 :=
+  Look.predictAt c loc.curve (Look.hswAt wake t)
+
+theorem theHomeCapDropped :
+    (futureEnergyWithoutTheHomeCap Look.Curves.shipped 3 .home ⟨Look.onTheSpecDay 365, 0⟩
+      ⟨Look.onTheSpecDay 480, 0⟩).val ≤ 3 := by
+  decide
+
+/- CHEAT 115 — hours since wake from whole minutes: the wake and the slot are
+   read as clock minutes before subtracting.  Woken at 06:05:40, a slot at 07:05
+   is 3,560 seconds away, `hsw` 0.99 and bucket 0 in the fork; whole minutes say
+   60 and bucket 1 (CRIT 6).  `decide` refuses the equality. -/
+def hswFromWholeMinutes (wake t : Cal.Instant) : Int :=
+  Look.hsw100 (60 * ((t.sec / 60 : Nat) - (wake.sec / 60 : Nat) : Int))
+
+theorem hoursSinceWakeFromWholeMinutes :
+    Look.bucket (hswFromWholeMinutes ⟨Look.onTheSpecDay 365 + 40, 0⟩ ⟨Look.onTheSpecDay 425, 0⟩)
+      = Look.bucket (Look.hswAt ⟨Look.onTheSpecDay 365 + 40, 0⟩ ⟨Look.onTheSpecDay 425, 0⟩) := by
+  decide
+
+/- CHEAT 116 — the hours-since-wake bucket without its clamp to `0..11`: the
+   learned curve is indexed by `floor(hsw)` itself.  At 30 hours the fork's
+   `Model::energy_at` reads the fixture lounge curve's last entry, 2
+   (`predict_uses_the_learned_curve`); the unclamped index 30 is past the
+   curve's 12 entries and reads nothing.  `decide` refuses the equality. -/
+def bucketWithoutTheClamp (h : Int) : Nat := if h ≤ 0 then 0 else h.toNat / 100
+
+def learnedWithoutTheClamp (energy : List (List Char × List Nat)) (curve : List Char) (h : Int) :
+    Option Nat :=
+  (Look.curveLookup energy curve).bind (fun c => c[bucketWithoutTheClamp h]?)
+
+theorem theBucketWithoutItsClamp :
+    learnedWithoutTheClamp Look.fixtureEnergy Look.loungeKey 3000
+      = Look.learnedLevel Look.fixtureEnergy Look.loungeKey 3000 := by
+  decide
+
 end Tm

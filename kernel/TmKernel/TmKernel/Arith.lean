@@ -62,6 +62,7 @@ each monotone (`*_mono`) and each within one minute of the exact value
 | R5 | §8.5 slot energy after the posterior correction | **half-up, then clamp to `0..5`** — and the clamp is load-bearing (`posterior_can_go_negative`) | `energyAfter` |
 | R6 | §8.2 step 3's short last block, "≥ 30m or dropped" (§16 `min_last_block_min`) | a **comparison**, not a rounding — named so that nobody adds one | — |
 | R7 | §8.4's future-day capacity, mixing the two locations by `p_lounge` | **open**: a mixture of two integer capacities by a rational weight. Nothing rounds here yet; the pair is carried exact | — |
+| R11 | §8.5's hours since wake, `hsw = round(seconds / 36) / 100` (fork `log::hours_since_wake`), which `energy::bucket` floors and the prior curve's range keys compare | **half away from zero**, on whole seconds (`Cal.secondsBetween`, chrono's `num_seconds`); exact against the fork's `f64` for every input, because no quotient lies within an ulp of a tie and no hundredth within an ulp of a range key with `den ≤ 10^6`. *Added at stage 5 D10 step L4 (design D10-11). R8–R10 are the D9 track's and step L9's rows, added by their steps* | `Look.hsw100` (`hsw100_mono`, `hsw100_withinOne`) |
 
 Two families that look like rounding and are not.  §7.1's utilization, §7.3's
 `avail` and `reserve`, §7.4's hysteresis, §7.5's batching threshold, §8.5's

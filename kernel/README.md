@@ -10146,3 +10146,252 @@ committed):
 | `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (unchanged) |
 | FFI suite (`tm-kernel-ffi`) | **81 passed / 0 failed** (kernel 72, corpus 8, stack 1) |
 | `cli_latency.rs` | green: first verb 627.8 / 617.7 / 627.4 ms (226 files, 2,959 lines), later verb 50.7 / 50.7 / 50.7 ms |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5, D10 track, step L4 (branch stage5-lookahead,
+     worktree .claude/worktrees/stage5-lookahead).  Built in parallel with the D9
+     track on rebuild-on-lean (D11).  Takes cheats 114-116 (the design's own L4
+     labels, §16), none taken in this checkout or on rebuild-on-lean at c73e032.
+     No gap and no parity entry.  Whoever merges renumbers (AGENTS §6.2, §6.4).
+     =========================================================================== -->
+
+## Stage 5 D10 L4, 2026-09-14: a future day's energy profile — each location's minutes per level, limited to the budget
+
+**Starting point.**  The worktree at `27a88a0` (L3) was clean: check.sh 7/7, audit 2351, corpus
+29/37 files and 4/5 whole plans, burn-down 13, `cargo test --workspace` 1013 / 0, FFI 81.  Every
+figure at the end of this block is re-measured in this worktree.
+
+**The plan executed** is design `kernel/design/stage5/stage5-D9-D10-design.md` §13.3's L4 part
+("energy and the limit … hours since wake from seconds, site R11") and §14.8's L4 row, under the
+owner's D12 (stage 6's future-day energy prediction pulled into stage 5), with the fork
+(`tm-core/src/capacity.rs` `energize`/`limit_to_budget`/`lookahead`, `energy.rs`
+`bucket`/`prior_level`/`predict`/`Model::energy_at`, `config.rs` `StepFn::at`/`prior_energy`,
+`log.rs` `hours_since_wake`) as the oracle.  Files: `Lookahead.lean` (a new section, "Energy and
+the budget limit", and the module header), `Arith.lean` (the site table's R11 row, prose only),
+`Check.lean`, `Negative.lean`, `AGENTS.md` (§2.3's `Lookahead` entry, §8.4 item 1).  No new
+module, so `TmKernel.lean` is unchanged at seventeen imports.  `Cal.lean` and every other D9
+module are untouched.
+
+### What was built (`Lookahead.lean`, section "Energy and the budget limit")
+
+| piece | what it is | fork point |
+|---|---|---|
+| **`hsw100 s`** (site R11), `hswAt wake t` | `sign s · ((|s| + 18) / 36)`, the hours since wake in hundredths; `hswAt` reads `Cal.secondsBetween wake t` (chrono's `num_seconds`, truncated toward zero, leap seconds and nanoseconds included) | `(secs / 36.0).round()` in `log::hours_since_wake`, `Features::at` |
+| `bucket h : Fin 12` | `0` for `h ≤ 0`, else `min 11 (h / 100)` | `energy::bucket` |
+| `Step {fromNum, fromDen, toKey, level}`, `Step.reached`, `Step.before`, **`stepAt`** | a range key as exact pairs; `hours ≥ from` as `100·num ≤ h·den`, `hours < to` as `h·den < 100·num`; `3` for an empty curve, the first level before the first step, the first containing step, else the last step starting at or before the hours | `Step`, `StepFn::at` |
+| `curveKeyLt`, `curveLookup`, `curveLeast`, `loungeKey`, `homeKey` | the map's key order (UTF-8 bytes, which is code-point order), `get`, `values().next()` | `BTreeMap<String, _>` |
+| **`priorEnergy`**, **`priorLevel`**, **`learnedLevel`** | the named prior curve, else `lounge`, else the least key, else `3`; the curve's own prior when present or when there is no `home` curve, else `home`'s; the learned level at `bucket h`, if the model has the curve and the entry | `Config::prior_energy`, `energy::prior_level`, `Model::energy_at` |
+| `Curves {prior, energy}`, `Loc {lounge, home}`, `Loc.curve` | the two maps as data, keys as `List Char`; a future day's two locations and their curve keys | `[energy.prior]`, `model.json` `energy`; `curve_key` |
+| **`predictAt`**, **`capForLocation`** | `min 5 (learned.getD prior)`; `min e homeMax` at home unless `--allow-home` | `energy::predict` (no sleep shift), `EnergyCtx::cap_for_location` |
+| **`futureEnergy`**, **`energize`** | a future slot's energy: the prediction at its start from the wake, then the home cap with `allowHome = false`; every slot mapped to `(energy, slot)` | `EnergyCtx::energy_at` under `EnergyCtx::new` and `Posterior::none`; `capacity::energize` |
+| `histOf'`, `slotMinutesOf` | per level, a `foldl` of `Slot.minutes` (L3's note: no second division); all slot minutes | `DayCapacity::from_slots`, `Cut::slot_minutes` |
+| `slotLe`, `takeStep`, **`limitSlots`** | merge sort by energy descending then start ascending, then each slot takes `min(minutes, left)` | `limit_to_budget` and the loop summing it per level |
+| `limitSlotsFast`, **`@[csimp] limitSlots_eq_limitSlotsFast`** | `limitHist B (histOf' slots)`: no sort and no closure per slot at run time | — |
+| **`dayHist c homeMax loc wake budgetMin slots`** | one location's future day: `limitSlots budgetMin (energize …)`; L5's `pureDay` is this over `windowOn` and `cutSlots … [] 0` | `lookahead`'s loop body after the cut |
+| `Step.range`, `Step.from`, `shippedLounge`, `shippedHome`, `shippedPrior`, `Curves.shipped`, `fixtureEnergy`, `Curves.fixture` | the shipped `[energy.prior]` and `tm-core/tests/fixtures/model.json`'s curves | `EnergyConfig::default`, the fixture |
+
+**What a future day's energy is not, by name.**  The fork's future day runs `Posterior::none`
+(its `correct` is the identity on a whole level), `slept_min = None` (no sleep-debt shift) and
+`allow_home = false`.  Day 0's posterior, shift and `--allow-home` are L9's (`Arith.energyAfter`,
+site R10).  `energize`'s progress features (`blocks_done`, `since_break_min`) are v2's and change
+no v1 level (fork test `energize_counts_blocks_and_break_gaps`).
+
+### Exact against the fork's doubles (design §13.3, D10-11)
+
+`s / 36.0` is correctly rounded.  A tie has the exact quotient `k + ½`, and a non-tie lies at
+least `1/36` from `k + ½`, beyond an ulp for `|s| < 2^40`.  So `round` sees the true side and
+`hsw100` is its value.  `bucket` floors the correctly rounded `n / 100.0`, which never reaches the
+next integer.  A range key `num/den` with `den ≤ 10^6` differs from `n/100` by at least
+`1/(100·den)` when unequal and gives the same double when equal, so both range comparisons are
+exact.  So **the future-day energy is exact by design, and input design LOOK's range-key exception
+(its P8) is not needed.**  Seconds matter because today's wake keeps them: wake 06:05:40 against a
+07:05 slot is 3,560 s, `hsw` 0.99, bucket 0 and the lounge's `0-1` level 4, where whole minutes say
+bucket 1 and level 5 (`the_bucket_reads_seconds_on_the_spec_day`).  Real seconds across DST also
+count: on 2026-11-01 a wake at 00:00 and a slot at 03:30 are 4.5 hours apart, so a home day predicts
+3, where the civil 3.5 hours would predict 4
+(`hours_since_wake_count_real_hours_across_the_fall_transition`).
+
+### The laws (in-step; never in `Goals.lean`)
+
+§14.8's L4 row names four theorems, and §15 lists them under "L1, L4, L5 (in-step)".  So they were
+stated and proved in the step, and the burn-down does not move.  The two with §15 signatures match
+them **verbatim**.
+
+| theorem | statement |
+|---|---|
+| **`hsw100_is_round_half_away`** (§15's signature) | for `s : Nat`: `36·h ≤ s + 18 < 36·(h + 1)` and `hsw100 (−s) = −hsw100 s` |
+| `hsw100_nearest` | for every `s : Int`: `|72·h − 2s| ≤ 36`, a `+36` tie only for `s > 0` and a `−36` tie only for `s < 0` (ties away from zero; the conditions determine `h`) |
+| `hsw100_mono`, `hsw100_withinOne` | site R11 is monotone, and `|36·h − s| ≤ 18` (`Arith.lean`'s `*_mono` / `*_withinOne` convention) |
+| **`the_bucket_reads_seconds`** (§15's signature) | `bucket (hsw100 3560) = 0 ∧ bucket (hsw100 3600) = 1` |
+| **`limitSlots_is_limitHist`** (§15's signature) | the fork's per-slot sort and greedy equal L1's per-level `limitHist` over `histOf'`, for **every** slot list and budget |
+| **`futureEnergy_home_is_capped`** | a future home day's energy is `≤ homeMax` and equals `min homeMax` of the prediction |
+| `futureEnergy_lounge_is_the_prediction` | a lounge day is uncapped |
+| `dayHist_eq`, **`dayHist_keeps_the_min`**, **`dayHist_home_is_capped`** | one location's day is `limitHist` of its energised histogram; it keeps exactly `min(budget × block_min, cut.slotMinutes)`; a home day holds `0` above `homeMax` |
+| `bucket_mono`, `histOf'_perm`, `sum6_histOf'` | the bucket is monotone; the histogram ignores the slots' order and holds every slot minute |
+
+**The proof route for `limitSlots_is_limitHist`.**  `limitHist_eq` reads L1's limit at level `l` as
+`min (h l) (B − topElig 0 h (5 − l))` (step 3's `dayLeft_eq_sub`).  `greedy_spec` shows, by
+induction over any slot list in non-increasing energy, that the fold gives each level exactly
+that.  It needs `topElig_bump` (a slot at level `k` adds its minutes to every level below `k`) and
+`topElig_of_zero_above` (nothing above the head's level).  Core's `List.pairwise_mergeSort` puts
+the merge-sorted list in that order, and `List.mergeSort_perm` with `histOf'_perm` gives the same
+histogram.  The start-ascending tie-break is invisible.
+
+**Audit (AGENTS §7.4).**  (1) Every binder is used; `limitSlots_is_limitHist` quantifies over all
+slot lists, sorted or not.  (2) Hypotheses are satisfiable: `dayHist_home_is_capped`'s
+`homeMax < l` holds at `homeMax = 3`, `l = 4` (the Sunday witness).  (3) Names say what the
+statements say.  (4) Both directions: the home cap is an equality with `min`, not only a bound;
+`limitSlots_is_limitHist` is an equality; the prior and learned fallbacks are witnessed per branch
+(below).  (5) The compiled code runs `limitSlotsFast`, checked in the generated C: `dayHist` calls
+`limitSlotsFast`, and neither calls the merge sort.  (6) Units: whole UTC seconds in, hundredths
+of an hour for `hsw`, whole minutes per level out.
+
+### The fork's tests, as witnesses (Chicago's 2026 table; `onTheSpecDay c` is 2026-09-07 at clock `c`)
+
+| fork test | theorem |
+|---|---|
+| `energy.rs` `buckets_clamp` (6 assertions, on hundredths) | `buckets_clamp` |
+| `config.rs` `prior_energy_lookup` (**all 13** assertions, `zoom` and the empty prior included) | `prior_energy_lookup` |
+| `energy_model.rs` `predict_matches_the_prior_tables_at_boundaries` (all 15) | `predict_matches_the_prior_tables_at_boundaries` |
+| `energy.rs` `predict_falls_back_to_the_prior` (lounge 0.99 → 4, 1.0 → 5, home 2.0 → 4; its `Out`/`Any`/`Named` three read `curve_key`'s `"home"` and are the home one) | `predict_falls_back_to_the_prior` |
+| `energy_model.rs` `predict_uses_the_learned_curve` (the fixture model; home at 7 h is 2 learned and 3 prior; past the last bucket the last level holds) | `predict_uses_the_learned_curve` |
+| `config.rs` `unknown_keys_are_errors`' extra curve (`cafe` at 5 h is 2), plus `prior_level`'s `home` branch, the least-key fallback (`cafe` before `zoo` in either list order) and `StepFn::at` in a gap and before the first step | `a_curve_falls_back_as_the_config_does` |
+| `capacity_slots.rs` `energize_follows_the_prior_curve` (the §4.3 cut, lounge, wake 06:05: 4, 5, 5, 5, 4, 4, 3) | `energize_follows_the_prior_curve` |
+| `capacity_slots.rs` `energize_applies_the_home_cap_and_the_posterior`: lounge 5, 4; home capped 3, 3; `--allow-home` 4, 3 (the posterior and sleep-debt parts are day 0's, L9) | `energize_applies_the_home_cap` |
+| `capacity_lookahead.rs` `lookahead_follows_the_learned_arrival_and_location`'s Tuesday: the 07:00–15:00 cut holds 420 minutes, above the 6-block budget, and keeps `[0, 0, 0, 0, 180, 180]` | `a_future_tuesday_keeps_its_budget` |
+| `capacity_lookahead.rs` `lookahead_uses_the_learned_energy_curve`'s Sunday (a home day, 10:00–18:00): the prior keeps 2 h at 2 and 4 h at 3 (the week-grid snapshot's Sunday row), the learned home curve moves one hour from 3 to 2 | `the_learned_curve_moves_an_hour_on_sunday` |
+| the design's CRIT 6 witness | `the_bucket_reads_seconds`, `the_bucket_reads_seconds_on_the_spec_day` |
+| — (ties, both signs; DST) | `hsw100_on_witnesses`, `hours_since_wake_count_real_hours_across_the_fall_transition` |
+
+The Tuesday and Sunday witnesses state the limit as `limitHist 360 (histOf' …)`, which is
+`dayHist` by `dayHist_eq`: `decide` cannot unfold core's `List.mergeSort`, which is defined by
+well-founded recursion.
+
+### Cheats (`Negative.lean`, appended)
+
+| # | label | cheat | fails because |
+|---|---|---|---|
+| **114** | L4 | no home cap: a home day's energy is the prediction, claimed `≤ home_max_ci = 3` at 08:00 on the spec day | the shipped home prior there is `1-4`'s 4; `decide` refuses (controls `futureEnergy_home_is_capped`, `energize_applies_the_home_cap`) |
+| **115** | L4 | hours since wake from whole clock minutes, claimed to give the same bucket as seconds for wake 06:05:40 and a 07:05 slot | whole minutes give bucket 1 and seconds bucket 0; `decide` refuses (controls `the_bucket_reads_seconds`, `the_bucket_reads_seconds_on_the_spec_day`) |
+| **116** | L4 | the learned curve indexed by `floor(hsw)` without the clamp to `0..11`, claimed equal to `learnedLevel` at 30 hours on the fixture lounge curve | the fork reads the last entry, `Some 2`, and the cheat reads past the 12 entries, `none`; `decide` refuses (controls `buckets_clamp`, `predict_uses_the_learned_curve`) |
+
+Each fails at its own line with `Tactic decide proved that the proposition … is false`.
+
+### Parity and rounding sites
+
+**No parity entry.**  §17's "exact by design" list gains **a future day's slot energy (learned and
+prior curves, their fallbacks, the home cap) and the budget limit**.  It already lists "hours since
+wake from a wake with seconds" and "prior range keys with `den ≤ 10^6`".  A curve outside the exact
+domain is P26's and is refused at L6: a level ≥ 256, a curve not of 12 entries, or a key with
+`den > 10^6`, negative or not finite.  The kernel reads a short curve as the fork does, falling to
+the prior past its end.
+
+**Site R11** is added to `Arith.lean`'s site table: half away from zero on whole seconds, with
+`hsw100_mono` and `hsw100_withinOne`.  The table still stops at R7 before it, because R8 and R9 are
+the D9 track's rows (C3, R9) and R10 is step L9's.  The merge keeps the numbers.
+
+### Rule D9-21
+
+Functions this step adds that walk a list the wire can make large: `energize` (core `map`,
+`mapTR`), `histOf'` (a `foldl` per level) and `slotMinutesOf` (`foldl`).  `limitSlots` folds a
+closure per slot, so it is behind **`@[csimp] limitSlots_eq_limitSlotsFast`** and never runs.  Its
+merge sort is core's `mergeSortTR₂`.  `stepAt` walks one curve (core `find?` and `reverse`; at most
+64 ranges under L6's bounds).  `curveLookup` and `curveLeast` walk the curve map (`find?`,
+`foldl`).  `curveKeyLt` recurses over one key's characters, which L6 must bound.  Proof-only
+recursions: `greedy_spec`, `foldl_levelStep`, `foldl_add_minutes`, `sum6_histOf'`.
+
+### The `decide` budget (§14.0 item 4)
+
+14 new decided witnesses and 3 cheats, **17 in all**, within the budget of 20.  They use at most
+Chicago's **2 zone transitions**, at most 2 curves of at most 12 entries and 7 slots, no `Entry`
+value and no string literal (keys are `List Char`).  All were probed first in scratch files under
+`/tmp/claude-1000/l4probe/` against the built package, under `MemoryMax=8G` and `timeout 120`,
+before the module was edited.  Each file (import included) ran in 0.11–0.17 s at a 520–539 MB
+peak.  Two deliberately wrong probes were refused by `decide` and not committed: the §4.3 energies
+with a 4 for the last 3, and the Sunday limits swapped between the prior and the learned curve.
+The committed `Lookahead.lean` elaborates in **2.05 / 2.05 / 2.05 s at an 818–846 MB peak** under
+the same cap, against 1.30 / 1.31 / 1.34 s and 741–747 MB at `27a88a0`.  No realistic-size input is
+evaluated.
+
+### Recorded disagreements between the design and the repo
+
+1. **Site R11, not R10.**  This step's instruction named "site R10 per the design".  The design
+   names **R11** for L4's hours since wake (§13.3, D10-11, §14.8's `Arith.lean` column) and R10 for
+   L9's sleep shift.  The design is followed.  The L4 row names no within-one or monotone theorem;
+   both are proved anyway, by `Arith.lean`'s convention.
+2. **A future day's wake (owed by L5).**  §13.3 says future days use `instantOf z d (expectedWake
+   wd)` "from the model-then-config fallback, as fork `wake_or_expected(None, weekday)` does", and
+   §13.6's wire carries weekday `wake` tables.  The fork disagrees.  `Ctx::priorities`,
+   `planning::week` and `planner.rs` pass `Ctx::wake_time()`: today's logged wake clock, seconds and
+   nanoseconds included, else **today's** weekday's expected **arrival** (`model.json` has no
+   expected wake).  `capacity::lookahead` then applies `local_dt(tz, date, wake_default)` to every
+   future date.  Input design `design-lookahead.md` §5.1 has the fork's reading ("today's; every
+   future day reuses it").  `futureEnergy` takes the wake instant, so L4 is exact either way.
+   **L5 owes `local_dt` at second resolution of today's wake clock.**  B1's `instantOf` takes whole
+   minutes.  L6's wire should carry today's wake clock and today's expected arrival, not weekday
+   wake tables.
+3. **`histOf'`, not `histOf`.**  L1 took `histOf` (six levels from a list), and §15's signature for
+   `limitSlots_is_limitHist` already reads `histOf'`.
+4. **Fork assertion counts.**  §13.3 says `prior_energy_lookup`'s 12 and
+   `predict_falls_back_to_the_prior`'s 4.  The fork has 13, all witnessed, and 6, of which the three
+   `Out`/`Any`/`Named` ones are the home one under `curve_key`.  §14.8's "16 fork witnesses" is
+   here 14 decided theorems, most of them conjunctions of a whole fork test.
+5. **`stepAt`, not `inRange`.**  §13.3's `inRange` compares both bounds.  `StepFn::at` also answers
+   before the first step and in a gap between ranges.  `stepAt` ports `at`, and `Step.reached` and
+   `Step.before` are `inRange`'s two comparisons.
+6. **Instants, not minutes.**  `design-lookahead.md` §4.3's `futureEnergy … (wake start : Nat)` took
+   whole minutes.  D10-11 superseded it, and `futureEnergy` takes `Cal.Instant`s.
+7. **Cheat 116's control.**  §16 names "the predict witness".  At `predict` the clamp is
+   unobservable on the fork's data, because past 12 hours both shipped priors equal both fixture
+   curves' last level, 2.  The cheat is refuted at `learnedLevel` (fork `Model::energy_at`, which
+   returns `Some(2)`).
+8. **What L6 owes the curves, beyond §13.6's table.**  The table sends only `prior.lounge` and
+   `prior.home`, but with neither present `Config::prior_energy` reads the least-keyed curve, so the
+   wire needs every prior curve, or that one.  It also needs one entry per key, each curve sorted by
+   `from` as `StepFn::from_pairs` sorts it (a stable sort), and a key-length bound for `curveKeyLt`.
+9. **In-step, so the burn-down does not move.**  §14.8's column reads "goals (added → discharged)",
+   but §15 marks the block in-step.  None stood in `Goals.lean`.
+10. **Memory cap.**  Every run used the workflow's 30 GB cap (8 GB for probes), not §14.0's 40 GB.
+
+**A note for L5 (not owed by L4).**  A `Hist` is a function, and the compiled `dayHist` takes the
+level as its last argument.  So every read of one level re-runs `energize` and the level's fold,
+and `limitHist` reads up to six levels.  L5's `lookahead` should materialise each `dayHist` once
+per day, as six numbers, before `mix` and `edf` read it many times.  T0 (c) (`days = 3,660` on a
+2 MiB thread) is where that is measured.
+
+**Label-to-number map:** cheats L4 114 → **114**, L4 115 → **115**, L4 116 → **116**.  No gap, no
+parity entry.  Highest numbers in this checkout after the step: gap 104, cheat 121, parity P27.
+
+**Observable behaviour changes: none.**  Nothing on the wire calls `futureEnergy`, `energize`,
+`limitSlots` or `dayHist`, and `Arith.lean`'s change is a comment.  **Behaviour rows:** none (§20
+lists none for L4).  **Goals:** discharged 0, refuted 0, added 0.  Burn-down **13** (unchanged).
+
+**New theorems: 37**, all in `Lookahead.lean`, audited under `Check.lean`'s new `APPENDED
+2026-09-14 (stage 5, D10 track).  Step L4` banner.  AGENTS §6.3's counts agree at 2388
+(`grep -c '^#print axioms' Check.lean` 2388, 2388 distinct, and `check.sh`'s audit line).  About
+104 definition lines and 289 proof lines (about 100 of them the witnesses), against design
+§14.8's estimate of 200 and 550.  No theorem was retired, weakened or deleted.  No existing two-run
+theorem was touched.
+
+**Owed, by name (the rest of the D10 track):** L5 (`lookahead`, `pureDay` = `windowOn` →
+`cutSlots … [] 0` → `dayHist` for each location → `mix`, `mkInput?`, the future-day wake of
+disagreement 2, the materialised histograms of the note above, the loaded-plan witness; cheat 117
+is taken).  L6 (the capacity wire, `DayCfg` containing `CutCfg`, the curves with disagreement 8's
+rows and §13.6's R10 bounds, `badTz subMinuteOffset`, P26, P30).  L7 (the parity twin, which also
+measures P27, gap 85 and gap 104).  L8.  L9 (day 0: the posterior, the sleep shift at site R10,
+`--allow-home` through `capForLocation`, and L3's `⌈now⌉` note).
+
+**Re-measured after this step** (every command under the 30 GB cap, in this worktree, on the tree
+committed):
+
+| measurement | value |
+|---|---|
+| `lake build TmKernel:static` after the edits | 130.9 s wall at a 7.99 GB peak (`Arith.lean`'s comment rebuilt every module that imports it) |
+| `check.sh` | **7/7**; 3.50 s on its first run (FFI test binaries relinked), then 2.73 / 2.71 / 2.76 s on the built tree against L3's 2.67 / 2.78 / 2.72 s, within §14.0 item 4's 10% |
+| axiom audit | **2388 theorems** (2351 + 37; `grep -c '^#print axioms' Check.lean` 2388, 2388 distinct); each new name prints its own line |
+| `Negative.lean` | check 4 ok; 121 errors (118 before); 115 `/- CHEAT` banners (112 before); CHEATs 114, 115 and 116 each fail at their own line |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (stage 3: 0, stage 4: 0, stage 5: 0, stage 6: 13) |
+| `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (unchanged) |
+| FFI suite (`tm-kernel-ffi`) | **81 passed / 0 failed** (kernel 72, corpus 8, stack 1) |
+| `cli_latency.rs` | green: first verb 622.2 / 617.5 / 622.4 ms (226 files, 2,959 lines), later verb 55.8 / 55.8 / 50.7 ms |

@@ -2766,3 +2766,46 @@ open Tm
 #print axioms Tm.Look.a_late_arrival_cuts_nothing
 #print axioms Tm.Look.free_intervals_merge_overlapping_walls
 #print axioms Tm.Look.a_cut_counts_real_minutes_across_the_fall_transition
+
+-- APPENDED 2026-09-14 (stage 5, D10 track).  Step L4 (design §13.3, §14.8 row L4): energy and the
+-- budget limit, fork `hours_since_wake`/`bucket`/`StepFn::at`/`prior_energy`/`prior_level`/`predict`/
+-- `cap_for_location`/`energize`/`limit_to_budget`, pulled from stage 6 under D12; site R11, the four
+-- goals of the step row in-step (`limitSlots_is_limitHist` equal to L1's `limitHist`), and the fork's
+-- tests as witnesses.
+#print axioms Tm.Look.hsw100_is_round_half_away
+#print axioms Tm.Look.hsw100_nearest
+#print axioms Tm.Look.hsw100_mono
+#print axioms Tm.Look.hsw100_withinOne
+#print axioms Tm.Look.bucket_mono
+#print axioms Tm.Look.futureEnergy_home_is_capped
+#print axioms Tm.Look.futureEnergy_lounge_is_the_prediction
+#print axioms Tm.Look.foldl_levelStep
+#print axioms Tm.Look.histOf'_cons
+#print axioms Tm.Look.histOf'_of_below
+#print axioms Tm.Look.histOf'_perm
+#print axioms Tm.Look.topElig_bump
+#print axioms Tm.Look.topElig_of_zero_above
+#print axioms Tm.Look.limitHist_eq
+#print axioms Tm.Look.greedy_spec
+#print axioms Tm.Look.limitSlots_is_limitHist
+#print axioms Tm.Look.limitSlots_eq_limitSlotsFast
+#print axioms Tm.Look.sum6_bump
+#print axioms Tm.Look.foldl_add_minutes
+#print axioms Tm.Look.sum6_histOf'
+#print axioms Tm.Look.dayHist_eq
+#print axioms Tm.Look.dayHist_keeps_the_min
+#print axioms Tm.Look.dayHist_home_is_capped
+#print axioms Tm.Look.hsw100_on_witnesses
+#print axioms Tm.Look.the_bucket_reads_seconds
+#print axioms Tm.Look.the_bucket_reads_seconds_on_the_spec_day
+#print axioms Tm.Look.buckets_clamp
+#print axioms Tm.Look.prior_energy_lookup
+#print axioms Tm.Look.predict_matches_the_prior_tables_at_boundaries
+#print axioms Tm.Look.predict_falls_back_to_the_prior
+#print axioms Tm.Look.predict_uses_the_learned_curve
+#print axioms Tm.Look.a_curve_falls_back_as_the_config_does
+#print axioms Tm.Look.energize_follows_the_prior_curve
+#print axioms Tm.Look.energize_applies_the_home_cap
+#print axioms Tm.Look.a_future_tuesday_keeps_its_budget
+#print axioms Tm.Look.the_learned_curve_moves_an_hour_on_sunday
+#print axioms Tm.Look.hours_since_wake_count_real_hours_across_the_fall_transition

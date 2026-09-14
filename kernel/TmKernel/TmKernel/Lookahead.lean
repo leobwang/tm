@@ -9,10 +9,15 @@ Design `kernel/design/stage5/stage5-D9-D10-design.md` §13.  This module **produ
 by the owner's D12) builds the day's window, E7, in real seconds through `Cal`'s zone
 table, and the plan's walls; its section below says what it ports and what it refutes.
 Step L3 (§13.3, D12 likewise) cuts the window into slots and breaks around the walls and
-rests (`freeIntervals`, `cutSlots`), exactly in whole seconds.
+rests (`freeIntervals`, `cutSlots`), exactly in whole seconds.  Step L4 (§13.3, D12
+likewise) gives each slot its energy from the hours since wake in exact hundredths from
+seconds (site R11, `hsw100`), the prior curve and the model's learned curves as data, and the
+home cap (`futureEnergy`, `energize`), then limits the day to its budget (`limitSlots`, proved
+equal to L1's `limitHist`), so one location's future day is `dayHist`.
 **Stage 6's `dayPlan` must reuse L2's `windowEnd`, `windowOn`, `wallIndex` and `wallsOn`,
-and L3's `freeIntervals` and `cutSlots`, never a second copy** (design §2.3).  Energy and
-the budget limit's slots are L4's, so each location's histogram is still an argument.
+L3's `freeIntervals` and `cutSlots`, and L4's `hsw100`, `predictAt`, `capForLocation` and
+`energize`, never a second copy** (design §2.3).  The day range and the mixture of the two
+locations' `dayHist`s are L5's.
 
 ## The owner's D10 and D17, and the fork point they replace
 
@@ -58,12 +63,16 @@ walls are listed in its section: every run-time pass is a `foldl` or core's tail
 `map`/`filter`/`filterMap`, and the one quadratic sort is behind a proved `@[csimp]` twin
 (`windowEnd_eq_windowEndFast`; since L3 also `sortByStart_eq_sortByStartFast`, for every
 caller).  L3's cut is listed in its section: `foldl`s, core's `append`, `map`, `filter` and
-`any`, and a tail-recursive loop on structural fuel.
+`any`, and a tail-recursive loop on structural fuel.  L4's energy and limit are listed in
+theirs: core `map`, `foldl`s, and `limitSlots` compiled as its histogram form
+(`limitSlots_eq_limitSlotsFast`).
 
 ## Not here, by name
 
-* `pureDay`, `lookahead`, `Input`, `mkInput?` (L5); energy, `histOf` and `limitSlots` (L4).
-* Energy on a slot (fork `Slot::energy`, `energize`): L4's.  L3's `Slot` carries no energy.
+* `pureDay`, `lookahead`, `Input`, `mkInput?` (L5), and a future day's wake instant (L5; the
+  fork reuses today's wake clock on every future day, see README "Stage 5 D10 L4").
+* The wire for the curves (`Curves`, `Step`), with their R10 bounds and rejection theorems: L6.
+* Day 0's posterior correction, sleep-debt shift and `--allow-home` (L9).
 * The zone table's refusal of a sub-minute offset (`badTz subMinuteOffset`, §13.6): L6's.
   L2's window and L3's cut count seconds, so neither needs such a refusal to be exact.
 * Day 0 (`ofHist` over the host's histogram until L9, gap 93 of the design).
@@ -2213,6 +2222,665 @@ theorem a_cut_counts_real_minutes_across_the_fall_transition :
          [((Cal.instantOf Cal.chicago 739920 0).sec + 7200,
            (Cal.instantOf Cal.chicago 739920 0).sec + 8400)]⟩ ∧
     (Cal.instantOf Cal.chicago 739920 180).sec - (Cal.instantOf Cal.chicago 739920 0).sec = 4 * 3600 := by
+  decide
+
+
+/-! ############################################################################
+## Energy and the budget limit (stage 5 D10 step L4; design §13.3, owner's D12)
+
+Pulled forward from stage 6 by the owner's D12, beside L2's window and L3's cut.  **Stage 6's
+`dayPlan` must reuse `hsw100`, `bucket`, `stepAt`, `priorLevel`, `learnedLevel`, `predictAt`,
+`capForLocation` and `energize`, never a second copy** (design §2.3, AGENTS §5.3).  A future
+day at one location is `dayHist`: L3's slots, each given its energy, then the budget limit.
+L5's `pureDay` is `dayHist` over `windowOn` and `cutSlots … [] 0`.
+
+### The fork point, read by name
+
+`capacity::lookahead`'s future day is `energize(&cut.slots, &EnergyCtx::new(model, cfg,
+&Posterior::none(cfg), wake, loc))` then `limit_to_budget(&slots, budget, block_min)`.
+
+1. `EnergyCtx::energy_at(t)` is `cap_for_location(posterior.correct(t, predict(model, cfg,
+   &Features::at(t, wake, loc))))` (`futureEnergy`).  On a future day the posterior is
+   `Posterior::none`, whose `correct` returns the prediction unchanged (no report, so the
+   adjustment is `0.0` and `round` of a whole level is that level), `slept_min` is `None`, so
+   the sleep-debt shift is `0`, and `allow_home` is `false`.  Day 0's posterior, shift and
+   `--allow-home` are L9's (design §13.5).
+2. `Features::at` → `log::hours_since_wake(t, wake)`: `secs =
+   t.signed_duration_since(wake).num_seconds()`, then `(secs / 36.0).round() / 100.0`
+   (`hsw100` of `Cal.secondsBetween`, **site R11**; `hswAt`).
+3. `energy::predict`: `curve_key` is `"lounge"` or `"home"` (`Loc.curve`); the base is
+   `model.energy_at(curve, hsw)` (`learnedLevel`: the curve's entry at `bucket(hsw)`, if the
+   model has the curve and the curve has the entry), else `prior_level(cfg, curve, hsw)`
+   (`priorLevel`: the curve's own prior when the config has it or has no `home` curve, else
+   the `home` prior), each through `Config::prior_energy` (`priorEnergy`: the named curve,
+   else `lounge`, else the first curve in the map's key order, else `3`) and `StepFn::at`
+   (`stepAt`: before the first step its level; else the first step containing the hours;
+   else, in a gap, the last step starting at or before them; `3` for an empty curve); then
+   `(base − 0).clamp(0, 5)` (`predictAt`).
+4. `cap_for_location`: `min(energy, home_max_ci)` at home unless `--allow-home`
+   (`capForLocation`).
+5. `energize` maps every slot to its energy at its start (`energize`; the progress features it
+   also computes are v2's and change no level).
+6. `limit_to_budget`: the slots sorted by energy descending, then start ascending (a stable
+   sort), each taking `min(minutes, left)` from `left = budget × block_min`, summed per level
+   (`limitSlots`).  **`limitSlots_is_limitHist`: that is L1's per-level greedy `limitHist` over
+   the slots' histogram `histOf'`**, so the sort is unobservable, and D10-3's "mix after the
+   limit" is stated over the fork's own limit.
+
+### Exact against the fork's doubles (design §13.3, D10-11)
+
+* `s / 36.0` is correctly rounded.  A tie `s = 36k + 18` has the exact quotient `k + ½`, and a
+  non-tie lies at least `1/36` from `k + ½`, far beyond an ulp for `|s| < 2^40`.  So `round`
+  sees the true side, ties go away from zero, and `hsw100` is its value
+  (`hsw100_is_round_half_away`, `hsw100_nearest`).
+* `bucket` floors `n / 100.0`, correctly rounded, which never reaches the next integer for
+  `|n| < 2^40`, because `(100m − 1)/100` is `1/100` below `m`; negative and zero hours are
+  bucket `0`, and the index is clamped to `0..11`.
+* A range key `num/den` (the decimal text of the TOML key, `den ≤ 10^6` under L6's R10
+  bounds) against `n / 100.0`: unequal rationals differ by at least `1/(100·den)`, beyond the
+  ulp at these magnitudes, and equal rationals give the same double.  So `hours ≥ from` is
+  `100·num ≤ n·den` and `hours < to` is `n·den < 100·num`, exactly (`Step.reached`,
+  `Step.before`); input design LOOK's range-key exception (its P8) is not needed.
+* Seconds, not minutes: today's wake keeps its seconds, and wake 06:05:40 against a slot at
+  07:05:00 is 3,560 s, `hsw` 0.99 and bucket 0, where whole minutes would say 1.00 and bucket 1
+  (`the_bucket_reads_seconds`, `the_bucket_reads_seconds_on_the_spec_day`).  Real seconds
+  across a DST transition too (`hours_since_wake_count_real_hours_across_the_fall_transition`).
+
+### Data, and what L6 owes it
+
+`Curves` holds `[energy.prior]` as `(key, steps)` pairs in the config's map and `model.json`'s
+`energy` likewise, keys as `List Char`.  `stepAt` reads a curve in `StepFn`'s order, sorted by
+`from` (fork `StepFn::from_pairs`).  L6's decoder owes that sort, one entry per key, and the
+§13.6 bounds (`den ∈ [1, 10^6]`, `num ≤ 48·den`, levels `≤ 5`, `≤ 64` ranges, 12-entry curves
+of levels `< 256`, `homeMaxCi ≤ 5`) with their rejection theorems.  It also owes every prior
+curve, not only `lounge` and `home`: with neither, `Config::prior_energy` reads the least key
+(`curveLeast`; `a_curve_falls_back_as_the_config_does`).  Nothing here crosses the wire yet, so
+no smart constructor is owed by this step.
+
+### The recursion rule (D9-21)
+
+Over lists the wire can make large: `energize` is core `map` (`mapTR`); `histOf'` is a `foldl`
+per level; `slotMinutesOf` is a `foldl`.  `limitSlots`' fold builds one closure per slot, so
+it is **never run**: `@[csimp] limitSlots_eq_limitSlotsFast` compiles it as `limitHist` over
+`histOf'` (the step's own theorem).  `stepAt` walks one curve (core `find?` and `reverse`, at most
+64 ranges under L6), `curveLookup` and `curveLeast` walk the curve map (`find?`, `foldl`), and
+`curveKeyLt` recurses over one key's characters, which L6 bounds.
+-/
+
+/-! ### Hours since wake: site R11 -/
+
+/-- **Site R11** (design D10-11): fork `(s / 36.0).round()` for whole seconds `s`, the hours
+since wake in hundredths, rounded half away from zero. -/
+def hsw100 (s : Int) : Int :=
+  if s < 0 then -(((((-s).toNat + 18) / 36 : Nat)) : Int) else (((s.toNat + 18) / 36 : Nat) : Int)
+
+/-- **`hsw100` is `f64::round` of `s / 36`**: the nearest whole number, a tie `s + 18 = 36k`
+going up, and odd in `s`, so a negative tie goes down (away from zero). -/
+theorem hsw100_is_round_half_away (s : Nat) :
+    36 * (hsw100 s).toNat ≤ s + 18 ∧ s + 18 < 36 * ((hsw100 s).toNat + 1) ∧
+    hsw100 (-(s : Int)) = -(hsw100 s) := by
+  unfold hsw100
+  refine ⟨?_, ?_, ?_⟩
+  · simp only [show ¬ ((s : Int) < 0) by omega, if_false]
+    omega
+  · simp only [show ¬ ((s : Int) < 0) by omega, if_false]
+    omega
+  · by_cases h : s = 0
+    · subst h; simp
+    · simp only [show (-(s : Int)) < 0 by omega, show ¬ ((s : Int) < 0) by omega, if_true, if_false]
+      omega
+
+/-- **The rational specification, both signs**: `|h − s/36| ≤ ½`, and at a tie `h` lies on the
+side away from zero.  The two conditions determine `h`. -/
+theorem hsw100_nearest (s : Int) :
+    -36 ≤ 72 * hsw100 s - 2 * s ∧ 72 * hsw100 s - 2 * s ≤ 36 ∧
+      (72 * hsw100 s - 2 * s = 36 → 0 < s) ∧ (72 * hsw100 s - 2 * s = -36 → s < 0) := by
+  unfold hsw100
+  split <;> omega
+
+/-- Site R11 is monotone (`Arith.lean`'s `*_mono` convention). -/
+theorem hsw100_mono {a b : Int} (h : a ≤ b) : hsw100 a ≤ hsw100 b := by
+  unfold hsw100
+  split <;> split <;> omega
+
+/-- Site R11 is within half a hundredth of the exact hours (`*_withinOne`: 18 of 36 seconds). -/
+theorem hsw100_withinOne (s : Int) : -18 ≤ 36 * hsw100 s - s ∧ 36 * hsw100 s - s ≤ 18 := by
+  have := hsw100_nearest s
+  omega
+
+/-- Fork `energy::bucket`: `floor(hsw)` clamped to `0..HSW_BUCKETS − 1`, `0` for `hsw ≤ 0`, on
+the hundredths. -/
+def bucket (h : Int) : Fin 12 := if h ≤ 0 then 0 else ⟨min 11 (h.toNat / 100), by omega⟩
+
+theorem bucket_mono {a b : Int} (h : a ≤ b) : (bucket a).val ≤ (bucket b).val := by
+  unfold bucket
+  split <;> split <;> simp <;> omega
+
+/-- Fork `Features::at`'s `hsw`: `hours_since_wake(t, wake)` in hundredths, from chrono's
+`num_seconds` of `t − wake` (`Cal.secondsBetween`, leap seconds and nanoseconds included). -/
+def hswAt (wake t : Cal.Instant) : Int := hsw100 (Cal.secondsBetween wake t)
+
+/-! ### The curves: fork `StepFn::at`, `Config::prior_energy`, `prior_level`, `Model::energy_at` -/
+
+/-- One range of a prior curve (fork `Step`): `from = fromNum / fromDen` hours, `to` the same
+or `none` for an open `N+` key, and the level. -/
+structure Step where
+  fromNum : Nat
+  fromDen : Nat
+  toKey   : Option (Nat × Nat)
+  level   : Nat
+deriving DecidableEq, Repr
+
+/-- `hours >= s.from` for `hours = h / 100`, cross-multiplied. -/
+def Step.reached (h : Int) (s : Step) : Bool := decide (100 * (s.fromNum : Int) ≤ h * (s.fromDen : Int))
+
+/-- `s.to.is_none_or(|to| hours < to)`, cross-multiplied. -/
+def Step.before (h : Int) (s : Step) : Bool :=
+  match s.toKey with
+  | none => true
+  | some (n, d) => decide (h * (d : Int) < 100 * (n : Int))
+
+/-- **Fork `StepFn::at`** on hundredths of an hour: `3` for an empty curve; before the first
+step, its level; else the first step containing the hours; else (a gap between ranges) the
+last step starting at or before them. -/
+def stepAt (steps : List Step) (h : Int) : Nat :=
+  match steps with
+  | [] => 3
+  | first :: _ =>
+    if first.reached h then
+      match steps.find? (fun s => s.reached h && s.before h) with
+      | some s => s.level
+      | none =>
+        match steps.reverse.find? (Step.reached h) with
+        | some s => s.level
+        | none => first.level
+    else first.level
+
+/-- `BTreeMap<String, _>`'s key order: bytes of UTF-8, which is code-point order. -/
+def curveKeyLt : List Char → List Char → Bool
+  | [], [] => false
+  | [], _ :: _ => true
+  | _ :: _, [] => false
+  | a :: as, b :: bs => if a.toNat < b.toNat then true else if a = b then curveKeyLt as bs else false
+
+/-- `map.get(key)`. -/
+def curveLookup {α : Type} (m : List (List Char × α)) (k : List Char) : Option α :=
+  (m.find? (fun e => e.1 == k)).map (·.2)
+
+def curveLeastStep {α : Type} (acc : Option (List Char × α)) (e : List Char × α) :
+    Option (List Char × α) :=
+  match acc with
+  | none => some e
+  | some a => if curveKeyLt e.1 a.1 then some e else some a
+
+/-- `map.values().next()`'s entry: the least key. -/
+def curveLeast {α : Type} (m : List (List Char × α)) : Option (List Char × α) :=
+  m.foldl curveLeastStep none
+
+def loungeKey : List Char := ['l', 'o', 'u', 'n', 'g', 'e']
+def homeKey : List Char := ['h', 'o', 'm', 'e']
+
+/-- **Fork `Config::prior_energy(loc, hsw)`**: the named curve, else `lounge`, else the first
+curve in key order, else `3`. -/
+def priorEnergy (prior : List (List Char × List Step)) (loc : List Char) (h : Int) : Nat :=
+  match curveLookup prior loc with
+  | some c => stepAt c h
+  | none =>
+    match curveLookup prior loungeKey with
+    | some c => stepAt c h
+    | none =>
+      match curveLeast prior with
+      | some e => stepAt e.2 h
+      | none => 3
+
+/-- **Fork `energy::prior_level(cfg, curve, hsw)`**: the curve's own prior when the config
+has it or has no `home` curve, else `home`'s. -/
+def priorLevel (prior : List (List Char × List Step)) (curve : List Char) (h : Int) : Nat :=
+  if (curveLookup prior curve).isSome || (curveLookup prior homeKey).isNone then priorEnergy prior curve h
+  else priorEnergy prior homeKey h
+
+/-- **Fork `Model::energy_at(curve, hsw)`**: the learned level at `bucket(hsw)`, if the model
+has the curve and the curve has that entry. -/
+def learnedLevel (energy : List (List Char × List Nat)) (curve : List Char) (h : Int) : Option Nat :=
+  (curveLookup energy curve).bind (fun c => c[(bucket h).val]?)
+
+/-- The curves `predict` reads: `config.toml`'s `[energy.prior]` and `model.json`'s `energy`,
+as data. -/
+structure Curves where
+  prior  : List (List Char × List Step)
+  energy : List (List Char × List Nat)
+deriving DecidableEq, Repr
+
+/-- The two locations of a future day (fork `Loc::Lounge`, `Loc::Home`). -/
+inductive Loc where
+  | lounge
+  | home
+deriving DecidableEq, Repr
+
+/-- Fork `curve_key`: a lounge day reads `"lounge"`, a home day `"home"`. -/
+def Loc.curve : Loc → List Char
+  | .lounge => loungeKey
+  | .home => homeKey
+
+/-- **Fork `energy::predict` with no sleep-debt shift**: the learned level, else the prior,
+clamped to `0..5`. -/
+def predictAt (c : Curves) (curve : List Char) (h : Int) : Fin 6 :=
+  ⟨min 5 ((learnedLevel c.energy curve h).getD (priorLevel c.prior curve h)), by omega⟩
+
+/-- **Fork `EnergyCtx::cap_for_location`**: `min(energy, home_max_ci)` at home unless
+`--allow-home`. -/
+def capForLocation (homeMax : Nat) (allowHome : Bool) (loc : Loc) (e : Fin 6) : Fin 6 :=
+  match loc, allowHome with
+  | .home, false => ⟨min e.val homeMax, by omega⟩
+  | _, _ => e
+
+/-- **A future day's slot energy** (fork `EnergyCtx::energy_at` under `EnergyCtx::new` and
+`Posterior::none`): predicted from the hours since `wake` at `t`, then the home cap. -/
+def futureEnergy (c : Curves) (homeMax : Nat) (loc : Loc) (wake t : Cal.Instant) : Fin 6 :=
+  capForLocation homeMax false loc (predictAt c loc.curve (hswAt wake t))
+
+/-- **The home cap holds on every future home day**, and it is the only change to the
+prediction there. -/
+theorem futureEnergy_home_is_capped (c : Curves) (homeMax : Nat) (wake t : Cal.Instant) :
+    (futureEnergy c homeMax .home wake t).val ≤ homeMax ∧
+      (futureEnergy c homeMax .home wake t).val = min homeMax (predictAt c homeKey (hswAt wake t)).val := by
+  simp only [futureEnergy, capForLocation, Loc.curve]
+  omega
+
+/-- A lounge day is not capped. -/
+theorem futureEnergy_lounge_is_the_prediction (c : Curves) (homeMax : Nat) (wake t : Cal.Instant) :
+    futureEnergy c homeMax .lounge wake t = predictAt c loungeKey (hswAt wake t) := rfl
+
+/-- **Fork `capacity::energize`** on a future day: each slot with its energy at its start. -/
+def energize (c : Curves) (homeMax : Nat) (loc : Loc) (wake : Cal.Instant) (slots : List Slot) :
+    List (Fin 6 × Slot) :=
+  slots.map fun s => (futureEnergy c homeMax loc wake ⟨s.start, 0⟩, s)
+
+/-! ### The budget limit: fork `limit_to_budget`, and why it is L1's `limitHist` -/
+
+def levelStep (l : Fin 6) (a : Nat) (x : Fin 6 × Slot) : Nat := if x.1 = l then a + x.2.minutes else a
+
+/-- **Fork `DayCapacity::from_slots`**: the slots' minutes (`Slot.minutes`) at each level. -/
+def histOf' (slots : List (Fin 6 × Slot)) : Hist := fun l => slots.foldl (levelStep l) 0
+
+/-- Fork `limit_to_budget`'s order, `b.energy.cmp(&a.energy).then(a.start.cmp(&b.start))`, as
+"`a` may come first". -/
+def slotLe (a b : Fin 6 × Slot) : Bool :=
+  decide (b.1.val < a.1.val) || (decide (a.1 = b.1) && decide (a.2.start ≤ b.2.start))
+
+/-- One turn of `limit_to_budget`'s loop: `take = min(minutes, left)`, `left −= take`, and
+`minutes_at_level[energy] += take` (a slot after `left` reaches `0` takes `0`, as the fork's
+`break` does). -/
+def takeStep (acc : Nat × Hist) (x : Fin 6 × Slot) : Nat × Hist :=
+  (acc.1 - min x.2.minutes acc.1,
+    fun l => if l = x.1 then acc.2 l + min x.2.minutes acc.1 else acc.2 l)
+
+/-- **Fork `limit_to_budget(slots, budget, block_min)`** summed per level, with
+`budgetMin = budget × block_min`: the slots merge-sorted by energy descending then start
+ascending, each taking what is left.  Compiled as `limitSlotsFast` (`@[csimp]`). -/
+def limitSlots (budgetMin : Nat) (slots : List (Fin 6 × Slot)) : Hist :=
+  ((slots.mergeSort slotLe).foldl takeStep (budgetMin, fun _ => 0)).2
+
+theorem foldl_levelStep (l : Fin 6) : ∀ (L : List (Fin 6 × Slot)) (a : Nat),
+    L.foldl (levelStep l) a = a + L.foldl (levelStep l) 0
+  | [], a => by simp
+  | x :: xs, a => by
+    simp only [List.foldl_cons]
+    rw [foldl_levelStep l xs (levelStep l a x), foldl_levelStep l xs (levelStep l 0 x)]
+    unfold levelStep
+    split <;> omega
+
+theorem histOf'_cons (x : Fin 6 × Slot) (xs : List (Fin 6 × Slot)) (l : Fin 6) :
+    histOf' (x :: xs) l = (if l = x.1 then histOf' xs l + x.2.minutes else histOf' xs l) := by
+  simp only [histOf', List.foldl_cons]
+  rw [foldl_levelStep]
+  unfold levelStep
+  by_cases h : l = x.1
+  · subst h; simp; omega
+  · simp [h, Ne.symm h]
+
+theorem histOf'_of_below (xs : List (Fin 6 × Slot)) (l : Fin 6) (h : ∀ x ∈ xs, x.1.val < l.val) :
+    histOf' xs l = 0 := by
+  induction xs with
+  | nil => rfl
+  | cons x xs ih =>
+    rw [histOf'_cons, ih (fun y hy => h y (by simp [hy]))]
+    have := h x (by simp)
+    have : l ≠ x.1 := fun e => by subst e; omega
+    simp [this]
+
+/-- The histogram does not see the slots' order. -/
+theorem histOf'_perm {L M : List (Fin 6 × Slot)} (p : L.Perm M) : histOf' L = histOf' M := by
+  funext l
+  unfold histOf'
+  apply p.foldl_eq'
+  intro x _ y _ z
+  unfold levelStep
+  split <;> split <;> omega
+
+theorem topElig_bump (f : Hist) (k : Fin 6) (m : Nat) : ∀ n, n ≤ 6 →
+    topElig ⟨0, by decide⟩ (fun l => if l = k then f l + m else f l) n
+      = topElig ⟨0, by decide⟩ f n + (if 5 < k.val + n then m else 0) := by
+  intro n
+  induction n with
+  | zero => intro _; have := k.isLt; simp [topElig]; omega
+  | succ n ih =>
+    intro hn
+    have ih' := ih (by omega)
+    have hk := k.isLt
+    show topElig ⟨0, by decide⟩ (fun l => if l = k then f l + m else f l) n
+        + (if 0 ≤ 5 - n then (if stepLevel n = k then f (stepLevel n) + m else f (stepLevel n)) else 0)
+      = topElig ⟨0, by decide⟩ f n + (if 0 ≤ 5 - n then f (stepLevel n) else 0)
+        + (if 5 < k.val + (n + 1) then m else 0)
+    rw [ih']
+    simp only [Nat.zero_le, if_true]
+    by_cases h : stepLevel n = k
+    · have hv : k.val = 5 - n := by rw [← h, stepLevel_val]
+      rw [if_pos h]
+      split <;> split <;> omega
+    · have hv : k.val ≠ 5 - n := fun e => h (Fin.ext (by rw [stepLevel_val]; omega))
+      rw [if_neg h]
+      split <;> split <;> omega
+
+theorem topElig_of_zero_above (f : Hist) (k : Fin 6) (h : ∀ l : Fin 6, k.val < l.val → f l = 0) :
+    ∀ n, n ≤ 5 - k.val → topElig ⟨0, by decide⟩ f n = 0 := by
+  intro n
+  induction n with
+  | zero => intro _; rfl
+  | succ n ih =>
+    intro hn
+    simp only [topElig, ih (by omega), Nat.zero_le, if_true]
+    rw [h (stepLevel n) (by rw [stepLevel_val]; omega)]
+
+/-- L1's limit at one level: what is left after every higher level, capped by the level. -/
+theorem limitHist_eq (B : Nat) (h : Hist) (l : Fin 6) :
+    limitHist B h l = min (h l) (B - topElig ⟨0, by decide⟩ h (5 - l.val)) := by
+  simp only [limitHist, dayTake, Nat.zero_le, if_true, dayLeft_eq_sub]
+
+/-- **The greedy over slots in non-increasing energy** gives each level the minimum of its
+minutes and what the higher levels left. -/
+theorem greedy_spec : ∀ (L : List (Fin 6 × Slot)) (left : Nat) (h₀ : Hist) (l : Fin 6),
+    L.Pairwise (fun a b => b.1.val ≤ a.1.val) →
+    (L.foldl takeStep (left, h₀)).2 l
+      = h₀ l + min (histOf' L l) (left - topElig ⟨0, by decide⟩ (histOf' L) (5 - l.val))
+  | [], left, h₀, l, _ => by simp [histOf']
+  | x :: xs, left, h₀, l, hp => by
+    have hxs := (List.pairwise_cons.1 hp)
+    simp only [List.foldl_cons]
+    rw [greedy_spec xs _ _ l hxs.2]
+    simp only [takeStep]
+    have hb : histOf' (x :: xs) = fun l => if l = x.1 then histOf' xs l + x.2.minutes else histOf' xs l :=
+      funext (histOf'_cons x xs)
+    rw [hb, topElig_bump _ _ _ _ (by omega)]
+    have hz : ∀ l' : Fin 6, x.1.val < l'.val → histOf' xs l' = 0 :=
+      fun l' hl' => histOf'_of_below xs l' (fun y hy => by have := hxs.1 y hy; omega)
+    have := l.isLt
+    have := x.1.isLt
+    by_cases hk : l = x.1
+    · have h0 := topElig_of_zero_above (histOf' xs) x.1 hz (5 - l.val) (by rw [hk]; exact Nat.le_refl _)
+      simp only [if_pos hk, h0]
+      split <;> omega
+    · have hk' : l.val ≠ x.1.val := fun e => hk (Fin.ext e)
+      simp only [hk, if_false]
+      by_cases hlt : x.1.val < l.val
+      · rw [hz l hlt]; simp
+      · split <;> omega
+
+/-- **The fork's per-slot sort is L1's per-level greedy** (design D10-6): sorting by energy
+and taking what is left gives exactly `limitHist` over the slots' histogram, whatever the
+slots' order and however ties are broken. -/
+theorem limitSlots_is_limitHist (budgetMin : Nat) (slots : List (Fin 6 × Slot)) :
+    limitSlots budgetMin slots = limitHist budgetMin (histOf' slots) := by
+  funext l
+  have trans : ∀ a b c : Fin 6 × Slot, slotLe a b = true → slotLe b c = true → slotLe a c = true := by
+    intro a b c h1 h2
+    simp only [slotLe, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq, Fin.ext_iff] at *
+    omega
+  have total : ∀ a b : Fin 6 × Slot, (slotLe a b || slotLe b a) = true := by
+    intro a b
+    simp only [slotLe, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq, Fin.ext_iff]
+    omega
+  have hs := List.pairwise_mergeSort trans total slots
+  have hs' : (slots.mergeSort slotLe).Pairwise (fun a b => b.1.val ≤ a.1.val) := by
+    refine hs.imp ?_
+    intro a b h
+    simp only [slotLe, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq, Fin.ext_iff] at h
+    omega
+  simp only [limitSlots]
+  rw [greedy_spec _ _ _ l hs', histOf'_perm (List.mergeSort_perm slots slotLe), limitHist_eq]
+  simp
+
+/-- `limitSlots` as the compiled code runs it: no sort, no closure per slot. -/
+def limitSlotsFast (budgetMin : Nat) (slots : List (Fin 6 × Slot)) : Hist :=
+  limitHist budgetMin (histOf' slots)
+
+/-- The compiled `limitSlots` is the histogram's greedy (D9-21). -/
+@[csimp] theorem limitSlots_eq_limitSlotsFast : @limitSlots = @limitSlotsFast := by
+  funext B slots
+  exact limitSlots_is_limitHist B slots
+
+/-- Fork `Cut::slot_minutes` over energised slots. -/
+def slotMinutesOf (slots : List (Fin 6 × Slot)) : Nat := slots.foldl (fun a x => a + x.2.minutes) 0
+
+theorem sum6_bump (g : Hist) (k : Fin 6) (m : Nat) :
+    sum6 (fun l => if l = k then g l + m else g l) = sum6 g + m := by
+  obtain ⟨k, hk⟩ := k
+  simp only [sum6, Fin.ext_iff]
+  have : k = 0 ∨ k = 1 ∨ k = 2 ∨ k = 3 ∨ k = 4 ∨ k = 5 := by omega
+  rcases this with rfl | rfl | rfl | rfl | rfl | rfl <;> simp (config := { decide := true }) <;> omega
+
+theorem foldl_add_minutes : ∀ (L : List (Fin 6 × Slot)) (a : Nat),
+    L.foldl (fun a x => a + x.2.minutes) a = a + L.foldl (fun a x => a + x.2.minutes) 0
+  | [], a => by simp
+  | x :: xs, a => by
+    simp only [List.foldl_cons]
+    rw [foldl_add_minutes xs (a + _), foldl_add_minutes xs (0 + _)]
+    omega
+
+/-- The histogram holds every slot minute. -/
+theorem sum6_histOf' : ∀ (L : List (Fin 6 × Slot)), sum6 (histOf' L) = slotMinutesOf L
+  | [] => rfl
+  | x :: xs => by
+    have hb : histOf' (x :: xs) = fun l => if l = x.1 then histOf' xs l + x.2.minutes else histOf' xs l :=
+      funext (histOf'_cons x xs)
+    rw [hb, sum6_bump, sum6_histOf' xs]
+    simp only [slotMinutesOf, List.foldl_cons]
+    rw [foldl_add_minutes xs (0 + _)]
+    omega
+
+/-- **One location's future day** (fork `lookahead`'s loop body after the cut): the slots
+energised at `loc`, limited to `budgetMin = budget × block_min` minutes.  L5's mixture reads
+two of these, lounge and home. -/
+def dayHist (c : Curves) (homeMax : Nat) (loc : Loc) (wake : Cal.Instant) (budgetMin : Nat)
+    (slots : List Slot) : Hist :=
+  limitSlots budgetMin (energize c homeMax loc wake slots)
+
+theorem dayHist_eq (c : Curves) (homeMax : Nat) (loc : Loc) (wake : Cal.Instant) (budgetMin : Nat)
+    (slots : List Slot) :
+    dayHist c homeMax loc wake budgetMin slots
+      = limitHist budgetMin (histOf' (energize c homeMax loc wake slots)) :=
+  limitSlots_is_limitHist _ _
+
+/-- **A future day keeps `min(budget × block_min, the cut's slot minutes)`.** -/
+theorem dayHist_keeps_the_min (c : Curves) (homeMax : Nat) (loc : Loc) (wake : Cal.Instant)
+    (budgetMin : Nat) (cut : Cut) :
+    sum6 (dayHist c homeMax loc wake budgetMin cut.slots) = min budgetMin cut.slotMinutes := by
+  rw [dayHist_eq, limitHist_keeps_the_min, sum6_histOf']
+  simp only [slotMinutesOf, energize, List.foldl_map, Cut.slotMinutes]
+
+/-- A home day's histogram holds nothing above `home_max_ci`. -/
+theorem dayHist_home_is_capped (c : Curves) (homeMax : Nat) (wake : Cal.Instant) (budgetMin : Nat)
+    (slots : List Slot) (l : Fin 6) (hl : homeMax < l.val) :
+    dayHist c homeMax .home wake budgetMin slots l = 0 := by
+  rw [dayHist_eq, limitHist_eq, histOf'_of_below]
+  · simp
+  · intro x hx
+    simp only [energize, List.mem_map] at hx
+    obtain ⟨s, _, rfl⟩ := hx
+    have := (futureEnergy_home_is_capped c homeMax wake ⟨s.start, 0⟩).1
+    show (futureEnergy c homeMax .home wake ⟨s.start, 0⟩).val < l.val
+    omega
+
+/-! ### The shipped curves and the fork's fixture model -/
+
+def Step.range (a b level : Nat) : Step := ⟨a, 1, some (b, 1), level⟩
+def Step.from (a level : Nat) : Step := ⟨a, 1, none, level⟩
+
+/-- `[energy.prior.lounge]`: `0-1` 4, `1-5` 5, `5-8` 4, `8-10` 3, `10+` 2. -/
+def shippedLounge : List Step := [.range 0 1 4, .range 1 5 5, .range 5 8 4, .range 8 10 3, .from 10 2]
+/-- `[energy.prior.home]`: `0-1` 3, `1-4` 4, `4-8` 3, `8+` 2. -/
+def shippedHome : List Step := [.range 0 1 3, .range 1 4 4, .range 4 8 3, .from 8 2]
+/-- The shipped `[energy.prior]`, in key order. -/
+def shippedPrior : List (List Char × List Step) := [(homeKey, shippedHome), (loungeKey, shippedLounge)]
+/-- `Config::default()` with `Model::default()` (no learned curve). -/
+def Curves.shipped : Curves := ⟨shippedPrior, []⟩
+/-- `tm-core/tests/fixtures/model.json`'s `energy`. -/
+def fixtureEnergy : List (List Char × List Nat) :=
+  [(homeKey, [3, 4, 4, 4, 3, 3, 3, 2, 2, 2, 2, 2]), (loungeKey, [4, 5, 5, 5, 5, 4, 4, 4, 3, 3, 2, 2])]
+/-- `Config::default()` with the fixture model. -/
+def Curves.fixture : Curves := ⟨shippedPrior, fixtureEnergy⟩
+
+/-! ### The fork's tests, as witnesses (Chicago's 2026 table) -/
+
+/-- Rounding at the ties, both signs. -/
+theorem hsw100_on_witnesses :
+    hsw100 17 = 0 ∧ hsw100 18 = 1 ∧ hsw100 (-17) = 0 ∧ hsw100 (-18) = -1 ∧
+    hsw100 3560 = 99 ∧ hsw100 3600 = 100 ∧ hsw100 (-3600) = -100 := by
+  decide
+
+/-- **Hours since wake read seconds** (design §15, CRIT 6): 3,560 s is 0.99 h and bucket 0;
+3,600 s is 1.00 h and bucket 1. -/
+theorem the_bucket_reads_seconds :
+    bucket (hsw100 3560) = 0 ∧ bucket (hsw100 3600) = 1 := by
+  decide
+
+/-- The same on instants: wake 06:05:40 against a slot at 07:05:00 on the spec day predicts
+the lounge's `0-1` level 4; a wake at 06:05:00 predicts `1-5`'s 5. -/
+theorem the_bucket_reads_seconds_on_the_spec_day :
+    Cal.secondsBetween ⟨onTheSpecDay 365 + 40, 0⟩ ⟨onTheSpecDay 425, 0⟩ = 3560 ∧
+    hswAt ⟨onTheSpecDay 365 + 40, 0⟩ ⟨onTheSpecDay 425, 0⟩ = 99 ∧
+    (futureEnergy Curves.shipped 3 .lounge ⟨onTheSpecDay 365 + 40, 0⟩ ⟨onTheSpecDay 425, 0⟩).val = 4 ∧
+    hswAt ⟨onTheSpecDay 365, 0⟩ ⟨onTheSpecDay 425, 0⟩ = 100 ∧
+    (futureEnergy Curves.shipped 3 .lounge ⟨onTheSpecDay 365, 0⟩ ⟨onTheSpecDay 425, 0⟩).val = 5 := by
+  decide
+
+/-- Fork test `buckets_clamp` (`energy.rs`), on hundredths. -/
+theorem buckets_clamp :
+    bucket (-100) = 0 ∧ bucket 0 = 0 ∧ bucket 99 = 0 ∧ bucket 100 = 1 ∧ bucket 1190 = 11 ∧
+    bucket 3000 = 11 := by
+  decide
+
+/-- Fork test `prior_energy_lookup` (`config.rs`), all 13 assertions. -/
+theorem prior_energy_lookup :
+    priorEnergy shippedPrior loungeKey 0 = 4 ∧ priorEnergy shippedPrior loungeKey 50 = 4 ∧
+    priorEnergy shippedPrior loungeKey 100 = 5 ∧ priorEnergy shippedPrior loungeKey 499 = 5 ∧
+    priorEnergy shippedPrior loungeKey 500 = 4 ∧ priorEnergy shippedPrior loungeKey 900 = 3 ∧
+    priorEnergy shippedPrior loungeKey 1000 = 2 ∧ priorEnergy shippedPrior loungeKey 3000 = 2 ∧
+    priorEnergy shippedPrior loungeKey (-100) = 4 ∧ priorEnergy shippedPrior homeKey 200 = 4 ∧
+    priorEnergy shippedPrior homeKey 800 = 2 ∧ priorEnergy shippedPrior ['z', 'o', 'o', 'm'] 200 = 5 ∧
+    priorEnergy [] loungeKey 200 = 3 := by
+  decide
+
+/-- Fork test `predict_matches_the_prior_tables_at_boundaries` (`energy_model.rs`), all 15. -/
+theorem predict_matches_the_prior_tables_at_boundaries :
+    ([0, 99, 100, 499, 500, 799, 800, 999, 1000, 2300].map fun h => (predictAt Curves.shipped loungeKey h).val)
+      = [4, 4, 5, 5, 4, 4, 3, 3, 2, 2] ∧
+    ([99, 100, 399, 400, 800].map fun h => (predictAt Curves.shipped homeKey h).val) = [3, 4, 4, 3, 2] := by
+  decide
+
+/-- Fork test `predict_falls_back_to_the_prior` (`energy.rs`): its lounge and home assertions.
+Its three `Out`/`Any`/`Named` assertions read `curve_key`'s `"home"`, so they are the home one;
+no future day has those locations. -/
+theorem predict_falls_back_to_the_prior :
+    (predictAt Curves.shipped Loc.lounge.curve 99).val = 4 ∧
+    (predictAt Curves.shipped Loc.lounge.curve 100).val = 5 ∧
+    (predictAt Curves.shipped Loc.home.curve 200).val = 4 := by
+  decide
+
+/-- Fork test `predict_uses_the_learned_curve` (`energy_model.rs`): the learned curve wins,
+the bucket floors, and past the last bucket the last learned level holds. -/
+theorem predict_uses_the_learned_curve :
+    ([99, 100, 500, 800, 1000, 3000].map fun h => (predictAt Curves.fixture loungeKey h).val)
+      = [4, 5, 4, 3, 2, 2] ∧
+    (predictAt Curves.fixture homeKey 700).val = 2 ∧ (predictAt Curves.shipped homeKey 700).val = 3 := by
+  decide
+
+/-- `Config::prior_energy`'s and `prior_level`'s fallbacks, and `StepFn::at` in a gap and
+before the first step: a lounge day with only a `home` prior reads it; with neither, the least
+key (`cafe` before `zoo`, whatever the list order); fork `unknown_keys_are_errors`' extra
+curve. -/
+theorem a_curve_falls_back_as_the_config_does :
+    priorLevel [(homeKey, shippedHome)] loungeKey 50 = 3 ∧
+    priorLevel [(['z', 'o', 'o'], [Step.from 0 1]), (['c', 'a', 'f', 'e'], [Step.from 0 2])] loungeKey 50 = 2 ∧
+    priorLevel [(['c', 'a', 'f', 'e'], [Step.range 0 4 3, Step.from 4 2])] ['c', 'a', 'f', 'e'] 500 = 2 ∧
+    stepAt [Step.range 0 1 4, Step.range 2 3 5] 150 = 4 ∧ stepAt [Step.range 0 1 4, Step.range 2 3 5] 350 = 5 ∧
+    stepAt [Step.range 1 2 4, Step.range 2 3 5] 50 = 4 ∧ stepAt [] 50 = 3 := by
+  decide
+
+/-- Fork test `energize_follows_the_prior_curve` (`capacity_slots.rs`): the §4.3 cut, lounge,
+wake 06:05. -/
+theorem energize_follows_the_prior_curve :
+    (energize Curves.shipped 3 .lounge ⟨onTheSpecDay 365, 0⟩
+        (cutSlots CutCfg.shipped (onTheSpecDay 420) (onTheSpecDay 960)
+          [(onTheSpecDay 770, onTheSpecDay 830)] [] 0).slots).map (·.1.val)
+      = [4, 5, 5, 5, 4, 4, 3] := by
+  decide
+
+/-- Fork test `energize_applies_the_home_cap_and_the_posterior` (`capacity_slots.rs`): its
+lounge, home-cap and `--allow-home` assertions (the posterior and sleep-debt ones are day 0's,
+L9). -/
+theorem energize_applies_the_home_cap :
+    (energize Curves.shipped 3 .lounge ⟨onTheSpecDay 365, 0⟩
+        [⟨onTheSpecDay 480, onTheSpecDay 540, .block⟩, ⟨onTheSpecDay 720, onTheSpecDay 780, .block⟩]).map (·.1.val)
+      = [5, 4] ∧
+    (energize Curves.shipped 3 .home ⟨onTheSpecDay 365, 0⟩
+        [⟨onTheSpecDay 480, onTheSpecDay 540, .block⟩, ⟨onTheSpecDay 720, onTheSpecDay 780, .block⟩]).map (·.1.val)
+      = [3, 3] ∧
+    ([onTheSpecDay 480, onTheSpecDay 720].map fun t =>
+        (capForLocation 3 true .home (predictAt Curves.shipped homeKey (hswAt ⟨onTheSpecDay 365, 0⟩ ⟨t, 0⟩))).val)
+      = [4, 3] := by
+  decide
+
+/-- Fork test `lookahead_follows_the_learned_arrival_and_location`'s Tuesday (2026-09-08,
+`capacity_lookahead.rs`), window 07:00–15:00, wake 06:05: the cut holds 420 minutes, more than
+the 6-block budget, and the limit keeps three 5s and three 4s. -/
+theorem a_future_tuesday_keeps_its_budget :
+    Cal.toDay ⟨2026, 9, 8⟩ = 739866 ∧
+    slotMinutesOf (energize Curves.shipped 3 .lounge ⟨(Cal.instantOf Cal.chicago 739866 365).sec, 0⟩
+        (cutSlots CutCfg.shipped (Cal.instantOf Cal.chicago 739866 420).sec
+          (Cal.instantOf Cal.chicago 739866 900).sec [] [] 0).slots) = 420 ∧
+    (List.finRange 6).map (limitHist 360 (histOf' (energize Curves.shipped 3 .lounge
+        ⟨(Cal.instantOf Cal.chicago 739866 365).sec, 0⟩
+        (cutSlots CutCfg.shipped (Cal.instantOf Cal.chicago 739866 420).sec
+          (Cal.instantOf Cal.chicago 739866 900).sec [] [] 0).slots)))
+      = [0, 0, 0, 0, 180, 180] := by
+  decide
+
+/-- Fork test `lookahead_uses_the_learned_energy_curve`'s Sunday (2026-09-13, a home day,
+window 10:00–18:00, wake 06:05): the prior gives 4 h at 3 and 2 h at 2 (the week-grid
+snapshot's Sunday); the fixture model's learned home curve moves one hour from 3 to 2. -/
+theorem the_learned_curve_moves_an_hour_on_sunday :
+    Cal.toDay ⟨2026, 9, 13⟩ = 739871 ∧
+    (List.finRange 6).map (limitHist 360 (histOf' (energize Curves.shipped 3 .home
+        ⟨(Cal.instantOf Cal.chicago 739871 365).sec, 0⟩
+        (cutSlots CutCfg.shipped (Cal.instantOf Cal.chicago 739871 600).sec
+          (Cal.instantOf Cal.chicago 739871 1080).sec [] [] 0).slots)))
+      = [0, 0, 120, 240, 0, 0] ∧
+    (List.finRange 6).map (limitHist 360 (histOf' (energize Curves.fixture 3 .home
+        ⟨(Cal.instantOf Cal.chicago 739871 365).sec, 0⟩
+        (cutSlots CutCfg.shipped (Cal.instantOf Cal.chicago 739871 600).sec
+          (Cal.instantOf Cal.chicago 739871 1080).sec [] [] 0).slots)))
+      = [0, 0, 180, 180, 0, 0] := by
+  decide
+
+/-- **Hours since wake count real hours across a DST transition**: on 2026-11-01 in Chicago a
+wake at 00:00 and a slot at 03:30 are 4.5 hours apart, so a home day predicts `4-8`'s 3, where
+the civil 3.5 hours would predict `1-4`'s 4. -/
+theorem hours_since_wake_count_real_hours_across_the_fall_transition :
+    hswAt ⟨(Cal.instantOf Cal.chicago 739920 0).sec, 0⟩ ⟨(Cal.instantOf Cal.chicago 739920 210).sec, 0⟩ = 450 ∧
+    (futureEnergy Curves.shipped 5 .home ⟨(Cal.instantOf Cal.chicago 739920 0).sec, 0⟩
+        ⟨(Cal.instantOf Cal.chicago 739920 210).sec, 0⟩).val = 3 ∧
+    (predictAt Curves.shipped homeKey 350).val = 4 := by
   decide
 
 end Look
