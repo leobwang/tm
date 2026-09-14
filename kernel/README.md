@@ -8679,6 +8679,230 @@ to 81, cheats to 90 and parity entries to P12.
 built tree; axiom audit **2079 theorems**; corpus **29/37 files and 4/5 whole plans**; burn-down
 **15** (stage 5: 0, stage 6: 15). All unchanged, as a docs-only commit must leave them.
 
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5, D10 track, step L1 (branch stage5-lookahead,
+     worktree .claude/worktrees/stage5-lookahead).  Built in parallel with the D9
+     track on rebuild-on-lean (D11).  Cheat numbers are the design's reserved
+     labels; whoever merges renumbers (AGENTS §6.2, §6.4).
+     =========================================================================== -->
+
+## Stage 5 D10 L1, 2026-09-14: capacity is an exact mixture — lounge and home weighed after each budget, nothing rounded
+
+**Starting point.**  The worktree at `43e6309` was clean.  The baseline figures are the
+previous blocks' (check.sh 7/7, audit 2079, corpus 29/37 files and 4/5 whole plans,
+burn-down 15, `cargo test --workspace` 1010 / 0, FFI 76).  The figures at the end of this
+block are re-measured in this worktree.
+
+**The plan executed** is design `kernel/design/stage5/stage5-D9-D10-design.md` §13.2 and
+§14.8's L1 row, under the owner's D10 and D17 (`capDen = 10^18`).  One new module,
+`TmKernel/Lookahead.lean`, imported in `TmKernel.lean` after `Capacity` in the same commit
+(seventeen imports now).  It imports `Capacity` only.  `Capacity.lean` is not edited: the
+mixture produces numerators for step 3's `DayCapacity` over step 3's `Den`, and every law
+about the EDF pass below is proved over step 3's own definitions.
+
+### The unit and the weight (D17, R10)
+
+| name | what it is |
+|---|---|
+| `capDen`, `capDenD` | `10^18` (`capDen_eq_pow`), and the same as step 3's `Den` |
+| `Weight` | `{w : Nat // w ≤ capDen}`: `p = w / capDen`, in `[0, 1]` by the type |
+| `WErr` | `badWeight`, `weightAboveOne`, `weightPrecision` |
+| `mkWeight? n d` | Rust's decimal pair for `p_lounge` (`0.9` → `9 / 10`).  Refuses `d = 0` (`badWeight`), then `n > d` (`weightAboveOne`), then `capDen % d ≠ 0` (`weightPrecision`); otherwise the weight is `n · (capDen / d)`.  Nothing is rounded |
+
+**The rejection theorems** (R10, both directions, AGENTS §5.8):
+
+- `mkWeight?_zero_den`, `mkWeight?_above_one`, `mkWeight?_precision`: each refusal, by name,
+  for every pair that meets its condition.
+- `mkWeight?_refuses_more_than_18_places`: every denominator `10^k` with `k > 18` is refused,
+  whatever the numerator.  This is D17's "more than 18 decimals", as a quantified law.
+- `mkWeight?_accepts`, and `mkWeight?_ok_elim` for the converse: an accepted pair had
+  `0 < d`, `n ≤ d` and `d ∣ capDen`.
+- `mkWeight?_denotes`: an accepted weight is **exactly** the pair, `w · d = n · capDen`.
+  `mkWeight?_complement` gives the same for `1 − p`.
+- `mkWeight?_accepted_width`: `n ≤ d ≤ 10^18`.
+- `mkWeight?_round2` (the fit's two-decimal `9/10` is `9·10^17`) and `mkWeight?_on_witnesses`
+  (accepts `0/1`, `1/1`, `1/2`, `9/10`, `1/10^18`; refuses `1/0`, `3/2`, `1/3` and `1/10^19`
+  by name).
+
+**Widths** (R10).  A weight is `≤ 10^18 < 2^60`.  A mixed level is
+`≤ capDen · max lounge home` (`mix_width`), so at L6's bound of 1,440 minutes a level it is
+`≤ 1.44·10^21 < 2^71`.  One minute is already past 2^53 and `u64`, so unit counts cross the
+wire as digit strings and Rust holds them as `u128` (D17).  The wire itself is L6's.
+
+**Two readings recorded, not decisions.**
+
+- A negative weight or NaN cannot be spelled as a `Nat` pair.  The refusal of `-0.2` and NaN
+  belongs to L6's digit-string reader and the host's `decimal_pair`.
+- A written trailing zero counts as a place: `1000000000000000000 / 10^19` (a 19-place
+  spelling of `0.1`) is refused by `weightPrecision`, although its value is representable.
+  That is D17's words read literally ("more than 18 decimal places").  The host's shortest
+  round-trip text never writes a trailing zero, so no weight Rust sends reaches it.
+
+### The mixture (§13.2, D10-3)
+
+`Hist := Fin 6 → Nat` is one location's whole minutes per level on one day, **after** that
+location's budget limit.  `mix w lounge home l = w · lounge l + (capDen − w) · home l`,
+`mixDay d w L H = ⟨d, mix w L H⟩`, and `ofHist d h = ⟨d, capDen · h⟩` is a pure day (day 0
+until L9).
+
+**The four laws:**
+
+| law | theorem |
+|---|---|
+| between `capDen · min` and `capDen · max`, at every level | `mix_between_the_locations` |
+| weight 0 is home | `mix_at_zero_is_home` (and `mixDay_at_a_certain_weight`: `mixDay d Weight.home L H = ofHist d H`) |
+| weight `capDen` is the lounge | `mix_at_one_is_lounge` (and the same for `Weight.lounge`) |
+| it denotes `p·L + (1 − p)·H` exactly for the decoded `p = n/d` | `mix_denotes_the_weighted_sum` (`mix · d = capDen · (n·L + (d − n)·H)`), and over step 3's rationals `mixDay_minutesAt_is_the_expectation` (`Q.equiv` of `minutesAt capDenD` with `(n·L + (d−n)·H) / d`) |
+
+What a deadline of `ci` sees is linear too: `eligAt_mix`, and
+`mix_atLeast_between_the_locations` puts `DayCapacity::at_least` between the locations.
+`mix_on_a_witness`: `p = 9/10`, lounge 60 minutes at level 5 and home 120 at level 3 give 54
+minutes at level 5 and 12 at level 3; a `ci 4` deadline sees 54, a `ci 3` one 66.
+
+### The budget limit, and the refutation of mixing first
+
+Fork-point `limit_to_budget` sorts slots by energy, highest first, and takes
+`budget × block_min` minutes greedily.  Over a histogram that is step 3's inner loop at
+`ci = 0`, so **`limitHist B h := dayTake 0 h B`**, reused rather than restated
+(`limitHist_keeps_the_min`: it keeps `min(B, day)`).
+
+- **`mixing_before_the_budget_is_not_the_expectation`** (the lookahead design's witness):
+  budget 60, lounge 60 minutes at each of levels 5 and 4, home 120 at level 3, `p = ½`.
+  `mixing_before_the_budget_on_the_witness` gives both days.  Limited first and then mixed:
+  30 minutes at level 5 and 30 at level 3.  Mixed first and then limited to `60 · capDen`:
+  30 at level 5, 30 at level 4, and **nothing at level 3**.  They differ at level 3.
+- **The other direction**, `mixing_before_the_budget_agrees_at_a_certain_weight`: at `w = 0`
+  and `w = capDen` the two orders agree for every budget and histogram.  It rests on
+  `dayTake_scale`, `dayRest_scale` and `dayOut_scale` (the inner loop commutes with scaling).
+  So the order matters exactly where D10 changed the answer.
+
+### The threshold twin (parity P1)
+
+- `twin w` is `Weight.lounge` when `capDen ≤ 2w`, else `Weight.home`.
+- `twin_is_the_forks_location`: the twin's day is `capDen ×` the location the fork point
+  picks.
+- `twin_is_the_forks_threshold`: for a decoded pair, `capDen ≤ 2w ↔ d ≤ 2n`, which is `p ≥ ½`
+  exactly.
+
+The fork point compares the `f64` against `0.5`.  That test is exact on the decimal text:
+`0.5` is a double, and rounding to nearest is monotone, so a double whose shortest text is
+`≥ 0.5` is itself `≥ 0.5`.  L7 runs the harness through this twin (design §13.7).
+
+### `capDen` is unobservable: two runs (D5)
+
+- `the_bin_does_not_see_capDen`: scaling an availability's numerator and denominator by
+  `k > 0` leaves §7.1's `binOfScaledQ` unchanged.  It is an instance of step 2's
+  `binOfScaledQ_congr`.
+- **`edf_commutes_with_scaling`**: step 3's `edf` over `k · den` on days scaled by `k` is the
+  first run's days, scaled.  **`edfGrants_commute_with_scaling`**: each grant's `avail` and
+  `reserved` are the first run's, scaled (`scaleGrant`).  Both are proved over
+  `reserveRest`/`reserveOut`/`availUntil` (`reserveRest_scale`, `reserveOut_scale`,
+  `availUntil_scale`, `edfCaps_scale`, `edfGrantsGo_scale`) without editing `Capacity.lean`.
+- `a_scaled_grant_keeps_its_verdicts`: IMPOSSIBLE and the bin at a scaled grant are the first
+  run's.
+
+So D17's `10^18` is a one-line change: no verdict of the pass can see it.  No existing
+two-run theorem was touched, so none was re-proved.
+
+### Parity: P1's extension
+
+P1 (stage 5 step 1) said "`p·lounge + (1 − p)·home`, exact".  Refined here, as design §17
+writes it; the harness that checks it is L7's:
+
+| # | site | the kernel | the fork point | authority | step |
+|---|---|---|---|---|---|
+| **P1 (refined)** | future-day capacity **and everything downstream**: each dated candidate's `avail`, `allocation`, `shortfall`, `u`, bin, `p`, HOT/IMPOSSIBLE class, the floor pass's availability, the week grid | `w·L + (capDen − w)·H` numerators over `capDen = 10^18`, mixed **after** each location's budget limit (`mix`, `limitHist`), the weight decoded exactly or refused by name | `capacity::lookahead`: `lounge` iff `model.p_lounge_on(wd, cfg) >= 0.5`, that one location's `u32` minutes; `f64` `u` | D10, D17; checked through the threshold twin (`twin_is_the_forks_location`, `twin_is_the_forks_threshold`), with `mix_between_the_locations` as the bounds on the real run | L1 (recorded), L7 (measured) |
+
+Nothing on the wire calls the mixture yet, so P1's refinement is not observable.
+
+### Both directions, decided witnesses, and the cheats
+
+| cheat (design label = number here) | the false claim | fails because |
+|---|---|---|
+| 108 | `mix` with `w` and `capDen − w` swapped is home at weight 0 | `decide` proves it false (control `mix_at_zero_is_home`, `mix_on_a_witness`) |
+| 109 | `3/2` is a weight: the subtype value, and `mkWeight? 3 2` accepting it | `decide` proves `1.5·10^18 ≤ capDen` false; `rfl` fails on `mkWeight?` (control `mkWeight?_above_one`) |
+| 117 | mixing before the budget limit is the expectation, on the witness | `decide` proves it false (control `mixing_before_the_budget_is_not_the_expectation`) |
+
+**Numbers.**  The highest numbers in this checkout were gap 81, cheat 90 and P12.  The design
+(§14.0 item 1, §16) reserves gaps 82–99, cheats 91–118 and P13–P31 for D9 and D10, with 108
+and 109 for L1.  This step uses those labels as numbers so the parallel D9 track's 91–107
+cannot collide.  Label to number: `108 → 108`, `109 → 109`, and `117 → 117`.  117 is L5's
+label (mix before limit), taken in L1 because the refutation it inverts is proved here.  L5
+must not take 117 again.  No gap was added.
+
+**Probes, under the 8 GB cap and `timeout 120` first**, run with `LEAN_PATH` at the built
+package:
+
+| probe | wall | peak |
+|---|---|---|
+| `Lookahead.lean` alone, its 7 decided/`rfl` witnesses included | 0.26 s | 0.57 GB |
+| cheats 108, 109, 117 against `TmKernel.Lookahead` | 0.12 s | 0.51 GB |
+
+The witnesses are `capDen_eq_pow`, `capDen_pos`, `mkWeight?_round2`, `mkWeight?_on_witnesses`,
+`mixing_before_the_budget_is_not_the_expectation`, `mixing_before_the_budget_on_the_witness`
+and `mix_on_a_witness`.  Seven, within the 20 per step.  Every literal is six levels long and
+below 90 characters, with no `Entry` value and no zone transition.  The first probe of the
+proofs failed on eight tactic steps, none of them a witness.  All were fixed before the
+module was imported.
+
+### Recorded disagreements between the design and the repo
+
+1. **Imports.**  Design §13.1 says `Lookahead.lean` imports `Capacity`, `Cal`, `Line`, `Plan`
+   and `Tree`.  L1 needs only `Capacity`, so it imports only `Capacity`.  `Cal` is the D9
+   track's (B1 rewrites it).  L2–L5 add the others when their definitions need them.
+2. **Where the refutation lives.**  Design §13.4 and §15 place
+   `mixing_before_the_budget_is_not_the_expectation` in L5, over L4's `limitHist`.  This step's
+   instructions put it in L1.  So L1 defines `limitHist` as step 3's `dayTake` at `ci = 0` (the
+   per-level greedy D10-6 names).  **L4 must prove `limitSlots_is_limitHist` against this
+   definition and must not add a second one** (AGENTS §5.3).  The statement is §15's signature
+   verbatim.  Cheat 117 moved with it.
+3. **The design's weight comment** (§13.2) lists the refusals in the order `badWeight`,
+   `weightAboveOne`, `weightPrecision`.  `mkWeight?` checks them in that order, and each
+   rejection theorem carries the hypotheses that make the earlier checks pass.
+4. **Signatures.**  §15's `the_bin_does_not_see_capDen` builds its positivity proof with
+   `by simp [Look.capDen]; omega`.  The theorem uses `Nat.mul_pos hk capDen_pos` instead, with
+   the same statement.  §13.2's `ofHist (d : Nat)` is `ofHist (d : Day)`, and `Day` is `Nat`.
+5. **Memory cap.**  §14.0 item 3's 40 GB cap is superseded by this workflow's 30 GB
+   (README "Stage 5 D9/D10: the owner's answers"), and every run here used it.
+
+### The recursion rule (D9-21)
+
+This step adds no function that recurses over a list the wire can make large.  `Hist` is
+`Fin 6 → Nat`.  The only new recursion is in proofs, by induction over step 3's own
+`reserveRest`, `edfCaps` and `edfGrantsGo`.
+
+**Observable behaviour changes: none.**  Nothing on the wire calls `mkWeight?`, `mix` or the
+scaling laws.  **Behaviour rows: none.**
+
+**New theorems** (42, audited under `Check.lean`'s new `APPENDED 2026-09-14 (stage 5, D10
+track)` step-L1 banner), all in `Lookahead.lean`.  **Goals:** none added, discharged or
+refuted.  §13.2's theorems are in-step (design §15), so `Goals.lean` is untouched and the
+burn-down does not move.  No theorem was retired, weakened or deleted.
+
+**Owed, by name (the rest of the D10 track, not attempted here):** L2 (E7, after D9's B1),
+L3 (the cut), L4 (energy, `limitSlots_is_limitHist` against this `limitHist`), L5
+(`lookahead`, `pureDay`, `mkInput?`), L6 (the capacity wire: digit strings, `decimal_pair`,
+the §13.6 rejection table, P26 and P30), L7 (the parity twin harness), L8 (wiring, `u128`
+reserves in Rust), L9 (day 0 in the kernel).
+
+**Re-measured after this step** (every command under the 30 GB cap, in this worktree, on the
+tree committed):
+
+| measurement | value |
+|---|---|
+| `lake build TmKernel:static`, cold, in the new worktree | 146.1 s wall (before this step's edits; the D9 track was building on the same machine) |
+| `check.sh` | **7/7**, 2.75 / 2.78 / 2.75 s on the built tree; the parent tree measured 2.77 / 2.74 / 2.79 s in the same session, so the change is under 1% (§14.0 item 4 allows 10%) |
+| axiom audit | **2121 theorems** (2079 + 42; `grep -c '^#print axioms' Check.lean` 2121, 2121 distinct, 2121 declared) |
+| `Negative.lean` | 109 errors on 108 lines, cap not reached; 103 CHEAT blocks, 102 erroring and the withdrawn CHEAT 7 exempt |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **15** (stage 4: 0, stage 5: 0, stage 6: 15; unchanged) |
+| `cargo test --workspace` | **1010 passed / 0 failed / 0 ignored across 66 binaries** (`cli_latency.rs` included) |
+| `cli_latency.rs`, first verb | 622.8 / 672.9 / 606.9 ms (three serial runs, 226 files, 2,959 lines; step 3 measured 622.6 / 617.6 / 617.7 ms) |
+| `cli_latency.rs`, later verb | 65.8 / 55.8 / 55.7 ms |
+| FFI suite | **76** (68 kernel + 8 corpus, unchanged) |
+
+`TmKernel.lean` holds seventeen imports, `Lookahead` after `Capacity`.  AGENTS §2.3 names it.
+
 ## Stage 5 A1, 2026-09-14: gap 44 closed — accumulating twins, a 200,000-element array on a 2 MiB stack
 
 The D9 track's first step (design `kernel/design/stage5/stage5-D9-D10-design.md` §14.1, row A1;
@@ -9345,3 +9569,907 @@ agree at 2207. Axioms stay within `propext`, `Quot.sound` and `Classical.choice`
 | `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (unchanged) |
 | FFI suite (`cargo test` in `tm-kernel-ffi`) | **81 passed / 0 failed** (kernel 72, corpus 8, stack 1) |
 | `cli_latency.rs` | green: first verb 627.7 ms, later verb 50.7 ms |
+
+## Stage 5 D10 merge-in, 2026-09-14: the D9 track's A1–B1 reach the lookahead branch — no number taken twice
+
+`rebuild-on-lean` (A1 `b2ad4ba`, A2 `013ed83`, A3 `c2ebb8f`, B1 `c73e032`) merged into
+`stage5-lookahead` (L1 `319919c`), so L2–L4 can use `Cal.instantOf` and the zone table. The
+merge base is `43e6309`.
+
+**Conflicts and how they were resolved (AGENTS §6.5).** Git merged `AGENTS.md` (the D10 import
+order and `Lookahead` entry, and the D9 note on `JVal.dec`, touch different lines), `Json.lean`,
+`Cal.lean`, `Plan.lean`, `Boundary.lean`, the Rust tests and `TmKernel.lean` without conflict.
+Three append-only files conflicted at their tails, and each keeps both sides whole, the D10
+banner first and the D9 banners after it:
+- `Check.lean`: the L1 banner (42 names), then the A1, A2, A3 and B1 banners (128 names).
+- `Negative.lean`: the L1 cheats 108, 109 and 117, then A2's 119–121 and B1's 91–92. Both sides
+  appended before `end Tm`, and the only textual overlap was the closing `decide` of the last
+  cheat on each side, which the resolution repeats once per side.
+- `kernel/README.md`: the L1 block, then the A1, A2, A3 and B1 blocks, then this one.
+
+**Numbers: no collision, so nothing was renumbered.** The map is the identity:
+
+| item | D10 side | D9 side |
+|---|---|---|
+| cheats | 108, 109, 117 (design labels; 117 is L5's, taken in L1) | 91, 92 (B1's labels); 119, 120, 121 (A2, outside §16's range) |
+| gaps | none | 100 (A1-a), 101 (A2-a), 102 (A3-a), 103 (A3-b) |
+| parity | P1 refined | P16 |
+
+Highest numbers after the merge: gap 103, cheat 121, parity P16. D10 steps from here on must not
+take 119–121 or 100–103. L5 must not take 117 again.
+
+**The three counts (AGENTS §6.3) reconcile.** 2079 at the merge base, +42 from L1, +128 from
+D9 (A1 22, A2 42, A3 0, B1 64). `check.sh` reports **2249**, and `grep -c '^#print axioms'
+Check.lean` gives 2249, all distinct.
+
+**Carried forward, unchanged by the merge:** gap 102 (gates W3), gap 103 (clears at B4), B1's
+`.nanos`-vs-`Date` note for C2 and W2, and the `Tm.Stamp` namespace note for B2. For L2: `Cal`
+is now the B1 version. `Lookahead.lean` still imports only `Capacity`, and L2 adds `Cal`.
+
+**Observable behaviour changes: none beyond the D9 side's own rows (A2's).** **Goals:** none moved
+(burn-down **15**). **New theorems: none** beyond the two sides' own.
+
+**Re-measured on the merge tree** (every command under the 30 GB cap, in this worktree):
+
+| measurement | value |
+|---|---|
+| `check.sh`, first run after the merge (every module D9 touched rebuilt) | **7/7**, 150.7 s wall |
+| `check.sh`, built tree | **7/7**, 2.70 / 2.72 s |
+| axiom audit | **2249 theorems** (2079 + 42 + 128) |
+| `Negative.lean` | check 4 ok, 107 `CHEAT n` blocks |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **15** (unchanged) |
+| `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (D9's `loggen` included) |
+| FFI suite (`tm-kernel-ffi`) | **81 passed / 0 failed** (kernel 72, corpus 8, stack 1) |
+| `cli_latency.rs` | green: first verb 617.2 / 607.4 / 632.8 ms, later verb 60.8 / 60.8 / 55.8 ms |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5, D10 track, step L2 (branch stage5-lookahead,
+     worktree .claude/worktrees/stage5-lookahead).  Built in parallel with the D9
+     track on rebuild-on-lean (D11).  Takes cheats 110-111, gap 85 and parity
+     entry P27, the design's own L2 labels (§16, §20, §17), none taken in this
+     checkout or on rebuild-on-lean at c73e032.  Whoever merges renumbers
+     (AGENTS §6.2, §6.4).
+     =========================================================================== -->
+
+## Stage 5 D10 L2, 2026-09-14: the day's window solves E7 in real seconds — two stage-6 goals discharged in stage 5
+
+**Starting point.**  The worktree at `1dbb6a1` (the D9 merge-in) was clean: check.sh 7/7, audit
+2249, corpus 29/37 files and 4/5 whole plans, burn-down 15, `cargo test --workspace` 1013 / 0,
+FFI 81.  Every figure at the end of this block is re-measured in this worktree.
+
+**The plan executed** is design `kernel/design/stage5/stage5-D9-D10-design.md` §13.3's E7 part and
+§14.8's L2 row, under the owner's D12 (stage 6's window pulled into stage 5) and Q6 (quirk (e)
+ported faithfully).  Files: `Lookahead.lean` (a new section, and `import TmKernel.Cal`),
+`Arith.lean` (the R3 and R2 rows of its site table, prose only), `Goals.lean`, `Check.lean`,
+`Negative.lean`, `AGENTS.md` (§2.3's module map, §8.3 and §8.4 move E7).  No new module, so
+`TmKernel.lean` is unchanged at seventeen imports.  `Cal.lean` and every other D9 module are
+untouched.
+
+### What was built (`Lookahead.lean`, section "E7: the day's window")
+
+| piece | what it is | fork point |
+|---|---|---|
+| `windowBase a wm wc` | `max a (min (a + wm) wc)` | `base_end = (arrival + window_min).min(cap).max(arrival)` |
+| `clipWalls lo ws` | each start raised to `lo`, **no upper bound**, empty walls dropped | `walls_after`'s map and filter |
+| `sortByStart`, `mergeStep`, `mergeSorted` | sorted by start (an insertion sort), then merged with touching walls joined, as a `foldl` and a `reverse` | `merge_walls` |
+| `extendStep`, `windowEnd a wm wc ws` | the walk: a wall starting before the end extends it by its whole length | `window_and_budget`'s loop |
+| `windowEndFast` | the same walk over core's `List.mergeSort`; **`@[csimp]` twin** (`windowEnd_eq_windowEndFast`) | — |
+| `wallOverlap a stop ws` | the units of `[a, stop)` under at least one wall; **specification only**, never run | §8.1's `Σ wall minutes inside [arrival, end]`, as the fork counts it |
+| `windowMinOf wh` | **site R3, reopened**: `halfUpQ (60 · wh)` on the exact pair | `(window_hours * 60.0).round().max(0.0)` |
+| `budgetOf wh bm br` | **site R2 on the exact pairs**: `Arith.budgetBlocks (60 · whn) (max 1 bm · whd) br` (`budgetOf_denotes`) | `budget_blocks` with `block_min().max(1)` |
+| `windowOn z d arrival cap wm walls` | the window of day `d` in **UTC seconds**: `instantOf z d arrival`, the cap on the arrival's local date | `window_and_budget(local_dt(tz, d, arrival), walls, cfg)`, `cap = local_dt(tz, arrival.date_naive(), window_cap)` |
+| `WallIx`, `shiftBack`, `wallOfEntity`, `wallIndex z bm p`, `wallsOn ix d` | the plan's walls, read **once per request**: every item not settled whose effective shape is an interval, the start moved back by `buffer:` on the local clock, both ends through `instantOf`, belonging to every date from the shifted start's to the end's | `Ctx::walls_on`, `Ctx::walls_by_date` |
+
+**The rule the design fixes (§2.3), in the module doc:** stage 6's `dayPlan` must reuse
+`windowEnd`, `windowOn`, `wallIndex` and `wallsOn`, never a second copy.
+
+### Goals: two discharged, both refuted as written and restated under their names
+
+`Goals.lean`'s STAGE 6 held the E7 block: the real `wallsInside`, the provisional
+`windowEnd := sorry`, and the goals `the_window_end_solves_the_equation` (E7a) and
+`the_window_end_is_the_least_solution` (E7b).  Under D12 the block is **deleted**.  Both goals
+were **false as written** against the fork, which clips at the arrival, merges, counts overlap
+and clamps the base to the arrival (§3.1 item 3):
+
+| goal as `Goals.lean` STAGE 6 stated it | refuted by | why |
+|---|---|---|
+| E7b over `wallsInside` and `min (arrival + window) cap` | **`the_window_end_is_not_the_least_solution_as_stage_6_wrote_it`** (`¬ ∀ …`), from the design's witness **`the_window_end_is_not_the_least_solution_over_walls_wholly_inside`** | arrival 420, window 480, cap 1140, wall `(890, 950)`: 900 solves the old equation because the wall is not wholly inside `[420, 900]`; the fork, and `windowEnd`, give 960 |
+| E7a over `wallsInside` and the unclamped base | **`the_window_end_does_not_solve_the_equation_as_stage_6_wrote_it`** (`¬ ∀ …`), from **`the_window_base_is_clamped_to_the_arrival`** | arriving at 20:00 after a 19:00 cap: the fork's window is empty and ends at 1200; the old equation's base is 1140 |
+| (a third difference, the clip) | **`a_wall_begun_before_the_arrival_extends_the_window`** | a wall `(400, 480)` against a 420 arrival extends the window to 960, and `wallsInside` counts nothing |
+
+**Restated to the oracle's overlap semantics and proved, under the design §15 signatures,
+verbatim:**
+
+- **E7a `the_window_end_solves_the_equation`**:
+  `windowEnd a wm wc ws = windowBase a wm wc + wallOverlap a (windowEnd a wm wc ws) ws`;
+- **E7b `the_window_end_is_the_least_solution`**:
+  `m = windowBase a wm wc + wallOverlap a m ws → windowEnd a wm wc ws ≤ m`, with the stronger
+  **`windowEnd_le_of_prefixpoint`** (every `m` with `windowBase + wallOverlap a m ws ≤ m`).
+
+Both were added to STAGE 5 and discharged in this step, so they never stood in `Goals.lean`
+(design §15's transient group).  A note under STAGE 5 records the move.  **The burn-down drops
+from 15 to 13, and the drop is stage 6's: its goals go from 15 to 13.**  AGENTS §8.4's list
+says so.
+
+**The proof route** (design risk K16's merged-interval bridge): `mergeSorted_spec` (any
+start-sorted list merges into a chain of disjoint, nonempty walls with the same cover, via
+`mergeStep_spec` and `foldl_mergeStep_spec`); `covered_clipWalls` (at or after the arrival,
+clipping changes no unit's cover); `countIn_wall` and `countIn_or` (one wall starting at or
+after `a` puts `min w.2 x − w.1` units under `[a, x)`, and disjoint covers add); then
+`extend_solves` and `extend_least` by induction over the chain.  `walk_is_the_least_solution`
+states both for **any** start-sorted permutation of the clipped walls.  The insertion sort and
+core's merge sort are both instances, so the two walks are equal (`windowEnd_eq_windowEndFast`).
+
+**Audit (AGENTS §7.4).**  (1) Every binder is used.  (2) E7b's hypothesis is satisfiable: `m :=
+windowEnd a wm wc ws` meets it by E7a.  (3) The names say what the statements say.  (4) Both
+directions: E7a says the end is a solution, E7b says nothing smaller is.  (5) The compiled code
+runs `windowEndFast`, and the `@[csimp]` theorem makes the statements about it.  `windowOn`,
+which L5 will call, is covered by `windowOn_solves_E7`.  (6) Units: the theorems hold in any one
+unit, and `windowOn` feeds them UTC seconds, which are `instantOf`'s whole instants
+(`instantOf_ns`).  Laws beside them: `windowBase_le_windowEnd`, `arrival_le_windowEnd`,
+`windowEnd_without_walls`.
+
+### Real seconds, through B1's zone table
+
+Every endpoint is UTC seconds from `Cal.instantOf`.  **`the_window_counts_real_hours_across_the_spring_transition`**:
+on 2026-03-08 in Chicago, arriving at 01:00 CST, eight hours end at 10:00 CDT on the clock,
+28,800 seconds later.  So a DST day's window is the fork's, and **P28 (civil minutes) is never
+recorded**.
+
+**The fork's tests, as witnesses on Chicago's 2026 table** (day 739865 is 2026-09-07, a Monday:
+`the_witness_days_are_the_dates_they_name`):
+
+| fork test | theorem |
+|---|---|
+| `budget_of_an_eight_hour_window` (07:00 → 15:00, budget 6) | `budget_of_an_eight_hour_window` |
+| `walls_extend_the_window` (a 12:50–13:50 wall → 16:00) | `walls_extend_the_window` |
+| `the_cap_bounds_the_window` (14:00 → 19:00) | `the_cap_bounds_the_window` |
+| `capacity_slots.rs` `wall_extension_reaches_a_fixed_point` (16:30) | `wall_extension_reaches_a_fixed_point` |
+
+Also: `window_and_budget_on_witnesses` (8 h is 480 minutes and 6 blocks; 7.33 h is 440; half a
+minute rounds up; `block_min = 0` reads as 1; 7.5 h at 50-minute blocks is 6) and
+`overlapping_walls_count_once` (two overlapping walls extend by their union, 150, not 200).
+
+### Quirk (e): the multi-day wall, ported faithfully (owner's Q6)
+
+**`a_multi_day_wall_puts_one_evening_in_two_windows`**: a wall from Monday 09:00 to Wednesday
+17:00 (2026-09-07 to 09-09, Chicago) is handed unclipped to Tuesday and Wednesday.  Tuesday's
+window runs from 07:00 to **Thursday 01:00**, and so does Wednesday's, so Wednesday 17:00 to
+Thursday 01:00, after the wall ends, lies in both windows.
+
+### Gap 85 (new; the design's label) — a multi-day wall puts one stretch of free time in several days' windows
+
+(1) *What is not done*: `wallsOn` gives each date every wall that covers it, unclipped (fork
+`Ctx::walls_on`), and `windowEnd` clips a wall only at the arrival (fork `walls_after`).  A wall
+spanning several dates therefore extends the window of every date it covers past that date's
+end, and the free time after it is counted in each of those windows
+(`a_multi_day_wall_puts_one_evening_in_two_windows`).  (2) *Why not now*: the owner's Q6 (e)
+ports every oracle quirk faithfully while parity is the stage's acceptance, and fixes this one
+later.  (3) *Cost*: inflated future capacity on the dates under a multi-day wall.  L4's budget
+limit caps each date at `budget × block_min` minutes, so the inflation per date is bounded by the
+budget.  No verb reads it yet: nothing on the wire calls `windowOn`.  (4) *When it clears*: after
+the parity run (L7), as a behaviour change with its own parity entry.  The fix bounds each date's
+walls and window to that date.
+
+### Site R3 reopened (D10-10), and P27
+
+`Arith.lean`'s R3 row said "eliminated: the window enters the kernel as minutes".  Since this
+step the kernel computes the window, so the row now reads **half-up on the exact pair**, at
+`Look.windowMinOf`.  The R2 row names `Look.budgetOf` as its exact-pair caller.  This is design
+§20's L2 behaviour row.  It is a correction to the site table: the binary is unchanged.
+
+| # | site | the kernel | the fork point | authority | step |
+|---|---|---|---|---|---|
+| **P27** | `window_hours × 60` not whole (e.g. `7.33` h), and the budget | `halfUpQ (60 · num/den)` for the window; one exact floor for the budget (`budgetOf`) | `f64::round` of the double product; `f64` floor of `window_hours × 60 / block_min × budget_ratio` | site R3 reopened (D10-10) | L2 (recorded), L7 (measured) |
+
+Not observable yet: nothing on the wire sends `windowHours`.
+
+### Cheats (`Negative.lean`, appended)
+
+| # | label | cheat | fails because |
+|---|---|---|---|
+| **110** | L2 | walls counted only when wholly inside: `windowEnd 420 480 1140 [(890, 950)]` claimed to be `min (420 + 480) 1140 + wallsInside 420 900 …` = 900 | `decide` proves it false (control `the_window_end_is_not_the_least_solution_over_walls_wholly_inside`) |
+| **111** | L2 | overlapping walls not merged: the walk over the sorted, unmerged walls `[(650, 750), (600, 700)]` claimed equal to `windowEnd` | 1100 against 1050; `decide` proves it false (controls `the_window_end_solves_the_equation`, `overlapping_walls_count_once`) |
+
+Each fails at its own line with `Tactic decide proved that the proposition … is false`.
+
+### Rule D9-21
+
+Functions this step adds that walk a list the wire can make large: `clipWalls` (core `map` and
+`filter`, tail-recursive by core's `@[csimp]`), `mergeSorted` (a `foldl`, then core's `reverse`),
+the walk (`List.foldl extendStep`), `wallIndex` over the store's ids and `wallsOn` over the index
+(core `filterMap`, `filterMapTR`).  `sortByStart` is quadratic and not tail-recursive; it is the
+specification's sort, because core's `List.mergeSort` is well-founded and does not reduce under
+`decide`.  **`windowEnd_eq_windowEndFast` is its `@[csimp]` twin**, so compiled code sorts with
+`List.mergeSort` (`mergeSortTR₂` by core's `@[csimp]`).  `wallOverlap` is never run.
+
+### The `decide` budget (§14.0 item 4)
+
+13 new decided witnesses and 2 cheats, 15 in all, within the budget of 20.  Every witness uses at
+most Chicago's **2 zone transitions**, no `Entry` value and no string literal.  The witnesses are
+`the_window_end_is_not_the_least_solution_over_walls_wholly_inside`,
+`the_window_base_is_clamped_to_the_arrival`, `a_wall_begun_before_the_arrival_extends_the_window`,
+`overlapping_walls_count_once`, `window_and_budget_on_witnesses`,
+`the_witness_days_are_the_dates_they_name`, `budget_of_an_eight_hour_window`,
+`walls_extend_the_window`, `the_cap_bounds_the_window`, `wall_extension_reaches_a_fixed_point`,
+`the_window_counts_real_hours_across_the_spring_transition`,
+`the_buffer_is_taken_off_the_local_clock` and
+`a_multi_day_wall_puts_one_evening_in_two_windows`.  All were probed in a scratch file under
+`/tmp/claude-1000/l2probe/` against the built package, under `MemoryMax=8G` and `timeout 120`,
+before the module was edited: the whole section took 0.54 s at a 638 MB peak, and the two cheats
+0.09 s at 519 MB.  Two witnesses were restated after that probe (the last conjunct of
+`a_multi_day_wall_puts_one_evening_in_two_windows`, and the second of
+`the_buffer_is_taken_off_the_local_clock`), and were probed in the edited module under the same
+cap before it was built.  The committed `Lookahead.lean` elaborates in **0.65 s at a 657 MB peak** under
+the same cap (0.24 s and 583 MB at `1dbb6a1`).  No realistic-size input is evaluated, and no
+witness evaluates `wallOverlap`.
+
+### Recorded disagreements between the design and the repo
+
+1. **The buffer comes off the local clock.**  Design §13.3 writes a wall as
+   `(instantOf z s.day s.time − buffer, …)`.  Fork `Ctx::walls_on` subtracts the buffer from the
+   `NaiveDateTime` and then calls `local_dt`, and it tests dates on the shifted start.  The two
+   differ when the buffer crosses a DST transition: `the_buffer_is_taken_off_the_local_clock`
+   (an 03:30 interval with a 60-minute buffer on 2026-03-08 starts its wall at 03:00 CDT, half an
+   hour after `instant − buffer`).  The kernel follows the fork.
+2. **`wallsOn p d` is two functions.**  An instant needs the zone and a `buffer:` in blocks needs
+   `block_min`, and the design says the plan is "indexed once per request".  So `wallIndex z bm p`
+   reads the plan once, and `wallsOn ix d` selects a date's walls.
+3. **Seconds, not minutes.**  §13.3 counts E7 in whole minutes of UTC instants and relies on a
+   `badTz subMinuteOffset` refusal.  L2 counts UTC seconds, which is exact for any offset, so the
+   window needs no refusal.  The refusal stays in §13.6's table for L6.  Whether L3's cut, whose
+   fork compares `num_minutes()`, needs it is L3's question.
+4. **The cap's date.**  §13.3 writes `cap = instantOf z d windowCap`.  The fork takes the cap on
+   `arrival.date_naive()`, the arrival's local date, and `windowOn` does too
+   (`Cal.localDate z arrival`).  They differ only when `local_dt`'s gap search carries the arrival
+   past midnight.
+5. **No `break` in the walk.**  The fork stops at the first merged wall that starts at or after the
+   end.  The kernel's `foldl` skips it and every later one instead, which gives the same value
+   because the walls are sorted and a skip does not move the end.  E7a and E7b pin the value
+   either way.
+6. **The sort.**  §13.3 says "clip, sort, merge, extend (a `foldl`)".  The sort is a reducing
+   insertion sort behind a proved `@[csimp]` twin (above), because `List.mergeSort` does not
+   reduce under `decide`.
+7. **`wallsInside` survives, in `Lookahead.lean` only.**  The L2 row deletes it from
+   `Goals.lean`, and §15's refutation names `Look.wallsInside`.  It is defined there with the
+   deleted body, kept only for the refutations.
+8. **Status.**  "Every item whose status is not `.settled`" is the fork's `!is_closed()` (Done or
+   Dropped): a demoted `[-]` and a waiting `[?]` item are open in both.  The fork's `Tree::iter`
+   yields one primary record per id, the live copy when an archive copy exists, which is the
+   kernel's entity.
+9. **No `DayCfg` yet.**  `windowMinOf` and `budgetOf` take `Arith.Pos` pairs and a `Nat`, adding
+   no new bounded wire type, so no smart constructor is owed here.  §13.6's bounds on
+   `windowHours`, `budgetRatio`, `blockMin` and `windowCap` are L6's rejection theorems.
+10. **Refutation names.**  The design names one witness per refutation.  This step also states
+    each as a negated universal over the old statement
+    (`…_as_stage_6_wrote_it`), so the refutation is of the goal and not only of a number.
+11. **Memory cap.**  Every run used the workflow's 30 GB cap, and 8 GB for probes, not §14.0's
+    40 GB.
+
+**Label-to-number map:** cheats L2 110 → **110** and L2 111 → **111**; gap 85 → **85**; parity
+**P27**.  Highest numbers in this checkout after the step: gap 103, cheat 121, parity P27.
+
+**Observable behaviour changes: none.**  Nothing on the wire calls `windowOn`, `wallIndex` or
+`budgetOf`.  **Behaviour rows:** design §20's L2 row, `Arith.lean`'s R3 row corrected, which is
+documentation of a site.  **Goals:** discharged 2 (E7a, E7b, restated), refuted as written 2,
+added 0.  Burn-down **15 → 13** (stage 6).
+
+**New theorems: 60**, all in `Lookahead.lean`, audited under `Check.lean`'s new
+`APPENDED 2026-09-14 (stage 5, D10 track).  Step L2` banner.  AGENTS §6.3's three counts agree at
+2309.  About 66 definition lines and 418 proof lines, against design §14.8's estimate of 170 and
+650.  No theorem was retired, weakened or deleted.  No existing two-run theorem was touched.
+
+**Owed, by name (the rest of the D10 track):** L3 (the cut, `cutSlots_*`, reusing `windowOn` and
+`wallsOn`), L4 (energy, `limitSlots_is_limitHist` against L1's `limitHist`), L5 (`lookahead`,
+`pureDay`, `mkInput?`, and the loaded-plan witness through `wallIndex`; cheat 117 is taken), L6
+(the capacity wire, `DayCfg`'s R10 bounds, `badTz subMinuteOffset`, P26, P30), L7 (the parity
+twin harness, which also measures P27 and gap 85), L8, L9.
+
+**Re-measured after this step** (every command under the 30 GB cap, in this worktree, on the tree
+committed):
+
+| measurement | value |
+|---|---|
+| `lake build TmKernel:static` after the edits | 130.3 s wall (`Arith.lean`'s prose edit rebuilt every module downstream) |
+| `check.sh` | **7/7**; 3.48 s on its first run (FFI test binaries relinked), then 2.80 / 2.73 / 2.73 s on the built tree against 2.70 / 2.72 s at `1dbb6a1`, a rise of at most 3% (§14.0 item 4 allows 10%) |
+| axiom audit | **2309 theorems** (2249 + 60; `grep -c '^#print axioms' Check.lean` 2309, 2309 distinct, 2309 declared) |
+| `Negative.lean` | check 4 ok; 116 errors; 110 `/- CHEAT` banners (108 before); CHEATs 110 and 111 each fail at their own line |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (stage 3: 0, stage 4: 0, stage 5: 0, stage 6: 13) |
+| `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (unchanged) |
+| FFI suite (`tm-kernel-ffi`) | **81 passed / 0 failed** (kernel 72, corpus 8, stack 1) |
+| `cli_latency.rs` | green: first verb 626.9 / 642.7 / 622.8 ms (226 files, 2,959 lines), later verb 55.7 / 50.8 / 55.8 ms |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5, D10 track, step L3 (branch stage5-lookahead,
+     worktree .claude/worktrees/stage5-lookahead).  Built in parallel with the D9
+     track on rebuild-on-lean (D11).  Takes cheats 112-113 (the design's own L3
+     labels, §16) and gap 104 (label L3-a; §20 reserves no L3 gap, and 100-103
+     are the D9 side's), none taken in this checkout or on rebuild-on-lean at
+     c73e032.  Whoever merges renumbers (AGENTS §6.2, §6.4).
+     =========================================================================== -->
+
+## Stage 5 D10 L3, 2026-09-14: time is cut into slots around walls and breaks — the planner's cut, pulled into stage 5
+
+**Starting point.**  The worktree at `d1179b4` (L2) was clean: check.sh 7/7, audit 2309, corpus
+29/37 files and 4/5 whole plans, burn-down 13, `cargo test --workspace` 1013 / 0, FFI 81.  Every
+figure at the end of this block is re-measured in this worktree.
+
+**The plan executed** is design `kernel/design/stage5/stage5-D9-D10-design.md` §13.3's L3 part
+("the general `cut_slots_around` … rests and since-break included, so stage 6's `dayPlan` reuses
+it") and §14.8's L3 row, under the owner's D12, with spec §8.2 step 3 as the behaviour and the fork
+(`tm-core/src/capacity.rs`) as the oracle.  Files: `Lookahead.lean` (a new section, "The slot
+cut", and the module header), `Check.lean`, `Negative.lean`, `AGENTS.md` (§2.3's `Lookahead` entry,
+§8.4 item 1).  No new module, so `TmKernel.lean` is unchanged at seventeen imports.  `Cal.lean`
+and every other D9 module are untouched.
+
+### What was built (`Lookahead.lean`, section "The slot cut")
+
+| piece | what it is | fork point |
+|---|---|---|
+| `SlotKind`, `Slot {start, stop, kind}`, `Slot.minutes`, `Cut {slots, breaks}`, `Cut.slotMinutes`, `Cut.breakMinutes` | a slot in UTC seconds, before energy; minutes as `num_minutes()` floors them | `SlotKind`, `Slot` (without `energy`), `Slot::minutes`, `Cut`, `Cut::slot_minutes`, `Cut::break_minutes` |
+| `CutCfg {blockMin, breakMin, breakAfter, minLastBlockMin}`, `CutCfg.minLast`, `CutCfg.shipped` | the four `[day]` keys the cut reads; `min_last = max 1 (min minLastBlockMin blockMin)`; the shipped 60/20/2/30 | `DayConfig`'s four `u32`s; `min_last_block_min.min(block_min).max(1)` |
+| `clipTo lo hi ws`, `freeChain`, `freeStep`, `freeIntervals lo hi ws` | walls clipped **on both sides**, empty ones dropped, sorted and merged (L2's `sortByStart`, `mergeSorted`), then the cursor walk emitting the gaps; empty when `hi ≤ lo` | `normalize_walls`, `free_intervals` |
+| `cutStretch c stop fuel t k acc` | the `while t < stop` loop on structural fuel, tail-recursive: a due break only when `min_last` still fits after it, else a full block, else a short block to `stop`, else stop | `cut_slots_around`'s loop |
+| `restfulEnd c rests t`, `cutStep`, **`cutSlots c lo hi walls rests k`** | the counter reset by a rest ending exactly at a stretch's start and at least `break_min` long; one stretch on fuel `stop − start + 1`; the whole cut over `freeIntervals lo hi (walls ++ rests)`, empty when `blockMin = 0` | `restful_end`, `cut_slots_around`; `cut_slots` is `cutSlots c lo hi walls [] 0` and `cut_slots_from` is `cutSlots c lo hi walls [] k` |
+| `sortByStartFast`, **`@[csimp] sortByStart_eq_sortByStartFast`** | L2's insertion sort proved equal to core's `List.mergeSort`, list for list (both stable; `List.mergeSort_cons`), so every compiled caller merge-sorts | `merge_walls`' `sort_by_key` |
+
+**The rule the design fixes (§2.3), in the section doc:** stage 6's `dayPlan` must reuse
+`freeIntervals` and `cutSlots`, never a second copy.  The lookahead (L5) calls
+`cutSlots c arrival end walls [] 0`; the planner's step 3 passes its placed routines as `rests`
+and its blocks since the last break as `k`, as the fork's `planner.rs` does.
+
+### Exact in whole seconds: no sub-minute refusal is needed by the cut
+
+The fork compares `Duration::num_minutes()`, which truncates toward zero.  For whole seconds
+`x ≥ 0`, `num_minutes x ≥ m ⇔ x ≥ 60·m`, and a negative `x` has `num_minutes x ≤ 0 < min_last`.
+So each comparison is one inequality over UTC seconds: the break guard
+`(stop − (t + brk)).num_minutes() < min_last` is `stop < t + 60·brk + 60·min_last`; a block fits
+iff `t + 60·block_min ≤ stop`; a short block iff `t + 60·min_last ≤ stop`; and `restful_end`'s
+`(b − a).num_minutes() >= break_min` is `60·break_min ≤ b − a ∧ a < b + 60` (the second conjunct is
+a reversed rest's truncation toward zero; it is unobservable, because the counter is read only when
+breaks are on, which needs `break_min > 0`).  L2's instants are whole seconds (`instantOf_ns`), so
+the cut is the fork's **for every zone offset**, and L2's open question (its disagreement 3) is
+answered: neither the window nor the cut needs `badTz subMinuteOffset`.  The refusal stays in
+§13.6's table for L6 to decide.
+
+**`a_cut_counts_real_minutes_across_the_fall_transition`**: on 2026-11-01 in Chicago the clock
+runs 00:00 to 03:00 in four real hours, and the cut is two blocks, a break, a block and a
+40-minute short block.  So **the slot cut on a DST day is exact by design, not a parity entry.**
+
+### The laws (in-step; never in `Goals.lean`)
+
+The four names of §14.8's L3 row, each stated over the general `cutSlots` (walls, rests and a
+since-break count), and so over `cut_slots` and `cut_slots_from` as instances:
+
+| theorem | statement |
+|---|---|
+| **`cutSlots_inside_the_window`** | every slot has `lo ≤ start < stop ≤ hi` |
+| **`cutSlots_avoid_the_walls`** | for every slot, every wall **or rest** `w ∈ walls ++ rests` and every unit `t ∈ [start, stop)`: `¬ (w.1 ≤ t ∧ t < w.2)` |
+| **`cutSlots_short_block_is_at_least_min_last`** | a short block has `start + 60·minLast ≤ stop < start + 60·blockMin`, so `minLast ≤ minutes < blockMin` |
+| **`cutSlots_fuel_is_enough`** | with `blockMin ≥ 1` (which `cutSlots` checks first), any fuel `f > stop − t` gives the loop result of fuel `stop − t + 1`: the fuel is never the answer (`cutStretch_fuel`: two such fuels agree) |
+
+And beside them, because stage 6's `plan_*` goals will lean on them:
+`cutSlots_breaks_inside_the_window`, `cutSlots_breaks_avoid_the_walls`,
+`cutSlots_block_is_block_min` (a block is exactly `blockMin`, and `blockMin > 0`),
+`cutSlots_break_is_break_min`, `cutSlots_slots_are_in_order`, `cutSlots_breaks_are_in_order`,
+**`cutSlots_no_slot_overlaps_a_break`** (what `plan_places_no_block_over_a_break` needs of the
+cut), **`every_break_is_followed_by_a_slot`** (a slot starts where every break ends: no stretch
+ends on a break, the fork's "only rest when work still follows"), and
+`cutSlots_without_a_block_length_is_empty`.
+
+**Free intervals, both directions (AGENTS §5.8).**  `freeIntervals_spec`: the stretches lie in
+`[lo, hi]`, are nonempty, and come in order with a wall between each two
+(`freeIntervals_inside_the_window`, `freeIntervals_are_in_order`); and
+**`freeIntervals_are_the_free_units`**: a unit is in some stretch **iff** it is in `[lo, hi)` and no
+wall holds it.  `cutSlots_avoid_the_walls` is its forward half applied to the slots.
+
+**The proof route.**  `freeChain_spec` (the clipped, merged walls are L2's `WallChain` inside
+`[lo, hi]` with the walls' cover there, through L2's `mergeSorted_spec` and the new
+`covered_clipTo`); `freeFold_spec` (the cursor walk over a chain, by induction, with the gaps'
+order, bounds and exact cover); `cutStretch_rec` (the loop's induction principle: a state property
+kept by the three pushes and turned into the result at each of the four exits, the fuel's
+included); `cutStretch_spec` (one stretch keeps `AccInv`, the ordered, disjoint and shaped
+accumulator, puts new items inside the stretch, and leaves no break without its slot: a break is
+pushed only when `min_last` fits after it and resets the counter, so the next turn must push a
+slot at its end, and the fuel hypothesis rules out the fuel exit); `cutFold_spec` (the stretches in
+order); `cutSlots_spec` (all of it on the reversed lists).
+
+**Audit (AGENTS §7.4).**  (1) Every binder is used; `hb : 0 < blockMin` in the two fuel theorems is
+needed (a zero-length block loops until the fuel runs out).  (2) Hypotheses are satisfiable: the
+witnesses below instantiate every membership hypothesis.  (3) Names say what the statements say;
+`cutSlots_avoid_the_walls` covers rests too, as its binder `walls ++ rests` shows.  (4) Both
+directions: `freeIntervals_are_the_free_units` is an iff; the cut's use of the free time is
+witnessed and differentially tested, not proved (gap 104).  (5) The compiled code runs
+`cutSlots` with `sortByStartFast` (`@[csimp]`), checked in the generated C: `freeChain` calls
+`sortByStartFast`, and `cutStretch`'s self-calls are `goto _start`.  (6) Units: UTC seconds
+throughout, as above.
+
+### The fork's tests, as witnesses (Chicago's 2026 table; `onTheSpecDay c` is 2026-09-07 at clock `c`)
+
+| fork test | theorem |
+|---|---|
+| `capacity_slots.rs` `cut_slots_on_the_spec_day`, capacity.rs's documented **§4.3 cut** (07:00, 08:00, break 09:00, 09:20, 10:20, break 11:20, 11:40, the 10 minutes before the meeting dropped, 13:50, break 14:50, 15:10–16:00 short; 410 slot minutes, 60 of breaks) | `cut_slots_on_the_spec_day` |
+| `a_routine_passed_as_a_wall_does_not_pay_off_the_break` (break at 11:50, a 40-minute block before the meeting) | `a_routine_passed_as_a_wall_does_not_pay_off_the_break` |
+| `cut_slots_around_a_placed_routine` (lunch as a rest pays off the break; a 10-minute rest does not, break at 11:30) | `cut_slots_around_a_placed_routine` |
+| `cut_slots_from_a_pending_break` (both configurations) | `cut_slots_from_a_pending_break` |
+| `a_cut_never_ends_on_a_break` (to 09:45: two blocks and no break; to 09:50: the break and a 30-minute short block) | `a_cut_never_ends_on_a_break` |
+| `a_long_wall_extends_the_window_by_its_whole_duration`'s cut (420 slot minutes, 60 of breaks) | `a_long_wall_leaves_eight_hours_to_cut` |
+| `the_window_cap_bounds_a_late_arrival`'s cut (empty) | `a_late_arrival_cuts_nothing` |
+| `capacity.rs` unit test `free_intervals_merge_overlapping_walls` | `free_intervals_merge_overlapping_walls` |
+
+### A scratch differential against the fork (evidence for this commit; not committed, not a figure to quote again)
+
+A throwaway generator under `/tmp/claude-1000/l3diff/` (a cargo package outside the repo depending
+on this worktree's `tm-core` by path) ran the fork's `cut_slots_around` on **20,000** seeded random
+cases: whole-second instants on grids of 1, 60, 600 and 1,200 seconds, `block_min ∈ {0, 1, 5, 30,
+45, 50, 60, 90}`, `break_min ∈ {0, 1, 10, 20, 30}`, `break_after_blocks ∈ 0..3`,
+`min_last_block_min ∈ {0, 1, 10, 20, 30, 45, 100}`, up to 5 walls (overlapping, reversed, outside
+the window), up to 3 rests (some reversed, some empty) and a since-break count `0..3`.  A scratch
+Lean program ran `cutSlots` on the same cases: **0 differences**; 2,595 cases had a rest paying off
+a break.  The comparison bites: changing the break guard's `<` to `≤` gave 371 differences, and
+dropping `min_last`'s `max 1` gave 134.  Changing `restfulEnd`'s reversed-rest conjunct gave 0,
+which is not evidence either way: the generator made no reversed rest shorter than a minute, and
+the conjunct is unobservable anyway (above).  The committed parity harness is L7's (design
+§13.7).
+
+### Cheats (`Negative.lean`, appended)
+
+| # | label | cheat | fails because |
+|---|---|---|---|
+| **112** | L3 | a stretch that ends on a break: the loop with the break guard removed, claimed equal to `cutSlots` from 07:00 to 09:45 | the cheat places the 09:00 break and ends on it; `decide` proves the equality false (controls `a_cut_never_ends_on_a_break`, `every_break_is_followed_by_a_slot`) |
+| **113** | L3 | the short block dropped at exactly `min_last` (`<` for `≤`), claimed equal to `cutSlots` from 07:00 to 09:50 | the fork keeps the 30-minute block after the 09:00 break; `decide` proves the equality false (controls `a_cut_never_ends_on_a_break`, `cutSlots_short_block_is_at_least_min_last`) |
+
+Each fails at its own line with `Tactic decide proved that the proposition … is false`.
+
+### Gap 104 (new; label L3-a) — the cut's use of the free time is witnessed, not proved
+
+(1) *What is not done*: no theorem says the cut leaves free time unused only where the fork does
+(a tail shorter than `min_last`, a due break that `min_last` would not follow, and the rest of that
+stretch).  The laws bound the cut from one side: slots and breaks lie in free time, in order, with
+the right lengths.  A cut that dropped a whole stretch would satisfy every one of them.  (2) *Why
+not now*: the fork's rule is the loop itself, so the law would restate `cutStretch`.  The eight
+fork witnesses, `a_long_wall_leaves_eight_hours_to_cut` (every free minute used) and the scratch
+differential above cover it.  (3) *Cost*: only the witnesses and L7's parity twin would catch
+a change that drops free time.  (4) *When it clears*: L7 measures it end to end through the
+lookahead.  Stage 6 states a law only if a planner goal needs one.
+
+### Notes for L4 and L9 (not owed by L3)
+
+- **L4.** `Slot.minutes` floors `(stop − start) / 60`, as `num_minutes().max(0)` does.  A short
+  block under a sub-minute offset would floor, as the fork's does.  `histOf` must read
+  `Slot.minutes`, not a second division.
+- **L9.** Day 0 cuts from `max(start, now)`, and `now` has nanoseconds.  For a `from` with
+  `0 < ns`, every fork comparison `num_minutes(stop − (from + k·60 + …))` equals the kernel's over
+  `⌈from⌉` whole seconds: the truncated duration is `stop − ⌈from⌉ − …` when non-negative, and both
+  sides are below `min_last` otherwise.  So L9 can cut from `⌈now⌉` and get the fork's slots, each
+  starting less than a second later, with equal minutes.  That is an argument, not yet a theorem.
+  L9 owes the theorem or a parity entry.
+
+### Rule D9-21
+
+Functions this step adds that walk a list the wire can make large: `clipTo` (core `map` and
+`filter`), `walls ++ rests` (core `append`, `appendTR`), the sort (`sortByStart`, now
+**`@[csimp]` → `sortByStartFast`**, core's `mergeSort`, so L2's `windowEnd` twin is no longer the
+only route to it), `mergeSorted` and the free walk (`foldl`, then `reverse`), the cut over the
+stretches (`foldl cutStep`), `Cut.slotMinutes` and `Cut.breakMinutes` (`foldl`).  `cutStretch`
+recurses on a `Nat` fuel with every self-call in tail position (compiled as `goto _start`), once
+per slot or break, not once per unit.  `restfulEnd` is core `any` over the rests.  No `wallOverlap`-
+style specification is added: every function in the section runs.
+
+### The `decide` budget (§14.0 item 4)
+
+9 new decided witnesses and 2 cheats, **11 in all**, within the budget of 20.  They use at most
+Chicago's **2 zone transitions**, at most 5 walls, no `Entry` value and no string literal.  The
+witnesses are `cut_slots_on_the_spec_day`,
+`a_routine_passed_as_a_wall_does_not_pay_off_the_break`, `cut_slots_around_a_placed_routine`,
+`cut_slots_from_a_pending_break`, `a_cut_never_ends_on_a_break`,
+`a_long_wall_leaves_eight_hours_to_cut`, `a_late_arrival_cuts_nothing`,
+`free_intervals_merge_overlapping_walls` and
+`a_cut_counts_real_minutes_across_the_fall_transition`.  All were probed in scratch files under
+`/tmp/claude-1000/l3probe/` against the built package, under `MemoryMax=8G` and `timeout 120`,
+before the module was edited.  Each `decide` took 1–19 ms, and the whole section elaborated in
+0.75 s at a 669 MB peak.  The cheats took 0.16 s at 534 MB.  Two further probes were run and not
+committed: a deliberately wrong §4.3 layout, which `decide` refused, and the §4.3 day as cheat
+112's witness, which compiled (disagreement 1 below).  The committed `Lookahead.lean` elaborates in
+**1.29–1.31 s at a 736–755 MB peak** under the same cap, against 0.64–0.70 s and 652–678 MB at
+`d1179b4` (three runs each).  No realistic-size input is evaluated.
+
+### Recorded disagreements between the design and the repo
+
+1. **Cheat 112's witness.**  §16 says a stretch ending on a break fails against "the documented
+   §4.3 cut witness".  It does not: on the §4.3 day every due break has at least `min_last` after
+   it, so the guard never fires, and the guard-less cut equals `cutSlots` there (probed; it
+   compiles).  The cheat is refuted on fork test `a_cut_never_ends_on_a_break`'s 09:45 window, and
+   the law is `every_break_is_followed_by_a_slot`.
+2. **Cheat 113's reason.**  §16 says the short block dropped at `min_last` fails because of
+   `cutSlots_short_block_is_at_least_min_last`.  A cut that drops the block does not contradict
+   that theorem, which speaks only of short blocks that exist.  The cheat fails on the 09:50
+   window, where the fork keeps a block of exactly `min_last`, and the theorem's `≤` is what allows
+   that block.
+3. **Seconds, not `DT.abs` minutes.**  Input design `design-lookahead.md` §4.2 cuts "all in
+   `DT.abs` minutes".  L3 cuts UTC seconds, as L2's window does, which is exact against the fork's
+   `num_minutes()` for any offset (above).
+4. **`Slot {start, stop, kind}`, not `{start, len, kind}`** (`design-lookahead.md` §4.2).  The
+   fork's `Slot` has `start` and `end`, and `end` is a Lean keyword.  `cutSlots_inside_the_window`
+   reads `start < stop ≤ hi` for "`start + len ≤ end`".
+5. **One function.**  The fork has `cut_slots`, `cut_slots_from` and `cut_slots_around`.  The
+   kernel has `cutSlots` only.  The other two are its instances, so there is one definition
+   (AGENTS §5.3).
+6. **`CutCfg`, not `DayCfg`.**  §13.4's `Input` holds a `DayCfg`, which is L6's with its R10 bounds
+   (§13.6).  `CutCfg` carries only the four keys the cut reads, crosses no wire, and so owes no smart
+   constructor yet.  L6's `DayCfg` should contain it, not copy it.
+7. **In-step, so the burn-down does not move.**  §14.8's L3 column reads "goals (added →
+   discharged): the four `cutSlots_*`".  §15 gives them no signature, so they were stated and
+   proved in the step and never stood in `Goals.lean`.
+8. **A second `@[csimp]`.**  §13.3 says nothing of the sort's compiled form here.  L2's
+   `windowEnd_eq_windowEndFast` is kept as it is (D5).  `sortByStart_eq_sortByStartFast` is added
+   because the free walk sorts too.
+9. **Memory cap.**  Every run used the workflow's 30 GB cap (16 GB for the scratch generator and
+   the differential), and 8 GB for probes, not §14.0's 40 GB.
+
+**Label-to-number map:** cheats L3 112 → **112** and L3 113 → **113**; gap L3-a → **104**.  No
+parity entry: the cut is exact by design, and §17's "exact by design" list gains **the slot cut, in
+whole seconds, DST days included**.  Highest numbers in this checkout after the step: gap 104,
+cheat 121, parity P27.
+
+**Observable behaviour changes: none.**  Nothing on the wire calls `freeIntervals` or `cutSlots`,
+and the new `@[csimp]` changes only how `sortByStart`'s callers compile, not their values.
+**Behaviour rows:** none (§20 lists none for L3).  **Goals:** discharged 0, refuted 0, added 0.
+Burn-down **13** (unchanged).
+
+**New theorems: 42**, all in `Lookahead.lean`, audited under `Check.lean`'s new
+`APPENDED 2026-09-14 (stage 5, D10 track).  Step L3` banner.  AGENTS §6.3's three counts agree at
+2351.  About 71 definition lines and 597 proof lines (110 of them the witnesses), against design
+§14.8's estimate of 130 and 450.  No theorem was retired, weakened or deleted.  No existing two-run
+theorem was touched.
+
+**Owed, by name (the rest of the D10 track):** L4 (energy, `hsw100`, `futureEnergy`, `histOf`
+over `Slot.minutes`, `limitSlots_is_limitHist` against L1's `limitHist`), L5 (`lookahead`,
+`pureDay` = `windowOn` → `cutSlots … [] 0` → energy → limit, `mkInput?`, and the loaded-plan witness
+through `wallIndex`; cheat 117 is taken), L6 (the capacity wire, `DayCfg` containing `CutCfg` with
+§13.6's R10 bounds, `badTz subMinuteOffset`, P26, P30), L7 (the parity twin, which also measures
+P27, gap 85 and gap 104), L8, L9 (day 0, including the `⌈now⌉` note above).
+
+**Re-measured after this step** (every command under the 30 GB cap, in this worktree, on the tree
+committed):
+
+| measurement | value |
+|---|---|
+| `lake build TmKernel:static` after the edits | 2.1 s wall (only `Lookahead` and the root rebuilt: nothing imports `Lookahead`) |
+| `check.sh` | **7/7**; 3.49 s on its first run (FFI test binaries relinked), then 2.67 / 2.78 / 2.72 s on the built tree against L2's 2.80 / 2.73 / 2.73 s, no rise (§14.0 item 4 allows 10%) |
+| axiom audit | **2351 theorems** (2309 + 42; `grep -c '^#print axioms' Check.lean` 2351, 2351 distinct, 2351 declared); each new name prints its own line |
+| `Negative.lean` | check 4 ok; 118 errors; 112 `/- CHEAT` banners (110 before); CHEATs 112 and 113 each fail at their own line |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (stage 3: 0, stage 4: 0, stage 5: 0, stage 6: 13) |
+| `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (unchanged) |
+| FFI suite (`tm-kernel-ffi`) | **81 passed / 0 failed** (kernel 72, corpus 8, stack 1) |
+| `cli_latency.rs` | green: first verb 627.8 / 617.7 / 627.4 ms (226 files, 2,959 lines), later verb 50.7 / 50.7 / 50.7 ms |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5, D10 track, step L4 (branch stage5-lookahead,
+     worktree .claude/worktrees/stage5-lookahead).  Built in parallel with the D9
+     track on rebuild-on-lean (D11).  Takes cheats 114-116 (the design's own L4
+     labels, §16), none taken in this checkout or on rebuild-on-lean at c73e032.
+     No gap and no parity entry.  Whoever merges renumbers (AGENTS §6.2, §6.4).
+     =========================================================================== -->
+
+## Stage 5 D10 L4, 2026-09-14: a future day's energy profile — each location's minutes per level, limited to the budget
+
+**Starting point.**  The worktree at `27a88a0` (L3) was clean: check.sh 7/7, audit 2351, corpus
+29/37 files and 4/5 whole plans, burn-down 13, `cargo test --workspace` 1013 / 0, FFI 81.  Every
+figure at the end of this block is re-measured in this worktree.
+
+**The plan executed** is design `kernel/design/stage5/stage5-D9-D10-design.md` §13.3's L4 part
+("energy and the limit … hours since wake from seconds, site R11") and §14.8's L4 row, under the
+owner's D12 (stage 6's future-day energy prediction pulled into stage 5), with the fork
+(`tm-core/src/capacity.rs` `energize`/`limit_to_budget`/`lookahead`, `energy.rs`
+`bucket`/`prior_level`/`predict`/`Model::energy_at`, `config.rs` `StepFn::at`/`prior_energy`,
+`log.rs` `hours_since_wake`) as the oracle.  Files: `Lookahead.lean` (a new section, "Energy and
+the budget limit", and the module header), `Arith.lean` (the site table's R11 row, prose only),
+`Check.lean`, `Negative.lean`, `AGENTS.md` (§2.3's `Lookahead` entry, §8.4 item 1).  No new
+module, so `TmKernel.lean` is unchanged at seventeen imports.  `Cal.lean` and every other D9
+module are untouched.
+
+### What was built (`Lookahead.lean`, section "Energy and the budget limit")
+
+| piece | what it is | fork point |
+|---|---|---|
+| **`hsw100 s`** (site R11), `hswAt wake t` | `sign s · ((|s| + 18) / 36)`, the hours since wake in hundredths; `hswAt` reads `Cal.secondsBetween wake t` (chrono's `num_seconds`, truncated toward zero, leap seconds and nanoseconds included) | `(secs / 36.0).round()` in `log::hours_since_wake`, `Features::at` |
+| `bucket h : Fin 12` | `0` for `h ≤ 0`, else `min 11 (h / 100)` | `energy::bucket` |
+| `Step {fromNum, fromDen, toKey, level}`, `Step.reached`, `Step.before`, **`stepAt`** | a range key as exact pairs; `hours ≥ from` as `100·num ≤ h·den`, `hours < to` as `h·den < 100·num`; `3` for an empty curve, the first level before the first step, the first containing step, else the last step starting at or before the hours | `Step`, `StepFn::at` |
+| `curveKeyLt`, `curveLookup`, `curveLeast`, `loungeKey`, `homeKey` | the map's key order (UTF-8 bytes, which is code-point order), `get`, `values().next()` | `BTreeMap<String, _>` |
+| **`priorEnergy`**, **`priorLevel`**, **`learnedLevel`** | the named prior curve, else `lounge`, else the least key, else `3`; the curve's own prior when present or when there is no `home` curve, else `home`'s; the learned level at `bucket h`, if the model has the curve and the entry | `Config::prior_energy`, `energy::prior_level`, `Model::energy_at` |
+| `Curves {prior, energy}`, `Loc {lounge, home}`, `Loc.curve` | the two maps as data, keys as `List Char`; a future day's two locations and their curve keys | `[energy.prior]`, `model.json` `energy`; `curve_key` |
+| **`predictAt`**, **`capForLocation`** | `min 5 (learned.getD prior)`; `min e homeMax` at home unless `--allow-home` | `energy::predict` (no sleep shift), `EnergyCtx::cap_for_location` |
+| **`futureEnergy`**, **`energize`** | a future slot's energy: the prediction at its start from the wake, then the home cap with `allowHome = false`; every slot mapped to `(energy, slot)` | `EnergyCtx::energy_at` under `EnergyCtx::new` and `Posterior::none`; `capacity::energize` |
+| `histOf'`, `slotMinutesOf` | per level, a `foldl` of `Slot.minutes` (L3's note: no second division); all slot minutes | `DayCapacity::from_slots`, `Cut::slot_minutes` |
+| `slotLe`, `takeStep`, **`limitSlots`** | merge sort by energy descending then start ascending, then each slot takes `min(minutes, left)` | `limit_to_budget` and the loop summing it per level |
+| `limitSlotsFast`, **`@[csimp] limitSlots_eq_limitSlotsFast`** | `limitHist B (histOf' slots)`: no sort and no closure per slot at run time | — |
+| **`dayHist c homeMax loc wake budgetMin slots`** | one location's future day: `limitSlots budgetMin (energize …)`; L5's `pureDay` is this over `windowOn` and `cutSlots … [] 0` | `lookahead`'s loop body after the cut |
+| `Step.range`, `Step.from`, `shippedLounge`, `shippedHome`, `shippedPrior`, `Curves.shipped`, `fixtureEnergy`, `Curves.fixture` | the shipped `[energy.prior]` and `tm-core/tests/fixtures/model.json`'s curves | `EnergyConfig::default`, the fixture |
+
+**What a future day's energy is not, by name.**  The fork's future day runs `Posterior::none`
+(its `correct` is the identity on a whole level), `slept_min = None` (no sleep-debt shift) and
+`allow_home = false`.  Day 0's posterior, shift and `--allow-home` are L9's (`Arith.energyAfter`,
+site R10).  `energize`'s progress features (`blocks_done`, `since_break_min`) are v2's and change
+no v1 level (fork test `energize_counts_blocks_and_break_gaps`).
+
+### Exact against the fork's doubles (design §13.3, D10-11)
+
+`s / 36.0` is correctly rounded.  A tie has the exact quotient `k + ½`, and a non-tie lies at
+least `1/36` from `k + ½`, beyond an ulp for `|s| < 2^40`.  So `round` sees the true side and
+`hsw100` is its value.  `bucket` floors the correctly rounded `n / 100.0`, which never reaches the
+next integer.  A range key `num/den` with `den ≤ 10^6` differs from `n/100` by at least
+`1/(100·den)` when unequal and gives the same double when equal, so both range comparisons are
+exact.  So **the future-day energy is exact by design, and input design LOOK's range-key exception
+(its P8) is not needed.**  Seconds matter because today's wake keeps them: wake 06:05:40 against a
+07:05 slot is 3,560 s, `hsw` 0.99, bucket 0 and the lounge's `0-1` level 4, where whole minutes say
+bucket 1 and level 5 (`the_bucket_reads_seconds_on_the_spec_day`).  Real seconds across DST also
+count: on 2026-11-01 a wake at 00:00 and a slot at 03:30 are 4.5 hours apart, so a home day predicts
+3, where the civil 3.5 hours would predict 4
+(`hours_since_wake_count_real_hours_across_the_fall_transition`).
+
+### The laws (in-step; never in `Goals.lean`)
+
+§14.8's L4 row names four theorems, and §15 lists them under "L1, L4, L5 (in-step)".  So they were
+stated and proved in the step, and the burn-down does not move.  The two with §15 signatures match
+them **verbatim**.
+
+| theorem | statement |
+|---|---|
+| **`hsw100_is_round_half_away`** (§15's signature) | for `s : Nat`: `36·h ≤ s + 18 < 36·(h + 1)` and `hsw100 (−s) = −hsw100 s` |
+| `hsw100_nearest` | for every `s : Int`: `|72·h − 2s| ≤ 36`, a `+36` tie only for `s > 0` and a `−36` tie only for `s < 0` (ties away from zero; the conditions determine `h`) |
+| `hsw100_mono`, `hsw100_withinOne` | site R11 is monotone, and `|36·h − s| ≤ 18` (`Arith.lean`'s `*_mono` / `*_withinOne` convention) |
+| **`the_bucket_reads_seconds`** (§15's signature) | `bucket (hsw100 3560) = 0 ∧ bucket (hsw100 3600) = 1` |
+| **`limitSlots_is_limitHist`** (§15's signature) | the fork's per-slot sort and greedy equal L1's per-level `limitHist` over `histOf'`, for **every** slot list and budget |
+| **`futureEnergy_home_is_capped`** | a future home day's energy is `≤ homeMax` and equals `min homeMax` of the prediction |
+| `futureEnergy_lounge_is_the_prediction` | a lounge day is uncapped |
+| `dayHist_eq`, **`dayHist_keeps_the_min`**, **`dayHist_home_is_capped`** | one location's day is `limitHist` of its energised histogram; it keeps exactly `min(budget × block_min, cut.slotMinutes)`; a home day holds `0` above `homeMax` |
+| `bucket_mono`, `histOf'_perm`, `sum6_histOf'` | the bucket is monotone; the histogram ignores the slots' order and holds every slot minute |
+
+**The proof route for `limitSlots_is_limitHist`.**  `limitHist_eq` reads L1's limit at level `l` as
+`min (h l) (B − topElig 0 h (5 − l))` (step 3's `dayLeft_eq_sub`).  `greedy_spec` shows, by
+induction over any slot list in non-increasing energy, that the fold gives each level exactly
+that.  It needs `topElig_bump` (a slot at level `k` adds its minutes to every level below `k`) and
+`topElig_of_zero_above` (nothing above the head's level).  Core's `List.pairwise_mergeSort` puts
+the merge-sorted list in that order, and `List.mergeSort_perm` with `histOf'_perm` gives the same
+histogram.  The start-ascending tie-break is invisible.
+
+**Audit (AGENTS §7.4).**  (1) Every binder is used; `limitSlots_is_limitHist` quantifies over all
+slot lists, sorted or not.  (2) Hypotheses are satisfiable: `dayHist_home_is_capped`'s
+`homeMax < l` holds at `homeMax = 3`, `l = 4` (the Sunday witness).  (3) Names say what the
+statements say.  (4) Both directions: the home cap is an equality with `min`, not only a bound;
+`limitSlots_is_limitHist` is an equality; the prior and learned fallbacks are witnessed per branch
+(below).  (5) The compiled code runs `limitSlotsFast`, checked in the generated C: `dayHist` calls
+`limitSlotsFast`, and neither calls the merge sort.  (6) Units: whole UTC seconds in, hundredths
+of an hour for `hsw`, whole minutes per level out.
+
+### The fork's tests, as witnesses (Chicago's 2026 table; `onTheSpecDay c` is 2026-09-07 at clock `c`)
+
+| fork test | theorem |
+|---|---|
+| `energy.rs` `buckets_clamp` (6 assertions, on hundredths) | `buckets_clamp` |
+| `config.rs` `prior_energy_lookup` (**all 13** assertions, `zoom` and the empty prior included) | `prior_energy_lookup` |
+| `energy_model.rs` `predict_matches_the_prior_tables_at_boundaries` (all 15) | `predict_matches_the_prior_tables_at_boundaries` |
+| `energy.rs` `predict_falls_back_to_the_prior` (lounge 0.99 → 4, 1.0 → 5, home 2.0 → 4; its `Out`/`Any`/`Named` three read `curve_key`'s `"home"` and are the home one) | `predict_falls_back_to_the_prior` |
+| `energy_model.rs` `predict_uses_the_learned_curve` (the fixture model; home at 7 h is 2 learned and 3 prior; past the last bucket the last level holds) | `predict_uses_the_learned_curve` |
+| `config.rs` `unknown_keys_are_errors`' extra curve (`cafe` at 5 h is 2), plus `prior_level`'s `home` branch, the least-key fallback (`cafe` before `zoo` in either list order) and `StepFn::at` in a gap and before the first step | `a_curve_falls_back_as_the_config_does` |
+| `capacity_slots.rs` `energize_follows_the_prior_curve` (the §4.3 cut, lounge, wake 06:05: 4, 5, 5, 5, 4, 4, 3) | `energize_follows_the_prior_curve` |
+| `capacity_slots.rs` `energize_applies_the_home_cap_and_the_posterior`: lounge 5, 4; home capped 3, 3; `--allow-home` 4, 3 (the posterior and sleep-debt parts are day 0's, L9) | `energize_applies_the_home_cap` |
+| `capacity_lookahead.rs` `lookahead_follows_the_learned_arrival_and_location`'s Tuesday: the 07:00–15:00 cut holds 420 minutes, above the 6-block budget, and keeps `[0, 0, 0, 0, 180, 180]` | `a_future_tuesday_keeps_its_budget` |
+| `capacity_lookahead.rs` `lookahead_uses_the_learned_energy_curve`'s Sunday (a home day, 10:00–18:00): the prior keeps 2 h at 2 and 4 h at 3 (the week-grid snapshot's Sunday row), the learned home curve moves one hour from 3 to 2 | `the_learned_curve_moves_an_hour_on_sunday` |
+| the design's CRIT 6 witness | `the_bucket_reads_seconds`, `the_bucket_reads_seconds_on_the_spec_day` |
+| — (ties, both signs; DST) | `hsw100_on_witnesses`, `hours_since_wake_count_real_hours_across_the_fall_transition` |
+
+The Tuesday and Sunday witnesses state the limit as `limitHist 360 (histOf' …)`, which is
+`dayHist` by `dayHist_eq`: `decide` cannot unfold core's `List.mergeSort`, which is defined by
+well-founded recursion.
+
+### Cheats (`Negative.lean`, appended)
+
+| # | label | cheat | fails because |
+|---|---|---|---|
+| **114** | L4 | no home cap: a home day's energy is the prediction, claimed `≤ home_max_ci = 3` at 08:00 on the spec day | the shipped home prior there is `1-4`'s 4; `decide` refuses (controls `futureEnergy_home_is_capped`, `energize_applies_the_home_cap`) |
+| **115** | L4 | hours since wake from whole clock minutes, claimed to give the same bucket as seconds for wake 06:05:40 and a 07:05 slot | whole minutes give bucket 1 and seconds bucket 0; `decide` refuses (controls `the_bucket_reads_seconds`, `the_bucket_reads_seconds_on_the_spec_day`) |
+| **116** | L4 | the learned curve indexed by `floor(hsw)` without the clamp to `0..11`, claimed equal to `learnedLevel` at 30 hours on the fixture lounge curve | the fork reads the last entry, `Some 2`, and the cheat reads past the 12 entries, `none`; `decide` refuses (controls `buckets_clamp`, `predict_uses_the_learned_curve`) |
+
+Each fails at its own line with `Tactic decide proved that the proposition … is false`.
+
+### Parity and rounding sites
+
+**No parity entry.**  §17's "exact by design" list gains **a future day's slot energy (learned and
+prior curves, their fallbacks, the home cap) and the budget limit**.  It already lists "hours since
+wake from a wake with seconds" and "prior range keys with `den ≤ 10^6`".  A curve outside the exact
+domain is P26's and is refused at L6: a level ≥ 256, a curve not of 12 entries, or a key with
+`den > 10^6`, negative or not finite.  The kernel reads a short curve as the fork does, falling to
+the prior past its end.
+
+**Site R11** is added to `Arith.lean`'s site table: half away from zero on whole seconds, with
+`hsw100_mono` and `hsw100_withinOne`.  The table still stops at R7 before it, because R8 and R9 are
+the D9 track's rows (C3, R9) and R10 is step L9's.  The merge keeps the numbers.
+
+### Rule D9-21
+
+Functions this step adds that walk a list the wire can make large: `energize` (core `map`,
+`mapTR`), `histOf'` (a `foldl` per level) and `slotMinutesOf` (`foldl`).  `limitSlots` folds a
+closure per slot, so it is behind **`@[csimp] limitSlots_eq_limitSlotsFast`** and never runs.  Its
+merge sort is core's `mergeSortTR₂`.  `stepAt` walks one curve (core `find?` and `reverse`; at most
+64 ranges under L6's bounds).  `curveLookup` and `curveLeast` walk the curve map (`find?`,
+`foldl`).  `curveKeyLt` recurses over one key's characters, which L6 must bound.  Proof-only
+recursions: `greedy_spec`, `foldl_levelStep`, `foldl_add_minutes`, `sum6_histOf'`.
+
+### The `decide` budget (§14.0 item 4)
+
+14 new decided witnesses and 3 cheats, **17 in all**, within the budget of 20.  They use at most
+Chicago's **2 zone transitions**, at most 2 curves of at most 12 entries and 7 slots, no `Entry`
+value and no string literal (keys are `List Char`).  All were probed first in scratch files under
+`/tmp/claude-1000/l4probe/` against the built package, under `MemoryMax=8G` and `timeout 120`,
+before the module was edited.  Each file (import included) ran in 0.11–0.17 s at a 520–539 MB
+peak.  Two deliberately wrong probes were refused by `decide` and not committed: the §4.3 energies
+with a 4 for the last 3, and the Sunday limits swapped between the prior and the learned curve.
+The committed `Lookahead.lean` elaborates in **2.05 / 2.05 / 2.05 s at an 818–846 MB peak** under
+the same cap, against 1.30 / 1.31 / 1.34 s and 741–747 MB at `27a88a0`.  No realistic-size input is
+evaluated.
+
+### Recorded disagreements between the design and the repo
+
+1. **Site R11, not R10.**  This step's instruction named "site R10 per the design".  The design
+   names **R11** for L4's hours since wake (§13.3, D10-11, §14.8's `Arith.lean` column) and R10 for
+   L9's sleep shift.  The design is followed.  The L4 row names no within-one or monotone theorem;
+   both are proved anyway, by `Arith.lean`'s convention.
+2. **A future day's wake (owed by L5).**  §13.3 says future days use `instantOf z d (expectedWake
+   wd)` "from the model-then-config fallback, as fork `wake_or_expected(None, weekday)` does", and
+   §13.6's wire carries weekday `wake` tables.  The fork disagrees.  `Ctx::priorities`,
+   `planning::week` and `planner.rs` pass `Ctx::wake_time()`: today's logged wake clock, seconds and
+   nanoseconds included, else **today's** weekday's expected **arrival** (`model.json` has no
+   expected wake).  `capacity::lookahead` then applies `local_dt(tz, date, wake_default)` to every
+   future date.  Input design `design-lookahead.md` §5.1 has the fork's reading ("today's; every
+   future day reuses it").  `futureEnergy` takes the wake instant, so L4 is exact either way.
+   **L5 owes `local_dt` at second resolution of today's wake clock.**  B1's `instantOf` takes whole
+   minutes.  L6's wire should carry today's wake clock and today's expected arrival, not weekday
+   wake tables.
+3. **`histOf'`, not `histOf`.**  L1 took `histOf` (six levels from a list), and §15's signature for
+   `limitSlots_is_limitHist` already reads `histOf'`.
+4. **Fork assertion counts.**  §13.3 says `prior_energy_lookup`'s 12 and
+   `predict_falls_back_to_the_prior`'s 4.  The fork has 13, all witnessed, and 6, of which the three
+   `Out`/`Any`/`Named` ones are the home one under `curve_key`.  §14.8's "16 fork witnesses" is
+   here 14 decided theorems, most of them conjunctions of a whole fork test.
+5. **`stepAt`, not `inRange`.**  §13.3's `inRange` compares both bounds.  `StepFn::at` also answers
+   before the first step and in a gap between ranges.  `stepAt` ports `at`, and `Step.reached` and
+   `Step.before` are `inRange`'s two comparisons.
+6. **Instants, not minutes.**  `design-lookahead.md` §4.3's `futureEnergy … (wake start : Nat)` took
+   whole minutes.  D10-11 superseded it, and `futureEnergy` takes `Cal.Instant`s.
+7. **Cheat 116's control.**  §16 names "the predict witness".  At `predict` the clamp is
+   unobservable on the fork's data, because past 12 hours both shipped priors equal both fixture
+   curves' last level, 2.  The cheat is refuted at `learnedLevel` (fork `Model::energy_at`, which
+   returns `Some(2)`).
+8. **What L6 owes the curves, beyond §13.6's table.**  The table sends only `prior.lounge` and
+   `prior.home`, but with neither present `Config::prior_energy` reads the least-keyed curve, so the
+   wire needs every prior curve, or that one.  It also needs one entry per key, each curve sorted by
+   `from` as `StepFn::from_pairs` sorts it (a stable sort), and a key-length bound for `curveKeyLt`.
+9. **In-step, so the burn-down does not move.**  §14.8's column reads "goals (added → discharged)",
+   but §15 marks the block in-step.  None stood in `Goals.lean`.
+10. **Memory cap.**  Every run used the workflow's 30 GB cap (8 GB for probes), not §14.0's 40 GB.
+
+**A note for L5 (not owed by L4).**  A `Hist` is a function, and the compiled `dayHist` takes the
+level as its last argument.  So every read of one level re-runs `energize` and the level's fold,
+and `limitHist` reads up to six levels.  L5's `lookahead` should materialise each `dayHist` once
+per day, as six numbers, before `mix` and `edf` read it many times.  T0 (c) (`days = 3,660` on a
+2 MiB thread) is where that is measured.
+
+**Label-to-number map:** cheats L4 114 → **114**, L4 115 → **115**, L4 116 → **116**.  No gap, no
+parity entry.  Highest numbers in this checkout after the step: gap 104, cheat 121, parity P27.
+
+**Observable behaviour changes: none.**  Nothing on the wire calls `futureEnergy`, `energize`,
+`limitSlots` or `dayHist`, and `Arith.lean`'s change is a comment.  **Behaviour rows:** none (§20
+lists none for L4).  **Goals:** discharged 0, refuted 0, added 0.  Burn-down **13** (unchanged).
+
+**New theorems: 37**, all in `Lookahead.lean`, audited under `Check.lean`'s new `APPENDED
+2026-09-14 (stage 5, D10 track).  Step L4` banner.  AGENTS §6.3's counts agree at 2388
+(`grep -c '^#print axioms' Check.lean` 2388, 2388 distinct, and `check.sh`'s audit line).  About
+104 definition lines and 289 proof lines (about 100 of them the witnesses), against design
+§14.8's estimate of 200 and 550.  No theorem was retired, weakened or deleted.  No existing two-run
+theorem was touched.
+
+**Owed, by name (the rest of the D10 track):** L5 (`lookahead`, `pureDay` = `windowOn` →
+`cutSlots … [] 0` → `dayHist` for each location → `mix`, `mkInput?`, the future-day wake of
+disagreement 2, the materialised histograms of the note above, the loaded-plan witness; cheat 117
+is taken).  L6 (the capacity wire, `DayCfg` containing `CutCfg`, the curves with disagreement 8's
+rows and §13.6's R10 bounds, `badTz subMinuteOffset`, P26, P30).  L7 (the parity twin, which also
+measures P27, gap 85 and gap 104).  L8.  L9 (day 0: the posterior, the sleep shift at site R10,
+`--allow-home` through `capForLocation`, and L3's `⌈now⌉` note).
+
+**Re-measured after this step** (every command under the 30 GB cap, in this worktree, on the tree
+committed):
+
+| measurement | value |
+|---|---|
+| `lake build TmKernel:static` after the edits | 130.9 s wall at a 7.99 GB peak (`Arith.lean`'s comment rebuilt every module that imports it) |
+| `check.sh` | **7/7**; 3.50 s on its first run (FFI test binaries relinked), then 2.73 / 2.71 / 2.76 s on the built tree against L3's 2.67 / 2.78 / 2.72 s, within §14.0 item 4's 10% |
+| axiom audit | **2388 theorems** (2351 + 37; `grep -c '^#print axioms' Check.lean` 2388, 2388 distinct); each new name prints its own line |
+| `Negative.lean` | check 4 ok; 121 errors (118 before); 115 `/- CHEAT` banners (112 before); CHEATs 114, 115 and 116 each fail at their own line |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (stage 3: 0, stage 4: 0, stage 5: 0, stage 6: 13) |
+| `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (unchanged) |
+| FFI suite (`tm-kernel-ffi`) | **81 passed / 0 failed** (kernel 72, corpus 8, stack 1) |
+| `cli_latency.rs` | green: first verb 622.2 / 617.5 / 622.4 ms (226 files, 2,959 lines), later verb 55.8 / 55.8 / 50.7 ms |
+
+<!-- ===================================================================
+     APPENDED 2026-09-14 (stage 5).  Merge-back: stage5-lookahead (D10 steps L1-L4,
+     and the merge-in 1dbb6a1) into rebuild-on-lean (D9 steps A1-B1).  AGENTS §6.5.
+     Takes no number.
+     =================================================================== -->
+
+## Stage 5 merge-back, 2026-09-14: the lookahead branch returns to rebuild-on-lean — L1–L4 on one history, no number taken twice
+
+`stage5-lookahead` (L1 `319919c`, merge-in `1dbb6a1`, L2 `d1179b4`, L3 `27a88a0`, L4 `58a5014`)
+merged into `rebuild-on-lean` (B1 `c73e032`). The merge base is `c73e032` itself: the D9 track
+committed nothing after the merge-in took B1, so the branch was a fast-forward. It is recorded
+as a merge commit (`--no-ff`) so the track boundary and these measurements stay on the history.
+`stage5-lookahead` is then fast-forwarded to the merge, and W-2 continues at L5 in the worktree
+`.claude/worktrees/stage5-lookahead`.
+
+**Conflicts: none.** Nothing on the `rebuild-on-lean` side changed after the merge base. Git
+brought in `AGENTS.md` (the import order and `Lookahead` entry, the §8.4 E7 and slot-cut notes),
+`Arith.lean` (R2, R3 and R11 rows, comments only), `Lookahead.lean` (new), and the tails of
+the append-only files: `Check.lean`, `Goals.lean`, `Negative.lean`, `TmKernel.lean` and this
+README. Each keeps both sides whole.
+
+**Numbers (AGENTS §6.2, §6.4): nothing collided, so nothing was renumbered.** The map is the
+identity. The merge-in block above covers D9's numbers.
+
+| item | D10 side (L1–L4) | D9 side (A1–B1) |
+|---|---|---|
+| cheats | 108, 109, 117 (L1); 110, 111 (L2); 112, 113 (L3); 114, 115, 116 (L4) | 91, 92 (B1); 119, 120, 121 (A2) |
+| gaps | 85 (L2), 104 (L3) | 100 (A1), 101 (A2), 102, 103 (A3) |
+| parity | P1 refined (L1), P27 (L2) | P16 (B1) |
+
+Checked on the merged tree. `### Gap N` headings are distinct (25, 27, 42–44, 85, 100–104; the
+rest are headed in other forms, AGENTS §6.4). `Negative.lean` has 115 `/- CHEAT` banners, and
+the only numbers that repeat are 27–30. That repetition predates stage 5 and is AGENTS §6.2's
+outstanding renumber, which this merge does **not** do: it would renumber blocks that neither
+branch touched, and the README gaps cite those blocks by their current numbers. So the file is
+not one ordered sequence (108, 109, 117, 119–121, 91, 92, 110–116 run in commit order). Every
+number from stage 5 is still used exactly once.
+**Highest numbers after the merge: gap 104, cheat 121, parity P27.** L5 onward must not take
+91, 92, 108–117 or 119–121 again, nor gaps 85 or 100–104. Cheat 117 is already L5's (taken in L1).
+
+**Check.lean (AGENTS §6.3).** The D10 side's banners (L1, L2, L3, L4) follow B1's banner. The
+three counts agree at **2388**: `grep -c '^#print axioms'` 2388, 2388 distinct names, and 2388
+declared theorems by the attribute-aware grep. That is 2207 at `c73e032` plus 181. The 181 new
+audit lines were diffed against the 181 theorems declared in `Lookahead.lean` by short name, and
+they match one to one (`comm` empty). Each of the 181 prints exactly one line, and none collapsed
+to a namespace root. `check.sh`'s audit line reports 2388, and the audit has no `sorryAx`.
+
+**Goals.lean (AGENTS §3.2).** The only deletions are the D10 side's two, which are the E7 goals
+`the_window_end_solves_the_equation` and `the_window_end_is_the_least_solution`, discharged at L2
+under D12. The D9 side deleted none. Burn-down **15 → 13**: 15 at `c73e032`, minus 2, gives
+check 7's **13** (stage 3: 0, stage 4: 0, stage 5: 0, stage 6: 13).
+
+**TmKernel.lean (AGENTS §2.3).** There are seventeen imports, and `Lookahead` comes right after
+`Capacity`. `Stamp` and `Log` do not exist yet. B2 and B3 create them and place their imports.
+
+**Observable behaviour changes: none.** The binary is unchanged, and nothing on the wire calls
+`Lookahead`. **Goals discharged by the merge: none** beyond L2's two. **New theorems: none** beyond
+the two sides' own.
+
+**Re-measured on the merge tree** (every command under the 30 GB cap, in the main worktree):
+
+| measurement | value |
+|---|---|
+| `check.sh`, first run after the merge (every module rebuilt, since `Arith.lean` changed) | **7/7**, 135.7 s wall, 8.31 GB peak RSS |
+| `check.sh`, built tree | **7/7**, 2.73 / 2.70 s |
+| axiom audit | **2388 theorems** (2207 + 181) |
+| `Negative.lean` | check 4 ok; 115 `/- CHEAT` banners, each with an error at its own line |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** |
+| `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (unchanged) |
+| FFI suite (`tm-kernel-ffi`) | **81 passed / 0 failed** (kernel 72, corpus 8, stack 1) |
+| `cli_latency.rs` | green: first verb 622.7 / 637.5 / 621.5 ms (226 files, 2,959 lines), later verb 50.7 / 50.8 / 55.7 ms |
+
+**Carried forward, unchanged by the merge:** gap 102 (gates W3); gap 103 (clears at B4); gap 85
+and gap 104 (measured by L7's twin harness); the `Tm.Stamp` namespace note for B2; and L4's
+note that L5 should materialise each `dayHist`. **Owed next:** D9 B2 onward on `rebuild-on-lean`,
+and D10 L5 onward in the lookahead worktree.

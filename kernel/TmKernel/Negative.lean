@@ -971,6 +971,46 @@ theorem theMixtureMayBeFlooredForTheVerdict :
 theorem aZeroDenominatorIsAccepted : (denOf? 0).isSome = true := by
   decide
 
+
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D10 track, step L1: the exact mixture,
+-- `Lookahead.lean`).  Numbers are the design's reserved labels (design §16):
+-- 108 and 109 are L1's; 117 is L5's label, taken here because the refutation it
+-- inverts moved into L1 (README "Stage 5 D10 L1").  The merge renumbers.  The
+-- controls, which compile, are in Lookahead.lean: `mix_at_zero_is_home` and
+-- `mix_on_a_witness` (108), `mkWeight?_above_one` and `mkWeight?_on_witnesses`
+-- (109), `mixing_before_the_budget_is_not_the_expectation` and
+-- `mixing_before_the_budget_on_the_witness` (117).
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 108 — D10's mixture with `w` and `capDen − w` swapped: the lounge weighed by
+   `1 − p`.  At weight 0 the day must be home's, which has nothing at level 5. -/
+def swappedMix (w : Look.Weight) (L H : Look.Hist) : Look.Hist := fun l =>
+  (Look.capDen - w.val) * L l + w.val * H l
+
+theorem theSwappedMixIsHomeAtZero :
+    swappedMix Look.Weight.home (Look.histOf [0, 0, 0, 0, 0, 60]) (Look.histOf [0, 0, 0, 120, 0, 0]) 5
+      = Look.capDen * Look.histOf [0, 0, 0, 120, 0, 0] 5 := by
+  decide
+
+/- CHEAT 109 — a weight above one accepted: `3/2` decoded as `1.5 · capDen`.  The type
+   refuses the value, and `mkWeight?` refuses the pair by name. -/
+def threeHalvesIsAWeight : Look.Weight := ⟨1500000000000000000, by decide⟩
+
+theorem mkWeightAcceptsThreeHalves :
+    (Look.mkWeight? 3 2).map Subtype.val = .ok 1500000000000000000 := by
+  rfl
+
+/- CHEAT 117 — mixing before the budget limit taken for the expectation.  Budget 60,
+   lounge 60 at levels 5 and 4, home 120 at level 3, `p = ½`: the expected day keeps
+   30 minutes at level 3, and the limited mixture keeps none. -/
+theorem mixingBeforeTheBudgetIsTheExpectation :
+    Look.mix Look.halfWeight (Look.limitHist 60 Look.budgetWitnessL) (Look.limitHist 60 Look.budgetWitnessH) 3
+      = Look.limitHist (60 * Look.capDen) (Look.mix Look.halfWeight Look.budgetWitnessL Look.budgetWitnessH) 3 := by
+  decide
+
+
 -- ===========================================================================
 -- APPENDED 2026-09-14 (stage 5, D9 track, step A2: JSON gains an exact decimal;
 -- gaps 42 and 43).  Numbered 119-121 because the design labels cheats 91-118
@@ -1033,6 +1073,176 @@ theorem twoStampsOfOneInstantOrderedByTheirClocks :
     (⟨(Cal.utcSecAt ⟨true, 18000⟩ (Cal.toDay ⟨2026, 9, 7⟩ * 86400 + 22 * 3600)).getD 0, 0⟩ :
         Cal.Instant)
       < ⟨(Cal.utcSecAt Cal.Offset.utc (Cal.toDay ⟨2026, 9, 8⟩ * 86400 + 3 * 3600)).getD 0, 0⟩ := by
+  decide
+
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D10 track, step L2: the day's window, E7, in
+-- `Lookahead.lean`).  Numbers 110 and 111 are the design's own L2 labels (its
+-- §16); nothing in this checkout had taken them.  The D9 track numbers in
+-- parallel and the merge renumbers.  The controls, which compile, are in
+-- Lookahead.lean: `the_window_end_is_not_the_least_solution_over_walls_wholly_inside`
+-- and `the_window_end_is_the_least_solution` (110),
+-- `the_window_end_solves_the_equation` and `overlapping_walls_count_once` (111).
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 110 — walls counted only when wholly inside the window (Goals.lean
+   STAGE 6's `wallsInside`).  Arrival 07:00, eight hours, cap 19:00, a wall
+   14:50–15:50: the stage-6 equation is solved at 15:00, because the wall is not
+   wholly inside `[07:00, 15:00]`.  The fork, and `windowEnd`, extend the window
+   by the wall's whole hour to 16:00, so claiming 15:00 is false: `decide`
+   refuses it. -/
+theorem theWindowEndCountsOnlyWallsWhollyInside :
+    Look.windowEnd 420 480 1140 [(890, 950)]
+      = min (420 + 480) 1140 + Look.wallsInside 420 900 [(890, 950)] := by
+  decide
+
+/- CHEAT 111 — overlapping walls not merged before the walk.  Walls 10:00–11:40
+   and 10:50–12:30 each extend the window by their own length, 200 minutes, where
+   their union is 150: the unmerged walk ends at 18:20 and the least solution of
+   E7 at 17:30 (`the_window_end_solves_the_equation`,
+   `overlapping_walls_count_once`).  `decide` refuses the equality. -/
+def unmergedWindowEnd (a wm wc : Nat) (ws : List (Nat × Nat)) : Nat :=
+  (Look.sortByStart (Look.clipWalls a ws)).foldl Look.extendStep (Look.windowBase a wm wc)
+
+theorem theUnmergedWalkIsTheWindowEnd :
+    unmergedWindowEnd 420 480 1140 [(650, 750), (600, 700)]
+      = Look.windowEnd 420 480 1140 [(650, 750), (600, 700)] := by
+  decide
+
+
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D10 track, step L3: the slot cut in
+-- `Lookahead.lean`).  Numbers 112 and 113 are the design's own L3 labels (its
+-- §16); nothing in this checkout had taken them.  The D9 track numbers in
+-- parallel and the merge renumbers.  Each cheat is the real loop with one line
+-- changed, run over the same free stretches, and claimed equal to `cutSlots` on
+-- a fork-test window.  The controls, which compile, are in Lookahead.lean:
+-- `a_cut_never_ends_on_a_break` and `every_break_is_followed_by_a_slot` (112),
+-- `a_cut_never_ends_on_a_break` and `cutSlots_short_block_is_at_least_min_last`
+-- (113).  Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 112 — a stretch that ends on a break: the loop places a due break
+   without checking that `min_last` still fits after it.  From 07:00 to 09:45
+   the break due at 09:00 leaves 25 minutes, so the fork places neither it nor a
+   block (`a_cut_never_ends_on_a_break`); the cheat places the break and ends
+   the stretch on it, which `every_break_is_followed_by_a_slot` forbids.
+   `decide` refuses the equality.  (The design names the §4.3 cut as this
+   cheat's witness, but the guard never fires on that day, so the cheat and the
+   fork agree there; see the README's L3 block.) -/
+def cutStretchEndingOnABreak (c : Look.CutCfg) (stop : Nat) :
+    Nat → Nat → Nat → Look.CutAcc → Nat × Look.CutAcc
+  | 0, _, k, acc => (k, acc)
+  | fuel + 1, t, k, acc =>
+    if t < stop then
+      if (0 < c.breakAfter ∧ 0 < c.breakMin) ∧ c.breakAfter ≤ k then
+        cutStretchEndingOnABreak c stop fuel (t + 60 * c.breakMin) 0
+          (acc.1, (t, t + 60 * c.breakMin) :: acc.2)
+      else if t + 60 * c.blockMin ≤ stop then
+        cutStretchEndingOnABreak c stop fuel (t + 60 * c.blockMin) (k + 1)
+          (⟨t, t + 60 * c.blockMin, .block⟩ :: acc.1, acc.2)
+      else if t + 60 * c.minLast ≤ stop then
+        cutStretchEndingOnABreak c stop fuel stop (k + 1) (⟨t, stop, .short⟩ :: acc.1, acc.2)
+      else (k, acc)
+    else (k, acc)
+
+def cutEndingOnABreak (c : Look.CutCfg) (lo hi : Nat) (walls : List (Nat × Nat)) : Look.Cut :=
+  let r := (Look.freeIntervals lo hi walls).foldl
+    (fun acc iv => cutStretchEndingOnABreak c iv.2 (iv.2 - iv.1 + 1) iv.1 acc.1 acc.2) (0, ([], []))
+  ⟨r.2.1.reverse, r.2.2.reverse⟩
+
+theorem aStretchEndsOnABreak :
+    cutEndingOnABreak Look.CutCfg.shipped (Look.onTheSpecDay 420) (Look.onTheSpecDay 585) []
+      = Look.cutSlots Look.CutCfg.shipped (Look.onTheSpecDay 420) (Look.onTheSpecDay 585) [] [] 0 := by
+  decide
+
+/- CHEAT 113 — the short last block dropped at exactly `min_last`: the loop
+   keeps a tail only when it is strictly longer than `min_last`.  From 07:00 to
+   09:50 the fork places the break at 09:00 and a 30-minute short block after it
+   (`a_cut_never_ends_on_a_break`; `cutSlots_short_block_is_at_least_min_last`
+   allows exactly `min_last`); the cheat drops the block and so ends on the
+   break.  `decide` refuses the equality. -/
+def cutStretchDroppingAtMinLast (c : Look.CutCfg) (stop : Nat) :
+    Nat → Nat → Nat → Look.CutAcc → Nat × Look.CutAcc
+  | 0, _, k, acc => (k, acc)
+  | fuel + 1, t, k, acc =>
+    if t < stop then
+      if (0 < c.breakAfter ∧ 0 < c.breakMin) ∧ c.breakAfter ≤ k then
+        if stop < t + 60 * c.breakMin + 60 * c.minLast then (k, acc)
+        else cutStretchDroppingAtMinLast c stop fuel (t + 60 * c.breakMin) 0
+          (acc.1, (t, t + 60 * c.breakMin) :: acc.2)
+      else if t + 60 * c.blockMin ≤ stop then
+        cutStretchDroppingAtMinLast c stop fuel (t + 60 * c.blockMin) (k + 1)
+          (⟨t, t + 60 * c.blockMin, .block⟩ :: acc.1, acc.2)
+      else if t + 60 * c.minLast < stop then
+        cutStretchDroppingAtMinLast c stop fuel stop (k + 1) (⟨t, stop, .short⟩ :: acc.1, acc.2)
+      else (k, acc)
+    else (k, acc)
+
+def cutDroppingAtMinLast (c : Look.CutCfg) (lo hi : Nat) (walls : List (Nat × Nat)) : Look.Cut :=
+  let r := (Look.freeIntervals lo hi walls).foldl
+    (fun acc iv => cutStretchDroppingAtMinLast c iv.2 (iv.2 - iv.1 + 1) iv.1 acc.1 acc.2) (0, ([], []))
+  ⟨r.2.1.reverse, r.2.2.reverse⟩
+
+theorem theShortBlockDroppedAtMinLast :
+    cutDroppingAtMinLast Look.CutCfg.shipped (Look.onTheSpecDay 420) (Look.onTheSpecDay 590) []
+      = Look.cutSlots Look.CutCfg.shipped (Look.onTheSpecDay 420) (Look.onTheSpecDay 590) [] [] 0 := by
+  decide
+
+
+
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D10 track, step L4: energy and the budget limit
+-- in `Lookahead.lean`).  Numbers 114, 115 and 116 are the design's own L4 labels
+-- (its §16); nothing in this checkout had taken them.  The D9 track numbers in
+-- parallel and the merge renumbers.  Each cheat is the real function with one
+-- step changed, claimed to agree with the fork on a fork-test input.  The
+-- controls, which compile, are in Lookahead.lean: `futureEnergy_home_is_capped`
+-- and `energize_applies_the_home_cap` (114), `the_bucket_reads_seconds` and
+-- `the_bucket_reads_seconds_on_the_spec_day` (115), `buckets_clamp` and
+-- `predict_uses_the_learned_curve` (116).  Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 114 — no home cap: a future home day's slot energy is the prediction
+   itself.  At 08:00 on the spec day, woken at 06:05, the shipped home prior is
+   `1-4`'s 4, above `home_max_ci = 3`, which the fork's `cap_for_location` (and
+   `futureEnergy_home_is_capped`) forbid.  `decide` refuses the claim. -/
+def futureEnergyWithoutTheHomeCap (c : Look.Curves) (_homeMax : Nat) (loc : Look.Loc)
+    (wake t : Cal.Instant) : Fin 6 :=
+  Look.predictAt c loc.curve (Look.hswAt wake t)
+
+theorem theHomeCapDropped :
+    (futureEnergyWithoutTheHomeCap Look.Curves.shipped 3 .home ⟨Look.onTheSpecDay 365, 0⟩
+      ⟨Look.onTheSpecDay 480, 0⟩).val ≤ 3 := by
+  decide
+
+/- CHEAT 115 — hours since wake from whole minutes: the wake and the slot are
+   read as clock minutes before subtracting.  Woken at 06:05:40, a slot at 07:05
+   is 3,560 seconds away, `hsw` 0.99 and bucket 0 in the fork; whole minutes say
+   60 and bucket 1 (CRIT 6).  `decide` refuses the equality. -/
+def hswFromWholeMinutes (wake t : Cal.Instant) : Int :=
+  Look.hsw100 (60 * ((t.sec / 60 : Nat) - (wake.sec / 60 : Nat) : Int))
+
+theorem hoursSinceWakeFromWholeMinutes :
+    Look.bucket (hswFromWholeMinutes ⟨Look.onTheSpecDay 365 + 40, 0⟩ ⟨Look.onTheSpecDay 425, 0⟩)
+      = Look.bucket (Look.hswAt ⟨Look.onTheSpecDay 365 + 40, 0⟩ ⟨Look.onTheSpecDay 425, 0⟩) := by
+  decide
+
+/- CHEAT 116 — the hours-since-wake bucket without its clamp to `0..11`: the
+   learned curve is indexed by `floor(hsw)` itself.  At 30 hours the fork's
+   `Model::energy_at` reads the fixture lounge curve's last entry, 2
+   (`predict_uses_the_learned_curve`); the unclamped index 30 is past the
+   curve's 12 entries and reads nothing.  `decide` refuses the equality. -/
+def bucketWithoutTheClamp (h : Int) : Nat := if h ≤ 0 then 0 else h.toNat / 100
+
+def learnedWithoutTheClamp (energy : List (List Char × List Nat)) (curve : List Char) (h : Int) :
+    Option Nat :=
+  (Look.curveLookup energy curve).bind (fun c => c[bucketWithoutTheClamp h]?)
+
+theorem theBucketWithoutItsClamp :
+    learnedWithoutTheClamp Look.fixtureEnergy Look.loungeKey 3000
+      = Look.learnedLevel Look.fixtureEnergy Look.loungeKey 3000 := by
   decide
 
 end Tm

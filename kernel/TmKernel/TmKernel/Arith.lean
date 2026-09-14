@@ -56,12 +56,13 @@ each monotone (`*_mono`) and each within one minute of the exact value
 | # | site | rule | here |
 |---|---|---|---|
 | R1 | §7.1/§7.3 `need = remaining × safety`, for the EDF reservation | **ceiling** — a margin rounded down stops being a margin | `needMin` |
-| R2 | §8.1 `budget = floor(window_hours × 60 / block_min × budget_ratio)` | **floor**, one division, constants folded | `budgetBlocks` |
-| R3 | §8.1 `window_min = round(window_hours × 60)` | **eliminated**: the window enters the kernel as minutes, so the site does not exist | — |
+| R2 | §8.1 `budget = floor(window_hours × 60 / block_min × budget_ratio)` | **floor**, one division, constants folded | `budgetBlocks`; on the exact pairs, `Look.budgetOf` (stage 5 D10 step L2) |
+| R3 | §8.1 `window_min = round(window_hours × 60)` | **half-up**, on the exact pair `window_hours = num/den` (fork `(window_hours × 60.0).round()`). *Reopened at stage 5 D10 step L2 (design D10-10): the kernel computes the window, so the site exists; this row said "eliminated" while the window entered the kernel as minutes.* Parity P27 | `Look.windowMinOf` |
 | R4 | §8.5 `planned = round(est × duration multiplier)` | **half-up** | `plannedMin` |
 | R5 | §8.5 slot energy after the posterior correction | **half-up, then clamp to `0..5`** — and the clamp is load-bearing (`posterior_can_go_negative`) | `energyAfter` |
 | R6 | §8.2 step 3's short last block, "≥ 30m or dropped" (§16 `min_last_block_min`) | a **comparison**, not a rounding — named so that nobody adds one | — |
 | R7 | §8.4's future-day capacity, mixing the two locations by `p_lounge` | **open**: a mixture of two integer capacities by a rational weight. Nothing rounds here yet; the pair is carried exact | — |
+| R11 | §8.5's hours since wake, `hsw = round(seconds / 36) / 100` (fork `log::hours_since_wake`), which `energy::bucket` floors and the prior curve's range keys compare | **half away from zero**, on whole seconds (`Cal.secondsBetween`, chrono's `num_seconds`); exact against the fork's `f64` for every input, because no quotient lies within an ulp of a tie and no hundredth within an ulp of a range key with `den ≤ 10^6`. *Added at stage 5 D10 step L4 (design D10-11). R8–R10 are the D9 track's and step L9's rows, added by their steps* | `Look.hsw100` (`hsw100_mono`, `hsw100_withinOne`) |
 
 Two families that look like rounding and are not.  §7.1's utilization, §7.3's
 `avail` and `reserve`, §7.4's hysteresis, §7.5's batching threshold, §8.5's

@@ -9,6 +9,7 @@ import TmKernel.Plan
 import TmKernel.Tree
 import TmKernel.Priority
 import TmKernel.Capacity
+import TmKernel.Lookahead
 import TmKernel.Fast
 import TmKernel.Cmd
 import TmKernel.Close

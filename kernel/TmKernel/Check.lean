@@ -2461,6 +2461,56 @@ open Tm
 #print axioms Tm.edf_five_deadlines_over_three_days
 #print axioms Tm.edf_serves_a_loaded_plans_needs_earliest_deadline_first
 
+-- APPENDED 2026-09-14 (stage 5, D10 track).  Step L1: D10's exact mixture
+-- (kernel/README.md "Stage 5 D10 L1").  `Lookahead.lean` (new, imported after `Capacity`):
+-- `capDen = 10^18` (D17), the weight decoder `mkWeight?` with its three named refusals,
+-- `mix` (lounge and home weighed after each budget limit), `limitHist`, the threshold twin,
+-- and the scaling laws that make `capDen` unobservable.  In-step (design §13.2); no goal
+-- entered or left `Goals.lean`.  Two-run laws proved (D5): `edf_commutes_with_scaling`,
+-- `edfGrants_commute_with_scaling`.
+#print axioms Tm.Look.capDen_eq_pow
+#print axioms Tm.Look.capDen_pos
+#print axioms Tm.Look.mkWeight?_zero_den
+#print axioms Tm.Look.mkWeight?_above_one
+#print axioms Tm.Look.mkWeight?_precision
+#print axioms Tm.Look.mkWeight?_refuses_more_than_18_places
+#print axioms Tm.Look.mkWeight?_accepts
+#print axioms Tm.Look.mkWeight?_ok_elim
+#print axioms Tm.Look.mkWeight?_denotes
+#print axioms Tm.Look.mkWeight?_accepted_width
+#print axioms Tm.Look.mkWeight?_complement
+#print axioms Tm.Look.mkWeight?_round2
+#print axioms Tm.Look.mix_between_the_locations
+#print axioms Tm.Look.mix_at_zero_is_home
+#print axioms Tm.Look.mix_at_one_is_lounge
+#print axioms Tm.Look.mixDay_at_a_certain_weight
+#print axioms Tm.Look.mix_denotes_the_weighted_sum
+#print axioms Tm.Look.mixDay_minutesAt_is_the_expectation
+#print axioms Tm.Look.mix_width
+#print axioms Tm.Look.topElig_lin
+#print axioms Tm.Look.eligAt_mix
+#print axioms Tm.Look.mix_atLeast_between_the_locations
+#print axioms Tm.Look.limitHist_keeps_the_min
+#print axioms Tm.Look.dayTake_scale
+#print axioms Tm.Look.dayRest_scale
+#print axioms Tm.Look.dayOut_scale
+#print axioms Tm.Look.mixing_before_the_budget_agrees_at_a_certain_weight
+#print axioms Tm.Look.mixing_before_the_budget_is_not_the_expectation
+#print axioms Tm.Look.mixing_before_the_budget_on_the_witness
+#print axioms Tm.Look.twin_is_the_forks_location
+#print axioms Tm.Look.twin_is_the_forks_threshold
+#print axioms Tm.Look.the_bin_does_not_see_capDen
+#print axioms Tm.Look.availUntil_scale
+#print axioms Tm.Look.reserveRest_scale
+#print axioms Tm.Look.reserveOut_scale
+#print axioms Tm.Look.edfCaps_scale
+#print axioms Tm.Look.edfGrantsGo_scale
+#print axioms Tm.Look.edf_commutes_with_scaling
+#print axioms Tm.Look.edfGrants_commute_with_scaling
+#print axioms Tm.Look.a_scaled_grant_keeps_its_verdicts
+#print axioms Tm.Look.mkWeight?_on_witnesses
+#print axioms Tm.Look.mix_on_a_witness
+
 -- APPENDED 2026-09-14 (stage 5, D9 track).  Step A1 (design §14.1): gap 44 closed.
 -- The per-element recursions of the codec and splitDoc run as proved @[csimp]
 -- accumulator twins (rule D9-21).  Json.lean: the emitter twin, then the parser twin;
@@ -2606,3 +2656,156 @@ open Tm
 #print axioms Tm.Cal.instantOf_in_the_spring_gap
 #print axioms Tm.Cal.instantOf_in_the_fall_fold
 #print axioms Tm.Cal.instantOf_on_an_unambiguous_noon
+
+-- APPENDED 2026-09-14 (stage 5, D10 track).  Step L2 (design §13.3, §14.8 row L2): the day's
+-- window, E7, in real seconds; the two STAGE 6 E7 goals discharged in Lookahead.lean
+-- (restated to overlap semantics and refuted as written), and the plan's walls.
+#print axioms Tm.Look.wallOverlap_eq_countIn
+#print axioms Tm.Look.countIn_of_le
+#print axioms Tm.Look.countIn_succ
+#print axioms Tm.Look.countIn_congr
+#print axioms Tm.Look.countIn_or
+#print axioms Tm.Look.countIn_wall
+#print axioms Tm.Look.countIn_zero
+#print axioms Tm.Look.covered_cons
+#print axioms Tm.Look.covered_eq_true
+#print axioms Tm.Look.countIn_covered_nil
+#print axioms Tm.Look.WallChain.tail
+#print axioms Tm.Look.extend_ge
+#print axioms Tm.Look.extendStep_pos
+#print axioms Tm.Look.extendStep_neg
+#print axioms Tm.Look.countIn_covered_cons
+#print axioms Tm.Look.extend_least
+#print axioms Tm.Look.extend_solves
+#print axioms Tm.Look.mergeStep_spec
+#print axioms Tm.Look.foldl_mergeStep_spec
+#print axioms Tm.Look.covered_reverse
+#print axioms Tm.Look.mergeSorted_spec
+#print axioms Tm.Look.insertByStart_perm
+#print axioms Tm.Look.insertByStart_sorted
+#print axioms Tm.Look.sortByStart_perm
+#print axioms Tm.Look.sortByStart_sorted
+#print axioms Tm.Look.mergeSort_start_sorted
+#print axioms Tm.Look.clipWalls_mem
+#print axioms Tm.Look.covered_clipWalls
+#print axioms Tm.Look.covered_perm
+#print axioms Tm.Look.walk_is_the_least_solution
+#print axioms Tm.Look.the_window_end_solves_the_equation
+#print axioms Tm.Look.windowEnd_le_of_prefixpoint
+#print axioms Tm.Look.the_window_end_is_the_least_solution
+#print axioms Tm.Look.windowEnd_eq_windowEndFast
+#print axioms Tm.Look.windowBase_le_windowEnd
+#print axioms Tm.Look.arrival_le_windowEnd
+#print axioms Tm.Look.windowEnd_without_walls
+#print axioms Tm.Look.the_window_end_is_not_the_least_solution_over_walls_wholly_inside
+#print axioms Tm.Look.the_window_end_is_not_the_least_solution_as_stage_6_wrote_it
+#print axioms Tm.Look.the_window_base_is_clamped_to_the_arrival
+#print axioms Tm.Look.a_wall_begun_before_the_arrival_extends_the_window
+#print axioms Tm.Look.the_window_end_does_not_solve_the_equation_as_stage_6_wrote_it
+#print axioms Tm.Look.overlapping_walls_count_once
+#print axioms Tm.Look.budgetOf_denotes
+#print axioms Tm.Look.window_and_budget_on_witnesses
+#print axioms Tm.Look.instantOf_ns
+#print axioms Tm.Look.windowOn_solves_E7
+#print axioms Tm.Look.the_witness_days_are_the_dates_they_name
+#print axioms Tm.Look.budget_of_an_eight_hour_window
+#print axioms Tm.Look.walls_extend_the_window
+#print axioms Tm.Look.the_cap_bounds_the_window
+#print axioms Tm.Look.wall_extension_reaches_a_fixed_point
+#print axioms Tm.Look.the_window_counts_real_hours_across_the_spring_transition
+#print axioms Tm.Look.shiftBack_zero
+#print axioms Tm.Look.mem_wallsOn
+#print axioms Tm.Look.mem_wallIndex
+#print axioms Tm.Look.wallOfEntity_settled
+#print axioms Tm.Look.wallOfEntity_interval
+#print axioms Tm.Look.the_buffer_is_taken_off_the_local_clock
+#print axioms Tm.Look.a_multi_day_wall_puts_one_evening_in_two_windows
+
+-- APPENDED 2026-09-14 (stage 5, D10 track).  Step L3 (design §13.3, §14.8 row L3): the slot cut,
+-- fork `free_intervals` and `cut_slots_around`, in whole seconds, pulled from stage 6 under D12;
+-- the four `cutSlots_*` laws of the step row in-step, and the fork's tests as witnesses.
+#print axioms Tm.Look.insertByStart_append
+#print axioms Tm.Look.sortByStart_eq_mergeSort
+#print axioms Tm.Look.sortByStart_eq_sortByStartFast
+#print axioms Tm.Look.clipTo_mem
+#print axioms Tm.Look.covered_clipTo
+#print axioms Tm.Look.freeChain_spec
+#print axioms Tm.Look.freeFold_spec
+#print axioms Tm.Look.mem_ite_cons
+#print axioms Tm.Look.freeIntervals_spec
+#print axioms Tm.Look.freeIntervals_inside_the_window
+#print axioms Tm.Look.freeIntervals_are_in_order
+#print axioms Tm.Look.freeIntervals_are_the_free_units
+#print axioms Tm.Look.cutStretch_fuel
+#print axioms Tm.Look.cutSlots_fuel_is_enough
+#print axioms Tm.Look.cutStretch_rec
+#print axioms Tm.Look.minLast_pos
+#print axioms Tm.Look.AccInv.mono
+#print axioms Tm.Look.AccInv.nil
+#print axioms Tm.Look.cutStretch_spec
+#print axioms Tm.Look.cutFold_spec
+#print axioms Tm.Look.cutSlots_spec
+#print axioms Tm.Look.cutSlots_without_a_block_length_is_empty
+#print axioms Tm.Look.cutSlots_inside_the_window
+#print axioms Tm.Look.cutSlots_breaks_inside_the_window
+#print axioms Tm.Look.cutSlots_avoid_the_walls
+#print axioms Tm.Look.cutSlots_breaks_avoid_the_walls
+#print axioms Tm.Look.cutSlots_block_is_block_min
+#print axioms Tm.Look.cutSlots_short_block_is_at_least_min_last
+#print axioms Tm.Look.cutSlots_break_is_break_min
+#print axioms Tm.Look.cutSlots_slots_are_in_order
+#print axioms Tm.Look.cutSlots_breaks_are_in_order
+#print axioms Tm.Look.cutSlots_no_slot_overlaps_a_break
+#print axioms Tm.Look.every_break_is_followed_by_a_slot
+#print axioms Tm.Look.cut_slots_on_the_spec_day
+#print axioms Tm.Look.a_routine_passed_as_a_wall_does_not_pay_off_the_break
+#print axioms Tm.Look.cut_slots_around_a_placed_routine
+#print axioms Tm.Look.cut_slots_from_a_pending_break
+#print axioms Tm.Look.a_cut_never_ends_on_a_break
+#print axioms Tm.Look.a_long_wall_leaves_eight_hours_to_cut
+#print axioms Tm.Look.a_late_arrival_cuts_nothing
+#print axioms Tm.Look.free_intervals_merge_overlapping_walls
+#print axioms Tm.Look.a_cut_counts_real_minutes_across_the_fall_transition
+
+-- APPENDED 2026-09-14 (stage 5, D10 track).  Step L4 (design §13.3, §14.8 row L4): energy and the
+-- budget limit, fork `hours_since_wake`/`bucket`/`StepFn::at`/`prior_energy`/`prior_level`/`predict`/
+-- `cap_for_location`/`energize`/`limit_to_budget`, pulled from stage 6 under D12; site R11, the four
+-- goals of the step row in-step (`limitSlots_is_limitHist` equal to L1's `limitHist`), and the fork's
+-- tests as witnesses.
+#print axioms Tm.Look.hsw100_is_round_half_away
+#print axioms Tm.Look.hsw100_nearest
+#print axioms Tm.Look.hsw100_mono
+#print axioms Tm.Look.hsw100_withinOne
+#print axioms Tm.Look.bucket_mono
+#print axioms Tm.Look.futureEnergy_home_is_capped
+#print axioms Tm.Look.futureEnergy_lounge_is_the_prediction
+#print axioms Tm.Look.foldl_levelStep
+#print axioms Tm.Look.histOf'_cons
+#print axioms Tm.Look.histOf'_of_below
+#print axioms Tm.Look.histOf'_perm
+#print axioms Tm.Look.topElig_bump
+#print axioms Tm.Look.topElig_of_zero_above
+#print axioms Tm.Look.limitHist_eq
+#print axioms Tm.Look.greedy_spec
+#print axioms Tm.Look.limitSlots_is_limitHist
+#print axioms Tm.Look.limitSlots_eq_limitSlotsFast
+#print axioms Tm.Look.sum6_bump
+#print axioms Tm.Look.foldl_add_minutes
+#print axioms Tm.Look.sum6_histOf'
+#print axioms Tm.Look.dayHist_eq
+#print axioms Tm.Look.dayHist_keeps_the_min
+#print axioms Tm.Look.dayHist_home_is_capped
+#print axioms Tm.Look.hsw100_on_witnesses
+#print axioms Tm.Look.the_bucket_reads_seconds
+#print axioms Tm.Look.the_bucket_reads_seconds_on_the_spec_day
+#print axioms Tm.Look.buckets_clamp
+#print axioms Tm.Look.prior_energy_lookup
+#print axioms Tm.Look.predict_matches_the_prior_tables_at_boundaries
+#print axioms Tm.Look.predict_falls_back_to_the_prior
+#print axioms Tm.Look.predict_uses_the_learned_curve
+#print axioms Tm.Look.a_curve_falls_back_as_the_config_does
+#print axioms Tm.Look.energize_follows_the_prior_curve
+#print axioms Tm.Look.energize_applies_the_home_cap
+#print axioms Tm.Look.a_future_tuesday_keeps_its_budget
+#print axioms Tm.Look.the_learned_curve_moves_an_hour_on_sunday
+#print axioms Tm.Look.hours_since_wake_count_real_hours_across_the_fall_transition
