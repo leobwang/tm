@@ -775,4 +775,44 @@ theorem aDroppedChildIsDeleted :
     foldClosed (fun q => (q.val.store.get "c3".toList).isSome) = some false := by
   decide
 
+
+-- ===========================================================================
+-- APPENDED 2026-09-13 (stage-4 final, repair: the mixed pair's order and `NhMm`
+-- in the fold).  The controls, which compile, are `unitValue_renderDur` and
+-- `the_week_close_folds_an_hours_and_minutes_child` (67, 68) and
+-- `the_mixed_pair_keeps_its_order_on_the_loaded_witness` (69).
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 67 — the stage-one reader blind to `NhMm`, as it was.  `unitValue` reads
+   `2h30m` as 150; `decide` proves the equation false. -/
+theorem hoursAndMinutesReadNothing : unitValue 50 "2h30m".toList = none := by
+  decide
+
+/- CHEAT 68 — the fold that loses an `NhMm` child.  `^p1` (`6b`) with `5h + 2h30m`
+   dropped would keep a record with only its stamp, 150 minutes short of its
+   children; the record carries `est:9b`. -/
+set_option maxRecDepth 40000 in
+theorem hoursAndMinutesChildIsLost :
+    closedFileLines week closeHmWitness = some
+      [["# Milestones".toList,
+        "- [-] 6b Parent project ^p1".toList,
+        "# Tasks".toList,
+        "- [~] 5h Part one @p1 ^c1".toList,
+        "- [~] 2h30m Part two @p1 ^c2".toList],
+       ["# Outcomes".toList, "# Demoted".toList,
+        "- [-] 6b Parent project demoted:W36 ^p1".toList]] := by
+  decide
+
+/- CHEAT 69 — the mixed pair inverted.  A close that left `^p1`'s tombstone below the
+   child `^c1` it dropped would reorder the week file it closed; the tombstone stands
+   above. -/
+set_option maxRecDepth 40000 in
+theorem mixedPairInverts :
+    foldClosed (fun q => match q.val.store.get "p1".toList, q.val.store.get "c1".toList with
+      | some fp, some fc =>
+        fp.val.archiveSite.map (fun t => decide (t.doc = fc.val.live.doc ∧ fc.val.live.rank < t.rank))
+      | _, _ => none) = some (some true) := by
+  decide
+
 end Tm

@@ -2165,3 +2165,30 @@ open Tm
 #print axioms Tm.the_week_close_reports_the_fold
 #print axioms Tm.toNat_eq_one
 #print axioms Tm.toNat_eq_zero
+
+-- APPENDED 2026-09-13 (stage-4 final).  Repair: two defects of step 4 an independent
+-- verification found (kernel/README.md "Stage 4 final, repair").  Defect 2: the mixed
+-- pair — one line the fold drops, one it files, from one file by one action — gets the
+-- order law `close_keeps_source_order` (whose `hfold` it falls outside) cannot state,
+-- over the sites both leave in the source file; `close_keeps_source_order` and `_iff`
+-- are unchanged.  Defect 3: the stage-one reader `unitValue` reads `NhMm`
+-- (`hmValue`), so an `NhMm` child is folded at its minutes; `unitValue_estWord`,
+-- `unitValue_isSome` and `Field.unitValue_none_of_mem` keep their statements, their
+-- proofs re-run over the new branch.
+#print axioms Tm.Entity.bumpIn_live
+#print axioms Tm.Entity.bumpIn_archiveSite
+#print axioms Tm.landAt_get
+#print axioms Tm.closeOne_get_others
+#print axioms Tm.fold_keeps_a_closed_site
+#print axioms Tm.fold_keeps_a_dropped_line_in_place
+#print axioms Tm.fold_leaves_a_copied_lines_tombstone_where_it_stood
+#print axioms Tm.mem_closeCands_of_ne_stay
+#print axioms Tm.files_of_isDrop
+#print axioms Tm.close_leaves_a_dropped_line_where_it_stood
+#print axioms Tm.close_leaves_a_copied_lines_tombstone_where_it_stood
+#print axioms Tm.close_keeps_source_order_across_the_fold
+#print axioms Tm.close_keeps_source_order_across_the_fold_is_not_vacuous
+#print axioms Tm.the_mixed_pair_keeps_its_order_on_the_loaded_witness
+#print axioms Tm.Field.hmValue_none_of_mem
+#print axioms Tm.Field.unitValue_renderDur
+#print axioms Tm.the_week_close_folds_an_hours_and_minutes_child

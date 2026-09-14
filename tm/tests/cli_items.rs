@@ -832,6 +832,59 @@ fn a_typod_parent_refuses_a_kernel_backed_verb_by_name_and_writes_nothing() {
     }
 }
 
+/// **A refused tree is not written by the housekeeping ahead of the verb
+/// either** — kernel/README.md "Stage 4 final, repair", defect 1. The test
+/// above runs at [`cli_common::NOW`], before `^a4`'s `on-event:reply/7d`
+/// timeout has elapsed, so §5.1's timeout never tried to write. Here it has,
+/// by both roads into it: (a) on the Monday after the week, where the
+/// automatic close runs first and is refused, and (b) on a day whose close
+/// has already run, where the timeout alone meets the tree and checks it with
+/// the kernel first. Before the repair both rewrote `^a4` to `[ ]` and created
+/// the log, and then the verb refused saying nothing was written. Now every
+/// Markdown file and the log are as they were, stderr names the fault, and
+/// fixing the link lets the same verb run — with the timeout applied.
+#[test]
+fn a_typod_parent_refuses_a_verb_after_a_waiting_timeout_and_writes_nothing() {
+    for (road, at) in [("auto close refused", "2026-09-14T09:00:00-05:00"), ("timeout alone", "2026-09-07T10:00:00-05:00")] {
+        let tm = Tm::new();
+        if road == "timeout alone" {
+            // The day's close runs here, on a sound tree; nothing is due at `at`.
+            let first = tm.run(&["now"]);
+            assert_eq!(first.code, 0, "{road}: {}{}", first.stdout, first.stderr);
+            let backlog = tm.read("backlog.md");
+            let aged = backlog.replace("waiting:2026-09-05", "waiting:2026-08-01");
+            assert_ne!(aged, backlog, "the fixture no longer carries `waiting:2026-09-05`");
+            std::fs::write(tm.plan.join("backlog.md"), aged).expect("write backlog");
+        }
+        let path = tm.plan.join("week/2026-W37.md");
+        let text = std::fs::read_to_string(&path).expect("read week");
+        let broken = text.replace("@O1 ^m1", "@O9 ^m1");
+        assert_ne!(broken, text, "the fixture no longer carries `@O1 ^m1`");
+        std::fs::write(&path, &broken).expect("write week");
+        assert!(tm.line("backlog.md", "a4").starts_with("- [?]"));
+        let before = plan_md(&tm);
+        let events = tm.events();
+        let log_existed = tm.exists(".tm/log.jsonl");
+
+        let out = tm.run_at(at, &["drop", "^a1"]);
+        assert_eq!(out.code, 1, "{road}: {}{}", out.stdout, out.stderr);
+        assert!(out.stderr.contains("danglingParent"), "{road}: {}", out.stderr);
+        if road == "timeout alone" {
+            assert!(out.stderr.contains("waiting timeouts (§5.1) were not applied"), "{road}: {}", out.stderr);
+        }
+        assert_eq!(plan_md(&tm), before, "{road}: a refused tree was written");
+        assert_eq!(tm.events(), events, "{road}: a refused tree was logged");
+        assert_eq!(tm.exists(".tm/log.jsonl"), log_existed, "{road}: the log was created");
+        assert!(tm.line("backlog.md", "a4").starts_with("- [?]"), "{road}");
+
+        std::fs::write(&path, &text).expect("restore week");
+        let fixed = tm.run_at(at, &["drop", "^a1"]);
+        assert_eq!(fixed.code, 0, "{road}, fixed: {}{}", fixed.stdout, fixed.stderr);
+        assert!(tm.line("backlog.md", "a1").starts_with("- [~]"), "{road}");
+        assert!(tm.line("backlog.md", "a4").starts_with("- [ ]"), "{road}: the timeout did not run");
+    }
+}
+
 /// **`tm add` refuses a line whose `@parent` names no item, on both of its
 /// paths, and writes nothing** — the owner's D6. The kernel-backed add would
 /// refuse the title by its post-state check; the carve-outs (`--section`, a

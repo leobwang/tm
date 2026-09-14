@@ -198,11 +198,24 @@ about one function rather than a rule spread over the code. -/
 
 def isEstKey (w : List Char) : Bool := w.take 4 == ['e', 's', 't', ':']
 
-/-- `Nb` = N blocks, `Nm` = N minutes, `Nh` = N hours. -/
+/-- `NhMm`'s value, read off the word with its final `m` removed (`2h30` → 150):
+the digits before the `h`, times 60, plus the digits after it.  Fork-point
+`Dur::parse`'s `NhMm` arm, and `Field.parseDur`'s `hm` (`Dur.minutes`). -/
+def hmValue (w : List Char) : Option Nat :=
+  (readNat (w.takeWhile (fun c => (charDigit c).isSome))).bind (fun h =>
+    match w.dropWhile (fun c => (charDigit c).isSome) with
+    | 'h' :: t => (readNat t).map (fun m => h * 60 + m)
+    | _        => none)
+
+/-- `Nb` = N blocks, `Nm` = N minutes, `Nh` = N hours, `NhMm` = N hours and M
+minutes.  The last was not read before the stage-4 repair (kernel/README.md
+"Stage 4 final, repair", defect 3): a child whose estimate was `2h30m` counted 0 in
+the week close's fold, and its parent's record dropped the minutes, while the
+report's `estMinutes` (`viewRemainingDur`) and the Rust both read 150. -/
 def unitValue (blockMin : Nat) (w : List Char) : Option Nat :=
   match w.reverse with
   | 'b' :: ds => (readNat ds.reverse).map (· * blockMin)
-  | 'm' :: ds => readNat ds.reverse
+  | 'm' :: ds => (readNat ds.reverse).or (hmValue ds.reverse)
   | 'h' :: ds => (readNat ds.reverse).map (· * 60)
   | _ => none
 
@@ -270,8 +283,8 @@ theorem unitValue_estWord (bm v : Nat) : unitValue bm ((estWord v).drop 4) = som
   unfold unitValue
   rw [List.reverse_append]
   simp only [List.reverse_cons, List.reverse_nil, List.nil_append, List.cons_append]
-  rw [List.reverse_reverse]
-  exact readNat_digitsOf v
+  rw [List.reverse_reverse, readNat_digitsOf]
+  rfl
 
 theorem isEstKey_estWord (v : Nat) : isEstKey (estWord v) = true := by
   simp [isEstKey, estWord]
@@ -6581,6 +6594,33 @@ theorem readNat_none_of_mem {x : Char} (hd : charDigit x = none) :
           · exact ih _ h
     exact gen _ 0 hx
 
+/-- `hmValue` reads nothing off a word holding a character that is neither a digit
+nor `h`. -/
+theorem hmValue_none_of_mem {x : Char} (hd : charDigit x = none) (hh : x ≠ 'h') :
+    ∀ (l : List Char), x ∈ l → hmValue l = none := by
+  intro l hx
+  unfold hmValue
+  have hsplit := List.takeWhile_append_dropWhile (p := fun c => (charDigit c).isSome) (l := l)
+  have hnt : x ∉ l.takeWhile (fun c => (charDigit c).isSome) := by
+    intro hm
+    have := List.all_eq_true.1 (List.all_takeWhile (p := fun c => (charDigit c).isSome) (l := l)) x hm
+    simp [hd] at this
+  have hxd : x ∈ l.dropWhile (fun c => (charDigit c).isSome) := by
+    rw [← hsplit] at hx
+    rcases List.mem_append.1 hx with h | h
+    · exact absurd h hnt
+    · exact h
+  cases hr : readNat (l.takeWhile (fun c => (charDigit c).isSome)) with
+  | none => rfl
+  | some k =>
+    simp only [Option.bind_some]
+    split
+    · rename_i t heq
+      rw [heq] at hxd
+      have hxt : x ∈ t := (List.mem_cons.1 hxd).resolve_left hh
+      simp [readNat_none_of_mem hd t hxt]
+    · rfl
+
 theorem unitValue_none_of_mem (bm : Nat) {w : List Char} {x : Char} (hx : x ∈ w)
     (hd : charDigit x = none) (hb : x ≠ 'b') (hm : x ≠ 'm') (hh : x ≠ 'h') :
     unitValue bm w = none := by
@@ -6600,13 +6640,53 @@ theorem unitValue_none_of_mem (bm : Nat) {w : List Char} {x : Char} (hx : x ∈ 
       obtain ⟨rfl, rfl⟩ := List.cons.inj heq
       rcases List.mem_cons.1 hr with h | h
       · exact absurd h hm
-      · simp [readNat_none_of_mem hd _ (List.mem_reverse.2 h)]
+      · simp [readNat_none_of_mem hd _ (List.mem_reverse.2 h),
+          hmValue_none_of_mem hd hh _ (List.mem_reverse.2 h)]
     · rename_i ds' heq
       obtain ⟨rfl, rfl⟩ := List.cons.inj heq
       rcases List.mem_cons.1 hr with h | h
       · exact absurd h hh
       · simp [readNat_none_of_mem hd _ (List.mem_reverse.2 h)]
     · rfl
+
+/-- **The stage-one reader reads every duration the field reader reads** (README gap 4's
+disagreement on `NhMm`, closed at the stage-4 final repair, defect 3): whatever
+`renderDur` writes without days — `6b`, `90m`, `2h`, `2h30m` — `unitValue` reads as
+`Dur.minutes`, which is `parseDurND`'s reading (`parse_render_durND`).  Before the
+repair the `hm` case was `none`, and a `2h30m` child counted `0` in the week close's
+fold. -/
+theorem unitValue_renderDur (bm : Nat) (d : Dur) (hd : d.noDays = true) :
+    unitValue bm (renderDur d) = some (d.minutes bm) := by
+  cases d with
+  | simple n u =>
+    show unitValue bm (digitsOf n ++ [DurUnit.char u]) = _
+    cases u with
+    | days => simp [Dur.noDays] at hd
+    | blocks =>
+      unfold unitValue
+      simp [DurUnit.char, readNat_digitsOf, Dur.minutes]
+    | minutes =>
+      unfold unitValue
+      simp [DurUnit.char, readNat_digitsOf, Dur.minutes]
+    | hours =>
+      unfold unitValue
+      simp [DurUnit.char, readNat_digitsOf, Dur.minutes]
+  | hm h m =>
+    have hw : renderDur (.hm h m) = (digitsOf h ++ 'h' :: digitsOf m) ++ ['m'] := by
+      simp [renderDur]
+    rw [hw]
+    unfold unitValue
+    rw [List.reverse_append]
+    simp only [List.reverse_cons, List.reverse_nil, List.nil_append, List.cons_append]
+    rw [List.reverse_reverse, readNat_none_of_mem (x := 'h') rfl _ (by simp)]
+    have hs := takeWhile_append_all (fun c => (charDigit c).isSome) (digitsOf h) ('h' :: digitsOf m)
+      (digitsOf_isDigitC h) (fun x hx => by
+        simp only [List.head?_cons, Option.some.injEq] at hx
+        subst hx
+        rfl)
+    unfold hmValue
+    rw [hs.1, hs.2, readNat_digitsOf]
+    simp [readNat_digitsOf, Dur.minutes]
 
 /-- A word holding `:` or `^` is never a `ci` digit and never a positional
 estimate; unless it is an `est:` key, it is `Neutral`. -/

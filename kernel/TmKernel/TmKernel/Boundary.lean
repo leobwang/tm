@@ -7096,4 +7096,82 @@ theorem close_week_drops_a_child_with_its_parent_is_not_vacuous :
       exact this.2.2.2.2.2.1.1
     exact ⟨_, _, _, _, _, _, e3, f3, f2, h, he3, hf3, hf2, hd⟩
 
+
+/-! ## Stage 4 final, repair (2026-09-13): the mixed pair's order, and `NhMm` in the fold
+
+Two defects an independent verification found in step 4.  (Defect 2) the mixed pair —
+one line the fold drops, one it files, taken from one file by one action — had no
+order law once `close_keeps_source_order` gained `hfold`; `Close.lean`'s
+`close_keeps_source_order_across_the_fold` states it over the sites the two leave in
+the source file, and it is decided below on the fold witness's `^p1`/`^c1`, the pair
+`a_dropped_child_and_its_filed_parent_part_ways` separates.  (Defect 3) the stage-one
+reader `unitValue` did not read `NhMm`, so a `2h30m` child counted `0` in the fold and
+its parent's record lost 150 minutes while the report (`estMinutes`) and the Rust
+read them; `unitValue_renderDur` (Line.lean) is the law, `closeHmWitness` the loaded
+plan (each decision probed alone under an 8 GB cap first). -/
+
+set_option maxRecDepth 40000 in
+/-- **The mixed pair on the loaded witness**: the fold files `^p1` and drops `^c1`; after
+the close `^p1`'s tombstone stands in `^c1`'s file, above it, as `^p1` stood above
+`^c1`. -/
+theorem the_mixed_pair_keeps_its_order_on_the_loaded_witness :
+    (foldFxOf week closeNow 50 closeFoldPlan.val "p1".toList).isDrop = false ∧
+      (foldFxOf week closeNow 50 closeFoldPlan.val "c1".toList).isDrop = true ∧
+      foldClosed (fun q => match q.val.store.get "p1".toList, q.val.store.get "c1".toList with
+        | some fp, some fc =>
+          fp.val.archiveSite.map (fun t => decide (t.doc = fc.val.live.doc ∧ t.rank < fc.val.live.rank))
+        | _, _ => none) = some (some true) := by
+  decide
+
+/-- **`close_keeps_source_order_across_the_fold`'s hypotheses are satisfiable**: `^p1`
+filed and `^c1` dropped, one action, one file, `^p1` above. -/
+theorem close_keeps_source_order_across_the_fold_is_not_vacuous :
+    ∃ (g : Grain) (now : Day) (bm : Nat) (p q : WfPlan) (i j : Id) (ei ej : Entity),
+      close g now bm p = .ok q ∧ p.val.store.get i = some ei ∧ p.val.store.get j = some ej ∧
+        closeAct g now p.val ej.val.skel = closeAct g now p.val ei.val.skel ∧
+        (foldFxOf g now bm p.val i).isDrop = false ∧ (foldFxOf g now bm p.val j).isDrop = true ∧
+        ei.val.live.doc = ej.val.live.doc ∧ ei.val.live.rank < ej.val.live.rank := by
+  cases h : close week closeNow 50 closeFoldPlan with
+  | error x =>
+    have hw := the_fold_facts_on_the_loaded_witness
+    unfold foldClosed at hw; rw [h] at hw; cases hw
+  | ok q =>
+    obtain ⟨⟨ei, _, hei, _, _⟩, -⟩ := fold_facts h
+    obtain ⟨hpair, -⟩ := the_fold_witness_links_and_dates.2.2.2
+    obtain ⟨hxi, hxj, -⟩ := the_mixed_pair_keeps_its_order_on_the_loaded_witness
+    cases hej : closeFoldPlan.val.store.get "c1".toList with
+    | none => rw [hei, hej] at hpair; cases hpair
+    | some ej =>
+      rw [hei, hej] at hpair
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hpair
+      obtain ⟨⟨hact, hdoc⟩, hlt⟩ := hpair
+      exact ⟨week, closeNow, 50, closeFoldPlan, q, _, _, ei, ej, h, hei, hej, hact, hxi, hxj, hdoc, hlt⟩
+
+/-- 2026-W36 with a `6b` milestone whose two subtasks are `5h` and `2h30m`, and
+September with §4.3's two sections. -/
+def closeHmWitness : List ReqDoc :=
+  [⟨"week/2026-W36.md", some closeW36,
+     ["# Milestones".toList,
+      "- [ ] 6b Parent project ^p1".toList,
+      "# Tasks".toList,
+      "- [ ] 5h Part one @p1 ^c1".toList,
+      "- [ ] 2h30m Part two @p1 ^c2".toList]⟩,
+   ⟨"month/2026-09.md", some closeM09, ["# Outcomes".toList, "# Demoted".toList]⟩]
+
+set_option maxRecDepth 40000 in
+/-- **An `NhMm` child is folded at its minutes, on a loaded plan.**  At a 50-minute
+block `^p1` reads 300 and its dropped subtasks `300 + 150`; its record carries §6.4's
+`max`, `est:9b`.  Before the repair `2h30m` read `0` and the record was the line with
+only its stamp — 150 minutes of open work gone (defect 3). -/
+theorem the_week_close_folds_an_hours_and_minutes_child :
+    closedFileLines week closeHmWitness = some
+      [["# Milestones".toList,
+        "- [-] 6b Parent project ^p1".toList,
+        "# Tasks".toList,
+        "- [~] 5h Part one @p1 ^c1".toList,
+        "- [~] 2h30m Part two @p1 ^c2".toList],
+       ["# Outcomes".toList, "# Demoted".toList,
+        "- [-] 6b Parent project est:9b demoted:W36 ^p1".toList]] := by
+  decide
+
 end Tm

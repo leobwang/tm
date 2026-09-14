@@ -4498,6 +4498,385 @@ theorem close_keeps_source_order_iff {g : Grain} {now : Day} {bm : Nat} {p q : W
       exact Nat.lt_asymm hq hr
 
 
+/-! ## Source order across the fold: the mixed pair (stage-4 final repair, defect 2)
+
+`close_keeps_source_order` asks that the fold drop both lines or neither (`hfold`),
+because a filed line and a child dropped with it end in different files — the law
+without that clause is false (`a_dropped_child_and_its_filed_parent_part_ways`,
+Boundary.lean).  The mixed pair still has an order law, stated over the sites the
+two leave **in the file they were taken from**: the filed line's tombstone stands
+exactly where the line stood (`close_leaves_a_copied_lines_tombstone_where_it_stood`),
+and the dropped child stays exactly where it stood
+(`close_leaves_a_dropped_line_where_it_stood`), so the one above stays above
+(`close_keeps_source_order_across_the_fold`).  With it every pair of lines one close
+takes from one file by one action has an order law: both dropped or both not by
+`close_keeps_source_order`, one of each by this section.  Neither half moves a site:
+no step of a close shifts a closed file (`closeOne_get_others`: a landing's shift is
+in an open one). -/
+
+/-- An entity after a landing's shift in document `k` (`none`: no shift). -/
+def Entity.bumpIn (k : DocIx) : Option Nat → Entity → Entity
+  | none,   e => e
+  | some n, e => e.shiftIn k n
+
+theorem Entity.bumpIn_live {k : DocIx} (spot : Option Nat) {e : Entity} (hk : e.val.live.doc ≠ k) :
+    (e.bumpIn k spot).val.live = e.val.live := by
+  cases spot with
+  | none => rfl
+  | some n =>
+    show e.val.live.shiftIn k n = e.val.live
+    unfold Site.shiftIn
+    rw [if_neg hk]
+
+theorem Entity.bumpIn_archiveSite {k : DocIx} (spot : Option Nat) {e : Entity} {s : Site}
+    (hs : e.val.archiveSite = some s) (hk : s.doc ≠ k) :
+    (e.bumpIn k spot).val.archiveSite = some s := by
+  cases spot with
+  | none => exact hs
+  | some n =>
+    show (e.val.archive.map (fun t => { t with site := t.site.shiftIn k n })).map Tomb.site = some s
+    unfold Core.archiveSite at hs
+    cases ha : e.val.archive with
+    | none => rw [ha] at hs; cases hs
+    | some t =>
+      rw [ha] at hs
+      simp only [Option.map_some, Option.some.injEq] at hs ⊢
+      subst hs
+      unfold Site.shiftIn
+      rw [if_neg hk]
+
+/-- **What a landing does to every entity**: the landed id is `f` of it, shifted;
+every other is shifted, and nothing else. -/
+theorem landAt_get {p q : WfPlan} {k : DocIx} {spot : Option Nat} {i : Id}
+    {f : Site → Entity → Except KErr Entity} (h : landAt p k spot i f = .ok q) :
+    (∀ j, j ≠ i → q.val.store.get j = (p.val.store.get j).map (Entity.bumpIn k spot)) ∧
+      ∃ e f', p.val.store.get i = some e ∧
+        f ⟨k, spot.getD (endRank p.val k)⟩ (e.bumpIn k spot) = .ok f' ∧ q.val.store.get i = some f' := by
+  cases spot with
+  | none =>
+    unfold landAt at h
+    obtain ⟨_, hj, e, e', hget, hf, hq⟩ := WfPlan.mapAt_spec h
+    refine ⟨fun j hji => ?_, e, e', hget, hf, hq⟩
+    rw [hj j hji]
+    cases p.val.store.get j <;> rfl
+  | some n =>
+    unfold landAt at h
+    simp only at h
+    cases h1 : p.shiftAt k n with
+    | error x => simp [h1] at h
+    | ok q1 =>
+      simp only [h1] at h
+      have hv := WfPlan.shiftAt_val h1
+      obtain ⟨_, hj, e1, e', hget1, hf, hq⟩ := WfPlan.mapAt_spec h
+      have hg : ∀ j, q1.val.store.get j = (p.val.store.get j).map (Entity.shiftIn k n) := by
+        intro j
+        rw [hv]
+        rfl
+      refine ⟨fun j hji => ?_, ?_⟩
+      · rw [hj j hji, hg j]
+        cases p.val.store.get j <;> rfl
+      · rw [hg i] at hget1
+        obtain ⟨e, he, hee⟩ := Option.map_eq_some_iff.1 hget1
+        subst hee
+        exact ⟨e, e', he, hf, hq⟩
+
+/-- **One step, seen from every id it does not take**: at most one shift, and only in
+a file that is not closed. -/
+theorem closeOne_get_others {g : Grain} {now : Day} {x : FoldFx} {i : Id} {p q : WfPlan}
+    (h : closeOne g now x i p = .ok q) :
+    ∃ k spot, (∀ n, spot = some n → docOpenAt now p.val k) ∧
+      ∀ j, j ≠ i → q.val.store.get j = (p.val.store.get j).map (Entity.bumpIn k spot) := by
+  have hid : ∀ j, (p.val.store.get j).map (Entity.bumpIn 0 none) = p.val.store.get j := by
+    intro j
+    cases p.val.store.get j <;> rfl
+  unfold closeOne at h
+  split at h
+  · simp at h
+  · split at h
+    · injection h with h
+      subst h
+      exact ⟨0, none, (fun _ hn => nomatch hn), fun j _ => (hid j).symm⟩
+    · split at h
+      · simp at h
+      · rename_i k _
+        exact ⟨k, none, (fun _ hn => nomatch hn), (landAt_get h).1⟩
+    · split at h
+      · obtain ⟨_, hj, _⟩ := WfPlan.mapAt_spec h
+        exact ⟨0, none, (fun _ hn => nomatch hn), fun j hji => by rw [hj j hji, hid j]⟩
+      · split at h
+        · simp at h
+        · rename_i k hk
+          split at h
+          · simp at h
+          · rename_i spot _
+            refine ⟨k, spot, fun _ _ => ?_, (landAt_get (guardStray_ok h).1).1⟩
+            obtain ⟨_, _, hreg⟩ := findDocIx_spec hk
+            intro r hr
+            rw [hreg] at hr
+            injection hr with hr
+            subst hr
+            exact closeTo_target_is_open g now
+    · split at h
+      · simp at h
+      · rename_i k hk
+        split at h
+        · simp at h
+        · rename_i spot _
+          refine ⟨k, spot, fun _ _ => ?_, (landAt_get h).1⟩
+          obtain ⟨_, _, hreg⟩ := overdueTarget_spec hk
+          intro r hr
+          rw [hreg] at hr
+          cases hr
+
+/-- **The fold moves no site of a closed file**, for an id it does not take — a
+live line or a tombstone, whichever `obs` reads. -/
+theorem fold_keeps_a_closed_site (g : Grain) (now : Day) (fx : Id → FoldFx) (p0 : WfPlan) (x : Id)
+    (obs : Entity → Option Site)
+    (hobs : ∀ (k : DocIx) (spot : Option Nat) (e : Entity) (s : Site), obs e = some s → s.doc ≠ k →
+      obs (e.bumpIn k spot) = some s)
+    {s : Site} {r : Region} (hr : docRegion p0.val s.doc = some r) (hc : Closed r now) :
+    ∀ (l : List Id) (P Q : WfPlan), l.foldlM (fun q c => closeOne g now (fx c) c q) P = .ok Q →
+      x ∉ l → Frame p0.val P.val → (∃ b, P.val.store.get x = some b ∧ obs b = some s) →
+      ∃ b, Q.val.store.get x = some b ∧ obs b = some s := by
+  intro l
+  induction l with
+  | nil =>
+    intro P Q h _ _ hb
+    simp only [List.foldlM_nil] at h
+    injection h with h
+    subst h
+    exact hb
+  | cons c rest ih =>
+    intro P Q h hx hfr hb
+    simp only [List.foldlM_cons] at h
+    cases h1 : closeOne g now (fx c) c P with
+    | error e => rw [h1] at h; simp [bind, Except.bind] at h
+    | ok P1 =>
+      rw [h1] at h
+      simp only [bind, Except.bind] at h
+      have hxc : x ≠ c := fun he => hx (he ▸ List.mem_cons_self ..)
+      obtain ⟨hf1, _, _⟩ := closeOne_spec h1
+      obtain ⟨k, spot, hopen, hget⟩ := closeOne_get_others h1
+      obtain ⟨b, hPb, hbs⟩ := hb
+      refine ih P1 Q h (fun hm => hx (List.mem_cons_of_mem _ hm)) (hfr.trans hf1) ⟨b.bumpIn k spot, ?_, ?_⟩
+      · rw [hget x hxc, hPb]
+        rfl
+      · cases hsp : spot with
+        | none => exact hbs
+        | some n =>
+          refine hobs k (some n) b s hbs (fun hsk => ?_)
+          exact hopen n hsp r (by rw [← hsk, hfr.2.2]; exact hr) hc
+
+/-- **The fold, for a line it drops**: the line ends where it stood. -/
+theorem fold_keeps_a_dropped_line_in_place (g : Grain) (now : Day) (fx : Id → FoldFx) (p0 : WfPlan)
+    (j : Id) (ej : Entity) {r0 : Region} (hactj : closeAct g now p0.val ej.val.skel = .file r0)
+    (hxj : (fx j).isDrop = true) :
+    ∀ (l : List Id) (P Q : WfPlan), l.foldlM (fun q c => closeOne g now (fx c) c q) P = .ok Q →
+      l.Nodup → j ∈ l → Frame p0.val P.val → ClosedDocsKept now p0.val P.val →
+      (∃ b, P.val.store.get j = some b ∧ b.val.skel = ej.val.skel ∧ b.val.live = ej.val.live) →
+      ∃ b, Q.val.store.get j = some b ∧ b.val.live = ej.val.live := by
+  obtain ⟨r1, hr1, hc1⟩ :=
+    closeAct_closed (show closeAct g now p0.val ej.val.skel ≠ .stay by rw [hactj]; simp)
+  intro l
+  induction l with
+  | nil => intro _ _ _ _ hj; simp at hj
+  | cons c rest ih =>
+    intro P Q h hnd hj hfr hcd hb
+    simp only [List.foldlM_cons] at h
+    cases h1 : closeOne g now (fx c) c P with
+    | error x => rw [h1] at h; simp [bind, Except.bind] at h
+    | ok P1 =>
+      rw [h1] at h
+      simp only [bind, Except.bind] at h
+      have hnd' := List.nodup_cons.1 hnd
+      obtain ⟨b, hPb, hbs, hbl⟩ := hb
+      obtain ⟨hf1, _, _⟩ := closeOne_spec h1
+      have hfr1 := hfr.trans hf1
+      by_cases hjc : j = c
+      · subst hjc
+        have hactP := closeAct_skel_frame (g := g) (now := now) hfr hbs
+        rcases closeOne_moves h1 with ⟨_, hst⟩ | ⟨_, _, _, hPe, _, _, _, _, _, hfil, _⟩ |
+            ⟨_, hlives, _⟩
+        · exact absurd (hactP.symm.trans (hst b hPb)) (by rw [hactj]; simp)
+        · rw [hPb] at hPe
+          injection hPe with hPe
+          subst hPe
+          have := (hfil r0 (hactP.trans hactj)).2.2
+          rw [hxj] at this
+          cases this
+        · have hlj := hlives j
+          rw [hPb] at hlj
+          obtain ⟨b', hb', hbl'⟩ := get_of_map_eq_some hlj
+          simp only at hbl'
+          obtain ⟨b'', hb'', hl''⟩ := fold_keeps_a_closed_site g now fx p0 j (fun e => some e.val.live)
+            (fun k spot e s hs hk => by
+              simp only [Option.some.injEq] at hs ⊢
+              subst hs
+              exact Entity.bumpIn_live spot hk)
+            (s := ej.val.live) hr1 hc1 rest P1 Q h hnd'.1 hfr1 ⟨b', hb', by rw [hbl', hbl]⟩
+          exact ⟨b'', hb'', Option.some.inj hl''⟩
+      · have hjr : j ∈ rest := (List.mem_cons.1 hj).resolve_left hjc
+        obtain ⟨_, hcd1, b', hb', hb's, hb'l⟩ :=
+          closeOne_keeps_untaken h1 hfr hcd hjc hPb hbs hbl hr1 hc1
+        exact ih P1 Q h hnd'.2 hjr hfr1 hcd1 ⟨b', hb', hb's, hb'l⟩
+
+/-- **The fold, for a line it copies forward**: its tombstone stands where the line
+stood. -/
+theorem fold_leaves_a_copied_lines_tombstone_where_it_stood (g : Grain) (now : Day)
+    (fx : Id → FoldFx) (p0 : WfPlan) (i : Id) (ei : Entity) {r0 : Region}
+    (hacti : closeAct g now p0.val ei.val.skel = .file r0) (hxi : (fx i).isDrop = false)
+    (hcopy : (closePolicy g).disposition = .copy) :
+    ∀ (l : List Id) (P Q : WfPlan), l.foldlM (fun q c => closeOne g now (fx c) c q) P = .ok Q →
+      l.Nodup → i ∈ l → Frame p0.val P.val → ClosedDocsKept now p0.val P.val →
+      (∃ b, P.val.store.get i = some b ∧ b.val.skel = ei.val.skel ∧ b.val.live = ei.val.live) →
+      ∃ b, Q.val.store.get i = some b ∧ b.val.archiveSite = some ei.val.live := by
+  obtain ⟨r1, hr1, hc1⟩ :=
+    closeAct_closed (show closeAct g now p0.val ei.val.skel ≠ .stay by rw [hacti]; simp)
+  intro l
+  induction l with
+  | nil => intro _ _ _ _ hi; simp at hi
+  | cons c rest ih =>
+    intro P Q h hnd hi hfr hcd hb
+    simp only [List.foldlM_cons] at h
+    cases h1 : closeOne g now (fx c) c P with
+    | error x => rw [h1] at h; simp [bind, Except.bind] at h
+    | ok P1 =>
+      rw [h1] at h
+      simp only [bind, Except.bind] at h
+      have hnd' := List.nodup_cons.1 hnd
+      obtain ⟨b, hPb, hbs, hbl⟩ := hb
+      obtain ⟨hf1, _, _⟩ := closeOne_spec h1
+      have hfr1 := hfr.trans hf1
+      by_cases hic : i = c
+      · subst hic
+        have hactP := closeAct_skel_frame (g := g) (now := now) hfr hbs
+        have hr1' : docRegion p0.val ei.val.live.doc = some r1 := hr1
+        have hne : ∀ k, docRegion P.val k = some (closeTo g now) → b.val.live.doc ≠ k := by
+          intro k hk hbk
+          rw [← hbk, hbl, hfr.2.2, hr1'] at hk
+          injection hk with hk
+          subst hk
+          exact closeTo_target_is_open g now hc1
+        have hstep : ∃ f', P1.val.store.get i = some f' ∧ f'.val.archiveSite = some ei.val.live := by
+          unfold closeOne at h1
+          split at h1
+          · simp at h1
+          · rename_i e hget
+            rw [hPb] at hget
+            injection hget with hget
+            subst hget
+            split at h1
+            · rename_i hst
+              exact absurd (hactP.symm.trans hst) (by rw [hacti]; simp)
+            · rename_i hst
+              exact absurd (hactP.symm.trans hst) (by rw [hacti]; simp)
+            · rename_i r hact
+              have hrr : r0 = r := by
+                have := hactP.symm.trans hact
+                rw [hacti] at this
+                injection this
+              subst hrr
+              split at h1
+              · rename_i hx
+                rw [hxi] at hx
+                cases hx
+              · split at h1
+                · simp at h1
+                · rename_i k hk
+                  split at h1
+                  · simp at h1
+                  · rename_i spot _
+                    obtain ⟨_, e0, f', hget0, hfe, hq⟩ := landAt_get (guardStray_ok h1).1
+                    rw [hPb] at hget0
+                    injection hget0 with hget0
+                    subst hget0
+                    obtain ⟨_, _, hreg⟩ := findDocIx_spec hk
+                    have hlive := Entity.bumpIn_live spot (hne k hreg)
+                    unfold fileE at hfe
+                    rw [hcopy] at hfe
+                    simp only at hfe
+                    split at hfe
+                    · rename_i st _
+                      have hv := refileX_roundtrips _ _ _ _ _ hfe
+                      refine ⟨f', hq, ?_⟩
+                      unfold Core.archiveSite
+                      rw [hv]
+                      simp only [Option.map_some]
+                      rw [hlive, hbl]
+                    · simp at hfe
+            · rename_i hst
+              exact absurd (hactP.symm.trans hst) (by rw [hacti]; simp)
+        obtain ⟨f', hq, hsite⟩ := hstep
+        exact fold_keeps_a_closed_site g now fx p0 i (fun e => e.val.archiveSite)
+          (fun k spot e s hs hk => Entity.bumpIn_archiveSite spot hs hk)
+          (s := ei.val.live) hr1 hc1 rest P1 Q h hnd'.1 hfr1 ⟨f', hq, hsite⟩
+      · have hir : i ∈ rest := (List.mem_cons.1 hi).resolve_left hic
+        obtain ⟨_, hcd1, b', hb', hb's, hb'l⟩ :=
+          closeOne_keeps_untaken h1 hfr hcd hic hPb hbs hbl hr1 hc1
+        exact ih P1 Q h hnd'.2 hir hfr1 hcd1 ⟨b', hb', hb's, hb'l⟩
+
+theorem mem_closeCands_of_ne_stay {g : Grain} {now : Day} {p : PlanCore} {i : Id} {e : Entity}
+    (hi : p.store.get i = some e) (h : closeAct g now p e.val.skel ≠ .stay) : i ∈ closeCands g now p := by
+  by_cases hc : i ∈ closeCands g now p
+  · exact hc
+  · exact absurd (closeAct_of_not_mem_closeCands hc hi) h
+
+/-- A line the week close drops is one it files (`dropsInto_spec`), at the week row. -/
+theorem files_of_isDrop {g : Grain} {now : Day} {bm : Nat} {p : PlanCore} {j : Id} {ej : Entity}
+    (hj : p.store.get j = some ej) (hxj : (foldFxOf g now bm p j).isDrop = true) :
+    g = week ∧ ∃ r, closeAct g now p ej.val.skel = .file r := by
+  rw [foldFxOf_isDrop] at hxj
+  obtain ⟨r, hd⟩ := Option.isSome_iff_exists.1 hxj
+  obtain ⟨hg, _, _, ej', _, hj', _, hfj, _, _⟩ := dropsInto_spec hd
+  rw [hj] at hj'
+  injection hj' with hj'
+  rw [← hj'] at hfj
+  exact ⟨hg, filesLine_iff.1 hfj⟩
+
+/-- **A child the week close drops ends where it stood** — its file and its rank. -/
+theorem close_leaves_a_dropped_line_where_it_stood {g : Grain} {now : Day} {bm : Nat} {p q : WfPlan}
+    (h : close g now bm p = .ok q) {j : Id} {ej : Entity} (hj : p.val.store.get j = some ej)
+    (hxj : (foldFxOf g now bm p.val j).isDrop = true) :
+    ∃ fj, q.val.store.get j = some fj ∧ fj.val.live = ej.val.live := by
+  obtain ⟨_, r0, hact⟩ := files_of_isDrop hj hxj
+  exact fold_keeps_a_dropped_line_in_place g now (foldFxOf g now bm p.val) p j ej hact hxj
+    (closeCands g now p.val) p q h (closeCands_nodup g now p.val)
+    (mem_closeCands_of_ne_stay hj (by rw [hact]; simp)) (Frame.refl _) (fun _ _ _ _ => rfl)
+    ⟨ej, hj, rfl, rfl⟩
+
+/-- **A line a copying row files forward leaves its tombstone where it stood** — its
+file and its rank, whatever else the close lands or shifts. -/
+theorem close_leaves_a_copied_lines_tombstone_where_it_stood {g : Grain} {now : Day} {bm : Nat}
+    {p q : WfPlan} (h : close g now bm p = .ok q) {i : Id} {ei : Entity} {r : Region}
+    (hi : p.val.store.get i = some ei) (hact : closeAct g now p.val ei.val.skel = .file r)
+    (hxi : (foldFxOf g now bm p.val i).isDrop = false) (hcopy : (closePolicy g).disposition = .copy) :
+    ∃ fi, q.val.store.get i = some fi ∧ fi.val.archiveSite = some ei.val.live :=
+  fold_leaves_a_copied_lines_tombstone_where_it_stood g now (foldFxOf g now bm p.val) p i ei hact hxi hcopy
+    (closeCands g now p.val) p q h (closeCands_nodup g now p.val)
+    (mem_closeCands_of_ne_stay hi (by rw [hact]; simp)) (Frame.refl _) (fun _ _ _ _ => rfl)
+    ⟨ei, hi, rfl, rfl⟩
+
+/-- **The mixed pair keeps source order** (the case `close_keeps_source_order`'s `hfold`
+leaves out).  Two lines one close takes from one file by one action, the fold dropping
+`j` and not `i`: `i`'s tombstone and `j` stand in that file in the order `i` and `j`
+had — the one above stays above, in both directions. -/
+theorem close_keeps_source_order_across_the_fold {g : Grain} {now : Day} {bm : Nat} {p q : WfPlan}
+    (h : close g now bm p = .ok q)
+    {i j : Id} {ei ej : Entity} (hi : p.val.store.get i = some ei) (hj : p.val.store.get j = some ej)
+    (hact : closeAct g now p.val ej.val.skel = closeAct g now p.val ei.val.skel)
+    (hxi : (foldFxOf g now bm p.val i).isDrop = false)
+    (hxj : (foldFxOf g now bm p.val j).isDrop = true)
+    (hdoc : ei.val.live.doc = ej.val.live.doc) :
+    ∃ fi fj t, q.val.store.get i = some fi ∧ q.val.store.get j = some fj ∧
+      fi.val.archiveSite = some t ∧ t.doc = fj.val.live.doc ∧
+      (ei.val.live.rank < ej.val.live.rank ↔ t.rank < fj.val.live.rank) := by
+  obtain ⟨hg, r0, hactj⟩ := files_of_isDrop hj hxj
+  subst hg
+  obtain ⟨fi, hfi, hti⟩ :=
+    close_leaves_a_copied_lines_tombstone_where_it_stood h hi (hact.symm.trans hactj) hxi rfl
+  obtain ⟨fj, hfj, hlj⟩ := close_leaves_a_dropped_line_where_it_stood h hj hxj
+  exact ⟨fi, fj, ei.val.live, hfi, hfj, hti, by rw [hlj, hdoc], by rw [hlj]⟩
+
 /-! ## Gap 55 closed: dated work routes itself (the owner's D7 and D8)
 
 Until the owner's decisions of 2026-09-13 a week line with `due:` was filed like any

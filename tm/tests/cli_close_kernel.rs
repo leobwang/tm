@@ -771,6 +771,52 @@ fn a_week_close_folds_dropped_tasks_into_their_milestone_by_max() {
     assert_eq!(md_files(&tm), before, "{again}");
 }
 
+/// **An `NhMm` child is folded at its minutes** — kernel/README.md "Stage 4
+/// final, repair", defect 3. The kernel's stage-one estimate reader did not
+/// read `2h30m`, so a `6b` milestone with `5h` and `2h30m` of subtasks dropped
+/// into it kept a record of 360 minutes — the 150 minutes of the second task
+/// silently gone, while the report said 150 for the task itself and `tm check`
+/// was clean. Now the record carries §6.4's `max`: 300 + 150 = 450 minutes,
+/// written `est:450m` (the fold writes whole blocks, else hours, else minutes).
+/// The control `90m` in the same slot was always read.
+#[test]
+fn a_week_close_folds_an_hours_and_minutes_child_at_its_minutes() {
+    const AT: &str = "2026-09-14T09:00:00-05:00";
+    for (child, est) in [("2h30m", "est:450m"), ("90m", "est:390m")] {
+        let tm = tree(
+            &[
+                (
+                    "week/2026-W37.md",
+                    &format!(
+                        "# Milestones\n- [ ] 3 6b Parent project @O1 ^pp\n\
+                         # Tasks\n- [ ] 3 5h Child one @pp ^c8\n- [ ] 3 {child} Child two @pp ^c9\n"
+                    ),
+                ),
+                (
+                    "month/2026-09.md",
+                    "---\nmonth: 2026-09\n---\n# Outcomes\n- [ ] 5 !1 Lean through ch.8 ^O1\n# Demoted\n",
+                ),
+            ],
+            None,
+        );
+        let json = tm.json_at(AT, &["close", "week"]);
+        let closes = json["report"]["closes"].as_array().expect("closes");
+        let c9 = closes.iter().find(|c| c["id"] == "c9").expect("c9 in the report");
+        assert_eq!(c9["did"], "dropIntoParent", "{json}");
+        let pp = closes.iter().find(|c| c["id"] == "pp").expect("pp in the report");
+        let want: u64 = est.trim_start_matches("est:").trim_end_matches('m').parse().expect("minutes");
+        assert_eq!(pp["min"]["num"], want, "{child}: {json}");
+        assert!(
+            tm.read("month/2026-09.md")
+                .contains(&format!("- [-] 3 6b Parent project @O1 {est} demoted:W37 ^pp")),
+            "{child}: {}",
+            tm.read("month/2026-09.md")
+        );
+        assert!(tm.line("week/2026-W37.md", "c9").starts_with("- [~]"), "{child}");
+        tm.ok_at(AT, &["check"]);
+    }
+}
+
 /// The owner's D8 reaches the `demote` verb too: `tm demote ^d1` on §4.3's
 /// dated line files a `[-]` record into September's `# Demoted` that keeps
 /// `due:2026-09-11T23:59`, and `tm check` accepts it. Until D8 the verb's

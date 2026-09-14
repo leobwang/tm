@@ -53,6 +53,7 @@ use tm_core::store::{
 use tm_core::tree::Tree;
 use tm_core::recur;
 
+use super::kernel_bridge;
 use super::out::CliError;
 
 /// `.tm/last_plan.json` — the plan `tm plan --diff` compares against and the
@@ -243,13 +244,15 @@ impl Ctx {
             model,
             timed_out: Vec::new(),
         };
+        let mut refused = false;
         if auto_close {
             // Writes, logs, stamps `state.closed` and reloads when it closed
-            // anything; a refusal is printed and the verb goes on.
-            super::closing::auto_close(&mut cx)?;
+            // anything; a refusal is printed and the verb goes on — but
+            // nothing below writes to the tree the kernel just refused.
+            refused = super::closing::auto_close(&mut cx)? == super::closing::AutoClosed::Refused;
         }
         if housekeeping {
-            cx.timed_out = cx.resolve_timeouts()?;
+            cx.timed_out = cx.resolve_timeouts(refused)?;
             if !cx.timed_out.is_empty() {
                 cx.reload()?;
             }
@@ -507,17 +510,51 @@ impl Ctx {
 
     /// §5.1: `[?]` items whose `on-event:` timeout has elapsed go back to
     /// `[ ]` with `est:` reset and `waiting:` removed. Returns what changed.
-    fn resolve_timeouts(&mut self) -> Result<Vec<Id>, CliError> {
-        let mut changed = Vec::new();
+    ///
+    /// **Only on a tree the kernel loads whole** (the owner's D6: a dangling
+    /// or cyclic `@parent` refuses the whole tree). `refused` says the
+    /// automatic close ahead of this was refused, which settles it without a
+    /// second call; otherwise, when some timeout has elapsed, one kernel call
+    /// with no commands ([`kernel_bridge::apply`], which writes nothing
+    /// without a change) checks the tree first. A refusal skips every
+    /// timeout, writes nothing and logs nothing, and is named on stderr — so a
+    /// verb that then refuses the same tree has written nothing either
+    /// (kernel/README.md "Stage 4 final, repair", defect 1: before this, a
+    /// typo'd parent on the example tree's Monday rewrote `^a4` and created
+    /// the log ahead of a refusal that said nothing was written). A kernel
+    /// fault still fails the verb.
+    fn resolve_timeouts(&mut self, refused: bool) -> Result<Vec<Id>, CliError> {
+        let mut expired_ids = Vec::new();
         for id in self.tree.waiting_ids() {
             let Some(item) = self.tree.get(&id) else {
                 continue;
             };
-            let expired = recur::waiting_state(item, &self.replay, self.today, &self.cfg)
-                .is_some_and(|w| w.expired);
-            if !expired {
-                continue;
+            if recur::waiting_state(item, &self.replay, self.today, &self.cfg).is_some_and(|w| w.expired) {
+                expired_ids.push(id);
             }
+        }
+        if expired_ids.is_empty() || refused {
+            return Ok(Vec::new());
+        }
+        match kernel_bridge::apply(self, &[]) {
+            Ok(_) => {}
+            Err(CliError::Kernel(issue)) if !issue.is_fault() => {
+                if !kernel_bridge::capturing_kernel_stderr() {
+                    eprintln!(
+                        "tm: the waiting timeouts (§5.1) were not applied, so nothing was written; \
+                         they run again on the next command. {}",
+                        issue.message
+                    );
+                }
+                return Ok(Vec::new());
+            }
+            Err(e) => return Err(e),
+        }
+        let mut changed = Vec::new();
+        for id in expired_ids {
+            let Some(item) = self.tree.get(&id) else {
+                continue;
+            };
             let mut line = item.line().clone();
             recur::on_event_arrived(item).apply(&mut line)?;
             self.store.write_line(&id, &line.to_string())?;

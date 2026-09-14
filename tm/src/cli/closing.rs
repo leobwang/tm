@@ -228,7 +228,11 @@ pub struct Summary {
     pub demoted: usize,
     /// Walls carried into the live week.
     pub carried: usize,
-    /// `--drop` ids.
+    /// Lines the request left `[~]`: the `--drop` ids, and the unfinished
+    /// children the week close dropped into their parent (`dropIntoParent`,
+    /// goal B3's repair). Before kernel/README.md "Stage 4 final, repair"
+    /// (defect 4) only the `--drop` ids were counted, so the example week's
+    /// close printed `0 dropped` over four tasks it had just made `[~]`.
     pub dropped: usize,
 }
 
@@ -253,11 +257,16 @@ impl ReportOut {
                 .count(),
             demoted: self.closes.iter().filter(|c| c.stamp.is_some()).count(),
             carried: self.closes.iter().filter(|c| c.did == CloseDid::Carry.name()).count(),
-            dropped: self.dropped.len(),
+            dropped: self.dropped.len()
+                + self
+                    .closes
+                    .iter()
+                    .filter(|c| c.did == CloseDid::DropIntoParent.name())
+                    .count(),
         }
     }
 
-    /// `closed week 2026-W37 · 1 moved · 5 demoted · 1 carried · 0 dropped`.
+    /// `closed week 2026-W37 · 1 moved · 5 demoted · 1 carried · 4 dropped`.
     pub fn line(&self, period: &str, key: &str) -> String {
         let s = self.summary();
         format!(
@@ -390,12 +399,12 @@ pub fn run(ctx: &mut Ctx, which: Which, drops: &[Id]) -> Result<ReportOut, CliEr
 /// own example week was one, on its open dated `^d1`, until the owner's D7
 /// and D8 closed kernel/README.md gap 55). A kernel **fault**, a write
 /// conflict or an I/O error still fails the verb.
-pub fn auto_close(ctx: &mut Ctx) -> Result<Option<ReportOut>, CliError> {
+pub fn auto_close(ctx: &mut Ctx) -> Result<AutoClosed, CliError> {
     if !due(&ctx.state.closed, ctx.today) {
-        return Ok(None);
+        return Ok(AutoClosed::NotDue);
     }
     match run(ctx, Which::All, &[]) {
-        Ok(report) => Ok(Some(report)),
+        Ok(report) => Ok(AutoClosed::Closed(report)),
         Err(CliError::Kernel(issue)) if !issue.is_fault() => {
             if !kernel_bridge::capturing_kernel_stderr() {
                 eprintln!(
@@ -404,10 +413,24 @@ pub fn auto_close(ctx: &mut Ctx) -> Result<Option<ReportOut>, CliError> {
                     explain(&issue)
                 );
             }
-            Ok(None)
+            Ok(AutoClosed::Refused)
         }
         Err(e) => Err(e),
     }
+}
+
+/// What [`auto_close`] did, for the housekeeping that runs after it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AutoClosed {
+    /// No period has ended since the last close: no kernel call was made.
+    NotDue,
+    /// The kernel closed what had ended; its report.
+    Closed(ReportOut),
+    /// The kernel refused the tree by name (printed): nothing was written, and
+    /// nothing after it in [`Ctx::load`] may write to that tree either — the
+    /// §5.1 waiting timeouts are skipped (kernel/README.md "Stage 4 final,
+    /// repair", defect 1).
+    Refused,
 }
 
 /// A close refusal's message, with what the name most likely means for a
@@ -580,16 +603,20 @@ mod tests {
                 line("m1", CloseDid::Copy, Some("W37")),
                 line("m2", CloseDid::CopyMerging, Some("W37")),
                 line("O1", CloseDid::Move, None),
+                line("t1", CloseDid::DropIntoParent, None),
+                line("m3", CloseDid::CopyFolding, Some("W37")),
             ],
             dropped: vec!["O3".into()],
         };
+        // A child dropped into its parent is `dropped`, never `moved`; its
+        // parent's folding copy is `demoted`.
         assert_eq!(
             report.summary(),
-            Summary { moved: 3, demoted: 3, carried: 1, dropped: 1 }
+            Summary { moved: 3, demoted: 4, carried: 1, dropped: 2 }
         );
         assert_eq!(
             report.line("week", "2026-W37"),
-            "closed week 2026-W37 · 3 moved · 3 demoted · 1 carried · 1 dropped"
+            "closed week 2026-W37 · 3 moved · 4 demoted · 1 carried · 2 dropped"
         );
     }
 }

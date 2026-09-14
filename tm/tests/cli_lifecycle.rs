@@ -150,12 +150,14 @@ fn close_on_the_monday_after_reports_each_line_it_took() {
     // `^m1` (`6b`) covers `^t3`'s `est:1b`: its record carries 360 minutes.
     assert_eq!(closes[0]["min"], serde_json::json!({"num": 360, "den": 1}));
 
-    // And the human line of the same close counts the same entries.
+    // And the human line of the same close counts the same entries — the
+    // four `dropIntoParent` tasks among the `dropped` (kernel/README.md
+    // "Stage 4 final, repair", defect 4; `0 dropped` before it).
     let fresh = closable_week();
     let out = fresh.run_at("2026-09-14T09:00:00-05:00", &["close", "week"]);
     assert_eq!(
         out.stdout.trim(),
-        "closed week 2026-W37 · 1 moved · 5 demoted · 1 carried · 0 dropped",
+        "closed week 2026-W37 · 1 moved · 5 demoted · 1 carried · 4 dropped",
         "{}",
         out.stderr
     );

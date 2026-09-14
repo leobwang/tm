@@ -2416,6 +2416,7 @@ they are settled, and changing one needs the owner again.
 | 8 | What `report` carries, and therefore its shape (§8.2). Nothing in the kernel names it today | before stage 4 writes one | **ANSWERED 2026-09-12 (D3):** a per-item list — id, disposition, destination, stamp, minutes as integer numerator/denominator. Not counts only (the month review would re-derive per-item history from the files, a second reader of one fact), and not stage 6's full diagnostics surface yet. **Landed** at `d7487b2` (`Report.lean`, `ok.report.closes`) and read by the shipped binary since `5557713` |
 | 9 | Whether the kernel should refuse a `[-]` outside a week file or `month/…# Demoted`, as `tree.rs` does — a behaviour change (gap 31, §8.1) | stage 3 | **open**, not taken in stage 3 or 4. It came due when `demote` got a section target (`10bae51`), and the kernel now gives two answers to one question — the close refuses `noSection`, the verb falls back to the end of the file — recorded as README gap 60 until the owner answers |
 | 10 | A child the week close drops (`[~]` in place, B3) keeps any standing `# Demoted` record where it stood, and the month close takes no settled item: should that record be carried to the next month like any record, merged into its root's record, or retired (README gap 72) | before a month review reads stamp history across months (stage 5–6) | **open** — raised at stage 4 final step 4. The fork point deleted the child's week line and carried the record; the kernel keeps both lines and carries neither. No work is lost (the child's minutes are in its root's record); the next month's review does not see the child's stamp history |
+| 11 | Whether `close_keeps_source_order`'s (and `_iff`'s) added hypothesis `hfold` ("the fold drops both lines or neither") is a change B3's spec-settled fold forced, and not a D5 downgrade | before stage 5's next re-proof of it, not blocking | **open**, raised at the stage-4 final repair (README "Stage 4 final, repair", defect 2). The statement without `hfold` is proved **false** (`a_dropped_child_and_its_filed_parent_part_ways`). The case `hfold` excludes, one line dropped and one filed, now has its own order law over the source-file sites (`close_keeps_source_order_across_the_fold`), so every pair one close takes from one file by one action is covered. Nothing was deleted or weakened in the repair |
 | — | `main`: keep it as the oracle, or discard it | — | **DECIDED 2026-09-12 (D4):** discarded (`f386c56`); the fork point `4748911` is the restore source and the oracle; stage 0's fix, `invariant_exhaustive.rs` and the ability to reproduce anything measured on `main` went with it (§2.2) |
 
 **Stage 4 is closed (2026-09-13); stage 5 is blocked.** Stage 4's gating
@@ -2444,3 +2445,11 @@ one new question for the owner, **q10** (gap 72: where a dropped child's standin
 goes), not blocking. Still owed to the human, in order: **q4** (before stage 5, not
 blocking), **q5** (stage 5), **q10** (stage 5–6), **q7** (stage 6), **q9** (gap 60), and
 the §5.13 drives of the stage-3 and stage-4 binaries.
+
+**Update 2026-09-13, stage 4 final repair (README "Stage 4 final, repair").** Four
+verification defects are fixed. A refused tree is no longer written by the §5.1 timeouts
+(behaviour row 39). The mixed pair has an order law. `NhMm` estimates are read by the
+kernel's stage-one reader (row 40). The close's human line counts dropped children
+(row 41). The repair raised **q11** (whether `hfold` is a forced change), not blocking.
+Still owed to the human: **q4**, **q5**, **q10**, **q11**, **q7**, **q9**, and the §5.13
+drives.
