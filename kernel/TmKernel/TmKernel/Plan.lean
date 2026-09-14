@@ -990,6 +990,54 @@ def splitDocC (c : Bool) (k : Nat) (ls : List (List Char)) : DocSplit :=
 /-- Read a file: from the top, no comment open. -/
 def splitDoc (k : Nat) (ls : List (List Char)) : DocSplit := splitDocC false k ls
 
+/-! ### `splitDoc`'s runtime twin (stage 5 A1, rule D9-21)
+
+APPENDED 2026-09-14 (stage-5 D9 track, step A1).  `splitDocC` builds its
+answer after the recursive call, so compiled as written it takes a frame per
+line of a document (README gap 44 measured it aborting in the same bands as the
+codec).  The twin carries both halves reversed and reverses them once at the
+end.  Two `@[csimp]` theorems, because `splitDoc`'s compiled body calls
+`splitDocC`.  Every theorem about the split is still about `splitDocC`. -/
+
+def splitDocCAcc.go (c : Bool) (k : Nat) (ls : List (List Char))
+    (ps : List (Nat × List Char)) (is : List (Nat × (Id × Glyph × RawItem))) : DocSplit :=
+  match ls with
+  | [] => ⟨ps.reverse, is.reverse⟩
+  | l :: rest =>
+    if c then splitDocCAcc.go (commentAfter c l) (k + 1) rest ((k, l) :: ps) is else
+    match parseItem l with
+    | .ok (i, g, r) => splitDocCAcc.go (commentAfter c l) (k + 1) rest ps ((k, i, g, r) :: is)
+    | .error _      => splitDocCAcc.go (commentAfter c l) (k + 1) rest ((k, l) :: ps) is
+
+def splitDocCAcc (c : Bool) (k : Nat) (ls : List (List Char)) : DocSplit :=
+  splitDocCAcc.go c k ls [] []
+
+def splitDocAcc (k : Nat) (ls : List (List Char)) : DocSplit := splitDocCAcc false k ls
+
+theorem splitDocCAcc_go (ls : List (List Char)) : ∀ (c : Bool) (k : Nat) ps is,
+    splitDocCAcc.go c k ls ps is =
+      ⟨ps.reverse ++ (splitDocC c k ls).prose, is.reverse ++ (splitDocC c k ls).items⟩ := by
+  induction ls with
+  | nil => intro c k ps is; simp [splitDocCAcc.go, splitDocC]
+  | cons l rest ih =>
+    intro c k ps is
+    cases c with
+    | true => simp [splitDocCAcc.go, splitDocC, ih]
+    | false =>
+      cases h : parseItem l with
+      | ok x =>
+        obtain ⟨i, g, r⟩ := x
+        simp [splitDocCAcc.go, splitDocC, h, ih]
+      | error e => simp [splitDocCAcc.go, splitDocC, h, ih]
+
+@[csimp] theorem splitDocC_eq_splitDocCAcc : @splitDocC = @splitDocCAcc := by
+  funext c k ls
+  simp [splitDocCAcc, splitDocCAcc_go]
+
+@[csimp] theorem splitDoc_eq_splitDocAcc : @splitDoc = @splitDocAcc := by
+  funext k ls
+  simp [splitDocAcc, splitDoc, splitDocC_eq_splitDocCAcc]
+
 /-- Merge two rank-ordered lists of lines. -/
 def weave (ps is : List (Nat × List Char)) : List (List Char) :=
   match ps, is with

@@ -68,6 +68,15 @@ call that Rust line the rejected alternative; see `kernel/README.md`'s stage-4
 block and `Grain.closeTo_week_is_not_monthOfWeek`.)*  The tie-break answers a
 different question — *name the month a given week belongs to* — which has no
 `now` in it, and which nothing in the kernel yet asks.
+
+## Instants, offsets and the zone (stage 5, step B1)
+
+Sections 8 and 9 add time of day, which the log needs: an `Instant` (UTC seconds
+and nanoseconds from this module's origin), an `Offset`, chrono's durations with
+its leap-second rule, and the zone as a **table the host probes** — the kernel
+carries no tz database.  `offsetAt` reads the table, `localDate` is the date a
+log line is attributed to, and `instantOf` is the fork's `capacity::local_dt`.
+Each section's header states what is ported and what was refuted on the way.
 -/
 -- The exhaustive `decide` lemmas over the month table run over 731 days and 416
 -- (month, day) pairs.  They are checked by the **kernel** (`decide`),
@@ -827,6 +836,898 @@ theorem monthOfIsoWeek_W36 :
   decide
 theorem monthOfIsoWeek_W35 :
     monthOfIsoWeek (weekOrdinal (toDay ⟨2026, 8, 24⟩)) = monthOrdinal (toDay ⟨2026, 8, 1⟩) := by
+  decide
+
+/-! ## 8. Instants and offsets (stage 5, step B1; design §5.2)
+
+A log line's `t` is an instant with the offset it was written in, and the replay
+does arithmetic on instants: minutes between two of them, seconds since a wake,
+an idle's start `min` minutes before its stamp.  That arithmetic belongs here,
+beside `Day` (AGENTS §8.3's trap), and it is **chrono 0.4.45's**, ported, because
+parity against the fork point is the acceptance.
+
+**An instant** is UTC seconds since 0001-01-01T00:00:00Z, the origin of `Day`,
+plus nanoseconds, so `t.sec / 86400` is the UTC `Day`.  chrono represents a leap
+second as a nanosecond count of 1,000,000,000 or more on second 59 of a minute
+(`NaiveTime`'s `frac`), and so does `Instant.wf`.
+
+**Its order is chrono's**: `DateTime` compares its UTC `(secs, frac)`
+lexicographically.  That is **not** the order of `Instant.nanos`: a leap second's
+nanosecond count passes the next second's
+(`the_instant_order_is_not_the_nanos_order`); the two agree off a leap second
+(`Instant.lt_iff_nanos_off_a_leap_second`).
+
+**Its durations are chrono's too**, and chrono's leap-second rule is not
+arithmetic on nanoseconds: `NaiveTime::signed_duration_since` counts a leap
+second only when the other side is a later second *of the same day*, so a leap
+second counts before 03:00:00 and does not count before midnight
+(`the_leap_second_counts_within_a_day_but_not_across_midnight`).  `durationBetween`
+is that function, written in its date and time halves as chrono writes it.
+
+**Day-valued results are typed `Nat`**, never `Day` (the `omega` trap in this
+file's header). -/
+
+/-- An instant: UTC seconds since 0001-01-01T00:00:00Z, and nanoseconds. -/
+structure Instant where
+  sec : Nat
+  ns  : Nat
+deriving DecidableEq, Repr
+
+/-- chrono's representable instants: a nanosecond count below two seconds, at or
+above one second only on second 59 of a minute (a leap second), and a year of at
+most 9999 (R10; `the_witness_seconds_are_the_dates_they_name` checks the bound is
+0001-01-01 plus the days to 10000-01-01). -/
+def Instant.wf (i : Instant) : Bool :=
+  decide (i.ns < 2000000000) && (decide (i.ns < 1000000000) || i.sec % 60 == 59)
+    && decide (i.sec < 315537897600)
+
+abbrev VInstant := { i : Instant // i.wf = true }
+
+/-- The only constructor a decoder uses (R10). -/
+def mkInstant? (sec ns : Nat) : Option VInstant :=
+  if h : Instant.wf ⟨sec, ns⟩ = true then some ⟨⟨sec, ns⟩, h⟩ else none
+
+/-- Nanoseconds since the origin.  Not the order, and not chrono's duration: see
+the section header. -/
+def Instant.nanos (i : Instant) : Nat := i.sec * 1000000000 + i.ns
+
+/-- chrono's order: `(sec, ns)` lexicographically. -/
+instance : LT Instant := ⟨fun a b => a.sec < b.sec ∨ (a.sec = b.sec ∧ a.ns < b.ns)⟩
+instance : LE Instant := ⟨fun a b => a.sec < b.sec ∨ (a.sec = b.sec ∧ a.ns ≤ b.ns)⟩
+instance (a b : Instant) : Decidable (a < b) := inferInstanceAs (Decidable (_ ∨ _))
+instance (a b : Instant) : Decidable (a ≤ b) := inferInstanceAs (Decidable (_ ∨ _))
+
+theorem Instant.lt_iff (a b : Instant) : a < b ↔ (a.sec < b.sec ∨ (a.sec = b.sec ∧ a.ns < b.ns)) :=
+  Iff.rfl
+theorem Instant.le_iff (a b : Instant) : a ≤ b ↔ (a.sec < b.sec ∨ (a.sec = b.sec ∧ a.ns ≤ b.ns)) :=
+  Iff.rfl
+theorem Instant.lt_irrefl (a : Instant) : ¬ a < a := by
+  rw [Instant.lt_iff]; omega
+theorem Instant.lt_trans {a b c : Instant} (h₁ : a < b) (h₂ : b < c) : a < c := by
+  rw [Instant.lt_iff] at *; omega
+theorem Instant.not_lt (a b : Instant) : ¬ a < b ↔ b ≤ a := by
+  rw [Instant.lt_iff, Instant.le_iff]; omega
+theorem Instant.le_total (a b : Instant) : a ≤ b ∨ b ≤ a := by
+  rw [Instant.le_iff, Instant.le_iff]; omega
+theorem Instant.le_antisymm {a b : Instant} (h₁ : a ≤ b) (h₂ : b ≤ a) : a = b := by
+  obtain ⟨as, an⟩ := a
+  obtain ⟨bs, bn⟩ := b
+  simp only [Instant.le_iff] at h₁ h₂
+  simp only [Instant.mk.injEq]; omega
+
+/-- **Refuted** (design §5.2 lists `Instant.lt_iff_nanos`): chrono's order is not
+the order of nanosecond counts.  A leap second `…:59` plus 1.5 s is before the
+next second in chrono's order and after it in nanoseconds.  Both instants are
+representable. -/
+theorem the_instant_order_is_not_the_nanos_order :
+    ∃ a b : VInstant, a.val < b.val ∧ b.val.nanos < a.val.nanos :=
+  ⟨⟨⟨59, 1500000000⟩, by decide⟩, ⟨⟨60, 0⟩, by decide⟩, by decide⟩
+
+/-- The narrowing, named by its subdomain: off a leap second the two orders agree. -/
+theorem Instant.lt_iff_nanos_off_a_leap_second (a b : Instant)
+    (ha : a.ns < 1000000000) (hb : b.ns < 1000000000) : a < b ↔ a.nanos < b.nanos := by
+  rw [Instant.lt_iff]; unfold Instant.nanos
+  constructor <;> intro h <;> omega
+
+/-- A UTC offset: `±HH:MM[:SS]`, as a sign and seconds.  UTC is `⟨false, 0⟩`; zone
+offsets before 1972 carry seconds, so the unit is the second (D9-6). -/
+structure Offset where
+  west : Bool
+  sec  : Nat
+deriving DecidableEq, Repr
+
+/-- chrono's `FixedOffset` range: strictly less than a day. -/
+def Offset.wf (o : Offset) : Bool := decide (o.sec < 86400)
+
+abbrev VOffset := { o : Offset // o.wf = true }
+
+/-- The only constructor a decoder uses (R10). -/
+def mkOffset? (west : Bool) (sec : Nat) : Option VOffset :=
+  if h : Offset.wf ⟨west, sec⟩ = true then some ⟨⟨west, sec⟩, h⟩ else none
+
+def Offset.utc : Offset := ⟨false, 0⟩
+
+/-- The local clock of `t` at `o`, in whole seconds from the origin: chrono's
+`naive_utc() + offset`, with the leap nanoseconds dropped.  West of UTC it
+saturates at the origin, the one place a `Nat` cannot follow chrono's
+proleptic year 0. -/
+def localSecAt (o : Offset) (t : Instant) : Nat :=
+  if o.west then t.sec - o.sec else t.sec + o.sec
+
+/-- The UTC second whose local clock at `o` reads `l`: local time minus offset.
+`none` when that falls before the origin. -/
+def utcSecAt (o : Offset) (l : Nat) : Option Nat :=
+  if o.west then some (l + o.sec) else if o.sec ≤ l then some (l - o.sec) else none
+
+theorem localSecAt_utcSecAt (o : Offset) (l s ns : Nat) (h : utcSecAt o l = some s) :
+    localSecAt o ⟨s, ns⟩ = l := by
+  unfold utcSecAt at h; unfold localSecAt
+  cases hw : o.west <;> simp only [hw, if_true, if_false, Bool.false_eq_true] at h ⊢
+  · split at h
+    · simp only [Option.some.injEq] at h; omega
+    · simp at h
+  · simp only [Option.some.injEq] at h; omega
+
+theorem utcSecAt_localSecAt (o : Offset) (t : Instant) (h : 0 < localSecAt o t) :
+    utcSecAt o (localSecAt o t) = some t.sec := by
+  unfold localSecAt at *; unfold utcSecAt
+  cases hw : o.west <;> simp only [hw, if_true, if_false, Bool.false_eq_true] at h ⊢
+  · rw [if_pos (by omega)]; simp
+  · simp only [Option.some.injEq]; omega
+
+/-! ### Durations: chrono's `signed_duration_since`, leap seconds included -/
+
+/-- `b.signed_duration_since(a)` for UTC instants, as `(secs, nanos)` with
+`0 ≤ nanos < 10^9`: chrono 0.4.45 `NaiveDateTime::signed_duration_since`, which is
+the dates' difference in days plus `NaiveTime::signed_duration_since` of the
+times of day.  The latter counts a leap second "yet to be counted" only when the
+other side is a later (or earlier) second **of the day**, which is the rule
+`the_leap_second_counts_within_a_day_but_not_across_midnight` pins. -/
+def durationBetween (a b : Instant) : Int × Int :=
+  let days : Int := ((b.sec / 86400 : Nat) : Int) - ((a.sec / 86400 : Nat) : Int)
+  let bs := b.sec % 86400
+  let as := a.sec % 86400
+  let frac : Int := (b.ns : Int) - (a.ns : Int)
+  let secs : Int :=
+    if as < bs ∧ 1000000000 ≤ a.ns then (bs : Int) - as + 1
+    else if bs < as ∧ 1000000000 ≤ b.ns then (bs : Int) - as - 1
+    else (bs : Int) - as
+  (days * 86400 + secs + frac / 1000000000, frac % 1000000000)
+
+/-- `TimeDelta::num_seconds` of `b − a`: whole seconds, truncated toward zero
+(`hours_since_wake`, site R11). -/
+def secondsBetween (a b : Instant) : Int :=
+  if (durationBetween a b).1 < 0 ∧ 0 < (durationBetween a b).2 then (durationBetween a b).1 + 1
+  else (durationBetween a b).1
+
+/-- `num_minutes().max(0)` of `b − a`, as `close_sub` reads it.  `num_minutes` is
+`num_seconds / 60` truncated toward zero, so a negative count gives at most 0 and
+the clamp makes it 0: this is the clamped seconds over 60
+(`minutesBetween_is_num_minutes_max_zero`). -/
+def minutesBetween (a b : Instant) : Nat := (secondsBetween a b).toNat / 60
+
+theorem minutesBetween_is_num_minutes_max_zero (a b : Instant) :
+    (minutesBetween a b : Int) = max 0 ((secondsBetween a b).tdiv 60) := by
+  unfold minutesBetween
+  by_cases h : 0 ≤ secondsBetween a b
+  · rw [Int.tdiv_eq_ediv_of_nonneg h]; omega
+  · have : (secondsBetween a b).tdiv 60 ≤ 0 := by
+      have e : secondsBetween a b = -(-secondsBetween a b) := by omega
+      rw [e, Int.neg_tdiv, Int.tdiv_eq_ediv_of_nonneg (by omega)]
+      omega
+    omega
+
+/-- `t − Duration::minutes(m)` (idle's start): chrono's
+`NaiveTime::overflowing_add_signed` with a negative whole-minute delta.  A leap
+second is left as the next second before subtracting; a zero delta leaves the
+instant, leap second and all.  Below the origin it saturates at the origin. -/
+def subMinutes (t : Instant) (m : Nat) : Instant :=
+  if m = 0 then t
+  else if 1000000000 ≤ t.ns then
+    (if 60 * m ≤ t.sec + 1 then ⟨t.sec + 1 - 60 * m, t.ns - 1000000000⟩ else ⟨0, 0⟩)
+  else if 60 * m ≤ t.sec then ⟨t.sec - 60 * m, t.ns⟩ else ⟨0, 0⟩
+
+theorem subMinutes_zero (t : Instant) : subMinutes t 0 = t := by
+  simp [subMinutes]
+
+/-- Off the origin, subtracting minutes is subtracting nanoseconds, leap second
+or not. -/
+theorem subMinutes_nanos (t : Instant) (m : Nat) (hm : 0 < m) (hns : t.ns < 2000000000)
+    (h : m * 60000000000 ≤ t.nanos) : (subMinutes t m).nanos = t.nanos - m * 60000000000 := by
+  unfold subMinutes Instant.nanos at *
+  rw [if_neg (by omega)]
+  split
+  · rw [if_pos (by omega)]; simp only; omega
+  · rw [if_pos (by omega)]; simp only; omega
+
+theorem subMinutes_wf (t : Instant) (m : Nat) (h : t.wf = true) : (subMinutes t m).wf = true := by
+  unfold subMinutes
+  simp only [Instant.wf, Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq, beq_iff_eq] at h
+  split
+  · simp only [Instant.wf, Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq, beq_iff_eq]; omega
+  · split
+    · split <;> simp only [Instant.wf, Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq,
+        beq_iff_eq] <;> omega
+    · split <;> simp only [Instant.wf, Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq,
+        beq_iff_eq] <;> omega
+
+/-- chrono's own documented examples for `signed_duration_since` with a leap second
+(CRIT 29): the five `NaiveTime` ones on day 0 (`03:00:59` plus 1,000 ms and 1,500 ms,
+against `03:00:59`, `03:00:00` and `02:59:59` plus 1,000 ms), and the two
+`NaiveDateTime` ones around 2015-06-30T23:59:60.5. -/
+theorem durationBetween_across_a_leap_second :
+    durationBetween ⟨10859, 0⟩ ⟨10859, 1000000000⟩ = (1, 0) ∧
+    durationBetween ⟨10859, 0⟩ ⟨10859, 1500000000⟩ = (1, 500000000) ∧
+    durationBetween ⟨10800, 0⟩ ⟨10859, 1000000000⟩ = (60, 0) ∧
+    durationBetween ⟨10799, 1000000000⟩ ⟨10800, 0⟩ = (1, 0) ∧
+    durationBetween ⟨10799, 1000000000⟩ ⟨10859, 1000000000⟩ = (61, 0) ∧
+    durationBetween ⟨63571302000, 0⟩ ⟨63571305599, 1500000000⟩ = (3600, 500000000) ∧
+    durationBetween ⟨63571305599, 1500000000⟩ ⟨63571309200, 0⟩ = (3599, 500000000) := by
+  decide
+
+/-- **chrono's rule, which nanosecond arithmetic is not.**  From a leap second
+`…:59` plus 1.5 s to 200 ms past the next second: 0.7 s when the next second is
+in the same day (03:00:00.2), and **−0.3 s** when it is the next day's midnight,
+although both pairs are in order.  The design's "leap seconds included" means
+this. -/
+theorem the_leap_second_counts_within_a_day_but_not_across_midnight :
+    (⟨10799, 1500000000⟩ : Instant) < ⟨10800, 200000000⟩ ∧
+    durationBetween ⟨10799, 1500000000⟩ ⟨10800, 200000000⟩ = (0, 700000000) ∧
+    (⟨63571305599, 1500000000⟩ : Instant) < ⟨63571305600, 200000000⟩ ∧
+    durationBetween ⟨63571305599, 1500000000⟩ ⟨63571305600, 200000000⟩ = (-1, 700000000) := by
+  decide
+
+theorem minutesBetween_truncates :
+    minutesBetween ⟨0, 0⟩ ⟨119, 0⟩ = 1 ∧ minutesBetween ⟨0, 0⟩ ⟨119, 999999999⟩ = 1 ∧
+    minutesBetween ⟨0, 0⟩ ⟨120, 0⟩ = 2 ∧ minutesBetween ⟨119, 0⟩ ⟨0, 0⟩ = 0 := by
+  decide
+
+/-- −59.5 s is −59 whole seconds, and +59.5 s is 59. -/
+theorem secondsBetween_truncates_toward_zero :
+    secondsBetween ⟨59, 500000000⟩ ⟨0, 0⟩ = -59 ∧ secondsBetween ⟨0, 0⟩ ⟨59, 500000000⟩ = 59 := by
+  decide
+
+/-- The duration, as one count of nanoseconds: the nanosecond difference plus
+chrono's leap adjustment of at most one second either way. -/
+theorem durationBetween_total (a b : Instant) :
+    ∃ adj : Int, (adj = 0 ∨ adj = 1 ∨ adj = -1) ∧
+      (a.sec = b.sec → adj = 0) ∧
+      (durationBetween a b).1 * 1000000000 + (durationBetween a b).2
+        = ((b.sec : Int) - a.sec) * 1000000000 + ((b.ns : Int) - a.ns) + adj * 1000000000 ∧
+      0 ≤ (durationBetween a b).2 ∧ (durationBetween a b).2 < 1000000000 := by
+  unfold durationBetween
+  simp only
+  split
+  · exact ⟨1, by omega, by omega, by omega, by omega, by omega⟩
+  · split
+    · exact ⟨-1, by omega, by omega, by omega, by omega, by omega⟩
+    · exact ⟨0, by omega, by omega, by omega, by omega, by omega⟩
+
+/-- An interval that runs backwards has no minutes, as `close_sub`'s clamp
+intends — chrono's leap rule included, which can make such a duration up to two
+seconds positive but never a minute. -/
+theorem minutesBetween_zero_of_le (a b : Instant) (hb : b.wf = true) (h : b ≤ a) :
+    minutesBetween a b = 0 := by
+  obtain ⟨adj, hadj, hsame, htot, hlo, hhi⟩ := durationBetween_total a b
+  simp only [Instant.wf, Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq, beq_iff_eq] at hb
+  rw [Instant.le_iff] at h
+  unfold minutesBetween secondsBetween
+  split <;> omega
+
+theorem mkInstant?_isSome_iff (sec ns : Nat) :
+    (mkInstant? sec ns).isSome = Instant.wf ⟨sec, ns⟩ := by
+  unfold mkInstant?; split <;> simp_all
+
+/-- R10's rejection: a leap nanosecond off second 59, two seconds of nanoseconds,
+year 10000; and the edges that are accepted. -/
+theorem mkInstant?_refuses_a_bad_nanosecond :
+    mkInstant? 0 1000000000 = none ∧ mkInstant? 59 2000000000 = none ∧
+    mkInstant? 315537897600 0 = none ∧
+    (mkInstant? 59 1999999999).isSome = true ∧ (mkInstant? 315537897599 999999999).isSome = true := by
+  decide
+
+theorem mkOffset?_isSome_iff (west : Bool) (sec : Nat) :
+    (mkOffset? west sec).isSome = Offset.wf ⟨west, sec⟩ := by
+  unfold mkOffset?; split <;> simp_all
+
+theorem mkOffset?_refuses_a_whole_day :
+    mkOffset? false 86400 = none ∧ mkOffset? true 86400 = none ∧
+    (mkOffset? true 86399).isSome = true := by
+  decide
+
+/-- **The written clock is not the instant order** (cheat 92's control).
+`2026-09-07T22:00:00-05:00` and `2026-09-08T03:00:00+00:00` are one instant,
+whose written clocks are five hours apart: ordering the two by their clocks
+would put one before the other, and no instant is before itself
+(`Instant.lt_irrefl`). -/
+theorem the_written_clock_is_not_the_instant_order :
+    utcSecAt ⟨true, 18000⟩ (toDay ⟨2026, 9, 7⟩ * 86400 + 22 * 3600) = some 63924433200 ∧
+    utcSecAt Offset.utc (toDay ⟨2026, 9, 8⟩ * 86400 + 3 * 3600) = some 63924433200 ∧
+    localSecAt ⟨true, 18000⟩ ⟨63924433200, 0⟩ < localSecAt Offset.utc ⟨63924433200, 0⟩ := by
+  decide
+
+/-! ## 9. The zone: a table the host probes (stage 5, step B1; design §6.1)
+
+The kernel carries **no tz database**.  The host samples chrono-tz's offset for
+the configured zone at every UTC hour over [1900, 2200), bisects each change to
+the second, and sends the result: the offset in force before the first change,
+and every change as the instant it takes effect with the offset from then on.
+The kernel reads it, and nothing else about zones (D9-7).
+
+**Stated assumptions**, each tested on the host at B4 (T4): a zone never changes
+and changes back inside one sampled hour; and outside [1900, 2200) the edge
+offset applies (parity entry P16).
+
+**`offsetAt` is chrono-tz's lookup** (`offset_from_utc_datetime`: the timestamp,
+in whole seconds, against the spans): the last transition at or before `t`.  A
+transition is a whole second (chrono-tz's spans are `i64` seconds, and the host
+bisects to the second), so in chrono's order "at or before `t`" is exactly "at a
+second at or before `t.sec`".
+
+**`localHits` is chrono-tz's local lookup** (`offset_from_local_datetime`): the
+table's spans, each read at its own offset, and the instants whose span holds
+them, earliest first.  chrono-tz finds them by a binary search over local spans
+plus a check of both neighbours; the scan below agrees with it whenever at most
+two local spans overlap and the local spans are ordered, which a table probed from
+a real zone satisfies.  A table that broke that would be a table no zone has; T4
+(d) is the host's check.
+
+Both are `foldl`s over at most 4,096 transitions (rule D9-21). -/
+
+/-- The host's zone table.  `key` names the zone, the tzdb version and the span;
+the kernel only compares it. -/
+structure TzTable where
+  key   : List Char
+  base  : Offset
+  trans : List (Instant × Offset)
+deriving DecidableEq, Repr
+
+/-- Transitions after `lo`: whole, representable seconds, strictly increasing, with
+representable offsets.  A tail call, run only after the length guard in
+`TzTable.wf`. -/
+def transFrom : Option Nat → List (Instant × Offset) → Bool
+  | _, [] => true
+  | lo, (i, o) :: rest =>
+      (match lo with | none => true | some l => decide (l < i.sec)) && i.ns == 0 && i.wf && o.wf
+        && transFrom (some i.sec) rest
+
+/-- R10: a key of at most 128 characters, a representable base, at most 4,096
+transitions, and `transFrom`.  The cheap guards come first, so `transFrom` never
+runs over an over-long list. -/
+def TzTable.wf (z : TzTable) : Bool :=
+  decide (z.key.length ≤ 128) && z.base.wf && decide (z.trans.length ≤ 4096) && transFrom none z.trans
+
+abbrev Tz := { z : TzTable // z.wf = true }
+
+/-- The only constructor a decoder uses (R10). -/
+def mkTz? (z : TzTable) : Option Tz := if h : z.wf = true then some ⟨z, h⟩ else none
+
+def offsetStep (t : Instant) (acc : Offset) (p : Instant × Offset) : Offset :=
+  if p.1.sec ≤ t.sec then p.2 else acc
+
+/-- The offset in force at `t`: the last transition at or before it, else the base. -/
+def offsetAt (z : Tz) (t : Instant) : Offset := z.val.trans.foldl (offsetStep t) z.val.base
+
+/-- `t`'s local clock in the zone, in whole seconds from the origin. -/
+def localSec (z : Tz) (t : Instant) : Nat := localSecAt (offsetAt z t) t
+
+/-- `t`'s local date in the zone. -/
+def localDate (z : Tz) (t : Instant) : Nat := localSec z t / 86400
+
+/-- One span of the table: UTC seconds `[lo, hi)` (an absent bound is unbounded)
+and the offset in force over it. -/
+structure Span where
+  lo  : Option Nat
+  hi  : Option Nat
+  off : Offset
+deriving DecidableEq, Repr
+
+def Span.holds (sp : Span) (x : Nat) : Bool :=
+  (match sp.lo with | none => true | some l => decide (l ≤ x)) &&
+    (match sp.hi with | none => true | some h => decide (x < h))
+
+/-- The UTC second of local clock `l` in this span, if the span holds it. -/
+def Span.hit (sp : Span) (l : Nat) : Option Nat :=
+  match utcSecAt sp.off l with
+  | some s => if sp.holds s then some s else none
+  | none => none
+
+/-- The spans, in order.  Specification: proofs read it, the run time does not. -/
+def spansFrom (lo : Option Nat) (off : Offset) : List (Instant × Offset) → List Span
+  | [] => [⟨lo, none, off⟩]
+  | (i, o) :: rest => ⟨lo, some i.sec, off⟩ :: spansFrom (some i.sec) o rest
+
+def TzTable.spans (z : TzTable) : List Span := spansFrom none z.base z.trans
+
+def pushHit : Option Nat → List Nat → List Nat
+  | some s, acc => s :: acc
+  | none, acc => acc
+
+def hitStep (l : Nat) (st : Option Nat × Offset × List Nat) (p : Instant × Offset) :
+    Option Nat × Offset × List Nat :=
+  (some p.1.sec, p.2, pushHit (Span.hit ⟨st.1, some p.1.sec, st.2.1⟩ l) st.2.2)
+
+def hitFinish (l : Nat) (st : Option Nat × Offset × List Nat) : List Nat :=
+  (pushHit (Span.hit ⟨st.1, none, st.2.1⟩ l) st.2.2).reverse
+
+/-- The UTC seconds whose local clock in the zone reads `l`, earliest first. -/
+def localHits (z : Tz) (l : Nat) : List Nat :=
+  hitFinish l (z.val.trans.foldl (hitStep l) (none, z.val.base, []))
+
+/-- The first local clock 1 to 180 minutes after `l` that the zone has. -/
+def gapHit (z : Tz) (l : Nat) : Nat → Nat → Option Nat
+  | 0, _ => none
+  | fuel + 1, m =>
+      match localHits z (l + 60 * m) with
+      | s :: _ => some s
+      | [] => gapHit z l fuel (m + 1)
+
+/-! ### `instantOf`: the fork's `local_dt` (design §6.3)
+
+`capacity::local_dt(tz, date, time)`: `Single` gives that instant; `Ambiguous`
+the earliest; `None` (a spring-forward gap) the first valid local time 1 to 180
+minutes later, earliest; and failing that, the local time read as UTC
+(`from_utc_datetime`).  The clock is minutes of the day, `Field.Clock`'s
+`Fin 1440`, which `Line.lean` defines and this module cannot import. -/
+
+def instantOf (z : Tz) (d : Nat) (c : Fin 1440) : Instant :=
+  match localHits z (d * 86400 + c.val * 60) with
+  | s :: _ => ⟨s, 0⟩
+  | [] =>
+      match gapHit z (d * 86400 + c.val * 60) 180 1 with
+      | some s => ⟨s, 0⟩
+      | none => ⟨d * 86400 + c.val * 60, 0⟩
+
+/-- Exactly one instant has this local clock.  The origin's first second is not
+claimed: `localSec` saturates there, so it is the reading of every instant up to
+an offset west of UTC. -/
+def unambiguousAt (z : Tz) (d : Nat) (c : Fin 1440) : Bool :=
+  (localHits z (d * 86400 + c.val * 60)).length == 1 && decide (0 < d * 86400 + c.val * 60)
+
+/-- Why `unambiguousAt` leaves out the origin's first second: a zone west of UTC
+with one hit there still has another instant reading that clock, because
+`localSec` saturates. -/
+theorem the_origin_second_is_not_unambiguous :
+    ∃ (z : Tz) (t : Instant), (localHits z 0).length = 1 ∧ t.ns = 0 ∧
+      localSec z t = 0 * 86400 + (0 : Fin 1440).val * 60 ∧ instantOf z 0 0 ≠ t :=
+  ⟨⟨⟨[], ⟨true, 21600⟩, []⟩, by decide⟩, ⟨100, 0⟩, by decide, rfl, by decide, by decide⟩
+
+/-! ### What the table's well-formedness gives -/
+
+theorem transFrom_mem : ∀ (L : List (Instant × Offset)) (lo : Option Nat) (p : Instant × Offset),
+    transFrom lo L = true → p ∈ L →
+      p.1.ns = 0 ∧ p.1.wf = true ∧ p.2.wf = true ∧ (∀ l, lo = some l → l < p.1.sec)
+  | [], _, _, _, hm => by simp at hm
+  | (i, o) :: rest, lo, p, hw, hm => by
+      simp only [transFrom, Bool.and_eq_true, beq_iff_eq] at hw
+      obtain ⟨⟨⟨⟨hlo, hns⟩, hiw⟩, how⟩, hrest⟩ := hw
+      rcases List.mem_cons.mp hm with h | h
+      · subst h
+        refine ⟨hns, hiw, how, ?_⟩
+        intro l hl; subst hl; simpa using hlo
+      · obtain ⟨a, b, c, d⟩ := transFrom_mem rest (some i.sec) p hrest h
+        refine ⟨a, b, c, ?_⟩
+        intro l hl; subst hl
+        have := d i.sec rfl
+        simp only [decide_eq_true_eq] at hlo
+        omega
+
+theorem transFrom_tail {lo : Option Nat} {i : Instant} {o : Offset} {rest : List (Instant × Offset)}
+    (h : transFrom lo ((i, o) :: rest) = true) : transFrom (some i.sec) rest = true := by
+  simp only [transFrom, Bool.and_eq_true] at h; exact h.2
+
+theorem Tz.transFrom (z : Tz) : transFrom none z.val.trans = true := by
+  have h := z.property
+  simp only [TzTable.wf, Bool.and_eq_true] at h
+  exact h.2
+
+theorem Tz.trans_ns (z : Tz) {p : Instant × Offset} (h : p ∈ z.val.trans) : p.1.ns = 0 :=
+  (transFrom_mem _ _ _ z.transFrom h).1
+
+/-- **A table's transitions strictly increase**, in chrono's order. -/
+theorem tz_transitions_strictly_increase (z : Tz) :
+    z.val.trans.Pairwise (fun p q => p.1 < q.1) := by
+  suffices ∀ (L : List (Instant × Offset)) lo, transFrom lo L = true → L.Pairwise (fun p q => p.1 < q.1) from
+    this _ _ z.transFrom
+  intro L
+  induction L with
+  | nil => intro _ _; exact List.Pairwise.nil
+  | cons p rest ih =>
+    intro lo hw
+    obtain ⟨i, o⟩ := p
+    have ht := transFrom_tail hw
+    refine List.Pairwise.cons ?_ (ih _ ht)
+    intro q hq
+    have := (transFrom_mem rest (some i.sec) q ht hq).2.2.2 i.sec rfl
+    exact Or.inl this
+
+theorem mkTz?_isSome_iff (z : TzTable) : (mkTz? z).isSome = z.wf := by
+  unfold mkTz?; split <;> simp_all
+
+theorem mkTz?_refuses_a_long_key (z : TzTable) (h : 128 < z.key.length) : mkTz? z = none := by
+  unfold mkTz? TzTable.wf
+  rw [dif_neg]; simp only [Bool.and_eq_true, decide_eq_true_eq, not_and]; omega
+
+theorem mkTz?_refuses_too_many_transitions (z : TzTable) (h : 4096 < z.trans.length) :
+    mkTz? z = none := by
+  unfold mkTz? TzTable.wf
+  rw [dif_neg]; simp only [Bool.and_eq_true, decide_eq_true_eq, not_and]; intros; omega
+
+/-- R10's rejection: transitions out of order, a repeated instant, a transition off
+a whole second, a transition to an offset of a day, and a base of a day; and a
+sorted table, which is accepted. -/
+theorem mkTz?_refuses_an_unsorted_table :
+    mkTz? ⟨[], Offset.utc, [(⟨120, 0⟩, ⟨false, 3600⟩), (⟨60, 0⟩, Offset.utc)]⟩ = none ∧
+    mkTz? ⟨[], Offset.utc, [(⟨60, 0⟩, ⟨false, 3600⟩), (⟨60, 0⟩, Offset.utc)]⟩ = none ∧
+    mkTz? ⟨[], Offset.utc, [(⟨60, 1⟩, ⟨false, 3600⟩)]⟩ = none ∧
+    mkTz? ⟨[], Offset.utc, [(⟨60, 0⟩, ⟨false, 86400⟩)]⟩ = none ∧
+    mkTz? ⟨[], ⟨true, 86400⟩, []⟩ = none ∧
+    (mkTz? ⟨[], Offset.utc, [(⟨60, 0⟩, ⟨false, 3600⟩), (⟨120, 0⟩, Offset.utc)]⟩).isSome = true := by
+  decide
+
+/-! ### `offsetAt` reads the last transition -/
+
+theorem offsetFold_none (t : Instant) : ∀ (L : List (Instant × Offset)) (acc : Offset),
+    (∀ p ∈ L, t.sec < p.1.sec) → L.foldl (offsetStep t) acc = acc
+  | [], _, _ => rfl
+  | p :: rest, acc, h => by
+      rw [List.foldl_cons]
+      have hp := h p (List.mem_cons_self ..)
+      have : offsetStep t acc p = acc := by unfold offsetStep; rw [if_neg (by omega)]
+      rw [this]
+      exact offsetFold_none t rest acc (fun q hq => h q (List.mem_cons_of_mem _ hq))
+
+theorem offsetFold_last (t i : Instant) (o : Offset) :
+    ∀ (L : List (Instant × Offset)) (lo : Option Nat) (acc : Offset),
+      transFrom lo L = true → (i, o) ∈ L → i.sec ≤ t.sec →
+      (∀ j o', (j, o') ∈ L → i.sec < j.sec → t.sec < j.sec) →
+      L.foldl (offsetStep t) acc = o
+  | [], _, _, _, hm, _, _ => by simp at hm
+  | (j, o') :: rest, lo, acc, hw, hm, hle, hnext => by
+      rw [List.foldl_cons]
+      have ht := transFrom_tail hw
+      rcases List.mem_cons.mp hm with h | h
+      · simp only [Prod.mk.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        have : offsetStep t acc (i, o) = o := by unfold offsetStep; rw [if_pos hle]
+        rw [this]
+        apply offsetFold_none
+        intro q hq
+        have hs := (transFrom_mem rest (some i.sec) q ht hq).2.2.2 i.sec rfl
+        exact hnext q.1 q.2 (List.mem_cons_of_mem _ hq) hs
+      · exact offsetFold_last t i o rest (some j.sec) _ ht h hle
+          (fun j' o'' hm' => hnext j' o'' (List.mem_cons_of_mem _ hm'))
+
+/-- **`offsetAt` reads the last transition** (design §15, B1), in chrono's order:
+the offset of a transition at or before `t` with no later transition at or before
+`t`.  The design stated it over `Instant.nanos`, where it is false
+(`offsetAt_does_not_read_the_last_transition_by_nanos`). -/
+theorem offsetAt_reads_the_last_transition (z : Tz) (t i : Instant) (o : Offset)
+    (hmem : (i, o) ∈ z.val.trans) (hle : i ≤ t)
+    (hnext : ∀ j o', (j, o') ∈ z.val.trans → i < j → t < j) :
+    offsetAt z t = o := by
+  have hi : i.ns = 0 := z.trans_ns hmem
+  apply offsetFold_last t i o z.val.trans none z.val.base z.transFrom hmem
+  · rw [Instant.le_iff] at hle; omega
+  · intro j o' hj hij
+    have hj0 : j.ns = 0 := z.trans_ns hj
+    have := hnext j o' hj (by rw [Instant.lt_iff]; omega)
+    rw [Instant.lt_iff] at this; omega
+
+/-- Its other direction: before every transition, the base. -/
+theorem offsetAt_before_every_transition (z : Tz) (t : Instant)
+    (h : ∀ j o', (j, o') ∈ z.val.trans → t < j) : offsetAt z t = z.val.base := by
+  apply offsetFold_none
+  intro p hp
+  have hp0 : p.1.ns = 0 := z.trans_ns hp
+  have := h p.1 p.2 hp
+  rw [Instant.lt_iff] at this; omega
+
+/-- And exactly at a transition, its offset. -/
+theorem offsetAt_at_a_transition (z : Tz) (i : Instant) (o : Offset) (hmem : (i, o) ∈ z.val.trans) :
+    offsetAt z i = o :=
+  offsetAt_reads_the_last_transition z i i o hmem (by rw [Instant.le_iff]; omega)
+    (fun _ _ _ h => h)
+
+/-- **Refuted as the design stated it**, over nanoseconds: a leap second one and a
+half seconds before a transition has a nanosecond count past the transition's,
+and chrono-tz (and `offsetAt`) still give the base. -/
+theorem offsetAt_does_not_read_the_last_transition_by_nanos :
+    ∃ (z : Tz) (t i : Instant) (o : Offset), (i, o) ∈ z.val.trans ∧ i.nanos ≤ t.nanos ∧
+      (∀ j o', (j, o') ∈ z.val.trans → i.nanos < j.nanos → t.nanos < j.nanos) ∧
+      t.wf = true ∧ offsetAt z t ≠ o := by
+  refine ⟨⟨⟨[], Offset.utc, [(⟨60, 0⟩, ⟨false, 3600⟩)]⟩, by decide⟩, ⟨59, 1500000000⟩, ⟨60, 0⟩,
+    ⟨false, 3600⟩, by simp, by decide, ?_, by decide, by decide⟩
+  intro j o' hj hlt
+  simp only [List.mem_singleton, Prod.mk.injEq] at hj
+  obtain ⟨rfl, rfl⟩ := hj
+  exact absurd hlt (Nat.lt_irrefl _)
+
+theorem offsetAt_wf (z : Tz) (t : Instant) : (offsetAt z t).wf = true := by
+  have hb : z.val.base.wf = true := by
+    have h := z.property
+    simp only [TzTable.wf, Bool.and_eq_true] at h
+    exact h.1.1.2
+  suffices ∀ (L : List (Instant × Offset)) (acc : Offset), acc.wf = true →
+      (∀ p ∈ L, p.2.wf = true) → (L.foldl (offsetStep t) acc).wf = true from
+    this _ _ hb (fun p hp => (transFrom_mem _ _ _ z.transFrom hp).2.2.1)
+  intro L
+  induction L with
+  | nil => intro acc h _; exact h
+  | cons p rest ih =>
+    intro acc hacc hall
+    rw [List.foldl_cons]
+    apply ih _ _ (fun q hq => hall q (List.mem_cons_of_mem _ hq))
+    unfold offsetStep; split
+    · exact hall p (List.mem_cons_self ..)
+    · exact hacc
+
+/-- A local date is within a day of the UTC date: an offset is under a day. -/
+theorem localDate_near_the_utc_date (z : Tz) (t : Instant) :
+    t.sec / 86400 ≤ localDate z t + 1 ∧ localDate z t ≤ t.sec / 86400 + 1 := by
+  have hw := offsetAt_wf z t
+  unfold localDate localSec localSecAt
+  simp only [Offset.wf, decide_eq_true_eq] at hw
+  split <;> omega
+
+theorem foldl_offsetStep_congr (t t' : Instant) : ∀ (L : List (Instant × Offset)) (acc : Offset),
+    (∀ p ∈ L, (p.1.sec ≤ t.sec ↔ p.1.sec ≤ t'.sec)) →
+      L.foldl (offsetStep t) acc = L.foldl (offsetStep t') acc
+  | [], _, _ => rfl
+  | p :: rest, acc, h => by
+      rw [List.foldl_cons, List.foldl_cons]
+      have hp := h p (List.mem_cons_self ..)
+      have : offsetStep t acc p = offsetStep t' acc p := by
+        unfold offsetStep
+        by_cases hc : p.1.sec ≤ t.sec
+        · rw [if_pos hc, if_pos (hp.mp hc)]
+        · rw [if_neg hc, if_neg (fun h' => hc (hp.mpr h'))]
+      rw [this]
+      exact foldl_offsetStep_congr t t' rest _ (fun q hq => h q (List.mem_cons_of_mem _ hq))
+
+/-- Between transitions the offset is one offset. -/
+theorem offsetAt_is_constant_between_transitions (z : Tz) (t t' : Instant)
+    (h : ∀ j o', (j, o') ∈ z.val.trans → (j ≤ t ↔ j ≤ t')) : offsetAt z t = offsetAt z t' := by
+  apply foldl_offsetStep_congr
+  intro p hp
+  have hp0 : p.1.ns = 0 := z.trans_ns hp
+  have := h p.1 p.2 hp
+  rw [Instant.le_iff, Instant.le_iff] at this
+  constructor <;> intro hc <;> omega
+
+/-- Between transitions the local date only moves forward.  (Across one it can move
+back: a fall-back at local midnight repeats a date, which is why C2's `keptWakes`
+dedups runs, not dates.) -/
+theorem localDate_mono_between_transitions (z : Tz) (t t' : Instant)
+    (h : ∀ j o', (j, o') ∈ z.val.trans → (j ≤ t ↔ j ≤ t')) (hle : t ≤ t') :
+    localDate z t ≤ localDate z t' := by
+  have ho := offsetAt_is_constant_between_transitions z t t' h
+  unfold localDate localSec
+  rw [ho]
+  rw [Instant.le_iff] at hle
+  apply Nat.div_le_div_right
+  unfold localSecAt; split <;> omega
+
+/-! ### `localHits` is the spans, read at their own offsets -/
+
+theorem pushHit_reverse (o : Option Nat) (acc : List Nat) :
+    (pushHit o acc).reverse = acc.reverse ++ o.toList := by
+  cases o <;> simp [pushHit]
+
+theorem hitFold (l : Nat) : ∀ (L : List (Instant × Offset)) (lo : Option Nat) (off : Offset)
+    (acc : List Nat),
+    hitFinish l (L.foldl (hitStep l) (lo, off, acc))
+      = acc.reverse ++ (spansFrom lo off L).filterMap (fun sp => sp.hit l)
+  | [], lo, off, acc => by
+      simp only [List.foldl_nil, hitFinish, spansFrom, pushHit_reverse]
+      cases h : Span.hit ⟨lo, none, off⟩ l <;> simp [h]
+  | (i, o) :: rest, lo, off, acc => by
+      rw [List.foldl_cons]
+      have := hitFold l rest (some i.sec) o (pushHit (Span.hit ⟨lo, some i.sec, off⟩ l) acc)
+      simp only [hitStep] at this ⊢
+      rw [this, pushHit_reverse, spansFrom]
+      cases h : Span.hit ⟨lo, some i.sec, off⟩ l <;> simp [h]
+
+theorem localHits_eq (z : Tz) (l : Nat) :
+    localHits z l = z.val.spans.filterMap (fun sp => sp.hit l) := by
+  unfold localHits TzTable.spans
+  rw [hitFold]; simp
+
+theorem spansFrom_lo (l : Nat) : ∀ (L : List (Instant × Offset)) (off : Offset) (sp : Span),
+    transFrom (some l) L = true → sp ∈ spansFrom (some l) off L → ∃ l', sp.lo = some l' ∧ l ≤ l'
+  | [], off, sp, _, hm => by
+      simp only [spansFrom, List.mem_singleton] at hm; subst hm; exact ⟨l, rfl, Nat.le_refl _⟩
+  | (i, o) :: rest, off, sp, hw, hm => by
+      simp only [spansFrom, List.mem_cons] at hm
+      rcases hm with h | h
+      · subst h; exact ⟨l, rfl, Nat.le_refl _⟩
+      · obtain ⟨l', hl', hle⟩ := spansFrom_lo i.sec rest o sp (transFrom_tail hw) h
+        have : l < i.sec := (transFrom_mem _ _ (i, o) hw (List.mem_cons_self ..)).2.2.2 l rfl
+        exact ⟨l', hl', by omega⟩
+
+/-- The fold reads a span's offset at every second the span holds. -/
+theorem offsetFold_span (t : Instant) : ∀ (L : List (Instant × Offset)) (lo : Option Nat)
+    (off : Offset) (sp : Span),
+    transFrom lo L = true → sp ∈ spansFrom lo off L → sp.holds t.sec = true →
+      L.foldl (offsetStep t) off = sp.off
+  | [], lo, off, sp, _, hm, _ => by
+      simp only [spansFrom, List.mem_singleton] at hm; subst hm; rfl
+  | (i, o) :: rest, lo, off, sp, hw, hm, hh => by
+      rw [List.foldl_cons]
+      have ht := transFrom_tail hw
+      simp only [spansFrom, List.mem_cons] at hm
+      rcases hm with h | h
+      · subst h
+        simp only [Span.holds, Bool.and_eq_true, decide_eq_true_eq] at hh
+        have hx := hh.2
+        have : offsetStep t off (i, o) = off := by unfold offsetStep; rw [if_neg (by simp; omega)]
+        rw [this]
+        apply offsetFold_none
+        intro q hq
+        have := (transFrom_mem rest (some i.sec) q ht hq).2.2.2 i.sec rfl
+        omega
+      · obtain ⟨l', hl', hle⟩ := spansFrom_lo i.sec rest o sp ht h
+        have hx : l' ≤ t.sec := by
+          simp only [Span.holds, hl', Bool.and_eq_true, decide_eq_true_eq] at hh; exact hh.1
+        have : offsetStep t off (i, o) = o := by unfold offsetStep; rw [if_pos (by simp; omega)]
+        rw [this]
+        exact offsetFold_span t rest (some i.sec) o sp ht h hh
+
+theorem exists_span (x : Nat) : ∀ (L : List (Instant × Offset)) (lo : Option Nat) (off : Offset),
+    (∀ l, lo = some l → l ≤ x) → ∃ sp ∈ spansFrom lo off L, sp.holds x = true
+  | [], lo, off, h => by
+      refine ⟨⟨lo, none, off⟩, by simp [spansFrom], ?_⟩
+      cases lo with
+      | none => rfl
+      | some l => simpa [Span.holds] using h l rfl
+  | (i, o) :: rest, lo, off, h => by
+      by_cases hx : x < i.sec
+      · refine ⟨⟨lo, some i.sec, off⟩, by simp [spansFrom], ?_⟩
+        cases lo with
+        | none => simpa [Span.holds] using hx
+        | some l => simpa [Span.holds, hx] using h l rfl
+      · obtain ⟨sp, hsp, hh⟩ := exists_span x rest (some i.sec) o (by intro l hl; cases hl; omega)
+        exact ⟨sp, by simp [spansFrom, hsp], hh⟩
+
+/-- Every hit is an instant whose local clock reads `l`. -/
+theorem localSec_of_mem_localHits (z : Tz) (l s ns : Nat) (h : s ∈ localHits z l) :
+    localSec z ⟨s, ns⟩ = l := by
+  rw [localHits_eq, List.mem_filterMap] at h
+  obtain ⟨sp, hsp, hhit⟩ := h
+  unfold Span.hit at hhit
+  split at hhit
+  · rename_i s' hu
+    split at hhit
+    · rename_i hholds
+      simp only [Option.some.injEq] at hhit
+      subst hhit
+      have hoff : offsetAt z ⟨s', ns⟩ = sp.off :=
+        offsetFold_span ⟨s', ns⟩ z.val.trans none z.val.base sp z.transFrom hsp hholds
+      unfold localSec
+      rw [hoff]
+      exact localSecAt_utcSecAt sp.off l s' ns hu
+    · simp at hhit
+  · simp at hhit
+
+/-- And every whole-second instant whose local clock reads `l` is a hit, away from
+the origin's saturated second. -/
+theorem mem_localHits_of_localSec (z : Tz) (t : Instant) (l : Nat) (hl : 0 < l)
+    (h : localSec z t = l) : t.sec ∈ localHits z l := by
+  obtain ⟨sp, hsp, hh⟩ := exists_span t.sec z.val.trans none z.val.base (by intro _ h; cases h)
+  have hoff : offsetAt z t = sp.off :=
+    offsetFold_span t z.val.trans none z.val.base sp z.transFrom hsp hh
+  unfold localSec at h
+  rw [hoff] at h
+  have hu := utcSecAt_localSecAt sp.off t (by omega)
+  rw [h] at hu
+  rw [localHits_eq, List.mem_filterMap]
+  refine ⟨sp, hsp, ?_⟩
+  unfold Span.hit
+  rw [hu]; simp [hh]
+
+/-- `instantOf` lands on its local clock whenever the zone has that clock. -/
+theorem localSec_instantOf (z : Tz) (d : Nat) (c : Fin 1440)
+    (h : localHits z (d * 86400 + c.val * 60) ≠ []) :
+    localSec z (instantOf z d c) = d * 86400 + c.val * 60 := by
+  unfold instantOf
+  cases hh : localHits z (d * 86400 + c.val * 60) with
+  | nil => exact absurd hh h
+  | cons s rest =>
+    simp only
+    exact localSec_of_mem_localHits z _ s 0 (by rw [hh]; exact List.mem_cons_self ..)
+
+/-- **`instantOf` is `local_dt` on an unambiguous time** (design §15, B1): when
+exactly one instant has the local clock, `instantOf` is that instant. -/
+theorem instantOf_is_local_dt_on_an_unambiguous_time (z : Tz) (d : Nat) (c : Fin 1440) (t : Instant)
+    (hu : unambiguousAt z d c = true) (hns : t.ns = 0)
+    (ht : localSec z t = d * 86400 + c.val * 60) :
+    instantOf z d c = t := by
+  unfold unambiguousAt at hu
+  simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hu
+  obtain ⟨hlen, hpos⟩ := hu
+  have hmem := mem_localHits_of_localSec z t _ hpos ht
+  unfold instantOf
+  cases hh : localHits z (d * 86400 + c.val * 60) with
+  | nil => rw [hh] at hlen; simp at hlen
+  | cons s rest =>
+    rw [hh] at hlen hmem
+    have hr : rest = [] := by simpa using hlen
+    subst hr
+    simp only [List.mem_singleton] at hmem
+    cases t
+    simp_all
+
+/-! ### Witnesses on Chicago's 2026 rules (two transitions; design §14.0 item 4)
+
+Chicago springs forward at 2026-03-08T08:00:00Z (02:00 CST becomes 03:00 CDT) and
+falls back at 2026-11-01T07:00:00Z (02:00 CDT becomes 01:00 CST).  Instants are
+`Nat` literals; `the_witness_seconds_are_the_dates_they_name` ties each to the
+calendar. -/
+
+def chicago2026 : TzTable :=
+  ⟨['A', 'm', 'e', 'r', 'i', 'c', 'a', '/', 'C', 'h', 'i', 'c', 'a', 'g', 'o'], ⟨true, 21600⟩,
+    [(⟨63908553600, 0⟩, ⟨true, 18000⟩), (⟨63929113200, 0⟩, ⟨true, 21600⟩)]⟩
+
+theorem chicago2026_wf : chicago2026.wf = true := by decide
+
+def chicago : Tz := ⟨chicago2026, chicago2026_wf⟩
+
+theorem the_witness_seconds_are_the_dates_they_name :
+    toDay ⟨10000, 1, 1⟩ * 86400 = 315537897600 ∧
+    toDay ⟨2026, 3, 8⟩ * 86400 + 8 * 3600 = 63908553600 ∧
+    toDay ⟨2026, 11, 1⟩ * 86400 + 7 * 3600 = 63929113200 ∧
+    toDay ⟨2026, 9, 8⟩ * 86400 + 3 * 3600 = 63924433200 ∧
+    toDay ⟨2015, 6, 30⟩ * 86400 + 23 * 3600 = 63571302000 ∧
+    toDay ⟨2015, 7, 1⟩ * 86400 + 3600 = 63571309200 := by
+  decide
+
+/-- Design §6.1's witnesses: one second before each transition the old offset, at
+it the new one, each on its local date; and `2026-09-08T03:00:00+00:00` is
+2026-09-07 in Chicago. -/
+theorem chicago_2026_offsets :
+    offsetAt chicago ⟨63908553599, 0⟩ = ⟨true, 21600⟩ ∧
+    offsetAt chicago ⟨63908553600, 0⟩ = ⟨true, 18000⟩ ∧
+    offsetAt chicago ⟨63929113199, 0⟩ = ⟨true, 18000⟩ ∧
+    offsetAt chicago ⟨63929113200, 0⟩ = ⟨true, 21600⟩ ∧
+    localDate chicago ⟨63908553599, 0⟩ = toDay ⟨2026, 3, 8⟩ ∧
+    localDate chicago ⟨63908553600, 0⟩ = toDay ⟨2026, 3, 8⟩ ∧
+    localDate chicago ⟨63929113199, 0⟩ = toDay ⟨2026, 11, 1⟩ ∧
+    localDate chicago ⟨63929113200, 0⟩ = toDay ⟨2026, 11, 1⟩ ∧
+    localDate chicago ⟨63924433200, 0⟩ = toDay ⟨2026, 9, 7⟩ := by
+  decide
+
+/-- **Refuted as the design named it** (§6.1 lists
+`localDate_is_constant_between_transitions`): between Chicago's 2026 transitions,
+17:00:00Z on 2026-09-07 and on 2026-09-08 share an offset and not a local date.
+What holds between transitions is one offset
+(`offsetAt_is_constant_between_transitions`) and a date that only moves forward
+(`localDate_mono_between_transitions`). -/
+theorem localDate_is_not_constant_between_transitions :
+    offsetAt chicago ⟨63924397200, 0⟩ = offsetAt chicago ⟨63924483600, 0⟩ ∧
+    localDate chicago ⟨63924397200, 0⟩ ≠ localDate chicago ⟨63924483600, 0⟩ := by
+  decide
+
+/-- Design §6.3's gap witness: 02:30 on 2026-03-08 does not exist in Chicago, and
+`local_dt` gives 03:00 CDT, 08:00:00Z. -/
+theorem instantOf_in_the_spring_gap :
+    localHits chicago (toDay ⟨2026, 3, 8⟩ * 86400 + 150 * 60) = [] ∧
+    instantOf chicago (toDay ⟨2026, 3, 8⟩) 150 = ⟨63908553600, 0⟩ := by
+  decide
+
+/-- Design §6.3's fold witness: 01:30 on 2026-11-01 happens twice in Chicago, at
+06:30Z and 07:30Z, and `local_dt` gives the earlier. -/
+theorem instantOf_in_the_fall_fold :
+    localHits chicago (toDay ⟨2026, 11, 1⟩ * 86400 + 90 * 60) = [63929111400, 63929115000] ∧
+    unambiguousAt chicago (toDay ⟨2026, 11, 1⟩) 90 = false ∧
+    instantOf chicago (toDay ⟨2026, 11, 1⟩) 90 = ⟨63929111400, 0⟩ := by
+  decide
+
+/-- The unambiguous law's hypotheses are satisfiable: noon on 2026-09-07 is one
+instant in Chicago, 17:00:00Z. -/
+theorem instantOf_on_an_unambiguous_noon :
+    unambiguousAt chicago (toDay ⟨2026, 9, 7⟩) 720 = true ∧
+    localSec chicago ⟨63924397200, 0⟩ = toDay ⟨2026, 9, 7⟩ * 86400 + 720 * 60 ∧
+    instantOf chicago (toDay ⟨2026, 9, 7⟩) 720 = ⟨63924397200, 0⟩ := by
   decide
 
 end Cal

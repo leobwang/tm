@@ -896,16 +896,87 @@ fn cmds_that_are_not_an_array_are_refused() {
 }
 
 /// A malformed request is refused with the parser's own name for the reason —
-/// and a surrogate-pair escape is refused rather than recombined (README gap
-/// 42; serde_json writes astral characters as raw UTF-8, never as a pair).
+/// and a *lone* surrogate escape is refused by name (README gap 42).  Since
+/// stage 5 A2 a surrogate pair is read, as serde_json reads it:
+/// `a_surrogate_pair_is_read_and_a_lone_surrogate_refused`.
 #[test]
 fn a_parse_refusal_names_its_reason() {
     assert_eq!(call("{ not json").unwrap(), r#"{"err":"bad json: expectedKey n"}"#);
     assert_eq!(call(r#"{"docs":[]"#).unwrap(), r#"{"err":"bad json: unterminatedObject"}"#);
     assert_eq!(
-        call(r#"{"docs":[{"path":"w.md","lines":["\ud83d\ude00"]}]}"#).unwrap(),
+        call(r#"{"docs":[{"path":"w.md","lines":["\ud83d"]}]}"#).unwrap(),
         r#"{"err":"bad json: badEscape surrogateEscape 55357"}"#
     );
+}
+
+// ---------------------------------------------------------------------------
+// Stage 5 A2 (design §5.1): JSON gains an exact decimal; gaps 42 and 43 read as
+// serde_json reads.  This crate has no serde_json (R7), so the host's verdict on
+// the same bytes is checked beside these in `tm/src/cli/kernel_bridge.rs`
+// (`the_kernel_reads_numerals_and_surrogates_as_serde_reads_them`).
+// ---------------------------------------------------------------------------
+
+const EMPTY_OK: &str = r#"{"ok":{"docs":[],"report":{"closes":[]}}}"#;
+
+/// `-0.5` and `1e5` at a key no reader reads are accepted, where before A2 the
+/// whole request was `bad json` (`notAValue -`, `trailingGarbage e`).
+#[test]
+fn a_decimal_and_an_exponent_parse() {
+    for n in ["-0.5", "1e5", "1E+05", "2.50e-3", "-0"] {
+        let req = format!(r#"{{"docs":[],"x":{n}}}"#);
+        assert_eq!(call(&req).unwrap(), EMPTY_OK, "{n}");
+    }
+}
+
+/// `007` is refused by name (gap 43, closed); before A2 the kernel read it as
+/// `7`.  So is a numeral that stops where a digit must follow.  A lone `0` and
+/// `0.5` still read.
+#[test]
+fn a_leading_zero_is_refused_by_name() {
+    for (n, why) in [("007", "leadingZero"), ("-01", "leadingZero"), ("1.", "missingDigit ."),
+                     ("1e", "missingDigit e"), ("-", "missingDigit -")] {
+        let req = format!(r#"{{"docs":[],"x":{n}}}"#);
+        assert_eq!(call(&req).unwrap(), format!(r#"{{"err":"bad json: {why}"}}"#), "{n}");
+    }
+    for n in ["0", "0.5"] {
+        let req = format!(r#"{{"docs":[],"x":{n}}}"#);
+        assert_eq!(call(&req).unwrap(), EMPTY_OK, "{n}");
+    }
+}
+
+/// A request number that is not a natural is refused by the field's reader, not
+/// as `bad json` (which is what `-3` got before A2), and the same field carrying
+/// a natural reads.
+#[test]
+fn a_request_minus_three_is_refused_by_its_reader() {
+    let out = call(&req(r#"[{"op":"est","id":"m1","min":-3}]"#)).unwrap();
+    assert_eq!(out, r#"{"err":"Natural number expected"}"#, "{out}");
+    let out = call(&req(r#"[{"op":"move","id":"m1","doc":1.5}]"#)).unwrap();
+    assert_eq!(out, r#"{"err":"Natural number expected"}"#, "{out}");
+    let out = call(r#"{"docs":[],"blockMin":1.5}"#).unwrap();
+    assert_eq!(out, r#"{"err":"badBlockMin"}"#, "{out}");
+    let out = call(&req(r#"[{"op":"est","id":"m1","min":3}]"#)).unwrap();
+    assert!(out.starts_with(r#"{"ok":"#), "{out}");
+}
+
+/// A surrogate pair is read as the one astral character it stands for, and the
+/// line comes back as raw UTF-8 (gap 42, closed).  A lone high or low surrogate
+/// is refused by name.
+#[test]
+fn a_surrogate_pair_is_read_and_a_lone_surrogate_refused() {
+    let req = r#"{"docs":[{"path":"w.md","lines":["a \ud83d\ude00 b"]}],"cmds":[]}"#;
+    assert_eq!(
+        call(req).unwrap(),
+        "{\"ok\":{\"docs\":[{\"path\":\"w.md\",\"lines\":[\"a \u{1F600} b\"]}],\"report\":{\"closes\":[]}}}"
+    );
+    for (esc, v) in [(r"\ud83d", 55357), (r"\ude00", 56832), (r"\ud83d\u0041", 55357), (r"\ud83dx", 55357)] {
+        let req = format!(r#"{{"docs":[{{"path":"w.md","lines":["{esc}"]}}]}}"#);
+        assert_eq!(
+            call(&req).unwrap(),
+            format!(r#"{{"err":"bad json: badEscape surrogateEscape {v}"}}"#),
+            "{esc}"
+        );
+    }
 }
 
 /// The codec's per-character recursions run as their `@[csimp]` twins

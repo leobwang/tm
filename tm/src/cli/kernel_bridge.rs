@@ -1183,6 +1183,44 @@ mod tests {
             assert!(issue.message.contains(says), "{}", issue.message);
         }
     }
+    /// Stage 5 A2 (design §5.1; kernel/README.md gaps 42 and 43, closed): the
+    /// kernel's JSON reader takes a request exactly when serde_json takes the
+    /// same bytes, on the numerals and surrogate escapes the design names.  A
+    /// numeral is read at a key no field reads, so only the parser answers; a
+    /// line read through a pair comes back as the character serde decodes.
+    /// `kernel/tm-kernel-ffi/tests/kernel.rs` pins the kernel's texts.
+    #[test]
+    fn the_kernel_reads_numerals_and_surrogates_as_serde_reads_them() {
+        for n in [
+            "-0.5", "1e5", "1E+05", "2.50e-3", "0", "0.5", "-0", "007", "-01", "01.5", "1.",
+            "1e", "1e+", "-", "+1", ".5",
+        ] {
+            let req = format!(r#"{{"docs":[],"x":{n}}}"#);
+            let serde_ok = serde_json::from_str::<Value>(&req).is_ok();
+            let raw = tm_kernel_ffi::call(&req).expect("kernel call");
+            assert_eq!(!raw.contains("bad json"), serde_ok, "{n}: the kernel answered {raw}");
+        }
+        for esc in [
+            r"\ud83d\ude00", r"\uD83D\uDE00", r"\ud800\udc00", r"\ud83d", r"\ude00",
+            r"\ud83d\u0041", r"\ud83dx", r"\ud83d\ud83d",
+        ] {
+            let req = format!(r#"{{"docs":[{{"path":"w.md","lines":["{esc}"]}}],"cmds":[]}}"#);
+            let raw = tm_kernel_ffi::call(&req).expect("kernel call");
+            match serde_json::from_str::<Value>(&req) {
+                Ok(v) => {
+                    let resp: Value = serde_json::from_str(&raw).expect("json");
+                    assert_eq!(resp["ok"]["docs"][0]["lines"][0], v["docs"][0]["lines"][0], "{esc}: {raw}");
+                }
+                Err(_) => assert!(raw.contains("bad json: badEscape surrogateEscape"), "{esc}: {raw}"),
+            }
+        }
+        // A request `-3` is a number to serde; the kernel refuses it by the
+        // field's reader, never as `bad json`.
+        let req = r#"{"docs":[],"cmds":[{"op":"est","id":"m1","min":-3}]}"#;
+        assert!(serde_json::from_str::<Value>(req).is_ok());
+        assert_eq!(tm_kernel_ffi::call(req).expect("kernel call"), r#"{"err":"Natural number expected"}"#);
+    }
+
     /// The report decoder, end to end against the real kernel: a week close
     /// sent through `tm_kernel_ffi::call` comes back with the per-item list
     /// `Boundary.lean`'s `the_week_close_reports_each_line` decides, and every

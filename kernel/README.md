@@ -8902,3 +8902,723 @@ tree committed):
 | FFI suite | **76** (68 kernel + 8 corpus, unchanged) |
 
 `TmKernel.lean` holds seventeen imports, `Lookahead` after `Capacity`.  AGENTS §2.3 names it.
+
+## Stage 5 A1, 2026-09-14: gap 44 closed — accumulating twins, a 200,000-element array on a 2 MiB stack
+
+The D9 track's first step (design `kernel/design/stage5/stage5-D9-D10-design.md` §14.1, row A1;
+owner decision D11 runs D9 and D10 as parallel tracks). Every per-element recursion of the JSON
+codec, and `splitDoc`'s per-line recursion, now runs as an accumulating twin behind a proved
+`@[csimp]` theorem, in the `junescapeTR` pattern. No definition a theorem is about changed: the
+twins are new constants and the compiler substitutes them. `jparse_jemit` and
+`the_response_call_emits_parses_back` are untouched and still audited, so nothing needed
+re-proving (D5).
+
+### The twins
+
+| module | twin (worker) | `@[csimp]` theorem | proved from |
+|---|---|---|---|
+| `Json.lean` | `jemitRev` (per nesting level), `jemitArrAcc.go`, `jemitTailAcc.go` (loop), `jemitObjAcc.go`, `jemitPairAcc.go`, `jemitOTailAcc.go` (loop); wrappers `jemitAcc` … `jemitOTailAcc` reverse once | `jemit_eq_jemitAcc`, `jemitArr_eq_jemitArrAcc`, **`jemitTail_eq_jemitTailAcc`**, `jemitObj_eq_jemitObjAcc`, `jemitPair_eq_jemitPairAcc`, **`jemitOTail_eq_jemitOTailAcc`** | `jemitRev_eq` (the four-motive `JVal.rec`: `jemitRev v acc = (jemit v).reverse ++ acc`), `jemitTailAcc_go_eq`, `jemitArrAcc_go_eq`, `jemitOTailAcc_go_eq`, `jemitPairAcc_go_eq`, `jemitObjAcc_go_eq` |
+| `Json.lean` | `jvalAcc`, **`jarrAcc`**, `jtailAcc.go` (loop), **`jobjAcc`**, `jpairAcc`, `jotailAcc.go` (loop); wrappers **`jtailAcc`**, **`jotailAcc`** | `jval_eq_jvalAcc`, `jarr_eq_jarrAcc`, **`jtail_eq_jtailAcc`**, `jobj_eq_jobjAcc`, `jpair_eq_jpairAcc`, **`jotail_eq_jotailAcc`** | `jparserAcc`: one six-conjunct fuel induction (the shape `jparser_fuel` has); the loops satisfy `go f l acc = (jtail f l).map (acc.reverse ++ ·)` |
+| `Plan.lean` | `splitDocCAcc.go` (loop over lines, both halves reversed); wrappers `splitDocCAcc`, **`splitDocAcc`** | `splitDocC_eq_splitDocCAcc`, **`splitDoc_eq_splitDocAcc`** | `splitDocCAcc_go`, by induction on the lines |
+
+Bold names are the ones the A1 row names. The generated C was read to confirm the substitution
+is real: `jparseWith` calls `jvalAcc`, `Boundary.c` calls `jemitAcc` and `splitDocAcc`, and
+`jtailAcc_go` and `jemitTailAcc_go` loop with `goto _start`.
+
+### Rule D9-21, a per-step checklist item from here on
+
+> **D9-21.** Every step's README block lists each function it adds that recurses over a list the
+> wire can make large (lines, log lines, events, days, ids, association lists, transitions), and
+> gives next to it its `foldl` form or its proved `@[csimp]` twin. A function recursing only per
+> nesting level or per character of a bounded token says so. A `T0` test on an explicit
+> `stack_size(2 << 20)` thread covers the step's new wire-sized path end to end
+> (`kernel/tm-kernel-ffi/tests/stack.rs`).
+
+A1's own list: `jtailAcc.go`, `jotailAcc.go`, `jemitTailAcc.go`, `jemitOTailAcc.go`,
+`splitDocCAcc.go` are tail-recursive loops (twins above). `jvalAcc`, `jarrAcc`, `jobjAcc`,
+`jpairAcc`, `jemitRev`, `jemitArrAcc.go`, `jemitObjAcc.go` and `jemitPairAcc.go` recurse per
+nesting level only. Depth stays unbounded until B3's `lineTooDeep` (P14). `List.reverse` and
+`List.reverseAux` are core's tail-recursive loops.
+
+### T0 (a)
+
+`a_200000_element_array_reads_on_a_2mib_thread`, in a new test binary
+`kernel/tm-kernel-ffi/tests/stack.rs`, runs on a thread built with `stack_size(2 << 20)`:
+
+- **strings:** a 200,000-line document is read, split, loaded, rendered and emitted back byte for
+  byte;
+- **objects:** a request carrying 200,000 `{"path":…,"lines":["x"]}` objects is parsed to the
+  end, and `run` refuses it as `array expected`. The same bytes without the closing `]` are refused by the
+  parser at the last element (`bad json: expectedCommaOrBracket }`).
+
+### Gap 44 — closed
+
+Measured through `examples/oneshot` (release), `ulimit -s 2048`, `MemoryMax=16G`:
+
+| request | at `43e6309` (before) | at this commit |
+|---|---|---|
+| one doc, 20,000 lines, full load | answers | answers |
+| one doc, 30,000 lines, full load | **stack-overflow abort** | answers |
+| one doc, 200,000 lines (1.8 MiB), full load and echo | — | answers, 0.27–0.33 s, 137–140 MB max RSS |
+| 30,000 docs as `docs` objects, full load and echo | **abort** | answers, 2.5 s, 77 MB |
+| 200,000 objects in an unread key (6.8 MiB) | — | refused after parsing, 0.20 s, 417 MB (59 MB of RSS per MiB of request) |
+
+### Gap 100 (new; label A1-a) — `run` builds `docs` and `cmds` with `++`, quadratic in their count
+
+(1) *What is not done*: `Boundary.run` appends every decoded document (`docs := docs ++ [d]`)
+and every command (`cmds := cmds ++ [c]`) to the end of the list. Measured: 30,000 one-line
+documents took 2.5 s where 200,000 one-line *lines* take 0.3 s, and 200,000 documents with a
+malformed `cmds` took **150 s** before the refusal. (2) *Why not now*: it is `Boundary.lean`,
+outside A1's files, and theorems evaluate `run` by `rfl` (`call_refuses_the_real_duplicate_id_request`).
+Rewriting it as a `foldl` with a final reverse is a D9-21 item, not part of gap 44's stack
+defect. (3) *Cost*: no real plan tree has more than tens of documents or commands, so it costs
+nothing today. D9's log travels as a line array, which is not this loop (W3). It also forced T0
+(a)'s objects into an unread key. (4) *When it clears*: W3, which adds the `log` fields to `run`
+and owes D9-21 there; or earlier if a step touches `run`.
+
+### Recorded disagreements
+
+- **`splitDoc` is in `Plan.lean`, not `Line.lean`** as the A1 row says. The twin went next to
+  the definition.
+- **The row lists four parser twins and two emitter tails; this step has six of each.**
+  `@[csimp]` rewrites call sites. `jval`'s compiled body calls `jarr`, and `jemit`'s calls
+  `jemitArr`, so twinning only the loops would have left the old frames reachable from
+  `jparseWith` and `call`. `jvalAcc`, `jpairAcc`, `jemitAcc`, `jemitArrAcc`, `jemitObjAcc`,
+  `jemitPairAcc` and `splitDocCAcc` were added for that reason.
+- **T0 lives in its own test binary.** `check.sh` check 5 runs only `--test kernel`. With T0
+  inside it, `check.sh` went from 2.8 s to 3.4 s, over §14.0 item 4's 10% budget. In
+  `tests/stack.rs`, `cargo test` in the FFI crate still runs it, and `check.sh` stays at 2.7 s.
+- Design §18's "gap 44 today: 14,941 array elements parse; 22,055 abort" is LAT's figure. At
+  `43e6309` this step measured 20,000 read and 30,000 abort on 2 MiB, which matches the README's
+  earlier 21,500 / 22,000.
+
+**Label-to-number map:** gap A1-a → **100** (the design's 82–99 are all labelled in its §20).
+There are no cheats and no parity entries: A1 adds no predicate, and nothing is weaker to cheat.
+The D10 track numbers in parallel, and the merge step reconciles.
+
+**Observable behaviour change (one row):** a request with more than about 21,500 elements in one
+array, or a document of more than about 21,500 lines, used to abort the process with a stack
+overflow on a 2 MiB thread (about 80,000 on tm's 8 MiB main thread). It now answers. No answer
+that was produced before changes.
+
+**Goals:** none added, discharged or refuted (burn-down **15**). **New theorems: 22**, all
+audited under an `APPENDED … Step A1` banner in `Check.lean`, with axioms within `propext` and
+`Quot.sound`.
+
+**Re-measured** (under the 30 GB cap, on the tree committed):
+
+| measurement | value |
+|---|---|
+| `check.sh` | **7/7**, 2.7 s on the built tree (2.8 s before) |
+| axiom audit | **2101 theorems** (was 2079, +22); §6.3's three counts agree at 2101 |
+| `Negative.lean` | unchanged; check 4 ok |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **15** (unchanged) |
+| `cargo test --workspace` | **1010 passed / 0 failed / 0 ignored across 66 binaries**, `cli_latency.rs` green |
+| FFI suite (`cargo test` in `tm-kernel-ffi`) | **77 passed / 0 failed** (kernel 68, corpus 8, the new `stack` 1, plus empty lib and doc-test runs; was 76) |
+
+<!-- ===================================================================
+     APPENDED 2026-09-14 (stage 5, D9 track).  Step A2 (design §14.1 row A2, §5.1): JSON gains an exact decimal; gaps 42 and 43 closed.
+     Takes gap 101 (label A2-a) and cheats 119-121 (labels A2-a..c), past the design's labelled ranges; the D10 track numbers in parallel and whoever merges renumbers (AGENTS §6.4).
+     Supersedes, by name: gap 42's and gap 43's stage-3 records (both closed below); `Json.lean`'s header decisions 1 and 3 as written at stage 3; AGENTS §8.3's config-decimal trap sentence "`JVal` is not widened" (a note is appended there).
+     =================================================================== -->
+
+## Stage 5 A2, 2026-09-14: JSON gains an exact decimal — gaps 42 and 43 read as serde reads, the round trip still unconditional
+
+The D9 track's second step (design `kernel/design/stage5/stage5-D9-D10-design.md` §14.1 row A2
+and §5.1). `JVal` gains a sixth constructor, `dec`, holding a `JDec`: the sign, the integer
+digits' value, the fraction digits and the exponent **digits**, never evaluated. `jparse` returns
+`num n` exactly for a numeral with no sign, fraction or exponent, and `dec` for every other one.
+A surrogate pair is read, a lone surrogate is still refused, and leading zeros are refused, each as
+serde_json does. **`jparse_jemit` is re-proved unconditionally** over the widened type, with its
+statement unchanged, and so is `the_response_call_emits_parses_back`, whose proof is untouched
+and compiles against the widened type (D5).
+
+### What was built (`Json.lean`)
+
+| piece | what it is |
+|---|---|
+| `JDec`, `JDec.plain`, `JVal.dec (d : {d : JDec // d.plain = false})` | the widening. `plain` excludes a bare natural, so `7` has one value (CHEAT 119) |
+| `JDec.render` (`renderU`, `renderFrac`, `renderExp`) | `-`, `digitsOf int`, `.` and the fraction digits, `e`, `-` and the exponent digits; `jemit (.dec d) = d.val.render` |
+| `digitFin`, `finChar`, `jfins` (+ `jfinsTR`) | a digit as a `Fin 10` through `charDigit`/`digitChar`: one reading of a digit |
+| `jfrac`, `jexpAfter`, `jexpDigits`, `jexp`, `jleadingZero`, `jreadDec`, `JVal.ofDec`, `jnumber` | the reader. The integer digits are `jparseNat`'s, so a natural numeral still has one reader (§5.3). `JVal.ofDec` is the one constructor from a read numeral to a value |
+| `jval` / `jvalAcc` | a digit calls `jnumber false`, and a `-` calls `jnumber true` |
+| `JErr.leadingZero`, `JErr.missingDigit c` | new named refusals, appended after `trailingGarbage`; `jerrText` names both |
+| `junescape` / `junescapeTR.go` | a high surrogate quad followed at once by a low one is `Char.ofNat (pairScalar hi lo)`; every other surrogate is `surrogateEscape` of the first quad; a high quad followed by a non-hex `\u` is that quad's `badHexQuad` |
+| `numEnd` | what may follow any numeral: not a digit, `.`, `e` or `E`. Its first conjunct is `notDigitStart` |
+
+**Design §5.1's table, as proved:** `jparse_jemit` (unconditional, re-proved);
+`jparse_reads_a_plain_numeral_as_num` (every `n`, by the round trip, plus `10` on bytes);
+`jparse_reads_a_signed_decimal_as_dec` (`-0.5`); `jparse_refuses_a_leading_zero` (`007`, `-01`,
+`00.5` refused; `0`, `-0`, `0.5` read); `junescape_reads_a_surrogate_pair` (`😀`, the
+uppercase `𐀀`, `􏿿`); `junescape_refuses_a_lone_surrogate` (restated: a low
+quad, a high quad at the end, followed by `x`, by `A`, or by a second high quad; and a high
+quad followed by `\uzzzz` is `badHexQuad`). Beside them: `jparse_reads_an_exponent_as_written` and
+`jparse_refuses_a_numeral_missing_a_digit`.
+
+**The route of the re-proof.** `jreadDec_renderU` shows the reader reads back what the renderer
+wrote, and stops where the numeral ends, whenever `numEnd` holds of what follows. It is a chain of
+rewrites through `jparseNat_jrenderNat`, `jleadingZero_digitsOf` (from `digitsOf_zero_head`: only
+`0` is written with a leading `0`), `jfrac_renderFrac`, `jexp_renderExp` and `jfins_append`.
+`jval_render` lifts it to `jval`, and `jval_jemit` gains a `dec` case beside the `num` case, both
+through `jval_render`. The fuel theorems gain one branch each (`jnumber_length`,
+`jnumber_ne_outOfFuel`). `jparserAcc`, `jparse_never_runs_out` and `junescape_jescape` needed no
+new argument beyond that.
+
+### Refuted and renamed (§3.1 item 3; D5: re-proved, never weakened)
+
+| stage-3 theorem | why it is false after A2 | now |
+|---|---|---|
+| `jparse_refuses_what_the_fragment_has_no_type_for` | `-3`, `1.5` and `1e3` parse | **`jparse_reads_what_the_fragment_had_no_type_for`**, with the reader-level law `a_request_number_that_is_not_a_nat_is_refused_by_its_reader` (`Boundary.lean`) beside it, as the design says. Its `Check.lean` line was renamed in place |
+| `jparse_accepts_leading_zeros` | `007` is refused (gap 43) | **`jparse_refuses_a_leading_zero`**; its `Check.lean` line was renamed in place |
+| `junescape_refuses_a_lone_surrogate`, third conjunct (a pair refused) | the pair is read (gap 42) | **`junescape_reads_a_surrogate_pair`**. The name `junescape_refuses_a_lone_surrogate` now carries only lone surrogates; its first two conjuncts are unchanged |
+| `jval_jemit` over `notDigitStart rest` | `1` followed by `.5` reads as the one numeral `1.5`: **`the_jval_jemit_fraction_guard_bites`** | `jval_jemit` over **`numEnd rest`**. `jparse_jemit` sits on it at `rest = []`, so its statement did not change. `jval_digit` (the equation of the digit branch) and `the_jval_jemit_hypotheses_are_satisfiable` are restated to match. CHEAT 47 still fails, now on `numEnd ['7'] = true` |
+
+### Both directions on the wire (`Boundary.lean`, appended)
+
+No arm was added to `Boundary.lean`: every `JVal` match there already ends in a wildcard, so a
+`dec` gets the refusal a string or `null` got. `a_request_number_that_is_not_a_nat_is_refused_by_its_reader`
+covers `min` `-3` and `doc` `1.5` (`Natural number expected`), `blockMin` `1.5` (`badBlockMin`) and
+`grain` `1e0` (`Natural number expected`); `min` `3` still reads.
+`respond_reads_a_decimal_and_a_surrogate_pair` runs end to end at `respond`: `-0.5` at an unread
+key answers `ok`; `007` gives `bad json: leadingZero`; and a top-level pair-escaped string parses,
+so the refusal is the reader's `object expected`.
+
+**FFI** (`kernel/tm-kernel-ffi/tests/kernel.rs`): `a_decimal_and_an_exponent_parse` (`-0.5`, `1e5`,
+`1E+05`, `2.50e-3`, `-0`), `a_leading_zero_is_refused_by_name` (`007`, `-01`, `1.`, `1e`, `-`; `0` and
+`0.5` read), `a_request_minus_three_is_refused_by_its_reader`, and
+`a_surrogate_pair_is_read_and_a_lone_surrogate_refused` (the line comes back as raw UTF-8). The
+existing `a_parse_refusal_names_its_reason` is split: its surrogate case is now a lone `\ud83d`.
+**Against serde** (`tm/src/cli/kernel_bridge.rs`,
+`the_kernel_reads_numerals_and_surrogates_as_serde_reads_them`): the FFI crate has no serde_json
+(R7), so this check lives in the host. For 16 numerals and 8 escapes, the kernel accepts a request
+exactly when `serde_json::from_str` does, and a line read through a pair equals serde's decoded
+string. A request `-3` is a number to serde and the reader's refusal to the kernel.
+
+### Behaviour rows (design §20's three, with the texts measured before and after)
+
+The old texts were evaluated on the stage-3 `Json.lean` (`43e6309`'s file) and the new texts on
+this commit's. The shipped `tm` builds every request itself, from `u32`/`usize` values and
+serde's UTF-8 strings, so none of these requests is one it sends.
+
+| request | before A2 | after A2 |
+|---|---|---|
+| a read field carrying `-3`, `1.5` or `1e3` (`min`, `doc`, `period`, `rank`, `seed`, `grain`, `ix`) | `bad json: notAValue -`, `bad json: expectedCommaOrBrace .`, `… e` | `Natural number expected` (the field's reader) |
+| `blockMin` carrying `1.5` | `bad json: expectedCommaOrBrace .` | `badBlockMin` |
+| a decimal, negative or exponent at a key no reader reads | `bad json: …` | accepted |
+| a leading zero (`007`, `-01`) — **gap 43** | `007` read as `7` | `bad json: leadingZero` |
+| a numeral that stops where a digit must follow (`-x`, `1.`, `1e`, `1e+`) | `notAValue -`, `expectedCommaOrBrace .`, `… e` | `bad json: missingDigit -`, `… .`, `… e`, `… +` |
+| a surrogate pair `😀` — **gap 42** | `bad json: badEscape surrogateEscape 55357` | read as U+1F600 and emitted as raw UTF-8 |
+| a high surrogate followed by `\uzzzz` | `badEscape surrogateEscape 55357` | `badEscape badHexQuad zzzz` |
+| a lone surrogate (`\ud83d`, `\ude00`, `\ud83dx`, `\ud83dA`) | `badEscape surrogateEscape …` | unchanged |
+
+### Gap 42 — closed
+
+A surrogate pair is read as serde_json reads it (`junescape_reads_a_surrogate_pair`, FFI, and the
+serde cross-check), and every lone surrogate is still refused by name. Stage 3's reason for leaving
+it, that a recombination branch would be logic `junescape_jescape` does not cover, is answered two
+ways. `junescapeTR_go` proves the runtime twin equal on the new branch, and the witnesses pin the
+branch's bytes. `junescape_jescape` still holds unchanged, because `jescape` never writes a
+surrogate.
+
+### Gap 43 — closed
+
+Leading zeros are refused with `JErr.leadingZero` (`jparse_refuses_a_leading_zero`, FFI, serde
+cross-check). Stage 3's price was "one guard in `jval`'s digit branch plus a `digitsOf`
+leading-digit lemma", and that is what it cost: `jleadingZero` and `digitsOf_zero_head`.
+
+### Gap 101 (new; label A2-a) — emitting a `dec` with a long integer part recurses per digit
+
+(1) *What is not done*: `JDec.render` writes the integer part with `digitsOf`, and `digitsAux`
+recurses once per digit and appends with `++`, so its stack depth grows with the digit count and
+its time is quadratic in it. `jemit (.num n)` has done the same since stage 3. (2) *Why not now*:
+no wire path at A2 emits a `dec`. The kernel echoes no request numeral, and the only emitted
+numerals are line numbers, grains and indices. The reading side is twinned (below). (3) *Cost*:
+nothing today, and not measured. A hand-edited log line may carry a numeral of up to 65,536
+characters once B3's `lineTooLong` bounds it. Re-emitting that numeral lexically (`hsw`, §5.4;
+`render` at B4) would reach this recursion. (4) *When it clears*: B3 or B4, whichever first emits
+a `dec` it read. It needs a `digitsOf` twin, or a T0 measurement on a 2 MiB thread at the line
+bound.
+
+### Rule D9-21
+
+A2's functions that recurse over wire-sized input: `jfins` runs as `jfinsTR.go` (a loop,
+`jfins_eq_jfinsTR`). `jdigits`, already on the wire under every numeral since J4 and untwinned
+until now, runs as `jdigitsTR.go` (`jdigits_eq_jdigitsTR`). `jdigitsTR` is declared **before**
+`jparseNat`, because `@[csimp]` rewrites only code compiled after it. The first placement, after
+`jparseNat`, left `jparseNat`'s C calling `jdigits`, and moving the twin fixed it: the generated
+`Json.c` shows `jparseNat` calling `jdigitsTR` and `jexpDigits` calling `jfinsTR`. The pair arm
+lives inside `junescape`, whose twin `junescapeTR.go` stays a loop. `jfrac`, `jexp`,
+`jexpAfter`, `jexpDigits`, `jreadDec` and `jnumber` do not recurse. `List.map finChar` is core's
+`mapTR`. `JDec.render`'s `digitsOf` is gap 101. Measured through `examples/oneshot` (release,
+`ulimit -s 2048`, `MemoryMax=16G`): a 100,000-digit integer at an unread key answers `ok` in
+0.30 s at 14.7 MB. A numeral with 1,000,000 fraction digits and 1,000,000 exponent digits answers
+in 0.04 s at 137 MB. A `min` of `-` and 20,000 digits is refused by its reader in 0.01 s.
+
+### The `decide` budget (§14.0 item 4)
+
+17 new or restated decided witnesses, each a small `List Char` literal of at most 20 characters,
+with no `Entry` values or zone transitions: `junescape_reads_a_surrogate_pair`,
+`junescape_refuses_a_lone_surrogate`, `digitFin_finChar`, `finChar_is_digit`, the `digitChar` table
+inside `digitsOf_zero_head`, `jexpAfter_digit`, `JVal.ofDec_plain`,
+`jparse_refuses_a_leading_zero`, `jparse_reads_a_plain_numeral_as_num`,
+`jparse_reads_a_signed_decimal_as_dec`, `jparse_reads_an_exponent_as_written`,
+`jparse_refuses_a_numeral_missing_a_digit`, `jparse_reads_what_the_fragment_had_no_type_for`,
+`the_jval_jemit_hypotheses_are_satisfiable`, `the_jval_jemit_fraction_guard_bites`,
+`a_request_number_that_is_not_a_nat_is_refused_by_its_reader` and
+`respond_reads_a_decimal_and_a_surrogate_pair`. They were probed together, in scratch copies,
+under `MemoryMax=8G timeout 120`. Whole `Json.lean`: **3.51 s, 1.04 GB peak** (2.96 s and 1.01 GB
+for the file at `43e6309`). The two Boundary witnesses, on the built library: 0.2 s, 0.59 GB. The
+realistic sizes are instances of `jparse_jemit` (`jparse_reads_a_plain_numeral_as_num`'s `∀ n`,
+the `1e0005` conjunct). `check.sh` wall time is unchanged (below).
+
+### Recorded disagreements
+
+- **The exponent's type.** §5.1 stores it as `Option (Bool × List (Fin 10))`. Over that type
+  `jparse_jemit` is **false**: `some (false, [])` emits `1e`, which no reader takes back
+  (`jparse_refuses_a_numeral_missing_a_digit`'s `1e` conjunct). The kernel stores
+  `Option (Bool × Fin 10 × List (Fin 10))`, a first digit and the rest, so the type forbids the
+  bare marker (§3.1 item 1; CHEAT 121). The constructor's subtype, `d.plain = false`, is the
+  design's. B3's `Num.dec` and `finiteF64` read the exponent's digit count as `1 + rest.length`.
+- **`1E+05`.** §5.1 says `1E+05` reads to the same `JDec` as `1e5`, and K18 says it re-emits as
+  `1e5`. Both contradict the same section's rule that the exponent keeps its digits and `1e0005`
+  re-emits as written. The kernel keeps the digits: `E` and `+` are dropped, so `1E+5` is `1e5`,
+  but `1E+05` is `1e05` (`jparse_reads_an_exponent_as_written`). K18's residue is `1E+05` →
+  `1e05`, still the same double.
+- **"Boundary.lean (new arms)".** No arm was needed (above). **"Refused by the field's name"**
+  is literal only for the clock fields (`badBlockMin`, `badNow`). The seven `getNat` fields refuse
+  with `Natural number expected`, which names no field. That text predates A2, a string at those
+  fields already got it, and renaming it would change requests A2 does not concern. §20's "refused
+  by the field's reader" is what holds.
+- **Where the tests live.** §5.1 says `kernel_bridge::refusal`'s tests pin `expectedKey`,
+  `unterminatedObject` and the surrogate refusal. They are in `kernel/tm-kernel-ffi/tests/kernel.rs`
+  (`a_parse_refusal_names_its_reason`), and were split there. The comparison with serde went into
+  `kernel_bridge.rs`, because the FFI crate may not depend on serde_json.
+- **A second new refusal.** §5.1 names only `JErr.leadingZero`. A numeral that stops where a digit
+  must follow (`-`, `1.`, `1e`, `1e+`) needed a name too. It is `JErr.missingDigit`, carrying the
+  byte after which the digit was wanted. `badNumber` keeps its stage-3 meaning (unreachable through
+  `jval`).
+- **`jval_jemit`'s hypothesis** is not in §5.1's list. It had to change (refuted above).
+
+**Label-to-number map:** gap A2-a → **101**; cheats A2-a, A2-b, A2-c → **119** (a bare natural built as a
+`dec`), **120** (`1` followed by `.5` read as `1`), **121** (an exponent marker with no digit). The
+design labels cheats 91–118 (§16) and gaps 82–99 (§20), and A1 took gap 100. **Parity entries:
+none.** Design §17 lists "leading zeros refused, as serde does" and "surrogate pairs read" as exact
+by design, not exceptions. The serde cross-check above is where that claim is tested.
+
+**Goals:** none added, discharged or refuted; `Goals.lean` is untouched (burn-down **15**).
+**New theorems: 42** (Json.lean 40, Boundary.lean 2), audited under an `APPENDED … Step A2` banner in
+`Check.lean`. Two stage-3 audit lines were renamed in place to their refutations. Axioms stay within
+`propext`, `Quot.sound` and `Classical.choice`, and there is no `sorryAx`.
+
+**Re-measured** (under the 30 GB cap, on the tree committed):
+
+| measurement | value |
+|---|---|
+| `check.sh` | **7/7**, 2.70–2.72 s on the built tree (2.7 s before, so within §14.0 item 4's 10%); a rebuild after the `Json.lean` edit takes 2 m 13 s |
+| axiom audit | **2143 theorems** (was 2101, +42); §6.3's three counts agree at 2143 |
+| `Negative.lean` | check 4 ok; CHEATs 119–121 each fail at their own line, with the error they claim (`….plain = false`, `numEnd ['.', '5'] = true`, `[]` is not `Fin 10 × List (Fin 10)`) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **15** (unchanged) |
+| `cargo test --workspace` | **1011 passed / 0 failed / 0 ignored across 66 binaries** (was 1010; +1, the serde cross-check); `cli_latency.rs` green |
+| FFI suite (`cargo test` in `tm-kernel-ffi`) | **81 passed / 0 failed** (kernel 72, corpus 8, stack 1; was 77) |
+
+## Stage 5 A3, 2026-09-14: a log benchmark — the wire parse, the digest and RSS measured, not estimated
+
+The D9 track's third step (design `kernel/design/stage5/stage5-D9-D10-design.md` §14.1 row A3, §18).
+No `.lean` file changed. Two Rust files and one test binary were added:
+
+- `tm/tests/support/loggen.rs` is the design pass's `genlog.py` (about 40 events a day) and
+  `genlog80.py` (about 61 a day) ported **exactly**. It carries CPython's Mersenne Twister
+  (`random.seed(7)`, `random()`, `randint`, `choice`, `getrandbits`) and draws in the scripts'
+  order. `design_logs(rate)` regenerates the four ages from one generator, as the scripts did, and
+  `log(rate, days)` starts from a fresh seed. The file has no dependencies, so the FFI crate can
+  include it with `#[path]`. The scripts' quirks are kept for the byte identity, and the module doc
+  lists them.
+- `tm/tests/loggen.rs` (new, 2 tests). `the_generator_reproduces_the_design_passs_eight_logs_byte_for_byte`
+  pins the line count, byte count and FNV-1a-64 digest of each of the eight files the scripts wrote.
+  The pins were read off the files. Re-running both scripts under a 16 GB cap reproduced all eight
+  files with `cmp`. `every_generated_line_is_one_json_object_naming_its_event` reads every line of
+  a month back with serde. **Every figure in design §1.1 and §18 was therefore taken on these
+  exact logs.**
+- `kernel/tm-kernel-ffi/examples/logbench.rs`. Each call-bearing figure runs in a child process of
+  its own (the binary re-executed with a subcommand). `VmHWM` is reset to the current RSS
+  (`/proc/self/clear_refs` value 5) just before the calls, so the peak belongs to the call and not
+  to the generator. Each figure is the best of 7 in-process calls, with the median next to it, and
+  excludes process start. The request is `{"docs":[],"log":["<line>",…]}`. `run` reads no `log`
+  key, so the whole payload is parsed, and every response is checked to be `{"ok":…`. Run it from
+  `kernel/tm-kernel-ffi` as:
+  `systemd-run --user --scope -p MemoryMax=16G -p MemorySwapMax=0 --quiet env CARGO_PROFILE_DEV_OPT_LEVEL=1 cargo run --example logbench`.
+
+### Measured (one run of the committed harness, 2026-09-14, `MemoryMax=16G`, dev profile at `opt-level = 1` as the root `Cargo.toml` sets it)
+
+**(a) The wire parse of the log as a line array.** The baseline is `{"docs":[]}` at 0.002 ms, with a
+process `VmHWM` of 8.4 MiB.
+
+| rate | age | lines | line bytes | request bytes | best ms | median ms | ms per MiB of request | RSS before → peak | MiB of RSS per MiB of request |
+|---|---|---:|---:|---:|---:|---:|---:|---|---:|
+| 40/day | 1 mo | 1,191 | 123,939 | 148,656 | 2.37 | 2.48 | 16.7 | 8.9 → 18.3 MiB | 66.2 |
+| 40/day | 6 mo | 7,422 | 772,210 | 926,205 | 22.93 | 25.60 | 26.0 | 10.3 → 70.2 MiB | 67.7 |
+| 40/day | 1 y | 14,941 | 1,555,376 | 1,865,135 | 37.73 | 53.80 | 21.2 | 12.3 → 133.1 MiB | 67.9 |
+| 40/day | 3 y | 45,172 | 4,702,828 | 5,638,263 | 168.06 | 168.90 | 31.3 | 20.0 → 396.3 MiB | 70.0 |
+| 61/day | 1 mo | 1,845 | 191,478 | 227,937 | 3.64 | 3.71 | 16.7 | 8.9 → 22.7 MiB | 63.5 |
+| 61/day | 6 mo | 11,172 | 1,165,920 | 1,387,759 | 36.99 | 39.13 | 27.9 | 11.2 → 103.3 MiB | 69.6 |
+| 61/day | 1 y | 22,055 | 2,293,587 | 2,730,426 | 78.12 | 79.36 | 30.0 | 13.9 → 196.8 MiB | 70.2 |
+| 61/day | 3 y | 65,771 | 6,857,648 | 8,163,361 | 241.08 | 245.12 | 31.0 | 25.0 → 554.7 MiB | 68.0 |
+
+**(b) FNV-1a-64.** Over 7,235,174 bytes (6.9 MiB of the 3-year, 61-a-day text, cycled), in the
+benchmark process: best **5.10 ms**, median 5.12 ms, so **0.705 ns per byte**.
+
+**(c) The hourly zone probe for America/Chicago** is **pending**. B1's Rust half does not exist
+yet; see gap 103.
+
+**(d) RSS for one call carrying a line array**, a prefix of the 3-year, 61-a-day log cut by line
+bytes, each line counted with its newline as §9.7 counts it:
+
+| cut | lines | line bytes | request bytes | best ms | median ms | RSS before → peak |
+|---|---:|---:|---:|---:|---:|---|
+| 1 MiB | 10,055 | 1,048,571 | 1,248,272 | 30.09 | 34.80 | 12.7 → 96.2 MiB |
+| 2 MiB | 20,129 | 2,097,104 | 2,496,409 | 69.57 | 76.38 | 15.0 → 182.6 MiB |
+| 3 MiB | 30,188 | 3,145,712 | 3,744,467 | 92.71 | 111.02 | 17.2 → 264.3 MiB |
+| 32,768 lines | 32,768 | 3,415,185 | 4,065,170 | 117.51 | 118.43 | 17.6 → 284.0 MiB |
+| **4 MiB** | 40,216 | 4,194,231 | 4,992,450 | 150.90 | 154.03 | 21.9 → **357.2 MiB** |
+
+**THE ROW'S MEMORY GATE IS BREACHED.** A3's acceptance reads: "If (d) exceeds 256 MiB at 4 MiB,
+the resend cap in §9.7 is lowered before W3." The 4 MiB call peaks at **357.2 MiB**. The kernel's
+own share, the peak less the RSS before the calls, is 335.3 MiB. Even the cap's line bound alone,
+32,768 lines, peaks at 284.0 MiB. Two processes resending at once would peak at about 714 MiB,
+against §18.5's 520 MiB. This step does **not** change the cap. D18 fixes only that the cap is
+never *raised*. Which value it drops to is W3's input and the owner's call, so the track stops here
+and reports. Gap 102 names it.
+
+### Replacing design §18.1's figures (AGENTS §5.11)
+
+| §18.1 figure | the design's value | measured here |
+|---|---|---|
+| kernel wire parse | 22 ms per MiB of request, "any shape" (LAT, release `oneshot`, with process start) | **31.0 ms per MiB** at 3 y and 61/day (241.08 ms over 8,163,361 B). The rate is **not** flat: 16.7 ms/MiB at 1 month, rising with size (table (a)) |
+| kernel RSS | 63 MiB per MiB of request | **68.0 MiB per MiB** at 3 y and 61/day. Across (a) it runs 63.5–70.2 |
+| a 3-year log at 61/day | 65,771 lines, 6.54 MiB; ≈ 8.2 MiB as JSON line strings (+20%) | **65,771 lines, 6,857,648 B; 8,163,361 B** as a line-array request (+19.0%) |
+| FNV-1a-64 under `opt-level = 1` (ESTIMATE) | 1–2 ns per byte | **0.705 ns per byte**, so 6.54 MiB digests in ≈ 4.8 ms (the §18.2 row "digest plus file read" used 9–19 ms, of which the digest is now ≈ 5 ms) |
+| the hourly tz probe | not given | pending (gap 103) |
+| step cost per event | 5–40 µs (ESTIMATE) | not measurable yet: no kernel replay exists. W5 measures it |
+
+### Gap 102 (new; label A3-a) — a 4 MiB resend peaks at 357 MiB, over §9.7's memory cap
+
+(1) *What is not done*: §9.7 bounds a refusal's resend at 32,768 lines or 4 MiB of line bytes and
+§18.5 prices it at ≤ 256 MiB. A3 (d) measures 357.2 MiB at 4 MiB and 284.0 MiB at 32,768 lines. The
+design's arithmetic multiplied **line** bytes by a per-MiB-of-**request** rate. Escaping adds 19%,
+and the rate is 68, not 63. (2) *Why not now*: the design makes the new cap an input to W3, and
+choosing it is not A3's to settle. Between the 2 MiB (182.6 MiB) and 3 MiB (264.3 MiB) cuts the
+256 MiB line falls near 2.9 MiB of line bytes. That is an ESTIMATE by linear interpolation, not
+measured. (3) *Cost*: until the cap is lowered, a CLI-unreachable hand edit (§9.7, "CLI-written
+logs cannot reach the cap") can drive one call to ≈ 360 MiB, and two concurrent rebuilds to
+≈ 714 MiB, on a swapless machine. No such call exists in the binary today, since genesis and resend
+land at W3. (4) *When it clears*: before W3, when §9.7's resend cap and T0 (b)'s bound are lowered
+to a measured value whose (d) row peaks at ≤ 256 MiB. That row is added to `logbench`.
+
+### Gap 103 (new; label A3-b) — the Chicago hourly zone probe is not measured
+
+(1) *What is not done*: A3 (c), the wall time of the hourly zone probe for America/Chicago.
+(2) *Why not now*: the probe is B1's Rust half (`tz.json`, design §6.1), and it does not exist.
+`logbench` prints the item as pending. (3) *Cost*: §6's table-size and probe-cost claims stay
+unmeasured until then, and nothing in the binary depends on them. (4) *When it clears*: at B1,
+which adds the (c) measurement to `logbench` and records its figure.
+
+### Rule D9-21, the `decide` budget, goals
+
+No Lean function was added, so there is nothing to twin. There are no new `decide` or `rfl`
+witnesses. `Goals.lean`, `Check.lean`, `Negative.lean` and `TmKernel.lean` are untouched:
+**no goals discharged, refuted or added**, and the burn-down is **15**. **New theorems: none**
+(2143). **Parity entries: none. Behaviour rows: none**, since the binary is unchanged.
+
+### Recorded disagreements
+
+- **The parse rate is not constant.** §18.1's "22 ms per MiB, any shape" came from a release
+  `oneshot` built before A1 and A2, and it included process start. The committed harness measures
+  it in-process, and the rate rises from 16.7 ms/MiB at 1 month to 31.0 at 3 years. §18.2's hot
+  call (≤ 0.3 MiB) sits in the low band. §18.4's genesis parse of 8.2 MiB is ≈ 250 ms, not 180.
+  Genesis runs in chunks of ≤ 1 MiB, and at 1 MiB of line bytes the rate measured 25.3 ms/MiB (30.09 ms over
+  1,248,272 B). Whether A1's twins or A2's decimals moved the rate was not isolated.
+- **§9.7's and §18.5's memory arithmetic** is corrected by gap 102 above. The per-chunk figure
+  ("≤ 1 MiB × 63 ≈ 63 MiB") measures **96.2 MiB** at 1 MiB of line bytes.
+- **"6.9 MiB"** in the row is not a log size the design names: the 3-year, 61-a-day log is 6.54 MiB,
+  or 6.86 MB. The digest was measured over 6.9 MiB as the row says, and the per-byte rate converts
+  it.
+- **"Reconstruct the generator"** was not needed. `genlog.py` and `genlog80.py` were found in the
+  design pass's scratchpad, and the port reproduces their output byte for byte. The pins in
+  `tm/tests/loggen.rs` keep that true without the scratchpad.
+- **The row lists no test.** `tm/tests/loggen.rs` was added because `tests/support/` is not a
+  test target: without it, `loggen.rs` would be uncompiled until R14.
+- **The dev profile.** `tm-kernel-ffi` is its own cargo workspace, and its dev profile is
+  `opt-level = 0`. The row's "under the dev profile" means tm's, so the run passes
+  `CARGO_PROFILE_DEV_OPT_LEVEL=1`. The kernel archive is lake's build in either case.
+
+**Label-to-number map:** gap A3-a → **102**, gap A3-b → **103**. No cheats or parity entries. The
+D10 track's committed README (`stage5-lookahead`, `319919c`) takes no gap numbers at 100 or above,
+and the merge step reconciles.
+
+**Re-measured** (under the 30 GB cap, on the tree committed):
+
+| measurement | value |
+|---|---|
+| `check.sh` | **7/7**, 2.73 s on the built tree (unchanged; no Lean file touched) |
+| axiom audit | **2143 theorems** (unchanged) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **15** (unchanged) |
+| `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored** (was 1011; +2, `tm/tests/loggen.rs`) |
+| FFI suite (`cargo test` in `tm-kernel-ffi`, which also builds `examples/logbench.rs`) | **81 passed / 0 failed** (kernel 72, corpus 8, stack 1) |
+| `cli_latency.rs` | green: first verb 617.6 ms, later verb 55.8 ms |
+
+<!-- ===================================================================
+     APPENDED 2026-09-14 (stage 5, D9 track).  Step B1 (design §14.2 row B1, §5.2, §6.1 kernel side, §6.3): time and zone in Cal.lean.
+     Takes cheats 91-92 (the design's own B1 labels, free in this checkout) and parity entry P16 (the design's number; this checkout's highest was P12). No new gap.
+     The D10 track numbers in parallel; whoever merges renumbers (AGENTS §6.2, §6.4).
+     Supersedes, by name: gap 103's "When it clears: at B1" (it clears at B4; below).
+     =================================================================== -->
+
+## Stage 5 B1, 2026-09-14: the calendar learns instants and offsets — a zone is a table the host probes, never a database the kernel carries
+
+The D9 track's fourth step (design `kernel/design/stage5/stage5-D9-D10-design.md` §14.2 row B1,
+§5.2, §6.1's kernel side, §6.3). Only `Cal.lean` gained definitions: sections 8 and 9, appended,
+with a paragraph added to the module header. Nothing in the binary calls them yet. D10's L2 and
+L4 build on `instantOf` and `secondsBetween`.
+
+### What was built (`Cal.lean`)
+
+| piece | what it is |
+|---|---|
+| `Instant` (`sec`, `ns`), `Instant.wf`, `VInstant`, `mkInstant?` | UTC seconds since 0001-01-01T00:00:00Z (the origin of `Day`) and nanoseconds. `wf` is §5.2's: `ns < 2·10⁹`, at or above 10⁹ only on second 59 (chrono's leap second), year ≤ 9999 |
+| `LT`/`LE Instant`, `Instant.lt_iff`, `le_iff`, `lt_irrefl`, `lt_trans`, `not_lt`, `le_total`, `le_antisymm` | **chrono's order**: `(sec, ns)` lexicographically, as `DateTime`'s `Ord` compares its UTC `(secs, frac)`. `Instant.nanos` is kept, and it is not the order (below) |
+| `Offset` (`west`, `sec`), `Offset.wf` (`sec < 86400`), `VOffset`, `mkOffset?`, `Offset.utc` | a sign and seconds |
+| `localSecAt`, `utcSecAt` | the local clock of an instant at an offset (chrono's `naive_utc + offset`, whole seconds; west of UTC it saturates at the origin), and its inverse "local time minus offset", `none` before the origin. B2's `parseStamp` should reuse `utcSecAt` for its `beforeOrigin` rather than write a second conversion (AGENTS §5.3) |
+| `durationBetween a b` | `b.signed_duration_since(a)` as `(secs, nanos)`, a literal port of chrono 0.4.45's `NaiveDateTime`/`NaiveTime::signed_duration_since`: days times 86,400, the time-of-day difference, the ±1 s leap adjustment keyed on the **time of day**, then `div_euclid`/`rem_euclid` of the nanoseconds |
+| `secondsBetween`, `minutesBetween` | `num_seconds` (truncated toward zero) and `num_minutes().max(0)`; `minutesBetween_is_num_minutes_max_zero` ties the second to `Int.tdiv` |
+| `subMinutes` | `t − Duration::minutes(m)`, chrono's `overflowing_add_signed`: a leap second becomes the next second before subtracting, a zero delta leaves the instant untouched, and the result saturates at the origin |
+| `TzTable` (`key`, `base`, `trans`), `transFrom`, `TzTable.wf`, `Tz`, `mkTz?` | §6.1's table. `wf`: key ≤ 128 characters, base representable, ≤ 4,096 transitions, then `transFrom`: each transition a representable **whole second**, strictly increasing, with a representable offset |
+| `offsetStep`, `offsetAt`, `localSec`, `localDate` | chrono-tz's `offset_from_utc_datetime`: the last transition whose second is at or before `t.sec`, else the base, as a `foldl`. `localDate` is typed `Nat` (the `omega` trap) |
+| `Span`, `Span.holds`, `Span.hit`, `spansFrom`, `TzTable.spans` | the table as UTC spans `[lo, hi)` with their offsets; `spansFrom` is the specification the proofs read |
+| `pushHit`, `hitStep`, `hitFinish`, `localHits` | chrono-tz's `offset_from_local_datetime`: every UTC second whose local clock reads `l`, earliest first, as a `foldl` over the transitions (`localHits_eq` equates it with the spans) |
+| `gapHit`, `instantOf`, `unambiguousAt` | §6.3's `capacity::local_dt`: a single or earliest hit; in a gap, the first hit 1 to 180 minutes later; else the local time read as UTC |
+| `chicago2026`, `chicago` | a two-transition witness table: base −06:00, 2026-03-08T08:00:00Z to −05:00, 2026-11-01T07:00:00Z back to −06:00 |
+
+**Proved, against design §5.2's list:** `minutesBetween_truncates` (119 s gives 1; 119.999999999 s
+gives 1; backwards gives 0); `minutesBetween_zero_of_le`; `secondsBetween_truncates_toward_zero`
+(−59.5 s gives −59, +59.5 s gives 59); `mkInstant?_refuses_a_bad_nanosecond` (a leap nanosecond off
+second 59, two seconds of nanoseconds, year 10000; the edges accepted) with
+`mkInstant?_isSome_iff`; `durationBetween_across_a_leap_second`, all seven of chrono's documented
+leap-second examples for `signed_duration_since` (five `NaiveTime`, two `NaiveDateTime` around
+2015-06-30T23:59:60.5). Beside them: `durationBetween_total` (the duration is the nanosecond
+difference plus an adjustment of −1, 0 or +1 s, which is 0 when both instants share a second),
+`the_leap_second_counts_within_a_day_but_not_across_midnight`, `subMinutes_zero`,
+`subMinutes_nanos`, `subMinutes_wf`, `mkOffset?_isSome_iff`, `mkOffset?_refuses_a_whole_day`,
+`localSecAt_utcSecAt`, `utcSecAt_localSecAt` and `the_written_clock_is_not_the_instant_order`.
+**`Instant.lt_iff_nanos` is refuted** (below).
+
+**Against design §6.1's list:** `offsetAt_reads_the_last_transition` in both directions,
+`offsetAt_before_every_transition` and `offsetAt_at_a_transition`; `mkTz?_refuses_an_unsorted_table`
+(decreasing, repeated, fractional, an offset of a day, a base of a day; a sorted table accepted),
+with `mkTz?_refuses_a_long_key`, `mkTz?_refuses_too_many_transitions` and `mkTz?_isSome_iff`;
+`chicago_2026_offsets`: 07:59:59Z is −06:00 and 08:00:00Z is −05:00 on 2026-03-08,
+06:59:59Z is −05:00 and 07:00:00Z is −06:00 on 2026-11-01, and `2026-09-08T03:00:00+00:00` is
+2026-09-07. Beside them: `tz_transitions_strictly_increase` (in chrono's order), `offsetAt_wf`,
+`localDate_near_the_utc_date`, `offsetAt_is_constant_between_transitions` and
+`localDate_mono_between_transitions`. **`localDate_is_constant_between_transitions` is refuted**
+(below).
+
+**Against design §6.3's list:** `instantOf_is_local_dt_on_an_unambiguous_time` (the §15 goal, and
+the round trip §6.3 calls `instantOf_localSec`), with `localSec_instantOf` for the forward
+direction; `instantOf_in_the_spring_gap` (02:30 on 2026-03-08 has no instant, and `instantOf` gives
+03:00 CDT, 08:00:00Z); `instantOf_in_the_fall_fold` (01:30 on 2026-11-01 is both 06:30Z and 07:30Z,
+is not `unambiguousAt`, and `instantOf` gives 06:30Z); `instantOf_on_an_unambiguous_noon` (the
+goal's hypotheses are satisfiable: noon on 2026-09-07 is 17:00:00Z, and `unambiguousAt` holds).
+The route: `hitFold` and `localHits_eq` equate the run-time fold with the spans;
+`offsetFold_span` shows the offset fold reads a span's offset at every second the span holds;
+`exists_span` puts every second in a span; `localSec_of_mem_localHits` and
+`mem_localHits_of_localSec` are the two directions.
+
+### The two in-step goals (§15, B1)
+
+Neither entered `Goals.lean`: each is stated and proved in this step, so the burn-down does not move
+(§15's rule for in-step groups).
+
+| goal | status |
+|---|---|
+| `offsetAt_reads_the_last_transition` | **restated and proved in chrono's order.** As §15 writes it, over `Instant.nanos`, it is false: **`offsetAt_does_not_read_the_last_transition_by_nanos`**. A representable leap second at `…:59` plus 1.5 s has a nanosecond count past a transition at the next second, and chrono-tz reads the timestamp's whole second, so the offset is still the base. The proved statement has the same shape, with `i ≤ t`, `i < j` and `t < j` in the `Instant` order (§3.1 item 3; D5: re-proved, never weakened) |
+| `instantOf_is_local_dt_on_an_unambiguous_time` | **proved as stated**, with `c : Fin 1440` (below) |
+
+### Refuted and renamed (§3.1 item 3)
+
+| design §5.2 / §6.1 name | why it is false | now |
+|---|---|---|
+| `Instant.lt_iff_nanos` | §5.2 defines `LT Instant` by `nanos` and says chrono's lexicographic order is "equal here". It is not: `(59, 1.5·10⁹)` precedes `(60, 0)` in chrono and follows it in nanoseconds | **`the_instant_order_is_not_the_nanos_order`**, with the narrowing **`Instant.lt_iff_nanos_off_a_leap_second`**. `LT Instant` is chrono's order |
+| `offsetAt_reads_the_last_transition` over `nanos` | above | **`offsetAt_does_not_read_the_last_transition_by_nanos`**; the name now carries the chrono-order statement |
+| `localDate_is_constant_between_transitions` | a span lasts months, and the local date moves at every local midnight | **`localDate_is_not_constant_between_transitions`** (17:00:00Z on 2026-09-07 and 2026-09-08: one offset, two dates), with **`offsetAt_is_constant_between_transitions`** and **`localDate_mono_between_transitions`**, which hold |
+
+### Cheats (`Negative.lean`, appended)
+
+| # | label | cheat | fails because |
+|---|---|---|---|
+| **91** | B1-a | Chicago's spring transition applied at 07:59:59Z | `decide` proves `offsetAt chicago ⟨63908553599, 0⟩ = −05:00` false (`chicago_2026_offsets`, `offsetAt_reads_the_last_transition`) |
+| **92** | B1-b | `2026-09-07T22:00:00-05:00` ordered before `2026-09-08T03:00:00+00:00` by their written clocks | both are UTC second 63,924,433,200 (`the_written_clock_is_not_the_instant_order`), and `decide` proves the strict order false (`Instant.lt_irrefl`) |
+
+Each fails at its own line with `Tactic decide proved that the proposition … is false`.
+
+### Additions to the stage-5 parity exception list
+
+| # | site | the kernel | the fork point | authority |
+|---|---|---|---|---|
+| **P16** | an instant outside [1900, 2200) | the table's edge offset (`offsetAt` reads the base before the first transition and the last transition after it) | chrono-tz's value | design §6.1 |
+
+Not observable yet: nothing on the wire sends a table until B4. **Exact by design, and now proved of
+the kernel's side:** chrono's leap-second duration rule (`durationBetween_across_a_leap_second`,
+`the_leap_second_counts_within_a_day_but_not_across_midnight`) and the local-time lookup on
+DST days (`instantOf_in_the_spring_gap`, `instantOf_in_the_fall_fold`).
+
+### Rule D9-21
+
+B1's functions over lists: `offsetAt` is a `foldl` over at most 4,096 transitions, as §6.1 asks.
+`localHits` is a `foldl` (`hitStep`), then `List.reverse`, which is core's accumulator loop.
+`transFrom` is structural. Its recursive call is the tail of a `&&` chain, and `TzTable.wf` runs it
+only after the `length ≤ 4096` guard, which is `lengthTR` by core's `@[csimp]`. `gapHit` runs on fuel
+180, so an `instantOf` in a gap costs at most 181 scans of the table. `spansFrom` has no run-time
+caller: the proofs read it. The binary-search twin §6.1 names stays W4's lever, to be pulled if A3
+(c) or W5 shows the scans matter.
+
+### The `decide` budget (§14.0 item 4)
+
+18 new decided witnesses in `Cal.lean` and 2 cheats, 20 in all, which is the budget of 20. Each uses
+at most **2 zone transitions** and no `Entry` values. The instants are `Nat` literals, the longest
+literal is the 15-character key, and `the_witness_seconds_are_the_dates_they_name` ties each second
+to its date through `toDay`. The witnesses are `the_instant_order_is_not_the_nanos_order`,
+`durationBetween_across_a_leap_second`, `the_leap_second_counts_within_a_day_but_not_across_midnight`,
+`minutesBetween_truncates`, `secondsBetween_truncates_toward_zero`,
+`mkInstant?_refuses_a_bad_nanosecond`, `mkOffset?_refuses_a_whole_day`,
+`the_written_clock_is_not_the_instant_order`, `mkTz?_refuses_an_unsorted_table`,
+`offsetAt_does_not_read_the_last_transition_by_nanos`, `chicago2026_wf`,
+`the_witness_seconds_are_the_dates_they_name`, `chicago_2026_offsets`,
+`localDate_is_not_constant_between_transitions`, `instantOf_in_the_spring_gap`,
+`instantOf_in_the_fall_fold`, `instantOf_on_an_unambiguous_noon` and
+`the_origin_second_is_not_unambiguous`. The first 17 were probed together, before the edit, in a
+scratch copy of `Cal.lean` under `MemoryMax=8G timeout 120`. The whole file
+took **3.82 s at an 809 MB peak**, against 2.76 s and 815 MB for the file at `c2ebb8f`. The two
+cheats, on that copy, took 0.46 s at 495 MB, and `the_origin_second_is_not_unambiguous`, added
+last, 0.56 s at 494 MB. The committed `Cal.lean`, all 18 included, takes 3.36 s at an 817 MB peak
+under the same cap. No realistic-size input is evaluated.
+
+### Recorded disagreements
+
+- **The instant order** (above). §5.2's `LT` by `nanos` is not chrono's. **For C2 and W2:** §6.2
+  and §15 state `dayOf` and `a_wake_day_is_shorter_than_a_day` as `t.nanos < w.nanos + 86400·10⁹`
+  and sort wakes by `nanos`. The fork's `DayIndex::new` sorts by `DateTime`'s order, which is
+  `Instant`'s `<`, and `day_of` tests `t.signed_duration_since(w) < Duration::hours(24)`, which is
+  `durationBetween w t`. Near a leap second neither agrees with `nanos`, and the design counts day
+  attribution "leap seconds included" as exact by design. C2 chooses its statements; this step only
+  flags them.
+- **Whole-second transitions.** §6.1's `TzTable.wf` asks for representable, strictly increasing
+  transition instants. The kernel also requires `ns = 0`, because chrono-tz's spans are `i64`
+  seconds and the host bisects to the second. A fractional transition would have no chrono meaning,
+  and the requirement makes "at or before `t`" mean the same thing in chrono's order and in
+  chrono-tz's timestamp (`offsetAt_reads_the_last_transition`'s proof uses it). `mkTz?` refuses one
+  B4's decoder will refuse it as `badTz`.
+- **The Chicago witnesses.** §6.1 asks for "a four-transition Chicago table"; §14.0 item 4 caps a
+  witness at 2 zone transitions. `chicago2026` has 2026's two transitions, and every §6.1 and §6.3
+  witness lands on them.
+- **`instantOf`'s clock.** §6.3 types it `(c : Clock)`. `Clock` is `Field.Clock := Fin 1440` in
+  `Line.lean`, which imports `Cal` through `Text` and `Grain`, so `Cal.lean` cannot name it.
+  `instantOf` and `unambiguousAt` take `Fin 1440`, the type `Clock` abbreviates. A caller's `Clock`
+  passes unchanged, and §15's statement with `c : Clock` elaborates against these definitions.
+- **`unambiguousAt`** is named in §15 but not defined in the design. Here it means exactly one hit
+  and a local clock past the origin's first second. `localSec` saturates at the origin west of UTC,
+  so that second is the reading of every instant up to the offset, and the §15 statement is false
+  there without the second conjunct (`the_origin_second_is_not_unambiguous`: a table at −06:00,
+  UTC second 100). The origin lies outside every table's span (P16).
+- **The local lookup is a scan, not chrono-tz's binary search.** The two agree when at most two
+  local spans overlap and the local spans are in order. A table probed from a real zone meets both
+  conditions whenever each of its spans is longer than the offset changes around it. The section 9 header
+  states this assumption. T4 (d) at B4 checks every chrono-tz zone against chrono itself, and that
+  test would catch a zone that breaks it.
+- **`minutesBetween_zero_of_le`** assumes `b.wf`. The design gives no signature. Without the
+  assumption, a `b` whose `ns` is not representable makes `b − a` any size.
+- **`subMinutes` at zero minutes** leaves a leap second as it is, because chrono returns early.
+  §5.2 mentions only the saturation at the origin.
+- **Additions the design does not name:** `mkOffset?` (R10 for `VOffset`; §10.4's table starts
+  at B4), `localSecAt`/`utcSecAt`, `Span` and the proof lemmas above.
+- **Gap 103** (A3 (c), the Chicago hourly probe) says it clears at B1. Row B1 lists only
+  `Cal.lean`, and §6.1 and row B4 put `tz_table.rs` in B4. The gap stays open and clears at B4.
+- **For B2:** `Tm.Field.Stamp` already exists, and `Goals.lean` opens `Field (… Stamp …)`, so a
+  `Tm.Stamp` namespace for `Stamp.lean` will be ambiguous in `Goals.lean`'s STAGE 5 block.
+
+**Label-to-number map:** cheats B1-a → **91**, B1-b → **92**; parity entry **P16**. No gaps, no
+behaviour rows (the binary is unchanged).
+
+**Goals:** none added, discharged or refuted in `Goals.lean`, which is untouched (burn-down **15**).
+The two in-step goals are proved in `Cal.lean`, one restated (above). **New theorems: 64**, all in
+`Cal.lean`, audited under an `APPENDED … Step B1` banner in `Check.lean`. §6.3's three counts
+agree at 2207. Axioms stay within `propext`, `Quot.sound` and `Classical.choice`, and there is no
+`sorryAx`.
+
+**Re-measured** (under the 30 GB cap, on the tree committed):
+
+| measurement | value |
+|---|---|
+| `check.sh` | **7/7**, 2.65–2.71 s on the built tree (four runs) (2.73 s before, so within §14.0 item 4's 10%); the first run after the `Cal.lean` edit, rebuild of every module included, took 149.0 s |
+| axiom audit | **2207 theorems** (was 2143, +64) |
+| `Negative.lean` | check 4 ok; CHEATs 91 and 92 each fail at their own line with the `decide` refusal they claim |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **15** (unchanged) |
+| `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (unchanged) |
+| FFI suite (`cargo test` in `tm-kernel-ffi`) | **81 passed / 0 failed** (kernel 72, corpus 8, stack 1) |
+| `cli_latency.rs` | green: first verb 627.7 ms, later verb 50.7 ms |
+
+## Stage 5 D10 merge-in, 2026-09-14: the D9 track's A1–B1 reach the lookahead branch — no number taken twice
+
+`rebuild-on-lean` (A1 `b2ad4ba`, A2 `013ed83`, A3 `c2ebb8f`, B1 `c73e032`) merged into
+`stage5-lookahead` (L1 `319919c`), so L2–L4 can use `Cal.instantOf` and the zone table. The
+merge base is `43e6309`.
+
+**Conflicts and how they were resolved (AGENTS §6.5).** Git merged `AGENTS.md` (the D10 import
+order and `Lookahead` entry, and the D9 note on `JVal.dec`, touch different lines), `Json.lean`,
+`Cal.lean`, `Plan.lean`, `Boundary.lean`, the Rust tests and `TmKernel.lean` without conflict.
+Three append-only files conflicted at their tails, and each keeps both sides whole, the D10
+banner first and the D9 banners after it:
+- `Check.lean`: the L1 banner (42 names), then the A1, A2, A3 and B1 banners (128 names).
+- `Negative.lean`: the L1 cheats 108, 109 and 117, then A2's 119–121 and B1's 91–92. Both sides
+  appended before `end Tm`, and the only textual overlap was the closing `decide` of the last
+  cheat on each side, which the resolution repeats once per side.
+- `kernel/README.md`: the L1 block, then the A1, A2, A3 and B1 blocks, then this one.
+
+**Numbers: no collision, so nothing was renumbered.** The map is the identity:
+
+| item | D10 side | D9 side |
+|---|---|---|
+| cheats | 108, 109, 117 (design labels; 117 is L5's, taken in L1) | 91, 92 (B1's labels); 119, 120, 121 (A2, outside §16's range) |
+| gaps | none | 100 (A1-a), 101 (A2-a), 102 (A3-a), 103 (A3-b) |
+| parity | P1 refined | P16 |
+
+Highest numbers after the merge: gap 103, cheat 121, parity P16. D10 steps from here on must not
+take 119–121 or 100–103. L5 must not take 117 again.
+
+**The three counts (AGENTS §6.3) reconcile.** 2079 at the merge base, +42 from L1, +128 from
+D9 (A1 22, A2 42, A3 0, B1 64). `check.sh` reports **2249**, and `grep -c '^#print axioms'
+Check.lean` gives 2249, all distinct.
+
+**Carried forward, unchanged by the merge:** gap 102 (gates W3), gap 103 (clears at B4), B1's
+`.nanos`-vs-`Date` note for C2 and W2, and the `Tm.Stamp` namespace note for B2. For L2: `Cal`
+is now the B1 version. `Lookahead.lean` still imports only `Capacity`, and L2 adds `Cal`.
+
+**Observable behaviour changes: none beyond the D9 side's own rows (A2's).** **Goals:** none moved
+(burn-down **15**). **New theorems: none** beyond the two sides' own.
+
+**Re-measured on the merge tree** (every command under the 30 GB cap, in this worktree):
+
+| measurement | value |
+|---|---|
+| `check.sh`, first run after the merge (every module D9 touched rebuilt) | **7/7**, 150.7 s wall |
+| `check.sh`, built tree | **7/7**, 2.70 / 2.72 s |
+| axiom audit | **2249 theorems** (2079 + 42 + 128) |
+| `Negative.lean` | check 4 ok, 107 `CHEAT n` blocks |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **15** (unchanged) |
+| `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (D9's `loggen` included) |
+| FFI suite (`tm-kernel-ffi`) | **81 passed / 0 failed** (kernel 72, corpus 8, stack 1) |
+| `cli_latency.rs` | green: first verb 617.2 / 607.4 / 632.8 ms, later verb 60.8 / 60.8 / 55.8 ms |
