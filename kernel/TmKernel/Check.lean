@@ -2720,3 +2720,49 @@ open Tm
 #print axioms Tm.Look.wallOfEntity_interval
 #print axioms Tm.Look.the_buffer_is_taken_off_the_local_clock
 #print axioms Tm.Look.a_multi_day_wall_puts_one_evening_in_two_windows
+
+-- APPENDED 2026-09-14 (stage 5, D10 track).  Step L3 (design §13.3, §14.8 row L3): the slot cut,
+-- fork `free_intervals` and `cut_slots_around`, in whole seconds, pulled from stage 6 under D12;
+-- the four `cutSlots_*` laws of the step row in-step, and the fork's tests as witnesses.
+#print axioms Tm.Look.insertByStart_append
+#print axioms Tm.Look.sortByStart_eq_mergeSort
+#print axioms Tm.Look.sortByStart_eq_sortByStartFast
+#print axioms Tm.Look.clipTo_mem
+#print axioms Tm.Look.covered_clipTo
+#print axioms Tm.Look.freeChain_spec
+#print axioms Tm.Look.freeFold_spec
+#print axioms Tm.Look.mem_ite_cons
+#print axioms Tm.Look.freeIntervals_spec
+#print axioms Tm.Look.freeIntervals_inside_the_window
+#print axioms Tm.Look.freeIntervals_are_in_order
+#print axioms Tm.Look.freeIntervals_are_the_free_units
+#print axioms Tm.Look.cutStretch_fuel
+#print axioms Tm.Look.cutSlots_fuel_is_enough
+#print axioms Tm.Look.cutStretch_rec
+#print axioms Tm.Look.minLast_pos
+#print axioms Tm.Look.AccInv.mono
+#print axioms Tm.Look.AccInv.nil
+#print axioms Tm.Look.cutStretch_spec
+#print axioms Tm.Look.cutFold_spec
+#print axioms Tm.Look.cutSlots_spec
+#print axioms Tm.Look.cutSlots_without_a_block_length_is_empty
+#print axioms Tm.Look.cutSlots_inside_the_window
+#print axioms Tm.Look.cutSlots_breaks_inside_the_window
+#print axioms Tm.Look.cutSlots_avoid_the_walls
+#print axioms Tm.Look.cutSlots_breaks_avoid_the_walls
+#print axioms Tm.Look.cutSlots_block_is_block_min
+#print axioms Tm.Look.cutSlots_short_block_is_at_least_min_last
+#print axioms Tm.Look.cutSlots_break_is_break_min
+#print axioms Tm.Look.cutSlots_slots_are_in_order
+#print axioms Tm.Look.cutSlots_breaks_are_in_order
+#print axioms Tm.Look.cutSlots_no_slot_overlaps_a_break
+#print axioms Tm.Look.every_break_is_followed_by_a_slot
+#print axioms Tm.Look.cut_slots_on_the_spec_day
+#print axioms Tm.Look.a_routine_passed_as_a_wall_does_not_pay_off_the_break
+#print axioms Tm.Look.cut_slots_around_a_placed_routine
+#print axioms Tm.Look.cut_slots_from_a_pending_break
+#print axioms Tm.Look.a_cut_never_ends_on_a_break
+#print axioms Tm.Look.a_long_wall_leaves_eight_hours_to_cut
+#print axioms Tm.Look.a_late_arrival_cuts_nothing
+#print axioms Tm.Look.free_intervals_merge_overlapping_walls
+#print axioms Tm.Look.a_cut_counts_real_minutes_across_the_fall_transition

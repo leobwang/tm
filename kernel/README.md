@@ -9880,3 +9880,269 @@ committed):
 | `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (unchanged) |
 | FFI suite (`tm-kernel-ffi`) | **81 passed / 0 failed** (kernel 72, corpus 8, stack 1) |
 | `cli_latency.rs` | green: first verb 626.9 / 642.7 / 622.8 ms (226 files, 2,959 lines), later verb 55.7 / 50.8 / 55.8 ms |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5, D10 track, step L3 (branch stage5-lookahead,
+     worktree .claude/worktrees/stage5-lookahead).  Built in parallel with the D9
+     track on rebuild-on-lean (D11).  Takes cheats 112-113 (the design's own L3
+     labels, §16) and gap 104 (label L3-a; §20 reserves no L3 gap, and 100-103
+     are the D9 side's), none taken in this checkout or on rebuild-on-lean at
+     c73e032.  Whoever merges renumbers (AGENTS §6.2, §6.4).
+     =========================================================================== -->
+
+## Stage 5 D10 L3, 2026-09-14: time is cut into slots around walls and breaks — the planner's cut, pulled into stage 5
+
+**Starting point.**  The worktree at `d1179b4` (L2) was clean: check.sh 7/7, audit 2309, corpus
+29/37 files and 4/5 whole plans, burn-down 13, `cargo test --workspace` 1013 / 0, FFI 81.  Every
+figure at the end of this block is re-measured in this worktree.
+
+**The plan executed** is design `kernel/design/stage5/stage5-D9-D10-design.md` §13.3's L3 part
+("the general `cut_slots_around` … rests and since-break included, so stage 6's `dayPlan` reuses
+it") and §14.8's L3 row, under the owner's D12, with spec §8.2 step 3 as the behaviour and the fork
+(`tm-core/src/capacity.rs`) as the oracle.  Files: `Lookahead.lean` (a new section, "The slot
+cut", and the module header), `Check.lean`, `Negative.lean`, `AGENTS.md` (§2.3's `Lookahead` entry,
+§8.4 item 1).  No new module, so `TmKernel.lean` is unchanged at seventeen imports.  `Cal.lean`
+and every other D9 module are untouched.
+
+### What was built (`Lookahead.lean`, section "The slot cut")
+
+| piece | what it is | fork point |
+|---|---|---|
+| `SlotKind`, `Slot {start, stop, kind}`, `Slot.minutes`, `Cut {slots, breaks}`, `Cut.slotMinutes`, `Cut.breakMinutes` | a slot in UTC seconds, before energy; minutes as `num_minutes()` floors them | `SlotKind`, `Slot` (without `energy`), `Slot::minutes`, `Cut`, `Cut::slot_minutes`, `Cut::break_minutes` |
+| `CutCfg {blockMin, breakMin, breakAfter, minLastBlockMin}`, `CutCfg.minLast`, `CutCfg.shipped` | the four `[day]` keys the cut reads; `min_last = max 1 (min minLastBlockMin blockMin)`; the shipped 60/20/2/30 | `DayConfig`'s four `u32`s; `min_last_block_min.min(block_min).max(1)` |
+| `clipTo lo hi ws`, `freeChain`, `freeStep`, `freeIntervals lo hi ws` | walls clipped **on both sides**, empty ones dropped, sorted and merged (L2's `sortByStart`, `mergeSorted`), then the cursor walk emitting the gaps; empty when `hi ≤ lo` | `normalize_walls`, `free_intervals` |
+| `cutStretch c stop fuel t k acc` | the `while t < stop` loop on structural fuel, tail-recursive: a due break only when `min_last` still fits after it, else a full block, else a short block to `stop`, else stop | `cut_slots_around`'s loop |
+| `restfulEnd c rests t`, `cutStep`, **`cutSlots c lo hi walls rests k`** | the counter reset by a rest ending exactly at a stretch's start and at least `break_min` long; one stretch on fuel `stop − start + 1`; the whole cut over `freeIntervals lo hi (walls ++ rests)`, empty when `blockMin = 0` | `restful_end`, `cut_slots_around`; `cut_slots` is `cutSlots c lo hi walls [] 0` and `cut_slots_from` is `cutSlots c lo hi walls [] k` |
+| `sortByStartFast`, **`@[csimp] sortByStart_eq_sortByStartFast`** | L2's insertion sort proved equal to core's `List.mergeSort`, list for list (both stable; `List.mergeSort_cons`), so every compiled caller merge-sorts | `merge_walls`' `sort_by_key` |
+
+**The rule the design fixes (§2.3), in the section doc:** stage 6's `dayPlan` must reuse
+`freeIntervals` and `cutSlots`, never a second copy.  The lookahead (L5) calls
+`cutSlots c arrival end walls [] 0`; the planner's step 3 passes its placed routines as `rests`
+and its blocks since the last break as `k`, as the fork's `planner.rs` does.
+
+### Exact in whole seconds: no sub-minute refusal is needed by the cut
+
+The fork compares `Duration::num_minutes()`, which truncates toward zero.  For whole seconds
+`x ≥ 0`, `num_minutes x ≥ m ⇔ x ≥ 60·m`, and a negative `x` has `num_minutes x ≤ 0 < min_last`.
+So each comparison is one inequality over UTC seconds: the break guard
+`(stop − (t + brk)).num_minutes() < min_last` is `stop < t + 60·brk + 60·min_last`; a block fits
+iff `t + 60·block_min ≤ stop`; a short block iff `t + 60·min_last ≤ stop`; and `restful_end`'s
+`(b − a).num_minutes() >= break_min` is `60·break_min ≤ b − a ∧ a < b + 60` (the second conjunct is
+a reversed rest's truncation toward zero; it is unobservable, because the counter is read only when
+breaks are on, which needs `break_min > 0`).  L2's instants are whole seconds (`instantOf_ns`), so
+the cut is the fork's **for every zone offset**, and L2's open question (its disagreement 3) is
+answered: neither the window nor the cut needs `badTz subMinuteOffset`.  The refusal stays in
+§13.6's table for L6 to decide.
+
+**`a_cut_counts_real_minutes_across_the_fall_transition`**: on 2026-11-01 in Chicago the clock
+runs 00:00 to 03:00 in four real hours, and the cut is two blocks, a break, a block and a
+40-minute short block.  So **the slot cut on a DST day is exact by design, not a parity entry.**
+
+### The laws (in-step; never in `Goals.lean`)
+
+The four names of §14.8's L3 row, each stated over the general `cutSlots` (walls, rests and a
+since-break count), and so over `cut_slots` and `cut_slots_from` as instances:
+
+| theorem | statement |
+|---|---|
+| **`cutSlots_inside_the_window`** | every slot has `lo ≤ start < stop ≤ hi` |
+| **`cutSlots_avoid_the_walls`** | for every slot, every wall **or rest** `w ∈ walls ++ rests` and every unit `t ∈ [start, stop)`: `¬ (w.1 ≤ t ∧ t < w.2)` |
+| **`cutSlots_short_block_is_at_least_min_last`** | a short block has `start + 60·minLast ≤ stop < start + 60·blockMin`, so `minLast ≤ minutes < blockMin` |
+| **`cutSlots_fuel_is_enough`** | with `blockMin ≥ 1` (which `cutSlots` checks first), any fuel `f > stop − t` gives the loop result of fuel `stop − t + 1`: the fuel is never the answer (`cutStretch_fuel`: two such fuels agree) |
+
+And beside them, because stage 6's `plan_*` goals will lean on them:
+`cutSlots_breaks_inside_the_window`, `cutSlots_breaks_avoid_the_walls`,
+`cutSlots_block_is_block_min` (a block is exactly `blockMin`, and `blockMin > 0`),
+`cutSlots_break_is_break_min`, `cutSlots_slots_are_in_order`, `cutSlots_breaks_are_in_order`,
+**`cutSlots_no_slot_overlaps_a_break`** (what `plan_places_no_block_over_a_break` needs of the
+cut), **`every_break_is_followed_by_a_slot`** (a slot starts where every break ends: no stretch
+ends on a break, the fork's "only rest when work still follows"), and
+`cutSlots_without_a_block_length_is_empty`.
+
+**Free intervals, both directions (AGENTS §5.8).**  `freeIntervals_spec`: the stretches lie in
+`[lo, hi]`, are nonempty, and come in order with a wall between each two
+(`freeIntervals_inside_the_window`, `freeIntervals_are_in_order`); and
+**`freeIntervals_are_the_free_units`**: a unit is in some stretch **iff** it is in `[lo, hi)` and no
+wall holds it.  `cutSlots_avoid_the_walls` is its forward half applied to the slots.
+
+**The proof route.**  `freeChain_spec` (the clipped, merged walls are L2's `WallChain` inside
+`[lo, hi]` with the walls' cover there, through L2's `mergeSorted_spec` and the new
+`covered_clipTo`); `freeFold_spec` (the cursor walk over a chain, by induction, with the gaps'
+order, bounds and exact cover); `cutStretch_rec` (the loop's induction principle: a state property
+kept by the three pushes and turned into the result at each of the four exits, the fuel's
+included); `cutStretch_spec` (one stretch keeps `AccInv`, the ordered, disjoint and shaped
+accumulator, puts new items inside the stretch, and leaves no break without its slot: a break is
+pushed only when `min_last` fits after it and resets the counter, so the next turn must push a
+slot at its end, and the fuel hypothesis rules out the fuel exit); `cutFold_spec` (the stretches in
+order); `cutSlots_spec` (all of it on the reversed lists).
+
+**Audit (AGENTS §7.4).**  (1) Every binder is used; `hb : 0 < blockMin` in the two fuel theorems is
+needed (a zero-length block loops until the fuel runs out).  (2) Hypotheses are satisfiable: the
+witnesses below instantiate every membership hypothesis.  (3) Names say what the statements say;
+`cutSlots_avoid_the_walls` covers rests too, as its binder `walls ++ rests` shows.  (4) Both
+directions: `freeIntervals_are_the_free_units` is an iff; the cut's use of the free time is
+witnessed and differentially tested, not proved (gap 104).  (5) The compiled code runs
+`cutSlots` with `sortByStartFast` (`@[csimp]`), checked in the generated C: `freeChain` calls
+`sortByStartFast`, and `cutStretch`'s self-calls are `goto _start`.  (6) Units: UTC seconds
+throughout, as above.
+
+### The fork's tests, as witnesses (Chicago's 2026 table; `onTheSpecDay c` is 2026-09-07 at clock `c`)
+
+| fork test | theorem |
+|---|---|
+| `capacity_slots.rs` `cut_slots_on_the_spec_day`, capacity.rs's documented **§4.3 cut** (07:00, 08:00, break 09:00, 09:20, 10:20, break 11:20, 11:40, the 10 minutes before the meeting dropped, 13:50, break 14:50, 15:10–16:00 short; 410 slot minutes, 60 of breaks) | `cut_slots_on_the_spec_day` |
+| `a_routine_passed_as_a_wall_does_not_pay_off_the_break` (break at 11:50, a 40-minute block before the meeting) | `a_routine_passed_as_a_wall_does_not_pay_off_the_break` |
+| `cut_slots_around_a_placed_routine` (lunch as a rest pays off the break; a 10-minute rest does not, break at 11:30) | `cut_slots_around_a_placed_routine` |
+| `cut_slots_from_a_pending_break` (both configurations) | `cut_slots_from_a_pending_break` |
+| `a_cut_never_ends_on_a_break` (to 09:45: two blocks and no break; to 09:50: the break and a 30-minute short block) | `a_cut_never_ends_on_a_break` |
+| `a_long_wall_extends_the_window_by_its_whole_duration`'s cut (420 slot minutes, 60 of breaks) | `a_long_wall_leaves_eight_hours_to_cut` |
+| `the_window_cap_bounds_a_late_arrival`'s cut (empty) | `a_late_arrival_cuts_nothing` |
+| `capacity.rs` unit test `free_intervals_merge_overlapping_walls` | `free_intervals_merge_overlapping_walls` |
+
+### A scratch differential against the fork (evidence for this commit; not committed, not a figure to quote again)
+
+A throwaway generator under `/tmp/claude-1000/l3diff/` (a cargo package outside the repo depending
+on this worktree's `tm-core` by path) ran the fork's `cut_slots_around` on **20,000** seeded random
+cases: whole-second instants on grids of 1, 60, 600 and 1,200 seconds, `block_min ∈ {0, 1, 5, 30,
+45, 50, 60, 90}`, `break_min ∈ {0, 1, 10, 20, 30}`, `break_after_blocks ∈ 0..3`,
+`min_last_block_min ∈ {0, 1, 10, 20, 30, 45, 100}`, up to 5 walls (overlapping, reversed, outside
+the window), up to 3 rests (some reversed, some empty) and a since-break count `0..3`.  A scratch
+Lean program ran `cutSlots` on the same cases: **0 differences**; 2,595 cases had a rest paying off
+a break.  The comparison bites: changing the break guard's `<` to `≤` gave 371 differences, and
+dropping `min_last`'s `max 1` gave 134.  Changing `restfulEnd`'s reversed-rest conjunct gave 0,
+which is not evidence either way: the generator made no reversed rest shorter than a minute, and
+the conjunct is unobservable anyway (above).  The committed parity harness is L7's (design
+§13.7).
+
+### Cheats (`Negative.lean`, appended)
+
+| # | label | cheat | fails because |
+|---|---|---|---|
+| **112** | L3 | a stretch that ends on a break: the loop with the break guard removed, claimed equal to `cutSlots` from 07:00 to 09:45 | the cheat places the 09:00 break and ends on it; `decide` proves the equality false (controls `a_cut_never_ends_on_a_break`, `every_break_is_followed_by_a_slot`) |
+| **113** | L3 | the short block dropped at exactly `min_last` (`<` for `≤`), claimed equal to `cutSlots` from 07:00 to 09:50 | the fork keeps the 30-minute block after the 09:00 break; `decide` proves the equality false (controls `a_cut_never_ends_on_a_break`, `cutSlots_short_block_is_at_least_min_last`) |
+
+Each fails at its own line with `Tactic decide proved that the proposition … is false`.
+
+### Gap 104 (new; label L3-a) — the cut's use of the free time is witnessed, not proved
+
+(1) *What is not done*: no theorem says the cut leaves free time unused only where the fork does
+(a tail shorter than `min_last`, a due break that `min_last` would not follow, and the rest of that
+stretch).  The laws bound the cut from one side: slots and breaks lie in free time, in order, with
+the right lengths.  A cut that dropped a whole stretch would satisfy every one of them.  (2) *Why
+not now*: the fork's rule is the loop itself, so the law would restate `cutStretch`.  The eight
+fork witnesses, `a_long_wall_leaves_eight_hours_to_cut` (every free minute used) and the scratch
+differential above cover it.  (3) *Cost*: only the witnesses and L7's parity twin would catch
+a change that drops free time.  (4) *When it clears*: L7 measures it end to end through the
+lookahead.  Stage 6 states a law only if a planner goal needs one.
+
+### Notes for L4 and L9 (not owed by L3)
+
+- **L4.** `Slot.minutes` floors `(stop − start) / 60`, as `num_minutes().max(0)` does.  A short
+  block under a sub-minute offset would floor, as the fork's does.  `histOf` must read
+  `Slot.minutes`, not a second division.
+- **L9.** Day 0 cuts from `max(start, now)`, and `now` has nanoseconds.  For a `from` with
+  `0 < ns`, every fork comparison `num_minutes(stop − (from + k·60 + …))` equals the kernel's over
+  `⌈from⌉` whole seconds: the truncated duration is `stop − ⌈from⌉ − …` when non-negative, and both
+  sides are below `min_last` otherwise.  So L9 can cut from `⌈now⌉` and get the fork's slots, each
+  starting less than a second later, with equal minutes.  That is an argument, not yet a theorem.
+  L9 owes the theorem or a parity entry.
+
+### Rule D9-21
+
+Functions this step adds that walk a list the wire can make large: `clipTo` (core `map` and
+`filter`), `walls ++ rests` (core `append`, `appendTR`), the sort (`sortByStart`, now
+**`@[csimp]` → `sortByStartFast`**, core's `mergeSort`, so L2's `windowEnd` twin is no longer the
+only route to it), `mergeSorted` and the free walk (`foldl`, then `reverse`), the cut over the
+stretches (`foldl cutStep`), `Cut.slotMinutes` and `Cut.breakMinutes` (`foldl`).  `cutStretch`
+recurses on a `Nat` fuel with every self-call in tail position (compiled as `goto _start`), once
+per slot or break, not once per unit.  `restfulEnd` is core `any` over the rests.  No `wallOverlap`-
+style specification is added: every function in the section runs.
+
+### The `decide` budget (§14.0 item 4)
+
+9 new decided witnesses and 2 cheats, **11 in all**, within the budget of 20.  They use at most
+Chicago's **2 zone transitions**, at most 5 walls, no `Entry` value and no string literal.  The
+witnesses are `cut_slots_on_the_spec_day`,
+`a_routine_passed_as_a_wall_does_not_pay_off_the_break`, `cut_slots_around_a_placed_routine`,
+`cut_slots_from_a_pending_break`, `a_cut_never_ends_on_a_break`,
+`a_long_wall_leaves_eight_hours_to_cut`, `a_late_arrival_cuts_nothing`,
+`free_intervals_merge_overlapping_walls` and
+`a_cut_counts_real_minutes_across_the_fall_transition`.  All were probed in scratch files under
+`/tmp/claude-1000/l3probe/` against the built package, under `MemoryMax=8G` and `timeout 120`,
+before the module was edited.  Each `decide` took 1–19 ms, and the whole section elaborated in
+0.75 s at a 669 MB peak.  The cheats took 0.16 s at 534 MB.  Two further probes were run and not
+committed: a deliberately wrong §4.3 layout, which `decide` refused, and the §4.3 day as cheat
+112's witness, which compiled (disagreement 1 below).  The committed `Lookahead.lean` elaborates in
+**1.29–1.31 s at a 736–755 MB peak** under the same cap, against 0.64–0.70 s and 652–678 MB at
+`d1179b4` (three runs each).  No realistic-size input is evaluated.
+
+### Recorded disagreements between the design and the repo
+
+1. **Cheat 112's witness.**  §16 says a stretch ending on a break fails against "the documented
+   §4.3 cut witness".  It does not: on the §4.3 day every due break has at least `min_last` after
+   it, so the guard never fires, and the guard-less cut equals `cutSlots` there (probed; it
+   compiles).  The cheat is refuted on fork test `a_cut_never_ends_on_a_break`'s 09:45 window, and
+   the law is `every_break_is_followed_by_a_slot`.
+2. **Cheat 113's reason.**  §16 says the short block dropped at `min_last` fails because of
+   `cutSlots_short_block_is_at_least_min_last`.  A cut that drops the block does not contradict
+   that theorem, which speaks only of short blocks that exist.  The cheat fails on the 09:50
+   window, where the fork keeps a block of exactly `min_last`, and the theorem's `≤` is what allows
+   that block.
+3. **Seconds, not `DT.abs` minutes.**  Input design `design-lookahead.md` §4.2 cuts "all in
+   `DT.abs` minutes".  L3 cuts UTC seconds, as L2's window does, which is exact against the fork's
+   `num_minutes()` for any offset (above).
+4. **`Slot {start, stop, kind}`, not `{start, len, kind}`** (`design-lookahead.md` §4.2).  The
+   fork's `Slot` has `start` and `end`, and `end` is a Lean keyword.  `cutSlots_inside_the_window`
+   reads `start < stop ≤ hi` for "`start + len ≤ end`".
+5. **One function.**  The fork has `cut_slots`, `cut_slots_from` and `cut_slots_around`.  The
+   kernel has `cutSlots` only.  The other two are its instances, so there is one definition
+   (AGENTS §5.3).
+6. **`CutCfg`, not `DayCfg`.**  §13.4's `Input` holds a `DayCfg`, which is L6's with its R10 bounds
+   (§13.6).  `CutCfg` carries only the four keys the cut reads, crosses no wire, and so owes no smart
+   constructor yet.  L6's `DayCfg` should contain it, not copy it.
+7. **In-step, so the burn-down does not move.**  §14.8's L3 column reads "goals (added →
+   discharged): the four `cutSlots_*`".  §15 gives them no signature, so they were stated and
+   proved in the step and never stood in `Goals.lean`.
+8. **A second `@[csimp]`.**  §13.3 says nothing of the sort's compiled form here.  L2's
+   `windowEnd_eq_windowEndFast` is kept as it is (D5).  `sortByStart_eq_sortByStartFast` is added
+   because the free walk sorts too.
+9. **Memory cap.**  Every run used the workflow's 30 GB cap (16 GB for the scratch generator and
+   the differential), and 8 GB for probes, not §14.0's 40 GB.
+
+**Label-to-number map:** cheats L3 112 → **112** and L3 113 → **113**; gap L3-a → **104**.  No
+parity entry: the cut is exact by design, and §17's "exact by design" list gains **the slot cut, in
+whole seconds, DST days included**.  Highest numbers in this checkout after the step: gap 104,
+cheat 121, parity P27.
+
+**Observable behaviour changes: none.**  Nothing on the wire calls `freeIntervals` or `cutSlots`,
+and the new `@[csimp]` changes only how `sortByStart`'s callers compile, not their values.
+**Behaviour rows:** none (§20 lists none for L3).  **Goals:** discharged 0, refuted 0, added 0.
+Burn-down **13** (unchanged).
+
+**New theorems: 42**, all in `Lookahead.lean`, audited under `Check.lean`'s new
+`APPENDED 2026-09-14 (stage 5, D10 track).  Step L3` banner.  AGENTS §6.3's three counts agree at
+2351.  About 71 definition lines and 597 proof lines (110 of them the witnesses), against design
+§14.8's estimate of 130 and 450.  No theorem was retired, weakened or deleted.  No existing two-run
+theorem was touched.
+
+**Owed, by name (the rest of the D10 track):** L4 (energy, `hsw100`, `futureEnergy`, `histOf`
+over `Slot.minutes`, `limitSlots_is_limitHist` against L1's `limitHist`), L5 (`lookahead`,
+`pureDay` = `windowOn` → `cutSlots … [] 0` → energy → limit, `mkInput?`, and the loaded-plan witness
+through `wallIndex`; cheat 117 is taken), L6 (the capacity wire, `DayCfg` containing `CutCfg` with
+§13.6's R10 bounds, `badTz subMinuteOffset`, P26, P30), L7 (the parity twin, which also measures
+P27, gap 85 and gap 104), L8, L9 (day 0, including the `⌈now⌉` note above).
+
+**Re-measured after this step** (every command under the 30 GB cap, in this worktree, on the tree
+committed):
+
+| measurement | value |
+|---|---|
+| `lake build TmKernel:static` after the edits | 2.1 s wall (only `Lookahead` and the root rebuilt: nothing imports `Lookahead`) |
+| `check.sh` | **7/7**; 3.49 s on its first run (FFI test binaries relinked), then 2.67 / 2.78 / 2.72 s on the built tree against L2's 2.80 / 2.73 / 2.73 s, no rise (§14.0 item 4 allows 10%) |
+| axiom audit | **2351 theorems** (2309 + 42; `grep -c '^#print axioms' Check.lean` 2351, 2351 distinct, 2351 declared); each new name prints its own line |
+| `Negative.lean` | check 4 ok; 118 errors; 112 `/- CHEAT` banners (110 before); CHEATs 112 and 113 each fail at their own line |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (stage 3: 0, stage 4: 0, stage 5: 0, stage 6: 13) |
+| `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (unchanged) |
+| FFI suite (`tm-kernel-ffi`) | **81 passed / 0 failed** (kernel 72, corpus 8, stack 1) |
+| `cli_latency.rs` | green: first verb 627.8 / 617.7 / 627.4 ms (226 files, 2,959 lines), later verb 50.7 / 50.7 / 50.7 ms |

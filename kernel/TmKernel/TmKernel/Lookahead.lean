@@ -8,9 +8,11 @@ Design `kernel/design/stage5/stage5-D9-D10-design.md` §13.  This module **produ
 (§13.2) builds the unit, the weight and the mixture.  Step L2 (§13.3, pulled from stage 6
 by the owner's D12) builds the day's window, E7, in real seconds through `Cal`'s zone
 table, and the plan's walls; its section below says what it ports and what it refutes.
+Step L3 (§13.3, D12 likewise) cuts the window into slots and breaks around the walls and
+rests (`freeIntervals`, `cutSlots`), exactly in whole seconds.
 **Stage 6's `dayPlan` must reuse L2's `windowEnd`, `windowOn`, `wallIndex` and `wallsOn`,
-never a second copy** (design §2.3).  The slot cut, energy and the budget limit's slots are
-L3–L4's, so each location's histogram is still an argument.
+and L3's `freeIntervals` and `cutSlots`, never a second copy** (design §2.3).  Energy and
+the budget limit's slots are L4's, so each location's histogram is still an argument.
 
 ## The owner's D10 and D17, and the fork point they replace
 
@@ -54,13 +56,16 @@ L1 recurses over no list the wire can make large: a histogram is `Fin 6 → Nat`
 scaling laws recurse over step 3's own `reserveRest`/`edfCaps` only inside proofs.  L2's
 walls are listed in its section: every run-time pass is a `foldl` or core's tail-recursive
 `map`/`filter`/`filterMap`, and the one quadratic sort is behind a proved `@[csimp]` twin
-(`windowEnd_eq_windowEndFast`).
+(`windowEnd_eq_windowEndFast`; since L3 also `sortByStart_eq_sortByStartFast`, for every
+caller).  L3's cut is listed in its section: `foldl`s, core's `append`, `map`, `filter` and
+`any`, and a tail-recursive loop on structural fuel.
 
 ## Not here, by name
 
-* `pureDay`, `lookahead`, `Input`, `mkInput?` (L5); the cut and energy (L3–L4).
+* `pureDay`, `lookahead`, `Input`, `mkInput?` (L5); energy, `histOf` and `limitSlots` (L4).
+* Energy on a slot (fork `Slot::energy`, `energize`): L4's.  L3's `Slot` carries no energy.
 * The zone table's refusal of a sub-minute offset (`badTz subMinuteOffset`, §13.6): L6's.
-  L2's window counts seconds, so it needs no such refusal to be exact.
+  L2's window and L3's cut count seconds, so neither needs such a refusal to be exact.
 * Day 0 (`ofHist` over the host's histogram until L9, gap 93 of the design).
 * The wire (`capacity`, `lookahead` sections, digit strings): L6.
 -/
@@ -1299,6 +1304,915 @@ theorem a_multi_day_wall_puts_one_evening_in_two_windows :
     windowOn Cal.chicago 739867 420 1140 480 (wallsOn ix 739867)
       = ((Cal.instantOf Cal.chicago 739867 420).sec, (Cal.instantOf Cal.chicago 739868 60).sec) ∧
     (Cal.instantOf Cal.chicago 739867 1020).sec < (Cal.instantOf Cal.chicago 739868 60).sec := by
+  decide
+
+/-! ############################################################################
+## The slot cut (stage 5 D10 step L3; design §13.3, owner's D12)
+
+Pulled forward from stage 6 by the owner's D12, beside L2's window.  **Stage 6's `dayPlan`
+must reuse `freeIntervals` and `cutSlots`, never a second copy** (design §2.3, AGENTS §5.3):
+the lookahead calls `cutSlots c arrival end walls [] 0`, and the planner's step 3 calls it
+with its placed routines as `rests` and its blocks since the last break.
+
+### The fork point, read by name
+
+`capacity::cut_slots_around(from, end, walls, rests, cfg, blocks_since_break)` (spec §8.2
+step 3); `cut_slots(from, end, walls, cfg)` is `cutSlots c from end walls [] 0` and
+`cut_slots_from(…, k)` is `cutSlots c from end walls [] k`.
+
+1. `block_min == 0` returns the empty cut (`cutSlots_without_a_block_length_is_empty`);
+2. `min_last = min_last_block_min.min(block_min).max(1)` (`CutCfg.minLast`), and
+   `breaks_on = break_after_blocks > 0 && break_min > 0`;
+3. `free_intervals(from, end, walls ++ rests)` (`freeIntervals`): empty when `end ≤ from`;
+   otherwise `normalize_walls` clips each wall to `[from, end)` **on both sides** (`clipTo`),
+   drops the empty ones, sorts by start and merges touching walls (L2's `sortByStart` and
+   `mergeSorted`), and the cursor walk (`freeStep`) emits the gaps;
+4. for each free stretch `(start, stop)`, in order: `restful_end(start)` (a rest ending
+   exactly at `start` and at least `break_min` long, `restfulEnd`) sets the counter to 0;
+   then the `while t < stop` loop (`cutStretch`): a break that is due is placed only when
+   `min_last` still fits after it, else the stretch ends; a full block when `block_min`
+   fits; else a short block to `stop` when `min_last` fits; else the stretch ends.  The
+   counter is carried from one stretch to the next: a wall is work.
+
+### Exact in whole seconds, so no sub-minute refusal is needed
+
+The fork compares `Duration::num_minutes()`, which truncates toward zero, against whole
+minutes.  For whole seconds `x ≥ 0`, `num_minutes x ≥ m ⇔ x ≥ 60·m`; for a negative `x`,
+`num_minutes x ≤ 0 < min_last`.  So every comparison is one inequality between UTC seconds:
+`(stop − (t + brk)).num_minutes() < min_last ⇔ stop < t + 60·brk + 60·min_last`, a block
+fits iff `t + 60·block_min ≤ stop`, and `restful_end`'s `(b − a).num_minutes() >= break_min`
+is `60·break_min ≤ b − a ∧ a < b + 60` (the second conjunct is a reversed rest's truncation,
+and it is unobservable: the counter is read only when breaks are on, which needs
+`break_min > 0`).  L2's instants (`Cal.instantOf`) are whole seconds, so the cut is the
+fork's for **any** zone offset, and design §13.6's `badTz subMinuteOffset` is not needed by
+the window or the cut.  A fall-back day's cut counts real minutes
+(`a_cut_counts_real_minutes_across_the_fall_transition`).
+
+### What is proved
+
+`freeIntervals_spec`: the free stretches lie in the window, come in order with a wall between
+each two, and **hold exactly the units of `[from, end)` no wall or rest covers** (both
+directions).  `cutSlots_spec`, and the named consequences below it: slots and breaks inside
+the window, avoiding every wall and rest, in order, never overlapping one another; a block is
+exactly `block_min`; a short block is at least `min_last` and shorter than a block; a break is
+exactly `break_min`; **every break is followed by a slot that starts where it ends**, so no
+stretch ends on a break; and the fuel is never the answer (`cutSlots_fuel_is_enough`).
+
+### The recursion rule (D9-21)
+
+Over lists the wire can make large: `clipTo` is core `map`/`filter`; `walls ++ rests` is core
+`append` (`appendTR`); the sort is L2's `sortByStart`, now behind its own `@[csimp]` twin
+**`sortByStart_eq_sortByStartFast`** (core's `List.mergeSort`, proved equal through
+`List.mergeSort_cons`, so every caller, not only `windowEnd`, runs the merge sort);
+`mergeSorted`, the free walk and the cut are `foldl`s; `Cut.slotMinutes` and
+`Cut.breakMinutes` are `foldl`s.  `cutStretch` recurses on structural fuel `stop − start + 1`
+with every recursive call in tail position, and runs once per slot or break, not once per
+unit.  `restfulEnd` is core `any` over the rests (the planner's placed routines).
+-/
+
+/-- What a slot is (fork `SlotKind`): a full block, or the short last block of a stretch. -/
+inductive SlotKind where
+  | block
+  | short
+deriving DecidableEq, Repr
+
+/-- One slot before `energize` (fork `Slot` without its `energy`): UTC seconds
+`[start, stop)`. -/
+structure Slot where
+  start : Nat
+  stop  : Nat
+  kind  : SlotKind
+deriving DecidableEq, Repr
+
+/-- Fork `Slot::minutes`: `(end − start).num_minutes().max(0)`. -/
+def Slot.minutes (s : Slot) : Nat := (s.stop - s.start) / 60
+
+/-- Fork `Cut`: the slots and the breaks, each in time order. -/
+structure Cut where
+  slots  : List Slot
+  breaks : List (Nat × Nat)
+deriving DecidableEq, Repr
+
+/-- Fork `Cut::slot_minutes`. -/
+def Cut.slotMinutes (c : Cut) : Nat := c.slots.foldl (fun a s => a + s.minutes) 0
+
+/-- Fork `Cut::break_minutes`. -/
+def Cut.breakMinutes (c : Cut) : Nat := c.breaks.foldl (fun a b => a + (b.2 - b.1) / 60) 0
+
+/-- The four `[day]` keys the cut reads, in minutes (fork `DayConfig`'s `u32`s).  L6's
+`DayCfg` carries them with their R10 bounds. -/
+structure CutCfg where
+  blockMin        : Nat
+  breakMin        : Nat
+  breakAfter      : Nat
+  minLastBlockMin : Nat
+deriving DecidableEq, Repr
+
+/-- Fork `cfg.day.min_last_block_min.min(block_min).max(1)`. -/
+def CutCfg.minLast (c : CutCfg) : Nat := max 1 (min c.minLastBlockMin c.blockMin)
+
+/-- The shipped `[day]` defaults: `block_min = 60`, `break_min = 20`,
+`break_after_blocks = 2`, `min_last_block_min = 30`. -/
+def CutCfg.shipped : CutCfg := ⟨60, 20, 2, 30⟩
+
+/-! ### Sorting, compiled as core's merge sort -/
+
+/-- `sortByStart` as the compiled code runs it. -/
+def sortByStartFast (L : List (Nat × Nat)) : List (Nat × Nat) :=
+  L.mergeSort (fun v w => decide (v.1 ≤ w.1))
+
+theorem insertByStart_append (w : Nat × Nat) : ∀ (l₁ l₂ : List (Nat × Nat)),
+    (∀ v ∈ l₁, ¬ w.1 ≤ v.1) → (∀ v ∈ l₂, w.1 ≤ v.1) → insertByStart w (l₁ ++ l₂) = l₁ ++ w :: l₂
+  | [], [], _, _ => rfl
+  | [], v :: vs, _, h2 => by
+    simp only [List.nil_append]
+    unfold insertByStart
+    rw [if_pos (h2 v (by simp))]
+  | v :: vs, l₂, h1, h2 => by
+    simp only [List.cons_append]
+    unfold insertByStart
+    rw [if_neg (h1 v (by simp)), insertByStart_append w vs l₂ (fun u hu => h1 u (by simp [hu])) h2]
+
+/-- **The insertion sort is core's merge sort**, list for list: both are stable, so a wall
+lands after every earlier wall with its start (`List.mergeSort_cons`). -/
+theorem sortByStart_eq_mergeSort : ∀ L : List (Nat × Nat), sortByStart L = sortByStartFast L
+  | [] => by simp [sortByStart, sortByStartFast]
+  | w :: ws => by
+    have trans : ∀ a b c : Nat × Nat, decide (a.1 ≤ b.1) = true → decide (b.1 ≤ c.1) = true →
+        decide (a.1 ≤ c.1) = true := fun a b c h1 h2 => by simp at *; omega
+    have total : ∀ a b : Nat × Nat, (decide (a.1 ≤ b.1) || decide (b.1 ≤ a.1)) = true :=
+      fun a b => by simp; omega
+    obtain ⟨l₁, l₂, h1, h2, h3⟩ := List.mergeSort_cons trans total w ws
+    have hs := mergeSort_start_sorted (w :: ws)
+    rw [show List.mergeSort (w :: ws) (fun v w => decide (v.1 ≤ w.1)) = l₁ ++ w :: l₂ from h1] at hs
+    have hl₂ : ∀ v ∈ l₂, w.1 ≤ v.1 :=
+      fun v hv => List.rel_of_pairwise_cons (List.pairwise_append.1 hs).2.1 hv
+    show insertByStart w (sortByStart ws) = sortByStartFast (w :: ws)
+    rw [sortByStart_eq_mergeSort ws, sortByStartFast, sortByStartFast, h2, h1]
+    exact insertByStart_append w l₁ l₂ (fun v hv => by simpa using h3 v hv) hl₂
+
+/-- The compiled `sortByStart` is core's merge sort (D9-21). -/
+@[csimp] theorem sortByStart_eq_sortByStartFast : @sortByStart = @sortByStartFast :=
+  funext sortByStart_eq_mergeSort
+
+/-! ### Free intervals: fork `free_intervals` -/
+
+/-- Fork `normalize_walls`'s clip: each wall cut to `[lo, hi)`, empty walls dropped. -/
+def clipTo (lo hi : Nat) (walls : List (Nat × Nat)) : List (Nat × Nat) :=
+  (walls.map fun w => (max w.1 lo, min w.2 hi)).filter fun w => decide (w.1 < w.2)
+
+/-- Fork `normalize_walls(lo, hi, walls)`: clipped, sorted by start, merged. -/
+def freeChain (lo hi : Nat) (walls : List (Nat × Nat)) : List (Nat × Nat) :=
+  mergeSorted (sortByStart (clipTo lo hi walls))
+
+/-- One step of fork `free_intervals`' walk, on `(cursor, gaps newest first)`:
+`if a > cursor { push (cursor, a) }; cursor = cursor.max(b)`. -/
+def freeStep (acc : Nat × List (Nat × Nat)) (w : Nat × Nat) : Nat × List (Nat × Nat) :=
+  (max acc.1 w.2, if acc.1 < w.1 then (acc.1, w.1) :: acc.2 else acc.2)
+
+/-- **Fork `free_intervals(lo, hi, walls)`**: the free stretches of `[lo, hi)`, in order. -/
+def freeIntervals (lo hi : Nat) (walls : List (Nat × Nat)) : List (Nat × Nat) :=
+  if hi ≤ lo then [] else
+    let r := (freeChain lo hi walls).foldl freeStep (lo, [])
+    (if r.1 < hi then (r.1, hi) :: r.2 else r.2).reverse
+
+/-! ### The cut: fork `cut_slots_around` -/
+
+/-- The loop's slots and breaks, newest first. -/
+abbrev CutAcc := List Slot × List (Nat × Nat)
+
+/-- **Fork `cut_slots_around`'s `while t < stop` loop** over one free stretch ending at
+`stop`, from `t` with `k` blocks since the last break, on structural fuel.  Returns the
+counter and the accumulator. -/
+def cutStretch (c : CutCfg) (stop : Nat) : Nat → Nat → Nat → CutAcc → Nat × CutAcc
+  | 0, _, k, acc => (k, acc)
+  | fuel + 1, t, k, acc =>
+    if t < stop then
+      if (0 < c.breakAfter ∧ 0 < c.breakMin) ∧ c.breakAfter ≤ k then
+        if stop < t + 60 * c.breakMin + 60 * c.minLast then (k, acc)
+        else cutStretch c stop fuel (t + 60 * c.breakMin) 0 (acc.1, (t, t + 60 * c.breakMin) :: acc.2)
+      else if t + 60 * c.blockMin ≤ stop then
+        cutStretch c stop fuel (t + 60 * c.blockMin) (k + 1)
+          (⟨t, t + 60 * c.blockMin, .block⟩ :: acc.1, acc.2)
+      else if t + 60 * c.minLast ≤ stop then
+        cutStretch c stop fuel stop (k + 1) (⟨t, stop, .short⟩ :: acc.1, acc.2)
+      else (k, acc)
+    else (k, acc)
+
+/-- Fork `restful_end(t)`: a rest ending exactly at `t` whose `num_minutes()` is at least
+`break_min`, in whole seconds. -/
+def restfulEnd (c : CutCfg) (rests : List (Nat × Nat)) (t : Nat) : Bool :=
+  rests.any fun r => decide (r.2 = t ∧ 60 * c.breakMin ≤ r.2 - r.1 ∧ r.1 < r.2 + 60)
+
+/-- One free stretch of the cut: the counter reset by a restful end, then the loop on fuel
+`stop − start + 1`. -/
+def cutStep (c : CutCfg) (rests : List (Nat × Nat)) (acc : Nat × CutAcc) (iv : Nat × Nat) :
+    Nat × CutAcc :=
+  cutStretch c iv.2 (iv.2 - iv.1 + 1) iv.1 (if restfulEnd c rests iv.1 then 0 else acc.1) acc.2
+
+/-- **§8.2 step 3's cut** (fork `cut_slots_around(lo, hi, walls, rests, cfg, k)`), in UTC
+seconds: `[lo, hi)` around the walls and the rests, into blocks and breaks. -/
+def cutSlots (c : CutCfg) (lo hi : Nat) (walls rests : List (Nat × Nat)) (sinceBreak : Nat) : Cut :=
+  if c.blockMin = 0 then ⟨[], []⟩ else
+    let r := (freeIntervals lo hi (walls ++ rests)).foldl (cutStep c rests) (sinceBreak, ([], []))
+    ⟨r.2.1.reverse, r.2.2.reverse⟩
+
+/-! ### Free intervals, specified -/
+
+theorem clipTo_mem {lo hi : Nat} {ws : List (Nat × Nat)} {w : Nat × Nat} (h : w ∈ clipTo lo hi ws) :
+    lo ≤ w.1 ∧ w.1 < w.2 ∧ w.2 ≤ hi := by
+  simp only [clipTo, List.mem_filter, List.mem_map, decide_eq_true_eq] at h
+  obtain ⟨⟨u, _, rfl⟩, h2⟩ := h
+  exact ⟨Nat.le_max_right _ _, h2, Nat.min_le_right _ _⟩
+
+/-- Clipping keeps a unit's cover inside `[lo, hi)` and removes it outside. -/
+theorem covered_clipTo (lo hi : Nat) (ws : List (Nat × Nat)) (t : Nat) :
+    covered (clipTo lo hi ws) t = (decide (lo ≤ t ∧ t < hi) && covered ws t) := by
+  apply Bool.eq_iff_iff.2
+  rw [covered_eq_true, Bool.and_eq_true, covered_eq_true, decide_eq_true_eq]
+  simp only [clipTo, List.mem_filter, List.mem_map, decide_eq_true_eq]
+  constructor
+  · rintro ⟨_, ⟨⟨u, hu, rfl⟩, _⟩, h1, h2⟩
+    simp only at h1 h2
+    exact ⟨⟨by omega, by omega⟩, u, hu, by omega, by omega⟩
+  · rintro ⟨⟨h1, h2⟩, u, hu, h3, h4⟩
+    exact ⟨(max u.1 lo, min u.2 hi), ⟨⟨u, hu, rfl⟩, by simp; omega⟩, by simp; omega, by simp; omega⟩
+
+/-- The merged walls form a chain inside `[lo, hi]` with the walls' cover there. -/
+theorem freeChain_spec (lo hi : Nat) (ws : List (Nat × Nat)) :
+    WallChain lo (freeChain lo hi ws) ∧ (∀ w ∈ freeChain lo hi ws, w.2 ≤ hi) ∧
+      ∀ t, covered (freeChain lo hi ws) t = (decide (lo ≤ t ∧ t < hi) && covered ws t) := by
+  obtain ⟨hc, hcov⟩ := mergeSorted_spec lo (sortByStart (clipTo lo hi ws)) (sortByStart_sorted _)
+    (fun w hw => (clipTo_mem ((sortByStart_perm _).mem_iff.1 hw)).imp_right (fun h => h.1))
+  have hcov' : ∀ t, covered (freeChain lo hi ws) t = (decide (lo ≤ t ∧ t < hi) && covered ws t) :=
+    fun t => by rw [freeChain, hcov t, covered_perm (sortByStart_perm _) t, covered_clipTo]
+  refine ⟨hc, fun w hw => ?_, hcov'⟩
+  have hw' := hc.2 w hw
+  have h := hcov' (w.2 - 1)
+  have hin : covered (freeChain lo hi ws) (w.2 - 1) = true :=
+    covered_eq_true.2 ⟨w, hw, by omega, by omega⟩
+  rw [hin] at h
+  have := h.symm
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at this
+  omega
+
+/-- The free walk over a chain of walls starting at or after the cursor: the gaps it emits
+are ordered, lie between the cursor and the final cursor, and hold exactly the uncovered
+units there. -/
+theorem freeFold_spec : ∀ (L : List (Nat × Nat)), L.Pairwise (fun v w => v.2 < w.1) →
+    ∀ (c : Nat) (R : List (Nat × Nat)), (∀ w ∈ L, c ≤ w.1 ∧ w.1 < w.2) →
+    (∀ iv ∈ R, iv.1 < iv.2 ∧ iv.2 < c) → R.Pairwise (fun a b => b.2 < a.1) →
+    c ≤ (L.foldl freeStep (c, R)).1 ∧
+    (∀ B, c ≤ B → (∀ w ∈ L, w.2 ≤ B) → (L.foldl freeStep (c, R)).1 ≤ B) ∧
+    (∀ w ∈ L, w.2 ≤ (L.foldl freeStep (c, R)).1) ∧
+    (∀ iv ∈ (L.foldl freeStep (c, R)).2, iv.1 < iv.2 ∧ iv.2 < (L.foldl freeStep (c, R)).1) ∧
+    (L.foldl freeStep (c, R)).2.Pairwise (fun a b => b.2 < a.1) ∧
+    (∀ iv ∈ (L.foldl freeStep (c, R)).2, iv ∈ R ∨ c ≤ iv.1) ∧
+    ∀ t, (∃ iv ∈ (L.foldl freeStep (c, R)).2, iv.1 ≤ t ∧ t < iv.2) ↔
+      ((∃ iv ∈ R, iv.1 ≤ t ∧ t < iv.2) ∨
+        (c ≤ t ∧ t < (L.foldl freeStep (c, R)).1 ∧ covered L t = false))
+  | [], _, c, R, _, hR, hRp => by
+    simp only [List.foldl_nil]
+    refine ⟨Nat.le_refl _, fun _ h _ => h, by simp, hR, hRp, fun iv h => .inl h, fun t => ?_⟩
+    constructor
+    · exact fun h => .inl h
+    · rintro (h | ⟨h1, h2, _⟩)
+      · exact h
+      · omega
+  | w :: L, hp, c, R, hm, hR, hRp => by
+    have hw := hm w (by simp)
+    have hpw := List.pairwise_cons.1 hp
+    have hstep : freeStep (c, R) w = (w.2, if c < w.1 then (c, w.1) :: R else R) := by
+      simp only [freeStep]; congr 1; omega
+    rw [List.foldl_cons, hstep]
+    have hm' : ∀ u ∈ L, w.2 ≤ u.1 ∧ u.1 < u.2 := fun u hu =>
+      ⟨Nat.le_of_lt (hpw.1 u hu), (hm u (List.mem_cons_of_mem _ hu)).2⟩
+    have hR' : ∀ iv ∈ (if c < w.1 then (c, w.1) :: R else R), iv.1 < iv.2 ∧ iv.2 < w.2 := by
+      intro iv hiv
+      split at hiv
+      · rcases List.mem_cons.1 hiv with rfl | hiv
+        · simp only; omega
+        · have := hR iv hiv; omega
+      · have := hR iv hiv; omega
+    have hRp' : (if c < w.1 then (c, w.1) :: R else R).Pairwise (fun a b => b.2 < a.1) := by
+      split
+      · exact List.pairwise_cons.2 ⟨fun iv hiv => (hR iv hiv).2, hRp⟩
+      · exact hRp
+    obtain ⟨i1, i2, i3, i4, i5, i6, i7⟩ := freeFold_spec L hpw.2 w.2 _ hm' hR' hRp'
+    refine ⟨by omega, fun B hB hL => i2 B (hL w (by simp)) (fun u hu => hL u (by simp [hu])),
+      fun u hu => ?_, i4, i5, fun iv hiv => ?_, fun t => ?_⟩
+    · rcases List.mem_cons.1 hu with rfl | hu
+      · exact i1
+      · exact i3 u hu
+    · rcases i6 iv hiv with h | h
+      · split at h
+        · rcases List.mem_cons.1 h with rfl | h
+          · exact .inr (Nat.le_refl _)
+          · exact .inl h
+        · exact .inl h
+      · exact .inr (by omega)
+    · rw [i7 t, covered_cons]
+      constructor
+      · rintro (⟨iv, hiv, h1, h2⟩ | ⟨h1, h2, h3⟩)
+        · split at hiv
+          · rcases List.mem_cons.1 hiv with rfl | hiv
+            · refine .inr ⟨h1, by omega, ?_⟩
+              simp only at h1 h2
+              have : covered L t = false := by
+                cases hct : covered L t
+                · rfl
+                · obtain ⟨u, hu, hu1, _⟩ := covered_eq_true.1 hct
+                  have := hm' u hu; omega
+              simp [this]; omega
+            · exact .inl ⟨iv, hiv, h1, h2⟩
+          · exact .inl ⟨iv, hiv, h1, h2⟩
+        · refine .inr ⟨by omega, h2, ?_⟩
+          simp only [h3, Bool.or_false, decide_eq_false_iff_not]
+          omega
+      · rintro (⟨iv, hiv, h1, h2⟩ | ⟨h1, h2, h3⟩)
+        · refine .inl ⟨iv, ?_, h1, h2⟩
+          split
+          · exact List.mem_cons_of_mem _ hiv
+          · exact hiv
+        · simp only [Bool.or_eq_false_iff, decide_eq_false_iff_not] at h3
+          by_cases htw : t < w.1
+          · refine .inl ⟨(c, w.1), ?_, h1, htw⟩
+            rw [if_pos (by omega)]; simp
+          · exact .inr ⟨by omega, h2, h3.2⟩
+
+
+theorem mem_ite_cons {p : Prop} [Decidable p] {x iv : Nat × Nat} {R : List (Nat × Nat)} :
+    iv ∈ (if p then x :: R else R) ↔ (p ∧ iv = x) ∨ iv ∈ R := by
+  split <;> simp_all
+
+/-- **Fork `free_intervals`, specified**: the stretches lie in `[lo, hi]`, are nonempty,
+come in order with a wall between each two, and hold **exactly** the units of `[lo, hi)`
+that no wall covers. -/
+theorem freeIntervals_spec (lo hi : Nat) (ws : List (Nat × Nat)) :
+    (∀ iv ∈ freeIntervals lo hi ws, lo ≤ iv.1 ∧ iv.1 < iv.2 ∧ iv.2 ≤ hi) ∧
+    (freeIntervals lo hi ws).Pairwise (fun a b => a.2 < b.1) ∧
+    ∀ t, (∃ iv ∈ freeIntervals lo hi ws, iv.1 ≤ t ∧ t < iv.2) ↔
+      (lo ≤ t ∧ t < hi ∧ covered ws t = false) := by
+  unfold freeIntervals
+  by_cases hlh : hi ≤ lo
+  · rw [if_pos hlh]
+    refine ⟨by simp, by simp, fun t => ?_⟩
+    simp only [List.not_mem_nil, false_and, exists_false, false_iff]
+    omega
+  · rw [if_neg hlh]
+    obtain ⟨hc, hhi, hcov⟩ := freeChain_spec lo hi ws
+    obtain ⟨i1, i2, i3, i4, i5, i6, i7⟩ :=
+      freeFold_spec (freeChain lo hi ws) hc.1 lo [] (fun w hw => hc.2 w hw) (by simp) (by simp)
+    have hr : ((freeChain lo hi ws).foldl freeStep (lo, [])).1 ≤ hi := i2 hi (by omega) hhi
+    have hc1 : ∀ t, lo ≤ t → t < hi → covered (freeChain lo hi ws) t = covered ws t := by
+      intro t h1 h2; rw [hcov t]; simp [h1, h2]
+    generalize (freeChain lo hi ws).foldl freeStep (lo, []) = r at i1 i3 i4 i5 i6 i7 hr
+    refine ⟨fun iv hiv => ?_, ?_, fun t => ?_⟩
+    · rw [List.mem_reverse, mem_ite_cons] at hiv
+      rcases hiv with ⟨h1, rfl⟩ | hiv
+      · exact ⟨i1, h1, Nat.le_refl _⟩
+      · have := i4 iv hiv
+        rcases i6 iv hiv with h | h
+        · simp at h
+        · exact ⟨h, this.1, by omega⟩
+    · rw [List.pairwise_reverse]
+      split
+      · exact List.pairwise_cons.2 ⟨fun iv hiv => (i4 iv hiv).2, i5⟩
+      · exact i5
+    · constructor
+      · rintro ⟨iv, hiv, h1, h2⟩
+        rw [List.mem_reverse, mem_ite_cons] at hiv
+        rcases hiv with ⟨h3, rfl⟩ | hiv
+        · simp only at h1 h2
+          refine ⟨by omega, h2, ?_⟩
+          have hz : covered (freeChain lo hi ws) t = false := by
+            cases hct : covered (freeChain lo hi ws) t
+            · rfl
+            · obtain ⟨u, hu, _, hu2⟩ := covered_eq_true.1 hct
+              have := i3 u hu; omega
+          rw [← hc1 t (by omega) h2]; exact hz
+        · obtain ⟨h0, h4, h5⟩ := (i7 t).1 ⟨iv, hiv, h1, h2⟩ |>.resolve_left (by simp)
+          refine ⟨h0, by omega, ?_⟩
+          rw [← hc1 t h0 (by omega)]; exact h5
+      · rintro ⟨h1, h2, h3⟩
+        by_cases htr : t < r.1
+        · obtain ⟨iv, hiv, hh⟩ := (i7 t).2 (.inr ⟨h1, htr, by rw [hc1 t h1 h2]; exact h3⟩)
+          exact ⟨iv, by rw [List.mem_reverse, mem_ite_cons]; exact .inr hiv, hh⟩
+        · exact ⟨(r.1, hi), by rw [List.mem_reverse, mem_ite_cons]; exact .inl ⟨by omega, rfl⟩,
+            by simp only; omega, h2⟩
+
+theorem freeIntervals_inside_the_window {lo hi : Nat} {ws : List (Nat × Nat)} {iv : Nat × Nat}
+    (h : iv ∈ freeIntervals lo hi ws) : lo ≤ iv.1 ∧ iv.1 < iv.2 ∧ iv.2 ≤ hi :=
+  (freeIntervals_spec lo hi ws).1 iv h
+
+theorem freeIntervals_are_in_order (lo hi : Nat) (ws : List (Nat × Nat)) :
+    (freeIntervals lo hi ws).Pairwise (fun a b => a.2 < b.1) :=
+  (freeIntervals_spec lo hi ws).2.1
+
+/-- **Both directions**: a unit is in a free stretch exactly when it is in the window and no
+wall holds it. -/
+theorem freeIntervals_are_the_free_units (lo hi : Nat) (ws : List (Nat × Nat)) (t : Nat) :
+    (∃ iv ∈ freeIntervals lo hi ws, iv.1 ≤ t ∧ t < iv.2) ↔
+      (lo ≤ t ∧ t < hi ∧ ∀ w ∈ ws, ¬ (w.1 ≤ t ∧ t < w.2)) := by
+  rw [(freeIntervals_spec lo hi ws).2.2 t]
+  have : covered ws t = false ↔ ∀ w ∈ ws, ¬ (w.1 ≤ t ∧ t < w.2) := by
+    rw [← Bool.not_eq_true, covered_eq_true]; simp
+  rw [this]
+
+/-! ### The stretch loop -/
+
+/-- Two fuels above the stretch's remaining length give the same loop result, when
+`block_min ≥ 1` (which `cutSlots` checks first, as the fork does). -/
+theorem cutStretch_fuel (c : CutCfg) (hb : 0 < c.blockMin) (stop : Nat) :
+    ∀ f g t k (acc : CutAcc), stop - t < f → stop - t < g →
+      cutStretch c stop f t k acc = cutStretch c stop g t k acc
+  | 0, _, _, _, _, hf, _ => absurd hf (Nat.not_lt_zero _)
+  | _ + 1, 0, _, _, _, _, hg => absurd hg (Nat.not_lt_zero _)
+  | f + 1, g + 1, t, k, acc, hf, hg => by
+    simp only [cutStretch]
+    by_cases ht : t < stop
+    · rw [if_pos ht, if_pos ht]
+      by_cases hd : (0 < c.breakAfter ∧ 0 < c.breakMin) ∧ c.breakAfter ≤ k
+      · rw [if_pos hd, if_pos hd]
+        by_cases hg' : stop < t + 60 * c.breakMin + 60 * c.minLast
+        · rw [if_pos hg', if_pos hg']
+        · rw [if_neg hg', if_neg hg']
+          exact cutStretch_fuel c hb stop f g _ _ _ (by omega) (by omega)
+      · rw [if_neg hd, if_neg hd]
+        by_cases h1 : t + 60 * c.blockMin ≤ stop
+        · rw [if_pos h1, if_pos h1]
+          exact cutStretch_fuel c hb stop f g _ _ _ (by omega) (by omega)
+        · rw [if_neg h1, if_neg h1]
+          by_cases h2 : t + 60 * c.minLast ≤ stop
+          · rw [if_pos h2, if_pos h2]
+            exact cutStretch_fuel c hb stop f g _ _ _ (by omega) (by omega)
+          · rw [if_neg h2, if_neg h2]
+    · rw [if_neg ht, if_neg ht]
+
+/-- **The fuel is never the answer** (design §13.3): any fuel above the stretch's length gives
+the cut `cutStep` computes on `stop − t + 1`.  Every loop turn advances `t` by at least
+60 seconds, or ends the stretch. -/
+theorem cutSlots_fuel_is_enough (c : CutCfg) (hb : 0 < c.blockMin) (stop f t k : Nat) (acc : CutAcc)
+    (hf : stop - t < f) :
+    cutStretch c stop f t k acc = cutStretch c stop (stop - t + 1) t k acc :=
+  cutStretch_fuel c hb stop f _ t k acc hf (by omega)
+
+/-- The stretch loop's induction principle: a property of the loop state that every push
+keeps and every exit turns into `Q`. -/
+theorem cutStretch_rec (c : CutCfg) (stop : Nat) (P : Nat → Nat → Nat → CutAcc → Prop)
+    (Q : Nat × CutAcc → Prop)
+    (hexit : ∀ f t k acc, P f t k acc →
+      (f = 0 ∨ stop ≤ t ∨
+        ((0 < c.breakAfter ∧ 0 < c.breakMin) ∧ c.breakAfter ≤ k ∧
+          stop < t + 60 * c.breakMin + 60 * c.minLast) ∨
+        (¬ ((0 < c.breakAfter ∧ 0 < c.breakMin) ∧ c.breakAfter ≤ k) ∧
+          stop < t + 60 * c.blockMin ∧ stop < t + 60 * c.minLast)) →
+      Q (k, acc))
+    (hbrk : ∀ f t k acc, P (f + 1) t k acc → t < stop → (0 < c.breakAfter ∧ 0 < c.breakMin) →
+      c.breakAfter ≤ k → t + 60 * c.breakMin + 60 * c.minLast ≤ stop →
+      P f (t + 60 * c.breakMin) 0 (acc.1, (t, t + 60 * c.breakMin) :: acc.2))
+    (hblk : ∀ f t k acc, P (f + 1) t k acc → t < stop →
+      ¬ ((0 < c.breakAfter ∧ 0 < c.breakMin) ∧ c.breakAfter ≤ k) → t + 60 * c.blockMin ≤ stop →
+      P f (t + 60 * c.blockMin) (k + 1) (⟨t, t + 60 * c.blockMin, .block⟩ :: acc.1, acc.2))
+    (hsht : ∀ f t k acc, P (f + 1) t k acc → t < stop →
+      ¬ ((0 < c.breakAfter ∧ 0 < c.breakMin) ∧ c.breakAfter ≤ k) → stop < t + 60 * c.blockMin →
+      t + 60 * c.minLast ≤ stop →
+      P f stop (k + 1) (⟨t, stop, .short⟩ :: acc.1, acc.2)) :
+    ∀ f t k acc, P f t k acc → Q (cutStretch c stop f t k acc)
+  | 0, t, k, acc, h => hexit 0 t k acc h (.inl rfl)
+  | f + 1, t, k, acc, h => by
+    simp only [cutStretch]
+    by_cases ht : t < stop
+    · rw [if_pos ht]
+      by_cases hd : (0 < c.breakAfter ∧ 0 < c.breakMin) ∧ c.breakAfter ≤ k
+      · rw [if_pos hd]
+        by_cases hg : stop < t + 60 * c.breakMin + 60 * c.minLast
+        · rw [if_pos hg]; exact hexit _ t k acc h (.inr (.inr (.inl ⟨hd.1, hd.2, hg⟩)))
+        · rw [if_neg hg]
+          exact cutStretch_rec c stop P Q hexit hbrk hblk hsht f _ _ _
+            (hbrk f t k acc h ht hd.1 hd.2 (by omega))
+      · rw [if_neg hd]
+        by_cases h1 : t + 60 * c.blockMin ≤ stop
+        · rw [if_pos h1]
+          exact cutStretch_rec c stop P Q hexit hbrk hblk hsht f _ _ _ (hblk f t k acc h ht hd h1)
+        · rw [if_neg h1]
+          by_cases h2 : t + 60 * c.minLast ≤ stop
+          · rw [if_pos h2]
+            exact cutStretch_rec c stop P Q hexit hbrk hblk hsht f _ _ _
+              (hsht f t k acc h ht hd (by omega) h2)
+          · rw [if_neg h2]
+            exact hexit _ t k acc h (.inr (.inr (.inr ⟨hd, by omega, by omega⟩)))
+    · rw [if_neg ht]; exact hexit _ t k acc h (.inr (.inl (by omega)))
+
+theorem minLast_pos (c : CutCfg) : 0 < c.minLast := by
+  unfold CutCfg.minLast; omega
+
+/-- A slot as the fork cuts it. -/
+def SlotShape (c : CutCfg) (s : Slot) : Prop :=
+  s.start < s.stop ∧
+    (s.kind = .block → s.stop = s.start + 60 * c.blockMin) ∧
+    (s.kind = .short → s.start + 60 * c.minLast ≤ s.stop ∧ s.stop < s.start + 60 * c.blockMin)
+
+/-- The loop's accumulator (both lists newest first) is ordered, disjoint and shaped, and
+nothing in it ends after `t`. -/
+def AccInv (c : CutCfg) (t : Nat) (acc : CutAcc) : Prop :=
+  (∀ s ∈ acc.1, s.stop ≤ t) ∧ (∀ b ∈ acc.2, b.2 ≤ t) ∧
+    acc.1.Pairwise (fun x y => y.stop ≤ x.start) ∧ acc.2.Pairwise (fun x y => y.2 ≤ x.1) ∧
+    (∀ s ∈ acc.1, ∀ b ∈ acc.2, s.stop ≤ b.1 ∨ b.2 ≤ s.start) ∧
+    (∀ s ∈ acc.1, SlotShape c s) ∧ (∀ b ∈ acc.2, b.2 = b.1 + 60 * c.breakMin ∧ 0 < c.breakMin)
+
+theorem AccInv.mono {c : CutCfg} {t t' : Nat} {acc : CutAcc} (h : AccInv c t acc) (ht : t ≤ t') :
+    AccInv c t' acc :=
+  ⟨fun s hs => Nat.le_trans (h.1 s hs) ht, fun b hb => Nat.le_trans (h.2.1 b hb) ht, h.2.2⟩
+
+theorem AccInv.nil (c : CutCfg) (t : Nat) : AccInv c t ([], []) := by
+  simp [AccInv]
+
+/-- Every break has a slot starting where it ends. -/
+def Followed (acc : CutAcc) : Prop := ∀ b ∈ acc.2, ∃ s ∈ acc.1, s.start = b.2
+
+/-- **One stretch** keeps the invariant, puts every new item inside `[t₀, stop]`, and
+leaves no break without its slot. -/
+theorem cutStretch_spec (c : CutCfg) (hb : 0 < c.blockMin) (stop t₀ f k : Nat) (acc : CutAcc)
+    (ht : t₀ ≤ stop) (hf : stop - t₀ < f) (hi : AccInv c t₀ acc) (hfo : Followed acc) :
+    AccInv c stop (cutStretch c stop f t₀ k acc).2 ∧ Followed (cutStretch c stop f t₀ k acc).2 ∧
+    (∀ s ∈ (cutStretch c stop f t₀ k acc).2.1, s ∈ acc.1 ∨ (t₀ ≤ s.start ∧ s.stop ≤ stop)) ∧
+    (∀ b ∈ (cutStretch c stop f t₀ k acc).2.2, b ∈ acc.2 ∨ (t₀ ≤ b.1 ∧ b.2 ≤ stop)) := by
+  have hml := minLast_pos c
+  apply cutStretch_rec c stop
+    (fun f t k a => t₀ ≤ t ∧ t ≤ stop ∧ stop - t < f ∧ AccInv c t a ∧
+      (∀ b ∈ a.2, (∃ s ∈ a.1, s.start = b.2) ∨ (b.2 = t ∧ k = 0 ∧ t + 60 * c.minLast ≤ stop)) ∧
+      (∀ s ∈ a.1, s ∈ acc.1 ∨ (t₀ ≤ s.start ∧ s.stop ≤ stop)) ∧
+      (∀ b ∈ a.2, b ∈ acc.2 ∨ (t₀ ≤ b.1 ∧ b.2 ≤ stop)))
+    (fun r => AccInv c stop r.2 ∧ Followed r.2 ∧
+      (∀ s ∈ r.2.1, s ∈ acc.1 ∨ (t₀ ≤ s.start ∧ s.stop ≤ stop)) ∧
+      (∀ b ∈ r.2.2, b ∈ acc.2 ∨ (t₀ ≤ b.1 ∧ b.2 ≤ stop)))
+  · -- exits
+    rintro f t k a ⟨_, h2, h3, h4, h5, h6, h7⟩ hx
+    refine ⟨h4.mono h2, fun b hb => ?_, h6, h7⟩
+    rcases h5 b hb with h | ⟨_, hk, hs⟩
+    · exact h
+    · exfalso
+      rcases hx with hx | hx | ⟨⟨ha, _⟩, hk', _⟩ | ⟨_, _, hx⟩ <;> omega
+  · -- a break
+    rintro f t k a ⟨h1, h2, h3, h4, h5, h6, h7⟩ ht hon hdue hg
+    obtain ⟨i1, i2, i3, i4, i5, i6, i7⟩ := h4
+    refine ⟨by omega, by omega, by omega, ⟨fun s hs => by have := i1 s hs; omega, ?_, i3, ?_, ?_, i6, ?_⟩,
+      ?_, h6, ?_⟩
+    · intro b hb
+      rcases List.mem_cons.1 hb with rfl | hb
+      · exact Nat.le_refl _
+      · have := i2 b hb; omega
+    · exact List.pairwise_cons.2 ⟨fun y hy => i2 y hy, i4⟩
+    · intro s hs b hb
+      rcases List.mem_cons.1 hb with rfl | hb
+      · exact .inl (i1 s hs)
+      · exact i5 s hs b hb
+    · intro b hb
+      rcases List.mem_cons.1 hb with rfl | hb
+      · exact ⟨rfl, hon.2⟩
+      · exact i7 b hb
+    · intro b hb
+      rcases List.mem_cons.1 hb with rfl | hb
+      · exact .inr ⟨rfl, rfl, show t + 60 * c.breakMin + 60 * c.minLast ≤ stop by omega⟩
+      · rcases h5 b hb with h | ⟨_, hk, _⟩
+        · exact .inl h
+        · omega
+    · intro b hb
+      rcases List.mem_cons.1 hb with rfl | hb
+      · exact .inr ⟨h1, by simp only; omega⟩
+      · exact h7 b hb
+  · -- a full block
+    rintro f t k a ⟨h1, h2, h3, h4, h5, h6, h7⟩ ht hnd hfit
+    obtain ⟨i1, i2, i3, i4, i5, i6, i7⟩ := h4
+    refine ⟨by omega, hfit, by omega, ⟨?_, fun b hb => by have := i2 b hb; omega, ?_, i4, ?_, ?_, i7⟩,
+      ?_, ?_, h7⟩
+    · intro s hs
+      rcases List.mem_cons.1 hs with rfl | hs
+      · exact Nat.le_refl _
+      · have := i1 s hs; omega
+    · exact List.pairwise_cons.2 ⟨fun y hy => i1 y hy, i3⟩
+    · intro s hs b hb
+      rcases List.mem_cons.1 hs with rfl | hs
+      · exact .inr (i2 b hb)
+      · exact i5 s hs b hb
+    · intro s hs
+      rcases List.mem_cons.1 hs with rfl | hs
+      · exact ⟨show t < t + 60 * c.blockMin by omega, fun _ => rfl, (fun h => by cases h)⟩
+      · exact i6 s hs
+    · intro b hb
+      rcases h5 b hb with ⟨s, hs, hse⟩ | ⟨hbt, _, _⟩
+      · exact .inl ⟨s, List.mem_cons_of_mem _ hs, hse⟩
+      · exact .inl ⟨_, List.mem_cons_self, hbt.symm⟩
+    · intro s hs
+      rcases List.mem_cons.1 hs with rfl | hs
+      · exact .inr ⟨h1, hfit⟩
+      · exact h6 s hs
+  · -- the short block
+    rintro f t k a ⟨h1, h2, h3, h4, h5, h6, h7⟩ ht hnd hlt hfit
+    obtain ⟨i1, i2, i3, i4, i5, i6, i7⟩ := h4
+    refine ⟨by omega, Nat.le_refl _, by omega, ⟨?_, fun b hb => by have := i2 b hb; omega, ?_, i4, ?_, ?_, i7⟩,
+      ?_, ?_, h7⟩
+    · intro s hs
+      rcases List.mem_cons.1 hs with rfl | hs
+      · exact Nat.le_refl _
+      · have := i1 s hs; omega
+    · exact List.pairwise_cons.2 ⟨fun y hy => i1 y hy, i3⟩
+    · intro s hs b hb
+      rcases List.mem_cons.1 hs with rfl | hs
+      · exact .inr (i2 b hb)
+      · exact i5 s hs b hb
+    · intro s hs
+      rcases List.mem_cons.1 hs with rfl | hs
+      · exact ⟨show t < stop by omega, (fun h => by cases h), fun _ => ⟨hfit, hlt⟩⟩
+      · exact i6 s hs
+    · intro b hb
+      rcases h5 b hb with ⟨s, hs, hse⟩ | ⟨hbt, _, _⟩
+      · exact .inl ⟨s, List.mem_cons_of_mem _ hs, hse⟩
+      · exact .inl ⟨_, List.mem_cons_self, hbt.symm⟩
+    · intro s hs
+      rcases List.mem_cons.1 hs with rfl | hs
+      · exact .inr ⟨h1, Nat.le_refl _⟩
+      · exact h6 s hs
+  · exact ⟨Nat.le_refl _, ht, hf, hi, fun b hb => .inl (hfo b hb), fun s hs => .inl hs,
+      fun b hb => .inl hb⟩
+
+theorem cutFold_spec (c : CutCfg) (hb : 0 < c.blockMin) (rests FI : List (Nat × Nat)) :
+    ∀ (L : List (Nat × Nat)) (acc : Nat × CutAcc) (x : Nat),
+      (∀ iv ∈ L, iv ∈ FI ∧ x ≤ iv.1 ∧ iv.1 < iv.2) → L.Pairwise (fun a b => a.2 < b.1) →
+      AccInv c x acc.2 → Followed acc.2 →
+      (∀ s ∈ acc.2.1, ∃ iv ∈ FI, iv.1 ≤ s.start ∧ s.stop ≤ iv.2) →
+      (∀ b ∈ acc.2.2, ∃ iv ∈ FI, iv.1 ≤ b.1 ∧ b.2 ≤ iv.2) →
+      ∃ y, AccInv c y (L.foldl (cutStep c rests) acc).2 ∧ Followed (L.foldl (cutStep c rests) acc).2 ∧
+        (∀ s ∈ (L.foldl (cutStep c rests) acc).2.1, ∃ iv ∈ FI, iv.1 ≤ s.start ∧ s.stop ≤ iv.2) ∧
+        (∀ b ∈ (L.foldl (cutStep c rests) acc).2.2, ∃ iv ∈ FI, iv.1 ≤ b.1 ∧ b.2 ≤ iv.2)
+  | [], acc, x, _, _, hi, hfo, hs, hbk => ⟨x, hi, hfo, hs, hbk⟩
+  | iv :: L, acc, x, hm, hp, hi, hfo, hs, hbk => by
+    obtain ⟨hivF, hx, hiv⟩ := hm iv (by simp)
+    have hpc := List.pairwise_cons.1 hp
+    rw [List.foldl_cons]
+    obtain ⟨j1, j2, j3, j4⟩ := cutStretch_spec c hb iv.2 iv.1 (iv.2 - iv.1 + 1)
+      (if restfulEnd c rests iv.1 then 0 else acc.1) acc.2 (Nat.le_of_lt hiv) (by omega)
+      (hi.mono hx) hfo
+    apply cutFold_spec c hb rests FI L _ iv.2
+      (fun u hu => ⟨(hm u (by simp [hu])).1, Nat.le_of_lt (hpc.1 u hu), (hm u (by simp [hu])).2.2⟩)
+      hpc.2 j1 j2
+    · intro s hsm
+      rcases j3 s hsm with h | ⟨h1, h2⟩
+      · exact hs s h
+      · exact ⟨iv, hivF, h1, h2⟩
+    · intro b hbm
+      rcases j4 b hbm with h | ⟨h1, h2⟩
+      · exact hbk b h
+      · exact ⟨iv, hivF, h1, h2⟩
+
+theorem cutSlots_spec (c : CutCfg) (lo hi : Nat) (walls rests : List (Nat × Nat)) (k : Nat) :
+    (cutSlots c lo hi walls rests k).slots.Pairwise (fun x y => x.stop ≤ y.start) ∧
+    (cutSlots c lo hi walls rests k).breaks.Pairwise (fun x y => x.2 ≤ y.1) ∧
+    (∀ s ∈ (cutSlots c lo hi walls rests k).slots, ∀ b ∈ (cutSlots c lo hi walls rests k).breaks,
+      s.stop ≤ b.1 ∨ b.2 ≤ s.start) ∧
+    (∀ s ∈ (cutSlots c lo hi walls rests k).slots, SlotShape c s ∧ 0 < c.blockMin) ∧
+    (∀ b ∈ (cutSlots c lo hi walls rests k).breaks, b.2 = b.1 + 60 * c.breakMin ∧ 0 < c.breakMin) ∧
+    (∀ b ∈ (cutSlots c lo hi walls rests k).breaks,
+      ∃ s ∈ (cutSlots c lo hi walls rests k).slots, s.start = b.2) ∧
+    (∀ s ∈ (cutSlots c lo hi walls rests k).slots,
+      ∃ iv ∈ freeIntervals lo hi (walls ++ rests), iv.1 ≤ s.start ∧ s.stop ≤ iv.2) ∧
+    (∀ b ∈ (cutSlots c lo hi walls rests k).breaks,
+      ∃ iv ∈ freeIntervals lo hi (walls ++ rests), iv.1 ≤ b.1 ∧ b.2 ≤ iv.2) := by
+  unfold cutSlots
+  by_cases hb : c.blockMin = 0
+  · rw [if_pos hb]; simp
+  · rw [if_neg hb]
+    obtain ⟨f1, f2, _⟩ := freeIntervals_spec lo hi (walls ++ rests)
+    obtain ⟨y, ⟨_, _, i3, i4, i5, i6, i7⟩, hfo, hs, hbk⟩ :=
+      cutFold_spec c (by omega) rests (freeIntervals lo hi (walls ++ rests))
+        (freeIntervals lo hi (walls ++ rests)) (k, ([], [])) lo
+        (fun iv hiv => ⟨hiv, (f1 iv hiv).1, (f1 iv hiv).2.1⟩) f2 (AccInv.nil c lo) (by simp [Followed])
+        (by simp) (by simp)
+    simp only [List.pairwise_reverse, List.mem_reverse]
+    exact ⟨i3, i4, i5, fun s hs => ⟨i6 s hs, by omega⟩, i7, hfo, hs, hbk⟩
+
+
+/-! ### The cut's laws, by name -/
+
+/-- Fork: `if block_min == 0 { return cut; }`. -/
+theorem cutSlots_without_a_block_length_is_empty (c : CutCfg) (h : c.blockMin = 0) (lo hi : Nat)
+    (walls rests : List (Nat × Nat)) (k : Nat) : cutSlots c lo hi walls rests k = ⟨[], []⟩ := by
+  simp [cutSlots, h]
+
+/-- **Every slot lies inside the window**, and is nonempty. -/
+theorem cutSlots_inside_the_window (c : CutCfg) (lo hi : Nat) (walls rests : List (Nat × Nat))
+    (k : Nat) {s : Slot} (hs : s ∈ (cutSlots c lo hi walls rests k).slots) :
+    lo ≤ s.start ∧ s.start < s.stop ∧ s.stop ≤ hi := by
+  obtain ⟨_, _, _, h4, _, _, h7, _⟩ := cutSlots_spec c lo hi walls rests k
+  obtain ⟨iv, hiv, h1, h2⟩ := h7 s hs
+  have := freeIntervals_inside_the_window hiv
+  exact ⟨by omega, (h4 s hs).1.1, by omega⟩
+
+/-- Every break lies inside the window, and is nonempty. -/
+theorem cutSlots_breaks_inside_the_window (c : CutCfg) (lo hi : Nat) (walls rests : List (Nat × Nat))
+    (k : Nat) {b : Nat × Nat} (hb : b ∈ (cutSlots c lo hi walls rests k).breaks) :
+    lo ≤ b.1 ∧ b.1 < b.2 ∧ b.2 ≤ hi := by
+  obtain ⟨_, _, _, _, h5, _, _, h8⟩ := cutSlots_spec c lo hi walls rests k
+  obtain ⟨iv, hiv, h1, h2⟩ := h8 b hb
+  have := freeIntervals_inside_the_window hiv
+  have := h5 b hb
+  exact ⟨by omega, by omega, by omega⟩
+
+/-- **No slot unit is inside a wall or a rest.** -/
+theorem cutSlots_avoid_the_walls (c : CutCfg) (lo hi : Nat) (walls rests : List (Nat × Nat))
+    (k : Nat) {s : Slot} (hs : s ∈ (cutSlots c lo hi walls rests k).slots)
+    {w : Nat × Nat} (hw : w ∈ walls ++ rests) {t : Nat} (h1 : s.start ≤ t) (h2 : t < s.stop) :
+    ¬ (w.1 ≤ t ∧ t < w.2) := by
+  obtain ⟨_, _, _, _, _, _, h7, _⟩ := cutSlots_spec c lo hi walls rests k
+  obtain ⟨iv, hiv, h3, h4⟩ := h7 s hs
+  exact ((freeIntervals_are_the_free_units lo hi (walls ++ rests) t).1
+    ⟨iv, hiv, by omega, by omega⟩).2.2 w hw
+
+/-- No break unit is inside a wall or a rest. -/
+theorem cutSlots_breaks_avoid_the_walls (c : CutCfg) (lo hi : Nat) (walls rests : List (Nat × Nat))
+    (k : Nat) {b : Nat × Nat} (hb : b ∈ (cutSlots c lo hi walls rests k).breaks)
+    {w : Nat × Nat} (hw : w ∈ walls ++ rests) {t : Nat} (h1 : b.1 ≤ t) (h2 : t < b.2) :
+    ¬ (w.1 ≤ t ∧ t < w.2) := by
+  obtain ⟨_, _, _, _, _, _, _, h8⟩ := cutSlots_spec c lo hi walls rests k
+  obtain ⟨iv, hiv, h3, h4⟩ := h8 b hb
+  exact ((freeIntervals_are_the_free_units lo hi (walls ++ rests) t).1
+    ⟨iv, hiv, by omega, by omega⟩).2.2 w hw
+
+/-- A full block is exactly `block_min` minutes. -/
+theorem cutSlots_block_is_block_min (c : CutCfg) (lo hi : Nat) (walls rests : List (Nat × Nat))
+    (k : Nat) {s : Slot} (hs : s ∈ (cutSlots c lo hi walls rests k).slots) (hk : s.kind = .block) :
+    s.stop = s.start + 60 * c.blockMin ∧ s.minutes = c.blockMin ∧ 0 < c.blockMin := by
+  obtain ⟨_, _, _, h4, _, _, _, _⟩ := cutSlots_spec c lo hi walls rests k
+  have h := (h4 s hs).1.2.1 hk
+  refine ⟨h, ?_, (h4 s hs).2⟩
+  simp only [Slot.minutes, h]
+  omega
+
+/-- **A short block is at least `min_last`** (never dropped at `min_last`, never below it)
+and shorter than a full block. -/
+theorem cutSlots_short_block_is_at_least_min_last (c : CutCfg) (lo hi : Nat)
+    (walls rests : List (Nat × Nat)) (k : Nat) {s : Slot}
+    (hs : s ∈ (cutSlots c lo hi walls rests k).slots) (hk : s.kind = .short) :
+    s.start + 60 * c.minLast ≤ s.stop ∧ s.stop < s.start + 60 * c.blockMin ∧
+      c.minLast ≤ s.minutes ∧ s.minutes < c.blockMin := by
+  obtain ⟨_, _, _, h4, _, _, _, _⟩ := cutSlots_spec c lo hi walls rests k
+  obtain ⟨h1, h2⟩ := (h4 s hs).1.2.2 hk
+  refine ⟨h1, h2, ?_, ?_⟩ <;> simp only [Slot.minutes] <;> omega
+
+/-- A break is exactly `break_min` minutes, and breaks happen only with `break_min > 0`. -/
+theorem cutSlots_break_is_break_min (c : CutCfg) (lo hi : Nat) (walls rests : List (Nat × Nat))
+    (k : Nat) {b : Nat × Nat} (hb : b ∈ (cutSlots c lo hi walls rests k).breaks) :
+    b.2 = b.1 + 60 * c.breakMin ∧ 0 < c.breakMin :=
+  (cutSlots_spec c lo hi walls rests k).2.2.2.2.1 b hb
+
+/-- The slots come in time order, each ending before the next starts. -/
+theorem cutSlots_slots_are_in_order (c : CutCfg) (lo hi : Nat) (walls rests : List (Nat × Nat))
+    (k : Nat) : (cutSlots c lo hi walls rests k).slots.Pairwise (fun x y => x.stop ≤ y.start) :=
+  (cutSlots_spec c lo hi walls rests k).1
+
+/-- The breaks come in time order. -/
+theorem cutSlots_breaks_are_in_order (c : CutCfg) (lo hi : Nat) (walls rests : List (Nat × Nat))
+    (k : Nat) : (cutSlots c lo hi walls rests k).breaks.Pairwise (fun x y => x.2 ≤ y.1) :=
+  (cutSlots_spec c lo hi walls rests k).2.1
+
+/-- **No slot overlaps a break** (what stage 6's `plan_places_no_block_over_a_break` needs of
+the cut). -/
+theorem cutSlots_no_slot_overlaps_a_break (c : CutCfg) (lo hi : Nat) (walls rests : List (Nat × Nat))
+    (k : Nat) {s : Slot} (hs : s ∈ (cutSlots c lo hi walls rests k).slots)
+    {b : Nat × Nat} (hb : b ∈ (cutSlots c lo hi walls rests k).breaks) :
+    s.stop ≤ b.1 ∨ b.2 ≤ s.start :=
+  (cutSlots_spec c lo hi walls rests k).2.2.1 s hs b hb
+
+/-- **No stretch ends on a break**: every break is followed by a slot starting where it ends
+(fork: "only rest when work still follows"). -/
+theorem every_break_is_followed_by_a_slot (c : CutCfg) (lo hi : Nat) (walls rests : List (Nat × Nat))
+    (k : Nat) {b : Nat × Nat} (hb : b ∈ (cutSlots c lo hi walls rests k).breaks) :
+    ∃ s ∈ (cutSlots c lo hi walls rests k).slots, s.start = b.2 :=
+  (cutSlots_spec c lo hi walls rests k).2.2.2.2.2.1 b hb
+
+/-! ### The fork's tests, as witnesses (Chicago's 2026 table) -/
+
+/-- A clock time on the §4.3 day, 2026-09-07 in Chicago, as UTC seconds. -/
+def onTheSpecDay (c : Field.Clock) : Nat := (Cal.instantOf Cal.chicago 739865 c).sec
+
+/-- **Capacity.rs's documented §4.3 cut** (fork test `cut_slots_on_the_spec_day`): 07:00 to
+16:00 around the 12:50–13:50 meeting is 07:00, 08:00, break 09:00, 09:20, 10:20, break 11:20,
+11:40 (the 10 minutes before the meeting dropped), 13:50, break 14:50, and 15:10–16:00
+short: 410 slot minutes and 60 of breaks. -/
+theorem cut_slots_on_the_spec_day :
+    cutSlots CutCfg.shipped (onTheSpecDay 420) (onTheSpecDay 960)
+        [(onTheSpecDay 770, onTheSpecDay 830)] [] 0
+      = ⟨[⟨onTheSpecDay 420, onTheSpecDay 480, .block⟩, ⟨onTheSpecDay 480, onTheSpecDay 540, .block⟩,
+          ⟨onTheSpecDay 560, onTheSpecDay 620, .block⟩, ⟨onTheSpecDay 620, onTheSpecDay 680, .block⟩,
+          ⟨onTheSpecDay 700, onTheSpecDay 760, .block⟩, ⟨onTheSpecDay 830, onTheSpecDay 890, .block⟩,
+          ⟨onTheSpecDay 910, onTheSpecDay 960, .short⟩],
+         [(onTheSpecDay 540, onTheSpecDay 560), (onTheSpecDay 680, onTheSpecDay 700),
+          (onTheSpecDay 890, onTheSpecDay 910)]⟩ ∧
+    (cutSlots CutCfg.shipped (onTheSpecDay 420) (onTheSpecDay 960)
+      [(onTheSpecDay 770, onTheSpecDay 830)] [] 0).slotMinutes = 410 ∧
+    (cutSlots CutCfg.shipped (onTheSpecDay 420) (onTheSpecDay 960)
+      [(onTheSpecDay 770, onTheSpecDay 830)] [] 0).breakMinutes = 60 := by
+  decide
+
+/-- Fork test `a_routine_passed_as_a_wall_does_not_pay_off_the_break`: lunch 11:20–11:50 as a
+wall is work, so the break due at 11:20 lands at 11:50 and the pre-meeting block is 40
+minutes. -/
+theorem a_routine_passed_as_a_wall_does_not_pay_off_the_break :
+    cutSlots CutCfg.shipped (onTheSpecDay 420) (onTheSpecDay 960)
+        [(onTheSpecDay 680, onTheSpecDay 710), (onTheSpecDay 770, onTheSpecDay 830)] [] 0
+      = ⟨[⟨onTheSpecDay 420, onTheSpecDay 480, .block⟩, ⟨onTheSpecDay 480, onTheSpecDay 540, .block⟩,
+          ⟨onTheSpecDay 560, onTheSpecDay 620, .block⟩, ⟨onTheSpecDay 620, onTheSpecDay 680, .block⟩,
+          ⟨onTheSpecDay 730, onTheSpecDay 770, .short⟩, ⟨onTheSpecDay 830, onTheSpecDay 890, .block⟩,
+          ⟨onTheSpecDay 910, onTheSpecDay 960, .short⟩],
+         [(onTheSpecDay 540, onTheSpecDay 560), (onTheSpecDay 710, onTheSpecDay 730),
+          (onTheSpecDay 890, onTheSpecDay 910)]⟩ := by
+  decide
+
+/-- Fork test `cut_slots_around_a_placed_routine`: lunch 11:20–11:50 as a **rest** pays off
+the break due at 11:20, so a full block follows at 11:50; a 10-minute rest (11:20–11:30) is
+shorter than `break_min` and the break still lands, at 11:30. -/
+theorem cut_slots_around_a_placed_routine :
+    cutSlots CutCfg.shipped (onTheSpecDay 420) (onTheSpecDay 960)
+        [(onTheSpecDay 770, onTheSpecDay 830)] [(onTheSpecDay 680, onTheSpecDay 710)] 0
+      = ⟨[⟨onTheSpecDay 420, onTheSpecDay 480, .block⟩, ⟨onTheSpecDay 480, onTheSpecDay 540, .block⟩,
+          ⟨onTheSpecDay 560, onTheSpecDay 620, .block⟩, ⟨onTheSpecDay 620, onTheSpecDay 680, .block⟩,
+          ⟨onTheSpecDay 710, onTheSpecDay 770, .block⟩, ⟨onTheSpecDay 830, onTheSpecDay 890, .block⟩,
+          ⟨onTheSpecDay 910, onTheSpecDay 960, .short⟩],
+         [(onTheSpecDay 540, onTheSpecDay 560), (onTheSpecDay 890, onTheSpecDay 910)]⟩ ∧
+    (onTheSpecDay 690, onTheSpecDay 710) ∈ (cutSlots CutCfg.shipped (onTheSpecDay 420) (onTheSpecDay 960)
+        [(onTheSpecDay 770, onTheSpecDay 830)] [(onTheSpecDay 680, onTheSpecDay 690)] 0).breaks := by
+  decide
+
+/-- Fork test `cut_slots_from_a_pending_break`: two blocks already worked, 09:00 to 12:00 opens
+with the break; the second break due at 11:20 would leave 20 minutes, below `min_last`, so it
+is dropped with the tail.  With `min_last_block_min = 20` the tail is a short block, so the
+break is placed. -/
+theorem cut_slots_from_a_pending_break :
+    cutSlots CutCfg.shipped (onTheSpecDay 540) (onTheSpecDay 720) [] [] 2
+      = ⟨[⟨onTheSpecDay 560, onTheSpecDay 620, .block⟩, ⟨onTheSpecDay 620, onTheSpecDay 680, .block⟩],
+         [(onTheSpecDay 540, onTheSpecDay 560)]⟩ ∧
+    cutSlots ⟨60, 20, 2, 20⟩ (onTheSpecDay 540) (onTheSpecDay 720) [] [] 2
+      = ⟨[⟨onTheSpecDay 560, onTheSpecDay 620, .block⟩, ⟨onTheSpecDay 620, onTheSpecDay 680, .block⟩,
+          ⟨onTheSpecDay 700, onTheSpecDay 720, .short⟩],
+         [(onTheSpecDay 540, onTheSpecDay 560), (onTheSpecDay 680, onTheSpecDay 700)]⟩ := by
+  decide
+
+/-- Fork test `a_cut_never_ends_on_a_break`: a window to 09:45 leaves 25 minutes after the
+break due at 09:00, so neither is placed; to 09:50 the break is placed and a 30-minute short
+block, exactly `min_last`, follows it.  (`every_break_is_followed_by_a_slot` is the law.) -/
+theorem a_cut_never_ends_on_a_break :
+    cutSlots CutCfg.shipped (onTheSpecDay 420) (onTheSpecDay 585) [] [] 0
+      = ⟨[⟨onTheSpecDay 420, onTheSpecDay 480, .block⟩, ⟨onTheSpecDay 480, onTheSpecDay 540, .block⟩], []⟩ ∧
+    cutSlots CutCfg.shipped (onTheSpecDay 420) (onTheSpecDay 590) [] [] 0
+      = ⟨[⟨onTheSpecDay 420, onTheSpecDay 480, .block⟩, ⟨onTheSpecDay 480, onTheSpecDay 540, .block⟩,
+          ⟨onTheSpecDay 560, onTheSpecDay 590, .short⟩], [(onTheSpecDay 540, onTheSpecDay 560)]⟩ := by
+  decide
+
+/-- Fork test `a_long_wall_extends_the_window_by_its_whole_duration`'s cut: five back-to-back
+meetings 14:30–19:30 inside a window to 20:00 leave eight hours, cut into 420 minutes of slots
+and 60 of breaks. -/
+theorem a_long_wall_leaves_eight_hours_to_cut :
+    (cutSlots CutCfg.shipped (onTheSpecDay 420) (onTheSpecDay 1200)
+        [(onTheSpecDay 870, onTheSpecDay 930), (onTheSpecDay 930, onTheSpecDay 990),
+         (onTheSpecDay 990, onTheSpecDay 1050), (onTheSpecDay 1050, onTheSpecDay 1110),
+         (onTheSpecDay 1110, onTheSpecDay 1170)] [] 0).slotMinutes = 420 ∧
+    (cutSlots CutCfg.shipped (onTheSpecDay 420) (onTheSpecDay 1200)
+        [(onTheSpecDay 870, onTheSpecDay 930), (onTheSpecDay 930, onTheSpecDay 990),
+         (onTheSpecDay 990, onTheSpecDay 1050), (onTheSpecDay 1050, onTheSpecDay 1110),
+         (onTheSpecDay 1110, onTheSpecDay 1170)] [] 0).breakMinutes = 60 := by
+  decide
+
+/-- Fork test `the_window_cap_bounds_a_late_arrival`'s cut: arriving at 20:00, after the cap,
+the window is empty and so is the cut. -/
+theorem a_late_arrival_cuts_nothing :
+    cutSlots CutCfg.shipped (onTheSpecDay 1200) (onTheSpecDay 1200) [] [] 0 = ⟨[], []⟩ := by
+  decide
+
+/-- Fork unit test `free_intervals_merge_overlapping_walls`. -/
+theorem free_intervals_merge_overlapping_walls :
+    freeIntervals (onTheSpecDay 420) (onTheSpecDay 780)
+        [(onTheSpecDay 540, onTheSpecDay 600), (onTheSpecDay 570, onTheSpecDay 660)]
+      = [(onTheSpecDay 420, onTheSpecDay 540), (onTheSpecDay 660, onTheSpecDay 780)] := by
+  decide
+
+/-- **A fall-back day's cut counts real minutes**: on 2026-11-01 in Chicago the clock runs
+00:00 to 03:00 in four real hours, and the cut is two blocks, a break, a block and a
+40-minute short block (civil minutes would give 180 minutes and a different cut). -/
+theorem a_cut_counts_real_minutes_across_the_fall_transition :
+    Cal.toDay ⟨2026, 11, 1⟩ = 739920 ∧
+    cutSlots CutCfg.shipped (Cal.instantOf Cal.chicago 739920 0).sec
+        (Cal.instantOf Cal.chicago 739920 180).sec [] [] 0
+      = ⟨[⟨(Cal.instantOf Cal.chicago 739920 0).sec, (Cal.instantOf Cal.chicago 739920 0).sec + 3600, .block⟩,
+          ⟨(Cal.instantOf Cal.chicago 739920 0).sec + 3600,
+            (Cal.instantOf Cal.chicago 739920 0).sec + 7200, .block⟩,
+          ⟨(Cal.instantOf Cal.chicago 739920 0).sec + 8400,
+            (Cal.instantOf Cal.chicago 739920 0).sec + 12000, .block⟩,
+          ⟨(Cal.instantOf Cal.chicago 739920 0).sec + 12000,
+            (Cal.instantOf Cal.chicago 739920 180).sec, .short⟩],
+         [((Cal.instantOf Cal.chicago 739920 0).sec + 7200,
+           (Cal.instantOf Cal.chicago 739920 0).sec + 8400)]⟩ ∧
+    (Cal.instantOf Cal.chicago 739920 180).sec - (Cal.instantOf Cal.chicago 739920 0).sec = 4 * 3600 := by
   decide
 
 end Look

@@ -1111,4 +1111,84 @@ theorem theUnmergedWalkIsTheWindowEnd :
   decide
 
 
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D10 track, step L3: the slot cut in
+-- `Lookahead.lean`).  Numbers 112 and 113 are the design's own L3 labels (its
+-- §16); nothing in this checkout had taken them.  The D9 track numbers in
+-- parallel and the merge renumbers.  Each cheat is the real loop with one line
+-- changed, run over the same free stretches, and claimed equal to `cutSlots` on
+-- a fork-test window.  The controls, which compile, are in Lookahead.lean:
+-- `a_cut_never_ends_on_a_break` and `every_break_is_followed_by_a_slot` (112),
+-- `a_cut_never_ends_on_a_break` and `cutSlots_short_block_is_at_least_min_last`
+-- (113).  Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 112 — a stretch that ends on a break: the loop places a due break
+   without checking that `min_last` still fits after it.  From 07:00 to 09:45
+   the break due at 09:00 leaves 25 minutes, so the fork places neither it nor a
+   block (`a_cut_never_ends_on_a_break`); the cheat places the break and ends
+   the stretch on it, which `every_break_is_followed_by_a_slot` forbids.
+   `decide` refuses the equality.  (The design names the §4.3 cut as this
+   cheat's witness, but the guard never fires on that day, so the cheat and the
+   fork agree there; see the README's L3 block.) -/
+def cutStretchEndingOnABreak (c : Look.CutCfg) (stop : Nat) :
+    Nat → Nat → Nat → Look.CutAcc → Nat × Look.CutAcc
+  | 0, _, k, acc => (k, acc)
+  | fuel + 1, t, k, acc =>
+    if t < stop then
+      if (0 < c.breakAfter ∧ 0 < c.breakMin) ∧ c.breakAfter ≤ k then
+        cutStretchEndingOnABreak c stop fuel (t + 60 * c.breakMin) 0
+          (acc.1, (t, t + 60 * c.breakMin) :: acc.2)
+      else if t + 60 * c.blockMin ≤ stop then
+        cutStretchEndingOnABreak c stop fuel (t + 60 * c.blockMin) (k + 1)
+          (⟨t, t + 60 * c.blockMin, .block⟩ :: acc.1, acc.2)
+      else if t + 60 * c.minLast ≤ stop then
+        cutStretchEndingOnABreak c stop fuel stop (k + 1) (⟨t, stop, .short⟩ :: acc.1, acc.2)
+      else (k, acc)
+    else (k, acc)
+
+def cutEndingOnABreak (c : Look.CutCfg) (lo hi : Nat) (walls : List (Nat × Nat)) : Look.Cut :=
+  let r := (Look.freeIntervals lo hi walls).foldl
+    (fun acc iv => cutStretchEndingOnABreak c iv.2 (iv.2 - iv.1 + 1) iv.1 acc.1 acc.2) (0, ([], []))
+  ⟨r.2.1.reverse, r.2.2.reverse⟩
+
+theorem aStretchEndsOnABreak :
+    cutEndingOnABreak Look.CutCfg.shipped (Look.onTheSpecDay 420) (Look.onTheSpecDay 585) []
+      = Look.cutSlots Look.CutCfg.shipped (Look.onTheSpecDay 420) (Look.onTheSpecDay 585) [] [] 0 := by
+  decide
+
+/- CHEAT 113 — the short last block dropped at exactly `min_last`: the loop
+   keeps a tail only when it is strictly longer than `min_last`.  From 07:00 to
+   09:50 the fork places the break at 09:00 and a 30-minute short block after it
+   (`a_cut_never_ends_on_a_break`; `cutSlots_short_block_is_at_least_min_last`
+   allows exactly `min_last`); the cheat drops the block and so ends on the
+   break.  `decide` refuses the equality. -/
+def cutStretchDroppingAtMinLast (c : Look.CutCfg) (stop : Nat) :
+    Nat → Nat → Nat → Look.CutAcc → Nat × Look.CutAcc
+  | 0, _, k, acc => (k, acc)
+  | fuel + 1, t, k, acc =>
+    if t < stop then
+      if (0 < c.breakAfter ∧ 0 < c.breakMin) ∧ c.breakAfter ≤ k then
+        if stop < t + 60 * c.breakMin + 60 * c.minLast then (k, acc)
+        else cutStretchDroppingAtMinLast c stop fuel (t + 60 * c.breakMin) 0
+          (acc.1, (t, t + 60 * c.breakMin) :: acc.2)
+      else if t + 60 * c.blockMin ≤ stop then
+        cutStretchDroppingAtMinLast c stop fuel (t + 60 * c.blockMin) (k + 1)
+          (⟨t, t + 60 * c.blockMin, .block⟩ :: acc.1, acc.2)
+      else if t + 60 * c.minLast < stop then
+        cutStretchDroppingAtMinLast c stop fuel stop (k + 1) (⟨t, stop, .short⟩ :: acc.1, acc.2)
+      else (k, acc)
+    else (k, acc)
+
+def cutDroppingAtMinLast (c : Look.CutCfg) (lo hi : Nat) (walls : List (Nat × Nat)) : Look.Cut :=
+  let r := (Look.freeIntervals lo hi walls).foldl
+    (fun acc iv => cutStretchDroppingAtMinLast c iv.2 (iv.2 - iv.1 + 1) iv.1 acc.1 acc.2) (0, ([], []))
+  ⟨r.2.1.reverse, r.2.2.reverse⟩
+
+theorem theShortBlockDroppedAtMinLast :
+    cutDroppingAtMinLast Look.CutCfg.shipped (Look.onTheSpecDay 420) (Look.onTheSpecDay 590) []
+      = Look.cutSlots Look.CutCfg.shipped (Look.onTheSpecDay 420) (Look.onTheSpecDay 590) [] [] 0 := by
+  decide
+
+
 end Tm
