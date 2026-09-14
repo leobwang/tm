@@ -8678,3 +8678,117 @@ to 81, cheats to 90 and parity entries to P12.
 **Re-measured** (under the 30 GB cap, on the tree committed): `check.sh` **7/7**, 2.8 s on the
 built tree; axiom audit **2079 theorems**; corpus **29/37 files and 4/5 whole plans**; burn-down
 **15** (stage 5: 0, stage 6: 15). All unchanged, as a docs-only commit must leave them.
+
+## Stage 5 A1, 2026-09-14: gap 44 closed — accumulating twins, a 200,000-element array on a 2 MiB stack
+
+The D9 track's first step (design `kernel/design/stage5/stage5-D9-D10-design.md` §14.1, row A1;
+owner decision D11 runs D9 and D10 as parallel tracks). Every per-element recursion of the JSON
+codec, and `splitDoc`'s per-line recursion, now runs as an accumulating twin behind a proved
+`@[csimp]` theorem, in the `junescapeTR` pattern. No definition a theorem is about changed: the
+twins are new constants and the compiler substitutes them. `jparse_jemit` and
+`the_response_call_emits_parses_back` are untouched and still audited, so nothing needed
+re-proving (D5).
+
+### The twins
+
+| module | twin (worker) | `@[csimp]` theorem | proved from |
+|---|---|---|---|
+| `Json.lean` | `jemitRev` (per nesting level), `jemitArrAcc.go`, `jemitTailAcc.go` (loop), `jemitObjAcc.go`, `jemitPairAcc.go`, `jemitOTailAcc.go` (loop); wrappers `jemitAcc` … `jemitOTailAcc` reverse once | `jemit_eq_jemitAcc`, `jemitArr_eq_jemitArrAcc`, **`jemitTail_eq_jemitTailAcc`**, `jemitObj_eq_jemitObjAcc`, `jemitPair_eq_jemitPairAcc`, **`jemitOTail_eq_jemitOTailAcc`** | `jemitRev_eq` (the four-motive `JVal.rec`: `jemitRev v acc = (jemit v).reverse ++ acc`), `jemitTailAcc_go_eq`, `jemitArrAcc_go_eq`, `jemitOTailAcc_go_eq`, `jemitPairAcc_go_eq`, `jemitObjAcc_go_eq` |
+| `Json.lean` | `jvalAcc`, **`jarrAcc`**, `jtailAcc.go` (loop), **`jobjAcc`**, `jpairAcc`, `jotailAcc.go` (loop); wrappers **`jtailAcc`**, **`jotailAcc`** | `jval_eq_jvalAcc`, `jarr_eq_jarrAcc`, **`jtail_eq_jtailAcc`**, `jobj_eq_jobjAcc`, `jpair_eq_jpairAcc`, **`jotail_eq_jotailAcc`** | `jparserAcc`: one six-conjunct fuel induction (the shape `jparser_fuel` has); the loops satisfy `go f l acc = (jtail f l).map (acc.reverse ++ ·)` |
+| `Plan.lean` | `splitDocCAcc.go` (loop over lines, both halves reversed); wrappers `splitDocCAcc`, **`splitDocAcc`** | `splitDocC_eq_splitDocCAcc`, **`splitDoc_eq_splitDocAcc`** | `splitDocCAcc_go`, by induction on the lines |
+
+Bold names are the ones the A1 row names. The generated C was read to confirm the substitution
+is real: `jparseWith` calls `jvalAcc`, `Boundary.c` calls `jemitAcc` and `splitDocAcc`, and
+`jtailAcc_go` and `jemitTailAcc_go` loop with `goto _start`.
+
+### Rule D9-21, a per-step checklist item from here on
+
+> **D9-21.** Every step's README block lists each function it adds that recurses over a list the
+> wire can make large (lines, log lines, events, days, ids, association lists, transitions), and
+> gives next to it its `foldl` form or its proved `@[csimp]` twin. A function recursing only per
+> nesting level or per character of a bounded token says so. A `T0` test on an explicit
+> `stack_size(2 << 20)` thread covers the step's new wire-sized path end to end
+> (`kernel/tm-kernel-ffi/tests/stack.rs`).
+
+A1's own list: `jtailAcc.go`, `jotailAcc.go`, `jemitTailAcc.go`, `jemitOTailAcc.go`,
+`splitDocCAcc.go` are tail-recursive loops (twins above). `jvalAcc`, `jarrAcc`, `jobjAcc`,
+`jpairAcc`, `jemitRev`, `jemitArrAcc.go`, `jemitObjAcc.go` and `jemitPairAcc.go` recurse per
+nesting level only. Depth stays unbounded until B3's `lineTooDeep` (P14). `List.reverse` and
+`List.reverseAux` are core's tail-recursive loops.
+
+### T0 (a)
+
+`a_200000_element_array_reads_on_a_2mib_thread`, in a new test binary
+`kernel/tm-kernel-ffi/tests/stack.rs`, runs on a thread built with `stack_size(2 << 20)`:
+
+- **strings:** a 200,000-line document is read, split, loaded, rendered and emitted back byte for
+  byte;
+- **objects:** a request carrying 200,000 `{"path":…,"lines":["x"]}` objects is parsed to the
+  end, and `run` refuses it as `array expected`. The same bytes without the closing `]` are refused by the
+  parser at the last element (`bad json: expectedCommaOrBracket }`).
+
+### Gap 44 — closed
+
+Measured through `examples/oneshot` (release), `ulimit -s 2048`, `MemoryMax=16G`:
+
+| request | at `43e6309` (before) | at this commit |
+|---|---|---|
+| one doc, 20,000 lines, full load | answers | answers |
+| one doc, 30,000 lines, full load | **stack-overflow abort** | answers |
+| one doc, 200,000 lines (1.8 MiB), full load and echo | — | answers, 0.27–0.33 s, 137–140 MB max RSS |
+| 30,000 docs as `docs` objects, full load and echo | **abort** | answers, 2.5 s, 77 MB |
+| 200,000 objects in an unread key (6.8 MiB) | — | refused after parsing, 0.20 s, 417 MB (59 MB of RSS per MiB of request) |
+
+### Gap 100 (new; label A1-a) — `run` builds `docs` and `cmds` with `++`, quadratic in their count
+
+(1) *What is not done*: `Boundary.run` appends every decoded document (`docs := docs ++ [d]`)
+and every command (`cmds := cmds ++ [c]`) to the end of the list. Measured: 30,000 one-line
+documents took 2.5 s where 200,000 one-line *lines* take 0.3 s, and 200,000 documents with a
+malformed `cmds` took **150 s** before the refusal. (2) *Why not now*: it is `Boundary.lean`,
+outside A1's files, and theorems evaluate `run` by `rfl` (`call_refuses_the_real_duplicate_id_request`).
+Rewriting it as a `foldl` with a final reverse is a D9-21 item, not part of gap 44's stack
+defect. (3) *Cost*: no real plan tree has more than tens of documents or commands, so it costs
+nothing today. D9's log travels as a line array, which is not this loop (W3). It also forced T0
+(a)'s objects into an unread key. (4) *When it clears*: W3, which adds the `log` fields to `run`
+and owes D9-21 there; or earlier if a step touches `run`.
+
+### Recorded disagreements
+
+- **`splitDoc` is in `Plan.lean`, not `Line.lean`** as the A1 row says. The twin went next to
+  the definition.
+- **The row lists four parser twins and two emitter tails; this step has six of each.**
+  `@[csimp]` rewrites call sites. `jval`'s compiled body calls `jarr`, and `jemit`'s calls
+  `jemitArr`, so twinning only the loops would have left the old frames reachable from
+  `jparseWith` and `call`. `jvalAcc`, `jpairAcc`, `jemitAcc`, `jemitArrAcc`, `jemitObjAcc`,
+  `jemitPairAcc` and `splitDocCAcc` were added for that reason.
+- **T0 lives in its own test binary.** `check.sh` check 5 runs only `--test kernel`. With T0
+  inside it, `check.sh` went from 2.8 s to 3.4 s, over §14.0 item 4's 10% budget. In
+  `tests/stack.rs`, `cargo test` in the FFI crate still runs it, and `check.sh` stays at 2.7 s.
+- Design §18's "gap 44 today: 14,941 array elements parse; 22,055 abort" is LAT's figure. At
+  `43e6309` this step measured 20,000 read and 30,000 abort on 2 MiB, which matches the README's
+  earlier 21,500 / 22,000.
+
+**Label-to-number map:** gap A1-a → **100** (the design's 82–99 are all labelled in its §20).
+There are no cheats and no parity entries: A1 adds no predicate, and nothing is weaker to cheat.
+The D10 track numbers in parallel, and the merge step reconciles.
+
+**Observable behaviour change (one row):** a request with more than about 21,500 elements in one
+array, or a document of more than about 21,500 lines, used to abort the process with a stack
+overflow on a 2 MiB thread (about 80,000 on tm's 8 MiB main thread). It now answers. No answer
+that was produced before changes.
+
+**Goals:** none added, discharged or refuted (burn-down **15**). **New theorems: 22**, all
+audited under an `APPENDED … Step A1` banner in `Check.lean`, with axioms within `propext` and
+`Quot.sound`.
+
+**Re-measured** (under the 30 GB cap, on the tree committed):
+
+| measurement | value |
+|---|---|
+| `check.sh` | **7/7**, 2.7 s on the built tree (2.8 s before) |
+| axiom audit | **2101 theorems** (was 2079, +22); §6.3's three counts agree at 2101 |
+| `Negative.lean` | unchanged; check 4 ok |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **15** (unchanged) |
+| `cargo test --workspace` | **1010 passed / 0 failed / 0 ignored across 66 binaries**, `cli_latency.rs` green |
+| FFI suite (`cargo test` in `tm-kernel-ffi`) | **77 passed / 0 failed** (kernel 68, corpus 8, the new `stack` 1, plus empty lib and doc-test runs; was 76) |

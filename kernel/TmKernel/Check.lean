@@ -2460,3 +2460,30 @@ open Tm
 #print axioms Tm.lookaheadOf?_on_witnesses
 #print axioms Tm.edf_five_deadlines_over_three_days
 #print axioms Tm.edf_serves_a_loaded_plans_needs_earliest_deadline_first
+
+-- APPENDED 2026-09-14 (stage 5, D9 track).  Step A1 (design §14.1): gap 44 closed.
+-- The per-element recursions of the codec and splitDoc run as proved @[csimp]
+-- accumulator twins (rule D9-21).  Json.lean: the emitter twin, then the parser twin;
+-- Plan.lean: splitDoc's twin.  22 theorems.
+#print axioms Tm.jemitRev_eq
+#print axioms Tm.jemitTailAcc_go_eq
+#print axioms Tm.jemitArrAcc_go_eq
+#print axioms Tm.jemitOTailAcc_go_eq
+#print axioms Tm.jemitPairAcc_go_eq
+#print axioms Tm.jemitObjAcc_go_eq
+#print axioms Tm.jemit_eq_jemitAcc
+#print axioms Tm.jemitArr_eq_jemitArrAcc
+#print axioms Tm.jemitTail_eq_jemitTailAcc
+#print axioms Tm.jemitObj_eq_jemitObjAcc
+#print axioms Tm.jemitPair_eq_jemitPairAcc
+#print axioms Tm.jemitOTail_eq_jemitOTailAcc
+#print axioms Tm.jparserAcc
+#print axioms Tm.jval_eq_jvalAcc
+#print axioms Tm.jarr_eq_jarrAcc
+#print axioms Tm.jtail_eq_jtailAcc
+#print axioms Tm.jobj_eq_jobjAcc
+#print axioms Tm.jpair_eq_jpairAcc
+#print axioms Tm.jotail_eq_jotailAcc
+#print axioms Tm.splitDocCAcc_go
+#print axioms Tm.splitDocC_eq_splitDocCAcc
+#print axioms Tm.splitDoc_eq_splitDocAcc

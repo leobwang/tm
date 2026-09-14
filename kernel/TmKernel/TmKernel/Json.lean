@@ -18,7 +18,8 @@ theorem.
 `jparse` and every field with `jget` (end of this module), and writes every
 response as a `JVal` with `jemit`; no kernel module imports `Lean.Data.Json`.
 The per-character recursions run as proved `@[csimp]` twins (`jescapeTR`,
-`junescapeTR`, `jscanTR`); the per-element ones do not yet (README gap 44).
+`junescapeTR`, `jscanTR`), and since stage 5 A1 so do the per-element ones
+(`jemitAcc`…`jemitOTailAcc`, `jvalAcc`…`jotailAcc`; README gap 44, closed).
 
 ## The three decisions this module takes, stated rather than left implicit
 
@@ -769,6 +770,118 @@ def jemitOTail : List (List Char × JVal) → List Char
   | kv :: kvs => ',' :: (jemitPair kv ++ jemitOTail kvs)
 end
 
+/-! ### The emitter's runtime twin (stage 5 A1, gap 44 closed)
+
+APPENDED 2026-09-14 (stage-5 D9 track, step A1).  Compiled as written,
+`jemitArr`/`jemitTail` and `jemitObj`/`jemitOTail` take a stack frame per array
+element or object pair (README gap 44).  The twin writes the output **reversed
+into an accumulator**, one element after another in tail position, and reverses
+once at the end; it recurses per *nesting level* only.  All six functions get a
+`@[csimp]` twin, not just the two tails, because the compiler substitutes a
+constant at its call sites and `jemit`'s own compiled body would otherwise keep
+calling the old `jemitArr`.  The proofs never see the twin: `jparse_jemit` and
+every `decide` in the kernel are still about `jemit`.  Rule D9-21. -/
+
+mutual
+def jemitRev : JVal → List Char → List Char
+  | .null, acc => 'l' :: 'l' :: 'u' :: 'n' :: acc
+  | .bool b, acc => if b then 'e' :: 'u' :: 'r' :: 't' :: acc else 'e' :: 's' :: 'l' :: 'a' :: 'f' :: acc
+  | .num n, acc => List.reverseAux (jrenderNat n) acc
+  | .str s, acc => '"' :: List.reverseAux (jescape s) ('"' :: acc)
+  | .arr xs, acc => jemitArrAcc.go xs ('[' :: acc)
+  | .obj kvs, acc => jemitObjAcc.go kvs ('{' :: acc)
+def jemitArrAcc.go : List JVal → List Char → List Char
+  | [], acc => ']' :: acc
+  | x :: xs, acc => jemitTailAcc.go xs (jemitRev x acc)
+def jemitTailAcc.go : List JVal → List Char → List Char
+  | [], acc => ']' :: acc
+  | x :: xs, acc => jemitTailAcc.go xs (jemitRev x (',' :: acc))
+def jemitObjAcc.go : List (List Char × JVal) → List Char → List Char
+  | [], acc => '}' :: acc
+  | kv :: kvs, acc => jemitOTailAcc.go kvs (jemitPairAcc.go kv acc)
+def jemitPairAcc.go : List Char × JVal → List Char → List Char
+  | (k, v), acc => jemitRev v (':' :: '"' :: List.reverseAux (jescape k) ('"' :: acc))
+def jemitOTailAcc.go : List (List Char × JVal) → List Char → List Char
+  | [], acc => '}' :: acc
+  | kv :: kvs, acc => jemitOTailAcc.go kvs (jemitPairAcc.go kv (',' :: acc))
+end
+
+def jemitAcc (v : JVal) : List Char := (jemitRev v []).reverse
+def jemitArrAcc (xs : List JVal) : List Char := (jemitArrAcc.go xs []).reverse
+def jemitTailAcc (xs : List JVal) : List Char := (jemitTailAcc.go xs []).reverse
+def jemitObjAcc (kvs : List (List Char × JVal)) : List Char := (jemitObjAcc.go kvs []).reverse
+def jemitPairAcc (kv : List Char × JVal) : List Char := (jemitPairAcc.go kv []).reverse
+def jemitOTailAcc (kvs : List (List Char × JVal)) : List Char := (jemitOTailAcc.go kvs []).reverse
+
+theorem jemitRev_eq (v : JVal) : ∀ acc, jemitRev v acc = (jemit v).reverse ++ acc := by
+  refine JVal.rec
+    (motive_1 := fun v => ∀ acc, jemitRev v acc = (jemit v).reverse ++ acc)
+    (motive_2 := fun xs => (∀ acc, jemitArrAcc.go xs acc = (jemitArr xs).reverse ++ acc) ∧
+                           (∀ acc, jemitTailAcc.go xs acc = (jemitTail xs).reverse ++ acc))
+    (motive_3 := fun kvs => (∀ acc, jemitObjAcc.go kvs acc = (jemitObj kvs).reverse ++ acc) ∧
+                            (∀ acc, jemitOTailAcc.go kvs acc = (jemitOTail kvs).reverse ++ acc))
+    (motive_4 := fun p => ∀ acc, jemitPairAcc.go p acc = (jemitPair p).reverse ++ acc)
+    ?null ?bool ?num ?str ?arr ?obj ?lnil ?lcons ?onil ?ocons ?pair v
+  case null => intro acc; rfl
+  case bool => intro b acc; cases b <;> rfl
+  case num => intro n acc; simp [jemitRev, jemit, List.reverseAux_eq]
+  case str => intro s acc; simp [jemitRev, jemit, List.reverseAux_eq]
+  case arr => intro xs ih acc; simp [jemitRev, jemit, ih.1]
+  case obj => intro kvs ih acc; simp [jemitRev, jemit, ih.1]
+  case lnil => exact ⟨fun acc => rfl, fun acc => rfl⟩
+  case lcons =>
+    intro x xs ihx ihxs
+    exact ⟨fun acc => by simp [jemitArrAcc.go, jemitArr, ihx, ihxs.2],
+           fun acc => by simp [jemitTailAcc.go, jemitTail, ihx, ihxs.2]⟩
+  case onil => exact ⟨fun acc => rfl, fun acc => rfl⟩
+  case ocons =>
+    intro kv kvs ihkv ihkvs
+    exact ⟨fun acc => by simp [jemitObjAcc.go, jemitObj, ihkv, ihkvs.2],
+           fun acc => by simp [jemitOTailAcc.go, jemitOTail, ihkv, ihkvs.2]⟩
+  case pair =>
+    intro k v ihv acc
+    simp [jemitPairAcc.go, jemitPair, ihv, List.reverseAux_eq]
+
+theorem jemitTailAcc_go_eq (xs : List JVal) (acc : List Char) :
+    jemitTailAcc.go xs acc = (jemitTail xs).reverse ++ acc := by
+  induction xs generalizing acc with
+  | nil => rfl
+  | cons x xs ih => simp [jemitTailAcc.go, jemitTail, jemitRev_eq, ih]
+theorem jemitArrAcc_go_eq (xs : List JVal) (acc : List Char) :
+    jemitArrAcc.go xs acc = (jemitArr xs).reverse ++ acc := by
+  cases xs with
+  | nil => rfl
+  | cons x xs => simp [jemitArrAcc.go, jemitArr, jemitRev_eq, jemitTailAcc_go_eq]
+theorem jemitOTailAcc_go_eq (kvs : List (List Char × JVal)) (acc : List Char) :
+    jemitOTailAcc.go kvs acc = (jemitOTail kvs).reverse ++ acc := by
+  induction kvs generalizing acc with
+  | nil => rfl
+  | cons kv kvs ih =>
+    obtain ⟨k, v⟩ := kv
+    simp [jemitOTailAcc.go, jemitOTail, jemitPairAcc.go, jemitPair, jemitRev_eq, ih, List.reverseAux_eq]
+theorem jemitPairAcc_go_eq (kv : List Char × JVal) (acc : List Char) :
+    jemitPairAcc.go kv acc = (jemitPair kv).reverse ++ acc := by
+  obtain ⟨k, v⟩ := kv
+  simp [jemitPairAcc.go, jemitPair, jemitRev_eq, List.reverseAux_eq]
+theorem jemitObjAcc_go_eq (kvs : List (List Char × JVal)) (acc : List Char) :
+    jemitObjAcc.go kvs acc = (jemitObj kvs).reverse ++ acc := by
+  cases kvs with
+  | nil => rfl
+  | cons kv kvs => simp [jemitObjAcc.go, jemitObj, jemitPairAcc_go_eq, jemitOTailAcc_go_eq]
+
+@[csimp] theorem jemit_eq_jemitAcc : @jemit = @jemitAcc := by
+  funext v; simp [jemitAcc, jemitRev_eq]
+@[csimp] theorem jemitArr_eq_jemitArrAcc : @jemitArr = @jemitArrAcc := by
+  funext xs; simp [jemitArrAcc, jemitArrAcc_go_eq]
+@[csimp] theorem jemitTail_eq_jemitTailAcc : @jemitTail = @jemitTailAcc := by
+  funext xs; simp [jemitTailAcc, jemitTailAcc_go_eq]
+@[csimp] theorem jemitObj_eq_jemitObjAcc : @jemitObj = @jemitObjAcc := by
+  funext kvs; simp [jemitObjAcc, jemitObjAcc_go_eq]
+@[csimp] theorem jemitPair_eq_jemitPairAcc : @jemitPair = @jemitPairAcc := by
+  funext kv; simp [jemitPairAcc, jemitPairAcc_go_eq]
+@[csimp] theorem jemitOTail_eq_jemitOTailAcc : @jemitOTail = @jemitOTailAcc := by
+  funext kvs; simp [jemitOTailAcc, jemitOTailAcc_go_eq]
+
 /-! ### The fuel a value needs, and why it is derivable from the bytes
 
 `jparse` is total by **fuel that is structurally consumed** (§5.10): a
@@ -1171,6 +1284,229 @@ def jotail : Nat → List Char → Except JErr (List (List Char × JVal) × List
           | .ok (kvs, r'') => .ok (kv :: kvs, r'')
       else .error (.expectedCommaOrBrace c)
 end
+
+/-! ### The parser's runtime twin (stage 5 A1, gap 44 closed)
+
+APPENDED 2026-09-14 (stage-5 D9 track, step A1).  `jarr`/`jtail` and
+`jobj`/`jotail` recursed once per element, not in tail position: 21 500
+one-line strings in one array read and 22 000 aborted on a 2 MiB stack.  The
+twin block is the same six fuel-structural functions with the per-element loops
+(`jtailAcc.go`, `jotailAcc.go`) carrying the elements read so far **reversed** in
+an accumulator, so their recursive call is a tail call; the stack grows per
+nesting level only.  Depth is not bounded here: a deeply nested document still
+costs a frame per level (design P14's depth warning is step B3's).  `jvalAcc` and `jpairAcc` exist only so the
+twins call twins: `@[csimp]` rewrites call sites, and `jval`'s compiled body
+calls `jarr`.  `jparserAcc` is the one six-conjunct fuel induction, the shape
+`jparser_fuel` already has; the six `@[csimp]` theorems read off it.  Every
+proof about the parser is still about `jval`…`jotail`. -/
+
+mutual
+def jvalAcc : Nat → List Char → Except JErr (JVal × List Char)
+  | 0, _ => .error .outOfFuel
+  | f + 1, l =>
+    match skipWs l with
+    | [] => .error .emptyInput
+    | c :: r =>
+      if (charDigit c).isSome then
+        match jparseNat (c :: r) with
+        | none => .error .badNumber
+        | some (n, r') => .ok (.num n, r')
+      else if c = '"' then
+        match jstring r with
+        | .error e => .error e
+        | .ok (s, r') => .ok (.str s, r')
+      else if c = '[' then
+        match jarrAcc f r with
+        | .error e => .error e
+        | .ok (xs, r') => .ok (.arr xs, r')
+      else if c = '{' then
+        match jobjAcc f r with
+        | .error e => .error e
+        | .ok (kvs, r') => .ok (.obj kvs, r')
+      else
+        match c, r with
+        | 'n', 'u' :: 'l' :: 'l' :: r' => .ok (.null, r')
+        | 't', 'r' :: 'u' :: 'e' :: r' => .ok (.bool true, r')
+        | 'f', 'a' :: 'l' :: 's' :: 'e' :: r' => .ok (.bool false, r')
+        | _, _ => .error (.notAValue c)
+def jarrAcc : Nat → List Char → Except JErr (List JVal × List Char)
+  | 0, _ => .error .outOfFuel
+  | f + 1, l =>
+    match skipWs l with
+    | [] => .error .unterminatedArray
+    | c :: r =>
+      if c = ']' then .ok ([], r)
+      else
+        match jvalAcc f (c :: r) with
+        | .error e => .error e
+        | .ok (x, r') => jtailAcc.go f r' [x]
+def jtailAcc.go : Nat → List Char → List JVal → Except JErr (List JVal × List Char)
+  | 0, _, _ => .error .outOfFuel
+  | f + 1, l, acc =>
+    match skipWs l with
+    | [] => .error .unterminatedArray
+    | c :: r =>
+      if c = ']' then .ok (acc.reverse, r)
+      else if c = ',' then
+        match jvalAcc f r with
+        | .error e => .error e
+        | .ok (x, r') => jtailAcc.go f r' (x :: acc)
+      else .error (.expectedCommaOrBracket c)
+def jobjAcc : Nat → List Char → Except JErr (List (List Char × JVal) × List Char)
+  | 0, _ => .error .outOfFuel
+  | f + 1, l =>
+    match skipWs l with
+    | [] => .error .unterminatedObject
+    | c :: r =>
+      if c = '}' then .ok ([], r)
+      else
+        match jpairAcc f (c :: r) with
+        | .error e => .error e
+        | .ok (kv, r') => jotailAcc.go f r' [kv]
+def jpairAcc : Nat → List Char → Except JErr ((List Char × JVal) × List Char)
+  | 0, _ => .error .outOfFuel
+  | f + 1, l =>
+    match skipWs l with
+    | [] => .error .unterminatedObject
+    | c :: r =>
+      if c = '"' then
+        match jstring r with
+        | .error e => .error e
+        | .ok (k, r') =>
+          match skipWs r' with
+          | [] => .error .unterminatedObject
+          | c' :: r'' =>
+            if c' = ':' then
+              match jvalAcc f r'' with
+              | .error e => .error e
+              | .ok (v, r3) => .ok ((k, v), r3)
+            else .error (.expectedColon c')
+      else .error (.expectedKey c)
+def jotailAcc.go : Nat → List Char → List (List Char × JVal) →
+    Except JErr (List (List Char × JVal) × List Char)
+  | 0, _, _ => .error .outOfFuel
+  | f + 1, l, acc =>
+    match skipWs l with
+    | [] => .error .unterminatedObject
+    | c :: r =>
+      if c = '}' then .ok (acc.reverse, r)
+      else if c = ',' then
+        match jpairAcc f r with
+        | .error e => .error e
+        | .ok (kv, r') => jotailAcc.go f r' (kv :: acc)
+      else .error (.expectedCommaOrBrace c)
+end
+
+def jtailAcc (f : Nat) (l : List Char) : Except JErr (List JVal × List Char) :=
+  jtailAcc.go f l []
+def jotailAcc (f : Nat) (l : List Char) : Except JErr (List (List Char × JVal) × List Char) :=
+  jotailAcc.go f l []
+
+theorem jparserAcc (n : Nat) :
+    (∀ l, jvalAcc n l = jval n l) ∧
+    (∀ l, jarrAcc n l = jarr n l) ∧
+    (∀ l acc, jtailAcc.go n l acc = (jtail n l).map (fun p => (acc.reverse ++ p.1, p.2))) ∧
+    (∀ l, jobjAcc n l = jobj n l) ∧
+    (∀ l, jpairAcc n l = jpair n l) ∧
+    (∀ l acc, jotailAcc.go n l acc = (jotail n l).map (fun p => (acc.reverse ++ p.1, p.2))) := by
+  induction n with
+  | zero => refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intros <;> rfl
+  | succ f ih =>
+    obtain ⟨hv, ha, ht, ho, hp, hot⟩ := ih
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+    · intro l
+      simp only [jvalAcc, jval, ha, ho] <;> rfl
+    · intro l
+      simp only [jarrAcc, jarr]
+      generalize skipWs l = s
+      cases s with
+      | nil => rfl
+      | cons c r =>
+        by_cases hc : c = ']'
+        · simp only [hc, if_true]
+        · simp only [hc, if_false, hv]
+          cases jval f (c :: r) with
+          | error e => rfl
+          | ok p =>
+            obtain ⟨x, r'⟩ := p
+            simp only [ht]
+            cases jtail f r' with
+            | error e => rfl
+            | ok q => rfl
+    · intro l acc
+      simp only [jtailAcc.go, jtail]
+      generalize skipWs l = s
+      cases s with
+      | nil => rfl
+      | cons c r =>
+        by_cases hc : c = ']'
+        · simp [hc, Except.map]
+        · by_cases hk : c = ','
+          · simp only [hk, if_true, hv]
+            cases jval f r with
+            | error e => rfl
+            | ok p =>
+              obtain ⟨x, r'⟩ := p
+              simp only [ht]
+              cases jtail f r' with
+              | error e => rfl
+              | ok q => simp [Except.map]
+          · simp only [hc, hk, if_false]; rfl
+    · intro l
+      simp only [jobjAcc, jobj]
+      generalize skipWs l = s
+      cases s with
+      | nil => rfl
+      | cons c r =>
+        by_cases hc : c = '}'
+        · simp only [hc, if_true]
+        · simp only [hc, if_false, hp]
+          cases jpair f (c :: r) with
+          | error e => rfl
+          | ok p =>
+            obtain ⟨x, r'⟩ := p
+            simp only [hot]
+            cases jotail f r' with
+            | error e => rfl
+            | ok q => rfl
+    · intro l
+      simp only [jpairAcc, jpair, hv] <;> rfl
+    · intro l acc
+      simp only [jotailAcc.go, jotail]
+      generalize skipWs l = s
+      cases s with
+      | nil => rfl
+      | cons c r =>
+        by_cases hc : c = '}'
+        · simp [hc, Except.map]
+        · by_cases hk : c = ','
+          · simp only [hk, if_true, hp]
+            cases jpair f r with
+            | error e => rfl
+            | ok p =>
+              obtain ⟨x, r'⟩ := p
+              simp only [hot]
+              cases jotail f r' with
+              | error e => rfl
+              | ok q => simp [Except.map]
+          · simp only [hc, hk, if_false]; rfl
+
+@[csimp] theorem jval_eq_jvalAcc : @jval = @jvalAcc := by
+  funext n l; exact ((jparserAcc n).1 l).symm
+@[csimp] theorem jarr_eq_jarrAcc : @jarr = @jarrAcc := by
+  funext n l; exact ((jparserAcc n).2.1 l).symm
+@[csimp] theorem jtail_eq_jtailAcc : @jtail = @jtailAcc := by
+  funext n l
+  rw [jtailAcc, (jparserAcc n).2.2.1 l []]
+  cases jtail n l <;> rfl
+@[csimp] theorem jobj_eq_jobjAcc : @jobj = @jobjAcc := by
+  funext n l; exact ((jparserAcc n).2.2.2.1 l).symm
+@[csimp] theorem jpair_eq_jpairAcc : @jpair = @jpairAcc := by
+  funext n l; exact ((jparserAcc n).2.2.2.2.1 l).symm
+@[csimp] theorem jotail_eq_jotailAcc : @jotail = @jotailAcc := by
+  funext n l
+  rw [jotailAcc, (jparserAcc n).2.2.2.2.2 l []]
+  cases jotail n l <;> rfl
 
 /-- A whole document: one value, then nothing but whitespace.  `fuel` is
 explicit so the refusal `JErr.outOfFuel` is reachable and testable. -/
