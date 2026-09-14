@@ -65,7 +65,8 @@ stage then has to fight.
   D1.  What *was* stated, `close_writes_every_estimate_through_demoteEst`, is
   refuted (stage 4 step 7, `210daad`); the half that does not need the log was
   `close_keeps_every_remaining_estimate`, restated at README gap 53 as
-  `close_reads_every_remaining_estimate_through_demoteEst` (Close.lean).
+  `close_reads_every_remaining_estimate_through_demoteEst` (Close.lean), and at goal
+  B3's repair as `close_reads_every_remaining_estimate_through_demoteEst_and_the_fold`.
 * **F3 and G1 — generated-block ownership.**  "The kernel owns the bytes of
   every generated block" is §4's **A** verdict — single ownership, architecture
   rather than type theory, and the plan says not to credit the compiler for an
@@ -80,6 +81,9 @@ stage then has to fight.
   behaviour.  *Since 2026-09-13 (the owner's D7, stage 4 final step 2)* the overdue
   target is behaviour — `OverdueRule`, the week row's `toBacklogOverdue`, bridged by
   `closePolicy_routes_overdue_only_at_week` — and only the child fold is `Owed`.
+  *Since 2026-09-13 (stage 4 final step 4, goal B3's repair)* the child fold is
+  behaviour too — `ChildRule`, the week row's `dropIntoParent`, bridged by
+  `closePolicy_drops_children_only_at_week` — and the table owes nothing.
 * **R7 — how future-day capacity mixes lounge and home by `p_lounge`**
   (README gap 26, in the `Arith.lean` block).  Whether the planner floors the mixture per
   level, per day, or carries it exact into the EDF pass is a **decision** the
@@ -195,8 +199,9 @@ second, "week→month is the month of today", was never a behaviour change —
 fork-point `horizon::close_week` already computes `closeTo week now` — and was
 withdrawn at stage 4 step 1 (README "Stage 4 opens", AGENTS §10.2).
 §4's F1, F2 and F4 are discharged here; B1–B3 are re-owed at the fold level.
-At stage 4's close one goal of this section stands: B3, below, on gap 22 (closed
-at stage 4 final step 3, D6; B3 now waits on nothing but its proof).
+At stage 4's close one goal of this section stood: B3, on gap 22 (closed at stage 4
+final step 3, D6).  It is refuted and renamed at stage 4 final step 4, with the `max`
+law beside it; **no goal of stage 4 stands**.
 ############################################################################ -/
 
 /- **`close` is real (2026-09-12, stage 4 step 2).**  The provisional
@@ -206,7 +211,8 @@ the grain, the instant, `Transform` as the shape, and `ClosePolicy` read from a
 table indexed by `Grain` rather than passed.  Every goal below that names
 `close` now elaborates against that definition.  `close_spec` is its
 denotation; the README's stage-4 step-2 block records what it does and what it
-scopes out. -/
+scopes out.  (Since goal B3's repair the signature also takes the block length,
+`close g now bm`: the week row's child fold adds a `1b` child to a `30m` one.) -/
 
 /- **`autoClose` is real (2026-09-12, stage 4 step 4).**  The provisional
 `def autoClose (now : Day) : Transform := sorry` that stood here is replaced by
@@ -264,7 +270,10 @@ estimate half step 2 owed, `close_keeps_every_remaining_estimate`, built on
 `Field.remainingOf_setDemoted` (Line.lean).  The last two were restated at README
 gap 53, when a close began merging into a standing record:
 `close_rewrites_a_line_only_by_stamping_or_merging_it` and
-`close_reads_every_remaining_estimate_through_demoteEst`. -/
+`close_reads_every_remaining_estimate_through_demoteEst` — and again at goal B3's
+repair, when a close began folding dropped children into their parents' records:
+`close_rewrites_a_line_only_by_stamping_merging_or_folding_it` and
+`close_reads_every_remaining_estimate_through_demoteEst_and_the_fold`. -/
 
 /- **`close_day_stamps_a_day_stamp` is discharged (2026-09-12, stage 4 step
 2)** — proved as stated in `Close.lean`, audited in `Check.lean`.  D1 kept the
@@ -272,40 +281,28 @@ stamp `demoted:D<dd>`, and the table's day row names `StampRule.dayOfMonth`;
 `closeStamp_names_the_closed_grain` is the bridge that makes a day row stamping
 `W` a build failure. -/
 
-/-- **B3 (P\*), stage 4 — and it is blocked on README gap 22.**  §6.3's week
-row: "Unfinished children are dropped from the week file (their remaining is
-folded into the parent's `est:`)."  The statement needs `parentStep`, and
-`Core.parent` is the one §3.1 field still stored and is **always `none`** —
-reading it off the line today would make every `week/*.md` in the corpus stop
-loading on `parentsTotal`.  So this goal cannot *fire* until gap 22's decision
-(derive the field, or demote `parentsTotal` to a report the way `check.rs` has
-it) is taken.  It is stated now so the decision is visibly a precondition of
-stage 4 and not a surprise inside it.
+/- **`close_week_folds_a_dropped_child_into_its_parent` (B3) is refuted (2026-09-13,
+stage 4 final step 4)** — renamed to its negation
+`close_week_does_not_add_a_dropped_child_to_its_parent` and proved in `Boundary.lean` on
+the loaded fold witness (`closeFoldWitness`: `^p2`, `6b`, with its dropped `1b` subtask
+`^c3` carries 300 minutes, not 350), audited in `Check.lean`.  Its statement added a
+dropped child's remaining to its parent's; spec §6.4 makes a parent's own estimate
+cover its decomposition (`remaining(item)`: its own `est` if set, else `est_original`,
+else Σ over children), so the addition double-counts.  The negation is stated
+quantifier for quantifier; the goal's `close week now p` is `close week now bm p`
+there, at the `bm` the goal already bound, because the close now reads the block
+length (the child fold adds a `1b` child to a `30m` one).  The law beside it, in
+`Close.lean`, is fork-point `horizon::demote_est`'s documented choice "Folding
+children": `close_week_folds_dropped_children_by_max` — a line the week row files
+forward carries `max(what it carried, Σ own remaining of the children dropped with
+it)` — with both directions (`close_week_lifts_a_parent_its_dropped_children_outweigh`,
+`close_week_keeps_a_parent_that_covers_its_dropped_children`), the child's side
+(`close_week_drops_a_child_with_its_parent`), and what the goal meant and holds:
+`close_week_keeps_a_dropped_childs_remaining_in_its_parents_record`.  Non-vacuity:
+`close_week_folds_dropped_children_by_max_is_not_vacuous` (both directions) and
+`close_week_drops_a_child_with_its_parent_is_not_vacuous`.
 
-**Unblocked 2026-09-13 (owner decision D6: parents are on, derived from the
-line), and this statement is expected to be REFUTED.**  Spec §6.4 defines
-`remaining(item)` as its own `est` if set, else `est_original`, else the sum over
-its children, so a parent's own estimate already covers its decomposition.  The
-additive conclusion below (`remaining parent + remaining child ≤ remaining parent
-afterwards`) therefore double-counts: a `6b` parent with a dropped `1b` child
-carries `6b`, not `7b`.  The spec-settled law is fork-point `horizon.rs`'s
-module-doc choice "Folding children" (applied by `horizon::demote_est`): the parent
-carries `max(remaining(parent), Σ own remaining of the children dropped with it)`.
-The repair is refute-and-rename (AGENTS §3.2), with the max law proved beside the
-negation; README "Stage 4 final, 2026-09-13".  The statement is unchanged here.
-
-**D6 landed at stage 4 final step 3**: `Core.parent` is `Field.parentRef` of the
-line, so `parentStep` reads the `@parent` a loaded file carries and this goal's
-hypotheses can be met on a plan the boundary builds (`the_parent_tree_loads`,
-`effectiveCi_inherits_on_a_loaded_plan`).  The paragraph above about "always
-`none`" describes the kernel before that step. -/
-theorem close_week_folds_a_dropped_child_into_its_parent (now : Day) (bm : Nat)
-    (p q : WfPlan) (h : close week now p = .ok q) (i j : Id) (ec ep fp fc : Entity)
-    (hchild : parentStep p.val j = some i)
-    (hcp : p.val.store.get j = some ec) (hip : p.val.store.get i = some ep)
-    (hiq : q.val.store.get i = some fp) (hcq : q.val.store.get j = some fc)
-    (hdropped : fc.val.status = .settled .dropped) :
-    remainingOf bm ep.val.line + remainingOf bm ec.val.line ≤ remainingOf bm fp.val.line := sorry
+**Stage 4's goal count is zero.** -/
 
 /- **`lifecycle_commands_commute` (L27) is refuted (2026-09-12, stage 4 step 3)**
 — renamed to its negation `lifecycle_commands_do_not_commute` and proved in

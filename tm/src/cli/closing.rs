@@ -32,13 +32,17 @@
 //! does either (each recorded by name in kernel/README.md's stage-4 step-6
 //! block, next to the rule it replaces): the day file's `review pending`
 //! placeholder (F3, stage 6); a closed week's `closed:` front matter; `est:`
-//! = remaining and the day's logged minutes (gap 54); the folding of children
-//! into their parent (gap 22); and reopening a week file's `[>]` at a day
-//! close (the day row takes lines from day files only). Overdue dated items
-//! **do** go into `backlog.md#Overdue` again since the owner's D7 (stage 4
-//! final, kernel/README.md gap 55): the kernel's week close moves a past-due
-//! `persist` line there (`moveOverdue`), and a not-yet-due one is demoted
-//! keeping its `due:` (D8).
+//! = remaining and the day's logged minutes (gap 54); and reopening a week
+//! file's `[>]` at a day close (the day row takes lines from day files only).
+//! Overdue dated items **do** go into `backlog.md#Overdue` again since the
+//! owner's D7 (stage 4 final, kernel/README.md gap 55): the kernel's week close
+//! moves a past-due `persist` line there (`moveOverdue`), and a not-yet-due one
+//! is demoted keeping its `due:` (D8). Children **are** folded into their
+//! parent again since goal B3's repair (stage 4 final step 4): an unfinished
+//! child of a line the week close files from the same file is dropped, `[~]` in
+//! place (`dropIntoParent`, logged as nothing — the fork point deleted the line
+//! and logged nothing), and its own remaining floors the parent's record by
+//! §6.4's `max` (`copyFolding`, `copyMergingFolding`).
 
 use chrono::NaiveDate;
 use serde::Serialize;
@@ -185,7 +189,11 @@ pub struct ClosedLine {
     /// filed forward), `copyMerging` (the same, rewriting the item's standing
     /// `# Demoted` record — kernel/README.md gap 53), `carry` (a wall still
     /// ahead, moved unstamped), `moveOverdue` (past due with `persist`, moved
-    /// unstamped to `backlog.md # Overdue` — the owner's D7).
+    /// unstamped to `backlog.md # Overdue` — the owner's D7), `dropIntoParent`
+    /// (an unfinished child of a line the week close files: `[~]` in place,
+    /// its remaining folded into that line's record), `copyFolding` and
+    /// `copyMergingFolding` (the two copies, with that fold's floor on the
+    /// record's estimate — goal B3's repair).
     pub did: &'static str,
     /// The file it was taken from.
     pub from: String,
@@ -212,7 +220,9 @@ pub struct ReportOut {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Summary {
     /// Lines that left their file for another: `move`, `moveReopening`,
-    /// `carry`, `moveOverdue` — not the two copies, which leave a `[-]` behind.
+    /// `carry`, `moveOverdue` — not the copies (`copy`, `copyMerging` and their
+    /// `…Folding` forms), which leave a `[-]` behind, and not a child the week
+    /// close dropped, which stays where it is.
     pub moved: usize,
     /// Lines that gained a stamp.
     pub demoted: usize,
@@ -229,7 +239,17 @@ impl ReportOut {
             moved: self
                 .closes
                 .iter()
-                .filter(|c| c.did != CloseDid::Copy.name() && c.did != CloseDid::CopyMerging.name())
+                .filter(|c| {
+                    ![
+                        CloseDid::Copy,
+                        CloseDid::CopyMerging,
+                        CloseDid::CopyFolding,
+                        CloseDid::CopyMergingFolding,
+                        CloseDid::DropIntoParent,
+                    ]
+                    .iter()
+                    .any(|d| c.did == d.name())
+                })
                 .count(),
             demoted: self.closes.iter().filter(|c| c.stamp.is_some()).count(),
             carried: self.closes.iter().filter(|c| c.did == CloseDid::Carry.name()).count(),
@@ -270,10 +290,12 @@ fn period_key(path: &str) -> String {
 /// Run one close through the kernel: the `--drop` list first (a dropped
 /// line is settled, and no close row takes a settled line), then the close,
 /// in **one** request. On success, log what the report names — a `demote`
-/// for every stamped entry and a `move` for every other, in the kernel's
-/// order — plus a `drop` per dropped id and a `close` per grain, advance
-/// `state.closed`, and return the report. On a refusal nothing has been
-/// written, logged or stamped.
+/// for every stamped entry and a `move` for every entry that left its file,
+/// in the kernel's order; a child the week close dropped into its parent
+/// (`dropIntoParent`) moved nowhere and logs nothing, as fork-point
+/// `close_week` logged nothing for its `dropped_children` — plus a `drop` per
+/// `--drop` id and a `close` per grain, advance `state.closed`, and return the
+/// report. On a refusal nothing has been written, logged or stamped.
 pub fn run(ctx: &mut Ctx, which: Which, drops: &[Id]) -> Result<ReportOut, CliError> {
     let mut cmds: Vec<Cmd> = drops
         .iter()
@@ -295,7 +317,9 @@ pub fn run(ctx: &mut Ctx, which: Which, drops: &[Id]) -> Result<ReportOut, CliEr
     for e in &applied.closes {
         let (from, to) = (applied.path_of(e.from).to_string(), applied.path_of(e.to).to_string());
         let min = e.minutes.map(|m| MinOut { num: m.num(), den: m.den() });
-        if e.stamp.is_some() {
+        if e.did == CloseDid::DropIntoParent {
+            // stays in its file, `[~]`; its minutes are in its parent's record
+        } else if e.stamp.is_some() {
             ctx.append_event(Event::Demote {
                 id: e.id.clone(),
                 from: period_key(&from),

@@ -1908,6 +1908,237 @@ theorem refile_respects_user {t : Site} {st : Stamp} {e a : Entity} {tb : Tomb}
   rw [refile_roundtrips _ _ _ _ h, harch]
   simp [refiledLine, carryEst, hu, Core.stamps, stampsOfLine]
 
+/-! ## The week row's child fold: §6.4's `max`, through L15's floor (goal B3's repair)
+
+§6.3's week row: "Unfinished children are dropped from the week file (their
+remaining is folded into the parent's `est:`)."  §6.4 makes a parent's own estimate
+cover its decomposition — `remaining(item)` is its own `est` if set, else
+`est_original`, else Σ over its children — so the fold is **not** a sum: fork-point
+`horizon::demote_est` floors the parent's remaining at the children's (`folded`),
+which is `max(remaining(parent), Σ own remaining of the children dropped with it)`
+(module doc, "Folding children").  Here that floor is `foldEst`, and it reads as
+`demoteEst bm false` reads with `rec :=` the children's minutes
+(`foldEst_reads_as_demoteEst`).  **No user exception applies to it**, as in the
+fork point: `demote_est` drops the *record's* floor under a line that owns an
+estimate (`carryEst`, L15b), never the children's — the dropped lines are about
+to leave the plan's open work, and the parent's record is the only place their
+minutes survive.  L14 (`floor_and_respect_are_incompatible`) is not contradicted:
+the fold floors, and it says so.
+
+The bytes: nothing, when the parent's reading already covers the children (the
+`max` changes nothing, so neither does the line); otherwise one `est:` token, set
+where `setEst` sets one, in whole blocks when the block length divides the minutes
+(fork-point `est_dur`, `3b`), else whole hours, else minutes.  The fork point
+writes minutes over an hour as `NhMm`, which the reader `remainingOf` does not read,
+so the kernel writes `Nm` there (README "Stage 4 final, step 4"). -/
+
+/-- The stage-one `est:` setter over an arbitrary value word: replace the value of
+the first `est:` token, or insert one before the id.  `setEst v` is this with the
+minutes word `digitsOf v ++ "m"`. -/
+def setEstInTo (w : List Char) : List Tok → List Tok
+  | []      => []
+  | t :: ts => if isEstKey t.word then ⟨t.sep, w⟩ :: ts else t :: setEstInTo w ts
+
+def setEstTo (v : List Char) (r : RawItem) : RawItem :=
+  if hasEst r then ⟨r.indent, setEstInTo (['e', 's', 't', ':'] ++ v) r.toks⟩
+  else ⟨r.indent, insertBeforeId (['e', 's', 't', ':'] ++ v) r.toks⟩
+
+theorem find_setEstInTo (w : List Char) (hw : isEstKey w = true) (ts : List Tok)
+    (h : ts.any (fun t => isEstKey t.word) = true) :
+    ((setEstInTo w ts).find? (fun t => isEstKey t.word)).map Tok.word = some w := by
+  induction ts with
+  | nil => simp at h
+  | cons t ts' ih =>
+    by_cases hk : isEstKey t.word = true
+    · simp only [setEstInTo, if_pos hk, List.find?_cons]
+      simp [hw]
+    · simp only [setEstInTo, if_neg hk, List.find?_cons]
+      simp only [Bool.not_eq_true] at hk
+      simp only [hk, Bool.false_eq_true]
+      exact ih (by simpa [hk] using h)
+
+/-- **What the fold's setter writes, the stage-one reader reads** — the
+`view_set_is_not_silent` obligation, for any value word. -/
+theorem viewRemaining_setEstTo (bm : Nat) (v : List Char) (r : RawItem) :
+    viewRemaining bm (setEstTo v r) = unitValue bm v := by
+  have hw : isEstKey (['e', 's', 't', ':'] ++ v) = true := by simp [isEstKey]
+  have hdrop : (['e', 's', 't', ':'] ++ v).drop 4 = v := rfl
+  unfold setEstTo viewRemaining estKeyTok
+  by_cases h : hasEst r = true
+  · rw [if_pos h]
+    have := find_setEstInTo _ hw r.toks (by simpa [hasEst] using h)
+    cases hf : (setEstInTo (['e', 's', 't', ':'] ++ v) r.toks).find? (fun t => isEstKey t.word) with
+    | none => rw [hf] at this; simp at this
+    | some t =>
+      rw [hf] at this
+      simp only [Option.map_some, Option.some.injEq] at this
+      simp only [this, hdrop]
+  · simp only [Bool.not_eq_true] at h
+    rw [if_neg (by simp [h])]
+    have := find_insertBeforeId _ r.toks hw (by simpa [hasEst] using h)
+    cases hf : (insertBeforeId (['e', 's', 't', ':'] ++ v) r.toks).find? (fun t => isEstKey t.word) with
+    | none => rw [hf] at this; simp at this
+    | some t =>
+      rw [hf] at this
+      simp only [Option.map_some, Option.some.injEq] at this
+      simp only [this, hdrop]
+
+/-- The duration the fold writes for `n` minutes at block length `bm`. -/
+def foldDur (bm n : Nat) : Dur :=
+  if 0 < bm ∧ n % bm = 0 then .simple (n / bm) .blocks
+  else if n % 60 = 0 then .simple (n / 60) .hours
+  else .simple n .minutes
+
+theorem unitValue_digits_b (bm k : Nat) : unitValue bm (digitsOf k ++ ['b']) = some (k * bm) := by
+  unfold unitValue; simp [readNat_digitsOf]
+
+theorem unitValue_digits_h (bm k : Nat) : unitValue bm (digitsOf k ++ ['h']) = some (k * 60) := by
+  unfold unitValue; simp [readNat_digitsOf]
+
+theorem unitValue_digits_m (bm k : Nat) : unitValue bm (digitsOf k ++ ['m']) = some k := by
+  unfold unitValue; simp [readNat_digitsOf]
+
+/-- **The token the fold writes reads back as the minutes it was given**, at the
+block length it was written for. -/
+theorem unitValue_foldDur (bm n : Nat) : unitValue bm (Field.renderDur (foldDur bm n)) = some n := by
+  unfold foldDur
+  split
+  · rename_i h
+    show unitValue bm (digitsOf (n / bm) ++ ['b']) = some n
+    rw [unitValue_digits_b, Nat.div_mul_cancel (Nat.dvd_of_mod_eq_zero h.2)]
+  · split
+    · rename_i h
+      show unitValue bm (digitsOf (n / 60) ++ ['h']) = some n
+      rw [unitValue_digits_h, Nat.div_mul_cancel (Nat.dvd_of_mod_eq_zero h)]
+    · show unitValue bm (digitsOf n ++ ['m']) = some n
+      rw [unitValue_digits_m]
+
+/-- **The fold's estimate.**  A line whose reading covers the children's `n`
+minutes is left byte for byte; otherwise its `est:` becomes `n`. -/
+def foldEst (bm n : Nat) (l : RawItem) : RawItem :=
+  if n ≤ remainingOf bm l then l else setEstTo (Field.renderDur (foldDur bm n)) l
+
+theorem foldEst_of_le {bm n : Nat} {l : RawItem} (h : n ≤ remainingOf bm l) : foldEst bm n l = l := by
+  unfold foldEst; rw [if_pos h]
+
+theorem foldEst_of_lt {bm n : Nat} {l : RawItem} (h : remainingOf bm l < n) :
+    foldEst bm n l = setEstTo (Field.renderDur (foldDur bm n)) l := by
+  unfold foldEst; rw [if_neg (Nat.not_le.2 h)]
+
+/-- Nothing folded writes nothing. -/
+theorem foldEst_zero (bm : Nat) (l : RawItem) : foldEst bm 0 l = l := foldEst_of_le (Nat.zero_le _)
+
+/-- **§6.4's `max`**: the folded line reads as the larger of its own reading and the
+children's minutes. -/
+theorem remainingOf_foldEst (bm n : Nat) (l : RawItem) :
+    remainingOf bm (foldEst bm n l) = max (remainingOf bm l) n := by
+  by_cases h : n ≤ remainingOf bm l
+  · rw [foldEst_of_le h, Nat.max_eq_left h]
+  · have h' := Nat.lt_of_not_le h
+    rw [foldEst_of_lt h', Nat.max_eq_right (Nat.le_of_lt h')]
+    unfold remainingOf
+    rw [viewRemaining_setEstTo, unitValue_foldDur]
+    rfl
+
+/-- **The fold is `demoteEst`'s floor**, with the children's minutes as the recorded
+measurement and no user exception (`userSet := false`), at every block length the
+fold was computed for. -/
+theorem foldEst_reads_as_demoteEst (bm n : Nat) (e : Entity) :
+    remainingOf bm (foldEst bm n e.val.line) = remainingOf bm (demoteEst bm false n e).val.line := by
+  rw [remainingOf_foldEst]
+  show _ = remainingOf bm (setEst (max (remainingOf bm e.val.line) n) e.val.line)
+  unfold remainingOf
+  rw [view_set_is_not_silent]
+  rfl
+
+/-- **What the week row's child fold asks of one line** — computed once per close
+from the plan the close is handed (`foldFxOf`, Close.lean). -/
+inductive FoldFx
+  /-- no fold: the line is filed as it was before B3's repair -/
+  | none
+  /-- a child dropped with its parent: `[~]` in place, its minutes in the parent's record -/
+  | drop
+  /-- a line that files forward carrying `n` minutes of the children dropped with it,
+      read at block length `bm` -/
+  | lift (bm n : Nat)
+deriving DecidableEq, Repr
+
+def FoldFx.isDrop : FoldFx → Bool
+  | .drop => true
+  | _     => false
+
+/-- The estimate a filed line's record carries under the fold. -/
+def FoldFx.apply : FoldFx → RawItem → RawItem
+  | .lift bm n, l => foldEst bm n l
+  | _,          l => l
+
+/-- The bytes a demotion files forward, the fold included: `refiledLine`'s, with the
+children's floor applied to the estimate **before** the stamp is set — fork-point
+`demote_one` sets `est` and then `demoted`, so an inserted `est:` stands ahead of
+the `demoted:` token. -/
+def refiledLineX (x : FoldFx) (st : Stamp) : Option RawItem → RawItem → RawItem
+  | none,   l => Field.setDemoted (stampsOfLine l ++ [st]) (x.apply l)
+  | some t, l => Field.setDemoted (mergeStamps (stampsOfLine t) (stampsOfLine l) st) (x.apply (carryEst t l))
+
+/-- Without a lift, the fold writes what `refiledLine` wrote. -/
+theorem refiledLineX_of_apply {x : FoldFx} (hx : ∀ l, x.apply l = l) (st : Stamp) (a : Option RawItem)
+    (l : RawItem) : refiledLineX x st a l = refiledLine st a l := by
+  cases a <;> simp [refiledLineX, refiledLine, hx]
+
+theorem refiledLineX_none (st : Stamp) (a : Option RawItem) (l : RawItem) :
+    refiledLineX .none st a l = refiledLine st a l := refiledLineX_of_apply (fun _ => rfl) st a l
+
+/-- `refile`, with the fold: the same refusal, the same placements and box, and
+`refiledLineX`'s bytes. -/
+def refileX (x : FoldFx) (target : Site) (st : Stamp) (e : Entity) : Except KErr Entity :=
+  match e.val.archive with
+  | none   => lift { e.val with live := target, archive := some ⟨e.val.live, e.val.line⟩,
+                                status := .demoted, line := refiledLineX x st none e.val.line }
+  | some t =>
+    if e.val.status = .demoted then .error .alreadyDemoted
+    else lift { e.val with live := target, archive := some ⟨e.val.live, e.val.line⟩,
+                           status := .demoted, line := refiledLineX x st (some t.line) e.val.line }
+
+theorem refileX_roundtrips (x : FoldFx) (t : Site) (st : Stamp) (e a : Entity) (h : refileX x t st e = .ok a) :
+    a.val = { e.val with live := t, archive := some ⟨e.val.live, e.val.line⟩, status := .demoted,
+                         line := refiledLineX x st (e.val.archive.map Tomb.line) e.val.line } := by
+  unfold refileX at h
+  cases ha : e.val.archive with
+  | none =>
+    simp only [ha] at h
+    rw [lift_roundtrips _ _ h]
+    rfl
+  | some tb =>
+    simp only [ha] at h
+    split at h
+    · simp at h
+    · rw [lift_roundtrips _ _ h]
+      rfl
+
+/-- **Without a lift, `refileX` is `refile`** — the transform the close ran before
+B3's repair and the demote verb still runs. -/
+theorem refileX_none (t : Site) (st : Stamp) (e : Entity) : refileX .none t st e = refile t st e := by
+  unfold refileX refile
+  cases ha : e.val.archive with
+  | none =>
+    simp only [demote, ha, Option.isSome_none, Bool.false_eq_true, if_false]
+    rfl
+  | some tb => rfl
+
+theorem refileX_refuses_only_a_record {x : FoldFx} {t : Site} {st : Stamp} {e : Entity}
+    (h : refileX x t st e = .error .alreadyDemoted) : e.val.status = .demoted := by
+  unfold refileX at h
+  cases ha : e.val.archive with
+  | none =>
+    simp only [ha, lift] at h
+    split at h <;> simp at h
+  | some tb =>
+    simp only [ha] at h
+    split at h
+    · assumption
+    · unfold lift at h
+      split at h <;> simp at h
+
 /-! ## What is actually structural, and what is proved
 
 An earlier version of this section carried a theorem named

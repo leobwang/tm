@@ -6512,7 +6512,8 @@ theorem parseLoc_wf {w : List Char} {c : Loc} (h : parseLoc w = some c) : c.wf =
 
 The estimate half of narrowed B1–B3.  `close` rewrites a line only by setting
 `demoted:` (`close_rewrites_a_line_only_by_stamping_or_merging_it`, Close.lean, which
-since README gap 53 also carries a standing record's `est:`); this is
+since README gap 53 also carries a standing record's `est:`, and since goal B3's
+repair the child fold's — `close_rewrites_a_line_only_by_stamping_merging_or_folding_it`); this is
 the lemma that says the rewrite is invisible to the one estimate reader.  The
 reader is restated over the line's words (`remainingWords`), and every word a
 `demoted:` write touches — the new `demoted:` token, the one it replaces, the

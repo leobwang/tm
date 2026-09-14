@@ -28,7 +28,8 @@ line went somewhere it did not.
    success path, so a host that gets `err` gets no report;
 2. every field is a bounded type with a smart constructor its decoder uses —
    `Grain` is `Fin 3`, the disposition is `CloseDid` (five constructors since
-   README gap 53 added `copyMerging`, six since D7 added `moveOverdue`;
+   README gap 53 added `copyMerging`, six since D7 added `moveOverdue`, nine since
+   goal B3's repair added `dropIntoParent`, `copyFolding` and `copyMergingFolding`;
    `CloseDid.ofName?` refuses every other spelling), a stamp is `Field.Stamp`
    (whose parser is `parseStamp`), minutes are `Arith.Pos` (`den > 0`, built by
    `Arith.posOfNat`, decoded by `Arith.ofPair?`, which refuses `den = 0`), and
@@ -68,7 +69,9 @@ theorem BlockMin.ofNat?_pos {n : Nat} (h : 0 < n) : BlockMin.ofNat? n = some ⟨
 /-- **What a close did to one line, by name.**  The first three are the
 `ClosePolicy` row's `Disposition`; the fourth is the week row's copy of a line whose
 item already had a `# Demoted` record, merged into it (README gap 53); the fifth is
-the wall exemption's carry; the sixth is the week row's overdue route (D7). -/
+the wall exemption's carry; the sixth is the week row's overdue route (D7); the last
+three are the week row's child fold (goal B3's repair): a child dropped with its
+parent, and a copy — plain or merging — that absorbed the children dropped with it. -/
 inductive CloseDid
   /-- moved, unchanged (§6.3's month row) -/
   | move
@@ -85,6 +88,16 @@ inductive CloseDid
   /-- past due with `persist`: moved undemoted, unstamped, leaving no tombstone,
       to the end of `backlog.md`'s `# Overdue` (§6.3's week row; the owner's D7) -/
   | moveOverdue
+  /-- an unfinished child of a line the week row files from the same file: `[~]` in
+      place, unstamped, its own remaining folded into that line's record (§6.3's week
+      row, "Unfinished children are dropped …"; fork-point `dropped_children`) -/
+  | dropIntoParent
+  /-- `copy`, and the record's estimate floored at the remaining of the children
+      dropped with it, by §6.4's `max` -/
+  | copyFolding
+  /-- `copyMerging`, and the merged record's estimate floored at the remaining of the
+      children dropped with it, by §6.4's `max` -/
+  | copyMergingFolding
 deriving DecidableEq, Repr
 
 def CloseDid.ofDisposition : Disposition → CloseDid
@@ -92,18 +105,37 @@ def CloseDid.ofDisposition : Disposition → CloseDid
   | .moveReopening => .moveReopening
   | .copy          => .copy
 
-/-- The name of a filing step: the row's disposition, and `copyMerging` for a copy
-of a line whose item has a standing record (`merging`). -/
-def CloseDid.ofStep : Disposition → Bool → CloseDid
-  | .copy, true => .copyMerging
-  | d,     _    => .ofDisposition d
+/-- The name of a filing step the fold does not drop: the row's disposition,
+`copyMerging` for a copy of a line whose item has a standing record (`merging`), and
+the `…Folding` forms for a copy that absorbed dropped children (`folding`). -/
+def CloseDid.ofStep : Disposition → Bool → Bool → CloseDid
+  | .copy, true,  true  => .copyMergingFolding
+  | .copy, true,  false => .copyMerging
+  | .copy, false, true  => .copyFolding
+  | d,     _,     _     => .ofDisposition d
 
-theorem CloseDid.ofStep_ne_carry (d : Disposition) (b : Bool) : CloseDid.ofStep d b ≠ .carry := by
-  cases d <;> cases b <;> simp [CloseDid.ofStep, CloseDid.ofDisposition]
+theorem CloseDid.ofStep_ne_carry (d : Disposition) (b c : Bool) : CloseDid.ofStep d b c ≠ .carry := by
+  cases d <;> cases b <;> cases c <;> simp [CloseDid.ofStep, CloseDid.ofDisposition]
 
-theorem CloseDid.ofStep_ne_moveOverdue (d : Disposition) (b : Bool) :
-    CloseDid.ofStep d b ≠ .moveOverdue := by
-  cases d <;> cases b <;> simp [CloseDid.ofStep, CloseDid.ofDisposition]
+theorem CloseDid.ofStep_ne_moveOverdue (d : Disposition) (b c : Bool) :
+    CloseDid.ofStep d b c ≠ .moveOverdue := by
+  cases d <;> cases b <;> cases c <;> simp [CloseDid.ofStep, CloseDid.ofDisposition]
+
+theorem CloseDid.ofStep_ne_dropIntoParent (d : Disposition) (b c : Bool) :
+    CloseDid.ofStep d b c ≠ .dropIntoParent := by
+  cases d <;> cases b <;> cases c <;> simp [CloseDid.ofStep, CloseDid.ofDisposition]
+
+/-- A filing step is named merging exactly when the item had a standing record at a
+copying row. -/
+theorem CloseDid.ofStep_merging_iff (d : Disposition) (b c : Bool) :
+    (CloseDid.ofStep d b c = .copyMerging ∨ CloseDid.ofStep d b c = .copyMergingFolding) ↔
+      d = .copy ∧ b = true := by
+  cases d <;> cases b <;> cases c <;> simp [CloseDid.ofStep, CloseDid.ofDisposition]
+
+theorem CloseDid.ofStep_folding_iff (d : Disposition) (b c : Bool) :
+    (CloseDid.ofStep d b c = .copyFolding ∨ CloseDid.ofStep d b c = .copyMergingFolding) ↔
+      d = .copy ∧ c = true := by
+  cases d <;> cases b <;> cases c <;> simp [CloseDid.ofStep, CloseDid.ofDisposition]
 
 /-- The name on the wire: the constructor's own. -/
 def CloseDid.name : CloseDid → String
@@ -113,8 +145,11 @@ def CloseDid.name : CloseDid → String
   | .copyMerging   => "copyMerging"
   | .carry         => "carry"
   | .moveOverdue   => "moveOverdue"
+  | .dropIntoParent     => "dropIntoParent"
+  | .copyFolding        => "copyFolding"
+  | .copyMergingFolding => "copyMergingFolding"
 
-/-- The decoder's smart constructor: exactly the six names, nothing else. -/
+/-- The decoder's smart constructor: exactly the nine names, nothing else. -/
 def CloseDid.ofName? (s : List Char) : Option CloseDid :=
   if s = "move".toList then some .move
   else if s = "moveReopening".toList then some .moveReopening
@@ -122,6 +157,9 @@ def CloseDid.ofName? (s : List Char) : Option CloseDid :=
   else if s = "copyMerging".toList then some .copyMerging
   else if s = "carry".toList then some .carry
   else if s = "moveOverdue".toList then some .moveOverdue
+  else if s = "dropIntoParent".toList then some .dropIntoParent
+  else if s = "copyFolding".toList then some .copyFolding
+  else if s = "copyMergingFolding".toList then some .copyMergingFolding
   else none
 
 theorem CloseDid.ofName?_name : ∀ d : CloseDid, CloseDid.ofName? d.name.toList = some d := by
@@ -139,6 +177,14 @@ are not `moveOverdue`. -/
 theorem CloseDid.ofName?_refuses_near_overdue :
     CloseDid.ofName? "overdue".toList = none ∧ CloseDid.ofName? "overdue_to_backlog".toList = none ∧
       CloseDid.ofName? "moveoverdue".toList = none := by
+  decide
+
+/-- B3's names bite too: the fork-point report's `dropped_children`, a bare `drop` and a
+case change are not `dropIntoParent`, and `folded` is no disposition. -/
+theorem CloseDid.ofName?_refuses_near_fold :
+    CloseDid.ofName? "dropped_children".toList = none ∧ CloseDid.ofName? "drop".toList = none ∧
+      CloseDid.ofName? "dropintoparent".toList = none ∧ CloseDid.ofName? "folded".toList = none ∧
+      CloseDid.ofName? "copyfolding".toList = none := by
   decide
 
 /-- **An item's minutes**, as the kernel reads them: the estimate view
@@ -177,33 +223,44 @@ def Report.empty : Report := ⟨[]⟩
 
 def Report.append (a b : Report) : Report := ⟨a.closes ++ b.closes⟩
 
-/-- The entry for one line, read off the step the fold takes. -/
-def closeEntry (g : Grain) (now : Day) (bm : BlockMin) (p : PlanCore) (i : Id) (s : Skel) :
+def FoldFx.isLift : FoldFx → Bool
+  | .lift _ _ => true
+  | _         => false
+
+/-- The entry for one line, read off the step the fold takes, with what the child
+fold asks of it. -/
+def closeEntry (g : Grain) (now : Day) (bm : BlockMin) (p : PlanCore) (i : Id) (x : FoldFx) (s : Skel) :
     Option CloseEntry :=
   match closeAct g now p s with
   | .stay   => none
-  | .carry  => some ⟨i, g, .carry, s.doc, (stepSkel g now p s).doc, none,
-                     estMinutes bm (stepSkel g now p s).line⟩
-  | .file r => some ⟨i, g, .ofStep (closePolicy g).disposition s.archLine.isSome, s.doc,
-                     (stepSkel g now p s).doc, closeStamp g r.ix,
-                     estMinutes bm (stepSkel g now p s).line⟩
-  | .overdue => some ⟨i, g, .moveOverdue, s.doc, (stepSkel g now p s).doc, none,
-                     estMinutes bm (stepSkel g now p s).line⟩
+  | .carry  => some ⟨i, g, .carry, s.doc, (stepSkel g now p x s).doc, none,
+                     estMinutes bm (stepSkel g now p x s).line⟩
+  | .file r =>
+    if x.isDrop then
+      some ⟨i, g, .dropIntoParent, s.doc, (stepSkel g now p x s).doc, none,
+            estMinutes bm (stepSkel g now p x s).line⟩
+    else
+      some ⟨i, g, .ofStep (closePolicy g).disposition s.archLine.isSome x.isLift, s.doc,
+            (stepSkel g now p x s).doc, closeStamp g r.ix,
+            estMinutes bm (stepSkel g now p x s).line⟩
+  | .overdue => some ⟨i, g, .moveOverdue, s.doc, (stepSkel g now p x s).doc, none,
+                     estMinutes bm (stepSkel g now p x s).line⟩
 
 /-- **The report of `close g now` on plan `p`**: one entry per candidate, in the
-order the fold takes them. -/
+order the fold takes them, each with the child fold the close computes. -/
 def closeReport (g : Grain) (now : Day) (bm : BlockMin) (p : PlanCore) : List CloseEntry :=
+  let t := foldTab g now bm.val p
   (closeCands g now p).filterMap (fun i =>
-    (p.store.get i).bind (fun e => closeEntry g now bm p i e.val.skel))
+    (p.store.get i).bind (fun e => closeEntry g now bm p i (foldFxIn t g now bm.val p i) e.val.skel))
 
 /-- `close`, reporting. -/
 def closeR (g : Grain) (now : Day) (bm : BlockMin) (p : WfPlan) : Except KErr (WfPlan × Report) :=
-  (close g now p).map (fun q => (q, ⟨closeReport g now bm p.val⟩))
+  (close g now bm.val p).map (fun q => (q, ⟨closeReport g now bm p.val⟩))
 
 /-- One grain of `autoClose`, reporting: the close, and its entries appended. -/
 def closeStepR (now : Day) (bm : BlockMin) (acc : WfPlan × Report) (g : Grain) :
     Except KErr (WfPlan × Report) :=
-  (close g now acc.1).map (fun q => (q, acc.2.append ⟨closeReport g now bm acc.1.val⟩))
+  (close g now bm.val acc.1).map (fun q => (q, acc.2.append ⟨closeReport g now bm acc.1.val⟩))
 
 /-- `autoClose`, reporting: the same fold over `autoCloseOrder`, each grain's
 entries against the plan that grain's close was handed. -/
@@ -213,14 +270,14 @@ def autoCloseR (now : Day) (bm : BlockMin) (p : WfPlan) : Except KErr (WfPlan ×
 /-! ## The reporting forms are the closes -/
 
 theorem closeR_plan (g : Grain) (now : Day) (bm : BlockMin) (p : WfPlan) :
-    (closeR g now bm p).map Prod.fst = close g now p := by
+    (closeR g now bm p).map Prod.fst = close g now bm.val p := by
   unfold closeR
-  cases close g now p <;> rfl
+  cases close g now bm.val p <;> rfl
 
 theorem foldlM_closeStepR_plan (now : Day) (bm : BlockMin) :
     ∀ (gs : List Grain) (p : WfPlan) (r : Report),
       (gs.foldlM (closeStepR now bm) (p, r)).map Prod.fst =
-        gs.foldlM (fun q g => close g now q) p := by
+        gs.foldlM (fun q g => close g now bm.val q) p := by
   intro gs
   induction gs with
   | nil => intro p r; rfl
@@ -228,17 +285,17 @@ theorem foldlM_closeStepR_plan (now : Day) (bm : BlockMin) :
     intro p r
     simp only [List.foldlM_cons]
     unfold closeStepR
-    cases hc : close g now p with
+    cases hc : close g now bm.val p with
     | error x => rfl
     | ok q =>
       show (rest.foldlM (closeStepR now bm) (q, r.append ⟨closeReport g now bm p.val⟩)).map Prod.fst =
-        rest.foldlM (fun q g => close g now q) q
+        rest.foldlM (fun q g => close g now bm.val q) q
       exact ih q _
 
 /-- **`autoCloseR` is `autoClose`**, on the plan: reporting changes nothing a
 close writes. -/
 theorem autoCloseR_plan (now : Day) (bm : BlockMin) (p : WfPlan) :
-    (autoCloseR now bm p).map Prod.fst = autoClose now p :=
+    (autoCloseR now bm p).map Prod.fst = autoClose now bm.val p :=
   foldlM_closeStepR_plan now bm autoCloseOrder p Report.empty
 
 /-! ## Every line the close acts on is named once, in fold order -/
@@ -274,12 +331,12 @@ theorem closeReport_ids (g : Grain) (now : Day) (bm : BlockMin) (p : PlanCore) :
     cases hact : closeAct g now p e.val.skel with
     | stay => simp only [hact] at hf; exact absurd hf (by simp)
     | carry => exact ⟨_, rfl, rfl⟩
-    | file r => exact ⟨_, rfl, rfl⟩
+    | file r => simp only; split <;> exact ⟨_, rfl, rfl⟩
     | overdue => exact ⟨_, rfl, rfl⟩
 
 theorem mem_closeReport {g : Grain} {now : Day} {bm : BlockMin} {p : PlanCore} {x : CloseEntry}
     (hx : x ∈ closeReport g now bm p) :
-    ∃ i e, p.store.get i = some e ∧ closeEntry g now bm p i e.val.skel = some x := by
+    ∃ i e, p.store.get i = some e ∧ closeEntry g now bm p i (foldFxOf g now bm.val p i) e.val.skel = some x := by
   unfold closeReport at hx
   obtain ⟨i, _, hix⟩ := List.mem_filterMap.1 hx
   cases hg : p.store.get i with
@@ -292,41 +349,41 @@ theorem mem_closeReport {g : Grain} {now : Day} {bm : BlockMin} {p : PlanCore} {
 /-! ## Under a successful close, each entry is what happened -/
 
 /-- A step's stamps, where it does not merge: the row's stamp for the closed
-region, appended. -/
-theorem skelAfter_stamps_of_not_merging (g : Grain) (r : Region) (k : DocIx) (s : Skel)
-    (hm : CloseDid.ofStep (closePolicy g).disposition s.archLine.isSome ≠ .copyMerging) :
-    (skelAfter g r k s).stamps = s.stamps ++ (closeStamp g r.ix).toList := by
-  have hset : ∀ st : Stamp,
-      (Field.viewDemoted (Field.setDemoted (s.stamps ++ [st]) s.line)).getD [] = s.stamps ++ [st] := by
-    intro st
+region, appended — the child fold's estimate touches no stamp. -/
+theorem skelAfter_stamps_of_not_merging (g : Grain) (r : Region) (k : DocIx) (x : FoldFx) (s : Skel)
+    (hm : ¬ ((closePolicy g).disposition = .copy ∧ s.archLine.isSome = true)) :
+    (skelAfter g r k x s).stamps = s.stamps ++ (closeStamp g r.ix).toList := by
+  have hset : ∀ (st : Stamp) (l : RawItem),
+      (Field.viewDemoted (Field.setDemoted (s.stamps ++ [st]) l)).getD [] = s.stamps ++ [st] := by
+    intro st l
     rw [Field.view_set_demoted _ _ (by simp)]
     rfl
   match g with
-  | ⟨0, _⟩ => exact hset _
+  | ⟨0, _⟩ => exact hset _ _
   | ⟨1, _⟩ =>
     cases ha : s.archLine with
     | none =>
-      show (Field.viewDemoted (refiledLine _ s.archLine s.line)).getD [] = _
+      show (Field.viewDemoted (refiledLineX x _ s.archLine s.line)).getD [] = _
       rw [ha]
-      exact hset _
-    | some tl => rw [ha] at hm; exact absurd rfl hm
+      exact hset _ _
+    | some tl => rw [ha] at hm; exact absurd ⟨rfl, rfl⟩ hm
   | ⟨2, _⟩ => simp [skelAfter, closePolicy, closeStamp, stampRuleOf, Skel.stamps]
 
 /-- A step's stamps, where it merges (README gap 53): fork-point `merge_stamps` of
 the standing record's history, the line's, and the row's stamp. -/
-theorem skelAfter_stamps_merging (g : Grain) (r : Region) (k : DocIx) (s : Skel)
-    (hm : CloseDid.ofStep (closePolicy g).disposition s.archLine.isSome = .copyMerging) :
+theorem skelAfter_stamps_merging (g : Grain) (r : Region) (k : DocIx) (x : FoldFx) (s : Skel)
+    (hm : (closePolicy g).disposition = .copy ∧ s.archLine.isSome = true) :
     ∃ tl st, s.archLine = some tl ∧ closeStamp g r.ix = some st ∧
-      (skelAfter g r k s).stamps = mergeStamps (stampsOfLine tl) s.stamps st := by
+      (skelAfter g r k x s).stamps = mergeStamps (stampsOfLine tl) s.stamps st := by
   match g with
-  | ⟨0, _⟩ => simp [closePolicy, CloseDid.ofStep, CloseDid.ofDisposition] at hm
-  | ⟨2, _⟩ => simp [closePolicy, CloseDid.ofStep, CloseDid.ofDisposition] at hm
+  | ⟨0, _⟩ => simp [closePolicy] at hm
+  | ⟨2, _⟩ => simp [closePolicy] at hm
   | ⟨1, _⟩ =>
     cases ha : s.archLine with
-    | none => rw [ha] at hm; simp [closePolicy, CloseDid.ofStep, CloseDid.ofDisposition] at hm
+    | none => rw [ha] at hm; simp at hm
     | some tl =>
       refine ⟨tl, _, rfl, rfl, ?_⟩
-      show (Field.viewDemoted (refiledLine _ s.archLine s.line)).getD [] = _
+      show (Field.viewDemoted (refiledLineX x _ s.archLine s.line)).getD [] = _
       rw [ha]
       show (Field.viewDemoted (Field.setDemoted _ _)).getD [] = _
       rw [Field.view_set_demoted _ _
@@ -336,61 +393,91 @@ theorem skelAfter_stamps_merging (g : Grain) (r : Region) (k : DocIx) (s : Skel)
 /-- **Under a successful close, a taken line's step found its target** — the
 branches of `stepSkel` in which the close would have refused are not the ones
 it took. -/
-theorem close_found_the_target {g : Grain} {now : Day} {p q : WfPlan}
-    (h : close g now p = .ok q) {i : Id} {e f : Entity}
+theorem close_found_the_target {g : Grain} {now : Day} {bm : Nat} {p q : WfPlan}
+    (h : close g now bm p = .ok q) {i : Id} {e f : Entity}
     (hp : p.val.store.get i = some e) (hq : q.val.store.get i = some f) :
     (closeAct g now p.val e.val.skel = .carry →
-      ∃ k, carryTarget now p.val = some k ∧ stepSkel g now p.val e.val.skel = { e.val.skel with doc := k }) ∧
-    (∀ r, closeAct g now p.val e.val.skel = .file r →
+      ∃ k, carryTarget now p.val = some k ∧
+        stepSkel g now p.val (foldFxOf g now bm p.val i) e.val.skel = { e.val.skel with doc := k }) ∧
+    (∀ r, closeAct g now p.val e.val.skel = .file r → (foldFxOf g now bm p.val i).isDrop = false →
       ∃ k, closeTarget g now p.val = some k ∧
-        stepSkel g now p.val e.val.skel = skelAfter g r k e.val.skel) ∧
+        stepSkel g now p.val (foldFxOf g now bm p.val i) e.val.skel =
+          skelAfter g r k (foldFxOf g now bm p.val i) e.val.skel) ∧
     (closeAct g now p.val e.val.skel = .overdue →
-      ∃ k, overdueTarget p.val = some k ∧ stepSkel g now p.val e.val.skel = { e.val.skel with doc := k }) := by
+      ∃ k, overdueTarget p.val = some k ∧
+        stepSkel g now p.val (foldFxOf g now bm p.val i) e.val.skel = { e.val.skel with doc := k }) := by
   obtain ⟨hfr, hall⟩ := close_spec h
   have hsk := close_skel h hp hq
   have hst := (hall i).2 f hq
   rw [closeAct_frame hfr, hsk] at hst
-  refine ⟨fun hact => ?_, fun r hact => ?_, fun hact => ?_⟩
+  refine ⟨fun hact => ?_, fun r hact hx => ?_, fun hact => ?_⟩
   · cases hk : carryTarget now p.val with
     | none =>
-      have hstep : stepSkel g now p.val e.val.skel = e.val.skel := by
+      have hstep : stepSkel g now p.val (foldFxOf g now bm p.val i) e.val.skel = e.val.skel := by
         unfold stepSkel; simp only [hact, hk]
       rw [hstep, hact] at hst
       exact absurd hst (by simp)
     | some k => exact ⟨k, rfl, by unfold stepSkel; simp only [hact, hk]⟩
   · cases hk : closeTarget g now p.val with
     | none =>
-      have hstep : stepSkel g now p.val e.val.skel = e.val.skel := by
-        unfold stepSkel; simp only [hact, hk]
+      have hstep : stepSkel g now p.val (foldFxOf g now bm p.val i) e.val.skel = e.val.skel := by
+        rw [stepSkel_of_file hact hx, hk]
       rw [hstep, hact] at hst
       exact absurd hst (by simp)
-    | some k => exact ⟨k, rfl, by unfold stepSkel; simp only [hact, hk]⟩
+    | some k => exact ⟨k, rfl, by rw [stepSkel_of_file hact hx, hk]⟩
   · cases hk : overdueTarget p.val with
     | none =>
-      have hstep : stepSkel g now p.val e.val.skel = e.val.skel := by
+      have hstep : stepSkel g now p.val (foldFxOf g now bm p.val i) e.val.skel = e.val.skel := by
         unfold stepSkel; simp only [hact, hk]
       rw [hstep, hact] at hst
       exact absurd hst (by simp)
     | some k => exact ⟨k, rfl, by unfold stepSkel; simp only [hact, hk]⟩
 
+theorem foldFxOf_isLift_week {g : Grain} {now : Day} {bm : Nat} {p : PlanCore} {i : Id}
+    (h : (foldFxOf g now bm p i).isLift = true) : g = week := by
+  rcases closePolicy_children_cases g with hc | hg
+  · rw [foldFxOf_of_asAnyLine hc] at h; cases h
+  · exact hg
+
+theorem foldFxOf_isLift_not_drop {g : Grain} {now : Day} {bm : Nat} {p : PlanCore} {i : Id}
+    (h : (foldFxOf g now bm p i).isLift = true) : dropsInto g now p i = none := by
+  have := foldFxOf_isDrop g now bm p i
+  cases hd : dropsInto g now p i with
+  | none => rfl
+  | some r =>
+    rw [hd] at this
+    cases hx : foldFxOf g now bm p i with
+    | none => rw [hx] at h; cases h
+    | drop => rw [hx] at h; cases h
+    | lift _ _ => rw [hx] at this; cases this
+
 /-- **The report agrees with the close.**  For every entry of a successful
 close's report: it names the close's grain; the item is in the plan before and
 after; the entry's `src` is the file its live line was in and its `dst` the
 file it is in now; the stamps it carries now are the ones it carried with the
-entry's `stamp` appended — or, for a `copyMerging` entry (README gap 53), fork-point
-`merge_stamps` of its standing record's history, its own and the entry's stamp;
-and the entry's minutes are its estimate now.  (Restates
-`closeReport_agrees_with_close`, whose stamp clause — `f.stamps = e.stamps ++
-x.stamp.toList` for every entry — a merge falsifies:
-`closeReport_agrees_with_close_is_refuted_by_a_merge`, Boundary.lean.  It kept its
-name at gap 53 over this narrower clause until the stage-4 hardening repair.) -/
+entry's `stamp` appended — or, for a `copyMerging` or `copyMergingFolding` entry
+(README gap 53), fork-point `merge_stamps` of its standing record's history, its own
+and the entry's stamp; a `dropIntoParent` entry is a `[~]` line with its bytes as they
+were, dropped into the line its minutes went to (goal B3's repair); a `copyFolding`
+or `copyMergingFolding` entry's record reads, at the close's block length, as §6.4's
+`max` of what it carried and the minutes of the children dropped with it; and the
+entry's minutes are its estimate now.  (Restates, under its name, the statement B3's
+repair gave three new dispositions: on the six it had, every clause is as it was.
+It restated `closeReport_agrees_with_close`, whose stamp clause — `f.stamps = e.stamps
+++ x.stamp.toList` for every entry — a merge falsifies:
+`closeReport_agrees_with_close_is_refuted_by_a_merge`, Boundary.lean.) -/
 theorem closeReport_agrees_with_close_stamping_or_merging {g : Grain} {now : Day} {bm : BlockMin} {p q : WfPlan}
-    (h : close g now p = .ok q) {x : CloseEntry} (hx : x ∈ closeReport g now bm p.val) :
+    (h : close g now bm.val p = .ok q) {x : CloseEntry} (hx : x ∈ closeReport g now bm p.val) :
     x.grain = g ∧ ∃ e f, p.val.store.get x.id = some e ∧ q.val.store.get x.id = some f ∧
       e.val.live.doc = x.src ∧ f.val.live.doc = x.dst ∧
-      (x.did ≠ .copyMerging → f.val.stamps = e.val.stamps ++ x.stamp.toList) ∧
-      (x.did = .copyMerging → ∃ t st, e.val.archive = some t ∧ x.stamp = some st ∧
+      (x.did ≠ .copyMerging → x.did ≠ .copyMergingFolding → f.val.stamps = e.val.stamps ++ x.stamp.toList) ∧
+      (x.did = .copyMerging ∨ x.did = .copyMergingFolding → ∃ t st, e.val.archive = some t ∧ x.stamp = some st ∧
         f.val.stamps = mergeStamps (stampsOfLine t.line) e.val.stamps st) ∧
+      (x.did = .dropIntoParent → f.val.status = .settled .dropped ∧ f.val.line = e.val.line ∧
+        ∃ r, dropsInto g now p.val x.id = some r) ∧
+      (x.did = .copyFolding ∨ x.did = .copyMergingFolding →
+        remainingOf bm.val f.val.line =
+          max (remainingOf bm.val (carriedLine e)) (foldedMinutes g now bm.val p.val x.id)) ∧
       x.minutes = estMinutes bm f.val.line := by
   obtain ⟨i, e, hp, hx⟩ := mem_closeReport hx
   -- the id is still in the plan: a close relocates, it never removes
@@ -411,56 +498,100 @@ theorem closeReport_agrees_with_close_stamping_or_merging {g : Grain} {now : Day
       subst hx
       obtain ⟨k, _, hstep⟩ := ht.1 hact
       have hf : f.val.skel = { e.val.skel with doc := k } := hsk.trans hstep
-      refine ⟨rfl, e, f, hp, hq, rfl, ?_, fun _ => ?_, fun hc => absurd hc (by simp), ?_⟩
-      · show f.val.live.doc = (stepSkel g now p.val e.val.skel).doc
+      refine ⟨rfl, e, f, hp, hq, rfl, ?_, fun _ _ => ?_, fun hc => ?_, fun hc => ?_, fun hc => ?_, ?_⟩
+      · show f.val.live.doc = (stepSkel g now p.val _ e.val.skel).doc
         rw [← hsk]; rfl
       · rw [← Core.skel_stamps, ← Core.skel_stamps, hf]; simp [Skel.stamps]
-      · show estMinutes bm (stepSkel g now p.val e.val.skel).line = estMinutes bm f.val.line
+      · rcases hc with hc | hc <;> cases hc
+      · cases hc
+      · rcases hc with hc | hc <;> cases hc
+      · show estMinutes bm (stepSkel g now p.val _ e.val.skel).line = estMinutes bm f.val.line
         rw [← hsk]; rfl
     | file r =>
       rw [hact] at hx
-      injection hx with hx
-      subst hx
-      obtain ⟨k, _, hstep⟩ := ht.2.1 r hact
-      refine ⟨rfl, e, f, hp, hq, rfl, ?_, fun hm => ?_, fun hm => ?_, ?_⟩
-      · show f.val.live.doc = (stepSkel g now p.val e.val.skel).doc
-        rw [← hsk]; rfl
-      · rw [← Core.skel_stamps, ← Core.skel_stamps, hsk, hstep, skelAfter_stamps_of_not_merging _ _ _ _ hm]
-      · obtain ⟨tl, st, ha, hs, hst⟩ := skelAfter_stamps_merging g r k e.val.skel hm
-        cases he : e.val.archive with
-        | none => simp [Core.skel, he] at ha
-        | some t =>
-          have htl : t.line = tl := by simpa [Core.skel, he] using ha
-          refine ⟨t, st, rfl, hs, ?_⟩
-          rw [← Core.skel_stamps, hsk, hstep, hst, htl]
-          rfl
-      · show estMinutes bm (stepSkel g now p.val e.val.skel).line = estMinutes bm f.val.line
-        rw [← hsk]; rfl
+      simp only at hx
+      cases hxd : (foldFxOf g now bm.val p.val i).isDrop with
+      | true =>
+        rw [if_pos hxd] at hx
+        injection hx with hx
+        subst hx
+        have hstep := stepSkel_of_drop (p := p.val) hact hxd
+        have hf : f.val.skel = { e.val.skel with status := .settled .dropped } := hsk.trans hstep
+        refine ⟨rfl, e, f, hp, hq, rfl, ?_, fun _ _ => ?_, fun hc => ?_, fun _ => ?_, fun hc => ?_, ?_⟩
+        · show f.val.live.doc = (stepSkel g now p.val _ e.val.skel).doc
+          rw [← hsk]; rfl
+        · rw [← Core.skel_stamps, ← Core.skel_stamps, hf]; simp [Skel.stamps]
+        · rcases hc with hc | hc <;> cases hc
+        · refine ⟨congrArg Skel.status hf, congrArg Skel.line hf, ?_⟩
+          rw [foldFxOf_isDrop] at hxd
+          cases hd : dropsInto g now p.val i with
+          | none => rw [hd] at hxd; cases hxd
+          | some r' => exact ⟨r', rfl⟩
+        · rcases hc with hc | hc <;> cases hc
+        · show estMinutes bm (stepSkel g now p.val _ e.val.skel).line = estMinutes bm f.val.line
+          rw [← hsk]; rfl
+      | false =>
+        rw [if_neg (by simp [hxd])] at hx
+        injection hx with hx
+        subst hx
+        obtain ⟨k, _, hstep⟩ := ht.2.1 r hact hxd
+        refine ⟨rfl, e, f, hp, hq, rfl, ?_, fun hm1 hm2 => ?_, fun hm => ?_, fun hc => ?_, fun hc => ?_, ?_⟩
+        · show f.val.live.doc = (stepSkel g now p.val _ e.val.skel).doc
+          rw [← hsk]; rfl
+        · rw [← Core.skel_stamps, ← Core.skel_stamps, hsk, hstep, skelAfter_stamps_of_not_merging]
+          intro hc
+          exact (fun h' => h'.elim hm1 hm2) ((CloseDid.ofStep_merging_iff _ _ _).2 hc)
+        · obtain ⟨tl, st, ha, hs, hst⟩ :=
+            skelAfter_stamps_merging g r k (foldFxOf g now bm.val p.val i) e.val.skel
+              (((CloseDid.ofStep_merging_iff _ _ _).1 hm))
+          cases he : e.val.archive with
+          | none => simp [Core.skel, he] at ha
+          | some t =>
+            have htl : t.line = tl := by simpa [Core.skel, he] using ha
+            refine ⟨t, st, rfl, hs, ?_⟩
+            rw [← Core.skel_stamps, hsk, hstep, hst, htl]
+            rfl
+        · exact absurd hc (CloseDid.ofStep_ne_dropIntoParent _ _ _)
+        · obtain ⟨hcopy, hlift⟩ := (CloseDid.ofStep_folding_iff _ _ _).1 hc
+          have hg := foldFxOf_isLift_week hlift
+          subst hg
+          have hnd := foldFxOf_isLift_not_drop hlift
+          have hmax := (close_week_folds_dropped_children_by_max h hp hq hact hnd).2
+          rw [hmax, remainingOf_carriedLine]
+        · show estMinutes bm (stepSkel g now p.val _ e.val.skel).line = estMinutes bm f.val.line
+          rw [← hsk]; rfl
     | overdue =>
       rw [hact] at hx
       injection hx with hx
       subst hx
       obtain ⟨k, _, hstep⟩ := ht.2.2 hact
       have hf : f.val.skel = { e.val.skel with doc := k } := hsk.trans hstep
-      refine ⟨rfl, e, f, hp, hq, rfl, ?_, fun _ => ?_, fun hc => absurd hc (by simp), ?_⟩
-      · show f.val.live.doc = (stepSkel g now p.val e.val.skel).doc
+      refine ⟨rfl, e, f, hp, hq, rfl, ?_, fun _ _ => ?_, fun hc => ?_, fun hc => ?_, fun hc => ?_, ?_⟩
+      · show f.val.live.doc = (stepSkel g now p.val _ e.val.skel).doc
         rw [← hsk]; rfl
       · rw [← Core.skel_stamps, ← Core.skel_stamps, hf]; simp [Skel.stamps]
-      · show estMinutes bm (stepSkel g now p.val e.val.skel).line = estMinutes bm f.val.line
+      · rcases hc with hc | hc <;> cases hc
+      · cases hc
+      · rcases hc with hc | hc <;> cases hc
+      · show estMinutes bm (stepSkel g now p.val _ e.val.skel).line = estMinutes bm f.val.line
         rw [← hsk]; rfl
 
-/-- **D1 and D7, in the report.**  A filed entry's destination is `closeTo g now`,
-in a file of the next coarser grain's kind; a carried entry's is the week
-containing *now*; an overdue entry's is the backlog, a file with no region.  The
-report names the destination the owner decided, not the one the closed line
-belonged to.  (Restates `closeReport_names_the_region_of_now`, whose second clause
-— every entry that is not a carry lands in `closeTo g now` — a `moveOverdue` entry
-falsifies since D7.) -/
-theorem closeReport_names_the_destination_of_now {g : Grain} {now : Day} {bm : BlockMin} {p q : WfPlan}
-    (h : close g now p = .ok q) {x : CloseEntry} (hx : x ∈ closeReport g now bm p.val) :
+/-- **D1, D7 and B3's fold, in the report** (restates
+`closeReport_names_the_destination_of_now`, whose third clause — every entry that is
+neither a carry nor an overdue move lands in `closeTo g now` — a `dropIntoParent`
+entry falsifies: the child stays in its closed week, `a_dropped_child_is_reported_where_it_stays`,
+Boundary.lean).  A filed entry's destination is `closeTo g now`, in a file of the next
+coarser grain's kind; a carried entry's is the week containing *now*; an overdue
+entry's is the backlog, a file with no region; and a dropped child's is the file it
+was in.  The report names the destination the owner decided, not the one the closed
+line belonged to. -/
+theorem closeReport_names_each_lines_destination {g : Grain} {now : Day} {bm : BlockMin} {p q : WfPlan}
+    (h : close g now bm.val p = .ok q) {x : CloseEntry} (hx : x ∈ closeReport g now bm p.val) :
     (x.did = .carry → docRegion q.val x.dst = some (regionOf week now)) ∧
       (x.did = .moveOverdue → docKindAt q.val x.dst = .backlog ∧ docRegion q.val x.dst = none) ∧
-      (x.did ≠ .carry → x.did ≠ .moveOverdue → docRegion q.val x.dst = some (closeTo g now)) := by
+      (x.did = .dropIntoParent → x.dst = x.src) ∧
+      (x.did ≠ .carry → x.did ≠ .moveOverdue → x.did ≠ .dropIntoParent →
+        docRegion q.val x.dst = some (closeTo g now)) := by
   obtain ⟨i, e, hp, hx⟩ := mem_closeReport hx
   obtain ⟨hfr, hall⟩ := close_spec h
   have hm := (hall i).1
@@ -479,28 +610,48 @@ theorem closeReport_names_the_destination_of_now {g : Grain} {now : Day} {bm : B
       subst hx
       obtain ⟨k, hk, hstep⟩ := ht.1 hact
       obtain ⟨_, _, hreg⟩ := findDocIx_spec hk
-      refine ⟨fun _ => ?_, fun hc => absurd hc (by simp), fun hc => absurd rfl hc⟩
-      show docRegion q.val (stepSkel g now p.val e.val.skel).doc = _
+      refine ⟨fun _ => ?_, fun hc => absurd hc (by simp), fun hc => absurd hc (by simp),
+        fun hc => absurd rfl hc⟩
+      show docRegion q.val (stepSkel g now p.val _ e.val.skel).doc = _
       rw [hstep, hfr.2.2]; exact hreg
     | file r =>
       rw [hact] at hx
-      injection hx with hx
-      subst hx
-      have hd := (close_files_a_taken_line_into_closeTo h hp hq hact).1
-      refine ⟨fun hc => ?_, fun hc => ?_, fun _ _ => ?_⟩
-      · exact absurd hc (CloseDid.ofStep_ne_carry _ _)
-      · exact absurd hc (CloseDid.ofStep_ne_moveOverdue _ _)
-      · show docRegion q.val (stepSkel g now p.val e.val.skel).doc = _
-        rw [← hsk]; exact hd
+      simp only at hx
+      cases hxd : (foldFxOf g now bm.val p.val i).isDrop with
+      | true =>
+        rw [if_pos hxd] at hx
+        injection hx with hx
+        subst hx
+        refine ⟨fun hc => absurd hc (by simp), fun hc => absurd hc (by simp), fun _ => ?_,
+          fun _ _ hc => absurd rfl hc⟩
+        show (stepSkel g now p.val _ e.val.skel).doc = e.val.skel.doc
+        rw [stepSkel_of_drop hact hxd]
+      | false =>
+        rw [if_neg (by simp [hxd])] at hx
+        injection hx with hx
+        subst hx
+        have hnd : dropsInto g now p.val i = none := by
+          rw [foldFxOf_isDrop] at hxd
+          cases hd : dropsInto g now p.val i with
+          | none => rfl
+          | some _ => rw [hd] at hxd; cases hxd
+        have hd := (close_files_a_taken_line_it_does_not_drop_into_closeTo h hp hq hact hnd).1
+        refine ⟨fun hc => ?_, fun hc => ?_, fun hc => ?_, fun _ _ _ => ?_⟩
+        · exact absurd hc (CloseDid.ofStep_ne_carry _ _ _)
+        · exact absurd hc (CloseDid.ofStep_ne_moveOverdue _ _ _)
+        · exact absurd hc (CloseDid.ofStep_ne_dropIntoParent _ _ _)
+        · show docRegion q.val (stepSkel g now p.val _ e.val.skel).doc = _
+          rw [← hsk]; exact hd
     | overdue =>
       rw [hact] at hx
       injection hx with hx
       subst hx
       obtain ⟨k, hk, hstep⟩ := ht.2.2 hact
       obtain ⟨_, hkind, hreg⟩ := overdueTarget_spec hk
-      refine ⟨fun hc => absurd hc (by simp), fun _ => ?_, fun _ hc => absurd rfl hc⟩
-      show docKindAt q.val (stepSkel g now p.val e.val.skel).doc = _ ∧
-        docRegion q.val (stepSkel g now p.val e.val.skel).doc = _
+      refine ⟨fun hc => absurd hc (by simp), fun _ => ?_, fun hc => absurd hc (by simp),
+        fun _ hc => absurd rfl hc⟩
+      show docKindAt q.val (stepSkel g now p.val _ e.val.skel).doc = _ ∧
+        docRegion q.val (stepSkel g now p.val _ e.val.skel).doc = _
       rw [hstep, hfr.2.2, hfr.2.1]; exact ⟨hkind, hreg⟩
 
 /-- **A stamp in the report names the grain that closed**, so the month review
@@ -515,8 +666,10 @@ theorem closeReport_stamp_names_its_grain {g : Grain} {now : Day} {bm : BlockMin
   · simp at hx
   · injection hx with hx; subst hx; simp at hs
   · rename_i r _
-    injection hx with hx; subst hx
-    exact closeStamp_names_the_closed_grain g r.ix st hs
+    split at hx
+    · injection hx with hx; subst hx; simp at hs
+    · injection hx with hx; subst hx
+      exact closeStamp_names_the_closed_grain g r.ix st hs
   · injection hx with hx; subst hx; simp at hs
 
 /-! ## `autoClose`'s report names each line at most once
@@ -530,23 +683,24 @@ review reads — an id appears in one grain's entries or in none. -/
 order, each against the plan its close was handed. -/
 theorem autoCloseR_ok {now : Day} {bm : BlockMin} {p q : WfPlan} {r : Report}
     (h : autoCloseR now bm p = .ok (q, r)) :
-    ∃ q1 q2, close day now p = .ok q1 ∧ close week now q1 = .ok q2 ∧ close month now q2 = .ok q ∧
+    ∃ q1 q2, close day now bm.val p = .ok q1 ∧ close week now bm.val q1 = .ok q2 ∧
+      close month now bm.val q2 = .ok q ∧
       r.closes = closeReport day now bm p.val ++ closeReport week now bm q1.val ++
         closeReport month now bm q2.val := by
   unfold autoCloseR at h
   simp only [autoCloseOrder, List.foldlM_cons, List.foldlM_nil] at h
   unfold closeStepR at h
-  cases h1 : close day now p with
+  cases h1 : close day now bm.val p with
   | error x => rw [h1] at h; exact absurd h (by simp [bind, Except.bind, Except.map])
   | ok q1 =>
     rw [h1] at h
     simp only [Except.map, bind, Except.bind] at h
-    cases h2 : close week now q1 with
+    cases h2 : close week now bm.val q1 with
     | error x => rw [h2] at h; exact absurd h (by simp)
     | ok q2 =>
       rw [h2] at h
       simp only at h
-      cases h3 : close month now q2 with
+      cases h3 : close month now bm.val q2 with
       | error x => rw [h3] at h; exact absurd h (by simp)
       | ok q3 =>
         rw [h3] at h
@@ -574,8 +728,8 @@ theorem not_mem_closeCands_of_stay {g : Grain} {now : Day} {p : PlanCore} {i : I
   exact hne (h e he)
 
 /-- **A line a close took is not a line any close at that instant takes next.** -/
-theorem close_takes_a_line_out_of_every_close {g g' : Grain} {now : Day} {p q : WfPlan}
-    (h : close g now p = .ok q) {i : Id} (hi : i ∈ closeCands g now p.val) :
+theorem close_takes_a_line_out_of_every_close {g g' : Grain} {now : Day} {bm : Nat} {p q : WfPlan}
+    (h : close g now bm p = .ok q) {i : Id} (hi : i ∈ closeCands g now p.val) :
     ∀ f, q.val.store.get i = some f → closeAct g' now q.val f.val.skel = .stay := by
   intro f hq
   obtain ⟨e, hp, hne⟩ := mem_closeCands hi
@@ -584,13 +738,13 @@ theorem close_takes_a_line_out_of_every_close {g g' : Grain} {now : Day} {p q : 
   have hst := (hall i).2 f hq
   rw [closeAct_frame hfr, hsk] at hst
   rw [closeAct_frame hfr, hsk]
-  rcases stepSkel_lands_outside_every_closed_region g g' now p.val e.val.skel with ht | ht
+  rcases stepSkel_leaves_nothing_a_close_takes g g' now p.val (foldFxOf g now bm p.val i) e.val.skel with ht | ht
   · rw [ht] at hst; exact absurd hst hne
-  · exact closeAct_of_closedRegionOf_none ht
+  · exact ht
 
 /-- A line no close of grain `g` takes stays that way through a close of any grain. -/
-theorem close_keeps_a_line_untaken {g g' : Grain} {now : Day} {p q : WfPlan}
-    (h : close g' now p = .ok q) {i : Id}
+theorem close_keeps_a_line_untaken {g g' : Grain} {now : Day} {bm : Nat} {p q : WfPlan}
+    (h : close g' now bm p = .ok q) {i : Id}
     (hs : ∀ e, p.val.store.get i = some e → closeAct g now p.val e.val.skel = .stay) :
     ∀ f, q.val.store.get i = some f → closeAct g now q.val f.val.skel = .stay := by
   intro f hq
@@ -603,9 +757,9 @@ theorem close_keeps_a_line_untaken {g g' : Grain} {now : Day} {p q : WfPlan}
     rw [hpi] at hm
     simp only [Option.map_some, Option.some.injEq] at hm
     rw [closeAct_frame hfr, hm]
-    rcases stepSkel_lands_outside_every_closed_region g' g now p.val e.val.skel with ht | ht
+    rcases stepSkel_leaves_nothing_a_close_takes g' g now p.val (foldFxOf g' now bm p.val i) e.val.skel with ht | ht
     · rw [ht]; exact hs e hpi
-    · exact closeAct_of_closedRegionOf_none ht
+    · exact ht
 
 /-- **Each id at most once in an `autoClose` report** — however stale the tree,
 no line is reported by two grains, so no line is reported stamped twice. -/
@@ -687,12 +841,12 @@ theorem closedRegionOf_of_closeAct {g : Grain} {now : Day} {p : PlanCore} {s : S
   | some r => exact ⟨r, rfl⟩
 
 /-- **A step moves a line only between the kinds the table names.** -/
-theorem stepSkel_doc_kinds (g : Grain) (now : Day) (p : PlanCore) (s : Skel)
-    (h : (stepSkel g now p s).doc ≠ s.doc) :
+theorem stepSkel_doc_kinds (g : Grain) (now : Day) (p : PlanCore) (x : FoldFx) (s : Skel)
+    (h : (stepSkel g now p x s).doc ≠ s.doc) :
     docKindAt p s.doc = kindOfGrain g ∧
-      (docKindAt p (stepSkel g now p s).doc = kindOfGrain (coarsen g) ∨
-        ((∃ b, s.wallAhead now = some b) ∧ docKindAt p (stepSkel g now p s).doc = .week) ∨
-        (s.overdue now = true ∧ docKindAt p (stepSkel g now p s).doc = .backlog)) := by
+      (docKindAt p (stepSkel g now p x s).doc = kindOfGrain (coarsen g) ∨
+        ((∃ b, s.wallAhead now = some b) ∧ docKindAt p (stepSkel g now p x s).doc = .week) ∨
+        (s.overdue now = true ∧ docKindAt p (stepSkel g now p x s).doc = .backlog)) := by
   cases hact : closeAct g now p s with
   | stay => rw [stepSkel_of_stay hact] at h; exact absurd rfl h
   | carry =>
@@ -700,22 +854,25 @@ theorem stepSkel_doc_kinds (g : Grain) (now : Day) (p : PlanCore) (s : Skel)
     refine ⟨(closedRegionOf_spec hr).2.1, Or.inr (Or.inl ⟨closeAct_carry_is_a_wall hact, ?_⟩)⟩
     cases hk : carryTarget now p with
     | none =>
-      have hs : stepSkel g now p s = s := by unfold stepSkel; simp only [hact, hk]
+      have hs : stepSkel g now p x s = s := by unfold stepSkel; simp only [hact, hk]
       rw [hs] at h; exact absurd rfl h
     | some k =>
-      have hs : stepSkel g now p s = { s with doc := k } := by unfold stepSkel; simp only [hact, hk]
+      have hs : stepSkel g now p x s = { s with doc := k } := by unfold stepSkel; simp only [hact, hk]
       rw [hs]; exact (findDocIx_spec hk).2.1
   | file r =>
     obtain ⟨r', hr⟩ := closedRegionOf_of_closeAct (by rw [hact]; simp)
     refine ⟨(closedRegionOf_spec hr).2.1, Or.inl ?_⟩
+    cases hx : x.isDrop with
+    | true => rw [stepSkel_of_drop hact hx] at h; exact absurd rfl h
+    | false =>
     cases hk : closeTarget g now p with
     | none =>
-      have hs : stepSkel g now p s = s := by unfold stepSkel; simp only [hact, hk]
+      have hs : stepSkel g now p x s = s := by rw [stepSkel_of_file hact hx, hk]
       rw [hs] at h; exact absurd rfl h
     | some k =>
-      have hs : stepSkel g now p s = skelAfter g r k s := by unfold stepSkel; simp only [hact, hk]
+      have hs : stepSkel g now p x s = skelAfter g r k x s := by rw [stepSkel_of_file hact hx, hk]
       rw [hs] at h ⊢
-      rcases skelAfter_doc g r k s with hd | hd
+      rcases skelAfter_doc g r k x s with hd | hd
       · rw [hd]; exact (findDocIx_spec hk).2.1
       · rw [hd] at h; exact absurd rfl h
   | overdue =>
@@ -723,10 +880,10 @@ theorem stepSkel_doc_kinds (g : Grain) (now : Day) (p : PlanCore) (s : Skel)
     refine ⟨(closedRegionOf_spec hr).2.1, Or.inr (Or.inr ⟨(closeAct_overdue_iff.1 hact).2.2.2.2, ?_⟩)⟩
     cases hk : overdueTarget p with
     | none =>
-      have hs : stepSkel g now p s = s := by unfold stepSkel; simp only [hact, hk]
+      have hs : stepSkel g now p x s = s := by unfold stepSkel; simp only [hact, hk]
       rw [hs] at h; exact absurd rfl h
     | some k =>
-      have hs : stepSkel g now p s = { s with doc := k } := by unfold stepSkel; simp only [hact, hk]
+      have hs : stepSkel g now p x s = { s with doc := k } := by unfold stepSkel; simp only [hact, hk]
       rw [hs]; exact (overdueTarget_spec hk).2.1
 
 end Tm

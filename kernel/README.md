@@ -7235,3 +7235,342 @@ binaries** (+3: `a_typod_parent_refuses_a_kernel_backed_verb_by_name_and_writes_
 **4.60 : 1** (17,250 : 3,750; this step 261 : 78), by the stage-4 script
 (`/tmp/claude-1000/proof_ratio.py kernel/TmKernel/TmKernel`).  Gaps run to 71 (new gaps
 start at 72); cheats to 61 (new cheats start at 62).
+
+<!-- ===================================================================
+     APPENDED 2026-09-13 (stage-4 final).  Step 4: goal B3, the week row's child fold — the additive statement refuted and renamed, §6.4's `max` law proved beside it; stage 4's goal count is zero.
+     Closes goal B3 and stage 4; takes gaps 72–74; takes cheats 62–66.  Retires twelve theorem names and restates each beside its replacement (table below); the goal is refuted as `close_week_does_not_add_a_dropped_child_to_its_parent`.
+     Supersedes, by name: stage-4 step 2's scope-out "unfinished children are dropped, their remaining folded into the parent's `est:`" (`children := .gap22Parent`, later `.childFoldB3`) and `Close.lean`'s module-header sentence to the same effect; `closePolicy_owes_only_the_child_fold` and the `Owed` type; stage 4 final step 1's "B3 is expected to be refuted and renamed … its statement is unchanged" (done, below); step 2's and step 3's "Owed (1) B3"; AGENTS §8.2's "What remains, by name: B3" and "Stage 4 has B3 left", §10.5's closing paragraphs' "B3 stands"; `Goals.lean`'s B3 docstring and its stage-4 header's "one goal of this section stands"; `closing.rs`'s module-doc clause "the folding of children into their parent (gap 22)" as something the close does not do; the host's `CloseDid` as "six names"; `cli_lifecycle.rs`'s `close_on_the_monday_after_reports_each_line_it_took` as it stood (it pinned the four tasks as `copy`); `the_example_week_closes_with_d1_in_the_backlog_overdue`'s expected lines as they stood (the four tasks filed as records).
+     =================================================================== -->
+
+## Stage 4 final, step 4, 2026-09-13: a dropped child is folded by `max` — stage 4 at zero
+
+Baseline re-measured at `b2af1a8` (tree clean), every command under `systemd-run --user
+--scope -p MemoryMax=40G -p MemorySwapMax=0` (8 GB and `timeout 120` for every new
+`decide` probe): `check.sh` **7/7** — axiom audit **1717 theorems**, corpus **29/37 files
+and 4/5 whole plans**, burn-down **30** (stage 4: B3); `cargo test --workspace` **1007
+passed / 0 failed across 66 binaries**, `cli_latency.rs` included; FFI suite **75** (67
+kernel + 8 corpus).  `cli_latency.rs` on a worktree of `b2af1a8`, three serial runs:
+first verb **596 / 608 / 602 ms**, later verb 60.8 / 65.9 / 55.7 ms.
+
+**What fork-point `horizon::close_week` does, read rather than remembered** (`git show
+4748911:tm-core/src/horizon.rs`: the module doc's "Folding children", `close_week`,
+`demoted_ancestor`, `is_demotion_root`, `own_minutes`, `demote_est`, `demote_one`).
+(1) *Which lines:* the week file's open non-recurring lines that are neither overdue nor
+carried are the `candidates` — and `carried_walls` carries every interval that is not
+past due **together with its prep children at any depth in the file**, so a wall's child
+is never a candidate; a candidate whose `tree.parent` is a candidate is a
+child, and `demoted_ancestor` walks up through candidates to the first one whose parent is
+not a candidate — the root.  A child of a line that stays and does not carry it (an overdue
+line filed to the backlog, a line of another file) is itself a root.  A parent-cycle member
+is a root, with a note.  *(This sentence corrected before its commit: the draft listed "a
+carried wall" among the parents whose children are roots; `carried_walls` makes them
+carried lines instead — difference (g), gap 74.)*  (2) *The fold:* `folded[root] += own_minutes(child)` for every
+child at any depth — `own_remaining`: `est:`, else the leading estimate, else `dur:`, and 0
+for a line with none; each dropped line counted once.  (3) *The record:* `demote_one(…,
+folded)` writes `est:` = `demote_est`: `max(remaining_est(item), max(folded, recorded'))`,
+where `remaining_est` is the line's own remaining or the §6.4 rollup, floored at
+`MIN_REMAINING_MIN` = 5, and `recorded'` is the standing record's measurement only when the
+line owns no estimate (L15) — **the fold's floor has no user exception**.  The value is
+written whole blocks when the block length divides it, else `Dur::canonical` (`Nm`, `Nh`,
+`NhMm`), `est` set before `demoted`.  (4) *The children:* `remove_line_in` — **deleted** from
+the week file, logged nothing, listed in the report's `dropped_children`.
+
+**The kernel's fold (spec-settled, README "Stage 4 final").**  `ClosePolicy.children` is
+now `ChildRule` (`asAnyLine | dropIntoParent`), the week row's `dropIntoParent`, bridged by
+`closePolicy_drops_children_only_at_week` and `closePolicy_drops_children_only_at_a_copying_row`
+(the table owes nothing any more).  From the plan a close is handed, once per close:
+`foldParent g now p j` is `j`'s `@parent` when the close **files** both (`closeAct … =
+.file _`) from **one document**; `dropsInto` walks it up to the first line with none, with
+the store's size as fuel (`planWf`'s `parentsAcyclic` makes the fuel sufficient; where it
+would run out the line is filed as a root, so no minutes can vanish — `dropsInto_spec`);
+`foldTab` lists each dropped line once with its root and `ownMinutes` (`remainingOf` of its
+line); `foldedMinutes g now bm p i` is the sum for root `i`; `foldFxOf` hands each line
+`FoldFx.drop`, `.lift bm n` or `.none`.  `closeOne g now x i` drops a line `x` says to —
+`[~]` in place through `mapAt` (`dropE`) — and files every other with `fileE g r x`, whose
+copy is `refileX x`: `refile`'s placements, box and refusal, and `refiledLineX`'s bytes,
+`setDemoted` over `x.apply` of the carried line — `foldEst bm n l`, which is `l` when `n ≤
+remainingOf bm l` and `setEstTo (renderDur (foldDur bm n)) l` otherwise.  The reading is
+`max (remainingOf bm l) n` (`remainingOf_foldEst`), which is `demoteEst bm false n`'s
+(`foldEst_reads_as_demoteEst`): the children's minutes are a recorded measurement with no
+user exception, as in the fork point.  **The fold needs the block length** — `1b + 30m` is
+not a number without it — so `close g now` is `close g now bm`, and `autoClose now bm`; the
+wire has carried `blockMin` since stage 4 step 5 (for the report), and `applyCmd` now hands
+it to the plan transform.  Two `@[csimp]` twins keep the history tree's cost:
+`foldParent_eq_foldParentFast` reads the `@parent` before classifying a placement, and
+`foldTab_eq_foldTabFast` answers a row that drops nothing without walking the store;
+`closeReport` computes its fold table once.
+
+**Deliberate differences from the fork point, each with its reason.**
+(a) *A dropped child stays, `[~]` in place, and logs nothing* — the fork point deleted it.
+No kernel command removes an entity (`close_dom`: a close keeps the store's domain); §0
+principle 6 is "demotion, not deletion"; the owner's D1 evidence named "an item whose parent
+was in the closing week was deleted, its minutes silently absorbed" as a defect; and goal B3
+itself stated the child as present and `settled dropped` afterwards.  The host logs no event
+for a `dropIntoParent` entry, as the fork point logged none for `dropped_children`.
+(b) *A dropped child's standing `# Demoted` record stays where it stands, unmerged* — the
+fork point also left the record and deleted the week line; but a kernel month close takes no
+settled item, so the record is no longer carried into the next month (gap 72).
+(c) *The parent's own reading is the line's* (`est:` over the leading estimate, or L15's
+merge), *not §6.4's rollup, and there is no `MIN_REMAINING_MIN` floor* — the existing
+stage-4 scope-out (`est:` = remaining beyond the line's own reading is stage 5's); a child
+contributes `remainingOf` of its line, so one with only `dur:` counts 0 where the fork
+point counted its `dur:` (gap 73).
+(d) *Units:* whole blocks when the block length divides the minutes, else whole hours,
+else `Nm` — never `NhMm`, which the reader `remainingOf` (`unitValue`) does not read, so
+`90m` where the fork point wrote `1h30m`.
+(e) *Same document:* the kernel folds only within one closed week file, which is what the
+fork point's one-file-at-a-time closes did across a catch-up; a child in `W37` whose parent
+is in `W36` is filed as a root, as the fork point filed it.
+(f) *The report names absorption, not effect:* a filed line with any child dropped into it
+is `copyFolding` (`copyMergingFolding` with a standing record) even when the `max` changed
+nothing; its minutes say what it carries.
+(g) *A wall's prep children are not carried with it* — not a choice of this step but a
+stage-4 step-2 scope-out ("with it goes fork-point `close_week`'s carrying of a wall's prep
+children, which the kernel demotes as ordinary lines", tied to gap 22) that D6 unblocked and
+nothing has taken since.  The fold leaves it as it was: a shapeless child of a carried wall
+is `file`, its parent `carry`, so `foldParent` is `none` and the child is filed as a root,
+`[-]` with a record, where the fork point moved it into the live week `[ ]` beside its
+wall.  Gap 74.
+
+**Observable behaviour changes, each next to the rule it replaces** (AGENTS §4's last row).
+The authority for rows 33–38 is spec §6.3's week row and §6.4's `remaining`, spec-settled
+(README "Stage 4 final": not an owner decision), applied through fork-point `demote_est`'s
+documented choice.
+
+| # | the rule it replaces | now | authority | separated by |
+|---|---|---|---|---|
+| 33 | stage-4 step 2's scope-out: an unfinished child of a line the week close files was filed like its parent — `[-]` left behind, a stamped record in `# Demoted` | dropped: `[~]` in place, no record, no stamp, no event; its own remaining floors the nearest filed ancestor's record | spec §6.3 | `close_week_drops_a_child_with_its_parent`; `the_week_close_folds_dropped_children_on_a_loaded_plan`; FFI `a_week_close_folds_dropped_children_on_the_wire`; CLI `a_week_close_folds_dropped_tasks_into_their_milestone_by_max`; cheat 66 |
+| 34 | a filed line's record carried its own reading, or L15's merge | carries `max(that, Σ own remaining of the children dropped with it)`; `est:` is written only when the children outweigh it | spec §6.4 | `close_week_folds_dropped_children_by_max`, `close_week_lifts_a_parent_its_dropped_children_outweigh`, `close_week_keeps_a_parent_that_covers_its_dropped_children`; cheats 62, 65 |
+| 35 | goal B3: a dropped child's remaining *added* to its parent's | not added: covered, `remaining child ≤ remaining of the parent's record` | spec §6.4 | `close_week_does_not_add_a_dropped_child_to_its_parent` (refutation); `close_week_keeps_a_dropped_childs_remaining_in_its_parents_record` |
+| 36 | `close g now`, `autoClose now` | `close g now bm`, `autoClose now bm`: the plan transform reads the request's `blockMin` | B3 | every statement over `close` (kept names, below) |
+| 37 | a report entry was one of six dispositions | one of nine: `dropIntoParent`, `copyFolding`, `copyMergingFolding` added; the host decodes the nine and refuses any other name; its human line's `moved` excludes the three | D3's per-item list | `closeReport_agrees_with_close_stamping_or_merging`, `closeReport_names_each_lines_destination`, `CloseDid.ofName?_refuses_near_fold`; cheat 64 |
+| 38 | §4.3's example week at 2026-09-14: `^t1`, `^t3`, `^t4`, `^t5` filed as `[-]` records into September (10 report entries: 9 `copy`/1 `carry`; "1 moved · 9 demoted") | `[~]` in the week, no records; `^m1`–`^m3` `copyFolding`, their records unchanged (each milestone covers its tasks); "1 moved · 5 demoted" | spec §6.3 | `the_example_week_closes_with_d1_in_the_backlog_overdue` (re-decided); CLI `close_on_the_monday_after_reports_each_line_it_took` |
+
+**Theorems, both directions (AGENTS §5.8).**
+
+| claim | theorem |
+|---|---|
+| the column is real and the week row's only | `closePolicy_drops_children_only_at_week`, `closePolicy_drops_children_only_at_a_copying_row`, `foldFxOf_of_asAnyLine`; cheat 63 |
+| what the fold computes: a dropped line is one the close files whose parent it files from the same file; its minutes go to a filed, undropped line of that file; each is counted there | `foldParent_spec`, `foldUp_spec`, `dropsInto_spec`, `ownMinutes_le_foldedMinutes`, `foldedMinutes_of_dropped`, `foldFxOf_apply`, `foldFxOf_isDrop` |
+| **the max law**: a filed, undropped week line's record reads `max(carried, folded)` | `close_week_folds_dropped_children_by_max` (over `remainingOf_carriedLine` = `demoteEst`'s reading) |
+| a stale parent is lifted / a covering parent is left byte for byte | `close_week_lifts_a_parent_its_dropped_children_outweigh` / `close_week_keeps_a_parent_that_covers_its_dropped_children` |
+| the child: `[~]`, file, bytes and tombstone kept, its root filed from its file, its minutes counted there | `close_week_drops_a_child_with_its_parent`; `close_week_keeps_a_dropped_childs_remaining_in_its_parents_record` |
+| the additive goal is false | `close_week_does_not_add_a_dropped_child_to_its_parent` (`^p2` 300 + `^c3` 50 ≰ 300) |
+| hypotheses satisfiable, both directions | `close_week_folds_dropped_children_by_max_is_not_vacuous` (`b := true` at `^p1`, 100 < 150; `false` at `^p2`, 100 ≤ 300), `close_week_drops_a_child_with_its_parent_is_not_vacuous` |
+| on a loaded plan: `^p1` (`2b`) with `2b + 1b` and a grandchild with no estimate carries `est:3b`; `^p2` (`6b`) with `1b + 1b` only its stamp; five tasks `[~]`; `^c5`'s record unmerged; the report | `the_week_close_folds_dropped_children_on_a_loaded_plan`, `the_fold_on_the_loaded_witness`, `the_week_close_reports_the_fold`, `the_fold_facts_on_the_loaded_witness` |
+| the fold is a function of what its close takes; a close of another grain keeps it | `foldFxOf_congr`, `close_keeps_skel_of_another_grain`, `close_keeps_foldFxOf_of_another_grain`, `close_dom` |
+| the fold's estimate: read back, `max`, `demoteEst`'s, keeps the date and stamps | `viewRemaining_setEstTo`, `unitValue_foldDur`, `remainingOf_foldEst`, `foldEst_reads_as_demoteEst`, `viewShape_refiledLineX`, `refiledLineX_stamps_mem`, `Field.lookupKey_setEstTo_other` |
+
+**Retired and restated** (twelve names; `Check.lean`'s step-4 block lists them too).  Each
+old statement is false under the fold, and every one that is not a helper is refuted on
+the loaded fold witness, stated over the new `close g now bm`:
+`closePolicy_owes_only_the_child_fold` → `closePolicy_drops_children_only_at_week` (+
+`…_at_a_copying_row`); `stepSkel_line_is_stamped_or_merged` →
+`stepSkel_line_is_stamped_merged_or_folded`; `close_rewrites_a_line_only_by_stamping_or_merging_it`
+→ `close_rewrites_a_line_only_by_stamping_merging_or_folding_it` (refuted:
+`a_folded_record_is_rewritten_beyond_its_stamp`);
+`close_rewrites_a_line_with_no_record_only_by_stamping_it` →
+`close_rewrites_a_line_with_no_record_only_by_stamping_or_folding_it` and
+`close_rewrites_a_line_with_no_record_and_nothing_folded_only_by_stamping_it` (refuted:
+`a_folded_line_with_no_record_is_rewritten_beyond_its_stamp`);
+`close_reads_every_remaining_estimate_through_demoteEst` →
+`close_reads_every_remaining_estimate_through_demoteEst_and_the_fold` (refuted:
+`a_folded_record_changes_a_remaining_estimate`);
+`close_keeps_the_remaining_estimate_of_a_line_with_no_record` →
+`close_keeps_the_remaining_estimate_of_a_line_with_no_record_and_nothing_folded` (refuted:
+`a_folded_line_with_no_record_changes_its_remaining_estimate`);
+`close_files_a_taken_line_into_closeTo` → `close_files_a_taken_line_it_does_not_drop_into_closeTo`
+(refuted: `a_dropped_child_is_not_filed_into_closeTo`); `close_week_merges_a_standing_record`
+→ `close_week_merges_a_standing_record_it_does_not_drop` (refuted:
+`a_dropped_child_keeps_its_record_unmerged`), and its `_is_not_vacuous`;
+`close_week_files_a_dated_line_keeping_its_date` →
+`close_week_files_a_dated_line_it_does_not_drop_keeping_its_date` (refuted:
+`a_dropped_dated_child_is_not_filed_as_a_record`); `close_week_demotes_a_not_yet_due_line_keeping_its_date`
+→ `close_week_demotes_a_not_yet_due_line_it_does_not_drop_keeping_its_date` (refuted:
+`a_not_yet_due_child_is_dropped_with_its_parent` — D8's "demoted like any unfinished task"
+is "like any unfinished task §6.3 does not drop with its parent"); `closeReport_names_the_destination_of_now`
+→ `closeReport_names_each_lines_destination` (refuted: `a_dropped_child_is_reported_where_it_stays`).
+
+**Kept names whose statements changed, recorded.**  *By the new argument alone* (`bm` on
+`close`/`autoClose`, the fold's `x`/`fx` on `stepSkel`, `skelAfter`, `fileE`, `closeOne`,
+the fold lemmas): `close_spec`, `close_skel`, `fileE_skel`, `stepSkel_frame`, `closeOne_spec`,
+`foldlM_closeOne_spec`, `stepSkel_of_exempt`, `skelAfter_doc`, `close_leaves_no_line_it_would_take`,
+`close_leaves_no_unfinished_line_in_a_closed_region`, `stepSkel_day_stamps`,
+`close_day_stamps_a_day_stamp`, `close_never_demotes_a_wall_but_may_carry_it`,
+`close_day_files_into_the_week_of_now`, `close_carries_a_wall_that_is_still_ahead`,
+`closeOne_refuses_a_carry_with_no_live_week`, `fileE_alreadyDemoted`,
+`closeOne_refuses_alreadyDemoted_only_over_a_stray_tomb`,
+`closeOne_never_refuses_alreadyDemoted_without_a_stray_tomb`,
+`close_answers_alreadyDemoted_only_at_a_copying_row`, `close_refuses_what_its_first_step_refuses`,
+`close_without_candidates_is_the_identity`, `stepSkel_of_stay`, `stepSkel_comm` (one fold
+per grain, `xs`), `close_bind_close_skel`, `close_skel_after`, `autoClose_skel`,
+`stepSkel_three_is_one`, `autoClose_takes_each_line_at_most_once`,
+`stepSkel_appends_at_most_one_stamp_or_merges`, every `autoClose_*` and
+`close_keeps_nothing_to_close`, the D7 landing lemmas and laws
+(`closeOne_lands_an_overdue_line_under_overdue`, `fold_keeps_an_overdue_line_under_overdue`,
+`fold_lands_an_overdue_line_under_overdue`, `close_lands_every_overdue_line_under_overdue`,
+`close_moves_a_past_due_persist_line_to_the_backlog`,
+`close_week_moves_a_past_due_persist_line_to_the_backlog`), Report.lean's
+`closeR_plan`, `foldlM_closeStepR_plan`, `autoCloseR_plan`, `closeReport_ids`, `mem_closeReport`,
+`close_found_the_target`, `closeReport_stamp_names_its_grain`, `autoCloseR_ok`,
+`close_takes_a_line_out_of_every_close`, `close_keeps_a_line_untaken`, `stepSkel_doc_kinds`,
+`CloseDid.ofStep_ne_carry`, `CloseDid.ofStep_ne_moveOverdue`, and Boundary.lean's eleven
+refutations and witnesses quantifying a close (`close_leaves_live_lines_in_a_closed_region`,
+`close_does_not_leave_every_wall_as_it_was`, `close_writes_a_line_demoteEst_does_not`,
+`autoClose_leaves_lines_in_periods_it_passes`, `a_merged_record_is_rewritten_beyond_its_stamp`,
+`a_merged_record_changes_a_remaining_estimate`, `autoClose_merges_a_line_beyond_one_appended_stamp`,
+`a_close_can_refuse_alreadyDemoted`, `closeReport_agrees_with_close_is_refuted_by_a_merge`,
+`close_week_and_close_month_do_not_commute`, `close_week_month_orders_both_succeed_and_differ`).
+*By a hypothesis or a disjunct naming the fold*, each because the unextended form is false of
+a dropped line: `closeOne_moves` (a third disjunct, the in-place drop; its file clause says
+the step was not one), `fold_keeps_order_after_first` (`j` is not dropped),
+`fold_keeps_order` (`hfold`, `hdoc`, `hlt`), `closeOne_refuses_a_missing_target`,
+`closeOne_refuses_a_missing_section`, `closeOne_refuses_an_ill_formed_post_state` and
+`closeOne_never_merges_into_a_stray_tomb` (`x.isDrop = false` — a drop needs no target and
+touches no tombstone), `close_found_the_target` (the same, in its file clause),
+`stepSkel_lands_outside_every_closed_region` (a dropped child stays in its closed file,
+settled; the general form is the new `stepSkel_leaves_nothing_a_close_takes`),
+`skelAfter_stamps_of_not_merging`/`skelAfter_stamps_merging` (the merging test reads the
+row and the tombstone rather than a disposition name).  *Decided witnesses re-decided under
+their names with new expected values:* `the_example_week_closes_with_d1_in_the_backlog_overdue`
+(row 38).
+
+**The two-run laws this breaks, re-proved in the same step (D5).**
+- **L16, `close_is_idempotent`** — the proof text is unchanged; its engine,
+  `close_leaves_no_line_it_would_take`, reads `closeOne_spec`'s new drop branch, whose "not
+  taken again" is `closeAct_of_settled`: a `[~]` child is settled, and no row takes a settled
+  line.  At the CLI: the new test's second `tm close week` changes no byte; at the wire: the
+  FFI test's second close reports nothing.
+- **`close_keeps_source_order`, `close_keeps_source_order_iff`** — re-proved with one added
+  hypothesis, `hfold : (foldFxOf … j).isDrop = (foldFxOf … i).isDrop`: "the same action" now
+  includes whether the fold drops the line.  **This is the narrowing, stated plainly:** the
+  statement as it stood is **false** since B3's repair — `^p1` and its subtask `^c1` are
+  taken by one action (`file`) from one file and end in different files —
+  `a_dropped_child_and_its_filed_parent_part_ways` proves its negation on the loaded
+  witness.  The new case (two dropped lines keep their ranks, no step moving either) is
+  `fold_keeps_order_of_drop`.  No stronger true statement of the same shape exists: any pair
+  of a dropped and a filed line separates.
+- **The L19 theorems** (`autoClose_is_each_grain_once`, `autoClose_catches_up_in_one_step`,
+  `autoClose_strands_no_unfinished_line`, `autoClose_takes_each_line_at_most_once`,
+  `autoClose_appends_at_most_one_stamp_or_merges_each_line`) — through
+  `stepSkel_leaves_nothing_a_close_takes` (a move lands outside every closed region; a drop
+  settles) and, for the per-id reading, `close_keeps_foldFxOf_of_another_grain`: the day close
+  leaves the week row's fold as it was, and the month row folds nothing, so
+  `autoClose_takes_each_line_at_most_once` reads `stepSkel g now p (foldFxOf g now bm p i)`
+  against the starting plan, as before.
+- **The report agreement, `closeReport_agrees_with_close_stamping_or_merging`** — its name
+  kept, its statement extended to the three new dispositions and nothing else: the append
+  clause excludes `copyMergingFolding` beside `copyMerging`, the merge clause includes it; a
+  `dropIntoParent` entry is `[~]` with its bytes and a root; a `…Folding` entry's record reads
+  §6.4's `max`.  On the six dispositions it had, every clause is as it was.
+- **`two_closes_at_one_instant_commute_on_skeletons`** — statement unchanged but for `bm`;
+  `close_bind_close_skel` needs `close_keeps_foldFxOf_of_another_grain` and
+  `stepSkel_congr_fx`.  `close_week_and_close_month_do_not_commute`,
+  `lifecycle_commands_do_not_commute` and `move_has_no_inverse_command` re-checked (the last
+  one's `hnoclose` quantifies the fold's argument).
+- **`close_spec`** — its per-id denotation is `stepSkel g now p (foldFxOf g now bm p j)`.
+
+**Probes, under the 8 GB cap first** (each in a scratch file importing the built
+`TmKernel.Boundary`, `timeout 120`): `the_close_fold_witness_loads` 1.4 s / 0.86 GB;
+`the_week_close_folds_dropped_children_on_a_loaded_plan` 2.7 s / 1.15 GB; with
+`the_fold_on_the_loaded_witness`, `the_week_close_reports_the_fold` and
+`the_fold_facts_on_the_loaded_witness` 6.2 s / 1.50 GB together; the whole new section
+(six decisions and every refutation over them) 19.9 s / 2.48 GB;
+`the_dated_witness_drops_nothing` 2.5 s / 1.09 GB; cheats 62–66 0.1–0.9 s each, each failing
+for its stated reason (`decide` proved the proposition false).  **Not probed before its
+build:** `the_merge_witness_drops_neither_record` was first decided inside a capped
+`Boundary.lean` build (whole build 1:33 at a 7.75 GB peak, under the 40 GB cap); probed
+alone afterwards, 2.0 s / 0.97 GB.  First forms that did not elaborate, kept out: a nine-field
+`Prod` of facts (no `Decidable` instance synthesised) — restated as a `List Nat`.
+**Build cost:** `Boundary.lean` alone 1:33 / 7.75 GB (92 s at `b2af1a8`); the whole `lake
+build TmKernel:static` 1:53 at a 7.27 GB peak (96.4 s / 7.83 GB at `b2af1a8`); `check.sh`
+149.5 s at a 7.70 GB peak.
+
+**Latency.**  `cli_latency.rs`, serial runs on one machine: first verb **627 / 612 / 616 /
+617 ms** with both twins (596 / 608 / 602 at `b2af1a8`; 632 / 643 / 642 before the twins),
+later verb 55.8 / 55.7 / 62.3 / 55.7 ms — about 2 % on the first verb, inside the 5 s bound.
+Re-measured at commit time on the tree committed (three serial capped runs of `cargo test -p
+tm --test cli_latency -- --nocapture`): first verb **617 / 602 / 648 ms**, later verb 55.7 /
+60.8 / 55.8 ms (226 files, 2,959 lines).
+
+**The host.**  `kernel_bridge.rs`: `CloseDid` decodes the nine names (an unknown one still
+refused).  `closing.rs`: a `dropIntoParent` entry logs no event; the human line's `moved`
+excludes the three new dispositions; the module doc no longer lists the fold as undone.
+Tests: `close_on_the_monday_after_reports_each_line_it_took` re-based (row 38); new CLI
+`a_week_close_folds_dropped_tasks_into_their_milestone_by_max` (at the 60-minute block: `^m1`
+`2b` with `2b + 1b` dropped → `est:3b demoted:W37`; `^m2` covered; three `[~]`; no event for
+them; `tm check` clean; a second close writes nothing); new FFI
+`a_week_close_folds_dropped_children_on_the_wire` (the loaded witness byte for byte, the
+report's names, the fold at `blockMin` 60, L16 at the wire).
+
+72. **A dropped child's standing `# Demoted` record is no longer carried by the month close.**
+    The fork point deleted the child's week line and left its `[-]` record under `# Demoted`,
+    which its month close then carried like any record.  The kernel keeps the child as a
+    `[~]` item whose tombstone is that record (difference (b)); the month row takes no settled
+    item, so the record stays in the month it was filed in.  Its minutes are in the parent's
+    record, so no work is lost; the month review of the next month does not see the stamp
+    history.  Owed: whether a dropped child's record is carried, merged into its root's, or
+    retired — a product question, not attempted; recorded for the owner as AGENTS §10.5 q10.
+73. **The fold reads each child's `remainingOf` and the parent's own reading only.**  A child
+    whose only duration is `dur:` counts 0 (fork-point `own_minutes` counts it); a parent with
+    no estimate of its own carries the children's minutes but is not floored at
+    `MIN_REMAINING_MIN`, and no parent reads §6.4's rollup (difference (c)).  Clears with
+    stage 5's rollups (`remainingMin`, `Goals.lean`).
+74. **A wall's prep children are demoted, not carried with the wall** (difference (g)).
+    Fork-point `carried_walls` takes every interval of the closing week that is not past due
+    together with its open children at any depth in the file: never demoted, and moved into
+    the live week beside the wall when it is still ahead.  The kernel's `closeAct` reads the
+    line's own skeleton, so a shapeless child of a carried wall is `file`d as an ordinary
+    root — `[-]` in the week, a stamped record in `# Demoted`.  Stage-4 step 2 scoped this
+    out with gap 22; D6 closed gap 22 at step 3 without taking it, and this step's fold does
+    not either (its parent is `carry`, never `file`).  Taking it makes `closeAct` a fact about
+    the tree rather than the skeleton, exactly gap 68's price: `close_spec`, L16, the L19
+    theorems and `close_keeps_source_order` re-opened under D5.  Owed, not attempted.
+
+**Owed, by name (not attempted in this step).**  (1) Gaps 72–74 above.  (2) Gaps 68–71
+(step 3): the overdue route's own shape, `parentsAcyclic`'s `n·d` walk, the carve-out's
+dangling `after:^id`, the `grammar_proptest` flake.  (3) Gap 19's labels.  (4) The human's
+30-minute drive (AGENTS §5.13).
+
+**Re-measured after this step**, every command under the 40 GB cap: `check.sh` **7/7** — axiom
+audit **1826 theorems** (1717 − 12 retired + 121 new; `grep -c '^#print axioms' Check.lean`
+1826, no duplicate), corpus **29/37 files and 4/5 whole plans** (unchanged), burn-down **29**
+(B3 gone: stage 4 **0**, stage 5 14, stage 6 15); `cargo test --workspace` **1008 passed / 0
+failed / 0 ignored across 66 binaries** (+1: `a_week_close_folds_dropped_tasks_into_their_milestone_by_max`;
+one test re-based), `cli_latency.rs` green; FFI suite **76** (68 kernel + 8 corpus; +1).
+Proof : definition **4.80 : 1** (18,815 : 3,917; this step 1,565 : 167), 9.36 : 1 in
+`Close.lean`, 6.22 : 1 in `Report.lean`, by the stage-4 script
+(`/tmp/claude-1000/proof_ratio.py kernel/TmKernel/TmKernel`) — recorded beside D5, which it
+no longer gates.  Gaps run to 74 (new gaps start at 75); cheats to 66 (new cheats start at 67).
+
+### Stage 4 closed, for real (2026-09-13)
+
+`Goals.lean`'s `# STAGE 4` section holds **no goal**: all eleven are gone, each with a proof
+of its statement (`close_is_idempotent`, `autoClose_is_each_grain_once`,
+`autoClose_catches_up_in_one_step`, `close_day_stamps_a_day_stamp`) or of its negation beside
+the narrowed law that holds (L17, L27, L18, L19c, F4, B1–B3's estimate law, and now B3's
+child fold).  Burn-down **29**, all of it stages 5 and 6.  The plan's acceptance, clause by
+clause: close idempotent at library level (`close_is_idempotent`, fold dropping children
+included) and at CLI level (`closing_twice_changes_zero_bytes_the_second_time`, and the fold
+test's second close); a 3-month-stale tree catches up losing nothing
+(`autoClose_catches_up_in_one_step`, `the_stale_tree_catches_up_in_one_call`, through the
+wire and the binary); the behaviour change landed with assent (D1), and every change since
+(D5–D8, and the spec-settled fold) is recorded next to the rule it replaced, rows 1–38.  §6.3's
+week row is performed — the copy, the stamp, the merge, the walls, the overdue route and the
+child fold — **except** where a tree fact decides a line's action: a wall's prep children
+are demoted rather than carried with it (gap 74), and the overdue route reads a line's own
+shape, not its effective one (gap 68); §4.3's literal example tree closes on its first
+command a week after its week.  **One two-run law carries a new hypothesis, stated here as
+well as above:** `close_keeps_source_order` (and `_iff`) now assumes the two lines agree on
+whether the fold drops them (`hfold`), because its statement as it stood at `b2af1a8` is
+false under §6.3's child rule and is proved false (`a_dropped_child_and_its_filed_parent_part_ways`);
+every other two-run law named by D5 keeps its statement but for the block length the close
+now reads, or, for the report agreement, extends it over the three new dispositions.
+**Re-measured at the commit that closes it** (capped, on the committed tree): `check.sh` 7/7,
+audit 1826 theorems, corpus 29/37 files and 4/5 whole plans, burn-down 29 (0 / 14 / 15 by
+stage 4 / 5 / 6); `cargo test --workspace` 1008 passed / 0 failed across 66 binaries; FFI 76
+(68 + 8); `cli_latency.rs` first verb 617 / 602 / 648 ms; proof : definition 4.80 : 1.
+**What stage 4 leaves, by name:** F3 (stage 6), `est:` = remaining and the
+log's minutes (gap 54, stage 5), the rollup under the fold (gap 73, stage 5), gaps 52, 56's
+kernel half, 57, 58, 60 (q9), 61, 63, 64–72 and 74 as recorded, and the human's drive.  Stage 5 is
+not blocked by anything in stage 4.

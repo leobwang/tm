@@ -1524,7 +1524,6 @@ open Tm
 #print axioms Tm.stepSkel_day_stamps
 #print axioms Tm.close_day_stamps_a_day_stamp
 #print axioms Tm.close_never_demotes_a_wall_but_may_carry_it
-#print axioms Tm.close_files_a_taken_line_into_closeTo
 #print axioms Tm.close_day_files_into_the_week_of_now
 #print axioms Tm.close_carries_a_wall_that_is_still_ahead
 #print axioms Tm.closeOne_refuses_a_missing_target
@@ -1803,16 +1802,10 @@ open Tm
 #print axioms Tm.refile_conserves
 #print axioms Tm.refile_respects_user
 -- Close.lean: the restated laws, the refusal gone, the merge
-#print axioms Tm.stepSkel_line_is_stamped_or_merged
-#print axioms Tm.close_rewrites_a_line_only_by_stamping_or_merging_it
-#print axioms Tm.close_rewrites_a_line_with_no_record_only_by_stamping_it
-#print axioms Tm.close_reads_every_remaining_estimate_through_demoteEst
-#print axioms Tm.close_keeps_the_remaining_estimate_of_a_line_with_no_record
 #print axioms Tm.mapAt_error
 #print axioms Tm.landAt_error
 #print axioms Tm.landingSpot_error
 #print axioms Tm.fileE_alreadyDemoted
-#print axioms Tm.close_week_merges_a_standing_record
 #print axioms Tm.autoClose_stamps_each_line_with_no_record_at_most_once
 -- Report.lean: the named disposition `copyMerging`
 #print axioms Tm.CloseDid.ofStep_ne_carry
@@ -1861,7 +1854,6 @@ open Tm
 #print axioms Tm.the_week_close_merges_m2s_stamps_and_reports_one
 #print axioms Tm.mergeHypsAt_spec
 #print axioms Tm.the_merge_hypotheses_hold_together
-#print axioms Tm.close_week_merges_a_standing_record_is_not_vacuous
 #print axioms Tm.refile_merge_laws_are_not_vacuous
 #print axioms Tm.a_close_can_refuse_alreadyDemoted
 #print axioms Tm.closeReport_agrees_with_close_is_refuted_by_a_merge
@@ -1892,7 +1884,6 @@ open Tm
 #print axioms Tm.secKindAtF_eq
 #print axioms Tm.demotedRecordPlacementF_eq
 -- Close.lean: the table's new column, the fourth action, the laws
-#print axioms Tm.closePolicy_owes_only_the_child_fold
 #print axioms Tm.closePolicy_routes_overdue_only_at_week
 #print axioms Tm.Core.skel_onMiss
 #print axioms Tm.Skel.overdue_of_wallAhead
@@ -1932,14 +1923,11 @@ open Tm
 #print axioms Tm.fold_lands_an_overdue_line_under_overdue
 #print axioms Tm.close_lands_every_overdue_line_under_overdue
 #print axioms Tm.close_moves_a_past_due_persist_line_to_the_backlog
-#print axioms Tm.close_week_files_a_dated_line_keeping_its_date
 #print axioms Tm.Skel.overdue_of_not_yet_due
-#print axioms Tm.close_week_demotes_a_not_yet_due_line_keeping_its_date
 #print axioms Tm.close_week_moves_a_past_due_persist_line_to_the_backlog
 -- Report.lean: the sixth disposition
 #print axioms Tm.CloseDid.ofStep_ne_moveOverdue
 #print axioms Tm.CloseDid.ofName?_refuses_near_overdue
-#print axioms Tm.closeReport_names_the_destination_of_now
 #print axioms Tm.closeAct_overdue_iff
 -- Boundary.lean: the refusals left, the loaded witnesses, two refutations
 #print axioms Tm.the_close_refusals_left_after_d7_are_named_on_loaded_plans
@@ -2003,3 +1991,177 @@ open Tm
 #print axioms Tm.the_prep_rule_fires_on_a_loaded_plan
 #print axioms Tm.effectiveCi_inherits_on_a_loaded_plan
 #print axioms Tm.rootPrio_reads_the_root_on_a_loaded_plan
+-- ===========================================================================
+-- APPENDED 2026-09-13 (stage-4 final).  Step 4: goal B3, the week row's child fold
+-- — refuted and renamed, with §6.4's `max` law beside it; stage 4's goal count is
+-- zero.  `close g now` gains the block length (`close g now bm`, `autoClose now
+-- bm`); an unfinished child of a line the week close files from the same file is
+-- dropped `[~]` in place and its own remaining floors that line's record (fork-point
+-- `horizon::demote_est`'s `folded`).  Twelve names above were retired with the
+-- statements they carried and restated here (README "Stage 4 final, step 4"), each
+-- old statement refuted on the loaded fold witness where it is not a helper:
+-- `closePolicy_owes_only_the_child_fold` -> `closePolicy_drops_children_only_at_week`
+-- (+ `closePolicy_drops_children_only_at_a_copying_row`);
+-- `stepSkel_line_is_stamped_or_merged` -> `stepSkel_line_is_stamped_merged_or_folded`;
+-- `close_rewrites_a_line_only_by_stamping_or_merging_it` ->
+-- `close_rewrites_a_line_only_by_stamping_merging_or_folding_it` (refuted:
+-- `a_folded_record_is_rewritten_beyond_its_stamp`);
+-- `close_rewrites_a_line_with_no_record_only_by_stamping_it` ->
+-- `close_rewrites_a_line_with_no_record_only_by_stamping_or_folding_it` and
+-- `close_rewrites_a_line_with_no_record_and_nothing_folded_only_by_stamping_it`
+-- (refuted: `a_folded_line_with_no_record_is_rewritten_beyond_its_stamp`);
+-- `close_reads_every_remaining_estimate_through_demoteEst` ->
+-- `close_reads_every_remaining_estimate_through_demoteEst_and_the_fold` (refuted:
+-- `a_folded_record_changes_a_remaining_estimate`);
+-- `close_keeps_the_remaining_estimate_of_a_line_with_no_record` ->
+-- `close_keeps_the_remaining_estimate_of_a_line_with_no_record_and_nothing_folded`
+-- (refuted: `a_folded_line_with_no_record_changes_its_remaining_estimate`);
+-- `close_files_a_taken_line_into_closeTo` ->
+-- `close_files_a_taken_line_it_does_not_drop_into_closeTo` (refuted:
+-- `a_dropped_child_is_not_filed_into_closeTo`);
+-- `close_week_merges_a_standing_record` ->
+-- `close_week_merges_a_standing_record_it_does_not_drop` (refuted:
+-- `a_dropped_child_keeps_its_record_unmerged`), and its `_is_not_vacuous`;
+-- `close_week_files_a_dated_line_keeping_its_date` ->
+-- `close_week_files_a_dated_line_it_does_not_drop_keeping_its_date` (refuted:
+-- `a_dropped_dated_child_is_not_filed_as_a_record`);
+-- `close_week_demotes_a_not_yet_due_line_keeping_its_date` ->
+-- `close_week_demotes_a_not_yet_due_line_it_does_not_drop_keeping_its_date`
+-- (refuted: `a_not_yet_due_child_is_dropped_with_its_parent`);
+-- `closeReport_names_the_destination_of_now` -> `closeReport_names_each_lines_destination`
+-- (refuted: `a_dropped_child_is_reported_where_it_stays`).
+-- The goal: `close_week_folds_a_dropped_child_into_its_parent` (Goals.lean, deleted)
+-- -> `close_week_does_not_add_a_dropped_child_to_its_parent`.
+-- The two-run laws this breaks are re-proved under their own names (D5), their
+-- audit lines above standing: `close_is_idempotent` (L16; a `[~]` child is settled),
+-- `close_keeps_source_order`(`_iff`) (the same action now includes the fold's drop:
+-- `hfold`; the unextended form refuted as `a_dropped_child_and_its_filed_parent_part_ways`),
+-- the L19 theorems (`autoClose_*`, through `stepSkel_leaves_nothing_a_close_takes` and
+-- `close_keeps_foldFxOf_of_another_grain`), `closeReport_agrees_with_close_stamping_or_merging`
+-- (three new dispositions), `two_closes_at_one_instant_commute_on_skeletons`,
+-- `close_week_and_close_month_do_not_commute`, `move_has_no_inverse_command`, `close_spec`.
+-- Cmd.lean: the fold's estimate, through `demoteEst`, and `refileX`
+#print axioms Tm.find_setEstInTo
+#print axioms Tm.foldEst_of_le
+#print axioms Tm.foldEst_of_lt
+#print axioms Tm.foldEst_reads_as_demoteEst
+#print axioms Tm.foldEst_zero
+#print axioms Tm.refiledLineX_none
+#print axioms Tm.refiledLineX_of_apply
+#print axioms Tm.refileX_none
+#print axioms Tm.refileX_refuses_only_a_record
+#print axioms Tm.refileX_roundtrips
+#print axioms Tm.remainingOf_foldEst
+#print axioms Tm.unitValue_digits_b
+#print axioms Tm.unitValue_digits_h
+#print axioms Tm.unitValue_digits_m
+#print axioms Tm.unitValue_foldDur
+#print axioms Tm.viewRemaining_setEstTo
+-- Close.lean: the column, the fold, its laws, and the re-proofs' new lemmas
+#print axioms Tm.children_of_not_copy
+#print axioms Tm.closeAct_of_settled
+#print axioms Tm.closeAct_of_takes_false
+#print axioms Tm.close_dom
+#print axioms Tm.close_files_a_taken_line_it_does_not_drop_into_closeTo
+#print axioms Tm.close_keeps_foldFxOf_of_another_grain
+#print axioms Tm.close_keeps_skel_of_another_grain
+#print axioms Tm.close_keeps_the_remaining_estimate_of_a_line_with_no_record_and_nothing_folded
+#print axioms Tm.closeOne_dom
+#print axioms Tm.closePolicy_children_cases
+#print axioms Tm.closePolicy_drops_children_only_at_a_copying_row
+#print axioms Tm.closePolicy_drops_children_only_at_week
+#print axioms Tm.close_reads_every_remaining_estimate_through_demoteEst_and_the_fold
+#print axioms Tm.close_rewrites_a_line_only_by_stamping_merging_or_folding_it
+#print axioms Tm.close_rewrites_a_line_with_no_record_and_nothing_folded_only_by_stamping_it
+#print axioms Tm.close_rewrites_a_line_with_no_record_only_by_stamping_or_folding_it
+#print axioms Tm.close_week_demotes_a_not_yet_due_line_it_does_not_drop_keeping_its_date
+#print axioms Tm.close_week_drops_a_child_with_its_parent
+#print axioms Tm.close_week_files_a_dated_line_it_does_not_drop_keeping_its_date
+#print axioms Tm.close_week_folds_dropped_children_by_max
+#print axioms Tm.close_week_keeps_a_dropped_childs_remaining_in_its_parents_record
+#print axioms Tm.close_week_keeps_a_parent_that_covers_its_dropped_children
+#print axioms Tm.close_week_lifts_a_parent_its_dropped_children_outweigh
+#print axioms Tm.close_week_merges_a_standing_record_it_does_not_drop
+#print axioms Tm.demoteEst_reads_zero
+#print axioms Tm.dropE_skel
+#print axioms Tm.dropsInto_congr
+#print axioms Tm.dropsInto_of_asAnyLine
+#print axioms Tm.dropsInto_spec
+#print axioms Tm.filesLine_iff
+#print axioms Tm.foldedMinutes_of_asAnyLine
+#print axioms Tm.foldedMinutes_of_dropped
+#print axioms Tm.foldFxOf_apply
+#print axioms Tm.foldFxOf_congr
+#print axioms Tm.foldFxOf_isDrop
+#print axioms Tm.foldFxOf_of_asAnyLine
+#print axioms Tm.fold_keeps_order_of_drop
+#print axioms Tm.foldParent_congr
+#print axioms Tm.foldParent_of_asAnyLine
+#print axioms Tm.foldParent_spec
+#print axioms Tm.foldTab_congr
+#print axioms Tm.foldTab_of_asAnyLine
+#print axioms Tm.foldTabSum_of_not_has
+#print axioms Tm.foldParent_eq_foldParentFast
+#print axioms Tm.foldTab_eq_foldTabFast
+#print axioms Tm.foldTabSum_step
+#print axioms Tm.foldUp_congr
+#print axioms Tm.foldUp_spec
+#print axioms Tm.landAt_dom
+#print axioms Tm.le_foldTabSum
+#print axioms Tm.lookupKey_apply_other
+#print axioms Tm.Field.lookupKey_setEstTo_other
+#print axioms Tm.Field.lookup_setEstInTo_other
+#print axioms Tm.mem_foldTab
+#print axioms Tm.ownMinutes_le_foldedMinutes
+#print axioms Tm.refiledLineX_stamps_mem
+#print axioms Tm.remainingOf_carriedLine
+#print axioms Tm.skelAfter_week
+#print axioms Tm.SkelKept.filesLine_eq
+#print axioms Tm.SkelKept.get_none
+#print axioms Tm.SkelKept.skel_of_files
+#print axioms Tm.stepSkel_congr_fx
+#print axioms Tm.stepSkel_leaves_nothing_a_close_takes
+#print axioms Tm.stepSkel_line_is_stamped_merged_or_folded
+#print axioms Tm.stepSkel_of_drop
+#print axioms Tm.stepSkel_of_file
+#print axioms Tm.viewShape_refiledLineX
+#print axioms Tm.WfPlan.mapAt_dom
+-- Report.lean: the three new dispositions, and where each line is
+#print axioms Tm.CloseDid.ofName?_refuses_near_fold
+#print axioms Tm.CloseDid.ofStep_folding_iff
+#print axioms Tm.CloseDid.ofStep_merging_iff
+#print axioms Tm.CloseDid.ofStep_ne_dropIntoParent
+#print axioms Tm.closeReport_names_each_lines_destination
+#print axioms Tm.foldFxOf_isLift_not_drop
+#print axioms Tm.foldFxOf_isLift_week
+-- Boundary.lean: the loaded fold witness, the refutations, non-vacuity
+#print axioms Tm.a_dropped_child_and_its_filed_parent_part_ways
+#print axioms Tm.a_dropped_child_is_not_filed_into_closeTo
+#print axioms Tm.a_dropped_child_is_reported_where_it_stays
+#print axioms Tm.a_dropped_child_keeps_its_record_unmerged
+#print axioms Tm.a_dropped_dated_child_is_not_filed_as_a_record
+#print axioms Tm.a_folded_line_with_no_record_changes_its_remaining_estimate
+#print axioms Tm.a_folded_line_with_no_record_is_rewritten_beyond_its_stamp
+#print axioms Tm.a_folded_record_changes_a_remaining_estimate
+#print axioms Tm.a_folded_record_is_rewritten_beyond_its_stamp
+#print axioms Tm.a_not_yet_due_child_is_dropped_with_its_parent
+#print axioms Tm.archive_none_of_toNat
+#print axioms Tm.beforeAfterFoldClose_some
+#print axioms Tm.c5_dated_facts
+#print axioms Tm.closeAct_file_facts
+#print axioms Tm.close_week_does_not_add_a_dropped_child_to_its_parent
+#print axioms Tm.close_week_drops_a_child_with_its_parent_is_not_vacuous
+#print axioms Tm.close_week_folds_dropped_children_by_max_is_not_vacuous
+#print axioms Tm.close_week_merges_a_standing_record_it_does_not_drop_is_not_vacuous
+#print axioms Tm.fold_facts
+#print axioms Tm.foldFacts_eq
+#print axioms Tm.the_close_fold_witness_loads
+#print axioms Tm.the_fold_facts_on_the_loaded_witness
+#print axioms Tm.the_fold_on_the_loaded_witness
+#print axioms Tm.the_fold_witness_links_and_dates
+#print axioms Tm.the_merge_witness_drops_neither_record
+#print axioms Tm.the_dated_witness_drops_nothing
+#print axioms Tm.the_week_close_folds_dropped_children_on_a_loaded_plan
+#print axioms Tm.the_week_close_reports_the_fold
+#print axioms Tm.toNat_eq_one
+#print axioms Tm.toNat_eq_zero

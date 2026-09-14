@@ -1385,8 +1385,8 @@ def applyCmd (c : ReqCmd) (p : WfPlan) : Except KErr WfPlan :=
       p.insertFresh (freshId seed p.val.store.dom)
         (addEntity p.val dd (freshId seed p.val.store.dom) title)
         (store_get_isNone_of_not_mem (add_assigns_a_fresh_id seed _))
-  | .close g now _   => close g now p
-  | .autoClose now _ => autoClose now p
+  | .close g now bm   => close g now bm.val p
+  | .autoClose now bm => autoClose now bm.val p
 
 /-- **Error 2, as a theorem.**  A destination that is not a document is
 rejected, and the plan is untouched. -/
@@ -3657,13 +3657,13 @@ theorem move_has_no_inverse_command :
     -- a file of its own grain's kind — the month file, so a month close — and
     -- only into a month file, or, for a wall, the week, or, past due (D7), the
     -- backlog; `^m1` is no wall, and document 0 is a week file
-    have hnoclose : ∀ (g : Grain) (now : Day),
-        stepSkel g now q.val e1.val.skel ≠ e.val.skel := by
-      intro g now heq
-      have hd0 : (stepSkel g now q.val e1.val.skel).doc = 0 := by
+    have hnoclose : ∀ (g : Grain) (now : Day) (x : FoldFx),
+        stepSkel g now q.val x e1.val.skel ≠ e.val.skel := by
+      intro g now x heq
+      have hd0 : (stepSkel g now q.val x e1.val.skel).doc = 0 := by
         rw [heq]; exact congrArg Site.doc hml
       have hd1 : e1.val.skel.doc = 1 := congrArg Site.doc he1live
-      have hk := stepSkel_doc_kinds g now q.val e1.val.skel (by rw [hd0, hd1]; decide)
+      have hk := stepSkel_doc_kinds g now q.val x e1.val.skel (by rw [hd0, hd1]; decide)
       have hk0 : docKindAt q.val 0 = .week := by
         rw [hshape]; exact (by decide : docKindAt undoWitnessPlan.val 0 = .week)
       have hk1 : docKindAt q.val 1 = .month := by
@@ -3689,11 +3689,11 @@ theorem move_has_no_inverse_command :
     cases hcmd : inv (.move "m1".toList 1) with
     | close g now bm =>
       rw [hcmd] at hcon
-      exact hnoclose g now (close_skel hcon hq1 hgetE).symm
+      exact hnoclose g now _ (close_skel hcon hq1 hgetE).symm
     | autoClose now bm =>
       rw [hcmd] at hcon
       obtain ⟨g, hg⟩ := autoClose_takes_each_line_at_most_once hcon hq1 hgetE
-      exact hnoclose g now hg.symm
+      exact hnoclose g now _ hg.symm
     | move i' d' =>
       rw [hcmd] at hcon
       cases hrd' : resolveDest q.val d' with
@@ -4438,12 +4438,12 @@ def closeResultLines : Except KErr WfPlan → Option (List (List (List Char)))
 /-- Each file's lines in rank order after `close g closeNow`, if the request
 loads and the close succeeds. -/
 def closedFileLines (g : Grain) (docs : List ReqDoc) : Option (List (List (List Char))) :=
-  (loadedPlan? docs).bind (fun p => closeResultLines (close g closeNow p))
+  (loadedPlan? docs).bind (fun p => closeResultLines (close g closeNow 50 p))
 
 /-- The close's refusal, if the request loads and the close refuses. -/
 def closeRefusal (g : Grain) (docs : List ReqDoc) : Option KErr :=
   (loadedPlan? docs).bind (fun p =>
-    match close g closeNow p with
+    match close g closeNow 50 p with
     | .ok _    => none
     | .error k => some k)
 
@@ -4667,7 +4667,7 @@ set_option maxRecDepth 40000 in
 /-- **Week, then month.**  `^m2`'s stamped record lands at the end of 2026-09's
 `# Demoted`; then the month close moves `^m9` there, below it. -/
 theorem the_week_then_month_close_lands_the_week_record_first :
-    closeResultLines ((close week closeNow closeCommutePlan).bind (close month closeNow)) = some
+    closeResultLines ((close week closeNow 50 closeCommutePlan).bind (close month closeNow 50)) = some
       [["# Tasks".toList, "- [-] 4 6b Rollback path passes tests ^m2".toList],
        ["# Outcomes".toList, "# Demoted".toList],
        ["# Outcomes".toList, "# Demoted".toList,
@@ -4679,7 +4679,7 @@ set_option maxRecDepth 40000 in
 /-- **Month, then week.**  The same lines in the same files, and `^m9` above
 `^m2`. -/
 theorem the_month_then_week_close_lands_the_month_record_first :
-    closeResultLines ((close month closeNow closeCommutePlan).bind (close week closeNow)) = some
+    closeResultLines ((close month closeNow 50 closeCommutePlan).bind (close week closeNow 50)) = some
       [["# Tasks".toList, "- [-] 4 6b Rollback path passes tests ^m2".toList],
        ["# Outcomes".toList, "# Demoted".toList],
        ["# Outcomes".toList, "# Demoted".toList,
@@ -4692,18 +4692,18 @@ differ.  This is also the witness that the hypotheses of
 `two_closes_at_one_instant_commute_on_skeletons` are satisfiable at week and
 month. -/
 theorem close_week_month_orders_both_succeed_and_differ :
-    ∃ (now : Day) (p q r : WfPlan),
-      (close week now p).bind (close month now) = .ok q ∧
-        (close month now p).bind (close week now) = .ok r ∧ q ≠ r := by
+    ∃ (now : Day) (bm : Nat) (p q r : WfPlan),
+      (close week now bm p).bind (close month now bm) = .ok q ∧
+        (close month now bm p).bind (close week now bm) = .ok r ∧ q ≠ r := by
   have hwm := the_week_then_month_close_lands_the_week_record_first
   have hmw := the_month_then_week_close_lands_the_month_record_first
-  cases h1 : (close week closeNow closeCommutePlan).bind (close month closeNow) with
+  cases h1 : (close week closeNow 50 closeCommutePlan).bind (close month closeNow 50) with
   | error x => rw [h1] at hwm; simp [closeResultLines] at hwm
   | ok q =>
-    cases h2 : (close month closeNow closeCommutePlan).bind (close week closeNow) with
+    cases h2 : (close month closeNow 50 closeCommutePlan).bind (close week closeNow 50) with
     | error x => rw [h2] at hmw; simp [closeResultLines] at hmw
     | ok r =>
-      refine ⟨closeNow, closeCommutePlan, q, r, h1, h2, fun hqr => ?_⟩
+      refine ⟨closeNow, 50, closeCommutePlan, q, r, h1, h2, fun hqr => ?_⟩
       rw [h1, hqr] at hwm
       rw [h2, hwm] at hmw
       exact absurd hmw (by decide)
@@ -4713,11 +4713,11 @@ The negation of `close_week_and_close_month_commute`, quantifier for quantifier:
 it is not the case that for every instant and every plan the two orders give the
 same result.  Why, and what does commute: this section's header. -/
 theorem close_week_and_close_month_do_not_commute :
-    ¬ ∀ (now : Day) (p : WfPlan),
-      (close week now p).bind (close month now) = (close month now p).bind (close week now) := by
+    ¬ ∀ (now : Day) (bm : Nat) (p : WfPlan),
+      (close week now bm p).bind (close month now bm) = (close month now bm p).bind (close week now bm) := by
   intro hall
-  obtain ⟨now, p, q, r, h1, h2, hqr⟩ := close_week_month_orders_both_succeed_and_differ
-  rw [hall now p, h2] at h1
+  obtain ⟨now, bm, p, q, r, h1, h2, hqr⟩ := close_week_month_orders_both_succeed_and_differ
+  rw [hall now bm p, h2] at h1
   injection h1 with h
   exact hqr h.symm
 
@@ -4860,7 +4860,7 @@ theorem mem_closedLiveIds {now : Day} {q : WfPlan} {i : Id} (h : i ∈ closedLiv
 
 /-- The stale plan after one `autoClose`, observed three ways. -/
 def staleCaughtUp {α : Type} (obs : WfPlan → α) : Option α :=
-  match autoClose staleNow stalePlan with
+  match autoClose staleNow 50 stalePlan with
   | .ok q    => some (obs q)
   | .error _ => none
 
@@ -4921,7 +4921,7 @@ theorem staleCaughtUp_map {α : Type} (obs : CatchUpView → α) :
     staleCaughtUp (fun q => obs (catchUpView staleNow q)) =
       (staleCaughtUp (catchUpView staleNow)).map obs := by
   unfold staleCaughtUp
-  cases autoClose staleNow stalePlan <;> rfl
+  cases autoClose staleNow 50 stalePlan <;> rfl
 
 /-- **A three-month-stale tree catches up in one call** (AGENTS §8.2's
 acceptance, the library half).  Both pinned items — the three-month one and the
@@ -5002,7 +5002,7 @@ theorem the_stale_tree_catches_up_losing_nothing :
   have hb := the_stale_ledger_before_catch_up
   have ha := the_stale_ledger_after_catch_up
   unfold staleCaughtUp at ha ⊢
-  cases h : autoClose staleNow stalePlan with
+  cases h : autoClose staleNow 50 stalePlan with
   | error x => rw [h] at ha; simp at ha
   | ok q =>
     rw [h] at ha
@@ -5024,25 +5024,25 @@ line sits in a closed region.  `^t1`, a `[x]` line of the closed 2026-W24, is
 where §6.3 leaves it.  What does hold is `autoClose_strands_no_unfinished_line`
 (Close.lean): nothing a close takes is left behind, at any grain. -/
 theorem autoClose_leaves_lines_in_periods_it_passes :
-    ¬ ∀ (now : Day) (p q : WfPlan), autoClose now p = .ok q →
+    ¬ ∀ (now : Day) (bm : Nat) (p q : WfPlan), autoClose now bm p = .ok q →
       ∀ (i : Id) (e : Entity), q.val.store.get i = some e →
         ∀ (r : Region), docRegion q.val e.val.live.doc = some r → ¬ Closed r now := by
   intro hall
   have hw := the_stale_catch_up_leaves_only_settled_and_recurring_lines
   unfold staleCaughtUp at hw
-  cases h : autoClose staleNow stalePlan with
+  cases h : autoClose staleNow 50 stalePlan with
   | error x => rw [h] at hw; simp at hw
   | ok q =>
     rw [h] at hw
     simp only [Option.some.injEq] at hw
     have hm : "t1".toList ∈ closedLiveIds staleNow q := by rw [hw]; decide
     obtain ⟨e, r, hg, hr, hc⟩ := mem_closedLiveIds hm
-    exact hall staleNow stalePlan q h _ e hg r hr hc
+    exact hall staleNow 50 stalePlan q h _ e hg r hr hc
 
 /-- An `autoClose` refusal, if the request loads and the call refuses. -/
 def autoCloseRefusal (docs : List ReqDoc) : Option KErr :=
   (loadedPlan? docs).bind (fun p =>
-    match autoClose staleNow p with
+    match autoClose staleNow 50 p with
     | .ok _    => none
     | .error k => some k)
 
@@ -5218,7 +5218,9 @@ The narrowed laws that do hold sit beside each goal's old statement in
 `close_never_demotes_a_wall_but_may_carry_it`,
 `close_rewrites_a_line_only_by_stamping_or_merging_it` and
 `close_reads_every_remaining_estimate_through_demoteEst` (the last two restated at
-README gap 53).  Probed under an 8 GB cap first (AGENTS
+README gap 53, and again at goal B3's repair as
+`close_rewrites_a_line_only_by_stamping_merging_or_folding_it` and
+`close_reads_every_remaining_estimate_through_demoteEst_and_the_fold`).  Probed under an 8 GB cap first (AGENTS
 §5.10a): the three observations decide in about 4 s at a 1.3 GB peak, imports
 included. -/
 
@@ -5244,7 +5246,7 @@ def closedLiveIdsOfGrain (g : Grain) (now : Day) (q : WfPlan) : List Id :=
 
 /-- The week witness after `close week closeNow`, observed. -/
 def weekClosed {α : Type} (obs : WfPlan → α) : Option α :=
-  match close week closeNow closeWeekPlan with
+  match close week closeNow 50 closeWeekPlan with
   | .ok q    => some (obs q)
   | .error _ => none
 
@@ -5305,21 +5307,21 @@ its own grain: `^t1`, `[x]` in 2026-W36.  What holds is
 `close_leaves_no_line_it_would_take` (Close.lean): no line the close would take
 survives it. -/
 theorem close_leaves_live_lines_in_a_closed_region :
-    ¬ ∀ (g : Grain) (now : Day) (p q : WfPlan), close g now p = .ok q →
+    ¬ ∀ (g : Grain) (now : Day) (bm : Nat) (p q : WfPlan), close g now bm p = .ok q →
       ∀ (i : Id) (e : Entity), q.val.store.get i = some e →
         ∀ (r : Region), docRegion q.val e.val.live.doc = some r → r.grain = g →
           ¬ Closed r now := by
   intro hall
   have hw := the_week_close_leaves_r1_and_t1_in_the_closed_week
   unfold weekClosed at hw
-  cases h : close week closeNow closeWeekPlan with
+  cases h : close week closeNow 50 closeWeekPlan with
   | error x => rw [h] at hw; simp at hw
   | ok q =>
     rw [h] at hw
     simp only [Option.some.injEq] at hw
     have hm : "t1".toList ∈ closedLiveIdsOfGrain week closeNow q := by rw [hw]; decide
     obtain ⟨e, r, hg, hr, hgr, hc⟩ := mem_closedLiveIdsOfGrain hm
-    exact hall week closeNow closeWeekPlan q h _ e hg r hr hgr hc
+    exact hall week closeNow 50 closeWeekPlan q h _ e hg r hr hgr hc
 
 /-- **F4 (P\*), refuted — discharged from `Goals.lean` by refute-and-rename.**
 The negation of `close_never_demotes_a_wall`, quantifier for quantifier.  Its
@@ -5329,14 +5331,14 @@ rank shift a landing performs): `^x1`, a wall still ahead, leaves 2026-W36 for
 (Close.lean): a wall or recurring line keeps its box, bytes and tombstone, and
 only its file may change. -/
 theorem close_does_not_leave_every_wall_as_it_was :
-    ¬ ∀ (g : Grain) (now : Day) (p q : WfPlan), close g now p = .ok q →
+    ¬ ∀ (g : Grain) (now : Day) (bm : Nat) (p q : WfPlan), close g now bm p = .ok q →
       ∀ (i : Id) (e f : Entity), p.val.store.get i = some e → q.val.store.get i = some f →
         (e.val.recur ≠ Field.Recur.none ∨ ∃ a b : Field.DT, e.val.shape = Field.Shape.interval a b) →
         f.val = e.val := by
   intro hall
   have hw := the_week_close_carries_the_wall_x1_to_another_file
   unfold weekClosed beforeAfterWeekClose at hw
-  cases h : close week closeNow closeWeekPlan with
+  cases h : close week closeNow 50 closeWeekPlan with
   | error x => rw [h] at hw; simp at hw
   | ok q =>
     rw [h] at hw
@@ -5355,7 +5357,7 @@ theorem close_does_not_leave_every_wall_as_it_was :
           split at hwall
           · rename_i a b hs; exact ⟨a, b, hs⟩
           · exact absurd hwall (by simp)
-        have heq := congrArg (fun c => c.live.doc) (hall week closeNow closeWeekPlan q h _ e f he hf (Or.inr hsh))
+        have heq := congrArg (fun c => c.live.doc) (hall week closeNow 50 closeWeekPlan q h _ e f he hf (Or.inr hsh))
         simp only [he0, hf1] at heq
         exact absurd heq (by decide)
 
@@ -5366,15 +5368,16 @@ quantifier.  It equates the whole line, and §6.3's `demoted:` stamp is not
 (`userSet = true`) nor any line with an `est:` key (`userSet = false`, by
 `hasEst_setEst`), at a 50-minute block.  What holds is
 `close_rewrites_a_line_only_by_stamping_or_merging_it` and, for the estimate itself,
-`close_reads_every_remaining_estimate_through_demoteEst` (Close.lean). -/
+`close_reads_every_remaining_estimate_through_demoteEst` (Close.lean; restated at goal
+B3's repair with the child fold, `…_merging_or_folding_it` and `…_and_the_fold`). -/
 theorem close_writes_a_line_demoteEst_does_not :
-    ¬ ∀ (g : Grain) (now : Day) (bm : Nat) (p q : WfPlan), close g now p = .ok q →
+    ¬ ∀ (g : Grain) (now : Day) (bm : Nat) (p q : WfPlan), close g now bm p = .ok q →
       ∀ (i : Id) (e f : Entity), p.val.store.get i = some e → q.val.store.get i = some f →
         ∃ (userSet : Bool) (rec : Nat), f.val.line = (demoteEst bm userSet rec e).val.line := by
   intro hall
   have hw := the_week_close_stamps_m2_and_writes_no_estimate
   unfold weekClosed beforeAfterWeekClose at hw
-  cases h : close week closeNow closeWeekPlan with
+  cases h : close week closeNow 50 closeWeekPlan with
   | error x => rw [h] at hw; simp at hw
   | ok q =>
     rw [h] at hw
@@ -5670,7 +5673,7 @@ set_option maxRecDepth 40000 in
 /-- `^m5`'s remaining at a 50-minute block: nothing before the week close, the
 standing record's 150 minutes after it. -/
 theorem the_week_close_floors_m5_at_its_record :
-    (match close week closeNow closeMergePlan with
+    (match close week closeNow 50 closeMergePlan with
      | .ok q =>
        match closeMergePlan.val.store.get "m5".toList, q.val.store.get "m5".toList with
        | some e, some f => some (remainingOf 50 e.val.line, remainingOf 50 f.val.line)
@@ -5682,7 +5685,7 @@ set_option maxRecDepth 40000 in
 /-- `^m2`'s stamps across `autoClose`: none on its live line before, the record's
 and the week's after. -/
 theorem autoClose_merges_m2s_stamps :
-    (match autoClose closeNow closeMergePlan with
+    (match autoClose closeNow 50 closeMergePlan with
      | .ok q =>
        match closeMergePlan.val.store.get "m2".toList, q.val.store.get "m2".toList with
        | some e, some f => some (e.val.stamps, f.val.stamps)
@@ -5693,14 +5696,15 @@ theorem autoClose_merges_m2s_stamps :
 /-- **`close_rewrites_a_line_only_by_stamping_it`, refuted since gap 53.**  Its
 statement, quantifier for quantifier, is false once a close merges: `^m5`'s record
 carries its standing record's `est:3b`, which no `demoted:` write adds.  What holds
-is `close_rewrites_a_line_only_by_stamping_or_merging_it` (Close.lean). -/
+is `close_rewrites_a_line_only_by_stamping_or_merging_it` (Close.lean; since goal B3's
+repair `close_rewrites_a_line_only_by_stamping_merging_or_folding_it`). -/
 theorem a_merged_record_is_rewritten_beyond_its_stamp :
-    ¬ ∀ (g : Grain) (now : Day) (p q : WfPlan), close g now p = .ok q →
+    ¬ ∀ (g : Grain) (now : Day) (bm : Nat) (p q : WfPlan), close g now bm p = .ok q →
       ∀ (i : Id) (e f : Entity), p.val.store.get i = some e → q.val.store.get i = some f →
         f.val.line = e.val.line ∨ ∃ ss, f.val.line = Field.setDemoted ss e.val.line := by
   intro hall
   have hw := the_week_close_floors_m5_at_its_record
-  cases h : close week closeNow closeMergePlan with
+  cases h : close week closeNow 50 closeMergePlan with
   | error x => rw [h] at hw; simp at hw
   | ok q =>
     rw [h] at hw
@@ -5708,7 +5712,7 @@ theorem a_merged_record_is_rewritten_beyond_its_stamp :
     split at hw
     · rename_i e f he hf
       simp only [Option.some.injEq, Prod.mk.injEq] at hw
-      rcases hall week closeNow closeMergePlan q h _ e f he hf with hl | ⟨ss, hl⟩
+      rcases hall week closeNow 50 closeMergePlan q h _ e f he hf with hl | ⟨ss, hl⟩
       · rw [hl] at hw; omega
       · rw [hl, Field.remainingOf_setDemoted] at hw; omega
     · simp at hw
@@ -5716,14 +5720,15 @@ theorem a_merged_record_is_rewritten_beyond_its_stamp :
 /-- **`close_keeps_every_remaining_estimate`, refuted since gap 53.**  `^m5`'s
 remaining goes from nothing to its standing record's 150 minutes — L15's floor,
 which a close that kept every estimate could not write.  What holds is
-`close_reads_every_remaining_estimate_through_demoteEst` (Close.lean). -/
+`close_reads_every_remaining_estimate_through_demoteEst` (Close.lean; since goal B3's
+repair `close_reads_every_remaining_estimate_through_demoteEst_and_the_fold`). -/
 theorem a_merged_record_changes_a_remaining_estimate :
-    ¬ ∀ (g : Grain) (now : Day) (p q : WfPlan), close g now p = .ok q →
+    ¬ ∀ (g : Grain) (now : Day) (bm : Nat) (p q : WfPlan), close g now bm p = .ok q →
       ∀ (i : Id) (e f : Entity), p.val.store.get i = some e → q.val.store.get i = some f →
         ∀ bm, remainingOf bm f.val.line = remainingOf bm e.val.line := by
   intro hall
   have hw := the_week_close_floors_m5_at_its_record
-  cases h : close week closeNow closeMergePlan with
+  cases h : close week closeNow 50 closeMergePlan with
   | error x => rw [h] at hw; simp at hw
   | ok q =>
     rw [h] at hw
@@ -5731,7 +5736,7 @@ theorem a_merged_record_changes_a_remaining_estimate :
     split at hw
     · rename_i e f he hf
       simp only [Option.some.injEq, Prod.mk.injEq] at hw
-      have := hall week closeNow closeMergePlan q h _ e f he hf 50
+      have := hall week closeNow 50 closeMergePlan q h _ e f he hf 50
       omega
     · simp at hw
 
@@ -5741,12 +5746,12 @@ and the week's `W36` — which is neither "the same" nor "one appended".  What h
 is `autoClose_appends_at_most_one_stamp_or_merges_each_line` (Close.lean): keep, append one, or
 merge. -/
 theorem autoClose_merges_a_line_beyond_one_appended_stamp :
-    ¬ ∀ (now : Day) (p q : WfPlan), autoClose now p = .ok q →
+    ¬ ∀ (now : Day) (bm : Nat) (p q : WfPlan), autoClose now bm p = .ok q →
       ∀ (i : Id) (e f : Entity), p.val.store.get i = some e → q.val.store.get i = some f →
         f.val.stamps = e.val.stamps ∨ ∃ st, f.val.stamps = e.val.stamps ++ [st] := by
   intro hall
   have hw := autoClose_merges_m2s_stamps
-  cases h : autoClose closeNow closeMergePlan with
+  cases h : autoClose closeNow 50 closeMergePlan with
   | error x => rw [h] at hw; simp at hw
   | ok q =>
     rw [h] at hw
@@ -5755,7 +5760,7 @@ theorem autoClose_merges_a_line_beyond_one_appended_stamp :
     · rename_i e f he hf
       simp only [Option.some.injEq, Prod.mk.injEq] at hw
       obtain ⟨h1, h2⟩ := hw
-      rcases hall closeNow closeMergePlan q h _ e f he hf with hl | ⟨st, hl⟩
+      rcases hall closeNow 50 closeMergePlan q h _ e f he hf with hl | ⟨st, hl⟩
       · rw [h1, h2] at hl; exact absurd hl (by decide)
       · rw [h1, h2] at hl
         have := congrArg List.length hl
@@ -5786,14 +5791,14 @@ def closeStrayTombPlan : WfPlan :=
 set_option maxRecDepth 40000 in
 /-- **The week close refuses a stray tombstone, and writes nothing.** -/
 theorem a_stray_tomb_refuses_the_week_close :
-    (match close week closeNow closeStrayTombPlan with
+    (match close week closeNow 50 closeStrayTombPlan with
      | .ok _ => none
      | .error k => some k) = some KErr.alreadyDemoted := by decide
 
 set_option maxRecDepth 40000 in
 /-- **So does the automatic close** — the one the binary runs. -/
 theorem a_stray_tomb_refuses_autoClose :
-    (match autoClose closeNow closeStrayTombPlan with
+    (match autoClose closeNow 50 closeStrayTombPlan with
      | .ok _ => none
      | .error k => some k) = some KErr.alreadyDemoted := by decide
 
@@ -5808,7 +5813,7 @@ set_option maxRecDepth 40000 in
 /-- `^m2` under the week close of the merge witness: no stamps before, `W37,W36`
 after, and its report entry stamps `W36`. -/
 theorem the_week_close_merges_m2s_stamps_and_reports_one :
-    (match close week closeNow closeMergePlan with
+    (match close week closeNow 50 closeMergePlan with
      | .ok q =>
        match closeMergePlan.val.store.get "m2".toList, q.val.store.get "m2".toList with
        | some e, some f => some (e.val.stamps, f.val.stamps,
@@ -5861,20 +5866,30 @@ set_option maxRecDepth 40000 in
 close of `closeMergeWitness`, `^m2` (owns `6b`) and `^m5` (owns none) are each taken
 by the week row with a standing record, and `refile` succeeds on each. -/
 theorem the_merge_hypotheses_hold_together :
-    (match close week closeNow closeMergePlan with
+    (match close week closeNow 50 closeMergePlan with
      | .ok q => [mergeHypsAt closeMergePlan q "m2".toList, mergeHypsAt closeMergePlan q "m5".toList]
      | .error _ => []) = [some (true, true, true), some (true, false, true)] := by
   decide
 
-/-- `close_week_merges_a_standing_record`'s hypotheses are satisfiable together, in
-both of its estimate branches. -/
-theorem close_week_merges_a_standing_record_is_not_vacuous (b : Bool) :
-    ∃ (now : Day) (p q : WfPlan) (i : Id) (e f : Entity) (r : Region) (t : Tomb),
-      close week now p = .ok q ∧ p.val.store.get i = some e ∧ q.val.store.get i = some f ∧
-        closeAct week now p.val e.val.skel = .file r ∧ e.val.archive = some t ∧
-        ownsEstimate e.val.line = b := by
+set_option maxRecDepth 40000 in
+/-- The merge witness drops nothing: `^m2` and `^m5` name the outcome `^O2`, which the
+week close does not file. -/
+theorem the_merge_witness_drops_neither_record :
+    dropsInto week closeNow closeMergePlan.val "m2".toList = none ∧
+      dropsInto week closeNow closeMergePlan.val "m5".toList = none := by
+  decide
+
+/-- `close_week_merges_a_standing_record_it_does_not_drop`'s hypotheses are satisfiable
+together, in both of its estimate branches.  (Restates
+`close_week_merges_a_standing_record_is_not_vacuous` for the law B3's repair restated:
+it gains the block length and the line not being dropped.) -/
+theorem close_week_merges_a_standing_record_it_does_not_drop_is_not_vacuous (b : Bool) :
+    ∃ (now : Day) (bm : Nat) (p q : WfPlan) (i : Id) (e f : Entity) (r : Region) (t : Tomb),
+      close week now bm p = .ok q ∧ p.val.store.get i = some e ∧ q.val.store.get i = some f ∧
+        closeAct week now p.val e.val.skel = .file r ∧ dropsInto week now p.val i = none ∧
+        e.val.archive = some t ∧ ownsEstimate e.val.line = b := by
   have hw := the_merge_hypotheses_hold_together
-  cases h : close week closeNow closeMergePlan with
+  cases h : close week closeNow 50 closeMergePlan with
   | error k => rw [h] at hw; simp at hw
   | ok q =>
     rw [h] at hw
@@ -5882,9 +5897,9 @@ theorem close_week_merges_a_standing_record_is_not_vacuous (b : Bool) :
     obtain ⟨h2, h5, -⟩ := hw
     cases b
     · obtain ⟨e, f, r, t, he, hf, hr, ht, hb, -⟩ := mergeHypsAt_spec h5
-      exact ⟨_, _, _, _, e, f, r, t, h, he, hf, hr, ht, hb⟩
+      exact ⟨_, _, _, _, _, e, f, r, t, h, he, hf, hr, the_merge_witness_drops_neither_record.2, ht, hb⟩
     · obtain ⟨e, f, r, t, he, hf, hr, ht, hb, -⟩ := mergeHypsAt_spec h2
-      exact ⟨_, _, _, _, e, f, r, t, h, he, hf, hr, ht, hb⟩
+      exact ⟨_, _, _, _, _, e, f, r, t, h, he, hf, hr, the_merge_witness_drops_neither_record.1, ht, hb⟩
 
 /-- `refile_conserves` (`b = false`) and `refile_respects_user` (`b = true`) have
 satisfiable hypotheses: `^m5` and `^m2` of the loaded merge witness. -/
@@ -5892,7 +5907,7 @@ theorem refile_merge_laws_are_not_vacuous (b : Bool) :
     ∃ (t : Site) (st : Field.Stamp) (e a : Entity) (tb : Tomb),
       e.val.archive = some tb ∧ ownsEstimate e.val.line = b ∧ refile t st e = .ok a := by
   have hw := the_merge_hypotheses_hold_together
-  cases h : close week closeNow closeMergePlan with
+  cases h : close week closeNow 50 closeMergePlan with
   | error k => rw [h] at hw; simp at hw
   | ok q =>
     rw [h] at hw
@@ -5908,27 +5923,27 @@ theorem refile_merge_laws_are_not_vacuous (b : Bool) :
 
 /-- **`close_never_refuses_alreadyDemoted`, refuted** on a loaded plan. -/
 theorem a_close_can_refuse_alreadyDemoted :
-    ¬ ∀ (g : Grain) (now : Day) (p : WfPlan), close g now p ≠ .error .alreadyDemoted := by
+    ¬ ∀ (g : Grain) (now : Day) (bm : Nat) (p : WfPlan), close g now bm p ≠ .error .alreadyDemoted := by
   intro hall
   have hw := a_stray_tomb_refuses_the_week_close
-  cases h : close week closeNow closeStrayTombPlan with
+  cases h : close week closeNow 50 closeStrayTombPlan with
   | ok q => rw [h] at hw; simp at hw
   | error k =>
     rw [h] at hw
     simp only [Option.some.injEq] at hw
     subst hw
-    exact hall _ _ _ h
+    exact hall _ _ _ _ h
 
 /-- **`closeReport_agrees_with_close`, as stated before gap 53, refuted.** -/
 theorem closeReport_agrees_with_close_is_refuted_by_a_merge :
-    ¬ ∀ (g : Grain) (now : Day) (bm : BlockMin) (p q : WfPlan), close g now p = .ok q →
+    ¬ ∀ (g : Grain) (now : Day) (bm : BlockMin) (p q : WfPlan), close g now bm.val p = .ok q →
       ∀ x ∈ closeReport g now bm p.val,
         x.grain = g ∧ ∃ e f, p.val.store.get x.id = some e ∧ q.val.store.get x.id = some f ∧
           e.val.live.doc = x.src ∧ f.val.live.doc = x.dst ∧
           f.val.stamps = e.val.stamps ++ x.stamp.toList ∧ x.minutes = estMinutes bm f.val.line := by
   intro hall
   have hw := the_week_close_merges_m2s_stamps_and_reports_one
-  cases h : close week closeNow closeMergePlan with
+  cases h : close week closeNow 50 closeMergePlan with
   | error k => rw [h] at hw; simp at hw
   | ok q =>
     rw [h] at hw
@@ -5940,7 +5955,7 @@ theorem closeReport_agrees_with_close_is_refuted_by_a_merge :
       obtain ⟨x, hx, hxs⟩ := Option.map_eq_some_iff.mp h3
       have hmem := List.mem_of_find?_eq_some hx
       have hid : x.id = "m2".toList := by simpa using List.find?_some hx
-      obtain ⟨_, e', f', he', hf', _, _, hst, _⟩ := hall _ _ _ _ _ h x hmem
+      obtain ⟨_, e', f', he', hf', _, _, hst, _⟩ := hall week closeNow blockMin50 closeMergePlan q h x hmem
       rw [hid, he] at he'
       rw [hid, hf] at hf'
       injection he' with he'
@@ -6035,7 +6050,7 @@ def closeOverduePlan : WfPlan :=
 past due with `persist`, and — if the close succeeds — whether its bytes, box and
 tombstone survived and which kind of file it ends in. -/
 def overdueHypsAt (i : Id) : Option (CloseAct × Bool × Bool × DocKind) :=
-  match close week closeNow closeOverduePlan with
+  match close week closeNow 50 closeOverduePlan with
   | .ok q =>
     match closeOverduePlan.val.store.get i, q.val.store.get i with
     | some e, some f =>
@@ -6052,11 +6067,21 @@ succeeds, `^d1` meets every hypothesis of
 `close_moves_a_past_due_persist_line_to_the_backlog` and ends in the backlog with
 its bytes, box and tombstone unchanged; `^d2` meets those of
 `close_week_files_a_dated_line_keeping_its_date` (filed, not past due) and ends in
-the month file; `^x3`, a wall that is over with `on-miss:next`, is left alone. -/
+the month file; `^x3`, a wall that is over with `on-miss:next`, is left alone.  (The
+D8 law gained, at goal B3's repair, the hypothesis that the fold does not drop the
+line — `close_week_files_a_dated_line_it_does_not_drop_keeping_its_date` — which
+`^d2` meets: `the_dated_witness_drops_nothing`.) -/
 theorem the_dated_route_hypotheses_hold_on_a_loaded_plan :
     overdueHypsAt "d1".toList = some (.overdue, true, true, .backlog) ∧
       overdueHypsAt "d2".toList = some (.file closeW36, false, false, .month) ∧
       overdueHypsAt "x3".toList = some (.stay, false, true, .week) := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- The overdue witness has no `@parent`, so the week close drops nothing: `^d2` is
+filed, not dropped. -/
+theorem the_dated_witness_drops_nothing :
+    dropsInto week closeNow closeOverduePlan.val "d2".toList = none := by
   decide
 
 /-- A month file whose `# Demoted` holds a record with a `due:` — what a week close
@@ -6183,13 +6208,18 @@ def exampleWeekWitness : List ReqDoc :=
 
 set_option maxRecDepth 100000 in
 /-- **§4.3's example week closes a week after init** (README gap 55, closed).  At
-Monday 2026-09-14: every open line of 2026-W37 is left behind as `[-]`; `^d1`
+Monday 2026-09-14: every open milestone of 2026-W37 is left behind as `[-]`; `^d1`
 (`due:2026-09-11T23:59`, past due, `persist`) is not among them — it sits at the end
 of the backlog's `# Overdue`, `[ ]`, its `due:` and every byte kept; `^m2` is **one**
 merged record in `# Demoted` (README gap 53); the midterm wall is carried into
-2026-W38; no refusal. -/
+2026-W38; no refusal.  Since goal B3's repair the four tasks under `^m1`, `^m2` and
+`^m3` — milestones this close files from the same file — are **dropped**, `[~]` in
+place, and no record of them is filed; each milestone's own estimate covers them
+(`^m1` `6b` over `^t3`'s `est:1b`, `^m2` `6b` over `1b + 1b`, `^m3` `3b` over `1b`), so
+§6.4's `max` writes nothing on the three records.  `^x2` is not dropped: its parent,
+the wall `^x1`, is carried, not filed. -/
 theorem the_example_week_closes_with_d1_in_the_backlog_overdue :
-    (loadedPlan? exampleWeekWitness).bind (fun p => closeResultLines (close week exampleNow p)) = some
+    (loadedPlan? exampleWeekWitness).bind (fun p => closeResultLines (close week exampleNow 50 p)) = some
       [["---".toList,
         "week: 2026-W37".toList,
         "window: 2026-09-07..2026-09-13".toList,
@@ -6204,10 +6234,10 @@ theorem the_example_week_closes_with_d1_in_the_backlog_overdue :
         "- [-] 5 8b Midterm review               @x1 ^x2".toList,
         "".toList,
         "# Tasks".toList,
-        "- [-] 5 1b Read ch.6 §1–2               @m3 ^t1".toList,
-        "- [-] 4 2b Exercises 5.3–5.5            @m1 est:1b ^t3".toList,
-        "- [-] 3 1b Claude Code drafts tests     @m2 ^t4".toList,
-        "- [-] 3 1b Review the drafts            @m2 after:^t4 ^t5".toList],
+        "- [~] 5 1b Read ch.6 §1–2               @m3 ^t1".toList,
+        "- [~] 4 2b Exercises 5.3–5.5            @m1 est:1b ^t3".toList,
+        "- [~] 3 1b Claude Code drafts tests     @m2 ^t4".toList,
+        "- [~] 3 1b Review the drafts            @m2 after:^t4 ^t5".toList],
        ["---".toList,
         "week: 2026-W38".toList,
         "window: 2026-09-14..2026-09-20".toList,
@@ -6226,11 +6256,7 @@ theorem the_example_week_closes_with_d1_in_the_backlog_overdue :
         "- [-] 4 6b Rollback path passes tests   @O2 demoted:W37 ^m2".toList,
         "- [-] 5 3b Read ch.6                    @O1 demoted:W37 ^m3".toList,
         "- [-] 2 2b Pick winter courses          @O3 demoted:W37 ^m4".toList,
-        "- [-] 5 8b Midterm review               @x1 demoted:W37 ^x2".toList,
-        "- [-] 5 1b Read ch.6 §1–2               @m3 demoted:W37 ^t1".toList,
-        "- [-] 4 2b Exercises 5.3–5.5            @m1 est:1b demoted:W37 ^t3".toList,
-        "- [-] 3 1b Claude Code drafts tests     @m2 demoted:W37 ^t4".toList,
-        "- [-] 3 1b Review the drafts            @m2 after:^t4 demoted:W37 ^t5".toList],
+        "- [-] 5 8b Midterm review               @x1 demoted:W37 ^x2".toList],
        ["# Untied".toList,
         "- [ ] 2 30m Insurance claim for the bike  ^a1".toList,
         "- [ ] 1 Pick up package  win:2026-09-07T09:00/21:00 dur:20m ^a3".toList,
@@ -6458,5 +6484,616 @@ theorem rootPrio_reads_the_root_on_a_loaded_plan :
       rootPrio parentTreePlan.val "t1".toList = some ⟨0, by decide⟩ ∧
       rootPrio parentTreePlan.val "x2".toList = some ⟨2, by decide⟩ := by
   decide
+
+
+/-! ## Stage 4 final, step 4: goal B3's child fold, on a loaded plan
+
+§6.3's week row: "Unfinished children are dropped from the week file (their remaining
+is folded into the parent's `est:`)."  `Close.lean` performs it (`dropsInto`,
+`foldedMinutes`, `foldEst`) and proves its law, §6.4's `max`
+(`close_week_folds_dropped_children_by_max`).  Everything below is decided on one
+request the loader reads — `closeFoldWitness`: a stale `2b` milestone with `2b + 1b`
+of subtasks and a grandchild with no estimate, a `6b` milestone with two `1b`
+subtasks, one of them dated and with a standing `# Demoted` record — closed at Monday
+2026-09-07, and every refutation reads its facts off that one close (each decision
+probed alone under an 8 GB cap first; README "Stage 4 final, step 4"). -/
+
+/-- 2026-W36 with two milestones and their subtasks, and September's `# Demoted`
+holding a standing record of the dated subtask `^c5`. -/
+def closeFoldWitness : List ReqDoc :=
+  [⟨"week/2026-W36.md", some closeW36,
+     ["# Milestones".toList,
+      "- [ ] 2b Stale milestone ^p1".toList,
+      "- [ ] 6b Covered milestone ^p2".toList,
+      "# Tasks".toList,
+      "- [ ] 2b Part one @p1 ^c1".toList,
+      "- [ ] 1b Part two @p1 ^c2".toList,
+      "- [ ] Grandchild @c1 ^c4".toList,
+      "- [ ] 1b Covered part @p2 ^c3".toList,
+      "- [ ] 1b Dated part @p2 due:2026-09-30 ^c5".toList]⟩,
+   ⟨"month/2026-09.md", some closeM09,
+     ["# Outcomes".toList, "# Demoted".toList,
+      "- [-] 1b Dated part @p2 est:1b due:2026-09-30 demoted:W35 ^c5".toList]⟩]
+
+set_option maxRecDepth 40000 in
+/-- The fold witness loads. -/
+theorem the_close_fold_witness_loads : loadsOk closeFoldWitness = true := by decide
+
+/-- The loaded fold witness.  Total by `the_close_fold_witness_loads`: the error branch
+is refuted, not defaulted. -/
+def closeFoldPlan : WfPlan :=
+  match h : loadPlan closeFoldWitness with
+  | .ok p => p
+  | .error _ => absurd the_close_fold_witness_loads (by simp [loadsOk, h])
+
+set_option maxRecDepth 40000 in
+/-- **§6.3's week row folds dropped children into their parents, on a loaded plan.**
+At Monday 2026-09-07, 2026-W36 closes: its two milestones are left behind as `[-]`
+and their records filed into September's `# Demoted`; every task under them is
+dropped, `[~]` in place, and filed nowhere.  `^p1` (`2b`) had `2b + 1b` of subtasks
+dropped with it — and `^c4`, a grandchild with no estimate of its own, counted at `0`
+— so its record carries §6.4's `max`, `est:3b`; `^p2` (`6b`) covers its `1b + 1b`, so
+its record is the line with only the stamp set.  `^c5`'s standing record stays where
+it was, unmerged. -/
+theorem the_week_close_folds_dropped_children_on_a_loaded_plan :
+    closedFileLines week closeFoldWitness = some
+      [["# Milestones".toList,
+        "- [-] 2b Stale milestone ^p1".toList,
+        "- [-] 6b Covered milestone ^p2".toList,
+        "# Tasks".toList,
+        "- [~] 2b Part one @p1 ^c1".toList,
+        "- [~] 1b Part two @p1 ^c2".toList,
+        "- [~] Grandchild @c1 ^c4".toList,
+        "- [~] 1b Covered part @p2 ^c3".toList,
+        "- [~] 1b Dated part @p2 due:2026-09-30 ^c5".toList],
+       ["# Outcomes".toList, "# Demoted".toList,
+        "- [-] 1b Dated part @p2 est:1b due:2026-09-30 demoted:W35 ^c5".toList,
+        "- [-] 2b Stale milestone est:3b demoted:W36 ^p1".toList,
+        "- [-] 6b Covered milestone demoted:W36 ^p2".toList]] := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **What the fold computes on the loaded witness**: each task's line its minutes go
+to — the grandchild `^c4` past its dropped parent `^c1` to `^p1` — and each milestone's
+folded minutes at a 50-minute block: `^p1` `100 + 50 + 0`, `^p2` `50 + 50`. -/
+theorem the_fold_on_the_loaded_witness :
+    (["p1", "p2", "c1", "c2", "c4", "c3", "c5"].map (fun i =>
+      (dropsInto week closeNow closeFoldPlan.val i.toList,
+        foldedMinutes week closeNow 50 closeFoldPlan.val i.toList))) =
+      [(none, 150), (none, 100), (some "p1".toList, 0), (some "p1".toList, 0), (some "p1".toList, 0),
+        (some "p2".toList, 0), (some "p2".toList, 0)] := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **The report names the fold**: two `copyFolding` records and five `dropIntoParent`
+lines, each dropped line staying in document 0 with no stamp. -/
+theorem the_week_close_reports_the_fold :
+    closedReport week closeFoldWitness = some
+      [⟨"p1".toList, week, .copyFolding, 0, 1, some (.week 36), some (Arith.posOfNat 150)⟩,
+       ⟨"p2".toList, week, .copyFolding, 0, 1, some (.week 36), some (Arith.posOfNat 300)⟩,
+       ⟨"c1".toList, week, .dropIntoParent, 0, 0, none, some (Arith.posOfNat 100)⟩,
+       ⟨"c2".toList, week, .dropIntoParent, 0, 0, none, some (Arith.posOfNat 50)⟩,
+       ⟨"c4".toList, week, .dropIntoParent, 0, 0, none, none⟩,
+       ⟨"c3".toList, week, .dropIntoParent, 0, 0, none, some (Arith.posOfNat 50)⟩,
+       ⟨"c5".toList, week, .dropIntoParent, 0, 0, none, some (Arith.posOfNat 50)⟩] := by
+  decide
+
+/-- The fold witness after `close week closeNow 50`, observed. -/
+def foldClosed {α : Type} (obs : WfPlan → α) : Option α :=
+  match close week closeNow 50 closeFoldPlan with
+  | .ok q    => some (obs q)
+  | .error _ => none
+
+/-- One id's entity before and after the fold witness's week close, observed together. -/
+def beforeAfterFoldClose {α : Type} (i : Id) (obs : WfPlan → Entity → Entity → α) (q : WfPlan) :
+    Option α :=
+  match closeFoldPlan.val.store.get i, q.val.store.get i with
+  | some e, some f => some (obs q e f)
+  | _, _ => none
+
+/-- The facts every fold law reads off one line, as numbers (a `Bool` as `0`/`1`):
+whether the close files it, whether it is not dropped, what it folds, its readings
+before, carried and after at a 50-minute block, whether it has a record, whether it is
+`[~]` afterwards, and whether it ends in the file `closeTo` names. -/
+def foldFacts (q : WfPlan) (i : Id) (e f : Entity) : List Nat :=
+  [(filesLine week closeNow closeFoldPlan.val e.val.skel).toNat,
+   (dropsInto week closeNow closeFoldPlan.val i).isNone.toNat,
+   foldedMinutes week closeNow 50 closeFoldPlan.val i,
+   remainingOf 50 e.val.line, remainingOf 50 (carriedLine e), remainingOf 50 f.val.line,
+   e.val.archive.isSome.toNat,
+   (decide (f.val.status = .settled .dropped)).toNat,
+   (decide (docRegion q.val f.val.live.doc = some (closeTo week closeNow))).toNat]
+
+set_option maxRecDepth 40000 in
+/-- **The laws' hypotheses, and what they give, on the loaded witness.**  `^p1`: filed,
+not dropped, folding 150 minutes over a carried 100, reading 150 after, no record, in
+September.  `^p2`: filed, not dropped, folding 100 under its own 300, reading 300.
+`^c3`: filed and dropped, 50 minutes, `[~]`, still in 2026-W36.  `^c5`: the same, and
+it has a standing record. -/
+theorem the_fold_facts_on_the_loaded_witness :
+    foldClosed (α := List (Option (List Nat))) (fun q => ["p1", "p2", "c3", "c5"].map (fun i =>
+      beforeAfterFoldClose i.toList (fun q e f => foldFacts q i.toList e f) q)) =
+      some [some [1, 1, 150, 100, 100, 150, 0, 0, 1],
+            some [1, 1, 100, 300, 300, 300, 0, 0, 1],
+            some [1, 0, 0, 50, 50, 50, 0, 1, 0],
+            some [1, 0, 0, 50, 50, 50, 1, 1, 0]] := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- The rest of what the refutations read off the loaded witness: `^c3`'s parent is
+`^p2`; `^c5` is not recurring and is due on or after Monday; the report names `^c3`
+`dropIntoParent` in document 0; `^p1` and `^c1` are taken by one action from one file,
+`^p1` above, and end in different files. -/
+theorem the_fold_witness_links_and_dates :
+    parentStep closeFoldPlan.val "c3".toList = some "p2".toList ∧
+      (closeFoldPlan.val.store.get "c5".toList).map (fun e =>
+        (decide (e.val.recur = Field.Recur.none),
+         match e.val.shape with
+         | .point m => decide (closeNow ≤ m.day)
+         | _        => false)) = some (true, true) ∧
+      ((closeReport week closeNow blockMin50 closeFoldPlan.val).find? (fun x => x.id == "c3".toList)).map
+        (fun x => (x.did, x.dst)) = some (.dropIntoParent, 0) ∧
+      (match closeFoldPlan.val.store.get "p1".toList, closeFoldPlan.val.store.get "c1".toList with
+       | some a, some b =>
+         decide (closeAct week closeNow closeFoldPlan.val b.val.skel = closeAct week closeNow closeFoldPlan.val a.val.skel) &&
+           decide (a.val.live.doc = b.val.live.doc) && decide (a.val.live.rank < b.val.live.rank)
+       | _, _ => false) = true ∧
+      foldClosed (fun q => decide ((q.val.store.get "p1".toList).map (fun f => f.val.live.doc) ≠
+        (q.val.store.get "c1".toList).map (fun f => f.val.live.doc))) = some true := by
+  decide
+
+theorem toNat_eq_one {b : Bool} (h : b.toNat = 1) : b = true := by cases b <;> simp_all
+theorem toNat_eq_zero {b : Bool} (h : b.toNat = 0) : b = false := by cases b <;> simp_all
+
+theorem beforeAfterFoldClose_some {i : Id} {q : WfPlan} {l : List Nat}
+    (h : beforeAfterFoldClose i (fun q e f => foldFacts q i e f) q = some l) :
+    ∃ e f, closeFoldPlan.val.store.get i = some e ∧ q.val.store.get i = some f ∧ foldFacts q i e f = l := by
+  unfold beforeAfterFoldClose at h
+  split at h
+  · rename_i e f he hf
+    injection h with h
+    exact ⟨e, f, he, hf, h⟩
+  · simp at h
+
+/-- The four lines' facts under the fold witness's week close, unpacked. -/
+theorem fold_facts {q : WfPlan} (h : close week closeNow 50 closeFoldPlan = .ok q) :
+    (∃ e f, closeFoldPlan.val.store.get "p1".toList = some e ∧ q.val.store.get "p1".toList = some f ∧
+      foldFacts q "p1".toList e f = [1, 1, 150, 100, 100, 150, 0, 0, 1]) ∧
+    (∃ e f, closeFoldPlan.val.store.get "p2".toList = some e ∧ q.val.store.get "p2".toList = some f ∧
+      foldFacts q "p2".toList e f = [1, 1, 100, 300, 300, 300, 0, 0, 1]) ∧
+    (∃ e f, closeFoldPlan.val.store.get "c3".toList = some e ∧ q.val.store.get "c3".toList = some f ∧
+      foldFacts q "c3".toList e f = [1, 0, 0, 50, 50, 50, 0, 1, 0]) ∧
+    (∃ e f, closeFoldPlan.val.store.get "c5".toList = some e ∧ q.val.store.get "c5".toList = some f ∧
+      foldFacts q "c5".toList e f = [1, 0, 0, 50, 50, 50, 1, 1, 0]) := by
+  have hw := the_fold_facts_on_the_loaded_witness
+  unfold foldClosed at hw
+  rw [h] at hw
+  simp only [List.map_cons, List.map_nil, Option.some.injEq, List.cons.injEq] at hw
+  obtain ⟨h1, h2, h3, h4, -⟩ := hw
+  exact ⟨beforeAfterFoldClose_some h1, beforeAfterFoldClose_some h2, beforeAfterFoldClose_some h3,
+    beforeAfterFoldClose_some h4⟩
+
+theorem foldFacts_eq {q : WfPlan} {i : Id} {e f : Entity} {a b c d e' f' g h k : Nat}
+    (hf : foldFacts q i e f = [a, b, c, d, e', f', g, h, k]) :
+    (filesLine week closeNow closeFoldPlan.val e.val.skel).toNat = a ∧
+      (dropsInto week closeNow closeFoldPlan.val i).isNone.toNat = b ∧
+      foldedMinutes week closeNow 50 closeFoldPlan.val i = c ∧
+      remainingOf 50 e.val.line = d ∧ remainingOf 50 (carriedLine e) = e' ∧
+      remainingOf 50 f.val.line = f' ∧ e.val.archive.isSome.toNat = g ∧
+      (decide (f.val.status = .settled .dropped)).toNat = h ∧
+      (decide (docRegion q.val f.val.live.doc = some (closeTo week closeNow))).toNat = k := by
+  unfold foldFacts at hf
+  simp only [List.cons.injEq] at hf
+  exact ⟨hf.1, hf.2.1, hf.2.2.1, hf.2.2.2.1, hf.2.2.2.2.1, hf.2.2.2.2.2.1, hf.2.2.2.2.2.2.1,
+    hf.2.2.2.2.2.2.2.1, hf.2.2.2.2.2.2.2.2.1⟩
+
+theorem archive_none_of_toNat {e : Entity} (h : e.val.archive.isSome.toNat = 0) : e.val.archive = none := by
+  have := toNat_eq_zero h
+  cases ha : e.val.archive with
+  | none => rfl
+  | some _ => rw [ha] at this; cases this
+
+/-- **Goal B3 (P\*), refuted — discharged from `Goals.lean` by refute-and-rename.**
+The negation of `close_week_folds_a_dropped_child_into_its_parent`, quantifier for
+quantifier (its `close week now p` is `close week now bm p` since the close reads the
+block length, at the `bm` the goal already bound).  The goal added a dropped child's
+remaining to its parent's, and §6.4 makes a parent's own estimate cover its
+decomposition: `^p2` (`6b`, 300 minutes) with its `1b` subtask `^c3` (50) dropped
+carries 300, not 350.  What holds is `close_week_folds_dropped_children_by_max` and,
+for the child, `close_week_keeps_a_dropped_childs_remaining_in_its_parents_record`
+(Close.lean). -/
+theorem close_week_does_not_add_a_dropped_child_to_its_parent :
+    ¬ ∀ (now : Day) (bm : Nat) (p q : WfPlan), close week now bm p = .ok q →
+      ∀ (i j : Id) (ec ep fp fc : Entity),
+        parentStep p.val j = some i →
+        p.val.store.get j = some ec → p.val.store.get i = some ep →
+        q.val.store.get i = some fp → q.val.store.get j = some fc →
+        fc.val.status = .settled .dropped →
+        remainingOf bm ep.val.line + remainingOf bm ec.val.line ≤ remainingOf bm fp.val.line := by
+  intro hall
+  cases h : close week closeNow 50 closeFoldPlan with
+  | error x =>
+    have hw := the_fold_facts_on_the_loaded_witness
+    unfold foldClosed at hw; rw [h] at hw; cases hw
+  | ok q =>
+    obtain ⟨-, ⟨ep, fp, hep, hfp, hp2⟩, ⟨ec, fc, hec, hfc, hc3⟩, -⟩ := fold_facts h
+    obtain ⟨-, -, -, hre, -, hrf, -, -, -⟩ := foldFacts_eq hp2
+    obtain ⟨-, -, -, hrc, -, -, -, hdr, -⟩ := foldFacts_eq hc3
+    have hdrop : fc.val.status = .settled .dropped := by simpa using toNat_eq_one hdr
+    have := hall closeNow 50 closeFoldPlan q h "p2".toList "c3".toList ec ep fp fc
+      the_fold_witness_links_and_dates.1 hec hep hfp hfc hdrop
+    omega
+
+/-- **`close_rewrites_a_line_only_by_stamping_or_merging_it`, refuted since B3's
+repair.**  Its statement, quantifier for quantifier (at the close's new block length):
+`^p1`'s record carries `est:3b`, which neither a `demoted:` write nor a merge adds — it
+has no standing record.  What holds is
+`close_rewrites_a_line_only_by_stamping_merging_or_folding_it` (Close.lean). -/
+theorem a_folded_record_is_rewritten_beyond_its_stamp :
+    ¬ ∀ (g : Grain) (now : Day) (bm : Nat) (p q : WfPlan), close g now bm p = .ok q →
+      ∀ (i : Id) (e f : Entity), p.val.store.get i = some e → q.val.store.get i = some f →
+        f.val.line = e.val.line ∨ (∃ ss, f.val.line = Field.setDemoted ss e.val.line) ∨
+          ∃ ss t, e.val.archive = some t ∧ f.val.line = Field.setDemoted ss (carryEst t.line e.val.line) := by
+  intro hall
+  cases h : close week closeNow 50 closeFoldPlan with
+  | error x =>
+    have hw := the_fold_facts_on_the_loaded_witness
+    unfold foldClosed at hw; rw [h] at hw; cases hw
+  | ok q =>
+    obtain ⟨⟨e, f, he, hf, hp1⟩, -⟩ := fold_facts h
+    obtain ⟨-, -, -, hre, -, hrf, ha, -, -⟩ := foldFacts_eq hp1
+    rcases hall week closeNow 50 closeFoldPlan q h _ e f he hf with hl | ⟨ss, hl⟩ | ⟨ss, t, hat, _⟩
+    · rw [hl] at hrf; omega
+    · rw [hl, Field.remainingOf_setDemoted] at hrf; omega
+    · rw [archive_none_of_toNat ha] at hat; cases hat
+
+/-- **`close_rewrites_a_line_with_no_record_only_by_stamping_it`, refuted since B3's
+repair**, at `^p1`, which has no record.  What holds is
+`close_rewrites_a_line_with_no_record_only_by_stamping_or_folding_it`, and, with
+nothing folded, `close_rewrites_a_line_with_no_record_and_nothing_folded_only_by_stamping_it`. -/
+theorem a_folded_line_with_no_record_is_rewritten_beyond_its_stamp :
+    ¬ ∀ (g : Grain) (now : Day) (bm : Nat) (p q : WfPlan), close g now bm p = .ok q →
+      ∀ (i : Id) (e f : Entity), p.val.store.get i = some e → q.val.store.get i = some f →
+        e.val.archive = none →
+        f.val.line = e.val.line ∨ ∃ ss, f.val.line = Field.setDemoted ss e.val.line := by
+  intro hall
+  cases h : close week closeNow 50 closeFoldPlan with
+  | error x =>
+    have hw := the_fold_facts_on_the_loaded_witness
+    unfold foldClosed at hw; rw [h] at hw; cases hw
+  | ok q =>
+    obtain ⟨⟨e, f, he, hf, hp1⟩, -⟩ := fold_facts h
+    obtain ⟨-, -, -, hre, -, hrf, ha, -, -⟩ := foldFacts_eq hp1
+    rcases hall week closeNow 50 closeFoldPlan q h _ e f he hf (archive_none_of_toNat ha) with hl | ⟨ss, hl⟩
+    · rw [hl] at hrf; omega
+    · rw [hl, Field.remainingOf_setDemoted] at hrf; omega
+
+/-- **`close_reads_every_remaining_estimate_through_demoteEst`, refuted since B3's
+repair.**  `^p1`'s remaining goes from 100 to 150 minutes at a 50-minute block, and it
+has no standing record whose `demoteEst` reading could explain it.  What holds is
+`close_reads_every_remaining_estimate_through_demoteEst_and_the_fold` (Close.lean). -/
+theorem a_folded_record_changes_a_remaining_estimate :
+    ¬ ∀ (g : Grain) (now : Day) (bm : Nat) (p q : WfPlan), close g now bm p = .ok q →
+      ∀ (i : Id) (e f : Entity), p.val.store.get i = some e → q.val.store.get i = some f →
+        ∀ bm', remainingOf bm' f.val.line = remainingOf bm' e.val.line ∨
+          ∃ t, e.val.archive = some t ∧ remainingOf bm' f.val.line =
+            remainingOf bm' (demoteEst bm' (ownsEstimate e.val.line) (recordedEst bm' t.line) e).val.line := by
+  intro hall
+  cases h : close week closeNow 50 closeFoldPlan with
+  | error x =>
+    have hw := the_fold_facts_on_the_loaded_witness
+    unfold foldClosed at hw; rw [h] at hw; cases hw
+  | ok q =>
+    obtain ⟨⟨e, f, he, hf, hp1⟩, -⟩ := fold_facts h
+    obtain ⟨-, -, -, hre, -, hrf, ha, -, -⟩ := foldFacts_eq hp1
+    rcases hall week closeNow 50 closeFoldPlan q h _ e f he hf 50 with hl | ⟨t, hat, _⟩
+    · omega
+    · rw [archive_none_of_toNat ha] at hat; cases hat
+
+/-- **`close_keeps_the_remaining_estimate_of_a_line_with_no_record`, refuted since B3's
+repair**, at `^p1`.  What holds is
+`close_keeps_the_remaining_estimate_of_a_line_with_no_record_and_nothing_folded`. -/
+theorem a_folded_line_with_no_record_changes_its_remaining_estimate :
+    ¬ ∀ (g : Grain) (now : Day) (bm : Nat) (p q : WfPlan), close g now bm p = .ok q →
+      ∀ (i : Id) (e f : Entity), p.val.store.get i = some e → q.val.store.get i = some f →
+        e.val.archive = none → ∀ bm', remainingOf bm' f.val.line = remainingOf bm' e.val.line := by
+  intro hall
+  cases h : close week closeNow 50 closeFoldPlan with
+  | error x =>
+    have hw := the_fold_facts_on_the_loaded_witness
+    unfold foldClosed at hw; rw [h] at hw; cases hw
+  | ok q =>
+    obtain ⟨⟨e, f, he, hf, hp1⟩, -⟩ := fold_facts h
+    obtain ⟨-, -, -, hre, -, hrf, ha, -, -⟩ := foldFacts_eq hp1
+    have := hall week closeNow 50 closeFoldPlan q h _ e f he hf (archive_none_of_toNat ha) 50
+    omega
+
+/-- A line a close files: its closed region, a box the row takes, not recurring, not
+routed as overdue, not a wall. -/
+theorem closeAct_file_facts {g : Grain} {now : Day} {p : PlanCore} {s : Skel} {r : Region}
+    (h : closeAct g now p s = .file r) :
+    closedRegionOf g now p s.doc = some r ∧ (closePolicy g).takes s.status = true ∧
+      s.recurring = false ∧ ¬ ((closePolicy g).overdue = .toBacklogOverdue ∧ s.overdue now = true) ∧
+      s.wallAhead now = none := by
+  unfold closeAct at h
+  split at h
+  · cases h
+  · rename_i r' hr
+    split at h
+    · cases h
+    · rename_i htk
+      split at h
+      · rw [(closePolicy_exemptions g).1] at h; simp [exemptAct] at h
+      · rename_i hrec
+        split at h
+        · cases h
+        · rename_i hov
+          split at h
+          · rename_i b _; cases b <;> simp [(closePolicy_exemptions g).2, exemptAct] at h
+          · rename_i hw
+            injection h with h
+            subst h
+            exact ⟨hr, by simpa using htk, by simpa using hrec, hov, hw⟩
+
+/-- **`close_files_a_taken_line_into_closeTo`, refuted since B3's repair.**  `^c3`, a
+line the week row takes, is dropped with its parent and stays in 2026-W36, not in
+`closeTo week now`.  What holds is `close_files_a_taken_line_it_does_not_drop_into_closeTo`
+and `close_week_drops_a_child_with_its_parent` (Close.lean). -/
+theorem a_dropped_child_is_not_filed_into_closeTo :
+    ¬ ∀ (g : Grain) (now : Day) (bm : Nat) (p q : WfPlan), close g now bm p = .ok q →
+      ∀ {i : Id} {e f : Entity}, p.val.store.get i = some e → q.val.store.get i = some f →
+        ∀ {r : Region}, closeAct g now p.val e.val.skel = .file r →
+          docRegion q.val f.val.live.doc = some (closeTo g now) ∧
+            docKindAt q.val f.val.live.doc = kindOfGrain (coarsen g) ∧
+            f.val.skel = skelAfter g r f.val.live.doc .none e.val.skel := by
+  intro hall
+  cases h : close week closeNow 50 closeFoldPlan with
+  | error x =>
+    have hw := the_fold_facts_on_the_loaded_witness
+    unfold foldClosed at hw; rw [h] at hw; cases hw
+  | ok q =>
+    obtain ⟨-, -, ⟨e, f, he, hf, hc3⟩, -⟩ := fold_facts h
+    obtain ⟨hfl, -, -, -, -, -, -, -, hreg⟩ := foldFacts_eq hc3
+    obtain ⟨r, hr⟩ := filesLine_iff.1 (toNat_eq_one hfl)
+    have := (hall week closeNow 50 closeFoldPlan q h he hf hr).1
+    have hno := toNat_eq_zero hreg
+    rw [this] at hno
+    simp at hno
+
+/-- **`close_week_merges_a_standing_record`, refuted since B3's repair.**  `^c5` has a
+standing `# Demoted` record and the week row takes it, and it is dropped with its
+parent — `[~]`, not a `[-]` record.  What holds is
+`close_week_merges_a_standing_record_it_does_not_drop` (Close.lean). -/
+theorem a_dropped_child_keeps_its_record_unmerged :
+    ¬ ∀ (now : Day) (bm : Nat) (p q : WfPlan), close week now bm p = .ok q →
+      ∀ {i : Id} {e f : Entity}, p.val.store.get i = some e → q.val.store.get i = some f →
+        ∀ {r : Region}, closeAct week now p.val e.val.skel = .file r → ∀ {t : Tomb},
+          e.val.archive = some t →
+          f.val.archive.map Tomb.line = some e.val.line ∧ f.val.status = .demoted ∧
+            f.val.stamps = mergeStamps (stampsOfLine t.line) e.val.stamps
+              (.week (Cal.isoOf (7 * r.ix)).week) ∧
+            (ownsEstimate e.val.line = true → f.val.line = Field.setDemoted f.val.stamps e.val.line) ∧
+            ∀ bm', ownsEstimate e.val.line = false →
+              recordedEst bm' t.line ≤ remainingOf bm' f.val.line ∧
+                remainingOf bm' e.val.line ≤ remainingOf bm' f.val.line := by
+  intro hall
+  cases h : close week closeNow 50 closeFoldPlan with
+  | error x =>
+    have hw := the_fold_facts_on_the_loaded_witness
+    unfold foldClosed at hw; rw [h] at hw; cases hw
+  | ok q =>
+    obtain ⟨-, -, -, ⟨e, f, he, hf, hc5⟩⟩ := fold_facts h
+    obtain ⟨hfl, -, -, -, -, -, ha, hdr, -⟩ := foldFacts_eq hc5
+    obtain ⟨r, hr⟩ := filesLine_iff.1 (toNat_eq_one hfl)
+    have hsome := toNat_eq_one ha
+    cases hat : e.val.archive with
+    | none => rw [hat] at hsome; cases hsome
+    | some t =>
+      have hst := (hall closeNow 50 closeFoldPlan q h he hf hr hat).2.1
+      have hdrop : f.val.status = .settled .dropped := by simpa using toNat_eq_one hdr
+      rw [hdrop] at hst
+      cases hst
+
+/-- `^c5`'s hypotheses for the two D8 laws: filed, so in a closed region with a box the
+week row takes, not recurring, not overdue; a point due on or after Monday. -/
+theorem c5_dated_facts {q : WfPlan} (h : close week closeNow 50 closeFoldPlan = .ok q) :
+    ∃ e f r m, closeFoldPlan.val.store.get "c5".toList = some e ∧ q.val.store.get "c5".toList = some f ∧
+      closedRegionOf week closeNow closeFoldPlan.val e.val.live.doc = some r ∧
+      (closePolicy week).takes e.val.status = true ∧ e.val.recur = Field.Recur.none ∧
+      e.val.shape = Field.Shape.point m ∧ closeNow ≤ m.day ∧ e.val.skel.overdue closeNow = false ∧
+      f.val.status = .settled .dropped := by
+  obtain ⟨-, -, -, ⟨e, f, he, hf, hc5⟩⟩ := fold_facts h
+  obtain ⟨hfl, -, -, -, -, -, -, hdr, -⟩ := foldFacts_eq hc5
+  obtain ⟨r, hr⟩ := filesLine_iff.1 (toNat_eq_one hfl)
+  obtain ⟨hreg, htk, _, hov, _⟩ := closeAct_file_facts hr
+  have hd := the_fold_witness_links_and_dates.2.1
+  rw [he] at hd
+  simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hd
+  obtain ⟨hrec, hsh⟩ := hd
+  cases hs : e.val.shape with
+  | point m =>
+    rw [hs] at hsh
+    refine ⟨e, f, r, m, he, hf, hreg, htk, by simpa using hrec, hs, by simpa using hsh, ?_,
+      by simpa using toNat_eq_one hdr⟩
+    cases ho : e.val.skel.overdue closeNow with
+    | false => rfl
+    | true => exact absurd ⟨rfl, ho⟩ hov
+  | none => rw [hs] at hsh; cases hsh
+  | interval _ _ => rw [hs] at hsh; cases hsh
+  | window _ _ => rw [hs] at hsh; cases hsh
+
+/-- **`close_week_files_a_dated_line_keeping_its_date`, refuted since B3's repair.**
+`^c5`, a point-dated line of a closed week that is not past due, is dropped with its
+parent: `[~]`, not a `[-]` record.  What holds is
+`close_week_files_a_dated_line_it_does_not_drop_keeping_its_date` (Close.lean). -/
+theorem a_dropped_dated_child_is_not_filed_as_a_record :
+    ¬ ∀ (now : Day) (bm : Nat) (p q : WfPlan), close week now bm p = .ok q →
+      ∀ {i : Id} {e f : Entity}, p.val.store.get i = some e → q.val.store.get i = some f →
+        ∀ {r : Region}, closedRegionOf week now p.val e.val.live.doc = some r →
+        (closePolicy week).takes e.val.status = true → e.val.recur = Field.Recur.none →
+        ∀ {m : Field.Moment}, e.val.shape = Field.Shape.point m → e.val.skel.overdue now = false →
+        docRegion q.val f.val.live.doc = some (closeTo week now) ∧
+          docKindAt q.val f.val.live.doc = .month ∧
+          f.val.status = .demoted ∧ f.val.archive.map Tomb.line = some e.val.line ∧
+          Field.Stamp.week (Cal.isoOf (7 * r.ix)).week ∈ f.val.stamps ∧
+          f.val.shape = e.val.shape := by
+  intro hall
+  cases h : close week closeNow 50 closeFoldPlan with
+  | error x =>
+    have hw := the_fold_facts_on_the_loaded_witness
+    unfold foldClosed at hw; rw [h] at hw; cases hw
+  | ok q =>
+    obtain ⟨e, f, r, m, he, hf, hreg, htk, hrec, hsh, _, hov, hdrop⟩ := c5_dated_facts h
+    have hst := (hall closeNow 50 closeFoldPlan q h he hf hreg htk hrec hsh hov).2.2.1
+    rw [hdrop] at hst
+    cases hst
+
+/-- **`close_week_demotes_a_not_yet_due_line_keeping_its_date`, refuted since B3's
+repair** — D8's law stated without §6.3's child rule.  `^c5` is not yet due and is
+unfinished at the close, and it is dropped with the parent the close files, as §6.3
+drops any unfinished child.  What holds is
+`close_week_demotes_a_not_yet_due_line_it_does_not_drop_keeping_its_date` (Close.lean). -/
+theorem a_not_yet_due_child_is_dropped_with_its_parent :
+    ¬ ∀ (now : Day) (bm : Nat) (p q : WfPlan), close week now bm p = .ok q →
+      ∀ {i : Id} {e f : Entity}, p.val.store.get i = some e → q.val.store.get i = some f →
+        ∀ {r : Region}, closedRegionOf week now p.val e.val.live.doc = some r →
+        (closePolicy week).takes e.val.status = true → e.val.recur = Field.Recur.none →
+        ∀ {m : Field.Moment}, e.val.shape = Field.Shape.point m → now ≤ m.day →
+        docRegion q.val f.val.live.doc = some (closeTo week now) ∧
+          docKindAt q.val f.val.live.doc = .month ∧
+          f.val.status = .demoted ∧ f.val.archive.map Tomb.line = some e.val.line ∧
+          Field.Stamp.week (Cal.isoOf (7 * r.ix)).week ∈ f.val.stamps ∧
+          f.val.shape = e.val.shape := by
+  intro hall
+  cases h : close week closeNow 50 closeFoldPlan with
+  | error x =>
+    have hw := the_fold_facts_on_the_loaded_witness
+    unfold foldClosed at hw; rw [h] at hw; cases hw
+  | ok q =>
+    obtain ⟨e, f, r, m, he, hf, hreg, htk, hrec, hsh, hnot, _, hdrop⟩ := c5_dated_facts h
+    have hst := (hall closeNow 50 closeFoldPlan q h he hf hreg htk hrec hsh hnot).2.2.1
+    rw [hdrop] at hst
+    cases hst
+
+/-- **`close_keeps_source_order` without the fold's clause, refuted.**  `^p1` and its
+subtask `^c1` are taken from 2026-W36 by one action, `file`, `^p1` above; the child
+fold drops `^c1` and files `^p1`, so they end in different files.  What holds is
+`close_keeps_source_order` as re-proved at B3's repair (Close.lean): "the same action"
+includes whether the fold drops the line. -/
+theorem a_dropped_child_and_its_filed_parent_part_ways :
+    ¬ ∀ (g : Grain) (now : Day) (bm : Nat) (p q : WfPlan), close g now bm p = .ok q →
+      ∀ {i j : Id} {ei ej : Entity}, p.val.store.get i = some ei → p.val.store.get j = some ej →
+        closeAct g now p.val ei.val.skel ≠ .stay →
+        closeAct g now p.val ej.val.skel = closeAct g now p.val ei.val.skel →
+        ei.val.live.doc = ej.val.live.doc →
+        (closeAct g now p.val ei.val.skel ≠ .carry → (closePolicy g).landing = .sameSection →
+          sectionAt p.val ei.val.live = sectionAt p.val ej.val.live) →
+        ei.val.live.rank < ej.val.live.rank →
+        ∃ fi fj, q.val.store.get i = some fi ∧ q.val.store.get j = some fj ∧
+          fi.val.live.doc = fj.val.live.doc ∧ fi.val.live.rank < fj.val.live.rank := by
+  intro hall
+  cases h : close week closeNow 50 closeFoldPlan with
+  | error x =>
+    have hw := the_fold_facts_on_the_loaded_witness
+    unfold foldClosed at hw; rw [h] at hw; cases hw
+  | ok q =>
+    obtain ⟨⟨ei, fi0, hei, hfi0, hp1⟩, -⟩ := fold_facts h
+    obtain ⟨hfl, -, -, -, -, -, -, -, -⟩ := foldFacts_eq hp1
+    obtain ⟨r, hr⟩ := filesLine_iff.1 (toNat_eq_one hfl)
+    have hl := the_fold_witness_links_and_dates.2.2.2
+    obtain ⟨hpair, hdocs⟩ := hl
+    cases hej : closeFoldPlan.val.store.get "c1".toList with
+    | none => rw [hei, hej] at hpair; cases hpair
+    | some ej =>
+      rw [hei, hej] at hpair
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hpair
+      obtain ⟨⟨hact, hdoc⟩, hlt⟩ := hpair
+      obtain ⟨fi, fj, hfi, hfj, hd, _⟩ := hall week closeNow 50 closeFoldPlan q h hei hej
+        (by rw [hr]; simp) hact hdoc (fun _ hl => absurd hl (by decide)) hlt
+      unfold foldClosed at hdocs
+      rw [h] at hdocs
+      simp only [Option.some.injEq, hfi, hfj, Option.map_some, ne_eq, decide_eq_true_eq] at hdocs
+      exact hdocs (by rw [hd])
+
+/-- **`closeReport_names_the_destination_of_now`, refuted since B3's repair.**  Its third
+clause names `closeTo g now` for every entry that is neither a carry nor an overdue
+move; `^c3`'s entry is `dropIntoParent`, and the line stays in 2026-W36.  What holds
+is `closeReport_names_each_lines_destination` (Report.lean). -/
+theorem a_dropped_child_is_reported_where_it_stays :
+    ¬ ∀ (g : Grain) (now : Day) (bm : BlockMin) (p q : WfPlan), close g now bm.val p = .ok q →
+      ∀ {x : CloseEntry}, x ∈ closeReport g now bm p.val →
+        (x.did = .carry → docRegion q.val x.dst = some (regionOf week now)) ∧
+          (x.did = .moveOverdue → docKindAt q.val x.dst = .backlog ∧ docRegion q.val x.dst = none) ∧
+          (x.did ≠ .carry → x.did ≠ .moveOverdue → docRegion q.val x.dst = some (closeTo g now)) := by
+  intro hall
+  cases h : close week closeNow 50 closeFoldPlan with
+  | error x =>
+    have hw := the_fold_facts_on_the_loaded_witness
+    unfold foldClosed at hw; rw [h] at hw; cases hw
+  | ok q =>
+    obtain ⟨-, -, ⟨e, f, he, hf, hc3⟩, -⟩ := fold_facts h
+    obtain ⟨-, -, -, -, -, -, -, -, hreg⟩ := foldFacts_eq hc3
+    have hrep := the_fold_witness_links_and_dates.2.2.1
+    obtain ⟨x, hx, hxs⟩ := Option.map_eq_some_iff.mp hrep
+    have hmem := List.mem_of_find?_eq_some hx
+    have hid : x.id = "c3".toList := by simpa using List.find?_some hx
+    simp only [Prod.mk.injEq] at hxs
+    obtain ⟨hdid, hdst⟩ := hxs
+    have hq := (hall week closeNow blockMin50 closeFoldPlan q h hmem).2.2 (by rw [hdid]; decide)
+      (by rw [hdid]; decide)
+    obtain ⟨-, e', f', he', hf', -, hd, -⟩ := closeReport_agrees_with_close_stamping_or_merging
+      (bm := blockMin50) h hmem
+    rw [hid, hf] at hf'
+    injection hf' with hf'
+    subst hf'
+    rw [← hd] at hq
+    have hno := toNat_eq_zero hreg
+    rw [hq] at hno
+    simp at hno
+
+/-- **`close_week_folds_dropped_children_by_max`'s hypotheses are satisfiable, in both
+directions**: `b = true` is a stale parent the fold lifts (`^p1`, 100 < 150), `b = false`
+one that covers its children (`^p2`, 100 ≤ 300). -/
+theorem close_week_folds_dropped_children_by_max_is_not_vacuous (b : Bool) :
+    ∃ (now : Day) (bm : Nat) (p q : WfPlan) (i : Id) (e f : Entity) (r : Region),
+      close week now bm p = .ok q ∧ p.val.store.get i = some e ∧ q.val.store.get i = some f ∧
+        closeAct week now p.val e.val.skel = .file r ∧ dropsInto week now p.val i = none ∧
+        decide (remainingOf bm (carriedLine e) < foldedMinutes week now bm p.val i) = b := by
+  cases h : close week closeNow 50 closeFoldPlan with
+  | error x =>
+    have hw := the_fold_facts_on_the_loaded_witness
+    unfold foldClosed at hw; rw [h] at hw; cases hw
+  | ok q =>
+    obtain ⟨⟨e1, f1, he1, hf1, hp1⟩, ⟨e2, f2, he2, hf2, hp2⟩, -⟩ := fold_facts h
+    obtain ⟨hfl1, hnd1, hfm1, -, hc1, -, -, -, -⟩ := foldFacts_eq hp1
+    obtain ⟨hfl2, hnd2, hfm2, -, hc2, -, -, -, -⟩ := foldFacts_eq hp2
+    obtain ⟨r1, hr1⟩ := filesLine_iff.1 (toNat_eq_one hfl1)
+    obtain ⟨r2, hr2⟩ := filesLine_iff.1 (toNat_eq_one hfl2)
+    have hn1 : dropsInto week closeNow closeFoldPlan.val "p1".toList = none := by
+      simpa using toNat_eq_one hnd1
+    have hn2 : dropsInto week closeNow closeFoldPlan.val "p2".toList = none := by
+      simpa using toNat_eq_one hnd2
+    cases b
+    · exact ⟨_, _, _, _, _, e2, f2, r2, h, he2, hf2, hr2, hn2, by rw [hc2, hfm2]; decide⟩
+    · exact ⟨_, _, _, _, _, e1, f1, r1, h, he1, hf1, hr1, hn1, by rw [hc1, hfm1]; decide⟩
+
+/-- **`close_week_drops_a_child_with_its_parent`'s and
+`close_week_keeps_a_dropped_childs_remaining_in_its_parents_record`'s hypotheses are
+satisfiable**: `^c3` is dropped into `^p2`. -/
+theorem close_week_drops_a_child_with_its_parent_is_not_vacuous :
+    ∃ (now : Day) (bm : Nat) (p q : WfPlan) (i j : Id) (e f fp : Entity),
+      close week now bm p = .ok q ∧ p.val.store.get j = some e ∧ q.val.store.get j = some f ∧
+        q.val.store.get i = some fp ∧ dropsInto week now p.val j = some i := by
+  cases h : close week closeNow 50 closeFoldPlan with
+  | error x =>
+    have hw := the_fold_facts_on_the_loaded_witness
+    unfold foldClosed at hw; rw [h] at hw; cases hw
+  | ok q =>
+    obtain ⟨-, ⟨e2, f2, _, hf2, _⟩, ⟨e3, f3, he3, hf3, _⟩, -⟩ := fold_facts h
+    have hd : dropsInto week closeNow closeFoldPlan.val "c3".toList = some "p2".toList := by
+      have := the_fold_on_the_loaded_witness
+      simp only [List.map_cons, List.map_nil, List.cons.injEq, Prod.mk.injEq] at this
+      exact this.2.2.2.2.2.1.1
+    exact ⟨_, _, _, _, _, _, e3, f3, f2, h, he3, hf3, hf2, hd⟩
 
 end Tm

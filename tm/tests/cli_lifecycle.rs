@@ -102,6 +102,11 @@ fn close_week_archives_into_the_month() {
 /// closes the week that ended — not the one you are one day into — and
 /// reports every line it took, in the kernel's order — source order since
 /// kernel/README.md gap 59: `# Milestones` top to bottom, then `# Tasks`.
+/// Since goal B3's repair (kernel/README.md "Stage 4 final, step 4") the four
+/// tasks under `^m1`–`^m3` are dropped into the milestones the close files
+/// (`dropIntoParent`, no stamp, staying in the week file), and those three
+/// milestones' copies are `copyFolding` — each one's own estimate covers its
+/// tasks, so the record's minutes are the milestone's.
 #[test]
 fn close_on_the_monday_after_reports_each_line_it_took() {
     let tm = closable_week();
@@ -115,16 +120,16 @@ fn close_on_the_monday_after_reports_each_line_it_took() {
     assert_eq!(
         taken,
         vec![
-            ("m1", "copy"),
-            ("m2", "copy"),
-            ("m3", "copy"),
+            ("m1", "copyFolding"),
+            ("m2", "copyFolding"),
+            ("m3", "copyFolding"),
             ("m4", "copy"),
             ("x1", "carry"),
             ("x2", "copy"),
-            ("t1", "copy"),
-            ("t3", "copy"),
-            ("t4", "copy"),
-            ("t5", "copy"),
+            ("t1", "dropIntoParent"),
+            ("t3", "dropIntoParent"),
+            ("t4", "dropIntoParent"),
+            ("t5", "dropIntoParent"),
         ],
         "{json}"
     );
@@ -137,13 +142,20 @@ fn close_on_the_monday_after_reports_each_line_it_took() {
     assert_eq!(closes[0]["to"], "month/2026-09.md");
     assert_eq!(closes[4]["stamp"], serde_json::Value::Null);
     assert_eq!(closes[4]["to"], "week/2026-W38.md");
+    // A dropped task stays where it was, unstamped, `[~]`, its minutes its own.
+    assert_eq!(closes[7]["to"], "week/2026-W37.md");
+    assert_eq!(closes[7]["stamp"], serde_json::Value::Null);
+    assert_eq!(closes[7]["min"], serde_json::json!({"num": 60, "den": 1}));
+    assert!(tm.line("week/2026-W37.md", "t3").starts_with("- [~]"));
+    // `^m1` (`6b`) covers `^t3`'s `est:1b`: its record carries 360 minutes.
+    assert_eq!(closes[0]["min"], serde_json::json!({"num": 360, "den": 1}));
 
     // And the human line of the same close counts the same entries.
     let fresh = closable_week();
     let out = fresh.run_at("2026-09-14T09:00:00-05:00", &["close", "week"]);
     assert_eq!(
         out.stdout.trim(),
-        "closed week 2026-W37 · 1 moved · 9 demoted · 1 carried · 0 dropped",
+        "closed week 2026-W37 · 1 moved · 5 demoted · 1 carried · 0 dropped",
         "{}",
         out.stderr
     );

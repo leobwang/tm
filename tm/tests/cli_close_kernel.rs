@@ -698,6 +698,79 @@ fn a_not_yet_due_dated_task_is_demoted_keeping_its_date() {
     tm.ok_at(AT, &["check"]);
 }
 
+/// Goal B3's repair, through the binary (kernel/README.md "Stage 4 final,
+/// step 4"): §6.3's week row "Unfinished children are dropped from the week
+/// file (their remaining is folded into the parent's `est:`)", by §6.4's
+/// `max`. `^m1` (`2b`, 120 minutes at the 60-minute block) has `2b + 1b` of
+/// tasks dropped with it, so its record carries `est:3b`; `^m2` (`6b`) covers
+/// its `1b` task, so its record is the line with only the stamp set. The three
+/// tasks stay in the week file as `[~]` — fork-point `close_week` deleted them;
+/// the kernel removes no line — and log nothing; the report names each
+/// (`copyFolding`, `dropIntoParent`); `tm check` is clean; and a second close
+/// writes nothing (L16 at the CLI).
+#[test]
+fn a_week_close_folds_dropped_tasks_into_their_milestone_by_max() {
+    const AT: &str = "2026-09-14T09:00:00-05:00";
+    let tm = tree(
+        &[
+            (
+                "week/2026-W37.md",
+                "# Milestones\n- [ ] 5 2b Stale milestone @O1 ^m1\n- [ ] 4 6b Covered milestone @O1 ^m2\n\
+                 # Tasks\n- [ ] 3 2b Part one @m1 ^t1\n- [ ] 3 1b Part two @m1 ^t2\n- [ ] 3 1b Covered part @m2 ^t3\n",
+            ),
+            (
+                "month/2026-09.md",
+                "---\nmonth: 2026-09\n---\n# Outcomes\n- [ ] 5 !1 Lean through ch.8 ^O1\n# Demoted\n",
+            ),
+        ],
+        None,
+    );
+    let json = tm.json_at(AT, &["close", "week"]);
+    let closes = json["report"]["closes"].as_array().expect("closes");
+    let did: Vec<(&str, &str, &str, serde_json::Value, serde_json::Value)> = closes
+        .iter()
+        .map(|c| {
+            (
+                c["id"].as_str().unwrap(),
+                c["did"].as_str().unwrap(),
+                c["to"].as_str().unwrap(),
+                c["stamp"].clone(),
+                c["min"]["num"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        did,
+        vec![
+            ("m1", "copyFolding", "month/2026-09.md", "W37".into(), 180.into()),
+            ("m2", "copyFolding", "month/2026-09.md", "W37".into(), 360.into()),
+            ("t1", "dropIntoParent", "week/2026-W37.md", serde_json::Value::Null, 120.into()),
+            ("t2", "dropIntoParent", "week/2026-W37.md", serde_json::Value::Null, 60.into()),
+            ("t3", "dropIntoParent", "week/2026-W37.md", serde_json::Value::Null, 60.into()),
+        ],
+        "{json}"
+    );
+    let month = "---\nmonth: 2026-09\n---\n# Outcomes\n- [ ] 5 !1 Lean through ch.8 ^O1\n# Demoted\n\
+                 - [-] 5 2b Stale milestone @O1 est:3b demoted:W37 ^m1\n\
+                 - [-] 4 6b Covered milestone @O1 demoted:W37 ^m2\n";
+    let week = "# Milestones\n- [-] 5 2b Stale milestone @O1 ^m1\n- [-] 4 6b Covered milestone @O1 ^m2\n\
+                # Tasks\n- [~] 3 2b Part one @m1 ^t1\n- [~] 3 1b Part two @m1 ^t2\n- [~] 3 1b Covered part @m2 ^t3\n";
+    assert_eq!(tm.read("month/2026-09.md"), month);
+    assert_eq!(tm.read("week/2026-W37.md"), week);
+    let ev = events(&tm);
+    assert!(ev.contains(&("demote".to_string(), "m1".to_string())), "{ev:?}");
+    assert!(ev.contains(&("demote".to_string(), "m2".to_string())), "{ev:?}");
+    for t in ["t1", "t2", "t3"] {
+        assert!(!ev.iter().any(|(_, id)| id == t), "{t} logged: {ev:?}");
+    }
+    tm.ok_at(AT, &["check"]);
+
+    // L16 through the binary: the same close again writes nothing.
+    let before = md_files(&tm);
+    let again = tm.json_at(AT, &["close", "week"]);
+    assert_eq!(md_files(&tm), before, "{again}");
+}
+
 /// The owner's D8 reaches the `demote` verb too: `tm demote ^d1` on §4.3's
 /// dated line files a `[-]` record into September's `# Demoted` that keeps
 /// `due:2026-09-11T23:59`, and `tm check` accepts it. Until D8 the verb's

@@ -357,6 +357,16 @@ pub enum CloseDid {
     /// no `[-]`, to the end of `backlog.md`'s `# Overdue` (§6.3's week row;
     /// the owner's D7, kernel/README.md gap 55)
     MoveOverdue,
+    /// an unfinished child of a line the week close files from the same file:
+    /// `[~]` in place, unstamped, its own remaining folded into that line's
+    /// record (§6.3's week row, "Unfinished children are dropped …"; goal B3's
+    /// repair, kernel/README.md "Stage 4 final, step 4")
+    DropIntoParent,
+    /// `Copy`, the record's estimate floored at the remaining of the children
+    /// dropped with it by §6.4's `max`
+    CopyFolding,
+    /// `CopyMerging`, the merged record's estimate floored the same way
+    CopyMergingFolding,
 }
 
 impl CloseDid {
@@ -368,6 +378,9 @@ impl CloseDid {
             "copyMerging" => Some(CloseDid::CopyMerging),
             "carry" => Some(CloseDid::Carry),
             "moveOverdue" => Some(CloseDid::MoveOverdue),
+            "dropIntoParent" => Some(CloseDid::DropIntoParent),
+            "copyFolding" => Some(CloseDid::CopyFolding),
+            "copyMergingFolding" => Some(CloseDid::CopyMergingFolding),
             _ => None,
         }
     }
@@ -382,6 +395,9 @@ impl CloseDid {
             CloseDid::CopyMerging => "copyMerging",
             CloseDid::Carry => "carry",
             CloseDid::MoveOverdue => "moveOverdue",
+            CloseDid::DropIntoParent => "dropIntoParent",
+            CloseDid::CopyFolding => "copyFolding",
+            CloseDid::CopyMergingFolding => "copyMergingFolding",
         }
     }
 }

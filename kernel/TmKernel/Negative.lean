@@ -720,4 +720,59 @@ theorem cycleIsDangling :
       .error (jone "err" (jone "itemCheck" (.str "danglingParent".toList))) :=
   loadPlan_refuses_a_dangling_parent _ true (by decide)
 
+-- ===========================================================================
+-- APPENDED 2026-09-13 (stage-4 final, step 4: goal B3 — the week row's child fold,
+-- refuted as additive and performed by §6.4's `max`).  Each cheat below is a door
+-- the step closed; the controls, which compile, are
+-- `close_week_does_not_add_a_dropped_child_to_its_parent` (62),
+-- `closePolicy_drops_children_only_at_week` (63), `CloseDid.ofName?_refuses_near_fold`
+-- (64), `the_week_close_folds_dropped_children_on_a_loaded_plan` (65) and `close_dom`
+-- with `close_week_drops_a_child_with_its_parent` (66).
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 62 — the additive fold goal B3 stated.  `^p2` (`6b`) with its dropped `1b`
+   subtask `^c3` would carry 350 minutes; §6.4's parent estimate already covers its
+   decomposition, and the record reads 300.  `decide` runs the close on the loaded
+   witness and proves the equation false. -/
+set_option maxRecDepth 40000 in
+theorem additiveFoldHolds :
+    foldClosed (fun q => (q.val.store.get "p2".toList).map (fun f => remainingOf 50 f.val.line)) =
+      some (some 350) := by
+  decide
+
+/- CHEAT 63 — a month close that drops children.  §6.3's child rule is the week row's;
+   a month row with the same column would fold a `# Demoted` record's children into it
+   at the month review's cut.  The bridge's statement over the corrupted table is false
+   at `month`. -/
+def monthRowDropsChildren (g : Grain) : ClosePolicy :=
+  if g = month then { closePolicy g with children := .dropIntoParent } else closePolicy g
+
+theorem monthRowDropsChildren_only_at_week :
+    ∀ g : Grain, (monthRowDropsChildren g).children = .dropIntoParent ↔ g = week := by
+  decide
+
+/- CHEAT 64 — the fork-point report's list decoded as the kernel's name.  The Rust
+   `CloseReport` listed `dropped_children`; the wire's name is the constructor's,
+   `dropIntoParent`, and `CloseDid.ofName?` accepts exactly the nine. -/
+theorem droppedChildrenDecodes : CloseDid.ofName? "dropped_children".toList = some .dropIntoParent := by
+  decide
+
+/- CHEAT 65 — a fold that forgets the stale parent.  `^p1` (`2b`) had `2b + 1b` of
+   subtasks dropped with it; a close that dropped them and left the record at 100
+   minutes would lose 50 minutes of open work (§0 principle 6).  The record reads
+   150. -/
+set_option maxRecDepth 40000 in
+theorem staleParentKeepsItsEstimate :
+    foldClosed (fun q => (q.val.store.get "p1".toList).map (fun f => remainingOf 50 f.val.line)) =
+      some (some 100) := by
+  decide
+
+/- CHEAT 66 — the fork point's `remove_line_in`: a dropped child deleted from the plan.
+   The kernel removes no entity (`close_dom`); `^c3` is still there, `[~]`. -/
+set_option maxRecDepth 40000 in
+theorem aDroppedChildIsDeleted :
+    foldClosed (fun q => (q.val.store.get "c3".toList).isSome) = some false := by
+  decide
+
 end Tm

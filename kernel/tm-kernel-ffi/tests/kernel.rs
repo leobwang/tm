@@ -1113,6 +1113,63 @@ fn a_week_close_routes_dated_work_on_the_wire() {
     assert_eq!(twice, format!(r#"{{"ok":{{"docs":{docs},"report":{{"closes":[]}}}}}}"#));
 }
 
+/// `Boundary.lean`'s `closeFoldWitness`: 2026-W36 with a stale `2b` milestone
+/// whose subtasks add up to `3b` (and a grandchild with no estimate), a `6b`
+/// milestone whose two `1b` subtasks it covers — one of them dated, with a
+/// standing `# Demoted` record in September.
+const CLOSE_FOLD_DOCS: &str = r##"[{"path":"week/2026-W36.md","grain":1,"ix":105694,"lines":["# Milestones","- [ ] 2b Stale milestone ^p1","- [ ] 6b Covered milestone ^p2","# Tasks","- [ ] 2b Part one @p1 ^c1","- [ ] 1b Part two @p1 ^c2","- [ ] Grandchild @c1 ^c4","- [ ] 1b Covered part @p2 ^c3","- [ ] 1b Dated part @p2 due:2026-09-30 ^c5"]},{"path":"month/2026-09.md","grain":2,"ix":24308,"lines":["# Outcomes","# Demoted","- [-] 1b Dated part @p2 est:1b due:2026-09-30 demoted:W35 ^c5"]}]"##;
+
+/// **Goal B3's repair on the wire** (kernel/README.md "Stage 4 final, step 4";
+/// `the_week_close_folds_dropped_children_on_a_loaded_plan` and
+/// `the_week_close_reports_the_fold` decide the same request): the week close
+/// drops each unfinished task under a milestone it files, `[~]` in place, and
+/// floors the milestone's record by §6.4's `max` — `^p1` carries `est:3b`, `^p2`
+/// only its stamp; `^c5`'s standing record stays unmerged.  The report names
+/// `copyFolding` and `dropIntoParent`.  Closed again at the same instant,
+/// nothing changes and nothing is reported (L16).
+#[test]
+fn a_week_close_folds_dropped_children_on_the_wire() {
+    let out = call(&format!(
+        r#"{{"now":"2026-09-07","blockMin":50,"docs":{CLOSE_FOLD_DOCS},"cmds":[{{"op":"close","grain":1}}]}}"#
+    ))
+    .unwrap();
+    assert_eq!(
+        out,
+        concat!(
+            r##"{"ok":{"docs":["##,
+            r##"{"path":"week/2026-W36.md","lines":["# Milestones","- [-] 2b Stale milestone ^p1","- [-] 6b Covered milestone ^p2","# Tasks","- [~] 2b Part one @p1 ^c1","- [~] 1b Part two @p1 ^c2","- [~] Grandchild @c1 ^c4","- [~] 1b Covered part @p2 ^c3","- [~] 1b Dated part @p2 due:2026-09-30 ^c5"],"grain":1,"ix":105694},"##,
+            r##"{"path":"month/2026-09.md","lines":["# Outcomes","# Demoted","- [-] 1b Dated part @p2 est:1b due:2026-09-30 demoted:W35 ^c5","- [-] 2b Stale milestone est:3b demoted:W36 ^p1","- [-] 6b Covered milestone demoted:W36 ^p2"],"grain":2,"ix":24308}],"##,
+            r##""report":{"closes":["##,
+            r##"{"id":"p1","grain":1,"did":"copyFolding","from":0,"to":1,"stamp":"W36","min":{"num":150,"den":1}},"##,
+            r##"{"id":"p2","grain":1,"did":"copyFolding","from":0,"to":1,"stamp":"W36","min":{"num":300,"den":1}},"##,
+            r##"{"id":"c1","grain":1,"did":"dropIntoParent","from":0,"to":0,"stamp":null,"min":{"num":100,"den":1}},"##,
+            r##"{"id":"c2","grain":1,"did":"dropIntoParent","from":0,"to":0,"stamp":null,"min":{"num":50,"den":1}},"##,
+            r##"{"id":"c4","grain":1,"did":"dropIntoParent","from":0,"to":0,"stamp":null,"min":null},"##,
+            r##"{"id":"c3","grain":1,"did":"dropIntoParent","from":0,"to":0,"stamp":null,"min":{"num":50,"den":1}},"##,
+            r##"{"id":"c5","grain":1,"did":"dropIntoParent","from":0,"to":0,"stamp":null,"min":{"num":50,"den":1}}"##,
+            r##"]}}}"##
+        ),
+        "{out}"
+    );
+    // The block length is the fold's unit: at 60 minutes a block, `^p1`'s
+    // subtasks are 180 minutes against its own 120, and the record says `3b`.
+    let at60 = call(&format!(
+        r#"{{"now":"2026-09-07","blockMin":60,"docs":{CLOSE_FOLD_DOCS},"cmds":[{{"op":"close","grain":1}}]}}"#
+    ))
+    .unwrap();
+    assert!(at60.contains(r##""- [-] 2b Stale milestone est:3b demoted:W36 ^p1""##), "{at60}");
+    let docs = out
+        .trim_start_matches(r##"{"ok":{"docs":"##)
+        .split(r##","report":"##)
+        .next()
+        .unwrap();
+    let twice = call(&format!(
+        r#"{{"now":"2026-09-07","blockMin":50,"docs":{docs},"cmds":[{{"op":"close","grain":1}}]}}"#
+    ))
+    .unwrap();
+    assert_eq!(twice, format!(r#"{{"ok":{{"docs":{docs},"report":{{"closes":[]}}}}}}"#));
+}
+
 /// `Boundary.lean`'s `staleWitness`: a tree last closed in June, caught up on
 /// Saturday 2026-09-12.
 const STALE_DOCS: &str = r##"[{"path":"day/2026-06-12.md","grain":0,"ix":739778,"lines":["# Pinned","- [>] 2 20m Call the bank ^p1","- [x] 1 10m Water the plants ^p2"]},{"path":"day/2026-08-29.md","grain":0,"ix":739856,"lines":["# Pinned","- [>] 3 1h Draft the letter ^p3"]},{"path":"week/2026-W24.md","grain":1,"ix":105682,"lines":["# Tasks","- [ ] 4 6b Rollback path passes tests ^m2","- [x] 2 1b Send the draft ^t1","- [ ] 1 15m Standup every:day ^r1"]},{"path":"week/2026-W35.md","grain":1,"ix":105693,"lines":["# Tasks","- [ ] 3 2b Read chapter four ^m3","- [ ] 5 2h Midterm at:2026-10-20T10:00/12:00 ^x1"]},{"path":"week/2026-W37.md","grain":1,"ix":105695,"lines":["# Tasks","- [ ] 3 1b Review the drafts ^t5"]},{"path":"month/2026-06.md","grain":2,"ix":24305,"lines":["# Outcomes","- [ ] 5 !1 Old outcome ^O7","- [x] 3 !2 Done outcome ^O8","# Demoted","- [-] 4 3b Carried record est:3b demoted:W22 ^m9"]},{"path":"month/2026-09.md","grain":2,"ix":24308,"lines":["# Outcomes","- [ ] 5 !1 Lean through ch.8 ^O1","# Demoted"]}]"##;
