@@ -2,6 +2,7 @@ import TmKernel.Report
 import TmKernel.Json
 import TmKernel.Tree
 import TmKernel.Priority
+import TmKernel.Capacity
 /-!
 # The boundary: `String → String`, and nothing else
 
@@ -7417,6 +7418,20 @@ theorem the_rule_table_ranks_a_loaded_plan :
           some (binOfScaledQ Arith.defaultBins Arith.safety 60 (Arith.posOfNat 200))⟩ = some 0 ∧
       finalPrio true (yesterdayOf? 7) (rootK parentTreePlan.val specDefaultPrio "x2".toList)
         ⟨true, false, false, false, false, Option.none⟩ = Option.none := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **§7.3's pass over a loaded plan's needs.**  `treePlan`'s `^a1` (30 minutes remaining)
+and `^a2` (45) become R1's needs `39` and `59` (`needMin safety`, a ceiling).  `^a2` is
+listed first and due on day 2, `^a1` due on day 1, over 60 minutes on day 1 and 30 on day 2
+at level 3.  `^a1` is served first and reserves 39 of 60.  `^a2` then sees the 21 left on day 1
+plus day 2's 30: it reserves 51 and reports 8 short. -/
+theorem edf_serves_a_loaded_plans_needs_earliest_deadline_first :
+    remainingMin 60 treePlan "a1".toList = 30 ∧ remainingMin 60 treePlan "a2".toList = 45 ∧
+      (edfGrants Den.one [DayCapacity.ofLevels 1 [0, 0, 0, 60, 0, 0], DayCapacity.ofLevels 2 [0, 0, 0, 30, 0, 0]]
+        [Deadline.ofRemaining Arith.safety (remainingMin 60 treePlan "a2".toList) 3 2,
+         Deadline.ofRemaining Arith.safety (remainingMin 60 treePlan "a1".toList) 3 1]).map
+        (fun g => (g.deadline.need, g.avail, g.reserved, g.shortfall 1)) = [(39, 60, 39, 0), (59, 51, 51, 8)] := by
   decide
 
 end Tm

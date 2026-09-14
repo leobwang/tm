@@ -344,51 +344,17 @@ goals of this block are proved as stated there: `prio_of_hot_is_zero`,
 `priority::apply_hysteresis`, which passes a raw `0` before comparing.  README "Stage 5
 step 2". -/
 
-/-! ## §7.3's EDF pass and §8.4's capacity lookahead -/
-
-/-- **Provisional (stage 5).**  §8.4's `DayCapacity` verbatim: a date and
-"minutes of expected capacity at each energy level", indexed 0..5.  The spec
-writes the second as `[u32; 6]`; `Fin 6 → Nat` is that. -/
-structure DayCapacity where
-  day       : Day
-  minutesAt : Fin 6 → Nat
-
-/-- **Provisional (stage 5).**  The three numbers §7.3's loop reads off one
-dated candidate: `need(item)`, `item.ci`, and its effective due.  Transcribed
-from §7.3, not invented — the pass names exactly these. -/
-structure Deadline where
-  need : Nat
-  ci   : Fin 6
-  due  : Day
-
-/-- **Provisional (stage 5).**  §7.3's pass: "subtract reserve from cap,
-earliest days first, highest matching levels first".  Capacities in,
-capacities out; the per-item `u` and the IMPOSSIBLE flag are read off the
-before-and-after pair, which is why the reservation is the primitive. -/
-def edf (caps : List DayCapacity) (ds : List Deadline) : List DayCapacity := sorry
-
-/-- **P\*, stage 5, §7.3.**  The pass keeps the same days: reservation is
-subtraction, not a filter. -/
-theorem edf_keeps_the_days (caps : List DayCapacity) (ds : List Deadline) :
-    (edf caps ds).length = caps.length := sorry
-
-/-- **P\*, stage 5, §7.3.**  The pass only ever *spends* capacity.  Rules out
-E1's shape one layer up: a reservation that grows the pool it draws from makes
-every downstream `u` optimistic and nothing downstream can detect it. -/
-theorem edf_only_spends_capacity (caps : List DayCapacity) (ds : List Deadline)
-    (n : Nat) (c c' : DayCapacity) (l : Fin 6)
-    (h : caps[n]? = some c) (h' : (edf caps ds)[n]? = some c') :
-    c'.minutesAt l ≤ c.minutesAt l := sorry
-
-/-- **P\*, stage 5, §7.3.**  "what is left after earlier deadlines": a day past
-every deadline in the pass is untouched by it.  Rules out an EDF pass that
-reserves *after* an item's due date and so reports capacity the item can never
-use — which is exactly how a HOT item comes out looking comfortable. -/
-theorem edf_reserves_only_before_the_deadline (caps : List DayCapacity) (ds : List Deadline)
-    (n : Nat) (c c' : DayCapacity) (l : Fin 6)
-    (h : caps[n]? = some c) (h' : (edf caps ds)[n]? = some c')
-    (hafter : ∀ d ∈ ds, d.due < c.day) :
-    c'.minutesAt l = c.minutesAt l := sorry
+/- **§7.3's EDF pass is real, over D10's rational minutes (2026-09-14, stage 5 step 3).**
+The provisional `DayCapacity`, `Deadline` and `edf` that stood here are replaced by
+`Tm.DayCapacity`, `Tm.Deadline` and `Tm.edf` in `TmKernel/Capacity.lean`.  D10 makes a
+level's expected minutes an exact rational, so `DayCapacity.minutesAt : Fin 6 → Nat` became
+numerators `numAt` over one positive denominator `den : Den` that `edf` now takes, with
+`c.minutesAt den l : Arith.Pos` the rational.  The three goals are proved over that
+representation, which is the generalising restatement D10 forces, not a weakening:
+`edf_keeps_the_days` (the statement unchanged but for `den`), `edf_only_spends_capacity`
+(`Q.le` of the rationals, with `edf_only_spends_numerators` the provisional statement verbatim
+over the numerators at every denominator), and `edf_reserves_only_before_the_deadline`
+(equality of the rationals).  README "Stage 5 step 3". -/
 
 /-! ############################################################################
 # STAGE 6 — the planner; §8.3's invariants; L24 and L25

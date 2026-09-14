@@ -1918,7 +1918,9 @@ checkers plus the existing proptests.
 3. **Priority (§7).** `k = root_priority`, `need = remaining × safety`, the EDF
    pass with reservations, the bin ladder, §7.2's rule table, hysteresis,
    batching.
-4. **Capacity lookahead (§8.4).** `minutes_at_level : [u32; 6]` per day.
+4. **Capacity lookahead (§8.4).** `minutes_at_level : [u32; 6]` per day. *Under D10 a level holds an exact rational: stage 5 step 3's `DayCapacity`
+   (`Capacity.lean`) holds numerators over one positive denominator (`Den`), and the EDF pass
+   consumes a list of them. The lookahead that produces the list is the D9/D10 tranche's.*
 5. **Consume `Arith.lean`.** It exists — 1,079 lines, 90 theorem declarations at
    `c8f3a38` — and **nothing consumes it**: the only `import TmKernel.Arith` in
    the package is the root module's. `needMin` (R1, ceiling), `budgetBlocks` (R2, floor),
@@ -1951,6 +1953,25 @@ provisional `remainingMin`, `seriesHead`, `prio`, `hysteresis`, `DayCapacity`,
 `Goals.lean`'s header lists D1/D2 (no `LogEvent` exists), D2's epoch (a spec
 gap), R7 (a decision, not an obligation), and the parity harness (a measurement).
 Read that list before deciding your stage is bigger than it is.
+
+*Status at stage 5 step 3 (2026-09-14, README "Stage 5 step 3"). None of the fourteen
+stands in `Goals.lean`, and stage 5's burn-down is 0. Step 1 proved two §5.4 goals as stated
+and refuted the three §6.4 rows as written, proving the narrowed law beside each. Step 2
+proved `prio`'s three and `hysteresis`'s three as stated. Step 3 proved the three `edf`
+goals in `Capacity.lean`. They were restated over D10's rational minutes, which is a
+generalisation, not a weakening: `edf_only_spends_numerators` is the provisional `Nat`
+statement verbatim at every denominator. The provisional `DayCapacity`, `Deadline` and
+`edf` are real. Step 3 also proved two-run laws (D5):
+`edf_more_capacity_never_raises_a_shortfall` and
+`edf_a_later_deadline_takes_nothing_from_an_earlier_one`.*
+
+*What stage 5 still owes waits on q4/q5, which the owner answered as D9 and D10. The next
+tranche builds it:*
+- *D9's log replay, with `done_minutes`, `progress`, and recurrence instance selection
+  (plus its classification theorem)*
+- *D10's lookahead, producing the `Den`-denominated `DayCapacity` list*
+- *the floor pass (README gap 79) and the EDF candidate selection (gap 80)*
+- *the parity harness against `4748911`, whose exception list is now P1–P12*
 
 **Depends on.** `Cal.lean` and `Arith.lean` (both built), §4.1's field grammar
 (built), stage 4 for `close`, and — a hard dependency — the `parent` decision.
@@ -2033,7 +2054,10 @@ Rust.
   carries the pair exact into the EDF pass is undecided. Decide it here and state
   it, or stage 6 inherits an unstated rounding. *Taken 2026-09-14 (D10): exact, carried
   as numerator/denominator pairs through the EDF pass, nothing rounded; fork-point
-  `capacity::lookahead`'s `p ≥ 0.5` threshold is a parity exception.*
+  `capacity::lookahead`'s `p ≥ 0.5` threshold is a parity exception. *Stage 5 step 3: the EDF pass takes capacity as numerators over one positive
+  denominator (`Den`), so it grows no numerator/denominator pairs and rounds nothing.
+  `flooring_the_capacity_changes_the_verdict` shows why a floor per level is wrong: it turns
+  a HOT item IMPOSSIBLE.*
 - **The log has nowhere to live.** `PlanCore` is `{docs, store}` — there is no
   `log` field, against the plan's three-field sketch. Instance status comes from
   the log (`done inst=…`, `skip inst=…`), and so do `done_minutes`,
@@ -2494,3 +2518,11 @@ table was answered or raised. §7.1's priority, §7.2's rule table and §7.4's h
 built in `Priority.lean` on D9's and D10's types: log-derived rule inputs are plain
 arguments, and the ladder takes an exact rational availability. Still owed to the human:
 **q10**, **q11**, **q7**, **q9**, and the §5.13 drives.
+
+**Update 2026-09-14, stage 5 step 3 (README "Stage 5 step 3").** No question in this table
+was answered or raised. `Capacity.lean` builds §7.3's EDF reservation pass on D10's type:
+numerators over one positive denominator. It follows fork-point `capacity::reserve` and
+`capacity::available_until`, and `priority::compute`'s loop. Stage 5 holds no goal in
+`Goals.lean`. What remains of the stage waits on the D9/D10 tranche: the replay, the
+lookahead, the floor pass and candidate selection. Still owed to the human: **q10**,
+**q11**, **q7**, **q9**, and the §5.13 drives.

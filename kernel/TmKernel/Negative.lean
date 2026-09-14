@@ -917,4 +917,45 @@ set_option maxRecDepth 40000 in
 theorem theRootPriorityIsIgnored : rootK parentTreePlan.val specDefaultPrio "t1".toList = 3 := by
   decide
 
+/- CHEAT 84 — `capacity::reserve`'s inner loop run upward: the lowest matching level
+   spent first.  30 minutes at `ci ≥ 3` from `[0,0,0,60,60,60]` come off level 5. -/
+theorem theLowestMatchingLevelGoesFirst :
+    (reserveRest 8 3 [DayCapacity.ofLevels 7 [0, 0, 0, 60, 60, 60]] 30).map DayCapacity.levels =
+      [[0, 0, 0, 30, 60, 60]] := by
+  decide
+
+/- CHEAT 85 — a later day spent before an earlier one.  Earliest day first. -/
+theorem aLaterDayGoesFirst :
+    (reserveRest 2 3 edfExampleCaps 30).map DayCapacity.levels =
+      [[0, 0, 0, 60, 0, 0], [0, 0, 0, 30, 0, 0]] := by
+  decide
+
+/- CHEAT 86 — a reservation taken after the deadline.  A 90-minute need due on day 1
+   finds 60 minutes and leaves day 2 whole; it does not borrow day 2's. -/
+theorem aDayAfterTheDeadlineIsSpent :
+    (edf Den.one edfExampleCaps [⟨90, 3, 1⟩]).map DayCapacity.levels =
+      [[0, 0, 0, 0, 0, 0], [0, 0, 0, 30, 0, 0]] := by
+  decide
+
+/- CHEAT 87 — the deadlines served in input order.  §7.3 sorts by due: day 1 first. -/
+theorem inputOrderIsServed :
+    (edfGrants Den.one edfExampleCaps edfExampleDeadlines).map (fun g => g.deadline.due) = [2, 1] := by
+  decide
+
+/- CHEAT 88 — the shortfall hidden.  The due-2 deadline is 30 minutes short, and says so. -/
+theorem theShortfallIsHidden :
+    (edfGrants Den.one edfExampleCaps edfExampleDeadlines).map (fun g => g.shortfall 1) = [0, 0] := by
+  decide
+
+/- CHEAT 89 — D10's mixture floored before the pass.  `30½ + 30½` minutes meet a 61-minute
+   need; `30 + 30` do not, so §7.3's IMPOSSIBLE verdict differs. -/
+theorem theMixtureMayBeFlooredForTheVerdict :
+    (edfGrants halfDen mixtureCaps [⟨61, 4, 1⟩]).map (fun g => g.impossible halfDen) =
+      (edfGrants Den.one flooredCaps [⟨61, 4, 1⟩]).map (fun g => g.impossible Den.one) := by
+  decide
+
+/- CHEAT 90 — a zero denominator accepted as the lookahead's unit (R10). -/
+theorem aZeroDenominatorIsAccepted : (denOf? 0).isSome = true := by
+  decide
+
 end Tm

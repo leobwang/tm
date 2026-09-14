@@ -8264,3 +8264,311 @@ theorem was retired, weakened or deleted.
 
 `TmKernel.lean` holds fifteen imports, `Priority` after `Tree`.  Gaps run to 78 (new gaps
 start at 79); cheats run to 83 (new cheats start at 84).
+
+## Stage 5 step 3, 2026-09-14: EDF reserves before the deadline and spends only what exists
+
+**Starting point.**  The tree at `7d053bb` was clean.  The baseline figures are the previous
+block's as committed (check.sh 7/7, audit 1980, corpus 29/37 files and 4/5 whole plans,
+burn-down 18, `cargo test --workspace` 1010 / 0 across 66 binaries, FFI 76).  The figures at
+the end of this block are re-measured.
+
+One new module, `TmKernel/Capacity.lean`, imported in `TmKernel.lean` after `Priority`.  It
+imports `Priority`, and `Boundary` imports it for the loaded-plan witness.  `TmKernel.lean`
+now holds sixteen imports.  The oracle is fork-point `tm-core/src/capacity.rs` and
+`tm-core/src/priority.rs`, read by function name: `capacity::reserve`,
+`capacity::available_until`, `capacity::upto`, `DayCapacity::at_least`, and the EDF loop of
+`priority::compute`.  Nothing on the wire calls the pass yet.  It consumes a given list of
+capacities, and the lookahead that produces the list is the D9/D10 tranche's.
+
+### D10's type: numerators over one positive denominator
+
+Step 1's type (a) says capacity minutes are exact rationals.  **The pass is written over one
+positive denominator for the whole lookahead.**
+
+| name | what it is |
+|---|---|
+| `Den` | `{d : Nat // 0 < d}`, the lookahead's unit.  Smart constructor `denOf?`; `denOf?_refuses_zero` and `denOf?_accepts` (R10) |
+| `DayCapacity` | `{day : Day, numAt : Fin 6 → Nat}`: at each level, the numerator over that denominator |
+| `c.minutesAt den l : Arith.Pos` | the rational a level denotes, `mkPos (c.numAt l) den` |
+| `Deadline` | §7.3's `{need : Nat, ci : Fin 6, due : Day}`, as `Goals.lean` declared it |
+| `Deadline.ofRemaining s rem ci due` | takes R1's `needMin s rem`, a ceiling |
+| `levelOf?` | decodes a level; `levelOf?_refuses_six_and_above`, `levelOf?_accepts` |
+| `Lookahead`, `lookaheadOf?` | a positive denominator and strictly ascending days.  Refuses a zero denominator, days out of order, and a repeated day (`lookaheadOf?_refuses_a_zero_denominator`, `lookaheadOf?_refuses_unsorted_days`, `lookaheadOf?_on_witnesses`); accepts the rest (`lookaheadOf?_accepts`).  `daysAscending_pairwise` turns list order into date order |
+
+**Why one denominator, and not a pair per day or per level.**
+
+- **(d1) Nothing grows through the pass.**  A reservation subtracts numerators over a fixed
+  denominator.  Per-day or per-level denominators would multiply on every partial take,
+  which is D10's cost (ii) in step 1's block.
+- **(d2) The bound belongs to the configuration.**  A mixture `p_w·lounge + (1 − p_w)·home`
+  with `p_w = a_w / b_w` per weekday lands on the common denominator `∏ b_w` (or their `lcm`).
+  That is the contract the lookahead inherits: it hands over one `Den` and numerators scaled
+  to it.
+- **(d3) The rational order is the numerators' order** over one denominator
+  (`minutesAt_le_iff`, `minutesAt_eq_iff`).  At `Den.one` a level is the `Nat` it always was
+  (`minutesAt_one`).
+
+**Type (b), kept.**  A `Nat` need enters as `need · den` numerator units.
+
+- `Grant.hot` is Priority's `utilQGe need availQ hotEdge`, a cross-multiplication
+  (`Grant.hot_iff`: `avail ≤ need · den`).
+- `Grant.impossible` is `avail < need · den`, and `Grant.impossible_imp_hot` holds.
+- The bin at a grant's availability is Priority's `binOfQ` / `binOfScaledQ` on `Grant.availQ`.
+
+Nothing is divided.  **Wiring the grant into `RuleIn.pass` is the D9/D10 tranche's.**
+
+**Type (c), kept.**  Every input that will come from the log is a plain argument:
+
+- each deadline's need (a replayed remaining, through `Deadline.ofRemaining`);
+- which candidates enter (gap 80);
+- the capacity list (D10's lookahead).
+
+The D9/D10 tranche wires them.
+
+### The rule, read off the fork point by name
+
+- **`capacity::available_until(caps, due, ci)`** sums `DayCapacity::at_least(ci)` over the
+  days with `date ≤ due`.
+- **`capacity::reserve(caps, minutes, ci)`** walks days in order, earliest first.  Within a
+  day it walks `for level in (min_ci..6).rev()`, taking `min(cap, left)` at each level.  It
+  returns the minutes taken, which is less than asked when the days run out.
+- **`priority::compute`'s loop.**
+  - The candidates are the dated ones, sorted by `effective_due`, then `own_order`, then the
+    input index.
+  - For each: `avail = available_until(work, due, ci)`, read *before* the item's own
+    reservation.
+  - `take = need_min.min(avail)`, reserved from `work[..upto(work, due)]`.
+  - `u = utilization(need, avail)`, and `shortfall_min = need.saturating_sub(avail)` when
+    `u ≥ 1`.
+  - IMPOSSIBLE is HOT with `shortfall_min > 0`.
+
+### The kernel
+
+- **One day** (`dayLeft`, `stepTake`, `dayTake`, `dayRest`, `dayOut`): the inner loop, with
+  step `n` serving level `5 − n`.  `dayLeft_succ` is `left -= take` and `dayRest_eq_sub_take`
+  is `cap[level] -= take`, each as the fork point writes it.  The definitions use
+  `left − min(cap, left) = left − cap` in truncated subtraction, so each recursive value
+  occurs once and a decided witness does not re-evaluate it.
+- **The days** (`availUntil`, `reserveRest`, `reserveOut`): the outer loop over the days
+  `≤ due`.  `reserveOut_eq`: what the request still wants is `left − available_until`.
+- **The pass.**
+  - `sortDue` is an insertion sort by due, stable.
+  - `edfCaps` and `edfGrantsGo` serve a list in the order given, each with one recursive
+    call: `edfCaps` gives the capacity left, `edfGrantsGo` the grants.
+  - `edf den caps ds` and `edfGrants den caps ds` run both over `sortDue ds`.
+  - A `Grant` is `{deadline, avail, reserved}` in numerator units.  `grantOf` computes one
+    step; its `shortfall`, `availQ`, `reservedQ` and `shortfallQ` are views.
+
+### `Goals.lean`'s three EDF goals: restated over rational minutes, proved
+
+The provisional `DayCapacity.minutesAt : Fin 6 → Nat` cannot hold a mixture, so D10 forces
+the statements to move.  **Each restatement is a generalisation, not a weakening.**  The
+provisional `Nat` statement is still proved verbatim over the numerators, at every
+denominator, and at `Den.one` a level is its `Nat`.
+
+| goal | provisional statement | proved statement (`Capacity.lean`) |
+|---|---|---|
+| `edf_keeps_the_days` | `(edf caps ds).length = caps.length` | the same, with `edf` taking `den` |
+| `edf_only_spends_capacity` | `c'.minutesAt l ≤ c.minutesAt l` over `Nat` | `Q.le (c'.minutesAt den l).val (c.minutesAt den l).val = true`; beside it `edf_only_spends_numerators`, the provisional statement verbatim over `numAt` |
+| `edf_reserves_only_before_the_deadline` | `c'.minutesAt l = c.minutesAt l` over `Nat` | equality of the rationals, `c'.minutesAt den l = c.minutesAt den l`, under the same `hafter` |
+
+The provisional `DayCapacity`, `Deadline` and `edf` are replaced by the real definitions.
+`Deadline` keeps its three fields.  `DayCapacity`'s second field is renamed `numAt`, because
+it is a numerator.  **Stage 5 holds no goal in `Goals.lean`.**
+
+### The laws the goals do not cover
+
+- **The pass spends exactly what it reserves.**  The minutes before are the minutes after
+  plus the minutes granted: `edf_spends_exactly_what_it_reserves`, on top of
+  `reserve_conserves` and `day_conserves`.
+- **`reserve = min(need, avail)`.**  `edf_reserves_the_min` holds for every grant of the pass
+  (`reserve_gives_the_min`, `day_gives_the_min`).
+- **Reserved minutes never exceed the need.**  `edf_reserves_no_more_than_the_need` (in
+  rationals), and `edf_reserves_no_more_than_was_available`.
+- **The shortfall is exactly need minus reserved, and it is reported.**
+  - `edf_reports_the_shortfall`: reserved plus shortfall is the need, in numerators and as
+    `Q.equiv`.
+  - `edf_shortfall_is_need_minus_avail`: it is fork-point `need.saturating_sub(avail)`.
+  - `edf_impossible_iff_shortfall` gives both directions: IMPOSSIBLE exactly when something
+    is short.
+- **EDF order.**
+  - `sortDue_sorted` and `sortDue_perm` give the order; `edfGrants_deadlines`,
+    `edfGrants_length`.
+  - `edf_serves_an_earlier_deadline_first`: of two deadlines with `d₁.due < d₂.due`, `d₁`'s
+    grant comes first.
+  - `sortDue_is_stable`: deadlines with one due are served in the order given.
+- **Earliest day first, highest matching level first.**
+  - `reserveRest_drains_earlier_days`: if a reservation touched a day, every earlier day
+    `≤ due` has every matching level drained.
+  - `dayRest_drains_higher_levels`: a level that gave anything has every higher matching
+    level drained.
+- **The ci filter.**  `dayRest_below_ci`, and across the pass
+  `edf_spares_levels_below_every_ci`.
+- **Days and dates are kept.**  `edf_keeps_the_dates`.
+- **The fork point's clamp is invisible.**  `priority::compute` reserves `need.min(avail)`,
+  and the kernel reserves the need.  `reserving_the_clamped_request_is_the_same` proves the
+  two leave the same days.
+
+**Two runs, proved (D5), not tested:**
+
+- **`edf_more_capacity_never_raises_a_shortfall`.**  Take two lookaheads on the same dates,
+  the second at least as large at every level.  In the second, every deadline sees at least
+  as much available, reserves at least as much, and falls at most as short.
+  - `edf_more_capacity_leaves_more_capacity` is its companion for the days left over.
+  - Both rest on `availUntil_mono`, `reserveRest_mono`, `reserveOut_anti` and the day-level
+    `dayRest_mono` / `dayOut_mono`.
+- **`edf_a_later_deadline_takes_nothing_from_an_earlier_one`.**  Add a deadline no earlier
+  than any other.  Every earlier grant is unchanged, and the new one is served over exactly
+  what they left (`grantOf den (edf den caps ds) d`).  This is §7.1's "net of reservations
+  made by earlier deadlines" as a law.
+
+No existing two-run theorem was touched, so none was restated or re-proved.
+
+### Deliberate differences from the fork point, next to the rule
+
+- **(c1) Exact numerators over one denominator**, where the fork point uses `u32` minutes.
+  The pass rounds nothing (D10, extending P1); `flooring_the_capacity_changes_the_verdict`
+  shows what a floor per level does.
+- **(c2) The request is the need, not `need.min(avail)`.**  Proved invisible
+  (`reserving_the_clamped_request_is_the_same`), so not observable.
+- **(c3) One selection of days for both halves.**  The fork point sums `available_until` by
+  a filter and reserves from the prefix `work[..upto]`.  The kernel uses the filter
+  `day ≤ due` for both.  They agree on ascending days, which `lookaheadOf?` enforces.  On
+  unsorted days the fork point can report availability it then does not reserve.  Parity
+  entry P10.
+- **(c4) No overflow.**  `Nat` sums, where the fork point's `available_until` sums `u32`
+  (a debug panic or a release wrap past `2^32 − 1`).  Parity entry P11.
+- **(c5) Ties at day resolution.**  The fork point orders by `effective_due` as a
+  `DateTime`, then `own_order`, then input index.  The kernel has days and no time of day
+  (gap 10).  It orders by `due : Day` and keeps the given order for ties, so the caller
+  passes deadlines in line order.  Two deadlines on one date at different times are ordered
+  by line in the kernel and by time in the fork point.  Parity entry P12.
+- **Not differences.**
+  - The shortfall is the same number (`edf_shortfall_is_need_minus_avail`).
+  - IMPOSSIBLE is the same predicate: HOT with a positive shortfall
+    (`edf_impossible_iff_shortfall`, `Grant.impossible_imp_hot`).
+  - A zero need at zero availability is P2, as before.
+  - An overdue deadline reserves nothing when the lookahead starts at today, since no day
+    `≤ due` is in it.  That is the caller's contract on the list, not a theorem here.
+
+### Additions to the stage-5 parity exception list
+
+| # | site | the kernel | the fork point | authority |
+|---|---|---|---|---|
+| P10 | capacity days out of date order | refused (`lookaheadOf?`); the pass reads days `≤ due` by one filter for both availability and reservation | `available_until` filters, `reserve` takes the `upto` prefix; they can disagree | (c3) |
+| P11 | availability above `2^32 − 1` minutes | a `Nat` | `u32` sum overflows | (c4) |
+| P12 | two deadlines on one date | line order (the order given) | `effective_due` time of day first | (c5), gap 10 |
+
+None of P10–P12 is observable yet: nothing on the wire runs the pass.
+
+### Both directions, decided witnesses
+
+In `Capacity.lean`:
+
+| witness | what it shows |
+|---|---|
+| `reserve_takes_the_best_levels_earliest` | fork-point `capacity.rs`'s own unit test, transcribed |
+| `edf_serves_the_earlier_deadline_first_on_a_witness` | a due-2 deadline listed before a due-1 one is served second.  It finds 60 of 90 minutes: IMPOSSIBLE, 30 short.  The due-1 deadline is HOT and not IMPOSSIBLE |
+| `edf_spends_before_the_deadline_and_not_after_on_a_witness` | day 1 spent, day 2 untouched |
+| `flooring_the_capacity_changes_the_verdict` | `½·61 + ½·61` minutes over `halfDen` meet a 61-minute need; the per-level floor `30 + 30` is IMPOSSIBLE, one minute short |
+| `the_ci_filter_on_a_witness` | 60 minutes at level 4: nothing to `ci 5`, enough for `ci 4` |
+| `sortDue_keeps_ties_in_input_order_on_a_witness` | ties keep input order |
+| `lookaheadOf?_on_witnesses` | the smart constructor, both directions |
+| `edf_five_deadlines_over_three_days` | worked by hand and decided: availabilities 110, 350, 300, 60, 200; the last deadline 100 short; `630 = 20 + 610` |
+
+On a loaded plan (`Boundary.lean`):
+`edf_serves_a_loaded_plans_needs_earliest_deadline_first` takes `treePlan`'s `^a1`
+(remaining 30) and `^a2` (45) to R1's needs 39 and 59.  `^a2` is listed first and due on
+day 2, and `^a1` is served first.  Then `^a2` reserves 51 and reports 8 short.
+
+Cheats 84–90 (`Negative.lean`) invert them.  Each fails with "`decide` proved that the
+proposition … is false" at its own line.  They were checked one by one with
+`-DmaxErrors=100000`, because the file's earlier cheats exhaust Lean's default of 100 errors
+before line 938.
+
+| cheat | the false claim |
+|---|---|
+| 84 | the lowest matching level is spent first |
+| 85 | a later day is spent before an earlier one |
+| 86 | a day after the deadline is spent |
+| 87 | deadlines are served in input order |
+| 88 | the shortfall is hidden |
+| 89 | the mixture may be floored without changing the verdict |
+| 90 | a zero denominator is accepted |
+
+**Probes, under the 8 GB cap first.**  Scratch files ran against the built package, with
+`Capacity` compiled beside it, `timeout 120`.  One expected value was wrong on the first
+probe: the hand-worked availabilities of `edf_five_deadlines_over_three_days`, which omitted
+later eligible days.  It was corrected against `#eval` and re-probed.
+
+| probe | time | peak memory |
+|---|---|---|
+| `Capacity.lean` alone, before the witnesses | 1.21 s | 0.68 GB |
+| the eight decided witnesses | 0.43 s | 0.53 GB |
+| cheats 84–90 | 0.42 s | 0.52 GB |
+| the loaded-plan witness | 2.04 s | 0.92 GB |
+
+### Gaps
+
+79. **§7.2's floor pass is not built.**  (1) Fork-point `priority::floor_pass` computes
+    `need = (floor − done_this_period) × safety` and `avail = available_until` over the
+    capacity *left after* the EDF pass, up to the end of the period (`period_range`).  It
+    does not reserve (its module doc's deviation 4).  (2) Not a decision: it needs D9's
+    replayed `done_this_period` and the period arithmetic.  (3) Cost: an open item with a
+    floor has no `u_floor`, so `RuleIn.pass` cannot be filled for it.  Nothing ranks
+    candidates yet, so no answer is wrong today.  (4) The D9/D10 tranche.  `edf`'s remaining
+    capacity is its input.
+80. **Which candidates enter the EDF pass is not built.**  (1) `priority::compute` reserves
+    for non-wall, non-optional candidates that have an effective due and no placement window
+    (its deviation 2), overdue ones included.  Each need is `need_min` of the remaining.
+    (2) Not a decision: the fork point's rule stands.  It needs D9's instance status and
+    §3.2's derived due.  (3) Cost: `edf` is correct on the list it is given.  A caller that
+    passes a window instance would reserve a placement range as a deadline and double-count
+    the day.  (4) Stage 6's candidate collection, with the D9/D10 tranche.
+81. **Stage 6's provisional `edfNumbers : Nat × Nat` assumes whole-minute availability.**
+    (1) `Goals.lean`'s `plan_never_drops_an_impossible_item` reads
+    `Arith.isImpossible (edfNumbers r i).1 (edfNumbers r i).2` over two `Nat`s.  Under D10
+    the availability is `Grant.avail` over the lookahead's `den`, and IMPOSSIBLE is
+    `Grant.impossible` (`avail < need · den`).  (2) Not a decision: D10 settled it.
+    (3) Cost: none until stage 6.  The goal still elaborates, but as written it speaks only
+    of whole minutes.  It is owed a restatement over `(need · den, avail)` or a `Grant`,
+    under D5's rule that a statement is never weakened silently.  (4) Stage 6, when
+    `dayPlan` is built.
+
+**Observable behaviour changes: none.**  Nothing on the wire calls `edf`, `edfGrants` or a
+decoder.
+
+**New theorems** (99, audited under `Check.lean`'s new `APPENDED 2026-09-14 (stage 5)` step-3
+banner): 98 in `Capacity.lean` and 1 in `Boundary.lean`.
+**Goals:** three deleted from `Goals.lean`, each proved over D10's rational minutes as above.
+The provisional `DayCapacity`, `Deadline` and `edf` are replaced by the real definitions.  No
+theorem was retired, weakened or deleted.
+
+**Owed, by name (not attempted in this step).**
+
+1. Gap 73's rewire of the close's fold onto `remainingMin`, with its D5 re-proofs.
+2. Gap 75, the implied `after:`.
+3. The D9/D10 tranche: D9's replay (`done_minutes`, `progress`, recurrence instance
+   selection, the rule inputs `overdue` and `mandatory`); D10's lookahead, producing a
+   `Den`-denominated `DayCapacity` list per (d2); and the wiring of `Grant.availQ` into
+   `RuleIn.pass`.
+4. Gaps 76–81.
+5. The stage-5 parity harness against `4748911`, with exception list P1–P12.
+6. §10.5 q7, q9, q10 and q11, and the human's 30-minute drives (AGENTS §5.13).
+
+**Re-measured after this step** (every command under the 40 GB cap, on the tree committed):
+
+| measurement | value |
+|---|---|
+| `lake build TmKernel:static` | 130.7 s, peak 7.71 GB |
+| `check.sh` | **7/7**, 3.4 s on the built tree |
+| axiom audit | **2079 theorems** (1980 + 99; `grep -c '^#print axioms' Check.lean` 2079, no duplicate) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **15** (stage 4: 0, stage 5: **0**, stage 6: 15) |
+| `cargo test --workspace` | **1010 passed / 0 failed / 0 ignored across 66 binaries** |
+| `cli_latency.rs`, first verb | **622.6 / 617.6 / 617.7 ms** (three serial runs, 226 files, 2,959 lines; step 2 measured 707.6 / 707.6 / 707.2 ms) |
+| `cli_latency.rs`, later verb | 55.8 / 55.8 / 55.8 ms |
+| FFI suite | **76** (68 kernel + 8 corpus, unchanged) |
+
+`TmKernel.lean` holds sixteen imports, `Capacity` after `Priority`.  Gaps run to 81 (new gaps
+start at 82).  Cheats run to 90 (new cheats start at 91).

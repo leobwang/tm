@@ -2349,3 +2349,114 @@ open Tm
 #print axioms Tm.a_root_without_k_takes_the_default_on_a_loaded_plan
 #print axioms Tm.hot_is_zero_whatever_the_root_on_a_loaded_plan
 #print axioms Tm.the_rule_table_ranks_a_loaded_plan
+
+-- APPENDED 2026-09-14 (stage 5).  Step 3: §7.3's EDF reservation pass over given capacities
+-- (kernel/README.md "Stage 5 step 3").  `Capacity.lean` (new, imported after `Priority`):
+-- D10's exact minutes as numerators over one positive denominator; `reserveRest` is
+-- `capacity::reserve` (earliest day first, highest matching level first, the ci filter),
+-- `availUntil` is `capacity::available_until`, and `edf` / `edfGrants` are
+-- `priority::compute`'s EDF loop over a stable due-ascending order.  Goals discharged, each
+-- restated over rational minutes as D10 forces: `edf_keeps_the_days`,
+-- `edf_only_spends_capacity`, `edf_reserves_only_before_the_deadline`.  Two-run laws proved
+-- (D5): `edf_more_capacity_never_raises_a_shortfall`,
+-- `edf_more_capacity_leaves_more_capacity`,
+-- `edf_a_later_deadline_takes_nothing_from_an_earlier_one`.
+#print axioms Tm.denOf?_refuses_zero
+#print axioms Tm.denOf?_accepts
+#print axioms Tm.levelOf?_refuses_six_and_above
+#print axioms Tm.levelOf?_accepts
+#print axioms Tm.minutesAt_le_iff
+#print axioms Tm.minutesAt_eq_iff
+#print axioms Tm.minutesAt_one
+#print axioms Tm.stepLevel_val
+#print axioms Tm.stepLevel_five_sub
+#print axioms Tm.dayLeft_succ
+#print axioms Tm.stepTake_le_left
+#print axioms Tm.dayRest_eq_sub_take
+#print axioms Tm.dayTake_eq_stepTake
+#print axioms Tm.dayTake_le
+#print axioms Tm.dayRest_le
+#print axioms Tm.dayRest_below_ci
+#print axioms Tm.dayLeft_eq_sub
+#print axioms Tm.dayOut_eq
+#print axioms Tm.dayOut_le
+#print axioms Tm.topElig_mono_n
+#print axioms Tm.topElig_mono_f
+#print axioms Tm.eligAt_mono
+#print axioms Tm.topElig_at
+#print axioms Tm.topElig_at_le_eligAt
+#print axioms Tm.topTake_add_dayLeft
+#print axioms Tm.sum6_dayTake
+#print axioms Tm.day_conserves
+#print axioms Tm.day_gives_the_min
+#print axioms Tm.dayRest_zero
+#print axioms Tm.dayRest_drained
+#print axioms Tm.dayRest_drained_of_dayOut_pos
+#print axioms Tm.dayRest_drains_higher_levels
+#print axioms Tm.dayRest_mono
+#print axioms Tm.dayOut_mono
+#print axioms Tm.reserveOut_eq
+#print axioms Tm.reserveOut_le
+#print axioms Tm.reserve_gives_the_min
+#print axioms Tm.reserve_conserves
+#print axioms Tm.reserveRest_zero
+#print axioms Tm.reserving_the_clamped_request_is_the_same
+#print axioms Tm.reserveRest_spent
+#print axioms Tm.reserveRest_drains_earlier_days
+#print axioms Tm.availUntil_mono
+#print axioms Tm.reserveRest_mono
+#print axioms Tm.reserveOut_anti
+#print axioms Tm.perm_insertDue
+#print axioms Tm.sortDue_perm
+#print axioms Tm.mem_sortDue
+#print axioms Tm.sorted_insertDue
+#print axioms Tm.sortDue_sorted
+#print axioms Tm.filter_due_insertDue
+#print axioms Tm.sortDue_is_stable
+#print axioms Tm.insertDue_append_last
+#print axioms Tm.sortDue_append_last
+#print axioms Tm.edfGrantsGo_deadlines
+#print axioms Tm.edfGrants_deadlines
+#print axioms Tm.edfGrants_length
+#print axioms Tm.edf_serves_an_earlier_deadline_first
+#print axioms Tm.edf_a_later_deadline_takes_nothing_from_an_earlier_one
+#print axioms Tm.forall₂_refl
+#print axioms Tm.forall₂_trans
+#print axioms Tm.forall₂_length
+#print axioms Tm.forall₂_getElem?
+#print axioms Tm.edfCaps_spent
+#print axioms Tm.edf_keeps_the_days
+#print axioms Tm.edf_keeps_the_dates
+#print axioms Tm.edf_only_spends_numerators
+#print axioms Tm.edf_only_spends_capacity
+#print axioms Tm.edf_reserves_only_before_the_deadline
+#print axioms Tm.edf_spares_levels_below_every_ci
+#print axioms Tm.edfCaps_conserves
+#print axioms Tm.edf_spends_exactly_what_it_reserves
+#print axioms Tm.Grant.hot_iff
+#print axioms Tm.Grant.impossible_imp_hot
+#print axioms Tm.grantOf_reserved
+#print axioms Tm.edfGrantsGo_exact
+#print axioms Tm.edf_reserves_the_min
+#print axioms Tm.edf_reserves_no_more_than_the_need
+#print axioms Tm.edf_reserves_no_more_than_was_available
+#print axioms Tm.edf_reports_the_shortfall
+#print axioms Tm.edf_shortfall_is_need_minus_avail
+#print axioms Tm.edf_impossible_iff_shortfall
+#print axioms Tm.edfCaps_mono
+#print axioms Tm.edfGrantsGo_mono
+#print axioms Tm.edf_more_capacity_leaves_more_capacity
+#print axioms Tm.edf_more_capacity_never_raises_a_shortfall
+#print axioms Tm.lookaheadOf?_refuses_a_zero_denominator
+#print axioms Tm.lookaheadOf?_refuses_unsorted_days
+#print axioms Tm.lookaheadOf?_accepts
+#print axioms Tm.daysAscending_pairwise
+#print axioms Tm.reserve_takes_the_best_levels_earliest
+#print axioms Tm.edf_serves_the_earlier_deadline_first_on_a_witness
+#print axioms Tm.edf_spends_before_the_deadline_and_not_after_on_a_witness
+#print axioms Tm.flooring_the_capacity_changes_the_verdict
+#print axioms Tm.the_ci_filter_on_a_witness
+#print axioms Tm.sortDue_keeps_ties_in_input_order_on_a_witness
+#print axioms Tm.lookaheadOf?_on_witnesses
+#print axioms Tm.edf_five_deadlines_over_three_days
+#print axioms Tm.edf_serves_a_loaded_plans_needs_earliest_deadline_first
