@@ -8678,3 +8678,227 @@ to 81, cheats to 90 and parity entries to P12.
 **Re-measured** (under the 30 GB cap, on the tree committed): `check.sh` **7/7**, 2.8 s on the
 built tree; axiom audit **2079 theorems**; corpus **29/37 files and 4/5 whole plans**; burn-down
 **15** (stage 5: 0, stage 6: 15). All unchanged, as a docs-only commit must leave them.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5, D10 track, step L1 (branch stage5-lookahead,
+     worktree .claude/worktrees/stage5-lookahead).  Built in parallel with the D9
+     track on rebuild-on-lean (D11).  Cheat numbers are the design's reserved
+     labels; whoever merges renumbers (AGENTS §6.2, §6.4).
+     =========================================================================== -->
+
+## Stage 5 D10 L1, 2026-09-14: capacity is an exact mixture — lounge and home weighed after each budget, nothing rounded
+
+**Starting point.**  The worktree at `43e6309` was clean.  The baseline figures are the
+previous blocks' (check.sh 7/7, audit 2079, corpus 29/37 files and 4/5 whole plans,
+burn-down 15, `cargo test --workspace` 1010 / 0, FFI 76).  The figures at the end of this
+block are re-measured in this worktree.
+
+**The plan executed** is design `kernel/design/stage5/stage5-D9-D10-design.md` §13.2 and
+§14.8's L1 row, under the owner's D10 and D17 (`capDen = 10^18`).  One new module,
+`TmKernel/Lookahead.lean`, imported in `TmKernel.lean` after `Capacity` in the same commit
+(seventeen imports now).  It imports `Capacity` only.  `Capacity.lean` is not edited: the
+mixture produces numerators for step 3's `DayCapacity` over step 3's `Den`, and every law
+about the EDF pass below is proved over step 3's own definitions.
+
+### The unit and the weight (D17, R10)
+
+| name | what it is |
+|---|---|
+| `capDen`, `capDenD` | `10^18` (`capDen_eq_pow`), and the same as step 3's `Den` |
+| `Weight` | `{w : Nat // w ≤ capDen}`: `p = w / capDen`, in `[0, 1]` by the type |
+| `WErr` | `badWeight`, `weightAboveOne`, `weightPrecision` |
+| `mkWeight? n d` | Rust's decimal pair for `p_lounge` (`0.9` → `9 / 10`).  Refuses `d = 0` (`badWeight`), then `n > d` (`weightAboveOne`), then `capDen % d ≠ 0` (`weightPrecision`); otherwise the weight is `n · (capDen / d)`.  Nothing is rounded |
+
+**The rejection theorems** (R10, both directions, AGENTS §5.8):
+
+- `mkWeight?_zero_den`, `mkWeight?_above_one`, `mkWeight?_precision`: each refusal, by name,
+  for every pair that meets its condition.
+- `mkWeight?_refuses_more_than_18_places`: every denominator `10^k` with `k > 18` is refused,
+  whatever the numerator.  This is D17's "more than 18 decimals", as a quantified law.
+- `mkWeight?_accepts`, and `mkWeight?_ok_elim` for the converse: an accepted pair had
+  `0 < d`, `n ≤ d` and `d ∣ capDen`.
+- `mkWeight?_denotes`: an accepted weight is **exactly** the pair, `w · d = n · capDen`.
+  `mkWeight?_complement` gives the same for `1 − p`.
+- `mkWeight?_accepted_width`: `n ≤ d ≤ 10^18`.
+- `mkWeight?_round2` (the fit's two-decimal `9/10` is `9·10^17`) and `mkWeight?_on_witnesses`
+  (accepts `0/1`, `1/1`, `1/2`, `9/10`, `1/10^18`; refuses `1/0`, `3/2`, `1/3` and `1/10^19`
+  by name).
+
+**Widths** (R10).  A weight is `≤ 10^18 < 2^60`.  A mixed level is
+`≤ capDen · max lounge home` (`mix_width`), so at L6's bound of 1,440 minutes a level it is
+`≤ 1.44·10^21 < 2^71`.  One minute is already past 2^53 and `u64`, so unit counts cross the
+wire as digit strings and Rust holds them as `u128` (D17).  The wire itself is L6's.
+
+**Two readings recorded, not decisions.**
+
+- A negative weight or NaN cannot be spelled as a `Nat` pair.  The refusal of `-0.2` and NaN
+  belongs to L6's digit-string reader and the host's `decimal_pair`.
+- A written trailing zero counts as a place: `1000000000000000000 / 10^19` (a 19-place
+  spelling of `0.1`) is refused by `weightPrecision`, although its value is representable.
+  That is D17's words read literally ("more than 18 decimal places").  The host's shortest
+  round-trip text never writes a trailing zero, so no weight Rust sends reaches it.
+
+### The mixture (§13.2, D10-3)
+
+`Hist := Fin 6 → Nat` is one location's whole minutes per level on one day, **after** that
+location's budget limit.  `mix w lounge home l = w · lounge l + (capDen − w) · home l`,
+`mixDay d w L H = ⟨d, mix w L H⟩`, and `ofHist d h = ⟨d, capDen · h⟩` is a pure day (day 0
+until L9).
+
+**The four laws:**
+
+| law | theorem |
+|---|---|
+| between `capDen · min` and `capDen · max`, at every level | `mix_between_the_locations` |
+| weight 0 is home | `mix_at_zero_is_home` (and `mixDay_at_a_certain_weight`: `mixDay d Weight.home L H = ofHist d H`) |
+| weight `capDen` is the lounge | `mix_at_one_is_lounge` (and the same for `Weight.lounge`) |
+| it denotes `p·L + (1 − p)·H` exactly for the decoded `p = n/d` | `mix_denotes_the_weighted_sum` (`mix · d = capDen · (n·L + (d − n)·H)`), and over step 3's rationals `mixDay_minutesAt_is_the_expectation` (`Q.equiv` of `minutesAt capDenD` with `(n·L + (d−n)·H) / d`) |
+
+What a deadline of `ci` sees is linear too: `eligAt_mix`, and
+`mix_atLeast_between_the_locations` puts `DayCapacity::at_least` between the locations.
+`mix_on_a_witness`: `p = 9/10`, lounge 60 minutes at level 5 and home 120 at level 3 give 54
+minutes at level 5 and 12 at level 3; a `ci 4` deadline sees 54, a `ci 3` one 66.
+
+### The budget limit, and the refutation of mixing first
+
+Fork-point `limit_to_budget` sorts slots by energy, highest first, and takes
+`budget × block_min` minutes greedily.  Over a histogram that is step 3's inner loop at
+`ci = 0`, so **`limitHist B h := dayTake 0 h B`**, reused rather than restated
+(`limitHist_keeps_the_min`: it keeps `min(B, day)`).
+
+- **`mixing_before_the_budget_is_not_the_expectation`** (the lookahead design's witness):
+  budget 60, lounge 60 minutes at each of levels 5 and 4, home 120 at level 3, `p = ½`.
+  `mixing_before_the_budget_on_the_witness` gives both days.  Limited first and then mixed:
+  30 minutes at level 5 and 30 at level 3.  Mixed first and then limited to `60 · capDen`:
+  30 at level 5, 30 at level 4, and **nothing at level 3**.  They differ at level 3.
+- **The other direction**, `mixing_before_the_budget_agrees_at_a_certain_weight`: at `w = 0`
+  and `w = capDen` the two orders agree for every budget and histogram.  It rests on
+  `dayTake_scale`, `dayRest_scale` and `dayOut_scale` (the inner loop commutes with scaling).
+  So the order matters exactly where D10 changed the answer.
+
+### The threshold twin (parity P1)
+
+- `twin w` is `Weight.lounge` when `capDen ≤ 2w`, else `Weight.home`.
+- `twin_is_the_forks_location`: the twin's day is `capDen ×` the location the fork point
+  picks.
+- `twin_is_the_forks_threshold`: for a decoded pair, `capDen ≤ 2w ↔ d ≤ 2n`, which is `p ≥ ½`
+  exactly.
+
+The fork point compares the `f64` against `0.5`.  That test is exact on the decimal text:
+`0.5` is a double, and rounding to nearest is monotone, so a double whose shortest text is
+`≥ 0.5` is itself `≥ 0.5`.  L7 runs the harness through this twin (design §13.7).
+
+### `capDen` is unobservable: two runs (D5)
+
+- `the_bin_does_not_see_capDen`: scaling an availability's numerator and denominator by
+  `k > 0` leaves §7.1's `binOfScaledQ` unchanged.  It is an instance of step 2's
+  `binOfScaledQ_congr`.
+- **`edf_commutes_with_scaling`**: step 3's `edf` over `k · den` on days scaled by `k` is the
+  first run's days, scaled.  **`edfGrants_commute_with_scaling`**: each grant's `avail` and
+  `reserved` are the first run's, scaled (`scaleGrant`).  Both are proved over
+  `reserveRest`/`reserveOut`/`availUntil` (`reserveRest_scale`, `reserveOut_scale`,
+  `availUntil_scale`, `edfCaps_scale`, `edfGrantsGo_scale`) without editing `Capacity.lean`.
+- `a_scaled_grant_keeps_its_verdicts`: IMPOSSIBLE and the bin at a scaled grant are the first
+  run's.
+
+So D17's `10^18` is a one-line change: no verdict of the pass can see it.  No existing
+two-run theorem was touched, so none was re-proved.
+
+### Parity: P1's extension
+
+P1 (stage 5 step 1) said "`p·lounge + (1 − p)·home`, exact".  Refined here, as design §17
+writes it; the harness that checks it is L7's:
+
+| # | site | the kernel | the fork point | authority | step |
+|---|---|---|---|---|---|
+| **P1 (refined)** | future-day capacity **and everything downstream**: each dated candidate's `avail`, `allocation`, `shortfall`, `u`, bin, `p`, HOT/IMPOSSIBLE class, the floor pass's availability, the week grid | `w·L + (capDen − w)·H` numerators over `capDen = 10^18`, mixed **after** each location's budget limit (`mix`, `limitHist`), the weight decoded exactly or refused by name | `capacity::lookahead`: `lounge` iff `model.p_lounge_on(wd, cfg) >= 0.5`, that one location's `u32` minutes; `f64` `u` | D10, D17; checked through the threshold twin (`twin_is_the_forks_location`, `twin_is_the_forks_threshold`), with `mix_between_the_locations` as the bounds on the real run | L1 (recorded), L7 (measured) |
+
+Nothing on the wire calls the mixture yet, so P1's refinement is not observable.
+
+### Both directions, decided witnesses, and the cheats
+
+| cheat (design label = number here) | the false claim | fails because |
+|---|---|---|
+| 108 | `mix` with `w` and `capDen − w` swapped is home at weight 0 | `decide` proves it false (control `mix_at_zero_is_home`, `mix_on_a_witness`) |
+| 109 | `3/2` is a weight: the subtype value, and `mkWeight? 3 2` accepting it | `decide` proves `1.5·10^18 ≤ capDen` false; `rfl` fails on `mkWeight?` (control `mkWeight?_above_one`) |
+| 117 | mixing before the budget limit is the expectation, on the witness | `decide` proves it false (control `mixing_before_the_budget_is_not_the_expectation`) |
+
+**Numbers.**  The highest numbers in this checkout were gap 81, cheat 90 and P12.  The design
+(§14.0 item 1, §16) reserves gaps 82–99, cheats 91–118 and P13–P31 for D9 and D10, with 108
+and 109 for L1.  This step uses those labels as numbers so the parallel D9 track's 91–107
+cannot collide.  Label to number: `108 → 108`, `109 → 109`, and `117 → 117`.  117 is L5's
+label (mix before limit), taken in L1 because the refutation it inverts is proved here.  L5
+must not take 117 again.  No gap was added.
+
+**Probes, under the 8 GB cap and `timeout 120` first**, run with `LEAN_PATH` at the built
+package:
+
+| probe | wall | peak |
+|---|---|---|
+| `Lookahead.lean` alone, its 7 decided/`rfl` witnesses included | 0.26 s | 0.57 GB |
+| cheats 108, 109, 117 against `TmKernel.Lookahead` | 0.12 s | 0.51 GB |
+
+The witnesses are `capDen_eq_pow`, `capDen_pos`, `mkWeight?_round2`, `mkWeight?_on_witnesses`,
+`mixing_before_the_budget_is_not_the_expectation`, `mixing_before_the_budget_on_the_witness`
+and `mix_on_a_witness`.  Seven, within the 20 per step.  Every literal is six levels long and
+below 90 characters, with no `Entry` value and no zone transition.  The first probe of the
+proofs failed on eight tactic steps, none of them a witness.  All were fixed before the
+module was imported.
+
+### Recorded disagreements between the design and the repo
+
+1. **Imports.**  Design §13.1 says `Lookahead.lean` imports `Capacity`, `Cal`, `Line`, `Plan`
+   and `Tree`.  L1 needs only `Capacity`, so it imports only `Capacity`.  `Cal` is the D9
+   track's (B1 rewrites it).  L2–L5 add the others when their definitions need them.
+2. **Where the refutation lives.**  Design §13.4 and §15 place
+   `mixing_before_the_budget_is_not_the_expectation` in L5, over L4's `limitHist`.  This step's
+   instructions put it in L1.  So L1 defines `limitHist` as step 3's `dayTake` at `ci = 0` (the
+   per-level greedy D10-6 names).  **L4 must prove `limitSlots_is_limitHist` against this
+   definition and must not add a second one** (AGENTS §5.3).  The statement is §15's signature
+   verbatim.  Cheat 117 moved with it.
+3. **The design's weight comment** (§13.2) lists the refusals in the order `badWeight`,
+   `weightAboveOne`, `weightPrecision`.  `mkWeight?` checks them in that order, and each
+   rejection theorem carries the hypotheses that make the earlier checks pass.
+4. **Signatures.**  §15's `the_bin_does_not_see_capDen` builds its positivity proof with
+   `by simp [Look.capDen]; omega`.  The theorem uses `Nat.mul_pos hk capDen_pos` instead, with
+   the same statement.  §13.2's `ofHist (d : Nat)` is `ofHist (d : Day)`, and `Day` is `Nat`.
+5. **Memory cap.**  §14.0 item 3's 40 GB cap is superseded by this workflow's 30 GB
+   (README "Stage 5 D9/D10: the owner's answers"), and every run here used it.
+
+### The recursion rule (D9-21)
+
+This step adds no function that recurses over a list the wire can make large.  `Hist` is
+`Fin 6 → Nat`.  The only new recursion is in proofs, by induction over step 3's own
+`reserveRest`, `edfCaps` and `edfGrantsGo`.
+
+**Observable behaviour changes: none.**  Nothing on the wire calls `mkWeight?`, `mix` or the
+scaling laws.  **Behaviour rows: none.**
+
+**New theorems** (42, audited under `Check.lean`'s new `APPENDED 2026-09-14 (stage 5, D10
+track)` step-L1 banner), all in `Lookahead.lean`.  **Goals:** none added, discharged or
+refuted.  §13.2's theorems are in-step (design §15), so `Goals.lean` is untouched and the
+burn-down does not move.  No theorem was retired, weakened or deleted.
+
+**Owed, by name (the rest of the D10 track, not attempted here):** L2 (E7, after D9's B1),
+L3 (the cut), L4 (energy, `limitSlots_is_limitHist` against this `limitHist`), L5
+(`lookahead`, `pureDay`, `mkInput?`), L6 (the capacity wire: digit strings, `decimal_pair`,
+the §13.6 rejection table, P26 and P30), L7 (the parity twin harness), L8 (wiring, `u128`
+reserves in Rust), L9 (day 0 in the kernel).
+
+**Re-measured after this step** (every command under the 30 GB cap, in this worktree, on the
+tree committed):
+
+| measurement | value |
+|---|---|
+| `lake build TmKernel:static`, cold, in the new worktree | 146.1 s wall (before this step's edits; the D9 track was building on the same machine) |
+| `check.sh` | **7/7**, 2.75 / 2.78 / 2.75 s on the built tree; the parent tree measured 2.77 / 2.74 / 2.79 s in the same session, so the change is under 1% (§14.0 item 4 allows 10%) |
+| axiom audit | **2121 theorems** (2079 + 42; `grep -c '^#print axioms' Check.lean` 2121, 2121 distinct, 2121 declared) |
+| `Negative.lean` | 109 errors on 108 lines, cap not reached; 103 CHEAT blocks, 102 erroring and the withdrawn CHEAT 7 exempt |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **15** (stage 4: 0, stage 5: 0, stage 6: 15; unchanged) |
+| `cargo test --workspace` | **1010 passed / 0 failed / 0 ignored across 66 binaries** (`cli_latency.rs` included) |
+| `cli_latency.rs`, first verb | 622.8 / 672.9 / 606.9 ms (three serial runs, 226 files, 2,959 lines; step 3 measured 622.6 / 617.6 / 617.7 ms) |
+| `cli_latency.rs`, later verb | 65.8 / 55.8 / 55.7 ms |
+| FFI suite | **76** (68 kernel + 8 corpus, unchanged) |
+
+`TmKernel.lean` holds seventeen imports, `Lookahead` after `Capacity`.  AGENTS §2.3 names it.

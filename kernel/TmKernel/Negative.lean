@@ -971,4 +971,43 @@ theorem theMixtureMayBeFlooredForTheVerdict :
 theorem aZeroDenominatorIsAccepted : (denOf? 0).isSome = true := by
   decide
 
+
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D10 track, step L1: the exact mixture,
+-- `Lookahead.lean`).  Numbers are the design's reserved labels (design §16):
+-- 108 and 109 are L1's; 117 is L5's label, taken here because the refutation it
+-- inverts moved into L1 (README "Stage 5 D10 L1").  The merge renumbers.  The
+-- controls, which compile, are in Lookahead.lean: `mix_at_zero_is_home` and
+-- `mix_on_a_witness` (108), `mkWeight?_above_one` and `mkWeight?_on_witnesses`
+-- (109), `mixing_before_the_budget_is_not_the_expectation` and
+-- `mixing_before_the_budget_on_the_witness` (117).
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 108 — D10's mixture with `w` and `capDen − w` swapped: the lounge weighed by
+   `1 − p`.  At weight 0 the day must be home's, which has nothing at level 5. -/
+def swappedMix (w : Look.Weight) (L H : Look.Hist) : Look.Hist := fun l =>
+  (Look.capDen - w.val) * L l + w.val * H l
+
+theorem theSwappedMixIsHomeAtZero :
+    swappedMix Look.Weight.home (Look.histOf [0, 0, 0, 0, 0, 60]) (Look.histOf [0, 0, 0, 120, 0, 0]) 5
+      = Look.capDen * Look.histOf [0, 0, 0, 120, 0, 0] 5 := by
+  decide
+
+/- CHEAT 109 — a weight above one accepted: `3/2` decoded as `1.5 · capDen`.  The type
+   refuses the value, and `mkWeight?` refuses the pair by name. -/
+def threeHalvesIsAWeight : Look.Weight := ⟨1500000000000000000, by decide⟩
+
+theorem mkWeightAcceptsThreeHalves :
+    (Look.mkWeight? 3 2).map Subtype.val = .ok 1500000000000000000 := by
+  rfl
+
+/- CHEAT 117 — mixing before the budget limit taken for the expectation.  Budget 60,
+   lounge 60 at levels 5 and 4, home 120 at level 3, `p = ½`: the expected day keeps
+   30 minutes at level 3, and the limited mixture keeps none. -/
+theorem mixingBeforeTheBudgetIsTheExpectation :
+    Look.mix Look.halfWeight (Look.limitHist 60 Look.budgetWitnessL) (Look.limitHist 60 Look.budgetWitnessH) 3
+      = Look.limitHist (60 * Look.capDen) (Look.mix Look.halfWeight Look.budgetWitnessL Look.budgetWitnessH) 3 := by
+  decide
+
 end Tm

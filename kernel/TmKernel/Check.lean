@@ -2460,3 +2460,53 @@ open Tm
 #print axioms Tm.lookaheadOf?_on_witnesses
 #print axioms Tm.edf_five_deadlines_over_three_days
 #print axioms Tm.edf_serves_a_loaded_plans_needs_earliest_deadline_first
+
+-- APPENDED 2026-09-14 (stage 5, D10 track).  Step L1: D10's exact mixture
+-- (kernel/README.md "Stage 5 D10 L1").  `Lookahead.lean` (new, imported after `Capacity`):
+-- `capDen = 10^18` (D17), the weight decoder `mkWeight?` with its three named refusals,
+-- `mix` (lounge and home weighed after each budget limit), `limitHist`, the threshold twin,
+-- and the scaling laws that make `capDen` unobservable.  In-step (design §13.2); no goal
+-- entered or left `Goals.lean`.  Two-run laws proved (D5): `edf_commutes_with_scaling`,
+-- `edfGrants_commute_with_scaling`.
+#print axioms Tm.Look.capDen_eq_pow
+#print axioms Tm.Look.capDen_pos
+#print axioms Tm.Look.mkWeight?_zero_den
+#print axioms Tm.Look.mkWeight?_above_one
+#print axioms Tm.Look.mkWeight?_precision
+#print axioms Tm.Look.mkWeight?_refuses_more_than_18_places
+#print axioms Tm.Look.mkWeight?_accepts
+#print axioms Tm.Look.mkWeight?_ok_elim
+#print axioms Tm.Look.mkWeight?_denotes
+#print axioms Tm.Look.mkWeight?_accepted_width
+#print axioms Tm.Look.mkWeight?_complement
+#print axioms Tm.Look.mkWeight?_round2
+#print axioms Tm.Look.mix_between_the_locations
+#print axioms Tm.Look.mix_at_zero_is_home
+#print axioms Tm.Look.mix_at_one_is_lounge
+#print axioms Tm.Look.mixDay_at_a_certain_weight
+#print axioms Tm.Look.mix_denotes_the_weighted_sum
+#print axioms Tm.Look.mixDay_minutesAt_is_the_expectation
+#print axioms Tm.Look.mix_width
+#print axioms Tm.Look.topElig_lin
+#print axioms Tm.Look.eligAt_mix
+#print axioms Tm.Look.mix_atLeast_between_the_locations
+#print axioms Tm.Look.limitHist_keeps_the_min
+#print axioms Tm.Look.dayTake_scale
+#print axioms Tm.Look.dayRest_scale
+#print axioms Tm.Look.dayOut_scale
+#print axioms Tm.Look.mixing_before_the_budget_agrees_at_a_certain_weight
+#print axioms Tm.Look.mixing_before_the_budget_is_not_the_expectation
+#print axioms Tm.Look.mixing_before_the_budget_on_the_witness
+#print axioms Tm.Look.twin_is_the_forks_location
+#print axioms Tm.Look.twin_is_the_forks_threshold
+#print axioms Tm.Look.the_bin_does_not_see_capDen
+#print axioms Tm.Look.availUntil_scale
+#print axioms Tm.Look.reserveRest_scale
+#print axioms Tm.Look.reserveOut_scale
+#print axioms Tm.Look.edfCaps_scale
+#print axioms Tm.Look.edfGrantsGo_scale
+#print axioms Tm.Look.edf_commutes_with_scaling
+#print axioms Tm.Look.edfGrants_commute_with_scaling
+#print axioms Tm.Look.a_scaled_grant_keeps_its_verdicts
+#print axioms Tm.Look.mkWeight?_on_witnesses
+#print axioms Tm.Look.mix_on_a_witness
