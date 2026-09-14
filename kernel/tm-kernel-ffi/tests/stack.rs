@@ -5,6 +5,7 @@
 //! design §14.0 item 4's 10% budget.  `cargo test` in this crate runs both.
 //!
 //! Stage 5 step A1 (gap 44 closed).  T0 (c) joined at L6 (gap 105 closed); T0 (b) joins at W3.
+//! Stage 5 D9 B4 adds the `log` op at the line bound (`readLine`, `renderLine`).
 
 use tm_kernel_ffi::call;
 
@@ -84,6 +85,62 @@ fn a_200000_key_object_reads_on_a_2mib_thread() {
         let objs = objs.join(",");
         let out = call(&format!(r#"{{"docs":[],"cmds":[],"pad":[{objs}]}}"#)).unwrap();
         assert_eq!(out, EMPTY_OK);
+    });
+}
+
+/// A request of `lines` for the `log` op (stage 5 D9 B4), every line asked for a
+/// header and, up to 4,096, a rendering; the zone is UTC with no transitions.
+fn log_request(lines: &[String], render: usize) -> String {
+    let render: Vec<String> = (1..=render.min(lines.len())).map(|n| n.to_string()).collect();
+    format!(
+        r#"{{"docs":[],"tz":{{"key":"UTC","base":"+00:00:00","then":[]}},"log":{{"ckpt":null,"from":1,"lines":[{}],"terminated":true,"want":{{"headersFrom":1,"render":[{}]}}}}}}"#,
+        lines.join(","),
+        render.join(",")
+    )
+}
+
+/// **T0 for the `log` op (stage 5 D9 B4; README gap 101's note).**  `readLine`
+/// and `renderLine` end to end on a 2 MiB thread, at the line bound: a string of
+/// 65,000 characters, an unknown event's array of 21,000 numerals, an unknown
+/// event of 5,000 keys (`restOf`'s merge sort, and `jemitOTail` at scale: the
+/// rendering is an object of 5,002 keys, which the A1 test above could not reach
+/// from `call`), 64 levels of nesting, an `hsw` of 65,000 fraction digits
+/// (`finiteF64` and `JDec.render`), a line one character past the bound
+/// (`lineTooLong`), and one nested 65 deep (`lineTooDeep`).  Then 32,768 lines,
+/// the per-call bound, each with a header, 4,096 of them rendered.
+#[test]
+fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
+    const T: &str = r#"\"t\":\"2026-09-07T06:05:00-05:00\""#;
+    on_a_2mib_thread(|| {
+        let nums = vec!["1"; 21_000].join(",");
+        let keys: Vec<String> = (0..5_000).map(|i| format!(r#"\"k{i}\":{i}"#)).collect();
+        let deep = format!("{}1{}", "[".repeat(63), "]".repeat(63));
+        let lines = vec![
+            format!(r#""{{{T},\"ev\":\"note\",\"text\":\"{}\"}}""#, "y".repeat(65_000)),
+            format!(r#""{{{T},\"ev\":\"mood\",\"xs\":[{nums}]}}""#),
+            format!(r#""{{{T},\"ev\":\"mood\",{}}}""#, keys.join(",")),
+            format!(r#""{{{T},\"ev\":\"mood\",\"x\":{deep}}}""#),
+            format!(r#""{{{T},\"ev\":\"energy\",\"pred\":1,\"rep\":1,\"hsw\":0.{}1,\"loc\":\"h\"}}""#, "0".repeat(65_000)),
+            format!(r#""{{{T},\"ev\":\"note\",\"text\":\"{}\"}}""#, "y".repeat(65_537)),
+            format!(r#""{{{T},\"ev\":\"mood\",\"x\":[{deep}]}}""#),
+        ];
+        let out = call(&log_request(&lines, 7)).unwrap();
+        assert!(out.starts_with(r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":7,"warnings":[{"line":6,"w":"lineTooLong"},{"line":7,"w":"lineTooDeep"}],"headers":[[1,"note",null],[2,"mood",null],[3,"mood",null],[4,"mood",null],[5,"energy",null]],"render":[[1,"{\"t\":\"2026-09-07T06:05:00-05:00\",\"ev\":\"note\",\"text\":\"yyy"#), "{}", &out[..out.len().min(400)]);
+        assert!(out.contains(&format!(r#"\"hsw\":0.{}1,"#, "0".repeat(65_000))));
+        assert!(out.contains(r#"\"k999\":999}"#), "the last key in serde's order");
+        assert!(out.ends_with(r#""2026-09-07 06:05"],[6,null,null],[7,null,null]]}}}"#), "{}", &out[out.len().saturating_sub(200)..]);
+    });
+    on_a_2mib_thread(|| {
+        let lines: Vec<String> = (0..32_768)
+            .map(|i| format!(r#""{{{T},\"ev\":\"drop\",\"id\":\"x{i}\"}}""#))
+            .collect();
+        let out = call(&log_request(&lines, 4096)).unwrap();
+        assert!(out.starts_with(r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":32768,"warnings":[],"headers":[[1,"drop","x0"],"#));
+        assert!(out.contains(r#"[32768,"drop","x32767"]],"render":[[1,"#));
+        assert!(out.ends_with(r#"[4096,"{\"t\":\"2026-09-07T06:05:00-05:00\",\"ev\":\"drop\",\"id\":\"x4095\"}","2026-09-07 06:05"]]}}}"#));
+        let mut one_more = lines.clone();
+        one_more.push(r#""""#.to_string());
+        assert_eq!(call(&log_request(&one_more, 0)).unwrap(), r#"{"err":{"log":"tooManyLines"}}"#);
     });
 }
 

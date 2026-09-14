@@ -77,6 +77,37 @@ def digitsAux : Nat → Nat → List Char
 
 def digitsOf (n : Nat) : List Char := digitsAux n n
 
+/-! ### `digitsOf`'s runtime twin (stage 5 D9 step B3; README gap 101, closed)
+
+APPENDED 2026-09-14 (stage-5 D9 track, step B3).  Compiled as written, `digitsAux`
+recurses once per digit *below* an append, so its stack depth is the digit count and
+its time is quadratic in it.  B3's `Log.renderLine` re-emits a decimal it read (`hsw`,
+and an unknown event's numerals), and a hand-edited log line may carry a numeral of
+up to `Log.maxLineChars` characters, so the twin goes here, before every caller is
+compiled: `@[csimp]` rewrites only code compiled after it.  The accumulator holds the
+digits already produced, least significant last; the loop is a tail call.  The kernel
+still reduces `digitsAux` (fuel, not well-founded recursion), so every decided witness
+over rendered numbers is unchanged. -/
+def digitsOfTR.go : Nat → Nat → List Char → List Char
+  | 0,     n, acc => digitChar n :: acc
+  | f + 1, n, acc =>
+    if n < 10 then digitChar n :: acc else digitsOfTR.go f (n / 10) (digitChar (n % 10) :: acc)
+
+def digitsOfTR (n : Nat) : List Char := digitsOfTR.go n n []
+
+theorem digitsOfTR_go : ∀ (f n : Nat) (acc : List Char),
+    digitsOfTR.go f n acc = digitsAux f n ++ acc
+  | 0, n, acc => rfl
+  | f + 1, n, acc => by
+    simp only [digitsOfTR.go, digitsAux]
+    split
+    · rfl
+    · rw [digitsOfTR_go f (n / 10)]; simp
+
+@[csimp] theorem digitsOf_eq_digitsOfTR : @digitsOf = @digitsOfTR := by
+  funext n
+  simp [digitsOf, digitsOfTR, digitsOfTR_go]
+
 /-- Any fuel that covers `n` gives the same digits. -/
 theorem digitsAux_fuel : ∀ n f g : Nat, n ≤ f → n ≤ g → digitsAux f n = digitsAux g n := by
   intro n

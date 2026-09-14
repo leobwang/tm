@@ -924,10 +924,58 @@ fn fault_issue(what: &str, stderr: &str) -> KernelIssue {
     }
 }
 
+/// A refusal of the request's `log` or `tz` section (`{"err":{"log":…}}`,
+/// stage 5 D9 B4; design §10.3). Every one the kernel names at B4 —
+/// `tzAbsent`, `badTz <why>`, `tooManyLines`, `badLogReq <field>`,
+/// `renderNotInTail {line}` — is a **host defect**: tm builds every log request,
+/// and a line of the log never refuses one (a bad line is a warning). So each is
+/// a loud fault ([`fault_issue`]) whose detail names the refusal (`logRefusal`)
+/// and the field it is about (`why`, `field` or `line`). W3 adds the checkpoint
+/// refusals (`undoReach`, `cutMismatch`, …), whose reaction is a rebuild, not a
+/// fault. Nothing in the binary sends a `log` section before W3.
+fn log_refusal(l: &Value) -> KernelIssue {
+    let (name, arg) = match l {
+        Value::String(s) => (s.clone(), None),
+        Value::Object(m) if m.len() == 1 => match m.iter().next() {
+            Some((k, v)) => (k.clone(), Some(v)),
+            None => ("unrecognised".to_string(), None),
+        },
+        _ => ("unrecognised".to_string(), None),
+    };
+    let text = |v: Option<&Value>| v.and_then(Value::as_str).unwrap_or_default().to_string();
+    let (what, key, val): (String, &str, Value) = match name.as_str() {
+        "tzAbsent" => ("a log section was sent without its tz table".into(), "", Value::Null),
+        "tooManyLines" => ("more than 32,768 log lines were sent in one call".into(), "", Value::Null),
+        "badTz" => {
+            let why = text(arg);
+            (format!("the tz table's `{why}` is malformed (tm/src/cli/tz_table.rs writes it)"), "why", Value::String(why))
+        }
+        "badLogReq" => {
+            let field = text(arg);
+            (format!("the log section's `{field}` is malformed or not yet supported"), "field", Value::String(field))
+        }
+        "renderNotInTail" => {
+            let line = arg.and_then(|v| v.get("line")).and_then(Value::as_u64).unwrap_or_default();
+            (format!("render asked for line {line}, outside the lines sent"), "line", Value::from(line))
+        }
+        _ => (format!("an unlisted log refusal {l}"), "", Value::Null),
+    };
+    let mut issue = fault_issue(&format!("log refusal {name} — {what}"), "");
+    issue.detail.insert("logRefusal".into(), Value::String(name));
+    if !key.is_empty() {
+        issue.detail.insert(key.into(), val);
+    }
+    issue
+}
+
 /// Map the response's `err` payload to a named [`KernelIssue`]. The shapes
-/// are `Boundary.lean`'s: a free-text string, `{"kernel":name}`, and the six
-/// structured loader diagnostics.
+/// are `Boundary.lean`'s: a free-text string, `{"kernel":name}`, the six
+/// structured loader diagnostics, and (stage 5 D9 B4) `{"log":…}`, which
+/// [`log_refusal`] maps.
 fn refusal(err: &Value) -> KernelIssue {
+    if let Some(l) = err.get("log") {
+        return log_refusal(l);
+    }
     let mut detail = Map::new();
     let mut put = |k: &str, v: String| {
         detail.insert(k.to_string(), Value::String(v));
@@ -1202,7 +1250,7 @@ mod tests {
             // stage 5 D10 L6: the capacity section's names (design §13.6)
             (serde_json::json!({"capacity":"nowAbsent"}), "nowAbsent"),
             (serde_json::json!({"capacity":"tzAbsent"}), "tzAbsent"),
-            (serde_json::json!({"capacity":"badTz table"}), "badTz"),
+            (serde_json::json!({"capacity":"badTz unsorted"}), "badTz"),
             (serde_json::json!({"capacity":"badCapacity pLounge.config"}), "badCapacity"),
             (serde_json::json!({"capacity":"badWeight pLounge.config.Fri"}), "badWeight"),
             (serde_json::json!({"capacity":"weightAboveOne pLounge.model.Sat"}), "weightAboveOne"),
@@ -1225,6 +1273,53 @@ mod tests {
             assert_eq!(issue.name, name);
             assert!(issue.message.contains(name), "{}", issue.message);
             assert_eq!(issue.detail["refusal"], name);
+        }
+    }
+
+    /// Stage 5 D9 B4 (design §10.3): the `log` section's refusals are host
+    /// defects, so each is a loud fault that names the refusal and its field.
+    #[test]
+    fn every_log_refusal_is_a_loud_fault_naming_its_field() {
+        for (payload, name, key, val) in [
+            (serde_json::json!({"log":"tzAbsent"}), "tzAbsent", None, Value::Null),
+            (serde_json::json!({"log":"tooManyLines"}), "tooManyLines", None, Value::Null),
+            (serde_json::json!({"log":{"badTz":"unsorted"}}), "badTz", Some("why"), Value::from("unsorted")),
+            (serde_json::json!({"log":{"badLogReq":"from"}}), "badLogReq", Some("field"), Value::from("from")),
+            (serde_json::json!({"log":{"renderNotInTail":{"line":45101}}}), "renderNotInTail", Some("line"), Value::from(45101)),
+        ] {
+            let issue = refusal(&payload);
+            assert!(issue.is_fault(), "{name}: {}", issue.message);
+            assert_eq!(issue.detail["logRefusal"], name);
+            assert!(issue.message.contains(name), "{}", issue.message);
+            if let Some(k) = key {
+                assert_eq!(issue.detail[k], val, "{name}");
+            }
+        }
+    }
+
+    /// The same names, from the real kernel: each request below is refused by
+    /// `Boundary.lean`'s `readLogSection` with the name the host maps.
+    #[test]
+    fn the_kernel_names_its_log_refusals() {
+        let utc = r#"{"key":"UTC","base":"+00:00:00","then":[]}"#;
+        let many = vec!["null"; 32_769].join(",");
+        for (req, name) in [
+            (r#"{"docs":[],"log":{"from":1,"lines":[],"terminated":true}}"#.to_string(), "tzAbsent"),
+            (
+                r#"{"docs":[],"tz":{"key":"UTC","base":"+00:00:00","then":[["2026-03-08T08:00:00Z","+00:00:00"],["2026-03-08T07:00:00Z","+01:00:00"]]}}"#.to_string(),
+                "badTz",
+            ),
+            (format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":1,"lines":[{many}],"terminated":true}}}}"#), "tooManyLines"),
+            (format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":0,"lines":[],"terminated":true}}}}"#), "badLogReq"),
+            (
+                format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":5,"lines":["x"],"terminated":true,"want":{{"render":[4]}}}}}}"#),
+                "renderNotInTail",
+            ),
+        ] {
+            let raw = tm_kernel_ffi::call(&req).expect("kernel call");
+            let resp: Value = serde_json::from_str(&raw).expect("json");
+            let issue = refusal(&resp["err"]);
+            assert_eq!(issue.detail["logRefusal"], name, "{raw}");
         }
     }
 

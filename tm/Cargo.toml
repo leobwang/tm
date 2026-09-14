@@ -30,3 +30,6 @@ notify.workspace = true
 [dev-dependencies]
 insta.workspace = true
 tempfile.workspace = true
+# Stage 5 D9 B4: T2 (`tests/kernel_log_grammar.rs`). Not a new dependency: the
+# workspace's own, already in the lockfile through tm-core's dev-dependencies.
+proptest.workspace = true

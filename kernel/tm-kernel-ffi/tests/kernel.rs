@@ -852,9 +852,11 @@ fn unset_of_a_key_the_line_does_not_carry_is_refused() {
 /// spells: a quote and a backslash, serde_json's short escapes (`\t`, `\b`,
 /// `\f`) and `\/`, a control byte as a lowercase quad, `é` as an uppercase
 /// and a lowercase quad, and raw UTF-8 (a two-byte letter, a four-byte emoji).
-/// The response spells them the kernel's way (`jescape`: short forms only for
-/// quote, backslash, `\n`, `\r`; a quad for every other control byte).  This
-/// is the host-agreement obligation, evidenced rather than proved.
+/// The response spells them the kernel's way, which is serde_json's since stage
+/// 5 D9 B4 (`jescape`: short forms for quote, backslash, `\b`, `\t`, `\n`,
+/// `\f`, `\r`; a lowercase quad for every other control byte; `\/` and
+/// uppercase quads are read, never written).  This is the host-agreement
+/// obligation, evidenced rather than proved.
 #[test]
 fn the_request_reads_every_escape_a_host_writes() {
     let emoji = '\u{1F600}';
@@ -866,7 +868,7 @@ fn the_request_reads_every_escape_a_host_writes() {
     assert_eq!(
         out,
         format!(
-            r#"{{"ok":{{"docs":[{{"path":"w.md","lines":["q\"b\\s\u0009t\u0001c/s\u0008b\u000cf{e}{e} {e}{emoji}"]}}],"report":{{"closes":[]}}}}}}"#,
+            r#"{{"ok":{{"docs":[{{"path":"w.md","lines":["q\"b\\s\tt\u0001c/s\bb\ff{e}{e} {e}{emoji}"]}}],"report":{{"closes":[]}}}}}}"#,
             e = '\u{e9}'
         ),
         "{out}"
@@ -1358,6 +1360,46 @@ fn add_reads_a_parent_off_its_title_and_refuses_a_dangling_one() {
     assert_eq!(bad, r##"{"err":{"kernel":"badItem"}}"##, "{bad}");
 }
 
+// ---------------------------------------------------------------------------
+// Stage 5 D9 B4: the `tz` and `log` sections of a request (Boundary.lean's
+// `runWithLog`).  Lean-side twins: the_log_op_reads_a_four_line_tail,
+// the_log_section_refuses_by_name, the_response_shapes_emit_in_build_order.
+// ---------------------------------------------------------------------------
+
+/// **The `log` op, by line.**  From line 7: a `drop` (a header with its id, and
+/// its rendering in serde's bytes with the `tm log` column), a blank line, a
+/// line that is not UTF-8 (`null`), and `{"ev":7}` (no `t`).  The answer comes
+/// after `report`; the lines are the Lean witness's, byte for byte.
+#[test]
+fn the_log_op_answers_by_line() {
+    let out = call(r#"{"docs":[],"tz":{"key":"UTC","base":"+00:00:00","then":[]},"log":{"ckpt":null,"from":7,"lines":["{\"t\":\"2026-09-07T09:00:00Z\",\"ev\":\"drop\",\"id\":\"a1\"}","",null,"{\"ev\":7}"],"terminated":true,"want":{"headersFrom":7,"render":[7,8]}}}"#).unwrap();
+    assert_eq!(
+        out,
+        r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":10,"warnings":[{"line":9,"w":"invalidUtf8"},{"line":10,"w":"noT"}],"headers":[[7,"drop","a1"]],"render":[[7,"{\"t\":\"2026-09-07T09:00:00+00:00\",\"ev\":\"drop\",\"id\":\"a1\"}","2026-09-07 09:00"],[8,null,null]]}}}"#
+    );
+}
+
+/// **The section's refusals, by name**, and a request without `tz` or `log`
+/// answered as before.
+#[test]
+fn the_log_section_refuses_by_name() {
+    let utc = r#"{"key":"UTC","base":"+00:00:00","then":[]}"#;
+    for (req, want) in [
+        (r#"{"docs":[],"log":{}}"#.to_string(), r#"{"err":{"log":"tzAbsent"}}"#),
+        (format!(r#"{{"docs":[],"tz":{utc},"log":{{"ckpt":{{}}}}}}"#), r#"{"err":{"log":{"badLogReq":"ckpt"}}}"#),
+        (format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":1,"lines":[],"terminated":true,"reseal":{{}}}}}}"#), r#"{"err":{"log":{"badLogReq":"reseal"}}}"#),
+        (format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":1,"lines":[],"terminated":true,"want":{{"facts":true}}}}}}"#), r#"{"err":{"log":{"badLogReq":"facts"}}}"#),
+        (format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":1,"lines":[7],"terminated":true}}}}"#), r#"{"err":{"log":{"badLogReq":"lines"}}}"#),
+        (format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":1,"lines":["x"],"terminated":true,"want":{{"render":[2]}}}}}}"#), r#"{"err":{"log":{"renderNotInTail":{"line":2}}}}"#),
+        (r#"{"docs":[],"tz":{"key":"UTC","base":"-00:00:00","then":[]}}"#.to_string(), r#"{"err":{"log":{"badTz":"base"}}}"#),
+        (r#"{"docs":[],"tz":{"key":"UTC","base":"+00:00:00","then":[["2026-03-08T08:00:00Z","+01:00:00"],["2026-03-08T08:00:00Z","+00:00:00"]]}}"#.to_string(), r#"{"err":{"log":{"badTz":"unsorted"}}}"#),
+        (r#"{"docs":[],"tz":{"key":"UTC","base":"+00:00:00","then":[["2026-03-08T02:00:00-06:00","+01:00:00"]]}}"#.to_string(), r#"{"err":{"log":{"badTz":"instant"}}}"#),
+        (format!(r#"{{"docs":[],"tz":{utc}}}"#), r#"{"ok":{"docs":[],"report":{"closes":[]}}}"#),
+    ] {
+        assert_eq!(call(&req).unwrap(), want, "{req}");
+    }
+}
+
 // ===========================================================================
 // Stage 5 D10 step L6: capacity on the wire (design §13.6; Boundary.lean's
 // section "Stage 5 D10 L6").  A request may carry `tz` and `capacity`; the
@@ -1461,6 +1503,27 @@ fn a_calendar_wall_takes_its_hours_out_of_the_lookahead() {
     assert_eq!(wed(all_day), day_units("2026-09-09", [0, 0, 360, 0, 0, 0]));
 }
 
+/// **Merged (D9 B4 with D10 L6): one request carries `log` and `capacity`**, and
+/// the answer is `docs`, `report`, `log`, then `lookahead` (design §10.2;
+/// `runCap_answers_docs_report_log_lookahead`).  The `log` answer is the one a
+/// request without `capacity` gets, and the `lookahead` the one a request
+/// without `log` gets.  A refused `log` section refuses first.
+#[test]
+fn a_request_with_log_and_capacity_answers_both_in_build_order() {
+    let log = r#""log":{"from":7,"lines":["{\"t\":\"2026-09-07T09:00:00Z\",\"ev\":\"drop\",\"id\":\"x\"}"],"terminated":true,"want":{"headersFrom":7}}"#;
+    let both = call(&capacity_req("", &format!("{log},{SPEC_CAPACITY}"))).unwrap();
+    let cap_only = call(&capacity_req("", SPEC_CAPACITY)).unwrap();
+    let log_only = call(&format!(r#"{{"docs":[],"now":"2026-09-07","blockMin":60,{CHICAGO_2026},{log}}}"#)).unwrap();
+    let log_at = both.find(r#","log":"#).expect("log key");
+    let look_at = both.find(r#","lookahead":"#).expect("lookahead key");
+    assert!(both.starts_with(r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":7,"#), "{both}");
+    assert!(log_at < look_at);
+    assert_eq!(&both[..look_at], &log_only[..log_only.len() - 2], "the log answer is the log op's");
+    assert_eq!(&both[look_at..], &cap_only[cap_only.find(r#","lookahead":"#).unwrap()..], "the lookahead is the capacity op's");
+    let refused = call(&capacity_req("", &format!(r#""log":{{"from":0,"lines":[],"terminated":true}},{SPEC_CAPACITY}"#))).unwrap();
+    assert_eq!(refused, r#"{"err":{"log":{"badLogReq":"from"}}}"#);
+}
+
 /// **A request without `capacity` is answered exactly as before**
 /// (`callExport_without_capacity_is_call`), even when it carries `tz`.
 #[test]
@@ -1483,15 +1546,6 @@ fn every_capacity_refusal_is_named() {
         (r#""blockMin":60,"#, r#""blockMin":1441,"#, "badDay blockMin"),
         (r#""now":"2026-09-07""#, r#""now":"9999-12-30""#, "lookaheadTooLong"),
         (r#""tz":{"#, r#""tzz":{"#, "tzAbsent"),
-        (r#""tz":{"key""#, r#""tz":3,"tzz":{"key""#, "badTz shape"),
-        (r#""key":"America/Chicago","#, "", "badTz key"),
-        (r#""base":"-06:00:00""#, r#""base":"-06:00""#, "badTz base"),
-        (r#"[["2026-03-08T08:00:00Z","-05:00:00"],"#, r#"["2026-03-08T08:00:00Z","#, "badTz then"),
-        (
-            r#""2026-03-08T08:00:00Z","-05:00:00"],["2026-11-01T07:00:00Z""#,
-            r#""2026-11-01T07:00:00Z","-05:00:00"],["2026-03-08T08:00:00Z""#,
-            "badTz table",
-        ),
         (r#""capacity":{"#, r#""capacity":7,"x":{"#, "badCapacity capacity"),
         (r#""pLounge":{"#, r#""pLoungeX":{"#, "badCapacity pLounge"),
         (r#""pLounge":{"config""#, r#""pLounge":{"model":[],"config""#, "badCapacity pLounge.model"),
@@ -1557,6 +1611,26 @@ fn every_capacity_refusal_is_named() {
         assert_eq!(base.matches(from).count(), 1, "the edit {from:?} is not unique in the request");
         let out = call(&base.replacen(from, to, 1)).unwrap();
         assert_eq!(out, format!(r#"{{"err":{{"capacity":"{name}"}}}}"#), "{from:?} -> {to:?}");
+    }
+    // Merged with the D9 track's B4 (README gap 108): `tz` has one reader, B4's `readTz`, and a
+    // malformed zone is refused by B4's `readLogSection` before the capacity section is read, with
+    // B4's names (`transition` and `unsorted` were L6's `then` and `table`).  Only an absent zone
+    // is the capacity section's refusal (`tzAbsent` above).
+    let zone_cases: &[(&str, &str, &str)] = &[
+        (r#""tz":{"key""#, r#""tz":3,"tzz":{"key""#, "shape"),
+        (r#""key":"America/Chicago","#, "", "key"),
+        (r#""base":"-06:00:00""#, r#""base":"-06:00""#, "base"),
+        (r#"[["2026-03-08T08:00:00Z","-05:00:00"],"#, r#"["2026-03-08T08:00:00Z","#, "transition"),
+        (
+            r#""2026-03-08T08:00:00Z","-05:00:00"],["2026-11-01T07:00:00Z""#,
+            r#""2026-11-01T07:00:00Z","-05:00:00"],["2026-03-08T08:00:00Z""#,
+            "unsorted",
+        ),
+    ];
+    for (from, to, why) in zone_cases {
+        assert_eq!(base.matches(from).count(), 1, "the edit {from:?} is not unique in the request");
+        let out = call(&base.replacen(from, to, 1)).unwrap();
+        assert_eq!(out, format!(r#"{{"err":{{"log":{{"badTz":"{why}"}}}}}}"#), "{from:?} -> {to:?}");
     }
     // A `capacity` carried twice is `jget`'s refusal, as for every key the kernel reads.
     let twice = call(&base.replacen(r#""capacity":{"#, r#""capacity":{},"capacity":{"#, 1)).unwrap();

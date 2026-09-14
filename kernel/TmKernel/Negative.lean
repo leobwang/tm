@@ -1247,18 +1247,162 @@ theorem theBucketWithoutItsClamp :
   decide
 
 -- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D9 track, step B2: the log's timestamps in
+-- `Stamp.lean`).  The design's §16 gives B2 no cheat label, so 126 and 127 are
+-- taken above the highest number in this checkout (125, W-1's repair); the D10
+-- track numbers in parallel and the merge renumbers.  The controls, which
+-- compile, are in Stamp.lean: `renderStamp_is_fmt_timestamp` (126) and
+-- `a_leap_second_stamp_is_before_the_next_second` with `stampBefore_iff` (127).
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 126 — a UTC stamp written with `Z`.  The fork's `fmt_timestamp` is
+   `to_rfc3339_opts(SecondsFormat::Secs, false)`, and `use_z = false` writes
+   UTC as `+00:00` (`renderStamp_is_fmt_timestamp`).  Claiming the writer's
+   bytes for `2026-09-08T03:00:00Z` end in `Z` is false: `decide` refuses it. -/
+theorem aUtcStampWrittenWithZ :
+    LogStamp.renderStamp ⟨⟨63924433200, 0⟩, by decide⟩ ⟨⟨false, 0⟩, by decide⟩ =
+      ['2','0','2','6','-','0','9','-','0','8','T','0','3',':','0','0',':','0','0','Z'] := by
+  decide
+
+/- CHEAT 127 — stamps ordered by nanosecond counts.  chrono orders a
+   `DateTime<FixedOffset>` by its UTC `(secs, frac)`, and a leap second
+   `2016-12-31T23:59:60.5Z` is before `2017-01-01T00:00:00Z`
+   (`a_leap_second_stamp_is_before_the_next_second`).  An order by
+   `Instant.nanos` puts it after, so claiming that order agrees with
+   `stampBefore` on this pair is false (carried note 1): `decide` refuses it. -/
+def stampBeforeByNanos (a b : Cal.VInstant × Cal.VOffset) : Bool :=
+  decide (a.1.val.nanos < b.1.val.nanos)
+
+theorem stampsOrderedByNanoseconds :
+    stampBeforeByNanos (⟨⟨63618825599, 1500000000⟩, by decide⟩, ⟨⟨false, 0⟩, by decide⟩)
+        (⟨⟨63618825600, 0⟩, by decide⟩, ⟨⟨false, 0⟩, by decide⟩)
+      = LogStamp.stampBefore (⟨⟨63618825599, 1500000000⟩, by decide⟩, ⟨⟨false, 0⟩, by decide⟩)
+        (⟨⟨63618825600, 0⟩, by decide⟩, ⟨⟨false, 0⟩, by decide⟩) := by
+  decide
+
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D9 track, step B3: the typed event grammar in
+-- `Log.lean`).  The design's §16 labels these 93, 94 and 106; those numbers are
+-- the design's reserved-unused ones (W-1's repair left them unused), so the
+-- block takes 128, 129 and 130, above the highest number in this checkout (127,
+-- B2).  The D10 track numbers in parallel and the merge renumbers.  The
+-- controls, which compile, are in Log.lean: `an_unknown_tag_is_never_a_warning`
+-- with `malformed_line_9_is_an_unknown_mood` (128),
+-- `a_known_event_is_never_read_as_unknown` with
+-- `malformed_line_5_is_a_done_with_est_min_sixty` (129), and
+-- `an_out_of_range_numeral_warns_even_in_an_unknown_event` (130).
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 128 — an unknown tag read as a warning.  A reader that refuses every
+   tag it does not know turns the fork's `{"ev":"mood","level":3}` (the fixture's
+   line 9, an `Event::Unknown`) into a warning.  Claiming that reader keeps
+   `an_unknown_tag_is_never_a_warning` on that line is false: once the kernel's
+   verdict is rewritten in (`malformed_line_9_is_an_unknown_mood`), `decide`
+   refuses it. -/
+def readLineRefusingUnknownTags (n : Nat) (seg : Option (List Char)) : Log.Verdict :=
+  match Log.readLine n seg with
+  | .entry ⟨_, _, _, .unknown _ _⟩ => .warn n .notAnObject
+  | v => v
+
+theorem anUnknownTagReadAsAWarning :
+    readLineRefusingUnknownTags 9 (some Log.malformedLine9) ≠ .warn 9 .notAnObject := by
+  simp only [readLineRefusingUnknownTags, Log.malformed_line_9_is_an_unknown_mood.1, Log.malformedEntry9]
+  decide
+
+/- CHEAT 129 — a known event with a bad field read as `unknown`.  serde's
+   derived `Known` never falls back: `est_min:"sixty"` on a `done` is the
+   warning `event "done": est_min: …`.  A reader that files a bad payload under
+   `unknown` instead reads the fixture's line 5 as an unknown event, so claiming
+   `a_known_event_is_never_read_as_unknown` of it is false: `decide` refuses it on
+   the line's value (never its 96 characters). -/
+def readObjectFallingThroughToUnknown (n : Nat) (kvs : List (List Char × JVal)) : Log.Verdict :=
+  match Log.readObject n kvs with
+  | .warn _ (.badField _) =>
+    match Log.readT kvs, Log.lastVal kvs Log.kEv with
+    | .ok (t, o), some (.str tag) => .entry ⟨n, t, o, .unknown tag []⟩
+    | _, _ => .warn n .noEv
+  | v => v
+
+def malformedPairs5 : List (List Char × JVal) :=
+  match Log.malformedValue5 with
+  | .obj kvs => kvs
+  | _ => []
+
+theorem aBadFieldReadAsUnknown :
+    (match readObjectFallingThroughToUnknown 5 malformedPairs5 with
+     | .entry e => e.ev.isUnknown
+     | _ => false) = false := by
+  decide
+
+/- CHEAT 130 — `finiteF64` applied only to `hsw` (CRIT 15).  The fork collects
+   the whole line as a `Map<String, Value>` before it reads a field, so `1e400`
+   under any key of any event fails the line.  A reader that checks only `hsw`
+   reads `{"t":…,"ev":"mood","x":1e400}` as an entry; claiming it warns
+   `numberOutOfRange` there, as
+   `an_out_of_range_numeral_warns_even_in_an_unknown_event` says the kernel does,
+   is false: `decide` refuses it. -/
+def readValueCheckingOnlyHsw (n : Nat) (v : JVal) : Log.Verdict :=
+  match v with
+  | .obj kvs =>
+    match Log.lastVal kvs ['h','s','w'] with
+    | some (.dec d) => if Log.finiteF64 d.val then Log.readObject n kvs else .warn n .numberOutOfRange
+    | _ => Log.readObject n kvs
+  | _ => .warn n .notAnObject
+
+def moodOutOfRangeValue : JVal :=
+  .obj [(Log.kT, .str ['2','0','2','6','-','0','9','-','0','7','T','0','8',':','0','0',':','0','0','-','0','5',':','0','0']),
+    (Log.kEv, .str ['m','o','o','d']), (['x'], .dec ⟨⟨false, 1, [], some (false, 4, [0, 0])⟩, rfl⟩)]
+
+theorem finiteF64CheckedOnlyAtHsw :
+    (match readValueCheckingOnlyHsw 1 moodOutOfRangeValue with
+     | .warn _ .numberOutOfRange => true
+     | _ => false) = true := by
+  decide
+
+
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D9 track, step B4: the `tz` and `log` sections
+-- of the request, Boundary.lean).  The design's §16 names no B4 cheat; these two
+-- guard its R10 constructors.  They take 131 and 132, above the highest number in
+-- this checkout (130, B3); the D10 track numbers in parallel and the merge
+-- renumbers.  The controls, which compile, are in Boundary.lean:
+-- `readTz_refuses_by_name` (131) and
+-- `mkLogReq?_refuses_a_render_line_outside_the_tail` (132).
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 131 — a zone table built without `Cal.mkTz?`.  Rust sends the
+   transitions; a decoder that wraps them in a `Cal.Tz` by asserting the proof
+   would let two transitions out of order through, and `offsetAt` would read the
+   last one written rather than the last one in time.  `Cal.Tz` is a subtype of
+   `TzTable.wf = true`, so the assertion is a type error: `rfl` cannot prove
+   `false = true`. -/
+def unsortedZone : Cal.Tz :=
+  ⟨⟨['k'], ⟨false, 0⟩, [(⟨200, 0⟩, ⟨false, 3600⟩), (⟨100, 0⟩, ⟨false, 0⟩)]⟩, rfl⟩
+
+/- CHEAT 132 — a render line outside the tail answered.  A request whose tail is
+   line 2 alone asks for line 1; `mkLogReq?` refuses it `renderNotInTail`, so
+   claiming the request is accepted is false: `decide` refuses it. -/
+theorem aRenderLineOutsideTheTailAccepted :
+    (mkLogReq? ⟨2, [some ['x']], true, none, [1]⟩).toBool = true := by
+  decide
+
+-- ===========================================================================
 -- APPENDED 2026-09-14 (stage 5, D10 track, step L5: the lookahead in
--- `Lookahead.lean`).  Numbers 126 and 127 are the next free numbers in this
+-- `Lookahead.lean`).  Numbers 133 and 134 (126 and 127 on the branch, renumbered at the merge of
+-- the D9 track's B2-B4, which took 126-132) were the next free numbers in this
 -- checkout (the highest was 125, after W-1's repair).  The design's L5 label,
 -- 117 (mixing before the budget limit), was taken by L1 and still fails there.
 -- The D9 track numbers in parallel and the merge renumbers.  Each cheat is the
 -- real function with one step changed, claimed to agree with the fork on a
 -- fork-shaped input.  The controls, which compile, are in Lookahead.lean:
--- `a_future_day_reads_todays_wake_to_the_second` (126) and
--- `sunday_mixes_at_its_own_weight` (127).  Everything below must FAIL to compile.
+-- `a_future_day_reads_todays_wake_to_the_second` (133) and
+-- `sunday_mixes_at_its_own_weight` (134).  Everything below must FAIL to compile.
 -- ===========================================================================
 
-/- CHEAT 126 — a future day's wake at whole minutes: `local_dt` of today's wake clock with
+/- CHEAT 133 — a future day's wake at whole minutes: `local_dt` of today's wake clock with
    its seconds dropped.  On Tuesday 2026-09-08 with a 07:05 arrival and a wake at 06:05:40,
    the fork puts the 07:05 block at 0.99 h (the lounge's `0-1`, level 4) and keeps 180
    minutes at level 5; whole minutes put it at 1.00 h (level 5) and keep 240.  `decide`
@@ -1274,7 +1418,7 @@ theorem aFutureWakeOnTheMinute :
         .lounge 739866 5 := by
   decide
 
-/- CHEAT 127 — every future day mixed at today's weekday's weight.  The fork reads
+/- CHEAT 134 — every future day mixed at today's weekday's weight.  The fork reads
    `p_lounge_on(date.weekday())` for each date: on Sunday 2026-09-13 the shipped 0.4, where
    Monday's is 0.9.  The Sunday lounge day keeps 120 minutes at level 5, so the expected level
    5 is 48 minutes and the cheat's 108.  `decide` refuses the equality. -/
@@ -1290,16 +1434,17 @@ theorem everyDayAtTodaysWeight :
 
 -- ===========================================================================
 -- APPENDED 2026-09-14 (stage 5, D10 track).  Step L6 (design §13.6, §14.8 row
--- L6): capacity on the wire.  Numbers 128, 129 and 130 are the next free
--- numbers in this checkout (the highest was 127, L5's).  The D9 track numbers
+-- L6): capacity on the wire.  Numbers 135, 136 and 137 (128-130 on the branch, renumbered at the merge)
+-- were the next free
+-- numbers in this checkout (the highest was L5's).  The D9 track numbers
 -- in parallel and the merge renumbers.  The controls, which compile, are
 -- `CapWire.readWeight_on_witnesses` and `readWeight_refuses_more_than_18_places`
--- (128), `Look.curveOk_refuses_an_unsorted_curve` and `CapWire.readPrior_on_witnesses`
--- (129), and `CapWire.the_lookahead_response_emits_in_build_order` (130), in
+-- (135), `Look.curveOk_refuses_an_unsorted_curve` and `CapWire.readPrior_on_witnesses`
+-- (136), and `CapWire.the_lookahead_response_emits_in_build_order` (137), in
 -- Lookahead.lean and Boundary.lean.  Everything below must FAIL to compile.
 -- ===========================================================================
 
-/- CHEAT 128 — a lounge weight of 19 decimal places accepted on the wire.  `10^-19` sent as
+/- CHEAT 135 — a lounge weight of 19 decimal places accepted on the wire.  `10^-19` sent as
    the digit strings `1` / `10000000000000000000` does not divide `capDen = 10^18` (D17), so
    the wire refuses it `weightPrecision`; `decide` refuses the claim that it reads. -/
 theorem aWeightOf19PlacesReads :
@@ -1308,14 +1453,14 @@ theorem aWeightOf19PlacesReads :
       = true := by
   decide
 
-/- CHEAT 129 — a prior curve accepted out of `from` order.  Fork `StepFn::from_pairs` sorts a
+/- CHEAT 136 — a prior curve accepted out of `from` order.  Fork `StepFn::from_pairs` sorts a
    curve by its start, and `stepAt` reads it in that order; the wire refuses an unsorted curve
    (`badStep`) rather than sorting it silently.  `4+` before `1-4`: `decide` refuses. -/
 theorem anUnsortedCurveIsAccepted :
     Look.curveOk [Look.Step.from 4 3, Look.Step.range 1 4 4] = true := by
   decide
 
-/- CHEAT 130 — a unit count as a JSON number a double holds exactly.  One hour at `capDen`
+/- CHEAT 137 — a unit count as a JSON number a double holds exactly.  One hour at `capDen`
    is `60 · 10^18` units, past `2^53`; that is why every unit count crosses as a digit string
    (D17, `unitsJson`).  `decide` refuses the bound. -/
 theorem anHourOfUnitsFitsADouble : Look.capDen * 60 < 2 ^ 53 := by

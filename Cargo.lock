@@ -1526,6 +1526,7 @@ dependencies = [
  "crossterm",
  "insta",
  "notify",
+ "proptest",
  "ratatui",
  "serde",
  "serde_json",

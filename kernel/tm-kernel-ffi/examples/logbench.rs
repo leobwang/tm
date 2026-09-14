@@ -12,16 +12,24 @@
 //!
 //! It prints wall milliseconds and `VmHWM` for:
 //! - **(a)** the kernel's wire parse of the log as a line array,
-//!   `{"docs":[],"log":["<line>",…]}`, at 1 month, 6 months, 1 year and 3 years
-//!   at 40 and 61 events a day.  `run` reads no `log` key, so the whole request
-//!   is parsed and an empty `ok` answers; the response is checked.
+//!   `{"docs":[],"pad":["<line>",…]}`, at 1 month, 6 months, 1 year and 3 years
+//!   at 40 and 61 events a day.  No reader reads `pad`, so the whole request is
+//!   parsed and an empty `ok` answers; the response is checked.  (A3 sent the
+//!   array under `log`; since B4 that key is the log op's section, and an array
+//!   there is refused `tzAbsent`, so the key moved.  The parse is the same.)
 //! - **(b)** FNV-1a-64 over 6.9 MiB of log text, in this process.
-//! - **(c)** the hourly zone probe for America/Chicago: pending.  The probe is
-//!   `tm/src/cli/tz_table.rs`, design §6.1, and that file is B4's (design §14.1
-//!   row B4), not B1's: B1 landed without it.  B4 adds the measurement (gap 103).
+//! - **(c)** the hourly zone probe for America/Chicago (design §6.1; gap 103,
+//!   closed at B4).  The probe is `tm/src/cli/tz_table.rs`, and this crate does
+//!   not depend on chrono-tz, so (c) runs tm's `examples/tzprobe.rs` as a child
+//!   (`cargo run --example tzprobe -p tm`, the root workspace's dev profile) and
+//!   prints its record: best and median of 7 probes, transitions, wire bytes,
+//!   `VmHWM`.
 //! - **(d)** RSS for a call carrying a 1 MiB and a 4 MiB line array (line
 //!   bytes, §9.7's chunk and resend caps).  **Gate:** at 4 MiB, above 256 MiB
 //!   means §9.7's resend cap is lowered before W3.
+//! - **(e)** the `log` op itself (stage 5 D9 B4, grammar only): every line read
+//!   by `Log.readLine`, a header for each, no rendering, at the 1 MiB cut and at
+//!   the per-call bound of 32,768 lines.  B4 adds it; W5 measures the replay.
 //!
 //! Every call-bearing measurement runs in a child process of its own (this
 //! binary, re-executed with a subcommand), because `VmHWM` only ever rises.
@@ -69,7 +77,7 @@ fn jstr(out: &mut String, l: &str) {
 
 fn request(lines: &[String]) -> String {
     let mut r = String::with_capacity(lines.iter().map(|l| l.len() + 24).sum::<usize>() + 32);
-    r.push_str(r#"{"docs":[],"log":["#);
+    r.push_str(r#"{"docs":[],"pad":["#);
     for (i, l) in lines.iter().enumerate() {
         if i > 0 {
             r.push(',');
@@ -168,6 +176,36 @@ fn child_rss(how: &str, n_arg: usize) {
     println!("{how} {n_arg}\t{n}\t{line_bytes}\t{}\t{best:.2}\t{median:.2}\t{before}\t{after}", req.len());
 }
 
+/// Child: the `log` op over a prefix of the 3-year, 61-a-day log, cut as
+/// `child_rss` cuts it, with a header for every line.
+fn child_logop(how: &str, n_arg: usize) {
+    let all = lines_of(Rate::SixtyOne, "3y");
+    let n = match how {
+        "mib" => {
+            let mut used = 0;
+            all.iter().take_while(|l| { used += l.len() + 1; used <= n_arg << 20 }).count()
+        }
+        _ => n_arg.min(all.len()),
+    };
+    let lines: Vec<String> = all.into_iter().take(n).collect();
+    let line_bytes = text(&lines).len();
+    let mut req = String::from(r#"{"docs":[],"tz":{"key":"UTC","base":"+00:00:00","then":[]},"log":{"ckpt":null,"from":1,"lines":["#);
+    for (i, l) in lines.iter().enumerate() {
+        if i > 0 {
+            req.push(',');
+        }
+        jstr(&mut req, l);
+    }
+    req.push_str(r#"],"terminated":true,"want":{"headersFrom":1}}}"#);
+    drop(lines);
+    tm_kernel_ffi::init().expect("init");
+    assert!(reset_hwm(), "cannot reset VmHWM");
+    let before = vm_hwm_kib();
+    let (best, median) = time_calls(&req);
+    let after = vm_hwm_kib();
+    println!("{how} {n_arg}\t{n}\t{line_bytes}\t{}\t{best:.2}\t{median:.2}\t{before}\t{after}", req.len());
+}
+
 /// Child: the process and runtime alone, for the baseline under every figure.
 fn child_empty() {
     tm_kernel_ffi::init().expect("init");
@@ -187,9 +225,10 @@ fn main() {
     match args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
         ["parse", rate, age] => return child_parse(rate_of(rate), age),
         ["rss", how, n] => return child_rss(how, n.parse().expect("a count")),
+        ["logop", how, n] => return child_logop(how, n.parse().expect("a count")),
         ["empty"] => return child_empty(),
         [] => {}
-        _ => panic!("usage: logbench [parse 40|61 AGE | rss mib|lines N | empty]"),
+        _ => panic!("usage: logbench [parse 40|61 AGE | rss mib|lines N | logop mib|lines N | empty]"),
     }
 
     println!("logbench (stage 5 A3): best of {REPEATS} calls, median beside it; VmHWM of a fresh process, reset to its RSS just before the calls (\"pre\")");
@@ -202,7 +241,7 @@ fn main() {
     let base_kib: u64 = e[2].parse().unwrap();
     println!("\nbaseline: {{\"docs\":[]}} best {} ms (median {}), VmHWM {:.1} MiB", e[0], e[1], mib(base_kib));
 
-    println!("\n(a) wire parse, the log as a line array {{\"docs\":[],\"log\":[...]}}");
+    println!("\n(a) wire parse, the log as a line array {{\"docs\":[],\"pad\":[...]}}");
     println!(
         "{:>7} {:>4} {:>7} {:>10} {:>10} {:>9} {:>9} {:>8} {:>10} {:>10} {:>11}",
         "rate", "age", "lines", "line B", "request B", "best ms", "median", "ms/MiB", "HWM pre", "HWM post", "MiB/MiB req"
@@ -253,8 +292,18 @@ fn main() {
         ms[0].1
     );
 
-    println!("\n(c) hourly zone probe, America/Chicago");
-    println!("PENDING: the probe is tm/src/cli/tz_table.rs (design §6.1), which B4 adds; B4 measures it (gap 103)");
+    println!("\n(c) hourly zone probe, America/Chicago (tm/src/cli/tz_table.rs via tm's examples/tzprobe.rs)");
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.toml");
+    let out = Command::new("cargo")
+        .args(["run", "--quiet", "--example", "tzprobe", "-p", "tm", "--manifest-path", root, "--", "America/Chicago"])
+        .output()
+        .expect("spawn cargo");
+    assert!(out.status.success(), "tzprobe failed: {}", String::from_utf8_lossy(&out.stderr));
+    let r: Vec<String> = String::from_utf8(out.stdout).unwrap().trim().split('\t').map(str::to_owned).collect();
+    println!(
+        "{}: best {} ms (median {}), {} transitions ({} .. {}), {} B on the wire, VmHWM {:.1} MiB",
+        r[0], r[1], r[2], r[3], r[4], r[5], r[6], mib(r[7].parse().unwrap())
+    );
 
     println!("\n(d) RSS for one call carrying a line array (3y @61/day prefix)");
     println!(
@@ -282,6 +331,26 @@ fn main() {
             mib(r[6].parse().unwrap()),
             mib(post),
             gate
+        );
+    }
+
+    println!("\n(e) the log op (grammar only: every line read, a header each), 3y @61/day prefix");
+    println!(
+        "{:>11} {:>7} {:>10} {:>10} {:>9} {:>9} {:>10} {:>10}",
+        "cut", "lines", "line B", "request B", "best ms", "median", "HWM pre", "HWM post"
+    );
+    for (how, n) in [("mib", "1"), ("lines", "32768")] {
+        let r = spawn(&["logop", how, n]);
+        println!(
+            "{:>11} {:>7} {:>10} {:>10} {:>9} {:>9} {:>6.1} MiB {:>6.1} MiB",
+            r[0],
+            r[1],
+            r[2],
+            r[3],
+            r[4],
+            r[5],
+            mib(r[6].parse().unwrap()),
+            mib(r[7].parse().unwrap())
         );
     }
 }

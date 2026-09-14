@@ -2810,6 +2810,187 @@ open Tm
 #print axioms Tm.Look.the_learned_curve_moves_an_hour_on_sunday
 #print axioms Tm.Look.hours_since_wake_count_real_hours_across_the_fall_transition
 
+-- APPENDED 2026-09-14 (stage 5, D9 track).  Step B2 (design §14.2, §5.3): the log's timestamps,
+-- chrono's RFC 3339 reader and its fallback (`parseStamp`), `fmt_timestamp` (`renderStamp`), the
+-- `tm log` column (`displayStamp`) and chrono's stamp order (`stampBefore`).  Stamp.lean, namespace
+-- `Tm.LogStamp`.  22 theorems, including the in-step `parseStamp_renderStamp` (restated with a
+-- year bound; `parseStamp_renderStamp_fails_past_year_9999` refutes it as §15 writes it) and the
+-- order witness `stamp_order_is_the_instant_order`.
+#print axioms Tm.LogStamp.stampBefore_iff
+#print axioms Tm.LogStamp.stampBefore_ignores_the_offset
+#print axioms Tm.LogStamp.stampBefore_irrefl
+#print axioms Tm.LogStamp.renderOffset_length
+#print axioms Tm.LogStamp.rfcOffset_renderOffset
+#print axioms Tm.LogStamp.year_of_a_day_before_the_end
+#print axioms Tm.LogStamp.dateBase_renderDate
+#print axioms Tm.LogStamp.renderDate_length
+#print axioms Tm.LogStamp.localDateTod_spec
+#print axioms Tm.LogStamp.fracOf_renderOffset
+#print axioms Tm.LogStamp.rfc3339_renderStamp
+#print axioms Tm.LogStamp.parseStamp_renderStamp
+#print axioms Tm.LogStamp.parseStamp_renderStamp_fails_past_year_9999
+#print axioms Tm.LogStamp.renderStamp_is_fmt_timestamp
+#print axioms Tm.LogStamp.renderStamp_writes_a_leap_second_as_60
+#print axioms Tm.LogStamp.displayStamp_is_the_written_clock
+#print axioms Tm.LogStamp.the_origin_west_of_utc_is_year_zero
+#print axioms Tm.LogStamp.stamp_order_is_the_instant_order
+#print axioms Tm.LogStamp.a_leap_second_stamp_is_before_the_next_second
+#print axioms Tm.LogStamp.parseStamp_reads_the_rfc3339_spellings
+#print axioms Tm.LogStamp.parseStamp_reads_the_fallback
+#print axioms Tm.LogStamp.parseStamp_refuses_what_is_not_a_stamp
+
+-- APPENDED 2026-09-14 (stage 5, D9 track).  Step B3 (design §14.2, §5.4–§5.6): the typed event grammar
+-- of `.tm/log.jsonl` in Log.lean (new; namespace `Tm.Log`) — 26 known kinds and `unknown`, `readLine`,
+-- `renderLine`, serde's `finiteF64`, the small grammars — and `digitsOf`'s runtime twin in Text.lean
+-- (README gap 101, closed).  107 theorems: 2 in Text.lean, 105 in Log.lean, including the four goals
+-- §15 names for B3 (`the_log_reads_what_it_renders`, `a_known_event_is_never_read_as_unknown`,
+-- `an_unknown_tag_is_never_a_warning`, `lineTooLong_bounds_every_string`), added and discharged in
+-- this step, so Goals.lean never held them.
+#print axioms Tm.digitsOfTR_go
+#print axioms Tm.digitsOf_eq_digitsOfTR
+#print axioms Tm.Log.lastVal_go
+#print axioms Tm.Log.lastVal_cons
+#print axioms Tm.Log.lastVal_append
+#print axioms Tm.Log.lastVal_nil
+#print axioms Tm.Log.lastVal_of_not_mem
+#print axioms Tm.Log.lastVal_mem
+#print axioms Tm.Log.allStrs_map
+#print axioms Tm.Log.readF_renderF
+#print axioms Tm.Log.readArgs_of_agrees
+#print axioms Tm.Log.renderArgs_keys
+#print axioms Tm.Log.agrees_renderArgs
+#print axioms Tm.Log.Kind.build_of_split
+#print axioms Tm.Log.Event.tag_of_split
+#print axioms Tm.Log.Event.fields_of_split
+#print axioms Tm.Log.Event.strings_of_split
+#print axioms Tm.Log.Event.canonical_of_split
+#print axioms Tm.Log.Event.split_build
+#print axioms Tm.Log.Event.split_of_not_unknown
+#print axioms Tm.Log.kindOf_tag
+#print axioms Tm.Log.Kind.keys_nodup
+#print axioms Tm.Log.Kind.no_t_key
+#print axioms Tm.Log.Kind.no_ev_key
+#print axioms Tm.Log.finiteF64_of_nat
+#print axioms Tm.Log.allFiniteL_map_str
+#print axioms Tm.Log.allFiniteO_append
+#print axioms Tm.Log.u32_le_u64Max
+#print axioms Tm.Log.u8_le_u64Max
+#print axioms Tm.Log.allFiniteO_renderArgs
+#print axioms Tm.Log.jemitOTail_ends
+#print axioms Tm.Log.jemit_obj_ends
+#print axioms Tm.Log.trimCR_of_last
+#print axioms Tm.Log.trimCR_jemit_obj
+#print axioms Tm.Log.not_blank_jemit_obj
+#print axioms Tm.Log.charsLt_irrefl
+#print axioms Tm.Log.charsLe_of_lt
+#print axioms Tm.Log.ne_of_charsLt
+#print axioms Tm.Log.dedup_of_pairwise
+#print axioms Tm.Log.restOf_canonical
+#print axioms Tm.Log.countP_of_not_mem
+#print axioms Tm.Log.stamp_hyps
+#print axioms Tm.Log.readT_line
+#print axioms Tm.Log.lastVal_ev_line
+#print axioms Tm.Log.readLine_of_parse
+#print axioms Tm.Log.keys_of_fields_known
+#print axioms Tm.Log.keys_of_rest
+#print axioms Tm.Log.the_log_reads_what_it_renders
+#print axioms Tm.Log.a_known_event_is_never_read_as_unknown
+#print axioms Tm.Log.trimCR_prefix
+#print axioms Tm.Log.scan_peak_mono
+#print axioms Tm.Log.depthOf_prefix
+#print axioms Tm.Log.skipWs_suffix
+#print axioms Tm.Log.isRustSpace_digit
+#print axioms Tm.Log.jparse_not_blank
+#print axioms Tm.Log.an_unknown_tag_is_never_a_warning
+#print axioms Tm.Log.map_cons_ok
+#print axioms Tm.Log.junescape_length
+#print axioms Tm.Log.jscan_strlen
+#print axioms Tm.Log.jstring_strlen
+#print axioms Tm.Log.jstrs_ofDec
+#print axioms Tm.Log.jstrsO_cons
+#print axioms Tm.Log.jval_strs_step
+#print axioms Tm.Log.jarr_strs_step
+#print axioms Tm.Log.jtail_strs_step
+#print axioms Tm.Log.jobj_strs_step
+#print axioms Tm.Log.jpair_strs_step
+#print axioms Tm.Log.jotail_strs_step
+#print axioms Tm.Log.jparser_strs
+#print axioms Tm.Log.jparse_strs
+#print axioms Tm.Log.FR.pair_ok
+#print axioms Tm.Log.mem_jstrsO_of_mem
+#print axioms Tm.Log.jstrsO_sub
+#print axioms Tm.Log.allStrs_mem
+#print axioms Tm.Log.readF_strs
+#print axioms Tm.Log.readArgs_strs
+#print axioms Tm.Log.dedupStep_sub
+#print axioms Tm.Log.restOf_sub
+#print axioms Tm.Log.readLine_entry_inv
+#print axioms Tm.Log.lineTooLong_bounds_every_string
+#print axioms Tm.Log.digitsValue_ge
+#print axioms Tm.Log.capExp_none
+#print axioms Tm.Log.capExp_fold
+#print axioms Tm.Log.finiteF64_reads_only_the_sign_past_an_i32_exponent
+#print axioms Tm.Log.readF_refuses_a_u8_past_255
+#print axioms Tm.Log.readF_refuses_a_u32_past_its_width
+#print axioms Tm.Log.readF_refuses_a_decimal_at_an_integer_field
+#print axioms Tm.Log.readF_reads_hsw_as_written
+#print axioms Tm.Log.readLine_refuses_a_line_past_the_bound
+#print axioms Tm.Log.readLine_refuses_a_line_nested_past_the_bound
+#print axioms Tm.Log.readLine_refuses_a_line_that_is_not_utf8
+#print axioms Tm.Log.malformed_line_1_is_a_wake
+#print axioms Tm.Log.malformed_line_2_is_not_json
+#print axioms Tm.Log.malformed_line_3_is_a_wake_without_slept_min
+#print axioms Tm.Log.malformed_line_4_has_no_t
+#print axioms Tm.Log.malformed_line_5_is_a_done_with_est_min_sixty
+#print axioms Tm.Log.malformed_line_6_has_a_t_that_is_not_a_stamp
+#print axioms Tm.Log.malformed_line_7_is_an_array
+#print axioms Tm.Log.malformed_line_8_is_blank
+#print axioms Tm.Log.malformed_line_9_is_an_unknown_mood
+#print axioms Tm.Log.malformed_line_10_has_an_ev_that_is_not_a_string
+#print axioms Tm.Log.malformed_line_11_is_a_note
+#print axioms Tm.Log.the_malformed_corpus_reads_as_the_fork_point_did
+#print axioms Tm.Log.an_out_of_range_numeral_warns_even_in_an_unknown_event
+#print axioms Tm.Log.every_line_warning_is_reachable
+#print axioms Tm.Log.finiteF64_is_serdes_band
+#print axioms Tm.Log.the_small_grammars_read_as_the_fork_does
+
+-- APPENDED 2026-09-14 (stage 5, D9 track).  Step B4 (design §14.2 row B4, §6.1, §10): the `tz` and
+-- `log` sections of the request in Boundary.lean — `readTz` (the zone table Rust probes, built only
+-- by `Cal.mkTz?`), `readLogReq` and `mkLogReq?` (R10), `logAnswer` (lines, warnings, headers with tag
+-- and id, render) and `runWithLog`, which `respond` now calls.  31 theorems, all in Boundary.lean;
+-- `the_response_shapes_emit_in_build_order` is extended in place (already audited above).
+#print axioms Tm.run_ok_shape
+#print axioms Tm.runPlan_ok_shape
+#print axioms Tm.runWithLog_without_a_log_is_run
+#print axioms Tm.a_request_without_tz_or_log_is_read_as_before
+#print axioms Tm.runWithLog_refuses_a_log_section_first
+#print axioms Tm.runWithLog_puts_the_log_after_the_report
+#print axioms Tm.readStep_fold
+#print axioms Tm.logVerdicts_eq
+#print axioms Tm.mkLogReq?_ok_iff
+#print axioms Tm.mkLogReq?_keeps_the_request
+#print axioms Tm.mkLogReq?_error_is_the_fault
+#print axioms Tm.mkLogReq?_refuses_a_from_of_zero_or_past_2_40
+#print axioms Tm.mkLogReq?_refuses_too_many_lines
+#print axioms Tm.mkLogReq?_refuses_headersFrom_past_2_40
+#print axioms Tm.mkLogReq?_refuses_too_many_render_lines
+#print axioms Tm.LogReq.wf_bounds
+#print axioms Tm.mkLogReq?_refuses_a_render_line_outside_the_tail
+#print axioms Tm.readTz_refuses_a_long_key
+#print axioms Tm.readTz_refuses_too_many_transitions
+#print axioms Tm.readLogReq_refuses_more_lines_than_the_bound
+#print axioms Tm.lineStep_error
+#print axioms Tm.lineStep_fold
+#print axioms Tm.readLogReq_reads_the_lines_as_sent
+#print axioms Tm.LogReq.wf_render_in_tail
+#print axioms Tm.logAnswer_renders_the_line_at_its_number
+#print axioms Tm.readTzOffset_reads_the_table_spelling
+#print axioms Tm.readTzInstant_reads_utc_whole_seconds
+#print axioms Tm.readTz_reads_the_witness_table
+#print axioms Tm.readTz_refuses_by_name
+#print axioms Tm.the_log_op_reads_a_four_line_tail
+#print axioms Tm.the_log_section_refuses_by_name
+
 -- APPENDED 2026-09-14 (stage 5, D10 track).  Step L5 (design §13.4, §14.8 row L5): the lookahead, fork
 -- `capacity::lookahead` with D10's mixture; `mkInput?` (R10, the model-then-config fallbacks of D10-4),
 -- a future day's wake through `local_dt` at second resolution (`wakeInstantOf`), `pureDay`, `dayOf` held
@@ -2904,7 +3085,7 @@ open Tm
 #print axioms Tm.the_exported_call_emits_parses_back
 #print axioms Tm.runCap_answers_with_the_lookahead
 #print axioms Tm.runCap_refuses_what_the_section_refuses
-#print axioms Tm.runPlan_ok_shape
+#print axioms Tm.runPlan_ok_is_docs_then_report
 #print axioms Tm.runCap_answers_docs_report_lookahead
 #print axioms Tm.CapWire.unitsJson_reads_back
 #print axioms Tm.CapWire.lookaheadJson_days
@@ -2942,3 +3123,13 @@ open Tm
 #print axioms Tm.CapWire.readWeight_refuses_more_than_18_places
 #print axioms Tm.CapWire.readHomeMax_on_the_bound
 #print axioms Tm.CapWire.readTz_refuses_too_many_transitions
+
+-- APPENDED 2026-09-14 (merge of rebuild-on-lean's D9 B2-B4 into stage5-lookahead's D10 L5-L6).
+-- `runCap` now composes B4's `log` section (`logInto`), so the bridge to the old entry point is
+-- restated over `runWithLog`; the L6 name `runPlan_ok_shape` collided with B4's and was renamed
+-- `runPlan_ok_is_docs_then_report` in place above.  L6's second `tz` reader is gone (gap 108):
+-- `CapWire.readTz_on_witnesses`, `CapWire.the_zone_texts_read_on_witnesses` and
+-- `CapWire.readTz_refuses_too_many_transitions` are re-proved over B4's `readTz` (audited above).
+#print axioms Tm.runCap_without_capacity_is_runWithLog
+#print axioms Tm.runCap_refuses_a_log_section_first
+#print axioms Tm.runCap_answers_docs_report_log_lookahead

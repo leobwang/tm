@@ -10529,11 +10529,680 @@ refuted or added: none**, and the burn-down stays **13**. **New theorems: none**
 | FFI suite (`tm-kernel-ffi`) | **82 passed / 0 failed** (kernel 72, corpus 8, stack 2) |
 | `cli_latency.rs` | green (1 passed) |
 
+<!-- ===================================================================
+     APPENDED 2026-09-14 (stage 5, D9 track).  Step B2 (design §14.2 row B2, §5.3): the log's timestamps in Stamp.lean (new).
+     Takes cheats 126-127 (the design's §16 gives B2 no label; 125 was the highest in this checkout) and parity entry P23 (the design's
+     own number, free here).  No new gap.  The D10 track numbers in parallel; whoever merges renumbers (AGENTS §6.2, §6.4).
+     =================================================================== -->
+
+## Stage 5 B2, 2026-09-14: a log timestamp reads and renders — RFC 3339 with its offset, ordered as chrono orders it
+
+The D9 track's fifth step (design `kernel/design/stage5/stage5-D9-D10-design.md` §14.2 row B2, §5.3).
+A new module, `TmKernel/Stamp.lean`, imports `Cal` and `Line`, and `TmKernel.lean` imports it in the
+same commit, right after `Line` (**eighteen imports**; AGENTS §2.3 updated). Nothing in the binary
+calls it yet: B3's `Log.lean` reads a line's `"t"` with it, and B4 puts it on the wire.
+
+### What was built (`Stamp.lean`, namespace `Tm.LogStamp`)
+
+| piece | what it is |
+|---|---|
+| `StampErr` | `tooShort`, `badDate`, `badSeparator`, `badTime`, `badFraction`, `badOffset`, `tooLong`, `beforeOrigin`, `pastYear9999` |
+| `rfc3339` | chrono 0.4.45 `parse_rfc3339`, ported from its source: ≥ 19 characters; the date through `Field.parseDate` (or `0000-12-31`, below); `T`, `t` or a space; the clock through `Field.parseClock`; second `60` as 59 plus 10⁹ ns; `.` and ≥ 1 digit, nine counted and the rest skipped (`fracOf`); `Z`, `z` or a sign (`+`, `-`, **U+2212**, which chrono's `timezone_offset` accepts) with `HH:MM`, then the end (`rfcOffset`) |
+| `fallback` | chrono's generic `parse_from_str(s, "%Y-%m-%dT%H:%M%:z")`: Rust's Unicode whitespace (`isRustSpace`, `char::is_whitespace`) before each number and the offset; an unsigned year of 1–4 digits or a signed year of any length (`yearOf`); 1–2 digits for month, day, hour and minute in `Parsed`'s ranges (`numIn`); a literal `T`; any mix of `:` and whitespace inside the offset (`fallbackOffset`); no seconds |
+| `parseStamp` | the fork's `parse_timestamp`: `rfc3339`, else `fallback`; the error returned is `rfc3339`'s. **The one smart constructor for a stamp (R10)**: it yields a `Cal.VInstant` and a `Cal.VOffset`; `build` is B1's `utcSecAt` then `mkInstant?`, as B1's note asked |
+| `renderStamp` | `fmt_timestamp` (`to_rfc3339_opts(Secs, false)`): the local date and clock (`localDateTod`, chrono's `naive_local`), whole seconds, a leap second as `60`, the offset rounded to the minute with `+` at zero (`renderOffset`) |
+| `displayStamp` | the `tm log` column, `e.t.format("%Y-%m-%d %H:%M")` |
+| `stampBefore` | chrono's `DateTime<FixedOffset>` order: `Cal.Instant`'s `<` on the instants, the offsets never read (`stampBefore_iff`, `stampBefore_ignores_the_offset`, `stampBefore_irrefl`) |
+| `accepted` | a read as plain values, for decided witnesses (`Except` has no `DecidableEq`) |
+
+**Year 0 is ported.** chrono's proleptic year 0 exists and `Cal.Date` starts at year 1. The one
+year-0 date a representable instant can read is 0000-12-31 (west of UTC, in the origin's first day),
+so both readers read it as a base one day before `Day` 0 (`dateBase`, `build` in whole days from
+0000-12-31), and `renderStamp` writes it (`the_origin_west_of_utc_is_year_zero`). East of UTC in
+9999's last day, `renderStamp` writes `+10000-01-01`, as chrono does.
+
+**Carried note (4) resolved: the namespace is `Tm.LogStamp`.** `Tm.Field.Stamp` already exists, with
+`Field.parseStamp`, `Field.renderStamp`, `Field.parseStamps` and `Field.renderStamps`, and
+`Goals.lean` opens `Field (… Stamp …)`. `LogStamp` is a name nothing else in the kernel uses, so
+`LogStamp.parseStamp` resolves one way under any `open`. The short names keep the design's spelling
+(`parseStamp`, `renderStamp`, `displayStamp`, `StampErr`), so **callers write them qualified, and
+no file that opens `Field` may `open LogStamp`**. The module header says so. The design's
+`Stamp.parseStamp`, `Stamp.renderStamp` and `Stamp.StampErr` (§5.3, §5.5, §15) are these.
+
+**Carried note (1) honoured.** The stamp order compares the instant in `Cal.Instant`'s order, which
+is chrono's. It never compares `.nanos` (`a_leap_second_stamp_is_before_the_next_second`; cheat 127).
+
+### Goals (in-step; `Goals.lean` untouched)
+
+| §15 / §5.3 name | status |
+|---|---|
+| `parseStamp_renderStamp` | **refuted as §15 writes it, and restated under its name.** Without a year bound it is false: `parseStamp_renderStamp_fails_past_year_9999`. At UTC second 315,537,897,599 and `+00:01`, `fmt_timestamp` writes `+10000-01-01T00:00:59+00:01`. chrono does not read that back (its RFC 3339 year has four digits, and its fallback has no seconds), and the kernel does not either. The proved statement adds `hend : o.west = true ∨ i.sec + o.sec < yearEnd` and widens §15's `ns = 0` to `ns = 0 ∨ ns = 10⁹`: a leap second is written as `60` and read back exactly (D5: re-proved, never weakened). The proof is by position, through `rfc3339_renderStamp`, `localDateTod_spec`, `rfcOffset_renderOffset`, `Field.parse_render_date`, `Field.parse_render_clock` and `readNat_padTo` |
+| the order witness, `stamp_order_is_the_instant_order` | **proved, in chrono's order.** `2026-09-08T03:00:00+00:00` and `2026-09-07T22:00:00-05:00` read as UTC second 63,924,433,200 in two offsets, and `stampBefore` is false both ways |
+| `renderStamp_is_fmt_timestamp` (§5.3's list) | proved, with `2026-09-07T06:05:00-05:00` and the UTC `2026-09-08T03:00:00+00:00` |
+
+Beside them, all decided: `renderStamp_writes_a_leap_second_as_60`, `displayStamp_is_the_written_clock`,
+`the_origin_west_of_utc_is_year_zero`, `a_leap_second_stamp_is_before_the_next_second`,
+`parseStamp_reads_the_rfc3339_spellings` (`t`, a space, `z`, `-00:00` as UTC, U+2212, ten fraction
+digits) and `parseStamp_reads_the_fallback` (no seconds; spaces and one-digit fields). The R10
+rejection theorem is `parseStamp_refuses_what_is_not_a_stamp`, which refuses 2026-02-29, hour 24,
+second 61, `+24:00`, `+05:60`, text after the offset, an instant before the origin, and `+10000`
+through the fallback. **Burn-down stays 13.**
+
+### The scratch differential against the fork (evidence for this commit; not committed)
+
+A throwaway Rust crate under `/tmp/claude-1000/b2/rs` depended on `tm-core` by path and called the
+fork's own `log::parse_timestamp` and `log::fmt_timestamp`, and `format("%Y-%m-%d %H:%M")`. A scratch
+Lean file ran `LogStamp.parseStamp`, `renderStamp` and `displayStamp` on the same lines. Both printed
+the UTC second since 0001-01-01, the nanoseconds, the offset's sign and seconds, the render and the
+display, or `err`.
+
+| input | lines | result |
+|---|---|---|
+| every `"t"` of the seven corpus logs (`kernel/corpus/logs/*.jsonl`, `malformed.jsonl` included, and the three plans' `.tm/log.jsonl`) | 516 (389 distinct) | **identical, line for line** |
+| a crafted edge set: separators, 0–12 fraction digits, `:60`/`:61`, `-00:00`, `+24:00`, `+05:60`, U+2212, `0000`, `9999`, the fallback with spaces, tabs, U+00A0, U+3000, U+200A, one-digit fields, signed years, `+0500`, trailing text | 81 | 5 differences, below |
+| 4,000 random mutations of five seeds (Python `random.seed(7)`) | 4,000 (205 accepted by chrono) | 2 differences, below |
+
+The first pass also differed on `0000-12-31T23:00:00-05:00`, `0-12-31T23:00-05:00` and
+`-00-12-31T23:00+05:00`. That is what led to porting year 0 and the signed `-0` year. **The seven
+differences left are all stamps whose instant is outside `Cal.VInstant`'s range**, so no value of
+the kernel can hold them: `0000-01-01T00:00:00Z` (UTC second −31,622,400), `0001-01-01T00:00:00+00:01`
+(−60), `-2026-09-07T06:05-05:00`, `-00-12-31T23:00+05:00` (−21,600) and `0000-12-31T03:30:00-01:00`
+(−70,200) before the origin, and `9999-12-31T23:59:59-00:01` and `+10000-01-01T00:00+00:00` at or
+after 10000-01-01. They are P23's residue. **On every stamp chrono accepts inside the range, the
+kernel's instant, offset, render and display are chrono's.** T3 at B4 is the committed form of this
+comparison. The edge list above is a starting set for it.
+
+### Additions to the stage-5 parity exception list
+
+| # | site | the kernel | the fork point | authority |
+|---|---|---|---|---|
+| **P23** | a `"t"` whose instant is before 0001-01-01T00:00:00Z or at or after 10000-01-01T00:00:00Z (a year ≤ 0 other than a 0000-12-31 inside the range, a year ≥ 10000, `-00:01` on 9999-12-31T23:59:59) | refused, `beforeOrigin` / `pastYear9999` (a `badT` warning at B3) | chrono reads it | R10 (`Cal.Instant.wf`); design §5.3. Measured by the B2 differential, re-measured by T3 at B4 |
+
+The error class of a refused stamp (chrono's `TOO_SHORT`/`INVALID`/`OUT_OF_RANGE` and its message
+text, and the fork returning the fallback's error) is P15's named-diagnostic row, not a new entry.
+
+### Cheats (`Negative.lean`, appended)
+
+| # | label | cheat | fails because |
+|---|---|---|---|
+| **126** | B2-a | a UTC stamp written with `Z` (`use_z = true`) | `decide` proves `renderStamp` of `2026-09-08T03:00:00Z` ending in `Z` false (`renderStamp_is_fmt_timestamp`) |
+| **127** | B2-b | stamps ordered by nanosecond counts, claimed to agree with `stampBefore` on `2016-12-31T23:59:60.5Z` and `2017-01-01T00:00:00Z` | `decide` proves the agreement false (`a_leap_second_stamp_is_before_the_next_second`; carried note 1) |
+
+Each fails at its own line with `Tactic decide proved that the proposition … is false`
+(`-DmaxErrors=1000000` run under the 30 GB cap). `uniq -d` over the banners prints nothing.
+
+### Rule D9-21
+
+A `"t"` can be as long as a line. `List.length`, `take` and `takeWhile` compile through core's
+`@[csimp]` twins (`lengthTR`, `takeTR`, `takeWhileTR`). `drop`, `dropWhile` and `List.all` are tail
+recursive. `readNat` is a `foldl`, and every digit run is cut before it is read: 9 digits for a
+fraction, 4 for an unsigned year, 2 for a field. A signed year's run is read only after a run with
+more than four significant digits has been refused, so it holds at most four non-zero digits.
+`Field.parseDate` and `Field.parseClock` use `splitFirst`, which is not tail recursive, and they
+only ever see 10 and 5 characters. `renderStamp`'s `padTo` and `digitsOf` see numbers below 10,000.
+No new function recurses over a wire-sized list. **Gap 101 is untouched**: no decimal is re-emitted
+here, so it still clears at B3 or B4.
+
+### The `decide` budget (§14.0 item 4)
+
+**12 new decided witnesses**, within the budget of 20: the ten decided theorems above (counting
+`parseStamp_renderStamp_fails_past_year_9999`), and cheats 126 and 127. Beside them, three `decide`s
+on constants sit inside proofs: `Field.parseDate year0Dec31 = none`, `Cal.yearOfZ (3652058 + 366) =
+9999`, and a two-character comparison. There are no `Entry` values and no zone transitions. The
+longest literal is 31 characters (the ten-digit fraction), and instants are `Nat` literals. Each
+conjunction is decided one conjunct at a time (`⟨by decide, …⟩`). The first probe hit `maxRecDepth`
+in the elaborator on `renderStamp_is_fmt_timestamp` and `renderStamp_writes_a_leap_second_as_60`.
+The cause was the named constant `utc` inside a decided render: splitting the conjuncts alone did
+not clear it, and spelling the offset `⟨⟨false, 0⟩, _⟩` did. The budget was not raised. The small
+`by decide` proofs of `wf` on literal instants and offsets are not counted as witnesses. Probed first in a scratch copy
+under `MemoryMax=8G timeout 120`: the whole file took **0.82 s at a 678 MB peak**. The committed
+`Stamp.lean` takes **1.03 s at a 630 MB peak** under the same cap. No realistic-size input is
+evaluated. A kernel-checking trap is recorded in `rfc3339_renderStamp`'s docstring: `simp` deciding
+`x + 86400 < 86400` for a variable `x` produced `(kernel) deep recursion detected`, and the proof
+rewrites with `if_neg` instead.
+
+### Recorded disagreements between the design and the repo
+
+- **§15's `parseStamp_renderStamp`** is false without a year bound (above), and its `ns = 0` is
+  narrower than what holds.
+- **§5.3 step 1** ("`Cal.Date` validity, otherwise `badDate`") would refuse `0000-12-31`, which
+  chrono reads for a representable instant. Year 0 is ported (above).
+- **§5.3 step 5** lists `+`/`-` only. chrono's `parse_rfc3339` calls `timezone_offset` with
+  `allow_tz_minus_sign = true`, so U+2212 is accepted, and it is ported.
+- **§5.3 step 6** writes the fallback as a format string. chrono's generic parser is more tolerant
+  than the string suggests: whitespace before every numeric item and the offset, one-digit fields, a
+  signed year of any length, and any `:`/whitespace mix inside the offset. All of it is ported, and
+  the differential agrees on all of it. **This is a second reader of a date spelling (AGENTS §5.3), taken
+  deliberately for parity:** the fallback reads its year, month and day with chrono's numeric
+  rules, which are not `Field.parseDate`'s fixed widths. It shares `Cal.Date.valid` and `Cal.toDay`,
+  so there is no second calendar.
+- **§5.3 names two errors** (`badDate`, `beforeOrigin`). The other seven are named here, and
+  `pastYear9999` is new: `Cal.Instant.wf` bounds the year, and an instant past it is not "before the
+  origin".
+- **The error returned is `rfc3339`'s.** The fork's `or_else` returns the fallback's error, which
+  for a stamp with seconds names the wrong thing. Only acceptance and values are parity (P15).
+- **"At least 19 bytes"** is 19 characters here. The two agree on acceptance: the 19 leading
+  positions must be ASCII digits and separators in both.
+- **§5.3's `renderStamp` writes "±HH:MM".** A `VOffset` may carry seconds (pre-1972 zones), and
+  chrono rounds them to the nearest minute with the sign of the unrounded offset (`-00:00` for
+  −20 s). That is ported. Such an offset never reads back, which is why the round trip assumes
+  `sec % 60 = 0`.
+- **`stampBefore` and `accepted`** are not in the design. The first names the order the design's
+  witness is about. The second exists because `Except` has no `DecidableEq`.
+- **The namespace** is `Tm.LogStamp`, not the design's `Stamp` (carried note 4, above).
+
+**Label-to-number map:** cheats B2-a → **126**, B2-b → **127**; parity entry **P23**. No gaps. No
+behaviour rows: the binary does not call `Stamp` (it is linked into `libTmKernel`, unused).
+**Highest numbers after the step: gap 104, cheat 127, parity P27.**
+
+**New theorems: 22**, all in `Stamp.lean`, audited under an `APPENDED … Step B2` banner in
+`Check.lean`. §6.3's three counts agree at **2410** (2388 + 22). Axioms stay within `propext`,
+`Quot.sound` and `Classical.choice`, and there is no `sorryAx`.
+
+**For B3:** `Log.lean` calls `LogStamp.parseStamp` and never re-derives a stamp's parts. §5.5's
+`badT (e : Stamp.StampErr)` is `badT (e : LogStamp.StampErr)`. One fact is not proved here, and C2
+may want it: every accepted stamp's offset is a whole minute, so a leap second's UTC second is
+second 59. Both readers build offsets only through `offsetOf`, which multiplies whole minutes.
+
+**Re-measured** (every command capped at 30 GB, main worktree, on the tree committed):
+
+| measurement | value |
+|---|---|
+| `check.sh`, first run after the edit (`Stamp` and the static archive built) | **7/7**, 4.84 s wall, 1.98 GB peak |
+| `check.sh`, built tree | **7/7**, 2.79 / 2.77 / 3.18 s (3.06 s at W-1's repair, so within §14.0 item 4's 10%) |
+| axiom audit | **2410 theorems** (was 2388, +22) |
+| `Negative.lean` | check 4 ok; CHEATs 126 and 127 each fail at their own line with the `decide` refusal they claim |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged) |
+| `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (unchanged) |
+| FFI suite (`tm-kernel-ffi`) | **82 passed / 0 failed** (kernel 72, corpus 8, stack 2) |
+| `cli_latency.rs` | green: first verb 622.4 ms (226 files, 2,959 lines), later verb 60.7 ms |
+
+<!-- ===================================================================
+     APPENDED 2026-09-14 (stage 5, D9 track).  Step B3 (design §14.2 row B3, §5.4–§5.6): the typed event grammar in Log.lean (new),
+     and digitsOf's runtime twin in Text.lean (gap 101, closed).  Takes cheats 128–130 (the design's labels 93, 94 and 106 are among
+     its reserved-unused numbers; 127 was the highest in this checkout), gap 91 and parity entries P14, P15, P24 and P25 (the design's
+     own numbers, free here).  The D10 track numbers in parallel; whoever merges renumbers (AGENTS §6.2, §6.4).
+     =================================================================== -->
+
+## Stage 5 B3, 2026-09-14: the log has a grammar — 26 kinds, unknown tags kept, every bad line a named warning
+
+The D9 track's sixth step (design `kernel/design/stage5/stage5-D9-D10-design.md` §14.2 row B3, §5.4–§5.6).
+A new module, `TmKernel/Log.lean` (namespace `Tm.Log`, 2,523 lines), imports `Json` and `Stamp`, and
+`TmKernel.lean` imports it in the same commit, right after `Stamp` (**nineteen imports**; AGENTS §2.3
+updated). Nothing in the binary calls it yet: B4 puts `log` on the wire, and C1–C6 replay its entries.
+
+### What was built
+
+| piece | what it is |
+|---|---|
+| `Event`, `Entry`, `Num` | the **26** `define_events!` kinds (`wake` … `undo`, with the fork's field names and serde widths `U8 = Fin 256`, `U32 = Fin 2³²`) and `unknown tag rest`; `Entry` is `line`, `t`, `off`, `ev`; `Num` is `hsw` as written (`nat`, `dec`) |
+| `Kind.schema` | **the field table**: each kind's keys in declaration order with serde's type (`FTy`: `u8`, `u32`, defaulted `u32d`, `optU8`, `optU32`, `str`, `optStr`, `strs`, `flag`, `num`, `pair`). Data, not derivation (AGENTS §5.5) |
+| `readF`, `renderF` | the **one** reader and the **one** writer per field type; `readArgs`/`renderArgs` run a kind's schema through them, and `Kind.build`/`Event.split` are the two directions between a kind's fields (`Args`) and the typed event. No kind reads a field one way and writes it another |
+| `FR`, `FR.pair` | a field's verdict (`ok`, `missing k`, `bad k`); a type error anywhere beats a missing field, and among each the first in declaration order is named (`Known::field_error`) |
+| `finiteF64` | **serde_json 1.0.151's own "number out of range"**, ported step for step (`parse_integer`, `parse_long_integer`, `parse_decimal`, `parse_decimal_overflow`, `parse_exponent`, `parse_exponent_overflow`, `f64_from_parts`; `float_roundtrip` is off, `cargo tree -e features`): the significand keeps the digits that fit a `u64` (`capInt`, `capFrac`, `capOf`), the exponent's digits fold with an `i32` cut (`capExp`), and only `roundF sig * roundF 10^e ≥ 2¹⁰²⁴ − 2⁹⁷⁰` is refused (`fromPartsFinite`). `allFinite` applies it to every numeral of the line |
+| `readLine` | `Log::parse_bytes`' loop body: `none` → `invalidUtf8`; every trailing `\r` (`trimCR`); blank (`LogStamp.isRustSpace`, B2's `char::is_whitespace`); `lineTooLong` (> 65,536 characters); `lineTooDeep` (`depthOf`, a bracket scan outside strings, > 64); `jparse` → `notJson`; `numberOutOfRange`; `notAnObject`; `readT` (the first `t`: `noT`, `tNotString`, `badT`, and `duplicateT` for a second `t`); the last `ev` (`noEv`, `evNotString`); a known kind strictly (`missingField`, `badField`); any other tag `unknown` with `restOf` (every other key, sorted by serde's `String` order, `charsLe` over core's stable merge sort, the last of a repeated key kept) |
+| `renderLine` | `LogEntry::to_json`: `jemit` of `{"t":…,"ev":…,<fields>}`, fields in declaration order, `None` and `partial: false` skipped, `tags`/`dropped`/`hsw` always written; an absent `hsw` reads as `Num.zero`, `0.0`, which serde writes |
+| `Entry.canonical` | what `readLine` can return: the stamp round-trips (B2's hypotheses), `hsw` is finite, an unknown tag is not a known one with a finite, strictly sorted `rest` holding no `t`/`ev`, and the line is within both bounds |
+| §5.6 | `parseInstanceStatus`, `instDate?` (`parse_date`: 10 characters, chrono's `%Y-%m-%d` through B2's `yearOf`/`lit`/`numIn`), `stampFromKey` (`IsoWeek::parse` as `isoWeekOfKey`, split at the first `-W` by the loop `splitDashW.go`, Rust's integer readers, `Cal.isoWeeksIn` over the 400-year cycle; else a date's day) |
+| `Text.lean` | `digitsOfTR` and `@[csimp] digitsOf_eq_digitsOfTR` (gap 101, below) |
+
+### Goals: four added and discharged in this step (Goals.lean never held them)
+
+| §15 name | status |
+|---|---|
+| `the_log_reads_what_it_renders` | **proved as §15 states it**, for every entry with `e.canonical = true`. The proof is generic: `readArgs_of_agrees` and `agrees_renderArgs` over any schema, `readF_renderF` per field type, then `Kind.build_of_split`; `restOf_canonical` for `unknown` (`List.mergeSort_of_pairwise`); B2's `parseStamp_renderStamp` for `t`; `jparse_jemit` for the bytes |
+| `a_known_event_is_never_read_as_unknown` | proved as stated |
+| `an_unknown_tag_is_never_a_warning` | proved as stated. `isObjectWithStampAndTag` means the line parses to an object whose `readT` succeeds and whose last `ev` is a string. `jparse_not_blank`, `trimCR_prefix` and `depthOf_prefix` carry the bounds from `l` to the trimmed line |
+| `lineTooLong_bounds_every_string` | proved as stated. `jparser_strs` (a six-part induction on the fuel beside `jparser_consumes`, with `jscan_strlen` and `junescape_length`) shows every string `jparse` returns is shorter than its input; `readArgs_strs`, `restOf_sub` and `jstrsO_sub` carry every string of the event into the parsed object. `Event.strings` is written out per constructor, so the statement does not lean on the table |
+
+In-step beside them: `an_out_of_range_numeral_warns_even_in_an_unknown_event` (the line meets every
+other hypothesis of the unknown-tag law and is still a warning), `every_line_warning_is_reachable`
+(all fourteen `LWarn` constructors; `lineTooLong` by a 65,537-character line whose length is rewritten,
+never evaluated), `finiteF64_reads_only_the_sign_past_an_i32_exponent` (the cost bound), eleven
+per-line theorems over the fork's `malformed.jsonl` and `the_malformed_corpus_reads_as_the_fork_point_did`
+collecting them, `finiteF64_is_serdes_band`, `the_small_grammars_read_as_the_fork_does`, and the R10
+refusals `readF_refuses_a_u8_past_255`, `readF_refuses_a_u32_past_its_width`,
+`readF_refuses_a_decimal_at_an_integer_field` (with `readF_reads_hsw_as_written` beside it, §5.8),
+`readLine_refuses_a_line_past_the_bound`, `readLine_refuses_a_line_nested_past_the_bound` and
+`readLine_refuses_a_line_that_is_not_utf8`. **Refuted: none. Burn-down stays 13.**
+
+### The serde probe, before the grammar froze (evidence for this commit; not committed)
+
+A throwaway crate under `/tmp/claude-1000/d9b3/rs` called the fork's own `Log::parse_bytes` on each
+line and printed `LogEntry::to_json` or the warning text; a scratch Lean `main` printed `readLine`'s
+verdict and `renderLine`. Release build, `MemoryMax=16G`.
+
+| input | lines | result |
+|---|---|---|
+| the seven corpus logs (`kernel/corpus/logs/*.jsonl`, `malformed.jsonl` included, and the three plans' `.tm/log.jsonl`) | 520 | **every verdict agrees**; all **509 entries render byte-identically** to serde; the 7 warnings of `malformed.jsonl` are the same classes |
+| a crafted set: §5.4's numeric rows at `u32`, `u8` and `Option` fields (`-0`, `3.0`, `1e2`, `-1`, `null`, `"5"`, 2³², 2⁶⁴), `hsw` spellings, repeated known keys in both orders, repeated `t`, repeated `ev` in both orders, repeated and non-ASCII unknown keys, 28 numerals around serde's float band, nesting of 64–128 levels, two-defect lines, `\r\r`, NBSP, a BOM, bad `window`/`tags`/`partial`/`dropped`/`id`, an escaped `ev` key | 104 | 95 lines agree in verdict and class; the other 9 are the residue below. Of the 39 entries both read, 19 render byte-identically and 20 differ only in numerals written non-canonically by hand (P29's class) |
+
+What the probe fixed in the grammar: serde refuses a repeated `t` (`duplicate field`, hence
+`duplicateT`); a mistyped field is named before a missing one; `trim_end_matches` removes every `\r`;
+and the float band is serde's, not IEEE's: `1.7976931348623157e308` is finite and the 309-digit integer
+spelling of the same `f64` is refused (a `u64` significand, then two rounded doubles multiplied). All 28
+band values agree with the port, including `0e2147483648` (finite), `1e2147483647` (refused) and
+`0.0…01e700` (finite).
+
+### Additions to the stage-5 parity exception list
+
+| # | site | the kernel | the fork point | authority |
+|---|---|---|---|---|
+| **P14** | a line over 65,536 characters, or nested deeper than 64 levels | `lineTooLong` / `lineTooDeep` | parsed, up to serde's recursion limit: 127 levels read, 128 are refused (`recursion limit exceeded`) | R10; `jparse` recurses per nesting level. Measured: probe lines of 65, 66 and 127 levels (entries to serde); 128 and 129 levels are warnings to both, of different classes |
+| **P15** | a line warning's text, **and its class when a line has two defects** | named constructors, decided in §5.5's order (numerals before `t`, the whole line parsed first) | serde's message, for the first defect in stream order | AGENTS §5.7. Measured: `{"t":"bad","x":1e400}` (`numberOutOfRange` / `badT`), `[1,2,` (`notJson` / `notAnObject`: serde refuses a sequence before reading it), `{"t":…,"ev":"wake"} x` (`notJson` / `missingField`), `{"t":"bad","ev":"wake"` (`notJson` / `badT`), and the two deepest lines (`lineTooDeep` / recursion limit). Entry or warning never differs. C4 adds the replay warnings |
+| **P24** | numeric and duplicate-key edges at a known field | serde's verdict | serde | design §5.4. **Measured residue: none** on the crafted set (every row above, repeated keys in both orders, repeated `t`). T1 re-measures at B4 |
+| **P25** | a numeral in serde's float band, anywhere in a line | serde's algorithm, ported | serde_json without `float_roundtrip` | design §5.4. **Measured residue: none** on 28 band values. The one unported edge is `parse_long_integer`'s `i32` counter of dropped integer digits, which overflows only past 2³¹ digits, beyond the line bound |
+
+**P23's residue, extended by §5.6:** `instDate?` refuses a year-0 or negative-year date that
+`parse_date` reads (`0000-02-29`, `-001-01-01`), and `stampFromKey` gives no stamp for a negative-year
+date key (`-001-01-01` is `D1` in the fork). Everything else in a 32-key differential against
+`stamp_from_key`, `parse_date` and `parse_instance_status` agrees, including `+202-W05`, `-999-W05`,
+`2026-W+5` (all weeks to both), `2026-W53` and `0000-W52`, ` 2026-9-07` (day 739,865 to both), and
+`2026-9-07 ` (refused by both).
+
+### Gap 91 (the design's label) — `arrive.window` strings and `idle.attributed` are not validated
+
+(1) *What is not done*: `Event.arrive`'s `window` is any two strings and `Event.idle`'s `attributed` is
+any string; the reader checks only that they are strings, as `log.rs` does. (2) *Why*: parity. The fork
+validates neither, so a check would turn today's entries into warnings. (3) *Cost*: a hand-written
+`"window":["x","y"]` is an entry, and whatever reads `window` or `attributed` (Rust's
+`arrivals_from_replay` today, the replay's leak ledger at C4) meets strings it must refuse or ignore
+itself. (4) *When it clears*: only by an owner decision to validate the log; nothing in stage 5 needs it.
+
+### Gap 101 — closed
+
+`digitsOfTR.go` is a loop with the digits accumulated least significant last (`digitsOfTR_go`), and
+`@[csimp] digitsOf_eq_digitsOfTR` is declared in `Text.lean` right after `digitsOf`, before every caller
+is compiled. The generated C confirms it: `Text.c`'s `digitsOfTR_go` has no self-call and one
+`goto _start`, and no module's C calls `digitsAux` any more (`Json.c` calls `digitsOfTR` 5 times,
+`Line.c` 9, `Log.c` 2). The kernel still reduces `digitsAux`, so no decided witness changed. No wire path
+emits a decimal yet; B4's `render` is the first, and T0 there runs it at the line bound.
+
+### Cheats (`Negative.lean`, appended)
+
+| # | label | cheat | fails because |
+|---|---|---|---|
+| **128** | B3-a (design 93) | a reader that refuses unknown tags, claimed to keep `an_unknown_tag_is_never_a_warning` on the fixture's `mood` line | after `malformed_line_9_is_an_unknown_mood` is rewritten in, `decide` proves the claim false |
+| **129** | B3-b (design 94) | a reader that files a bad payload under `unknown`, claimed to keep `a_known_event_is_never_read_as_unknown` on line 5's value | `decide` proves the claim false (on the value, never the 96 characters) |
+| **130** | B3-c (design 106) | a reader that checks `finiteF64` only at `hsw`, claimed to warn on `{"t":…,"ev":"mood","x":1e400}` | `decide` proves the claim false (`an_out_of_range_numeral_warns_even_in_an_unknown_event`) |
+
+Each fails at its own line with `Tactic decide proved that the proposition … is false`
+(`-DmaxErrors=1000000`, 30 GB cap). None evaluates `restOf`: core's merge sort is well-founded and
+does not reduce, so every decided witness over an unknown event reaches it through
+`the_log_reads_what_it_renders` or through a constructor match. `uniq -d` over the banners prints
+nothing.
+
+### Rule D9-21
+
+Every function added here that walks a line-sized list is a `foldl` or a loop, **checked in the
+generated `Log.c`** (each has `goto _start` and no self-call): the `foldl`s in `lastVal`, `allStrs`
+(`strStep`), `depthOf` (`scanStep`), `capOf` (both), `finiteF64` (the exponent), `restOf`
+(`dedupStep`) and `digitsValue`; the tail-recursive `charsLe`, `charsLt`, `splitDashW.go`, `allFiniteL`
+and `allFiniteO` (the list call is the tail of `&&`); and core's `find?` (`readT`, `kindOf`),
+`countP.go`, `all`, `dropWhile`, `filterTR`, `mapTR`, `lengthTR`, `reverse` and `mergeSortTR₂`.
+`allFinite` recurses per nesting level (bounded at 64 by `lineTooDeep`). `readArgs` and `renderArgs`
+recurse over a schema of at most 8 keys. `jstrs`, `jstrsL`, `jstrsO`, `Agrees` and `digitsValue`'s
+laws are specifications no wire path calls. **No T0 run:** no wire path reaches `readLine` or
+`renderLine` until B4, whose T1/T0 runs them end to end on a 2 MiB thread.
+
+### The `decide` budget (§14.0 item 4)
+
+**18 new decided witness theorems**, within the budget of 20: the eleven per-line theorems,
+`an_out_of_range_numeral_warns_even_in_an_unknown_event`, `every_line_warning_is_reachable`,
+`finiteF64_is_serdes_band`, `the_small_grammars_read_as_the_fork_does`, and cheats 128–130. Each
+conjunction is decided conjunct by conjunct (38 decided literals in all). **3 `Entry` values**, no zone
+transitions. Beside them, `cases k <;> decide` over the 26 kinds' constant tables (`kindOf_tag`,
+`Kind.keys_nodup`, `Kind.no_t_key`, `Kind.no_ev_key`) and single-character checks sit inside proofs;
+they evaluate no line. The longest parsed literal is 69 characters (line 11). **Line 5 is 96
+characters**, over the 90-character limit, and it is not parsed: `malformedLine5 = jemit
+malformedValue5` is decided (an emission compared with the literal), `jparse_jemit` is the rewrite,
+and only the reading of the value is decided. The good lines 1, 9 and 11 are instances of
+`the_log_reads_what_it_renders`: on them `renderLine` and `Entry.canonical` are decided, and on line 9
+also the unknown-tag law's hypotheses, on the line's value after `jparse_jemit`. Two
+budgets were raised, neither a heartbeat or memory budget: `maxRecDepth 8000` for the witness section
+(Json.lean has 4000 file-wide, Negative.lean 10000), and `exponentiation.threshold 1100` for
+`finiteF64_is_serdes_band` alone, whose `10 ^ 292` the elaborator otherwise refuses to evaluate. Probed
+first in a scratch copy under `MemoryMax=8G timeout 120`: the whole of `Log.lean` elaborates in
+**4.08 s at a 1.52 GB peak**. No realistic-size input is evaluated.
+
+### Recorded disagreements between the design and the repo
+
+- **26 known tags, not 25** (§5.4, inventory §1, and this step's brief). `define_events!` has 26
+  (`grep -c '=> "'`); §5.4's own `Event` sketch lists 26 known constructors.
+- **§5.5 step 2** trims one trailing `\r`. The fork's `trim_end_matches('\r')` trims every one (probe
+  line 85, `\r\r`).
+- **§5.5's `LWarn`** has no constructor for a `t` that is not a string or for a repeated `t`. `badT`
+  takes a `StampErr`, so the first is `tNotString`; serde refuses a repeated `t` (`duplicate field`,
+  probe lines 29 and 98), so the second is `duplicateT`. The first `t` decides `badT`/`tNotString`,
+  as serde's stream does.
+- **§5.4's table** defaults an absent `hsw` to `nat 0`. serde's default is `0.0`, which it writes as
+  `0.0`, so the default is `Num.zero = dec 0.0`, and a line without `hsw` renders the fork's bytes.
+- **§5.4's `finiteF64` rule** (`k ≤ 308` finite, `k ≥ 310` not, `k = 309` exact against
+  `2¹⁰²⁴ − 2⁹⁷⁰`) is IEEE's reading of the decimal, and serde's differs inside the band (the 309-digit
+  spelling of `f64::MAX`). serde's algorithm is ported instead, and the design's
+  `finiteF64_reads_only_the_digit_counts_beyond_seven_exponent_digits` is restated for it as
+  `finiteF64_reads_only_the_sign_past_an_i32_exponent` (serde's cut is `i32::MAX`, not seven digits).
+  P25 records zero residue rather than the band.
+- **§5.4's check order** is kept, and serde's stream order differs on two-defect lines (P15 above).
+- **§5.5's corpus theorems over literals of at most 90 characters**: line 5 is 96 (above).
+- **§5.5's "`White_Space` table reached through `simp only [isWhite]`"**: B2's `isRustSpace` is a
+  comparison chain, not a table, and `all` evaluates it on one character of a non-blank witness (the
+  blank line has none), so no rewrite is needed.
+- **§14.0 item 4's "instants are `Nat` literals, never parsed text"**: §5.5 asks for per-line theorems
+  over the fixture's bytes, so the warning lines parse their stamps. Every `Entry` value is built from
+  `Nat` literals.
+- **§5.6's `stampFromKey` "through `Line.lean`'s existing week reader"**: there is none for a `YYYY-Www`
+  key (`Field.parseStamp` reads the `W37` of a `demoted:` field). `isoWeekOfKey` is the first and only
+  reader of that spelling in the kernel. The finding §5.6 asked for: `IsoWeek::parse` also accepts
+  `+202-W05`, `-999-W05` and `2026-W+5` (Rust's integer readers); they are ported and the differential
+  agrees.
+- **§5.6's `instDate?` "read through `Field.parseDate`"**: `parse_date` is chrono's generic parser and
+  reads ` 2026-9-07`, which `Field.parseDate` refuses. It reads through B2's chrono readers instead,
+  so no third date reader exists.
+- **The namespace** `Stamp` in §5.5 and §15 is B2's `LogStamp`.
+- **`maxLineChars` counts characters**, as §5.5 writes it; the host's bytes may be more. B4's wire
+  bound decides what the host sends.
+
+### Notes for B4 (not owed by B3)
+
+- **serde_json 1.0.151 writes a large or tiny `f64` with an explicit `+` in the exponent**
+  (`1e+308`, `1.8446744073709552e+19`; probe lines 19, 20), and `JDec` keeps no `+` (A2), so a serde
+  line with such an `hsw` re-renders as `1e308`. T2's proptest over arbitrary `f64` will meet it; the
+  fork's own writer never does (`hours_since_wake` rounds to 0.01). It is P20's residue or a `JDec`
+  widening.
+- The crafted probe set (`/tmp/claude-1000/d9b3/probe.jsonl`, generated by `gen.py` beside it) is a
+  starting set for T1's crafted lines.
+- Carried: gap 102 still gates W3; gap 103 clears at B4; B2's unproved note for C2 (an accepted stamp's
+  offset is a whole minute) is untouched.
+
+**Label-to-number map:** cheats B3-a → **128**, B3-b → **129**, B3-c → **130**; gap **91**; parity
+**P14**, **P15**, **P24**, **P25**. **Behaviour rows:** the design's B3 row (`lineTooLong` /
+`lineTooDeep` warnings, P14) is recorded for S, where the binary starts calling `readLine`; at B3 the
+binary's behaviour is unchanged (`Log` is linked into `libTmKernel`, unused). **Highest numbers after
+the step: gap 104, cheat 130, parity P27.**
+
+**New theorems: 107** (105 in `Log.lean`, 2 in `Text.lean`), audited under an `APPENDED … Step B3`
+banner in `Check.lean`. §6.3's three counts agree at **2517** (2410 + 107). Axioms stay within
+`propext`, `Quot.sound` and `Classical.choice`, and there is no `sorryAx`. `Goals.lean`'s header no
+longer says `PlanCore.log` is `List String` (inventory §7 item 7).
+
+**Re-measured** (every command capped at 30 GB, main worktree, on the tree committed):
+
+| measurement | value |
+|---|---|
+| `lake build TmKernel:static` after `Text.lean` changed (every module rebuilt) | 143.7 s wall |
+| `check.sh`, first run after the last edit | **7/7**, 8.16 s wall |
+| `check.sh`, built tree | **7/7**, 2.80 / 2.78 / 2.78 s (2.79 / 2.77 / 3.18 s at B2, so within §14.0 item 4's 10%) |
+| axiom audit | **2517 theorems** (was 2410, +107) |
+| `Negative.lean` | check 4 ok; CHEATs 128, 129 and 130 each fail at their own line with the `decide` refusal they claim |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged) |
+| `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (unchanged) |
+| FFI suite (`tm-kernel-ffi`) | **82 passed / 0 failed** (kernel 72, corpus 8, stack 2) |
+| `cli_latency.rs` | green: first verb 642.3 ms (226 files, 2,959 lines), later verb 60.8 ms |
+
+<!-- ===================================================================
+     APPENDED 2026-09-14 (stage 5, D9 track).  Step B4 (design §14.2 row B4, §6.1, §10): the request's `tz` and `log` sections in
+     Boundary.lean, the zone probe in tm/src/cli/tz_table.rs, T0–T4, and serde's string escapes in Json.lean.  Takes cheats 131–132
+     (130 was the highest in this checkout; the D10 branch holds 126–127 and gaps 105–106, so neither range is touched), gaps 89 and 90
+     (the design's own labels, free here) and closes gap 103.  Parity: P20 (the design's number) and re-measurements of P14, P15, P23,
+     P24 and P25.  The D10 track numbers in parallel; whoever merges renumbers (AGENTS §6.2, §6.4).
+     =================================================================== -->
+
+## Stage 5 B4, 2026-09-14: the log op reads lines, and the zone is a table Rust probes — T1 agrees with the fork on every corpus line
+
+The D9 track's seventh step (design `kernel/design/stage5/stage5-D9-D10-design.md` §14.2 row B4, §6.1,
+§10.1–§10.4). No new module: `Boundary.lean` now imports `Log` (still nineteen imports in
+`TmKernel.lean`). Nothing in the binary sends a `log` section yet; W3's `kernel_log.rs` is the first
+caller. **The D10 track's L7 can build on `tm/src/cli/tz_table.rs` from this commit.**
+
+### What was built
+
+| piece | what it is |
+|---|---|
+| `readTz` (`Boundary.lean`) | the `tz` section: `key` (at most 128 characters); `base` and each transition's offset through `readTzOffset` (exactly `±HH:MM:SS`, hours at most 23, `+` at zero, so UTC has one spelling); each transition's instant through `readTzInstant` (a stamp B2's `LogStamp.parseStamp` reads, at UTC, in whole seconds); `then` measured (at most 4,096) before an element is read (`transStep`, a `foldl`); the table built only by B1's `Cal.mkTz?`. Refusals by name (`TzWhy`): `shape`, `key`, `base`, `then`, `transition`, `instant`, `offset`, `keyTooLong`, `tooManyTransitions`, `unsorted` |
+| `readLogReq`, `LogReq`, `mkLogReq?` | the `log` section. `ckpt`, `reseal` and `sealed` must be `null` or absent (W1–W3 give them meaning); `from` is a number; `lines` holds strings or `null` (not UTF-8), and is measured (at most 32,768) before an element is read (`lineStep`); `terminated` is a boolean; `want` is absent or `{facts: false or absent, headersFrom: null or n, render: [n…] (at most 4,096)}`. `mkLogReq?` is the one constructor of a `VLogReq` (R10): `LogReq.fault` names the first bound broken, which is `from` of 0 or at least 2⁴⁰, `tooManyLines`, `headersFrom` of at least 2⁴⁰, more than 4,096 render lines, or `renderNotInTail {line}` |
+| `logAnswer` | `{"lines": from + n − 1, "warnings": [{"line","w", "key" or "why"}…], "headers": [[line, tag, id or null]…], "render": [[line, rendering or null, display or null]…]}`. `logVerdicts` reads line `from + k` with `Log.readLine` (`readStep`, a `foldl`). A warning carries `key` for `missingField` and `badField`, and `why` for `notJson` (`jerrText`) and `badT` (`stampErrName`). A header is `Event.tag` and `Event.primaryId`. A rendering is `Log.renderLine` and `LogStamp.displayStamp`, with `null`s for a blank or warning line; `render` looks lines up in an array |
+| `readLogSection`, `withLog`, `runWithLog` | the two sections, then `run`; `respond` calls `runWithLog`. A request without `tz` and `log` is `run`; `log` without `tz` is `tzAbsent`; a malformed `tz` is refused with or without `log`; the answer goes after `report` |
+| `LogRefusal.json` | `{"err":{"log":"tzAbsent"}}`, `{"err":{"log":{"badTz":<why>}}}`, `{"err":{"log":"tooManyLines"}}`, `{"err":{"log":{"badLogReq":<field>}}}`, `{"err":{"log":{"renderNotInTail":{"line":n}}}}` |
+| `escOf` (`Json.lean`) | **serde_json's string escapes**: backspace, tab and form feed are now written `\b`, `\t`, `\f`, as serde writes them (they were quads, Lean's printer's classes). T2 found it (below) |
+| `tm/src/cli/tz_table.rs` (new) | **the one encoder of zone tables**. `probe(tz)` samples `offset_from_utc_datetime(..).fix().local_minus_utc()` at every UTC hour of `[1900-01-01, 2200-01-01]`, bisects each change to the second, and looks again inside the same hour from there, so A → B → C in one hour keeps both changes. `ZoneTable::to_wire` writes §10.1's shape with the key `<zone>`, `chrono_tz::IANA_TZDB_VERSION` and `1900-2200` joined by vertical bars (`America/Chicago` then `2025b` then `1900-2200`). `wire_for(cache_dir, tz)` keeps the wire value in `.tm/cache/replay/tz.json` (D13): passed on as read when its key matches, else probed and written (temporary name, then rename; a failed write changes nothing). `#[allow(dead_code)]` in the binary until W3 |
+| `kernel_bridge.rs` | `log_refusal`: every B4 log refusal is a host defect (§10.3), so it is a loud `kernelFault` whose detail names it (`logRefusal`) and its `why`, `field` or `line` |
+| `tm/examples/tzprobe.rs` (new), `logbench` (c) and (e) | (c) runs `tzprobe` as a child (the FFI crate has no chrono-tz); (e) times the `log` op. (a) and (d) now send the line array under `pad`: A3 sent it under `log`, which since B4 is the log op's section (an array there is `tzAbsent`); the parse is the same |
+
+### The laws (all in-step; `Goals.lean` untouched, burn-down **13**)
+
+**31 new theorems**, in `Boundary.lean`'s appended section "Stage 5 D9 B4":
+
+- **The op sits beside the plan, never inside it.** `run_ok_shape` (every `ok` that `run` returns is
+  `jone "ok" (.obj kvs)`, read through every path of `run`, with `runPlan_ok_shape`),
+  `runWithLog_without_a_log_is_run`, `a_request_without_tz_or_log_is_read_as_before`,
+  `runWithLog_refuses_a_log_section_first` and `runWithLog_puts_the_log_after_the_report` (the answer is
+  `run`'s `ok` object with `log` appended, and is never dropped).
+- **The op reads the lines it was sent, at their numbers.** `readStep_fold`, `logVerdicts_eq` (line
+  `from + k` is `Log.readLine (from + k)` of the `k`-th element), `lineStep_error`, `lineStep_fold`,
+  `readLogReq_reads_the_lines_as_sent`, `LogReq.wf_render_in_tail` and
+  `logAnswer_renders_the_line_at_its_number`.
+- **R10, both directions.** `mkLogReq?_ok_iff`, `mkLogReq?_keeps_the_request`, `mkLogReq?_error_is_the_fault`,
+  `mkLogReq?_refuses_a_from_of_zero_or_past_2_40`, `mkLogReq?_refuses_too_many_lines`,
+  `mkLogReq?_refuses_headersFrom_past_2_40`, `mkLogReq?_refuses_too_many_render_lines`,
+  `mkLogReq?_refuses_a_render_line_outside_the_tail`, `LogReq.wf_bounds` (an accepted request is inside
+  every bound), `readLogReq_refuses_more_lines_than_the_bound` (the decoder measures before it reads),
+  `readTz_refuses_a_long_key` and `readTz_refuses_too_many_transitions`.
+- **Witnesses** (decided). `readTzOffset_reads_the_table_spelling` reads west, east and a seconds offset
+  (`-00:44:30`), and refuses `-00:00:00`, `+24:00:00`, a minute of 60, no seconds and a trailing sign.
+  `readTzInstant_reads_utc_whole_seconds`. `readTz_reads_the_witness_table` reads B1's `Cal.chicago2026`.
+  `readTz_refuses_by_name` covers eight defects. `the_log_op_reads_a_four_line_tail` answers a `drop`, a
+  blank line, `null` and `{"ev":7}` from line 7 with the whole `ok` response, and
+  `the_log_section_refuses_by_name` covers five refusals.
+- **Extended in place.** `the_response_shapes_emit_in_build_order` gains five conjuncts: three `log`
+  refusals, a line warning, and a `log` answer after `report`, all emitted by the builders `call` runs.
+- **Restated in `Json.lean`**, because the escapes changed; each name still says what its statement says.
+  `demo_jescape_bytes` now writes the tab as `\t`. `the_emitted_escape_classes` has `\t`, `\b` and `\f`
+  short, and U+000B as a quad. `the_accepted_escapes_exceed_the_emitted_ones` is **restated on `/`**: it
+  was stated on a tab, which the kernel now writes as the host does, so the tab no longer witnesses the
+  asymmetry, and `\/` does. `junescape_escOf` and `jscan_escOf` gained the three branches. **Refuted: none.**
+
+§6.3's three counts agree at **2548** (2517 + 31). Axioms stay within `propext`, `Quot.sound` and
+`Classical.choice`, and there is no `sorryAx`.
+
+### T0–T4 (the row's acceptance)
+
+| test | where | result |
+|---|---|---|
+| **T0**, the `log` op at the line bound on a 2 MiB thread | `kernel/tm-kernel-ffi/tests/stack.rs`, `the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread` | green. The lines: a 65,000-character string; an array of 21,000 numerals; an unknown event of 5,000 keys, whose rendering is a 5,002-key object, so `jemitOTail_eq_jemitOTailAcc` runs at scale (the A1 test says `call` could not reach it before); 64 levels; an `hsw` of 65,000 fraction digits; `lineTooLong`; and `lineTooDeep`. Then 32,768 lines with a header each and 4,096 rendered, and 32,769 lines refused `tooManyLines`. **Gap 101's note is discharged**: B3 closed the gap with the `@[csimp]` twin, and this is the run at the bound it asked for |
+| **T1** `kernel_reads_the_corpus_logs_as_the_fork_point_did` | `tm/tests/kernel_log_grammar.rs` | green. **636 lines**: the seven corpus logs (the four `kernel/corpus/logs/*.jsonl`, `malformed.jsonl` among them, and the three plans' `.tm/log.jsonl`) and the crafted set. The crafted set is B3's 103 probe lines ported to Rust (§5.4's numeric rows, `hsw` spellings, repeated keys, 28 numerals in serde's float band, nesting, two-defect lines, bad payloads), plus escapes and non-ASCII text, CRLF, a 65,537-character line, and two segments that are not UTF-8. Per line, the fork is `Log::parse_bytes` of that segment, and the whole file is read too. **553 entries**: each, read back by the fork, equals the fork's entry, offset included, with the fork's tag, `primary_id` and `%Y-%m-%d %H:%M`. **533 render byte-identically**, every corpus entry among them. The other 20 are crafted lines whose numerals were written by hand (`-3`, `1.50`, `1E+05`, …), and they equal serde's once every numeral is read as `f64` (P29's class). **66 warnings** of the fork's class (serde's message read as a class), **9 blank lines**, and **8 residue lines**, each asserted to still differ (P14 and P15 below) |
+| **T2** `kernel_reads_what_the_rust_writer_writes` | same file | green. Proptest, 256 cases per run: all 26 known kinds with arbitrary Unicode strings (control characters included), any `u8`, `u32`, `Option` or list, `hsw` as `hours_since_wake` of two instants, and instants in years 1000–8999 with any nanosecond and a whole-minute offset. `LogEntry::to_json`, then the kernel's rendering: **byte-identical**. **Its first run failed** on its fifteenth case, shrinking to `Done` with an id of one backspace: the kernel wrote `\u0008` where serde writes `\b` (and quads for tab and form feed). `escOf` now writes serde's escapes (above), and the seed is kept in `tm/tests/kernel_log_grammar.proptest-regressions` |
+| **T3** `kernel_reads_every_timestamp_spelling_chrono_reads` | same file | green. **4,601 spellings**: B2's edge set (85 spellings, including the `:60` forms, U+2212, NBSP, U+200A and U+3000), every `"t"` of the seven logs, and 4,000 seeded mutations of five stamps. **822 are read** by both to the same instant and offset, and rendered as `fmt_timestamp` and the `tm log` column do (**42 leap seconds**). **3,765 are refused** by both (`badT`). **14** are read by chrono and refused by the kernel, and every one is an instant outside `[0001-01-01, 10000-01-01)`: P23's residue, re-measured |
+| **T4 (a)**, 10,000 seeded instants over [1970, 2100) in Chicago, Berlin, Kolkata, Chatham and Lord Howe | `tm/tests/kernel_tz_table.rs`, `the_table_is_chronos_offset_at_random_instants` | green; each table is well formed and accepted by the kernel (a `log` section with no lines answers `ok`) |
+| **T4 (b)**, every transition of the five at −1 s, 0 and +1 s | `the_table_is_chronos_offset_at_every_transition` | green |
+| **T4 (c)**, `#[ignore]`, the five at every minute of [1900, 2200) | `the_table_is_chronos_offset_at_every_minute` | **run once: all 157,785,120 minutes agree in each of the five zones** (788,925,600 lookups) |
+| **T4 (d)**, `#[ignore]`, every chrono-tz zone | `every_zone_table_is_chronos_offset_at_its_transitions` | **run once: 597 zones and 64,864 transitions; the 55,340 in [1970, 2100) agree at ±1 s; the kernel accepts every table; the largest has 364 transitions (Europe/Belfast)**, so the 4,096 bound has room. It also checks **B1's scan assumption** for `Cal.localHits` (local spans in order, no three overlapping), and **it holds in all 597 zones** |
+
+Beside them:
+
+- `the_wire_table_is_spelled_as_the_kernel_reads_it`: Chicago's base is `-06:00:00` and its first
+  transition is `["1918-03-31T08:00:00Z", "-05:00:00"]`.
+- `the_cache_keeps_the_wire_value_under_its_key`: it writes; it reads on a matching key; it re-probes on
+  another key or an unparsable file; it touches no disk without a directory.
+- In `kernel_bridge`: `every_log_refusal_is_a_loud_fault_naming_its_field`, and
+  `the_kernel_names_its_log_refusals` (five refusals from the real kernel).
+- In the FFI suite: `the_log_op_answers_by_line` (the Lean witness's bytes) and
+  `the_log_section_refuses_by_name` (ten requests). These put the op under `check.sh` check 5.
+
+### Measured: the probe, and gap 103 closed
+
+One run of the committed harness, under `MemoryMax=16G` and tm's dev profile (`opt-level = 1`):
+
+| figure | design (ESTIMATE, §6.1) | measured |
+|---|---|---|
+| (c) the hourly probe of America/Chicago | 0.1–0.3 s | **best 60.5 ms, median 60.6 ms** (7 probes; an earlier run gave 60.4 and 60.9), `VmHWM` 4.2 MiB |
+| transitions for Chicago | ≈ 500 | **358**, from 1918-03-31T08:00:00Z to **2099-11-01T07:00:00Z** |
+| the table on the wire | ≈ 20 KB | **13,315 B** |
+| T4 (c) and (d) together, 13 threads | — | 4.36 s wall, 50.5 s CPU |
+
+**chrono-tz 0.10.4's spans end in 2099.** After 2099-11-01 it gives Chicago standard time for ever, so
+the table does too, since it is probed from chrono. Every instant tm writes lies before then.
+
+### Gap 103 — closed
+
+A3 (c) is measured: `logbench` prints the probe's figure through `tm/examples/tzprobe.rs`, above.
+
+### Gap 89 (the design's label) — the log's line format has two writers until S2
+
+(1) *What is not done*: Rust's `LogEntry::to_json` writes every line of `.tm/log.jsonl`, and the kernel's
+`Log.renderLine` renders the same lines for `tm log`. That is two definitions of one format. (2) *Why not
+now*: D16 moves writing into the kernel in step S2, right after the switch S. Until then Rust writes, and
+T2 holds the two together byte for byte. (3) *Cost*: a change to `define_events!` (a field, a
+`skip_serializing_if`, an escape) that the kernel's schema does not follow fails T2, not the build. T2 is
+property-based, so a rare difference can pass one run and fail a later one; the escape defect above was
+found on the fifteenth case of a run. (4) *When it clears*: at S2, which deletes `LogEntry::to_json` with
+its last caller.
+
+### Gap 90 (the design's label) — two zone evaluators until stage 6
+
+(1) *What is not done*: `ctx.today`, `now` and every display conversion stay in chrono-tz, and day
+attribution will read the probed table in the kernel (C2). (2) *Why not now*: stage 6 moves `now` into
+the kernel (design §6.4). (3) *Cost*: the two could disagree where the hourly probe misses a change and
+change back inside one hour (the stated assumption, K10), or under a tzdb the key does not name. T4
+(a)–(d) measured **no disagreement**: none in the five zones at any minute, and none in all 597 zones at
+any transition. (4) *When it clears*: when stage 6 computes `today` from the table.
+
+### Additions to the stage-5 parity exception list
+
+| # | site | the kernel | the fork point | authority |
+|---|---|---|---|---|
+| **P20** | `tm log --json` bytes for lines the Rust writer wrote | `Log.renderLine`, byte-identical by T2 | serde's re-serialisation | design §11.4, §17. **Measured residue: none** on lines the writer writes, once `escOf` took serde's escapes. Two things fall outside the writer's domain, so they are not residue: an `f64` serde writes with a positive exponent (`1e+308`, `1.8446744073709552e+19`; `JDec` keeps no `+`), which `hours_since_wake` never produces (its values stay below 10⁸ hours), and numerals written by hand (P29) |
+
+**Re-measured by T1 and T3** (entries B2 and B3 recorded):
+
+- **P14** (entry against warning): three lines nested 65, 66 and 127 deep are entries to serde and
+  `lineTooDeep` to the kernel, and a 65,537-character line is an entry to serde and `lineTooLong` to the
+  kernel. Lines of 128 and 129 levels are warnings to both, and serde's `recursion limit exceeded` reads
+  as the same class.
+- **P15** (class only): four lines, as B3 measured. `{"t":"bad","x":1e400}` is `numberOutOfRange` against
+  `badT`; `[1,2,` is `notJson` against `notAnObject`; `{"t":"bad","ev":"wake"` is `notJson` against `badT`;
+  and `{…,"ev":"wake"} x` is `notJson` against `missingField slept_min`. B3's fifth, the two deepest lines,
+  is the same class under T1's reading of serde's message.
+- **P23**: 14 spellings, all outside `Cal.Instant`'s range. **P24**: no residue. **P25**: no residue on
+  the 28 band values.
+
+### Behaviour rows
+
+| row | before | after |
+|---|---|---|
+| a request carrying a top-level `tz` or `log` key | the key was ignored | the section is read. A malformed one is refused by name (`{"err":{"log":…}}`), `log` without `tz` is `tzAbsent`, and a good `log` is answered after `report`. The binary sends neither key; `logbench`, the one sender of a `log` key, now sends `pad` |
+| a string in any response holding U+0008, U+0009 or U+000C | written `\u0008`, `\u0009`, `\u000c` | written `\b`, `\t`, `\f`, as serde writes them. Every host reads both, so no value changes. The FFI test `the_request_reads_every_escape_a_host_writes` pins the new bytes |
+
+### Cheats (`Negative.lean`, appended)
+
+| # | label | cheat | fails because |
+|---|---|---|---|
+| **131** | B4-a | a zone table of two transitions out of order, wrapped in a `Cal.Tz` by asserting `rfl` | `Application type mismatch`: `rfl` cannot prove `TzTable.wf … = true`, because `Cal.Tz` is a subtype (`readTz_refuses_by_name`) |
+| **132** | B4-b | a request whose tail is line 2 alone, asking to render line 1, claimed to be accepted | `decide` proves `(mkLogReq? …).toBool = true` false (`mkLogReq?_refuses_a_render_line_outside_the_tail`) |
+
+Each fails at its own line (`-DmaxErrors=1000000`, 30 GB cap). `uniq -d` over the banners prints nothing.
+
+### Rule D9-21
+
+Every new function over a list the wire can make large is a `foldl` or core's tail-recursive twin,
+**checked in the generated `Boundary.c`** (`goto _start`, no self-call): `transStep`'s fold over `then`,
+`lineStep`'s over `lines`, `renderStep`'s over `want.render`, and `readStep`'s in `logVerdicts`. Each list
+is measured with `lengthTR` before it is walked. `logAnswer` uses `filterMapTR`, `mapTR`, `List.toArray`
+and array indexing; `LogReq.fault` uses `find?`; `jget` is `filterTR`. `Cal.mkTz?` runs B1's `transFrom`
+(the tail of `&&`) after its own length guard. `readTzOffset` reads nine characters. T0 runs all of it on
+a 2 MiB thread.
+
+### The `decide` budget (§14.0 item 4)
+
+**12 new or restated decided witnesses**, within the budget of 20: `readTzOffset_reads_the_table_spelling`,
+`readTzInstant_reads_utc_whole_seconds`, `readTz_reads_the_witness_table`, `readTz_refuses_by_name`,
+`the_log_op_reads_a_four_line_tail`, `the_log_section_refuses_by_name`, the extended
+`the_response_shapes_emit_in_build_order`, the three restated `Json.lean` witnesses, and cheats 131–132.
+They hold **1 `Entry`** (the four-line tail's `drop`) and **2 zone transitions** (the witness table).
+Every string a parser reads is a `List Char` literal, the longest being the 50-character `drop` line. The
+build-order conjunct compares a 180-character emission, as its existing conjuncts do: emission is
+evaluated, never a parse.
+
+**The first probe of the four-line tail was killed at the 8 GB cap (exit 143).** Its lines were escaped
+`String` literals under `.toList` inside a parser run, which is AGENTS §5.10a's trap. Spelled as
+characters, the same witness took **0.81 s at a 728 MB peak**. Probed under `MemoryMax=8G timeout 120`:
+the whole appended section took **1.00 s at 860 MB**, the build-order extension **2.60 s at 1.20 GB**,
+and the `Json.lean` restatements **0.12 s at 508 MB**.
+
+One budget was raised, and it is neither heartbeats nor memory: `maxRecDepth 8000` on the three theorems
+that evaluate `runWithLog` or long emissions. No realistic-size input is evaluated. `Boundary.lean` as a
+whole now elaborates in **150.1 s at an 8.32 GB peak** (30 GB cap), against **127.5 s and 7.68 GB** for
+the file at `85f586d`, compiled against the same built modules.
+
+### Recorded disagreements between the design and the repo
+
+- **Where the definitions are.** The row appends "a new section" to `Boundary.lean`. The theorems are
+  appended, but the definitions sit after `run`, because `respond` calls them and Lean defines before
+  use. `respond` changed one call (`run` → `runWithLog`), and `call_refuses_the_real_duplicate_id_request`
+  is re-proved over it (`rfl`).
+- **`from` with `ckpt: null`** is any line number in `[1, 2⁴⁰)`, not `cut + 1 = 1` (§10.1's
+  `cutMismatch`), because §11.4's render-only call sends lines that are not a prefix. W3 decides
+  `cutMismatch`.
+- **`terminated`** is read and checked, and B4 reads every line, an unterminated last one included, as
+  `Log::parse_bytes` does. W3 is where it stops a line from being folded.
+- **`want`** may be absent, and `facts: true` is refused `badLogReq facts` until C6. **A rendering of a
+  blank or warning line** is `[line, null, null]`; the design does not say.
+- **§10.3's `badTz <why>`** names no whys; `TzWhy` is this step's. `readTzOffset` refuses `-00:00:00`, so
+  UTC has one spelling. A transition instant may be any UTC stamp `parseStamp` reads, and the encoder
+  writes `Z`.
+- **`mkTz?`'s rejection theorems** are B1's (`mkTz?_refuses_an_unsorted_table` and its neighbours). B4
+  adds the decoder's.
+- **§6.1's estimates** (≈ 500 transitions, ≈ 20 KB, 0.1–0.3 s) are replaced by the measurements above.
+  §12 says the cache belongs to `tz_table.rs`, while row B4 names only the probe; `wire_for` is here,
+  uncalled.
+- **`Json.lean` is not in the row's file list.** T2's byte identity needed serde's escapes, so `escOf`
+  changed here, with the three restatements above.
+- **T1's "four corpus logs, malformed.jsonl"**: T1 reads seven logs, as B2 and B3 did.
+- **T4 compares chrono with the table under `Cal.offsetAt`'s rule written in Rust** (`table_offset` in
+  the test), because the kernel's `offsetAt` reaches the wire only at C2 (the headers' days). What T4
+  does tie to the kernel is that the kernel accepts every table the encoder writes. T4 (d) also checks
+  B1's scan assumption, as B1 said it would.
+- **The row's T2 says "proptest"**, so `proptest` is added to tm's dev-dependencies. It is the workspace's
+  own (`[workspace.dependencies]`, already in `Cargo.lock` through tm-core); the lockfile gains one line
+  in `tm`'s dependency list and no package.
+- **`logbench`**: (a) and (d) moved from `log` to `pad` (above), and (e) is new.
+
+### Carried notes
+
+- **Gap 102 applies to the `log` op too.** `logbench` (e): the op over the 1 MiB cut (10,055 lines) takes
+  **73.2 ms and peaks at 120.8 MiB**; over 32,768 lines it takes **283.3 ms and peaks at 308.3 MiB**,
+  against 284.3 MiB for the parse alone ((d), same run). At the bound the op adds about 24 MiB and
+  165 ms. W3 lowers the resend cap; this step does not change it.
+- **For C2**: headers carry tag and id only; the day, the cancelled flag and the display join at C6.
+  **For W3**: `tz_table::wire_for` is the cache's reader and writer, and nothing else may probe a zone.
+- **For the merge**: the D10 branch also appends to `Boundary.lean`'s tail, and its L6 will extend the
+  response. Both tracks extend `the_response_shapes_emit_in_build_order` and the path through `respond`.
+
+**Label-to-number map:** cheats B4-a → **131** and B4-b → **132**; gaps **89** and **90** (design labels);
+gap **103** closed; parity **P20**. **Highest numbers after the step: gap 104, cheat 132, parity P27.**
+
+**Re-measured** (every command capped at 30 GB, main worktree, on the tree committed):
+
+| measurement | value |
+|---|---|
+| `check.sh`, first run after `Json.lean` changed (every module rebuilt) | 2 min 19.8 s wall |
+| `check.sh`, built tree | **7/7**, 2.88 / 2.74 / 2.72 s (2.76 s at B3's tree on this machine today, so within §14.0 item 4's 10%) |
+| axiom audit | **2548 theorems** (was 2517, +31) |
+| `Negative.lean` | check 4 ok; CHEATs 131 and 132 each fail at their own line with the error they claim |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged) |
+| `cargo test --workspace` | **1022 passed / 0 failed / 2 ignored across 69 binaries** (was 1013 / 0 / 0 across 67; +3 T1–T3, +4 T4 with 2 ignored, +2 `kernel_bridge`) |
+| FFI suite (`tm-kernel-ffi`) | **85 passed / 0 failed** (kernel 74, corpus 8, stack 3) |
+| `cli_latency.rs` | green: first verb 622.2 ms (226 files, 2,959 lines), later verb 55.8 ms |
+| `logbench` | (a), (b) and (d) within a few percent of A3's figures; (c) and (e) above; (d)'s 4 MiB gate still **BREACH** (357.6 MiB; gap 102) |
+
 <!-- ===========================================================================
      APPENDED 2026-09-14: stage 5, D10 track, step L5 (branch stage5-lookahead,
      worktree .claude/worktrees/stage5-lookahead).  Built in parallel with the D9
-     track on rebuild-on-lean (D11).  Takes cheats 126-127 and gaps 105-106 (the
-     next free numbers in this checkout; the design's L5 cheat label 117 was
+     track on rebuild-on-lean (D11).  Takes cheats 133-134 (126-127 on the branch;
+     renumbered at the D9 B2-B4 merge) and gaps 105-106 (the next free numbers; the design's L5 cheat label 117 was
      taken by L1).  No parity entry.  Whoever merges renumbers (AGENTS §6.2, §6.4).
      =========================================================================== -->
 
@@ -10640,8 +11309,8 @@ the load and the lookahead.
 
 | # | label | cheat | fails because |
 |---|---|---|---|
-| **126** | L5-a | a future day's wake at whole minutes (today's wake clock with its seconds dropped, through `Cal.instantOf`), claimed equal to `pureDay` at level 5 on the 07:05 Tuesday woken at 06:05:40 | whole minutes keep 240 minutes at level 5, the fork 180; `decide` refuses (controls `a_future_day_reads_todays_wake_to_the_second`) |
-| **127** | L5-b | every future day mixed at today's weekday's weight, claimed equal to `dayOf` at Sunday's level 5 | the cheat's Sunday level 5 is 108 minutes (Monday's 0.9), the fork's weekday reading 48 (Sunday's 0.4); `decide` refuses (controls `sunday_mixes_at_its_own_weight`, `lookahead_future_day_is_the_mixture`) |
+| **133** | L5-a | a future day's wake at whole minutes (today's wake clock with its seconds dropped, through `Cal.instantOf`), claimed equal to `pureDay` at level 5 on the 07:05 Tuesday woken at 06:05:40 | whole minutes keep 240 minutes at level 5, the fork 180; `decide` refuses (controls `a_future_day_reads_todays_wake_to_the_second`) |
+| **134** | L5-b | every future day mixed at today's weekday's weight, claimed equal to `dayOf` at Sunday's level 5 | the cheat's Sunday level 5 is 108 minutes (Monday's 0.9), the fork's weekday reading 48 (Sunday's 0.4); `decide` refuses (controls `sunday_mixes_at_its_own_weight`, `lookahead_future_day_is_the_mixture`) |
 
 Each fails at its own line with `Tactic decide proved that the proposition … is false`.
 
@@ -10770,7 +11439,7 @@ the same cap, against L4's 2.05 s and 818–846 MB.  No realistic-size input is 
    holds resolved weights.  The curves', `[day]`'s, `homeMaxCi`'s and the zone's bounds remain L6's.
 7. **`mixing_before_the_budget_is_not_the_expectation` and cheat 117 were L1's.**  The L5 row lists
    both.  L1 proved the theorem and took cheat 117, and neither is repeated.  L5's cheats take the
-   next free numbers, 126 and 127, and control L5's own reading: seconds in the future wake, and the
+   next free numbers, 133 and 134 (126 and 127 until the merge), and control L5's own reading: seconds in the future wake, and the
    weekday per date.
 8. **T0 (c) is measured, not committed** (gap 105).
 9. **The loaded-plan witness evaluates the load under `decide`.**  §13.4 says `loadPlan` is "reached
@@ -10792,8 +11461,8 @@ the same cap, against L4's 2.05 s and 818–846 MB.  No realistic-size input is 
 `Cal.secondsBetween`.  No decimal is re-emitted (gap 101).  Nothing assumes a 4 MiB request
 (gap 102).  No `Stamp` name is added (the B2 note).
 
-**Label-to-number map:** cheats L5-a → **126**, L5-b → **127**; gaps L5-a → **105**, L5-b → **106**.
-No parity entry.  Highest numbers in this checkout after the step: gap 106, cheat 127, parity P27.
+**Label-to-number map:** cheats L5-a → **133**, L5-b → **134** (126 and 127 until the merge); gaps L5-a → **105**, L5-b → **106**.
+No parity entry.  Highest numbers in this checkout after the step: gap 106, cheat 127, parity P27 (on the branch).
 
 **Observable behaviour changes: none.**  Nothing on the wire calls `mkInput?` or `lookahead`.
 `Boundary.lean`'s new definitions (`lookWallWitness`, `lookWallPlan`) are unreachable from `call`.
@@ -10823,7 +11492,7 @@ committed):
 | `lake build TmKernel:static` after the edits | 149.5 s wall at an 8.20 GB peak (`Lookahead` 3.2 s, then `Boundary` 147 s, which now imports it) |
 | `check.sh` | **7/7**; 3.45 s on its first run, then 2.73 / 2.72 / 2.78 s on the built tree against L4's 2.73 / 2.71 / 2.76 s, no rise (§14.0 item 4 allows 10%) |
 | axiom audit | **2434 theorems** (2388 + 46); each new name prints its own line |
-| `Negative.lean` | check 4 ok; 123 errors (121 before); 117 `/- CHEAT` banners (115 before); CHEATs 126 and 127 each fail at their own line |
+| `Negative.lean` | check 4 ok; 123 errors (121 before); 117 `/- CHEAT` banners (115 before); CHEATs 133 and 134 (126 and 127 then) each fail at their own line |
 | corpus | **29/37 files and 4/5 whole plans** (unchanged) |
 | burn-down | **13** (stage 3: 0, stage 4: 0, stage 5: 0, stage 6: 13) |
 | `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (unchanged) |
@@ -10834,7 +11503,8 @@ committed):
 <!-- ===========================================================================
      APPENDED 2026-09-14: stage 5, D10 track, step L6 (branch stage5-lookahead,
      worktree .claude/worktrees/stage5-lookahead).  Built in parallel with the D9
-     track on rebuild-on-lean (D11).  Takes cheats 128-130, gaps 98 (the design's
+     track on rebuild-on-lean (D11).  Takes cheats 135-137 (128-130 on the branch; renumbered at
+     the D9 B2-B4 merge), gaps 98 (the design's
      label), 107-109, and parity entries P26 and P30 (the design's numbers).
      Closes gaps 77 and 105.  Edits Boundary.lean mid-file in two places (`run`
      split, the export moved): the merge reconciles them with the D9 track's B4.
@@ -10982,9 +11652,9 @@ overflows) stands for the stack bound.
 
 | # | label | cheat | fails because |
 |---|---|---|---|
-| **128** | L6-a | a lounge weight of 19 decimal places reads on the wire | `10^-19`'s denominator does not divide `10^18`; `decide` refuses `isOk` (controls `readWeight_on_witnesses`, `readWeight_refuses_more_than_18_places`) |
-| **129** | L6-b | a prior curve out of `from` order is accepted | `curveOk` refuses `4+` before `1-4`; `decide` refuses (controls `curveOk_refuses_an_unsorted_curve`, `readPrior_on_witnesses`) |
-| **130** | L6-c | an hour of units fits a double (`capDen · 60 < 2^53`) | it is `6·10^19`; `decide` refuses (controls `the_lookahead_response_emits_in_build_order`: units are strings) |
+| **135** | L6-a | a lounge weight of 19 decimal places reads on the wire | `10^-19`'s denominator does not divide `10^18`; `decide` refuses `isOk` (controls `readWeight_on_witnesses`, `readWeight_refuses_more_than_18_places`) |
+| **136** | L6-b | a prior curve out of `from` order is accepted | `curveOk` refuses `4+` before `1-4`; `decide` refuses (controls `curveOk_refuses_an_unsorted_curve`, `readPrior_on_witnesses`) |
+| **137** | L6-c | an hour of units fits a double (`capDen · 60 < 2^53`) | it is `6·10^19`; `decide` refuses (controls `the_lookahead_response_emits_in_build_order`: units are strings) |
 
 Each fails at its own line with `Tactic decide proved that the proposition … is false`.
 
@@ -11126,9 +11796,9 @@ counts go out as `.str (digitsOf n)`, never a `dec` (gap 101).  Nothing assumes 
 (c)'s request is about 0.22 MiB (gap 102).  No `Stamp` name is added (the B2 note); the zone readers are
 `readOffsetText` and `readInstantText` in `Tm.CapWire`.
 
-**Label-to-number map:** cheats L6-a → **128**, L6-b → **129**, L6-c → **130**; gaps design 98 →
+**Label-to-number map:** cheats L6-a → **135**, L6-b → **136**, L6-c → **137** (128–130 until the merge); gaps design 98 →
 **98**, L6-a → **107**, L6-b → **108**, L6-c → **109**; parity P26 → **P26**, P30 → **P30**.  Highest
-numbers in this checkout after the step: gap 109, cheat 130, parity P30.  (Read-only, for the merge: the
+numbers in this checkout after the step: gap 109, cheat 130, parity P30 (on the branch).  (Read-only, for the merge: the
 D9 track's B2 on `rebuild-on-lean` took cheats 126–127 and parity P23 in parallel, so cheats 126–127
 collide with L5's.)
 
@@ -11160,10 +11830,180 @@ committed):
 | `lake build TmKernel:static` after the edits | 135.7 s wall at a 7.89 GB peak (`Lookahead` then `Boundary`) |
 | `check.sh` | **7/7**; 134.5 s on its first run (the rename rebuilt `Boundary`), then 2.82 / 2.75 / 2.80 s on the built tree against L5's 2.73 / 2.72 / 2.78 s, +1.8% (§14.0 item 4 allows 10%) |
 | axiom audit | **2508 theorems** (2434 + 74); each new name prints its own line |
-| `Negative.lean` | check 4 ok; 126 errors (123 before); 120 `/- CHEAT` banners (117 before); CHEATs 128, 129 and 130 each fail at their own line |
+| `Negative.lean` | check 4 ok; 126 errors (123 before); 120 `/- CHEAT` banners (117 before); CHEATs 135, 136 and 137 (128–130 then) each fail at their own line |
 | corpus | **29/37 files and 4/5 whole plans** (unchanged) |
 | burn-down | **13** (stage 3: 0, stage 4: 0, stage 5: 0, stage 6: 13) |
 | `cargo test --workspace` | **1014 passed / 0 failed / 0 ignored across 67 binaries** (1013 + `a_capacity_refusal_carries_its_key`) |
 | FFI suite (`tm-kernel-ffi`) | **88 passed / 0 failed** (kernel 77, corpus 8, stack 3) |
 | `cli_latency.rs` | green: first verb 627.5 / 607.3 / 617.7 ms (226 files, 2,959 lines), later verb 50.8 / 50.7 / 55.7 ms |
 | T0 (c), `stack.rs`, 2 MiB thread | 3,660 days with 600 transitions and 3,660 walls: 282 / 277 / 278 ms; the same request for 7 days: 128 / 127 / 127 ms |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: the merge of rebuild-on-lean (the D9 track's B2, B3
+     and B4, at a8f3022) into stage5-lookahead (the D10 track's L5 and L6, at
+     0aa24ae), so that L7 can use tm/src/cli/tz_table.rs.  AGENTS §6.5.
+     Renumbers this branch's cheats 126-130 to 133-137, closes gap 108, takes
+     gap 110.  No parity entry.
+     =========================================================================== -->
+
+## Stage 5 merge, 2026-09-14: the D9 track's log op meets the D10 track's capacity section — one `tz` reader, one response
+
+**Starting point.**  Both sides had branched from `e3e9e9e`.  `rebuild-on-lean` added `Stamp.lean`
+and `Log.lean` (B2, B3), the `tz` and `log` sections in `Boundary.lean` and `tz_table.rs` (B4), with
+160 theorems.  `stage5-lookahead` added the lookahead (L5) and the capacity wire (L6), with 120
+theorems.  The shared append-only files (`Check.lean`, `Negative.lean`, `kernel/README.md`), the two
+FFI test files and `kernel_bridge.rs` conflicted only where both sides appended.  **Each keeps both
+sides whole**: the D9 track's material first, then the D10 track's.  `Boundary.lean` had a conflict
+at its imports (both kept) and at its end: B4's laws section, then L5's and L6's sections, whole.
+`TmKernel.lean` merged cleanly to nineteen imports (`Stamp` and `Log` after `Line`, `Lookahead` after
+`Capacity`).  `Goals.lean` merged cleanly (B3's note on D1/D2); no goal was discharged by either
+side, so the burn-down stays **13**.
+
+### Numbers
+
+| taken on both sides | this branch's (D10) | now | where it was changed |
+|---|---|---|---|
+| cheat 126 (B2 on the D9 side) | L5-a | **133** | `Negative.lean` banner and preamble; the L5 block's table, disagreement 7, map and figures |
+| cheat 127 (B2) | L5-b | **134** | the same |
+| cheat 128 (B3) | L6-a | **135** | `Negative.lean` banner and preamble; the L6 block's table, map and figures |
+| cheat 129 (B3) | L6-b | **136** | the same |
+| cheat 130 (B3) | L6-c | **137** | the same |
+
+`grep -o '^/- CHEAT [0-9A-Z]*' Negative.lean | sort | uniq -d` prints nothing.  The D9 side's 131 and
+132 (B4) are unchanged.  **Gaps did not collide.** The D9 side took 89, 90 and 91 (the design's labels)
+and closed 101 and 103.  The D10 side took 98 and 105–109 and closed 77 and 105.  **Parity did not
+collide either.** P14, P15, P20, P23, P24 and P25 are the D9 side's, and P26 and P30 the D10 side's.
+The block headers' "highest numbers after the step" lines are now marked "(on the branch)".
+**Highest numbers after the merge: gap 110, cheat 137, parity P30.**  The README's central cheat table
+still ends at 125.  Neither track added rows to it for 126–137, and each step block carries its own
+table.
+
+### What the merge had to decide (not textual)
+
+**1. The exported call served one section or the other, never both.**  B4 changed `respond` to run
+`runWithLog`.  L6 moved `@[export tm_kernel_call]` to `callExport := callCap`, and `callCap`'s `runCap`
+called `run` on a request without `capacity`.  Merged textually, the FFI would have silently dropped
+every `log` section, and B4's FFI tests would have failed.  The merged `runCap`:
+
+- **Without `capacity`, it is `runWithLog`.**  `runCap_without_capacity_is_runWithLog` replaces L6's
+  `runCap_without_capacity_is_run`, which was false as stated once a request can carry `log`.  The old
+  name stays as the corollary with the one hypothesis that makes it true, `readLogSection j = .ok none`,
+  via B4's `runWithLog_without_a_log_is_run`.
+- **L6's bridge theorems still hold without change.**  `respondCap_without_capacity_is_respond` (its
+  proof now goes through `…_is_runWithLog`) and `callExport_without_capacity_is_call` keep their
+  statements.  `respond` is B4's, so every `call` theorem reaches the FFI for a request without
+  `capacity`, log or no log.
+- **With `capacity`, B4's `readLogSection` runs first.**  Its refusals come first
+  (`runCap_refuses_a_log_section_first`, B4's rule).  Then come the documents (`runLoad`), the capacity
+  section, and the commands.  The answer is `docs`, `report`, `log` (when asked), then `lookahead`:
+  design §10.2's order, through `logInto`.
+- **L6's answered and refused laws take the log section as a hypothesis.**
+  `runCap_answers_with_the_lookahead` and `runCap_refuses_what_the_section_refuses` gain
+  `readLogSection j = .ok lg` for any `lg`, and the answer is `withLookahead (logInto lg r) …`.
+  `runCap_answers_docs_report_lookahead` gains `= .ok none` and keeps its conclusion.
+  **`runCap_answers_docs_report_log_lookahead`** (new) is the `some` case.
+
+**2. Two readers of `tz` (gap 108, below: closed).**  One reader stays, B4's `Tm.readTz`, because
+design §14.2 gives the key to B4.  `CapWire.readTz` is now only the capacity section's view of it:
+`tzAbsent` when the key is absent, else `(Tm.readTz z).mapError .badTz`.  The following are deleted
+with nothing left calling them: L6's `readOffsetText`, `readInstantText`, `transOf`,
+`CapWire.transStep`, `readTrans`, `maxTrans`, `tzObj`, `two` and `CapWire.TzWhy`.  `CapWire.Refusal.badTz`
+carries B4's `TzWhy`.  Gap 108 named three theorems to re-prove over the one reader (D5), and none was
+weakened:
+
+- `CapWire.the_zone_texts_read_on_witnesses`: L6's ten cases, now over `readTzOffset` and
+  `readTzInstant`, with the same verdicts.
+- `CapWire.readTz_on_witnesses`: the same seven requests.  The last two refusals now carry B4's names,
+  `transition` and `unsorted`, where L6 had `then` and `table`.
+- `CapWire.readTz_refuses_too_many_transitions`: now an instance of B4's
+  `Tm.readTz_refuses_too_many_transitions`, with the refusal `tooManyTransitions`.  It gains the
+  hypothesis `key.length ≤ 128`, because the one reader checks the key's bound first.  L6's reader
+  never bounded the key, and `Cal.TzTable.wf` refused a long key as `table`.  The count is still
+  refused before any transition is read.
+
+**3. A name taken twice.**  Both sides declared `Tm.runPlan_ok_shape`.  B4's is the `∃ kvs` form, and
+B4's `run_ok_shape` applies it with explicit arguments.  L6's is the stronger `docs`-then-`report`
+form, and it is renamed **`runPlan_ok_is_docs_then_report`**, also in place in `Check.lean`.  The other
+same-named declarations do not clash, because each lives in its own namespace.  `readTz`, `TzWhy`,
+`transStep` and `readStep` are B4's at `Tm.` and L6's at `Tm.CapWire.`.  Inside `namespace CapWire` the
+innermost name wins, and the build confirms it.
+
+### Behaviour rows (the FFI; no verb sends `tz`, `log` or `capacity` yet)
+
+| request | before the merge (stage5-lookahead) | after |
+|---|---|---|
+| `log` without `capacity` | `log` ignored (`runCap` called `run`) | B4's answer: `log` after `report`, or B4's refusal |
+| `capacity` with a malformed `tz` | `{"err":{"capacity":"badTz shape\|key\|base\|then\|table"}}` | `{"err":{"log":{"badTz":"shape\|key\|base\|transition\|unsorted"}}}`, which is B4's refusal and design §10.3's shape for `badTz` |
+| `capacity` without `tz` | `{"err":{"capacity":"tzAbsent"}}` | unchanged |
+| `capacity` and `log` | `log` ignored | `docs`, `report`, `log`, `lookahead`; a refused `log` section refuses first |
+
+`every_capacity_refusal_is_named` in `tests/kernel.rs` moves the five malformed-zone edits into a second
+table that expects B4's refusal.  `kernel_bridge.rs`'s name table maps `{"capacity":"badTz unsorted"}`
+where it mapped `badTz table`.  The new FFI test
+**`a_request_with_log_and_capacity_answers_both_in_build_order`** checks three things.  The composed
+answer's `log` part is byte-identical to the log op's alone, and its `lookahead` to the capacity op's
+alone.  A refused `log` section (`from` 0) refuses the capacity request.
+
+### Gap 108 — closed
+
+The merge kept one reader and re-proved the three theorems the gap named over it (above).
+
+### Gap 110 (new; label merge-a) — a capacity request reads its `tz` twice
+
+(1) *What is not done*: with `capacity`, `readLogSection` reads and checks `tz`, then `CapWire.readTz`
+reads it again for the lookahead.  `readLogSection` returns only the `log` request, not the zone.
+(2) *Why not now*: threading the zone out of `readLogSection` changes B4's function and its seven laws.
+That is W3's request reader to reshape, since the checkpoint compares the zone's key.  A merge should
+not do it.  (3) *Cost*: T0 (c)'s 3,660-day request went from 282 / 277 / 278 ms to 320 / 315 / 336 ms,
+and its 7-day request from 128 / 127 / 127 ms to 154 / 149 / 148 ms (debug FFI build, 2 MiB thread).
+Part of that is B4's reader going through `LogStamp.parseStamp` where L6's read fixed-width text.
+Nothing was split out to measure the double read alone.  (4) *When it clears*: when the request reader
+returns the zone once (W3, or L8's wiring if that comes first).
+
+### Rule D9-21, the `decide` budget, and the carried notes
+
+- **D9-21.** No new recursion over a wire list: `logInto` and the new `CapWire.readTz` do not recurse.
+- **The `decide` budget.** The three re-proved witnesses were probed first, from scratch files under
+  `/tmp/claude-1000/probe/` against a build with those three proofs as `sorry`, each under
+  `MemoryMax=8G timeout 120`.  `the_zone_texts_read_on_witnesses` (`decide`) took 0.21 s at 581 MB,
+  `readTz_on_witnesses` (`rfl`) 0.19 s at 583 MB, and `runCap_reads_the_corpus_request` (`rfl`, now
+  through `readLogSection` as well) 0.73 s at 711 MB.  A falsified copy of each of the first two fails,
+  so the probes elaborate.  No new witness was added.
+- **Gap 102 is untouched.** The merge assumes no 4 MiB request, and the resend cap is unchanged.
+  **Gap 101** was closed by B3 (`digitsOfTR`).  No `Stamp` name is added.
+
+### Recorded disagreements between the design and the repo
+
+1. Design §10.3 puts `tzAbsent` and `badTz` in the `log` refusal shape for every request.  After the
+   merge, a malformed zone is refused in that shape even for a capacity-only request.  An absent zone
+   on a capacity request is still `{"err":{"capacity":"tzAbsent"}}`, as L6 chose (its disagreement 7).
+   L8, when a verb first sends `capacity`, decides whether the host needs one shape.
+2. Design §10.1 says `tz` is "required when `log` or `capacity` is present".  That is still two
+   refusals of one condition, one per section.  It is recorded here, not changed.
+
+**Goals:** discharged 0, refuted 0, added 0.  Burn-down **13**.  **New theorems: 3**:
+`runCap_without_capacity_is_runWithLog`, `runCap_refuses_a_log_section_first` and
+`runCap_answers_docs_report_log_lookahead`, audited under `Check.lean`'s merge banner.  The three counts
+of AGENTS §6.3 agree at **2671** (2388 at the branch point, + 160 from D9 B2–B4, + 120 from D10 L5–L6,
++ 3).  That is 2671 audit lines, 2671 distinct names, and 2671 declarations by the attribute-aware
+grep, with no duplicate audited.  Two existing theorems changed statement for the merge, as stated
+above: `runCap_without_capacity_is_run` gained a hypothesis, and `readTz_refuses_too_many_transitions`
+now covers the one reader.  Three gained a log-section hypothesis.  Each is true of the merged code and
+is not a weakening of any claim about it.
+
+**Re-measured on the merge tree** (every command under the 30 GB cap, in the worktree):
+
+| measurement | value |
+|---|---|
+| `check.sh` | **7/7**; 142.4 s on its first run (the merge rebuilt `Json` onward), then 2.81 / 2.86 / 2.75 s on the built tree |
+| axiom audit | **2671 theorems** |
+| `Negative.lean` | check 4 ok; 133 errors; 127 `/- CHEAT` banners, 126–137 each failing at their own line |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (stage 6: 13) |
+| `cargo test --workspace` | **1023 passed / 0 failed / 2 ignored across 69 binaries** (1013 + D9's 9 + D10's 1) |
+| FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** (kernel 80 = 72 + B4's 2 + L6's 5 + the merge's 1; corpus 8; stack 4) |
+| `cli_latency.rs` | green: first verb 622.7 / 632.4 / 627.2 ms (226 files, 2,959 lines), later verb 55.7 / 50.6 / 50.7 ms |
+| T0 (c), `stack.rs`, 2 MiB thread | 3,660 days: 320 / 315 / 336 ms; 7 days: 154 / 149 / 148 ms (gap 110) |
+
+**Owed, by name:** as the two tracks left it.  D10: L7 (now with `tz_table.rs` in the checkout), L8 and
+L9, and gap 110 if L8 comes before W3.  D9: C1–C6, W1–W3, S.
