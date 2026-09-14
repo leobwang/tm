@@ -1,12 +1,16 @@
 import TmKernel.Capacity
+import TmKernel.Cal
 /-!
 # Lookahead — D10's exact mixture over step 3's EDF (stage 5, track L)
 
 Design `kernel/design/stage5/stage5-D9-D10-design.md` §13.  This module **produces** the
 `List DayCapacity` that `Capacity.lean`'s `edf` consumes, and never restates it.  Step L1
-(§13.2) builds the unit, the weight and the mixture; the histograms each location would
-have on a day (the window E7, the slot cut, energy and the budget limit) are L2–L4's, and
-are arguments here.
+(§13.2) builds the unit, the weight and the mixture.  Step L2 (§13.3, pulled from stage 6
+by the owner's D12) builds the day's window, E7, in real seconds through `Cal`'s zone
+table, and the plan's walls; its section below says what it ports and what it refutes.
+**Stage 6's `dayPlan` must reuse L2's `windowEnd`, `windowOn`, `wallIndex` and `wallsOn`,
+never a second copy** (design §2.3).  The slot cut, energy and the budget limit's slots are
+L3–L4's, so each location's histogram is still an argument.
 
 ## The owner's D10 and D17, and the fork point they replace
 
@@ -46,12 +50,17 @@ strings** and the host holds them as `u128` (D17; the wire is L6's, `Boundary.le
 
 ## The recursion rule (D9-21)
 
-Nothing here recurses over a list the wire can make large: a histogram is `Fin 6 → Nat`, and
-the scaling laws recurse over step 3's own `reserveRest`/`edfCaps` only inside proofs.
+L1 recurses over no list the wire can make large: a histogram is `Fin 6 → Nat`, and the
+scaling laws recurse over step 3's own `reserveRest`/`edfCaps` only inside proofs.  L2's
+walls are listed in its section: every run-time pass is a `foldl` or core's tail-recursive
+`map`/`filter`/`filterMap`, and the one quadratic sort is behind a proved `@[csimp]` twin
+(`windowEnd_eq_windowEndFast`).
 
 ## Not here, by name
 
-* `pureDay`, `lookahead`, `Input`, `mkInput?` (L5); the window, cut and energy (L2–L4).
+* `pureDay`, `lookahead`, `Input`, `mkInput?` (L5); the cut and energy (L3–L4).
+* The zone table's refusal of a sub-minute offset (`badTz subMinuteOffset`, §13.6): L6's.
+  L2's window counts seconds, so it needs no such refusal to be exact.
 * Day 0 (`ofHist` over the host's histogram until L9, gap 93 of the design).
 * The wire (`capacity`, `lookahead` sections, digit strings): L6.
 -/
@@ -529,6 +538,767 @@ theorem mix_on_a_witness :
         (histOf [0, 0, 0, 120, 0, 0])) = 54 * capDen ∧
       eligAt 3 (mix ⟨900000000000000000, by decide⟩ (histOf [0, 0, 0, 0, 0, 60])
         (histOf [0, 0, 0, 120, 0, 0])) = 66 * capDen := by
+  decide
+
+/-! ############################################################################
+## E7: the day's window (stage 5 D10 step L2; design §13.3, owner's D12)
+
+Pulled forward from stage 6 by the owner's D12.  **Stage 6's `dayPlan` must reuse
+`windowEnd`, `windowOn`, `wallIndex` and `wallsOn`, never a second copy** (design §2.3,
+AGENTS §5.3).
+
+### The fork point, read by name
+
+`capacity::window_and_budget(arrival, walls_today, cfg)`:
+
+1. `window_min = (window_hours × 60.0).round().max(0.0)` (site R3, `windowMinOf`);
+2. `cap = local_dt(tz, arrival.date_naive(), window_cap)`;
+3. `base_end = (arrival + window_min).min(cap).max(arrival)` (`windowBase`);
+4. `walls_after(arrival, walls)`: each wall's start raised to the arrival, **no upper
+   bound**, empty walls dropped (`clipWalls`), then `merge_walls`: sorted by start and
+   merged, touching walls included (`sortByStart`, `mergeStep`, `mergeSorted`);
+5. the walk: for each merged wall in order, `if a >= end { break }`, else
+   `end += b − a` (`extendStep`).  The kernel's walk does not stop: once a merged wall
+   starts at or after the end, every later one does too and the end no longer moves, so
+   skipping them is the `break`.  `the_window_end_solves_the_equation` and
+   `the_window_end_is_the_least_solution` pin the value whatever the walk looks like;
+6. `budget_blocks = floor(window_hours × 60 / block_min × budget_ratio)` with
+   `block_min.max(1)` (site R2, `budgetOf`).
+
+### E7, in overlap semantics
+
+`wallOverlap arrival stop walls` counts the units of `[arrival, stop)` under at least one
+wall: clipped, merged and counted once, as the fork does.  It is a specification and is
+never evaluated at run time.  `windowEnd` **solves** `end = windowBase + wallOverlap arrival
+end walls` and is its **least** solution (the two E7 goals, moved here from `Goals.lean`'s
+STAGE 6 under D12).  The proof goes through the merged walls, the route design risk K16
+names: `mergeSorted_spec` (a sorted list merges into a chain of disjoint walls with the same
+cover), then `extend_solves` and `extend_least` over the chain.
+
+**Refuted as stage 6 wrote it.**  `Goals.lean` stated E7 over `wallsInside` (walls wholly
+inside `[arrival, end]`) and the base `min(arrival + window, cap)`.  Both differ from the
+fork: `the_window_end_is_not_the_least_solution_as_stage_6_wrote_it` (a wall straddling the
+base end: 900 solves the old equation, and the fork gives 960) and
+`the_window_end_does_not_solve_the_equation_as_stage_6_wrote_it` (an arrival after the cap:
+the fork clamps the base to the arrival).  `a_wall_begun_before_the_arrival_extends_the_window`
+is the third difference, the clip at the arrival.
+
+### Real seconds (design §13.3)
+
+`windowOn z d arrival cap windowMin walls` is `window_and_budget` for day `d` in zone `z`:
+the arrival is `Cal.instantOf z d arrival` (fork `local_dt`), the cap is `instantOf` on the
+arrival's local date, and every endpoint, wall and length is a count of **UTC seconds**.
+`instantOf` returns whole seconds (`instantOf_ns`), so the seconds are the instants, and a
+DST day's window counts real hours
+(`the_window_counts_real_hours_across_the_spring_transition`).  Parity entry P28 (civil
+minutes) is therefore never recorded.
+
+### Walls from the plan (fork `Ctx::walls_on`, `Ctx::walls_by_date`)
+
+For every item whose status is not settled (`State::is_closed` is Done or Dropped; a
+demoted `[-]` line is not closed) and whose effective shape is `Interval { start, end }`:
+the start moved back by `buffer:` **on the local clock** (`NaiveDateTime − Duration`,
+`shiftBack`), then both ends through `local_dt`.  The wall belongs to every date from the
+shifted start's date to the end's date.  `wallIndex` reads the plan **once per request**,
+and `wallsOn` selects a date's walls from it.
+
+**Quirk (e), ported faithfully (owner's Q6; gap 85).**  `walls_on` does not clip a wall to
+its date and `walls_after` clips only at the arrival, so a Monday 09:00 to Wednesday 17:00
+wall extends Tuesday's window to Thursday 01:00, and Wednesday evening lies inside both
+Tuesday's and Wednesday's windows
+(`a_multi_day_wall_puts_one_evening_in_two_windows`).
+
+### The recursion rule (D9-21)
+
+Over lists the wire can make large: `clipWalls` is core `map`/`filter` (tail-recursive by
+core's `@[csimp]`); `mergeSorted` is a `foldl` then `reverse`; the walk is a `foldl`;
+`wallIndex` and `wallsOn` are core `filterMap` (`filterMapTR`).  The sort is the one
+exception: `sortByStart` is an insertion sort, quadratic and not tail-recursive, kept
+because it reduces under `decide`.  **`windowEnd_eq_windowEndFast` is its `@[csimp]`
+twin**: the compiled `windowEnd` runs core's `List.mergeSort`, and the two are equal
+because both walks are the least solution of one equation.  `wallOverlap` is never run.
+-/
+
+/-- The units of `[arrival, stop)` under at least one wall.  **Specification only:** never
+evaluated at run time (D9-21); decided witnesses stay below 1,440 units. -/
+def wallOverlap (arrival stop : Nat) (walls : List (Nat × Nat)) : Nat :=
+  ((List.range (stop - arrival)).map (· + arrival)).countP
+    (fun t => walls.any (fun w => decide (w.1 ≤ t ∧ t < w.2)))
+
+/-- Fork `base_end`: `(arrival + window).min(cap).max(arrival)`. -/
+def windowBase (arrival windowMin windowCap : Nat) : Nat :=
+  max arrival (min (arrival + windowMin) windowCap)
+
+/-- Fork `walls_after`'s clip: each start raised to `lo`, no upper bound, empty walls
+dropped. -/
+def clipWalls (lo : Nat) (walls : List (Nat × Nat)) : List (Nat × Nat) :=
+  (walls.map fun w => (max w.1 lo, w.2)).filter fun w => decide (w.1 < w.2)
+
+/-- Insert by start, before the first wall that does not start earlier. -/
+def insertByStart (w : Nat × Nat) : List (Nat × Nat) → List (Nat × Nat)
+  | [] => [w]
+  | v :: vs => if w.1 ≤ v.1 then w :: v :: vs else v :: insertByStart w vs
+
+/-- Sorted by start (fork `sort_by_key`).  The specification's sort: it reduces under
+`decide`; the compiled code runs `List.mergeSort` (`windowEnd_eq_windowEndFast`). -/
+def sortByStart : List (Nat × Nat) → List (Nat × Nat)
+  | [] => []
+  | w :: ws => insertByStart w (sortByStart ws)
+
+/-- One step of fork `merge_walls`, on an accumulator whose head is the last wall:
+`Some(last) if a <= last.1 => last.1 = last.1.max(b)`, else push. -/
+def mergeStep (acc : List (Nat × Nat)) (w : Nat × Nat) : List (Nat × Nat) :=
+  match acc with
+  | v :: vs => if w.1 ≤ v.2 then (v.1, max v.2 w.2) :: vs else w :: v :: vs
+  | [] => [w]
+
+/-- Fork `merge_walls` over a list already sorted by start. -/
+def mergeSorted (s : List (Nat × Nat)) : List (Nat × Nat) := (s.foldl mergeStep []).reverse
+
+/-- One step of the fork's walk: a wall that starts before the end extends it by its whole
+length. -/
+def extendStep (e : Nat) (w : Nat × Nat) : Nat := if w.1 < e then e + (w.2 - w.1) else e
+
+/-- **§8.1's window end, E7** (fork `window_and_budget`'s `end`), in one unit throughout:
+clip, sort, merge, extend. -/
+def windowEnd (arrival windowMin windowCap : Nat) (walls : List (Nat × Nat)) : Nat :=
+  (mergeSorted (sortByStart (clipWalls arrival walls))).foldl extendStep
+    (windowBase arrival windowMin windowCap)
+
+/-- `windowEnd` with core's merge sort, which is what the compiled code runs. -/
+def windowEndFast (arrival windowMin windowCap : Nat) (walls : List (Nat × Nat)) : Nat :=
+  (mergeSorted ((clipWalls arrival walls).mergeSort (fun v w => decide (v.1 ≤ w.1)))).foldl
+    extendStep (windowBase arrival windowMin windowCap)
+
+/-! ### Counting the units under the walls -/
+
+/-- Some wall holds `t`. -/
+def covered (L : List (Nat × Nat)) (t : Nat) : Bool := L.any (fun w => decide (w.1 ≤ t ∧ t < w.2))
+
+/-- The units of `[a, x)` where `P` holds, in `wallOverlap`'s own form. -/
+def countIn (P : Nat → Bool) (a x : Nat) : Nat := ((List.range (x - a)).map (· + a)).countP P
+
+theorem wallOverlap_eq_countIn (a x : Nat) (ws : List (Nat × Nat)) :
+    wallOverlap a x ws = countIn (covered ws) a x := rfl
+
+theorem countIn_of_le (P : Nat → Bool) {a x : Nat} (h : x ≤ a) : countIn P a x = 0 := by
+  simp [countIn, Nat.sub_eq_zero_of_le h]
+
+theorem countIn_succ (P : Nat → Bool) {a x : Nat} (h : a ≤ x) :
+    countIn P a (x + 1) = countIn P a x + if P x then 1 else 0 := by
+  unfold countIn
+  rw [show x + 1 - a = (x - a) + 1 by omega, List.range_succ, List.map_append, List.countP_append]
+  simp only [List.map_cons, List.map_nil, List.countP_cons, List.countP_nil, Nat.zero_add]
+  rw [show x - a + a = x by omega]
+
+theorem countIn_congr {P Q : Nat → Bool} (a : Nat) : ∀ x, (∀ t, a ≤ t → t < x → P t = Q t) →
+    countIn P a x = countIn Q a x
+  | 0, _ => by simp [countIn]
+  | x + 1, h => by
+    by_cases hax : a ≤ x
+    · rw [countIn_succ P hax, countIn_succ Q hax, countIn_congr a x (fun t h1 h2 => h t h1 (by omega)),
+        h x hax (by omega)]
+    · rw [countIn_of_le P (by omega), countIn_of_le Q (by omega)]
+
+theorem countIn_or {P Q : Nat → Bool} (a : Nat) (hd : ∀ t, ¬ (P t = true ∧ Q t = true)) :
+    ∀ x, countIn (fun t => P t || Q t) a x = countIn P a x + countIn Q a x
+  | 0 => by simp [countIn]
+  | x + 1 => by
+    by_cases hax : a ≤ x
+    · rw [countIn_succ _ hax, countIn_succ P hax, countIn_succ Q hax, countIn_or a hd x]
+      have := hd x
+      cases hp : P x <;> cases hq : Q x <;> simp_all <;> omega
+    · rw [countIn_of_le _ (by omega), countIn_of_le P (by omega), countIn_of_le Q (by omega)]
+
+/-- One wall that starts at or after `a` puts `min w.2 x − w.1` units under `[a, x)`. -/
+theorem countIn_wall (w : Nat × Nat) {a : Nat} (hw : a ≤ w.1) :
+    ∀ x, countIn (fun t => decide (w.1 ≤ t ∧ t < w.2)) a x = min w.2 x - w.1
+  | 0 => by simp [countIn]
+  | x + 1 => by
+    by_cases hax : a ≤ x
+    · rw [countIn_succ _ hax, countIn_wall w hw x]
+      by_cases h1 : w.1 ≤ x <;> by_cases h2 : x < w.2 <;> simp [h1, h2] <;> omega
+    · rw [countIn_of_le _ (by omega)]; omega
+
+theorem countIn_zero (P : Nat → Bool) (a : Nat) : ∀ x, (∀ t, t < x → P t = false) → countIn P a x = 0
+  | 0, _ => by simp [countIn]
+  | x + 1, h => by
+    by_cases hax : a ≤ x
+    · rw [countIn_succ _ hax, countIn_zero P a x (fun t ht => h t (by omega)), h x (by omega)]; rfl
+    · rw [countIn_of_le _ (by omega)]
+
+theorem covered_cons (w : Nat × Nat) (L : List (Nat × Nat)) (t : Nat) :
+    covered (w :: L) t = (decide (w.1 ≤ t ∧ t < w.2) || covered L t) := rfl
+
+theorem covered_eq_true {L : List (Nat × Nat)} {t : Nat} :
+    covered L t = true ↔ ∃ w ∈ L, w.1 ≤ t ∧ t < w.2 := by
+  simp [covered, List.any_eq_true]
+
+theorem countIn_covered_nil (a x : Nat) : countIn (covered []) a x = 0 :=
+  countIn_zero _ a x (fun _ _ => rfl)
+
+/-! ### The walk over a chain of disjoint walls -/
+
+/-- Disjoint walls in order, each nonempty, none starting before `a`. -/
+def WallChain (a : Nat) (L : List (Nat × Nat)) : Prop :=
+  L.Pairwise (fun v w => v.2 < w.1) ∧ ∀ w ∈ L, a ≤ w.1 ∧ w.1 < w.2
+
+theorem WallChain.tail {a : Nat} {w : Nat × Nat} {L : List (Nat × Nat)} (h : WallChain a (w :: L)) :
+    WallChain a L :=
+  ⟨(List.pairwise_cons.1 h.1).2, fun v hv => h.2 v (List.mem_cons_of_mem _ hv)⟩
+
+theorem extend_ge : ∀ (L : List (Nat × Nat)) (e : Nat), e ≤ L.foldl extendStep e
+  | [], _ => Nat.le_refl _
+  | w :: L, e => by
+    simp only [List.foldl_cons]
+    refine Nat.le_trans ?_ (extend_ge L _)
+    unfold extendStep; split <;> omega
+
+theorem extendStep_pos {e : Nat} {w : Nat × Nat} (h : w.1 < e) : extendStep e w = e + (w.2 - w.1) :=
+  if_pos h
+
+theorem extendStep_neg {e : Nat} {w : Nat × Nat} (h : ¬ w.1 < e) : extendStep e w = e :=
+  if_neg h
+
+theorem countIn_covered_cons (a : Nat) (w : Nat × Nat) (L : List (Nat × Nat)) (h : WallChain a (w :: L))
+    (x : Nat) : countIn (covered (w :: L)) a x = (min w.2 x - w.1) + countIn (covered L) a x := by
+  have hw := h.2 w (by simp)
+  rw [show covered (w :: L) = fun t => decide (w.1 ≤ t ∧ t < w.2) || covered L t from rfl]
+  rw [countIn_or a, countIn_wall w hw.1]
+  intro t ⟨h1, h2⟩
+  simp only [decide_eq_true_eq] at h1
+  obtain ⟨v, hv, hv1, hv2⟩ := covered_eq_true.1 h2
+  have := List.rel_of_pairwise_cons h.1 hv
+  omega
+
+/-- Over a chain, the walk from `e` is at most every `m` with `e + overlap(m) ≤ m`. -/
+theorem extend_least (a : Nat) : ∀ (L : List (Nat × Nat)), WallChain a L → ∀ e m,
+    e + countIn (covered L) a m ≤ m → L.foldl extendStep e ≤ m
+  | [], _, e, m, h => by rw [countIn_covered_nil] at h; simpa using h
+  | w :: L, hc, e, m, h => by
+    rw [countIn_covered_cons a w L hc] at h
+    have hw := hc.2 w (by simp)
+    rw [List.foldl_cons]
+    by_cases hlt : w.1 < e
+    · rw [extendStep_pos hlt]
+      apply extend_least a L hc.tail
+      have : w.2 ≤ m := by
+        by_cases hm : w.2 ≤ m
+        · exact hm
+        · exfalso; omega
+      omega
+    · rw [extendStep_neg hlt]
+      apply extend_least a L hc.tail; omega
+
+/-- Over a chain, the walk from `e` solves `r = e + overlap(r)`. -/
+theorem extend_solves (a : Nat) : ∀ (L : List (Nat × Nat)), WallChain a L → ∀ e,
+    L.foldl extendStep e = e + countIn (covered L) a (L.foldl extendStep e)
+  | [], _, e => by rw [countIn_covered_nil]; rfl
+  | w :: L, hc, e => by
+    have hw := hc.2 w (by simp)
+    rw [List.foldl_cons]
+    by_cases hlt : w.1 < e
+    · rw [extendStep_pos hlt]
+      have ih := extend_solves a L hc.tail (e + (w.2 - w.1))
+      have hge := extend_ge L (e + (w.2 - w.1))
+      rw [countIn_covered_cons a w L hc]
+      have hmin : min w.2 (L.foldl extendStep (e + (w.2 - w.1))) = w.2 := by omega
+      rw [hmin]
+      omega
+    · rw [extendStep_neg hlt]
+      have z : countIn (covered L) a e = 0 := by
+        apply countIn_zero
+        intro t ht
+        cases hct : covered L t
+        · rfl
+        · obtain ⟨v, hv, hv1, _⟩ := covered_eq_true.1 hct
+          have := List.rel_of_pairwise_cons hc.1 hv
+          omega
+      have hle := extend_least a L hc.tail e e (by omega)
+      have heq : L.foldl extendStep e = e := Nat.le_antisymm hle (extend_ge L e)
+      rw [heq, countIn_covered_cons a w L hc, z]
+      omega
+
+/-! ### Merging a sorted list gives a chain with the same cover -/
+
+/-- The merge's accumulator: a chain read last wall first. -/
+def WallChainRev (a : Nat) (R : List (Nat × Nat)) : Prop :=
+  R.Pairwise (fun v w => w.2 < v.1) ∧ ∀ w ∈ R, a ≤ w.1 ∧ w.1 < w.2
+
+theorem mergeStep_spec (a : Nat) (R : List (Nat × Nat)) (w : Nat × Nat) (hR : WallChainRev a R)
+    (hw : a ≤ w.1 ∧ w.1 < w.2) (hle : ∀ v ∈ R, v.1 ≤ w.1) :
+    WallChainRev a (mergeStep R w) ∧ (∀ v ∈ mergeStep R w, v.1 ≤ w.1) ∧
+      ∀ t, covered (mergeStep R w) t = (covered R t || decide (w.1 ≤ t ∧ t < w.2)) := by
+  match R with
+  | [] =>
+    show WallChainRev a [w] ∧ (∀ v ∈ [w], v.1 ≤ w.1) ∧
+      ∀ t, covered [w] t = (covered [] t || decide (w.1 ≤ t ∧ t < w.2))
+    refine ⟨⟨by simp, by simpa using hw⟩, by simp, fun t => ?_⟩
+    simp [covered]
+  | v :: vs =>
+    have hv := hR.2 v (by simp)
+    have hvw := hle v (by simp)
+    have hpw := List.pairwise_cons.1 hR.1
+    by_cases hm : w.1 ≤ v.2
+    · have e : mergeStep (v :: vs) w = (v.1, max v.2 w.2) :: vs := if_pos hm
+      rw [e]
+      refine ⟨⟨List.pairwise_cons.2 ⟨fun u hu => hpw.1 u hu, hpw.2⟩, ?_⟩, ?_, fun t => ?_⟩
+      · intro u hu
+        rcases List.mem_cons.1 hu with rfl | hu
+        · simp; omega
+        · exact hR.2 u (List.mem_cons_of_mem _ hu)
+      · intro u hu
+        rcases List.mem_cons.1 hu with rfl | hu
+        · simpa using hvw
+        · exact hle u (List.mem_cons_of_mem _ hu)
+      · simp only [covered_cons]
+        by_cases h1 : v.1 ≤ t <;> by_cases h2 : t < v.2 <;> by_cases h3 : w.1 ≤ t <;>
+          by_cases h4 : t < w.2 <;> by_cases h5 : t < max v.2 w.2 <;>
+          simp [h1, h2, h3, h4, h5] <;> omega
+    · have e : mergeStep (v :: vs) w = w :: v :: vs := if_neg hm
+      rw [e]
+      refine ⟨⟨List.pairwise_cons.2 ⟨fun u hu => ?_, hR.1⟩, ?_⟩, ?_, fun t => ?_⟩
+      · rcases List.mem_cons.1 hu with rfl | hu
+        · omega
+        · have := hpw.1 u hu
+          have := hR.2 u (List.mem_cons_of_mem _ hu)
+          omega
+      · intro u hu
+        rcases List.mem_cons.1 hu with rfl | hu
+        · exact hw
+        · exact hR.2 u hu
+      · intro u hu
+        rcases List.mem_cons.1 hu with rfl | hu
+        · exact Nat.le_refl _
+        · exact hle u hu
+      · simp only [covered_cons]
+        cases decide (v.1 ≤ t ∧ t < v.2) <;> cases covered vs t <;>
+          cases decide (w.1 ≤ t ∧ t < w.2) <;> rfl
+
+theorem foldl_mergeStep_spec (a : Nat) : ∀ (S R : List (Nat × Nat)),
+    S.Pairwise (fun v w => v.1 ≤ w.1) → (∀ w ∈ S, a ≤ w.1 ∧ w.1 < w.2) → WallChainRev a R →
+    (∀ v ∈ R, ∀ w ∈ S, v.1 ≤ w.1) →
+    WallChainRev a (S.foldl mergeStep R) ∧
+      ∀ t, covered (S.foldl mergeStep R) t = (covered R t || covered S t)
+  | [], R, _, _, hR, _ => ⟨hR, fun t => by simp [covered]⟩
+  | w :: S, R, hs, hm, hR, hle => by
+    rw [List.foldl_cons]
+    have hps := List.pairwise_cons.1 hs
+    obtain ⟨h1, h2, h3⟩ :=
+      mergeStep_spec a R w hR (hm w (by simp)) (fun v hv => hle v hv w (by simp))
+    have ih := foldl_mergeStep_spec a S (mergeStep R w) hps.2
+      (fun u hu => hm u (List.mem_cons_of_mem _ hu)) h1
+      (fun v hv u hu => Nat.le_trans (h2 v hv) (hps.1 u hu))
+    refine ⟨ih.1, fun t => ?_⟩
+    rw [ih.2 t, h3 t, covered_cons]
+    cases covered R t <;> cases decide (w.1 ≤ t ∧ t < w.2) <;> cases covered S t <;> rfl
+
+theorem covered_reverse (L : List (Nat × Nat)) (t : Nat) : covered L.reverse t = covered L t := by
+  simp [covered, List.any_reverse]
+
+/-- **Fork `merge_walls`, specified**: a list sorted by start merges into a chain of
+disjoint walls holding exactly the units the list held. -/
+theorem mergeSorted_spec (a : Nat) (S : List (Nat × Nat)) (hs : S.Pairwise (fun v w => v.1 ≤ w.1))
+    (hm : ∀ w ∈ S, a ≤ w.1 ∧ w.1 < w.2) :
+    WallChain a (mergeSorted S) ∧ ∀ t, covered (mergeSorted S) t = covered S t := by
+  obtain ⟨⟨hp, hmem⟩, hcov⟩ := foldl_mergeStep_spec a S [] hs hm ⟨by simp, by simp⟩ (by simp)
+  refine ⟨⟨?_, fun w hw => hmem w (List.mem_reverse.1 hw)⟩, fun t => ?_⟩
+  · unfold mergeSorted; rw [List.pairwise_reverse]; exact hp
+  · unfold mergeSorted; rw [covered_reverse, hcov t]; simp [covered]
+
+/-! ### Sorting and clipping -/
+
+theorem insertByStart_perm (w : Nat × Nat) : ∀ L : List (Nat × Nat), (insertByStart w L).Perm (w :: L)
+  | [] => List.Perm.refl _
+  | v :: vs => by
+    unfold insertByStart
+    split
+    · exact List.Perm.refl _
+    · exact ((insertByStart_perm w vs).cons v).trans (List.Perm.swap w v vs)
+
+theorem insertByStart_sorted (w : Nat × Nat) : ∀ L : List (Nat × Nat),
+    L.Pairwise (fun v w => v.1 ≤ w.1) → (insertByStart w L).Pairwise (fun v w => v.1 ≤ w.1)
+  | [], _ => by simp [insertByStart]
+  | v :: vs, h => by
+    have hp := List.pairwise_cons.1 h
+    unfold insertByStart
+    split
+    · rename_i hle
+      refine List.pairwise_cons.2 ⟨fun u hu => ?_, h⟩
+      rcases List.mem_cons.1 hu with rfl | hu
+      · exact hle
+      · exact Nat.le_trans hle (hp.1 u hu)
+    · rename_i hle
+      refine List.pairwise_cons.2 ⟨fun u hu => ?_, insertByStart_sorted w vs hp.2⟩
+      rcases List.mem_cons.1 ((insertByStart_perm w vs).mem_iff.1 hu) with rfl | hu
+      · omega
+      · exact hp.1 u hu
+
+theorem sortByStart_perm : ∀ L : List (Nat × Nat), (sortByStart L).Perm L
+  | [] => List.Perm.refl _
+  | w :: ws => (insertByStart_perm w _).trans ((sortByStart_perm ws).cons w)
+
+theorem sortByStart_sorted : ∀ L : List (Nat × Nat), (sortByStart L).Pairwise (fun v w => v.1 ≤ w.1)
+  | [] => List.Pairwise.nil
+  | w :: ws => insertByStart_sorted w _ (sortByStart_sorted ws)
+
+theorem mergeSort_start_sorted (L : List (Nat × Nat)) :
+    (L.mergeSort (fun v w => decide (v.1 ≤ w.1))).Pairwise (fun v w => v.1 ≤ w.1) := by
+  have := List.pairwise_mergeSort (le := fun v w : Nat × Nat => decide (v.1 ≤ w.1))
+    (fun a b c hab hbc => by simp at *; omega) (fun a b => by simp; omega) L
+  exact this.imp (fun h => by simpa using h)
+
+theorem clipWalls_mem {lo : Nat} {ws : List (Nat × Nat)} {w : Nat × Nat} (h : w ∈ clipWalls lo ws) :
+    lo ≤ w.1 ∧ w.1 < w.2 := by
+  simp only [clipWalls, List.mem_filter, List.mem_map, decide_eq_true_eq] at h
+  obtain ⟨⟨u, _, rfl⟩, h2⟩ := h
+  exact ⟨Nat.le_max_right _ _, h2⟩
+
+/-- At or after `lo`, clipping changes no unit's cover. -/
+theorem covered_clipWalls (lo : Nat) (ws : List (Nat × Nat)) {t : Nat} (ht : lo ≤ t) :
+    covered (clipWalls lo ws) t = covered ws t := by
+  apply Bool.eq_iff_iff.2
+  rw [covered_eq_true, covered_eq_true]
+  simp only [clipWalls, List.mem_filter, List.mem_map, decide_eq_true_eq]
+  constructor
+  · rintro ⟨_, ⟨⟨u, hu, rfl⟩, _⟩, h1, h2⟩
+    exact ⟨u, hu, by simp at h1; omega, h2⟩
+  · rintro ⟨u, hu, h1, h2⟩
+    exact ⟨(max u.1 lo, u.2), ⟨⟨u, hu, rfl⟩, by simp; omega⟩, by simp; omega, h2⟩
+
+theorem covered_perm {L M : List (Nat × Nat)} (h : L.Perm M) (t : Nat) : covered L t = covered M t := by
+  apply Bool.eq_iff_iff.2
+  rw [covered_eq_true, covered_eq_true]
+  exact ⟨fun ⟨w, hw, hh⟩ => ⟨w, h.mem_iff.1 hw, hh⟩, fun ⟨w, hw, hh⟩ => ⟨w, h.mem_iff.2 hw, hh⟩⟩
+
+/-! ### E7, discharged (moved from `Goals.lean`'s STAGE 6 under D12) -/
+
+/-- The walk over **any** start-sorted arrangement of the clipped walls solves the
+equation and is below every pre-fixed point.  Both sorts are instances. -/
+theorem walk_is_the_least_solution (a wm wc : Nat) (ws S : List (Nat × Nat))
+    (hperm : S.Perm (clipWalls a ws)) (hs : S.Pairwise (fun v w => v.1 ≤ w.1)) :
+    (mergeSorted S).foldl extendStep (windowBase a wm wc)
+        = windowBase a wm wc
+          + wallOverlap a ((mergeSorted S).foldl extendStep (windowBase a wm wc)) ws ∧
+      ∀ m, windowBase a wm wc + wallOverlap a m ws ≤ m →
+        (mergeSorted S).foldl extendStep (windowBase a wm wc) ≤ m := by
+  have hm : ∀ w ∈ S, a ≤ w.1 ∧ w.1 < w.2 := fun w hw => clipWalls_mem (hperm.mem_iff.1 hw)
+  obtain ⟨hc, hcov⟩ := mergeSorted_spec a S hs hm
+  have hov : ∀ x, wallOverlap a x ws = countIn (covered (mergeSorted S)) a x := by
+    intro x
+    rw [wallOverlap_eq_countIn]
+    apply countIn_congr a x
+    intro t hat _
+    rw [hcov t, covered_perm hperm t, covered_clipWalls a ws hat]
+  refine ⟨?_, fun m h => ?_⟩
+  · rw [hov]; exact extend_solves a _ hc _
+  · rw [hov] at h; exact extend_least a _ hc _ _ h
+
+/-- **E7a**: the window end solves §8.1's equation, in the fork's overlap semantics. -/
+theorem the_window_end_solves_the_equation (a wm wc : Nat) (ws : List (Nat × Nat)) :
+    windowEnd a wm wc ws = windowBase a wm wc + wallOverlap a (windowEnd a wm wc ws) ws :=
+  (walk_is_the_least_solution a wm wc ws _ (sortByStart_perm _) (sortByStart_sorted _)).1
+
+/-- E7b's stronger form: below every pre-fixed point. -/
+theorem windowEnd_le_of_prefixpoint (a wm wc m : Nat) (ws : List (Nat × Nat))
+    (hm : windowBase a wm wc + wallOverlap a m ws ≤ m) : windowEnd a wm wc ws ≤ m :=
+  (walk_is_the_least_solution a wm wc ws _ (sortByStart_perm _) (sortByStart_sorted _)).2 m hm
+
+/-- **E7b**: the window end is the least solution, so it is a definition and not a choice
+of how many rounds a loop ran. -/
+theorem the_window_end_is_the_least_solution (a wm wc m : Nat) (ws : List (Nat × Nat))
+    (hm : m = windowBase a wm wc + wallOverlap a m ws) :
+    windowEnd a wm wc ws ≤ m :=
+  windowEnd_le_of_prefixpoint a wm wc m ws (Nat.le_of_eq hm.symm)
+
+/-- The compiled `windowEnd` runs core's merge sort: both walks are the least solution. -/
+@[csimp] theorem windowEnd_eq_windowEndFast : @windowEnd = @windowEndFast := by
+  funext a wm wc ws
+  have f :=
+    walk_is_the_least_solution a wm wc ws _ (List.mergeSort_perm _ _) (mergeSort_start_sorted _)
+  have s := walk_is_the_least_solution a wm wc ws _ (sortByStart_perm _) (sortByStart_sorted _)
+  exact Nat.le_antisymm (s.2 _ (Nat.le_of_eq f.1.symm)) (f.2 _ (Nat.le_of_eq s.1.symm))
+
+theorem windowBase_le_windowEnd (a wm wc : Nat) (ws : List (Nat × Nat)) :
+    windowBase a wm wc ≤ windowEnd a wm wc ws := extend_ge _ _
+
+/-- The window never ends before the arrival (fork: "arriving after `window_cap` gives an
+empty window rather than a negative one"). -/
+theorem arrival_le_windowEnd (a wm wc : Nat) (ws : List (Nat × Nat)) : a ≤ windowEnd a wm wc ws :=
+  Nat.le_trans (Nat.le_max_left _ _) (windowBase_le_windowEnd a wm wc ws)
+
+theorem windowEnd_without_walls (a wm wc : Nat) : windowEnd a wm wc [] = windowBase a wm wc := rfl
+
+/-! ### The stage-6 statement, refuted as written (§3.1 item 3) -/
+
+/-- **`Goals.lean` STAGE 6's reading, kept only to refute it**: the length of every wall
+wholly inside `[arrival, stop]`.  The fork clips at the arrival, merges, and counts
+overlap (`wallOverlap`). -/
+def wallsInside (arrival stop : Nat) (walls : List (Nat × Nat)) : Nat :=
+  (walls.filter (fun w => decide (arrival ≤ w.1 ∧ w.2 ≤ stop))).foldl (fun a w => a + (w.2 - w.1)) 0
+
+/-- Arrival 07:00, an eight-hour window, cap 19:00, a wall 14:50–15:50: 900 (15:00) solves
+the stage-6 equation, because the wall is not wholly inside `[420, 900]`; the fork gives 960. -/
+theorem the_window_end_is_not_the_least_solution_over_walls_wholly_inside :
+    (900 = min (420 + 480) 1140 + wallsInside 420 900 [(890, 950)]) ∧
+    windowEnd 420 480 1140 [(890, 950)] = 960 := by
+  decide
+
+/-- **E7b as `Goals.lean` STAGE 6 stated it is false** against the fork. -/
+theorem the_window_end_is_not_the_least_solution_as_stage_6_wrote_it :
+    ¬ ∀ (a wm wc m : Nat) (ws : List (Nat × Nat)),
+      m = min (a + wm) wc + wallsInside a m ws → windowEnd a wm wc ws ≤ m := fun h => by
+  have w := the_window_end_is_not_the_least_solution_over_walls_wholly_inside
+  have := h 420 480 1140 900 [(890, 950)] w.1
+  rw [w.2] at this
+  omega
+
+/-- The base clamp: arriving at 20:00 after a 19:00 cap gives an empty window ending at the
+arrival, where the stage-6 equation's base is the cap. -/
+theorem the_window_base_is_clamped_to_the_arrival :
+    windowEnd 1200 480 1140 [] = 1200 ∧ min (1200 + 480) 1140 + wallsInside 1200 1200 [] = 1140 := by
+  decide
+
+/-- The clip: a wall 06:40–08:00 against a 07:00 arrival extends the window by its hour
+after the arrival, and is not wholly inside it. -/
+theorem a_wall_begun_before_the_arrival_extends_the_window :
+    windowEnd 420 480 1140 [(400, 480)] = 960 ∧
+    min (420 + 480) 1140 + wallsInside 420 960 [(400, 480)] = 900 := by
+  decide
+
+/-- **E7a as `Goals.lean` STAGE 6 stated it is false** against the fork. -/
+theorem the_window_end_does_not_solve_the_equation_as_stage_6_wrote_it :
+    ¬ ∀ (a wm wc : Nat) (ws : List (Nat × Nat)),
+      windowEnd a wm wc ws = min (a + wm) wc + wallsInside a (windowEnd a wm wc ws) ws := fun h => by
+  have w := the_window_base_is_clamped_to_the_arrival
+  have := h 1200 480 1140 []
+  rw [w.1, w.2] at this
+  omega
+
+/-- Two overlapping walls, 10:00–11:40 and 10:50–12:30 after a 07:00 arrival, count their
+union once: 150 units, not 200 (fork `merge_walls`). -/
+theorem overlapping_walls_count_once :
+    windowEnd 420 480 1140 [(650, 750), (600, 700)] = 1050 := by
+  decide
+
+/-! ### The configured window: site R3 (reopened, D10-10) and site R2 -/
+
+/-- **Site R3, reopened** (design D10-10): fork `(window_hours * 60.0).round().max(0.0)`,
+half-up on the exact pair `window_hours = num/den`.  `f64::round` is half away from zero,
+which is half-up on a positive value; where the double's product lands on the other side of
+a tie than the exact pair does, the kernel differs by one minute (parity P27). -/
+def windowMinOf (wh : Pos) : Nat := halfUpQ (scale wh 60)
+
+/-- **Site R2 on the exact pairs**: fork `budget_blocks` =
+`floor(window_hours × 60 / block_min.max(1) × budget_ratio)`, one division, through
+`Arith.budgetBlocks`.  It reads the configured window, never the day's actual length (§8.1:
+a late start keeps its budget), and never the rounded `windowMinOf`. -/
+def budgetOf (wh : Pos) (blockMin : Nat) (br : Pos) : Nat :=
+  budgetBlocks (60 * wh.val.num) (max 1 blockMin * wh.val.den)
+    (Nat.mul_pos (by omega) (denPos wh)) br
+
+theorem budgetOf_denotes (wh : Pos) (blockMin : Nat) (br : Pos) :
+    budgetOf wh blockMin br
+      = (60 * wh.val.num * br.val.num) / (max 1 blockMin * wh.val.den * br.val.den) := by
+  simp [budgetOf, budgetBlocks, floorQ, mkPos, Nat.mul_assoc]
+
+/-- Eight hours is 480 minutes and 6 blocks of 60 at 3/4; `7.33` h is 440 minutes; half a
+minute rounds up; `block_min = 0` reads as 1 (360 blocks); `7.5` h at 50-minute blocks is
+floor(6.75) = 6. -/
+theorem window_and_budget_on_witnesses :
+    windowMinOf (mkPos 8 1 (by decide)) = 480 ∧
+    budgetOf (mkPos 8 1 (by decide)) 60 budgetRatio = 6 ∧
+    windowMinOf (mkPos 733 100 (by decide)) = 440 ∧
+    windowMinOf (mkPos 1 120 (by decide)) = 1 ∧
+    budgetOf (mkPos 8 1 (by decide)) 0 budgetRatio = 360 ∧
+    budgetOf (mkPos 15 2 (by decide)) 50 budgetRatio = 6 := by
+  decide
+
+/-! ### In real seconds, through the zone table -/
+
+/-- `local_dt`'s instants are whole seconds, so a window in UTC seconds is exact. -/
+theorem instantOf_ns (z : Cal.Tz) (d : Nat) (c : Fin 1440) : (Cal.instantOf z d c).ns = 0 := by
+  unfold Cal.instantOf
+  split
+  · rfl
+  · split <;> rfl
+
+/-- **Fork `window_and_budget(local_dt(tz, d, arrival), walls, cfg)`'s window for day `d`**,
+as UTC seconds `(start, end)`.  The walls are UTC seconds (`wallsOn`); `windowMin` is
+`windowMinOf`'s minutes.  The cap is `window_cap` on the arrival's local date. -/
+def windowOn (z : Cal.Tz) (d : Nat) (arrival windowCap : Field.Clock) (windowMin : Nat)
+    (walls : List (Nat × Nat)) : Nat × Nat :=
+  let a := (Cal.instantOf z d arrival).sec
+  (a, windowEnd a (60 * windowMin) (Cal.instantOf z (Cal.localDate z ⟨a, 0⟩) windowCap).sec walls)
+
+/-- E7 in real seconds, as `windowOn` runs it. -/
+theorem windowOn_solves_E7 (z : Cal.Tz) (d : Nat) (arrival windowCap : Field.Clock) (windowMin : Nat)
+    (walls : List (Nat × Nat)) :
+    let w := windowOn z d arrival windowCap windowMin walls
+    let base := windowBase w.1 (60 * windowMin)
+      (Cal.instantOf z (Cal.localDate z ⟨w.1, 0⟩) windowCap).sec
+    w.1 = (Cal.instantOf z d arrival).sec ∧ w.2 = base + wallOverlap w.1 w.2 walls ∧
+      ∀ m, m = base + wallOverlap w.1 m walls → w.2 ≤ m :=
+  ⟨rfl, the_window_end_solves_the_equation _ _ _ _, fun m hm => the_window_end_is_the_least_solution _ _ _ m _ hm⟩
+
+/-- The witnesses' day numbers are the dates they name. -/
+theorem the_witness_days_are_the_dates_they_name :
+    Cal.toDay ⟨2026, 9, 7⟩ = 739865 ∧ Cal.weekdayOf 739865 = .monday ∧
+    Cal.toDay ⟨2026, 3, 8⟩ = 739682 := by
+  decide
+
+/-- Fork test `budget_of_an_eight_hour_window` (Chicago, 2026-09-07): arriving at 07:00 with
+no walls, the window ends at 15:00 and the budget is 6. -/
+theorem budget_of_an_eight_hour_window :
+    windowOn Cal.chicago 739865 420 1140 (windowMinOf (mkPos 8 1 (by decide))) []
+      = ((Cal.instantOf Cal.chicago 739865 420).sec, (Cal.instantOf Cal.chicago 739865 900).sec) ∧
+    budgetOf (mkPos 8 1 (by decide)) 60 budgetRatio = 6 := by
+  decide
+
+/-- Fork test `walls_extend_the_window`: the §4.3 meeting 12:50–13:50 moves the end from
+15:00 to 16:00. -/
+theorem walls_extend_the_window :
+    windowOn Cal.chicago 739865 420 1140 480
+        [((Cal.instantOf Cal.chicago 739865 770).sec, (Cal.instantOf Cal.chicago 739865 830).sec)]
+      = ((Cal.instantOf Cal.chicago 739865 420).sec, (Cal.instantOf Cal.chicago 739865 960).sec) := by
+  decide
+
+/-- Fork test `the_cap_bounds_the_window`: arriving at 14:00, the eight hours would end at
+22:00, and the cap ends the window at 19:00. -/
+theorem the_cap_bounds_the_window :
+    (windowOn Cal.chicago 739865 840 1140 480 []).2 = (Cal.instantOf Cal.chicago 739865 1140).sec := by
+  decide
+
+/-- Fork test `wall_extension_reaches_a_fixed_point` (`capacity_slots.rs`): 15:00 plus the
+09:00 wall's hour is 16:00, which brings the 15:30 wall inside, so the end is 16:30. -/
+theorem wall_extension_reaches_a_fixed_point :
+    (windowOn Cal.chicago 739865 420 1140 480
+        [((Cal.instantOf Cal.chicago 739865 540).sec, (Cal.instantOf Cal.chicago 739865 600).sec),
+         ((Cal.instantOf Cal.chicago 739865 930).sec, (Cal.instantOf Cal.chicago 739865 960).sec)]).2
+      = (Cal.instantOf Cal.chicago 739865 990).sec := by
+  decide
+
+/-- **A DST day counts real hours** (design §13.3, P28 not needed): on 2026-03-08, arriving
+at 01:00 CST, eight hours end at 10:00 CDT on the clock, 28,800 seconds later. -/
+theorem the_window_counts_real_hours_across_the_spring_transition :
+    windowOn Cal.chicago 739682 60 1140 480 []
+      = ((Cal.instantOf Cal.chicago 739682 60).sec, (Cal.instantOf Cal.chicago 739682 600).sec) ∧
+    (Cal.instantOf Cal.chicago 739682 600).sec - (Cal.instantOf Cal.chicago 739682 60).sec
+      = 480 * 60 := by
+  decide
+
+/-! ### Walls from the plan: fork `Ctx::walls_on`, indexed once per request -/
+
+/-- One wall of the plan: the local dates it belongs to and its UTC seconds. -/
+structure WallIx where
+  fromDay : Nat
+  toDay   : Nat
+  lo      : Nat
+  hi      : Nat
+deriving DecidableEq, Repr
+
+/-- `NaiveDateTime − Duration::minutes(m)`: the local clock moved back, as a date and a
+clock (saturating at the origin). -/
+def shiftBack (s : Field.DT) (m : Nat) : Nat × Field.Clock :=
+  ((s.day * 1440 + s.time.val - m) / 1440,
+    ⟨(s.day * 1440 + s.time.val - m) % 1440, Nat.mod_lt _ (by decide)⟩)
+
+theorem shiftBack_zero (s : Field.DT) : shiftBack s 0 = (s.day, s.time) := by
+  have h := s.time.isLt
+  simp only [shiftBack, Nat.sub_zero, Prod.mk.injEq]
+  refine ⟨by omega, Fin.ext ?_⟩
+  simp only
+  omega
+
+/-- Fork `walls_on`'s wall for one item: none for a settled item or a shape that is not an
+interval; otherwise the start moved back by `buffer:` on the local clock, the start's date
+through the end's date, and both ends through `local_dt`. -/
+def wallOfEntity (z : Cal.Tz) (bm : Nat) (p : PlanCore) (i : Id) (e : Entity) : Option WallIx :=
+  match e.val.status with
+  | .settled _ => none
+  | _ =>
+    match effectiveShape p i with
+    | .interval s f =>
+      let sb := shiftBack s ((e.val.buffer.map (Field.Dur.minutes bm)).getD 0)
+      some ⟨sb.1, f.day, (Cal.instantOf z sb.1 sb.2).sec, (Cal.instantOf z f.day f.time).sec⟩
+    | _ => none
+
+/-- Every wall of the plan, read once per request (`bm` is `block_min`, for a `buffer:`
+written in blocks). -/
+def wallIndex (z : Cal.Tz) (bm : Nat) (p : PlanCore) : List WallIx :=
+  p.store.dom.filterMap fun i =>
+    match p.store.get i with
+    | none => none
+    | some e => wallOfEntity z bm p i e
+
+/-- Fork `walls_on(date)`: the walls whose dates cover `d`, **not clipped to `d`** (quirk
+(e), gap 85). -/
+def wallsOn (ix : List WallIx) (d : Nat) : List (Nat × Nat) :=
+  ix.filterMap fun w => if w.fromDay ≤ d ∧ d ≤ w.toDay then some (w.lo, w.hi) else none
+
+theorem mem_wallsOn {ix : List WallIx} {d : Nat} {w : Nat × Nat} :
+    w ∈ wallsOn ix d ↔ ∃ x ∈ ix, x.fromDay ≤ d ∧ d ≤ x.toDay ∧ w = (x.lo, x.hi) := by
+  simp only [wallsOn, List.mem_filterMap]
+  constructor
+  · rintro ⟨x, hx, h⟩
+    split at h
+    · rename_i hd; simp only [Option.some.injEq] at h; exact ⟨x, hx, hd.1, hd.2, h.symm⟩
+    · simp at h
+  · rintro ⟨x, hx, h1, h2, rfl⟩
+    exact ⟨x, hx, by simp [h1, h2]⟩
+
+theorem mem_wallIndex {z : Cal.Tz} {bm : Nat} {p : PlanCore} {x : WallIx} :
+    x ∈ wallIndex z bm p ↔ ∃ i e, p.store.get i = some e ∧ wallOfEntity z bm p i e = some x := by
+  simp only [wallIndex, List.mem_filterMap]
+  constructor
+  · rintro ⟨i, _, h⟩
+    split at h
+    · simp at h
+    · rename_i e he; exact ⟨i, e, he, h⟩
+  · rintro ⟨i, e, he, h⟩
+    refine ⟨i, (p.store.domSpec i).2 (by simp [he]), ?_⟩
+    simp [he, h]
+
+/-- A settled item is no wall. -/
+theorem wallOfEntity_settled (z : Cal.Tz) (bm : Nat) (p : PlanCore) (i : Id) (e : Entity)
+    (o : Outcome) (h : e.val.status = .settled o) : wallOfEntity z bm p i e = none := by
+  simp [wallOfEntity, h]
+
+/-- An unsettled interval item with no `buffer:` is the wall of its own ends. -/
+theorem wallOfEntity_interval (z : Cal.Tz) (bm : Nat) (p : PlanCore) (i : Id) (e : Entity)
+    (s f : Field.DT) (hst : ∀ o, e.val.status ≠ .settled o) (hsh : effectiveShape p i = .interval s f)
+    (hb : e.val.buffer = none) :
+    wallOfEntity z bm p i e
+      = some ⟨s.day, f.day, (Cal.instantOf z s.day s.time).sec, (Cal.instantOf z f.day f.time).sec⟩ := by
+  unfold wallOfEntity
+  split
+  · rename_i o ho; exact absurd ho (hst o)
+  · simp [hsh, hb, shiftBack_zero]
+
+/-- **The buffer comes off the local clock, not off the instant** (fork `walls_on`): an
+03:30 interval with `buffer:60m` on 2026-03-08 starts its wall at the local time 02:30,
+which Chicago skips, so the wall starts at 03:00 CDT; one hour before the 03:30 instant
+would be half an hour earlier. -/
+theorem the_buffer_is_taken_off_the_local_clock :
+    shiftBack ⟨739682, 210⟩ 60 = (739682, 150) ∧
+    (Cal.instantOf Cal.chicago 739682 150).sec
+      = (Cal.instantOf Cal.chicago 739682 210).sec - 60 * 60 + 30 * 60 := by
+  decide
+
+/-- **Quirk (e), the multi-day wall** (owner's Q6, gap 85): a wall from Monday 09:00 to
+Wednesday 17:00 (2026-09-07 to 09-09, Chicago) belongs to Tuesday and Wednesday unclipped.
+Tuesday's window runs from 07:00 to Thursday 01:00 and Wednesday's from 07:00 to Thursday
+01:00, so Wednesday 17:00 to Thursday 01:00, after the wall ends, lies in both.  Bounding a
+window to its own date (the later fix Q6 names) would change Tuesday's end, so the fix is a
+behaviour change with its own parity entry. -/
+theorem a_multi_day_wall_puts_one_evening_in_two_windows :
+    let ix : List WallIx := [⟨739865, 739867, (Cal.instantOf Cal.chicago 739865 540).sec,
+      (Cal.instantOf Cal.chicago 739867 1020).sec⟩]
+    windowOn Cal.chicago 739866 420 1140 480 (wallsOn ix 739866)
+      = ((Cal.instantOf Cal.chicago 739866 420).sec, (Cal.instantOf Cal.chicago 739868 60).sec) ∧
+    windowOn Cal.chicago 739867 420 1140 480 (wallsOn ix 739867)
+      = ((Cal.instantOf Cal.chicago 739867 420).sec, (Cal.instantOf Cal.chicago 739868 60).sec) ∧
+    (Cal.instantOf Cal.chicago 739867 1020).sec < (Cal.instantOf Cal.chicago 739868 60).sec := by
   decide
 
 end Look

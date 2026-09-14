@@ -214,7 +214,7 @@ Root import order (`cat TmKernel.lean`): `Arith Cal Grain Text Json Line State
 Plan Tree Priority Capacity Lookahead Fast Cmd Close Report Boundary` (`Tree` since stage 5 step 1: it imports `Plan`
 only, and `Boundary` imports it for its loaded-plan witnesses; `Priority` since stage 5 step 2: it
 imports `Plan` and `Arith`, and `Boundary` imports it likewise; `Capacity` since stage 5 step 3: it
-imports `Priority` only, and `Boundary` imports it likewise; `Lookahead` since stage 5 D10 step L1: it imports `Capacity` only, and nothing imports it yet). `Json` imports `Text` only; `Close` imports `Cmd`;
+imports `Priority` only, and `Boundary` imports it likewise; `Lookahead` since stage 5 D10 step L1: it imports `Capacity`, and `Cal` explicitly since step L2 (which `Capacity` already reached through `Priority` and `Plan`), and nothing imports it yet). `Json` imports `Text` only; `Close` imports `Cmd`;
 `Report` imports `Close` and `Arith` (stage 4 step 5 — the first consumer of
 `Arith`); `Boundary` imports `Report` and `Json` (it imported `Cmd` before stage 4
 step 2, and `Close` before step 5). **No module imports `Lean.Data.Json` any more** — the wire is the
@@ -230,7 +230,7 @@ kernel's own (§2.4).
 - `Tree` — §6.4's `remaining` (`remainingMin`, structural fuel, proved to be the one fixed point of its step) and §5.4's series head (`seriesHead`). Stage 5 step 1.
 - `Priority` — §7.1's `k` (`rootK`, `Tree::root_priority`) and `p` (`prio`), the bin ladder at an exact rational availability (`binOfQ`, `binOfScaledQ`; D10), gap 27's loader check (`binsOf?`, `binsOfPairs?`), §7.2's rule table (`rowOf`, `rowTable`, `rawPrio`, `finalPrio`) and §7.4's hysteresis (`hysteresis`, `applyHysteresis`, `hysteresisDays`). Stage 5 step 2.
 - `Capacity` — §7.3's EDF reservation pass over D10's exact capacity: `Den` (a positive denominator, `denOf?`), `DayCapacity` (a day and six level numerators, read over the pass's one `Den` by `minutesAt`), `Deadline`, `reserveRest`/`availUntil`, `sortDue`, `edf`/`edfGrants` and `Grant` (`avail`, `reserved`, `shortfall`, `hot`, `impossible`, `availQ`), and the lookahead's smart constructor `lookaheadOf?` (`Lookahead`, days ascending). The lookahead that produces the list is the D9/D10 tranche's. Stage 5 step 3.
-- `Lookahead` — D10's exact mixture (design §13): `capDen = 10^18` (D17) and `capDenD`, `Weight` and its decoder `mkWeight?` (`WErr`: `badWeight`, `weightAboveOne`, `weightPrecision`), `Hist`, `mix`/`mixDay`/`ofHist`, the budget limit `limitHist` (mixing comes after it), the threshold twin `twin` (parity P1), and `scaleDay`/`scaleGrant` with `edf_commutes_with_scaling`. The histograms are arguments until L2–L5. Stage 5 D10 step L1.
+- `Lookahead` — D10's exact mixture (design §13): `capDen = 10^18` (D17) and `capDenD`, `Weight` and its decoder `mkWeight?` (`WErr`: `badWeight`, `weightAboveOne`, `weightPrecision`), `Hist`, `mix`/`mixDay`/`ofHist`, the budget limit `limitHist` (mixing comes after it), the threshold twin `twin` (parity P1), and `scaleDay`/`scaleGrant` with `edf_commutes_with_scaling` (step L1). The day's window, E7, pulled from stage 6 by D12 (step L2): `windowEnd` (clip, sort, merge, extend; `@[csimp]` twin `windowEndFast`), `windowBase`, the specification `wallOverlap`, E7a/E7b (`the_window_end_solves_the_equation`, `the_window_end_is_the_least_solution`), sites R3 `windowMinOf` and R2 `budgetOf`, `windowOn` in UTC seconds through `Cal.instantOf`, and the plan's walls `wallIndex`/`wallsOn` (fork `Ctx::walls_on`, quirk (e) kept). Stage 6's `dayPlan` must reuse these. The histograms are arguments until L3–L5. Stage 5 D10 steps L1–L2.
 - `Cmd` — `lift`, `Transform`, `Dest`, `WfPlan.mapAt`, `KErr`, the commands (`cmdMove cmdDrop cmdSetEst cmdDemote cmdReadopt cmdRank cmdEdit cmdUnset`, and `WfPlan.insertFresh` for `add`), the `EditVal` table.
 - `Close` — §6.3's lifecycle as one fold at three grains: the `ClosePolicy` table and its bridges, `close`, the landing rank shift, `close_spec`, `autoClose`. On the wire since stage 4 step 5, as the `close` and `autoClose` ops.
 - `Report` — what a close reports (the owner's D3): `CloseEntry`, `Report`, `closeReport`, `closeR`/`autoCloseR`, and the theorems tying each entry to the close's result. kernel/README.md, stage-4 step-5 block.
@@ -2112,6 +2112,13 @@ Rust.
 - **E7 is `~U`, not U.** `window_and_budget` solved a fixed point by iterating;
   totality forces a termination argument *or* a bound. Forcing a decision point
   is not the same as making the right decision.
+  *Moved into stage 5 by the owner's D12 and proved at D10 step L2 (README "Stage 5 D10 L2"):
+  `Look.windowEnd` is the fork's clip-sort-merge-extend walk, and it is the least solution of
+  `end = max(arrival, min(arrival + window, cap)) + overlap(arrival, end, walls)`
+  (`the_window_end_solves_the_equation`, `the_window_end_is_the_least_solution`). Both STAGE 6
+  goals were false as written (walls wholly inside, an unclamped base) and are restated under
+  their names; the refutations are `the_window_end_is_not_the_least_solution_as_stage_6_wrote_it`
+  and `the_window_end_does_not_solve_the_equation_as_stage_6_wrote_it`.*
 - **Series head has no home** (gap 18). `seriesOf` derives the
   `## series:<name>` a placement sits in; §5.4's head rule and the implied
   `after:` a series section carries are planner concepts. *The head got a home at
@@ -2139,6 +2146,9 @@ Rust.
 
 1. **§8.1–8.2**: window and budget, then the eight steps — walls, routines,
    slots, priority, assign, deferred routines, rest, emit.
+   *The window, the budget and the walls are stage 5's since D12 (D10 step L2,
+   `Look.windowEnd`, `Look.windowOn`, `Look.budgetOf`, `Look.wallIndex`/`wallsOn`):
+   `dayPlan` reuses them and never writes a second copy (AGENTS §5.3).*
 2. **L26 as decidable checks over the produced `DayPlan`**: the energy filter
    (`item.ci ≤ slot.energy`), no overbooking, walls unmoved, monotone rank. These
    are single-run and therefore cheap — a checker plus a `lift`, which is the
@@ -2168,7 +2178,9 @@ left it open, settle it before you widen it, because this stage is where it grow
 `Segment`/`SegKind`'s eleven variants and `Diagnostics`' nine families.
 
 **Goals this stage owns** — 15 in `Goals.lean` under `# STAGE 6`, plus the
-provisional `Seg`/`DayPlan`/`PlanReq`/`dayPlan` vocabulary:
+provisional `Seg`/`DayPlan`/`PlanReq`/`dayPlan` vocabulary *(13 since stage 5 D10 step L2:
+the two E7 goals moved into stage 5 under D12 and are proved in `Lookahead.lean`, restated
+to the fork's overlap semantics and refuted as written)*:
 `plan_does_not_overbook`, `plan_reserves_one_block_at_a_time`,
 `plan_respects_the_energy_filter`, `plan_places_no_block_over_a_wall`,
 `plan_places_no_block_over_a_break`,
@@ -2177,7 +2189,7 @@ provisional `Seg`/`DayPlan`/`PlanReq`/`dayPlan` vocabulary:
 `plan_never_drops_an_impossible_item`,
 `plan_never_batches_past_an_equal_ci_candidate` (these eleven are L26's
 single-run checks), `the_window_end_solves_the_equation` and
-`the_window_end_is_the_least_solution` (E7), and `plan_tail_drop` /
+`the_window_end_is_the_least_solution` (E7, *gone to stage 5, above*), and `plan_tail_drop` /
 `plan_is_stable_across_a_replan` — L24 and L25, the two relational ones the
 recorded recommendation says to leave to the proptest. If you take that
 recommendation, the two goals stay in `Goals.lean` and check 7 ends the stage at

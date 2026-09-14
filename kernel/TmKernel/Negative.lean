@@ -1075,4 +1075,40 @@ theorem twoStampsOfOneInstantOrderedByTheirClocks :
       < ⟨(Cal.utcSecAt Cal.Offset.utc (Cal.toDay ⟨2026, 9, 8⟩ * 86400 + 3 * 3600)).getD 0, 0⟩ := by
   decide
 
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D10 track, step L2: the day's window, E7, in
+-- `Lookahead.lean`).  Numbers 110 and 111 are the design's own L2 labels (its
+-- §16); nothing in this checkout had taken them.  The D9 track numbers in
+-- parallel and the merge renumbers.  The controls, which compile, are in
+-- Lookahead.lean: `the_window_end_is_not_the_least_solution_over_walls_wholly_inside`
+-- and `the_window_end_is_the_least_solution` (110),
+-- `the_window_end_solves_the_equation` and `overlapping_walls_count_once` (111).
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 110 — walls counted only when wholly inside the window (Goals.lean
+   STAGE 6's `wallsInside`).  Arrival 07:00, eight hours, cap 19:00, a wall
+   14:50–15:50: the stage-6 equation is solved at 15:00, because the wall is not
+   wholly inside `[07:00, 15:00]`.  The fork, and `windowEnd`, extend the window
+   by the wall's whole hour to 16:00, so claiming 15:00 is false: `decide`
+   refuses it. -/
+theorem theWindowEndCountsOnlyWallsWhollyInside :
+    Look.windowEnd 420 480 1140 [(890, 950)]
+      = min (420 + 480) 1140 + Look.wallsInside 420 900 [(890, 950)] := by
+  decide
+
+/- CHEAT 111 — overlapping walls not merged before the walk.  Walls 10:00–11:40
+   and 10:50–12:30 each extend the window by their own length, 200 minutes, where
+   their union is 150: the unmerged walk ends at 18:20 and the least solution of
+   E7 at 17:30 (`the_window_end_solves_the_equation`,
+   `overlapping_walls_count_once`).  `decide` refuses the equality. -/
+def unmergedWindowEnd (a wm wc : Nat) (ws : List (Nat × Nat)) : Nat :=
+  (Look.sortByStart (Look.clipWalls a ws)).foldl Look.extendStep (Look.windowBase a wm wc)
+
+theorem theUnmergedWalkIsTheWindowEnd :
+    unmergedWindowEnd 420 480 1140 [(650, 750), (600, 700)]
+      = Look.windowEnd 420 480 1140 [(650, 750), (600, 700)] := by
+  decide
+
+
 end Tm

@@ -9622,3 +9622,261 @@ is now the B1 version. `Lookahead.lean` still imports only `Capacity`, and L2 ad
 | `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (D9's `loggen` included) |
 | FFI suite (`tm-kernel-ffi`) | **81 passed / 0 failed** (kernel 72, corpus 8, stack 1) |
 | `cli_latency.rs` | green: first verb 617.2 / 607.4 / 632.8 ms, later verb 60.8 / 60.8 / 55.8 ms |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5, D10 track, step L2 (branch stage5-lookahead,
+     worktree .claude/worktrees/stage5-lookahead).  Built in parallel with the D9
+     track on rebuild-on-lean (D11).  Takes cheats 110-111, gap 85 and parity
+     entry P27, the design's own L2 labels (§16, §20, §17), none taken in this
+     checkout or on rebuild-on-lean at c73e032.  Whoever merges renumbers
+     (AGENTS §6.2, §6.4).
+     =========================================================================== -->
+
+## Stage 5 D10 L2, 2026-09-14: the day's window solves E7 in real seconds — two stage-6 goals discharged in stage 5
+
+**Starting point.**  The worktree at `1dbb6a1` (the D9 merge-in) was clean: check.sh 7/7, audit
+2249, corpus 29/37 files and 4/5 whole plans, burn-down 15, `cargo test --workspace` 1013 / 0,
+FFI 81.  Every figure at the end of this block is re-measured in this worktree.
+
+**The plan executed** is design `kernel/design/stage5/stage5-D9-D10-design.md` §13.3's E7 part and
+§14.8's L2 row, under the owner's D12 (stage 6's window pulled into stage 5) and Q6 (quirk (e)
+ported faithfully).  Files: `Lookahead.lean` (a new section, and `import TmKernel.Cal`),
+`Arith.lean` (the R3 and R2 rows of its site table, prose only), `Goals.lean`, `Check.lean`,
+`Negative.lean`, `AGENTS.md` (§2.3's module map, §8.3 and §8.4 move E7).  No new module, so
+`TmKernel.lean` is unchanged at seventeen imports.  `Cal.lean` and every other D9 module are
+untouched.
+
+### What was built (`Lookahead.lean`, section "E7: the day's window")
+
+| piece | what it is | fork point |
+|---|---|---|
+| `windowBase a wm wc` | `max a (min (a + wm) wc)` | `base_end = (arrival + window_min).min(cap).max(arrival)` |
+| `clipWalls lo ws` | each start raised to `lo`, **no upper bound**, empty walls dropped | `walls_after`'s map and filter |
+| `sortByStart`, `mergeStep`, `mergeSorted` | sorted by start (an insertion sort), then merged with touching walls joined, as a `foldl` and a `reverse` | `merge_walls` |
+| `extendStep`, `windowEnd a wm wc ws` | the walk: a wall starting before the end extends it by its whole length | `window_and_budget`'s loop |
+| `windowEndFast` | the same walk over core's `List.mergeSort`; **`@[csimp]` twin** (`windowEnd_eq_windowEndFast`) | — |
+| `wallOverlap a stop ws` | the units of `[a, stop)` under at least one wall; **specification only**, never run | §8.1's `Σ wall minutes inside [arrival, end]`, as the fork counts it |
+| `windowMinOf wh` | **site R3, reopened**: `halfUpQ (60 · wh)` on the exact pair | `(window_hours * 60.0).round().max(0.0)` |
+| `budgetOf wh bm br` | **site R2 on the exact pairs**: `Arith.budgetBlocks (60 · whn) (max 1 bm · whd) br` (`budgetOf_denotes`) | `budget_blocks` with `block_min().max(1)` |
+| `windowOn z d arrival cap wm walls` | the window of day `d` in **UTC seconds**: `instantOf z d arrival`, the cap on the arrival's local date | `window_and_budget(local_dt(tz, d, arrival), walls, cfg)`, `cap = local_dt(tz, arrival.date_naive(), window_cap)` |
+| `WallIx`, `shiftBack`, `wallOfEntity`, `wallIndex z bm p`, `wallsOn ix d` | the plan's walls, read **once per request**: every item not settled whose effective shape is an interval, the start moved back by `buffer:` on the local clock, both ends through `instantOf`, belonging to every date from the shifted start's to the end's | `Ctx::walls_on`, `Ctx::walls_by_date` |
+
+**The rule the design fixes (§2.3), in the module doc:** stage 6's `dayPlan` must reuse
+`windowEnd`, `windowOn`, `wallIndex` and `wallsOn`, never a second copy.
+
+### Goals: two discharged, both refuted as written and restated under their names
+
+`Goals.lean`'s STAGE 6 held the E7 block: the real `wallsInside`, the provisional
+`windowEnd := sorry`, and the goals `the_window_end_solves_the_equation` (E7a) and
+`the_window_end_is_the_least_solution` (E7b).  Under D12 the block is **deleted**.  Both goals
+were **false as written** against the fork, which clips at the arrival, merges, counts overlap
+and clamps the base to the arrival (§3.1 item 3):
+
+| goal as `Goals.lean` STAGE 6 stated it | refuted by | why |
+|---|---|---|
+| E7b over `wallsInside` and `min (arrival + window) cap` | **`the_window_end_is_not_the_least_solution_as_stage_6_wrote_it`** (`¬ ∀ …`), from the design's witness **`the_window_end_is_not_the_least_solution_over_walls_wholly_inside`** | arrival 420, window 480, cap 1140, wall `(890, 950)`: 900 solves the old equation because the wall is not wholly inside `[420, 900]`; the fork, and `windowEnd`, give 960 |
+| E7a over `wallsInside` and the unclamped base | **`the_window_end_does_not_solve_the_equation_as_stage_6_wrote_it`** (`¬ ∀ …`), from **`the_window_base_is_clamped_to_the_arrival`** | arriving at 20:00 after a 19:00 cap: the fork's window is empty and ends at 1200; the old equation's base is 1140 |
+| (a third difference, the clip) | **`a_wall_begun_before_the_arrival_extends_the_window`** | a wall `(400, 480)` against a 420 arrival extends the window to 960, and `wallsInside` counts nothing |
+
+**Restated to the oracle's overlap semantics and proved, under the design §15 signatures,
+verbatim:**
+
+- **E7a `the_window_end_solves_the_equation`**:
+  `windowEnd a wm wc ws = windowBase a wm wc + wallOverlap a (windowEnd a wm wc ws) ws`;
+- **E7b `the_window_end_is_the_least_solution`**:
+  `m = windowBase a wm wc + wallOverlap a m ws → windowEnd a wm wc ws ≤ m`, with the stronger
+  **`windowEnd_le_of_prefixpoint`** (every `m` with `windowBase + wallOverlap a m ws ≤ m`).
+
+Both were added to STAGE 5 and discharged in this step, so they never stood in `Goals.lean`
+(design §15's transient group).  A note under STAGE 5 records the move.  **The burn-down drops
+from 15 to 13, and the drop is stage 6's: its goals go from 15 to 13.**  AGENTS §8.4's list
+says so.
+
+**The proof route** (design risk K16's merged-interval bridge): `mergeSorted_spec` (any
+start-sorted list merges into a chain of disjoint, nonempty walls with the same cover, via
+`mergeStep_spec` and `foldl_mergeStep_spec`); `covered_clipWalls` (at or after the arrival,
+clipping changes no unit's cover); `countIn_wall` and `countIn_or` (one wall starting at or
+after `a` puts `min w.2 x − w.1` units under `[a, x)`, and disjoint covers add); then
+`extend_solves` and `extend_least` by induction over the chain.  `walk_is_the_least_solution`
+states both for **any** start-sorted permutation of the clipped walls.  The insertion sort and
+core's merge sort are both instances, so the two walks are equal (`windowEnd_eq_windowEndFast`).
+
+**Audit (AGENTS §7.4).**  (1) Every binder is used.  (2) E7b's hypothesis is satisfiable: `m :=
+windowEnd a wm wc ws` meets it by E7a.  (3) The names say what the statements say.  (4) Both
+directions: E7a says the end is a solution, E7b says nothing smaller is.  (5) The compiled code
+runs `windowEndFast`, and the `@[csimp]` theorem makes the statements about it.  `windowOn`,
+which L5 will call, is covered by `windowOn_solves_E7`.  (6) Units: the theorems hold in any one
+unit, and `windowOn` feeds them UTC seconds, which are `instantOf`'s whole instants
+(`instantOf_ns`).  Laws beside them: `windowBase_le_windowEnd`, `arrival_le_windowEnd`,
+`windowEnd_without_walls`.
+
+### Real seconds, through B1's zone table
+
+Every endpoint is UTC seconds from `Cal.instantOf`.  **`the_window_counts_real_hours_across_the_spring_transition`**:
+on 2026-03-08 in Chicago, arriving at 01:00 CST, eight hours end at 10:00 CDT on the clock,
+28,800 seconds later.  So a DST day's window is the fork's, and **P28 (civil minutes) is never
+recorded**.
+
+**The fork's tests, as witnesses on Chicago's 2026 table** (day 739865 is 2026-09-07, a Monday:
+`the_witness_days_are_the_dates_they_name`):
+
+| fork test | theorem |
+|---|---|
+| `budget_of_an_eight_hour_window` (07:00 → 15:00, budget 6) | `budget_of_an_eight_hour_window` |
+| `walls_extend_the_window` (a 12:50–13:50 wall → 16:00) | `walls_extend_the_window` |
+| `the_cap_bounds_the_window` (14:00 → 19:00) | `the_cap_bounds_the_window` |
+| `capacity_slots.rs` `wall_extension_reaches_a_fixed_point` (16:30) | `wall_extension_reaches_a_fixed_point` |
+
+Also: `window_and_budget_on_witnesses` (8 h is 480 minutes and 6 blocks; 7.33 h is 440; half a
+minute rounds up; `block_min = 0` reads as 1; 7.5 h at 50-minute blocks is 6) and
+`overlapping_walls_count_once` (two overlapping walls extend by their union, 150, not 200).
+
+### Quirk (e): the multi-day wall, ported faithfully (owner's Q6)
+
+**`a_multi_day_wall_puts_one_evening_in_two_windows`**: a wall from Monday 09:00 to Wednesday
+17:00 (2026-09-07 to 09-09, Chicago) is handed unclipped to Tuesday and Wednesday.  Tuesday's
+window runs from 07:00 to **Thursday 01:00**, and so does Wednesday's, so Wednesday 17:00 to
+Thursday 01:00, after the wall ends, lies in both windows.
+
+### Gap 85 (new; the design's label) — a multi-day wall puts one stretch of free time in several days' windows
+
+(1) *What is not done*: `wallsOn` gives each date every wall that covers it, unclipped (fork
+`Ctx::walls_on`), and `windowEnd` clips a wall only at the arrival (fork `walls_after`).  A wall
+spanning several dates therefore extends the window of every date it covers past that date's
+end, and the free time after it is counted in each of those windows
+(`a_multi_day_wall_puts_one_evening_in_two_windows`).  (2) *Why not now*: the owner's Q6 (e)
+ports every oracle quirk faithfully while parity is the stage's acceptance, and fixes this one
+later.  (3) *Cost*: inflated future capacity on the dates under a multi-day wall.  L4's budget
+limit caps each date at `budget × block_min` minutes, so the inflation per date is bounded by the
+budget.  No verb reads it yet: nothing on the wire calls `windowOn`.  (4) *When it clears*: after
+the parity run (L7), as a behaviour change with its own parity entry.  The fix bounds each date's
+walls and window to that date.
+
+### Site R3 reopened (D10-10), and P27
+
+`Arith.lean`'s R3 row said "eliminated: the window enters the kernel as minutes".  Since this
+step the kernel computes the window, so the row now reads **half-up on the exact pair**, at
+`Look.windowMinOf`.  The R2 row names `Look.budgetOf` as its exact-pair caller.  This is design
+§20's L2 behaviour row.  It is a correction to the site table: the binary is unchanged.
+
+| # | site | the kernel | the fork point | authority | step |
+|---|---|---|---|---|---|
+| **P27** | `window_hours × 60` not whole (e.g. `7.33` h), and the budget | `halfUpQ (60 · num/den)` for the window; one exact floor for the budget (`budgetOf`) | `f64::round` of the double product; `f64` floor of `window_hours × 60 / block_min × budget_ratio` | site R3 reopened (D10-10) | L2 (recorded), L7 (measured) |
+
+Not observable yet: nothing on the wire sends `windowHours`.
+
+### Cheats (`Negative.lean`, appended)
+
+| # | label | cheat | fails because |
+|---|---|---|---|
+| **110** | L2 | walls counted only when wholly inside: `windowEnd 420 480 1140 [(890, 950)]` claimed to be `min (420 + 480) 1140 + wallsInside 420 900 …` = 900 | `decide` proves it false (control `the_window_end_is_not_the_least_solution_over_walls_wholly_inside`) |
+| **111** | L2 | overlapping walls not merged: the walk over the sorted, unmerged walls `[(650, 750), (600, 700)]` claimed equal to `windowEnd` | 1100 against 1050; `decide` proves it false (controls `the_window_end_solves_the_equation`, `overlapping_walls_count_once`) |
+
+Each fails at its own line with `Tactic decide proved that the proposition … is false`.
+
+### Rule D9-21
+
+Functions this step adds that walk a list the wire can make large: `clipWalls` (core `map` and
+`filter`, tail-recursive by core's `@[csimp]`), `mergeSorted` (a `foldl`, then core's `reverse`),
+the walk (`List.foldl extendStep`), `wallIndex` over the store's ids and `wallsOn` over the index
+(core `filterMap`, `filterMapTR`).  `sortByStart` is quadratic and not tail-recursive; it is the
+specification's sort, because core's `List.mergeSort` is well-founded and does not reduce under
+`decide`.  **`windowEnd_eq_windowEndFast` is its `@[csimp]` twin**, so compiled code sorts with
+`List.mergeSort` (`mergeSortTR₂` by core's `@[csimp]`).  `wallOverlap` is never run.
+
+### The `decide` budget (§14.0 item 4)
+
+13 new decided witnesses and 2 cheats, 15 in all, within the budget of 20.  Every witness uses at
+most Chicago's **2 zone transitions**, no `Entry` value and no string literal.  The witnesses are
+`the_window_end_is_not_the_least_solution_over_walls_wholly_inside`,
+`the_window_base_is_clamped_to_the_arrival`, `a_wall_begun_before_the_arrival_extends_the_window`,
+`overlapping_walls_count_once`, `window_and_budget_on_witnesses`,
+`the_witness_days_are_the_dates_they_name`, `budget_of_an_eight_hour_window`,
+`walls_extend_the_window`, `the_cap_bounds_the_window`, `wall_extension_reaches_a_fixed_point`,
+`the_window_counts_real_hours_across_the_spring_transition`,
+`the_buffer_is_taken_off_the_local_clock` and
+`a_multi_day_wall_puts_one_evening_in_two_windows`.  All were probed in a scratch file under
+`/tmp/claude-1000/l2probe/` against the built package, under `MemoryMax=8G` and `timeout 120`,
+before the module was edited: the whole section took 0.54 s at a 638 MB peak, and the two cheats
+0.09 s at 519 MB.  Two witnesses were restated after that probe (the last conjunct of
+`a_multi_day_wall_puts_one_evening_in_two_windows`, and the second of
+`the_buffer_is_taken_off_the_local_clock`), and were probed in the edited module under the same
+cap before it was built.  The committed `Lookahead.lean` elaborates in **0.65 s at a 657 MB peak** under
+the same cap (0.24 s and 583 MB at `1dbb6a1`).  No realistic-size input is evaluated, and no
+witness evaluates `wallOverlap`.
+
+### Recorded disagreements between the design and the repo
+
+1. **The buffer comes off the local clock.**  Design §13.3 writes a wall as
+   `(instantOf z s.day s.time − buffer, …)`.  Fork `Ctx::walls_on` subtracts the buffer from the
+   `NaiveDateTime` and then calls `local_dt`, and it tests dates on the shifted start.  The two
+   differ when the buffer crosses a DST transition: `the_buffer_is_taken_off_the_local_clock`
+   (an 03:30 interval with a 60-minute buffer on 2026-03-08 starts its wall at 03:00 CDT, half an
+   hour after `instant − buffer`).  The kernel follows the fork.
+2. **`wallsOn p d` is two functions.**  An instant needs the zone and a `buffer:` in blocks needs
+   `block_min`, and the design says the plan is "indexed once per request".  So `wallIndex z bm p`
+   reads the plan once, and `wallsOn ix d` selects a date's walls.
+3. **Seconds, not minutes.**  §13.3 counts E7 in whole minutes of UTC instants and relies on a
+   `badTz subMinuteOffset` refusal.  L2 counts UTC seconds, which is exact for any offset, so the
+   window needs no refusal.  The refusal stays in §13.6's table for L6.  Whether L3's cut, whose
+   fork compares `num_minutes()`, needs it is L3's question.
+4. **The cap's date.**  §13.3 writes `cap = instantOf z d windowCap`.  The fork takes the cap on
+   `arrival.date_naive()`, the arrival's local date, and `windowOn` does too
+   (`Cal.localDate z arrival`).  They differ only when `local_dt`'s gap search carries the arrival
+   past midnight.
+5. **No `break` in the walk.**  The fork stops at the first merged wall that starts at or after the
+   end.  The kernel's `foldl` skips it and every later one instead, which gives the same value
+   because the walls are sorted and a skip does not move the end.  E7a and E7b pin the value
+   either way.
+6. **The sort.**  §13.3 says "clip, sort, merge, extend (a `foldl`)".  The sort is a reducing
+   insertion sort behind a proved `@[csimp]` twin (above), because `List.mergeSort` does not
+   reduce under `decide`.
+7. **`wallsInside` survives, in `Lookahead.lean` only.**  The L2 row deletes it from
+   `Goals.lean`, and §15's refutation names `Look.wallsInside`.  It is defined there with the
+   deleted body, kept only for the refutations.
+8. **Status.**  "Every item whose status is not `.settled`" is the fork's `!is_closed()` (Done or
+   Dropped): a demoted `[-]` and a waiting `[?]` item are open in both.  The fork's `Tree::iter`
+   yields one primary record per id, the live copy when an archive copy exists, which is the
+   kernel's entity.
+9. **No `DayCfg` yet.**  `windowMinOf` and `budgetOf` take `Arith.Pos` pairs and a `Nat`, adding
+   no new bounded wire type, so no smart constructor is owed here.  §13.6's bounds on
+   `windowHours`, `budgetRatio`, `blockMin` and `windowCap` are L6's rejection theorems.
+10. **Refutation names.**  The design names one witness per refutation.  This step also states
+    each as a negated universal over the old statement
+    (`…_as_stage_6_wrote_it`), so the refutation is of the goal and not only of a number.
+11. **Memory cap.**  Every run used the workflow's 30 GB cap, and 8 GB for probes, not §14.0's
+    40 GB.
+
+**Label-to-number map:** cheats L2 110 → **110** and L2 111 → **111**; gap 85 → **85**; parity
+**P27**.  Highest numbers in this checkout after the step: gap 103, cheat 121, parity P27.
+
+**Observable behaviour changes: none.**  Nothing on the wire calls `windowOn`, `wallIndex` or
+`budgetOf`.  **Behaviour rows:** design §20's L2 row, `Arith.lean`'s R3 row corrected, which is
+documentation of a site.  **Goals:** discharged 2 (E7a, E7b, restated), refuted as written 2,
+added 0.  Burn-down **15 → 13** (stage 6).
+
+**New theorems: 60**, all in `Lookahead.lean`, audited under `Check.lean`'s new
+`APPENDED 2026-09-14 (stage 5, D10 track).  Step L2` banner.  AGENTS §6.3's three counts agree at
+2309.  About 66 definition lines and 418 proof lines, against design §14.8's estimate of 170 and
+650.  No theorem was retired, weakened or deleted.  No existing two-run theorem was touched.
+
+**Owed, by name (the rest of the D10 track):** L3 (the cut, `cutSlots_*`, reusing `windowOn` and
+`wallsOn`), L4 (energy, `limitSlots_is_limitHist` against L1's `limitHist`), L5 (`lookahead`,
+`pureDay`, `mkInput?`, and the loaded-plan witness through `wallIndex`; cheat 117 is taken), L6
+(the capacity wire, `DayCfg`'s R10 bounds, `badTz subMinuteOffset`, P26, P30), L7 (the parity
+twin harness, which also measures P27 and gap 85), L8, L9.
+
+**Re-measured after this step** (every command under the 30 GB cap, in this worktree, on the tree
+committed):
+
+| measurement | value |
+|---|---|
+| `lake build TmKernel:static` after the edits | 130.3 s wall (`Arith.lean`'s prose edit rebuilt every module downstream) |
+| `check.sh` | **7/7**; 3.48 s on its first run (FFI test binaries relinked), then 2.80 / 2.73 / 2.73 s on the built tree against 2.70 / 2.72 s at `1dbb6a1`, a rise of at most 3% (§14.0 item 4 allows 10%) |
+| axiom audit | **2309 theorems** (2249 + 60; `grep -c '^#print axioms' Check.lean` 2309, 2309 distinct, 2309 declared) |
+| `Negative.lean` | check 4 ok; 116 errors; 110 `/- CHEAT` banners (108 before); CHEATs 110 and 111 each fail at their own line |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (stage 3: 0, stage 4: 0, stage 5: 0, stage 6: 13) |
+| `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (unchanged) |
+| FFI suite (`tm-kernel-ffi`) | **81 passed / 0 failed** (kernel 72, corpus 8, stack 1) |
+| `cli_latency.rs` | green: first verb 626.9 / 642.7 / 622.8 ms (226 files, 2,959 lines), later verb 55.7 / 50.8 / 55.8 ms |

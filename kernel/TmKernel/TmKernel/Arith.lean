@@ -56,8 +56,8 @@ each monotone (`*_mono`) and each within one minute of the exact value
 | # | site | rule | here |
 |---|---|---|---|
 | R1 | §7.1/§7.3 `need = remaining × safety`, for the EDF reservation | **ceiling** — a margin rounded down stops being a margin | `needMin` |
-| R2 | §8.1 `budget = floor(window_hours × 60 / block_min × budget_ratio)` | **floor**, one division, constants folded | `budgetBlocks` |
-| R3 | §8.1 `window_min = round(window_hours × 60)` | **eliminated**: the window enters the kernel as minutes, so the site does not exist | — |
+| R2 | §8.1 `budget = floor(window_hours × 60 / block_min × budget_ratio)` | **floor**, one division, constants folded | `budgetBlocks`; on the exact pairs, `Look.budgetOf` (stage 5 D10 step L2) |
+| R3 | §8.1 `window_min = round(window_hours × 60)` | **half-up**, on the exact pair `window_hours = num/den` (fork `(window_hours × 60.0).round()`). *Reopened at stage 5 D10 step L2 (design D10-10): the kernel computes the window, so the site exists; this row said "eliminated" while the window entered the kernel as minutes.* Parity P27 | `Look.windowMinOf` |
 | R4 | §8.5 `planned = round(est × duration multiplier)` | **half-up** | `plannedMin` |
 | R5 | §8.5 slot energy after the posterior correction | **half-up, then clamp to `0..5`** — and the clamp is load-bearing (`posterior_can_go_negative`) | `energyAfter` |
 | R6 | §8.2 step 3's short last block, "≥ 30m or dropped" (§16 `min_last_block_min`) | a **comparison**, not a rounding — named so that nobody adds one | — |

@@ -356,6 +356,20 @@ representation, which is the generalising restatement D10 forces, not a weakenin
 over the numerators at every denominator), and `edf_reserves_only_before_the_deadline`
 (equality of the rationals).  README "Stage 5 step 3". -/
 
+/- **§8.1's window (E7) is real, in stage 5 (2026-09-14, stage 5 D10 step L2).**
+The owner's D12 pulls stage 6's window into stage 5, so STAGE 6's E7 block — the real
+`wallsInside`, the provisional `windowEnd` and the goals `the_window_end_solves_the_equation`
+and `the_window_end_is_the_least_solution` — is deleted here and its vocabulary lives in
+`TmKernel/Lookahead.lean` (`Look.windowEnd`, `Look.windowBase`, `Look.wallOverlap`).  Both
+goals were **false as written** against fork-point `capacity::window_and_budget`, which clips
+walls at the arrival, merges them and counts their overlap, and clamps the base to the
+arrival: `Look.the_window_end_is_not_the_least_solution_as_stage_6_wrote_it` (a wall
+straddling the base end) and `Look.the_window_end_does_not_solve_the_equation_as_stage_6_wrote_it`
+(an arrival after the cap), with `Look.wallsInside` kept only for the refutations.  Restated
+over `Look.wallOverlap` and `Look.windowBase`, both are proved under the same names
+(§3.1 item 3; restated to the oracle's overlap semantics, refuted as written).  Stage 6's
+`dayPlan` reuses `Look.windowEnd`; the burn-down drops by 2.  README "Stage 5 D10 L2". -/
+
 /-! ############################################################################
 # STAGE 6 — the planner; §8.3's invariants; L24 and L25
 
@@ -552,37 +566,6 @@ theorem plan_never_batches_past_an_equal_ci_candidate (r : PlanReq) (s : Seg) (i
     (hdoc : e.val.live.doc = f.val.live.doc)
     (hrank : f.val.live.rank < e.val.live.rank) :
     j ∈ assignedOf (dayPlan r) := sorry
-
-/-! ## E7 — §8.1's window, which is a fixed point and was solved by iterating -/
-
-/-- The minutes §8.1's `Σ duration(walls inside [arrival, end])` adds.  A real
-definition; `windowEnd` below is the provisional one. -/
-def wallsInside (arrival stop : Nat) (walls : List (Nat × Nat)) : Nat :=
-  (walls.filter (fun w => decide (arrival ≤ w.1 ∧ w.2 ≤ stop))).foldl
-    (fun a w => a + (w.2 - w.1)) 0
-
-/-- **Provisional (stage 6).**  §8.1's `end = min(arrival + window_hours,
-window_cap) + Σ duration(walls inside [arrival, end])` — the equation names
-`end` on both sides.  E7 is `window_and_budget` solving it by iterating; plan
-§4 says "totality forces a termination argument or a bound", and that is what
-this signature is for. -/
-def windowEnd (arrival windowMin windowCap : Nat) (walls : List (Nat × Nat)) : Nat := sorry
-
-/-- **E7a (P\*), stage 6, §8.1.**  It is a solution of the equation. -/
-theorem the_window_end_solves_the_equation (arrival windowMin windowCap : Nat)
-    (walls : List (Nat × Nat)) :
-    windowEnd arrival windowMin windowCap walls
-      = min (arrival + windowMin) windowCap
-        + wallsInside arrival (windowEnd arrival windowMin windowCap walls) walls := sorry
-
-/-- **E7b (P\*), stage 6, §8.1.**  It is the *least* solution, which is what
-makes it a definition rather than a choice — and what makes "a late start gets a
-later end and the same budget formula" reproducible rather than dependent on how
-many times the loop happened to run. -/
-theorem the_window_end_is_the_least_solution (arrival windowMin windowCap m : Nat)
-    (walls : List (Nat × Nat))
-    (hm : m = min (arrival + windowMin) windowCap + wallsInside arrival m walls) :
-    windowEnd arrival windowMin windowCap walls ≤ m := sorry
 
 /-! ## L24 and L25 — the two relational laws
 
