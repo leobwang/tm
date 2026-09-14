@@ -7725,3 +7725,262 @@ committed**, because pinning it would make every later run replay a known failur
 fork-point code this step does not touch.  The next capped run passed 1010 / 0 across 66
 binaries, and that is the figure quoted above.  Gap 71 stays owed: fix the latent case, or pin
 it together with its fix.
+
+<!-- ===================================================================
+     APPENDED 2026-09-14 (stage 5).  Step 1: the owner's D9 and D10 recorded; §6.4's `remaining` and §5.4's series head built in the new `Tree.lean` — five stage-5 goals: two proved as stated, three refuted as written with the law that holds beside each.
+     Closes gap 18 (the head's half); leaves gap 73 buildable and owed; takes gap 75; takes cheats 70–74.  Whoever merges renumbers (AGENTS §6.4).
+     Supersedes, by name: AGENTS §10.5 q4 and q5 "open"; AGENTS §8.3's "Series head has no home" as a description of the kernel; `Plan.lean`'s `seriesOf` doc sentence "§5.4's head … is a planner concept and is not here"; gap 73's "Clears with stage 5's rollups" (the rollup exists; the fold's rewire is a separate owed step, below).
+     =================================================================== -->
+
+## Stage 5 step 1, 2026-09-14: the owner decides the log and the capacity mixture; `remaining` is §6.4's rollup and a series has a head
+
+**Starting point.**  The tree at `c2cf4dc` was clean but for one untracked file,
+`kernel/TmKernel/TmKernel/Tree.lean`, left by an earlier launch of this step that was
+stopped minutes in so the owner's D9 and D10 could be added.  It was inspected, not
+committed blind: it fit this brief (`remainingMin` with structural fuel and its fixed-point
+proof, `seriesHead` per document), imported nothing but `Plan`, and failed to compile on two
+proofs (`remainingStep_own`, `remainingStep_children`: a `split` whose `rename_i` named the
+wrong binder).  Both proofs were rewritten as a case split on the status; nothing else in
+the file was weakened.  It is built on here, not stashed.  The baseline figures are the
+previous block's, as committed at `c2cf4dc` (check.sh 7/7, audit 1843, corpus 29/37 files
+and 4/5 whole plans, burn-down 29, `cargo test --workspace` 1010 / 0 across 66 binaries,
+FFI 76); the figures at the end of this block are re-measured.
+
+### The owner's decisions, taken 2026-09-14 after a detailed explanation of the trade-offs
+
+Settled in the AGENTS §4 sense (rows D9 and D10 there): build on them, and changing one
+needs the owner again.
+
+- **D9 — the Lean kernel replays the log, all of it** (AGENTS §10.5 q4).  Requests will
+  carry `.tm/log.jsonl`'s events.  The kernel derives every replay fact — minutes and blocks
+  per item and per day, last completion, completion dates, routine instance status, undo
+  masking, lost minutes — and hands the energy and duration observations back to Rust, which
+  keeps **only** the statistical fit (plan §3.6).  The old Rust `log::replay` stops being a
+  source of decision facts.  **What it settles.**  One reader of the log, and it is proved
+  (AGENTS §5.3); `move_has_no_inverse_command` already made replay the only correct
+  `tm undo`.  AGENTS §8.3's trap "the log has nowhere to live" has its answer.  **What it
+  costs.**  (i) The wire grows a log section and the kernel a log grammar — a second parser
+  the size of an event schema, with its own round-trip obligations.  (ii) Every verb whose
+  answer depends on history pays the replay on each call, so the latency acceptance test
+  (`cli_latency.rs`) is exposed.  (iii) Rust's fit loses its own replay and must consume the
+  kernel's observations, which is a contract change on the host side.  **Not built in this
+  step:** no log replay, no `done_minutes` or `progress`, no recurrence instance selection,
+  nothing reading `.tm/log.jsonl`.
+- **D10 — future-day capacity is an exact weighted mixture** (AGENTS §10.5 q5, R7, gap 26).
+  Expected minutes at each energy level = `p_lounge × lounge + (1 − p_lounge) × home`,
+  carried as exact numerator/denominator pairs through the EDF deadline pass, with nothing
+  rounded.  **This deliberately disagrees with the fork-point Rust**, whose
+  `capacity::lookahead` simulates a later day at location `lounge` when
+  `P(lounge | weekday) ≥ 0.5` and `home` otherwise; it is entry P1 of the parity exception
+  list below.  **What it settles.**  R7: nothing rounds between the mixture and the bin, so
+  stage 6 inherits no unstated rounding.  **What it costs.**  (i) Capacity is a rational per
+  day and level, so `DayCapacity.minutesAt : Fin 6 → Nat` (`Goals.lean`'s provisional
+  shape) cannot be the type (below).  (ii) Numerators and denominators grow through the pass
+  (sums of mixtures over days), so the EDF pass needs a stated bound or a normalisation that
+  is proved not to change a comparison.  (iii) The parity harness reports a difference on
+  every future day where `p_lounge` is not 0 or 1.  **Not built in this step.**
+
+**The types this and later steps must fit, now** (so the D9/D10 tranche extends them
+instead of restating them):
+
+- (a) **Capacity minutes are exact rationals**: an `Arith.Q` with a positive denominator —
+  `Arith.Pos`, built only by `mkPos`/`ofPair?` — never a `Nat`.  `Goals.lean`'s provisional
+  `DayCapacity.minutesAt : Fin 6 → Nat` and the `edf` goals stated over it are therefore
+  **owed a restatement** when stage 5 reaches them: the three EDF goals are to be refuted or
+  re-stated over rational minutes, under D5's rule that a statement is never weakened
+  silently.
+- (b) **Utilisation compares a `Nat` need against a rational availability by
+  cross-multiplication, never by division.**  `Arith.utilGe need avail e` is the pattern at
+  `avail : Nat`; at `avail = a/b` the comparison `need / (a/b) ≥ p/q` is `p·a ≤ q·need·b`,
+  still three products and a `≤`.
+- (c) **Every log-derived input is a plain argument** — minutes done, last completion,
+  instance status — whose type is what the kernel's own replay will produce, never a Rust
+  summary format.  This step takes no such input: `remainingMin` is a function of the plan
+  and the block length alone (fork-point `Tree::remaining` reads no log either).  The D9/D10
+  tranche wires them.
+
+**Config decimals — the route, chosen here and inherited by the wiring step** (AGENTS §8.3's
+named trap).  No `Float` anywhere, ever.  The wire's `JVal.num` is a `Nat` and stays one:
+**Rust sends every configured rational** (`priority.bins = [0.5, 0.25, 0.1]`,
+`safety = 1.3`, `budget_ratio = 0.75`, `plan_ratio = 0.8`, `p_lounge = 0.9`,
+`under_hours = 7.0`) **as a numerator/denominator pair of `Nat`s**, and the kernel decodes
+each through `Arith.ofPair?`, which refuses a zero denominator (`ofPair?_zero`).  `JVal` is
+not widened.  This step does not change the wire.
+
+### The stage-5 parity exception list
+
+Stage 5's acceptance is the parity harness against fork point `4748911`, and AGENTS §8.3
+warns its exception list is longer than the plan's six rounding sites.  Every entry is a
+decided difference, recorded **before** the harness runs.  Entries P2–P3 were decided
+earlier and are listed here so the list is in one place.
+
+| # | site | the kernel | the fork point | authority |
+|---|---|---|---|---|
+| P1 | future-day capacity | `p·lounge + (1 − p)·home`, exact | `capacity::lookahead`: lounge iff `p ≥ 0.5` | D10 |
+| P2 | `u` at need 0, capacity 0 | `∞`, so HOT (`utilGe 0 0 e = true`) | `0.0/0.0 = NaN`, every comparison false, lowest bin | gap 25 |
+| P3 | `need_min` | ceiling of `remaining × safety` | `round` (`priority::safety_minutes`, and the planner inline) | R1, §3.5 |
+| P4 | series head across files | one head per document (`seriesHead p k name`) | `Tree::series_members` concatenates same-named sections across files in file order, one head | difference (s1) below |
+| P5 | `remaining` above `2^32 − 1` minutes | a `Nat` | `u32::saturating_add` | difference (r2) below |
+| P6 | a child linked by `@label` | not a child (only `@id` is read) | resolved by title | gap 19 |
+
+### §6.4's `remaining`: `Tree.lean`
+
+**The rule, read off the fork point by name.**  `Tree::remaining` calls `remaining_inner`:
+an id the tree does not hold is `None`; a Done or Dropped item (`State::is_closed`) is
+`Some(0)`; an item with its own estimate — `Item::own_remaining`, which is `est` (the `est:`
+key), else `est_original` (the leading estimate), else `dur` — is that many minutes;
+otherwise the children's remainings are summed, children with nothing anywhere below them
+contributing nothing, and the answer is `None` when no child contributed.  `seen` guards a
+cycle.
+
+**The kernel.**  `ownRemaining` is `Item::own_remaining` over the three views
+(`Field.viewEstKey`, `Field.estLeadOf` — which is `(Field.viewFields l).estLead`, by `rfl`,
+`viewFields_estLead` — and `Field.viewDur`).  `childrenOf p i` is the ids whose
+`parentStep` is `i` (D6: read off the line).  `remainingStep` is one level of
+`remaining_inner` with the children's answers supplied; `remainingAux` runs it on structural
+fuel (`effectiveCiAux`'s pattern, AGENTS §5.10), `remainingOpt` at `fuel p`, and
+`remainingMin bm p i = (remainingOpt bm p.val i).getD 0` is the provisional signature
+`Goals.lean` declared.
+
+**The fuel is never the answer.**  `anc_fuel_none`: on an acyclic plan no chain is `fuel p`
+links long, from any id at all.  `remainingAux_stable`: once nothing lies `n` links below
+`i`, more fuel changes nothing; so `remainingAux_fuel_is_enough` (any larger fuel, same
+answer), `remainingOpt_step` (`remainingOpt` is one step of the recursion over its own
+answers, with no fuel in the statement) and `remainingOpt_is_the_unique_fixed_point` (every
+function the step fixes *is* `remainingOpt`) — all under `parentsAcyclic`, which every
+`WfPlan` carries (`WfPlan.acyclic`).  The rollup is determined by the rule, not by how the
+recursion was bounded.
+
+**Deliberate differences from the fork point**, each next to the rule it implements:
+
+- **(r1) No `MIN_REMAINING_MIN` floor.**  `Tree::remaining` has none: the floor of 5 is
+  `horizon::remaining_est`'s, the close's reading of the rollup.  It arrives with the close's
+  rewire (gap 73, owed).
+- **(r2) No saturation.**  Minutes are a `Nat`; the fork point `saturating_add`s a `u32`.
+  Parity entry P5.
+- **(r3) Children in the store's `dom` order**, not `(file, line)` order.  A sum cannot see
+  the order (`foldl_optAdd_getD`), so nothing observable differs.
+- **(r4) Only `@id` parents.**  A child written `@Some title` is not a child here (gap 19's
+  labels); the fork point resolves it.  Parity entry P6.
+
+**`Goals.lean`'s three §6.4 rows, refuted as written, with the law that holds beside each.**
+The goals transcribed §6.4's sentence, which names neither the closed-item rule nor the
+`dur:` slot; fork-point `remaining_inner` has both.  Following the stage-4 pattern, each
+statement is refuted quantifier for quantifier on a loaded plan (`Boundary.lean`), and the
+narrowed law is proved in `Tree.lean`:
+
+| goal (deleted) | refuted as | where it fails | the law that holds |
+|---|---|---|---|
+| `remaining_is_the_est_key_when_set` | `remaining_is_not_the_est_key_on_a_settled_line` | `^d1` `[x] 1b … est:40m` → 0 | `remaining_is_the_est_key_when_set_and_unsettled` |
+| `remaining_falls_back_to_the_leading_estimate` | `remaining_does_not_fall_back_to_the_leading_estimate_on_a_settled_line` | `^d2` `[x] 25m` → 0 | `remaining_falls_back_to_the_leading_estimate_when_unsettled` |
+| `remaining_sums_the_children` | `remaining_does_not_sum_the_children_over_a_dur` | `^w1` `dur:30m`, no children → 30, not 0 | `remaining_sums_the_children_when_unsettled_with_no_dur`, with `remaining_falls_back_to_dur_when_unsettled` for the row §6.4 does not write |
+
+Beside them, both edges: `remaining_of_a_settled_item_is_zero` and
+`remaining_of_a_missing_id_is_zero`.  A settled parent over an open child also refutes the
+third goal (by the first edge); the witness uses `dur:` because it is the difference the
+goal's own hypotheses leave open.
+
+**Gap 73 is buildable, and not rewired — owed, by name.**  The week close's child fold still
+reads each dropped child's `remainingOf` and the parent's own reading (`Close.lean`'s
+`foldedMinutes`, `demoteEst`), so a child with only `dur:` still counts 0 there and no parent
+reads the rollup.  `remainingMin` is the reading gap 73 asks for, and `horizon::remaining_est`
+(the rollup, floored at `MIN_REMAINING_MIN`) is the fork point's.  Rewiring it re-opens
+`close_spec`, L16 (`close_is_idempotent`), the L19 theorems
+(`autoClose_is_each_grain_once`, `autoClose_catches_up_in_one_step`,
+`autoClose_strands_no_unfinished_line`), `close_keeps_source_order` (and `_iff`,
+`_across_the_fold`) and the report agreement, all to be re-proved under D5.  That is its own
+later step; this one does not touch `Close.lean`.
+
+### §5.4's series head: `Tree.lean` (gap 18's head, closed)
+
+**The rule, read off the fork point by name.**  `Tree::series_head(name)`: the first of
+`Tree::series_members(name)` — in section order, concatenated across files in file order
+when several files carry the name — whose state is not Done/Dropped.
+
+**The kernel.**  `seriesHead p k name`: among the members of document `k` sitting in a
+`## series:<name>` section (`seriesOf`, derived since stage 2) whose status is not
+`.settled _`, the one of least rank (`seriesOpen`, `firstByRank`).  `seriesHead_spec` says
+what the head is; the two goals are proved **as stated**: `the_series_head_is_not_settled`
+and `the_series_head_ranks_first`.  Both directions (AGENTS §5.8):
+`seriesHead_isSome_of_an_unsettled_member` (a series with an open member has a head — the
+rule does not over-bite) and `seriesHead_none_when_every_member_is_settled` (the head is not
+a default).
+
+- **(s1) Per document.**  The goal's signature names a document, so a series is a document
+  plus a name; the fork point pools same-named sections across files.  On a tree where one
+  name appears in two files the fork point has one head and the kernel two.  Parity entry P4.
+- **(s2) A `[-]` member can be the head**, as in the fork point: `State::Deferred` is not
+  closed, and neither is the kernel's `.demoted`.
+- **(s3) `the_series_head_ranks_first`'s `hsi`** (the head's own membership) is implied by
+  the head hypothesis (`seriesHead_spec`); the goal stated it, so the statement keeps it,
+  under the name `_hsi`.
+
+75. **A series section's implied `after:` is not derived.**  (1) §5.4: "the head inherits
+    nothing from the previous item except the section's implied `after:`"; fork-point
+    `Tree::implied_dep` returns the previous line of the member's section, and
+    `Tree::all_deps` adds it to the written `after:`.  The kernel has `seriesOf` and
+    `seriesHead`, and `depsOf`/`afterTotal`/the `after:` peel read only written
+    dependencies.  (2) Not a decision: eligibility (§5.5) is planner work, and this step
+    builds the head only.  (3) Cost: nothing reads eligibility in the kernel yet, so no
+    answer is wrong today; when stage 6's candidate filter lands, a series member reordered
+    by hand above its predecessor would be eligible early unless the implied dependency is
+    derived by then.  (4) Stage 6, with §5.5's eligibility, or late stage 5.
+
+### Both directions, on a loaded plan (`Boundary.lean`)
+
+One `backlog.md` of thirteen item lines (`treeWitness`), loaded through `loadPlan`
+(`the_tree_witness_loads`), at a 60-minute block:
+
+- `remaining_reads_the_est_key_over_the_leading_estimate_on_a_loaded_plan` — `^a1` `2b …
+  est:30m`: 30, not 120.
+- `remaining_reads_the_leading_estimate_on_a_loaded_plan` — `^a2` `45m`: 45.
+- `remaining_sums_two_children_on_a_loaded_plan` — `^p1`, no estimate, children `^c2`, `^c1`
+  read off `@p1`: 50.
+- `remaining_reads_dur_on_a_loaded_plan` — `^w1` `dur:30m`: 30.
+- `remaining_of_a_settled_line_is_zero_on_a_loaded_plan` — `^d1` (`est:` key) and `^d2`
+  (leading estimate), both `[x]`: 0.
+- `remaining_is_none_without_an_estimate_on_a_loaded_plan` — `^n1`: `none`, read as 0; the
+  absent `^zz`: `none`.
+- `the_series_head_skips_a_settled_member_on_a_loaded_plan` — `## series:vols` `[x] ^v1`,
+  `^v2`, `^v3`: head `^v2`; `## series:read` with only `[x] ^r1`: no head; an absent name: no
+  head.
+
+Cheats 70–74 (`Negative.lean`) invert them: the leading estimate over the key (70), a Done
+line keeping its estimate (71), a parent reading nothing (72), `dur:` ignored (73), the
+settled volume as the head (74).  Each fails with "`decide` proved that the proposition …
+is false".
+
+**Probes, under the 8 GB cap first** (scratch files importing the built `TmKernel.Boundary`
+and `TmKernel.Tree`, `timeout 120`): the load alone 1.56 s at 0.89 GB; the seven witnesses
+and one refutation together 9.98 s at 2.40 GB; the three refutations with their two witnesses
+5.18 s at 1.48 GB; cheats 70–74 together 2.97 s at 1.34 GB.
+
+**Observable behaviour changes: none.**  Nothing on the wire calls `remainingMin` or
+`seriesHead` yet, and `Close.lean` is untouched; no two-run theorem was restated or
+re-proved, because none was touched.
+
+**New theorems** (48, audited under `Check.lean`'s `APPENDED 2026-09-14 (stage 5)` banner):
+37 in `Tree.lean` and 11 in `Boundary.lean` (the load, seven witnesses, three refutations).
+**Goals:** five deleted from `Goals.lean` — two proved as stated, three refuted and renamed
+with the narrowed law beside each — and the provisional `remainingMin` and `seriesHead`
+replaced by the real definitions.  No theorem was retired, weakened or deleted.
+
+**Owed, by name (not attempted in this step).**  (1) Gap 73's rewire of the close's fold
+onto `remainingMin`, with the D5 re-proofs listed above.  (2) Gap 75, the implied `after:`.
+(3) D9's replay and D10's lookahead, with `done_minutes`, `progress` and recurrence instance
+selection (the next tranche; a read-only design pass runs in parallel).  (4) The
+restatement of `Goals.lean`'s `DayCapacity` and EDF goals over rational minutes (type (a)
+above).  (5) Stage 5's remaining goals: `prio` (3), `hysteresis` (3), `edf` (3).
+(6) Gaps 19, 68–72, 74 as recorded, and the human's 30-minute drives (AGENTS §5.13).
+
+**Re-measured after this step** (every command under the 40 GB cap, on the tree committed):
+`check.sh` **7/7** in 2:08, with the axiom audit at **1891 theorems** (1843 + 48;
+`grep -c '^#print axioms' Check.lean` 1891, no duplicate), corpus **29/37 files and 4/5
+whole plans** (unchanged) and burn-down **24** (stage 4: 0, stage 5: **9** — `prio`'s three,
+`hysteresis`'s three, `edf`'s three — stage 6: 15).  `cargo test --workspace` gives **1010
+passed / 0 failed / 0 ignored across 66 binaries** (unchanged; `tm-kernel-ffi` and `tm`
+relinked against the rebuilt archive), with `cli_latency.rs` green at first verb **622 / 698 /
+627 ms** and later verb 55.6 / 55.8 / 50.7 ms (three serial runs, 226 files, 2,959 lines).  The
+FFI suite is **76** (68 kernel + 8 corpus, unchanged).  `TmKernel.lean` holds fourteen imports,
+`Tree` after `Plan`.  Gaps run to 75 (new gaps start at 76); cheats run to 74 (new cheats
+start at 75).

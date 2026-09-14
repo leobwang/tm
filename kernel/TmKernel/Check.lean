@@ -2192,3 +2192,61 @@ open Tm
 #print axioms Tm.Field.hmValue_none_of_mem
 #print axioms Tm.Field.unitValue_renderDur
 #print axioms Tm.the_week_close_folds_an_hours_and_minutes_child
+
+-- APPENDED 2026-09-14 (stage 5).  Step 1: §6.4's `remaining` and §5.4's series head
+-- (kernel/README.md "Stage 5 step 1").  `Tree.lean` (new, imported after `Plan`):
+-- `remainingMin` is fork-point `Tree::remaining` with structural fuel, proved to be
+-- the one fixed point of its step on a well-formed plan; `seriesHead` is
+-- `Tree::series_head` per document.  Goals discharged as stated:
+-- `the_series_head_is_not_settled`, `the_series_head_ranks_first`.  Goals refuted as
+-- written, the law that holds beside each: `remaining_is_the_est_key_when_set`,
+-- `remaining_falls_back_to_the_leading_estimate`, `remaining_sums_the_children`
+-- (`Boundary.lean`, on a loaded plan).  Gap 18 closed; gap 73 buildable, not rewired.
+#print axioms Tm.viewFields_estLead
+#print axioms Tm.ownRemaining_of_estKey
+#print axioms Tm.ownRemaining_of_lead
+#print axioms Tm.ownRemaining_of_dur
+#print axioms Tm.ownRemaining_none
+#print axioms Tm.parentStep_of_mem_childrenOf
+#print axioms Tm.optAdd_getD
+#print axioms Tm.remainingStep_congr
+#print axioms Tm.remainingStep_missing
+#print axioms Tm.remainingStep_settled
+#print axioms Tm.remainingStep_own
+#print axioms Tm.remainingStep_children
+#print axioms Tm.anc_succ_bind
+#print axioms Tm.anc_fuel_none
+#print axioms Tm.WfPlan.acyclic
+#print axioms Tm.anc_ne_of_child
+#print axioms Tm.remainingAux_stable
+#print axioms Tm.remainingAux_fuel_is_enough
+#print axioms Tm.remainingOpt_step
+#print axioms Tm.remainingOpt_is_the_unique_fixed_point
+#print axioms Tm.foldl_optAdd_getD
+#print axioms Tm.remaining_of_a_settled_item_is_zero
+#print axioms Tm.remaining_of_a_missing_id_is_zero
+#print axioms Tm.remaining_is_the_est_key_when_set_and_unsettled
+#print axioms Tm.remaining_falls_back_to_the_leading_estimate_when_unsettled
+#print axioms Tm.remaining_falls_back_to_dur_when_unsettled
+#print axioms Tm.remaining_sums_the_children_when_unsettled_with_no_dur
+#print axioms Tm.firstByRank_mem
+#print axioms Tm.firstByRank_isSome_cons
+#print axioms Tm.firstByRank_le
+#print axioms Tm.firstByRank_eq_none
+#print axioms Tm.mem_seriesOpen
+#print axioms Tm.seriesHead_spec
+#print axioms Tm.the_series_head_is_not_settled
+#print axioms Tm.the_series_head_ranks_first
+#print axioms Tm.seriesHead_isSome_of_an_unsettled_member
+#print axioms Tm.seriesHead_none_when_every_member_is_settled
+#print axioms Tm.the_tree_witness_loads
+#print axioms Tm.remaining_reads_the_est_key_over_the_leading_estimate_on_a_loaded_plan
+#print axioms Tm.remaining_reads_the_leading_estimate_on_a_loaded_plan
+#print axioms Tm.remaining_sums_two_children_on_a_loaded_plan
+#print axioms Tm.remaining_reads_dur_on_a_loaded_plan
+#print axioms Tm.remaining_of_a_settled_line_is_zero_on_a_loaded_plan
+#print axioms Tm.remaining_is_none_without_an_estimate_on_a_loaded_plan
+#print axioms Tm.the_series_head_skips_a_settled_member_on_a_loaded_plan
+#print axioms Tm.remaining_is_not_the_est_key_on_a_settled_line
+#print axioms Tm.remaining_does_not_fall_back_to_the_leading_estimate_on_a_settled_line
+#print axioms Tm.remaining_does_not_sum_the_children_over_a_dur

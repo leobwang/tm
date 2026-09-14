@@ -1,5 +1,6 @@
 import TmKernel.Report
 import TmKernel.Json
+import TmKernel.Tree
 /-!
 # The boundary: `String → String`, and nothing else
 
@@ -7172,6 +7173,187 @@ theorem the_week_close_folds_an_hours_and_minutes_child :
         "- [~] 2h30m Part two @p1 ^c2".toList],
        ["# Outcomes".toList, "# Demoted".toList,
         "- [-] 6b Parent project est:9b demoted:W36 ^p1".toList]] := by
+  decide
+
+/-! ## Stage 5 step 1: §6.4's `remaining` and §5.4's series head, on a loaded plan
+
+`Tree.lean` defines both and proves their laws over every well-formed plan.  Everything
+below is decided on one small `backlog.md`, loaded through `loadPlan` exactly as the host
+hands it over, so each rule is seen **firing** on what the boundary builds, and each of
+`Goals.lean`'s three §6.4 rows is refuted as written on the same lines.  At a 60-minute
+block:
+
+* `^a1` `2b … est:30m` — the `est:` key wins over the leading estimate: 30;
+* `^a2` `45m` — no key, the leading estimate: 45;
+* `^p1`, no estimate, children `^c1` `30m` and `^c2` `20m` — the sum: 50;
+* `^w1` `dur:30m` only — fork-point `Item::own_remaining`'s third slot: 30;
+* `^d1` `[x] 1b … est:40m` and `^d2` `[x] 25m` — closed, so `Some(0)`: 0;
+* `^n1`, nothing anywhere — `none`, read as 0;
+* `## series:vols` `[x] ^v1`, `[ ] ^v2`, `[ ] ^v3` — the head skips the settled `^v1`:
+  `^v2`; `## series:read` holds only a settled `^r1`: no head. -/
+
+def treeWitness : List ReqDoc :=
+  [⟨"backlog.md", none,
+     ["# Untied".toList,
+      "- [ ] 2b Key wins est:30m ^a1".toList,
+      "- [ ] 45m Lead only ^a2".toList,
+      "- [ ] Parent with no estimate ^p1".toList,
+      "- [ ] 30m Child one @p1 ^c1".toList,
+      "- [ ] 20m Child two @p1 ^c2".toList,
+      "- [x] 1b Done with a key est:40m ^d1".toList,
+      "- [x] 25m Done with a lead ^d2".toList,
+      "- [ ] Watch the talk dur:30m ^w1".toList,
+      "- [ ] No estimate at all ^n1".toList,
+      "## series:vols".toList,
+      "- [x] 1b Vol 1 ^v1".toList,
+      "- [ ] 1b Vol 2 ^v2".toList,
+      "- [ ] 1b Vol 3 ^v3".toList,
+      "## series:read".toList,
+      "- [x] 1b Old volume ^r1".toList]⟩]
+
+set_option maxRecDepth 40000 in
+/-- **The rollup witness loads.** -/
+theorem the_tree_witness_loads : loadsOk treeWitness = true := by decide
+
+/-- The loaded rollup witness.  Total by `the_tree_witness_loads`: the error branch is
+refuted, not defaulted. -/
+def treePlan : WfPlan :=
+  match h : loadPlan treeWitness with
+  | .ok p => p
+  | .error _ => absurd the_tree_witness_loads (by simp [loadsOk, h])
+
+/-- A Done or Dropped entity (fork-point `State::is_closed`). -/
+def settledB (e : Entity) : Bool :=
+  match e.val.status with
+  | .settled _ => true
+  | _          => false
+
+/-- What the §6.4 laws assume of an id, read off a plan: its `est:` key, its leading
+estimate, its `dur:`, and whether it is settled. -/
+def estSlotsAt (p : PlanCore) (i : Id) :
+    Option (Option Field.Dur × Option Field.Dur × Option Field.Dur × Bool) :=
+  (p.store.get i).map (fun e =>
+    (Field.viewEstKey e.val.line, Field.estLeadOf e.val.line, Field.viewDur e.val.line, settledB e))
+
+set_option maxRecDepth 40000 in
+/-- **§6.4 row 1 fires on a loaded plan: an `est:` key wins over a leading estimate.**
+`^a1` writes both, `2b` and `est:30m`; its remaining is 30, not 120. -/
+theorem remaining_reads_the_est_key_over_the_leading_estimate_on_a_loaded_plan :
+    estSlotsAt treePlan.val "a1".toList =
+        some (some (.simple 30 .minutes), some (.simple 2 .blocks), none, false) ∧
+      remainingMin 60 treePlan "a1".toList = 30 := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **§6.4 row 2 fires on a loaded plan: with no key, the leading estimate.** -/
+theorem remaining_reads_the_leading_estimate_on_a_loaded_plan :
+    estSlotsAt treePlan.val "a2".toList = some (none, some (.simple 45 .minutes), none, false) ∧
+      remainingMin 60 treePlan "a2".toList = 45 := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **§6.4 row 3 fires on a loaded plan: a parent with no estimate sums two children.**
+The children are read off the line (`@p1`, D6) and listed in the store's order. -/
+theorem remaining_sums_two_children_on_a_loaded_plan :
+    estSlotsAt treePlan.val "p1".toList = some (none, none, none, false) ∧
+      childrenOf treePlan.val "p1".toList = ["c2".toList, "c1".toList] ∧
+      remainingMin 60 treePlan "p1".toList = 50 := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **The fork point's `dur:` row fires on a loaded plan.**  `^w1` writes no estimate
+and has no children; its remaining is its `dur:`. -/
+theorem remaining_reads_dur_on_a_loaded_plan :
+    estSlotsAt treePlan.val "w1".toList = some (none, none, some (.simple 30 .minutes), false) ∧
+      childrenOf treePlan.val "w1".toList = [] ∧
+      remainingMin 60 treePlan "w1".toList = 30 := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **A settled line has nothing remaining, on a loaded plan**, whichever estimate it
+writes: `^d1` an `est:` key, `^d2` a leading estimate. -/
+theorem remaining_of_a_settled_line_is_zero_on_a_loaded_plan :
+    estSlotsAt treePlan.val "d1".toList =
+        some (some (.simple 40 .minutes), some (.simple 1 .blocks), none, true) ∧
+      remainingMin 60 treePlan "d1".toList = 0 ∧
+      estSlotsAt treePlan.val "d2".toList = some (none, some (.simple 25 .minutes), none, true) ∧
+      remainingMin 60 treePlan "d2".toList = 0 := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **The edges: no estimate anywhere is `none`** (fork-point `Tree::remaining`'s
+`None`), read as 0 by `remainingMin`; an id the plan does not hold is `none` too. -/
+theorem remaining_is_none_without_an_estimate_on_a_loaded_plan :
+    remainingOpt 60 treePlan.val "n1".toList = none ∧ remainingMin 60 treePlan "n1".toList = 0 ∧
+      remainingOpt 60 treePlan.val "zz".toList = none := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **§5.4 fires on a loaded plan: a settled head is skipped for the next open member.**
+`^v1` is `[x]` and sits in `## series:vols`, so the head is `^v2`.  And both edges: a
+series whose only member is settled has no head, and neither does a name no section
+carries. -/
+theorem the_series_head_skips_a_settled_member_on_a_loaded_plan :
+    (treePlan.val.store.get "v1".toList).map (fun e => (settledB e, seriesOf treePlan.val e.val.live)) =
+        some (true, some "vols".toList) ∧
+      seriesHead treePlan 0 "vols".toList = some "v2".toList ∧
+      seriesHead treePlan 0 "read".toList = none ∧
+      seriesHead treePlan 0 "nope".toList = none := by
+  decide
+
+/-- **`Goals.lean`'s `remaining_is_the_est_key_when_set`, refuted as written.**  Its
+statement, quantifier for quantifier, fails at `^d1`: `[x] 1b … est:40m` has an `est:`
+key and nothing remaining, because fork-point `Tree::remaining_inner` answers `Some(0)`
+for a closed item before it reads an estimate.  What holds is
+`remaining_is_the_est_key_when_set_and_unsettled`. -/
+theorem remaining_is_not_the_est_key_on_a_settled_line :
+    ¬ ∀ (bm : Nat) (p : WfPlan) (i : Id) (e : Entity) (d : Field.Dur),
+      p.val.store.get i = some e → Field.viewEstKey e.val.line = some d →
+      remainingMin bm p i = Field.Dur.minutes bm d := by
+  intro hall
+  have hw := remaining_of_a_settled_line_is_zero_on_a_loaded_plan
+  simp only [estSlotsAt, Option.map_eq_some_iff, Prod.mk.injEq] at hw
+  obtain ⟨⟨e, hg, hk, -, -, -⟩, h0, -⟩ := hw
+  have h := hall 60 treePlan _ e _ hg hk
+  rw [h0] at h
+  simp [Field.Dur.minutes] at h
+
+/-- **`Goals.lean`'s `remaining_falls_back_to_the_leading_estimate`, refuted as
+written.**  It fails at `^d2`: `[x] 25m` has no key, a leading estimate, and nothing
+remaining.  What holds is `remaining_falls_back_to_the_leading_estimate_when_unsettled`. -/
+theorem remaining_does_not_fall_back_to_the_leading_estimate_on_a_settled_line :
+    ¬ ∀ (bm : Nat) (p : WfPlan) (i : Id) (e : Entity) (d : Field.Dur),
+      p.val.store.get i = some e → Field.viewEstKey e.val.line = Option.none →
+      (Field.viewFields e.val.line).estLead = some d →
+      remainingMin bm p i = Field.Dur.minutes bm d := by
+  intro hall
+  have hw := remaining_of_a_settled_line_is_zero_on_a_loaded_plan
+  simp only [estSlotsAt, Option.map_eq_some_iff, Prod.mk.injEq] at hw
+  obtain ⟨-, -, ⟨e, hg, hk, hl, -, -⟩, h0⟩ := hw
+  have h := hall 60 treePlan _ e _ hg hk hl
+  rw [h0] at h
+  simp [Field.Dur.minutes] at h
+
+set_option maxRecDepth 40000 in
+/-- **`Goals.lean`'s `remaining_sums_the_children`, refuted as written.**  It fails at
+`^w1`: no key, no leading estimate, no children — the sum is 0 — and `dur:30m`, which
+fork-point `Item::own_remaining` reads before the children.  (A settled parent over an
+open child refutes it too, by `remaining_of_a_settled_item_is_zero`.)  What holds is
+`remaining_sums_the_children_when_unsettled_with_no_dur`, with
+`remaining_falls_back_to_dur_when_unsettled` for the row §6.4 does not write. -/
+theorem remaining_does_not_sum_the_children_over_a_dur :
+    ¬ ∀ (bm : Nat) (p : WfPlan) (i : Id) (e : Entity),
+      p.val.store.get i = some e → Field.viewEstKey e.val.line = Option.none →
+      (Field.viewFields e.val.line).estLead = Option.none →
+      remainingMin bm p i
+        = (p.val.store.dom.filter (fun j => parentStep p.val j == some i)).foldl
+            (fun a j => a + remainingMin bm p j) 0 := by
+  intro hall
+  have hw := remaining_reads_dur_on_a_loaded_plan
+  simp only [estSlotsAt, Option.map_eq_some_iff, Prod.mk.injEq] at hw
+  obtain ⟨⟨e, hg, hk, hl, -, -⟩, -, -⟩ := hw
+  have h := hall 60 treePlan _ e hg hk hl
+  revert h
   decide
 
 end Tm

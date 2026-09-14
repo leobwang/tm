@@ -319,68 +319,20 @@ at the six stated rounding sites".  The recurrence half of this stage is in the
 header's not-yet-stateable list; what follows is the half that has vocabulary.
 ############################################################################ -/
 
-/-! ## §6.4's rollups (`tree.rs`) -/
-
-/-- **Provisional (stage 5).**  §6.4's `remaining(item)`: "`est` if set, else
-`est_original`, else Σ over children".  Every input is settled — the two
-estimate slots are `Field.viewEstKey` and `Fields.estLead`, the child relation
-is `parentStep`, and `blockMin` is what turns a `b` into minutes.  The three
-goals below are the three rows of that sentence. -/
-def remainingMin (bm : Nat) (p : WfPlan) (i : Id) : Nat := sorry
-
-/-- **P\*, stage 5, §6.4 row 1.**  An explicit `est:` wins.  Rules out C1
-re-entering through the rollup: §4.1's `est:` key overrides the leading
-estimate at the *line*, and the rollup must not read the other slot. -/
-theorem remaining_is_the_est_key_when_set (bm : Nat) (p : WfPlan) (i : Id) (e : Entity)
-    (d : Dur) (hget : p.val.store.get i = some e)
-    (hd : Field.viewEstKey e.val.line = some d) :
-    remainingMin bm p i = Dur.minutes bm d := sorry
-
-/-- **P\*, stage 5, §6.4 row 2.**  With no `est:`, the leading estimate as
-written (§3.1's `est_original`) is the value. -/
-theorem remaining_falls_back_to_the_leading_estimate (bm : Nat) (p : WfPlan) (i : Id)
-    (e : Entity) (d : Dur) (hget : p.val.store.get i = some e)
-    (hno : Field.viewEstKey e.val.line = Option.none)
-    (hlead : (Field.viewFields e.val.line).estLead = some d) :
-    remainingMin bm p i = Dur.minutes bm d := sorry
-
-/-- **P\*, stage 5, §6.4 row 3.**  With neither, the value is the sum over
-children.  The recursion is well-founded only because `parentsAcyclic` is part
-of `planWf` — which is what F5 (a parent cycle made `close_week` delete every
-line in it) becomes once the traversal has to be total. -/
-theorem remaining_sums_the_children (bm : Nat) (p : WfPlan) (i : Id) (e : Entity)
-    (hget : p.val.store.get i = some e)
-    (hno : Field.viewEstKey e.val.line = Option.none)
-    (hnolead : (Field.viewFields e.val.line).estLead = Option.none) :
-    remainingMin bm p i
-      = (p.val.store.dom.filter (fun j => parentStep p.val j == some i)).foldl
-          (fun a j => a + remainingMin bm p j) 0 := sorry
-
-/-! ## §5.4's series head (README gap 18) -/
-
-/-- **Provisional (stage 5).**  §5.4: "`## series:<name>` sections hold ordered
-items.  Only the **head** — the first item not Done/Dropped — is active; the
-rest are invisible to the planner."  `seriesOf` already derives which series a
-placement sits in, so a series is a document plus a name and the head is a
-function of the plan.  Settled by §5.4; nothing else about series is. -/
-def seriesHead (p : WfPlan) (k : DocIx) (name : List Char) : Option Id := sorry
-
-/-- **P\*, stage 5, §5.4.**  The head is not settled — completing it hands the
-role to the next line, which is §5.4's whole mechanism. -/
-theorem the_series_head_is_not_settled (p : WfPlan) (k : DocIx) (nm : List Char)
-    (i : Id) (e : Entity) (h : seriesHead p k nm = some i)
-    (hget : p.val.store.get i = some e) (o : Outcome) :
-    e.val.status ≠ .settled o := sorry
-
-/-- **P\*, stage 5, §5.4.**  The head is the *first* such line: no unsettled
-member of the same series ranks ahead of it.  Rules out "adding a volume =
-adding a line at the end" quietly activating the wrong volume. -/
-theorem the_series_head_ranks_first (p : WfPlan) (k : DocIx) (nm : List Char)
-    (i j : Id) (e f : Entity) (h : seriesHead p k nm = some i)
-    (hi : p.val.store.get i = some e) (hj : p.val.store.get j = some f)
-    (hsi : seriesOf p.val e.val.live = some nm) (hsj : seriesOf p.val f.val.live = some nm)
-    (hk : f.val.live.doc = k) (hun : ∀ o : Outcome, f.val.status ≠ .settled o) :
-    e.val.live.rank ≤ f.val.live.rank := sorry
+/- **§6.4's `remaining` and §5.4's series head are real (2026-09-14, stage 5 step 1).**
+The provisional `remainingMin` and `seriesHead` that stood here are replaced by
+`Tm.remainingMin` and `Tm.seriesHead` in `TmKernel/Tree.lean`, with the signatures
+they declared.  Of this section's five goals, `the_series_head_is_not_settled` and
+`the_series_head_ranks_first` are proved as stated (`Tree.lean`).  The three §6.4 rows
+were stated over every item and with no `dur:` row; fork-point `Tree::remaining_inner`
+answers `0` for a Done or Dropped item and `Item::own_remaining` reads `dur:` before the
+children, so each is refuted as written on a loaded plan (`Boundary.lean`:
+`remaining_is_not_the_est_key_on_a_settled_line`,
+`remaining_does_not_fall_back_to_the_leading_estimate_on_a_settled_line`,
+`remaining_does_not_sum_the_children_over_a_dur`), with the law that holds beside each
+(`remaining_is_the_est_key_when_set_and_unsettled`,
+`remaining_falls_back_to_the_leading_estimate_when_unsettled`,
+`remaining_sums_the_children_when_unsettled_with_no_dur`).  README "Stage 5 step 1". -/
 
 /-! ## §7's priority -/
 

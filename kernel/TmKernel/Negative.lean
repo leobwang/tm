@@ -815,4 +815,48 @@ theorem mixedPairInverts :
       | _, _ => none) = some (some true) := by
   decide
 
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5 step 1: §6.4's `remaining` and §5.4's series
+-- head).  The controls, which compile, are in Boundary.lean:
+-- `remaining_reads_the_est_key_over_the_leading_estimate_on_a_loaded_plan` (70),
+-- `remaining_of_a_settled_line_is_zero_on_a_loaded_plan` (71),
+-- `remaining_sums_two_children_on_a_loaded_plan` (72),
+-- `remaining_reads_dur_on_a_loaded_plan` (73) and
+-- `the_series_head_skips_a_settled_member_on_a_loaded_plan` (74).
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 70 — C1 re-entering through the rollup.  A rollup that read the leading
+   estimate over the `est:` key would give `^a1` (`2b … est:30m`) its 120 minutes at a
+   60-minute block; it has 30. -/
+set_option maxRecDepth 40000 in
+theorem theLeadingEstimateWinsOverTheKey : remainingMin 60 treePlan "a1".toList = 120 := by
+  decide
+
+/- CHEAT 71 — a Done line still owing its estimate.  `^d1` is `[x] 1b … est:40m`;
+   fork-point `remaining_inner` answers `Some(0)` for a closed item, and so does the
+   kernel. -/
+set_option maxRecDepth 40000 in
+theorem aDoneLineKeepsItsEstimate : remainingMin 60 treePlan "d1".toList = 40 := by
+  decide
+
+/- CHEAT 72 — a parent with no estimate reading nothing.  `^p1` writes no estimate;
+   its children `30m` and `20m` sum to 50. -/
+set_option maxRecDepth 40000 in
+theorem aParentWithNoEstimateReadsNothing : remainingMin 60 treePlan "p1".toList = 0 := by
+  decide
+
+/- CHEAT 73 — `dur:` ignored.  `^w1` writes only `dur:30m`; `Item::own_remaining`
+   reads it, and so does the kernel. -/
+set_option maxRecDepth 40000 in
+theorem aDurOnlyLineReadsNothing : remainingMin 60 treePlan "w1".toList = 0 := by
+  decide
+
+/- CHEAT 74 — the settled volume kept active.  `^v1` is `[x]`; the head of
+   `## series:vols` is the next open member, `^v2`. -/
+set_option maxRecDepth 40000 in
+theorem theSettledVolumeIsTheHead : seriesHead treePlan 0 "vols".toList = some "v1".toList := by
+  decide
+
+
 end Tm

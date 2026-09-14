@@ -211,7 +211,8 @@ Arith ────────────────────────�
 ```
 
 Root import order (`cat TmKernel.lean`): `Arith Cal Grain Text Json Line State
-Plan Cmd Close Report Boundary`. `Json` imports `Text` only; `Close` imports `Cmd`;
+Plan Tree Fast Cmd Close Report Boundary` (`Tree` since stage 5 step 1: it imports `Plan`
+only, and `Boundary` imports it for its loaded-plan witnesses). `Json` imports `Text` only; `Close` imports `Cmd`;
 `Report` imports `Close` and `Arith` (stage 4 step 5 — the first consumer of
 `Arith`); `Boundary` imports `Report` and `Json` (it imported `Cmd` before stage 4
 step 2, and `Close` before step 5). **No module imports `Lean.Data.Json` any more** — the wire is the
@@ -224,6 +225,7 @@ kernel's own (§2.4).
 - `Line` — the item line and the whole of §4.1's field grammar, with the parse ⇒ wf bridges. 6,494 lines.
 - `State` — entity versus observation. `Core`, `wf`, `Entity`, `render`.
 - `Plan` — `Store`, `Doc`, `PlanCore`, `planWf`, `WfPlan`, and the comment rule (`commentAfter`).
+- `Tree` — §6.4's `remaining` (`remainingMin`, structural fuel, proved to be the one fixed point of its step) and §5.4's series head (`seriesHead`). Stage 5 step 1.
 - `Cmd` — `lift`, `Transform`, `Dest`, `WfPlan.mapAt`, `KErr`, the commands (`cmdMove cmdDrop cmdSetEst cmdDemote cmdReadopt cmdRank cmdEdit cmdUnset`, and `WfPlan.insertFresh` for `add`), the `EditVal` table.
 - `Close` — §6.3's lifecycle as one fold at three grains: the `ClosePolicy` table and its bridges, `close`, the landing rank shift, `close_spec`, `autoClose`. On the wire since stage 4 step 5, as the `close` and `autoClose` ops.
 - `Report` — what a close reports (the owner's D3): `CloseEntry`, `Report`, `closeReport`, `closeR`/`autoCloseR`, and the theorems tying each entry to the close's result. kernel/README.md, stage-4 step-5 block.
@@ -231,7 +233,7 @@ kernel's own (§2.4).
 - `Arith` — exact rational arithmetic. Its one consumer so far is `Report` (minutes as an `Arith.Pos`).
 
 **A new module is not built until it is imported.** `kernel/TmKernel/TmKernel.lean`
-is twelve `import TmKernel.<Mod>` lines and nothing else; `lakefile.toml` names one
+is fourteen `import TmKernel.<Mod>` lines at stage 5 step 1 and nothing else; `lakefile.toml` names one
 `lean_lib TmKernel` and no module list. So a `.lean` file dropped into
 `TmKernel/TmKernel/` that nobody imports is **not compiled by check 1**, is not in
 `libTmKernel_TmKernel.a`, and is therefore invisible to the Rust — while
@@ -513,6 +515,8 @@ that needs the user's assent, not an agent's judgment.
 | **D6** (2026-09-13): parents are on, strictly — `@parent` is a view over the token vector, not a stored slot; a dangling link refuses the whole tree (`danglingParent`), a cycle refuses (`parentCycle`); the corpus harness loads whole trees only | one reader per field (§5.3), and a refusal by name over the old Rust's check-only `@ghost`; stricter than the Rust, chosen knowingly (gap 22, §10.5 q3) |
 | **D7** (2026-09-13): at a week close a past-due dated `persist` line (a point's or interval's default) moves to `backlog.md # Overdue`, staying `[ ]` — pulled forward from stage 5 | spec §6.3's week row and §5.3; §4.3's own example week (`^d1`) otherwise refuses its automatic close (gap 55) |
 | **D8** (2026-09-13): a not-yet-due dated line unfinished at a week close is demoted like any other and keeps its `due:`; the month rule "an outcome carries no date" covers outcomes, not `# Demoted` records — a deliberate owner narrowing of `shapesWf` | spec §6.3 calls `# Demoted` records work items, and fork-point `check.rs` has no date rule for month items (gap 55) |
+| **D9** (2026-09-14): the Lean kernel replays `.tm/log.jsonl`, all of it — requests carry the log's events; the kernel derives every replay fact (minutes and blocks per item and per day, last completion, completion dates, routine instance status, undo masking, lost minutes) and hands energy and duration observations back to Rust, which keeps **only** the statistical fit (plan §3.6); the old Rust `log::replay` stops being a source of decision facts | one reader, and it is proved (§5.3); `move_has_no_inverse_command` already made replay the only correct `tm undo`. §10.5 q4; README "Stage 5 step 1" |
+| **D10** (2026-09-14): future-day capacity is an **exact weighted mixture** — expected minutes at each energy level = `p_lounge · lounge + (1 − p_lounge) · home`, carried as exact numerator/denominator pairs through the EDF pass with nothing rounded; this deliberately disagrees with fork-point `capacity::lookahead` (lounge iff `p ≥ 0.5`) and is on stage 5's parity exception list | no unstated rounding reaches stage 6 (R7, gap 26); a threshold throws away the weight §8.4 states. §10.5 q5; README "Stage 5 step 1" |
 | Behaviour changes are recorded next to the rule they replace, with a theorem separating them — never taken silently | *"this is a bug" vs "this is an undocumented deliberate choice" is a judgment reading cannot settle* |
 
 ---
@@ -1988,7 +1992,10 @@ Rust.
   route is gone; the remaining routes are Rust sending numerator/denominator
   pairs as two `Nat`s, or widening `JVal` with an exact decimal constructor —
   **visibly, in a diff**, with its escaping/numeral round trip extended so
-  `jparse_jemit` still holds. The last sentence stands unchanged.
+  `jparse_jemit` still holds. The last sentence stands unchanged. *Route chosen at
+  stage 5 step 1 (README "Stage 5 step 1"): Rust sends each configured rational as a
+  numerator/denominator pair of `Nat`s, decoded by `Arith.ofPair?` (a zero denominator
+  refused); `JVal` is not widened. The wiring step inherits this.*
 - **`binsWf` and `descending` are two decidable checks a loader should run**
   (gap 27). `ladder_eq_rungs` needs the edges sorted;
   `rungs_antitone` does not. A misconfigured `priority.bins` still produces a
@@ -2013,12 +2020,18 @@ Rust.
   mixes lounge and home capacity by `p_lounge`, a rational weight over two
   integer minute counts. Whether the planner floors per level, per day, or
   carries the pair exact into the EDF pass is undecided. Decide it here and state
-  it, or stage 6 inherits an unstated rounding.
+  it, or stage 6 inherits an unstated rounding. *Taken 2026-09-14 (D10): exact, carried
+  as numerator/denominator pairs through the EDF pass, nothing rounded; fork-point
+  `capacity::lookahead`'s `p ≥ 0.5` threshold is a parity exception.*
 - **The log has nowhere to live.** `PlanCore` is `{docs, store}` — there is no
   `log` field, against the plan's three-field sketch. Instance status comes from
   the log (`done inst=…`, `skip inst=…`), and so do `done_minutes`,
   `blocks_done` and lost minutes. §3.6 keeps the *statistical* layer in Rust —
   but `log::replay` is not statistics. **Decide which side replays, and say so.**
+  *Taken 2026-09-14 (D9): the kernel replays all of it and hands the energy and duration
+  observations back to Rust's fit. Until the D9/D10 tranche lands, every log-derived
+  input is a plain argument of the kernel function that reads it, never a Rust summary
+  format.*
 - **Hysteresis is a second relational-ish law and it is not in L1..L27.** §7.4:
   `p` may improve by at most one bin per day relative to yesterday's stored `p`,
   unless the new value is 0. It makes today's priorities depend on yesterday's
@@ -2041,7 +2054,10 @@ Rust.
   is not the same as making the right decision.
 - **Series head has no home** (gap 18). `seriesOf` derives the
   `## series:<name>` a placement sits in; §5.4's head rule and the implied
-  `after:` a series section carries are planner concepts.
+  `after:` a series section carries are planner concepts. *The head got a home at
+  stage 5 step 1: `Tree.lean`'s `seriesHead`, per document (README "Stage 5 step 1",
+  difference (s1)). The implied `after:` (fork-point `Tree::implied_dep`) is still
+  unbuilt, README gap 75.*
 - **This is where the proof-to-definition ratio is expected to blow up**, and the
   3:1 stop condition fires here on the measurement taken at the end of stage 4.
   The `1.09 : 1` figure in the plan is a stage-1 first-slice measurement and the
@@ -2409,8 +2425,8 @@ they are settled, and changing one needs the owner again.
 | 1 | The two close behaviour changes — and by **constructing a stale tree and closing it**, not by reading | before stage 4 | **First half ANSWERED 2026-09-12 (D1):** `close day` targets the week containing *now* — the kernel's `closeTo` — decided after driving stale trees with the restored binary (skipping a weekend double-stamped leftovers onto the month cut list and dropped them off Monday's plan; an item whose parent was in the closing week was deleted, its minutes silently absorbed; a day closed more than 16 days late stranded work in a sealed file). Package: the stamp stays `demoted:D<dd>`; `AUTO_CLOSE_CATCHUP = 16` collapses to one step per grain. Evidence and mechanism: `kernel/README.md`'s stage-4 block (D1). **Second half WITHDRAWN:** the week→month "behaviour change" does not exist — `horizon::close_week` already computes `closeTo week now` (checked by `decide` on four dates; `rfl`-equal to `monthOfWeekByToday`) (§10.2's row; §8.2's trap). The sites were repaired at stage 4 step 1; the residual "which month file holds a week's `# Demoted` record" is README gap 52, **deferred** out of stage 4 (no consumer) |
 | 2 | `Id`'s shape — the recorded resolution is weaken the spec, not tighten the data | stage 3 | **ANSWERED 2026-09-12 (D2):** ids stay digits (`freshId`'s `^9`, `^10`); spec §3.1's "4 chars of `[a-z0-9]`" width sentence is weakened to match. Closes gap 13. *The spec edit landed at stage 4's closing docs commit* (§3.1's `Item` listing, §17.2's "Ids:" bullet); the host's old generator still mints base-32 ids on `tm add`'s carve-outs and `--fix-ids` (README gap 61) |
 | 3 | `parent`: derive the field and demote `parentsTotal` to a report, or keep it stored and have no hierarchy (gap 22) | **before stage 5, blocking** | **ANSWERED 2026-09-13 (D6):** derive it, strictly — `@parent` is a view over the token vector, `parentsTotal` and `parentsAcyclic` stay load preconditions (`danglingParent`, `parentCycle` refuse the whole tree), and the corpus harness loads whole trees only; B3 is unblocked (README "Stage 4 final"). *As it stood at stage 4's close:* **open — the one question in this table that blocks stage 5.** B3 (`close_week_folds_a_dropped_child_into_its_parent`) stands in `Goals.lean` on it at stage 4's close, and §6.3's child-folding clause is scoped out of the close on it (`children := .gap22Parent`). **LANDED at stage 4 final step 3:** `Core.parent` is `Field.parentRef` of the line; a dangling or cyclic link refuses by name; the column is renamed `childFoldB3`. **B3 LANDED at stage 4 final step 4:** refuted as additive (`close_week_does_not_add_a_dropped_child_to_its_parent`), the fold by §6.4's `max` beside it; the column is `dropIntoParent` |
-| 4 | Which side replays the log | before stage 5 | **open** — and `move_has_no_inverse_command` makes replay the only correct `tm undo` |
-| 5 | R7: where the `p_lounge` capacity mixture rounds (gap 26) | stage 5, consumed by 6 | **open** |
+| 4 | Which side replays the log | before stage 5 | **ANSWERED 2026-09-14 (D9):** the Lean kernel replays the log, all of it; Rust keeps only the statistical fit (plan §3.6), fed the energy and duration observations the kernel hands back. Not built at stage 5 step 1: every log-derived input (minutes done, last completion, instance status) is a plain argument whose type the kernel's own replay will produce, and the D9/D10 tranche wires them. *As it stood at stage 4's close:* **open** — and `move_has_no_inverse_command` makes replay the only correct `tm undo` |
+| 5 | R7: where the `p_lounge` capacity mixture rounds (gap 26) | stage 5, consumed by 6 | **ANSWERED 2026-09-14 (D10):** nowhere — expected minutes per level are the exact mixture `p·lounge + (1 − p)·home`, exact pairs through the EDF pass; a deliberate disagreement with fork-point `capacity::lookahead`'s `p ≥ 0.5` threshold, on stage 5's parity exception list. Not built at stage 5 step 1; capacity minutes must be exact rationals and utilisation compares a `Nat` need against a rational availability by cross-multiplication. *As it stood at stage 4's close:* **open** |
 | 6 | L24 / L25: prove, or keep the 882-line proptest and say so | **before stage 6 starts** | **ANSWERED 2026-09-13 (D5), by the ratio decision:** prove them; the proptest stays beside the proofs, never in place of them. *As it stood at stage 4's close:* **open**; the proptest is restored and runs (`tm-core/tests/planner_invariants.rs`) |
 | 7 | Lifecycle commutation (R7 in the law list) — L27 surfaces it and does not answer it | stage 6 | **open** — L27 is refuted (stage 4 step 3) by a demote/readopt precondition pair, which does not bear on whether pairs that both succeed should commute |
 | 8 | What `report` carries, and therefore its shape (§8.2). Nothing in the kernel names it today | before stage 4 writes one | **ANSWERED 2026-09-12 (D3):** a per-item list — id, disposition, destination, stamp, minutes as integer numerator/denominator. Not counts only (the month review would re-derive per-item history from the files, a second reader of one fact), and not stage 6's full diagnostics surface yet. **Landed** at `d7487b2` (`Report.lean`, `ok.report.closes`) and read by the shipped binary since `5557713` |
@@ -2453,3 +2469,8 @@ kernel's stage-one reader (row 40). The close's human line counts dropped childr
 (row 41). The repair raised **q11** (whether `hfold` is a forced change), not blocking.
 Still owed to the human: **q4**, **q5**, **q10**, **q11**, **q7**, **q9**, and the §5.13
 drives.
+
+**Update 2026-09-14, stage 5 step 1 (README "Stage 5 step 1").** q4 is answered (D9: the
+kernel replays the log, all of it) and q5 is answered (D10: the capacity mixture is exact).
+Neither is built yet; the step's types are shaped to take them. Still owed to the human:
+**q10**, **q11**, **q7**, **q9**, and the §5.13 drives.
