@@ -1246,4 +1246,45 @@ theorem theBucketWithoutItsClamp :
       = Look.learnedLevel Look.fixtureEnergy Look.loungeKey 3000 := by
   decide
 
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D10 track, step L5: the lookahead in
+-- `Lookahead.lean`).  Numbers 126 and 127 are the next free numbers in this
+-- checkout (the highest was 125, after W-1's repair).  The design's L5 label,
+-- 117 (mixing before the budget limit), was taken by L1 and still fails there.
+-- The D9 track numbers in parallel and the merge renumbers.  Each cheat is the
+-- real function with one step changed, claimed to agree with the fork on a
+-- fork-shaped input.  The controls, which compile, are in Lookahead.lean:
+-- `a_future_day_reads_todays_wake_to_the_second` (126) and
+-- `sunday_mixes_at_its_own_weight` (127).  Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 126 — a future day's wake at whole minutes: `local_dt` of today's wake clock with
+   its seconds dropped.  On Tuesday 2026-09-08 with a 07:05 arrival and a wake at 06:05:40,
+   the fork puts the 07:05 block at 0.99 h (the lounge's `0-1`, level 4) and keeps 180
+   minutes at level 5; whole minutes put it at 1.00 h (level 5) and keep 240.  `decide`
+   refuses the equality. -/
+def pureDayWakingOnTheMinute (I : Look.Input) (loc : Look.Loc) (d : Nat) : Look.Hist :=
+  Look.limitHist (Look.budgetMinOf I.day) (Look.histOf' (Look.energize I.curves I.homeMax loc
+    (Cal.instantOf I.tz d ⟨I.wake.sec / 60 % 1440, Nat.mod_lt _ (by decide)⟩) (Look.dayCut I d).slots))
+
+theorem aFutureWakeOnTheMinute :
+    pureDayWakingOnTheMinute { Look.specInput with arrival := fun _ => 425, wake := ⟨6 * 3600 + 5 * 60 + 40, 0⟩ }
+        .lounge 739866 5
+      = Look.pureDay { Look.specInput with arrival := fun _ => 425, wake := ⟨6 * 3600 + 5 * 60 + 40, 0⟩ }
+        .lounge 739866 5 := by
+  decide
+
+/- CHEAT 127 — every future day mixed at today's weekday's weight.  The fork reads
+   `p_lounge_on(date.weekday())` for each date: on Sunday 2026-09-13 the shipped 0.4, where
+   Monday's is 0.9.  The Sunday lounge day keeps 120 minutes at level 5, so the expected level
+   5 is 48 minutes and the cheat's 108.  `decide` refuses the equality. -/
+def dayOfAtTodaysWeight (I : Look.Input) (i : Nat) : DayCapacity :=
+  if i = 0 then Look.ofHist I.today I.day0
+  else Look.mixDay (I.today + i) (I.weight (Cal.weekdayOf I.today))
+    (Look.pureDay I .lounge (I.today + i)) (Look.pureDay I .home (I.today + i))
+
+theorem everyDayAtTodaysWeight :
+    (dayOfAtTodaysWeight Look.specInput 6).numAt 5 = (Look.dayOf Look.specInput 6).numAt 5 := by
+  decide
+
 end Tm

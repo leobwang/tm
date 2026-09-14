@@ -10528,3 +10528,305 @@ refuted or added: none**, and the burn-down stays **13**. **New theorems: none**
 | `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored** |
 | FFI suite (`tm-kernel-ffi`) | **82 passed / 0 failed** (kernel 72, corpus 8, stack 2) |
 | `cli_latency.rs` | green (1 passed) |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5, D10 track, step L5 (branch stage5-lookahead,
+     worktree .claude/worktrees/stage5-lookahead).  Built in parallel with the D9
+     track on rebuild-on-lean (D11).  Takes cheats 126-127 and gaps 105-106 (the
+     next free numbers in this checkout; the design's L5 cheat label 117 was
+     taken by L1).  No parity entry.  Whoever merges renumbers (AGENTS §6.2, §6.4).
+     =========================================================================== -->
+
+## Stage 5 D10 L5, 2026-09-14: the lookahead — each future day's lounge and home profiles, mixed exactly, ready for EDF
+
+**Starting point.**  The worktree at `e3e9e9e` (W-1's repair) was clean: check.sh 7/7, audit 2388,
+corpus 29/37 files and 4/5 whole plans, burn-down 13, `cargo test --workspace` 1013 / 0, FFI 82.
+Every figure at the end of this block is re-measured in this worktree.
+
+**The plan executed** is design `kernel/design/stage5/stage5-D9-D10-design.md` §13.4 and §14.8's L5
+row, under the owner's D10 (the exact mixture), D12 (L2–L4 pulled into stage 5) and D17
+(`capDen = 10^18`), with the fork's `capacity::lookahead` (`tm-core/src/capacity.rs`), `Ctx::wake_time`
+(`tm/src/cli/ctx.rs`) and `Model::p_lounge_on`/`expected_arrival_on`/`wake_or_expected`
+(`tm-core/src/energy.rs`) as the oracle, the location forced per day as the fork forces it.  Files:
+`Lookahead.lean` (a new section, "The lookahead", and the module header), `Boundary.lean` (an
+`import TmKernel.Lookahead` line and the loaded-plan witness, appended), `Check.lean`,
+`Negative.lean`, `AGENTS.md` (§2.3's import note and `Lookahead` entry).  No new module, so
+`TmKernel.lean` is unchanged at seventeen imports.  `Cal.lean` and every other D9 module are
+untouched.
+
+### What was built (`Lookahead.lean`, section "The lookahead")
+
+| piece | what it is | fork point |
+|---|---|---|
+| `WakeClock {sec, ns}`, `WakeClock.wf`, `WakeClock.ofClock` | a time of day with nanoseconds; chrono's bounds (second < 86,400, nanoseconds < 2·10^9, a leap second only on second 59); a whole-minute clock as one | `NaiveTime` |
+| **`wakeInstantOf z d w`**, `leapFold` | `local_dt` at second resolution: the local clock's whole seconds against B1's `Cal.localHits`; `Single`/`Ambiguous` give the earliest hit with the time's nanoseconds; a spring-forward gap tries 1 to 180 minutes later with the seconds kept and a leap second left (`leapFold`); else the local time read as UTC.  **B1's `Cal.instantOf` is its whole-minute instance** (`wakeInstantOf_ofClock`) | `capacity::local_dt(tz, date, wake_default)`, chrono 0.4.45's `NaiveTime::overflowing_add_signed` |
+| `maxLookaheadDays = 3660`, `DayCfg {cut, windowHours, windowCap, budgetRatio}` | D10-13's bound; the `[day]` keys the window, the budget and the cut read, L3's `CutCfg` contained | `DayConfig` |
+| **`InputIn`**, **`mkInput?`**, `CapErr` | the host's raw input (both readings of `p_lounge` and `arrival` per weekday, today's logged wake if any, day 0's six levels, curves, `home_max_ci`, `[day]`, zone, walls indexed once) and its smart constructor: `lookaheadTooLong`, then `weight wd e` Monday first, then `badWake`, then `badDay0` | `lookahead`'s arguments, `Model::p_lounge_on`, `Model::expected_arrival_on`, `Ctx::wake_time` (`wake_or_expected(logged, today.weekday())`) |
+| `weightOn?`, `weightsOf?`, `arrivalOn`, `wakeOf`, `day0Wf` | the fallbacks, applied by the kernel (D10-4, AGENTS §5.6) | same |
+| `Input` | the decoded input | — |
+| `budgetMinOf`, **`dayCut`**, `wakeOn` | `budget_blocks × block_min`; a date's walls, `windowOn`, `cutSlots … [] 0`; today's wake clock on that date | `limit_to_budget`'s `left`; `window_and_budget`, `cut_slots` |
+| **`pureDay I loc d`**, `pureDay_is_dayHist` | one location's future day: `limitHist` over the energised histogram, equal to L4's `dayHist` (the fork's per-slot sort) | `lookahead`'s loop body |
+| **`dayOf I i`**, **`lookahead I`** | entry `i`: day 0 is `ofHist today day0` (interim until L9), a later day `mixDay` at **its own weekday's** weight; the lookahead is a `foldl` over `List.range days`, then `reverse` | `capacity::lookahead` |
+| `Six`, `Six.of`, `Six.get`, `locSix`, `dayOfFast`, **`@[csimp] dayOf_eq_dayOfFast`** | L4's note: the compiled day cuts once, lists each location's energised slots once, and holds its histogram, its limited day and the mixed numerators as six numbers.  `lookahead` is declared after the `@[csimp]`, so its compiled fold calls `dayOfFast` (checked in the generated C: the fold specialised for `lp_TmKernel_Tm_Look_lookahead` calls `dayOfFast`, and `dayOfFast` builds `Six` values and closures over them) | — |
+| `Input.twin` | every weight forced to the fork's threshold (L1's `twin`), for L7 | `p_lounge_on(wd) >= 0.5` |
+| `DayCfg.shipped`, `shippedWeight`, `shippedArrival`, `specInput`, `specIn`, `wednesdayWall` | the shipped `config.toml` tables and the fork's `capacity_lookahead.rs` week (Monday 2026-09-07, Chicago, woken 06:05), for the witnesses | `plan-basic/config.toml` |
+
+### The laws (in-step; never in `Goals.lean`)
+
+§15 lists the L5 theorems under "L1, L4, L5 (in-step)", so none stood in `Goals.lean` and the
+burn-down does not move.  The four with §15 signatures match them **verbatim**:
+`lookahead_keeps_the_days`, `lookahead_is_a_lookahead`, `lookahead_between_the_locations` and
+`mkInput?_refuses_too_many_days`.
+
+| theorem | statement |
+|---|---|
+| **`lookahead_keeps_the_days`** (§15) | `(lookahead I).length = I.days` |
+| `lookahead_eq_map`, `lookahead_getElem?`, `lookahead_dates` | the lookahead is `dayOf` over `0..days`; entry `i` exists iff `i < days`; the dates are `today + i` in order |
+| **`lookahead_is_a_lookahead`** (§15) | `(lookaheadOf? capDen (lookahead I)).isSome = true`, for **every** input: step 3's `edf` accepts it |
+| `lookahead_day_zero_is_the_hosts` | entry 0 is `ofHist today day0` |
+| **`lookahead_future_day_is_the_mixture`** | every later entry is `mixDay` of the two `pureDay`s at the weight of **its own date's** weekday, each limited first (D10-3) |
+| **`lookahead_between_the_locations`** (§15) | every level of every later entry lies between `capDen ×` the two locations' minutes |
+| **`lookahead_at_a_certain_weight_is_the_pure_location`** | at weight `capDen` the day is `ofHist` of the lounge's, at `0` of home's |
+| **`the_twin_forces_the_forks_location`** | on `I.twin` every later day is `ofHist` of the lounge's day iff `capDen ≤ 2w`, else home's: the fork's forced location in `capDen` units (P1 refined, what L7 checks) |
+| **`lookahead_is_the_expected_minutes`** | end to end from the host's pair: for an accepted `InputIn`, a later day's level read over `capDenD` is the rational `(n·lounge + (d − n)·home)/d` for the model-then-config pair `n/d` of its weekday |
+| `pureDay_le_budget`, `lookahead_future_day_width` | R10's width: a later day's level is at most `capDen × budget × block_min` |
+| **`mkInput?_refuses_too_many_days`** (§15) | `maxLookaheadDays < x.days → mkInput? x = .error .lookaheadTooLong`, whatever else `x` holds |
+| `mkInput?_refuses_a_bad_weight`, `mkInput?_refuses_a_bad_wake`, `mkInput?_refuses_a_bad_day0` | each other refusal: no input is accepted |
+| `mkInput?_accepts` | both directions: every other input is accepted |
+| `mkInput?_ok_elim`, `mkInput?_days_le`, `mkInput?_weight_is_the_model_then_config`, `mkInput?_arrival_and_wake`, `wakeOf_without_a_logged_wake_is_wf` | what an accepted input holds: at most 3,660 days; each weight decoded exactly from the model's pair, else the config's; each arrival the model's, else the config's; the wake the logged one, else today's expected arrival, which is always well formed |
+| `wakeInstantOf_ofClock`, **`wakeInstantOf_on_an_unambiguous_time`** | B1's `instantOf` is the whole-minute instance; on an unambiguous local second the wake is that instant with the time's nanoseconds (B1's `instantOf_is_local_dt_on_an_unambiguous_time`, at second resolution) |
+| `Six.get_of`, `locSix_get`, `dayOf_eq_dayOfFast`, `pureDay_is_dayHist`, `dayOf_day`, `lookahead_entry`, `weightsOf?_ok`, `weightsOf?_of_ok`, `foldl_cons_map`, `daysAscending_range'`, `WakeClock.ofClock_wf` | the supporting lemmas |
+
+**`mixing_before_the_budget_is_not_the_expectation`** is the L5 row's fifth name.  L1 already proved
+it, with §15's statement and §13.4's witness (budget 60, `L = {5:60, 4:60}`, `H = {3:120}`,
+`w = capDen/2`), and `lookahead_future_day_is_the_mixture` is what makes it about the lookahead: the
+kernel's day is the mixture of the limited days.  It was not proved a second time.
+
+**Audit (AGENTS §7.4).**  (1) Every binder is used; the lookahead laws quantify over **every**
+`Input`, not over a decoded or witnessed one, and `lookahead_is_the_expected_minutes` over every
+accepted `InputIn`.  (2) Hypotheses are satisfiable: `0 < i` with `(lookahead I)[i]? = some c` holds
+at `specInput`, `i = 1` (`the_expected_tuesday`); the certain weights hold at `Input.twin`'s
+(`the_twin_follows_the_learned_arrival_and_location`); `wakeInstantOf_on_an_unambiguous_time`'s one
+hit holds on 2026-09-07 in Chicago (`wakeInstantOf_on_witnesses`, and B1's
+`instantOf_on_an_unambiguous_noon`).  (3) Names say what the statements say.  (4) Both directions:
+`mkInput?` has a refusal theorem per name and `mkInput?_accepts`; the twin law is an equality with
+the `if`, not a bound.  (5) The compiled code runs `dayOfFast` (generated C, above).  (6) Units:
+UTC seconds and nanoseconds for instants, whole minutes per level per location, numerators over
+`capDen` per level per day.
+
+### The fork's tests, as witnesses (Chicago's 2026 table; the shipped `config.toml`)
+
+| theorem | what it pins |
+|---|---|
+| `wakeInstantOf_on_witnesses` | 06:05:40.25 on 2026-09-07 keeps its seconds and nanoseconds; 02:30:40 on 2026-03-08 (Chicago skips it) is 03:00:40 CDT; 02:30:59 with a leap nanosecond count of 1.5·10^9 there is 03:00:59.5 CDT; 01:30:40 on 2026-11-01 (twice) is the earlier |
+| **`a_future_day_reads_todays_wake_to_the_second`** | Tuesday 2026-09-08, arrival 07:05: woken 06:05:00 the 07:05 block is at 1.00 h (level 5) and the day keeps `[0,0,0,0,120,240]`; woken 06:05:40 it is at 0.99 h (level 4) and the day keeps `[0,0,0,0,180,180]` |
+| **`the_twin_follows_the_learned_arrival_and_location`** | fork test `lookahead_follows_the_learned_arrival_and_location` through the twin: a learned Tuesday arrival of 12:00 gives the fork's asserted `[0,0,120,120,120,0]`, and a learned Wednesday `P(lounge)` of 0.2 gives a home day capped at 3, `[0,0,0,360,0,0]`, each times `capDen`; day 0 as handed in |
+| **`the_expected_tuesday`** | at `p = 0.9` the lounge keeps 180 at 5 and 180 at 4 (the fork's `config[1]`), home keeps 360 at 3, and the expected Tuesday holds 162, 162 and 36 minutes |
+| `sunday_mixes_at_its_own_weight` | Sunday 2026-09-13 at the shipped 0.4: lounge `[0,0,0,120,120,120]`, home `[0,0,120,240,0,0]` (L4's Sunday), expected 48, 48, 192, 72 |
+| `mkInput?_on_witnesses` (11 `rfl`) | accepted: the shipped tables with Monday's 07:00 as the wake; a learned Sunday 0.8 over the config's 0.4; 3,660 days; a leap second on second 59.  Refused by name: 3,661 days; a config 3/2 on Saturday (`weight saturday weightAboveOne`); a learned third on Wednesday (`weight wednesday weightPrecision`); a wake at 24:00; a leap second off second 59; five day-0 levels; 1,441 minutes |
+| **`a_wednesday_wall_moves_the_window_and_keeps_the_budget`** | without walls Wednesday's window ends at 15:00; the §4.3 meeting on Wednesday moves it to 16:00, the cut holds 410 minutes, and the twin's Wednesday is `[0,0,0,0,180,180]` times `capDen` |
+
+**The loaded-plan witness (`Boundary.lean`, appended).**  `lookWallWitness` is a one-line calendar,
+fork fixture `calendar/2026-W37.md`'s meeting moved to Wednesday
+(`- [ ] 3 Meeting w/ host      at:2026-09-09T12:50/13:50 loc:zoom ^g1`).
+`the_look_wall_witness_loads` (decide); `lookWallPlan` is total by it;
+`the_look_wall_calendar_indexes_one_wednesday_wall` (decide) shows `wallIndex Cal.chicago 60`
+reads exactly `wednesdayWall` from it; **`a_loaded_wednesday_wall_moves_the_window_and_keeps_the_budget`**
+states the window end 16:00 and the twin's capacity over `wallIndex` of the loaded plan, and is
+proved by rewriting with the index equation and the Lookahead witness, so no `decide` holds both
+the load and the lookahead.
+
+### Cheats (`Negative.lean`, appended)
+
+| # | label | cheat | fails because |
+|---|---|---|---|
+| **126** | L5-a | a future day's wake at whole minutes (today's wake clock with its seconds dropped, through `Cal.instantOf`), claimed equal to `pureDay` at level 5 on the 07:05 Tuesday woken at 06:05:40 | whole minutes keep 240 minutes at level 5, the fork 180; `decide` refuses (controls `a_future_day_reads_todays_wake_to_the_second`) |
+| **127** | L5-b | every future day mixed at today's weekday's weight, claimed equal to `dayOf` at Sunday's level 5 | the cheat's Sunday level 5 is 108 minutes (Monday's 0.9), the fork's weekday reading 48 (Sunday's 0.4); `decide` refuses (controls `sunday_mixes_at_its_own_weight`, `lookahead_future_day_is_the_mixture`) |
+
+Each fails at its own line with `Tactic decide proved that the proposition … is false`.
+
+### T0 (c): 3,660 days on a 2 MiB thread, measured (not committed; gap 105)
+
+A scratch harness under `/tmp/claude-1000/l5probe/t0c/` (not committed) linked this commit's
+`libTmKernel_TmKernel.a` into a C `main` that runs the lookahead on a `pthread` created with an
+explicit 2,048 KiB stack.  (A Lean `main` is not usable for this: `lean_run_main` runs it on a thread
+of its own, so `ulimit -s 2048` did not stop the control below.)  Input: `specInput` with 3,660 days,
+a wake at 06:05:40.25, and a Chicago-rule table of 600 transitions over [1900, 2200).  Every level of
+every day is read.  Each run is `MemoryMax=16G`.
+
+| run | result |
+|---|---|
+| **control**: a non-tail `deepSum` over 10^6 elements, same 2 MiB thread | **killed by SIGSEGV** (signal 11): the stack bound is real |
+| 7 days | returns, 0 ms, 8.8 MB peak RSS |
+| **3,660 days, no walls** | **returns, 110 ms**, 9.3 MB peak RSS; sum of numerators `1317650 · capDen` = 410 + 3,659 × 360 minutes |
+| **3,660 days, a 12:50–13:50 wall every day** (3,660 walls, `wallsOn` filters them per day) | **returns, 135 ms**, 9.5 MB peak RSS; the same sum (each wall extends its window and the budget is still met) |
+
+Design §18.8's ESTIMATE for the 3,660-day cap was 0.18–0.73 s and names a per-weekday memo as the
+lever above 300 ms (risk K22).  The measured 110–135 ms does not need it; T14 (L8) measures through the
+shipped binary.
+
+### Gap 105 (new; label L5-a) — T0 (c) is measured by a scratch harness, not committed
+
+(1) *What is not done*: design §14.8's L5 acceptance "T0 (c) `lookahead` with `days = 3,660` on a
+2 MiB thread" is not a committed test in `kernel/tm-kernel-ffi/tests/stack.rs`.  (2) *Why not now*:
+the FFI exposes one symbol, `tm_kernel_call` (R9), and no request reaches `lookahead` until L6's
+`capacity` section; a test-only export or request key would be a boundary change L6 designs.
+(3) *Cost*: the figures above are one measurement of this commit, not a test; a later edit that
+recursed once per day, or dropped `dayOf_eq_dayOfFast`, would go unseen until L6.  (4) *When it
+clears*: L6, with a `stack.rs` test that sends a `capacity` request of 3,660 days on a 2 MiB thread.
+
+### Gap 106 (new; label L5-b) — step 3's EDF pass reads a day through one closure per earlier reservation
+
+(1) *What is not done*: `Capacity.lean`'s `reserveRest` returns `⟨c.day, dayRest ci c.numAt left⟩`
+for every day up to the due date, and `dayRest` is a closure over the previous `numAt`.  So after
+`k` deadlines a day's level is read through `k` closures, and each `dayRest` read also reads the
+levels above it (`dayLeft`).  `availUntil`, `reserveOut`, `edfCaps` and `edfGrantsGo` also recurse
+once per day, not in tail position (they passed 3,660 days on the 2 MiB thread).  (2) *Why not now*:
+the fix belongs in `Capacity.lean` (step 3), outside L5's files.  A `@[csimp]` twin declared in
+`Lookahead.lean` would not reach `edfCaps`, which is compiled in `Capacity.lean` before it.  Nothing
+on the wire calls `edf` yet.  (3) *Cost*, measured with the same scratch harness over this commit's
+3,660-day lookahead (`ci` 3, 600-minute needs, due dates spread evenly; each figure includes the
+≈ 107 ms lookahead): 1 deadline 107 ms, 10 → 170 ms, 20 → 685 ms, 30 → 2,478 ms, 40 → 6,900 ms,
+about the fourth power of the deadline count.  A plan with 100 dated candidates would take minutes,
+and a `ci` 0 deadline reads more levels.  (4) *When it clears*: whichever of L6 and the priority
+wiring (L8) first calls `edf` from the wire.  It needs a `@[csimp]` twin of `reserveRest` that holds
+each day's rest as six numbers (L5's `Six`), `foldl` forms for the day recursions (D9-21), and T14's
+measurement.
+
+### Parity and rounding sites
+
+**No new parity entry.**  The kernel's lookahead, with every weight forced, is the fork's
+`capacity::lookahead` in `capDen` units: `the_twin_forces_the_forks_location` is P1 (refined)
+stated over the whole lookahead, and L7 measures it.  The twin is still subject to P27 (the window's
+half-up minutes) and, from L6, P26 and P30.  §17's "exact by design" list gains **the day range
+(dates, each date's own weekday for its weight and arrival), and a future day's wake from today's
+wake clock with seconds and nanoseconds, spring-gap, fall-fold and leap-second clocks included**.
+Day 0 is the host's histogram (design gap 93, recorded at L8 by §20) and is identical to the
+twin's by `lookahead_day_zero_is_the_hosts`.  No rounding site is added.
+
+### Rule D9-21
+
+Functions this step adds that walk a list the wire can make large: `lookahead` (a `foldl` over core
+`List.range`, whose `range.loop` is tail recursive, then `reverse`); `dayCut`, `pureDay` and
+`locSix` call L2–L4's `wallsOn`, `windowOn`, `cutSlots`, `energize`, `histOf'` and `limitHist`,
+listed in their blocks; `wakeInstantOf` calls B1's `Cal.localHits` (a `foldl` over at most 4,096
+transitions) and `Cal.gapHit` (structural fuel 180); `day0Wf` is core `length` then `all`.
+`weightsOf?` and `Six` recurse over nothing.  `dayOf` is compiled as **`@[csimp] dayOf_eq_dayOfFast`**.
+Proof-only recursions: `foldl_cons_map`, `daysAscending_range'`.
+
+### The `decide` budget (§14.0 item 4)
+
+9 new decided or `rfl` witnesses (`wakeInstantOf_on_witnesses`,
+`a_future_day_reads_todays_wake_to_the_second`,
+`the_twin_follows_the_learned_arrival_and_location`, `the_expected_tuesday`,
+`sunday_mixes_at_its_own_weight`, `mkInput?_on_witnesses` (11 `rfl`s in one theorem),
+`a_wednesday_wall_moves_the_window_and_keeps_the_budget`, and in `Boundary.lean`
+`the_look_wall_witness_loads` and `the_look_wall_calendar_indexes_one_wednesday_wall`) and 2
+cheats, **11 in all**, within the budget of 20.  They use at most Chicago's **2 zone transitions**,
+no `Entry` value, and one string literal of 68 characters (the calendar line).  All were probed first
+in scratch files under `/tmp/claude-1000/l5probe/` against the built package, under `MemoryMax=8G`
+and `timeout 120`, before the module was edited: the section with its witnesses elaborated in
+0.64 s at a 734 MB peak, the Boundary part in 1.57 s at 956 MB (the load included), the cheats in
+0.54 s at 696 MB.  Six deliberately wrong probe files were refused and not committed: a wake one second
+late, the two Tuesday wakes' histograms swapped, a wrong twin Wednesday and expected Tuesday, a
+wrong wake fallback and a misnamed weight refusal, and 420 cut minutes for 410.  One probe showed
+that `pureDay` written as `dayHist` does not reduce under `decide` (core's `List.mergeSort` is
+well-founded recursion), which is why `pureDay` is written as the histogram limit (disagreement 3).
+The committed `Lookahead.lean` elaborates in **2.57 / 2.61 / 2.61 s at an 874–895 MB peak** under
+the same cap, against L4's 2.05 s and 818–846 MB.  No realistic-size input is evaluated.
+
+### Recorded disagreements between the design and the repo
+
+1. **A future day's wake is today's wake clock, not the weekday's expected wake** (resolves L4's
+   disagreement 2).  §13.3 and §13.4 give `Input` `wakeToday : Cal.Instant` and
+   `expectedWake : Cal.Weekday → Clock`, and build a future day's wake as `instantOf z d
+   (expectedWake wd)`.  The fork passes `Ctx::wake_time()`, a `NaiveTime`: `state.json`'s logged
+   wake, else the replay's wake of today, else **today's** weekday's expected **arrival**
+   (`model.json` has no expected wake), and applies `local_dt(tz, date, wake_default)` to every
+   future date.  The kernel follows the fork: `InputIn.wake : Option WakeClock` (the logged clock),
+   `wakeOf` applies the fallback, and no weekday wake table exists.  **L6's wire should carry the
+   logged wake as a time of day with nanoseconds**, not a stamp, and not weekday wake tables.
+2. **`instantOf` at second resolution lives in `Lookahead.lean`.**  B1's `Cal.instantOf` takes a
+   whole-minute `Fin 1440`, and `Cal.lean` is the D9 track's.  `wakeInstantOf` is the same rule over
+   whole seconds and nanoseconds, and `wakeInstantOf_ofClock` proves `instantOf` its whole-minute
+   instance, so the two cannot drift apart silently.  **Left for the D9 track or the merge (AGENTS
+   §5.3):** `wakeInstantOf` could move into `Cal.lean`, with `instantOf` defined as its instance.
+3. **`pureDay` is written as the limit over the histogram.**  §13.4 says `pureDay` is "window,
+   cut, energise, limit", and L4 named it `dayHist` over the cut.  `dayHist` calls `limitSlots`,
+   whose merge sort does not reduce under `decide`, so no lookahead witness could be decided.
+   `pureDay` is `limitHist … (histOf' (energize …))`, and `pureDay_is_dayHist` proves it is
+   `dayHist` (L4's `limitSlots_is_limitHist`).
+4. **`Input`'s fields.**  §13.4's `Input` has `dayCfg : DayCfg`, `walls : List (Nat × Nat)` and
+   no `homeMax`.  Here `day : DayCfg` contains L3's `CutCfg`, `walls : List WallIx` (L2 split the
+   design's `wallsOn p d` into `wallIndex` and `wallsOn`), and `homeMax` is fork
+   `cfg.home_max_ci`, which `futureEnergy` reads.  §15's `InputIn` was unspecified, and it now holds
+   both readings of each weekday table, so the kernel picks (D10-4).
+5. **`days = 0` is accepted.**  §13.6 bounds `days` to `1..=3660` with `lookaheadTooLong`.  The fork's
+   `lookahead(…, 0)` is empty, `lookaheadOf?` accepts the empty list, and naming a zero "too long"
+   would misname it.  `mkInput?` refuses only `days > 3660`.  If L6's wire needs a positive count, it
+   refuses zero under its own name.
+6. **Bounds checked now that §13.6 assigns to L6.**  `badWake` and `badDay0` are checked by
+   `mkInput?`, because `Input` introduces those types.  So is the weight fallback, because `Input`
+   holds resolved weights.  The curves', `[day]`'s, `homeMaxCi`'s and the zone's bounds remain L6's.
+7. **`mixing_before_the_budget_is_not_the_expectation` and cheat 117 were L1's.**  The L5 row lists
+   both.  L1 proved the theorem and took cheat 117, and neither is repeated.  L5's cheats take the
+   next free numbers, 126 and 127, and control L5's own reading: seconds in the future wake, and the
+   weekday per date.
+8. **T0 (c) is measured, not committed** (gap 105).
+9. **The loaded-plan witness evaluates the load under `decide`.**  §13.4 says `loadPlan` is "reached
+   through its existing round-trip theorem, not unfolded under decide (CRIT 13)".  Every loaded-plan
+   witness in `Boundary.lean` (`the_tree_witness_loads` and its kind) decides `loadsOk` on a small
+   literal, and there is no round-trip theorem that yields the plan's `wallIndex`.  The repo's form
+   is followed, on the smallest plan with one wall (one line), and the lookahead is reached by a
+   rewrite, not inside the same `decide`.
+10. **`Boundary.lean` imports `Lookahead.lean` now.**  Before this step nothing imported
+    `Lookahead`, and an edit to it rebuilt in about 2 s.  Now it also rebuilds `Boundary` (147 s at
+    this step's build).  L6 edits both anyway.
+11. **Two theorems not in the row.**  `the_twin_forces_the_forks_location` (the law L7 checks,
+    stated over the lookahead) and `lookahead_is_the_expected_minutes` (D10 end to end from the
+    host's pair).
+12. **Memory cap.**  Every run used the workflow's 30 GB cap, with 8 GB for probes and 16 GB for
+    the scratch harness, not §14.0's 40 GB.
+
+**Carried notes honoured.**  No instant is compared (B1's order note); `hswAt` reads
+`Cal.secondsBetween`.  No decimal is re-emitted (gap 101).  Nothing assumes a 4 MiB request
+(gap 102).  No `Stamp` name is added (the B2 note).
+
+**Label-to-number map:** cheats L5-a → **126**, L5-b → **127**; gaps L5-a → **105**, L5-b → **106**.
+No parity entry.  Highest numbers in this checkout after the step: gap 106, cheat 127, parity P27.
+
+**Observable behaviour changes: none.**  Nothing on the wire calls `mkInput?` or `lookahead`.
+`Boundary.lean`'s new definitions (`lookWallWitness`, `lookWallPlan`) are unreachable from `call`.
+**Behaviour rows:** none (§20 lists none for L5).  **Goals:** discharged 0, refuted 0, added 0.
+Burn-down **13** (unchanged).
+
+**New theorems: 46**: 43 in `Lookahead.lean` and 3 in `Boundary.lean`, audited under `Check.lean`'s
+new `APPENDED 2026-09-14 (stage 5, D10 track).  Step L5` banner.  AGENTS §6.3's three counts agree
+at **2434** (`grep -c '^#print axioms' Check.lean` 2434, 2434 distinct, 2434 declared by the
+attribute-aware grep).  About 150 definition lines and 308 proof lines (about 90 of them the
+witnesses), against design §14.8's estimate of 170 and 550.  No theorem was retired, weakened or
+deleted.  No existing two-run theorem was touched.
+
+**Owed, by name (the rest of the D10 track):** L6 (the capacity wire: `InputIn` from JSON, with the
+wake as a time of day per disagreement 1; `DayCfg`'s, the curves' (L4's disagreement 8),
+`homeMaxCi`'s and the zone's R10 bounds with `badTz subMinuteOffset`; P26, P30; gap 77; gap 105's
+committed T0 (c); gap 106 if `edf` goes on the wire there).  L7 (the parity twin through
+`Input.twin` and `the_twin_forces_the_forks_location`, which also measures P27, gap 85 and gap 104).
+L8 (the wiring, T14, T16, gap 106 if not L6's).  L9 (day 0 in the kernel; `wakeInstantOf` is ready
+for today's wake with seconds).
+
+**Re-measured after this step** (every command under the 30 GB cap, in this worktree, on the tree
+committed):
+
+| measurement | value |
+|---|---|
+| `lake build TmKernel:static` after the edits | 149.5 s wall at an 8.20 GB peak (`Lookahead` 3.2 s, then `Boundary` 147 s, which now imports it) |
+| `check.sh` | **7/7**; 3.45 s on its first run, then 2.73 / 2.72 / 2.78 s on the built tree against L4's 2.73 / 2.71 / 2.76 s, no rise (§14.0 item 4 allows 10%) |
+| axiom audit | **2434 theorems** (2388 + 46); each new name prints its own line |
+| `Negative.lean` | check 4 ok; 123 errors (121 before); 117 `/- CHEAT` banners (115 before); CHEATs 126 and 127 each fail at their own line |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (stage 3: 0, stage 4: 0, stage 5: 0, stage 6: 13) |
+| `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (unchanged) |
+| FFI suite (`tm-kernel-ffi`) | **82 passed / 0 failed** (kernel 72, corpus 8, stack 2) |
+| `cli_latency.rs` | green: first verb 632.1 / 637.6 / 657.4 ms (226 files, 2,959 lines), later verb 50.7 / 55.8 / 50.7 ms |
+| T0 (c), scratch harness, 2 MiB pthread | 3,660 days in 110 ms (no walls) and 135 ms (a wall a day), 9.3–9.5 MB peak RSS; the control overflows |

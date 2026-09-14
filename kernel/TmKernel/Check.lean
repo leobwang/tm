@@ -2809,3 +2809,55 @@ open Tm
 #print axioms Tm.Look.a_future_tuesday_keeps_its_budget
 #print axioms Tm.Look.the_learned_curve_moves_an_hour_on_sunday
 #print axioms Tm.Look.hours_since_wake_count_real_hours_across_the_fall_transition
+
+-- APPENDED 2026-09-14 (stage 5, D10 track).  Step L5 (design §13.4, §14.8 row L5): the lookahead, fork
+-- `capacity::lookahead` with D10's mixture; `mkInput?` (R10, the model-then-config fallbacks of D10-4),
+-- a future day's wake through `local_dt` at second resolution (`wakeInstantOf`), `pureDay`, `dayOf` held
+-- once (`@[csimp] dayOf_eq_dayOfFast`), the §15 laws in-step, the twin, and the loaded-plan witness in
+-- Boundary.lean through `wallIndex`.
+#print axioms Tm.Look.WakeClock.ofClock_wf
+#print axioms Tm.Look.wakeInstantOf_ofClock
+#print axioms Tm.Look.wakeInstantOf_on_an_unambiguous_time
+#print axioms Tm.Look.mkInput?_refuses_too_many_days
+#print axioms Tm.Look.pureDay_is_dayHist
+#print axioms Tm.Look.Six.get_of
+#print axioms Tm.Look.locSix_get
+#print axioms Tm.Look.dayOf_eq_dayOfFast
+#print axioms Tm.Look.foldl_cons_map
+#print axioms Tm.Look.lookahead_eq_map
+#print axioms Tm.Look.dayOf_day
+#print axioms Tm.Look.lookahead_keeps_the_days
+#print axioms Tm.Look.lookahead_dates
+#print axioms Tm.Look.lookahead_getElem?
+#print axioms Tm.Look.daysAscending_range'
+#print axioms Tm.Look.lookahead_is_a_lookahead
+#print axioms Tm.Look.lookahead_entry
+#print axioms Tm.Look.lookahead_day_zero_is_the_hosts
+#print axioms Tm.Look.lookahead_future_day_is_the_mixture
+#print axioms Tm.Look.lookahead_between_the_locations
+#print axioms Tm.Look.lookahead_at_a_certain_weight_is_the_pure_location
+#print axioms Tm.Look.the_twin_forces_the_forks_location
+#print axioms Tm.Look.pureDay_le_budget
+#print axioms Tm.Look.lookahead_future_day_width
+#print axioms Tm.Look.weightsOf?_ok
+#print axioms Tm.Look.weightsOf?_of_ok
+#print axioms Tm.Look.mkInput?_ok_elim
+#print axioms Tm.Look.mkInput?_weight_is_the_model_then_config
+#print axioms Tm.Look.mkInput?_arrival_and_wake
+#print axioms Tm.Look.mkInput?_days_le
+#print axioms Tm.Look.mkInput?_refuses_a_bad_weight
+#print axioms Tm.Look.mkInput?_refuses_a_bad_wake
+#print axioms Tm.Look.mkInput?_refuses_a_bad_day0
+#print axioms Tm.Look.mkInput?_accepts
+#print axioms Tm.Look.wakeOf_without_a_logged_wake_is_wf
+#print axioms Tm.Look.lookahead_is_the_expected_minutes
+#print axioms Tm.Look.wakeInstantOf_on_witnesses
+#print axioms Tm.Look.a_future_day_reads_todays_wake_to_the_second
+#print axioms Tm.Look.the_twin_follows_the_learned_arrival_and_location
+#print axioms Tm.Look.the_expected_tuesday
+#print axioms Tm.Look.mkInput?_on_witnesses
+#print axioms Tm.Look.sunday_mixes_at_its_own_weight
+#print axioms Tm.Look.a_wednesday_wall_moves_the_window_and_keeps_the_budget
+#print axioms Tm.the_look_wall_witness_loads
+#print axioms Tm.the_look_wall_calendar_indexes_one_wednesday_wall
+#print axioms Tm.a_loaded_wednesday_wall_moves_the_window_and_keeps_the_budget

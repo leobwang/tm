@@ -3,6 +3,7 @@ import TmKernel.Json
 import TmKernel.Tree
 import TmKernel.Priority
 import TmKernel.Capacity
+import TmKernel.Lookahead
 /-!
 # The boundary: `String → String`, and nothing else
 
@@ -7475,5 +7476,53 @@ theorem respond_reads_a_decimal_and_a_surrogate_pair :
     respond ['"', '\\', 'u', 'd', '8', '3', 'd', '\\', 'u', 'd', 'e', '0', '0', '"']
       = jsonErr "object expected" :=
   ⟨rfl, rfl, rfl⟩
+
+/-! ## Stage 5 D10 L5: a loaded calendar's wall reaches the lookahead
+
+APPENDED 2026-09-14 (stage-5 D10 track, step L5; design §13.4).  The loaded-plan witness: a
+one-line calendar holding the §4.3 meeting on Wednesday 2026-09-09 loads, `wallIndex` reads it
+once as one wall on that date (fork `Ctx::walls_on`), and through it Wednesday's window ends at
+16:00 and the twin's Wednesday is the fork's `[0, 0, 0, 0, 180, 180]` times `capDen`
+(`Look.a_wednesday_wall_moves_the_window_and_keeps_the_budget`).  The plan is evaluated under
+`decide` once, in `the_look_wall_calendar_indexes_one_wednesday_wall`, and the capacity
+statement is reached by rewriting with that equation, so no `decide` holds both the load and
+the lookahead.  This module imports `Lookahead` for it (it imported `Capacity` already). -/
+
+/-- A one-line calendar: fork fixture `calendar/2026-W37.md`'s meeting, moved to Wednesday. -/
+def lookWallWitness : List ReqDoc :=
+  [⟨"calendar/2026-W37.md", none,
+     ["- [ ] 3 Meeting w/ host      at:2026-09-09T12:50/13:50 loc:zoom ^g1".toList]⟩]
+
+set_option maxRecDepth 40000 in
+/-- **The calendar witness loads.** -/
+theorem the_look_wall_witness_loads : loadsOk lookWallWitness = true := by decide
+
+/-- The loaded calendar.  Total by `the_look_wall_witness_loads`: the error branch is refuted,
+not defaulted. -/
+def lookWallPlan : WfPlan :=
+  match h : loadPlan lookWallWitness with
+  | .ok p => p
+  | .error _ => absurd the_look_wall_witness_loads (by simp [loadsOk, h])
+
+set_option maxRecDepth 40000 in
+/-- **`wallIndex` reads the loaded calendar once: one wall, on Wednesday, 12:50 to 13:50 in
+Chicago** (an open `[ ]` item with an `at:` interval and no `buffer:`). -/
+theorem the_look_wall_calendar_indexes_one_wednesday_wall :
+    Look.wallIndex Cal.chicago 60 lookWallPlan.val = Look.wednesdayWall := by
+  decide
+
+/-- **A Wednesday wall on a loaded plan gives Wednesday's window end 16:00, and the twin's
+capacity is the fork's value written out by hand** (design §13.4): the lounge day at `p = 0.9`
+keeps 180 minutes at level 5 and 180 at level 4, times `capDen`. -/
+theorem a_loaded_wednesday_wall_moves_the_window_and_keeps_the_budget :
+    (Look.windowOn Cal.chicago 739867 420 1140 480
+        (Look.wallsOn (Look.wallIndex Cal.chicago 60 lookWallPlan.val) 739867)).2
+      = (Cal.instantOf Cal.chicago 739867 960).sec ∧
+    ((Look.lookahead { Look.specInput with walls := Look.wallIndex Cal.chicago 60 lookWallPlan.val }.twin)[2]?).map
+        (fun c => (c.day, (List.finRange 6).map c.numAt))
+      = some (739867, [0, 0, 0, 0, 180 * Look.capDen, 180 * Look.capDen]) := by
+  rw [the_look_wall_calendar_indexes_one_wednesday_wall]
+  exact ⟨Look.a_wednesday_wall_moves_the_window_and_keeps_the_budget.2.1,
+    Look.a_wednesday_wall_moves_the_window_and_keeps_the_budget.2.2.2⟩
 
 end Tm
