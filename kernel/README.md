@@ -8998,3 +8998,149 @@ by design, not exceptions. The serde cross-check above is where that claim is te
 | burn-down | **15** (unchanged) |
 | `cargo test --workspace` | **1011 passed / 0 failed / 0 ignored across 66 binaries** (was 1010; +1, the serde cross-check); `cli_latency.rs` green |
 | FFI suite (`cargo test` in `tm-kernel-ffi`) | **81 passed / 0 failed** (kernel 72, corpus 8, stack 1; was 77) |
+
+## Stage 5 A3, 2026-09-14: a log benchmark — the wire parse, the digest and RSS measured, not estimated
+
+The D9 track's third step (design `kernel/design/stage5/stage5-D9-D10-design.md` §14.1 row A3, §18).
+No `.lean` file changed. Two Rust files and one test binary were added:
+
+- `tm/tests/support/loggen.rs` is the design pass's `genlog.py` (about 40 events a day) and
+  `genlog80.py` (about 61 a day) ported **exactly**. It carries CPython's Mersenne Twister
+  (`random.seed(7)`, `random()`, `randint`, `choice`, `getrandbits`) and draws in the scripts'
+  order. `design_logs(rate)` regenerates the four ages from one generator, as the scripts did, and
+  `log(rate, days)` starts from a fresh seed. The file has no dependencies, so the FFI crate can
+  include it with `#[path]`. The scripts' quirks are kept for the byte identity, and the module doc
+  lists them.
+- `tm/tests/loggen.rs` (new, 2 tests). `the_generator_reproduces_the_design_passs_eight_logs_byte_for_byte`
+  pins the line count, byte count and FNV-1a-64 digest of each of the eight files the scripts wrote.
+  The pins were read off the files. Re-running both scripts under a 16 GB cap reproduced all eight
+  files with `cmp`. `every_generated_line_is_one_json_object_naming_its_event` reads every line of
+  a month back with serde. **Every figure in design §1.1 and §18 was therefore taken on these
+  exact logs.**
+- `kernel/tm-kernel-ffi/examples/logbench.rs`. Each call-bearing figure runs in a child process of
+  its own (the binary re-executed with a subcommand). `VmHWM` is reset to the current RSS
+  (`/proc/self/clear_refs` value 5) just before the calls, so the peak belongs to the call and not
+  to the generator. Each figure is the best of 7 in-process calls, with the median next to it, and
+  excludes process start. The request is `{"docs":[],"log":["<line>",…]}`. `run` reads no `log`
+  key, so the whole payload is parsed, and every response is checked to be `{"ok":…`. Run it from
+  `kernel/tm-kernel-ffi` as:
+  `systemd-run --user --scope -p MemoryMax=16G -p MemorySwapMax=0 --quiet env CARGO_PROFILE_DEV_OPT_LEVEL=1 cargo run --example logbench`.
+
+### Measured (one run of the committed harness, 2026-09-14, `MemoryMax=16G`, dev profile at `opt-level = 1` as the root `Cargo.toml` sets it)
+
+**(a) The wire parse of the log as a line array.** The baseline is `{"docs":[]}` at 0.002 ms, with a
+process `VmHWM` of 8.4 MiB.
+
+| rate | age | lines | line bytes | request bytes | best ms | median ms | ms per MiB of request | RSS before → peak | MiB of RSS per MiB of request |
+|---|---|---:|---:|---:|---:|---:|---:|---|---:|
+| 40/day | 1 mo | 1,191 | 123,939 | 148,656 | 2.37 | 2.48 | 16.7 | 8.9 → 18.3 MiB | 66.2 |
+| 40/day | 6 mo | 7,422 | 772,210 | 926,205 | 22.93 | 25.60 | 26.0 | 10.3 → 70.2 MiB | 67.7 |
+| 40/day | 1 y | 14,941 | 1,555,376 | 1,865,135 | 37.73 | 53.80 | 21.2 | 12.3 → 133.1 MiB | 67.9 |
+| 40/day | 3 y | 45,172 | 4,702,828 | 5,638,263 | 168.06 | 168.90 | 31.3 | 20.0 → 396.3 MiB | 70.0 |
+| 61/day | 1 mo | 1,845 | 191,478 | 227,937 | 3.64 | 3.71 | 16.7 | 8.9 → 22.7 MiB | 63.5 |
+| 61/day | 6 mo | 11,172 | 1,165,920 | 1,387,759 | 36.99 | 39.13 | 27.9 | 11.2 → 103.3 MiB | 69.6 |
+| 61/day | 1 y | 22,055 | 2,293,587 | 2,730,426 | 78.12 | 79.36 | 30.0 | 13.9 → 196.8 MiB | 70.2 |
+| 61/day | 3 y | 65,771 | 6,857,648 | 8,163,361 | 241.08 | 245.12 | 31.0 | 25.0 → 554.7 MiB | 68.0 |
+
+**(b) FNV-1a-64.** Over 7,235,174 bytes (6.9 MiB of the 3-year, 61-a-day text, cycled), in the
+benchmark process: best **5.10 ms**, median 5.12 ms, so **0.705 ns per byte**.
+
+**(c) The hourly zone probe for America/Chicago** is **pending**. B1's Rust half does not exist
+yet; see gap 103.
+
+**(d) RSS for one call carrying a line array**, a prefix of the 3-year, 61-a-day log cut by line
+bytes, each line counted with its newline as §9.7 counts it:
+
+| cut | lines | line bytes | request bytes | best ms | median ms | RSS before → peak |
+|---|---:|---:|---:|---:|---:|---|
+| 1 MiB | 10,055 | 1,048,571 | 1,248,272 | 30.09 | 34.80 | 12.7 → 96.2 MiB |
+| 2 MiB | 20,129 | 2,097,104 | 2,496,409 | 69.57 | 76.38 | 15.0 → 182.6 MiB |
+| 3 MiB | 30,188 | 3,145,712 | 3,744,467 | 92.71 | 111.02 | 17.2 → 264.3 MiB |
+| 32,768 lines | 32,768 | 3,415,185 | 4,065,170 | 117.51 | 118.43 | 17.6 → 284.0 MiB |
+| **4 MiB** | 40,216 | 4,194,231 | 4,992,450 | 150.90 | 154.03 | 21.9 → **357.2 MiB** |
+
+**THE ROW'S MEMORY GATE IS BREACHED.** A3's acceptance reads: "If (d) exceeds 256 MiB at 4 MiB,
+the resend cap in §9.7 is lowered before W3." The 4 MiB call peaks at **357.2 MiB**. The kernel's
+own share, the peak less the RSS before the calls, is 335.3 MiB. Even the cap's line bound alone,
+32,768 lines, peaks at 284.0 MiB. Two processes resending at once would peak at about 714 MiB,
+against §18.5's 520 MiB. This step does **not** change the cap. D18 fixes only that the cap is
+never *raised*. Which value it drops to is W3's input and the owner's call, so the track stops here
+and reports. Gap 102 names it.
+
+### Replacing design §18.1's figures (AGENTS §5.11)
+
+| §18.1 figure | the design's value | measured here |
+|---|---|---|
+| kernel wire parse | 22 ms per MiB of request, "any shape" (LAT, release `oneshot`, with process start) | **31.0 ms per MiB** at 3 y and 61/day (241.08 ms over 8,163,361 B). The rate is **not** flat: 16.7 ms/MiB at 1 month, rising with size (table (a)) |
+| kernel RSS | 63 MiB per MiB of request | **68.0 MiB per MiB** at 3 y and 61/day. Across (a) it runs 63.5–70.2 |
+| a 3-year log at 61/day | 65,771 lines, 6.54 MiB; ≈ 8.2 MiB as JSON line strings (+20%) | **65,771 lines, 6,857,648 B; 8,163,361 B** as a line-array request (+19.0%) |
+| FNV-1a-64 under `opt-level = 1` (ESTIMATE) | 1–2 ns per byte | **0.705 ns per byte**, so 6.54 MiB digests in ≈ 4.8 ms (the §18.2 row "digest plus file read" used 9–19 ms, of which the digest is now ≈ 5 ms) |
+| the hourly tz probe | not given | pending (gap 103) |
+| step cost per event | 5–40 µs (ESTIMATE) | not measurable yet: no kernel replay exists. W5 measures it |
+
+### Gap 102 (new; label A3-a) — a 4 MiB resend peaks at 357 MiB, over §9.7's memory cap
+
+(1) *What is not done*: §9.7 bounds a refusal's resend at 32,768 lines or 4 MiB of line bytes and
+§18.5 prices it at ≤ 256 MiB. A3 (d) measures 357.2 MiB at 4 MiB and 284.0 MiB at 32,768 lines. The
+design's arithmetic multiplied **line** bytes by a per-MiB-of-**request** rate. Escaping adds 19%,
+and the rate is 68, not 63. (2) *Why not now*: the design makes the new cap an input to W3, and
+choosing it is not A3's to settle. Between the 2 MiB (182.6 MiB) and 3 MiB (264.3 MiB) cuts the
+256 MiB line falls near 2.9 MiB of line bytes. That is an ESTIMATE by linear interpolation, not
+measured. (3) *Cost*: until the cap is lowered, a CLI-unreachable hand edit (§9.7, "CLI-written
+logs cannot reach the cap") can drive one call to ≈ 360 MiB, and two concurrent rebuilds to
+≈ 714 MiB, on a swapless machine. No such call exists in the binary today, since genesis and resend
+land at W3. (4) *When it clears*: before W3, when §9.7's resend cap and T0 (b)'s bound are lowered
+to a measured value whose (d) row peaks at ≤ 256 MiB. That row is added to `logbench`.
+
+### Gap 103 (new; label A3-b) — the Chicago hourly zone probe is not measured
+
+(1) *What is not done*: A3 (c), the wall time of the hourly zone probe for America/Chicago.
+(2) *Why not now*: the probe is B1's Rust half (`tz.json`, design §6.1), and it does not exist.
+`logbench` prints the item as pending. (3) *Cost*: §6's table-size and probe-cost claims stay
+unmeasured until then, and nothing in the binary depends on them. (4) *When it clears*: at B1,
+which adds the (c) measurement to `logbench` and records its figure.
+
+### Rule D9-21, the `decide` budget, goals
+
+No Lean function was added, so there is nothing to twin. There are no new `decide` or `rfl`
+witnesses. `Goals.lean`, `Check.lean`, `Negative.lean` and `TmKernel.lean` are untouched:
+**no goals discharged, refuted or added**, and the burn-down is **15**. **New theorems: none**
+(2143). **Parity entries: none. Behaviour rows: none**, since the binary is unchanged.
+
+### Recorded disagreements
+
+- **The parse rate is not constant.** §18.1's "22 ms per MiB, any shape" came from a release
+  `oneshot` built before A1 and A2, and it included process start. The committed harness measures
+  it in-process, and the rate rises from 16.7 ms/MiB at 1 month to 31.0 at 3 years. §18.2's hot
+  call (≤ 0.3 MiB) sits in the low band. §18.4's genesis parse of 8.2 MiB is ≈ 250 ms, not 180.
+  Genesis runs in chunks of ≤ 1 MiB, and at 1 MiB of line bytes the rate measured 25.3 ms/MiB (30.09 ms over
+  1,248,272 B). Whether A1's twins or A2's decimals moved the rate was not isolated.
+- **§9.7's and §18.5's memory arithmetic** is corrected by gap 102 above. The per-chunk figure
+  ("≤ 1 MiB × 63 ≈ 63 MiB") measures **96.2 MiB** at 1 MiB of line bytes.
+- **"6.9 MiB"** in the row is not a log size the design names: the 3-year, 61-a-day log is 6.54 MiB,
+  or 6.86 MB. The digest was measured over 6.9 MiB as the row says, and the per-byte rate converts
+  it.
+- **"Reconstruct the generator"** was not needed. `genlog.py` and `genlog80.py` were found in the
+  design pass's scratchpad, and the port reproduces their output byte for byte. The pins in
+  `tm/tests/loggen.rs` keep that true without the scratchpad.
+- **The row lists no test.** `tm/tests/loggen.rs` was added because `tests/support/` is not a
+  test target: without it, `loggen.rs` would be uncompiled until R14.
+- **The dev profile.** `tm-kernel-ffi` is its own cargo workspace, and its dev profile is
+  `opt-level = 0`. The row's "under the dev profile" means tm's, so the run passes
+  `CARGO_PROFILE_DEV_OPT_LEVEL=1`. The kernel archive is lake's build in either case.
+
+**Label-to-number map:** gap A3-a → **102**, gap A3-b → **103**. No cheats or parity entries. The
+D10 track's committed README (`stage5-lookahead`, `319919c`) takes no gap numbers at 100 or above,
+and the merge step reconciles.
+
+**Re-measured** (under the 30 GB cap, on the tree committed):
+
+| measurement | value |
+|---|---|
+| `check.sh` | **7/7**, 2.73 s on the built tree (unchanged; no Lean file touched) |
+| axiom audit | **2143 theorems** (unchanged) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **15** (unchanged) |
+| `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored** (was 1011; +2, `tm/tests/loggen.rs`) |
+| FFI suite (`cargo test` in `tm-kernel-ffi`, which also builds `examples/logbench.rs`) | **81 passed / 0 failed** (kernel 72, corpus 8, stack 1) |
+| `cli_latency.rs` | green: first verb 617.6 ms, later verb 55.8 ms |
