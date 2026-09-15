@@ -333,6 +333,7 @@ fn fitted_model_show_snapshot() {
 fn obs(t: &str, loc: &str, hsw: f64, pred: u8, rep: u8) -> EnergyObs {
     let t: DateTime<FixedOffset> = DateTime::parse_from_rfc3339(t).unwrap();
     EnergyObs {
+        line: 0,
         t,
         day: t.date_naive(),
         pred,
@@ -452,6 +453,7 @@ fn calibration_uses_the_logged_predictions() {
 fn estimate_calibration_reports_per_tag_ratios() {
     let cfg = Config::default();
     let mk = |day: &str, tag: &str, est: u32, actual: u32| DurationObs {
+        line: 0,
         t: chrono_tz::America::Chicago
             .with_ymd_and_hms(2026, 9, 7, 12, 0, 0)
             .unwrap()

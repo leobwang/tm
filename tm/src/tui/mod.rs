@@ -45,7 +45,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration as StdDuration, Instant};
 
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Datelike, Local, NaiveDate};
 use chrono_tz::Tz;
 use clap::Parser;
 use crossterm::event::{
@@ -64,12 +64,12 @@ use ratatui::Terminal;
 use tm_core::config::Config;
 use tm_core::log::Event as LogEvent;
 
-use crate::cli::ctx::{resolve_dir, Ctx, Globals};
+use crate::cli::ctx::{resolve_dir, Ctx, Globals, ReplayScope};
 use crate::cli::ghost;
 use crate::cli::out::CliError;
 use crate::cli::{dayfile, undo, Cli, Command};
 
-use app::{App, AppData, Effect, Hover};
+use app::{App, AppData, Effect, Hover, Screen};
 
 /// §17.2: "`notify` debounce 200 ms".
 const DEBOUNCE: StdDuration = StdDuration::from_millis(200);
@@ -187,16 +187,47 @@ fn data_of(ctx: &Ctx) -> AppData {
 }
 
 
+/// The replay scope the TUI asks for on `screen` (design §11.1, step R13;
+/// gap 112).
+///
+/// - **The Review screen** runs the day, week and month reviews, which read
+///   every day, duration and demotion: [`ReplayScope::All`].
+/// - **Every other screen** shows the week pane, which counts the blocks done
+///   on each date of the ISO week so far, and the status line, which reads
+///   `state.date`'s day: `Dates` from the earlier of the week's Monday and
+///   that date, to today.
+/// - **With no `state.date`** the status line falls back to the log's last
+///   day, at any age, so the TUI asks [`ReplayScope::All`].
+fn tui_scope(
+    screen: Screen,
+    state: &tm_core::store::RuntimeState,
+    today: NaiveDate,
+) -> ReplayScope {
+    if screen == Screen::Review {
+        return ReplayScope::All;
+    }
+    let Some(date) = state.date else {
+        return ReplayScope::All;
+    };
+    let monday = today - chrono::Duration::days(i64::from(today.weekday().num_days_from_monday()));
+    ReplayScope::Dates {
+        from: monday.min(date),
+        to: today,
+    }
+}
+
 /// Load the plan directory and plan today (§6.3's auto-close runs first, as
 /// for every other verb).
 fn load(g: &Globals) -> Result<App, CliError> {
-    let ctx = Ctx::load(g, true)?;
+    let ctx = Ctx::load_scoped(g, true, |state, today| tui_scope(Screen::default(), state, today))?;
     Ok(App::new(data_of(&ctx)))
 }
 
-/// Re-read the plan directory into an existing [`App`], keeping the UI state.
+/// Re-read the plan directory into an existing [`App`], keeping the UI state,
+/// in the scope of the screen it shows.
 fn reload(app: &mut App, g: &Globals) -> Result<(), CliError> {
-    let ctx = Ctx::load(g, false)?;
+    let screen = app.screen;
+    let ctx = Ctx::load_scoped(g, false, |state, today| tui_scope(screen, state, today))?;
     let mut data = data_of(&ctx);
     data.now = now_of(g, &data.cfg);
     app.adopt(data);
@@ -274,6 +305,7 @@ fn event_loop(
             let ev = event::read().map_err(|e| CliError::io("terminal", e))?;
             let area = term.size().map_err(|e| CliError::io("terminal", e))?;
             let area = Rect::new(0, 0, area.width, area.height);
+            let screen = app.screen;
             let effects = match ev {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
                     let action = app.action_for(key);
@@ -294,6 +326,14 @@ fn event_loop(
                 if app.quit {
                     return Ok(());
                 }
+            }
+            // Entering the Review screen widens the scope (§11.1): read the
+            // history it needs before it draws.
+            if app.screen != screen
+                && tui_scope(app.screen, &app.state, app.today)
+                    != tui_scope(screen, &app.state, app.today)
+            {
+                reload(app, g)?;
             }
         }
 
@@ -666,5 +706,46 @@ mod tests {
         let ctx = Ctx::load(&g, false).expect("load");
         assert_ne!(ctx.state.loc.as_deref(), Some("home"), "put back");
         crate::cli::run(&g, Command::Undo).expect("undo the wake underneath it");
+    }
+
+    /// Design §11.1, step R13, gap 112: the TUI asks for the scope of the
+    /// screen it shows. The Review screen reads every day (`All`); every other
+    /// screen reads the ISO week so far and `state.date`'s day (`Dates`); a
+    /// missing `state.date` sends the status line to the log's last day, at
+    /// any age (`All`).
+    #[test]
+    fn the_tui_asks_for_the_scope_of_the_screen_it_shows() {
+        let d = |s: &str| tm_core::model::parse_date(s).expect("date");
+        let state = |date: Option<&str>| tm_core::store::RuntimeState {
+            date: date.map(d),
+            ..tm_core::store::RuntimeState::default()
+        };
+        let wednesday = d("2026-09-09");
+        for screen in [Screen::Today, Screen::Queue, Screen::Necessities, Screen::Inbox] {
+            assert_eq!(
+                tui_scope(screen, &state(Some("2026-09-09")), wednesday),
+                ReplayScope::Dates { from: d("2026-09-07"), to: wednesday },
+                "{screen:?}"
+            );
+            // A date not yet rolled (a reload without housekeeping) reaches back to it.
+            assert_eq!(
+                tui_scope(screen, &state(Some("2026-09-04")), wednesday),
+                ReplayScope::Dates { from: d("2026-09-04"), to: wednesday },
+                "{screen:?}"
+            );
+            assert_eq!(tui_scope(screen, &state(None), wednesday), ReplayScope::All, "{screen:?}");
+        }
+        // On a Monday the week so far is today.
+        assert_eq!(
+            tui_scope(Screen::Today, &state(Some("2026-09-07")), d("2026-09-07")),
+            ReplayScope::Dates { from: d("2026-09-07"), to: d("2026-09-07") }
+        );
+        assert_eq!(tui_scope(Screen::Review, &state(Some("2026-09-09")), wednesday), ReplayScope::All);
+        let today = state(Some("2026-09-09"));
+        assert_eq!(
+            tui_scope(Screen::default(), &today, wednesday),
+            tui_scope(Screen::Today, &today, wednesday),
+            "the TUI opens on Today"
+        );
     }
 }

@@ -318,3 +318,47 @@ fn replay_is_json_safe_and_snapshotted() {
     assert_eq!(back, r);
     insta::assert_yaml_snapshot!("three_days_replay", r);
 }
+
+/// Design §11.2, step R13: every observation carries the physical line of the
+/// entry it came from (a `start`'s observation the start's line, a duration
+/// its `done`'s), and `energy` and `durations` are in that order, which is
+/// file order.
+#[test]
+fn observations_carry_their_source_line() {
+    let r = load();
+    let row = |line: u64| {
+        r.view()
+            .iter()
+            .find(|row| row.line == line)
+            .unwrap_or_else(|| panic!("no entry on line {line}"))
+    };
+    assert_eq!(r.energy.len(), 10);
+    for o in &r.energy {
+        let row = row(o.line);
+        assert!(!row.cancelled, "line {}", o.line);
+        assert_eq!(row.entry.t, o.t, "line {}", o.line);
+        match &row.entry.ev {
+            tm_core::log::Event::Start { id, .. } => {
+                assert!(o.from_start);
+                assert_eq!(o.id.as_deref(), Some(id.as_str()));
+            }
+            tm_core::log::Event::Energy { .. } => assert!(!o.from_start),
+            other => panic!("line {}: {other:?} is not an observation", o.line),
+        }
+    }
+    assert_eq!(r.durations.len(), 8);
+    for o in &r.durations {
+        let row = row(o.line);
+        assert!(!row.cancelled, "line {}", o.line);
+        assert_eq!(row.entry.t, o.t, "line {}", o.line);
+        assert!(
+            matches!(&row.entry.ev, tm_core::log::Event::Done { id, .. } if *id == o.id),
+            "line {}",
+            o.line
+        );
+    }
+    assert!(r.energy.windows(2).all(|w| w[0].line < w[1].line));
+    assert!(r.durations.windows(2).all(|w| w[0].line < w[1].line));
+    // Line 5 is day 1's first `done` (t1), line 4 its `start`.
+    assert_eq!((r.energy[0].line, r.durations[0].line), (4, 5));
+}

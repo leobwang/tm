@@ -810,3 +810,55 @@ fn init_example_writes_the_spec_tree_and_passes_check() {
     scrub(&mut json, "hook_hint", "[hint]");
     insta::assert_json_snapshot!("init_json", json);
 }
+
+/// Design §11.1, step R13: every verb family asks for the replay scope it
+/// needs, so the switch changes only `Ctx::replay_with`'s body. The binary
+/// names each scope it asks for on stderr when `TM_TRACE_REPLAY_SCOPE` is
+/// set; a verb that reloads asks again, in the same scope.
+#[test]
+fn each_verb_family_asks_for_the_replay_scope_it_needs() {
+    let tm = Tm::new();
+    let scopes = |args: &[&str]| -> Vec<String> {
+        let out = tm.run_env(&[("TM_TRACE_REPLAY_SCOPE", "1")], args);
+        assert_eq!(out.code, 0, "`tm {}`: {}{}", args.join(" "), out.stdout, out.stderr);
+        let mut asked: Vec<String> = out
+            .stderr
+            .lines()
+            .filter_map(|l| l.strip_prefix("replay scope: "))
+            .map(str::to_string)
+            .collect();
+        assert!(!asked.is_empty(), "`tm {}` asked for no replay", args.join(" "));
+        asked.dedup();
+        asked
+    };
+    // Today is Monday 2026-09-07 (`NOW`).
+    let cases: &[(&[&str], &str)] = &[
+        // Hot: every verb not named below.
+        (&["now"], "hot"),
+        (&["plan"], "hot"),
+        (&["energy", "4"], "hot"),
+        (&["check"], "hot"),
+        (&["model"], "hot"),
+        (&["log"], "hot"),
+        (&["log", "--tail", "5"], "hot"),
+        (&["close", "week"], "hot"),
+        // Dates: a verb that names old dates.
+        (&["log", "--since", "7d"], "dates 2026-08-31..2026-09-07"),
+        (&["log", "--since", "2026-09-01"], "dates 2026-09-01..2026-09-07"),
+        (&["close", "day", "--date", "2026-09-06"], "dates 2026-09-06..2026-09-06"),
+        // All: the reviews, the fit, and `tm log --item`.
+        (&["review", "day"], "all"),
+        (&["review", "day", "--date", "2026-09-01"], "all"),
+        (&["review", "week"], "all"),
+        (&["review", "month"], "all"),
+        (&["model", "--fit"], "all"),
+        (&["model", "--compare"], "all"),
+        (&["log", "--item", "^t3"], "all"),
+    ];
+    for (args, want) in cases {
+        assert_eq!(scopes(args), vec![want.to_string()], "`tm {}`", args.join(" "));
+    }
+    // Without the variable nothing is written.
+    let out = tm.run(&["log"]);
+    assert!(!out.stderr.contains("replay scope"), "{}", out.stderr);
+}

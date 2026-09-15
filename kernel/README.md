@@ -13438,3 +13438,140 @@ taken: none.** No kernel change; no recursion over a wire list.
 
 **Phase R on this track:** R-audit, R1–R12 committed. **Owed next:** R13 (scopes; clears gap 112),
 R14 (latency with history).
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5 D9 R13 (design §14.3 row R13, §11.1, §11.2,
+     D9-20), on rebuild-on-lean after a117141.  Closes gap 112.  Takes gap 113
+     (label R13-a).  No cheat, no parity number.
+     =========================================================================== -->
+
+## Stage 5 D9 R13, 2026-09-14: every verb asks for the replay scope it needs — the switch will only change the body
+
+**What changed.**
+- **Observations carry their source line.** `EnergyObs.line` and `DurationObs.line` (`u64`) hold the
+  physical line of the entry the observation came from: a `start`'s energy observation carries the
+  start's line, an `energy` report its own, and a duration its `done`'s. `replay_lines` hands each
+  surviving entry's line to the machine (`Machine::step(line, entry)`). **`Replay.energy` and
+  `Replay.durations` are sorted by `line`** at `finish`. The walk is already in file order, so the
+  stable sort moves nothing today; after the switch it puts the kernel's records back in order (§11.2).
+  `line` is line bookkeeping, like `Replay.rows`: it is `#[serde(skip)]`, and both types' `PartialEq` are
+  written out (destructured, so a new field fails to compile) to ignore it. So no snapshot and no
+  equality in any suite changes. Three struct literals in tests gained `line: 0` (`energy_fit.rs` ×2,
+  `review.rs`' unit test).
+- **`ReplayScope { Hot, Dates { from, to }, All }`** and **`Ctx::replay_with(store, cfg, scope)`**
+  (`cli/ctx.rs`). Before the switch every scope returns `Ctx::replay_of`, the whole log. `Ctx.scope`
+  records the scope the verb asked for, and `Ctx::reload` asks again in the same scope.
+  `Ctx::load(g, hk)` asks `Hot`. **`Ctx::load_scoped(g, hk, |state, today| scope)`** and
+  `Ctx::load_for_close(g, |state, today| scope)` let a verb choose its scope from `.tm/state.json` and
+  today's date, both read before the replay. With `TM_TRACE_REPLAY_SCOPE` set, `replay_with` writes
+  `replay scope: <scope>` to stderr.
+- **The verb families, per §11.1 and the R-audit table:**
+
+  | verb | scope |
+  |---|---|
+  | every verb not below; `tm model` (show); `tm log` and `tm log --tail n`; `tm close week`/`month`; the TUI's note, location and screen mutations | `Hot` |
+  | `tm log --since <bound>` | `Dates { from: bound, to: today }` (a future bound clamps to today) |
+  | `tm close day --date <d>` | `Dates { from: d, to: d }` |
+  | `tm review day [--date]`, `review week`, `review month`; `tm model --fit`, `--compare`; `tm log --item` | `All` |
+  | the TUI, on the Review screen | `All` |
+  | the TUI, on any other screen, with `state.date = d` | `Dates { from: min(ISO Monday of today, d), to: today }` |
+  | the TUI with no `state.date` | `All` |
+
+- **The TUI** (`tui/mod.rs`): `load` and `reload` ask `tui_scope(app.screen, state, today)`. When a
+  key moves the app to a screen whose scope differs (into or out of Review), the loop reloads before
+  the next draw.
+
+**Gap 112 is closed.** (a) The TUI Review screen asks `All`. (b) The week pane's `week_blocks_done`
+reads dates from the ISO Monday, and every non-Review screen asks `Dates` from that Monday. (c) The
+status line's `days.keys().last` fallback runs only when `state.date` is absent, and then the TUI asks
+`All` (disagreement 2). W1's check of gap 112 passes.
+
+**New tests (4).**
+- `tm/tests/cli_lifecycle.rs` **`each_verb_family_asks_for_the_replay_scope_it_needs`**: 18 verb
+  invocations on `plan-basic` at Monday 2026-09-07 under `TM_TRACE_REPLAY_SCOPE`. Each asks exactly the
+  scope the table names (`now`, `plan`, `energy 4`, `check`, `model`, `log`, `log --tail 5`,
+  `close week` → hot; `log --since 7d` → dates 2026-08-31..2026-09-07; `log --since 2026-09-01`;
+  `close day --date 2026-09-06` → dates 2026-09-06..2026-09-06; `review day`, `review day --date`,
+  `review week`, `review month`, `model --fit`, `model --compare`, `log --item ^t3` → all). A reload asks
+  the same scope again. Without the variable nothing is written.
+- `tm/src/tui/mod.rs` **`the_tui_asks_for_the_scope_of_the_screen_it_shows`**: the four non-Review
+  screens on a Wednesday give `Dates` from Monday, and from an unrolled earlier `state.date`; no
+  `state.date` gives `All`; on a Monday the range is the day itself; Review gives `All`; the TUI
+  opens on Today.
+- `tm/src/cli/ctx.rs` **`every_scope_is_the_whole_replay_before_the_switch`**: over loggen's 1-month
+  log at 61/day, `replay_with` in `Hot`, a `Dates` range and `All` equals `replay_of` in facts, view
+  rows and `PortedFacts` (R11's note: every scope keeps the ported fields).
+- `tm-core/tests/log_replay.rs` **`observations_carry_their_source_line`**: on `three-days`, every
+  energy observation's line is an uncancelled `start` (same id, `from_start`) or `energy` entry at
+  the same `t`; every duration's line is its `done`; both vectors strictly increase by line; the first
+  pair is (4, 5).
+
+**Equivalence test (run, then deleted in this commit).** For the run, `Machine::finish` asserted, before
+its sort, that `energy` and `durations` already strictly increase by `line`. It printed each count, and
+the whole workspace suite passed through it: **782 in-process replays holding 8,529 energy and 6,622
+duration observations, 0 out of order.** The run also printed from the `tm` binary, so 11 tests that
+parse the binary's stderr failed on the extra line; none failed on the assertion. A test
+`tm-core/tests/r13_equivalence.rs` checked, over the four corpus logs and loggen's 1-month logs at both
+rates in `America/Chicago`, `Pacific/Auckland` and `UTC`, that every observation's line names the
+uncancelled entry it came from: **18 pairs, 1,656 energy and 1,140 duration observations, 0
+differences.** The old unsorted, unlined vectors are equal to the new under the observations'
+`PartialEq`, which ignores `line`.
+
+### Gap 113 (new; label R13-a) — `tm log`'s tail in `Hot` scope can come out short after the switch
+
+1. **What is not done.** §11.1 puts plain `tm log` and `tm log --tail n` in `Hot`. §11.4 step 2 builds
+   the candidates for the last *n* entries from "every day record's headers in scope, followed by the
+   headers of the open days and the tail". In `Hot` no day record is in scope, so a user with fewer than
+   *n* entries since the horizon `H` would see fewer than *n*. Today every scope is the whole log, so
+   nothing is short yet.
+2. **Why.** The design scoped `tm log` by its selectors (`--item` → `All`, `--since` → `Dates`) and
+   left the tail in "every verb not listed".
+3. **What it costs.** A light user's `tm log` after the switch, until S widens the tail. R13 follows
+   §11.1 and asks `Hot`, so S changes one place: `lifecycle.rs` `log_scope`'s `(None, None)` arm.
+4. **Which step clears it.** S: the tail asks `Dates` back from the oldest open day far enough to hold
+   *n* headers (each day record holds its headers, §11.3), or `All`.
+
+### Observable behaviour changes
+
+| where | before | after |
+|---|---|---|
+| the TUI, moving into or out of the Review screen | the screen drew from the last reload's snapshot | the loop reloads first (the scope widens or narrows), so the screen draws the files and log as they are on disk at the switch |
+| any verb with `TM_TRACE_REPLAY_SCOPE` set | nothing | `replay scope: <scope>` on stderr, once per replay read |
+
+### Recorded disagreements between the design and the repo
+
+1. **`replay_with` takes the scope, and the verb chooses it through a closure over `(state, today)`.**
+   §11.1 and D9-20 name `Ctx::replay_with(scope)`. The replay is read inside `Ctx::load` before any
+   verb code runs, and a verb's scope can depend on today (`--since 7d`) or on `state.date` (the TUI).
+   Both are known only there. So `load_scoped` takes a closure, `replay_with` is an associated function
+   like `replay_of`, and `Ctx.scope` keeps the answer for `reload`.
+2. **The status line's last-day fallback asks `All`, not `Dates(lastDay, lastDay)`** (gap 112 (c)
+   offered either). The last day is known only from a replay, so a `Dates` request would need a first
+   `Hot` call for the answer's `lastDay`. The case needs a `state.json` with no `date`, which
+   `roll_day` never fills in. The lever at S is that two-step narrowing.
+3. **`line` is bookkeeping, not a fact.** §11.2 lists `line` among `EnergyObs`' and `DurationObs`'
+   fields. Here it is neither serialised nor compared, matching `Replay.rows`, so T5 (C6) must compare
+   it explicitly.
+4. **Scopes §11.1 does not name:** `tm model` without `--fit`/`--compare` reads no history (`Hot`);
+   `tm close week`/`month --date` read no replay at all (the kernel close sends none, R-audit
+   disagreement 1) and ask `Hot`; `tm close day --date` asks `Dates(d, d)` even for `d ≥ H`, which the S
+   body reduces to `Hot`. The undo `Recorder` still calls `Ctx::replay_of` directly; S item 1 moves it to
+   `kernel_log`.
+5. **`TM_TRACE_REPLAY_SCOPE`** is a new environment variable in the binary, like
+   `TM_KERNEL_FAULT_PROBE`. It only writes to stderr and exists so the verb-family test observes the
+   real wiring, not a mapping table.
+
+**Goals discharged: none. Refuted: none. Added: none.** Burn-down **13 → 13**. **New theorems:
+none.** **Parity entries: none.** **Behaviour rows: two.** **Numbers taken: gap 113** (label R13-a);
+gap 112 closed. No kernel change; no recursion over a wire list.
+
+**Re-measured** (main worktree, every command under the 30 GB cap):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.86 s; audit **2672**; corpus **29/37 and 4/5**; burn-down **13** |
+| `cargo test --workspace` | **1042 passed / 0 failed / 2 ignored across 71 binaries** (+4: `cli_lifecycle` 25 → 26, `log_replay` 4 → 5, tm unit tests 56 → 58), 0 compiler warnings |
+| FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
+| `cli_latency.rs` | green: first verb 617.4 / 652.9 / 612.6 ms (226 files, 2,959 lines), later verb 50.6 / 55.6 / 50.7 ms |
+
+**Phase R on this track:** R-audit, R1–R13 committed. **Owed next:** R14 (latency with history).

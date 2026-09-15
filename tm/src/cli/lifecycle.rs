@@ -40,7 +40,7 @@ use tm_core::store::{Store, MODEL_PATH};
 use tm_core::tree::Tree;
 
 use super::closing;
-use super::ctx::{Ctx, Globals};
+use super::ctx::{Ctx, Globals, ReplayScope};
 use super::kernel_bridge::Grain;
 use super::ghost;
 use super::items::id_gen;
@@ -90,7 +90,15 @@ pub fn close(g: &Globals, args: &super::CloseArgs) -> Result<i32, CliError> {
             horizon::period_name(period)
         )));
     }
-    let mut ctx = Ctx::load_for_close(g)?;
+    // §11.1: `tm close day <date>` names an old date; every other close is Hot.
+    let day_date = match period {
+        Period::Day => args.date().and_then(|d| tm_core::model::parse_date(d).ok()),
+        _ => None,
+    };
+    let mut ctx = Ctx::load_for_close(g, |_, _| match day_date {
+        Some(d) => ReplayScope::Dates { from: d, to: d },
+        None => ReplayScope::Hot,
+    })?;
     let grain = Grain::of_period(period);
     if let Some(date) = args.date() {
         closing::check_date(grain, date, ctx.today)?;
@@ -366,7 +374,9 @@ fn optional_quota(plan: &tm_core::planner::DayPlan, tree: &Tree) -> core_review:
 /// monitors verify — so the CLI, the §12.4 Review screen and the tests all
 /// report one set of monitors.
 pub fn review(g: &Globals, args: &super::ReviewArgs) -> Result<i32, CliError> {
-    let mut ctx = Ctx::load(g, true)?;
+    // §11.1: every review reads every day (`lounge_rate`) or every duration
+    // (`estimate_calibration`).
+    let mut ctx = Ctx::load_scoped(g, true, |_, _| ReplayScope::All)?;
     let period: Period = args.period.into();
     let (key, body, path) = match period {
         Period::Day => {
@@ -493,7 +503,15 @@ pub struct CompareOut {
 
 /// `tm model --fit | --show | --compare` (§8.5).
 pub fn model(g: &Globals, args: &super::ModelArgs) -> Result<i32, CliError> {
-    let mut ctx = Ctx::load(g, true)?;
+    // §11.1: the fit (and `--compare`, which refits) reads every observation.
+    let history = args.fit || args.compare;
+    let mut ctx = Ctx::load_scoped(g, true, |_, _| {
+        if history {
+            ReplayScope::All
+        } else {
+            ReplayScope::Hot
+        }
+    })?;
     if args.fit {
         let rec = undo_stack::Recorder::start(&ctx, "model")?;
         let fitted = energy::fit_replay(&ctx.cfg, &ctx.replay, ctx.today);
@@ -569,7 +587,7 @@ pub struct LogOut {
 
 /// `tm log --tail 20 | --since 7d | --item ^id` (§10.1).
 pub fn log(g: &Globals, args: &super::LogArgs) -> Result<i32, CliError> {
-    let ctx = Ctx::load(g, false)?;
+    let ctx = Ctx::load_scoped(g, false, |_, today| log_scope(args, today))?;
     let rows = log_rows(&ctx.replay, args, ctx.today)?;
     let out = LogOut {
         total: ctx.replay.entry_count(),
@@ -636,6 +654,20 @@ fn log_human(rows: &[&ViewRow]) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// The scope `tm log` asks for (§11.1): `--item` reads every day's headers,
+/// `--since` the days from its bound to today, and the tail the recent log.
+fn log_scope(args: &super::LogArgs, today: NaiveDate) -> ReplayScope {
+    match (&args.item, &args.since) {
+        (Some(_), _) => ReplayScope::All,
+        (None, Some(since)) => match parse_since(since, today) {
+            Ok(from) => ReplayScope::Dates { from: from.min(today), to: today },
+            // `log_rows` refuses the bound; nothing is read for it.
+            Err(_) => ReplayScope::Hot,
+        },
+        (None, None) => ReplayScope::Hot,
+    }
 }
 
 /// `--since 7d` or `--since 2026-09-01`.

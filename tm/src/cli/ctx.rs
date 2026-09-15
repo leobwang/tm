@@ -8,7 +8,8 @@
 //!   (`config.toml` plus `.tm/` or a plan file) or has a `plan/` child that
 //!   does.
 //! * [`Ctx`] — the loaded directory: [`Config`], an [`FsStore`], the parsed
-//!   [`PlanFiles`] and their [`Tree`], the log's [`Replay`] (read through
+//!   [`PlanFiles`] and their [`Tree`], the log's [`Replay`] (asked for with
+//!   the verb's [`ReplayScope`] through [`Ctx::replay_with`], over
 //!   [`Ctx::replay_of`], the one reader of `.tm/log.jsonl`), the
 //!   learned [`Model`] and `.tm/state.json` ([`RuntimeState`]), plus `now` in
 //!   both `FixedOffset` (log timestamps) and `cfg.tz` (everything else).
@@ -160,6 +161,46 @@ pub struct StoredSegment {
     pub item: Option<String>,
 }
 
+/// How much history a verb's [`Replay`] must hold (design §11.1).
+///
+/// After the switch the kernel's answer covers the open days and the recent
+/// window (`Hot`); a wider scope merges the sealed day and window records it
+/// names. **Before the switch every scope is the whole log in memory**, but
+/// every verb family already asks for its own, so the switch changes only
+/// [`Ctx::replay_with`]'s body.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReplayScope {
+    /// The answer only: today's periods, the auto-close catch-up, id-keyed
+    /// facts. Every verb not named below.
+    Hot,
+    /// The answer plus the day records of `[from − 1, to + 1]` and the window
+    /// records of `[from, to]`: a verb that names old dates (`tm log --since`,
+    /// `tm close day <date>`, the TUI's week pane).
+    Dates {
+        /// The first date asked for.
+        from: NaiveDate,
+        /// The last date asked for.
+        to: NaiveDate,
+    },
+    /// The answer plus every sealed record: the reviews, the model fit,
+    /// `tm log --item`, the TUI's Review screen.
+    All,
+}
+
+impl std::fmt::Display for ReplayScope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReplayScope::Hot => write!(f, "hot"),
+            ReplayScope::Dates { from, to } => write!(f, "dates {from}..{to}"),
+            ReplayScope::All => write!(f, "all"),
+        }
+    }
+}
+
+/// When set, [`Ctx::replay_with`] writes the scope it was asked for to stderr
+/// as `replay scope: <scope>` (the verb-family test reads it).
+pub const TRACE_SCOPE_ENV: &str = "TM_TRACE_REPLAY_SCOPE";
+
 /// One loaded plan directory.
 pub struct Ctx {
     /// The store over the plan root ([`FsStore::root`] is the directory).
@@ -180,9 +221,11 @@ pub struct Ctx {
     pub files: PlanFiles,
     /// The tree over them (§6).
     pub tree: Tree,
-    /// The replay of the whole of `.tm/log.jsonl` (§10.1), from
-    /// [`Ctx::replay_of`].
+    /// The replay of `.tm/log.jsonl` (§10.1) in [`Ctx::scope`], from
+    /// [`Ctx::replay_with`].
     pub replay: Replay,
+    /// The scope the verb asked its replay for; [`Ctx::reload`] asks again.
+    pub scope: ReplayScope,
     /// `.tm/model.json` (§8.5).
     pub model: Model,
     /// Items whose `on-event:` timeout elapsed and went back to `[ ]` (§5.1).
@@ -193,19 +236,40 @@ impl Ctx {
     /// Load the plan directory named by `g`. `housekeeping` runs §6.3's
     /// automatic close and §5.1's waiting timeouts first (every verb but
     /// `init`, `check`, `log`, `undo` and `tui`).
+    ///
+    /// The replay is asked for in [`ReplayScope::Hot`]; a verb that reads
+    /// older history loads through [`Ctx::load_scoped`].
     pub fn load(g: &Globals, housekeeping: bool) -> Result<Ctx, CliError> {
-        Ctx::load_with(g, housekeeping, housekeeping)
+        Ctx::load_with(g, housekeeping, housekeeping, |_, _| ReplayScope::Hot)
+    }
+
+    /// [`Ctx::load`] with the replay asked for in the scope `scope` returns,
+    /// given `.tm/state.json` as read and today's date (§11.1).
+    pub fn load_scoped(
+        g: &Globals,
+        housekeeping: bool,
+        scope: impl FnOnce(&RuntimeState, NaiveDate) -> ReplayScope,
+    ) -> Result<Ctx, CliError> {
+        Ctx::load_with(g, housekeeping, housekeeping, scope)
     }
 
     /// [`Ctx::load`] with housekeeping but without the automatic close — for
     /// `tm close`, whose own kernel call is the close: running the automatic
     /// one first would leave the verb reporting an empty close over a tree it
     /// had just rewritten.
-    pub fn load_for_close(g: &Globals) -> Result<Ctx, CliError> {
-        Ctx::load_with(g, true, false)
+    pub fn load_for_close(
+        g: &Globals,
+        scope: impl FnOnce(&RuntimeState, NaiveDate) -> ReplayScope,
+    ) -> Result<Ctx, CliError> {
+        Ctx::load_with(g, true, false, scope)
     }
 
-    fn load_with(g: &Globals, housekeeping: bool, auto_close: bool) -> Result<Ctx, CliError> {
+    fn load_with(
+        g: &Globals,
+        housekeeping: bool,
+        auto_close: bool,
+        scope: impl FnOnce(&RuntimeState, NaiveDate) -> ReplayScope,
+    ) -> Result<Ctx, CliError> {
         let dir = resolve_dir(g.dir.as_deref())?;
         if !dir.join(store::CONFIG_PATH).is_file() {
             return Err(CliError::msg(format!(
@@ -219,7 +283,8 @@ impl Ctx {
         let now_tz = now.with_timezone(&cfg.tz);
         let today = now_tz.date_naive();
         let mut state = store.load_state()?;
-        let replay = Ctx::replay_of(&store, &cfg)?;
+        let scope = scope(&state, today);
+        let replay = Ctx::replay_with(&store, &cfg, scope)?;
 
         if housekeeping && roll_day(&mut state, today) {
             store.save_state(&state)?;
@@ -239,6 +304,7 @@ impl Ctx {
             files,
             tree,
             replay,
+            scope,
             model,
             timed_out: Vec::new(),
         };
@@ -258,12 +324,25 @@ impl Ctx {
         Ok(cx)
     }
 
-    /// Re-read files, tree, log and replay after a write.
+    /// Re-read files, tree, log and replay after a write, in the same scope.
     pub fn reload(&mut self) -> Result<(), CliError> {
         self.files = self.store.read_tree()?;
         self.tree = self.files.tree();
-        self.replay = Ctx::replay_of(&self.store, &self.cfg)?;
+        self.replay = Ctx::replay_with(&self.store, &self.cfg, self.scope)?;
         Ok(())
+    }
+
+    /// **The replay a verb family asks for** (design §11.1, step R13): the
+    /// [`Replay`] holding every fact `scope` covers. Before the switch every
+    /// scope is [`Ctx::replay_of`], the whole log; at the switch this body
+    /// becomes the kernel's answer merged with the sealed records `scope`
+    /// names, and no caller changes. With [`TRACE_SCOPE_ENV`] set it names the
+    /// scope on stderr.
+    pub fn replay_with(store: &FsStore, cfg: &Config, scope: ReplayScope) -> Result<Replay, CliError> {
+        if env::var_os(TRACE_SCOPE_ENV).is_some() {
+            eprintln!("replay scope: {scope}");
+        }
+        Ctx::replay_of(store, cfg)
     }
 
     /// **The one door to the log** (design §14.3 row R8): the replay of the
@@ -641,6 +720,31 @@ mod tests {
             assert_eq!(door.ported_facts(), direct.ported_facts(), "{name}");
             let json = serde_json::to_value(door.ported_facts()).expect("json");
             assert_eq!(json, snapshot_body(name), "{name}: the pinned values");
+        }
+    }
+
+    /// Step R13: before the switch every scope is the whole log, and each
+    /// keeps the facts D14 ports (the switch changes only
+    /// `Ctx::replay_with`'s body; §11.1's merge must keep them too).
+    #[test]
+    fn every_scope_is_the_whole_replay_before_the_switch() {
+        let d = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").expect("date");
+        let text = loggen::text(&loggen::log(loggen::Rate::SixtyOne, 30));
+        let cfg = Config { tz: chrono_tz::America::Chicago, ..Config::default() };
+        let dir = tempfile::TempDir::new().expect("tempdir");
+        std::fs::create_dir_all(dir.path().join(".tm")).expect("mkdir");
+        std::fs::write(dir.path().join(LOG_PATH), &text).expect("write log");
+        let store = FsStore::new(dir.path());
+        let whole = Ctx::replay_of(&store, &cfg).expect("replay_of");
+        for scope in [
+            ReplayScope::Hot,
+            ReplayScope::Dates { from: d("2026-09-01"), to: d("2026-09-07") },
+            ReplayScope::All,
+        ] {
+            let r = Ctx::replay_with(&store, &cfg, scope).expect("replay_with");
+            assert!(r == whole, "{scope}");
+            assert_eq!(r.view(), whole.view(), "{scope}");
+            assert_eq!(r.ported_facts(), whole.ported_facts(), "{scope}");
         }
     }
 }

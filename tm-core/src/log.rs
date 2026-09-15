@@ -1123,8 +1123,17 @@ impl LogSegment {
 }
 
 /// An energy observation for the learned model (§8.5).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+///
+/// `PartialEq` ignores [`EnergyObs::line`], as [`Replay`]'s ignores `rows`:
+/// equal observations read from different lines are equal facts.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EnergyObs {
+    /// The 1-based physical line of the entry it came from (a `start`'s
+    /// observation carries the start's line, not its `done`'s). Line
+    /// bookkeeping, not a fact: [`Replay::energy`] is sorted by it, which is
+    /// file order (design §11.2); not serialised.
+    #[serde(skip)]
+    pub line: u64,
     /// When.
     pub t: DateTime<FixedOffset>,
     /// The day it belongs to.
@@ -1147,6 +1156,35 @@ pub struct EnergyObs {
     pub from_start: bool,
 }
 
+impl PartialEq for EnergyObs {
+    fn eq(&self, other: &EnergyObs) -> bool {
+        // Destructured so a new field is a compile error here.
+        let EnergyObs {
+            line: _,
+            t,
+            day,
+            pred,
+            rep,
+            hsw,
+            loc,
+            slept_min,
+            went,
+            id,
+            from_start,
+        } = self;
+        *t == other.t
+            && *day == other.day
+            && *pred == other.pred
+            && *rep == other.rep
+            && *hsw == other.hsw
+            && *loc == other.loc
+            && *slept_min == other.slept_min
+            && *went == other.went
+            && *id == other.id
+            && *from_start == other.from_start
+    }
+}
+
 impl EnergyObs {
     /// `rep − pred`.
     pub fn delta(&self) -> i32 {
@@ -1163,8 +1201,15 @@ impl EnergyObs {
 }
 
 /// A duration observation for the multipliers (§8.5): one per timed block.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+///
+/// `PartialEq` ignores [`DurationObs::line`], as [`EnergyObs`]'s does.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DurationObs {
+    /// The 1-based physical line of the `done` it came from. Line bookkeeping,
+    /// not a fact: [`Replay::durations`] is sorted by it (design §11.2); not
+    /// serialised.
+    #[serde(skip)]
+    pub line: u64,
     /// When the block ended.
     pub t: DateTime<FixedOffset>,
     /// The day it belongs to.
@@ -1183,6 +1228,33 @@ pub struct DurationObs {
     pub went: Option<u8>,
     /// Block done but item not finished.
     pub partial: bool,
+}
+
+impl PartialEq for DurationObs {
+    fn eq(&self, other: &DurationObs) -> bool {
+        // Destructured so a new field is a compile error here.
+        let DurationObs {
+            line: _,
+            t,
+            day,
+            id,
+            ci,
+            tags,
+            est_min,
+            actual_min,
+            went,
+            partial,
+        } = self;
+        *t == other.t
+            && *day == other.day
+            && *id == other.id
+            && *ci == other.ci
+            && *tags == other.tags
+            && *est_min == other.est_min
+            && *actual_min == other.actual_min
+            && *went == other.went
+            && *partial == other.partial
+    }
 }
 
 impl DurationObs {
@@ -2143,6 +2215,8 @@ struct Machine {
     block: Option<Block>,
     last_cut: Option<Cut>,
     interrupt: Option<(DateTime<FixedOffset>, Option<String>)>,
+    /// The physical line of the entry being stepped.
+    line: u64,
 }
 
 impl Machine {
@@ -2304,7 +2378,8 @@ impl Machine {
             .insert(date);
     }
 
-    fn step(&mut self, e: &LogEntry) {
+    fn step(&mut self, line: u64, e: &LogEntry) {
+        self.line = line;
         let t = e.t;
         let day = self.days.day_of(t);
         self.out.last_effective_t = Some(t);
@@ -2377,6 +2452,7 @@ impl Machine {
                     if let Some(rep) = rep {
                         obs = Some(self.out.energy.len());
                         self.out.energy.push(EnergyObs {
+                            line: self.line,
                             t,
                             day,
                             pred: *pred,
@@ -2529,6 +2605,7 @@ impl Machine {
                             d.blocks_done = d.blocks_done.saturating_add(1);
                         }
                         self.out.durations.push(DurationObs {
+                            line: self.line,
                             t,
                             day,
                             id: id.clone(),
@@ -2601,6 +2678,7 @@ impl Machine {
                     // its line last.
                     let slept = self.slept_by_day.get(&day).copied();
                     self.out.energy.push(EnergyObs {
+                        line: self.line,
                         t,
                         day,
                         pred: *pred,
@@ -2788,6 +2866,11 @@ impl Machine {
         for d in self.out.days.values_mut() {
             d.segments.sort_by_key(|s| s.start);
         }
+        // File order, as the kernel's observations are put back in order
+        // after the switch (design §11.2). The walk is already in file order,
+        // so this stable sort moves nothing here.
+        self.out.energy.sort_by_key(|o| o.line);
+        self.out.durations.sort_by_key(|o| o.line);
         self.out
     }
 }
@@ -2816,25 +2899,32 @@ fn replay_lines(
     tz: Tz,
 ) -> Replay {
     let mask = undo_mask(entries);
-    let refs: Vec<&LogEntry> = entries
+    let mut prev = 0u64;
+    let entry_lines: Vec<u64> = (0..entries.len())
+        .map(|i| {
+            let line = lines.get(i).copied().unwrap_or(prev + 1);
+            prev = line;
+            line
+        })
+        .collect();
+    let refs: Vec<(u64, &LogEntry)> = entries
         .iter()
+        .zip(&entry_lines)
         .zip(&mask.cancelled)
-        .filter_map(|(e, c)| (!*c).then_some(e))
+        .filter_map(|((e, line), c)| (!*c).then_some((*line, e)))
         .collect();
     let days = DayIndex::new(
         tz,
         refs.iter()
-            .filter(|e| matches!(e.ev, Event::Wake { .. }))
-            .map(|e| e.t),
+            .filter(|(_, e)| matches!(e.ev, Event::Wake { .. }))
+            .map(|(_, e)| e.t),
     );
-    let mut prev = 0u64;
     let rows = entries
         .iter()
+        .zip(&entry_lines)
         .zip(&mask.cancelled)
-        .enumerate()
-        .map(|(i, (e, c))| {
-            let line = lines.get(i).copied().unwrap_or(prev + 1);
-            prev = line;
+        .map(|((e, line), c)| {
+            let line = *line;
             ViewRow {
                 line,
                 entry: e.clone(),
@@ -2851,7 +2941,7 @@ fn replay_lines(
 }
 
 fn replay_refs(
-    entries: &[&LogEntry],
+    entries: &[(u64, &LogEntry)],
     days: DayIndex,
     range: Option<RangeInclusive<NaiveDate>>,
     tz: Tz,
@@ -2860,7 +2950,7 @@ fn replay_refs(
     // (and appended) after events it precedes. The first `wake` of a day wins,
     // as it does for `DayReplay::wake`.
     let mut slept_by_day: HashMap<NaiveDate, u32> = HashMap::new();
-    for e in entries {
+    for (_, e) in entries {
         if let Event::Wake { slept_min, .. } = &e.ev {
             slept_by_day.entry(days.day_of(e.t)).or_insert(*slept_min);
         }
@@ -2898,9 +2988,10 @@ fn replay_refs(
         block: None,
         last_cut: None,
         interrupt: None,
+        line: 0,
     };
-    for e in entries {
-        m.step(e);
+    for (line, e) in entries {
+        m.step(*line, e);
     }
     m.finish()
 }

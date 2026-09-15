@@ -2202,6 +2202,7 @@ mod tests {
     fn the_hourly_rows_follow_the_day_across_midnight() {
         let cfg = Config::default();
         let obs = |t: &str, pred: u8, rep: u8| log::EnergyObs {
+            line: 0,
             t: DateTime::parse_from_rfc3339(t).unwrap(),
             day: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
             pred,
