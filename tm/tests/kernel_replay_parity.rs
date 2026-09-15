@@ -3362,3 +3362,108 @@ fn t0b_genesis_over_200000_lines_in_chunks_runs_on_a_2mib_thread() {
         "T0 (b): 200,000 lines, {calls} calls, {pops} pops, largest call {largest} lines, {days} day and {window} window records, genesis {genesis_ms:.0} ms; a call at the cap {cap_ms:.0} ms; one reseal of {sealed_days} day records"
     );
 }
+
+/// **D18's named fault, reached through a real guard** (W-5 audit repair; OWNER Q9 (iii), §17 P31, gap 120): a
+/// hand-written **retro wake** — Q9 (iii)'s own example — appended at the end of a 400-day log and dated on the log's
+/// first day. A wake decides the day the lines after it are attributed to, and its own day is long since sealed, so it
+/// cannot be folded without re-deciding days the checkpoint has closed: the guard refuses it (`sealedDay`, G3 — the
+/// wake's day key lies below the checkpoint's ledger day, which is what refuses first here, measured rather than
+/// assumed), and the pop walks back past every checkpoint whose ledger day is above that day — to `Ckpt.empty`. The
+/// resend from there through the refusing chunk's end is more lines than the cap allows, so it **is not sent**:
+/// genesis fails with `ReachTooFar`, naming the line and the guard that could not be answered.
+///
+/// Two controls make this the *edit's* fault and not the log's: the same log as the CLI wrote it is answered in chunks
+/// with no pop at all (gap 120's block — a CLI-written log cannot reach the cap), and the fork replays the edited log
+/// (§17 P31's right-hand column: this is a parity row, not a defect). A retro `done` is deliberately **not** the edit
+/// used here — measured at this repair, not assumed: day attribution is wake-based, so a retro-dated `done` lands on
+/// the open day and is folded with no refusal at all (a 300-day log so edited answers, 12,297 lines).
+#[test]
+fn t0b_a_hand_edit_no_window_can_reach_is_the_named_fault_reach_too_far() {
+    let tz = chrono_tz::UTC;
+    let table = table(tz);
+    let lines = loggen::log(loggen::Rate::Forty, 400);
+    // The pop reaches no further back than `Ckpt.empty`, so the resend passes the cap only if the whole log does.
+    assert!(lines.len() > kernel_log::RESEND_LINES + 4_096, "the resend must be able to pass the cap: {} lines", lines.len());
+    let now = kernel_log::date_of(day_after(&lines));
+    let policy = kernel_log::Policy { keep_days: kernel_log::KEEP_DAYS, max_line: None };
+    let want = kernel_log::Want { facts: true, headers_from: None, render: vec![] };
+
+    // The control: the log as the CLI wrote it is answered, in chunks, with no pop and no call past the cap.
+    let clean = loggen::text(&lines);
+    let s_clean = kernel_log::split(clean.as_bytes());
+    let g = kernel_log::genesis(&now, &table, &s_clean, policy, &want).expect("a CLI-written log is answered");
+    assert_eq!(g.pops, 0, "a CLI-written log needs no pop (gap 120's block)");
+    assert!(g.largest_call <= kernel_log::RESEND_LINES, "largest call {} lines", g.largest_call);
+
+    // The hand edit: a wake dated on the log's first day, appended last. `now` stays the clean log's, so the edit is
+    // retro and does not move the day the rebuild is asked about.
+    let first_t = serde_json::from_str::<Value>(&lines[0]).expect("json")["t"].as_str().expect("t").to_string();
+    let mut edited = lines.clone();
+    edited.push(format!(r#"{{"t":"{first_t}","ev":"wake","slept_min":420}}"#));
+    let text = loggen::text(&edited);
+    let s = kernel_log::split(text.as_bytes());
+    let e = match kernel_log::genesis(&now, &table, &s, policy, &want) {
+        Ok(g) => panic!("genesis answered instead of naming the fault: {} calls, {} pops, largest call {} lines", g.calls, g.pops, g.largest_call),
+        Err(e) => e,
+    };
+    let kernel_log::GenesisError::ReachTooFar { line, kind, reach, bytes } = &e else { panic!("the named fault, not {e:?}") };
+    assert_eq!(*line, edited.len() as u64, "the fault names the hand-edited line");
+    assert_eq!(kind, "sealedDay", "the guard the pop could not answer");
+    assert!(*reach > kernel_log::RESEND_LINES as u64, "the resend is past the line bound: {reach} lines, cap {}", kernel_log::RESEND_LINES);
+    assert!(*bytes > 0, "the fault reports the resend's size");
+    // **The margin over the cap is thin by design, and that is recorded, not relied on by luck.** `CHUNK_LINES` is
+    // exactly half `RESEND_LINES`, so a pop of two levels resends about two chunks — just over the cap by the lines
+    // `keepDays` left unfolded. Measured at this repair: 8,356 lines against the 8,192 cap, a margin of 164 (2.0%); a
+    // 600-day log gives 8,390, a margin of 198, so the margin does not grow with the log. The generator is seeded
+    // (`loggen::SEED`) and the rate fixed, so this is deterministic. If a later step changes that 1:2 ratio or
+    // `keepDays`, this assertion is what will say so.
+    assert!(*reach <= 2 * kernel_log::CHUNK_LINES as u64 + 512, "the reach is about two chunks: {reach}");
+
+    // §17 P31: the fork replays such a log. The kernel's answer is a named fault, and that difference is the parity row.
+    let forked = replay::replay_of_text(&text, tz);
+    assert_eq!(forked.line_count(), edited.len() as u64, "the fork reads every line of the edited log");
+    eprintln!(
+        "ReachTooFar: {} lines, the edit at line {line}, {kind}, resend {reach} lines / {bytes} bytes (cap {} lines / {} bytes)",
+        edited.len(), kernel_log::RESEND_LINES, kernel_log::RESEND_BYTES
+    );
+}
+
+/// **The resend cap's sibling branch, on the cache** (W-5 audit repair; `kernel_log.rs`'s `ReplayCache::replay`, §9.7):
+/// a stored checkpoint whose tail has grown past the resend cap is **not** sent in one call — the call would be refused
+/// `tooManyLines` — so the cache rebuilds from genesis instead, naming why. The control is a tail *under* the cap, which
+/// resumes from the stored checkpoint and rebuilds nothing. Both answers are compared with the fork's whole replay.
+#[test]
+fn t5_a_tail_past_the_resend_cap_rebuilds_instead_of_resending() {
+    let tz = chrono_tz::UTC;
+    let table = table(tz);
+    let lines = loggen::log(loggen::Rate::Forty, 500);
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let cdir = dir.path().join(kernel_log::CACHE_DIR);
+    let mut cache = kernel_log::ReplayCache::new(Some(cdir));
+    let want = kernel_log::Want { facts: true, headers_from: None, render: vec![] };
+
+    // A checkpoint over the first 150 days.
+    let head = &lines[..40 * 150];
+    let text_a = loggen::text(head);
+    let ra = cache.replay(text_a.as_bytes(), day_after(head), &table, None, &want).expect("genesis answers");
+    assert_eq!(ra.outcome, kernel_log::Outcome::Genesis, "{:?}", ra.rebuilt_because);
+    assert_windowed("a tail under the cap: genesis", &cache, &ra, &text_a, tz, &table);
+
+    // The control: 100 more days is a tail under the cap, so it resumes from the stored checkpoint.
+    let mid = &lines[..40 * 250];
+    let text_b = loggen::text(mid);
+    let rb = cache.replay(text_b.as_bytes(), day_after(mid), &table, None, &want).expect("a resume answers");
+    let cut_b = rb.snapshot.meta.cut as usize;
+    assert!(mid.len() - (ra.snapshot.meta.cut as usize) <= kernel_log::RESEND_LINES, "this tail is under the cap");
+    assert_ne!(rb.outcome, kernel_log::Outcome::Genesis, "a tail under the cap is resumed, not rebuilt");
+    assert_eq!(rb.rebuilt_because, None, "nothing to rebuild");
+    assert_windowed("a tail under the cap: resumed", &cache, &rb, &text_b, tz, &table);
+
+    // The tail past the cap: 250 more days. One call cannot carry it, so the cache rebuilds.
+    let text_c = loggen::text(&lines);
+    assert!(lines.len() - cut_b > kernel_log::RESEND_LINES, "the tail is past the cap: {} lines", lines.len() - cut_b);
+    let rc = cache.replay(text_c.as_bytes(), day_after(&lines), &table, None, &want).expect("the rebuild answers");
+    assert_eq!(rc.outcome, kernel_log::Outcome::Genesis, "{:?}", rc.rebuilt_because);
+    assert_eq!(rc.rebuilt_because.as_deref(), Some("a tail past the resend cap"), "named, not silent");
+    assert_windowed("a tail past the cap: rebuilt", &cache, &rc, &text_c, tz, &table);
+}

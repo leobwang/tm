@@ -1104,4 +1104,26 @@ mod tests {
         assert_eq!(month_of(739865), "2026-09");
         assert_eq!(day_of(chrono::NaiveDate::from_ymd_opt(2026, 9, 7).unwrap()), 739865);
     }
+
+    /// **D18's named fault, raised before any call** (OWNER Q9 (iii), §17 P31, gap 120): a hand-edited first line longer
+    /// than the resend cap's byte bound is a chunk of its own, so the first call genesis would make is already past the
+    /// cap. It is not sent: genesis names the line, its kind and its size. The zone table here is `null`, which every
+    /// real call faults on (`tzAbsent`), so a fault named `ReachTooFar` is proof that **no call was made** — if the cap
+    /// check went away, this would come back a `Fault`, not the named fault.
+    #[test]
+    fn a_line_past_the_resend_cap_is_the_named_fault_before_any_call() {
+        let mut text = format!(r#"{{"t":"2026-01-01T06:00:00Z","ev":"note","text":"{}"}}"#, "x".repeat(RESEND_BYTES));
+        text.push('\n');
+        text.push_str("{\"t\":\"2026-01-02T06:00:00Z\",\"ev\":\"wake\",\"slept_min\":420}\n");
+        let s = split(text.as_bytes());
+        assert_eq!(chunk_ends(&s), vec![1, 2], "the over-long line is a chunk of its own");
+        assert!(s.bytes_between(0, 1) > RESEND_BYTES, "{} bytes", s.bytes_between(0, 1));
+        let policy = Policy { keep_days: KEEP_DAYS, max_line: None };
+        let e = genesis("2026-01-03", &Value::Null, &s, policy, &Want::default()).expect_err("no window reaches this line");
+        assert_eq!(
+            e,
+            GenesisError::ReachTooFar { line: 1, kind: "unfolded".into(), reach: 1, bytes: s.bytes_between(0, 1) as u64 },
+            "the named fault, not a kernel call"
+        );
+    }
 }

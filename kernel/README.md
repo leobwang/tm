@@ -14734,7 +14734,7 @@ file changed. No kernel change, and no recursion over a wire list.
 | `check.sh`, built tree | **7/7**, 2.83 s; audit **2732**; corpus **29/37 files and 4/5 plans**; burn-down **13** |
 | `cargo test --workspace` | **1060 passed / 0 failed / 3 ignored across 72 binaries** (1057 + 3: `a_literal_is_its_exact_decimal`, `a_weight_past_18_written_places_is_refused_though_its_double_is_shorter`, `the_recorders_tail_is_the_whole_replays`), 0 compiler warnings |
 | FFI suite | **97 passed / 0 failed** (kernel 83, corpus 8, stack 6; `stack.rs` 2.27 s) |
-| R8's one-reader grep | **69 lines**, W-3's count (64 at the merge-back, plus `log_tail_of`'s 5): T5 adds none, and reads the Rust only through `support/replay.rs` |
+| R8's one-reader grep | **70 lines** *(corrected at the W-5 audit repair: the pinned command gives 70, not 69 — 64 at W-3's merge-back, plus `log_tail_of`'s 5 in `ctx.rs`, plus 1 in `kernel_replay_parity.rs` itself, a doc comment naming the fork's `undo_mask` test rather than a read; the per-file counts are identical at `a43e232` and today, so nothing regressed — S compares against 70)*: T5 adds no reader, and reaches the Rust only through `support/replay.rs` |
 | `cli_latency.rs --include-ignored`, three serial runs | green, 4 passed. No log: first 622.8 / 627.5 / 627.7 ms, later 55.7 / 55.7 / 55.8 ms. 1y: first 708.8 / 708.7 / 733.4, later 121.7 / 121.5 / 121.6. 3y: first 946.5 / 941.3 / 931.5, later 278.5 / 283.6 / 268.4. T14: 76.0 / 80.9 / 76.1 ms (3 years), 136.7 / 161.8 / 136.8 ms (10 years) |
 | gap 106 bound, scratch mutant without the seven `@[csimp]` | fails at 30 deadlines, 6,324 ms > 5,000 ms |
 
@@ -18480,3 +18480,141 @@ the only reader; the switch is S).
 **Owed next:** **S (the switch)** — this gate is clear and blocks nothing. Also owed, each named above: gap 127 (the
 pinned day's reseal, unbounded), gap 126's wire levers (K14, a `String` parser and emitter twin) if a later re-run puts
 genesis above 1.5 s, gap 123's tests, and gap 122's linear-growth measurement.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-15: stage 5, D9 track, the W-5 audit repair on
+     rebuild-on-lean (after W5's re-measurement 72576ec).  Design §9.7, §10.1,
+     §10.4, §14.5's W3 row, §17 P31, §18.5, §21 CRIT 10; OWNER Q9 (iii), D18.
+     Takes no gap, no cheat and no parity number.  No Lean edited.
+     =========================================================================== -->
+
+## Stage 5 D9, the W-5 audit repair, 2026-09-15: the named fault gets its witnesses, seven supersession notes move onto their clauses, and the one-reader grep is corrected to 70
+
+W-5's independent audit found three defects. All three reproduced, two of them with more instances than the audit
+named, and one of the audit's four cited examples did not reproduce. Each is recorded below with the evidence.
+
+### Defect 1 (major) — `ReachTooFar` was raised by one line no test executed
+
+**Reproduced.** `grep -rn 'ReachTooFar\|reach_too_far\|reachTooFar' --include=*.rs` (target/ excluded) gave exactly four
+hits, all in `tm/src/cli/kernel_log.rs`: the module doc, a doc comment, the enum variant, and the single construction at
+the cap check in `genesis`. Nothing built a log that tripped it, and the sibling branch in `ReplayCache::replay` (the
+`too_big` tail) was likewise unexercised. This is D18's chosen behaviour for a hand edit no rebuild can window, and §17
+P31 rests on it, so it is the one branch standing between a named fault and a resend past the 200 MiB rule on a swapless
+machine.
+
+**Three witnesses were built, and the fault is now exercised on both bounds and on both call sites.**
+
+1. **The byte bound, with no kernel call** — `kernel_log.rs`'s own test module,
+   `a_line_past_the_resend_cap_is_the_named_fault_before_any_call`. A hand-edited first line longer than `RESEND_BYTES`
+   is a chunk of its own, so the first call genesis would make is already past the cap. The zone table passed is `null`,
+   which every real call faults on (`tzAbsent`), **so a fault named `ReachTooFar` is itself the proof that no call was
+   made**: if the cap check went away, this comes back a `Fault`, not the named fault.
+2. **The line bound, through a real guard** — `kernel_replay_parity.rs`'s
+   `t0b_a_hand_edit_no_window_can_reach_is_the_named_fault_reach_too_far`. A hand-written **retro wake** (OWNER Q9
+   (iii)'s own example) dated on the first day of a 400-day log and appended last. Measured: the guard that refuses is
+   **`sealedDay`**, not `wakeBehindCut` — the wake's own day key lies below the checkpoint's ledger day, and G3 refuses
+   before G2 can. The pop walks back two levels, and the resend is **8,356 lines against the 8,192 cap**, so it is not
+   sent: `ReachTooFar { line: 16456, kind: "sealedDay", reach: 8356, bytes: 869251 }`.
+   - **A retro `done` was tried first and does not work, which is now recorded in the test's own doc**: day attribution
+     is wake-based, so a retro-dated `done` lands on the open day and folds with no refusal at all (a 300-day log so
+     edited answers, 12,297 lines). The witness had to be a line that moves a *day boundary*, not merely a dated line.
+   - **The margin over the cap is thin by design, and is asserted rather than relied on.** `CHUNK_LINES` is exactly half
+     `RESEND_LINES`, so a two-level pop resends about two chunks — over the cap only by the lines `keepDays` leaves
+     unfolded. Measured 164 lines (2.0%) at 400 days and 198 at 600, so **the margin does not grow with the log**. The
+     generator is seeded and the rate fixed, so this is deterministic, not flaky. The test asserts
+     `reach <= 2 * CHUNK_LINES + 512`, which is what will say so if a later step changes that 1:2 ratio or `keepDays`.
+   - Two controls make it the *edit's* fault and not the log's: the same log as the CLI wrote it is answered in chunks
+     with **0 pops** and no call past the cap (gap 120's block, now tested rather than only argued), and the fork
+     replays the edited log — §17 P31's right-hand column, so this is a parity row and not a defect.
+3. **The sibling branch on the cache** — `t5_a_tail_past_the_resend_cap_rebuilds_instead_of_resending`. A stored
+   checkpoint whose tail has grown past the cap is not sent in one call (the kernel would refuse `tooManyLines`): the
+   cache rebuilds from genesis, naming `"a tail past the resend cap"`. The control is a tail *under* the cap, which
+   resumes from the stored checkpoint and rebuilds nothing (`rebuilt_because: None`). Both answers are compared with the
+   fork's whole replay through `assert_windowed`.
+
+**What is still true and unchanged:** the kernel's genesis has no resend cap of its own — §9.7's cap is the host's (W2's
+recorded disagreement 15), so this fault stays Rust-only; and no verb is wired to it until S (gap 120's part 3, "once S
+wires it"). Neither is newly owed: both were already recorded, and nothing here narrows a window law or moves a memory
+bound.
+
+### Defect 2 (minor) — supersession notes spliced mid-sentence and into the wrong table cells
+
+**Reproduced for three of the audit's four examples, with four more of the same class found, and one that did not
+reproduce.** Gap 102's notes had been appended at each *physical line* end rather than at the end of the *clause* they
+annotate. Seven were moved; the substance of every note is unchanged.
+
+| § | what it read as before | now |
+|---|---|---|
+| OWNER Q9 (iii) | split the noun phrase "further / back" | at the end of the sentence (audit's example 1) |
+| §14.5 W3 row | appended to the **budget** cell — the step's 150/400/900/7–9 looked superseded | on "the 32,768-line / 4 MiB resend cap" in the *what* cell (audit's example 2) |
+| §17 P31 | in the **when** column — the step *S* looked superseded | on "within 32,768 lines or 4 MiB" (audit's example 3) |
+| §9.7 memory cap | split "the named / fault `reachTooFar`" | at the end of the sentence (**not named by the audit**) |
+| §10.1 | split "The kernel cannot / measure bytes" | on the clause that carries the cap, "before sending (§9.7)." (**not named**) |
+| §10.4 table | in the **refusal** cell, on `tooManyLines` | in the *bound* cell, on "≤ 32,768" (**not named**) |
+| §18.5 table | in the **RSS** cell — **it read as if the ≤ 256 MiB memory gate were superseded** | in the *request* cell, on "≤ 4 MiB (32,768 lines)" (**not named; the most consequential, since D18 forbids raising that gate**) |
+
+**§21 CRIT 10 did not reproduce.** The audit reports it as "the same shape" as P31's — a note in a "when" column. That
+table has no "when" column: the note sits at the end of the row's prose cell, directly after the figure it supersedes
+("…because the per-call cap is 32,768"). That is correct placement, so it was left alone.
+
+**The edit is provably placement-only:** line, word and character totals are identical before and after
+(3,168 / 39,253 / 244,488), and a sorted token diff shows one change — at the W3 row the clause-closing `;` now follows
+the note instead of the word `cap`, which is the move itself.
+
+**Left deliberately:** §14.5's A3 row still reads "If (d) exceeds 256 MiB at 4 MiB, the resend cap in §9.7 is lowered
+before W3". That is the record of the trigger that *fired* and produced gap 102's lowering, not a current-tense claim,
+and annotating it would misrepresent the history. §10.1's line-array comment already carries its own
+`// W3: <= 8,192 (gap 102)` form.
+
+### Defect 3 (minor) — the quoted one-reader grep figure was stale by one
+
+**Reproduced.** README line 14737 recorded **69 lines**; the command the README itself pins gives **70** today. Corrected
+in place, with the correction marked as such rather than silently rewritten, because S is the step that must re-run this
+grep to prove the reader moved and would otherwise compare against a wrong baseline.
+
+The arithmetic, now recorded: 64 at W-3's merge-back, plus `log_tail_of`'s 5 in `ctx.rs` (P32's five, already recorded),
+**plus 1 in `kernel_replay_parity.rs` itself** — line 2621, a doc comment naming the fork's `undo_mask` test, not a read.
+That last one is why the old sentence "T5 adds none" undercounted. Per-file counts today: `tm-core/src/log.rs` 41,
+`tm/src/cli/ctx.rs` 14, `tm/tests/kernel_log_grammar.rs` 7, `tm/tests/support/replay.rs` 3, `tm-core/src/horizon.rs` 2,
+`tm-core/src/store.rs` 2, `tm/tests/kernel_replay_parity.rs` 1 = **70**. This is drift that predates `a43e232`, not a
+regression from the twelve commits audited: the per-file counts are identical at `a43e232` and at HEAD.
+
+**The two new tests add no reader.** They reach the Rust only through `support/replay.rs`, the test chokepoint, so the
+grep still gives 70 after this step.
+
+**AGENTS §6.3's three counts, re-checked (the audit's related note): 3934 / 3934 / 3934, agreeing with the same two
+cancelling off-by-ones §6.3 warns about still in place** — `Tm.WfPlan`, a `def`, is still audited (`Check.lean:472`), and
+`Cmd.lean:30`'s prose line beginning "theorem whose command argument was unused." at column 0 is still counted by the
+declaration grep. So the honest sentence remains *"every theorem in the modules is audited, and the audit names one
+definition as well"*. Nothing was changed here: `AGENTS.md` is the process authority and already states it correctly, and
+this repair edited no Lean.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**Goals added: none. Discharged: none. Refuted: none.** Burn-down **13** (unchanged). **No Lean was edited**: no new
+theorem, no new witness, no new cheat, no new parity entry, and rule D9-21 has nothing to add (the step's only code is
+Rust test code, which the wire never reaches). `Negative.lean` still fails for its stated reasons (check 4).
+
+### Numbers
+
+**Taken:** none. **Highest, unchanged:** gap 127, cheat 157, parity P34. **Behaviour rows:** none in the binary (Rust is
+still the only reader; the switch is S).
+
+**Re-measured** (main worktree, on the tree committed; every command capped at `MemoryMax=40G`, `MemorySwapMax=0`):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 3.03 / 3.06 / 3.11 s (W5b: 3.07 / 3.11 / 3.06 s; flat, far inside the 10% a step may add) |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged, stages 3–6) |
+| `cargo test --workspace` | **1082 passed / 0 failed / 5 ignored across 73 result lines** (W5b: 1078), exit 0, 0 warnings. **+4 for 3 new tests**: `kernel_log.rs`'s unit test is compiled into both the `tm` bin and the parity binary (via `#[path]`), so it counts twice |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6; `stack.rs` 2.28 s) — unchanged |
+| T5 (`kernel_replay_parity.rs --include-ignored`) | **19 passed / 0 failed**, 6.49 s (W5b: 16). 17 passed / 2 ignored without. The binary holds 14 file tests + `kernel_log`'s 5 unit tests |
+| the new fault's own figures | `ReachTooFar` at line 16,456, `sealedDay`, resend **8,356 lines / 869,251 bytes** against the cap's 8,192 / 1,572,864; the clean 400-day log: **0 pops**, largest call ≤ 8,192 |
+| `cli_latency.rs --include-ignored`, three runs | green, 4 passed each. One `--nocapture` sample: 3y later verb **283.7 ms** (W5b: 283.5 / 283.6 / 283.5), 1y later **121.6** (W5b: 121.6 / 121.7 / 121.5), T14 **76.0 ms** (3y) and **141.8 ms** (10y). **Unchanged: Rust is still the reader, and these did not move.** The no-log later verb read 60.8 ms on that one sample against W5b's 50.7–55.8 band; it passed the test's own bound, and it is a single sample, so it is recorded as one rather than quoted as a new figure |
+| R8's one-reader grep | **70 lines** (see defect 3) |
+
+**Owed next, unchanged by this repair:** **S (the switch)**, which nothing here blocks. Also owed, each already named:
+gap 127 (the pinned day's reseal, unbounded), gap 126's wire levers, gap 123's tests, gap 122's linear-growth
+measurement, and gap 120's part 3 (wiring every verb but `tm check` to the named fault, at S).

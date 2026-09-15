@@ -610,8 +610,8 @@ typo) is folded correctly and fenced (D9-22). Should `tm check` name it?
 - **(b) No.**
 
 **(iii) Beyond the rebuild's memory bound.** Some line may be so far out of place that no rebuild can
-window around it within 32,768 lines or 4 MiB in one call: a hand-written undo whose target is further *(Superseded at W3 by gap 102's measurement: 8,192 lines or 1,536 KiB, chunks of 4,096 lines or 768 KiB; README "Stage 5 D9 W3".)*
-back, a retro wake, or a retro line into a sealed day.
+window around it within 32,768 lines or 4 MiB in one call: a hand-written undo whose target is further
+back, a retro wake, or a retro line into a sealed day. *(Superseded at W3 by gap 102's measurement: 8,192 lines or 1,536 KiB, chunks of 4,096 lines or 768 KiB; README "Stage 5 D9 W3".)*
 - **(a) A named fault.** Every verb except `tm check` fails with `log.jsonl line N reaches M lines back;
   move or delete it`, and `tm check` reports it as an error.
 - **(b) Raise the cap for that rebuild, with a notice.** This risks an OOM on a swapless machine, ≈
@@ -1642,8 +1642,8 @@ call**, with `reseal`.
 holds an undo's target cannot see the undo in the next chunk, so it folds the target again, and the next
 chunk refuses again. One call carrying both ends is what lets the call-wide mask settle the undo.
 
-**The memory cap.** A resend over **32,768 lines or 4 MiB** is not sent. Genesis fails with the named *(Superseded at W3 by gap 102's measurement: 8,192 lines or 1,536 KiB, chunks of 4,096 lines or 768 KiB; README "Stage 5 D9 W3".)*
-fault `reachTooFar {line, kind, reach}` (OWNER Q9 (iii)), and the host prints the line and its kind.
+**The memory cap.** A resend over **32,768 lines or 4 MiB** is not sent. Genesis fails with the named
+fault `reachTooFar {line, kind, reach}` (OWNER Q9 (iii)), and the host prints the line and its kind. *(Superseded at W3 by gap 102's measurement: 8,192 lines or 1,536 KiB, chunks of 4,096 lines or 768 KiB; README "Stage 5 D9 W3".)*
 
 **It terminates.**
 - Each refusal pops to a strictly earlier start, or the resend carries both ends of the refused relation,
@@ -1756,7 +1756,7 @@ The existing keys (`docs`, `cmds`, `now`, `blockMin`) are unchanged. A request w
 }
 ```
 
-Rust also enforces **≤ 4 MiB of line bytes per request** before sending (§9.7). The kernel cannot *(Superseded at W3 by gap 102's measurement: 8,192 lines or 1,536 KiB, chunks of 4,096 lines or 768 KiB; README "Stage 5 D9 W3".)*
+Rust also enforces **≤ 4 MiB of line bytes per request** before sending (§9.7). *(Superseded at W3 by gap 102's measurement: 8,192 lines or 1,536 KiB, chunks of 4,096 lines or 768 KiB; README "Stage 5 D9 W3".)* The kernel cannot
 measure bytes before parsing, so the line count and the per-line bound are its half.
 
 ### 10.2 Response
@@ -1803,7 +1803,7 @@ W1 and L6 check it against the decoders before they freeze.
 
 | value | bound | constructor | refusal |
 |---|---|---|---|
-| lines per call | ≤ 32,768 (Rust: ≤ 4 MiB of bytes too) | `mkLogReq?` | `tooManyLines` *(Superseded at W3 by gap 102's measurement: 8,192 lines or 1,536 KiB, chunks of 4,096 lines or 768 KiB; README "Stage 5 D9 W3".)* |
+| lines per call | ≤ 32,768 (Rust: ≤ 4 MiB of bytes too) *(Superseded at W3 by gap 102's measurement: 8,192 lines or 1,536 KiB, chunks of 4,096 lines or 768 KiB; README "Stage 5 D9 W3".)* | `mkLogReq?` | `tooManyLines` |
 | a line | ≤ 65,536 chars; nesting ≤ 64 | `readLine` | warnings `lineTooLong`, `lineTooDeep` |
 | a decimal's exponent | its digits are bounded by the line; its **value** is never used to build `10^e` unless `k = digits m ± e` lies in [−330, 330]; `m = 0` short-circuits to finite | `finiteF64` | `badField k` / `outOfRange k` |
 | an instant | year ≤ 9999; `ns` per `Instant.wf` | `mkInstant?` | `badT`, `badTz` |
@@ -2351,7 +2351,7 @@ without `reseal`, and compares them field by field with `Ctx::replay_of` over:
 |---|---|---|---|---|---|
 | **W1** types and codecs | `Seal.lean` (new; imports `Replay`) | `Header`, `DayRecord`, `WindowRecord`, `Ckpt`, `Meta`, `Resealed`, `Policy`, `Refusal`, `Seal.Q`; `emitCkpt`/`readCkpt`, `emitDayRecord`/`readDayRecord`, `emitWindowRecord`/`readWindowRecord`; `Ckpt.empty`, `ckptOf`, `sealable`, `horizonOf`, `dayRecordsBelow`/`Between`, `windowRecordsBelow`/`Between`, `answer`, `askAnswer`, `askMerged`. **Blocked on R-audit, Q3 and Q7** | **adds §15's W block: 16 goals** with provisional `resume`, `foldPoint`, `sealDay`, `reachFree`, `tagsClear`, `genesis` as `sorry` defs. **The burn-down rises by 16, a deliberate debt.** In-step: the three codec round trips | check.sh; cheat 97 (a view without `lastDone` still satisfies the partition law on its minimal witness: two `done` entries of one id on two days); cheat 98 (`readCkpt` defaulting a missing `ledgerDay` to 0) | 450 / 900 / — / 4–5 |
 | **W2** seal, resume, the laws | `Seal.lean` | `resume` with G0–G4 and the `now` anchor; `foldPoint` (greatest valid cut, one pass); `sealDay`; `settled`; `futureFloor`; compaction to `H'`; record emission | discharges the 16 via §9.5's route; in-step: `resume_without_the_guards_is_not_replay`, `a_spurious_tag_refusal_exists`, `foldPoint_valid`, `foldPoint_greatest`, `dayOf_agrees_two_days_before`, `an_instant_before_the_stored_wakes_is_sealed`, `dayOf_with_no_folded_wake_reads_the_tail`, `the_unterminated_segment_is_never_folded`. **The laws' instances go through the codec round trips as rewrites and are never evaluated** (§14.0 item 4). **Stop condition:** if `resume_is_replay` or `resume_ok_iff` will not close, raise it to the owner (AGENTS §9.1). D5 forbids replacing a law with T6 | check.sh; cheats 99 (a resume accepting an unsettled undo whose target is folded), 100 (a ledger day that moves backwards), 101 (a reseal that leaves a folded-target undo out of `settled`, accepted afterwards), 102 (window compacted to `H + 1`), 103 (`F` not bounded by `now`), 104 (an unterminated last segment folded) | 600 / 4,600 / — / 14–17 |
-| **W3** wire, genesis, files | `Boundary.lean` (`log`: `ckpt`, `from`, `lines`, `terminated`, `reseal`, `want`, `sealed`; refusals), `kernel_log.rs` | §9.6–§9.8, §10; the snapshot rule, generations and collection; back-off; genesis with exact pops and the 32,768-line / 4 MiB resend cap; the unwritable-cache fallback | in-step: `the_log_op_emits_only_numerals_below_2_53`; a rejection theorem per §10.4 row; extends the response-shape theorem | **T0 (b)** on a 2 MiB thread: genesis over a generated 200,000-line log (25 chunks) with facts and record emission; one call at exactly 32,768 lines; a reseal emitting ≥ 1,000 day records; a checkpoint at every §10.4 maximum through `readCkpt` (CRIT 10). **T6** `resume_equals_genesis_at_fifty_cuts` (6-month log, kernel against kernel). **T7** each refusal (`undoReach`, `wakeBehindCut`, `sealedDay`, `sealedWindow`, `nowBelowLedger`) followed by a fallback equal to genesis; `nowBelowLedger`'s answer is not persisted; `a_line_dated_next_year_changes_no_fact_about_today`. **T8** `genesis_in_chunks_equals_one_call`, with forced pops. **T10** cache mutation proptest: flip a prefix byte, truncate, append, a retro line, a far undo, a tz change, **finish a torn last line** (CRIT 8), **a concurrent reseal between reading `ckpt.json` and a month file** and **a deleted month file** (CRIT 7), an unwritable directory. After each, the next call equals a cold genesis | 150 / 400 / 900 / 7–9 *(Superseded at W3 by gap 102's measurement: 8,192 lines or 1,536 KiB, chunks of 4,096 lines or 768 KiB; README "Stage 5 D9 W3".)* |
+| **W3** wire, genesis, files | `Boundary.lean` (`log`: `ckpt`, `from`, `lines`, `terminated`, `reseal`, `want`, `sealed`; refusals), `kernel_log.rs` | §9.6–§9.8, §10; the snapshot rule, generations and collection; back-off; genesis with exact pops and the 32,768-line / 4 MiB resend cap *(Superseded at W3 by gap 102's measurement: 8,192 lines or 1,536 KiB, chunks of 4,096 lines or 768 KiB; README "Stage 5 D9 W3".)*; the unwritable-cache fallback | in-step: `the_log_op_emits_only_numerals_below_2_53`; a rejection theorem per §10.4 row; extends the response-shape theorem | **T0 (b)** on a 2 MiB thread: genesis over a generated 200,000-line log (25 chunks) with facts and record emission; one call at exactly 32,768 lines; a reseal emitting ≥ 1,000 day records; a checkpoint at every §10.4 maximum through `readCkpt` (CRIT 10). **T6** `resume_equals_genesis_at_fifty_cuts` (6-month log, kernel against kernel). **T7** each refusal (`undoReach`, `wakeBehindCut`, `sealedDay`, `sealedWindow`, `nowBelowLedger`) followed by a fallback equal to genesis; `nowBelowLedger`'s answer is not persisted; `a_line_dated_next_year_changes_no_fact_about_today`. **T8** `genesis_in_chunks_equals_one_call`, with forced pops. **T10** cache mutation proptest: flip a prefix byte, truncate, append, a retro line, a far undo, a tz change, **finish a torn last line** (CRIT 8), **a concurrent reseal between reading `ckpt.json` and a month file** and **a deleted month file** (CRIT 7), an unwritable directory. After each, the next call equals a cold genesis | 150 / 400 / 900 / 7–9 |
 | **W4** tree-map twin (gated) | `Replay.lean`, `Seal.lean` | `Std.TreeMap` fast twins of the item and window maps behind `@[csimp]`, proved equal to the list spec (the stage-4 `planWf` hardening pattern) | `items_eq_itemsFast`, … | **required** if W5's first run measures genesis above 1.5 s, or a hot call above 60 ms, at 3 y on lists | 250 / 900 / — / 4–6 |
 | **W5** measurement gate | `logbench` | genesis total; hot call (checkpoint plus 3 days); reseal call; RSS; digest; **a 10-day stall** (a block left open); **a hand undo 30 days back** followed by 10 verbs (CRIT 19); **an undo stack pinning 14 days** | — | **Gate at 3 y and 61 events a day, dev profile:** hot call ≤ 60 ms including the digest, stalled or pinned; at most one checkpoint write per day during the stall; after the far undo, one rebuild and then hot calls again; genesis ≤ 1.5 s; per-call RSS ≤ 256 MiB. Otherwise W4, then §19's levers, before S | — / — / — / 1 |
 
@@ -2843,7 +2843,7 @@ These continue the README's P1–P12 (steps 1–3), and are recorded **before** 
 | P28 | **conditional**: a window or wall spanning a DST transition | civil minutes | real minutes via `local_dt` | recorded only if L2 lands before B1, and deleted when L2 moves onto `instantOf` | L2 |
 | P29 | `tm log` (human and `--json`) of a **hand-appended unknown event** with a non-canonical numeral (`1.50`, `1e3`, `-0`, an integer above `u64`) | printed as written | re-serialised through `serde_json::Value` (`1.5`, `1000.0`, `-0.0`, a float) | CRIT 15; porting ryu's shortest-float printing for hand-written lines only is not worth its cost; OWNER Q9 (iv) | S |
 | P30 | a `due:` more than 3,660 days ahead | the deadline sees the capacity of the first 3,660 days | the lookahead runs to the due date | R10; D10-13 | L6 |
-| P31 | a hand-edited line that no rebuild can window within 32,768 lines or 4 MiB | the named fault `reachTooFar`; `tm check` reports it | the fork replays it | D9-12; OWNER Q9 (iii) | S *(Superseded at W3 by gap 102's measurement: 8,192 lines or 1,536 KiB, chunks of 4,096 lines or 768 KiB; README "Stage 5 D9 W3".)* |
+| P31 | a hand-edited line that no rebuild can window within 32,768 lines or 4 MiB *(Superseded at W3 by gap 102's measurement: 8,192 lines or 1,536 KiB, chunks of 4,096 lines or 768 KiB; README "Stage 5 D9 W3".)* | the named fault `reachTooFar`; `tm check` reports it | the fork replays it | D9-12; OWNER Q9 (iii) | S |
 
 **Exact by design, so not exceptions** (the harness must report zero differences):
 - the undo mask, dangling undos and the housekeeping cancellation included;
@@ -2938,7 +2938,7 @@ this once (Q3, gap 99).
 |---|---|---:|
 | hot call | ≤ 0.3 MiB | ≤ 20 MiB |
 | genesis chunk | ≤ 1 MiB of lines + checkpoint | ≤ 80 MiB |
-| a refusal's resend | ≤ 4 MiB (32,768 lines) | ≤ 256 MiB *(Superseded at W3 by gap 102's measurement: 8,192 lines or 1,536 KiB, chunks of 4,096 lines or 768 KiB; README "Stage 5 D9 W3".)* |
+| a refusal's resend | ≤ 4 MiB (32,768 lines) *(Superseded at W3 by gap 102's measurement: 8,192 lines or 1,536 KiB, chunks of 4,096 lines or 768 KiB; README "Stage 5 D9 W3".)* | ≤ 256 MiB |
 | two processes rebuilding at once | | ≤ 520 MiB |
 
 No call carries the whole log at any age. The first draft's worst case (≈ 520 MiB at 3 years,
