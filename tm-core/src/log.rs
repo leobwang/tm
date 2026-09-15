@@ -1614,6 +1614,49 @@ pub struct Replay {
     /// Per wake-attributed day inside the range: the seam facts of every
     /// surviving entry of that day ([`DaySeam`]).
     pub seams: BTreeMap<NaiveDate, DaySeam>,
+    /// The `t` of the last surviving entry in **file order**, of any kind,
+    /// whatever the range (`tm idle`'s default length reads it). Not the
+    /// latest instant: a hand-appended or retro line can be dated earlier.
+    pub last_effective_t: Option<DateTime<FixedOffset>>,
+}
+
+/// What [`Replay::latest_named`] keeps of the `tm event <name>` occurrences
+/// addressed to one id or to nobody: two instants, enough to answer "the
+/// latest occurrence on or after a local date" without the list.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LatestNamed {
+    /// The latest occurrence by instant (a tie goes to the later line).
+    pub latest: DateTime<FixedOffset>,
+    /// The latest occurrence by `(local date in tz, instant)` (a tie goes to
+    /// the later line). It differs from `latest` only when the zone's clock
+    /// went back across midnight between them.
+    pub latest_dated: DateTime<FixedOffset>,
+}
+
+impl LatestNamed {
+    /// The latest occurrence whose local date in `tz` is `since` or later
+    /// (`None`: no bound), the value `recur::arrival_of` filtered and
+    /// maximised the list for.
+    ///
+    /// Equal to that filter-then-maximum whenever the latest by instant is
+    /// dated `since` or later (it is then the maximum), or no occurrence is
+    /// (the latest-dated one is not either). In between, the answer is the
+    /// latest-dated occurrence, and the two agree unless the local date went
+    /// **backwards twice** across the occurrences in that interval — two
+    /// backward offset changes of the zone within the sum of their sizes,
+    /// which no zone of the tz database has.
+    pub fn on_or_after(&self, since: Option<NaiveDate>, tz: Tz) -> Option<DateTime<FixedOffset>> {
+        let Some(s) = since else {
+            return Some(self.latest);
+        };
+        if self.latest.with_timezone(&tz).date_naive() >= s {
+            Some(self.latest)
+        } else if self.latest_dated.with_timezone(&tz).date_naive() >= s {
+            Some(self.latest_dated)
+        } else {
+            None
+        }
+    }
 }
 
 impl Replay {
@@ -1660,7 +1703,16 @@ impl Replay {
     pub fn last_done(&self, id: &str) -> Option<DateTime<FixedOffset>> {
         self.last_done.get(id).copied()
     }
-    /// Completion dates of `id`, ascending (for calendar instances).
+    /// The first completion date of `id` (the `every:Nd` phase anchor).
+    pub fn done_date_first(&self, id: &str) -> Option<NaiveDate> {
+        self.done_dates.get(id).and_then(|s| s.first().copied())
+    }
+    /// How many distinct completion dates `id` has.
+    pub fn done_date_count(&self, id: &str) -> usize {
+        self.done_dates.get(id).map_or(0, BTreeSet::len)
+    }
+    /// Completion dates of `id`, ascending. Read by tests only; the library
+    /// reads [`Replay::done_date_first`] and [`Replay::done_date_count`].
     pub fn done_dates(&self, id: &str) -> Vec<NaiveDate> {
         self.done_dates
             .get(id)
@@ -1683,9 +1735,42 @@ impl Replay {
             .into_iter()
             .flat_map(|m| m.iter().map(|(k, v)| (k.as_str(), v)))
     }
-    /// Occurrences of `tm event <name>`.
+    /// Occurrences of `tm event <name>`. Read by tests only; the library
+    /// reads [`Replay::latest_named`] and [`Replay::event_names`].
     pub fn events_named(&self, name: &str) -> &[NamedEvent] {
         self.events.get(name).map_or(&[], Vec::as_slice)
+    }
+    /// The names `tm event` was logged with (§5.5's `after:event:` deps).
+    pub fn event_names(&self) -> impl Iterator<Item = &str> {
+        self.events.keys().map(String::as_str)
+    }
+    /// The latest `tm event <name>` addressed to `id` or to nobody, with
+    /// local dates in `tz` ([`LatestNamed`]); `None` when there is none.
+    pub fn latest_named(&self, name: &str, id: &str, tz: Tz) -> Option<LatestNamed> {
+        let mut out: Option<LatestNamed> = None;
+        for e in self.events_named(name) {
+            if e.id.as_deref().is_some_and(|i| i != id) {
+                continue;
+            }
+            let t = e.t;
+            out = Some(match out {
+                None => LatestNamed {
+                    latest: t,
+                    latest_dated: t,
+                },
+                Some(mut l) => {
+                    if t >= l.latest {
+                        l.latest = t;
+                    }
+                    let key = |x: DateTime<FixedOffset>| (x.with_timezone(&tz).date_naive(), x);
+                    if key(t) >= key(l.latest_dated) {
+                        l.latest_dated = t;
+                    }
+                    l
+                }
+            });
+        }
+        out
     }
     /// Every `tm event` addressed to `id`, in time order.
     pub fn events_for(&self, id: &str) -> Vec<&NamedEvent> {
@@ -1972,6 +2057,7 @@ impl Machine {
     fn step(&mut self, e: &LogEntry) {
         let t = e.t;
         let day = self.days.day_of(t);
+        self.out.last_effective_t = Some(t);
         if self.in_range(day) {
             let seam = self.out.seams.entry(day).or_default();
             match &e.ev {
@@ -2512,6 +2598,7 @@ fn replay_refs(entries: &[&LogEntry], range: Option<RangeInclusive<NaiveDate>>, 
             unknown: 0,
             warnings: Vec::new(),
             seams: BTreeMap::new(),
+            last_effective_t: None,
         },
         block: None,
         last_cut: None,

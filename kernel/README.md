@@ -12599,3 +12599,74 @@ No kernel change; no recursion over a wire list.
 | `cargo test --workspace` | **1026 passed / 0 failed / 2 ignored across 70 binaries** |
 | FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
 | `cli_latency.rs` | green: first verb 626.9 / 637.3 / 622.0 ms (226 files, 2,959 lines), later verb 55.7 / 55.7 / 55.8 ms |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5 D9 R3 (design §14.3 row R3, §8.4), on
+     rebuild-on-lean after 885853f.  Takes no gap, cheat or parity number.
+     =========================================================================== -->
+
+## Stage 5 D9 R3, 2026-09-14: the replay remembers its last line, and recur asks narrower questions — `tm idle` stops walking the log
+
+**What changed.**
+- **`Replay.last_effective_t`**: the `t` of the last surviving entry in file order, of any kind,
+  set by the machine for every survivor whatever the range. `cli/day.rs`'s `idle` reads it instead of
+  `ctx.log.effective().map(|e| e.t).last()`.
+- **Accessor narrowing.** `Replay::done_date_first(id)` and `done_date_count(id)` replace
+  `done_dates(id).first()` (`recur.rs` `calendar_instances`) and `done_dates(id).len()`
+  (`next_ordinal`, `completion_count`). `Replay::latest_named(name, id, tz) -> Option<LatestNamed>`
+  with `LatestNamed::on_or_after(since, tz)` replaces `arrival_of`'s filter-then-maximum over
+  `events_named(name)`. `Replay::event_names()` replaces `priority.rs`'s `replay.events.keys()`
+  (same family; not in the row's list). `done_dates`, `events_named`, `event_occurred`,
+  `events_for` and `stamps` stay for the tests that read them (R12), with doc comments saying so; no
+  library call site reads them any more.
+
+**Equivalence test (run, then deleted with the old reads).** A unit test in `recur.rs` compared, over
+the four corpus logs and loggen's 1-month logs at both rates (Chicago) and a crafted St John's log:
+`log.effective().map(|e| e.t).last()` with `last_effective_t` (7 logs); `done_dates(k).first()` and
+`.len()` with the new accessors for every key plus an absent one (**274 keys**); `events.keys()` with
+`event_names()`; and `arrival_of`'s old expression, verbatim, with
+`latest_named(..)?.on_or_after(..)` for every event name plus an absent one, every id logged plus an
+absent one, and `since` ∈ {none} ∪ every local date ± 1 — **644 `(name, id, since)` queries, 115 with
+an arrival, equal in instant and in written offset; 0 differences.** The crafted log checks the case
+below (the latest by instant and the latest by date differ, and the answer is the latter) and a
+three-way tie of one instant written with two offsets (the later line wins, as `Iterator::max` does).
+
+**Existing suites.** No assertion changed: `recur_cases` 18, `recur_fixture` 3, `recur_regressions`
+11, `priority_edf` 8, `priority_plan_basic` 5, `priority_regressions` 12, `priority_rules` 11,
+`cli_day` 26, all passed. `log_replay__three_days_replay.snap` gains `last_effective_t` (1 line
+added, 0 removed: the log's last line, the 10:50 `pause`).
+
+### Recorded disagreements between the design and the repo
+
+1. **"A `≥ since` filter commutes with max" is false when a zone's clock goes back across midnight**
+   (§8.4's `events_named` row, which makes the fact "latest instant per `(name, id?)`"). The filter
+   is on the **local date** in `cfg.tz`, and a local date can decrease as the instant increases. St
+   John's changed its clocks at 00:01 until 2011: on 2010-11-07 an event at Sunday 00:00:30 NDT is
+   dated Sunday, one at Saturday 23:30 NST, an instant later, is dated Saturday. With `since` =
+   Sunday the fork answers the first; "the latest, then filter" answers nothing. So the A form is
+   **two instants per `(name, id)`**: `latest` (by instant) and `latest_dated` (by local date, then
+   instant; ties to the later line), and `on_or_after` returns `latest` when it is dated `since` or
+   later, else `latest_dated` when that is, else nothing. That equals the fork's filter-then-maximum
+   except when the local date goes backwards **twice** among the occurrences between the two, which
+   needs two backward offset changes within the sum of their sizes; no tz-database zone has that
+   (stated in `on_or_after`'s doc comment, not proved). The cost for W1: about 25 bytes more per
+   `(name, id)` key in the checkpoint. A transition exactly at 00:00 (Santiago, historical São Paulo)
+   never makes a date go backwards, which is why the first crafted attempt did not exercise the case.
+2. **`latest_named` takes one id and answers for `id ∈ {none, key}`**, the pair `arrival_of`
+   asks for, and takes `tz`: the local date is `cfg.tz`'s, and `Replay.tz` is not guaranteed to be
+   the same (tests build replays in their own zone).
+3. **`priority.rs` read `events.keys()`, not `events_named`**, and `done_items`, not `done_dates`.
+   `event_names()` narrows the first; `done_items` (A, a set) is left as it is.
+
+**Goals discharged: none. Refuted: none. Added: none.** Burn-down **13 → 13**. **New theorems:
+none.** **Parity entries: none.** **Observable behaviour changes: none.** **Numbers taken: none.**
+No kernel change; no recursion over a wire list.
+
+**Re-measured** (main worktree, every command under the 30 GB cap):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.79 s; audit **2672**; corpus **29/37 and 4/5**; burn-down **13** |
+| `cargo test --workspace` | **1026 passed / 0 failed / 2 ignored across 70 binaries** |
+| FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
+| `cli_latency.rs` | green: first verb 637.7 / 627.7 / 632.8 ms (226 files, 2,959 lines), later verb 55.8 / 50.7 / 60.8 ms |

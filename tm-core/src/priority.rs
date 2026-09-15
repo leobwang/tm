@@ -481,7 +481,7 @@ pub fn collect_candidates(
             .iter()
             .map(|s| Id::new(s.clone()))
             .collect(),
-        events: replay.events.keys().cloned().collect(),
+        events: replay.event_names().map(str::to_string).collect(),
         overdue: tree.overdue(now.naive_local()).into_iter().collect(),
         seen: HashSet::new(),
         out: Vec::new(),

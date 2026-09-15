@@ -707,11 +707,7 @@ fn calendar_instances(
     // earliest completion the log knows, else the fixed `PHASE_EPOCH`. Anchor
     // it on `range.0` and `today_instances` and `week_instances` would put the
     // same item on different days (see the module docs, deviation 6).
-    let anchor = replay
-        .done_dates(key.as_str())
-        .first()
-        .copied()
-        .unwrap_or(PHASE_EPOCH);
+    let anchor = replay.done_date_first(key.as_str()).unwrap_or(PHASE_EPOCH);
     rule_occurrences(rule, range, anchor)
         .into_iter()
         .map(|(first, last)| {
@@ -868,7 +864,7 @@ fn next_ordinal(key: &Id, replay: &Replay) -> u32 {
         })
         .max()
         .unwrap_or(0);
-    let dates = u32::try_from(replay.done_dates(key.as_str()).len()).unwrap_or(u32::MAX);
+    let dates = u32::try_from(replay.done_date_count(key.as_str())).unwrap_or(u32::MAX);
     resolved.max(dates).saturating_add(1)
 }
 
@@ -883,7 +879,7 @@ fn completion_count(key: &Id, replay: &Replay) -> u32 {
                 && matches!(parse_instance_key(inst), Some(InstanceKey::Nth(_)))
         })
         .count();
-    let dates = replay.done_dates(key.as_str()).len();
+    let dates = replay.done_date_count(key.as_str());
     u32::try_from(logged.max(dates)).unwrap_or(u32::MAX)
 }
 
@@ -1142,12 +1138,8 @@ fn arrival_of(item: &Item, replay: &Replay, cfg: &Config) -> Option<DateTime<Fix
     let key = Tree::key_of(item);
     let since = item.stamps.waiting_since;
     replay
-        .events_named(name)
-        .iter()
-        .filter(|e| e.id.is_none() || e.id.as_deref() == Some(key.as_str()))
-        .filter(|e| since.is_none_or(|s| e.t.with_timezone(&cfg.tz).date_naive() >= s))
-        .map(|e| e.t)
-        .max()
+        .latest_named(name, key.as_str(), cfg.tz)?
+        .on_or_after(since, cfg.tz)
 }
 
 fn parse_instance_key(inst: &str) -> Option<InstanceKey> {

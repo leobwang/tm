@@ -1264,7 +1264,7 @@ pub fn idle(g: &Globals, args: &super::IdleArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
     let rec = Recorder::start(&ctx, "idle")?;
     let min = args.min.unwrap_or_else(|| {
-        let last = ctx.log.effective().map(|e| e.t).last();
+        let last = ctx.replay.last_effective_t;
         match last {
             Some(t) => (ctx.now - t).num_minutes().clamp(0, 24 * 60) as u32,
             None => ctx.cfg.day.idle_min,
