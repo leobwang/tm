@@ -620,3 +620,96 @@ fn an_append_after_a_torn_line_starts_a_new_line() {
     let now = tm.read(".tm/log.jsonl");
     assert!(now.starts_with(&before) && !now[before.len()..].starts_with('\n'), "no repair on a whole line");
 }
+
+/// Break `^m1`'s `@parent` so the kernel refuses the whole tree
+/// (`itemCheck`/`danglingParent`, the owner's D6). Returns the text as it was.
+fn break_tree(tm: &Tm) -> String {
+    let path = tm.plan.join("week/2026-W37.md");
+    let text = std::fs::read_to_string(&path).expect("read week");
+    let broken = text.replace("@O1 ^m1", "@O9 ^m1");
+    assert_ne!(broken, text, "the fixture no longer carries `@O1 ^m1`");
+    std::fs::write(&path, &broken).expect("write week");
+    text
+}
+
+fn restore_tree(tm: &Tm, text: &str) {
+    std::fs::write(tm.plan.join("week/2026-W37.md"), text).expect("restore week");
+}
+
+/// **A tree the kernel refuses stops `arrive`, `resume` and `energy` before
+/// they write, and the same verb runs once the tree is fixed** — gap 115,
+/// closed here. These three write `state.json` and the log *before* the
+/// planning call that sends the tree, so each used to fail *after* its own
+/// write. Driven at `89ead46`, each on a copy of `plan-basic` with a typo'd
+/// `@parent`: `arrive` left an `arrive` line and a written `state.json`,
+/// `energy 3` left an `energy` line, and `resume` left `state.json` with the
+/// interruption **cleared** and no log line naming it — the interruption was
+/// simply lost. Both orders are checked: refused writes nothing, fixed runs.
+#[test]
+fn a_refused_tree_stops_the_writing_verbs_before_they_write() {
+    // (a) `arrive`, from a fresh tree: it wrote both the log line and the state.
+    {
+        let tm = Tm::new();
+        let text = break_tree(&tm);
+        let before = tm.events();
+        let out = tm.run(&["arrive", "lounge"]);
+        assert_eq!(out.code, 1, "arrive: {}{}", out.stdout, out.stderr);
+        assert!(out.stderr.contains("danglingParent"), "arrive: {}", out.stderr);
+        assert_eq!(tm.events(), before, "arrive logged on a refused tree");
+        assert!(
+            !tm.exists(".tm/state.json") || tm.state()["arrival"].is_null(),
+            "arrive wrote its arrival on a refused tree"
+        );
+
+        restore_tree(&tm, &text);
+        let ok = tm.run(&["arrive", "lounge"]);
+        assert_eq!(ok.code, 0, "arrive, fixed: {}{}", ok.stdout, ok.stderr);
+        assert!(tm.events().contains(&"arrive".to_string()), "arrive did not log once fixed");
+        assert_eq!(tm.state()["arrival"], "09:00");
+    }
+
+    // (b) `energy`: a non-zero delta replans (§8.5), which is the refused call.
+    {
+        let tm = Tm::new();
+        let text = break_tree(&tm);
+        let before = tm.events();
+        let out = tm.run(&["energy", "3"]);
+        assert_eq!(out.code, 1, "energy: {}{}", out.stdout, out.stderr);
+        assert!(out.stderr.contains("danglingParent"), "energy: {}", out.stderr);
+        assert_eq!(tm.events(), before, "energy logged on a refused tree");
+
+        restore_tree(&tm, &text);
+        let ok = tm.run(&["energy", "3"]);
+        assert_eq!(ok.code, 0, "energy, fixed: {}{}", ok.stdout, ok.stderr);
+        assert!(tm.events().contains(&"energy".to_string()), "energy did not log once fixed");
+    }
+
+    // (c) `resume`: the worst shape — no log line, but the interruption was
+    // cleared out of `state.json` by a command that then failed.
+    {
+        let tm = Tm::new();
+        tm.ok(&["arrive", "lounge"]);
+        tm.ok(&["start", "^t3"]);
+        tm.ok(&["interrupt"]);
+        assert!(!tm.state()["interrupt"].is_null(), "the setup left no interruption");
+        let state_before = tm.read(".tm/state.json");
+        let events_before = tm.events();
+
+        let text = break_tree(&tm);
+        let out = tm.run(&["resume"]);
+        assert_eq!(out.code, 1, "resume: {}{}", out.stdout, out.stderr);
+        assert!(out.stderr.contains("danglingParent"), "resume: {}", out.stderr);
+        assert_eq!(tm.events(), events_before, "resume logged on a refused tree");
+        assert_eq!(
+            tm.read(".tm/state.json"),
+            state_before,
+            "resume rewrote state.json on a refused tree — the interruption was lost"
+        );
+
+        restore_tree(&tm, &text);
+        let ok = tm.run(&["resume"]);
+        assert_eq!(ok.code, 0, "resume, fixed: {}{}", ok.stdout, ok.stderr);
+        assert!(tm.events().contains(&"resume".to_string()), "resume did not log once fixed");
+        assert!(tm.state()["interrupt"].is_null(), "the interruption is closed once fixed");
+    }
+}

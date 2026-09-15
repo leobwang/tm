@@ -367,12 +367,32 @@ pub struct ArrivalPlan {
     pub blocks: Vec<ArrivalBlock>,
 }
 
+/// **The pre-flight the three verbs that write before they plan owe** (gap
+/// 115). `arrive`, `resume` and `energy` write `state.json` and the log
+/// *before* the planning call that sends the tree to the kernel, so until this
+/// a tree the kernel refuses was found only *after* the write. Driven at
+/// `89ead46` on a `plan-basic` copy whose `^m1` carries a typo'd `@parent`:
+/// `arrive` exited 1 having appended its `arrive` line *and* written
+/// `state.json`; `energy 3` exited 1 having appended its `energy` line; and
+/// `resume` exited 1 having cleared the interruption out of `state.json` —
+/// losing it outright, since no log line recorded it either.
+///
+/// [`super::kernel_capacity::check_plan`] covers the *configured* values
+/// (parity P26). This adds the **tree**, through the one no-command kernel
+/// call [`Ctx`]'s `resolve_timeouts` already uses for the same purpose:
+/// [`super::kernel_bridge::apply`] writes a document only when the kernel
+/// changed it, and a request with no commands changes none — so the check
+/// itself writes nothing, on a sound tree or a refused one.
+fn preflight(ctx: &Ctx) -> Result<(), CliError> {
+    super::kernel_capacity::check_plan(ctx)?;
+    super::kernel_bridge::apply(ctx, &[])?;
+    Ok(())
+}
+
 /// `tm arrive [lounge|home|<name>]`.
 pub fn arrive(g: &Globals, args: &super::ArriveArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
-    // Stage 5 D10 L8: this verb plans after it writes, so a configured value the
-    // kernel cannot read (parity P26) is refused before anything is written.
-    super::kernel_capacity::check_plan(&ctx)?;
+    preflight(&ctx)?;
     let rec = Recorder::start(&ctx, "arrive")?;
     let loc = args
         .loc
@@ -1025,9 +1045,7 @@ pub fn interrupt(g: &Globals) -> Result<i32, CliError> {
 /// `tm resume`.
 pub fn resume(g: &Globals) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
-    // Stage 5 D10 L8: this verb plans after it writes, so a configured value the
-    // kernel cannot read (parity P26) is refused before anything is written.
-    super::kernel_capacity::check_plan(&ctx)?;
+    preflight(&ctx)?;
     let Some(int) = ctx.state.interrupt.clone() else {
         return Err(CliError::msg("nothing to resume"));
     };
@@ -1178,9 +1196,7 @@ pub fn energy(g: &Globals, args: &super::EnergyArgs) -> Result<i32, CliError> {
         return Err(CliError::msg("energy is 0–5"));
     }
     let mut ctx = Ctx::load(g, true)?;
-    // Stage 5 D10 L8: this verb plans after it writes, so a configured value the
-    // kernel cannot read (parity P26) is refused before anything is written.
-    super::kernel_capacity::check_plan(&ctx)?;
+    preflight(&ctx)?;
     let rec = Recorder::start(&ctx, "energy")?;
     let at: NaiveTime = match &args.at {
         Some(t) => parse_time(t)?,
