@@ -62,6 +62,14 @@ use tm_core::emit;
 use tm_core::energy::{self, Model, Posterior};
 use tm_core::horizon::MIN_REMAINING_MIN;
 use tm_core::log::{Log, Replay};
+
+/// `PlanInput::log` until R7 deletes the field: the planner reads nothing from
+/// it (stage 5 D9 R4 removed `App::log`; every log fact the TUI shows comes
+/// from [`App::replay`]).
+static NO_LOG: Log = Log {
+    entries: Vec::new(),
+    warnings: Vec::new(),
+};
 use tm_core::model::{Id, IsoWeek, Loc, Recur};
 use tm_core::planner::{self, DayPlan, PlanInput, PlanOverrides, SegFlags, SegKind, Segment};
 use tm_core::priority::{Candidate, Prio, PrioClass};
@@ -495,9 +503,7 @@ pub struct AppData {
     pub state: RuntimeState,
     /// The parsed tree (§6).
     pub tree: Tree,
-    /// `.tm/log.jsonl` (§10.1).
-    pub log: Log,
-    /// Its replay.
+    /// The replay of `.tm/log.jsonl` (§10.1).
     pub replay: Replay,
     /// `.tm/arrival_plan.json` — the block starts as `tm arrive` recorded
     /// them (§12.1's ghost row). Empty when the day has no record yet.
@@ -525,9 +531,7 @@ pub struct App {
     pub state: RuntimeState,
     /// §6.
     pub tree: Tree,
-    /// §10.1.
-    pub log: Log,
-    /// The replay of the log.
+    /// The replay of the log (§10.1).
     pub replay: Replay,
     /// The plan as `tm arrive` recorded it (`.tm/arrival_plan.json`).
     pub arrival: Vec<ArrivalBlock>,
@@ -626,7 +630,6 @@ impl App {
             model: data.model,
             state: data.state,
             tree: data.tree,
-            log: data.log,
             replay: data.replay,
             arrival: data.arrival,
             files: data.files,
@@ -677,7 +680,7 @@ impl App {
     fn input(&self) -> PlanInput<'_> {
         PlanInput::new(
             &self.tree,
-            &self.log,
+            &NO_LOG,
             &self.replay,
             &self.cfg,
             &self.model,
@@ -1127,7 +1130,6 @@ impl App {
         self.model = data.model;
         self.state = data.state;
         self.tree = data.tree;
-        self.log = data.log;
         self.replay = data.replay;
         self.arrival = data.arrival;
         self.files = data.files;
@@ -1245,7 +1247,7 @@ impl App {
         let alt = planner::plan(
             &PlanInput::new(
                 &self.tree,
-                &self.log,
+                &NO_LOG,
                 &self.replay,
                 &self.cfg,
                 &self.model,
@@ -1359,10 +1361,10 @@ impl App {
     /// start (there is no gap before the day begins).
     fn idle_since(&self) -> Option<DateTime<Tz>> {
         let last = self
-            .log
-            .iter_day(self.today, self.cfg.tz)
-            .map(|e| e.t.with_timezone(&self.cfg.tz))
-            .max();
+            .replay
+            .seam(self.today)
+            .and_then(|s| s.last_t)
+            .map(|t| t.with_timezone(&self.cfg.tz));
         let start = self.plan.window.0;
         match last {
             Some(t) if t > start => Some(t),

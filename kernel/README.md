@@ -12670,3 +12670,58 @@ No kernel change; no recursion over a wire list.
 | `cargo test --workspace` | **1026 passed / 0 failed / 2 ignored across 70 binaries** |
 | FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
 | `cli_latency.rs` | green: first verb 637.7 / 627.7 / 632.8 ms (226 files, 2,959 lines), later verb 55.8 / 50.7 / 60.8 ms |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5 D9 R4 (design §14.3 row R4, §8.4), on
+     rebuild-on-lean after bad6521.  Takes no gap, cheat or parity number.
+     =========================================================================== -->
+
+## Stage 5 D9 R4, 2026-09-14: the replay knows each day's latest line — the TUI drops its copy of the log
+
+**What changed.** `DaySeam` gains `last_t`: the maximum `t` by instant over the day's surviving
+entries of every kind (`plan`, `note` and unknown events included; a tie keeps the later line, and
+the TUI converts to `cfg.tz`, where equal instants are equal values). `tui/app.rs`'s `idle_since`
+reads `self.replay.seam(self.today)`'s `last_t` instead of `self.log.iter_day(..).max()`.
+**`AppData.log` and `App.log` are removed**; `tui/mod.rs`'s `data_of` no longer clones `ctx.log`,
+and `tm/tests/tui_common/mod.rs`'s `app_with` no longer moves the `Log` into `AppData` (it still takes
+one and builds the replay from it; no assertion changed).
+
+**Equivalence test (run, then deleted with the old read).** A unit test in `tui/app.rs` compared the
+old expression, verbatim, with `seam(d).last_t` in `cfg.tz` for every attributed day ± 1 in
+`America/Chicago`, over the four corpus logs, loggen's 1-month logs at both rates, and a crafted log
+(a `note` and a `plan` written out of time order, one instant written with two offsets, an unknown
+event, and a day holding only a `note`): **109 days equal, 94 with a last `t`; 0 differences.** The
+crafted day 2026-09-09 has a seam with `last_t` and **no `DayReplay`**, the case R1's disagreement
+is about: a `DayReplay.last_t` would have answered no gap there.
+
+**Existing suites.** No assertion changed: `tui_queue_capture` 9, `tui_queue_keys` 8,
+`tui_queue_reorder` 7, `tui_queue_screens` 22, `tui_screen_router` 14, `tui_today_daybar` 20,
+`tui_today_ghost` 15, `tui_today_keys` 34, `tui_today_prompts` 30, `tui_today_render` 28 (187), all
+passed. `log_replay__three_days_replay.snap` gains the three days' `last_t` (3 lines added, 0
+removed).
+
+### Recorded disagreements between the design and the repo
+
+1. **`PlanInput.log` outlives `App.log` by three steps.** Row R4 removes `App.log`; row R7 deletes
+   `PlanInput.log`. The TUI passed `&self.log` to `PlanInput::new` in `App::input` and in the
+   overtime replan (`app.rs` `overtime_drops` path). Until R7 it passes a `static NO_LOG: Log` (no
+   entries, no warnings), with a doc comment naming R7. The planner has no reader of `input.log`
+   (`rg '\blog\b' tm-core/src/planner.rs`: the field, its constructor and doc comments only), so no
+   plan changes, which the 187 TUI tests and the planner suites confirm.
+
+**Goals discharged: none. Refuted: none. Added: none.** Burn-down **13 → 13**. **New theorems:
+none.** **Parity entries: none.** **Observable behaviour changes: none.** **Numbers taken: none.**
+No kernel change; no recursion over a wire list.
+
+**Re-measured** (main worktree, every command under the 30 GB cap):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.80 s; audit **2672**; corpus **29/37 and 4/5**; burn-down **13** |
+| `cargo test --workspace` | **1026 passed / 0 failed / 2 ignored across 70 binaries**, 0 compiler warnings |
+| FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
+| `cli_latency.rs` | green: first verb 632.4 / 627.7 / 631.8 ms (226 files, 2,959 lines), later verb 50.7 / 50.8 / 55.7 ms |
+
+**Phase R so far on this track:** R-audit, R1–R4 committed. **Owed next:** R5 (`Replay::view` rows
+and `tm log`), R6–R14 as §14.3 lists them, R11 under D14 (keep and route the unread fields). Gap 112
+gates W1 and is R13's to clear.

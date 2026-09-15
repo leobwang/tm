@@ -1522,6 +1522,11 @@ pub struct DaySeam {
     /// in file order. `day.rs`'s `idle_min_since` pairs them into the minutes
     /// a running block was not worked.
     pub idle_marks: Vec<IdleMark>,
+    /// The latest `t` (by instant) over the day's surviving entries of any
+    /// kind, `plan`, `note` and unknown events included; the TUI's idle
+    /// prompt measures the gap from it. Not file order: see
+    /// [`Replay::last_effective_t`].
+    pub last_t: Option<DateTime<FixedOffset>>,
 }
 
 /// One mark of [`DaySeam::idle_marks`]: the entry's kind and `t`, and a
@@ -2060,6 +2065,9 @@ impl Machine {
         self.out.last_effective_t = Some(t);
         if self.in_range(day) {
             let seam = self.out.seams.entry(day).or_default();
+            if seam.last_t.is_none_or(|l| t >= l) {
+                seam.last_t = Some(t);
+            }
             match &e.ev {
                 Event::Break { actual_min, .. } => {
                     seam.since_break = Some(t + Duration::minutes(i64::from(actual_min.unwrap_or(0))));

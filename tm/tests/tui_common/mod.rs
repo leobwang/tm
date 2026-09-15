@@ -532,7 +532,6 @@ pub fn app_with(now: DateTime<Tz>, state: RuntimeState, log: Log) -> App {
         model: Default::default(),
         state,
         tree: tree(&cfg),
-        log,
         replay,
         arrival: arrival(),
         files: plan_files(),

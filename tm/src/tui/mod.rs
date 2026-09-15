@@ -176,7 +176,6 @@ fn data_of(ctx: &Ctx) -> AppData {
         model: ctx.model.clone(),
         state: ctx.state.clone(),
         tree: ctx.tree.clone(),
-        log: ctx.log.clone(),
         replay: ctx.replay.clone(),
         arrival: ghost::blocks(ctx),
         files: ctx.files.clone(),
