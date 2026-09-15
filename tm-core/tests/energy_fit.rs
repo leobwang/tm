@@ -4,6 +4,10 @@
 //! `(n0·prior + Σ wᵢ xᵢ) / (n0 + Σ wᵢ)`, `wᵢ = exp(−age/decay) × went`, so
 //! the test states the formula rather than the implementation.
 
+#[path = "../../tm/tests/support/replay.rs"]
+#[allow(dead_code)]
+mod chokepoint;
+
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, TimeZone, Weekday};
@@ -12,7 +16,7 @@ use tm_core::energy::{
     self, arrivals_from_replay, calibration, compare, estimate_calibration, fit, fit_replay,
     ArrivalObs, FitInput, Model, DEFAULT_TAG,
 };
-use tm_core::log::{DurationObs, EnergyObs, Log, Replay};
+use tm_core::log::{DurationObs, EnergyObs, Replay};
 
 fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
@@ -24,9 +28,10 @@ fn today() -> NaiveDate {
 
 fn setup() -> (Config, Replay) {
     let cfg = Config::load(fixtures().join("plan-basic/config.toml")).unwrap();
-    let log = Log::read(fixtures().join("logs/energy-14d.jsonl")).unwrap();
-    assert!(log.warnings.is_empty(), "{:?}", log.warnings);
-    let replay = log.replay(None, cfg.tz);
+    let text = std::fs::read_to_string(fixtures().join("logs/energy-14d.jsonl")).unwrap();
+    let warnings = chokepoint::warning_lines_of_text(&text);
+    assert!(warnings.is_empty(), "{:?}", warnings);
+    let replay = chokepoint::replay_of_text(&text, cfg.tz);
     (cfg, replay)
 }
 

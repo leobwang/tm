@@ -6,6 +6,10 @@
 //! crosses it **byte for byte**, apart from the tokens the verb is defined to
 //! change (the state, `est:`, `demoted:`).
 
+#[path = "../../tm/tests/support/replay.rs"]
+#[allow(dead_code)]
+mod chokepoint;
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -13,7 +17,6 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, FixedOffset};
 use tempfile::TempDir;
 use tm_core::horizon::{demote, drop_item, move_item, rank, readopt, Ctx, HorizonError};
-use tm_core::log::Log;
 use tm_core::model::{Horizon, Id, IsoWeek, Stamp, State, YearMonth};
 use tm_core::store::{FsStore, MemStore, PlanFiles, Store};
 use tm_core::tree::Tree;
@@ -92,16 +95,14 @@ fn snapshot(store: &FsStore) -> (PlanFiles, Tree) {
 
 fn log_events(store: &FsStore) -> Vec<(String, String)> {
     let path = store.abs_path(".tm/log.jsonl").unwrap();
-    Log::read(path)
-        .unwrap()
-        .entries
-        .iter()
-        .map(|e| {
-            (
-                e.ev.name().to_string(),
-                e.ev.primary_id().unwrap_or_default().to_string(),
-            )
-        })
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => panic!("{}: {e}", path.display()),
+    };
+    chokepoint::headers_of_text(&text)
+        .into_iter()
+        .map(|(tag, id)| (tag, id.unwrap_or_default()))
         .collect()
 }
 

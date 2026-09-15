@@ -1168,15 +1168,13 @@ fn end_of_day(date: NaiveDate) -> NaiveDateTime {
 mod tests {
     use super::*;
     use crate::grammar::{parse_line, ParseCtx};
-    use crate::log::Log;
+
+    // The instance tests that need a replay moved to
+    // `tests/recur_regressions.rs` (`from_unit_tests`) at step R12: a replay is
+    // read through the test chokepoint, which `src/` cannot reach.
 
     fn cfg() -> Config {
         Config::default()
-    }
-
-    fn item(text: &str) -> Item {
-        let ctx = ParseCtx::new("routines.md", cfg().block_min());
-        parse_line(text, &ctx).expect("fixture line parses")
     }
 
     fn backlog_item(text: &str) -> Item {
@@ -1184,131 +1182,8 @@ mod tests {
         parse_line(text, &ctx).expect("fixture line parses")
     }
 
-    fn replay_of(jsonl: &str) -> Replay {
-        Log::parse(jsonl).replay(None, cfg().tz)
-    }
-
     fn date(s: &str) -> NaiveDate {
         crate::model::parse_date(s).expect("date")
-    }
-
-    fn dt(s: &str) -> NaiveDateTime {
-        crate::model::parse_datetime(s).expect("datetime")
-    }
-
-    #[test]
-    fn daily_window_expands_over_the_range() {
-        let it = item("- lunch win:11:30-13:30 dur:30m every:day");
-        let r = replay_of("");
-        let v = instances(
-            &it,
-            (date("2026-09-07"), date("2026-09-09")),
-            date("2026-09-07"),
-            &r,
-            &cfg(),
-        );
-        assert_eq!(v.len(), 3);
-        assert_eq!(v[0].key, InstanceKey::Date(date("2026-09-07")));
-        assert_eq!(v[0].window, Some((dt("2026-09-07T11:30"), dt("2026-09-07T13:30"))));
-        assert_eq!(v[0].due, Some(dt("2026-09-07T13:30")));
-        assert!(v.iter().all(|i| i.status == InstanceStatus::Pending));
-    }
-
-    #[test]
-    fn overnight_window_runs_into_the_next_morning() {
-        let it = item("- sleep win:22:00-08:00 dur:8h30m every:day ci:0");
-        let r = replay_of("");
-        let v = instances(
-            &it,
-            (date("2026-09-07"), date("2026-09-07")),
-            date("2026-09-07"),
-            &r,
-            &cfg(),
-        );
-        assert_eq!(
-            v[0].window,
-            Some((dt("2026-09-07T22:00"), dt("2026-09-08T08:00")))
-        );
-    }
-
-    #[test]
-    fn monthly_clamps_to_the_month_length() {
-        let it = item("- bins win:07:00-09:00 dur:10m every:month:31");
-        let r = replay_of("");
-        let v = instances(
-            &it,
-            (date("2026-02-01"), date("2026-03-31")),
-            date("2026-02-01"),
-            &r,
-            &cfg(),
-        );
-        let keys: Vec<InstanceKey> = v.iter().map(|i| i.key).collect();
-        assert_eq!(
-            keys,
-            vec![
-                InstanceKey::Date(date("2026-02-28")),
-                InstanceKey::Date(date("2026-03-31")),
-            ]
-        );
-    }
-
-    #[test]
-    fn a_recurring_item_without_a_window_is_due_at_the_end_of_its_day() {
-        let it = backlog_item("- [ ] 2 30m Pay the water bill  every:month:1 ^w1");
-        let r = replay_of("");
-        let v = instances(
-            &it,
-            (date("2026-09-01"), date("2026-10-31")),
-            date("2026-09-07"),
-            &r,
-            &cfg(),
-        );
-        assert_eq!(v.len(), 2);
-        assert_eq!(v[0].due, Some(dt("2026-09-01T23:59")));
-        assert_eq!(v[0].window, None);
-        assert_eq!(v[0].status, InstanceStatus::Pending, "on-miss:persist");
-        // No window, so it is never a "placed before any task" instance.
-        assert!(!is_mandatory(
-            &it,
-            &v[0],
-            date("2026-09-07"),
-            dt("2026-09-07T10:42")
-        ));
-    }
-
-    #[test]
-    fn missing_expire_window_expires_and_persist_carries() {
-        let expire = item("- lunch win:11:30-13:30 dur:30m every:day");
-        let persist = item("- laundry win:09:00-21:00 dur:30m every:day on-miss:persist");
-        let next = item("- stretch win:07:00-09:00 dur:15m every:day on-miss:next");
-        let r = replay_of("");
-        let range = (date("2026-09-05"), date("2026-09-05"));
-        let today = date("2026-09-07");
-        assert_eq!(
-            instances(&expire, range, today, &r, &cfg())[0].status,
-            InstanceStatus::Expired
-        );
-        assert_eq!(
-            instances(&persist, range, today, &r, &cfg())[0].status,
-            InstanceStatus::Pending
-        );
-        assert_eq!(
-            instances(&next, range, today, &r, &cfg())[0].status,
-            InstanceStatus::Skipped
-        );
-    }
-
-    #[test]
-    fn waiting_item_has_no_pending_instance_until_the_timeout() {
-        let it = backlog_item("- [?] 2 15m Ask about the reading group  on-event:reply/7d waiting:2026-09-05 ^a4");
-        let r = replay_of("");
-        let range = (date("2026-09-07"), date("2026-09-07"));
-        assert!(instances(&it, range, date("2026-09-07"), &r, &cfg()).is_empty());
-        let later = (date("2026-09-13"), date("2026-09-13"));
-        assert_eq!(
-            instances(&it, later, date("2026-09-13"), &r, &cfg()).len(),
-            1
-        );
     }
 
     #[test]

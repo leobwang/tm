@@ -1,7 +1,8 @@
 //! Serialization contract for `.tm/log.jsonl` (tm-spec-v1.md §10.1): every
 //! example line's key set round-trips, every other event kind has the field
 //! names of the spec, unknown events survive losslessly, malformed lines are
-//! tolerated, and the fixture log is snapshotted as written back.
+//! tolerated. (The fixture log's byte-identical write-back and its snapshot test the
+//! reader too, so step R12 moved them beside it, into `log.rs`'s `reader_tests`.)
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -296,25 +297,6 @@ fn malformed_lines_are_warnings_not_errors() {
     // Missing file → empty log, no error.
     let missing = Log::read(fixture("does-not-exist.jsonl")).unwrap();
     assert!(missing.is_empty() && missing.warnings.is_empty());
-}
-
-#[test]
-fn fixture_log_serializes_back_byte_identically_and_is_snapshotted() {
-    let path = fixture("three-days.jsonl");
-    let text = std::fs::read_to_string(&path).unwrap();
-    let log = Log::read(&path).unwrap();
-    assert!(log.warnings.is_empty(), "{:?}", log.warnings);
-    assert_eq!(log.len(), 74);
-    let back = log.to_jsonl().unwrap();
-    assert_eq!(back, text, "the fixture is written in canonical form");
-    assert_eq!(Log::parse(&back), log);
-    insta::assert_snapshot!("three_days_jsonl", back);
-    // Every kind appears in the fixture (plus one unknown), so the snapshot
-    // shows the field names of each.
-    let mut kinds: BTreeSet<&str> = log.entries.iter().map(|e| e.ev.name()).collect();
-    assert!(kinds.remove("mood"));
-    let all: BTreeSet<&str> = EVENT_NAMES.iter().copied().collect();
-    assert_eq!(kinds, all);
 }
 
 #[test]

@@ -166,12 +166,12 @@ fn the_elapsed_minutes_are_worked_minutes_not_wall_clock() {
         ],
     );
     let at = |h, m| tui_common::at(&cfg, h, m);
-    let app = tui_common::app_with(at(12, 51), tui_common::state(), paused.clone());
+    let app = tui_common::app_with_log_text(at(12, 51), tui_common::state(), &paused);
     assert_eq!(app.active_elapsed_min(), Some(179), "199 wall, 20 paused");
     assert!(app.overtime_due().is_none(), "not yet 192 worked minutes");
     // 09:32 → 11:00 is 88 worked; 192 is reached 104 minutes after the
     // unpause, at 13:04 — twenty minutes later than the wall clock would say.
-    let app = tui_common::app_with(at(13, 4), tui_common::state(), paused);
+    let app = tui_common::app_with_log_text(at(13, 4), tui_common::state(), &paused);
     let over = app.overtime_due().expect("192 worked minutes by 13:04");
     assert_eq!(over.elapsed_min, 192);
 }
@@ -199,7 +199,7 @@ fn a_block_started_before_midnight_still_goes_overtime() {
         .single()
         .expect("unambiguous");
     // An empty log: the state is all there is to go on.
-    let app = tui_common::app_with(midnight, state, tm_core::log::Log::new());
+    let app = tui_common::app_with_log_text(midnight, state, "");
     assert_eq!(app.active_elapsed_min(), Some(60));
     assert!(app.overtime_due().is_some(), "an hour into a one-hour block");
 }
@@ -221,16 +221,16 @@ fn a_break_that_overran_still_raises_the_idle_prompt() {
     if let Some(active) = state.active.as_mut() {
         active.paused = true;
     }
-    let app = tui_common::app_with(tui_common::at(&cfg, 12, 25), state.clone(), log_of(&cfg));
+    let app = tui_common::app_with_log_text(tui_common::at(&cfg, 12, 25), state.clone(), &log_of(&cfg));
     assert!(app.idle_due().is_none(), "five minutes over is not idle yet");
-    let app = tui_common::app_with(tui_common::at(&cfg, 12, 45), state, log_of(&cfg));
+    let app = tui_common::app_with_log_text(tui_common::at(&cfg, 12, 45), state, &log_of(&cfg));
     assert!(app.overtime_due().is_none(), "the timer is paused");
     let idle = app.idle_due().expect("25 minutes past a 20m break");
     assert_eq!(idle.minutes, 25);
 }
 
 /// The fixture log (a second copy, for tests that build two apps).
-fn log_of(cfg: &tm_core::config::Config) -> tm_core::log::Log {
+fn log_of(cfg: &tm_core::config::Config) -> String {
     tui_common::log(cfg)
 }
 

@@ -23,12 +23,16 @@
 
 #![allow(dead_code)]
 
+/// The test chokepoint (step R12): every replay here is read through it.
+#[path = "../../../tm/tests/support/replay.rs"]
+pub mod chokepoint;
+
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveTime, TimeZone};
 use chrono_tz::Tz;
 use tm_core::config::Config;
-use tm_core::log::{self, Event, Log, LogEntry, Replay};
+use tm_core::log::{self, Event, LogEntry, Replay};
 
 /// The zone every timestamp in the fixture is written in.
 pub const TZ: Tz = chrono_tz::America::Chicago;
@@ -732,16 +736,17 @@ pub fn config() -> Config {
     Config::load(fixtures().join("plan-basic/config.toml")).expect("config loads")
 }
 
-/// The committed fixture, parsed.
-pub fn read_log() -> Log {
-    let log = Log::read(fixture_path()).expect("fixture reads");
-    assert!(log.warnings.is_empty(), "{:?}", log.warnings);
-    log
+/// The committed fixture's text; it has no malformed line.
+pub fn log_text() -> String {
+    let text = std::fs::read_to_string(fixture_path()).expect("fixture reads");
+    let warnings = chokepoint::warning_lines_of_text(&text);
+    assert!(warnings.is_empty(), "{:?}", warnings);
+    text
 }
 
 /// The committed fixture, replayed over every day.
 pub fn replay() -> Replay {
-    read_log().replay(None, TZ)
+    chokepoint::replay_of_text(&log_text(), TZ)
 }
 
 /// The month file the week and month reviews are read against: three

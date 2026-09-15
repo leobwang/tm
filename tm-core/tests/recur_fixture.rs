@@ -2,13 +2,17 @@
 //! recurrence, expanded over 2026-09-01..2026-09-21 with the fixture's two
 //! weeks of log history replayed.
 
+#[path = "../../tm/tests/support/replay.rs"]
+#[allow(dead_code)]
+mod chokepoint;
+
 use std::path::{Path, PathBuf};
 
 use chrono::{NaiveDate, NaiveDateTime};
 use serde::Serialize;
 use tm_core::config::Config;
 use tm_core::grammar::{parse_file, ParsedFile};
-use tm_core::log::{Log, Replay};
+use tm_core::log::Replay;
 use tm_core::model::{Instance, IsoWeek, Recur};
 use tm_core::recur::{self, InstanceInfo};
 use tm_core::tree::Tree;
@@ -47,9 +51,10 @@ fn load() -> (Tree, Config, Replay) {
             f.all_problems()
         );
     }
-    let log = Log::read(fixture_dir().join(".tm/log.jsonl")).unwrap();
-    assert!(log.warnings.is_empty(), "log warnings: {:?}", log.warnings);
-    let replay = log.replay(None, cfg.tz);
+    let log_text = std::fs::read_to_string(fixture_dir().join(".tm/log.jsonl")).unwrap();
+    let log_warnings = chokepoint::warning_lines_of_text(&log_text);
+    assert!(log_warnings.is_empty(), "log warnings: {:?}", log_warnings);
+    let replay = chokepoint::replay_of_text(&log_text, cfg.tz);
     assert!(
         replay.warnings.is_empty(),
         "replay warnings: {:?}",

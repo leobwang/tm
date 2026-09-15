@@ -8,6 +8,10 @@
 //! stretch between two breaks, an evening that reaches the wind-down, and the
 //! diagnostics nothing else asserts.
 
+#[path = "../../tm/tests/support/replay.rs"]
+#[allow(dead_code)]
+mod chokepoint;
+
 mod planner_common;
 
 use chrono::{DateTime, Duration};
@@ -17,7 +21,7 @@ use planner_common::{
 };
 use tm_core::config::Config;
 use tm_core::energy::Model;
-use tm_core::log::{self, Log, Replay};
+use tm_core::log::Replay;
 use tm_core::model::Id;
 use tm_core::planner::{self, DayPlan, PlanInput, SegKind, Segment};
 use tm_core::store::{ActiveBlock, InterruptState, RuntimeState};
@@ -47,9 +51,9 @@ impl World {
             &cfg,
         );
         assert!(tree.problems().is_empty(), "{:?}", tree.problems());
-        let log = Log::parse(log_text);
-        assert!(log.warnings.is_empty(), "{:?}", log.warnings);
-        let replay = log::replay(&log.entries, None, cfg.tz);
+        let warnings = chokepoint::warning_lines_of_text(log_text);
+        assert!(warnings.is_empty(), "{:?}", warnings);
+        let replay = chokepoint::replay_of_text(log_text, cfg.tz);
         World {
             tree,
             cfg,

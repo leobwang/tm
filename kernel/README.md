@@ -13314,3 +13314,127 @@ none.** No kernel change; no recursion over a wire list.
 **Phase R on this track:** R-audit, R1–R11 committed. **Owed next:** R12 (the test chokepoints; R8's
 disagreement 2 still open), R13 (scopes; clears gap 112, which gates W1; every scope must keep the
 `PortedFacts` fields), R14 (latency with history).
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5 D9 R12 (design §14.3 row R12, D9-18, §12's
+     tests row), on rebuild-on-lean after 1716aaa.  Takes no gap, cheat or
+     parity number.
+     =========================================================================== -->
+
+## Stage 5 D9 R12, 2026-09-14: every test reads its log through one door — the test chokepoint
+
+**What changed.**
+- **`tm/tests/support/replay.rs` (new): the test chokepoint.** `replay_of_text(text, tz) -> Replay` is
+  the whole reader, the tests' twin of `Ctx::replay_of`. Beside it, each built only from the text:
+  `text_of(entries)` (the Rust writer's lines, each ending in `\n`), `replay_of_entries(entries, tz)`
+  (= `replay_of_text(&text_of(entries), tz)`), `warning_lines_of_text(text)` (the malformed lines, by
+  number) and `headers_of_text(text)` (`(tag, primary id)` per entry, the kernel's headers). Both
+  crates include the file by `#[path]`. Before the switch its body is the in-tree reader; at S it calls
+  the kernel and no caller changes.
+- **18 tm-core test files call it (35 calls: 17 `replay_of_text`, 8 `replay_of_entries`, 6
+  `warning_lines_of_text`, 2 `headers_of_text`, 2 `text_of`)**: `energy_fit`, `horizon_close`,
+  `horizon_moves`, `log_ported_facts`, `log_regressions`, `log_replay`, `planner_common/mod.rs`,
+  `planner_invariants`, `planner_regressions`, `priority_plan_basic`, `priority_regressions`,
+  `priority_rules`, `recur_cases`, `recur_fixture`, `recur_regressions`, `review_common/mod.rs`,
+  `review_day`, `review_edges`. `Log::read(..).replay`, `Log::parse(..).replay`,
+  `Log::from_entries(..).replay` and `log::replay(&entries, ..)` are gone from `tests/`. A
+  `log.warnings.is_empty()` check became `warning_lines_of_text(&text).is_empty()`; `recur_cases`'
+  `log.push(entry)` became the text plus `text_of(&[entry])`; `horizon_*`'s `log_events` read
+  `headers_of_text`. `planner_common::Fixture` loses its unread `log: Log` field, and
+  `review_common::read_log() -> Log` became `log_text() -> String`.
+- **tm:** `tui_common::app_with` became **`app_with_log_text(now, state, &str)`**; `tui_common::log`
+  and `log_plus` return the log's text (`log_entries` keeps the entries); `tui_today_prompts.rs` passes
+  text (`""` for the empty log). `tui_queue_common::world_with` calls `replay_of_entries`.
+- **Tests of the reader's own internals moved beside it, verbatim**, into a new `#[cfg(test)] mod
+  reader_tests` in `tm-core/src/log.rs`: `undo_cancels_targets_and_itself` (the mask,
+  `compensating_undo`), `days_run_wake_to_wake` (`day_index`, `iter_day`, `iter_range`) and
+  `range_keeps_only_the_requested_days` from `log_replay.rs`, and
+  `fixture_log_serializes_back_byte_identically_and_is_snapshotted` from `log_serde.rs`. Its snapshot
+  moved with it (`tests/snapshots/log_serde__three_days_jsonl.snap` →
+  `src/snapshots/tm_core__log__reader_tests__three_days_jsonl.snap`; only the `source:` header line
+  changed). They test what S deletes, and they go with it.
+- **The six instance tests of `src/recur.rs`'s unit module that read `Log::parse("")`** moved verbatim to
+  `tests/recur_regressions.rs` as `mod from_unit_tests` (`src/` cannot reach the chokepoint, and at S
+  the kernel). `edits_for_the_waiting_transitions` needs no replay and stays.
+- **R8's disagreement 2 is settled:** `recur_cases.rs` parses its two constant instants with
+  `DateTime::parse_from_rfc3339`, and `kernel_log_grammar.rs` stays as it is (disagreement 1 below).
+
+**Equivalence test (run, then deleted with the old call sites in this commit).**
+(a) A test `tm-core/tests/r12_equivalence.rs` compared, over the four corpus logs and loggen's 1-month
+logs at both rates, in `America/Chicago`, `Pacific/Auckland` and `UTC`: `Log::read(path).replay` with
+`replay_of_text` (facts, view rows, line count); `log::replay(&entries)` and
+`Log::from_entries(entries).replay` with `replay_of_entries` (facts, rows, line count); `Log::push` of a
+mid-log entry with the text plus `text_of`; the empty log with `replay_of_text("")`; and, per log, the
+warnings' lines and the entries' `(name, primary_id)` with the two new helpers. **18 (log, zone) pairs,
+10,341 view rows and 10,341 entries written and read back: 0 differences.** (b) For the run,
+`replay_of_entries` itself also computed `Log::from_entries(entries).replay` and asserted equal facts,
+rows and line count. The whole workspace suite passed through it: **104 calls, 0 differences.**
+(c) `planner_common` now reads the fixture's `.tm/log.jsonl` straight from disk instead of through its
+`MemStore`. A temporary assertion showed equal text on all 9 loads (`plan-basic` absent = empty,
+`plan-home-day` 1,467 bytes, `plan-recur` 7,805, `plan-travel-day` 1,454).
+
+**Test counts, before (`1716aaa`) and after, per binary where they moved.** Workspace **1038 passed / 0
+failed / 2 ignored across 71 binaries**, both times. `log_replay` 7 → 4, `log_serde` 7 → 6, tm-core unit
+tests 153 → 151 (−6 recur, +4 `reader_tests`), `recur_regressions` 11 → 17. Every other binary is
+unchanged. No assertion changed. No snapshot changed except the moved file's `source:` line.
+
+### The one-reader grep, run on this commit's tree
+
+`grep -rn 'LOG_PATH\|Log::parse\|Log::new\|iter_day\|effective()\|day_index(\|undo_mask\|parse_timestamp' tm tm-core --include=*.rs`
+gives **63 lines** (67 at R8). Outside `tm-core/src/log.rs` (41 lines, all the reader, its docs and its
+unit tests, `reader_tests` included), they are:
+
+| file | hits | what it is |
+|---|---|---|
+| `tm/src/cli/ctx.rs` | 8 | **the chokepoint** (`replay_of`, its import and doc) and **the writer** (`append_entry`); lines 637 and 640 are R11's unit test of the chokepoint, in the chokepoint's own file |
+| `tm/tests/support/replay.rs` | 3 | **the test chokepoint** |
+| `tm-core/src/horizon.rs` | 2 | the second writer (R8 disagreement 3) |
+| `tm-core/src/store.rs` | 2 | the constant and its doc line |
+| `tm/tests/kernel_log_grammar.rs` | 7 | B4's T1–T3, the kernel-against-fork differential (disagreement 1) |
+
+**No consumer test file is listed.** The one test file left is the differential.
+
+### Recorded disagreements between the design and the repo
+
+1. **`kernel_log_grammar.rs` stays in the grep.** The row says the grep lists no test file. T1 compares
+   the kernel's per-line verdict with the fork's `Log::parse_bytes` (entries and warning classes), T2
+   compares the writer's bytes and T3 compares against `parse_timestamp`. None of these is a replay, and the
+   chokepoint does not expose the fork's per-line `Event` values or its timestamp parser. Routing them
+   through a renamed wrapper would only hide the hit. At S the fork reader is deleted, so they must be
+   retargeted to fork point `4748911`'s oracle, as §14.6 item 4 does for T5. That is owed to S, by name.
+2. **The helper lives at `tm/tests/support/replay.rs`, and it has four siblings.** D9-18 names one
+   helper, `replay_of_text`. The file sits where S moves the tm-core suites, next to `loggen.rs`, and
+   tm-core includes it by path as it already does `loggen.rs`. The siblings are each a function of the
+   text alone, and each has a kernel counterpart at S: `text_of` is the writer (S2 replaces it),
+   `warning_lines_of_text` the response's `warnings`, `headers_of_text` its `headers`.
+3. **The row's "45 call sites" (counted at `4748911`) is 35 calls here**, in the same 18 files. R1–R11
+   removed sites, and the counting pattern is not recorded in the design. The files match the row one
+   for one, and `log_ported_facts.rs` (new at R11) takes the place of `review_week.rs`, which a count of
+   `replay(` at `4748911` matches only through its `fixture::replay()` calls: it reads the replay
+   through `review_common` and never built one itself.
+4. **`tui_queue_common/mod.rs` calls `replay_of_entries`, not `app_with_log_text`.** It builds a
+   priority world, not an `App`.
+5. **Tests of reader internals moved, not switched.** A replay cannot express the mask, the day index,
+   a ranged replay or a byte round trip of `Log`, so those four tests moved into `log.rs` and are deleted
+   with it at S. Still in `tests/`, outside the grep's pattern and owed to S by name:
+   `log_serde.rs` `unknown_events_*`, `malformed_lines_are_warnings_not_errors` and
+   `append_creates_the_directory_and_one_object_per_line` (`LogEntry::parse`, `Log::read`,
+   `Log::append`), and `log_regressions.rs` `read_tolerates_a_line_that_is_not_utf8`,
+   `append_repairs_a_missing_trailing_newline` and `two_wakes_on_one_date_do_not_stretch_the_day`
+   (`DayIndex::new`). §12 already says "`log_serde.rs` keeps writer tests only".
+
+**Goals discharged: none. Refuted: none. Added: none.** Burn-down **13 → 13**. **New theorems:
+none.** **Parity entries: none.** **Observable behaviour changes: none** (tests only). **Numbers
+taken: none.** No kernel change; no recursion over a wire list.
+
+**Re-measured** (main worktree, every command under the 30 GB cap):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.88 s; audit **2672**; corpus **29/37 and 4/5**; burn-down **13** |
+| `cargo test --workspace` | **1038 passed / 0 failed / 2 ignored across 71 binaries** (unchanged; per-binary moves above), 0 compiler warnings |
+| FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
+| `cli_latency.rs` | green: first verb 627.8 / 617.7 / 632.2 ms (226 files, 2,959 lines), later verb 50.7 / 60.9 / 60.7 ms |
+
+**Phase R on this track:** R-audit, R1–R12 committed. **Owed next:** R13 (scopes; clears gap 112),
+R14 (latency with history).

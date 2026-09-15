@@ -38,6 +38,10 @@
 //! `max:`-capped item is skipped by §8.2 step 5 for reasons the invariant is
 //! not about, and the Active item is excepted by §8.3 itself.
 
+#[path = "../../tm/tests/support/replay.rs"]
+#[allow(dead_code)]
+mod chokepoint;
+
 use std::collections::BTreeSet;
 
 use chrono::{DateTime, Duration, NaiveDate, NaiveTime};
@@ -46,7 +50,7 @@ use proptest::prelude::*;
 use tm_core::capacity::{self, local_dt};
 use tm_core::config::Config;
 use tm_core::energy::Model;
-use tm_core::log::{self, Log, Replay};
+use tm_core::log::Replay;
 use tm_core::model::{Id, Loc, Shape};
 use tm_core::planner::{self, DayPlan, PlanInput, SegKind, Segment};
 use tm_core::priority::{self, Candidate, Prio};
@@ -379,8 +383,7 @@ fn build(case: &Case) -> World {
         ],
         &cfg,
     );
-    let log = Log::parse(&log_text(case, tz));
-    let replay = log::replay(&log.entries, None, tz);
+    let replay = chokepoint::replay_of_text(&log_text(case, tz), tz);
     let now = case.now(tz);
     let arrival = NaiveTime::from_hms_opt(case.arrival_hour(), 0, 0).expect("time");
     let state = RuntimeState {

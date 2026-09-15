@@ -5,6 +5,10 @@
 //! consecutive days from Monday 2026-09-07 with `minutes` at energy `level`
 //! and nothing else), so every number in the assertions is computed by hand.
 
+#[path = "../../tm/tests/support/replay.rs"]
+#[allow(dead_code)]
+mod chokepoint;
+
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Duration, FixedOffset, NaiveDate, NaiveTime, TimeZone};
@@ -12,7 +16,7 @@ use chrono_tz::Tz;
 use tm_core::capacity::{local_dt, DayCapacity};
 use tm_core::config::Config;
 use tm_core::energy::Model;
-use tm_core::log::{self, Event, LogEntry, Replay};
+use tm_core::log::{Event, LogEntry, Replay};
 use tm_core::model::{Id, InstanceKey, Period};
 use tm_core::priority::{self, Candidate, Ineligible, Prio, PrioClass};
 use tm_core::tree::Tree;
@@ -53,7 +57,7 @@ fn empty() -> BTreeMap<Id, u8> {
 }
 
 fn no_log() -> Replay {
-    log::replay(&[], None, TZ)
+    chokepoint::replay_of_text("", TZ)
 }
 
 fn tree(files: &[(&str, &str)]) -> Tree {
@@ -374,7 +378,7 @@ fn routine_minutes_count_towards_a_max_cap() {
         .iter()
         .map(|d| routine_done("Factorio", d, 60, 20))
         .collect();
-    let replay = log::replay(&entries, None, TZ);
+    let replay = chokepoint::replay_of_entries(&entries, TZ);
     let key = Id::new("Factorio");
 
     // The week of 2026-09-07 is Mon 09-07..Sun 09-13; last week's four hours

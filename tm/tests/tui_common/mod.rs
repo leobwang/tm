@@ -16,13 +16,20 @@
 //!   timeline, so the snapshots do not depend on the planner's exact output.
 //!   [`log`] agrees with it: every block `day_plan` marks done is a `start`
 //!   and a `done` in the log, because §11's monitors are read off the log.
+//!   The log is **text**: every app reads it through the test chokepoint
+//!   (`tests/support/replay.rs`, step R12), as the binary reads
+//!   `.tm/log.jsonl` through `Ctx::replay_of`.
 //! * [`app`] — the two glued together, plus [`app_at`] for another instant,
-//!   [`app_with`] for another state or log, [`ghost_plan`] for §12.1's ghost
+//!   [`app_with_log_text`] for another state or log, [`ghost_plan`] for §12.1's ghost
 //!   row and [`arrival`] for the record it is really built from.
 //! * [`render`] / [`lines`] — a `TestBackend` frame, and a `Vec<Line>`, as
 //!   snapshot text.
 
 #![allow(dead_code)]
+
+/// The test chokepoint (step R12): the app's replay is read through it.
+#[path = "../support/replay.rs"]
+pub mod chokepoint;
 
 #[path = "../../src/tui/theme.rs"]
 pub mod theme;
@@ -65,7 +72,7 @@ use ratatui::text::Line;
 use ratatui::Terminal;
 
 use tm_core::config::Config;
-use tm_core::log::{Event, Log, LogEntry, Replay};
+use tm_core::log::{Event, LogEntry, Replay};
 use tm_core::model::{Dep, Id, InstanceKey};
 use tm_core::planner::{DayPlan, Diagnostics, SegFlags, SegKind, Segment};
 use tm_core::priority::{Prio, PrioClass};
@@ -153,10 +160,16 @@ pub fn plan_files() -> PlanFiles {
         .expect("fixture parses")
 }
 
-/// The day's log, as §4.3's `## Log` records it.
-pub fn log(cfg: &Config) -> Log {
+/// The day's log, as §4.3's `## Log` records it, as the text of
+/// `.tm/log.jsonl`.
+pub fn log(cfg: &Config) -> String {
+    chokepoint::text_of(&log_entries(cfg))
+}
+
+/// The entries of [`log`], in file order.
+pub fn log_entries(cfg: &Config) -> Vec<LogEntry> {
     let e = |h: u32, m: u32, ev: Event| LogEntry::new(stamp(cfg, h, m), ev);
-    Log::from_entries(vec![
+    vec![
         e(
             6,
             5,
@@ -256,7 +269,7 @@ pub fn log(cfg: &Config) -> Log {
                 since_break_min: 24,
             },
         ),
-    ])
+    ]
 }
 
 /// §10.2's runtime state at 10:42, with `^t3` running since 09:32.
@@ -517,15 +530,15 @@ pub fn app() -> App {
 /// [`app`] at another time of day.
 pub fn app_at(h: u32, m: u32) -> App {
     let cfg = config();
-    app_with(at(&cfg, h, m), state(), log(&cfg))
+    app_with_log_text(at(&cfg, h, m), state(), &log(&cfg))
 }
 
-/// [`app_at`] with the runtime state and the log given: the two things §9's
-/// timers (`active`, `break`, the worked minutes) and §11's monitors are
-/// derived from.
-pub fn app_with(now: DateTime<Tz>, state: RuntimeState, log: Log) -> App {
+/// [`app_at`] with the runtime state and the log's text given: the two things
+/// §9's timers (`active`, `break`, the worked minutes) and §11's monitors are
+/// derived from. The log is read through the test chokepoint.
+pub fn app_with_log_text(now: DateTime<Tz>, state: RuntimeState, log: &str) -> App {
     let cfg = config();
-    let replay: Replay = log.replay(None, cfg.tz);
+    let replay: Replay = chokepoint::replay_of_text(log, cfg.tz);
     let plan = day_plan(&cfg);
     let ghost = ghost_plan(&cfg);
     let data = AppData {
@@ -550,11 +563,11 @@ pub fn entry(cfg: &Config, h: u32, m: u32, ev: Event) -> LogEntry {
 }
 
 /// [`log`] with more entries, kept in time order.
-pub fn log_plus(cfg: &Config, extra: Vec<LogEntry>) -> Log {
-    let mut log = log(cfg);
-    log.entries.extend(extra);
-    log.entries.sort_by_key(|e| e.t);
-    log
+pub fn log_plus(cfg: &Config, extra: Vec<LogEntry>) -> String {
+    let mut entries = log_entries(cfg);
+    entries.extend(extra);
+    entries.sort_by_key(|e| e.t);
+    chokepoint::text_of(&entries)
 }
 
 /// [`app_at`] with the running block sized differently, so §9.1's prompt can

@@ -10,6 +10,10 @@
 //! whole one (60/60/120/120 = 6 blocks), for as many days as the furthest
 //! deadline needs (`priority::lookahead_days` → 2026-11-20, 75 days).
 
+#[path = "../../tm/tests/support/replay.rs"]
+#[allow(dead_code)]
+mod chokepoint;
+
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Duration, NaiveDate, NaiveTime};
@@ -17,7 +21,7 @@ use chrono_tz::Tz;
 use tm_core::capacity::{local_dt, DayCapacity};
 use tm_core::config::Config;
 use tm_core::energy::Model;
-use tm_core::log::{self, Replay};
+use tm_core::log::Replay;
 use tm_core::model::Id;
 use tm_core::planner::{self, DayPlan, PlanInput, SegFlags, SegKind, Segment};
 use tm_core::priority::{self, Candidate, Ineligible, Prio};
@@ -49,7 +53,7 @@ fn plan_basic() -> (Tree, Config, Replay) {
     let plan = store.read_tree().expect("tree parses");
     let tree = Tree::build(&plan.files, &plan.config);
     assert!(tree.problems().is_empty(), "{:?}", tree.problems());
-    let replay = log::replay(&[], None, plan.config.tz);
+    let replay = chokepoint::replay_of_text("", plan.config.tz);
     (tree, plan.config, replay)
 }
 

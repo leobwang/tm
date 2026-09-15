@@ -5,6 +5,10 @@
 //! a torn write, a stray `unpause`, arithmetic that must not panic, the day a
 //! `wake` logged out of order belongs to, and two `wake`s on one date.
 
+#[path = "../../tm/tests/support/replay.rs"]
+#[allow(dead_code)]
+mod chokepoint;
+
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, FixedOffset, NaiveDate};
@@ -65,7 +69,7 @@ fn stop(t: &str, id: &str, remaining_min: u32) -> LogEntry {
 }
 
 fn replay_of(entries: Vec<LogEntry>) -> Replay {
-    Log::from_entries(entries).replay(None, TZ)
+    chokepoint::replay_of_entries(&entries, TZ)
 }
 
 fn seg_lines(r: &Replay, date: NaiveDate) -> Vec<String> {
@@ -116,7 +120,7 @@ fn cut_block_minutes_are_accounted_as_ci_unknown() {
 
     // The same identity on every day of the three-day fixture (day 1 has the
     // 45 minutes of `t4`, cut by `stop`, with no ci in the log).
-    let r = Log::read(fixture()).unwrap().replay(None, TZ);
+    let r = chokepoint::replay_of_text(&std::fs::read_to_string(fixture()).unwrap(), TZ);
     assert_eq!(r.day(d("2026-09-07")).unwrap().ci_unknown_min(), 45);
     assert_eq!(r.day(d("2026-09-08")).unwrap().ci_unknown_min(), 0);
     for day in r.days.values() {

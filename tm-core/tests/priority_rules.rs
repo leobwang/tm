@@ -3,6 +3,10 @@
 //! the floor rule, the pure-rank rule, optional, overdue, the `hot` flag,
 //! mandatory routines, blocked items, sorting and batching (§7.5).
 
+#[path = "../../tm/tests/support/replay.rs"]
+#[allow(dead_code)]
+mod chokepoint;
+
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Duration, FixedOffset, NaiveDate, NaiveTime, TimeZone};
@@ -10,7 +14,7 @@ use chrono_tz::Tz;
 use tm_core::capacity::{local_dt, DayCapacity};
 use tm_core::config::Config;
 use tm_core::energy::Model;
-use tm_core::log::{self, Event, LogEntry, Replay};
+use tm_core::log::{Event, LogEntry, Replay};
 use tm_core::model::{Dep, Id, Period};
 use tm_core::priority::{self, Candidate, Ineligible, PrioClass};
 use tm_core::tree::Tree;
@@ -51,7 +55,7 @@ fn empty() -> BTreeMap<Id, u8> {
 }
 
 fn no_log() -> Replay {
-    log::replay(&[], None, TZ)
+    chokepoint::replay_of_text("", TZ)
 }
 
 fn tree(files: &[(&str, &str)]) -> Tree {
@@ -301,7 +305,7 @@ fn open_floor_uses_the_remainder_of_the_period() {
     let t = tree(&[("backlog.md", "- [ ] 3 Lean practice open min:6b/w ^f1\n")]);
     assert!(t.problems().is_empty(), "{:?}", t.problems());
     let entries = vec![done_entry("f1", 120, MONDAY, 8)];
-    let replay = log::replay(&entries, None, TZ);
+    let replay = chokepoint::replay_of_entries(&entries, TZ);
 
     // done_this_period reads the logged minutes of the item's own period.
     assert_eq!(
@@ -357,7 +361,7 @@ fn an_exhausted_cap_is_an_ineligibility_reason() {
         "- [ ] 4 6b CS 234 pset 2 due:2026-09-11T23:59 max:2b/d ^d1\n",
     )]);
     let entries = vec![done_entry("d1", 120, MONDAY, 9)];
-    let replay = log::replay(&entries, None, TZ);
+    let replay = chokepoint::replay_of_entries(&entries, TZ);
     let cands = candidates(&t, &replay);
     let d1 = find(&cands, "d1");
     assert_eq!(d1.cap_done_min, 120);
@@ -370,7 +374,7 @@ fn an_exhausted_cap_is_an_ineligibility_reason() {
 
     // Half the cap used: still eligible, one block left.
     let entries = vec![done_entry("d1", 60, MONDAY, 9)];
-    let replay = log::replay(&entries, None, TZ);
+    let replay = chokepoint::replay_of_entries(&entries, TZ);
     let cands = candidates(&t, &replay);
     assert!(find(&cands, "d1").eligible());
     assert_eq!(find(&cands, "d1").cap_left_min(), Some(60));

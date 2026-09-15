@@ -13,12 +13,16 @@
 //! interruption at every line prefix of `three-days` (no whole log ends
 //! inside one).
 
+#[path = "../../tm/tests/support/replay.rs"]
+#[allow(dead_code)]
+mod chokepoint;
+
 #[path = "../../tm/tests/support/loggen.rs"]
 #[allow(dead_code)]
 mod loggen;
 
 use chrono_tz::Tz;
-use tm_core::log::{Log, Replay};
+use tm_core::log::Replay;
 
 const TZ: Tz = chrono_tz::America::Chicago;
 
@@ -28,7 +32,7 @@ fn corpus(name: &str) -> String {
 }
 
 fn replay(text: &str) -> Replay {
-    Log::parse(text).replay(None, TZ)
+    chokepoint::replay_of_text(text, TZ)
 }
 
 #[test]

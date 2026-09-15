@@ -5,11 +5,21 @@
 //! wake-to-wake day boundary (its `close` is logged after midnight); day 3
 //! has no `wake`, an interruption without an id, and an open paused block.
 
+//!
+//! Every replay here is read through the test chokepoint
+//! (`tm/tests/support/replay.rs`, step R12). The tests of the reader's own
+//! internals (the undo mask, the day index, a ranged replay) live beside it,
+//! in `log.rs`'s `reader_tests`, and go with it at the switch.
+
+#[path = "../../tm/tests/support/replay.rs"]
+#[allow(dead_code)]
+mod chokepoint;
+
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Duration, FixedOffset, NaiveDate};
+use chrono::{DateTime, FixedOffset, NaiveDate};
 use chrono_tz::Tz;
-use tm_core::log::{hours_since_wake, replay, Event, Log, LogEntry, Replay, SegmentKind};
+use tm_core::log::{Replay, SegmentKind};
 use tm_core::model::{Id, InstanceStatus, Stamp};
 
 const TZ: Tz = Tz::America__Chicago;
@@ -18,10 +28,12 @@ fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/logs/three-days.jsonl")
 }
 
-fn load() -> Log {
-    let log = Log::read(fixture()).unwrap();
-    assert!(log.warnings.is_empty());
-    log
+/// The fixture, replayed over every day through the chokepoint; it has no
+/// malformed line.
+fn load() -> Replay {
+    let text = std::fs::read_to_string(fixture()).unwrap();
+    assert!(chokepoint::warning_lines_of_text(&text).is_empty());
+    chokepoint::replay_of_text(&text, TZ)
 }
 
 fn at(s: &str) -> DateTime<FixedOffset> {
@@ -58,88 +70,8 @@ fn seg_lines(r: &Replay, date: NaiveDate) -> Vec<String> {
 }
 
 #[test]
-fn undo_cancels_targets_and_itself() {
-    let log = load();
-    let mask = log.undo_mask();
-    let cancelled: Vec<usize> = (0..log.len()).filter(|&i| mask.cancelled[i]).map(|i| i + 1).collect();
-    // 1-based fixture lines: (39 done t6, 40), (44 skip laundry, 45),
-    // (46 stop t7, 47), (58 drop a5, 59), (61 event visa, 62), (67 note, 68).
-    assert_eq!(cancelled, vec![39, 40, 44, 45, 46, 47, 58, 59, 61, 62, 67, 68]);
-    assert!(mask.dangling.is_empty());
-    assert_eq!(mask.pairs(), 6);
-    assert_eq!(log.effective().count(), 62);
-    // What `tm undo` would cancel next: the last surviving state change.
-    assert_eq!(
-        log.compensating_undo(),
-        Some(Event::Undo { of: "pause".into(), id: Some("t8".into()) })
-    );
-    // The free function applies the mask itself, so raw entries are safe:
-    // replaying the raw log gives what replaying the already-masked entries
-    // gives — and the masked list really is 12 entries shorter, so this is
-    // not two spellings of the same call.
-    let effective: Vec<LogEntry> = log.effective().cloned().collect();
-    assert_eq!(effective.len(), log.len() - 12);
-    assert!(!effective.iter().any(|e| matches!(e.ev, Event::Undo { .. })));
-    assert_eq!(replay(&log.entries, None, TZ), replay(&effective, None, TZ));
-    // …and it is not vacuous: the undone events do change the result.
-    assert_ne!(replay(&log.entries, None, TZ), replay_raw(&log));
-}
-
-/// Replay as if `undo` did nothing: every entry except the `undo` lines
-/// themselves. Only used to prove the undo mask has an effect.
-fn replay_raw(log: &Log) -> Replay {
-    let kept: Vec<LogEntry> = log
-        .iter()
-        .filter(|e| !matches!(e.ev, Event::Undo { .. }))
-        .cloned()
-        .collect();
-    replay(&kept, None, TZ)
-}
-
-#[test]
-fn days_run_wake_to_wake() {
-    let log = load();
-    let idx = log.day_index(TZ);
-    assert_eq!(idx.wakes().len(), 2);
-    // 21:30 CDT written as UTC belongs to the 7th; the close at 00:10 on the
-    // 9th belongs to the 8th (its wake is < 24 h earlier); the 9th has no
-    // wake and falls back to the calendar date.
-    assert_eq!(idx.day_of(at("2026-09-08T02:30:00+00:00")), d("2026-09-07"));
-    assert_eq!(idx.day_of(at("2026-09-09T00:10:00-05:00")), d("2026-09-08"));
-    assert_eq!(idx.day_of(at("2026-09-09T09:00:00-05:00")), d("2026-09-09"));
-    assert_eq!(idx.wake_of(d("2026-09-09")), None);
-    // 06:20 on the 8th is 24h15m after the 7th's wake: that wake is stale, so
-    // the entry falls back to its calendar date. The 8th therefore begins
-    // when the 7th's wake goes stale (06:05 + 24 h), not at its own 06:40
-    // wake, and the days still tile exactly (`bounds` agrees with `day_of`).
-    assert_eq!(idx.day_of(at("2026-09-08T06:20:00-05:00")), d("2026-09-08"));
-    assert_eq!(
-        idx.bounds(d("2026-09-07")),
-        (at("2026-09-07T00:00:00-05:00"), at("2026-09-08T06:05:00-05:00"))
-    );
-    assert_eq!(
-        idx.bounds(d("2026-09-08")),
-        (at("2026-09-08T06:05:00-05:00"), at("2026-09-09T06:40:00-05:00"))
-    );
-    assert_eq!(log.iter_day(d("2026-09-07"), TZ).count(), 31);
-    assert_eq!(log.iter_day(d("2026-09-08"), TZ).count(), 24, "34 entries minus 10 cancelled");
-    assert_eq!(log.iter_day(d("2026-09-09"), TZ).count(), 7);
-    assert_eq!(log.iter_range(d("2026-09-07"), d("2026-09-08"), TZ).count(), 55);
-    assert_eq!(log.iter_range(d("2026-09-01"), d("2026-09-06"), TZ).count(), 0);
-    assert_eq!(log.iter_item("t3").count(), 5, "start, extend, done, start, done");
-    // The logged `hsw` values agree with the helper wherever a wake exists.
-    for e in log.effective() {
-        if let Event::Start { hsw, .. } = &e.ev {
-            if let Some(w) = idx.wake_of(idx.day_of(e.t)) {
-                assert_eq!(*hsw, hours_since_wake(&e.t, &w), "{}", e.to_json().unwrap());
-            }
-        }
-    }
-}
-
-#[test]
 fn day_one_matches_hand_computed_values() {
-    let r = load().replay(None, TZ);
+    let r = load();
     let d7 = d("2026-09-07");
     let day = r.day(d7).unwrap();
     assert_eq!(day.wake, Some(at("2026-09-07T06:05:00-05:00")));
@@ -259,7 +191,7 @@ fn day_one_matches_hand_computed_values() {
 
 #[test]
 fn day_two_applies_undo_and_the_midnight_close() {
-    let r = load().replay(None, TZ);
+    let r = load();
     let d8 = d("2026-09-08");
     let day = r.day(d8).unwrap();
     assert_eq!((day.slept_min, day.onset_min), (Some(400), Some(35)));
@@ -332,7 +264,7 @@ fn day_two_applies_undo_and_the_midnight_close() {
 
 #[test]
 fn day_three_has_no_wake_and_an_open_block() {
-    let r = load().replay(None, TZ);
+    let r = load();
     let d9 = d("2026-09-09");
     let day = r.day(d9).unwrap();
     assert_eq!(day.wake, None);
@@ -379,35 +311,8 @@ fn day_three_has_no_wake_and_an_open_block() {
 }
 
 #[test]
-fn range_keeps_only_the_requested_days() {
-    let log = load();
-    let d8 = d("2026-09-08");
-    let r = log.replay(Some(d8..=d8), TZ);
-    assert_eq!(r.days.keys().copied().collect::<Vec<_>>(), vec![d8]);
-    assert_eq!(r.block_minutes("t3"), 65, "only day-2 minutes");
-    assert_eq!(r.block_minutes("t1"), 0);
-    assert!(!r.items.contains_key("t1"));
-    assert_eq!(r.energy.len(), 3);
-    assert_eq!(r.durations.len(), 3);
-    assert!(r.events_named("reply").is_empty());
-    assert_eq!(r.instance_status("lunch", "2026-09-07"), InstanceStatus::Pending);
-    assert_eq!(r.done_dates("t3"), vec![d8]);
-    assert!(r.last_done("lunch").is_none());
-    assert_eq!(r.closes.len(), 1);
-    assert_eq!(r.unknown, 1);
-    assert!(r.open_block.is_some(), "the machine still runs to the end");
-    assert_eq!(r.range, Some(d8..=d8));
-    // A range starting mid-log still credits a block cut inside it.
-    let d9 = d("2026-09-09");
-    let r = log.replay(Some(d9..=d9 + Duration::days(1)), TZ);
-    assert_eq!(r.block_minutes("t8"), 60);
-    assert_eq!(r.lost_min(d9), 15);
-    assert!(r.longest_leak.is_none());
-}
-
-#[test]
 fn replay_is_json_safe_and_snapshotted() {
-    let r = load().replay(None, TZ);
+    let r = load();
     let json = serde_json::to_string(&r).unwrap();
     let back: Replay = serde_json::from_str(&json).unwrap();
     assert_eq!(back, r);

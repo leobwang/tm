@@ -25,7 +25,7 @@ use chrono::{NaiveTime, TimeZone};
 use review_common as fixture;
 use tm_core::capacity::local_dt;
 use tm_core::energy::Model;
-use tm_core::log::{Event, Log, LogEntry};
+use tm_core::log::{Event, LogEntry};
 use tm_core::model::Id;
 use tm_core::review::{
     day_review, render_day, render_status, render_status_full, status_line, DayExtras,
@@ -469,7 +469,7 @@ fn the_status_line_warns_when_the_rest_debt_is_over_forty_minutes() {
             },
         ));
     }
-    let replay = Log::from_entries(entries).replay(None, fixture::TZ);
+    let replay = fixture::chokepoint::replay_of_entries(&entries, fixture::TZ);
     let runtime = RuntimeState {
         date: Some(date),
         ..RuntimeState::default()

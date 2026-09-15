@@ -10,6 +10,10 @@
 //! step 6 the shipped `tm close` and automatic close go through the kernel
 //! instead — see `tm-core/src/horizon.rs`'s module docs.)
 
+#[path = "../../tm/tests/support/replay.rs"]
+#[allow(dead_code)]
+mod chokepoint;
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -21,7 +25,7 @@ use tm_core::horizon::{
     churn, close_day, close_month, close_week, CloseReport, Ctx,
     HorizonError, Moved, MIN_REMAINING_MIN, REVIEW_PLACEHOLDER,
 };
-use tm_core::log::{replay, Event, Log, LogEntry, Replay};
+use tm_core::log::{Event, LogEntry, Replay};
 use tm_core::model::{Id, IsoWeek, Period, Stamp, State, YearMonth};
 use tm_core::review::write_day_review;
 use tm_core::store::{FsStore, MemStore, Store};
@@ -135,16 +139,14 @@ fn only_changed(before: &BTreeMap<String, String>, after: &BTreeMap<String, Stri
 /// The log lines the store wrote, as `(ev, id)` pairs.
 fn log_events(store: &FsStore) -> Vec<(String, String)> {
     let path = store.abs_path(".tm/log.jsonl").unwrap();
-    Log::read(path)
-        .unwrap()
-        .entries
-        .iter()
-        .map(|e| {
-            (
-                e.ev.name().to_string(),
-                e.ev.primary_id().unwrap_or_default().to_string(),
-            )
-        })
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => panic!("{}: {e}", path.display()),
+    };
+    chokepoint::headers_of_text(&text)
+        .into_iter()
+        .map(|(tag, id)| (tag, id.unwrap_or_default()))
         .collect()
 }
 
@@ -162,7 +164,7 @@ fn replay_of(id: &str, minutes: u32, at_time: &str) -> Replay {
             partial: true,
         },
     )];
-    replay(&entries, None, Tz::America__Chicago)
+    chokepoint::replay_of_entries(&entries, Tz::America__Chicago)
 }
 
 // ---------------------------------------------------------------------------

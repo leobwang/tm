@@ -13,7 +13,7 @@ use chrono::{DateTime, FixedOffset};
 use review_common as fixture;
 use tm_core::config::Config;
 use tm_core::energy::Model;
-use tm_core::log::{Event, Log, LogEntry, Replay};
+use tm_core::log::{Event, LogEntry, Replay};
 use tm_core::model::{Id, IsoWeek};
 use tm_core::review::{day_review, waiting, week_review, DayExtras, DayReview, Style, WeekExtras};
 use tm_core::tree::Tree;
@@ -68,7 +68,7 @@ fn done(at: &str, id: &str, actual_min: u32, ci: u8) -> LogEntry {
 }
 
 fn replay_of(entries: Vec<LogEntry>) -> Replay {
-    Log::from_entries(entries).replay(None, fixture::TZ)
+    fixture::chokepoint::replay_of_entries(&entries, fixture::TZ)
 }
 
 fn empty_tree(cfg: &Config) -> Tree {

@@ -2,12 +2,16 @@
 //! fixture: after-done due and validity, persist carry, skip, the calendar
 //! rules, overnight windows, waiting timeouts and logged completions.
 
+#[path = "../../tm/tests/support/replay.rs"]
+#[allow(dead_code)]
+mod chokepoint;
+
 use std::path::{Path, PathBuf};
 
 use chrono::{NaiveDate, NaiveDateTime};
 use tm_core::config::Config;
 use tm_core::grammar::{parse_file, ParsedFile};
-use tm_core::log::{Event, Log, Replay};
+use tm_core::log::{Event, Replay};
 use tm_core::model::{Id, Instance, InstanceKey, InstanceStatus, Item, OnMiss};
 use tm_core::recur::{self, InstanceInfo};
 use tm_core::tree::Tree;
@@ -28,7 +32,8 @@ struct World {
     tree: Tree,
     cfg: Config,
     replay: Replay,
-    log: Log,
+    /// The fixture's `.tm/log.jsonl` as text.
+    log_text: String,
 }
 
 impl World {
@@ -66,13 +71,13 @@ fn load() -> World {
             parse_file(rel, &text, &cfg)
         })
         .collect();
-    let log = Log::read(fixture_dir().join(".tm/log.jsonl")).unwrap();
-    let replay = log.replay(None, cfg.tz);
+    let log_text = std::fs::read_to_string(fixture_dir().join(".tm/log.jsonl")).unwrap();
+    let replay = chokepoint::replay_of_text(&log_text, cfg.tz);
     World {
         tree: Tree::build(&parsed, &cfg),
         cfg,
         replay,
-        log,
+        log_text,
     }
 }
 
@@ -264,16 +269,15 @@ fn skipping_an_instance_leaves_the_next_occurrence_unchanged() {
     assert_eq!(v[3].status, InstanceStatus::Pending);
 
     // What `tm skip workout` would append for today's instance.
-    let now = tm_core::log::parse_timestamp("2026-09-07T16:05:00-05:00").unwrap();
+    let now = chrono::DateTime::parse_from_rfc3339("2026-09-07T16:05:00-05:00").unwrap();
     let entry = recur::skip_instance(w.item("workout"), &v[2], now);
     assert_eq!(
         entry.to_json().unwrap(),
         r#"{"t":"2026-09-07T16:05:00-05:00","ev":"skip","item":"workout","inst":"2026-09-07"}"#
     );
     // Replaying it makes today's instance Skipped and leaves Wednesday alone.
-    let mut log = w.log.clone();
-    log.push(entry);
-    let replay = log.replay(None, w.cfg.tz);
+    let log = w.log_text.clone() + &chokepoint::text_of(&[entry]);
+    let replay = chokepoint::replay_of_text(&log, w.cfg.tz);
     let after = recur::instances(
         w.item("workout"),
         (date("2026-09-07"), date("2026-09-09")),
@@ -290,7 +294,7 @@ fn a_logged_routine_done_marks_the_instance_done() {
     let w = load();
     let inst = w.one("groceries", "2026-09-07", "2026-09-07");
     assert_eq!(inst.status, InstanceStatus::Pending);
-    let now = tm_core::log::parse_timestamp("2026-09-09T18:20:00-05:00").unwrap();
+    let now = chrono::DateTime::parse_from_rfc3339("2026-09-09T18:20:00-05:00").unwrap();
     let entry = recur::done_instance(w.item("groceries"), &inst, now, Some(45));
     assert!(matches!(
         &entry.ev,
@@ -298,9 +302,8 @@ fn a_logged_routine_done_marks_the_instance_done() {
             if item == "groceries" && inst == "2026-09-07" && status == "done"
                 && *actual_min == Some(45)
     ));
-    let mut log = w.log.clone();
-    log.push(entry);
-    let replay = log.replay(None, w.cfg.tz);
+    let log = w.log_text.clone() + &chokepoint::text_of(&[entry]);
+    let replay = chokepoint::replay_of_text(&log, w.cfg.tz);
     let after = recur::instances(
         w.item("groceries"),
         (date("2026-09-07"), date("2026-09-07")),

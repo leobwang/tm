@@ -15,6 +15,10 @@
 
 #![allow(dead_code)]
 
+/// The test chokepoint (step R12): every replay here is read through it.
+#[path = "../support/replay.rs"]
+pub mod chokepoint;
+
 #[allow(dead_code, unused_imports)]
 #[path = "../../src/tui/queue.rs"]
 pub mod queue;
@@ -39,7 +43,7 @@ use ratatui::{Frame, Terminal};
 
 use tm_core::capacity::{local_dt, DayCapacity};
 use tm_core::energy::Model;
-use tm_core::log::{self, Event, LogEntry, Replay};
+use tm_core::log::{Event, LogEntry, Replay};
 use tm_core::priority::{self, Candidate, Prio};
 use tm_core::store::{MemStore, PlanFiles, Store};
 use tm_core::tree::Tree;
@@ -145,7 +149,7 @@ pub fn world_with(
     let store = MemStore::from_dir(dir).expect("fixture readable");
     let files = store.read_tree().expect("tree parses");
     let tree = Tree::build(&files.files, &files.config);
-    let replay = log::replay(entries, None, files.config.tz);
+    let replay = chokepoint::replay_of_entries(entries, files.config.tz);
     let today = date("2026-09-07");
     let now = local_dt(
         files.config.tz,

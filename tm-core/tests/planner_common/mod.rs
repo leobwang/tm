@@ -3,15 +3,19 @@
 //! §4.3-shaped timeline the snapshots pin.
 #![allow(dead_code)]
 
+/// The test chokepoint (step R12): every replay here is read through it.
+#[path = "../../../tm/tests/support/replay.rs"]
+pub mod chokepoint;
+
 use chrono::{DateTime, NaiveDate, NaiveTime};
 use chrono_tz::Tz;
 use tm_core::capacity::local_dt;
 use tm_core::config::Config;
 use tm_core::energy::Model;
-use tm_core::log::{self, Log, Replay};
+use tm_core::log::Replay;
 use tm_core::model::Id;
 use tm_core::planner::{self, DayPlan, PlanInput, SegKind, Segment};
-use tm_core::store::{self, MemStore, RuntimeState, Store};
+use tm_core::store::{MemStore, RuntimeState, Store};
 use tm_core::tree::Tree;
 
 pub const TZ: Tz = Tz::America__Chicago;
@@ -32,11 +36,10 @@ pub fn at(day: &str, h: u32, m: u32) -> DateTime<Tz> {
     local_dt(TZ, date(day), time(h, m))
 }
 
-/// A fixture tree with its config, log, replay and `.tm/state.json`.
+/// A fixture tree with its config, replay and `.tm/state.json`.
 pub struct Fixture {
     pub tree: Tree,
     pub cfg: Config,
-    pub log: Log,
     pub replay: Replay,
     pub state: RuntimeState,
     pub model: Model,
@@ -55,16 +58,18 @@ pub fn load_with_log(name: &str, log_text: Option<&str>) -> Fixture {
     assert!(tree.problems().is_empty(), "{:?}", tree.problems());
     let text = match log_text {
         Some(t) => t.to_string(),
-        None => store.read_text(store::LOG_PATH).unwrap_or_default(),
+        // The fixture's own log file, read as text like every other test's
+        // (a fixture without one has an empty log).
+        None => std::fs::read_to_string(format!("{}/.tm/log.jsonl", fixture_path(name)))
+            .unwrap_or_default(),
     };
-    let log = Log::parse(&text);
-    assert!(log.warnings.is_empty(), "{:?}", log.warnings);
-    let replay = log::replay(&log.entries, None, plan.config.tz);
+    let warnings = chokepoint::warning_lines_of_text(&text);
+    assert!(warnings.is_empty(), "{:?}", warnings);
+    let replay = chokepoint::replay_of_text(&text, plan.config.tz);
     let state = store.load_state().expect("state.json parses");
     Fixture {
         tree,
         cfg: plan.config,
-        log,
         replay,
         state,
         model: Model::default(),
