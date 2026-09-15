@@ -32,6 +32,8 @@ pub mod init;
 pub mod items;
 pub mod kernel_bridge;
 pub mod kernel_capacity;
+/// Stage 5 D9 W3: the replay cache and the `log` op, host side. No verb calls it before the switch S (W-6).
+pub mod kernel_log;
 pub mod lifecycle;
 pub mod out;
 pub mod planning;

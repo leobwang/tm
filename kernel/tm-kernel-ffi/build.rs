@@ -35,6 +35,17 @@ fn main() {
         .compile("tmshim");
     println!("cargo:rerun-if-changed=shim.c");
 
+    // Stage 5 D9 W3 (design §9.8, CRIT 26): the kernel's identity is FNV-1a-64 of the archive this crate links, so a
+    // replay cache written by another kernel goes to genesis once.
+    let archive = pkg.join(".lake/build/lib/libTmKernel_TmKernel.a");
+    let bytes = std::fs::read(&archive).expect("the kernel archive lake just built");
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in bytes {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    println!("cargo:rustc-env=TM_KERNEL_ID={h:016x}");
+    println!("cargo:rerun-if-changed={}", archive.display());
     println!("cargo:rustc-link-search=native={}", pkg.join(".lake/build/lib").display());
     // TWO search paths: gmp/uv/ssl/crypto live in lib/, not lib/lean/.
     println!("cargo:rustc-link-search=native={}", prefix.join("lib/lean").display());

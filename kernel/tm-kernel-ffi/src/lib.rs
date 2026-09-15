@@ -15,6 +15,10 @@ extern "C" {
     fn tm_kernel_free(p: *mut c_char);
 }
 
+/// **The kernel's identity** (stage 5 D9 W3, design §9.8): FNV-1a-64 of the static archive this crate links, as 16 hex
+/// digits (`build.rs`). A replay cache written by another kernel is rebuilt once.
+pub const KERNEL_ID: &str = env!("TM_KERNEL_ID");
+
 static INIT: Once = Once::new();
 static mut INIT_RC: i32 = -1;
 

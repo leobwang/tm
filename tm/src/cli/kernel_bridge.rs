@@ -969,7 +969,19 @@ fn log_refusal(l: &Value) -> KernelIssue {
     let text = |v: Option<&Value>| v.and_then(Value::as_str).unwrap_or_default().to_string();
     let (what, key, val): (String, &str, Value) = match name.as_str() {
         "tzAbsent" => ("a log section was sent without its tz table".into(), "", Value::Null),
-        "tooManyLines" => ("more than 32,768 log lines were sent in one call".into(), "", Value::Null),
+        "tooManyLines" => ("more than 8,192 log lines were sent in one call (the memory gate, gap 102)".into(), "", Value::Null),
+        // W3 (design §10.3): the resume's refusals. `kernel_log` reacts to these (genesis, then the request once more,
+        // or genesis at that `now` unpersisted); one that reaches the bridge is a host defect.
+        "undoReach" | "wakeBehindCut" | "sealedDay" | "sealedWindow" | "nowBelowLedger" => {
+            let line = arg.and_then(|v| v.get("line").or_else(|| v.get("now"))).and_then(Value::as_u64).unwrap_or_default();
+            (format!("the replay cache's guard `{name}` refused line {line} and no rebuild answered"), "line", Value::from(line))
+        }
+        "badCkpt" | "counterOverflow" => {
+            let field = text(arg);
+            (format!("the checkpoint's `{field}` is out of its bounds"), "field", Value::String(field))
+        }
+        "cutMismatch" => ("the log tail did not start at the checkpoint's cut".into(), "", Value::Null),
+        "zone" => ("the checkpoint was attributed under another zone table".into(), "", Value::Null),
         "badTz" => {
             let why = text(arg);
             (format!("the tz table's `{why}` is malformed (tm/src/cli/tz_table.rs writes it)"), "why", Value::String(why))
@@ -1318,6 +1330,12 @@ mod tests {
             (serde_json::json!({"log":{"badTz":"unsorted"}}), "badTz", Some("why"), Value::from("unsorted")),
             (serde_json::json!({"log":{"badLogReq":"from"}}), "badLogReq", Some("field"), Value::from("from")),
             (serde_json::json!({"log":{"renderNotInTail":{"line":45101}}}), "renderNotInTail", Some("line"), Value::from(45101)),
+            (serde_json::json!({"log":{"undoReach":{"line":45171,"below":45100}}}), "undoReach", Some("line"), Value::from(45171)),
+            (serde_json::json!({"log":{"nowBelowLedger":{"now":739860,"ledgerDay":739870}}}), "nowBelowLedger", Some("line"), Value::from(739860)),
+            (serde_json::json!({"log":{"badCkpt":"items"}}), "badCkpt", Some("field"), Value::from("items")),
+            (serde_json::json!({"log":{"counterOverflow":"facts.items"}}), "counterOverflow", Some("field"), Value::from("facts.items")),
+            (serde_json::json!({"log":"cutMismatch"}), "cutMismatch", None, Value::Null),
+            (serde_json::json!({"log":"zone"}), "zone", None, Value::Null),
         ] {
             let issue = refusal(&payload);
             assert!(issue.is_fault(), "{name}: {}", issue.message);
@@ -1334,7 +1352,7 @@ mod tests {
     #[test]
     fn the_kernel_names_its_log_refusals() {
         let utc = r#"{"key":"UTC","base":"+00:00:00","then":[]}"#;
-        let many = vec!["null"; 32_769].join(",");
+        let many = vec!["null"; 8_193].join(",");
         for (req, name) in [
             (r#"{"docs":[],"log":{"from":1,"lines":[],"terminated":true}}"#.to_string(), "tzAbsent"),
             (
@@ -1347,6 +1365,9 @@ mod tests {
                 format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":5,"lines":["x"],"terminated":true,"want":{{"render":[4]}}}}}}"#),
                 "renderNotInTail",
             ),
+            // W3: G0 at the op, a guard, and the checkpoint's own decoder.
+            (format!(r#"{{"docs":[],"now":"2026-09-15","tz":{utc},"log":{{"from":2,"lines":[],"terminated":true,"want":{{"facts":true}}}}}}"#), "cutMismatch"),
+            (format!(r#"{{"docs":[],"now":"2026-09-15","tz":{utc},"log":{{"ckpt":{{}},"from":1,"lines":[],"terminated":true}}}}"#), "badCkpt"),
         ] {
             let raw = tm_kernel_ffi::call(&req).expect("kernel call");
             let resp: Value = serde_json::from_str(&raw).expect("json");

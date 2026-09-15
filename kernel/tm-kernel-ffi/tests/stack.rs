@@ -93,7 +93,7 @@ fn a_200000_key_object_reads_on_a_2mib_thread() {
 fn log_request(lines: &[String], render: usize) -> String {
     let render: Vec<String> = (1..=render.min(lines.len())).map(|n| n.to_string()).collect();
     format!(
-        r#"{{"docs":[],"tz":{{"key":"UTC","base":"+00:00:00","then":[]}},"log":{{"ckpt":null,"from":1,"lines":[{}],"terminated":true,"want":{{"headersFrom":1,"render":[{}]}}}}}}"#,
+        r#"{{"docs":[],"now":"2026-09-15","tz":{{"key":"UTC","base":"+00:00:00","then":[]}},"log":{{"ckpt":null,"from":1,"lines":[{}],"terminated":true,"want":{{"headersFrom":1,"render":[{}]}}}}}}"#,
         lines.join(","),
         render.join(",")
     )
@@ -106,8 +106,10 @@ fn log_request(lines: &[String], render: usize) -> String {
 /// rendering is an object of 5,002 keys, which the A1 test above could not reach
 /// from `call`), 64 levels of nesting, an `hsw` of 65,000 fraction digits
 /// (`finiteF64` and `JDec.render`), a line one character past the bound
-/// (`lineTooLong`), and one nested 65 deep (`lineTooDeep`).  Then 32,768 lines,
-/// the per-call bound, each with a header, 4,096 of them rendered.
+/// (`lineTooLong`), and one nested 65 deep (`lineTooDeep`).  Then 8,192 lines,
+/// the per-call bound (W3 lowered it from 32,768 by gap 102's memory gate), each with
+/// a header, 4,096 of them rendered.  Since W3 a request asking for headers resumes, so it
+/// carries `now` and the answer ends with `reseal`.
 #[test]
 fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
     const T: &str = r#"\"t\":\"2026-09-07T06:05:00-05:00\""#;
@@ -128,25 +130,25 @@ fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
         assert!(out.starts_with(r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":7,"warnings":[{"line":6,"w":"lineTooLong"},{"line":7,"w":"lineTooDeep"}],"facts":null,"headers":[[1,"note",null,739865,false,"2026-09-07 06:05"],[2,"mood",null,739865,false,"2026-09-07 06:05"],[3,"mood",null,739865,false,"2026-09-07 06:05"],[4,"mood",null,739865,false,"2026-09-07 06:05"],[5,"energy",null,739865,false,"2026-09-07 06:05"]],"render":[[1,"{\"t\":\"2026-09-07T06:05:00-05:00\",\"ev\":\"note\",\"text\":\"yyy"#), "{}", &out[..out.len().min(400)]);
         assert!(out.contains(&format!(r#"\"hsw\":0.{}1,"#, "0".repeat(65_000))));
         assert!(out.contains(r#"\"k999\":999}"#), "the last key in serde's order");
-        assert!(out.ends_with(r#""2026-09-07 06:05"],[6,null,null],[7,null,null]]}}}"#), "{}", &out[out.len().saturating_sub(200)..]);
+        assert!(out.ends_with(r#""2026-09-07 06:05"],[6,null,null],[7,null,null]],"reseal":null}}}"#), "{}", &out[out.len().saturating_sub(200)..]);
     });
     on_a_2mib_thread(|| {
-        let lines: Vec<String> = (0..32_768)
+        let lines: Vec<String> = (0..8_192)
             .map(|i| format!(r#""{{{T},\"ev\":\"drop\",\"id\":\"x{i}\"}}""#))
             .collect();
         let out = call(&log_request(&lines, 4096)).unwrap();
-        assert!(out.starts_with(r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":32768,"warnings":[],"facts":null,"headers":[[1,"drop","x0",739865,false,"2026-09-07 06:05"],"#));
-        assert!(out.contains(r#"[32768,"drop","x32767",739865,false,"2026-09-07 06:05"]],"render":[[1,"#));
-        assert!(out.ends_with(r#"[4096,"{\"t\":\"2026-09-07T06:05:00-05:00\",\"ev\":\"drop\",\"id\":\"x4095\"}","2026-09-07 06:05"]]}}}"#));
+        assert!(out.starts_with(r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":8192,"warnings":[],"facts":null,"headers":[[1,"drop","x0",739865,false,"2026-09-07 06:05"],"#));
+        assert!(out.contains(r#"[8192,"drop","x8191",739865,false,"2026-09-07 06:05"]],"render":[[1,"#));
+        assert!(out.ends_with(r#"[4096,"{\"t\":\"2026-09-07T06:05:00-05:00\",\"ev\":\"drop\",\"id\":\"x4095\"}","2026-09-07 06:05"]],"reseal":null}}}"#));
         let mut one_more = lines.clone();
         one_more.push(r#""""#.to_string());
         assert_eq!(call(&log_request(&one_more, 0)).unwrap(), r#"{"err":{"log":"tooManyLines"}}"#);
     });
     // Stage 5 D9 C1: the undo mask at the line bound (`Replay.maskFast`, a `foldl`; the
     // `@[csimp]` twins `survivors_eq_survivorsFast` and `cancelledLines_eq_cancelledLinesFast`).
-    // 16,384 drops, each followed by its undo: every line is cancelled.
+    // 4,096 drops, each followed by its undo: every line is cancelled (W3: the bound is 8,192 lines).
     on_a_2mib_thread(|| {
-        let lines: Vec<String> = (0..32_768)
+        let lines: Vec<String> = (0..8_192)
             .map(|i| {
                 if i % 2 == 0 {
                     format!(r#""{{{T},\"ev\":\"drop\",\"id\":\"x{i}\"}}""#)
@@ -156,27 +158,28 @@ fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
             })
             .collect();
         let req = format!(
-            r#"{{"docs":[],"tz":{{"key":"UTC","base":"+00:00:00","then":[]}},"log":{{"ckpt":null,"from":1,"lines":[{}],"terminated":true,"want":{{"facts":true}}}}}}"#,
+            r#"{{"docs":[],"now":"2026-09-15","tz":{{"key":"UTC","base":"+00:00:00","then":[]}},"log":{{"ckpt":null,"from":1,"lines":[{}],"terminated":true,"want":{{"facts":true}}}}}}"#,
             lines.join(",")
         );
         let start = std::time::Instant::now();
         let out = call(&req).unwrap();
-        // C6 (design §8.4's view): every line is cancelled, so no survivor writes a record, a
-        // seam or an observation; the one day, 2026-09-07 (06:05 at -05:00 is 11:05 UTC, day
-        // 739,865), holds the 32,768 headers, each cancelled, each with its display.
-        let headers: Vec<String> = (1..=32_768)
+        // C6 (design §8.4's view), in W3's codec shape: every line is cancelled, so no survivor writes a
+        // record, a seam or an observation; the one day, 2026-09-07 (06:05 at -05:00 is 11:05 UTC, day
+        // 739,865, second 63,924,375,900), holds the 8,192 headers, each cancelled, each with its stamp
+        // and written offset. The answer's ledger day and horizon are the empty checkpoint's, 0.
+        let headers: Vec<String> = (1..=8_192)
             .map(|n| {
                 if n % 2 == 1 {
-                    format!(r#"[{n},"drop","x{}",true,"2026-09-07 06:05"]"#, n - 1)
+                    format!(r#"[{n},"drop","x{}",true,[63924375900,0],[true,18000]]"#, n - 1)
                 } else {
-                    format!(r#"[{n},"undo","x{}",true,"2026-09-07 06:05"]"#, n - 2)
+                    format!(r#"[{n},"undo","x{}",true,[63924375900,0],[true,18000]]"#, n - 2)
                 }
             })
             .collect();
         assert_eq!(
             out,
             format!(
-                r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"log":{{"lines":32768,"warnings":[],"facts":{{"days":[[739865,null,null,[],[],[],[],[],[{}]]],"window":[],"items":[],"instOther":[],"named":[],"open":{{"block":null,"interrupt":null}},"lastDay":null,"lastEffective":null,"entryCount":32768,"unknown":0,"longestLeak":null,"replayWarnings":[],"warnings":{{"first":[],"overflow":0}}}},"headers":[],"render":[]}}}}}}"#,
+                r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"log":{{"lines":8192,"warnings":[],"facts":{{"ledgerDay":0,"horizon":0,"items":[],"window":[],"instOther":[],"named":[],"days":[[739865,null,null,[],[],[],[],[],[{}]]],"open":{{"block":null,"interrupt":null}},"lastDay":null,"lastEffective":null,"entryCount":8192,"unknown":0,"longestLeak":null,"replayWarnings":[],"warnings":{{"first":[],"overflow":0}}}},"headers":[],"render":[],"reseal":null}}}}}}"#,
                 headers.join(",")
             )
         );
@@ -184,16 +187,16 @@ fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
     });
     // Stage 5 D9 C2: the day index at the line bound (`Replay.sortWakes` compiled as
     // core's merge sort, `sortWakes_eq_sortWakesFast`; each entry's wake found by
-    // bisection, `entryDays_eq_entryDaysFast`). 32,768 wakes on 32,768 dates written
-    // newest first, so the sort reverses the whole list and the index keeps every
-    // wake; each wake is on its own date. The specification's fold per entry would
-    // compare over half a billion pairs.
+    // bisection, `entryDays_eq_entryDaysFast`). 8,192 wakes on 8,192 dates written
+    // newest first (W3: the bound is 8,192 lines), so the sort reverses the whole list and
+    // the index keeps every wake; each wake is on its own date. Since W3 the facts come
+    // from a resume from the empty checkpoint, in the codec's shape.
     on_a_2mib_thread(|| {
-        let lines: Vec<String> = (0..32_768i64)
+        let lines: Vec<String> = (0..8_192i64)
             .map(|i| format!(r#""{{\"t\":\"{}T06:05:00Z\",\"ev\":\"wake\",\"slept_min\":420}}""#, date_after_spec_monday(-i)))
             .collect();
         let req = format!(
-            r#"{{"docs":[],"tz":{{"key":"UTC","base":"+00:00:00","then":[]}},"log":{{"ckpt":null,"from":1,"lines":[{}],"terminated":true,"want":{{"facts":true}}}}}}"#,
+            r#"{{"docs":[],"now":"2026-09-15","tz":{{"key":"UTC","base":"+00:00:00","then":[]}},"log":{{"ckpt":null,"from":1,"lines":[{}],"terminated":true,"want":{{"facts":true}}}}}}"#,
             lines.join(",")
         );
         let start = std::time::Instant::now();
@@ -201,15 +204,15 @@ fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
         // C6 (design §8.4's view): every wake creates its day. Each day's record is
         // `DayReplay::new`'s block fields, the wake (06:05 UTC) and its sleep, 420; its seam's
         // latest stamp is the wake; its one header is the wake's, on its own date.
-        assert!(out.starts_with(r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":32768,"warnings":[],"facts":{"days":[["#), "{}", &out[..out.len().min(400)]);
+        assert!(out.starts_with(r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":8192,"warnings":[],"facts":{"ledgerDay":0,"horizon":0,"items":[],"window":[],"instOther":[],"named":[],"days":[["#), "{}", &out[..out.len().min(400)]);
         assert_eq!(
             out.matches(r#",[null,[],0,0,0,[0,0,0,0,0,0],[],[],0,[],[],["#).count(),
-            32_768,
+            8_192,
             "one day record a wake, its block fields empty"
         );
-        assert_eq!(out.matches(r#",0,false,0],420,null,null,null,null,null,[],0,0,[],[],0,0,0,0,null],[null,[],["#).count(), 32_768, "its wake, its sleep and its seam");
-        assert_eq!(out.matches(r#",0,false,0]],[],[],[],[],[],[["#).count(), 32_768, "no observation, interruption, demotion or close; its header");
-        for i in [0i64, 1, 16_383, 32_767] {
+        assert_eq!(out.matches(r#",0,false,0],420,null,null,null,null,null,[],0,0,[],[],0,0,0,0,null],[null,[],["#).count(), 8_192, "its wake, its sleep and its seam");
+        assert_eq!(out.matches(r#",0,false,0]],[],[],[],[],[],[["#).count(), 8_192, "no observation, interruption, demotion or close; its header");
+        for i in [0i64, 1, 4_095, 8_191] {
             let d = 739_865 - i;
             let sec = d * 86_400 + 6 * 3_600 + 5 * 60;
             let line = i + 1;
@@ -217,12 +220,12 @@ fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
             assert!(out.contains(&format!(r#"[{sec},0,false,0],420,null,"#)), "the wake of day {d}");
             assert!(out.contains(&format!(r#",[[{line},"wake",null,false,"#)), "the header of line {line}");
         }
-        // The last survivor in file order is line 32,768's wake, 06:05 UTC on day 739,865 − 32,767,
+        // The last survivor in file order is line 8,192's wake, 06:05 UTC on day 739,865 − 8,191,
         // and the last day is 739,865.
-        let last: i64 = (739_865 - 32_767) * 86_400 + 6 * 3_600 + 5 * 60;
+        let last: i64 = (739_865 - 8_191) * 86_400 + 6 * 3_600 + 5 * 60;
         assert!(
             out.ends_with(&format!(
-                r#"]],"window":[],"items":[],"instOther":[],"named":[],"open":{{"block":null,"interrupt":null}},"lastDay":739865,"lastEffective":[{last},0,false,0],"entryCount":32768,"unknown":0,"longestLeak":null,"replayWarnings":[],"warnings":{{"first":[],"overflow":0}}}},"headers":[],"render":[]}}}}}}"#
+                r#"]]]],"open":{{"block":null,"interrupt":null}},"lastDay":739865,"lastEffective":[{last},0,false,0],"entryCount":8192,"unknown":0,"longestLeak":null,"replayWarnings":[],"warnings":{{"first":[],"overflow":0}}}},"headers":[],"render":[],"reseal":null}}}}}}"#
             )),
             "{}",
             &out[out.len().saturating_sub(400)..]
@@ -232,15 +235,15 @@ fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
     // Stage 5 D9 C3: the block machine at the line bound (`Replay.replay`, compiled as
     // `Replay.replayFast`: one `foldl` of the effects over the survivors, maps altered by a
     // tail-recursive loop, the observations and each day's segments sorted by core's merge
-    // sort through `sortObs_eq_sortObsFast` and `sortSegs_eq_sortSegsFast`). 16,384 blocks of
-    // one item, a `start` and a one-minute `done` two minutes apart, over 23 days: 16,384
-    // segments, observations, durations and completions.
+    // sort through `sortObs_eq_sortObsFast` and `sortSegs_eq_sortSegsFast`). 4,096 blocks of
+    // one item (W3: the bound is 8,192 lines), a `start` and a one-minute `done` two minutes
+    // apart, over 6 days: 4,096 segments, observations, durations and completions.
     on_a_2mib_thread(|| {
         let stamp = |i: i64, plus: i64| {
             let m = (i % 720) * 2 + plus;
             format!(r#"\"t\":\"{}T{:02}:{:02}:00Z\""#, date_after_spec_monday(i / 720), m / 60, m % 60)
         };
-        let lines: Vec<String> = (0..16_384i64)
+        let lines: Vec<String> = (0..4_096i64)
             .flat_map(|i| {
                 [
                     format!(r#""{{{},\"ev\":\"start\",\"id\":\"a\",\"pred\":3,\"rep\":3,\"loc\":\"h\"}}""#, stamp(i, 0)),
@@ -249,61 +252,64 @@ fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
             })
             .collect();
         let req = format!(
-            r#"{{"docs":[],"tz":{{"key":"UTC","base":"+00:00:00","then":[]}},"log":{{"ckpt":null,"from":1,"lines":[{}],"terminated":true,"want":{{"facts":true}}}}}}"#,
+            r#"{{"docs":[],"now":"2026-09-15","tz":{{"key":"UTC","base":"+00:00:00","then":[]}},"log":{{"ckpt":null,"from":1,"lines":[{}],"terminated":true,"want":{{"facts":true}}}}}}"#,
             lines.join(",")
         );
         let start = std::time::Instant::now();
         let out = call(&req).unwrap();
-        // C6 (design §8.4's view).
-        assert!(out.contains(r#""items":[["a",[16384,16384,[["#), "{}", &out[..out.len().min(400)]);
-        assert_eq!(out.matches(r#""block","a"]"#).count(), 16_384, "one segment a block");
+        // C6 (design §8.4's view), in W3's codec shape (a segment's kind is `[0, id]` for a block).
+        assert!(out.contains(r#""items":[["a",[4096,4096,[["#), "{}", &out[..out.len().min(400)]);
+        assert_eq!(out.matches(r#",[0,"a"]]"#).count(), 4_096, "one segment a block");
         assert_eq!(out.matches(r#",739865,3,3,0.0,"h",0,null,"a",true]"#).count(), 720, "the first day's start observations");
-        // C4: every `done` completes `a`, so its done dates are the 23 days (its first the 7th,
-        // 23 of them), and its `last_done` is the last `done`.
-        assert!(out.contains(r#",0,0],[63926302020,0,false,0],false,739865,23]],"instOther":[],"named":[],"open":{"block":null,"interrupt":null},"lastDay":739887,"lastEffective":[63926302020,0,false,0],"#), "{}", &out[out.len().saturating_sub(600)..]);
-        for d in 739_865..=739_887 {
+        // C4: every `done` completes `a`, so its done dates are the 6 days (its first the 7th,
+        // 6 of them), and its `last_done` is the last `done` (block 4,095: day 739,870 at 16:31).
+        assert!(out.contains(r#",0,0],[63924827460,0,false,0],false,739865,6]],"window":["#), "{}", &out[..out.len().min(600)]);
+        assert!(out.contains(r#""open":{"block":null,"interrupt":null},"lastDay":739870,"lastEffective":[63924827460,0,false,0],"#), "{}", &out[out.len().saturating_sub(600)..]);
+        for d in 739_865..=739_870 {
             assert!(out.contains(&format!(r#"[{d},[["a","#)), "the window of day {d}");
         }
-        // C5: the 23 days' records hold nothing of the day family (no wake, arrival, gap or plan).
-        assert_eq!(out.matches(r#",null,null,null,null,null,null,null,[],0,0,[],[],0,0,0,0,null],["#).count(), 23, "23 day records empty of the day family");
-        assert!(out.ends_with(r#""unknown":0,"longestLeak":null,"replayWarnings":[],"warnings":{"first":[],"overflow":0}},"headers":[],"render":[]}}}"#), "{}", &out[out.len().saturating_sub(300)..]);
+        // C5: the 6 days' records hold nothing of the day family (no wake, arrival, gap or plan).
+        assert_eq!(out.matches(r#",null,null,null,null,null,null,null,[],0,0,[],[],0,0,0,0,null],["#).count(), 6, "6 day records empty of the day family");
+        assert!(out.ends_with(r#""unknown":0,"longestLeak":null,"replayWarnings":[],"warnings":{"first":[],"overflow":0}},"headers":[],"render":[],"reseal":null}}}"#), "{}", &out[out.len().saturating_sub(300)..]);
         eprintln!("the block machine at the line bound: {:.0} ms, {} bytes", start.elapsed().as_secs_f64() * 1000.0, out.len());
     });
     // Stage 5 D9 C4: the completion family at the line bound (the same `foldl`; instances,
     // done dates and `LatestNamed` records altered in `Replay.HMap`'s buckets, sized to the
-    // log). 16,384 `routine` lines of one item, each on its own instance, the even ones
-    // `done` and the odd ones `maybe` (a replay warning each), then 16,384 `event` lines
-    // over 64 names, all at 06:05 on 2026-09-07 written in UTC.
+    // log). 4,096 `routine` lines of one item, each on its own instance, the even ones
+    // `done` and the odd ones `maybe` (a replay warning each), then 4,096 `event` lines
+    // over 64 names, all at 06:05 on 2026-09-07 written in UTC (W3: the bound is 8,192 lines).
     on_a_2mib_thread(|| {
-        let lines: Vec<String> = (0..16_384)
+        let lines: Vec<String> = (0..4_096)
             .map(|i| {
                 format!(
                     r##""{{\"t\":\"2026-09-07T06:05:00Z\",\"ev\":\"routine\",\"item\":\"r\",\"inst\":\"#{i}\",\"status\":\"{}\"}}""##,
                     if i % 2 == 0 { "done" } else { "maybe" }
                 )
             })
-            .chain((0..16_384).map(|i| format!(r#""{{\"t\":\"2026-09-07T06:05:00Z\",\"ev\":\"event\",\"name\":\"n{}\"}}""#, i % 64)))
+            .chain((0..4_096).map(|i| format!(r#""{{\"t\":\"2026-09-07T06:05:00Z\",\"ev\":\"event\",\"name\":\"n{}\"}}""#, i % 64)))
             .collect();
         let req = format!(
-            r#"{{"docs":[],"tz":{{"key":"UTC","base":"+00:00:00","then":[]}},"log":{{"ckpt":null,"from":1,"lines":[{}],"terminated":true,"want":{{"facts":true}}}}}}"#,
+            r#"{{"docs":[],"now":"2026-09-15","tz":{{"key":"UTC","base":"+00:00:00","then":[]}},"log":{{"ckpt":null,"from":1,"lines":[{}],"terminated":true,"want":{{"facts":true}}}}}}"#,
             lines.join(",")
         );
         let start = std::time::Instant::now();
         let out = call(&req).unwrap();
         let ms = start.elapsed().as_secs_f64() * 1000.0;
         let t = r#"[63924357900,0,false,0]"#;
-        assert_eq!(out.matches(r##"["r","#"##).count(), 16_384, "one instance a routine line");
-        assert_eq!(out.matches(&format!(r#"{t},"done","done",null]"#)).count(), 8_192);
-        assert_eq!(out.matches(&format!(r#"{t},"pending","maybe",null]"#)).count(), 8_192);
-        assert_eq!(out.matches(r#""w":"unknownInstanceStatus","raw":"maybe"}"#).count(), 8_192);
+        // W3's codec shape: an instance is `[[item, inst], [stamp, status, raw, actualMin]]`, its status a numeral
+        // (done 0, pending 1); a replay warning is `[line, raw]`.
+        assert_eq!(out.matches(r##"[["r","#"##).count(), 4_096, "one instance a routine line");
+        assert_eq!(out.matches(&format!(r#"{t},0,"done",null]"#)).count(), 2_048);
+        assert_eq!(out.matches(&format!(r#"{t},1,"maybe",null]"#)).count(), 2_048);
+        assert_eq!(out.matches(r#","maybe"]"#).count(), 2_048);
         // The first `done` of equal instants is `last_done`; every one is on the day.
         assert!(out.contains(&format!(r#""items":[["r",null,{t},false,739865,1]],"#)), "{}", &out[..out.len().min(600)]);
         // Each name's latest by instant and by date is its last line (a later line wins a tie).
         for k in 0..64 {
-            let last = 16_384 + 16_320 + k + 1;
-            assert!(out.contains(&format!(r#"["n{k}",null,{last},{t},{last},{t}]"#)), "name n{k}");
+            let last = 4_096 + 4_032 + k + 1;
+            assert!(out.contains(&format!(r#"[["n{k}",null],[[{last},{t}],[739865,[{last},{t}]]]]"#)), "name n{k}");
         }
-        assert!(out.contains(r#""replayWarnings":[{"line":2,"w":"unknownInstanceStatus","raw":"maybe"},{"line":4,"#));
+        assert!(out.contains(r#""replayWarnings":[[2,"maybe"],[4,"maybe"],"#));
         eprintln!("the completion family at the line bound: {ms:.0} ms (the call), {} bytes", out.len());
     });
 }

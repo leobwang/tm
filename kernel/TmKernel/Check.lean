@@ -3282,10 +3282,6 @@ open Tm
 #print axioms Tm.linesIncreasing_of_pairwise
 #print axioms Tm.filterMap_entryOf_pairwise
 #print axioms Tm.the_tail_entries_have_increasing_lines
-#print axioms Tm.logAnswer_facts
-#print axioms Tm.LogReq.wf_facts_from_line_one
-#print axioms Tm.mkLogReq?_refuses_facts_of_a_tail_without_a_checkpoint
-#print axioms Tm.the_log_op_answers_the_cancelled_lines
 
 -- APPENDED 2026-09-14 (stage 5, D9 track).  Step C2 (design §6.2, §14.4 row C2): the day index in
 -- Replay.lean and the `log` op's `facts.days` in Boundary.lean (the request carries its zone,
@@ -3348,8 +3344,6 @@ open Tm
 #print axioms Tm.Replay.keptWakes_append_of_later_by_nanos_is_refuted
 #print axioms Tm.Replay.a_wake_day_is_shorter_than_a_day_is_not_vacuous
 #print axioms Tm.Replay.an_undone_wake_indexes_nothing
-#print axioms Tm.logSectionWith_passes_its_zone
-#print axioms Tm.the_log_op_answers_every_entrys_day
 
 -- APPENDED 2026-09-15 (stage 5, D9 track).  Step C3 (design §8.1–§8.2, §14.4 row C3): the machine's
 -- state, effects and keys in Replay.lean, the block family's arms (`start`, `pause`, `unpause`,
@@ -3445,7 +3439,6 @@ open Tm
 #print axioms Tm.Replay.a_block_started_during_an_interruption_runs_from_resume
 #print axioms Tm.Replay.worked_minutes_is_not_the_floor_of_the_block
 #print axioms Tm.Replay.an_extend_changes_more_than_the_bookkeeping
-#print axioms Tm.the_log_op_answers_the_block_facts
 
 -- APPENDED 2026-09-15 (stage 5, D9 track).  Step C4 (design §8.2–§8.4, §14.4 row C4): the completion
 -- family in Replay.lean (`completionArm`: `done`'s `mark_done`, `routine`, `skip`, `event`; the keys
@@ -3519,7 +3512,6 @@ open Tm
 #print axioms Tm.Replay.last_done_keeps_the_first_of_equal_instants
 #print axioms Tm.Replay.a_routine_done_is_dated_by_its_inst_only_when_it_is_a_date
 #print axioms Tm.Replay.a_since_filter_does_not_commute_with_the_latest_by_instant
-#print axioms Tm.the_log_op_answers_the_completion_facts
 
 -- APPENDED 2026-09-15 (stage 5, D9 track).  Step C5 (design §8.2–§8.4, §14.4 row C5): the day header and
 -- records family in Replay.lean (`dayArm`: `wake`, `arrive`, `loc`, `break`, `energy`, `idle`, `routine`'s day
@@ -3598,7 +3590,6 @@ open Tm
 #print axioms Tm.Replay.an_undo_of_a_close_cancels_the_latest_close_whatever_its_period
 #print axioms Tm.Replay.the_calendar_today_is_not_the_replays_day_after_midnight
 #print axioms Tm.Replay.idle_and_idle_since_read_different_orders
-#print axioms Tm.the_log_op_answers_the_day_facts
 
 -- APPENDED 2026-09-15 (stage 5, D9 track).  Step C6 (design §8.2, §8.4, §11, §14.4 row C6): every line's header
 -- (the survivors' `header` effects and the second pass over the cancelled lines, `entryHeaders` compiled as its
@@ -3659,9 +3650,6 @@ open Tm
 #print axioms Tm.Replay.every_line_has_a_header_and_a_cancelled_one_is_marked
 #print axioms Tm.Replay.a_start_observation_is_in_its_starts_place
 #print axioms Tm.Replay.the_view_reads_a_small_log
-#print axioms Tm.logAnswer_headers
-#print axioms Tm.LogReq.wf_headers_from_line_one
-#print axioms Tm.mkLogReq?_refuses_headers_of_a_tail_without_a_checkpoint
 
 -- APPENDED 2026-09-15 (stage 5, D9 track).  Step C7 (design §7.3, §14.4 row C7): the undo law in Replay.lean.
 -- `undosFor` (what `tm undo` appends: one `undo{of: tag, id: primary id}` per event, most recent first) and
@@ -4468,3 +4456,61 @@ open Tm
 #print axioms Tm.Seal.genLoop_ok
 #print axioms Tm.Seal.genEnds_spec
 #print axioms Tm.Seal.chunked_genesis_is_one_replay
+
+-- APPENDED 2026-09-15 (stage 5, D9 track).  Step W3 (design §9.6–§9.8, §10, §14.5 row W3): the window crosses the wire.
+-- SealWire.lean (new): the downward fold-point scan and the compiled twins of `cutOk`, `resumeRun` and `resealOf`
+-- (`@[csimp]`), the reseal's emitters and their read-back, the sealed input and its merge (`askMerged`), law 13's
+-- numeral check.  Boundary.lean, section W3: the op's R10 rows, G0 at the op, the op as the resume, law 13, laws 8 and
+-- 2 at the wire, three witnesses.  RETIRED with C6's string-tagged facts (their lines removed above, recorded in the
+-- README's W3 block): logAnswer_facts, logAnswer_headers, LogReq.wf_facts_from_line_one,
+-- mkLogReq?_refuses_facts_of_a_tail_without_a_checkpoint, LogReq.wf_headers_from_line_one,
+-- mkLogReq?_refuses_headers_of_a_tail_without_a_checkpoint, logSectionWith_passes_its_zone,
+-- the_log_op_answers_the_cancelled_lines, the_log_op_answers_every_entrys_day, the_log_op_answers_the_block_facts,
+-- the_log_op_answers_the_completion_facts, the_log_op_answers_the_day_facts.
+#print axioms Tm.Seal.greatestValid_succ
+#print axioms Tm.Seal.greatestValid_eq_down
+#print axioms Tm.Seal.cutOk_eq_cutOkFast
+#print axioms Tm.Seal.resumeRun_eq_resumeRunFast
+#print axioms Tm.Seal.resealOf_eq_resealOfFast
+#print axioms Tm.Seal.cOpenBlock_nonnull
+#print axioms Tm.Seal.cInterruption_nonnull
+#print axioms Tm.Seal.findSome?_eq_none_all
+#print axioms Tm.Seal.emitResealed_reads_back
+#print axioms Tm.Seal.findDay_filter_append
+#print axioms Tm.Seal.findWin_filter_append
+#print axioms Tm.Seal.the_merged_days_read_as_askMerged
+#print axioms Tm.Seal.the_merged_window_reads_as_askMerged
+#print axioms Tm.Seal.answer_ckptOf_days_ge
+#print axioms Tm.Seal.numeralBound_eq
+#print axioms Tm.Seal.jnumsBelow_obj
+#print axioms Tm.Seal.jnumsBelow_arr
+#print axioms Tm.logLineStep_fold
+#print axioms Tm.logLines_eq
+#print axioms Tm.contiguousFrom_zipIdx
+#print axioms Tm.logLines_contiguous
+#print axioms Tm.LogReq.fault_of_b4_bounds
+#print axioms Tm.mkLogReq?_refuses_keepDays_past_31
+#print axioms Tm.mkLogReq?_refuses_maxLine_past_2_40
+#print axioms Tm.policyOk_any
+#print axioms Tm.mkLogReq?_refuses_a_sealed_input_out_of_bounds
+#print axioms Tm.mkLogReq?_refuses_a_checkpoint_out_of_bounds
+#print axioms Tm.mkLogReq?_refuses_a_resume_without_now
+#print axioms Tm.LogReq.wf_resume_bounds
+#print axioms Tm.readCkptField_refuses_what_readCkpt_refuses
+#print axioms Tm.readLogReq_refuses_a_checkpoint_its_reader_refuses
+#print axioms Tm.readSealedField_refuses_more_than_62_records
+#print axioms Tm.logOp_refuses_a_checkpoint_of_another_zone
+#print axioms Tm.logOp_refuses_a_tail_not_at_its_checkpoints_cut
+#print axioms Tm.logOp_refuses_what_the_resume_refuses
+#print axioms Tm.logOp_answers_through_the_resume
+#print axioms Tm.logOp_reads_without_a_replay
+#print axioms Tm.within53_ok
+#print axioms Tm.within53_refuses_by_name
+#print axioms Tm.the_log_op_emits_only_numerals_below_2_53
+#print axioms Tm.the_log_op_checks_every_numeral
+#print axioms Tm.the_log_op_emits_only_what_its_readers_read_back
+#print axioms Tm.the_log_op_facts_from_genesis_are_the_replays
+#print axioms Tm.the_log_op_facts_from_a_stored_checkpoint_are_the_replays
+#print axioms Tm.the_log_op_names_its_resume_refusals
+#print axioms Tm.the_log_op_refuses_a_count_past_2_53_by_its_key
+#print axioms Tm.the_log_op_merges_a_sealed_day_below_its_ledger_day

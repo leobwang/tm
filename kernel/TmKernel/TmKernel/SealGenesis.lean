@@ -7,7 +7,7 @@ chunks, every call resealing, and keeps a stack of the checkpoints its calls sea
 it and how far its call had read.  A guard refusal pops to the newest earlier checkpoint the refusal cannot name (the
 oldest when none), and the lines from that checkpoint's cut through the refusing chunk's end go in one call.
 
-Specification only: W3 wires the host's genesis, its resend cap (32,768 lines or 4 MiB) and its files.  D9-21: the loop
+Specification only: W3 wires the host's genesis, its resend cap (the design's 32,768 lines or 4 MiB, lowered at W3 by gap 102 to 8,192 lines or 1,536 KiB) and its files.  D9-21: the loop
 runs at most twice per chunk (`genLoop`'s fuel), the stack holds at most one entry per chunk, and `endsFrom` recurses
 over the chunks, not the lines.
 -/

@@ -60,6 +60,10 @@ mod loggen;
 #[path = "support/replay.rs"]
 mod replay;
 
+#[allow(dead_code)]
+#[path = "../src/cli/kernel_log.rs"]
+mod kernel_log;
+
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Mutex, OnceLock};
 
@@ -609,6 +613,12 @@ fn kernel_view(log: &Value) -> Facts {
     let mut interrupts: Vec<(u64, InterruptRow)> = Vec::new();
     let mut demotions: Vec<(u64, DemotionRow)> = Vec::new();
     let mut closes: Vec<(u64, CloseRow)> = Vec::new();
+    // W3: a day record's header carries its stamp and written offset (the codec's shape); the display the view compares
+    // is the one the answer's own headers carry (`want.headersFrom: 1`), matched by line.
+    let displays: BTreeMap<u64, String> = j_arr(&log["headers"], "headers")
+        .iter()
+        .map(|h| (j_u64(&h[0], "line"), j_str(&h[5], "display")))
+        .collect();
     for p in j_arr(&v["days"], "days") {
         let p = j_arr(p, "a day");
         assert_eq!(p.len(), 9, "a day is [day, record, seam, energy, durations, interrupts, demotions, closes, headers]");
@@ -645,7 +655,9 @@ fn kernel_view(log: &Value) -> Facts {
                         .iter()
                         .map(|g| {
                             let g = j_arr(g, "a segment");
-                            (j_stamp(&g[0]), j_stamp(&g[1]), j_str(&g[2], "kind"), g[3..].iter().map(|x| j_opt(x, |y| j_str(y, "a segment argument"))).collect())
+                            assert_eq!(g.len(), 3, "a segment is [start, stop, kind] (W3: the codec's shape)");
+                            let (kind, args) = j_seg_kind(&g[2]);
+                            (j_stamp(&g[0]), j_stamp(&g[1]), kind, args)
                         })
                         .collect(),
                 },
@@ -716,7 +728,7 @@ fn kernel_view(log: &Value) -> Facts {
             let r = j_arr(o, "a demotion");
             demotions.push((
                 j_u64(&r[0], "line"),
-                (d, j_stamp(&r[1]), j_str(&r[2], "id"), j_str(&r[3], "from"), j_str(&r[4], "to"), j_u64(&r[5], "est"), j_opt(&r[6], |x| j_str(x, "stamp"))),
+                (d, j_stamp(&r[1]), j_str(&r[2], "id"), j_str(&r[3], "from"), j_str(&r[4], "to"), j_u64(&r[5], "est"), j_opt(&r[6], j_demotion_stamp)),
             ));
         }
         for o in j_arr(&p[7], "closes") {
@@ -725,8 +737,10 @@ fn kernel_view(log: &Value) -> Facts {
         }
         for h in j_arr(&p[8], "headers") {
             let h = j_arr(h, "a header");
-            assert_eq!(h.len(), 5, "a day's header is [line, tag, id, cancelled, display]");
-            rows.push((j_u64(&h[0], "line"), j_str(&h[1], "tag"), j_opt(&h[2], |x| j_str(x, "id")), d, h[3].as_bool().expect("cancelled"), j_str(&h[4], "display")));
+            assert_eq!(h.len(), 6, "a day's header is [line, tag, id, cancelled, [sec, ns], [west, offSec]] (W3: the codec's shape)");
+            let line = j_u64(&h[0], "line");
+            let display = displays.get(&line).unwrap_or_else(|| panic!("line {line}: a day's header with no header in the answer")).clone();
+            rows.push((line, j_str(&h[1], "tag"), j_opt(&h[2], |x| j_str(x, "id")), d, h[3].as_bool().expect("cancelled"), display));
         }
     }
     fn in_line_order<T>(mut xs: Vec<(u64, T)>, what: &str) -> Vec<T> {
@@ -791,13 +805,18 @@ fn kernel_view(log: &Value) -> Facts {
         assert!(completion.instances.insert(key, row).is_none(), "a repeated instance");
     }
     for r in j_arr(&v["named"], "named") {
+        // W3: the codec's shape, `[[name, id], [[latestLine, latestStamp], [datedDate, [datedLine, datedStamp]]]]`.
         let r = j_arr(r, "a named record");
-        let row = (j_u64(&r[2], "latest line"), j_stamp(&r[3]), j_u64(&r[4], "dated line"), j_stamp(&r[5]));
-        assert!(completion.named.insert((j_str(&r[0], "name"), j_opt(&r[1], |x| j_str(x, "id"))), row).is_none(), "a repeated named key");
+        let (key, rec) = (j_arr(&r[0], "a named key"), j_arr(&r[1], "a named record's value"));
+        let (latest, dated) = (j_arr(&rec[0], "the latest occurrence"), j_arr(&rec[1], "the dated occurrence"));
+        let dated = j_arr(&dated[1], "the dated occurrence's line and stamp");
+        let row = (j_u64(&latest[0], "latest line"), j_stamp(&latest[1]), j_u64(&dated[0], "dated line"), j_stamp(&dated[1]));
+        assert!(completion.named.insert((j_str(&key[0], "name"), j_opt(&key[1], |x| j_str(x, "id"))), row).is_none(), "a repeated named key");
     }
     for x in j_arr(&v["replayWarnings"], "replayWarnings") {
-        assert_eq!(x["w"], "unknownInstanceStatus", "the one replay warning: {x}");
-        completion.warnings.push((j_u64(&x["line"], "line"), j_str(&x["raw"], "raw")));
+        // W3: the codec's shape, `[line, raw]` (the one replay warning, `unknownInstanceStatus`).
+        let x = j_arr(x, "a replay warning");
+        completion.warnings.push((j_u64(&x[0], "line"), j_str(&x[1], "raw")));
     }
     block.open_block = j_opt(&v["open"]["block"], |o| {
         let o = j_arr(o, "the open block");
@@ -848,8 +867,17 @@ fn j_seam(v: &Value) -> SeamRow {
     let marks = j_arr(&a[1], "idleMarks")
         .iter()
         .map(|m| {
+            // W3: the codec's numeral tags, `[0, t]` pause … `[4, t, actual]` break.
             let m = j_arr(m, "an idle mark");
-            let kind = j_str(&m[0], "kind");
+            let kind = match j_u64(&m[0], "an idle mark's tag") {
+                0 => "pause",
+                1 => "interrupt",
+                2 => "unpause",
+                3 => "resume",
+                4 => "break",
+                t => panic!("an idle mark tag {t}"),
+            }
+            .to_string();
             let actual = if kind == "break" { j_opt(&m[2], |x| j_u64(x, "actual")) } else {
                 assert_eq!(m.len(), 2, "only a break mark carries minutes");
                 None
@@ -893,9 +921,46 @@ fn j_duration(o: &Value) -> DurationRow {
     )
 }
 
+/// W3: an instance in the codec's shape, `[[item, inst], [stamp, status, raw, actualMin]]`, its status a numeral (done 0,
+/// pending 1, missed 2, expired 3, skipped 4).
 fn j_instance(r: &Value) -> ((String, String), InstanceRow) {
     let r = j_arr(r, "an instance");
-    ((j_str(&r[0], "item"), j_str(&r[1], "inst")), (j_stamp(&r[2]), j_str(&r[3], "status"), j_str(&r[4], "raw"), j_opt(&r[5], |x| j_u64(x, "actualMin"))))
+    let (key, rec) = (j_arr(&r[0], "an instance key"), j_arr(&r[1], "an instance record"));
+    let status = match j_u64(&rec[1], "status") {
+        0 => "done",
+        1 => "pending",
+        2 => "missed",
+        3 => "expired",
+        4 => "skipped",
+        s => panic!("an instance status {s}"),
+    };
+    ((j_str(&key[0], "item"), j_str(&key[1], "inst")), (j_stamp(&rec[0]), status.to_string(), j_str(&rec[2], "raw"), j_opt(&rec[3], |x| j_u64(x, "actualMin"))))
+}
+
+/// W3: a segment kind in the codec's numeral tags (`[0, id]` block, `[1, id]` pause, `[2, id]` interrupt, `[3, where]`
+/// break, `[4, item, inst]` routine, `[5, attributed]` idle), as its name and arguments.
+fn j_seg_kind(k: &Value) -> (String, Vec<Option<String>>) {
+    let k = j_arr(k, "a segment kind");
+    let name = match j_u64(&k[0], "a segment kind's tag") {
+        0 => "block",
+        1 => "pause",
+        2 => "interrupt",
+        3 => "break",
+        4 => "routine",
+        5 => "idle",
+        t => panic!("a segment kind tag {t}"),
+    };
+    (name.to_string(), k[1..].iter().map(|x| j_opt(x, |y| j_str(y, "a segment argument"))).collect())
+}
+
+/// W3: a demotion's stamp in the codec's shape, `[0, week]` or `[1, day]`, as `demoted:` writes it (`W37`, `D07`).
+fn j_demotion_stamp(v: &Value) -> String {
+    let a = j_arr(v, "a demotion stamp");
+    match j_u64(&a[0], "a stamp's tag") {
+        0 => format!("W{:02}", j_u64(&a[1], "week")),
+        1 => format!("D{:02}", j_u64(&a[1], "day")),
+        t => panic!("a stamp tag {t}"),
+    }
 }
 
 /// The lines of `text` as the host sends them: split on `\n`, the empty segment after a final `\n` not sent
@@ -911,9 +976,9 @@ fn segments(text: &str) -> Vec<Value> {
 /// **The kernel's `log` answer**: one genesis call over the whole text, facts and every header asked.
 fn kernel_answer(text: &str, tz: Tz) -> Value {
     let segs = segments(text);
-    assert!(segs.len() <= 32_768, "T5 sends one call; W3's chunked genesis is not built yet");
+    assert!(segs.len() <= 8_192, "T5 sends one call, within the memory gate's line bound (W3, gap 102)");
     let req = json!({
-        "docs": [], "tz": table(tz),
+        "docs": [], "now": "2026-09-15", "tz": table(tz),
         "log": {"ckpt": null, "from": 1, "lines": segs, "terminated": text.is_empty() || text.ends_with('\n'),
                 "reseal": null, "want": {"facts": true, "headersFrom": 1}}
     });
@@ -1200,8 +1265,12 @@ fn rust_facts(text: &str, tz: Tz) -> Facts {
 
 /// Compare one log; the kernel's facts are returned for the arms' own checks.
 fn assert_parity(name: &str, text: &str, tz: Tz) -> Facts {
-    let answer = kernel_answer(text, tz);
-    let (k, r) = (kernel_view(&answer), rust_facts(text, tz));
+    assert_parity_answer(name, text, tz, &kernel_answer(text, tz))
+}
+
+/// Compare one log with a kernel `log` answer built any way (W3: a windowed answer merged with its sealed records).
+fn assert_parity_answer(name: &str, text: &str, tz: Tz, answer: &Value) -> Facts {
+    let (k, r) = (kernel_view(answer), rust_facts(text, tz));
     // C5: the kernel creates every day the fork creates, and no other: its block
     // records and its day records are one set of days, the Rust's.
     let (kd, rd): (BTreeSet<_>, BTreeSet<_>) = (k.block.days.keys().collect(), r.block.days.keys().collect());
@@ -2916,8 +2985,8 @@ fn t5_a_sequence_is_its_seed() {
 }
 
 /// **The fast twin on a hostile log** (Replay.lean's `survivors_eq_survivorsFast`,
-/// rule D9-21): 5,000 `done`s of distinct ids, then 2,500 undos of ids nothing
-/// carries and 2,500 of a tag nothing carries. The specification's `eraseP` scans
+/// rule D9-21): 4,000 `done`s of distinct ids, then 2,000 undos of ids nothing
+/// carries and 2,000 of a tag nothing carries (W3: 8,000 lines, under the memory gate's 8,192). The specification's `eraseP` scans
 /// the whole stack for each undo (25 million matches); the per-tag and per-(tag,
 /// id) stacks answer each in constant time. Under 1 MiB, one call (gap 102's
 /// memory gate). `#[ignore]`d: a measurement, run by hand and recorded in the
@@ -2928,13 +2997,14 @@ fn t5_a_hostile_undo_log_is_answered_in_linear_time() {
     let tz = chrono_tz::UTC;
     let mut w = Writer::new(tz);
     let t0 = utc(2026, 9, 7, 9, 0, 0);
-    for i in 0..5_000 {
+    // W3: 8,000 lines, within the memory gate's line bound of 8,192 (was 5,000, 2,500 and 2,500).
+    for i in 0..4_000 {
         w.push(t0, ev_done(&format!("i{i}"), 30, false));
     }
-    for i in 0..2_500 {
+    for i in 0..2_000 {
         w.push(t0, ev_undo("done", Some(&format!("absent{i}"))));
     }
-    for _ in 0..2_500 {
+    for _ in 0..2_000 {
         w.push(t0, ev_undo("rank", None));
     }
     let text = w.text();
@@ -2946,7 +3016,7 @@ fn t5_a_hostile_undo_log_is_answered_in_linear_time() {
     let rust_ms = start.elapsed().as_secs_f64() * 1000.0;
     assert_eq!(k, r);
     assert!(text.len() < 1 << 20, "under 1 MiB");
-    assert_eq!(k.cancelled.len(), 5_000);
+    assert_eq!(k.cancelled.len(), 4_000);
     eprintln!("T5 hostile: {} lines, {} bytes, kernel {kernel_ms:.0} ms, rust {rust_ms:.0} ms", w.lines.len(), text.len());
 }
 
@@ -3038,4 +3108,257 @@ fn t5_p33_a_done_date_before_the_origin_is_the_named_exception() {
     assert_eq!(r.completion.done_first.get("stretch"), Some(&(Some(day_number(date(0, 9, 7))), 1)), "the fork's first done date is in year 0");
     r.completion.done_first.insert("stretch".to_string(), (Some(day_number(date(2026, 9, 7))), 1));
     assert_eq!(k, r, "P33 is the only difference");
+}
+
+
+// ---------------------------------------------------------------------------
+// W3: the window across the wire (design §9.6–§9.8, §10, §11.1; README "Stage 5 D9 W3").
+
+/// W3: render-only calls (no resume, so no checkpoint and no `now` needed by the kernel) over a whole log, at most 4,096
+/// lines each: every line's display and every line warning, as the one-call answer carries them.
+fn displays_and_warnings(s: &kernel_log::Split, table: &Value) -> (BTreeMap<u64, String>, Vec<Value>) {
+    let (mut displays, mut warnings) = (BTreeMap::new(), Vec::new());
+    let n = s.lines.len();
+    let mut k = 0;
+    while k < n {
+        let m = (n - k).min(4096);
+        let want = kernel_log::Want { facts: false, headers_from: None, render: (k as u64 + 1..=(k + m) as u64).collect() };
+        let req = kernel_log::request("2026-09-15", table, None, k as u64 + 1, &s.lines[k..k + m], k + m < n || s.terminated, None, &want, None);
+        let a = kernel_log::log_call(&req).expect("the kernel answers").expect("a render-only call is not refused");
+        for r in a.render.as_array().expect("render") {
+            if let Some(d) = r[2].as_str() {
+                displays.insert(r[0].as_u64().expect("a line"), d.to_string());
+            }
+        }
+        warnings.extend(a.warnings.as_array().expect("warnings").iter().cloned());
+        k += m;
+    }
+    (displays, warnings)
+}
+
+/// **W3: a windowed answer as the whole replay's** (§11.1's `All` scope): the snapshot's day records below its ledger day
+/// and window records below its horizon, then the answer's own (which win where both hold a key), every day record's
+/// headers with their day and the display a render-only call gives, and every line warning. `kernel_view` then reads it
+/// exactly as it reads a one-call answer.
+fn windowed_log(facts: &Value, days: &BTreeMap<u64, String>, window: &BTreeMap<u64, String>, s: &kernel_log::Split, table: &Value) -> Value {
+    let mut facts = facts.clone();
+    let parse = |t: &String| serde_json::from_str::<Value>(t).expect("a sealed record reads");
+    let mut all_days: BTreeMap<u64, Value> = days.iter().map(|(d, t)| (*d, parse(t))).collect();
+    for d in facts["days"].as_array().expect("facts.days") {
+        all_days.insert(d[0].as_u64().expect("a day"), d.clone());
+    }
+    let mut all_window: BTreeMap<u64, Value> = window.iter().map(|(d, t)| (*d, parse(t))).collect();
+    for w in facts["window"].as_array().expect("facts.window") {
+        all_window.insert(w[0].as_u64().expect("a date"), w.clone());
+    }
+    let (displays, warnings) = displays_and_warnings(s, table);
+    let mut headers: Vec<(u64, Value)> = Vec::new();
+    for (d, rec) in &all_days {
+        for h in rec[8].as_array().expect("a record's headers") {
+            let line = h[0].as_u64().expect("a line");
+            let display = displays.get(&line).unwrap_or_else(|| panic!("line {line} has no display"));
+            headers.push((line, json!([line, h[1], h[2], d, h[3], display])));
+        }
+    }
+    headers.sort_by_key(|h| h.0);
+    facts["days"] = Value::Array(all_days.into_values().collect());
+    facts["window"] = Value::Array(all_window.into_values().collect());
+    json!({"lines": s.lines.len(), "warnings": warnings, "facts": facts, "headers": headers.into_iter().map(|h| h.1).collect::<Vec<_>>()})
+}
+
+/// The kernel day after the last dated line of `lines`.
+fn day_after(lines: &[String]) -> u64 {
+    let last = lines
+        .iter()
+        .rev()
+        .find_map(|l| serde_json::from_str::<Value>(l).ok()?.get("t")?.as_str().and_then(|t| DateTime::parse_from_rfc3339(t).ok()))
+        .expect("a dated line");
+    kernel_log::day_of(last.date_naive()) + 1
+}
+
+/// Compare a replay through the cache with the fork's, merged with every record its snapshot stands on (§11.1's `All`).
+fn assert_windowed(name: &str, cache: &kernel_log::ReplayCache, r: &kernel_log::Replayed, text: &str, tz: Tz, table: &Value) -> Facts {
+    let s = kernel_log::split(text.as_bytes());
+    let facts = r.answer.facts.as_ref().unwrap_or_else(|| panic!("{name}: facts asked"));
+    let (days, window) = cache.records_of(r).unwrap_or_else(|| panic!("{name}: the snapshot's records load"));
+    assert_parity_answer(name, text, tz, &windowed_log(facts, &days, &window, &s, table))
+}
+
+/// **The windowed T5** (W3; design §9.6–§9.8, §11.1, §14.5 row W3's T7 and T10 in part): a year of the generated log in
+/// Chicago through [`kernel_log::ReplayCache`] on disk, every answer merged with the records the cache holds and compared
+/// with the fork's whole replay (`Ctx::replay_of`):
+/// genesis (two chunks), a hot call, a reseal five days on (§9.6's back-off), an old-date read of a sealed week (`sealed`,
+/// D13), a hand undo of a folded `done` (G1's `undoReach`, then genesis), a `now` below the ledger day (genesis, not
+/// persisted), and a prefix edited on disk (the digest, then genesis).
+#[test]
+fn t5_windowed_genesis_hot_reseal_old_date_and_fallbacks_replay_as_the_fork_does() {
+    let tz = chrono_tz::America::Chicago;
+    let table = table(tz);
+    let lines = loggen::log(loggen::Rate::Forty, 365);
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let cdir = dir.path().join(kernel_log::CACHE_DIR);
+    let mut cache = kernel_log::ReplayCache::new(Some(cdir.clone()));
+    let want = kernel_log::Want { facts: true, headers_from: None, render: vec![] };
+    let start = std::time::Instant::now();
+
+    // Genesis over eleven months.
+    let a_lines = &lines[..lines.len() - 40 * 30];
+    let text_a = loggen::text(a_lines);
+    let now_a = day_after(a_lines);
+    let ra = cache.replay(text_a.as_bytes(), now_a, &table, None, &want).expect("genesis answers");
+    assert_eq!(ra.outcome, kernel_log::Outcome::Genesis, "{:?}", ra.rebuilt_because);
+    assert!(cdir.join(kernel_log::CKPT_FILE).exists(), "genesis writes ckpt.json");
+    // §9.4: L' is at most F = min(now − keepDays, M − keepDays), M the log's last header day (here `now` − 1).
+    assert!(ra.snapshot.meta.ledger_day <= now_a - kernel_log::KEEP_DAYS && ra.snapshot.meta.ledger_day + 4 >= now_a, "ledger day {}", ra.snapshot.meta.ledger_day);
+    assert!(ra.days.len() > 300 && ra.snapshot.manifest.len() >= 10, "{} day records, {} months", ra.days.len(), ra.snapshot.manifest.len());
+    assert_windowed("windowed genesis", &cache, &ra, &text_a, tz, &table);
+
+    // A hot call the same day: the stored checkpoint and its tail, no reseal.
+    let rb = cache.replay(text_a.as_bytes(), now_a, &table, None, &want).expect("a hot call answers");
+    assert_eq!(rb.outcome, kernel_log::Outcome::Hot);
+    assert_eq!(rb.snapshot.gen, ra.snapshot.gen);
+    assert_windowed("windowed hot call", &cache, &rb, &text_a, tz, &table);
+
+    // Five more days, and `now` past them: the back-off's second clause reseals.
+    let c_lines = &lines[..lines.len() - 40 * 25];
+    let text_c = loggen::text(c_lines);
+    let now_c = day_after(c_lines);
+    let rc = cache.replay(text_c.as_bytes(), now_c, &table, None, &want).expect("a reseal answers");
+    assert_eq!(rc.outcome, kernel_log::Outcome::Resealed);
+    assert_eq!(rc.snapshot.prev_gen, ra.snapshot.gen);
+    assert!(rc.snapshot.meta.ledger_day > ra.snapshot.meta.ledger_day, "the ledger day moves forward");
+    assert_windowed("windowed reseal", &cache, &rc, &text_c, tz, &table);
+
+    // An old-date read: a sealed week (the eighth to the fourteenth day of the log), sent as `sealed` with the tail.
+    let snap = cache.read_snapshot().expect("the resealed snapshot");
+    let (sd, sw) = cache.all_records(&snap).map(|(_, d, w)| (d, w)).expect("its records load");
+    let from = *sd.keys().next().expect("a sealed day") + 7;
+    let (days, window) = kernel_log::ReplayCache::sealed_between(&snap, &sd, &sw, from, from + 6);
+    assert!(!days.is_empty() && days.len() + window.len() <= kernel_log::MAX_SEALED_IN, "{} day and {} window records", days.len(), window.len());
+    let s_c = kernel_log::split(text_c.as_bytes());
+    let cut = snap.meta.cut as usize;
+    let req = kernel_log::request(&kernel_log::date_of(now_c), &table, Some(&snap.ckpt), cut as u64 + 1, &s_c.lines[cut..], s_c.terminated, None, &want, Some((&days, &window)));
+    let old = kernel_log::log_call(&req).expect("the kernel answers").expect("an old-date read is not refused");
+    let old_facts = old.facts.expect("facts");
+    let merged_days: BTreeSet<u64> = old_facts["days"].as_array().expect("days").iter().map(|d| d[0].as_u64().expect("a day")).collect();
+    for rec in &days {
+        let d = serde_json::from_str::<Value>(rec).expect("a record")[0].as_u64().expect("a day");
+        assert!(merged_days.contains(&d), "the sealed day {d} is merged into the facts");
+    }
+    let (sd_rest, sw_rest) = (sd.clone(), sw.clone());
+    assert_parity_answer("windowed old-date read", &text_c, tz, &windowed_log(&old_facts, &sd_rest, &sw_rest, &s_c, &table));
+
+    // A hand undo of a `done` folded into the checkpoint, with no later `done` of that id: G1 refuses, genesis answers.
+    let folded: Vec<(usize, String)> = c_lines[..cut]
+        .iter()
+        .enumerate()
+        .filter_map(|(i, l)| {
+            let v: Value = serde_json::from_str(l).ok()?;
+            (v["ev"] == "done").then(|| (i, v["id"].as_str().map(str::to_string)))?.1.map(|id| (i, id))
+        })
+        .collect();
+    let (_, id) = folded
+        .iter()
+        .rev()
+        .find(|(i, id)| {
+            !c_lines[*i + 1..].iter().any(|l| serde_json::from_str::<Value>(l).is_ok_and(|v| v["ev"] == "done" && v["id"] == id.as_str()))
+        })
+        .expect("a folded done whose id is never done again");
+    let last_t = serde_json::from_str::<Value>(c_lines.last().expect("a line")).expect("json")["t"].as_str().expect("t").to_string();
+    let mut e_lines = c_lines.to_vec();
+    e_lines.push(format!(r#"{{"t":"{last_t}","ev":"undo","of":"done","id":"{id}"}}"#));
+    let text_e = loggen::text(&e_lines);
+    let re = cache.replay(text_e.as_bytes(), now_c, &table, None, &want).expect("the fallback answers");
+    assert_eq!(re.outcome, kernel_log::Outcome::Genesis);
+    assert!(re.rebuilt_because.as_deref().is_some_and(|w| w.starts_with("undoReach")), "{:?}", re.rebuilt_because);
+    assert_windowed("windowed far undo", &cache, &re, &text_e, tz, &table);
+
+    // `now` below the ledger day: genesis at that `now`, and ckpt.json is not written.
+    let before = std::fs::read(cdir.join(kernel_log::CKPT_FILE)).expect("ckpt.json");
+    let low = re.snapshot.meta.ledger_day - 1;
+    let rf = cache.replay(text_e.as_bytes(), low, &table, None, &want).expect("the unpersisted genesis answers");
+    assert_eq!(rf.outcome, kernel_log::Outcome::GenesisUnpersisted, "{:?}", rf.rebuilt_because);
+    assert_eq!(std::fs::read(cdir.join(kernel_log::CKPT_FILE)).expect("ckpt.json"), before, "not persisted");
+    assert_windowed("windowed now below the ledger day", &cache, &rf, &text_e, tz, &table);
+
+    // A byte of the prefix edited on disk (the first letter of the first location): the digest sends the next call to
+    // genesis.
+    let at = text_e.find(r#""loc":""#).expect("an early location") + r#""loc":""#.len();
+    assert!((at as u64) < rf.snapshot.prefix_bytes.max(re.snapshot.prefix_bytes), "the edit is inside the stored prefix");
+    let mut text_g = text_e.clone();
+    text_g.replace_range(at..at + 1, "Q");
+    let rg = cache.replay(text_g.as_bytes(), now_c, &table, None, &want).expect("genesis answers");
+    assert_eq!(rg.outcome, kernel_log::Outcome::Genesis);
+    assert_eq!(rg.rebuilt_because.as_deref(), Some("the prefix's digest differs"));
+    assert_windowed("windowed edited prefix", &cache, &rg, &text_g, tz, &table);
+
+    eprintln!(
+        "T5 windowed: {} lines, genesis {} day records over {} months, reseal to ledger day {}, old-date read of {} day records; {:.1} s",
+        lines.len(),
+        ra.days.len(),
+        ra.snapshot.manifest.len(),
+        rc.snapshot.meta.ledger_day,
+        days.len(),
+        start.elapsed().as_secs_f64()
+    );
+}
+
+/// **T0 (b)** (W3; design §14.5 row W3, CRIT 10), on a 2 MiB thread: genesis over a generated 200,000-line log (61 events
+/// a day) in chunks of at most 8,192 lines and 1 MiB, every call resealing and emitting its records, the last with facts;
+/// one call at exactly the resend cap's 8,192 lines (and one line past it, refused `tooManyLines`); and one reseal
+/// emitting 1,997 day records.
+#[test]
+fn t0b_genesis_over_200000_lines_in_chunks_runs_on_a_2mib_thread() {
+    // One continuous run of the generator (`LogGen::days` starts at 2026-01-01 on every call, so calls in a loop would
+    // write a log that goes back in time every 30 days, which no CLI writes and whose refusals genesis cannot answer).
+    let mut lines = loggen::LogGen::new(loggen::Rate::SixtyOne, loggen::SEED).days(3_400);
+    assert!(lines.len() >= 200_000, "{} lines", lines.len());
+    lines.truncate(200_000);
+    let text = loggen::text(&lines);
+    let now = kernel_log::date_of(day_after(&lines));
+    let entries = replay::replay_of_text(&text, chrono_tz::UTC).entry_count() as u64;
+    let table = table(chrono_tz::UTC);
+    let wake_days: Vec<String> = (0..2_000)
+        .map(|i| {
+            let d = NaiveDate::from_ymd_opt(2020, 1, 1).expect("a date") + Duration::days(i);
+            format!(r#"{{"t":"{}T06:00:00Z","ev":"wake","slept_min":420}}"#, d.format("%Y-%m-%d"))
+        })
+        .collect();
+    let handle = std::thread::Builder::new()
+        .stack_size(2 << 20)
+        .spawn(move || {
+            let s = kernel_log::split(text.as_bytes());
+            let policy = kernel_log::Policy { keep_days: kernel_log::KEEP_DAYS, max_line: None };
+            let facts = kernel_log::Want { facts: true, headers_from: None, render: vec![] };
+            let t = std::time::Instant::now();
+            let g = kernel_log::genesis(&now, &table, &s, policy, &facts).expect("genesis answers");
+            let genesis_ms = t.elapsed().as_secs_f64() * 1000.0;
+            let answered = g.answer.facts.as_ref().expect("the last call's facts")["entryCount"].as_u64().expect("entryCount");
+            // One call at exactly the cap, and one line past it.
+            let at_cap = kernel_log::request(&now, &table, None, 1, &s.lines[..kernel_log::RESEND_LINES], true, Some(policy), &facts, None);
+            assert!(s.bytes_between(0, kernel_log::RESEND_LINES) <= kernel_log::RESEND_BYTES, "the line bound binds first here");
+            let t = std::time::Instant::now();
+            let a = kernel_log::log_call(&at_cap).expect("the kernel answers").expect("a call at the cap is answered");
+            let cap_ms = t.elapsed().as_secs_f64() * 1000.0;
+            assert!(a.reseal.is_some(), "the call at the cap reseals");
+            let past = kernel_log::request(&now, &table, None, 1, &s.lines[..kernel_log::RESEND_LINES + 1], true, Some(policy), &facts, None);
+            let refused = kernel_log::log_call(&past).expect("the kernel answers").expect_err("one line past the cap is refused");
+            assert!(matches!(&refused, kernel_log::Refusal::Fault(v) if v["log"] == "tooManyLines"), "{refused:?}");
+            // One reseal emitting 2,000 day records: a wake a day for 2,000 days, sealed from nothing.
+            let w = kernel_log::split(loggen::text(&wake_days).as_bytes());
+            let req = kernel_log::request("2026-01-01", &table, None, 1, &w.lines, true, Some(policy), &kernel_log::Want::default(), None);
+            let rs = kernel_log::log_call(&req).expect("the kernel answers").expect("answered").reseal.expect("a reseal");
+            (g.calls, g.pops, g.largest_call, g.top.days.len(), g.top.window.len(), answered, genesis_ms, cap_ms, rs.days.len())
+        })
+        .expect("a 2 MiB thread");
+    let (calls, pops, largest, days, window, answered, genesis_ms, cap_ms, sealed_days) = handle.join().expect("no stack overflow");
+    assert!(calls >= 25, "{calls} calls");
+    assert!(largest <= kernel_log::RESEND_LINES, "{largest}");
+    assert_eq!(answered, entries, "the last call answers for every entry");
+    assert!(days >= 3_000 && window >= 3_000, "{days} day and {window} window records");
+    // F = min(now − keepDays, M − keepDays), M the last wake's day: the last two days stay open, the other 1,997 are sealed.
+    assert_eq!(sealed_days, 1_997, "one reseal emits a record a day below F");
+    eprintln!(
+        "T0 (b): 200,000 lines, {calls} calls, {pops} pops, largest call {largest} lines, {days} day and {window} window records, genesis {genesis_ms:.0} ms; a call at the cap {cap_ms:.0} ms; one reseal of {sealed_days} day records"
+    );
 }

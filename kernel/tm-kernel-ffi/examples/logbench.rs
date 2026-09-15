@@ -27,9 +27,17 @@
 //! - **(d)** RSS for a call carrying a 1 MiB and a 4 MiB line array (line
 //!   bytes, §9.7's chunk and resend caps).  **Gate:** at 4 MiB, above 256 MiB
 //!   means §9.7's resend cap is lowered before W3.
-//! - **(e)** the `log` op itself (stage 5 D9 B4, grammar only): every line read
-//!   by `Log.readLine`, a header for each, no rendering, at the 1 MiB cut and at
-//!   the per-call bound of 32,768 lines.  B4 adds it; W5 measures the replay.
+//! - **(e)** the `log` op itself (stage 5 D9 B4): every line read by
+//!   `Log.readLine`, a header for each, no rendering, at the 1 MiB cut and at the
+//!   per-call bound (8,192 lines since W3).  Since W3 a request asking for headers
+//!   resumes from the empty checkpoint, so (e) replays too.
+//! - **(f)** (W3, gap 102) **the memory gate for one resend-shaped call**: a
+//!   genesis call from the empty checkpoint with a reseal and facts, no headers, at
+//!   4,096 and 8,192 lines of the 3-year log (the line bound; 16,384 lines measured
+//!   218.9 MiB before the kernel's bound fell to 8,192, and is refused since), and 8,192
+//!   lines of long note text at 1,536, 1,792 and 1,920 KiB (the byte bound's worst
+//!   shape).  **Gate:** the resend cap is the largest power-of-two line count, and a
+//!   byte bound, whose peak `VmHWM` is at most 200 MiB.
 //!
 //! Every call-bearing measurement runs in a child process of its own (this
 //! binary, re-executed with a subcommand), because `VmHWM` only ever rises.
@@ -117,9 +125,10 @@ fn reset_hwm() -> bool {
     std::fs::write("/proc/self/clear_refs", "5").is_ok()
 }
 
-/// Times `REPEATS` calls; returns (best ms, median ms).
+/// Times `REPEATS` calls (or `LOGBENCH_REPEATS`); returns (best ms, median ms).
 fn time_calls(req: &str) -> (f64, f64) {
-    let mut ms: Vec<f64> = (0..REPEATS)
+    let repeats = std::env::var("LOGBENCH_REPEATS").ok().and_then(|v| v.parse().ok()).unwrap_or(REPEATS);
+    let mut ms: Vec<f64> = (0..repeats)
         .map(|_| {
             let s = Instant::now();
             let out = tm_kernel_ffi::call(req).expect("kernel fault");
@@ -129,7 +138,7 @@ fn time_calls(req: &str) -> (f64, f64) {
         })
         .collect();
     ms.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    (ms[0], ms[REPEATS / 2])
+    (ms[0], ms[repeats / 2])
 }
 
 /// Child: one parse measurement.  Prints one tab-separated record.
@@ -189,7 +198,7 @@ fn child_logop(how: &str, n_arg: usize) {
     };
     let lines: Vec<String> = all.into_iter().take(n).collect();
     let line_bytes = text(&lines).len();
-    let mut req = String::from(r#"{"docs":[],"tz":{"key":"UTC","base":"+00:00:00","then":[]},"log":{"ckpt":null,"from":1,"lines":["#);
+    let mut req = String::from(r#"{"docs":[],"now":"2029-01-01","tz":{"key":"UTC","base":"+00:00:00","then":[]},"log":{"ckpt":null,"from":1,"lines":["#);
     for (i, l) in lines.iter().enumerate() {
         if i > 0 {
             req.push(',');
@@ -206,6 +215,82 @@ fn child_logop(how: &str, n_arg: usize) {
     println!("{how} {n_arg}\t{n}\t{line_bytes}\t{}\t{best:.2}\t{median:.2}\t{before}\t{after}", req.len());
 }
 
+/// The prefix of the 3-year, 61-a-day log a cut names: `mib N` / `kib N` the longest prefix within that many
+/// bytes of lines (each line counted with its newline, as §9.7 counts them), `lines N` the first N lines.
+fn cut_of(how: &str, n_arg: usize) -> Vec<String> {
+    let all = lines_of(Rate::SixtyOne, "3y");
+    let bytes = match how {
+        "mib" => Some(n_arg << 20),
+        "kib" => Some(n_arg << 10),
+        _ => None,
+    };
+    let n = match bytes {
+        Some(b) => {
+            let mut used = 0;
+            all.iter().take_while(|l| { used += l.len() + 1; used <= b }).count()
+        }
+        None => n_arg.min(all.len()),
+    };
+    all.into_iter().take(n).collect()
+}
+
+/// Child (W3, gap 102): **one `log` call with its facts** over a cut of the 3-year, 61-a-day log, the call a
+/// genesis resend makes: every line read and replayed, the facts and a header for every line emitted.  Before
+/// W3's wire it is a call with `ckpt: null` and `want.facts`; W3 adds `reseal` (the resend's shape).
+fn child_logfacts(how: &str, n_arg: usize, reseal: bool) {
+    let lines = cut_of(how, n_arg);
+    let n = lines.len();
+    let line_bytes = text(&lines).len();
+    let mut req = String::from(r#"{"docs":[],"now":"2029-01-01","tz":{"key":"UTC","base":"+00:00:00","then":[]},"log":{"ckpt":null,"from":1,"lines":["#);
+    for (i, l) in lines.iter().enumerate() {
+        if i > 0 {
+            req.push(',');
+        }
+        jstr(&mut req, l);
+    }
+    req.push_str(r#"],"terminated":true,"#);
+    req.push_str(if reseal { r#""reseal":{"keepDays":2,"maxLine":null},"# } else { r#""reseal":null,"# });
+    // `LOGBENCH_FACTS=0` / `LOGBENCH_HEADERS=0` drop what a call asks for, to measure the resend's own shape (a genesis
+    // call asks facts only at the log's end, and headers never).
+    let facts = std::env::var("LOGBENCH_FACTS").map_or(true, |v| v != "0");
+    let headers = std::env::var("LOGBENCH_HEADERS").map_or(true, |v| v != "0");
+    req.push_str(&format!(r#""want":{{"facts":{facts},"headersFrom":{}}}}}}}"#, if headers { "1" } else { "null" }));
+    drop(lines);
+    tm_kernel_ffi::init().expect("init");
+    assert!(reset_hwm(), "cannot reset VmHWM");
+    let before = vm_hwm_kib();
+    let (best, median) = time_calls(&req);
+    let after = vm_hwm_kib();
+    println!("{how} {n_arg}\t{n}\t{line_bytes}\t{}\t{best:.2}\t{median:.2}\t{before}\t{after}", req.len());
+}
+
+/// Child (W3, gap 102): **the byte bound's worst shape**: 8,192 `note` lines padded to `kib` KiB of line bytes in all
+/// (each counted with its newline), in one resend-shaped call (`ckpt: null`, a reseal, facts, no headers).  A line's text
+/// costs the kernel a list cell a character in the request, the line and the entry, so long lines are the heaviest bytes.
+fn child_logpad(lines: usize, kib: usize) {
+    let head = r#"{"t":"2026-09-07T06:05:00-05:00","ev":"note","text":""#;
+    let per = (kib << 10) / lines;
+    let pad = per.saturating_sub(head.len() + 3);
+    let line = format!(r#"{head}{}"}}"#, "y".repeat(pad));
+    let all: Vec<String> = vec![line; lines];
+    let line_bytes = text(&all).len();
+    let mut req = String::from(r#"{"docs":[],"now":"2029-01-01","tz":{"key":"UTC","base":"+00:00:00","then":[]},"log":{"ckpt":null,"from":1,"lines":["#);
+    for (i, l) in all.iter().enumerate() {
+        if i > 0 {
+            req.push(',');
+        }
+        jstr(&mut req, l);
+    }
+    req.push_str(r#"],"terminated":true,"reseal":{"keepDays":2,"maxLine":null},"want":{"facts":true,"headersFrom":null}}}"#);
+    drop(all);
+    tm_kernel_ffi::init().expect("init");
+    assert!(reset_hwm(), "cannot reset VmHWM");
+    let before = vm_hwm_kib();
+    let (best, median) = time_calls(&req);
+    let after = vm_hwm_kib();
+    println!("pad {kib}\t{lines}\t{line_bytes}\t{}\t{best:.2}\t{median:.2}\t{before}\t{after}", req.len());
+}
+
 /// Child: the process and runtime alone, for the baseline under every figure.
 fn child_empty() {
     tm_kernel_ffi::init().expect("init");
@@ -214,8 +299,12 @@ fn child_empty() {
 }
 
 fn spawn(args: &[&str]) -> Vec<String> {
+    spawn_env(args, &[])
+}
+
+fn spawn_env(args: &[&str], env: &[(&str, &str)]) -> Vec<String> {
     let exe = std::env::current_exe().unwrap();
-    let out = Command::new(exe).args(args).output().expect("spawn");
+    let out = Command::new(exe).args(args).envs(env.iter().copied()).output().expect("spawn");
     assert!(out.status.success(), "child {args:?} failed: {}", String::from_utf8_lossy(&out.stderr));
     String::from_utf8(out.stdout).unwrap().trim().split('\t').map(str::to_owned).collect()
 }
@@ -226,9 +315,13 @@ fn main() {
         ["parse", rate, age] => return child_parse(rate_of(rate), age),
         ["rss", how, n] => return child_rss(how, n.parse().expect("a count")),
         ["logop", how, n] => return child_logop(how, n.parse().expect("a count")),
+        ["logfacts", how, n] => return child_logfacts(how, n.parse().expect("a count"), false),
+        ["logreseal", how, n] => return child_logfacts(how, n.parse().expect("a count"), true),
+        ["only-f"] => return table_f(),
+        ["logpad", lines, kib] => return child_logpad(lines.parse().expect("a count"), kib.parse().expect("a count")),
         ["empty"] => return child_empty(),
         [] => {}
-        _ => panic!("usage: logbench [parse 40|61 AGE | rss mib|lines N | logop mib|lines N | empty]"),
+        _ => panic!("usage: logbench [parse 40|61 AGE | rss mib|lines N | logop mib|lines N | logfacts|logreseal mib|kib|lines N | only-f | empty]"),
     }
 
     println!("logbench (stage 5 A3): best of {REPEATS} calls, median beside it; VmHWM of a fresh process, reset to its RSS just before the calls (\"pre\")");
@@ -339,7 +432,8 @@ fn main() {
         "{:>11} {:>7} {:>10} {:>10} {:>9} {:>9} {:>10} {:>10}",
         "cut", "lines", "line B", "request B", "best ms", "median", "HWM pre", "HWM post"
     );
-    for (how, n) in [("mib", "1"), ("lines", "32768")] {
+    // W3 (gap 102): the per-call bound is the memory gate's 8,192 lines; a larger cut is refused `tooManyLines`.
+    for (how, n) in [("mib", "1"), ("lines", "8192")] {
         let r = spawn(&["logop", how, n]);
         println!(
             "{:>11} {:>7} {:>10} {:>10} {:>9} {:>9} {:>6.1} MiB {:>6.1} MiB",
@@ -351,6 +445,43 @@ fn main() {
             r[5],
             mib(r[6].parse().unwrap()),
             mib(r[7].parse().unwrap())
+        );
+    }
+
+    table_f();
+}
+
+/// **(f) the memory gate for one resend-shaped call (W3, gap 102).**  A genesis resend is one call carrying every line
+/// from a popped checkpoint through the refusing chunk, with a reseal, and facts when it reaches the log's end: read,
+/// replayed, resealed, its facts and records emitted.  The cap is chosen by this table: the largest power-of-two line count,
+/// and a byte bound, whose peak `VmHWM` is at most 200 MiB (22% under design §14.1's 256 MiB gate).  Rows at and around the
+/// cap are measured, and one past it each way.  `LOGBENCH_F=how:n,…` measures other rows (`lines`, `kib` or `pad`).
+fn table_f() {
+    println!("\n(f) one resend-shaped call (ckpt null, reseal {{keepDays 2}}, facts, no headers); gate: peak <= 200 MiB");
+    println!(
+        "{:>11} {:>7} {:>10} {:>10} {:>9} {:>9} {:>10} {:>10} {:>9}",
+        "cut", "lines", "line B", "request B", "best ms", "median", "HWM pre", "HWM post", "gate"
+    );
+    let rows: Vec<(String, String)> = match std::env::var("LOGBENCH_F") {
+        Ok(v) => v.split(',').map(|c| { let (h, n) = c.split_once(':').expect("how:n"); (h.to_string(), n.to_string()) }).collect(),
+        // 16,384 lines was measured before the kernel's bound fell to 8,192 (218.9 MiB, README "Stage 5 D9 W3"); the
+        // kernel now refuses it `tooManyLines`, so the table stops at the cap.
+        Err(_) => [("lines", "4096"), ("lines", "8192"), ("pad", "1536"), ("pad", "1792"), ("pad", "1920")]
+            .iter()
+            .map(|(h, n)| (h.to_string(), n.to_string()))
+            .collect(),
+    };
+    for (how, n) in rows {
+        let r = if how == "pad" {
+            spawn_env(&["logpad", "8192", &n], &[])
+        } else {
+            spawn_env(&["logreseal", &how, &n], &[("LOGBENCH_HEADERS", "0")])
+        };
+        let post: u64 = r[7].parse().unwrap();
+        let gate = if mib(post) <= 200.0 { "ok <=200" } else { "OVER" };
+        println!(
+            "{:>11} {:>7} {:>10} {:>10} {:>9} {:>9} {:>6.1} MiB {:>6.1} MiB {:>9}",
+            r[0], r[1], r[2], r[3], r[4], r[5], mib(r[6].parse().unwrap()), mib(post), gate
         );
     }
 }

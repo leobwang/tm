@@ -64,7 +64,7 @@ fn kernel_read(segs: &[Option<&str>], terminated: bool) -> Vec<Kernel> {
             segs[..upto].iter().map(|s| s.map_or(Value::Null, |s| Value::String(s.to_string()))).collect();
         let render: Vec<u64> = (from..from + chunk.len() as u64).collect();
         let req = json!({
-            "docs": [], "tz": chicago(),
+            "docs": [], "now": "2026-09-15", "tz": chicago(),
             "log": {"ckpt": null, "from": 1, "lines": lines,
                     "terminated": terminated || upto < segs.len(),
                     "want": {"facts": false, "headersFrom": from, "render": render}}

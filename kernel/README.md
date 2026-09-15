@@ -17631,3 +17631,334 @@ added (the cheats'; the controls were probed, not added).
 | `cli_latency` | green; 3 y later verb 283.5 / 273.3 / 268.4 ms |
 
 **Owed next (W2):** the one-pass `foldPoint` twin. W3 wires the log op, genesis and its files.
+
+<!-- ===================================================================== -->
+<!-- Stage 5 D9 W3 (2026-09-15).  Gaps, cheats and parity entries are     -->
+<!-- numbered from the next free numbers (gap 119, cheat 158, P35).        -->
+<!-- ===================================================================== -->
+
+## Stage 5 D9 W3, 2026-09-15: the window crosses the wire — genesis in chunks under the memory gate, the cache on disk, every answer equal to the whole replay
+
+**Starting point.** `7bbd730` (W2 part 4d), clean: check.sh 7/7, audit 3850 theorems, corpus 29/37 files and 4/5 plans,
+burn-down 13, `cargo test --workspace` 1068 / 0 / 5 ignored across 73 binaries, FFI 100.
+
+### Carried note 7, settled first: gap 102 is closed — the resend cap is 8,192 lines or 1,536 KiB
+
+**The rule** (the W3 brief, D18): the largest power-of-two line count, and a byte bound, whose measured peak RSS for one
+`log` call is at most 200 MiB on this machine (22% under design §14.1's 256 MiB gate); no memory bound raised.
+
+**Which call.** The heaviest call genesis makes is a resend: a reseal, and facts when it reaches the log's end (a
+genesis call never asks headers; the verb's request is re-issued after it, over a short tail). `logbench` (f) measures
+exactly that shape, each row in a child process of its own, `VmHWM` reset to the RSS before the call (A3's method):
+
+- **The line bound**: prefixes of the design's 3-year, 61-a-day log, `ckpt: null`, `reseal {keepDays 2}`, facts.
+- **The byte bound's worst shape**: 8,192 `note` lines padded with text to a total of K KiB of line bytes. A line's text
+  costs the kernel a list cell a character in the request, the line and the entry, so long lines are the heaviest bytes a
+  line count allows.
+
+**`logbench` (f), the committed table** (`env CARGO_PROFILE_DEV_OPT_LEVEL=1 cargo run --example logbench -- only-f`,
+under `MemoryMax=16G`; seven calls a child, best and median; `VmHWM` before and after):
+
+| cut | lines | line B | request B | best ms | median ms | RSS before → peak | gate (≤ 200 MiB) |
+|---|---:|---:|---:|---:|---:|---|---|
+| 4,096 lines | 4,096 | 428,135 | 509,862 | 468.09 | 480.16 | 12.5 → 77.9 MiB | ok |
+| **8,192 lines** | 8,192 | 855,486 | 1,018,679 | 1,922.63 | 1,962.94 | 13.6 → **111.5 MiB** | **ok** |
+| 8,192 notes, **1,536 KiB** | 8,192 | 1,572,864 | 1,687,767 | 2,765.28 | 2,835.40 | 11.2 → **174.1 MiB** | **ok** |
+| 8,192 notes, 1,792 KiB | 8,192 | 1,835,008 | 1,949,911 | 2,860.02 | 2,910.33 | 14.2 → 211.9 MiB | OVER |
+| 8,192 notes, 1,920 KiB | 8,192 | 1,966,080 | 2,080,983 | 2,853.20 | 2,869.72 | 11.6 → 220.6 MiB | OVER |
+
+**Single calls** (`LOGBENCH_REPEATS=1`, the same children; measured while the op was being built, on the tree with every
+twin compiled):
+
+| cut | peak | ms |
+|---|---:|---:|
+| 8,192 lines, a reseal and facts | 114.3 MiB | 1,874 |
+| **16,384 lines, a reseal and facts** | **218.9 MiB** | 6,526 |
+| 16,384 lines, a reseal, no facts | 182.4 MiB | 6,728 |
+| 16,384 lines, facts, no reseal | 182.2 MiB | 741 |
+| 8,192 notes at 1,536 / 1,792 / 1,920 / 2,048 KiB | 156.3 / 183.5 / 210.5 / 206.3 MiB | 2,737–2,837 |
+
+- **The line bound is 8,192**: the largest power of two whose resend-shaped call stays under 200 MiB (16,384 lines peaks
+  at 218.9 MiB in one call).
+- **The byte bound is 1,536 KiB**: the committed table's largest row under 200 MiB. A single call at 1,792 KiB measured
+  183.5 MiB, but seven calls in one process peak at 211.9 MiB, and a long-lived host (the TUI) makes repeated calls, so
+  the committed table's figure is the one quoted (AGENTS §5.11) and the stricter bound taken (D18).
+
+- **The chunks drop with the cap**, to 4,096 lines or 768 KiB (design §9.7: 8,192 lines or 1 MiB). A pop resends from
+  the popped checkpoint through the refusing chunk's end: with exact pops that is the refusing chunk and the one before
+  it, so the cap must hold two chunks. A chunk at the cap would turn every refusal across a chunk boundary into the named
+  fault.
+- **Every place that named the old cap** now names the new one or carries a supersession note: `Boundary.maxLogLines`
+  (8,192) and its B4 prose, `SealGenesis.lean`'s module doc, `kernel_log::{RESEND_LINES, RESEND_BYTES, CHUNK_LINES,
+  CHUNK_BYTES}`, `kernel_bridge`'s `tooManyLines` text and test, T5's one-call bound, T0 (a)'s five log tests in
+  `stack.rs` (now at 8,192 lines), `logbench` (e) and (f), and design §0, Q9, §9.7, §10.1, §10.4, §14.5's W3 row,
+  §17 P31, §18.5 and §21 CRIT 10 (section numbers kept; each line carries "Superseded at W3 by gap 102's measurement").
+  AGENTS.md names no cap.
+- **The named fault stays unreachable by CLI-written logs — argued with measured sizes, not proved.** A resend spans two
+  chunks when the refused relation reaches back less than one chunk. Measured on the design's 3-year, 61-a-day log (65,771 lines, 6,857,648 B; a throwaway example over
+`support/loggen.rs`, not committed): the longest line is 155 B; the most lines in one day 94 (9,597 B), in two days 184
+(18,996 B), in three days 256 (27,135 B), in fourteen days 959 (99,553 B); the most bytes in 4,096 consecutive lines
+429,549 (under a chunk's 768 KiB, so a chunk is cut by its line count), in 50 consecutive lines 5,698.
+  - **An undo from the stack** reaches at most 50 commands back (`MAX_ENTRIES`), and `maxLine` pins at most 14 days:
+    959 lines, far under one chunk of 4,096. This is argued from the CLI (every appending verb records one undo
+    entry; housekeeping closes run inside a verb), not proved.
+  - **A retro CLI line** falls within `keepDays`: at most 184 lines back (two days), under one chunk.
+  - So a refusal from a CLI-written log pops at most one checkpoint, and its resend (the refusing chunk and the one
+    before it: at most 8,192 lines and 1,536 KiB) is inside the cap. `ReachTooFar` needs a hand edit reaching further
+    than a chunk (gap 120).
+- **Owed to W5**: two processes rebuilding at once stay under 400 MiB by this table; W5 measures it.
+- **Measured before the reseal existed** (the C6 op with facts, no reseal): 16,384 lines 174.2 MiB, 1,792 KiB 177.8,
+  1,920 KiB 179.2, 2,048 KiB 208.1. The resume with a reseal is heavier, so the cap was chosen on the real op.
+
+### What was built
+
+**`SealWire.lean` (new; imports `SealLaw9`).** `TmKernel.lean` gains its import: **77 imports**.
+- **Compiled twins, each behind `@[csimp]` with its equality proved**:
+  - `greatestValidDown` (the fold point scanned down from the tail's end; `greatestValid_eq_down`), inside
+    `resealOfFast` (`resealOf_eq_resealOfFast`);
+  - `cutOkFast`: condition (i)'s `floorOf` computed once (`cutOk_eq_cutOkFast`, `rfl`). The specification evaluated it
+    inside the per-entry test, so a reseal of 1,024 lines took 10.9 s and of 2,048 lines 112 s;
+  - `resumeRunFast`: the tail's `slept_by_day` table computed once, the lookup a partial application
+    (`resumeRun_eq_resumeRunFast`, `rfl`). The specification's `tailSlept` closure rebuilt it at every lookup.
+- **The reseal's emitters**: `emitMeta`, `emitResealed`, `cOpenBlock`; `Resealed.fault` (the checkpoint's, a day
+  record's, a window record's bound) and `emitResealed_reads_back`: with no fault, the checkpoint and every record read
+  back through their smart decoders (law 10 at the wire).
+- **Sealed records for an old date** (§10.1, D13): `SealedIn` and `SealedIn.wf` (at most 62, each within its decoder's
+  bounds, strictly ascending), `mergeSealed` (records below the answer's ledger day and horizon in front of its own),
+  and `the_merged_days_read_as_askMerged` / `the_merged_window_reads_as_askMerged`, which with law 1
+  (`seal_partition_is_the_replay`) make a merged read the replay's on a checkpoint's own records;
+  `answer_ckptOf_days_ge`.
+- **Law 13's check**: `jnumsBelow` (three mutually structural `Bool` functions over `JVal`), `overflowField` (the
+  first key path holding a numeral past the bound), `numeralBound = 2^53`, `CkField.name`.
+
+**`Boundary.lean`: the `log` op resumes** (§9.3–§9.4, §10).
+- **The request** gains `now` (the clock's `now`, read by `nowOf`), `ckpt` (read by `Seal.readCkpt`: G0's
+  `badCkpt <field>`), `reseal` (`{keepDays, maxLine}`) and `sealed` (`{days, window}`, measured before a record is
+  read, each record through its decoder). `LogReq.fault` adds §10.4's rows: `keepDays ≤ 31`, `maxLine < 2^40`,
+  `sealed`, the checkpoint's own bounds, and `badLogReq now` for a resume without `now`. C1/C6's rule that facts and
+  headers need a tail from line 1 is gone: a checkpoint carries the lines before a tail.
+- **One code path** (law 8): a request that carries a checkpoint, a policy or sealed records, or asks facts or headers,
+  resumes (`LogReq.resumes`); a genesis request from its zone's `Ckpt.empty`. A request that only reads and renders does
+  not replay (§11.4 step 4). **G0 at the op**: the zone, then `from = cut + 1` (`cutMismatch`, also for an empty tail);
+  then `Seal.resumeRun`, the reseal (`Seal.resealOf`, compiled as its twin), `counterOverflow <field>` rather than an
+  emission its readers refuse, and law 13's check (`within53`).
+- **The answer**: `lines`, `warnings`, `facts`, `headers`, `render`, then **`reseal`** (`{ckpt, meta, days, window}` or
+  `null`). **`facts` is the resume's answer in the codec shapes** (`emitAnswer`): `ledgerDay`, `horizon`, `items`,
+  `window`, `instOther`, `named`, `days`, `open`, `lastDay`, `lastEffective`, `entryCount`, `unknown`, `longestLeak`,
+  `replayWarnings`, `warnings`. Headers are the tail's entries at or after `headersFrom`, on the resume's index.
+- **Refusals on the wire** (`sealRefusalJson`, §10.3): `undoReach {line, below}`, `wakeBehindCut {line, t: [sec, ns]}`,
+  `sealedDay {line, day}`, `sealedWindow {line, day}`, `nowBelowLedger {now, ledgerDay}`, `badCkpt <field>`,
+  `cutMismatch`, `zone`, `counterOverflow <field>` (a checkpoint bound, or law 13's key path).
+- **The sections return the answer** (`readLogSection`, `logSectionWith`, `logAnswerOf`), so the resume's refusals come
+  before the plan loads, as B4's did; `runWithLog`, `logInto` and `runCapZ` carry the answer.
+- **Gap 100 closed**: `runLoad` accumulates documents and commands reversed and turns them once (was `++ [d]`).
+- **C6's string-tagged facts leave the wire** (`factsJson` and its sixteen sub-emitters are deleted): every shape Rust
+  decodes has one emitter, the codec the kernel reads it back with (W1's disagreement 13).
+
+**`tm/src/cli/kernel_log.rs` (new; ≈ 1,000 lines; declared in `cli/mod.rs`, called by no verb).**
+- The byte split (`split`: lines, end offsets, `terminated`), FNV-1a-64, the request builder (the checkpoint and the
+  records spliced in as raw JSON text, byte for byte), `read_response` (serde_json's borrowed `RawValue`, so the
+  checkpoint is never parsed into a map), `Refusal` by name with §9.7's `pop_ok`.
+- **Genesis** (`genesis`, §9.7): chunks of 4,096 lines or 768 KiB, every call resealing, a stack of entries (checkpoint,
+  meta, sealed records, lines read), exact pops (the newest entry below the top the refusal cannot name, else the
+  oldest), the same end retried in one call, the resend cap checked before every call (`ReachTooFar {line, kind, reach,
+  bytes}`, OWNER Q9 (iii)), and facts asked only of the call that reaches the log's end.
+- **The files** (§9.8, D13): `ckpt.json` format 2 (`kernel` = `TM_KERNEL_ID`, `tzKey`, `prefixLines`, `prefixBytes`,
+  `prefixFnv`, `gen`, `prevGen`, `manifest`, `meta`, `ckpt` verbatim), `sealed/YYYY-MM.g<gen>.json` month files
+  written by read-modify-write into a new generation, temp file plus rename for every write, collection of month files
+  named by neither manifest and older than ten minutes.
+- **`ReplayCache::replay`**: the snapshot read once, the integrity checks (kernel id, zone key, prefix length, the
+  prefix ending a line, the digest, the cut), §9.6's policy (more than 512 foldable lines, or `now` more than two days
+  past the ledger day and not resealed today), a hot call with no month file loaded, a reseal written as a new
+  generation, and genesis on no checkpoint, a failed check, a guard refusal, `badCkpt`, `cutMismatch` or `zone`;
+  `nowBelowLedger` runs genesis at that `now` and writes nothing. `records_of` loads the snapshot's months (re-reading
+  `ckpt.json` once when a file is missing); `sealed_between` selects an old date's records for `sealed`. An unwritable
+  directory keeps the checkpoint and records in memory with one named notice per process.
+- **`TM_KERNEL_ID`**: `tm-kernel-ffi/build.rs` hashes the linked archive (FNV-1a-64), exposed as
+  `tm_kernel_ffi::KERNEL_ID`.
+- `kernel_bridge::log_refusal` names the resume's refusals (a guard reaching the bridge is a host defect: `kernel_log`
+  reacts to it first).
+
+**Tests.**
+- **T5** (`kernel_replay_parity.rs`) decodes the codec-shaped facts (segment kinds, idle marks, statuses and stamps as
+  numerals; a day record's header carries its stamp and offset, and its display comes from the answer's headers;
+  instances, named records and replay warnings as nested pairs). Every existing arm passes unchanged in what it compares.
+- **The windowed T5** (`t5_windowed_genesis_hot_reseal_old_date_and_fallbacks_replay_as_the_fork_does`): a year of the
+  generated log in Chicago through `ReplayCache` on disk. Every answer, merged with the records its snapshot stands on
+  (§11.1's `All`: `windowed_log`, displays from render-only calls), is compared by `assert_parity_answer` with
+  `Ctx::replay_of`'s replay: genesis over eleven months, a hot call, a reseal five days on (the back-off), an old-date
+  read of a sealed week sent as `sealed`, a hand undo of a folded `done` (G1, then genesis), a `now` below the ledger
+  day (genesis, `ckpt.json` unchanged), and a prefix edited on disk (the digest, then genesis).
+- **T0 (b)** (`t0b_genesis_over_200000_lines_in_chunks_runs_on_a_2mib_thread`): on a 2 MiB thread, genesis over 200,000
+  generated lines at 61 a day, with record emission and facts; one call at exactly 8,192 lines (answered, resealed) and
+  one at 8,193 (`tooManyLines`); one reseal emitting 2,000 day records.
+- **T0 (a)** (`stack.rs`): its five log tests at the new bound and in the codec shapes.
+- `kernel_log`'s unit tests (the split, refusals and pops, the snapshot's text and integrity, the chunks), the bridge's
+  refusal tests (six new names, two from the real kernel: `cutMismatch`, `badCkpt`), T1's requests carry `now`.
+
+### Goals (AGENTS §3.2)
+
+**Added: none. Discharged: none. Refuted: none.** W3's row has no goals; burn-down **13** (unchanged). In-step theorems
+are below.
+
+### In-step theorems (47, in `Check.lean` under the W3 banner)
+
+- **`SealWire.lean` (17)**: `greatestValid_succ`, `greatestValid_eq_down`, `cutOk_eq_cutOkFast`,
+  `resumeRun_eq_resumeRunFast`, `resealOf_eq_resealOfFast`, `cOpenBlock_nonnull`, `cInterruption_nonnull`,
+  `findSome?_eq_none_all`, `emitResealed_reads_back`, `findDay_filter_append`, `findWin_filter_append`,
+  `the_merged_days_read_as_askMerged`, `the_merged_window_reads_as_askMerged`, `answer_ckptOf_days_ge`,
+  `numeralBound_eq`, `jnumsBelow_obj`, `jnumsBelow_arr`.
+- **`Boundary.lean`, section W3 (30)**:
+  - the tail: `logLineStep_fold`, `logLines_eq`, `contiguousFrom_zipIdx`, `logLines_contiguous`;
+  - **R10, §10.4's W3 rows, both directions**: `LogReq.fault_of_b4_bounds`, `mkLogReq?_refuses_keepDays_past_31`,
+    `mkLogReq?_refuses_maxLine_past_2_40`, `policyOk_any`, `mkLogReq?_refuses_a_sealed_input_out_of_bounds`,
+    `mkLogReq?_refuses_a_checkpoint_out_of_bounds`, `mkLogReq?_refuses_a_resume_without_now`,
+    `LogReq.wf_resume_bounds`, `readCkptField_refuses_what_readCkpt_refuses`,
+    `readLogReq_refuses_a_checkpoint_its_reader_refuses`, `readSealedField_refuses_more_than_62_records`;
+  - **the op is the resume**: `logOp_refuses_a_checkpoint_of_another_zone`,
+    `logOp_refuses_a_tail_not_at_its_checkpoints_cut`, `logOp_refuses_what_the_resume_refuses`,
+    `logOp_answers_through_the_resume`, `logOp_reads_without_a_replay`;
+  - **law 13**: `within53_ok`, `within53_refuses_by_name`, `the_log_op_emits_only_numerals_below_2_53`,
+    `the_log_op_checks_every_numeral`; §10.4's last paragraph: `the_log_op_emits_only_what_its_readers_read_back`;
+  - **laws 8 and 2 at the wire**: `the_log_op_facts_from_genesis_are_the_replays`,
+    `the_log_op_facts_from_a_stored_checkpoint_are_the_replays` (through `emitCkpt`, `jemit`, `jparse`, `readCkpt`);
+  - **witnesses**: `the_log_op_names_its_resume_refusals`, `the_log_op_refuses_a_count_past_2_53_by_its_key`,
+    `the_log_op_merges_a_sealed_day_below_its_ledger_day`.
+- **Extended in place**: `the_response_shapes_emit_in_build_order` (the op's answer with `reseal` last, a guard's refusal,
+  G0's `cutMismatch`, the `meta` object), `the_log_op_reads_a_four_line_tail` (now resumes: `now`, `reseal: null`),
+  `the_log_section_refuses_by_name` (a checkpoint `{}` is `badCkpt v`), `runWithLog_puts_the_log_after_the_report`,
+  `readLogReq_refuses_more_lines_than_the_bound`, `readLogReq_reads_the_lines_as_sent`, and the capacity section's four
+  laws that carried a `VLogReq` answer.
+- **Retired with the wire they pinned** (12; their `Check.lean` lines removed, named in the W3 banner): `logAnswer_facts`,
+  `logAnswer_headers`, `LogReq.wf_facts_from_line_one`, `LogReq.wf_headers_from_line_one`,
+  `mkLogReq?_refuses_facts_of_a_tail_without_a_checkpoint`, `mkLogReq?_refuses_headers_of_a_tail_without_a_checkpoint`
+  (the rule is gone), `logSectionWith_passes_its_zone` (the section now returns the answer), and C1–C5's five
+  `the_log_op_answers_*` witnesses (C6's string-tagged facts). What they checked of the replay is T5's, now over the
+  resume.
+
+### Witnesses
+
+**3 new decided theorems**, each probed in a scratch copy under `MemoryMax=8G timeout 120`, and 3 restated in place.
+- **A reseal witness was probed and stopped at `decide`'s heartbeat budget** (one `note`, and a note with its undo; in
+  under 4 s, not at the memory cap). AGENTS §5.10a: the budget was not raised. The reseal's bytes rest on laws 6 and 7,
+  `emitResealed_reads_back`, `logOp_answers_through_the_resume`, the witness of its refusals, and the FFI tests.
+- The probes first printed each value with `#eval` (the reseal over a note and its undo: cut 2, ledger day 739,898,
+  one day record with both headers cancelled; each refusal by name; `facts.items` on a count of `2^53`; a sealed day
+  merged below ledger day 5).
+
+### Recorded disagreements between the design and the repo
+
+1. **§9.7's resend cap and chunks** are 8,192 lines or 1,536 KiB, and 4,096 lines or 768 KiB (gap 102, above).
+2. **§10.2 lists `replayWarnings` beside `facts`**; the answer carries it inside `facts`, where C6 put it.
+3. **§10.1 gives no rule for a request that only renders**; the op does not resume one (no checkpoint, policy, sealed
+   records, facts or headers asked), so §11.4's render-only call needs no `now` and no `from = 1`.
+4. **`now` is required only of a request that resumes** (`badLogReq now`); §9.1 says every `log` request. B4's
+   grammar-only requests (T1's renderings, `logbench` (e)'s parse rows before W3) stay valid.
+5. **`cutMismatch` is checked at the op for every resume**, an empty tail included; `Seal.resume` can only check a
+   non-empty tail's first line.
+6. **`sealed` is merged into `facts` by the kernel** (`mergeSealed`, records below the answer's horizons only). No kernel
+   query reads an old date yet; the merge is what §11.1's `Dates` scope and D13 ask of the kernel, and the windowed T5
+   reads it.
+7. **Day records' headers carry no display** (W1's disagreement 3). Rust never needs it from a record: §11.4 renders the
+   selected lines with a render-only call. The windowed T5 does the same.
+8. **§9.8's `ckpt.json` keys `prefixFnv`, `gen` and `prevGen` are strings of 16 hex digits**, as §9.8 shows; `meta` is the
+   kernel's object, re-emitted by Rust from its parsed fields (instants `[sec, ns]`), while `ckpt` is the kernel's text
+   verbatim (W1's disagreement 12).
+9. **§9.8's reseal writes the months "touched by `[L, L')` or `[H, H')`"**; `kernel_log` writes the months of the records
+   the reseal emitted, which is the same set, since the kernel emits only days with a reading (W1's disagreement 10).
+10. **A hot call loads no month file**; the snapshot rule's retry applies when a verb loads records (`records_of`).
+
+### Rule D9-21 (functions over a list the wire can make large)
+
+- **On the wire, new at W3**: `jnumsBelowArr`/`jnumsBelowObj` (tail calls; the value's nesting is the recursion's depth),
+  `logLineStep` (`foldl`), `sealedDayStep`/`sealedWinStep` (`foldl`, run only below 62 records), `emitAnswer`,
+  `emitResealed`, `emitMeta` (`List.map`), `LogReq.headersOf` (`filter`, `map`), `mergeSealed` (`filter`, `++`),
+  `Resealed.fault` (`findSome?`), `greatestValidDown` (tail-recursive), `cutFloorOk` (`all`), `sleptLookup`.
+- **Twins added**: `cutOkFast`, `resumeRunFast`, `resealOfFast` (each `@[csimp]`, each proved).
+- **Quadratic, measured, owed (gap 122)**: `Replay.dayOf`'s scan of the kept wakes at every index query (entries × wakes)
+  in the resume and the reseal; the reseal's refolds. `runLoad`'s `++` is gone (gap 100).
+- **Specification only**: everything in section W3's proofs.
+
+### Gaps
+
+### Gap 119 (new; design label 88) — a stall holds the ledger day back, and nothing names it yet
+
+(1) *What is not done*: an open block holding an observation, a `stop` never followed by a `start`, or an open
+interruption holds the new ledger day back (§9.4's `L'` rule: the machine's days), though not the fold point. The open
+days in the checkpoint grow with each stalled day, and `tm check` does not yet name a stall longer than seven days.
+(2) *Why not now*: `tm check` reads the log through Rust until the switch S, and the stall is a fact of the kernel's
+checkpoint (`meta.ledgerDay` against `now`), which no verb reads before S. (3) *Cost*: a long stall makes every call
+carry more open days (W5 measures a 10-day stall); a user is not told why. The back-off keeps the writes to one a day.
+(4) *When it clears*: at S, when `tm check` reads `meta` and names a ledger day more than seven days behind `now`.
+
+### Gap 120 (new; design label 95) — a hand-edited line beyond the resend cap is a named fault, not an answer
+
+(1) *What is not done*: a hand edit whose refused relation reaches back more than one genesis chunk (4,096 lines or
+768 KiB; for example a hand-written undo of a line months back, or a wake written far out of order) makes genesis'
+resend exceed the cap (8,192 lines or 1,536 KiB), and `kernel_log::genesis` fails with `ReachTooFar {line, kind, reach,
+bytes}` instead of answering. (2) *Why not now*: D18 makes it a named fault and forbids raising the memory cap; the
+kernel cannot answer without a larger call. (3) *Cost*: every verb except `tm check` fails naming the line, once S wires
+it (P31); the fork replays such a log. CLI-written logs do not reach it (W3's block, gap 102's settlement). (4) *When it
+clears*: it does not clear by default (the owner's D18). A kernel whose memory per line falls (W4's tree maps, a
+`String`-based parser) could raise the measured cap within the same 200 MiB rule, a change the owner would approve.
+
+### Gap 121 (new; design label 96) — hand-edit detection costs a full digest per call
+
+(1) *What is not done*: `ReplayCache::replay` checks FNV-1a-64 over the whole folded prefix on every call (§9.8,
+D9-14), so a call's cost grows with the log. (2) *Why not now*: the lever (a digest kept at seal time and checked
+against the file's metadata, or a cheaper tail check) trades detection of an edit that keeps size and mtime for speed,
+which is the owner's call (K9). (3) *Cost*: A3 measured 0.705 ns a byte, about 4.8 ms at the 3-year log's 6.86 MB,
+inside W5's 60 ms hot-call budget. (4) *When it clears*: if W5's gate fails on the digest, or when the owner picks the
+lever.
+
+### Gap 122 (new; label W3-a) — the resume and the reseal grow faster than linearly
+
+(1) *What is not done*: W3 compiled out the two worst costs (`cutOkFast`: 10.9 s → 56 ms for a reseal of 1,024 lines;
+`resumeRunFast`), but both paths still scan the kept wakes at every day-index query (`Replay.dayOf`'s
+`lastWakeLe`, entries × wakes), and the reseal refolds the survivors twice (`stepLows`, the state at the cut).
+Measured one call each, `logbench` (f)'s method: a resume with facts takes 99 / 285 / 799 ms at 4,096 / 8,192 /
+16,384 lines, a reseal 485 / 2,020 / 6,936 ms. (2) *Why not now*: W3's row is the wire, the files and genesis; the
+levers are W4's and W5's (the C2 bisection `Replay.dayOfArr` behind a `@[csimp]` twin, which needs the index's order
+carried into the twin's proof, and W2's owed one-pass fold point). (3) *Cost*: genesis at 3 years is about 17 calls of
+4,096 lines at about half a second each, far above W5's 1.5 s gate; T0 (b)'s genesis over 200,000 lines takes 36.8 s. (4) *When it
+clears*: at W4/W5, before S, by those two twins and re-measurement.
+
+### Gap 123 (new; label W3-b) — W3's row names tests not built
+
+(1) *What is not done*: from §14.5's W3 row, **T6** `resume_equals_genesis_at_fifty_cuts`; **T7** for `wakeBehindCut`,
+`sealedDay` and `sealedWindow` (`undoReach` and `nowBelowLedger` are the windowed T5's) and
+`a_line_dated_next_year_changes_no_fact_about_today`; **T8** `genesis_in_chunks_equals_one_call` with forced pops;
+**T10**'s proptest (the windowed T5 covers a prefix edit, an append, a far undo and `now` below the ledger day; not a
+truncation, a tz change, a torn last line finished, a concurrent reseal between reading `ckpt.json` and a month file, a
+deleted month file, an unwritable directory); and a checkpoint at every §10.4 maximum through `readCkpt`. (2) *Why not
+now*: the step was spent on the wire, the op's laws, the cache and the memory gate, and T6–T8 each run genesis many
+times at the reseal's present cost (gap 122). (3) *Cost*: the fallbacks and the snapshot rule's retry are exercised
+only as far as the windowed T5 goes; a regression in those paths is found by review, not by a test. (4) *When it
+clears*: with gap 122's levers (so the tests run in seconds), before S.
+
+### Numbers
+
+**Taken:** gaps 119–123. **Highest:** gap 123, cheat 157, parity P34. **Parity entries:** none new; P31's text now names
+the new cap (design §17). **Behaviour rows:** none in the binary (Rust is still the only reader of its decisions).
+
+**Re-measured** (main worktree, on the tree committed; every command capped at 40 GB, probes and benchmarks at 8 and
+16 GB):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 3.099 / 3.105 / 3.105 s (W2 part 4d: 3.08 / 3.05 / 3.00 s; +3.5% at the worst against the fastest, within §14.0 item 4's 10%). The run that rebuilt the kernel after the last Lean edit: 2 min 24.9 s |
+| axiom audit | **3885 theorems** (3850 − 12 retired + 47 new) |
+| `Negative.lean` | check 4 ok (unchanged: 153 errors, 147 `/- CHEAT` banners; no cheat added) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged) |
+| `TmKernel.lean` | **77 imports** (`SealWire` new) |
+| modules | `SealWire.lean` 1 new; `Boundary.lean` rewritten in its log section (the C6 facts emitters gone, section W3 appended); `SealGenesis.lean` a doc line |
+| `cargo test --workspace` | **1078 passed / 0 failed / 5 ignored across 73 binaries**, 0 compiler warnings, 53.8 s (was 1068: +4 `kernel_log` unit tests in the binary, the same 4 compiled into T5's, and the windowed T5 and T0 (b)) |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6; `stack.rs` 4.30 s) |
+| T5 (`kernel_replay_parity.rs --include-ignored`) | **16 passed**, 39.7 s. The windowed T5 19.8 s (14,978 lines; genesis 333 day records over 11 months; reseal to ledger day 739,954; an old-date read of 9 day records). T0 (b): 200,000 lines, 49 calls, 0 pops, largest call 4,337 lines, 3,315 day and 3,287 window records, genesis 36.8 s, a call at the cap 1,834 ms, one reseal of 1,997 day records. **Slower through the resume** (gap 122): distinct ids kernel 1,707 ms (W2: 302), the hostile undo log (now 8,000 lines) 2,071 ms (W2: 252 at 10,000); Rust 30 and 72 ms |
+| `cli_latency.rs --include-ignored`, three serial runs | green, 4 passed each. No log: first 612.7 / 627.6 / 627.6 ms, later 50.7 / 55.8 / 50.7 ms. 1y: first 719.0 / 713.7 / 713.0, later 121.4 / 126.6 / 121.7. 3y: first 965.6 / 946.5 / 951.8, later 268.5 / 268.4 / 283.4. T14: 81.0 / 76.1 / 81.1 ms (3 years), 141.7 / 126.6 / 141.8 ms (10 years). The binary's reader is unchanged (Rust), and these sit within W2's spread |
+| `logbench` (f) | the committed table above |
+| `SealWire.lean` alone | elaborates in under 10 s at the 8 GB probe cap |
+
+**Owed next:** W-5/W5 (the measurement gate, with gap 122's lever first), then S; gap 123's tests; the one-pass
+`foldPoint` twin (W2 part 4b's disagreement 12).

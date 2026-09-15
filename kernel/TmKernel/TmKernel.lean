@@ -63,6 +63,7 @@ import TmKernel.SealGenesis
 import TmKernel.SealLaw9A
 import TmKernel.SealLaw9B
 import TmKernel.SealLaw9
+import TmKernel.SealWire
 import TmKernel.State
 import TmKernel.Plan
 import TmKernel.Tree
