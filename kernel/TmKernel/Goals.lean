@@ -398,6 +398,18 @@ second, and each statement as written is false of the fork's index
 `Replay.keptWakes_append_of_later` (each checked against its restated goal by a scratch `example`).
 README "Stage 5 D9 C2". -/
 
+/- **§8.2's machine is real for the block family (2026-09-15, stage 5 D9 step C3).**
+The three C3 goals of design §15 were added here as written, elaborated against
+`TmKernel/Replay.lean` (16 goals, no error), and discharged in the same step, so the burn-down stays
+at 13: `Replay.applyEffects_touches_only_named_keys` (the frame law),
+`Replay.every_known_event_has_an_arm` (one header effect per entry, whatever its kind) and
+`Replay.credit_conserves_the_day_minutes` (a day's ci minutes and ci-unknown minutes add up to its
+block minutes, the stop-then-done replacement included) are proved as stated, each checked against
+its goal by a scratch `example`.  §8.2's witness `an_extend_changes_only_the_bookkeeping` (not a goal
+here) is false under the owner's D14, which ports `extended_min`:
+`Replay.an_extend_changes_more_than_the_bookkeeping`, with the law beside it,
+`Replay.an_extend_changes_only_the_bookkeeping_and_its_extended_minutes`.  README "Stage 5 D9 C3". -/
+
 /-! ############################################################################
 # STAGE 6 — the planner; §8.3's invariants; L24 and L25
 

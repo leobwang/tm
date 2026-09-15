@@ -1588,4 +1588,28 @@ theorem aWakeDayOf25HoursIsShorterThanADay :
     (Cal.durationBetween w t).1 < 86400 := by
   decide
 
+-- ===========================================================================
+-- APPENDED 2026-09-15 (stage 5, D9 track, step C3: the machine's effects in
+-- `Replay.lean`).  Design §16 names no cheat for C3; this one guards the frame
+-- law, which is what lets a sealed day refuse a line (G3).  Number 145 is the
+-- next free number in this checkout (the highest was 144, C2).  The control,
+-- which compiles, is `Replay.applyEffects_touches_only_named_keys`.  Everything
+-- below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 145 — an effect that writes a key it does not name.  A header effect
+   names its day (`Key.day d`).  One that also counts the entry in the
+   bookkeeping writes `Key.global` too, and claims the frame law for itself:
+   the value at `.global` is unchanged by an effect list whose keys do not
+   include `.global`.  On the empty state it is changed, and `decide` refuses. -/
+def applyEffectCountingOnHeader (st : Replay.State) : Replay.Effect → Replay.State
+  | .header d h => { Replay.applyEffect st (.header d h) with global := ⟨st.global.lastEffective, st.global.entries + 1⟩ }
+  | e => Replay.applyEffect st e
+
+theorem aHeaderThatCountsTouchesOnlyItsDay :
+    (applyEffectCountingOnHeader (Replay.State.init 1) (.header 739865 ⟨1, ['n'], none, false⟩)).valueAt .global
+      = (Replay.State.init 1).valueAt .global := by
+  decide
+
+
 end Tm

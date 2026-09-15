@@ -165,7 +165,7 @@ fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
         assert_eq!(
             out,
             format!(
-                r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"log":{{"lines":32768,"warnings":[],"facts":{{"cancelled":[{}],"days":[{}]}},"headers":[],"render":[]}}}}}}"#,
+                r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"log":{{"lines":32768,"warnings":[],"facts":{{"cancelled":[{}],"days":[{}],"block":{{"days":[],"items":[],"itemDays":[],"energy":[],"durations":[],"interrupts":[],"openBlock":null,"openInterrupt":null,"lastEffective":null}}}},"headers":[],"render":[]}}}}}}"#,
                 all.join(","),
                 // C2: 06:05 at -05:00 is 11:05 UTC on 2026-09-07, day 739,865, for every line.
                 (1..=32_768).map(|n| format!("[{n},739865]")).collect::<Vec<_>>().join(",")
@@ -190,14 +190,48 @@ fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
         let start = std::time::Instant::now();
         let out = call(&req).unwrap();
         let days: Vec<String> = (0..32_768i64).map(|i| format!("[{},{}]", i + 1, 739_865 - i)).collect();
+        // C3: wakes have no block facts; the last survivor in file order is line
+        // 32,768's wake, 06:05 UTC on day 739,865 − 32,767.
+        let last: i64 = (739_865 - 32_767) * 86_400 + 6 * 3_600 + 5 * 60;
         assert_eq!(
             out,
             format!(
-                r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"log":{{"lines":32768,"warnings":[],"facts":{{"cancelled":[],"days":[{}]}},"headers":[],"render":[]}}}}}}"#,
+                r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"log":{{"lines":32768,"warnings":[],"facts":{{"cancelled":[],"days":[{}],"block":{{"days":[],"items":[],"itemDays":[],"energy":[],"durations":[],"interrupts":[],"openBlock":null,"openInterrupt":null,"lastEffective":[{last},0,false,0]}}}},"headers":[],"render":[]}}}}}}"#,
                 days.join(",")
             )
         );
         eprintln!("the day index at the line bound: {:.0} ms", start.elapsed().as_secs_f64() * 1000.0);
+    });
+    // Stage 5 D9 C3: the block machine at the line bound (`Replay.replay`, compiled as
+    // `Replay.replayFast`: one `foldl` of the effects over the survivors, maps altered by a
+    // tail-recursive loop, the observations and each day's segments sorted by core's merge
+    // sort through `sortObs_eq_sortObsFast` and `sortSegs_eq_sortSegsFast`). 16,384 blocks of
+    // one item, a `start` and a one-minute `done` two minutes apart, over 23 days: 16,384
+    // segments, observations, durations and completions.
+    on_a_2mib_thread(|| {
+        let stamp = |i: i64, plus: i64| {
+            let m = (i % 720) * 2 + plus;
+            format!(r#"\"t\":\"{}T{:02}:{:02}:00Z\""#, date_after_spec_monday(i / 720), m / 60, m % 60)
+        };
+        let lines: Vec<String> = (0..16_384i64)
+            .flat_map(|i| {
+                [
+                    format!(r#""{{{},\"ev\":\"start\",\"id\":\"a\",\"pred\":3,\"rep\":3,\"loc\":\"h\"}}""#, stamp(i, 0)),
+                    format!(r#""{{{},\"ev\":\"done\",\"id\":\"a\",\"est_min\":1,\"actual_min\":1,\"ci\":3}}""#, stamp(i, 1)),
+                ]
+            })
+            .collect();
+        let req = format!(
+            r#"{{"docs":[],"tz":{{"key":"UTC","base":"+00:00:00","then":[]}},"log":{{"ckpt":null,"from":1,"lines":[{}],"terminated":true,"want":{{"facts":true}}}}}}"#,
+            lines.join(",")
+        );
+        let start = std::time::Instant::now();
+        let out = call(&req).unwrap();
+        assert!(out.contains(r#"["a",{"minutes":16384,"blocks":16384,"doneAt":["#), "{}", &out[..out.len().min(400)]);
+        assert_eq!(out.matches(r#""block","a"]"#).count(), 16_384, "one segment a block");
+        assert_eq!(out.matches(r#",739865,3,3,0.0,"h",0,null,"a",true]"#).count(), 720, "the first day's start observations");
+        assert!(out.ends_with(r#""openBlock":null,"openInterrupt":null,"lastEffective":[63926302020,0,false,0]}},"headers":[],"render":[]}}}"#), "{}", &out[out.len().saturating_sub(300)..]);
+        eprintln!("the block machine at the line bound: {:.0} ms, {} bytes", start.elapsed().as_secs_f64() * 1000.0, out.len());
     });
 }
 

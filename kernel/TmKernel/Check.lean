@@ -3350,3 +3350,99 @@ open Tm
 #print axioms Tm.Replay.an_undone_wake_indexes_nothing
 #print axioms Tm.logSectionWith_passes_its_zone
 #print axioms Tm.the_log_op_answers_every_entrys_day
+
+-- APPENDED 2026-09-15 (stage 5, D9 track).  Step C3 (design §8.1–§8.2, §14.4 row C3): the machine's
+-- state, effects and keys in Replay.lean, the block family's arms (`start`, `pause`, `unpause`,
+-- `interrupt`, `resume`, `stop`, `done` with partials, `extend`) with `credit`, `uncredit_cut` and `cut`
+-- ported by name, the maps' laws (`KMap`, and `HMap`, the bucketed map of items and item days), and the
+-- `log` op's `facts.block` in Boundary.lean (`the_log_op_answers_the_block_facts`).  The three goals §15 names for C3
+-- were added to Goals.lean as written and discharged in the step: `applyEffects_touches_only_named_keys`,
+-- `every_known_event_has_an_arm` and `credit_conserves_the_day_minutes`.  Site R8 (quirk Q6c, gap 83):
+-- `worked_minutes_floor_each_subsegment` and its twin `worked_minutes_is_not_the_floor_of_the_block`.  Site R9:
+-- `load_is_exact_fifths`.
+-- §8.2's `an_extend_changes_only_the_bookkeeping` is refuted under the owner's D14
+-- (`an_extend_changes_more_than_the_bookkeeping`) and restated
+-- (`an_extend_changes_only_the_bookkeeping_and_its_extended_minutes`).  The `@[csimp]` twins are
+-- `replay_eq_replayFast`, `sortObs_eq_sortObsFast` and `sortSegs_eq_sortSegsFast`.
+#print axioms Tm.Replay.insBy_append
+#print axioms Tm.Replay.insSort_eq_mergeSort
+#print axioms Tm.Replay.sortObs_eq_sortObsFast
+#print axioms Tm.Replay.sortSegs_eq_sortSegsFast
+#print axioms Tm.Replay.replay_eq_replayFast
+#print axioms Tm.Replay.KMap.get_nil
+#print axioms Tm.Replay.KMap.get_cons
+#print axioms Tm.Replay.KMap.get_append
+#print axioms Tm.Replay.KMap.get_eq_none_of_keys
+#print axioms Tm.Replay.KMap.get_eq_none_iff_keys
+#print axioms Tm.Replay.KMap.get_filter_key
+#print axioms Tm.Replay.KMap.get_alterGo
+#print axioms Tm.Replay.KMap.get_alter
+#print axioms Tm.Replay.KMap.get_map_snd
+#print axioms Tm.Replay.KMap.vsum_append
+#print axioms Tm.Replay.KMap.vsum_cons
+#print axioms Tm.Replay.KMap.vsum_reverse
+#print axioms Tm.Replay.KMap.get_le_vsum
+#print axioms Tm.Replay.KMap.mem_keys_of_get
+#print axioms Tm.Replay.KMap.filter_key_of_not_mem
+#print axioms Tm.Replay.KMap.vsum_alterGo
+#print axioms Tm.Replay.KMap.vsum_alter
+#print axioms Tm.Replay.HMap.get_alter
+#print axioms Tm.Replay.HMap.get_mapVals
+#print axioms Tm.Replay.HMap.get_empty
+#print axioms Tm.Replay.valueAt_applyEffect
+#print axioms Tm.Replay.applyEffects_touches_only_named_keys
+#print axioms Tm.Replay.closeSub_plain
+#print axioms Tm.Replay.closePause_plain
+#print axioms Tm.Replay.creditFx_plain
+#print axioms Tm.Replay.obsFx_plain
+#print axioms Tm.Replay.cut_plain
+#print axioms Tm.Replay.not_header_of_plain
+#print axioms Tm.Replay.uncreditFx_no_header
+#print axioms Tm.Replay.doneClose_no_header
+#print axioms Tm.Replay.doneFx_no_header
+#print axioms Tm.Replay.arm_no_header
+#print axioms Tm.Replay.every_known_event_has_an_arm
+#print axioms Tm.Replay.Ci6.sum_add
+#print axioms Tm.Replay.safe_of_plain
+#print axioms Tm.Replay.DayAcc.bal_empty
+#print axioms Tm.Replay.DayOp.bal_apply
+#print axioms Tm.Replay.DayAcc.bal_uncredit
+#print axioms Tm.Replay.applyEffects_append
+#print axioms Tm.Replay.applyEffects_cons
+#print axioms Tm.Replay.safe_apply
+#print axioms Tm.Replay.safe_list
+#print axioms Tm.Replay.machine_apply
+#print axioms Tm.Replay.conserves_safe
+#print axioms Tm.Replay.conserves_safe_then_machine
+#print axioms Tm.Replay.closeSub_lastCut
+#print axioms Tm.Replay.closePause_lastCut
+#print axioms Tm.Replay.all_safe_of_plain
+#print axioms Tm.Replay.unk_credit_none
+#print axioms Tm.Replay.conserves_cut
+#print axioms Tm.Replay.bal_apply_uncredit
+#print axioms Tm.Replay.conserves_doneClose
+#print axioms Tm.Replay.conserves_arm
+#print axioms Tm.Replay.conserves_init
+#print axioms Tm.Replay.conserves_step
+#print axioms Tm.Replay.conserves_foldl
+#print axioms Tm.Replay.credit_conserves_the_day_minutes
+#print axioms Tm.Replay.Ci6.fifths_add
+#print axioms Tm.Replay.DayOp.fifths_apply
+#print axioms Tm.Replay.DayOp.fifths_alterFn
+#print axioms Tm.Replay.allFifths_apply
+#print axioms Tm.Replay.allFifths_foldl
+#print axioms Tm.Replay.load_is_exact_fifths
+#print axioms Tm.Replay.worked_minutes_floor_each_subsegment
+#print axioms Tm.Replay.an_extend_changes_only_the_bookkeeping_and_its_extended_minutes
+#print axioms Tm.Replay.a_start_cuts_any_open_block_even_the_same_id
+#print axioms Tm.Replay.a_block_cut_by_start_is_never_replaced_by_done
+#print axioms Tm.Replay.a_stop_then_done_replaces_the_cut_credit
+#print axioms Tm.Replay.a_stop_for_another_id_is_ignored
+#print axioms Tm.Replay.a_matched_done_discards_the_clock_minutes
+#print axioms Tm.Replay.close_pause_does_not_clear_paused
+#print axioms Tm.Replay.a_partial_done_credits_but_does_not_complete
+#print axioms Tm.Replay.a_partial_done_after_stop_replaces_the_cut
+#print axioms Tm.Replay.a_block_started_during_an_interruption_runs_from_resume
+#print axioms Tm.Replay.worked_minutes_is_not_the_floor_of_the_block
+#print axioms Tm.Replay.an_extend_changes_more_than_the_bookkeeping
+#print axioms Tm.the_log_op_answers_the_block_facts

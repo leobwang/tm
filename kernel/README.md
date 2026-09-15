@@ -15139,3 +15139,308 @@ reader of the log, the Rust. The kernel's `log` op answers `facts.days`.
 **Owed next:** C3 (effects and the block family; site R8, gap 83). Its `credit` reads `dayOf` of the closing
 event, and T5 gains the block fields. C5 reads `firstLoggedWakeOn` for `DayReplay.wake` and `slept_by_day`.
 C6 moves `days` onto the headers. Then C4–C7, W1–W3, S and S2.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-15: stage 5, D9 track, step C3 on rebuild-on-lean (after C2
+     1e55211).  Design §8.1–§8.2, §14.4's C3 row and T5.  Takes gap 83 (the
+     design's label, Q6(c)), cheat 145 (design §16 names none for C3) and parity
+     P17 (the design's label).
+     =========================================================================== -->
+
+## Stage 5 D9 C3, 2026-09-15: the block machine — minutes credited as the fork credits them, every known event has an arm
+
+**Starting point.** `1e55211`, **not clean**. The tree held the uncommitted work of an earlier run of this
+step that stopped before committing: `Replay.lean` (+1,961 lines), `Boundary.lean`, `Negative.lean`
+(cheat 145), the three C3 goals in `Goals.lean` still as `sorry`, T5 and the FFI tests. No `lake` or
+`cargo` process was running. This run read that work against fork `Machine` (`tm-core/src/log.rs`:
+`close_sub`, `close_pause`, `credit`, `uncredit_cut`, `cut`, `step`, `finish`) arm by arm, finished it
+(the goals' discharge, the `Check.lean` banner, site R9's law, one stale test comment), and re-measured
+every number below. So `check.sh`'s pre-edit time could not be re-measured; the baseline is C2's recorded
+2.86 / 2.82 / 2.83 s.
+
+### What was built
+
+**`Replay.lean`, section C3 (no new module; `TmKernel.lean` keeps its twenty imports).**
+- **The state (§8.1).** `DayAcc` holds the block fields of fork `DayReplay`: `first_start`, `starts`,
+  `block_min`, `blocks_done`, `load_fifths`, `minutes_by_ci` (`Ci6`), `ci_unknown`, `done`, `lost_min`,
+  `dropped` and `segments`. `ItemAcc` is fork `ItemReplay`, less `minutes_by_day`, which is the map
+  `State.itemDays` keyed `(day, id)`. Beside them sit the observation and interruption lists, the
+  headers, `Machine` (`block`, `lastCut`, `interrupt`) and `GlobalAcc` (`lastEffective`, the count of
+  stepped survivors). A stamp is `At`, the instant and its written offset, fork
+  `DateTime<FixedOffset>`. Every order and duration reads the instant only.
+  - **A block's pending start observation lives in the block.** It is emitted when the block closes or at
+    `finish`, carrying its start's line. `finish` sorts by line, which puts it where the fork pushed it.
+  - **`Cut.day` and the open interruption's day are stored**, computed once on the index the fork
+    recomputes them on.
+- **Effects and keys (§8.2).** An `Effect` is one of: `dayAdd d op`, `header d h`, `itemAdd i op`,
+  `itemDay`, `itemDaySub`, `obs`, `interruption`, `machine` or `global`. `Effect.key` names the one key
+  each writes: `day d`, `itemDay i d`, `item i`, `machine` or `global`. Observations and interruptions are
+  keyed by their own day. `State.valueAt` reads every part of the state through some key, and
+  `applyEffects` is a `foldl`.
+- **The arms.** `arm` is fork `Machine::step` for `start`, `pause`, `unpause`, `interrupt`, `resume`,
+  `stop`, `done` (partial included) and `extend`. Every other event's arm is empty until C4 and C5.
+  - The helpers are ported by name: `closeSub`, `closePause`, `creditFx` (`credit`), `uncreditFx`
+    (`uncredit_cut`) and `cut`.
+  - `doneClose` is the closing half of the `done` arm: a matched block is closed with its clock minutes
+    discarded, and an unmatched `done` with minutes, no block open and the last cut its own takes the
+    cut's credit back.
+  - `effectsWith` puts an entry's header (on its day) and its bookkeeping in front of its arm.
+  - `replay z es` folds `step` over the survivors on the day index of their wakes, then runs `finish`
+    (fork `Machine::finish`).
+- **Maps.** Days are a `KMap`, an association list, most recent first. Its law `KMap.get_alter` holds on
+  every list, duplicate keys included. Items and item-days, whose ids have no locality in a log, are an
+  `HMap`: an array of `KMap` buckets chosen by `KeyHash`, sized to the log, updated in place when uniquely
+  held. Its law is `HMap.get_alter`.
+- **The fast twins (`@[csimp]`, D9-21).**
+  - `replay_eq_replayFast`: the day index is looked up by the C2 bisection (`dayOfArr`), not the
+    specification's fold.
+  - `sortObs_eq_sortObsFast` and `sortSegs_eq_sortSegsFast`: the stable insertion sorts compile as core's
+    `mergeSort`, by `insSort_eq_mergeSort` (for a transitive, total comparison, insertion sort is merge
+    sort on every list).
+- **Laws.**
+  - The three goals (below).
+  - **Site R8 (gap 83), both halves.** `worked_minutes_floor_each_subsegment`: closing a running stretch
+    adds that stretch's own `num_minutes().max(0)`. `worked_minutes_is_not_the_floor_of_the_block`: two
+    90-second stretches give 2 minutes, where the floor of 180 s is 3.
+  - **Site R9, beyond the row:** `load_is_exact_fifths`. On every day of every replay, `load_fifths` is
+    `c1 + 2·c2 + 3·c3 + 4·c4 + 5·c5` over the day's ci minutes. §8.2 lists it under "Proved in C3–C6",
+    but no step's row names it, and C3 is where `load_fifths` is built. It is proved by the invariant
+    `AllFifths` (`DayOp.fifths_apply`, `allFifths_apply`, `allFifths_foldl`). An uncredit takes back only
+    ci-unknown minutes, which weigh nothing.
+  - `an_extend_changes_only_the_bookkeeping_and_its_extended_minutes` (below).
+- **Witnesses (§8.2's rules a builder is tempted to fix).**
+  - `a_start_cuts_any_open_block_even_the_same_id`
+  - `a_block_cut_by_start_is_never_replaced_by_done`
+  - `a_stop_then_done_replaces_the_cut_credit`
+  - `a_stop_for_another_id_is_ignored`
+  - `a_matched_done_discards_the_clock_minutes` (its start's observation gets the `done`'s `went`)
+  - `close_pause_does_not_clear_paused` (an interruption inside a pause)
+  - The partial-`done` pair: `a_partial_done_credits_but_does_not_complete` and
+    `a_partial_done_after_stop_replaces_the_cut`
+  - Beyond the list: `a_block_started_during_an_interruption_runs_from_resume`.
+
+**The wire (`Boundary.lean`).**
+- **`facts` gains `block`** (`blockJson`), the block family of `Replay.replay`, compiled as
+  `replayFast`:
+  - per day (`dayBlockJson`), per item (`itemBlockJson`) and per item-day;
+  - the start observations, `durations` and `interrupts`;
+  - `openBlock`, `openInterrupt` and `lastEffective`.
+- A stamp is `[sec, ns, west, offsetSec]`: seconds since 0001-01-01T00:00:00Z, the leap nanoseconds in
+  `ns`, and the written offset.
+- **Edited in place:** `logAnswer_facts` spells out `block`. C1's `the_log_op_answers_the_cancelled_lines`
+  and C2's `the_log_op_answers_every_entrys_day` now expect an empty block family and their last survivor.
+- **New end to end:** `the_log_op_answers_the_block_facts`. A `start` (77 characters) and its `done` (84)
+  give the day's start, 30 minutes at ci 3 (90 fifths), one block done, the 09:00–09:30 segment, the
+  item's completion, the start's observation on line 1 and the `DurationObs` on line 2.
+
+**`Negative.lean`.** CHEAT 145: an effect that writes a key it does not name. A header that also counts the
+entry into `global` claims the frame law. `decide` refuses it on the empty state (it fails at its own
+`decide` line, checked). Design §16 names no cheat for C3. The control is
+`applyEffects_touches_only_named_keys`. No existing block was edited.
+
+**The FFI suite.**
+- `the_log_op_answers_the_cancelled_lines` expects `block`.
+- `stack.rs`'s mask and day-index tests at the line bound expect `block`: empty for a note, and the last
+  wake as `lastEffective`.
+- A new block in the same test runs **the block machine at the line bound**: 16,384 blocks of one item, a
+  `start` and a one-minute `done` each, 32,768 lines over 23 days, on a 2 MiB thread.
+
+### Goals (AGENTS §3.2)
+
+§15's three C3 goals were added to `Goals.lean` **as written**, elaborated in-tree (16 goals, no error), and
+discharged in the step. Burn-down **13 → 16 → 13**. A note in the STAGE 5 section records it, and a scratch
+`example` per goal checks each against its proof.
+
+| goal | status |
+|---|---|
+| `applyEffects_touches_only_named_keys` | proved as stated (`valueAt_applyEffect`, one effect at a time) |
+| `every_known_event_has_an_arm` | proved as stated: exactly one header effect per entry, whatever its kind (`arm_no_header`; `arm` is one match over `Event`'s 27 constructors) |
+| `credit_conserves_the_day_minutes` | proved as stated, through the invariant `Conserves`. Every day balances, and the last cut's minutes are still on its day's ci-unknown minutes, so the stop-then-done replacement takes back exactly what the cut gave (`conserves_cut`, `conserves_doneClose`, `conserves_arm`, `conserves_foldl`) |
+
+**Refuted and renamed: one design claim.** §8.2's `an_extend_changes_only_the_bookkeeping` says an
+`extend`'s arm emits only its header and the bookkeeping. That was OWNER Q7's default (a), which deletes
+`extended_min`. **The owner's D14 ports it** (`PortedItemFacts.extended_min`), so the arm also writes its
+item.
+- The refutation: `an_extend_changes_more_than_the_bookkeeping`.
+- The law: `an_extend_changes_only_the_bookkeeping_and_its_extended_minutes`. An `extend`'s keys are its
+  day, `global` and its item. The item's `extended_min` grows by `by_min` (the item is created if absent,
+  as fork `item_mut` does), and by the frame law no other key moves.
+
+**Witnesses.** 12 new decided witnesses, and 2 re-probed. All were probed in a scratch copy under
+`MemoryMax=8G timeout 120`, with at most 4 entries, `utcZone` (no transition), and `Nat` instants.
+- **In `Replay.lean`:** the eleven above, plus the refutation. Taken alone, the witnesses elaborate in
+  **0.19 s at 572 MB**. The whole of `Replay.lean` (C1–C3, 3,998 lines) takes **3.27–3.30 s at 830–839 MB**.
+- **On the wire, 0.90 s at 977 MB:** the new `the_log_op_answers_the_block_facts`, plus C1's and C2's wire
+  witnesses, re-probed. The two new lines are 77 and 84 characters.
+
+Altering an expected value fails at `decide`. This was checked on `a_start_cuts_any_open_block_even_the_same_id`,
+`worked_minutes_is_not_the_floor_of_the_block` and the wire witness (`loadFifths` 90 → 91).
+
+### T5 (`tm/tests/kernel_replay_parity.rs`, extended)
+
+**What `Facts` gains.** `block`, which holds:
+- per day, `DayReplay`'s `first_start`, `starts`, `block_min`, `blocks_done`, `load_fifths`,
+  `minutes_by_ci`, `ci_unknown`, `done`, `lost_min`, `dropped`, and its `Block`, `Pause` and `Interrupt`
+  segments in `DayReplay::segments`' order;
+- every `ItemReplay` field, `minutes_by_day` included;
+- the start observations of `energy`, all fields;
+- `durations`, `interrupts`, `open_block`, `open_interrupt` and `last_effective_t`.
+
+**How it compares.**
+- Stamps are compared with their written offset, which chrono's `PartialEq` ignores.
+- Maps are decoded as maps, and a repeated key fails.
+- A day the kernel created must exist in the Rust. A Rust day the kernel did not create must have
+  `DayReplay::new`'s block fields: another family created it.
+- A mismatch prints the first five differing days, items or lists.
+
+**`BlockEdges`, a new generator arm.** It runs one to three of 14 cases a time:
+- a retro `done`, with no block and with another id's block open;
+- a `done` for another id, and a `stop` for another id;
+- a `start` inside an interruption, and a `pause` inside one;
+- a `done` while paused;
+- a pause split by an interruption;
+- two `interrupt`s and two `resume`s, sometimes leaving one open;
+- a stray `unpause`;
+- a `start` without `rep` and a `done` at ci 7;
+- zero-length and backwards stretches;
+- a block across the writer's midnight;
+- site R8's two 90-second stretches;
+- a `stop`, a 0-minute `done`, then a real `done`.
+
+The new arm changes the generator's random stream, so the arm and zone counts below are not C2's.
+
+| input | run |
+|---|---|
+| corpus | 7 logs, 12 cancelled, 512 days. Block family: 33 days (113 segments, 1 ci-unknown pair), 104 items (105 item-days), 101 start observations, 103 durations, 4 interruptions, 1 open block |
+| generated, 40 a day, seed 7 | 1mo: 1,191 lines. Block family: 30 days (290 segments, 24 ci-unknown pairs), 142 items (163 item-days), 163 start observations, 139 durations, 30 interruptions. 6mo: 7,472 lines. Block family: 182 days (1,803 segments, 148 ci-unknown pairs), 613 items (999 item-days), 1,003 start observations, 855 durations, 163 interruptions. 140–157 ms for both readers |
+| 256 sequences | 9,921 lines, 3,669 cancelled, 9,921 days (2,798 off their own local date). Block family: 480 days (2,422 segments, 209 ci-unknown pairs), 723 items (907 item-days), 1,222 start observations, 1,031 durations, 168 interruptions, **18 open blocks, 5 open interruptions**. Edge cases 0–13 ran 30, 31, 34, 35, 35, 30, 36, 22, 28, 30, 30, 45, 24 and 35 times (the test asserts all 14 ran). Arms: `BlockEdges` 214, the other sixteen 200–239 each. Zones: Chicago 43, St John's 54, Kolkata 53, Berlin 59, UTC 47 |
+| §6.4 zone cases | 10 cases, 58 days, 44 named days. Block family: 7 days, 4 segments, 4 items, 7 start observations, 4 durations, 3 open blocks |
+
+**Exceptions: 0.** §17 lists site R8's per-sub-segment floor and observation order as exact by design.
+P17 (below) is not reached: no input sums past `u32::MAX`.
+
+**T5 bites.** Two scratch mutations of the Rust side were each restored with `git checkout` afterwards.
+- `close_sub` rounding each stretch to the nearest minute instead of truncating it fails the sequences
+  (sequence 5, St John's).
+- The stop-then-done replacement removed (no `uncredit_cut`) fails the sequences (sequence 1, Kolkata).
+
+In both cases the corpus, the 1mo and 6mo logs, and the zone cases still pass. The corpus and `loggen` write
+whole-minute stretches and no stop-then-done, so only the generated sequences exercise these rules.
+
+**Measurements** (`#[ignore]`d, three runs each):
+- `t5_a_block_log_of_distinct_ids_is_measured` (new): 3,500 blocks of distinct ids, 7,000 lines,
+  932,280 bytes. Kernel 232 / 236 / 235 ms, Rust 24 ms, equal. The kernel figure includes the debug-build
+  test's `serde_json` decode of the answer.
+- C1's hostile-undo log, now answered with the block family: kernel 219 / 212 / 210 ms (129 ms at C1),
+  Rust 98 ms.
+
+### Recorded disagreements between the design and the repo
+
+1. **§8.2's `an_extend_changes_only_the_bookkeeping` assumes Q7 (a).** The owner's D14 ports
+   `extended_min`, so the claim is refuted and restated (above).
+2. **§8.1's sketch.**
+   - It stamps with `Cal.Instant`. The state keeps `At`, the instant and its written offset: the fork keeps
+     `DateTime<FixedOffset>`, and T5 compares the offset.
+   - Its `Block.startDay` is not kept, because the pending observation carries its own day.
+   - Its `GlobalDelta` is `Effect.global (t : At)`, which writes `lastEffective` and the stepped-survivor
+     count.
+3. **§8.2's `Effect` folds interruptions into `dayAdd`.** Here `interruption r` is its own constructor, keyed
+   by `r.day` (its start's day, or the `resume`'s without one).
+4. **§8.2's keys.** C3 has the block family's: `day`, `itemDay`, `item`, `machine` and `global`. `doneDate`,
+   `instDate`, `instOther` and `named` come with C4's arms.
+5. **§8.2: "every line produces a `header` effect, cancelled lines included (a second pass)."** C3 heads the
+   survivors. The second pass over cancelled lines is C6's.
+6. **§8.2: "one arm per constructor, all 26".**
+   - `Event` has 27 constructors: 26 known tags and `unknown`.
+   - At C3, `arm` matches the eight block-family events and gives every other event `[]` through a
+     wildcard. C4 and C5 replace the wildcard with their arms.
+   - `every_known_event_has_an_arm` is §15's statement, one header per entry, and does not depend on the
+     wildcard.
+7. **Fork `finish` sorts `durations` by line.** Here they are the pushes reversed, in file order. That equals
+   the sort on every entry list the op builds, since their lines strictly increase
+   (`the_tail_entries_have_increasing_lines`). `energy` is sorted, because a start's observation is
+   emitted late.
+8. **§8.4 and W4 name tree maps.** C3's maps are association lists and bucket arrays (above), with W4's
+   tree-map twins still the gated lever.
+9. **§10.2 has no `facts.block`.** As with C1's `cancelled` and C2's `days`, it is interim, and C6's view
+   replaces it.
+10. **§8.2's witness list mixes families.** `a_retro_done_marks_done_and_credits_nothing` needs the done set
+    (C4). T5's edge cases 0 and 13 already compare its crediting half. `the_first_leak_maximum_wins`,
+    `a_later_pending_does_not_undo_a_done_date`, `an_unknown_status_warns_and_is_pending`,
+    `a_demote_stamp_reads_the_week_or_date_key` and `idle_and_idle_since_read_different_orders` belong to
+    C4 and C5, whose rows name them.
+11. **`load_is_exact_fifths` is in §8.2's list but no row names it.** It is proved here (above).
+
+### Rule D9-21 (functions over a list the wire can make large)
+
+- `applyEffects` and the replay's fold: `foldl`.
+- `KMap.get`: `find?`, a loop.
+- `KMap.alter` and `KMap.alterGo`: a tail-recursive loop, `reverseAux`, `filterTR`.
+- `HMap.get` and `HMap.alter`: one bucket's `KMap`, `Array.modify`.
+- `HMap.mapVals` and `HMap.pairs`: `toList`, `mapTR`, a `foldl`.
+- `finish`: `mapTR`, `reverse`, `appendTR`.
+- `sortObsFast` and `sortSegsFast`: core `mergeSort`, compiled as `mergeSortTR₂`.
+- `replayFast`'s day lookups: the C2 bisection, `dayOfArr`.
+- `blockJson` over the facts: `mapTR`.
+- Specification only, never on the wire: `insBy` and `insSort` (compiled as the merge sorts),
+  `State.valueAt` (`filter`), `KMap.vsum` (`List.sum`), `replay` itself (compiled as `replayFast`), and
+  the invariants `Conserves` and `AllFifths`.
+
+### Gap 83 (the design's label, Q6(c)) — site R8 truncates minutes per sub-segment
+
+(1) *What is not done*: a block's clock minutes are not the floor of its running time. `Replay.closeSub`,
+fork `close_sub`, adds the floor of **each running stretch's own** seconds (`Cal.minutesBetween`) when a
+pause, an interruption, a `stop` or the next `start` closes it. The kernel ports this faithfully
+(`worked_minutes_floor_each_subsegment`). (2) *Why not now*: Q6(c) says port now and fix later, because
+stage 5's acceptance is parity with the fork, and flooring once changes behaviour. (3) *Cost*: a block
+paused or interrupted `k` times can be credited up to `k` minutes less than it ran
+(`worked_minutes_is_not_the_floor_of_the_block`: 2 minutes for 180 running seconds in two stretches).
+The loss is only in clock-credited minutes: the ci-unknown minutes of a cut by `stop` or the next
+`start`, and an open block's `worked_min`.
+A matched `done` discards the clock, and its `actual_min` is authoritative. The CLI writes stamps to the
+second, so stretches are rarely whole minutes. (4) *When it clears*: after the switch, as a behaviour
+change with its own parity entry, when the block accumulates seconds and floors once at the cut.
+
+### Parity entry
+
+| # | site | the kernel | the fork point | authority | step |
+|---|---|---|---|---|---|
+| **P17** | a day's or an item's minute and count sums above `2^32 − 1`. For a day: `block_min`, `blocks_done`, `lost_min`, `minutes_by_ci`, `ci_unknown`. For an item: `minutes`, `blocks`, `stops`, `extended_min`, `minutes_by_day` | `Nat`. Below the line bound every sum is under `2^53`: 32,768 × `u32::MAX` × 5 ≈ 7.0 × 10^14, so the answer's numerals stay exact | `saturating_add` on `u32` (`u64` for `load_fifths`) | as P5; design §17 | C3 (recorded; T5 does not reach it). The Rust decoder's `minutesOverflow` refusal by name lands at S |
+
+### Numbers
+
+**Taken:**
+- gap 83 (the design's label; free, checked by grep);
+- cheat 145 (the next free number; design §16 names none for C3);
+- P17 (the design's label; free, checked by grep).
+
+**Highest:** gap 117, cheat 145, parity P32. **Behaviour rows:** none in the binary, which still has one reader
+of the log, the Rust. The kernel's `log` op answers `facts.block`.
+
+**Re-measured** (main worktree, every command capped at 40 GB; probes at 8 GB, the scratch twin measurement at 16 GB):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.88 / 2.83 / 2.84 s (C2's recorded baseline 2.85 s; +1.1% at the worst, the budget is 10%) |
+| axiom audit | **2935 theorems** (2853 + 82). The three §6.3 counts agree at 2935: audit lines, distinct names, and declarations by the attribute-aware grep |
+| `Negative.lean` | check 4 ok; 141 errors; 135 `/- CHEAT` banners; no duplicate number; 145 fails at its `decide` |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (13 → 16 → 13 within the step) |
+| `TmKernel.lean` | **20 imports** (no new module) |
+| `lake build TmKernel:static` after a `Replay.lean` edit | 2 min 21 s (`Replay` 3.8 s, `Boundary` 136 s) |
+| `Replay.lean` elaboration (8 GB probe cap) | 3.27–3.30 s, 830–839 MB; 3,998 lines |
+| `cargo test --workspace` | **1065 passed / 0 failed / 5 ignored across 73 binaries**, 0 compiler warnings (T5 gains one ignored measurement) |
+| FFI suite | **98 passed / 0 failed** (kernel 84, corpus 8, stack 6; `stack.rs` 2.17 s: the mask at the bound 340 ms, the day index 223 ms, the block machine 717 ms with a 4,636,089-byte answer) |
+| T5 (`kernel_replay_parity.rs`) | 5 passed, 2 ignored, 0.52 s; 0 exceptions |
+| `cli_latency.rs --include-ignored`, three serial runs | green, 4 passed. No log: first 632.8 / 612.6 / 642.4 ms, later 50.7 / 60.7 / 55.8 ms. 1y: first 723.5 / 707.9 / 708.7, later 126.7 / 121.4 / 121.6. 3y: first 946.4 / 925.2 / 946.6, later 288.3 / 277.9 / 283.5. T14: 76.0 / 81.0 / 81.1 ms (3 years), 141.7 / 141.8 / 141.8 ms (10 years). The binary's reader is unchanged, and so are these |
+| **the twin bites** (scratch copy, 16 GB cap, dev profile, `examples/oneshot`) | 32,768 wakes on as many dates, newest first, UTC, facts asked, one call (2,261,131 bytes with the newline). With `replay_eq_replayFast`: 0.18 / 0.18 / 0.18 s, 151 MB. Without that attribute (Replay and Boundary rebuilt; the other twins kept): 4.15 / 4.32 / 4.14 s, 151 MB, the same answer byte for byte (one `md5sum`). At 4,096 and 8,192 wakes: 0.02 and 0.03 s with the twin, 0.07 and 0.24 s without. The copy was deleted |
+| the block machine's growth (`examples/oneshot`, facts asked, UTC, a `start` and a `done` a minute) | distinct ids: 4,000 / 8,000 / 16,000 / 32,000 lines take 0.04 / 0.13 / 0.36 / 0.85 s. One id: 0.03 / 0.09 / 0.25 / 0.61 s. Facts not asked: 0.02 / 0.04 / 0.10 / 0.22 s. That is 2.3–3.3× per doubling, not the 4× of a quadratic |
+
+**Owed next:**
+- **C4** (the completion family): `routine`, `skip`, the done sets (fork `mark_done`), instances, and
+  `a_retro_done_marks_done_and_credits_nothing`, filling `arm`'s wildcard for its events.
+- **C5** binds `slept` to `slept_by_day` and adds the `energy` event's observations, `break`, `idle` and
+  `Routine` segments, and the day records.
+- **C6** heads the cancelled lines, derives the seam facts, and replaces `facts.cancelled`, `days` and
+  `block` with the view.
+- Then C7, W1–W3, S and S2.
