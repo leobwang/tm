@@ -8,7 +8,8 @@
 //!   (`config.toml` plus `.tm/` or a plan file) or has a `plan/` child that
 //!   does.
 //! * [`Ctx`] — the loaded directory: [`Config`], an [`FsStore`], the parsed
-//!   [`PlanFiles`] and their [`Tree`], the [`Log`] and its [`Replay`], the
+//!   [`PlanFiles`] and their [`Tree`], the log's [`Replay`] (read through
+//!   [`Ctx::replay_of`], the one reader of `.tm/log.jsonl`), the
 //!   learned [`Model`] and `.tm/state.json` ([`RuntimeState`]), plus `now` in
 //!   both `FixedOffset` (log timestamps) and `cfg.tz` (everything else).
 //!   [`Ctx::load`] runs the housekeeping of §6.3 (the automatic close —
@@ -179,9 +180,8 @@ pub struct Ctx {
     pub files: PlanFiles,
     /// The tree over them (§6).
     pub tree: Tree,
-    /// `.tm/log.jsonl` (§10.1).
-    pub log: Log,
-    /// The replay of the whole log.
+    /// The replay of the whole of `.tm/log.jsonl` (§10.1), from
+    /// [`Ctx::replay_of`].
     pub replay: Replay,
     /// `.tm/model.json` (§8.5).
     pub model: Model,
@@ -219,8 +219,7 @@ impl Ctx {
         let now_tz = now.with_timezone(&cfg.tz);
         let today = now_tz.date_naive();
         let mut state = store.load_state()?;
-        let log = read_log(&store)?;
-        let replay = log.replay(None, cfg.tz);
+        let replay = Ctx::replay_of(&store, &cfg)?;
 
         if housekeeping && roll_day(&mut state, today) {
             store.save_state(&state)?;
@@ -239,7 +238,6 @@ impl Ctx {
             state,
             files,
             tree,
-            log,
             replay,
             model,
             timed_out: Vec::new(),
@@ -264,9 +262,24 @@ impl Ctx {
     pub fn reload(&mut self) -> Result<(), CliError> {
         self.files = self.store.read_tree()?;
         self.tree = self.files.tree();
-        self.log = read_log(&self.store)?;
-        self.replay = self.log.replay(None, self.cfg.tz);
+        self.replay = Ctx::replay_of(&self.store, &self.cfg)?;
         Ok(())
+    }
+
+    /// **The one door to the log** (design §14.3 row R8): the replay of the
+    /// whole of `.tm/log.jsonl` as it is on disk now, in `cfg.tz`. A missing
+    /// file is an empty log; malformed lines are the replay's rows' gaps and
+    /// its warnings' business; only an I/O failure (or a file that is not
+    /// UTF-8) is an error. Nothing else in `tm/src` or `tm-core/src` reads
+    /// `LOG_PATH`: [`Ctx::append_entry`] and `horizon`'s close append to it.
+    /// At the switch its body becomes the kernel's `log` call.
+    pub fn replay_of(store: &FsStore, cfg: &Config) -> Result<Replay, CliError> {
+        let text = if store.exists(LOG_PATH) {
+            store.read_text(LOG_PATH)?
+        } else {
+            String::new()
+        };
+        Ok(Log::parse(&text).replay(None, cfg.tz))
     }
 
     /// A [`horizon::Ctx`] over the current snapshot (§6.3).
@@ -574,13 +587,4 @@ impl Ctx {
     pub fn taken_ids(&self) -> HashSet<String> {
         self.files.ids()
     }
-
-}
-
-/// Read `.tm/log.jsonl`, treating a missing file as an empty log.
-fn read_log(store: &FsStore) -> Result<Log, CliError> {
-    if !store.exists(LOG_PATH) {
-        return Ok(Log::new());
-    }
-    Ok(Log::parse(&store.read_text(LOG_PATH)?))
 }

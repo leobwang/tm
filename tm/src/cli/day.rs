@@ -526,7 +526,7 @@ pub fn start(g: &Globals, args: &super::StartArgs) -> Result<i32, CliError> {
 
     let mut f = features(&ctx, ctx.now_tz);
     if ended_break.is_some() {
-        // The break this very command closed is not in `ctx.log` yet.
+        // The break this very command closed is not in `ctx.replay` yet.
         f.since_break_min = 0;
     }
     let pred = energy::predict(&ctx.model, &ctx.cfg, &f);

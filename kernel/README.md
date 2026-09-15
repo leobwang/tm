@@ -12932,3 +12932,157 @@ none.** **Parity entries: none.** **Observable behaviour changes: none** (420 ru
 | `cargo test --workspace` | **1028 passed / 0 failed / 2 ignored across 70 binaries**, 0 compiler warnings |
 | FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
 | `cli_latency.rs` | green: first verb 622.8 / 642.4 / 607.6 ms (226 files, 2,959 lines), later verb 55.7 / 50.7 / 55.7 ms |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5 D9 R8 (design §14.3 row R8, §12, CRIT 31),
+     on rebuild-on-lean after 114ab46.  Takes no gap, cheat or parity number.
+     =========================================================================== -->
+
+## Stage 5 D9 R8, 2026-09-14: one door to the log — `Ctx::replay_of` is the only reader of `LOG_PATH`
+
+**What changed.**
+- **`Ctx::replay_of(store, cfg) -> Result<Replay, CliError>`** (`cli/ctx.rs`): the replay of the whole
+  of `.tm/log.jsonl` as it is on disk, in `cfg.tz`; a missing file is an empty log, an I/O failure (or
+  a file that is not UTF-8) is the error `read_log` returned. **`Ctx.log` and `read_log` are
+  deleted.** `Ctx::load_with` and `Ctx::reload` set `ctx.replay` through it.
+- **`cli/undo.rs`** no longer names `LOG_PATH` or `Log`: the recorder's `replay_now` calls
+  `Ctx::replay_of`, and an unreadable log records line count 0 and no events, as `log_len` and
+  `new_events` did.
+- A comment in `cli/day.rs` that named `ctx.log` names `ctx.replay`.
+
+**Equivalence test (run, then deleted with `read_log` in this commit).** A unit test in `cli/ctx.rs`
+held `read_log` verbatim and compared `read_log(store).map(|l| l.replay(None, tz))` with
+`Ctx::replay_of(store, cfg)` on an `FsStore` over a temporary directory holding, as
+`.tm/log.jsonl`, each of the four corpus logs, loggen's 1-month logs at both rates, no file, an empty
+file and a file with a byte that is not UTF-8, in `America/Chicago`, `Pacific/Auckland` and `UTC`:
+**27 (log, zone) pairs; facts (`PartialEq`), view rows and line count equal on the 24 readable ones
+(10,341 rows), the same error text on the 3 unreadable ones; 0 differences.**
+
+**Existing suites.** No assertion changed; the workspace count is unchanged at 1028 (the equivalence
+test was a unit test, run and removed).
+
+### The one-reader grep (CRIT 31), run on this commit's tree
+
+`grep -rn 'LOG_PATH\|Log::parse\|Log::new\|iter_day\|effective()\|day_index(\|undo_mask\|parse_timestamp' tm tm-core --include=*.rs`
+— **67 lines**, pasted whole:
+
+```
+tm/src/cli/ctx.rs:52:    self, FsStore, PlanFiles, RuntimeState, Store, StoreExt, LOG_PATH, MODEL_PATH,
+tm/src/cli/ctx.rs:274:    /// `LOG_PATH`: [`Ctx::append_entry`] and `horizon`'s close append to it.
+tm/src/cli/ctx.rs:277:        let text = if store.exists(LOG_PATH) {
+tm/src/cli/ctx.rs:278:            store.read_text(LOG_PATH)?
+tm/src/cli/ctx.rs:282:        Ok(Log::parse(&text).replay(None, cfg.tz))
+tm/src/cli/ctx.rs:298:        self.store.append_text(LOG_PATH, &line)?;
+tm/tests/kernel_log_grammar.rs:5://! The fork is the in-tree Rust: `tm_core::log::Log::parse_bytes` is still the one
+tm/tests/kernel_log_grammar.rs:32:use tm_core::log::{fmt_timestamp, hours_since_wake, parse_timestamp, Event, Log, LogEntry};
+tm/tests/kernel_log_grammar.rs:149:/// The fork's verdict on one segment: `Log::parse_bytes` over that segment alone.
+tm/tests/kernel_log_grammar.rs:151:    let log = Log::parse_bytes(seg);
+tm/tests/kernel_log_grammar.rs:311:        let whole = Log::parse_bytes(bytes);
+tm/tests/kernel_log_grammar.rs:547:/// **T3.** Every spelling chrono reads (the fork's `parse_timestamp`: RFC 3339,
+tm/tests/kernel_log_grammar.rs:566:        match (parse_timestamp(s), k) {
+tm/tests/tui_today_prompts.rs:202:    let app = tui_common::app_with(midnight, state, tm_core::log::Log::new());
+tm-core/src/recur.rs:1188:        Log::parse(jsonl).replay(None, cfg().tz)
+tm-core/tests/log_serde.rs:310:    assert_eq!(Log::parse(&back), log);
+tm-core/src/store.rs:68://!   `.tm/` constants [`STATE_PATH`], [`MODEL_PATH`], [`LOG_PATH`],
+tm-core/src/store.rs:106:pub const LOG_PATH: &str = ".tm/log.jsonl";
+tm-core/src/horizon.rs:174:use crate::store::{edit, PlanFiles, Store, StoreError, LOG_PATH};
+tm-core/src/horizon.rs:493:        self.store.append_text(LOG_PATH, &line)?;
+tm-core/tests/recur_cases.rs:267:    let now = tm_core::log::parse_timestamp("2026-09-07T16:05:00-05:00").unwrap();
+tm-core/tests/recur_cases.rs:293:    let now = tm_core::log::parse_timestamp("2026-09-09T18:20:00-05:00").unwrap();
+tm-core/tests/planner_regressions.rs:50:        let log = Log::parse(log_text);
+tm-core/tests/recur_regressions.rs:33:    Log::parse(jsonl).replay(None, cfg().tz)
+tm-core/src/log.rs:26://!   [`Log::parse`]`(text)` / [`Log::parse_bytes`]`(bytes)`,
+tm-core/src/log.rs:28://!   one object per line), [`Log::to_jsonl`], [`Log::iter_day`]`(date, tz)`,
+tm-core/src/log.rs:32://!   [`undo_mask`] / [`Log::undo_mask`] compute which entries are cancelled
+tm-core/src/log.rs:161:pub fn parse_timestamp(s: &str) -> Result<DateTime<FixedOffset>, chrono::ParseError> {
+tm-core/src/log.rs:166:    use super::{fmt_timestamp, parse_timestamp};
+tm-core/src/log.rs:176:        parse_timestamp(&s).map_err(|e| de::Error::custom(format!("invalid timestamp {s:?}: {e}")))
+tm-core/src/log.rs:706:        Log::parse_bytes(text.as_bytes())
+tm-core/src/log.rs:714:        let mut log = Log::new();
+tm-core/src/log.rs:753:            Ok(bytes) => Ok(Log::parse_bytes(&bytes)),
+tm-core/src/log.rs:754:            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Log::new()),
+tm-core/src/log.rs:841:    /// that matches nothing is *dangling*. See [`undo_mask`].
+tm-core/src/log.rs:842:    pub fn undo_mask(&self) -> UndoMask {
+tm-core/src/log.rs:843:        undo_mask(&self.entries)
+tm-core/src/log.rs:848:        let mask = self.undo_mask();
+tm-core/src/log.rs:858:        self.effective().filter(|e| e.ev.is_state_change()).last()
+tm-core/src/log.rs:870:    pub fn day_index(&self, tz: Tz) -> DayIndex {
+tm-core/src/log.rs:873:            self.effective()
+tm-core/src/log.rs:881:    pub fn iter_day(&self, date: NaiveDate, tz: Tz) -> impl Iterator<Item = &LogEntry> {
+tm-core/src/log.rs:892:        let days = self.day_index(tz);
+tm-core/src/log.rs:893:        self.effective().filter(move |e| {
+tm-core/src/log.rs:901:        self.effective().filter(move |e| e.ev.primary_id() == Some(id))
+tm-core/src/log.rs:916:pub fn undo_mask(entries: &[LogEntry]) -> UndoMask {
+tm-core/src/log.rs:1529:/// `Log::iter_day` for, derived once by the replay instead.
+tm-core/src/log.rs:1609:    /// Cancelled by an `undo` (or itself an `undo`), per [`undo_mask`].
+tm-core/src/log.rs:2684:/// [`undo_mask`]): an undone event and its `undo` entry are both skipped.
+tm-core/src/log.rs:2706:    let mask = undo_mask(entries);
+tm-core/src/log.rs:2801:        parse_timestamp(s).unwrap()
+tm-core/src/log.rs:2813:        assert!(parse_timestamp("2026-09-07T06:05").is_err());
+tm-core/src/log.rs:2903:    fn undo_mask_pairs_and_dangling() {
+tm-core/src/log.rs:2913:        let m = log.undo_mask();
+tm-core/src/log.rs:2917:        assert_eq!(log.effective().count(), 1);
+tm-core/src/log.rs:2932:        let log = Log::parse(text);
+tm-core/tests/log_replay.rs:63:    let mask = log.undo_mask();
+tm-core/tests/log_replay.rs:70:    assert_eq!(log.effective().count(), 62);
+tm-core/tests/log_replay.rs:80:    let effective: Vec<LogEntry> = log.effective().cloned().collect();
+tm-core/tests/log_replay.rs:102:    let idx = log.day_index(TZ);
+tm-core/tests/log_replay.rs:124:    assert_eq!(log.iter_day(d("2026-09-07"), TZ).count(), 31);
+tm-core/tests/log_replay.rs:125:    assert_eq!(log.iter_day(d("2026-09-08"), TZ).count(), 24, "34 entries minus 10 cancelled");
+tm-core/tests/log_replay.rs:126:    assert_eq!(log.iter_day(d("2026-09-09"), TZ).count(), 7);
+tm-core/tests/log_replay.rs:131:    for e in log.effective() {
+tm-core/tests/planner_invariants.rs:382:    let log = Log::parse(&log_text(case, tz));
+tm-core/tests/planner_common/mod.rs:58:        None => store.read_text(store::LOG_PATH).unwrap_or_default(),
+tm-core/tests/planner_common/mod.rs:60:    let log = Log::parse(&text);
+```
+
+**What each file is** (the row allows the chokepoint, the writer, `log.rs` and the test files R12 will
+switch):
+
+| file | hits | what it is |
+|---|---|---|
+| `tm/src/cli/ctx.rs` | 6 | **the chokepoint** (the import; `replay_of`'s doc comment, `exists`, `read_text` and `Log::parse`) and **the writer** (`append_entry`'s `append_text(LOG_PATH, ..)`) |
+| `tm-core/src/horizon.rs` | 2 | **the writer**: `horizon::Ctx::append` (the import and one `append_text(LOG_PATH, ..)`); it never reads the log |
+| `tm-core/src/store.rs` | 2 | the constant's definition and its module doc line: neither reads |
+| `tm-core/src/log.rs` | 32 | **`log.rs`** (the reader S replaces, its docs and its unit tests) |
+| `tm-core/src/recur.rs` | 1 | a `#[cfg(test)]` helper (`replay_of(jsonl)`) — a test site R12 switches, though it lives under `src/` |
+| `tm-core/tests/log_replay.rs`, `log_serde.rs`, `recur_regressions.rs`, `planner_regressions.rs`, `planner_invariants.rs`, `planner_common/mod.rs` | 8, 1, 1, 1, 1, 2 | test files R12 switches (`planner_common/mod.rs` reads a fixture's `LOG_PATH` from a `FsStore` of its own, not a `Ctx`) |
+| `tm/tests/tui_today_prompts.rs` | 1 | a test file R12 switches (`app_with(.., Log::new())`) |
+| `tm-core/tests/recur_cases.rs` | 2 | `parse_timestamp` of a constant `now`, not a log read; see 2 below |
+| `tm/tests/kernel_log_grammar.rs` | 7 | B4's T1–T3, which compare the kernel's grammar with the fork's `Log::parse_bytes` and `parse_timestamp` on purpose; see 2 below |
+
+No other file under `src/` of either crate reads the log: `rg 'log\.jsonl|Log::read|parse_bytes'`
+over both `src/` trees (`log.rs` excluded) finds only doc comments and the constant, and
+`FsStore::list_files` (the undo snapshot) lists plan `.md` files only.
+
+### Recorded disagreements between the design and the repo
+
+1. **`replay_of` returns `Result<Replay, CliError>`, not `Replay`.** `read_log` failed the verb on an
+   I/O error or a log that is not UTF-8, and every verb still does; a bare `Replay` would have
+   turned that into an empty log silently. S's kernel call has its own faults to return.
+2. **Two test files in the grep are not in R12's list.** `tm/tests/kernel_log_grammar.rs` (T1–T3) is
+   the differential against the fork reader and must keep calling it until S deletes `Log`
+   (§12's S column deletes `parse_timestamp` and `Log::parse_bytes` with it), and
+   `tm-core/tests/recur_cases.rs` only parses two timestamp constants. R12 should either leave both
+   named in its grep result or give `recur_cases.rs` a `DateTime::parse_from_rfc3339`; this block does
+   not choose. `tm-core/src/recur.rs`'s `#[cfg(test)]` helper is a test site under `src/`, which the
+   row's "test files" wording does not cover; it is listed above by name.
+3. **`horizon.rs` is a second writer**, beside `Ctx::append_entry` (§12 names `ctx.rs`' writer only):
+   `horizon::Ctx`'s close appends through the store. It reads nothing.
+
+**Goals discharged: none. Refuted: none. Added: none.** Burn-down **13 → 13**. **New theorems:
+none.** **Parity entries: none.** **Observable behaviour changes: none.** **Numbers taken: none.**
+No kernel change; no recursion over a wire list.
+
+**Re-measured** (main worktree, every command under the 30 GB cap):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.81 s; audit **2672**; corpus **29/37 and 4/5**; burn-down **13** |
+| `cargo test --workspace` | **1028 passed / 0 failed / 2 ignored across 70 binaries**, 0 compiler warnings |
+| FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
+| `cli_latency.rs` | green: in the acceptance run first verb 647.7 / 668.3 / 647.5 ms, later verb 60.8 / 60.8 / 65.9 ms, with the machine loaded (load average 4.3); five reruns at load 1.7: first verb 703.8 / 636.8 / 638.0 / 637.7 / 643.0 ms, later verb 55.8 / 50.6 / 55.8 / 55.7 / 55.8 ms (226 files, 2,959 lines) |
+
+**Phase R on this track:** R-audit, R1–R8 committed. **Owed next:** R9 (`load_fifths`, P21), R10
+(torn-line repair, P19), R11 under D14 (keep and route the unread fields), R12 (the test chokepoints;
+see disagreement 2 above), R13 (scopes; clears gap 112), R14 (latency with history).

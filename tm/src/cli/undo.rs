@@ -29,9 +29,9 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use tm_core::log::{Event, Log, Replay};
+use tm_core::log::{Event, Replay};
 use tm_core::model::Id;
-use tm_core::store::{RuntimeState, Store, StoreError, StoreExt, LOG_PATH};
+use tm_core::store::{RuntimeState, Store, StoreError, StoreExt};
 
 use super::ctx::Ctx;
 use super::out::CliError;
@@ -122,15 +122,11 @@ fn snapshot(ctx: &Ctx) -> Result<BTreeMap<String, String>, CliError> {
     Ok(out)
 }
 
-/// The replay of `.tm/log.jsonl` as it stands on disk now (a missing or
-/// unreadable file is an empty log, as before).
-fn replay_now(ctx: &Ctx) -> Replay {
-    let text = if ctx.store.exists(LOG_PATH) {
-        ctx.store.read_text(LOG_PATH).unwrap_or_default()
-    } else {
-        String::new()
-    };
-    Log::parse(&text).replay(None, ctx.cfg.tz)
+/// The replay of `.tm/log.jsonl` as it stands on disk now, through
+/// [`Ctx::replay_of`]; `None` when the file cannot be read, which records
+/// no line count and no events, as the recorder always did.
+fn replay_now(ctx: &Ctx) -> Option<Replay> {
+    Ctx::replay_of(&ctx.store, &ctx.cfg).ok()
 }
 
 /// The events a command appended after the log had `from_lines` physical
@@ -162,7 +158,7 @@ impl Recorder {
             verb: verb.to_string(),
             files: snapshot(ctx)?,
             state: ctx.state.clone(),
-            log_lines: replay_now(ctx).line_count(),
+            log_lines: replay_now(ctx).map_or(0, |r| r.line_count()),
         })
     }
 
@@ -196,7 +192,7 @@ impl Recorder {
             }
         }
 
-        let (events, log_line) = recorded(&replay_now(ctx), self.log_lines);
+        let (events, log_line) = replay_now(ctx).map_or((Vec::new(), None), |r| recorded(&r, self.log_lines));
         let state_changed = ctx.state != self.state;
         if files.is_empty() && events.is_empty() && !state_changed {
             return Ok(());
