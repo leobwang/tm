@@ -4204,3 +4204,51 @@ open Tm
 #print axioms Tm.Seal.readCkpt_emitCkpt_eq
 #print axioms Tm.Seal.resume_is_replay
 #print axioms Tm.Seal.resume_from_empty_is_replay
+-- APPENDED 2026-09-15 (stage 5, D9 track).  Step W2, part 3 (design §9.5 laws 4 and 5, §15 W block): the new modules
+-- SealReach.lean (law 5's spec side: reachFree on the whole list, tagsClear as G1 on the specification's tags),
+-- SealLaw5A.lean and SealLaw5B.lean (acceptance both ways; the resume's steps against the whole log's, from either
+-- side's head checks), SealPending.lean (a fold's pending start observation) and SealLaw4.lean (the whole log reads as
+-- the folded lines below the horizons).  Laws 4 and 5 discharged under their names.
+#print axioms Tm.Seal.foldAll_iff
+#print axioms Tm.Seal.foldAll_eq_true
+#print axioms Tm.Seal.tagsClear_iff
+#print axioms Tm.Seal.contiguousFrom_append
+#print axioms Tm.Seal.head_of_contiguousFrom
+#print axioms Tm.Seal.stepCheck_eq_none
+#print axioms Tm.Seal.tailFold_none_of
+#print axioms Tm.Seal.headerCheck_none_of
+#print axioms Tm.Seal.resumeRun_isOk_of
+#print axioms Tm.Seal.index_facts
+#print axioms Tm.Seal.folded_part_agrees
+#print axioms Tm.Seal.steps_agree
+#print axioms Tm.Seal.congr_of_spec
+#print axioms Tm.Seal.maxInstant?_mem
+#print axioms Tm.Seal.minInstant?_mem
+#print axioms Tm.Seal.resume_isOk_eq
+#print axioms Tm.Seal.isOk_iff_exists
+#print axioms Tm.Seal.foldAll_append_vacuous
+#print axioms Tm.Seal.reachFree_iff
+#print axioms Tm.Seal.reachFree_of_accepted
+#print axioms Tm.Seal.accepted_of_reachFree
+#print axioms Tm.Seal.resume_ok_iff
+#print axioms Tm.Seal.pending_none_of_pendLines
+#print axioms Tm.Seal.arm_pending
+#print axioms Tm.Seal.stepWith_pending
+#print axioms Tm.Seal.foldl_pending
+#print axioms Tm.Seal.AgreeBelow.symm
+#print axioms Tm.Seal.pendingOn_below
+#print axioms Tm.Seal.not_mem_pending_below
+#print axioms Tm.Seal.winKeys_filter_below
+#print axioms Tm.Seal.windowOf_below
+#print axioms Tm.Seal.windowsIn_below
+#print axioms Tm.Seal.dayKeys_filter_below
+#print axioms Tm.Seal.openDayOf_below
+#print axioms Tm.Seal.daysIn_below
+#print axioms Tm.Seal.valueAt_day_view
+#print axioms Tm.Seal.valueAt_itemDay_get
+#print axioms Tm.Seal.valueAt_instDate_get
+#print axioms Tm.Seal.filter_fst_eq_of_snd
+#print axioms Tm.Seal.foldl_frame
+#print axioms Tm.Seal.filter_rebind_below
+#print axioms Tm.Seal.resume_below
+#print axioms Tm.Seal.resume_keeps_the_sealed_records

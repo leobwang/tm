@@ -32,6 +32,11 @@ import TmKernel.SealLaw2C
 import TmKernel.SealLaw2D
 import TmKernel.SealLaw2E
 import TmKernel.SealLaw2F
+import TmKernel.SealReach
+import TmKernel.SealLaw5A
+import TmKernel.SealLaw5B
+import TmKernel.SealPending
+import TmKernel.SealLaw4
 import TmKernel.State
 import TmKernel.Plan
 import TmKernel.Tree

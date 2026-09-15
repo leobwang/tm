@@ -17126,3 +17126,99 @@ read the real one.
 **Owed next (W2, part 3):** laws 4 and 5 (`reachFree`, `tagsClear`); `foldPoint`, `sealDay` and the reseal with record
 emission, laws 6, 6's pair and 7, and W1's disagreement 11; `genesis` and law 9; the in-step theorems of §14.5's W2
 row; cheats 99–104 (design labels).
+
+<!-- ===================================================================== -->
+<!-- Stage 5 D9 W2, part 3 (2026-09-15).  Gaps, cheats and parity entries  -->
+<!-- are numbered from the next free numbers (gap 119, cheat 152, P35).    -->
+<!-- ===================================================================== -->
+
+## Stage 5 D9 W2, part 3, 2026-09-15: acceptance is exactly the whole log's conditions — law 5 both ways, and law 4
+
+**Starting point.** `cd2e8bc` (part 2).
+
+### What was built
+
+**`SealReach.lean` (new): law 5's spec side.** `reachFree z T₀ L a b` reads the whole list `a ++ b`: its survivors,
+day index, `slept_by_day` and fold. It has three parts:
+- every surviving wake of `b` is later than every instant of `a` not future at `T₀`, and more than the fence before
+  every future one;
+- every entry of `b`, cancelled or not, is at or after the head second of `L`, on a day at or after `L`;
+- every surviving entry of `b`, at its step of the whole log's fold, reads the index only at or after the head second
+  and names keys only at or above the horizons (`tailStepsOk`, a `foldAll`).
+
+`tagsClear z T₀ L a r b` is G1's condition on the specification's tags (`tagReach`, over `keptTags` of the folded
+survivors), and `tagsClear_iff` says it is G1 accepting the checkpoint of `a`.
+
+**`SealLaw5A.lean`, `SealLaw5B.lean` (new): law 5.**
+- Acceptance both ways: every check passes exactly when the run is accepted (`stepCheck_eq_none`, `tailFold_none_of`,
+  `headerCheck_none_of`, `resumeRun_isOk_of`).
+- The index facts from the separation and the head alone (`index_facts`), with no reference to the resume's checks.
+- **The two folds step alike** (`steps_agree`): once every prefix of the tail folds alike on the stored and the whole
+  index, the resume's machine before each step is the whole log's, and each step's effects name the same keys. "Folds
+  alike" comes from either side: from the resume's head checks (`resume_fold_congr`) for law 5 forwards, or from the
+  whole log's (`congr_of_spec`) for law 5 backwards.
+- `reachFree_iff` reads `reachFree` on the resume's split; `reachFree_of_accepted` and `accepted_of_reachFree` are the
+  two directions.
+
+**`SealPending.lean` (new).** A step keeps the open block's pending start observation, drops it, or opens one on its
+own day (`arm_pending`), so a fold's pending observation is its start state's or on one of its entries' days
+(`foldl_pending`).
+
+**`SealLaw4.lean` (new): law 4.**
+- `AgreeBelow L H` is `AgreeAbove`'s mirror: each day below `L`, each window date below `H`.
+- Its grouping lemmas: `daysIn_below` (needs both pending observations at or after `L`) and `windowsIn_below`.
+- `resume_below`: below the horizons, an accepted resume's whole log reads as its folded lines. It uses:
+  - the tail's frame (`foldl_below`; `foldl_frame` for instance dates);
+  - the folded part's rebinding (`filter_rebind_below`, by `SleptInv`, with the whole log's `slept_by_day` equal to
+    the folded lines' below `L`);
+  - the pending observation (`foldl_pending`, with `sealable`'s machine days);
+  - the tail's headers, all at or after `L`.
+- `sealable`'s record clauses make those records the records of `a` alone.
+
+`TmKernel.lean` gains the 5 imports: **50 imports**. The 5 modules hold 1,354 lines.
+
+### Goals (AGENTS §3.2)
+
+**Discharged (2), under their §15 names, deleted from `Goals.lean`:**
+- `resume_keeps_the_sealed_records` (law 4). It uses `hs`: `sealable`'s machine days and its record clauses.
+- `resume_ok_iff` (law 5, both directions). It uses `hc` and `hr`, and not `hs` (`_hs`).
+
+The provisional `Seal.reachFree` and `Seal.tagsClear` are deleted.
+
+**Added: none. Refuted: none.** Burn-down **19 → 17**.
+
+### Recorded disagreements between the design and the repo (continuing part 2's)
+
+7. **§9.5's `reachFree` has four parts; the kernel's has three.** The first ("no undo of `b` cancels a line of `a`
+   that a settled record does not already account for") needs `r`, which §15's `reachFree` signature does not take.
+   It is implied by `tagsClear` (the mask splits under G1, `survivors_append_of_g1`), which law 5 conjoins, so the
+   law stays an equivalence.
+8. **`reachFree`'s wake part uses the three-day fence** (disagreement 2) **and its head part the head second**
+   (disagreement 3). Its step part reads the whole log's fold, at every instant a surviving step of `b` reads the
+   index at.
+9. **`tagsClear` is G1 on the specification's tags**, not a condition on survivors: §7.4 defines G1 as conservative,
+   so law 5's right side refuses exactly what G1 refuses. `a_spurious_tag_refusal_exists` is owed (part 4).
+
+### Rule D9-21
+
+Nothing added here is on the wire: every definition and lemma is specification (`foldAll` is a `foldl`).
+
+### Numbers
+
+**Taken:** none. **Highest:** gap 118, cheat 151, parity P34. **Parity entries:** none. **Witnesses:** none added.
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 3.00 / 3.03 / 2.99 s (part 1: 2.98 / 2.98 / 3.01 s, +1% at the worst; the cold first run after the build 3.78 s) |
+| axiom audit | **3657 theorems** (3614 + 43) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **17** |
+| `TmKernel.lean` | **50 imports** |
+| `cargo test --workspace` | **1068 passed / 0 failed / 5 ignored across 73 binaries** (no test added or removed) |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6; `stack.rs` 4.21 s) |
+| T5 (`kernel_replay_parity.rs --include-ignored`) | 10 passed, 0.88 s |
+| `cli_latency.rs --include-ignored`, three serial runs | green, 4 passed each. No log: first 622.6 / 627.8 / 642.4 ms, later 50.7 / 50.8 / 55.8 ms. 1y: first 733.4 / 728.6 / 708.4, later 121.5 / 121.5 / 121.6. 3y: first 971.0 / 951.4 / 946.8, later 283.7 / 268.4 / 283.6. T14: 80.9 / 76.0 / 75.9 ms (3 years), 141.6 / 141.9 / 126.6 ms (10 years). The binary's reader is unchanged (Rust) |
+
+**Owed next (W2, part 4):** `foldPoint`, `sealDay`, the reseal and record emission, with laws 6, 6's pair and 7;
+W1's disagreement 11, settled by a fold point that never separates an unfolded undo from a folded target;
+`genesis` and law 9; the in-step theorems of §14.5's W2 row; cheats 99–104 (design labels).

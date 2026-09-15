@@ -494,8 +494,11 @@ eleven goals and the six provisional definitions remained.
 (`Seal.resume_from_empty_is_replay`) and its pair (`Seal.resume_from_empty_never_refuses_by_guard`), in
 `SealLaw2D.lean`–`SealLaw2F.lean`; the real `Seal.resume` (`SealResume.lean`) replaced its provisional definition, so
 the goals below read it.  Its reseal (`Seal.resealOf`) is not built yet and returns `none`: laws 6, 6's pair and 7
-hold vacuously of it and are **not** discharged.  Six goals and five provisional definitions remain (README "Stage 5
-D9 W2, part 2").
+hold vacuously of it and are **not** discharged.  Six goals and five provisional definitions remained.
+**W2, part 3** discharged law 4 (`Seal.resume_keeps_the_sealed_records`, `SealLaw4.lean`) and law 5 in both directions
+(`Seal.resume_ok_iff`, `SealLaw5B.lean`), with the real `Seal.reachFree` and `Seal.tagsClear` (`SealReach.lean`)
+replacing their provisional definitions.  Four goals (laws 6, 6's pair, 7 and 9) and three provisional definitions
+(`foldPoint`, `sealDay`, `genesis`) remain (README "Stage 5 D9 W2, part 3").
 ############################################################################ -/
 
 -- provisional, replaced by the real definitions in W2 (signatures fixed by design §15)
@@ -505,27 +508,9 @@ def Seal.foldPoint (z : Cal.Tz) (T : Nat) (k : Seal.Ckpt) (b : List Log.Line) (t
 /-- **Provisional (W2).**  The new ledger day `L'` (§9.4). -/
 def Seal.sealDay (z : Cal.Tz) (T : Nat) (k : Seal.Ckpt) (b : List Log.Line) (terminated : Bool)
     (p : Seal.Policy) : Nat := sorry
-/-- **Provisional (W2).**  §9.5 law 5's spec side of G1–G3 on the whole list. -/
-def Seal.reachFree (z : Cal.Tz) (T₀ L : Nat) (a b : List Log.Line) : Bool := sorry
-/-- **Provisional (W2).**  G1's conservative tag condition (§7.4). -/
-def Seal.tagsClear (z : Cal.Tz) (T₀ L : Nat) (a r b : List Log.Line) : Bool := sorry
 /-- **Provisional (W2).**  The chunked rebuild with exact pops (§9.7). -/
 def Seal.genesis (z : Cal.Tz) (T : Nat) (chunks : List (List Log.Line)) (terminated : Bool) (p : Seal.Policy) :
     Except Seal.Refusal (List Seal.DayRecord × List Seal.WindowRecord × Seal.Answer) := sorry
-
-/-- **Law 4, two-run**: what Rust stored is still true. -/
-theorem resume_keeps_the_sealed_records (z : Cal.Tz) (T₀ T L : Nat) (a r b : List Log.Line) (term : Bool)
-    (p : Option Seal.Policy) (x : Seal.Answer × Option Seal.Resealed)
-    (hc : Log.contiguousFrom 1 (a ++ b) = true) (hr : r <+: b) (hs : Seal.sealable z T₀ L a r = true)
-    (h : Seal.resume z T (Seal.ckptOf z T₀ L a r) b term p = .ok x) :
-    Seal.dayRecordsBelow z T₀ L (a ++ b) = Seal.dayRecordsBelow z T₀ L a ∧
-    Seal.windowRecordsBelow z T₀ L (a ++ b) = Seal.windowRecordsBelow z T₀ L a := sorry
-
-/-- **Law 5, both directions** (§5.8): acceptance is exactly `L ≤ T`, `reachFree` and `tagsClear`. -/
-theorem resume_ok_iff (z : Cal.Tz) (T₀ T L : Nat) (a r b : List Log.Line) (term : Bool) (p : Option Seal.Policy)
-    (hc : Log.contiguousFrom 1 (a ++ b) = true) (hr : r <+: b) (hs : Seal.sealable z T₀ L a r = true) :
-    (Seal.resume z T (Seal.ckptOf z T₀ L a r) b term p).isOk
-      = (decide (L ≤ T) && Seal.reachFree z T₀ L a b && Seal.tagsClear z T₀ L a r b) := sorry
 
 /-- **Law 6, two-run**: a reseal is a seal, never behind its ledger day. -/
 theorem reseal_is_seal (z : Cal.Tz) (T₀ T L : Nat) (a r b : List Log.Line) (term : Bool) (p : Seal.Policy)
