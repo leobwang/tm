@@ -19,6 +19,7 @@
 //! | C3 | `block`: the block family of the machine (`start`, `pause`, `unpause`, `interrupt`, `resume`, `stop`, `done`, `extend`). Per day, `DayReplay`'s `first_start`, `starts`, `block_min`, `blocks_done`, `load_fifths`, `minutes_by_ci`, `ci_unknown`, `done`, `lost_min`, `dropped` and its `Block`/`Pause`/`Interrupt` segments; every `ItemReplay` field; the start observations of `energy`; `durations`; `interrupts`; `open_block`; `open_interrupt`; `last_effective_t` ([`Block`]) |
 //! | C5 | `day`: the day header and records family (`wake`, `arrive`, `loc`, `break`, `energy`, `idle`, `routine`'s day half, `plan`, `demote`, `drop`, `close`, unknown events). Per day every remaining `DayReplay` field (`wake`, `slept_min`, `onset_min`, `arrival`, `loc`, `window`, `budget`, `loc_changes`, `leak_min`, `longest_leak`, `idle`, `breaks`, `routine_min`, `plans`, `replans_today`, `drift_min`, `last_plan_hash`); `demotions` (each with its day), `closes` (each with its day), `dropped_items`, the global `longest_leak`, `unknown`. The block family's comparison widens to every segment kind, every energy observation, and exactly the Rust's set of days ([`DayFam`]) |
 //! | C6 | **the entire `Replay`**. The kernel's facts are design §8.4's view (every day's record, seam, observations, interruptions, demotions, closes and headers; every date's window; every item; the all-time counts), decoded into the families above plus `seams` (fork `DaySeam`: since-break anchor, idle marks, `last_t`), `rows` (`tm log`'s `ViewRow`s: line, tag, id, day, cancelled, display), the counts (`entry_count`, `line_count`, `days.keys().last()`) and each id's first done date and count; and then rebuilt as a `tm_core::log::Replay` ([`kernel_replay`]) compared with the fork's by its own `PartialEq` and `ported_facts()` (D14) |
+//! | C7 | no new field: [`TRIPLES`] generated `(L, E, M)` triples ([`triple`]). The undone log `L ++ E ++ M ++ undosFor E` is compared in full with the fork, and so is the log without the command, `L ++ M`, with `E`'s lines left blank so every entry keeps its line. When `untouchedBy E M` holds, the two agree on every fact but the line bookkeeping (Replay.lean's `undoing_a_command_replays_the_log_without_it`); when it does not, the fork's cancellation is reproduced line by line and the two disagree |
 //! | C4 | `completion`: the completion family (`done`'s `mark_done`, `routine`, `skip`, `event`): `done_items` and `last_done` (the latest by instant, the first of equal instants), `done_dates`, `instances` (the last record in file order), `LatestNamed` per `(name, id?)` from `events` (with each occurrence's line) and every `latest_named` query, `event_names`; and the replay warnings as `(line, status)`, each checked against `Replay.warnings`' text ([`Completion`]) |
 //!
 //! **The inputs**, every one compared in full:
@@ -44,7 +45,8 @@
 //! named test ([`t5_p34_a_gap_before_the_origin_is_the_named_exception`]). C6 adds none: the
 //! seams, the view rows and the counts are exact (§17: observation order by source
 //! line is exact by design); P33's and P34's tests carry the one date into the first
-//! done date and the last day.
+//! done date and the last day. C7 adds none: §17 lists the undo mask and the housekeeping
+//! cancellation as exact by design, and the triples are generated inside the table's span.
 
 #[allow(dead_code)]
 #[path = "../src/cli/tz_table.rs"]
@@ -1731,6 +1733,8 @@ struct Generated {
     completions: Vec<u64>,
     /// C5: the [`day_edge`] cases this sequence ran.
     day_edges: Vec<u64>,
+    /// C7: the clock after the last entry, where a triple's command starts.
+    now: DateTime<Utc>,
 }
 
 /// Move the clock on by 1 to 90 minutes and return it.
@@ -1929,7 +1933,7 @@ fn generate(seed: u64) -> Generated {
             }
         }
     }
-    Generated { tz, text: w.text(), arms, silent_targets, housekeeping, edges, completions, day_edges }
+    Generated { tz, text: w.text(), arms, silent_targets, housekeeping, edges, completions, day_edges, now }
 }
 
 /// How many cases [`day_edge`] has.
@@ -2537,6 +2541,137 @@ fn zone_cases() -> Vec<ZoneCase> {
 // The tests.
 
 /// The seven corpus logs.
+// ---------------------------------------------------------------------------
+// C7: the undo law's `(L, E, M)` triples (design §7.3).
+
+/// How many `(L, E, M)` triples T5 runs (design §7.3, §14.4 row C7): the even ones meet `untouchedBy`, the odd
+/// ones do not.
+const TRIPLES: u64 = 64;
+
+/// Kernel `Replay.matches`: `undo{of, id?}` takes `m` when `m`'s tag is `of` and, when `id` is given, `m`'s
+/// primary id is `id` (fork `undo_mask`'s test, without its undo clause: undos never reach the stack).
+fn undo_matches(of: &str, id: Option<&str>, m: &Event) -> bool {
+    m.name() == of && id.is_none_or(|x| m.primary_id() == Some(x))
+}
+
+/// Kernel `Replay.untouchedBy E M`: no event of `M` is an undo, and none matches the undo `tm undo` writes for
+/// an event of `E`.
+fn untouched_by(e: &[Event], m: &[Event]) -> bool {
+    m.iter().all(|x| !matches!(x, Event::Undo { .. }) && e.iter().all(|y| !undo_matches(y.name(), y.primary_id(), x)))
+}
+
+/// Kernel `Replay.undosFor E`: what `tm undo` appends for a command's events (`tm/src/cli/undo.rs`), one
+/// `undo{of: name, id: primary id}` per event, most recent first.
+fn undos_for(e: &[Event]) -> Vec<Event> {
+    e.iter().rev().map(|y| ev_undo(y.name(), y.primary_id())).collect()
+}
+
+/// One triple: a generated prefix `L`, a command's events `E`, events `M` the command did not write, and
+/// `tm undo`'s appends.
+struct Triple {
+    tz: Tz,
+    kind: &'static str,
+    e: Vec<Event>,
+    m: Vec<Event>,
+    /// `L ++ E ++ M ++ undosFor E`.
+    undone: String,
+    /// `L ++ M`, with `E`'s lines blank: every entry keeps the line it has in the undone log, as the kernel's
+    /// law states it (entries carry their lines).
+    without: String,
+    /// `L ++ E ++ M`: the log before `tm undo`.
+    before: String,
+    /// Lines the fork's mask must cancel in the undone log, and lines it must leave standing.
+    cancelled: Vec<u64>,
+    standing: Vec<u64>,
+}
+
+fn ev_named(name: &str, id: Option<&str>) -> Event {
+    Event::Named { name: name.into(), id: id.map(str::to_string) }
+}
+
+/// **Triple `seed`.** `L` is generated sequence `1000 + seed`. An even seed takes a command from seven kinds
+/// (`tm done`'s done and routine, a start, a week close, a drop, a move, an interrupt and its resume, and two
+/// events of one name whose undos overlap, so their order matters) and 0 to 4 events for `M` from a pool that
+/// holds the automatic close, keeping those `untouchedBy` allows. An odd seed breaks the hypothesis one of four
+/// ways: quirk Q6(f)'s automatic close after a week close; `M` repeating the command's `done`; the command's
+/// event without an id and `M`'s with one; and an undo in `M` that takes the command's event, so `tm undo`'s own
+/// reaches into `L`.
+fn triple(seed: u64) -> Triple {
+    let g = generate(1_000 + seed);
+    let mut rng = Rng(seed.wrapping_mul(0x9e37_79b9) ^ 0xc7);
+    let mut w = Writer::new(g.tz);
+    for l in g.text.lines() {
+        w.push_raw(l.to_string());
+    }
+    let mut now = g.now;
+    let id = *rng.pick(&["1", "2", "17"]);
+    let key = now.with_timezone(&g.tz).date_naive().to_string();
+    let (kind, e, m, pre): (&'static str, Vec<Event>, Vec<Event>, Vec<Event>) = if seed % 2 == 0 {
+        let (kind, e) = match rng.below(7) {
+            0 => ("done", vec![ev_done(id, 30, false), ev_routine("stretch", "2026-09-07", "done", None)]),
+            1 => ("start", vec![ev_start(id)]),
+            2 => ("close week", vec![ev_close("week", "2026-W37")]),
+            3 => ("drop", vec![Event::Drop { id: id.into() }]),
+            4 => ("move", vec![Event::Move { id: id.into(), from: "week/2026-W37.md".into(), to: "backlog.md".into() }]),
+            5 => ("interrupt", vec![Event::Interrupt { id: Some(id.into()) }, Event::Resume { lost_min: 5, dropped: vec![] }]),
+            _ => ("overlapping events", vec![ev_named("arrival", None), ev_named("arrival", Some(id))]),
+        };
+        let pool = [
+            ev_close("day", &key),
+            Event::Note { text: "between".into() },
+            ev_wake(400),
+            Event::Plan { hash: "m".into(), replans_today: 1, drift_min: 0 },
+            ev_done("m9", 20, false),
+            ev_named("lunch", None),
+            Event::Energy { pred: 3, rep: 4, hsw: 3.25, loc: "home".into() },
+            ev_start("m9"),
+            Event::Drop { id: "m9".into() },
+        ];
+        let m: Vec<Event> = (0..rng.below(5)).map(|_| rng.pick(&pool).clone()).filter(|x| untouched_by(&e, std::slice::from_ref(x))).collect();
+        (kind, e, m, vec![])
+    } else {
+        match (seed / 2) % 4 {
+            0 => ("housekeeping close (Q6(f))", vec![ev_close("week", "2026-W37")], vec![ev_close("day", &key)], vec![]),
+            1 => ("M repeats the done", vec![ev_done(id, 30, false)], vec![ev_done(id, 45, false)], vec![]),
+            2 => ("an id-less event, then one with an id", vec![ev_named("arrival", None)], vec![ev_named("arrival", Some("m9"))], vec![]),
+            _ => ("an undo in M", vec![ev_done(id, 30, false)], vec![ev_undo("done", None)], vec![ev_done(id, 25, false), ev_done("b", 25, false)]),
+        }
+    };
+    // `L`'s tail (the undo-in-M case's two dones), the command, the events after it, and `tm undo` at one instant.
+    let pre_lines: Vec<u64> = pre.into_iter().map(|x| w.push(tick(&mut now, &mut rng), x)).collect();
+    let e_lines: Vec<u64> = e.iter().map(|x| w.push(tick(&mut now, &mut rng), x.clone())).collect();
+    let m_lines: Vec<u64> = m.iter().map(|x| w.push(tick(&mut now, &mut rng), x.clone())).collect();
+    let before = w.text();
+    let t = tick(&mut now, &mut rng);
+    let u_lines: Vec<u64> = undos_for(&e).into_iter().map(|x| w.push(t, x)).collect();
+    let undone = w.text();
+    let mut blanked = w.lines.clone();
+    blanked.truncate(*u_lines.first().expect("a command has events") as usize - 1);
+    for l in &e_lines {
+        blanked[*l as usize - 1] = String::new();
+    }
+    let without = loggen::text(&blanked);
+    let law = untouched_by(&e, &m);
+    assert_eq!(law, seed % 2 == 0, "triple {seed} ({kind}): untouchedBy is {law}");
+    let (cancelled, standing) = if law {
+        (e_lines.iter().chain(&u_lines).copied().collect(), m_lines.clone())
+    } else {
+        match (seed / 2) % 4 {
+            // The undo takes `M`'s event, the latest match, and leaves the command's standing.
+            0..=2 => (m_lines.iter().chain(&u_lines).copied().collect(), e_lines.clone()),
+            // `M`'s undo takes the command's `done`; `tm undo`'s takes `L`'s `done` of the id, and `L`'s last `done` stands.
+            _ => (vec![pre_lines[0], e_lines[0], m_lines[0], u_lines[0]], vec![pre_lines[1]]),
+        }
+    };
+    Triple { tz: g.tz, kind, e, m, undone, without, before, cancelled, standing }
+}
+
+/// The facts the undo law speaks of: everything but the line bookkeeping (the cancelled lines, every line's day and
+/// view row, the entry and line counts), which appending undos changes (Replay.lean's `factsView`).
+fn law_view(k: &Facts) -> (&Block, &Completion, &DayFam, &BTreeMap<i64, SeamRow>, Option<i64>) {
+    (&k.block, &k.completion, &k.day, &k.seams, k.counts.2)
+}
+
 fn corpus_logs() -> Vec<(String, String)> {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../kernel/corpus");
     [
@@ -2727,6 +2862,49 @@ fn t5_the_zone_cases_replay_as_the_fork_does() {
         cases.len(),
         cases.iter().map(|c| &c.name).collect::<Vec<_>>(),
         latest_named_queries()
+    );
+}
+
+/// **C7: T5 over [`TRIPLES`] `(L, E, M)` triples** (design §7.3). Every undone log, every log without the command,
+/// and every log before the undo is compared in full with the fork. A triple that meets `untouchedBy` must satisfy
+/// the undo law: the undone log and the log without the command agree on every fact but the line bookkeeping
+/// (Replay.lean's `undoing_a_command_replays_the_log_without_it`). A triple that does not must reproduce the fork's
+/// cancellation, line by line, and there the two logs disagree (`the_undo_law_fails_without_untouchedBy`).
+#[test]
+fn t5_undo_triples_meet_the_law_or_reproduce_the_forks_cancellation() {
+    let mut kinds: BTreeMap<(bool, &str), usize> = BTreeMap::new();
+    let (mut lines, mut m_events, mut auto_closes, mut e_mattered, mut law_count, mut broken) = (0, 0, 0, 0, 0, 0);
+    for seed in 0..TRIPLES {
+        let tr = triple(seed);
+        let name = format!("triple {seed} ({})", tr.kind);
+        let law = untouched_by(&tr.e, &tr.m);
+        let undone = assert_parity(&format!("{name}, undone"), &tr.undone, tr.tz);
+        let without = assert_parity(&format!("{name}, without the command"), &tr.without, tr.tz);
+        let before = assert_parity(&format!("{name}, before the undo"), &tr.before, tr.tz);
+        for l in &tr.cancelled {
+            assert!(undone.cancelled.contains(l), "{name}: line {l} should be cancelled");
+        }
+        for l in &tr.standing {
+            assert!(!undone.cancelled.contains(l), "{name}: line {l} should stand");
+        }
+        if law {
+            assert!(law_view(&undone) == law_view(&without), "{name}: untouchedBy holds, and the undone log's facts are not the log's without the command");
+            law_count += 1;
+        } else {
+            assert!(law_view(&undone) != law_view(&without), "{name}: untouchedBy fails, and yet the undone log's facts are the log's without the command");
+            broken += 1;
+        }
+        e_mattered += usize::from(law_view(&before) != law_view(&without));
+        *kinds.entry((law, tr.kind)).or_default() += 1;
+        lines += tr.undone.lines().count();
+        m_events += tr.m.len();
+        auto_closes += tr.m.iter().filter(|x| matches!(x, Event::Close { period, .. } if period == "day")).count();
+    }
+    assert_eq!((law_count, broken), (TRIPLES / 2, TRIPLES / 2), "half meet untouchedBy, half do not");
+    assert!(kinds.len() == 11, "every command kind and every violation ran: {kinds:?}");
+    assert!(auto_closes > 0 && e_mattered > TRIPLES as usize / 2, "housekeeping ran and the commands changed facts: {auto_closes} automatic closes, {e_mattered} commands that mattered");
+    eprintln!(
+        "T5 triples: {TRIPLES} (L, E, M) triples, {lines} undone lines, {m_events} events in M ({auto_closes} automatic closes); {law_count} meet untouchedBy and satisfy the law, {broken} do not and reproduce the fork's cancellation; {e_mattered} commands whose facts the undo took back; kinds {kinds:?}; 0 exceptions"
     );
 }
 

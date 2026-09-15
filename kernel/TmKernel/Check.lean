@@ -3662,3 +3662,53 @@ open Tm
 #print axioms Tm.logAnswer_headers
 #print axioms Tm.LogReq.wf_headers_from_line_one
 #print axioms Tm.mkLogReq?_refuses_headers_of_a_tail_without_a_checkpoint
+
+-- APPENDED 2026-09-15 (stage 5, D9 track).  Step C7 (design §7.3, §14.4 row C7): the undo law in Replay.lean.
+-- `undosFor` (what `tm undo` appends: one `undo{of: tag, id: primary id}` per event, most recent first) and
+-- `untouchedBy`; the mask's half (`undoing_a_command_leaves_the_survivors_of_the_log_without_it`); the view reads only
+-- the survivors, whatever its maps' bucket counts (`SameReadings`, `HMap.Keyed`, `HMap.perm_keys_pairs`,
+-- `the_view_reads_only_the_survivors`).  The C7 goals were added to Goals.lean and discharged in the step:
+-- `undoing_a_command_replays_the_log_without_it` (without §15's unused `hl`), `undo_of_a_silent_verb_cancels_an_older_event`
+-- and `undo_after_housekeeping_cancels_the_housekeeping`, with the refutation twin in the law's conclusion
+-- (`the_undo_law_fails_without_untouchedBy`) and quirk Q6(d)'s law and separation beside them.
+#print axioms Tm.Replay.matches_its_own_undo
+#print axioms Tm.Replay.foldl_maskStep_of_no_undo
+#print axioms Tm.Replay.foldl_maskStep_undos
+#print axioms Tm.Replay.undoing_a_command_leaves_the_survivors_of_the_log_without_it
+#print axioms Tm.Replay.sameReadings_init
+#print axioms Tm.Replay.SameReadings.apply
+#print axioms Tm.Replay.SameReadings.applyEffects
+#print axioms Tm.Replay.SameReadings.stepWith
+#print axioms Tm.Replay.SameReadings.foldl
+#print axioms Tm.Replay.KMap.mem_alterGo
+#print axioms Tm.Replay.KMap.mem_alter
+#print axioms Tm.Replay.KMap.nodup_alterGo
+#print axioms Tm.Replay.KMap.nodup_alter
+#print axioms Tm.Replay.HMap.keyed_empty
+#print axioms Tm.Replay.HMap.keyed_alter
+#print axioms Tm.Replay.HMap.keyed_mapVals
+#print axioms Tm.Replay.HMap.mem_foldl_pairs
+#print axioms Tm.Replay.HMap.nodup_foldl_pairs
+#print axioms Tm.Replay.HMap.nodup_keys_pairs
+#print axioms Tm.Replay.HMap.mem_keys_pairs_iff
+#print axioms Tm.Replay.HMap.perm_keys_pairs
+#print axioms Tm.Replay.HMap.keys_pairs_mapVals
+#print axioms Tm.Replay.minDay?_perm
+#print axioms Tm.Replay.maxDay?_perm
+#print axioms Tm.Replay.pairsKeyed_init
+#print axioms Tm.Replay.PairsKeyed.apply
+#print axioms Tm.Replay.PairsKeyed.foldl
+#print axioms Tm.Replay.doneKeys_filter
+#print axioms Tm.Replay.doneCount_filter
+#print axioms Tm.Replay.factsView_finish_of_sameReadings
+#print axioms Tm.Replay.the_view_reads_only_the_survivors
+#print axioms Tm.Replay.undoing_a_command_replays_the_log_without_it
+#print axioms Tm.Replay.undoing_the_last_command_replays_the_log_without_it
+#print axioms Tm.Replay.undoing_a_command_answers_every_fact_query_as_the_log_without_it
+#print axioms Tm.Replay.a_silent_verb_undo_cancels_the_latest_event_of_its_name
+#print axioms Tm.Replay.a_silent_verb_undo_cancels_nothing_iff_no_survivor_has_its_name
+#print axioms Tm.Replay.move_toList
+#print axioms Tm.Replay.undo_of_a_silent_verb_cancels_an_older_event
+#print axioms Tm.Replay.undo_after_housekeeping_cancels_the_housekeeping
+#print axioms Tm.Replay.the_undo_law_fails_without_untouchedBy
+#print axioms Tm.Replay.a_done_undone_over_an_automatic_close_is_untouched

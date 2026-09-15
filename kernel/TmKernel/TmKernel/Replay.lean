@@ -205,6 +205,24 @@ a log of wakes on as many dates would make an association list's absent-key scan
   depend on bucket counts; the line bookkeeping answers `lines`) and `ask` (it and the headers).  The wire groups the
   view by where each fact lives (`dayOuts`, `winOuts`, `itemOuts`, `instOthers`).
 
+## C7: the undo law (§7.3)
+
+* **The law** (`undoing_a_command_replays_the_log_without_it`): `tm undo` of a command whose events `E` are followed
+  by events `M` it did not write appends `undosFor E` (one `undo{of: tag, id: primary id}` per event, most recent
+  first), and when `untouchedBy E M` (no event of `M` is an undo or matches one of those undos) the view of
+  `L ++ E ++ M ++ undosFor E` is the view of `L ++ M`.  **This is what "`tm undo` must replay the log, never apply an
+  inverse command" (`move_has_no_inverse_command`, L22, Boundary.lean) always pointed at.**
+* **Two halves**: the survivors are those of `L ++ M`, entry for entry
+  (`undoing_a_command_leaves_the_survivors_of_the_log_without_it`), and the view reads only the survivors
+  (`the_view_reads_only_the_survivors`): the replay sizes its maps by the log's length, and the view reads every map
+  through `get` (`SameReadings`) and a map's pairs only through its keys, one set whatever the bucket count
+  (`HMap.Keyed`, `HMap.perm_keys_pairs`).
+* **The quirks the hypothesis excludes, ported faithfully**: Q6(d), a silent verb's `undo{of: verb}` cancels the
+  latest survivor named like the verb (`a_silent_verb_undo_cancels_the_latest_event_of_its_name`), and nothing exactly
+  when no survivor is (`a_silent_verb_undo_cancels_nothing_iff_no_survivor_has_its_name`; gap 84); Q6(f), the undo of a
+  week close cancels the automatic close after it (`undo_after_housekeeping_cancels_the_housekeeping`), so the law
+  fails without its hypothesis (`the_undo_law_fails_without_untouchedBy`; gap 86).
+
 ## Rule D9-21 (functions here over a list the wire can make large)
 
 `survivors`, `stackI`, `danglingOf` (`foldl`, specification only: compiled as their `@[csimp]` twins or
@@ -244,6 +262,8 @@ replay and the headers), `SeamOp.apply` (no recursion; one `HMap.alter` a surviv
 `maxDay?` and `minDay?` (`foldl`).  Specification only, never on the wire: `entryHeaders` (compiled as its twin),
 `cancelledHeaderFx` (`filter`, `map`), `factsView` and `ask` (`filter`, `map`; W's laws read them), `pendLines`,
 `obsLines` and the `Effect` projections of the laws.
+C7 adds nothing on the wire.  Specification only: `undosFor` (`zipIdx`, `map`), `untouchedBy` (`all`), and
+`HMap.Keyed`, `SameReadings` and `PairsKeyed` (propositions).
 -/
 namespace Tm
 namespace Log
@@ -7238,6 +7258,672 @@ theorem the_view_reads_a_small_log :
   decide
 
 end FactsWitnesses6
+
+/-! ## C7: the undo law, with housekeeping in between (§7.3)
+
+`tm undo` of a command `X` whose events are `E` sees the log `L ++ E ++ M`, where `M` holds what `X` did not
+write (the next verb's automatic `close`, `tm now`'s and the TUI's appends, later commands), and appends
+`undosFor E`: one `undo{of: tag, id: primary id}` per event of `E`, most recent first, each stamped `ctx.now`
+(`tm/src/cli/undo.rs`).  **The law**: when no event of `M` is an undo or matches one of those undos
+(`untouchedBy`), the replay's view of the log is the view of `L ++ M`
+(`undoing_a_command_replays_the_log_without_it`).  It is what "`tm undo` must replay the log, never apply an
+inverse command" (Boundary.lean's `move_has_no_inverse_command`, L22) always pointed at: an inverse command does
+not exist, and the replay of the log with the command's undos is the replay without the command.
+
+**Why it holds**, in two halves:
+* **the mask** (`undoing_a_command_leaves_the_survivors_of_the_log_without_it`): taken most recent first, each
+  undo finds its own event, because the later events of `E` are already cancelled and `untouchedBy` rules out
+  `M`; so the survivors are those of `L ++ M`, entry for entry;
+* **the view reads only the survivors** (`the_view_reads_only_the_survivors`): the replay folds the survivors
+  over the day index of their wakes, and only its maps' bucket counts see the whole log's length.  The view
+  reads every map through `HMap.get` (`SameReadings`), and its three readings of a map's pairs (`lastDay`,
+  `doneFirst`, `doneCount`) through the keys, which are one set up to order whatever the bucket count
+  (`HMap.Keyed`, `HMap.perm_keys_pairs`).
+
+**Not the line bookkeeping**: a header, the entry count and the cancelled lines see the appended lines, and
+`factsView` answers them `lines`.
+
+**The two quirks the hypothesis excludes, ported faithfully** (Q6):
+* **(d), the silent verb** (gap 84): a command that logged nothing is undone by `undo{of: verb}`, which cancels the
+  latest surviving event named like the verb (`a_silent_verb_undo_cancels_the_latest_event_of_its_name`); it
+  cancels nothing exactly when no survivor carries the name
+  (`a_silent_verb_undo_cancels_nothing_iff_no_survivor_has_its_name`).  §15's witness:
+  `undo_of_a_silent_verb_cancels_an_older_event`.
+* **(f), housekeeping in between** (gap 86): `close` has no primary id, so the undo of a week close cancels the
+  automatic close after it (`undo_after_housekeeping_cancels_the_housekeeping`), and the law's conclusion fails
+  (`the_undo_law_fails_without_untouchedBy`).
+
+Nothing here is on the wire: `undosFor` and `untouchedBy` are specification (D9-21). -/
+
+section UndoLaw
+
+open Log (Id U8 U32 Num)
+
+/-- **What `tm undo` appends for a command's events `E`** (fork `undo`, `tm/src/cli/undo.rs`): one
+`undo{of: tag, id: primary id}` per event, **most recent first**, at lines `n, n + 1, …`, every one stamped
+`ctx.now`, the instant `t` written at offset `o`.  The tag and id are `Event.tag` and `Event.primaryId`, the
+functions `«matches»` reads (fork `Recorder::finish` records `ev.name()` and `ev.primary_id()`).  A command that
+logged nothing gets `undo{of: verb}` instead, quirk Q6(d), below. -/
+def undosFor (E : List Entry) (n : Nat) (t : Cal.VInstant) (o : Cal.VOffset) : List Entry :=
+  (E.reverse.zipIdx n).map (fun p => ⟨p.2, t, o, .undo p.1.ev.tag p.1.ev.primaryId⟩)
+
+/-- **No event of `M` is an undo, and none matches the pattern of any undo `tm undo` writes for `E`.** -/
+def untouchedBy (E M : List Entry) : Bool :=
+  M.all (fun m => !m.ev.isUndo && E.all (fun e => !«matches» e.ev.tag e.ev.primaryId m))
+
+/-- An event matches the undo written for it. -/
+theorem matches_its_own_undo (e : Entry) : «matches» e.ev.tag e.ev.primaryId e = true := by
+  unfold «matches»
+  cases e.ev.primaryId <;> simp
+
+/-- Events that are not undos are pushed onto the stack in order. -/
+theorem foldl_maskStep_of_no_undo : ∀ (xs st : List Entry), xs.all (fun e => !e.ev.isUndo) = true →
+    xs.foldl maskStep st = xs.reverse ++ st
+  | [], _, _ => rfl
+  | x :: xs, st, h => by
+    simp only [List.all_cons, Bool.and_eq_true, Bool.not_eq_true'] at h
+    rw [List.foldl_cons, foldl_maskStep_of_no_undo xs _ h.2]
+    have : maskStep st x = x :: st := by
+      unfold maskStep; split
+      · rename_i of_ id hev; simp [hev, Event.isUndo] at h
+      · rfl
+    rw [this]; simp
+
+/-- **The undos of `D`, most recent first, over a stack `R ++ D ++ S`** in which no entry of `R` matches any of
+them: each takes its own event, and `R ++ S` is left. -/
+theorem foldl_maskStep_undos (R S : List Entry) (t : Cal.VInstant) (o : Cal.VOffset) :
+    ∀ (D : List Entry) (n : Nat), (∀ m ∈ R, ∀ e ∈ D, «matches» e.ev.tag e.ev.primaryId m = false) →
+      ((D.zipIdx n).map (fun p => (⟨p.2, t, o, .undo p.1.ev.tag p.1.ev.primaryId⟩ : Entry))).foldl maskStep
+        (R ++ D ++ S) = R ++ S
+  | [], _, _ => by simp
+  | e :: D, n, h => by
+    rw [List.zipIdx_cons, List.map_cons, List.foldl_cons]
+    have hstep : maskStep (R ++ e :: D ++ S) ⟨n, t, o, .undo e.ev.tag e.ev.primaryId⟩ = R ++ D ++ S := by
+      simp only [maskStep]
+      rw [List.append_assoc, List.eraseP_append_right _ (fun b hb => by
+        simp [h b hb e List.mem_cons_self])]
+      rw [List.cons_append, List.eraseP_cons_of_pos (matches_its_own_undo e)]
+      simp
+    rw [hstep]
+    exact foldl_maskStep_undos R S t o D (n + 1) (fun m hm e' he' => h m hm e' (List.mem_cons_of_mem _ he'))
+
+/-- **The mask's half of the undo law**: the survivors of `L ++ E ++ M ++ undosFor E n t o` are those of
+`L ++ M`, entry for entry. -/
+theorem undoing_a_command_leaves_the_survivors_of_the_log_without_it (L E M : List Entry) (n : Nat)
+    (t : Cal.VInstant) (o : Cal.VOffset)
+    (hE : E.all (fun e => !e.ev.isUndo) = true) (hM : untouchedBy E M = true) :
+    survivors (L ++ E ++ M ++ undosFor E n t o) = survivors (L ++ M) := by
+  have hM1 : M.all (fun e => !e.ev.isUndo) = true := by
+    unfold untouchedBy at hM
+    simp only [List.all_eq_true, Bool.and_eq_true] at hM ⊢
+    exact fun m hm => (hM m hm).1
+  have hM2 : ∀ m ∈ M.reverse, ∀ e ∈ E.reverse, «matches» e.ev.tag e.ev.primaryId m = false := by
+    intro m hm e he
+    unfold untouchedBy at hM
+    simp only [List.all_eq_true, Bool.and_eq_true, Bool.not_eq_true'] at hM
+    exact (hM m (List.mem_reverse.1 hm)).2 e (List.mem_reverse.1 he)
+  unfold survivors undosFor
+  rw [List.foldl_append, List.foldl_append, List.foldl_append, List.foldl_append,
+    foldl_maskStep_of_no_undo E _ hE, foldl_maskStep_of_no_undo M _ hM1, foldl_maskStep_of_no_undo M _ hM1,
+    ← List.append_assoc, foldl_maskStep_undos _ _ t o E.reverse n hM2]
+
+end UndoLaw
+
+/-! ### The view reads only the survivors: maps compared by their keys, whatever their bucket counts -/
+
+section BucketFree
+
+/-- **Two states that answer every reading alike**: every list and scalar equal, and every bucketed map equal key
+by key (`HMap.get`), whatever its bucket count. -/
+structure SameReadings (a b : State) : Prop where
+  days : ∀ k, a.days.get k = b.days.get k
+  items : ∀ k, a.items.get k = b.items.get k
+  itemDays : ∀ k, a.itemDays.get k = b.itemDays.get k
+  lastDone : ∀ k, a.lastDone.get k = b.lastDone.get k
+  doneDates : ∀ k, a.doneDates.get k = b.doneDates.get k
+  instances : ∀ k, a.instances.get k = b.instances.get k
+  named : ∀ k, a.named.get k = b.named.get k
+  dropped : ∀ k, a.dropped.get k = b.dropped.get k
+  seams : ∀ k, a.seams.get k = b.seams.get k
+  energy : a.energy = b.energy
+  durations : a.durations = b.durations
+  interrupts : a.interrupts = b.interrupts
+  headers : a.headers = b.headers
+  machine : a.machine = b.machine
+  global : a.global = b.global
+  rwarns : a.rwarns = b.rwarns
+  demotions : a.demotions = b.demotions
+  closes : a.closes = b.closes
+  longestLeak : a.longestLeak = b.longestLeak
+  unknown : a.unknown = b.unknown
+
+/-- The empty states of any two sizes answer alike. -/
+theorem sameReadings_init (n m : Nat) : SameReadings (State.init n) (State.init m) := by
+  constructor <;> first | rfl | (intro k; simp [State.init, HMap.get_empty])
+
+/-- Every effect keeps two states answering alike: it writes a map through `alter`, whose law is `get_alter`
+(`itemDaySub` reads `items` through `get` first). -/
+theorem SameReadings.apply {a b : State} (h : SameReadings a b) (x : Effect) :
+    SameReadings (applyEffect a x) (applyEffect b x) := by
+  cases x with
+  | obs ob =>
+    cases ob <;>
+    exact ⟨h.days, h.items, h.itemDays, h.lastDone, h.doneDates, h.instances, h.named, h.dropped, h.seams,
+      by simp [applyEffect, h.energy], by simp [applyEffect, h.durations], h.interrupts, h.headers, h.machine,
+      h.global, h.rwarns, h.demotions, h.closes, h.longestLeak, h.unknown⟩
+  | itemDaySub i d m =>
+    simp only [applyEffect]
+    rw [h.items i]
+    split
+    · exact { h with itemDays := fun k => by simp only [HMap.get_alter, h.itemDays] }
+    · exact h
+  | _ =>
+    constructor <;>
+      first
+      | (intro k; simp only [applyEffect, HMap.get_alter, h.days, h.items, h.itemDays, h.lastDone, h.doneDates,
+          h.instances, h.named, h.dropped, h.seams])
+      | simp only [applyEffect, h.energy, h.durations, h.interrupts, h.headers, h.machine, h.global, h.rwarns,
+          h.demotions, h.closes, h.longestLeak, h.unknown]
+
+theorem SameReadings.applyEffects {a b : State} (h : SameReadings a b) :
+    ∀ (fx : List Effect), SameReadings (applyEffects a fx) (applyEffects b fx)
+  | [] => h
+  | x :: fx => by
+    unfold Replay.applyEffects
+    rw [List.foldl_cons, List.foldl_cons]
+    exact SameReadings.applyEffects (h.apply x) fx
+
+/-- An entry's effects read the state only through its machine, so two states answering alike step alike. -/
+theorem SameReadings.stepWith {a b : State} (h : SameReadings a b) (z : Cal.Tz) (dy : Cal.Instant → Nat)
+    (sl : Nat → Option Nat) (e : Entry) :
+    SameReadings (Replay.stepWith z dy sl a e) (Replay.stepWith z dy sl b e) := by
+  unfold Replay.stepWith
+  have : effectsWith z dy sl a e = effectsWith z dy sl b e := by unfold effectsWith; rw [h.machine]
+  rw [this]
+  exact h.applyEffects _
+
+theorem SameReadings.foldl (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) :
+    ∀ (sv : List Entry) {a b : State}, SameReadings a b →
+      SameReadings (sv.foldl (Replay.stepWith z dy sl) a) (sv.foldl (Replay.stepWith z dy sl) b)
+  | [], _, _, h => h
+  | e :: sv, _, _, h => by
+    rw [List.foldl_cons, List.foldl_cons]
+    exact SameReadings.foldl z dy sl sv (h.stepWith z dy sl e)
+
+namespace KMap
+variable {κ β : Type} [DecidableEq κ]
+
+theorem mem_alterGo (k : κ) (f : Option β → Option β) (orig : KMap κ β) (q : κ × β) :
+    ∀ (l acc : KMap κ β), orig = acc.reverse ++ l →
+      q ∈ alterGo k f orig acc l → q.1 = k ∨ q ∈ orig := by
+  intro l
+  induction l with
+  | nil =>
+    intro acc ho hq
+    unfold alterGo at hq
+    split at hq
+    · rcases List.mem_cons.1 hq with rfl | hq
+      · exact Or.inl rfl
+      · exact Or.inr hq
+    · exact Or.inr hq
+  | cons p rest ih =>
+    intro acc ho hq
+    unfold alterGo at hq
+    split at hq
+    · split at hq
+      · simp only [List.reverseAux_eq, List.mem_append, List.mem_cons, List.mem_reverse] at hq
+        rcases hq with hq | rfl | hq
+        · exact Or.inr (by rw [ho]; simp [hq])
+        · exact Or.inl rfl
+        · exact Or.inr (by rw [ho]; simp [hq])
+      · simp only [List.reverseAux_eq, List.mem_append, List.mem_reverse, List.mem_filter] at hq
+        rcases hq with hq | hq
+        · exact Or.inr (by rw [ho]; simp [hq])
+        · exact Or.inr (by rw [ho]; simp [hq.1])
+    · exact ih (p :: acc) (by rw [ho]; simp) hq
+
+/-- A pair of an altered map has the altered key or was in the map. -/
+theorem mem_alter (m : KMap κ β) (k : κ) (f : Option β → Option β) (q : κ × β)
+    (hq : q ∈ m.alter k f) : q.1 = k ∨ q ∈ m := by
+  unfold alter at hq
+  split at hq
+  · split at hq
+    · rcases List.mem_cons.1 hq with rfl | hq
+      · exact Or.inl rfl
+      · exact Or.inr hq
+    · exact Or.inr hq
+  · exact mem_alterGo k f m q m [] (by simp) hq
+
+theorem nodup_alterGo (k : κ) (f : Option β → Option β) (orig : KMap κ β)
+    (hnd : (orig.map Prod.fst).Nodup) :
+    ∀ (l acc : KMap κ β), orig = acc.reverse ++ l → (∀ q ∈ acc, q.1 ≠ k) →
+      ((alterGo k f orig acc l).map Prod.fst).Nodup := by
+  intro l
+  induction l with
+  | nil =>
+    intro acc ho hacc
+    unfold alterGo
+    cases hf : f none with
+    | some v =>
+      refine List.nodup_cons.2 ⟨fun hm => ?_, hnd⟩
+      obtain ⟨q, hq, hqk⟩ := List.mem_map.1 hm
+      rw [ho, List.append_nil] at hq
+      exact hacc q (List.mem_reverse.1 hq) hqk
+    | none => exact hnd
+  | cons p rest ih =>
+    intro acc ho hacc
+    unfold alterGo
+    by_cases hp : p.1 = k
+    · rw [if_pos hp]
+      have hnd' := hnd
+      rw [ho, List.map_append] at hnd'
+      cases hf : f (some p.2) with
+      | some v =>
+        simp only [List.reverseAux_eq]
+        simpa [hp] using hnd'
+      | none =>
+        simp only [List.reverseAux_eq]
+        have hnk : k ∉ rest.map Prod.fst := by
+          have h2 : ((p :: rest).map Prod.fst).Nodup := (List.nodup_append.1 hnd').2.1
+          rw [List.map_cons, List.nodup_cons] at h2
+          rw [← hp]; exact h2.1
+        rw [filter_key_of_not_mem _ _ hnk, List.map_append]
+        exact (List.Sublist.append_left (List.Sublist.map Prod.fst (List.sublist_cons_self p rest)) _).nodup hnd'
+    · rw [if_neg hp]
+      exact ih (p :: acc) (by rw [ho]; simp) (fun q hq => by
+        rcases List.mem_cons.1 hq with rfl | hq
+        · exact hp
+        · exact hacc q hq)
+
+/-- `alter` keeps a map's keys distinct, on every value type. -/
+theorem nodup_alter (m : KMap κ β) (k : κ) (f : Option β → Option β) (hnd : (m.map Prod.fst).Nodup) :
+    ((m.alter k f).map Prod.fst).Nodup := by
+  unfold alter
+  split
+  · rename_i hg
+    cases hf : f none with
+    | some v =>
+      refine List.nodup_cons.2 ⟨fun hm => ?_, hnd⟩
+      obtain ⟨q, hq, hqk⟩ := List.mem_map.1 hm
+      exact ((get_eq_none_iff_keys m k).1 hg) q hq hqk
+    | none => simpa using hnd
+  · exact nodup_alterGo k f m hnd m [] (by simp) (by simp)
+
+end KMap
+
+namespace HMap
+variable {κ β : Type} [DecidableEq κ] [KeyHash κ]
+
+/-- **Every pair sits in its key's bucket, and no bucket holds a key twice**: what `empty`, `alter` and `mapVals`
+keep. -/
+def Keyed (m : HMap κ β) : Prop :=
+  ∀ (i : Nat) (b : KMap κ β), m[i]? = some b →
+    (b.map Prod.fst).Nodup ∧ ∀ q ∈ b, KeyHash.hash q.1 % m.size = i
+
+omit [DecidableEq κ] in
+theorem keyed_empty (n : Nat) : (empty n : HMap κ β).Keyed := by
+  intro i b hb
+  unfold empty at hb
+  rw [Array.getElem?_replicate] at hb
+  split at hb
+  · cases hb; simp
+  · cases hb
+
+theorem keyed_alter (m : HMap κ β) (k : κ) (f : Option β → Option β) (hm : m.Keyed) : (m.alter k f).Keyed := by
+  intro i b hb
+  unfold alter at hb ⊢
+  by_cases h0 : m.size = 0
+  · rw [if_pos h0] at hb ⊢
+    have hi : i = 0 := by
+      rcases Nat.lt_or_ge i 1 with h | h
+      · omega
+      · rw [Array.getElem?_eq_none (by simpa using h)] at hb; cases hb
+    subst hi
+    simp only [List.getElem?_toArray, List.getElem?_cons_zero, Option.some.injEq] at hb
+    subst hb
+    refine ⟨KMap.nodup_alter _ k f (by simp), fun q _ => by simp [Nat.mod_one]⟩
+  · rw [if_neg h0] at hb ⊢
+    rw [Array.size_modify]
+    rw [Array.getElem?_modify] at hb
+    split at hb
+    · rename_i hik
+      cases hb0 : m[i]? with
+      | none => rw [hb0] at hb; cases hb
+      | some b0 =>
+        rw [hb0] at hb
+        simp only [Option.map_some, Option.some.injEq] at hb
+        subst hb
+        obtain ⟨hnd, hk⟩ := hm i b0 hb0
+        refine ⟨KMap.nodup_alter b0 k f hnd, fun q hq => ?_⟩
+        rcases KMap.mem_alter b0 k f q hq with hq | hq
+        · rw [hq]; exact hik
+        · exact hk q hq
+    · exact hm i b hb
+
+omit [DecidableEq κ] in
+theorem keyed_mapVals {γ : Type} (m : HMap κ β) (f : β → γ) (hm : m.Keyed) : (m.mapVals f).Keyed := by
+  intro i b hb
+  unfold mapVals at hb ⊢
+  simp only [List.getElem?_toArray, List.getElem?_map, Array.getElem?_toList] at hb
+  cases hb0 : m[i]? with
+  | none => rw [hb0] at hb; cases hb
+  | some b0 =>
+    rw [hb0] at hb
+    simp only [Option.map_some, Option.some.injEq] at hb
+    subst hb
+    obtain ⟨hnd, hk⟩ := hm i b0 hb0
+    refine ⟨by rw [List.map_map]; exact hnd, fun q hq => ?_⟩
+    simp only [List.size_toArray, List.length_map, Array.length_toList]
+    obtain ⟨p, hp, rfl⟩ := List.mem_map.1 hq
+    exact hk p hp
+
+omit [DecidableEq κ] [KeyHash κ] in
+theorem mem_foldl_pairs : ∀ (l : List (KMap κ β)) (acc : KMap κ β) (q : κ × β),
+    q ∈ l.foldl (fun acc b => b ++ acc) acc ↔ q ∈ acc ∨ ∃ b ∈ l, q ∈ b
+  | [], acc, q => by simp
+  | b :: l, acc, q => by
+    rw [List.foldl_cons, mem_foldl_pairs l (b ++ acc) q]
+    simp only [List.mem_append, List.mem_cons, exists_eq_or_imp]
+    constructor
+    · rintro ((h | h) | h)
+      · exact Or.inr (Or.inl h)
+      · exact Or.inl h
+      · exact Or.inr (Or.inr h)
+    · rintro (h | h | h)
+      · exact Or.inl (Or.inr h)
+      · exact Or.inl (Or.inl h)
+      · exact Or.inr h
+
+omit [DecidableEq κ] in
+theorem nodup_foldl_pairs (s : Nat) : ∀ (l : List (KMap κ β)) (j : Nat) (acc : KMap κ β),
+    (∀ (i : Nat) (b : KMap κ β), l[i]? = some b →
+      (b.map Prod.fst).Nodup ∧ ∀ q ∈ b, KeyHash.hash q.1 % s = j + i) →
+    (acc.map Prod.fst).Nodup → (∀ q ∈ acc, KeyHash.hash q.1 % s < j) →
+    ((l.foldl (fun acc b => b ++ acc) acc).map Prod.fst).Nodup
+  | [], _, _, _, hacc, _ => hacc
+  | b :: l, j, acc, hl, hacc, hlt => by
+    rw [List.foldl_cons]
+    obtain ⟨hb, hbk⟩ := hl 0 b rfl
+    refine nodup_foldl_pairs s l (j + 1) (b ++ acc) (fun i c hc => ?_) ?_ ?_
+    · obtain ⟨h1, h2⟩ := hl (i + 1) c (by simpa using hc)
+      exact ⟨h1, fun q hq => by rw [h2 q hq]; omega⟩
+    · rw [List.map_append, List.nodup_append]
+      refine ⟨hb, hacc, fun x hx y hy hxy => ?_⟩
+      obtain ⟨p, hp, rfl⟩ := List.mem_map.1 hx
+      obtain ⟨r, hr, rfl⟩ := List.mem_map.1 hy
+      have h1 := hbk p hp
+      have h2 := hlt r hr
+      rw [hxy] at h1
+      omega
+    · intro q hq
+      rcases List.mem_append.1 hq with hq | hq
+      · rw [hbk q hq]; omega
+      · have := hlt q hq; omega
+
+omit [DecidableEq κ] in
+/-- A keyed map's pairs hold each key once. -/
+theorem nodup_keys_pairs (m : HMap κ β) (hm : m.Keyed) : (m.pairs.map Prod.fst).Nodup := by
+  unfold pairs
+  exact nodup_foldl_pairs m.size m.toList 0 [] (fun i b hb => by
+    rw [Array.getElem?_toList] at hb
+    obtain ⟨h1, h2⟩ := hm i b hb
+    exact ⟨h1, fun q hq => by rw [h2 q hq]; omega⟩) (by simp) (by simp)
+
+/-- A keyed map's pairs hold exactly the keys `get` finds. -/
+theorem mem_keys_pairs_iff (m : HMap κ β) (hm : m.Keyed) (k : κ) :
+    k ∈ m.pairs.map Prod.fst ↔ (m.get k).isSome := by
+  unfold pairs
+  constructor
+  · intro hk
+    obtain ⟨q, hq, rfl⟩ := List.mem_map.1 hk
+    rcases (mem_foldl_pairs _ _ q).1 hq with hq | ⟨b, hb, hqb⟩
+    · cases hq
+    · obtain ⟨i, hi⟩ := List.mem_iff_getElem?.1 hb
+      rw [Array.getElem?_toList] at hi
+      have hh := (hm i b hi).2 q hqb
+      unfold get
+      rw [hh, hi]
+      show (b.get q.1).isSome = true
+      cases hg : KMap.get b q.1 with
+      | some _ => rfl
+      | none => exact absurd rfl ((KMap.get_eq_none_iff_keys b q.1).1 hg q hqb)
+  · intro hk
+    unfold get at hk
+    cases hb : m[KeyHash.hash k % m.size]? with
+    | none => rw [hb] at hk; cases hk
+    | some b =>
+      rw [hb] at hk
+      change (b.get k).isSome = true at hk
+      cases hg : KMap.get b k with
+      | none => rw [hg] at hk; cases hk
+      | some v =>
+        obtain ⟨q, hq, hqk⟩ := List.mem_map.1 (KMap.mem_keys_of_get b k v hg)
+        refine List.mem_map.2 ⟨q, (mem_foldl_pairs _ _ q).2 (Or.inr ⟨b, ?_, hq⟩), hqk⟩
+        exact Array.mem_toList_iff.2 (Array.mem_of_getElem? hb)
+
+/-- **Two keyed maps that read alike hold one set of keys**, in whatever order their buckets give. -/
+theorem perm_keys_pairs (m m' : HMap κ β) (hm : m.Keyed) (hm' : m'.Keyed) (h : ∀ k, m.get k = m'.get k) :
+    (m.pairs.map Prod.fst).Perm (m'.pairs.map Prod.fst) :=
+  (List.perm_ext_iff_of_nodup (nodup_keys_pairs m hm) (nodup_keys_pairs m' hm')).2 (fun k => by
+    rw [mem_keys_pairs_iff m hm, mem_keys_pairs_iff m' hm', h k])
+
+omit [DecidableEq κ] [KeyHash κ] in
+theorem keys_pairs_mapVals {γ : Type} (m : HMap κ β) (f : β → γ) :
+    (m.mapVals f).pairs.map Prod.fst = m.pairs.map Prod.fst := by
+  unfold pairs mapVals
+  suffices ∀ (l : List (KMap κ β)) (acc : KMap κ γ) (acc' : KMap κ β), acc.map Prod.fst = acc'.map Prod.fst →
+      (((l.map (fun b => b.map (fun p => (p.1, f p.2)))).foldl (fun acc b => b ++ acc) acc).map Prod.fst)
+        = ((l.foldl (fun acc b => b ++ acc) acc').map Prod.fst) from this _ [] [] rfl
+  intro l
+  induction l with
+  | nil => intro acc acc' h; exact h
+  | cons b l ih =>
+    intro acc acc' h
+    simp only [List.map_cons, List.foldl_cons]
+    apply ih
+    simp [List.map_append, h, List.map_map]
+
+end HMap
+
+theorem minDay?_perm {l₁ l₂ : List Nat} (p : l₁.Perm l₂) : minDay? l₁ = minDay? l₂ := by
+  unfold minDay?
+  exact p.foldl_eq' (fun x _ y _ z => by cases z <;> simp [Nat.min_comm, Nat.min_left_comm]) none
+
+theorem maxDay?_perm {l₁ l₂ : List Nat} (p : l₁.Perm l₂) : maxDay? l₁ = maxDay? l₂ := by
+  unfold maxDay?
+  exact p.foldl_eq' (fun x _ y _ z => by cases z <;> simp [Nat.max_comm, Nat.max_left_comm]) none
+
+/-- The two maps the view reads by their pairs (`lastDay`; `doneFirst` and `doneCount`) are keyed. -/
+def PairsKeyed (st : State) : Prop := st.days.Keyed ∧ st.doneDates.Keyed
+
+theorem pairsKeyed_init (n : Nat) : PairsKeyed (State.init n) := ⟨HMap.keyed_empty n, HMap.keyed_empty n⟩
+
+theorem PairsKeyed.apply {a : State} (h : PairsKeyed a) (x : Effect) : PairsKeyed (applyEffect a x) := by
+  cases x with
+  | dayAdd d op => exact ⟨HMap.keyed_alter _ _ _ h.1, h.2⟩
+  | doneDate i d => exact ⟨h.1, HMap.keyed_alter _ _ _ h.2⟩
+  | obs ob => cases ob <;> exact h
+  | itemDaySub i d m =>
+    simp only [applyEffect]
+    split
+    · exact h
+    · exact h
+  | _ => exact h
+
+theorem PairsKeyed.foldl (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) :
+    ∀ (sv : List Entry) {a : State}, PairsKeyed a → PairsKeyed (sv.foldl (Replay.stepWith z dy sl) a)
+  | [], _, h => h
+  | e :: sv, a, h => by
+    rw [List.foldl_cons]
+    refine PairsKeyed.foldl z dy sl sv ?_
+    unfold Replay.stepWith Replay.applyEffects
+    generalize effectsWith z dy sl a e = fx
+    induction fx generalizing a with
+    | nil => exact h
+    | cons x fx ih => rw [List.foldl_cons]; exact ih (a := applyEffect a x) (h.apply x)
+
+theorem doneKeys_filter (l : KMap (Nat × Log.Id) Unit) (i : Log.Id) :
+    (l.filter (fun p => decide (p.1.2 = i))).map (·.1.1)
+      = ((l.map Prod.fst).filter (fun k => decide (k.2 = i))).map (·.1) := by
+  rw [List.filter_map, List.map_map]; rfl
+
+theorem doneCount_filter (l : KMap (Nat × Log.Id) Unit) (i : Log.Id) :
+    (l.filter (fun p => decide (p.1.2 = i))).length
+      = ((l.map Prod.fst).filter (fun k => decide (k.2 = i))).length := by
+  rw [List.filter_map, List.length_map]; rfl
+
+/-- **Two states answering alike finish to one view**, whatever their maps' bucket counts: every reading goes through
+`get`, and the three readings of a map's pairs through its keys, one set up to order (`HMap.perm_keys_pairs`),
+folded by a minimum, a maximum or a count. -/
+theorem factsView_finish_of_sameReadings {a b : State} (h : SameReadings a b) (ha : PairsKeyed a)
+    (hb : PairsKeyed b) : factsView (finish a) = factsView (finish b) := by
+  funext q
+  cases q with
+  | day d dq =>
+    cases dq <;> simp only [factsView, finish, HMap.get_mapVals, h.days, h.seams, h.energy, h.durations,
+      h.interrupts, h.demotions, h.closes, h.machine]
+  | win d wq =>
+    cases wq <;> simp only [factsView, finish, Facts.doneOn, Facts.instance, h.itemDays, h.doneDates, h.instances]
+  | lastDay =>
+    simp only [factsView, finish]
+    rw [HMap.keys_pairs_mapVals, HMap.keys_pairs_mapVals,
+      maxDay?_perm (HMap.perm_keys_pairs _ _ ha.1 hb.1 h.days)]
+  | doneFirst i =>
+    simp only [factsView, finish]
+    rw [doneKeys_filter, doneKeys_filter,
+      minDay?_perm (((HMap.perm_keys_pairs _ _ ha.2 hb.2 h.doneDates).filter _).map _)]
+  | doneCount i =>
+    simp only [factsView, finish]
+    rw [doneCount_filter, doneCount_filter, ((HMap.perm_keys_pairs _ _ ha.2 hb.2 h.doneDates).filter _).length_eq]
+  | _ =>
+    simp only [factsView, finish, HMap.get_mapVals, Facts.lastDone, Facts.instance, Facts.namedAt, h.items,
+      h.lastDone, h.dropped, h.instances, h.named, h.machine, h.global, h.unknown, h.longestLeak, h.rwarns]
+
+/-- **The replay's view reads only the survivors**: two logs with one list of survivors have one view, however many
+lines each holds (the replay sizes its maps by the log's length, and the view does not see it). -/
+theorem the_view_reads_only_the_survivors (z : Cal.Tz) (es es' : List Entry) (h : survivors es = survivors es') :
+    factsView (replay z es) = factsView (replay z es') := by
+  have hs : ∀ kw sl, step z kw sl = Replay.stepWith z (dayOf z kw) (KMap.get sl) := fun _ _ => rfl
+  unfold replay dayIndexOf
+  rw [h, hs]
+  exact factsView_finish_of_sameReadings (SameReadings.foldl _ _ _ _ (sameReadings_init _ _))
+    (PairsKeyed.foldl _ _ _ _ (pairsKeyed_init _)) (PairsKeyed.foldl _ _ _ _ (pairsKeyed_init _))
+
+end BucketFree
+
+/-! ### The law, its corollaries, and the two quirks -/
+
+section UndoLaws
+
+/-- **`undoing_a_command_replays_the_log_without_it`** (Goals, §15, C7; §7.3): `tm undo` of a command whose events
+`E` are followed by events `M` it did not write replays, fact for fact, as the log without the command.  Stated
+without §15's `hl`, which the law does not need (the mask's half is about entries, not lines); §15's statement is
+this theorem given fewer arguments.  `o`, the offset `ctx.now` is written at, is §15's `undosFor` made total. -/
+theorem undoing_a_command_replays_the_log_without_it (z : Cal.Tz) (L E M : List Entry) (n : Nat)
+    (t : Cal.VInstant) (o : Cal.VOffset)
+    (hE : E.all (fun e => !e.ev.isUndo) = true) (hM : untouchedBy E M = true) :
+    factsView (replay z (L ++ E ++ M ++ undosFor E n t o)) = factsView (replay z (L ++ M)) :=
+  the_view_reads_only_the_survivors z _ _ (undoing_a_command_leaves_the_survivors_of_the_log_without_it L E M n t o hE hM)
+
+/-- **The first draft's law** (§7.3): with nothing after the command, its undo replays the log without it. -/
+theorem undoing_the_last_command_replays_the_log_without_it (z : Cal.Tz) (L E : List Entry) (n : Nat)
+    (t : Cal.VInstant) (o : Cal.VOffset) (hE : E.all (fun e => !e.ev.isUndo) = true) :
+    factsView (replay z (L ++ E ++ undosFor E n t o)) = factsView (replay z L) := by
+  have h := undoing_a_command_replays_the_log_without_it z L E [] n t o hE (by simp [untouchedBy])
+  simpa using h
+
+/-- **Every query but the line bookkeeping** (W1's laws read `ask`): the undone log and the log without the command
+answer it alike. -/
+theorem undoing_a_command_answers_every_fact_query_as_the_log_without_it (z : Cal.Tz) (L E M : List Entry)
+    (n : Nat) (t : Cal.VInstant) (o : Cal.VOffset)
+    (hE : E.all (fun e => !e.ev.isUndo) = true) (hM : untouchedBy E M = true)
+    (q : Q) (hh : ∀ d, q ≠ .day d .headers) (he : q ≠ .entryCount) :
+    ask (replayDoc z (L ++ E ++ M ++ undosFor E n t o)) q = ask (replayDoc z (L ++ M)) q := by
+  rw [ask_reads_the_facts _ q hh he, ask_reads_the_facts _ q hh he]
+  exact congrFun (undoing_a_command_replays_the_log_without_it z L E M n t o hE hM) q
+
+/-- **Quirk Q6(d), ported faithfully** (gap 84): a command that logged nothing (`tm rank`; a `move` or `readopt` on
+an id-less line; a `close` that closed nothing) is undone by `undo{of: verb}` with no id, which cancels the latest
+surviving event whose tag is the verb's name, an older command's. -/
+theorem a_silent_verb_undo_cancels_the_latest_event_of_its_name (es : List Entry) (u : Entry) (verb : List Char)
+    (h : u.ev = .undo verb none) :
+    survivors (es ++ [u]) = ((survivors es).reverse.eraseP (fun e => e.ev.tag == verb)).reverse := by
+  rw [survivors_snoc_undo es u verb none h]
+  congr 2
+  funext e
+  simp [«matches»]
+
+/-- **The separation of quirk Q6(d) from its fix** (`of: "verb:<name>"`, which names no event, so cancels nothing):
+the silent-verb undo leaves the survivors alone exactly when no survivor carries the verb's name. -/
+theorem a_silent_verb_undo_cancels_nothing_iff_no_survivor_has_its_name (es : List Entry) (u : Entry)
+    (verb : List Char) (h : u.ev = .undo verb none) :
+    survivors (es ++ [u]) = survivors es ↔ ∀ e ∈ survivors es, e.ev.tag ≠ verb := by
+  rw [a_silent_verb_undo_cancels_the_latest_event_of_its_name es u verb h]
+  constructor
+  · intro heq
+    have h2 : (survivors es).reverse.eraseP (fun e => e.ev.tag == verb) = (survivors es).reverse := by
+      have := congrArg List.reverse heq
+      simpa using this
+    intro e he hte
+    exact (List.eraseP_eq_self_iff.1 h2) e (List.mem_reverse.2 he) (by simp [hte])
+  · intro hall
+    rw [List.eraseP_eq_self_iff.2 (fun e he hte => hall e (List.mem_reverse.1 he) (by simpa using hte)),
+      List.reverse_reverse]
+
+end UndoLaws
+
+/-! ## Witnesses (C7)
+
+Probed in a scratch copy under `MemoryMax=8G timeout 120` (§14.0 item 4): at most 3 entries, `utcZone`, instants as
+`Nat` literals.  2026-09-07T09:00:00Z is second 63924368400, and the day is 739865. -/
+
+section UndoWitnesses7
+
+/-- The stamp of the witnesses' undos: 09:02 UTC. -/
+def undoStamp : Cal.VInstant := ⟨⟨63924368520, 0⟩, by decide⟩
+
+def undoOffset : Cal.VOffset := ⟨⟨false, 0⟩, by decide⟩
+
+theorem move_toList : "move".toList = ['m', 'o', 'v', 'e'] := by decide
+
+/-- `undo_of_a_silent_verb_cancels_an_older_event` (Goals, §15, C7; §7.3's witness): `L = [move a]`, and the undo
+of a silent `tm move` writes `undo{of:"move"}`, which takes `L`'s move. -/
+theorem undo_of_a_silent_verb_cancels_an_older_event :
+    ∃ (L : List Entry) (u : Entry), u.ev = .undo "move".toList none ∧ survivors (L ++ [u]) ≠ survivors L :=
+  ⟨[bE 1 63924368400 (.move ['a'] ['w'] ['b'])], bE 2 63924368460 (.undo ['m', 'o', 'v', 'e'] none),
+    by rw [move_toList]; rfl, by decide⟩
+
+/-- `undo_after_housekeeping_cancels_the_housekeeping` (Goals, §15, C7, with `undosFor`'s offset): `E = [close week]`,
+`M = [close day]` (the next verb's automatic close), and `undosFor E = [undo{of:"close"}]`.  `M`'s close matches
+the undo, so `untouchedBy` fails, and the survivors are `E`'s close, not `M`'s. -/
+theorem undo_after_housekeeping_cancels_the_housekeeping :
+    ∃ (L E M : List Entry) (n : Nat) (t : Cal.VInstant) (o : Cal.VOffset),
+      E.all (fun e => !e.ev.isUndo) = true ∧ untouchedBy E M = false ∧
+      survivors (L ++ E ++ M ++ undosFor E n t o) ≠ survivors (L ++ M) :=
+  ⟨[], [bE 1 63924368400 (.close ['w', 'e', 'e', 'k'] ['k'])], [bE 2 63924368460 (.close ['d', 'a', 'y'] ['k'])], 3,
+    undoStamp, undoOffset, by decide, by decide, by decide⟩
+
+/-- **The refutation twin: the law fails without `untouchedBy`**, in its conclusion, not only in the survivors.  On
+the housekeeping witness the undone log's closes on 2026-09-07 are the week's, and the log without the command's
+are the day's. -/
+theorem the_undo_law_fails_without_untouchedBy :
+    ∃ (z : Cal.Tz) (L E M : List Entry) (n : Nat) (t : Cal.VInstant) (o : Cal.VOffset),
+      E.all (fun e => !e.ev.isUndo) = true ∧ untouchedBy E M = false ∧
+      factsView (replay z (L ++ E ++ M ++ undosFor E n t o)) ≠ factsView (replay z (L ++ M)) := by
+  refine ⟨utcZone, [], [bE 1 63924368400 (.close ['w', 'e', 'e', 'k'] ['k'])],
+    [bE 2 63924368460 (.close ['d', 'a', 'y'] ['k'])], 3, undoStamp, undoOffset, by decide, by decide, fun h => ?_⟩
+  have := congrFun h (.day 739865 .closes)
+  revert this
+  decide
+
+/-- **The hypothesis holds of the common case**: `tm done a` (a `done` and a routine `done`), the next verb's
+automatic `close day`, then `tm undo`.  Neither undo matches the close, so the law applies. -/
+theorem a_done_undone_over_an_automatic_close_is_untouched :
+    untouchedBy [bE 1 63924368400 (bDone ['a'] 30 false), bE 2 63924368460 (rDone ['s'] ['#', '1'])]
+      [bE 3 63924368520 (.close ['d', 'a', 'y'] ['k'])] = true := by
+  decide
+
+end UndoWitnesses7
 
 end Replay
 end Tm

@@ -16332,3 +16332,243 @@ answers the view, and refuses headers of a tail from any line but 1.
   - carry the machine's `lastCut` in the checkpoint;
   - alias `Seal.Q` to `Replay.Q`, and wrap `replayDoc` over lines.
 - **W3** owes law 13 (`counterOverflow` at emission). Then S and S2.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-15: stage 5, D9 track, step C7 on rebuild-on-lean (after C6
+     69bd90f).  Design §7.3, §14.4's C7 row, §15's C7 goals, §16's label 107, and
+     T5.  Takes cheat 149 (design label 107) and gap 84 (the design's label, Q6(d)).
+     Takes no parity number.
+     =========================================================================== -->
+
+## Stage 5 D9 C7, 2026-09-15: undoing a command replays the log without it — the law, its hypothesis, and the fork's two quirks
+
+**Starting point.** `69bd90f`, clean: check.sh 7/7 (built tree 2.88 / 2.87 / 2.81 s, re-measured before any edit),
+audit 3105, corpus 29/37 files and 4/5 plans, burn-down 13, `cargo test --workspace` 1067 / 0 / 5 ignored across 73
+binaries, FFI 100.
+
+### What was built
+
+**`Replay.lean` (no new module; `TmKernel.lean` keeps its twenty imports).** A new C7 part at the end, and the module
+doc gains a C7 section. That section says what the law is for: **"`tm undo` must replay the log, never apply an
+inverse command" (`move_has_no_inverse_command`, L22) always pointed at this law.** Nothing earlier was edited.
+
+- **What `tm undo` appends.**
+  - `undosFor E n t o` gives one `undo{of: Event.tag, id: Event.primaryId}` per event of `E`, most recent first, at
+    lines `n, n+1, …`, all stamped `ctx.now`. This is fork `undo` (`tm/src/cli/undo.rs`) over `Recorder`'s
+    `recorded`, which reads `ev.name()` and `ev.primary_id()`.
+  - `untouchedBy E M` holds when no event of `M` is an undo and none matches one of those undos.
+- **The mask's half.** `undoing_a_command_leaves_the_survivors_of_the_log_without_it` shows the survivors of
+  `L ++ E ++ M ++ undosFor E` are those of `L ++ M`, entry for entry:
+  - `foldl_maskStep_of_no_undo`: events that are not undos are pushed in order;
+  - `foldl_maskStep_undos`: over a stack `R ++ D ++ S` whose `R` matches none of `D`'s undos, the undos of `D`, most
+    recent first, each take their own event (`matches_its_own_undo`) and leave `R ++ S`.
+- **The view's half: the view reads only the survivors** (`the_view_reads_only_the_survivors`). The replay sizes its
+  eight bucketed maps by the log's **length**, which the undos change, so `replay z (L ++ E ++ M ++ undosFor E)` and
+  `replay z (L ++ M)` are different `Facts` values even when their survivors agree. The view is equal anyway, in
+  three steps:
+  - **`SameReadings a b`**: every list and scalar of two states is equal, and every map is equal key by key through
+    `HMap.get`. `sameReadings_init` gives it for two initial states of any sizes, and `SameReadings.apply`,
+    `.applyEffects`, `.stepWith` and `.foldl` carry it through the replay. An entry's effects read the state only
+    through its machine, and every map write is an `alter` (`HMap.get_alter`).
+  - **`HMap.Keyed m`**: every pair sits in its key's bucket, and no bucket holds a key twice. `keyed_empty`,
+    `keyed_alter` and `keyed_mapVals` show the maps keep it, with the new general-value `KMap.nodup_alter` and
+    `KMap.mem_alter`. For a keyed map:
+    - its pairs hold each key once (`nodup_keys_pairs`);
+    - they hold exactly the keys `get` finds (`mem_keys_pairs_iff`);
+    - so two keyed maps that read alike hold one set of keys in some order (`perm_keys_pairs`).
+    `PairsKeyed` carries this through the fold for the two maps the view reads by their pairs: `days` for `lastDay`,
+    and `doneDates` for `doneFirst` and `doneCount`.
+  - **`factsView_finish_of_sameReadings`**: two such states finish to one view. The pairs readings are a maximum, a
+    minimum and a count over one set of keys (`maxDay?_perm`, `minDay?_perm`, `List.Perm.length_eq` of the filtered keys).
+- **The law and its corollaries.**
+  - `undoing_a_command_replays_the_log_without_it` (the goal) is the two halves composed.
+  - `undoing_the_last_command_replays_the_log_without_it` is the first draft's law (`M = []`).
+  - `undoing_a_command_answers_every_fact_query_as_the_log_without_it` states it through `ask` for every query except
+    the line bookkeeping. This is the form W1's laws read.
+- **Quirk Q6(d), ported faithfully** (gap 84, below):
+  - `a_silent_verb_undo_cancels_the_latest_event_of_its_name`: `undo{of: verb}` with no id cancels the latest survivor
+    whose tag is the verb's name;
+  - `a_silent_verb_undo_cancels_nothing_iff_no_survivor_has_its_name` separates the quirk from its fix. The fix writes
+    `of: "verb:<name>"`, which names no event, so the quirk shows exactly when a survivor carries the verb's name;
+  - §15's witness is `undo_of_a_silent_verb_cancels_an_older_event`.
+- **Quirk Q6(f), ported faithfully** (gap 86, C5):
+  - §15's witness is `undo_after_housekeeping_cancels_the_housekeeping`;
+  - **the refutation twin in the law's own conclusion** is `the_undo_law_fails_without_untouchedBy`. On `E = [close
+    week]`, `M = [close day]`, the undone log's closes on 2026-09-07 are the week's, and the log without the command's
+    are the day's.
+- **The hypothesis is satisfiable in the common case**: `a_done_undone_over_an_automatic_close_is_untouched` (`tm done`'s
+  `done` and routine `done`, then the next verb's automatic `close day`). With `M = []` it holds of every `E`, by
+  `simp`.
+
+**`Negative.lean`.** CHEAT 149 (design 107) emits `undosFor` oldest first. On `event e` (no id) then `event e` with id
+`x`, an oldest-first `undo{of:"event"}` takes the newer event, and `undo{of:"event", id:"x"}` then dangles. The older
+event survives, so `decide` refuses the law's `(e, none)` query with `L = M = []`. The same query with `undosFor`
+(most recent first) decides true: it was probed as the control. The other 138 banners still fail at their own lines.
+No existing block was edited.
+
+**T5** (below) gains the triples. Nothing on the wire changed: `Boundary.lean`, the FFI suite and the binary are
+untouched.
+
+### Goals (AGENTS §3.2)
+
+§15's three C7 goals were added to `Goals.lean`, with `undosFor`'s offset. They elaborated in-tree (16 goals, no
+error) and were discharged in the step, so the burn-down went **13 → 16 → 13**. A note in the STAGE 5 section records
+this. A scratch `example` per goal checked it against its proof. The same scratch file decided that `untouchedBy E []`
+and `hE` hold of a one-entry `E`, so the hypotheses are satisfiable.
+
+| goal | status |
+|---|---|
+| `undoing_a_command_replays_the_log_without_it` | **proved without §15's `hl`**, which the law does not need: both halves speak of entries, not lines. §15's statement is this theorem given fewer arguments |
+| `undo_of_a_silent_verb_cancels_an_older_event` | proved as stated (`L = [move a]`, `u = undo{of:"move"}`); the law beside it is the iff above |
+| `undo_after_housekeeping_cancels_the_housekeeping` | proved as stated, with `∃ o`; the twin in the law's conclusion is `the_undo_law_fails_without_untouchedBy` |
+
+**Refuted and renamed:** none. No goal was false as stated. One hypothesis was dropped because it was unused, and one
+parameter was added (disagreements 1 and 2).
+
+**What the law's quantifiers say** (AGENTS §5.2 and §7.4):
+- It holds for every zone, every prefix `L`, every command `E` without undos, every `M` untouched by `E`, every line
+  `n`, and every stamp `(t, o)`.
+- Its conclusion is equality of `factsView`, a function over every query `Q`.
+- `hE` is what `Recorder` records: a command's appended events, and no verb appends an undo but `tm undo`.
+- `hM` is exactly the fork's condition for the undos to find their own events.
+- Both directions are covered:
+  - the law holds under `hM`;
+  - without `hM` the conclusion is refuted (`the_undo_law_fails_without_untouchedBy`);
+  - with `hM` but the undos written oldest first, `decide` refuses it on cheat 149's witness.
+
+### Witnesses
+
+**5 new decided theorems**, each probed first in a scratch copy under `MemoryMax=8G timeout 120` (§14.0 item 4):
+at most 3 entries, `utcZone`, `Nat` instants, and no stamp text parsed.
+- `move_toList` (`"move".toList` as a four-character list, decided; the goal spells the tag as a string);
+- `undo_of_a_silent_verb_cancels_an_older_event`;
+- `undo_after_housekeeping_cancels_the_housekeeping`;
+- `the_undo_law_fails_without_untouchedBy` (one query of each replay: a day's closes);
+- `a_done_undone_over_an_automatic_close_is_untouched`.
+
+Probed together with the definitions they need, the file took 0.17 s at 572 MB. Cheat 149 and its control took 0.18 s
+at 580 MB. The simulation (`SameReadings`, `Keyed`, the view lemmas) decides nothing: it took 1.18 s at 667 MB in
+scratch before the splice.
+
+### T5 (`tm/tests/kernel_replay_parity.rs`, extended)
+
+**`t5_undo_triples_meet_the_law_or_reproduce_the_forks_cancellation`**, 64 triples (`TRIPLES`).
+
+**How a triple is built** (`triple`):
+- `L` is generated sequence `1000 + seed` (`Generated` gains `now`, the clock after its last entry).
+- `E` is a command's events, `M` is what came after it, and `tm undo` appends `undos_for(E)` at one instant.
+- The test's `untouched_by`, `undo_matches` and `undos_for` restate `Replay.untouchedBy`, `«matches»` and
+  `undosFor`, and the test asserts `untouched_by` is true exactly for the even seeds.
+- **Three logs per triple, each compared in full with the fork** by `assert_parity`:
+  - the undone log `L ++ E ++ M ++ undosFor E`;
+  - the log without the command, `L ++ M`, **with `E`'s lines left blank**. Both readers skip a blank line and keep
+    the physical numbering, so every entry keeps its line, exactly as the kernel's law states it over entries;
+  - the log before the undo, `L ++ E ++ M`.
+- **Even seeds** (32) meet `untouchedBy`. The command is one of seven kinds:
+  - `tm done`'s `done` and routine `done`;
+  - a `start`;
+  - a week close;
+  - a `drop`;
+  - a `move`;
+  - an `interrupt` and its `resume`;
+  - two `event`s of one name, the first without an id, whose undos overlap, so their order matters (cheat 149's
+    shape).
+
+  `M` is 0 to 4 events from a pool that holds the automatic close, filtered by `untouched_by`. **The law**: every fact
+  but the line bookkeeping agrees between the undone log and the log without the command, where that is the block,
+  completion and day families, the seams and the last day (`law_view`). The command's lines and the undos are
+  cancelled, and `M`'s stand.
+- **Odd seeds** (32) break `untouchedBy`, eight each of four ways, and **the fork's cancellation is reproduced line by
+  line**:
+  - quirk Q6(f): the week close stands, and the automatic close is cancelled;
+  - `M` repeats the command's `done`: `M`'s `done` is cancelled, and the command's stands;
+  - the command's `event` has no id and `M`'s has one: `M`'s is cancelled;
+  - an undo in `M` takes the command's `done`, so `tm undo`'s own undo reaches back to `L`'s `done` of that id, and
+    `L`'s last `done` of another id stands.
+
+  In each, the two logs' facts **differ**.
+
+| input | run |
+|---|---|
+| 64 triples | 2,941 undone lines. 96 events in `M`, 16 of them automatic closes. 32 meet the law, and 32 reproduce the cancellation. 61 commands whose facts the undo took back (the before log's view differs from the log without the command). Kinds: done 6, start 3, close week 6, drop 6, move 4, interrupt 3, overlapping events 4; and 8 of each violation |
+| the other T5 tests | unchanged inputs and counts, re-counted: the sequences' 11,355 rows (3,176 cancelled), the corpus's 512 (12), the months' 1,191 (8) and 7,472 (58), the zone cases' 73 (24), as C6's table. `generate`'s text is unchanged; it only returns its clock |
+
+**Exceptions: 0.** §17 lists the mask and the housekeeping cancellation as exact.
+
+**T5 bites.** Three scratch mutations of the test were each restored afterwards; the file was compared with a saved
+copy, and the diff stat matched the committed change.
+- Undos written oldest first fails triple 0 (overlapping events) at its cancellation check.
+- The same mutation with the line checks removed fails triple 0 at the law's own comparison.
+- The log without the command keeping `E`'s lines fails triple 0 at the law's comparison.
+
+### Recorded disagreements between the design and the repo
+
+1. **§15's `undoing_a_command_replays_the_log_without_it` carries an unused `hl`.** It is proved without it (above).
+2. **§7.3's `undosFor E n t` has no offset.** An `Entry` carries a `VOffset`, and fork `tm undo` writes `ctx.now` at
+   its local offset. So `undosFor` takes `o`, and the goals quantify over it.
+3. **§7.3's "why it holds" stops at the survivors.** The replay sizes its maps by the log's length, so equal survivors
+   give equal views, not equal `Facts`. The view half is `the_view_reads_only_the_survivors`. **W1 inherits it**: a
+   resumed checkpoint builds its maps at another size, and `SameReadings`, `HMap.Keyed` and
+   `factsView_finish_of_sameReadings` are the tools for W's laws over `ask`.
+4. **§7.3's `L ++ M` is a list of entries that keep their lines.** As a file it is `L`, then `E`'s lines blank, then
+   `M`, and T5 builds it that way.
+5. **Q6(d)'s row says `tm undo` of a recorded `move`/`readopt` on an id-less line writes `undo{of: verb}`.** In the
+   in-tree Rust, `undo` writes `undo{of: entry.verb, id: null}` exactly when the command recorded no event
+   (`entry.events.is_empty()`). Which verbs do that is the recorder's business. The kernel's law is about that undo,
+   whatever the verb, so it is stated for every `verb`. That undo is outside `undosFor`'s domain (`undosFor [] = []`),
+   which is why the law does not cover it.
+
+### Gap 84 (the design's label, Q6(d)) — a silent verb's compensating undo cancels an older event
+
+(1) *What is not done*: a command that recorded no event (fork `Recorder` found no appended line) is undone by
+`undo{of: <verb>, id: null}`. The mask cancels the **latest surviving event whose tag is the verb's name**, which is an
+older command's event whenever the verb is named like an event kind. The kernel ports this faithfully
+(`a_silent_verb_undo_cancels_the_latest_event_of_its_name`), and it cancels nothing exactly when no survivor carries
+the name (`a_silent_verb_undo_cancels_nothing_iff_no_survivor_has_its_name`). (2) *Why not now*: Q6(d) says port now
+and fix after the switch, because the fix, `of: "verb:<name>"`, changes the bytes `tm undo` appends. (3) *Cost*: the
+older event vanishes from every fact that reads it and from `tm log`'s standing lines. T5's `SilentVerbUndo` arm
+reproduces it for `move`: 186 silent-verb undos in the 256 sequences each cancel the older `move`, in both readers (re-counted here). (4) *When it clears*: after the switch (S2 writes the
+lines), as a behaviour change with its own parity entry.
+
+**Gap 86** (C5) is unchanged, and its law now stands beside it: `undoing_a_command_replays_the_log_without_it` under
+`untouchedBy`, and `the_undo_law_fails_without_untouchedBy` without it.
+
+### Rule D9-21 (functions over a list the wire can make large)
+
+**C7 adds nothing on the wire.** Specification only:
+- `undosFor` (`zipIdx`, `map`) and `untouchedBy` (`all`);
+- the propositions `SameReadings`, `HMap.Keyed` and `PairsKeyed`.
+
+### Numbers
+
+**Taken:** cheat 149 (design label 107; the next free number, checked by grep) and gap 84 (the design's label, unused
+until now; checked by grep). **Highest:** gap 117, cheat 149, parity P34. **Behaviour rows:** none. The binary still has
+one reader of the log, the Rust, and the `log` op is unchanged.
+
+**Re-measured** (main worktree; commands capped at 40 GB, probes and measurements at 8 or 16 GB):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.90 / 2.89 / 2.94 s. Baseline 2.88 / 2.87 / 2.81 s, re-measured before any edit: +4.6% at the worst against the fastest baseline run, and the budget is 10% |
+| axiom audit | **3146 theorems** (3105 + 41). The three §6.3 counts agree at 3146 |
+| `Negative.lean` | check 4 ok; 145 errors; 139 `/- CHEAT` banners; no duplicate number; 149 fails at its `decide` ("proved that the proposition … is false"). At the 8 GB cap: 1.95 s, 1.97 GB |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (13 → 16 → 13 within the step) |
+| `TmKernel.lean` | **20 imports** (no new module) |
+| `lake build TmKernel:static` after the `Replay.lean` edit | 2 min 31 s (`Boundary` rebuilt) |
+| `Replay.lean` elaboration (8 GB probe cap) | 8.58 / 8.73 s, 1.19 GB; 7,929 lines (C6 7.24–7.25 s, 1.13 GB, 7,243 lines) |
+| `cargo test --workspace` | **1068 passed / 0 failed / 5 ignored across 73 binaries**, 0 compiler warnings (C6 1067: T5's triples test added) |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6; untouched) |
+| T5 (`kernel_replay_parity.rs`) | 8 passed, 2 ignored, 0.87 / 0.87 / 0.88 s; 0 exceptions. The triples test alone: 1.02 s. Measurements (`#[ignore]`d, three runs): distinct ids kernel 339 / 309 / 296 ms, Rust 28 ms; the hostile undo log kernel 242 / 258 / 244 ms, Rust 102 ms (C6 303–345 and 248–255: unchanged, the wire is) |
+| `cli_latency.rs --include-ignored`, three serial runs | green, 4 passed. No log: first 612.3 / 602.3 / 612.6 ms, later 55.9 / 60.8 / 50.7 ms. 1y: first 697.1 / 708.5 / 748.6, later 121.6 / 116.5 / 121.6. 3y: first 921.3 / 941.6 / 955.8, later 283.5 / 283.5 / 283.5. T14: 81.1 / 80.9 / 81.1 ms (3 years), 126.7 / 141.8 / 146.7 ms (10 years). The binary's reader is unchanged, and so are these |
+
+**Phase C is complete** on this track: C1–C7 committed, and T5 agrees on the whole `Replay`, with the undo law's
+triples.
+
+**Owed next:**
+- **W1** must:
+  - decide where the global longest leak lives (C6);
+  - carry the machine's `lastCut` in the checkpoint;
+  - alias `Seal.Q` to `Replay.Q`, and wrap `replayDoc` over lines;
+  - take C7's `SameReadings` and `HMap.Keyed` for a resumed checkpoint's maps (disagreement 3).
+- **W3** owes law 13 (`counterOverflow` at emission). Then S and S2, and after S2 the fixes of gaps 84 and 86.

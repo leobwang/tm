@@ -452,6 +452,21 @@ entries: an `energy` entry listed twice gives two observations on one line
 (`Replay.observations_are_not_in_file_order_when_a_line_repeats`).  The law holds on the log op's entries, whose
 lines strictly increase: `Replay.observations_are_in_file_order_on_increasing_lines`.  README "Stage 5 D9 C6". -/
 
+/- **§7.3's undo law is real (2026-09-15, stage 5 D9 step C7).**
+The three C7 goals of design §15 were added here, with `Replay.undosFor` taking the offset `ctx.now` is written at
+(`o`, which the stamp of an `Entry` needs), elaborated against `TmKernel/Replay.lean` (16 goals, no error), and
+discharged in the same step, so the burn-down stays at 13, each checked against its proof by a scratch `example`.
+`Replay.undoing_a_command_replays_the_log_without_it` is proved **without** §15's `hl`, which it does not need (the
+mask's half is about entries, not lines; §15's statement is that theorem given fewer arguments), in two halves:
+`Replay.undoing_a_command_leaves_the_survivors_of_the_log_without_it` (the mask) and
+`Replay.the_view_reads_only_the_survivors` (the replay sizes its maps by the log's length, and the view reads them
+through `get` and their keys).  Beside it, `Replay.undoing_the_last_command_replays_the_log_without_it` (`M = []`) and
+`Replay.undoing_a_command_answers_every_fact_query_as_the_log_without_it` (through `ask`).  The two quirk witnesses
+are proved as stated: `Replay.undo_of_a_silent_verb_cancels_an_older_event` (Q6(d), gap 84; the law beside it,
+`Replay.a_silent_verb_undo_cancels_nothing_iff_no_survivor_has_its_name`) and
+`Replay.undo_after_housekeeping_cancels_the_housekeeping` (Q6(f), gap 86), with the refutation twin in the law's own
+conclusion, `Replay.the_undo_law_fails_without_untouchedBy`.  README "Stage 5 D9 C7". -/
+
 /-! ############################################################################
 # STAGE 6 — the planner; §8.3's invariants; L24 and L25
 

@@ -1690,4 +1690,35 @@ theorem anObservationKeyedGloballyNamesItsDay :
         false⟩)).day? := by
   decide
 
+
+-- ===========================================================================
+-- APPENDED 2026-09-15 (stage 5, D9 track, step C7: the undo law in
+-- `Replay.lean`).  Design §16's label 107 ("`undosFor` emitted oldest first").
+-- Number 149 is the next free number in this checkout (the highest was 148, C6).
+-- The control, which compiles, is `Replay.undoing_a_command_replays_the_log_without_it`
+-- over `Replay.undosFor`, most recent first.
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 149 — `undosFor` emitted oldest first.  The tempting port walks the
+   recorded events in the order the command wrote them.  But an undo takes the
+   most recent surviving match, so an older event's undo can take a newer event
+   of the command: `event e` (no id) then `event e` with id `x`, undone oldest
+   first, writes `undo{of:"event"}` first, which takes the newer (id `x`) event,
+   and then `undo{of:"event", id:"x"}`, which finds nothing and dangles.  The
+   older event survives, so the undone log's `(e, none)` record is not the empty
+   log's, and `decide` refuses the undo law on it (with `L = M = []`, where
+   `untouchedBy` holds). -/
+def undosOldestFirst (E : List Log.Entry) (n : Nat) (t : Cal.VInstant) (o : Cal.VOffset) : List Log.Entry :=
+  (E.zipIdx n).map (fun p => ⟨p.2, t, o, .undo p.1.ev.tag p.1.ev.primaryId⟩)
+
+theorem undoingOldestFirstReplaysTheLogWithoutTheCommand :
+    Replay.factsView (Replay.replay Replay.utcZone
+        ([Replay.bE 1 63924368400 (.named ['e'] none), Replay.bE 2 63924368460 (.named ['e'] (some ['x']))]
+          ++ undosOldestFirst [Replay.bE 1 63924368400 (.named ['e'] none),
+            Replay.bE 2 63924368460 (.named ['e'] (some ['x']))] 3 Replay.undoStamp Replay.undoOffset))
+        (.named ['e'] none)
+      = Replay.factsView (Replay.replay Replay.utcZone []) (.named ['e'] none) := by
+  decide
+
 end Tm
