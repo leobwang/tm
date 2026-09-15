@@ -333,3 +333,46 @@ fn the_table_covers_every_section_13_verb() {
         assert!(!named.contains(&verb), "{verb} belongs to its own test");
     }
 }
+
+/// An exact `{num, den}` pair (the owner's D15): digit strings (D17).
+fn exact_pair(v: &Value) -> (u128, u128) {
+    let part = |k: &str| v[k].as_str().and_then(|s| s.parse::<u128>().ok()).unwrap_or_else(|| panic!("{k} in {v}"));
+    (part("num"), part("den").max(1))
+}
+
+/// **Every integer of capacity on `--json` is the floor of the exact value
+/// beside it** (the owner's D15; stage 5 D10 L8). `tm plan --json`'s
+/// priorities carry `avail_min`, `allocation_min` and `shortfall_min` with
+/// `…_exact` pairs; each integer is the floor of its own pair, so for a HOT
+/// answer `need_min − allocation_min` may exceed `shortfall_min` by one (the
+/// design's Q4 names the pair `avail − allocation`; documented on `Prio`),
+/// while the exact values agree: the exact shortfall is exactly `need −
+/// allocation`. `tm plan --week --json` is pinned in `cli_plan.rs`.
+#[test]
+fn capacity_integers_are_floors_beside_their_exact_values() {
+    let tm = Tm::new();
+    run_setup(&tm, &[&["arrive", "lounge"]]);
+    let out = tm.run(&["--json", "plan"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    let json = out.json();
+    let prios = json["priorities"].as_array().expect("priorities");
+    assert!(!prios.is_empty());
+    let mut passed = 0;
+    for p in prios {
+        let mut ex = Vec::new();
+        for key in ["avail_min", "allocation_min", "shortfall_min"] {
+            let (n, d) = exact_pair(&p[format!("{key}_exact")]);
+            assert_eq!(p[key].as_u64(), Some((n / d) as u64), "{key} in {p}");
+            ex.push((n, d));
+        }
+        let [(ln, ld), (sn, sd)] = [ex[1], ex[2]];
+        if sn > 0 {
+            let need = u128::from(p["need_min"].as_u64().expect("need"));
+            assert_eq!(sn * ld, need * sd * ld - ln * sd, "the exact shortfall is need − allocation: {p}");
+            let gap = need - ln / ld - sn / sd;
+            assert!(gap <= 1, "the floors differ by at most one: {p}");
+        }
+        passed += usize::from(p["until"].is_string());
+    }
+    assert!(passed > 0, "no candidate went through a pass: {json}");
+}

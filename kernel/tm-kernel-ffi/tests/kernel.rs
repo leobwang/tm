@@ -1761,3 +1761,87 @@ fn every_candidate_refusal_is_named() {
     let empty_cmds = with_cmd.replacen(r#"[{"op":"est","id":"m1","min":45}]"#, "[]", 1);
     assert_eq!(call(&empty_cmds).unwrap(), call(&without).unwrap());
 }
+
+/// A candidate record with a `floor` object appended (stage 5 D10 L8 host half, gap 79).
+fn with_floor(rec: &str, floor: &str) -> String {
+    format!("{},\"floor\":{floor}}}", rec.strip_suffix('}').expect("a record"))
+}
+
+/// **The floor pass reads what the pass left** (`Look.prioritiesWithFloors`, gap 79).
+/// `^a2` owes 100 minutes (need 130), so after `^a1`'s 39 and `^a2`'s 130 the pass
+/// leaves 241 minutes at levels ≥ 3 on Monday and all of Tuesday's 360.  `^r` (level
+/// 2, undated, `!1`) has a floor of 120 minutes (need 156): to Tuesday it sees 601,
+/// `u ≈ 0.26`, the `+1` bin, `p = 2`; to Monday 241, `u ≈ 0.65`, the `+0` bin,
+/// `p = 1`.  The optional's floor of 10 minutes shows 241 available and 13 allocated
+/// and stays `p = 5`.  `^a1`'s floor is ignored (it enters the pass), and a floor
+/// reserves nothing: `^a2`'s grant is the same with and without the floors.
+#[test]
+fn a_floor_is_answered_over_what_the_pass_left() {
+    let e18 = |m: u128| (m * 1_000_000_000_000_000_000u128).to_string();
+    let mut items = witness_items();
+    items[1] = items[1].replace(r#""remaining":600"#, r#""remaining":100"#);
+    let bare = call(&capacity_req("", &spec_with_candidates(true, &items))).unwrap();
+    items[2] = with_floor(&items[2], r#"{"left":30,"until":"2026-09-07"}"#);
+    items[3] = with_floor(&items[3], r#"{"left":10,"until":"2026-09-07"}"#);
+    items[4] = with_floor(&items[4], r#"{"left":120,"until":"2026-09-08"}"#);
+    let out = call(&capacity_req("", &spec_with_candidates(true, &items))).unwrap();
+    let r = format!(
+        r#"{{"id":"r","class":"floor","k":1,"p":2,"rawP":2,"need":156,"until":"2026-09-08","avail":"{}","allocation":"{}","shortfall":"0","bin":1}}"#,
+        e18(601),
+        e18(156)
+    );
+    assert!(out.contains(&r), "{out}");
+    let o = format!(
+        r#"{{"id":"o","class":"optional","k":3,"p":5,"rawP":5,"need":13,"until":"2026-09-07","avail":"{}","allocation":"{}","shortfall":"0","bin":3}}"#,
+        e18(241),
+        e18(13)
+    );
+    assert!(out.contains(&o), "{out}");
+    // The grants of the candidates that enter are the same bytes with and without floors.
+    let grant_of = |resp: &str, id: &str| -> String {
+        let at = resp.find(&format!(r#"{{"id":"{id}","#)).expect("a grant");
+        resp[at..at + resp[at..].find('}').expect("its end") + 1].to_string()
+    };
+    for id in ["w", "a2", "a1"] {
+        assert_eq!(grant_of(&out, id), grant_of(&bare, id), "{id}");
+    }
+    items[4] = items[4].replace(r#""until":"2026-09-08""#, r#""until":"2026-09-07""#);
+    let monday = call(&capacity_req("", &spec_with_candidates(true, &items))).unwrap();
+    assert!(
+        monday.contains(&format!(
+            r#"{{"id":"r","class":"floor","k":1,"p":1,"rawP":1,"need":156,"until":"2026-09-07","avail":"{}","allocation":"{}","shortfall":"0","bin":0}}"#,
+            e18(241),
+            e18(156)
+        )),
+        "{monday}"
+    );
+    // A floor the pass left nothing for is IMPOSSIBLE: the whole of `^a2`'s 600 minutes.
+    let mut starved = witness_items();
+    starved[4] = with_floor(&starved[4], r#"{"left":120,"until":"2026-09-08"}"#);
+    let out = call(&capacity_req("", &spec_with_candidates(true, &starved))).unwrap();
+    assert!(
+        out.contains(&format!(
+            r#"{{"id":"r","class":"impossible","k":1,"p":0,"rawP":0,"need":156,"until":"2026-09-08","avail":"0","allocation":"0","shortfall":"{}","bin":null}}"#,
+            e18(156)
+        )),
+        "{out}"
+    );
+    // Every floor refusal is named by the record's position.
+    for (floor, at) in [
+        (r#"{"left":4294967296,"until":"2026-09-08"}"#, 4),
+        (r#"{"left":120,"until":"2026-02-30"}"#, 4),
+        (r#"{"left":120}"#, 4),
+        ("1", 4),
+    ] {
+        let mut bad = witness_items();
+        bad[at] = with_floor(&bad[at], floor);
+        let out = call(&capacity_req("", &spec_with_candidates(true, &bad))).unwrap();
+        assert_eq!(out, format!(r#"{{"err":{{"capacity":"badCandidate {at} floor"}}}}"#), "{floor}");
+    }
+    let mut null = witness_items();
+    null[4] = with_floor(&null[4], "null");
+    assert_eq!(
+        call(&capacity_req("", &spec_with_candidates(true, &null))).unwrap(),
+        call(&capacity_req("", &spec_with_candidates(true, &witness_items()))).unwrap()
+    );
+}

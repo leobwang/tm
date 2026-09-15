@@ -3190,3 +3190,24 @@ open Tm
 #print axioms Tm.CapWire.readCands_on_witnesses
 #print axioms Tm.CapWire.runCap_refuses_a_command_beside_the_corpus_request
 #print axioms Tm.CapWire.the_grant_response_emits_in_build_order
+
+-- APPENDED 2026-09-14 (stage 5, D10 track).  Step L8, host half (design §13.8): the floor pass (gap
+-- 79).  One existing statement gained a hypothesis for it (`runCap_answers_docs_report_lookahead_grants`:
+-- no candidate carries a floor; its audit line stands above), and
+-- `runCap_answers_docs_report_lookahead_floor_grants` states the general answer.
+#print axioms Tm.Look.passLeft_is_edf
+#print axioms Tm.Look.prioritiesWithFloors_length
+#print axioms Tm.Look.prioritiesWithFloors_getElem?
+#print axioms Tm.Look.lt_of_priorities_getElem?
+#print axioms Tm.Look.prioritiesWithFloors_without_floors
+#print axioms Tm.Look.a_floor_reserves_nothing
+#print axioms Tm.Look.the_pass_wins_over_a_floor
+#print axioms Tm.Look.an_ungranted_floor_is_answered_at_its_floor
+#print axioms Tm.Look.a_floor_answer_reads_what_the_pass_left
+#print axioms Tm.Look.a_hot_floor_answer_is_zero
+#print axioms Tm.Look.prioritiesWithFloors_on_a_witness
+#print axioms Tm.Look.prioritiesWithFloors_on_a_roomier_witness
+#print axioms Tm.CapWire.grantJsonF_without_a_floor
+#print axioms Tm.runCap_answers_docs_report_lookahead_floor_grants
+#print axioms Tm.CapWire.readCands_reads_and_refuses_floors
+#print axioms Tm.CapWire.the_floor_grant_response_emits_in_build_order

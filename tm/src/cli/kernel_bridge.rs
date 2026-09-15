@@ -688,10 +688,7 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
     let mut docs_json = Vec::new();
     let mut sent_joined: Vec<String> = Vec::new();
     for (rel, text) in paths.iter().zip(&texts) {
-        let mut lines: Vec<&str> = text.split('\n').collect();
-        if text.ends_with('\n') {
-            lines.pop();
-        }
+        let mut lines = doc_lines(text);
         // The other half of gap 56: a close lands a week's record at the end
         // of the month's `# Demoted`, and a month's leftover under the
         // heading it stood under, and the kernel refuses `noSection` rather
@@ -722,12 +719,7 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
             }
         }
         sent_joined.push(lines.join("\n"));
-        let mut doc = json!({ "path": rel, "lines": lines });
-        if let Some((g, ix)) = region_of(rel) {
-            doc["grain"] = json!(g);
-            doc["ix"] = json!(ix);
-        }
-        docs_json.push(doc);
+        docs_json.push(doc_json(rel, &lines));
     }
     let doc_ix = |dest: &str| -> u64 {
         paths.iter().position(|p| p == dest).expect("dest was added above") as u64
@@ -762,33 +754,8 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
         request["now"] = json!(ctx.today.format("%Y-%m-%d").to_string());
         request["blockMin"] = json!(ctx.block_min());
     }
-    let request = request.to_string();
-
-    // 3. One call — with Lean's stderr captured while it runs when the TUI
-    // asked for it (panic layer 2), so a backtrace lands in the fault's
-    // detail, never on the alternate screen.
-    let capture = StderrCapture::start();
-    let called = tm_kernel_ffi::call(&request);
-    let stderr = capture.map(StderrCapture::finish).unwrap_or_default();
-    // The constructed panic probe (AGENTS 8.1's named trap: the kernel is
-    // total by CI, so a reachable panic does not exist — the probe injects
-    // the fault at the host's own seam, the response bytes, and the tests
-    // assert the HOST's reaction: named fault, non-zero exit, nothing
-    // written, terminal restored). The real call still runs first.
-    let called = if std::env::var_os("TM_KERNEL_FAULT_PROBE").is_some() {
-        called.map(|_| "*** panic probe: a deliberately non-JSON response (TM_KERNEL_FAULT_PROBE) ***".to_string())
-    } else {
-        called
-    };
-    let raw = called.map_err(|f| {
-        CliError::Kernel(fault_issue(&format!("{f:?}"), &stderr))
-    })?;
-    let resp: Value = serde_json::from_str(&raw).map_err(|e| {
-        CliError::Kernel(fault_issue(&format!("unparseable response ({e})"), &stderr))
-    })?;
-    if let Some(err) = resp.get("err") {
-        return Err(CliError::Kernel(refusal(err)));
-    }
+    // 3. One call ([`call`]: stderr captured, the fault probe, the refusal by name).
+    let (resp, stderr) = call(&request)?;
     let out_docs = resp["ok"]["docs"]
         .as_array()
         .ok_or_else(|| CliError::Kernel(fault_issue("response carries neither ok nor err", &stderr)))?;
@@ -886,6 +853,63 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
     Ok(Applied { docs, closes: report })
 }
 
+/// **The lines the kernel sees for a file's text** (the module-level newline
+/// convention): split on `'\n'`, with exactly one trailing empty segment
+/// stripped iff the text ends with `'\n'`. Every request document is built
+/// through it ([`apply`]'s, and the capacity request's,
+/// [`super::kernel_capacity`]).
+pub fn doc_lines(text: &str) -> Vec<&str> {
+    let mut lines: Vec<&str> = text.split('\n').collect();
+    if text.ends_with('\n') {
+        lines.pop();
+    }
+    lines
+}
+
+/// **One request document**: `{path, lines}`, with the region the path
+/// declares ([`region_of`], gap 10's host half) when it declares one.
+pub fn doc_json(rel: &str, lines: &[&str]) -> Value {
+    let mut doc = json!({ "path": rel, "lines": lines });
+    if let Some((g, ix)) = region_of(rel) {
+        doc["grain"] = json!(g);
+        doc["ix"] = json!(ix);
+    }
+    doc
+}
+
+/// **One kernel call**, the only one in the binary: the request's bytes to
+/// `tm_kernel_ffi::call`, with Lean's stderr captured while it runs when the
+/// TUI asked for it (panic layer 2), so a backtrace lands in the fault's
+/// detail, never on the alternate screen. Returns the parsed response (whose
+/// `ok` the caller reads) and the captured stderr; an `err` is the named
+/// refusal ([`refusal`]), and no usable response is a named fault.
+pub fn call(request: &Value) -> Result<(Value, String), CliError> {
+    let request = request.to_string();
+    let capture = StderrCapture::start();
+    let called = tm_kernel_ffi::call(&request);
+    let stderr = capture.map(StderrCapture::finish).unwrap_or_default();
+    // The constructed panic probe (AGENTS 8.1's named trap: the kernel is
+    // total by CI, so a reachable panic does not exist — the probe injects
+    // the fault at the host's own seam, the response bytes, and the tests
+    // assert the HOST's reaction: named fault, non-zero exit, nothing
+    // written, terminal restored). The real call still runs first.
+    let called = if std::env::var_os("TM_KERNEL_FAULT_PROBE").is_some() {
+        called.map(|_| "*** panic probe: a deliberately non-JSON response (TM_KERNEL_FAULT_PROBE) ***".to_string())
+    } else {
+        called
+    };
+    let raw = called.map_err(|f| {
+        CliError::Kernel(fault_issue(&format!("{f:?}"), &stderr))
+    })?;
+    let resp: Value = serde_json::from_str(&raw).map_err(|e| {
+        CliError::Kernel(fault_issue(&format!("unparseable response ({e})"), &stderr))
+    })?;
+    if let Some(err) = resp.get("err") {
+        return Err(CliError::Kernel(refusal(err)));
+    }
+    Ok((resp, stderr))
+}
+
 /// §4.3's month-file sections, the two a close lands lines under: each
 /// heading's name, and the line the host appends when a month lacks it.
 const MONTH_SECTIONS: [(&str, &str); 2] = [("Outcomes", "# Outcomes"), ("Demoted", "# Demoted")];
@@ -908,7 +932,7 @@ fn heading_body(line: &str) -> Option<&str> {
 /// is whatever layer 2 captured off fd 2 during the call (empty outside the
 /// TUI); it rides the detail so the bug report carries the backtrace the
 /// terminal never saw.
-fn fault_issue(what: &str, stderr: &str) -> KernelIssue {
+pub fn fault_issue(what: &str, stderr: &str) -> KernelIssue {
     let mut detail = Map::new();
     detail.insert("refusal".into(), Value::String("kernelFault".into()));
     detail.insert("what".into(), Value::String(what.to_string()));

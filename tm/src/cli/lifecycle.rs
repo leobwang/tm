@@ -283,7 +283,7 @@ pub struct ReviewOut {
 /// current day only. Reviewing an earlier day gives what the log alone knows
 /// — `day_review` treats an empty `plan_at_arrival` as "no adherence
 /// denominator" rather than as 0%.
-fn day_extras(ctx: &Ctx, date: NaiveDate) -> core_review::DayExtras {
+fn day_extras(ctx: &Ctx, date: NaiveDate) -> Result<core_review::DayExtras, CliError> {
     let mut extras = core_review::DayExtras {
         budget: ctx.state.budget.filter(|_| ctx.state.date == Some(date)),
         // §12.4's `lost 55m (call)` names what the day was lost *to*, which
@@ -293,7 +293,7 @@ fn day_extras(ctx: &Ctx, date: NaiveDate) -> core_review::DayExtras {
         ..core_review::DayExtras::default()
     };
     if date != ctx.today {
-        return extras;
+        return Ok(extras);
     }
     let blocks = ghost::blocks(ctx);
     extras.plan_at_arrival = blocks
@@ -305,8 +305,7 @@ fn day_extras(ctx: &Ctx, date: NaiveDate) -> core_review::DayExtras {
             ))
         })
         .collect();
-    let (plan, prios) = planning::build(ctx, false);
-    let (cands, _, _) = ctx.priorities(false);
+    let (plan, cands, prios) = planning::build_ranked(ctx, false)?;
     extras.underused = plan.diagnostics.underused.len();
     extras.optional = Some(optional_quota(&plan, &ctx.tree));
     // §12.4's `tomorrow  first candidate t5 (after t4) · d1 p1 u=0.6`: the
@@ -325,7 +324,7 @@ fn day_extras(ctx: &Ctx, date: NaiveDate) -> core_review::DayExtras {
             core_review::TomorrowCandidate::new(id, note.as_deref())
         })
         .collect();
-    extras
+    Ok(extras)
 }
 
 /// §11's optional quota for a day: minutes the plan gives `optional.md`
@@ -374,7 +373,7 @@ pub fn review(g: &Globals, args: &super::ReviewArgs) -> Result<i32, CliError> {
                 Some(d) => parse_date(d)?,
                 None => ctx.today,
             };
-            let extras = day_extras(&ctx, date);
+            let extras = day_extras(&ctx, date)?;
             let r = core_review::day_review(
                 &ctx.tree,
                 &ctx.replay,
@@ -396,10 +395,13 @@ pub fn review(g: &Globals, args: &super::ReviewArgs) -> Result<i32, CliError> {
                 None => IsoWeek::from_date(ctx.today),
             };
             let extras = core_review::WeekExtras {
-                deadline_health: week.contains(ctx.today).then(|| {
-                    let (cands, prios, _) = ctx.priorities(false);
-                    priority::deadline_health(&prios, &cands, ctx.today)
-                }),
+                deadline_health: match week.contains(ctx.today) {
+                    true => {
+                        let (cands, prios, _) = ctx.priorities(false)?;
+                        Some(priority::deadline_health(&prios, &cands, ctx.today))
+                    }
+                    false => None,
+                },
                 ..core_review::WeekExtras::default()
             };
             let r = core_review::week_review(

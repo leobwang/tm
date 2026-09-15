@@ -22,7 +22,8 @@ capacity wire carries (`mkDayCfg?`, `mkStep?`, `curveOk`, `priorOk`, `energyOk`,
 each with its rejection theorems; the wire itself is `Boundary.lean`'s.  Step L8's kernel half (§13.6,
 §13.8) answers fork `priority::compute` over the lookahead: which candidates enter step 3's EDF pass
 (gap 80), the grants (gap 107), §7.1's bin at each grant's exact availability, and §7.2's `p` after
-§7.4 (`priorities`).
+§7.4 (`priorities`).  Its host half adds §7.2's floor pass over the capacity the pass leaves
+(`prioritiesWithFloors`, gap 79).
 **Stage 6's `dayPlan` must reuse L2's `windowEnd`, `windowOn`, `wallIndex` and `wallsOn`,
 L3's `freeIntervals` and `cutSlots`, and L4's `hsw100`, `predictAt`, `capForLocation` and
 `energize`, never a second copy** (design §2.3).
@@ -4400,6 +4401,352 @@ theorem priorities_on_a_witness :
        ⟨some 5, .optional, 26, none, 0⟩,
        ⟨some 3, .rank, 65, none, 0⟩] := by
   decide
+
+/-! ############################################################################
+## The floor pass (stage 5 D10 step L8, host half; gap 79)
+
+Fork-point `priority::floor_pass`: a candidate with a `min:` floor that does not enter §7.3's pass is
+ranked by §7.2's floor line.  Its need is `(floor − done_this_period) × safety`, and its capacity is
+what the pass **left**, at levels `≥ ci`, on every day up to the last date of the floor's period.  A
+floor reserves nothing (the fork's deviation 4: two floors of one period are independent claims), and
+a candidate that enters the pass is answered by its grant whatever its floor (fork
+`edf[i].or(floor)`).  A wall has no floor answer (fork `compute` answers a wall before the floor).
+
+The floor's facts are the host's (gap 113): `left`, the floor's minutes less those done this period
+(fork `floor.amount − floor_done_min`, saturating), and `until`, the period's last date (fork
+`period_range(per, today).1`).  The need is R1's ceiling (P3), the bin is exact against the capacity
+left over `capDen` (P7), and `0/0` is HOT (P2), as for a grant.
+
+* `prioritiesWithFloors` is `priorities` with each answer that has no grant and a floor replaced by
+  the floor's answer; `prioritiesWithFloors_without_floors` carries every law of `priorities` to a
+  request without floors, and the host's wire answers through it.
+* `passLeft_is_edf`: the capacity a floor reads is step 3's `edf` over the entering deadlines.
+* `a_floor_reserves_nothing`, `the_pass_wins_over_a_floor`,
+  `a_floor_answer_reads_what_the_pass_left` and `an_ungranted_floor_is_answered_at_its_floor` are the
+  laws; `a_hot_floor_answer_is_zero` is §7.2's HOT row for a floor.
+
+The recursion rule (D9-21): `prioritiesWithFloors` is core's `map` and `zip` over the guarded
+candidate list; `passLeft` is step 3's `edfCaps` (compiled as a `foldl`, gap 106) and the floor's
+availability `availUntil` (compiled as a `foldl`).
+-/
+
+/-- **A candidate's floor**, as the host collected it (gap 113): the floor's minutes still owed this
+period, and the period's last date. -/
+structure Floor where
+  left : Nat
+  last : Day
+deriving DecidableEq, Repr
+
+/-- **The capacity the pass leaves**: step 3's pass over the served order of the entering
+candidates. -/
+def passLeft (s : Pos) (caps : List DayCapacity) (cs : List Cand) : List DayCapacity :=
+  edfCaps capDen caps ((servedOrder s cs).map Prod.snd)
+
+/-- **What a floor reads is step 3's `edf`** over the entering candidates' deadlines, in request
+order: every `edf` law of `Capacity.lean` describes it. -/
+theorem passLeft_is_edf (s : Pos) (caps : List DayCapacity) (cs : List Cand) :
+    passLeft s caps cs = edf capDenD caps ((entering s cs).map Prod.snd) := by
+  unfold passLeft servedOrder
+  rw [sortDueIx_snd]
+  rfl
+
+/-- One floor's reading: the floor, R1's ceiling of `left × safety`, and what the pass left up to
+`until` at levels `≥ ci`, in units over `capDen`. -/
+structure FloorGrant where
+  floor : Floor
+  need  : Nat
+  avail : Nat
+deriving DecidableEq, Repr
+
+/-- A floor, read against the capacity the pass left. -/
+def floorGrantOf (s : Pos) (left : List DayCapacity) (ci : Fin 6) (f : Floor) : FloorGrant :=
+  ⟨f, needMin s f.left, availUntil f.last ci left⟩
+
+/-- **§7.1's bin at a floor**: `left × safety` against the exact availability over `capDen`, never
+rounded (P7), as `binAt` is for a grant. -/
+def floorBin (bins : Bins) (s : Pos) (g : FloorGrant) : Bin :=
+  binOfScaledQ bins.val s g.floor.left (mkPos g.avail capDen capDenD.property)
+
+/-- One answer, with the floor it was answered at when it was. -/
+structure FloorOut where
+  out   : CandOut
+  floor : Option FloorGrant
+
+/-- **An answer and its candidate's floor**: an answer without a grant, not a wall, whose candidate
+has a floor is answered at the floor's bin; every other answer is `priorities`' own.  The capacity the
+pass left is a `Thunk`, forced only by a floor answer and then once for the whole request (an
+argument evaluated per candidate cost 1,024 passes over 3,660 days: 705 s of `stack.rs`). -/
+def withFloor (bins : Bins) (s : Pos) (hyst : Bool) (left : Thunk (List DayCapacity)) (o : CandOut)
+    (f : Option Floor) : FloorOut :=
+  match o.grant, f with
+  | none, some fl =>
+    if o.cand.wall then ⟨o, none⟩
+    else
+      let g := floorGrantOf s left.get o.cand.ci fl
+      let b := floorBin bins s g
+      ⟨⟨o.cand, o.k, g.need, none, some b, rowOf (o.cand.rule (some b)),
+        rawPrio o.k (o.cand.rule (some b)), finalPrio hyst o.cand.yesterday o.k (o.cand.rule (some b))⟩,
+        some g⟩
+  | _, _ => ⟨o, none⟩
+
+/-- **Fork `priority::compute`, the floor pass included** (gap 79): one answer per candidate, in
+request order, each candidate carrying its floor.  The pass is `priorities`' over the candidates;
+a floor reads what it left. -/
+def floorAll (bins : Bins) (s : Pos) (hyst : Bool) (left : Thunk (List DayCapacity))
+    (ps : List (CandOut × Option Floor)) : List FloorOut :=
+  ps.map (fun p => withFloor bins s hyst left p.1 p.2)
+
+def prioritiesWithFloors (bins : Bins) (s : Pos) (dflt : Fin 4) (hyst : Bool) (caps : List DayCapacity)
+    (cfs : List (Cand × Option Floor)) : List FloorOut :=
+  floorAll bins s hyst (Thunk.mk (fun _ => passLeft s caps (cfs.map Prod.fst)))
+    ((priorities bins s dflt hyst caps (cfs.map Prod.fst)).zip (cfs.map Prod.snd))
+
+/-- The shortfall an answer reports: a grant's (`CandOut.shortfall`), or a HOT floor's
+`need − avail` (fork `shortfall_min` over the floor pass). -/
+def FloorOut.shortfall (o : FloorOut) : Nat :=
+  match o.floor, o.out.bin with
+  | none, _ => o.out.shortfall
+  | some g, some .hot => g.need * capDen - g.avail
+  | some _, _ => 0
+
+/-- Which line of §7.2 answered, HOT split by the answer's shortfall; a floor's `+n` row is still
+`dated` here, and the wire names it `floor` (fork `PrioClass::Floor`). -/
+def FloorOut.cls (o : FloorOut) : PClass :=
+  match o.floor, o.out.row with
+  | some _, .pressure .hot => if 0 < o.shortfall then .impossible else .hot
+  | _, _ => o.out.cls
+
+theorem prioritiesWithFloors_length (bins : Bins) (s : Pos) (dflt : Fin 4) (hyst : Bool)
+    (caps : List DayCapacity) (cfs : List (Cand × Option Floor)) :
+    (prioritiesWithFloors bins s dflt hyst caps cfs).length = cfs.length := by
+  simp [prioritiesWithFloors, floorAll, priorities_length]
+
+theorem prioritiesWithFloors_getElem? (bins : Bins) (s : Pos) (dflt : Fin 4) (hyst : Bool)
+    (caps : List DayCapacity) (cfs : List (Cand × Option Floor)) (i : Nat) :
+    (prioritiesWithFloors bins s dflt hyst caps cfs)[i]? =
+      ((priorities bins s dflt hyst caps (cfs.map Prod.fst))[i]?).bind (fun o =>
+        (cfs[i]?).map (fun cf => withFloor bins s hyst (Thunk.mk (fun _ => passLeft s caps (cfs.map Prod.fst))) o cf.2)) := by
+  unfold prioritiesWithFloors floorAll
+  rw [List.getElem?_map, List.zip_eq_zipWith, List.getElem?_zipWith, List.getElem?_map]
+  cases (priorities bins s dflt hyst caps (cfs.map Prod.fst))[i]? <;> cases cfs[i]? <;> rfl
+
+/-- The candidate list is as long as the answers. -/
+theorem lt_of_priorities_getElem? {bins : Bins} {s : Pos} {dflt : Fin 4} {hyst : Bool}
+    {caps : List DayCapacity} {cfs : List (Cand × Option Floor)} {i : Nat} {o : CandOut}
+    (ho : (priorities bins s dflt hyst caps (cfs.map Prod.fst))[i]? = some o) : i < cfs.length := by
+  have := (List.getElem?_eq_some_iff.mp ho).1
+  simpa [priorities_length] using this
+
+/-- **Without floors, the answers are `priorities`' own**: every law of `priorities` holds of the wire's
+answers to a request whose candidates carry no floor. -/
+theorem prioritiesWithFloors_without_floors (bins : Bins) (s : Pos) (dflt : Fin 4) (hyst : Bool)
+    (caps : List DayCapacity) (cfs : List (Cand × Option Floor)) (h : ∀ cf ∈ cfs, cf.2 = none) :
+    prioritiesWithFloors bins s dflt hyst caps cfs =
+      (priorities bins s dflt hyst caps (cfs.map Prod.fst)).map (fun o => ⟨o, none⟩) := by
+  apply List.ext_getElem?
+  intro i
+  rw [prioritiesWithFloors_getElem?, List.getElem?_map]
+  cases ho : (priorities bins s dflt hyst caps (cfs.map Prod.fst))[i]? with
+  | none => rfl
+  | some o =>
+    have hl : i < cfs.length := by
+      have := (List.getElem?_eq_some_iff.mp ho).1
+      simpa [priorities_length] using this
+    have hn : cfs[i].2 = none := h _ (List.getElem_mem hl)
+    simp only [Option.bind_some, List.getElem?_eq_getElem hl, Option.map_some]
+    unfold withFloor
+    rw [hn]
+    cases o.grant <;> rfl
+
+/-- **A floor reserves nothing** (the fork's deviation 4): every candidate's grant, floors or not, is
+the grant `priorities` gives it over the same candidates. -/
+theorem a_floor_reserves_nothing (bins : Bins) (s : Pos) (dflt : Fin 4) (hyst : Bool)
+    (caps : List DayCapacity) (cfs : List (Cand × Option Floor)) :
+    (prioritiesWithFloors bins s dflt hyst caps cfs).map (·.out.grant) =
+      (priorities bins s dflt hyst caps (cfs.map Prod.fst)).map (·.grant) := by
+  apply List.ext_getElem?
+  intro i
+  rw [List.getElem?_map, List.getElem?_map, prioritiesWithFloors_getElem?]
+  cases ho : (priorities bins s dflt hyst caps (cfs.map Prod.fst))[i]? with
+  | none => rfl
+  | some o =>
+    have hl := lt_of_priorities_getElem? ho
+    rw [List.getElem?_eq_getElem hl]
+    simp only [Option.bind_some, Option.map_some, Option.some.injEq]
+    unfold withFloor
+    cases hg : o.grant with
+    | some g => simp [hg]
+    | none =>
+      cases cfs[i].2 with
+      | none => simp [hg]
+      | some fl => by_cases hw : o.cand.wall <;> simp [hg, hw]
+
+/-- **The pass wins over a floor**: a candidate that enters the pass is answered by its grant, exactly
+as `priorities` answers it, and carries no floor answer. -/
+theorem the_pass_wins_over_a_floor (bins : Bins) (s : Pos) (dflt : Fin 4) (hyst : Bool)
+    (caps : List DayCapacity) (cfs : List (Cand × Option Floor)) {i : Nat} {c : Cand} {f : Option Floor}
+    (hc : cfs[i]? = some (c, f)) (he : c.enters = true) :
+    (prioritiesWithFloors bins s dflt hyst caps cfs)[i]? =
+      ((priorities bins s dflt hyst caps (cfs.map Prod.fst))[i]?).map (fun o => ⟨o, none⟩) := by
+  have hc' : (cfs.map Prod.fst)[i]? = some c := by rw [List.getElem?_map, hc]; rfl
+  obtain ⟨g, _, hg, -⟩ := grantAt_some_of_enters (s := s) (caps := caps) hc' he
+  rw [prioritiesWithFloors_getElem?, priorities_getElem?, hc', hc]
+  simp only [Option.map_some, Option.bind_some, Option.some.injEq]
+  unfold withFloor
+  simp only [candOut, hg]
+
+/-- **An ungranted floor is answered at its floor** (the other direction): a candidate that does not
+enter the pass, is not a wall and has a floor is answered at that floor. -/
+theorem an_ungranted_floor_is_answered_at_its_floor (bins : Bins) (s : Pos) (dflt : Fin 4) (hyst : Bool)
+    (caps : List DayCapacity) (cfs : List (Cand × Option Floor)) {i : Nat} {c : Cand} {fl : Floor}
+    (hc : cfs[i]? = some (c, some fl)) (hn : c.enters = false) (hw : c.wall = false) :
+    ∃ o, (prioritiesWithFloors bins s dflt hyst caps cfs)[i]? = some o ∧
+      o.floor = some (floorGrantOf s (passLeft s caps (cfs.map Prod.fst)) c.ci fl) := by
+  have hc' : (cfs.map Prod.fst)[i]? = some c := by rw [List.getElem?_map, hc]; rfl
+  have hg := grantAt_none_of_not_enters (s := s) (caps := caps) hc' hn
+  rw [prioritiesWithFloors_getElem?, priorities_getElem?, hc', hc]
+  refine ⟨_, rfl, ?_⟩
+  unfold withFloor
+  simp [candOut, hg, hw] <;> rfl
+
+/-- **A floor answer reads what the pass left**: an answer at a floor is for a candidate that did not
+enter the pass and is not a wall; its availability is `availUntil` over step 3's `edf` of the entering
+deadlines, up to the floor's last date at the candidate's levels; its need is R1's ceiling of the
+floor's remainder; and its bin, row and `p` are §7.1, §7.2 and §7.4 at that availability. -/
+theorem a_floor_answer_reads_what_the_pass_left (bins : Bins) (s : Pos) (dflt : Fin 4) (hyst : Bool)
+    (caps : List DayCapacity) (cfs : List (Cand × Option Floor)) {i : Nat} {o : FloorOut} {g : FloorGrant}
+    (ho : (prioritiesWithFloors bins s dflt hyst caps cfs)[i]? = some o) (hg : o.floor = some g) :
+    ∃ c, cfs[i]? = some (c, some g.floor) ∧ c.enters = false ∧ c.wall = false ∧
+      g.avail = availUntil g.floor.last c.ci (edf capDenD caps ((entering s (cfs.map Prod.fst)).map Prod.snd)) ∧
+      g.need = needMin s g.floor.left ∧ o.out.need = g.need ∧ o.out.grant = none ∧
+      o.out.bin = some (floorBin bins s g) ∧ o.out.row = rowOf (c.rule (some (floorBin bins s g))) ∧
+      o.out.p = finalPrio hyst c.yesterday (c.kOf dflt) (c.rule (some (floorBin bins s g))) := by
+  rw [prioritiesWithFloors_getElem?, priorities_getElem?] at ho
+  cases hc : cfs[i]? with
+  | none =>
+    have h0 : (cfs.map Prod.fst)[i]? = none := by rw [List.getElem?_map, hc]; rfl
+    rw [h0] at ho; cases ho
+  | some cf =>
+    obtain ⟨c, f⟩ := cf
+    have hc' : (cfs.map Prod.fst)[i]? = some c := by rw [List.getElem?_map, hc]; rfl
+    rw [hc', hc] at ho
+    simp only [Option.map_some, Option.bind_some, Option.some.injEq] at ho
+    subst ho
+    cases he : c.enters with
+    | true =>
+      obtain ⟨g', _, hg', -⟩ := grantAt_some_of_enters (s := s) (caps := caps) hc' he
+      simp [withFloor, candOut, hg'] at hg
+    | false =>
+      have hga := grantAt_none_of_not_enters (s := s) (caps := caps) hc' he
+      cases f with
+      | none => simp [withFloor, candOut, hga] at hg
+      | some fl =>
+        cases hw : c.wall with
+        | true => simp [withFloor, candOut, hga, hw] at hg
+        | false =>
+          simp only [withFloor, candOut, hga, hw, Bool.false_eq_true, ↓reduceIte, Option.some.injEq] at hg
+          subst hg
+          refine ⟨c, rfl, he, hw, ?_, rfl, ?_⟩
+          · simp [floorGrantOf, passLeft_is_edf] <;> rfl
+          · simp [withFloor, candOut, hga, hw]
+
+/-- **A HOT floor answer is `p = 0`**, whatever yesterday was, and an IMPOSSIBLE one reports a
+shortfall. -/
+theorem a_hot_floor_answer_is_zero (bins : Bins) (s : Pos) (dflt : Fin 4) (hyst : Bool)
+    (caps : List DayCapacity) (cfs : List (Cand × Option Floor)) {i : Nat} {o : FloorOut}
+    (ho : (prioritiesWithFloors bins s dflt hyst caps cfs)[i]? = some o)
+    (hh : o.cls = .hot ∨ o.cls = .impossible) :
+    o.out.p = some 0 ∧ (o.cls = .impossible → 0 < o.shortfall) := by
+  cases hf : o.floor with
+  | none =>
+    have hcls : o.cls = o.out.cls := by unfold FloorOut.cls; rw [hf]
+    have hsh : o.shortfall = o.out.shortfall := by unfold FloorOut.shortfall; rw [hf]
+    rw [prioritiesWithFloors_getElem?] at ho
+    cases hp : (priorities bins s dflt hyst caps (cfs.map Prod.fst))[i]? with
+    | none => rw [hp] at ho; cases ho
+    | some o' =>
+      rw [hp] at ho
+      cases hc : cfs[i]? with
+      | none => rw [hc] at ho; cases ho
+      | some cf =>
+        rw [hc] at ho
+        simp only [Option.bind_some, Option.map_some, Option.some.injEq] at ho
+        have heq : o.out = o' := by
+          subst ho
+          unfold withFloor at hf ⊢
+          revert hf
+          cases o'.grant <;> cases cf.2 <;> simp
+          all_goals (intro h; split at h <;> simp_all)
+        rw [hcls, heq] at hh
+        rw [hcls, hsh, heq]
+        exact a_hot_answer_is_zero bins s dflt hyst caps (cfs.map Prod.fst) hp hh
+  | some g =>
+    obtain ⟨c, -, -, -, -, -, -, -, -, hrow, hp⟩ :=
+      a_floor_answer_reads_what_the_pass_left bins s dflt hyst caps cfs ho hf
+    have hrow' : o.out.row = .pressure .hot := by
+      unfold FloorOut.cls at hh
+      rw [hf] at hh
+      revert hh
+      cases hr : o.out.row with
+      | pressure b =>
+        cases b with
+        | hot => intro _; rfl
+        | plus n => intro hh; simp [CandOut.cls, hr] at hh
+      | _ => intro hh; simp [CandOut.cls, hr] at hh
+    refine ⟨?_, ?_⟩
+    · rw [hp]
+      exact finalPrio_of_pressure_hot _ _ _ _ (by rw [← hrow]; exact hrow')
+    · intro himp
+      unfold FloorOut.cls at himp
+      rw [hf, hrow'] at himp
+      by_cases h0 : 0 < o.shortfall
+      · exact h0
+      · simp [h0] at himp
+
+/-! ### A witness (decided; probed under the 8 GB cap) -/
+
+/-- What a witness pins of an answer with its floor: `p`, the class, the need, the availability and
+reservation of the grant or the floor (a floor's allocation is `min(need, avail)` and reserves nothing),
+and the shortfall. -/
+def FloorOut.view (o : FloorOut) : CandView :=
+  ⟨o.out.p, o.cls, o.out.need,
+    (o.floor.map (fun g => (g.avail, min (g.need * capDen) g.avail))).or (o.out.grant.map (fun g => (g.avail, g.reserved))),
+    o.shortfall⟩
+
+/-- `witnessCands` with floors: on the wall, on `^a1` (which enters the pass), on the optional and on
+the undated `^r` (20 minutes owed by day 2). -/
+def witnessFloors : List (Cand × Option Floor) :=
+  witnessCands.zip [some ⟨10, 2⟩, none, some ⟨30, 1⟩, some ⟨10, 2⟩, some ⟨20, 2⟩]
+
+/-- The witness days with 120 minutes on day 2. -/
+def witnessFloorCaps : List DayCapacity :=
+  [ofHist 1 (histOf [0, 0, 0, 60, 0, 0]), ofHist 2 (histOf [0, 0, 0, 120, 0, 0])]
+
+/-- **The floor pass over `witnessCaps`**: the pass leaves nothing, so the optional's floor sees 0 (still
+`p = 5`, 13 minutes short) and `^r`'s floor of 20 minutes is IMPOSSIBLE, `p = 0`, 26 short; the wall and
+`^a1` ignore their floors, and `^a1` and `^a2` keep `priorities_on_a_witness`'s grants.  (Stated as two
+projections of `FloorOut.view`: `decide` over the whole `CandView` of a floor answer loops in the
+elaborator at any `maxRecDepth`, while each projection decides in well under a second.) -/
+theorem prioritiesWithFloors_on_a_witness :
+    (prioritiesWithFloors defaultBinsV Arith.safety specDefaultPrio true witnessCaps witnessFloors).map (fun o => (o.view.p, o.view.cls, o.view.need)) =
+      [(none, .wall, 0), (some 0, .impossible, 59), (some 5, .dated, 39), (some 5, .optional, 13),
+       (some 0, .impossible, 26)] ∧
+    (prioritiesWithFloors defaultBinsV Arith.safety specDefaultPrio true witnessCaps witnessFloors).map (fun o => (o.view.grant, o.view.shortfall)) =
+      [(none, 0), (some (51 * capDen, 51 * capDen), 8 * capDen), (some (60 * capDen, 39 * capDen), 0),
+       (some (0, 0), 13 * capDen), (some (0, 0), 26 * capDen)] := by
+  constructor <;> decide
+
+/-- **The floor pass over `witnessFloorCaps`**: `^a2` sees 141 minutes and reserves 59, leaving 82 on
+day 2; the optional's floor fits, and `^r`'s need of 26 against 82 is `u ≈ 0.32`, the `+1` bin,
+`p = !1 + 1 = 2` (against the 180 minutes before the pass it would be the `+2` bin, `p = 3`; cheat
+141). -/
+theorem prioritiesWithFloors_on_a_roomier_witness :
+    (prioritiesWithFloors defaultBinsV Arith.safety specDefaultPrio true witnessFloorCaps witnessFloors).map (fun o => (o.view.p, o.view.cls, o.view.need)) =
+      [(none, .wall, 0), (some 4, .dated, 59), (some 5, .dated, 39), (some 5, .optional, 13), (some 2, .dated, 26)] ∧
+    (prioritiesWithFloors defaultBinsV Arith.safety specDefaultPrio true witnessFloorCaps witnessFloors).map (fun o => (o.view.grant, o.view.shortfall)) =
+      [(none, 0), (some (141 * capDen, 59 * capDen), 0), (some (60 * capDen, 39 * capDen), 0),
+       (some (82 * capDen, 13 * capDen), 0), (some (82 * capDen, 26 * capDen), 0)] := by
+  constructor <;> decide
 
 end Look
 end Tm

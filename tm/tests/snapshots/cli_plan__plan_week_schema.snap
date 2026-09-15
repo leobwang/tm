@@ -9,7 +9,17 @@ expression: schema(&json)
       "minutes_at_level": [
         "integer"
       ],
-      "total": "integer"
+      "minutes_at_level_exact": [
+        {
+          "den": "string",
+          "num": "string"
+        }
+      ],
+      "total": "integer",
+      "total_exact": {
+        "den": "string",
+        "num": "string"
+      }
     }
   ],
   "grid": "string",

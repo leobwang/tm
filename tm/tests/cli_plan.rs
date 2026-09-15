@@ -504,3 +504,130 @@ fn plan_warns_when_the_day_is_planned_above_a_realistic_budget() {
         out.stdout
     );
 }
+
+// ---------------------------------------------------------------------------
+// Stage 5 D10 L8: the week's capacity and every priority come from the kernel
+// ---------------------------------------------------------------------------
+
+/// An exact `{num, den}` pair on `--json` (the owner's D15): two digit strings
+/// (D17), read as `u128`.
+fn exact(v: &serde_json::Value) -> (u128, u128) {
+    let part = |k: &str| {
+        let s = v[k].as_str().unwrap_or_else(|| panic!("{k} is a digit string in {v}"));
+        assert!(!s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()), "{k} in {v}");
+        s.parse::<u128>().expect("fits u128")
+    };
+    let (n, d) = (part("num"), part("den"));
+    assert!(d >= 1, "{v}");
+    (n, d)
+}
+
+/// **The mixture reaches the week grid, as floors beside exact values** (the
+/// owner's D10 and D15; kernel/README.md parity P1).  `plan-basic`'s
+/// `[expected] p_lounge` is 0.9 on Tuesday: the fork's threshold put the whole
+/// day at the lounge (4h at level 5, 2h at level 4), and the kernel's day is
+/// `0.9 · lounge + 0.1 · home`, the home day capped at level 3 by `home_max_ci`:
+/// 3h36 at 5, 1h48 at 4 and 36m at 3.  With Wednesday's weight set to 0.333 the
+/// day is no longer whole minutes: every `minutes_at_level` is the floor of its
+/// own exact value, and `total` is the floor of the exact total.
+#[test]
+fn plan_week_shows_the_kernels_mixture_as_floors_beside_exact_values() {
+    let tm = Tm::new();
+    let cfg = tm.read("config.toml").replace("Wed = 0.9", "Wed = 0.333");
+    std::fs::write(tm.plan.join("config.toml"), cfg).expect("config");
+    tm.ok(&["arrive", "lounge"]);
+    let json = tm.json(&["plan", "--week"]);
+    let days = json["days"].as_array().expect("days");
+    assert_eq!(days.len(), 7);
+    let tuesday = &days[1];
+    assert_eq!(tuesday["date"], "2026-09-08");
+    assert_eq!(tuesday["minutes_at_level"], serde_json::json!([0, 0, 0, 36, 108, 216]), "{tuesday}");
+    let wednesday = &days[2];
+    assert_eq!(exact(&wednesday["minutes_at_level_exact"][5]), (1998, 25), "0.333 × 240: {wednesday}");
+    assert_eq!(exact(&wednesday["minutes_at_level_exact"][3]), (6003, 25), "0.667 × 360: {wednesday}");
+    assert_eq!(wednesday["minutes_at_level"], serde_json::json!([0, 0, 0, 240, 39, 79]), "{wednesday}");
+    for day in days {
+        let mut sum = (0u128, 1u128);
+        for l in 0..6 {
+            let (n, d) = exact(&day["minutes_at_level_exact"][l]);
+            assert_eq!(day["minutes_at_level"][l].as_u64(), Some((n / d) as u64), "{day}");
+            sum = (sum.0 * d + n * sum.1, sum.1 * d);
+        }
+        let (tn, td) = exact(&day["total_exact"]);
+        assert_eq!(day["total"].as_u64(), Some((tn / td) as u64), "{day}");
+        assert_eq!(tn * sum.1, sum.0 * td, "total_exact is the exact sum: {day}");
+    }
+    // Wednesday's total is the floor of 79.92 + 39.96 + 240.12 = 360, not 79 + 39 + 240 = 358.
+    assert_eq!(wednesday["total"], 360, "{wednesday}");
+    let grid = json["grid"].as_str().expect("grid");
+    assert!(grid.contains("Tue 09-08     6h  3h36  1h48   36m"), "{grid}");
+    assert!(grid.contains("Wed 09-09     6h  1h19   39m    4h"), "{grid}");
+}
+
+/// **A weight the kernel cannot read fails every capacity verb by file and
+/// key, and nothing else** (design §13.2, §20's L6 row; parity P26; D17).
+#[test]
+fn a_weight_outside_its_domain_fails_capacity_verbs_by_file_and_key() {
+    let tm = Tm::new();
+    std::fs::create_dir_all(tm.plan.join(".tm")).expect(".tm");
+    std::fs::write(tm.plan.join(".tm/model.json"), r#"{"p_lounge": {"Mon": 1.2}}"#).expect("model");
+    for args in [&["plan"][..], &["plan", "--week"], &["now"]] {
+        let out = tm.run(args);
+        assert_eq!(out.code, 1, "{args:?}: {}{}", out.stdout, out.stderr);
+        assert!(
+            out.stderr.contains(".tm/model.json: p_lounge.Mon = 1.2 is outside [0, 1]"),
+            "{args:?}: {}",
+            out.stderr
+        );
+    }
+    // A verb that plans after it writes refuses before it writes anything.
+    let out = tm.run(&["arrive", "lounge"]);
+    assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains(".tm/model.json: p_lounge.Mon = 1.2"), "{}", out.stderr);
+    assert!(!tm.log().iter().any(|e| e["ev"] == "arrive"), "{:?}", tm.log());
+    // A verb that computes no capacity still runs.
+    tm.ok(&["add", "Buy stamps", "--to", "week"]);
+    tm.ok(&["triage"]);
+    // More than 18 decimal places in config.toml is named there. (A double's shortest
+    // text has at most 17 significant digits, so only a weight below 10^-18 has more
+    // than 18 places: `0.1234567890123456789` is read as `0.12345678901234568`.)
+    std::fs::remove_file(tm.plan.join(".tm/model.json")).expect("rm model");
+    let cfg = tm.read("config.toml").replace("Sat = 0.5", "Sat = 0.0000000000000000001");
+    std::fs::write(tm.plan.join("config.toml"), cfg).expect("config");
+    let out = tm.run(&["plan"]);
+    assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+    assert!(
+        out.stderr.contains("config.toml: expected.p_lounge.Sat = ") && out.stderr.contains("(at most 18)"),
+        "{}",
+        out.stderr
+    );
+}
+
+/// **Gap 98: a deadline past the kernel's 3,660-day lookahead is clamped, and
+/// the binary says so** (parity P30).  The plan still runs.
+#[test]
+fn a_due_past_the_lookahead_cap_is_clamped_and_said() {
+    let tm = Tm::new();
+    let week = tm.read("week/2026-W37.md");
+    std::fs::write(
+        tm.plan.join("week/2026-W37.md"),
+        format!("{week}- [ ] 3 30m A far deadline due:2038-09-07 ^far1\n"),
+    )
+    .expect("week");
+    let out = tm.run(&["plan"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(
+        out.stderr.contains("the capacity lookahead is clamped to 3660 days (through 2036-09-13"),
+        "{}",
+        out.stderr
+    );
+    // Ten years out is inside the cap: nothing is said.
+    std::fs::write(
+        tm.plan.join("week/2026-W37.md"),
+        format!("{week}- [ ] 3 30m A far deadline due:2036-09-07 ^far1\n"),
+    )
+    .expect("week");
+    let out = tm.run(&["plan"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(!out.stderr.contains("clamped"), "{}", out.stderr);
+}

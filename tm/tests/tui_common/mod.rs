@@ -306,8 +306,11 @@ pub fn prio(id: &str, p: u8, class: PrioClass) -> (Id, Prio) {
             bin: None,
             need_min: 0,
             avail_min: 0,
+            avail_min_exact: Default::default(),
             allocation_min: 0,
+            allocation_min_exact: Default::default(),
             shortfall_min: 0,
+            shortfall_min_exact: Default::default(),
             until: None,
             hysteresis_applied: false,
             raw_p: p,
@@ -528,17 +531,29 @@ pub fn app_with(now: DateTime<Tz>, state: RuntimeState, log: Log) -> App {
     let replay: Replay = log.replay(None, cfg.tz);
     let plan = day_plan(&cfg);
     let ghost = ghost_plan(&cfg);
+    let tree = tree(&cfg);
+    // The ranking `tui::data_of` loads from the kernel (stage 5 D10 L8), stood in
+    // for by the fork point's own pass: the planner's candidates and priorities at
+    // `now`, and its first days in units. The TUI's replans and §9.1's what-ifs
+    // rank by it (`App::input`).
+    let model = tm_core::energy::Model::default();
+    let input = tm_core::planner::PlanInput::new(&tree, &log, &replay, &cfg, &model, &state, now);
+    let prios: Vec<Prio> = tm_core::planner::plan(&input).priorities.into_iter().map(|(_, p)| p).collect();
+    let candidates =
+        tm_core::priority::collect_candidates(&tree, &replay, &cfg, &model, input.date(), now);
+    assert_eq!(candidates.len(), prios.len(), "the ranking is 1:1 with the candidates");
+    let caps = tm_core::planner::week_plan(&input).capacity;
     let data = AppData {
-        model: Default::default(),
+        model,
         state,
-        tree: tree(&cfg),
+        tree,
         log,
         replay,
         arrival: arrival(),
         files: plan_files(),
-        candidates: Vec::new(),
-        prios: Vec::new(),
-        caps: Vec::new(),
+        candidates,
+        prios,
+        caps,
         now,
         cfg,
     };

@@ -1502,5 +1502,33 @@ theorem aCandidateAtLevelSixReads :
       [CapWire.candJ ['a'] (.num 6) .null (.num 30) CapWire.sep8J (.bool false) .null])).isOk = true := by
   decide
 
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D10 track).  Step L8, host half (design
+-- §13.8; gap 79): the floor pass.  Numbers 141 and 142 are the next free
+-- numbers in this checkout (the highest was 140; the D9 track's highest on
+-- rebuild-on-lean is 137, read-only check).  The controls, which compile, are
+-- `Look.prioritiesWithFloors_on_a_roomier_witness` and
+-- `Look.a_floor_answer_reads_what_the_pass_left` (141), and
+-- `Look.the_pass_wins_over_a_floor` and `Look.prioritiesWithFloors_on_a_witness`
+-- (142), in Lookahead.lean.  Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 141 — a floor reads the capacity before the pass.  Fork `floor_pass` reads `work`, the
+   capacity the EDF pass left (§7.1: "net of reservations made by earlier deadlines").  Over
+   `witnessFloorCaps` the pass leaves 82 minutes, so `^r`'s need of 26 is the `+1` bin and `p = 2`; read
+   against the 180 minutes before the pass it would be the `+2` bin, `p = 3`.  `decide` refuses. -/
+theorem aFloorReadsTheCapacityBeforeThePass :
+    ((Look.prioritiesWithFloors Look.defaultBinsV Arith.safety specDefaultPrio true Look.witnessFloorCaps
+      Look.witnessFloors)[4]?).map (fun o => o.out.p) = some (some 3) := by
+  decide
+
+/- CHEAT 142 — a candidate that enters the pass is answered at its floor.  Fork `compute` takes
+   `edf[i].or(floor)`: the grant wins.  `^a1` enters and carries a floor in `witnessFloors`; it is
+   answered by its grant and carries no floor answer.  `decide` refuses. -/
+theorem aGrantedCandidateIsAnsweredAtItsFloor :
+    ((Look.prioritiesWithFloors Look.defaultBinsV Arith.safety specDefaultPrio true Look.witnessCaps
+      Look.witnessFloors)[2]?).map (fun o => o.floor.isSome) = some true := by
+  decide
+
 
 end Tm

@@ -56,7 +56,7 @@ use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveTime, Timelike};
 use chrono_tz::Tz;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use tm_core::capacity::{self, DayCapacity, EnergyCtx};
+use tm_core::capacity::{self, EnergyCtx, UnitCapacity};
 use tm_core::config::Config;
 use tm_core::emit;
 use tm_core::energy::{self, Model, Posterior};
@@ -509,8 +509,9 @@ pub struct AppData {
     pub candidates: Vec<Candidate>,
     /// Their priorities (§7), 1:1 with `candidates`.
     pub prios: Vec<Prio>,
-    /// The §8.4 lookahead the EDF pass ran on.
-    pub caps: Vec<DayCapacity>,
+    /// The §8.4 lookahead the EDF pass ran on: the kernel's first days, in
+    /// exact units (stage 5 D10 L8).
+    pub caps: Vec<UnitCapacity>,
     /// The instant the TUI is at, in `cfg.tz`.
     pub now: DateTime<Tz>,
 }
@@ -537,8 +538,8 @@ pub struct App {
     pub candidates: Vec<Candidate>,
     /// Their priorities (§7).
     pub prios: Vec<Prio>,
-    /// The §8.4 lookahead.
-    pub caps: Vec<DayCapacity>,
+    /// The §8.4 lookahead: the kernel's first days, in exact units.
+    pub caps: Vec<UnitCapacity>,
     /// Today's energy reports as §8.5's posterior correction.
     pub posterior: Posterior,
     /// `now`, in `cfg.tz` (§17.2: injected, never read from a clock here).
@@ -673,7 +674,10 @@ impl App {
     // Planning (§8) — pure, so a replan is just data
     // -----------------------------------------------------------------
 
-    /// The planner's input for `now`.
+    /// The planner's input for `now`, ranked by the kernel's priorities and
+    /// lookahead of the last load (stage 5 D10 L8, gap 111: the planner reads
+    /// no walls of its own and runs no pass of its own; a file change or a verb
+    /// reloads them).
     fn input(&self) -> PlanInput<'_> {
         PlanInput::new(
             &self.tree,
@@ -684,6 +688,8 @@ impl App {
             &self.state,
             self.now,
         )
+        .with_caps(&self.caps)
+        .with_ranking(&self.candidates, &self.prios)
     }
 
     /// §9: recompute the plan from `now` and refresh every digest.
@@ -1252,6 +1258,8 @@ impl App {
                 &runtime,
                 self.now,
             )
+            .with_caps(&self.caps)
+            .with_ranking(&self.candidates, &self.prios)
             .with_overrides(&overrides),
         );
         planner::diff(&base, &alt).removed
@@ -1635,7 +1643,7 @@ impl App {
         replay: &'a Replay,
         candidates: &'a [Candidate],
         prios: &'a [Prio],
-        caps: &'a [DayCapacity],
+        caps: &'a [UnitCapacity],
         today: NaiveDate,
         now: DateTime<Tz>,
     ) -> queue::View<'a> {

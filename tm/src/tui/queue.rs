@@ -68,7 +68,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
-use tm_core::capacity::{self, DayCapacity};
+use tm_core::capacity::{self, UnitCapacity, CAP_DEN};
 use tm_core::config::Config;
 use tm_core::grammar::ParsedFile;
 use tm_core::log::Replay;
@@ -99,8 +99,9 @@ pub struct View<'a> {
     pub candidates: &'a [Candidate],
     /// `priority::compute`'s output, 1:1 with `candidates` (§7).
     pub prios: &'a [Prio],
-    /// The week lookahead the EDF pass ran on (§8.4).
-    pub caps: &'a [DayCapacity],
+    /// The week lookahead the EDF pass ran on (§8.4): the kernel's days, in
+    /// exact units (stage 5 D10 L8).
+    pub caps: &'a [UnitCapacity],
     /// Today.
     pub today: NaiveDate,
     /// Now, in `cfg.tz`.
@@ -119,7 +120,7 @@ impl<'a> View<'a> {
         replay: &'a Replay,
         candidates: &'a [Candidate],
         prios: &'a [Prio],
-        caps: &'a [DayCapacity],
+        caps: &'a [UnitCapacity],
         today: NaiveDate,
         now: DateTime<Tz>,
     ) -> View<'a> {
@@ -705,24 +706,28 @@ pub fn task_rows(view: &View<'_>, parent: Option<&Id>) -> Vec<TaskRow> {
 /// how much of it this week's lookahead can actually hold, allocated greedily
 /// in row order at each row's `ci` — the same reservation §7.3 makes, run over
 /// the rest of the week instead of up to a deadline.
+///
+/// The reservation runs in exact units over the kernel's days (stage 5 D10
+/// L8; kernel/README.md gap 94, T16), and `fits` is shown as the floor of the
+/// exact units reserved.
 pub fn fits_footer(view: &View<'_>, rows: &[TaskRow]) -> String {
     let block_min = view.block_min();
     let week_end = view.week().sunday();
-    let n = capacity::upto(view.caps, week_end);
-    let mut caps: Vec<DayCapacity> = view.caps[..n].to_vec();
+    let n = capacity::upto_units(view.caps, week_end);
+    let mut caps: Vec<UnitCapacity> = view.caps[..n].to_vec();
     let mut total = 0;
-    let mut fits = 0;
+    let mut fits: u128 = 0;
     for row in rows {
         if row.done {
             continue;
         }
         let remaining = view.tree.remaining(&row.id).unwrap_or(0);
         total += remaining;
-        fits += capacity::reserve(&mut caps, remaining, row.ci);
+        fits += capacity::reserve_units(&mut caps, u128::from(remaining) * CAP_DEN, row.ci);
     }
     format!(
         "fits this week: {} of {}",
-        priority::fmt_blocks(fits, block_min),
+        priority::fmt_blocks(capacity::floor_minutes(fits), block_min),
         priority::fmt_blocks(total, block_min)
     )
 }

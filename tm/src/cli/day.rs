@@ -379,6 +379,9 @@ pub struct ArrivalPlan {
 /// `tm arrive [lounge|home|<name>]`.
 pub fn arrive(g: &Globals, args: &super::ArriveArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
+    // Stage 5 D10 L8: this verb plans after it writes, so a configured value the
+    // kernel cannot read (parity P26) is refused before anything is written.
+    super::kernel_capacity::check_inputs(&ctx.cfg, &ctx.model)?;
     let rec = Recorder::start(&ctx, "arrive")?;
     let loc = args
         .loc
@@ -422,7 +425,7 @@ pub fn arrive(g: &Globals, args: &super::ArriveArgs) -> Result<i32, CliError> {
     ctx.reload()?;
 
     // The plan, and the ghost row §12.1 draws from it.
-    let (plan, prios) = planning::build(&ctx, false);
+    let (plan, prios) = planning::build(&ctx, false)?;
     planning::write_plan(&mut ctx, &plan, &prios)?;
     let blocks: Vec<ArrivalBlock> = plan
         .segments
@@ -1031,6 +1034,9 @@ pub fn interrupt(g: &Globals) -> Result<i32, CliError> {
 /// `tm resume`.
 pub fn resume(g: &Globals) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
+    // Stage 5 D10 L8: this verb plans after it writes, so a configured value the
+    // kernel cannot read (parity P26) is refused before anything is written.
+    super::kernel_capacity::check_inputs(&ctx.cfg, &ctx.model)?;
     let Some(int) = ctx.state.interrupt.clone() else {
         return Err(CliError::msg("nothing to resume"));
     };
@@ -1057,7 +1063,7 @@ pub fn resume(g: &Globals) -> Result<i32, CliError> {
         a.paused = false;
     }
     ctx.save_state()?;
-    let (plan, prios) = planning::build(&ctx, false);
+    let (plan, prios) = planning::build(&ctx, false)?;
     let after: Vec<String> = plan
         .segments
         .iter()
@@ -1181,6 +1187,9 @@ pub fn energy(g: &Globals, args: &super::EnergyArgs) -> Result<i32, CliError> {
         return Err(CliError::msg("energy is 0–5"));
     }
     let mut ctx = Ctx::load(g, true)?;
+    // Stage 5 D10 L8: this verb plans after it writes, so a configured value the
+    // kernel cannot read (parity P26) is refused before anything is written.
+    super::kernel_capacity::check_inputs(&ctx.cfg, &ctx.model)?;
     let rec = Recorder::start(&ctx, "energy")?;
     let at: NaiveTime = match &args.at {
         Some(t) => parse_time(t)?,
@@ -1207,7 +1216,7 @@ pub fn energy(g: &Globals, args: &super::EnergyArgs) -> Result<i32, CliError> {
     // re-energises every later slot (§9's "slots re-energised").
     let mut replanned = false;
     if delta != 0 {
-        let (plan, prios) = planning::build(&ctx, false);
+        let (plan, prios) = planning::build(&ctx, false)?;
         planning::write_plan(&mut ctx, &plan, &prios)?;
         ctx.reload()?;
         replanned = true;

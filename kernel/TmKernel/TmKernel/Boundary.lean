@@ -8389,6 +8389,12 @@ one per candidate in request order (`grantJson` over `Look.priorities`, which us
 safety and the default); the zone is read once (`zoneOf`, feeding `logSectionWith` and
 `readCapacityZ`); and a capacity request that also carries commands is refused by name,
 `capacityWithCommands`, because the walls are the documents as sent.
+
+**Stage 5 D10 L8 (host half) adds the floor pass** (gap 79 closed): a candidate record may carry
+`"floor": {"left": 120, "until": "2026-09-30"}` (`readFloor`), and a candidate that does not enter the
+pass, is not a wall and has a floor is answered at it (`grantJsonF` over `Look.prioritiesWithFloors`,
+class `floor`).  A request without floors is answered as before (`grantJsonF_without_a_floor`,
+`Look.prioritiesWithFloors_without_floors`).
 -/
 
 namespace CapWire
@@ -8441,6 +8447,8 @@ inductive CandKey where
   | mandatory
   | hot
   | yesterday
+  /-- Stage 5 D10 L8 host half: the record's `floor` object (gap 79). -/
+  | floor
 deriving DecidableEq, Repr
 
 -- `CapWire.TzWhy` (`shape key base trans table`) was removed at the merge of the D9 track's B4
@@ -8487,7 +8495,7 @@ def Part.name : Part → String
 def CandKey.name : CandKey → String
   | .id => "id" | .ci => "ci" | .rootPrio => "rootPrio" | .remaining => "remaining" | .due => "due"
   | .window => "window" | .wall => "wall" | .optional => "optional" | .overdue => "overdue"
-  | .mandatory => "mandatory" | .hot => "hot" | .yesterday => "yesterday"
+  | .mandatory => "mandatory" | .hot => "hot" | .yesterday => "yesterday" | .floor => "floor"
 
 def werrName : WErr → String
   | .badWeight => "badWeight" | .weightAboveOne => "weightAboveOne" | .weightPrecision => "weightPrecision"
@@ -8985,14 +8993,40 @@ def readCand (i : Nat) (v : JVal) : Except Refusal Look.Cand := do
   let y ← optNatWith v "yesterday" (.badCandidate i .yesterday) yesterdayOf?
   return ⟨id, ci, rp, rem, due, window, wall, optional, overdue, mandatory, hot, y⟩
 
-/-- The decoded `candidates` object. -/
+/-- **A record's floor** (stage 5 D10 L8 host half, gap 79): absent or `null` is none; otherwise an
+object with `left` (minutes, at most `2^32 − 1`, fork `u32`) and `until` (a date), else
+`badCandidate <i> floor`. -/
+def readFloor (i : Nat) (v : JVal) : Except Refusal (Option Look.Floor) :=
+  match opt v "floor" (.badCandidate i .floor) with
+  | .error e => .error e
+  | .ok none => .ok none
+  | .ok (some f) =>
+    match natAt f "left" (.badCandidate i .floor), need f "until" (.badCandidate i .floor) with
+    | .ok l, .ok (.str d) =>
+      if l ≤ maxRemaining then
+        match Field.parseDate d with
+        | some day => .ok (some ⟨l, day⟩)
+        | none => .error (.badCandidate i .floor)
+      else .error (.badCandidate i .floor)
+    | _, _ => .error (.badCandidate i .floor)
+
+/-- One record: the candidate, then its floor. -/
+def readCandFloor (i : Nat) (v : JVal) : Except Refusal (Look.Cand × Option Look.Floor) := do
+  let c ← readCand i v
+  let f ← readFloor i v
+  return (c, f)
+
+/-- The decoded `candidates` object: each candidate with its floor. -/
 structure CandReq where
   hysteresis : Bool
-  cands      : List Look.Cand
+  items      : List (Look.Cand × Option Look.Floor)
+
+/-- The candidates of a decoded object. -/
+def CandReq.cands (q : CandReq) : List Look.Cand := q.items.map Prod.fst
 
 /-- The records, each read at its position (after the count's guard). -/
-def readCandList (xs : List JVal) : Except Refusal (List Look.Cand) :=
-  xs.zipIdx.mapM (fun p => readCand p.2 p.1)
+def readCandList (xs : List JVal) : Except Refusal (List (Look.Cand × Option Look.Floor)) :=
+  xs.zipIdx.mapM (fun p => readCandFloor p.2 p.1)
 
 /-- **`capacity.candidates`**: absent is no grants; present is `hysteresis`, then at most 1,024 `items`,
 each read by `readCand`. -/
@@ -9063,9 +9097,28 @@ def grantJson (o : Look.CandOut) : JVal :=
     ("allocation".toList, unitsJson ((o.grant.map Grant.reserved).getD 0)),
     ("shortfall".toList, unitsJson o.shortfall), ("bin".toList, binJson o.bin)]
 
-/-- The grants of a request's candidates over its whole lookahead (not only the seven days emitted). -/
-def grantsOf (c : CapReq) (la : List DayCapacity) (q : CandReq) : List Look.CandOut :=
-  Look.priorities c.bins c.safety c.dflt q.hysteresis la q.cands
+/-- **A floor answer's grant** (stage 5 D10 L8 host half, gap 79): the keys of `grantJson`, the class
+`floor` for a floor's `+n` row (fork `PrioClass::Floor`), `until` the floor's last date, `avail` what the
+pass left, `allocation` `min(need, avail)` (fork `floor_pass`; a floor reserves nothing), `shortfall`
+`need − avail` when HOT.  An answer without a floor is `grantJson`'s. -/
+def grantJsonF (o : Look.FloorOut) : JVal :=
+  match o.floor with
+  | none => grantJson o.out
+  | some g =>
+    .obj [("id".toList, .str o.out.cand.id),
+      ("class".toList, .str (if o.cls = .dated then "floor".toList else pclassName o.cls)),
+      ("k".toList, .num o.out.k), ("p".toList, optNatJson o.out.p), ("rawP".toList, optNatJson o.out.raw),
+      ("need".toList, .num o.out.need), ("until".toList, .str (Field.renderDate g.floor.last)),
+      ("avail".toList, unitsJson g.avail), ("allocation".toList, unitsJson (min (g.need * capDen) g.avail)),
+      ("shortfall".toList, unitsJson o.shortfall), ("bin".toList, binJson o.out.bin)]
+
+/-- An answer without a floor emits `grantJson`'s bytes. -/
+theorem grantJsonF_without_a_floor (o : Look.CandOut) : grantJsonF ⟨o, none⟩ = grantJson o := rfl
+
+/-- The grants of a request's candidates over its whole lookahead (not only the seven days emitted),
+the floor pass included. -/
+def grantsOf (c : CapReq) (la : List DayCapacity) (q : CandReq) : List Look.FloorOut :=
+  Look.prioritiesWithFloors c.bins c.safety c.dflt q.hysteresis la q.items
 
 /-- **The `lookahead` key** (stage 5 D10 L8): L6's `den` and `days`, then `grants` when the request
 carried `candidates`.  The lookahead is computed once for both. -/
@@ -9074,7 +9127,7 @@ def lookaheadJsonWith (c : CapReq) (q : Option CandReq) : JVal :=
   match q with
   | none => lookaheadJson la
   | some q => .obj [("den".toList, unitsJson capDen), ("days".toList, .arr ((la.take maxEmittedDays).map dayCapJson)),
-      ("grants".toList, .arr ((grantsOf c la q).map grantJson))]
+      ("grants".toList, .arr ((grantsOf c la q).map grantJsonF))]
 
 end CapWire
 
@@ -9420,9 +9473,10 @@ theorem runCap_answers_docs_report_log_lookahead {j cap : JVal} {l : VLogReq} {p
   obtain ⟨d, rep, rfl⟩ := runPlan_ok_is_docs_then_report hp
   exact ⟨d, rep, runCap_answers_with_the_lookahead hc hg hl hr hq hcm hp⟩
 
-/-- **Build order with grants** (design §10.2, §13.6; stage 5 D10 L8): `docs`, `report`, `log` when
-asked, then `lookahead` with `den`, `days` and `grants`, one grant per candidate in request order. -/
-theorem runCap_answers_docs_report_lookahead_grants {j cap : JVal} {lg : Option VLogReq} {plan : WfPlan}
+/-- **Build order with grants and floors** (design §10.2, §13.6; stage 5 D10 L8, host half): `docs`,
+`report`, `log` when asked, then `lookahead` with `den`, `days` and `grants`, one grant per candidate in
+request order, each answered with its floor (`Look.prioritiesWithFloors`, gap 79). -/
+theorem runCap_answers_docs_report_lookahead_floor_grants {j cap : JVal} {lg : Option VLogReq} {plan : WfPlan}
     {cmds : List ReqCmd} {clock : ReqClock} {c : CapWire.CapReq} {q : CapWire.CandReq} {r : JVal}
     (hc : jget j "capacity" = .ok (some cap)) (hg : readLogSection j = .ok lg)
     (hl : runLoad j = .ok (plan, cmds, clock)) (hr : CapWire.readCapacity plan.val clock j cap = .ok c)
@@ -9431,14 +9485,37 @@ theorem runCap_answers_docs_report_lookahead_grants {j cap : JVal} {lg : Option 
       (match lg with | none => [] | some l => [("log".toList, logAnswer l)]) ++
       [("lookahead".toList, .obj [("den".toList, CapWire.unitsJson Look.capDen),
         ("days".toList, .arr (((Look.lookahead c.look).take CapWire.maxEmittedDays).map CapWire.dayCapJson)),
+        ("grants".toList, .arr ((Look.prioritiesWithFloors c.bins c.safety c.dflt q.hysteresis (Look.lookahead c.look)
+          q.items).map CapWire.grantJsonF))])]))) ∧
+      ((Look.prioritiesWithFloors c.bins c.safety c.dflt q.hysteresis (Look.lookahead c.look) q.items).map
+        CapWire.grantJsonF).length = q.items.length := by
+  obtain ⟨d, rep, rfl⟩ := runPlan_ok_is_docs_then_report hp
+  refine ⟨d, rep, ?_, by simp [Look.prioritiesWithFloors_length]⟩
+  rw [runCap_answers_with_the_lookahead_and_grants hc hg hl hr hq hcm hp]
+  cases lg <;> rfl
+
+/-- **Build order with grants** (design §10.2, §13.6; stage 5 D10 L8): `docs`, `report`, `log` when
+asked, then `lookahead` with `den`, `days` and `grants`, one grant per candidate in request order.
+Stage 5 D10 L8's host half added `hf` (no candidate carries a floor): with floors, the grants are
+`runCap_answers_docs_report_lookahead_floor_grants`'. -/
+theorem runCap_answers_docs_report_lookahead_grants {j cap : JVal} {lg : Option VLogReq} {plan : WfPlan}
+    {cmds : List ReqCmd} {clock : ReqClock} {c : CapWire.CapReq} {q : CapWire.CandReq} {r : JVal}
+    (hc : jget j "capacity" = .ok (some cap)) (hg : readLogSection j = .ok lg)
+    (hl : runLoad j = .ok (plan, cmds, clock)) (hr : CapWire.readCapacity plan.val clock j cap = .ok c)
+    (hq : CapWire.readCands cap = .ok (some q)) (hcm : cmds = []) (hp : runPlan plan cmds = .ok r)
+    (hf : ∀ cf ∈ q.items, cf.2 = none) :
+    ∃ d rep, runCap j = .ok (jone "ok" (.obj ([("docs".toList, d), ("report".toList, rep)] ++
+      (match lg with | none => [] | some l => [("log".toList, logAnswer l)]) ++
+      [("lookahead".toList, .obj [("den".toList, CapWire.unitsJson Look.capDen),
+        ("days".toList, .arr (((Look.lookahead c.look).take CapWire.maxEmittedDays).map CapWire.dayCapJson)),
         ("grants".toList, .arr ((Look.priorities c.bins c.safety c.dflt q.hysteresis (Look.lookahead c.look)
           q.cands).map CapWire.grantJson))])]))) ∧
       ((Look.priorities c.bins c.safety c.dflt q.hysteresis (Look.lookahead c.look) q.cands).map CapWire.grantJson).length
         = q.cands.length := by
-  obtain ⟨d, rep, rfl⟩ := runPlan_ok_is_docs_then_report hp
+  obtain ⟨d, rep, h1, -⟩ := runCap_answers_docs_report_lookahead_floor_grants hc hg hl hr hq hcm hp
   refine ⟨d, rep, ?_, by simp [Look.priorities_length]⟩
-  rw [runCap_answers_with_the_lookahead_and_grants hc hg hl hr hq hcm hp]
-  cases lg <;> rfl
+  rw [h1, Look.prioritiesWithFloors_without_floors _ _ _ _ _ _ hf, List.map_map]
+  rfl
 
 namespace CapWire
 
@@ -10209,6 +10286,53 @@ theorem the_grant_response_emits_in_build_order :
       ",\"avail\":\"60000000000000000000\",\"allocation\":\"39000000000000000000\",\"shortfall\":\"0\"".toList ++
       ",\"bin\":0}".toList := by
   constructor <;> decide
+
+/-! ### Stage 5 D10 L8 host half: the floor on the wire (gap 79; each witness probed under the 8 GB cap first) -/
+
+/-- A record's `floor` object on the wire. -/
+def floorJ (left last : JVal) : JVal := .obj [(['l', 'e', 'f', 't'], left), (['u', 'n', 't', 'i', 'l'], last)]
+
+/-- A candidate record with a `floor` key appended. -/
+def withFloorJ (rec f : JVal) : JVal :=
+  match rec with
+  | .obj kvs => .obj (kvs ++ [(['f', 'l', 'o', 'o', 'r'], f)])
+  | v => v
+
+set_option maxRecDepth 8000 in
+/-- **A record's floor, both directions**: `^a1` with a floor of 120 minutes to 2026-09-08 reads it; a
+`null` floor is none; `left` of `2^32`, 2026-02-30 and a floor that is not an object are each
+`badCandidate 0 floor`. -/
+theorem readCands_reads_and_refuses_floors :
+    (readCands (inCands (.bool true) [withFloorJ a1J (floorJ (.num 120) sep8J)])).map
+      (Option.map fun q => q.items.map Prod.snd) = .ok (some [some ⟨120, 739866⟩]) ∧
+    (readCands (inCands (.bool true) [withFloorJ a1J .null])).map
+      (Option.map fun q => q.items.map Prod.snd) = .ok (some [none]) ∧
+    (readCands (inCands (.bool true) [withFloorJ a1J (floorJ (.num 4294967296) sep8J)])).map
+      (fun _ => ()) = .error (.badCandidate 0 .floor) ∧
+    (readCands (inCands (.bool true) [withFloorJ a1J (floorJ (.num 120)
+      (.str ['2', '0', '2', '6', '-', '0', '2', '-', '3', '0']))])).map
+      (fun _ => ()) = .error (.badCandidate 0 .floor) ∧
+    (readCands (inCands (.bool true) [withFloorJ a1J (.num 1)])).map
+      (fun _ => ()) = .error (.badCandidate 0 .floor) := by
+  refine ⟨rfl, rfl, rfl, rfl, rfl⟩
+
+/-- `^r` of `Look.witnessFloors` over `Look.witnessFloorCaps`, answered at its floor
+(`Look.prioritiesWithFloors_on_a_roomier_witness`): 82 minutes left by the pass, need 26, the `+1`
+bin, `p = 2`. -/
+def rFloorOut : Look.FloorOut :=
+  ⟨⟨⟨['r'], 2, some 0, 50, none, false, false, false, false, false, false, none⟩, 1, 26, none, some (.plus 1),
+    .pressure (.plus 1), some 2, some 2⟩, some ⟨⟨20, 739866⟩, 26, 82 * capDen⟩⟩
+
+set_option maxRecDepth 8000 in
+/-- **A floor answer's bytes, in build order**: the class `floor`, `until` the floor's last date, `avail`
+what the pass left, `allocation` `min(need, avail)`, then the shortfall and the bin.  Each literal is at
+most 90 characters. -/
+theorem the_floor_grant_response_emits_in_build_order :
+    jemit (grantJsonF rFloorOut) =
+      "{\"id\":\"r\",\"class\":\"floor\",\"k\":1,\"p\":2,\"rawP\":2,\"need\":26,\"until\":\"2026-09-08\"".toList ++
+      ",\"avail\":\"82000000000000000000\",\"allocation\":\"26000000000000000000\",\"shortfall\":\"0\"".toList ++
+      ",\"bin\":1}".toList := by
+  decide
 
 end CapWire
 end Tm

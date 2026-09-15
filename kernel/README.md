@@ -12691,3 +12691,359 @@ host, `Ctx::priorities` through the kernel's grants with gap 113's facts and gap
 | gap 106, 40 deadlines × 3,660 days (2 MiB thread) | 18,427 ms before; 122 / 120 / 128 ms after; 1,024 deadlines 815 / 819 / 813 ms |
 | T0 (c), 3,660 days; 7 days | 273 / 270 / 268 / 275 ms; 125 / 126 / 126 / 131 ms (warm runs) |
 | `kernel_lookahead_parity.rs`, twin priorities | 0.40 s; 526 candidates, 0 disagreements |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5, D10 track, step L8's host half (design
+     §13.6, §13.8, §14.8's L8 row, §20's L6 and L8 rows; the owner's D10, D15,
+     D17).  Branch stage5-lookahead, parent 7c4efc2.  Closes gaps 79 and 111,
+     records gaps 93 and 94 under the design's labels, takes gaps 114-116 and
+     cheats 141-142.  No parity entry.
+     =========================================================================== -->
+
+## Stage 5 D10 L8 (host half), 2026-09-14: the week's capacity and every priority come from the kernel — exact units, floors only on screen
+
+**Starting point.**  The worktree at `7c4efc2` (L8's kernel half) was clean: check.sh 7/7, audit 2716, corpus
+29/37 files and 4/5 whole plans, burn-down 13, `cargo test --workspace` 1027 / 0 / 2 ignored across 70
+binaries, FFI 95.  Every figure at the end of this block is re-measured in this worktree.
+
+**The plan executed** is design §13.6 (the host's one encoder), §13.8's consumer table, §14.8's L8 row (T14,
+T16, `cli_plan.rs`/`cli_json_matrix.rs` per Q4), §20's L6 behaviour row (moved to L8) and gap 98's clamp,
+under the owner's D10 (exact mixture), D15 (integer floors with `…_exact: {num, den}` beside them) and D17
+(`capDen = 10^18`, `u128` units, digit strings).  One kernel change was needed first: **the floor pass (gap
+79)**, because no host-side floor answer can read the capacity the kernel's pass left (below, and
+disagreement 3).  Files: `Lookahead.lean` (a section at the end), `Boundary.lean` (L6's candidate reader and
+grant response extended in place, one statement restated, witnesses at the end), `Check.lean`,
+`Negative.lean`, `AGENTS.md` (§2.3's `Lookahead` and `Boundary` entries), `kernel/tm-kernel-ffi/tests/kernel.rs`
+and `tests/stack.rs`; `tm/src/cli/kernel_capacity.rs` (new), `kernel_bridge.rs`, `ctx.rs` (`Ctx::priorities`,
+`Ctx::logged_wake`, `Ctx::walls_by_date` deleted), `planning.rs` (`build`, `build_ranked`, `week`,
+`DayOut`), `lifecycle.rs`, `day.rs` (three pre-flight lines and three `?`), `mod.rs`,
+`tui/app.rs` (`input`, `extend_drops`, the caps' type), `tui/mod.rs` (`data_of`, `data_with`, `reload`), `tui/queue.rs` (`View::caps`, `fits_footer`);
+`tm-core/src/capacity.rs` (exact units), `priority.rs` (`Prio`'s exact fields), `planner.rs`
+(`PlanInput::with_ranking`, step 4, `week_from_run`); tests `kernel_unit_reserve.rs` (new),
+`kernel_lookahead_parity.rs`, `cli_plan.rs`, `cli_json_matrix.rs`, `cli_latency.rs`, `cli_close_kernel.rs`,
+`tui_common`, `tui_queue_common`, `emit_fixture`, two schema snapshots.  No new Lean module: `TmKernel.lean`
+is unchanged at nineteen imports.  No D9 module (`Json`, `Cal`, `Stamp`, `Log`) and no D9 Rust seam
+(`log.rs`, `day.rs`'s idle and since-break facts, `lifecycle.rs`'s `tm log`, `undo.rs`, the Recorder) is
+edited; `ctx.rs`, `tui/app.rs` and `planner.rs` are edited only in the functions named above.
+
+### Gap 79 — closed: the floor pass, in the kernel
+
+`Lookahead.lean`, section "The floor pass".  Fork `priority::compute` answers a candidate that does not
+enter the EDF pass, is not a wall and has a `min:` floor at §7.2's floor line: need `(floor −
+done_this_period) × safety`, capacity what the pass **left** at levels `≥ ci` up to the end of the floor's
+period, no reservation (the fork's deviation 4), and `edf[i].or(floor)` (a grant wins).
+
+| piece | what it is |
+|---|---|
+| `Floor` | the host's facts (gap 113): `left` (fork `floor.amount − floor_done_min`) and `last` (fork `period_range(per, today).1`) |
+| `passLeft`, **`passLeft_is_edf`** | the capacity the pass leaves, which is step 3's `edf` over the entering deadlines (every `edf` law applies) |
+| `FloorGrant`, `floorGrantOf`, `floorBin` | R1's ceiling of `left × safety` (P3), `availUntil` over `passLeft`, `binOfScaledQ` at the exact availability (P7, `0/0` HOT by P2) |
+| `withFloor`, `floorAll`, `FloorOut`, **`prioritiesWithFloors`** | `priorities`' answer, replaced by the floor's answer exactly when the candidate has no grant, is not a wall and has a floor; `FloorOut.shortfall`, `FloorOut.cls` (IMPOSSIBLE split by the floor's shortfall) |
+
+**The laws** (in-step; nothing stood in `Goals.lean`): **`prioritiesWithFloors_without_floors`** (no floor:
+`priorities`' own answers, so every L8 kernel-half law carries), **`a_floor_reserves_nothing`** (every
+candidate's grant is the one `priorities` gives it), **`the_pass_wins_over_a_floor`** (an entering candidate is
+answered by its grant and carries no floor answer), **`an_ungranted_floor_is_answered_at_its_floor`** (the other
+direction), **`a_floor_answer_reads_what_the_pass_left`** (its availability is `availUntil` over `edf` of the
+entering deadlines, its need R1's ceiling, its bin, row and `p` §7.1, §7.2, §7.4 at that availability),
+**`a_hot_floor_answer_is_zero`**, and `prioritiesWithFloors_length`, `prioritiesWithFloors_getElem?`,
+`lt_of_priorities_getElem?`.
+
+**A measured defect, found by the FFI suite and fixed before commit.**  The first `prioritiesWithFloors`
+passed `passLeft s caps cs` as an argument inside the `map`'s lambda.  Lean evaluates arguments strictly, so
+the compiled code ran step 3's whole pass once per candidate: `stack.rs`'s 1,024 deadlines over 3,660 days
+took **705.28 s** for the suite.  `withFloor` now takes the capacity as a `Thunk` built once per request and
+forced only by a floor answer (`floorAll`); the suite runs in **2.18 s**, and the new
+`floors_over_a_3660_day_lookahead_force_the_pass_once` (512 deadlines and 512 floors, 3,660 days, 2 MiB
+thread) measures **1,076 / 1,080 / 1,111 ms** against **381 / 383 / 389 ms** for the same candidates without
+floors, the dated grants byte-identical either way.
+
+**`Boundary.lean`**: a candidate record may carry `"floor": {"left": 120, "until": "2026-09-30"}` (`readFloor`:
+`left ≤ 2^32 − 1`, `until` a date, else `badCandidate <i> floor`; `readCandFloor`, `CandReq.items`, the
+function `CandReq.cands`), and `grantsOf` is `prioritiesWithFloors`, emitted by `grantJsonF`: a floor answer
+has the class `floor` for its `+n` row (fork `PrioClass::Floor`), `until` the floor's last date, `avail` what
+the pass left, `allocation` `min(need, avail)` (fork `floor_pass`), `shortfall` `need − avail` when HOT; any
+other answer is `grantJson`'s bytes (`grantJsonF_without_a_floor`, `rfl`).
+**`runCap_answers_docs_report_lookahead_floor_grants`** states the answer over `prioritiesWithFloors`.
+**Restated:** `runCap_answers_docs_report_lookahead_grants` gained `hf : ∀ cf ∈ q.items, cf.2 = none`; it was
+false as stated once a record can carry a floor, and the case it excludes is the new theorem's.  Re-proved,
+statements unchanged: `readCands_on_witnesses` (`rfl`), and every `priorities` law (untouched definitions).
+No EDF theorem and no two-run law was touched (D5).
+
+**Witnesses** (each probed under the 8 GB cap first; the roomier witness, both wire witnesses and the cheats were also falsified to see `decide` refuse):
+`prioritiesWithFloors_on_a_witness` (over `witnessCaps` the pass leaves nothing: the optional's floor sees 0,
+`^r`'s floor of 20 minutes is IMPOSSIBLE, 26 short; the wall and `^a1` ignore theirs) and
+`prioritiesWithFloors_on_a_roomier_witness` (120 minutes on day 2: `^a2` reserves 59 of 141, the pass leaves
+82, `^r` is `u ≈ 0.32`, the `+1` bin, `p = 2`); `CapWire.readCands_reads_and_refuses_floors` (a floor reads, a
+`null` floor is none, `left` `2^32`, 2026-02-30 and a non-object refuse by name);
+`CapWire.the_floor_grant_response_emits_in_build_order` (the bytes, literals of 77 and 83 characters).
+**The FFI** (`kernel.rs`, `a_floor_is_answered_over_what_the_pass_left`): the spec capacity with `^a2` owing 100
+minutes; `^r`'s floor of 120 minutes sees 601 to Tuesday (`+1`, `p = 2`) and 241 to Monday (`+0`, `p = 1`),
+the optional's floor 241 with 13 allocated; the dated grants are the same bytes with and without floors; a
+starved floor is IMPOSSIBLE; four floor refusals by name; a `null` floor is no floor.
+
+**Parity, measured** (`kernel_lookahead_parity.rs`, `the_twin_priorities_are_the_forks_modulo_p2_p3_p7`, now
+generating a floor on 30% of candidates, `left` a multiple of 10 so the fork's `round` is the kernel's ceiling
+and P3 is corrected as for the need): **482 candidates, 132 floors, 50 answered at their floor (10 in the floor
+class), 0 disagreements**; P2 on 3, P7 on 0 generated (5 targeted), P3's reach 131, the mixture changes `p` on
+25.  **The comparison bites** (scratch mutants, run and deleted): the harness's floor bin read at
+`remaining` instead of `left`, **17** disagreements; floors not sent to the kernel, **50**.
+
+### The host's one encoder: `tm/src/cli/kernel_capacity.rs`
+
+| piece | what it does |
+|---|---|
+| **`decimal_pair(x, max_places)`** | the shortest round-trip `Display` text of the double, split at the point, as `(num, den)` digit strings with `den = 10^places`; refuses NaN and the infinities (`NotFinite`), negatives, and more than `max_places` places.  `-0.0` is `0/1`.  The only way a configured `f64` reaches the kernel |
+| **`check_inputs(cfg, model)`** | before any request: every lounge weight of `.tm/model.json` and `config.toml` (`[0, 1]`, ≤ 18 places), `[day]`'s two ratios (≤ 6 places), `[priority]`'s edges and safety (≤ 18), every prior range key (≤ 6), each failing **by file and key**: `.tm/model.json: p_lounge.Mon = 1.2 is outside [0, 1]; tm cannot compute capacity or priorities until it is fixed (kernel/README.md parity P26)` |
+| **`named_refusal`** | every capacity refusal a configured value can cause, mapped to its file and key (`badDay windowHours` → `config.toml: day.window_hours`, `badCurve energy.lounge` → `.tm/model.json`, …); a refusal only this module can cause stays the kernel's named issue |
+| **`request`** | the whole tree's documents (`kernel_bridge::doc_lines`/`doc_json`, the newline convention `apply` uses), `now`, `blockMin`, `tz` from `tz_table::wire_for` (cached under `.tm/cache/replay/`, D13), and the section: both weekday tables raw, `wake` from `Ctx::logged_wake` as `{sec, ns}`, the `lounge`/`home` curves, the prior, `homeMaxCi`, `[day]`, `[priority]`, `days`, `day0` (`DayCapacity::from_slots` of `Ctx::today_slots`, gap 93), and the candidates |
+| candidates | sent in the fork's `(effective_due, own_order, index)` order so the kernel's stable sort by date serves a date's deadlines in the fork's order (P12 does not bite), and un-permuted on the way back; `rootPrio` is the root's written `!k` off the tree; `floor` is `left`/`until` |
+| **`read_answer`** | `den` must be `capDen`; unit counts are digit strings read into `u128` (a malformed one is a named `kernelFault`); each grant becomes a `Prio` with the kernel's class, `k`, `p`, raw `p`, need, `until` and bin, and floors beside exact values |
+| **`horizon`** | gap 98: `priority::lookahead_days` clamped to 3,660 days and to 9999-12-31; when it clamps, stderr says `tm: the capacity lookahead is clamped to 3660 days (through …; … were needed): a deadline or floor after that sees only those days' capacity (kernel/README.md gap 98, parity P30)` (not while the TUI owns the screen) |
+| `rank`, `week`, `ask` | `Ctx::priorities` and `tm plan --week`'s callers |
+
+`kernel_bridge.rs` gains `doc_lines`, `doc_json` and `call` (the capture, the fault probe and the refusal,
+factored out of `apply`, which now calls them; its behaviour is unchanged and every bridge test passes).
+
+**`Prio.u`** is display only: the exact `need·capDen / avail` as a double, held at or above 1 exactly when the
+kernel's bin is HOT and below 1 otherwise, so `Prio::is_hot` agrees with the kernel; `Prio::is_impossible`
+reads `shortfall_min_exact`.
+
+### Design §13.8's table, as implemented
+
+| consumer | after this step |
+|---|---|
+| `capacity::lookahead`, `priority::compute`, `floor_pass` | the binary calls neither: `Look.lookahead` and `Look.prioritiesWithFloors` answer; the fork functions stay in tm-core as the parity oracle and the library tests' planner fallback |
+| `ctx.rs` `Ctx::priorities` | `collect_candidates` (the host's facts, gap 113), `hysteresis_input`, then `kernel_capacity::rank`; returns the kernel's first days as `UnitCapacity` (`u128` units over `CAP_DEN`) |
+| `planner.rs` step 4 | **`PlanInput::with_ranking(cands, prios)`**: ranks by the given priorities, restricted to the candidates §9.1's overrides keep; the planner runs its own lookahead and pass only when no ranking is given (the library's tests) |
+| `planner.rs` week allocation | `take = min(left · capDen, at_least_units)`, `reserve_units`; `planned_min`, `capacity_min` and the items' minutes are floors; the note's totals are floors of exact sums (gap 94) |
+| `planner.rs` `total` | `floor(Σ units / capDen)` |
+| `planning.rs` `week` | `kernel_capacity::week`; `DayOut` per D15 (below); the grid `week_grid_units` |
+| `tui/app.rs` | `caps: Vec<UnitCapacity>`; `App::input` and `extend_drops` hand the kernel's ranking and caps to the planner (gap 111) |
+| `tui/queue.rs` | `View::caps` in units; `fits_footer` reserves `remaining · capDen` with `reserve_units` and shows the floor (gap 94) |
+
+### D15 on `--json`
+
+`tm plan --week --json`'s `days[]` keep `minutes_at_level` and `total` as integers, each **the floor of its own
+exact value** (`total` the floor of the exact total, not the sum of the level floors, so it may be up to five
+more), and add `minutes_at_level_exact` and `total_exact`.  `tm plan --json`'s `priorities[]` keep
+`avail_min`, `allocation_min` and `shortfall_min` and add `avail_min_exact`, `allocation_min_exact` and
+`shortfall_min_exact`.  Each pair is `{"num": "<digits>", "den": "<digits>"}` in lowest terms (digit strings,
+D17).  Because each integer is its own floor, a HOT answer's `need_min − allocation_min` may exceed
+`shortfall_min` by one; the exact values agree (`shortfall = need − allocation`), documented on `Prio`.
+Tests: `cli_plan.rs` `plan_week_shows_the_kernels_mixture_as_floors_beside_exact_values` (Tuesday at 0.9 is
+3h36 at 5, 1h48 at 4 and 36m at 3; Wednesday at 0.333 is 1998/25 at 5 and 6003/25 at 3, floors 79 and 240,
+total 360, not 358), `cli_json_matrix.rs` `capacity_integers_are_floors_beside_their_exact_values`, and the two
+schema snapshots.
+
+### Gap 111 — closed
+
+`tm plan` hands the planner the kernel's ranking and days; the TUI's replan (`App::input`) and both what-if
+plans do too, so the planner reads no walls for capacity (`Planner::walls_by_date` runs only without a
+ranking, i.e. in tm-core's tests) and `Ctx::walls_by_date`, its last caller gone, is deleted.  The kernel's
+`wallIndex` is the binary's one reading of future walls; today's window and slots still read
+`Ctx::walls_today` (day 0 is the host's, gap 93).
+
+### Gap 98 — the host's half done
+
+`kernel_capacity::horizon` clamps and says so (`cli_plan.rs` `a_due_past_the_lookahead_cap_is_clamped_and_said`:
+a due 2038-09-07 is clamped through 2036-09-13; 2036-09-07 is inside and nothing is said).  The cap itself
+stands by D10-13 (P30).
+
+### T14, T15, T16
+
+- **T14** (`cli_latency.rs`, `a_plan_with_a_due_three_and_ten_years_out_stays_a_later_verb`): the
+  history-shaped tree, swept, with a `due:` 3 years out (1,097 lookahead days) then 10 years out (3,652):
+  **81.1 / 81.1 / 76.1 ms** and **141.8 / 141.9 / 136.7 ms** through the shipped binary (debug profile,
+  serial runs), inside `LATER_VERB` (1 s).  Design §18.8's per-weekday memo is required above 300 ms at 3,660
+  days; it is not needed.
+- **T15** (`kernel_capacity.rs`): `t15_decimal_pair_is_the_shortest_text` (4,096 random bit patterns, each
+  against a random `max_places` in 0..20: refused exactly for NaN, infinities, negatives and too many places;
+  otherwise the pair rendered back as a decimal parses to the same double) and `t15_a_written_weight_is_sent_as_written` (4,096
+  decimals of up to 15 places in [0, 1], equal as rationals), plus
+  `a_decimal_is_its_text_not_its_binary_expansion` (`0.9` is `9/10`; `0.1 + 0.2` is
+  `30000000000000004/10^17`), `the_horizon_is_clamped_to_the_kernels_cap_and_the_calendar`,
+  `a_weight_outside_its_domain_is_named_by_file_and_key`.
+- **T16** (`kernel_unit_reserve.rs`, `rust_unit_reserve_is_the_kernels`, 256 cases, 0.43 s): the kernel's
+  seven days at random six-decimal weights and a random day 0; up to 11 random dated candidates served by the
+  kernel and by `reserve_units` over the kernel's days in (due, request) order, availability and allocation
+  identical; and 42 floor probes (one per level and day, `left = 0`) whose availability is what the pass left,
+  identical to Rust's remaining units.  `a_fixed_case_is_served_earliest_deadline_first` pins one case by
+  hand.  **Bites** (scratch mutants, run and restored): `reserve_units` taking the lowest level first fails
+  both tests; serving in request order fails the proptest.  Ignoring the `upto` slice passes, and is
+  equivalent: a take never exceeds what the days up to the due hold, and the reserve is earliest-day-first.
+
+### Behaviour rows (the shipped binary; each cites its decision)
+
+| verb | before (the fork point) | after | authority |
+|---|---|---|---|
+| `tm plan`, `tm now`, `tm arrive`, `tm resume`, `tm energy`, `tm review day`/`week`, the TUI: priorities | a threshold lookahead (lounge iff `p ≥ 0.5`), `round` need, `f64` bins | the kernel's mixture, R1's ceiling need, exact bins, floors included; `p` may move where they differ | D10, P1, P3, P7 |
+| the same: a dated candidate that needs 0 minutes with no capacity | the lowest bin | HOT, `p = 0` | P2 |
+| `tm plan --week` | whole minutes of the threshold day | the mixture, each cell the floor of its exact value; `--json` adds the `…_exact` pairs | D10, D15 |
+| `tm plan --json` priorities | `avail_min`, `allocation_min`, `shortfall_min` | the same as floors, with `…_exact` beside each | D15, D17 |
+| a lounge weight outside `[0, 1]` or past 18 places, in `.tm/model.json` or `config.toml` | accepted (`1.2` → lounge, NaN → home) | every verb that computes capacity or priority fails by file and key; `arrive`, `resume` and `energy` refuse before they write; other verbs run | §20's L6 row, P26, D17 |
+| a `due:` more than 3,660 days ahead | the lookahead runs to it | clamped, and stderr says so | gap 98, P30 |
+| a capacity verb on a tree the kernel refuses (a dangling `@parent`, a `badLine`) | planned from the Rust tree | the kernel's named refusal, exit 1 (as every kernel-backed verb since stage 3) | D9/D10's one reader |
+| the TUI's minute replan and §9.1's what-ifs | re-collect candidates and re-run the pass at each instant | rank the candidates and priorities of the last load (a file change or a verb reloads) | gaps 114, 116 |
+| the TUI, a reload whose capacity request is refused (a file saved into a tree the kernel refuses, a P26 value) | re-ranked from the Rust tree | keeps the last ranking, adopts the rest, and the status line says `priorities not refreshed: …`; a kernel fault still ends the TUI; the TUI's first load on such a tree fails as `tm plan` does | D10, P26 |
+| a capacity verb's first run in a plan directory | — | writes `.tm/cache/replay/tz.json` (the probed zone table) | D13 |
+| `tm plan`, `tm now` on a swept tree | no kernel call | one kernel call (T14 above; the latency test's later verb is unchanged) | D10 |
+
+`cli_close_kernel.rs`'s three "the gate holds, so the fault probe is never reached" legs used `tm now` as the
+housekeeping verb that calls no kernel; `now` now asks the kernel for priorities, so they use `tm triage`
+(housekeeping and no kernel call), and the unswept leg's discrimination is kept the same way.  No CLI test
+pinned the fork's capacity or priority numbers, so none was loosened.
+
+### Gap 93 (the design's label) — day 0 of the lookahead is the host's histogram
+
+(1) *What is not done*: the capacity request's `day0` is `DayCapacity::from_slots(today, Ctx::today_slots)`: the
+window, walls, cut, posterior, sleep shift and home cap of today are Rust's.  (2) *Why not now*: design §13.5
+puts it at L9, after the switch, because today's facts are D9's replay.  (3) *Cost*: today's capacity has two
+readers of today's walls (`Ctx::walls_today` for day 0, the kernel's `wallIndex` for later days).  (4) *When
+it clears*: L9.
+
+### Gap 94 (the design's label) — two reserves stay Rust
+
+(1) *What is not done*: `planner.rs`'s week allocation and `tui/queue.rs`'s "fits" reserve over the kernel's
+days in Rust.  (2) *Why not now*: both are stage 6's planner and TUI tranches (§13.8).  (3) *Cost*: a second
+implementation of `reserveRest`, in exact `u128` units and held to the kernel by T16.  (4) *When it clears*:
+stage 6.
+
+### Gap 114 (new; label L8h-a) — a what-if replan ranks by the priorities before the what-if
+
+(1) *What is not done*: §9.1's overtime alternatives (`planner::overtime_drops`, `App::extend_drops`) replan
+with `PlanOverrides` over the kernel's ranking: a dropped candidate's priority is dropped with it, but a
+candidate given more minutes keeps the `p` it was ranked with.  (2) *Why not now*: the planner is pure
+tm-core and cannot call the kernel, and a kernel call per alternative from the TUI needs the plan directory the
+`App` does not hold.  (3) *Cost*: an extended dated item whose extra need would move it to a more urgent bin
+is ranked one bin late in the "→ drops:" preview only (the verb itself replans through the kernel).  (4)
+*When it clears*: stage 6, when the planner's step 4 is the kernel's.
+
+### Gap 115 (new; label L8h-b) — a verb that writes before it plans can fail after its write
+
+(1) *What is not done*: `tm arrive`, `tm resume` and `tm energy` write state and the log, then plan.  A
+configured value the kernel cannot read is refused before the write (`check_inputs`), but a tree the kernel
+refuses is found only by the planning call, after the write.  (2) *Why not now*: reordering those verbs
+touches `day.rs`'s facts, the D9 track's seam in this workflow; a second kernel call before the write doubles
+the verb's kernel cost.  (3) *Cost*: on a refused tree the arrival (or resume, or energy report) is recorded and
+the verb exits 1 without writing the plan; the next verb on a repaired tree plans.  (4) *When it clears*: the
+switch S or S2, when the kernel writes the log and the verb is one request.
+
+### Gap 116 (new; label L8h-c) — the TUI's minute replan ranks the last load's candidates
+
+(1) *What is not done*: `App::input` passes the candidates and priorities `tui::data_of` loaded; a minute tick
+replans with them.  Before, each replan re-collected candidates at the new instant (an instance that opens or
+an item that becomes overdue mid-minute changed the ranking).  (2) *Why not now*: re-ranking needs a kernel
+call per minute from a pure `App`.  (3) *Cost*: until the next reload (any file change or verb), a candidate
+that appears or changes class within the day is ranked as it was at load.  (4) *When it clears*: stage 6's TUI
+tranche, or a reload on the tick when the candidate set changes.
+
+### Gap 113 — carried, with the floor's facts
+
+`left` and `until` join the host's facts.
+
+### Cheats (`Negative.lean`, appended)
+
+| # | label | cheat | fails because |
+|---|---|---|---|
+| **141** | L8h-a | a floor reads the capacity before the pass | `^r` is `p = 2` over the 82 minutes left, not `p = 3` over 180; `decide` refuses (controls `prioritiesWithFloors_on_a_roomier_witness`, `a_floor_answer_reads_what_the_pass_left`) |
+| **142** | L8h-b | an entering candidate is answered at its floor | `^a1` carries no floor answer; `decide` refuses (controls `the_pass_wins_over_a_floor`) |
+
+Each fails at its own line with `Tactic decide proved that the proposition … is false`.
+
+### Rule D9-21
+
+Lean functions this step adds that walk a list the wire can make large: `prioritiesWithFloors` and `floorAll`
+(core `map`, `zip`, over the ≤ 1,024 candidates), `passLeft` (step 3's `edfCaps`, compiled as its `foldl`
+twin), `floorGrantOf` (`availUntil`, compiled as its `foldl` twin), `readCandList` (core `mapM` over `zipIdx`,
+after the ≤ 1,024 guard).  `readFloor` and `readCandFloor` recurse over nothing.  Proof-only: none.
+
+### The `decide` budget (§14.0 item 4)
+
+4 new decided or `rfl` witness theorems and 2 cheats, **6 in all**, within 20.  No `Entry` value, no zone
+transition, literals of at most 83 characters.  Each was probed in scratch files under `/tmp/claude-1000/l8host/`
+against the built package under `MemoryMax=8G` and `timeout 120` (the falsified probes as above): the floor
+section with its two witnesses 0.27 s at 573 MB; the cheats refuse at their lines; the wire witnesses 1.37 s
+at 967 MB (`maxRecDepth 8000`, as L8's).  **A probe that did not close**: `decide` over the whole `CandView` of
+a floor answer (`FloorOut.view`) hit `maximum recursion depth` at every `maxRecDepth` tried up to 200,000 in
+about a second (so a loop, not a depth), while each projection decides at once; the committed witnesses state
+the two projections `(p, cls, need)` and `(grant, shortfall)`.  No realistic-size input is evaluated.
+Committed: `Lookahead.lean` elaborates in **3.36 s at 880 MB** (L8 kernel half: 4.34 s at 902 MB); `Boundary.lean` alone in **150.8 s at 8.17 GB** under a
+16 GB cap (L8 kernel half: 139.6 s at 8.07 GB).
+
+### Recorded disagreements between the design and the repo
+
+1. **`decimal_pair` lives in `kernel_capacity.rs`**, the single encoder module the workflow names, not
+   `kernel_bridge.rs` (§13.6), and returns `PairErr` (`NotFinite`, `Negative`, `TooManyPlaces`), not `CapErr`.
+2. **"The text of the value" is the shortest round-trip text of the parsed double** (§13.6's definition).
+   `config.toml` and `model.json` are read by serde into `f64` first, so a file decimal with more than 17
+   significant digits reaches the host as its nearest double's shortest text (`0.1234567890123456789` is sent
+   as `12345678901234568/10^17`); the binary expansion is never used.  Only a weight below `10^-18` has more
+   than 18 places.
+3. **Gap 79 is closed in the kernel here**, where the kernel half's owed list said "floor candidates kept off the
+   kernel's p": without the capacity the pass left, which the wire does not carry, the only host answer for a
+   floor was the fork's own lookahead and pass beside the kernel's, two readers of one capacity (AGENTS §5.3).
+4. **The D15 pairs are digit strings in lowest terms** (the design writes `{num, den}` without a type).
+5. **Q4's "avail − allocation may differ from shortfall by one"** is corrected to `need_min − allocation_min`
+   against `shortfall_min`: under the fork's rule `allocation = avail` whenever the shortfall is non-zero.
+6. **The planner's step 4 is wired too** (`PlanInput::with_ranking`), which §13.8's table does not list: without
+   it `tm plan`'s day would be ranked by the planner's own `priority::compute` beside the kernel's (the
+   pre-existing `build` kept the planner's `plan.priorities` over `Ctx::priorities`').
+7. **T16 runs through the capacity wire**, not a harness op, with floor probes reading the remaining units.
+8. **The TUI test harnesses stand in for the kernel's ranking with the fork's** (`tui_common::app_with`: the
+   planner's candidates, priorities and first days at `now`; `tui_queue_common`: its whole-minute days in
+   units), since the TUI modules are included by path without the kernel; the screens' arithmetic is what they
+   pin.
+9. **`check_inputs` checks more than the weights** (the ratios, edges, safety and prior keys), so each named
+   refusal a configured decimal can cause is caught with its file and key before the request.
+10. **Three verbs pre-flight** the configured values (`arrive`, `resume`, `energy`), and gap 115 records what
+    that does not cover.
+11. **A capacity verb reads the plan's documents a second time** (`Ctx` parsed them for the Rust tree): the
+    kernel must load the tree whole, as `apply` does.
+12. **The candidates are sent in the fork's service order** and un-permuted (L8 kernel half's disagreement 6
+    asked for it).
+13. **`Ctx::walls_by_date` is deleted** (no caller); `Planner::walls_by_date` stays for the library fallback.
+14. **Memory cap.**  Every run used the workflow's 30 GB cap, 16 GB for the timings and the elaboration
+    measurement, 8 GB for probes.
+
+**Carried notes honoured.**  No instant is compared by `.nanos` (the host sends dates and `{sec, ns}` clocks).
+Nothing assumes the resend cap (the largest capacity request here is the history tree's, well under 1 MiB).
+D14 and R11 are the D9 track's and untouched.  S2 is not touched.  Gaps 106, 107, 80, 109 and 110 stay closed.
+
+**Label-to-number map:** gaps L8h-a → **114**, L8h-b → **115**, L8h-c → **116**, design 93 → **93**, design 94 →
+**94**; cheats L8h-a → **141**, L8h-b → **142**.  Read-only check of `rebuild-on-lean` at `a9cbeda`: the D9
+track's highest are gap 113 (its own R13-a, a collision with this branch's 113 that the merge renumbers),
+cheat 137 and parity P31.  **Highest numbers in this checkout after the step: gap 116, cheat 142, parity P32.**
+
+**Goals:** discharged 0, refuted 0, added 0.  Burn-down **13** (unchanged).
+
+**New theorems: 16**: 12 in `Lookahead.lean`, 4 in `Boundary.lean`, audited under `Check.lean`'s new
+`APPENDED 2026-09-14 (stage 5, D10 track).  Step L8, host half` banner.  AGENTS §6.3's three counts agree at
+**2732**.  About 190 definition lines and 300 proof and witness lines in Lean, docstrings included (ESTIMATE from
+the diff: `Lookahead.lean` +348, `Boundary.lean` +138/−14), against design §14.8's 80 / 150 for the row; the
+Rust is +697 lines in `kernel_capacity.rs` (with its tests), +198 in `capacity.rs`, +87/−40 in `planner.rs`,
+about +200/−190 across the CLI and TUI, and +185 (`kernel_unit_reserve.rs`), +127 (`cli_plan.rs`), +84
+(`kernel.rs`), +43, +42, +40, +25 in the other tests.  No theorem was retired, weakened or deleted.
+
+**Owed, by name (the rest of the D10 track):** L9 (day 0 in the kernel; gap 93).  Gap 85's fix after the switch.
+Gaps 114–116 as recorded.
+
+**Re-measured after this step** (every command capped, in this worktree, on the tree committed):
+
+| measurement | value |
+|---|---|
+| `lake build TmKernel:static` after the edits | 2 min 24 s wall (`Lookahead` onward) |
+| `check.sh` | **7/7**; 2.82 / 2.80 s on the built tree (L8 kernel half: 2.86 / 2.84 s) |
+| axiom audit | **2732 theorems** (2716 + 16) |
+| `Negative.lean` | check 4 ok; 138 errors; 132 `/- CHEAT` banners; 141 and 142 each fail at their own line |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (stage 6: 13) |
+| `cargo test --workspace` | **1039 passed / 0 failed / 2 ignored across 71 binaries** (1027 + 12) |
+| FFI suite (`tm-kernel-ffi`) | **97 passed / 0 failed** (kernel 83, corpus 8, stack 6); `stack.rs` 2.18 s |
+| `cli_latency.rs` | green: first verb 647.0 / 627.7 / 612.5 ms (226 files, 2,959 lines), later verb 50.7 / 55.9 / 55.8 ms |
+| T14: `tm plan`, due 3 years / 10 years out | 81.1 / 81.1 / 76.1 ms; 141.8 / 141.9 / 136.7 ms |
+| gap 106, 1,024 deadlines × 3,660 days (2 MiB thread) | 824 / 843 / 831 ms (no floors: the `Thunk` is never forced) |
+| floors: 512 deadlines + 512 floors × 3,660 days | 1,076 / 1,080 / 1,111 ms; without the floors 381 / 383 / 389 ms |
+| T0 (c), 3,660 days; 7 days | 270 / 270 / 263 ms; 125 / 122 / 122 ms |
+| `kernel_lookahead_parity.rs`, twin priorities | 482 candidates (50 at their floor), 0 disagreements |
+| T16 | 256 cases, 0.43 s |

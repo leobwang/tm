@@ -37,7 +37,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::{Frame, Terminal};
 
-use tm_core::capacity::{local_dt, DayCapacity};
+use tm_core::capacity::{local_dt, DayCapacity, UnitCapacity};
 use tm_core::energy::Model;
 use tm_core::log::{self, Event, LogEntry, Replay};
 use tm_core::priority::{self, Candidate, Prio};
@@ -74,8 +74,9 @@ pub struct World {
     pub candidates: Vec<Candidate>,
     /// Their priorities.
     pub prios: Vec<Prio>,
-    /// The synthetic lookahead.
-    pub caps: Vec<DayCapacity>,
+    /// The synthetic lookahead, in the exact units the screens read (stage 5
+    /// D10 L8; whole minutes here, so every floor is the minute it was).
+    pub caps: Vec<UnitCapacity>,
     /// 2026-09-07.
     pub today: NaiveDate,
     /// 2026-09-07 10:42 America/Chicago.
@@ -162,6 +163,7 @@ pub fn world_with(
     );
     let caps = caps(priority::lookahead_days(&candidates, today), today);
     let prios = priority::compute(&candidates, &caps, yesterday, &files.config, today);
+    let caps = caps.iter().map(UnitCapacity::from_minutes).collect();
     World {
         files,
         tree,

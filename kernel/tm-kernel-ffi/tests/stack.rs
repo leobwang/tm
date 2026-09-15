@@ -298,3 +298,45 @@ fn grants_over_a_3660_day_lookahead_run_on_a_2mib_thread() {
         eprintln!("{line} (3,660 days, 2 MiB thread)");
     });
 }
+
+/// **The floor pass forces the capacity the pass left once per request** (stage 5
+/// D10 L8, host half; gap 79).  `withFloor` takes that capacity as a `Thunk`: a
+/// strict argument evaluated per candidate ran step 3's pass once per candidate,
+/// and 1,024 of them over 3,660 days took 705 s of this suite.  Through the wire,
+/// on a 2 MiB thread: 512 dated deadlines and 512 undated candidates with a floor
+/// to the lookahead's last day, against the same 1,024 without the floors.  Every
+/// floor candidate is answered at its floor, and the dated grants are the same
+/// bytes either way (a floor reserves nothing).
+#[test]
+fn floors_over_a_3660_day_lookahead_force_the_pass_once() {
+    on_a_2mib_thread(|| {
+        let last = date_after_spec_monday(3659);
+        let dated = spread_deadlines(512, 3660);
+        let floors: Vec<String> = (0..512)
+            .map(|i| {
+                format!(
+                    r#"{{"id":"f{i}","ci":{},"remaining":60,"due":null,"window":false,"wall":false,"optional":false,"overdue":false,"mandatory":false,"hot":false,"floor":{{"left":{},"until":"{last}"}}}}"#,
+                    i % 6,
+                    30 + i
+                )
+            })
+            .collect();
+        let bare: Vec<String> = floors.iter().map(|f| f.replace(&format!(r#","floor":{{"left":"#), r#","nofloor":{"left":"#)).collect();
+        let with = [dated.clone(), floors].concat();
+        let without = [dated, bare].concat();
+        let t = std::time::Instant::now();
+        let a = call(&grants_request(3660, &with)).unwrap();
+        let with_ms = t.elapsed().as_millis();
+        let t = std::time::Instant::now();
+        let b = call(&grants_request(3660, &without)).unwrap();
+        let without_ms = t.elapsed().as_millis();
+        let grants = |out: &str| out[out.find(r#""grants":"#).expect("grants")..].to_string();
+        let (ga, gb) = (grants(&a), grants(&b));
+        assert_eq!(ga.matches(r#""class":"#).count(), 1024);
+        assert_eq!(ga.matches(&format!(r#""until":"{last}""#)).count() >= 512, true, "{}", &ga[..300]);
+        let dated_part = |g: &str| g[..g.find(r#"{"id":"f0""#).expect("f0")].to_string();
+        assert_eq!(dated_part(&ga), dated_part(&gb), "a floor reserves nothing");
+        assert!(!gb.contains(r#""class":"floor""#));
+        eprintln!("floors: 512 deadlines + 512 floors {with_ms} ms; the same without floors {without_ms} ms (3,660 days, 2 MiB thread)");
+    });
+}

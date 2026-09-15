@@ -208,3 +208,28 @@ fn a_verb_on_a_tree_with_months_of_history_takes_well_under_a_second() {
     assert!(later < LATER_VERB, "a drop on the swept tree took {later:?} (bound {LATER_VERB:?})");
     assert!(fs::read_to_string(tm.plan.join("backlog.md")).expect("backlog").contains("[~] 2 30m Synthetic task 1 ^z1"));
 }
+
+/// **T14** (stage 5 D10 L8, design §14.8's L8 row and §18.8): since L8 `tm plan`
+/// asks the kernel for its priorities over a lookahead that reaches the furthest
+/// deadline, so a `due:` three years out makes the kernel simulate about 1,100
+/// days and one ten years out about 3,650 (just inside the 3,660-day cap, gap
+/// 98). On the history-shaped tree, once swept, both plans stay inside
+/// `LATER_VERB`.
+#[test]
+fn a_plan_with_a_due_three_and_ten_years_out_stays_a_later_verb() {
+    let tm = history_tree();
+    let (code, out, _) = timed(&tm, &["drop", "^a1"], FIRST_VERB);
+    assert_eq!(code, 0, "{out}");
+    // The first capacity request probes the zone and caches it (D13); time the plans after it.
+    let (code, out, _) = timed(&tm, &["plan"], FIRST_VERB);
+    assert_eq!(code, 0, "{out}");
+    let backlog = fs::read_to_string(tm.plan.join("backlog.md")).expect("backlog");
+    for (years, due, days) in [(3, "2029-09-14", 1097), (10, "2036-09-12", 3652)] {
+        write(&tm, "backlog.md", &format!("{backlog}- [ ] 3 2h A deadline {years} years out due:{due} ^far{years}\n"));
+        let (code, out, took) = timed(&tm, &["plan"], LATER_VERB);
+        eprintln!("latency: plan with a due {years} years out ({days} lookahead days) {took:?}");
+        assert_eq!(code, 0, "{out}");
+        assert!(!out.contains("clamped"), "{out}");
+        assert!(took < LATER_VERB, "a plan with a due {years} years out took {took:?} (bound {LATER_VERB:?})");
+    }
+}

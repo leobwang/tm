@@ -1197,7 +1197,7 @@ fn p27_is_two_integers_at_rare_decimals() {
 // the same rule applied at its own utilisation (so the harness's rule is the fork's),
 // and where the two utilisations classify apart the difference is P2 or P7 by name.
 
-use tm_core::model::Id;
+use tm_core::model::{Dur, Id, Period, Rate};
 use tm_core::priority::{self, Candidate, Prio};
 
 /// One generated candidate: fork `Candidate`'s §7 inputs.
@@ -1214,6 +1214,15 @@ struct GenCand {
     mandatory: bool,
     hot: bool,
     yesterday: Option<u8>,
+    /// A `min:` floor (stage 5 D10 L8 host half, gap 79): minutes owed this period, a
+    /// multiple of 10 so the fork's `round(left × 1.3)` is the kernel's ceiling (P3
+    /// corrected, as for the need), and the period.
+    floor: Option<(u32, Period)>,
+}
+
+/// Whether a generated candidate enters the EDF pass (gap 80's rule).
+fn enters(g: &GenCand) -> bool {
+    !g.wall && !g.optional && !g.window && g.due.is_some()
 }
 
 /// Four to twelve candidates: walls, optionals, window instances, undated ones and
@@ -1234,6 +1243,9 @@ fn gen_cands(r: &mut Rng, today: NaiveDate) -> Vec<GenCand> {
             };
             let root_prio = if r.chance(50) { Some(1 + r.below(4) as u8) } else { None };
             let yesterday = if r.chance(30) { Some(r.below(8) as u8) } else { None };
+            let floor = r.chance(30).then(|| {
+                (10 * (r.below(61) as u32), *r.pick(&[Period::Day, Period::Week, Period::Month]))
+            });
             GenCand {
                 id: format!("c{i}"),
                 ci: r.below(6) as u8,
@@ -1247,6 +1259,7 @@ fn gen_cands(r: &mut Rng, today: NaiveDate) -> Vec<GenCand> {
                 mandatory: r.chance(5),
                 hot: r.chance(5),
                 yesterday,
+                floor,
             }
         })
         .collect()
@@ -1273,20 +1286,22 @@ fn fork_cands(cs: &[GenCand], cfg: &Config, tz: Tz, today: NaiveDate, own_round:
             c.hot = g.hot;
             c.own_order = (0, i);
             c.root_order = (0, i);
+            c.floor = g.floor.map(|(l, per)| Rate { amount: Dur::from_minutes(l), per });
             c
         })
         .collect()
 }
 
-/// The kernel's `candidates` object.
-fn cands_json(cs: &[GenCand], hysteresis: bool) -> Value {
+/// The kernel's `candidates` object; a floor's `until` is fork `period_range`'s last date.
+fn cands_json(cs: &[GenCand], hysteresis: bool, today: NaiveDate) -> Value {
     let items: Vec<Value> = cs
         .iter()
         .map(|g| {
             json!({"id": g.id, "ci": g.ci, "rootPrio": g.root_prio, "remaining": g.remaining,
                    "due": g.due.map(|(d, _)| d.to_string()), "window": g.window, "wall": g.wall,
                    "optional": g.optional, "overdue": g.overdue, "mandatory": g.mandatory, "hot": g.hot,
-                   "yesterday": g.yesterday})
+                   "yesterday": g.yesterday,
+                   "floor": g.floor.map(|(l, per)| json!({"left": l, "until": priority::period_range(per, today).1.to_string()}))})
         })
         .collect();
     json!({"hysteresis": hysteresis, "items": items})
@@ -1314,7 +1329,7 @@ fn rule_json(g: &GenCand, fp: &Prio, hysteresis: bool, hot: bool, bin: Option<u8
     } else if entered && hot {
         (if shortfall > 0 { "impossible" } else { "hot" }, 0)
     } else if entered {
-        ("dated", (fp.k + bin.expect("a bin")).min(7))
+        (if enters(g) { "dated" } else { "floor" }, (fp.k + bin.expect("a bin")).min(7))
     } else {
         ("rank", (fp.k + 2).min(7))
     };
@@ -1336,10 +1351,14 @@ fn fork_pass(fp: &Prio, cfg: &Config) -> (bool, Option<u8>) {
     (bin.is_none(), bin.or(Some(0)))
 }
 
-/// The kernel's reading (`Look.binAt`): `remaining × 13/10` against `avail`, exactly,
-/// no capacity HOT at any need (gap 25).
+/// The kernel's reading (`Look.binAt`, `Look.floorBin`): `remaining × 13/10` (a floor's
+/// `left × 13/10`) against `avail`, exactly, no capacity HOT at any need (gap 25).
 fn exact_pass(g: &GenCand, fp: &Prio) -> (bool, Option<u8>) {
-    let (rem, a) = (u128::from(g.remaining), u128::from(fp.avail_min));
+    let owed = match g.floor {
+        Some((left, _)) if !enters(g) => left,
+        _ => g.remaining,
+    };
+    let (rem, a) = (u128::from(owed), u128::from(fp.avail_min));
     if a == 0 || 13 * rem >= 10 * a {
         return (true, Some(0));
     }
@@ -1360,6 +1379,9 @@ struct PrioTally {
     impossible: usize,
     hot: usize,
     dated: usize,
+    floors: usize,
+    floor_answers: usize,
+    floor_class: usize,
     held: usize,
     p2: usize,
     p7: usize,
@@ -1392,7 +1414,7 @@ fn run_priorities(c: &Case, tz_wire: &Value, cs: &[GenCand], hysteresis: bool, t
         std::array::from_fn(|i| if 2 * weight_units(c, i) >= CAP_DEN { (1, 1) } else { (0, 1) });
     let grants_of = |weights: Option<[(u128, u128); 7]>| -> Vec<Value> {
         let mut req = kernel_request(c, tz_wire, weights);
-        req["capacity"]["candidates"] = cands_json(cs, hysteresis);
+        req["capacity"]["candidates"] = cands_json(cs, hysteresis, c.today);
         let raw = tm_kernel_ffi::call(&req.to_string()).expect("kernel call");
         let resp: Value = serde_json::from_str(&raw).expect("json");
         resp["ok"]["lookahead"]["grants"].as_array().unwrap_or_else(|| panic!("{tag}: {raw}")).clone()
@@ -1420,7 +1442,7 @@ fn run_priorities(c: &Case, tz_wire: &Value, cs: &[GenCand], hysteresis: bool, t
             t.disagreements.push(format!("{tag}: kernel {} vs the rule at the exact utilisation {as_kernel}", k_twin[i]));
         }
         if as_fork != as_kernel {
-            if fp.until.is_some() && g.remaining == 0 && fp.avail_min == 0 {
+            if fp.until.is_some() && fp.need_min == 0 && fp.avail_min == 0 {
                 t.p2 += 1;
             } else if fp.until.is_some() && (fh, fb) != (xh, xb) {
                 t.p7 += 1;
@@ -1441,6 +1463,9 @@ fn run_priorities(c: &Case, tz_wire: &Value, cs: &[GenCand], hysteresis: bool, t
         t.undated += usize::from(g.due.is_none());
         t.impossible += usize::from(k_twin[i]["class"] == "impossible");
         t.dated += usize::from(k_twin[i]["class"] == "dated");
+        t.floors += usize::from(g.floor.is_some());
+        t.floor_answers += usize::from(g.floor.is_some() && !g.wall && !enters(g));
+        t.floor_class += usize::from(k_twin[i]["class"] == "floor");
         t.hot += usize::from(k_twin[i]["class"] == "hot");
         t.held += usize::from(k_twin[i]["p"] != k_twin[i]["rawP"]);
     }
@@ -1462,6 +1487,7 @@ fn one_like(today: NaiveDate) -> GenCand {
         mandatory: false,
         hot: false,
         yesterday: None,
+        floor: None,
     }
 }
 
@@ -1483,8 +1509,9 @@ fn the_twin_priorities_are_the_forks_modulo_p2_p3_p7() {
     }
     println!(
         "priorities on the twin: {} windows, {} candidates ({} entered the pass; {} walls, {} optionals, {} window instances, {} undated), \
-         {} impossible, {} hot, {} dated, {} held by hysteresis; P2 on {}, P7 on {}; P3 changes {} fork answers; the mixture changes p on {}; disagreements: {}",
-        t.windows, t.candidates, t.entered, t.walls, t.optionals, t.windowed, t.undated, t.impossible, t.hot, t.dated, t.held, t.p2, t.p7,
+         {} impossible, {} hot, {} dated, {} held by hysteresis; {} floors, {} answered at their floor ({} in the floor class); P2 on {}, P7 on {}; P3 changes {} fork answers; the mixture changes p on {}; disagreements: {}",
+        t.windows, t.candidates, t.entered, t.walls, t.optionals, t.windowed, t.undated, t.impossible, t.hot, t.dated, t.held,
+        t.floors, t.floor_answers, t.floor_class, t.p2, t.p7,
         t.p3_reach, t.p1_changes, t.disagreements.len()
     );
     for d in &t.disagreements {
@@ -1510,6 +1537,7 @@ fn the_twin_priorities_are_the_forks_modulo_p2_p3_p7() {
     }
     println!("after the targeted P7 windows: P7 on {}, disagreements: {}", t.p7, t.disagreements.len());
     assert!(t.candidates >= 256 && t.entered > 0 && t.impossible > 0 && t.dated > 0 && t.held > 0 && t.walls > 0);
+    assert!(t.floor_answers > 0 && t.floor_class > 0, "the floor pass is reached");
     assert!(t.p2 > 0 && t.p3_reach > 0, "the recorded exceptions are reached");
     assert!(t.disagreements.is_empty(), "{} disagreements", t.disagreements.len());
 }
