@@ -14490,3 +14490,252 @@ takes the refused-request fallback (L8) like any other.
 **Owed next, unchanged by the merge:** D10 L9 (day 0 in the kernel; gap 93). D9 phases C (C1–C6) and W
 (W1–W3), then S and S2. S also owes gap 117 and R14's replays-per-verb count, and S or S2 owes gap 115.
 Stage 6 owes gaps 94, 114 and 116.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5, W-3 audit repair on rebuild-on-lean (after the
+     merge-back 23b06e2).  Seven defects of the independent audit, fixed most
+     severe first.  Takes no gap, cheat or parity number.
+     =========================================================================== -->
+
+## Stage 5 W-3 audit repair, 2026-09-14: a weight is read as its file writes it, the undo recorder stops replaying the log, and gap 106 is timed
+
+The independent audit of `23b06e2` found one major and six minor defects. **Each one was reproduced
+first**, and all seven are fixed. Every command ran under the workflow's caps: 30 GB, 16 GB for
+timings and the scratch mutant.
+
+### 1 (major). A weight with 19 written decimals was rounded to a double and accepted
+
+**Reproduced** on scratch copies of `plan-basic` with `tm plan --week` at 2026-09-08:
+- `.tm/model.json` `p_lounge.Tue = 0.1234567890123456789` exited 0, and so did `0.1000000000000000001`;
+- `config.toml` `Tue = 0.1234567890123456789` exited 0;
+- only `0.0000000000000000001` and `1.2` were refused.
+
+The cause is the one the audit named: `decimal_pair` took the `f64` that serde had already parsed.
+L8's host block recorded this as its disagreement 2. D17 and D10 overrule that reading, so it is
+**withdrawn**.
+
+**The fix (`tm/src/cli/kernel_capacity.rs`).** The host now reads each literal from its file.
+- **`written_pair(text, max_places)`** reads the literal's text as the exact decimal it writes.
+  - Accepted forms: a sign, digits, `.`, an exponent, TOML underscores.
+  - Places are counted on the value, so trailing zeros after the point do not count: `0.500` is `5/10`.
+  - Refused: NaN, infinities and non-numbers (`NotFinite`), a negative value (`-0` is `0/1`), and more
+    places than allowed (`TooManyPlaces(n)`).
+  - `decimal_pair(x)` is now `written_pair` applied to the double's `Display` text. T15's two proptests
+    are unchanged and pass.
+- **`Written`** re-reads `config.toml` through a shadow struct of `toml::Spanned` values, sliced out of
+  the text. It reads `.tm/model.json`'s `p_lounge` as `serde_json::value::RawValue` entries, in file
+  order, where the last entry for a weekday wins, as in `Model`. For each configured decimal the
+  request carries, it keeps the literal:
+  - both weekday tables of lounge weights;
+  - `day.window_hours` and `day.budget_ratio`;
+  - `priority.bins[i]` and `priority.safety`;
+  - every `energy.prior.<curve>` range key.
+
+  A key that no file writes (a default) falls back to its double's shortest text.
+- **`pairs_of`**, and through it `check_inputs(cfg, model, written)` and `check_plan(ctx)`, check every
+  one of those literals and return the pairs the request sends. Weights, `[day]` and `[priority]` go
+  onto the wire as their literal's pair. `above_one` compares the digit strings exactly, with no
+  `f64`. The prior's range keys are checked as written: at most 6 places and 48 hours means at most 8
+  significant digits, so the double's text is the same decimal, and the request still sends it.
+- **A literal whose nearest double is not the value `Ctx` loaded** (within one ULP, since serde_json's
+  default float parse is not always correctly rounded) means the file changed while the verb ran. The
+  verb stops by name: `config.toml: … = … changed while tm was reading it; run the verb again`.
+- `day.rs`'s three pre-flights (`arrive`, `resume`, `energy`) call `check_plan(&ctx)`.
+- Messages quote the written text:
+  `.tm/model.json: p_lounge.Tue = 0.1000000000000000001 has 19 decimal places (at most 18); …`.
+- **`Cargo.toml`** turns on serde_json's `raw_value` feature. That is a feature of a dependency the
+  workspace already has, so `Cargo.lock` is unchanged and no crate is added.
+
+**Tests.**
+- `a_literal_is_its_exact_decimal`: 11 accepted and 12 refused literals, plus `above_one`.
+- `a_weight_past_18_written_places_is_refused_though_its_double_is_shorter`:
+  - both 19-place values, in both files;
+  - last-wins on `Tue`/`Tuesday`;
+  - 18 places sent exactly (`123456789012345678/10^18`, not the double);
+  - `safety`, `bins[1]`, `window_hours` and a prior key refused at 19 places;
+  - the changed-under-the-verb error;
+  - integers, `+`, exponents and underscores read exactly.
+- `cli_plan.rs` `a_weight_outside_its_domain_fails_capacity_verbs_by_file_and_key` gains the binary's
+  legs: both 19-place values refused in `config.toml` and in `.tm/model.json`, and 18 places accepted.
+  Its old comment, which said `0.1234567890123456789` is read as `0.12345678901234568`, is deleted,
+  because that is no longer true. Every existing assertion stands.
+- **Re-run of the audit's evidence** on the new binary:
+  - both 19-place model weights and the config weight exit 1 with the message above;
+  - `0.0000000000000000001` and `1.2` are refused as before;
+  - `0.123456789012345678` exits 0;
+  - `plan --week` output is byte-identical with and without `{"p_lounge":{"Tue":0.9}}`, the value
+    `config.toml` already has.
+
+### 2. The R phase roughly doubled a mutating verb's latency on a long log
+
+**Reproduced.** The 3-year tree was built by `cli_latency.rs`'s `history_tree` plus `write_log(1095)`
+(66,292 lines after the first verb's close) and copied to scratch. On it, HEAD ran `wake` 550, `arrive`
+760, `start` 525, `pause` 520/494, `done` 528, `energy` 685, `undo` 274, `review day` 158, `log` 123 and
+`check` 127 ms. `Ctx::replay_of` was instrumented temporarily in a copy, then reverted: **4 replays per
+mutating verb (5 for `arrive` and `energy`), each ≈ 112 ms**. The extra two were `Recorder::start` and
+`Recorder::finish`. The base binary at `18947b8` was not rebuilt, because building it needs a second
+Lean build of the L8-era kernel. Its figures are the audit's. At `18947b8` the recorder counted lines
+(`log_len`) and parsed only the new lines, as its source shows.
+
+**The fix: two replays gone, and a cheaper replay.**
+- **`Ctx::log_tail_of(store, cfg, after)`** (`ctx.rs`, beside `replay_of`, **inside the one door**) returns
+  the log's physical line count on disk now. With `after` given, it also returns the `(line, entry)`
+  rows past that line, found by skipping `after` newlines and replaying only the tail. When the file
+  has fewer lines than that, it falls back to the whole replay. The recorder uses it for `start` (the
+  count) and `finish` (the rows), so it no longer replays the whole log.
+- `tm_core::log::physical_line_count(bytes)` is `Log::parse_bytes`' own count, factored out and used by
+  both.
+- **Proved equal by test.** `the_recorders_tail_is_the_whole_replays` covers 8 logs: empty, `\n`,
+  60 loggen lines with and without a final newline, blank, malformed and CRLF lines, a torn last line,
+  a torn line with an append glued onto it, and non-ASCII. At every cut from 0 to line count + 2, the
+  count equals `replay_of(..).line_count()` and the rows equal `headers_from(after + 1)`'s
+  `(line, entry)`. All 18 `cli_undo.rs` tests pass unchanged.
+- **`ViewRow::display` is now a method, not a field.** Formatting a timestamp for all 66,292 rows cost
+  ≈ 20 ms per replay (a scratch timing of `Log::parse` then `replay`: 60 + 48 ms before, 60 + 25 ms
+  after). Its one reader, `tm log`'s human rows, calls it. `tm log` output is unchanged, and
+  `kernel_log_grammar.rs` still checks the display against chrono.
+
+**Re-measured** on the same scratch tree, three serial runs of the final binary (ms):
+
+| verb | audit, `18947b8` | audit / reproduced, before the fix | **after** |
+|---|---:|---:|---:|
+| `wake` | 263 | 510 / 550 | **253–271** |
+| `start` | 261 | 490 / 525 | **253–270** |
+| `pause` (twice) | 248 / 271 | 485 / 491 | **246–279** |
+| `done` | 250 | 487 / 528 | **250–287** |
+| `energy` | 256 | 506 / 685 | **378–396** |
+| `arrive` | 354 | 648 / 760 | **476–493** |
+| `undo` | 184 | 259 / 274 | **221–238** |
+| `review day`, `log`, `check` | 85–97 | 115–126 / 123–158 | **106–141** |
+
+**A regression still on record, by name.** `energy` and `arrive` still read the log 3 times each
+(load, a reload after the write, a reload after the plan), as at the base. They also make L8's kernel
+capacity call (a `tm now` on this tree takes 160 ms against 125 ms for `tm triage`, which makes no
+kernel call). So they sit ≈ 120–140 ms above the base. Read verbs sit 10–45 ms above it: the R phase's
+rows and seams make each replay slower. Neither takes a gap number. The switch S replaces the reader,
+and T11 compares against the table above. **`cli_latency.rs`'s figures fall with the fix:**
+- 1-year log: later verb **121.5–121.7 ms** (was 202.5–232.5), first verb 708.7–733.4 ms;
+- 3-year log: later verb **268.4–283.6 ms** (was 526–547), first verb 931.5–946.5 ms.
+
+R14's "Rust reader's baseline" for T11 is therefore these figures, not R14's.
+
+### 3. Nothing guarded gap 106 against regressing
+
+**Reproduced by reading.** `stack.rs`'s `grants_over_a_3660_day_lookahead_run_on_a_2mib_thread` only
+printed its timings.
+
+**The fix.** Each call now asserts its time: at most `GAP_106_MS = 5,000 ms` for up to 40 deadlines and
+`GAP_106_MAX_MS = 15,000 ms` for 1,024. The floors test asserts at most 20,000 ms with and without its
+floors; the regression it guards took 705 s.
+
+**The bound bites.** In a scratch copy of the kernel, the seven `@[csimp]` attributes of `Capacity.lean`'s
+gap 106 section were removed (`lake build TmKernel:static`, 2 min 40 s under 16 GB). The test then
+**fails**: `gap 106 regressed: 30 deadlines over 3,660 days took 6324 ms (bound 5000 ms)`. The copy was
+deleted afterwards.
+
+With the twins, the timings are 112 / 115 / 116 / 121 / 127 / 128 ms (no candidates, then 1–40 deadlines)
+and 864 ms for 1,024. Floors: 1,117 ms, and 393 ms without them.
+
+### 4. The R-audit table missed `planner.rs:842`
+
+**Reproduced.** At `18947b8`, `tm-core/src/planner.rs:842`, in `Planner::new`, reads
+`let blocks_done = input.replay.blocks_done(date);`. It is `:864` at HEAD. It appears in no row of the
+R-audit's library table. This block does not edit that table in place (AGENTS §6.2). The missing row is:
+
+| accessor | call site | verb / screen | dates | form | scope |
+|---|---|---|---|---|---|
+| `blocks_done` (a `day(d)` read) | `planner.rs:842` `Planner::new` (HEAD `:864`) | `tm plan`, every planning verb, TUI replan | today (`input.date()`) | O | Hot |
+
+The audit's conclusion stands: its scope, `Hot`, is correct. Gap 112 is unaffected.
+
+### 5. D14's single view omitted `DayReplay.routine_min`, and two more
+
+**Reproduced.** `routine_min` has no reader outside `log.rs` and two `log_replay.rs` asserts. **The same
+grep, run over every `DayReplay` and `ItemReplay` field, found two more that `PortedFacts` did not
+list.** `DayReplay.idle` is read only by tests (`log_replay.rs:101`, `:210`). `ItemReplay.blocks` is
+incremented at `log.rs:2618` and never read. (`first_start` is read, through `arrive_to_start_min`, in
+the day review.)
+
+**The fix.** `PortedDayFacts` gains `routine_min` and `idle`, and `PortedItemFacts` gains `blocks`. So
+the `log_ported_facts` snapshots, and `ctx.rs`'s chokepoint test that reads them, now pin all three for
+T5 and W1. The six changed snapshots were regenerated. **A script checked that the change only adds
+fields:** removing the three new keys from every day and item gives exactly the snapshot at HEAD. No
+existing value changed, and the open-interruption snapshot is untouched. `three_days_ported_facts` now
+asserts that some day has routine minutes and an idle record, and some item has blocks.
+
+### 6. The cache existed from L8 on, but `tm init`'s `.gitignore` did not exclude it (D13 iii)
+
+**Reproduced** by reading `tm/templates/gitignore`.
+
+**The fix.**
+- The template gains `.tm/cache/` under a comment.
+- `merged_gitignore` handles a `.gitignore` that already has the tm block (the `.tm/state.json`
+  marker) but lacks an entry the block has since gained: it appends the missing entry lines and
+  changes nothing else. Before, it left such a file untouched, so plans initialised before L8 would
+  never have ignored the cache.
+
+**Tests.**
+- `the_gitignore_is_merged_not_rewritten`: the template has the line; an old block gains exactly
+  `.tm/cache/\n`; a current block is unchanged.
+- `init_tree.rs` `the_gitignore_keeps_the_runtime_state_out_of_git`: a fresh init has the line, and
+  `tm init --force` over the pre-L8 block appends it.
+
+### 7. D15's floors were documented only in code and the README
+
+**Fix.**
+- **`explain.md`** declares `avail_min_exact`, `allocation_min`, `allocation_min_exact` and
+  `shortfall_min_exact`. A new bullet says each integer is the floor of the exact fraction beside it,
+  and that `need_min − allocation_min` can exceed `shortfall_min` by one.
+- **`plan-week.md`** and **`triage.md`** declare `days[].total_exact` and
+  `days[].minutes_at_level_exact`, and say that the minutes are floors and that `total` floors the exact
+  total, so it can exceed the sum of `minutes_at_level` by up to 5.
+- `plan-week.md` stays under `init_tree.rs`' 60-line bound: the proposal sentence is joined onto one
+  line, and the bound is unchanged.
+- **`tm-spec-v1.md` §8.4** gains a paragraph covering the exact mixture over `10^18`, the 18
+  written-place rule for `p_lounge`, and both documents' floor/exact field pairs.
+
+`init_skills.rs` runs every declared field against the real `--json` documents and passes. The
+`skill_plan_week` snapshot changed only by these lines.
+
+### Behaviour rows (the shipped binary)
+
+| verb | before (`23b06e2`) | after | authority |
+|---|---|---|---|
+| any capacity or priority verb, and `arrive`/`resume`/`energy`'s pre-flight: a lounge weight, `[priority]` edge or safety, `[day]` ratio or prior key **written** with more places than allowed but whose double prints fewer (`0.1000000000000000001`) | accepted, sent as the double's text | refused by file and key, quoting the written text; an accepted literal is sent exactly as written | D10, D17, P26 |
+| the same, a file rewritten between `Ctx`'s load and the request | the loaded value used | `<file>: <key> = <text> changed while tm was reading it; run the verb again`, exit 1 | D10 |
+| `tm init` | `.gitignore` without `.tm/cache/` | with it; `--force` appends it to an older tm block | D13 |
+| every mutating verb | replays the whole log 4–5 times | 2–3 times; output unchanged | W-3 audit |
+
+`tm log`'s output, the undo stack's contents and every `--json` document are unchanged.
+
+### Recorded disagreements between the design and the repo
+
+1. **§13.6 defines the encoder over "the shortest round-trip `Display` text" of an `f64`.** D17 refuses
+   a weight with more than 18 decimals, and D10 forbids rounding, and the double loses the literal. The
+   host therefore reads the literal (`written_pair`), and `decimal_pair` remains only for values no file
+   writes. This withdraws L8 host disagreement 2.
+2. **"Decimals" count the value's places**, not trailing zeros: `0.50000000000000000000` is `1/2` and
+   is accepted. Nothing in D17 counts written zeros.
+3. **§14.6 item 1 puts the recorder on `kernel_log` at S.** Here it moves before S onto a tail read
+   inside the Rust door, `Ctx::log_tail_of`. S replaces that body with `headersFrom`.
+
+**Goals:** discharged 0, refuted 0, added 0. Burn-down **13** (unchanged). **New theorems: none**
+(no Lean change), and the audit stays at **2732**. **Parity entries: none new.** P26's refusal now
+reads the written text. **Numbers taken: none.** The highest are still gap 117, cheat 142 and parity
+P32. **R8's one-reader grep:** `ctx.rs` now has 14 hits, up from 9. The 5 new ones are `log_tail_of`'s
+`LOG_PATH` ×2 and `Log::parse` ×2, plus its test's `LOG_PATH`, all in the chokepoint.
+`kernel_capacity.rs` has 0 hits: two local names that matched `day_index(` were renamed. No other
+file changed. No kernel change, and no recursion over a wire list.
+
+**Re-measured** (main worktree, every command capped):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.83 s; audit **2732**; corpus **29/37 files and 4/5 plans**; burn-down **13** |
+| `cargo test --workspace` | **1060 passed / 0 failed / 3 ignored across 72 binaries** (1057 + 3: `a_literal_is_its_exact_decimal`, `a_weight_past_18_written_places_is_refused_though_its_double_is_shorter`, `the_recorders_tail_is_the_whole_replays`), 0 compiler warnings |
+| FFI suite | **97 passed / 0 failed** (kernel 83, corpus 8, stack 6; `stack.rs` 2.27 s) |
+| `cli_latency.rs --include-ignored`, three serial runs | green, 4 passed. No log: first 622.8 / 627.5 / 627.7 ms, later 55.7 / 55.7 / 55.8 ms. 1y: first 708.8 / 708.7 / 733.4, later 121.7 / 121.5 / 121.6. 3y: first 946.5 / 941.3 / 931.5, later 278.5 / 283.6 / 268.4. T14: 76.0 / 80.9 / 76.1 ms (3 years), 136.7 / 161.8 / 136.8 ms (10 years) |
+| gap 106 bound, scratch mutant without the seven `@[csimp]` | fails at 30 deadlines, 6,324 ms > 5,000 ms |
+
+**Owed next, unchanged:** D10 L9 (gap 93). D9 phases C and W, then S and S2. S owes gap 117 and T11's
+comparison with the latency table above, and S or S2 owes gap 115. Stage 6 owes gaps 94, 114 and 116.

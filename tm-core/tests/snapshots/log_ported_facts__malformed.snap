@@ -14,7 +14,9 @@ expression: "replay(&corpus(\"malformed\")).ported_facts()"
       "last_plan_hash": null,
       "loc_changes": [],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 0,
+      "idle": []
     }
   },
   "items": {}

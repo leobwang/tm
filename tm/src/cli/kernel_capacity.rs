@@ -9,13 +9,15 @@
 //! floor pass). Nothing else in the Rust builds a capacity request, and nothing
 //! else reads one back:
 //!
-//! * [`decimal_pair`] is the only way a configured `f64` reaches the kernel: the
-//!   shortest round-trip text of the double (Rust's `Display`), split at the
-//!   point, never the double's binary expansion (`0.9` is `9/10`, not
-//!   `0.90000000000000002220446…`). T15 is its proptest.
+//! * [`written_pair`] is the only way a configured decimal reaches the kernel:
+//!   **the text its file writes** ([`Written`]: TOML spans, JSON raw values),
+//!   read as the exact decimal it is, never its double (`0.1000000000000000001`
+//!   has 19 places, though its double prints `0.1`; W-3's audit). A value no file
+//!   writes (a default) is its double's shortest text, [`decimal_pair`], never
+//!   the binary expansion (`0.9` is `9/10`). T15 is the latter's proptest.
 //! * [`check_inputs`] runs the same encoding over `config.toml` and
 //!   `.tm/model.json` before a request is built, so a weight outside `[0, 1]` or
-//!   with more than 18 decimal places fails every verb that computes capacity or
+//!   with more than 18 written decimal places fails every verb that computes capacity or
 //!   priority **by file and key** (§13.2, parity P26); the kernel's refusal stays
 //!   the authority, and [`named_refusal`] names the file and key of every
 //!   refusal a configured value can cause.
@@ -90,43 +92,251 @@ pub enum PairErr {
 }
 
 /// **A double as the decimal it is written as** (design §13.6): the shortest
-/// round-trip `Display` text of `x`, split at the point, as `(numerator,
-/// denominator)` digit strings with the denominator `10^places`. `-0.0` is
-/// `0/1`. Refuses NaN, the infinities, negatives, and more than `max_places`
-/// decimal places.
+/// round-trip `Display` text of `x`, read by [`written_pair`]. `-0.0` is `0/1`.
+/// Refuses NaN, the infinities, negatives, and more than `max_places` decimal
+/// places. The fallback for a value no file writes (a default of [`Config`]);
+/// a value a file writes is sent as its file's text (D17, [`Written`]).
 pub fn decimal_pair(x: f64, max_places: u32) -> Result<(String, String), PairErr> {
-    if !x.is_finite() {
+    written_pair(&format!("{x}"), max_places)
+}
+
+/// **A decimal literal as the exact rational it writes** (D10, D17): the text of
+/// a TOML or JSON number (`0.1234567890123456789`, `+0.5`, `1e-3`, `1_000.5`,
+/// `inf`, `nan`) as `(numerator, denominator)` digit strings, the denominator
+/// `10^places` and `places` the literal's decimal places **of its value**
+/// (trailing zeros after the point do not count: `0.500` is `5/10`). Nothing is
+/// rounded: a literal with 19 places is refused as `TooManyPlaces(19)` even
+/// where its nearest double has fewer. Refuses NaN and the infinities, a
+/// negative value (`-0` and `-0.000` are `0/1`), text that is not a number
+/// (`NotFinite`), and more than `max_places` places.
+pub fn written_pair(text: &str, max_places: u32) -> Result<(String, String), PairErr> {
+    let t: String = text.trim().chars().filter(|c| *c != '_').collect();
+    let (neg, body) = match t.as_bytes().first() {
+        Some(b'-') => (true, &t[1..]),
+        Some(b'+') => (false, &t[1..]),
+        _ => (false, t.as_str()),
+    };
+    let (mant, exp) = match body.find(['e', 'E']) {
+        Some(i) => (&body[..i], Some(&body[i + 1..])),
+        None => (body, None),
+    };
+    let (int, frac) = mant.split_once('.').unwrap_or((mant, ""));
+    let digits_ok = |s: &str| s.bytes().all(|b| b.is_ascii_digit());
+    if (int.is_empty() && frac.is_empty()) || !digits_ok(int) || !digits_ok(frac) {
         return Err(PairErr::NotFinite);
     }
-    if x < 0.0 {
-        return Err(PairErr::Negative);
+    let exp: i64 = match exp {
+        None => 0,
+        Some(e) => {
+            let unsigned = e.strip_prefix(['+', '-']).unwrap_or(e);
+            if unsigned.is_empty() || !digits_ok(unsigned) {
+                return Err(PairErr::NotFinite);
+            }
+            // Past 10^6 the exponent's size alone refuses (or no double holds it).
+            if unsigned.len() > 6 {
+                return if e.starts_with('-') { Err(PairErr::TooManyPlaces(usize::MAX)) } else { Err(PairErr::NotFinite) };
+            }
+            let n: i64 = unsigned.parse().unwrap_or(0);
+            if e.starts_with('-') { -n } else { n }
+        }
+    };
+    let mut digits = format!("{int}{frac}");
+    let mut places = frac.len() as i64 - exp;
+    if places < 0 {
+        digits.push_str(&"0".repeat(places.unsigned_abs() as usize));
+        places = 0;
     }
-    let text = format!("{}", x.abs());
-    let (int, frac) = text.split_once('.').unwrap_or((&text, ""));
-    if frac.len() > max_places as usize {
-        return Err(PairErr::TooManyPlaces(frac.len()));
+    // Trailing zeros after the point are not places of the value.
+    while places > 0 && digits.ends_with('0') {
+        digits.pop();
+        places -= 1;
     }
-    let digits = format!("{int}{frac}");
     let num = digits.trim_start_matches('0');
     let num = if num.is_empty() { "0".to_string() } else { num.to_string() };
-    let den = format!("1{}", "0".repeat(frac.len()));
-    Ok((num, den))
+    let places = usize::try_from(places).unwrap_or(usize::MAX);
+    if neg && num != "0" {
+        return Err(PairErr::Negative);
+    }
+    if places > max_places as usize {
+        return Err(PairErr::TooManyPlaces(places));
+    }
+    Ok((num, format!("1{}", "0".repeat(places))))
+}
+
+/// `num / den > 1` for a pair of [`written_pair`] (digit strings, no leading zeros).
+fn above_one(num: &str, den: &str) -> bool {
+    num.len() > den.len() || (num.len() == den.len() && num > den)
 }
 
 /// A pair as the kernel's JSON naturals (`{"num": n, "den": d}`), for the
 /// pairs whose parts are bounded well inside `u64` (`[day]`, `[priority]`, the
 /// prior's keys).
-fn nat_pair(x: f64, places: u32) -> Result<Value, PairErr> {
-    let (n, d) = decimal_pair(x, places)?;
+fn nat_pair_of((n, d): (String, String)) -> Value {
     // `places ≤ 18`, so the denominator fits; a numerator past u64 is a value
     // no bound admits, and is sent as the largest natural so the kernel refuses it.
-    Ok(json!({"num": n.parse::<u64>().unwrap_or(u64::MAX), "den": d.parse::<u64>().unwrap_or(u64::MAX)}))
+    json!({"num": n.parse::<u64>().unwrap_or(u64::MAX), "den": d.parse::<u64>().unwrap_or(u64::MAX)})
 }
 
-/// A pair as digit strings (`{"num": "…", "den": "…"}`, D17): a lounge weight.
-fn str_pair(x: f64) -> Result<Value, PairErr> {
-    let (n, d) = decimal_pair(x, WEIGHT_PLACES)?;
-    Ok(json!({"num": n, "den": d}))
+// ---------------------------------------------------------------------------
+// The written text of every configured decimal (D10, D17)
+// ---------------------------------------------------------------------------
+
+/// **The configured decimals as their files write them.** `config.toml` and
+/// `.tm/model.json` are read by serde into `f64`, which rounds a literal of more
+/// than 17 significant digits to its nearest double; D10 forbids rounding and
+/// D17 refuses a weight of more than 18 places, so the host re-reads each
+/// decimal the capacity request carries as **the literal's text** (TOML spans,
+/// JSON raw values) and [`written_pair`] reads that text. A key no file writes
+/// is `None` and falls back to [`decimal_pair`] of its (default) double.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Written {
+    /// `.tm/model.json`'s `p_lounge`, Monday first (the last entry for a weekday wins, as in [`Model`]).
+    pub model_p: [Option<String>; 7],
+    /// `config.toml`'s `expected.p_lounge`, Monday first.
+    pub config_p: [Option<String>; 7],
+    /// `day.window_hours`.
+    pub window_hours: Option<String>,
+    /// `day.budget_ratio`.
+    pub budget_ratio: Option<String>,
+    /// `priority.bins`, index for index (`None` when the file writes no `bins`).
+    pub bins: Option<Vec<String>>,
+    /// `priority.safety`.
+    pub safety: Option<String>,
+    /// Each `energy.prior.<curve>` range key as written: `(curve, key)`.
+    pub prior_keys: Vec<(String, String)>,
+}
+
+/// The shadow of `config.toml` that keeps the literals (every other key ignored).
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct CfgText {
+    expected: ExpectedText,
+    day: DayText,
+    priority: PriorityText,
+    energy: EnergyText,
+}
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct ExpectedText {
+    p_lounge: BTreeMap<String, toml::Spanned<toml::Value>>,
+}
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct DayText {
+    window_hours: Option<toml::Spanned<toml::Value>>,
+    budget_ratio: Option<toml::Spanned<toml::Value>>,
+}
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct PriorityText {
+    bins: Option<Vec<toml::Spanned<toml::Value>>>,
+    safety: Option<toml::Spanned<toml::Value>>,
+}
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct EnergyText {
+    prior: BTreeMap<String, BTreeMap<String, toml::Value>>,
+}
+
+/// The shadow of `.tm/model.json`: `p_lounge`'s entries in file order, as raw text.
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct ModelText {
+    #[serde(deserialize_with = "raw_entries")]
+    p_lounge: Vec<(String, Box<serde_json::value::RawValue>)>,
+}
+
+/// A JSON object's entries in file order, each value's raw text.
+fn raw_entries<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Vec<(String, Box<serde_json::value::RawValue>)>, D::Error> {
+    struct V;
+    impl<'de> serde::de::Visitor<'de> for V {
+        type Value = Vec<(String, Box<serde_json::value::RawValue>)>;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("a table keyed by weekday")
+        }
+        fn visit_map<A: serde::de::MapAccess<'de>>(self, mut m: A) -> Result<Self::Value, A::Error> {
+            let mut out = Vec::new();
+            while let Some(e) = m.next_entry()? {
+                out.push(e);
+            }
+            Ok(out)
+        }
+    }
+    d.deserialize_map(V)
+}
+
+/// The weekday index (Monday 0) of a key [`Model`] and [`Config`] accept.
+fn weekday_slot(key: &str) -> Option<usize> {
+    tm_core::energy::parse_weekday_key(key).map(|wd| wd.num_days_from_monday() as usize)
+}
+
+impl Written {
+    /// **Read the literals** of `config.toml` (`None` when absent) and
+    /// `.tm/model.json` (`None` when absent): the texts `Ctx` parsed.
+    pub fn parse(config: Option<&str>, model: Option<&str>) -> Result<Written, CliError> {
+        let mut w = Written::default();
+        if let Some(text) = config {
+            let c: CfgText = toml::from_str(text)
+                .map_err(|e| CliError::msg(format!("{CONFIG_FILE}: {e}")))?;
+            let lit = |v: &toml::Spanned<toml::Value>| text.get(v.span()).unwrap_or_default().to_string();
+            for (k, v) in &c.expected.p_lounge {
+                if let Some(i) = weekday_slot(k) {
+                    w.config_p[i] = Some(lit(v));
+                }
+            }
+            w.window_hours = c.day.window_hours.as_ref().map(lit);
+            w.budget_ratio = c.day.budget_ratio.as_ref().map(lit);
+            w.bins = c.priority.bins.as_ref().map(|b| b.iter().map(lit).collect());
+            w.safety = c.priority.safety.as_ref().map(lit);
+            for (curve, keys) in &c.energy.prior {
+                w.prior_keys.extend(keys.keys().map(|k| (curve.clone(), k.clone())));
+            }
+        }
+        if let Some(text) = model {
+            let m: ModelText = serde_json::from_str(text)
+                .map_err(|e| CliError::msg(format!("{MODEL_FILE}: {e}")))?;
+            for (k, v) in &m.p_lounge {
+                if let Some(i) = weekday_slot(k) {
+                    w.model_p[i] = Some(v.get().to_string());
+                }
+            }
+        }
+        Ok(w)
+    }
+
+    /// The literals of the plan `ctx` loaded, read from its files now.
+    pub fn of(ctx: &Ctx) -> Result<Written, CliError> {
+        let read = |rel: &str| -> Result<Option<String>, CliError> {
+            if ctx.store.exists(rel) {
+                Ok(Some(ctx.store.read_text(rel)?))
+            } else {
+                Ok(None)
+            }
+        };
+        Written::parse(read(tm_core::store::CONFIG_PATH)?.as_deref(), read(tm_core::store::MODEL_PATH)?.as_deref())
+    }
+}
+
+/// **The text a configured value is sent as**: its file's literal when the file
+/// writes one, else its double's shortest text. A literal whose nearest double is
+/// not (within one step of) the value `Ctx` loaded means the file changed while
+/// the verb ran, and the verb stops rather than send one value and plan another.
+fn text_of(file: &str, key: &str, written: Option<&str>, x: f64) -> Result<String, CliError> {
+    let Some(lit) = written else {
+        return Ok(format!("{x}"));
+    };
+    let parsed: Option<f64> = lit.trim().replace('_', "").parse().ok();
+    let same = parsed.is_some_and(|p| {
+        (p.is_nan() && x.is_nan()) || p == x || p.to_bits().abs_diff(x.to_bits()) <= 1
+    });
+    if !same {
+        return Err(CliError::msg(format!(
+            "{file}: {key} = {lit} changed while tm was reading it; run the verb again"
+        )));
+    }
+    Ok(lit.trim().to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -138,10 +348,10 @@ const MODEL_FILE: &str = ".tm/model.json";
 /// The configuration, as messages name it.
 const CONFIG_FILE: &str = "config.toml";
 
-/// The failure of a configured value, by file and key.
-fn bad_value(file: &str, key: &str, x: f64, why: &str) -> CliError {
+/// The failure of a configured value, by file and key, quoting its written text.
+fn bad_value(file: &str, key: &str, text: &str, why: &str) -> CliError {
     CliError::msg(format!(
-        "{file}: {key} = {x} {why}; tm cannot compute capacity or priorities until it is fixed \
+        "{file}: {key} = {text} {why}; tm cannot compute capacity or priorities until it is fixed \
          (kernel/README.md parity P26)"
     ))
 }
@@ -151,59 +361,101 @@ fn pair_why(e: PairErr, places: u32) -> String {
     match e {
         PairErr::NotFinite => "is not a number".to_string(),
         PairErr::Negative => "is below zero".to_string(),
+        PairErr::TooManyPlaces(usize::MAX) => format!("has too many decimal places (at most {places})"),
         PairErr::TooManyPlaces(n) => format!("has {n} decimal places (at most {places})"),
     }
 }
 
-/// **A lounge weight**: a decimal pair of at most 18 places, in `[0, 1]`.
-fn check_weight(file: &str, key: &str, x: f64) -> Result<(), CliError> {
-    match decimal_pair(x, WEIGHT_PLACES) {
-        Err(PairErr::Negative) => return Err(bad_value(file, key, x, "is outside [0, 1]")),
-        Err(e) => return Err(bad_value(file, key, x, &pair_why(e, WEIGHT_PLACES))),
-        Ok(_) => {}
+/// **A lounge weight**, as written: a decimal of at most 18 places in `[0, 1]`.
+/// Returns its pair.
+fn check_weight(file: &str, key: &str, written: Option<&str>, x: f64) -> Result<(String, String), CliError> {
+    let text = text_of(file, key, written, x)?;
+    let (n, d) = match written_pair(&text, WEIGHT_PLACES) {
+        Err(PairErr::Negative) => return Err(bad_value(file, key, &text, "is outside [0, 1]")),
+        Err(e) => return Err(bad_value(file, key, &text, &pair_why(e, WEIGHT_PLACES))),
+        Ok(p) => p,
+    };
+    if above_one(&n, &d) {
+        return Err(bad_value(file, key, &text, "is outside [0, 1]"));
     }
-    if x > 1.0 {
-        return Err(bad_value(file, key, x, "is outside [0, 1]"));
-    }
-    Ok(())
+    Ok((n, d))
 }
 
-/// A configured decimal with at most `places` places.
-fn check_places(key: &str, x: f64, places: u32) -> Result<(), CliError> {
-    decimal_pair(x, places).map(|_| ()).map_err(|e| bad_value(CONFIG_FILE, key, x, &pair_why(e, places)))
+/// A configured decimal of `config.toml` with at most `places` places, as written.
+fn check_places(key: &str, written: Option<&str>, x: f64, places: u32) -> Result<(String, String), CliError> {
+    let text = text_of(CONFIG_FILE, key, written, x)?;
+    written_pair(&text, places).map_err(|e| bad_value(CONFIG_FILE, key, &text, &pair_why(e, places)))
 }
 
-/// **Every configured decimal the capacity request carries, checked before it is
-/// built**: the model's and the config's lounge weights (§13.2: every pair is
-/// sent, so both are checked), `[day]`'s two ratios, `[priority]`'s edges and
-/// safety, and the prior's range keys. The message names the file and the key.
-pub fn check_inputs(cfg: &Config, model: &Model) -> Result<(), CliError> {
+/// Every configured decimal the request carries, as the pairs it sends.
+struct Pairs {
+    model_p: [Option<(String, String)>; 7],
+    config_p: [(String, String); 7],
+    window_hours: (String, String),
+    budget_ratio: (String, String),
+    bins: Vec<(String, String)>,
+    safety: (String, String),
+}
+
+/// The checks of [`check_inputs`], keeping the pairs they read.
+fn pairs_of(cfg: &Config, model: &Model, written: &Written) -> Result<Pairs, CliError> {
+    let mut model_p: [Option<(String, String)>; 7] = Default::default();
     for (wd, x) in model.p_lounge.iter() {
-        check_weight(MODEL_FILE, &format!("p_lounge.{}", weekday_key(wd)), *x)?;
+        let i = wd.num_days_from_monday() as usize;
+        let key = format!("p_lounge.{}", weekday_key(wd));
+        model_p[i] = Some(check_weight(MODEL_FILE, &key, written.model_p[i].as_deref(), *x)?);
     }
-    for wd in WEEK {
-        check_weight(
-            CONFIG_FILE,
-            &format!("expected.p_lounge.{}", weekday_key(wd)),
-            *cfg.expected.p_lounge.get(wd),
-        )?;
+    let mut config_p: Vec<(String, String)> = Vec::with_capacity(7);
+    for (i, wd) in WEEK.iter().enumerate() {
+        let key = format!("expected.p_lounge.{}", weekday_key(*wd));
+        config_p.push(check_weight(CONFIG_FILE, &key, written.config_p[i].as_deref(), *cfg.expected.p_lounge.get(*wd))?);
     }
-    check_places("day.window_hours", cfg.day.window_hours, RATIO_PLACES)?;
-    check_places("day.budget_ratio", cfg.day.budget_ratio, RATIO_PLACES)?;
+    let config_p: [(String, String); 7] = config_p.try_into().unwrap_or_else(|_| Default::default());
+    let window_hours = check_places("day.window_hours", written.window_hours.as_deref(), cfg.day.window_hours, RATIO_PLACES)?;
+    let budget_ratio = check_places("day.budget_ratio", written.budget_ratio.as_deref(), cfg.day.budget_ratio, RATIO_PLACES)?;
+    let mut bins = Vec::with_capacity(cfg.priority.bins.len());
     for (i, edge) in cfg.priority.bins.iter().enumerate() {
-        check_places(&format!("priority.bins[{i}]"), *edge, PRIORITY_PLACES)?;
+        let lit = written.bins.as_ref().and_then(|b| b.get(i)).map(String::as_str);
+        bins.push(check_places(&format!("priority.bins[{i}]"), lit, *edge, PRIORITY_PLACES)?);
     }
-    check_places("priority.safety", cfg.priority.safety, PRIORITY_PLACES)?;
+    let safety = check_places("priority.safety", written.safety.as_deref(), cfg.priority.safety, PRIORITY_PLACES)?;
+    // The prior's range keys, as written.  At most 6 places and at most 48 hours,
+    // a key has at most 8 significant digits, so its double's shortest text is
+    // exactly the written decimal and the request may send the double's pair.
+    for (curve, key) in &written.prior_keys {
+        let name = format!("energy.prior.{curve}.\"{key}\"");
+        let parts: Vec<&str> = match key.strip_suffix('+') {
+            Some(a) => vec![a],
+            None => key.split_once('-').map(|(a, b)| vec![a, b]).unwrap_or_default(),
+        };
+        for part in parts {
+            written_pair(part, RATIO_PLACES).map_err(|e| bad_value(CONFIG_FILE, &name, part.trim(), &pair_why(e, RATIO_PLACES)))?;
+        }
+    }
     for (curve, steps) in &cfg.energy.prior {
         for step in &steps.0 {
             let key = format!("energy.prior.{curve}.\"{}\"", tm_core::config::StepFn::key(step));
-            check_places(&key, step.from, RATIO_PLACES)?;
+            check_places(&key, None, step.from, RATIO_PLACES)?;
             if let Some(to) = step.to {
-                check_places(&key, to, RATIO_PLACES)?;
+                check_places(&key, None, to, RATIO_PLACES)?;
             }
         }
     }
-    Ok(())
+    Ok(Pairs { model_p, config_p, window_hours, budget_ratio, bins, safety })
+}
+
+/// **Every configured decimal the capacity request carries, checked before it is
+/// built, as its file writes it** (`written`; D10, D17): the model's and the
+/// config's lounge weights (§13.2: every pair is sent, so both are checked),
+/// `[day]`'s two ratios, `[priority]`'s edges and safety, and the prior's range
+/// keys. The message names the file and the key and quotes the written text.
+pub fn check_inputs(cfg: &Config, model: &Model, written: &Written) -> Result<(), CliError> {
+    pairs_of(cfg, model, written).map(|_| ())
+}
+
+/// [`check_inputs`] over the plan `ctx` loaded, its literals read from its files.
+pub fn check_plan(ctx: &Ctx) -> Result<(), CliError> {
+    check_inputs(&ctx.cfg, &ctx.model, &Written::of(ctx)?)
 }
 
 /// **A capacity refusal a configured value causes, by file and key** (P26).
@@ -340,7 +592,8 @@ fn cand_json(ctx: &Ctx, c: &Candidate, yesterday: &BTreeMap<Id, u8>) -> Value {
 /// `ranked` is given. Returns the request and the order the candidates were
 /// sent in.
 pub fn request(ctx: &Ctx, allow_home: bool, days: u32, ranked: Option<&Ranked<'_>>) -> Result<(Value, Vec<usize>), CliError> {
-    check_inputs(&ctx.cfg, &ctx.model)?;
+    // Every configured decimal as its file writes it (D10, D17): checked, then sent.
+    let pairs = pairs_of(&ctx.cfg, &ctx.model, &Written::of(ctx)?)?;
     let cfg = &ctx.cfg;
     let model = &ctx.model;
 
@@ -354,16 +607,18 @@ pub fn request(ctx: &Ctx, allow_home: bool, days: u32, ranked: Option<&Ranked<'_
     let week_table = |f: &dyn Fn(chrono::Weekday) -> Option<Value>| -> Map<String, Value> {
         WEEK.iter().filter_map(|wd| f(*wd).map(|v| (weekday_key(*wd).to_string(), v))).collect()
     };
-    let weight = |x: f64| str_pair(x).unwrap_or(Value::Null);
-    let p_model = week_table(&|wd| model.p_lounge.get(wd).map(|x| weight(*x)));
-    let p_config = week_table(&|wd| Some(weight(*cfg.expected.p_lounge.get(wd))));
+    let str_pair = |(n, d): &(String, String)| json!({"num": n, "den": d});
+    let wd_slot = |wd: chrono::Weekday| wd.num_days_from_monday() as usize;
+    let p_model = week_table(&|wd| pairs.model_p[wd_slot(wd)].as_ref().map(str_pair));
+    let p_config = week_table(&|wd| Some(str_pair(&pairs.config_p[wd_slot(wd)])));
     let a_model = week_table(&|wd| model.expected_arrival.get(wd).map(|t| json!(hhmm(t.0))));
     let a_config = week_table(&|wd| Some(json!(hhmm(*cfg.expected.arrival.get(wd)))));
     let energy: Map<String, Value> = LOCATIONS
         .iter()
         .filter_map(|loc| model.energy.get(*loc).map(|c| (loc.to_string(), json!(c))))
         .collect();
-    let pair = |x: f64, places: u32| nat_pair(x, places).unwrap_or(Value::Null);
+    // The prior's keys: checked as written by `pairs_of`, and exactly their doubles' text.
+    let pair = |x: f64, places: u32| decimal_pair(x, places).map(nat_pair_of).unwrap_or(Value::Null);
     let prior: Map<String, Value> = cfg
         .energy
         .prior
@@ -381,7 +636,7 @@ pub fn request(ctx: &Ctx, allow_home: bool, days: u32, ranked: Option<&Ranked<'_
         .collect();
     let wake = ctx.logged_wake().map(|t| json!({"sec": t.num_seconds_from_midnight(), "ns": t.nanosecond()}));
     let day0 = DayCapacity::from_slots(ctx.today, &ctx.today_slots(allow_home)).minutes_at_level;
-    let bins: Vec<Value> = cfg.priority.bins.iter().map(|e| pair(*e, PRIORITY_PLACES)).collect();
+    let bins: Vec<Value> = pairs.bins.iter().cloned().map(nat_pair_of).collect();
 
     let mut section = json!({
         "pLounge": {"model": p_model, "config": p_config},
@@ -394,13 +649,13 @@ pub fn request(ctx: &Ctx, allow_home: bool, days: u32, ranked: Option<&Ranked<'_
             "breakMin": cfg.day.break_min,
             "breakAfterBlocks": cfg.day.break_after_blocks,
             "minLastBlockMin": cfg.day.min_last_block_min,
-            "windowHours": pair(cfg.day.window_hours, RATIO_PLACES),
+            "windowHours": nat_pair_of(pairs.window_hours.clone()),
             "windowCap": hhmm(cfg.day.window_cap),
-            "budgetRatio": pair(cfg.day.budget_ratio, RATIO_PLACES),
+            "budgetRatio": nat_pair_of(pairs.budget_ratio.clone()),
         },
         "priority": {
             "bins": bins,
-            "safety": pair(cfg.priority.safety, PRIORITY_PLACES),
+            "safety": nat_pair_of(pairs.safety.clone()),
             "defaultPriority": cfg.priority.default_priority,
         },
         "days": days,
@@ -636,17 +891,99 @@ mod tests {
     fn a_weight_outside_its_domain_is_named_by_file_and_key() {
         let mut model = Model::default();
         model.p_lounge.set(chrono::Weekday::Mon, 1.2);
-        let err = check_inputs(&Config::default(), &model).unwrap_err().to_string();
+        let err = check_inputs(&Config::default(), &model, &Written::default()).unwrap_err().to_string();
         assert!(err.starts_with(".tm/model.json: p_lounge.Mon = 1.2 is outside [0, 1]"), "{err}");
         let mut cfg = Config::default();
         cfg.expected.p_lounge.tue = 0.1234567890123456789e-3;
-        let err = check_inputs(&cfg, &Model::default()).unwrap_err().to_string();
+        let err = check_inputs(&cfg, &Model::default(), &Written::default()).unwrap_err().to_string();
         assert!(err.starts_with("config.toml: expected.p_lounge.Tue = "), "{err}");
         assert!(err.contains("decimal places (at most 18)"), "{err}");
         let mut cfg = Config::default();
         cfg.expected.p_lounge.sun = f64::NAN;
-        assert!(check_inputs(&cfg, &Model::default()).unwrap_err().to_string().contains("expected.p_lounge.Sun = NaN is not a number"));
-        assert!(check_inputs(&Config::default(), &Model::default()).is_ok());
+        assert!(check_inputs(&cfg, &Model::default(), &Written::default()).unwrap_err().to_string().contains("expected.p_lounge.Sun = NaN is not a number"));
+        assert!(check_inputs(&Config::default(), &Model::default(), &Written::default()).is_ok());
+    }
+
+    /// The audit's defect (W-3): a weight of 19 written places whose nearest
+    /// double has 17 was sent as that double.  Read as written, it is refused.
+    fn parse_both(config: &str, model: &str) -> (Config, Model, Written) {
+        let cfg = Config::parse(config).unwrap();
+        let m: Model = serde_json::from_str(model).unwrap();
+        (cfg, m, Written::parse(Some(config), Some(model)).unwrap())
+    }
+
+    #[test]
+    fn a_literal_is_its_exact_decimal() {
+        let ok = |t: &str, n: &str, d: &str| assert_eq!(written_pair(t, 18), Ok((n.into(), d.into())), "{t}");
+        ok("0.9", "9", "10");
+        ok("0.500", "5", "10");
+        ok("1", "1", "1");
+        ok("+0.25", "25", "100");
+        ok("-0", "0", "1");
+        ok("-0.000", "0", "1");
+        ok("1e-3", "1", "1000");
+        ok("2.5E+2", "250", "1");
+        ok("1_000.5", "10005", "10");
+        ok("0.123456789012345678", "123456789012345678", "1000000000000000000");
+        ok(" 0.75 ", "75", "100");
+        let err = |t: &str, e: PairErr| assert_eq!(written_pair(t, 18), Err(e), "{t}");
+        err("0.1234567890123456789", PairErr::TooManyPlaces(19));
+        err("0.1000000000000000001", PairErr::TooManyPlaces(19));
+        err("1e-19", PairErr::TooManyPlaces(19));
+        err("1.5e-18", PairErr::TooManyPlaces(19));
+        err("1e-9999999", PairErr::TooManyPlaces(usize::MAX));
+        err("-0.5", PairErr::Negative);
+        err("nan", PairErr::NotFinite);
+        err("inf", PairErr::NotFinite);
+        err("+inf", PairErr::NotFinite);
+        err("", PairErr::NotFinite);
+        err(".", PairErr::NotFinite);
+        err("1e", PairErr::NotFinite);
+        assert!(above_one("11", "10") && above_one("2", "1") && !above_one("1", "1") && !above_one("9", "10"));
+    }
+
+    #[test]
+    fn a_weight_past_18_written_places_is_refused_though_its_double_is_shorter() {
+        for v in ["0.1234567890123456789", "0.1000000000000000001"] {
+            let (cfg, model, w) = parse_both("", &format!("{{\"p_lounge\": {{\"Tue\": {v}}}}}"));
+            let err = check_inputs(&cfg, &model, &w).unwrap_err().to_string();
+            assert!(err.starts_with(&format!(".tm/model.json: p_lounge.Tue = {v} has 19 decimal places (at most 18)")), "{err}");
+            let (cfg, model, w) = parse_both(&format!("[expected]\np_lounge = {{ Mon = 0.9, Tue = {v}, Wed = 0.9, Thu = 0.9, Fri = 0.8, Sat = 0.5, Sun = 0.4 }}\n"), "{}");
+            let err = check_inputs(&cfg, &model, &w).unwrap_err().to_string();
+            assert!(err.starts_with(&format!("config.toml: expected.p_lounge.Tue = {v} has 19 decimal places (at most 18)")), "{err}");
+        }
+        // The last entry for a weekday wins, as in the model's own reading.
+        let (cfg, model, w) = parse_both("", r#"{"p_lounge": {"Tue": 0.1000000000000000001, "Tuesday": 0.5}}"#);
+        assert_eq!(w.model_p[1].as_deref(), Some("0.5"));
+        assert!(check_inputs(&cfg, &model, &w).is_ok());
+        // 18 written places are sent exactly, not as their nearest double.
+        let (cfg, model, w) = parse_both("[expected.p_lounge]\nMon = 0\nTue = 0\nWed = 0.123456789012345678\nThu = 0\nFri = 0\nSat = 0\nSun = 0\n", "{}");
+        let p = pairs_of(&cfg, &model, &w).unwrap();
+        assert_eq!(p.config_p[2], ("123456789012345678".into(), "1000000000000000000".into()));
+        // Every other configured decimal the request carries is read as written too.
+        let (cfg, model, w) = parse_both("[priority]\nsafety = 1.3000000000000000001\n", "{}");
+        let err = check_inputs(&cfg, &model, &w).unwrap_err().to_string();
+        assert!(err.starts_with("config.toml: priority.safety = 1.3000000000000000001 has 19 decimal places (at most 18)"), "{err}");
+        let (cfg, model, w) = parse_both("[priority]\nbins = [0.5, 0.2500000000000000001, 0.1]\n", "{}");
+        let err = check_inputs(&cfg, &model, &w).unwrap_err().to_string();
+        assert!(err.starts_with("config.toml: priority.bins[1] = 0.2500000000000000001 has 19 decimal places"), "{err}");
+        let (cfg, model, w) = parse_both("[day]\nwindow_hours = 8.0000000000000000001\n", "{}");
+        let err = check_inputs(&cfg, &model, &w).unwrap_err().to_string();
+        assert!(err.starts_with("config.toml: day.window_hours = 8.0000000000000000001 has 19 decimal places (at most 6)"), "{err}");
+        let (cfg, model, w) = parse_both("[energy.prior.lounge]\n\"0-1.0000000000000000001\" = 4\n", "{}");
+        let err = check_inputs(&cfg, &model, &w).unwrap_err().to_string();
+        assert!(err.starts_with("config.toml: energy.prior.lounge.\"0-1.0000000000000000001\" = 1.0000000000000000001 has 19 decimal places (at most 6)"), "{err}");
+        // A written value its double does not read is a file that changed under the verb.
+        let cfg = Config::parse("[expected]\np_lounge = { Mon = 0, Tue = 0.5, Wed = 0, Thu = 0, Fri = 0, Sat = 0, Sun = 0 }\n").unwrap();
+        let w = Written::parse(Some("[expected]\np_lounge = { Mon = 0, Tue = 0.25, Wed = 0, Thu = 0, Fri = 0, Sat = 0, Sun = 0 }\n"), None).unwrap();
+        let err = check_inputs(&cfg, &Model::default(), &w).unwrap_err().to_string();
+        assert!(err.contains("changed while tm was reading it"), "{err}");
+        // Integers, signs, exponents and underscores are the literals TOML and JSON allow.
+        let (cfg, model, w) = parse_both("[expected]\np_lounge = { Mon = 1, Tue = +0.5, Wed = 5e-1, Thu = 0.000_5, Fri = 0, Sat = 0, Sun = 0 }\n", r#"{"p_lounge": {"Fri": 2.5E-1}}"#);
+        let p = pairs_of(&cfg, &model, &w).unwrap();
+        assert_eq!(p.config_p[0], ("1".into(), "1".into()));
+        assert_eq!(p.config_p[3], ("5".into(), "10000".into()));
+        assert_eq!(p.model_p[4], Some(("25".into(), "100".into())));
     }
 
     proptest! {

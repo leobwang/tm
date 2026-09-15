@@ -268,8 +268,17 @@ fn spread_deadlines(n: usize, days: i64) -> Vec<String> {
 /// shape), then 1,024 (`maxCandidates`, the wire's bound).  Each answer carries
 /// one grant per candidate, and a deadline's grant does not depend on the
 /// deadlines due after it (`edf_a_later_deadline_takes_nothing_from_an_earlier_one`).
+///
+/// **The time is asserted** (W-3's audit: the test only printed it, and with the
+/// seven `@[csimp]` attributes removed 40 deadlines took 18,102 ms and it still
+/// passed).  Each call must finish within `GAP_106_MS` for up to 40 deadlines
+/// and `GAP_106_MAX_MS` for 1,024; measured 121 ms and 825 ms with the twins,
+/// so the bounds leave a loaded machine 40x and 18x, and the bound for 40 is 3.6x
+/// under the regression it guards (which grows as the fourth power of the count).
 #[test]
 fn grants_over_a_3660_day_lookahead_run_on_a_2mib_thread() {
+    const GAP_106_MS: u128 = 5_000;
+    const GAP_106_MAX_MS: u128 = 15_000;
     on_a_2mib_thread(|| {
         let base = grants_request(3660, &[]);
         let t = std::time::Instant::now();
@@ -288,6 +297,8 @@ fn grants_over_a_3660_day_lookahead_run_on_a_2mib_thread() {
             let t = std::time::Instant::now();
             let out = call(&req).unwrap();
             let ms = t.elapsed().as_millis();
+            let bound = if n <= 40 { GAP_106_MS } else { GAP_106_MAX_MS };
+            assert!(ms <= bound, "gap 106 regressed: {n} deadlines over 3,660 days took {ms} ms (bound {bound} ms)");
             let grants = &out[out.find(r#""grants":"#).unwrap_or_else(|| panic!("{}", &out[..300.min(out.len())]))..];
             assert_eq!(grants.matches(r#"{"id":"#).count(), n, "{}", &grants[..300.min(grants.len())]);
             // The first-due deadline is served first: its grant is the one it gets alone.
@@ -330,6 +341,9 @@ fn floors_over_a_3660_day_lookahead_force_the_pass_once() {
         let t = std::time::Instant::now();
         let b = call(&grants_request(3660, &without)).unwrap();
         let without_ms = t.elapsed().as_millis();
+        // Asserted, as gap 106's test is (W-3): 1,076 and 381 ms measured; forcing the
+        // pass once per candidate took 705 s.
+        assert!(with_ms <= 20_000 && without_ms <= 20_000, "floors {with_ms} ms, without {without_ms} ms (bound 20,000 ms)");
         let grants = |out: &str| out[out.find(r#""grants":"#).expect("grants")..].to_string();
         let (ga, gb) = (grants(&a), grants(&b));
         assert_eq!(ga.matches(r#""class":"#).count(), 1024);

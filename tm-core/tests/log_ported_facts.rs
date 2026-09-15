@@ -1,10 +1,11 @@
 //! **The facts D14 ports though nothing reads them**, pinned as an oracle
 //! (design §4 Q7 option (b), §22.1; step R11 under the owner's D14).
 //!
-//! `ItemReplay.{stops, extended_min, done_at, partial_done_at}`,
+//! `ItemReplay.{stops, extended_min, done_at, partial_done_at, blocks}`,
 //! `Replay.{closes, dropped_items, open_interrupt, longest_leak, interrupts}`
 //! and `DayReplay.{replans_today, last_plan_hash, loc_changes, dropped,
-//! longest_leak}` have no reader in the binary and appear in no output. The
+//! longest_leak, routine_min, idle}` have no reader in the binary and appear in
+//! no output (`routine_min`, `idle` and `blocks` joined at W-3's repair). The
 //! design's default deleted them before the port; D14 keeps them, the kernel
 //! derives them in phase C, and W1's day records carry them. Until the switch
 //! the Rust replay is the reference, and after it this file's snapshots are:
@@ -50,6 +51,12 @@ fn three_days_ported_facts() {
     assert_eq!(f.items.values().map(|i| i.partial_done_at.len()).sum::<usize>(), 2);
     assert_eq!(f.days.values().map(|d| d.loc_changes.len()).sum::<usize>(), 4);
     assert_eq!(f.days.values().map(|d| d.dropped.len()).sum::<usize>(), 1);
+    assert_eq!(
+        (f.days.values().map(|d| d.routine_min).sum::<u32>(), f.days.values().map(|d| d.idle.len()).sum::<usize>()),
+        (r.days.values().map(|d| d.routine_min).sum::<u32>(), r.days.values().map(|d| d.idle.len()).sum::<usize>())
+    );
+    assert!(f.days.values().any(|d| d.routine_min > 0) && f.days.values().any(|d| !d.idle.is_empty()));
+    assert!(f.items.values().any(|i| i.blocks > 0));
     insta::assert_json_snapshot!("three_days", f);
 }
 

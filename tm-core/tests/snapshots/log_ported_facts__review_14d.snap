@@ -44,7 +44,9 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 30,
+      "idle": []
     },
     "2026-08-26": {
       "replans_today": 1,
@@ -56,7 +58,16 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
         ]
       ],
       "dropped": [],
-      "longest_leak": 15
+      "longest_leak": 15,
+      "routine_min": 30,
+      "idle": [
+        {
+          "t": "2026-08-26T12:30:00-05:00",
+          "day": "2026-08-26",
+          "attributed": "leak",
+          "min": 15
+        }
+      ]
     },
     "2026-08-27": {
       "replans_today": 1,
@@ -68,7 +79,9 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 0,
+      "idle": []
     },
     "2026-08-28": {
       "replans_today": 2,
@@ -80,7 +93,9 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 0,
+      "idle": []
     },
     "2026-08-29": {
       "replans_today": 1,
@@ -92,14 +107,18 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 0,
+      "idle": []
     },
     "2026-08-30": {
       "replans_today": 0,
       "last_plan_hash": null,
       "loc_changes": [],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 0,
+      "idle": []
     },
     "2026-08-31": {
       "replans_today": 2,
@@ -113,7 +132,9 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "dropped": [
         "b06z"
       ],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 30,
+      "idle": []
     },
     "2026-09-01": {
       "replans_today": 1,
@@ -125,7 +146,9 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 30,
+      "idle": []
     },
     "2026-09-02": {
       "replans_today": 1,
@@ -137,7 +160,9 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 0,
+      "idle": []
     },
     "2026-09-03": {
       "replans_today": 1,
@@ -149,7 +174,9 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 30,
+      "idle": []
     },
     "2026-09-04": {
       "replans_today": 1,
@@ -161,7 +188,9 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 30,
+      "idle": []
     },
     "2026-09-05": {
       "replans_today": 1,
@@ -173,7 +202,9 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 0,
+      "idle": []
     },
     "2026-09-06": {
       "replans_today": 1,
@@ -185,7 +216,9 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 0,
+      "idle": []
     },
     "2026-09-07": {
       "replans_today": 4,
@@ -199,7 +232,16 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "dropped": [
         "t5"
       ],
-      "longest_leak": 14
+      "longest_leak": 14,
+      "routine_min": 30,
+      "idle": [
+        {
+          "t": "2026-09-07T15:06:00-05:00",
+          "day": "2026-09-07",
+          "attributed": "leak",
+          "min": 14
+        }
+      ]
     }
   },
   "items": {
@@ -209,7 +251,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-08-25T08:05:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b00b": {
       "stops": 0,
@@ -217,7 +260,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-08-25T09:25:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b00c": {
       "stops": 0,
@@ -225,7 +269,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-08-25T10:45:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b00d": {
       "stops": 0,
@@ -233,7 +278,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-08-25T12:15:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b01a": {
       "stops": 0,
@@ -241,7 +287,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-08-26T08:05:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b01b": {
       "stops": 0,
@@ -249,7 +296,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-08-26T09:25:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b01c": {
       "stops": 0,
@@ -257,7 +305,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-08-26T10:45:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b01d": {
       "stops": 0,
@@ -265,7 +314,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-08-26T12:15:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b02a": {
       "stops": 0,
@@ -273,7 +323,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-08-27T08:05:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b02b": {
       "stops": 0,
@@ -281,7 +332,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-08-27T09:30:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b02c": {
       "stops": 0,
@@ -289,7 +341,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-08-27T10:30:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b03a": {
       "stops": 0,
@@ -297,7 +350,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-08-28T08:05:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b03b": {
       "stops": 0,
@@ -305,7 +359,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-08-28T09:25:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b03c": {
       "stops": 0,
@@ -313,7 +368,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-08-28T10:25:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b04a": {
       "stops": 0,
@@ -321,7 +377,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-08-29T11:05:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b04b": {
       "stops": 0,
@@ -329,7 +386,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-08-29T12:25:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b06a": {
       "stops": 0,
@@ -337,7 +395,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-08-31T08:05:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b06b": {
       "stops": 0,
@@ -345,7 +404,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-08-31T09:25:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b06c": {
       "stops": 0,
@@ -353,7 +413,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-08-31T11:15:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b06d": {
       "stops": 0,
@@ -361,7 +422,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-08-31T12:45:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b07a": {
       "stops": 0,
@@ -369,7 +431,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-01T08:05:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b07b": {
       "stops": 0,
@@ -377,7 +440,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-01T09:25:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b07c": {
       "stops": 0,
@@ -385,7 +449,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-01T10:45:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b07d": {
       "stops": 0,
@@ -393,7 +458,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-01T12:15:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b08a": {
       "stops": 0,
@@ -401,7 +467,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-02T08:05:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b08b": {
       "stops": 0,
@@ -409,7 +476,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-02T09:25:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b08c": {
       "stops": 0,
@@ -417,7 +485,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-02T10:45:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b08d": {
       "stops": 0,
@@ -425,7 +494,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-02T12:30:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b09a": {
       "stops": 0,
@@ -433,7 +503,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-03T08:05:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b09b": {
       "stops": 0,
@@ -441,7 +512,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-03T09:25:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b09c": {
       "stops": 0,
@@ -449,7 +521,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-03T10:45:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b09d": {
       "stops": 0,
@@ -457,7 +530,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-03T12:15:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b10a": {
       "stops": 0,
@@ -465,7 +539,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-04T08:05:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b10b": {
       "stops": 0,
@@ -473,7 +548,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-04T09:25:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b10c": {
       "stops": 0,
@@ -481,7 +557,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-04T10:45:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b10d": {
       "stops": 0,
@@ -489,7 +566,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-04T12:15:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b11a": {
       "stops": 0,
@@ -497,7 +575,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-05T11:05:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b11b": {
       "stops": 0,
@@ -505,7 +584,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-05T12:25:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b12a": {
       "stops": 0,
@@ -513,7 +593,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-06T10:35:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "b12b": {
       "stops": 0,
@@ -521,7 +602,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-06T11:55:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "p1": {
       "stops": 0,
@@ -529,7 +611,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-07T15:26:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "t1": {
       "stops": 0,
@@ -537,7 +620,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-07T08:09:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "t2": {
       "stops": 0,
@@ -545,7 +629,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-07T09:31:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "t3": {
       "stops": 0,
@@ -553,7 +638,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-07T13:32:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "t4": {
       "stops": 0,
@@ -561,7 +647,8 @@ expression: "replay(&corpus(\"review-14d\")).ported_facts()"
       "done_at": [
         "2026-09-07T14:52:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     }
   }
 }

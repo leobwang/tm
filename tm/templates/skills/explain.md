@@ -18,7 +18,7 @@ cap 2b/d: 1b used`, and `priorities[]` carries the same numbers per item:
 <!-- json fields -->
 
 ```
-tm plan --explain ^id --json → explain priorities[].id priorities[].p priorities[].class priorities[].k priorities[].u priorities[].bin priorities[].need_min priorities[].avail_min priorities[].shortfall_min priorities[].until segments[].item segments[].energy
+tm plan --explain ^id --json → explain priorities[].id priorities[].p priorities[].class priorities[].k priorities[].u priorities[].bin priorities[].need_min priorities[].avail_min priorities[].avail_min_exact priorities[].allocation_min priorities[].allocation_min_exact priorities[].shortfall_min priorities[].shortfall_min_exact priorities[].until segments[].item segments[].energy
 ```
 
 ## 2. Translate it
@@ -32,6 +32,12 @@ stored:
   estimate × the safety factor (1.3); `avail_min` is the expected slot-minutes
   before the due date at an energy level the item can use, *after* earlier
   deadlines have reserved theirs. `u ≥ 1` means it does not fit: priority 0.
+- **Minutes are floors.** Capacity is an exact mixture of the lounge day and
+  the home day, so it is rarely a whole number of minutes. `avail_min`,
+  `allocation_min` and `shortfall_min` are each **the floor** of the exact
+  value beside it, `avail_min_exact` etc., a fraction `{"num": "…", "den": "…"}`
+  of digit strings in lowest terms. Quote the integers, but reason from the
+  exact values: `need_min − allocation_min` can exceed `shortfall_min` by one.
 - `bin` — 0.5/0.25/0.1 turn `u` into `+0/+1/+2/+3`, so slack costs rank.
 - Ties break by line order: the rank the user set by cut-and-paste.
 

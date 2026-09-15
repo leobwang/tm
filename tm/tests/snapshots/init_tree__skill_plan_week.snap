@@ -20,7 +20,7 @@ tm check --json                # the tree must be clean before you propose anyth
 <!-- json fields -->
 
 ```
-tm plan --week --json → week days[].date days[].total days[].minutes_at_level grid
+tm plan --week --json → week days[].date days[].total days[].total_exact days[].minutes_at_level days[].minutes_at_level_exact grid
 tm review week --json → key review.blocks_done review.block_min review.load review.blocks_per_day[] review.hit review.demoted review.planned_blocks review.carry_in_min review.carry_out_min review.mix.high_share review.estimates[].tag review.estimates[].multiplier review.deadline_health.min_slack_days review.deadline_health.hot review.deadline_health.impossible review.lounge.overall
 ```
 
@@ -38,14 +38,14 @@ near the week, and each `## series:` head), `calendar/<next week>.md`.
 - **Demoted items first.** Anything in `month/# Demoted` already lost a week;
   pre-select it, and for anything in `churn` propose a cut or a re-scope
   instead of a third attempt.
-- **Honesty.** Show Σ estimates ÷ the week's capacity (Σ `days[].total` ÷ 60
-  for blocks). Above `week.plan_ratio` (0.8), say what you would drop.
+- **Honesty.** Show Σ estimates ÷ the week's capacity (Σ `days[].total` ÷ 60 for blocks; minutes are
+  **floors** of `minutes_at_level_exact` and `total_exact`, and `total` floors the exact total, so it can
+  exceed Σ `minutes_at_level` by 5). Above `week.plan_ratio` (0.8), say what you would drop.
 - **Deadlines.** Name every dated item whose `u = need / capacity` is near 1
   (`tm plan --explain ^id --json`) and what makes it fit: a smaller `est:`, a
   later `due:`, or fewer milestones.
 
-Show the proposal as the exact lines you would write, grouped under
-`# Milestones` and `# Tasks`.
+Show the proposal as the exact lines you would write, under `# Milestones` and `# Tasks`.
 
 ## 3. Write — only after confirmation
 

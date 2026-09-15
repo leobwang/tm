@@ -652,7 +652,7 @@ fn log_human(rows: &[&ViewRow]) -> String {
                         .join(" ")
                 })
                 .unwrap_or_default();
-            format!("{} {} {}", r.display, r.entry.ev.name(), rest)
+            format!("{} {} {}", r.display(), r.entry.ev.name(), rest)
         })
         .collect::<Vec<_>>()
         .join("\n")

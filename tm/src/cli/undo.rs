@@ -29,7 +29,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use tm_core::log::{Event, Replay};
+use tm_core::log::{Event, LogEntry};
 use tm_core::model::Id;
 use tm_core::store::{RuntimeState, Store, StoreError, StoreExt};
 
@@ -122,25 +122,25 @@ fn snapshot(ctx: &Ctx) -> Result<BTreeMap<String, String>, CliError> {
     Ok(out)
 }
 
-/// The replay of `.tm/log.jsonl` as it stands on disk now, through
-/// [`Ctx::replay_of`]; `None` when the file cannot be read, which records
-/// no line count and no events, as the recorder always did.
-fn replay_now(ctx: &Ctx) -> Option<Replay> {
-    Ctx::replay_of(&ctx.store, &ctx.cfg).ok()
+/// The log's physical line count on disk now and, with `after`, the entries a
+/// command appended after that many lines, through [`Ctx::log_tail_of`] (the one
+/// door; the rows are `Replay::headers_from`'s, without replaying the lines
+/// before). `None` when the file cannot be read, which records no line count
+/// and no events, as the recorder always did.
+fn log_now(ctx: &Ctx, after: Option<u64>) -> Option<(u64, Vec<(u64, LogEntry)>)> {
+    Ctx::log_tail_of(&ctx.store, &ctx.cfg, after).ok()
 }
 
-/// The events a command appended after the log had `from_lines` physical
-/// lines, and the line of the first of them.
-fn recorded(replay: &Replay, from_lines: u64) -> (Vec<UndoneEvent>, Option<u64>) {
-    let rows = replay.headers_from(from_lines + 1);
+/// The events of `rows` (a command's appended entries), and the line of the first.
+fn recorded(rows: &[(u64, LogEntry)]) -> (Vec<UndoneEvent>, Option<u64>) {
     let events = rows
         .iter()
-        .map(|r| UndoneEvent {
-            ev: r.entry.ev.name().to_string(),
-            id: r.entry.ev.primary_id().map(str::to_string),
+        .map(|(_, e)| UndoneEvent {
+            ev: e.ev.name().to_string(),
+            id: e.ev.primary_id().map(str::to_string),
         })
         .collect();
-    (events, rows.first().map(|r| r.line))
+    (events, rows.first().map(|(line, _)| *line))
 }
 
 /// Records what one command changed.
@@ -158,7 +158,7 @@ impl Recorder {
             verb: verb.to_string(),
             files: snapshot(ctx)?,
             state: ctx.state.clone(),
-            log_lines: replay_now(ctx).map_or(0, |r| r.line_count()),
+            log_lines: log_now(ctx, None).map_or(0, |(count, _)| count),
         })
     }
 
@@ -192,7 +192,7 @@ impl Recorder {
             }
         }
 
-        let (events, log_line) = replay_now(ctx).map_or((Vec::new(), None), |r| recorded(&r, self.log_lines));
+        let (events, log_line) = log_now(ctx, Some(self.log_lines)).map_or((Vec::new(), None), |(_, rows)| recorded(&rows));
         let state_changed = ctx.state != self.state;
         if files.is_empty() && events.is_empty() && !state_changed {
             return Ok(());

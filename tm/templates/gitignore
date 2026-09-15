@@ -5,3 +5,5 @@
 .tm/last_plan.json
 .tm/arrival_plan.json
 .tm/undo.json
+# The kernel's caches (the probed zone table; sealed day records at the switch).
+.tm/cache/

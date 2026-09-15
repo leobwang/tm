@@ -588,9 +588,7 @@ fn a_weight_outside_its_domain_fails_capacity_verbs_by_file_and_key() {
     // A verb that computes no capacity still runs.
     tm.ok(&["add", "Buy stamps", "--to", "week"]);
     tm.ok(&["triage"]);
-    // More than 18 decimal places in config.toml is named there. (A double's shortest
-    // text has at most 17 significant digits, so only a weight below 10^-18 has more
-    // than 18 places: `0.1234567890123456789` is read as `0.12345678901234568`.)
+    // More than 18 decimal places in config.toml is named there.
     std::fs::remove_file(tm.plan.join(".tm/model.json")).expect("rm model");
     let cfg = tm.read("config.toml").replace("Sat = 0.5", "Sat = 0.0000000000000000001");
     std::fs::write(tm.plan.join("config.toml"), cfg).expect("config");
@@ -601,6 +599,32 @@ fn a_weight_outside_its_domain_fails_capacity_verbs_by_file_and_key() {
         "{}",
         out.stderr
     );
+    // The places are the file's, not its nearest double's (W-3 audit, D10, D17): 19
+    // written places are refused even where the double has 17 (`0.12345678901234568`)
+    // or 1 (`0.1`), in config.toml and in .tm/model.json alike.
+    for v in ["0.1234567890123456789", "0.1000000000000000001"] {
+        let cfg = tm.read("config.toml").replace("Sat = 0.0000000000000000001", &format!("Sat = {v}"));
+        std::fs::write(tm.plan.join("config.toml"), cfg).expect("config");
+        let out = tm.run(&["plan", "--week"]);
+        assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+        let want = format!("config.toml: expected.p_lounge.Sat = {v} has 19 decimal places (at most 18)");
+        assert!(out.stderr.contains(&want), "{}", out.stderr);
+        let cfg = tm.read("config.toml").replace(&format!("Sat = {v}"), "Sat = 0.0000000000000000001");
+        std::fs::write(tm.plan.join("config.toml"), cfg).expect("config");
+    }
+    let cfg = tm.read("config.toml").replace("Sat = 0.0000000000000000001", "Sat = 0.5");
+    std::fs::write(tm.plan.join("config.toml"), cfg).expect("config");
+    tm.ok(&["plan", "--week"]);
+    for v in ["0.1234567890123456789", "0.1000000000000000001"] {
+        std::fs::write(tm.plan.join(".tm/model.json"), format!(r#"{{"p_lounge": {{"Tue": {v}}}}}"#)).expect("model");
+        let out = tm.run(&["plan", "--week"]);
+        assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+        let want = format!(".tm/model.json: p_lounge.Tue = {v} has 19 decimal places (at most 18)");
+        assert!(out.stderr.contains(&want), "{}", out.stderr);
+    }
+    // Eighteen written places are accepted.
+    std::fs::write(tm.plan.join(".tm/model.json"), r#"{"p_lounge": {"Tue": 0.123456789012345678}}"#).expect("model");
+    tm.ok(&["plan", "--week"]);
 }
 
 /// **Gap 98: a deadline past the kernel's 3,660-day lookahead is clamped, and

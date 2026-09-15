@@ -401,10 +401,29 @@ fn make_executable(_path: &Path) -> Result<(), InitError> {
 }
 
 /// The text a `.gitignore` should end up with: the existing one plus the tm
-/// block, or `None` when it already has it.
+/// block, or `None` when it already has it. A `.gitignore` holding an older tm
+/// block (the marker, without an entry the block has since gained, such as
+/// `.tm/cache/`, D13) gets the missing entries appended, and nothing else.
 fn merged_gitignore(existing: &str, block: &str) -> Option<String> {
     if existing.lines().any(|l| l.trim() == GITIGNORE_MARKER) {
-        return None;
+        let have: std::collections::BTreeSet<&str> = existing.lines().map(str::trim).collect();
+        let missing: Vec<&str> = block
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with('#') && !have.contains(l))
+            .collect();
+        if missing.is_empty() {
+            return None;
+        }
+        let mut out = String::from(existing);
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
+        for l in missing {
+            out.push_str(l);
+            out.push('\n');
+        }
+        return Some(out);
     }
     let mut out = String::from(existing);
     if !out.is_empty() && !out.ends_with('\n') {
@@ -622,5 +641,10 @@ mod tests {
         assert!(merged.starts_with("target/\n\n"));
         assert!(merged.ends_with(GITIGNORE));
         assert_eq!(merged_gitignore("", GITIGNORE).as_deref(), Some(GITIGNORE));
+        // D13: the kernel's cache is ignored, and a block from before it gains the line.
+        assert!(GITIGNORE.lines().any(|l| l == ".tm/cache/"), "{GITIGNORE}");
+        let old = "target/\n.tm/state.json\n.tm/last_plan.json\n.tm/arrival_plan.json\n.tm/undo.json";
+        assert_eq!(merged_gitignore(old, GITIGNORE).as_deref(), Some(format!("{old}\n.tm/cache/\n").as_str()));
+        assert_eq!(merged_gitignore(&format!("{old}\n.tm/cache/\n"), GITIGNORE), None);
     }
 }

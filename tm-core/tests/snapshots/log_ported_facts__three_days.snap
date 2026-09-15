@@ -59,7 +59,16 @@ expression: f
       "dropped": [
         "t5"
       ],
-      "longest_leak": 14
+      "longest_leak": 14,
+      "routine_min": 48,
+      "idle": [
+        {
+          "t": "2026-09-07T15:40:00-05:00",
+          "day": "2026-09-07",
+          "attributed": "leak",
+          "min": 14
+        }
+      ]
     },
     "2026-09-08": {
       "replans_today": 2,
@@ -71,7 +80,28 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 25
+      "longest_leak": 25,
+      "routine_min": 15,
+      "idle": [
+        {
+          "t": "2026-09-08T10:10:00-05:00",
+          "day": "2026-09-08",
+          "attributed": "work",
+          "min": 3
+        },
+        {
+          "t": "2026-09-08T12:00:00-05:00",
+          "day": "2026-09-08",
+          "attributed": "leak",
+          "min": 25
+        },
+        {
+          "t": "2026-09-08T12:30:00-05:00",
+          "day": "2026-09-08",
+          "attributed": "leak",
+          "min": 12
+        }
+      ]
     },
     "2026-09-09": {
       "replans_today": 0,
@@ -83,7 +113,9 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 0,
+      "idle": []
     }
   },
   "items": {
@@ -93,7 +125,8 @@ expression: f
       "done_at": [
         "2026-09-07T18:00:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "t1": {
       "stops": 0,
@@ -101,7 +134,8 @@ expression: f
       "done_at": [
         "2026-09-07T08:09:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "t2": {
       "stops": 0,
@@ -109,7 +143,8 @@ expression: f
       "done_at": [
         "2026-09-07T09:08:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "t3": {
       "stops": 0,
@@ -119,13 +154,15 @@ expression: f
       ],
       "partial_done_at": [
         "2026-09-07T11:50:00-05:00"
-      ]
+      ],
+      "blocks": 2
     },
     "t4": {
       "stops": 1,
       "extended_min": 0,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "t5": {
       "stops": 0,
@@ -133,7 +170,8 @@ expression: f
       "done_at": [
         "2026-09-07T15:05:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "t6": {
       "stops": 0,
@@ -141,7 +179,8 @@ expression: f
       "done_at": [
         "2026-09-08T10:07:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "t7": {
       "stops": 0,
@@ -149,7 +188,8 @@ expression: f
       "done_at": [
         "2026-09-08T11:00:00-05:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "t8": {
       "stops": 0,
@@ -157,7 +197,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-09-09T10:05:00-05:00"
-      ]
+      ],
+      "blocks": 1
     }
   }
 }

@@ -352,6 +352,14 @@ fn the_gitignore_keeps_the_runtime_state_out_of_git() {
         .map(|v| v.as_str().unwrap_or_default())
         .collect();
     assert!(!created.contains(&".gitignore"), "{created:?}");
+
+    // D13: the kernel's cache stays out of git, and a plan initialised before the
+    // cache existed gains the line on `--force`, keeping every line it had.
+    assert!(tm.read(".gitignore").lines().any(|l| l == ".tm/cache/"));
+    let old = "target/\n.tm/state.json\n.tm/last_plan.json\n.tm/arrival_plan.json\n.tm/undo.json\n";
+    std::fs::write(tm.plan.join(".gitignore"), old).expect("write");
+    tm.json(&["init", "--force"]);
+    assert_eq!(tm.read(".gitignore"), format!("{old}.tm/cache/\n"));
 }
 
 #[test]

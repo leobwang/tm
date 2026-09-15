@@ -683,6 +683,14 @@ pub struct Log {
     pub line_count: u64,
 }
 
+/// **The physical line count of log bytes** ([`Log::line_count`]): the
+/// `\n`-separated segments, not counting the empty one after a final `\n`. An
+/// entry appended next is on line `physical_line_count(bytes) + 1`.
+pub fn physical_line_count(bytes: &[u8]) -> u64 {
+    let newlines = bytes.iter().filter(|b| **b == b'\n').count();
+    (newlines + usize::from(!bytes.is_empty() && !bytes.ends_with(b"\n"))) as u64
+}
+
 impl Log {
     /// An empty log.
     pub fn new() -> Log {
@@ -712,8 +720,7 @@ impl Log {
     /// instead of taking the whole log with it.
     pub fn parse_bytes(bytes: &[u8]) -> Log {
         let mut log = Log::new();
-        let segments = bytes.split(|b| *b == b'\n').count();
-        log.line_count = (segments - usize::from(bytes.is_empty() || bytes.ends_with(b"\n"))) as u64;
+        log.line_count = physical_line_count(bytes);
         for (i, raw) in bytes.split(|b| *b == b'\n').enumerate() {
             let line = match std::str::from_utf8(raw) {
                 Ok(s) => s.trim_end_matches('\r'),
@@ -1688,8 +1695,16 @@ pub struct ViewRow {
     pub day: NaiveDate,
     /// Cancelled by an `undo` (or itself an `undo`), per [`undo_mask`].
     pub cancelled: bool,
-    /// `t` as `tm log` prints it: `%Y-%m-%d %H:%M` in the written offset.
-    pub display: String,
+}
+
+impl ViewRow {
+    /// `t` as `tm log` prints it: `%Y-%m-%d %H:%M` in the written offset. A
+    /// method, not a field: formatting it for every row of every replay cost
+    /// about 20 ms a replay on three years of log, and only `tm log` reads it
+    /// (W-3's latency repair).
+    pub fn display(&self) -> String {
+        self.entry.t.format("%Y-%m-%d %H:%M").to_string()
+    }
 }
 
 /// Everything replay derives from the log.
@@ -1899,6 +1914,10 @@ pub struct PortedDayFacts<'a> {
     pub dropped: &'a [String],
     /// [`DayReplay::longest_leak`] (the day's).
     pub longest_leak: u32,
+    /// [`DayReplay::routine_min`] (W-3's audit: unread, and missing here).
+    pub routine_min: u32,
+    /// [`DayReplay::idle`] (unread outside `log.rs` too; found by the same grep).
+    pub idle: &'a [IdleRecord],
 }
 
 /// [`PortedFacts`] of one [`ItemReplay`].
@@ -1912,6 +1931,8 @@ pub struct PortedItemFacts<'a> {
     pub done_at: &'a [DateTime<FixedOffset>],
     /// [`ItemReplay::partial_done_at`].
     pub partial_done_at: &'a [DateTime<FixedOffset>],
+    /// [`ItemReplay::blocks`] (unread outside `log.rs`; found by W-3's repair grep).
+    pub blocks: u32,
 }
 
 impl Replay {
@@ -1936,6 +1957,8 @@ impl Replay {
                             loc_changes: &day.loc_changes,
                             dropped: &day.dropped,
                             longest_leak: day.longest_leak,
+                            routine_min: day.routine_min,
+                            idle: &day.idle,
                         },
                     )
                 })
@@ -1951,6 +1974,7 @@ impl Replay {
                             extended_min: it.extended_min,
                             done_at: &it.done_at,
                             partial_done_at: &it.partial_done_at,
+                            blocks: it.blocks,
                         },
                     )
                 })
@@ -2930,7 +2954,6 @@ fn replay_lines(
                 entry: e.clone(),
                 day: days.day_of(e.t),
                 cancelled: *c,
-                display: e.t.format("%Y-%m-%d %H:%M").to_string(),
             }
         })
         .collect();

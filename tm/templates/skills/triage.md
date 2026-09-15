@@ -15,11 +15,15 @@ tm plan --week --json          # what the week already holds, before adding to i
 The preview shows what the grammar would make of the line as written. Your job
 is the part it cannot guess.
 
+The week's capacity minutes are floors of exact values: `days[].total` is the
+floor of `total_exact` and each `minutes_at_level` the floor of its entry in
+`minutes_at_level_exact` (`{"num": "…", "den": "…"}`, digit strings).
+
 <!-- json fields -->
 
 ```
 tm triage --json → file lines[].line lines[].raw lines[].parsed lines[].problem
-tm plan --week --json → week days[].date days[].total days[].minutes_at_level grid
+tm plan --week --json → week days[].date days[].total days[].total_exact days[].minutes_at_level days[].minutes_at_level_exact grid
 ```
 
 ## 2. Decide, per line

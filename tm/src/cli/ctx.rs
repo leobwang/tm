@@ -362,6 +362,55 @@ impl Ctx {
         Ok(Log::parse(&text).replay(None, cfg.tz))
     }
 
+    /// **What the undo recorder reads, through the same door** (design §14.3
+    /// rows R6 and R8): the log's physical line count on disk now and, when
+    /// `after` is given, the entries on the physical lines after it, each with
+    /// its line, in file order. The count is exactly
+    /// `Ctx::replay_of(..).line_count()`, and the entries are exactly the `(line,
+    /// entry)` of `Ctx::replay_of(..).headers_from(after + 1)` (unit test
+    /// `the_recorders_tail_is_the_whole_replays`), without replaying the lines
+    /// before `after`: a mutating verb used to replay the whole log twice more
+    /// for its undo entry (W-3's audit: 4 replays a verb, ≈ 110 ms each on three
+    /// years of log). A log with fewer lines than `after` (rewritten under the
+    /// verb) falls back to the whole replay. At the switch this body becomes the
+    /// kernel's `headersFrom`.
+    pub fn log_tail_of(
+        store: &FsStore,
+        cfg: &Config,
+        after: Option<u64>,
+    ) -> Result<(u64, Vec<(u64, LogEntry)>), CliError> {
+        let text = if store.exists(LOG_PATH) {
+            store.read_text(LOG_PATH)?
+        } else {
+            String::new()
+        };
+        let count = tm_core::log::physical_line_count(text.as_bytes());
+        let Some(after) = after else {
+            return Ok((count, Vec::new()));
+        };
+        let skip = usize::try_from(after).unwrap_or(usize::MAX);
+        let start = if skip == 0 {
+            Some(0)
+        } else {
+            text.bytes().enumerate().filter(|(_, b)| *b == b'\n').nth(skip - 1).map(|(i, _)| i + 1)
+        };
+        let rows = match start {
+            Some(at) => Log::parse(&text[at..])
+                .replay(None, cfg.tz)
+                .headers_from(1)
+                .iter()
+                .map(|r| (r.line + after, r.entry.clone()))
+                .collect(),
+            None => Log::parse(&text)
+                .replay(None, cfg.tz)
+                .headers_from(after + 1)
+                .iter()
+                .map(|r| (r.line, r.entry.clone()))
+                .collect(),
+        };
+        Ok((count, rows))
+    }
+
     /// A [`horizon::Ctx`] over the current snapshot (§6.3).
     pub fn hz(&self) -> horizon::Ctx<'_> {
         horizon::Ctx::new(&self.store, &self.files, &self.tree, self.now).with_replay(&self.replay)
@@ -703,6 +752,47 @@ mod tests {
             assert_eq!(door.ported_facts(), direct.ported_facts(), "{name}");
             let json = serde_json::to_value(door.ported_facts()).expect("json");
             assert_eq!(json, snapshot_body(name), "{name}: the pinned values");
+        }
+    }
+
+    /// W-3's repair: the recorder's tail read is the whole replay's rows from
+    /// the same line, and its count the whole replay's, at every cut of logs
+    /// with malformed, blank, CRLF and torn lines.
+    #[test]
+    fn the_recorders_tail_is_the_whole_replays() {
+        let gen = loggen::text(&loggen::log(loggen::Rate::SixtyOne, 2));
+        let mut lines: Vec<&str> = gen.lines().collect();
+        lines.truncate(60);
+        let good = lines.join("\n");
+        let torn = &lines[3][..lines[3].len() / 2];
+        let texts = [
+            String::new(),
+            "\n".to_string(),
+            format!("{good}\n"),
+            good.clone(),
+            format!("{}\n\n{}\nnot json\n{}\r\n{}\n", lines[0], lines[1], lines[2], lines[4]),
+            format!("{}\n{torn}", lines[0]),
+            format!("{}\n{torn}{}\n{}\n", lines[0], lines[5], lines[6]),
+            format!("{}\n\u{00e9}\u{0000}\n{}\n", lines[7], lines[8]),
+        ];
+        let cfg = Config { tz: chrono_tz::America::Chicago, ..Config::default() };
+        for (k, text) in texts.iter().enumerate() {
+            let dir = tempfile::TempDir::new().expect("tempdir");
+            std::fs::create_dir_all(dir.path().join(".tm")).expect("mkdir");
+            if k > 0 {
+                std::fs::write(dir.path().join(LOG_PATH), text).expect("write log");
+            }
+            let store = FsStore::new(dir.path());
+            let whole = Ctx::replay_of(&store, &cfg).expect("replay_of");
+            let (count, none) = Ctx::log_tail_of(&store, &cfg, None).expect("count");
+            assert_eq!((count, none.len()), (whole.line_count(), 0), "text {k}");
+            for after in 0..=whole.line_count() + 2 {
+                let (count, rows) = Ctx::log_tail_of(&store, &cfg, Some(after)).expect("tail");
+                let want: Vec<(u64, LogEntry)> =
+                    whole.headers_from(after + 1).iter().map(|r| (r.line, r.entry.clone())).collect();
+                assert_eq!(count, whole.line_count(), "text {k}");
+                assert_eq!(rows, want, "text {k}, after {after}");
+            }
         }
     }
 

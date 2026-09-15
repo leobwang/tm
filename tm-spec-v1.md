@@ -583,6 +583,10 @@ pub struct DayCapacity { pub date: NaiveDate, pub minutes_at_level: [u32; 6] }  
 
 For today: the actual remaining slots from §8.2 step 3. For future days: expected arrival = `model.expected_arrival(weekday)` (learned; default config), expected location by `P(lounge | weekday)`, walls from `calendar/`, the prior curve, and budget_ratio. `tm plan --week` renders this as the week grid; `priority.rs` consumes it for the EDF pass.
 
+**Exact capacity (kernel stage 5, owner decisions D10, D15, D17).** Since the kernel computes the lookahead, a future day is the exact mixture `p · lounge day + (1 − p) · home day` with `p = P(lounge | weekday)`, held in units over `capDen = 10^18`; `p_lounge` (in `model.json` or `config.toml`) must be a decimal in `[0, 1]` of at most 18 places **as written**, or every verb that computes capacity or priority fails naming the file and key. Capacity minutes in `--json` are **floors**, each beside its exact value as `{"num": "<digits>", "den": "<digits>"}` in lowest terms:
+- `tm plan --week --json`: `days[].minutes_at_level` (each the floor of its entry in `minutes_at_level_exact`) and `days[].total` (the floor of the exact day total `total_exact`, **not** the sum of the six floors, so up to five more);
+- `tm plan --json` and `--explain`: `priorities[].avail_min`, `allocation_min` and `shortfall_min`, each the floor of `avail_min_exact`, `allocation_min_exact` and `shortfall_min_exact`. Because each integer is its own floor, `need_min − allocation_min` may exceed `shortfall_min` by one; the exact values agree.
+
 ### 8.5 Energy (`energy.rs`)
 
 **Scale:** 0–5 for both items (`ci`) and slots. Report keys `0`–`5`.

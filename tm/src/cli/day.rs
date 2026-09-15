@@ -372,7 +372,7 @@ pub fn arrive(g: &Globals, args: &super::ArriveArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
     // Stage 5 D10 L8: this verb plans after it writes, so a configured value the
     // kernel cannot read (parity P26) is refused before anything is written.
-    super::kernel_capacity::check_inputs(&ctx.cfg, &ctx.model)?;
+    super::kernel_capacity::check_plan(&ctx)?;
     let rec = Recorder::start(&ctx, "arrive")?;
     let loc = args
         .loc
@@ -1027,7 +1027,7 @@ pub fn resume(g: &Globals) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
     // Stage 5 D10 L8: this verb plans after it writes, so a configured value the
     // kernel cannot read (parity P26) is refused before anything is written.
-    super::kernel_capacity::check_inputs(&ctx.cfg, &ctx.model)?;
+    super::kernel_capacity::check_plan(&ctx)?;
     let Some(int) = ctx.state.interrupt.clone() else {
         return Err(CliError::msg("nothing to resume"));
     };
@@ -1180,7 +1180,7 @@ pub fn energy(g: &Globals, args: &super::EnergyArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
     // Stage 5 D10 L8: this verb plans after it writes, so a configured value the
     // kernel cannot read (parity P26) is refused before anything is written.
-    super::kernel_capacity::check_inputs(&ctx.cfg, &ctx.model)?;
+    super::kernel_capacity::check_plan(&ctx)?;
     let rec = Recorder::start(&ctx, "energy")?;
     let at: NaiveTime = match &args.at {
         Some(t) => parse_time(t)?,

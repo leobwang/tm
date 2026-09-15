@@ -382,7 +382,9 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 59,
+      "idle": []
     },
     "2026-01-02": {
       "replans_today": 8,
@@ -394,7 +396,9 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 50,
+      "idle": []
     },
     "2026-01-03": {
       "replans_today": 3,
@@ -406,7 +410,22 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 14
+      "longest_leak": 14,
+      "routine_min": 71,
+      "idle": [
+        {
+          "t": "2026-01-03T12:31:00-06:00",
+          "day": "2026-01-03",
+          "attributed": "work",
+          "min": 18
+        },
+        {
+          "t": "2026-01-03T12:31:00-06:00",
+          "day": "2026-01-03",
+          "attributed": "leak",
+          "min": 14
+        }
+      ]
     },
     "2026-01-04": {
       "replans_today": 3,
@@ -418,7 +437,22 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 23
+      "longest_leak": 23,
+      "routine_min": 43,
+      "idle": [
+        {
+          "t": "2026-01-04T12:08:00-06:00",
+          "day": "2026-01-04",
+          "attributed": "leak",
+          "min": 23
+        },
+        {
+          "t": "2026-01-04T12:08:00-06:00",
+          "day": "2026-01-04",
+          "attributed": "work",
+          "min": 37
+        }
+      ]
     },
     "2026-01-05": {
       "replans_today": 7,
@@ -430,7 +464,16 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 16
+      "longest_leak": 16,
+      "routine_min": 44,
+      "idle": [
+        {
+          "t": "2026-01-05T14:31:00-06:00",
+          "day": "2026-01-05",
+          "attributed": "leak",
+          "min": 16
+        }
+      ]
     },
     "2026-01-06": {
       "replans_today": 7,
@@ -442,7 +485,9 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 20,
+      "idle": []
     },
     "2026-01-07": {
       "replans_today": 8,
@@ -454,7 +499,28 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 25
+      "longest_leak": 25,
+      "routine_min": 66,
+      "idle": [
+        {
+          "t": "2026-01-07T16:14:00-06:00",
+          "day": "2026-01-07",
+          "attributed": "leak",
+          "min": 25
+        },
+        {
+          "t": "2026-01-07T16:14:00-06:00",
+          "day": "2026-01-07",
+          "attributed": "break",
+          "min": 36
+        },
+        {
+          "t": "2026-01-07T16:14:00-06:00",
+          "day": "2026-01-07",
+          "attributed": "leak",
+          "min": 23
+        }
+      ]
     },
     "2026-01-08": {
       "replans_today": 5,
@@ -466,7 +532,22 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 62,
+      "idle": [
+        {
+          "t": "2026-01-08T12:47:00-06:00",
+          "day": "2026-01-08",
+          "attributed": "break",
+          "min": 13
+        },
+        {
+          "t": "2026-01-08T12:47:00-06:00",
+          "day": "2026-01-08",
+          "attributed": "work",
+          "min": 20
+        }
+      ]
     },
     "2026-01-09": {
       "replans_today": 8,
@@ -478,7 +559,16 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 24,
+      "idle": [
+        {
+          "t": "2026-01-09T16:19:00-06:00",
+          "day": "2026-01-09",
+          "attributed": "work",
+          "min": 12
+        }
+      ]
     },
     "2026-01-10": {
       "replans_today": 2,
@@ -490,7 +580,22 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 40,
+      "idle": [
+        {
+          "t": "2026-01-10T11:24:00-06:00",
+          "day": "2026-01-10",
+          "attributed": "work",
+          "min": 17
+        },
+        {
+          "t": "2026-01-10T11:24:00-06:00",
+          "day": "2026-01-10",
+          "attributed": "break",
+          "min": 38
+        }
+      ]
     },
     "2026-01-11": {
       "replans_today": 3,
@@ -502,7 +607,9 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 27,
+      "idle": []
     },
     "2026-01-12": {
       "replans_today": 7,
@@ -514,7 +621,28 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 49,
+      "idle": [
+        {
+          "t": "2026-01-12T15:48:00-06:00",
+          "day": "2026-01-12",
+          "attributed": "break",
+          "min": 25
+        },
+        {
+          "t": "2026-01-12T15:48:00-06:00",
+          "day": "2026-01-12",
+          "attributed": "break",
+          "min": 38
+        },
+        {
+          "t": "2026-01-12T15:48:00-06:00",
+          "day": "2026-01-12",
+          "attributed": "break",
+          "min": 28
+        }
+      ]
     },
     "2026-01-13": {
       "replans_today": 7,
@@ -526,7 +654,28 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 72,
+      "idle": [
+        {
+          "t": "2026-01-13T15:49:00-06:00",
+          "day": "2026-01-13",
+          "attributed": "break",
+          "min": 17
+        },
+        {
+          "t": "2026-01-13T15:49:00-06:00",
+          "day": "2026-01-13",
+          "attributed": "break",
+          "min": 21
+        },
+        {
+          "t": "2026-01-13T15:49:00-06:00",
+          "day": "2026-01-13",
+          "attributed": "break",
+          "min": 18
+        }
+      ]
     },
     "2026-01-14": {
       "replans_today": 5,
@@ -538,7 +687,9 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 40,
+      "idle": []
     },
     "2026-01-15": {
       "replans_today": 8,
@@ -550,7 +701,22 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 49,
+      "idle": [
+        {
+          "t": "2026-01-15T16:00:00-06:00",
+          "day": "2026-01-15",
+          "attributed": "break",
+          "min": 18
+        },
+        {
+          "t": "2026-01-15T16:00:00-06:00",
+          "day": "2026-01-15",
+          "attributed": "work",
+          "min": 14
+        }
+      ]
     },
     "2026-01-16": {
       "replans_today": 5,
@@ -562,7 +728,16 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 88,
+      "idle": [
+        {
+          "t": "2026-01-16T13:00:00-06:00",
+          "day": "2026-01-16",
+          "attributed": "break",
+          "min": 31
+        }
+      ]
     },
     "2026-01-17": {
       "replans_today": 3,
@@ -574,7 +749,16 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 71,
+      "idle": [
+        {
+          "t": "2026-01-17T12:16:00-06:00",
+          "day": "2026-01-17",
+          "attributed": "break",
+          "min": 21
+        }
+      ]
     },
     "2026-01-18": {
       "replans_today": 3,
@@ -586,7 +770,16 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 27,
+      "idle": [
+        {
+          "t": "2026-01-18T12:40:00-06:00",
+          "day": "2026-01-18",
+          "attributed": "work",
+          "min": 39
+        }
+      ]
     },
     "2026-01-19": {
       "replans_today": 5,
@@ -598,7 +791,22 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 27
+      "longest_leak": 27,
+      "routine_min": 81,
+      "idle": [
+        {
+          "t": "2026-01-19T12:52:00-06:00",
+          "day": "2026-01-19",
+          "attributed": "work",
+          "min": 30
+        },
+        {
+          "t": "2026-01-19T12:52:00-06:00",
+          "day": "2026-01-19",
+          "attributed": "leak",
+          "min": 27
+        }
+      ]
     },
     "2026-01-20": {
       "replans_today": 5,
@@ -610,7 +818,28 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 39
+      "longest_leak": 39,
+      "routine_min": 52,
+      "idle": [
+        {
+          "t": "2026-01-20T12:53:00-06:00",
+          "day": "2026-01-20",
+          "attributed": "break",
+          "min": 16
+        },
+        {
+          "t": "2026-01-20T12:53:00-06:00",
+          "day": "2026-01-20",
+          "attributed": "work",
+          "min": 38
+        },
+        {
+          "t": "2026-01-20T12:53:00-06:00",
+          "day": "2026-01-20",
+          "attributed": "leak",
+          "min": 39
+        }
+      ]
     },
     "2026-01-21": {
       "replans_today": 7,
@@ -622,7 +851,9 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 33,
+      "idle": []
     },
     "2026-01-22": {
       "replans_today": 6,
@@ -634,7 +865,28 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 13
+      "longest_leak": 13,
+      "routine_min": 65,
+      "idle": [
+        {
+          "t": "2026-01-22T14:07:00-06:00",
+          "day": "2026-01-22",
+          "attributed": "work",
+          "min": 34
+        },
+        {
+          "t": "2026-01-22T14:07:00-06:00",
+          "day": "2026-01-22",
+          "attributed": "leak",
+          "min": 13
+        },
+        {
+          "t": "2026-01-22T14:07:00-06:00",
+          "day": "2026-01-22",
+          "attributed": "break",
+          "min": 15
+        }
+      ]
     },
     "2026-01-23": {
       "replans_today": 5,
@@ -646,7 +898,16 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 55,
+      "idle": [
+        {
+          "t": "2026-01-23T13:23:00-06:00",
+          "day": "2026-01-23",
+          "attributed": "work",
+          "min": 15
+        }
+      ]
     },
     "2026-01-24": {
       "replans_today": 2,
@@ -658,7 +919,9 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 57,
+      "idle": []
     },
     "2026-01-25": {
       "replans_today": 4,
@@ -670,7 +933,28 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 29
+      "longest_leak": 29,
+      "routine_min": 112,
+      "idle": [
+        {
+          "t": "2026-01-25T13:26:00-06:00",
+          "day": "2026-01-25",
+          "attributed": "leak",
+          "min": 14
+        },
+        {
+          "t": "2026-01-25T13:26:00-06:00",
+          "day": "2026-01-25",
+          "attributed": "leak",
+          "min": 29
+        },
+        {
+          "t": "2026-01-25T13:26:00-06:00",
+          "day": "2026-01-25",
+          "attributed": "break",
+          "min": 38
+        }
+      ]
     },
     "2026-01-26": {
       "replans_today": 6,
@@ -682,7 +966,9 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 0
+      "longest_leak": 0,
+      "routine_min": 75,
+      "idle": []
     },
     "2026-01-27": {
       "replans_today": 6,
@@ -694,7 +980,22 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 25
+      "longest_leak": 25,
+      "routine_min": 44,
+      "idle": [
+        {
+          "t": "2026-01-27T14:12:00-06:00",
+          "day": "2026-01-27",
+          "attributed": "leak",
+          "min": 17
+        },
+        {
+          "t": "2026-01-27T14:12:00-06:00",
+          "day": "2026-01-27",
+          "attributed": "leak",
+          "min": 25
+        }
+      ]
     },
     "2026-01-28": {
       "replans_today": 8,
@@ -706,7 +1007,22 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 15
+      "longest_leak": 15,
+      "routine_min": 100,
+      "idle": [
+        {
+          "t": "2026-01-28T16:40:00-06:00",
+          "day": "2026-01-28",
+          "attributed": "leak",
+          "min": 15
+        },
+        {
+          "t": "2026-01-28T16:40:00-06:00",
+          "day": "2026-01-28",
+          "attributed": "break",
+          "min": 14
+        }
+      ]
     },
     "2026-01-29": {
       "replans_today": 7,
@@ -718,7 +1034,28 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 32
+      "longest_leak": 32,
+      "routine_min": 67,
+      "idle": [
+        {
+          "t": "2026-01-29T15:32:00-06:00",
+          "day": "2026-01-29",
+          "attributed": "break",
+          "min": 40
+        },
+        {
+          "t": "2026-01-29T15:32:00-06:00",
+          "day": "2026-01-29",
+          "attributed": "leak",
+          "min": 17
+        },
+        {
+          "t": "2026-01-29T15:32:00-06:00",
+          "day": "2026-01-29",
+          "attributed": "leak",
+          "min": 32
+        }
+      ]
     },
     "2026-01-30": {
       "replans_today": 6,
@@ -730,7 +1067,16 @@ expression: f
         ]
       ],
       "dropped": [],
-      "longest_leak": 13
+      "longest_leak": 13,
+      "routine_min": 48,
+      "idle": [
+        {
+          "t": "2026-01-30T15:11:00-06:00",
+          "day": "2026-01-30",
+          "attributed": "leak",
+          "min": 13
+        }
+      ]
     }
   },
   "items": {
@@ -740,7 +1086,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-19T10:04:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "103": {
       "stops": 0,
@@ -748,7 +1095,8 @@ expression: f
       "done_at": [
         "2026-01-13T09:24:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "109": {
       "stops": 0,
@@ -756,7 +1104,8 @@ expression: f
       "done_at": [
         "2026-01-02T15:44:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "110": {
       "stops": 0,
@@ -764,7 +1113,8 @@ expression: f
       "done_at": [
         "2026-01-08T11:15:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "117": {
       "stops": 0,
@@ -772,7 +1122,8 @@ expression: f
       "done_at": [
         "2026-01-16T09:04:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "12": {
       "stops": 0,
@@ -780,7 +1131,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-02T14:01:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "129": {
       "stops": 0,
@@ -788,7 +1140,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-05T07:59:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "148": {
       "stops": 0,
@@ -796,7 +1149,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-12T12:12:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "154": {
       "stops": 0,
@@ -804,7 +1158,8 @@ expression: f
       "done_at": [
         "2026-01-03T09:44:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "156": {
       "stops": 0,
@@ -812,7 +1167,8 @@ expression: f
       "done_at": [
         "2026-01-23T10:36:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "166": {
       "stops": 0,
@@ -820,7 +1176,8 @@ expression: f
       "done_at": [
         "2026-01-26T11:16:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "167": {
       "stops": 0,
@@ -828,7 +1185,8 @@ expression: f
       "done_at": [
         "2026-01-28T13:30:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "168": {
       "stops": 0,
@@ -836,7 +1194,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-29T08:45:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "17": {
       "stops": 0,
@@ -844,7 +1203,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-27T12:40:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "174": {
       "stops": 0,
@@ -852,7 +1212,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-21T15:05:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "180": {
       "stops": 0,
@@ -860,7 +1221,8 @@ expression: f
       "done_at": [
         "2026-01-12T13:30:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "188": {
       "stops": 0,
@@ -868,13 +1230,15 @@ expression: f
       "done_at": [
         "2026-01-06T13:35:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "190": {
       "stops": 1,
       "extended_min": 0,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "191": {
       "stops": 0,
@@ -882,7 +1246,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-15T14:41:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "197": {
       "stops": 0,
@@ -890,13 +1255,15 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-08T10:01:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "203": {
       "stops": 1,
       "extended_min": 0,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "22": {
       "stops": 0,
@@ -904,7 +1271,8 @@ expression: f
       "done_at": [
         "2026-01-16T12:54:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "227": {
       "stops": 0,
@@ -912,7 +1280,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-21T10:34:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "230": {
       "stops": 0,
@@ -920,7 +1289,8 @@ expression: f
       "done_at": [
         "2026-01-22T13:40:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "249": {
       "stops": 0,
@@ -928,7 +1298,8 @@ expression: f
       "done_at": [
         "2026-01-08T12:39:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "25": {
       "stops": 0,
@@ -936,7 +1307,8 @@ expression: f
       "done_at": [
         "2026-01-26T07:55:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "255": {
       "stops": 0,
@@ -944,7 +1316,8 @@ expression: f
       "done_at": [
         "2026-01-26T12:25:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "258": {
       "stops": 0,
@@ -952,7 +1325,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-25T11:06:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "262": {
       "stops": 0,
@@ -960,7 +1334,8 @@ expression: f
       "done_at": [
         "2026-01-26T10:08:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "267": {
       "stops": 0,
@@ -968,7 +1343,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-15T11:15:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "277": {
       "stops": 0,
@@ -976,7 +1352,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-13T11:50:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "278": {
       "stops": 0,
@@ -984,7 +1361,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-23T08:14:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "281": {
       "stops": 0,
@@ -992,7 +1370,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-24T11:25:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "295": {
       "stops": 0,
@@ -1000,13 +1379,15 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-07T07:46:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "301": {
       "stops": 1,
       "extended_min": 30,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "307": {
       "stops": 0,
@@ -1014,7 +1395,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-01T10:44:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "316": {
       "stops": 0,
@@ -1022,7 +1404,8 @@ expression: f
       "done_at": [
         "2026-01-23T08:59:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "318": {
       "stops": 0,
@@ -1030,7 +1413,8 @@ expression: f
       "done_at": [
         "2026-01-30T10:53:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "342": {
       "stops": 0,
@@ -1038,7 +1422,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-17T09:57:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "353": {
       "stops": 0,
@@ -1046,7 +1431,8 @@ expression: f
       "done_at": [
         "2026-01-21T13:58:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "356": {
       "stops": 0,
@@ -1054,7 +1440,8 @@ expression: f
       "done_at": [
         "2026-01-11T10:06:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "361": {
       "stops": 0,
@@ -1062,7 +1449,8 @@ expression: f
       "done_at": [
         "2026-01-30T12:07:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "364": {
       "stops": 0,
@@ -1071,7 +1459,8 @@ expression: f
       "partial_done_at": [
         "2026-01-25T10:04:00-06:00",
         "2026-01-27T07:50:00-06:00"
-      ]
+      ],
+      "blocks": 2
     },
     "368": {
       "stops": 0,
@@ -1079,7 +1468,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-01T13:04:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "376": {
       "stops": 1,
@@ -1087,7 +1477,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-20T11:08:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "382": {
       "stops": 0,
@@ -1097,7 +1488,8 @@ expression: f
         "2026-01-04T10:51:00-06:00",
         "2026-01-05T13:11:00-06:00",
         "2026-01-06T07:54:00-06:00"
-      ]
+      ],
+      "blocks": 3
     },
     "390": {
       "stops": 0,
@@ -1107,7 +1499,8 @@ expression: f
       ],
       "partial_done_at": [
         "2026-01-13T14:06:00-06:00"
-      ]
+      ],
+      "blocks": 2
     },
     "391": {
       "stops": 0,
@@ -1115,7 +1508,8 @@ expression: f
       "done_at": [
         "2026-01-20T08:38:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "392": {
       "stops": 0,
@@ -1123,7 +1517,8 @@ expression: f
       "done_at": [
         "2026-01-25T12:21:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "403": {
       "stops": 0,
@@ -1131,7 +1526,8 @@ expression: f
       "done_at": [
         "2026-01-20T07:46:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "429": {
       "stops": 0,
@@ -1139,7 +1535,8 @@ expression: f
       "done_at": [
         "2026-01-14T10:14:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "433": {
       "stops": 0,
@@ -1149,7 +1546,8 @@ expression: f
       ],
       "partial_done_at": [
         "2026-01-14T11:19:00-06:00"
-      ]
+      ],
+      "blocks": 2
     },
     "446": {
       "stops": 0,
@@ -1157,7 +1555,8 @@ expression: f
       "done_at": [
         "2026-01-09T13:42:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "452": {
       "stops": 0,
@@ -1165,7 +1564,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-01T14:08:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "454": {
       "stops": 0,
@@ -1173,7 +1573,8 @@ expression: f
       "done_at": [
         "2026-01-02T10:43:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "458": {
       "stops": 0,
@@ -1181,7 +1582,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-24T10:10:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "470": {
       "stops": 0,
@@ -1189,13 +1591,15 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-02T09:23:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "473": {
       "stops": 1,
       "extended_min": 0,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "48": {
       "stops": 0,
@@ -1203,13 +1607,15 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-09T14:47:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "485": {
       "stops": 1,
       "extended_min": 0,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "486": {
       "stops": 0,
@@ -1217,7 +1623,8 @@ expression: f
       "done_at": [
         "2026-01-01T11:47:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "487": {
       "stops": 0,
@@ -1225,13 +1632,15 @@ expression: f
       "done_at": [
         "2026-01-05T14:30:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "488": {
       "stops": 0,
       "extended_min": 0,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "5": {
       "stops": 0,
@@ -1239,7 +1648,8 @@ expression: f
       "done_at": [
         "2026-01-08T07:48:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "50": {
       "stops": 0,
@@ -1247,7 +1657,8 @@ expression: f
       "done_at": [
         "2026-01-19T12:43:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "507": {
       "stops": 0,
@@ -1255,13 +1666,15 @@ expression: f
       "done_at": [
         "2026-01-09T11:37:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "508": {
       "stops": 1,
       "extended_min": 0,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "51": {
       "stops": 0,
@@ -1269,7 +1682,8 @@ expression: f
       "done_at": [
         "2026-01-04T12:02:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "510": {
       "stops": 0,
@@ -1277,13 +1691,15 @@ expression: f
       "done_at": [
         "2026-01-22T09:56:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "515": {
       "stops": 0,
       "extended_min": 0,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "524": {
       "stops": 0,
@@ -1291,7 +1707,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-30T08:17:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "526": {
       "stops": 0,
@@ -1299,7 +1716,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-28T16:13:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "531": {
       "stops": 0,
@@ -1307,7 +1725,8 @@ expression: f
       "done_at": [
         "2026-01-01T16:14:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "534": {
       "stops": 0,
@@ -1315,13 +1734,15 @@ expression: f
       "done_at": [
         "2026-01-06T12:23:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "539": {
       "stops": 1,
       "extended_min": 0,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "540": {
       "stops": 0,
@@ -1329,13 +1750,15 @@ expression: f
       "done_at": [
         "2026-01-09T08:11:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "544": {
       "stops": 1,
       "extended_min": 0,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "548": {
       "stops": 0,
@@ -1343,7 +1766,8 @@ expression: f
       "done_at": [
         "2026-01-29T07:45:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "550": {
       "stops": 0,
@@ -1351,7 +1775,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-18T09:43:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "556": {
       "stops": 0,
@@ -1359,7 +1784,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-29T12:42:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "565": {
       "stops": 0,
@@ -1367,7 +1793,8 @@ expression: f
       "done_at": [
         "2026-01-05T08:48:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "566": {
       "stops": 0,
@@ -1375,7 +1802,8 @@ expression: f
       "done_at": [
         "2026-01-30T13:35:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "569": {
       "stops": 0,
@@ -1383,7 +1811,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-12T15:45:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "570": {
       "stops": 0,
@@ -1393,7 +1822,8 @@ expression: f
       ],
       "partial_done_at": [
         "2026-01-21T07:45:00-06:00"
-      ]
+      ],
+      "blocks": 2
     },
     "571": {
       "stops": 0,
@@ -1403,7 +1833,8 @@ expression: f
       ],
       "partial_done_at": [
         "2026-01-15T13:15:00-06:00"
-      ]
+      ],
+      "blocks": 2
     },
     "572": {
       "stops": 0,
@@ -1411,13 +1842,15 @@ expression: f
       "done_at": [
         "2026-01-03T11:05:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "578": {
       "stops": 1,
       "extended_min": 0,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "583": {
       "stops": 0,
@@ -1425,7 +1858,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-29T15:24:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "589": {
       "stops": 0,
@@ -1433,7 +1867,8 @@ expression: f
       "done_at": [
         "2026-01-10T10:53:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "59": {
       "stops": 0,
@@ -1441,19 +1876,22 @@ expression: f
       "done_at": [
         "2026-01-27T10:20:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "592": {
       "stops": 0,
       "extended_min": 0,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "601": {
       "stops": 1,
       "extended_min": 0,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "604": {
       "stops": 0,
@@ -1461,13 +1899,15 @@ expression: f
       "done_at": [
         "2026-01-12T08:12:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "614": {
       "stops": 1,
       "extended_min": 0,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "615": {
       "stops": 0,
@@ -1475,7 +1915,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-03T12:24:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "616": {
       "stops": 0,
@@ -1483,7 +1924,8 @@ expression: f
       "done_at": [
         "2026-01-07T14:43:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "625": {
       "stops": 0,
@@ -1491,7 +1933,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-13T10:45:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "628": {
       "stops": 0,
@@ -1499,7 +1942,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-14T09:04:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "633": {
       "stops": 0,
@@ -1507,13 +1951,15 @@ expression: f
       "done_at": [
         "2026-01-29T11:09:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "637": {
       "stops": 1,
       "extended_min": 0,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "64": {
       "stops": 0,
@@ -1521,7 +1967,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-07T12:07:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "653": {
       "stops": 0,
@@ -1529,7 +1976,8 @@ expression: f
       "done_at": [
         "2026-01-09T12:42:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "655": {
       "stops": 0,
@@ -1537,7 +1985,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-07T10:03:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "659": {
       "stops": 0,
@@ -1545,13 +1994,15 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-28T08:55:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "667": {
       "stops": 1,
       "extended_min": 0,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "674": {
       "stops": 0,
@@ -1559,7 +2010,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-21T12:59:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "675": {
       "stops": 0,
@@ -1567,7 +2019,8 @@ expression: f
       "done_at": [
         "2026-01-06T15:15:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "677": {
       "stops": 0,
@@ -1575,7 +2028,8 @@ expression: f
       "done_at": [
         "2026-01-02T11:49:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "687": {
       "stops": 0,
@@ -1583,7 +2037,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-02T16:50:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "695": {
       "stops": 0,
@@ -1591,13 +2046,15 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-23T11:44:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "705": {
       "stops": 1,
       "extended_min": 30,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "712": {
       "stops": 0,
@@ -1605,7 +2062,8 @@ expression: f
       "done_at": [
         "2026-01-15T10:17:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "717": {
       "stops": 0,
@@ -1613,7 +2071,8 @@ expression: f
       "done_at": [
         "2026-01-25T13:02:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "722": {
       "stops": 0,
@@ -1621,7 +2080,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-09T09:22:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "737": {
       "stops": 0,
@@ -1629,7 +2089,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-21T11:38:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "739": {
       "stops": 1,
@@ -1637,7 +2098,8 @@ expression: f
       "done_at": [
         "2026-01-16T10:41:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "74": {
       "stops": 0,
@@ -1645,7 +2107,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-12T14:33:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "741": {
       "stops": 0,
@@ -1653,7 +2116,8 @@ expression: f
       "done_at": [
         "2026-01-16T08:08:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "755": {
       "stops": 0,
@@ -1661,7 +2125,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-07T15:47:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "760": {
       "stops": 0,
@@ -1669,7 +2134,8 @@ expression: f
       "done_at": [
         "2026-01-07T13:02:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "764": {
       "stops": 0,
@@ -1677,7 +2143,8 @@ expression: f
       "done_at": [
         "2026-01-06T11:13:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "766": {
       "stops": 0,
@@ -1685,7 +2152,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-28T10:22:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "782": {
       "stops": 0,
@@ -1693,7 +2161,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-18T12:38:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "786": {
       "stops": 0,
@@ -1701,19 +2170,22 @@ expression: f
       "done_at": [
         "2026-01-28T11:27:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "787": {
       "stops": 1,
       "extended_min": 0,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "791": {
       "stops": 0,
       "extended_min": 0,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "797": {
       "stops": 0,
@@ -1721,7 +2193,8 @@ expression: f
       "done_at": [
         "2026-01-12T09:18:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "8": {
       "stops": 0,
@@ -1729,13 +2202,15 @@ expression: f
       "done_at": [
         "2026-01-26T08:40:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "807": {
       "stops": 1,
       "extended_min": 30,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "808": {
       "stops": 0,
@@ -1743,7 +2218,8 @@ expression: f
       "done_at": [
         "2026-01-02T12:57:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "82": {
       "stops": 0,
@@ -1751,7 +2227,8 @@ expression: f
       "done_at": [
         "2026-01-05T12:08:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "822": {
       "stops": 0,
@@ -1759,7 +2236,8 @@ expression: f
       "done_at": [
         "2026-01-29T13:45:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "824": {
       "stops": 0,
@@ -1767,7 +2245,8 @@ expression: f
       "done_at": [
         "2026-01-12T10:56:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "826": {
       "stops": 0,
@@ -1775,7 +2254,8 @@ expression: f
       "done_at": [
         "2026-01-02T08:04:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "827": {
       "stops": 0,
@@ -1784,13 +2264,15 @@ expression: f
       "partial_done_at": [
         "2026-01-19T07:45:00-06:00",
         "2026-01-27T11:07:00-06:00"
-      ]
+      ],
+      "blocks": 2
     },
     "831": {
       "stops": 1,
       "extended_min": 0,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "835": {
       "stops": 0,
@@ -1798,13 +2280,15 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-13T08:02:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "839": {
       "stops": 1,
       "extended_min": 0,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "842": {
       "stops": 0,
@@ -1812,7 +2296,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-30T14:43:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "844": {
       "stops": 0,
@@ -1820,7 +2305,8 @@ expression: f
       "done_at": [
         "2026-01-21T08:51:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "846": {
       "stops": 0,
@@ -1828,7 +2314,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-13T15:45:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "849": {
       "stops": 0,
@@ -1836,7 +2323,8 @@ expression: f
       "done_at": [
         "2026-01-01T15:30:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "854": {
       "stops": 0,
@@ -1844,7 +2332,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-27T13:42:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "862": {
       "stops": 0,
@@ -1852,7 +2341,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-22T08:09:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "865": {
       "stops": 0,
@@ -1860,7 +2350,8 @@ expression: f
       "done_at": [],
       "partial_done_at": [
         "2026-01-15T07:59:00-06:00"
-      ]
+      ],
+      "blocks": 1
     },
     "876": {
       "stops": 0,
@@ -1868,7 +2359,8 @@ expression: f
       "done_at": [
         "2026-01-29T10:00:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "88": {
       "stops": 0,
@@ -1876,7 +2368,8 @@ expression: f
       "done_at": [
         "2026-01-28T12:42:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "884": {
       "stops": 0,
@@ -1884,13 +2377,15 @@ expression: f
       "done_at": [
         "2026-01-19T08:51:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "891": {
       "stops": 1,
       "extended_min": 0,
       "done_at": [],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 0
     },
     "894": {
       "stops": 0,
@@ -1898,7 +2393,8 @@ expression: f
       "done_at": [
         "2026-01-17T10:59:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 1
     },
     "898": {
       "stops": 0,
@@ -1908,7 +2404,8 @@ expression: f
       ],
       "partial_done_at": [
         "2026-01-04T09:43:00-06:00"
-      ]
+      ],
+      "blocks": 2
     },
     "900": {
       "stops": 0,
@@ -1917,7 +2414,8 @@ expression: f
         "2026-01-19T11:16:00-06:00",
         "2026-01-22T12:39:00-06:00"
       ],
-      "partial_done_at": []
+      "partial_done_at": [],
+      "blocks": 2
     },
     "98": {
       "stops": 0,
@@ -1927,7 +2425,8 @@ expression: f
       ],
       "partial_done_at": [
         "2026-01-28T07:48:00-06:00"
-      ]
+      ],
+      "blocks": 2
     }
   }
 }
