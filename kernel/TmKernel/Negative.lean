@@ -1389,4 +1389,81 @@ theorem aRenderLineOutsideTheTailAccepted :
     (mkLogReq? ⟨2, [some ['x']], true, none, [1]⟩).toBool = true := by
   decide
 
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D10 track, step L5: the lookahead in
+-- `Lookahead.lean`).  Numbers 133 and 134 (126 and 127 on the branch, renumbered at the merge of
+-- the D9 track's B2-B4, which took 126-132) were the next free numbers in this
+-- checkout (the highest was 125, after W-1's repair).  The design's L5 label,
+-- 117 (mixing before the budget limit), was taken by L1 and still fails there.
+-- The D9 track numbers in parallel and the merge renumbers.  Each cheat is the
+-- real function with one step changed, claimed to agree with the fork on a
+-- fork-shaped input.  The controls, which compile, are in Lookahead.lean:
+-- `a_future_day_reads_todays_wake_to_the_second` (133) and
+-- `sunday_mixes_at_its_own_weight` (134).  Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 133 — a future day's wake at whole minutes: `local_dt` of today's wake clock with
+   its seconds dropped.  On Tuesday 2026-09-08 with a 07:05 arrival and a wake at 06:05:40,
+   the fork puts the 07:05 block at 0.99 h (the lounge's `0-1`, level 4) and keeps 180
+   minutes at level 5; whole minutes put it at 1.00 h (level 5) and keep 240.  `decide`
+   refuses the equality. -/
+def pureDayWakingOnTheMinute (I : Look.Input) (loc : Look.Loc) (d : Nat) : Look.Hist :=
+  Look.limitHist (Look.budgetMinOf I.day) (Look.histOf' (Look.energize I.curves I.homeMax loc
+    (Cal.instantOf I.tz d ⟨I.wake.sec / 60 % 1440, Nat.mod_lt _ (by decide)⟩) (Look.dayCut I d).slots))
+
+theorem aFutureWakeOnTheMinute :
+    pureDayWakingOnTheMinute { Look.specInput with arrival := fun _ => 425, wake := ⟨6 * 3600 + 5 * 60 + 40, 0⟩ }
+        .lounge 739866 5
+      = Look.pureDay { Look.specInput with arrival := fun _ => 425, wake := ⟨6 * 3600 + 5 * 60 + 40, 0⟩ }
+        .lounge 739866 5 := by
+  decide
+
+/- CHEAT 134 — every future day mixed at today's weekday's weight.  The fork reads
+   `p_lounge_on(date.weekday())` for each date: on Sunday 2026-09-13 the shipped 0.4, where
+   Monday's is 0.9.  The Sunday lounge day keeps 120 minutes at level 5, so the expected level
+   5 is 48 minutes and the cheat's 108.  `decide` refuses the equality. -/
+def dayOfAtTodaysWeight (I : Look.Input) (i : Nat) : DayCapacity :=
+  if i = 0 then Look.ofHist I.today I.day0
+  else Look.mixDay (I.today + i) (I.weight (Cal.weekdayOf I.today))
+    (Look.pureDay I .lounge (I.today + i)) (Look.pureDay I .home (I.today + i))
+
+theorem everyDayAtTodaysWeight :
+    (dayOfAtTodaysWeight Look.specInput 6).numAt 5 = (Look.dayOf Look.specInput 6).numAt 5 := by
+  decide
+
+
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D10 track).  Step L6 (design §13.6, §14.8 row
+-- L6): capacity on the wire.  Numbers 135, 136 and 137 (128-130 on the branch, renumbered at the merge)
+-- were the next free
+-- numbers in this checkout (the highest was L5's).  The D9 track numbers
+-- in parallel and the merge renumbers.  The controls, which compile, are
+-- `CapWire.readWeight_on_witnesses` and `readWeight_refuses_more_than_18_places`
+-- (135), `Look.curveOk_refuses_an_unsorted_curve` and `CapWire.readPrior_on_witnesses`
+-- (136), and `CapWire.the_lookahead_response_emits_in_build_order` (137), in
+-- Lookahead.lean and Boundary.lean.  Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 135 — a lounge weight of 19 decimal places accepted on the wire.  `10^-19` sent as
+   the digit strings `1` / `10000000000000000000` does not divide `capDen = 10^18` (D17), so
+   the wire refuses it `weightPrecision`; `decide` refuses the claim that it reads. -/
+theorem aWeightOf19PlacesReads :
+    (CapWire.readWeight .model .tuesday (CapWire.pairJ (.str ['1'])
+      (.str ['1', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']))).isOk
+      = true := by
+  decide
+
+/- CHEAT 136 — a prior curve accepted out of `from` order.  Fork `StepFn::from_pairs` sorts a
+   curve by its start, and `stepAt` reads it in that order; the wire refuses an unsorted curve
+   (`badStep`) rather than sorting it silently.  `4+` before `1-4`: `decide` refuses. -/
+theorem anUnsortedCurveIsAccepted :
+    Look.curveOk [Look.Step.from 4 3, Look.Step.range 1 4 4] = true := by
+  decide
+
+/- CHEAT 137 — a unit count as a JSON number a double holds exactly.  One hour at `capDen`
+   is `60 · 10^18` units, past `2^53`; that is why every unit count crosses as a digit string
+   (D17, `unitsJson`).  `decide` refuses the bound. -/
+theorem anHourOfUnitsFitsADouble : Look.capDen * 60 < 2 ^ 53 := by
+  decide
+
 end Tm

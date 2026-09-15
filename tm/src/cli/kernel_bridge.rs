@@ -1046,6 +1046,42 @@ fn refusal(err: &Value) -> KernelIssue {
             _ => "an unlisted kernel refusal — see kernel/TmKernel/TmKernel/Boundary.lean",
         };
         (name.to_string(), format!("kernel refusal: {name} — {why}"))
+    } else if let Some(text) = err.get("capacity").and_then(Value::as_str) {
+        // Stage 5 D10 step L6 (design §13.6, Boundary.lean's `CapWire.Refusal`):
+        // `<name> <key>`. No verb sends `capacity` until L8 wires the encoder,
+        // so today these reach the host only from a hand-built request.
+        let (name, key) = match text.split_once(' ') {
+            Some((n, k)) => (n, Some(k)),
+            None => (text, None),
+        };
+        if let Some(k) = key {
+            put("key", k.to_string());
+        }
+        let why = match name {
+            "nowAbsent" => "a capacity request was sent without `now`, which is the lookahead's first day",
+            "blockMinAbsent" => "a capacity request was sent without `blockMin`, which is `[day] block_min`",
+            "tzAbsent" => "a capacity request was sent without the zone table `tz`",
+            "badTz" => "the zone table is malformed, out of order, or longer than 4,096 transitions",
+            "badCapacity" => "a required key of the capacity section is absent, repeated, or of the wrong type",
+            "badWeight" => "a `p_lounge` value is not a decimal pair with a positive denominator",
+            "weightAboveOne" => "a `p_lounge` value is above 1",
+            "weightPrecision" => "a `p_lounge` value has more than 18 decimal places",
+            "badClock" => "a clock is not `HH:MM` below 24:00",
+            "badWake" => "today's logged wake is not a time of day chrono can hold",
+            "badCurve" => "a learned energy curve is not 12 levels below 256",
+            "badPrior" => "the energy prior has more than 16 curves, a key over 64 characters, or a key twice",
+            "badStep" => "an energy prior range has a key outside [0, 48] hours with at most 6 decimal places, an empty range, or is out of order",
+            "badLevel" => "an energy prior level is above 5",
+            "badCap" => "`home_max_ci` is above 5",
+            "badDay" => "a `[day]` value is outside its bound",
+            "lookaheadTooLong" => "the lookahead runs past 3,660 days or past year 9999",
+            "badDay0" => "today's capacity is not six levels of at most 1,440 minutes",
+            "badBins" => "`priority.bins` is not a descending ladder of at most 16 edges in (0, 1]",
+            "badSafety" => "`priority.safety` is not in (0, 1000]",
+            "badDefaultPriority" => "`priority.default_priority` is not 1 to 4",
+            _ => "an unlisted capacity refusal — see Boundary.lean's `CapWire.Refusal`",
+        };
+        (name.to_string(), format!("kernel refusal: {text} — {why}"))
     } else if let Some(id) = err.get("dupId").and_then(Value::as_str) {
         put("id", format!("^{id}"));
         ("dupId".into(), format!(
@@ -1211,6 +1247,27 @@ mod tests {
             (serde_json::json!("badNow"), "badNow"),
             (serde_json::json!("blockMinAbsent"), "blockMinAbsent"),
             (serde_json::json!("badBlockMin"), "badBlockMin"),
+            // stage 5 D10 L6: the capacity section's names (design §13.6)
+            (serde_json::json!({"capacity":"nowAbsent"}), "nowAbsent"),
+            (serde_json::json!({"capacity":"tzAbsent"}), "tzAbsent"),
+            (serde_json::json!({"capacity":"badTz unsorted"}), "badTz"),
+            (serde_json::json!({"capacity":"badCapacity pLounge.config"}), "badCapacity"),
+            (serde_json::json!({"capacity":"badWeight pLounge.config.Fri"}), "badWeight"),
+            (serde_json::json!({"capacity":"weightAboveOne pLounge.model.Sat"}), "weightAboveOne"),
+            (serde_json::json!({"capacity":"weightPrecision pLounge.model.Wed"}), "weightPrecision"),
+            (serde_json::json!({"capacity":"badClock arrival.config.Thu"}), "badClock"),
+            (serde_json::json!({"capacity":"badWake"}), "badWake"),
+            (serde_json::json!({"capacity":"badCurve energy.home"}), "badCurve"),
+            (serde_json::json!({"capacity":"badPrior prior.home"}), "badPrior"),
+            (serde_json::json!({"capacity":"badStep prior.lounge"}), "badStep"),
+            (serde_json::json!({"capacity":"badLevel prior.home"}), "badLevel"),
+            (serde_json::json!({"capacity":"badCap homeMaxCi"}), "badCap"),
+            (serde_json::json!({"capacity":"badDay breakMin"}), "badDay"),
+            (serde_json::json!({"capacity":"lookaheadTooLong"}), "lookaheadTooLong"),
+            (serde_json::json!({"capacity":"badDay0"}), "badDay0"),
+            (serde_json::json!({"capacity":"badBins"}), "badBins"),
+            (serde_json::json!({"capacity":"badSafety"}), "badSafety"),
+            (serde_json::json!({"capacity":"badDefaultPriority"}), "badDefaultPriority"),
         ] {
             let issue = refusal(&payload);
             assert_eq!(issue.name, name);
@@ -1264,6 +1321,17 @@ mod tests {
             let issue = refusal(&resp["err"]);
             assert_eq!(issue.detail["logRefusal"], name, "{raw}");
         }
+    }
+
+    /// Stage 5 D10 L6: a capacity refusal carries the key it names.
+    #[test]
+    fn a_capacity_refusal_carries_its_key() {
+        let issue = refusal(&serde_json::json!({"capacity":"weightPrecision pLounge.model.Wed"}));
+        assert_eq!(issue.name, "weightPrecision");
+        assert_eq!(issue.detail["key"], "pLounge.model.Wed");
+        assert!(issue.message.contains("more than 18 decimal places"), "{}", issue.message);
+        let bare = refusal(&serde_json::json!({"capacity":"badWake"}));
+        assert!(!bare.detail.contains_key("key"));
     }
 
     /// The owner's D6: a dangling or cyclic `@parent` refuses the whole tree as

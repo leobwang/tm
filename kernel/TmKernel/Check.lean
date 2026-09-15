@@ -2990,3 +2990,146 @@ open Tm
 #print axioms Tm.readTz_refuses_by_name
 #print axioms Tm.the_log_op_reads_a_four_line_tail
 #print axioms Tm.the_log_section_refuses_by_name
+
+-- APPENDED 2026-09-14 (stage 5, D10 track).  Step L5 (design §13.4, §14.8 row L5): the lookahead, fork
+-- `capacity::lookahead` with D10's mixture; `mkInput?` (R10, the model-then-config fallbacks of D10-4),
+-- a future day's wake through `local_dt` at second resolution (`wakeInstantOf`), `pureDay`, `dayOf` held
+-- once (`@[csimp] dayOf_eq_dayOfFast`), the §15 laws in-step, the twin, and the loaded-plan witness in
+-- Boundary.lean through `wallIndex`.
+#print axioms Tm.Look.WakeClock.ofClock_wf
+#print axioms Tm.Look.wakeInstantOf_ofClock
+#print axioms Tm.Look.wakeInstantOf_on_an_unambiguous_time
+#print axioms Tm.Look.mkInput?_refuses_too_many_days
+#print axioms Tm.Look.pureDay_is_dayHist
+#print axioms Tm.Look.Six.get_of
+#print axioms Tm.Look.locSix_get
+#print axioms Tm.Look.dayOf_eq_dayOfFast
+#print axioms Tm.Look.foldl_cons_map
+#print axioms Tm.Look.lookahead_eq_map
+#print axioms Tm.Look.dayOf_day
+#print axioms Tm.Look.lookahead_keeps_the_days
+#print axioms Tm.Look.lookahead_dates
+#print axioms Tm.Look.lookahead_getElem?
+#print axioms Tm.Look.daysAscending_range'
+#print axioms Tm.Look.lookahead_is_a_lookahead
+#print axioms Tm.Look.lookahead_entry
+#print axioms Tm.Look.lookahead_day_zero_is_the_hosts
+#print axioms Tm.Look.lookahead_future_day_is_the_mixture
+#print axioms Tm.Look.lookahead_between_the_locations
+#print axioms Tm.Look.lookahead_at_a_certain_weight_is_the_pure_location
+#print axioms Tm.Look.the_twin_forces_the_forks_location
+#print axioms Tm.Look.pureDay_le_budget
+#print axioms Tm.Look.lookahead_future_day_width
+#print axioms Tm.Look.weightsOf?_ok
+#print axioms Tm.Look.weightsOf?_of_ok
+#print axioms Tm.Look.mkInput?_ok_elim
+#print axioms Tm.Look.mkInput?_weight_is_the_model_then_config
+#print axioms Tm.Look.mkInput?_arrival_and_wake
+#print axioms Tm.Look.mkInput?_days_le
+#print axioms Tm.Look.mkInput?_refuses_a_bad_weight
+#print axioms Tm.Look.mkInput?_refuses_a_bad_wake
+#print axioms Tm.Look.mkInput?_refuses_a_bad_day0
+#print axioms Tm.Look.mkInput?_accepts
+#print axioms Tm.Look.wakeOf_without_a_logged_wake_is_wf
+#print axioms Tm.Look.lookahead_is_the_expected_minutes
+#print axioms Tm.Look.wakeInstantOf_on_witnesses
+#print axioms Tm.Look.a_future_day_reads_todays_wake_to_the_second
+#print axioms Tm.Look.the_twin_follows_the_learned_arrival_and_location
+#print axioms Tm.Look.the_expected_tuesday
+#print axioms Tm.Look.mkInput?_on_witnesses
+#print axioms Tm.Look.sunday_mixes_at_its_own_weight
+#print axioms Tm.Look.a_wednesday_wall_moves_the_window_and_keeps_the_budget
+#print axioms Tm.the_look_wall_witness_loads
+#print axioms Tm.the_look_wall_calendar_indexes_one_wednesday_wall
+#print axioms Tm.a_loaded_wednesday_wall_moves_the_window_and_keeps_the_budget
+
+-- APPENDED 2026-09-14 (stage 5, D10 track).  Step L6 (design §13.6, §10.4, §14.8 row L6): capacity on
+-- the wire.  Lookahead.lean: every §13.6 bound mkInput? does not check, with its smart constructor and
+-- rejection theorems (mkDayCfg?, mkStep?, curveOk, priorOk, energyOk, homeMaxOk).  Boundary.lean: `run`
+-- split at runLoad, the `capacity` and `tz` readers (CapWire), runCap / respondCap / callCap with the
+-- export moved to them, the bridge to `run` and `call`, what an answered request satisfies, and the
+-- decided witnesses.  Gap 77 closed.
+#print axioms Tm.Look.mkDayCfg?_wf
+#print axioms Tm.Look.mkDayCfg?_of_wf
+#print axioms Tm.Look.mkDayCfg?_refuses_blockMin
+#print axioms Tm.Look.mkDayCfg?_refuses_breakMin
+#print axioms Tm.Look.mkDayCfg?_refuses_breakAfterBlocks
+#print axioms Tm.Look.mkDayCfg?_refuses_minLastBlockMin
+#print axioms Tm.Look.mkDayCfg?_refuses_windowHours
+#print axioms Tm.Look.mkDayCfg?_refuses_budgetRatio
+#print axioms Tm.Look.DayCfg.wf_window_le_a_day
+#print axioms Tm.Look.mkStep?_ok_iff
+#print axioms Tm.Look.mkStep?_refuses_a_zero_denominator
+#print axioms Tm.Look.mkStep?_refuses_a_wide_denominator
+#print axioms Tm.Look.mkStep?_refuses_past_48_hours
+#print axioms Tm.Look.mkStep?_refuses_an_empty_range
+#print axioms Tm.Look.mkStep?_refuses_a_level_above_five
+#print axioms Tm.Look.curveOk_refuses_too_many_ranges
+#print axioms Tm.Look.curveOk_refuses_a_bad_range
+#print axioms Tm.Look.curveOk_refuses_an_unsorted_curve
+#print axioms Tm.Look.priorOk_refuses_too_many_curves
+#print axioms Tm.Look.priorOk_refuses_a_long_key
+#print axioms Tm.Look.priorOk_refuses_a_key_twice
+#print axioms Tm.Look.priorOk_refuses_a_bad_curve
+#print axioms Tm.Look.energyOk_refuses_a_curve_not_of_12
+#print axioms Tm.Look.energyOk_refuses_an_entry_past_a_byte
+#print axioms Tm.Look.homeMaxOk_iff
+#print axioms Tm.Look.priorOk_widths
+#print axioms Tm.Look.priorOk_keys_in_the_exact_domain
+#print axioms Tm.Look.the_shipped_bounds_hold
+#print axioms Tm.run_is_runLoad_then_runPlan
+#print axioms Tm.capBind_ok_elim
+#print axioms Tm.runCap_without_capacity_is_run
+#print axioms Tm.respondCap_without_capacity_is_respond
+#print axioms Tm.callExport_without_capacity_is_call
+#print axioms Tm.the_exported_call_emits_parses_back
+#print axioms Tm.runCap_answers_with_the_lookahead
+#print axioms Tm.runCap_refuses_what_the_section_refuses
+#print axioms Tm.runPlan_ok_is_docs_then_report
+#print axioms Tm.runCap_answers_docs_report_lookahead
+#print axioms Tm.CapWire.unitsJson_reads_back
+#print axioms Tm.CapWire.lookaheadJson_days
+#print axioms Tm.CapWire.readWeight_ok
+#print axioms Tm.CapWire.readWeekAll_ok
+#print axioms Tm.CapWire.readWeekOpt_ok
+#print axioms Tm.CapWire.orErr_ok
+#print axioms Tm.CapWire.mapError_ok
+#print axioms Tm.CapWire.readModelTable_ok
+#print axioms Tm.CapWire.readTables_ok
+#print axioms Tm.CapWire.readEnergyCurve_ok
+#print axioms Tm.CapWire.readEnergy_ok
+#print axioms Tm.CapWire.readCurve_ok
+#print axioms Tm.CapWire.readPrior_ok
+#print axioms Tm.CapWire.readHomeMax_ok
+#print axioms Tm.CapWire.mkDayCfg?_blockMin
+#print axioms Tm.CapWire.readDay_ok
+#print axioms Tm.CapWire.readPriority_ok
+#print axioms Tm.CapWire.readSection_ok
+#print axioms Tm.CapWire.readCapacity_ok
+#print axioms Tm.CapWire.the_zone_texts_read_on_witnesses
+#print axioms Tm.CapWire.readTz_on_witnesses
+#print axioms Tm.CapWire.readWeight_on_witnesses
+#print axioms Tm.CapWire.readDay_on_witnesses
+#print axioms Tm.CapWire.readPrior_on_witnesses
+#print axioms Tm.CapWire.readEnergy_on_witnesses
+#print axioms Tm.CapWire.readPriority_on_witnesses
+#print axioms Tm.CapWire.the_capacity_section_reads_the_corpus_model
+#print axioms Tm.CapWire.the_lookahead_response_emits_in_build_order
+#print axioms Tm.CapWire.runCap_reads_the_corpus_request
+#print axioms Tm.CapWire.jget_pairJ
+#print axioms Tm.CapWire.natOfDigits_digitsOf
+#print axioms Tm.CapWire.pairWith_digits
+#print axioms Tm.CapWire.readWeight_reads_every_representable_weight
+#print axioms Tm.CapWire.readWeight_refuses_more_than_18_places
+#print axioms Tm.CapWire.readHomeMax_on_the_bound
+#print axioms Tm.CapWire.readTz_refuses_too_many_transitions
+
+-- APPENDED 2026-09-14 (merge of rebuild-on-lean's D9 B2-B4 into stage5-lookahead's D10 L5-L6).
+-- `runCap` now composes B4's `log` section (`logInto`), so the bridge to the old entry point is
+-- restated over `runWithLog`; the L6 name `runPlan_ok_shape` collided with B4's and was renamed
+-- `runPlan_ok_is_docs_then_report` in place above.  L6's second `tz` reader is gone (gap 108):
+-- `CapWire.readTz_on_witnesses`, `CapWire.the_zone_texts_read_on_witnesses` and
+-- `CapWire.readTz_refuses_too_many_transitions` are re-proved over B4's `readTz` (audited above).
+#print axioms Tm.runCap_without_capacity_is_runWithLog
+#print axioms Tm.runCap_refuses_a_log_section_first
+#print axioms Tm.runCap_answers_docs_report_log_lookahead

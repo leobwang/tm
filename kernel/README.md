@@ -11197,3 +11197,1073 @@ gap **103** closed; parity **P20**. **Highest numbers after the step: gap 104, c
 | FFI suite (`tm-kernel-ffi`) | **85 passed / 0 failed** (kernel 74, corpus 8, stack 3) |
 | `cli_latency.rs` | green: first verb 622.2 ms (226 files, 2,959 lines), later verb 55.8 ms |
 | `logbench` | (a), (b) and (d) within a few percent of A3's figures; (c) and (e) above; (d)'s 4 MiB gate still **BREACH** (357.6 MiB; gap 102) |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5, D10 track, step L5 (branch stage5-lookahead,
+     worktree .claude/worktrees/stage5-lookahead).  Built in parallel with the D9
+     track on rebuild-on-lean (D11).  Takes cheats 133-134 (126-127 on the branch;
+     renumbered at the D9 B2-B4 merge) and gaps 105-106 (the next free numbers; the design's L5 cheat label 117 was
+     taken by L1).  No parity entry.  Whoever merges renumbers (AGENTS §6.2, §6.4).
+     =========================================================================== -->
+
+## Stage 5 D10 L5, 2026-09-14: the lookahead — each future day's lounge and home profiles, mixed exactly, ready for EDF
+
+**Starting point.**  The worktree at `e3e9e9e` (W-1's repair) was clean: check.sh 7/7, audit 2388,
+corpus 29/37 files and 4/5 whole plans, burn-down 13, `cargo test --workspace` 1013 / 0, FFI 82.
+Every figure at the end of this block is re-measured in this worktree.
+
+**The plan executed** is design `kernel/design/stage5/stage5-D9-D10-design.md` §13.4 and §14.8's L5
+row, under the owner's D10 (the exact mixture), D12 (L2–L4 pulled into stage 5) and D17
+(`capDen = 10^18`), with the fork's `capacity::lookahead` (`tm-core/src/capacity.rs`), `Ctx::wake_time`
+(`tm/src/cli/ctx.rs`) and `Model::p_lounge_on`/`expected_arrival_on`/`wake_or_expected`
+(`tm-core/src/energy.rs`) as the oracle, the location forced per day as the fork forces it.  Files:
+`Lookahead.lean` (a new section, "The lookahead", and the module header), `Boundary.lean` (an
+`import TmKernel.Lookahead` line and the loaded-plan witness, appended), `Check.lean`,
+`Negative.lean`, `AGENTS.md` (§2.3's import note and `Lookahead` entry).  No new module, so
+`TmKernel.lean` is unchanged at seventeen imports.  `Cal.lean` and every other D9 module are
+untouched.
+
+### What was built (`Lookahead.lean`, section "The lookahead")
+
+| piece | what it is | fork point |
+|---|---|---|
+| `WakeClock {sec, ns}`, `WakeClock.wf`, `WakeClock.ofClock` | a time of day with nanoseconds; chrono's bounds (second < 86,400, nanoseconds < 2·10^9, a leap second only on second 59); a whole-minute clock as one | `NaiveTime` |
+| **`wakeInstantOf z d w`**, `leapFold` | `local_dt` at second resolution: the local clock's whole seconds against B1's `Cal.localHits`; `Single`/`Ambiguous` give the earliest hit with the time's nanoseconds; a spring-forward gap tries 1 to 180 minutes later with the seconds kept and a leap second left (`leapFold`); else the local time read as UTC.  **B1's `Cal.instantOf` is its whole-minute instance** (`wakeInstantOf_ofClock`) | `capacity::local_dt(tz, date, wake_default)`, chrono 0.4.45's `NaiveTime::overflowing_add_signed` |
+| `maxLookaheadDays = 3660`, `DayCfg {cut, windowHours, windowCap, budgetRatio}` | D10-13's bound; the `[day]` keys the window, the budget and the cut read, L3's `CutCfg` contained | `DayConfig` |
+| **`InputIn`**, **`mkInput?`**, `CapErr` | the host's raw input (both readings of `p_lounge` and `arrival` per weekday, today's logged wake if any, day 0's six levels, curves, `home_max_ci`, `[day]`, zone, walls indexed once) and its smart constructor: `lookaheadTooLong`, then `weight wd e` Monday first, then `badWake`, then `badDay0` | `lookahead`'s arguments, `Model::p_lounge_on`, `Model::expected_arrival_on`, `Ctx::wake_time` (`wake_or_expected(logged, today.weekday())`) |
+| `weightOn?`, `weightsOf?`, `arrivalOn`, `wakeOf`, `day0Wf` | the fallbacks, applied by the kernel (D10-4, AGENTS §5.6) | same |
+| `Input` | the decoded input | — |
+| `budgetMinOf`, **`dayCut`**, `wakeOn` | `budget_blocks × block_min`; a date's walls, `windowOn`, `cutSlots … [] 0`; today's wake clock on that date | `limit_to_budget`'s `left`; `window_and_budget`, `cut_slots` |
+| **`pureDay I loc d`**, `pureDay_is_dayHist` | one location's future day: `limitHist` over the energised histogram, equal to L4's `dayHist` (the fork's per-slot sort) | `lookahead`'s loop body |
+| **`dayOf I i`**, **`lookahead I`** | entry `i`: day 0 is `ofHist today day0` (interim until L9), a later day `mixDay` at **its own weekday's** weight; the lookahead is a `foldl` over `List.range days`, then `reverse` | `capacity::lookahead` |
+| `Six`, `Six.of`, `Six.get`, `locSix`, `dayOfFast`, **`@[csimp] dayOf_eq_dayOfFast`** | L4's note: the compiled day cuts once, lists each location's energised slots once, and holds its histogram, its limited day and the mixed numerators as six numbers.  `lookahead` is declared after the `@[csimp]`, so its compiled fold calls `dayOfFast` (checked in the generated C: the fold specialised for `lp_TmKernel_Tm_Look_lookahead` calls `dayOfFast`, and `dayOfFast` builds `Six` values and closures over them) | — |
+| `Input.twin` | every weight forced to the fork's threshold (L1's `twin`), for L7 | `p_lounge_on(wd) >= 0.5` |
+| `DayCfg.shipped`, `shippedWeight`, `shippedArrival`, `specInput`, `specIn`, `wednesdayWall` | the shipped `config.toml` tables and the fork's `capacity_lookahead.rs` week (Monday 2026-09-07, Chicago, woken 06:05), for the witnesses | `plan-basic/config.toml` |
+
+### The laws (in-step; never in `Goals.lean`)
+
+§15 lists the L5 theorems under "L1, L4, L5 (in-step)", so none stood in `Goals.lean` and the
+burn-down does not move.  The four with §15 signatures match them **verbatim**:
+`lookahead_keeps_the_days`, `lookahead_is_a_lookahead`, `lookahead_between_the_locations` and
+`mkInput?_refuses_too_many_days`.
+
+| theorem | statement |
+|---|---|
+| **`lookahead_keeps_the_days`** (§15) | `(lookahead I).length = I.days` |
+| `lookahead_eq_map`, `lookahead_getElem?`, `lookahead_dates` | the lookahead is `dayOf` over `0..days`; entry `i` exists iff `i < days`; the dates are `today + i` in order |
+| **`lookahead_is_a_lookahead`** (§15) | `(lookaheadOf? capDen (lookahead I)).isSome = true`, for **every** input: step 3's `edf` accepts it |
+| `lookahead_day_zero_is_the_hosts` | entry 0 is `ofHist today day0` |
+| **`lookahead_future_day_is_the_mixture`** | every later entry is `mixDay` of the two `pureDay`s at the weight of **its own date's** weekday, each limited first (D10-3) |
+| **`lookahead_between_the_locations`** (§15) | every level of every later entry lies between `capDen ×` the two locations' minutes |
+| **`lookahead_at_a_certain_weight_is_the_pure_location`** | at weight `capDen` the day is `ofHist` of the lounge's, at `0` of home's |
+| **`the_twin_forces_the_forks_location`** | on `I.twin` every later day is `ofHist` of the lounge's day iff `capDen ≤ 2w`, else home's: the fork's forced location in `capDen` units (P1 refined, what L7 checks) |
+| **`lookahead_is_the_expected_minutes`** | end to end from the host's pair: for an accepted `InputIn`, a later day's level read over `capDenD` is the rational `(n·lounge + (d − n)·home)/d` for the model-then-config pair `n/d` of its weekday |
+| `pureDay_le_budget`, `lookahead_future_day_width` | R10's width: a later day's level is at most `capDen × budget × block_min` |
+| **`mkInput?_refuses_too_many_days`** (§15) | `maxLookaheadDays < x.days → mkInput? x = .error .lookaheadTooLong`, whatever else `x` holds |
+| `mkInput?_refuses_a_bad_weight`, `mkInput?_refuses_a_bad_wake`, `mkInput?_refuses_a_bad_day0` | each other refusal: no input is accepted |
+| `mkInput?_accepts` | both directions: every other input is accepted |
+| `mkInput?_ok_elim`, `mkInput?_days_le`, `mkInput?_weight_is_the_model_then_config`, `mkInput?_arrival_and_wake`, `wakeOf_without_a_logged_wake_is_wf` | what an accepted input holds: at most 3,660 days; each weight decoded exactly from the model's pair, else the config's; each arrival the model's, else the config's; the wake the logged one, else today's expected arrival, which is always well formed |
+| `wakeInstantOf_ofClock`, **`wakeInstantOf_on_an_unambiguous_time`** | B1's `instantOf` is the whole-minute instance; on an unambiguous local second the wake is that instant with the time's nanoseconds (B1's `instantOf_is_local_dt_on_an_unambiguous_time`, at second resolution) |
+| `Six.get_of`, `locSix_get`, `dayOf_eq_dayOfFast`, `pureDay_is_dayHist`, `dayOf_day`, `lookahead_entry`, `weightsOf?_ok`, `weightsOf?_of_ok`, `foldl_cons_map`, `daysAscending_range'`, `WakeClock.ofClock_wf` | the supporting lemmas |
+
+**`mixing_before_the_budget_is_not_the_expectation`** is the L5 row's fifth name.  L1 already proved
+it, with §15's statement and §13.4's witness (budget 60, `L = {5:60, 4:60}`, `H = {3:120}`,
+`w = capDen/2`), and `lookahead_future_day_is_the_mixture` is what makes it about the lookahead: the
+kernel's day is the mixture of the limited days.  It was not proved a second time.
+
+**Audit (AGENTS §7.4).**  (1) Every binder is used; the lookahead laws quantify over **every**
+`Input`, not over a decoded or witnessed one, and `lookahead_is_the_expected_minutes` over every
+accepted `InputIn`.  (2) Hypotheses are satisfiable: `0 < i` with `(lookahead I)[i]? = some c` holds
+at `specInput`, `i = 1` (`the_expected_tuesday`); the certain weights hold at `Input.twin`'s
+(`the_twin_follows_the_learned_arrival_and_location`); `wakeInstantOf_on_an_unambiguous_time`'s one
+hit holds on 2026-09-07 in Chicago (`wakeInstantOf_on_witnesses`, and B1's
+`instantOf_on_an_unambiguous_noon`).  (3) Names say what the statements say.  (4) Both directions:
+`mkInput?` has a refusal theorem per name and `mkInput?_accepts`; the twin law is an equality with
+the `if`, not a bound.  (5) The compiled code runs `dayOfFast` (generated C, above).  (6) Units:
+UTC seconds and nanoseconds for instants, whole minutes per level per location, numerators over
+`capDen` per level per day.
+
+### The fork's tests, as witnesses (Chicago's 2026 table; the shipped `config.toml`)
+
+| theorem | what it pins |
+|---|---|
+| `wakeInstantOf_on_witnesses` | 06:05:40.25 on 2026-09-07 keeps its seconds and nanoseconds; 02:30:40 on 2026-03-08 (Chicago skips it) is 03:00:40 CDT; 02:30:59 with a leap nanosecond count of 1.5·10^9 there is 03:00:59.5 CDT; 01:30:40 on 2026-11-01 (twice) is the earlier |
+| **`a_future_day_reads_todays_wake_to_the_second`** | Tuesday 2026-09-08, arrival 07:05: woken 06:05:00 the 07:05 block is at 1.00 h (level 5) and the day keeps `[0,0,0,0,120,240]`; woken 06:05:40 it is at 0.99 h (level 4) and the day keeps `[0,0,0,0,180,180]` |
+| **`the_twin_follows_the_learned_arrival_and_location`** | fork test `lookahead_follows_the_learned_arrival_and_location` through the twin: a learned Tuesday arrival of 12:00 gives the fork's asserted `[0,0,120,120,120,0]`, and a learned Wednesday `P(lounge)` of 0.2 gives a home day capped at 3, `[0,0,0,360,0,0]`, each times `capDen`; day 0 as handed in |
+| **`the_expected_tuesday`** | at `p = 0.9` the lounge keeps 180 at 5 and 180 at 4 (the fork's `config[1]`), home keeps 360 at 3, and the expected Tuesday holds 162, 162 and 36 minutes |
+| `sunday_mixes_at_its_own_weight` | Sunday 2026-09-13 at the shipped 0.4: lounge `[0,0,0,120,120,120]`, home `[0,0,120,240,0,0]` (L4's Sunday), expected 48, 48, 192, 72 |
+| `mkInput?_on_witnesses` (11 `rfl`) | accepted: the shipped tables with Monday's 07:00 as the wake; a learned Sunday 0.8 over the config's 0.4; 3,660 days; a leap second on second 59.  Refused by name: 3,661 days; a config 3/2 on Saturday (`weight saturday weightAboveOne`); a learned third on Wednesday (`weight wednesday weightPrecision`); a wake at 24:00; a leap second off second 59; five day-0 levels; 1,441 minutes |
+| **`a_wednesday_wall_moves_the_window_and_keeps_the_budget`** | without walls Wednesday's window ends at 15:00; the §4.3 meeting on Wednesday moves it to 16:00, the cut holds 410 minutes, and the twin's Wednesday is `[0,0,0,0,180,180]` times `capDen` |
+
+**The loaded-plan witness (`Boundary.lean`, appended).**  `lookWallWitness` is a one-line calendar,
+fork fixture `calendar/2026-W37.md`'s meeting moved to Wednesday
+(`- [ ] 3 Meeting w/ host      at:2026-09-09T12:50/13:50 loc:zoom ^g1`).
+`the_look_wall_witness_loads` (decide); `lookWallPlan` is total by it;
+`the_look_wall_calendar_indexes_one_wednesday_wall` (decide) shows `wallIndex Cal.chicago 60`
+reads exactly `wednesdayWall` from it; **`a_loaded_wednesday_wall_moves_the_window_and_keeps_the_budget`**
+states the window end 16:00 and the twin's capacity over `wallIndex` of the loaded plan, and is
+proved by rewriting with the index equation and the Lookahead witness, so no `decide` holds both
+the load and the lookahead.
+
+### Cheats (`Negative.lean`, appended)
+
+| # | label | cheat | fails because |
+|---|---|---|---|
+| **133** | L5-a | a future day's wake at whole minutes (today's wake clock with its seconds dropped, through `Cal.instantOf`), claimed equal to `pureDay` at level 5 on the 07:05 Tuesday woken at 06:05:40 | whole minutes keep 240 minutes at level 5, the fork 180; `decide` refuses (controls `a_future_day_reads_todays_wake_to_the_second`) |
+| **134** | L5-b | every future day mixed at today's weekday's weight, claimed equal to `dayOf` at Sunday's level 5 | the cheat's Sunday level 5 is 108 minutes (Monday's 0.9), the fork's weekday reading 48 (Sunday's 0.4); `decide` refuses (controls `sunday_mixes_at_its_own_weight`, `lookahead_future_day_is_the_mixture`) |
+
+Each fails at its own line with `Tactic decide proved that the proposition … is false`.
+
+### T0 (c): 3,660 days on a 2 MiB thread, measured (not committed; gap 105)
+
+A scratch harness under `/tmp/claude-1000/l5probe/t0c/` (not committed) linked this commit's
+`libTmKernel_TmKernel.a` into a C `main` that runs the lookahead on a `pthread` created with an
+explicit 2,048 KiB stack.  (A Lean `main` is not usable for this: `lean_run_main` runs it on a thread
+of its own, so `ulimit -s 2048` did not stop the control below.)  Input: `specInput` with 3,660 days,
+a wake at 06:05:40.25, and a Chicago-rule table of 600 transitions over [1900, 2200).  Every level of
+every day is read.  Each run is `MemoryMax=16G`.
+
+| run | result |
+|---|---|
+| **control**: a non-tail `deepSum` over 10^6 elements, same 2 MiB thread | **killed by SIGSEGV** (signal 11): the stack bound is real |
+| 7 days | returns, 0 ms, 8.8 MB peak RSS |
+| **3,660 days, no walls** | **returns, 110 ms**, 9.3 MB peak RSS; sum of numerators `1317650 · capDen` = 410 + 3,659 × 360 minutes |
+| **3,660 days, a 12:50–13:50 wall every day** (3,660 walls, `wallsOn` filters them per day) | **returns, 135 ms**, 9.5 MB peak RSS; the same sum (each wall extends its window and the budget is still met) |
+
+Design §18.8's ESTIMATE for the 3,660-day cap was 0.18–0.73 s and names a per-weekday memo as the
+lever above 300 ms (risk K22).  The measured 110–135 ms does not need it; T14 (L8) measures through the
+shipped binary.
+
+### Gap 105 (new; label L5-a) — T0 (c) is measured by a scratch harness, not committed
+
+(1) *What is not done*: design §14.8's L5 acceptance "T0 (c) `lookahead` with `days = 3,660` on a
+2 MiB thread" is not a committed test in `kernel/tm-kernel-ffi/tests/stack.rs`.  (2) *Why not now*:
+the FFI exposes one symbol, `tm_kernel_call` (R9), and no request reaches `lookahead` until L6's
+`capacity` section; a test-only export or request key would be a boundary change L6 designs.
+(3) *Cost*: the figures above are one measurement of this commit, not a test; a later edit that
+recursed once per day, or dropped `dayOf_eq_dayOfFast`, would go unseen until L6.  (4) *When it
+clears*: L6, with a `stack.rs` test that sends a `capacity` request of 3,660 days on a 2 MiB thread.
+
+### Gap 106 (new; label L5-b) — step 3's EDF pass reads a day through one closure per earlier reservation
+
+(1) *What is not done*: `Capacity.lean`'s `reserveRest` returns `⟨c.day, dayRest ci c.numAt left⟩`
+for every day up to the due date, and `dayRest` is a closure over the previous `numAt`.  So after
+`k` deadlines a day's level is read through `k` closures, and each `dayRest` read also reads the
+levels above it (`dayLeft`).  `availUntil`, `reserveOut`, `edfCaps` and `edfGrantsGo` also recurse
+once per day, not in tail position (they passed 3,660 days on the 2 MiB thread).  (2) *Why not now*:
+the fix belongs in `Capacity.lean` (step 3), outside L5's files.  A `@[csimp]` twin declared in
+`Lookahead.lean` would not reach `edfCaps`, which is compiled in `Capacity.lean` before it.  Nothing
+on the wire calls `edf` yet.  (3) *Cost*, measured with the same scratch harness over this commit's
+3,660-day lookahead (`ci` 3, 600-minute needs, due dates spread evenly; each figure includes the
+≈ 107 ms lookahead): 1 deadline 107 ms, 10 → 170 ms, 20 → 685 ms, 30 → 2,478 ms, 40 → 6,900 ms,
+about the fourth power of the deadline count.  A plan with 100 dated candidates would take minutes,
+and a `ci` 0 deadline reads more levels.  (4) *When it clears*: whichever of L6 and the priority
+wiring (L8) first calls `edf` from the wire.  It needs a `@[csimp]` twin of `reserveRest` that holds
+each day's rest as six numbers (L5's `Six`), `foldl` forms for the day recursions (D9-21), and T14's
+measurement.
+
+### Parity and rounding sites
+
+**No new parity entry.**  The kernel's lookahead, with every weight forced, is the fork's
+`capacity::lookahead` in `capDen` units: `the_twin_forces_the_forks_location` is P1 (refined)
+stated over the whole lookahead, and L7 measures it.  The twin is still subject to P27 (the window's
+half-up minutes) and, from L6, P26 and P30.  §17's "exact by design" list gains **the day range
+(dates, each date's own weekday for its weight and arrival), and a future day's wake from today's
+wake clock with seconds and nanoseconds, spring-gap, fall-fold and leap-second clocks included**.
+Day 0 is the host's histogram (design gap 93, recorded at L8 by §20) and is identical to the
+twin's by `lookahead_day_zero_is_the_hosts`.  No rounding site is added.
+
+### Rule D9-21
+
+Functions this step adds that walk a list the wire can make large: `lookahead` (a `foldl` over core
+`List.range`, whose `range.loop` is tail recursive, then `reverse`); `dayCut`, `pureDay` and
+`locSix` call L2–L4's `wallsOn`, `windowOn`, `cutSlots`, `energize`, `histOf'` and `limitHist`,
+listed in their blocks; `wakeInstantOf` calls B1's `Cal.localHits` (a `foldl` over at most 4,096
+transitions) and `Cal.gapHit` (structural fuel 180); `day0Wf` is core `length` then `all`.
+`weightsOf?` and `Six` recurse over nothing.  `dayOf` is compiled as **`@[csimp] dayOf_eq_dayOfFast`**.
+Proof-only recursions: `foldl_cons_map`, `daysAscending_range'`.
+
+### The `decide` budget (§14.0 item 4)
+
+9 new decided or `rfl` witnesses (`wakeInstantOf_on_witnesses`,
+`a_future_day_reads_todays_wake_to_the_second`,
+`the_twin_follows_the_learned_arrival_and_location`, `the_expected_tuesday`,
+`sunday_mixes_at_its_own_weight`, `mkInput?_on_witnesses` (11 `rfl`s in one theorem),
+`a_wednesday_wall_moves_the_window_and_keeps_the_budget`, and in `Boundary.lean`
+`the_look_wall_witness_loads` and `the_look_wall_calendar_indexes_one_wednesday_wall`) and 2
+cheats, **11 in all**, within the budget of 20.  They use at most Chicago's **2 zone transitions**,
+no `Entry` value, and one string literal of 68 characters (the calendar line).  All were probed first
+in scratch files under `/tmp/claude-1000/l5probe/` against the built package, under `MemoryMax=8G`
+and `timeout 120`, before the module was edited: the section with its witnesses elaborated in
+0.64 s at a 734 MB peak, the Boundary part in 1.57 s at 956 MB (the load included), the cheats in
+0.54 s at 696 MB.  Six deliberately wrong probe files were refused and not committed: a wake one second
+late, the two Tuesday wakes' histograms swapped, a wrong twin Wednesday and expected Tuesday, a
+wrong wake fallback and a misnamed weight refusal, and 420 cut minutes for 410.  One probe showed
+that `pureDay` written as `dayHist` does not reduce under `decide` (core's `List.mergeSort` is
+well-founded recursion), which is why `pureDay` is written as the histogram limit (disagreement 3).
+The committed `Lookahead.lean` elaborates in **2.57 / 2.61 / 2.61 s at an 874–895 MB peak** under
+the same cap, against L4's 2.05 s and 818–846 MB.  No realistic-size input is evaluated.
+
+### Recorded disagreements between the design and the repo
+
+1. **A future day's wake is today's wake clock, not the weekday's expected wake** (resolves L4's
+   disagreement 2).  §13.3 and §13.4 give `Input` `wakeToday : Cal.Instant` and
+   `expectedWake : Cal.Weekday → Clock`, and build a future day's wake as `instantOf z d
+   (expectedWake wd)`.  The fork passes `Ctx::wake_time()`, a `NaiveTime`: `state.json`'s logged
+   wake, else the replay's wake of today, else **today's** weekday's expected **arrival**
+   (`model.json` has no expected wake), and applies `local_dt(tz, date, wake_default)` to every
+   future date.  The kernel follows the fork: `InputIn.wake : Option WakeClock` (the logged clock),
+   `wakeOf` applies the fallback, and no weekday wake table exists.  **L6's wire should carry the
+   logged wake as a time of day with nanoseconds**, not a stamp, and not weekday wake tables.
+2. **`instantOf` at second resolution lives in `Lookahead.lean`.**  B1's `Cal.instantOf` takes a
+   whole-minute `Fin 1440`, and `Cal.lean` is the D9 track's.  `wakeInstantOf` is the same rule over
+   whole seconds and nanoseconds, and `wakeInstantOf_ofClock` proves `instantOf` its whole-minute
+   instance, so the two cannot drift apart silently.  **Left for the D9 track or the merge (AGENTS
+   §5.3):** `wakeInstantOf` could move into `Cal.lean`, with `instantOf` defined as its instance.
+3. **`pureDay` is written as the limit over the histogram.**  §13.4 says `pureDay` is "window,
+   cut, energise, limit", and L4 named it `dayHist` over the cut.  `dayHist` calls `limitSlots`,
+   whose merge sort does not reduce under `decide`, so no lookahead witness could be decided.
+   `pureDay` is `limitHist … (histOf' (energize …))`, and `pureDay_is_dayHist` proves it is
+   `dayHist` (L4's `limitSlots_is_limitHist`).
+4. **`Input`'s fields.**  §13.4's `Input` has `dayCfg : DayCfg`, `walls : List (Nat × Nat)` and
+   no `homeMax`.  Here `day : DayCfg` contains L3's `CutCfg`, `walls : List WallIx` (L2 split the
+   design's `wallsOn p d` into `wallIndex` and `wallsOn`), and `homeMax` is fork
+   `cfg.home_max_ci`, which `futureEnergy` reads.  §15's `InputIn` was unspecified, and it now holds
+   both readings of each weekday table, so the kernel picks (D10-4).
+5. **`days = 0` is accepted.**  §13.6 bounds `days` to `1..=3660` with `lookaheadTooLong`.  The fork's
+   `lookahead(…, 0)` is empty, `lookaheadOf?` accepts the empty list, and naming a zero "too long"
+   would misname it.  `mkInput?` refuses only `days > 3660`.  If L6's wire needs a positive count, it
+   refuses zero under its own name.
+6. **Bounds checked now that §13.6 assigns to L6.**  `badWake` and `badDay0` are checked by
+   `mkInput?`, because `Input` introduces those types.  So is the weight fallback, because `Input`
+   holds resolved weights.  The curves', `[day]`'s, `homeMaxCi`'s and the zone's bounds remain L6's.
+7. **`mixing_before_the_budget_is_not_the_expectation` and cheat 117 were L1's.**  The L5 row lists
+   both.  L1 proved the theorem and took cheat 117, and neither is repeated.  L5's cheats take the
+   next free numbers, 133 and 134 (126 and 127 until the merge), and control L5's own reading: seconds in the future wake, and the
+   weekday per date.
+8. **T0 (c) is measured, not committed** (gap 105).
+9. **The loaded-plan witness evaluates the load under `decide`.**  §13.4 says `loadPlan` is "reached
+   through its existing round-trip theorem, not unfolded under decide (CRIT 13)".  Every loaded-plan
+   witness in `Boundary.lean` (`the_tree_witness_loads` and its kind) decides `loadsOk` on a small
+   literal, and there is no round-trip theorem that yields the plan's `wallIndex`.  The repo's form
+   is followed, on the smallest plan with one wall (one line), and the lookahead is reached by a
+   rewrite, not inside the same `decide`.
+10. **`Boundary.lean` imports `Lookahead.lean` now.**  Before this step nothing imported
+    `Lookahead`, and an edit to it rebuilt in about 2 s.  Now it also rebuilds `Boundary` (147 s at
+    this step's build).  L6 edits both anyway.
+11. **Two theorems not in the row.**  `the_twin_forces_the_forks_location` (the law L7 checks,
+    stated over the lookahead) and `lookahead_is_the_expected_minutes` (D10 end to end from the
+    host's pair).
+12. **Memory cap.**  Every run used the workflow's 30 GB cap, with 8 GB for probes and 16 GB for
+    the scratch harness, not §14.0's 40 GB.
+
+**Carried notes honoured.**  No instant is compared (B1's order note); `hswAt` reads
+`Cal.secondsBetween`.  No decimal is re-emitted (gap 101).  Nothing assumes a 4 MiB request
+(gap 102).  No `Stamp` name is added (the B2 note).
+
+**Label-to-number map:** cheats L5-a → **133**, L5-b → **134** (126 and 127 until the merge); gaps L5-a → **105**, L5-b → **106**.
+No parity entry.  Highest numbers in this checkout after the step: gap 106, cheat 127, parity P27 (on the branch).
+
+**Observable behaviour changes: none.**  Nothing on the wire calls `mkInput?` or `lookahead`.
+`Boundary.lean`'s new definitions (`lookWallWitness`, `lookWallPlan`) are unreachable from `call`.
+**Behaviour rows:** none (§20 lists none for L5).  **Goals:** discharged 0, refuted 0, added 0.
+Burn-down **13** (unchanged).
+
+**New theorems: 46**: 43 in `Lookahead.lean` and 3 in `Boundary.lean`, audited under `Check.lean`'s
+new `APPENDED 2026-09-14 (stage 5, D10 track).  Step L5` banner.  AGENTS §6.3's three counts agree
+at **2434** (`grep -c '^#print axioms' Check.lean` 2434, 2434 distinct, 2434 declared by the
+attribute-aware grep).  About 150 definition lines and 308 proof lines (about 90 of them the
+witnesses), against design §14.8's estimate of 170 and 550.  No theorem was retired, weakened or
+deleted.  No existing two-run theorem was touched.
+
+**Owed, by name (the rest of the D10 track):** L6 (the capacity wire: `InputIn` from JSON, with the
+wake as a time of day per disagreement 1; `DayCfg`'s, the curves' (L4's disagreement 8),
+`homeMaxCi`'s and the zone's R10 bounds with `badTz subMinuteOffset`; P26, P30; gap 77; gap 105's
+committed T0 (c); gap 106 if `edf` goes on the wire there).  L7 (the parity twin through
+`Input.twin` and `the_twin_forces_the_forks_location`, which also measures P27, gap 85 and gap 104).
+L8 (the wiring, T14, T16, gap 106 if not L6's).  L9 (day 0 in the kernel; `wakeInstantOf` is ready
+for today's wake with seconds).
+
+**Re-measured after this step** (every command under the 30 GB cap, in this worktree, on the tree
+committed):
+
+| measurement | value |
+|---|---|
+| `lake build TmKernel:static` after the edits | 149.5 s wall at an 8.20 GB peak (`Lookahead` 3.2 s, then `Boundary` 147 s, which now imports it) |
+| `check.sh` | **7/7**; 3.45 s on its first run, then 2.73 / 2.72 / 2.78 s on the built tree against L4's 2.73 / 2.71 / 2.76 s, no rise (§14.0 item 4 allows 10%) |
+| axiom audit | **2434 theorems** (2388 + 46); each new name prints its own line |
+| `Negative.lean` | check 4 ok; 123 errors (121 before); 117 `/- CHEAT` banners (115 before); CHEATs 133 and 134 (126 and 127 then) each fail at their own line |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (stage 3: 0, stage 4: 0, stage 5: 0, stage 6: 13) |
+| `cargo test --workspace` | **1013 passed / 0 failed / 0 ignored across 67 binaries** (unchanged) |
+| FFI suite (`tm-kernel-ffi`) | **82 passed / 0 failed** (kernel 72, corpus 8, stack 2) |
+| `cli_latency.rs` | green: first verb 632.1 / 637.6 / 657.4 ms (226 files, 2,959 lines), later verb 50.7 / 55.8 / 50.7 ms |
+| T0 (c), scratch harness, 2 MiB pthread | 3,660 days in 110 ms (no walls) and 135 ms (a wall a day), 9.3–9.5 MB peak RSS; the control overflows |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5, D10 track, step L6 (branch stage5-lookahead,
+     worktree .claude/worktrees/stage5-lookahead).  Built in parallel with the D9
+     track on rebuild-on-lean (D11).  Takes cheats 135-137 (128-130 on the branch; renumbered at
+     the D9 B2-B4 merge), gaps 98 (the design's
+     label), 107-109, and parity entries P26 and P30 (the design's numbers).
+     Closes gaps 77 and 105.  Edits Boundary.lean mid-file in two places (`run`
+     split, the export moved): the merge reconciles them with the D9 track's B4.
+     Whoever merges renumbers (AGENTS §6.2, §6.4).
+     =========================================================================== -->
+
+## Stage 5 D10 L6, 2026-09-14: capacity crosses the wire — every bound named, units as digit strings, gap 77 closed
+
+**Starting point.**  The worktree at `dbed826` (L5) was clean: check.sh 7/7, audit 2434, corpus 29/37
+files and 4/5 whole plans, burn-down 13, `cargo test --workspace` 1013 / 0, FFI 82.  Every figure at
+the end of this block is re-measured in this worktree.
+
+**The plan executed** is design `kernel/design/stage5/stage5-D9-D10-design.md` §13.6, §10.1–§10.4 and
+§14.8's L6 row, under the owner's D10, D15 (not yet: `--json` is L8's), D17 (`capDen = 10^18`, digit
+strings, `u128` on the host) and the workflow's split of the row: **the kernel side only**; the host
+encoder `decimal_pair`, its proptest T15 and the CLI wiring are L8's (W-3).  Files: `Lookahead.lean`
+(a new section, "The capacity input's bounds", and the header), `Boundary.lean` (`run` split at
+`runLoad`, the export moved, and a new section at the end, "Stage 5 D10 L6"), `Check.lean`,
+`Negative.lean`, `kernel/tm-kernel-ffi/tests/kernel.rs` and `tests/stack.rs`, `tm/src/cli/kernel_bridge.rs`
+(the refusal names only), `AGENTS.md` (§2.3's `Lookahead` and `Boundary` entries).  No new module, so
+`TmKernel.lean` is unchanged at seventeen imports.  `Cal.lean` and every other D9 module are untouched.
+
+### What was built
+
+**`Lookahead.lean`: every bound `mkInput?` does not check** (R10), each with a smart constructor the wire
+decoder uses and rejection theorems:
+
+| value | bound | constructor | refusal on the wire |
+|---|---|---|---|
+| `[day]` `block_min` (the request's `blockMin`), `min_last_block_min` | `1..=1440` | `mkDayCfg?` (`DayKey`) | `badDay blockMin`, `badDay minLastBlockMin` |
+| `[day]` `break_min` | `≤ 1440` | `mkDayCfg?` | `badDay breakMin` |
+| `[day]` `break_after_blocks` | `≤ 64` | `mkDayCfg?` | `badDay breakAfterBlocks` |
+| `[day]` `window_hours` | `den ∈ [1, 10^6]`, `0 < num ≤ 24·den` | `mkDayCfg?` | `badDay windowHours` |
+| `[day]` `budget_ratio` | `den ∈ [1, 10^6]`, `num ≤ den` | `mkDayCfg?` | `badDay budgetRatio` |
+| a prior range | keys `den ∈ [1, 10^6]`, `num ≤ 48·den`, `from < to`; level `≤ 5` | `mkStep?` (`StepErr`) | `badStep prior.<curve>`, `badLevel prior.<curve>` |
+| a prior curve | `≤ 64` ranges, sorted by `from` (fork `StepFn::from_pairs`) | `curveOk` | `badStep prior.<curve>` |
+| the prior curves | `≤ 16`, keys `≤ 64` characters, no key twice, **every** curve (L4's disagreement 8) | `priorOk` | `badPrior prior.<curve>` |
+| a learned curve (`lounge`, `home`) | exactly 12 entries, each `< 256` | `energyOk` | `badCurve energy.<loc>` |
+| `home_max_ci` | `≤ 5` | `homeMaxOk` | `badCap homeMaxCi` |
+| all of the above | | `InputIn.boundsWf` | |
+
+**`Boundary.lean`, section "Stage 5 D10 L6": the wire.**
+
+| piece | what it is |
+|---|---|
+| `runLoad`, `run` | `run` split, unchanged in behaviour: `runLoad` is the documents, commands, clock, scan and loader; `run j = (runLoad j).bind …runPlan` (`run_is_runLoad_then_runPlan`, `rfl`); so `runCap` loads the plan once |
+| `CapWire.Refusal`, `.text`, `refusalJson` | the names, rendered `<name> <key>` and sent as `{"err":{"capacity":"…"}}` |
+| `need`, `opt`, `natAt`, `strAt`, `arrAt`, `pairAt`, `clockAt`, `orErr`, `pairWith`, `natOfDigits`, `clockOf` | the field readers: a key absent, carried twice, or of the wrong JSON type is the row's refusal; clocks through `Field.parseClock`, digit strings through `readNat` (at most 40 digits) |
+| `readWeight`, `readWeekOpt`, `readWeekAll`, `readModelTable`, `readTables`, `readArrival` | `pLounge` and `arrival`, both readings (D10-4); **every** weight pair sent is checked by L1's `mkWeight?`, the model's and the config's |
+| `readWake`, `readEnergyCurve`, `readEnergy`, `readStep`, `readCurve`, `readPriorEntry`, `readPriorObj`, `readPrior`, `readHomeMax`, `readDay`, `readDays`, `readDay0` | the section's other keys, each ending in its constructor |
+| `binsOfWire`, `safetyOfWire`, `readPriority` | **gap 77**: `[priority]` through step 2's `binsOfPairs?`, `safetyOf?`, `defaultPrioOf?` (at most 16 edges; denominators at most `10^18`; safety at most 1,000) |
+| `readOffsetText`, `readInstantText`, `transOf`, `readTrans`, `tzObj`, `readTz` | the zone table of §10.1 (`±HH:MM:SS`, `YYYY-MM-DDTHH:MM:SSZ`, at most 4,096 transitions checked before any is read), then B1's `Cal.mkTz?` |
+| `Section`, `readSection`, `Section.input`, `ofCapErr`, `lookaheadInCalendar`, `inCalendar`, `CapReq`, `readCapacity` | the whole request: `nowAbsent`, `blockMinAbsent`, the zone, the section, then L5's `mkInput?` over the loaded plan's walls (`wallIndex`, indexed once, `buffer:` in the request's blocks), then a lookahead that would run past year 9999 (`lookaheadTooLong`) |
+| `unitsJson`, `dayCapJson`, `maxEmittedDays`, `lookaheadJson`, `withLookahead` | the response: `den`, then the first `min(days, 7)` days (D10-8), each `day` a date and `numAt` six digit strings (D17) |
+| `runCap`, `respondCap`, `callCap`, **`@[export tm_kernel_call] callExport`** | the request with its capacity section; the export moved here from beside `call` (R9's one symbol is unchanged) |
+
+The wire, in one example (the section's header in `Boundary.lean` has it in full):
+
+```jsonc
+{"docs": [...], "now": "2026-09-07", "blockMin": 60,
+ "tz": {"key": "America/Chicago", "base": "-06:00:00", "then": [["2026-03-08T08:00:00Z", "-05:00:00"], …]},
+ "capacity": {"pLounge": {"model": {…}, "config": {"Mon": {"num": "9", "den": "10"}, … all 7}},
+              "arrival": {"model": {…}, "config": {"Mon": "07:00", … all 7}},
+              "wake": null | {"sec": 21900, "ns": 0}, "energy": {"lounge": [12], "home": [12]},
+              "prior": {"lounge": [{"from": {"num": 0, "den": 1}, "to": {"num": 1, "den": 1}, "level": 4}, …], …},
+              "homeMaxCi": 3, "day": {"breakMin": 20, "breakAfterBlocks": 2, "minLastBlockMin": 30,
+              "windowHours": {"num": 8, "den": 1}, "windowCap": "19:00", "budgetRatio": {"num": 75, "den": 100}},
+              "priority": {"bins": [{"num": 5, "den": 10}, …], "safety": {"num": 13, "den": 10}, "defaultPriority": 3},
+              "days": 7, "day0": [0, 0, 0, 60, 170, 180]}}
+// ok gains, after "report":
+"lookahead": {"den": "1000000000000000000", "days": [{"day": "2026-09-07", "numAt": ["0", "0", "0", "60000000000000000000", …]}, …]}
+```
+
+### The laws (in-step; nothing stood in `Goals.lean` for L6)
+
+| theorem | statement |
+|---|---|
+| **`callExport_without_capacity_is_call`**, `respondCap_without_capacity_is_respond`, `runCap_without_capacity_is_run` | a request without `capacity` is answered exactly as before, so every theorem stated about `call`, `respond` and `run` holds of the FFI for it |
+| **`the_exported_call_emits_parses_back`** | J5's round trip at the new exported function |
+| `runCap_answers_with_the_lookahead`, **`runCap_answers_docs_report_lookahead`**, `runPlan_ok_shape` | with `capacity`, the answer is `run`'s with `lookahead` after `docs` and `report` (design §10.2's build order) |
+| **`runCap_refuses_what_the_section_refuses`** | a refused section refuses the request by its name, whatever the commands |
+| **`readCapacity_ok`** | what every answered capacity request satisfies: its input is `mkInput?`'s, `InputIn.boundsWf` holds (every §13.6 bound), `now` is today, `blockMin` is `[day] block_min` and the walls' block, the walls are the loaded plan's `wallIndex`, every weight pair sent decodes exactly (config's for all seven days, model's where present), the lookahead ends by year 9999, and the ladder, safety and default came through step 2's decoders |
+| `readSection_ok`, `readTables_ok`, `readModelTable_ok`, `readWeekAll_ok`, `readWeekOpt_ok`, `readWeight_ok`, `readEnergy_ok`, `readEnergyCurve_ok`, `readPrior_ok`, `readCurve_ok`, `readHomeMax_ok`, `readDay_ok`, `readPriority_ok`, `mkDayCfg?_blockMin`, `orErr_ok`, `mapError_ok`, `capBind_ok_elim` | the per-reader lemmas it is assembled from |
+| **`readWeight_reads_every_representable_weight`** / **`readWeight_refuses_more_than_18_places`** | both directions on the host's digit strings: every pair in `[0, 1]` whose denominator divides `10^18` reads as itself; a denominator `10^k`, `18 < k < 40`, is `weightPrecision` whatever the numerator |
+| `readHomeMax_on_the_bound`, `readTz_refuses_too_many_transitions` | `homeMaxCi` reads exactly when `≤ 5`; more than 4,096 transitions is `badTz table` before any is read |
+| `unitsJson_reads_back`, `lookaheadJson_days` | every unit count is a string `readNat` reads back; the response carries `min(days, 7)` days |
+| `mkDayCfg?_wf`, **`mkDayCfg?_of_wf`**, `mkDayCfg?_refuses_<key>` (six), `DayCfg.wf_window_le_a_day` | `[day]` in both directions, one refusal theorem per key; an accepted window is at most 1,440 minutes |
+| `mkStep?_ok_iff`, `mkStep?_refuses_a_zero_denominator`, `_a_wide_denominator`, `_past_48_hours`, `_an_empty_range`, `_a_level_above_five` | a prior range |
+| `curveOk_refuses_too_many_ranges`, `_a_bad_range`, `_an_unsorted_curve`; `priorOk_refuses_too_many_curves`, `_a_long_key`, `_a_key_twice`, `_a_bad_curve`; `energyOk_refuses_a_curve_not_of_12`, `_an_entry_past_a_byte`; `homeMaxOk_iff` | the curves and `home_max_ci` |
+| **`priorOk_widths`**, **`priorOk_keys_in_the_exact_domain`** | R10's widths for `stepAt` and `curveKeyLt` (D9-21), and every accepted key in L4's exact domain (`den ≤ 10^6`) |
+
+**Audit (AGENTS §7.4).**  (1) Every binder is used; `readCapacity_ok` quantifies over every plan, clock and
+JSON value.  (2) Hypotheses are satisfiable: `runCap_reads_the_corpus_request` and the FFI spec week
+satisfy `readCapacity … = .ok c`; `readWeight_refuses_more_than_18_places` holds at `k = 19`
+(`readWeight_on_witnesses`).  (3) Names say what the statements say.  (4) Both directions: every
+constructor has acceptance (`mkDayCfg?_of_wf`, `mkStep?_ok_iff`, `readWeight_reads_every_representable_weight`,
+the shipped and corpus witnesses) and refusals.  (5) About the code the FFI runs: `callExport` is
+`callCap`, and the bridge theorems are stated about it.  (6) Units: unit counts over `capDen`, weights
+over their decimal denominators, UTC seconds for zone transitions, minutes for `[day]`.
+
+### Witnesses (decided or `rfl`; each probed under the 8 GB cap first)
+
+| theorem | what it pins |
+|---|---|
+| `Look.the_shipped_bounds_hold` | the shipped `[day]`, prior, L4's fixture curves and `home_max_ci` are accepted |
+| `the_zone_texts_read_on_witnesses` | `-06:00:00`, `+05:30:00`, `-05:50:36` (seconds kept); 2026-03-08T08:00:00Z is `63908553600`; `-06:00`, `+24:00:00`, a bad sign, Feb 30, second 60 and a missing `Z` refused |
+| `readTz_on_witnesses` | Chicago's two 2026 transitions read as B1's `chicago2026`; `tzAbsent`, `badTz shape`, `key`, `base`, `then`, `table` (out of order) |
+| `readWeight_on_witnesses` | 0.9 and 1 read; `10^-19` → `weightPrecision`; 1.2 → `weightAboveOne`; `9/0`, numbers, `-1` and 41 digits → `badWeight` |
+| `readDay_on_witnesses` | the shipped `[day]`; one refusal per key, a missing key, no `day` |
+| `readPrior_on_witnesses` | the shipped curves read as L4's `shippedPrior`; a wide key, an empty range, an unsorted curve, level 6, a key twice, a 65-character key, 17 curves, a non-object |
+| `readEnergy_on_witnesses` | the corpus model's two curves; absent; 11 entries, 256, a non-natural, a non-object |
+| `readPriority_on_witnesses` | the shipped `bins`, `safety`, `default_priority`; swapped edges, a `10^18 + 1` denominator, safety 0 and 1,001, default 0 and 5 |
+| **`the_capacity_section_reads_the_corpus_model`** | design §14.8's named theorem: `kernel/corpus/model.json`, hand-shrunk, over `plan-basic/config.toml`: the model's seven weights and two arrivals (Monday 07:10, Saturday 10:30), the config's tables, both learned curves, the prior, `home_max_ci`, seven days, day 0 |
+| `the_lookahead_response_emits_in_build_order` | the bytes: `den`'s 19-digit string, an empty `lookahead`, one day with `"60000000000000000000"` at level 5 |
+| **`runCap_reads_the_corpus_request`** | end to end at `runCap`: the corpus request for one day answers `docs`, `report`, `lookahead`; 3,661 days is `lookaheadTooLong`; no `tz` is `tzAbsent` |
+
+**The FFI** (`kernel.rs`, 5 new tests): `capacity_answers_the_spec_week_in_units` (L5's `specInput` over
+the wire: day 0 as handed in, Tuesday 36/162/162 and Sunday 72/192/48/48, the decided witnesses, and a
+170-minute count parsed as `u128` past `u64::MAX`); `capacity_emits_at_most_seven_days` (2, 10 and 0
+days); `a_calendar_wall_takes_its_hours_out_of_the_lookahead` (Wednesday at weight 1: the §4.3 meeting
+keeps `[0,0,0,0,180,180]`; a 07:00–19:00 wall extends the window past the cap by E7, so the free time
+is 19:00–03:00, 12.9 hours after the wake, and the budget lands at the prior's level 2:
+`[0,0,360,0,0,0]` — the test's first expectation of zeros was wrong, the kernel's value is L2's E7);
+`a_request_without_capacity_is_answered_as_before` (with `tz` and without); and
+**`every_capacity_refusal_is_named`**: 50 single edits of the spec request, one per name and key
+(`nowAbsent`, `blockMinAbsent`, `badDay blockMin`, `lookaheadTooLong` for 3,661 days and for
+9999-12-30, `tzAbsent`, `badTz shape/key/base/then/table`, `badCapacity capacity/pLounge/pLounge.model/pLounge.config/arrival/energy/prior/day/priority/days`,
+`weightPrecision`/`weightAboveOne`/`badWeight` (config and model), `badClock arrival.model/config`,
+`badWake` twice, `badCurve` twice, `badPrior`, `badLevel`, `badStep` three ways, `badCap`, every
+`badDay` key, `badClock day.windowCap`, `badBins`, `badSafety`, `badDefaultPriority`, `badDay0` twice), plus
+a `capacity` carried twice (`duplicateKey capacity`).  `kernel_bridge.rs` maps every name
+(`every_named_refusal_reaches_the_message_by_name` gains 20 rows; `a_capacity_refusal_carries_its_key`).
+
+### T0 (c), committed: 3,660 days on a 2 MiB thread (gap 105 closed)
+
+`stack.rs` **`a_3660_day_lookahead_runs_on_a_2mib_thread`**: through the wire, a zone table of 600
+transitions (a Chicago-shaped pair every year over [1900, 2200)), a calendar of 3,660 walls (12:50–13:50
+every day), a wake at 06:05:40.25, 3,660 days.  It answers on a 2 MiB thread, and its seven emitted days
+equal a seven-day request's.  **282 / 277 / 278 ms**; the same request for 7 days **128 / 127 / 127 ms**
+(the load and `wallIndex` over 3,660 walls; L5's scratch harness measured the lookahead alone at 135 ms
+with a wall a day).  L5's control (a non-tail recursion over 10^6 elements on the same stack size
+overflows) stands for the stack bound.
+
+### Cheats (`Negative.lean`, appended)
+
+| # | label | cheat | fails because |
+|---|---|---|---|
+| **135** | L6-a | a lounge weight of 19 decimal places reads on the wire | `10^-19`'s denominator does not divide `10^18`; `decide` refuses `isOk` (controls `readWeight_on_witnesses`, `readWeight_refuses_more_than_18_places`) |
+| **136** | L6-b | a prior curve out of `from` order is accepted | `curveOk` refuses `4+` before `1-4`; `decide` refuses (controls `curveOk_refuses_an_unsorted_curve`, `readPrior_on_witnesses`) |
+| **137** | L6-c | an hour of units fits a double (`capDen · 60 < 2^53`) | it is `6·10^19`; `decide` refuses (controls `the_lookahead_response_emits_in_build_order`: units are strings) |
+
+Each fails at its own line with `Tactic decide proved that the proposition … is false`.
+
+### Gap 77 — closed
+
+`binsOfPairs?`, `safetyOf?` and `defaultPrioOf?` are called by the wire (`binsOfWire`, `safetyOfWire`,
+`readPriority`) and their refusals reach the host by name (`badBins`, `badSafety`, `badDefaultPriority`;
+`readPriority_on_witnesses`, `readCapacity_ok`).  What gap 77 also listed, `yesterdayOf?`, decodes
+`state.json`'s stored priorities, not config: **it moves to gap 78**, with the writer it reads back
+(stage 6, `finalPrio` over the candidate list).  The decoded ladder, safety and default are held in
+`CapReq` and read by no response key until the priority wiring (gap 107).
+
+### Gap 105 — closed
+
+T0 (c) is a committed test (above).
+
+### Gap 106 — carried to L8, unchanged
+
+L6 does not call `edf` from the wire (no grants, gap 107), so step 3's closure-per-reservation read is
+still unexercised; it clears when L8's priority wiring first calls `edf`.
+
+### Gap 98 (new; the design's label) — the lookahead is capped at 3,660 days (P30)
+
+(1) *What is not done*: a `due:` more than 3,660 days ahead sees the capacity of the first 3,660 days;
+`days > 3660` is `lookaheadTooLong`, and a lookahead that would pass year 9999 is refused under the same
+name.  (2) *Why*: a decision (D10-13): R10 needs a bound, and it keeps every unit count within `u128`
+and every day count below `2^53`.  (3) *Cost*: an item due beyond ten years gets a shortfall computed
+against ten years of capacity; the fork runs its lookahead to the due date (parity P30).  (4) *When it
+clears*: never by default; L8's host must clamp `lookahead_days` to 3,660 (or the owner widens D10-13).
+
+### Gap 107 (new; label L6-a) — the response carries no grants, and the priority configuration reaches no answer
+
+(1) *What is not done*: design §13.6's response lists `lookahead.grants` (`id`, `avail`, `reserved`,
+`shortfall`, `bin`).  L6 emits `den` and `days` only; the decoded `priority` section is checked and held
+(`CapReq.bins`, `.safety`, `.dflt`) but read by nothing.  (2) *Why not now*: grants need the candidates
+that enter the EDF pass (gap 80: effective due, instance status, the placement-window exclusion) and
+step 3's pass at scale (gap 106); both are the priority wiring's, L8 in §13.8's table.  (3) *Cost*: no
+verb can get an availability or a bin from the kernel yet; a host that sends `priority` gets its
+refusals and nothing else.  (4) *When it clears*: L8, with gaps 80 and 106.
+
+### Gap 108 (new; label L6-b) — two readers of `tz` until the merge
+
+(1) *What is not done*: design §14.2 gives the `tz` request key to the D9 track's B4 (with `tz_table.rs`).
+L6 needs a zone for the lookahead and reads `tz` itself (`CapWire.readTz`, the fixed-width forms of
+§10.1's example: `±HH:MM:SS`, `YYYY-MM-DDTHH:MM:SSZ`), so when B4 lands there are two readers of one key
+(AGENTS §5.3).  (2) *Why not now*: B4 is being built in parallel and is not in this checkout; the D9
+track's `Stamp.lean` (B2) reads RFC 3339 but not `±HH:MM:SS`.  (3) *Cost*: until the merge, none on the
+wire (no verb sends `tz`); after it, two readers that could disagree on a spelling.  (4) *When it clears*:
+the merge that brings B4 and L6 together keeps one reader, and re-proves `readTz_on_witnesses` and
+`readTz_refuses_too_many_transitions` over it (D5).  The merge also reconciles the two mid-file edits of
+`Boundary.lean` (`run` split at `runLoad`; `callExport` moved to the end), since B4 composes `log` into
+the same response.
+
+### Gap 109 (new; label L6-c) — the lookahead reads the walls of the documents as sent, not after the request's commands
+
+(1) *What is not done*: `runCap` indexes walls from the loaded plan before `runPlan` applies the
+commands, so a request that both edits the calendar and asks for capacity answers the capacity of the
+unedited plan beside the edited documents.  (2) *Why not now*: `runPlan` does not expose the plan it
+builds, and no verb combines the two (capacity verbs are read verbs).  (3) *Cost*: a host that sent both
+would see a lookahead that disagrees with the documents in the same response.  (4) *When it clears*: L8,
+by building the capacity verbs without commands (and saying so in `kernel_bridge.rs`), or by threading
+the post-command plan out of `runPlan` if a verb needs both.
+
+### Parity entries (recorded before L7 measures them)
+
+| # | site | the kernel | the fork point | authority | step |
+|---|---|---|---|---|---|
+| **P26** | a weight or capacity value outside the exact domain: `p ∉ [0, 1]`, NaN, more than 18 decimal places, a prior key with `den > 10^6` or past 48 hours, an empty or out-of-order range, a level above 5, a learned entry ≥ 256, a curve not of 12 entries, more than 16 prior curves or a key over 64 characters, `home_max_ci > 5`, a `[day]` value outside §13.6's bounds, a ladder of more than 16 edges or a denominator above `10^18`, a safety above 1,000 | refused by name (`{"err":{"capacity":"<name> <key>"}}`); the host names the file (L8) | accepted (`p = 1.2` → lounge, NaN → home, a level clamped, a short curve falls to the prior) | R10; OWNER Q8 (D17) | L6 |
+| **P30** | a `due:` more than 3,660 days ahead | the deadline sees the capacity of the first 3,660 days (gap 98) | the lookahead runs to the due date | R10; D10-13 | L6 |
+
+§17's "exact by design" list gains **every weight the host can spell in at most 18 places, exactly
+(`readWeight_reads_every_representable_weight`), and every unit count as a string read back exactly
+(`unitsJson_reads_back`)**.
+
+### Rule D9-21
+
+Functions this step adds that walk a list the wire can make large, each behind its own length guard:
+`readTrans` (a `foldl`, after `xs.length ≤ 4096`); `readPriorObj` (core `mapM` after `kvs.length ≤ 16`);
+`readCurve` (`mapM` after `≤ 64`); `binsOfWire` (`mapM` after `≤ 16`); `readEnergyCurve` (`mapM` after
+`= 12`); `readDay0` (`mapM` after `≤ 6`); `curveOk`, `priorOk`, `energyOk` (core `length` first, then
+`all` and `sortedFrom` over the guarded list); `firstDupKey` (over at most 16 keys).  `readWeekOpt` and
+`readWeekAll` read seven keys.  `jget` is J5's.  `lookaheadJson` takes seven days.  Every length is core's
+tail-recursive `length`.  Proof-only: none.
+
+### The `decide` budget (§14.0 item 4)
+
+11 new decided or `rfl` witnesses (`Look.the_shipped_bounds_hold` and the ten in the table above) and 3
+cheats, **14 in all**, within the budget of 20.  They use at most Chicago's **2 zone transitions**, no
+`Entry` value, and `List Char` literals of at most 73 characters.  All were probed first in scratch
+files under `/tmp/claude-1000/l6probe/` against the built package, under `MemoryMax=8G` and `timeout 120`,
+before either module was edited: the whole section with its witnesses elaborated in 2.28 s at a 959 MB
+peak (0.98 s and 674 MB without the witnesses), the cheats in 0.13 s at 563 MB.  Wrong probes were
+refused and not committed: `tzAbsent` claimed as `badTz key`, `weightAboveOne` claimed as
+`weightPrecision`, and a day 0 of 181 minutes at level 5 in the end-to-end witness (refused by the
+elaborator's recursion depth, not a clean mismatch, which is why no cheat is built on that witness).  No
+realistic-size input is evaluated.  Committed: `Lookahead.lean` elaborates in **3.03 s at 882 MB** (L5:
+2.57–2.61 s, 874–895 MB); `Boundary.lean` alone in **130.7 s at 7.77 GB** under the 8 GB cap.
+
+### Recorded disagreements between the design and the repo
+
+1. **The host half of the L6 row is L8's** (the workflow's instruction): `decimal_pair`, T15, `u128`
+   parsing in `kernel_bridge.rs`.  Only the refusal names were added to `kernel_bridge.rs`.
+2. **`wake` is a time of day `{sec, ns}`** (L5's disagreement 1), not §13.6's `wake.today` stamp and
+   weekday wake tables: the fork's future days reuse today's wake clock.
+3. **`block_min` is the request's `blockMin`**, not `day.blockMin`: one reading of one config key
+   (AGENTS §5.6), required with `capacity` (`blockMinAbsent`) and bounded `≤ 1440` (`badDay blockMin`).
+   A `blockMin` inside `day` is ignored, as every unread key is.
+4. **`tz` is read here** (gap 108), though §14.2 gives it to B4.
+5. **`badTz subMinuteOffset` is not added** (§13.6's last row, left open by L2 and L3): the window, the
+   cut and the hours since wake are exact in whole seconds for every offset.
+6. **No `grants`** (gap 107).
+7. **Names beyond §13.6's table**: `badCapacity <part>` for the section's structure, `badPrior <curve>`
+   for the curve map, `badClock day.windowCap`; the clock and zone refusals ride the same
+   `{"err":{"capacity":…}}` shape (design §10.3 gives `{"err":{"log":…}}` to the log op and no shape to
+   capacity).  A duplicated `capacity` is `jget`'s `duplicateKey capacity`, as for every read key.
+8. **Bounds beyond the table** (P26 lists them): the prior's curve count, key length and `from` order
+   (L4's disagreement 8); at most 16 ladder edges with denominators at most `10^18`; a safety at most
+   1,000; digit strings of at most 40 digits; a lookahead that passes year 9999 (under
+   `lookaheadTooLong`, so every emitted date renders).
+9. **`days = 0` is accepted** (as L5 decided), where §13.6 says `1..=3660`; the answer is an empty `days`.
+10. **`energy` carries `lounge` and `home` only**, the two curves a future day reads; `prior` carries
+    every curve.
+11. **Every weight pair sent is checked**, the model's and the config's, where L5's `mkInput?` checks only
+    the one it picks: §13.2 has the host check both files at load, and the kernel is the authority.
+12. **`Boundary.lean` is edited mid-file twice** (`run` split; the export moved), against "a new section
+    at the end": the section needs the loaded plan once and the FFI must run it.  Both edits are small,
+    `run`'s behaviour is `rfl`-equal, and `callExport_without_capacity_is_call` carries every `call`
+    theorem to the export.  `the_response_call_emits_parses_back`'s doc comment gains one sentence.
+13. **`the_response_shapes_emit_in_build_order` is not edited** (§10.2 says "extended"):
+    `the_lookahead_response_emits_in_build_order` and `runCap_answers_docs_report_lookahead` are appended
+    instead, so the old theorem keeps its statement.
+14. **The walls are the documents as sent** (gap 109).
+15. **Gap 98 takes the design's label** (as L2 took 85); the other new gaps take the next free numbers.
+16. **Memory cap.**  Every run used the workflow's 30 GB cap (8 GB for probes and the module timing,
+    16 GB for the T0 (c) timing runs), not §14.0's 40 GB.
+
+**Carried notes honoured.**  No instant is compared (B1's order note).  No decimal is re-emitted: unit
+counts go out as `.str (digitsOf n)`, never a `dec` (gap 101).  Nothing assumes a 4 MiB request: T0
+(c)'s request is about 0.22 MiB (gap 102).  No `Stamp` name is added (the B2 note); the zone readers are
+`readOffsetText` and `readInstantText` in `Tm.CapWire`.
+
+**Label-to-number map:** cheats L6-a → **135**, L6-b → **136**, L6-c → **137** (128–130 until the merge); gaps design 98 →
+**98**, L6-a → **107**, L6-b → **108**, L6-c → **109**; parity P26 → **P26**, P30 → **P30**.  Highest
+numbers in this checkout after the step: gap 109, cheat 130, parity P30 (on the branch).  (Read-only, for the merge: the
+D9 track's B2 on `rebuild-on-lean` took cheats 126–127 and parity P23 in parallel, so cheats 126–127
+collide with L5's.)
+
+**Observable behaviour changes: none in the binary.**  No verb sends `capacity` or `tz`, and a request
+without `capacity` is answered as before (`callExport_without_capacity_is_call`; the whole FFI suite and
+`cargo test --workspace` unchanged but for the new tests).  The FFI gains the `capacity` section and the
+`lookahead` key.  **Behaviour rows:** none now; §20's L6 row ("an out-of-domain `model.json` weight fails
+capacity verbs by file and key", P26, Q8) needs the host encoder and moves to L8.  **Goals:** discharged 0,
+refuted 0, added 0.  Burn-down **13** (unchanged).
+
+**New theorems: 74**: 28 in `Lookahead.lean` and 46 in `Boundary.lean`, audited under `Check.lean`'s new
+`APPENDED 2026-09-14 (stage 5, D10 track).  Step L6` banner.  AGENTS §6.3's three counts agree at
+**2508** (`grep -c '^#print axioms' Check.lean` 2508, 2508 distinct, 2508 declared by the
+attribute-aware grep).  About 600 definition lines and 930 proof and witness lines, docstrings included
+(ESTIMATE from the section files), against design §14.8's 150 / 400 for the row; the Rust is +277 test
+lines and +68 in `kernel_bridge.rs`.  No theorem was retired, weakened or deleted.  No existing two-run
+theorem was touched.
+
+**Owed, by name (the rest of the D10 track):** L7 (the parity twin through `Input.twin`; P1, P26, P27, P30,
+gaps 85 and 104).  L8 (`decimal_pair` and T15, `u128` unit parsing, the §20 behaviour row, grants with
+gaps 80, 106, 107, gap 109's rule, gap 98's clamp, T14, T16, the D15 `…_exact` fields).  L9 (day 0 in the
+kernel; gap 93).  The merge: gap 108.
+
+**Re-measured after this step** (every command under the 30 GB cap, in this worktree, on the tree
+committed):
+
+| measurement | value |
+|---|---|
+| `lake build TmKernel:static` after the edits | 135.7 s wall at a 7.89 GB peak (`Lookahead` then `Boundary`) |
+| `check.sh` | **7/7**; 134.5 s on its first run (the rename rebuilt `Boundary`), then 2.82 / 2.75 / 2.80 s on the built tree against L5's 2.73 / 2.72 / 2.78 s, +1.8% (§14.0 item 4 allows 10%) |
+| axiom audit | **2508 theorems** (2434 + 74); each new name prints its own line |
+| `Negative.lean` | check 4 ok; 126 errors (123 before); 120 `/- CHEAT` banners (117 before); CHEATs 135, 136 and 137 (128–130 then) each fail at their own line |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (stage 3: 0, stage 4: 0, stage 5: 0, stage 6: 13) |
+| `cargo test --workspace` | **1014 passed / 0 failed / 0 ignored across 67 binaries** (1013 + `a_capacity_refusal_carries_its_key`) |
+| FFI suite (`tm-kernel-ffi`) | **88 passed / 0 failed** (kernel 77, corpus 8, stack 3) |
+| `cli_latency.rs` | green: first verb 627.5 / 607.3 / 617.7 ms (226 files, 2,959 lines), later verb 50.8 / 50.7 / 55.7 ms |
+| T0 (c), `stack.rs`, 2 MiB thread | 3,660 days with 600 transitions and 3,660 walls: 282 / 277 / 278 ms; the same request for 7 days: 128 / 127 / 127 ms |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: the merge of rebuild-on-lean (the D9 track's B2, B3
+     and B4, at a8f3022) into stage5-lookahead (the D10 track's L5 and L6, at
+     0aa24ae), so that L7 can use tm/src/cli/tz_table.rs.  AGENTS §6.5.
+     Renumbers this branch's cheats 126-130 to 133-137, closes gap 108, takes
+     gap 110.  No parity entry.
+     =========================================================================== -->
+
+## Stage 5 merge, 2026-09-14: the D9 track's log op meets the D10 track's capacity section — one `tz` reader, one response
+
+**Starting point.**  Both sides had branched from `e3e9e9e`.  `rebuild-on-lean` added `Stamp.lean`
+and `Log.lean` (B2, B3), the `tz` and `log` sections in `Boundary.lean` and `tz_table.rs` (B4), with
+160 theorems.  `stage5-lookahead` added the lookahead (L5) and the capacity wire (L6), with 120
+theorems.  The shared append-only files (`Check.lean`, `Negative.lean`, `kernel/README.md`), the two
+FFI test files and `kernel_bridge.rs` conflicted only where both sides appended.  **Each keeps both
+sides whole**: the D9 track's material first, then the D10 track's.  `Boundary.lean` had a conflict
+at its imports (both kept) and at its end: B4's laws section, then L5's and L6's sections, whole.
+`TmKernel.lean` merged cleanly to nineteen imports (`Stamp` and `Log` after `Line`, `Lookahead` after
+`Capacity`).  `Goals.lean` merged cleanly (B3's note on D1/D2); no goal was discharged by either
+side, so the burn-down stays **13**.
+
+### Numbers
+
+| taken on both sides | this branch's (D10) | now | where it was changed |
+|---|---|---|---|
+| cheat 126 (B2 on the D9 side) | L5-a | **133** | `Negative.lean` banner and preamble; the L5 block's table, disagreement 7, map and figures |
+| cheat 127 (B2) | L5-b | **134** | the same |
+| cheat 128 (B3) | L6-a | **135** | `Negative.lean` banner and preamble; the L6 block's table, map and figures |
+| cheat 129 (B3) | L6-b | **136** | the same |
+| cheat 130 (B3) | L6-c | **137** | the same |
+
+`grep -o '^/- CHEAT [0-9A-Z]*' Negative.lean | sort | uniq -d` prints nothing.  The D9 side's 131 and
+132 (B4) are unchanged.  **Gaps did not collide.** The D9 side took 89, 90 and 91 (the design's labels)
+and closed 101 and 103.  The D10 side took 98 and 105–109 and closed 77 and 105.  **Parity did not
+collide either.** P14, P15, P20, P23, P24 and P25 are the D9 side's, and P26 and P30 the D10 side's.
+The block headers' "highest numbers after the step" lines are now marked "(on the branch)".
+**Highest numbers after the merge: gap 110, cheat 137, parity P30.**  The README's central cheat table
+still ends at 125.  Neither track added rows to it for 126–137, and each step block carries its own
+table.
+
+### What the merge had to decide (not textual)
+
+**1. The exported call served one section or the other, never both.**  B4 changed `respond` to run
+`runWithLog`.  L6 moved `@[export tm_kernel_call]` to `callExport := callCap`, and `callCap`'s `runCap`
+called `run` on a request without `capacity`.  Merged textually, the FFI would have silently dropped
+every `log` section, and B4's FFI tests would have failed.  The merged `runCap`:
+
+- **Without `capacity`, it is `runWithLog`.**  `runCap_without_capacity_is_runWithLog` replaces L6's
+  `runCap_without_capacity_is_run`, which was false as stated once a request can carry `log`.  The old
+  name stays as the corollary with the one hypothesis that makes it true, `readLogSection j = .ok none`,
+  via B4's `runWithLog_without_a_log_is_run`.
+- **L6's bridge theorems still hold without change.**  `respondCap_without_capacity_is_respond` (its
+  proof now goes through `…_is_runWithLog`) and `callExport_without_capacity_is_call` keep their
+  statements.  `respond` is B4's, so every `call` theorem reaches the FFI for a request without
+  `capacity`, log or no log.
+- **With `capacity`, B4's `readLogSection` runs first.**  Its refusals come first
+  (`runCap_refuses_a_log_section_first`, B4's rule).  Then come the documents (`runLoad`), the capacity
+  section, and the commands.  The answer is `docs`, `report`, `log` (when asked), then `lookahead`:
+  design §10.2's order, through `logInto`.
+- **L6's answered and refused laws take the log section as a hypothesis.**
+  `runCap_answers_with_the_lookahead` and `runCap_refuses_what_the_section_refuses` gain
+  `readLogSection j = .ok lg` for any `lg`, and the answer is `withLookahead (logInto lg r) …`.
+  `runCap_answers_docs_report_lookahead` gains `= .ok none` and keeps its conclusion.
+  **`runCap_answers_docs_report_log_lookahead`** (new) is the `some` case.
+
+**2. Two readers of `tz` (gap 108, below: closed).**  One reader stays, B4's `Tm.readTz`, because
+design §14.2 gives the key to B4.  `CapWire.readTz` is now only the capacity section's view of it:
+`tzAbsent` when the key is absent, else `(Tm.readTz z).mapError .badTz`.  The following are deleted
+with nothing left calling them: L6's `readOffsetText`, `readInstantText`, `transOf`,
+`CapWire.transStep`, `readTrans`, `maxTrans`, `tzObj`, `two` and `CapWire.TzWhy`.  `CapWire.Refusal.badTz`
+carries B4's `TzWhy`.  Gap 108 named three theorems to re-prove over the one reader (D5), and none was
+weakened:
+
+- `CapWire.the_zone_texts_read_on_witnesses`: L6's ten cases, now over `readTzOffset` and
+  `readTzInstant`, with the same verdicts.
+- `CapWire.readTz_on_witnesses`: the same seven requests.  The last two refusals now carry B4's names,
+  `transition` and `unsorted`, where L6 had `then` and `table`.
+- `CapWire.readTz_refuses_too_many_transitions`: now an instance of B4's
+  `Tm.readTz_refuses_too_many_transitions`, with the refusal `tooManyTransitions`.  It gains the
+  hypothesis `key.length ≤ 128`, because the one reader checks the key's bound first.  L6's reader
+  never bounded the key, and `Cal.TzTable.wf` refused a long key as `table`.  The count is still
+  refused before any transition is read.
+
+**3. A name taken twice.**  Both sides declared `Tm.runPlan_ok_shape`.  B4's is the `∃ kvs` form, and
+B4's `run_ok_shape` applies it with explicit arguments.  L6's is the stronger `docs`-then-`report`
+form, and it is renamed **`runPlan_ok_is_docs_then_report`**, also in place in `Check.lean`.  The other
+same-named declarations do not clash, because each lives in its own namespace.  `readTz`, `TzWhy`,
+`transStep` and `readStep` are B4's at `Tm.` and L6's at `Tm.CapWire.`.  Inside `namespace CapWire` the
+innermost name wins, and the build confirms it.
+
+### Behaviour rows (the FFI; no verb sends `tz`, `log` or `capacity` yet)
+
+| request | before the merge (stage5-lookahead) | after |
+|---|---|---|
+| `log` without `capacity` | `log` ignored (`runCap` called `run`) | B4's answer: `log` after `report`, or B4's refusal |
+| `capacity` with a malformed `tz` | `{"err":{"capacity":"badTz shape\|key\|base\|then\|table"}}` | `{"err":{"log":{"badTz":"shape\|key\|base\|transition\|unsorted"}}}`, which is B4's refusal and design §10.3's shape for `badTz` |
+| `capacity` without `tz` | `{"err":{"capacity":"tzAbsent"}}` | unchanged |
+| `capacity` and `log` | `log` ignored | `docs`, `report`, `log`, `lookahead`; a refused `log` section refuses first |
+
+`every_capacity_refusal_is_named` in `tests/kernel.rs` moves the five malformed-zone edits into a second
+table that expects B4's refusal.  `kernel_bridge.rs`'s name table maps `{"capacity":"badTz unsorted"}`
+where it mapped `badTz table`.  The new FFI test
+**`a_request_with_log_and_capacity_answers_both_in_build_order`** checks three things.  The composed
+answer's `log` part is byte-identical to the log op's alone, and its `lookahead` to the capacity op's
+alone.  A refused `log` section (`from` 0) refuses the capacity request.
+
+### Gap 108 — closed
+
+The merge kept one reader and re-proved the three theorems the gap named over it (above).
+
+### Gap 110 (new; label merge-a) — a capacity request reads its `tz` twice
+
+(1) *What is not done*: with `capacity`, `readLogSection` reads and checks `tz`, then `CapWire.readTz`
+reads it again for the lookahead.  `readLogSection` returns only the `log` request, not the zone.
+(2) *Why not now*: threading the zone out of `readLogSection` changes B4's function and its seven laws.
+That is W3's request reader to reshape, since the checkpoint compares the zone's key.  A merge should
+not do it.  (3) *Cost*: T0 (c)'s 3,660-day request went from 282 / 277 / 278 ms to 320 / 315 / 336 ms,
+and its 7-day request from 128 / 127 / 127 ms to 154 / 149 / 148 ms (debug FFI build, 2 MiB thread).
+Part of that is B4's reader going through `LogStamp.parseStamp` where L6's read fixed-width text.
+Nothing was split out to measure the double read alone.  (4) *When it clears*: when the request reader
+returns the zone once (W3, or L8's wiring if that comes first).
+
+### Rule D9-21, the `decide` budget, and the carried notes
+
+- **D9-21.** No new recursion over a wire list: `logInto` and the new `CapWire.readTz` do not recurse.
+- **The `decide` budget.** The three re-proved witnesses were probed first, from scratch files under
+  `/tmp/claude-1000/probe/` against a build with those three proofs as `sorry`, each under
+  `MemoryMax=8G timeout 120`.  `the_zone_texts_read_on_witnesses` (`decide`) took 0.21 s at 581 MB,
+  `readTz_on_witnesses` (`rfl`) 0.19 s at 583 MB, and `runCap_reads_the_corpus_request` (`rfl`, now
+  through `readLogSection` as well) 0.73 s at 711 MB.  A falsified copy of each of the first two fails,
+  so the probes elaborate.  No new witness was added.
+- **Gap 102 is untouched.** The merge assumes no 4 MiB request, and the resend cap is unchanged.
+  **Gap 101** was closed by B3 (`digitsOfTR`).  No `Stamp` name is added.
+
+### Recorded disagreements between the design and the repo
+
+1. Design §10.3 puts `tzAbsent` and `badTz` in the `log` refusal shape for every request.  After the
+   merge, a malformed zone is refused in that shape even for a capacity-only request.  An absent zone
+   on a capacity request is still `{"err":{"capacity":"tzAbsent"}}`, as L6 chose (its disagreement 7).
+   L8, when a verb first sends `capacity`, decides whether the host needs one shape.
+2. Design §10.1 says `tz` is "required when `log` or `capacity` is present".  That is still two
+   refusals of one condition, one per section.  It is recorded here, not changed.
+
+**Goals:** discharged 0, refuted 0, added 0.  Burn-down **13**.  **New theorems: 3**:
+`runCap_without_capacity_is_runWithLog`, `runCap_refuses_a_log_section_first` and
+`runCap_answers_docs_report_log_lookahead`, audited under `Check.lean`'s merge banner.  The three counts
+of AGENTS §6.3 agree at **2671** (2388 at the branch point, + 160 from D9 B2–B4, + 120 from D10 L5–L6,
++ 3).  That is 2671 audit lines, 2671 distinct names, and 2671 declarations by the attribute-aware
+grep, with no duplicate audited.  Two existing theorems changed statement for the merge, as stated
+above: `runCap_without_capacity_is_run` gained a hypothesis, and `readTz_refuses_too_many_transitions`
+now covers the one reader.  Three gained a log-section hypothesis.  Each is true of the merged code and
+is not a weakening of any claim about it.
+
+**Re-measured on the merge tree** (every command under the 30 GB cap, in the worktree):
+
+| measurement | value |
+|---|---|
+| `check.sh` | **7/7**; 142.4 s on its first run (the merge rebuilt `Json` onward), then 2.81 / 2.86 / 2.75 s on the built tree |
+| axiom audit | **2671 theorems** |
+| `Negative.lean` | check 4 ok; 133 errors; 127 `/- CHEAT` banners, 126–137 each failing at their own line |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (stage 6: 13) |
+| `cargo test --workspace` | **1023 passed / 0 failed / 2 ignored across 69 binaries** (1013 + D9's 9 + D10's 1) |
+| FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** (kernel 80 = 72 + B4's 2 + L6's 5 + the merge's 1; corpus 8; stack 4) |
+| `cli_latency.rs` | green: first verb 622.7 / 632.4 / 627.2 ms (226 files, 2,959 lines), later verb 55.7 / 50.6 / 50.7 ms |
+| T0 (c), `stack.rs`, 2 MiB thread | 3,660 days: 320 / 315 / 336 ms; 7 days: 154 / 149 / 148 ms (gap 110) |
+
+**Owed, by name:** as the two tracks left it.  D10: L7 (now with `tz_table.rs` in the checkout), L8 and
+L9, and gap 110 if L8 comes before W3.  D9: C1–C6, W1–W3, S.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5, D10 track, step L7 (branch stage5-lookahead,
+     worktree .claude/worktrees/stage5-lookahead).  Built in parallel with the D9
+     track on rebuild-on-lean (D11).  A measurement: no Lean file is touched.
+     Takes gap 111 (label L7-a); closes gap 104; narrows gap 85 and P27; no
+     cheat and no parity entry.  Whoever merges renumbers (AGENTS §6.2, §6.4).
+     =========================================================================== -->
+
+## Stage 5 D10 L7, 2026-09-14: the lookahead's parity twin — lounge and home profiles equal the fork's on 552 days, the mixture as documented
+
+**Starting point.**  The worktree at `70d9b3d` (the merge of the D9 track's B2–B4) was clean: check.sh
+7/7, audit 2671, corpus 29/37 files and 4/5 whole plans, burn-down 13, `cargo test --workspace` 1023 / 0
+/ 2 ignored across 69 binaries, FFI 92.  Every figure at the end of this block is re-measured in this
+worktree.
+
+**The plan executed** is design `kernel/design/stage5/stage5-D9-D10-design.md` §13.7 and §14.8's L7 row
+(T13; "P1 refined and P26, P27, P30 recorded before the run"; "the real run inside the bounds; wakes with
+seconds and DST walls included"), under the owner's D10 (the exact mixture), D12, D17 and Q6 (quirk (e)
+ported faithfully).  The fork is the in-tree Rust, as for B4's T1–T4: `tm_core::capacity::lookahead`, fed
+the walls of `Ctx::walls_on` and the wake of `Ctx::wake_time`.  The kernel is reached through
+`tm_kernel_ffi::call` with L6's `capacity` section and the zone table from `tm/src/cli/tz_table.rs`.  One
+file: **`tm/tests/kernel_lookahead_parity.rs`** (new, 1,182 lines at rustfmt's 120 columns).  No Lean
+module, no `Check.lean`, `Negative.lean`, `Goals.lean` or `TmKernel.lean` edit; `tz_table.rs` is included
+by `#[path]`, unchanged.
+
+### What the harness runs
+
+Each window (a zone, a date, `[day]`, the prior and learned curves, both weight and arrival tables, a
+logged wake or none, day 0 and a calendar) is answered **seven times**: the fork with every `P(lounge)`
+forced to 1, to 0, and as given; the kernel with the model's seven weights sent as `1/1`, `0/1`, the
+**threshold twin** of each weekday's weight (`Look.twin`: `1/1` iff `2w ≥ capDen`), and as given.  Each
+emitted day (day 0 and six future days; the response carries at most seven, D10-8) must satisfy:
+
+| check | what must hold | the law it measures |
+|---|---|---|
+| **per-location profiles** | kernel at `1/1` = `capDen ×` fork at 1; at `0/1` = `capDen ×` fork at 0, level by level | `lookahead_at_a_certain_weight_is_the_pure_location` |
+| **T13, the twin** | kernel twin = `capDen ×` the fork's own run (its `p ≥ 0.5`) | `the_twin_forces_the_forks_location` (P1 refined) |
+| **the mixture** (D10's documented difference) | kernel as given = `w·L + (capDen − w)·H`, with `L`, `H` the fork's forced minutes and `w` the weight of **that date's** weekday, model's pair else config's; and each level lies between the two locations | `lookahead_future_day_is_the_mixture`, `lookahead_between_the_locations` |
+| **day 0** | every kernel run's day 0 = the host's histogram = the fork's `DayCapacity::from_slots` | `lookahead_day_zero_is_the_hosts` |
+
+A weight reaches the kernel as the host will send it: the shortest round-trip text of the double, split at
+the point (a harness-local `decimal_pair`; L8 owns the product one and T15).
+
+**`the_lookahead_is_the_forks_at_each_location_and_mixes_exactly`** runs two sets, seed `0x4c37d1077e57`:
+
+| set | windows | future days | what it holds |
+|---|---:|---:|---|
+| **generated** | 64 | **384** | five zones (Chicago, Berlin, Lord Howe's 30-minute DST, Chatham's +12:45/+13:45, Kolkata); a DST zone's window holds a transition with probability 0.6, and then its first wall lies on it in the night; 26 future days on a transition, 21 of them with walls; 187 calendar intervals over `[ ]`, `[>]`, `[?]`, `[x]`, `[~]`, with `buffer:` in minutes, hours and blocks; 91 days with a wall that crosses midnight or starts on an earlier date (multi-day walls, gap 85); arrivals in DST gaps and folds and after the cap; 47 wakes with seconds, 7 of them leap seconds, and wakes placed seconds short of whole hours before an arrival; weights round, at 0.5 (10 days), and raw doubles of up to 18 places; prior maps missing `lounge`, `home` or both, extra curves, gaps, overlaps, open ranges, empty curves; learned curves with levels 6, 7 and 255 |
+| **corpus** | 28 | **168** | `plan-basic`, `plan-home-day`, `plan-travel-day`, `plan-recur` (the four whole plans that load) with their own `config.toml`, every `.md` file and `kernel/corpus/model.json`, at 2026-09-06, -07, -08, -09, -11, -12 and 10-16; a logged 06:05:40 wake on odd windows; 105 intervals (the flight's `buffer:2h` among them) |
+
+**Result: 552 future days and 92 days 0, 0 disagreements** in every check.  Twin at the lounge on 191
+generated and 144 corpus days; the mixture strictly between two different locations on 195 and 168 days.
+
+**The comparison bites.**  Six mutants of the harness's fork side (scratch copies, run and deleted), each
+against the generated set: the buffer dropped from the fork's walls, **12** disagreements; the fork's
+walls clipped to each date (quirk (e) removed), **28**; the twin at `2w > capDen`, **4**; the fork's wake
+cut to its minute, **16**; the mixture at the config's weight only, **114**; P27's correction removed,
+**124**.  The harness also counts, and requires non-zero, the days on which the wake's seconds are
+observable (the fork run again with the wake cut to its minute differs): **6**.
+
+### P27 — narrowed to two integers, measured
+
+(P27, L2: `window_hours × 60` not whole, and the budget, on doubles in the fork and exact pairs in the
+kernel.)  Where a window's doubles give other integers than the exact pairs, the harness runs the fork
+again on doubles chosen to give the kernel's window minutes and budget blocks, and **that run must agree
+exactly**.  It did on every day: 13 generated windows had P27 inputs, 31 future days differed between the
+fork's own doubles and the exact rounding, and 0 differed from the kernel after the correction.  **So P27 is
+exactly the two integers `windowMinOf` and `budgetOf`**; nothing downstream differs.
+
+**`p27_is_two_integers_at_rare_decimals`** measures how rare they are, on a grid, as the fork reads its
+config text: of the 24,001 windows 0.000 to 24.000 hours, `(wh × 60).round()` misses the half-up minute at
+exactly **9** (`1.025`, `4.225`, `8.075`, `8.325`, `16.025`, `16.275`, `16.525`, `16.775`, `17.025`, each
+a tie the double lies below, one minute short); of the **7,213,206** combinations of windows 2.00 to 14.00
+hours, block lengths 25, 30, 45, 50, 60 and 90, and ratios 0.000 to 1.000, the budget's floor differs at
+exactly **2**: 8.75 h and 13.75 h at 45-minute blocks and 0.6, one block short (7 against 6, 11 against 10).
+The shipped `[day]` (8 h, 60 minutes, 0.75) is on neither list.  The generated set takes its P27 windows
+from these.
+
+### P1 refined, P26 and P30 — measured
+
+**P1 (refined)**: the threshold twin equals the fork on all 552 future days (above).  **P26 and P30**:
+**`the_recorded_exceptions_are_refused_where_the_fork_answers`** edits one generated window seven ways
+the fork computes a lookahead from, and the kernel refuses each by name: a Saturday weight of 1.2
+(`weightAboveOne pLounge.config.Sat`), a Monday weight of `1e-19` (`weightPrecision pLounge.config.Mon`),
+a prior key `0.0000001-1` (`badStep prior.lounge`), a learned curve of 11 entries
+(`badCurve energy.lounge`), `home_max_ci = 6` (`badCap homeMaxCi`), a 25-hour window
+(`badDay windowHours`), and 3,661 days (`lookaheadTooLong`; the fork returns 3,661 days).  The entries'
+text is unchanged.
+
+### Gap 104 — closed
+
+Its clearing condition was "L7 measures it end to end through the lookahead".  The per-location profiles
+equal the fork's on every day, and on **120** generated location-days the budget did not bind, so the
+profile's total is the fork cut's `slot_minutes()`: on those days every slot of the fork's cut, with its
+length and level, is in the kernel's answer.  What gap 104 said is still true of the proofs (no law says
+the cut uses the free time only where the fork does); stage 6 states one only if a planner goal needs it.
+
+### Gap 85 — narrowed, still open (quirk (e), fixed after the switch under Q6)
+
+Measured on the generated set: the kernel agrees with the fork on all **91** days carrying a wall that
+crosses a date boundary, so the quirk is ported, and the clipped-walls mutant's 28 disagreements show the
+generator reaches it.  Clipping each date's walls to that date (the fix's first half) changes **7 of 384**
+future days, by **0 minutes** of any day's total and **4,542 level-minutes** across both locations (the
+sum of per-level differences).  **So the measured cost is misplaced energy, not inflated capacity**: on
+every such day the budget bound the total either way, and the extra window lands in the small hours of
+the next date at other levels.  Corpus: 0 days (no multi-day wall).  (4) is unchanged: after the switch,
+as a behaviour change with its own parity entry.  **A finding for its fix:** the fork already has the
+clipped reading, in the TUI (gap 111).
+
+### Gap 111 (new; label L7-a) — the TUI's replan reads the walls a second way, and §13.8 does not list it
+
+(1) *What is not done*: `Planner::run`'s step 4 calls `capacity::lookahead` itself when `PlanInput.caps` is
+`None`, which is every TUI replan (`tui/app.rs`: `replan`, the overtime alternatives), over
+`Planner::walls_by_date` (`tm-core/src/planner.rs`).  That reading differs from `Ctx::walls_on`, which
+`tm plan` and the priorities use and the kernel ports (L2), three ways: only `[ ]` and `[>]` items (not
+`[?]` or `[-]`), the buffer taken off the instant (not the local clock), and each date's walls clipped to
+that date.  Design §13.8's consumer table has no row for this call.  (2) *Why not now*: L7 measures; the
+TUI's capacity wiring is L8's (`tui/app.rs` is in its file list), and picking one reading changes the
+fork's TUI (AGENTS §5.3, §5.6).  (3) *Cost*, measured by the harness (a copy of the planner's reading):
+the planner's walls change the profile on **13 of 384** generated future days and 0 of 168 corpus days.
+Once L8 wires `Ctx::priorities` to the kernel, the TUI replan would also compute a threshold lookahead
+over its own walls beside `tm plan`'s mixture: two capacities for one day.  (4) *When it clears*: L8, by
+handing the kernel's capacities to the TUI's `PlanInput::with_caps`, or stage 6, when the planner's step 4
+is the kernel's.
+
+### Gap 107 — carried to L8, with one more item
+
+§13.7's "priorities on the twin must equal fork `priority::compute`, modulo P2, P3, P7, P8 and P10–P12" is
+not measured: the response carries no grants.  It joins gap 107 and clears with it (L8).
+
+### Rule D9-21, the `decide` budget, and the carried notes
+
+No Lean definition, theorem or witness is added: nothing for D9-21, 0 of the 20 probed witnesses used.
+No instant is compared in Lean (B1's order note); no decimal is re-emitted (gap 101); the largest request
+is under 20 KB, most of it a zone table of about 13 KB (gap 102); no `Stamp` name is added (the B2 note).
+
+### Recorded disagreements between the design and the repo
+
+1. **"Oracle scaffolding (AGENTS §7.3)".**  The fork point is the in-tree Rust, so the harness is a
+   workspace test beside B4's T1–T4, not §7.3's out-of-tree oracle (whose `build-oracle.sh` still archives
+   the discarded `main`).
+2. **No harness-only export of `pureDay`.**  §13.7 checks the real run against "the twin's `pureDay`
+   histograms (a harness-only export)".  Weights of `1/1` and `0/1` on the wire return `capDen × pureDay`
+   of each location (`lookahead_at_a_certain_weight_is_the_pure_location`), so no boundary change was made.
+3. **"Inside the bounds" is checked as an equality.**  The real run is compared with the exact mixture of
+   the fork's forced minutes, which implies `lookahead_between_the_locations`; the bound is asserted too.
+4. **P27 is not a mask.**  §13.7 compares "modulo P26, P27 and P30".  P27 days are compared against the
+   fork rerun with corrected doubles, so they are checked exactly; P26 and P30 lie outside the generated
+   domain and are measured by their own test.
+5. **Fixtures.**  §13.7 names `plan-*` × `model.json` × generated wall layouts.  Generated walls go with
+   generated configs and zones; the corpus plans run with their own calendars and `model.json`.
+   `plan-conflicts` is left out, being refused whole (§7.2).
+6. **The test's name.**  T13 is `the_lookahead_is_the_forks_at_each_location_and_mixes_exactly`.
+7. **Rust size.**  §14.8 estimates 250 lines; the file is 1,182 at 120 columns, most of it the generator,
+   the two copied wall readings and the tallies.
+8. **Gap 104 is closed by its own recorded condition**, a measurement, not a law.
+9. **Memory cap.**  Every run used the workflow's 30 GB cap, and 16 GB for the harness's timing runs, not
+   §14.0's 40 GB.
+
+**Label-to-number map:** gap L7-a → **111**.  No cheat, no parity entry.  **Highest numbers in this
+checkout after the step: gap 111, cheat 137, parity P30.**  (For the merge: the D9 track may take gap 111
+in parallel.)
+
+**Observable behaviour changes: none.**  A test file only.  **Behaviour rows:** none (§20 lists none for
+L7).  **Goals:** discharged 0, refuted 0, added 0.  Burn-down **13** (unchanged).  **New theorems: 0**; the
+audit stays at **2671**.  No theorem was retired, weakened or deleted.
+
+**Owed, by name (the rest of the D10 track):** L8 (`decimal_pair` and T15, `u128` unit parsing, the §20
+behaviour row, grants with gaps 80, 106, 107 (now with the twin's priorities), gap 109's rule, gap 98's
+clamp, gap 111's TUI capacities, T14, T16, the D15 `…_exact` fields; gap 110 if before W3).  L9 (day 0 in
+the kernel; gap 93).  Gap 85's fix after the switch.
+
+**Re-measured after this step** (every command under the 30 GB cap, in this worktree, on the tree
+committed):
+
+| measurement | value |
+|---|---|
+| `check.sh` | **7/7**; 2.83 / 2.78 / 2.83 s (the merge: 2.81 / 2.86 / 2.75 s) |
+| axiom audit | **2671 theorems** (unchanged) |
+| `Negative.lean` | check 4 ok (unchanged) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (stage 6: 13) |
+| `cargo test --workspace` | **1026 passed / 0 failed / 2 ignored across 70 binaries** (1023 + this file's 3) |
+| FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** (kernel 80, corpus 8, stack 4) |
+| `cli_latency.rs` | green: first verb 637.3 / 657.5 / 627.8 ms (226 files, 2,959 lines), later verb 50.5 / 50.7 / 50.7 ms |
+| `kernel_lookahead_parity.rs` (16 GB cap, each test alone) | T13 0.76 / 0.75 / 0.76 s; the P27 grid 0.37 / 0.37 / 0.37 s; P26 and P30 0.08 / 0.07 / 0.07 s |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5 merge-back (W-2 boundary).  stage5-lookahead
+     (L5, L6, the merge 70d9b3d, L7) merged into rebuild-on-lean (B4 a8f3022).
+     Takes no number.  The worktree .claude/worktrees/stage5-lookahead stays;
+     W-3 continues L8 there.
+     =========================================================================== -->
+
+## Stage 5 merge-back, 2026-09-14: the lookahead branch returns to rebuild-on-lean — L5–L7 and the log op on one history
+
+`stage5-lookahead` (L5 `dbed826`, L6 `0aa24ae`, the merge `70d9b3d`, L7 `47cfabc`) merged into
+`rebuild-on-lean` (B4 `a8f3022`). The merge base is `a8f3022` itself: `70d9b3d` already took B2–B4
+into the lookahead branch and did every reconciliation AGENTS §6.5 asks for (its block above), and
+the D9 track committed nothing after B4. So the merge was a fast-forward. It is recorded as a merge
+commit (`--no-ff`), as the L1–L4 merge-back was, and its tree is byte-identical to `47cfabc`
+(`git diff --cached 47cfabc` empty before this block was appended). `stage5-lookahead` is then
+fast-forwarded to it, so W-2 continues from one history.
+
+**Conflicts: none.** Git brought in `AGENTS.md` (§2.3's `Lookahead` and `Boundary` entries),
+`Boundary.lean`, `Lookahead.lean`, the two FFI test files, `kernel_bridge.rs`, the new
+`tm/tests/kernel_lookahead_parity.rs`, and the tails of `Check.lean`, `Negative.lean` and this README.
+
+**Numbers (AGENTS §6.2, §6.4): nothing collided, so nothing was renumbered here.** The map is the
+identity. The collisions (cheats 126–130 on both sides) were renumbered at `70d9b3d` (L5-a/b → 133,
+134; L6-a/b/c → 135–137), and that block's table is the map. L7 took gap 111 and no cheat or parity
+entry; the D9 track took nothing after B4. Checked on the merged tree:
+`grep -o '^/- CHEAT [0-9A-Z]*' Negative.lean | sort | uniq -d` prints nothing (127 banners, highest
+137); every repeated `### Gap N` heading (85, 101, 103–108) is a later "closed", "narrowed" or
+"carried" note on the one gap, not a second gap. **Highest numbers after the merge: gap 111, cheat
+137, parity P30.** W-2's steps start at gap 112 and cheat 138 (grep first, as always).
+
+**Check.lean (AGENTS §6.3).** The three counts agree at **2671**: 2671 `#print axioms` lines, 2671
+distinct names, 2671 declarations by the attribute-aware grep. The theorem declarations added since
+`a8f3022` (123: L5–L6's 120 and the merge's 3; none removed) were each matched by short name against
+the audited names' last segments, and every one prints its own line. No new audit line names a
+namespace root. The only non-theorem audited is still `Tm.WfPlan` (§6.3).
+
+**Goals.lean (AGENTS §3.2).** Unchanged by every commit on the lookahead side since `e3e9e9e`
+(`git diff a8f3022 -- Goals.lean` is empty): L5, L6 and L7 discharged none and deleted none, and
+B2–B4 discharged none. Burn-down **13 → 13** (stage 6: 13), matching check 7.
+
+**TmKernel.lean (AGENTS §2.3).** Unchanged by the merge: nineteen imports, `Stamp` and `Log` after
+`Line` where B2 and B3 placed them, `Lookahead` after `Capacity`. No new module.
+
+**Boundary.lean** keeps both appended sections whole: B4's `tz`/`log` laws (from line 7889) and
+L5's loaded-plan witness and L6's capacity wire (from lines 8272 and 8320), with `70d9b3d`'s merged
+`runCap` (`runWithLog` without `capacity`) inside L6's section.
+
+**Negative.lean.** Check 4 ok: 133 errors, and every one of the 127 `/- CHEAT` blocks has an error
+inside it.
+
+**Goals discharged: none. Refuted: none. Added: none. New theorems: none** beyond the two sides' own.
+**Observable behaviour changes: none** beyond the `70d9b3d` merge's rows (no verb sends `tz`, `log`
+or `capacity` yet). **Parity entries: none new.**
+
+**Re-measured on the merge tree** (every command under the 30 GB cap, in the main worktree):
+
+| measurement | value |
+|---|---|
+| `check.sh`, first run in the main worktree (the changed modules rebuilt) | **7/7**, 160.2 s wall, 8.05 GB peak RSS |
+| `check.sh`, built tree | **7/7**, 2.75 / 2.85 s |
+| axiom audit | **2671 theorems** |
+| `Negative.lean` | check 4 ok; 133 errors; 127 `/- CHEAT` banners |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (stage 6: 13) |
+| `cargo test --workspace` | **1026 passed / 0 failed / 2 ignored across 70 binaries** (the two ignored are B4's T4 (c) and (d)) |
+| FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** (kernel 80, corpus 8, stack 4) |
+| `cli_latency.rs` | green: first verb 607.2 / 611.4 / 617.5 ms (226 files, 2,959 lines), later verb 55.7 / 55.7 / 55.8 ms |
+
+**Carried forward, unchanged by the merge:** gap 102 (gates W3; the resend cap is untouched), gap
+110 (the double `tz` read, W3 or L8), gaps 106, 107, 109 and 111 (L8), gap 85 (narrowed; after the
+switch under Q6), gaps 89–91 (the D9 track). **Owed next:** D10 L8 and L9 in the lookahead
+worktree; D9 C1–C6, W1–W3 and S.

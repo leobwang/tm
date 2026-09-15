@@ -1399,3 +1399,240 @@ fn the_log_section_refuses_by_name() {
         assert_eq!(call(&req).unwrap(), want, "{req}");
     }
 }
+
+// ===========================================================================
+// Stage 5 D10 step L6: capacity on the wire (design §13.6; Boundary.lean's
+// section "Stage 5 D10 L6").  A request may carry `tz` and `capacity`; the
+// response gains `lookahead` after `report`, every unit count a digit string
+// (D17), and every refusal is `{"err":{"capacity":"<name> <key>"}}`.
+// ===========================================================================
+
+/// Chicago's 2026 rules: two transitions (`Cal.chicago2026`).
+const CHICAGO_2026: &str = r#""tz":{"key":"America/Chicago","base":"-06:00:00","then":[["2026-03-08T08:00:00Z","-05:00:00"],["2026-11-01T07:00:00Z","-06:00:00"]]}"#;
+
+/// The fork's `capacity_lookahead.rs` week as the capacity section: the shipped
+/// `config.toml` tables (`p_lounge` 0.9 Monday to Thursday, 0.8 Friday, 0.5
+/// Saturday, 0.4 Sunday; arrival 07:00 weekdays, 10:00 weekends), the shipped
+/// prior curves, `[day]`, `home_max_ci` and `[priority]`, woken at 06:05, seven
+/// days, day 0 the §4.3 day's 410 minutes (L5's `specInput`).
+const SPEC_CAPACITY: &str = concat!(
+    r#""capacity":{"pLounge":{"config":{"Mon":{"num":"9","den":"10"},"Tue":{"num":"9","den":"10"},"Wed":{"num":"9","den":"10"},"Thu":{"num":"9","den":"10"},"Fri":{"num":"8","den":"10"},"Sat":{"num":"5","den":"10"},"Sun":{"num":"4","den":"10"}}},"#,
+    r#""arrival":{"config":{"Mon":"07:00","Tue":"07:00","Wed":"07:00","Thu":"07:00","Fri":"07:00","Sat":"10:00","Sun":"10:00"}},"#,
+    r#""wake":{"sec":21900,"ns":0},"#,
+    r#""prior":{"lounge":[{"from":{"num":0,"den":1},"to":{"num":1,"den":1},"level":4},{"from":{"num":1,"den":1},"to":{"num":5,"den":1},"level":5},{"from":{"num":5,"den":1},"to":{"num":8,"den":1},"level":4},{"from":{"num":8,"den":1},"to":{"num":10,"den":1},"level":3},{"from":{"num":10,"den":1},"to":null,"level":2}],"#,
+    r#""home":[{"from":{"num":0,"den":1},"to":{"num":1,"den":1},"level":3},{"from":{"num":1,"den":1},"to":{"num":4,"den":1},"level":4},{"from":{"num":4,"den":1},"to":{"num":8,"den":1},"level":3},{"from":{"num":8,"den":1},"level":2}]},"#,
+    r#""homeMaxCi":3,"day":{"breakMin":20,"breakAfterBlocks":2,"minLastBlockMin":30,"windowHours":{"num":8,"den":1},"windowCap":"19:00","budgetRatio":{"num":75,"den":100}},"#,
+    r#""priority":{"bins":[{"num":5,"den":10},{"num":25,"den":100},{"num":1,"den":10}],"safety":{"num":13,"den":10},"defaultPriority":3},"#,
+    r#""days":7,"day0":[0,0,0,60,170,180]}"#
+);
+
+fn capacity_req(docs: &str, capacity: &str) -> String {
+    format!(r#"{{"docs":[{docs}],"now":"2026-09-07","blockMin":60,{CHICAGO_2026},{capacity}}}"#)
+}
+
+/// One day of the response, minutes per level times `capDen` as digit strings.
+fn day_units(date: &str, minutes: [u128; 6]) -> String {
+    let units: Vec<String> = minutes.iter().map(|m| format!("\"{}\"", m * 1_000_000_000_000_000_000u128)).collect();
+    format!(r#"{{"day":"{date}","numAt":[{}]}}"#, units.join(","))
+}
+
+/// **The spec week in exact units** (D10, D17).  Day 0 is the host's histogram;
+/// every later day mixes the two locations' budget-limited days at its own
+/// weekday's weight.  Tuesday (`Look.the_expected_tuesday`: 36, 162, 162) and
+/// Sunday (`Look.sunday_mixes_at_its_own_weight`: 72, 192, 48, 48) are decided
+/// witnesses in `Lookahead.lean`; this checks the same numbers reach Rust, and
+/// that units past `u64` read as `u128`.
+#[test]
+fn capacity_answers_the_spec_week_in_units() {
+    let out = call(&capacity_req("", SPEC_CAPACITY)).unwrap();
+    let days = [
+        day_units("2026-09-07", [0, 0, 0, 60, 170, 180]),
+        day_units("2026-09-08", [0, 0, 0, 36, 162, 162]),
+        day_units("2026-09-09", [0, 0, 0, 36, 162, 162]),
+        day_units("2026-09-10", [0, 0, 0, 36, 162, 162]),
+        day_units("2026-09-11", [0, 0, 0, 72, 144, 144]),
+        day_units("2026-09-12", [0, 0, 60, 180, 60, 60]),
+        day_units("2026-09-13", [0, 0, 72, 192, 48, 48]),
+    ];
+    assert_eq!(
+        out,
+        format!(
+            r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"lookahead":{{"den":"1000000000000000000","days":[{}]}}}}}}"#,
+            days.join(",")
+        )
+    );
+    // A unit count past u64 reads as u128 (170 minutes is 1.7·10^20 units).
+    let units: u128 = "170000000000000000000".parse().unwrap();
+    assert!(units > u64::MAX as u128);
+    assert!(out.contains(r#""170000000000000000000""#), "{out}");
+}
+
+/// **The response carries the first `min(days, 7)` days** (design D10-8), and a
+/// lookahead of zero days carries none.
+#[test]
+fn capacity_emits_at_most_seven_days() {
+    let two = call(&capacity_req("", &SPEC_CAPACITY.replace(r#""days":7"#, r#""days":2"#))).unwrap();
+    assert_eq!(two.matches(r#""day":"#).count(), 2, "{two}");
+    let ten = call(&capacity_req("", &SPEC_CAPACITY.replace(r#""days":7"#, r#""days":10"#))).unwrap();
+    assert_eq!(ten.matches(r#""day":"#).count(), 7, "{ten}");
+    let none = call(&capacity_req("", &SPEC_CAPACITY.replace(r#""days":7"#, r#""days":0"#))).unwrap();
+    assert!(none.ends_with(r#""lookahead":{"den":"1000000000000000000","days":[]}}}"#), "{none}");
+}
+
+/// **A calendar wall takes its hours out of the lookahead** (L2's walls through
+/// `wallIndex`, indexed once from the loaded plan).  With Wednesday's weight
+/// certain (1/1), Wednesday is the lounge's day: 180 minutes at 5 and 180 at 4.
+/// The §4.3 meeting (12:50–13:50) moves the window's end and keeps the budget
+/// (`a_loaded_wednesday_wall_moves_the_window_and_keeps_the_budget`).  A wall over
+/// 07:00–19:00 moves the whole day: E7 extends the window by the wall's twelve
+/// hours past the cap (L2's `windowEnd`; the cap bounds only the base), so the
+/// free time is 19:00–03:00, 12.9 hours and more after the 06:05 wake, where the
+/// lounge's prior is `10+`'s level 2: the 360-minute budget at level 2.
+#[test]
+fn a_calendar_wall_takes_its_hours_out_of_the_lookahead() {
+    let certain = SPEC_CAPACITY.replace(r#""Wed":{"num":"9","den":"10"}"#, r#""Wed":{"num":"1","den":"1"}"#);
+    let wed = |docs: &str| -> String {
+        let out = call(&capacity_req(docs, &certain)).unwrap();
+        let at = out.find(r#"{"day":"2026-09-09""#).unwrap_or_else(|| panic!("{out}"));
+        out[at..].split('}').next().unwrap().to_string() + "}"
+    };
+    assert_eq!(wed(""), day_units("2026-09-09", [0, 0, 0, 0, 180, 180]));
+    let meeting = r#"{"path":"calendar/2026-W37.md","lines":["- [ ] 3 Meeting w/ host      at:2026-09-09T12:50/13:50 loc:zoom ^g1"]}"#;
+    assert_eq!(wed(meeting), day_units("2026-09-09", [0, 0, 0, 0, 180, 180]));
+    let all_day = r#"{"path":"calendar/2026-W37.md","lines":["- [ ] 3 Offsite      at:2026-09-09T07:00/19:00 loc:zoom ^g1"]}"#;
+    assert_eq!(wed(all_day), day_units("2026-09-09", [0, 0, 360, 0, 0, 0]));
+}
+
+/// **Merged (D9 B4 with D10 L6): one request carries `log` and `capacity`**, and
+/// the answer is `docs`, `report`, `log`, then `lookahead` (design §10.2;
+/// `runCap_answers_docs_report_log_lookahead`).  The `log` answer is the one a
+/// request without `capacity` gets, and the `lookahead` the one a request
+/// without `log` gets.  A refused `log` section refuses first.
+#[test]
+fn a_request_with_log_and_capacity_answers_both_in_build_order() {
+    let log = r#""log":{"from":7,"lines":["{\"t\":\"2026-09-07T09:00:00Z\",\"ev\":\"drop\",\"id\":\"x\"}"],"terminated":true,"want":{"headersFrom":7}}"#;
+    let both = call(&capacity_req("", &format!("{log},{SPEC_CAPACITY}"))).unwrap();
+    let cap_only = call(&capacity_req("", SPEC_CAPACITY)).unwrap();
+    let log_only = call(&format!(r#"{{"docs":[],"now":"2026-09-07","blockMin":60,{CHICAGO_2026},{log}}}"#)).unwrap();
+    let log_at = both.find(r#","log":"#).expect("log key");
+    let look_at = both.find(r#","lookahead":"#).expect("lookahead key");
+    assert!(both.starts_with(r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":7,"#), "{both}");
+    assert!(log_at < look_at);
+    assert_eq!(&both[..look_at], &log_only[..log_only.len() - 2], "the log answer is the log op's");
+    assert_eq!(&both[look_at..], &cap_only[cap_only.find(r#","lookahead":"#).unwrap()..], "the lookahead is the capacity op's");
+    let refused = call(&capacity_req("", &format!(r#""log":{{"from":0,"lines":[],"terminated":true}},{SPEC_CAPACITY}"#))).unwrap();
+    assert_eq!(refused, r#"{"err":{"log":{"badLogReq":"from"}}}"#);
+}
+
+/// **A request without `capacity` is answered exactly as before**
+/// (`callExport_without_capacity_is_call`), even when it carries `tz`.
+#[test]
+fn a_request_without_capacity_is_answered_as_before() {
+    let plain = call(&req("[]")).unwrap();
+    let with_tz = call(&format!("{{\"docs\":[{WEEK},{MONTH}],\"cmds\":[],{CHICAGO_2026}}}")).unwrap();
+    assert_eq!(plain, with_tz);
+    assert!(!plain.contains("lookahead"), "{plain}");
+}
+
+/// **Every capacity refusal is named** (design §13.6's table, §10.3; R10): one
+/// edit of the spec request at a time, each refused with its name and key.
+#[test]
+fn every_capacity_refusal_is_named() {
+    let base = capacity_req("", SPEC_CAPACITY);
+    assert!(call(&base).unwrap().starts_with(r#"{"ok":"#));
+    let cases: &[(&str, &str, &str)] = &[
+        (r#""now":"2026-09-07","#, "", "nowAbsent"),
+        (r#""blockMin":60,"#, "", "blockMinAbsent"),
+        (r#""blockMin":60,"#, r#""blockMin":1441,"#, "badDay blockMin"),
+        (r#""now":"2026-09-07""#, r#""now":"9999-12-30""#, "lookaheadTooLong"),
+        (r#""tz":{"#, r#""tzz":{"#, "tzAbsent"),
+        (r#""capacity":{"#, r#""capacity":7,"x":{"#, "badCapacity capacity"),
+        (r#""pLounge":{"#, r#""pLoungeX":{"#, "badCapacity pLounge"),
+        (r#""pLounge":{"config""#, r#""pLounge":{"model":[],"config""#, "badCapacity pLounge.model"),
+        (r#""pLounge":{"config""#, r#""pLounge":{"cfg""#, "badCapacity pLounge.config"),
+        (r#""Mon":{"num":"9","den":"10"}"#, r#""Mon":{"num":"9","den":"10000000000000000000"}"#, "weightPrecision pLounge.config.Mon"),
+        (r#""Sat":{"num":"5","den":"10"}"#, r#""Sat":{"num":"12","den":"10"}"#, "weightAboveOne pLounge.config.Sat"),
+        (r#""Fri":{"num":"8","den":"10"}"#, r#""Fri":{"num":8,"den":10}"#, "badWeight pLounge.config.Fri"),
+        (r#""Thu":{"num":"9","den":"10"}"#, r#""Thu":{"num":"9","den":"0"}"#, "badWeight pLounge.config.Thu"),
+        (r#","Sun":{"num":"4","den":"10"}}"#, "}", "badWeight pLounge.config.Sun"),
+        (
+            r#""pLounge":{"config""#,
+            r#""pLounge":{"model":{"Wed":{"num":"1","den":"3"}},"config""#,
+            "weightPrecision pLounge.model.Wed",
+        ),
+        (r#""arrival":{"#, r#""arrivalX":{"#, "badCapacity arrival"),
+        (r#""arrival":{"config""#, r#""arrival":{"model":{"Tue":"7:00"},"config""#, "badClock arrival.model.Tue"),
+        (r#""Thu":"07:00""#, r#""Thu":"24:00""#, "badClock arrival.config.Thu"),
+        (r#""wake":{"sec":21900,"ns":0}"#, r#""wake":{"sec":86400,"ns":0}"#, "badWake"),
+        (r#""wake":{"sec":21900,"ns":0}"#, r#""wake":"06:05""#, "badWake"),
+        (r#""homeMaxCi":3"#, r#""energy":{"lounge":[4,5,5]},"homeMaxCi":3"#, "badCurve energy.lounge"),
+        (r#""homeMaxCi":3"#, r#""energy":{"home":[3,4,4,4,3,3,3,2,2,2,2,256]},"homeMaxCi":3"#, "badCurve energy.home"),
+        (r#""homeMaxCi":3"#, r#""energy":[],"homeMaxCi":3"#, "badCapacity energy"),
+        (r#""prior":{"#, r#""priorX":{"#, "badCapacity prior"),
+        (r#""prior":{"lounge""#, r#""prior":{"home":[],"lounge""#, "badPrior prior.home"),
+        (r#""from":{"num":8,"den":1},"level":2}"#, r#""from":{"num":8,"den":1},"level":6}"#, "badLevel prior.home"),
+        (
+            r#"{"from":{"num":0,"den":1},"to":{"num":1,"den":1},"level":4}"#,
+            r#"{"from":{"num":0,"den":1},"to":{"num":0,"den":1},"level":4}"#,
+            "badStep prior.lounge",
+        ),
+        (
+            r#"{"from":{"num":0,"den":1},"to":{"num":1,"den":1},"level":3}"#,
+            r#"{"from":{"num":0,"den":1000001},"to":{"num":1,"den":1},"level":3}"#,
+            "badStep prior.home",
+        ),
+        (
+            r#"{"from":{"num":8,"den":1},"level":2}"#,
+            r#"{"from":{"num":0,"den":1},"level":2}"#,
+            "badStep prior.home",
+        ),
+        (r#""homeMaxCi":3"#, r#""homeMaxCi":6"#, "badCap homeMaxCi"),
+        (r#""day":{"#, r#""dayX":{"#, "badCapacity day"),
+        (r#""breakMin":20"#, r#""breakMin":1441"#, "badDay breakMin"),
+        (r#""breakAfterBlocks":2"#, r#""breakAfterBlocks":65"#, "badDay breakAfterBlocks"),
+        (r#""minLastBlockMin":30"#, r#""minLastBlockMin":0"#, "badDay minLastBlockMin"),
+        (r#""windowHours":{"num":8,"den":1}"#, r#""windowHours":{"num":0,"den":1}"#, "badDay windowHours"),
+        (r#""windowCap":"19:00""#, r#""windowCap":"19:60""#, "badClock day.windowCap"),
+        (r#""budgetRatio":{"num":75,"den":100}"#, r#""budgetRatio":{"num":75,"den":0}"#, "badDay budgetRatio"),
+        (r#""priority":{"#, r#""priorityX":{"#, "badCapacity priority"),
+        (
+            r#""bins":[{"num":5,"den":10},{"num":25,"den":100},{"num":1,"den":10}]"#,
+            r#""bins":[{"num":1,"den":10},{"num":5,"den":10}]"#,
+            "badBins",
+        ),
+        (r#""safety":{"num":13,"den":10}"#, r#""safety":{"num":0,"den":10}"#, "badSafety"),
+        (r#""defaultPriority":3"#, r#""defaultPriority":5"#, "badDefaultPriority"),
+        (r#""days":7"#, r#""days":"7""#, "badCapacity days"),
+        (r#""days":7"#, r#""days":3661"#, "lookaheadTooLong"),
+        (r#""day0":[0,0,0,60,170,180]"#, r#""day0":[0,0,0,60,170]"#, "badDay0"),
+        (r#""day0":[0,0,0,60,170,180]"#, r#""day0":[0,0,0,60,170,1441]"#, "badDay0"),
+    ];
+    for (from, to, name) in cases {
+        assert_eq!(base.matches(from).count(), 1, "the edit {from:?} is not unique in the request");
+        let out = call(&base.replacen(from, to, 1)).unwrap();
+        assert_eq!(out, format!(r#"{{"err":{{"capacity":"{name}"}}}}"#), "{from:?} -> {to:?}");
+    }
+    // Merged with the D9 track's B4 (README gap 108): `tz` has one reader, B4's `readTz`, and a
+    // malformed zone is refused by B4's `readLogSection` before the capacity section is read, with
+    // B4's names (`transition` and `unsorted` were L6's `then` and `table`).  Only an absent zone
+    // is the capacity section's refusal (`tzAbsent` above).
+    let zone_cases: &[(&str, &str, &str)] = &[
+        (r#""tz":{"key""#, r#""tz":3,"tzz":{"key""#, "shape"),
+        (r#""key":"America/Chicago","#, "", "key"),
+        (r#""base":"-06:00:00""#, r#""base":"-06:00""#, "base"),
+        (r#"[["2026-03-08T08:00:00Z","-05:00:00"],"#, r#"["2026-03-08T08:00:00Z","#, "transition"),
+        (
+            r#""2026-03-08T08:00:00Z","-05:00:00"],["2026-11-01T07:00:00Z""#,
+            r#""2026-11-01T07:00:00Z","-05:00:00"],["2026-03-08T08:00:00Z""#,
+            "unsorted",
+        ),
+    ];
+    for (from, to, why) in zone_cases {
+        assert_eq!(base.matches(from).count(), 1, "the edit {from:?} is not unique in the request");
+        let out = call(&base.replacen(from, to, 1)).unwrap();
+        assert_eq!(out, format!(r#"{{"err":{{"log":{{"badTz":"{why}"}}}}}}"#), "{from:?} -> {to:?}");
+    }
+    // A `capacity` carried twice is `jget`'s refusal, as for every key the kernel reads.
+    let twice = call(&base.replacen(r#""capacity":{"#, r#""capacity":{},"capacity":{"#, 1)).unwrap();
+    assert_eq!(twice, r#"{"err":"duplicateKey capacity"}"#);
+}

@@ -13,11 +13,16 @@ rests (`freeIntervals`, `cutSlots`), exactly in whole seconds.  Step L4 (§13.3,
 likewise) gives each slot its energy from the hours since wake in exact hundredths from
 seconds (site R11, `hsw100`), the prior curve and the model's learned curves as data, and the
 home cap (`futureEnergy`, `energize`), then limits the day to its budget (`limitSlots`, proved
-equal to L1's `limitHist`), so one location's future day is `dayHist`.
+equal to L1's `limitHist`), so one location's future day is `dayHist`.  Step L5 (§13.4)
+runs the day range: `mkInput?` decodes the host's tables with the kernel's fallbacks, each
+future day's wake is today's wake clock through `local_dt` at second resolution
+(`wakeInstantOf`), and `lookahead` mixes the two locations' limited days at the weekday's
+weight, day 0 being the host's histogram until L9.  Step L6 (§13.6) bounds every other value the
+capacity wire carries (`mkDayCfg?`, `mkStep?`, `curveOk`, `priorOk`, `energyOk`, `homeMaxOk`),
+each with its rejection theorems; the wire itself is `Boundary.lean`'s.
 **Stage 6's `dayPlan` must reuse L2's `windowEnd`, `windowOn`, `wallIndex` and `wallsOn`,
 L3's `freeIntervals` and `cutSlots`, and L4's `hsw100`, `predictAt`, `capForLocation` and
-`energize`, never a second copy** (design §2.3).  The day range and the mixture of the two
-locations' `dayHist`s are L5's.
+`energize`, never a second copy** (design §2.3).
 
 ## The owner's D10 and D17, and the fork point they replace
 
@@ -65,18 +70,21 @@ walls are listed in its section: every run-time pass is a `foldl` or core's tail
 caller).  L3's cut is listed in its section: `foldl`s, core's `append`, `map`, `filter` and
 `any`, and a tail-recursive loop on structural fuel.  L4's energy and limit are listed in
 theirs: core `map`, `foldl`s, and `limitSlots` compiled as its histogram form
-(`limitSlots_eq_limitSlotsFast`).
+(`limitSlots_eq_limitSlotsFast`).  L5's day range is a `foldl` over core's `List.range`,
+then `reverse`, and each day is compiled with its histograms held
+(`dayOf_eq_dayOfFast`).  L6's bounds walk nothing longer than their own guards allow: `curveOk`
+checks a curve's length (core `length`, tail recursive) before `all` and `sortedFrom` walk its
+at most 64 ranges, and `priorOk` checks the curve count before its walks over at most 16 curves.
 
 ## Not here, by name
 
-* `pureDay`, `lookahead`, `Input`, `mkInput?` (L5), and a future day's wake instant (L5; the
-  fork reuses today's wake clock on every future day, see README "Stage 5 D10 L4").
-* The wire for the curves (`Curves`, `Step`), with their R10 bounds and rejection theorems: L6.
+* The wire (`capacity` and `lookahead`, digit strings, the refusal names): `Boundary.lean`'s L6
+  section.
 * Day 0's posterior correction, sleep-debt shift and `--allow-home` (L9).
-* The zone table's refusal of a sub-minute offset (`badTz subMinuteOffset`, §13.6): L6's.
-  L2's window and L3's cut count seconds, so neither needs such a refusal to be exact.
+* The zone table's refusal of a sub-minute offset (`badTz subMinuteOffset`, §13.6): not needed.
+  L2's window, L3's cut and L4's hours since wake count whole seconds, so each is the fork's for
+  every offset (the L6 section says so).
 * Day 0 (`ofHist` over the host's histogram until L9, gap 93 of the design).
-* The wire (`capacity`, `lookahead` sections, digit strings): L6.
 -/
 
 namespace Tm
@@ -2881,6 +2889,1061 @@ theorem hours_since_wake_count_real_hours_across_the_fall_transition :
     (futureEnergy Curves.shipped 5 .home ⟨(Cal.instantOf Cal.chicago 739920 0).sec, 0⟩
         ⟨(Cal.instantOf Cal.chicago 739920 210).sec, 0⟩).val = 3 ∧
     (predictAt Curves.shipped homeKey 350).val = 4 := by
+  decide
+
+
+/-! ############################################################################
+## The lookahead (stage 5 D10 step L5; design §13.4)
+
+The day range and the mixture.  Fork-point `capacity::lookahead(walls_by_date, cfg, model,
+today_slots, from, days, wake_default)` produces the `List DayCapacity` that step 3's `edf`
+consumes; `lookahead` produces it over `capDen` (`lookahead_is_a_lookahead`), and L2–L4's
+window, cut, energy and limit are reused, never copied.
+
+### The fork point, read by name
+
+For `i` in `0..days`, `date = from + i`:
+
+1. `i == 0`: `DayCapacity::from_slots(date, today_slots)`, the host's histogram until L9
+   (design §13.5): `ofHist today day0`;
+2. otherwise, with `wd = date.weekday()`: `arrival = local_dt(tz, date,
+   model.expected_arrival_on(wd, cfg))` (`arrivalOn`: learned, else the config's),
+   `wake = local_dt(tz, date, wake_default)` (`wakeOn`, `wakeInstantOf`), the walls of the date
+   (L2's `wallsOn` over the plan indexed once), `window_and_budget` (L2's `windowOn`,
+   `windowMinOf`, `budgetOf`), `cut_slots(arrival, end, walls, cfg)` (L3's `cutSlots … [] 0`),
+   `energize` at the location and `limit_to_budget(slots, budget, block_min)` (L4's `dayHist`,
+   here `pureDay`, `pureDay_is_dayHist`);
+3. the location: `lounge` iff `model.p_lounge_on(wd, cfg) >= 0.5`.  **Under D10 both locations
+   are computed and mixed at the weekday's exact weight** (`dayOf`, `mixDay`), after each
+   location's budget limit (D10-3).  With every weight forced to the fork's threshold
+   (`Input.twin`), a day is the fork's location in `capDen` units
+   (`the_twin_forces_the_forks_location`): that is P1 (refined), the one recorded difference.
+
+`wake_default` is `Ctx::wake_time()`: `state.json`'s logged wake, else the replay's `wake` of
+today, else **today's** weekday's expected arrival (`Model::wake_or_expected`), a `NaiveTime`
+with seconds and nanoseconds.  Every future date reuses that clock.  `wakeInstantOf` is
+`local_dt` at second resolution: chrono-tz reads the local clock's whole seconds against its
+spans, the nanoseconds ride along, and in a spring-forward gap `naive + Duration::minutes(m)`
+keeps the seconds and leaves a leap second (`leapFold`).  Its whole-minute instance is B1's
+`Cal.instantOf` (`wakeInstantOf_ofClock`), so no second definition of `local_dt` exists.
+
+### The input (R10, D10-4)
+
+`InputIn` is what the host has: both readings of every weekday table, today's logged wake if
+any, day 0's six levels, the curves, the `[day]` keys and the walls indexed once.  `mkInput?`
+is the smart constructor.  It refuses `lookaheadTooLong` first (more than 3,660 days, D10-13),
+then a weight by weekday (`weight wd e`, L1's `WErr`), then a wake chrono could not hold
+(`badWake`), then day-0 levels that are not six of at most 1,440 minutes (`badDay0`); each
+refusal has its theorem, and every other input is accepted (`mkInput?_accepts`).  The kernel
+applies the model-then-config fallbacks and the wake fallback itself
+(`mkInput?_weight_is_the_model_then_config`, `mkInput?_arrival_and_wake`).  The curves' and
+`[day]`'s own bounds, the zone's, and the wire are L6's (design §13.6).
+
+### Held once (L4's note)
+
+A `Hist` is a function, so every read of a level re-runs what built it, and step 3's pass reads
+each day's levels once per deadline.  **`@[csimp] dayOf_eq_dayOfFast`**: the compiled code cuts
+each day once, lists each location's energised slots once, and holds its histogram, its limited
+day and the mixed numerators as `Six`, six numbers read in constant time.
+
+### The recursion rule (D9-21)
+
+Over lists the wire can make large: the day range is core's `List.range` (`range.loop`, tail
+recursive) folded by `foldl` and reversed; each day's walls, window, cut, energy and limit are
+L2–L4's, listed in their sections; `Cal.localHits` and `Cal.gapHit` are B1's (a `foldl` over the
+zone table; structural fuel 180).  `weightsOf?`, `day0Wf` (core `all` over at most six entries
+after the length check) and `Six` recurse over nothing large.  Proof-only recursions:
+`foldl_cons_map`, `daysAscending_range'`.
+-/
+
+/-! ### A future day's wake: fork `local_dt(tz, date, wake_default)` at second resolution -/
+
+/-- chrono's `NaiveTime`: seconds of the day and nanoseconds. -/
+structure WakeClock where
+  sec : Nat
+  ns  : Nat
+deriving DecidableEq, Repr
+
+/-- chrono's representable times of day (R10): a second below 86,400, a nanosecond count below
+two seconds, at or above one second only on second 59 of a minute (a leap second). -/
+def WakeClock.wf (w : WakeClock) : Bool :=
+  decide (w.sec < 86400) && decide (w.ns < 2000000000) && (decide (w.ns < 1000000000) || w.sec % 60 == 59)
+
+/-- A whole-minute clock as a time of day (fork `wake_or_expected`'s fallback, an expected
+arrival). -/
+def WakeClock.ofClock (c : Field.Clock) : WakeClock := ⟨c.val * 60, 0⟩
+
+theorem WakeClock.ofClock_wf (c : Field.Clock) : (WakeClock.ofClock c).wf = true := by
+  have := c.isLt
+  simp only [WakeClock.wf, WakeClock.ofClock, Bool.and_eq_true]
+  exact ⟨⟨decide_eq_true (by omega), rfl⟩, rfl⟩
+
+/-- chrono's `NaiveDateTime + Duration::minutes(m)`, `m ≥ 1`, on the nanoseconds: a leap
+second is left, the minutes land on the next whole second's count. -/
+def leapFold (ns : Nat) : Nat := if 1000000000 ≤ ns then ns - 1000000000 else ns
+
+/-- **Fork `local_dt(tz, date, time)` for a time with seconds and nanoseconds**, as
+`capacity::lookahead` builds `wake = local_dt(tz, date, wake_default)` for every future date:
+chrono-tz reads the local clock's whole seconds against its spans; `Single` gives that instant
+and `Ambiguous` the earliest, each with the time's nanoseconds; `None` tries the local time plus
+1 to 180 minutes (the seconds kept, a leap second left); failing that, the local time read as
+UTC.  `Cal.instantOf` is its whole-minute instance (`wakeInstantOf_ofClock`). -/
+def wakeInstantOf (z : Cal.Tz) (d : Nat) (w : WakeClock) : Cal.Instant :=
+  match Cal.localHits z (d * 86400 + w.sec) with
+  | s :: _ => ⟨s, w.ns⟩
+  | [] =>
+      match Cal.gapHit z (d * 86400 + w.sec) 180 1 with
+      | some s => ⟨s, leapFold w.ns⟩
+      | none => ⟨d * 86400 + w.sec, w.ns⟩
+
+theorem wakeInstantOf_ofClock (z : Cal.Tz) (d : Nat) (c : Field.Clock) :
+    wakeInstantOf z d (WakeClock.ofClock c) = Cal.instantOf z d c := by
+  simp only [wakeInstantOf, WakeClock.ofClock, Cal.instantOf, leapFold]
+  rfl
+
+/-- **`wakeInstantOf` is `local_dt` on an unambiguous time**: when exactly one instant has the
+local second, the wake is that second with the time's nanoseconds. -/
+theorem wakeInstantOf_on_an_unambiguous_time (z : Cal.Tz) (d : Nat) (w : WakeClock) (t : Cal.Instant)
+    (hu : (Cal.localHits z (d * 86400 + w.sec)).length = 1) (hpos : 0 < d * 86400 + w.sec)
+    (hns : t.ns = w.ns) (ht : Cal.localSec z t = d * 86400 + w.sec) :
+    wakeInstantOf z d w = t := by
+  have hmem := Cal.mem_localHits_of_localSec z t _ hpos ht
+  unfold wakeInstantOf
+  cases hh : Cal.localHits z (d * 86400 + w.sec) with
+  | nil => rw [hh] at hu; simp at hu
+  | cons s rest =>
+    rw [hh] at hu hmem
+    have hr : rest = [] := by simpa using hu
+    subst hr
+    simp only [List.mem_singleton] at hmem
+    cases t
+    simp_all
+
+/-! ### The input: fork `capacity::lookahead`'s arguments, with the kernel's fallbacks -/
+
+/-- The lookahead's R10 bound (D10-13): at most 3,660 days, else `lookaheadTooLong`. -/
+def maxLookaheadDays : Nat := 3660
+
+/-- The `[day]` keys the window, the budget and the cut read.  L6 decodes it with §13.6's
+bounds (`badDay <key>`); `CutCfg` is L3's, contained, not copied. -/
+structure DayCfg where
+  cut         : CutCfg
+  windowHours : Pos
+  windowCap   : Field.Clock
+  budgetRatio : Pos
+
+/-- What the host hands the lookahead, raw: both readings of every weekday table (D10-4: the
+kernel picks, AGENTS §5.6), today's logged wake if the day has one, and the plan's walls indexed
+once (`wallIndex`). -/
+structure InputIn where
+  today     : Nat
+  days      : Nat
+  day0      : List Nat
+  pModel    : Cal.Weekday → Option (Nat × Nat)
+  pConfig   : Cal.Weekday → Nat × Nat
+  arrModel  : Cal.Weekday → Option Field.Clock
+  arrConfig : Cal.Weekday → Field.Clock
+  wake      : Option WakeClock
+  curves    : Curves
+  homeMax   : Nat
+  day       : DayCfg
+  tz        : Cal.Tz
+  walls     : List WallIx
+
+/-- The lookahead's input, decoded (`mkInput?`). -/
+structure Input where
+  today   : Nat
+  days    : Nat
+  day0    : Hist
+  weight  : Cal.Weekday → Weight
+  arrival : Cal.Weekday → Field.Clock
+  wake    : WakeClock
+  curves  : Curves
+  homeMax : Nat
+  day     : DayCfg
+  tz      : Cal.Tz
+  walls   : List WallIx
+
+/-- Why the capacity input is refused, by name (AGENTS §5.7). -/
+inductive CapErr where
+  | lookaheadTooLong
+  | weight (wd : Cal.Weekday) (e : WErr)
+  | badWake
+  | badDay0
+deriving DecidableEq, Repr
+
+/-- **Fork `Model::p_lounge_on(wd, cfg)`**: the learned pair, else the config's, decoded
+exactly or refused with the weekday's name. -/
+def weightOn? (x : InputIn) (wd : Cal.Weekday) : Except CapErr Weight :=
+  match mkWeight? ((x.pModel wd).getD (x.pConfig wd)).1 ((x.pModel wd).getD (x.pConfig wd)).2 with
+  | .ok w => .ok w
+  | .error e => .error (.weight wd e)
+
+/-- The seven weights, Monday first; the first refusal is returned. -/
+def weightsOf? (x : InputIn) : Except CapErr (Cal.Weekday → Weight) :=
+  match weightOn? x .monday, weightOn? x .tuesday, weightOn? x .wednesday, weightOn? x .thursday,
+      weightOn? x .friday, weightOn? x .saturday, weightOn? x .sunday with
+  | .ok mo, .ok tu, .ok we, .ok th, .ok fr, .ok sa, .ok su =>
+    .ok fun
+      | .monday => mo | .tuesday => tu | .wednesday => we | .thursday => th
+      | .friday => fr | .saturday => sa | .sunday => su
+  | .error e, _, _, _, _, _, _ => .error e
+  | _, .error e, _, _, _, _, _ => .error e
+  | _, _, .error e, _, _, _, _ => .error e
+  | _, _, _, .error e, _, _, _ => .error e
+  | _, _, _, _, .error e, _, _ => .error e
+  | _, _, _, _, _, .error e, _ => .error e
+  | _, _, _, _, _, _, .error e => .error e
+
+/-- **Fork `Model::expected_arrival_on(wd, cfg)`**: learned, else the config's. -/
+def arrivalOn (x : InputIn) (wd : Cal.Weekday) : Field.Clock := (x.arrModel wd).getD (x.arrConfig wd)
+
+/-- **Fork `Ctx::wake_time()`** (`Model::wake_or_expected(logged, today.weekday())`): the
+logged wake, else today's weekday's expected arrival.  Every future day reuses it. -/
+def wakeOf (x : InputIn) : WakeClock := x.wake.getD (WakeClock.ofClock (arrivalOn x (Cal.weekdayOf x.today)))
+
+/-- Day 0's six levels (interim until L9): exactly six, each a day's minutes at most. -/
+def day0Wf (ns : List Nat) : Bool := ns.length == 6 && ns.all (fun n => decide (n ≤ 1440))
+
+/-- **The smart constructor** (R10).  Checked in the order `lookaheadTooLong`, the weights
+Monday first, `badWake`, `badDay0`. -/
+def mkInput? (x : InputIn) : Except CapErr Input :=
+  if maxLookaheadDays < x.days then .error .lookaheadTooLong else
+  match weightsOf? x with
+  | .error e => .error e
+  | .ok ws =>
+    if (wakeOf x).wf = false then .error .badWake
+    else if day0Wf x.day0 = false then .error .badDay0
+    else .ok ⟨x.today, x.days, histOf x.day0, ws, arrivalOn x, wakeOf x, x.curves, x.homeMax, x.day,
+      x.tz, x.walls⟩
+
+theorem mkInput?_refuses_too_many_days (x : Look.InputIn) (h : Look.maxLookaheadDays < x.days) :
+    Look.mkInput? x = .error .lookaheadTooLong := by
+  simp [mkInput?, h]
+
+/-! ### One future day: window, cut, energy and limit at each location, then the mixture -/
+
+/-- Fork `limit_to_budget`'s `budget.saturating_mul(block_min)`, `budget` from `budget_blocks`. -/
+def budgetMinOf (c : DayCfg) : Nat := budgetOf c.windowHours c.cut.blockMin c.budgetRatio * c.cut.blockMin
+
+/-- Fork `lookahead`'s day `d` up to the cut: the arrival on `d`'s weekday through `local_dt`,
+`window_and_budget` over the walls of `d`, and `cut_slots(arrival, end, walls, cfg)`. -/
+def dayCut (I : Input) (d : Nat) : Cut :=
+  let walls := wallsOn I.walls d
+  let w := windowOn I.tz d (I.arrival (Cal.weekdayOf d)) I.day.windowCap (windowMinOf I.day.windowHours) walls
+  cutSlots I.day.cut w.1 w.2 walls [] 0
+
+/-- Fork `local_dt(tz, date, wake_default)`: today's wake clock on day `d`. -/
+def wakeOn (I : Input) (d : Nat) : Cal.Instant := wakeInstantOf I.tz d I.wake
+
+/-- **One location's future day** (design §13.4): the window, the cut, each slot's energy at
+`loc`, and the budget limit.  Written as the limit over the energised histogram, which reduces
+under `decide`; it is L4's `dayHist`, the fork's per-slot sort, by `pureDay_is_dayHist`. -/
+def pureDay (I : Input) (loc : Loc) (d : Nat) : Hist :=
+  limitHist (budgetMinOf I.day) (histOf' (energize I.curves I.homeMax loc (wakeOn I d) (dayCut I d).slots))
+
+/-- **`pureDay` is L4's `dayHist`**: fork `lookahead`'s loop body after the cut,
+`limit_to_budget(energize(cut.slots, ctx), budget, block_min)`. -/
+theorem pureDay_is_dayHist (I : Input) (loc : Loc) (d : Nat) :
+    pureDay I loc d = dayHist I.curves I.homeMax loc (wakeOn I d) (budgetMinOf I.day) (dayCut I d).slots :=
+  (dayHist_eq _ _ _ _ _ _).symm
+
+/-- **Entry `i` of the lookahead**: day 0 is the host's histogram (interim until L9, design
+§13.5); a later day mixes the two locations' limited days at its weekday's weight (D10-3). -/
+def dayOf (I : Input) (i : Nat) : DayCapacity :=
+  if i = 0 then ofHist I.today I.day0
+  else mixDay (I.today + i) (I.weight (Cal.weekdayOf (I.today + i)))
+    (pureDay I .lounge (I.today + i)) (pureDay I .home (I.today + i))
+
+/-! ### Held once: six numbers per histogram (what the compiled code runs) -/
+
+/-- Six levels, held.  A `Hist` is a function, so a level read re-runs what built it; a
+`Six` is built once and read in constant time. -/
+structure Six where
+  l0 : Nat
+  l1 : Nat
+  l2 : Nat
+  l3 : Nat
+  l4 : Nat
+  l5 : Nat
+
+def Six.of (h : Hist) : Six := ⟨h 0, h 1, h 2, h 3, h 4, h 5⟩
+
+def Six.get (s : Six) (l : Fin 6) : Nat :=
+  if l.val = 0 then s.l0 else if l.val = 1 then s.l1 else if l.val = 2 then s.l2
+  else if l.val = 3 then s.l3 else if l.val = 4 then s.l4 else s.l5
+
+theorem Six.get_of (h : Hist) : (Six.of h).get = h := by
+  funext l
+  obtain ⟨n, hn⟩ := l
+  have : n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 := by omega
+  rcases this with rfl | rfl | rfl | rfl | rfl | rfl <;> rfl
+
+/-- One location's day, held: the energised slots listed once, their histogram held, the limit
+held. -/
+def locSix (c : Curves) (homeMax : Nat) (loc : Loc) (wake : Cal.Instant) (budgetMin : Nat)
+    (slots : List Slot) : Six :=
+  let e := energize c homeMax loc wake slots
+  let h := Six.of (histOf' e)
+  Six.of (limitHist budgetMin h.get)
+
+theorem locSix_get (c : Curves) (homeMax : Nat) (loc : Loc) (wake : Cal.Instant) (budgetMin : Nat)
+    (slots : List Slot) :
+    (locSix c homeMax loc wake budgetMin slots).get = limitHist budgetMin (histOf' (energize c homeMax loc wake slots)) := by
+  simp only [locSix, Six.get_of]
+
+/-- `dayOf` as the compiled code runs it: the cut once per day, each location's day held, the
+mixed numerators held. -/
+def dayOfFast (I : Input) (i : Nat) : DayCapacity :=
+  if i = 0 then ⟨I.today, (Six.of (ofHist I.today I.day0).numAt).get⟩
+  else
+    let d := I.today + i
+    let slots := (dayCut I d).slots
+    let wake := wakeOn I d
+    let B := budgetMinOf I.day
+    let L := locSix I.curves I.homeMax .lounge wake B slots
+    let H := locSix I.curves I.homeMax .home wake B slots
+    ⟨d, (Six.of (mix (I.weight (Cal.weekdayOf d)) L.get H.get)).get⟩
+
+/-- The compiled `dayOf` holds every histogram once (L4's note; D9-21). -/
+@[csimp] theorem dayOf_eq_dayOfFast : @dayOf = @dayOfFast := by
+  funext I i
+  unfold dayOf dayOfFast
+  split
+  · simp only [Six.get_of]; rfl
+  · simp only [locSix_get, Six.get_of, pureDay]; rfl
+
+/-- **Fork `capacity::lookahead`, under D10** (design §13.4): `days` entries from `today`, a
+`foldl` over the day range, then `reverse` (D9-21).  Declared after `dayOf_eq_dayOfFast`, so its
+compiled fold calls `dayOfFast`. -/
+def lookahead (I : Input) : List DayCapacity :=
+  ((List.range I.days).foldl (fun acc i => dayOf I i :: acc) []).reverse
+
+/-! ### The laws (in-step; design §15) -/
+
+theorem foldl_cons_map {α β : Type} (f : α → β) : ∀ (L : List α) (acc : List β),
+    L.foldl (fun acc i => f i :: acc) acc = (L.map f).reverse ++ acc
+  | [], acc => rfl
+  | x :: xs, acc => by
+    simp only [List.foldl_cons, List.map_cons, List.reverse_cons, List.append_assoc,
+      List.singleton_append]
+    exact foldl_cons_map f xs (f x :: acc)
+
+/-- **The lookahead is its entries, in order.** -/
+theorem lookahead_eq_map (I : Input) : lookahead I = (List.range I.days).map (dayOf I) := by
+  simp [lookahead]
+
+theorem dayOf_day (I : Input) (i : Nat) : (dayOf I i).day = I.today + i := by
+  unfold dayOf
+  split
+  · rename_i h; subst h; rfl
+  · rfl
+
+theorem lookahead_keeps_the_days (I : Look.Input) : (Look.lookahead I).length = I.days := by
+  simp [lookahead_eq_map]
+
+/-- **The days are `today`, `today + 1`, … in order** (fork `from.checked_add_signed(i)`). -/
+theorem lookahead_dates (I : Input) : (lookahead I).map (·.day) = (List.range I.days).map (I.today + ·) := by
+  rw [lookahead_eq_map, List.map_map]
+  congr 1
+  funext i
+  exact dayOf_day I i
+
+theorem lookahead_getElem? (I : Input) (i : Nat) :
+    (lookahead I)[i]? = if i < I.days then some (dayOf I i) else none := by
+  by_cases h : i < I.days <;> simp [h, lookahead_eq_map]
+
+theorem daysAscending_range' (g : Nat → DayCapacity) (c : Nat) (hg : ∀ j, (g j).day = c + j) :
+    ∀ n s, daysAscending ((List.range' s n).map g) = true
+  | 0, _ => rfl
+  | 1, _ => rfl
+  | n + 2, s => by
+    have ih := daysAscending_range' g c hg (n + 1) (s + 1)
+    simp only [List.range'_succ, List.map_cons] at ih ⊢
+    simp only [daysAscending, ih, Bool.and_true]
+    simp [hg]
+
+theorem lookahead_is_a_lookahead (I : Look.Input) : (lookaheadOf? Look.capDen (Look.lookahead I)).isSome = true := by
+  have h : daysAscending (lookahead I) = true := by
+    rw [lookahead_eq_map, List.range_eq_range']
+    exact daysAscending_range' (dayOf I) I.today (dayOf_day I) I.days 0
+  simp [lookaheadOf?, denOf?, capDen_pos, h]
+
+theorem lookahead_entry {I : Input} {i : Nat} {c : DayCapacity} (h : (lookahead I)[i]? = some c) :
+    i < I.days ∧ c = dayOf I i := by
+  rw [lookahead_getElem?] at h
+  split at h
+  · exact ⟨by assumption, (Option.some.inj h).symm⟩
+  · cases h
+
+/-- **Day 0 is the host's histogram** (interim until L9, design §13.5). -/
+theorem lookahead_day_zero_is_the_hosts (I : Input) (h : 0 < I.days) :
+    (lookahead I)[0]? = some (ofHist I.today I.day0) := by
+  rw [lookahead_getElem?, if_pos h]
+  rfl
+
+/-- **A future day is the mixture of the two locations' limited days** (D10-3), at the weight
+of its own weekday. -/
+theorem lookahead_future_day_is_the_mixture {I : Input} {i : Nat} {c : DayCapacity}
+    (h : (lookahead I)[i]? = some c) (hi : 0 < i) :
+    c = mixDay c.day (I.weight (Cal.weekdayOf c.day)) (pureDay I .lounge c.day) (pureDay I .home c.day) := by
+  obtain ⟨_, rfl⟩ := lookahead_entry h
+  rw [dayOf_day]
+  unfold dayOf
+  rw [if_neg (by omega)]
+
+theorem lookahead_between_the_locations (I : Look.Input) (i : Nat) (c : DayCapacity) (l : Fin 6)
+    (h : (Look.lookahead I)[i]? = some c) (hi : 0 < i) :
+    Look.capDen * min (Look.pureDay I .lounge c.day l) (Look.pureDay I .home c.day l) ≤ c.numAt l ∧
+    c.numAt l ≤ Look.capDen * max (Look.pureDay I .lounge c.day l) (Look.pureDay I .home c.day l) := by
+  have e := lookahead_future_day_is_the_mixture h hi
+  have hn : c.numAt = mix (I.weight (Cal.weekdayOf c.day)) (pureDay I .lounge c.day) (pureDay I .home c.day) := by
+    conv => lhs; rw [e]
+    rfl
+  rw [hn]
+  exact mix_between_the_locations _ _ _ l
+
+/-- **At a certain weight the day is the pure location's** (D10's mixture meets the fork's
+forced location). -/
+theorem lookahead_at_a_certain_weight_is_the_pure_location {I : Input} {i : Nat} {c : DayCapacity}
+    (h : (lookahead I)[i]? = some c) (hi : 0 < i) :
+    ((I.weight (Cal.weekdayOf c.day)).val = capDen → c = ofHist c.day (pureDay I .lounge c.day)) ∧
+    ((I.weight (Cal.weekdayOf c.day)).val = 0 → c = ofHist c.day (pureDay I .home c.day)) := by
+  have e := lookahead_future_day_is_the_mixture h hi
+  refine ⟨fun hw => ?_, fun hw => ?_⟩
+  · conv => lhs; rw [e]
+    simp only [mixDay, ofHist, mix_at_one_is_lounge _ hw]
+  · conv => lhs; rw [e]
+    simp only [mixDay, ofHist, mix_at_zero_is_home _ hw]
+
+/-- The lookahead with every weight replaced by the fork's threshold (step L7's twin). -/
+def Input.twin (I : Input) : Input := { I with weight := fun wd => Look.twin (I.weight wd) }
+
+/-- **The twin is the fork's `capacity::lookahead` with the location forced per day**, in
+`capDen` units: lounge iff `p ≥ ½` (`twin_is_the_forks_threshold`), day 0 unchanged. -/
+theorem the_twin_forces_the_forks_location {I : Input} {i : Nat} {c : DayCapacity}
+    (h : (lookahead I.twin)[i]? = some c) (hi : 0 < i) :
+    c = ofHist c.day (if capDen ≤ 2 * (I.weight (Cal.weekdayOf c.day)).val
+      then pureDay I .lounge c.day else pureDay I .home c.day) := by
+  have e := lookahead_future_day_is_the_mixture h hi
+  conv => lhs; rw [e]
+  have hp : ∀ loc d, pureDay I.twin loc d = pureDay I loc d := fun _ _ => rfl
+  simp only [hp, mixDay, ofHist]
+  show DayCapacity.mk c.day (mix (Look.twin (I.weight (Cal.weekdayOf c.day))) _ _) = _
+  rw [twin_is_the_forks_location]
+  congr 1
+  funext l
+  split <;> rfl
+
+/-- R10's width of a future day: no level holds more than the day's budget, in `capDen` units. -/
+theorem pureDay_le_budget (I : Input) (loc : Loc) (d : Nat) (l : Fin 6) :
+    pureDay I loc d l ≤ budgetMinOf I.day := by
+  unfold pureDay
+  rw [limitHist_eq]
+  omega
+
+theorem lookahead_future_day_width {I : Input} {i : Nat} {c : DayCapacity}
+    (h : (lookahead I)[i]? = some c) (hi : 0 < i) (l : Fin 6) :
+    c.numAt l ≤ capDen * budgetMinOf I.day :=
+  have hb := lookahead_between_the_locations I i c l h hi
+  Nat.le_trans hb.2 (Nat.mul_le_mul_left _ (Nat.max_le.mpr ⟨pureDay_le_budget I _ _ l, pureDay_le_budget I _ _ l⟩))
+
+/-! ### The smart constructor's laws (R10, D10-4) -/
+
+theorem weightsOf?_ok {x : InputIn} {ws : Cal.Weekday → Weight} (h : weightsOf? x = .ok ws) :
+    ∀ wd, weightOn? x wd = .ok (ws wd) := by
+  unfold weightsOf? at h
+  split at h
+  · rename_i mo tu we th fr sa su h1 h2 h3 h4 h5 h6 h7
+    cases h
+    intro wd
+    cases wd <;> assumption
+  all_goals cases h
+
+theorem weightsOf?_of_ok {x : InputIn} (h : ∀ wd, ∃ w, weightOn? x wd = .ok w) :
+    ∃ ws, weightsOf? x = .ok ws := by
+  obtain ⟨mo, h1⟩ := h .monday
+  obtain ⟨tu, h2⟩ := h .tuesday
+  obtain ⟨we, h3⟩ := h .wednesday
+  obtain ⟨th, h4⟩ := h .thursday
+  obtain ⟨fr, h5⟩ := h .friday
+  obtain ⟨sa, h6⟩ := h .saturday
+  obtain ⟨su, h7⟩ := h .sunday
+  exact ⟨_, by simp only [weightsOf?, h1, h2, h3, h4, h5, h6, h7]; rfl⟩
+
+/-- What an accepted input satisfied, and what it holds. -/
+theorem mkInput?_ok_elim {x : InputIn} {I : Input} (h : mkInput? x = .ok I) :
+    x.days ≤ maxLookaheadDays ∧ (∀ wd, weightOn? x wd = .ok (I.weight wd)) ∧
+      (wakeOf x).wf = true ∧ day0Wf x.day0 = true ∧
+      I.today = x.today ∧ I.days = x.days ∧ I.day0 = histOf x.day0 ∧ I.arrival = arrivalOn x ∧
+      I.wake = wakeOf x ∧ I.curves = x.curves ∧ I.homeMax = x.homeMax ∧ I.day = x.day ∧ I.tz = x.tz ∧
+      I.walls = x.walls := by
+  unfold mkInput? at h
+  by_cases hd : maxLookaheadDays < x.days
+  · rw [if_pos hd] at h; cases h
+  · rw [if_neg hd] at h
+    split at h
+    · cases h
+    · rename_i ws hws
+      by_cases hw : (wakeOf x).wf = false
+      · rw [if_pos hw] at h; cases h
+      · rw [if_neg hw] at h
+        by_cases h0 : day0Wf x.day0 = false
+        · rw [if_pos h0] at h; cases h
+        · rw [if_neg h0] at h
+          cases h
+          exact ⟨by omega, weightsOf?_ok hws, by simpa using hw, by simpa using h0, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- **The weight is the model's, else the config's, decoded exactly** (fork
+`Model::p_lounge_on`; D10-4). -/
+theorem mkInput?_weight_is_the_model_then_config {x : InputIn} {I : Input} (h : mkInput? x = .ok I)
+    (wd : Cal.Weekday) :
+    mkWeight? ((x.pModel wd).getD (x.pConfig wd)).1 ((x.pModel wd).getD (x.pConfig wd)).2 = .ok (I.weight wd) := by
+  have hw := (mkInput?_ok_elim h).2.1 wd
+  unfold weightOn? at hw
+  split at hw
+  · rename_i w hm; cases hw; exact hm
+  · cases hw
+
+/-- **The arrival is the model's, else the config's; the wake is today's logged wake, else
+today's expected arrival** (fork `Model::expected_arrival_on`, `Ctx::wake_time`). -/
+theorem mkInput?_arrival_and_wake {x : InputIn} {I : Input} (h : mkInput? x = .ok I) :
+    (∀ wd, I.arrival wd = (x.arrModel wd).getD (x.arrConfig wd)) ∧
+      I.wake = x.wake.getD (WakeClock.ofClock ((x.arrModel (Cal.weekdayOf x.today)).getD
+        (x.arrConfig (Cal.weekdayOf x.today)))) := by
+  obtain ⟨-, -, -, -, -, -, -, ha, hw, -⟩ := mkInput?_ok_elim h
+  exact ⟨fun wd => by rw [ha]; rfl, by rw [hw]; rfl⟩
+
+/-- R10's width: an accepted lookahead has at most 3,660 days. -/
+theorem mkInput?_days_le {x : InputIn} {I : Input} (h : mkInput? x = .ok I) : I.days ≤ maxLookaheadDays := by
+  obtain ⟨hd, -, -, -, -, he, -⟩ := mkInput?_ok_elim h
+  rw [he]; exact hd
+
+theorem mkInput?_refuses_a_bad_weight {x : InputIn} {wd : Cal.Weekday} {e : CapErr}
+    (h : weightOn? x wd = .error e) (I : Input) : mkInput? x ≠ .ok I := fun hI => by
+  have := (mkInput?_ok_elim hI).2.1 wd
+  rw [h] at this
+  cases this
+
+theorem mkInput?_refuses_a_bad_wake {x : InputIn} (h : (wakeOf x).wf = false) (I : Input) :
+    mkInput? x ≠ .ok I := fun hI => by
+  have := (mkInput?_ok_elim hI).2.2.1
+  rw [h] at this
+  cases this
+
+theorem mkInput?_refuses_a_bad_day0 {x : InputIn} (h : day0Wf x.day0 = false) (I : Input) :
+    mkInput? x ≠ .ok I := fun hI => by
+  have := (mkInput?_ok_elim hI).2.2.2.1
+  rw [h] at this
+  cases this
+
+/-- **Both directions**: every other input is accepted. -/
+theorem mkInput?_accepts {x : InputIn} (hd : x.days ≤ maxLookaheadDays)
+    (hws : ∀ wd, ∃ w, weightOn? x wd = .ok w) (hw : (wakeOf x).wf = true) (h0 : day0Wf x.day0 = true) :
+    ∃ I, mkInput? x = .ok I := by
+  obtain ⟨ws, hws⟩ := weightsOf?_of_ok hws
+  refine ⟨⟨x.today, x.days, histOf x.day0, ws, arrivalOn x, wakeOf x, x.curves, x.homeMax, x.day, x.tz,
+    x.walls⟩, ?_⟩
+  simp only [mkInput?, if_neg (Nat.not_lt.mpr hd), hws, hw, h0]
+  rfl
+
+/-- A logged wake is refused by name only when chrono could not hold it; the fallback, an
+expected arrival, never is. -/
+theorem wakeOf_without_a_logged_wake_is_wf (x : InputIn) (h : x.wake = none) : (wakeOf x).wf = true := by
+  simp only [wakeOf, h, Option.getD_none]
+  exact WakeClock.ofClock_wf _
+
+/-- **End to end from the host's pair**: an accepted input's future day, read over `capDenD`, is
+the rational `(n·lounge + (d − n)·home) / d` for the model-then-config pair `n / d` of its
+weekday, each location's day limited to its budget first (D10, D10-3, D10-4). -/
+theorem lookahead_is_the_expected_minutes {x : InputIn} {I : Input} (hI : mkInput? x = .ok I)
+    {i : Nat} {c : DayCapacity} (h : (lookahead I)[i]? = some c) (hi : 0 < i) (l : Fin 6) :
+    Q.equiv (c.minutesAt capDenD l).val
+      ⟨((x.pModel (Cal.weekdayOf c.day)).getD (x.pConfig (Cal.weekdayOf c.day))).1 * pureDay I .lounge c.day l
+        + (((x.pModel (Cal.weekdayOf c.day)).getD (x.pConfig (Cal.weekdayOf c.day))).2
+          - ((x.pModel (Cal.weekdayOf c.day)).getD (x.pConfig (Cal.weekdayOf c.day))).1) * pureDay I .home c.day l,
+        ((x.pModel (Cal.weekdayOf c.day)).getD (x.pConfig (Cal.weekdayOf c.day))).2⟩ = true := by
+  have e := lookahead_future_day_is_the_mixture h hi
+  have hw := mkInput?_weight_is_the_model_then_config hI (Cal.weekdayOf c.day)
+  rw [e]
+  exact mixDay_minutesAt_is_the_expectation hw c.day _ _ l
+
+/-! ### Witnesses (Chicago's 2026 table; the shipped `config.toml`) -/
+
+/-- The wake witnesses on Chicago's 2026 table: seconds and nanoseconds kept on an unambiguous
+time; the spring gap moves 02:30:40 to 03:00:40 CDT, and a leap second there is left; the fall
+fold takes the earlier 01:30:40. -/
+theorem wakeInstantOf_on_witnesses :
+    wakeInstantOf Cal.chicago 739865 ⟨6 * 3600 + 5 * 60 + 40, 250000000⟩
+      = ⟨(Cal.instantOf Cal.chicago 739865 365).sec + 40, 250000000⟩ ∧
+    wakeInstantOf Cal.chicago 739682 ⟨2 * 3600 + 30 * 60 + 40, 0⟩ = ⟨63908553600 + 40, 0⟩ ∧
+    wakeInstantOf Cal.chicago 739682 ⟨2 * 3600 + 30 * 60 + 59, 1500000000⟩ = ⟨63908553600 + 59, 500000000⟩ ∧
+    wakeInstantOf Cal.chicago 739920 ⟨1 * 3600 + 30 * 60 + 40, 0⟩ = ⟨63929111400 + 40, 0⟩ := by
+  decide
+
+/-- The shipped `[day]`: 60-minute blocks, a 20-minute break after 2, a 30-minute last block,
+8 hours, a 19:00 cap, `budget_ratio` 0.75. -/
+def DayCfg.shipped : DayCfg := ⟨CutCfg.shipped, mkPos 8 1 (by decide), 1140, Arith.budgetRatio⟩
+
+/-- The shipped `[expected] p_lounge`, as exact weights: 0.9 Monday to Thursday, 0.8 Friday,
+0.5 Saturday, 0.4 Sunday. -/
+def shippedWeight : Cal.Weekday → Weight
+  | .friday => ⟨800000000000000000, by decide⟩
+  | .saturday => ⟨500000000000000000, by decide⟩
+  | .sunday => ⟨400000000000000000, by decide⟩
+  | _ => ⟨900000000000000000, by decide⟩
+
+/-- The shipped `[expected] arrival`: 07:00 on weekdays, 10:00 at weekends. -/
+def shippedArrival : Cal.Weekday → Field.Clock
+  | .saturday => 600
+  | .sunday => 600
+  | _ => 420
+
+/-- The fork's `capacity_lookahead.rs` week, from Monday 2026-09-07 in Chicago: the shipped
+config, no learned model, no walls, woken at 06:05; day 0 is the §4.3 day's 410 minutes. -/
+def specInput : Input :=
+  ⟨739865, 3, histOf [0, 0, 0, 60, 170, 180], shippedWeight, shippedArrival, ⟨6 * 3600 + 5 * 60, 0⟩,
+    Curves.shipped, 3, DayCfg.shipped, Cal.chicago, []⟩
+
+/-- **A future day reuses today's wake clock to the second** (fork `Ctx::wake_time`, then
+`local_dt` per date): on Tuesday 2026-09-08 with a 07:05 arrival, a wake at 06:05:00 puts the
+07:05 block at 1.00 h, the lounge's `1-5` level 5, and the day keeps 240 minutes at 5; a wake at
+06:05:40 puts it at 0.99 h, level 4, and the day keeps 180 at 5 and 180 at 4. -/
+theorem a_future_day_reads_todays_wake_to_the_second :
+    (List.finRange 6).map (pureDay { specInput with arrival := fun _ => 425 } .lounge 739866)
+      = [0, 0, 0, 0, 120, 240] ∧
+    (List.finRange 6).map (pureDay { specInput with arrival := fun _ => 425, wake := ⟨6 * 3600 + 5 * 60 + 40, 0⟩ }
+        .lounge 739866) = [0, 0, 0, 0, 180, 180] := by
+  decide
+
+/-- Fork test `lookahead_follows_the_learned_arrival_and_location`, through the twin: the
+learned Tuesday arrival 12:00 and the learned Wednesday `P(lounge)` 0.2 (a home day).  With the
+location forced as the fork forces it, the kernel's three days are the fork's minutes times
+`capDen`: day 0 as handed in, Tuesday `[0, 0, 120, 120, 120, 0]` (the fork's assertion) and
+Wednesday at home, capped at level 3. -/
+theorem the_twin_follows_the_learned_arrival_and_location :
+    (lookahead { specInput with
+        arrival := fun wd => if wd = Cal.Weekday.tuesday then 720 else shippedArrival wd,
+        weight := fun wd => if wd = Cal.Weekday.wednesday then ⟨200000000000000000, by decide⟩ else shippedWeight wd }.twin).map
+        (fun c => (c.day, (List.finRange 6).map c.numAt))
+      = [(739865, [0, 0, 0, 60 * capDen, 170 * capDen, 180 * capDen]),
+         (739866, [0, 0, 120 * capDen, 120 * capDen, 120 * capDen, 0]),
+         (739867, [0, 0, 0, 360 * capDen, 0, 0])] := by
+  decide
+
+/-- **D10's Tuesday**: `p = 0.9`.  The lounge keeps 180 minutes at 5 and 180 at 4; home caps
+every slot at 3 and keeps 360 there.  The expected day holds 162, 162 and 36 minutes, where the
+fork's lounge day holds 180, 180 and 0. -/
+theorem the_expected_tuesday :
+    (List.finRange 6).map (pureDay specInput .lounge 739866) = [0, 0, 0, 0, 180, 180] ∧
+    (List.finRange 6).map (pureDay specInput .home 739866) = [0, 0, 0, 360, 0, 0] ∧
+    ((lookahead specInput)[1]?).map (fun c => (List.finRange 6).map c.numAt)
+      = some [0, 0, 0, 36 * capDen, 162 * capDen, 162 * capDen] := by
+  decide
+
+/-- `specInput`'s raw form: the shipped tables as the host sends them, nothing learned, no
+logged wake. -/
+def specIn : InputIn :=
+  ⟨739865, 3, [0, 0, 0, 60, 170, 180], fun _ => none,
+    fun wd => match wd with | .friday => (8, 10) | .saturday => (5, 10) | .sunday => (4, 10) | _ => (9, 10),
+    fun _ => none, shippedArrival, none, Curves.shipped, 3, DayCfg.shipped, Cal.chicago, []⟩
+
+/-- **The decoder, both directions.**  Accepted: the shipped tables, with today's expected
+arrival (Monday 07:00) as the wake; a learned Sunday weight 0.8 over the config's 0.4; 3,660
+days; a leap second on second 59.  Refused by name: 3,661 days; a config weight 3/2 on
+Saturday; a learned third on Wednesday, whatever the config says; a wake at 24:00; a leap
+second off second 59; five day-0 levels; a day-0 level of 1,441 minutes. -/
+theorem mkInput?_on_witnesses :
+    (mkInput? specIn).map (fun I => (I.days, (I.weight .sunday).val, I.wake)) = .ok (3, 400000000000000000, ⟨25200, 0⟩) ∧
+    (mkInput? { specIn with pModel := fun wd => if wd = Cal.Weekday.sunday then some (8, 10) else none }).map
+      (fun I => (I.weight .sunday).val) = .ok 800000000000000000 ∧
+    (mkInput? { specIn with days := 3660 }).map (fun I => I.days) = .ok 3660 ∧
+    (mkInput? { specIn with wake := some ⟨7 * 3600 + 59, 1500000000⟩ }).map (fun I => I.wake.ns) = .ok 1500000000 ∧
+    (mkInput? { specIn with days := 3661 }).map (fun _ => ()) = .error .lookaheadTooLong ∧
+    (mkInput? { specIn with pConfig := fun wd => if wd = Cal.Weekday.saturday then (3, 2) else (9, 10) }).map
+      (fun _ => ()) = .error (.weight .saturday .weightAboveOne) ∧
+    (mkInput? { specIn with pModel := fun wd => if wd = Cal.Weekday.wednesday then some (1, 3) else none }).map
+      (fun _ => ()) = .error (.weight .wednesday .weightPrecision) ∧
+    (mkInput? { specIn with wake := some ⟨86400, 0⟩ }).map (fun _ => ()) = .error .badWake ∧
+    (mkInput? { specIn with wake := some ⟨7 * 3600 + 58, 1500000000⟩ }).map (fun _ => ()) = .error .badWake ∧
+    (mkInput? { specIn with day0 := [0, 0, 0, 60, 170] }).map (fun _ => ()) = .error .badDay0 ∧
+    (mkInput? { specIn with day0 := [0, 0, 0, 0, 0, 1441] }).map (fun _ => ()) = .error .badDay0 :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- **Sunday mixes at its own weekday's weight** (fork `p_lounge_on(date.weekday())`): the
+shipped 0.4.  The lounge keeps 120 minutes at each of 5, 4 and 3; home keeps 240 at 3 and 120 at
+2; the expected Sunday holds 48, 48, 192 and 72. -/
+theorem sunday_mixes_at_its_own_weight :
+    (List.finRange 6).map (pureDay specInput .lounge 739871) = [0, 0, 0, 120, 120, 120] ∧
+    (List.finRange 6).map (pureDay specInput .home 739871) = [0, 0, 120, 240, 0, 0] ∧
+    (List.finRange 6).map (dayOf specInput 6).numAt = [0, 0, 72 * capDen, 192 * capDen, 48 * capDen, 48 * capDen] := by
+  decide
+
+/-- The §4.3 meeting on Wednesday 2026-09-09, 12:50–13:50 in Chicago, as `wallIndex` lists it. -/
+def wednesdayWall : List WallIx :=
+  [⟨739867, 739867, (Cal.instantOf Cal.chicago 739867 770).sec, (Cal.instantOf Cal.chicago 739867 830).sec⟩]
+
+/-- **The Wednesday wall, end to end** (design §13.4's loaded-plan witness; `Boundary.lean`
+reaches it from a loaded calendar through `wallIndex`).  Without walls Wednesday's window ends
+at 15:00; the meeting moves it to 16:00 and the §4.3 cut holds 410 minutes; the lounge day, the
+fork's forced location at `p = 0.9`, keeps its 360-minute budget, 180 at 5 and 180 at 4: the
+fork's `[0, 0, 0, 0, 180, 180]`, written out by hand, times `capDen`. -/
+theorem a_wednesday_wall_moves_the_window_and_keeps_the_budget :
+    (windowOn Cal.chicago 739867 420 1140 480 []).2 = (Cal.instantOf Cal.chicago 739867 900).sec ∧
+    (windowOn Cal.chicago 739867 420 1140 480 (wallsOn wednesdayWall 739867)).2
+      = (Cal.instantOf Cal.chicago 739867 960).sec ∧
+    (dayCut { specInput with walls := wednesdayWall } 739867).slotMinutes = 410 ∧
+    ((lookahead { specInput with walls := wednesdayWall }.twin)[2]?).map
+        (fun c => (c.day, (List.finRange 6).map c.numAt))
+      = some (739867, [0, 0, 0, 0, 180 * capDen, 180 * capDen]) := by
+  decide
+
+/-! ############################################################################
+## The capacity input's bounds (stage 5 D10 step L6; design §13.6, §10.4)
+
+Step L5's `mkInput?` checks the day count, the weights, the wake and day 0.  This section gives
+every other value the capacity wire carries its R10 bound, a smart constructor the wire decoder
+(`Boundary.lean`, section "Stage 5 D10 L6") actually uses, and a rejection theorem, with the names
+of design §13.6's table:
+
+| value | bound | constructor | refusal |
+|---|---|---|---|
+| `[day]` `block_min`, `min_last_block_min` | `1..=1440` | `mkDayCfg?` | `badDay <key>` |
+| `[day]` `break_min` | `0..=1440` | `mkDayCfg?` | `badDay breakMin` |
+| `[day]` `break_after_blocks` | `≤ 64` | `mkDayCfg?` | `badDay breakAfterBlocks` |
+| `[day]` `window_hours` | a pair, `den ∈ [1, 10^6]`, `0 < num ≤ 24·den` | `mkDayCfg?` | `badDay windowHours` |
+| `[day]` `budget_ratio` | a pair, `den ∈ [1, 10^6]`, `num ≤ den` | `mkDayCfg?` | `badDay budgetRatio` |
+| a prior range | keys `den ∈ [1, 10^6]`, `num ≤ 48·den`, `from < to`; level `≤ 5` | `mkStep?` | `badStep`, `badLevel` |
+| a prior curve | `≤ 64` ranges, each well formed, sorted by `from` as `StepFn::from_pairs` sorts | `curveOk` | `badStep` |
+| the prior curves | `≤ 16` curves, keys `≤ 64` characters, no key twice, **every** curve (L4's disagreement 8) | `priorOk` | `badPrior <key>` |
+| a learned curve (`lounge`, `home`) | exactly 12 entries, each `< 256` | `energyOk` | `badCurve <loc>` |
+| `home_max_ci` | `≤ 5` | `homeMaxOk` | `badCap homeMaxCi` |
+
+**Why these bounds and not wider ones.**  A range key with `den ≤ 10^6` is where L4 proved the
+kernel's exact comparison is the fork's `f64` one, so a wider key is parity entry P26's, refused.
+A level above 5, a learned entry of 256 or more, or a curve not of 12 entries is P26's too: the
+fork clamps or reads past the end, and the kernel refuses by name.  `curveKeyLt` recurses over one
+key's characters and `stepAt` over one curve, so the key length and the range count are R10's
+widths for rule D9-21.  The bounds the fork cannot violate (a `u32` minute count above 1,440, a
+`window_hours` above a day) are refused as host defects.
+
+**`badTz subMinuteOffset` is not needed** (design §13.6's last row, left to L6 by L2 and L3).
+L2's window and L3's cut count whole UTC seconds and are the fork's for every offset (L3's block,
+"Exact in whole seconds"), and L4's hours since wake read seconds (site R11).  So no zone table is
+refused for a sub-minute offset.
+-/
+
+/-! ### `[day]`: fork `DayConfig`, every key bounded -/
+
+/-- The `[day]` key a bound refused (design §13.6's `badDay <key>`). -/
+inductive DayKey where
+  | blockMin
+  | breakMin
+  | breakAfterBlocks
+  | minLastBlockMin
+  | windowHours
+  | budgetRatio
+deriving DecidableEq, Repr
+
+/-- A day's minutes: the widest `block_min`, `break_min` and `min_last_block_min`. -/
+def maxDayMin : Nat := 1440
+
+/-- The widest denominator of a `[day]` ratio or a prior range key: six decimal places. -/
+def maxKeyDen : Nat := 1000000
+
+/-- The most blocks between breaks. -/
+def maxBreakAfter : Nat := 64
+
+/-- **The smart constructor for `[day]`** (R10).  Checked in the order of §13.6's table:
+`blockMin`, `breakMin`, `breakAfterBlocks`, `minLastBlockMin`, `windowHours`, `budgetRatio`.
+`window_cap` is a `Field.Clock`, bounded by its type and read by the clock grammar. -/
+def mkDayCfg? (blockMin breakMin breakAfter minLast whNum whDen : Nat) (windowCap : Field.Clock)
+    (brNum brDen : Nat) : Except DayKey DayCfg :=
+  if ¬ (1 ≤ blockMin ∧ blockMin ≤ maxDayMin) then .error .blockMin
+  else if ¬ breakMin ≤ maxDayMin then .error .breakMin
+  else if ¬ breakAfter ≤ maxBreakAfter then .error .breakAfterBlocks
+  else if ¬ (1 ≤ minLast ∧ minLast ≤ maxDayMin) then .error .minLastBlockMin
+  else if hw : 1 ≤ whDen ∧ whDen ≤ maxKeyDen ∧ 0 < whNum ∧ whNum ≤ 24 * whDen then
+    if hb : 1 ≤ brDen ∧ brDen ≤ maxKeyDen ∧ brNum ≤ brDen then
+      .ok ⟨⟨blockMin, breakMin, breakAfter, minLast⟩, mkPos whNum whDen (by omega), windowCap,
+        mkPos brNum brDen (by omega)⟩
+    else .error .budgetRatio
+  else .error .windowHours
+
+/-- What an accepted `[day]` satisfies. -/
+def DayCfg.wf (c : DayCfg) : Bool :=
+  decide (1 ≤ c.cut.blockMin ∧ c.cut.blockMin ≤ maxDayMin) && decide (c.cut.breakMin ≤ maxDayMin) &&
+  decide (c.cut.breakAfter ≤ maxBreakAfter) &&
+  decide (1 ≤ c.cut.minLastBlockMin ∧ c.cut.minLastBlockMin ≤ maxDayMin) &&
+  decide (c.windowHours.val.den ≤ maxKeyDen ∧ 0 < c.windowHours.val.num ∧
+    c.windowHours.val.num ≤ 24 * c.windowHours.val.den) &&
+  decide (c.budgetRatio.val.den ≤ maxKeyDen ∧ c.budgetRatio.val.num ≤ c.budgetRatio.val.den)
+
+theorem mkDayCfg?_wf {bm br ba ml wn wd : Nat} {cap : Field.Clock} {rn rd : Nat} {c : DayCfg}
+    (h : mkDayCfg? bm br ba ml wn wd cap rn rd = .ok c) : c.wf = true := by
+  unfold mkDayCfg? at h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  split at h
+  · split at h
+    · rename_i h1 h2 h3 h4 hw hb
+      cases h
+      simp only [Decidable.not_not] at h1 h2 h3 h4
+      simp [DayCfg.wf, mkPos, h1, h2, h3, h4, hw.1, hw.2.1, hw.2.2.1, hw.2.2.2, hb.1, hb.2.1, hb.2.2]
+    · cases h
+  · cases h
+
+/-- **Both directions**: every well-formed `[day]` is accepted, as itself. -/
+theorem mkDayCfg?_of_wf (c : DayCfg) (h : c.wf = true) :
+    mkDayCfg? c.cut.blockMin c.cut.breakMin c.cut.breakAfter c.cut.minLastBlockMin
+      c.windowHours.val.num c.windowHours.val.den c.windowCap c.budgetRatio.val.num
+      c.budgetRatio.val.den = .ok c := by
+  simp only [DayCfg.wf, Bool.and_eq_true, decide_eq_true_eq] at h
+  have hwd := denPos c.windowHours
+  have hbd := denPos c.budgetRatio
+  unfold mkDayCfg?
+  rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega),
+    dif_pos (by omega), dif_pos (by omega)]
+  obtain ⟨⟨a, b, c', d⟩, ⟨⟨wn, wd⟩, hw⟩, cap, ⟨⟨rn, rd⟩, hr⟩⟩ := c
+  rfl
+
+theorem mkDayCfg?_refuses_blockMin {bm : Nat} (h : bm = 0 ∨ maxDayMin < bm) (br ba ml wn wd : Nat)
+    (cap : Field.Clock) (rn rd : Nat) : mkDayCfg? bm br ba ml wn wd cap rn rd = .error .blockMin := by
+  unfold mkDayCfg?; rw [if_pos (by omega)]
+
+theorem mkDayCfg?_refuses_breakMin {bm br : Nat} (h0 : 1 ≤ bm ∧ bm ≤ maxDayMin) (h : maxDayMin < br)
+    (ba ml wn wd : Nat) (cap : Field.Clock) (rn rd : Nat) :
+    mkDayCfg? bm br ba ml wn wd cap rn rd = .error .breakMin := by
+  unfold mkDayCfg?; rw [if_neg (by omega), if_pos (by omega)]
+
+theorem mkDayCfg?_refuses_breakAfterBlocks {bm br ba : Nat} (h0 : 1 ≤ bm ∧ bm ≤ maxDayMin)
+    (h1 : br ≤ maxDayMin) (h : maxBreakAfter < ba) (ml wn wd : Nat) (cap : Field.Clock) (rn rd : Nat) :
+    mkDayCfg? bm br ba ml wn wd cap rn rd = .error .breakAfterBlocks := by
+  unfold mkDayCfg?; rw [if_neg (by omega), if_neg (by omega), if_pos (by omega)]
+
+theorem mkDayCfg?_refuses_minLastBlockMin {bm br ba ml : Nat} (h0 : 1 ≤ bm ∧ bm ≤ maxDayMin)
+    (h1 : br ≤ maxDayMin) (h2 : ba ≤ maxBreakAfter) (h : ml = 0 ∨ maxDayMin < ml) (wn wd : Nat)
+    (cap : Field.Clock) (rn rd : Nat) :
+    mkDayCfg? bm br ba ml wn wd cap rn rd = .error .minLastBlockMin := by
+  unfold mkDayCfg?; rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_pos (by omega)]
+
+theorem mkDayCfg?_refuses_windowHours {bm br ba ml wn wd : Nat} (h0 : 1 ≤ bm ∧ bm ≤ maxDayMin)
+    (h1 : br ≤ maxDayMin) (h2 : ba ≤ maxBreakAfter) (h3 : 1 ≤ ml ∧ ml ≤ maxDayMin)
+    (h : ¬ (1 ≤ wd ∧ wd ≤ maxKeyDen ∧ 0 < wn ∧ wn ≤ 24 * wd)) (cap : Field.Clock) (rn rd : Nat) :
+    mkDayCfg? bm br ba ml wn wd cap rn rd = .error .windowHours := by
+  unfold mkDayCfg?; rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega),
+    dif_neg h]
+
+theorem mkDayCfg?_refuses_budgetRatio {bm br ba ml wn wd rn rd : Nat} (h0 : 1 ≤ bm ∧ bm ≤ maxDayMin)
+    (h1 : br ≤ maxDayMin) (h2 : ba ≤ maxBreakAfter) (h3 : 1 ≤ ml ∧ ml ≤ maxDayMin)
+    (h4 : 1 ≤ wd ∧ wd ≤ maxKeyDen ∧ 0 < wn ∧ wn ≤ 24 * wd) (h : ¬ (1 ≤ rd ∧ rd ≤ maxKeyDen ∧ rn ≤ rd))
+    (cap : Field.Clock) : mkDayCfg? bm br ba ml wn wd cap rn rd = .error .budgetRatio := by
+  unfold mkDayCfg?; rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega),
+    dif_pos h4, dif_neg h]
+
+/-- R10's width of an accepted `[day]`: the configured window is at most a day, and the budget at
+most the window. -/
+theorem DayCfg.wf_window_le_a_day {c : DayCfg} (h : c.wf = true) : windowMinOf c.windowHours ≤ 1440 := by
+  simp only [DayCfg.wf, Bool.and_eq_true, decide_eq_true_eq] at h
+  have hd := denPos c.windowHours
+  simp only [windowMinOf, halfUpQ, scale_num, scale_den]
+  have hlt : (2 * (c.windowHours.val.num * 60) + c.windowHours.val.den) / (2 * c.windowHours.val.den) < 1441 :=
+    Nat.div_lt_of_lt_mul (by omega)
+  omega
+
+/-! ### The prior curves: fork `StepFn`, `EnergyConfig::prior` -/
+
+/-- Why a prior range is refused (design §13.6's `badStep`, `badLevel`). -/
+inductive StepErr where
+  | badStep
+  | badLevel
+deriving DecidableEq, Repr
+
+/-- A range key `num / den` hours inside the exact domain: `den ∈ [1, 10^6]`, at most 48 hours. -/
+def keyOk (n d : Nat) : Bool := decide (1 ≤ d ∧ d ≤ maxKeyDen ∧ n ≤ 48 * d)
+
+/-- The range part of a step: both keys in the domain, and `from < to` for a closed range. -/
+def rangeOk (fromNum fromDen : Nat) : Option (Nat × Nat) → Bool
+  | none => keyOk fromNum fromDen
+  | some (n, d) => keyOk fromNum fromDen && keyOk n d && decide (fromNum * d < n * fromDen)
+
+/-- A well-formed prior range. -/
+def Step.wf (s : Step) : Bool := rangeOk s.fromNum s.fromDen s.toKey && decide (s.level ≤ 5)
+
+/-- **The smart constructor for a prior range** (R10): `badStep` for the keys, then `badLevel`. -/
+def mkStep? (fromNum fromDen : Nat) (toKey : Option (Nat × Nat)) (level : Nat) : Except StepErr Step :=
+  if rangeOk fromNum fromDen toKey = false then .error .badStep
+  else if level ≤ 5 then .ok ⟨fromNum, fromDen, toKey, level⟩
+  else .error .badLevel
+
+theorem mkStep?_ok_iff {fn fd : Nat} {t : Option (Nat × Nat)} {l : Nat} {s : Step} :
+    mkStep? fn fd t l = .ok s ↔ s = ⟨fn, fd, t, l⟩ ∧ s.wf = true := by
+  unfold mkStep?
+  constructor
+  · intro h
+    split at h
+    · cases h
+    · split at h
+      · cases h
+        rename_i h1 h2
+        refine ⟨rfl, ?_⟩
+        simp only [Step.wf, Bool.and_eq_true, decide_eq_true_eq]
+        exact ⟨by simpa using h1, h2⟩
+      · cases h
+  · rintro ⟨rfl, hw⟩
+    simp only [Step.wf, Bool.and_eq_true, decide_eq_true_eq] at hw
+    rw [if_neg (by simp [hw.1]), if_pos hw.2]
+
+theorem mkStep?_refuses_a_zero_denominator (fn : Nat) (t : Option (Nat × Nat)) (l : Nat) :
+    mkStep? fn 0 t l = .error .badStep := by
+  cases t <;> simp [mkStep?, rangeOk, keyOk]
+
+theorem mkStep?_refuses_a_wide_denominator {fd : Nat} (h : maxKeyDen < fd) (fn : Nat)
+    (t : Option (Nat × Nat)) (l : Nat) : mkStep? fn fd t l = .error .badStep := by
+  have : keyOk fn fd = false := by simp [keyOk]; omega
+  cases t with
+  | none => simp [mkStep?, rangeOk, this]
+  | some p => obtain ⟨n, d⟩ := p; simp [mkStep?, rangeOk, this]
+
+theorem mkStep?_refuses_past_48_hours {fn fd : Nat} (h : 48 * fd < fn) (t : Option (Nat × Nat)) (l : Nat) :
+    mkStep? fn fd t l = .error .badStep := by
+  have : keyOk fn fd = false := by simp [keyOk]; omega
+  cases t with
+  | none => simp [mkStep?, rangeOk, this]
+  | some p => obtain ⟨n, d⟩ := p; simp [mkStep?, rangeOk, this]
+
+theorem mkStep?_refuses_an_empty_range {fn fd tn td : Nat} (h : tn * fd ≤ fn * td) (l : Nat) :
+    mkStep? fn fd (some (tn, td)) l = .error .badStep := by
+  have : decide (fn * td < tn * fd) = false := by simp; omega
+  simp [mkStep?, rangeOk, this]
+
+theorem mkStep?_refuses_a_level_above_five {fn fd : Nat} {t : Option (Nat × Nat)} {l : Nat}
+    (hr : rangeOk fn fd t = true) (h : 5 < l) : mkStep? fn fd t l = .error .badLevel := by
+  simp only [mkStep?, hr]
+  rw [if_neg (by simp), if_neg (by omega)]
+
+/-- The most ranges in one curve, the most curves, and the longest curve key. -/
+def maxCurveSteps : Nat := 64
+def maxCurves : Nat := 16
+def maxCurveKey : Nat := 64
+
+/-- `a.from ≤ b.from`, cross-multiplied. -/
+def fromLe (a b : Step) : Bool := decide (a.fromNum * b.fromDen ≤ b.fromNum * a.fromDen)
+
+/-- Sorted by `from`, as fork `StepFn::from_pairs` leaves a curve (its sort is stable, so equal
+starts keep the order given). -/
+def sortedFrom : List Step → Bool
+  | a :: b :: t => fromLe a b && sortedFrom (b :: t)
+  | _ => true
+
+/-- **A prior curve on the wire**: at most 64 ranges, each well formed, sorted by `from`.  The
+length is checked first, so the walks below it never run over a longer list. -/
+def curveOk (steps : List Step) : Bool :=
+  decide (steps.length ≤ maxCurveSteps) && steps.all Step.wf && sortedFrom steps
+
+/-- **The prior curves on the wire**: at most 16, keys of at most 64 characters, no key twice,
+each curve `curveOk`. -/
+def priorOk (p : List (List Char × List Step)) : Bool :=
+  decide (p.length ≤ maxCurves) && p.all (fun e => decide (e.1.length ≤ maxCurveKey)) &&
+    decide (p.map Prod.fst).Nodup && p.all (fun e => curveOk e.2)
+
+/-- **A learned curve on the wire** (fork `model.json` `energy.<loc>`): exactly 12 entries, each a
+`u8`. -/
+def energyOk (c : List Nat) : Bool := c.length == 12 && c.all (fun n => decide (n < 256))
+
+/-- `[location] home_max_ci`: a level. -/
+def homeMaxOk (n : Nat) : Bool := decide (n ≤ 5)
+
+/-- The curves `predict` reads, as the wire may carry them: the prior curves `priorOk`, and the
+learned curves at most one `lounge` and one `home`, each `energyOk`. -/
+def Curves.wf (c : Curves) : Bool :=
+  priorOk c.prior && decide (c.energy.map Prod.fst).Nodup &&
+    c.energy.all (fun e => (e.1 == loungeKey || e.1 == homeKey) && energyOk e.2)
+
+/-- Every §13.6 bound `mkInput?` does not check. -/
+def InputIn.boundsWf (x : InputIn) : Bool := x.curves.wf && homeMaxOk x.homeMax && x.day.wf
+
+theorem curveOk_refuses_too_many_ranges {steps : List Step} (h : maxCurveSteps < steps.length) :
+    curveOk steps = false := by
+  simp [curveOk]; omega
+
+theorem curveOk_refuses_a_bad_range {steps : List Step} {s : Step} (hs : s ∈ steps) (h : s.wf = false) :
+    curveOk steps = false := by
+  have : steps.all Step.wf = false := by
+    rw [List.all_eq_false]; exact ⟨s, hs, by simp [h]⟩
+  simp [curveOk, this]
+
+theorem curveOk_refuses_an_unsorted_curve {a b : Step} {t : List Step} (h : fromLe a b = false) :
+    curveOk (a :: b :: t) = false := by
+  simp [curveOk, sortedFrom, h]
+
+theorem priorOk_refuses_too_many_curves {p : List (List Char × List Step)} (h : maxCurves < p.length) :
+    priorOk p = false := by
+  simp [priorOk]; omega
+
+theorem priorOk_refuses_a_long_key {p : List (List Char × List Step)} {e : List Char × List Step}
+    (he : e ∈ p) (h : maxCurveKey < e.1.length) : priorOk p = false := by
+  have : p.all (fun e => decide (e.1.length ≤ maxCurveKey)) = false := by
+    rw [List.all_eq_false]; exact ⟨e, he, by simp; omega⟩
+  simp [priorOk, this]
+
+theorem priorOk_refuses_a_key_twice {p : List (List Char × List Step)} (h : ¬ (p.map Prod.fst).Nodup) :
+    priorOk p = false := by
+  simp [priorOk, h]
+
+theorem priorOk_refuses_a_bad_curve {p : List (List Char × List Step)} {e : List Char × List Step}
+    (he : e ∈ p) (h : curveOk e.2 = false) : priorOk p = false := by
+  have : p.all (fun e => curveOk e.2) = false := by
+    rw [List.all_eq_false]; exact ⟨e, he, by simp [h]⟩
+  simp [priorOk, this]
+
+theorem energyOk_refuses_a_curve_not_of_12 {c : List Nat} (h : c.length ≠ 12) : energyOk c = false := by
+  simp [energyOk, h]
+
+theorem energyOk_refuses_an_entry_past_a_byte {c : List Nat} {n : Nat} (hn : n ∈ c) (h : 256 ≤ n) :
+    energyOk c = false := by
+  have : c.all (fun n => decide (n < 256)) = false := by
+    rw [List.all_eq_false]; exact ⟨n, hn, by simp; omega⟩
+  simp [energyOk, this]
+
+theorem homeMaxOk_iff (n : Nat) : homeMaxOk n = true ↔ n ≤ 5 := by simp [homeMaxOk]
+
+/-- **R10's width for `stepAt` and `curveKeyLt`** (rule D9-21): an accepted prior's walks are over
+at most 16 curves, 64 ranges and 64 key characters. -/
+theorem priorOk_widths {p : List (List Char × List Step)} (h : priorOk p = true) :
+    p.length ≤ maxCurves ∧ ∀ e ∈ p, e.1.length ≤ maxCurveKey ∧ e.2.length ≤ maxCurveSteps := by
+  simp only [priorOk, curveOk, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at h
+  exact ⟨h.1.1.1, fun e he => ⟨h.1.1.2 e he, (h.2 e he).1.1⟩⟩
+
+/-- **Exact against the fork on an accepted curve** (L4's domain): every key of every accepted
+range has a denominator of at most `10^6`, where L4's range comparisons are the fork's `f64` ones. -/
+theorem priorOk_keys_in_the_exact_domain {p : List (List Char × List Step)} (h : priorOk p = true)
+    {e : List Char × List Step} (he : e ∈ p) {s : Step} (hs : s ∈ e.2) :
+    s.fromDen ≤ maxKeyDen ∧ ∀ n d, s.toKey = some (n, d) → d ≤ maxKeyDen := by
+  simp only [priorOk, curveOk, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at h
+  have hw := (h.2 e he).1.2 s hs
+  obtain ⟨fn, fd, t, l⟩ := s
+  cases t with
+  | none =>
+    simp only [Step.wf, rangeOk, keyOk, Bool.and_eq_true, decide_eq_true_eq] at hw
+    exact ⟨hw.1.2.1, fun _ _ h => by cases h⟩
+  | some p =>
+    obtain ⟨n, d⟩ := p
+    simp only [Step.wf, rangeOk, keyOk, Bool.and_eq_true, decide_eq_true_eq] at hw
+    refine ⟨hw.1.1.1.2.1, fun n' d' h' => ?_⟩
+    simp only [Option.some.injEq, Prod.mk.injEq] at h'
+    obtain ⟨-, rfl⟩ := h'
+    exact hw.1.1.2.2.1
+
+/-- The shipped `[day]`, curves and `home_max_ci` are accepted. -/
+theorem the_shipped_bounds_hold :
+    DayCfg.shipped.wf = true ∧ Curves.shipped.wf = true ∧ Curves.fixture.wf = true ∧ homeMaxOk 3 = true := by
   decide
 
 end Look

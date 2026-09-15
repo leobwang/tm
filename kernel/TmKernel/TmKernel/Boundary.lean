@@ -4,6 +4,7 @@ import TmKernel.Tree
 import TmKernel.Priority
 import TmKernel.Capacity
 import TmKernel.Log
+import TmKernel.Lookahead
 /-!
 # The boundary: `String → String`, and nothing else
 
@@ -2520,7 +2521,11 @@ def runPlanFast (plan : WfPlan) (cmds : List ReqCmd) : Except JVal JVal := do
     simp only [pure_bind]
     rw [this]
 
-def run (j : JVal) : Except JVal JVal := do
+/-- **The request up to its loaded plan**: the documents, the commands, the clock, the scan and the
+loader.  Split out of `run` at stage 5 D10 step L6 so that `runCap` (end of file) loads the plan
+once for both the commands and the capacity section; `run` is this, then `runPlan`, unchanged in
+behaviour (`run_is_runLoad_then_runPlan`). -/
+def runLoad (j : JVal) : Except JVal (WfPlan × List ReqCmd × ReqClock) := do
   let docsJ ←
     match getArr j "docs" with
     | .ok a => pure a
@@ -2560,7 +2565,12 @@ def run (j : JVal) : Except JVal JVal := do
   -- theorem about the code the FFI runs rather than about a copy of it.
   match loadPlan docs with
   | .error e   => throw e
-  | .ok plan   => runPlan plan cmds
+  | .ok plan   => return (plan, cmds, clock)
+
+def run (j : JVal) : Except JVal JVal := (runLoad j).bind (fun x => runPlan x.1 x.2.1)
+
+theorem run_is_runLoad_then_runPlan (j : JVal) :
+    run j = (runLoad j).bind (fun x => runPlan x.1 x.2.1) := rfl
 
 /-! ## The `tz` and `log` sections (stage 5, D9 track, step B4)
 
@@ -3602,8 +3612,9 @@ def respond (input : List Char) : JVal :=
 No `Lean.Json` either: `jparse` in, `jemit` out (J5). -/
 def call (input : String) : String := String.ofList (jemit (respond input.toList))
 
-@[export tm_kernel_call]
-def callExport (input : String) : String := call input
+-- `@[export tm_kernel_call] def callExport` moved to the end of this file at stage 5 D10 step
+-- L6: the FFI runs `callCap`, which is `call` on every request without `capacity`
+-- (`callExport_without_capacity_is_call`).
 
 /-! ## §5.8 for `rank` and `add` — the owed forms, landed
 
@@ -4481,7 +4492,9 @@ def`s make it neither provable nor refutable (README "Gap 39 REPRICED"), and
 whose own route was "a kernel-owned emitter and fuel-structural parser …
 round-tripped unconditionally, put on the wire in `call`".  Both halves of that
 are now true: `jparse_jemit` is the unconditional round trip over every `JVal`,
-and this is its instance at the code `callExport` runs.  What it does not say,
+and this is its instance at the code `callExport` ran until stage 5 D10 step L6 (since
+then `callExport` runs `callCap`: `the_exported_call_emits_parses_back`, and
+`callExport_without_capacity_is_call` carries every `call` theorem to it).  What it does not say,
 and nothing here can: that the **host's** reader (serde_json in
 `kernel_bridge.rs`, the hand-written codec in the corpus harness) agrees with
 `jparse` — that is corpus and FFI evidence, the framing gap 12 took for Rust's
@@ -8255,5 +8268,1429 @@ theorem the_log_section_refuses_by_name :
   ⟨by decide, by decide, by decide, by decide, by decide⟩
 
 end B4
+
+/-! ## Stage 5 D10 L5: a loaded calendar's wall reaches the lookahead
+
+APPENDED 2026-09-14 (stage-5 D10 track, step L5; design §13.4).  The loaded-plan witness: a
+one-line calendar holding the §4.3 meeting on Wednesday 2026-09-09 loads, `wallIndex` reads it
+once as one wall on that date (fork `Ctx::walls_on`), and through it Wednesday's window ends at
+16:00 and the twin's Wednesday is the fork's `[0, 0, 0, 0, 180, 180]` times `capDen`
+(`Look.a_wednesday_wall_moves_the_window_and_keeps_the_budget`).  The plan is evaluated under
+`decide` once, in `the_look_wall_calendar_indexes_one_wednesday_wall`, and the capacity
+statement is reached by rewriting with that equation, so no `decide` holds both the load and
+the lookahead.  This module imports `Lookahead` for it (it imported `Capacity` already). -/
+
+/-- A one-line calendar: fork fixture `calendar/2026-W37.md`'s meeting, moved to Wednesday. -/
+def lookWallWitness : List ReqDoc :=
+  [⟨"calendar/2026-W37.md", none,
+     ["- [ ] 3 Meeting w/ host      at:2026-09-09T12:50/13:50 loc:zoom ^g1".toList]⟩]
+
+set_option maxRecDepth 40000 in
+/-- **The calendar witness loads.** -/
+theorem the_look_wall_witness_loads : loadsOk lookWallWitness = true := by decide
+
+/-- The loaded calendar.  Total by `the_look_wall_witness_loads`: the error branch is refuted,
+not defaulted. -/
+def lookWallPlan : WfPlan :=
+  match h : loadPlan lookWallWitness with
+  | .ok p => p
+  | .error _ => absurd the_look_wall_witness_loads (by simp [loadsOk, h])
+
+set_option maxRecDepth 40000 in
+/-- **`wallIndex` reads the loaded calendar once: one wall, on Wednesday, 12:50 to 13:50 in
+Chicago** (an open `[ ]` item with an `at:` interval and no `buffer:`). -/
+theorem the_look_wall_calendar_indexes_one_wednesday_wall :
+    Look.wallIndex Cal.chicago 60 lookWallPlan.val = Look.wednesdayWall := by
+  decide
+
+/-- **A Wednesday wall on a loaded plan gives Wednesday's window end 16:00, and the twin's
+capacity is the fork's value written out by hand** (design §13.4): the lounge day at `p = 0.9`
+keeps 180 minutes at level 5 and 180 at level 4, times `capDen`. -/
+theorem a_loaded_wednesday_wall_moves_the_window_and_keeps_the_budget :
+    (Look.windowOn Cal.chicago 739867 420 1140 480
+        (Look.wallsOn (Look.wallIndex Cal.chicago 60 lookWallPlan.val) 739867)).2
+      = (Cal.instantOf Cal.chicago 739867 960).sec ∧
+    ((Look.lookahead { Look.specInput with walls := Look.wallIndex Cal.chicago 60 lookWallPlan.val }.twin)[2]?).map
+        (fun c => (c.day, (List.finRange 6).map c.numAt))
+      = some (739867, [0, 0, 0, 0, 180 * Look.capDen, 180 * Look.capDen]) := by
+  rw [the_look_wall_calendar_indexes_one_wednesday_wall]
+  exact ⟨Look.a_wednesday_wall_moves_the_window_and_keeps_the_budget.2.1,
+    Look.a_wednesday_wall_moves_the_window_and_keeps_the_budget.2.2.2⟩
+
+/-! ## Stage 5 D10 L6: capacity on the wire — every bound named, units as digit strings, gap 77 closed
+
+APPENDED 2026-09-14 (stage-5 D10 track, step L6; design §13.6, §10.1–§10.4).  A request may carry
+a `capacity` section and the zone table `tz`.  The kernel reads both with the smart constructors
+of `Lookahead.lean` (L5's `mkInput?`, L1's `mkWeight?`, L6's `mkDayCfg?`, `mkStep?`, `curveOk`,
+`priorOk`, `energyOk`, `homeMaxOk`), B1's `Cal.mkTz?`, and step 2's priority decoders
+(`binsOfPairs?`, `safetyOf?`, `defaultPrioOf?`: **gap 77 is closed**, since the wire now calls
+them), runs L5's `lookahead` over the loaded plan's walls, and answers the request as `run` does
+with one more key, `lookahead`, after `report`.  A request without `capacity` is answered exactly
+as before (`runCap_without_capacity_is_run`, `callExport_without_capacity_is_call`).
+
+```jsonc
+// request (added keys)
+"tz": {"key": "America/Chicago|2025b|1900-2200", "base": "-06:00:00",
+       "then": [["2026-03-08T08:00:00Z", "-05:00:00"], …]},          // ≤ 4,096, strictly increasing
+"capacity": {
+  "pLounge":  {"model": {"Mon": {"num": "9", "den": "10"}}, "config": {"Mon": {…}, … all 7}},   // digit strings
+  "arrival":  {"model": {"Mon": "07:10"}, "config": {"Mon": "07:00", … all 7}},
+  "wake":     null | {"sec": 21940, "ns": 250000000},              // today's logged wake, a time of day
+  "energy":   {"lounge": [12 entries < 256], "home": […]},          // either may be absent
+  "prior":    {"lounge": [{"from": {"num": 0, "den": 1}, "to": {"num": 1, "den": 1}, "level": 4}, …], …},
+  "homeMaxCi": 3,
+  "day":      {"breakMin": 20, "breakAfterBlocks": 2, "minLastBlockMin": 30,
+               "windowHours": {"num": 8, "den": 1}, "windowCap": "19:00", "budgetRatio": {"num": 75, "den": 100}},
+  "priority": {"bins": [{"num": 5, "den": 10}, …], "safety": {"num": 13, "den": 10}, "defaultPriority": 3},
+  "days": 7,
+  "day0": [0, 0, 60, 120, 60, 0]}                                   // until L9
+// the request's `now` is today and its `blockMin` is `[day] block_min`: both required with `capacity`
+// response: the `ok` object gains, after `report`,
+"lookahead": {"den": "1000000000000000000",
+              "days": [{"day": "2026-09-07", "numAt": ["0", "0", "0", "60000000000000000000", …]}, …]}   // first min(days, 7)
+// refusal
+{"err": {"capacity": "<name> <key>"}}
+```
+
+**Unit counts are digit strings** (D17): one minute is `10^18` units, past `2^53` and `u64`, so no
+unit count is a JSON number, and `readNat (digitsOf n) = some n` is the host's reading
+(`unitsJson_reads_back`).  **The weight is a pair of digit strings**, refused by name above 18
+decimal places (`weightPrecision`), above one (`weightAboveOne`) or malformed (`badWeight`).  Every
+pair sent is checked, the model's and the config's (§13.2: the host names the file, the kernel is
+the authority), and the kernel then picks the model's, else the config's (D10-4).
+
+**Refusal order.**  `nowAbsent`, `blockMinAbsent`, then the zone (`tzAbsent`, `badTz <why>`), then the
+section in the order of the example (a key that is absent, carried twice or of the wrong JSON type is
+refused before any bound of its own object), then L5's `mkInput?` (`lookaheadTooLong` first), then a
+lookahead that would run past year 9999 (`lookaheadTooLong`, so every emitted date renders as one).
+The documents load before the section is read, and the section is read before the commands run.
+
+**What is not on the wire yet, by name.**  The response carries no `grants`: which candidates enter
+the EDF pass is gap 80's, and step 3's pass is gap 106's (both L8, with the priority wiring).  The
+decoded `priority` ladder, safety and default are held in `CapReq` for that wiring and read by no
+response key.  `tz` is read here because the lookahead needs it; the D9 track's B4 owns the `tz` key
+for the `log` op, and the merge keeps one reader.
+-/
+
+namespace CapWire
+
+open Look
+
+/-! ### Names -/
+
+/-- A weekday's key in the `pLounge` and `arrival` tables (fork `WeekdayMap`'s serde keys). -/
+def wdKey : Cal.Weekday → String
+  | .monday => "Mon" | .tuesday => "Tue" | .wednesday => "Wed" | .thursday => "Thu"
+  | .friday => "Fri" | .saturday => "Sat" | .sunday => "Sun"
+
+/-- Which reading of a weekday table (D10-4: the host sends both, the kernel picks). -/
+inductive Src where
+  | model
+  | config
+deriving DecidableEq, Repr
+
+/-- A structural key of the section: absent where it is required, carried twice, or not the JSON
+type it must be. -/
+inductive Part where
+  | capacity
+  | pLounge
+  | pLoungeModel
+  | pLoungeConfig
+  | arrival
+  | arrivalModel
+  | arrivalConfig
+  | energy
+  | prior
+  | day
+  | priority
+  | days
+deriving DecidableEq, Repr
+
+-- `CapWire.TzWhy` (`shape key base trans table`) was removed at the merge of the D9 track's B4
+-- (gap 108 closed): `badTz` carries B4's `Tm.TzWhy`, the one zone reader's names.
+
+/-- **A capacity refusal, by name** (AGENTS §5.7; design §13.6's table). -/
+inductive Refusal where
+  | nowAbsent
+  | blockMinAbsent
+  | tzAbsent
+  | badTz (why : TzWhy)
+  | badCapacity (p : Part)
+  | weight (e : WErr) (src : Src) (wd : Cal.Weekday)
+  | badClock (src : Src) (wd : Cal.Weekday)
+  | badWindowCap
+  | badWake
+  | badCurve (loc : Loc)
+  | badPrior (key : List Char)
+  | step (e : StepErr) (key : List Char)
+  | badCap
+  | badDay (k : DayKey)
+  | lookaheadTooLong
+  | badDay0
+  | badBins
+  | badSafety
+  | badDefaultPriority
+deriving DecidableEq, Repr
+
+def Src.name : Src → String
+  | .model => "model" | .config => "config"
+
+def Part.name : Part → String
+  | .capacity => "capacity" | .pLounge => "pLounge" | .pLoungeModel => "pLounge.model"
+  | .pLoungeConfig => "pLounge.config" | .arrival => "arrival" | .arrivalModel => "arrival.model"
+  | .arrivalConfig => "arrival.config" | .energy => "energy" | .prior => "prior" | .day => "day"
+  | .priority => "priority" | .days => "days"
+
+def werrName : WErr → String
+  | .badWeight => "badWeight" | .weightAboveOne => "weightAboveOne" | .weightPrecision => "weightPrecision"
+
+def stepErrName : StepErr → String
+  | .badStep => "badStep" | .badLevel => "badLevel"
+
+def dayKeyName : DayKey → String
+  | .blockMin => "blockMin" | .breakMin => "breakMin" | .breakAfterBlocks => "breakAfterBlocks"
+  | .minLastBlockMin => "minLastBlockMin" | .windowHours => "windowHours" | .budgetRatio => "budgetRatio"
+
+def locName : Loc → String
+  | .lounge => "lounge" | .home => "home"
+
+/-- The refusal's text: its name, then the key it names. -/
+def Refusal.text : Refusal → String
+  | .nowAbsent => "nowAbsent"
+  | .blockMinAbsent => "blockMinAbsent"
+  | .tzAbsent => "tzAbsent"
+  | .badTz w => "badTz " ++ w.name
+  | .badCapacity p => "badCapacity " ++ p.name
+  | .weight e s wd => werrName e ++ " pLounge." ++ s.name ++ "." ++ wdKey wd
+  | .badClock s wd => "badClock arrival." ++ s.name ++ "." ++ wdKey wd
+  | .badWindowCap => "badClock day.windowCap"
+  | .badWake => "badWake"
+  | .badCurve l => "badCurve energy." ++ locName l
+  | .badPrior k => "badPrior prior." ++ String.ofList k
+  | .step e k => stepErrName e ++ " prior." ++ String.ofList k
+  | .badCap => "badCap homeMaxCi"
+  | .badDay k => "badDay " ++ dayKeyName k
+  | .lookaheadTooLong => "lookaheadTooLong"
+  | .badDay0 => "badDay0"
+  | .badBins => "badBins"
+  | .badSafety => "badSafety"
+  | .badDefaultPriority => "badDefaultPriority"
+
+/-- The refusal on the wire: `{"err": {"capacity": "<name> <key>"}}`. -/
+def refusalJson (r : Refusal) : JVal := jone "err" (jone "capacity" (.str r.text.toList))
+
+/-! ### Readers: every value through its smart constructor -/
+
+/-- A required key: absent, `null`, carried twice, or read off a non-object is `r`. -/
+def need (j : JVal) (k : String) (r : Refusal) : Except Refusal JVal :=
+  match jget j k with
+  | .ok (some .null) => .error r
+  | .ok (some v) => .ok v
+  | _ => .error r
+
+/-- An optional key: absent or `null` is `none`; carried twice or read off a non-object is `r`. -/
+def opt (j : JVal) (k : String) (r : Refusal) : Except Refusal (Option JVal) :=
+  match jget j k with
+  | .ok none => .ok none
+  | .ok (some .null) => .ok none
+  | .ok (some v) => .ok (some v)
+  | .error _ => .error r
+
+/-- A JSON natural. -/
+def natOf : JVal → Option Nat
+  | .num n => some n
+  | _ => none
+
+/-- The longest digit string a pair part may be. -/
+def maxDigits : Nat := 40
+
+/-- A digit string (D17): at least one digit, only digits, at most 40. -/
+def natOfDigits : JVal → Option Nat
+  | .str s => if s.length ≤ maxDigits then readNat s else none
+  | _ => none
+
+/-- `{"num": …, "den": …}`, each part read by `rd`. -/
+def pairWith (rd : JVal → Option Nat) (v : JVal) : Option (Nat × Nat) :=
+  match jget v "num", jget v "den" with
+  | .ok (some n), .ok (some d) => (rd n).bind fun n => (rd d).map fun d => (n, d)
+  | _, _ => none
+
+/-- An `HH:MM` clock, by the clock grammar every clock field uses (`Field.parseClock`). -/
+def clockOf : JVal → Option Field.Clock
+  | .str s => Field.parseClock s
+  | _ => none
+
+/-- An option, or the refusal. -/
+def orErr {α : Type} (o : Option α) (r : Refusal) : Except Refusal α :=
+  match o with
+  | some a => .ok a
+  | none => .error r
+
+/-- A natural at `k`, or `r`. -/
+def natAt (v : JVal) (k : String) (r : Refusal) : Except Refusal Nat :=
+  match need v k r with
+  | .ok (.num n) => .ok n
+  | _ => .error r
+
+/-- A string at `k`, or `r`. -/
+def strAt (v : JVal) (k : String) (r : Refusal) : Except Refusal (List Char) :=
+  match need v k r with
+  | .ok (.str s) => .ok s
+  | _ => .error r
+
+/-- An array at `k`, or `r`. -/
+def arrAt (v : JVal) (k : String) (r : Refusal) : Except Refusal (List JVal) :=
+  match need v k r with
+  | .ok (.arr xs) => .ok xs
+  | _ => .error r
+
+/-- A pair of JSON naturals at `k`, or `r`. -/
+def pairAt (v : JVal) (k : String) (r : Refusal) : Except Refusal (Nat × Nat) :=
+  match need v k r with
+  | .ok p => orErr (pairWith natOf p) r
+  | .error e => .error e
+
+/-- A clock at `k`, or `r`. -/
+def clockAt (v : JVal) (k : String) (r : Refusal) : Except Refusal Field.Clock :=
+  match need v k r with
+  | .ok c => orErr (clockOf c) r
+  | .error e => .error e
+
+/-- **One lounge weight** (L1's `mkWeight?`): a pair of digit strings, then the constructor's names. -/
+def readWeight (src : Src) (wd : Cal.Weekday) (v : JVal) : Except Refusal (Nat × Nat) :=
+  match pairWith natOfDigits v with
+  | none => .error (.weight .badWeight src wd)
+  | some (n, d) =>
+    match mkWeight? n d with
+    | .ok _ => .ok (n, d)
+    | .error e => .error (.weight e src wd)
+
+/-- One arrival clock. -/
+def readArrival (src : Src) (wd : Cal.Weekday) (v : JVal) : Except Refusal Field.Clock :=
+  match clockOf v with
+  | some c => .ok c
+  | none => .error (.badClock src wd)
+
+/-- The seven entries of a table, Monday first, as a function. -/
+def ofSeven {α : Type} (mo tu we th fr sa su : α) : Cal.Weekday → α
+  | .monday => mo | .tuesday => tu | .wednesday => we | .thursday => th
+  | .friday => fr | .saturday => sa | .sunday => su
+
+/-- **The model's reading of a weekday table**: an absent weekday is `none`. -/
+def readWeekOpt {α : Type} (tbl : JVal) (bad : Cal.Weekday → Refusal)
+    (rd : Cal.Weekday → JVal → Except Refusal α) : Except Refusal (Cal.Weekday → Option α) := do
+  let one := fun (wd : Cal.Weekday) =>
+    match opt tbl (wdKey wd) (bad wd) with
+    | .error e => (Except.error e : Except Refusal (Option α))
+    | .ok none => .ok none
+    | .ok (some v) => (rd wd v).map some
+  return ofSeven (← one .monday) (← one .tuesday) (← one .wednesday) (← one .thursday)
+    (← one .friday) (← one .saturday) (← one .sunday)
+
+/-- **The config's reading of a weekday table**: every weekday is required. -/
+def readWeekAll {α : Type} (tbl : JVal) (bad : Cal.Weekday → Refusal)
+    (rd : Cal.Weekday → JVal → Except Refusal α) : Except Refusal (Cal.Weekday → α) := do
+  let one := fun (wd : Cal.Weekday) =>
+    match need tbl (wdKey wd) (bad wd) with
+    | .error e => (Except.error e : Except Refusal α)
+    | .ok v => rd wd v
+  return ofSeven (← one .monday) (← one .tuesday) (← one .wednesday) (← one .thursday)
+    (← one .friday) (← one .saturday) (← one .sunday)
+
+/-- An object, or the structural refusal. -/
+def needObj (v : JVal) (p : Part) : Except Refusal JVal :=
+  match v with
+  | .obj _ => .ok v
+  | _ => .error (.badCapacity p)
+
+/-- **Both readings of a weekday table** (`pLounge`, `arrival`): the model's may be absent. -/
+def readModelTable {α : Type} (t : JVal) (pm : Part) (bad : Cal.Weekday → Refusal)
+    (rd : Cal.Weekday → JVal → Except Refusal α) : Except Refusal (Cal.Weekday → Option α) :=
+  match opt t "model" (.badCapacity pm) with
+  | .error e => .error e
+  | .ok none => .ok (fun _ => none)
+  | .ok (some mt) => (needObj mt pm).bind (fun mt => readWeekOpt mt bad rd)
+
+def readTables {α : Type} (sec : JVal) (k : String) (p pm pc : Part)
+    (bad : Src → Cal.Weekday → Refusal) (rd : Src → Cal.Weekday → JVal → Except Refusal α) :
+    Except Refusal ((Cal.Weekday → Option α) × (Cal.Weekday → α)) := do
+  let t0 ← need sec k (.badCapacity p)
+  let t ← needObj t0 p
+  let m ← readModelTable t pm (bad .model) (rd .model)
+  let c0 ← need t "config" (.badCapacity pc)
+  let ct ← needObj c0 pc
+  let c ← readWeekAll ct (bad .config) (rd .config)
+  return (m, c)
+
+/-- **A learned curve** (`energyOk`): absent is not learned; present is 12 entries below 256. -/
+def readEnergyCurve (loc : Loc) (v : Option JVal) : Except Refusal (List (List Char × List Nat)) :=
+  match v with
+  | none => .ok []
+  | some (.arr xs) =>
+    if xs.length = 12 then
+      match xs.mapM natOf with
+      | some ns => if energyOk ns then .ok [(loc.curve, ns)] else .error (.badCurve loc)
+      | none => .error (.badCurve loc)
+    else .error (.badCurve loc)
+  | some _ => .error (.badCurve loc)
+
+/-- `energy`: absent is no learned curve. -/
+def readEnergyIn (e0 : JVal) : Except Refusal (List (List Char × List Nat)) := do
+  let e ← needObj e0 .energy
+  let ol ← opt e "lounge" (.badCurve .lounge)
+  let l ← readEnergyCurve .lounge ol
+  let oh ← opt e "home" (.badCurve .home)
+  let h ← readEnergyCurve .home oh
+  return l ++ h
+
+def readEnergy (sec : JVal) : Except Refusal (List (List Char × List Nat)) :=
+  match opt sec "energy" (.badCapacity .energy) with
+  | .error e => .error e
+  | .ok none => .ok []
+  | .ok (some e) => readEnergyIn e
+
+/-- **One prior range** (`mkStep?`). -/
+def optPair (o : Option JVal) (r : Refusal) : Except Refusal (Option (Nat × Nat)) :=
+  match o with
+  | none => .ok none
+  | some v => (orErr (pairWith natOf v) r).map some
+
+def readStep (key : List Char) (v : JVal) : Except Refusal Step := do
+  let f ← pairAt v "from" (.step .badStep key)
+  let tv ← opt v "to" (.step .badStep key)
+  let t ← optPair tv (.step .badStep key)
+  let l ← natAt v "level" (.step .badLevel key)
+  (mkStep? f.1 f.2 t l).mapError (fun e => .step e key)
+
+/-- **One prior curve** (`curveOk`): at most 64 ranges, checked before any is read. -/
+def readCurve (key : List Char) (v : JVal) : Except Refusal (List Step) :=
+  match v with
+  | .arr xs =>
+    if maxCurveSteps < xs.length then .error (.step .badStep key)
+    else
+      match xs.mapM (readStep key) with
+      | .ok steps => if curveOk steps then .ok steps else .error (.step .badStep key)
+      | .error e => .error e
+  | _ => .error (.step .badStep key)
+
+/-- The first key carried twice. -/
+def firstDupKey : List (List Char) → Option (List Char)
+  | [] => none
+  | k :: ks => if k ∈ ks then some k else firstDupKey ks
+
+/-- **The prior curves** (`priorOk`), every one of them (L4's disagreement 8). -/
+def readPriorEntry (kv : List Char × JVal) : Except Refusal (List Char × List Step) :=
+  if maxCurveKey < kv.1.length then .error (.badPrior kv.1)
+  else (readCurve kv.1 kv.2).map (fun s => (kv.1, s))
+
+def readPriorObj (kvs : List (List Char × JVal)) : Except Refusal (List (List Char × List Step)) :=
+  if maxCurves < kvs.length then .error (.badPrior ((kvs.getD maxCurves ([], .null)).1))
+  else
+    match kvs.mapM readPriorEntry with
+    | .error e => .error e
+    | .ok p => if priorOk p then .ok p else .error (.badPrior ((firstDupKey (p.map Prod.fst)).getD []))
+
+def readPrior (sec : JVal) : Except Refusal (List (List Char × List Step)) :=
+  match need sec "prior" (.badCapacity .prior) with
+  | .ok (.obj kvs) => readPriorObj kvs
+  | _ => .error (.badCapacity .prior)
+
+/-- `home_max_ci` (`homeMaxOk`). -/
+def readHomeMax (sec : JVal) : Except Refusal Nat :=
+  match natAt sec "homeMaxCi" .badCap with
+  | .ok n => if homeMaxOk n then .ok n else .error .badCap
+  | .error e => .error e
+
+/-- **`[day]`** (`mkDayCfg?`), with the request's `blockMin` as `block_min`. -/
+def readDay (bm : Nat) (sec : JVal) : Except Refusal DayCfg := do
+  let d0 ← need sec "day" (.badCapacity .day)
+  let v ← needObj d0 .day
+  let br ← natAt v "breakMin" (.badDay .breakMin)
+  let ba ← natAt v "breakAfterBlocks" (.badDay .breakAfterBlocks)
+  let ml ← natAt v "minLastBlockMin" (.badDay .minLastBlockMin)
+  let wh ← pairAt v "windowHours" (.badDay .windowHours)
+  let cap ← clockAt v "windowCap" .badWindowCap
+  let rt ← pairAt v "budgetRatio" (.badDay .budgetRatio)
+  (mkDayCfg? bm br ba ml wh.1 wh.2 cap rt.1 rt.2).mapError .badDay
+
+/-- The most ladder edges, and the widest denominator of a priority pair (`capDen`'s 18 places). -/
+def maxBins : Nat := 16
+def maxPairDen : Nat := 1000000000000000000
+
+/-- **The ladder off the wire** (step 2's `binsOfPairs?`): at most 16 edges, each denominator at
+most `10^18`. -/
+def binsOfWire (xs : List JVal) : Option Bins :=
+  if maxBins < xs.length then none
+  else (xs.mapM (pairWith natOf)).bind fun ps =>
+    if ps.all (fun p => decide (p.2 ≤ maxPairDen)) then binsOfPairs? ps else none
+
+/-- **The safety off the wire** (step 2's `safetyOf?`): a denominator of at most `10^18`, a
+safety of at most 1,000. -/
+def safetyOfWire (p : Nat × Nat) : Option Arith.Pos :=
+  if p.2 ≤ maxPairDen ∧ p.1 ≤ 1000 * p.2 then safetyOf? p.1 p.2 else none
+
+/-- **`[priority]`, through step 2's decoders** (gap 77): `binsOfPairs?`, `safetyOf?` (a safety of
+at most 1,000), `defaultPrioOf?`. -/
+def readPriority (sec : JVal) : Except Refusal (Bins × Arith.Pos × Fin 4) := do
+  let p0 ← need sec "priority" (.badCapacity .priority)
+  let v ← needObj p0 .priority
+  let xs ← arrAt v "bins" .badBins
+  let bins ← orErr (binsOfWire xs) .badBins
+  let sp ← pairAt v "safety" .badSafety
+  let safety ← orErr (safetyOfWire sp) .badSafety
+  let n ← natAt v "defaultPriority" .badDefaultPriority
+  let dflt ← orErr (defaultPrioOf? n) .badDefaultPriority
+  return (bins, safety, dflt)
+
+/-! ### The zone table: B4's one reader
+
+**Merged 2026-09-14 (gap 108 closed).**  L6 read `tz` with its own fixed-width readers
+(`readOffsetText`, `readInstantText`, `transOf`, `readTrans`, `maxTrans`, `tzObj`).  The D9 track's
+B4 owns the key (design §14.2) and reads it with `Tm.readTz` (`readTzOffset`, `readTzInstant` through
+`LogStamp.parseStamp`, `Cal.mkTz?`), so the merge keeps that one reader (AGENTS §5.3) and this is
+only the capacity section's view of it: absent is `tzAbsent`, and a refusal is `badTz` with B4's
+name for it. -/
+
+/-- **The zone table**: `tzAbsent`, else `Tm.readTz`'s table or its refusal as `badTz <why>`. -/
+def readTz (j : JVal) : Except Refusal Cal.Tz :=
+  match jget j "tz" with
+  | .ok none => .error .tzAbsent
+  | .ok (some z) => (Tm.readTz z).mapError .badTz
+  | .error _ => .error (.badTz .shape)
+
+/-! ### The section, whole -/
+
+/-- The section's values, each through its constructor. -/
+structure Section where
+  pModel    : Cal.Weekday → Option (Nat × Nat)
+  pConfig   : Cal.Weekday → Nat × Nat
+  arrModel  : Cal.Weekday → Option Field.Clock
+  arrConfig : Cal.Weekday → Field.Clock
+  wake      : Option WakeClock
+  energy    : List (List Char × List Nat)
+  prior     : List (List Char × List Step)
+  homeMax   : Nat
+  day       : DayCfg
+  prio      : Bins × Arith.Pos × Fin 4
+  days      : Nat
+  day0      : List Nat
+
+/-- `wake`: absent or `null` is no logged wake. -/
+def readWake (sec : JVal) : Except Refusal (Option WakeClock) :=
+  match opt sec "wake" .badWake with
+  | .error e => .error e
+  | .ok none => .ok none
+  | .ok (some w) => match natAt w "sec" .badWake, natAt w "ns" .badWake with
+    | .ok s, .ok n => .ok (some ⟨s, n⟩)
+    | _, _ => .error .badWake
+
+/-- `days`: a natural (its bound is `mkInput?`'s). -/
+def readDays (sec : JVal) : Except Refusal Nat := natAt sec "days" (.badCapacity .days)
+
+/-- `day0`: at most six naturals, read (the exact count and bound are `mkInput?`'s). -/
+def readDay0 (sec : JVal) : Except Refusal (List Nat) :=
+  match arrAt sec "day0" .badDay0 with
+  | .ok xs => orErr (if 6 < xs.length then none else xs.mapM natOf) .badDay0
+  | .error e => .error e
+
+/-- **The section** (design §13.6), in the order of the example. -/
+def readSection (bm : Nat) (cap : JVal) : Except Refusal Section := do
+  let sec ← needObj cap .capacity
+  let p ← readTables sec "pLounge" .pLounge .pLoungeModel .pLoungeConfig
+    (fun s wd => .weight .badWeight s wd) readWeight
+  let a ← readTables sec "arrival" .arrival .arrivalModel .arrivalConfig
+    (fun s wd => .badClock s wd) readArrival
+  let wake ← readWake sec
+  let energy ← readEnergy sec
+  let prior ← readPrior sec
+  let homeMax ← readHomeMax sec
+  let day ← readDay bm sec
+  let prio ← readPriority sec
+  let days ← readDays sec
+  let day0 ← readDay0 sec
+  return ⟨p.1, p.2, a.1, a.2, wake, energy, prior, homeMax, day, prio, days, day0⟩
+
+/-- The decoded request: the lookahead's raw input and its decoded form, and the priority
+configuration for the priority wiring (L8). -/
+structure CapReq where
+  input  : InputIn
+  look   : Input
+  bins   : Bins
+  safety : Arith.Pos
+  dflt   : Fin 4
+
+/-- L5's refusals, named on the wire.  A weight is named by the reading it came from. -/
+def ofCapErr (x : InputIn) : CapErr → Refusal
+  | .lookaheadTooLong => .lookaheadTooLong
+  | .weight wd e => .weight e (if (x.pModel wd).isSome then .model else .config) wd
+  | .badWake => .badWake
+  | .badDay0 => .badDay0
+
+/-- The lookahead's last day is a date the calendar renders (year ≤ 9999). -/
+def lookaheadInCalendar (today days : Nat) : Bool := days == 0 || Field.dayWf (today + days - 1)
+
+/-- The lookahead's raw input from the section, the zone, today and the plan's walls. -/
+def Section.input (s : Section) (today bm : Nat) (z : Cal.Tz) (plan : PlanCore) : InputIn :=
+  ⟨today, s.days, s.day0, s.pModel, s.pConfig, s.arrModel, s.arrConfig, s.wake, ⟨s.prior, s.energy⟩,
+    s.homeMax, s.day, z, wallIndex z bm plan⟩
+
+/-- A lookahead the calendar can render, or `lookaheadTooLong`. -/
+def inCalendar (today days : Nat) : Except Refusal Unit :=
+  if lookaheadInCalendar today days then .ok () else .error .lookaheadTooLong
+
+/-- **The capacity request**: the clock, the zone, the section, then L5's `mkInput?` over the
+loaded plan's walls (`wallIndex`, indexed once, `buffer:` in the request's blocks). -/
+def readCapacity (plan : PlanCore) (clock : ReqClock) (j cap : JVal) : Except Refusal CapReq := do
+  let today ← orErr clock.now .nowAbsent
+  let bm ← orErr (clock.blockMin.map Subtype.val) .blockMinAbsent
+  let z ← readTz j
+  let s ← readSection bm cap
+  let I ← (mkInput? (s.input today bm z plan)).mapError (ofCapErr (s.input today bm z plan))
+  let _ ← inCalendar today s.days
+  return ⟨s.input today bm z plan, I, s.prio.1, s.prio.2.1, s.prio.2.2⟩
+
+/-! ### The response -/
+
+/-- **A unit count as a digit string** (D17). -/
+def unitsJson (n : Nat) : JVal := .str (digitsOf n)
+
+/-- One day: its date and its six numerators over `den`, level 0 first. -/
+def dayCapJson (c : DayCapacity) : JVal :=
+  .obj [("day".toList, .str (Field.renderDate c.day)),
+    ("numAt".toList, .arr [unitsJson (c.numAt 0), unitsJson (c.numAt 1), unitsJson (c.numAt 2),
+      unitsJson (c.numAt 3), unitsJson (c.numAt 4), unitsJson (c.numAt 5)])]
+
+/-- The days the response carries (design D10-8). -/
+def maxEmittedDays : Nat := 7
+
+/-- **The `lookahead` key**: `den`, then the first `min(days, 7)` days. -/
+def lookaheadJson (cs : List DayCapacity) : JVal :=
+  .obj [("den".toList, unitsJson capDen), ("days".toList, .arr ((cs.take maxEmittedDays).map dayCapJson))]
+
+/-- The `ok` object with `lookahead` after its keys. -/
+def withLookahead (r v : JVal) : JVal :=
+  match r with
+  | .obj [(k, .obj kvs)] => .obj [(k, .obj (kvs ++ [("lookahead".toList, v)]))]
+  | _ => r
+
+end CapWire
+
+/-- The `log` answer after `report`, when the request carries a `log` section (B4's `withLog`). -/
+def logInto : Option VLogReq → JVal → JVal
+  | none, r => r
+  | some l, r => withLog (logAnswer l) r
+
+open CapWire in
+/-- **The request, with its capacity section**: without `capacity`, B4's `runWithLog`
+(`runCap_without_capacity_is_runWithLog`, and `run` when there is no `log` section either); with it,
+the `tz` and `log` sections are read first (B4's `readLogSection`, whose refusals come first), the
+documents load (`runLoad`), the capacity section is read, the commands run (`runPlan`), and the
+response gains `log` (when asked) and then `lookahead` (design §10.2's order).  **Merged 2026-09-14**
+with the D9 track's B4: L6's `runCap` called `run` and so dropped a `log` section. -/
+def runCap (j : JVal) : Except JVal JVal :=
+  match jget j "capacity" with
+  | .error e => .error (jsonErr e)
+  | .ok none => runWithLog j
+  | .ok (some cap) =>
+    match readLogSection j with
+    | .error e => .error e
+    | .ok lg =>
+    match runLoad j with
+    | .error e => .error e
+    | .ok (plan, cmds, clock) =>
+      match readCapacity plan.val clock j cap with
+      | .error r => .error (refusalJson r)
+      | .ok c =>
+        match runPlan plan cmds with
+        | .error e => .error e
+        | .ok r => .ok (withLookahead (logInto lg r) (lookaheadJson (Look.lookahead c.look)))
+
+/-- **The response value for a request's bytes**, `respond` over `runCap`. -/
+def respondCap (input : List Char) : JVal :=
+  match jparse input with
+  | .error e => jsonErr s!"bad json: {jerrText e}"
+  | .ok j =>
+    match runCap j with
+    | .error e => e
+    | .ok r    => r
+
+/-- What the FFI runs: `call` over `respondCap`. -/
+def callCap (input : String) : String := String.ofList (jemit (respondCap input.toList))
+
+/-- **The one export** (R9), moved here from `call`'s definition at step L6. -/
+@[export tm_kernel_call]
+def callExport (input : String) : String := callCap input
+
+/-! ### The laws: the bridge to `run`, what an answered request satisfies, and the response -/
+
+theorem capBind_ok_elim {ε α β : Type} {x : Except ε α} {f : α → Except ε β} {b : β}
+    (h : (x >>= f) = .ok b) : ∃ a, x = .ok a ∧ f a = .ok b := by
+  cases x with
+  | error e => cases h
+  | ok a => exact ⟨a, rfl, h⟩
+
+/-- **A request without `capacity` is `runWithLog`'s**, byte for byte (merged form: L6 stated
+`runCap j = run j`, which the merge made false for a request with a `log` section). -/
+theorem runCap_without_capacity_is_runWithLog {j : JVal} (h : jget j "capacity" = .ok none) :
+    runCap j = runWithLog j := by
+  simp [runCap, h]
+
+/-- **A request without `capacity` or a `log` section is `run`'s**, byte for byte. -/
+theorem runCap_without_capacity_is_run {j : JVal} (h : jget j "capacity" = .ok none)
+    (hl : readLogSection j = .ok none) : runCap j = run j := by
+  rw [runCap_without_capacity_is_runWithLog h, runWithLog_without_a_log_is_run j hl]
+
+/-- **At the bytes**: a request that parses to a value without `capacity` gets `respond`'s answer. -/
+theorem respondCap_without_capacity_is_respond (input : List Char)
+    (h : ∀ j, jparse input = .ok j → jget j "capacity" = .ok none) : respondCap input = respond input := by
+  unfold respondCap respond
+  cases hp : jparse input with
+  | error e => rfl
+  | ok j => dsimp only; rw [runCap_without_capacity_is_runWithLog (h j hp)]; try rfl
+
+/-- **The exported function is `call` on every request without `capacity`**, so every theorem stated
+about `call` above holds of the FFI for those requests. -/
+theorem callExport_without_capacity_is_call (input : String)
+    (h : ∀ j, jparse input.toList = .ok j → jget j "capacity" = .ok none) : callExport input = call input := by
+  unfold callExport callCap call
+  rw [respondCap_without_capacity_is_respond _ h]
+
+/-- **J5's round trip, at the exported function**: whatever bytes the FFI hands the host, the
+kernel's own parser reads back to exactly the response value `respondCap` built. -/
+theorem the_exported_call_emits_parses_back (input : String) :
+    jparse (callExport input).toList = .ok (respondCap input.toList) := by
+  unfold callExport callCap
+  rw [String.toList_ofList]
+  exact jparse_jemit _
+
+/-- **With `capacity`**: the documents load, the section is read, the commands run, and the answer is
+`run`'s with `lookahead` after its keys. -/
+theorem runCap_answers_with_the_lookahead {j cap : JVal} {lg : Option VLogReq} {plan : WfPlan}
+    {cmds : List ReqCmd} {clock : ReqClock} {c : CapWire.CapReq} {r : JVal} (hc : jget j "capacity" = .ok (some cap))
+    (hg : readLogSection j = .ok lg)
+    (hl : runLoad j = .ok (plan, cmds, clock)) (hr : CapWire.readCapacity plan.val clock j cap = .ok c)
+    (hp : runPlan plan cmds = .ok r) :
+    runCap j = .ok (CapWire.withLookahead (logInto lg r) (CapWire.lookaheadJson (Look.lookahead c.look))) := by
+  simp [runCap, hc, hg, hl, hr, hp]
+
+/-- **With `capacity`, a refused `tz` or `log` section refuses the request first** (B4's rule, kept
+by the merge), before the documents load. -/
+theorem runCap_refuses_a_log_section_first {j cap e : JVal} (hc : jget j "capacity" = .ok (some cap))
+    (hg : readLogSection j = .error e) : runCap j = .error e := by
+  simp [runCap, hc, hg]
+
+/-- **A refused section refuses the request by its name**, whatever the commands. -/
+theorem runCap_refuses_what_the_section_refuses {j cap : JVal} {lg : Option VLogReq} {plan : WfPlan}
+    {cmds : List ReqCmd} {clock : ReqClock} {e : CapWire.Refusal} (hc : jget j "capacity" = .ok (some cap))
+    (hg : readLogSection j = .ok lg)
+    (hl : runLoad j = .ok (plan, cmds, clock)) (hr : CapWire.readCapacity plan.val clock j cap = .error e) :
+    runCap j = .error (CapWire.refusalJson e) := by
+  simp [runCap, hc, hg, hl, hr]
+
+/-- `runPlan`'s `ok` is the documents, then the report.  (L6 named it `runPlan_ok_shape`; B4 took
+that name for the weaker `∃ kvs` form, so the merge renamed this one.) -/
+theorem runPlan_ok_is_docs_then_report {plan : WfPlan} {cmds : List ReqCmd} {r : JVal} (h : runPlan plan cmds = .ok r) :
+    ∃ d rep, r = jone "ok" (.obj [("docs".toList, d), ("report".toList, rep)]) := by
+  unfold runPlan at h
+  cases ha : applyAllR cmds plan with
+  | error k => simp [ha, bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
+  | ok qr =>
+    obtain ⟨q, rp⟩ := qr
+    simp only [ha, bind, Except.bind, pure, Except.pure] at h
+    cases h
+    exact ⟨_, _, rfl⟩
+
+/-- **Build order** (design §10.2): `docs`, `report`, then `lookahead`. -/
+theorem runCap_answers_docs_report_lookahead {j cap : JVal} {plan : WfPlan} {cmds : List ReqCmd}
+    {clock : ReqClock} {c : CapWire.CapReq} {r : JVal} (hc : jget j "capacity" = .ok (some cap))
+    (hg : readLogSection j = .ok none)
+    (hl : runLoad j = .ok (plan, cmds, clock)) (hr : CapWire.readCapacity plan.val clock j cap = .ok c)
+    (hp : runPlan plan cmds = .ok r) :
+    ∃ d rep, runCap j = .ok (jone "ok" (.obj [("docs".toList, d), ("report".toList, rep),
+      ("lookahead".toList, CapWire.lookaheadJson (Look.lookahead c.look))])) := by
+  obtain ⟨d, rep, rfl⟩ := runPlan_ok_is_docs_then_report hp
+  exact ⟨d, rep, runCap_answers_with_the_lookahead hc hg hl hr hp⟩
+
+/-- **Build order with a `log` section** (design §10.2, merged): `docs`, `report`, `log`, then
+`lookahead`. -/
+theorem runCap_answers_docs_report_log_lookahead {j cap : JVal} {l : VLogReq} {plan : WfPlan}
+    {cmds : List ReqCmd} {clock : ReqClock} {c : CapWire.CapReq} {r : JVal} (hc : jget j "capacity" = .ok (some cap))
+    (hg : readLogSection j = .ok (some l))
+    (hl : runLoad j = .ok (plan, cmds, clock)) (hr : CapWire.readCapacity plan.val clock j cap = .ok c)
+    (hp : runPlan plan cmds = .ok r) :
+    ∃ d rep, runCap j = .ok (jone "ok" (.obj [("docs".toList, d), ("report".toList, rep),
+      ("log".toList, logAnswer l), ("lookahead".toList, CapWire.lookaheadJson (Look.lookahead c.look))])) := by
+  obtain ⟨d, rep, rfl⟩ := runPlan_ok_is_docs_then_report hp
+  exact ⟨d, rep, runCap_answers_with_the_lookahead hc hg hl hr hp⟩
+
+namespace CapWire
+
+open Look
+
+/-- **Every unit count reads back** as the host reads a digit string (D17). -/
+theorem unitsJson_reads_back (n : Nat) : ∃ s, unitsJson n = .str s ∧ readNat s = some n :=
+  ⟨digitsOf n, rfl, readNat_digitsOf n⟩
+
+/-- **The response carries the first `min(days, 7)` days**, in order, each with its six numerators. -/
+theorem lookaheadJson_days (cs : List DayCapacity) :
+    lookaheadJson cs = .obj [("den".toList, unitsJson capDen),
+      ("days".toList, .arr ((cs.take maxEmittedDays).map dayCapJson))] ∧
+    (cs.take maxEmittedDays).length = min cs.length 7 := by
+  simp [lookaheadJson, maxEmittedDays, Nat.min_comm]
+
+/-! #### What each reader's success means -/
+
+theorem readWeight_ok {src : Src} {wd : Cal.Weekday} {v : JVal} {p : Nat × Nat}
+    (h : readWeight src wd v = .ok p) : ∃ w, mkWeight? p.1 p.2 = .ok w := by
+  unfold readWeight at h
+  split at h
+  · cases h
+  · rename_i n d _
+    split at h
+    · rename_i w hw; cases h; exact ⟨w, hw⟩
+    · cases h
+
+theorem readWeekAll_ok {α : Type} {tbl : JVal} {bad : Cal.Weekday → Refusal}
+    {rd : Cal.Weekday → JVal → Except Refusal α} {f : Cal.Weekday → α}
+    (h : readWeekAll tbl bad rd = .ok f) : ∀ wd, ∃ v, rd wd v = .ok (f wd) := by
+  unfold readWeekAll at h
+  obtain ⟨a1, h1, h⟩ := capBind_ok_elim h
+  obtain ⟨a2, h2, h⟩ := capBind_ok_elim h
+  obtain ⟨a3, h3, h⟩ := capBind_ok_elim h
+  obtain ⟨a4, h4, h⟩ := capBind_ok_elim h
+  obtain ⟨a5, h5, h⟩ := capBind_ok_elim h
+  obtain ⟨a6, h6, h⟩ := capBind_ok_elim h
+  obtain ⟨a7, h7, h⟩ := capBind_ok_elim h
+  cases h
+  have one : ∀ wd a, (match need tbl (wdKey wd) (bad wd) with
+      | .error e => (Except.error e : Except Refusal α) | .ok v => rd wd v) = .ok a → ∃ v, rd wd v = .ok a := by
+    intro wd a ha
+    split at ha
+    · cases ha
+    · exact ⟨_, ha⟩
+  intro wd
+  cases wd
+  · exact one _ _ h1
+  · exact one _ _ h2
+  · exact one _ _ h3
+  · exact one _ _ h4
+  · exact one _ _ h5
+  · exact one _ _ h6
+  · exact one _ _ h7
+
+theorem readWeekOpt_ok {α : Type} {tbl : JVal} {bad : Cal.Weekday → Refusal}
+    {rd : Cal.Weekday → JVal → Except Refusal α} {f : Cal.Weekday → Option α}
+    (h : readWeekOpt tbl bad rd = .ok f) : ∀ wd a, f wd = some a → ∃ v, rd wd v = .ok a := by
+  unfold readWeekOpt at h
+  obtain ⟨a1, h1, h⟩ := capBind_ok_elim h
+  obtain ⟨a2, h2, h⟩ := capBind_ok_elim h
+  obtain ⟨a3, h3, h⟩ := capBind_ok_elim h
+  obtain ⟨a4, h4, h⟩ := capBind_ok_elim h
+  obtain ⟨a5, h5, h⟩ := capBind_ok_elim h
+  obtain ⟨a6, h6, h⟩ := capBind_ok_elim h
+  obtain ⟨a7, h7, h⟩ := capBind_ok_elim h
+  cases h
+  have one : ∀ wd o a, (match opt tbl (wdKey wd) (bad wd) with
+      | .error e => (Except.error e : Except Refusal (Option α)) | .ok none => .ok none
+      | .ok (some v) => (rd wd v).map some) = .ok o → o = some a → ∃ v, rd wd v = .ok a := by
+    intro wd o a ho hs
+    subst hs
+    split at ho
+    · cases ho
+    · cases ho
+    · rename_i v _
+      cases hr : rd wd v with
+      | error e => rw [hr] at ho; cases ho
+      | ok b => rw [hr] at ho; cases ho; exact ⟨v, hr⟩
+  intro wd a ha
+  cases wd
+  · exact one _ _ _ h1 ha
+  · exact one _ _ _ h2 ha
+  · exact one _ _ _ h3 ha
+  · exact one _ _ _ h4 ha
+  · exact one _ _ _ h5 ha
+  · exact one _ _ _ h6 ha
+  · exact one _ _ _ h7 ha
+
+theorem orErr_ok {α : Type} {o : Option α} {r : Refusal} {a : α} (h : orErr o r = .ok a) : o = some a := by
+  unfold orErr at h
+  split at h
+  · cases h; rfl
+  · cases h
+
+theorem mapError_ok {ε ε' α : Type} {x : Except ε α} {f : ε → ε'} {a : α} (h : x.mapError f = .ok a) :
+    x = .ok a := by
+  cases x with
+  | error e => cases h
+  | ok b => cases h; rfl
+
+theorem readModelTable_ok {α : Type} {t : JVal} {pm : Part} {bad : Cal.Weekday → Refusal}
+    {rd : Cal.Weekday → JVal → Except Refusal α} {m : Cal.Weekday → Option α}
+    (h : readModelTable t pm bad rd = .ok m) : ∀ wd a, m wd = some a → ∃ v, rd wd v = .ok a := by
+  unfold readModelTable at h
+  intro wd a ha
+  split at h
+  · cases h
+  · cases h; cases ha
+  · rename_i mt _
+    cases hn : needObj mt pm with
+    | error e => rw [hn] at h; cases h
+    | ok mt' => rw [hn] at h; exact readWeekOpt_ok h wd a ha
+
+theorem readTables_ok {α : Type} {sec : JVal} {k : String} {p pm pc : Part}
+    {bad : Src → Cal.Weekday → Refusal} {rd : Src → Cal.Weekday → JVal → Except Refusal α}
+    {m : Cal.Weekday → Option α} {c : Cal.Weekday → α}
+    (h : readTables sec k p pm pc bad rd = .ok (m, c)) :
+    (∀ wd a, m wd = some a → ∃ v, rd .model wd v = .ok a) ∧ (∀ wd, ∃ v, rd .config wd v = .ok (c wd)) := by
+  unfold readTables at h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨m', hm, h⟩ := capBind_ok_elim h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨c', hc, h⟩ := capBind_ok_elim h
+  cases h
+  exact ⟨readModelTable_ok hm, readWeekAll_ok hc⟩
+
+theorem readEnergyCurve_ok {loc : Loc} {v : Option JVal} {e : List (List Char × List Nat)}
+    (h : readEnergyCurve loc v = .ok e) : e = [] ∨ ∃ ns, e = [(loc.curve, ns)] ∧ energyOk ns = true := by
+  unfold readEnergyCurve at h
+  split at h
+  · cases h; exact .inl rfl
+  · split at h
+    · split at h
+      · split at h
+        · rename_i ns _ hok; cases h; exact .inr ⟨ns, rfl, hok⟩
+        · cases h
+      · cases h
+    · cases h
+  · cases h
+
+theorem readEnergy_ok {sec : JVal} {e : List (List Char × List Nat)} (h : readEnergy sec = .ok e) :
+    decide (e.map Prod.fst).Nodup = true ∧
+      e.all (fun x => (x.1 == loungeKey || x.1 == homeKey) && energyOk x.2) = true := by
+  unfold readEnergy at h
+  split at h
+  · cases h
+  · cases h; simp
+  · unfold readEnergyIn at h
+    obtain ⟨_, -, h⟩ := capBind_ok_elim h
+    obtain ⟨_, -, h⟩ := capBind_ok_elim h
+    obtain ⟨l, hl, h⟩ := capBind_ok_elim h
+    obtain ⟨_, -, h⟩ := capBind_ok_elim h
+    obtain ⟨hh', hh, h⟩ := capBind_ok_elim h
+    cases h
+    rcases readEnergyCurve_ok hl with rfl | ⟨nl, rfl, hnl⟩ <;>
+      rcases readEnergyCurve_ok hh with rfl | ⟨nh, rfl, hnh⟩ <;>
+      simp_all [Loc.curve, loungeKey, homeKey]
+
+theorem readCurve_ok {key : List Char} {v : JVal} {s : List Step} (h : readCurve key v = .ok s) :
+    curveOk s = true := by
+  unfold readCurve at h
+  split at h
+  · split at h
+    · cases h
+    · split at h
+      · split at h
+        · cases h; assumption
+        · cases h
+      · cases h
+  · cases h
+
+theorem readPrior_ok {sec : JVal} {p : List (List Char × List Step)} (h : readPrior sec = .ok p) :
+    priorOk p = true := by
+  unfold readPrior at h
+  split at h
+  · unfold readPriorObj at h
+    split at h
+    · cases h
+    · split at h
+      · cases h
+      · split at h
+        · cases h; assumption
+        · cases h
+  · cases h
+
+theorem readHomeMax_ok {sec : JVal} {n : Nat} (h : readHomeMax sec = .ok n) : homeMaxOk n = true := by
+  unfold readHomeMax at h
+  split at h
+  · split at h
+    · cases h; assumption
+    · cases h
+  · cases h
+
+theorem mkDayCfg?_blockMin {bm br ba ml wn wd : Nat} {cap : Field.Clock} {rn rd : Nat} {c : DayCfg}
+    (h : mkDayCfg? bm br ba ml wn wd cap rn rd = .ok c) : c.cut.blockMin = bm := by
+  unfold mkDayCfg? at h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  split at h
+  · split at h
+    · cases h; rfl
+    · cases h
+  · cases h
+
+theorem readDay_ok {bm : Nat} {sec : JVal} {c : DayCfg} (h : readDay bm sec = .ok c) :
+    c.wf = true ∧ c.cut.blockMin = bm := by
+  unfold readDay at h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  have h := mapError_ok h
+  exact ⟨mkDayCfg?_wf h, mkDayCfg?_blockMin h⟩
+
+theorem readPriority_ok {sec : JVal} {b : Bins} {s : Arith.Pos} {k : Fin 4}
+    (h : readPriority sec = .ok (b, s, k)) :
+    (∃ xs, binsOfWire xs = some b) ∧ (∃ p, safetyOfWire p = some s) ∧ ∃ n, defaultPrioOf? n = some k := by
+  unfold readPriority at h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨xs, -, h⟩ := capBind_ok_elim h
+  obtain ⟨b', hb, h⟩ := capBind_ok_elim h
+  obtain ⟨sp, -, h⟩ := capBind_ok_elim h
+  obtain ⟨s', hs, h⟩ := capBind_ok_elim h
+  obtain ⟨n, -, h⟩ := capBind_ok_elim h
+  obtain ⟨k', hk, h⟩ := capBind_ok_elim h
+  cases h
+  exact ⟨⟨xs, orErr_ok hb⟩, ⟨sp, orErr_ok hs⟩, ⟨n, orErr_ok hk⟩⟩
+
+/-- **What an accepted section holds**: every §13.6 bound of its own values, each weight pair sent
+decoded exactly (the model's and the config's), and `[day] block_min` the request's. -/
+theorem readSection_ok {bm : Nat} {cap : JVal} {s : Section} (h : readSection bm cap = .ok s) :
+    Curves.wf ⟨s.prior, s.energy⟩ = true ∧ homeMaxOk s.homeMax = true ∧ s.day.wf = true ∧
+      s.day.cut.blockMin = bm ∧
+      (∀ wd, ∃ w, mkWeight? (s.pConfig wd).1 (s.pConfig wd).2 = .ok w) ∧
+      (∀ wd p, s.pModel wd = some p → ∃ w, mkWeight? p.1 p.2 = .ok w) ∧
+      (∃ xs, binsOfWire xs = some s.prio.1) ∧ (∃ p, safetyOfWire p = some s.prio.2.1) ∧
+      (∃ n, defaultPrioOf? n = some s.prio.2.2) := by
+  unfold readSection at h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨⟨pm, pc⟩, hp, h⟩ := capBind_ok_elim h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨en, he, h⟩ := capBind_ok_elim h
+  obtain ⟨pr, hpr, h⟩ := capBind_ok_elim h
+  obtain ⟨hm, hhm, h⟩ := capBind_ok_elim h
+  obtain ⟨dy, hdy, h⟩ := capBind_ok_elim h
+  obtain ⟨⟨b, sf, df⟩, hpo, h⟩ := capBind_ok_elim h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  cases h
+  obtain ⟨hpm, hpc⟩ := readTables_ok hp
+  obtain ⟨hn, ha⟩ := readEnergy_ok he
+  obtain ⟨hdw, hdb⟩ := readDay_ok hdy
+  obtain ⟨hb, hs, hk⟩ := readPriority_ok hpo
+  refine ⟨?_, readHomeMax_ok hhm, hdw, hdb, ?_, ?_, hb, hs, hk⟩
+  · simp only [Curves.wf, readPrior_ok hpr, hn, ha, Bool.and_self]
+  · intro wd
+    obtain ⟨v, hv⟩ := hpc wd
+    exact readWeight_ok hv
+  · intro wd p hpw
+    obtain ⟨v, hv⟩ := hpm wd p hpw
+    exact readWeight_ok hv
+
+/-- **What an answered capacity request satisfies** (R10, §13.6): the request's `now` is today and
+its `blockMin` the day's blocks and the walls' blocks; the lookahead's input is L5's `mkInput?` of
+the raw input, which holds every §13.6 bound (`InputIn.boundsWf`); every weight pair sent decodes
+exactly; the walls are the loaded plan's, indexed once; the zone is B1's `mkTz?`; the lookahead
+ends in year 9999 at the latest; and the priority configuration went through step 2's decoders. -/
+theorem readCapacity_ok {plan : PlanCore} {clock : ReqClock} {j cap : JVal} {c : CapReq}
+    (h : readCapacity plan clock j cap = .ok c) :
+    mkInput? c.input = .ok c.look ∧ c.input.boundsWf = true ∧
+      clock.now = some c.input.today ∧ clock.blockMin.map Subtype.val = some c.input.day.cut.blockMin ∧
+      c.input.walls = wallIndex c.input.tz c.input.day.cut.blockMin plan ∧
+      (∀ wd, ∃ w, mkWeight? (c.input.pConfig wd).1 (c.input.pConfig wd).2 = .ok w) ∧
+      (∀ wd p, c.input.pModel wd = some p → ∃ w, mkWeight? p.1 p.2 = .ok w) ∧
+      lookaheadInCalendar c.input.today c.input.days = true ∧
+      (∃ xs, binsOfWire xs = some c.bins) ∧ (∃ p, safetyOfWire p = some c.safety) ∧
+      (∃ n, defaultPrioOf? n = some c.dflt) := by
+  unfold readCapacity at h
+  obtain ⟨today, htoday, h⟩ := capBind_ok_elim h
+  obtain ⟨bm, hbm, h⟩ := capBind_ok_elim h
+  obtain ⟨z, -, h⟩ := capBind_ok_elim h
+  obtain ⟨s, hs, h⟩ := capBind_ok_elim h
+  obtain ⟨I, hI, h⟩ := capBind_ok_elim h
+  obtain ⟨_, hcal, h⟩ := capBind_ok_elim h
+  cases h
+  obtain ⟨hcw, hhm, hdw, hdb, hpc, hpm, hb, hsf, hk⟩ := readSection_ok hs
+  refine ⟨mapError_ok hI, ?_, orErr_ok htoday, ?_, ?_, hpc, hpm, ?_, hb, hsf, hk⟩
+  · simp only [InputIn.boundsWf, Section.input, hcw, hhm, hdw, Bool.and_self]
+  · simp only [Section.input, hdb]; exact orErr_ok hbm
+  · simp only [Section.input, hdb]
+  · unfold inCalendar at hcal
+    split at hcal
+    · assumption
+    · cases hcal
+
+end CapWire
+
+namespace CapWire
+
+open Look
+
+/-! ### The wire's names, as witnesses (each probed under the 8 GB cap; literals as `List Char`) -/
+
+/-- `{"num": n, "den": d}`. -/
+def pairJ (n d : JVal) : JVal := .obj [(['n', 'u', 'm'], n), (['d', 'e', 'n'], d)]
+
+/-- The zone texts: an offset `±HH:MM:SS` (seconds kept, as a pre-1972 table has them) and a
+transition `YYYY-MM-DDTHH:MM:SSZ`; anything else is refused.  Re-proved at the merge over B4's one
+reader (`readTzOffset`, `readTzInstant`; gap 108), L6's ten cases unchanged. -/
+theorem the_zone_texts_read_on_witnesses :
+    (readTzOffset ['-', '0', '6', ':', '0', '0', ':', '0', '0']).map Subtype.val = some ⟨true, 21600⟩ ∧
+    (readTzOffset ['+', '0', '5', ':', '3', '0', ':', '0', '0']).map Subtype.val = some ⟨false, 19800⟩ ∧
+    (readTzOffset ['-', '0', '5', ':', '5', '0', ':', '3', '6']).map Subtype.val = some ⟨true, 21036⟩ ∧
+    (readTzOffset ['-', '0', '6', ':', '0', '0']).map Subtype.val = none ∧
+    (readTzOffset ['+', '2', '4', ':', '0', '0', ':', '0', '0']).map Subtype.val = none ∧
+    (readTzOffset ['~', '0', '6', ':', '0', '0', ':', '0', '0']).map Subtype.val = none ∧
+    readTzInstant ['2', '0', '2', '6', '-', '0', '3', '-', '0', '8', 'T', '0', '8', ':', '0', '0', ':',
+      '0', '0', 'Z'] = some ⟨63908553600, 0⟩ ∧
+    readTzInstant ['2', '0', '2', '6', '-', '0', '2', '-', '3', '0', 'T', '0', '8', ':', '0', '0', ':',
+      '0', '0', 'Z'] = none ∧
+    readTzInstant ['2', '0', '2', '6', '-', '0', '3', '-', '0', '8', 'T', '0', '8', ':', '0', '0', ':',
+      '6', '0', 'Z'] = none ∧
+    readTzInstant ['2', '0', '2', '6', '-', '0', '3', '-', '0', '8', 'T', '0', '8', ':', '0', '0', ':',
+      '0', '0'] = none := by
+  decide
+
+/-- Chicago's 2026 table as the host sends it. -/
+def chicagoTzJ (t1 t2 : List Char) : JVal :=
+  .obj [(['k', 'e', 'y'], .str Cal.chicago2026.key), (['b', 'a', 's', 'e'], .str ['-', '0', '6', ':', '0', '0', ':', '0', '0']),
+    (['t', 'h', 'e', 'n'], .arr [.arr [.str t1, .str ['-', '0', '5', ':', '0', '0', ':', '0', '0']],
+      .arr [.str t2, .str ['-', '0', '6', ':', '0', '0', ':', '0', '0']]])]
+
+def springJ : List Char :=
+  ['2', '0', '2', '6', '-', '0', '3', '-', '0', '8', 'T', '0', '8', ':', '0', '0', ':', '0', '0', 'Z']
+def fallJ : List Char :=
+  ['2', '0', '2', '6', '-', '1', '1', '-', '0', '1', 'T', '0', '7', ':', '0', '0', ':', '0', '0', 'Z']
+
+/-- **The zone table, both directions**: Chicago's two 2026 transitions read as B1's `chicago2026`;
+refused by name: no `tz`, a `tz` that is not an object, no key, a base without seconds, a
+transition that is not a pair, and the two transitions out of order (B1's `mkTz?`).  Re-proved at the
+merge over B4's one reader (gap 108): the last two refusals are B4's `transition` and `unsorted`
+(L6's `then` and `table`). -/
+theorem readTz_on_witnesses :
+    (readTz (.obj [(['t', 'z'], chicagoTzJ springJ fallJ)])).map Subtype.val = .ok Cal.chicago2026 ∧
+    (readTz (.obj [])).map Subtype.val = .error .tzAbsent ∧
+    (readTz (.obj [(['t', 'z'], .num 3)])).map Subtype.val = .error (.badTz .shape) ∧
+    (readTz (.obj [(['t', 'z'], .obj [])])).map Subtype.val = .error (.badTz .key) ∧
+    (readTz (.obj [(['t', 'z'], .obj [(['k', 'e', 'y'], .str []), (['b', 'a', 's', 'e'], .str ['-', '0', '6', ':', '0', '0'])])])).map
+      Subtype.val = .error (.badTz .base) ∧
+    (readTz (.obj [(['t', 'z'], .obj [(['k', 'e', 'y'], .str []), (['b', 'a', 's', 'e'], .str ['+', '0', '0', ':', '0', '0', ':', '0', '0']),
+      (['t', 'h', 'e', 'n'], .arr [.str springJ])])])).map Subtype.val = .error (.badTz .transition) ∧
+    (readTz (.obj [(['t', 'z'], chicagoTzJ fallJ springJ)])).map Subtype.val = .error (.badTz .unsorted) := by
+  refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- **One lounge weight, both directions**: `0.9` and `1` read as their pairs; refused by name:
+`10^-19` (19 places), `1.2`, a zero denominator, a numeral that is not a digit string, and 41
+digits. -/
+theorem readWeight_on_witnesses :
+    readWeight .model .monday (pairJ (.str ['9']) (.str ['1', '0'])) = .ok (9, 10) ∧
+    readWeight .config .sunday (pairJ (.str ['1']) (.str ['1'])) = .ok (1, 1) ∧
+    readWeight .model .tuesday (pairJ (.str ['1'])
+      (.str ['1', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']))
+      = .error (.weight .weightPrecision .model .tuesday) ∧
+    readWeight .config .saturday (pairJ (.str ['1', '2']) (.str ['1', '0']))
+      = .error (.weight .weightAboveOne .config .saturday) ∧
+    readWeight .config .friday (pairJ (.str ['9']) (.str ['0'])) = .error (.weight .badWeight .config .friday) ∧
+    readWeight .config .friday (pairJ (.num 9) (.num 10)) = .error (.weight .badWeight .config .friday) ∧
+    readWeight .config .friday (pairJ (.str ['-', '1']) (.str ['1', '0'])) = .error (.weight .badWeight .config .friday) ∧
+    readWeight .config .friday (pairJ (.str (List.replicate 41 '0')) (.str ['1', '0']))
+      = .error (.weight .badWeight .config .friday) := by
+  refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+end CapWire
+
+namespace CapWire
+
+open Look
+
+/-- A `[day]` object from its six values, keys in the wire's spelling. -/
+def dayJ (br ba ml wh cap rt : JVal) : JVal :=
+  .obj [(['b', 'r', 'e', 'a', 'k', 'M', 'i', 'n'], br),
+    (['b', 'r', 'e', 'a', 'k', 'A', 'f', 't', 'e', 'r', 'B', 'l', 'o', 'c', 'k', 's'], ba),
+    (['m', 'i', 'n', 'L', 'a', 's', 't', 'B', 'l', 'o', 'c', 'k', 'M', 'i', 'n'], ml),
+    (['w', 'i', 'n', 'd', 'o', 'w', 'H', 'o', 'u', 'r', 's'], wh),
+    (['w', 'i', 'n', 'd', 'o', 'w', 'C', 'a', 'p'], cap),
+    (['b', 'u', 'd', 'g', 'e', 't', 'R', 'a', 't', 'i', 'o'], rt)]
+
+/-- The shipped `[day]` on the wire: `window_hours = 8`, `window_cap = "19:00"`, `budget_ratio = 0.75`. -/
+def shippedDayJ : JVal :=
+  dayJ (.num 20) (.num 2) (.num 30) (pairJ (.num 8) (.num 1)) (.str ['1', '9', ':', '0', '0']) (pairJ (.num 75) (.num 100))
+
+def inDay (d : JVal) : JVal := .obj [(['d', 'a', 'y'], d)]
+
+/-- **`[day]`, both directions**: the shipped keys read (block length the request's 60); refused by
+name, one key at a time: a zero block, a 1,441-minute break, 65 blocks between breaks, a zero last
+block, 25 hours, a 24:00 cap, a ratio above one, a missing key, and no `day`. -/
+theorem readDay_on_witnesses :
+    (readDay 60 (inDay shippedDayJ)).map (fun c => (c.cut, c.windowHours.val, c.windowCap, c.budgetRatio.val))
+      = .ok (⟨60, 20, 2, 30⟩, ⟨8, 1⟩, 1140, ⟨75, 100⟩) ∧
+    (readDay 0 (inDay shippedDayJ)).map (fun _ => ()) = .error (.badDay .blockMin) ∧
+    (readDay 60 (inDay (dayJ (.num 1441) (.num 2) (.num 30) (pairJ (.num 8) (.num 1)) (.str ['1', '9', ':', '0', '0'])
+      (pairJ (.num 75) (.num 100))))).map (fun _ => ()) = .error (.badDay .breakMin) ∧
+    (readDay 60 (inDay (dayJ (.num 20) (.num 65) (.num 30) (pairJ (.num 8) (.num 1)) (.str ['1', '9', ':', '0', '0'])
+      (pairJ (.num 75) (.num 100))))).map (fun _ => ()) = .error (.badDay .breakAfterBlocks) ∧
+    (readDay 60 (inDay (dayJ (.num 20) (.num 2) (.num 0) (pairJ (.num 8) (.num 1)) (.str ['1', '9', ':', '0', '0'])
+      (pairJ (.num 75) (.num 100))))).map (fun _ => ()) = .error (.badDay .minLastBlockMin) ∧
+    (readDay 60 (inDay (dayJ (.num 20) (.num 2) (.num 30) (pairJ (.num 25) (.num 1)) (.str ['1', '9', ':', '0', '0'])
+      (pairJ (.num 75) (.num 100))))).map (fun _ => ()) = .error (.badDay .windowHours) ∧
+    (readDay 60 (inDay (dayJ (.num 20) (.num 2) (.num 30) (pairJ (.num 8) (.num 1)) (.str ['2', '4', ':', '0', '0'])
+      (pairJ (.num 75) (.num 100))))).map (fun _ => ()) = .error .badWindowCap ∧
+    (readDay 60 (inDay (dayJ (.num 20) (.num 2) (.num 30) (pairJ (.num 8) (.num 1)) (.str ['1', '9', ':', '0', '0'])
+      (pairJ (.num 101) (.num 100))))).map (fun _ => ()) = .error (.badDay .budgetRatio) ∧
+    (readDay 60 (inDay (dayJ .null (.num 2) (.num 30) (pairJ (.num 8) (.num 1)) (.str ['1', '9', ':', '0', '0'])
+      (pairJ (.num 75) (.num 100))))).map (fun _ => ()) = .error (.badDay .breakMin) ∧
+    (readDay 60 (.obj [])).map (fun _ => ()) = .error (.badCapacity .day) := by
+  refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- One range on the wire; `to = null` is an open `N+` key. -/
+def stepJ (a b : Nat) (to : Option Nat) (l : Nat) : JVal :=
+  .obj [(['f', 'r', 'o', 'm'], pairJ (.num a) (.num b)),
+    (['t', 'o'], match to with | some t => pairJ (.num t) (.num 1) | none => .null),
+    (['l', 'e', 'v', 'e', 'l'], .num l)]
+
+/-- The shipped `[energy.prior]` on the wire, home first. -/
+def shippedPriorJ : JVal :=
+  .obj [(homeKey, .arr [stepJ 0 1 (some 1) 3, stepJ 1 1 (some 4) 4, stepJ 4 1 (some 8) 3, stepJ 8 1 none 2]),
+    (loungeKey, .arr [stepJ 0 1 (some 1) 4, stepJ 1 1 (some 5) 5, stepJ 5 1 (some 8) 4, stepJ 8 1 (some 10) 3,
+      stepJ 10 1 none 2])]
+
+def inPrior (p : JVal) : JVal := .obj [(['p', 'r', 'i', 'o', 'r'], p)]
+
+/-- **The prior curves, both directions**: the shipped curves read as L4's `shippedPrior`; refused by
+name: a key denominator above `10^6`, an empty range, an unsorted curve, a level of 6, a key twice,
+a 65-character key, 17 curves, and a `prior` that is not an object. -/
+theorem readPrior_on_witnesses :
+    readPrior (inPrior shippedPriorJ) = .ok shippedPrior ∧
+    readPrior (inPrior (.obj [(homeKey, .arr [.obj [(['f', 'r', 'o', 'm'], pairJ (.num 0) (.num 1000001)),
+      (['l', 'e', 'v', 'e', 'l'], .num 3)]])])) = .error (.step .badStep homeKey) ∧
+    readPrior (inPrior (.obj [(homeKey, .arr [stepJ 5 1 (some 5) 3])])) = .error (.step .badStep homeKey) ∧
+    readPrior (inPrior (.obj [(homeKey, .arr [stepJ 4 1 none 3, stepJ 1 1 (some 4) 4])]))
+      = .error (.step .badStep homeKey) ∧
+    readPrior (inPrior (.obj [(loungeKey, .arr [stepJ 0 1 (some 1) 6])])) = .error (.step .badLevel loungeKey) ∧
+    readPrior (inPrior (.obj [(homeKey, .arr []), (homeKey, .arr [])])) = .error (.badPrior homeKey) ∧
+    readPrior (inPrior (.obj [(List.replicate 65 'x', .arr [])])) = .error (.badPrior (List.replicate 65 'x')) ∧
+    readPrior (inPrior (.obj ((List.range 17).map (fun i => ([Char.ofNat (97 + i)], .arr [])))))
+      = .error (.badPrior ['q']) ∧
+    readPrior (inPrior (.arr [])) = .error (.badCapacity .prior) := by
+  refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+def inEnergy (e : JVal) : JVal := .obj [(['e', 'n', 'e', 'r', 'g', 'y'], e)]
+
+/-- **The learned curves, both directions**: the corpus `model.json`'s two curves read; absent is
+none learned; refused by name: 11 entries, an entry of 256, an entry that is not a natural, and an
+`energy` that is not an object. -/
+theorem readEnergy_on_witnesses :
+    readEnergy (inEnergy (.obj [(loungeKey, .arr ([4, 5, 5, 5, 5, 4, 4, 4, 3, 3, 2, 2].map JVal.num)),
+      (homeKey, .arr ([3, 4, 4, 4, 3, 3, 3, 2, 2, 2, 2, 2].map JVal.num))]))
+      = .ok [(loungeKey, [4, 5, 5, 5, 5, 4, 4, 4, 3, 3, 2, 2]), (homeKey, [3, 4, 4, 4, 3, 3, 3, 2, 2, 2, 2, 2])] ∧
+    readEnergy (.obj []) = .ok [] ∧
+    readEnergy (inEnergy (.obj [(loungeKey, .arr ((List.replicate 11 2).map JVal.num))])) = .error (.badCurve .lounge) ∧
+    readEnergy (inEnergy (.obj [(homeKey, .arr ((256 :: List.replicate 11 2).map JVal.num))])) = .error (.badCurve .home) ∧
+    readEnergy (inEnergy (.obj [(homeKey, .arr (.str [] :: (List.replicate 11 2).map JVal.num))])) = .error (.badCurve .home) ∧
+    readEnergy (inEnergy (.num 1)) = .error (.badCapacity .energy) := by
+  refine ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- A `[priority]` object from its three values. -/
+def prioJ (bins safety dflt : JVal) : JVal :=
+  .obj [(['p', 'r', 'i', 'o', 'r', 'i', 't', 'y'], .obj [(['b', 'i', 'n', 's'], bins), (['s', 'a', 'f', 'e', 't', 'y'], safety),
+    (['d', 'e', 'f', 'a', 'u', 'l', 't', 'P', 'r', 'i', 'o', 'r', 'i', 't', 'y'], dflt)])]
+
+def shippedBinsJ : JVal := .arr [pairJ (.num 5) (.num 10), pairJ (.num 25) (.num 100), pairJ (.num 1) (.num 10)]
+
+/-- **`[priority]` through step 2's decoders (gap 77), both directions**: the shipped
+`bins = [0.5, 0.25, 0.1]`, `safety = 1.3`, `default_priority = 3` read; refused by name: swapped
+edges, a denominator above `10^18`, a zero safety, a safety above 1,000, and a default of 0 or 5. -/
+theorem readPriority_on_witnesses :
+    (readPriority (prioJ shippedBinsJ (pairJ (.num 13) (.num 10)) (.num 3))).map
+      (fun p => (p.1.val, p.2.1.val, p.2.2)) = .ok ([⟨5, 10⟩, ⟨25, 100⟩, ⟨1, 10⟩], ⟨13, 10⟩, specDefaultPrio) ∧
+    (readPriority (prioJ (.arr [pairJ (.num 1) (.num 10), pairJ (.num 1) (.num 2)]) (pairJ (.num 13) (.num 10))
+      (.num 3))).map (fun _ => ()) = .error .badBins ∧
+    (readPriority (prioJ (.arr [pairJ (.num 1) (.num 1000000000000000001)]) (pairJ (.num 13) (.num 10))
+      (.num 3))).map (fun _ => ()) = .error .badBins ∧
+    (readPriority (prioJ shippedBinsJ (pairJ (.num 0) (.num 10)) (.num 3))).map (fun _ => ()) = .error .badSafety ∧
+    (readPriority (prioJ shippedBinsJ (pairJ (.num 1001) (.num 1)) (.num 3))).map (fun _ => ()) = .error .badSafety ∧
+    (readPriority (prioJ shippedBinsJ (pairJ (.num 13) (.num 10)) (.num 0))).map (fun _ => ()) = .error .badDefaultPriority ∧
+    (readPriority (prioJ shippedBinsJ (pairJ (.num 13) (.num 10)) (.num 5))).map (fun _ => ()) = .error .badDefaultPriority := by
+  refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+end CapWire
+
+namespace CapWire
+
+open Look
+
+/-- A weekday table from seven values, `null` for an absent weekday. -/
+def weekJ (mo tu we th fr sa su : JVal) : JVal :=
+  .obj [(['M', 'o', 'n'], mo), (['T', 'u', 'e'], tu), (['W', 'e', 'd'], we), (['T', 'h', 'u'], th),
+    (['F', 'r', 'i'], fr), (['S', 'a', 't'], sa), (['S', 'u', 'n'], su)]
+
+def tenthsJ (n : Nat) : JVal := pairJ (.str (digitsOf n)) (.str ['1', '0'])
+def clockJ (h1 h2 m1 m2 : Char) : JVal := .str [h1, h2, ':', m1, m2]
+
+/-- **The corpus `model.json`, hand-shrunk, over `plan-basic/config.toml`**, as the capacity
+section: the model's `p_lounge` (0.9, 0.9, 0.8, 0.9, 0.7, 0.5, 0.4) and its two learned arrivals
+(Monday 07:10, Saturday 10:30), the config's tables, the learned curves, the shipped prior, `[day]`,
+`home_max_ci` and `[priority]`, seven days and no logged wake. -/
+def corpusSectionJ : JVal :=
+  .obj [(['p', 'L', 'o', 'u', 'n', 'g', 'e'], .obj [
+      (['m', 'o', 'd', 'e', 'l'], weekJ (tenthsJ 9) (tenthsJ 9) (tenthsJ 8) (tenthsJ 9) (tenthsJ 7) (tenthsJ 5) (tenthsJ 4)),
+      (['c', 'o', 'n', 'f', 'i', 'g'], weekJ (tenthsJ 9) (tenthsJ 9) (tenthsJ 9) (tenthsJ 9) (tenthsJ 8) (tenthsJ 5) (tenthsJ 4))]),
+    (['a', 'r', 'r', 'i', 'v', 'a', 'l'], .obj [
+      (['m', 'o', 'd', 'e', 'l'], .obj [(['M', 'o', 'n'], clockJ '0' '7' '1' '0'), (['S', 'a', 't'], clockJ '1' '0' '3' '0')]),
+      (['c', 'o', 'n', 'f', 'i', 'g'], weekJ (clockJ '0' '7' '0' '0') (clockJ '0' '7' '0' '0') (clockJ '0' '7' '0' '0')
+        (clockJ '0' '7' '0' '0') (clockJ '0' '7' '0' '0') (clockJ '1' '0' '0' '0') (clockJ '1' '0' '0' '0'))]),
+    (['e', 'n', 'e', 'r', 'g', 'y'], .obj [(loungeKey, .arr ([4, 5, 5, 5, 5, 4, 4, 4, 3, 3, 2, 2].map JVal.num)),
+      (homeKey, .arr ([3, 4, 4, 4, 3, 3, 3, 2, 2, 2, 2, 2].map JVal.num))]),
+    (['p', 'r', 'i', 'o', 'r'], shippedPriorJ),
+    (['h', 'o', 'm', 'e', 'M', 'a', 'x', 'C', 'i'], .num 3),
+    (['d', 'a', 'y'], shippedDayJ),
+    (['p', 'r', 'i', 'o', 'r', 'i', 't', 'y'], .obj [(['b', 'i', 'n', 's'], shippedBinsJ),
+      (['s', 'a', 'f', 'e', 't', 'y'], pairJ (.num 13) (.num 10)),
+      (['d', 'e', 'f', 'a', 'u', 'l', 't', 'P', 'r', 'i', 'o', 'r', 'i', 't', 'y'], .num 3)]),
+    (['d', 'a', 'y', 's'], .num 7),
+    (['d', 'a', 'y', '0'], .arr ([0, 0, 0, 60, 170, 180].map JVal.num))]
+
+def weekdays : List Cal.Weekday := [.monday, .tuesday, .wednesday, .thursday, .friday, .saturday, .sunday]
+
+/-- **`the_capacity_section_reads_the_corpus_model`** (design §14.8's L6 row): every value of the
+corpus model and config reads through its constructor, the model's weights and arrivals where it
+has them, the config's beside them, and the learned curves as written. -/
+theorem the_capacity_section_reads_the_corpus_model :
+    (readSection 60 corpusSectionJ).map (fun s => (weekdays.map s.pModel, weekdays.map s.pConfig,
+        weekdays.map s.arrModel, weekdays.map s.arrConfig, s.wake, s.energy, s.prior, s.homeMax, s.days, s.day0))
+      = .ok ([some (9, 10), some (9, 10), some (8, 10), some (9, 10), some (7, 10), some (5, 10), some (4, 10)],
+          [(9, 10), (9, 10), (9, 10), (9, 10), (8, 10), (5, 10), (4, 10)],
+          [some 430, none, none, none, none, some 630, none],
+          [420, 420, 420, 420, 420, 600, 600], none,
+          [(loungeKey, [4, 5, 5, 5, 5, 4, 4, 4, 3, 3, 2, 2]), (homeKey, [3, 4, 4, 4, 3, 3, 3, 2, 2, 2, 2, 2])],
+          shippedPrior, 3, 7, [0, 0, 0, 60, 170, 180]) := by
+  rfl
+
+end CapWire
+
+namespace CapWire
+
+open Look
+
+/-- **The response's bytes, in build order** (design §10.2; D17's digit strings): `den`, then
+`days`; a day's `day`, then `numAt`, level 0 first, every unit count a JSON string. -/
+theorem the_lookahead_response_emits_in_build_order :
+    jemit (unitsJson capDen) = ['"', '1', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0',
+      '0', '0', '"'] ∧
+    jemit (lookaheadJson []) = ['{', '"', 'd', 'e', 'n', '"', ':', '"', '1', '0', '0', '0', '0', '0', '0', '0', '0', '0',
+      '0', '0', '0', '0', '0', '0', '0', '0', '0', '"', ',', '"', 'd', 'a', 'y', 's', '"', ':', '[', ']', '}'] ∧
+    jemit (dayCapJson ⟨739865, fun l => if l.val = 5 then 60 * capDen else 0⟩) =
+      ['{', '"', 'd', 'a', 'y', '"', ':', '"', '2', '0', '2', '6', '-', '0', '9', '-', '0', '7', '"', ',', '"', 'n', 'u',
+       'm', 'A', 't', '"', ':', '[', '"', '0', '"', ',', '"', '0', '"', ',', '"', '0', '"', ',', '"', '0', '"', ',', '"',
+       '0', '"', ',', '"', '6', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0',
+       '0', '"', ']', '}'] := by
+  decide
+
+/-- The corpus section with `days` replaced. -/
+def sectionWithDays (days : Nat) : JVal :=
+  match corpusSectionJ with
+  | .obj kvs => .obj (kvs.map fun kv => if kv.1 = ['d', 'a', 'y', 's'] then (kv.1, .num days) else kv)
+  | v => v
+
+/-- A whole request: no documents, `now` 2026-09-07 (a Monday), 60-minute blocks, Chicago's 2026
+table, the corpus section. -/
+def corpusRequestJ (tz : Bool) (days : Nat) : JVal :=
+  .obj ([(['d', 'o', 'c', 's'], .arr []), (['n', 'o', 'w'], .str ['2', '0', '2', '6', '-', '0', '9', '-', '0', '7']),
+    (['b', 'l', 'o', 'c', 'k', 'M', 'i', 'n'], .num 60)] ++
+    (if tz then [(['t', 'z'], chicagoTzJ springJ fallJ)] else []) ++
+    [(['c', 'a', 'p', 'a', 'c', 'i', 't', 'y'], sectionWithDays days)])
+
+/-- **End to end at `runCap`**: the corpus request for one day answers `run`'s documents and report,
+then `lookahead` with day 0 as handed in, over `capDen`; for 3,661 days it is `lookaheadTooLong`, and
+without `tz` it is `tzAbsent`. -/
+theorem runCap_reads_the_corpus_request :
+    runCap (corpusRequestJ true 1) = .ok (jone "ok" (.obj [(['d', 'o', 'c', 's'], .arr []),
+      (['r', 'e', 'p', 'o', 'r', 't'], reportJson Report.empty),
+      (['l', 'o', 'o', 'k', 'a', 'h', 'e', 'a', 'd'], lookaheadJson [ofHist 739865 (histOf [0, 0, 0, 60, 170, 180])])])) ∧
+    runCap (corpusRequestJ true 3661) = .error (refusalJson .lookaheadTooLong) ∧
+    runCap (corpusRequestJ false 1) = .error (refusalJson .tzAbsent) := by
+  refine ⟨rfl, rfl, rfl⟩
+
+end CapWire
+
+namespace CapWire
+
+open Look
+
+theorem jget_pairJ (a b : JVal) : jget (pairJ a b) "num" = .ok (some a) ∧ jget (pairJ a b) "den" = .ok (some b) :=
+  ⟨rfl, rfl⟩
+
+theorem natOfDigits_digitsOf {n : Nat} (h : n < 10 ^ 40) : natOfDigits (.str (digitsOf n)) = some n := by
+  have hl : (digitsOf n).length ≤ maxDigits := digitsOf_length_le 39 n h
+  simp only [natOfDigits]
+  rw [if_pos hl]
+  exact readNat_digitsOf n
+
+theorem pairWith_digits {n d : Nat} (hn : n < 10 ^ 40) (hd : d < 10 ^ 40) :
+    pairWith natOfDigits (pairJ (.str (digitsOf n)) (.str (digitsOf d))) = some (n, d) := by
+  unfold pairWith
+  rw [(jget_pairJ _ _).1, (jget_pairJ _ _).2]
+  simp only [natOfDigits_digitsOf hn, natOfDigits_digitsOf hd, Option.bind_some, Option.map_some]
+
+/-- **On the wire, a weight is read exactly when `mkWeight?` accepts it** (both directions, for the
+host's digit strings): every pair in `[0, 1]` whose denominator divides `10^18` reads as itself. -/
+theorem readWeight_reads_every_representable_weight (src : Src) (wd : Cal.Weekday) {n d : Nat}
+    (hd : 0 < d) (hn : n ≤ d) (hp : capDen % d = 0) :
+    readWeight src wd (pairJ (.str (digitsOf n)) (.str (digitsOf d))) = .ok (n, d) := by
+  have hdc : d ≤ capDen := Nat.le_of_dvd capDen_pos (Nat.dvd_of_mod_eq_zero hp)
+  have hc : capDen < 10 ^ 40 := by decide
+  unfold readWeight
+  rw [pairWith_digits (by omega) (by omega)]
+  simp only [mkWeight?_accepts hd hn hp]
+
+/-- **On the wire, more than 18 decimal places is `weightPrecision`**, whatever the digits (for
+denominators the 40-digit strings can spell). -/
+theorem readWeight_refuses_more_than_18_places (src : Src) (wd : Cal.Weekday) {n k : Nat} (hk : 18 < k)
+    (hk40 : k < 40) (hn : n ≤ 10 ^ k) :
+    readWeight src wd (pairJ (.str (digitsOf n)) (.str (digitsOf (10 ^ k))))
+      = .error (.weight .weightPrecision src wd) := by
+  have h10 : 10 ^ k < 10 ^ 40 := Nat.pow_lt_pow_right (by decide) hk40
+  unfold readWeight
+  rw [pairWith_digits (by omega) h10]
+  simp only [mkWeight?_refuses_more_than_18_places hk hn]
+
+/-- **`home_max_ci` above 5 is `badCap`**, and every level reads. -/
+theorem readHomeMax_on_the_bound (n : Nat) :
+    readHomeMax (.obj [(['h', 'o', 'm', 'e', 'M', 'a', 'x', 'C', 'i'], .num n)])
+      = if n ≤ 5 then .ok n else .error .badCap := by
+  have hj : jget (.obj [(['h', 'o', 'm', 'e', 'M', 'a', 'x', 'C', 'i'], .num n)]) "homeMaxCi" = .ok (some (.num n)) := rfl
+  simp only [readHomeMax, natAt, need, hj, homeMaxOk]
+  by_cases h : n ≤ 5 <;> simp [h]
+
+/-- **More than 4,096 transitions is `badTz tooManyTransitions`**, refused before any transition is
+read.  Re-proved at the merge over B4's one reader (gap 108), as an instance of B4's
+`Tm.readTz_refuses_too_many_transitions`: that reader checks the key's 128-character bound first, so
+the key is within it (L6's reader named the count `table` and did not bound the key). -/
+theorem readTz_refuses_too_many_transitions (key base : List Char) {xs : List JVal} (h : 4096 < xs.length)
+    (hb : (readTzOffset base).isSome) (hk : key.length ≤ 128) :
+    readTz (.obj [(['t', 'z'], .obj [(['k', 'e', 'y'], .str key), (['b', 'a', 's', 'e'], .str base),
+      (['t', 'h', 'e', 'n'], .arr xs)])]) = .error (.badTz .tooManyTransitions) := by
+  obtain ⟨o, ho⟩ := Option.isSome_iff_exists.mp hb
+  have h1 : jget (.obj [(['t', 'z'], .obj [(['k', 'e', 'y'], .str key), (['b', 'a', 's', 'e'], .str base),
+      (['t', 'h', 'e', 'n'], .arr xs)])]) "tz" = .ok (some (.obj [(['k', 'e', 'y'], .str key),
+      (['b', 'a', 's', 'e'], .str base), (['t', 'h', 'e', 'n'], .arr xs)])) := rfl
+  have h2 := Tm.readTz_refuses_too_many_transitions [(['k', 'e', 'y'], .str key), (['b', 'a', 's', 'e'], .str base),
+    (['t', 'h', 'e', 'n'], .arr xs)] key base xs o rfl rfl ho rfl hk h
+  simp only [readTz, h1, h2, Except.mapError]
+
+end CapWire
 
 end Tm
