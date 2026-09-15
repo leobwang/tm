@@ -17222,3 +17222,93 @@ Nothing added here is on the wire: every definition and lemma is specification (
 **Owed next (W2, part 4):** `foldPoint`, `sealDay`, the reseal and record emission, with laws 6, 6's pair and 7;
 W1's disagreement 11, settled by a fold point that never separates an unfolded undo from a folded target;
 `genesis` and law 9; the in-step theorems of §14.5's W2 row; cheats 99–104 (design labels).
+
+<!-- ===================================================================== -->
+<!-- Stage 5 D9 W2, part 4a (2026-09-15).  Gaps, cheats and parity entries -->
+<!-- are numbered from the next free numbers (gap 119, cheat 152, P35).    -->
+<!-- ===================================================================== -->
+
+## Stage 5 D9 W2, part 4a, 2026-09-15: the stored wakes' edge cases, the fence at three days, and why the guards are there
+
+**Starting point.** `0173f48` (part 3).
+
+### What was built
+
+**`SealInStep.lean` (new): six of §14.5's W2 in-step theorems.** The other two, `foldPoint_valid`/`foldPoint_greatest`
+and `the_unterminated_segment_is_never_folded`, need the reseal.
+- `an_instant_before_the_stored_wakes_is_sealed`: a tail instant before the head second has a day below the ledger
+  day on every index, so G3 refusing it without computing `dayOf` is exact (CRIT 25's first edge case).
+- `dayOf_with_no_folded_wake_reads_the_tail`: the stored wakes are empty exactly when no surviving wake was folded
+  (`keptWakes_eq_nil`), and then the stored index is the tail's (the second edge case).
+- **`dayOf_agrees_two_days_before` is refuted and renamed** (next section): `dayOf_agrees_two_days_before_is_false`,
+  with the law beside it, `dayOf_agrees_three_days_before`.
+- `a_spurious_tag_refusal_exists`: after a folded `done a`, G1 refuses `undo done b` because a folded survivor carries
+  its tag, though the whole log's mask cancels nothing folded. One pop, never a wrong fact.
+- `resume_without_the_guards_is_not_replay`: `resumeUnguarded` (the tail folded from the restored state, no refusal)
+  keeps `a` done after a folded `done a` and a tail `undo done a`, while the replay of both lines cancels it; G1
+  refuses that undo.
+- `the_window_at_the_horizon_reads_the_replay`: cheat 153's control.
+
+**Cheats 152 and 153** (design labels 99 and 102), the next free numbers:
+- 152: the unguarded resume reading the replay's `last_done`;
+- 153: the window compacted to `horizonOf L + 1`, reading the done date on the horizon.
+
+Both fail at their `decide`.
+
+`TmKernel.lean` gains the import: **51 imports**. The module holds 135 lines.
+
+### Goals (AGENTS §3.2)
+
+**Discharged: none** (in-step theorems). **Added: none.**
+
+**Refuted and renamed (1):** §9.4's `dayOf_agrees_two_days_before` ("24 hours plus any offset change is less than 2
+days"), stated as §9.4 states it:
+
+> a tail wake after every folded instant not future, and more than two days before every future one, leaves the day of
+> every folded instant unchanged.
+
+It is false under a zone table the kernel accepts (`flipZone`: `+23:00`, then `-23:00` from 18:00Z on 2026-09-07, then
+`+23:00` again from 02:30Z on the 9th). The counterexample:
+- a tail wake at 01:00Z on the 7th has local date the 8th;
+- a folded future wake at 02:00Z on the 9th, two days and an hour later, also has local date the 8th;
+- a folded future instant at 03:00Z on the 9th has local date the 10th.
+
+The tail wake takes the folded wake's place in the index (one wake a local date), so the later instant's day moves
+from the 8th to the 10th. **The law is `dayOf_agrees_three_days_before`** (`dayOf_folded_agrees` at `fenceSec`). It
+has equivalent strength: G2 needs the fence the index needs, and the kernel's G2 uses three days (part 2's
+disagreement 2).
+
+Burn-down **17** (unchanged).
+
+### Rule D9-21
+
+Nothing added here is on the wire: `resumeUnguarded` is witness vocabulary, and the rest is specification.
+
+### Numbers
+
+**Taken:** cheats 152 and 153. **Highest:** gap 118, cheat 153, parity P34. **Parity entries:** none.
+
+**Witnesses: 4 new**, each probed in a scratch copy under `MemoryMax=8G timeout 120`:
+- the spurious refusal, 0.14 s;
+- the unguarded resume, 0.16 s;
+- the window at the horizon, 0.23 s;
+- the two-day refutation, 0.16 s.
+
+At most two entries each; `utcZone`, or `flipZone` with two transitions; no text parsed.
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 3.08 / 3.00 / 3.04 s (part 1: 2.98 / 2.98 / 3.01 s, +3% at the worst; the cold first run after the build 3.69 s) |
+| axiom audit | **3665 theorems** (3657 + 8) |
+| `Negative.lean` | check 4 ok; 149 errors; 143 `/- CHEAT` banners; 152 and 153 fail at their `decide` |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **17** |
+| `TmKernel.lean` | **51 imports** |
+| `cargo test --workspace` | **1068 passed / 0 failed / 5 ignored across 73 binaries** (no test added or removed) |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6; `stack.rs` 4.22 s) |
+| T5 (`kernel_replay_parity.rs --include-ignored`) | 10 passed, 0.87 s |
+| `cli_latency.rs --include-ignored`, three serial runs | green, 4 passed each. No log: first 622.6 / 601.9 / 607.1 ms, later 50.7 / 50.7 / 55.7 ms. 1y: first 708.2 / 703.7 / 713.3, later 136.5 / 121.6 / 121.6. 3y: first 941.4 / 931.4 / 951.3, later 283.5 / 273.5 / 268.2. T14: 81.1 / 81.1 / 76.1 ms (3 years), 136.7 / 126.6 / 136.8 ms (10 years). The binary's reader is unchanged (Rust) |
+
+**Owed next (W2, part 4b):** `foldPoint`, `sealDay`, the reseal and record emission, with laws 6, 6's pair and 7,
+`foldPoint_valid`, `foldPoint_greatest` and `the_unterminated_segment_is_never_folded`; `genesis` and law 9; cheats
+100, 101, 103 and 104 (design labels).

@@ -1772,4 +1772,48 @@ theorem aDefaultingReaderRefusesAMissingLedgerDay :
       | _ => false) = true := by
   decide
 
+-- ===========================================================================
+-- APPENDED 2026-09-15 (stage 5, D9 track, step W2).  Design §16's labels 99
+-- ("`resume` accepting an unsettled undo whose target is folded") and 102
+-- ("the window compacted to `horizonOf L + 1`").  Numbers 152 and 153 are the
+-- next free numbers in this checkout (the highest was 151, W1).  The controls,
+-- which compile, are `Seal.resume_without_the_guards_is_not_replay` and
+-- `Seal.the_window_at_the_horizon_reads_the_replay`.
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 152 — a resume accepting an unsettled undo whose target is folded
+   (design label 99).  The tempting resume folds the tail's survivors from the
+   restored state and skips G1.  After a folded `done a`, the tail's
+   `undo done a` finds nothing on the tail's own stack, so the resumed answer
+   keeps `a` done, while the replay of both lines cancels it.  `decide` refuses
+   the claim that the unguarded resume reads the replay's `last_done`. -/
+set_option maxRecDepth 8000 in
+theorem anUnguardedResumeReadsTheReplaysLastDone :
+    Seal.askAnswer (Seal.resumeUnguarded Replay.utcZone
+        (Seal.ckptOfEntries Replay.utcZone 739865 739865 1 [Replay.bE 1 63924368400 (Replay.bDone ['a'] 50 false)] [] [])
+        [Replay.bE 2 63924368460 (.undo ['d', 'o', 'n', 'e'] (some ['a']))] []) (.lastDone ['a'])
+      = Seal.askAnswer (Seal.answer (Seal.ckptOfEntries Replay.utcZone 739865 739865 2
+        [Replay.bE 1 63924368400 (Replay.bDone ['a'] 50 false),
+         Replay.bE 2 63924368460 (.undo ['d', 'o', 'n', 'e'] (some ['a']))] [] [])) (.lastDone ['a']) := by
+  decide
+
+/- CHEAT 153 — the window compacted to `horizonOf L + 1` (design label 102,
+   CRIT 3).  The tempting compaction keeps the window from the day after the
+   horizon, since the window records cover every date below it.  But the
+   horizon itself is then in neither: one `done x` on 2026-08-29, sealed on
+   2026-09-14 (whose horizon is the 29th), reads no done date there, and
+   `decide` refuses the claim that the compacted answer reads the replay's. -/
+def compactedAnswer (L : Nat) (es : List Log.Entry) : Seal.Answer :=
+  { Seal.answer (Seal.ckptOfEntries Replay.utcZone L L es.length es [] []) with
+      window := Seal.windowsFrom (Seal.foldedState Replay.utcZone es []) (Seal.horizonOf L + 1) }
+
+set_option maxRecDepth 8000 in
+theorem aWindowCompactedPastItsHorizonReadsTheReplay :
+    Seal.askMerged (Seal.dayRecordsOfEntries Replay.utcZone 0 739872 Seal.oneDoneOnTheHorizon)
+        (Seal.windowRecordsOfEntries Replay.utcZone 0 (Seal.horizonOf 739872) Seal.oneDoneOnTheHorizon)
+        (compactedAnswer 739872 Seal.oneDoneOnTheHorizon) (.win 739856 (.done ['x']))
+      = Replay.ask (Replay.replayDoc Replay.utcZone Seal.oneDoneOnTheHorizon) (.win 739856 (.done ['x'])) := by
+  decide
+
 end Tm

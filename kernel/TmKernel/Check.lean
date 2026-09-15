@@ -4252,3 +4252,14 @@ open Tm
 #print axioms Tm.Seal.filter_rebind_below
 #print axioms Tm.Seal.resume_below
 #print axioms Tm.Seal.resume_keeps_the_sealed_records
+-- APPENDED 2026-09-15 (stage 5, D9 track).  Step W2, in-step theorems (§14.5's W2 row): SealInStep.lean.  The stored
+-- wakes' two edge cases, the fence's day-index law at three days with the two-day margin refuted on a two-transition
+-- zone, a spurious G1 refusal, and a resume without the guards that is not the replay.
+#print axioms Tm.Seal.an_instant_before_the_stored_wakes_is_sealed
+#print axioms Tm.Seal.keptWakes_eq_nil
+#print axioms Tm.Seal.dayOf_with_no_folded_wake_reads_the_tail
+#print axioms Tm.Seal.dayOf_agrees_three_days_before
+#print axioms Tm.Seal.a_spurious_tag_refusal_exists
+#print axioms Tm.Seal.resume_without_the_guards_is_not_replay
+#print axioms Tm.Seal.the_window_at_the_horizon_reads_the_replay
+#print axioms Tm.Seal.dayOf_agrees_two_days_before_is_false

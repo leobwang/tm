@@ -37,6 +37,7 @@ import TmKernel.SealLaw5A
 import TmKernel.SealLaw5B
 import TmKernel.SealPending
 import TmKernel.SealLaw4
+import TmKernel.SealInStep
 import TmKernel.State
 import TmKernel.Plan
 import TmKernel.Tree
