@@ -69,6 +69,8 @@ use tm_core::log::{Log, Replay};
 static NO_LOG: Log = Log {
     entries: Vec::new(),
     warnings: Vec::new(),
+    lines: Vec::new(),
+    line_count: 0,
 };
 use tm_core::model::{Id, IsoWeek, Loc, Recur};
 use tm_core::planner::{self, DayPlan, PlanInput, PlanOverrides, SegFlags, SegKind, Segment};

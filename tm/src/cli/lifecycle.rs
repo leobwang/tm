@@ -32,7 +32,7 @@ use tm_core::check as validate;
 use tm_core::energy::{self, Model};
 use tm_core::horizon::{self, REVIEW_BLOCK};
 use tm_core::ics;
-use tm_core::log::LogEntry;
+use tm_core::log::{LogEntry, Replay, ViewRow};
 use tm_core::priority;
 use tm_core::review as core_review;
 use tm_core::model::{parse_date, Horizon, Id, IsoWeek, Period, YearMonth};
@@ -570,59 +570,72 @@ pub struct LogOut {
 /// `tm log --tail 20 | --since 7d | --item ^id` (§10.1).
 pub fn log(g: &Globals, args: &super::LogArgs) -> Result<i32, CliError> {
     let ctx = Ctx::load(g, false)?;
-    let total = ctx.log.entries.len();
-    let mut entries: Vec<LogEntry> = match &args.item {
+    let rows = log_rows(&ctx.replay, args, ctx.today)?;
+    let out = LogOut {
+        total: ctx.replay.entry_count(),
+        entries: rows.iter().map(|r| r.entry.clone()).collect(),
+    };
+    emit(ctx.json, || log_human(&rows), &out)?;
+    Ok(0)
+}
+
+/// The rows `tm log` prints, from [`Replay::view`] (design §11.4 step 2):
+/// `--item` keeps the surviving entries whose primary id is the key,
+/// `--since` the entries whose wake-attributed day is on or after the bound
+/// (cancelled ones included), and `--tail` the last *n* (20 when neither
+/// selector is given, else all).
+fn log_rows<'a>(
+    replay: &'a Replay,
+    args: &super::LogArgs,
+    today: NaiveDate,
+) -> Result<Vec<&'a ViewRow>, CliError> {
+    let mut rows: Vec<&ViewRow> = match &args.item {
         Some(id) => {
             let key = Ctx::key(id);
-            ctx.log.iter_item(key.as_str()).cloned().collect()
+            replay
+                .view()
+                .iter()
+                .filter(|r| !r.cancelled && r.entry.ev.primary_id() == Some(key.as_str()))
+                .collect()
         }
-        None => ctx.log.entries.clone(),
+        None => replay.view().iter().collect(),
     };
     if let Some(since) = &args.since {
-        let from = parse_since(since, ctx.today)?;
-        let days = ctx.log.day_index(ctx.cfg.tz);
-        entries.retain(|e| days.day_of(e.t) >= from);
+        let from = parse_since(since, today)?;
+        rows.retain(|r| r.day >= from);
     }
     let tail = args.tail.unwrap_or(if args.since.is_some() || args.item.is_some() {
-        entries.len()
+        rows.len()
     } else {
         20
     });
-    if entries.len() > tail {
-        entries.drain(0..entries.len() - tail);
+    if rows.len() > tail {
+        rows.drain(0..rows.len() - tail);
     }
-    let out = LogOut { total, entries };
-    emit(
-        ctx.json,
-        || {
-            out.entries
-                .iter()
-                .map(|e| {
-                    let mut v = serde_json::to_value(e).unwrap_or(serde_json::Value::Null);
-                    let obj = v.as_object_mut();
-                    let rest = obj
-                        .map(|m| {
-                            m.remove("t");
-                            m.remove("ev");
-                            m.iter()
-                                .map(|(k, v)| format!("{k}={v}"))
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                        })
-                        .unwrap_or_default();
-                    format!(
-                        "{} {} {}",
-                        e.t.format("%Y-%m-%d %H:%M"),
-                        e.ev.name(),
-                        rest
-                    )
+    Ok(rows)
+}
+
+/// `tm log`'s human lines: the row's display text, the tag, and the `k=v`
+/// pairs of the entry's JSON without `t` and `ev`.
+fn log_human(rows: &[&ViewRow]) -> String {
+    rows.iter()
+        .map(|r| {
+            let mut v = serde_json::to_value(&r.entry).unwrap_or(serde_json::Value::Null);
+            let obj = v.as_object_mut();
+            let rest = obj
+                .map(|m| {
+                    m.remove("t");
+                    m.remove("ev");
+                    m.iter()
+                        .map(|(k, v)| format!("{k}={v}"))
+                        .collect::<Vec<_>>()
+                        .join(" ")
                 })
-                .collect::<Vec<_>>()
-                .join("\n")
-        },
-        &out,
-    )?;
-    Ok(0)
+                .unwrap_or_default();
+            format!("{} {} {}", r.display, r.entry.ev.name(), rest)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// `--since 7d` or `--since 2026-09-01`.

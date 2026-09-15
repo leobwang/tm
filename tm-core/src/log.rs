@@ -55,7 +55,9 @@
 //!   `done_minutes_map()` (§6.4, keyed by [`crate::model::Id`] for
 //!   `tree::done_minutes`), [`DayReplay::gaps`] (unattributed gaps for
 //!   the §11 leak ledger), and `seam(date)`, the [`DaySeam`] facts the
-//!   CLI and TUI once walked the log for. `Replay` is
+//!   CLI and TUI once walked the log for. [`Replay::view`] is every entry
+//!   with its physical line, day, mask bit and display text ([`ViewRow`],
+//!   `tm log`'s rows), [`Replay::entry_count`] their number. `Replay` is
 //!   `Serialize`/`Deserialize` (JSON-safe: every map key is a string or a
 //!   date) for `--json` output.
 //!
@@ -669,6 +671,14 @@ pub struct Log {
     pub entries: Vec<LogEntry>,
     /// Lines that did not parse.
     pub warnings: Vec<LogWarning>,
+    /// The 1-based **physical** line of each entry (`lines[i]` is
+    /// `entries[i]`'s): blank and malformed lines keep their numbers, so a
+    /// line number names the same bytes whatever the lines around it hold.
+    pub lines: Vec<u64>,
+    /// How many physical lines the text has: the `\n`-separated segments,
+    /// the empty segment after a final `\n` not counted (so a line appended
+    /// after them is line `line_count + 1`).
+    pub line_count: u64,
 }
 
 impl Log {
@@ -679,9 +689,12 @@ impl Log {
 
     /// A log from entries (no warnings).
     pub fn from_entries(entries: Vec<LogEntry>) -> Log {
+        let n = entries.len() as u64;
         Log {
             entries,
             warnings: Vec::new(),
+            lines: (1..=n).collect(),
+            line_count: n,
         }
     }
 
@@ -697,6 +710,8 @@ impl Log {
     /// instead of taking the whole log with it.
     pub fn parse_bytes(bytes: &[u8]) -> Log {
         let mut log = Log::new();
+        let segments = bytes.split(|b| *b == b'\n').count();
+        log.line_count = (segments - usize::from(bytes.is_empty() || bytes.ends_with(b"\n"))) as u64;
         for (i, raw) in bytes.split(|b| *b == b'\n').enumerate() {
             let line = match std::str::from_utf8(raw) {
                 Ok(s) => s.trim_end_matches('\r'),
@@ -713,7 +728,10 @@ impl Log {
                 continue;
             }
             match LogEntry::parse(line) {
-                Ok(e) => log.entries.push(e),
+                Ok(e) => {
+                    log.entries.push(e);
+                    log.lines.push(i as u64 + 1);
+                }
                 Err(e) => log.warnings.push(LogWarning {
                     line: i + 1,
                     text: line.to_string(),
@@ -784,6 +802,8 @@ impl Log {
 
     /// Push an entry in memory.
     pub fn push(&mut self, entry: LogEntry) {
+        self.line_count += 1;
+        self.lines.push(self.line_count);
         self.entries.push(entry);
     }
 
@@ -881,7 +901,7 @@ impl Log {
 
     /// Derive state from the surviving entries; `None` = the whole log.
     pub fn replay(&self, range: Option<RangeInclusive<NaiveDate>>, tz: Tz) -> Replay {
-        replay(&self.entries, range, tz)
+        replay_lines(&self.entries, &self.lines, self.line_count, range, tz)
     }
 }
 
@@ -1571,8 +1591,31 @@ pub struct ItemReplay {
     pub extended_min: u32,
 }
 
+/// One row of [`Replay::view`]: a log entry with its line bookkeeping, the
+/// Rust side of the kernel's line header `(line, tag, id?, day, cancelled,
+/// display)` (design §8.4, §11.4). Every entry has one, cancelled entries and
+/// `undo`s included; malformed and blank lines have none.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ViewRow {
+    /// The entry's 1-based physical line ([`Log::lines`]).
+    pub line: u64,
+    /// The entry as read.
+    pub entry: LogEntry,
+    /// Its wake-attributed day ([`DayIndex::day_of`] over the surviving
+    /// wakes), whether or not it survives.
+    pub day: NaiveDate,
+    /// Cancelled by an `undo` (or itself an `undo`), per [`undo_mask`].
+    pub cancelled: bool,
+    /// `t` as `tm log` prints it: `%Y-%m-%d %H:%M` in the written offset.
+    pub display: String,
+}
+
 /// Everything replay derives from the log.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+///
+/// `PartialEq` compares the facts and ignores the line bookkeeping (`rows`,
+/// `line_count`), as serialisation does: two logs with the same survivors
+/// replay to equal facts whatever lines they were read from.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Replay {
     /// Timezone used for day attribution.
     pub tz: Tz,
@@ -1623,6 +1666,70 @@ pub struct Replay {
     /// whatever the range (`tm idle`'s default length reads it). Not the
     /// latest instant: a hand-appended or retro line can be dated earlier.
     pub last_effective_t: Option<DateTime<FixedOffset>>,
+    /// Every entry in file order with its line, day, mask bit and display
+    /// text ([`Replay::view`]), whatever the range. Line bookkeeping, not a
+    /// fact: not serialised (the kernel's `factsView` omits it too).
+    #[serde(skip)]
+    pub rows: Vec<ViewRow>,
+    /// The log's physical line count ([`Log::line_count`]). Line
+    /// bookkeeping; not serialised.
+    #[serde(skip)]
+    pub line_count: u64,
+}
+
+impl PartialEq for Replay {
+    fn eq(&self, other: &Replay) -> bool {
+        // Destructured so a new field is a compile error here until it is
+        // placed on one side or the other.
+        let Replay {
+            tz,
+            range,
+            days,
+            items,
+            instances,
+            energy,
+            durations,
+            interrupts,
+            events,
+            demotions,
+            closes,
+            dropped_items,
+            done_items,
+            last_done,
+            done_dates,
+            longest_leak,
+            open_block,
+            open_interrupt,
+            unknown,
+            warnings,
+            seams,
+            last_effective_t,
+            rows: _,
+            line_count: _,
+        } = self;
+        *tz == other.tz
+            && *range == other.range
+            && *days == other.days
+            && *items == other.items
+            && *instances == other.instances
+            && *energy == other.energy
+            && *durations == other.durations
+            && *interrupts == other.interrupts
+            && *events == other.events
+            && *demotions == other.demotions
+            && *closes == other.closes
+            && *dropped_items == other.dropped_items
+            && *done_items == other.done_items
+            && *last_done == other.last_done
+            && *done_dates == other.done_dates
+            && *longest_leak == other.longest_leak
+            && *open_block == other.open_block
+            && *open_interrupt == other.open_interrupt
+            && *unknown == other.unknown
+            && *warnings == other.warnings
+            && *seams == other.seams
+            && *last_effective_t == other.last_effective_t
+    }
 }
 
 /// What [`Replay::latest_named`] keeps of the `tm event <name>` occurrences
@@ -1665,6 +1772,17 @@ impl LatestNamed {
 }
 
 impl Replay {
+    /// Every entry of the log in file order, cancelled ones included, with its
+    /// physical line, wake-attributed day, mask bit and display text — what
+    /// `tm log` selects from and prints.
+    pub fn view(&self) -> &[ViewRow] {
+        &self.rows
+    }
+    /// How many entries the log holds (malformed and blank lines not
+    /// counted): `tm log`'s `total`.
+    pub fn entry_count(&self) -> usize {
+        self.rows.len()
+    }
     /// The day's record.
     pub fn day(&self, date: NaiveDate) -> Option<&DayReplay> {
         self.days.get(&date)
@@ -2554,23 +2672,63 @@ impl Machine {
 /// inside `range` (wake-aware days, see [`DayIndex`]; `None` = everything)
 /// are kept.
 pub fn replay(entries: &[LogEntry], range: Option<RangeInclusive<NaiveDate>>, tz: Tz) -> Replay {
+    let n = entries.len() as u64;
+    let lines: Vec<u64> = (1..=n).collect();
+    replay_lines(entries, &lines, n, range, tz)
+}
+
+/// [`replay`] with each entry's physical line (`lines[i]` is `entries[i]`'s)
+/// and the text's line count, for [`Replay::view`]. An entry past the end of
+/// `lines` (one pushed onto [`Log::entries`] directly) takes the line after
+/// the previous entry's.
+fn replay_lines(
+    entries: &[LogEntry],
+    lines: &[u64],
+    line_count: u64,
+    range: Option<RangeInclusive<NaiveDate>>,
+    tz: Tz,
+) -> Replay {
     let mask = undo_mask(entries);
     let refs: Vec<&LogEntry> = entries
         .iter()
         .zip(&mask.cancelled)
         .filter_map(|(e, c)| (!*c).then_some(e))
         .collect();
-    replay_refs(&refs, range, tz)
-}
-
-fn replay_refs(entries: &[&LogEntry], range: Option<RangeInclusive<NaiveDate>>, tz: Tz) -> Replay {
     let days = DayIndex::new(
         tz,
-        entries
-            .iter()
+        refs.iter()
             .filter(|e| matches!(e.ev, Event::Wake { .. }))
             .map(|e| e.t),
     );
+    let mut prev = 0u64;
+    let rows = entries
+        .iter()
+        .zip(&mask.cancelled)
+        .enumerate()
+        .map(|(i, (e, c))| {
+            let line = lines.get(i).copied().unwrap_or(prev + 1);
+            prev = line;
+            ViewRow {
+                line,
+                entry: e.clone(),
+                day: days.day_of(e.t),
+                cancelled: *c,
+                display: e.t.format("%Y-%m-%d %H:%M").to_string(),
+            }
+        })
+        .collect();
+    let mut out = replay_refs(&refs, days, range, tz);
+    out.rows = rows;
+    out.line_count = line_count.max(prev);
+    out
+}
+
+fn replay_refs(
+    entries: &[&LogEntry],
+    days: DayIndex,
+    range: Option<RangeInclusive<NaiveDate>>,
+    tz: Tz,
+) -> Replay {
     // The day's sleep, indexed before the walk: `tm wake 06:05` may be typed
     // (and appended) after events it precedes. The first `wake` of a day wins,
     // as it does for `DayReplay::wake`.
@@ -2607,6 +2765,8 @@ fn replay_refs(entries: &[&LogEntry], range: Option<RangeInclusive<NaiveDate>>, 
             warnings: Vec::new(),
             seams: BTreeMap::new(),
             last_effective_t: None,
+            rows: Vec::new(),
+            line_count: 0,
         },
         block: None,
         last_cut: None,

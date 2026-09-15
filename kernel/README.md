@@ -12725,3 +12725,77 @@ No kernel change; no recursion over a wire list.
 **Phase R so far on this track:** R-audit, R1–R4 committed. **Owed next:** R5 (`Replay::view` rows
 and `tm log`), R6–R14 as §14.3 lists them, R11 under D14 (keep and route the unread fields). Gap 112
 gates W1 and is R13's to clear.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5 D9 R5 (design §14.3 row R5, §8.4, §11.4), on
+     rebuild-on-lean after 22a43df.  Takes no gap, cheat or parity number.
+     =========================================================================== -->
+
+## Stage 5 D9 R5, 2026-09-14: the replay holds the log's rows — `tm log` prints what the view says
+
+**What changed.**
+- **`tm_core::log::ViewRow { line, entry, day, cancelled, display }`** and **`Replay::view()`**: every
+  entry of the log in file order, cancelled entries and `undo`s included, with its 1-based
+  **physical** line, its wake-attributed day (`DayIndex::day_of` over the surviving wakes, the index
+  the machine uses), its mask bit (`undo_mask`) and its display text (`%Y-%m-%d %H:%M` in the written
+  offset). **`Replay::entry_count()`** is their number (malformed and blank lines not counted). This
+  is the Rust side of the kernel's header `(line, tag, id?, day, cancelled, display)` (§8.4's last
+  row), with the entry itself beside it until S hands `tm log` renderings instead.
+- **`Log` gains `lines: Vec<u64>`** (each entry's physical line; `parse_bytes` records the split
+  index, `from_entries` and `push` number consecutively) **and `line_count: u64`** (the `\n`-separated
+  segments, the empty one after a final `\n` not counted). `Log::replay` passes both to a private
+  `replay_lines`; the free `replay(entries, ..)` numbers its entries `1..=n`.
+- **`lifecycle.rs` `log`** reads `ctx.replay`: `log_rows` selects exactly as before (`--item`: not
+  cancelled and primary id = key; `--since`: `day ≥ from`, cancelled rows included; `--tail`: the last
+  *n*, 20 by default) and `log_human` prints `row.display` instead of formatting `e.t`; `total` is
+  `entry_count()`. It no longer reads `ctx.log`.
+
+**Equivalence test (run, then deleted with the old function in this commit).** A unit test in
+`cli/lifecycle.rs` held the old `log` body verbatim (over `Log`, returning the `--json` text and the
+human text) and compared it with `log_rows` + `log_human` over `Replay::view`, in `America/Chicago`,
+over the four corpus logs (`three-days`, `energy-14d`, `review-14d`, `malformed`) and loggen's 1-month
+logs at both rates: for `today` ∈ {first day, middle day, last day or 2026-09-14}, `--item` ∈ {none}
+∪ every primary id ∪ an absent one, `--since` ∈ {none, `7d`, `2w`, `junk`} ∪ every row day ± 1 (every
+bound without `--item`, every seventh with one) and `--tail` ∈ {none, 0, 1, 20, 100,000}: **98,700
+calls equal (errors included), 46,040 with non-empty output, 3,447 rows; 0 differences.** The same
+test checked every row's `line` against the text (the segment at that line parses to that entry;
+`malformed`'s lines skip its warnings), `line_count` against the split, and `cancelled` against
+`undo_mask`. **The binary, byte for byte:** `tm log` of the commit before (`22a43df`) and of this
+commit, human and `--json`, over copies of the three plan corpora that carry a log
+(`plan-home-day`, `plan-travel-day`, `plan-recur`) and of `plan-home-day` holding each of the four
+corpus logs, with `--now` on 2026-09-01, 09-09 and 09-20 and the selectors none, `--tail 5`,
+`--tail 1000`, `--since 7d`, `--since 2026-09-08`, `--since 2w --tail 3` and `--item=^<id>` for up to
+15 ids of each log: **654 invocations, stdout, stderr and exit code identical.**
+
+**Existing suites.** No assertion changed; `cli_lifecycle` (its `log_tail_since_and_item` and the
+`log_json` snapshot) passed. `log_replay__three_days_replay.snap` is **unchanged** (see 1 below).
+
+### Recorded disagreements between the design and the repo
+
+1. **The rows are not facts, so they are not serialised and not compared.** `Replay.rows` and
+   `Replay.line_count` are `#[serde(skip)]`, and `Replay`'s `PartialEq` is now written out (a
+   destructuring `let` over every field, so a new field is a compile error until it is placed) and
+   ignores those two. The design says `factsView` omits the line bookkeeping (§7.3); the repo's
+   `log_replay.rs` asserts `replay(&log.entries) == replay(&effective)` (the survivors of a masked
+   log replay to the same facts as the whole log), which compared rows would falsify — they number
+   and include different entries. Serialising them would also have copied all 74 entries of
+   `three-days` into the snapshot. R1's rule ("every new field extends the snapshot") holds for facts.
+2. **`Log` carries line numbers.** §12 deletes `Log` at S, and the kernel reads lines from the byte
+   split; until then Rust is the only reader, so the split's line numbers have to come from
+   `Log::parse_bytes`. An entry pushed onto `Log::entries` directly (only
+   `tm/tests/tui_common/mod.rs` does, before R12) takes the line after the previous entry's.
+3. **`entry_count` is a method over the rows, not a field** (the kernel's `entryCount` is a
+   field); the two cannot disagree in Rust.
+
+**Goals discharged: none. Refuted: none. Added: none.** Burn-down **13 → 13**. **New theorems:
+none.** **Parity entries: none.** **Observable behaviour changes: none** (654 binary invocations
+identical). **Numbers taken: none.** No kernel change; no recursion over a wire list.
+
+**Re-measured** (main worktree, every command under the 30 GB cap):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.93 s; audit **2672**; corpus **29/37 and 4/5**; burn-down **13** |
+| `cargo test --workspace` | **1026 passed / 0 failed / 2 ignored across 70 binaries**, 0 compiler warnings |
+| FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
+| `cli_latency.rs` | green: first verb 621.4 / 622.2 / 622.1 ms (226 files, 2,959 lines), later verb 55.8 / 50.7 / 55.8 ms |
