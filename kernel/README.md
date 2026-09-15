@@ -12346,3 +12346,161 @@ normally. Every figure below comes from capped runs.
 | `cargo test --workspace` | **1026 passed / 0 failed / 2 ignored across 70 binaries** |
 | FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** (kernel 80, corpus 8, stack 4) |
 | `cli_latency.rs` | green: first verb 642.1 / 632.0 / 622.8 ms (226 files, 2,959 lines), later verb 55.9 / 60.8 / 50.7 ms |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5 D9 R-audit (design §14.3, §8.4, §11.1), on
+     rebuild-on-lean after 18947b8.  Takes gap 112 (label R-audit-a).  The D10
+     track builds in parallel; whoever merges renumbers (AGENTS §6.4).
+     =========================================================================== -->
+
+## Stage 5 D9 R-audit, 2026-09-14: every replay accessor by name — which dates each call site asks for, and its scope
+
+Rust is still the only reader of the log. This block is the table §14.3's R-audit row asks for:
+every accessor it names, re-grepped **by name** over `src/` **and** `tests/` of both crates at
+`18947b8` (`rg --type rust`, `tm-core/src/log.rs` itself excluded), with each call site's reachable
+dates, the §8.4 form that holds the fact, and the §11.1 scope of the verbs that reach it. Nothing in
+the code changed in this commit.
+
+**Dates column.** *today* = `Ctx::today`/`App::today`, the calendar date of `now` in `cfg.tz`;
+*period(T)* = the day, ISO week or month containing today (all `≥ H` by §9.1's anchor); *≥ T − 16*
+= the auto-close catch-up; *explicit* = a date the user names; *all* = every date the log has;
+*A-key* = not a date at all (an id, a name, an ordinal instance).
+
+### Library call sites (`tm-core/src`)
+
+| accessor | call site | reached from | dates it can ask for | form (§8.4) | scope (§11.1) |
+|---|---|---|---|---|---|
+| `done_items` (field) | `priority.rs:480` `collect_candidates` | every verb through `Ctx::priorities` (`tm plan`, the TUI, `tm review day`/`week` extras) | A-key | A | Hot |
+| `is_done` | `recur.rs:838` `one_off_instances` | `today_instances`/`week_instances` | A-key | A | Hot |
+| `is_done` | `review.rs:1593` `week_review` | `tm review week`, TUI Review screen | A-key | A | All (**TUI: Hot**, gap 112) |
+| `is_done` | `review.rs:2005` `month_review` | `tm review month`, TUI Review screen | A-key | A | All (**TUI: Hot**, gap 112) |
+| `last_done` | `recur.rs:482` `after_done_state` | `instances` → `after_done_instances` | A-key (latest by instant) | A | Hot |
+| `done_dates` `.first()` | `recur.rs:711` `calendar_instances` (the `every:Nd` anchor) | `instances` | A-key (first date ever) | A | Hot |
+| `done_dates` `.len()` | `recur.rs:871` `next_ordinal` | `after_done_state` | A-key (count of all dates) | A | Hot |
+| `done_dates` `.len()` | `recur.rs:886` `completion_count` | `after_done_state` | A-key (count of all dates) | A | Hot |
+| `ItemReplay.minutes` via `done_minutes_map` | `review.rs:1996` `month_review` | `tm review month`, TUI Review screen | A-key | A | All (**TUI: Hot**, gap 112) |
+| `ItemReplay.minutes`/`.blocks` directly | — | **no reader outside `log.rs`** (only `block_minutes`, `done_minutes_map`) | — | — | — |
+| `block_minutes_on` | `priority.rs:388` `done_this_period` | `build_candidate` (`min:`/`max:`), every verb through `Ctx::priorities` | every day of period(T), up to today | W | Hot |
+| `block_minutes_on` | `horizon.rs:1430` `day_remaining` ← `close_day` | **no binary caller at `18947b8`**: stage 4 moved `tm close` and auto-close into the kernel (`closing.rs` sends no replay). Reached only from `tm-core/tests/horizon_close.rs` | explicit (test) | W + WR | test only |
+| `block_minutes_on_day` | — | tests only (`log_replay.rs:158`) | — | — | test only |
+| `instances_of` | `recur.rs:864` `next_ordinal`, `:880` `completion_count` | `after_done_state` | A-key (ordinal keys; date keys filtered out by `Nth`) | A | Hot |
+| `instances_of` | `recur.rs:900` `logged_instances` | `after_done_instances`, `on_event_instances` over the caller's range (today or this week) | date keys in the range (≥ H); ordinal keys by the record's `t` date | W (date keys) + A (ordinal) | Hot |
+| `instances_of` | `priority.rs:396` `done_this_period` | as `:388` | date keys in period(T); ordinal keys by `t` date | W + A | Hot |
+| `instance` (not in the row's list; the same family) | `recur.rs:1081` `logged_status` ← `status_of` | `calendar_instances`, `one_off_instances` for instance keys in the range | date keys in today/this week | W | Hot |
+| `events_named` | `recur.rs:1145` `arrival_of` ← `waiting_state` | `Ctx::resolve_timeouts` (housekeeping of every verb), `on_event_instances`, TUI week pane and Necessities, `review::waiting` (tests only) | A-key: latest over `id ∈ {none, key}` with local date ≥ `waiting_since` | A (see R3's block: two instants per key) | Hot |
+| `events` keys (field) | `priority.rs:484` `collect_candidates` | every verb through `Ctx::priorities` | A-key (names ever logged) | A | Hot |
+| `event_occurred` | — | tests only (`log_replay.rs:252–253`) | — | — | test only |
+| `events_for`, `stamps` | — | tests only (`log_replay.rs:251`, `:323`, `:325`); no library reader (CRIT 23 still holds) | — | not derived | test only |
+| `day(d)` | `planner.rs:805` `Planner::new`, `:1999` `past_segments`, `:2172` rest debt | `tm plan`, every planning verb, TUI replan | today (`input.date()` is `now`'s date) | O | Hot |
+| `day(d)` | `review.rs:342` `status_line` | TUI `App::bare`, `App::refresh` | `runtime.date`, **else `days.keys().last`** — the log's last day, any age, when `state.json` has no `date` (`roll_day` never sets a missing date) | O, **else DR** | Hot (**gap 112**) |
+| `day(d)` | `review.rs:871` `day_review` | `tm review day [--date]`, TUI Review screen (today) | explicit or today | O + DR | All (**TUI: Hot**, gap 112) |
+| `day(d)` | `review.rs:1545` `week_review` | `tm review week [--date]`, TUI Review screen | the 7 dates of an explicit or the current week | O + DR | All (**TUI: Hot**, gap 112) |
+| `days` iteration | `review.rs:1705` `lounge_rate` | `week_review` | all | O + DR | All (**TUI: Hot**, gap 112) |
+| `days` iteration | `energy.rs:1089` `arrivals_from_replay` | `fit_replay` ← `tm model --fit`, `--compare` | all | O + DR | All |
+| `days.keys().last` | `review.rs:341` `status_line` | TUI | the last day | A (`lastDay`) + DR for its record | Hot (gap 112) |
+| `energy` (field) | `review.rs:890` `day_review` (filter `day == date`) | as `:871` | explicit or today | O + DR | All (TUI: gap 112) |
+| `energy` (field) | `review.rs:1568` `week_review` (filter per date) | as `:1545` | the week's dates | O + DR | All (TUI: gap 112) |
+| `energy`, `durations` (fields) | `energy.rs:1082` `fit_replay` | `tm model --fit`, `--compare` | all | O + DR | All |
+| `energy_on` | `planner.rs:839` | planning verbs, TUI | today | O | Hot |
+| `durations` (field) | `review.rs:948` `day_review`, `:1678` `week_review` → `estimate_calibration` | review verbs, TUI Review screen | all | O + DR | All (TUI: gap 112) |
+| `demotions` (field) | `review.rs:913` `day_review` (by `t`'s local date) | as `:871` | explicit or today, ± 1 day of wake attribution | O + DR | All (TUI: gap 112) |
+| `demotions` (field) | `review.rs:1597` `week_review` (by `from == week key`), `:1615` (carry in/out, every demotion) | as `:1545` | all | O + DR | All (TUI: gap 112) |
+| `demotions` (field) | `review.rs:2017` `month_review` (by `t`'s local date in the month) | `tm review month`, TUI | the month's dates | O + DR | All (TUI: gap 112) |
+| `open_block` | `planner.rs:1485` `active_run`, `:1967` `open_block_segment` | planning verbs, TUI | machine state | A | Hot |
+| `last_cut` | — | private to the machine (`Machine.last_cut`); no field, no reader | — | A (machine) | — |
+| the open interruption (`open_interrupt`, `interrupts`, `interrupts_on`) | — | tests only (`log_replay.rs:254`, `:363`; `review_fixture.rs:45`); the planner reads `state.interrupt`, not the replay | — | A (machine) | test only |
+| `warnings` (`Replay.warnings`) | — | tests only (`energy_fit.rs:56`, `review_fixture.rs:35`, `recur_fixture.rs:54–56`); `Log.warnings` has no reader at all | — | A | test only |
+| `unknown` | — | tests only (`energy_fit.rs:55`, `review_fixture.rs:34`, `log_replay.rs:326`, `:397`) | — | A | test only |
+
+### Binary call sites (`tm/src`)
+
+| accessor | call site | verb / screen | dates | form | scope |
+|---|---|---|---|---|---|
+| `is_done` | `cli/lifecycle.rs:318` `day_extras` | `tm review day` for today | A-key | A | All |
+| `done_minutes_map` | `tui/queue.rs:136` `View::new`; `tui/app.rs:956` `week_pane` | TUI Queue, week pane | A-key | A | Hot |
+| `day(d)` | `cli/ctx.rs:341` `wake_time`, `:356` `slept_min`, `:508` `plans_today` | every verb that plans or cuts slots | today | O | Hot |
+| `day(d)` | `tui/app.rs:872` `status_head`, `:919` `energy_ctx` | TUI | today | O | Hot |
+| `energy_on` | `cli/ctx.rs:444`; `tui/app.rs:621`, `:812`, `:873`, `:937` | every energy-reading verb, TUI | today | O | Hot |
+| `energy` (field) | `cli/lifecycle.rs:519` `model --compare` | `tm model --compare` | all | O + DR | All |
+| `blocks_done` (a `day(d)` read) | `cli/ctx.rs:448`, `cli/day.rs:151`, `:576`, `cli/planning.rs:346`, `:497`; `tui/app.rs:920`, `:925`, `:935` | day verbs, plan, TUI | today | O | Hot |
+| `blocks_done` (a `day(d)` read) | `tui/app.rs:1056` `week_blocks_done` | TUI week pane (`Week W37 · 8/20`) | **every date of the current ISO week**, Monday up to Sunday: dates in `[isoMonday T, L)` are sealed day records | O **+ DR** | Hot (**gap 112**) |
+| `open_block` | `tui/app.rs:1193` `active_elapsed_min` | TUI | machine state | A | Hot |
+| `energy`/`durations`/`days` | `cli/lifecycle.rs:499`, `:518` `fit_replay` | `tm model --fit`, `--compare` | all | O + DR | All |
+| `waiting_state` → `events_named` | `cli/ctx.rs:532`; `tui/app.rs:1022`; `tui/necessities.rs:451` | housekeeping of every verb; TUI | A-key | A | Hot |
+| `today_instances`/`week_instances` → the recur rows above | `cli/day.rs:135`, `cli/items.rs:1381`, `tui/necessities.rs:199`, `priority.rs:585` | day verbs, `tm routine`, TUI Necessities | today / this week, plus A-keys | W + A | Hot |
+| `day_review`/`week_review`/`month_review` → the review rows above | `cli/lifecycle.rs:380`, `:407`, `:427` | `tm review` | explicit | O + DR (+ A) | All |
+| `day_review`/`week_review`/`month_review` → the review rows above | `tui/app.rs:1535`, `:1544`, `:1553` `App::reviews` (TUI Review screen, `today.rs:554`, `app.rs:1617`) | TUI | today's day, week, month; **all** days, durations and demotions | O + DR (+ A) | **Hot** (**gap 112**) |
+
+The raw-log walks R1–R8 remove are listed by name, not as accessors: `cli/day.rs:91`
+(`since_break_min`, R1), `:200` (`idle_min_since`, R2), `:1276` (`idle`, R3), `tui/app.rs:1363`
+(`idle_since`, R4), `cli/lifecycle.rs:573–583` (`tm log`, R5), `cli/undo.rs:119–207` (R6),
+`cli/planning.rs:130` and `tui/app.rs:680`, `:1248` (`PlanInput.log`, R7), `cli/ctx.rs:222`, `:267`,
+`:581` (`read_log`, R8).
+
+### Test call sites (both crates; R12 switches how they build the `Replay`)
+
+Every test fixes its own dates; none is a verb. By file, the accessors above that each reads
+directly: `tm-core/tests/log_replay.rs` (92 reads: every accessor in the list except
+`done_minutes_map`'s TUI use), `log_regressions.rs` (33: `block_minutes`, `block_minutes_on`,
+`blocks_done`, `done_minutes_map`, `is_done`, `total_block_min`), `energy_fit.rs` (18: `days`,
+`unknown`, `warnings`, `energy`, `durations`), `review_fixture.rs` (9: `days`, `day`, `unknown`,
+`warnings`, `durations`, `energy`, `interrupts`, `demotions`), `recur_fixture.rs` (3: `warnings`),
+`horizon_close.rs` (2: `block_minutes_on`), `planner_invariants.rs:527` (1: `blocks_done`), and the
+`priority_*`, `recur_*`, `review_*`, `planner_*` and `tui_*` suites through the library functions
+above. (`review_day.rs`, `review_edges.rs` and `review_week.rs`' `r.energy`/`r.blocks_done` are
+review structs, not the replay.)
+
+### Gap 112 (new; label R-audit-a) — three Hot call sites ask for dates below `H`
+
+1. **What is not done.** Three call sites that §11.1 puts in `Hot` scope can ask for facts a
+   windowed kernel no longer holds in the checkpoint: (a) the TUI Review screen, `App::reviews`
+   (`tui/app.rs:1527`), runs `day_review`, `week_review` and `month_review`, which read **every**
+   day (`lounge_rate`), every duration (`estimate_calibration`) and every demotion; (b) the TUI
+   week pane's `week_blocks_done` (`tui/app.rs:1053`) reads `blocks_done` for every date of the ISO
+   week, and the days in `[isoMonday T, L)` are sealed day records, not open days; (c)
+   `review::status_line` (`review.rs:333`, TUI only) falls back to `days.keys().last` when
+   `state.json` has no `date` (`roll_day` never sets a missing one), and reads that day's record at
+   any age.
+2. **Why.** §11.1 lists "TUI reloads" under `Hot` whole, and §8.4 lists "status_line's last-day
+   fallback" under DR without giving the TUI a wider scope; the design did not split the TUI by screen.
+3. **What it costs.** Under the acceptance of this row, **W1 is blocked** until each is resolved:
+   (a) by the TUI Review screen asking `All` (it is computed only when the screen is shown or keyed:
+   `today.rs:554`, `app.rs:1617`); (b) by adding a day's `blocksDone` to the W form (dates `≥ H`
+   already cover the ISO week) or by the week pane asking `Dates(isoMonday T, T)`; (c) by the
+   `lastDay` fallback asking `Dates(lastDay, lastDay)` or by `status_line` receiving today when
+   `state.date` is absent. None changes a value before S.
+4. **Which step clears it.** R13 (`Ctx::replay_with(scope)` introduces the scopes, and each verb family
+   asks for §11.1's scope) must give the three sites the scopes above; W1 checks this entry first.
+
+### Recorded disagreements between the design and the repo
+
+1. **`block_minutes_on`'s auto-close reader is gone.** §8.4 and §14.0's facts table name
+   `horizon::day_remaining` via `close_day` as a reader of old item-day minutes "auto-close dates
+   `≥ T − 16`, and `tm close day <date>` for any date". Since stage 4 the binary closes through the
+   kernel (`cli/closing.rs`), which sends no replay; `horizon::close_day` is reached only from
+   `tm-core/tests/horizon_close.rs`. The only binary reader of item-day minutes is
+   `priority::done_this_period` (period(T), `≥ H`). WR is therefore needed only if stage 6 or the
+   kernel's own close brings day minutes back; the `Dates` scope for `tm close day <date>` has no
+   replay reader at `18947b8`.
+2. **`instance(item, inst)`** (`recur.rs:1081`) is not in the row's list but is the same family as
+   `instances_of`; it is audited above (W, today or this week).
+3. **Readers the design names that do not exist:** `events_for`, `stamps`, `event_occurred`,
+   `block_minutes_on_day`, `open_interrupt`/`interrupts`, `Replay.warnings` and `unknown` are read
+   by tests only; `last_cut` is not a field.
+
+**Goals discharged: none. Refuted: none. Added: none.** Burn-down **13 → 13**. **New theorems:
+none.** **Parity entries: none.** **Observable behaviour changes: none** (no code changed).
+**Numbers taken:** gap 112 (label R-audit-a). No cheat, no parity entry. No new recursion.
+
+**Re-measured** (main worktree, every command under the 30 GB cap; no code changed, so these are
+`18947b8`'s figures re-taken):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.76 s |
+| axiom audit | **2672 theorems** |
+| corpus | **29/37 files and 4/5 whole plans** |
+| burn-down | **13** (stage 6: 13) |
+| `cargo test --workspace` | **1026 passed / 0 failed / 2 ignored across 70 binaries** |
+| FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
+| `cli_latency.rs` | green: first verb 632.6 / 626.7 / 622.7 ms (226 files, 2,959 lines), later verb 50.6 / 55.7 / 50.7 ms |
