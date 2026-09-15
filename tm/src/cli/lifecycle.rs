@@ -659,7 +659,8 @@ fn log_human(rows: &[&ViewRow]) -> String {
 }
 
 /// The scope `tm log` asks for (§11.1): `--item` reads every day's headers,
-/// `--since` the days from its bound to today, and the tail the recent log.
+/// `--since` the days from its bound to today, and the tail a scope wide
+/// enough to hold the last *n* entries (gap 117).
 fn log_scope(args: &super::LogArgs, today: NaiveDate) -> ReplayScope {
     match (&args.item, &args.since) {
         (Some(_), _) => ReplayScope::All,
@@ -668,7 +669,15 @@ fn log_scope(args: &super::LogArgs, today: NaiveDate) -> ReplayScope {
             // `log_rows` refuses the bound; nothing is read for it.
             Err(_) => ReplayScope::Hot,
         },
-        (None, None) => ReplayScope::Hot,
+        // **Gap 117, closed here.** §11.4 step 2 takes "the last *n*", and
+        // `Hot` holds no day record, so after the switch a user with fewer
+        // than *n* entries since the horizon `H` would see fewer than *n* —
+        // `tm log` would silently come out short. `All` is the scope that can
+        // always hold the tail. §11.1's narrower reading — `Dates` reaching
+        // back just far enough for *n* headers — needs a first answer to know
+        // how far back that is, so it is a two-step narrowing: a latency
+        // lever for S, not a correctness fix, and it is recorded as one.
+        (None, None) => ReplayScope::All,
     }
 }
 
@@ -756,4 +765,55 @@ pub fn check(g: &Globals, args: &super::CheckArgs) -> Result<i32, CliError> {
 /// `tm tui` — §12's terminal UI (see [`crate::tui`]).
 pub fn tui(g: &Globals) -> Result<i32, CliError> {
     crate::tui::run(g)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(tail: Option<usize>, since: Option<&str>, item: Option<&str>) -> crate::cli::LogArgs {
+        crate::cli::LogArgs {
+            tail,
+            since: since.map(str::to_string),
+            item: item.map(str::to_string),
+        }
+    }
+
+    /// **`tm log`'s tail asks for a scope that can hold it** — gap 117, closed.
+    /// §11.4 step 2 builds the last *n* from the day records in scope plus the
+    /// open days and the tail; `Hot` carries no day record, so asking `Hot` for
+    /// a plain `tm log` or `--tail n` lets the list come out short once the
+    /// switch makes the scope real. This pins the scope each selector asks for.
+    ///
+    /// It is a scope test, not a behaviour test, and that is the whole of what
+    /// can be checked before S: `Ctx::replay_with` still answers every scope
+    /// with the whole log, so a `tm log --tail n` run over a three-year log
+    /// returns the same *n* lines either way and could not fail. The guard
+    /// that a three-year log would give is owed to S, with the switch.
+    #[test]
+    fn the_log_tail_asks_a_scope_that_can_hold_the_last_n() {
+        let d = |s: &str| tm_core::model::parse_date(s).expect("date");
+        let today = d("2026-09-14");
+
+        // Plain `tm log`, and an explicit tail of any size.
+        assert_eq!(log_scope(&args(None, None, None), today), ReplayScope::All);
+        assert_eq!(log_scope(&args(Some(20), None, None), today), ReplayScope::All);
+        assert_eq!(log_scope(&args(Some(5_000), None, None), today), ReplayScope::All);
+
+        // `--item` reads every day's headers (§11.1), tail or no tail.
+        assert_eq!(log_scope(&args(None, None, Some("^a1")), today), ReplayScope::All);
+        assert_eq!(log_scope(&args(Some(20), None, Some("^a1")), today), ReplayScope::All);
+
+        // `--since` pins both ends, and a tail beside it is selected inside them.
+        assert_eq!(
+            log_scope(&args(None, Some("7d"), None), today),
+            ReplayScope::Dates { from: d("2026-09-07"), to: today }
+        );
+        assert_eq!(
+            log_scope(&args(Some(20), Some("2026-09-01"), None), today),
+            ReplayScope::Dates { from: d("2026-09-01"), to: today }
+        );
+        // A bound `log_rows` will refuse: nothing is read for it.
+        assert_eq!(log_scope(&args(None, Some("not a date"), None), today), ReplayScope::Hot);
+    }
 }

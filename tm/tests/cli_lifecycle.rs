@@ -839,8 +839,6 @@ fn each_verb_family_asks_for_the_replay_scope_it_needs() {
         (&["energy", "4"], "hot"),
         (&["check"], "hot"),
         (&["model"], "hot"),
-        (&["log"], "hot"),
-        (&["log", "--tail", "5"], "hot"),
         (&["close", "week"], "hot"),
         // Dates: a verb that names old dates.
         (&["log", "--since", "7d"], "dates 2026-08-31..2026-09-07"),
@@ -854,6 +852,14 @@ fn each_verb_family_asks_for_the_replay_scope_it_needs() {
         (&["model", "--fit"], "all"),
         (&["model", "--compare"], "all"),
         (&["log", "--item", "^t3"], "all"),
+        // Gap 117: the tail asks `All`, not `Hot`. `Hot` carries no day
+        // record, so once the switch makes the scope real a plain `tm log`
+        // or `--tail n` could return fewer than *n* entries. Narrowing this
+        // back to a `Dates` window wide enough for *n* headers is a latency
+        // lever for S (it needs a first answer to size the window), not a
+        // correctness fix.
+        (&["log"], "all"),
+        (&["log", "--tail", "5"], "all"),
     ];
     for (args, want) in cases {
         assert_eq!(scopes(args), vec![want.to_string()], "`tm {}`", args.join(" "));

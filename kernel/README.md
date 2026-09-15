@@ -18759,3 +18759,217 @@ than one comparison, so the corpus rows sum to **199**, not 61.
 
 **Owed next: S, in full**, starting from gap 128. Nothing in this block blocks it, and the instrument it
 needs now exists.
+
+
+<!-- ===========================================================================
+     APPENDED 2026-09-15: stage 5, D9 track, the S-gaps step on rebuild-on-lean
+     (after the S attempt, 89ead46).  THE SWITCH STILL HAS NOT LANDED.  This
+     block closes the two gaps S owes that are reachable without it, says why
+     the third is not, and records the fourth as unfalsifiable until S.
+     Takes gap 129; new gaps start at 130.  Cheats and parity entries are
+     untouched (no Lean edited): highest stay cheat 157 and P34.
+     =========================================================================== -->
+
+## Stage 5 D9, the S-gaps step, 2026-09-15: gaps 115 and 117 closed before the switch, and gap 119 shown not to be reachable until it
+
+**Starting point.** `89ead46`, clean: check.sh 7/7, audit 3934, corpus 29/37 files and 4/5 whole plans,
+burn-down 13, `cargo test --workspace` 1082 / 0 / 5 across 73 result lines, FFI 100, T5 19.
+
+**The step's premise did not hold, and that is the first thing to say.** The step was handed over as
+"the gaps S owes, each closed by name with a test". **S did not land** — `89ead46` is the oracle
+repair, and the block above it says so in its own heading. Every one of the four gaps named was
+written with "(4) *When it clears*: at S". So each was re-read against the repo before anything was
+written, and they do not behave alike:
+
+| gap | reachable before the switch? | what happened here |
+|---|---|---|
+| **115** (a verb fails after its write) | **yes, fully** — pure Rust ordering, nothing to do with the reader | **closed**, driven and tested both orders |
+| **117** (`tm log`'s `Hot` tail) | the **fix** is, the **test** is not | **closed**, with the unfalsifiable half said out loud |
+| **119** (`tm check` names a stall) | **no** — three independent blockers, below | **not closed**; the blockers are recorded |
+| **120 part 3** (every verb but `tm check` fails on `ReachTooFar`) | no — it is S item 7's wiring, and the step did not name it as its own | untouched |
+
+**A numbering correction the handover needs.** The step calls the `tm log` tail gap **113**. On this
+branch that is **gap 117**: the D9/D10 L8 merge renumbered R13-a from 113 to 117 because it collided
+with the D10 track's own gap 113 ("the candidates' facts are the host's"), which is cited in
+`Boundary.lean`, `Lookahead.lean`, `ctx.rs` and `kernel_capacity.rs` and kept its number. The merge
+table in this README records the swap. **Read the step's "gap 113" as gap 117 throughout**; gap 113 on
+this branch is a different, closed thing.
+
+### Gap 115 — closed: `arrive`, `resume` and `energy` check the tree before they write
+
+**Driven first, at `89ead46`**, each verb on its own copy of `plan-basic` whose `^m1` carries a typo'd
+`@parent` (`itemCheck`/`danglingParent`, the owner's D6). The gap said "a verb that writes before it
+plans can fail after its write". It is worse than that, and the three verbs fail in **three different
+shapes**:
+
+| verb | exit | log | `state.json` |
+|---|---|---|---|
+| `tm arrive` | 1 | an `arrive` line appended | **written** (`date`, `arrival`, `loc`, `window`, `budget`) |
+| `tm energy 3` | 1 | an `energy` line appended | not created |
+| `tm resume` | 1 | **nothing** | **written**, with `interrupt` cleared to `null` and `paused` flipped |
+
+`resume` is the one that loses data: the interruption is cleared out of `state.json` by a command that
+then exits 1, and because no log line was written either, **nothing anywhere records that it existed**.
+`tm energy` only reaches its planning call when the delta is non-zero (§8.5), so a `rep` equal to the
+prediction is refused *after* its line on a refused tree too, but by the next verb rather than itself.
+
+**The fix.** `day.rs` gains `preflight`, and the three verbs call it where they called
+`kernel_capacity::check_plan`. It keeps that configured-value check (parity P26) and adds the **tree**,
+through the one no-command `kernel_bridge::apply` call `Ctx::resolve_timeouts` already makes for exactly
+this purpose ("Stage 4 final, repair", defect 1 — the same bug class, caught then for the housekeeping
+and left open for these three). `apply` writes a document only where the kernel changed it
+(`if doc.changed`), and a request with no commands changes none, so the check writes nothing on a sound
+tree or a refused one.
+
+**Re-driven after the fix:** each of the three exits 1 still naming `danglingParent`, with **no
+`.tm/log.jsonl` and no `.tm/state.json` created at all**.
+
+**The cost the gap itself raised, measured.** Gap 115 item (2) declined the fix partly because "a second
+kernel call before the write doubles the verb's kernel cost". Measured on a 227-file history-shaped tree,
+three runs each, the "before" taken by reverting the two files and rebuilding: `arrive` **723 → 743 ms**
+median, `energy 3` **728 → 746 ms**. So the added call is **≈ +20 ms, about 2.7%** of a ≈ 0.74 s verb —
+not a doubling, because the verb already loads and sends the tree several times over. **These three verbs
+are not in `cli_latency.rs`**, which times `drop`, so no committed bound covers them; the figures above
+are the only ones.
+
+**Test:** `cli_day.rs` `a_refused_tree_stops_the_writing_verbs_before_they_write`, following
+`cli_items.rs`' two `…_writes_nothing` tests. Both orders, per the step: refused → the events and
+`state.json` are byte-identical to before and the fault is named; then the link is fixed and **the same
+verb runs**, logs its event and sets its state.
+
+### Gap 117 — closed, with the half that cannot be tested yet said out loud
+
+**The fix is one arm**, exactly where the gap said it would be: `lifecycle.rs` `log_scope`'s
+`(None, None)` arm becomes `ReplayScope::All` instead of `Hot`. `Hot` carries no day record, so once the
+switch makes the scope real, a plain `tm log` or `tm log --tail n` from a user with fewer than *n*
+entries since the horizon `H` would come out **short** — §11.4 step 2 builds the last *n* from the day
+records in scope plus the open days and the tail. `All` is the scope that can always hold it.
+
+**What is honestly not closed, and why the step's own acceptance cannot be met.** The step says "test it
+on a 3-year log". **That test cannot fail today, in either direction.** `Ctx::replay_with` still answers
+*every* scope with `Ctx::replay_of`, the whole log (its own unit test
+`every_scope_is_the_whole_replay_before_the_switch` pins that), so `tm log --tail n` over a three-year log
+returns the same *n* lines with the arm set to `Hot` or to `All`. A test asserting otherwise would be a
+check no input can fail — the disguised gap AGENTS §9.2 names by that exact phrase. So the test written
+here is a **scope** test, not a behaviour test: `lifecycle.rs`'s new
+`the_log_tail_asks_a_scope_that_can_hold_the_last_n` pins the scope each selector combination asks for,
+and it *can* fail — it fails if the arm goes back. **The three-year behavioural guard is owed to S**, and
+is named in gap 129 below rather than claimed here.
+
+**The verb-family test caught the change**, which is the wiring test doing its job:
+`cli_lifecycle.rs`'s `each_verb_family_asks_for_the_replay_scope_it_needs` asserted `tm log` and
+`tm log --tail 5` ask `hot`, and failed with `left: ["all"], right: ["hot"]`. Its two rows moved from the
+`Hot` group to the `All` group with the reason on them. That is a corrected assertion about wiring that
+really changed, not a weakened one.
+
+### Gap 119 — NOT closed: three independent blockers, each checked
+
+The step asked for "a named line for it (D18's family)". It cannot be written yet, and forcing it would
+cost more than it bought:
+
+1. **Its fact does not exist before the switch.** The gap's own (2) says the stall is a fact of the
+   kernel's checkpoint, `meta.ledgerDay` against `now`. No verb reads a checkpoint until S — `tm check`
+   loads through `Ctx::load(g, false)` and validates files and tree only.
+2. **The Rust `Replay` carries two of the three stall causes, not three.** §9.4's "Stalls" paragraph
+   names an open block holding an observation, *a `stop` never followed by a `start`*, and an open
+   interruption. `Replay` exposes `open_block` and `open_interrupt`; the middle one is a fact of the
+   machine, which `Replay` does not carry. A check built on the two would be a **second, different
+   definition of a stall** from the one S installs — AGENTS §5.3, the rule this package breaks least
+   willingly.
+3. **`tm-core`'s `check` cannot hold it without weakening two committed assertions.**
+   `check_fixtures.rs` asserts `seen == known` over `check::CODES` — *every* code must be exercised by
+   the `plan-conflicts` **tree** fixture — and `plan_conflicts_problems_are_sorted_and_located` asserts
+   every problem has a non-empty `file` and `line > 0`. A stall is a **log** fact with neither a file nor
+   a line, and `check::check(files, tree, cfg)` is handed no replay at all. Adding the code would fail
+   both tests, and the only ways through are to relax them or to invent a file and line — a weakened
+   assertion and a false one.
+
+**The shape S should build**, so the next agent does not re-derive it: the warning belongs in the **CLI
+layer** (`lifecycle.rs`'s `check`, which does hold `ctx.replay` and will hold the checkpoint), outside
+`tm-core`'s `CODES`, reading `meta.ledgerDay` against `now` per D18's family — a warning, exit code
+unchanged. Gap 119's text stands as written; nothing about it changed here.
+
+### Gap 129 (new; label Sg-a) — a plain `tm log` now asks `All`, and the narrowing is unbuilt
+
+1. **What is not done.** Gap 117's arm takes the safe scope, not the tight one. §11.1's own reading is
+   that the tail should ask `Dates` reaching back just far enough to hold *n* headers, since each day
+   record carries its headers (§11.3). That narrowing is not built, so after the switch the most common
+   verb of all — a bare `tm log` — merges **every** month's sealed records.
+2. **Why.** How far back *n* headers lie is only known from an answer, so the narrowing is a two-step
+   call: one `Hot` request for the counts, then a sized `Dates` request. That is the same two-step shape
+   R13's disagreement 2 already records for the status line's last-day fallback, and it is a latency
+   lever, not a correctness fix — so it belongs with the measurement at S, not ahead of it.
+3. **What it costs.** Nothing today (every scope is the whole log). After the switch, a bare `tm log`
+   pays the `All` scope's record merge — the cost §18.6 prices for `tm review week` — on a verb users run
+   far more often. It is bounded, not unbounded: `All` is what `tm log --item` and the reviews already ask.
+4. **Which step clears it.** S, with T11's latency rows: if a bare `tm log` at three years sits inside
+   `LATER_VERB` on the `All` scope, the narrowing is not worth its second call and this gap closes as
+   "measured, not needed"; if it does not, S builds the two-step. **The three-year behavioural test gap
+   117 could not carry is owed here too** — once the scope is real, `tm log --tail n` over a three-year
+   log must return *n* entries, and that test can then fail.
+
+### Observable behaviour changes
+
+| where | before | after |
+|---|---|---|
+| `tm arrive`, `tm resume`, `tm energy` on a tree the kernel refuses | the verb wrote its log line and/or `state.json`, then exited 1 naming the fault; `resume` lost the interruption | the fault is named and **nothing is written** — no log line, no `state.json`, no undo entry |
+| the same three verbs on a sound tree | — | one extra no-command kernel call, ≈ +20 ms (measured above); every answer identical |
+| `TM_TRACE_REPLAY_SCOPE` on a plain `tm log` or `--tail n` | `replay scope: hot` | `replay scope: all` (no user-visible output changes: every scope is still the whole log) |
+
+### Recorded disagreements between the design and the repo
+
+1. **The step's "gap 113" is this branch's gap 117** (the merge renumbering, above). Its acceptance,
+   "test it on a 3-year log", is not achievable before the switch for the reason given; a scope test
+   stands in, and the behavioural test is carried as gap 129 item 4.
+2. **Gap 115's cost estimate was pessimistic.** Its (2) priced the fix as doubling the verb's kernel
+   cost; measured, it is ≈ 2.7% of the verb. The estimate assumed one kernel call per verb, but these
+   verbs already send the tree more than once (R14's disagreement 3 makes the same correction for
+   replays per verb: 4–5, not 1).
+3. **Gap 115 named `arrive`, `resume` and `energy` as one shape; they are three** (the table above), and
+   `resume`'s is a data-loss shape the gap's text does not suggest. The gap's (3) said "the arrival (or
+   resume, or energy report) is recorded and the verb exits 1"; for `resume` nothing was recorded — the
+   interruption was erased.
+4. **`tm arrive`'s calendar sync still writes before the tree is re-checked.** `preflight` runs before
+   every write the verb makes, but `sync_on_arrive` writes calendar files and reloads *after* it; a tree
+   the sync itself breaks would still be found by the planning call. That is outside gap 115 (nothing the
+   verb logs or states is written), and it is not a new fault — it is left as written, and named here so
+   it is not mistaken for covered.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited.** Goals discharged, refuted, added: none; burn-down **13 → 13**. New theorems:
+none. New `decide`/`rfl` witnesses: none, so §14.0 item 4's probe budget is untouched. New cheats: none
+(highest stays **157**). New parity entries: none (highest stays **P34**). `TmKernel.lean` imports: **78**,
+unchanged. No recursion over a wire-sized list was added (rule D9-21): the Rust added is `preflight`
+(two calls, no loop) and `log_scope`'s arm.
+
+### Numbers
+
+**Taken:** gap 129. **Highest:** gap 129, cheat 157, parity P34. **Behaviour rows:** three, above — and
+**the binary still has exactly one reader of the log, the Rust.** Nothing here calls `kernel_log.rs`;
+the switch is still S, still owed in full, still starting from gap 128.
+
+**Re-measured** (main worktree, on the tree committed; every command capped at `MemoryMax=40G`,
+`MemorySwapMax=0`):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 3.05 / 3.12 / 3.08 s (S attempt: 3.01 / 3.07 / 3.05 s; +1.3% at the worst against the fastest, well inside §14.0 item 4's 10%) |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged, stages 3–6) |
+| `cargo test --workspace` | **1084 passed / 0 failed / 5 ignored across 73 result lines** (89ead46: 1082; **+2**: gap 115's CLI test and gap 117's unit test), exit 0, **0 compiler warnings** |
+| FFI suite | **100 passed / 0 failed** — unchanged |
+| T5 (`kernel_replay_parity.rs --include-ignored`) | **19 passed / 0 failed**, 6.42 s — unchanged |
+| `cli_latency.rs --include-ignored` | **4 passed / 0 failed**, 3.69 s, the year-of-log and three-year tests included — unchanged, and none of its rows times the three verbs this step changed |
+| gap 115, driven before | `arrive` exit 1 + `arrive` line + `state.json`; `energy 3` exit 1 + `energy` line; `resume` exit 1 + `state.json` with `interrupt` cleared and no log line |
+| gap 115, driven after | all three exit 1 naming `danglingParent`, **no `.tm/log.jsonl`, no `.tm/state.json`** |
+| gap 115, the added call | `arrive` **723 → 743 ms**, `energy 3` **728 → 746 ms** (medians of three, 227-file history tree, "before" measured by reverting and rebuilding) |
+| `tm` unit tests | **72 passed / 0 failed**, the new `the_log_tail_asks_a_scope_that_can_hold_the_last_n` among them |
+
+**Owed next: S, in full**, unchanged and unblocked by this step — starting from gap 128, then §14.6's
+contents 1–3 and 5, item 7's D18 defaults (**gap 120 part 3** included), **gap 119** as shaped above,
+**gap 129**'s measurement, the nine T9 CLI tests, T12, T11's seven latency rows, the per-verb kernel-call
+count against R14's table, and the §5.13 drive. **T9, T11 and T12 could not be "re-run" by this step**:
+T9 and T12 do not exist — they are S's own deliverables and were never built — and T11 is `cli_latency.rs`,
+which is green above and whose rows do not cover the three verbs changed here.
