@@ -75,7 +75,6 @@ impl Fixture {
     pub fn input<'a>(&'a self, state: &'a RuntimeState, now: DateTime<Tz>) -> PlanInput<'a> {
         PlanInput::new(
             &self.tree,
-            &self.log,
             &self.replay,
             &self.cfg,
             &self.model,

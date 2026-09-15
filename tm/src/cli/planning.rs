@@ -127,7 +127,6 @@ pub fn build(ctx: &Ctx, allow_home: bool) -> (DayPlan, Vec<Prio>) {
     let (cands, prios, caps) = ctx.priorities(allow_home);
     let input = PlanInput::new(
         &ctx.tree,
-        &ctx.log,
         &ctx.replay,
         &ctx.cfg,
         &ctx.model,

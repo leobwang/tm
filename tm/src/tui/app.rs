@@ -61,17 +61,8 @@ use tm_core::config::Config;
 use tm_core::emit;
 use tm_core::energy::{self, Model, Posterior};
 use tm_core::horizon::MIN_REMAINING_MIN;
-use tm_core::log::{Log, Replay};
+use tm_core::log::Replay;
 
-/// `PlanInput::log` until R7 deletes the field: the planner reads nothing from
-/// it (stage 5 D9 R4 removed `App::log`; every log fact the TUI shows comes
-/// from [`App::replay`]).
-static NO_LOG: Log = Log {
-    entries: Vec::new(),
-    warnings: Vec::new(),
-    lines: Vec::new(),
-    line_count: 0,
-};
 use tm_core::model::{Id, IsoWeek, Loc, Recur};
 use tm_core::planner::{self, DayPlan, PlanInput, PlanOverrides, SegFlags, SegKind, Segment};
 use tm_core::priority::{Candidate, Prio, PrioClass};
@@ -682,7 +673,6 @@ impl App {
     fn input(&self) -> PlanInput<'_> {
         PlanInput::new(
             &self.tree,
-            &NO_LOG,
             &self.replay,
             &self.cfg,
             &self.model,
@@ -1249,8 +1239,7 @@ impl App {
         let alt = planner::plan(
             &PlanInput::new(
                 &self.tree,
-                &NO_LOG,
-                &self.replay,
+                    &self.replay,
                 &self.cfg,
                 &self.model,
                 &runtime,

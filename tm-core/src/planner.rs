@@ -12,7 +12,7 @@
 //!
 //! # API overview
 //!
-//! * [`PlanInput`] — the tree, the log and its [`Replay`], the config, the
+//! * [`PlanInput`] — the tree, the log's [`Replay`], the config, the
 //!   learned [`Model`], the runtime [`RuntimeState`] and `now`, plus four
 //!   optional shortcuts: `caps` and `candidates` (a caller that already built
 //!   the §8.4 lookahead or the §6.2 candidate list does not build it twice),
@@ -157,7 +157,7 @@ use serde::Serialize;
 use crate::capacity::{self, DayCapacity, EnergyCtx, Slot, Wall, WallsByDate};
 use crate::config::Config;
 use crate::energy::{self, Model, Posterior};
-use crate::log::{Log, Replay, SegmentKind};
+use crate::log::{Replay, SegmentKind};
 use crate::model::{Dep, Horizon, Id, InstanceKey, Loc, Pref, Shape};
 use crate::priority::{self, Candidate, Ineligible, Prio};
 use crate::store::RuntimeState;
@@ -177,16 +177,14 @@ const SLEEP_MIN_MINUTES: u32 = 6 * 60;
 
 /// Everything `plan()` reads (§8).
 ///
-/// `log` is the raw event log (§10.1) and `replay` is `log::replay(...)` over
-/// it — the planner never derives the replay itself, so the caller decides
-/// the range once and the TUI can reuse it across replans.
+/// `replay` is the replay of the event log (§10.1) — the planner never reads
+/// the log or derives the replay itself, so the caller decides the range once
+/// and the TUI can reuse it across replans.
 #[derive(Clone, Copy, Debug)]
 pub struct PlanInput<'a> {
     /// The parsed plan tree (§6).
     pub tree: &'a Tree,
-    /// The raw event log (§10.1).
-    pub log: &'a Log,
-    /// `log::replay(...)` over `log` — block minutes, instance statuses,
+    /// The replay of the event log — block minutes, instance statuses,
     /// energy and duration observations (§10.1).
     pub replay: &'a Replay,
     /// Configuration (§16).
@@ -215,7 +213,6 @@ impl<'a> PlanInput<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         tree: &'a Tree,
-        log: &'a Log,
         replay: &'a Replay,
         cfg: &'a Config,
         model: &'a Model,
@@ -224,7 +221,6 @@ impl<'a> PlanInput<'a> {
     ) -> PlanInput<'a> {
         PlanInput {
             tree,
-            log,
             replay,
             cfg,
             model,

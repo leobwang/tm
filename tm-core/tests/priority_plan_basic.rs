@@ -17,7 +17,7 @@ use chrono_tz::Tz;
 use tm_core::capacity::{local_dt, DayCapacity};
 use tm_core::config::Config;
 use tm_core::energy::Model;
-use tm_core::log::{self, Log, Replay};
+use tm_core::log::{self, Replay};
 use tm_core::model::Id;
 use tm_core::planner::{self, DayPlan, PlanInput, SegFlags, SegKind, Segment};
 use tm_core::priority::{self, Candidate, Ineligible, Prio};
@@ -344,7 +344,6 @@ fn explain_names_the_shortfall_when_impossible() {
 #[test]
 fn planner_types_carry_the_window_budget_and_hash() {
     let (tree, cfg, replay) = plan_basic();
-    let log = Log::new();
     let model = Model::default();
     let mut runtime = RuntimeState {
         date: Some(date("2026-09-07")),
@@ -357,7 +356,6 @@ fn planner_types_carry_the_window_budget_and_hash() {
     ));
     let input = PlanInput::new(
         &tree,
-        &log,
         &replay,
         &cfg,
         &model,
@@ -465,7 +463,6 @@ fn planner_types_carry_the_window_budget_and_hash() {
 #[test]
 fn plan_without_a_stored_window_uses_the_spec_formula() {
     let (tree, cfg, replay) = plan_basic();
-    let log = Log::new();
     let model = Model::default();
     let runtime = RuntimeState {
         date: Some(date("2026-09-07")),
@@ -474,7 +471,7 @@ fn plan_without_a_stored_window_uses_the_spec_formula() {
     assert!(runtime.window.is_none() && runtime.budget.is_none());
 
     let now = at("2026-09-07", 10, 42);
-    let input = PlanInput::new(&tree, &log, &replay, &cfg, &model, &runtime, now);
+    let input = PlanInput::new(&tree, &replay, &cfg, &model, &runtime, now);
     let day = planner::plan(&input);
     // 10:42 + 8h = 18:42, inside the 19:00 cap, plus §8.1's `Σ duration(walls
     // inside the window)` — the 12:50–13:50 meeting — is 19:42. (Before M4 the
@@ -488,7 +485,7 @@ fn plan_without_a_stored_window_uses_the_spec_formula() {
         arrival: Some(NaiveTime::from_hms_opt(7, 0, 0).expect("time")),
         ..RuntimeState::default()
     };
-    let input = PlanInput::new(&tree, &log, &replay, &cfg, &model, &arrived, now);
+    let input = PlanInput::new(&tree, &replay, &cfg, &model, &arrived, now);
     let day = planner::plan(&input);
     // 07:00 + 8h = 15:00, plus the 12:50–13:50 wall inside it, is 16:00 —
     // which is exactly the window `.tm/state.json` stores in §4.3.
@@ -503,7 +500,7 @@ fn plan_without_a_stored_window_uses_the_spec_formula() {
         arrival: Some(NaiveTime::from_hms_opt(20, 0, 0).expect("time")),
         ..RuntimeState::default()
     };
-    let input = PlanInput::new(&tree, &log, &replay, &cfg, &model, &late, now);
+    let input = PlanInput::new(&tree, &replay, &cfg, &model, &late, now);
     let day = planner::plan(&input);
     assert_eq!(day.window.0, at("2026-09-07", 20, 0));
     assert_eq!(day.window.1, at("2026-09-07", 20, 0));

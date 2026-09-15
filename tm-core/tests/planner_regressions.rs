@@ -32,7 +32,6 @@ use tm_core::tree::Tree;
 struct World {
     tree: Tree,
     cfg: Config,
-    log: Log,
     replay: Replay,
     model: Model,
 }
@@ -54,7 +53,6 @@ impl World {
         World {
             tree,
             cfg,
-            log,
             replay,
             model: Model::default(),
         }
@@ -63,7 +61,6 @@ impl World {
     fn input<'a>(&'a self, state: &'a RuntimeState, now: DateTime<Tz>) -> PlanInput<'a> {
         PlanInput::new(
             &self.tree,
-            &self.log,
             &self.replay,
             &self.cfg,
             &self.model,

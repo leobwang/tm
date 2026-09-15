@@ -12885,3 +12885,50 @@ number equal). No kernel change; no recursion over a wire list.
 | `cargo test --workspace` | **1028 passed / 0 failed / 2 ignored across 70 binaries** (+2: the two new `cli_undo` tests), 0 compiler warnings |
 | FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
 | `cli_latency.rs` | green: first verb 627.5 / 638.0 / 637.9 ms (226 files, 2,959 lines), later verb 55.7 / 55.8 / 55.7 ms |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5 D9 R7 (design §14.3 row R7, §12), on
+     rebuild-on-lean after bc47b90.  Takes no gap, cheat or parity number.
+     =========================================================================== -->
+
+## Stage 5 D9 R7, 2026-09-14: the planner is handed the replay alone — `PlanInput.log` is deleted
+
+**What changed.** `tm_core::planner::PlanInput` loses its `log: &Log` field and `PlanInput::new` its
+`log` argument (six arguments now: tree, replay, config, model, runtime, now); `planner.rs` no longer
+imports `Log`. It had no reader: `rg '\blog\b' tm-core/src/planner.rs` at `bc47b90` finds the field,
+its constructor and doc comments only. The callers follow: `cli/planning.rs` (`&ctx.log` dropped),
+`tui/app.rs` (both `PlanInput::new` calls, and the `static NO_LOG` R4 introduced as a stand-in, with
+its doc comment naming R7), and the tests `planner_common/mod.rs`, `planner_invariants.rs`,
+`planner_regressions.rs` (their `World.log` fields, now unread, removed; the local `Log` still builds
+the replay) and `priority_plan_basic.rs` (four calls; two unused `Log::new()` and the `Log` import
+removed). The planner's module and struct docs say it reads the replay, not the log.
+
+**Equivalence test.** There is no old and new function inside one build to compare (the change is a
+field nobody read, and the compiler is the proof that nothing read it). The row's comparison was run
+on the **binary** instead, before and after: `bc47b90`'s `tm` and this commit's, each on a fresh copy
+of every plan corpus (`plan-basic`, `plan-conflicts`, `plan-home-day`, `plan-recur`,
+`plan-travel-day`) × the log it ships (or none) / each of the four corpus logs / loggen's 1-month
+logs at both rates × `--now` 2026-09-07 10:00 and 15:30 and 2026-01-15 10:00 × `tm plan`,
+`tm plan --json`, `tm plan --allow-home`, `tm now --json`: **420 runs; stdout, stderr, exit code and
+every byte of the resulting tree (`diff -r`, `.tm/` included: the day file, `last_plan.json`, the
+appended `plan` event) identical.** Nothing was added to the tree for it, so nothing is deleted.
+
+**Existing suites.** No assertion changed: `emit_planner` 4, `planner_dynamics` 11,
+`planner_fixtures` 4, `planner_invariants` 1, `planner_regressions` 21, `priority_plan_basic` 5,
+`cli_plan` 13, and the TUI suites (187), all passed.
+
+**Disagreements.** None. (R4's — `PlanInput.log` outliving `App.log` by three steps — is closed:
+`NO_LOG` is gone.)
+
+**Goals discharged: none. Refuted: none. Added: none.** Burn-down **13 → 13**. **New theorems:
+none.** **Parity entries: none.** **Observable behaviour changes: none** (420 runs identical).
+**Numbers taken: none.** No kernel change; no recursion over a wire list.
+
+**Re-measured** (main worktree, every command under the 30 GB cap):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.91 s; audit **2672**; corpus **29/37 and 4/5**; burn-down **13** |
+| `cargo test --workspace` | **1028 passed / 0 failed / 2 ignored across 70 binaries**, 0 compiler warnings |
+| FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
+| `cli_latency.rs` | green: first verb 622.8 / 642.4 / 607.6 ms (226 files, 2,959 lines), later verb 55.7 / 50.7 / 55.7 ms |
