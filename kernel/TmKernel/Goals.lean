@@ -498,16 +498,14 @@ hold vacuously of it and are **not** discharged.  Six goals and five provisional
 **W2, part 3** discharged law 4 (`Seal.resume_keeps_the_sealed_records`, `SealLaw4.lean`) and law 5 in both directions
 (`Seal.resume_ok_iff`, `SealLaw5B.lean`), with the real `Seal.reachFree` and `Seal.tagsClear` (`SealReach.lean`)
 replacing their provisional definitions.  Four goals (laws 6, 6's pair, 7 and 9) and three provisional definitions
-(`foldPoint`, `sealDay`, `genesis`) remain (README "Stage 5 D9 W2, part 3").
+(`foldPoint`, `sealDay`, `genesis`) remained.
+**W2, part 4b** built the reseal (`Seal.resealOf`, `Seal.foldPoint`, `Seal.sealDay` in `SealResume.lean`; the
+provisional `foldPoint` and `sealDay` are deleted) and discharged law 6's pair (`Seal.a_reseal_never_seals_past_now`,
+`SealLaw6Pair.lean`).  Laws 6 and 7 read the real reseal and are not vacuous: they remain, with law 9 and the
+provisional `genesis` (README "Stage 5 D9 W2, part 4b").
 ############################################################################ -/
 
 -- provisional, replaced by the real definitions in W2 (signatures fixed by design §15)
-/-- **Provisional (W2).**  How many tail lines a reseal folds: the greatest valid cut (§9.4). -/
-def Seal.foldPoint (z : Cal.Tz) (T : Nat) (k : Seal.Ckpt) (b : List Log.Line) (terminated : Bool)
-    (p : Seal.Policy) : Nat := sorry
-/-- **Provisional (W2).**  The new ledger day `L'` (§9.4). -/
-def Seal.sealDay (z : Cal.Tz) (T : Nat) (k : Seal.Ckpt) (b : List Log.Line) (terminated : Bool)
-    (p : Seal.Policy) : Nat := sorry
 /-- **Provisional (W2).**  The chunked rebuild with exact pops (§9.7). -/
 def Seal.genesis (z : Cal.Tz) (T : Nat) (chunks : List (List Log.Line)) (terminated : Bool) (p : Seal.Policy) :
     Except Seal.Refusal (List Seal.DayRecord × List Seal.WindowRecord × Seal.Answer) := sorry
@@ -524,14 +522,6 @@ theorem reseal_is_seal (z : Cal.Tz) (T₀ T L : Nat) (a r b : List Log.Line) (te
     s.ckpt = Seal.ckptOf z T L' (a ++ b.take j) (b.drop j) ∧
     s.days = Seal.dayRecordsBetween z T L L' (a ++ b.take j) ∧
     s.window = Seal.windowRecordsBetween z T (Seal.horizonOf L) (Seal.horizonOf L') (a ++ b.take j) := sorry
-
-/-- **Law 6's pair**: a reseal never seals past `now` (CRIT 1). -/
-theorem a_reseal_never_seals_past_now (z : Cal.Tz) (T₀ T L : Nat) (a r b : List Log.Line) (term : Bool)
-    (p : Seal.Policy) (v : Seal.Answer) (s : Seal.Resealed)
-    (hc : Log.contiguousFrom 1 (a ++ b) = true) (hr : r <+: b) (hs : Seal.sealable z T₀ L a r = true)
-    (h : Seal.resume z T (Seal.ckptOf z T₀ L a r) b term (some p) = .ok (v, some s)) :
-    Seal.sealDay z T (Seal.ckptOf z T₀ L a r) b term p = L ∨
-    Seal.sealDay z T (Seal.ckptOf z T₀ L a r) b term p + p.keepDays ≤ T := sorry
 
 /-- **Law 7, no loop**: a resealed checkpoint accepts its own unfolded suffix at every later day. -/
 theorem a_resealed_checkpoint_accepts_its_own_suffix (z : Cal.Tz) (T₀ T L : Nat) (a r b : List Log.Line)

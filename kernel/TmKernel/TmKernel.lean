@@ -38,6 +38,13 @@ import TmKernel.SealLaw5B
 import TmKernel.SealPending
 import TmKernel.SealLaw4
 import TmKernel.SealInStep
+import TmKernel.SealFoldPoint
+import TmKernel.SealLaw6Pair
+import TmKernel.SealCutBounds
+import TmKernel.SealCutMask
+import TmKernel.SealCutStep
+import TmKernel.SealCutTags
+import TmKernel.SealCutWakes
 import TmKernel.State
 import TmKernel.Plan
 import TmKernel.Tree

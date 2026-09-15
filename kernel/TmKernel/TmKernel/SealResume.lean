@@ -247,9 +247,161 @@ def resumeRun (z : Cal.Tz) (T : Nat) (K : Ckpt) (b : List Log.Line) : Except Ref
         let st := rebindState sl r.1
         .ok ⟨bs, N, sv, kw, sl, st, hs, resumedAnswer K st hs bs.length (Log.lineWarnings b)⟩
 
-/-- The reseal of a run (W2, part 3 builds it). -/
-def resealOf (_z : Cal.Tz) (_T : Nat) (_K : Ckpt) (_b : List Log.Line) (_terminated : Bool) (_p : Policy) (_r : Run) :
-    Option Resealed := none
+/-! ## The reseal (§9.4)
+
+A run's fold point `j` counts the tail lines it folds; the folded tail is the tail's entries on lines `K.cut + 1 ..
+K.cut + j`.  A cut is valid (`cutOk`) when
+- (i) every folded entry not future at `T` is on a day before `F` (`floorOf`, bounded by `now`, CRIT 1);
+- (ii) it is within the policy's `maxLine`;
+- (iii) every unfolded surviving wake is after the folded instants not future at `T` and more than the fence before the
+  future ones;
+- (iv) the new `settled` fits;
+- (v) it does not fold an unterminated last line (CRIT 8);
+- (vi) no unfolded undo's target is folded: the stored `settled` undos are folded, and no undo of the tail is cut from
+  its tail target (W1's disagreement 11, settled by the cut, not by the ledger day).
+The fold point is the greatest valid cut (`greatestValid`), and the new ledger day (`sealDayOf`) is the least of `F`,
+the days the unfolded lines head, name and read, and the folded machine's days, never below `L`.  A reseal is emitted
+when the stored checkpoint's future classification is unchanged at `T` (`migrationOk`) and the fold point is valid. -/
+
+/-- The later of two optional instants. -/
+def maxOptI : Option Cal.Instant → Option Cal.Instant → Option Cal.Instant
+  | none, b => b
+  | some a, none => some a
+  | some a, some b => some (if a < b then b else a)
+
+/-- The earlier of two optional instants. -/
+def minOptI : Option Cal.Instant → Option Cal.Instant → Option Cal.Instant
+  | none, b => b
+  | some a, none => some a
+  | some a, some b => some (if b < a then b else a)
+
+/-- **The stored checkpoint's future classification holds at `T`**: its latest non-future instant is not future at `T`
+and its earliest future one still is, so every folded instant keeps its side. -/
+def migrationOk (K : Ckpt) (T : Nat) : Bool := K.maxT.all (fun m => !isFuture T m) && K.futureFloor.all (isFuture T)
+
+/-- **`F`** (§9.4's G-w): `T − keepDays`, and `M − keepDays` for `M` the greatest day the call's surviving entries not
+future at `T` head (`T` when there is none). -/
+def floorOf (T keep : Nat) (dy : Cal.Instant → Nat) (sv : List Entry) : Nat :=
+  let ds := (sv.filter (fun e => !isFuture T e.t.val)).map (fun e => dy e.t.val)
+  Nat.min (T - keep) ((match ds with | [] => T | d :: rest => rest.foldl Nat.max d) - keep)
+
+/-- Each undo of a list with the target it cancels there (stack order, as the mask cancels). -/
+def undoTargets (N : List Entry) : List (Entry × Entry) :=
+  (N.foldl (fun (acc : List Entry × List (Entry × Entry)) e =>
+    match e.ev with
+    | .undo of_ id =>
+      match acc.1.find? (Replay.«matches» of_ id) with
+      | some t => (acc.1.eraseP (Replay.«matches» of_ id), (e, t) :: acc.2)
+      | none => acc
+    | _ => (e :: acc.1, acc.2)) ([], [])).2
+
+/-- **The new `settled` at cut `j`**: the unfolded undos of the unsettled tail that dangle there, ascending. -/
+def settledAt (K : Ckpt) (r : Run) (j : Nat) : List Nat :=
+  (((Replay.danglingOf r.unsettledTail).2.filter (fun u => decide (K.cut + j < u.line))).map (·.line)).reverse
+
+/-- The days a tail's steps bound the new ledger day by, for the entries `P` selects: every date an effect's key names,
+and the day after every instant the step reads the index at (so the head second is at or before it). -/
+def stepLows (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (P : Entry → Bool) (st : State)
+    (sv : List Entry) : List Nat :=
+  (sv.foldl (fun (acc : State × List Nat) e =>
+    let fx := Replay.effectsWith z dy sl acc.1 e
+    (Replay.applyEffects acc.1 fx,
+     if P e then fx.filterMap (fun x => x.key.date?) ++ (stepQueries acc.1.machine e).map (fun q => q.sec / 86400 + 1)
+       ++ acc.2 else acc.2)) (st, [])).2
+
+/-- **A valid cut** (§9.4's conditions (i)–(v), and (vi)). -/
+def cutOk (z : Cal.Tz) (T : Nat) (K : Ckpt) (b : List Log.Line) (terminated : Bool) (p : Policy) (r : Run) (j : Nat) :
+    Bool :=
+  let dy := Replay.dayOf z r.index
+  let Bj := r.entries.filter (fun e => decide (e.line ≤ K.cut + j))
+  let svr := r.survivors.filter (fun e => decide (K.cut + j < e.line))
+  let QAj := Bj.flatMap entryInstants
+  let maxT' := maxOptI K.maxT (maxInstant? (QAj.filter (fun q => !isFuture T q)))
+  let ff' := minOptI K.futureFloor (minInstant? (QAj.filter (isFuture T)))
+  decide (j ≤ b.length)
+  && Bj.all (fun e => isFuture T e.t.val || decide (dy e.t.val < floorOf T p.keepDays dy r.survivors))
+  && (j == 0 || p.maxLine.all (fun m => decide (K.cut + j ≤ m)))
+  && (Replay.wakeInstants svr).all (fun w => maxT'.all (· < w) && ff'.all (fun f => decide (w.sec + fenceSec < f.sec)))
+  && decide ((settledAt K r j).length ≤ maxSettled)
+  && (terminated || decide (j < b.length) || j == 0)
+  && K.settled.all (fun n => decide (n ≤ K.cut + j))
+  && (undoTargets r.unsettledTail).all (fun ut => !(decide (ut.2.line ≤ K.cut + j) && decide (K.cut + j < ut.1.line)))
+
+/-- **The greatest `j ≤ n` a check accepts**, or `0` (specification: every cut is checked). -/
+def greatestValid (n : Nat) (valid : Nat → Bool) : Nat :=
+  (List.range (n + 1)).foldl (fun acc j => if valid j then j else acc) 0
+
+/-- A run's fold point: its greatest valid cut. -/
+def foldPointOf (z : Cal.Tz) (T : Nat) (K : Ckpt) (b : List Log.Line) (terminated : Bool) (p : Policy) (r : Run) : Nat :=
+  greatestValid b.length (cutOk z T K b terminated p r)
+
+/-- **The new ledger day `L'`** at cut `j` (§9.4, with W2's head-second and read-day bounds): the least of `F`, every
+unfolded line's day and the day after its stamp, every date an unfolded surviving step names and the day after every
+instant it reads, and the folded machine's days; never below `L`. -/
+def sealDayOf (z : Cal.Tz) (T : Nat) (K : Ckpt) (p : Policy) (r : Run) (j : Nat) : Nat :=
+  let dy := Replay.dayOf z r.index
+  let n := K.items.length + K.openDays.length + r.entries.length
+  let Brest := r.entries.filter (fun e => decide (K.cut + j < e.line))
+  let svj := r.survivors.filter (fun e => decide (e.line ≤ K.cut + j))
+  let lows := Brest.map (fun e => dy e.t.val) ++ Brest.map (fun e => e.t.val.sec / 86400 + 1)
+    ++ stepLows z dy r.slept (fun e => decide (K.cut + j < e.line)) (restore K n) r.survivors
+    ++ machineDays (svj.foldl (Replay.stepWith z dy r.slept) (restore K n)).machine
+  Nat.max K.ledgerDay (lows.foldl Nat.min (floorOf T p.keepDays dy r.survivors))
+
+/-- The tag filter of `keptTags`, over a tag-line list: every known tag, and the first unknown tags of bounded length. -/
+def keepTags (all : List (List Char × Nat)) : List (List Char × Nat) :=
+  let unknownKept := ((all.filter (fun p => !Log.isKnownTag p.1 && decide (p.1.length ≤ maxTagChars))).take maxUnknownTags)
+  all.filter (fun p => Log.isKnownTag p.1 || unknownKept.contains p)
+
+/-- Two tag-line lists merged by tag, the newer list's line winning. -/
+def mergeTagLines (old new : List (List Char × Nat)) : List (List Char × Nat) :=
+  (canon idLt (old.map Prod.fst ++ new.map Prod.fst)).map (fun t =>
+    (t, ((new.find? (fun p => p.1 == t)).map Prod.snd).getD (((old.find? (fun p => p.1 == t)).map Prod.snd).getD 0)))
+
+/-- **The reseal of a run** (§9.4): the checkpoint at the fold point and the records it seals. -/
+def resealOf (z : Cal.Tz) (T : Nat) (K : Ckpt) (b : List Log.Line) (terminated : Bool) (p : Policy) (r : Run) :
+    Option Resealed :=
+  let j := foldPointOf z T K b terminated p r
+  if migrationOk K T && cutOk z T K b terminated p r j then
+    let dy := Replay.dayOf z r.index
+    let n := K.items.length + K.openDays.length + r.entries.length
+    let Bj := r.entries.filter (fun e => decide (e.line ≤ K.cut + j))
+    let svj := r.survivors.filter (fun e => decide (e.line ≤ K.cut + j))
+    let Rj := svj.foldl (Replay.stepWith z dy r.slept) (restore K n)
+    let kwj := Replay.keptWakes z (K.wakes ++ Replay.wakeInstants svj)
+    let sleptj := K.sleptByDay ++ Replay.sleptByDay z kwj svj
+    let st := rebindState (Replay.KMap.get sleptj) Rj
+    let hsj := storedHeaders K ++ (tailHeaders dy K.settled r.entries).take Bj.length
+    let L' := sealDayOf z T K p r j
+    let QAj := Bj.flatMap entryInstants
+    let merged := mergeTagLines K.tagLast (tagLines svj)
+    let ws := (Log.lineWarnings b).filter (fun w => decide (w.1 ≤ K.cut + j))
+    let ck : Ckpt := ⟨ckptVersion, K.tzKey, K.cut + j, L', T,
+      maxOptI K.maxT (maxInstant? (QAj.filter (fun q => !isFuture T q))),
+      minOptI K.futureFloor (minInstant? (QAj.filter (isFuture T))),
+      storedWakes L' kwj, storedSlept sleptj L', keepTags merged,
+      K.tagOverflow || decide ((keepTags merged).length < merged.length),
+      settledAt K r j, st.machine,
+      (canon idLt (K.items.map (·.id) ++ itemIds st)).map (aggMerged K st),
+      windowsFrom st (horizonOf L'), instOtherOf st, namedOf st, daysFrom st hsj L',
+      maxOpt K.lastDay (Replay.maxDay? (st.days.pairs.map Prod.fst)), st.global.lastEffective,
+      K.entryCount + Bj.length, st.unknown, st.longestLeak, st.rwarns.reverse,
+      (K.warnings ++ ws).take maxWarnings, K.warnings.length + K.warnOverflow + ws.length - maxWarnings⟩
+    some ⟨ck, ck.meta, (daysIn st hsj K.ledgerDay L').map (OpenDay.finish st.machine),
+      windowsIn st (horizonOf K.ledgerDay) (horizonOf L')⟩
+  else none
+
+/-- **How many tail lines a reseal folds** (§15): the resume's greatest valid cut. -/
+def foldPoint (z : Cal.Tz) (T : Nat) (k : Ckpt) (b : List Log.Line) (terminated : Bool) (p : Policy) : Nat :=
+  match resumeRun z T k b with
+  | .ok r => foldPointOf z T k b terminated p r
+  | .error _ => 0
+
+/-- **The new ledger day `L'`** (§15), at the fold point. -/
+def sealDay (z : Cal.Tz) (T : Nat) (k : Ckpt) (b : List Log.Line) (terminated : Bool) (p : Policy) : Nat :=
+  match resumeRun z T k b with
+  | .ok r => sealDayOf z T k p r (foldPointOf z T k b terminated p r)
+  | .error _ => k.ledgerDay
 
 /-- **Resume** (§9.4): the answer, and with a policy, the reseal. -/
 def resume (z : Cal.Tz) (T : Nat) (k : Ckpt) (b : List Log.Line) (terminated : Bool) (p : Option Policy) :

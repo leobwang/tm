@@ -17312,3 +17312,137 @@ At most two entries each; `utcZone`, or `flipZone` with two transitions; no text
 **Owed next (W2, part 4b):** `foldPoint`, `sealDay`, the reseal and record emission, with laws 6, 6's pair and 7,
 `foldPoint_valid`, `foldPoint_greatest` and `the_unterminated_segment_is_never_folded`; `genesis` and law 9; cheats
 100, 101, 103 and 104 (design labels).
+
+<!-- ===================================================================== -->
+<!-- Stage 5 D9 W2, part 4b (2026-09-15).  Gaps, cheats and parity entries -->
+<!-- are numbered from the next free numbers (gap 119, cheat 154, P35).    -->
+<!-- ===================================================================== -->
+
+## Stage 5 D9 W2, part 4b, 2026-09-15: the reseal is built — law 6's pair, the fold point's in-step theorems, and the route at the cut
+
+**Starting point.** `7aee392` (part 4a).
+
+### What was built
+
+**`SealResume.lean`: the reseal (§9.4), replacing `resealOf`'s stub.**
+- **A valid cut** (`cutOk`): §9.4's conditions (i)–(v), and (vi): the stored settled undos are folded, and no undo of
+  the tail is cut from its tail target (`undoTargets`).
+- **`foldPoint`** is the greatest valid cut (`greatestValid`, a specification scan).
+- **`sealDay`** (`sealDayOf`) is the least of:
+  - `F` (`floorOf`, bounded by `now`);
+  - every unfolded line's day and the day after its stamp;
+  - every date an unfolded surviving step names, and the day after every instant it reads (`stepLows`);
+  - the folded machine's days (`machineDays`).
+
+  It is never below `L`.
+- **`resealOf`** emits a reseal when the stored classification holds at `T` (`migrationOk`) and the fold point is
+  valid. It builds the checkpoint at the fold point from the stored one and the run:
+  - `maxT` and `futureFloor` combined (`maxOptI`, `minOptI`);
+  - the stored wakes and `slept_by_day` from the stored ones and the folded tail's;
+  - the tags merged (`mergeTagLines`, `keepTags`);
+  - `settled` as the unfolded undos that dangle (`settledAt`);
+  - the state at the cut, grouped as `ckptOf` groups a state.
+
+  It also emits the day records of `[L, L')` and the window records of `[H, H')`.
+
+**`SealFoldPoint.lean`.** `foldPoint_valid` and `foldPoint_greatest` (§14.5's W2 row),
+`the_unterminated_segment_is_never_folded` (CRIT 8), and `cutOk_parts`.
+
+**`SealLaw6Pair.lean`.** `a_reseal_never_seals_past_now` (law 6's pair).
+
+**The route at the cut, for law 6** (proven, no `sorry`):
+- `SealCutBounds`: the resealed `maxT` and `futureFloor` are the fold point's (`resealed_maxT`, `resealed_futureFloor`,
+  from `isFuture_migrates`).
+- `SealCutMask`:
+  - the fold point's lines are the tail's entries below and at or after a line (`lineEntries_take`, `lineEntries_drop`);
+  - the folded survivors under the call-wide mask (`foldedSurvivors_at_cut`);
+  - G1's soundness half (`dangling_misses_the_folded`);
+  - `undoTargets`' meaning (`mem_undoTargets`).
+- `SealCutStep`:
+  - under G1 and (vi), an undo past the cut finds its first match on the whole log's stack past the cut, or none, and
+    it is the unsettled tail's (`cut_step`, `cut_find_eq`);
+  - so the folded lines' own mask is the call-wide mask's restriction (`survivors_at_cut`);
+  - and the resealed `settled` is the fold point's (`settled_at_cut`).
+- `SealCutTags`: appended survivors' tag lines merge by tag (`tagLines_append`), with the count lemmas truncation needs
+  (`take_filter_of_prefix`, `mem_take_iff_count`).
+- `SealCutWakes`: the resealed stored wakes are the fold point's (`storedWakes_at_cut`).
+
+**Evidence before the proofs (probes, not theorems).** A generator of small logs:
+- 3–8 lines of 17 event kinds, block events included;
+- `utcZone` and a two-transition zone;
+- future-dated lines, `maxLine`, terminated or not.
+
+Each log was sealed at every sealable `(L, T₀)` and resumed with a reseal policy. Each reseal was checked for:
+- `L ≤ L'` and `sealable` at `L'`;
+- `s.ckpt = ckptOf …`;
+- `s.days = dayRecordsBetween …` and `s.window = windowRecordsBetween …`;
+- law 7's acceptance at `T` and `T + 5`.
+
+Each resealed checkpoint was then resumed over its own suffix and resealed again.
+
+Result: **5,541 reseals** (1,166 folding tail lines, 2,855 chained, 15 under tag overflow), **0 failures**, 43 s at
+the 8 GB cap.
+
+### Goals (AGENTS §3.2)
+
+**Discharged (1):** `a_reseal_never_seals_past_now` (law 6's pair). The provisional `foldPoint` and `sealDay` are
+deleted.
+
+Laws 6 and 7 now read the real reseal and are not vacuous. They remain priced, with law 9 and the provisional
+`genesis`. In-step: `foldPoint_valid`, `foldPoint_greatest` and `the_unterminated_segment_is_never_folded`.
+
+**Added: none. Refuted: none.** Burn-down **17 → 16**.
+
+### Recorded disagreements between the design and the repo (continuing part 4a's)
+
+10. **The fold point never cuts an undo from its target** (condition (vi)).
+    - This settles W1's disagreement 11 by the cut, not by the ledger day.
+    - A cut is invalid while a stored settled undo is unfolded, or while an unfolded undo's tail target is folded.
+    - The unfolded remainder then cancels nothing folded, so the folded lines' mask is their own.
+    - Cost: a settled undo recent enough to stay unfolded holds the fold point back until it is folded.
+11. **The new ledger day also takes the day after every instant an unfolded line heads or reads** (W2's head second):
+    the stamps, the gap starts, and the open block's instants the unfolded steps read. So the resealed checkpoint's
+    head rule accepts its own suffix (law 7).
+12. **`foldPoint` is a specification scan** (`greatestValid` checks every cut; quadratic). §9.4's one pass (prefix
+    maxima and suffix minima) is owed as a `@[csimp]` twin with its equality theorem, before W5 measures a reseal.
+13. **A reseal is emitted only when the stored future classification holds at `T`** (`migrationOk`). A folded instant
+    that has changed sides is recomputed only by a genesis.
+
+### Rule D9-21
+
+- **On the wire from W3** (`resume` with a policy): `cutOk`, `settledAt`, `undoTargets`, `stepLows`, `floorOf`,
+  `sealDayOf`, `mergeTagLines`, `keepTags` and `resealOf` (`foldl`, `filterTR`, `mapTR`, `flatMapTR`, `find?`,
+  `eraseP`).
+- **Quadratic, recorded for W4/W5:**
+  - `greatestValid` (every cut rechecked);
+  - `undoTargets` (each undo scans the stack, as `danglingOf` does);
+  - `mergeTagLines` (`canon`, within the tag bound).
+- **Specification only:** everything in `SealFoldPoint` … `SealCutWakes`.
+
+### Numbers
+
+**Taken:** none. **Highest:** gap 118, cheat 153, parity P34. **Parity entries:** none. **Witnesses:** none added (the
+probes above are evaluations, not witnesses).
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 3.04 / 2.99 / 3.06 s (part 1: 2.98 / 2.98 / 3.01 s, +2% at the worst; the cold first run after the build 3.85 s) |
+| axiom audit | **3737 theorems** (3665 + 72) |
+| `Negative.lean` | check 4 ok (unchanged: 149 errors, 143 `/- CHEAT` banners) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **16** |
+| `TmKernel.lean` | **58 imports** (51 + 7) |
+| modules | 7 new, 1,447 lines; `SealResume.lean` +155 lines |
+| `cargo test --workspace` | **1068 passed / 0 failed / 5 ignored across 73 binaries** (no test added or removed) |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6; `stack.rs` 4.25 s) |
+| T5 (`kernel_replay_parity.rs --include-ignored`) | 10 passed, 0.88 s |
+| `cli_latency.rs --include-ignored`, three serial runs | green, 4 passed each. No log: first 647.6 / 637.9 / 617.3 ms, later 50.8 / 55.8 / 50.7 ms. 1y: first 713.8 / 728.9 / 729.0, later 121.6 / 126.5 / 126.6. 3y: first 946.6 / 950.8 / 946.7, later 283.5 / 288.7 / 268.5. T14: 81.0 / 96.2 / 81.1 ms (3 years), 146.8 / 141.7 / 136.8 ms (10 years). The binary's reader is unchanged (Rust) |
+
+**Owed next (W2, part 4c):**
+- the truncated tags merge (`keptTags` of appended survivors from the stored truncation) and its overflow flag;
+- the resealed `slept_by_day`;
+- the state at the cut;
+- `sealable` at `L'`, the emitted records, and law 6's assembly;
+- law 7 (from law 5 on the resealed checkpoint);
+- `genesis` and law 9;
+- cheats 100, 101, 103 and 104 (design labels).
