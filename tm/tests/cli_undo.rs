@@ -256,3 +256,81 @@ fn undo_with_an_empty_stack_is_an_error() {
     assert_eq!(out.code, 1);
     assert!(out.stderr.contains("nothing to undo"), "{}", out.stderr);
 }
+
+/// The log's physical lines (a final `\n` ends the last one), unparsed.
+fn physical_lines(tm: &Tm) -> Vec<String> {
+    let text = tm.read(".tm/log.jsonl");
+    text.strip_suffix('\n').unwrap_or(&text).split('\n').map(str::to_string).collect()
+}
+
+/// The top of `.tm/undo.json`.
+fn top_of_stack(tm: &Tm) -> serde_json::Value {
+    let stack: serde_json::Value = serde_json::from_str(&tm.read(".tm/undo.json")).expect("undo.json");
+    stack["entries"].as_array().and_then(|e| e.last()).cloned().expect("an undo entry")
+}
+
+#[test]
+fn a_malformed_line_does_not_shift_the_recorded_events() {
+    // Parity P18 (design §7.2): the recorder counted non-blank lines, malformed
+    // ones included, and then skipped that many *parsed* entries, so every
+    // malformed line earlier in the log hid one of the command's own events.
+    // It now counts physical lines and reads the entries after them.
+    let tm = Tm::new();
+    tm.ok(&["wake", "06:05", "--slept", "8h10m"]);
+    let path = tm.plan.join(".tm/log.jsonl");
+    let mut text = std::fs::read_to_string(&path).expect("read log");
+    text.push_str("this is not json\n\n{\"t\":\"2026-09-07T06:30:00-05:00\",\"ev\":\"wake\"\n");
+    std::fs::write(&path, &text).expect("write log");
+    let before = physical_lines(&tm).len();
+
+    tm.ok(&["start", "^t4", "--energy", "4"]);
+    let lines = physical_lines(&tm);
+    let appended: Vec<serde_json::Value> = lines[before..]
+        .iter()
+        .map(|l| serde_json::from_str(l).expect("an appended line is JSON"))
+        .collect();
+    assert!(appended.iter().any(|e| e["ev"] == "start" && e["id"] == "t4"), "{appended:?}");
+    let top = top_of_stack(&tm);
+    assert_eq!(top["verb"], "start");
+    let recorded = top["events"].as_array().expect("events").clone();
+    let names = |es: &[serde_json::Value]| es.iter().map(|e| e["ev"].as_str().unwrap_or_default().to_string()).collect::<Vec<_>>();
+    assert_eq!(names(&recorded), names(&appended), "every appended event is recorded, the first included");
+    assert!(recorded.iter().any(|e| e["ev"] == "start" && e["id"] == "t4"), "{recorded:?}");
+    assert_eq!(top["log_line"], serde_json::json!(before + 1), "the first appended line, counted physically");
+
+    // And the undo cancels the start by its id, not by name alone.
+    tm.ok_at("2026-09-07T09:05:00-05:00", &["undo"]);
+    let last: serde_json::Value = serde_json::from_str(physical_lines(&tm).last().expect("a line")).expect("JSON");
+    assert_eq!(last["ev"], "undo");
+    assert_eq!(last["of"], "start");
+    assert_eq!(last["id"], "t4");
+    assert_eq!(tm.state()["active"], serde_json::Value::Null);
+}
+
+#[test]
+fn an_undo_stack_written_before_log_line_still_undoes() {
+    // CRIT 27: `.tm/undo.json` files written before `log_line` existed have no
+    // such key. They must load (as `None`) and undo exactly as before.
+    let tm = Tm::new();
+    tm.ok(&["wake", "06:05", "--slept", "8h10m"]);
+    let before = tm.line("week/2026-W37.md", "t4");
+    tm.ok(&["start", "^t4", "--energy", "4"]);
+    assert!(top_of_stack(&tm)["log_line"].is_u64(), "a new entry carries its line");
+
+    let path = tm.plan.join(".tm/undo.json");
+    let mut stack: serde_json::Value = serde_json::from_str(&tm.read(".tm/undo.json")).expect("undo.json");
+    for e in stack["entries"].as_array_mut().expect("entries") {
+        e.as_object_mut().expect("an entry").remove("log_line");
+    }
+    std::fs::write(&path, serde_json::to_string_pretty(&stack).expect("json")).expect("write undo.json");
+    assert!(!tm.read(".tm/undo.json").contains("log_line"));
+
+    tm.ok_at("2026-09-07T09:05:00-05:00", &["undo"]);
+    assert_eq!(tm.line("week/2026-W37.md", "t4"), before);
+    assert_eq!(tm.state()["active"], serde_json::Value::Null);
+    assert_eq!(undone(&tm), vec!["start"]);
+    assert_eq!(tm.last()["id"], "t4");
+    // The older entry (the wake) is still there, without the key, and undoes too.
+    tm.ok_at("2026-09-07T09:06:00-05:00", &["undo"]);
+    assert_eq!(undone(&tm), vec!["start", "wake"]);
+}

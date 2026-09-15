@@ -57,7 +57,9 @@
 //!   the §11 leak ledger), and `seam(date)`, the [`DaySeam`] facts the
 //!   CLI and TUI once walked the log for. [`Replay::view`] is every entry
 //!   with its physical line, day, mask bit and display text ([`ViewRow`],
-//!   `tm log`'s rows), [`Replay::entry_count`] their number. `Replay` is
+//!   `tm log`'s rows), [`Replay::entry_count`] their number,
+//!   [`Replay::headers_from`]`(line)` the rows from a physical line on
+//!   (`tm undo`'s recorder). `Replay` is
 //!   `Serialize`/`Deserialize` (JSON-safe: every map key is a string or a
 //!   date) for `--json` output.
 //!
@@ -1782,6 +1784,19 @@ impl Replay {
     /// counted): `tm log`'s `total`.
     pub fn entry_count(&self) -> usize {
         self.rows.len()
+    }
+    /// The rows of the entries on physical line `line` or later, in file
+    /// order: what a command appended after the log had `line - 1` lines
+    /// (`tm undo`'s recorder; the kernel's `headersFrom`). Rows are in
+    /// increasing line order, so this is a binary search.
+    pub fn headers_from(&self, line: u64) -> &[ViewRow] {
+        let i = self.rows.partition_point(|r| r.line < line);
+        &self.rows[i..]
+    }
+    /// The log's physical line count ([`Log::line_count`]): an entry
+    /// appended next is on line `line_count() + 1`.
+    pub fn line_count(&self) -> u64 {
+        self.line_count
     }
     /// The day's record.
     pub fn day(&self, date: NaiveDate) -> Option<&DayReplay> {

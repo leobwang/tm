@@ -8,8 +8,11 @@
 //! command did is recorded here, in `.tm/undo.json`:
 //!
 //! * [`Recorder::start`] snapshots the plan files, `.tm/state.json` and the
-//!   length of `.tm/log.jsonl` before the command runs;
-//!   [`Recorder::finish`] diffs all three and pushes one [`UndoEntry`].
+//!   **physical** line count of `.tm/log.jsonl` before the command runs;
+//!   [`Recorder::finish`] diffs all three and pushes one [`UndoEntry`]: the
+//!   events are the replay's rows from the next physical line on
+//!   ([`tm_core::log::Replay::headers_from`]), so a malformed or blank line
+//!   earlier in the log shifts nothing (design §7.2, parity P18).
 //! * [`undo`] pops the top entry, appends one `undo` event per event that
 //!   entry wrote (most recent first, or one named after the verb when it
 //!   wrote none), restores the bytes of every file it changed and puts
@@ -26,7 +29,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use tm_core::log::{Event, Log};
+use tm_core::log::{Event, Log, Replay};
 use tm_core::model::Id;
 use tm_core::store::{RuntimeState, Store, StoreError, StoreExt, LOG_PATH};
 
@@ -76,6 +79,11 @@ pub struct UndoEntry {
     pub files: Vec<FileBefore>,
     /// `.tm/state.json` as it stood before.
     pub state: RuntimeState,
+    /// The physical line of the first event it appended; `None` when it
+    /// appended none, and in every entry written before stage 5 D9 R6 (the
+    /// field is absent there). The seal policy reads it (design §9.6).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_line: Option<u64>,
 }
 
 /// The stack in `.tm/undo.json`.
@@ -114,15 +122,29 @@ fn snapshot(ctx: &Ctx) -> Result<BTreeMap<String, String>, CliError> {
     Ok(out)
 }
 
-/// The number of lines currently in `.tm/log.jsonl`.
-fn log_len(ctx: &Ctx) -> usize {
-    if !ctx.store.exists(LOG_PATH) {
-        return 0;
-    }
-    ctx.store
-        .read_text(LOG_PATH)
-        .map(|t| t.lines().filter(|l| !l.trim().is_empty()).count())
-        .unwrap_or(0)
+/// The replay of `.tm/log.jsonl` as it stands on disk now (a missing or
+/// unreadable file is an empty log, as before).
+fn replay_now(ctx: &Ctx) -> Replay {
+    let text = if ctx.store.exists(LOG_PATH) {
+        ctx.store.read_text(LOG_PATH).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    Log::parse(&text).replay(None, ctx.cfg.tz)
+}
+
+/// The events a command appended after the log had `from_lines` physical
+/// lines, and the line of the first of them.
+fn recorded(replay: &Replay, from_lines: u64) -> (Vec<UndoneEvent>, Option<u64>) {
+    let rows = replay.headers_from(from_lines + 1);
+    let events = rows
+        .iter()
+        .map(|r| UndoneEvent {
+            ev: r.entry.ev.name().to_string(),
+            id: r.entry.ev.primary_id().map(str::to_string),
+        })
+        .collect();
+    (events, rows.first().map(|r| r.line))
 }
 
 /// Records what one command changed.
@@ -130,7 +152,7 @@ pub struct Recorder {
     verb: String,
     files: BTreeMap<String, String>,
     state: RuntimeState,
-    log_len: usize,
+    log_lines: u64,
 }
 
 impl Recorder {
@@ -140,7 +162,7 @@ impl Recorder {
             verb: verb.to_string(),
             files: snapshot(ctx)?,
             state: ctx.state.clone(),
-            log_len: log_len(ctx),
+            log_lines: replay_now(ctx).line_count(),
         })
     }
 
@@ -174,7 +196,7 @@ impl Recorder {
             }
         }
 
-        let events = new_events(ctx, self.log_len);
+        let (events, log_line) = recorded(&replay_now(ctx), self.log_lines);
         let state_changed = ctx.state != self.state;
         if files.is_empty() && events.is_empty() && !state_changed {
             return Ok(());
@@ -187,6 +209,7 @@ impl Recorder {
             events,
             files,
             state: self.state,
+            log_line,
         });
         let len = stack.entries.len();
         if len > MAX_ENTRIES {
@@ -194,25 +217,6 @@ impl Recorder {
         }
         stack.save(ctx)
     }
-}
-
-/// The events appended since the log had `from` lines.
-fn new_events(ctx: &Ctx, from: usize) -> Vec<UndoneEvent> {
-    if !ctx.store.exists(LOG_PATH) {
-        return Vec::new();
-    }
-    let Ok(text) = ctx.store.read_text(LOG_PATH) else {
-        return Vec::new();
-    };
-    Log::parse(&text)
-        .entries
-        .into_iter()
-        .skip(from)
-        .map(|e| UndoneEvent {
-            ev: e.ev.name().to_string(),
-            id: e.ev.primary_id().map(str::to_string),
-        })
-        .collect()
 }
 
 /// What one `tm undo` did.

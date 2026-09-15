@@ -12799,3 +12799,89 @@ identical). **Numbers taken: none.** No kernel change; no recursion over a wire 
 | `cargo test --workspace` | **1026 passed / 0 failed / 2 ignored across 70 binaries**, 0 compiler warnings |
 | FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
 | `cli_latency.rs` | green: first verb 621.4 / 622.2 / 622.1 ms (226 files, 2,959 lines), later verb 55.8 / 50.7 / 55.8 ms |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5 D9 R6 (design §14.3 row R6, §7.2, §17 P18),
+     on rebuild-on-lean after 4f69243.  Takes parity P18 (the design's number;
+     unused in this checkout: the highest D9 parity number here is P25, the
+     D10 side's P26/P27/P30).  No gap, no cheat.
+     =========================================================================== -->
+
+## Stage 5 D9 R6, 2026-09-14: `tm undo` records by physical line — a malformed line no longer hides a command's events
+
+**What changed.**
+- **`Replay::headers_from(line)`**: the view rows on physical line `line` or later (a binary search
+  over the rows, which are in line order), and **`Replay::line_count()`**. The kernel's `headersFrom`
+  answers the same question at S.
+- **`Recorder`** (`cli/undo.rs`) keeps `log_lines: u64`, the log's **physical** line count when the
+  command starts, and `finish` records the events of `headers_from(log_lines + 1)`: tag and primary
+  id per row, in file order. **`log_len` (a non-blank line count) and `new_events` (parsed entries
+  after skipping that many) are deleted.** Both points read the log as it is on disk, as the old pair
+  did, through a private `replay_now(ctx)` that R8 replaces with `Ctx::replay_of`.
+- **`UndoEntry.log_line: Option<u64>`**: the physical line of the first event the command appended;
+  `None` when it appended none. `#[serde(default, skip_serializing_if = "Option::is_none")]`, so a
+  stack written before this commit loads with `None` everywhere (CRIT 27) and an entry without events
+  is written as before. `tm undo` itself does not read it (§7.2: "`undo` itself does not change");
+  the seal policy of §9.6 will.
+
+**Equivalence test (run, then deleted with the old functions).** A unit test in `cli/undo.rs` split
+each log at **every** line boundary *k* (prefix = the first *k* physical lines, the command's appends
+= the rest) over the four corpus logs, loggen's 1-month logs at both rates, and `three-days` with a
+whitespace-only line inserted after line 10 and a blank line at the end: for each split, the old
+`new_events(text, log_len(prefix))` against the new `headers_from(line_count(prefix) + 1)`.
+**3,539 splits; `line_count(prefix) = k` at every one; 3,529 splits with no malformed line in the
+prefix give equal lists; the other 10 (all in `malformed.jsonl`) are exactly the P18 relation: the old
+list is the new list without its first *m* events, *m* the malformed lines in the prefix (9 of them
+differ, the 10th has no events left to lose); 0 other differences; 2,446,670 events compared.** Every
+first recorded line is past *k* and parses.
+
+**New tests (`tm/tests/cli_undo.rs`, 16 → 18).**
+- `a_malformed_line_does_not_shift_the_recorded_events` (P18): after `tm wake`, a garbage line, a blank
+  line and a torn `wake` are appended by hand; `tm start ^t4` then records every event it appended
+  (by name; the `start` with id `t4`) with `log_line` = the first appended physical line, and
+  `tm undo` writes `undo{of:"start", id:"t4"}` and clears the block. **Against the commit before (the
+  `22a43df` binary, by hand on the same fixture): the recorded events are `[]`**, so the undo would
+  have been `undo{of:"start"}` without an id.
+- `an_undo_stack_written_before_log_line_still_undoes` (CRIT 27): the `log_line` key is stripped from
+  every entry of `.tm/undo.json`; two `tm undo`s then undo `start` (by id) and `wake` exactly as before.
+
+**Existing suites.** No assertion changed; `cli_undo`'s 16 earlier tests and the `undo_json` snapshot
+(the `Undone` output, which has no `log_line`) passed.
+
+### Parity entry
+
+| # | what | the kernel (and, from R6, the Rust) | the fork point | why | step |
+|---|---|---|---|---|---|
+| **P18** | `tm undo`'s recorded events after a malformed line | physical line numbers; the kernel's headers (`headers_from` until S) | `log_len` counts the malformed line and `new_events` skips it, so each malformed line before the command hides one of its events (the first ones) | inventory §0 defect | R6 |
+
+### Observable behaviour changes
+
+| where | before | after |
+|---|---|---|
+| `.tm/undo.json` after a command run with *m* malformed lines anywhere earlier in the log | the command's first *m* events missing from `events` (so `tm undo` wrote fewer `undo` lines, or one named after the verb without an id) | every appended event recorded (P18) |
+| `.tm/undo.json`, an entry whose command appended an event | no `log_line` key | `"log_line": <physical line of its first event>` |
+
+### Recorded disagreements between the design and the repo
+
+1. **`Recorder::start` re-reads the log instead of using the loaded replay.** §7.2 has the count
+   "from the same byte split the request uses", i.e. the verb's own load. In the repo a verb can
+   append between `Ctx::load` and `Recorder::start` without a reload (housekeeping reloads, but
+   nothing enforces it for a verb's own appends), and the old `log_len` read the file at that moment;
+   so R6 keeps the moment, and pays one parse and replay of the log per recorded command at each end.
+   `cli_latency`'s later verb (a recorded `drop`) is unchanged within noise (55.7 ms, three runs).
+2. **`log_line` is the first appended *event's* line**, `None` when the command appended nothing
+   (a `tm rank`): §7.2's "the first line its command appended" does not say what a command without
+   lines records, and the seal policy (§9.6) only needs lines that exist.
+
+**Goals discharged: none. Refuted: none. Added: none.** Burn-down **13 → 13**. **New theorems:
+none.** **Parity entries: P18.** **Behaviour rows: two (above).** **Numbers taken: P18** (label and
+number equal). No kernel change; no recursion over a wire list.
+
+**Re-measured** (main worktree, every command under the 30 GB cap):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.86 s; audit **2672**; corpus **29/37 and 4/5**; burn-down **13** |
+| `cargo test --workspace` | **1028 passed / 0 failed / 2 ignored across 70 binaries** (+2: the two new `cli_undo` tests), 0 compiler warnings |
+| FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
+| `cli_latency.rs` | green: first verb 627.5 / 638.0 / 637.9 ms (226 files, 2,959 lines), later verb 55.7 / 55.8 / 55.7 ms |
