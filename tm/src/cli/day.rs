@@ -187,25 +187,26 @@ fn idle_min_since(ctx: &Ctx, started: DateTime<chrono_tz::Tz>) -> u32 {
             total += (b - a).num_minutes();
         }
     };
-    for e in ctx.log.iter_day(ctx.today, ctx.cfg.tz) {
-        match &e.ev {
-            Event::Pause { .. } | Event::Interrupt { .. } => {
+    let marks = ctx.replay.seam(ctx.today).map_or(&[][..], |s| s.idle_marks.as_slice());
+    for mark in marks {
+        match *mark {
+            log::IdleMark::Pause(t) | log::IdleMark::Interrupt(t) => {
                 if open.is_none() {
-                    open = Some(e.t);
+                    open = Some(t);
                 }
             }
-            Event::Unpause { .. } | Event::Resume { .. } => {
+            log::IdleMark::Unpause(t) | log::IdleMark::Resume(t) => {
                 if let Some(a) = open.take() {
-                    add(a, e.t);
+                    add(a, t);
                 }
             }
             // `break.t` is the break's start; the entry is written when it
             // ends, so the pair is one entry.
-            Event::Break {
+            log::IdleMark::Break {
+                t,
                 actual_min: Some(m),
-                ..
-            } => add(e.t, e.t + chrono::Duration::minutes(i64::from(*m))),
-            _ => {}
+            } => add(t, t + chrono::Duration::minutes(i64::from(m))),
+            log::IdleMark::Break { actual_min: None, .. } => {}
         }
     }
     // Anything still open at `now` (a pause or interruption that has not been

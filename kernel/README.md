@@ -12558,3 +12558,44 @@ No kernel change; no recursion over a wire list.
 | `cargo test --workspace` | **1026 passed / 0 failed / 2 ignored across 70 binaries** |
 | FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
 | `cli_latency.rs` | green: first verb 632.8 / 621.8 / 627.8 ms (226 files, 2,959 lines), later verb 55.7 / 50.6 / 50.7 ms |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5 D9 R2 (design §14.3 row R2, §8.4), on
+     rebuild-on-lean after acc0e8b.  Takes no gap, cheat or parity number.
+     =========================================================================== -->
+
+## Stage 5 D9 R2, 2026-09-14: the replay keeps the day's idle marks — `idle_min_since` stops walking the log
+
+**What changed.** `DaySeam` gains `idle_marks: Vec<IdleMark>`, and `tm_core::log::IdleMark` is
+`Pause(t) | Interrupt(t) | Unpause(t) | Resume(t) | Break { t, actual_min }`: the day's marks in
+file order, every `break` included (one without `actual_min` pairs with nothing, as before). The
+machine pushes one per surviving `pause`, `interrupt`, `unpause`, `resume` and `break` of an in-range
+day, in `R1`'s seam block. `cli/day.rs`'s `idle_min_since` pairs `ctx.replay.seam(ctx.today)`'s
+marks exactly as it paired the entries; the `from`/`now` clipping, the open-at-`now` tail, the
+running-break tail and the 24-hour clamp are unchanged.
+
+**Equivalence test (run, then deleted with the old walk).** A unit test in `cli/day.rs` ran the old
+walk verbatim (with `ctx.now` and `ctx.log.iter_day(today, ..)` as arguments) against the marks walk
+for every attributed day ± 1 in `America/Chicago`, with `from` each `start` of the day and the day's
+midnight, and `now` 30 minutes after each entry of the day, over the four corpus logs and loggen's
+1-month logs at both rates: **23,138 `(day, from, now)` triples equal, 14,811 of them non-zero, 490
+marks; 0 differences.**
+
+**Existing suites.** No assertion changed; `cli_day` 26 passed. `log_replay__three_days_replay.snap`
+gains the three days' `idle_marks` (16 lines added, 0 removed).
+
+**Disagreements.** None new; R1's (the seams live beside `days`) is what makes this exact: a day whose
+only survivors are a `pause` and an `unpause` has marks and no `DayReplay`.
+
+**Goals discharged: none. Refuted: none. Added: none.** Burn-down **13 → 13**. **New theorems:
+none.** **Parity entries: none.** **Observable behaviour changes: none.** **Numbers taken: none.**
+No kernel change; no recursion over a wire list.
+
+**Re-measured** (main worktree, every command under the 30 GB cap):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.80 s; audit **2672**; corpus **29/37 and 4/5**; burn-down **13** |
+| `cargo test --workspace` | **1026 passed / 0 failed / 2 ignored across 70 binaries** |
+| FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
+| `cli_latency.rs` | green: first verb 626.9 / 637.3 / 622.0 ms (226 files, 2,959 lines), later verb 55.7 / 55.7 / 55.8 ms |

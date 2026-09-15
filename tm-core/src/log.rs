@@ -1518,6 +1518,31 @@ pub struct DaySeam {
     /// `actual_min` counting as 0), else the day's first `start`; `None` with
     /// neither. `day.rs`'s `since_break_min` measures from it.
     pub since_break: Option<DateTime<FixedOffset>>,
+    /// The day's `pause`, `interrupt`, `unpause`, `resume` and `break` marks,
+    /// in file order. `day.rs`'s `idle_min_since` pairs them into the minutes
+    /// a running block was not worked.
+    pub idle_marks: Vec<IdleMark>,
+}
+
+/// One mark of [`DaySeam::idle_marks`]: the entry's kind and `t`, and a
+/// break's `actual_min`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum IdleMark {
+    /// A `pause` at `t`.
+    Pause(DateTime<FixedOffset>),
+    /// An `interrupt` at `t`.
+    Interrupt(DateTime<FixedOffset>),
+    /// An `unpause` at `t`.
+    Unpause(DateTime<FixedOffset>),
+    /// A `resume` at `t`.
+    Resume(DateTime<FixedOffset>),
+    /// A `break` that began at `t`, with the `actual_min` it was logged with.
+    Break {
+        /// When the break began.
+        t: DateTime<FixedOffset>,
+        /// Its logged length, if any.
+        actual_min: Option<u32>,
+    },
 }
 
 /// Per-item derived state.
@@ -1952,8 +1977,16 @@ impl Machine {
             match &e.ev {
                 Event::Break { actual_min, .. } => {
                     seam.since_break = Some(t + Duration::minutes(i64::from(actual_min.unwrap_or(0))));
+                    seam.idle_marks.push(IdleMark::Break {
+                        t,
+                        actual_min: *actual_min,
+                    });
                 }
                 Event::Start { .. } if seam.since_break.is_none() => seam.since_break = Some(t),
+                Event::Pause { .. } => seam.idle_marks.push(IdleMark::Pause(t)),
+                Event::Interrupt { .. } => seam.idle_marks.push(IdleMark::Interrupt(t)),
+                Event::Unpause { .. } => seam.idle_marks.push(IdleMark::Unpause(t)),
+                Event::Resume { .. } => seam.idle_marks.push(IdleMark::Resume(t)),
                 _ => {}
             }
         }
