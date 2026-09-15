@@ -1048,8 +1048,8 @@ fn refusal(err: &Value) -> KernelIssue {
         (name.to_string(), format!("kernel refusal: {name} — {why}"))
     } else if let Some(text) = err.get("capacity").and_then(Value::as_str) {
         // Stage 5 D10 step L6 (design §13.6, Boundary.lean's `CapWire.Refusal`):
-        // `<name> <key>`. No verb sends `capacity` until L8 wires the encoder,
-        // so today these reach the host only from a hand-built request.
+        // `<name> <key>`. No verb sends `capacity` until L8's host half wires the
+        // encoder, so today these reach the host only from a hand-built request.
         let (name, key) = match text.split_once(' ') {
             Some((n, k)) => (n, Some(k)),
             None => (text, None),
@@ -1079,6 +1079,10 @@ fn refusal(err: &Value) -> KernelIssue {
             "badBins" => "`priority.bins` is not a descending ladder of at most 16 edges in (0, 1]",
             "badSafety" => "`priority.safety` is not in (0, 1000]",
             "badDefaultPriority" => "`priority.default_priority` is not 1 to 4",
+            // stage 5 D10 L8: the candidates, and gap 109's rule
+            "tooManyCandidates" => "a capacity request carried more than 1,024 candidates",
+            "badCandidate" => "a candidate record's key is absent, of the wrong type, or outside its bound (the key names the record's position and the key)",
+            "capacityWithCommands" => "a capacity request also carried commands; the lookahead reads the documents as sent, so capacity is asked for without commands",
             _ => "an unlisted capacity refusal — see Boundary.lean's `CapWire.Refusal`",
         };
         (name.to_string(), format!("kernel refusal: {text} — {why}"))
@@ -1268,6 +1272,10 @@ mod tests {
             (serde_json::json!({"capacity":"badBins"}), "badBins"),
             (serde_json::json!({"capacity":"badSafety"}), "badSafety"),
             (serde_json::json!({"capacity":"badDefaultPriority"}), "badDefaultPriority"),
+            // stage 5 D10 L8
+            (serde_json::json!({"capacity":"tooManyCandidates"}), "tooManyCandidates"),
+            (serde_json::json!({"capacity":"badCandidate 3 ci"}), "badCandidate"),
+            (serde_json::json!({"capacity":"capacityWithCommands"}), "capacityWithCommands"),
         ] {
             let issue = refusal(&payload);
             assert_eq!(issue.name, name);

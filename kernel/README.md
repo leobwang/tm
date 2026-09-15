@@ -12346,3 +12346,348 @@ normally. Every figure below comes from capped runs.
 | `cargo test --workspace` | **1026 passed / 0 failed / 2 ignored across 70 binaries** |
 | FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** (kernel 80, corpus 8, stack 4) |
 | `cli_latency.rs` | green: first verb 642.1 / 632.0 / 622.8 ms (226 files, 2,959 lines), later verb 55.9 / 60.8 / 50.7 ms |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5, D10 track, step L8, kernel half (branch
+     stage5-lookahead, worktree .claude/worktrees/stage5-lookahead).  Built in
+     parallel with the D9 track on rebuild-on-lean (D11).  Takes gap 113 (label
+     L8-a), cheats 138-140 (labels L8-a/b/c) and parity P32 (label L8-P); closes
+     gaps 80, 106, 107, 109 and 110.  The host half is the next step.  Whoever
+     merges renumbers (AGENTS §6.2, §6.4).
+     =========================================================================== -->
+
+## Stage 5 D10 L8 (kernel half), 2026-09-14: capacity grants cross the wire — EDF linear again, one tz reading, walls read after the commands
+
+**Starting point.**  The worktree at `18947b8` (W-2 landed and audited; both branches there) was clean:
+check.sh 7/7, audit 2672, corpus 29/37 files and 4/5 whole plans, burn-down 13, `cargo test --workspace`
+1026 / 0 / 2 ignored across 70 binaries, FFI 92.  Every figure at the end of this block is re-measured in
+this worktree.
+
+**The plan executed** is design `kernel/design/stage5/stage5-D9-D10-design.md` §13.6, §13.7 and §13.8 and
+§14.8's L8 row, split by the workflow: **the kernel half only** (gaps 106, 107 and 80, 109, 110, and the
+§13.7 twin check of priorities); `decimal_pair` and T15, `u128` parsing in the host, `ctx.rs`,
+`planning.rs`, `planner.rs`, `tui/`, T14, T16, the D15 `…_exact` fields and gap 98's clamp are the host
+half's.  Under the owner's D5 (every EDF law stays proved against the original definition), D10 and D17
+(exact units over `capDen = 10^18`, digit strings).  Files: `Capacity.lean` (a section at the end),
+`Lookahead.lean` (a section at the end), `Boundary.lean` (L6's section extended in place, its laws
+re-proved, and a witness section at the end), `Check.lean`, `Negative.lean`, `AGENTS.md` (§2.3's
+`Capacity`, `Lookahead` and `Boundary` entries), `kernel/tm-kernel-ffi/tests/kernel.rs` and
+`tests/stack.rs`, `tm/tests/kernel_lookahead_parity.rs`, and `tm/src/cli/kernel_bridge.rs` (three refusal
+names).  No new module: `TmKernel.lean` is unchanged at nineteen imports.  No D9 module
+(`Json`, `Cal`, `Stamp`, `Log`) and no D9 Rust seam is touched.
+
+### Gap 106 — closed: the EDF pass as the compiled code runs it
+
+`Capacity.lean`, section "Gap 106".  Each twin is proved equal to its definition, so every theorem of the
+module is still about the definition; none was restated (D5).
+
+| definition | twin (what the compiler emits) | the equality |
+|---|---|---|
+| `availUntil` (non-tail recursion over the days) | `availUntilFast`, a `foldl` | `availUntil_eq_availUntilFast` (`availUntil_foldl`) |
+| `reserveRest` (one closure per reservation per day) | `reserveRestFast` = `reserveRestAcc … []`: an accumulator that stops at a request of nothing (fork `reserve`'s `left == 0` break; `reserveRest_zero`) and holds each reserved day's six numerators once (`NumSix`, `NumSix.get_of`) | `reserveRest_eq_reserveRestFast` (`reserveRestAcc_eq`) |
+| `reserveOut` | `reserveOutFast = left − availUntilFast` | `reserveOut_eq_reserveOutFast` (`reserveOut_eq`) |
+| `edfGrantsGo`, `edfCaps` (non-tail recursion over the deadlines) | one `foldl` of `edfStepFast` (a grant `⟨d, a, want − (want − a)⟩` and the reservation) | `edfGrantsGo_eq_edfGrantsGoFast`, `edfCaps_eq_edfCapsFast` (`edfStepFast_foldl`) |
+| `edf`, `edfGrants` (compiled before the lemmas above) | bodies compiled after them | `edf_eq_edfFast`, `edfGrants_eq_edfGrantsFast` (`rfl`) |
+
+**Measured through the wire** (`stack.rs`, `grants_over_a_3660_day_lookahead_run_on_a_2mib_thread`: the
+T0 (c) capacity section without a calendar, 3,660 days, `n` candidates at `ci` 3 with 600 minutes
+remaining, due dates spread evenly, on a 2 MiB thread; debug FFI build).  **Before** (this step's wire
+with the twins not yet declared, the same request builder, one run under the 16 GB cap): no candidates
+107 ms; 1 deadline 107 ms, 10 → 253 ms, 20 → 1,584 ms, 30 → 6,896 ms, **40 → 18,427 ms** (the need is
+`ceil(600 × 1.3) = 780` minutes, so each deadline reserves more days than L5's scratch harness's 600, which
+measured 6,900 ms).  **After** (the committed test, three runs): no candidates 110 / 107 / 109 ms; 1 → 106 /
+106 / 108 ms; 10 → 125 / 110 / 111 ms; 20 → 114 / 113 / 118 ms; 30 → 118 / 117 / 120 ms; **40 → 122 / 120 /
+128 ms**; **1,024 (the wire's bound) → 815 / 819 / 813 ms**.  The pass is now about `deadlines × days`: 40
+deadlines cost 13–21 ms over the lookahead's ≈ 107 ms.  The test also checks, at every `n`, that the
+first-due deadline's grant is the one it gets alone (`edf_a_later_deadline_takes_nothing_from_an_earlier_one`).
+
+### Gaps 107 and 80 — closed: the grants, and who enters the pass
+
+**`Lookahead.lean`, section "The grants"**: fork `priority::compute` without the floor pass.
+
+| piece | what it is |
+|---|---|
+| `Cand` | fork `Candidate`'s §7 inputs: `id`, `ci`, `rootPrio` (the root's written `!k`), `remaining`, `due` (the effective due's local date), `window`, `wall`, `optional`, `overdue`, `mandatory`, `hot`, `yesterday` |
+| **`Cand.enters`**, `enterOf`, `entering` | **gap 80's rule**: not a wall, not optional, no placement window, an effective due; overdue candidates included.  The deadline is `⟨needMin safety remaining, ci, due⟩` (R1's ceiling, P3) |
+| `insertDueIx`, `sortDueIx`, `servedOrder` | step 3's `sortDue` carrying each deadline's position (`sortDueIx_snd`, `sortDueIx_perm`) |
+| `tagGrants`, `servedGrants`, `grantAt` | step 3's `edfGrantsGo` at `capDen` over the served order, each grant tagged with its candidate's position |
+| `Cand.kOf`, `Cand.rule`, `binAt` | `k` from `!k` else **`default_priority`**; §7.2's inputs; §7.1's bin, `binOfScaledQ` of `remaining ×` **`safety`** against the grant's exact availability on **the configured ladder** (P7) |
+| `CandOut`, `CandOut.shortfall`, `PClass`, `CandOut.cls`, **`priorities`** | one answer per candidate in request order: `k`, `need`, the grant, the bin, the row, raw `p`, `p` after §7.4; the shortfall reported only when HOT (fork `shortfall_min`); fork `PrioClass` without `floor` |
+
+So the decoded `[priority]` (L6) is used: the ladder, the safety and the default all reach an answer.
+
+**`Boundary.lean`**: an optional `capacity.candidates` object and `lookahead.grants`.
+
+```jsonc
+"candidates": {"hysteresis": true, "items": [            // at most 1,024 (tooManyCandidates)
+  {"id": "a1", "ci": 3, "rootPrio": 1, "remaining": 30, "due": "2026-09-07", "window": false, "wall": false,
+   "optional": false, "overdue": false, "mandatory": false, "hot": false, "yesterday": 7}]}
+// lookahead gains, after "days":
+"grants": [{"id": "a1", "class": "dated", "k": 1, "p": 6, "rawP": 4, "need": 39, "until": "2026-09-07",
+            "avail": "410000000000000000000", "allocation": "39000000000000000000", "shortfall": "0", "bin": 3}, …]
+```
+
+| value | bound | decoder | refusal |
+|---|---|---|---|
+| `items` | `≤ 1,024`, checked before any is read | `readCands` | `tooManyCandidates` |
+| `hysteresis`, `items`, the object | a boolean, an array, an object | `boolAt`, `arrAt`, `opt` | `badCapacity candidates` |
+| `id` | a string of `≤ 1,024` characters | `strAt`, `within` | `badCandidate <i> id` |
+| `ci` | `0..5` | `levelOf?` | `badCandidate <i> ci` |
+| `rootPrio` | absent, `null` or `1..4` | `defaultPrioOf?` | `badCandidate <i> rootPrio` |
+| `remaining` | `≤ 2^32 − 1` (fork `u32`) | `natAt`, `within` | `badCandidate <i> remaining` |
+| `due` | absent, `null` or `YYYY-MM-DD` | `Field.parseDate` | `badCandidate <i> due` |
+| `window`, `wall`, `optional`, `overdue`, `mandatory`, `hot` | booleans | `boolAt` | `badCandidate <i> <key>` |
+| `yesterday` | absent, `null` or `0..7` | `yesterdayOf?` (step 2's decoder, now called) | `badCandidate <i> yesterday` |
+
+`grantJson` writes `id`, `class` (fork `PrioClass`'s serde names), `k`, `p`, `rawP`, `need` (minutes), `until`,
+then `avail`, `allocation` and `shortfall` as digit strings over `den` (D17), then `bin`.  The EDF pass runs
+over the **whole** lookahead, not the seven days emitted.  A request without `candidates` gets no `grants`
+key: L6's response, byte for byte.
+
+**Gap 80's remainder moves, by name, to gap 113**: the rule of who enters is the kernel's, the facts it reads
+(instance status, derived due, the flags) are still the host's.
+
+### Gap 110 — closed: one zone reading
+
+`runCap` reads `tz` once (`zoneOf`) and hands that reading to `runCapZ`, which gives it to the `log` section
+(`logSectionWith`) and to the capacity section (`readCapacityZ`).  **`the_zone_is_read_once_and_feeds_both_sections`**:
+whenever the zone reads, B4's `readLogSection` is `logSectionWith` over it and L6's `readCapacity` is
+`readCapacityZ` over it, so every law of either function holds of what runs (`readLogSection_is_zoneOf_then_logSectionWith`,
+`runCap_with_capacity_reads_the_zone_once`).  B4's `readLogSection` and L6's `readCapacity` are unchanged.
+T0 (c) (`stack.rs`, seven runs): 3,660 days **606 (cold), 290, 315, 273, 270, 268, 275 ms**; 7 days 308 (cold),
+139, 150, 125, 126, 126, 131 ms, against the merge's 320 / 315 / 336 and 154 / 149 / 148 ms with two
+readings.
+
+### Gap 109 — closed: the rule is a refusal
+
+The walls are the documents as sent, so **a capacity request that also carries commands is refused by name,
+`{"err":{"capacity":"capacityWithCommands"}}`**, after the zone, the `log` section, the documents, the
+capacity section and the candidates have read (so their refusals keep their precedence).  Stated both
+ways: `runCap_refuses_commands_beside_capacity` (any command refuses) and
+**`an_answered_capacity_request_has_no_commands`** (every answered capacity request carried none, so its
+lookahead and grants are of the documents it returns); end to end on the corpus request,
+`runCap_refuses_a_command_beside_the_corpus_request`.  Threading the post-command plan was the other choice
+(design §13.8, gap 109's (4)); it was not taken because capacity verbs are read verbs and it would have put
+the commands' refusals before the section's.
+
+### The laws (in-step; nothing stood in `Goals.lean` for L8)
+
+| theorem | statement |
+|---|---|
+| **`servedGrants_are_the_pass`** | the grants on the answer, in served order, are `edfGrants capDenD caps` over the entering deadlines in request order, so every EDF law of `Capacity.lean` applies to them unchanged |
+| **`grantAt_servedGrants`** | the grant a candidate carries is the pass's grant at the position its deadline is served, and is for that deadline |
+| **`grantAt_none_of_not_enters`** / **`grantAt_some_of_enters`** | gap 80 both ways: a wall, optional, window instance or undated candidate reserves nothing; an entering one carries the grant for its own deadline |
+| **`an_answer_carries_a_grant_iff_its_candidate_enters`** | the same on `priorities`' answer, with its bin `binAt` of that grant and its row `rowOf` over that bin |
+| **`an_answers_grant_reserves_the_min`** | every grant on the answer reserved `min(need·capDen, avail)`, and the reported shortfall is `need·capDen − avail` exactly when the bin is HOT |
+| **`an_answer_is_off_the_scale_iff_a_wall`** | `p` is absent exactly for walls |
+| **`a_hot_answer_is_zero`** (`finalPrio_of_pressure_hot`) | HOT and IMPOSSIBLE are `p = 0` whatever yesterday was, and IMPOSSIBLE reports a shortfall |
+| `priorities_length`, `priorities_getElem?`, `mem_entering`, `enterOf_eq_some`, `insertDueIx_snd`, `sortDueIx_snd`, `perm_insertDueIx`, `sortDueIx_perm`, `edfGrantsGo_length`, `tagGrants_snd` | the parts |
+| **`the_zone_is_read_once_and_feeds_both_sections`**, `readLogSection_is_zoneOf_then_logSectionWith`, `zoneOf_ok_obj`, `runCap_with_capacity_reads_the_zone_once`, `zoneOf_of_readLogSection` | gap 110 |
+| **`runCap_answers_with_the_lookahead_and_grants`**, **`runCap_answers_docs_report_lookahead_grants`** | with candidates and no commands, the answer is `docs`, `report`, `log` when asked, then `lookahead` with `den`, `days` and `grants`, one grant per candidate |
+| `runCap_refuses_what_the_candidates_refuse`, `runCap_refuses_commands_beside_capacity`, **`an_answered_capacity_request_has_no_commands`** | the new refusals, and gap 109's rule |
+| the eleven `Capacity.lean` equalities above | gap 106 |
+
+**Re-proved, statements unchanged:** `runCap_refuses_a_log_section_first` and
+`runCap_refuses_what_the_section_refuses` (over the one zone reading).  **Restated:**
+`runCap_answers_with_the_lookahead`, `runCap_answers_docs_report_lookahead` and
+`runCap_answers_docs_report_log_lookahead` each gained two hypotheses, `readCands cap = .ok none` and
+`cmds = []`.  Each was false as stated once the wire gained `grants` and the commands refusal; the cases the
+hypotheses exclude are covered, with their own conclusions, by `runCap_answers_with_the_lookahead_and_grants`
+and `runCap_refuses_commands_beside_capacity`, so nothing the old statements said of a request they still
+cover is lost.  Every other L6 and B4 wire theorem (`callExport_without_capacity_is_call`,
+`the_exported_call_emits_parses_back`, `runCap_reads_the_corpus_request`, B4's seven) is unchanged and
+still proved.  No EDF theorem of `Capacity.lean` and no two-run law was touched (D5).
+
+**Audit (AGENTS §7.4).**  (1) Every binder is used: the `priorities` laws quantify over every ladder, safety,
+default, hysteresis switch, lookahead and candidate list.  (2) Hypotheses are satisfiable:
+`priorities_on_a_witness` and the FFI tests satisfy `enters` both ways, HOT, IMPOSSIBLE and hysteresis.
+(3) Names say what the statements say.  (4) Both directions: `grantAt_none_of_not_enters` /
+`grantAt_some_of_enters`; `readCands_on_witnesses` accepts and refuses; the commands rule as a refusal and as
+a theorem about answers.  (5) About the code the FFI runs: `runCap` is what `callExport` runs, and the csimp
+twins are what the compiler emits.  (6) Units: grants and shortfalls in units over `capDen`, needs in
+minutes.
+
+### Witnesses (decided or `rfl`; each probed under the 8 GB cap first)
+
+| theorem | what it pins |
+|---|---|
+| **`Look.priorities_on_a_witness`** | step 3's loaded-plan witness at `capDen`, five candidates in request order: the wall and the optional enter nothing; `^a1` (listed third) is served first, 60 available, 39 reserved, `+0` bin, raw 3 held at 5 by yesterday's 6; `^a2` sees 51 against 59, IMPOSSIBLE, 8 short; the undated one is `k + 2` |
+| **`CapWire.readCands_on_witnesses`** | absent is none; `^a1` reads as itself; `ci` 6, `rootPrio` 5, `remaining` `2^32`, 2026-02-30, a non-boolean `wall`, `yesterday` 8, a bad second record at position 1, no `hysteresis`, and 1,025 records, each refused by name |
+| **`CapWire.the_grant_response_emits_in_build_order`** | a wall's grant and a dated grant, byte for byte, in literals of at most 85 characters |
+| **`CapWire.runCap_refuses_a_command_beside_the_corpus_request`** | L6's corpus request, answered by `runCap_reads_the_corpus_request`, refused once it carries one command |
+
+**The FFI** (`kernel.rs`, 2 new tests): **`capacity_answers_grants_in_request_order`** (the spec capacity for
+two days with `Look.witnessCands`' shape: the whole response byte for byte; `^a1` 410 available, 39 reserved,
+`+3` bin, raw 4 held at 6; `^a2` 731 against 780, IMPOSSIBLE, 49 short; without hysteresis `^a1` is 4; no
+`candidates` is L6's bytes, and an empty `items` adds `"grants":[]` only) and **`every_candidate_refusal_is_named`**
+(nine single edits, a 1,025-character id, 1,025 records, 1,024 answered, and gap 109 on a plan with a
+document: one command refused, no `cmds` and `"cmds":[]` answered alike).  `stack.rs` gains gap 106's test
+(above).  `kernel_bridge.rs` maps the three new names.
+
+### §13.7's second check, measured: the twin's priorities are the fork's
+
+`tm/tests/kernel_lookahead_parity.rs`, **`the_twin_priorities_are_the_forks_modulo_p2_p3_p7`**: 64 generated
+windows (L7's generator, seed `SEED ^ 0x9e10a8`), four to twelve candidates each, hysteresis on in about 70%
+of windows.  The fork is `priority::compute` over `capacity::lookahead` on the fork's own run (the threshold
+twin's days, so P1 is no difference; the window and budget on the exact pair's doubles, so P27 is none); the
+kernel is `lookahead.grants` with the twin's weights.  The fork's candidates carry the kernel's R1 need
+(`ceil(remaining × 1.3)`: **P3 corrected**, the way L7 corrects P27), and a date's candidates are due at
+00:00, 00:01, … in request order, so the fork's `(effective_due, own_order, index)` order is the request order
+(**P12 does not bite**, by construction).  Each candidate is checked three ways: the kernel equals §7.2/§7.4
+applied at the exact utilisation; the fork equals the same rule at its own utilisation (so the harness's rule
+is the fork's); where the two utilisations classify apart, the difference must be P2 or P7 by name.
+
+**Result: 526 candidates (281 entered the pass; 52 walls, 56 optionals, 57 window instances, 80 undated;
+134 IMPOSSIBLE, 2 HOT, 102 dated, 3 held by hysteresis), 0 disagreements.**  **P2** on 2 candidates (need 0
+due before today: HOT in the kernel, the lowest bin in the fork).  **P7** on 0 generated candidates, so five
+targeted windows (one per zone) put 12 minutes on day 0 and a 9-minute candidate due today: the fork's
+`ceil(11.7) = 12` against 12 is `u = 1`, HOT; the kernel's exact `11.7 / 12` is the `+0` bin — P7 on all 5,
+and the tie (10 minutes, 13 available, `u = 1` exactly) HOT in both, on all 5.  **P3's reach**: the fork run
+with its own `round` changes 129 of 526 answers.  **P1**: the real mixture changes `p` on 9 of 526.  **The
+comparison bites** (scratch mutants of the harness, run and deleted): the fork's own `round` need, **205**
+disagreements; hysteresis ignored by the harness's rule, **6**; the fork's window instances entering the
+pass, **76**; the exact HOT edge at `>` instead of `≥`, the tie assertion fails.
+
+### Gap 113 (new; label L8-a) — the candidates' facts are the host's
+
+(1) *What is not done*: `capacity.candidates` carries each candidate's §7 inputs as the host's
+`collect_candidates` computed them: `ci`, the root's written `!k`, `remaining` (an instance's `dur:` or
+`Tree::remaining`), the effective due's date, the flags `window`, `wall`, `optional`, `overdue`, `mandatory`,
+`hot`, and yesterday's `p`.  The kernel applies gap 80's rule, the pass, the bin and §7.2–§7.4 to them, but
+derives none of them.  (2) *Why not now*: instance status, `overdue` with `on-miss:persist`, `mandatory` and
+the derived due are D9's replay facts (design §14.7's F3); and id-less routine and optional lines, keyed by
+title, are not addressable in the kernel (gap 5), so reading `ci` and `!k` off the loaded plan for some
+candidates and from the host for others would be two readings (AGENTS §5.6).  (3) *Cost*: a wrong fact from
+the host is a wrong priority with no refusal (only R10's bounds are checked), and `ci`, `!k` and `remaining`
+have two readers for id-bearing items (the fork's tree and the kernel's `effectiveCi`, `rootPrio`,
+`remainingMin`).  (4) *When it clears*: F3, when the kernel computes the rule inputs from its own replay over
+the loaded plan; id-less lines with gap 5.
+
+### Gap 79 — carried, with a consequence for the host half
+
+The floor pass is not built, so a candidate with a `min:` floor and no dated pass is answered `rank`
+(`p = k + 2`) where the fork's `floor_pass` answers `floor` (`p = k + bin(u_floor)`).  The harness generates no
+floors.  Until gap 79 closes, the host half must not take a floor candidate's `p` from the kernel.
+
+### Gaps 98 and 111 — carried to the host half, unchanged
+
+### Parity entry (recorded; the kernel side is `every_candidate_refusal_is_named`)
+
+| # | site | the kernel | the fork point | authority | step |
+|---|---|---|---|---|---|
+| **P32** | more than 1,024 candidates; a candidate's `ci` above 5, written `!k` outside 1..4, `remaining` above `2^32 − 1`, id over 1,024 characters | refused by name (`tooManyCandidates`, `badCandidate <i> <key>`) | computed (`Vec<Candidate>`, `u8` fields) | R10 | L8 |
+
+P2, P3, P7 and P12 are unchanged in text; their measurement is above.
+
+### Cheats (`Negative.lean`, appended)
+
+| # | label | cheat | fails because |
+|---|---|---|---|
+| **138** | L8-a | a wall enters the EDF pass | `entering` of a wall is empty; `decide` refuses length 1 (controls `grantAt_none_of_not_enters`) |
+| **139** | L8-b | the pass served in request order | `^a2` sees 51 minutes, not 90; `decide` refuses (controls `priorities_on_a_witness`, `servedGrants_are_the_pass`) |
+| **140** | L8-c | a candidate at level 6 reads | `levelOf?` refuses; `decide` refuses `isOk` (controls `readCands_on_witnesses`) |
+
+Each fails at its own line with `Tactic decide proved that the proposition … is false`.
+
+### Rule D9-21
+
+Functions this step adds that walk a list the wire can make large: `availUntilFast`, `edfGrantsGoFast`,
+`edfCapsFast` (`foldl`); `reserveRestAcc` (tail recursive, with core's `reverse`/`reverseAux`); `entering`
+(core `zipIdx`, `filterMap`); `tagGrants`, `priorities`, `grantJson` lists (core `map`, `zip`); `grantAt`
+(core `find?`); `readCandList` (core `mapM` over `zipIdx`, after the `≤ 1,024` guard); `insertDueIx` and
+`sortDueIx`, an insertion sort that recurses once per candidate, **behind the `≤ 1,024` guard** (as step 3's
+`sortDue`, which runs over the same list).  The 1,024-candidate request over 3,660 days runs on the 2 MiB
+thread (above).  Proof-only: none.
+
+### The `decide` budget (§14.0 item 4)
+
+4 new decided or `rfl` witnesses and 3 cheats, **7 in all**, within 20.  No `Entry` value; Chicago's **2 zone
+transitions** (the corpus request); literals of at most 85 characters (the grant bytes; every other literal is a
+key or a date).  All were probed first in scratch files under `/tmp/claude-1000/l8probe/` against the built
+package under `MemoryMax=8G` and `timeout 120`, each also falsified to see it refuse: the grants section with
+its witness 0.36 s at 576 MB; the wire witnesses 2.33 s at 1.29 GB (`readCands_on_witnesses` needs
+`maxRecDepth 8000`, as B4's did); the cheats 0.17 s at 564 MB.  Wrong probes refused and not committed: the
+first `priorities` witness, over a five-tuple, found no `Decidable` instance for a list of nested products
+(the committed witness uses a structure, `CandView`).  No realistic-size input is evaluated.  Committed:
+`Capacity.lean` elaborates in **3.29 s at 700 MB**, `Lookahead.lean` in **4.34 s at 902 MB** (L6: 3.03 s,
+882 MB); `Boundary.lean` alone in **139.6 s at 8.07 GB** under a 16 GB cap (W-2: 132.6 s at 8.32 GB).
+
+### Recorded disagreements between the design and the repo
+
+1. **The host half is the next step** (the workflow's split of the L8 row).
+2. **The candidates' facts come from the host** (gap 113), where §13.8 moves `priority::compute` into the
+   kernel whole.
+3. **A grant carries more than §13.6's `id`, `avail`, `reserved`, `shortfall`, `bin`**: `class`, `k`, `p`,
+   `rawP`, `need` and `until` (the host's `Prio` needs them), and the reservation is named `allocation`
+   (fork `allocation_min`, the workflow's word).
+4. **`grants` is present only when `candidates` is sent** (§13.6 shows it always), so L6's bytes and theorems
+   stand for a request without candidates.
+5. **`the_response_shapes_emit_in_build_order` is not edited** (the workflow says "extend"): it sits before
+   `grantJson` in the file.  `the_grant_response_emits_in_build_order` and
+   `runCap_answers_docs_report_lookahead_grants` extend the shapes instead (L6's disagreement 13 again).
+6. **Ties on one date keep request order** (P12 stands); the host is to send candidates in the fork's
+   `(effective_due, own_order, index)` order, and the harness generates that order.
+7. **Gap 109 is decided by refusal**, not by threading the post-command plan (above).
+8. **Three `runCap` theorems gained hypotheses** (above).
+9. **No floor pass** (gap 79).
+10. **The twins are declared in `Capacity.lean`**, step 3's module: gap 106's own clearing condition, since a
+    twin declared later cannot reach `edfCaps`'s compiled callers.
+11. **§13.7's "modulo P2, P3, P7, P8, P10–P12"**: P3 is corrected rather than masked, P12 avoided by
+    construction, P8, P10 and P11 lie outside the generated domain (valid configs, ascending days, small
+    minutes); only generated windows are run (the corpus plans' `[priority]` would need the request's
+    ladder from each `config.toml`, which L7's request builder hard-codes).
+12. **`Boundary.lean`'s L6 section is edited mid-file** (the names, the candidate readers, the response,
+    `runCap`), as L6's disagreement 12 did: the new wire must sit before `runCap`, which the FFI runs.
+13. **Bounds beyond the design**: 1,024 candidates, a 1,024-character id, `rootPrio` in `1..4` (P32).
+14. **Memory cap.**  Every run used the workflow's 30 GB cap, 16 GB for benchmarks and the Boundary timing,
+    and 8 GB for probes, not §14.0's 40 GB.
+
+**Carried notes honoured.**  No instant is compared (due dates are day numbers).  Nothing assumes the 4 MiB
+resend cap (the largest request here, 1,025 candidates, is about 0.2 MiB).  D14 and R11 are the D9 track's and
+untouched.  Gap 106's measurement is through the wire, committed.
+
+**Label-to-number map:** gap L8-a → **113** (the D9 track took 112 on `rebuild-on-lean`, read-only check);
+cheats L8-a → **138**, L8-b → **139**, L8-c → **140**; parity L8-P → **P32** (P31 is the design's label for the
+D9 track's `reachTooFar`).  **Highest numbers in this checkout after the step: gap 113, cheat 140, parity P32.**
+
+**Observable behaviour changes: none in the binary** (no verb sends `capacity`).  **Behaviour rows (the FFI):**
+
+| request | before (L7) | after |
+|---|---|---|
+| `capacity` with `candidates` | the key ignored | `lookahead.grants`, or a named candidate refusal |
+| `capacity` with non-empty `cmds` | answered: the commands applied, the lookahead of the documents as sent | `{"err":{"capacity":"capacityWithCommands"}}` |
+| `capacity` with `"cmds":[]` or no `cmds` | answered | unchanged |
+| `capacity` and `tz` | `tz` read twice | read once; the same answers and refusals |
+
+**Goals:** discharged 0, refuted 0, added 0.  Burn-down **13** (unchanged).
+
+**New theorems: 44**: 11 in `Capacity.lean`, 20 in `Lookahead.lean`, 13 in `Boundary.lean`, audited under
+`Check.lean`'s new `APPENDED 2026-09-14 (stage 5, D10 track).  Step L8` banner.  AGENTS §6.3's three counts
+agree at **2716** (audit lines, distinct names, and declarations by the attribute-aware grep).  About 520
+definition lines and 640 proof and witness lines in Lean, docstrings included (ESTIMATE from the diff),
+against design §14.8's 80 / 150 for the row, which did not count gap 106's twins or the wire; the Rust is
++125 lines in `kernel.rs`, +85 in `stack.rs`, +333 in the parity harness and +10 in `kernel_bridge.rs`.  No
+theorem was retired, weakened or deleted.
+
+**Owed, by name (the rest of the D10 track):** L8's host half (`decimal_pair` and T15, `u128` units in the
+host, `Ctx::priorities` through the kernel's grants with gap 113's facts and gap 79's floor exclusion,
+`planning.rs` `week`, `planner.rs` and `tui/queue.rs` unit reserves with T16, gap 111's TUI capacities, gap
+98's clamp, T14, the D15 `…_exact` fields, the §20 behaviour row).  L9 (day 0 in the kernel; gap 93).  Gap
+85's fix after the switch.
+
+**Re-measured after this step** (every command capped, in this worktree, on the tree committed):
+
+| measurement | value |
+|---|---|
+| `lake build TmKernel:static` after the edits | 2 min 28 s wall (`Capacity` onward) |
+| `check.sh` | **7/7**; 2.86 / 2.84 s on the built tree (W-2: 2.83 / 2.81 s), +1% |
+| axiom audit | **2716 theorems** (2672 + 44) |
+| `Negative.lean` | check 4 ok; 136 errors; 130 `/- CHEAT` banners; 138, 139 and 140 each fail at their own line |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (stage 6: 13) |
+| `cargo test --workspace` | **1027 passed / 0 failed / 2 ignored across 70 binaries** (1026 + the twin priorities test) |
+| FFI suite (`tm-kernel-ffi`) | **95 passed / 0 failed** (kernel 82, corpus 8, stack 5) |
+| `cli_latency.rs` | green: first verb 627.8 / 607.3 / 606.9 ms (226 files, 2,959 lines), later verb 50.8 / 50.7 / 50.7 ms |
+| gap 106, 40 deadlines × 3,660 days (2 MiB thread) | 18,427 ms before; 122 / 120 / 128 ms after; 1,024 deadlines 815 / 819 / 813 ms |
+| T0 (c), 3,660 days; 7 days | 273 / 270 / 268 / 275 ms; 125 / 126 / 126 / 131 ms (warm runs) |
+| `kernel_lookahead_parity.rs`, twin priorities | 0.40 s; 526 candidates, 0 disagreements |

@@ -213,3 +213,88 @@ fn a_3660_day_lookahead_runs_on_a_2mib_thread() {
         eprintln!("T0 (c): 3,660 days, 600 transitions, 3,660 walls: {ms} ms; the same request for 7 days: {short_ms} ms (2 MiB thread)");
     });
 }
+
+/// The T0 (c) request's capacity section (no calendar), with `candidates` when
+/// `cands` is non-empty.
+fn grants_request(days: u32, cands: &[String]) -> String {
+    let mut then = Vec::new();
+    for y in 1900..2200 {
+        then.push(format!(r#"["{y}-03-08T08:00:00Z","-05:00:00"]"#));
+        then.push(format!(r#"["{y}-11-01T07:00:00Z","-06:00:00"]"#));
+    }
+    let tz = format!(r#""tz":{{"key":"Chicago-shaped|1900-2200","base":"-06:00:00","then":[{}]}}"#, then.join(","));
+    let candidates = if cands.is_empty() {
+        String::new()
+    } else {
+        format!(r#","candidates":{{"hysteresis":true,"items":[{}]}}"#, cands.join(","))
+    };
+    format!(
+        concat!(
+            r#"{{"docs":[],"now":"2026-09-07","blockMin":60,{tz},"#,
+            r#""capacity":{{"pLounge":{{"config":{{"Mon":{{"num":"9","den":"10"}},"Tue":{{"num":"9","den":"10"}},"Wed":{{"num":"9","den":"10"}},"Thu":{{"num":"9","den":"10"}},"Fri":{{"num":"8","den":"10"}},"Sat":{{"num":"5","den":"10"}},"Sun":{{"num":"4","den":"10"}}}}}},"#,
+            r#""arrival":{{"config":{{"Mon":"07:00","Tue":"07:00","Wed":"07:00","Thu":"07:00","Fri":"07:00","Sat":"10:00","Sun":"10:00"}}}},"#,
+            r#""wake":{{"sec":21940,"ns":250000000}},"#,
+            r#""prior":{{"lounge":[{{"from":{{"num":0,"den":1}},"to":{{"num":1,"den":1}},"level":4}},{{"from":{{"num":1,"den":1}},"to":{{"num":5,"den":1}},"level":5}},{{"from":{{"num":5,"den":1}},"to":{{"num":8,"den":1}},"level":4}},{{"from":{{"num":8,"den":1}},"to":{{"num":10,"den":1}},"level":3}},{{"from":{{"num":10,"den":1}},"level":2}}],"#,
+            r#""home":[{{"from":{{"num":0,"den":1}},"to":{{"num":1,"den":1}},"level":3}},{{"from":{{"num":1,"den":1}},"to":{{"num":4,"den":1}},"level":4}},{{"from":{{"num":4,"den":1}},"to":{{"num":8,"den":1}},"level":3}},{{"from":{{"num":8,"den":1}},"level":2}}]}},"#,
+            r#""homeMaxCi":3,"day":{{"breakMin":20,"breakAfterBlocks":2,"minLastBlockMin":30,"windowHours":{{"num":8,"den":1}},"windowCap":"19:00","budgetRatio":{{"num":75,"den":100}}}},"#,
+            r#""priority":{{"bins":[{{"num":5,"den":10}},{{"num":25,"den":100}},{{"num":1,"den":10}}],"safety":{{"num":13,"den":10}},"defaultPriority":3}},"#,
+            r#""days":{days},"day0":[0,0,0,60,170,180]{candidates}}}}}"#
+        ),
+        tz = tz,
+        days = days,
+        candidates = candidates
+    )
+}
+
+/// `n` dated candidates at `ci` 3, 600 minutes each, due dates spread evenly
+/// over `days` (the shape README gap 106 was measured with).
+fn spread_deadlines(n: usize, days: i64) -> Vec<String> {
+    (0..n)
+        .map(|i| {
+            let due = date_after_spec_monday(((i as i64 + 1) * days) / n as i64 - 1);
+            format!(
+                r#"{{"id":"d{i}","ci":3,"remaining":600,"due":"{due}","window":false,"wall":false,"optional":false,"overdue":false,"mandatory":false,"hot":false}}"#
+            )
+        })
+        .collect()
+}
+
+/// **Gap 106, T0 for the EDF pass (stage 5 D10 L8).**  Step 3's `reserveRest`
+/// read each day through one closure per earlier reservation, and its day
+/// recursions were not tail calls; the pass now runs as a proved `@[csimp]`
+/// `foldl` holding each reserved day's six numerators once
+/// (`edfGrantsGo_eq_edfGrantsGoFast`).  Through the wire, on a 2 MiB thread:
+/// 1, 10, 20, 30 and 40 deadlines over the 3,660-day lookahead (the gap's
+/// shape), then 1,024 (`maxCandidates`, the wire's bound).  Each answer carries
+/// one grant per candidate, and a deadline's grant does not depend on the
+/// deadlines due after it (`edf_a_later_deadline_takes_nothing_from_an_earlier_one`).
+#[test]
+fn grants_over_a_3660_day_lookahead_run_on_a_2mib_thread() {
+    on_a_2mib_thread(|| {
+        let base = grants_request(3660, &[]);
+        let t = std::time::Instant::now();
+        let out = call(&base).unwrap();
+        let base_ms = t.elapsed().as_millis();
+        assert!(!out.contains(r#""grants""#), "{}", &out[..200.min(out.len())]);
+        let mut line = format!("gap 106: no candidates {base_ms} ms");
+        let grant_of = |out: &str, id: &str| -> String {
+            let grants = &out[out.find(r#""grants":"#).unwrap_or_else(|| panic!("{}", &out[..300.min(out.len())]))..];
+            let at = grants.find(&format!(r#"{{"id":"{id}""#)).unwrap_or_else(|| panic!("{id}"));
+            grants[at..].split('}').next().unwrap().to_string()
+        };
+        for n in [1usize, 10, 20, 30, 40, 1024] {
+            let cands = spread_deadlines(n, 3660);
+            let req = grants_request(3660, &cands);
+            let t = std::time::Instant::now();
+            let out = call(&req).unwrap();
+            let ms = t.elapsed().as_millis();
+            let grants = &out[out.find(r#""grants":"#).unwrap_or_else(|| panic!("{}", &out[..300.min(out.len())]))..];
+            assert_eq!(grants.matches(r#"{"id":"#).count(), n, "{}", &grants[..300.min(grants.len())]);
+            // The first-due deadline is served first: its grant is the one it gets alone.
+            let alone = call(&grants_request(3660, &cands[..1])).unwrap();
+            assert_eq!(grant_of(&out, "d0"), grant_of(&alone, "d0"));
+            line.push_str(&format!("; {n} deadlines {ms} ms"));
+        }
+        eprintln!("{line} (3,660 days, 2 MiB thread)");
+    });
+}

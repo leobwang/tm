@@ -1636,3 +1636,128 @@ fn every_capacity_refusal_is_named() {
     let twice = call(&base.replacen(r#""capacity":{"#, r#""capacity":{},"capacity":{"#, 1)).unwrap();
     assert_eq!(twice, r#"{"err":"duplicateKey capacity"}"#);
 }
+
+// ===========================================================================
+// Stage 5 D10 step L8, kernel half: the grants on the wire (design §13.6,
+// §13.8; Boundary.lean's L6 section, extended, and "Stage 5 D10 L8").  A
+// capacity request may carry `candidates`; `lookahead` then gains `grants`,
+// one per candidate in request order.  Gap 109: a capacity request with
+// commands is refused by name.
+// ===========================================================================
+
+/// One candidate record, with `window`, `optional`, `overdue`, `mandatory` and
+/// `hot` false (a test edits the text to set one).
+fn cand(id: &str, ci: u8, root_prio: &str, remaining: u64, due: &str, wall: bool, yesterday: &str) -> String {
+    format!(
+        r#"{{"id":"{id}","ci":{ci},"rootPrio":{root_prio},"remaining":{remaining},"due":{due},"window":false,"wall":{wall},"optional":false,"overdue":false,"mandatory":false,"hot":false,"yesterday":{yesterday}}}"#
+    )
+}
+
+/// The spec capacity for two days (day 0's 410 minutes at levels 3–5, Tuesday's
+/// 36/162/162) with `candidates`.
+fn spec_with_candidates(hysteresis: bool, items: &[String]) -> String {
+    SPEC_CAPACITY.replace(r#""days":7,"#, r#""days":2,"#).replacen(
+        r#""day0":[0,0,0,60,170,180]}"#,
+        &format!(r#""day0":[0,0,0,60,170,180],"candidates":{{"hysteresis":{hysteresis},"items":[{}]}}}}"#, items.join(",")),
+        1,
+    )
+}
+
+/// The five candidates of `Look.witnessCands`, on the spec days.
+fn witness_items() -> Vec<String> {
+    vec![
+        cand("w", 3, "null", 60, r#""2026-09-07""#, true, "null"),
+        cand("a2", 3, "null", 600, r#""2026-09-08""#, false, "null"),
+        cand("a1", 3, "1", 30, r#""2026-09-07""#, false, "7"),
+        cand("o", 3, "null", 20, r#""2026-09-07""#, false, "null").replace(r#""optional":false"#, r#""optional":true"#),
+        cand("r", 2, "1", 50, "null", false, "null"),
+    ]
+}
+
+/// **The grants, in request order, in exact units** (gaps 80 and 107).  The wall
+/// and the optional enter nothing.  `^a1` (due Monday, listed third) is served
+/// first: 410 minutes available at levels ≥ 3, 39 reserved (R1's ceiling of
+/// 30 × 1.3), `u = 39/410` in the `+3` bin, `p = k + 3 = 4` with its written
+/// `!1`, held at 6 by yesterday's 7 (§7.4).  `^a2` (due Tuesday) then sees the
+/// 371 minutes left plus Tuesday's 360: 731 against 780, IMPOSSIBLE, `p = 0`,
+/// 49 minutes short.  `^r` is undated, pure rank: `k + 2 = 3`.  Without
+/// hysteresis `^a1` is its raw 4.
+#[test]
+fn capacity_answers_grants_in_request_order() {
+    let out = call(&capacity_req("", &spec_with_candidates(true, &witness_items()))).unwrap();
+    let e18 = |m: u128| (m * 1_000_000_000_000_000_000u128).to_string();
+    let grants = [
+        r#"{"id":"w","class":"wall","k":3,"p":null,"rawP":null,"need":0,"until":null,"avail":"0","allocation":"0","shortfall":"0","bin":null}"#.to_string(),
+        format!(
+            r#"{{"id":"a2","class":"impossible","k":3,"p":0,"rawP":0,"need":780,"until":"2026-09-08","avail":"{}","allocation":"{}","shortfall":"{}","bin":null}}"#,
+            e18(731),
+            e18(731),
+            e18(49)
+        ),
+        format!(
+            r#"{{"id":"a1","class":"dated","k":1,"p":6,"rawP":4,"need":39,"until":"2026-09-07","avail":"{}","allocation":"{}","shortfall":"0","bin":3}}"#,
+            e18(410),
+            e18(39)
+        ),
+        r#"{"id":"o","class":"optional","k":3,"p":5,"rawP":5,"need":26,"until":null,"avail":"0","allocation":"0","shortfall":"0","bin":null}"#.to_string(),
+        r#"{"id":"r","class":"rank","k":1,"p":3,"rawP":3,"need":65,"until":null,"avail":"0","allocation":"0","shortfall":"0","bin":null}"#.to_string(),
+    ];
+    let days = [day_units("2026-09-07", [0, 0, 0, 60, 170, 180]), day_units("2026-09-08", [0, 0, 0, 36, 162, 162])];
+    assert_eq!(
+        out,
+        format!(
+            r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"lookahead":{{"den":"1000000000000000000","days":[{}],"grants":[{}]}}}}}}"#,
+            days.join(","),
+            grants.join(",")
+        )
+    );
+    let plain = call(&capacity_req("", &spec_with_candidates(false, &witness_items()))).unwrap();
+    assert!(plain.contains(r#"{"id":"a1","class":"dated","k":1,"p":4,"rawP":4,"#), "{plain}");
+    // No candidates: no `grants` key, and the lookahead is L6's, byte for byte.
+    let none = call(&capacity_req("", SPEC_CAPACITY.replace(r#""days":7,"#, r#""days":2,"#).as_str())).unwrap();
+    assert!(!none.contains("grants"), "{none}");
+    let empty = call(&capacity_req("", &spec_with_candidates(true, &[]))).unwrap();
+    assert_eq!(empty, none.replacen(r#"]}}}"#, r#"],"grants":[]}}}"#, 1));
+}
+
+/// **Every candidate refusal is named** (R10), and **gap 109: a capacity
+/// request with commands is refused** (`runCap_refuses_commands_beside_capacity`).
+#[test]
+fn every_candidate_refusal_is_named() {
+    let base = capacity_req("", &spec_with_candidates(true, &witness_items()));
+    assert!(call(&base).unwrap().starts_with(r#"{"ok":"#));
+    let cases: &[(&str, &str, &str)] = &[
+        (r#"{"id":"a2","ci":3,"#, r#"{"id":"a2","ci":6,"#, "badCandidate 1 ci"),
+        (r#""id":"a1","ci":3,"rootPrio":1"#, r#""id":"a1","ci":3,"rootPrio":5"#, "badCandidate 2 rootPrio"),
+        (r#""remaining":600"#, r#""remaining":4294967296"#, "badCandidate 1 remaining"),
+        (r#""remaining":600,"due":"2026-09-08""#, r#""remaining":600,"due":"2026-02-30""#, "badCandidate 1 due"),
+        (r#""remaining":60,"due":"2026-09-07","window":false,"wall":true"#, r#""remaining":60,"due":"2026-09-07","window":false,"wall":"yes""#, "badCandidate 0 wall"),
+        (r#""yesterday":7"#, r#""yesterday":8"#, "badCandidate 2 yesterday"),
+        (r#"{"id":"r","#, r#"{"idx":"r","#, "badCandidate 4 id"),
+        (r#""hysteresis":true,"#, "", "badCapacity candidates"),
+        (r#""candidates":{"#, r#""candidates":[],"x":{"#, "badCapacity candidates"),
+    ];
+    for (from, to, name) in cases {
+        assert_eq!(base.matches(from).count(), 1, "the edit {from:?} is not unique in the request");
+        let out = call(&base.replacen(from, to, 1)).unwrap();
+        assert_eq!(out, format!(r#"{{"err":{{"capacity":"{name}"}}}}"#), "{from:?} -> {to:?}");
+    }
+    let long_id = cand(&"x".repeat(1025), 3, "null", 30, "null", false, "null");
+    let out = call(&capacity_req("", &spec_with_candidates(true, &[long_id]))).unwrap();
+    assert_eq!(out, r#"{"err":{"capacity":"badCandidate 0 id"}}"#);
+    let many: Vec<String> = (0..1025).map(|i| cand(&format!("c{i}"), 3, "null", 30, "null", false, "null")).collect();
+    let out = call(&capacity_req("", &spec_with_candidates(true, &many))).unwrap();
+    assert_eq!(out, r#"{"err":{"capacity":"tooManyCandidates"}}"#);
+    let at_the_bound = call(&capacity_req("", &spec_with_candidates(true, &many[..1024]))).unwrap();
+    assert_eq!(at_the_bound.matches(r#"{"id":"c"#).count(), 1024);
+    // Gap 109: the walls are the documents as sent, so capacity and commands are never answered together.
+    let doc = r#"{"path":"weeks/2026-W37.md","lines":["- [ ] Draft est:30m ^m1"]}"#;
+    let with_cmd = format!(
+        r#"{{"docs":[{doc}],"cmds":[{{"op":"est","id":"m1","min":45}}],"now":"2026-09-07","blockMin":60,{CHICAGO_2026},{SPEC_CAPACITY}}}"#
+    );
+    assert_eq!(call(&with_cmd).unwrap(), r#"{"err":{"capacity":"capacityWithCommands"}}"#);
+    let without = with_cmd.replacen(r#""cmds":[{"op":"est","id":"m1","min":45}],"#, "", 1);
+    assert!(call(&without).unwrap().starts_with(r#"{"ok":{"docs":[{"path":"weeks/2026-W37.md""#));
+    let empty_cmds = with_cmd.replacen(r#"[{"op":"est","id":"m1","min":45}]"#, "[]", 1);
+    assert_eq!(call(&empty_cmds).unwrap(), call(&without).unwrap());
+}

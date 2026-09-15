@@ -3140,3 +3140,53 @@ open Tm
 -- 142-character `log` conjunct is split into three conjuncts of at most 52 characters, composed by
 -- the new `withLog_jone`.  `malformedLine5` is spelled pair by pair (no new theorem).
 #print axioms Tm.withLog_jone
+
+-- APPENDED 2026-09-14 (stage 5, D10 track).  Step L8, kernel half (design §13.6, §13.8): the grants
+-- on the wire (gaps 80, 107), EDF compiled linear (gap 106), one zone reading (gap 110), and capacity
+-- refused beside commands (gap 109).  Three existing statements gained hypotheses for the new wire
+-- (`runCap_answers_with_the_lookahead`, `runCap_answers_docs_report_lookahead`,
+-- `runCap_answers_docs_report_log_lookahead`: no candidates, no commands); their audit lines stand above.
+#print axioms Tm.NumSix.get_of
+#print axioms Tm.availUntil_foldl
+#print axioms Tm.availUntil_eq_availUntilFast
+#print axioms Tm.reserveRestAcc_eq
+#print axioms Tm.edfStepFast_foldl
+#print axioms Tm.edfGrantsGo_eq_edfGrantsGoFast
+#print axioms Tm.edfCaps_eq_edfCapsFast
+#print axioms Tm.reserveRest_eq_reserveRestFast
+#print axioms Tm.reserveOut_eq_reserveOutFast
+#print axioms Tm.edf_eq_edfFast
+#print axioms Tm.edfGrants_eq_edfGrantsFast
+#print axioms Tm.Look.enterOf_eq_some
+#print axioms Tm.Look.mem_entering
+#print axioms Tm.Look.insertDueIx_snd
+#print axioms Tm.Look.sortDueIx_snd
+#print axioms Tm.Look.perm_insertDueIx
+#print axioms Tm.Look.sortDueIx_perm
+#print axioms Tm.Look.edfGrantsGo_length
+#print axioms Tm.Look.tagGrants_snd
+#print axioms Tm.Look.servedGrants_are_the_pass
+#print axioms Tm.Look.grantAt_servedGrants
+#print axioms Tm.Look.grantAt_none_of_not_enters
+#print axioms Tm.Look.grantAt_some_of_enters
+#print axioms Tm.Look.priorities_length
+#print axioms Tm.Look.priorities_getElem?
+#print axioms Tm.Look.an_answer_carries_a_grant_iff_its_candidate_enters
+#print axioms Tm.Look.an_answers_grant_reserves_the_min
+#print axioms Tm.Look.an_answer_is_off_the_scale_iff_a_wall
+#print axioms Tm.Look.finalPrio_of_pressure_hot
+#print axioms Tm.Look.a_hot_answer_is_zero
+#print axioms Tm.Look.priorities_on_a_witness
+#print axioms Tm.readLogSection_is_zoneOf_then_logSectionWith
+#print axioms Tm.zoneOf_ok_obj
+#print axioms Tm.the_zone_is_read_once_and_feeds_both_sections
+#print axioms Tm.runCap_with_capacity_reads_the_zone_once
+#print axioms Tm.zoneOf_of_readLogSection
+#print axioms Tm.runCap_answers_with_the_lookahead_and_grants
+#print axioms Tm.runCap_refuses_what_the_candidates_refuse
+#print axioms Tm.runCap_refuses_commands_beside_capacity
+#print axioms Tm.an_answered_capacity_request_has_no_commands
+#print axioms Tm.runCap_answers_docs_report_lookahead_grants
+#print axioms Tm.CapWire.readCands_on_witnesses
+#print axioms Tm.CapWire.runCap_refuses_a_command_beside_the_corpus_request
+#print axioms Tm.CapWire.the_grant_response_emits_in_build_order

@@ -1466,4 +1466,41 @@ theorem anUnsortedCurveIsAccepted :
 theorem anHourOfUnitsFitsADouble : Look.capDen * 60 < 2 ^ 53 := by
   decide
 
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D10 track).  Step L8, kernel half (design
+-- §13.6, §13.8): the grants on the wire.  Numbers 138, 139 and 140 were the
+-- next free numbers in this checkout (the highest was L6's 137).  The D9
+-- track numbers in parallel and the merge renumbers.  The controls, which
+-- compile, are `Look.grantAt_none_of_not_enters` and
+-- `Look.an_answer_carries_a_grant_iff_its_candidate_enters` (138),
+-- `Look.priorities_on_a_witness` and `Look.servedGrants_are_the_pass` (139),
+-- and `CapWire.readCands_on_witnesses` (140), in Lookahead.lean and
+-- Boundary.lean.  Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 138 — a wall enters the EDF pass.  Fork `priority::compute` reserves only for dated
+   candidates that are not walls, not optional and have no placement window (gap 80): a wall is
+   placed by §8.2 step 1 and would otherwise reserve its own hours twice.  `decide` refuses. -/
+theorem aWallEntersThePass :
+    (Look.entering Arith.safety [⟨['w'], 3, none, 60, some 1, false, true, false, false, false, false, none⟩]).length
+      = 1 := by
+  decide
+
+/- CHEAT 139 — the pass served in request order.  `^a2` (due day 2) is listed before `^a1` (due
+   day 1); served first it would see all 90 minutes.  EDF serves `^a1` first, so `^a2` sees the 51
+   minutes `^a1` left (`Look.priorities_on_a_witness`).  `decide` refuses the 90. -/
+theorem thePassServesInRequestOrder :
+    ((Look.priorities Look.defaultBinsV Arith.safety specDefaultPrio true Look.witnessCaps Look.witnessCands)[1]?.bind
+      (·.grant)).map (·.avail) = some (90 * Look.capDen) := by
+  decide
+
+/- CHEAT 140 — a candidate at energy level 6 reads.  A level is `0..5` (`levelOf?`, R10); the
+   wire refuses the record by its position and key, `badCandidate 0 ci`.  `decide` refuses the
+   claim that it reads. -/
+theorem aCandidateAtLevelSixReads :
+    (CapWire.readCands (CapWire.inCands (.bool true)
+      [CapWire.candJ ['a'] (.num 6) .null (.num 30) CapWire.sep8J (.bool false) .null])).isOk = true := by
+  decide
+
+
 end Tm

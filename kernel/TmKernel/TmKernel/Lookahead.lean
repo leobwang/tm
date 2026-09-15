@@ -19,7 +19,10 @@ future day's wake is today's wake clock through `local_dt` at second resolution
 (`wakeInstantOf`), and `lookahead` mixes the two locations' limited days at the weekday's
 weight, day 0 being the host's histogram until L9.  Step L6 (§13.6) bounds every other value the
 capacity wire carries (`mkDayCfg?`, `mkStep?`, `curveOk`, `priorOk`, `energyOk`, `homeMaxOk`),
-each with its rejection theorems; the wire itself is `Boundary.lean`'s.
+each with its rejection theorems; the wire itself is `Boundary.lean`'s.  Step L8's kernel half (§13.6,
+§13.8) answers fork `priority::compute` over the lookahead: which candidates enter step 3's EDF pass
+(gap 80), the grants (gap 107), §7.1's bin at each grant's exact availability, and §7.2's `p` after
+§7.4 (`priorities`).
 **Stage 6's `dayPlan` must reuse L2's `windowEnd`, `windowOn`, `wallIndex` and `wallsOn`,
 L3's `freeIntervals` and `cutSlots`, and L4's `hsw100`, `predictAt`, `capForLocation` and
 `energize`, never a second copy** (design §2.3).
@@ -3944,6 +3947,458 @@ theorem priorOk_keys_in_the_exact_domain {p : List (List Char × List Step)} (h 
 /-- The shipped `[day]`, curves and `home_max_ci` are accepted. -/
 theorem the_shipped_bounds_hold :
     DayCfg.shipped.wf = true ∧ Curves.shipped.wf = true ∧ Curves.fixture.wf = true ∧ homeMaxOk 3 = true := by
+  decide
+
+/-! ############################################################################
+## The grants (stage 5 D10 step L8, kernel half; design §13.6, §13.8; gaps 80 and 107)
+
+Fork-point `priority::compute` over the lookahead: which candidates enter §7.3's EDF pass (gap 80),
+step 3's pass over their deadlines at `capDen` (gap 107), §7.1's bin at each grant's exact
+availability, and §7.2's row and `p` after §7.4's hysteresis, one answer per candidate in request
+order.  The configuration decoded at L6 is used here: the ladder (`binAt`), the safety (R1's `needMin`
+and the bin's scaled need) and `default_priority` (`Cand.kOf`).
+
+* **Which enter** (`Cand.enters`, `entering`): not a wall, not optional, no placement window, and an
+  effective due; overdue candidates included.  `grantAt_none_of_not_enters` and
+  `grantAt_some_of_enters` are the two directions.
+* **The served order** (`sortDueIx`) is step 3's `sortDue` with each deadline's position carried
+  alongside (`sortDueIx_snd`), so the grants are `edfGrants` itself (`servedGrants_are_the_pass`), and
+  every EDF theorem of `Capacity.lean` applies to them unchanged.  Ties on one date keep request order
+  (parity P12: the fork orders a date's deadlines by time of day, then line).
+* **The bin** is `binOfScaledQ` of `remaining × safety` against the grant's availability over `capDen`
+  (P7), HOT (`u ≥ 1`) at the bin; the reported shortfall is the grant's `need − avail` when HOT, as fork
+  `shortfall_min` is, and IMPOSSIBLE is HOT with a shortfall.
+* **Not here, by name**: the floor pass (gap 79), and the candidates' facts, which the host collects
+  (gap 113).
+
+The recursion rule (D9-21): the candidates are at most 1,024 (the wire's guard); `entering` is core's
+`zipIdx` and `filterMap`, `sortDueIx` an insertion sort over the guarded list, `grantAt` core's
+`find?`, and the pass is step 3's `edfGrantsGo`, compiled as a `foldl` (`edfGrantsGo_eq_edfGrantsGoFast`).
+-/
+
+open Arith
+
+/-! ### A candidate, and which enter the pass (gap 80) -/
+
+/-- **§7's inputs of one candidate**: fork `priority::Candidate`, the fields `priority::compute`
+reads, as the host collected them (gap 113).  `rootPrio` is the root's written `!k` (fork
+`Item::priority` on `Tree::root`), so `default_priority` is applied here (`Cand.kOf`);
+`remaining` is the candidate's minutes (fork `remaining_min`), and the need is R1's ceiling of
+`remaining × safety` (P3); `due` is the local date of the effective due (fork
+`effective_due.date_naive()`); `window` is fork `window.is_some()`, and `optional` fork
+`is_optional`. -/
+structure Cand where
+  id        : List Char
+  ci        : Fin 6
+  rootPrio  : Option (Fin 4)
+  remaining : Nat
+  due       : Option Day
+  window    : Bool
+  wall      : Bool
+  optional  : Bool
+  overdue   : Bool
+  mandatory : Bool
+  hot       : Bool
+  yesterday : Option (Fin 8)
+deriving DecidableEq, Repr
+
+/-- **Gap 80, fork `priority::compute`'s filter**: a candidate enters the EDF pass when it is not a
+wall, not optional, has no placement window, and has an effective due; overdue candidates
+included. -/
+def Cand.enters (c : Cand) : Bool := !c.wall && !c.optional && !c.window && c.due.isSome
+
+/-- The deadline an entering candidate reserves for: R1's ceiling of its remaining × safety, its
+`ci`, its due date. -/
+def Cand.deadlineAt (s : Pos) (c : Cand) (due : Day) : Deadline := ⟨needMin s c.remaining, c.ci, due⟩
+
+/-- One candidate, with its position in the request, as the pass sees it. -/
+def enterOf (s : Pos) (x : Cand × Nat) : Option (Nat × Deadline) :=
+  if !x.1.wall && !x.1.optional && !x.1.window then x.1.due.map (fun d => (x.2, x.1.deadlineAt s d))
+  else none
+
+/-- The entering candidates' deadlines, in request order, each with its position. -/
+def entering (s : Pos) (cs : List Cand) : List (Nat × Deadline) := cs.zipIdx.filterMap (enterOf s)
+
+theorem enterOf_eq_some {s : Pos} {c : Cand} {i j : Nat} {d : Deadline} :
+    enterOf s (c, j) = some (i, d) ↔ j = i ∧ c.enters = true ∧ ∃ due, c.due = some due ∧ d = c.deadlineAt s due := by
+  unfold enterOf Cand.enters
+  cases hd : c.due with
+  | none => simp
+  | some due =>
+    by_cases hf : (!c.wall && !c.optional && !c.window) = true
+    · simp only [hf, ↓reduceIte, Option.map_some, Option.some.injEq, Prod.mk.injEq, Option.isSome_some,
+        Bool.and_true, true_and]
+      constructor
+      · rintro ⟨h1, h2⟩; exact ⟨h1, due, rfl, h2.symm⟩
+      · rintro ⟨h1, _, rfl, h4⟩; exact ⟨h1, h4.symm⟩
+    · simp only [Bool.not_eq_true] at hf
+      simp [hf]
+
+/-- **Who is in the pass**: a position and a deadline are entering exactly when the candidate at that
+position enters and the deadline is its own. -/
+theorem mem_entering {s : Pos} {cs : List Cand} {i : Nat} {d : Deadline} :
+    (i, d) ∈ entering s cs ↔
+      ∃ c due, cs[i]? = some c ∧ c.enters = true ∧ c.due = some due ∧ d = c.deadlineAt s due := by
+  unfold entering
+  rw [List.mem_filterMap]
+  constructor
+  · rintro ⟨⟨c, j⟩, hm, he⟩
+    obtain ⟨rfl, hen, due, hdue, rfl⟩ := enterOf_eq_some.mp he
+    exact ⟨c, due, List.mem_zipIdx_iff_getElem?.mp hm, hen, hdue, rfl⟩
+  · rintro ⟨c, due, hc, hen, hdue, rfl⟩
+    exact ⟨(c, i), List.mem_zipIdx_iff_getElem?.mpr hc, enterOf_eq_some.mpr ⟨rfl, hen, due, hdue, rfl⟩⟩
+
+/-! ### The served order: `sortDue`, carrying each deadline's position -/
+
+/-- `insertDue`, on positioned deadlines. -/
+def insertDueIx (x : Nat × Deadline) : List (Nat × Deadline) → List (Nat × Deadline)
+  | []      => [x]
+  | y :: ys => if x.2.due ≤ y.2.due then x :: y :: ys else y :: insertDueIx x ys
+
+/-- `sortDue`, on positioned deadlines: by due, stable. -/
+def sortDueIx : List (Nat × Deadline) → List (Nat × Deadline)
+  | []      => []
+  | x :: xs => insertDueIx x (sortDueIx xs)
+
+theorem insertDueIx_snd (x : Nat × Deadline) :
+    ∀ ys : List (Nat × Deadline), (insertDueIx x ys).map Prod.snd = insertDue x.2 (ys.map Prod.snd)
+  | [] => rfl
+  | y :: ys => by
+    have ih := insertDueIx_snd x ys
+    by_cases h : x.2.due ≤ y.2.due
+    · simp [insertDueIx, insertDue, h]
+    · simp [insertDueIx, insertDue, h, ih]
+
+/-- **The served order is step 3's `sortDue`**, positions carried alongside. -/
+theorem sortDueIx_snd : ∀ xs : List (Nat × Deadline), (sortDueIx xs).map Prod.snd = sortDue (xs.map Prod.snd)
+  | [] => rfl
+  | x :: xs => by
+    simp only [sortDueIx, List.map_cons, sortDue, insertDueIx_snd, sortDueIx_snd xs]
+
+theorem perm_insertDueIx (x : Nat × Deadline) :
+    ∀ ys : List (Nat × Deadline), List.Perm (insertDueIx x ys) (x :: ys)
+  | [] => List.Perm.refl _
+  | y :: ys => by
+    unfold insertDueIx
+    split
+    · exact List.Perm.refl _
+    · exact ((perm_insertDueIx x ys).cons y).trans (List.Perm.swap x y ys)
+
+theorem sortDueIx_perm : ∀ xs : List (Nat × Deadline), List.Perm (sortDueIx xs) xs
+  | [] => List.Perm.refl _
+  | x :: xs => (perm_insertDueIx x (sortDueIx xs)).trans ((sortDueIx_perm xs).cons x)
+
+/-- The served order of a request's candidates. -/
+def servedOrder (s : Pos) (cs : List Cand) : List (Nat × Deadline) := sortDueIx (entering s cs)
+
+/-- Step 3's grants over a served order, each tagged with its candidate's position. -/
+def tagGrants (caps : List DayCapacity) (srv : List (Nat × Deadline)) : List (Nat × Grant) :=
+  (srv.map Prod.fst).zip (edfGrantsGo capDen caps (srv.map Prod.snd))
+
+/-- **The pass over a request's candidates** (gap 107): step 3's `edfGrants` over the entering
+candidates' deadlines, each grant tagged with its candidate's position. -/
+def servedGrants (s : Pos) (caps : List DayCapacity) (cs : List Cand) : List (Nat × Grant) :=
+  tagGrants caps (servedOrder s cs)
+
+theorem edfGrantsGo_length (den : Nat) (caps : List DayCapacity) (ds : List Deadline) :
+    (edfGrantsGo den caps ds).length = ds.length := by
+  have := congrArg List.length (edfGrantsGo_deadlines den caps ds)
+  rwa [List.length_map] at this
+
+theorem tagGrants_snd (caps : List DayCapacity) (srv : List (Nat × Deadline)) :
+    (tagGrants caps srv).map Prod.snd = edfGrantsGo capDen caps (srv.map Prod.snd) := by
+  unfold tagGrants
+  apply List.map_snd_zip
+  simp [edfGrantsGo_length]
+
+/-- **The grants are step 3's pass** (gap 107): in served order, the grants the response carries
+are `edfGrants` at `capDen` over the entering candidates' deadlines, listed in request order. -/
+theorem servedGrants_are_the_pass (s : Pos) (caps : List DayCapacity) (cs : List Cand) :
+    (servedGrants s caps cs).map Prod.snd = edfGrants capDenD caps ((entering s cs).map Prod.snd) := by
+  unfold servedGrants servedOrder
+  rw [tagGrants_snd, sortDueIx_snd]
+  rfl
+
+/-- A candidate's grant: the one tagged with its position. -/
+def grantAt (served : List (Nat × Grant)) (i : Nat) : Option Grant :=
+  (served.find? (fun p => p.1 == i)).map Prod.snd
+
+/-- **The grant a candidate carries is the pass's grant at the position its deadline is served**,
+and that grant is for the deadline served there. -/
+theorem grantAt_servedGrants {s : Pos} {caps : List DayCapacity} {cs : List Cand} {i : Nat} {g : Grant}
+    (h : grantAt (servedGrants s caps cs) i = some g) :
+    ∃ (j : Nat) (d : Deadline), (servedOrder s cs)[j]? = some (i, d) ∧
+      (edfGrants capDenD caps ((entering s cs).map Prod.snd))[j]? = some g ∧ g.deadline = d := by
+  unfold grantAt at h
+  obtain ⟨p, hp, rfl⟩ := Option.map_eq_some_iff.mp h
+  obtain ⟨hpi, j, hj, hjp, -⟩ := List.find?_eq_some_iff_getElem.mp hp
+  have hz : (servedGrants s caps cs)[j]? = some p := by rw [List.getElem?_eq_getElem hj, hjp]
+  unfold servedGrants tagGrants at hz
+  obtain ⟨h1, h2⟩ := List.getElem?_zip_eq_some.mp hz
+  rw [List.getElem?_map] at h1
+  obtain ⟨⟨i', d⟩, hsrv, hi'⟩ := Option.map_eq_some_iff.mp h1
+  simp only [beq_iff_eq] at hpi
+  simp only at hi'
+  subst hi'
+  have hg : (edfGrants capDenD caps ((entering s cs).map Prod.snd))[j]? = some p.2 := by
+    have e : edfGrants capDenD caps ((entering s cs).map Prod.snd)
+        = edfGrantsGo capDen caps ((servedOrder s cs).map Prod.snd) := by
+      unfold servedOrder; rw [sortDueIx_snd]; rfl
+    rw [e]; exact h2
+  refine ⟨j, d, by rw [hsrv, hpi], hg, ?_⟩
+  have hd := congrArg (fun l => l[j]?) (edfGrantsGo_deadlines capDen caps ((servedOrder s cs).map Prod.snd))
+  simp only [List.getElem?_map, h2, hsrv, Option.map_some] at hd
+  exact Option.some.inj hd
+
+/-- **Gap 80, one direction: a candidate that does not enter reserves nothing** (a wall, an
+optional, a window instance, an undated candidate). -/
+theorem grantAt_none_of_not_enters {s : Pos} {caps : List DayCapacity} {cs : List Cand} {i : Nat}
+    {c : Cand} (hc : cs[i]? = some c) (hn : c.enters = false) :
+    grantAt (servedGrants s caps cs) i = none := by
+  cases hg : grantAt (servedGrants s caps cs) i with
+  | none => rfl
+  | some g =>
+    obtain ⟨j, d, hsrv, -, -⟩ := grantAt_servedGrants hg
+    have hm : (i, d) ∈ entering s cs :=
+      (sortDueIx_perm _).mem_iff.mp (List.mem_of_getElem? hsrv)
+    obtain ⟨c', _, hc', hen, -⟩ := mem_entering.mp hm
+    rw [hc] at hc'
+    cases hc'
+    rw [hn] at hen
+    cases hen
+
+/-- **Gap 80, the other direction: a candidate that enters carries a grant**, and it is the grant
+for its own deadline. -/
+theorem grantAt_some_of_enters {s : Pos} {caps : List DayCapacity} {cs : List Cand} {i : Nat}
+    {c : Cand} (hc : cs[i]? = some c) (he : c.enters = true) :
+    ∃ g due, grantAt (servedGrants s caps cs) i = some g ∧ c.due = some due ∧ g.deadline = c.deadlineAt s due := by
+  obtain ⟨due, hdue⟩ : ∃ due, c.due = some due := by
+    unfold Cand.enters at he
+    simp only [Bool.and_eq_true] at he
+    exact Option.isSome_iff_exists.mp he.2
+  have hm : (i, c.deadlineAt s due) ∈ servedOrder s cs :=
+    (sortDueIx_perm _).mem_iff.mpr (mem_entering.mpr ⟨c, due, hc, he, hdue, rfl⟩)
+  obtain ⟨j, hj⟩ := List.mem_iff_getElem?.mp hm
+  have hlen : j < (edfGrantsGo capDen caps ((servedOrder s cs).map Prod.snd)).length := by
+    rw [edfGrantsGo_length, List.length_map]
+    exact (List.getElem?_eq_some_iff.mp hj).1
+  have hz : (servedGrants s caps cs)[j]? =
+      some (i, (edfGrantsGo capDen caps ((servedOrder s cs).map Prod.snd))[j]) := by
+    unfold servedGrants tagGrants
+    rw [List.getElem?_zip_eq_some]
+    exact ⟨by rw [List.getElem?_map, hj]; rfl, List.getElem?_eq_getElem hlen⟩
+  have hsome : (grantAt (servedGrants s caps cs) i).isSome = true := by
+    unfold grantAt
+    rw [Option.isSome_map, List.find?_isSome]
+    exact ⟨_, List.mem_of_getElem? hz, by simp⟩
+  obtain ⟨g, hg⟩ := Option.isSome_iff_exists.mp hsome
+  obtain ⟨j', d, hsrv, -, hgd⟩ := grantAt_servedGrants hg
+  have hm' : (i, d) ∈ entering s cs := (sortDueIx_perm _).mem_iff.mp (List.mem_of_getElem? hsrv)
+  obtain ⟨c', due', hc', -, hdue', rfl⟩ := mem_entering.mp hm'
+  rw [hc] at hc'
+  cases hc'
+  rw [hdue] at hdue'
+  cases hdue'
+  exact ⟨g, due, hg, hdue, hgd⟩
+
+/-! ### Each candidate's answer: the grant, §7.1's bin, §7.2's row and `p` -/
+
+/-- `k`: the root's written `!k`, else `default_priority` (fork `Tree::root_priority`), `1..4`. -/
+def Cand.kOf (dflt : Fin 4) (c : Cand) : Nat := (c.rootPrio.getD dflt).val + 1
+
+/-- What §7.2 reads off a candidate, with the pass's bin. -/
+def Cand.rule (c : Cand) (pass : Option Bin) : RuleIn :=
+  ⟨c.wall, c.optional, c.overdue, c.mandatory, c.hot, pass⟩
+
+/-- **§7.1's bin at a grant** (design §13.1): `remaining × safety` against the grant's exact
+availability over `capDen`, never rounded (P7). -/
+def binAt (bins : Bins) (s : Pos) (c : Cand) (g : Grant) : Bin :=
+  binOfScaledQ bins.val s c.remaining (g.availQ capDenD)
+
+/-- One candidate's answer. -/
+structure CandOut where
+  cand  : Cand
+  k     : Nat
+  need  : Nat
+  grant : Option Grant
+  bin   : Option Bin
+  row   : PrioRow
+  raw   : Option Nat
+  p     : Option Nat
+
+/-- The answer for the candidate at position `x.2`. -/
+def candOut (bins : Bins) (s : Pos) (dflt : Fin 4) (hyst : Bool) (served : List (Nat × Grant))
+    (x : Cand × Nat) : CandOut :=
+  let g := grantAt served x.2
+  let b := g.map (binAt bins s x.1)
+  ⟨x.1, x.1.kOf dflt, if x.1.wall then 0 else needMin s x.1.remaining, g, b, rowOf (x.1.rule b),
+    rawPrio (x.1.kOf dflt) (x.1.rule b), finalPrio hyst x.1.yesterday (x.1.kOf dflt) (x.1.rule b)⟩
+
+/-- **Fork `priority::compute`, without the floor pass (gap 79)**: one answer per candidate, in
+request order, over the lookahead `caps`. -/
+def priorities (bins : Bins) (s : Pos) (dflt : Fin 4) (hyst : Bool) (caps : List DayCapacity)
+    (cs : List Cand) : List CandOut :=
+  cs.zipIdx.map (candOut bins s dflt hyst (servedGrants s caps cs))
+
+/-- The shortfall a candidate reports: fork `shortfall_min`, set only when the pass is HOT. -/
+def CandOut.shortfall (o : CandOut) : Nat :=
+  match o.grant, o.bin with
+  | some g, some .hot => g.shortfall capDen
+  | _, _ => 0
+
+/-- Fork `PrioClass`, without `floor` (gap 79). -/
+inductive PClass where
+  | wall | hot | impossible | overdue | mandatory | hotFlag | dated | rank | optional
+deriving DecidableEq, Repr
+
+/-- Which line of §7.2 answered, HOT split by its shortfall (fork `priority::compute`). -/
+def CandOut.cls (o : CandOut) : PClass :=
+  match o.row with
+  | .wall => .wall
+  | .optional => .optional
+  | .overdue => .overdue
+  | .mandatory => .mandatory
+  | .hotFlag => .hotFlag
+  | .pressure .hot => if 0 < o.shortfall then .impossible else .hot
+  | .pressure (.plus _) => .dated
+  | .rank => .rank
+
+theorem priorities_length (bins : Bins) (s : Pos) (dflt : Fin 4) (hyst : Bool) (caps : List DayCapacity)
+    (cs : List Cand) : (priorities bins s dflt hyst caps cs).length = cs.length := by
+  simp [priorities]
+
+theorem priorities_getElem? (bins : Bins) (s : Pos) (dflt : Fin 4) (hyst : Bool) (caps : List DayCapacity)
+    (cs : List Cand) (i : Nat) :
+    (priorities bins s dflt hyst caps cs)[i]? = cs[i]?.map (fun c => candOut bins s dflt hyst (servedGrants s caps cs) (c, i)) := by
+  simp [priorities, List.getElem?_zipIdx, Function.comp_def]
+
+/-- **Gap 80 on the answer, both directions**: the answer at a position carries a grant exactly when
+its candidate enters the pass, and then the grant is for the candidate's own deadline, its bin is
+§7.1's at the grant's availability, and its row reads that bin. -/
+theorem an_answer_carries_a_grant_iff_its_candidate_enters (bins : Bins) (s : Pos) (dflt : Fin 4)
+    (hyst : Bool) (caps : List DayCapacity) (cs : List Cand) {i : Nat} {c : Cand} {o : CandOut}
+    (hc : cs[i]? = some c) (ho : (priorities bins s dflt hyst caps cs)[i]? = some o) :
+    o.cand = c ∧ (o.grant.isSome = c.enters) ∧
+      (∀ g, o.grant = some g → ∃ due, c.due = some due ∧ g.deadline = c.deadlineAt s due ∧
+        o.bin = some (binAt bins s c g) ∧ o.row = rowOf (c.rule (some (binAt bins s c g)))) := by
+  rw [priorities_getElem?, hc, Option.map_some, Option.some.injEq] at ho
+  subst ho
+  refine ⟨rfl, ?_, ?_⟩
+  · cases he : c.enters
+    · simp [candOut, grantAt_none_of_not_enters hc he]
+    · obtain ⟨g, _, hg, -⟩ := grantAt_some_of_enters (s := s) (caps := caps) hc he
+      simp [candOut, hg]
+  · intro g hg
+    simp only [candOut] at hg
+    cases he : c.enters
+    · rw [grantAt_none_of_not_enters hc he] at hg; cases hg
+    · obtain ⟨g', due, hg', hdue, hd⟩ := grantAt_some_of_enters (s := s) (caps := caps) hc he
+      rw [hg'] at hg
+      cases hg
+      exact ⟨due, hdue, hd, by simp [candOut, hg'], by simp [candOut, hg']⟩
+
+/-- **Every grant on the answer is §7.3's**: it reserved `min(need, avail)` in units over `capDen`,
+and the shortfall it reports is `need − avail` (fork `shortfall_min`), whenever the pass is HOT. -/
+theorem an_answers_grant_reserves_the_min (bins : Bins) (s : Pos) (dflt : Fin 4) (hyst : Bool)
+    (caps : List DayCapacity) (cs : List Cand) {i : Nat} {o : CandOut} {g : Grant}
+    (ho : (priorities bins s dflt hyst caps cs)[i]? = some o) (hg : o.grant = some g) :
+    g.reserved = min (g.deadline.need * capDen) g.avail ∧
+      o.shortfall = (if o.bin = some .hot then g.deadline.need * capDen - g.avail else 0) := by
+  rw [priorities_getElem?] at ho
+  obtain ⟨c, _, rfl⟩ := Option.map_eq_some_iff.mp ho
+  simp only [candOut] at hg
+  obtain ⟨j, d, -, hj, -⟩ := grantAt_servedGrants hg
+  have hmem := List.mem_of_getElem? hj
+  have hmin := edf_reserves_the_min capDenD caps _ g hmem
+  have hsh : g.shortfall capDen = g.deadline.need * capDen - g.avail :=
+    edf_shortfall_is_need_minus_avail capDenD caps _ g hmem
+  refine ⟨hmin, ?_⟩
+  unfold CandOut.shortfall
+  simp only [candOut, hg, Option.map_some]
+  split <;> simp_all
+
+/-- **A wall is off the scale, and only a wall**: `p` is absent exactly for walls (fork `Prio::wall`). -/
+theorem an_answer_is_off_the_scale_iff_a_wall (bins : Bins) (s : Pos) (dflt : Fin 4) (hyst : Bool)
+    (caps : List DayCapacity) (cs : List Cand) {i : Nat} {o : CandOut}
+    (ho : (priorities bins s dflt hyst caps cs)[i]? = some o) : o.p = none ↔ o.cand.wall = true := by
+  rw [priorities_getElem?] at ho
+  obtain ⟨c, _, rfl⟩ := Option.map_eq_some_iff.mp ho
+  simp only [candOut, finalPrio, Option.map_eq_none_iff]
+  exact rawPrio_isNone_iff _ _
+
+/-- §7.2's HOT row is `p = 0` after §7.4. -/
+theorem finalPrio_of_pressure_hot (en : Bool) (y : Option (Fin 8)) (k : Nat) (r : RuleIn)
+    (h : rowOf r = .pressure .hot) : finalPrio en y k r = some 0 := by
+  simp only [finalPrio, rawPrio, h, rowTable, PVal.eval, Option.map_some, prio_of_hot_is_zero,
+    applyHysteresis_zero, ite_self]
+
+/-- **HOT and IMPOSSIBLE are `p = 0`, whatever yesterday was** (§7.2, §7.4's exception), and an
+IMPOSSIBLE answer reports a shortfall. -/
+theorem a_hot_answer_is_zero (bins : Bins) (s : Pos) (dflt : Fin 4) (hyst : Bool) (caps : List DayCapacity)
+    (cs : List Cand) {i : Nat} {o : CandOut} (ho : (priorities bins s dflt hyst caps cs)[i]? = some o)
+    (hh : o.cls = .hot ∨ o.cls = .impossible) :
+    o.p = some 0 ∧ (o.cls = .impossible → 0 < o.shortfall) := by
+  rw [priorities_getElem?] at ho
+  obtain ⟨c, _, rfl⟩ := Option.map_eq_some_iff.mp ho
+  unfold CandOut.cls at hh ⊢
+  split at hh
+  · simp at hh
+  · simp at hh
+  · simp at hh
+  · simp at hh
+  · simp at hh
+  · rename_i hrow
+    refine ⟨finalPrio_of_pressure_hot _ _ _ _ hrow, ?_⟩
+    intro himp
+    by_cases h0 : 0 < (candOut bins s dflt hyst (servedGrants s caps cs) (c, i)).shortfall
+    · exact h0
+    · simp [h0] at himp
+  · simp at hh
+  · simp at hh
+
+/-! ### A witness (decided; probed under the 8 GB cap) -/
+
+/-- What a witness pins of an answer: `p`, the class, the need, the grant's availability and
+reservation, and the shortfall. -/
+structure CandView where
+  p         : Option Nat
+  cls       : PClass
+  need      : Nat
+  grant     : Option (Nat × Nat)
+  shortfall : Nat
+deriving DecidableEq, Repr
+
+def CandOut.view (o : CandOut) : CandView :=
+  ⟨o.p, o.cls, o.need, o.grant.map (fun g => (g.avail, g.reserved)), o.shortfall⟩
+
+/-- §16's default ladder, accepted. -/
+def defaultBinsV : Bins := ⟨Arith.defaultBins, by decide⟩
+
+/-- Step 3's loaded-plan witness over `capDen`: 60 minutes at level 3 on day 1, 30 on day 2. -/
+def witnessCaps : List DayCapacity := [ofHist 1 (histOf [0, 0, 0, 60, 0, 0]), ofHist 2 (histOf [0, 0, 0, 30, 0, 0])]
+
+/-- Five candidates: a wall, `^a2` (45 minutes, due day 2) listed before `^a1` (30 minutes, due
+day 1, yesterday at 6), an optional, and an undated one. -/
+def witnessCands : List Cand :=
+  [⟨['w'], 3, none, 60, some 1, false, true, false, false, false, false, none⟩,
+   ⟨['a', '2'], 3, none, 45, some 2, false, false, false, false, false, false, none⟩,
+   ⟨['a', '1'], 3, none, 30, some 1, false, false, false, false, false, false, some 6⟩,
+   ⟨['o'], 3, none, 20, some 1, false, false, true, false, false, false, none⟩,
+   ⟨['r'], 2, some 0, 50, none, false, false, false, false, false, false, none⟩]
+
+/-- **The grants on a witness, in request order.**  The wall and the optional enter nothing; `^a1`
+is served first though listed after `^a2`: 60 minutes available, 39 reserved (R1's ceiling of
+`30 × 1.3`), `u = 0.65` in the `+0` bin, `p = k + 0 = 3` held at 5 by yesterday's 6.  `^a2` then
+sees 51 minutes against a need of 59: IMPOSSIBLE, `p = 0`, 8 minutes short.  The undated one is pure
+rank, `k + 2` with its written `!1`. -/
+theorem priorities_on_a_witness :
+    (priorities defaultBinsV Arith.safety specDefaultPrio true witnessCaps witnessCands).map
+        CandOut.view =
+      [⟨none, .wall, 0, none, 0⟩,
+       ⟨some 0, .impossible, 59, some (51 * capDen, 51 * capDen), 8 * capDen⟩,
+       ⟨some 5, .dated, 39, some (60 * capDen, 39 * capDen), 0⟩,
+       ⟨some 5, .optional, 26, none, 0⟩,
+       ⟨some 3, .rank, 65, none, 0⟩] := by
   decide
 
 end Look

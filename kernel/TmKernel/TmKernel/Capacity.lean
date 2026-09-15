@@ -40,6 +40,11 @@ enters as `need · den` numerator units.  Why one denominator:
 * The days: `availUntil` (`capacity::available_until`), `reserveRest` and `reserveOut`
   (`capacity::reserve`'s outer loop, restricted to the days `≤ due` like `capacity::upto`).
 * The pass: `sortDue` (by due, stable), `edfCaps`, `edfGrantsGo`, and `edf` / `edfGrants`.
+* **What the compiled code runs** (stage 5 D10 L8, gap 106): proved `@[csimp]` twins at the end of
+  the file, a `foldl` over the deadlines and an accumulator over the days that holds each reserved
+  day's six numerators once (`edfGrantsGo_eq_edfGrantsGoFast`, `edfCaps_eq_edfCapsFast`,
+  `reserveRest_eq_reserveRestFast`, `availUntil_eq_availUntilFast`, `reserveOut_eq_reserveOutFast`,
+  `edf_eq_edfFast`, `edfGrants_eq_edfGrantsFast`).  Every theorem here is about the definitions.
 
 ## Not here, by name
 
@@ -1253,5 +1258,162 @@ theorem edf_five_deadlines_over_three_days :
       [[0, 0, 0, 0, 0, 0], [10, 0, 0, 0, 0, 0], [10, 0, 0, 0, 0, 0]] ∧
     totalMin deepCaps = 630 := by
   decide
+
+/-! ## Gap 106: the pass as the compiled code runs it (`@[csimp]`; stage 5 D10 L8)
+
+APPENDED 2026-09-14 (stage 5, D10 track, step L8).  `reserveRest` returned
+`⟨c.day, dayRest ci c.numAt left⟩` for every day up to the due date, a closure over the previous
+`numAt`: after `k` deadlines a level was read through `k` closures, each also reading the levels
+above it (`dayLeft`), and `availUntil`, `reserveRest`, `reserveOut`, `edfCaps` and `edfGrantsGo`
+recursed once per day or deadline, not in tail position.  Measured through the wire over a 3,660-day
+lookahead (README, "Stage 5 D10 L8"): 40 deadlines took 18.4 s.
+
+The twins below are what the compiled code runs.  Each is proved equal to its definition, so each
+law above, the EDF laws included, is still about the definition (D5: none is restated), and the
+compiled program is that definition (the stage-4 `Fast.lean` device).
+
+* `availUntilFast`: a `foldl`.
+* `reserveRestAcc`: an accumulator, stopping at a request of nothing (fork `reserve`'s `left == 0`
+  break; `reserveRest_zero` is why the rest is unchanged), each reserved day's six numerators held
+  once (`NumSix`), so a later read is constant time.
+* `edfStepFast`: one deadline's grant and reservation; `edfGrantsGoFast` and `edfCapsFast` are one
+  `foldl` over the deadlines.
+
+`edf`, `edfGrants`, `availUntil`, `reserveRest` and `reserveOut` were compiled before these lemmas, so
+each gets a twin compiled after them, with a `csimp` lemma of its own. -/
+
+/-- Six numerators, held: a `DayCapacity`'s `numAt` is a function, so a level read re-runs what
+built it; `NumSix` is built once and read in constant time. -/
+structure NumSix where
+  n0 : Nat
+  n1 : Nat
+  n2 : Nat
+  n3 : Nat
+  n4 : Nat
+  n5 : Nat
+
+def NumSix.of (f : Fin 6 → Nat) : NumSix := ⟨f 0, f 1, f 2, f 3, f 4, f 5⟩
+
+def NumSix.get (s : NumSix) (l : Fin 6) : Nat :=
+  if l.val = 0 then s.n0 else if l.val = 1 then s.n1 else if l.val = 2 then s.n2
+  else if l.val = 3 then s.n3 else if l.val = 4 then s.n4 else s.n5
+
+theorem NumSix.get_of (f : Fin 6 → Nat) : (NumSix.of f).get = f := by
+  funext l
+  obtain ⟨n, hn⟩ := l
+  have : n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 := by omega
+  rcases this with rfl | rfl | rfl | rfl | rfl | rfl <;> rfl
+
+/-- `availUntil` as a `foldl`. -/
+def availUntilFast (due : Day) (ci : Fin 6) (caps : List DayCapacity) : Nat :=
+  caps.foldl (fun a c => if c.day ≤ due then a + eligAt ci c.numAt else a) 0
+
+theorem availUntil_foldl (due : Day) (ci : Fin 6) :
+    ∀ (caps : List DayCapacity) (a : Nat),
+      caps.foldl (fun a c => if c.day ≤ due then a + eligAt ci c.numAt else a) a = a + availUntil due ci caps
+  | [], a => by simp [availUntil]
+  | c :: cs, a => by
+    simp only [List.foldl_cons, availUntil]
+    rw [availUntil_foldl due ci cs]
+    split <;> omega
+
+@[csimp] theorem availUntil_eq_availUntilFast : @availUntil = @availUntilFast := by
+  funext due ci caps
+  simp [availUntilFast, availUntil_foldl]
+
+/-- `reserveRest` with an accumulator: stops at a request of nothing (fork `reserve`'s `left == 0`
+break), holds each reserved day's six numerators once. -/
+def reserveRestAcc (due : Day) (ci : Fin 6) : List DayCapacity → Nat → List DayCapacity → List DayCapacity
+  | [],      _,    acc => acc.reverse
+  | c :: cs, left, acc =>
+    if left = 0 then acc.reverseAux (c :: cs)
+    else if c.day ≤ due then
+      reserveRestAcc due ci cs (dayOut ci c.numAt left)
+        (⟨c.day, (NumSix.of (dayRest ci c.numAt left)).get⟩ :: acc)
+    else reserveRestAcc due ci cs left (c :: acc)
+
+theorem reserveRestAcc_eq (due : Day) (ci : Fin 6) :
+    ∀ (caps : List DayCapacity) (left : Nat) (acc : List DayCapacity),
+      reserveRestAcc due ci caps left acc = acc.reverse ++ reserveRest due ci caps left
+  | [], left, acc => by simp [reserveRestAcc, reserveRest]
+  | c :: cs, left, acc => by
+    unfold reserveRestAcc
+    by_cases h0 : left = 0
+    · subst h0
+      rw [if_pos rfl, reserveRest_zero, List.reverseAux_eq]
+    · rw [if_neg h0]
+      simp only [reserveRest]
+      split
+      · rw [reserveRestAcc_eq due ci cs, NumSix.get_of]
+        simp
+      · rw [reserveRestAcc_eq due ci cs]
+        simp
+
+/-- One deadline of the pass, over the capacity left so far: its grant consed on, the days after its
+reservation. -/
+def edfStepFast (den : Nat) (acc : List DayCapacity × List Grant) (d : Deadline) :
+    List DayCapacity × List Grant :=
+  let want := d.need * den
+  let a := availUntilFast d.due d.ci acc.1
+  (reserveRestAcc d.due d.ci acc.1 want [], ⟨d, a, want - (want - a)⟩ :: acc.2)
+
+theorem edfStepFast_foldl (den : Nat) :
+    ∀ (ds : List Deadline) (caps : List DayCapacity) (gs : List Grant),
+      ds.foldl (edfStepFast den) (caps, gs) = (edfCaps den caps ds, (edfGrantsGo den caps ds).reverse ++ gs)
+  | [], caps, gs => by simp [edfCaps, edfGrantsGo]
+  | d :: ds, caps, gs => by
+    simp only [List.foldl_cons, edfStepFast]
+    rw [reserveRestAcc_eq, List.reverse_nil, List.nil_append]
+    have hg : (⟨d, availUntilFast d.due d.ci caps, d.need * den - (d.need * den - availUntilFast d.due d.ci caps)⟩ : Grant)
+        = grantOf den caps d := by
+      simp only [grantOf, reserveOut_eq, ← availUntil_eq_availUntilFast]
+    rw [hg, edfStepFast_foldl den ds]
+    simp [edfCaps, edfGrantsGo]
+
+/-- `edfGrantsGo` as the compiled code runs it: one `foldl` over the deadlines. -/
+def edfGrantsGoFast (den : Nat) (caps : List DayCapacity) (ds : List Deadline) : List Grant :=
+  (ds.foldl (edfStepFast den) (caps, [])).2.reverse
+
+/-- `edfCaps` as the compiled code runs it. -/
+def edfCapsFast (den : Nat) (caps : List DayCapacity) (ds : List Deadline) : List DayCapacity :=
+  (ds.foldl (edfStepFast den) (caps, [])).1
+
+@[csimp] theorem edfGrantsGo_eq_edfGrantsGoFast : @edfGrantsGo = @edfGrantsGoFast := by
+  funext den caps ds
+  simp [edfGrantsGoFast, edfStepFast_foldl]
+
+@[csimp] theorem edfCaps_eq_edfCapsFast : @edfCaps = @edfCapsFast := by
+  funext den caps ds
+  simp [edfCapsFast, edfStepFast_foldl]
+
+
+/-- `reserveRest` as the compiled code runs it. -/
+def reserveRestFast (due : Day) (ci : Fin 6) (caps : List DayCapacity) (left : Nat) : List DayCapacity :=
+  reserveRestAcc due ci caps left []
+
+@[csimp] theorem reserveRest_eq_reserveRestFast : @reserveRest = @reserveRestFast := by
+  funext due ci caps left
+  simp only [reserveRestFast, reserveRestAcc_eq, List.reverse_nil, List.nil_append]
+
+/-- `reserveOut` as the compiled code runs it: `reserveOut_eq`. -/
+def reserveOutFast (due : Day) (ci : Fin 6) (caps : List DayCapacity) (left : Nat) : Nat :=
+  left - availUntilFast due ci caps
+
+@[csimp] theorem reserveOut_eq_reserveOutFast : @reserveOut = @reserveOutFast := by
+  funext due ci caps left
+  rw [reserveOut_eq, availUntil_eq_availUntilFast]
+  rfl
+
+/-- `edf`, compiled after `edfCaps_eq_edfCapsFast`. -/
+def edfFast (den : Den) (caps : List DayCapacity) (ds : List Deadline) : List DayCapacity :=
+  edfCaps den.val caps (sortDue ds)
+
+@[csimp] theorem edf_eq_edfFast : @edf = @edfFast := rfl
+
+/-- `edfGrants`, compiled after `edfGrantsGo_eq_edfGrantsGoFast`. -/
+def edfGrantsFast (den : Den) (caps : List DayCapacity) (ds : List Deadline) : List Grant :=
+  edfGrantsGo den.val caps (sortDue ds)
+
+@[csimp] theorem edfGrants_eq_edfGrantsFast : @edfGrants = @edfGrantsFast := rfl
 
 end Tm
