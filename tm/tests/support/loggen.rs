@@ -204,6 +204,16 @@ impl Date {
         }
     }
 
+    /// Any proleptic Gregorian date, its weekday computed (Sakamoto's
+    /// method), for a log that ends on a chosen day (`cli_latency.rs`).
+    pub fn from_ymd(y: i32, m: u32, d: u32) -> Date {
+        const T: [i32; 12] = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
+        let yy = if m < 3 { y - 1 } else { y };
+        // 0 = Sunday here; Python's weekday has Monday = 0.
+        let sunday0 = (yy + yy / 4 - yy / 100 + yy / 400 + T[(m - 1) as usize] + d as i32).rem_euclid(7);
+        Date { y, m, d, weekday: ((sunday0 + 6) % 7) as u32 }
+    }
+
     pub fn iso(self) -> String {
         format!("{:04}-{:02}-{:02}", self.y, self.m, self.d)
     }
@@ -243,8 +253,14 @@ impl LogGen {
     /// `gen(days)`: `days` consecutive days from 2026-01-01, one compact JSON
     /// line per event, without newlines.
     pub fn days(&mut self, days: u32) -> Vec<String> {
+        self.days_from(Date::START, days)
+    }
+
+    /// [`LogGen::days`] from `start` instead of the scripts' 2026-01-01: the
+    /// same draws in the same order, dated from `start`.
+    pub fn days_from(&mut self, start: Date, days: u32) -> Vec<String> {
         let mut out = Vec::new();
-        let mut d = Date::START;
+        let mut d = start;
         for _ in 0..days {
             self.day(d, &mut out);
             d = d.succ();

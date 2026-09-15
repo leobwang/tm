@@ -52,3 +52,36 @@ fn every_generated_line_is_one_json_object_naming_its_event() {
         }
     }
 }
+
+/// Step R14: a log can end on a chosen day. `Date::from_ymd`'s weekday is
+/// chrono's on every day of 2020–2030, and `days_from` the scripts' start is
+/// `days` exactly.
+#[test]
+fn a_log_can_start_on_any_day_with_the_same_draws() {
+    use chrono::Datelike;
+    let mut day = chrono::NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
+    let mut ours = loggen::Date::from_ymd(2020, 1, 1);
+    while day.year() <= 2030 {
+        let fresh = loggen::Date::from_ymd(day.year(), day.month(), day.day());
+        assert_eq!(fresh.weekday, day.weekday().num_days_from_monday(), "{day}");
+        assert_eq!(
+            (ours.y, ours.m, ours.d, ours.weekday),
+            (fresh.y, fresh.m, fresh.d, fresh.weekday),
+            "{day}"
+        );
+        day = day.succ_opt().unwrap();
+        ours = ours.succ();
+    }
+    let start = loggen::Date::START;
+    assert_eq!(loggen::Date::from_ymd(2026, 1, 1).weekday, start.weekday);
+    assert_eq!(
+        loggen::LogGen::new(Rate::SixtyOne, loggen::SEED).days_from(start, 40),
+        log(Rate::SixtyOne, 40)
+    );
+    // Dated from elsewhere: the first line on the start, the last on the 40th
+    // day (the week close falls on other days, so the line count differs).
+    let shifted = loggen::LogGen::new(Rate::SixtyOne, loggen::SEED)
+        .days_from(loggen::Date::from_ymd(2025, 9, 14), 40);
+    assert!(shifted[0].contains("2025-09-14T"), "{}", shifted[0]);
+    assert!(shifted.last().unwrap().contains("2025-10-23T"), "{}", shifted.last().unwrap());
+}

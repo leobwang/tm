@@ -18,11 +18,18 @@
 
 mod cli_common;
 
+#[path = "support/loggen.rs"]
+#[allow(dead_code)]
+mod loggen;
+
 use std::fs;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use cli_common::Tm;
+
+/// Held while a test times its verbs.
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// The Monday after W37: the last ended day is 2026-09-13.
 const AT: &str = "2026-09-14T09:00:00-05:00";
@@ -177,13 +184,22 @@ fn plan_lines(tm: &Tm) -> (usize, usize) {
 #[test]
 fn a_verb_on_a_tree_with_months_of_history_takes_well_under_a_second() {
     let tm = history_tree();
-    let (files, lines) = plan_lines(&tm);
+    history_verbs(&tm, "");
+}
+
+/// The two verbs every test here times, with the work the bounds are about
+/// checked: `label` names the log behind them in the printed figures.
+fn history_verbs(tm: &Tm, label: &str) -> (Duration, Duration) {
+    // One timed pair at a time: the harness runs tests on parallel threads, and
+    // two trees closing at once would time each other.
+    let _serial = SERIAL.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let (files, lines) = plan_lines(tm);
     assert!(files >= 220 && lines >= 2_700, "not history-shaped: {files} files, {lines} lines");
 
     // The first verb: unswept, so the automatic close runs over the whole tree
     // and lands 120 open lines, one plan check per landing; then the drop.
-    let (code, out, first) = timed(&tm, &["drop", "^a1"], FIRST_VERB);
-    eprintln!("latency: first verb {first:?} ({files} files, {lines} lines)");
+    let (code, out, first) = timed(tm, &["drop", "^a1"], FIRST_VERB);
+    eprintln!("latency{label}: first verb {first:?} ({files} files, {lines} lines)");
     assert_eq!(code, 0, "{out}");
     assert!(
         first < FIRST_VERB,
@@ -202,9 +218,56 @@ fn a_verb_on_a_tree_with_months_of_history_takes_well_under_a_second() {
     assert_eq!(tm.state()["closed"]["swept"], true);
 
     // A later verb: the gate holds, so this is the drop's one kernel call.
-    let (code, out, later) = timed(&tm, &["drop", "^z1"], LATER_VERB);
-    eprintln!("latency: later verb {later:?}");
+    let (code, out, later) = timed(tm, &["drop", "^z1"], LATER_VERB);
+    eprintln!("latency{label}: later verb {later:?}");
     assert_eq!(code, 0, "{out}");
     assert!(later < LATER_VERB, "a drop on the swept tree took {later:?} (bound {LATER_VERB:?})");
     assert!(fs::read_to_string(tm.plan.join("backlog.md")).expect("backlog").contains("[~] 2 30m Synthetic task 1 ^z1"));
+    (first, later)
+}
+
+/// The history tree's last ended day: the log below ends on it.
+const LAST_LOGGED: (i32, u32, u32) = (2026, 9, 13);
+
+/// `.tm/log.jsonl` on the history tree: `days` days of loggen's 61-events-a-day
+/// log (seed 7, the design pass's generator), dated so the last day is
+/// [`LAST_LOGGED`], the day before [`AT`]. Returns its lines and bytes.
+fn write_log(tm: &Tm, days: u32) -> (usize, usize) {
+    let (y, m, d) = LAST_LOGGED;
+    let last = chrono::NaiveDate::from_ymd_opt(y, m, d).expect("date");
+    let first = last - chrono::Duration::days(i64::from(days) - 1);
+    use chrono::Datelike;
+    let start = loggen::Date::from_ymd(first.year(), first.month(), first.day());
+    let lines = loggen::LogGen::new(loggen::Rate::SixtyOne, loggen::SEED).days_from(start, days);
+    assert!(lines.last().expect("a line").contains(&format!("{last}T")), "the log ends on {last}");
+    let text = loggen::text(&lines);
+    write(tm, ".tm/log.jsonl", &text);
+    (lines.len(), text.len())
+}
+
+/// Design §14.3 row R14: the same two verbs with a year of log behind them
+/// (365 days at 61 events a day, about 2.3 MiB). Every verb
+/// reads the whole log through `Ctx::replay_with`; this is the Rust reader's
+/// baseline, which the switch's T11 is compared with.
+#[test]
+fn a_verb_with_a_year_of_log_takes_well_under_a_second() {
+    let tm = history_tree();
+    let (lines, bytes) = write_log(&tm, 365);
+    let (first, later) = history_verbs(&tm, &format!(" (1y log: {lines} lines, {bytes} bytes)"));
+    assert!(first < FIRST_VERB && later < LATER_VERB);
+    // The verbs appended after the year, not over it.
+    let text = fs::read_to_string(tm.plan.join(".tm/log.jsonl")).expect("log");
+    assert!(text.len() > bytes && text.starts_with("{\"t\":\"2025-09-14T"), "{}", &text[..80]);
+}
+
+/// The three-year variant (1,095 days, about 6.9 MiB), run by hand
+/// (`cargo test --test cli_latency -- --ignored --nocapture`); its figures
+/// are recorded in kernel/README.md (step R14), not asserted beyond the bounds.
+#[test]
+#[ignore]
+fn a_verb_with_three_years_of_log_takes_well_under_a_second() {
+    let tm = history_tree();
+    let (lines, bytes) = write_log(&tm, 1_095);
+    let (first, later) = history_verbs(&tm, &format!(" (3y log: {lines} lines, {bytes} bytes)"));
+    assert!(first < FIRST_VERB && later < LATER_VERB);
 }

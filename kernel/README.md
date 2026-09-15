@@ -13575,3 +13575,84 @@ gap 112 closed. No kernel change; no recursion over a wire list.
 | `cli_latency.rs` | green: first verb 617.4 / 652.9 / 612.6 ms (226 files, 2,959 lines), later verb 50.6 / 55.6 / 50.7 ms |
 
 **Phase R on this track:** R-audit, R1–R13 committed. **Owed next:** R14 (latency with history).
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5 D9 R14 (design §14.3 row R14, §18.2, §18.9,
+     §14.6 T11), on rebuild-on-lean after 83bdf98.  Takes no gap, cheat or
+     parity number.
+     =========================================================================== -->
+
+## Stage 5 D9 R14, 2026-09-14: latency with history — the Rust reader's baseline for the switch
+
+**What changed.**
+- **`tm/tests/cli_latency.rs`** times the same two verbs (`drop ^a1` with its automatic close, then
+  `drop ^z1`) on the same history tree. The verbs, their checks of the work done and the bounds
+  (`FIRST_VERB` 5 s, `LATER_VERB` 1 s) moved unchanged into one helper, `history_verbs`, which the
+  existing test calls. Timed pairs hold a mutex, so tests on parallel harness threads do not time each
+  other. New:
+  - **`a_verb_with_a_year_of_log_takes_well_under_a_second`**: the tree plus `.tm/log.jsonl` holding
+    365 days of loggen's 61-events-a-day log (seed 7), dated to end on 2026-09-13, the day before `AT`,
+    so no line is in the future. That is **22,180 lines and 2,313,089 bytes**. It also checks that the
+    verbs appended after the year.
+  - **`a_verb_with_three_years_of_log_takes_well_under_a_second`**, `#[ignore]`d: 1,095 days, **66,169
+    lines and 6,896,281 bytes**, run by hand with `--include-ignored`.
+- **`tm/tests/support/loggen.rs`**: `Date::from_ymd(y, m, d)` (weekday by Sakamoto's method) and
+  `LogGen::days_from(start, days)`. `days(n)` is now `days_from(Date::START, n)`, and the design pass's
+  eight files still reproduce byte for byte (`loggen.rs`' pins pass). New
+  **`a_log_can_start_on_any_day_with_the_same_draws`**: `from_ymd`'s weekday equals chrono's on every day
+  of 2020–2030 and agrees with `succ`, `days_from(START, 40) == days(40)`, and a log dated from
+  2025-09-14 runs to 2025-10-23. The line counts differ from the design's 1y and 3y files (22,055 and
+  65,771) because the weekly close falls on other weekdays and the generator is freshly seeded.
+
+**The baseline, against the Rust reader** (debug profile at `opt-level = 1`, the binary the test runs).
+Three serial runs with `--include-ignored` at load average 0.8–1.0, plus the acceptance run's figures:
+
+| log | lines / bytes | first verb (auto-close + drop) | later verb (drop) |
+|---|---|---:|---:|
+| none | — | 617.3 / 627.4 / 637.0 ms (acceptance 632.9) | 55.8 / 55.8 / 55.7 ms (acceptance 55.8) |
+| **1 year** | 22,180 / 2,313,089 | **830.1 / 834.6 / 825.2 ms** (acceptance 829.9) | **217.8 / 222.9 / 217.8 ms** (acceptance 227.4) |
+| 3 years (`#[ignore]`) | 66,169 / 6,896,281 | 1,205.0 / 1,220.1 / 1,249.7 ms | 531.4 / 536.7 / 536.7 ms |
+
+**Where the time goes, measured.** For one run, `Ctx::replay_of` was instrumented temporarily (the
+instrumentation was reverted before this commit). On the 1-year log **every call took 34.2–36.2 ms**
+(≈ 15 ms/MiB, the design's §18.1 Rust figure). **The first verb read and replayed the whole log 5
+times** (load, the automatic close's reload, `Recorder::start`, the verb's reload,
+`Recorder::finish`). **The later verb read it 4 times** (no close). So 4 × ≈ 35 ms is 140 ms of the later
+verb's +162 ms over no log. At 3 years the later verb's +480 ms over four reads is ≈ 120 ms a read (≈ 17
+ms/MiB); that figure is derived from the totals, not timed per call.
+
+**What this means for the switch.** §18.2 prices a hot kernel call at 15–67 ms at 3 years, once per
+read. The Rust reader today pays ≈ 120 ms per read, four or five times per verb. T11 (S) compares its
+1-year run with the 217.8–227.4 ms later verb and the 825–835 ms first verb above. Both bounds hold
+today with room (1 year: 4.4× under `LATER_VERB`, 6× under `FIRST_VERB`; 3 years: 1.9× and 4×).
+
+### Recorded disagreements between the design and the repo
+
+1. **The log is dated to end the day before `AT`**, not from loggen's fixed 2026-01-01. The row says
+   "a 365-day loggen log". From 2026-01-01, 255 of its days would fall after `AT` (2026-09-14). They
+   would cost the same to read today, but after the switch they are future-dated lines (D9-22), fenced
+   off from the fold, so they would not be a comparable baseline. `days_from` keeps the generator's
+   draws and dates them.
+2. **The row's "61 events a day" gives 22,180 and 66,169 lines**, not the design files' 22,055 and
+   65,771 (see above). The rate is the same generator's.
+3. **Replays per verb are 4–5, not 1.** §18.2 and §18.9 price "a hot call" per verb. The undo recorder
+   (`Recorder::start`/`finish`) and every `Ctx::reload` each read the whole log. At S the recorder moves
+   to `kernel_log` (§14.6 item 1), and whether each of those reads becomes a kernel call decides T11's
+   margin. S should count its calls per verb against this table.
+
+**Goals discharged: none. Refuted: none. Added: none.** Burn-down **13 → 13**. **New theorems:
+none.** **Parity entries: none.** **Observable behaviour changes: none** (tests only). **Numbers
+taken: none.** No kernel change; no recursion over a wire list.
+
+**Re-measured** (main worktree, every command under the 30 GB cap):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.85 s; audit **2672**; corpus **29/37 and 4/5**; burn-down **13** |
+| `cargo test --workspace` | **1044 passed / 0 failed / 3 ignored across 71 binaries** (+2 passed: the 1-year latency test and the loggen test; +1 ignored: the 3-year variant), 0 compiler warnings |
+| FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** (its `logbench` example builds against the extended `loggen.rs`) |
+| `cli_latency.rs` | green: the table above |
+
+**Phase R on this track: R-audit and R1–R14 are all committed.** Gap 112 is closed at R13, and gap 113 is
+owed to S. Rust stays the only reader of the log. The next D9 steps are phases C and W and then S, per
+§14.4–§14.6.
