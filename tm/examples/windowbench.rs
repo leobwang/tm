@@ -367,10 +367,11 @@ fn child_stall(base: &Path, work: &Path) {
     let hot: Vec<f64> = calls.iter().filter(|c| c.outcome == Outcome::Hot).map(|c| c.ms).collect();
     let (_, m, x) = stats(&hot);
     let first: Vec<f64> = calls.iter().filter(|c| c.outcome != Outcome::Hot).map(|c| c.ms).collect();
-    let (_, fm, fx) = stats(&first);
+    let (fb, fm, fx) = stats(&first);
     println!("=stall_writes_max_per_day\t{}", per_day.values().max().expect("a day"));
     println!("=stall_hot_max_ms\t{x:.1}");
     println!("=stall_hot_median_ms\t{m:.1}");
+    println!("=stall_write_call_min_ms\t{fb:.1}");
     println!("=stall_write_call_median_ms\t{fm:.1}");
     println!("=stall_write_call_max_ms\t{fx:.1}");
     println!("=stall_ledger_first_last\t{} {}", calls[0].ledger, calls.last().expect("a call").ledger);
@@ -392,6 +393,12 @@ fn child_pinned(base: &Path, work: &Path) {
     for c in &calls {
         *per_day.entry(c.day).or_default() += usize::from(c.outcome != Outcome::Hot);
     }
+    // The day's one reseal, the pin's cost: the gate bounds the hot call, so these are figures, not a bound.
+    let first: Vec<f64> = calls.iter().filter(|c| c.outcome != Outcome::Hot).map(|c| c.ms).collect();
+    let (fb, fm, fx) = stats(&first);
+    println!("=pinned_write_call_min_ms\t{fb:.1}");
+    println!("=pinned_write_call_median_ms\t{fm:.1}");
+    println!("=pinned_write_call_max_ms\t{fx:.1}");
     println!("=pinned_hot_max_ms\t{x:.1}");
     println!("=pinned_hot_median_ms\t{m:.1}");
     println!("=pinned_day14_hot_median_ms\t{m14:.1}");
