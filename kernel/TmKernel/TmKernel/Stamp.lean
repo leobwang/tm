@@ -547,13 +547,14 @@ theorem rfc3339_renderStamp (i : VInstant) (o : VOffset)
     rw [if_neg hnot, Nat.add_sub_cancel, Nat.add_zero]
     rw [show Cal.mkInstant? i.val.sec 1000000000 = some i from h1 ▸ hmk, if_neg (Nat.lt_irrefl 60)]
 
-/-- **`parseStamp_renderStamp`** (design §5.3 and §15, B2 in-step), restated.  The reader reads
-back what the writer writes, for a stamp in whole seconds **or on a leap second** (chrono writes
-second `60`, and reads it back as 59 plus 10⁹ ns), a whole-minute offset, UTC written `+00:00`,
-and a local clock before year 10000.  §15 states it without `hend`, and as stated it is false:
-`parseStamp_renderStamp_fails_past_year_9999`.  `hns` is §15's `ns = 0` widened by the leap
-second. -/
-theorem parseStamp_renderStamp (i : VInstant) (o : VOffset)
+/-- **`parseStamp_renderStamp_before_year_10000`** (design §5.3 and §15, B2 in-step), §15's
+`parseStamp_renderStamp` narrowed, and renamed to the narrowing (AGENTS §3.2; W-2 repair: B2 had
+kept the refuted name for it).  The reader reads back what the writer writes, for a stamp in whole
+seconds **or on a leap second** (chrono writes second `60`, and reads it back as 59 plus 10⁹ ns), a
+whole-minute offset, UTC written `+00:00`, and a local clock before year 10000.  §15 states it
+without `hend`, and as stated it is false: `parseStamp_renderStamp_fails_past_year_9999`.  `hns` is
+§15's `ns = 0` widened by the leap second. -/
+theorem parseStamp_renderStamp_before_year_10000 (i : VInstant) (o : VOffset)
     (hns : i.val.ns = 0 ∨ i.val.ns = 1000000000) (hmin : o.val.sec % 60 = 0)
     (hutc : o.val.sec = 0 → o.val.west = false)
     (hend : o.val.west = true ∨ i.val.sec + o.val.sec < yearEnd) :

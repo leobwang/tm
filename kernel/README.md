@@ -12267,3 +12267,82 @@ or `capacity` yet). **Parity entries: none new.**
 110 (the double `tz` read, W3 or L8), gaps 106, 107, 109 and 111 (L8), gap 85 (narrowed; after the
 switch under Q6), gaps 89–91 (the D9 track). **Owed next:** D10 L8 and L9 in the lookahead
 worktree; D9 C1–C6, W1–W3 and S.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5 W-2 repair.  The W-2 independent audit's two
+     minors, on rebuild-on-lean after edc3071.  Takes no gap, cheat or parity
+     number.
+     =========================================================================== -->
+
+## Stage 5 W-2 repair, 2026-09-14: no literal over 90 characters, and the narrowed stamp round trip under its own name
+
+Both findings reproduced on `edc3071` before any edit: `Boundary.lean`'s
+`the_response_shapes_emit_in_build_order` compared an emission with a **142-character** literal
+(B4's `log`-answer conjunct), `Log.lean`'s `malformedLine5` was one **96-character** literal decided
+equal to `jemit malformedValue5`, and `Stamp.lean`'s `parseStamp_renderStamp` was §15's name on a
+statement with an added hypothesis (`hend`) and a widened one (`hns`).
+
+**1. The 90-character literal limit (design §14.0.4), both instances.** Neither literal was
+shortened by changing what is pinned; each is split so that every decided witness holds literals of
+at most 90 characters.
+
+- **B4's conjunct** is replaced by three: the envelope,
+  `jemit (withLog .null (jone "ok" (.obj [docs, report])))` against a 52-character literal (`log`
+  is the last key, after `report`); the answer's value, `logAnswer ⟨⟨17, [none], true, some 17,
+  [17]⟩, _⟩ = .obj [lines 17, warnings [lwarnJson 17 .invalidUtf8], headers [], render [[17, null,
+  null]]]` (a `JVal` equality; its only literals are the four keys); and
+  `jemit (lwarnJson 17 .invalidUtf8)` against a 30-character literal. A new general theorem,
+  **`withLog_jone`** (`withLog a (jone k (.obj kvs)) = jone k (.obj (kvs ++ [("log", a)]))`, `rfl`,
+  for every answer and key list), composes them: with `jemit` structural, the three conjuncts fix
+  exactly the bytes the 142-character literal fixed. The probe checked the composition too
+  (`rw [withLog_jone, conjunct]; rfl` recovers B4's value). The theorem now has 10 conjuncts (8
+  before); no conjunct was weakened, and the Rust bytes test at `tm-kernel-ffi/tests/kernel.rs:1366`
+  still pins the full response end to end.
+- **`malformedLine5`** is now spelled pair by pair: six definitions `malformedLine5T`, `…Ev`, `…Id`,
+  `…Est`, `…Act`, `…Ci` (the longest 32 characters), joined by `,` inside `{…}` — the same list,
+  still corpus line 5. `malformed_line_5_is_a_done_with_est_min_sixty` proves
+  `malformedLine5 = jemit malformedValue5` by six per-pair `decide`s on `jemitPair` and `simp only`
+  over `jemit`/`jemitObj`/`jemitOTail`, where it decided the 96-character literal whole. The theorem's
+  statement is unchanged, and so is `the_malformed_corpus_reads_as_the_fork_point_did`.
+
+**Budget, re-counted.** 6 new small `decide`s inside one existing proof (≤ 32 characters each), and 2
+new decided conjuncts in `the_response_shapes_emit_in_build_order` (≤ 52 characters), well within
+20. No `Entry` value, no zone transition, no `native_decide`. Probed first in a scratch copy
+(`/tmp/claude-1000/w2repair/k`) under `MemoryMax=8G timeout 120`: `Log.lean` whole **4.00 s at
+1.53 GB**, `Stamp.lean` 0.81 s at 0.67 GB, and the three Boundary conjuncts with the composition, as a
+separate file over the built `Boundary`, **0.60 s at 0.68 GB**. Beside the probe, the whole of
+`Boundary.lean` elaborated in 132.6 s at 8.32 GB under that 8 GB cap: the module's own size, not the
+witness (W-2's cold build of `TmKernel:static` already peaked at 8.12 GB).
+
+**2. `parseStamp_renderStamp` renamed to its narrowing (AGENTS §3.2).** The restated theorem is now
+**`Tm.LogStamp.parseStamp_renderStamp_before_year_10000`**; the statement is unchanged. §15's name
+stays with the refutation `parseStamp_renderStamp_fails_past_year_9999`, as the refuted-and-renamed
+convention wants, and no theorem carries the bare §15 name any more. The one caller, `readT_line` in
+`Log.lean`, and `stampCanonical`'s doc comment follow the rename. `Check.lean`'s B2 line is edited
+in place (the old name no longer resolves) and the banner appended at the end records that. It was
+an in-step goal that never entered `Goals.lean`, so the ledger is unchanged. The design's §5.3, §15
+and step-table rows still write the old name; the Lean source is the truth.
+
+**Goals discharged: none. Refuted: none new. Added: none.** Burn-down **13 → 13** (stage 6: 13).
+**New theorems: 1** (`withLog_jone`); **renamed: 1**. **Observable behaviour changes: none**
+(`logAnswer`, `withLog` and `readLine` are untouched; only proofs and one definition's spelling
+changed). **Parity entries: none.** **Numbers taken: none** (highest still gap 111, cheat 137, parity P30).
+No new recursion over a wire list.
+
+**Process note.** One `check.sh` run in this repair, used only to re-count the audit lines after the
+append, went out **without the memory cap** by mistake. It ran on an already built tree and finished
+normally. Every figure below comes from capped runs.
+
+**Re-measured** (main worktree, every command under the 30 GB cap):
+
+| measurement | value |
+|---|---|
+| `check.sh`, first run after the edits (Stamp, Log, Boundary and dependents rebuilt) | **7/7**, 146.2 s wall, 7.96 GB peak RSS |
+| `check.sh`, built tree | **7/7**, 2.83 / 2.81 s (2.75 / 2.85 s at `edc3071`) |
+| axiom audit | **2672 theorems** (2671 + `withLog_jone`); audit lines, distinct names and declared theorems all 2672 |
+| `Negative.lean` | check 4 ok |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (stage 6: 13) |
+| `cargo test --workspace` | **1026 passed / 0 failed / 2 ignored across 70 binaries** |
+| FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** (kernel 80, corpus 8, stack 4) |
+| `cli_latency.rs` | green: first verb 642.1 / 632.0 / 622.8 ms (226 files, 2,959 lines), later verb 55.9 / 60.8 / 50.7 ms |

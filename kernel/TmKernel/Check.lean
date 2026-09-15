@@ -2827,7 +2827,7 @@ open Tm
 #print axioms Tm.LogStamp.localDateTod_spec
 #print axioms Tm.LogStamp.fracOf_renderOffset
 #print axioms Tm.LogStamp.rfc3339_renderStamp
-#print axioms Tm.LogStamp.parseStamp_renderStamp
+#print axioms Tm.LogStamp.parseStamp_renderStamp_before_year_10000
 #print axioms Tm.LogStamp.parseStamp_renderStamp_fails_past_year_9999
 #print axioms Tm.LogStamp.renderStamp_is_fmt_timestamp
 #print axioms Tm.LogStamp.renderStamp_writes_a_leap_second_as_60
@@ -3133,3 +3133,10 @@ open Tm
 #print axioms Tm.runCap_without_capacity_is_runWithLog
 #print axioms Tm.runCap_refuses_a_log_section_first
 #print axioms Tm.runCap_answers_docs_report_log_lookahead
+
+-- APPENDED 2026-09-14 (stage 5, W-2 repair).  The audit's two minors: B2's narrowed stamp round
+-- trip is renamed `Tm.LogStamp.parseStamp_renderStamp_before_year_10000` (its B2 line above is
+-- edited in place, since the old name no longer exists; the refutation keeps its line), and B4's
+-- 142-character `log` conjunct is split into three conjuncts of at most 52 characters, composed by
+-- the new `withLog_jone`.  `malformedLine5` is spelled pair by pair (no new theorem).
+#print axioms Tm.withLog_jone

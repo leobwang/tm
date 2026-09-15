@@ -988,7 +988,7 @@ def lineVal (e : Entry) : JVal :=
 `skip_serializing_if` as `define_events!` has it, an unknown event's keys sorted. -/
 def renderLine (e : Entry) : List Char := jemit (lineVal e)
 
-/-- A stamp `renderStamp` writes and `parseStamp` reads back (B2's `parseStamp_renderStamp`). -/
+/-- A stamp `renderStamp` writes and `parseStamp` reads back (B2's `LogStamp.parseStamp_renderStamp_before_year_10000`). -/
 def stampCanonical (t : VInstant) (o : VOffset) : Bool :=
   (t.val.ns == 0 || t.val.ns == 1000000000) && o.val.sec % 60 == 0 &&
     (o.val.sec != 0 || !o.val.west) && (o.val.west || decide (t.val.sec + o.val.sec < LogStamp.yearEnd))
@@ -1339,7 +1339,7 @@ theorem readT_line (t : VInstant) (o : VOffset) (tag : List Char) (fields : List
   obtain ⟨h1, h2, h3, h4⟩ := stamp_hyps t o hs
   have hte : (kT == kT) = true := by decide
   have hne : (kEv == kT) = false := by decide
-  simp only [readT, List.find?_cons, hte, LogStamp.parseStamp_renderStamp t o h1 h2 h3 h4,
+  simp only [readT, List.find?_cons, hte, LogStamp.parseStamp_renderStamp_before_year_10000 t o h1 h2 h3 h4,
     List.countP_cons, hne, countP_of_not_mem fields kT hf]
   rfl
 
@@ -2324,8 +2324,19 @@ def malformedLine3 : List Char :=
 def malformedLine4 : List Char :=
   ['{','"','e','v','"',':','"','n','o','t','e','"',',','"','t','e','x','t','"',':','"','n','o',' ','t','i','m','e','s','t','a','m','p','"','}']
 
+/-- Line 5 of `corpus/logs/malformed.jsonl`, 96 characters, spelled pair by pair so that no literal
+is over design §14.0.4's 90 characters (W-2 repair; B3 had one 96-character literal).  The list is
+the same: `{`, the six pairs below joined by `,`, then `}`. -/
+def malformedLine5T : List Char := ['"','t','"',':','"','2','0','2','6','-','0','9','-','0','7','T','0','7',':','3','0',':','0','0','-','0','5',':','0','0','"']
+def malformedLine5Ev : List Char := ['"','e','v','"',':','"','d','o','n','e','"']
+def malformedLine5Id : List Char := ['"','i','d','"',':','"','t','1','"']
+def malformedLine5Est : List Char := ['"','e','s','t','_','m','i','n','"',':','"','s','i','x','t','y','"']
+def malformedLine5Act : List Char := ['"','a','c','t','u','a','l','_','m','i','n','"',':','6','7']
+def malformedLine5Ci : List Char := ['"','c','i','"',':','5']
+
 def malformedLine5 : List Char :=
-  ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','7','T','0','7',':','3','0',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','d','o','n','e','"',',','"','i','d','"',':','"','t','1','"',',','"','e','s','t','_','m','i','n','"',':','"','s','i','x','t','y','"',',','"','a','c','t','u','a','l','_','m','i','n','"',':','6','7',',','"','c','i','"',':','5','}']
+  '{' :: (malformedLine5T ++ ',' :: (malformedLine5Ev ++ ',' :: (malformedLine5Id ++ ',' ::
+    (malformedLine5Est ++ ',' :: (malformedLine5Act ++ ',' :: (malformedLine5Ci ++ ['}']))))))
 
 def malformedLine6 : List Char :=
   ['{','"','t','"',':','"','n','o','t',' ','a',' ','t','i','m','e','"',',','"','e','v','"',':','"','n','o','t','e','"',',','"','t','e','x','t','"',':','"','b','a','d',' ','t','i','m','e','"','}']
@@ -2378,7 +2389,16 @@ def malformedValue5 : JVal :=
 
 theorem malformed_line_5_is_a_done_with_est_min_sixty :
     readLine 5 (some malformedLine5) = .warn 5 (.badField ['e','s','t','_','m','i','n']) := by
-  have h : malformedLine5 = jemit malformedValue5 := by decide
+  have h : malformedLine5 = jemit malformedValue5 := by
+    have h1 : jemitPair (kT, .str ['2','0','2','6','-','0','9','-','0','7','T','0','7',':','3','0',':','0','0',
+      '-','0','5',':','0','0']) = malformedLine5T := by decide
+    have h2 : jemitPair (kEv, .str ['d','o','n','e']) = malformedLine5Ev := by decide
+    have h3 : jemitPair (['i','d'], .str ['t','1']) = malformedLine5Id := by decide
+    have h4 : jemitPair (['e','s','t','_','m','i','n'], .str ['s','i','x','t','y']) = malformedLine5Est := by
+      decide
+    have h5 : jemitPair (['a','c','t','u','a','l','_','m','i','n'], .num 67) = malformedLine5Act := by decide
+    have h6 : jemitPair (['c','i'], .num 5) = malformedLine5Ci := by decide
+    simp only [malformedValue5, jemit, jemitObj, jemitOTail, h1, h2, h3, h4, h5, h6, malformedLine5]
   have ht : trimCR malformedLine5 = malformedLine5 := by rw [h]; exact trimCR_jemit_obj _
   rw [readLine_of_parse 5 _ malformedValue5 (by rw [ht, h]; exact not_blank_jemit_obj _)
     (by rw [ht, h]; decide) (by rw [ht, h]; decide) (by rw [ht, h]; exact jparse_jemit _)]

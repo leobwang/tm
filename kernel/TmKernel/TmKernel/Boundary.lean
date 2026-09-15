@@ -4425,12 +4425,24 @@ theorem the_response_shapes_emit_in_build_order :
     jemit (LogRefusal.badTz .unsorted).json = "{\"err\":{\"log\":{\"badTz\":\"unsorted\"}}}".toList ∧
     jemit (LogRefusal.renderNotInTail 45101).json
       = "{\"err\":{\"log\":{\"renderNotInTail\":{\"line\":45101}}}}".toList ∧
-    jemit (withLog (logAnswer ⟨⟨17, [none], true, some 17, [17]⟩, by decide⟩)
-        (jone "ok" (.obj [("docs".toList, .arr []), ("report".toList, reportJson Report.empty)])))
-      = "{\"ok\":{\"docs\":[],\"report\":{\"closes\":[]},\"log\":{\"lines\":17,\"warnings\":[{\"line\":17,\"w\":\"invalidUtf8\"}],\"headers\":[],\"render\":[[17,null,null]]}}}".toList ∧
+    -- W-2 repair: the `log` answer after `report` is pinned in three pieces, none over design
+    -- §14.0.4's 90 characters (B4 had one 142-character literal): the envelope with `log` last
+    -- (`withLog_jone`), the answer's value with its keys in order, and the warning's bytes.
+    jemit (withLog .null (jone "ok" (.obj [("docs".toList, .arr []), ("report".toList, reportJson Report.empty)])))
+      = "{\"ok\":{\"docs\":[],\"report\":{\"closes\":[]},\"log\":null}}".toList ∧
+    logAnswer ⟨⟨17, [none], true, some 17, [17]⟩, by decide⟩
+      = .obj [("lines".toList, .num 17), ("warnings".toList, .arr [lwarnJson 17 .invalidUtf8]),
+          ("headers".toList, .arr []), ("render".toList, .arr [.arr [.num 17, .null, .null]])] ∧
+    jemit (lwarnJson 17 .invalidUtf8) = "{\"line\":17,\"w\":\"invalidUtf8\"}".toList ∧
     jemit (lwarnJson 17 (.missingField ['s', 'l', 'e', 'p', 't', '_', 'm', 'i', 'n']))
       = "{\"line\":17,\"w\":\"missingField\",\"key\":\"slept_min\"}".toList := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> decide
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> decide
+
+/-- **The `log` answer goes last in the `ok` object** (W-2 repair), for every answer and every key
+list: what composes `the_response_shapes_emit_in_build_order`'s three `log`-answer conjuncts into
+the response's bytes, since `jemit` is structural. -/
+theorem withLog_jone (a : JVal) (k : String) (kvs : List (List Char × JVal)) :
+    withLog a (jone k (.obj kvs)) = jone k (.obj (kvs ++ [("log".toList, a)])) := rfl
 
 /-- `badLine`'s three keys go out as `path`, `line`, `why` — the order written
 in `lerrJson`, not `mkObj`'s `line`, `path`, `why`.  Stated for every diagnostic
