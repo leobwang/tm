@@ -1622,6 +1622,10 @@ pub struct ViewRow {
 
 /// Everything replay derives from the log.
 ///
+/// Some of it has no reader in the binary and appears in no output (the
+/// fields [`PortedFacts`] names). The owner's D14 keeps every one: the kernel
+/// ports them, so nothing here may drop or stop deriving them before it does.
+///
 /// `PartialEq` compares the facts and ignores the line bookkeeping (`rows`,
 /// `line_count`), as serialisation does: two logs with the same survivors
 /// replay to equal facts whatever lines they were read from.
@@ -1781,7 +1785,107 @@ impl LatestNamed {
     }
 }
 
+/// The replay facts nothing in the binary reads and no output shows, kept by
+/// the owner's **D14** (design §4 Q7, option (b); §22.1): the kernel ports
+/// them into the sealed day records instead of the fork deleting them. This
+/// view names every one in one place, borrowed from the [`Replay`] that
+/// `Ctx::replay_of` (the chokepoint) returns, so the kernel's facts (T5) and
+/// the sealed day records (W1) have one comparand, and
+/// `tm-core/tests/log_ported_facts.rs` pins their values.
+///
+/// Every field here is also a plain field of [`Replay`], [`DayReplay`] or
+/// [`ItemReplay`]; the view adds nothing and filters nothing.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct PortedFacts<'a> {
+    /// [`Replay::closes`].
+    pub closes: &'a [CloseRecord],
+    /// [`Replay::dropped_items`].
+    pub dropped_items: &'a BTreeSet<String>,
+    /// [`Replay::open_interrupt`].
+    pub open_interrupt: Option<&'a Interruption>,
+    /// [`Replay::longest_leak`] (the global one).
+    pub longest_leak: Option<&'a LeakRecord>,
+    /// [`Replay::interrupts`]: every interruption, beyond the lost and
+    /// dropped minutes each day sums.
+    pub interrupts: &'a [Interruption],
+    /// Per day, in date order.
+    pub days: BTreeMap<NaiveDate, PortedDayFacts<'a>>,
+    /// Per item, in id order.
+    pub items: BTreeMap<&'a str, PortedItemFacts<'a>>,
+}
+
+/// [`PortedFacts`] of one [`DayReplay`].
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct PortedDayFacts<'a> {
+    /// [`DayReplay::replans_today`].
+    pub replans_today: u32,
+    /// [`DayReplay::last_plan_hash`].
+    pub last_plan_hash: Option<&'a str>,
+    /// [`DayReplay::loc_changes`].
+    pub loc_changes: &'a [(DateTime<FixedOffset>, String)],
+    /// [`DayReplay::dropped`].
+    pub dropped: &'a [String],
+    /// [`DayReplay::longest_leak`] (the day's).
+    pub longest_leak: u32,
+}
+
+/// [`PortedFacts`] of one [`ItemReplay`].
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct PortedItemFacts<'a> {
+    /// [`ItemReplay::stops`].
+    pub stops: u32,
+    /// [`ItemReplay::extended_min`].
+    pub extended_min: u32,
+    /// [`ItemReplay::done_at`].
+    pub done_at: &'a [DateTime<FixedOffset>],
+    /// [`ItemReplay::partial_done_at`].
+    pub partial_done_at: &'a [DateTime<FixedOffset>],
+}
+
 impl Replay {
+    /// The facts D14 keeps though nothing reads them ([`PortedFacts`]),
+    /// borrowed whole: every day and every item of this replay.
+    pub fn ported_facts(&self) -> PortedFacts<'_> {
+        PortedFacts {
+            closes: &self.closes,
+            dropped_items: &self.dropped_items,
+            open_interrupt: self.open_interrupt.as_ref(),
+            longest_leak: self.longest_leak.as_ref(),
+            interrupts: &self.interrupts,
+            days: self
+                .days
+                .iter()
+                .map(|(d, day)| {
+                    (
+                        *d,
+                        PortedDayFacts {
+                            replans_today: day.replans_today,
+                            last_plan_hash: day.last_plan_hash.as_deref(),
+                            loc_changes: &day.loc_changes,
+                            dropped: &day.dropped,
+                            longest_leak: day.longest_leak,
+                        },
+                    )
+                })
+                .collect(),
+            items: self
+                .items
+                .iter()
+                .map(|(id, it)| {
+                    (
+                        id.as_str(),
+                        PortedItemFacts {
+                            stops: it.stops,
+                            extended_min: it.extended_min,
+                            done_at: &it.done_at,
+                            partial_done_at: &it.partial_done_at,
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+
     /// Every entry of the log in file order, cancelled ones included, with its
     /// physical line, wake-attributed day, mask bit and display text — what
     /// `tm log` selects from and prints.

@@ -1,0 +1,21 @@
+---
+source: tm-core/tests/log_ported_facts.rs
+expression: "replay(&corpus(\"malformed\")).ported_facts()"
+---
+{
+  "closes": [],
+  "dropped_items": [],
+  "open_interrupt": null,
+  "longest_leak": null,
+  "interrupts": [],
+  "days": {
+    "2026-09-07": {
+      "replans_today": 0,
+      "last_plan_hash": null,
+      "loc_changes": [],
+      "dropped": [],
+      "longest_leak": 0
+    }
+  },
+  "items": {}
+}

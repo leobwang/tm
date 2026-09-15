@@ -13237,3 +13237,80 @@ equal). No kernel change; no recursion over a wire list.
 | `cargo test --workspace` | **1030 passed / 0 failed / 2 ignored across 70 binaries** (+2: the two new tests), 0 compiler warnings |
 | FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
 | `cli_latency.rs` | green: first verb 627.5 / 612.1 / 627.2 ms (226 files, 2,959 lines), later verb 50.7 / 55.7 / 55.7 ms |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5 D9 R11 (design §14.3 row R11 as changed by
+     the owner's D14, §4 Q7 option (b), §22.1), on rebuild-on-lean after
+     f8d1f9c.  Takes no gap, cheat or parity number (P22: see disagreement 2).
+     =========================================================================== -->
+
+## Stage 5 D9 R11, 2026-09-14: the facts nothing reads stay, named in one view — D14 keeps them for the kernel's port
+
+**R11 follows D14, not the design's default.** §14.3's row R11 (default (a)) deletes the unread facts
+from `Replay` and updates the `log_replay` snapshot. The owner answered Q7 with (b) (**D14**, §22.1):
+R11 keeps them, the kernel derives them in C3–C6, and W1's `DayRecord` carries them. So this step
+deletes nothing; `log_replay__three_days_replay.snap` is **unchanged**.
+
+**What changed.**
+- **Nothing deletes them, confirmed by grep.** Every one is a `pub` field that `Replay` serialises and
+  its written-out `PartialEq` compares: `ItemReplay.{stops, extended_min, done_at, partial_done_at}`,
+  `Replay.{closes, dropped_items, open_interrupt, longest_leak, interrupts}` and
+  `DayReplay.{replans_today, last_plan_hash, loc_changes, dropped, longest_leak}`. `rg` for each name
+  over `tm/`, `tm-core/` and `kernel/tm-kernel-ffi` outside `log.rs` finds no reader and no writer of the
+  `Replay` fields (the hits are namesakes: `RuntimeState.last_plan_hash`, the close report's `closes`,
+  `horizon`'s `dropped`, the `plan` event's `replans_today`, a test named for an open interruption).
+- **`tm_core::log::PortedFacts<'a>`** (with `PortedDayFacts`, `PortedItemFacts`) and
+  **`Replay::ported_facts()`**: one borrowed, `Serialize` view naming every such field (the global five;
+  the five per day, by date; the four per item, by id). It filters and recomputes nothing. It is the
+  single comparand for T5 (C6) and for W1's day records. `Replay`'s doc says D14 keeps these fields.
+- **`tm-core/tests/log_ported_facts.rs` (new, 7 tests): the oracle.** It pins `ported_facts()` as
+  `insta` JSON snapshots, in `America/Chicago`, over the four corpus logs (`three_days`, `energy_14d`,
+  `review_14d`, `malformed`) and loggen's 1-month logs at both rates (`loggen_1mo_40`,
+  `loggen_1mo_61`): **6 snapshots, 103,024 bytes**. No whole log ends inside an interruption, so a
+  seventh snapshot holds `open_interrupt` at every line prefix of `three-days` (Some at 16 and 72
+  lines). A test checks that the view equals the plain fields on all six logs. Coverage is asserted,
+  not assumed. On `three-days`: 2 closes, 2 interruptions, a 25-minute longest leak, 1 stop, 60
+  extended minutes, 2 partial dones, 4 location changes, 1 day-dropped id. On each loggen month:
+  closes, dropped ids, interruptions, a stop, an extend and a partial done.
+- **`tm/src/cli/ctx.rs` `the_chokepoint_returns_the_ported_facts` (new unit test).** For each of the
+  six logs, written to disk under an `FsStore`, `Ctx::replay_of(..).ported_facts()` equals the view of
+  `Log::parse(text).replay(None, tz)`, and its JSON equals the pinned snapshot body read from
+  `tm-core/tests/snapshots/`. The oracle is therefore the chokepoint's output, not a second reading.
+
+**Equivalence test.** No old function is replaced, so nothing is run and deleted. The row's
+comparison over the corpus logs and the generated month is the pinned oracle above. It stays in the
+tree until the kernel's port (T5) and the day records take it over.
+
+**Existing suites.** No assertion changed; no snapshot changed.
+
+### Recorded disagreements between the design and the repo
+
+1. **R11 keeps the fields (D14) instead of deleting them (§14.3's row, default (a)).** §22.1 records
+   the answer. The row's "snapshot updated in the same commit" does not apply; the snapshot is
+   byte-identical.
+2. **P22 is not taken.** §17's P22 reads "not derived (default (a))". Under D14 the kernel derives
+   these facts exactly, so they belong in §17's "exact by design, so not exceptions" list (T5 must
+   report zero differences on them), not in the exception list. The number stays free for the merge.
+3. **`DayReplay.longest_leak` is in the view beside the global one.** Q7's list says "the global
+   `longest_leak`", and §8's catalogue says "`longest_leak` is read only per day". A grep at this
+   commit finds **no** reader of the per-day field either, so D14 ports both.
+4. **"The interrupts beyond each day's lost and dropped minutes"** is `Replay.interrupts` whole (each
+   `Interruption`'s start, end, day, id, lost minutes and dropped ids). `DayReplay.lost_min` has a
+   reader (the reviews) and stays outside the view; `DayReplay.dropped` has none and is inside it.
+
+**Goals discharged: none. Refuted: none. Added: none.** Burn-down **13 → 13**. **New theorems:
+none.** **Parity entries: none** (see 2). **Observable behaviour changes: none.** **Numbers taken:
+none.** No kernel change; no recursion over a wire list.
+
+**Re-measured** (main worktree, every command under the 30 GB cap):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.78 s; audit **2672**; corpus **29/37 and 4/5**; burn-down **13** |
+| `cargo test --workspace` | **1038 passed / 0 failed / 2 ignored across 71 binaries** (+8: `log_ported_facts`' 7 and the `ctx.rs` unit test; +1 binary), 0 compiler warnings |
+| FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
+| `cli_latency.rs` | green: first verb 647.5 / 622.4 / 617.5 ms (226 files, 2,959 lines), later verb 50.7 / 55.8 / 55.8 ms |
+
+**Phase R on this track:** R-audit, R1–R11 committed. **Owed next:** R12 (the test chokepoints; R8's
+disagreement 2 still open), R13 (scopes; clears gap 112, which gates W1; every scope must keep the
+`PortedFacts` fields), R14 (latency with history).

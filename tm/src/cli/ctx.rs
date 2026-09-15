@@ -588,3 +588,59 @@ impl Ctx {
         self.files.ids()
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/support/loggen.rs"]
+#[allow(dead_code)]
+mod loggen;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The body of an `insta` JSON snapshot: everything after its `---`
+    /// header.
+    fn snapshot_body(name: &str) -> serde_json::Value {
+        let path = format!(
+            "{}/../tm-core/tests/snapshots/log_ported_facts__{name}.snap",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        let body = text.splitn(3, "---\n").nth(2).unwrap_or_else(|| panic!("{path}: no header"));
+        serde_json::from_str(body).unwrap_or_else(|e| panic!("{path}: {e}"))
+    }
+
+    /// D14 (step R11): the facts nothing reads reach every caller through the
+    /// one door. `Ctx::replay_of` over each log on disk gives the same
+    /// [`tm_core::log::PortedFacts`] as the replay of the text, and both equal
+    /// the values `tm-core/tests/log_ported_facts.rs` pins — so the kernel's
+    /// port (T5, the sealed day records) is compared against what the
+    /// chokepoint returns, not against a second reading.
+    #[test]
+    fn the_chokepoint_returns_the_ported_facts() {
+        let corpus = |n: &str| {
+            std::fs::read_to_string(format!("{}/../kernel/corpus/logs/{n}.jsonl", env!("CARGO_MANIFEST_DIR")))
+                .expect("corpus log")
+        };
+        let logs = [
+            ("three_days", corpus("three-days")),
+            ("energy_14d", corpus("energy-14d")),
+            ("review_14d", corpus("review-14d")),
+            ("malformed", corpus("malformed")),
+            ("loggen_1mo_40", loggen::text(&loggen::log(loggen::Rate::Forty, 30))),
+            ("loggen_1mo_61", loggen::text(&loggen::log(loggen::Rate::SixtyOne, 30))),
+        ];
+        let cfg = Config { tz: chrono_tz::America::Chicago, ..Config::default() };
+        for (name, text) in &logs {
+            let dir = tempfile::TempDir::new().expect("tempdir");
+            std::fs::create_dir_all(dir.path().join(".tm")).expect("mkdir");
+            std::fs::write(dir.path().join(LOG_PATH), text).expect("write log");
+            let store = FsStore::new(dir.path());
+            let door = Ctx::replay_of(&store, &cfg).expect("replay_of");
+            let direct = Log::parse(text).replay(None, cfg.tz);
+            assert_eq!(door.ported_facts(), direct.ported_facts(), "{name}");
+            let json = serde_json::to_value(door.ported_facts()).expect("json");
+            assert_eq!(json, snapshot_body(name), "{name}: the pinned values");
+        }
+    }
+}
