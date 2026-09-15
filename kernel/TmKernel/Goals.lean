@@ -375,6 +375,15 @@ over `Look.wallOverlap` and `Look.windowBase`, both are proved under the same na
 (§3.1 item 3; restated to the oracle's overlap semantics, refuted as written).  Stage 6's
 `dayPlan` reuses `Look.windowEnd`; the burn-down drops by 2.  README "Stage 5 D10 L2". -/
 
+/- **§7.1's undo mask is real (2026-09-14, stage 5 D9 step C1).**
+The four C1 goals of design §15 were added here as written, elaborated against
+`TmKernel/Replay.lean` (17 goals, no error), and discharged in the same step, so the
+burn-down stays at 13: `Replay.survivors_snoc_event`, `Replay.survivors_snoc_undo` and
+`Replay.a_cancelled_event_is_never_revived` are proved as stated, and
+`Replay.a_dangling_undo_dangles_in_every_extension` is proved **without** §15's `hl` and
+`hu`, which it does not need (§15's statement is that theorem applied to fewer
+arguments).  README "Stage 5 D9 C1". -/
+
 /-! ############################################################################
 # STAGE 6 — the planner; §8.3's invariants; L24 and L25
 

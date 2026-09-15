@@ -125,7 +125,7 @@ fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
             format!(r#""{{{T},\"ev\":\"mood\",\"x\":[{deep}]}}""#),
         ];
         let out = call(&log_request(&lines, 7)).unwrap();
-        assert!(out.starts_with(r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":7,"warnings":[{"line":6,"w":"lineTooLong"},{"line":7,"w":"lineTooDeep"}],"headers":[[1,"note",null],[2,"mood",null],[3,"mood",null],[4,"mood",null],[5,"energy",null]],"render":[[1,"{\"t\":\"2026-09-07T06:05:00-05:00\",\"ev\":\"note\",\"text\":\"yyy"#), "{}", &out[..out.len().min(400)]);
+        assert!(out.starts_with(r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":7,"warnings":[{"line":6,"w":"lineTooLong"},{"line":7,"w":"lineTooDeep"}],"facts":null,"headers":[[1,"note",null],[2,"mood",null],[3,"mood",null],[4,"mood",null],[5,"energy",null]],"render":[[1,"{\"t\":\"2026-09-07T06:05:00-05:00\",\"ev\":\"note\",\"text\":\"yyy"#), "{}", &out[..out.len().min(400)]);
         assert!(out.contains(&format!(r#"\"hsw\":0.{}1,"#, "0".repeat(65_000))));
         assert!(out.contains(r#"\"k999\":999}"#), "the last key in serde's order");
         assert!(out.ends_with(r#""2026-09-07 06:05"],[6,null,null],[7,null,null]]}}}"#), "{}", &out[out.len().saturating_sub(200)..]);
@@ -135,12 +135,41 @@ fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
             .map(|i| format!(r#""{{{T},\"ev\":\"drop\",\"id\":\"x{i}\"}}""#))
             .collect();
         let out = call(&log_request(&lines, 4096)).unwrap();
-        assert!(out.starts_with(r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":32768,"warnings":[],"headers":[[1,"drop","x0"],"#));
+        assert!(out.starts_with(r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":32768,"warnings":[],"facts":null,"headers":[[1,"drop","x0"],"#));
         assert!(out.contains(r#"[32768,"drop","x32767"]],"render":[[1,"#));
         assert!(out.ends_with(r#"[4096,"{\"t\":\"2026-09-07T06:05:00-05:00\",\"ev\":\"drop\",\"id\":\"x4095\"}","2026-09-07 06:05"]]}}}"#));
         let mut one_more = lines.clone();
         one_more.push(r#""""#.to_string());
         assert_eq!(call(&log_request(&one_more, 0)).unwrap(), r#"{"err":{"log":"tooManyLines"}}"#);
+    });
+    // Stage 5 D9 C1: the undo mask at the line bound (`Replay.maskFast`, a `foldl`; the
+    // `@[csimp]` twins `survivors_eq_survivorsFast` and `cancelledLines_eq_cancelledLinesFast`).
+    // 16,384 drops, each followed by its undo: every line is cancelled.
+    on_a_2mib_thread(|| {
+        let lines: Vec<String> = (0..32_768)
+            .map(|i| {
+                if i % 2 == 0 {
+                    format!(r#""{{{T},\"ev\":\"drop\",\"id\":\"x{i}\"}}""#)
+                } else {
+                    format!(r#""{{{T},\"ev\":\"undo\",\"of\":\"drop\",\"id\":\"x{}\"}}""#, i - 1)
+                }
+            })
+            .collect();
+        let req = format!(
+            r#"{{"docs":[],"tz":{{"key":"UTC","base":"+00:00:00","then":[]}},"log":{{"ckpt":null,"from":1,"lines":[{}],"terminated":true,"want":{{"facts":true}}}}}}"#,
+            lines.join(",")
+        );
+        let start = std::time::Instant::now();
+        let out = call(&req).unwrap();
+        let all: Vec<String> = (1..=32_768).map(|n| n.to_string()).collect();
+        assert_eq!(
+            out,
+            format!(
+                r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"log":{{"lines":32768,"warnings":[],"facts":{{"cancelled":[{}]}},"headers":[],"render":[]}}}}}}"#,
+                all.join(",")
+            )
+        );
+        eprintln!("the mask at the line bound: {:.0} ms", start.elapsed().as_secs_f64() * 1000.0);
     });
 }
 

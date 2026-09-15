@@ -3211,3 +3211,78 @@ open Tm
 #print axioms Tm.runCap_answers_docs_report_lookahead_floor_grants
 #print axioms Tm.CapWire.readCands_reads_and_refuses_floors
 #print axioms Tm.CapWire.the_floor_grant_response_emits_in_build_order
+
+-- APPENDED 2026-09-14 (stage 5, D9 track).  Step C1 (design §7.1, §14.4 row C1): the undo mask in
+-- Replay.lean (new) and the `log` op's `facts.cancelled` in Boundary.lean.  The four goals §15 names for
+-- C1 were added to Goals.lean and discharged in the step: `survivors_snoc_event`, `survivors_snoc_undo`,
+-- `a_cancelled_event_is_never_revived` and `a_dangling_undo_dangles_in_every_extension` (the last
+-- without §15's two unneeded hypotheses).  The fast twins are `survivors_eq_survivorsFast` and
+-- `cancelledLines_eq_cancelledLinesFast`, both `@[csimp]`.
+#print axioms Tm.Log.linesIncreasing_pairwise
+#print axioms Tm.Replay.survivors_nil
+#print axioms Tm.Replay.survivors_snoc_event
+#print axioms Tm.Replay.survivors_snoc_undo
+#print axioms Tm.Replay.mem_foldl_maskStep
+#print axioms Tm.Replay.not_undo_of_mem_foldl_maskStep
+#print axioms Tm.Replay.an_undo_never_survives
+#print axioms Tm.Replay.mem_of_mem_survivors
+#print axioms Tm.Replay.a_cancelled_event_is_never_revived
+#print axioms Tm.Replay.danglingOf_fst_go
+#print axioms Tm.Replay.danglingOf_fst
+#print axioms Tm.Replay.danglingOf_snd_mono
+#print axioms Tm.Replay.a_dangling_undo_dangles_in_every_extension
+#print axioms Tm.Replay.an_entry_that_dangles_is_an_undo
+#print axioms Tm.Replay.isUndo_of_tag_undo
+#print axioms Tm.Replay.no_survivor_matches_an_undo_of_an_undo
+#print axioms Tm.Replay.an_undo_of_an_undo_cancels_nothing_in_a_canonical_log
+#print axioms Tm.Replay.dangleStep_of_no_match
+#print axioms Tm.Replay.an_undo_of_an_undo_dangles_in_a_canonical_log
+#print axioms Tm.Replay.maskStepI_map
+#print axioms Tm.Replay.foldl_maskStepI_map
+#print axioms Tm.Replay.zipIdx_map_fst
+#print axioms Tm.Replay.stackI_map
+#print axioms Tm.Replay.PosMap.size_set
+#print axioms Tm.Replay.PosMap.get_empty
+#print axioms Tm.Replay.find?_filter_ne
+#print axioms Tm.Replay.PosMap.get_set
+#print axioms Tm.Replay.pairKey_inj
+#print axioms Tm.Replay.deadAt_set
+#print axioms Tm.Replay.filter_dropWhile_cons
+#print axioms Tm.Replay.filter_dropWhile_nil
+#print axioms Tm.Replay.eraseP_eq_filter_pos
+#print axioms Tm.Replay.eraseP_eq_self_of_filter_nil
+#print axioms Tm.Replay.Inv.nodup
+#print axioms Tm.Replay.filter_kill
+#print axioms Tm.Replay.filter_kill1
+#print axioms Tm.Replay.filter_pos_ne_comm
+#print axioms Tm.Replay.foldl_snoc_maskStepI
+#print axioms Tm.Replay.stack_positions_lt
+#print axioms Tm.Replay.Inv.step_undo_none
+#print axioms Tm.Replay.Inv.posLt_snoc
+#print axioms Tm.Replay.Inv.incr_snoc
+#print axioms Tm.Replay.Inv.step_undo_some
+#print axioms Tm.Replay.maskFastStep_event
+#print axioms Tm.Replay.maskStepI_event
+#print axioms Tm.Replay.Inv.step_event
+#print axioms Tm.Replay.Inv.step
+#print axioms Tm.Replay.Inv.init
+#print axioms Tm.Replay.maskFast_inv
+#print axioms Tm.Replay.maskFast_stack
+#print axioms Tm.Replay.cancelledAt_eq_deadAt
+#print axioms Tm.Replay.survivors_are_the_uncancelled_entries
+#print axioms Tm.Replay.survivors_eq_survivorsFast
+#print axioms Tm.Replay.cancelledLines_eq_cancelledLinesFast
+#print axioms Tm.Replay.cancelled_and_survivors_partition
+#print axioms Tm.Replay.the_mask_ignores_isStateChange
+#print axioms Tm.Replay.undo_mask_pairs_and_dangling_ported
+#print axioms Tm.Replay.an_undo_of_an_undo_cancels_a_noncanonical_unknown_undo
+#print axioms Tm.Replay.an_undo_with_an_id_passes_over_other_ids
+#print axioms Tm.readLine_entry_line
+#print axioms Tm.filterMap_entryOf_lines
+#print axioms Tm.linesIncreasing_of_pairwise
+#print axioms Tm.filterMap_entryOf_pairwise
+#print axioms Tm.the_tail_entries_have_increasing_lines
+#print axioms Tm.logAnswer_facts
+#print axioms Tm.LogReq.wf_facts_from_line_one
+#print axioms Tm.mkLogReq?_refuses_facts_of_a_tail_without_a_checkpoint
+#print axioms Tm.the_log_op_answers_the_cancelled_lines

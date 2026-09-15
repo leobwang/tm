@@ -14734,8 +14734,192 @@ file changed. No kernel change, and no recursion over a wire list.
 | `check.sh`, built tree | **7/7**, 2.83 s; audit **2732**; corpus **29/37 files and 4/5 plans**; burn-down **13** |
 | `cargo test --workspace` | **1060 passed / 0 failed / 3 ignored across 72 binaries** (1057 + 3: `a_literal_is_its_exact_decimal`, `a_weight_past_18_written_places_is_refused_though_its_double_is_shorter`, `the_recorders_tail_is_the_whole_replays`), 0 compiler warnings |
 | FFI suite | **97 passed / 0 failed** (kernel 83, corpus 8, stack 6; `stack.rs` 2.27 s) |
+| R8's one-reader grep | **69 lines**, W-3's count (64 at the merge-back, plus `log_tail_of`'s 5): T5 adds none, and reads the Rust only through `support/replay.rs` |
 | `cli_latency.rs --include-ignored`, three serial runs | green, 4 passed. No log: first 622.8 / 627.5 / 627.7 ms, later 55.7 / 55.7 / 55.8 ms. 1y: first 708.8 / 708.7 / 733.4, later 121.7 / 121.5 / 121.6. 3y: first 946.5 / 941.3 / 931.5, later 278.5 / 283.6 / 268.4. T14: 76.0 / 80.9 / 76.1 ms (3 years), 136.7 / 161.8 / 136.8 ms (10 years) |
 | gap 106 bound, scratch mutant without the seven `@[csimp]` | fails at 30 deadlines, 6,324 ms > 5,000 ms |
 
 **Owed next, unchanged:** D10 L9 (gap 93). D9 phases C and W, then S and S2. S owes gap 117 and T11's
 comparison with the latency table above, and S or S2 owes gap 115. Stage 6 owes gaps 94, 114 and 116.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5, D9 track, step C1 on rebuild-on-lean (after the
+     W-3 audit repair 80fdc40).  Design §7.1, §10.2, §14.4's C1 row and T5.
+     Takes cheat 143 (design label 95).  Takes no gap and no parity number.
+     =========================================================================== -->
+
+## Stage 5 D9 C1, 2026-09-14: the undo mask — survivors folded, a cancelled line never revived, T5 agrees on every cancelled set
+
+**Starting point.** `80fdc40`, clean: check.sh 7/7 (built tree 2.82 s, re-measured before any edit), audit
+2732, corpus 29/37 files and 4/5 plans, burn-down 13, `cargo test --workspace` 1060 / 0 / 3 ignored across 72
+binaries, FFI 97.
+
+### What was built
+
+**`Replay.lean` (new; imports `Log` and `Arith`; imported in `TmKernel.lean` after `Log`: twenty imports).**
+- **The specification, §7.1 as written.** `Replay.matches` (fork `ev.name() == of` and, with an id,
+  `ev.primary_id() == Some(id)`), `maskStep` (an event is pushed; an undo `eraseP`s the first, most recent,
+  match and never enters), `survivors es = (es.foldl maskStep []).reverse`, `dangleStep`/`danglingOf`/`dangles`
+  (an undo whose `eraseP` found nothing).
+- **Positions.** `maskStepI`/`stackI` fold the same stack over `zipIdx`, `cancelledAt es i` is fork
+  `UndoMask::cancelled[i]`, and `cancelledLines` is the lines at the cancelled positions.
+  `survivors_are_the_uncancelled_entries` ties them to `survivors`, and `cancelled_and_survivors_partition` counts them.
+  `stackI_map` shows `stackI` is the mask's stack.
+- **The fast twin (`@[csimp]`, D9-21).** `maskFast` is one `foldl` of `maskFastStep` over `zipIdx`. It keeps
+  a dead-position `Array Bool` and two `PosMap`s, per tag and per `(tag, id)` (`pairKey`, injective by
+  `pairKey_inj`), each a stack of positions with lazy deletion. `survivorsFast` and `cancelledLinesFast`
+  read the dead array. The simulation is `Inv`: the stack in file order is the live entries, and each
+  stack's live positions are the spec stack's matches. It is preserved by `Inv.step_undo_none`,
+  `Inv.step_undo_some` and `Inv.step_event`, and carried over the whole list by `maskFast_inv`. The
+  equalities are `survivors_eq_survivorsFast` and `cancelledLines_eq_cancelledLinesFast`. `PosMap` is a
+  bucket table whose `set` **replaces** a key's pair (`PosMap.get_set`). The loader's `IdMap.insert`
+  prepends a shadowing pair, which would grow a bucket per event here, and `IdMap` lives behind `Plan`.
+- **The goals** (below), and beside them `an_undo_never_survives`, `mem_of_mem_survivors`,
+  `an_entry_that_dangles_is_an_undo`, `an_undo_of_an_undo_cancels_nothing_in_a_canonical_log`,
+  `an_undo_of_an_undo_dangles_in_a_canonical_log`, and `Log.linesIncreasing` with `linesIncreasing_pairwise`.
+
+**The wire (`Boundary.lean`).**
+- `LogReq` gains a sixth field, `facts`. `readWant` accepts `want.facts` as any boolean; B4 accepted
+  only `false`.
+- `logAnswer` emits `facts` after `warnings`, where design §10.2 puts it. It is `null` unless asked, and
+  `{"cancelled": [line, …]}` when asked (`factsJson`, `logAnswer_facts`).
+- **R10.** Without a checkpoint a tail is the whole log only from line 1. So facts asked of a tail from any
+  other line are refused `badLogReq facts` (`mkLogReq?_refuses_facts_of_a_tail_without_a_checkpoint`,
+  `LogReq.wf_facts_from_line_one`).
+- `the_tail_entries_have_increasing_lines` (via `readLine_entry_line`) proves that every entry list the op
+  builds meets `Log.linesIncreasing`. So `a_cancelled_event_is_never_revived`'s hypothesis is satisfiable
+  and holds on the wire (AGENTS §7.4 items 2 and 6).
+- End to end: `the_log_op_answers_the_cancelled_lines` (a note, its undo, a blank line and a note: `[1, 2]`).
+- Updated in place: B4's `the_response_shapes_emit_in_build_order` and `the_log_op_reads_a_four_line_tail`
+  now carry `"facts": null`, and `readLogReq_reads_the_lines_as_sent` gains one `_` for the new pattern
+  variable.
+
+**`Negative.lean`.** CHEAT 143 (design 95): a mask step that erases its target and keeps the undo. `decide`
+refuses `∀ u ∈ survivors, ¬undo` on `[undo{of:"note"}]`. **One existing block was edited: CHEAT 132's
+request literal gains `, false`** for the new field. Without it, 132 would fail with "insufficient number of
+fields", not its stated `decide` refusal (AGENTS §7.4 item 10). Its claim and its failure are unchanged,
+and checked: it fails at its `decide` line.
+
+### Goals (AGENTS §3.2)
+
+§15's four C1 goals were added to `Goals.lean` as written, elaborated in-tree (17 goals, no error), and
+discharged in the step. Burn-down **13 → 17 → 13**. A note in the STAGE 5 section records it.
+
+| goal | status |
+|---|---|
+| `survivors_snoc_event` | proved as stated |
+| `survivors_snoc_undo` | proved as stated |
+| `a_cancelled_event_is_never_revived` | proved as stated (`hl` is used: it rules out the entry reappearing in `fs`) |
+| `a_dangling_undo_dangles_in_every_extension` | **proved without §15's `hl` and `hu`**, which it does not need: a prefix's dangling undos are an extension's. §15's statement is this theorem given fewer arguments, checked by a scratch `example` for each of the four goals |
+
+**Refuted and renamed: one design claim.** §7.1's `an_undo_of_an_undo_cancels_nothing` is **false over every
+entry list**. An `unknown` event whose tag is `undo` is matched by `undo{of:"undo"}`, as fork
+`ev.name() == of` would match it. No reader returns one, since `undo` is a known tag.
+- The refutation: `an_undo_of_an_undo_cancels_a_noncanonical_unknown_undo`.
+- The law, over canonical events (every event `readLine` returns): `an_undo_of_an_undo_cancels_nothing_in_a_canonical_log`.
+
+**Witnesses** (5 new decided theorems, all probed in a scratch copy under `MemoryMax=8G timeout 120`; all of
+`Replay.lean` elaborates in 0.88 s at a 638 MB peak; at most 8 entries each, instants shared, no text parsed
+except the 4-line wire witness):
+- `the_mask_ignores_isStateChange`;
+- `undo_mask_pairs_and_dangling_ported`, the fork test ported: `[T,T,T,T,T,F,T]`, dangling lines 5 and 7,
+  `pairs() == 2`, and cancelled lines `[1,2,3,4,5,7]`;
+- `an_undo_with_an_id_passes_over_other_ids`;
+- the refutation above;
+- `the_log_op_answers_the_cancelled_lines`.
+
+Altering an expected value makes both the ported witness and the wire witness fail at `decide` (checked).
+
+### T5 (`tm/tests/kernel_replay_parity.rs`, new)
+
+Genesis call (`ckpt: null`, `reseal: null`, `from: 1`, `want.facts`), decoded into `Facts`. It is compared
+field by field with `support/replay.rs::replay_of_text`, whose body is `Ctx::replay_of`'s (the binary's `Ctx`
+is not a library). At C1 `Facts` holds `cancelled` (the lines of `ViewRow::cancelled`). It also holds each
+reader's line-warning lines, so an entry one reader dropped cannot hide.
+
+| input | run |
+|---|---|
+| corpus | 7 logs (the design's four `logs/*.jsonl` and the three plans' logs), 12 cancelled lines |
+| generated, 40 a day, seed 7 | 1mo: 1,191 lines, 123,939 bytes, 8 cancelled. 6mo: 7,472 lines, 776,568 bytes, 58 cancelled |
+| 256 sequences | 8,894 lines, 3,761 cancelled; zones Chicago 43, St John's 54, Kolkata 53, Berlin 59, UTC 47; one in four written in another zone than `cfg.tz`. Every arm forced at least once; counts per arm: Wake 246, OutOfOrderWake 216, Block 238, Extend 241, PartialDoneAfterStop 251, RetroBreakIdle 234, UndoLastCommand 241, HousekeepingBetween 210, SilentVerbUndo 216, SilentVerbUndoDangling 235, UndoOfUndo 215, UndoOfAbsentId 249, UndoOfNonStateChange 220, UnknownAndUndo 183, LeapInsideBlock (`:60`) 236, Misc 219 |
+| §6.4 zone cases, one arm each | 7: the 01:30 fall-back wake with the ambiguous hour twice; a wake after midnight under 24 h; events 23–25 h after a wake across the spring and the fall transition; a fold at midnight (St John's); one day written `-05:00` then `+02:00`; `cfg.tz` Chicago written in Berlin. Each carries an undo |
+
+**Quirks, reproduced and asserted by line.** Q6(d): 216 silent-verb `undo{of:"move"}` each cancel the older
+`move`, in both readers. Q6(f): every `undo{of:"close"}` after `close week` then an automatic `close day`
+cancels the automatic close. 108 week closes stayed standing because of it.
+
+**Exceptions: 0** (§17 lists the mask as exact by design). **T5 bites.** A scratch mutation of the Rust side
+(undos left out of `cancelled`) fails four of the five tests, each on its first log.
+
+**`t5_a_hostile_undo_log_is_answered_in_linear_time`** (`#[ignore]`d, a measurement) uses 5,000 `done`s of
+distinct ids, then 2,500 undos of absent ids and 2,500 of an absent tag: 10,000 lines, 902,780 bytes, one call
+under 1 MiB (gap 102's gate). The kernel answered in 129 ms, the Rust in 99 ms, and they agree. **The twins bite.** A scratch copy of the kernel ran the same log from a scratch example at a 16 GB
+cap. With the two `@[csimp]` attributes it answered in 66, 73 and 72 ms. With them removed (Replay and
+Boundary rebuilt), the first call had not answered after 646 s and was killed. Uncompiled, the specification
+`cancelledLines` rebuilds `stackI` once per line, on top of `eraseP`'s scan. The copy was deleted. The
+line bound is covered too: `tests/stack.rs` gains 16,384 drops, each followed by its undo, 32,768 lines on a
+2 MiB thread with `facts` asked. All 32,768 lines come back cancelled, in 211 ms.
+
+### Recorded disagreements between the design and the repo
+
+1. **`matches` is a Lean keyword.** It is defined as `«matches»`, and §15's spelling `Replay.matches`
+   elaborates unchanged.
+2. **§15's `a_dangling_undo_dangles_in_every_extension` carries two unused hypotheses.** It is proved
+   without them (above).
+3. **§7.1's `an_undo_of_an_undo_cancels_nothing` is false over arbitrary entries.** It is refuted and
+   restated over canonical events (above).
+4. **§7.1's fast twin keeps "stacks of lines".** It keeps positions, because the laws quantify over lists
+   that may hold one entry twice, and only the `log` op's lists are known to have distinct lines.
+5. **§10.2's `facts` object has no `cancelled` key**, and puts the cancelled flag on each header at C6. At
+   C1, before the view exists, `facts` is `{"cancelled": […]}`. C6 either keeps the key in the view or moves
+   the flag into the headers, and T5's decoder follows.
+6. **§10.1 has no refusal for facts of a tail without a checkpoint.** W3's `cutMismatch` (`from` must be
+   `ckpt.cut + 1`) is the eventual rule. Until then it is `badLogReq facts`, and the FFI refusal table
+   gains that row. B4's `facts: true` row, now accepted, becomes `facts: 7`.
+7. **§14.4's fold arm names America/Havana or Asia/Beirut "historically".** Neither probed table has a
+   transition in [1970, 2100) at which the local date goes backwards. Both fall back *at* midnight or within
+   one date (00:00 → 23:00 and 01:00 → 00:00), so dates stay monotone in instant order. **America/St_Johns
+   does.** Its pre-2011 rule fell back at 00:01 NDT to 23:01 NST; T5 found the first case at
+   1987-10-25T02:31Z. The arm searches the probed tables rather than assuming (`backwards_date_transition`).
+   It asserts that its three wakes' dates run D−1, D, D−1, so consecutive dedup keeps 3 and
+   earliest-per-date keeps 2.
+8. **§14.4 says "the four corpus logs".** T5 runs all seven.
+9. **The row imports `Arith`, which C1 does not use.** It is kept for C3's credit.
+
+### Rule D9-21 (functions over a list the wire can make large)
+
+- `maskFast`: a `foldl` of `maskFastStep`.
+- `survivorsFast`, `cancelledLinesFast`: `zipIdx`, `filterTR`, `mapTR`.
+- `keyHash`: a `foldl`.
+- `pairKey`: `flatMapTR`, `appendTR`.
+- `PosMap.get`: `find?` on one bucket.
+- `PosMap.set`: `filterTR` on one bucket.
+- `List.dropWhile`: a loop.
+- `factsJson`, `entryOf` over the tail: `filterMap`, `mapTR`.
+- Specification only, never on the wire: `survivors` and `cancelledLines` (compiled as their twins), and
+  `stackI`, `danglingOf` and `Log.linesIncreasing` (the tail of `&&`).
+
+### Numbers
+
+**Taken:** cheat 143. **Gaps, parity entries: none.** Highest: gap 117, cheat 143, parity P32. **Behaviour
+rows:** none in the binary, which still has one reader of the log, the Rust. The kernel's `log` op changes
+in two ways: `want.facts: true` is answered, and every `log` answer carries `"facts"`.
+
+**Re-measured** (main worktree, every command capped at 40 GB; probes at 8 GB, the scratch mutant at 16 GB):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.76 / 2.83 / 2.89 s (baseline 2.82 s, +2.5% at the worst; the budget is 10%) |
+| axiom audit | **2800 theorems** (2732 + 68). The three §6.3 counts agree at 2800: audit lines, distinct names, and declarations by the attribute-aware grep |
+| `Negative.lean` | check 4 ok; 139 errors; 133 `/- CHEAT` banners; no duplicate number; 143 fails at its `decide`, 132 still at its own |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (13 → 17 → 13 within the step) |
+| `TmKernel.lean` | **20 imports**, one per module |
+| `lake build TmKernel:static` after a `Replay.lean` edit | `Replay` 0.95 s; `Boundary` 139–149 s |
+| `Replay.lean` elaboration (8 GB probe cap) | 0.88 s, 638 MB peak; 1,105 lines |
+| `cargo test --workspace` | **1065 passed / 0 failed / 4 ignored across 73 binaries**, 0 compiler warnings. That is 1060 / 3 / 72, plus T5's five tests, one ignored measurement and one binary |
+| FFI suite | **98 passed / 0 failed** (kernel 84: `the_log_op_answers_the_cancelled_lines` added, `the_log_op_answers_by_line` gains `"facts":null`, the refusal table gains a row; corpus 8; stack 6, `stack.rs` 2.26 s, its two `log` expectations gaining `"facts":null` and its line-bound test the mask above) |
+| T5 (`kernel_replay_parity.rs`) | 5 passed, 0.43 s; 1mo 137 ms and 6mo 120 ms for both readers; 0 exceptions |
+| `cli_latency.rs --include-ignored`, three serial runs | green, 4 passed. No log: first 643.0 / 627.5 / 617.6 ms, later 50.7 / 60.7 / 50.7 ms. 1y: first 718.5 / 733.9 / 718.6, later 121.5 / 121.5 / 121.5. 3y: first 946.6 / 926.1 / 951.1, later 283.4 / 283.5 / 278.6. T14: 81.1 / 76.0 / 81.0 ms (3 years), 141.7 / 146.8 / 141.8 ms (10 years). The binary's reader is unchanged, and so are these |
+
+**Owed next:** C2 (the day index). It extends `Facts` with every survivor's day, and its zone arms are already
+in T5. Then C3–C7, W1–W3, S and S2.

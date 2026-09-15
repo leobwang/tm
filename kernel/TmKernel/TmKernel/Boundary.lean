@@ -5,6 +5,7 @@ import TmKernel.Priority
 import TmKernel.Capacity
 import TmKernel.Log
 import TmKernel.Lookahead
+import TmKernel.Replay
 /-!
 # The boundary: `String → String`, and nothing else
 
@@ -2739,6 +2740,9 @@ structure LogReq where
   terminated : Bool
   headersFrom : Option Nat
   render : List Nat
+  /-- `want.facts` (stage 5 D9 C1): the tail's replay facts; at C1, its cancelled line set.  Last, so
+  the five fields before it keep their places. -/
+  facts : Bool
 deriving DecidableEq, Repr
 
 /-- Line numbers on the wire are below `2^40` (§10.4). -/
@@ -2760,7 +2764,7 @@ def LogReq.fault (r : LogReq) : Option LogRefusal :=
   else
     match r.render.find? (fun n => n < r.from_ || r.from_ + r.lines.length ≤ n) with
     | some n => some (.renderNotInTail n)
-    | none => none
+    | none => if r.facts && r.from_ != 1 then some (.badLogReq .facts) else none
 
 def LogReq.wf (r : LogReq) : Bool := r.fault.isNone
 
@@ -2795,22 +2799,25 @@ def renderStep (acc : Except LogRefusal (List Nat)) (x : JVal) : Except LogRefus
   | .ok _, _ => .error (.badLogReq .render)
   | .error e, _ => .error e
 
-/-- `want`: `facts` absent or `false`, `headersFrom` absent, `null` or a number, `render` absent or
-an array of numbers.  An absent `want` wants nothing. -/
-def readWant (w : Option JVal) : Except LogRefusal (Option Nat × List Nat) :=
+/-- `want`: `facts` absent or a boolean (stage 5 D9 C1; B4 accepted only `false`), `headersFrom`
+absent, `null` or a number, `render` absent or an array of numbers.  An absent `want` wants
+nothing. -/
+def readWant (w : Option JVal) : Except LogRefusal (Bool × Option Nat × List Nat) :=
   match w with
-  | none => .ok (none, [])
+  | none => .ok (false, none, [])
   | some w@(.obj _) =>
     match jget w "facts" with
-    | .ok none | .ok (some (.bool false)) =>
-      match jget w "headersFrom" with
-      | .ok none | .ok (some .null) =>
-        (readRender w).map (fun rs => (none, rs))
-      | .ok (some (.num h)) => (readRender w).map (fun rs => (some h, rs))
-      | _ => .error (.badLogReq .headersFrom)
+    | .ok none => readHeaders false w
+    | .ok (some (.bool fa)) => readHeaders fa w
     | _ => .error (.badLogReq .facts)
   | some _ => .error (.badLogReq .want)
 where
+  readHeaders (fa : Bool) (w : JVal) : Except LogRefusal (Bool × Option Nat × List Nat) :=
+    match jget w "headersFrom" with
+    | .ok none | .ok (some .null) =>
+      (readRender w).map (fun rs => (fa, none, rs))
+    | .ok (some (.num h)) => (readRender w).map (fun rs => (fa, some h, rs))
+    | _ => .error (.badLogReq .headersFrom)
   readRender (w : JVal) : Except LogRefusal (List Nat) :=
     match jget w "render" with
     | .ok none => .ok []
@@ -2841,7 +2848,7 @@ def readLogReq (j : JVal) : Except LogRefusal VLogReq :=
               match jget j "want" with
               | .ok w =>
                 match readWant w with
-                | .ok (hf, rs) => mkLogReq? ⟨from_, rev.reverse, term, hf, rs⟩
+                | .ok (fa, hf, rs) => mkLogReq? ⟨from_, rev.reverse, term, hf, rs, fa⟩
                 | .error e => .error e
               | .error _ => .error (.badLogReq .want)
           | _ => .error (.badLogReq .terminated)
@@ -2907,6 +2914,16 @@ def headerOf (hf : Nat) : Log.Verdict → Option JVal
   | .entry e => if hf ≤ e.line then some (headerJson e) else none
   | _ => none
 
+def entryOf : Log.Verdict → Option Log.Entry
+  | .entry e => some e
+  | _ => none
+
+/-- **The tail's facts** (design §10.2's `facts`, stage 5 D9 C1): at C1 the cancelled line set, the
+lines of the entries the undo mask cancels (`Replay.cancelledLines`, compiled as its fast twin), in
+file order.  C6 replaces this with the whole view. -/
+def factsJson (es : List Log.Entry) : JVal :=
+  .obj [("cancelled".toList, .arr ((Replay.cancelledLines es).map JVal.num))]
+
 /-- **The `log` answer**: `lines` (the last physical line seen), `warnings`, `headers`, `render`,
 keys in build order.  `render` looks its lines up in an array. -/
 def logAnswer (r : VLogReq) : JVal :=
@@ -2914,6 +2931,7 @@ def logAnswer (r : VLogReq) : JVal :=
   let arr := vs.toArray
   .obj [("lines".toList, .num (r.val.from_ + r.val.lines.length - 1)),
         ("warnings".toList, .arr (vs.filterMap warningOf)),
+        ("facts".toList, if r.val.facts then factsJson (vs.filterMap entryOf) else .null),
         ("headers".toList, .arr (match r.val.headersFrom with
           | none => []
           | some hf => vs.filterMap (headerOf hf))),
@@ -4430,9 +4448,9 @@ theorem the_response_shapes_emit_in_build_order :
     -- (`withLog_jone`), the answer's value with its keys in order, and the warning's bytes.
     jemit (withLog .null (jone "ok" (.obj [("docs".toList, .arr []), ("report".toList, reportJson Report.empty)])))
       = "{\"ok\":{\"docs\":[],\"report\":{\"closes\":[]},\"log\":null}}".toList ∧
-    logAnswer ⟨⟨17, [none], true, some 17, [17]⟩, by decide⟩
+    logAnswer ⟨⟨17, [none], true, some 17, [17], false⟩, by decide⟩
       = .obj [("lines".toList, .num 17), ("warnings".toList, .arr [lwarnJson 17 .invalidUtf8]),
-          ("headers".toList, .arr []), ("render".toList, .arr [.arr [.num 17, .null, .null]])] ∧
+          ("facts".toList, .null), ("headers".toList, .arr []), ("render".toList, .arr [.arr [.num 17, .null, .null]])] ∧
     jemit (lwarnJson 17 .invalidUtf8) = "{\"line\":17,\"w\":\"invalidUtf8\"}".toList ∧
     jemit (lwarnJson 17 (.missingField ['s', 'l', 'e', 'p', 't', '_', 'm', 'i', 'n']))
       = "{\"line\":17,\"w\":\"missingField\",\"key\":\"slept_min\"}".toList := by
@@ -8135,7 +8153,7 @@ theorem readLogReq_reads_the_lines_as_sent (j : JVal) (v : VLogReq) (h : readLog
   all_goals first
     | (cases h; done)
     | skip
-  rename_i xs hl _ _ rev hfold _ _ _ _ _ _ _ _ _ _ _ _
+  rename_i xs hl _ _ rev hfold _ _ _ _ _ _ _ _ _ _ _ _ _
   refine ⟨xs, hl, ?_⟩
   rw [mkLogReq?_keeps_the_request _ _ h, lineStep_fold xs [] rev hfold]
   simp
@@ -8244,6 +8262,7 @@ def logWitnessAnswer : JVal :=
   .obj [("lines".toList, .num 10),
     ("warnings".toList, .arr [.obj [("line".toList, .num 9), ("w".toList, .str "invalidUtf8".toList)],
                               .obj [("line".toList, .num 10), ("w".toList, .str "noT".toList)]]),
+    ("facts".toList, .null),
     ("headers".toList, .arr [.arr [.num 7, .str "drop".toList, .str "a1".toList]]),
     ("render".toList, .arr [.arr [.num 7, .str "{\"t\":\"2026-09-07T09:00:00+00:00\",\"ev\":\"drop\",\"id\":\"a1\"}".toList,
                                   .str "2026-09-07 09:00".toList],
@@ -10335,4 +10354,143 @@ theorem the_floor_grant_response_emits_in_build_order :
   decide
 
 end CapWire
+
+/-! ## Stage 5 D9 C1: the `log` op's facts — the cancelled line set
+
+APPENDED 2026-09-14 (stage 5, D9 track, step C1; design §7.1, §10.2, §14.4 row C1).  `want.facts: true`
+is accepted since C1 and answers `facts: {"cancelled": [line, …]}`, the lines of the tail's entries
+that the undo mask cancels (`Replay.cancelledLines`, compiled as `Replay.cancelledLinesFast`); `facts`
+is `null` otherwise, in its §10.2 place after `warnings`.  There is no checkpoint before W1–W3, so a
+tail is the whole log only from line 1: facts asked of a tail from any other line are refused
+`badLogReq facts` (`mkLogReq?_refuses_facts_of_a_tail_without_a_checkpoint`), never answered for
+the tail alone.  The entries the mask reads are the tail's, each at its own line, so their lines
+strictly increase (`the_tail_entries_have_increasing_lines`): `Replay.a_cancelled_event_is_never_revived`'s
+hypothesis holds of every list the op builds. -/
+
+section C1
+
+theorem readLine_entry_line (n : Nat) (seg : Option (List Char)) (e : Log.Entry)
+    (h : Log.readLine n seg = .entry e) : e.line = n := by
+  cases seg with
+  | none => simp [Log.readLine] at h
+  | some l =>
+    obtain ⟨kvs, -, -, ho⟩ := Log.readLine_entry_inv n l e h
+    unfold Log.readObject at ho
+    repeat' split at ho
+    all_goals first | (cases ho; done) | (cases ho; rfl)
+
+theorem filterMap_entryOf_lines (segs : List (Option (List Char))) : ∀ (n : Nat) (e : Log.Entry),
+    e ∈ ((segs.zipIdx n).map (fun p => Log.readLine p.2 p.1)).filterMap entryOf →
+      n ≤ e.line ∧ e.line < n + segs.length := by
+  induction segs with
+  | nil => intro n e h; simp at h
+  | cons seg rest ih =>
+    intro n e h
+    simp only [List.zipIdx_cons, List.map_cons, List.filterMap_cons] at h
+    split at h
+    · have := ih (n + 1) e h; simp; omega
+    · rename_i e' he'
+      rcases List.mem_cons.1 h with rfl | h
+      · have : Log.readLine n seg = .entry e := by
+          unfold entryOf at he'; split at he' <;> simp_all
+        have := readLine_entry_line n seg e this
+        simp; omega
+      · have := ih (n + 1) e h; simp; omega
+
+theorem linesIncreasing_of_pairwise : ∀ (es : List Log.Entry),
+    es.Pairwise (fun a b => a.line < b.line) → Log.linesIncreasing es = true
+  | [], _ => rfl
+  | [_], _ => rfl
+  | a :: b :: rest, h => by
+    simp only [Log.linesIncreasing, Bool.and_eq_true, decide_eq_true_eq]
+    exact ⟨List.rel_of_pairwise_cons h List.mem_cons_self, linesIncreasing_of_pairwise _ h.of_cons⟩
+
+theorem filterMap_entryOf_pairwise (segs : List (Option (List Char))) : ∀ (n : Nat),
+    (((segs.zipIdx n).map (fun p => Log.readLine p.2 p.1)).filterMap entryOf).Pairwise
+      (fun a b => a.line < b.line) := by
+  induction segs with
+  | nil => intro n; simp
+  | cons seg rest ih =>
+    intro n
+    simp only [List.zipIdx_cons, List.map_cons, List.filterMap_cons]
+    split
+    · exact ih (n + 1)
+    · rename_i e he
+      have hl : e.line = n := by
+        apply readLine_entry_line n seg e
+        unfold entryOf at he; split at he <;> simp_all
+      refine List.Pairwise.cons (fun b hb => ?_) (ih (n + 1))
+      have := (filterMap_entryOf_lines rest (n + 1) b hb).1
+      omega
+
+/-- **The entries the facts are computed from have strictly increasing lines**: each is read at its
+own physical line. -/
+theorem the_tail_entries_have_increasing_lines (r : LogReq) :
+    Log.linesIncreasing ((logVerdicts r).filterMap entryOf) = true := by
+  rw [logVerdicts_eq]
+  exact linesIncreasing_of_pairwise _ (filterMap_entryOf_pairwise _ _)
+
+/-- **The `facts` key**: `null` unless asked; asked, the cancelled lines of the tail's entries. -/
+theorem logAnswer_facts (r : VLogReq) :
+    ∃ a b c d, logAnswer r = .obj [a, b, ("facts".toList,
+      if r.val.facts then .obj [("cancelled".toList,
+        .arr ((Replay.cancelledLines ((logVerdicts r.val).filterMap entryOf)).map JVal.num))] else .null), c, d] :=
+  ⟨_, _, _, _, rfl⟩
+
+/-- An accepted request asking for facts reads its tail from line 1. -/
+theorem LogReq.wf_facts_from_line_one (r : LogReq) (h : r.wf = true) (hf : r.facts = true) :
+    r.from_ = 1 := by
+  unfold LogReq.wf LogReq.fault at h
+  split at h; · simp at h
+  split at h; · simp at h
+  split at h; · simp at h
+  split at h; · simp at h
+  split at h; · simp at h
+  simp only [hf, Bool.true_and] at h
+  by_cases hne : r.from_ = 1
+  · exact hne
+  · simp [hne] at h
+
+/-- **R10: facts of a tail without a checkpoint are refused by name** unless the tail starts at line 1
+(W3's checkpoint is what will carry the lines before it).  Every earlier bound holds, so the facts are
+the fault. -/
+theorem mkLogReq?_refuses_facts_of_a_tail_without_a_checkpoint (r : LogReq) (h0 : 0 < r.from_)
+    (h1 : r.from_ < logLineBound) (h2 : r.lines.length ≤ maxLogLines)
+    (h3 : ∀ hf, r.headersFrom = some hf → hf < logLineBound) (h4 : r.render.length ≤ maxRenderLines)
+    (h5 : ∀ n ∈ r.render, r.from_ ≤ n ∧ n < r.from_ + r.lines.length)
+    (hf : r.facts = true) (hne : r.from_ ≠ 1) :
+    mkLogReq? r = .error (.badLogReq .facts) := by
+  rw [mkLogReq?_error_is_the_fault]
+  have h3' : r.headersFrom.any (fun h => decide (logLineBound ≤ h)) = false := by
+    cases hh : r.headersFrom with
+    | none => rfl
+    | some x => simp [Nat.not_le.mpr (h3 x hh)]
+  have h5' : r.render.find? (fun n => n < r.from_ || r.from_ + r.lines.length ≤ n) = none := by
+    apply List.find?_eq_none.2
+    intro n hn
+    have := h5 n hn
+    simp; omega
+  simp [LogReq.fault, Nat.pos_iff_ne_zero.mp h0, Nat.not_le.mpr h1, Nat.not_lt.mpr h2, h3',
+    Nat.not_lt.mpr h4, h5', hf, hne]
+
+/-- A note and the undo that cancels it, from line 1: `{"t":…,"ev":"note","text":"a"}` and
+`{"t":…,"ev":"undo","of":"note"}`, 51 and 51 characters, spelled as characters (the parser reads them). -/
+def factsWitnessNote : List Char :=
+  ['{', '"', 't', '"', ':', '"', '2', '0', '2', '6', '-', '0', '9', '-', '0', '7', 'T', '0', '9', ':', '0', '0', ':', '0', '0', 'Z', '"', ',', '"', 'e', 'v', '"', ':', '"', 'n', 'o', 't', 'e', '"', ',', '"', 't', 'e', 'x', 't', '"', ':', '"', 'a', '"', '}']
+
+def factsWitnessUndo : List Char :=
+  ['{', '"', 't', '"', ':', '"', '2', '0', '2', '6', '-', '0', '9', '-', '0', '7', 'T', '0', '9', ':', '0', '1', ':', '0', '0', 'Z', '"', ',', '"', 'e', 'v', '"', ':', '"', 'u', 'n', 'd', 'o', '"', ',', '"', 'o', 'f', '"', ':', '"', 'n', 'o', 't', 'e', '"', '}']
+
+set_option maxRecDepth 8000 in
+/-- **The op answers the cancelled lines, end to end**: a note, the undo of it, a blank line and a
+note after it, from line 1, facts asked.  Lines 1 and 2 are cancelled; line 4 survives. -/
+theorem the_log_op_answers_the_cancelled_lines :
+    logAnswer ⟨⟨1, [some factsWitnessNote, some factsWitnessUndo, some [], some factsWitnessNote],
+        true, none, [], true⟩, by decide⟩
+      = .obj [("lines".toList, .num 4), ("warnings".toList, .arr []),
+          ("facts".toList, .obj [("cancelled".toList, .arr [.num 1, .num 2])]),
+          ("headers".toList, .arr []), ("render".toList, .arr [])] := by
+  decide
+
+end C1
 end Tm

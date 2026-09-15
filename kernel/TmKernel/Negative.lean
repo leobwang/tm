@@ -1386,7 +1386,7 @@ def unsortedZone : Cal.Tz :=
    line 2 alone asks for line 1; `mkLogReq?` refuses it `renderNotInTail`, so
    claiming the request is accepted is false: `decide` refuses it. -/
 theorem aRenderLineOutsideTheTailAccepted :
-    (mkLogReq? ⟨2, [some ['x']], true, none, [1]⟩).toBool = true := by
+    (mkLogReq? ⟨2, [some ['x']], true, none, [1], false⟩).toBool = true := by
   decide
 
 -- ===========================================================================
@@ -1530,5 +1530,31 @@ theorem aGrantedCandidateIsAnsweredAtItsFloor :
       Look.witnessFloors)[2]?).map (fun o => o.floor.isSome) = some true := by
   decide
 
+
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D9 track, step C1: the undo mask in
+-- `Replay.lean`).  Design §16's label 95 ("an undo that does not cancel itself").
+-- Number 143 is the next free number in this checkout (the highest was 142,
+-- the merge-back).  The control, which compiles, is `Replay.an_undo_never_survives`
+-- with the witnesses `Replay.the_mask_ignores_isStateChange` and
+-- `Replay.undo_mask_pairs_and_dangling_ported`.  Everything below must FAIL to
+-- compile.
+-- ===========================================================================
+
+/- CHEAT 143 — an undo that does not cancel itself.  Fork `undo_mask` sets
+   `cancelled[i] = true` for every undo, whether or not it finds a target, so a
+   replay never sees one (`Replay.an_undo_never_survives`).  A mask step that
+   erases the target and then keeps the undo on the stack claims the same law and
+   cannot have it: over the one-line log `[undo{of:"note"}]` the undo survives.
+   `decide` refuses. -/
+def maskStepKeepingTheUndo (st : List Log.Entry) (e : Log.Entry) : List Log.Entry :=
+  match e.ev with
+  | .undo of_ id => e :: st.eraseP (Replay.matches of_ id)
+  | _            => e :: st
+
+theorem anUndoThatKeepsItselfNeverSurvives :
+    ∀ u ∈ ([Replay.wEnt 1 (.undo Log.Kind.note.tag none)].foldl maskStepKeepingTheUndo []).reverse,
+      u.ev.isUndo = false := by
+  decide
 
 end Tm

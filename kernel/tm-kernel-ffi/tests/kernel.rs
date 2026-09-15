@@ -1375,8 +1375,25 @@ fn the_log_op_answers_by_line() {
     let out = call(r#"{"docs":[],"tz":{"key":"UTC","base":"+00:00:00","then":[]},"log":{"ckpt":null,"from":7,"lines":["{\"t\":\"2026-09-07T09:00:00Z\",\"ev\":\"drop\",\"id\":\"a1\"}","",null,"{\"ev\":7}"],"terminated":true,"want":{"headersFrom":7,"render":[7,8]}}}"#).unwrap();
     assert_eq!(
         out,
-        r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":10,"warnings":[{"line":9,"w":"invalidUtf8"},{"line":10,"w":"noT"}],"headers":[[7,"drop","a1"]],"render":[[7,"{\"t\":\"2026-09-07T09:00:00+00:00\",\"ev\":\"drop\",\"id\":\"a1\"}","2026-09-07 09:00"],[8,null,null]]}}}"#
+        r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":10,"warnings":[{"line":9,"w":"invalidUtf8"},{"line":10,"w":"noT"}],"facts":null,"headers":[[7,"drop","a1"]],"render":[[7,"{\"t\":\"2026-09-07T09:00:00+00:00\",\"ev\":\"drop\",\"id\":\"a1\"}","2026-09-07 09:00"],[8,null,null]]}}}"#
     );
+}
+
+/// **The undo mask on the wire** (stage 5 D9 C1; Boundary.lean's
+/// `the_log_op_answers_the_cancelled_lines`): a note, its undo, a blank line and
+/// a note, from line 1, facts asked. The note on line 1 and its undo on line 2
+/// are cancelled; `facts` sits after `warnings`, and is `null` when not asked.
+#[test]
+fn the_log_op_answers_the_cancelled_lines() {
+    let utc = r#"{"key":"UTC","base":"+00:00:00","then":[]}"#;
+    let lines = r#"["{\"t\":\"2026-09-07T09:00:00Z\",\"ev\":\"note\",\"text\":\"a\"}","{\"t\":\"2026-09-07T09:01:00Z\",\"ev\":\"undo\",\"of\":\"note\"}","","{\"t\":\"2026-09-07T09:00:00Z\",\"ev\":\"note\",\"text\":\"a\"}"]"#;
+    let out = call(&format!(r#"{{"docs":[],"tz":{utc},"log":{{"ckpt":null,"from":1,"lines":{lines},"terminated":true,"want":{{"facts":true}}}}}}"#)).unwrap();
+    assert_eq!(
+        out,
+        r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":4,"warnings":[],"facts":{"cancelled":[1,2]},"headers":[],"render":[]}}}"#
+    );
+    let out = call(&format!(r#"{{"docs":[],"tz":{utc},"log":{{"ckpt":null,"from":1,"lines":{lines},"terminated":true,"want":{{"facts":false}}}}}}"#)).unwrap();
+    assert!(out.contains(r#""warnings":[],"facts":null,"headers":[]"#), "{out}");
 }
 
 /// **The section's refusals, by name**, and a request without `tz` or `log`
@@ -1388,7 +1405,9 @@ fn the_log_section_refuses_by_name() {
         (r#"{"docs":[],"log":{}}"#.to_string(), r#"{"err":{"log":"tzAbsent"}}"#),
         (format!(r#"{{"docs":[],"tz":{utc},"log":{{"ckpt":{{}}}}}}"#), r#"{"err":{"log":{"badLogReq":"ckpt"}}}"#),
         (format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":1,"lines":[],"terminated":true,"reseal":{{}}}}}}"#), r#"{"err":{"log":{"badLogReq":"reseal"}}}"#),
-        (format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":1,"lines":[],"terminated":true,"want":{{"facts":true}}}}}}"#), r#"{"err":{"log":{"badLogReq":"facts"}}}"#),
+        (format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":1,"lines":[],"terminated":true,"want":{{"facts":7}}}}}}"#), r#"{"err":{"log":{"badLogReq":"facts"}}}"#),
+        // Stage 5 D9 C1: facts are answered only for a tail from line 1 (no checkpoint yet).
+        (format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":2,"lines":["x"],"terminated":true,"want":{{"facts":true}}}}}}"#), r#"{"err":{"log":{"badLogReq":"facts"}}}"#),
         (format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":1,"lines":[7],"terminated":true}}}}"#), r#"{"err":{"log":{"badLogReq":"lines"}}}"#),
         (format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":1,"lines":["x"],"terminated":true,"want":{{"render":[2]}}}}}}"#), r#"{"err":{"log":{"renderNotInTail":{"line":2}}}}"#),
         (r#"{"docs":[],"tz":{"key":"UTC","base":"-00:00:00","then":[]}}"#.to_string(), r#"{"err":{"log":{"badTz":"base"}}}"#),
