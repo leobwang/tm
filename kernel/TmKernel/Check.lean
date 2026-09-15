@@ -3712,3 +3712,75 @@ open Tm
 #print axioms Tm.Replay.undo_after_housekeeping_cancels_the_housekeeping
 #print axioms Tm.Replay.the_undo_law_fails_without_untouchedBy
 #print axioms Tm.Replay.a_done_undone_over_an_automatic_close_is_untouched
+
+-- APPENDED 2026-09-15 (stage 5, D9 track).  Step W1 (design §9.2, §10.4, §14.5 row W1, §15 W block): the new module
+-- Seal.lean.  The codec library (a round trip per combinator, for every value), the record codecs, the checkpoint's
+-- keyed codec and law 10 (`readCkpt_emitCkpt`, `readDayRecord_emitDayRecord`, `readWindowRecord_emitWindowRecord`, each
+-- with its smart-decoder converse and iff), R10 (`Ckpt.wf_bounds`, the missing-field refusal, `mkPolicy?`), the horizon
+-- (`the_horizon_is_at_most_thirty_days_back`), carried note 1 (`the_answer_reads_the_replays_longest_leak`) and the
+-- specification's ties to the replay (`replay_eq_finish_foldedState`, `entryHeaders_eq_foldedHeaders`,
+-- `the_answer_reads_the_replays_scalar_facts`), and nine decided witnesses.  The sixteen W goals entered Goals.lean and
+-- stay there until W2 (the burn-down rises 13 -> 29); nothing here depends on them.
+#print axioms Tm.Seal.cNat_nonnull
+#print axioms Tm.Seal.cStr_nonnull
+#print axioms Tm.Seal.foldl_listStep_map
+#print axioms Tm.Seal.cList_nonnull
+#print axioms Tm.Seal.cTuple_nonnull
+#print axioms Tm.Seal.cIso_nonnull
+#print axioms Tm.Seal.cBool_nonnull
+#print axioms Tm.Seal.cFin_nonnull
+#print axioms Tm.Seal.cPair_nonnull
+#print axioms Tm.Seal.cInstant_nonnull
+#print axioms Tm.Seal.cAt_nonnull
+#print axioms Tm.Seal.cVInstant_nonnull
+#print axioms Tm.Seal.cVOffset_nonnull
+#print axioms Tm.Seal.cNum_nonnull
+#print axioms Tm.Seal.cEnergyObs_nonnull
+#print axioms Tm.Seal.cLeakRec_nonnull
+#print axioms Tm.Seal.cStamp_nonnull
+#print axioms Tm.Seal.cDayAcc_nonnull
+#print axioms Tm.Seal.cItemAcc_nonnull
+#print axioms Tm.Seal.cBlock_nonnull
+#print axioms Tm.Seal.cCut_nonnull
+#print axioms Tm.Seal.cOpenInt_nonnull
+#print axioms Tm.Seal.cSeamAcc_nonnull
+#print axioms Tm.Seal.pos_enc
+#print axioms Tm.Seal.key_enc
+#print axioms Tm.Seal.ok_bind
+#print axioms Tm.Seal.err_bind
+#print axioms Tm.Seal.key_ne
+#print axioms Tm.Seal.readDayFields_emit
+#print axioms Tm.Seal.readDayRecord_emitDayRecord
+#print axioms Tm.Seal.readDayRecord_wf
+#print axioms Tm.Seal.readDayRecord_emitDayRecord_iff
+#print axioms Tm.Seal.readWindowFields_emit
+#print axioms Tm.Seal.readWindowRecord_emitWindowRecord
+#print axioms Tm.Seal.readWindowRecord_wf
+#print axioms Tm.Seal.readWindowRecord_emitWindowRecord_iff
+#print axioms Tm.Seal.readCkptFields_emit
+#print axioms Tm.Seal.readCkpt_emitCkpt
+#print axioms Tm.Seal.readCkpt_wf
+#print axioms Tm.Seal.readCkpt_emitCkpt_iff
+#print axioms Tm.Seal.readCkpt_refuses_a_checkpoint_without_its_ledgerDay
+#print axioms Tm.Seal.mkPolicy?_refuses_keepDays_past_31
+#print axioms Tm.Seal.mkPolicy?_refuses_maxLine_past_2_40
+#print axioms Tm.Seal.horizonOf_le
+#print axioms Tm.Seal.the_horizon_is_at_most_thirty_days_back
+#print axioms Tm.Seal.replay_eq_finish_foldedState
+#print axioms Tm.Seal.entryHeaders_eq_foldedHeaders
+#print axioms Tm.Seal.the_answer_reads_the_replays_longest_leak
+#print axioms Tm.Seal.the_answer_reads_the_replays_scalar_facts
+#print axioms Tm.Seal.orElse_eq_none
+#print axioms Tm.Seal.check_eq_none
+#print axioms Tm.Seal.Ckpt.wf_bounds
+#print axioms Tm.Seal.the_checkpoint_of_nothing_is_the_empty_checkpoint
+#print axioms Tm.Seal.the_empty_checkpoint_is_wf
+#print axioms Tm.Seal.a_log_sealed_anywhere_answers_as_its_replay
+#print axioms Tm.Seal.the_last_done_outlives_the_seal_of_its_days
+#print axioms Tm.Seal.a_checkpoint_carries_the_last_cut
+#print axioms Tm.Seal.the_horizon_of_2026_09_14
+#print axioms Tm.Seal.an_undo_is_settled_when_its_target_is_folded_or_absent
+#print axioms Tm.Seal.an_unfolded_undo_of_a_sealed_day_is_not_sealable
+#print axioms Tm.Seal.a_future_dated_line_sets_the_future_floor
+#print axioms Tm.Seal.sealed_and_live_observations_on_a_start_across_the_seal
+#print axioms Tm.Seal.the_round_trips_are_not_vacuous

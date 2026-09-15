@@ -468,6 +468,161 @@ are proved as stated: `Replay.undo_of_a_silent_verb_cancels_an_older_event` (Q6(
 conclusion, `Replay.the_undo_law_fails_without_untouchedBy`.  README "Stage 5 D9 C7". -/
 
 /-! ############################################################################
+# STAGE 5 — D9 window (W1, added: the burn-down rises by 16) → discharged in W2
+Design `kernel/design/stage5/stage5-D9-D10-design.md` §9.5 and §15's W block, elaborated against
+`TmKernel/Seal.lean`.  `T₀` is the day a checkpoint was sealed at, `T` the request's day, `L` its
+ledger day; `a` the folded lines, `r` the unfolded lines known when it was sealed (a prefix of the
+tail `b`).
+
+**A deliberate debt** (§14.5's W1 row): these sixteen goals and the six provisional definitions
+below enter at W1 and leave at W2, which discharges them by §9.5's route.  A goal false as stated
+is refuted and renamed with the correct law beside it; a narrowed window law is not allowed (the
+owner's D5 and D11).
+
+**Restated from §15 where the repo differs** (README "Stage 5 D9 W1", recorded disagreements):
+§15 writes `Replay.ask (Replay.replayDoc z ls)` and `(Replay.replayDoc z ls).obs` over lines; no
+`Log.Line` type existed and `replayDoc` takes entries, so W1 adds `Log.Line` and
+`Seal.replayLines z ls` (`Replay.replayDoc` over `Log.lineEntries ls`) and the goals read it.
+`Seal.Q` is `Replay.Q` (carried note 3).  The laws over `ask` compare views, never `Facts` values:
+a resumed checkpoint's maps are sized differently (C7's `SameReadings`, carried note 4).
+############################################################################ -/
+
+-- provisional, replaced by the real definitions in W2 (signatures fixed by design §15)
+/-- **Provisional (W2).**  Resume checkpoint `k` over the tail `b` at request day `T`, under G0–G4; with a policy,
+reseal. -/
+def Seal.resume (z : Cal.Tz) (T : Nat) (k : Seal.Ckpt) (b : List Log.Line) (terminated : Bool)
+    (p : Option Seal.Policy) : Except Seal.Refusal (Seal.Answer × Option Seal.Resealed) := sorry
+/-- **Provisional (W2).**  How many tail lines a reseal folds: the greatest valid cut (§9.4). -/
+def Seal.foldPoint (z : Cal.Tz) (T : Nat) (k : Seal.Ckpt) (b : List Log.Line) (terminated : Bool)
+    (p : Seal.Policy) : Nat := sorry
+/-- **Provisional (W2).**  The new ledger day `L'` (§9.4). -/
+def Seal.sealDay (z : Cal.Tz) (T : Nat) (k : Seal.Ckpt) (b : List Log.Line) (terminated : Bool)
+    (p : Seal.Policy) : Nat := sorry
+/-- **Provisional (W2).**  §9.5 law 5's spec side of G1–G3 on the whole list. -/
+def Seal.reachFree (z : Cal.Tz) (T₀ L : Nat) (a b : List Log.Line) : Bool := sorry
+/-- **Provisional (W2).**  G1's conservative tag condition (§7.4). -/
+def Seal.tagsClear (z : Cal.Tz) (T₀ L : Nat) (a r b : List Log.Line) : Bool := sorry
+/-- **Provisional (W2).**  The chunked rebuild with exact pops (§9.7). -/
+def Seal.genesis (z : Cal.Tz) (T : Nat) (chunks : List (List Log.Line)) (terminated : Bool) (p : Seal.Policy) :
+    Except Seal.Refusal (List Seal.DayRecord × List Seal.WindowRecord × Seal.Answer) := sorry
+
+/-- **Law 1, the answer (A, O, W).**  Every query at or above the horizons reads the answer as the replay. -/
+theorem the_answer_reads_the_replay (z : Cal.Tz) (T₀ L : Nat) (ls : List Log.Line) (q : Seal.Q)
+    (hc : Log.contiguousFrom 1 ls = true) (hs : Seal.sealable z T₀ L ls [] = true)
+    (hq : q.atOrAbove L (Seal.horizonOf L) = true) :
+    Seal.askAnswer (Seal.answer (Seal.ckptOf z T₀ L ls [])) q = some (Replay.ask (Seal.replayLines z ls) q) := sorry
+
+/-- **Law 1, the day records (DR).**  Every day query below the ledger day reads the stored records as the replay. -/
+theorem a_day_record_is_the_replays_day (z : Cal.Tz) (T₀ L : Nat) (ls : List Log.Line) (d : Nat) (q : Seal.DayQ)
+    (hc : Log.contiguousFrom 1 ls = true) (hs : Seal.sealable z T₀ L ls [] = true) (hd : d < L) :
+    Seal.askDayRecords (Seal.dayRecordsBelow z T₀ L ls) d q = Replay.ask (Seal.replayLines z ls) (.day d q) := sorry
+
+/-- **Law 1, the window records (WR).**  Every window query below the horizon reads the stored records as the replay. -/
+theorem a_window_record_is_the_replays_window (z : Cal.Tz) (T₀ L : Nat) (ls : List Log.Line) (d : Nat) (q : Seal.WinQ)
+    (hc : Log.contiguousFrom 1 ls = true) (hs : Seal.sealable z T₀ L ls [] = true) (hd : d < Seal.horizonOf L) :
+    Seal.askWindowRecords (Seal.windowRecordsBelow z T₀ L ls) d q = Replay.ask (Seal.replayLines z ls) (.win d q) := sorry
+
+/-- **Law 1, the partition.**  The records below the horizons and the answer above them read every query as the
+replay. -/
+theorem seal_partition_is_the_replay (z : Cal.Tz) (T₀ L : Nat) (ls : List Log.Line) (q : Seal.Q)
+    (hc : Log.contiguousFrom 1 ls = true) (hs : Seal.sealable z T₀ L ls [] = true) :
+    Seal.askMerged (Seal.dayRecordsBelow z T₀ L ls) (Seal.windowRecordsBelow z T₀ L ls)
+      (Seal.answer (Seal.ckptOf z T₀ L ls [])) q = Replay.ask (Seal.replayLines z ls) q := sorry
+
+/-- **Law 2, two-run, through the disk** (AGENTS §5.9): resuming the stored checkpoint of `a` over `b` answers as the
+checkpoint of `a ++ b`. -/
+theorem resume_is_replay (z : Cal.Tz) (T₀ T L : Nat) (a r b : List Log.Line) (term : Bool)
+    (j : JVal) (k : Seal.Ckpt) (v : Seal.Answer)
+    (hc : Log.contiguousFrom 1 (a ++ b) = true) (hr : r <+: b) (hs : Seal.sealable z T₀ L a r = true)
+    (hwire : jparse (jemit (Seal.emitCkpt (Seal.ckptOf z T₀ L a r))) = .ok j)
+    (hk : Seal.readCkpt j = .ok k)
+    (h : Seal.resume z T k b term none = .ok (v, none)) :
+    v = Seal.answer (Seal.ckptOf z T₀ L (a ++ b) []) := sorry
+
+/-- **Law 3**: the reseal's own answer is the same answer (CRIT 3). -/
+theorem resume_answer_ignores_the_policy (z : Cal.Tz) (T : Nat) (k : Seal.Ckpt) (b : List Log.Line) (term : Bool)
+    (p : Seal.Policy) (v : Seal.Answer) (x : Option Seal.Resealed)
+    (h : Seal.resume z T k b term (some p) = .ok (v, x)) :
+    Seal.resume z T k b term none = .ok (v, none) := sorry
+
+/-- **Law 4, two-run**: what Rust stored is still true. -/
+theorem resume_keeps_the_sealed_records (z : Cal.Tz) (T₀ T L : Nat) (a r b : List Log.Line) (term : Bool)
+    (p : Option Seal.Policy) (x : Seal.Answer × Option Seal.Resealed)
+    (hc : Log.contiguousFrom 1 (a ++ b) = true) (hr : r <+: b) (hs : Seal.sealable z T₀ L a r = true)
+    (h : Seal.resume z T (Seal.ckptOf z T₀ L a r) b term p = .ok x) :
+    Seal.dayRecordsBelow z T₀ L (a ++ b) = Seal.dayRecordsBelow z T₀ L a ∧
+    Seal.windowRecordsBelow z T₀ L (a ++ b) = Seal.windowRecordsBelow z T₀ L a := sorry
+
+/-- **Law 5, both directions** (§5.8): acceptance is exactly `L ≤ T`, `reachFree` and `tagsClear`. -/
+theorem resume_ok_iff (z : Cal.Tz) (T₀ T L : Nat) (a r b : List Log.Line) (term : Bool) (p : Option Seal.Policy)
+    (hc : Log.contiguousFrom 1 (a ++ b) = true) (hr : r <+: b) (hs : Seal.sealable z T₀ L a r = true) :
+    (Seal.resume z T (Seal.ckptOf z T₀ L a r) b term p).isOk
+      = (decide (L ≤ T) && Seal.reachFree z T₀ L a b && Seal.tagsClear z T₀ L a r b) := sorry
+
+/-- **Law 6, two-run**: a reseal is a seal, never behind its ledger day. -/
+theorem reseal_is_seal (z : Cal.Tz) (T₀ T L : Nat) (a r b : List Log.Line) (term : Bool) (p : Seal.Policy)
+    (v : Seal.Answer) (s : Seal.Resealed)
+    (hc : Log.contiguousFrom 1 (a ++ b) = true) (hr : r <+: b) (hs : Seal.sealable z T₀ L a r = true)
+    (h : Seal.resume z T (Seal.ckptOf z T₀ L a r) b term (some p) = .ok (v, some s)) :
+    let k  := Seal.ckptOf z T₀ L a r
+    let j  := Seal.foldPoint z T k b term p
+    let L' := Seal.sealDay z T k b term p
+    L ≤ L' ∧ Seal.sealable z T L' (a ++ b.take j) (b.drop j) = true ∧
+    s.ckpt = Seal.ckptOf z T L' (a ++ b.take j) (b.drop j) ∧
+    s.days = Seal.dayRecordsBetween z T L L' (a ++ b.take j) ∧
+    s.window = Seal.windowRecordsBetween z T (Seal.horizonOf L) (Seal.horizonOf L') (a ++ b.take j) := sorry
+
+/-- **Law 6's pair**: a reseal never seals past `now` (CRIT 1). -/
+theorem a_reseal_never_seals_past_now (z : Cal.Tz) (T₀ T L : Nat) (a r b : List Log.Line) (term : Bool)
+    (p : Seal.Policy) (v : Seal.Answer) (s : Seal.Resealed)
+    (hc : Log.contiguousFrom 1 (a ++ b) = true) (hr : r <+: b) (hs : Seal.sealable z T₀ L a r = true)
+    (h : Seal.resume z T (Seal.ckptOf z T₀ L a r) b term (some p) = .ok (v, some s)) :
+    Seal.sealDay z T (Seal.ckptOf z T₀ L a r) b term p = L ∨
+    Seal.sealDay z T (Seal.ckptOf z T₀ L a r) b term p + p.keepDays ≤ T := sorry
+
+/-- **The `now` anchor** (§9.1): an accepted resume's today, week, month and auto-close dates are at or after the
+horizon. -/
+theorem an_accepted_resume_covers_now (z : Cal.Tz) (T : Nat) (k : Seal.Ckpt) (b : List Log.Line) (term : Bool)
+    (p : Option Seal.Policy) (x : Seal.Answer × Option Seal.Resealed)
+    (h : Seal.resume z T k b term p = .ok x) :
+    k.ledgerDay ≤ T ∧ Seal.horizonOf k.ledgerDay ≤ Cal.monthStart T ∧
+    Seal.horizonOf k.ledgerDay ≤ Cal.isoMonday T ∧ Seal.horizonOf k.ledgerDay ≤ T - 16 := sorry
+
+/-- **Law 7, no loop**: a resealed checkpoint accepts its own unfolded suffix at every later day. -/
+theorem a_resealed_checkpoint_accepts_its_own_suffix (z : Cal.Tz) (T₀ T L : Nat) (a r b : List Log.Line)
+    (term : Bool) (p : Seal.Policy) (v : Seal.Answer) (s : Seal.Resealed)
+    (hc : Log.contiguousFrom 1 (a ++ b) = true) (hr : r <+: b) (hs : Seal.sealable z T₀ L a r = true)
+    (h : Seal.resume z T (Seal.ckptOf z T₀ L a r) b term (some p) = .ok (v, some s))
+    (T' : Nat) (hT : T ≤ T') (term' : Bool) :
+    (Seal.resume z T' s.ckpt (b.drop (Seal.foldPoint z T (Seal.ckptOf z T₀ L a r) b term p)) term' none).isOk = true :=
+  sorry
+
+/-- **Law 8, one code path**: a resume from the empty checkpoint is the replay. -/
+theorem resume_from_empty_is_replay (z : Cal.Tz) (T : Nat) (ls : List Log.Line) (term : Bool) (v : Seal.Answer)
+    (hc : Log.contiguousFrom 1 ls = true) (h : Seal.resume z T (Seal.Ckpt.empty z) ls term none = .ok (v, none))
+    (q : Seal.Q) :
+    Seal.askMerged [] [] v q = Replay.ask (Seal.replayLines z ls) q := sorry
+
+/-- **Law 8's pair**: the empty checkpoint is never refused by a guard. -/
+theorem resume_from_empty_never_refuses_by_guard (z : Cal.Tz) (T : Nat) (ls : List Log.Line) (term : Bool)
+    (p : Option Seal.Policy) (e : Seal.Refusal)
+    (h : Seal.resume z T (Seal.Ckpt.empty z) ls term p = .error e) : e.isGuard = false := sorry
+
+/-- **Law 9**: chunking and exact pops are invisible. -/
+theorem chunked_genesis_is_one_replay (z : Cal.Tz) (T : Nat) (chunks : List (List Log.Line)) (term : Bool)
+    (p : Seal.Policy) (ds : List Seal.DayRecord) (ws : List Seal.WindowRecord) (v : Seal.Answer)
+    (hc : Log.contiguousFrom 1 chunks.flatten = true)
+    (h : Seal.genesis z T chunks term p = .ok (ds, ws, v)) (q : Seal.Q) :
+    Seal.askMerged ds ws v q = Replay.ask (Seal.replayLines z chunks.flatten) q := sorry
+
+/-- **Law 11**: the sealed and the live observations, by line, are the replay's. -/
+theorem sealed_and_live_observations_are_the_replays (z : Cal.Tz) (T₀ L : Nat) (ls : List Log.Line)
+    (hc : Log.contiguousFrom 1 ls = true) (hs : Seal.sealable z T₀ L ls [] = true) :
+    Replay.sortByLine ((Seal.dayRecordsBelow z T₀ L ls).flatMap (·.obs)
+                       ++ (Seal.answer (Seal.ckptOf z T₀ L ls [])).obs)
+      = (Seal.replayLines z ls).obs := sorry
+
+/-! ############################################################################
 # STAGE 6 — the planner; §8.3's invariants; L24 and L25
 
 Plan §5: "D1–D14 decidable-checked on every plan the corpus produces;

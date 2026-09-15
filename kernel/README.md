@@ -16633,3 +16633,300 @@ still has one reader of the log, the Rust.
 | FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) |
 | T5 (`kernel_replay_parity.rs`) | 8 passed, 2 ignored, 0.89 s; 0 exceptions |
 | `cli_latency.rs --include-ignored` | green, 4 passed. No log: first 612.5 ms, later 65.8 ms. 1y: first 733.7, later 126.4. 3y: first 940.8, later 272.9. T14: 81.0 ms (3 years), 141.9 ms (10 years) |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-15: stage 5, D9 track, step W1 on rebuild-on-lean (after the
+     W-4 repair a43e232).  Design §9, §10.4, §11, §14.5's W1 row, §15's W block,
+     §16's labels 97 and 98, §21 (CRIT 1-3) and §22.  New module Seal.lean.  Takes
+     cheats 150 and 151 (design labels 97 and 98).  Takes no gap and no parity
+     number.
+     =========================================================================== -->
+
+## Stage 5 D9 W1, 2026-09-15: the checkpoint and the sealed records have codecs that round-trip — sixteen window laws stated
+
+**Starting point.** `a43e232`, clean: check.sh 7/7 (built tree 2.86 / 2.92 / 2.92 s, re-measured before any edit),
+audit 3146, corpus 29/37 files and 4/5 plans, burn-down 13, `cargo test --workspace` 1068 / 0 / 5 ignored across 73
+binaries, FFI 100.
+
+**Carried note 9, checked first: gap 112 is closed.** The R13 block above says so ("W1's check of gap 112 passes"):
+the TUI Review screen asks `All`, the week pane asks `Dates` from the ISO Monday, and the status line's last-day
+fallback asks `All`. No `Hot` call site can ask for a date below `H`. W1 went ahead.
+
+### What was built
+
+**`Seal.lean` (new; imports `Replay`).** `TmKernel.lean` gains its import, so it has **21 imports**. The module doc
+states what is stored where, the carried notes, the codecs, the specification and the D9-21 list.
+
+*The types (§9.2):*
+- **`DayRecord`**: one day's eight readings, finished, exactly as `Replay.ask` answers them:
+  - the fork's record (`Replay.DayAcc`) and the seam;
+  - the energy and duration observations, interruptions, demotions, closes and headers, in file order.
+  - D14's ported fields are the record's (`replans_today`, `last_plan_hash`, `loc_changes`, `dropped`, `longest_leak`,
+    `routine_min`, `idle`) plus the day's interruptions and closes.
+- **`OpenDay`**: the same readings as the fold leaves them. `acc` and `seam` are the accumulators, and there is no
+  pending start observation. `OpenDay.finish` is fork `Machine::finish` on one day.
+- **`WindowRecord`**: one date's item minutes, done ids and date-keyed instances, each sorted by its key.
+- **`ItemAgg`**: one item's all-time facts:
+  - its `ItemAcc` as the fold leaves it (D14's `stops`, `extended_min`, `done_at`, `partial_done_at`);
+  - `last_done`, the drop bit, and the first done date and the count of done dates over every date.
+- **`Ckpt`**: §9.2's fields, with the repo's differences below, plus `longestLeak` (note 1) and `rwarns` (the replay
+  warnings, an all-time fact).
+- **`Meta`**, **`Resealed`** (its field is `«meta»`: `meta` is a Lean keyword), **`Policy`** (with `mkPolicy?` and
+  two rejection theorems), **`Refusal`** (`isGuard`: the four guards and `nowBelowLedger`), **`CkField`**, **`CkErr`**
+  and **`Seal.Answer`** (§11.1's `Hot`: A, W and O, finished).
+- **`Seal.Q`, `Seal.DayQ` and `Seal.WinQ`** alias `Replay`'s (carried note 3), with `Q.atOrAbove`.
+
+*Outside `Seal`, in `Seal.lean`:*
+- **`Log.Line`** (a physical line's number and characters, as the host sends them), `Log.contiguousFrom`,
+  `Log.lineEntries` and `Log.lineWarnings`.
+- **`Cal.monthStart`** and **`Cal.isoMonday`**. They are defined here, not in `Cal.lean`, so that no module
+  downstream of `Cal` rebuilds.
+- **`Replay.Obs.line`**, **`Replay.sortByLine`** and **`Replay.Doc.obs`**: law 11's vocabulary.
+
+*The codecs (law 10, R10):*
+- **A codec library.** A `Codec` is an encoder, a decoder, a bound predicate `ok` and the round trip
+  `dec (enc a) = some a` **for every value**, proved once per combinator:
+  - `cNat`, `cBool`, `cStr`, `cChar` and `cFin`;
+  - `cOpt` (its element never encodes `null`);
+  - `cList`, read by a `foldl`;
+  - flat tuples `tNil`/`tCons`/`cTuple`, and structures through `cIso`.
+- **Every record type of the replay has a codec**: `At` is `[sec, ns, west, offSec]`, a bare instant `[sec, ns]`,
+  and a header's stamp is read through `Cal.mkInstant?` and `Cal.mkOffset?`. Sum types (segment kinds, idle marks,
+  statuses, stamps, line warnings with `JErr`, `JEsc` and `StampErr`) carry numeral tags.
+- **`emitDayRecord`/`readDayRecord` and `emitWindowRecord`/`readWindowRecord`**: positional arrays.
+- **`emitCkpt`/`readCkpt`**: an object whose keys come in build order.
+- **The readers are smart.** They read field by field, and a field that is absent, out of order or of the wrong shape
+  is refused `badCkpt <field>`, never defaulted. Then every §10.4 bound is checked (`Ckpt.fault`, `DayRecord.fault`,
+  `WindowRecord.fault`): the lengths, strings of at most 65,536 characters, map keys strictly ascending, open days
+  `≥ ledgerDay`, window dates `≥ horizonOf ledgerDay`, settled lines after the cut and ascending, tags within 25 + 64
+  and 128 characters.
+
+*The specification the laws read (§9.5):*
+- `foldedSurvivors`, `foldedState`, `foldedIndex` and `foldedHeaders`: the replay's fold over the survivors of the
+  call-wide mask that lie in the folded lines.
+- `ckptOfEntries` and **`ckptOf`**; `dayRecordsBetween`/`Below` and `windowRecordsBetween`/`Below` (every day or date
+  in the range with a reading, finished); **`answer`**, **`askAnswer`** (`none` below its horizons),
+  `askDayRecords`, `askWindowRecords` and **`askMerged`**.
+- **`sealable`** (below), **`horizonOf`**, **`Ckpt.empty`**, `Ckpt.meta`, `settledOf` (§7.4, through the mask's
+  targets), `keptTags`/`tagLines`, `storedWakes`, `storedSlept` and `futureDated`.
+- **Every map of a checkpoint is a canonical list** (`canon`: one pair a key, sorted by the key, read through `get`),
+  so a checkpoint does not depend on how many buckets the fold sized its maps with (carried note 4).
+
+**`Negative.lean`.** Two cheats; the other 139 banners still fail at their own lines, and no existing block was edited.
+- **CHEAT 150** (design 97): a view without `last_done`, read off the open days' completed duration observations.
+  - **The control compiles**: a scratch probe decided that it agrees with the replay when both days are open.
+  - Sealed after both days of `twoDoneDays`, it reads nothing, and `decide` refuses its claim to be the replay's.
+- **CHEAT 151** (design 98): `readCkpt` defaulting a missing `ledgerDay` to 0. `decide` refuses its claim to refuse
+  `badCkpt ledgerDay` on the checkpoint of `twoDoneDays` sealed at the 8th.
+
+**Nothing else changed.** The wire, `Boundary.lean`, the FFI suite, T5 and the binary are untouched. Rust is still
+the only reader of the log.
+
+### Goals (AGENTS §3.2)
+
+**Added: §15's W block, sixteen goals and six provisional definitions** (`Seal.resume`, `Seal.foldPoint`,
+`Seal.sealDay`, `Seal.reachFree`, `Seal.tagsClear`, `Seal.genesis`, each `sorry`), under a `# STAGE 5 — D9 window`
+banner before STAGE 6. They elaborate against `Seal.lean` (29 goals, no error). **The burn-down rises 13 → 29: a
+deliberate debt**, which W2 discharges by §9.5's route.
+
+| # | goal | law |
+|---|---|---|
+| 1 | `the_answer_reads_the_replay` | 1, A/O/W |
+| 2 | `a_day_record_is_the_replays_day` | 1, DR |
+| 3 | `a_window_record_is_the_replays_window` | 1, WR |
+| 4 | `seal_partition_is_the_replay` | 1 |
+| 5 | `resume_is_replay` | 2, through `emitCkpt`, `jemit`, `jparse`, `readCkpt` |
+| 6 | `resume_answer_ignores_the_policy` | 3 |
+| 7 | `resume_keeps_the_sealed_records` | 4 |
+| 8 | `resume_ok_iff` | 5 |
+| 9 | `reseal_is_seal` | 6 |
+| 10 | `a_reseal_never_seals_past_now` | 6's pair |
+| 11 | `an_accepted_resume_covers_now` | §9.1's anchor |
+| 12 | `a_resealed_checkpoint_accepts_its_own_suffix` | 7 |
+| 13 | `resume_from_empty_is_replay` | 8 |
+| 14 | `resume_from_empty_never_refuses_by_guard` | 8's pair |
+| 15 | `chunked_genesis_is_one_replay` | 9 |
+| 16 | `sealed_and_live_observations_are_the_replays` | 11 |
+
+**Discharged: none. Refuted: none.** Law 10's three round trips are in-step, not goals (below). Law 13 is W3's.
+
+**Restated from §15, not weakened** (disagreement 1). Wherever §15 reads the replay of lines through
+`Replay.replayDoc z ls` or `(Replay.replayDoc z ls).obs`, the goals read `Seal.replayLines z ls`, which is
+`Replay.replayDoc` over `Log.lineEntries ls`. Every quantifier, hypothesis and conclusion is otherwise §15's.
+
+**What the quantifiers say** (AGENTS §5.2):
+- Every law quantifies over every log `a ++ b` of lines numbered from 1, every checkpoint `ckptOf` builds under
+  `sealable`, every request day `T` and, in laws 1, 8 and 9, every query `q`.
+- `resume_is_replay` crosses the disk. The others speak of the in-memory checkpoint and inherit the disk through law 10.
+
+### In-step theorems (63, all in `Check.lean` under the W1 banner)
+
+- **Law 10, for every value within the bounds, with both directions:**
+  - `readCkpt_emitCkpt`, `readDayRecord_emitDayRecord` and `readWindowRecord_emitWindowRecord` (each under `wf`);
+  - `readCkpt_wf`, `readDayRecord_wf` and `readWindowRecord_wf`: the decoders return only values within the bounds;
+  - `readCkpt_emitCkpt_iff`, `readDayRecord_emitDayRecord_iff` and `readWindowRecord_emitWindowRecord_iff`.
+  - Beneath them, per combinator: `foldl_listStep_map`, `pos_enc`, `key_enc`, `key_ne`, `readCkptFields_emit`,
+    `readDayFields_emit`, `readWindowFields_emit`, and each codec's `rt` field (proved at its definition).
+- **R10:**
+  - `Ckpt.wf_bounds`: a checkpoint within its bounds holds §10.4's rows;
+  - `readCkpt_refuses_a_checkpoint_without_its_ledgerDay`: for every checkpoint, the `ledgerDay` pair removed gives
+    `badCkpt ledgerDay` (cheat 151's control);
+  - `mkPolicy?_refuses_keepDays_past_31` and `mkPolicy?_refuses_maxLine_past_2_40`.
+- **The horizon:** `horizonOf_le` and `the_horizon_is_at_most_thirty_days_back` (§9.1's `L − H ≤ 30`).
+- **The specification is the replay's**, for every log:
+  - `replay_eq_finish_foldedState`: with nothing unfolded, the replay is the finished fold;
+  - `entryHeaders_eq_foldedHeaders`;
+  - **carried note 1**, `the_answer_reads_the_replays_longest_leak`: for every log and every ledger day;
+  - `the_answer_reads_the_replays_scalar_facts`: the open block, the open interruption, the last day, the last
+    effective stamp, the unknown count, the replay warnings and the entry count;
+  - `the_checkpoint_of_nothing_is_the_empty_checkpoint` (`rfl`) and `the_empty_checkpoint_is_wf`.
+- **Nonnull lemmas** for the option codecs (22), and `orElse_eq_none`, `check_eq_none`, `ok_bind` and `err_bind`.
+
+### Carried notes, settled
+
+1. **The global longest leak lives in the checkpoint (A), whole.**
+   - It is a first maximum in file order over every day, and a tail only extends the fold. G1 keeps a tail from
+     cancelling a folded leak, so the running maximum continues exactly.
+   - Per-day candidates would add nothing: sealed days' leak gaps are already in the maximum.
+   - `the_answer_reads_the_replays_longest_leak` proves the answer's reading equals the replay's.
+2. **`lastCut` is carried** in `Ckpt.machine`, through `cMachine` and the round trip (`a_checkpoint_carries_the_last_cut`).
+3. **`Seal.Q` aliases `Replay.Q`**, and `Seal.replayLines` wraps `replayDoc` over `Log.Line`s.
+4. **No law compares `Facts` across a resume.** The checkpoint's maps are canonical lists, and the goals compare
+   `Seal.Answer` values and `Replay.ask` readings. W2's tools remain C7's `SameReadings`, `HMap.Keyed` and
+   `factsView_finish_of_sameReadings`.
+
+### Witnesses
+
+**9 decided theorems and 1 `rfl`**, each probed in a scratch copy under `MemoryMax=8G timeout 120` (§14.0 item 4),
+with at most 5 entries, `utcZone` and `Nat` instants:
+- `a_log_sealed_anywhere_answers_as_its_replay`: two `done x` on two days, sealed at 0, between the days and after
+  both, answer 13 readings of every kind as the replay does (`maxRecDepth 8000`, scoped);
+- `the_last_done_outlives_the_seal_of_its_days`;
+- `a_checkpoint_carries_the_last_cut`: `start a`, `stop a`;
+- `the_horizon_of_2026_09_14`;
+- `an_undo_is_settled_when_its_target_is_folded_or_absent`;
+- `an_unfolded_undo_of_a_sealed_day_is_not_sealable`: `sealable` bites at the 8th and holds at the 7th;
+- `a_future_dated_line_sets_the_future_floor`;
+- `sealed_and_live_observations_on_a_start_across_the_seal`: law 11, with a pending start observation in the answer;
+- `the_round_trips_are_not_vacuous` (`maxRecDepth 8000`, scoped): a non-empty checkpoint and its sealed day record
+  are within their bounds, so the round-trip theorems read them back;
+- `the_checkpoint_of_nothing_is_the_empty_checkpoint` (`rfl`).
+
+**The two cheats** were probed with cheat 150's control.
+
+**The whole module** elaborates in 4.35 / 4.42 s at 835 / 859 MB under the 8 GB cap.
+
+**Before any witness was pinned**, the partition was evaluated with `#eval` in a capped scratch file over a 13-entry
+log. The log had wakes, a block, a routine, an energy report, a pending start, a leak, a demotion, a close, an
+interruption and a partial `done`. It was sealed at 11 ledger days (0, the five days around the log, and five dates up
+to 739930), with 99 queries at each and none differing, and law 11 held at the ten nonzero ones.
+
+The same scratch file checked a remainder holding a settled undo, a dangling undo, an unsettled undo and a
+future-dated note. `settled`, `tagLast`, `wakes`, `maxT` and `futureFloor` were as §9.2 says, and `sealable` was false
+exactly at the ledger day whose record the settled undo changes.
+
+### Recorded disagreements between the design and the repo
+
+1. **§15's W block reads `Replay.replayDoc z ls` over `Log.Line`s.** No `Log.Line` existed and `replayDoc` takes
+   entries (C6's disagreement 7). The goals read `Seal.replayLines z ls`, and `Doc.obs` and `Replay.sortByLine` are
+   new.
+2. **§15 names `Cal.monthStart` and `Cal.isoMonday`, which did not exist.** They are defined in `Seal.lean` under
+   `Cal`.
+3. **§9.2's `Header` carries a display.** It is `Replay.HeaderRec`, which keeps the written stamp, and the display is
+   rendered at emission (C6's disagreement 3). A sealed header therefore reads back.
+4. **§9.2's `DayRecord` is `{day, facts, obs, demotions, headers}`.** It is the day's eight readings, as `Replay.ask`
+   answers them: record, seam, energy, durations, interruptions, demotions, closes and headers.
+5. **§9.2's `openDays : List DayRecord` is `List OpenDay`.** `DayAcc.finish` sorts the segments, which has no inverse,
+   so the checkpoint keeps the accumulators and `answer` finishes them.
+6. **§9.2's `named` holds one instant per key.** It is `NamedRec` (C4: fork `LatestNamed` keeps two).
+7. **§9.2 has no `longestLeak` or replay-warning field.** Both are added: carried note 1, and the replay warnings are
+   A. §9.2's survivor count (`GlobalAcc.entries`) is not stored, since no reading takes it.
+8. **§9.2's `items` lists "minutes, blocks, done".** `ItemAgg` keeps the whole `ItemAcc`, so D14's `stops`,
+   `extended_min`, `done_at` and `partial_done_at` are kept, as are the drop bit and `last_done`.
+9. **§9.2's `Ckpt.wf` includes "machine days ≥ L" and "every instant wf".**
+   - The machine's days are `sealable`'s, since `ckptOf` is a specification over every `L`.
+   - An `At` instant is not bounded: a break's end (`addMinutes`) can pass year 9999, so `wf` on every instant would
+     make some checkpoints `resume` builds unreadable.
+   - The typed header stamps are read through `mkInstant?`.
+10. **§9.4 says a reseal emits "one `DayRecord` for every day in `[L, L')`, including days now empty".**
+    - `dayRecordsBetween` holds the days in the range that have a reading. A day without a record reads empty, exactly
+      as the replay reads a day it never touched.
+    - A genesis from `L = 0` would otherwise emit about 739,000 empty records.
+    - **W3's Rust must not assume one record per day.**
+11. **§9.5 states `sealable` in two clauses. W1's has a third**: what the unfolded undos cancel changes no record below
+    the horizons. §9.4's `L'` rule does not take a settled undo's folded target's day, so without the clause law 6's
+    `s.days = dayRecordsBetween … (a ++ b.take j)`, computed without the remainder, would be false when a settled undo
+    cancels a line on a day in `[L, L')` (`an_unfolded_undo_of_a_sealed_day_is_not_sealable`). **W2 owes it**: either
+    `sealDay`'s minimum takes the day of every folded line an unfolded undo cancels, or law 6 is restated to an
+    equivalent-strength truth.
+12. **§9.2's encoding is compact and positional.** The checkpoint's top level is an object with keys in build order,
+    so a missing field is named (`badCkpt <field>`, cheat 151). Records are positional. **W3 owes**: Rust stores the
+    checkpoint byte-verbatim (`serde_json`'s `raw_value`, enabled in the workspace), since the reader wants the keys
+    in order.
+13. **§9.2 says "instance statuses are numerals".** Every sum type is numeral-tagged, which differs from C6's facts
+    wire (string tags, the display in headers). **W3 owes one emitter per shape** (AGENTS §5.3) when `facts` and the
+    records meet.
+14. **§15's `Seal.resumeUnguarded` is W2's in-step vocabulary** and is not declared. §15's `CkErr` is
+    `CkErr.badCkpt (f : CkField)`.
+
+### Rule D9-21 (functions over a list the wire can make large)
+
+- **On the wire (from W3):**
+  - the codecs' encoders (`List.map`, compiled as `mapTR`) and `listStep` (a `foldl` a list);
+  - the tuple codecs (recursion over a fixed schema of at most 28 fields), and `readCkptFields`, `readDayFields` and
+    `readWindowFields` (fixed schemas);
+  - `Ckpt.fault`, `DayRecord.fault` and `WindowRecord.fault` (`all`, `filterTR`, `mapTR`, `length`, and
+    `ascending`, a `foldl`);
+  - `answer` (`mapTR`) and `OpenDay.finish` (`sortObs`, core's merge sort; `appendTR`);
+  - `maxInstant?` and `minInstant?` (`foldl`);
+  - `Log.lineEntries` and `Log.lineWarnings` (`filterMapTR`).
+- **Specification only, never on the wire:**
+  - `Log.contiguousFrom` (structural);
+  - `insUniq` and `canon` (each insertion scans);
+  - the fold's spec functions `foldedSurvivors`, `foldedIndex`, `foldedState` and `foldedHeaders`, and the grouping
+    functions `dayKeys`, `openDayOf`, `daysIn`, `daysFrom`, `winKeys`, `windowOf`, `windowsIn`, `windowsFrom`,
+    `itemIds`, `itemAggOf`, `instOtherOf` and `namedOf`;
+  - the bookkeeping `storedWakes`, `storedSlept`, `tagLines`, `keptTags`, `targetStep`, `undoTargets` and
+    `settledOf` (`eraseP`, `find?`);
+  - `ckptOfEntries`, `ckptOf`, the records' specifications, `sealableEntries`, `sealable`, `unfoldedEffects` and
+    `machineDays`;
+  - `askAnswer`, `dayRead`, `winRead`, `askMerged`, `Replay.sortByLine` and `Replay.Doc.obs` (`find?`, `insSort`).
+
+### Numbers
+
+**Taken:** cheats 150 and 151 (design labels 97 and 98; the next free numbers, checked by grep). **Highest:** gap
+118, cheat 151, parity P34. **Parity entries:** none. **Behaviour rows:** none in the binary, which still has one
+reader of the log, the Rust.
+
+**Re-measured** (main worktree; commands capped at 40 GB, probes at 8 GB):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.98 / 2.99 / 2.97 s. Baseline 2.86 / 2.92 / 2.92 s, re-measured before any edit: +4.5% at the worst against the fastest baseline run, and the budget is 10% |
+| `check.sh` including the build of `Seal.lean` and the root | 12.7 s |
+| axiom audit | **3209 theorems** (3146 + 63). The three §6.3 counts agree at 3209; every new line reads `propext`, `Classical.choice` and `Quot.sound` or fewer |
+| `Negative.lean` | check 4 ok; 147 errors; 141 `/- CHEAT` banners; no duplicate number; 150 and 151 fail at their `decide` ("proved that the proposition … is false"). At the 8 GB cap: 2.00 s, 1.98 GB |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **29** (13 + 16, deliberate; W2 brings it back to 13) |
+| `TmKernel.lean` | **21 imports** (`Seal` new) |
+| `Seal.lean` | 1,817 lines; elaboration 4.35 / 4.42 s, 835 / 859 MB (8 GB probe cap) |
+| `Goals.lean` elaboration | 0.21 s, 616 MB |
+| `cargo test --workspace` | **1068 passed / 0 failed / 5 ignored across 73 binaries**, 0 compiler warnings (no test added or removed) |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6; `stack.rs` 4.20 s) |
+| T5 (`kernel_replay_parity.rs --include-ignored`) | 10 passed, 2.68 s; 0 exceptions. Distinct ids kernel 302 ms, Rust 28 ms; the hostile undo log kernel 252 ms, Rust 102 ms (C7 296–339 and 242–258: unchanged) |
+| `cli_latency.rs --include-ignored`, three serial runs | green, 4 passed. No log: first 622.8 / 632.8 / 638.0 ms, later 55.8 / 60.7 / 50.7 ms. 1y: first 718.3 / 753.9 / 734.2, later 126.4 / 121.6 / 121.7. 3y: first 940.8 / 956.8 / 981.1, later 273.4 / 288.6 / 273.5. T14: 86.1 / 81.1 / 81.1 ms (3 years), 131.7 / 141.8 / 141.6 ms (10 years). The binary's reader is unchanged, and these are within C7's run-to-run spread |
+
+**Owed next:**
+- **W2** (seal, resume, the laws):
+  - `resume` with G0–G4 and the `now` anchor, `foldPoint`, `sealDay`, `settled`, `futureFloor`, compaction to `H'`
+    and record emission;
+  - discharge the sixteen goals by §9.5's route;
+  - settle disagreement 11 (the `L'` rule against a settled undo's target) without narrowing a window law (D5, D11);
+  - cheats 99–104.
+- **W3**:
+  - law 13 (`counterOverflow` at emission);
+  - gap 102's memory gate, which lowers the resend cap by measurement;
+  - gap 100 (`Boundary.run`'s `++`);
+  - one emitter per shape for `facts` and the records (disagreement 13);
+  - the byte-verbatim checkpoint store (disagreement 12);
+  - no record assumed per empty day (disagreement 10).

@@ -1721,4 +1721,55 @@ theorem undoingOldestFirstReplaysTheLogWithoutTheCommand :
       = Replay.factsView (Replay.replay Replay.utcZone []) (.named ['e'] none) := by
   decide
 
+-- ===========================================================================
+-- APPENDED 2026-09-15 (stage 5, D9 track, step W1: the checkpoint and the
+-- sealed records in `Seal.lean`).  Design §16's labels 97 ("a view without
+-- `lastDone` still satisfies the partition law on its minimal witness") and 98
+-- ("`readCkpt` defaulting a missing `ledgerDay` to 0").  Numbers 150 and 151 are
+-- the next free numbers in this checkout (the highest was 149, C7).  The
+-- controls, which compile, are `Seal.a_log_sealed_anywhere_answers_as_its_replay`
+-- with `Seal.the_last_done_outlives_the_seal_of_its_days`, and
+-- `Seal.readCkpt_refuses_a_checkpoint_without_its_ledgerDay`.
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 150 — a view without `last_done`.  The tempting answer keeps no
+   all-time `last_done` and reads it off the open days: the latest completed
+   duration observation of the id on a day at or after the ledger day.  It
+   agrees with the replay while a `done`'s day is open, which is why a law
+   checked on a log sealed before its days still holds.  Sealed after both days
+   (two `done x`, on the 7th and the 8th, sealed at 2026-10-12), the open days
+   hold nothing, the view reads no `last_done`, and `decide` refuses the claim
+   that it reads the replay's. -/
+def lastDoneFromOpenDays (v : Seal.Answer) (i : Log.Id) : Option Replay.At :=
+  Replay.maxByInstant? (((v.days.flatMap (·.durations)).filter (fun o => decide (o.id = i) && !o.isPartial)).map (·.t))
+
+theorem aViewWithoutLastDoneReadsTheReplays :
+    Replay.Answer.stamp (lastDoneFromOpenDays
+        (Seal.answer (Seal.ckptOfEntries Replay.utcZone 739870 739900 2 Seal.twoDoneDays [] [])) ['x'])
+      = Replay.ask (Replay.replayDoc Replay.utcZone Seal.twoDoneDays) (.lastDone ['x']) := by
+  decide
+
+/- CHEAT 151 — `readCkpt` defaulting a missing `ledgerDay` to 0.  The
+   tempting reader fills an absent field with its zero, as a serde default
+   would.  But a ledger day of 0 makes every sealed day open again with nothing
+   in it: the checkpoint of the two-done log sealed at the 8th, read without its
+   `ledgerDay`, would answer the 7th as an empty open day.  `readCkpt` refuses
+   `badCkpt ledgerDay` by name; `decide` refuses the claim that the defaulting
+   reader does. -/
+def readCkptDefaultingLedgerDay (j : JVal) : Except Seal.CkErr Seal.Ckpt :=
+  match j with
+  | .obj kvs =>
+    if kvs.any (fun p => p.1 == Seal.kLedgerDay) then Seal.readCkpt j
+    else Seal.readCkpt (.obj (kvs.take 3 ++ (Seal.kLedgerDay, .num 0) :: kvs.drop 3))
+  | _ => Seal.readCkpt j
+
+theorem aDefaultingReaderRefusesAMissingLedgerDay :
+    (match readCkptDefaultingLedgerDay (.obj ((Seal.ckptPairs
+        (Seal.ckptOfEntries Replay.utcZone 739870 739866 2 Seal.twoDoneDays [] [])).filter
+          (fun p => !(p.1 == Seal.kLedgerDay)))) with
+      | .error (.badCkpt .ledgerDay) => true
+      | _ => false) = true := by
+  decide
+
 end Tm
