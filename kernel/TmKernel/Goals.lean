@@ -485,6 +485,10 @@ owner's D5 and D11).
 `Seal.replayLines z ls` (`Replay.replayDoc` over `Log.lineEntries ls`) and the goals read it.
 `Seal.Q` is `Replay.Q` (carried note 3).  The laws over `ask` compare views, never `Facts` values:
 a resumed checkpoint's maps are sized differently (C7's `SameReadings`, carried note 4).
+**W2, part 1** discharged law 1's four goals and law 11 (`Seal.the_answer_reads_the_replay`,
+`Seal.a_day_record_is_the_replays_day`, `Seal.a_window_record_is_the_replays_window`,
+`Seal.seal_partition_is_the_replay`, `Seal.sealed_and_live_observations_are_the_replays`, in `SealLaw.lean`);
+eleven goals and the six provisional definitions remain (README "Stage 5 D9 W2").
 ############################################################################ -/
 
 -- provisional, replaced by the real definitions in W2 (signatures fixed by design §15)
@@ -505,29 +509,6 @@ def Seal.tagsClear (z : Cal.Tz) (T₀ L : Nat) (a r b : List Log.Line) : Bool :=
 /-- **Provisional (W2).**  The chunked rebuild with exact pops (§9.7). -/
 def Seal.genesis (z : Cal.Tz) (T : Nat) (chunks : List (List Log.Line)) (terminated : Bool) (p : Seal.Policy) :
     Except Seal.Refusal (List Seal.DayRecord × List Seal.WindowRecord × Seal.Answer) := sorry
-
-/-- **Law 1, the answer (A, O, W).**  Every query at or above the horizons reads the answer as the replay. -/
-theorem the_answer_reads_the_replay (z : Cal.Tz) (T₀ L : Nat) (ls : List Log.Line) (q : Seal.Q)
-    (hc : Log.contiguousFrom 1 ls = true) (hs : Seal.sealable z T₀ L ls [] = true)
-    (hq : q.atOrAbove L (Seal.horizonOf L) = true) :
-    Seal.askAnswer (Seal.answer (Seal.ckptOf z T₀ L ls [])) q = some (Replay.ask (Seal.replayLines z ls) q) := sorry
-
-/-- **Law 1, the day records (DR).**  Every day query below the ledger day reads the stored records as the replay. -/
-theorem a_day_record_is_the_replays_day (z : Cal.Tz) (T₀ L : Nat) (ls : List Log.Line) (d : Nat) (q : Seal.DayQ)
-    (hc : Log.contiguousFrom 1 ls = true) (hs : Seal.sealable z T₀ L ls [] = true) (hd : d < L) :
-    Seal.askDayRecords (Seal.dayRecordsBelow z T₀ L ls) d q = Replay.ask (Seal.replayLines z ls) (.day d q) := sorry
-
-/-- **Law 1, the window records (WR).**  Every window query below the horizon reads the stored records as the replay. -/
-theorem a_window_record_is_the_replays_window (z : Cal.Tz) (T₀ L : Nat) (ls : List Log.Line) (d : Nat) (q : Seal.WinQ)
-    (hc : Log.contiguousFrom 1 ls = true) (hs : Seal.sealable z T₀ L ls [] = true) (hd : d < Seal.horizonOf L) :
-    Seal.askWindowRecords (Seal.windowRecordsBelow z T₀ L ls) d q = Replay.ask (Seal.replayLines z ls) (.win d q) := sorry
-
-/-- **Law 1, the partition.**  The records below the horizons and the answer above them read every query as the
-replay. -/
-theorem seal_partition_is_the_replay (z : Cal.Tz) (T₀ L : Nat) (ls : List Log.Line) (q : Seal.Q)
-    (hc : Log.contiguousFrom 1 ls = true) (hs : Seal.sealable z T₀ L ls [] = true) :
-    Seal.askMerged (Seal.dayRecordsBelow z T₀ L ls) (Seal.windowRecordsBelow z T₀ L ls)
-      (Seal.answer (Seal.ckptOf z T₀ L ls [])) q = Replay.ask (Seal.replayLines z ls) q := sorry
 
 /-- **Law 2, two-run, through the disk** (AGENTS §5.9): resuming the stored checkpoint of `a` over `b` answers as the
 checkpoint of `a ++ b`. -/
@@ -614,13 +595,6 @@ theorem chunked_genesis_is_one_replay (z : Cal.Tz) (T : Nat) (chunks : List (Lis
     (hc : Log.contiguousFrom 1 chunks.flatten = true)
     (h : Seal.genesis z T chunks term p = .ok (ds, ws, v)) (q : Seal.Q) :
     Seal.askMerged ds ws v q = Replay.ask (Seal.replayLines z chunks.flatten) q := sorry
-
-/-- **Law 11**: the sealed and the live observations, by line, are the replay's. -/
-theorem sealed_and_live_observations_are_the_replays (z : Cal.Tz) (T₀ L : Nat) (ls : List Log.Line)
-    (hc : Log.contiguousFrom 1 ls = true) (hs : Seal.sealable z T₀ L ls [] = true) :
-    Replay.sortByLine ((Seal.dayRecordsBelow z T₀ L ls).flatMap (·.obs)
-                       ++ (Seal.answer (Seal.ckptOf z T₀ L ls [])).obs)
-      = (Seal.replayLines z ls).obs := sorry
 
 /-! ############################################################################
 # STAGE 6 — the planner; §8.3's invariants; L24 and L25

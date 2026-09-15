@@ -16930,3 +16930,76 @@ reader of the log, the Rust.
   - one emitter per shape for `facts` and the records (disagreement 13);
   - the byte-verbatim checkpoint store (disagreement 12);
   - no record assumed per empty day (disagreement 10).
+
+<!-- ===================================================================== -->
+<!-- Stage 5 D9 W2, part 1 (2026-09-15).  Gaps, cheats and parity entries  -->
+<!-- are numbered from the next free numbers (gap 119, cheat 152, P35).    -->
+<!-- ===================================================================== -->
+
+## Stage 5 D9 W2, part 1, 2026-09-15: the seal partitions the replay, query by query — laws 1 and 11 proved
+
+**Starting point.** `45e8133` with an interrupted attempt in the tree: `Seal.lean` modified (`dayKeys` gained the
+machine's pending observation's day) and `SealLaw.lean` untracked (canonical-list, keyed-map and stable-sort lemmas).
+Both compiled and fit the W2 brief, so this step built on them rather than stashing them.
+
+### What was built
+
+**`SealLaw.lean` (new; imports `Seal`).** `TmKernel.lean` gains its import: **22 imports**.
+
+- **The reading lemmas, over every state** (so W2's resumed state reuses them): a day's reading from its grouped
+  record is the finished state's (`dayRead_state`), a window date's (`winRead_state`), an item's all-time readings
+  (`items_read_state`), the non-date instances and named events (`others_read_state`) and the scalars
+  (`scalars_read_state`); records are found by key in canonical lists (`findDay_days`, `findWin_windows`,
+  `findItem_items`, `get_filterMap_find`).
+- **The answer of a specification checkpoint, field by field** (`answer_days`, `answer_items`, …), each proved by
+  `simp only [answer, ckptOfEntries]`: a `rfl` proof of `answer_days` timed out at `whnf` (the elaborator unfolds the
+  fold), and the `simp` proof does not.
+- **Law 1 over entries** (`answer_reads_state`, `day_records_read_state`, `window_records_read_state`) and **over
+  lines** (`answer_reads_the_replay`, `day_record_is_the_replays_day`, `window_record_is_the_replays_window`,
+  `partition_is_the_replay`): for every log and every ledger day, with neither `contiguousFrom` nor `sealable`.
+- **Law 11** (`observations_read_state`, `observations_read_lines`): the day records' observations and the
+  answer's are a permutation of the replay's (`obs_perm_state`, by `perm_flatMap_filter`: every observation's day is a
+  day with a reading, listed once), and a sort by line has no ties, because **each entry adds at most one observation,
+  energy or duration, on its own line** (`arm_obs_one`, `stepWith_obs_one`, `foldedState_obs_nodup`; C6's `arm_obs`
+  bounded the two kinds separately).  Two lists sorted by line, one a permutation of the other, on distinct lines,
+  are one list (`sortByLine_eq_of_perm`).
+- **Why `dayKeys` gained the pending observation's day** (the interrupted attempt's change, kept): law 11's
+  permutation needs every observation's day among the keys, and the machine's pending start observation is emitted
+  at `finish` onto a day that, as far as the state's own lists go, may have no other reading.
+
+### Goals (AGENTS §3.2)
+
+**Discharged (5), under their §15 names in `SealLaw.lean`, deleted from `Goals.lean`:**
+`the_answer_reads_the_replay`, `a_day_record_is_the_replays_day`, `a_window_record_is_the_replays_window`,
+`seal_partition_is_the_replay` (law 1) and `sealed_and_live_observations_are_the_replays` (law 11).
+
+- **Law 1 does not use `hc` or `hs`**; the §15 statements keep them (renamed `_hc`, `_hs`), and the companions
+  without them are the stronger theorems.
+- **Law 11 uses `hc` and not `hs`.**  `hc` is needed: on a list holding one line twice (no host sends it), an energy
+  observation on a later day and a duration observation on an earlier day on one line sort differently.
+
+**Added: none. Refuted: none.**  Burn-down **29 → 24** (eleven W goals and the six provisional definitions remain).
+
+### Rule D9-21
+
+Nothing added here is on the wire: every definition and lemma is specification (`findItem`, `canon`, `insSort` and the
+reading lemmas are W1's).
+
+### Numbers
+
+**Taken:** none.  **Highest:** gap 118, cheat 151, parity P34.
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.98 / 2.98 / 3.01 s (W1's closing figures 2.98 / 2.99 / 2.97 s: +1% at the worst) |
+| axiom audit | **3319 theorems** (3209 + 110, all in `SealLaw.lean`) |
+| burn-down | **24** |
+| `TmKernel.lean` | **22 imports** (`SealLaw` new) |
+| `cargo test --workspace` | **1068 passed / 0 failed / 5 ignored across 73 binaries** (no test added or removed) |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6; `stack.rs` 4.20 s) |
+| T5 (`kernel_replay_parity.rs --include-ignored`) | 10 passed, 0.89 s |
+| `cli_latency.rs --include-ignored`, three serial runs | green, 4 passed each.  No log: first 612.4 / 622.8 / 621.8 ms, later 50.8 / 55.7 / 55.7 ms.  1y: first 719.0 / 713.5 / 713.1, later 116.5 / 116.5 / 121.5.  3y: first 941.4 / 935.3 / 956.3, later 278.6 / 283.1 / 283.6.  T14: 81.0 / 80.9 / 81.1 ms (3 years), 136.7 / 136.6 / 141.8 ms (10 years).  The binary's reader is unchanged (Rust), and these sit within W1's spread |
+
+**Owed next (W2, part 2 onward):** `resume` with G0–G4 and the `now` anchor, `foldPoint`, `sealDay`, the reseal and
+record emission, `genesis`; the eleven remaining W goals; the in-step theorems of §14.5's W2 row; cheats 99–104
+(design labels).

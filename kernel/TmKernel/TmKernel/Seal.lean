@@ -1314,11 +1314,12 @@ def foldedHeaders (z : Cal.Tz) (es er : List Entry) : List (Nat × HeaderRec) :=
 
 /-! ### The readings of a state, grouped by where they live -/
 
-/-- The days with a reading: a record, a seam, an observation, an interruption, a demotion, a close or a header. -/
+/-- The days with a reading: a record, a seam, an observation (the machine's pending one included, W2), an
+interruption, a demotion, a close or a header. -/
 def dayKeys (st : State) (hs : List (Nat × HeaderRec)) : List Nat :=
   canon natLt (st.days.pairs.map Prod.fst ++ st.seams.pairs.map Prod.fst ++ st.energy.map (·.day)
     ++ st.durations.map (·.day) ++ st.interrupts.map (·.day) ++ st.demotions.map Prod.fst ++ st.closes.map Prod.fst
-    ++ hs.map Prod.fst)
+    ++ hs.map Prod.fst ++ ((st.machine.block.bind (·.obs)).map (·.day)).toList)
 
 /-- **One day of a state**, as the fold leaves it. -/
 def openDayOf (st : State) (hs : List (Nat × HeaderRec)) (d : Nat) : OpenDay :=

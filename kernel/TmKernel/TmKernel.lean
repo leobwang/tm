@@ -8,6 +8,7 @@ import TmKernel.Stamp
 import TmKernel.Log
 import TmKernel.Replay
 import TmKernel.Seal
+import TmKernel.SealLaw
 import TmKernel.State
 import TmKernel.Plan
 import TmKernel.Tree
