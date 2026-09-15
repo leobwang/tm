@@ -139,7 +139,7 @@ survivors of the mask on the day index of their wakes, then `finish`es.
 ## C4: the completion family (§8.2–§8.4)
 
 `completionArm`, a second match beside `arm`: a non-partial `done`'s `mark_done`, `routine`, `skip` and
-`event`.  **Quirk Q6(b), ported faithfully**: fork `instances[item][inst]` keeps the last record in file order
+`event`.  **Quirk Q6(b), ported faithfully** (gap 118): fork `instances[item][inst]` keeps the last record in file order
 (`an_instance_is_its_last_record_in_file_order`) and fork `last_done` the latest by instant, the first of equal
 instants (`last_done_is_the_latest_by_instant`, `last_done_is_the_first_of_the_latest`); a retro append
 separates them (`instances_and_last_done_order_differently`).  Fork `LatestNamed` keeps two instants per
@@ -6983,7 +6983,7 @@ def bEo (line sec : Nat) (west : Bool) (off : Nat) (ev : Event) (h : Cal.Instant
 /-- A `routine` logged `done`, without minutes. -/
 def rDone (item ins : List Char) : Event := .routine item ins ['d', 'o', 'n', 'e'] none
 
-/-- **Quirk Q6(b): instances and `last_done` order differently** (§15, Goals): `routine s #1 done` at 10:00
+/-- **Quirk Q6(b): instances and `last_done` order differently** (§15, Goals; gap 118): `routine s #1 done` at 10:00
 on line 1, then the same instance `done` again at 08:00 on line 2 (a retro append).  The instance is the
 last record in file order, the 08:00 one; `last_done` is the latest by instant, 10:00. -/
 theorem instances_and_last_done_order_differently :

@@ -413,7 +413,7 @@ here) is false under the owner's D14, which ports `extended_min`:
 /- **§8.2's completion family is real (2026-09-15, stage 5 D9 step C4).**
 The C4 goals of design §15 were added here, elaborated against `TmKernel/Replay.lean` (16 goals, no
 error), and discharged in the same step, so the burn-down stays at 13, each checked against its goal by a
-scratch `example`.  Quirk Q6(b) is ported faithfully: `Replay.an_instance_is_its_last_record_in_file_order`
+scratch `example`.  Quirk Q6(b) is ported faithfully (gap 118): `Replay.an_instance_is_its_last_record_in_file_order`
 (fork `instances[item][inst]` holds the last surviving `routine` or `skip` in file order) is proved as
 stated; `Replay.last_done_is_the_latest_by_instant` is proved with §15's `Replay.doneInstants z i` taking
 no zone (a completion's instant does not read one: `doneInstants i`), and

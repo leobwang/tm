@@ -1614,7 +1614,7 @@ theorem aHeaderThatCountsTouchesOnlyItsDay :
 -- ===========================================================================
 -- APPENDED 2026-09-15 (stage 5, D9 track, step C4: the completion family in
 -- `Replay.lean`).  Design §16 names no cheat for C4; this one guards quirk
--- Q6(b), the owner's "keep: they answer different questions".  Number 146 is
+-- Q6(b) (gap 118), the owner's "keep: they answer different questions".  Number 146 is
 -- the next free number in this checkout (the highest was 145, C3).  The
 -- control, which compiles, is `Replay.an_instance_is_its_last_record_in_file_order`
 -- with its witness `Replay.instances_and_last_done_order_differently`.

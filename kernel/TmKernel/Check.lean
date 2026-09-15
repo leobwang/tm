@@ -3455,7 +3455,7 @@ open Tm
 -- (`the_date_grammars_count_bytes_not_characters`).  The C4 goals §15 names were added to Goals.lean and
 -- discharged in the step: `an_instance_is_its_last_record_in_file_order` (as written),
 -- `last_done_is_the_latest_by_instant` (`doneInstants` without the zone it does not read) and
--- `instances_and_last_done_order_differently`.  Quirk Q6(b) beside them:
+-- `instances_and_last_done_order_differently`.  Quirk Q6(b) (gap 118) beside them:
 -- `last_done_is_the_first_of_the_latest`, `last_done_keeps_the_first_of_equal_instants`.  Carried note 3:
 -- `a_since_filter_does_not_commute_with_the_latest_by_instant` refutes §8.4's claim, and
 -- `named_keeps_the_latest_by_instant_and_the_latest_by_local_date` is fork `LatestNamed`.

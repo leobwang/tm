@@ -15655,6 +15655,8 @@ exact by design. P33 (below) is not generated, and its test names it.
 8. **Q6(b) takes no gap.** The owner's answer is "keep: they answer different questions" (§22), not "fix
    later", so §20 has no label for it and none is taken. `instances_and_last_done_order_differently` and
    cheat 146 are its separating theorem and guard.
+   **Superseded at the W-4 repair (below):** design §4 Q6 says every row "gets a theorem separating it from its
+   alternative, and a gap", and (g), the other "keep" answer, took gap 87. Q6(b) now takes **gap 118**.
 9. **Pattern variables named `inst`.** Inside `Effect.key`, Lean resolves `inst` to the constructor
    `Effect.inst`, so the definitions use `ins`. The goal statements keep §15's `inst`.
 
@@ -16167,7 +16169,8 @@ against their doc comments before being pinned. Altering an expected value fails
 
 **Process note.** One re-run of the five `Replay.lean` witnesses (0.19 s, 578 MB) was started without the
 `systemd-run` cap, against the memory rule. It was small and finished, and every other `lake`, `lean`, `cargo` and
-`check.sh` run in the step was capped.
+`check.sh` run in the step was capped. *(W-4's audit named this as a defect. Nothing in the committed tree
+depends on that run, and it cannot be re-run capped after the fact; the W-4 repair below ran every command capped.)*
 
 ### T5 (`tm/tests/kernel_replay_parity.rs`, extended to the whole `Replay`)
 
@@ -16572,3 +16575,61 @@ triples.
   - alias `Seal.Q` to `Replay.Q`, and wrap `replayDoc` over lines;
   - take C7's `SameReadings` and `HMap.Keyed` for a resumed checkpoint's maps (disagreement 3).
 - **W3** owes law 13 (`counterOverflow` at emission). Then S and S2, and after S2 the fixes of gaps 84 and 86.
+
+## Stage 5 D9 W-4 repair, 2026-09-15: quirk Q6(b) takes its gap — both "keep" quirks now carry one, and every run is capped
+
+W-4's independent audit of C1–C7 (`ae3a3cc`..`8fe6d80`) found two minor defects. Both reproduce, and both are
+repaired here, most severe first (both are minor, so in the audit's order).
+
+### Defect 1: C6 ran one Lean probe without the memory cap
+
+**Reproduced.** The C6 block's own process note says a re-run of the five `Replay.lean` witnesses (0.19 s, 578 MB)
+was started without `systemd-run`. **Repair:** a past run cannot be re-run capped, and nothing committed depends on
+it (the same witnesses were re-probed capped in C6, and every later build elaborates them under `check.sh`'s cap).
+The C6 note now points here. **Every** `lake`, `cargo`, `check.sh` and `tm` invocation in this repair ran under
+`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`. No `lean` probe was needed: no witness changed.
+
+### Defect 2: Q6(b) had a separating theorem but no gap
+
+**Reproduced.** C4's disagreement 8 said "Q6(b) takes no gap", while design §4 Q6 says "Each row gets a theorem
+separating it from its alternative, and a gap", and Q6(g), also a "keep" answer, took gap 87. **Repair:** Q6(b)
+takes gap 118 below. Nothing is weakened or fixed: the quirk stays ported faithfully, its theorems
+(`an_instance_is_its_last_record_in_file_order`, `last_done_is_the_latest_by_instant`,
+`last_done_is_the_first_of_the_latest`, `instances_and_last_done_order_differently`) and cheat 146 are unchanged.
+The gap number is cited in `Replay.lean`'s module docstring and the separating theorem's docstring, the C4 banners of
+`Goals.lean` and `Check.lean`, and cheat 146's banner in `Negative.lean` (comments only).
+
+### Gap 118 (new; the design's §20 has no label for Q6(b)) — two "latest" rules: an instance is its last record in file order, `last_done` the latest by instant
+
+(1) *What is not done*: fork `instances[item][inst]` is a map overwrite, so a routine instance's record is the last
+surviving `routine`/`skip` **in file order**, while `last_done` keeps the latest `done` **by instant** (the first of
+equal instants). On a retro append (`routine s #1 done` at 10:00, then the same instance `done` stamped 08:00) the
+instance's record is the 08:00 one and `last_done` is 10:00
+(`instances_and_last_done_order_differently`). The kernel ports both rules and does not unify them. (2) *Why not
+now*: the owner's Q6(b) answer is "keep: they answer different questions" (§22, D18); unifying on instant would move
+`instances` away from the fork's bytes, which T5's parity forbids. (3) *Cost*: a reader that takes an instance's
+record as "the latest completion" is wrong after a retro append; the two maps answer "what was last written for this
+instance" and "when was the item last done". T5 separates them in every run (26–44 instances per 256 sequences at
+C4–C6). (4) *When it clears*: it does not clear by default, since the owner chose to keep it. If the owner reverses
+Q6(b), unifying is a behaviour change with its own parity entry, and cheat 146 must then move to the control side.
+
+### Numbers
+
+**Taken:** gap 118 (the next free number: `grep` finds no gap 118 in `kernel/`, `tm/` or `tm-core/`; the highest
+recorded was 117). **Highest:** gap 118, cheat 149, parity P34. **Goals:** none added, none discharged; burn-down 13.
+**Parity entries, refutations, behaviour rows, new theorems, witnesses:** none. **D9-21:** nothing added. The binary
+still has one reader of the log, the Rust.
+
+**Re-measured** (main worktree, every command capped at 40 GB):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.90 / 2.86 / 2.84 s after the edit. Baseline before any edit 3.03 / 2.85 / 2.95 s: no rise |
+| `check.sh` including the rebuild after the `Replay.lean` comment edit | 153 s |
+| axiom audit | **3146 theorems** (unchanged) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** |
+| `cargo test --workspace` | **1068 passed / 0 failed / 5 ignored across 73 binaries** |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) |
+| T5 (`kernel_replay_parity.rs`) | 8 passed, 2 ignored, 0.89 s; 0 exceptions |
+| `cli_latency.rs --include-ignored` | green, 4 passed. No log: first 612.5 ms, later 65.8 ms. 1y: first 733.7, later 126.4. 3y: first 940.8, later 272.9. T14: 81.0 ms (3 years), 141.9 ms (10 years) |
