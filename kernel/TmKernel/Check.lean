@@ -4341,3 +4341,96 @@ open Tm
 #print axioms Tm.Seal.dedupFrom_far_noRuns
 #print axioms Tm.Seal.getLast?_storedWakes
 #print axioms Tm.Seal.storedWakes_at_cut
+-- APPENDED 2026-09-15 (stage 5, D9 track).  Step W2, part 4c (design §9.4 the reseal, §9.5 laws 6 and 7):
+-- SealLaw6.lean (a reseal is a seal; a resealed checkpoint accepts its own suffix), through SealRsDefs.lean (the
+-- reseal's parts, named), SealLaw6Ctx.lean (an accepted resume and a valid cut as entries), SealLaw6Ckpt.lean (the
+-- checkpoint and records at the cut), SealLaw6Seal.lean (sealable, and the reach condition, at the new ledger day), and
+-- the route: SealCutState.lean (the state at the cut), SealCutHeaders.lean (headers; the unfolded lines cancel nothing
+-- folded), SealCutSlept.lean (the stored slept_by_day), SealCutTags2.lean (the truncated tags merge), SealCutMachine.lean
+-- (a fold's machine days), SealCutLows.lean (what bounds the new ledger day; a warning's line), SealCutGroup.lean (groups
+-- at a later ledger day), SealCutSteps.lean (the unfolded steps), SealTagsSelf.lean (a checkpoint's own suffix leaves no
+-- undo dangling).
+#print axioms Tm.Seal.kmap_get_isSome_of_mem
+#print axioms Tm.Seal.mem_storedSlept_keys
+#print axioms Tm.Seal.storedSlept_congr
+#print axioms Tm.Seal.mem_keys_iff_get
+#print axioms Tm.Seal.storedSlept_congr_get
+#print axioms Tm.Seal.cut_index_agrees
+#print axioms Tm.Seal.restore_fold_mi
+#print axioms Tm.Seal.cut_state_agrees
+#print axioms Tm.Seal.closeSub_keeps
+#print axioms Tm.Seal.closePause_keeps
+#print axioms Tm.Seal.cut_keeps
+#print axioms Tm.Seal.arm_lastCut
+#print axioms Tm.Seal.arm_interrupt
+#print axioms Tm.Seal.stepWith_machine_eq
+#print axioms Tm.Seal.stepWith_machineDays
+#print axioms Tm.Seal.foldl_machineDays
+#print axioms Tm.Seal.keepTags_eq
+#print axioms Tm.Seal.keptTags_eq_keepTags
+#print axioms Tm.Seal.shortUnknown_key
+#print axioms Tm.Seal.tagSorted_map
+#print axioms Tm.Seal.tagSorted_tagLines
+#print axioms Tm.Seal.tagSorted_merge
+#print axioms Tm.Seal.find?_key_of_mem
+#print axioms Tm.Seal.mem_tagLines_fst
+#print axioms Tm.Seal.mem_merge_fst
+#print axioms Tm.Seal.merge_filter_old
+#print axioms Tm.Seal.keptBy_iff
+#print axioms Tm.Seal.count_below_mono
+#print axioms Tm.Seal.keptBy_filter
+#print axioms Tm.Seal.keepTags_filter
+#print axioms Tm.Seal.tag_line_exists
+#print axioms Tm.Seal.merge_first_kept
+#print axioms Tm.Seal.merge_kept_in
+#print axioms Tm.Seal.keptTags_append
+#print axioms Tm.Seal.length_keepTags_lt_iff
+#print axioms Tm.Seal.tagOverflow_append
+#print axioms Tm.Seal.foldedIndex_congr_er
+#print axioms Tm.Seal.foldedState_congr_er
+#print axioms Tm.Seal.cancelledAt_congr_er
+#print axioms Tm.Seal.foldedHeaders_congr_er
+#print axioms Tm.Seal.length_foldedHeaders
+#print axioms Tm.Seal.foldedHeaders_at_cut
+#print axioms Tm.Seal.stepLows_eq
+#print axioms Tm.Seal.lowsStep_mono
+#print axioms Tm.Seal.mem_lows
+#print axioms Tm.Seal.foldl_min_le_of_mem
+#print axioms Tm.Seal.sealDayOf_le_max
+#print axioms Tm.Seal.filter_line_split
+#print axioms Tm.Seal.survivors_sublist
+#print axioms Tm.Seal.unsettled_sublist
+#print axioms Tm.Seal.readObject_warn
+#print axioms Tm.Seal.readValue_warn
+#print axioms Tm.Seal.readLine_warn
+#print axioms Tm.Seal.Line.warning_line
+#print axioms Tm.Seal.lineWarnings_ge
+#print axioms Tm.Seal.lineWarnings_take
+#print axioms Tm.Seal.AgreeAbove.mono
+#print axioms Tm.Seal.horizonOf_mono
+#print axioms Tm.Seal.daysFrom_eq_raw
+#print axioms Tm.Seal.daysIn_eq_filter
+#print axioms Tm.Seal.windowsIn_eq_filter
+#print axioms Tm.Seal.items_merged_eq_raw
+#print axioms Tm.Seal.settledStep_snd
+#print axioms Tm.Seal.mem_settledOf_iff
+#print axioms Tm.Seal.isUndo_iff
+#print axioms Tm.Seal.maskStep_push
+#print axioms Tm.Seal.dangleStep_push
+#print axioms Tm.Seal.stackOf_filter_nil
+#print axioms Tm.Seal.tail_dangle_inv
+#print axioms Tm.Seal.dangling_unsettled_self
+#print axioms Tm.Seal.tagsClear_self
+#print axioms Tm.Seal.resume_steps
+#print axioms Tm.Seal.keyAtOrAbove_later
+#print axioms Tm.Seal.headSec_later
+#print axioms Tm.Seal.unfoldedEffects_eq
+#print axioms Tm.Seal.mem_collect
+#print axioms Tm.Seal.survivors_split
+#print axioms Tm.Seal.resealOf_eq
+#print axioms Tm.Seal.resealOf_parts
+#print axioms Tm.Seal.rs_context
+#print axioms Tm.Seal.rs_state_parts
+#print axioms Tm.Seal.rs_sealable_reachFree
+#print axioms Tm.Seal.reseal_is_seal
+#print axioms Tm.Seal.a_resealed_checkpoint_accepts_its_own_suffix

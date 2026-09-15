@@ -17446,3 +17446,98 @@ probes above are evaluations, not witnesses).
 - law 7 (from law 5 on the resealed checkpoint);
 - `genesis` and law 9;
 - cheats 100, 101, 103 and 104 (design labels).
+
+<!-- ===================================================================== -->
+<!-- Stage 5 D9 W2, part 4c (2026-09-15).  Gaps, cheats and parity entries -->
+<!-- are numbered from the next free numbers (gap 119, cheat 154, P35).    -->
+<!-- ===================================================================== -->
+
+## Stage 5 D9 W2, part 4c, 2026-09-15: a reseal is a seal — laws 6 and 7 proved at the cut
+
+**Starting point.** `f959acf` (part 4b).
+
+### What was built
+
+**`SealLaw6.lean`: laws 6 and 7.**
+- `reseal_is_seal` (law 6). An emitted reseal's checkpoint is `ckptOf` of the lines up to the fold point, knowing the
+  rest, and it is sealable at the new ledger day `L' ≥ L`. Its day and window records are those lines' records of
+  `[L, L')` and `[H, H')`.
+- `a_resealed_checkpoint_accepts_its_own_suffix` (law 7): law 5 on the resealed checkpoint, for every `T' ≥ T`.
+
+**The route** (proven, no `sorry`):
+- `SealRsDefs`: the reseal's parts, named (`rsCkpt`, `rsDays`, `rsWindow`, …), with `resealOf_eq` by definition.
+- `SealLaw6Ctx` (`rs_context`): an accepted resume and a valid cut, unpacked as entries.
+  - The tail and its survivors split at line `|a| + j`.
+  - §9.4's (iii) becomes a separation of the unfolded surviving wakes from every folded instant.
+  - (vi) and the stored settled undos are stated on entries.
+- `SealLaw6Ckpt` (`rs_state_parts`): the checkpoint's 26 fields and the two record lists, one by one.
+  - `SealCutState`: the state at the cut (`cut_state_agrees`). The run's fold of the folded tail, rebound to the
+    folded wakes' `slept_by_day`, agrees above the horizons with the checkpoint's state at the cut. The run's index and
+    the folded lines' own agree at every folded instant, by (iii) (`cut_index_agrees`).
+  - `SealCutHeaders`: the folded headers at the cut. The unfolded lines cancel nothing folded, so the state and headers
+    knowing them are those knowing nothing (`foldedState_congr_er`, `foldedHeaders_congr_er`).
+  - `SealCutSlept`: a stored `slept_by_day` reads only its table at and after the ledger day (`storedSlept_congr_get`).
+  - `SealCutTags2`: the truncated tags merge (`keptTags_append`) and the overflow flag (`tagOverflow_append`). A stored
+    tag the truncation dropped is past the kept unknown tags, and stays past them once more tags merge.
+  - `SealCutGroup`: agreement at a later ledger day (`AgreeAbove.mono`); items and open days before `finish`.
+- `SealLaw6Seal` (`rs_sealable_reachFree`): sealable at `L'`, and law 5's reach condition at `L'`.
+  - `SealCutLows`: `L'` is at most the old ledger day or each low (`sealDayOf_le_max`, through `mem_lows`); a line
+    warning carries its line's number (`lineWarnings_take`).
+  - `SealCutMachine`: a fold's machine days are its start state's or its entries' days (`foldl_machineDays`).
+  - `SealCutSteps`: every accepted tail step has, on the whole log's fold, the resumed fold's machine and keys
+    (`resume_steps`). A key or head second stays accepted at a later ledger day it bounds (`keyAtOrAbove_later`,
+    `headSec_later`).
+- `SealTagsSelf`: with its settled undos set aside, a checkpoint's own suffix dangles no undo, for any split
+  (`tail_dangle_inv`, `tagsClear_self`). This is law 7's G1 half.
+
+**`Negative.lean`: cheats 154–157** (design labels 100, 101, 103, 104). Each is on an `Entry`-level witness of at most
+three entries, probed at the 8 GB cap (under a second each). Its control, the real definition on the same witness,
+passes in the probe.
+- **154 (100):** the new ledger day without its floor at `L`. An empty tail, resealed the day it was sealed with
+  `keepDays = 5`, moves the ledger day five days back.
+- **155 (101):** the resealed checkpoint without its settled undos. A folded-target `undo done a`, beside a folded
+  `done b`, dangles in the suffix, and G1 refuses it.
+- **156 (103):** `F` from the latest day any survivor heads, without `T − keepDays`. A note a year ahead seals past now.
+- **157 (104):** the fold point reading every tail as terminated. One unterminated line a year ahead folds.
+
+### Goals (AGENTS §3.2)
+
+**Discharged (2):** `reseal_is_seal` (law 6), `a_resealed_checkpoint_accepts_its_own_suffix` (law 7).
+
+**Added: none. Refuted: none.** Burn-down **16 → 14**. Law 9 and the provisional `genesis` remain.
+
+### Recorded disagreements between the design and the repo (continuing part 4b's)
+
+14. **G1's half of law 7 needs no cut condition.** §9.4 credits (i)–(v) and the `L'` rule with G0–G4 accepting the
+    suffix. A checkpoint's settled undos are exactly its unfolded undos whose call-wide target is folded or absent, so
+    its own suffix leaves none dangling at any split (`tagsClear_self`). The cut conditions and the `L'` rule carry
+    G2–G4 (`rs_sealable_reachFree`).
+
+### Rule D9-21
+
+- **On the wire:** nothing new. The reseal went on part 4b's list.
+- **New definitions:** `rsBj` … `rsWindow` (names for `resealOf`'s parts, no new computation), `lowsStep` and
+  `collectStep` (the steps of `stepLows`' and `unfoldedEffects`' folds), `shortUnknown`, `keptBy`.
+- **Specification only:** everything in the 14 new modules.
+- **Owed, unchanged:** the one-pass `foldPoint` `@[csimp]` twin (part 4b's disagreement 12).
+
+### Numbers
+
+**Taken:** cheats 154–157. **Highest:** gap 118, cheat 157, parity P34. **Parity entries:** none. **Witnesses:** 4
+added (the cheats'; the controls were probed, not added).
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 3.06 / 3.06 / 3.10 s (part 4b: 3.04 / 2.99 / 3.06 s, +1% at the worst; the first run after the change, which also built the static archive, 4.02 s) |
+| axiom audit | **3821 theorems** (3737 + 84) |
+| `Negative.lean` | check 4 ok: **153 errors, 147 `/- CHEAT` banners** (149 + 4, 143 + 4) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **14** |
+| `TmKernel.lean` | **72 imports** (58 + 14) |
+| modules | 14 new, 2,401 lines; no existing module changed |
+| `cargo test --workspace` | **1068 passed / 0 failed / 5 ignored across 73 binaries** (no test added or removed) |
+| FFI suite | **100 passed** (`stack.rs` 4.17 s) |
+| T5 | **10 passed**, 0.88 s |
+| `cli_latency` | green; 3 y later verb 283.4 / 288.2 / 283.4 ms |
+
+**Owed next (W2, part 4d):** `genesis` (§9.7, with exact pops) and law 9.

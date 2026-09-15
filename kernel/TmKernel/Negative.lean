@@ -1816,4 +1816,90 @@ theorem aWindowCompactedPastItsHorizonReadsTheReplay :
       = Replay.ask (Replay.replayDoc Replay.utcZone Seal.oneDoneOnTheHorizon) (.win 739856 (.done ['x'])) := by
   decide
 
+/- CHEAT 154 — a reseal whose ledger day moves backwards (design label 100).
+   The tempting new ledger day is the least of `F` and the unfolded lines' days,
+   without the floor at the stored ledger day.  A checkpoint sealed at
+   2026-09-14 and resumed the same day with `keepDays = 5` and an empty tail
+   then reseals at 2026-09-09, before the days it has already sealed, and
+   `decide` refuses the claim that the ledger day never moves back
+   (`reseal_is_seal`'s `L ≤ L'`). -/
+def resealEmptyRun : Seal.Run :=
+  ⟨[], [], [], [], fun _ => none, Replay.State.init 0, [], Seal.answer (Seal.Ckpt.empty Replay.utcZone)⟩
+
+def sealDayWithoutTheLedgerFloor (z : Cal.Tz) (T : Nat) (K : Seal.Ckpt) (p : Seal.Policy) (r : Seal.Run) (j : Nat) :
+    Nat :=
+  Seal.sealDayOf z T { K with ledgerDay := 0 } p r j
+
+set_option maxRecDepth 8000 in
+theorem aResealNeverMovesItsLedgerDayBack :
+    ({ Seal.Ckpt.empty Replay.utcZone with ledgerDay := 739865 } : Seal.Ckpt).ledgerDay
+      ≤ sealDayWithoutTheLedgerFloor Replay.utcZone 739865 { Seal.Ckpt.empty Replay.utcZone with ledgerDay := 739865 }
+          ⟨5, none⟩ resealEmptyRun 0 := by
+  decide
+
+/- CHEAT 155 — a reseal that leaves a folded-target undo out of `settled`, still
+   accepted afterwards (design label 101).  The tempting resealed checkpoint
+   keeps no settled undos.  Folded `done b` and `done a`, and an unfolded
+   `undo done a` whose target is folded: without its settled line, the undo
+   dangles in the suffix and the folded `done` tag makes G1 refuse it, and
+   `decide` refuses the claim that the suffix passes G1
+   (`a_resealed_checkpoint_accepts_its_own_suffix`, through `tagsClear_iff`). -/
+def aCheckpointWithASettledUndo : Seal.Ckpt :=
+  Seal.ckptOfEntries Replay.utcZone 739865 739865 2
+    [Replay.bE 1 63924368400 (Replay.bDone ['b'] 50 false), Replay.bE 2 63924368460 (Replay.bDone ['a'] 50 false)]
+    [Replay.bE 3 63924368520 (.undo ['d', 'o', 'n', 'e'] (some ['a']))] []
+
+set_option maxRecDepth 8000 in
+theorem aResealWithoutItsSettledUndoAcceptsItsSuffix :
+    Seal.g1 { aCheckpointWithASettledUndo with settled := [] }
+      (Seal.unsettled [] [Replay.bE 3 63924368520 (.undo ['d', 'o', 'n', 'e'] (some ['a']))]) = none := by
+  decide
+
+/- CHEAT 156 — `F` computed from the log's latest day without the `T − keepDays`
+   bound (design label 103, CRIT 1).  The tempting floor is the latest day any
+   surviving line heads, less `keepDays`.  One note dated a year ahead, folded
+   on 2026-09-14 with `keepDays = 2`, then seals to 2027-09-12, and `decide`
+   refuses the claim that the reseal never seals past now
+   (`a_reseal_never_seals_past_now`). -/
+def aLineAYearAhead : Log.Entry := Replay.bE 1 63955872000 (.note ['x'])
+
+def aRunOfALineAYearAhead : Seal.Run :=
+  ⟨[aLineAYearAhead], [aLineAYearAhead], [aLineAYearAhead], [], fun _ => none, Replay.State.init 1, [],
+   Seal.answer (Seal.Ckpt.empty Replay.utcZone)⟩
+
+def floorFromTheLatestDay (keep : Nat) (dy : Cal.Instant → Nat) (sv : List Log.Entry) : Nat :=
+  (sv.map (fun e => dy e.t.val)).foldl Nat.max 0 - keep
+
+def sealDayFromTheLatestDay (z : Cal.Tz) (K : Seal.Ckpt) (p : Seal.Policy) (r : Seal.Run) (j : Nat) : Nat :=
+  let dy := Replay.dayOf z r.index
+  let n := K.items.length + K.openDays.length + r.entries.length
+  let Brest := r.entries.filter (fun e => decide (K.cut + j < e.line))
+  let svj := r.survivors.filter (fun e => decide (e.line ≤ K.cut + j))
+  let lows := Brest.map (fun e => dy e.t.val) ++ Brest.map (fun e => e.t.val.sec / 86400 + 1)
+    ++ Seal.stepLows z dy r.slept (fun e => decide (K.cut + j < e.line)) (Seal.restore K n) r.survivors
+    ++ Seal.machineDays (svj.foldl (Replay.stepWith z dy r.slept) (Seal.restore K n)).machine
+  Nat.max K.ledgerDay (lows.foldl Nat.min (floorFromTheLatestDay p.keepDays dy r.survivors))
+
+set_option maxRecDepth 8000 in
+theorem aFloorFromTheLatestDayNeverSealsPastNow :
+    sealDayFromTheLatestDay Replay.utcZone (Seal.Ckpt.empty Replay.utcZone) ⟨2, none⟩ aRunOfALineAYearAhead 1 = 0 ∨
+      sealDayFromTheLatestDay Replay.utcZone (Seal.Ckpt.empty Replay.utcZone) ⟨2, none⟩ aRunOfALineAYearAhead 1 + 2
+        ≤ 739865 := by
+  decide
+
+/- CHEAT 157 — an unterminated last segment folded (design label 104, CRIT 8).
+   The tempting fold point reads every tail as terminated.  One unterminated
+   line, a note dated a year ahead (so no other condition holds it back), then
+   folds, and `decide` refuses the claim that the unterminated line stays
+   unfolded (`the_unterminated_segment_is_never_folded`). -/
+def foldPointIgnoringTheEnd (z : Cal.Tz) (T : Nat) (K : Seal.Ckpt) (b : List Log.Line) (_terminated : Bool)
+    (p : Seal.Policy) (r : Seal.Run) : Nat :=
+  Seal.foldPointOf z T K b true p r
+
+set_option maxRecDepth 8000 in
+theorem aFoldPointIgnoringTheEndLeavesTheLastLineUnfolded :
+    foldPointIgnoringTheEnd Replay.utcZone 739865 (Seal.Ckpt.empty Replay.utcZone) [⟨1, some ['x']⟩] false ⟨2, none⟩
+      aRunOfALineAYearAhead < 1 := by
+  decide
+
 end Tm

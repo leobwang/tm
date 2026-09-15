@@ -503,34 +503,18 @@ replacing their provisional definitions.  Four goals (laws 6, 6's pair, 7 and 9)
 provisional `foldPoint` and `sealDay` are deleted) and discharged law 6's pair (`Seal.a_reseal_never_seals_past_now`,
 `SealLaw6Pair.lean`).  Laws 6 and 7 read the real reseal and are not vacuous: they remain, with law 9 and the
 provisional `genesis` (README "Stage 5 D9 W2, part 4b").
+**W2, part 4c** discharged law 6 (`Seal.reseal_is_seal`) and law 7 (`Seal.a_resealed_checkpoint_accepts_its_own_suffix`),
+in `SealLaw6.lean`: the reseal's parts are named (`SealRsDefs.lean`), an accepted resume and a valid cut are unpacked as
+entries (`SealLaw6Ctx.lean`), the resealed checkpoint and records are the seal's at the cut (`SealLaw6Ckpt.lean`), and the
+resealed checkpoint is sealable and its suffix meets law 5's reach condition at the new ledger day (`SealLaw6Seal.lean`);
+a checkpoint's own suffix leaves no undo dangling (`Seal.tagsClear_self`).  Law 9 and the provisional `genesis` remain
+(README "Stage 5 D9 W2, part 4c").
 ############################################################################ -/
 
 -- provisional, replaced by the real definitions in W2 (signatures fixed by design §15)
 /-- **Provisional (W2).**  The chunked rebuild with exact pops (§9.7). -/
 def Seal.genesis (z : Cal.Tz) (T : Nat) (chunks : List (List Log.Line)) (terminated : Bool) (p : Seal.Policy) :
     Except Seal.Refusal (List Seal.DayRecord × List Seal.WindowRecord × Seal.Answer) := sorry
-
-/-- **Law 6, two-run**: a reseal is a seal, never behind its ledger day. -/
-theorem reseal_is_seal (z : Cal.Tz) (T₀ T L : Nat) (a r b : List Log.Line) (term : Bool) (p : Seal.Policy)
-    (v : Seal.Answer) (s : Seal.Resealed)
-    (hc : Log.contiguousFrom 1 (a ++ b) = true) (hr : r <+: b) (hs : Seal.sealable z T₀ L a r = true)
-    (h : Seal.resume z T (Seal.ckptOf z T₀ L a r) b term (some p) = .ok (v, some s)) :
-    let k  := Seal.ckptOf z T₀ L a r
-    let j  := Seal.foldPoint z T k b term p
-    let L' := Seal.sealDay z T k b term p
-    L ≤ L' ∧ Seal.sealable z T L' (a ++ b.take j) (b.drop j) = true ∧
-    s.ckpt = Seal.ckptOf z T L' (a ++ b.take j) (b.drop j) ∧
-    s.days = Seal.dayRecordsBetween z T L L' (a ++ b.take j) ∧
-    s.window = Seal.windowRecordsBetween z T (Seal.horizonOf L) (Seal.horizonOf L') (a ++ b.take j) := sorry
-
-/-- **Law 7, no loop**: a resealed checkpoint accepts its own unfolded suffix at every later day. -/
-theorem a_resealed_checkpoint_accepts_its_own_suffix (z : Cal.Tz) (T₀ T L : Nat) (a r b : List Log.Line)
-    (term : Bool) (p : Seal.Policy) (v : Seal.Answer) (s : Seal.Resealed)
-    (hc : Log.contiguousFrom 1 (a ++ b) = true) (hr : r <+: b) (hs : Seal.sealable z T₀ L a r = true)
-    (h : Seal.resume z T (Seal.ckptOf z T₀ L a r) b term (some p) = .ok (v, some s))
-    (T' : Nat) (hT : T ≤ T') (term' : Bool) :
-    (Seal.resume z T' s.ckpt (b.drop (Seal.foldPoint z T (Seal.ckptOf z T₀ L a r) b term p)) term' none).isOk = true :=
-  sorry
 
 /-- **Law 9**: chunking and exact pops are invisible. -/
 theorem chunked_genesis_is_one_replay (z : Cal.Tz) (T : Nat) (chunks : List (List Log.Line)) (term : Bool)
