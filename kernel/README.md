@@ -17962,3 +17962,143 @@ the new cap (design §17). **Behaviour rows:** none in the binary (Rust is still
 
 **Owed next:** W-5/W5 (the measurement gate, with gap 122's lever first), then S; gap 123's tests; the one-pass
 `foldPoint` twin (W2 part 4b's disagreement 12).
+
+## Stage 5 D9 W5, 2026-09-15: the measurement gate — measured through the replay cache on disk, and it FAILS
+
+**Starting point.** `4b7ee9c` (W3), clean: check.sh 7/7, audit 3885 theorems, corpus 29/37 files and 4/5 plans,
+burn-down 13, `cargo test --workspace` 1078 / 0 / 5 ignored across 73 binaries, FFI 100. W4 (the tree-map twin) is
+gated on this step and was not built; W3's gap 122 lever (the `dayOf` bisection twin) was not built either.
+
+**Result: FAIL**, on three of five bounds (genesis, the hot call, the far undo). §14.5 row W5: "Otherwise W4, then
+§19's levers, before S." No Lean changed in this step; the gate's verdict is what S waits on.
+
+### What was built
+
+- **`tm/examples/windowbench.rs` (new)**: the gate's scenarios through `kernel_log::ReplayCache::replay` on a cache
+  directory on disk, every call asking `facts` as a verb will. It includes `kernel_log.rs`, `tz_table.rs` and
+  `support/loggen.rs` with `#[path]`, as T5 does. Each scenario runs in a child process of its own with `VmHWM` reset to
+  the RSS before its first measured call (A3's method), and `all` prints the gate with PASS or FAIL.
+- **`logbench` (g)**: runs `windowbench all` as a child under the root workspace's dev profile, as (c) runs `tzprobe`,
+  because `kernel_log` needs serde_json and chrono, which the FFI crate may not depend on. `logbench only-g` runs (g)
+  alone.
+
+**The shape measured.** The design pass's 3-year log at 61 events a day (65,771 lines, 6,857,648 B; `loggen`), in
+America/Chicago, with the probed zone table crossing the wire on every call as it will at S. Days are the generator's
+(`2026-01-01` + index); `now` is the day of the last line appended.
+- **genesis**: the whole log, no cache.
+- **hot**: seven calls on the whole log's stored checkpoint, the same day.
+- **reseal**: a checkpoint sealed at day 1,054, then the log through day 1,055, seven times from fresh copies.
+- **stall**: from that checkpoint, ten days with a block started (with an energy reading) on the first evening and
+  never stopped. Every later block event (`start`, `stop`, `done`, `pause`, `unpause`, `interrupt`, `resume`,
+  `extend`, `undo`) is left out, so the machine's pending observation holds `L'` (§9.4). Ten verbs a day.
+- **pinned**: from that checkpoint, fourteen days of the log with `maxLine` at day 1,054's last line (§9.6). Ten verbs a
+  day.
+- **far undo**: the whole log's cache, a hand `undo` of a `done` thirty days back whose id is never done again, then ten
+  notes, each a call.
+- **two geneses at once**: two children rebuilding into two caches concurrently.
+
+A "verb" appends a tenth of the day's lines and calls `replay`. A scenario's peak `VmHWM` includes the log text it
+holds; it bounds each of its calls from above.
+
+### The gate (one measurement: `logbench only-g`, the tree committed, dev profile, `MemoryMax=16G`)
+
+| bound | measured | verdict |
+|---|---|---|
+| genesis ≤ 1.5 s | **25,432 ms** (17 calls, 0 pops, largest call 4,334 lines; 1,091 day and 1,065 window records in 36 month files written) | **FAIL** (17×) |
+| hot call ≤ 60 ms, digest included, stalled or pinned | **91.8 ms** worst (pinned, day 14). Hot: best 73.7 / median 74.9 / max 76.3 ms. Stalled: median 71.3, max 78.1. Pinned: median 79.1, max 91.8; day 14 alone median 89.8 at an 838-line tail | **FAIL** |
+| at most one checkpoint write a day in the stall | **1** each of the ten days (the day's first call reseals at 140.9–164.1 ms; ledger day held at 740,671 from the third day) | ok |
+| after the far undo: one rebuild, then hot calls | the rebuild (38,924 ms, `undoReach at line 65772`), then **every one of the ten later calls reseals and writes** (3,553–3,744 ms, median 3,648) | **FAIL** |
+| per-call RSS ≤ 256 MiB | **168.9 MiB** worst (far undo, its genesis resend); genesis 146.2, hot 49.9, reseal 50.3, stall 61.3, pinned 66.1 | ok |
+
+**The other figures, from the same run.**
+- **The hot call's parts**:
+  - tail 151 lines, 15,533 B (3 wakes);
+  - checkpoint 225,727 B, request 257,709 B;
+  - the digest alone over 6,842,115 B: best 4.81 / median 4.82 ms;
+  - the kernel call alone (request built, FFI, answer decoded): best 59.6 / median 60.5 ms.
+
+  So the kernel's call is the budget by itself: its cost is the checkpoint's resume, not the tail. §18.2's low column
+  estimated 15 ms.
+- **A reseal call**: best 164.6 / median 166.0 / max 173.4 ms. This one sealed no record: the ledger day stayed 740,668
+  and the cut moved 35 lines. §18.3 estimated +5–13 ms over a hot call.
+- **The pinned day's first call** (a reseal that cannot fold past `maxLine`) grows with the tail: 153.7 ms on day 1 and
+  742.6 ms on day 14 (gap 122's superlinear reseal).
+- **The checkpoint in the stall** grows from 212,937 to 243,237 B over ten days, about 3.4 KB a stalled day (§18.7
+  estimated 2.5 KB).
+- **Two geneses at once** peak at 144.5 and 144.4 MiB: **288.9 MiB** together, under W3's owed 400 MiB. Each took
+  about 25.9 s.
+- **Genesis through day 1,054** (the base of the reseal, stall and pinned scenarios): 24,236 ms, 137.7 MiB.
+
+### Recorded disagreements between the design and the repo
+
+1. **§18.7: "A hand undo 30 days back refuses once (G1), runs one genesis, and is `settled` from then on. No later call is
+   pinned."** The kernel's `SealResume.cutOk` has a condition (vi) that §9.4 does not list: no cut may fold an unsettled
+   undo's target while the undo itself stays unfolded (`undoTargets r.unsettledTail`). So after the rebuild, the cut
+   stays below the target (cut 63,990, tail 1,782 lines) and the ledger day stays at the target's day (740,680) until
+   the undo line itself folds, `keepDays` later.
+   - §9.6's first trigger counts every tail line at or below `maxLine` as foldable: 1,782 > 512. So every call reseals,
+     cannot move the cut, and writes a new generation.
+   - Measured: ten calls, ten writes, 3.6 s each (gap 124). The Lean source is the truth; §18.7 is wrong about it.
+2. **§18.2's hot call** (≈ 15 ms low, ≈ 67 ms high) and **§18.4's genesis** (≈ 0.9–3.3 s) are ESTIMATEs, and the
+   measurements above replace them (AGENTS §5.11). The tail was the small, cheap part: a 151-line tail costs 60 ms in
+   the kernel.
+3. **§14.5 row W5 names `logbench`**: the calls are made by tm's `examples/windowbench.rs`, run by `logbench` (g), for the
+   dependency reason above.
+
+### Goals, theorems, witnesses, D9-21
+
+**Goals added: none. Discharged: none. Refuted: none.** Burn-down **13** (unchanged). No Lean was edited: no new
+theorem, no witness, no cheat, no parity entry. Rule D9-21: no function over a wire list was added.
+
+### Gaps
+
+### Gap 124 (new; label W5-a) — after a far undo, every call reseals until the undo folds
+
+(1) *What is not done*: after a hand undo whose target is folded, genesis answers, but its checkpoint cannot fold past
+the target while the undo is unfolded (`cutOk`'s condition (vi)). `ReplayCache::replay`'s policy counts the pinned
+tail (1,782 lines at 3 years for a target 30 days back) as foldable, so every call sends `reseal`, folds nothing
+new, and writes `ckpt.json` and a month file.
+(2) *Why not now*: W5 measures; the lever is a policy change in `kernel_log.rs`, and W5's row adds no code. Two candidate
+levers: (a) count only lines above the stored cut that a previous reseal did not already refuse to fold (for example,
+skip the trigger when the last reseal left the cut unchanged at the same tail length), or (b) have the kernel's `meta`
+name the earliest unsettled undo target, so the host counts foldable lines only below it.
+(3) *Cost*: measured 3,553–3,744 ms per call (ten of ten) at 3 years, with a checkpoint write per call, for about
+`keepDays` after the undo. §9.6's promise "a stall costs one checkpoint write a day" does not hold for this state.
+(4) *When it clears*: before S, with the W4/§19 re-run of this gate. The far-undo row must then show one rebuild and ten
+hot calls.
+
+### Gap 125 (new; label W5-b) — the hot call's fixed cost is the checkpoint, and it breaks the 60 ms gate on its own
+
+(1) *What is not done*: one hot call at 3 years costs 73.7–76.3 ms. The kernel call alone takes 59.6–60.5 ms for a
+225,727 B checkpoint and a 151-line tail; the digest takes 4.8 ms, and the snapshot read, split and decode the rest.
+(2) *Why not now*: W5 measures. The levers are W4's (tree maps for the resumed item and window maps; C7 noted a resume
+rebuilds its maps) and §19's: K14's in-process checkpoint reuse, and K9's seal-time digest (the owner's call, gap 121).
+(3) *Cost*: every verb after S pays about 75 ms, and up to 92 ms with a 14-day pin, against the design's 60 ms. That is
+still inside `LATER_VERB` = 1 s; the 3-year later verb is measured at 278–283 ms today, with Rust reading.
+(4) *When it clears*: at W4, then §19's levers, re-measured by `logbench` (g) before S.
+
+**Gap 122** (W3) stands, now measured at 3 years: genesis takes 25.4 s against 1.5 s, and a pinned reseal 742.6 ms on day 14.
+It is the genesis half of this gate's failure, and W4's trigger ("required if W5's first run measures genesis above
+1.5 s, or a hot call above 60 ms") is met on both counts.
+
+### Numbers
+
+**Taken:** gaps 124–125. **Highest:** gap 125, cheat 158, parity P34. **Behaviour rows:** none in the binary (Rust is
+still the only reader).
+
+**Re-measured** (main worktree, on the tree committed; every command capped at 40 GB, the benchmark at 16 GB):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 3.07 / 3.12 / 3.07 s (W3: 3.099 / 3.105 / 3.105 s; flat) |
+| axiom audit | **3885 theorems** (unchanged) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged) |
+| `cargo test --workspace` | **1078 passed / 0 failed / 5 ignored across 73 binaries**, 0 compiler warnings, 51.1 s (the new example compiles in it) |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6; `stack.rs` 4.30 s) |
+| T5 (`kernel_replay_parity.rs --include-ignored`) | **16 passed**, 39.1 s |
+| `cli_latency.rs --include-ignored`, three serial runs | green, 4 passed each. No log: first 617.8 / 647.2 / 617.7 ms, later 55.8 / 55.7 / 55.8 ms. 1y: first 719.1 / 718.5 / 718.3, later 121.5 / 121.5 / 121.4. 3y: first 951.3 / 935.1 / 931.4, later 278.0 / 283.4 / 278.4. T14: 80.9 / 76.1 / 76.0 ms (3 years), 141.6 / 136.8 / 156.7 ms (10 years). Unchanged: Rust reads |
+| `logbench` (g) | the gate table above |
+
+**Owed next:** W4 (required: both of its triggers measured), gap 122's `dayOf` twin, gap 124's policy lever, and gap 125's
+levers, then this gate re-run by `logbench` (g) before S; gap 123's tests.

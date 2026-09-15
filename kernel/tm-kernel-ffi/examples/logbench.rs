@@ -38,6 +38,14 @@
 //!   lines of long note text at 1,536, 1,792 and 1,920 KiB (the byte bound's worst
 //!   shape).  **Gate:** the resend cap is the largest power-of-two line count, and a
 //!   byte bound, whose peak `VmHWM` is at most 200 MiB.
+//! - **(g)** (W5, design §14.5 row W5) **the measurement gate, through the replay
+//!   cache on disk**: genesis over the 3-year log, a hot call with its digest, a
+//!   reseal, a 10-day stall, an undo stack pinning 14 days, a hand undo 30 days
+//!   back followed by 10 verbs, and two geneses at once.  Those calls are
+//!   `tm/src/cli/kernel_log.rs`'s `ReplayCache::replay`, whose serde_json and chrono
+//!   this crate does not depend on, so (g) runs tm's `examples/windowbench.rs` as a
+//!   child (`cargo run --example windowbench -p tm`, as (c) runs `tzprobe`) and
+//!   prints its tables and its gate.  `logbench only-g` runs (g) alone.
 //!
 //! Every call-bearing measurement runs in a child process of its own (this
 //! binary, re-executed with a subcommand), because `VmHWM` only ever rises.
@@ -318,10 +326,11 @@ fn main() {
         ["logfacts", how, n] => return child_logfacts(how, n.parse().expect("a count"), false),
         ["logreseal", how, n] => return child_logfacts(how, n.parse().expect("a count"), true),
         ["only-f"] => return table_f(),
+        ["only-g"] => return table_g(),
         ["logpad", lines, kib] => return child_logpad(lines.parse().expect("a count"), kib.parse().expect("a count")),
         ["empty"] => return child_empty(),
         [] => {}
-        _ => panic!("usage: logbench [parse 40|61 AGE | rss mib|lines N | logop mib|lines N | logfacts|logreseal mib|kib|lines N | only-f | empty]"),
+        _ => panic!("usage: logbench [parse 40|61 AGE | rss mib|lines N | logop mib|lines N | logfacts|logreseal mib|kib|lines N | only-f | only-g | empty]"),
     }
 
     println!("logbench (stage 5 A3): best of {REPEATS} calls, median beside it; VmHWM of a fresh process, reset to its RSS just before the calls (\"pre\")");
@@ -449,6 +458,20 @@ fn main() {
     }
 
     table_f();
+    table_g();
+}
+
+/// **(g) the measurement gate (W5)**: tm's `examples/windowbench.rs`, run as a child under the root workspace's dev
+/// profile, its output printed as it wrote it (its scenarios, the gate's figures and PASS or FAIL).
+fn table_g() {
+    println!("\n(g) W5's measurement gate through the replay cache (tm's examples/windowbench.rs)");
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.toml");
+    let out = Command::new("cargo")
+        .args(["run", "--quiet", "--example", "windowbench", "-p", "tm", "--manifest-path", root, "--", "all"])
+        .output()
+        .expect("spawn cargo");
+    assert!(out.status.success(), "windowbench failed: {}", String::from_utf8_lossy(&out.stderr));
+    print!("{}", String::from_utf8_lossy(&out.stdout));
 }
 
 /// **(f) the memory gate for one resend-shaped call (W3, gap 102).**  A genesis resend is one call carrying every line
