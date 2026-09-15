@@ -1611,5 +1611,34 @@ theorem aHeaderThatCountsTouchesOnlyItsDay :
       = (Replay.State.init 1).valueAt .global := by
   decide
 
+-- ===========================================================================
+-- APPENDED 2026-09-15 (stage 5, D9 track, step C4: the completion family in
+-- `Replay.lean`).  Design §16 names no cheat for C4; this one guards quirk
+-- Q6(b), the owner's "keep: they answer different questions".  Number 146 is
+-- the next free number in this checkout (the highest was 145, C3).  The
+-- control, which compiles, is `Replay.an_instance_is_its_last_record_in_file_order`
+-- with its witness `Replay.instances_and_last_done_order_differently`.
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 146 — an instance kept by instant.  The tempting "one definition"
+   port of quirk Q6(b) keeps each instance's latest record by stamp, as
+   `last_done` is kept.  Fork `instances[item][inst]` is a map overwrite: the
+   last record in file order wins.  On a retro append (`routine s #1 done` at
+   10:00, then the same instance `done` at 08:00) the instance kept by instant
+   is the 10:00 record, and the fork's is the 08:00 one, so `decide` refuses. -/
+def instanceKeptByInstant (item ins : List Char) (es : List Log.Entry) : Option Replay.InstRec :=
+  es.foldl (fun acc e =>
+    match Replay.instRecordOf item ins e, acc with
+    | some r, some a => if a.t.1 < r.t.1 then some r else some a
+    | some r, none => some r
+    | none, acc => acc) none
+
+theorem anInstanceKeptByInstantIsTheLastRecordInFileOrder :
+    instanceKeptByInstant ['s'] ['#', '1']
+        [Replay.bE 1 63924372000 (Replay.rDone ['s'] ['#', '1']), Replay.bE 2 63924364800 (Replay.rDone ['s'] ['#', '1'])]
+      = ([Replay.bE 1 63924372000 (Replay.rDone ['s'] ['#', '1']),
+          Replay.bE 2 63924364800 (Replay.rDone ['s'] ['#', '1'])].reverse.findSome? (Replay.instRecordOf ['s'] ['#', '1'])) := by
+  decide
 
 end Tm

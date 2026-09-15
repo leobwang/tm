@@ -15444,3 +15444,274 @@ of the log, the Rust. The kernel's `log` op answers `facts.block`.
 - **C6** heads the cancelled lines, derives the seam facts, and replaces `facts.cancelled`, `days` and
   `block` with the view.
 - Then C7, W1–W3, S and S2.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-15: stage 5, D9 track, step C4 on rebuild-on-lean (after C3
+     5cc3831).  Design §8.2–§8.4, §14.4's C4 row, carried note 3 and T5.  Takes
+     cheat 146 (design §16 names none for C4) and parity P33 (new).  Takes no gap.
+     =========================================================================== -->
+
+## Stage 5 D9 C4, 2026-09-15: completions — the last record in file order, the latest done by instant, as the fork keeps them
+
+**Starting point.** `5cc3831`, clean: check.sh 7/7 (built tree 2.88 / 2.84 / 2.83 s, re-measured before any
+edit), audit 2935, corpus 29/37 files and 4/5 plans, burn-down 13, `cargo test --workspace` 1065 / 0 / 5 ignored
+across 73 binaries, FFI 98.
+
+### What was built
+
+**`Replay.lean`, section C4 (no new module; `TmKernel.lean` keeps its twenty imports).**
+- **The state.** `State` gains fork `last_done` (`lastDone`, an `HMap` by id, whose keys are fork `done_items`:
+  `mark_done` fills both), `done_dates` (`doneDates`, one pair per `(day, id)`), `instances` (keyed
+  `(item, inst)`, an `InstRec`: stamp, status, status as logged, minutes), fork `LatestNamed` per `(name, id?)`
+  (`named`, a `NamedRec`: the latest occurrence by instant with its line, and the latest by local date then
+  instant with its date and line) and the replay warnings (`rwarns`, `RWarn.unknownInstanceStatus line raw`,
+  §8.3). `Facts` carries them, with the accessors `Facts.lastDone`, `Facts.instance`, `Facts.namedAt` and
+  `Facts.doneOn`.
+- **Effects and keys (§8.2).** `markDone i t` (key `item i`; `Val.item` now carries the item and its
+  `last_done`), `doneDate i d` (key `doneDate i d`), `inst item inst r` (key `instDate item inst d` when
+  `inst` names a date, else `instOther item inst`), `named name id line t date` (key `named name id`) and
+  `rwarn w` (key `global`). The frame law is re-proved over the nine keys.
+- **The arms.** `completionArm` is fork `Machine::step`'s completion half, a second match beside C3's `arm`
+  (`effectsWith` is the header, the bookkeeping, `arm`, then `completionArm`):
+  - a non-partial `done` marks its id done on its day (fork `mark_done(id, t, day)`);
+  - a `routine` warns on a status fork `parse_instance_status` does not read and reads it as `Pending`,
+    overwrites its instance (**the last in file order wins**), and on `done` marks the item done on the
+    date its `inst` names, else on its day (`parse_date(inst).unwrap_or(day)`);
+  - a `skip` overwrites its instance as `Skipped`, logged `"skipped"`;
+  - an `event` folds into its key's `LatestNamed`, with its local date in the zone (`effectsWith` and
+    `stepWith` now take the zone).
+  - `arm_ofBlock`: every effect `arm` returns is a block-family effect, so the completion state is
+    `completionArm`'s alone. C3's `arm_no_header`, `conserves_step`, `conserves_foldl` and
+    `allFifths_foldl` are re-proved over the zone and the second arm (`completionArm_no_header`,
+    `completionArm_safe`).
+- **The goals** (below), and beside them:
+  - `lastMax?_spec`: a running maximum under a replacing relation splits the list at its answer, every
+    element before replaced by it and none after replacing it (`lastMax?_eq_none_iff`, `MaxSplit`).
+  - `last_done_is_the_first_of_the_latest`: every completion logged before `last_done` is strictly earlier,
+    and none logged after is later. `last_done_isSome_iff`: an item has one exactly when a survivor
+    completes it.
+  - `named_keeps_the_latest_by_instant_and_the_latest_by_local_date`: each `(name, id?)` record is the
+    running maximum of its occurrences by instant and by `(date, instant)`, a later line winning a tie.
+  - `the_replay_warnings_are_the_unknown_statuses_in_file_order` and
+    `a_done_date_is_a_survivors_completion_date` (an iff: a done date is recorded exactly when a survivor
+    completes the item on that date, so a later `pending` never removes one).
+
+**`Log.lean`: `parse_date` counts bytes (a repair of B3).** Fork `parse_date` refuses `s.len() != 10`, in
+UTF-8 bytes. B3's `instDate?` and `stampFromKey` tested `s.length = 10`, in characters, and chrono's numeric
+items skip Unicode whitespace (`LogStamp.trimWs`), so `2026-9-` + U+00A0 + `01` (10 characters, 11 bytes) was a
+date to the kernel and not to the fork. Both now test `utf8Len s = 10` (`the_date_grammars_count_bytes_not_characters`).
+`the_small_grammars_read_as_the_fork_does` still holds. T5's completion arm writes that instance.
+
+**The wire (`Boundary.lean`).**
+- `facts` gains `completion` (`completionJson`): `lastDone` as `[id, stamp]`, `doneDates` as `[id, day]`,
+  `instances` as `[item, inst, stamp, status, raw, actualMin]`, and `named` as
+  `[name, id, latestLine, latestStamp, datedLine, datedStamp]`; and `replayWarnings` (`rwarnJson`) in §10.2's
+  spelling, `{"line": n, "w": "unknownInstanceStatus", "raw": s}`. `factsJson` replays once (`let`).
+- **Edited in place:** `logAnswer_facts` spells out the two keys; C1's, C2's and C3's wire witnesses expect
+  them (C3's with `a` done on its day at its `done`).
+- **New end to end:** `the_log_op_answers_the_completion_facts`. `routine s #1 maybe` (83 characters), `skip s
+  #1` (63) and `event x` (52): one replay warning, the instance the `skip`, nothing done, and `x`'s record
+  on line 3.
+
+**`Negative.lean`.** CHEAT 146: an instance kept by instant (the "one definition" port of Q6(b)). `decide`
+refuses it against `(survivors es).reverse.findSome? (instRecordOf …)` on the retro append. It fails at its
+own `decide` (checked), and 145 still at its own. No existing block was edited (`end Tm` moved below the new
+block).
+
+**The FFI suite.**
+- `the_log_op_answers_the_cancelled_lines` and `stack.rs`'s mask and day-index tests expect the empty
+  completion family.
+- The block machine at the line bound checks its 23 done dates and `last_done` in the answer's tail.
+- New in `kernel.rs`: `the_log_op_answers_the_completion_facts` (the Lean witness through the FFI).
+- New in `stack.rs`: **the completion family at the line bound**: 16,384 `routine` lines of one item on as many
+  instances, half `done` and half `maybe`, then 16,384 `event` lines over 64 names, all at one instant, on a
+  2 MiB thread. It checks 16,384 instances, 8,192 warnings, `last_done` (the first of equal instants), and
+  every name's record on its last line (a later line wins a tie).
+
+### Goals (AGENTS §3.2)
+
+The C4 goals were added to `Goals.lean`, elaborated in-tree (16 goals, no error), and discharged in the step.
+Burn-down **13 → 16 → 13**. A note in the STAGE 5 section records it, and a scratch `example` per goal checks
+each against its proof.
+
+| goal | status |
+|---|---|
+| `an_instance_is_its_last_record_in_file_order` | proved as stated (§15) |
+| `last_done_is_the_latest_by_instant` | proved, with §15's `doneInstants z i` taking no zone: a completion's instant does not read one, and a def with an unused binder is AGENTS §7.4 item 1's trap. Not a weakening: the zone was never in the claim |
+| `instances_and_last_done_order_differently` | §15 gives only `∃ …`. Stated as: a log with increasing lines whose instance record is `done` and **strictly earlier** than its item's `last_done` (`routine s #1 done` at 10:00, then again at 08:00). Proved by `decide` on that log |
+
+**Refuted: one design claim.** §8.4's `events_named` row says a `≥ since` filter commutes with max, so the
+fact is "latest instant per `(name, id?)`". Carried note 3 (R3) found it false.
+`a_since_filter_does_not_commute_with_the_latest_by_instant` exhibits it in `foldZone`, whose clock goes back
+an hour at 00:30 UTC: `event x` at 00:29:30 (dated the 8th) and at 23:50 local an instant later (dated the 7th).
+Filtered to the 8th, the latest is line 1; the latest by instant, line 2, is dated the 7th. The law the kernel
+keeps is fork `LatestNamed`'s two instants (`named_keeps_the_latest_by_instant_and_the_latest_by_local_date`).
+
+**Witnesses.** 9 new decided witnesses, plus cheat 146's `decide`; 4 re-probed. All were probed in a scratch
+copy under `MemoryMax=8G timeout 120`, with at most 3 entries, `utcZone` or `foldZone` (one transition), and
+`Nat` instants.
+- **In `Replay.lean` (7):** `instances_and_last_done_order_differently`,
+  `a_retro_done_marks_done_and_credits_nothing`, `a_later_pending_does_not_undo_a_done_date` (the date its
+  `inst` names, not its day), `an_unknown_status_warns_and_is_pending` (`Done` with a capital D),
+  `last_done_keeps_the_first_of_equal_instants` (`>` not `>=`: two `done`s at one instant written at two
+  offsets), `a_routine_done_is_dated_by_its_inst_only_when_it_is_a_date` (`#2`, and the no-break space), and
+  the refutation above. Alone: **0.20 / 0.20 / 0.21 s at 566 MB**. The whole of `Replay.lean` (C1–C4, 5,034
+  lines, before the last header-comment edit brought it to 5,051): **4.22–4.47 s at 915–928 MB**.
+- **In `Log.lean` (1):** `the_date_grammars_count_bytes_not_characters`. The file, with B3's small-grammar
+  witness re-probed: 3.92 s, 1.57 GB.
+- **On the wire (1):** `the_log_op_answers_the_completion_facts`, with C1's, C2's and C3's re-probed (Boundary
+  built without the four, then a scratch file importing it): **1.43 s at 1.0 GB**.
+- `Negative.lean` at the 8 GB cap: 1.97–1.98 s, 1.9–2.0 GB, 142 errors.
+
+Altering an expected value fails at `decide`: checked on `last_done_keeps_the_first_of_equal_instants` (the
+written offset), `a_since_filter_does_not_commute_with_the_latest_by_instant` (the dated line) and the wire
+witness (the raw status).
+
+### T5 (`tm/tests/kernel_replay_parity.rs`, extended)
+
+**What `Facts` gains.** `completion` ([`Completion`]):
+- `last_done`, with its written offset. The Rust side asserts its keys are `done_items`.
+- `done_dates` and `instances`, in full.
+- `named`, fork `LatestNamed` per `(name, id?)`. The Rust side walks `events[name]` beside its surviving `event`
+  rows in file order, checks that they are the same occurrences, and takes each one's line.
+- The replay warnings as `(line, status)`. The Rust side renders each as `Replay.warnings`' text
+  (`fmt_timestamp`, `{status:?}`) and asserts the list equals `Replay.warnings`.
+- `assert_parity` also compares **every `Replay::latest_named(name, id, tz)` query** the fork answers (every
+  name and an absent one, every id the log addresses and an absent one) with the kernel's two keys merged, the
+  later line winning a tie, and compares `event_names`.
+
+**Two new generator arms.**
+- `Completions` runs one to three of ten cases:
+  - a retro routine `done` of one instance (Q6(b));
+  - statuses the fork does not read (`maybe`, `Done`, empty, `skip `, a quoted backslash, `é`);
+  - a `pending` after a `done`, and a `skip` after a `done`;
+  - instances `parse_date` does or does not read (`#3`, ` 2026-9-01`, the no-break space, `2026-9-01`,
+    `2026-09-31`, `W37`);
+  - a retro `done` and two `done`s at one instant written at two offsets;
+  - every known status with minutes;
+  - `event`s with and without an id, retro and at one instant at two offsets;
+  - an undone routine `done`;
+  - a partial `done` beside a completion.
+- `ClockBack` writes `event`s 30 s before and 29 min after the sequence zone's backwards-date transition (St
+  John's; elsewhere the zone's last fall-back), and a routine `done`.
+
+**A new zone case.** St John's clock back across midnight, events and completions. It names by hand the lines of
+`arrival`'s latest by instant (3) and by date (2), and `arrival`/`3`'s (4). It also carries a retro routine
+`done` and an undone one.
+
+**P33's named test.** `t5_p33_a_done_date_before_the_origin_is_the_named_exception` writes one routine `done` on
+`0000-09-07`. It asserts the fork's done date is year 0 and the kernel's is the wake day, then asserts the two
+readers' facts are otherwise equal.
+
+| input | run |
+|---|---|
+| corpus | 7 logs, 12 cancelled, 512 days; block family as at C3. Completion family: 124 done items (184 done dates), 93 instances, 2 named keys, 0 replay warnings; 13 `latest_named` queries |
+| generated, 40 a day, seed 7 | 1mo: 84 done items (158 done dates), 82 instances, 3 named keys, 0 warnings. 6mo: 403 done items (945 done dates), 497 instances, 15 named keys, 0 warnings; 40 queries over both; 126–208 ms for both readers |
+| 256 sequences | 10,189 lines, 3,245 cancelled, 10,189 days (2,935 off their own local date). Block family: 466 days (2,295 segments, 220 ci-unknown pairs), 715 items (889 item days), 1,133 start observations, 962 durations, 167 interruptions, 20 open blocks, 10 open interruptions. **Completion family: 723 done items (860 done dates), 372 instances (44 whose last record in file order is not their latest by instant), 173 named keys (22 whose latest by instant is not their latest by date), 42 replay warnings; 602 `latest_named` queries.** Completion edge cases 0–9 ran 45, 42, 40, 37, 27, 29, 30, 32, 37 and 22 times (the test asserts all ten, and that Q6(b), the clock going back and the warnings each showed). Arms: `Completions` 172, `ClockBack` 197, the other seventeen 175–229. Zones: Chicago 43, St John's 54, Kolkata 53, Berlin 59, UTC 47 |
+| §6.4 zone cases | 11 cases, 66 days, 47 named days, **2 named-event keys checked by hand**. Completion family: 5 done items, 1 instance (its last record not its latest), 2 named keys (1 whose latest by instant is not its latest by date); 14 queries |
+| P33 | 1 log, the one named difference |
+
+**Exceptions: 0** among the compared inputs. §17 lists `last_done` by instant and instances by file order as
+exact by design. P33 (below) is not generated, and its test names it.
+
+**T5 bites.** Three scratch mutations of the Rust side were each restored with `git checkout` afterwards.
+- `mark_done` with `>=` in place of `>` fails the sequences (sequence 9: the completion family).
+- `parse_date` counting characters in place of bytes fails the sequences (sequence 42, St John's).
+- `latest_named` moving `latest_dated` with `latest`, the design's commuting claim, fails the zone cases
+  (`latest_named(arrival, 3)`) and the sequences.
+
+**Measurements** (`#[ignore]`d, three runs each):
+- `t5_a_block_log_of_distinct_ids_is_measured`: kernel 252 / 254 / 285 ms (232–236 at C3), Rust 25–29 ms, equal.
+- The hostile undo log: kernel 227 / 232 / 231 ms (210–219 at C3), Rust 98 ms.
+
+### Recorded disagreements between the design and the repo
+
+1. **§14.4's C4 row does not list `event`; §8.4's row makes it "latest instant per `(name, id?)`".**
+   - Carried note 3 binds C4 to fork `LatestNamed`, so the `event` arm is C4's, not C5's.
+   - The kernel keeps both of its instants, and §8.4's claim is refuted (above).
+   - The fork's full `events` lists, `events_for`, `event_occurred` and `stamps` have no library reader
+     (R-audit) and are not derived, as §8.4 says.
+2. **§15's `doneInstants z i` takes a zone it does not read.** It is `doneInstants i` (Goals, above).
+3. **§8.2's `itemAdd` carries "done bit, lastDone, doneDates first/count".**
+   - Here they are the effects `markDone` (key `item i`) and `doneDate` (key `doneDate i d`).
+   - The done bit is `lastDone`'s key set. The fork fills `done_items` and `last_done` together, and T5
+     checks that they agree.
+   - A routine `done` creates no `ItemReplay`, so the facts cannot live in the item record: fork `items`
+     has no entry for it.
+   - `done_dates` is the full set at C4, and W1 fixes the checkpoint's form (§8.4: first, count, window).
+4. **§8.2's "one arm per constructor".** `completionArm` is a second match beside `arm`. The completion family
+   reads no machine state and writes none of the block family's (`arm_ofBlock`), so the order within an
+   entry is not observable. `every_known_event_has_an_arm` still counts one header per entry.
+5. **The routine arm's day half stays C5's.** Its `Routine` segment and `DayReplay.routine_min` are day
+   fields, as C3's owed list and §14.4's C5 row ("day fields") put them. T5 still filters the day's segments to
+   the block family's kinds.
+6. **§10.2 puts `replayWarnings` on the `log` answer.** At C4 it is inside `facts`, because only a replay
+   derives it. C6's view decides where it lives.
+7. **§5.6's `instDate?` is "exactly 10 characters".** Fork `parse_date` counts bytes. This is repaired in
+   `Log.lean` for `instDate?` and `stampFromKey` (above).
+   - **`stampFromKey` still differs from `stamp_from_key` on a negative year.** chrono reads `-001-09-07` as a
+     date, and `LogStamp.yearOf` refuses it.
+   - That is C5's `demote` stamp. It is owed there, as a parity entry or a port.
+8. **Q6(b) takes no gap.** The owner's answer is "keep: they answer different questions" (§22), not "fix
+   later", so §20 has no label for it and none is taken. `instances_and_last_done_order_differently` and
+   cheat 146 are its separating theorem and guard.
+9. **Pattern variables named `inst`.** Inside `Effect.key`, Lean resolves `inst` to the constructor
+   `Effect.inst`, so the definitions use `ins`. The goal statements keep §15's `inst`.
+
+### Rule D9-21 (functions over a list the wire can make large)
+
+- `completionArm`, `NamedRec.push`, `pick` and `lastMaxStep`: no recursion. `applyEffect`'s new arms: one
+  `HMap.alter`, or a cons.
+- `Log.utf8Len`: a `foldl`, over one `inst` string.
+- `completionJson`: `HMap.pairs` (a `foldl`) and `mapTR`. `factsJson`'s warnings: `mapTR`.
+- `finish`'s warnings: `reverse`.
+- `KeyHash` for `(item, inst)` and `(name, id?)`: `keyHash`, a `foldl`.
+- Specification only, never on the wire:
+  - `lastMax?` and `maxByInstant?` (`foldl`);
+  - `doneInstants` (`filter`, `map`), `namedOccurrences` and `the_replay_warnings…`'s `filterMap`;
+  - `instRecordOf`, `completes`, `doneDateOf`, `warnOf`, the `Effect.markOf`/`instOf`/`namedOf`/`dateOf`
+    projections, and the `Facts` accessors.
+
+### Parity entry
+
+| # | site | the kernel | the fork point | authority | step |
+|---|---|---|---|---|---|
+| **P33** | a routine `done` whose `inst` names a date before 0001-01-01 (`0000-09-07`, or a signed year such as `-001-09-07`) | not a date (`Log.instDate?`: `Cal.Day` starts at 0001-01-01), so the completion is recorded on its wake-attributed day | chrono's proleptic `NaiveDate`: the completion is recorded on year 0 or a negative year, which then anchors `every:Nd` (`done_date_first`) | P23's residue, applied to `done_dates`; §5.3 | C4 (named test in T5; not generated) |
+
+### Numbers
+
+**Taken:**
+- cheat 146 (the next free number; design §16 names none for C4);
+- P33 (new; free, checked by grep).
+
+**Gaps: none.** **Highest:** gap 117, cheat 146, parity P33. **Behaviour rows:** none in the binary, which still has
+one reader of the log, the Rust. The kernel's `log` op answers `facts.completion` and `facts.replayWarnings`.
+
+**Re-measured** (main worktree, every command capped at 40 GB; probes at 8 GB, measurements at 16 GB):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.90 / 2.88 / 2.83 s after the last rebuild (2.85 / 2.84 / 2.86 s before the final doc-comment edit to `Replay.lean`). Baseline 2.88 / 2.84 / 2.83 s, re-measured before any edit: +2.5% at the worst against the fastest baseline run, and the budget is 10% |
+| axiom audit | **2994 theorems** (2935 + 59). The three §6.3 counts agree at 2994 |
+| `Negative.lean` | check 4 ok; 142 errors; 136 `/- CHEAT` banners; no duplicate number; 146 fails at its `decide`, 145 still at its own |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (13 → 16 → 13 within the step) |
+| `TmKernel.lean` | **20 imports** (no new module) |
+| `lake build TmKernel:static` after the edits | 2 min 23 s (`Replay` 5.1 s). **A slip, recorded as a lesson:** one `lake -d TmKernel build` run from `kernel/` picked elan's default toolchain (v4.34.0), not `TmKernel/lean-toolchain`'s, and failed. It wrote no tracked file (`lean-toolchain` and `lake-manifest.json` unchanged), and check.sh's capped build (`cd TmKernel`) rebuilt the tree with v4.33.1 in 164 s, before the three timed runs above. Run `lake` from `kernel/TmKernel` |
+| `cargo test --workspace` | **1066 passed / 0 failed / 5 ignored across 73 binaries**, 0 compiler warnings (T5 gains P33's test) |
+| FFI suite | **99 passed / 0 failed** (kernel 85, corpus 8, stack 6; `stack.rs` 2.38 s). Serial, three runs: the mask at the bound 271–276 ms, the day index 221–229 ms, the block machine 695–702 ms (4,636,506 bytes), the completion family 422–462 ms for the call (1,918,829 bytes) |
+| T5 (`kernel_replay_parity.rs`) | 6 passed, 2 ignored, 0.85–0.90 s; 0 exceptions |
+| `cli_latency.rs --include-ignored`, three serial runs | green, 4 passed. No log: first 627.7 / 617.5 / 617.0 ms, later 50.7 / 55.8 / 55.7 ms. 1y: first 728.7 / 703.4 / 734.1, later 131.5 / 121.6 / 121.7. 3y: first 946.1 / 951.3 / 941.5, later 283.2 / 273.3 / 283.5. T14: 76.0 / 81.0 / 76.1 ms (3 years), 141.8 / 146.6 / 141.8 ms (10 years). The binary's reader is unchanged, and so are these |
+| the block machine's growth (`examples/oneshot`, facts asked, UTC, a `start` and a `done` a minute) | distinct ids: 4,000 / 8,000 / 16,000 / 32,000 lines take 0.07 / 0.16 / 0.40 / 0.91 s (C3: 0.04 / 0.13 / 0.36 / 0.85). One id: 0.05 / 0.11 / 0.29 / 0.65 s (C3: 0.03 / 0.09 / 0.25 / 0.61). Facts not asked: 0.22 s at 32,000 (C3: 0.22). About 6% over C3 at 32,000 lines: two completion effects a `done` |
+| the completion family's growth (`examples/oneshot`, the line-bound shape) | 4,096 / 8,192 / 16,384 / 32,768 lines: 0.04 / 0.06 / 0.20 / 0.39 s, 35 / 59 / 104 / 202 MB |
+
+**Owed next:**
+- **C5** (the day header and records family).
+  - Its `routine` half: the `Routine` segment, on the day of `t − actual_min` (`Cal.subMinutes`), and
+    `routine_min`.
+  - `break`, `idle`, `energy` (binding `slept` to `slept_by_day`), `plan`, `demote` (with `stampFromKey`'s
+    negative-year residue, disagreement 7), `drop`, `close`, `loc`, `arrive`, `wake` and `unknown`.
+  - T5's segment filter widens to every kind.
+- **C6** heads the cancelled lines, derives the seam facts, and replaces `facts.cancelled`, `days`, `block`,
+  `completion` and `replayWarnings` with the view.
+- Then C7, W1–W3, S and S2.

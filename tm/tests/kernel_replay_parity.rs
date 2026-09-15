@@ -17,6 +17,7 @@
 //! | C1 | `cancelled`: the lines of the entries the undo mask cancels (`ViewRow::cancelled`) |
 //! | C2 | `days`: every entry's wake-attributed day (`ViewRow::day`), survivors, cancelled entries and undos alike, as `(line, days since 0001-01-01)` |
 //! | C3 | `block`: the block family of the machine (`start`, `pause`, `unpause`, `interrupt`, `resume`, `stop`, `done`, `extend`). Per day, `DayReplay`'s `first_start`, `starts`, `block_min`, `blocks_done`, `load_fifths`, `minutes_by_ci`, `ci_unknown`, `done`, `lost_min`, `dropped` and its `Block`/`Pause`/`Interrupt` segments; every `ItemReplay` field; the start observations of `energy`; `durations`; `interrupts`; `open_block`; `open_interrupt`; `last_effective_t` ([`Block`]) |
+//! | C4 | `completion`: the completion family (`done`'s `mark_done`, `routine`, `skip`, `event`): `done_items` and `last_done` (the latest by instant, the first of equal instants), `done_dates`, `instances` (the last record in file order), `LatestNamed` per `(name, id?)` from `events` (with each occurrence's line) and every `latest_named` query, `event_names`; and the replay warnings as `(line, status)`, each checked against `Replay.warnings`' text ([`Completion`]) |
 //!
 //! **The inputs**, every one compared in full:
 //! * the seven corpus logs (`kernel/corpus/logs/*.jsonl`, the design's four, and
@@ -32,6 +33,10 @@
 //! is used. At C1 and C2 there are none: §17 lists the undo mask, dangling undos,
 //! the housekeeping cancellation, both first-wake rules and day attribution in
 //! `cfg.tz` inside the table's span, leap seconds included, as exact by design.
+//! C4 adds none to the compared inputs (§17: `last_done` by instant and instances
+//! by file order are exact by design). Parity P33, a routine `done` whose `inst`
+//! names a date before 0001-01-01, is not generated; it has its own named test
+//! ([`t5_p33_a_done_date_before_the_origin_is_the_named_exception`]).
 
 #[allow(dead_code)]
 #[path = "../src/cli/tz_table.rs"]
@@ -51,10 +56,20 @@ use std::sync::{Mutex, OnceLock};
 use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
 use serde_json::{json, Value};
-use tm_core::log::{Event, Interruption, LogEntry, Replay, SegmentKind};
+use tm_core::log::{fmt_timestamp, parse_instance_status, Event, Interruption, LogEntry, Replay, SegmentKind};
+use tm_core::model::InstanceStatus;
 
 /// How many generated sequences T5 runs (design §14.4).
 const SEQUENCES: u64 = 256;
+
+thread_local! {
+    /// C4: how many `latest_named` queries [`assert_parity`] has compared on this test's thread.
+    static LATEST_NAMED_QUERIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+fn latest_named_queries() -> usize {
+    LATEST_NAMED_QUERIES.with(std::cell::Cell::get)
+}
 
 // ---------------------------------------------------------------------------
 // The two readers.
@@ -71,6 +86,8 @@ struct Facts {
     days: Vec<(u64, i64)>,
     /// C3: the block family.
     block: Block,
+    /// C4: the completion family and the replay warnings.
+    completion: Completion,
     /// Not a replay fact: the lines each reader refused (T1's field, carried so a
     /// line one reader dropped cannot hide from the facts above).
     warnings: Vec<u64>,
@@ -150,6 +167,172 @@ struct Block {
     open_block: Option<OpenBlockRow>,
     open_interrupt: Option<InterruptRow>,
     last_effective: Option<Stamp>,
+}
+
+/// C4: an instance record, `(stamp, status, status as logged, actual_min)`.
+type InstanceRow = (Stamp, String, String, Option<u64>);
+/// C4: one `(name, id?)` key's `LatestNamed`, `(latest line, latest stamp, dated
+/// line, dated stamp)`.
+type NamedRow = (u64, Stamp, u64, Stamp);
+
+/// **C4: the completion family.**
+#[derive(Clone, Debug, PartialEq, Default)]
+struct Completion {
+    /// `last_done`; its keys are `done_items` (checked on the Rust side).
+    last_done: BTreeMap<String, Stamp>,
+    /// `done_dates`, days counted from 0001-01-01.
+    done_dates: BTreeMap<String, BTreeSet<i64>>,
+    /// `instances`, keyed `(item, inst)`.
+    instances: BTreeMap<(String, String), InstanceRow>,
+    /// `LatestNamed` per `(name, id?)`.
+    named: BTreeMap<(String, Option<String>), NamedRow>,
+    /// The replay warnings, `(line, status as logged)`, in file order.
+    warnings: Vec<(u64, String)>,
+}
+
+fn status_name(s: InstanceStatus) -> &'static str {
+    match s {
+        InstanceStatus::Pending => "pending",
+        InstanceStatus::Done => "done",
+        InstanceStatus::Missed => "missed",
+        InstanceStatus::Expired => "expired",
+        InstanceStatus::Skipped => "skipped",
+    }
+}
+
+/// The kernel's `facts.completion` and `facts.replayWarnings`. Maps are read as
+/// maps and a repeated key fails.
+fn kernel_completion(c: &Value, w: &Value) -> Completion {
+    let mut out = Completion::default();
+    for p in j_arr(&c["lastDone"], "lastDone") {
+        let p = j_arr(p, "a lastDone pair");
+        assert!(out.last_done.insert(j_str(&p[0], "id"), j_stamp(&p[1])).is_none(), "a repeated lastDone id");
+    }
+    for p in j_arr(&c["doneDates"], "doneDates") {
+        let p = j_arr(p, "a doneDates pair");
+        assert!(
+            out.done_dates.entry(j_str(&p[0], "id")).or_default().insert(p[1].as_i64().expect("a day")),
+            "a repeated done date"
+        );
+    }
+    for r in j_arr(&c["instances"], "instances") {
+        let r = j_arr(r, "an instance");
+        let row = (j_stamp(&r[2]), j_str(&r[3], "status"), j_str(&r[4], "raw"), j_opt(&r[5], |x| j_u64(x, "actualMin")));
+        assert!(out.instances.insert((j_str(&r[0], "item"), j_str(&r[1], "inst")), row).is_none(), "a repeated instance");
+    }
+    for r in j_arr(&c["named"], "named") {
+        let r = j_arr(r, "a named record");
+        let row = (j_u64(&r[2], "latest line"), j_stamp(&r[3]), j_u64(&r[4], "dated line"), j_stamp(&r[5]));
+        assert!(out.named.insert((j_str(&r[0], "name"), j_opt(&r[1], |x| j_str(x, "id"))), row).is_none(), "a repeated named key");
+    }
+    for x in j_arr(w, "replayWarnings") {
+        assert_eq!(x["w"], "unknownInstanceStatus", "the one replay warning: {x}");
+        out.warnings.push((j_u64(&x["line"], "line"), j_str(&x["raw"], "raw")));
+    }
+    out
+}
+
+/// The instant order of two stamps (chrono's: the offset is not compared).
+fn instant_of(s: &Stamp) -> (i64, u32) {
+    (s.0, s.1)
+}
+
+/// The Rust's completion family, from the in-tree `Replay`. The named records
+/// and the warnings need each occurrence's line, which the fork's lists do not
+/// carry: they are walked beside the surviving rows of their kind, in file order,
+/// and checked against them.
+fn rust_completion(r: &Replay, tz: Tz) -> Completion {
+    let done_items: BTreeSet<String> = r.last_done.keys().cloned().collect();
+    assert_eq!(done_items, r.done_items, "the fork's done_items are its last_done keys");
+    let mut out = Completion {
+        last_done: r.last_done.iter().map(|(k, t)| (k.clone(), stamp_of(t))).collect(),
+        done_dates: r.done_dates.iter().map(|(k, ds)| (k.clone(), ds.iter().map(|d| day_number(*d)).collect())).collect(),
+        instances: r
+            .instances
+            .iter()
+            .flat_map(|(item, m)| {
+                m.iter().map(move |(inst, rec)| {
+                    (
+                        (item.clone(), inst.clone()),
+                        (stamp_of(&rec.t), status_name(rec.status).to_string(), rec.raw_status.clone(), rec.actual_min.map(u64::from)),
+                    )
+                })
+            })
+            .collect(),
+        ..Completion::default()
+    };
+    let survivors: Vec<_> = r.view().iter().filter(|row| !row.cancelled).collect();
+    // The replay warnings: one a surviving routine with a status the fork does not read.
+    for row in &survivors {
+        if let Event::Routine { status, .. } = &row.entry.ev {
+            if parse_instance_status(status).is_none() {
+                out.warnings.push((row.line, status.clone()));
+            }
+        }
+    }
+    let texts: Vec<String> = out
+        .warnings
+        .iter()
+        .map(|(line, raw)| {
+            let row = survivors.iter().find(|row| row.line == *line).expect("the warned row");
+            format!("{}: unknown routine status {raw:?}", fmt_timestamp(&row.entry.t))
+        })
+        .collect();
+    assert_eq!(texts, r.warnings, "Replay.warnings is one message a surviving unknown status, in file order");
+    // `events[name]` in file order, beside the surviving `event` rows of that name.
+    for (name, occ) in &r.events {
+        let rows: Vec<_> = survivors.iter().filter(|row| matches!(&row.entry.ev, Event::Named { name: n, .. } if n == name)).collect();
+        assert_eq!(rows.len(), occ.len(), "events[{name}] is its surviving rows");
+        let mut keys: BTreeMap<Option<String>, NamedRow> = BTreeMap::new();
+        for (row, e) in rows.iter().zip(occ) {
+            let Event::Named { id: row_id, .. } = &row.entry.ev else { unreachable!("filtered to events") };
+            assert_eq!((stamp_of(&row.entry.t), row_id), (stamp_of(&e.t), &e.id), "events[{name}] in file order");
+            let (line, t) = (row.line, stamp_of(&e.t));
+            let date = |s: &Stamp| day_number(date_in(s, tz));
+            keys.entry(e.id.clone())
+                .and_modify(|k| {
+                    // `t >= latest` and `(date, t) >= (date, latest_dated)`: a later line wins a tie.
+                    if instant_of(&t) >= instant_of(&k.1) {
+                        k.0 = line;
+                        k.1 = t;
+                    }
+                    if (date(&t), instant_of(&t)) >= (date(&k.3), instant_of(&k.3)) {
+                        k.2 = line;
+                        k.3 = t;
+                    }
+                })
+                .or_insert((line, t, line, t));
+        }
+        for (id, k) in keys {
+            out.named.insert((name.clone(), id), k);
+        }
+    }
+    out
+}
+
+/// The local date of a stamp in `tz`.
+fn date_in(s: &Stamp, tz: Tz) -> NaiveDate {
+    DateTime::from_timestamp(s.0 - EPOCH_FROM_CE, s.1).expect("a stamp in range").with_timezone(&tz).date_naive()
+}
+
+/// **`Replay::latest_named(name, id, tz)` from the kernel's per-key records**: the
+/// key addressed to nobody and the key addressed to `id` merged, the later line
+/// winning a tie, as the fork's walk over `events[name]` does.
+fn kernel_latest_named(c: &Completion, name: &str, id: &str, tz: Tz) -> Option<(Stamp, Stamp)> {
+    let keys = [c.named.get(&(name.to_string(), None)), c.named.get(&(name.to_string(), Some(id.to_string())))];
+    let mut best: Option<NamedRow> = None;
+    for k in keys.into_iter().flatten() {
+        best = Some(match best {
+            None => *k,
+            Some(b) => {
+                let date = |s: &Stamp| day_number(date_in(s, tz));
+                let latest = if (instant_of(&k.1), k.0) > (instant_of(&b.1), b.0) { (k.0, k.1) } else { (b.0, b.1) };
+                let dated = if (date(&k.3), instant_of(&k.3), k.2) > (date(&b.3), instant_of(&b.3), b.2) { (k.2, k.3) } else { (b.2, b.3) };
+                (latest.0, latest.1, dated.0, dated.1)
+            }
+        });
+    }
+    best.map(|b| (b.1, b.3))
 }
 
 /// A date as the kernel counts it: days since 0001-01-01 (chrono counts that
@@ -446,6 +629,7 @@ fn kernel_facts(text: &str, tz: Tz) -> Facts {
             })
             .collect(),
         block: kernel_block(&facts["block"]),
+        completion: kernel_completion(&facts["completion"], &facts["replayWarnings"]),
         warnings: resp["ok"]["log"]["warnings"]
             .as_array()
             .expect("warnings")
@@ -462,6 +646,7 @@ fn rust_facts(text: &str, tz: Tz) -> Facts {
         cancelled: r.view().iter().filter(|row| row.cancelled).map(|row| row.line).collect(),
         days: r.view().iter().map(|row| (row.line, day_number(row.day))).collect(),
         block: rust_block(&r),
+        completion: rust_completion(&r, tz),
         warnings: replay::warning_lines_of_text(text),
     }
 }
@@ -510,6 +695,44 @@ fn assert_parity(name: &str, text: &str, tz: Tz) -> Facts {
         why.truncate(5);
         panic!("{name} ({}): the block family differs\n{}", tz.name(), why.join("\n"));
     }
+    if k.completion != r.completion {
+        let (kc, rc) = (&k.completion, &r.completion);
+        let mut why = Vec::new();
+        let keys: BTreeSet<_> = kc.last_done.keys().chain(rc.last_done.keys()).collect();
+        for i in keys.into_iter().filter(|i| kc.last_done.get(*i) != rc.last_done.get(*i)) {
+            why.push(format!("last_done {i}: kernel {:?} rust {:?}", kc.last_done.get(i), rc.last_done.get(i)));
+        }
+        let keys: BTreeSet<_> = kc.done_dates.keys().chain(rc.done_dates.keys()).collect();
+        for i in keys.into_iter().filter(|i| kc.done_dates.get(*i) != rc.done_dates.get(*i)) {
+            why.push(format!("done_dates {i}: kernel {:?} rust {:?}", kc.done_dates.get(i), rc.done_dates.get(i)));
+        }
+        let keys: BTreeSet<_> = kc.instances.keys().chain(rc.instances.keys()).collect();
+        for i in keys.into_iter().filter(|i| kc.instances.get(*i) != rc.instances.get(*i)) {
+            why.push(format!("instance {i:?}: kernel {:?} rust {:?}", kc.instances.get(i), rc.instances.get(i)));
+        }
+        let keys: BTreeSet<_> = kc.named.keys().chain(rc.named.keys()).collect();
+        for i in keys.into_iter().filter(|i| kc.named.get(*i) != rc.named.get(*i)) {
+            why.push(format!("named {i:?}: kernel {:?} rust {:?}", kc.named.get(i), rc.named.get(i)));
+        }
+        if kc.warnings != rc.warnings {
+            why.push(format!("replay warnings:\n  kernel {:?}\n  rust   {:?}", kc.warnings, rc.warnings));
+        }
+        why.truncate(5);
+        panic!("{name} ({}): the completion family differs\n{}", tz.name(), why.join("\n"));
+    }
+    // C4: every `latest_named` query the fork answers (every name, every id it was
+    // addressed to and one it was not), from the kernel's per-key records.
+    let rr = replay::replay_of_text(text, tz);
+    let ids: BTreeSet<String> = rr.events.values().flatten().filter_map(|e| e.id.clone()).chain(["zz-absent".to_string()]).collect();
+    let names: BTreeSet<&str> = rr.event_names().collect();
+    assert_eq!(names, k.completion.named.keys().map(|(n, _)| n.as_str()).collect::<BTreeSet<_>>(), "{name}: event_names");
+    for n in names.iter().copied().chain(["zz-absent"]) {
+        for id in &ids {
+            let fork = rr.latest_named(n, id, tz).map(|l| (stamp_of(&l.latest), stamp_of(&l.latest_dated)));
+            assert_eq!(kernel_latest_named(&k.completion, n, id, tz), fork, "{name}: latest_named({n}, {id})");
+            LATEST_NAMED_QUERIES.with(|q| q.set(q.get() + 1));
+        }
+    }
     if k.cancelled != r.cancelled {
         let (ks, rs): (BTreeSet<_>, BTreeSet<_>) = (k.cancelled.iter().collect(), r.cancelled.iter().collect());
         let lines: Vec<&str> = text.split('\n').collect();
@@ -550,9 +773,28 @@ struct Tally {
     interrupts: usize,
     open_blocks: usize,
     open_interrupts: usize,
+    /// C4.
+    done_items: usize,
+    done_dates: usize,
+    instances: usize,
+    named: usize,
+    replay_warnings: usize,
+    /// C4: instances whose last record in file order is stamped before an earlier-logged
+    /// record of the same instance (quirk Q6(b) showing; [`q6b_separations`]).
+    retro_instances: usize,
+    /// C4: `(name, id?)` keys whose latest by instant is not their latest by date (carried note 3 showing).
+    clock_back_keys: usize,
 }
 
 impl Tally {
+    fn add_completion(&mut self, c: &Completion) {
+        self.done_items += c.last_done.len();
+        self.done_dates += c.done_dates.values().map(BTreeSet::len).sum::<usize>();
+        self.instances += c.instances.len();
+        self.named += c.named.len();
+        self.replay_warnings += c.warnings.len();
+        self.clock_back_keys += c.named.values().filter(|k| k.0 != k.2).count();
+    }
     fn add(&mut self, b: &Block) {
         self.days += b.days.len();
         self.items += b.items.len();
@@ -571,10 +813,28 @@ impl std::fmt::Display for Tally {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "block family: {} days ({} segments, {} ci-unknown pairs), {} items ({} item days), {} start observations, {} durations, {} interruptions, {} open blocks, {} open interruptions",
-            self.days, self.segments, self.ci_unknown, self.items, self.item_days, self.energy, self.durations, self.interrupts, self.open_blocks, self.open_interrupts
+            "block family: {} days ({} segments, {} ci-unknown pairs), {} items ({} item days), {} start observations, {} durations, {} interruptions, {} open blocks, {} open interruptions; \
+             completion family: {} done items ({} done dates), {} instances ({} whose last record in file order is not their latest by instant), {} named keys ({} whose latest by instant is not their latest by date), {} replay warnings",
+            self.days, self.segments, self.ci_unknown, self.items, self.item_days, self.energy, self.durations, self.interrupts, self.open_blocks, self.open_interrupts,
+            self.done_items, self.done_dates, self.instances, self.retro_instances, self.named, self.clock_back_keys, self.replay_warnings
         )
     }
+}
+
+/// **Quirk Q6(b) in a log**: how many instances' last surviving record in file
+/// order is stamped strictly before another surviving record of the same instance,
+/// so the instance (last in file order) and the latest by instant differ.
+fn q6b_separations(text: &str, tz: Tz) -> usize {
+    let r = replay::replay_of_text(text, tz);
+    let mut by_inst: BTreeMap<(String, String), Vec<(i64, u32)>> = BTreeMap::new();
+    for row in r.view().iter().filter(|row| !row.cancelled) {
+        let key = match &row.entry.ev {
+            Event::Routine { item, inst, .. } | Event::Skip { item, inst } => (item.clone(), inst.clone()),
+            _ => continue,
+        };
+        by_inst.entry(key).or_default().push(instant_of(&stamp_of(&row.entry.t)));
+    }
+    by_inst.values().filter(|ts| ts.last().is_some_and(|last| ts.iter().any(|t| t > last))).count()
 }
 
 /// How many entries of `text` the day index puts on a date other than their own
@@ -726,9 +986,21 @@ enum Arm {
     /// midnight, two 90-second sub-segments (site R8), and a `stop` then a
     /// 0-minute `done` then a real one).
     BlockEdges,
+    /// C4: the completion family's edges, one of ten cases a time (a retro
+    /// routine `done` of one instance, unknown statuses, a `pending` after a `done`,
+    /// a `skip` after a `done`, instances that are not dates to `parse_date`, a retro
+    /// and an equal-instant `done`, every known status with minutes, events with
+    /// and without an id at retro and equal instants, an undone routine, and a
+    /// partial `done` beside a completion).
+    Completions,
+    /// C4: `event`s and a routine `done` across the zone's clock going back over
+    /// midnight (St John's before 2011; in a zone with no such transition, its
+    /// fall-back), so the latest by instant is not the latest by date (carried
+    /// note 3).
+    ClockBack,
 }
 
-const ARMS: [Arm; 17] = [
+const ARMS: [Arm; 19] = [
     Arm::Wake,
     Arm::OutOfOrderWake,
     Arm::Block,
@@ -746,6 +1018,8 @@ const ARMS: [Arm; 17] = [
     Arm::LeapInsideBlock,
     Arm::Misc,
     Arm::BlockEdges,
+    Arm::Completions,
+    Arm::ClockBack,
 ];
 
 /// One generated log and what the Rust must have cancelled because of the arms
@@ -761,6 +1035,8 @@ struct Generated {
     housekeeping: Vec<(u64, u64)>,
     /// C3: the [`block_edge`] cases this sequence ran.
     edges: Vec<u64>,
+    /// C4: the [`completion_edge`] cases this sequence ran.
+    completions: Vec<u64>,
 }
 
 /// Move the clock on by 1 to 90 minutes and return it.
@@ -792,6 +1068,7 @@ fn generate(seed: u64) -> Generated {
     let mut silent_targets = Vec::new();
     let mut housekeeping = Vec::new();
     let mut edges = Vec::new();
+    let mut completions = Vec::new();
     // Events that a silent-verb undo can target: (tag, line) of the latest move/readopt.
     let mut last_move: Option<u64> = None;
     w.push(now, ev_wake(420));
@@ -914,6 +1191,14 @@ fn generate(seed: u64) -> Generated {
                     block_edge(case, &mut w, &mut now, &mut rng, id);
                 }
             }
+            Arm::Completions => {
+                for _ in 0..1 + rng.below(3) {
+                    let case = rng.below(COMPLETION_EDGES);
+                    completions.push(case);
+                    completion_edge(case, &mut w, &mut now, &mut rng, id, tz);
+                }
+            }
+            Arm::ClockBack => clock_back(&mut w, tz, id, &mut rng),
             Arm::Misc => {
                 let t = tick(&mut now, &mut rng);
                 match rng.below(14) {
@@ -942,7 +1227,131 @@ fn generate(seed: u64) -> Generated {
             }
         }
     }
-    Generated { tz, text: w.text(), arms, silent_targets, housekeeping, edges }
+    Generated { tz, text: w.text(), arms, silent_targets, housekeeping, edges, completions }
+}
+
+/// How many cases [`completion_edge`] has.
+const COMPLETION_EDGES: u64 = 10;
+
+fn ev_routine(item: &str, inst: &str, status: &str, actual_min: Option<u32>) -> Event {
+    Event::Routine { item: item.into(), inst: inst.into(), status: status.into(), actual_min }
+}
+
+/// One of [`Arm::Completions`]' cases, by number.
+fn completion_edge(case: u64, w: &mut Writer, now: &mut DateTime<Utc>, rng: &mut Rng, id: &str, tz: Tz) {
+    let item = *rng.pick(&["stretch", "water", id]);
+    let today = now.with_timezone(&tz).date_naive();
+    let date_inst = (today - Duration::days(rng.below(3) as i64)).to_string();
+    match case {
+        // Quirk Q6(b): a routine `done`, then the same instance `done` again, stamped earlier (a
+        // retro append): the instance is the later line, `last_done` the later instant.
+        0 => {
+            let t = tick(now, rng);
+            w.push(t, ev_routine(item, &date_inst, "done", Some(10)));
+            w.push(t - Duration::minutes(30 + rng.below(120) as i64), ev_routine(item, &date_inst, "done", None));
+        }
+        // Statuses the fork does not read: a warning each, read as `Pending`.
+        1 => {
+            let status = *rng.pick(&["maybe", "Done", "", "skip ", "\"quoted\"\\", "é"]);
+            w.push(tick(now, rng), ev_routine(item, "#1", status, if rng.below(2) == 0 { Some(5) } else { None }));
+        }
+        // A `pending` after a `done`: the instance reads pending, the done date stays.
+        2 => {
+            w.push(tick(now, rng), ev_routine(item, &date_inst, "done", None));
+            w.push(tick(now, rng), ev_routine(item, &date_inst, "pending", None));
+        }
+        // A `skip` after a `done`.
+        3 => {
+            w.push(tick(now, rng), ev_routine(item, &date_inst, "done", Some(3)));
+            w.push(tick(now, rng), Event::Skip { item: item.into(), inst: date_inst.clone() });
+        }
+        // Instances `parse_date` does or does not read: an ordinal, a padded date, a date with a
+        // no-break space (10 characters, 11 bytes), and a single-digit month.
+        4 => {
+            let inst = *rng.pick(&["#3", " 2026-9-01", "2026-9-\u{a0}01", "2026-9-01", "2026-09-31", "W37"]);
+            w.push(tick(now, rng), ev_routine(item, inst, "done", None));
+        }
+        // A retro `done` and two `done`s at one instant written at two offsets: `last_done` is the
+        // latest instant, the first line of equal instants.
+        5 => {
+            let t = tick(now, rng);
+            w.push(t, ev_done_at(id, 0, false, 2, None));
+            w.push(t - Duration::minutes(45), ev_done_at(id, 0, false, 2, None));
+            let later = t + Duration::minutes(5);
+            w.push_at(later.with_timezone(&east(3600)), ev_done_at(id, 0, false, 2, None));
+            w.push_at(later.with_timezone(&east(-7200)), ev_done_at(id, 0, false, 2, None));
+            *now = later;
+        }
+        // Every known status, with minutes.
+        6 => {
+            for status in ["done", "pending", "missed", "expired", "skipped", "skip"] {
+                w.push(tick(now, rng), ev_routine(item, &format!("#{}", rng.below(4)), status, Some(1 + rng.below(20) as u32)));
+            }
+        }
+        // `event`s with and without an id, one retro and two at one instant at two offsets: a later
+        // line wins a tie.
+        7 => {
+            let name = *rng.pick(&["arrival", "parcel"]);
+            let t = tick(now, rng);
+            w.push(t, Event::Named { name: name.into(), id: Some(id.into()) });
+            w.push(t - Duration::minutes(90), Event::Named { name: name.into(), id: None });
+            let later = t + Duration::minutes(3);
+            w.push_at(later.with_timezone(&east(-3600)), Event::Named { name: name.into(), id: None });
+            w.push_at(later.with_timezone(&east(5400)), Event::Named { name: name.into(), id: Some(id.into()) });
+            *now = later;
+        }
+        // An undone routine `done`: its completion, instance and warning never happened.
+        8 => {
+            w.push(tick(now, rng), ev_routine(item, &date_inst, "done", None));
+            w.push(tick(now, rng), ev_undo("routine", Some(item)));
+        }
+        // A partial `done` beside a completion: only the completion marks done.
+        _ => {
+            w.push(tick(now, rng), ev_done_at(id, 20, true, 3, None));
+            if rng.below(2) == 0 {
+                w.push(tick(now, rng), ev_done_at(id, 15, false, 3, None));
+            }
+        }
+    }
+}
+
+/// The instant the zone's local date goes backwards, else its last fall-back
+/// transition, else none; probed once per zone per test binary (the hourly
+/// probe is the slow part).
+fn clock_back_instant(tz: Tz) -> Option<DateTime<Utc>> {
+    static FOUND: OnceLock<Mutex<HashMap<String, Option<DateTime<Utc>>>>> = OnceLock::new();
+    let found = FOUND.get_or_init(|| Mutex::new(HashMap::new()));
+    *found.lock().expect("the clock-back cache").entry(tz.name().to_string()).or_insert_with(|| probe_clock_back_instant(tz))
+}
+
+fn probe_clock_back_instant(tz: Tz) -> Option<DateTime<Utc>> {
+    if let Some((at, _, _)) = backwards_date_transition(tz) {
+        return DateTime::from_timestamp(at, 0);
+    }
+    let t = tz_table::probe(tz);
+    let mut prev = t.base;
+    let mut last = None;
+    for &(at, off) in &t.transitions {
+        if off < prev && (2000..2100).contains(&DateTime::from_timestamp(at, 0)?.year()) {
+            last = DateTime::from_timestamp(at, 0);
+        }
+        prev = off;
+    }
+    last
+}
+
+/// [`Arm::ClockBack`]: an event a minute before the zone's clock goes back and
+/// one half an hour after, a later instant on an earlier local date where the
+/// zone has such a transition, and a routine `done` beside them.
+fn clock_back(w: &mut Writer, tz: Tz, id: &str, rng: &mut Rng) {
+    let Some(at) = clock_back_instant(tz) else {
+        return;
+    };
+    let name = *rng.pick(&["arrival", "parcel"]);
+    let addressed = if rng.below(2) == 0 { Some(id.to_string()) } else { None };
+    w.push(at - Duration::seconds(30), Event::Named { name: name.into(), id: addressed.clone() });
+    w.push(at + Duration::minutes(29), Event::Named { name: name.into(), id: addressed });
+    w.push(at + Duration::minutes(31), ev_routine("stretch", "#9", "done", None));
 }
 
 /// One of [`Arm::BlockEdges`]' fourteen cases, by number.
@@ -1102,6 +1511,9 @@ struct ZoneCase {
     text: String,
     tz: Tz,
     expect: Vec<(u64, NaiveDate)>,
+    /// C4: `(name, id?)` keys and the lines of their latest occurrence by instant
+    /// and by local date, worked out by hand.
+    named: Vec<(&'static str, Option<&'static str>, u64, u64)>,
 }
 
 fn date(y: i32, m: u32, d: u32) -> NaiveDate {
@@ -1125,7 +1537,7 @@ fn zone_cases() -> Vec<ZoneCase> {
         w.push(utc(2026, 11, 1, 7, 40, 0), ev_undo("done", Some("1")));
         w.push(utc(2026, 11, 1, 7, 50, 0), ev_done("1", 60, false)); // 01:50 CST
         let expect = vec![(1, date(2026, 10, 31)), (2, date(2026, 11, 1)), (4, date(2026, 11, 1)), (6, date(2026, 11, 1))];
-        out.push(ZoneCase { name: "fall-back 01:30 twice".to_string(), text: w.text(), tz: chicago, expect });
+        out.push(ZoneCase { name: "fall-back 01:30 twice".to_string(), text: w.text(), tz: chicago, expect, named: vec![] });
     }
     // (2) A wake after midnight, under 24 hours after the previous one: once
     //     undone (the day stays the first wake's), once standing (it starts a day).
@@ -1143,7 +1555,7 @@ fn zone_cases() -> Vec<ZoneCase> {
             ("standing", date(2026, 9, 8))
         };
         let expect = vec![(2, day), (3, day), (4, day)];
-        out.push(ZoneCase { name: format!("wake after midnight under 24h, {label}"), text: w.text(), tz: chicago, expect });
+        out.push(ZoneCase { name: format!("wake after midnight under 24h, {label}"), text: w.text(), tz: chicago, expect, named: vec![] });
     }
     // (3) Events 23–25 real hours after a wake, across both transitions: before
     //     24 hours the wake's date, from 24 hours the entry's own.
@@ -1159,7 +1571,7 @@ fn zone_cases() -> Vec<ZoneCase> {
         w.push(wake + Duration::minutes(25 * 60 + 5), ev_undo("note", None));
         let woke = wake.with_timezone(&chicago).date_naive();
         let expect = vec![(1, woke), (2, woke), (3, woke), (4, own), (5, own), (6, own)];
-        out.push(ZoneCase { name: format!("23-25h after a wake, {label} transition"), text: w.text(), tz: chicago, expect });
+        out.push(ZoneCase { name: format!("23-25h after a wake, {label} transition"), text: w.text(), tz: chicago, expect, named: vec![] });
     }
     // (4) A fold at midnight where consecutive dedup differs from earliest-per-date:
     //     a wake just after midnight before the fold, one before midnight after it.
@@ -1198,7 +1610,7 @@ fn zone_cases() -> Vec<ZoneCase> {
             // Line 3, the third wake: its own date while it stands; undone, the
             // second wake's day (a second before it).
             let expect = vec![(2, dates[1]), (3, day), (4, day), (5, day)];
-            out.push(ZoneCase { name: format!("fold at midnight, {}, {label}", tz.name()), text: w.text(), tz, expect });
+            out.push(ZoneCase { name: format!("fold at midnight, {}, {label}", tz.name()), text: w.text(), tz, expect, named: vec![] });
         }
     }
     assert!(folds > 0, "no zone of the fold arm has a backwards-date transition in [1970, 2100)");
@@ -1212,7 +1624,7 @@ fn zone_cases() -> Vec<ZoneCase> {
         w.push_at((base + Duration::hours(4)).with_timezone(&east(2 * 3600)), ev_undo("done", None));
         w.push_at((base + Duration::hours(5)).with_timezone(&east(-5 * 3600)), ev_done("a1", 55, false));
         let expect = (1..=5).map(|l| (l, date(2026, 9, 7))).collect();
-        out.push(ZoneCase { name: "offsets -05:00 then +02:00".to_string(), text: w.text(), tz: chicago, expect });
+        out.push(ZoneCase { name: "offsets -05:00 then +02:00".to_string(), text: w.text(), tz: chicago, expect, named: vec![] });
     }
     // (6) cfg.tz different from the writer's Local: written in Berlin, read in
     //     Chicago. The wake is 23:00 on the 6th in Chicago (06:00 on the 7th in
@@ -1226,7 +1638,7 @@ fn zone_cases() -> Vec<ZoneCase> {
         w.push(base + Duration::hours(20), ev_wake(380));
         w.push(base + Duration::hours(21), ev_undo("done", Some("17")));
         let expect = vec![(1, date(2026, 9, 6)), (2, date(2026, 9, 6)), (3, date(2026, 9, 6)), (4, date(2026, 9, 7)), (5, date(2026, 9, 7))];
-        out.push(ZoneCase { name: "cfg.tz Chicago, written in Berlin".to_string(), text: w.text(), tz: chicago, expect });
+        out.push(ZoneCase { name: "cfg.tz Chicago, written in Berlin".to_string(), text: w.text(), tz: chicago, expect, named: vec![] });
     }
     // (7) A `:60` stamp at the 24-hour edge (carried note 1): chrono's
     //     `signed_duration_since` counts a leap second only before a later clock of
@@ -1245,7 +1657,37 @@ fn zone_cases() -> Vec<ZoneCase> {
         w.push(utc(2026, 9, 11, 3, 2, 0), Event::Note { text: "undone".into() });
         w.push(utc(2026, 9, 11, 3, 3, 0), ev_undo("note", None));
         let expect = vec![(1, date(2026, 9, 7)), (2, date(2026, 9, 7)), (3, date(2026, 9, 10)), (4, date(2026, 9, 11))];
-        out.push(ZoneCase { name: "a :60 stamp at the 24-hour edge".to_string(), text: w.text(), tz, expect });
+        out.push(ZoneCase { name: "a :60 stamp at the 24-hour edge".to_string(), text: w.text(), tz, expect, named: vec![] });
+    }
+    // (8) C4, carried note 3: St John's clock going back across midnight (00:01 NDT to 23:01
+    //     NST before 2011; the first such transition of the probed table, 1987-10-25). `event
+    //     arrival` 30 s before the change is dated D; one 29 minutes after it, a later instant,
+    //     is dated D − 1; a third, addressed to `3`, after both. The key addressed to nobody has
+    //     line 3 latest by instant and line 2 latest by date; `latest_named(arrival, 3)` merges
+    //     in line 4. A retro routine `done` of line 5's instance separates the instance from
+    //     `last_done`. Every entry is under 24 hours after the wake, so on the wake's day, D − 1.
+    {
+        let tz = chrono_tz::America::St_Johns;
+        let (at, before, after) = backwards_date_transition(tz).expect("St John's goes back across midnight");
+        let at = DateTime::from_timestamp(at, 0).expect("in range");
+        let mut w = Writer::new(tz);
+        w.push_at((at - Duration::hours(2)).with_timezone(&east(before)), ev_wake(400));
+        w.push_at((at - Duration::seconds(30)).with_timezone(&east(before)), Event::Named { name: "arrival".into(), id: None });
+        w.push_at((at + Duration::minutes(29)).with_timezone(&east(after)), Event::Named { name: "arrival".into(), id: None });
+        w.push_at((at + Duration::minutes(40)).with_timezone(&east(after)), Event::Named { name: "arrival".into(), id: Some("3".into()) });
+        w.push_at((at + Duration::minutes(50)).with_timezone(&east(after)), ev_routine("stretch", "#1", "done", None));
+        w.push_at((at - Duration::minutes(50)).with_timezone(&east(before)), ev_routine("stretch", "#1", "done", Some(4)));
+        w.push_at((at + Duration::minutes(55)).with_timezone(&east(after)), ev_routine("stretch", "#2", "done", None));
+        w.push_at((at + Duration::minutes(56)).with_timezone(&east(after)), ev_undo("routine", Some("stretch")));
+        let d7 = (at - Duration::seconds(30)).with_timezone(&tz).date_naive();
+        assert_eq!((at + Duration::minutes(29)).with_timezone(&tz).date_naive(), d7 - Duration::days(1), "the clock went back across midnight");
+        out.push(ZoneCase {
+            name: "St John's clock back across midnight, events and completions".to_string(),
+            text: w.text(),
+            tz,
+            expect: vec![(2, d7 - Duration::days(1)), (3, d7 - Duration::days(1)), (6, d7 - Duration::days(1))],
+            named: vec![("arrival", None, 3, 2), ("arrival", Some("3"), 4, 4)],
+        });
     }
     out
 }
@@ -1276,13 +1718,15 @@ fn t5_the_corpus_logs_replay_as_the_fork_does() {
     let (mut cancelled, mut days, mut off, mut tally) = (0, 0, 0, Tally::default());
     for (name, text) in corpus_logs() {
         let k = assert_parity(&name, &text, chrono_tz::America::Chicago);
+        tally.retro_instances += q6b_separations(&text, chrono_tz::America::Chicago);
         cancelled += k.cancelled.len();
         days += k.days.len();
         off += off_their_own_date(&text, chrono_tz::America::Chicago);
         tally.add(&k.block);
+        tally.add_completion(&k.completion);
     }
     assert!(tally.durations > 0 && tally.items > 0, "the corpus has blocks");
-    eprintln!("T5 corpus: 7 logs, {cancelled} cancelled lines, {days} days compared ({off} off their own local date); {tally}; 0 exceptions");
+    eprintln!("T5 corpus: 7 logs, {cancelled} cancelled lines, {days} days compared ({off} off their own local date); {tally}; {} latest_named queries; 0 exceptions", latest_named_queries());
 }
 
 /// **T5 over the generated 1-month and 6-month logs** (40 a day, seed 7).
@@ -1297,13 +1741,16 @@ fn t5_the_generated_month_and_half_year_replay_as_the_fork_does() {
         let ms = start.elapsed().as_secs_f64() * 1000.0;
         let mut tally = Tally::default();
         tally.add(&k.block);
+        tally.add_completion(&k.completion);
+        tally.retro_instances += q6b_separations(&text, chrono_tz::America::Chicago);
         eprintln!(
-            "T5 {label}: {} lines, {} bytes, {} cancelled, {} days compared ({} off their own local date); {tally}; {ms:.0} ms for both readers, 0 exceptions",
+            "T5 {label}: {} lines, {} bytes, {} cancelled, {} days compared ({} off their own local date); {tally}; {} latest_named queries so far; {ms:.0} ms for both readers, 0 exceptions",
             lines.len(),
             text.len(),
             k.cancelled.len(),
             k.days.len(),
             off_their_own_date(&text, chrono_tz::America::Chicago),
+            latest_named_queries(),
         );
     }
 }
@@ -1316,12 +1763,18 @@ fn t5_generated_sequences_replay_as_the_fork_does() {
     let (mut lines, mut cancelled, mut silent, mut auto, mut days, mut off) = (0, 0, 0, 0, 0, 0);
     let mut tally = Tally::default();
     let mut edges: BTreeMap<u64, usize> = BTreeMap::new();
+    let mut completions: BTreeMap<u64, usize> = BTreeMap::new();
     for seed in 0..SEQUENCES {
         let g = generate(seed);
         let k = assert_parity(&format!("sequence {seed}"), &g.text, g.tz);
         tally.add(&k.block);
+        tally.add_completion(&k.completion);
+        tally.retro_instances += q6b_separations(&g.text, g.tz);
         for e in &g.edges {
             *edges.entry(*e).or_default() += 1;
+        }
+        for e in &g.completions {
+            *completions.entry(*e).or_default() += 1;
         }
         for a in &g.arms {
             *counts.entry(*a).or_default() += 1;
@@ -1351,9 +1804,15 @@ fn t5_generated_sequences_replay_as_the_fork_does() {
     assert!(auto > 0, "quirk Q6(f) never left a week close standing");
     assert_eq!(edges.len(), 14, "every block edge case ran: {edges:?}");
     assert!(tally.ci_unknown > 0 && tally.interrupts > 0 && tally.open_blocks > 0 && tally.open_interrupts > 0, "the block edges ran: {tally}");
+    assert_eq!(completions.len() as u64, COMPLETION_EDGES, "every completion edge case ran: {completions:?}");
+    assert!(
+        tally.retro_instances > 0 && tally.clock_back_keys > 0 && tally.replay_warnings > 0 && tally.done_dates > 0,
+        "quirk Q6(b), the clock going back and the replay warnings were exercised: {tally}"
+    );
     eprintln!(
         "T5 sequences: {SEQUENCES} logs, {lines} lines, {cancelled} cancelled, {days} days compared ({off} off their own local date), {silent} silent-verb undos \
-         cancelling an older move, {auto} week closes left standing by an undo that took the automatic close; {tally}; block edge cases {edges:?}; arms {counts:?}; zones {zones:?}; 0 exceptions"
+         cancelling an older move, {auto} week closes left standing by an undo that took the automatic close; {tally}; block edge cases {edges:?}; completion edge cases {completions:?}; {} latest_named queries; arms {counts:?}; zones {zones:?}; 0 exceptions",
+        latest_named_queries()
     );
 }
 
@@ -1362,22 +1821,30 @@ fn t5_generated_sequences_replay_as_the_fork_does() {
 #[test]
 fn t5_the_zone_cases_replay_as_the_fork_does() {
     let cases = zone_cases();
-    let (mut days, mut named, mut off, mut tally) = (0, 0, 0, Tally::default());
+    let (mut days, mut named, mut off, mut tally, mut named_keys) = (0, 0, 0, Tally::default(), 0);
     for c in &cases {
         let k = assert_parity(&c.name, &c.text, c.tz);
         tally.add(&k.block);
+        tally.add_completion(&k.completion);
+        tally.retro_instances += q6b_separations(&c.text, c.tz);
         assert!(!k.cancelled.is_empty(), "{}: every zone case carries an undo", c.name);
         for (line, d) in &c.expect {
             assert_eq!(day_of_line(&k, *line), day_number(*d), "{}: line {line} should be on {d}", c.name);
             named += 1;
         }
+        for (n, id, latest, dated) in &c.named {
+            let rec = k.completion.named.get(&(n.to_string(), id.map(str::to_string))).expect("the named key");
+            assert_eq!((rec.0, rec.2), (*latest, *dated), "{}: {n} {id:?}", c.name);
+            named_keys += 1;
+        }
         days += k.days.len();
         off += off_their_own_date(&c.text, c.tz);
     }
     eprintln!(
-        "T5 zone cases: {} ({:?}), {days} days compared, {named} named days checked, {off} entries off their own local date; {tally}; 0 exceptions",
+        "T5 zone cases: {} ({:?}), {days} days compared, {named} named days checked, {named_keys} named-event keys checked by hand, {off} entries off their own local date; {tally}; {} latest_named queries; 0 exceptions",
         cases.len(),
-        cases.iter().map(|c| &c.name).collect::<Vec<_>>()
+        cases.iter().map(|c| &c.name).collect::<Vec<_>>(),
+        latest_named_queries()
     );
 }
 
@@ -1453,4 +1920,24 @@ fn t5_a_block_log_of_distinct_ids_is_measured() {
     assert_eq!(k.block.items.len(), 3_500);
     assert_eq!(k, r);
     eprintln!("T5 distinct ids: {} lines, {} bytes, kernel {kernel_ms:.0} ms, rust {rust_ms:.0} ms", w.lines.len(), text.len());
+}
+
+/// **Parity P33, the named exception** (C4): a routine `done` whose `inst` names a
+/// date before 0001-01-01. chrono's `parse_date` reads `0000-09-07` (year 0) as a
+/// date, so the fork records the completion on it; the kernel's days start at
+/// 0001-01-01 (`Cal.Day`), `Log.instDate?` reads no such date, and the completion is
+/// recorded on its wake-attributed day. Everything else about the log is compared
+/// as in the tests above; `done_dates` is compared with the one date put back.
+#[test]
+fn t5_p33_a_done_date_before_the_origin_is_the_named_exception() {
+    let tz = chrono_tz::UTC;
+    let mut w = Writer::new(tz);
+    w.push(utc(2026, 9, 7, 9, 0, 0), ev_routine("stretch", "0000-09-07", "done", None));
+    let text = w.text();
+    let (k, mut r) = (kernel_facts(&text, tz), rust_facts(&text, tz));
+    let fork = r.completion.done_dates.get("stretch").cloned().expect("the fork's done date");
+    assert_eq!(fork, BTreeSet::from([day_number(date(0, 9, 7))]), "the fork dates it in year 0");
+    assert_eq!(k.completion.done_dates.get("stretch"), Some(&BTreeSet::from([day_number(date(2026, 9, 7))])), "the kernel dates it on its day");
+    r.completion.done_dates.insert("stretch".to_string(), BTreeSet::from([day_number(date(2026, 9, 7))]));
+    assert_eq!(k, r, "P33 is the only difference");
 }

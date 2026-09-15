@@ -133,8 +133,21 @@ survivors of the mask on the day index of their wakes, then `finish`es.
   every list; an absent key costs one scan and no allocation).  Items and item-days, whose ids have no
   locality in a log, are arrays of such lists bucketed by `KeyHash` (`HMap`, `HMap.get_alter` on every
   map), updated in place when uniquely held.  W4's tree maps remain the gated lever.
-* **Not here**: the done sets (`mark_done`, C4), `slept_by_day` (C5 binds `slept`), every other family's
-  arm (C4, C5), and the cancelled lines' headers (C6's second pass).
+* **Not here**: `slept_by_day` (C5 binds `slept`), the day family's arms (C5), and the cancelled lines'
+  headers (C6's second pass).
+
+## C4: the completion family (§8.2–§8.4)
+
+`completionArm`, a second match beside `arm`: a non-partial `done`'s `mark_done`, `routine`, `skip` and
+`event`.  **Quirk Q6(b), ported faithfully**: fork `instances[item][inst]` keeps the last record in file order
+(`an_instance_is_its_last_record_in_file_order`) and fork `last_done` the latest by instant, the first of equal
+instants (`last_done_is_the_latest_by_instant`, `last_done_is_the_first_of_the_latest`); a retro append
+separates them (`instances_and_last_done_order_differently`).  Fork `LatestNamed` keeps two instants per
+`(name, id?)`, because a "since" filter does not commute with the latest by instant when the zone's clock goes
+back across midnight (`a_since_filter_does_not_commute_with_the_latest_by_instant`,
+`named_keeps_the_latest_by_instant_and_the_latest_by_local_date`).  An unknown routine status is the replay
+warning `unknownInstanceStatus` and reads as `Pending`.  `arm_ofBlock` keeps the block family's arm off the
+completion state.  The `routine` arm's `Routine` segment and `routine_min` are day fields, C5's.
 
 ## Rule D9-21 (functions here over a list the wire can make large)
 
@@ -158,6 +171,10 @@ C3 adds: `applyEffects` and the replay's fold (`foldl`), `KMap.get` (`find?`, a 
 lookups (the C2 bisection, `dayOfArr`).  Specification only, never on the wire: `insBy` and `insSort`
 (compiled as the merge sorts), `State.valueAt` (`filter`), `KMap.vsum` (`List.sum`), and `replay` itself
 (compiled as `replayFast`).
+C4 adds: `completionArm`, `NamedRec.push`, `pick` and `lastMaxStep` (no recursion), `HMap.alter` per completion
+effect, and `finish`'s warnings (`reverse`).  Specification only, never on the wire: `lastMax?` and
+`maxByInstant?` (`foldl`), `doneInstants` (`filter`, `map`), `namedOccurrences` (`filterMap`), and the
+`Effect` projections of the laws.
 -/
 namespace Tm
 namespace Log
@@ -2040,6 +2057,13 @@ instance : KeyHash (List Char) := ⟨keyHash⟩
 
 instance : KeyHash (Nat × List Char) := ⟨fun p => p.1 + keyHash p.2⟩
 
+/-- C4: an instance's key, `(item, inst)`. -/
+instance : KeyHash (List Char × List Char) := ⟨fun p => keyHash p.1 * 31 + keyHash p.2⟩
+
+/-- C4: a named event's key, `(name, id?)`. -/
+instance : KeyHash (List Char × Option (List Char)) :=
+  ⟨fun p => keyHash p.1 * 31 + (match p.2 with | some i => keyHash i + 1 | none => 0)⟩
+
 /-- **A map in buckets of association lists**, for keys with no locality in a log (item ids): each
 lookup scans one bucket.  An array, not a structure around one, so an update of a uniquely held map is in
 place.  Its law, `HMap.get_alter`, holds on every map, one with no bucket included (`alter` gives it
@@ -2137,6 +2161,66 @@ structure Interruption where
   lostMin : Nat
   dropped : List Id
 deriving DecidableEq, Repr
+
+/-- **C4: fork `InstanceRecord`**: the stamp, the status (an unknown one read as `Pending`), the status as
+logged, and the minutes. -/
+structure InstRec where
+  t : At
+  status : Log.InstanceStatus
+  raw : List Char
+  actualMin : Option Nat
+deriving DecidableEq, Repr
+
+/-- **C4: a replay warning** (§8.3), named, not formatted (P15).  Fork `Replay.warnings` holds one message,
+`"{t}: unknown routine status {status:?}"`; the kernel keeps the entry's line and the status as logged. -/
+inductive RWarn
+  | unknownInstanceStatus (line : Nat) (raw : List Char)
+deriving DecidableEq, Repr
+
+/-- The later of two candidates under a replacing relation `r`: `x` replaces `a` when `r a x`. -/
+def pick {α : Type} (r : α → α → Bool) (a x : α) : α := if r a x then x else a
+
+/-- **One step of a running maximum** under a replacing relation: the first element is taken, and each
+later one replaces the candidate when `r candidate x`.  With `r` "strictly later" the first of equal
+keys stays (fork `last_done`); with "at least as late" the last of equal keys wins (fork `LatestNamed`). -/
+def lastMaxStep {α : Type} (r : α → α → Bool) (acc : Option α) (x : α) : Option α :=
+  match acc with
+  | none => some x
+  | some a => some (pick r a x)
+
+/-- The running maximum of a list, as a `foldl` (D9-21). -/
+def lastMax? {α : Type} (r : α → α → Bool) (l : List α) : Option α := l.foldl (lastMaxStep r) none
+
+/-- Strictly later by instant (chrono's order; the written offset is not compared). -/
+def instLt (a b : At) : Bool := decide (a.1 < b.1)
+
+/-- **Fork `last_done`'s rule** (`if t > *last { *last = t }`): the latest completion by instant, the
+first of equal instants kept. -/
+def maxByInstant? (l : List At) : Option At := lastMax? instLt l
+
+/-- `(line, stamp)` at least as late by instant: fork `LatestNamed.latest` (`t >= l.latest`). -/
+def latestRel (a b : Nat × At) : Bool := decide (a.2.1 ≤ b.2.1)
+
+/-- `(local date, line, stamp)` at least as late by date, then by instant: fork
+`LatestNamed.latest_dated` (`(date, t) >= (date, latest_dated)`). -/
+def datedRel (a b : Nat × Nat × At) : Bool := decide (a.1 < b.1 ∨ (a.1 = b.1 ∧ a.2.2.1 ≤ b.2.2.1))
+
+/-- **C4: fork `LatestNamed` of one `(name, id?)` key** (R3; carried note 3).  `latest` is the latest
+occurrence by instant, with its line; `dated` the latest by local date in the zone, then by instant, with
+its date and line.  A later line wins a tie in both, as in the fork.  They differ only when the zone's
+clock went back across midnight between them, which is why a "since" filter does not commute with the
+latest by instant (`a_since_filter_does_not_commute_with_the_latest_by_instant`) and the fork keeps
+both. -/
+structure NamedRec where
+  latest : Nat × At
+  dated : Nat × Nat × At
+deriving DecidableEq, Repr
+
+/-- An occurrence at `line`, stamp `t`, local date `date`, folded into a key's record. -/
+def NamedRec.push (o : Option NamedRec) (line : Nat) (t : At) (date : Nat) : NamedRec :=
+  match o with
+  | none => ⟨(line, t), (date, line, t)⟩
+  | some r => ⟨pick latestRel r.latest (line, t), pick datedRel r.dated (date, line, t)⟩
 
 /-- Minutes per ci, `minutes_by_ci: [u32; 6]`. -/
 structure Ci6 where
@@ -2252,11 +2336,22 @@ structure State where
   headers : List (Nat × HeaderRec)
   machine : Machine
   global : GlobalAcc
+  /-- C4: fork `last_done` (its keys are fork `done_items`, which `mark_done` fills with it) -/
+  lastDone : HMap Id At
+  /-- C4: fork `done_dates`, one pair per `(date, id)` -/
+  doneDates : HMap (Nat × Id) Unit
+  /-- C4: fork `instances`, keyed `(item, inst)` -/
+  instances : HMap (List Char × List Char) InstRec
+  /-- C4: fork `LatestNamed` per `(name, id?)` of fork `events` -/
+  named : HMap (List Char × Option Id) NamedRec
+  /-- C4: fork `warnings`, newest first -/
+  rwarns : List RWarn
 deriving DecidableEq, Repr
 
 /-- The empty state, its bucketed maps sized for `n` entries. -/
 def State.init (n : Nat) : State :=
-  ⟨[], HMap.empty n, HMap.empty n, [], [], [], [], ⟨none, none, none⟩, ⟨none, 0⟩⟩
+  ⟨[], HMap.empty n, HMap.empty n, [], [], [], [], ⟨none, none, none⟩, ⟨none, 0⟩,
+    HMap.empty n, HMap.empty n, HMap.empty n, HMap.empty n, []⟩
 
 /-! ### Effects and keys (§8.2) -/
 
@@ -2356,15 +2451,32 @@ inductive Effect
   | interruption (r : Interruption)
   | machine (m : Machine)
   | global (t : At)
+  /-- C4, fork `mark_done`'s `done_items` and `last_done`: the latest by instant, the first of equal
+  instants kept -/
+  | markDone (i : Id) (t : At)
+  /-- C4, fork `mark_done`'s `done_dates[id].insert(date)` -/
+  | doneDate (i : Id) (d : Nat)
+  /-- C4, `instances[item][inst] = r`: the last in file order wins -/
+  | inst (item inst : List Char) (r : InstRec)
+  /-- C4, a `tm event` occurrence: its line, its stamp and its local date in the zone -/
+  | named (name : List Char) (id : Option Id) (line : Nat) (t : At) (date : Nat)
+  /-- C4, a replay warning -/
+  | rwarn (w : RWarn)
 deriving DecidableEq, Repr
 
-/-- **The keys** (§8.2's block-family keys; C4 and C5 add the completion and record keys). -/
+/-- **The keys** (§8.2's block-family and completion keys; C5 adds the record keys).  An instance is
+keyed by the date its `inst` names (`instDate`, a window fact) or, when `inst` is not a date, by
+`instOther` (an all-time fact). -/
 inductive Key
   | day (d : Nat)
   | itemDay (i : Id) (d : Nat)
   | item (i : Id)
   | machine
   | global
+  | doneDate (i : Id) (d : Nat)
+  | instDate (item inst : List Char) (d : Nat)
+  | instOther (item inst : List Char)
+  | named (name : List Char) (id : Option Id)
 deriving DecidableEq, Repr
 
 /-- The key an effect writes.  Every dated output names its day (CRIT 9). -/
@@ -2378,6 +2490,14 @@ def Effect.key : Effect → Key
   | .interruption r => .day r.day
   | .machine _ => .machine
   | .global _ => .global
+  | .markDone i _ => .item i
+  | .doneDate i d => .doneDate i d
+  | .inst item ins _ =>
+    match Log.instDate? ins with
+    | some d => .instDate item ins d
+    | none => .instOther item ins
+  | .named name id _ _ _ => .named name id
+  | .rwarn _ => .global
 
 def Effect.isHeader : Effect → Bool
   | .header _ _ => true
@@ -2394,10 +2514,13 @@ deriving DecidableEq, Repr
 
 inductive Val
   | day (v : DayView)
-  | item (a : Option ItemAcc)
+  | item (a : Option ItemAcc) (lastDone : Option At)
   | itemDay (m : Option Nat)
   | machine (m : Machine)
-  | global (g : GlobalAcc)
+  | global (g : GlobalAcc) (warnings : List RWarn)
+  | doneDate (u : Option Unit)
+  | inst (r : Option InstRec)
+  | named (r : Option NamedRec)
 deriving DecidableEq, Repr
 
 /-- **The value at a key**: what a sealed day (G3) or a query reads. -/
@@ -2406,9 +2529,13 @@ def State.valueAt (st : State) : Key → Val
       st.durations.filter (fun o => decide (o.day = d)), st.interrupts.filter (fun r => decide (r.day = d)),
       (st.headers.filter (fun h => decide (h.1 = d))).map Prod.snd⟩
   | .itemDay i d => .itemDay (st.itemDays.get (d, i))
-  | .item i => .item (st.items.get i)
+  | .item i => .item (st.items.get i) (st.lastDone.get i)
   | .machine => .machine st.machine
-  | .global => .global st.global
+  | .global => .global st.global st.rwarns
+  | .doneDate i d => .doneDate (st.doneDates.get (d, i))
+  | .instDate item inst d => .inst (if Log.instDate? inst = some d then st.instances.get (item, inst) else none)
+  | .instOther item inst => .inst (if Log.instDate? inst = none then st.instances.get (item, inst) else none)
+  | .named name id => .named (st.named.get (name, id))
 
 def applyEffect (st : State) : Effect → State
   | .dayAdd d op => { st with days := st.days.alter d op.alterFn }
@@ -2428,6 +2555,12 @@ def applyEffect (st : State) : Effect → State
   | .interruption r => { st with interrupts := r :: st.interrupts }
   | .machine m => { st with machine := m }
   | .global t => { st with global := ⟨some t, st.global.entries + 1⟩ }
+  | .markDone i t => { st with lastDone := st.lastDone.alter i (fun o => lastMaxStep instLt o t) }
+  | .doneDate i d => { st with doneDates := st.doneDates.alter (d, i) (fun _ => some ()) }
+  | .inst item inst r => { st with instances := st.instances.alter (item, inst) (fun _ => some r) }
+  | .named name id line t date =>
+    { st with named := st.named.alter (name, id) (fun o => some (NamedRec.push o line t date)) }
+  | .rwarn w => { st with rwarns := w :: st.rwarns }
 
 /-- Apply effects in order (a `foldl`, D9-21). -/
 def applyEffects (st : State) (fx : List Effect) : State := fx.foldl applyEffect st
@@ -2514,7 +2647,7 @@ def doneClose (dy : Cal.Instant → Nat) (m : Machine) (t : At) (id : Id) (actua
 /-- **Fork `step`'s `Done` arm.**  `doneClose`, its machine first; then `actual_min` is always credited
 with the event's ci, on the `done`'s day; with minutes, the item's and the day's block count and a
 `DurationObs` (partials included); a partial pushes `partial_done_at`, a completion `done_at` and the
-day's `done` (the done sets are C4's). -/
+day's `done` (the done sets are `completionArm`'s). -/
 def doneFx (dy : Cal.Instant → Nat) (m : Machine) (line : Nat) (t : At) (d : Nat) (id : Id)
     (est actual : Nat) (went : Option U8) (tags : List (List Char)) (ci : U8) (isPartial : Bool) :
     List Effect :=
@@ -2533,8 +2666,8 @@ def resumeBlock (b : Block) (t : At) : Block :=
     | none => { b with since := some t }
     | some _ => b
 
-/-- **The block family's arms of fork `Machine::step`**, one per event; every other event's arm is
-empty here (C4 and C5 fill theirs).  `dy` is the day index's `day_of`, `t` the entry's stamp and `d` its
+/-- **The block family's arms of fork `Machine::step`**, one per event; the completion family's are
+`completionArm`'s, and every other event's arm is empty here until C5.  `dy` is the day index's `day_of`, `t` the entry's stamp and `d` its
 day. -/
 def arm (dy : Cal.Instant → Nat) (m : Machine) (e : Entry) (t : At) (d : Nat) : List Effect :=
   match e.ev with
@@ -2597,20 +2730,45 @@ def arm (dy : Cal.Instant → Nat) (m : Machine) (e : Entry) (t : At) (d : Nat) 
     doneFx dy m e.line t d id est.val actual.val went tags ci isPartial
   | _ => []
 
+/-- **C4: the completion family's arms of fork `Machine::step`** (`done`'s `mark_done`, `routine`,
+`skip`, `event`), one per event; they read no state and write none of the block family's.
+* a non-partial `done` marks its id done on its day (fork `mark_done(id, t, day)`);
+* a `routine` warns when its status is unknown (read as `Pending`, fork `parse_instance_status`),
+  records the instance (**the last in file order wins**), and, when the status reads `done`, marks
+  the item done on the date its `inst` names, else on its day (fork `parse_date(inst).unwrap_or(day)`).
+  Its `Routine` segment and `routine_min` are day fields, C5's;
+* a `skip` records the instance as `Skipped`, logged `"skipped"`;
+* an `event` folds its occurrence into its `(name, id?)` key's `LatestNamed`, with its local date in
+  the zone. -/
+def completionArm (z : Cal.Tz) (e : Entry) (t : At) (d : Nat) : List Effect :=
+  match e.ev with
+  | .done id _ _ _ _ _ isPartial => if isPartial then [] else [.markDone id t, .doneDate id d]
+  | .routine item inst status actual =>
+    (match Log.parseInstanceStatus status with
+     | some _ => []
+     | none => [.rwarn (.unknownInstanceStatus e.line status)]) ++
+    .inst item inst ⟨t, (Log.parseInstanceStatus status).getD .pending, status, actual.map (·.val)⟩ ::
+    (if Log.parseInstanceStatus status = some .done then
+      [.markDone item t, .doneDate item ((Log.instDate? inst).getD d)] else [])
+  | .skip item inst => [.inst item inst ⟨t, .skipped, "skipped".toList, none⟩]
+  | .named name id => [.named name id e.line t (Cal.localDate z t.1)]
+  | _ => []
+
 /-- **`effects` over a day function**: every entry's header (on its day, not cancelled: C6's second pass
-heads the cancelled lines) and its bookkeeping, then its arm.  `slept` is fork `slept_by_day`, which the
-`energy` arm reads (C5). -/
-def effectsWith (dy : Cal.Instant → Nat) (_slept : List (Nat × Nat)) (st : State) (e : Entry) : List Effect :=
+heads the cancelled lines) and its bookkeeping, then its block family's arm and its completion family's.
+`slept` is fork `slept_by_day`, which the `energy` arm reads (C5). -/
+def effectsWith (z : Cal.Tz) (dy : Cal.Instant → Nat) (_slept : List (Nat × Nat)) (st : State) (e : Entry) :
+    List Effect :=
   .header (dy e.t.val) ⟨e.line, e.ev.tag, e.ev.primaryId, false⟩ :: .global (e.t.val, e.off.val) ::
-    arm dy st.machine e (e.t.val, e.off.val) (dy e.t.val)
+    (arm dy st.machine e (e.t.val, e.off.val) (dy e.t.val) ++ completionArm z e (e.t.val, e.off.val) (dy e.t.val))
 
 /-- **Fork `Machine::step` as effects** (§8.2), over the day index `kw`. -/
 def effects (z : Cal.Tz) (kw : List Cal.Instant) (slept : List (Nat × Nat)) (st : State) (e : Entry) :
     List Effect :=
-  effectsWith (dayOf z kw) slept st e
+  effectsWith z (dayOf z kw) slept st e
 
-def stepWith (dy : Cal.Instant → Nat) (slept : List (Nat × Nat)) (st : State) (e : Entry) : State :=
-  applyEffects st (effectsWith dy slept st e)
+def stepWith (z : Cal.Tz) (dy : Cal.Instant → Nat) (slept : List (Nat × Nat)) (st : State) (e : Entry) : State :=
+  applyEffects st (effectsWith z dy slept st e)
 
 def step (z : Cal.Tz) (kw : List Cal.Instant) (slept : List (Nat × Nat)) (st : State) (e : Entry) : State :=
   applyEffects st (effects z kw slept st e)
@@ -2638,7 +2796,29 @@ structure Facts where
   openInterrupt : Option Interruption
   lastEffective : Option At
   entries : Nat
+  /-- C4: fork `last_done` (and `done_items`, its keys) -/
+  lastDoneMap : HMap Id At
+  /-- C4: fork `done_dates` -/
+  doneDates : HMap (Nat × Id) Unit
+  /-- C4: fork `instances` -/
+  instances : HMap (List Char × List Char) InstRec
+  /-- C4: fork `LatestNamed` per `(name, id?)` -/
+  named : HMap (List Char × Option Id) NamedRec
+  /-- C4: fork `warnings`, in file order -/
+  warnings : List RWarn
 deriving DecidableEq, Repr
+
+/-- Fork `Replay::last_done(id)`. -/
+def Facts.lastDone (f : Facts) (i : Id) : Option At := f.lastDoneMap.get i
+
+/-- Fork `Replay::instance(item, inst)`. -/
+def Facts.instance (f : Facts) (item inst : List Char) : Option InstRec := f.instances.get (item, inst)
+
+/-- The `LatestNamed` of one `(name, id?)` key. -/
+def Facts.namedAt (f : Facts) (name : List Char) (id : Option Id) : Option NamedRec := f.named.get (name, id)
+
+/-- Whether `(d, i)` is one of fork `done_dates`. -/
+def Facts.doneOn (f : Facts) (i : Id) (d : Nat) : Bool := (f.doneDates.get (d, i)).isSome
 
 /-! ### The two sorts of `finish` -/
 
@@ -2722,7 +2902,9 @@ def finish (st : State) : Facts :=
     durations := st.durations.reverse, interrupts := st.interrupts.reverse, headers := st.headers.reverse,
     openBlock := st.machine.block.map (fun b => ⟨b.id, b.started, b.workedMin, b.since, b.paused⟩),
     openInterrupt := st.machine.interrupt.map (fun i => ⟨some i.1, none, i.2.1, i.2.2, 0, []⟩),
-    lastEffective := st.global.lastEffective, entries := st.global.entries }
+    lastEffective := st.global.lastEffective, entries := st.global.entries,
+    lastDoneMap := st.lastDone, doneDates := st.doneDates, instances := st.instances, named := st.named,
+    warnings := st.rwarns.reverse }
 
 /-- **The replay** (§8.2): the survivors of the mask, stepped in file order over the day index of their
 wakes, then `finish`.  C5 binds `slept` to fork `slept_by_day`; no C3 arm reads it. -/
@@ -2732,7 +2914,7 @@ def replay (z : Cal.Tz) (es : List Entry) : Facts :=
 /-- The compiled replay: the day index looked up by bisection (`dayOfArr`, as `entryDaysFast` does). -/
 def replayFast (z : Cal.Tz) (es : List Entry) : Facts :=
   let sv := survivors es
-  finish (sv.foldl (stepWith (dayOfArr z (keptWakes z (wakeInstants sv)).toArray) []) (State.init es.length))
+  finish (sv.foldl (stepWith z (dayOfArr z (keptWakes z (wakeInstants sv)).toArray) []) (State.init es.length))
 
 @[csimp] theorem replay_eq_replayFast : @replay = @replayFast := by
   funext z es
@@ -3062,47 +3244,95 @@ theorem valueAt_applyEffect (st : State) (e : Effect) (k : Key) (h : k ≠ e.key
     (applyEffect st e).valueAt k = st.valueAt k := by
   cases e with
   | dayAdd d op =>
-    rcases k with d' | ⟨i', d'⟩ | i' | _ | _ <;> simp only [applyEffect, State.valueAt]
+    rcases k with d' | ⟨i', d'⟩ | i' | _ | _ | ⟨i', d'⟩ | ⟨it', is', d'⟩ | ⟨it', is'⟩ | ⟨n', id'⟩ <;>
+      simp only [applyEffect, State.valueAt]
     have : d' ≠ d := fun e => h (by rw [e]; rfl)
     rw [KMap.get_alter, if_neg this]
   | header d hr =>
-    rcases k with d' | ⟨i', d'⟩ | i' | _ | _ <;> simp only [applyEffect, State.valueAt]
+    rcases k with d' | ⟨i', d'⟩ | i' | _ | _ | ⟨i', d'⟩ | ⟨it', is', d'⟩ | ⟨it', is'⟩ | ⟨n', id'⟩ <;>
+      simp only [applyEffect, State.valueAt]
     have : d ≠ d' := fun e => h (by rw [e]; rfl)
     simp [this]
   | itemAdd i op =>
-    rcases k with d' | ⟨i', d'⟩ | i' | _ | _ <;> simp only [applyEffect, State.valueAt]
+    rcases k with d' | ⟨i', d'⟩ | i' | _ | _ | ⟨i', d'⟩ | ⟨it', is', d'⟩ | ⟨it', is'⟩ | ⟨n', id'⟩ <;>
+      simp only [applyEffect, State.valueAt]
     have : i' ≠ i := fun e => h (by rw [e]; rfl)
     rw [HMap.get_alter, if_neg this]
   | itemDay i d m =>
-    rcases k with d' | ⟨i', d'⟩ | i' | _ | _ <;> simp only [applyEffect, State.valueAt]
+    rcases k with d' | ⟨i', d'⟩ | i' | _ | _ | ⟨i', d'⟩ | ⟨it', is', d'⟩ | ⟨it', is'⟩ | ⟨n', id'⟩ <;>
+      simp only [applyEffect, State.valueAt]
     have : (d', i') ≠ (d, i) := fun e => h (by simp only [Prod.mk.injEq] at e; rw [e.1, e.2]; rfl)
     rw [HMap.get_alter, if_neg this]
   | itemDaySub i d m =>
     simp only [applyEffect]
     split
-    · rcases k with d' | ⟨i', d'⟩ | i' | _ | _ <;> simp only [State.valueAt]
+    · rcases k with d' | ⟨i', d'⟩ | i' | _ | _ | ⟨i', d'⟩ | ⟨it', is', d'⟩ | ⟨it', is'⟩ | ⟨n', id'⟩ <;>
+        simp only [State.valueAt]
       have : (d', i') ≠ (d, i) := fun e => h (by simp only [Prod.mk.injEq] at e; rw [e.1, e.2]; rfl)
       rw [HMap.get_alter, if_neg this]
     · rfl
   | obs o =>
     cases o with
     | energy o =>
-      rcases k with d' | ⟨i', d'⟩ | i' | _ | _ <;> simp only [applyEffect, State.valueAt]
+      rcases k with d' | ⟨i', d'⟩ | i' | _ | _ | ⟨i', d'⟩ | ⟨it', is', d'⟩ | ⟨it', is'⟩ | ⟨n', id'⟩ <;>
+        simp only [applyEffect, State.valueAt]
       have : o.day ≠ d' := fun e => h (by rw [← e]; rfl)
       simp [this]
     | duration o =>
-      rcases k with d' | ⟨i', d'⟩ | i' | _ | _ <;> simp only [applyEffect, State.valueAt]
+      rcases k with d' | ⟨i', d'⟩ | i' | _ | _ | ⟨i', d'⟩ | ⟨it', is', d'⟩ | ⟨it', is'⟩ | ⟨n', id'⟩ <;>
+        simp only [applyEffect, State.valueAt]
       have : o.day ≠ d' := fun e => h (by rw [← e]; rfl)
       simp [this]
   | interruption r =>
-    rcases k with d' | ⟨i', d'⟩ | i' | _ | _ <;> simp only [applyEffect, State.valueAt]
+    rcases k with d' | ⟨i', d'⟩ | i' | _ | _ | ⟨i', d'⟩ | ⟨it', is', d'⟩ | ⟨it', is'⟩ | ⟨n', id'⟩ <;>
+      simp only [applyEffect, State.valueAt]
     have : r.day ≠ d' := fun e => h (by rw [← e]; rfl)
     simp [this]
   | machine m =>
-    rcases k with d' | ⟨i', d'⟩ | i' | _ | _ <;> simp only [applyEffect, State.valueAt]
+    rcases k with d' | ⟨i', d'⟩ | i' | _ | _ | ⟨i', d'⟩ | ⟨it', is', d'⟩ | ⟨it', is'⟩ | ⟨n', id'⟩ <;>
+      simp only [applyEffect, State.valueAt]
     exact absurd rfl h
   | global t =>
-    rcases k with d' | ⟨i', d'⟩ | i' | _ | _ <;> simp only [applyEffect, State.valueAt]
+    rcases k with d' | ⟨i', d'⟩ | i' | _ | _ | ⟨i', d'⟩ | ⟨it', is', d'⟩ | ⟨it', is'⟩ | ⟨n', id'⟩ <;>
+      simp only [applyEffect, State.valueAt]
+    exact absurd rfl h
+  | markDone i t =>
+    rcases k with d' | ⟨i', d'⟩ | i' | _ | _ | ⟨i', d'⟩ | ⟨it', is', d'⟩ | ⟨it', is'⟩ | ⟨n', id'⟩ <;>
+      simp only [applyEffect, State.valueAt]
+    have : i' ≠ i := fun e => h (by rw [e]; rfl)
+    rw [HMap.get_alter, if_neg this]
+  | doneDate i d =>
+    rcases k with d' | ⟨i', d'⟩ | i' | _ | _ | ⟨i', d'⟩ | ⟨it', is', d'⟩ | ⟨it', is'⟩ | ⟨n', id'⟩ <;>
+      simp only [applyEffect, State.valueAt]
+    have : (d', i') ≠ (d, i) := fun e => h (by simp only [Prod.mk.injEq] at e; rw [e.1, e.2]; rfl)
+    rw [HMap.get_alter, if_neg this]
+  | inst item inst r =>
+    rcases k with d' | ⟨i', d'⟩ | i' | _ | _ | ⟨i', d'⟩ | ⟨it', is', d'⟩ | ⟨it', is'⟩ | ⟨n', id'⟩ <;>
+      simp only [applyEffect, State.valueAt]
+    · by_cases hk : (it', is') = (item, inst)
+      · simp only [Prod.mk.injEq] at hk
+        obtain ⟨rfl, rfl⟩ := hk
+        cases hd : Log.instDate? is' with
+        | some d0 =>
+          have hne : d0 ≠ d' := fun e => h (by simp only [Effect.key, hd, e])
+          simp [hne]
+        | none => simp
+      · rw [HMap.get_alter, if_neg hk]
+    · by_cases hk : (it', is') = (item, inst)
+      · simp only [Prod.mk.injEq] at hk
+        obtain ⟨rfl, rfl⟩ := hk
+        cases hd : Log.instDate? is' with
+        | some d0 => simp
+        | none => exact absurd (by simp only [Effect.key, hd]) h
+      · rw [HMap.get_alter, if_neg hk]
+  | named name id line t date =>
+    rcases k with d' | ⟨i', d'⟩ | i' | _ | _ | ⟨i', d'⟩ | ⟨it', is', d'⟩ | ⟨it', is'⟩ | ⟨n', id'⟩ <;>
+      simp only [applyEffect, State.valueAt]
+    have : (n', id') ≠ (name, id) := fun e => h (by simp only [Prod.mk.injEq] at e; rw [e.1, e.2]; rfl)
+    rw [HMap.get_alter, if_neg this]
+  | rwarn w =>
+    rcases k with d' | ⟨i', d'⟩ | i' | _ | _ | ⟨i', d'⟩ | ⟨it', is', d'⟩ | ⟨it', is'⟩ | ⟨n', id'⟩ <;>
+      simp only [applyEffect, State.valueAt]
     exact absurd rfl h
 
 /-- **The frame law** (§8.2, Goals): applying effects changes only the keys they name. -/
@@ -3119,6 +3349,12 @@ def Effect.plain : Effect → Bool
   | .header _ _ => false
   | .machine _ => false
   | .dayAdd _ (.uncredit _ _) => false
+  | .global _ => false
+  | .markDone _ _ => false
+  | .doneDate _ _ => false
+  | .inst _ _ _ => false
+  | .named _ _ _ _ _ => false
+  | .rwarn _ => false
   | _ => true
 
 theorem closeSub_plain (dy : Cal.Instant → Nat) (m : Machine) (t : At) :
@@ -3208,15 +3444,75 @@ theorem doneFx_no_header (dy : Cal.Instant → Nat) (m : Machine) (line : Nat) (
     · simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
       rcases hx with rfl | rfl <;> rfl
 
-theorem arm_no_header (dy : Cal.Instant → Nat) (m : Machine) (e : Entry) (t : At) (d : Nat) :
-    ∀ x ∈ arm dy m e t d, x.isHeader = false := by
+/-- **C4: the block family's effects**: neither a header, nor the bookkeeping, nor a completion effect.
+Every effect `arm` returns is one (`arm_ofBlock`), so the completion family's state is `completionArm`'s
+alone. -/
+def Effect.ofBlock : Effect → Bool
+  | .header _ _ => false
+  | .global _ => false
+  | .markDone _ _ => false
+  | .doneDate _ _ => false
+  | .inst _ _ _ => false
+  | .named _ _ _ _ _ => false
+  | .rwarn _ => false
+  | _ => true
+
+theorem ofBlock_of_plain (x : Effect) (h : x.plain = true) : x.ofBlock = true := by
+  cases x <;> simp_all [Effect.plain, Effect.ofBlock]
+
+theorem header_of_ofBlock (x : Effect) (h : x.ofBlock = true) : x.isHeader = false := by
+  cases x <;> simp_all [Effect.ofBlock, Effect.isHeader]
+
+theorem uncreditFx_ofBlock (c : Cut) : ∀ x ∈ uncreditFx c, x.ofBlock = true := by
+  unfold uncreditFx; split <;> simp [Effect.ofBlock]
+
+theorem doneClose_ofBlock (dy : Cal.Instant → Nat) (m : Machine) (t : At) (id : Id) (actual : Nat)
+    (went : Option U8) : ∀ x ∈ (doneClose dy m t id actual went).2, x.ofBlock = true := by
+  intro x hx
+  unfold doneClose at hx
+  split at hx
+  · split at hx
+    · simp only [List.mem_append] at hx
+      rcases hx with (hx | hx) | hx
+      · exact ofBlock_of_plain x (closeSub_plain dy m t x hx)
+      · exact ofBlock_of_plain x (closePause_plain dy _ t x hx)
+      · exact ofBlock_of_plain x (obsFx_plain _ x hx)
+    · simp at hx
+  · split at hx
+    · split at hx
+      · exact uncreditFx_ofBlock _ x hx
+      · simp at hx
+    · simp at hx
+
+theorem doneFx_ofBlock (dy : Cal.Instant → Nat) (m : Machine) (line : Nat) (t : At) (d : Nat) (id : Id)
+    (est actual : Nat) (went : Option U8) (tags : List (List Char)) (ci : U8) (isPartial : Bool) :
+    ∀ x ∈ doneFx dy m line t d id est actual went tags ci isPartial, x.ofBlock = true := by
+  intro x hx
+  unfold doneFx at hx
+  simp only [List.cons_append, List.mem_cons, List.mem_append] at hx
+  rcases hx with rfl | (((hx | hx) | hx) | hx)
+  · rfl
+  · exact doneClose_ofBlock dy m t id actual went x hx
+  · exact ofBlock_of_plain x (creditFx_plain dy id t actual (some ci) x hx)
+  · split at hx
+    · simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
+      rcases hx with rfl | rfl | rfl <;> rfl
+    · simp at hx
+  · split at hx
+    · simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
+      subst hx; rfl
+    · simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
+      rcases hx with rfl | rfl <;> rfl
+
+theorem arm_ofBlock (dy : Cal.Instant → Nat) (m : Machine) (e : Entry) (t : At) (d : Nat) :
+    ∀ x ∈ arm dy m e t d, x.ofBlock = true := by
   intro x hx
   unfold arm at hx
   cases hev : e.ev <;> simp only [hev] at hx
   case start =>
     simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hx
     rcases hx with hx | rfl | rfl
-    · exact not_header_of_plain x (cut_plain dy m t x hx)
+    · exact ofBlock_of_plain x (cut_plain dy m t x hx)
     · rfl
     · rfl
   case pause =>
@@ -3224,7 +3520,7 @@ theorem arm_no_header (dy : Cal.Instant → Nat) (m : Machine) (e : Entry) (t : 
     · split at hx
       · simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hx
         rcases hx with hx | rfl
-        · exact not_header_of_plain x (closeSub_plain dy m t x hx)
+        · exact ofBlock_of_plain x (closeSub_plain dy m t x hx)
         · rfl
       · simp at hx
     · simp at hx
@@ -3233,15 +3529,15 @@ theorem arm_no_header (dy : Cal.Instant → Nat) (m : Machine) (e : Entry) (t : 
     · split at hx
       · simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hx
         rcases hx with hx | rfl
-        · exact not_header_of_plain x (closePause_plain dy m t x hx)
+        · exact ofBlock_of_plain x (closePause_plain dy m t x hx)
         · rfl
       · simp at hx
     · simp at hx
   case interrupt =>
     simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hx
     rcases hx with (hx | hx) | rfl
-    · exact not_header_of_plain x (closeSub_plain dy m t x hx)
-    · exact not_header_of_plain x (closePause_plain dy _ t x hx)
+    · exact ofBlock_of_plain x (closeSub_plain dy m t x hx)
+    · exact ofBlock_of_plain x (closePause_plain dy _ t x hx)
     · rfl
   case resume =>
     split at hx
@@ -3254,7 +3550,7 @@ theorem arm_no_header (dy : Cal.Instant → Nat) (m : Machine) (e : Entry) (t : 
     · split at hx
       · simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hx
         rcases hx with hx | rfl | rfl
-        · exact not_header_of_plain x (cut_plain dy m t x hx)
+        · exact ofBlock_of_plain x (cut_plain dy m t x hx)
         · rfl
         · rfl
       · simp at hx
@@ -3263,7 +3559,36 @@ theorem arm_no_header (dy : Cal.Instant → Nat) (m : Machine) (e : Entry) (t : 
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
     subst hx; rfl
   case done =>
-    exact doneFx_no_header dy m _ t d _ _ _ _ _ _ _ x hx
+    exact doneFx_ofBlock dy m _ t d _ _ _ _ _ _ _ x hx
+  all_goals simp at hx
+
+theorem arm_no_header (dy : Cal.Instant → Nat) (m : Machine) (e : Entry) (t : At) (d : Nat) :
+    ∀ x ∈ arm dy m e t d, x.isHeader = false :=
+  fun x hx => header_of_ofBlock x (arm_ofBlock dy m e t d x hx)
+
+/-- **C4: the completion family's effects are never headers.** -/
+theorem completionArm_no_header (z : Cal.Tz) (e : Entry) (t : At) (d : Nat) :
+    ∀ x ∈ completionArm z e t d, x.isHeader = false := by
+  intro x hx
+  unfold completionArm at hx
+  cases hev : e.ev <;> simp only [hev] at hx
+  case done =>
+    split at hx <;> simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
+    rcases hx with rfl | rfl <;> rfl
+  case routine =>
+    simp only [List.mem_append, List.mem_cons] at hx
+    rcases hx with hx | hx | hx
+    · split at hx <;> simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
+      subst hx; rfl
+    · subst hx; rfl
+    · split at hx <;> simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
+      rcases hx with rfl | rfl <;> rfl
+  case skip =>
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
+    subst hx; rfl
+  case named =>
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
+    subst hx; rfl
   all_goals simp at hx
 
 /-- **Every entry, whatever its kind, produces exactly one header effect** (Goals; CRIT 21).  `arm` is
@@ -3275,7 +3600,10 @@ theorem every_known_event_has_an_arm (z : Cal.Tz) (kw : List Cal.Instant) (slept
   unfold effects effectsWith
   rw [List.filter_cons, List.filter_cons]
   simp only [Effect.isHeader, if_true, Bool.false_eq_true, if_false, List.length_cons]
-  rw [List.filter_eq_nil_iff.2 (fun x hx => by simp [arm_no_header _ _ _ _ _ x hx])]
+  rw [List.filter_eq_nil_iff.2 (fun x hx => by
+    rcases List.mem_append.1 hx with hx | hx
+    · simp [arm_no_header _ _ _ _ _ x hx]
+    · simp [completionArm_no_header _ _ _ _ x hx])]
   rfl
 
 end MachineLaws
@@ -3428,6 +3756,11 @@ theorem safe_apply (st : State) (e : Effect) (hs : e.safe = true) (hb : Balanced
   | itemDay i d m => exact ⟨hb, fun _ _ => Nat.le_refl _, rfl⟩
   | interruption r => exact ⟨hb, fun _ _ => Nat.le_refl _, rfl⟩
   | global t => exact ⟨hb, fun _ _ => Nat.le_refl _, rfl⟩
+  | markDone i t => exact ⟨hb, fun _ _ => Nat.le_refl _, rfl⟩
+  | doneDate i d => exact ⟨hb, fun _ _ => Nat.le_refl _, rfl⟩
+  | inst item inst r => exact ⟨hb, fun _ _ => Nat.le_refl _, rfl⟩
+  | named name id line t date => exact ⟨hb, fun _ _ => Nat.le_refl _, rfl⟩
+  | rwarn w => exact ⟨hb, fun _ _ => Nat.le_refl _, rfl⟩
 
 theorem safe_list (fx : List Effect) (hs : ∀ x ∈ fx, x.safe = true) : ∀ (st : State), Balanced st →
     Balanced (applyEffects st fx) ∧ (∀ d i, unk st d i ≤ unk (applyEffects st fx) d i) ∧
@@ -3677,37 +4010,62 @@ theorem conserves_arm (dy : Cal.Instant → Nat) (st : State) (e : Entry) (t : A
         rcases hx with rfl | rfl <;> rfl
   all_goals exact h
 
+/-- **C4: the completion family's effects are safe**: they touch no day, no machine and no item. -/
+theorem completionArm_safe (z : Cal.Tz) (e : Entry) (t : At) (d : Nat) :
+    ∀ x ∈ completionArm z e t d, x.safe = true := by
+  intro x hx
+  unfold completionArm at hx
+  cases hev : e.ev <;> simp only [hev] at hx
+  case done =>
+    split at hx <;> simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
+    rcases hx with rfl | rfl <;> rfl
+  case routine =>
+    simp only [List.mem_append, List.mem_cons] at hx
+    rcases hx with hx | hx | hx
+    · split at hx <;> simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
+      subst hx; rfl
+    · subst hx; rfl
+    · split at hx <;> simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
+      rcases hx with rfl | rfl <;> rfl
+  case skip =>
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
+    subst hx; rfl
+  case named =>
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
+    subst hx; rfl
+  all_goals simp at hx
+
 theorem conserves_init (n : Nat) : Conserves (State.init n) := by
   refine ⟨fun d a h => ?_, fun c hc => ?_⟩
   · simp [State.init, KMap.get_nil] at h
   · simp [State.init] at hc
 
-theorem conserves_step (dy : Cal.Instant → Nat) (slept : List (Nat × Nat)) (st : State) (e : Entry)
-    (h : Conserves st) : Conserves (stepWith dy slept st e) := by
+theorem conserves_step (z : Cal.Tz) (dy : Cal.Instant → Nat) (slept : List (Nat × Nat)) (st : State)
+    (e : Entry) (h : Conserves st) : Conserves (stepWith z dy slept st e) := by
   unfold stepWith effectsWith
-  rw [applyEffects_cons, applyEffects_cons]
+  rw [applyEffects_cons, applyEffects_cons, applyEffects_append]
   have h2 : Conserves (applyEffect (applyEffect st (.header (dy e.t.val) ⟨e.line, e.ev.tag, e.ev.primaryId, false⟩))
       (.global (e.t.val, e.off.val))) :=
     conserves_safe st [.header _ _, .global _] (by simp [Effect.safe]) h
-  exact conserves_arm dy _ e _ _ h2
+  exact conserves_safe _ _ (completionArm_safe z e _ _) (conserves_arm dy _ e _ _ h2)
 
-theorem conserves_foldl (dy : Cal.Instant → Nat) (slept : List (Nat × Nat)) :
-    ∀ (es : List Entry) (st : State), Conserves st → Conserves (es.foldl (stepWith dy slept) st)
+theorem conserves_foldl (z : Cal.Tz) (dy : Cal.Instant → Nat) (slept : List (Nat × Nat)) :
+    ∀ (es : List Entry) (st : State), Conserves st → Conserves (es.foldl (stepWith z dy slept) st)
   | [], _, h => h
-  | e :: es, st, h => conserves_foldl dy slept es _ (conserves_step dy slept st e h)
+  | e :: es, st, h => conserves_foldl z dy slept es _ (conserves_step z dy slept st e h)
 
 /-- **Credit conserves the day's minutes** (§8.2, Goals): on every day of every replay, the minutes of
 known ci and the minutes of unknown ci add up to the day's block minutes, the stop-then-done
 replacement and the removal of emptied ci-unknown entries included. -/
 theorem credit_conserves_the_day_minutes (z : Cal.Tz) (es : List Entry) (d : Nat) :
     sumByCi (replay z es) d + sumCiUnknown (replay z es) d = blockMin (replay z es) d := by
-  have h := conserves_foldl (dayOf z (dayIndexOf z es)) [] (survivors es) _ (conserves_init es.length)
+  have h := conserves_foldl z (dayOf z (dayIndexOf z es)) [] (survivors es) _ (conserves_init es.length)
   have hst : (survivors es).foldl (step z (dayIndexOf z es) []) (State.init es.length)
-      = (survivors es).foldl (stepWith (dayOf z (dayIndexOf z es)) []) (State.init es.length) := rfl
+      = (survivors es).foldl (stepWith z (dayOf z (dayIndexOf z es)) []) (State.init es.length) := rfl
   unfold sumByCi sumCiUnknown blockMin replay finish ciSum
   simp only
   rw [hst, KMap.get_map_snd]
-  cases hg : ((survivors es).foldl (stepWith (dayOf z (dayIndexOf z es)) []) (State.init es.length)).days.get d with
+  cases hg : ((survivors es).foldl (stepWith z (dayOf z (dayIndexOf z es)) []) (State.init es.length)).days.get d with
   | none => rfl
   | some a => exact (h.1 d a hg).1
 
@@ -3778,13 +4136,13 @@ theorem allFifths_apply (st : State) (e : Effect) (h : AllFifths st) : AllFifths
   | obs o => cases o <;> exact h d a hd
   | _ => exact h d a hd
 
-theorem allFifths_foldl (dy : Cal.Instant → Nat) (slept : List (Nat × Nat)) :
-    ∀ (es : List Entry) (st : State), AllFifths st → AllFifths (es.foldl (stepWith dy slept) st)
+theorem allFifths_foldl (z : Cal.Tz) (dy : Cal.Instant → Nat) (slept : List (Nat × Nat)) :
+    ∀ (es : List Entry) (st : State), AllFifths st → AllFifths (es.foldl (stepWith z dy slept) st)
   | [], _, h => h
   | e :: es, st, h => by
-    refine allFifths_foldl dy slept es _ ?_
+    refine allFifths_foldl z dy slept es _ ?_
     unfold stepWith applyEffects
-    generalize effectsWith dy slept st e = fx
+    generalize effectsWith z dy slept st e = fx
     induction fx generalizing st with
     | nil => exact h
     | cons x fx ih => exact ih _ (allFifths_apply st x h)
@@ -3796,14 +4154,14 @@ only ci-unknown minutes, which weigh nothing. -/
 theorem load_is_exact_fifths (z : Cal.Tz) (es : List Entry) (d : Nat) (a : DayAcc)
     (h : (replay z es).days.get d = some a) :
     a.loadFifths = a.byCi.c1 + 2 * a.byCi.c2 + 3 * a.byCi.c3 + 4 * a.byCi.c4 + 5 * a.byCi.c5 := by
-  have hf := allFifths_foldl (dayOf z (dayIndexOf z es)) [] (survivors es) (State.init es.length)
+  have hf := allFifths_foldl z (dayOf z (dayIndexOf z es)) [] (survivors es) (State.init es.length)
     (fun d a h => by simp [State.init, KMap.get_nil] at h)
   have hst : (survivors es).foldl (step z (dayIndexOf z es) []) (State.init es.length)
-      = (survivors es).foldl (stepWith (dayOf z (dayIndexOf z es)) []) (State.init es.length) := rfl
+      = (survivors es).foldl (stepWith z (dayOf z (dayIndexOf z es)) []) (State.init es.length) := rfl
   unfold replay finish at h
   simp only at h
   rw [hst, KMap.get_map_snd] at h
-  cases hg : ((survivors es).foldl (stepWith (dayOf z (dayIndexOf z es)) []) (State.init es.length)).days.get d with
+  cases hg : ((survivors es).foldl (stepWith z (dayOf z (dayIndexOf z es)) []) (State.init es.length)).days.get d with
   | none => simp [hg] at h
   | some b =>
     rw [hg] at h
@@ -3842,7 +4200,7 @@ theorem an_extend_changes_only_the_bookkeeping_and_its_extended_minutes (z : Cal
       (step z kw slept st e).valueAt k = st.valueAt k := by
   have hfx : effects z kw slept st e = [.header (dayOf z kw e.t.val) ⟨e.line, e.ev.tag, e.ev.primaryId, false⟩,
       .global (e.t.val, e.off.val), .itemAdd id (.extend by_.val)] := by
-    simp [effects, effectsWith, arm, h]
+    simp [effects, effectsWith, arm, completionArm, h]
   refine ⟨by rw [hfx]; rfl, ?_, fun k hk => ?_⟩
   · unfold step
     rw [hfx]
@@ -3853,6 +4211,603 @@ theorem an_extend_changes_only_the_bookkeeping_and_its_extended_minutes (z : Cal
     rw [hfx]; exact hk
 
 end BlockLaws
+
+/-! ### C4: the completion family — the last record in file order, the latest done by instant
+
+Quirk Q6(b), ported faithfully: fork `instances[item][inst]` keeps the **last record in file order**
+(`an_instance_is_its_last_record_in_file_order`), and fork `last_done` keeps the **latest by instant**, the
+first of equal instants (`last_done_is_the_latest_by_instant`, `last_done_is_the_first_of_the_latest`).
+On a retro append the two disagree (`instances_and_last_done_order_differently`).  Fork `LatestNamed`
+keeps two instants per `(name, id?)` (carried note 3;
+`named_keeps_the_latest_by_instant_and_the_latest_by_local_date`). -/
+
+section CompletionLaws
+
+open Log (Id U8 U32 Num)
+
+theorem foldl_lastMaxStep_some {α : Type} (r : α → α → Bool) :
+    ∀ (l : List α) (a : α), (l.foldl (lastMaxStep r) (some a)).isSome = true
+  | [], _ => rfl
+  | x :: l, a => foldl_lastMaxStep_some r l (pick r a x)
+
+/-- A running maximum is `none` only on the empty list. -/
+theorem lastMax?_eq_none_iff {α : Type} (r : α → α → Bool) (l : List α) : lastMax? r l = none ↔ l = [] := by
+  cases l with
+  | nil => simp [lastMax?]
+  | cons x l =>
+    constructor
+    · intro h
+      have hs := foldl_lastMaxStep_some r l x
+      unfold lastMax? at h
+      rw [List.foldl_cons] at h
+      simp only [lastMaxStep] at h
+      rw [h] at hs
+      simp at hs
+    · intro h; cases h
+
+/-- The decomposition a running maximum keeps as it goes (`lastMax?_spec`'s invariant). -/
+def MaxSplit {α : Type} (r : α → α → Bool) (p : List α) (b : α) : Prop :=
+  ∃ l₁ l₂, p = l₁ ++ b :: l₂ ∧ (∀ x ∈ l₁, r x b = true) ∧ (∀ x ∈ l₂, r b x = false)
+
+theorem maxSplit_step {α : Type} (r : α → α → Bool)
+    (trans : ∀ a b c, r a b = true → r b c = true → r a c = true)
+    (skip : ∀ a b c, r a b = false → r a c = true → r b c = true)
+    (p : List α) (a x : α) (h : MaxSplit r p a) : MaxSplit r (p ++ [x]) (pick r a x) := by
+  obtain ⟨l₁, l₂, hp, h1, h2⟩ := h
+  unfold pick
+  split
+  · rename_i hax
+    refine ⟨p, [], rfl, fun y hy => ?_, by simp⟩
+    rw [hp] at hy
+    simp only [List.mem_append, List.mem_cons] at hy
+    rcases hy with hy | rfl | hy
+    · exact trans _ _ _ (h1 y hy) hax
+    · exact hax
+    · exact skip _ _ _ (h2 y hy) hax
+  · rename_i hax
+    refine ⟨l₁, l₂ ++ [x], by rw [hp]; simp, h1, fun y hy => ?_⟩
+    simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hy
+    rcases hy with hy | rfl
+    · exact h2 y hy
+    · simpa using hax
+
+theorem maxSplit_foldl {α : Type} (r : α → α → Bool)
+    (trans : ∀ a b c, r a b = true → r b c = true → r a c = true)
+    (skip : ∀ a b c, r a b = false → r a c = true → r b c = true) :
+    ∀ (l p : List α) (a b : α), MaxSplit r p a → l.foldl (lastMaxStep r) (some a) = some b →
+      MaxSplit r (p ++ l) b
+  | [], p, a, b, h, hf => by
+    simp only [List.foldl_nil, Option.some.injEq] at hf
+    subst hf; simpa using h
+  | x :: l, p, a, b, h, hf => by
+    rw [List.foldl_cons] at hf
+    have := maxSplit_foldl r trans skip l (p ++ [x]) (pick r a x) b (maxSplit_step r trans skip p a x h) hf
+    simpa using this
+
+/-- **What a running maximum returns**: the list splits at it, every element before it is replaced by
+it (`r x b`), and no element after it replaces it (`r b x = false`).  It needs `r` transitive, and a
+candidate that does not replace `a` to be replaced by whatever replaces `a`. -/
+theorem lastMax?_spec {α : Type} (r : α → α → Bool)
+    (trans : ∀ a b c, r a b = true → r b c = true → r a c = true)
+    (skip : ∀ a b c, r a b = false → r a c = true → r b c = true)
+    (l : List α) (b : α) (h : lastMax? r l = some b) :
+    ∃ l₁ l₂, l = l₁ ++ b :: l₂ ∧ (∀ x ∈ l₁, r x b = true) ∧ (∀ x ∈ l₂, r b x = false) := by
+  cases l with
+  | nil => simp [lastMax?] at h
+  | cons x l =>
+    unfold lastMax? at h
+    rw [List.foldl_cons] at h
+    exact maxSplit_foldl r trans skip l [x] x b ⟨[], [], rfl, by simp, by simp⟩ h
+
+/-! #### `last_done` -/
+
+theorem filterMap_cons_toList {α β : Type} (f : α → Option β) (x : α) (l : List α) :
+    (x :: l).filterMap f = (f x).toList ++ l.filterMap f := by
+  simp only [List.filterMap_cons]; cases f x <;> rfl
+
+/-- An entry's stamp as the fork keeps it. -/
+def stampOf (e : Entry) : At := (e.t.val, e.off.val)
+
+/-- **Whether an entry completes `i`** (fork `mark_done`'s two callers): a non-partial `done` of `i`, or a
+`routine` of `i` whose status reads `done`. -/
+def completes (i : Id) (e : Entry) : Bool :=
+  match e.ev with
+  | .done id _ _ _ _ _ isPartial => decide (id = i) && !isPartial
+  | .routine item _ status _ => decide (item = i) && decide (Log.parseInstanceStatus status = some .done)
+  | _ => false
+
+/-- **The stamps at which entries complete `i`**, in file order.  §15 gives it the zone, which a
+completion's instant does not read; it is left out. -/
+def doneInstants (i : Id) (es : List Entry) : List At := (es.filter (completes i)).map stampOf
+
+/-- A completion effect's instant for `i`. -/
+def Effect.markOf (i : Id) : Effect → Option At
+  | .markDone j t => if j = i then some t else none
+  | _ => none
+
+theorem applyEffect_lastDone (st : State) (x : Effect) (i : Id) :
+    (applyEffect st x).lastDone.get i
+      = match x.markOf i with
+        | some t => lastMaxStep instLt (st.lastDone.get i) t
+        | none => st.lastDone.get i := by
+  cases x with
+  | markDone j t =>
+    simp only [applyEffect, Effect.markOf, HMap.get_alter]
+    by_cases h : j = i
+    · subst h; simp
+    · simp [h, Ne.symm h]
+  | itemDaySub i' d m => simp only [applyEffect, Effect.markOf]; split <;> rfl
+  | obs o => cases o <;> rfl
+  | _ => rfl
+
+theorem lastDone_applyEffects (st : State) (fx : List Effect) (i : Id) :
+    (applyEffects st fx).lastDone.get i
+      = (fx.filterMap (Effect.markOf i)).foldl (lastMaxStep instLt) (st.lastDone.get i) := by
+  induction fx generalizing st with
+  | nil => rfl
+  | cons x fx ih =>
+    rw [applyEffects_cons, ih, applyEffect_lastDone, List.filterMap_cons]
+    cases hm : x.markOf i <;> rfl
+
+theorem markOf_of_ofBlock (i : Id) (x : Effect) (h : x.ofBlock = true) : x.markOf i = none := by
+  cases x <;> simp_all [Effect.ofBlock, Effect.markOf]
+
+theorem arm_markOf (dy : Cal.Instant → Nat) (m : Machine) (e : Entry) (t : At) (d : Nat) (i : Id) :
+    (arm dy m e t d).filterMap (Effect.markOf i) = [] :=
+  List.filterMap_eq_nil_iff.2 (fun x hx => markOf_of_ofBlock i x (arm_ofBlock dy m e t d x hx))
+
+theorem completionArm_markOf (z : Cal.Tz) (e : Entry) (t : At) (d : Nat) (i : Id) :
+    (completionArm z e t d).filterMap (Effect.markOf i) = if completes i e then [t] else [] := by
+  unfold completionArm completes
+  cases e.ev <;> simp only [List.filterMap_nil, Bool.false_eq_true, if_false]
+  case done id _ _ _ _ _ isPartial =>
+    cases isPartial <;> by_cases h : id = i <;> simp [h, Effect.markOf]
+  case routine item ins status actual =>
+    rw [List.filterMap_append, List.filterMap_cons]
+    have hw : (match Log.parseInstanceStatus status with
+        | some _ => ([] : List Effect)
+        | none => [.rwarn (.unknownInstanceStatus e.line status)]).filterMap (Effect.markOf i) = [] := by
+      split <;> rfl
+    rw [hw]
+    by_cases hs : Log.parseInstanceStatus status = some .done <;> by_cases h : item = i <;>
+      simp [hs, h, Effect.markOf]
+  case skip => rfl
+  case named => rfl
+
+theorem stepWith_lastDone (z : Cal.Tz) (dy : Cal.Instant → Nat) (slept : List (Nat × Nat)) (st : State)
+    (e : Entry) (i : Id) :
+    (stepWith z dy slept st e).lastDone.get i
+      = (if completes i e then [stampOf e] else []).foldl (lastMaxStep instLt) (st.lastDone.get i) := by
+  unfold stepWith effectsWith
+  rw [lastDone_applyEffects, List.filterMap_cons, List.filterMap_cons, List.filterMap_append, arm_markOf,
+    completionArm_markOf]
+  rfl
+
+theorem foldl_stepWith_lastDone (z : Cal.Tz) (dy : Cal.Instant → Nat) (slept : List (Nat × Nat)) (i : Id) :
+    ∀ (es : List Entry) (st : State),
+      (es.foldl (stepWith z dy slept) st).lastDone.get i
+        = (doneInstants i es).foldl (lastMaxStep instLt) (st.lastDone.get i)
+  | [], _ => rfl
+  | e :: es, st => by
+    rw [List.foldl_cons, foldl_stepWith_lastDone z dy slept i es, stepWith_lastDone]
+    unfold doneInstants
+    rw [List.filter_cons]
+    split <;> simp_all
+
+/-- The replay as a fold of `stepWith` over the survivors (its definition, by `rfl`). -/
+theorem replay_state (z : Cal.Tz) (es : List Entry) :
+    replay z es = finish ((survivors es).foldl (stepWith z (dayOf z (dayIndexOf z es)) []) (State.init es.length)) :=
+  rfl
+
+/-- **`last_done` is the latest by instant** (§15, Goals; quirk Q6(b)): the running maximum by chrono's
+order of the stamps at which the survivors complete the item, file order breaking no tie in favour of a
+later line. -/
+theorem last_done_is_the_latest_by_instant (z : Cal.Tz) (es : List Entry) (i : Id) :
+    (replay z es).lastDone i = maxByInstant? (doneInstants i (survivors es)) := by
+  rw [replay_state]
+  unfold Facts.lastDone finish maxByInstant? lastMax?
+  simp only
+  rw [foldl_stepWith_lastDone, State.init, HMap.get_empty]
+
+theorem instLt_trans (a b c : At) (h₁ : instLt a b = true) (h₂ : instLt b c = true) : instLt a c = true := by
+  simp only [instLt, decide_eq_true_eq] at *; exact Cal.Instant.lt_trans h₁ h₂
+
+theorem instLt_skip (a b c : At) (h₁ : instLt a b = false) (h₂ : instLt a c = true) : instLt b c = true := by
+  simp only [instLt, decide_eq_true_eq, decide_eq_false_iff_not, Cal.Instant.lt_iff] at *; omega
+
+/-- **What `last_done` is**: the first of the latest completions by instant.  Every completion logged
+before it is strictly earlier, and none logged after it is later. -/
+theorem last_done_is_the_first_of_the_latest (z : Cal.Tz) (es : List Entry) (i : Id) (b : At)
+    (h : (replay z es).lastDone i = some b) :
+    ∃ l₁ l₂, doneInstants i (survivors es) = l₁ ++ b :: l₂ ∧ (∀ x ∈ l₁, x.1 < b.1) ∧ (∀ x ∈ l₂, ¬ b.1 < x.1) := by
+  rw [last_done_is_the_latest_by_instant] at h
+  obtain ⟨l₁, l₂, he, h1, h2⟩ := lastMax?_spec instLt instLt_trans instLt_skip _ b h
+  exact ⟨l₁, l₂, he, fun x hx => by simpa [instLt] using h1 x hx, fun x hx => by simpa [instLt] using h2 x hx⟩
+
+/-- An item has a `last_done` exactly when some survivor completes it (fork `done_items`). -/
+theorem last_done_isSome_iff (z : Cal.Tz) (es : List Entry) (i : Id) :
+    ((replay z es).lastDone i).isSome = true ↔ ∃ e ∈ survivors es, completes i e = true := by
+  rw [last_done_is_the_latest_by_instant, maxByInstant?, Option.isSome_iff_ne_none, ne_eq,
+    lastMax?_eq_none_iff]
+  unfold doneInstants
+  simp [List.filter_eq_nil_iff]
+
+/-! #### Instances -/
+
+/-- **The record an entry writes to `(item, inst)`** (§15's `instRecordOf`): fork `routine` (an unknown
+status read as `Pending`, the status kept as logged) or `skip` (`Skipped`, logged `"skipped"`). -/
+def instRecordOf (item ins : List Char) (e : Entry) : Option InstRec :=
+  match e.ev with
+  | .routine it is status actual =>
+    if it = item ∧ is = ins then
+      some ⟨stampOf e, (Log.parseInstanceStatus status).getD .pending, status, actual.map (·.val)⟩
+    else none
+  | .skip it is => if it = item ∧ is = ins then some ⟨stampOf e, .skipped, "skipped".toList, none⟩ else none
+  | _ => none
+
+/-- An instance effect's record for `(item, inst)`. -/
+def Effect.instOf (item ins : List Char) : Effect → Option InstRec
+  | .inst it is r => if it = item ∧ is = ins then some r else none
+  | _ => none
+
+theorem applyEffect_instances (st : State) (x : Effect) (item ins : List Char) :
+    (applyEffect st x).instances.get (item, ins) = (x.instOf item ins).or (st.instances.get (item, ins)) := by
+  cases x with
+  | inst it is r =>
+    simp only [applyEffect, Effect.instOf, HMap.get_alter, Prod.mk.injEq]
+    by_cases h : it = item ∧ is = ins
+    · obtain ⟨rfl, rfl⟩ := h; simp
+    · have h' : ¬ (item = it ∧ ins = is) := fun ⟨a, b⟩ => h ⟨a.symm, b.symm⟩
+      simp [h, h']
+  | itemDaySub i' d m => simp only [applyEffect, Effect.instOf]; split <;> rfl
+  | obs o => cases o <;> rfl
+  | _ => rfl
+
+theorem instances_applyEffects (st : State) (fx : List Effect) (item ins : List Char) :
+    (applyEffects st fx).instances.get (item, ins)
+      = (fx.reverse.findSome? (Effect.instOf item ins)).or (st.instances.get (item, ins)) := by
+  induction fx generalizing st with
+  | nil => rfl
+  | cons x fx ih =>
+    rw [applyEffects_cons, ih, applyEffect_instances, List.reverse_cons, List.findSome?_append,
+      Option.or_assoc]
+    congr 1
+    simp only [List.findSome?_cons, List.findSome?_nil]
+    cases x.instOf item ins <;> rfl
+
+theorem instOf_of_ofBlock (item ins : List Char) (x : Effect) (h : x.ofBlock = true) : x.instOf item ins = none := by
+  cases x <;> simp_all [Effect.ofBlock, Effect.instOf]
+
+theorem stepWith_instances (z : Cal.Tz) (dy : Cal.Instant → Nat) (slept : List (Nat × Nat)) (st : State)
+    (e : Entry) (item ins : List Char) :
+    (stepWith z dy slept st e).instances.get (item, ins) = (instRecordOf item ins e).or (st.instances.get (item, ins)) := by
+  unfold stepWith effectsWith
+  rw [instances_applyEffects]
+  congr 1
+  simp only [List.reverse_cons, List.reverse_append, List.findSome?_append]
+  have ha : (arm dy st.machine e (e.t.val, e.off.val) (dy e.t.val)).reverse.findSome? (Effect.instOf item ins) = none :=
+    List.findSome?_eq_none_iff.2 (fun x hx => instOf_of_ofBlock item ins x
+      (arm_ofBlock _ _ _ _ _ x (List.mem_reverse.1 hx)))
+  rw [ha]
+  simp only [List.findSome?_cons, List.findSome?_nil, Effect.instOf, Option.or_none]
+  unfold completionArm instRecordOf stampOf
+  cases e.ev <;> simp only [List.reverse_nil, List.findSome?_nil]
+  case done id _ _ _ _ _ isPartial => cases isPartial <;> rfl
+  case routine it is status actual =>
+    simp only [List.reverse_append, List.reverse_cons, List.findSome?_append, List.append_assoc]
+    have hm : (if Log.parseInstanceStatus status = some .done then
+        [Effect.markDone it (e.t.val, e.off.val), .doneDate it ((Log.instDate? is).getD (dy e.t.val))]
+        else []).reverse.findSome? (Effect.instOf item ins) = none := by
+      split <;> rfl
+    rw [hm]
+    have hw : (match Log.parseInstanceStatus status with
+        | some _ => ([] : List Effect)
+        | none => [.rwarn (.unknownInstanceStatus e.line status)]).reverse.findSome? (Effect.instOf item ins) = none := by
+      split <;> rfl
+    simp only [List.findSome?_cons, List.findSome?_nil, Effect.instOf, hw]
+    by_cases h : it = item ∧ is = ins <;> simp [h]
+  case skip it is =>
+    simp only [List.reverse_cons, List.reverse_nil, List.nil_append, List.findSome?_cons, List.findSome?_nil,
+      Effect.instOf]
+    by_cases h : it = item ∧ is = ins <;> simp [h]
+  case named => rfl
+
+theorem foldl_stepWith_instances (z : Cal.Tz) (dy : Cal.Instant → Nat) (slept : List (Nat × Nat))
+    (item ins : List Char) : ∀ (es : List Entry) (st : State),
+      (es.foldl (stepWith z dy slept) st).instances.get (item, ins)
+        = (es.reverse.findSome? (instRecordOf item ins)).or (st.instances.get (item, ins))
+  | [], _ => rfl
+  | e :: es, st => by
+    rw [List.foldl_cons, foldl_stepWith_instances z dy slept item ins es, stepWith_instances,
+      List.reverse_cons, List.findSome?_append, Option.or_assoc]
+    congr 1
+    simp only [List.findSome?_cons, List.findSome?_nil]
+    cases instRecordOf item ins e <;> rfl
+
+/-- **An instance is its last record in file order** (§15, Goals; quirk Q6(b)): fork `instances[item][inst]`
+is overwritten by every surviving `routine` or `skip` of that instance, so it holds the last one logged,
+whatever its stamp. -/
+theorem an_instance_is_its_last_record_in_file_order (z : Cal.Tz) (es : List Entry) (item ins : List Char) :
+    (replay z es).instance item ins = (survivors es).reverse.findSome? (instRecordOf item ins) := by
+  rw [replay_state]
+  unfold Facts.instance finish
+  simp only
+  rw [foldl_stepWith_instances, State.init, HMap.get_empty, Option.or_none]
+
+/-! #### `LatestNamed` -/
+
+/-- The occurrences of `tm event name` addressed to `id?` (fork `events[name]` filtered to that key), in
+file order: each one's line, stamp and local date in the zone. -/
+def namedOccurrences (z : Cal.Tz) (name : List Char) (id : Option Id) (es : List Entry) : List (Nat × At × Nat) :=
+  es.filterMap (fun e =>
+    match e.ev with
+    | .named n i => if n = name ∧ i = id then some (e.line, stampOf e, Cal.localDate z e.t.val) else none
+    | _ => none)
+
+def Effect.namedOf (name : List Char) (id : Option Id) : Effect → Option (Nat × At × Nat)
+  | .named n i line t date => if n = name ∧ i = id then some (line, t, date) else none
+  | _ => none
+
+/-- One occurrence folded into a key's record. -/
+def pushStep (o : Option NamedRec) (x : Nat × At × Nat) : Option NamedRec := some (NamedRec.push o x.1 x.2.1 x.2.2)
+
+theorem applyEffect_named (st : State) (x : Effect) (name : List Char) (id : Option Id) :
+    (applyEffect st x).named.get (name, id)
+      = match x.namedOf name id with
+        | some o => pushStep (st.named.get (name, id)) o
+        | none => st.named.get (name, id) := by
+  cases x with
+  | named n i line t date =>
+    simp only [applyEffect, Effect.namedOf, HMap.get_alter, Prod.mk.injEq]
+    by_cases h : n = name ∧ i = id
+    · obtain ⟨rfl, rfl⟩ := h; simp [pushStep]
+    · have h' : ¬ (name = n ∧ id = i) := fun ⟨a, b⟩ => h ⟨a.symm, b.symm⟩
+      simp [h, h']
+  | itemDaySub i' d m => simp only [applyEffect, Effect.namedOf]; split <;> rfl
+  | obs o => cases o <;> rfl
+  | _ => rfl
+
+theorem named_applyEffects (st : State) (fx : List Effect) (name : List Char) (id : Option Id) :
+    (applyEffects st fx).named.get (name, id)
+      = (fx.filterMap (Effect.namedOf name id)).foldl pushStep (st.named.get (name, id)) := by
+  induction fx generalizing st with
+  | nil => rfl
+  | cons x fx ih =>
+    rw [applyEffects_cons, ih, applyEffect_named, List.filterMap_cons]
+    cases x.namedOf name id <;> rfl
+
+theorem completionArm_namedOf (z : Cal.Tz) (e : Entry) (t : At) (d : Nat) (name : List Char) (id : Option Id) :
+    (completionArm z e t d).filterMap (Effect.namedOf name id)
+      = (match e.ev with
+         | .named n i => if n = name ∧ i = id then some (e.line, t, Cal.localDate z t.1) else none
+         | _ => none).toList := by
+  unfold completionArm
+  cases e.ev <;> try rfl
+  case done _ _ _ _ _ _ p => cases p <;> rfl
+  case routine it is status actual =>
+    rw [List.filterMap_append, List.filterMap_cons]
+    have hw : (match Log.parseInstanceStatus status with
+        | some _ => ([] : List Effect)
+        | none => [.rwarn (.unknownInstanceStatus e.line status)]).filterMap (Effect.namedOf name id) = [] := by
+      split <;> rfl
+    have hm : (if Log.parseInstanceStatus status = some .done then
+        [Effect.markDone it t, .doneDate it ((Log.instDate? is).getD d)]
+        else []).filterMap (Effect.namedOf name id) = [] := by
+      split <;> rfl
+    rw [hw, hm]; rfl
+
+theorem stepWith_named (z : Cal.Tz) (dy : Cal.Instant → Nat) (slept : List (Nat × Nat)) (st : State)
+    (e : Entry) (name : List Char) (id : Option Id) :
+    (stepWith z dy slept st e).named.get (name, id)
+      = (namedOccurrences z name id [e]).foldl pushStep (st.named.get (name, id)) := by
+  unfold stepWith effectsWith
+  rw [named_applyEffects, List.filterMap_cons, List.filterMap_cons, List.filterMap_append]
+  have ha : (arm dy st.machine e (e.t.val, e.off.val) (dy e.t.val)).filterMap (Effect.namedOf name id) = [] :=
+    List.filterMap_eq_nil_iff.2 (fun x hx => by
+      have := arm_ofBlock _ _ _ _ _ x hx
+      cases x <;> simp_all [Effect.ofBlock, Effect.namedOf])
+  rw [ha, completionArm_namedOf]
+  unfold namedOccurrences stampOf
+  simp only [Effect.namedOf, List.nil_append, List.filterMap_cons, List.filterMap_nil]
+  cases (match e.ev with
+    | .named n i => if n = name ∧ i = id then some (e.line, (e.t.val, e.off.val), Cal.localDate z e.t.val) else none
+    | _ => none) <;> rfl
+
+theorem foldl_stepWith_named (z : Cal.Tz) (dy : Cal.Instant → Nat) (slept : List (Nat × Nat))
+    (name : List Char) (id : Option Id) : ∀ (es : List Entry) (st : State),
+      (es.foldl (stepWith z dy slept) st).named.get (name, id)
+        = (namedOccurrences z name id es).foldl pushStep (st.named.get (name, id))
+  | [], _ => rfl
+  | e :: es, st => by
+    rw [List.foldl_cons, foldl_stepWith_named z dy slept name id es, stepWith_named]
+    have : namedOccurrences z name id (e :: es) = namedOccurrences z name id [e] ++ namedOccurrences z name id es := by
+      unfold namedOccurrences
+      rw [filterMap_cons_toList, filterMap_cons_toList, List.filterMap_nil, List.append_nil]
+    rw [this, List.foldl_append]
+
+theorem foldl_pushStep_latest : ∀ (l : List (Nat × At × Nat)) (o : Option NamedRec),
+    (l.foldl pushStep o).map (·.latest) = (l.map (fun x => (x.1, x.2.1))).foldl (lastMaxStep latestRel) (o.map (·.latest))
+  | [], _ => rfl
+  | x :: l, o => by
+    rw [List.foldl_cons, List.map_cons, List.foldl_cons, foldl_pushStep_latest l]
+    cases o <;> rfl
+
+theorem foldl_pushStep_dated : ∀ (l : List (Nat × At × Nat)) (o : Option NamedRec),
+    (l.foldl pushStep o).map (·.dated) = (l.map (fun x => (x.2.2, x.1, x.2.1))).foldl (lastMaxStep datedRel) (o.map (·.dated))
+  | [], _ => rfl
+  | x :: l, o => by
+    rw [List.foldl_cons, List.map_cons, List.foldl_cons, foldl_pushStep_dated l]
+    cases o <;> rfl
+
+/-- **Fork `LatestNamed` of every `(name, id?)` key** (carried note 3; R3's `latest_named`): the record keeps
+the latest occurrence by instant, with its line, and the latest by local date in the zone and then by
+instant, with its date and line, a later line winning a tie in both. -/
+theorem named_keeps_the_latest_by_instant_and_the_latest_by_local_date (z : Cal.Tz) (es : List Entry)
+    (name : List Char) (id : Option Id) :
+    ((replay z es).namedAt name id).map (·.latest)
+      = lastMax? latestRel ((namedOccurrences z name id (survivors es)).map (fun x => (x.1, x.2.1))) ∧
+    ((replay z es).namedAt name id).map (·.dated)
+      = lastMax? datedRel ((namedOccurrences z name id (survivors es)).map (fun x => (x.2.2, x.1, x.2.1))) := by
+  rw [replay_state]
+  unfold Facts.namedAt finish lastMax?
+  simp only
+  rw [foldl_stepWith_named, State.init, HMap.get_empty]
+  exact ⟨foldl_pushStep_latest _ none, foldl_pushStep_dated _ none⟩
+
+/-! #### Replay warnings and done dates -/
+
+theorem applyEffect_ofBlock_keeps (s : State) (x : Effect) (h : x.ofBlock = true) :
+    (applyEffect s x).rwarns = s.rwarns ∧ (applyEffect s x).doneDates = s.doneDates := by
+  cases x with
+  | itemDaySub i d m => simp only [applyEffect]; split <;> exact ⟨rfl, rfl⟩
+  | obs o => cases o <;> exact ⟨rfl, rfl⟩
+  | rwarn w => simp [Effect.ofBlock] at h
+  | doneDate i d => simp [Effect.ofBlock] at h
+  | _ => exact ⟨rfl, rfl⟩
+
+/-- The replay warning an entry raises: a `routine` whose status the fork does not know. -/
+def warnOf (e : Entry) : Option RWarn :=
+  match e.ev with
+  | .routine _ _ status _ =>
+    match Log.parseInstanceStatus status with
+    | some _ => none
+    | none => some (.unknownInstanceStatus e.line status)
+  | _ => none
+
+theorem completionArm_rwarns (z : Cal.Tz) (e : Entry) (t : At) (d : Nat) (s : State) :
+    (applyEffects s (completionArm z e t d)).rwarns = (warnOf e).toList ++ s.rwarns := by
+  unfold completionArm warnOf
+  cases e.ev <;> try rfl
+  case done _ _ _ _ _ _ p => cases p <;> rfl
+  case routine it is status actual =>
+    rw [applyEffects_append]
+    cases hs : Log.parseInstanceStatus status with
+    | none => simp [applyEffects, applyEffect, hs]
+    | some s' => cases s' <;> simp [applyEffects, applyEffect, hs]
+
+theorem stepWith_rwarns (z : Cal.Tz) (dy : Cal.Instant → Nat) (slept : List (Nat × Nat)) (st : State)
+    (e : Entry) : (stepWith z dy slept st e).rwarns = (warnOf e).toList ++ st.rwarns := by
+  have hgen : ∀ (fx : List Effect) (s : State), (∀ x ∈ fx, x.ofBlock = true) →
+      (applyEffects s fx).rwarns = s.rwarns := by
+    intro fx
+    induction fx with
+    | nil => intro s _; rfl
+    | cons x fx ih =>
+      intro s hx
+      rw [applyEffects_cons, ih _ (fun y hy => hx y (List.mem_cons_of_mem _ hy))]
+      exact (applyEffect_ofBlock_keeps s x (hx x (List.mem_cons_self ..))).1
+  unfold stepWith effectsWith
+  rw [applyEffects_cons, applyEffects_cons, applyEffects_append, completionArm_rwarns,
+    hgen _ _ (arm_ofBlock _ _ _ _ _)]
+  rfl
+
+/-- **The replay warnings are the unknown routine statuses, in file order** (§8.3; fork
+`Replay.warnings`, which only `routine` pushes). -/
+theorem the_replay_warnings_are_the_unknown_statuses_in_file_order (z : Cal.Tz) (es : List Entry) :
+    (replay z es).warnings = (survivors es).filterMap warnOf := by
+  have h : ∀ (l : List Entry) (st : State),
+      (l.foldl (stepWith z (dayOf z (dayIndexOf z es)) []) st).rwarns = (l.filterMap warnOf).reverse ++ st.rwarns := by
+    intro l
+    induction l with
+    | nil => intro st; rfl
+    | cons e l ih =>
+      intro st
+      rw [List.foldl_cons, ih, stepWith_rwarns, List.filterMap_cons]
+      cases warnOf e <;> simp
+  rw [replay_state]
+  unfold finish
+  simp only
+  rw [h, State.init, List.append_nil, List.reverse_reverse]
+
+/-- **The date a completion is recorded on** (fork `mark_done`'s `date`): a `done`'s day, or the date a
+`routine`'s `inst` names, else its day. -/
+def doneDateOf (dy : Cal.Instant → Nat) (e : Entry) : Nat :=
+  match e.ev with
+  | .routine _ ins _ _ => (Log.instDate? ins).getD (dy e.t.val)
+  | _ => dy e.t.val
+
+/-- A completion effect's date for `i`. -/
+def Effect.dateOf (i : Id) : Effect → Option Nat
+  | .doneDate j d => if j = i then some d else none
+  | _ => none
+
+theorem applyEffect_doneDates (s : State) (x : Effect) (i : Id) (d : Nat) :
+    ((applyEffect s x).doneDates.get (d, i)).isSome
+      = ((s.doneDates.get (d, i)).isSome || x.dateOf i == some d) := by
+  cases x with
+  | doneDate j dd =>
+    simp only [applyEffect, Effect.dateOf, HMap.get_alter, Prod.mk.injEq]
+    by_cases h1 : j = i <;> by_cases h2 : dd = d
+    · subst h1; subst h2; simp
+    · subst h1; simp [h2, Ne.symm h2]
+    · simp [h1, Ne.symm h1]
+    · simp [h1, Ne.symm h1]
+  | itemDaySub i' d' m => simp only [applyEffect, Effect.dateOf]; split <;> simp
+  | obs o => cases o <;> simp [applyEffect, Effect.dateOf]
+  | _ => simp [applyEffect, Effect.dateOf]
+
+theorem applyEffects_doneDates (s : State) (fx : List Effect) (i : Id) (d : Nat) :
+    ((applyEffects s fx).doneDates.get (d, i)).isSome
+      = ((s.doneDates.get (d, i)).isSome || fx.any (fun x => x.dateOf i == some d)) := by
+  induction fx generalizing s with
+  | nil => simp [applyEffects]
+  | cons x fx ih => rw [applyEffects_cons, ih, applyEffect_doneDates, List.any_cons, Bool.or_assoc]
+
+theorem completionArm_doneDates (z : Cal.Tz) (dy : Cal.Instant → Nat) (e : Entry) (t : At) (i : Id) (d : Nat) :
+    (completionArm z e t (dy e.t.val)).any (fun x => x.dateOf i == some d)
+      = (completes i e && decide (doneDateOf dy e = d)) := by
+  unfold completionArm completes doneDateOf
+  cases e.ev <;> try rfl
+  case done id _ _ _ _ _ isPartial =>
+    cases isPartial
+    · by_cases h1 : id = i <;> by_cases h2 : dy e.t.val = d <;> simp [h1, h2, Effect.dateOf]
+    · simp
+  case routine it is status actual =>
+    rw [List.any_append, List.any_cons]
+    have hw : (match Log.parseInstanceStatus status with
+        | some _ => ([] : List Effect)
+        | none => [.rwarn (.unknownInstanceStatus e.line status)]).any (fun x => x.dateOf i == some d) = false := by
+      split <;> rfl
+    rw [hw]
+    by_cases hs : Log.parseInstanceStatus status = some .done <;>
+      by_cases h1 : it = i <;> by_cases h2 : (Log.instDate? is).getD (dy e.t.val) = d <;>
+      simp [hs, h1, h2, Effect.dateOf]
+
+theorem stepWith_doneDates (z : Cal.Tz) (dy : Cal.Instant → Nat) (slept : List (Nat × Nat)) (st : State)
+    (e : Entry) (i : Id) (d : Nat) :
+    ((stepWith z dy slept st e).doneDates.get (d, i)).isSome
+      = ((st.doneDates.get (d, i)).isSome || (completes i e && decide (doneDateOf dy e = d))) := by
+  unfold stepWith effectsWith
+  rw [applyEffects_doneDates, List.any_cons, List.any_cons, List.any_append, completionArm_doneDates]
+  have ha : (arm dy st.machine e (e.t.val, e.off.val) (dy e.t.val)).any (fun x => x.dateOf i == some d) = false :=
+    List.any_eq_false.2 (fun x hx => by
+      have := arm_ofBlock _ _ _ _ _ x hx
+      cases x <;> simp_all [Effect.ofBlock, Effect.dateOf])
+  rw [ha]
+  simp [Effect.dateOf]
+
+/-- **A done date is recorded exactly when a survivor completes the item on that date** (fork
+`done_dates`, which nothing but an undo removes from: a later `pending` does not). -/
+theorem a_done_date_is_a_survivors_completion_date (z : Cal.Tz) (es : List Entry) (i : Id) (d : Nat) :
+    (replay z es).doneOn i d = true ↔
+      ∃ e ∈ survivors es, completes i e = true ∧ doneDateOf (dayOf z (dayIndexOf z es)) e = d := by
+  have h : ∀ (l : List Entry) (st : State),
+      ((l.foldl (stepWith z (dayOf z (dayIndexOf z es)) []) st).doneDates.get (d, i)).isSome
+        = ((st.doneDates.get (d, i)).isSome ||
+            l.any (fun e => completes i e && decide (doneDateOf (dayOf z (dayIndexOf z es)) e = d))) := by
+    intro l
+    induction l with
+    | nil => intro st; simp
+    | cons e l ih =>
+      intro st
+      rw [List.foldl_cons, ih, stepWith_doneDates, List.any_cons, Bool.or_assoc]
+  rw [replay_state]
+  unfold Facts.doneOn finish
+  simp only
+  rw [h, State.init, HMap.get_empty]
+  simp
+
+end CompletionLaws
 
 /-! ## Witnesses (C3)
 
@@ -3940,8 +4895,8 @@ theorem close_pause_does_not_clear_paused :
 
 /-- **A partial `done` credits but does not complete** (CRIT 22): `start a` 09:00, a partial `done a`
 with 30 minutes at 09:30.  The minutes, the block and a `DurationObs` are recorded and the time goes to
-`partial_done_at`; no completion time is pushed and the day's `done` list stays empty (the done set is
-C4's). -/
+`partial_done_at`; no completion time is pushed and the day's `done` list stays empty (nor is the item
+done: `completionArm` marks only a non-partial `done`). -/
 theorem a_partial_done_credits_but_does_not_complete :
     let f := replay utcZone [bE 1 63924368400 (bStart ['a']), bE 2 63924370200 (bDone ['a'] 30 true)]
     (f.items.get ['a']).map (·.minutes) = some 30 ∧ (f.items.get ['a']).map (·.blocks) = some 1 ∧
@@ -3993,6 +4948,104 @@ theorem an_extend_changes_more_than_the_bookkeeping :
   ⟨bE 1 63924368400 (.extend ['a'] 15), ['a'], 15, rfl, by decide, by decide⟩
 
 end BlockWitnesses
+
+/-! ## Witnesses (C4)
+
+Each was probed in a scratch copy under `MemoryMax=8G timeout 120` (§14.0 item 4): at most 2 entries,
+`utcZone` or `foldZone` (one transition), instants as `Nat` literals, no stamp text parsed (an `inst`
+naming a date is read by `Log.instDate?`, ten characters).  2026-09-07T09:00:00Z is second 63924368400,
+and the day is 739865. -/
+
+section CompletionWitnesses
+
+open Log (Id U8 U32 Num)
+
+/-- An entry written at a chosen offset, `west` of UTC by `off` seconds. -/
+def bEo (line sec : Nat) (west : Bool) (off : Nat) (ev : Event) (h : Cal.Instant.wf ⟨sec, 0⟩ = true := by decide)
+    (ho : Cal.Offset.wf ⟨west, off⟩ = true := by decide) : Entry :=
+  ⟨line, ⟨⟨sec, 0⟩, h⟩, ⟨⟨west, off⟩, ho⟩, ev⟩
+
+/-- A `routine` logged `done`, without minutes. -/
+def rDone (item ins : List Char) : Event := .routine item ins ['d', 'o', 'n', 'e'] none
+
+/-- **Quirk Q6(b): instances and `last_done` order differently** (§15, Goals): `routine s #1 done` at 10:00
+on line 1, then the same instance `done` again at 08:00 on line 2 (a retro append).  The instance is the
+last record in file order, the 08:00 one; `last_done` is the latest by instant, 10:00. -/
+theorem instances_and_last_done_order_differently :
+    ∃ (es : List Entry) (item ins : List Char) (r : InstRec) (t : At),
+      Log.linesIncreasing es = true ∧ (replay utcZone es).instance item ins = some r ∧
+      (replay utcZone es).lastDone item = some t ∧ r.status = .done ∧ r.t.1 < t.1 :=
+  ⟨[bE 1 63924372000 (rDone ['s'] ['#', '1']), bE 2 63924364800 (rDone ['s'] ['#', '1'])], ['s'], ['#', '1'],
+    ⟨(⟨63924364800, 0⟩, ⟨false, 0⟩), .done, ['d', 'o', 'n', 'e'], none⟩, (⟨63924372000, 0⟩, ⟨false, 0⟩),
+    by decide, by decide, by decide, rfl, by decide⟩
+
+/-- **A retro `done` marks done and credits nothing** (§8.2): `done a` with 0 minutes and no block open.
+The item is done on the day, with `last_done` at the `done`; it is credited 0 minutes and no block, the
+day's block minutes stay 0, and no `DurationObs` is pushed. -/
+theorem a_retro_done_marks_done_and_credits_nothing :
+    let f := replay utcZone [bE 1 63924368400 (bDone ['a'] 0 false)]
+    f.lastDone ['a'] = some (⟨63924368400, 0⟩, ⟨false, 0⟩) ∧ f.doneOn ['a'] 739865 = true ∧
+    (f.items.get ['a']).map (fun i => (i.minutes, i.blocks)) = some (0, 0) ∧
+    (f.days.get 739865).map (·.blockMin) = some 0 ∧ f.durations = [] := by
+  decide
+
+/-- **A later `pending` does not undo a done date** (§8.2): `routine s 2026-09-01 done` at 09:00, then the
+same instance `pending` at 09:30.  The instance reads `Pending` (the last record), but the item stays done
+on 2026-09-01, the date its `inst` names (not the 7th, its day), with `last_done` at 09:00. -/
+theorem a_later_pending_does_not_undo_a_done_date :
+    let f := replay utcZone [bE 1 63924368400 (rDone ['s'] ['2', '0', '2', '6', '-', '0', '9', '-', '0', '1']),
+      bE 2 63924370200 (.routine ['s'] ['2', '0', '2', '6', '-', '0', '9', '-', '0', '1']
+        ['p', 'e', 'n', 'd', 'i', 'n', 'g'] none)]
+    (f.instance ['s'] ['2', '0', '2', '6', '-', '0', '9', '-', '0', '1']).map (·.status) = some .pending ∧
+    f.doneOn ['s'] (Cal.toDay ⟨2026, 9, 1⟩) = true ∧ f.doneOn ['s'] 739865 = false ∧
+    f.lastDone ['s'] = some (⟨63924368400, 0⟩, ⟨false, 0⟩) := by
+  decide
+
+/-- **An unknown status warns and is pending** (§8.3): `routine s #1 Done` (a capital `D`, which fork
+`parse_instance_status` does not read) with 5 minutes.  One replay warning names line 1 and the status as
+logged; the instance is `Pending`, keeps `"Done"` and its minutes, and the item is not done. -/
+theorem an_unknown_status_warns_and_is_pending :
+    let f := replay utcZone [bE 1 63924368400 (.routine ['s'] ['#', '1'] ['D', 'o', 'n', 'e'] (some 5))]
+    f.warnings = [.unknownInstanceStatus 1 ['D', 'o', 'n', 'e']] ∧
+    f.instance ['s'] ['#', '1'] = some ⟨(⟨63924368400, 0⟩, ⟨false, 0⟩), .pending, ['D', 'o', 'n', 'e'], some 5⟩ ∧
+    f.lastDone ['s'] = none := by
+  decide
+
+/-- **`last_done` keeps the first of equal instants** (fork `if t > *last`, not `>=`): two `done a` at the
+same instant, line 1 written `+00:00` and line 2 written `-01:00`.  `last_done` keeps line 1's written
+offset; both completions are in `done_at`. -/
+theorem last_done_keeps_the_first_of_equal_instants :
+    let f := replay utcZone [bE 1 63924368400 (bDone ['a'] 30 false), bEo 2 63924368400 true 3600 (bDone ['a'] 30 false)]
+    f.lastDone ['a'] = some (⟨63924368400, 0⟩, ⟨false, 0⟩) ∧
+    (f.items.get ['a']).map (fun i => i.doneAt.map (·.2)) = some [⟨false, 0⟩, ⟨true, 3600⟩] := by
+  decide
+
+/-- **A routine's done date is its `inst` only when that is a date `parse_date` reads**: `routine r #2 done`
+is done on its day; `routine q` on `2026-9-` + no-break space + `01` (10 characters, 11 bytes, which the
+fork's `s.len() != 10` refuses) is done on its day too, not on 2026-09-01. -/
+theorem a_routine_done_is_dated_by_its_inst_only_when_it_is_a_date :
+    let f := replay utcZone [bE 1 63924368400 (rDone ['r'] ['#', '2']),
+      bE 2 63924368460 (rDone ['q'] ['2', '0', '2', '6', '-', '9', '-', ' ', '0', '1'])]
+    f.doneOn ['r'] 739865 = true ∧ f.doneOn ['q'] 739865 = true ∧ f.doneOn ['q'] (Cal.toDay ⟨2026, 9, 1⟩) = false := by
+  decide
+
+/-- **Refuted: design §8.4's "a `≥ since` filter commutes with max"** (R3; carried note 3).  In `foldZone`,
+whose clock goes back an hour at 00:30 UTC on 2026-09-08, `event x` at 00:29:30 (dated the 8th) and again
+at 23:50 local an instant later (dated the 7th).  Filtered to dates on or after the 8th, the latest is line
+1; the latest by instant, line 2, is dated the 7th, so "the latest, then the filter" answers nothing.  The
+kernel keeps both, as fork `LatestNamed` does: `latest` is line 2 and `dated` line 1. -/
+theorem a_since_filter_does_not_commute_with_the_latest_by_instant :
+    let es := [bE 1 63924424170 (.named ['x'] none), bE 2 63924425400 (.named ['x'] none)]
+    let occ := (namedOccurrences foldZone ['x'] none es)
+    ((replay foldZone es).namedAt ['x'] none).map (fun r => (r.latest.1, r.dated.2.1)) = some (2, 1) ∧
+    occ.map (·.2.2) = [739866, 739865] ∧
+    lastMax? latestRel ((occ.filter (fun o => decide (739866 ≤ o.2.2))).map (fun o => (o.1, o.2.1)))
+      = some (1, (⟨63924424170, 0⟩, ⟨false, 0⟩)) ∧
+    (lastMax? latestRel (occ.map (fun o => (o.1, o.2.1)))).filter
+      (fun p => decide (739866 ≤ Cal.localDate foldZone p.2.1)) = none := by
+  decide
+
+end CompletionWitnesses
 
 end Replay
 end Tm

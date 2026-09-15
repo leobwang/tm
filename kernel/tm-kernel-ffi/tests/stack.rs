@@ -165,7 +165,7 @@ fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
         assert_eq!(
             out,
             format!(
-                r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"log":{{"lines":32768,"warnings":[],"facts":{{"cancelled":[{}],"days":[{}],"block":{{"days":[],"items":[],"itemDays":[],"energy":[],"durations":[],"interrupts":[],"openBlock":null,"openInterrupt":null,"lastEffective":null}}}},"headers":[],"render":[]}}}}}}"#,
+                r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"log":{{"lines":32768,"warnings":[],"facts":{{"cancelled":[{}],"days":[{}],"block":{{"days":[],"items":[],"itemDays":[],"energy":[],"durations":[],"interrupts":[],"openBlock":null,"openInterrupt":null,"lastEffective":null}},"completion":{{"lastDone":[],"doneDates":[],"instances":[],"named":[]}},"replayWarnings":[]}},"headers":[],"render":[]}}}}}}"#,
                 all.join(","),
                 // C2: 06:05 at -05:00 is 11:05 UTC on 2026-09-07, day 739,865, for every line.
                 (1..=32_768).map(|n| format!("[{n},739865]")).collect::<Vec<_>>().join(",")
@@ -196,7 +196,7 @@ fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
         assert_eq!(
             out,
             format!(
-                r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"log":{{"lines":32768,"warnings":[],"facts":{{"cancelled":[],"days":[{}],"block":{{"days":[],"items":[],"itemDays":[],"energy":[],"durations":[],"interrupts":[],"openBlock":null,"openInterrupt":null,"lastEffective":[{last},0,false,0]}}}},"headers":[],"render":[]}}}}}}"#,
+                r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"log":{{"lines":32768,"warnings":[],"facts":{{"cancelled":[],"days":[{}],"block":{{"days":[],"items":[],"itemDays":[],"energy":[],"durations":[],"interrupts":[],"openBlock":null,"openInterrupt":null,"lastEffective":[{last},0,false,0]}},"completion":{{"lastDone":[],"doneDates":[],"instances":[],"named":[]}},"replayWarnings":[]}},"headers":[],"render":[]}}}}}}"#,
                 days.join(",")
             )
         );
@@ -230,8 +230,52 @@ fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
         assert!(out.contains(r#"["a",{"minutes":16384,"blocks":16384,"doneAt":["#), "{}", &out[..out.len().min(400)]);
         assert_eq!(out.matches(r#""block","a"]"#).count(), 16_384, "one segment a block");
         assert_eq!(out.matches(r#",739865,3,3,0.0,"h",0,null,"a",true]"#).count(), 720, "the first day's start observations");
-        assert!(out.ends_with(r#""openBlock":null,"openInterrupt":null,"lastEffective":[63926302020,0,false,0]}},"headers":[],"render":[]}}}"#), "{}", &out[out.len().saturating_sub(300)..]);
+        let tail = &out[out.len().saturating_sub(2_000)..];
+        assert!(tail.contains(r#""openBlock":null,"openInterrupt":null,"lastEffective":[63926302020,0,false,0]},"completion":{"lastDone":[["a",[63926302020,0,false,0]]],"doneDates":["#), "{tail}");
+        // C4: every `done` completes `a`, so its done dates are the 23 days, and its
+        // `last_done` is the last `done`.
+        for d in 739_865..=739_887 {
+            assert!(tail.contains(&format!(r#"["a",{d}]"#)), "done on day {d}");
+        }
+        assert!(out.ends_with(r#""instances":[],"named":[]},"replayWarnings":[]},"headers":[],"render":[]}}}"#), "{}", &out[out.len().saturating_sub(300)..]);
         eprintln!("the block machine at the line bound: {:.0} ms, {} bytes", start.elapsed().as_secs_f64() * 1000.0, out.len());
+    });
+    // Stage 5 D9 C4: the completion family at the line bound (the same `foldl`; instances,
+    // done dates and `LatestNamed` records altered in `Replay.HMap`'s buckets, sized to the
+    // log). 16,384 `routine` lines of one item, each on its own instance, the even ones
+    // `done` and the odd ones `maybe` (a replay warning each), then 16,384 `event` lines
+    // over 64 names, all at 06:05 on 2026-09-07 written in UTC.
+    on_a_2mib_thread(|| {
+        let lines: Vec<String> = (0..16_384)
+            .map(|i| {
+                format!(
+                    r##""{{\"t\":\"2026-09-07T06:05:00Z\",\"ev\":\"routine\",\"item\":\"r\",\"inst\":\"#{i}\",\"status\":\"{}\"}}""##,
+                    if i % 2 == 0 { "done" } else { "maybe" }
+                )
+            })
+            .chain((0..16_384).map(|i| format!(r#""{{\"t\":\"2026-09-07T06:05:00Z\",\"ev\":\"event\",\"name\":\"n{}\"}}""#, i % 64)))
+            .collect();
+        let req = format!(
+            r#"{{"docs":[],"tz":{{"key":"UTC","base":"+00:00:00","then":[]}},"log":{{"ckpt":null,"from":1,"lines":[{}],"terminated":true,"want":{{"facts":true}}}}}}"#,
+            lines.join(",")
+        );
+        let start = std::time::Instant::now();
+        let out = call(&req).unwrap();
+        let ms = start.elapsed().as_secs_f64() * 1000.0;
+        let t = r#"[63924357900,0,false,0]"#;
+        assert_eq!(out.matches(r##"["r","#"##).count(), 16_384, "one instance a routine line");
+        assert_eq!(out.matches(&format!(r#"{t},"done","done",null]"#)).count(), 8_192);
+        assert_eq!(out.matches(&format!(r#"{t},"pending","maybe",null]"#)).count(), 8_192);
+        assert_eq!(out.matches(r#""w":"unknownInstanceStatus","raw":"maybe"}"#).count(), 8_192);
+        // The first `done` of equal instants is `last_done`; every one is on the day.
+        assert!(out.contains(&format!(r#""lastDone":[["r",{t}]],"doneDates":[["r",739865]],"#)), "{}", &out[..out.len().min(600)]);
+        // Each name's latest by instant and by date is its last line (a later line wins a tie).
+        for k in 0..64 {
+            let last = 16_384 + 16_320 + k + 1;
+            assert!(out.contains(&format!(r#"["n{k}",null,{last},{t},{last},{t}]"#)), "name n{k}");
+        }
+        assert!(out.contains(r#""replayWarnings":[{"line":2,"w":"unknownInstanceStatus","raw":"maybe"},{"line":4,"#));
+        eprintln!("the completion family at the line bound: {ms:.0} ms (the call), {} bytes", out.len());
     });
 }
 

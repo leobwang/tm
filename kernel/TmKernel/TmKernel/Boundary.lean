@@ -2985,16 +2985,52 @@ def blockJson (f : Replay.Facts) : JVal :=
         ("openInterrupt".toList, optJson interruptionJson f.openInterrupt),
         ("lastEffective".toList, optJson atJson f.lastEffective)]
 
+/-! ### Stage 5 D9 C4: the completion family's facts on the wire
+
+APPENDED 2026-09-15 (stage 5, D9 track, step C4; design §8.2–§8.4, §14.4 row C4).  `facts.completion` is
+`Replay.replay`'s completion family and `facts.replayWarnings` its replay warnings, for T5 to compare with
+the fork's `Replay` field by field.  C6's view replaces both. -/
+
+/-- A routine instance's status, as `parse_instance_status` names it. -/
+def instStatusJson : Log.InstanceStatus → JVal
+  | .done => .str "done".toList
+  | .pending => .str "pending".toList
+  | .missed => .str "missed".toList
+  | .expired => .str "expired".toList
+  | .skipped => .str "skipped".toList
+
+/-- A replay warning as design §10.2 spells it: `{"line": n, "w": "unknownInstanceStatus", "raw": s}`. -/
+def rwarnJson : Replay.RWarn → JVal
+  | .unknownInstanceStatus line raw =>
+    .obj [("line".toList, .num line), ("w".toList, .str "unknownInstanceStatus".toList), ("raw".toList, .str raw)]
+
+/-- **The completion family's facts** (C4): `lastDone` (fork `last_done`, whose ids are `done_items`) as
+`[id, stamp]`; `doneDates` as `[id, day]`; `instances` as `[item, inst, stamp, status, raw, actualMin]`
+(the last record in file order); and `named`, fork `LatestNamed` per `(name, id?)`, as
+`[name, id, latestLine, latestStamp, datedLine, datedStamp]`. -/
+def completionJson (f : Replay.Facts) : JVal :=
+  .obj [("lastDone".toList, .arr (f.lastDoneMap.pairs.map (fun p => .arr [.str p.1, atJson p.2]))),
+        ("doneDates".toList, .arr (f.doneDates.pairs.map (fun p => .arr [.str p.1.2, .num p.1.1]))),
+        ("instances".toList, .arr (f.instances.pairs.map (fun p =>
+          .arr [.str p.1.1, .str p.1.2, atJson p.2.t, instStatusJson p.2.status, .str p.2.raw,
+                optJson JVal.num p.2.actualMin]))),
+        ("named".toList, .arr (f.named.pairs.map (fun p =>
+          .arr [.str p.1.1, optJson JVal.str p.1.2, .num p.2.latest.1, atJson p.2.latest.2,
+                .num p.2.dated.2.1, atJson p.2.dated.2.2])))]
+
 /-- **The tail's facts** (design §10.2's `facts`, stage 5 D9 C1): at C1 the cancelled line set, the
 lines of the entries the undo mask cancels (`Replay.cancelledLines`, compiled as its fast twin), in
 file order.  **C2 adds `days`**: `[line, day]` for every entry in file order, cancelled ones included,
 its wake-attributed day in the request's zone (`Replay.entryDays`, compiled as its bisection twin),
 a day being days since 0001-01-01.  **C3 adds `block`**: the block family of `Replay.replay`
-(`blockJson`).  C6 replaces this with the whole view. -/
+(`blockJson`).  **C4 adds `completion` and `replayWarnings`** (`completionJson`, `rwarnJson`), from the same
+replay.  C6 replaces this with the whole view. -/
 def factsJson (z : Cal.Tz) (es : List Log.Entry) : JVal :=
+  let f := Replay.replay z es
   .obj [("cancelled".toList, .arr ((Replay.cancelledLines es).map JVal.num)),
         ("days".toList, .arr ((Replay.entryDays z es).map (fun p => .arr [.num p.1, .num p.2]))),
-        ("block".toList, blockJson (Replay.replay z es))]
+        ("block".toList, blockJson f), ("completion".toList, completionJson f),
+        ("replayWarnings".toList, .arr (f.warnings.map rwarnJson))]
 
 /-- **The `log` answer**: `lines` (the last physical line seen), `warnings`, `headers`, `render`,
 keys in build order.  `render` looks its lines up in an array. -/
@@ -10505,14 +10541,18 @@ theorem the_tail_entries_have_increasing_lines (r : LogReq) :
   exact linesIncreasing_of_pairwise _ (filterMap_entryOf_pairwise _ _)
 
 /-- **The `facts` key**: `null` unless asked; asked, the cancelled lines of the tail's entries, (C2)
-every entry's day in the request's zone, and (C3) the block family of their replay. -/
+every entry's day in the request's zone, (C3) the block family of their replay, and (C4) its completion
+family and replay warnings. -/
 theorem logAnswer_facts (r : VLogReq) :
     ∃ a b c d, logAnswer r = .obj [a, b, ("facts".toList,
       if r.val.facts then .obj [("cancelled".toList,
         .arr ((Replay.cancelledLines ((logVerdicts r.val).filterMap entryOf)).map JVal.num)),
         ("days".toList, .arr ((Replay.entryDays r.val.tz ((logVerdicts r.val).filterMap entryOf)).map
           (fun p => .arr [.num p.1, .num p.2]))),
-        ("block".toList, blockJson (Replay.replay r.val.tz ((logVerdicts r.val).filterMap entryOf)))]
+        ("block".toList, blockJson (Replay.replay r.val.tz ((logVerdicts r.val).filterMap entryOf))),
+        ("completion".toList, completionJson (Replay.replay r.val.tz ((logVerdicts r.val).filterMap entryOf))),
+        ("replayWarnings".toList,
+          .arr ((Replay.replay r.val.tz ((logVerdicts r.val).filterMap entryOf)).warnings.map rwarnJson))]
       else .null), c, d] :=
   ⟨_, _, _, _, rfl⟩
 
@@ -10575,7 +10615,10 @@ theorem the_log_op_answers_the_cancelled_lines :
             ("block".toList, .obj [("days".toList, .arr []), ("items".toList, .arr []),
               ("itemDays".toList, .arr []), ("energy".toList, .arr []), ("durations".toList, .arr []),
               ("interrupts".toList, .arr []), ("openBlock".toList, .null), ("openInterrupt".toList, .null),
-              ("lastEffective".toList, .arr [.num 63924368400, .num 0, .bool false, .num 0])])]),
+              ("lastEffective".toList, .arr [.num 63924368400, .num 0, .bool false, .num 0])]),
+            ("completion".toList, .obj [("lastDone".toList, .arr []), ("doneDates".toList, .arr []),
+              ("instances".toList, .arr []), ("named".toList, .arr [])]),
+            ("replayWarnings".toList, .arr [])]),
           ("headers".toList, .arr []), ("render".toList, .arr [])] := by
   decide
 
@@ -10640,7 +10683,10 @@ theorem the_log_op_answers_every_entrys_day :
             ("block".toList, .obj [("days".toList, .arr []), ("items".toList, .arr []),
               ("itemDays".toList, .arr []), ("energy".toList, .arr []), ("durations".toList, .arr []),
               ("interrupts".toList, .arr []), ("openBlock".toList, .null), ("openInterrupt".toList, .null),
-              ("lastEffective".toList, .arr [.num 63924465600, .num 0, .bool false, .num 0])])]),
+              ("lastEffective".toList, .arr [.num 63924465600, .num 0, .bool false, .num 0])]),
+            ("completion".toList, .obj [("lastDone".toList, .arr []), ("doneDates".toList, .arr []),
+              ("instances".toList, .arr []), ("named".toList, .arr [])]),
+            ("replayWarnings".toList, .arr [])]),
           ("headers".toList, .arr []), ("render".toList, .arr [])] := by
   decide
 
@@ -10695,9 +10741,64 @@ theorem the_log_op_answers_the_block_facts :
               ("durations".toList, .arr [.arr [.num 2, .arr [.num 63924370200, .num 0, .bool false, .num 0],
                 .num 739865, .str ['a'], .num 3, .arr [], .num 5, .num 30, .null, .bool false]]),
               ("interrupts".toList, .arr []), ("openBlock".toList, .null), ("openInterrupt".toList, .null),
-              ("lastEffective".toList, .arr [.num 63924370200, .num 0, .bool false, .num 0])])]),
+              ("lastEffective".toList, .arr [.num 63924370200, .num 0, .bool false, .num 0])]),
+            ("completion".toList, .obj [
+              ("lastDone".toList, .arr [.arr [.str ['a'], .arr [.num 63924370200, .num 0, .bool false, .num 0]]]),
+              ("doneDates".toList, .arr [.arr [.str ['a'], .num 739865]]),
+              ("instances".toList, .arr []), ("named".toList, .arr [])]),
+            ("replayWarnings".toList, .arr [])]),
           ("headers".toList, .arr []), ("render".toList, .arr [])] := by
   decide
 
 end C3
+
+/-! ## Stage 5 D9 C4: the `log` op's facts — the completion family
+
+APPENDED 2026-09-15 (stage 5, D9 track, step C4; design §8.2–§8.4, §14.4 row C4).  `facts.completion`
+(`completionJson`) and `facts.replayWarnings` (`rwarnJson`), defined before `factsJson`, carry
+`Replay.replay`'s completion family and replay warnings. -/
+
+section C4
+
+/-- A `routine` line of 83 characters with a status the fork does not know, a `skip` of the same instance
+(63), and an `event` (52), spelled as characters (the parser reads them). -/
+def completionWitnessRoutine : List Char :=
+  ['{', '"', 't', '"', ':', '"', '2', '0', '2', '6', '-', '0', '9', '-', '0', '7', 'T', '0', '9', ':', '0', '0', ':', '0', '0', 'Z', '"', ',', '"', 'e', 'v', '"', ':', '"', 'r', 'o', 'u', 't', 'i', 'n', 'e', '"', ',', '"', 'i', 't', 'e', 'm', '"', ':', '"', 's', '"', ',', '"', 'i', 'n', 's', 't', '"', ':', '"', '#', '1', '"', ',', '"', 's', 't', 'a', 't', 'u', 's', '"', ':', '"', 'm', 'a', 'y', 'b', 'e', '"', '}']
+
+def completionWitnessSkip : List Char :=
+  ['{', '"', 't', '"', ':', '"', '2', '0', '2', '6', '-', '0', '9', '-', '0', '7', 'T', '0', '9', ':', '0', '1', ':', '0', '0', 'Z', '"', ',', '"', 'e', 'v', '"', ':', '"', 's', 'k', 'i', 'p', '"', ',', '"', 'i', 't', 'e', 'm', '"', ':', '"', 's', '"', ',', '"', 'i', 'n', 's', 't', '"', ':', '"', '#', '1', '"', '}']
+
+def completionWitnessEvent : List Char :=
+  ['{', '"', 't', '"', ':', '"', '2', '0', '2', '6', '-', '0', '9', '-', '0', '7', 'T', '0', '9', ':', '0', '2', ':', '0', '0', 'Z', '"', ',', '"', 'e', 'v', '"', ':', '"', 'e', 'v', 'e', 'n', 't', '"', ',', '"', 'n', 'a', 'm', 'e', '"', ':', '"', 'x', '"', '}']
+
+set_option maxRecDepth 8000 in
+/-- **The op answers the completion family, end to end**: `routine s #1 maybe` at 09:00, `skip s #1` at
+09:01 and `event x` at 09:02, from line 1, facts asked.  The unknown status is one replay warning naming
+line 1 and `maybe`; the instance is the last record in file order, the `skip` (`skipped`, logged
+`"skipped"`, no minutes); nothing is done; and `event x` addressed to nobody is its own latest occurrence
+by instant and by date, on line 3.  No block facts; the last survivor is the `event`. -/
+theorem the_log_op_answers_the_completion_facts :
+    logAnswer ⟨⟨1, [some completionWitnessRoutine, some completionWitnessSkip, some completionWitnessEvent],
+        true, none, [], true, Replay.utcZone⟩, by decide⟩
+      = .obj [("lines".toList, .num 3), ("warnings".toList, .arr []),
+          ("facts".toList, .obj [("cancelled".toList, .arr []),
+            ("days".toList, .arr [.arr [.num 1, .num 739865], .arr [.num 2, .num 739865],
+              .arr [.num 3, .num 739865]]),
+            ("block".toList, .obj [("days".toList, .arr []), ("items".toList, .arr []),
+              ("itemDays".toList, .arr []), ("energy".toList, .arr []), ("durations".toList, .arr []),
+              ("interrupts".toList, .arr []), ("openBlock".toList, .null), ("openInterrupt".toList, .null),
+              ("lastEffective".toList, .arr [.num 63924368520, .num 0, .bool false, .num 0])]),
+            ("completion".toList, .obj [("lastDone".toList, .arr []), ("doneDates".toList, .arr []),
+              ("instances".toList, .arr [.arr [.str ['s'], .str ['#', '1'],
+                .arr [.num 63924368460, .num 0, .bool false, .num 0], .str "skipped".toList,
+                .str "skipped".toList, .null]]),
+              ("named".toList, .arr [.arr [.str ['x'], .null, .num 3,
+                .arr [.num 63924368520, .num 0, .bool false, .num 0], .num 3,
+                .arr [.num 63924368520, .num 0, .bool false, .num 0]]])]),
+            ("replayWarnings".toList, .arr [.obj [("line".toList, .num 1),
+              ("w".toList, .str "unknownInstanceStatus".toList), ("raw".toList, .str ['m', 'a', 'y', 'b', 'e'])]])]),
+          ("headers".toList, .arr []), ("render".toList, .arr [])] := by
+  decide
+
+end C4
 end Tm

@@ -410,6 +410,21 @@ here) is false under the owner's D14, which ports `extended_min`:
 `Replay.an_extend_changes_more_than_the_bookkeeping`, with the law beside it,
 `Replay.an_extend_changes_only_the_bookkeeping_and_its_extended_minutes`.  README "Stage 5 D9 C3". -/
 
+/- **§8.2's completion family is real (2026-09-15, stage 5 D9 step C4).**
+The C4 goals of design §15 were added here, elaborated against `TmKernel/Replay.lean` (16 goals, no
+error), and discharged in the same step, so the burn-down stays at 13, each checked against its goal by a
+scratch `example`.  Quirk Q6(b) is ported faithfully: `Replay.an_instance_is_its_last_record_in_file_order`
+(fork `instances[item][inst]` holds the last surviving `routine` or `skip` in file order) is proved as
+stated; `Replay.last_done_is_the_latest_by_instant` is proved with §15's `Replay.doneInstants z i` taking
+no zone (a completion's instant does not read one: `doneInstants i`), and
+`Replay.last_done_is_the_first_of_the_latest` says what the running maximum is (the first of the latest
+by chrono's order).  `Replay.instances_and_last_done_order_differently` (§15's `∃ …`) is stated as a
+retro append whose instance record is strictly earlier than `last_done`.  Beside them, carried note 3:
+design §8.4's "a since filter commutes with max" is refuted
+(`Replay.a_since_filter_does_not_commute_with_the_latest_by_instant`), and the kernel keeps both of fork
+`LatestNamed`'s instants (`Replay.named_keeps_the_latest_by_instant_and_the_latest_by_local_date`).
+README "Stage 5 D9 C4". -/
+
 /-! ############################################################################
 # STAGE 6 — the planner; §8.3's invariants; L24 and L25
 

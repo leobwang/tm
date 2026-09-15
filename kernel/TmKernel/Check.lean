@@ -3446,3 +3446,77 @@ open Tm
 #print axioms Tm.Replay.worked_minutes_is_not_the_floor_of_the_block
 #print axioms Tm.Replay.an_extend_changes_more_than_the_bookkeeping
 #print axioms Tm.the_log_op_answers_the_block_facts
+
+-- APPENDED 2026-09-15 (stage 5, D9 track).  Step C4 (design §8.2–§8.4, §14.4 row C4): the completion
+-- family in Replay.lean (`completionArm`: `done`'s `mark_done`, `routine`, `skip`, `event`; the keys
+-- `doneDate`, `instDate`, `instOther` and `named`; `arm_ofBlock`, which keeps the block family's arm off
+-- the completion state), the `log` op's `facts.completion` and `facts.replayWarnings` in Boundary.lean
+-- (`the_log_op_answers_the_completion_facts`), and Log.lean's repair of `parse_date`'s byte length
+-- (`the_date_grammars_count_bytes_not_characters`).  The C4 goals §15 names were added to Goals.lean and
+-- discharged in the step: `an_instance_is_its_last_record_in_file_order` (as written),
+-- `last_done_is_the_latest_by_instant` (`doneInstants` without the zone it does not read) and
+-- `instances_and_last_done_order_differently`.  Quirk Q6(b) beside them:
+-- `last_done_is_the_first_of_the_latest`, `last_done_keeps_the_first_of_equal_instants`.  Carried note 3:
+-- `a_since_filter_does_not_commute_with_the_latest_by_instant` refutes §8.4's claim, and
+-- `named_keeps_the_latest_by_instant_and_the_latest_by_local_date` is fork `LatestNamed`.
+-- `conserves_step`, `conserves_foldl`, `allFifths_foldl` and `arm_no_header` (audited under C3) are
+-- re-proved over the zone and the completion arm.
+#print axioms Tm.Log.the_date_grammars_count_bytes_not_characters
+#print axioms Tm.Replay.ofBlock_of_plain
+#print axioms Tm.Replay.header_of_ofBlock
+#print axioms Tm.Replay.uncreditFx_ofBlock
+#print axioms Tm.Replay.doneClose_ofBlock
+#print axioms Tm.Replay.doneFx_ofBlock
+#print axioms Tm.Replay.arm_ofBlock
+#print axioms Tm.Replay.completionArm_no_header
+#print axioms Tm.Replay.completionArm_safe
+#print axioms Tm.Replay.foldl_lastMaxStep_some
+#print axioms Tm.Replay.lastMax?_eq_none_iff
+#print axioms Tm.Replay.maxSplit_step
+#print axioms Tm.Replay.maxSplit_foldl
+#print axioms Tm.Replay.lastMax?_spec
+#print axioms Tm.Replay.filterMap_cons_toList
+#print axioms Tm.Replay.applyEffect_lastDone
+#print axioms Tm.Replay.lastDone_applyEffects
+#print axioms Tm.Replay.markOf_of_ofBlock
+#print axioms Tm.Replay.arm_markOf
+#print axioms Tm.Replay.completionArm_markOf
+#print axioms Tm.Replay.stepWith_lastDone
+#print axioms Tm.Replay.foldl_stepWith_lastDone
+#print axioms Tm.Replay.replay_state
+#print axioms Tm.Replay.last_done_is_the_latest_by_instant
+#print axioms Tm.Replay.instLt_trans
+#print axioms Tm.Replay.instLt_skip
+#print axioms Tm.Replay.last_done_is_the_first_of_the_latest
+#print axioms Tm.Replay.last_done_isSome_iff
+#print axioms Tm.Replay.applyEffect_instances
+#print axioms Tm.Replay.instances_applyEffects
+#print axioms Tm.Replay.instOf_of_ofBlock
+#print axioms Tm.Replay.stepWith_instances
+#print axioms Tm.Replay.foldl_stepWith_instances
+#print axioms Tm.Replay.an_instance_is_its_last_record_in_file_order
+#print axioms Tm.Replay.applyEffect_named
+#print axioms Tm.Replay.named_applyEffects
+#print axioms Tm.Replay.completionArm_namedOf
+#print axioms Tm.Replay.stepWith_named
+#print axioms Tm.Replay.foldl_stepWith_named
+#print axioms Tm.Replay.foldl_pushStep_latest
+#print axioms Tm.Replay.foldl_pushStep_dated
+#print axioms Tm.Replay.named_keeps_the_latest_by_instant_and_the_latest_by_local_date
+#print axioms Tm.Replay.applyEffect_ofBlock_keeps
+#print axioms Tm.Replay.completionArm_rwarns
+#print axioms Tm.Replay.stepWith_rwarns
+#print axioms Tm.Replay.the_replay_warnings_are_the_unknown_statuses_in_file_order
+#print axioms Tm.Replay.applyEffect_doneDates
+#print axioms Tm.Replay.applyEffects_doneDates
+#print axioms Tm.Replay.completionArm_doneDates
+#print axioms Tm.Replay.stepWith_doneDates
+#print axioms Tm.Replay.a_done_date_is_a_survivors_completion_date
+#print axioms Tm.Replay.instances_and_last_done_order_differently
+#print axioms Tm.Replay.a_retro_done_marks_done_and_credits_nothing
+#print axioms Tm.Replay.a_later_pending_does_not_undo_a_done_date
+#print axioms Tm.Replay.an_unknown_status_warns_and_is_pending
+#print axioms Tm.Replay.last_done_keeps_the_first_of_equal_instants
+#print axioms Tm.Replay.a_routine_done_is_dated_by_its_inst_only_when_it_is_a_date
+#print axioms Tm.Replay.a_since_filter_does_not_commute_with_the_latest_by_instant
+#print axioms Tm.the_log_op_answers_the_completion_facts

@@ -1386,7 +1386,8 @@ fn the_log_op_answers_by_line() {
 /// C2: every entry, cancelled or not, has its day, 2026-09-07 (day 739,865 from
 /// 0001-01-01) in UTC; the blank line has none. C3: `facts.block` holds no block
 /// facts for notes, and the last survivor is line 4's note at 09:00:00 UTC
-/// (second 63,924,368,400 from 0001-01-01).
+/// (second 63,924,368,400 from 0001-01-01). C4: nothing is done, no instance, no
+/// event, no replay warning.
 #[test]
 fn the_log_op_answers_the_cancelled_lines() {
     let utc = r#"{"key":"UTC","base":"+00:00:00","then":[]}"#;
@@ -1394,10 +1395,26 @@ fn the_log_op_answers_the_cancelled_lines() {
     let out = call(&format!(r#"{{"docs":[],"tz":{utc},"log":{{"ckpt":null,"from":1,"lines":{lines},"terminated":true,"want":{{"facts":true}}}}}}"#)).unwrap();
     assert_eq!(
         out,
-        r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":4,"warnings":[],"facts":{"cancelled":[1,2],"days":[[1,739865],[2,739865],[4,739865]],"block":{"days":[],"items":[],"itemDays":[],"energy":[],"durations":[],"interrupts":[],"openBlock":null,"openInterrupt":null,"lastEffective":[63924368400,0,false,0]}},"headers":[],"render":[]}}}"#
+        r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":4,"warnings":[],"facts":{"cancelled":[1,2],"days":[[1,739865],[2,739865],[4,739865]],"block":{"days":[],"items":[],"itemDays":[],"energy":[],"durations":[],"interrupts":[],"openBlock":null,"openInterrupt":null,"lastEffective":[63924368400,0,false,0]},"completion":{"lastDone":[],"doneDates":[],"instances":[],"named":[]},"replayWarnings":[]},"headers":[],"render":[]}}}"#
     );
     let out = call(&format!(r#"{{"docs":[],"tz":{utc},"log":{{"ckpt":null,"from":1,"lines":{lines},"terminated":true,"want":{{"facts":false}}}}}}"#)).unwrap();
     assert!(out.contains(r#""warnings":[],"facts":null,"headers":[]"#), "{out}");
+}
+
+/// **The completion family on the wire** (stage 5 D9 C4; Boundary.lean's
+/// `the_log_op_answers_the_completion_facts`): `routine s #1 maybe` at 09:00, `skip
+/// s #1` at 09:01 and `event x` at 09:02. The unknown status is one replay warning
+/// naming line 1 and `maybe`; the instance is the last record in file order, the
+/// `skip`; nothing is done; `event x` is its own latest by instant and by date.
+#[test]
+fn the_log_op_answers_the_completion_facts() {
+    let utc = r#"{"key":"UTC","base":"+00:00:00","then":[]}"#;
+    let lines = r##"["{\"t\":\"2026-09-07T09:00:00Z\",\"ev\":\"routine\",\"item\":\"s\",\"inst\":\"#1\",\"status\":\"maybe\"}","{\"t\":\"2026-09-07T09:01:00Z\",\"ev\":\"skip\",\"item\":\"s\",\"inst\":\"#1\"}","{\"t\":\"2026-09-07T09:02:00Z\",\"ev\":\"event\",\"name\":\"x\"}"]"##;
+    let out = call(&format!(r#"{{"docs":[],"tz":{utc},"log":{{"ckpt":null,"from":1,"lines":{lines},"terminated":true,"want":{{"facts":true}}}}}}"#)).unwrap();
+    assert_eq!(
+        out,
+        r##"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":3,"warnings":[],"facts":{"cancelled":[],"days":[[1,739865],[2,739865],[3,739865]],"block":{"days":[],"items":[],"itemDays":[],"energy":[],"durations":[],"interrupts":[],"openBlock":null,"openInterrupt":null,"lastEffective":[63924368520,0,false,0]},"completion":{"lastDone":[],"doneDates":[],"instances":[["s","#1",[63924368460,0,false,0],"skipped","skipped",null]],"named":[["x",null,3,[63924368520,0,false,0],3,[63924368520,0,false,0]]]},"replayWarnings":[{"line":1,"w":"unknownInstanceStatus","raw":"maybe"}]},"headers":[],"render":[]}}}"##
+    );
 }
 
 /// **The section's refusals, by name**, and a request without `tz` or `log`

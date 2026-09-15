@@ -895,10 +895,17 @@ def chronoDateParts (s : List Char) : Option (Nat × Nat × Nat) :=
           | .error _ => none
           | .ok (d, rest) => if rest.isEmpty then some (y, m, d) else none
 
-/-- **`parse_date`** (`model.rs`): exactly 10 characters, then chrono's `%Y-%m-%d`, as a `Day`.
-Year 0 is a date to chrono and not a `Cal.Day`, so it is `none` here (P23's residue). -/
+/-- Rust's `str::len`: a string's length in **UTF-8 bytes**, not in characters (a `foldl`, D9-21).
+chrono's numeric items skip Unicode whitespace (`LogStamp.trimWs`), so a 10-character date spelled
+with a no-break space is 11 bytes, and `parse_date` refuses it before chrono reads it
+(`the_date_grammars_count_bytes_not_characters`; stage 5 D9 C4's repair). -/
+def utf8Len (s : List Char) : Nat := s.foldl (fun n c => n + c.utf8Size) 0
+
+/-- **`parse_date`** (`model.rs`): exactly 10 bytes (`s.len() != 10`), then chrono's `%Y-%m-%d`, as a
+`Day`.  Year 0 and negative years are dates to chrono and not a `Cal.Day`, so they are `none` here
+(P23's residue; for a routine's done date, parity P33). -/
 def instDate? (s : List Char) : Option Nat :=
-  if s.length = 10 then
+  if utf8Len s = 10 then
     (chronoDateParts s).bind (fun (y, m, d) =>
       if Cal.Date.valid ⟨y, m, d⟩ then some (Cal.toDay ⟨y, m, d⟩) else none)
   else none
@@ -942,7 +949,7 @@ def stampFromKey (s : List Char) : Option Field.Stamp :=
   match isoWeekOfKey s with
   | some w => some (.week w)
   | none =>
-    if s.length = 10 then
+    if utf8Len s = 10 then
       match chronoDateParts s with
       | some (y, m, d) => if Cal.Date.valid ⟨y + 400, m, d⟩ then some (.day d) else none
       | none => none
@@ -2536,6 +2543,18 @@ theorem the_small_grammars_read_as_the_fork_does :
     parseInstanceStatus ['D','o','n','e'] = none :=
   ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide,
     by decide⟩
+
+/-- **`parse_date` counts bytes** (stage 5 D9 C4's repair): `2026-9-` then a no-break space (U+00A0,
+two bytes) then `07` is 10 characters that chrono's `%Y-%m-%d` reads as 2026-09-07, but 11 bytes, so
+the fork's `s.len() != 10` refuses it first.  A routine `done` on that instance is dated by its day, not
+by its `inst` (T5's completion arm writes it). -/
+theorem the_date_grammars_count_bytes_not_characters :
+    chronoDateParts ['2','0','2','6','-','9','-','\u00A0','0','7'] = some (2026, 9, 7) ∧
+    ['2','0','2','6','-','9','-','\u00A0','0','7'].length = 10 ∧
+    instDate? ['2','0','2','6','-','9','-','\u00A0','0','7'] = none ∧
+    stampFromKey ['2','0','2','6','-','9','-','\u00A0','0','7'] = none ∧
+    instDate? ['2','0','2','6','-','9','-',' ','0','7'] = some (Cal.toDay ⟨2026, 9, 7⟩) :=
+  ⟨by decide, by decide, by decide, by decide, by decide⟩
 
 end Witnesses
 
