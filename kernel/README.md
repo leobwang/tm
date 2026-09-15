@@ -13086,3 +13086,79 @@ No kernel change; no recursion over a wire list.
 **Phase R on this track:** R-audit, R1–R8 committed. **Owed next:** R9 (`load_fifths`, P21), R10
 (torn-line repair, P19), R11 under D14 (keep and route the unread fields), R12 (the test chokepoints;
 see disagreement 2 above), R13 (scopes; clears gap 112), R14 (latency with history).
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5 D9 R9 (design §14.3 row R9, §7.6 site R9,
+     §17 P21), on rebuild-on-lean after bdf53be.  Takes parity P21 (the
+     design's number; unused in this checkout).  No gap, no cheat.
+     =========================================================================== -->
+
+## Stage 5 D9 R9, 2026-09-14: the day's load is exact fifths — `DayReplay.load` becomes `load_fifths` with `load()`
+
+**What changed.**
+- **`DayReplay.load: f64` is deleted; `DayReplay.load_fifths: u64`** holds `Σ min × min(ci, 5)` over
+  the credited minutes whose ci the log records (the kernel's `loadFifths`, law `load_is_exact_fifths`
+  at C). **`DayReplay::load()`** divides it once: `load_fifths as f64 / 5.0`.
+- **`review.rs`**: `mix_and_load` returns the load in fifths (`u64`), adding each day's `load_fifths`
+  and each tree-attributed ci-unknown minute as `min × ci`. The reviews divide once at display:
+  `load_of_fifths(f) = f / 5` (no rounding left: a multiple of 0.2 needs one decimal, so `round1` is
+  deleted with its last caller), and `load_blocks_of_fifths(f, b) = ⌊(40·f + b) / 2b⌋ / 100`, the
+  half-up rounding of `f / 5b` to hundredths **in integers**. `status_line` reads `d.load()`.
+- Test sites: `day.load` → `day.load()` in `log.rs`'s unit test, `log_replay.rs` (two) and
+  `log_regressions.rs`; **the expected values are unchanged**. `log_replay__three_days_replay.snap`
+  renames the field: `load: 271.4 / 116.2 / 60` → `load_fifths: 1357 / 581 / 300` (the fact is now
+  the integer; R1's rule, a changed fact changes the snapshot).
+
+**Equivalence test (run, then deleted with the old field and arithmetic in this commit).** A unit test
+in `review.rs` held the old `f64` accumulation (the `DayReplay.load` field, kept alongside
+`load_fifths` for the run, and the old `mix_and_load` verbatim) and compared it with the new one, in
+`America/Chicago`, over the four corpus logs and loggen's 1-month logs at both rates: **92 days**, and
+**324 span evaluations** (162 spans: every run of 1, 7 and 31 consecutive replay days and the whole log; each with an empty
+tree and with a tree holding every ci-unknown id at a ci from its bytes; 49/49 ids found). Minutes by ci
+equal everywhere. The raw `f64` differs from `fifths / 5` on 101 of the 416 values (drift at most
+1.8 × 10⁻¹²), and **`round1(old)` equals `f / 5` on all 416: the one-decimal `load` of the day, week,
+and status line changes nowhere, and cannot** (the exact value times 10 is an even integer). For
+`load_blocks` the test swept the block length over {1, 20, 25, 30, 40, 45, 50, 60, 75, 80, 90, 120, 160}
+minutes: **50 of 4,212 differ, every one at an exact tie** (asserted: `40·f mod 2b = b`), at block
+lengths 40 (25), 80 (15), 120 (4) and 160 (6); **none at 60** (the default) or any length that is not a
+multiple of 8, where a tie cannot occur. Example: `f = 603`, `b = 120`: exact 1.005, the old `f64`
+quotient 1.00499… → 1.00, now 1.01.
+
+**Existing suites.** No assertion changed (the snapshot's field rename above is the only edit to
+an expected file). `review_day`'s `load_blocks 4.88` (block 60) passed.
+
+### Parity entry
+
+| # | what | the kernel (and, from R9, the Rust) | the fork point | why | step |
+|---|---|---|---|---|---|
+| **P21** | `DayReview.load_blocks` (`tm review day --json`) at a tie, `load / block_min` exactly on a half-hundredth; possible only when the block length is a multiple of 8 minutes | exact fifths, divided once, rounded half up in integers | an accumulated `f64` sum divided by the block length, then `f64::round`, which lands on either side of the tie | design §7.6 site R9 | R9 |
+
+The design's P21 names `round1`; the measured residue is not there (the one-decimal load has no ties)
+but in `load_blocks`'s two-decimal rounding.
+
+### Observable behaviour changes
+
+| where | before | after |
+|---|---|---|
+| `tm review day --json` `load_blocks`, block length a multiple of 8 minutes, load per block exactly on a half-hundredth | 1.00 or 1.01 by `f64` accident | always the half-up value (P21) |
+
+### Recorded disagreements between the design and the repo
+
+1. **P21's site is `load_blocks`, not `round1`** (above). The row's "any round1 tie" has none to
+   record; the tie the switch would otherwise have changed is in the day review's blocks figure.
+2. **`load_fifths` is `u64`**, not `u32` like its neighbours: `Σ min × 5` over `u32` minutes can pass
+   `u32::MAX`. The kernel's is `Nat`; P17's `minutesOverflow` refusal at the decoder covers minutes,
+   and five times a `u32` fits `u64`.
+
+**Goals discharged: none. Refuted: none. Added: none.** Burn-down **13 → 13**. **New theorems:
+none.** **Parity entries: P21.** **Behaviour rows: one.** **Numbers taken: P21** (label and number
+equal). No kernel change; no recursion over a wire list.
+
+**Re-measured** (main worktree, every command under the 30 GB cap):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.96 s; audit **2672**; corpus **29/37 and 4/5**; burn-down **13** |
+| `cargo test --workspace` | **1028 passed / 0 failed / 2 ignored across 70 binaries**, 0 compiler warnings |
+| FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
+| `cli_latency.rs` | green: first verb 632.9 / 642.9 / 627.8 ms (226 files, 2,959 lines), later verb 55.7 / 55.8 / 55.7 ms |

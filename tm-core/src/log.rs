@@ -76,7 +76,7 @@
 //!   A block still open at the end of the log gets no credit; it is
 //!   reported as [`Replay::open_block`]. Neither `stop` nor `start` carries a
 //!   `ci`, so a cut block's minutes land in [`DayReplay::ci_unknown`] rather
-//!   than in `minutes_by_ci`/`load`; `Σ minutes_by_ci + ci_unknown_min() ==
+//!   than in `minutes_by_ci`/`load_fifths`; `Σ minutes_by_ci + ci_unknown_min() ==
 //!   block_min` (§11 needs the tree to attribute the rest).
 //! * `pause`/`unpause` bracket a `Pause` segment. §13 has `tm pause` but no
 //!   `tm unpause`, so a block closed while still paused is ordinary: the
@@ -1378,9 +1378,11 @@ pub struct DayReplay {
     pub block_min: u32,
     /// Blocks done (`done` events with `actual_min > 0`).
     pub blocks_done: u32,
-    /// §11 load, `Σ block_min × ci / 5`, over the block minutes whose ci the
-    /// log records (i.e. every minute except [`DayReplay::ci_unknown`]).
-    pub load: f64,
+    /// §11 load in exact fifths, `Σ block_min × min(ci, 5)`, over the block
+    /// minutes whose ci the log records (i.e. every minute except
+    /// [`DayReplay::ci_unknown`]). [`DayReplay::load`] divides it once, at
+    /// display (design site R9, parity P21).
+    pub load_fifths: u64,
     /// Minutes at each ci (index = ci), over the block minutes whose ci the
     /// log records.
     pub minutes_by_ci: [u32; 6],
@@ -1435,7 +1437,7 @@ impl DayReplay {
             starts: Vec::new(),
             block_min: 0,
             blocks_done: 0,
-            load: 0.0,
+            load_fifths: 0,
             minutes_by_ci: [0; 6],
             ci_unknown: BTreeMap::new(),
             done: Vec::new(),
@@ -1452,6 +1454,12 @@ impl DayReplay {
             last_plan_hash: None,
             segments: Vec::new(),
         }
+    }
+
+    /// §11 load, `Σ block_min × ci / 5`: [`DayReplay::load_fifths`] divided
+    /// once. A multiple of 0.2, so one decimal shows it exactly.
+    pub fn load(&self) -> f64 {
+        self.load_fifths as f64 / 5.0
     }
 
     /// Minutes from wake to arrival, if both are known.
@@ -2099,7 +2107,7 @@ impl Machine {
     /// Credit `min` block minutes to `id` at `t`. `ci` is the item's
     /// min-energy where the log carries it (a `done`); a block cut by `stop`
     /// or by the next `start` has none, and its minutes are recorded in
-    /// [`DayReplay::ci_unknown`] instead of `minutes_by_ci`/`load`.
+    /// [`DayReplay::ci_unknown`] instead of `minutes_by_ci`/`load_fifths`.
     fn credit(&mut self, id: &str, t: DateTime<FixedOffset>, min: u32, ci: Option<u8>) {
         let day = self.days.day_of(t);
         if !self.in_range(day) {
@@ -2117,7 +2125,7 @@ impl Machine {
                     let ci = ci.min(5);
                     d.minutes_by_ci[ci as usize] =
                         d.minutes_by_ci[ci as usize].saturating_add(min);
-                    d.load += min as f64 * ci as f64 / 5.0;
+                    d.load_fifths = d.load_fifths.saturating_add(u64::from(min) * u64::from(ci));
                 }
                 None if min > 0 => {
                     let unknown = d.ci_unknown.entry(id).or_insert(0);
@@ -2982,7 +2990,7 @@ mod tests {
         assert_eq!(r.block_minutes_on_day(d7), 195);
         assert_eq!(r.lost_min(d7), 20);
         assert_eq!(r.day(d7).unwrap().dropped, vec!["z"]);
-        assert_eq!(r.day(d7).unwrap().load, 48.0, "only c's minutes carry a ci");
+        assert_eq!(r.day(d7).unwrap().load(), 48.0, "only c's minutes carry a ci");
         assert_eq!(r.day(d7).unwrap().minutes_by_ci[4], 60);
         // a (90) and b (45) were cut by `stop` / the next `start`, which carry
         // no ci; every block minute is still accounted for.

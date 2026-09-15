@@ -163,7 +163,7 @@ fn day_one_matches_hand_computed_values() {
     assert_eq!(day.starts[3].rep, None);
     assert_eq!(day.minutes_by_ci, [0, 0, 0, 60, 138, 125]);
     assert_eq!(day.high_ci_min(), 263);
-    assert!((day.load - 271.4).abs() < 1e-9, "{}", day.load);
+    assert!((day.load() - 271.4).abs() < 1e-9, "{}", day.load());
     assert_eq!((day.lost_min, day.leak_min, day.longest_leak), (55, 14, 14));
     assert_eq!(day.dropped, vec!["t5"]);
     assert_eq!(day.idle.len(), 1);
@@ -273,7 +273,7 @@ fn day_two_applies_undo_and_the_midnight_close() {
     assert_eq!(r.block_minutes("t7"), 45);
     assert_eq!(r.items["t7"].stops, 0, "the stop was undone");
     assert_eq!(r.items["t6"].done_at.len(), 1);
-    assert!((day.load - 116.2).abs() < 1e-9, "{}", day.load);
+    assert!((day.load() - 116.2).abs() < 1e-9, "{}", day.load());
     assert_eq!((day.lost_min, day.leak_min, day.longest_leak), (0, 37, 25));
     assert_eq!(day.idle.len(), 3, "work 3, leak 25, leak 12");
     assert_eq!(day.idle[0].attributed, "work");

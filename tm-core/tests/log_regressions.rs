@@ -112,7 +112,7 @@ fn cut_block_minutes_are_accounted_as_ci_unknown() {
         day.block_min,
         "every block minute is either attributed to a ci or listed as unknown"
     );
-    assert_eq!(day.load, 48.0, "load covers the minutes whose ci is known");
+    assert_eq!(day.load(), 48.0, "load covers the minutes whose ci is known");
 
     // The same identity on every day of the three-day fixture (day 1 has the
     // 45 minutes of `t4`, cut by `stop`, with no ci in the log).

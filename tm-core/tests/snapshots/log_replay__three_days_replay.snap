@@ -45,7 +45,7 @@ days:
         rep: 3
     block_min: 368
     blocks_done: 4
-    load: 271.4
+    load_fifths: 1357
     minutes_by_ci:
       - 0
       - 0
@@ -179,7 +179,7 @@ days:
         rep: ~
     block_min: 172
     blocks_done: 3
-    load: 116.2
+    load_fifths: 581
     minutes_by_ci:
       - 0
       - 0
@@ -288,7 +288,7 @@ days:
         rep: 4
     block_min: 60
     blocks_done: 1
-    load: 60
+    load_fifths: 300
     minutes_by_ci:
       - 0
       - 0

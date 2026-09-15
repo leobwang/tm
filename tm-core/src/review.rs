@@ -242,10 +242,6 @@ fn pct(part: usize, whole: usize) -> Option<u8> {
     (whole > 0).then(|| (part as f64 / whole as f64 * 100.0).round() as u8)
 }
 
-fn round1(x: f64) -> f64 {
-    (x * 10.0).round() / 10.0
-}
-
 fn round2(x: f64) -> f64 {
     (x * 100.0).round() / 100.0
 }
@@ -352,7 +348,7 @@ pub fn status_line(
             .or_else(|| day.and_then(window_of).map(|(_, end)| end)),
         lost_min: day.map_or(0, |d| d.lost_min),
         rest_debt_min: rest_debt(day, cfg),
-        load: day.map_or(0.0, |d| round1(d.load)),
+        load: day.map_or(0.0, |d| d.load()),
     }
 }
 
@@ -877,7 +873,7 @@ pub fn day_review(
 
     // Load and energy mix: start from what the log knows, then attribute the
     // blocks it has no `ci` for (cut blocks) from the tree.
-    let (minutes_by_ci, load) = mix_and_load(day.into_iter(), tree);
+    let (minutes_by_ci, load_fifths) = mix_and_load(day.into_iter(), tree);
     let mix = energy_mix(
         minutes_by_ci,
         budget.saturating_mul(block_min),
@@ -926,8 +922,8 @@ pub fn day_review(
         loc: day.and_then(|d| d.loc.clone()),
         blocks_done: day.map_or(0, |d| d.blocks_done),
         budget,
-        load: round1(load),
-        load_blocks: round2(load / block_min as f64),
+        load: load_of_fifths(load_fifths),
+        load_blocks: load_blocks_of_fifths(load_fifths, block_min),
         block_len_min: block_min,
         plan_honesty: (!extras.plan_at_arrival.is_empty() && budget > 0)
             .then(|| round2(extras.plan_at_arrival.len() as f64 / budget as f64)),
@@ -958,7 +954,9 @@ pub fn day_review(
 }
 
 /// §11's load and energy mix over any set of days: the log's own totals plus
-/// the block minutes it has no `ci` for, attributed from the tree.
+/// the block minutes it has no `ci` for, attributed from the tree. The load
+/// is returned in exact fifths (`Σ block_min × min(ci, 5)`), divided once at
+/// display by [`load_of_fifths`] (design site R9, parity P21).
 ///
 /// An item the tree no longer holds (dropped, or cut out of the plan by a
 /// close) is counted at `ci 0`: it adds nothing to the load, but its minutes
@@ -966,23 +964,37 @@ pub fn day_review(
 fn mix_and_load<'a>(
     days: impl Iterator<Item = &'a DayReplay>,
     tree: &Tree,
-) -> ([u32; 6], f64) {
+) -> ([u32; 6], u64) {
     let mut minutes_by_ci = [0u32; 6];
-    let mut load = 0.0f64;
+    let mut fifths = 0u64;
     for day in days {
         for (ci, min) in day.minutes_by_ci.iter().enumerate() {
             minutes_by_ci[ci] = minutes_by_ci[ci].saturating_add(*min);
         }
-        load += day.load;
+        fifths = fifths.saturating_add(day.load_fifths);
         for (id, min) in &day.ci_unknown {
             let ci = tree
                 .get(&Id::new(id.clone()))
                 .map_or(0, |item| item.ci.min(5) as usize);
             minutes_by_ci[ci] = minutes_by_ci[ci].saturating_add(*min);
-            load += *min as f64 * ci as f64 / 5.0;
+            fifths = fifths.saturating_add(u64::from(*min) * ci as u64);
         }
     }
-    (minutes_by_ci, load)
+    (minutes_by_ci, fifths)
+}
+
+/// A load in fifths as the one-decimal number the reviews show: `fifths / 5`
+/// is a multiple of 0.2, so no rounding is left to do.
+fn load_of_fifths(fifths: u64) -> f64 {
+    fifths as f64 / 5.0
+}
+
+/// A load in fifths per block of `block_min` minutes, to two decimals,
+/// rounded half up in integers: `⌊(2·20·fifths + b) / 2b⌋ / 100`.
+fn load_blocks_of_fifths(fifths: u64, block_min: u32) -> f64 {
+    let b = u128::from(block_min.max(1));
+    let hundredths = (40 * u128::from(fifths) + b) / (2 * b);
+    hundredths as f64 / 100.0
 }
 
 fn energy_mix(minutes_by_ci: [u32; 6], budget_min: u32, underused: usize) -> EnergyMix {
@@ -1550,7 +1562,7 @@ pub fn week_review(
     let mut budget_min = 0u32;
     let mut mae_per_day = Vec::new();
     let mut week_breaks: Vec<BreakRecord> = Vec::new();
-    let (mix_by_ci, load) = mix_and_load(days.iter().flatten().copied(), tree);
+    let (mix_by_ci, load_fifths) = mix_and_load(days.iter().flatten().copied(), tree);
     for (date, day) in dates.iter().zip(&days) {
         let Some(day) = day else { continue };
         blocks_done = blocks_done.saturating_add(day.blocks_done);
@@ -1643,7 +1655,7 @@ pub fn week_review(
             .collect(),
         blocks_done,
         block_min,
-        load: round1(load),
+        load: load_of_fifths(load_fifths),
         block_len_min: block_len,
         heat: dates
             .iter()
