@@ -509,19 +509,12 @@ entries (`SealLaw6Ctx.lean`), the resealed checkpoint and records are the seal's
 resealed checkpoint is sealable and its suffix meets law 5's reach condition at the new ledger day (`SealLaw6Seal.lean`);
 a checkpoint's own suffix leaves no undo dangling (`Seal.tagsClear_self`).  Law 9 and the provisional `genesis` remain
 (README "Stage 5 D9 W2, part 4c").
+**W2, part 4d** replaced the provisional `genesis` with the chunked rebuild with exact pops (`Seal.genesis`,
+`SealGenesis.lean`) and discharged law 9 (`Seal.chunked_genesis_is_one_replay`, `SealLaw9.lean`): genesis' loop keeps law
+9's invariant on every stack entry (`Seal.genLoop_ok`, one call by `Seal.genesis_call` through laws 2, 4, 6 and 7), and
+the last call's answer with the records returned reads the replay by law 1.  The W block's sixteen goals are discharged
+(README "Stage 5 D9 W2, part 4d").
 ############################################################################ -/
-
--- provisional, replaced by the real definitions in W2 (signatures fixed by design §15)
-/-- **Provisional (W2).**  The chunked rebuild with exact pops (§9.7). -/
-def Seal.genesis (z : Cal.Tz) (T : Nat) (chunks : List (List Log.Line)) (terminated : Bool) (p : Seal.Policy) :
-    Except Seal.Refusal (List Seal.DayRecord × List Seal.WindowRecord × Seal.Answer) := sorry
-
-/-- **Law 9**: chunking and exact pops are invisible. -/
-theorem chunked_genesis_is_one_replay (z : Cal.Tz) (T : Nat) (chunks : List (List Log.Line)) (term : Bool)
-    (p : Seal.Policy) (ds : List Seal.DayRecord) (ws : List Seal.WindowRecord) (v : Seal.Answer)
-    (hc : Log.contiguousFrom 1 chunks.flatten = true)
-    (h : Seal.genesis z T chunks term p = .ok (ds, ws, v)) (q : Seal.Q) :
-    Seal.askMerged ds ws v q = Replay.ask (Seal.replayLines z chunks.flatten) q := sorry
 
 /-! ############################################################################
 # STAGE 6 — the planner; §8.3's invariants; L24 and L25

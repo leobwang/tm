@@ -4434,3 +4434,37 @@ open Tm
 #print axioms Tm.Seal.rs_sealable_reachFree
 #print axioms Tm.Seal.reseal_is_seal
 #print axioms Tm.Seal.a_resealed_checkpoint_accepts_its_own_suffix
+-- APPENDED 2026-09-15 (stage 5, D9 track).  Step W2, part 4d (design §9.7 genesis, §9.5 law 9): SealGenesis.lean
+-- (the chunked rebuild with exact pops; definitions only), SealLaw9A.lean (a call's lines, the records' splits and
+-- restrictions, records above an answer's horizons, the empty log sealable, the stack's pops, the chunks' ends),
+-- SealLaw9B.lean (law 9's invariant; one accepted call through laws 2, 4, 6 and 7), SealLaw9.lean (genesis' loop keeps
+-- the invariant; law 9).
+#print axioms Tm.Seal.contiguousFrom_take
+#print axioms Tm.Seal.genLines_append
+#print axioms Tm.Seal.genLines_take
+#print axioms Tm.Seal.genLines_drop
+#print axioms Tm.Seal.length_genLines
+#print axioms Tm.Seal.filter_range_split
+#print axioms Tm.Seal.finish_day
+#print axioms Tm.Seal.daysIn_split
+#print axioms Tm.Seal.windowsIn_split
+#print axioms Tm.Seal.dayRecordsBetween_split
+#print axioms Tm.Seal.windowRecordsBetween_split
+#print axioms Tm.Seal.daysIn_restrict
+#print axioms Tm.Seal.windowsIn_restrict
+#print axioms Tm.Seal.dayRecordsBetween_restrict
+#print axioms Tm.Seal.windowRecordsBetween_restrict
+#print axioms Tm.Seal.mem_daysIn_finish
+#print axioms Tm.Seal.mem_windowsIn
+#print axioms Tm.Seal.mem_dayRecordsBetween
+#print axioms Tm.Seal.mem_windowRecordsBetween
+#print axioms Tm.Seal.askMerged_extra
+#print axioms Tm.Seal.sealable_empty
+#print axioms Tm.Seal.popTo_sub
+#print axioms Tm.Seal.popTo_ne_nil
+#print axioms Tm.Seal.endsFrom_spec
+#print axioms Tm.Seal.genOk_empty
+#print axioms Tm.Seal.genesis_call
+#print axioms Tm.Seal.genLoop_ok
+#print axioms Tm.Seal.genEnds_spec
+#print axioms Tm.Seal.chunked_genesis_is_one_replay

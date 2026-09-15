@@ -17541,3 +17541,93 @@ added (the cheats'; the controls were probed, not added).
 | `cli_latency` | green; 3 y later verb 283.4 / 288.2 / 283.4 ms |
 
 **Owed next (W2, part 4d):** `genesis` (§9.7, with exact pops) and law 9.
+
+<!-- ===================================================================== -->
+<!-- Stage 5 D9 W2, part 4d (2026-09-15).  Gaps, cheats and parity entries -->
+<!-- are numbered from the next free numbers (gap 119, cheat 158, P35).    -->
+<!-- ===================================================================== -->
+
+## Stage 5 D9 W2, part 4d, 2026-09-15: chunking and exact pops are invisible — genesis built, law 9 proved, the W block discharged
+
+**Starting point.** `b8d0f28` (part 4c).
+
+### What was built
+
+**`SealGenesis.lean`: genesis (§9.7), replacing the provisional definition** (definitions only).
+- **The calls.** Genesis resumes the log's chunks from the empty checkpoint, every call with the reseal policy. Each call
+  reads from its checkpoint's cut through the next chunk end (`genLines`), and is terminated except at the log's end.
+- **The stack.** Each entry (`GenEntry`) holds a checkpoint, the day and window records sealed below it, and how far its
+  call read. A reseal pushes an entry carrying its emitted records.
+- **The pops.** A guard refusal pops exactly to what it names (`popTo`, `popOk`: §9.7's table). The target is the newest
+  entry below the refusing top that the refusal cannot name, else the oldest. The same end is then retried in one call.
+  Any other refusal is genesis' own.
+- **The loop** (`genLoop`) is fuelled with `2·ends + 2`. Each round consumes an end or pops an entry that an earlier round
+  pushed for an end, so the fuel's `cutMismatch` branches are unreachable.
+- **The result.** `genesis` returns the last call's answer and the top entry's records.
+
+**`SealLaw9.lean`: law 9** (`chunked_genesis_is_one_replay`).
+- `SealLaw9B`: law 9's invariant on a stack entry (`GenOk`), and one accepted call (`genesis_call`).
+  - The call's answer is the answer of the lines through its end (law 2).
+  - The entry's records are those lines' below its horizons (law 4).
+  - A reseal pushes an entry meeting the invariant (laws 6 and 7, then law 4 on the resealed checkpoint). Its extra
+    records are at or above the answer's horizons (`ResultOk`).
+- `SealLaw9`: genesis' loop keeps the invariant (`genLoop_ok`). The last call reads every line. The records returned add
+  only records at or above its answer's horizons (`askMerged_extra`), and law 1's partition reads the replay.
+- `SealLaw9A`:
+  - consecutive calls' lines (`genLines_append`, `genLines_take`, `genLines_drop`);
+  - record ranges split and restricted over sorted keys (`dayRecordsBetween_split`, `dayRecordsBetween_restrict`, and
+    the windows');
+  - the empty log is sealable (`sealable_empty`);
+  - the pops and the chunks' ends (`popTo_sub`, `popTo_ne_nil`, `endsFrom_spec`).
+
+### Goals (AGENTS §3.2)
+
+**Discharged (1):** `chunked_genesis_is_one_replay` (law 9). The provisional `genesis` is deleted.
+
+**The W block's sixteen goals are discharged:** part 1 (5), part 2 (5), part 3 (2), part 4b (1), part 4c (2), and part 4d
+(1).
+
+**Added: none. Refuted: none** (part 4a's in-step `dayOf_agrees_two_days_before` stands refuted and renamed, with
+`dayOf_agrees_three_days_before` beside it). Burn-down **14 → 13**.
+
+### Recorded disagreements between the design and the repo (continuing part 4c's)
+
+15. **The kernel's genesis has no resend cap.** §9.7's cap (32,768 lines or 4 MiB, the fault `reachTooFar`) is the host's
+    (W3). A cap only turns successes into the named fault, and law 9 constrains successes.
+16. **Genesis' unreachable branches return `cutMismatch`** (fuel spent, an empty stack). No refusal names them, and adding
+    one would change the wire's refusals.
+17. **The pop searches below the refusing top.** §9.7 says "the newest stack entry with …". The top refused, so it cannot
+    qualify: searching below it is the same pop, and it guarantees progress.
+18. **`wakeBehindCut`'s pop uses G2's fence of three days** (part 2's disagreement 2), not §9.7's two.
+
+### Rule D9-21
+
+- **On the wire:** nothing yet. W3 wires genesis in `kernel_log.rs`.
+- **Recursions, none over a wire-large list:**
+  - `genLoop` recurses on its fuel, at most `2·chunks + 2` rounds;
+  - `popTo` recurses over the stack, at most one entry per chunk;
+  - `endsFrom` recurses over the chunks, not the lines.
+
+  The calls' work is `resume`'s.
+- **Specification only:** `SealLaw9A`, `SealLaw9B`, `SealLaw9`.
+- **Owed, unchanged:** the one-pass `foldPoint` `@[csimp]` twin (part 4b's disagreement 12).
+
+### Numbers
+
+**Taken:** none. **Highest:** gap 118, cheat 157, parity P34. **Parity entries:** none. **Witnesses:** none added.
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 3.08 / 3.05 / 3.00 s (part 4c: 3.06 / 3.06 / 3.10 s; the first run after the change, which also built the static archive, 3.98 s) |
+| axiom audit | **3850 theorems** (3821 + 29) |
+| `Negative.lean` | check 4 ok (unchanged: 153 errors, 147 `/- CHEAT` banners) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** |
+| `TmKernel.lean` | **76 imports** (72 + 4) |
+| modules | 4 new, 584 lines; no existing module changed |
+| `cargo test --workspace` | **1068 passed / 0 failed / 5 ignored across 73 binaries** (no test added or removed) |
+| FFI suite | **100 passed** (`stack.rs` 4.21 s) |
+| T5 | **10 passed**, 0.87 s |
+| `cli_latency` | green; 3 y later verb 283.5 / 273.3 / 268.4 ms |
+
+**Owed next (W2):** the one-pass `foldPoint` twin. W3 wires the log op, genesis and its files.
