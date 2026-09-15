@@ -12007,3 +12007,190 @@ is not a weakening of any claim about it.
 
 **Owed, by name:** as the two tracks left it.  D10: L7 (now with `tz_table.rs` in the checkout), L8 and
 L9, and gap 110 if L8 comes before W3.  D9: C1–C6, W1–W3, S.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5, D10 track, step L7 (branch stage5-lookahead,
+     worktree .claude/worktrees/stage5-lookahead).  Built in parallel with the D9
+     track on rebuild-on-lean (D11).  A measurement: no Lean file is touched.
+     Takes gap 111 (label L7-a); closes gap 104; narrows gap 85 and P27; no
+     cheat and no parity entry.  Whoever merges renumbers (AGENTS §6.2, §6.4).
+     =========================================================================== -->
+
+## Stage 5 D10 L7, 2026-09-14: the lookahead's parity twin — lounge and home profiles equal the fork's on 552 days, the mixture as documented
+
+**Starting point.**  The worktree at `70d9b3d` (the merge of the D9 track's B2–B4) was clean: check.sh
+7/7, audit 2671, corpus 29/37 files and 4/5 whole plans, burn-down 13, `cargo test --workspace` 1023 / 0
+/ 2 ignored across 69 binaries, FFI 92.  Every figure at the end of this block is re-measured in this
+worktree.
+
+**The plan executed** is design `kernel/design/stage5/stage5-D9-D10-design.md` §13.7 and §14.8's L7 row
+(T13; "P1 refined and P26, P27, P30 recorded before the run"; "the real run inside the bounds; wakes with
+seconds and DST walls included"), under the owner's D10 (the exact mixture), D12, D17 and Q6 (quirk (e)
+ported faithfully).  The fork is the in-tree Rust, as for B4's T1–T4: `tm_core::capacity::lookahead`, fed
+the walls of `Ctx::walls_on` and the wake of `Ctx::wake_time`.  The kernel is reached through
+`tm_kernel_ffi::call` with L6's `capacity` section and the zone table from `tm/src/cli/tz_table.rs`.  One
+file: **`tm/tests/kernel_lookahead_parity.rs`** (new, 1,182 lines at rustfmt's 120 columns).  No Lean
+module, no `Check.lean`, `Negative.lean`, `Goals.lean` or `TmKernel.lean` edit; `tz_table.rs` is included
+by `#[path]`, unchanged.
+
+### What the harness runs
+
+Each window (a zone, a date, `[day]`, the prior and learned curves, both weight and arrival tables, a
+logged wake or none, day 0 and a calendar) is answered **seven times**: the fork with every `P(lounge)`
+forced to 1, to 0, and as given; the kernel with the model's seven weights sent as `1/1`, `0/1`, the
+**threshold twin** of each weekday's weight (`Look.twin`: `1/1` iff `2w ≥ capDen`), and as given.  Each
+emitted day (day 0 and six future days; the response carries at most seven, D10-8) must satisfy:
+
+| check | what must hold | the law it measures |
+|---|---|---|
+| **per-location profiles** | kernel at `1/1` = `capDen ×` fork at 1; at `0/1` = `capDen ×` fork at 0, level by level | `lookahead_at_a_certain_weight_is_the_pure_location` |
+| **T13, the twin** | kernel twin = `capDen ×` the fork's own run (its `p ≥ 0.5`) | `the_twin_forces_the_forks_location` (P1 refined) |
+| **the mixture** (D10's documented difference) | kernel as given = `w·L + (capDen − w)·H`, with `L`, `H` the fork's forced minutes and `w` the weight of **that date's** weekday, model's pair else config's; and each level lies between the two locations | `lookahead_future_day_is_the_mixture`, `lookahead_between_the_locations` |
+| **day 0** | every kernel run's day 0 = the host's histogram = the fork's `DayCapacity::from_slots` | `lookahead_day_zero_is_the_hosts` |
+
+A weight reaches the kernel as the host will send it: the shortest round-trip text of the double, split at
+the point (a harness-local `decimal_pair`; L8 owns the product one and T15).
+
+**`the_lookahead_is_the_forks_at_each_location_and_mixes_exactly`** runs two sets, seed `0x4c37d1077e57`:
+
+| set | windows | future days | what it holds |
+|---|---:|---:|---|
+| **generated** | 64 | **384** | five zones (Chicago, Berlin, Lord Howe's 30-minute DST, Chatham's +12:45/+13:45, Kolkata); a DST zone's window holds a transition with probability 0.6, and then its first wall lies on it in the night; 26 future days on a transition, 21 of them with walls; 187 calendar intervals over `[ ]`, `[>]`, `[?]`, `[x]`, `[~]`, with `buffer:` in minutes, hours and blocks; 91 days with a wall that crosses midnight or starts on an earlier date (multi-day walls, gap 85); arrivals in DST gaps and folds and after the cap; 47 wakes with seconds, 7 of them leap seconds, and wakes placed seconds short of whole hours before an arrival; weights round, at 0.5 (10 days), and raw doubles of up to 18 places; prior maps missing `lounge`, `home` or both, extra curves, gaps, overlaps, open ranges, empty curves; learned curves with levels 6, 7 and 255 |
+| **corpus** | 28 | **168** | `plan-basic`, `plan-home-day`, `plan-travel-day`, `plan-recur` (the four whole plans that load) with their own `config.toml`, every `.md` file and `kernel/corpus/model.json`, at 2026-09-06, -07, -08, -09, -11, -12 and 10-16; a logged 06:05:40 wake on odd windows; 105 intervals (the flight's `buffer:2h` among them) |
+
+**Result: 552 future days and 92 days 0, 0 disagreements** in every check.  Twin at the lounge on 191
+generated and 144 corpus days; the mixture strictly between two different locations on 195 and 168 days.
+
+**The comparison bites.**  Six mutants of the harness's fork side (scratch copies, run and deleted), each
+against the generated set: the buffer dropped from the fork's walls, **12** disagreements; the fork's
+walls clipped to each date (quirk (e) removed), **28**; the twin at `2w > capDen`, **4**; the fork's wake
+cut to its minute, **16**; the mixture at the config's weight only, **114**; P27's correction removed,
+**124**.  The harness also counts, and requires non-zero, the days on which the wake's seconds are
+observable (the fork run again with the wake cut to its minute differs): **6**.
+
+### P27 — narrowed to two integers, measured
+
+(P27, L2: `window_hours × 60` not whole, and the budget, on doubles in the fork and exact pairs in the
+kernel.)  Where a window's doubles give other integers than the exact pairs, the harness runs the fork
+again on doubles chosen to give the kernel's window minutes and budget blocks, and **that run must agree
+exactly**.  It did on every day: 13 generated windows had P27 inputs, 31 future days differed between the
+fork's own doubles and the exact rounding, and 0 differed from the kernel after the correction.  **So P27 is
+exactly the two integers `windowMinOf` and `budgetOf`**; nothing downstream differs.
+
+**`p27_is_two_integers_at_rare_decimals`** measures how rare they are, on a grid, as the fork reads its
+config text: of the 24,001 windows 0.000 to 24.000 hours, `(wh × 60).round()` misses the half-up minute at
+exactly **9** (`1.025`, `4.225`, `8.075`, `8.325`, `16.025`, `16.275`, `16.525`, `16.775`, `17.025`, each
+a tie the double lies below, one minute short); of the **7,213,206** combinations of windows 2.00 to 14.00
+hours, block lengths 25, 30, 45, 50, 60 and 90, and ratios 0.000 to 1.000, the budget's floor differs at
+exactly **2**: 8.75 h and 13.75 h at 45-minute blocks and 0.6, one block short (7 against 6, 11 against 10).
+The shipped `[day]` (8 h, 60 minutes, 0.75) is on neither list.  The generated set takes its P27 windows
+from these.
+
+### P1 refined, P26 and P30 — measured
+
+**P1 (refined)**: the threshold twin equals the fork on all 552 future days (above).  **P26 and P30**:
+**`the_recorded_exceptions_are_refused_where_the_fork_answers`** edits one generated window seven ways
+the fork computes a lookahead from, and the kernel refuses each by name: a Saturday weight of 1.2
+(`weightAboveOne pLounge.config.Sat`), a Monday weight of `1e-19` (`weightPrecision pLounge.config.Mon`),
+a prior key `0.0000001-1` (`badStep prior.lounge`), a learned curve of 11 entries
+(`badCurve energy.lounge`), `home_max_ci = 6` (`badCap homeMaxCi`), a 25-hour window
+(`badDay windowHours`), and 3,661 days (`lookaheadTooLong`; the fork returns 3,661 days).  The entries'
+text is unchanged.
+
+### Gap 104 — closed
+
+Its clearing condition was "L7 measures it end to end through the lookahead".  The per-location profiles
+equal the fork's on every day, and on **120** generated location-days the budget did not bind, so the
+profile's total is the fork cut's `slot_minutes()`: on those days every slot of the fork's cut, with its
+length and level, is in the kernel's answer.  What gap 104 said is still true of the proofs (no law says
+the cut uses the free time only where the fork does); stage 6 states one only if a planner goal needs it.
+
+### Gap 85 — narrowed, still open (quirk (e), fixed after the switch under Q6)
+
+Measured on the generated set: the kernel agrees with the fork on all **91** days carrying a wall that
+crosses a date boundary, so the quirk is ported, and the clipped-walls mutant's 28 disagreements show the
+generator reaches it.  Clipping each date's walls to that date (the fix's first half) changes **7 of 384**
+future days, by **0 minutes** of any day's total and **4,542 level-minutes** across both locations (the
+sum of per-level differences).  **So the measured cost is misplaced energy, not inflated capacity**: on
+every such day the budget bound the total either way, and the extra window lands in the small hours of
+the next date at other levels.  Corpus: 0 days (no multi-day wall).  (4) is unchanged: after the switch,
+as a behaviour change with its own parity entry.  **A finding for its fix:** the fork already has the
+clipped reading, in the TUI (gap 111).
+
+### Gap 111 (new; label L7-a) — the TUI's replan reads the walls a second way, and §13.8 does not list it
+
+(1) *What is not done*: `Planner::run`'s step 4 calls `capacity::lookahead` itself when `PlanInput.caps` is
+`None`, which is every TUI replan (`tui/app.rs`: `replan`, the overtime alternatives), over
+`Planner::walls_by_date` (`tm-core/src/planner.rs`).  That reading differs from `Ctx::walls_on`, which
+`tm plan` and the priorities use and the kernel ports (L2), three ways: only `[ ]` and `[>]` items (not
+`[?]` or `[-]`), the buffer taken off the instant (not the local clock), and each date's walls clipped to
+that date.  Design §13.8's consumer table has no row for this call.  (2) *Why not now*: L7 measures; the
+TUI's capacity wiring is L8's (`tui/app.rs` is in its file list), and picking one reading changes the
+fork's TUI (AGENTS §5.3, §5.6).  (3) *Cost*, measured by the harness (a copy of the planner's reading):
+the planner's walls change the profile on **13 of 384** generated future days and 0 of 168 corpus days.
+Once L8 wires `Ctx::priorities` to the kernel, the TUI replan would also compute a threshold lookahead
+over its own walls beside `tm plan`'s mixture: two capacities for one day.  (4) *When it clears*: L8, by
+handing the kernel's capacities to the TUI's `PlanInput::with_caps`, or stage 6, when the planner's step 4
+is the kernel's.
+
+### Gap 107 — carried to L8, with one more item
+
+§13.7's "priorities on the twin must equal fork `priority::compute`, modulo P2, P3, P7, P8 and P10–P12" is
+not measured: the response carries no grants.  It joins gap 107 and clears with it (L8).
+
+### Rule D9-21, the `decide` budget, and the carried notes
+
+No Lean definition, theorem or witness is added: nothing for D9-21, 0 of the 20 probed witnesses used.
+No instant is compared in Lean (B1's order note); no decimal is re-emitted (gap 101); the largest request
+is under 20 KB, most of it a zone table of about 13 KB (gap 102); no `Stamp` name is added (the B2 note).
+
+### Recorded disagreements between the design and the repo
+
+1. **"Oracle scaffolding (AGENTS §7.3)".**  The fork point is the in-tree Rust, so the harness is a
+   workspace test beside B4's T1–T4, not §7.3's out-of-tree oracle (whose `build-oracle.sh` still archives
+   the discarded `main`).
+2. **No harness-only export of `pureDay`.**  §13.7 checks the real run against "the twin's `pureDay`
+   histograms (a harness-only export)".  Weights of `1/1` and `0/1` on the wire return `capDen × pureDay`
+   of each location (`lookahead_at_a_certain_weight_is_the_pure_location`), so no boundary change was made.
+3. **"Inside the bounds" is checked as an equality.**  The real run is compared with the exact mixture of
+   the fork's forced minutes, which implies `lookahead_between_the_locations`; the bound is asserted too.
+4. **P27 is not a mask.**  §13.7 compares "modulo P26, P27 and P30".  P27 days are compared against the
+   fork rerun with corrected doubles, so they are checked exactly; P26 and P30 lie outside the generated
+   domain and are measured by their own test.
+5. **Fixtures.**  §13.7 names `plan-*` × `model.json` × generated wall layouts.  Generated walls go with
+   generated configs and zones; the corpus plans run with their own calendars and `model.json`.
+   `plan-conflicts` is left out, being refused whole (§7.2).
+6. **The test's name.**  T13 is `the_lookahead_is_the_forks_at_each_location_and_mixes_exactly`.
+7. **Rust size.**  §14.8 estimates 250 lines; the file is 1,182 at 120 columns, most of it the generator,
+   the two copied wall readings and the tallies.
+8. **Gap 104 is closed by its own recorded condition**, a measurement, not a law.
+9. **Memory cap.**  Every run used the workflow's 30 GB cap, and 16 GB for the harness's timing runs, not
+   §14.0's 40 GB.
+
+**Label-to-number map:** gap L7-a → **111**.  No cheat, no parity entry.  **Highest numbers in this
+checkout after the step: gap 111, cheat 137, parity P30.**  (For the merge: the D9 track may take gap 111
+in parallel.)
+
+**Observable behaviour changes: none.**  A test file only.  **Behaviour rows:** none (§20 lists none for
+L7).  **Goals:** discharged 0, refuted 0, added 0.  Burn-down **13** (unchanged).  **New theorems: 0**; the
+audit stays at **2671**.  No theorem was retired, weakened or deleted.
+
+**Owed, by name (the rest of the D10 track):** L8 (`decimal_pair` and T15, `u128` unit parsing, the §20
+behaviour row, grants with gaps 80, 106, 107 (now with the twin's priorities), gap 109's rule, gap 98's
+clamp, gap 111's TUI capacities, T14, T16, the D15 `…_exact` fields; gap 110 if before W3).  L9 (day 0 in
+the kernel; gap 93).  Gap 85's fix after the switch.
+
+**Re-measured after this step** (every command under the 30 GB cap, in this worktree, on the tree
+committed):
+
+| measurement | value |
+|---|---|
+| `check.sh` | **7/7**; 2.83 / 2.78 / 2.83 s (the merge: 2.81 / 2.86 / 2.75 s) |
+| axiom audit | **2671 theorems** (unchanged) |
+| `Negative.lean` | check 4 ok (unchanged) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (stage 6: 13) |
+| `cargo test --workspace` | **1026 passed / 0 failed / 2 ignored across 70 binaries** (1023 + this file's 3) |
+| FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** (kernel 80, corpus 8, stack 4) |
+| `cli_latency.rs` | green: first verb 637.3 / 657.5 / 627.8 ms (226 files, 2,959 lines), later verb 50.5 / 50.7 / 50.7 ms |
+| `kernel_lookahead_parity.rs` (16 GB cap, each test alone) | T13 0.76 / 0.75 / 0.76 s; the P27 grid 0.37 / 0.37 / 0.37 s; P26 and P30 0.08 / 0.07 / 0.07 s |
