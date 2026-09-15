@@ -80,7 +80,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 use std::fs::{self, File};
 use std::hash::{Hash, Hasher};
-use std::io::{ErrorKind, Write};
+use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
@@ -880,16 +880,25 @@ pub trait Store {
     /// The absolute path of a file, when the store is on disk.
     fn abs_path(&self, rel: &str) -> Option<PathBuf>;
 
-    /// Append `text` to `rel` verbatim, creating the file when missing. For
-    /// the append-only `.tm/log.jsonl` (§10.1) — no parsing, no markers, no
+    /// Append `text` to `rel`, creating the file when missing. For the
+    /// append-only `.tm/log.jsonl` (§10.1) — no parsing, no markers, no
     /// guard: the file is only ever added to. [`FsStore`] opens it in append
     /// mode instead of rewriting it.
+    ///
+    /// **A torn last line is repaired first** (G9, parity P19): when the file
+    /// is non-empty and does not end in `\n` (a write cut short, a hand edit
+    /// saved without a final newline), a `\n` is written before `text`, so
+    /// the append starts a line of its own instead of being glued onto the
+    /// fragment and losing both.
     fn append_text(&self, rel: &str, text: &str) -> Result<(), StoreError> {
         let mut out = if self.exists(rel) {
             self.read_text(rel)?
         } else {
             String::new()
         };
+        if !text.is_empty() && !out.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
         out.push_str(text);
         self.write_file(rel, &out)
     }
@@ -1516,15 +1525,33 @@ impl Store for FsStore {
     }
 
     /// A real `O_APPEND` write, so `.tm/log.jsonl` never has to be read to be
-    /// extended and concurrent appends do not lose lines.
+    /// extended and concurrent appends do not lose lines. Only the last byte
+    /// is read: when the file is non-empty and that byte is not `\n`, the
+    /// write is `\n` + `text` in one `write_all` (G9's torn-line repair,
+    /// parity P19). Two writers racing past the same torn line each add a
+    /// `\n`, which leaves a blank line — skipped by every reader — never a
+    /// glued one.
     fn append_text(&self, rel: &str, text: &str) -> Result<(), StoreError> {
         let path = self.abs(rel)?;
         if let Some(dir) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
             fs::create_dir_all(dir).map_err(|e| io_err(rel, e))?;
         }
         let write = || -> std::io::Result<()> {
-            let mut f = fs::OpenOptions::new().create(true).append(true).open(&path)?;
-            f.write_all(text.as_bytes())
+            let mut f = fs::OpenOptions::new().create(true).read(true).append(true).open(&path)?;
+            let torn = !text.is_empty() && f.metadata()?.len() > 0 && {
+                let mut last = [0u8; 1];
+                f.seek(SeekFrom::End(-1))?;
+                f.read_exact(&mut last)?;
+                last[0] != b'\n'
+            };
+            if torn {
+                let mut buf = Vec::with_capacity(text.len() + 1);
+                buf.push(b'\n');
+                buf.extend_from_slice(text.as_bytes());
+                f.write_all(&buf)
+            } else {
+                f.write_all(text.as_bytes())
+            }
         };
         write().map_err(|e| io_err(rel, e))
     }

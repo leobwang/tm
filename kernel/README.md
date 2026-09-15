@@ -13162,3 +13162,78 @@ equal). No kernel change; no recursion over a wire list.
 | `cargo test --workspace` | **1028 passed / 0 failed / 2 ignored across 70 binaries**, 0 compiler warnings |
 | FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
 | `cli_latency.rs` | green: first verb 632.9 / 642.9 / 627.8 ms (226 files, 2,959 lines), later verb 55.7 / 55.8 / 55.7 ms |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5 D9 R10 (design §14.3 row R10, §9.8, §12's
+     store.rs row, §17 P19), on rebuild-on-lean after 100bd88.  Takes parity
+     P19 (the design's number; unused in this checkout).  No gap, no cheat.
+     =========================================================================== -->
+
+## Stage 5 D9 R10, 2026-09-14: a torn last line is repaired before the next append — G9's writer half
+
+**What changed.**
+- **`FsStore::append_text`** opens the file read + `O_APPEND`, and when it is non-empty reads **only its
+  last byte**: if that byte is not `\n` (a write cut short, a hand edit saved without a final newline),
+  the write is `\n` + `text` in one `write_all`. An empty file, a file ending in `\n`, or an empty
+  `text` is written exactly as before.
+- **The default `Store::append_text`** (read, append, write; `MemStore` uses it) does the same.
+- Both log writers go through it unchanged: `cli/ctx.rs` `Ctx::append_entry` and `horizon.rs`
+  `horizon::Ctx::log`. It has no other caller.
+
+**Equivalence test (run, then deleted with the old write in this commit).** A unit test in
+`store.rs` held the old `O_APPEND` write verbatim and cut each of the four corpus logs and loggen's
+1-month logs at both rates (361,353 bytes in all) at **every line boundary, every byte of the first
+4,000 bytes and every 61st byte after**: 29,289 prefixes. Onto each prefix, as a file, the old write and
+the new `FsStore::append_text` each appended the same `wake` line twice (and, for prefixes that are
+UTF-8, the default `Store::append_text` on a `MemStore`, which equalled `FsStore`'s bytes every time).
+**At the 3,461 line boundaries (the empty prefix counted among them) old and new bytes were equal; at the 25,828 torn
+cuts the new bytes were exactly prefix + `\n` + line + line, and `Log::parse_bytes` read both
+appended events from every one, where the old bytes lost the first on all 25,828.** 0 other
+differences.
+
+**New tests (both fail against the commit before, checked by restoring the old `store.rs`).**
+- `tm/tests/cli_day.rs` **`an_append_after_a_torn_line_starts_a_new_line`** (P19): after `tm wake`, a
+  fragment `{"t":"2026-09-07T06:30:00-05:00","ev":"no` without a newline is written by hand; `tm start
+  ^t4` leaves the fragment as its own physical line, every appended line parses on its own, `tm log
+  --item ^t4 --json` shows the `start`, `tm stop` then closes it; and an append to a log that already
+  ends in `\n` adds no blank line. **Before: the fragment was not a line of its own** (the `start` was
+  glued onto it).
+- `tm-core/tests/store_state.rs` **`append_text_repairs_a_torn_last_line_in_both_stores`**: `FsStore`
+  and `MemStore` add nothing before the first line of an empty file, one `\n` after a fragment, and
+  nothing for an empty append.
+
+**Existing suites.** No assertion changed; `append_text_extends_the_log_in_place` passed.
+
+### Parity entry
+
+| # | what | the kernel's checkpoint (§9.8) and, from R10, the Rust writer | the fork point | why | step |
+|---|---|---|---|---|---|
+| **P19** | an append after a torn last line | starts a new line; the fragment stays a (malformed) line of its own | the concatenation corrupts both lines: the fragment and the appended event read as one malformed line | G9 (PLAN §4) | R10 |
+
+### Observable behaviour changes
+
+| where | before | after |
+|---|---|---|
+| `.tm/log.jsonl` after any appending verb, when the file's last byte is not `\n` | the event glued onto the fragment; both lost to every reader | a `\n` first; the event is read, the fragment stays one malformed line (P19) |
+
+### Recorded disagreements between the design and the repo
+
+1. **The repair lives in `append_text` for every path, not only for `LOG_PATH`** (§12's row says "to
+   `LOG_PATH`"). `append_text`'s only callers append to `LOG_PATH`, and a special case keyed on the path
+   would leave `MemStore`'s default and a future append-only file unrepaired.
+2. **The CRIT 8 invalidation rule is untouched.** §9.8 invalidates a checkpoint whose byte
+   `prefixBytes − 1` is not `\n`; R10 makes that state short-lived (the next append ends it), and W3's
+   T10 "finish a torn last line" mutation still applies to hand edits between commands.
+
+**Goals discharged: none. Refuted: none. Added: none.** Burn-down **13 → 13**. **New theorems:
+none.** **Parity entries: P19.** **Behaviour rows: one.** **Numbers taken: P19** (label and number
+equal). No kernel change; no recursion over a wire list.
+
+**Re-measured** (main worktree, every command under the 30 GB cap):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.85 s; audit **2672**; corpus **29/37 and 4/5**; burn-down **13** |
+| `cargo test --workspace` | **1030 passed / 0 failed / 2 ignored across 70 binaries** (+2: the two new tests), 0 compiler warnings |
+| FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
+| `cli_latency.rs` | green: first verb 627.5 / 612.1 / 627.2 ms (226 files, 2,959 lines), later verb 50.7 / 55.7 / 55.7 ms |

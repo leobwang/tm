@@ -578,3 +578,45 @@ fn an_unknown_id_is_an_error() {
     assert_eq!(out.code, 1);
     assert!(out.stderr.contains("no such item"), "{}", out.stderr);
 }
+
+#[test]
+fn an_append_after_a_torn_line_starts_a_new_line() {
+    // Parity P19 (G9's writer half, design §14.3 row R10): a log whose last
+    // line has no final `\n` (a write cut short, a hand edit) used to have the
+    // next event glued onto the fragment, so both lines were lost to every
+    // reader. The append now writes the `\n` first.
+    let tm = Tm::new();
+    tm.ok(&["wake", "06:05", "--slept", "8h10m"]);
+    let path = tm.plan.join(".tm/log.jsonl");
+    let mut text = std::fs::read_to_string(&path).expect("read log");
+    let fragment = r#"{"t":"2026-09-07T06:30:00-05:00","ev":"no"#;
+    text.push_str(fragment);
+    std::fs::write(&path, &text).expect("write log");
+
+    tm.ok(&["start", "^t4", "--energy", "4"]);
+    let after = tm.read(".tm/log.jsonl");
+    assert!(after.ends_with('\n'), "every appended line is terminated");
+    let lines: Vec<&str> = after.strip_suffix('\n').unwrap_or(&after).split('\n').collect();
+    let at = lines.iter().position(|l| *l == fragment).expect("the fragment stays a line of its own");
+    let appended: Vec<serde_json::Value> = lines[at + 1..]
+        .iter()
+        .map(|l| serde_json::from_str(l).expect("each appended line is JSON on its own"))
+        .collect();
+    assert!(appended.iter().any(|e| e["ev"] == "start" && e["id"] == "t4"), "{appended:?}");
+    // The reader sees the start (and not the fragment): `tm log --json`.
+    assert_eq!(tm.state()["active"]["id"], "t4");
+    let shown = tm.json(&["log", "--item", "^t4"]);
+    let shown = shown["entries"].as_array().expect("entries").clone();
+    assert!(shown.iter().any(|e| e["ev"] == "start" && e["id"] == "t4"), "{shown:?}");
+    tm.ok_at("2026-09-07T09:20:00-05:00", &["stop"]);
+    assert_eq!(tm.state()["active"], serde_json::Value::Null, "the stop found the block the start opened");
+    let parsed: Vec<serde_json::Value> =
+        tm.read(".tm/log.jsonl").lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+    assert_eq!(parsed.last().map(|e| e["ev"].clone()), Some(serde_json::json!("stop")));
+
+    // A log that already ends in `\n` gains no blank line.
+    let before = tm.read(".tm/log.jsonl");
+    tm.ok_at("2026-09-07T09:25:00-05:00", &["start", "^t4", "--energy", "4"]);
+    let now = tm.read(".tm/log.jsonl");
+    assert!(now.starts_with(&before) && !now[before.len()..].starts_with('\n'), "no repair on a whole line");
+}

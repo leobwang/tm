@@ -149,3 +149,28 @@ fn append_text_extends_the_log_in_place() {
         events.concat()
     );
 }
+
+#[test]
+fn append_text_repairs_a_torn_last_line_in_both_stores() {
+    // G9 (parity P19): the default `Store::append_text` and `FsStore`'s
+    // `O_APPEND` write both start a new line after a fragment without `\n`,
+    // and add nothing to an empty file or one that ends in `\n`.
+    let dir = TempDir::new().unwrap();
+    let root = dir.path().join("plan");
+    let line = "{\"t\":\"2026-09-07T07:02:00-05:00\",\"ev\":\"start\",\"id\":\"t1\"}\n";
+    for store in [
+        Box::new(FsStore::new(&root)) as Box<dyn Store>,
+        Box::new(MemStore::new()) as Box<dyn Store>,
+    ] {
+        store.append_text(".tm/log.jsonl", line).unwrap();
+        assert_eq!(store.read_text(".tm/log.jsonl").unwrap(), line, "an empty file gets no newline first");
+        store.write_file(".tm/log.jsonl", "{\"t\":\"2026-09-07T06:05").unwrap();
+        store.append_text(".tm/log.jsonl", line).unwrap();
+        store.append_text(".tm/log.jsonl", "").unwrap();
+        store.append_text(".tm/log.jsonl", line).unwrap();
+        assert_eq!(
+            store.read_text(".tm/log.jsonl").unwrap(),
+            format!("{{\"t\":\"2026-09-07T06:05\n{line}{line}")
+        );
+    }
+}
