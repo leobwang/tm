@@ -31,13 +31,14 @@ pub mod ghost;
 pub mod init;
 pub mod items;
 pub mod kernel_bridge;
+pub mod kernel_capacity;
 pub mod lifecycle;
 pub mod out;
 pub mod planning;
 pub mod render;
-// Stage 5 D9 B4: the zone table the kernel reads (design §6.1). Nothing in the
-// binary calls it until W3's `kernel_log.rs`; the tests, `examples/tzprobe.rs`
-// and logbench include it by path.
+// Stage 5 D9 B4: the zone table the kernel reads (design §6.1). Stage 5 D10 L8's
+// capacity request (`kernel_capacity`) is its first caller in the binary; the
+// tests, `examples/tzprobe.rs` and logbench include it by path.
 #[allow(dead_code)]
 pub mod tz_table;
 pub mod undo;

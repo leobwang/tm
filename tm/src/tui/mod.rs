@@ -61,8 +61,10 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Rect;
 use ratatui::Terminal;
 
+use tm_core::capacity::UnitCapacity;
 use tm_core::config::Config;
 use tm_core::log::Event as LogEvent;
+use tm_core::priority::{Candidate, Prio};
 
 use crate::cli::ctx::{resolve_dir, Ctx, Globals, ReplayScope};
 use crate::cli::ghost;
@@ -168,9 +170,15 @@ fn now_of(g: &Globals, cfg: &Config) -> DateTime<Tz> {
 }
 
 /// Read the plan directory into the shape [`App`] wants.
-fn data_of(ctx: &Ctx) -> AppData {
-    // §12.2/§12.3 read §7's numbers; they are the same pass `tm plan` runs.
-    let (cands, prios, caps) = ctx.priorities(false);
+fn data_of(ctx: &Ctx) -> Result<AppData, CliError> {
+    // §12.2/§12.3 read §7's numbers; they are the same pass `tm plan` runs —
+    // the kernel's since stage 5 D10 L8, and the minute replan ranks by them.
+    let (cands, prios, caps) = ctx.priorities(false)?;
+    Ok(data_with(ctx, cands, prios, caps))
+}
+
+/// [`data_of`] with the ranking given.
+fn data_with(ctx: &Ctx, candidates: Vec<Candidate>, prios: Vec<Prio>, caps: Vec<UnitCapacity>) -> AppData {
     AppData {
         cfg: ctx.cfg.clone(),
         model: ctx.model.clone(),
@@ -179,13 +187,12 @@ fn data_of(ctx: &Ctx) -> AppData {
         replay: ctx.replay.clone(),
         arrival: ghost::blocks(ctx),
         files: ctx.files.clone(),
-        candidates: cands,
+        candidates,
         prios,
         caps,
         now: ctx.now_tz,
     }
 }
-
 
 /// The replay scope the TUI asks for on `screen` (design §11.1, step R13;
 /// gap 112).
@@ -220,17 +227,33 @@ fn tui_scope(
 /// for every other verb).
 fn load(g: &Globals) -> Result<App, CliError> {
     let ctx = Ctx::load_scoped(g, true, |state, today| tui_scope(Screen::default(), state, today))?;
-    Ok(App::new(data_of(&ctx)))
+    Ok(App::new(data_of(&ctx)?))
 }
 
 /// Re-read the plan directory into an existing [`App`], keeping the UI state,
 /// in the scope of the screen it shows.
+///
+/// Stage 5 D10 L8: the ranking is the kernel's. A reload whose capacity
+/// request is refused — a file saved half-edited into a tree the kernel cannot
+/// load, or a configured value it cannot read (parity P26) — keeps the last
+/// ranking, adopts the rest, and says so on the status line; a kernel fault
+/// still ends the TUI.
 fn reload(app: &mut App, g: &Globals) -> Result<(), CliError> {
     let screen = app.screen;
     let ctx = Ctx::load_scoped(g, false, |state, today| tui_scope(screen, state, today))?;
-    let mut data = data_of(&ctx);
+    let (mut data, refused) = match data_of(&ctx) {
+        Ok(data) => (data, None),
+        Err(e) if !e.is_kernel_fault() => {
+            let data = data_with(&ctx, app.candidates.clone(), app.prios.clone(), app.caps.clone());
+            (data, Some(e.to_string()))
+        }
+        Err(e) => return Err(e),
+    };
     data.now = now_of(g, &data.cfg);
     app.adopt(data);
+    if let Some(why) = refused {
+        app.message = Some(format!("priorities not refreshed: {why}"));
+    }
     Ok(())
 }
 

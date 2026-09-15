@@ -9,7 +9,10 @@
 //!   `plan` event and store the plan and its priorities (§7.4's hysteresis
 //!   reads them tomorrow). `--week` prints the §8.4 capacity grid instead,
 //!   `--diff` what moved since the last plan, `--explain ^id` §7's reasoning
-//!   for one item.
+//!   for one item. Since stage 5 D10 L8 the priorities and the week's
+//!   capacity are the kernel's ([`super::kernel_capacity`]): exact units, with
+//!   floors only on screen and `…_exact: {num, den}` beside every integer of
+//!   capacity on `--json` (the owner's D15).
 //! * [`now`] — the running block and the next three segments (§13).
 //!
 //! The segments come from `tm_core::planner` (§8.2's eight steps); everything
@@ -20,15 +23,16 @@ use std::collections::BTreeSet;
 
 use chrono::Timelike;
 use serde::Serialize;
-use tm_core::capacity::{self, DayCapacity};
+use tm_core::capacity::{self, Exact, UnitCapacity};
 use tm_core::log::Event;
 use tm_core::model::{Id, IsoWeek};
 use tm_core::planner::{self, DayPlan, Diagnostics, PlanInput, SegKind};
-use tm_core::priority::{self, Prio};
+use tm_core::priority::{self, Candidate, Prio};
 use tm_core::store::Store;
 
 use super::ctx::{Ctx, Globals, StoredPlan, StoredSegment};
 use super::ghost;
+use super::kernel_capacity;
 use super::out::{emit, CliError};
 use super::render;
 
@@ -106,15 +110,34 @@ pub struct WeekOut {
     pub grid: String,
 }
 
-/// One day of the week grid.
+/// One day of the week grid (the owner's D15: each integer is the floor of its
+/// own exact value, and the exact value is beside it).
 #[derive(Clone, Debug, Serialize)]
 pub struct DayOut {
     /// The date.
     pub date: String,
-    /// Minutes at each energy level 0..=5.
+    /// Minutes at each energy level 0..=5, each the floor of its exact value.
     pub minutes_at_level: [u32; 6],
-    /// Total minutes.
+    /// The exact minutes at each level, `{num, den}` as digit strings.
+    pub minutes_at_level_exact: [Exact; 6],
+    /// Total minutes: the floor of the exact total, not the sum of the floors
+    /// (so it may be up to five more than `minutes_at_level`'s sum).
     pub total: u32,
+    /// The exact total.
+    pub total_exact: Exact,
+}
+
+impl DayOut {
+    /// One kernel day, floors beside exact values.
+    fn of(day: &UnitCapacity) -> DayOut {
+        DayOut {
+            date: day.date.to_string(),
+            minutes_at_level: day.minutes_at_level_floor(),
+            minutes_at_level_exact: day.units.map(Exact::of_units),
+            total: day.total_floor(),
+            total_exact: Exact::of_units(day.total_units()),
+        }
+    }
 }
 
 /// `HH:MM`.
@@ -123,8 +146,16 @@ fn hhmm(t: chrono::DateTime<chrono_tz::Tz>) -> String {
 }
 
 /// Build the plan for `ctx` (§8), with the priorities it was ordered by.
-pub fn build(ctx: &Ctx, allow_home: bool) -> (DayPlan, Vec<Prio>) {
-    let (cands, prios, caps) = ctx.priorities(allow_home);
+pub fn build(ctx: &Ctx, allow_home: bool) -> Result<(DayPlan, Vec<Prio>), CliError> {
+    let (plan, _, prios) = build_ranked(ctx, allow_home)?;
+    Ok((plan, prios))
+}
+
+/// [`build`], with the candidates the priorities rank. The planner ranks by the
+/// kernel's priorities (stage 5 D10 L8: [`PlanInput::with_ranking`]) and never
+/// runs a lookahead or a pass of its own.
+pub fn build_ranked(ctx: &Ctx, allow_home: bool) -> Result<(DayPlan, Vec<Candidate>, Vec<Prio>), CliError> {
+    let (cands, prios, caps) = ctx.priorities(allow_home)?;
     let input = PlanInput::new(
         &ctx.tree,
         &ctx.replay,
@@ -134,7 +165,7 @@ pub fn build(ctx: &Ctx, allow_home: bool) -> (DayPlan, Vec<Prio>) {
         ctx.now_tz,
     )
     .with_caps(&caps)
-    .with_candidates(&cands)
+    .with_ranking(&cands, &prios)
     // §8.2 step 3: `--allow-home` lifts `home_max_ci`; the planner cuts its
     // own slots, so the flag has to reach `PlanInput` too, not only the
     // lookahead `ctx.priorities` sizes.
@@ -146,7 +177,7 @@ pub fn build(ctx: &Ctx, allow_home: bool) -> (DayPlan, Vec<Prio>) {
             .map(|p| (p.id.clone(), p.clone()))
             .collect::<Vec<_>>();
     }
-    (plan, prios)
+    Ok((plan, cands, prios))
 }
 
 /// The segments of a plan as JSON rows.
@@ -316,12 +347,11 @@ pub fn plan(g: &Globals, args: &super::PlanArgs) -> Result<i32, CliError> {
     if args.week {
         return week(&ctx, args.allow_home);
     }
-    let (plan, prios) = build(&ctx, args.allow_home);
+    let (plan, cands, prios) = build_ranked(&ctx, args.allow_home)?;
 
     let explain = match args.explain.as_deref() {
         Some(arg) => {
             let id = Ctx::key(arg);
-            let (cands, _, _) = ctx.priorities(args.allow_home);
             Some(priority::explain(&id, &cands, &prios, &ctx.cfg))
         }
         None => None,
@@ -391,31 +421,14 @@ pub fn plan(g: &Globals, args: &super::PlanArgs) -> Result<i32, CliError> {
     Ok(0)
 }
 
-/// `tm plan --week` (§8.4).
+/// `tm plan --week` (§8.4): the kernel's seven days (stage 5 D10 L8), each cell
+/// the floor of its own exact value.
 fn week(ctx: &Ctx, allow_home: bool) -> Result<i32, CliError> {
-    let days = 7;
-    let walls = ctx.walls_by_date(days);
-    let slots = ctx.today_slots(allow_home);
-    let caps: Vec<DayCapacity> = capacity::lookahead(
-        &walls,
-        &ctx.cfg,
-        &ctx.model,
-        &slots,
-        ctx.today,
-        days,
-        ctx.wake_time(),
-    );
+    let caps = kernel_capacity::week(ctx, allow_home)?;
     let out = WeekOut {
         week: IsoWeek::from_date(ctx.today).to_string(),
-        days: caps
-            .iter()
-            .map(|d| DayOut {
-                date: d.date.to_string(),
-                minutes_at_level: d.minutes_at_level,
-                total: d.total(),
-            })
-            .collect(),
-        grid: capacity::week_grid(&caps),
+        days: caps.iter().map(DayOut::of).collect(),
+        grid: capacity::week_grid_units(&caps),
     };
     emit(ctx.json, || out.grid.clone(), &out)?;
     Ok(0)
@@ -460,7 +473,7 @@ pub struct NowOut {
 /// `tm now` (§13).
 pub fn now(g: &Globals) -> Result<i32, CliError> {
     let ctx = Ctx::load(g, true)?;
-    let (plan, _) = build(&ctx, false);
+    let (plan, _) = build(&ctx, false)?;
     let segs = seg_out(&plan, &ctx);
     let current_idx = plan
         .segments

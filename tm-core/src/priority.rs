@@ -145,7 +145,7 @@ use chrono_tz::Tz;
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::capacity::{self, available_until, DayCapacity};
+use crate::capacity::{self, available_until, DayCapacity, Exact};
 use crate::config::Config;
 use crate::energy::{self, Model};
 use crate::log::Replay;
@@ -810,12 +810,24 @@ pub struct Prio {
     /// Minutes needed (the EDF need, or the floor need).
     pub need_min: u32,
     /// Minutes available up to `until`, before this item reserved (§7.3).
+    /// Since stage 5 D10 L8 the kernel's availability is exact units: this is
+    /// the floor of [`Prio::avail_min_exact`] (the owner's D15), for display.
     pub avail_min: u32,
-    /// `min(need, avail)` — §7.2's `allocation`, the Queue's "fits".
+    /// The exact availability, in minutes (`{num, den}` on `--json`).
+    pub avail_min_exact: Exact,
+    /// `min(need, avail)` — §7.2's `allocation`, the Queue's "fits"; the floor
+    /// of [`Prio::allocation_min_exact`].
     pub allocation_min: u32,
+    /// The exact allocation, in minutes.
+    pub allocation_min_exact: Exact,
     /// `need − avail` when IMPOSSIBLE, else 0 (§7.3's "needs 8b, 5b
-    /// available by Fri").
+    /// available by Fri"); the floor of [`Prio::shortfall_min_exact`]. Each of
+    /// the three is the floor of its own exact value, so for a HOT answer
+    /// `need_min − allocation_min` may exceed `shortfall_min` by one, while the
+    /// exact values agree (`shortfall = need − allocation`).
     pub shortfall_min: u32,
+    /// The exact shortfall, in minutes.
+    pub shortfall_min_exact: Exact,
     /// The date the capacity was summed to: the deadline, or the end of the
     /// floor's period.
     pub until: Option<NaiveDate>,
@@ -837,8 +849,11 @@ impl Prio {
             bin: None,
             need_min: 0,
             avail_min: 0,
+            avail_min_exact: Exact::default(),
             allocation_min: 0,
+            allocation_min_exact: Exact::default(),
             shortfall_min: 0,
+            shortfall_min_exact: Exact::default(),
             until: None,
             hysteresis_applied: false,
             raw_p: 0,
@@ -855,9 +870,11 @@ impl Prio {
         self.u.is_some_and(|u| !u.is_finite() || u >= 1.0)
     }
     /// §7.3's IMPOSSIBLE: `u ≥ 1` **and** `need > avail`, whatever the class.
-    /// [`Prio::shortfall_min`] is the "needs 8b, 5b available by Fri" gap.
+    /// [`Prio::shortfall_min`] is the "needs 8b, 5b available by Fri" gap. It
+    /// reads the exact shortfall: a shortfall of a fraction of a minute is
+    /// IMPOSSIBLE though its floor reads 0.
     pub fn is_impossible(&self) -> bool {
-        self.is_hot() && self.shortfall_min > 0
+        self.is_hot() && self.shortfall_min_exact.num > 0
     }
 }
 
@@ -969,8 +986,11 @@ pub fn compute(
                 c.need_min
             },
             avail_min: pass.map_or(0, |e| e.avail_min),
+            avail_min_exact: Exact::of_minutes(pass.map_or(0, |e| e.avail_min)),
             allocation_min: pass.map_or(0, |e| e.allocation_min),
+            allocation_min_exact: Exact::of_minutes(pass.map_or(0, |e| e.allocation_min)),
             shortfall_min: 0,
+            shortfall_min_exact: Exact::default(),
             until: pass.map(|e| e.until),
             hysteresis_applied: false,
             raw_p: 0,
@@ -978,6 +998,7 @@ pub fn compute(
         let over = pass.is_some_and(|e| !e.u.is_finite() || e.u >= 1.0);
         if over {
             prio.shortfall_min = prio.need_min.saturating_sub(prio.avail_min);
+            prio.shortfall_min_exact = Exact::of_minutes(prio.shortfall_min);
         }
 
         let (class, raw_p) = if c.is_optional {

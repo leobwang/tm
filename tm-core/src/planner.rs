@@ -13,11 +13,16 @@
 //! # API overview
 //!
 //! * [`PlanInput`] — the tree, the log's [`Replay`], the config, the
-//!   learned [`Model`], the runtime [`RuntimeState`] and `now`, plus four
+//!   learned [`Model`], the runtime [`RuntimeState`] and `now`, plus five
 //!   optional shortcuts: `caps` and `candidates` (a caller that already built
 //!   the §8.4 lookahead or the §6.2 candidate list does not build it twice),
-//!   `allow_home` (`tm plan --allow-home`) and `overrides` (§9.1's what-if
-//!   replans). All borrowed; the struct is `Copy`.
+//!   `prios` (the kernel's ranking of those candidates, stage 5 D10 L8:
+//!   [`PlanInput::with_ranking`]), `allow_home` (`tm plan --allow-home`) and
+//!   `overrides` (§9.1's what-if replans). All borrowed; the struct is `Copy`.
+//!   The binary always hands the kernel's ranking and lookahead in, so the
+//!   planner's own §8.4 lookahead and §7 pass (`capacity::lookahead`,
+//!   `priority::compute`, the fork point) run only for a caller that does not
+//!   — the library's tests.
 //! * [`plan`]`(&PlanInput) -> DayPlan` — §8.2 steps 1–8.
 //! * [`DayPlan`] `{ date, window, budget_blocks, segments, diagnostics,
 //!   priorities }` — the whole day, past *and* future: segments that ended
@@ -154,7 +159,7 @@ use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveTime, Timelike};
 use chrono_tz::Tz;
 use serde::Serialize;
 
-use crate::capacity::{self, DayCapacity, EnergyCtx, Slot, Wall, WallsByDate};
+use crate::capacity::{self, EnergyCtx, Slot, UnitCapacity, Wall, WallsByDate, CAP_DEN};
 use crate::config::Config;
 use crate::energy::{self, Model, Posterior};
 use crate::log::{Replay, SegmentKind};
@@ -196,12 +201,17 @@ pub struct PlanInput<'a> {
     pub runtime: &'a RuntimeState,
     /// The planning instant, in `cfg.tz`.
     pub now: DateTime<Tz>,
-    /// The §8.4 lookahead, when the caller already built it (ascending by
-    /// date). `None` = the planner builds its own.
-    pub caps: Option<&'a [DayCapacity]>,
+    /// The §8.4 lookahead in exact units (the kernel's, ascending by date),
+    /// when the caller already has it: [`week_plan`]'s allocation reads it.
+    /// `None` = the planner builds the fork point's own.
+    pub caps: Option<&'a [UnitCapacity]>,
     /// The §6.2 candidates, when the caller already built them. `None` = the
     /// planner calls `priority::collect_candidates`.
     pub candidates: Option<&'a [Candidate]>,
+    /// §7's priorities of `candidates`, 1:1 (the kernel's, stage 5 D10 L8),
+    /// set with [`PlanInput::with_ranking`]. `None` = the planner runs the fork
+    /// point's `priority::compute` over its own lookahead.
+    pub prios: Option<&'a [Prio]>,
     /// `tm plan --allow-home` (§8.2 step 3): skip the `home_max_ci` cap.
     pub allow_home: bool,
     /// §9.1's what-if overrides, when this is a consequence replan.
@@ -228,18 +238,29 @@ impl<'a> PlanInput<'a> {
             now,
             caps: None,
             candidates: None,
+            prios: None,
             allow_home: false,
             overrides: None,
         }
     }
-    /// Reuse a lookahead the caller already computed.
-    pub fn with_caps(mut self, caps: &'a [DayCapacity]) -> PlanInput<'a> {
+    /// Reuse a lookahead the caller already has (exact units).
+    pub fn with_caps(mut self, caps: &'a [UnitCapacity]) -> PlanInput<'a> {
         self.caps = Some(caps);
         self
     }
     /// Reuse a candidate list the caller already computed.
     pub fn with_candidates(mut self, cands: &'a [Candidate]) -> PlanInput<'a> {
         self.candidates = Some(cands);
+        self
+    }
+    /// **Rank by priorities the caller already has** (stage 5 D10 L8: the
+    /// kernel's), 1:1 with `cands`: the planner's step 4 uses them instead of
+    /// running §7 itself. Under §9.1's overrides a dropped candidate's priority
+    /// is dropped with it, and a candidate with more or fewer minutes keeps the
+    /// priority it was ranked with (kernel/README.md gap 114).
+    pub fn with_ranking(mut self, cands: &'a [Candidate], prios: &'a [Prio]) -> PlanInput<'a> {
+        self.candidates = Some(cands);
+        self.prios = Some(prios);
         self
     }
     /// `tm plan --allow-home` (§13).
@@ -300,12 +321,17 @@ impl PlanOverrides {
         self.est_min.is_empty() && self.extra_min.is_empty() && self.drop.is_empty()
     }
 
+    /// Whether a candidate stays in the day under these overrides.
+    fn keeps(&self, c: &Candidate) -> bool {
+        !self.drop.contains(&c.id)
+    }
+
     /// Apply the overrides to a candidate list in place.
     fn apply(&self, cands: &mut Vec<Candidate>, cfg: &Config) {
         if self.is_empty() {
             return;
         }
-        cands.retain(|c| !self.drop.contains(&c.id));
+        cands.retain(|c| self.keeps(c));
         let safety = cfg.priority.safety;
         for c in cands.iter_mut() {
             let mut minutes = self.est_min.get(&c.id).copied().unwrap_or(c.remaining_min);
@@ -764,7 +790,7 @@ struct Group {
 /// reuses.
 struct PlanRun {
     day: DayPlan,
-    caps: Vec<DayCapacity>,
+    caps: Vec<UnitCapacity>,
     cands: Vec<Candidate>,
     prios: Vec<Prio>,
 }
@@ -932,12 +958,22 @@ impl<'a> Planner<'a> {
         let raw_slots = capacity::energize(&cut.slots, &self.energy_ctx(&flat));
 
         // ---- step 4: priorities ------------------------------------------
-        let owned_caps: Vec<DayCapacity>;
-        let caps: &[DayCapacity] = match self.input.caps {
-            Some(c) => c,
-            None => {
+        // The caller's ranking (the kernel's, stage 5 D10 L8) when it handed
+        // one in, restricted to the candidates §9.1's overrides keep; else the
+        // fork point's lookahead and pass, for a library caller.
+        let (prios, caps): (Vec<Prio>, Vec<UnitCapacity>) = match (self.input.prios, self.input.candidates) {
+            (Some(given), Some(ranked)) => {
+                let prios = ranked
+                    .iter()
+                    .zip(given)
+                    .filter(|(c, _)| self.input.overrides.is_none_or(|ov| ov.keeps(c)))
+                    .map(|(_, p)| p.clone())
+                    .collect();
+                (prios, self.input.caps.map(<[UnitCapacity]>::to_vec).unwrap_or_default())
+            }
+            _ => {
                 let days = priority::lookahead_days(&cands, self.date);
-                owned_caps = capacity::lookahead(
+                let minutes = capacity::lookahead(
                     &self.walls_by_date(days),
                     self.cfg,
                     self.input.model,
@@ -946,16 +982,20 @@ impl<'a> Planner<'a> {
                     days,
                     self.wake.time(),
                 );
-                &owned_caps
+                let prios = priority::compute(
+                    &cands,
+                    &minutes,
+                    &self.input.runtime.priorities_yesterday,
+                    self.cfg,
+                    self.date,
+                );
+                let caps = match self.input.caps {
+                    Some(c) => c.to_vec(),
+                    None => minutes.iter().map(UnitCapacity::from_minutes).collect(),
+                };
+                (prios, caps)
             }
         };
-        let prios = priority::compute(
-            &cands,
-            caps,
-            &self.input.runtime.priorities_yesterday,
-            self.cfg,
-            self.date,
-        );
 
         // ---- step 5: assign ----------------------------------------------
         let ranked = priority::sorted_candidates(&prios, &cands);
@@ -1056,7 +1096,7 @@ impl<'a> Planner<'a> {
         );
         PlanRun {
             day,
-            caps: caps.to_vec(),
+            caps,
             cands,
             prios,
         }
@@ -2500,9 +2540,9 @@ pub struct WeekPlan {
     pub from: NaiveDate,
     /// The per-day allocation.
     pub days: Vec<WeekDay>,
-    /// The §8.4 lookahead itself.
-    pub capacity: Vec<DayCapacity>,
-    /// [`capacity::week_grid`] over `capacity`.
+    /// The §8.4 lookahead itself, in exact units.
+    pub capacity: Vec<UnitCapacity>,
+    /// [`capacity::week_grid_units`] over `capacity` (floors, display only).
     pub grid: String,
     /// Every candidate's priority (§7).
     pub priorities: Vec<(Id, Prio)>,
@@ -2517,14 +2557,18 @@ fn week_from_run(input: &PlanInput, run: &PlanRun) -> WeekPlan {
     let block_min = cfg.block_min().max(1);
     let from = run.day.date;
     let horizon = run.caps.len().min(7);
-    let capacity: Vec<DayCapacity> = run.caps.iter().take(horizon).copied().collect();
+    let capacity: Vec<UnitCapacity> = run.caps.iter().take(horizon).copied().collect();
+    // The allocation reserves in exact units (the owner's D10: the kernel's
+    // lookahead is a mixture, so a day's capacity is no longer whole minutes;
+    // kernel/README.md gap 94). Minutes appear only as floors, for display.
     let mut work = capacity.clone();
+    let mut planned_units: Vec<u128> = vec![0; capacity.len()];
 
     let mut days: Vec<WeekDay> = capacity
         .iter()
         .map(|c| WeekDay {
             date: c.date,
-            capacity_min: c.total(),
+            capacity_min: c.total_floor(),
             planned_min: 0,
             blocks: 0,
             items: Vec::new(),
@@ -2543,7 +2587,8 @@ fn week_from_run(input: &PlanInput, run: &PlanRun) -> WeekPlan {
                 }
             }
         }
-        work[0] = DayCapacity::empty(from);
+        work[0] = UnitCapacity::empty(from);
+        planned_units[0] = u128::from(today.planned_min) * CAP_DEN;
     }
 
     let ranked = priority::sorted_candidates(&run.prios, &run.cands);
@@ -2563,7 +2608,7 @@ fn week_from_run(input: &PlanInput, run: &PlanRun) -> WeekPlan {
             })
             .unwrap_or(0);
         let cap_left = c.cap_left_min().unwrap_or(u32::MAX);
-        let mut left = c.planned_min.min(cap_left).saturating_sub(today_min);
+        let mut left = u128::from(c.planned_min.min(cap_left).saturating_sub(today_min)) * CAP_DEN;
         if left == 0 {
             continue;
         }
@@ -2575,25 +2620,27 @@ fn week_from_run(input: &PlanInput, run: &PlanRun) -> WeekPlan {
             if due.is_some_and(|d| day.date > d) {
                 break;
             }
-            let take = left.min(day.at_least(c.ci));
+            let take = left.min(day.at_least_units(c.ci));
             if take == 0 {
                 continue;
             }
-            capacity::reserve(std::slice::from_mut(day), take, c.ci);
+            capacity::reserve_units(std::slice::from_mut(day), take, c.ci);
             left -= take;
-            days[i].planned_min += take;
-            days[i].items.push((c.id.clone(), take));
+            planned_units[i] += take;
+            days[i].items.push((c.id.clone(), capacity::floor_minutes(take)));
         }
         if left > 0 {
             unplaced.push(c.id.clone());
         }
     }
-    for d in days.iter_mut().skip(1) {
+    for (d, units) in days.iter_mut().zip(&planned_units).skip(1) {
+        d.planned_min = capacity::floor_minutes(*units);
         d.blocks = d.planned_min / block_min;
     }
 
-    let planned: u32 = days.iter().map(|d| d.planned_min).sum();
-    let total: u32 = capacity.iter().map(DayCapacity::total).sum();
+    // Both figures are the floors of their exact sums.
+    let planned = capacity::floor_minutes(planned_units.iter().sum());
+    let total = capacity::floor_minutes(capacity.iter().map(UnitCapacity::total_units).sum());
     let mut notes = Vec::new();
     if total > 0 {
         notes.push(format!(
@@ -2606,7 +2653,7 @@ fn week_from_run(input: &PlanInput, run: &PlanRun) -> WeekPlan {
     WeekPlan {
         from,
         days,
-        grid: capacity::week_grid(&capacity),
+        grid: capacity::week_grid_units(&capacity),
         capacity,
         priorities: run.day.priorities.clone(),
         unplaced,

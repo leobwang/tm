@@ -32,6 +32,15 @@
 //!   `config.expected`), the calendar walls, the prior curve and the budget.
 //!   [`available_until`] and [`reserve`] are the cumulative helpers §7.3's
 //!   EDF pass uses; [`week_grid`] renders the grid for `tm plan --week`.
+//! * **Exact units** (stage 5 D10 L8, the owner's D10, D15 and D17): the
+//!   kernel's lookahead is an exact mixture, so a capacity is a count of
+//!   units over [`CAP_DEN`]` = 10^18` per minute, held as `u128`.
+//!   [`UnitCapacity`] is one day of them; [`reserve_units`] and
+//!   [`available_until_units`] are the reserves the Rust still runs over the
+//!   kernel's days (the week allocation in `planner.rs`, the Queue's "fits";
+//!   gap 94), in exact units; [`week_grid_units`] renders floors, each the
+//!   floor of **its own** exact value; [`Exact`] is a `{num, den}` pair for
+//!   `--json`. A floor only ever displays.
 //! * [`local_dt`] resolves a local date + time in a zone (DST-safe);
 //!   [`free_intervals`] and [`wall_minutes`] are the wall arithmetic §8.1
 //!   and §8.2 are written in.
@@ -603,6 +612,195 @@ impl DayCapacity {
             .map(|(_, m)| *m)
             .sum()
     }
+}
+
+// ---------------------------------------------------------------------------
+// Exact units (stage 5 D10 L8)
+// ---------------------------------------------------------------------------
+
+/// Units per minute: the kernel's `Look.capDen` (the owner's D17). A capacity
+/// in units is `minutes × CAP_DEN` for a whole-minute day, and any natural
+/// number of units for a mixed one.
+pub const CAP_DEN: u128 = 1_000_000_000_000_000_000;
+
+/// An exact non-negative rational `num / den`, reduced, for `--json`'s
+/// `…_exact` fields (the owner's D15). Both parts cross as digit strings
+/// (D17: a unit count passes 2^53), so a consumer never narrows them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Exact {
+    /// The numerator.
+    pub num: u128,
+    /// The denominator, at least 1.
+    pub den: u128,
+}
+
+fn gcd(mut a: u128, mut b: u128) -> u128 {
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    a
+}
+
+impl Exact {
+    /// `num / den`, reduced; a zero denominator is read as 1 (never produced).
+    pub fn new(num: u128, den: u128) -> Exact {
+        let den = den.max(1);
+        let g = gcd(num, den).max(1);
+        Exact { num: num / g, den: den / g }
+    }
+    /// A count of units over [`CAP_DEN`], as minutes.
+    pub fn of_units(units: u128) -> Exact {
+        Exact::new(units, CAP_DEN)
+    }
+    /// Whole minutes.
+    pub fn of_minutes(minutes: u32) -> Exact {
+        Exact::new(u128::from(minutes), 1)
+    }
+    /// The floor, saturating at `u32::MAX` — the documented integer beside it.
+    pub fn floor_u32(&self) -> u32 {
+        u32::try_from(self.num / self.den).unwrap_or(u32::MAX)
+    }
+}
+
+impl Default for Exact {
+    fn default() -> Exact {
+        Exact { num: 0, den: 1 }
+    }
+}
+
+impl Serialize for Exact {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut st = s.serialize_struct("Exact", 2)?;
+        st.serialize_field("num", &self.num.to_string())?;
+        st.serialize_field("den", &self.den.to_string())?;
+        st.end()
+    }
+}
+
+/// Units as whole minutes, rounded down: **display only**.
+pub fn floor_minutes(units: u128) -> u32 {
+    u32::try_from(units / CAP_DEN).unwrap_or(u32::MAX)
+}
+
+/// One day of the kernel's lookahead: units at each energy level over
+/// [`CAP_DEN`] (the owner's D10: an exact mixture of the day at the lounge and
+/// the day at home).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct UnitCapacity {
+    /// The day.
+    pub date: NaiveDate,
+    /// Units at each energy level; index = energy 0..=5.
+    pub units: [u128; 6],
+}
+
+impl UnitCapacity {
+    /// An empty day.
+    pub fn empty(date: NaiveDate) -> UnitCapacity {
+        UnitCapacity { date, units: [0; 6] }
+    }
+    /// A whole-minute day in units (`minutes × CAP_DEN`).
+    pub fn from_minutes(day: &DayCapacity) -> UnitCapacity {
+        UnitCapacity {
+            date: day.date,
+            units: day.minutes_at_level.map(|m| u128::from(m) * CAP_DEN),
+        }
+    }
+    /// Σ units at every level.
+    pub fn total_units(&self) -> u128 {
+        self.units.iter().sum()
+    }
+    /// Σ units at levels ≥ `min_ci` (§7.1's capacity for that `ci`).
+    pub fn at_least_units(&self, min_ci: u8) -> u128 {
+        self.units.iter().skip(usize::from(min_ci.min(6))).sum()
+    }
+    /// Each level's minutes, the floor of its own exact value (display).
+    pub fn minutes_at_level_floor(&self) -> [u32; 6] {
+        self.units.map(floor_minutes)
+    }
+    /// The day's minutes, the floor of the exact total (display; not the sum
+    /// of the level floors).
+    pub fn total_floor(&self) -> u32 {
+        floor_minutes(self.total_units())
+    }
+}
+
+impl Serialize for UnitCapacity {
+    /// `{date, minutes_at_level, minutes_at_level_exact, total, total_exact}`:
+    /// each integer the floor of its own exact value (the owner's D15).
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut st = s.serialize_struct("UnitCapacity", 5)?;
+        st.serialize_field("date", &self.date)?;
+        st.serialize_field("minutes_at_level", &self.minutes_at_level_floor())?;
+        st.serialize_field("minutes_at_level_exact", &self.units.map(Exact::of_units))?;
+        st.serialize_field("total", &self.total_floor())?;
+        st.serialize_field("total_exact", &Exact::of_units(self.total_units()))?;
+        st.end()
+    }
+}
+
+/// §7.1/§7.3 in units: units at levels ≥ `min_ci` on every day up to and
+/// including `due` (the kernel's `availUntil`).
+pub fn available_until_units(caps: &[UnitCapacity], due: NaiveDate, min_ci: u8) -> u128 {
+    caps.iter().filter(|d| d.date <= due).map(|d| d.at_least_units(min_ci)).sum()
+}
+
+/// §7.3's reservation in units (the kernel's `reserveRest`/`reserveOut`): take
+/// `units` at energy ≥ `min_ci` out of `caps`, earliest day first and, within a
+/// day, the highest matching level first. Returns the units actually reserved.
+/// T16 (`tm/tests/kernel_unit_reserve.rs`) holds it to the kernel's pass.
+pub fn reserve_units(caps: &mut [UnitCapacity], units: u128, min_ci: u8) -> u128 {
+    let mut left = units;
+    let mut taken = 0;
+    for day in caps.iter_mut() {
+        if left == 0 {
+            break;
+        }
+        for level in (usize::from(min_ci.min(6))..6).rev() {
+            if left == 0 {
+                break;
+            }
+            let take = day.units[level].min(left);
+            day.units[level] -= take;
+            left -= take;
+            taken += take;
+        }
+    }
+    taken
+}
+
+/// How many leading days fall on or before `due` (the slice [`reserve_units`]
+/// reserves from).
+pub fn upto_units(caps: &[UnitCapacity], due: NaiveDate) -> usize {
+    caps.iter().take_while(|d| d.date <= due).count()
+}
+
+/// The `tm plan --week` capacity grid over exact units: every cell is the
+/// floor of its own exact value, and the `total` row and column are the
+/// floors of the exact sums (the owner's D15), so a row may read one more than
+/// the sum of its cells.
+pub fn week_grid_units(caps: &[UnitCapacity]) -> String {
+    fn row(label: &str, total: u128, levels: &[u128; 6]) -> String {
+        let cells: String = (0..6)
+            .rev()
+            .map(|l| format!("{:>6}", fmt_min(floor_minutes(levels[l]))))
+            .collect();
+        format!("{label:<10}{:>6}{cells}", fmt_min(floor_minutes(total)))
+    }
+    let mut s = String::new();
+    let header: String = (0..6).rev().map(|l| format!("{l:>6}")).collect();
+    writeln!(s, "{:<10}{:>6}{header}", "day", "tot").ok();
+    let mut totals = [0u128; 6];
+    for day in caps {
+        let label = format!("{} {}", day.date.weekday(), day.date.format("%m-%d"));
+        writeln!(s, "{}", row(&label, day.total_units(), &day.units)).ok();
+        for (total, units) in totals.iter_mut().zip(day.units) {
+            *total += units;
+        }
+    }
+    writeln!(s, "{}", row("total", totals.iter().sum::<u128>(), &totals)).ok();
+    s
 }
 
 /// Keep only `budget × block_min` minutes, highest energy first (§8.4).

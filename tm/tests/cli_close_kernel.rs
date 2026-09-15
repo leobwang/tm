@@ -497,9 +497,11 @@ fn an_upgraded_tree_whose_stamps_are_current_is_swept_once() {
     assert!(tm.log().iter().any(|e| e["ev"] == "close" && e["period"] == "day"), "{:?}", tm.log());
 
     // Swept and current: the gate holds, so a kernel fault probe set for the
-    // next housekeeping verb is never reached and the verb succeeds.
+    // next housekeeping verb is never reached and the verb succeeds. The verb
+    // is `triage`, which runs housekeeping and calls the kernel for nothing
+    // else: since stage 5 D10 L8 `now` asks the kernel for today's priorities.
     let before = md_files(&tm);
-    let out = tm.run_env_at(AT, &[("TM_KERNEL_FAULT_PROBE", "1")], &["now"]);
+    let out = tm.run_env_at(AT, &[("TM_KERNEL_FAULT_PROBE", "1")], &["triage"]);
     assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
     assert_eq!(md_files(&tm), before);
 
@@ -510,7 +512,7 @@ fn an_upgraded_tree_whose_stamps_are_current_is_swept_once() {
         r#"{"closed":{"day":"2026-09-11","week":"2026-W36","month":"2026-08"}}"#,
     )
     .expect("state");
-    let out = tm.run_env_at(AT, &[("TM_KERNEL_FAULT_PROBE", "1")], &["now"]);
+    let out = tm.run_env_at(AT, &[("TM_KERNEL_FAULT_PROBE", "1")], &["triage"]);
     assert_eq!(out.code, 1, "an unswept tree must call the kernel: {}{}", out.stdout, out.stderr);
     assert!(out.stderr.contains("kernel fault"), "{}", out.stderr);
     tm.ok_at(AT, &["now"]);
@@ -639,8 +641,9 @@ fn the_literal_example_tree_closes_on_its_first_command_a_week_after_its_week() 
     assert_eq!(state["closed"]["swept"], true, "{state}");
     tm.ok_at(AT, &["check"]);
 
-    // Closed and swept: the next command skips the kernel.
-    let out = tm.run_env_at(AT, &[("TM_KERNEL_FAULT_PROBE", "1")], &["now"]);
+    // Closed and swept: the next command's housekeeping skips the kernel
+    // (`triage`: since stage 5 D10 L8 `now` asks the kernel for priorities).
+    let out = tm.run_env_at(AT, &[("TM_KERNEL_FAULT_PROBE", "1")], &["triage"]);
     assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
     assert!(!out.stderr.contains("kernel fault"), "{}", out.stderr);
     assert_eq!(md_files(&tm), files);
@@ -893,8 +896,9 @@ fn the_example_week_closes_a_week_after_init_merging_m2_into_its_record() {
     assert_eq!(state["closed"]["swept"], true, "{state}");
     tm.ok_at(AT, &["check"]);
 
-    // Closed and swept: the next command skips the kernel.
-    let out = tm.run_env_at(AT, &[("TM_KERNEL_FAULT_PROBE", "1")], &["now"]);
+    // Closed and swept: the next command's housekeeping skips the kernel
+    // (`triage`: since stage 5 D10 L8 `now` asks the kernel for priorities).
+    let out = tm.run_env_at(AT, &[("TM_KERNEL_FAULT_PROBE", "1")], &["triage"]);
     assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
     assert!(!out.stderr.contains("kernel fault"), "{}", out.stderr);
     assert_eq!(md_files(&tm), files);

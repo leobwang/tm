@@ -26,8 +26,8 @@
 //!   [`Ctx::write_line`] (byte-faithful edits through
 //!   [`tm_core::grammar::ItemLine`]), [`Ctx::hz`] (a [`horizon::Ctx`]),
 //!   [`Ctx::walls_today`] / [`Ctx::window`] / [`Ctx::today_slots`] (§8.1,
-//!   §8.2 step 3) and [`Ctx::priorities`] (§7, the EDF pass over the §8.4
-//!   lookahead).
+//!   §8.2 step 3) and [`Ctx::priorities`] (§7 and the §8.4 lookahead, the
+//!   kernel's since stage 5 D10 L8).
 //! * Sidecars `.tm/` grew for state §10.2 does not model:
 //!   [`LAST_PLAN_PATH`] (`tm plan --diff` and the hysteresis roll),
 //!   [`ARRIVAL_PLAN_PATH`] (§9's ghost row: the plan as it stood at arrival)
@@ -41,7 +41,7 @@ use chrono::{DateTime, Datelike, FixedOffset, Local, NaiveDate, NaiveDateTime, N
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 
-use tm_core::capacity::{self, DayCapacity, EnergyCtx, Slot, Wall, WallsByDate};
+use tm_core::capacity::{self, EnergyCtx, Slot, UnitCapacity, Wall};
 use tm_core::config::Config;
 use tm_core::energy::{Model, Posterior};
 use tm_core::grammar::ItemLine;
@@ -56,6 +56,7 @@ use tm_core::tree::Tree;
 use tm_core::recur;
 
 use super::kernel_bridge;
+use super::kernel_capacity;
 use super::out::CliError;
 
 /// `.tm/last_plan.json` — the plan `tm plan --diff` compares against and the
@@ -428,14 +429,20 @@ impl Ctx {
     /// runs, in the same order and through the same fallback, so a plan and
     /// the verbs that cut their own slots read one wake.
     pub fn wake_time(&self) -> NaiveTime {
-        let logged = self.state.wake.or_else(|| {
+        self.model
+            .wake_or_expected(self.logged_wake(), self.today.weekday(), &self.cfg)
+    }
+
+    /// The wake today actually has: `state.wake`, else the `wake` event of the
+    /// day — what [`Ctx::wake_time`] falls back from, and what the capacity
+    /// request sends as `wake` (the kernel applies the same fallback).
+    pub fn logged_wake(&self) -> Option<NaiveTime> {
+        self.state.wake.or_else(|| {
             self.replay
                 .day(self.today)
                 .and_then(|d| d.wake)
                 .map(|t| t.with_timezone(&self.cfg.tz).time())
-        });
-        self.model
-            .wake_or_expected(logged, self.today.weekday(), &self.cfg)
+        })
     }
 
     /// Today's wake instant in `cfg.tz`.
@@ -483,22 +490,6 @@ impl Ctx {
         out
     }
 
-    /// Walls per date over `days` days from today (the §8.4 lookahead's
-    /// input).
-    pub fn walls_by_date(&self, days: u32) -> WallsByDate {
-        let mut map: WallsByDate = BTreeMap::new();
-        for i in 0..i64::from(days) {
-            let Some(date) = self.today.checked_add_signed(chrono::Duration::days(i)) else {
-                break;
-            };
-            let walls = self.walls_on(date);
-            if !walls.is_empty() {
-                map.insert(date, walls);
-            }
-        }
-        map
-    }
-
     /// A naive local datetime as an instant in `cfg.tz` (DST-safe, §17.2).
     pub fn instant(&self, dt: NaiveDateTime) -> DateTime<Tz> {
         capacity::local_dt(self.cfg.tz, dt.date(), dt.time())
@@ -542,9 +533,13 @@ impl Ctx {
         capacity::energize(&cut.slots, &ectx)
     }
 
-    /// §7: the candidates, their priorities and the capacity lookahead they
-    /// were computed against.
-    pub fn priorities(&self, allow_home: bool) -> (Vec<Candidate>, Vec<Prio>, Vec<DayCapacity>) {
+    /// §7: the candidates, their priorities and the first days of the capacity
+    /// lookahead they were computed against — **the kernel's** since stage 5 D10
+    /// L8 ([`kernel_capacity::rank`]: the exact mixture, step 3's EDF pass, the
+    /// floor pass, §7.1–§7.4), in exact units. The candidates' facts are the
+    /// host's (kernel/README.md gap 113). A configured value the kernel cannot
+    /// read fails the verb by file and key (parity P26).
+    pub fn priorities(&self, allow_home: bool) -> Result<(Vec<Candidate>, Vec<Prio>, Vec<UnitCapacity>), CliError> {
         let cands = priority::collect_candidates(
             &self.tree,
             &self.replay,
@@ -553,21 +548,9 @@ impl Ctx {
             self.today,
             self.now_tz,
         );
-        let days = priority::lookahead_days(&cands, self.today);
-        let walls = self.walls_by_date(days);
-        let slots = self.today_slots(allow_home);
-        let caps = capacity::lookahead(
-            &walls,
-            &self.cfg,
-            &self.model,
-            &slots,
-            self.today,
-            days,
-            self.wake_time(),
-        );
         let yesterday = self.hysteresis_input();
-        let prios = priority::compute(&cands, &caps, &yesterday, &self.cfg, self.today);
-        (cands, prios, caps)
+        let answer = kernel_capacity::rank(self, &cands, &yesterday, allow_home)?;
+        Ok((cands, answer.prios, answer.days))
     }
 
     /// Yesterday's `p` per item (§7.4). `state.priorities_yesterday` holds it

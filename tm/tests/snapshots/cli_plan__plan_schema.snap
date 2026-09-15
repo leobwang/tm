@@ -34,7 +34,15 @@ expression: schema(&json)
   "priorities": [
     {
       "allocation_min": "integer",
+      "allocation_min_exact": {
+        "den": "string",
+        "num": "string"
+      },
       "avail_min": "integer",
+      "avail_min_exact": {
+        "den": "string",
+        "num": "string"
+      },
       "bin": "null",
       "class": "string",
       "hysteresis_applied": "bool",
@@ -44,6 +52,10 @@ expression: schema(&json)
       "p": "integer",
       "raw_p": "integer",
       "shortfall_min": "integer",
+      "shortfall_min_exact": {
+        "den": "string",
+        "num": "string"
+      },
       "u": "null",
       "until": "null"
     }

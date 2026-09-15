@@ -271,3 +271,30 @@ fn a_verb_with_three_years_of_log_takes_well_under_a_second() {
     let (first, later) = history_verbs(&tm, &format!(" (3y log: {lines} lines, {bytes} bytes)"));
     assert!(first < FIRST_VERB && later < LATER_VERB);
 }
+
+/// **T14** (stage 5 D10 L8, design §14.8's L8 row and §18.8): since L8 `tm plan`
+/// asks the kernel for its priorities over a lookahead that reaches the furthest
+/// deadline, so a `due:` three years out makes the kernel simulate about 1,100
+/// days and one ten years out about 3,650 (just inside the 3,660-day cap, gap
+/// 98). On the history-shaped tree, once swept, both plans stay inside
+/// `LATER_VERB`.
+#[test]
+fn a_plan_with_a_due_three_and_ten_years_out_stays_a_later_verb() {
+    let tm = history_tree();
+    // Timed one at a time with the other latency tests (R14's rule).
+    let _serial = SERIAL.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let (code, out, _) = timed(&tm, &["drop", "^a1"], FIRST_VERB);
+    assert_eq!(code, 0, "{out}");
+    // The first capacity request probes the zone and caches it (D13); time the plans after it.
+    let (code, out, _) = timed(&tm, &["plan"], FIRST_VERB);
+    assert_eq!(code, 0, "{out}");
+    let backlog = fs::read_to_string(tm.plan.join("backlog.md")).expect("backlog");
+    for (years, due, days) in [(3, "2029-09-14", 1097), (10, "2036-09-12", 3652)] {
+        write(&tm, "backlog.md", &format!("{backlog}- [ ] 3 2h A deadline {years} years out due:{due} ^far{years}\n"));
+        let (code, out, took) = timed(&tm, &["plan"], LATER_VERB);
+        eprintln!("latency: plan with a due {years} years out ({days} lookahead days) {took:?}");
+        assert_eq!(code, 0, "{out}");
+        assert!(!out.contains("clamped"), "{out}");
+        assert!(took < LATER_VERB, "a plan with a due {years} years out took {took:?} (bound {LATER_VERB:?})");
+    }
+}
