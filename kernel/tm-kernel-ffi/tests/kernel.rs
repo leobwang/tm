@@ -1387,7 +1387,8 @@ fn the_log_op_answers_by_line() {
 /// 0001-01-01) in UTC; the blank line has none. C3: `facts.block` holds no block
 /// facts for notes, and the last survivor is line 4's note at 09:00:00 UTC
 /// (second 63,924,368,400 from 0001-01-01). C4: nothing is done, no instance, no
-/// event, no replay warning.
+/// event, no replay warning. C5: notes create no day, and there is no demotion,
+/// close, drop, leak or unknown event.
 #[test]
 fn the_log_op_answers_the_cancelled_lines() {
     let utc = r#"{"key":"UTC","base":"+00:00:00","then":[]}"#;
@@ -1395,7 +1396,7 @@ fn the_log_op_answers_the_cancelled_lines() {
     let out = call(&format!(r#"{{"docs":[],"tz":{utc},"log":{{"ckpt":null,"from":1,"lines":{lines},"terminated":true,"want":{{"facts":true}}}}}}"#)).unwrap();
     assert_eq!(
         out,
-        r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":4,"warnings":[],"facts":{"cancelled":[1,2],"days":[[1,739865],[2,739865],[4,739865]],"block":{"days":[],"items":[],"itemDays":[],"energy":[],"durations":[],"interrupts":[],"openBlock":null,"openInterrupt":null,"lastEffective":[63924368400,0,false,0]},"completion":{"lastDone":[],"doneDates":[],"instances":[],"named":[]},"replayWarnings":[]},"headers":[],"render":[]}}}"#
+        r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":4,"warnings":[],"facts":{"cancelled":[1,2],"days":[[1,739865],[2,739865],[4,739865]],"block":{"days":[],"items":[],"itemDays":[],"energy":[],"durations":[],"interrupts":[],"openBlock":null,"openInterrupt":null,"lastEffective":[63924368400,0,false,0]},"completion":{"lastDone":[],"doneDates":[],"instances":[],"named":[]},"replayWarnings":[],"day":{"days":[],"demotions":[],"closes":[],"dropped":[],"longestLeak":null,"unknown":0}},"headers":[],"render":[]}}}"#
     );
     let out = call(&format!(r#"{{"docs":[],"tz":{utc},"log":{{"ckpt":null,"from":1,"lines":{lines},"terminated":true,"want":{{"facts":false}}}}}}"#)).unwrap();
     assert!(out.contains(r#""warnings":[],"facts":null,"headers":[]"#), "{out}");
@@ -1413,7 +1414,25 @@ fn the_log_op_answers_the_completion_facts() {
     let out = call(&format!(r#"{{"docs":[],"tz":{utc},"log":{{"ckpt":null,"from":1,"lines":{lines},"terminated":true,"want":{{"facts":true}}}}}}"#)).unwrap();
     assert_eq!(
         out,
-        r##"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":3,"warnings":[],"facts":{"cancelled":[],"days":[[1,739865],[2,739865],[3,739865]],"block":{"days":[],"items":[],"itemDays":[],"energy":[],"durations":[],"interrupts":[],"openBlock":null,"openInterrupt":null,"lastEffective":[63924368520,0,false,0]},"completion":{"lastDone":[],"doneDates":[],"instances":[["s","#1",[63924368460,0,false,0],"skipped","skipped",null]],"named":[["x",null,3,[63924368520,0,false,0],3,[63924368520,0,false,0]]]},"replayWarnings":[{"line":1,"w":"unknownInstanceStatus","raw":"maybe"}]},"headers":[],"render":[]}}}"##
+        r##"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":3,"warnings":[],"facts":{"cancelled":[],"days":[[1,739865],[2,739865],[3,739865]],"block":{"days":[],"items":[],"itemDays":[],"energy":[],"durations":[],"interrupts":[],"openBlock":null,"openInterrupt":null,"lastEffective":[63924368520,0,false,0]},"completion":{"lastDone":[],"doneDates":[],"instances":[["s","#1",[63924368460,0,false,0],"skipped","skipped",null]],"named":[["x",null,3,[63924368520,0,false,0],3,[63924368520,0,false,0]]]},"replayWarnings":[{"line":1,"w":"unknownInstanceStatus","raw":"maybe"}],"day":{"days":[],"demotions":[],"closes":[],"dropped":[],"longestLeak":null,"unknown":0}},"headers":[],"render":[]}}}"##
+    );
+}
+
+/// **The day family on the wire** (stage 5 D9 C5; Boundary.lean's
+/// `the_log_op_answers_the_day_facts`): `energy` at 09:00, the day's `wake` at 06:00
+/// (slept 420) logged after it, and a `leak` gap of 20 minutes answered at 09:30. The
+/// energy observation reads the wake's 420 (late binding); the day's record (a
+/// positional array) holds the wake, its sleep, 20 leak minutes, the longest 20 and
+/// the idle record; its block fields hold the 09:10–09:30 `Idle` segment; the global
+/// longest leak is the gap.
+#[test]
+fn the_log_op_answers_the_day_facts() {
+    let utc = r#"{"key":"UTC","base":"+00:00:00","then":[]}"#;
+    let lines = r#"["{\"t\":\"2026-09-07T09:00:00Z\",\"ev\":\"energy\",\"pred\":3,\"rep\":4,\"loc\":\"h\"}","{\"t\":\"2026-09-07T06:00:00Z\",\"ev\":\"wake\",\"slept_min\":420}","{\"t\":\"2026-09-07T09:30:00Z\",\"ev\":\"idle\",\"attributed\":\"leak\",\"min\":20}"]"#;
+    let out = call(&format!(r#"{{"docs":[],"tz":{utc},"log":{{"ckpt":null,"from":1,"lines":{lines},"terminated":true,"want":{{"facts":true}}}}}}"#)).unwrap();
+    assert_eq!(
+        out,
+        r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":3,"warnings":[],"facts":{"cancelled":[],"days":[[1,739865],[2,739865],[3,739865]],"block":{"days":[[739865,{"firstStart":null,"starts":[],"blockMin":0,"blocksDone":0,"loadFifths":0,"byCi":[0,0,0,0,0,0],"ciUnknown":[],"done":[],"lostMin":0,"dropped":[],"segments":[[[63924369000,0,false,0],[63924370200,0,false,0],"idle","leak"]]}]],"items":[],"itemDays":[],"energy":[[1,[63924368400,0,false,0],739865,3,4,0.0,"h",420,null,null,false]],"durations":[],"interrupts":[],"openBlock":null,"openInterrupt":null,"lastEffective":[63924370200,0,false,0]},"completion":{"lastDone":[],"doneDates":[],"instances":[],"named":[]},"replayWarnings":[],"day":{"days":[[739865,[[63924357600,0,false,0],420,null,null,null,null,null,[],20,20,[[[63924370200,0,false,0],739865,"leak",20]],[],0,0,0,0,null]]],"demotions":[],"closes":[],"dropped":[],"longestLeak":[[63924370200,0,false,0],739865,20],"unknown":0}},"headers":[],"render":[]}}}"#
     );
 }
 

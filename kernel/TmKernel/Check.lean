@@ -3520,3 +3520,82 @@ open Tm
 #print axioms Tm.Replay.a_routine_done_is_dated_by_its_inst_only_when_it_is_a_date
 #print axioms Tm.Replay.a_since_filter_does_not_commute_with_the_latest_by_instant
 #print axioms Tm.the_log_op_answers_the_completion_facts
+
+-- APPENDED 2026-09-15 (stage 5, D9 track).  Step C5 (design §8.2–§8.4, §14.4 row C5): the day header and
+-- records family in Replay.lean (`dayArm`: `wake`, `arrive`, `loc`, `break`, `energy`, `idle`, `routine`'s day
+-- half, `plan`, `demote`, `drop`, `close`, unknown events; `DayAcc` the whole of fork `DayReplay`; days
+-- bucketed; fork `slept_by_day` built before the walk and compiled as `sleptMap`), the `log` op's `facts.day`
+-- in Boundary.lean (`the_log_op_answers_the_day_facts`), and Log.lean's port of chrono's signed `%Y`
+-- (`a_signed_year_is_a_date_to_chrono`).  The C5 goals were added to Goals.lean and discharged in the step:
+-- `energy_obs_slept_is_the_days_first_logged_sleep` (as §15 writes it), `the_first_leak_maximum_wins`,
+-- `a_demote_stamp_reads_the_week_or_date_key` and `idle_and_idle_since_read_different_orders`.  Quirks Q6(f)
+-- and Q6(g) with their separating witnesses.  Audited under C3/C4 and re-proved over the new arm (their
+-- names unchanged): `arm_ofBlock`, `arm_no_header`, `arm_markOf`, `uncreditFx_ofBlock`, `doneClose_ofBlock`,
+-- `doneFx_ofBlock`, `conserves_arm`, `conserves_step`, `conserves_foldl`, `allFifths_foldl`,
+-- `credit_conserves_the_day_minutes`, `load_is_exact_fifths`, `replay_state`, `replay_eq_replayFast` and the
+-- C4 `stepWith_*` laws.
+#print axioms Tm.Log.a_signed_year_is_a_date_to_chrono
+#print axioms Tm.Replay.foldl_sleptStep_get
+#print axioms Tm.Replay.blockOnly_of_plain
+#print axioms Tm.Replay.ofBlock_of_blockOnly
+#print axioms Tm.Replay.isRec_of_blockOnly
+#print axioms Tm.Replay.uncreditFx_blockOnly
+#print axioms Tm.Replay.doneClose_blockOnly
+#print axioms Tm.Replay.doneFx_blockOnly
+#print axioms Tm.Replay.dayArm_ofBlock
+#print axioms Tm.Replay.arm_split
+#print axioms Tm.Replay.arm_filterMap_rec
+#print axioms Tm.Replay.dayArm_safe
+#print axioms Tm.Replay.sleptInv_apply
+#print axioms Tm.Replay.sleptInv_applyEffects
+#print axioms Tm.Replay.closeSub_pending
+#print axioms Tm.Replay.closePause_pending
+#print axioms Tm.Replay.closeSub_sleptOk
+#print axioms Tm.Replay.closePause_sleptOk
+#print axioms Tm.Replay.creditFx_sleptOk
+#print axioms Tm.Replay.uncreditFx_sleptOk
+#print axioms Tm.Replay.obsFx_sleptOk
+#print axioms Tm.Replay.machine_sleptOk
+#print axioms Tm.Replay.cut_sleptOk
+#print axioms Tm.Replay.wentOn_fromStart
+#print axioms Tm.Replay.doneClose_sleptOk
+#print axioms Tm.Replay.doneFx_sleptOk
+#print axioms Tm.Replay.dayArm_sleptOk
+#print axioms Tm.Replay.completionArm_sleptOk
+#print axioms Tm.Replay.resumeBlock_obs
+#print axioms Tm.Replay.arm_sleptOk
+#print axioms Tm.Replay.sleptInv_step
+#print axioms Tm.Replay.sleptInv_foldl
+#print axioms Tm.Replay.sleptInv_init
+#print axioms Tm.Replay.insBy_perm
+#print axioms Tm.Replay.insSort_perm
+#print axioms Tm.Replay.isWake_eq_sleptOf
+#print axioms Tm.Replay.sleptByDay_get
+#print axioms Tm.Replay.energy_obs_slept_is_the_days_first_logged_sleep
+#print axioms Tm.Replay.completionArm_noRec
+#print axioms Tm.Replay.effectsWith_filterMap_rec
+#print axioms Tm.Replay.applyEffects_longestLeak
+#print axioms Tm.Replay.dayArm_leaks
+#print axioms Tm.Replay.the_first_leak_maximum_wins
+#print axioms Tm.Replay.leakLt_trans
+#print axioms Tm.Replay.leakLt_skip
+#print axioms Tm.Replay.the_longest_leak_is_the_first_of_the_longest
+#print axioms Tm.Replay.applyEffects_records
+#print axioms Tm.Replay.dayArm_records
+#print axioms Tm.Replay.stepWith_records
+#print axioms Tm.Replay.foldl_stepWith_records
+#print axioms Tm.Replay.the_demotions_are_the_survivors_demotes_in_file_order
+#print axioms Tm.Replay.the_closes_are_the_survivors_closes_in_file_order
+#print axioms Tm.Replay.the_unknown_count_is_the_surviving_unknown_events
+#print axioms Tm.Replay.a_demote_stamp_reads_the_week_or_date_key
+#print axioms Tm.Replay.the_days_wake_is_its_first_logged_wake
+#print axioms Tm.Replay.an_energy_line_before_its_wake_reads_the_wakes_sleep
+#print axioms Tm.Replay.a_gap_is_on_the_day_it_began
+#print axioms Tm.Replay.a_day_keeps_its_first_arrival_its_highest_replans_and_its_last_plan
+#print axioms Tm.Replay.a_break_lasts_its_actual_minutes_else_its_planned
+#print axioms Tm.Replay.the_first_of_equal_leaks_is_the_longest
+#print axioms Tm.Replay.the_demote_stamps_of_a_week_a_date_and_a_month_key
+#print axioms Tm.Replay.an_undo_of_a_close_cancels_the_latest_close_whatever_its_period
+#print axioms Tm.Replay.the_calendar_today_is_not_the_replays_day_after_midnight
+#print axioms Tm.Replay.idle_and_idle_since_read_different_orders
+#print axioms Tm.the_log_op_answers_the_day_facts

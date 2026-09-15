@@ -15715,3 +15715,305 @@ one reader of the log, the Rust. The kernel's `log` op answers `facts.completion
 - **C6** heads the cancelled lines, derives the seam facts, and replaces `facts.cancelled`, `days`, `block`,
   `completion` and `replayWarnings` with the view.
 - Then C7, W1–W3, S and S2.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-15: stage 5, D9 track, step C5 on rebuild-on-lean (after C4
+     c5689f8).  Design §8.2–§8.4, §14.4's C5 row, Q6(f) and Q6(g), and T5.  Takes
+     cheat 147 (design §16 names none for C5), parity P34 (new), and gaps 86 and 87
+     (the design's labels, free by grep).
+     =========================================================================== -->
+
+## Stage 5 D9 C5, 2026-09-15: day headers and records — every remaining event kind replayed as the fork replays it
+
+**Starting point.** `c5689f8`, clean: check.sh 7/7 (built tree 2.86 / 2.89 / 2.85 s, re-measured before any
+edit), audit 2994, corpus 29/37 files and 4/5 plans, burn-down 13, `cargo test --workspace` 1066 / 0 / 5
+ignored across 73 binaries, FFI 99.
+
+### What was built
+
+**`Replay.lean`, section C5 (no new module; `TmKernel.lean` keeps its twenty imports).**
+- **The state.** `DayAcc` is now the whole of fork `DayReplay`: beside C3's block fields, `wake`, `slept_min`,
+  `onset_min`, `arrival`, `loc`, `window`, `budget`, `loc_changes`, `leak_min`, `longest_leak`, `idle`
+  (`IdleRec`), `breaks` (`BreakRec`), `routine_min`, `plans`, `replans_today`, `drift_min` and
+  `last_plan_hash`. `SegKind` gains `brk`, `routine` and `idle`. `State` and `Facts` gain fork `demotions` and
+  `closes` (each record with its day, `Demotion`, `CloseRec`), `dropped_items` (`dropped`), the global
+  `longest_leak` (`LeakRec`) and `unknown`.
+- **Days are bucketed.** C3 kept days in an association list, most recent first. A `wake` creates its day, and
+  a log of wakes on as many dates would make the absent-key scan quadratic, so days are an `HMap` like items
+  (`KeyHash Nat`). `valueAt_applyEffect`, `safe_apply`, `credit_conserves_the_day_minutes` and
+  `load_is_exact_fifths` are re-proved over `HMap.get_alter` and `HMap.get_mapVals`.
+- **Effects and keys (§8.2).** `DayOp` gains `wake`, `arrive`, `loc`, `brk`, `idle`, `routineMin` and `plan`.
+  `Effect` gains `demote d r` and `close d r` (key `day d`), `drop i` (key `item i`; `Val.item` carries the
+  bit), and `leak r` and `unknown` (key `global`). The frame law is re-proved over them.
+- **The arms.** `dayArm` is fork `Machine::step` for every event outside the block family, and `arm` is one match:
+  the block family's eight events, then `dayArm` (`arm_split`).
+  - `wake` sets the day's wake, sleep and onset if it has none: the first **in file order** (quirk Q6(a)).
+  - The first `arrive` sets the arrival, location, window and budget. Every `arrive` and `loc` changes the
+    location.
+  - `break` gives a `Break` segment `[t, addMinutes t (actual or planned)]` and a `BreakRecord`.
+    `addMinutes` is chrono's `overflowing_add_signed`: a leap second becomes its own second before adding.
+  - `energy` gives an `EnergyObs` (`from_start` false) reading `slept_by_day`. It creates no day.
+  - `idle` gives a gap `[t − min, t]` on **the day of its start** (`Cal.subMinutes`): an `Idle` segment and an
+    `IdleRecord` there, and for `leak` the day's leak minutes, its longest, and the global longest leak.
+  - A `routine … done` with minutes gives a `Routine` segment on the day of its start, and `routine_min` on
+    the routine's own day. This is C4's owed day half.
+  - `plan` counts the plan, keeps the highest replans and the last hash, and sums the drift.
+  - `demote` records a `Demotion` with `Log.stampFromKey from`; `drop` records `dropped_items`; `close`
+    records a `CloseRecord`; an unknown event counts.
+  - `readopt`, `move`, `edit`, `note` and `undo` write nothing, as in the fork.
+- **Late binding (§15).** `replay` builds fork `slept_by_day` before the walk (`sleptByDay`, the survivors' wakes
+  in file order, read by the first pair of a day). `effectsWith` takes it as a lookup `sl`, and §15's
+  `effects z kw slept` reads the list through `KMap.get`. The compiled replay keeps it in buckets
+  (`sleptMap`, `foldl_sleptStep_get`, inside `replay_eq_replayFast`).
+- **The goals** (below), and beside them:
+  - `the_longest_leak_is_the_first_of_the_longest`: every leak logged before it is shorter, none after longer.
+  - `the_demotions_are_the_survivors_demotes_in_file_order`, `the_closes_are_the_survivors_closes_in_file_order`
+    and `the_unknown_count_is_the_surviving_unknown_events`.
+  - The machinery: `arm_split`, `arm_filterMap_rec`, `effectsWith_filterMap_rec` (an entry's effects,
+    projected onto the day family's records, are its `dayArm`'s), and the invariant `SleptInv` (the machine's
+    pending observation is a start's; `arm_sleptOk`, `sleptInv_foldl`).
+  - `Effect.plain` is now a whitelist of the block family's effects, and `Effect.blockOnly` beside it. C3's
+    and C4's laws over `arm` (`arm_ofBlock`, `arm_no_header`, `arm_markOf`, `conserves_arm`, the `stepWith_*`
+    laws) are re-proved under their names.
+- **Witnesses** (below).
+
+**`Log.lean`: chrono's signed `%Y` (C4's recorded disagreement 7, closed).** `chronoYear` reads `-` or `+` with
+any number of digits, or one to four unsigned digits, within `Parsed::set_year`'s `i32`. `chronoDateValid` is
+`NaiveDate::from_ymd_opt` for any year in chrono's range, the leap rule read at the year's class in `[400, 800)`.
+- `stampFromKey` now reads `-001-09-07` and `+10000-1-7` as fork `stamp_from_key` does (day 7).
+- `instDate?` reads `+10000-1-7` as a date (year 10000). Year 0 and negative years stay `none` (P33).
+- `a_signed_year_is_a_date_to_chrono` pins both, the leap rule before the origin (year −4 is leap, −1 not) and an
+  unsigned five-digit year refused.
+
+**The wire (`Boundary.lean`).**
+- `facts` gains `day` (`dayJson`): per day its header and records as a **positional array** (`dayRecJson`,
+  17 fields); `demotions` as `[day, stamp, id, from, to, estMin, stamp]` (the stamp `W37`, `D07` or `null`);
+  `closes` as `[day, stamp, period, key]`; `dropped`; `longestLeak` as `[stamp, day, min]`; `unknown`.
+- `facts.block.days` is now every day the fork creates, and `segKindJson` spells the three new kinds.
+- **Edited in place:** `logAnswer_facts` spells out `day`. C1's, C3's and C4's wire witnesses expect the empty
+  or default day family. C2's expects its wake's day: `DayReplay::new`'s block fields, and the wake and sleep
+  as the day record.
+- **New end to end:** `the_log_op_answers_the_day_facts`. `energy` at 09:00 (69 characters), the day's `wake`
+  at 06:00 logged after it (56), and a `leak` gap of 20 minutes at 09:30 (69). The observation reads 420, the day
+  record holds the wake, the leak minutes and the idle record, the `Idle` segment is 09:10–09:30, and the global
+  longest leak is the gap.
+
+**`Negative.lean`.** CHEAT 147: an energy observation bound early. It claims `[energy 09:00, wake 06:00 slept 420]`
+gives the observation no sleep (what the replay so far would say), and `decide` refuses it at its own line. Cheats
+145 and 146 still fail at theirs. No existing block was edited (`end Tm` moved below the new block).
+
+**The FFI suite.**
+- `kernel.rs`: the cancelled-lines and completion answers expect the empty day family. New:
+  `the_log_op_answers_the_day_facts` (the Lean witness through the FFI).
+- `stack.rs`: the mask at the line bound expects the empty day family.
+  - **The day index at the line bound** now asserts 32,768 days: one empty block record and one day record per
+    wake, four of them by hand, and the ends of the answer.
+  - The block machine at the line bound checks its 23 empty day records.
+
+### Goals (AGENTS §3.2)
+
+The C5 goals were added to `Goals.lean`, elaborated in-tree (17 goals, no error), and discharged in the step.
+Burn-down **13 → 17 → 13**. A note in the STAGE 5 section records it, and a scratch `example` per goal checks each
+against its proof.
+
+| goal | status |
+|---|---|
+| `energy_obs_slept_is_the_days_first_logged_sleep` | proved as §15 states it. `firstLoggedSleep z sv d` is the sleep of C2's `firstLoggedWakeOn` over the survivors' own index |
+| `the_first_leak_maximum_wins` | §8.2 names a witness; stated as the law: fork `longest_leak` is `lastMax? leakLt` over the survivors' leak gaps (`leakOf`), a strictly longer gap replacing. Witness `the_first_of_equal_leaks_is_the_longest` |
+| `a_demote_stamp_reads_the_week_or_date_key` | §8.2 names a witness; stated as the law: every demotion's stamp is `Log.stampFromKey` of its `from`. Witness `the_demote_stamps_of_a_week_a_date_and_a_month_key` (week 37, day 7, none) |
+| `idle_and_idle_since_read_different_orders` | §8.4's two-line log as `∃ …`: `lastEffective` is line 2's 08:00 and `lastTOn` line 1's 09:00. `lastTOn` is the specification of fork `DaySeam.last_t` (the latest instant of the day's survivors, a later line winning a tie); C6 derives the seam |
+
+**Refuted: none.**
+
+**Quirks Q6(f) and Q6(g), ported faithfully, each with its separating witness:**
+- `an_undo_of_a_close_cancels_the_latest_close_whatever_its_period`: `close` has no primary id, so after `close week`
+  and the automatic `close day`, `undo{of:"close"}` leaves the week's close. The log the undo meant keeps only the
+  automatic one.
+- `the_calendar_today_is_not_the_replays_day_after_midnight`: a block ending at 00:30 on the 8th before the 8th's wake
+  is the 7th's. The 8th, the calendar's today, has no day, so its `blocks_done` reads 0.
+
+**Witnesses.** 12 new decided witnesses, plus cheat 147's `decide`; 4 re-probed. All were probed in a scratch copy
+under `MemoryMax=8G timeout 120`, with at most 6 entries, `utcZone` (no transition), and `Nat` instants.
+- **In `Replay.lean` (10):**
+  - `the_days_wake_is_its_first_logged_wake` (Q6(a) in the day's fields)
+  - `an_energy_line_before_its_wake_reads_the_wakes_sleep`
+  - `a_gap_is_on_the_day_it_began` (an idle gap and a routine's minutes begun before the day's wake)
+  - `a_day_keeps_its_first_arrival_its_highest_replans_and_its_last_plan` (its log is the `def` `arrivalsAndPlans`:
+    with six entries in a `let`, the instance search for `Decidable` failed before evaluation)
+  - `a_break_lasts_its_actual_minutes_else_its_planned`
+  - `the_first_of_equal_leaks_is_the_longest`
+  - `the_demote_stamps_of_a_week_a_date_and_a_month_key`
+  - the Q6(f) and Q6(g) witnesses
+  - `idle_and_idle_since_read_different_orders`
+  - Alone: **0.23 / 0.25 / 0.23 s at 584–588 MB**. The whole of `Replay.lean` (C1–C5, 6,156 lines): **5.77–5.90 s
+    at 1.04–1.07 GB**.
+- **In `Log.lean` (1):** `a_signed_year_is_a_date_to_chrono`. The file: 3.95–3.96 s, 1.52–1.54 GB.
+- **On the wire (1):** `the_log_op_answers_the_day_facts`, with C1's–C4's re-probed (Boundary built without the
+  five, then a scratch file importing it): **2.06 s at 1.23 GB**.
+- `Negative.lean` at the 8 GB cap: 1.94 s, 2.0 GB, 143 errors.
+
+Altering an expected value fails at `decide`: checked on `an_energy_line_before_its_wake_reads_the_wakes_sleep`
+(420 → none), `a_gap_is_on_the_day_it_began` (the leak's day), `a_day_keeps_its_first_arrival…` (the drift 7 → 8)
+and the wire witness (the longest leak 20 → 21).
+
+### T5 (`tm/tests/kernel_replay_parity.rs`, extended)
+
+**What `Facts` gains.** `day` ([`DayFam`]):
+- per day every remaining `DayReplay` field, idle records and breaks with their days;
+- `demotions` and `closes`, each with the day of its line. The Rust side walks the fork's records beside the
+  surviving rows of their kind, and checks they are the same records in file order;
+- `dropped_items`, the global `longest_leak` and `unknown`.
+
+**The block family widens.**
+- Segments of every kind are compared.
+- Every energy observation is compared, not only a start's.
+- **The kernel's days must be exactly the Rust's**, and its block and day records must name the same days. C3's
+  allowance for days another family created is gone, because no family is missing now.
+
+**`DayRecords`, a new generator arm.** It runs one to three of ten cases a time:
+- an `energy` line, then two wakes of its day appended after it (late binding and Q6(a));
+- arrivals and a location;
+- plans whose replans fall and rise;
+- equal leaks, another attribution, and a 20-hour leak begun on an earlier day;
+- breaks, and `:60` stamps on a break, a gap and a routine's minutes (a leap second before adding or subtracting);
+- routine minutes begun on another day, a `done` without minutes, and `pending` and unknown statuses with minutes;
+- ten demote keys (a week, a date, a month, `2027-W53`, `2026-W53`, `-001-09-07`, `+10000-1-7`, ` 2026-9-07`,
+  `0000-02-29`, `-001-02-29`) and a routine `done` on `+10000-1-7`;
+- a drop, closes, unknown events and their undos;
+- an `energy` line on a date nothing else touches;
+- a block after midnight in the read zone (Q6(g)).
+
+**A new zone case**: a gap, a routine and a break across Chicago's fall-back hour, with the gap's day (the 31st,
+before the second wake) named by hand (`ZoneCase.gaps`).
+
+**P34's named test.** `t5_p34_a_gap_before_the_origin_is_the_named_exception` writes one `leak` gap of `u32::MAX`
+minutes in 2026. It asserts that the fork dates the gap in a negative year and the kernel at the origin, then asserts
+the two readers' facts are otherwise equal.
+
+| input | run |
+|---|---|
+| corpus | 7 logs, 12 cancelled, 512 days. Block family: 67 days (245 segments, 1 ci-unknown pair), 104 items (105 item days), 123 observations, 103 durations, 4 interruptions, 1 open block. Completion family as at C4. **Day family: 46 wakes, 32 arrivals, 33 location changes, 6 idle records, 43 breaks, 44 days with routine minutes, 15 days with plans, 5 demotions (5 stamped), 2 closes, 2 longest leaks, 2 unknown events, 22 energy-event observations** |
+| generated, 40 a day, seed 7 | 1mo: 1,191 lines, 30 days (478 segments), 217 observations; day family 30 wakes, 30 arrivals, 42 idle records, 77 breaks, 42 demotions, 34 closes, 6 dropped ids, 54 energy-event observations. 6mo: 7,472 lines, 182 days (2,952 segments), 1,327 observations; day family 182 wakes, 259 idle records, 462 breaks, 260 demotions, 208 closes, 22 dropped ids, 324 energy-event observations. 130 and 207 ms for both readers |
+| 256 sequences | 11,355 lines, 3,176 cancelled, 11,355 days (3,289 off their own local date). Block family: 575 days (2,992 segments, 183 ci-unknown pairs), 721 items, 1,267 observations, 1,030 durations, 175 interruptions, 21 open blocks, 11 open interruptions. Completion family: 735 done items, 538 instances (26 separating Q6(b)), 149 named keys (28 whose clock went back), 67 replay warnings. **Day family: 448 wakes, 46 arrivals, 126 location changes, 338 idle records (24 on a day before their own entry's), 290 breaks, 123 days with routine minutes, 42 days with plans, 399 demotions (282 stamped), 245 closes, 46 dropped ids, 99 longest leaks, 63 unknown events, 118 energy-event observations (17 reading a wake logged after them).** Day edge cases 0–9 ran 33, 34, 39, 29, 34, 37, 39, 44, 37 and 43 times (the test asserts all ten, and that late binding, early gaps, stamps, leaks, unknown events and arrivals showed). Arms: `DayRecords` 178, the other nineteen 149–204. Zones: Chicago 43, St John's 54, Kolkata 53, Berlin 59, UTC 47 |
+| §6.4 zone cases | 12 cases, 73 days, 53 named days (the new gap day included), 2 named-event keys. Day family: 19 wakes, 1 idle record (on a day before its entry's), 1 break, 2 days with routine minutes, 1 longest leak |
+| P33, P34 | 1 log each, the one named difference |
+
+**Exceptions: 0** among the compared inputs. §17 lists late-bound `slept` as exact by design. P34 (below) is not
+generated, and its test names it.
+
+**T5 bites.** Five scratch mutations of the Rust side were each restored with `git checkout` afterwards.
+- `slept_by_day` keeping the last wake of a day: fails the sequences (sequence 2, the energy observations).
+- The global longest leak replaced by an equal one (`>=`): fails the 6mo log and the sequences.
+- An idle gap dated by its answer's day instead of its start's: fails the new zone case, the sequences and P34's
+  test.
+- A break lasting its planned minutes even with an actual: fails the corpus, the 1mo log and the sequences.
+- `stamp_from_key` refusing a signed year: fails the sequences (sequence 3, a demotion's stamp).
+
+**Measurements** (`#[ignore]`d, three runs each):
+- `t5_a_block_log_of_distinct_ids_is_measured`: kernel 253 / 244 / 266 ms (C4 252–285), Rust 25 ms, equal.
+- The hostile undo log: kernel 186 / 186 / 199 ms (C4 227–232), Rust 99–100 ms.
+
+### Recorded disagreements between the design and the repo
+
+1. **§14.4's C5 row lists `event`.** C4 took it under carried note 3 (C4's disagreement 1), so `dayArm` gives it
+   nothing and `completionArm` keeps it.
+2. **§8.2's `effects z kw slept` and `step`** keep §15's `slept : List (Nat × Nat)`, read by its first pair of a day.
+   `effectsWith` and `stepWith`, which the laws are proved over, take the lookup `sl : Nat → Option Nat`, so the
+   compiled replay can pass its buckets.
+3. **§8.2 lists `the_first_leak_maximum_wins`, `a_demote_stamp_reads_the_week_or_date_key` and
+   `idle_and_idle_since_read_different_orders` as witnesses.** The first two are stated and proved as laws, with
+   witnesses beside them. The third needs fork `DaySeam.last_t`, a seam fact §14.4 gives C6. Here it is the
+   specification `lastTOn`, and C6's derived seam owes the equation to it.
+4. **C3's "Days are an association list, most recent first."** Days are bucketed from C5 (above).
+5. **§10.2 has no `facts.day`.** As with `block` and `completion`, it is interim, and C6's view replaces it. A day
+   record is positional, to keep a line-bound log of wakes to an 8,967,805-byte answer.
+6. **§20 records gap 86 at C7 and gap 87 at S.** Both quirks' facts land here (the close records, the day records),
+   with their separating witnesses. So both gaps are recorded now, under the design's labels. C7 still owes gap 86's
+   undo law.
+7. **Keys.** A demotion and a close are keyed by their day (§8.4: open days and day records). The drop bit is keyed
+   by its item. **The global longest leak and the unknown count are keyed `global`**: all-time aggregates, like
+   `last_done`'s instant keyed by its item. The leak record carries a day. C6's `every_dated_output_names_its_day_key`
+   must define `Effect.day?` on `leak` accordingly, or carry the day out of the record.
+8. **§8.2's "`close`, `note`, `edit`, `move`, `readopt`, `drop` and `loc`… where Q7 removes their facts".** The owner's
+   D14 ports them. `close`, `drop` and `loc` write their records. `note`, `edit`, `move` and `readopt` write nothing
+   in the fork either.
+9. **C4's disagreement 7 (a demote stamp on a negative year)** is closed by the `Log.lean` port. P33 narrows to years
+   0 and below: `+10000-1-7` is now a date to both readers.
+
+### Rule D9-21 (functions over a list the wire can make large)
+
+- `dayArm` and `addMinutes`: no recursion. A `DayOp` is one record update, and its day is found in its bucket.
+- `sleptMap`: a `foldl` of `sleptStep`, one `HMap.alter` a wake. Each energy line's lookup scans one bucket.
+- `DayAcc.finish`: its three new lists by `reverse`. `finish`'s demotions and closes: `reverse`. The days:
+  `HMap.mapVals`.
+- `dayRecJson` and `dayJson`: `mapTR` and `HMap.pairs` (a `foldl`).
+- `Log.chronoYear`: `takeWhile`, `dropWhile` and `readNat` (a `foldl`), over one key.
+- Specification only, never on the wire:
+  - `sleptByDay` (`filterMap`; compiled as `sleptMap` through `replay_eq_replayFast`);
+  - `firstLoggedSleep` (`find?`);
+  - `leakOf`, `demotionOf`, `closeOf`, `isUnknownEv` and `lastTOn` (`filter`, `map`, `foldl`);
+  - `insBy_perm` and `insSort_perm`, and the `Effect` projections of the laws.
+
+### Gap 86 (the design's label, Q6(f)) — an undo after housekeeping cancels the automatic close
+
+(1) *What is not done*: `close` has no primary id (`Log.Event.primaryId` gives it none, as fork
+`Event::primary_id` does). So `tm undo` of a `tm close week` that a later verb's automatic `close` followed writes
+`undo{of:"close", id:null}`, and the mask cancels the **latest** close, the automatic one. The kernel ports this
+faithfully (`an_undo_of_a_close_cancels_the_latest_close_whatever_its_period`). The replay's `closes` then keep the
+week's record and lose the day's. (2) *Why not now*: Q6(f) says port now and fix after the switch, because the
+fix, a primary id `period:key`, changes the bytes `tm undo` appends. (3) *Cost*: the automatic close's record
+vanishes from `closes` and from `tm log`, and the week close's stays. No decision fact reads `closes` today. (4)
+*When it clears*: after the switch (S2 writes the lines), as a behaviour change with its own parity entry. C7's
+`undo_after_housekeeping_cancels_the_housekeeping` states the law's failure beside the law.
+
+### Gap 87 (the design's label, Q6(g)) — two definitions of "today"
+
+(1) *What is not done*: the host's today (`Ctx::today`) is the calendar date of `now` in `cfg.tz`, and the replay's
+days are wake-attributed. At 00:30, before a new wake, the replay's day of `now` is yesterday
+(`the_calendar_today_is_not_the_replays_day_after_midnight`). The kernel ports the replay's rule faithfully, and the
+host keeps its own. (2) *Why not now*: Q6(g) says keep this until stage 6 moves `now` into the kernel. (3) *Cost*:
+after midnight and before the next wake, `blocks_done(today)` and `day(today)` read an empty day, while tonight's
+blocks and gaps sit on yesterday. (4) *When it clears*: stage 6, when `now` is the kernel's, deciding then whether
+today is the replay's day of `now`.
+
+### Parity entry
+
+| # | site | the kernel | the fork point | authority | step |
+|---|---|---|---|---|---|
+| **P34** | an `idle` gap, or a routine `done`'s minutes, reaching before 0001-01-01T00:00:00Z (`min` up to `u32::MAX`, about 8,166 years) | the start saturates at the origin (`Cal.subMinutes`, B1), so the segment starts there, and the segment, the `IdleRecord` and the leak are on day 0 | chrono's `t - Duration::minutes(min)`: a negative year, and those records on that day | P16's and P33's residue: `Cal.Instant` starts at the origin; §5.2 | C5 (named test in T5; not generated) |
+
+### Numbers
+
+**Taken:**
+- cheat 147 (the next free number; design §16 names none for C5);
+- P34 (new; free, checked by grep);
+- gaps 86 and 87 (the design's labels; free, checked by grep).
+
+**Highest:** gap 117, cheat 147, parity P34. **Behaviour rows:** none in the binary, which still has one reader of
+the log, the Rust. The kernel's `log` op answers `facts.day`.
+
+**Re-measured** (main worktree, every command capped at 40 GB; probes at 8 GB, measurements at 16 GB):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.89 / 2.86 / 2.89 s. Baseline 2.86 / 2.89 / 2.85 s, re-measured before any edit: +1.4% at the worst against the fastest baseline run, and the budget is 10% |
+| axiom audit | **3059 theorems** (2994 + 65). The three §6.3 counts agree at 3059 |
+| `Negative.lean` | check 4 ok; 143 errors; 137 `/- CHEAT` banners; no duplicate number; 147 fails at its `decide`, 145 and 146 still at theirs |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (13 → 17 → 13 within the step) |
+| `TmKernel.lean` | **20 imports** (no new module) |
+| `lake build TmKernel.Boundary` after the Replay edits | 2 min 24 s (`Boundary` 136 s); check.sh's own rebuild 2 min 28 s |
+| `Replay.lean` elaboration (8 GB probe cap) | 5.77–5.90 s, 1.04–1.07 GB; 6,156 lines |
+| `cargo test --workspace` | **1067 passed / 0 failed / 5 ignored across 73 binaries**, 0 compiler warnings (T5 gains P34's test) |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6). `stack.rs` serial, three runs, 7.58–7.73 s: the mask at the bound 271–287 ms; the day index 668–676 ms (8,967,805 bytes; C4 221–229 ms. The call alone, through `examples/oneshot`, is 0.57–0.63 s, below: the 32,768 day records it now builds and emits); the block machine 679–700 ms (4,638,250 bytes); the completion family 415–443 ms (1,918,918 bytes) |
+| T5 (`kernel_replay_parity.rs`) | 7 passed, 2 ignored, 0.84–0.85 s; 0 exceptions |
+| `cli_latency.rs --include-ignored`, three serial runs | green, 4 passed. No log: first 627.5 / 652.4 / 627.9 ms, later 55.7 / 70.8 / 55.8 ms. 1y: first 729.1 / 713.5 / 713.9, later 121.6 / 121.6 / 121.7. 3y: first 941.5 / 946.7 / 991.7, later 283.6 / 278.5 / 268.5. T14: 81.1 / 81.1 / 81.1 ms (3 years), 141.7 / 141.9 / 141.9 ms (10 years). The binary's reader is unchanged, and so are these |
+| the day family at the line bound (`examples/oneshot`, dev profile, UTC, facts asked) | 32,768 wakes on as many dates, newest first: 0.57 / 0.60 / 0.63 s, 307 MiB peak, an 8,967,806-byte answer (gap 102's gate measured the log op at 308 MiB at 32,768 lines). 16,384 `energy` lines each followed by its day's wake: 0.53 / 0.53 / 0.51 s, 215 MiB, 5,882,058 bytes, every observation reading 420 |
+
+**Owed next:**
+- **C6** (the facts emitter, observations, headers).
+  - Heads the cancelled lines and derives the seam facts (R1–R4: `since_break`, `idle_marks`, `last_t`). The
+    derived `last_t` owes its equation to `lastTOn`.
+  - Replaces `facts.cancelled`, `days`, `block`, `completion`, `replayWarnings` and `day` with the view.
+  - Defines `Effect.day?`, which must decide what the global longest leak's day means (disagreement 7).
+- **C7** (the undo law, gap 86's law beside it), then W1–W3, S and S2.

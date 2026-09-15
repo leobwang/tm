@@ -1641,4 +1641,26 @@ theorem anInstanceKeptByInstantIsTheLastRecordInFileOrder :
           Replay.bE 2 63924364800 (Replay.rDone ['s'] ['#', '1'])].reverse.findSome? (Replay.instRecordOf ['s'] ['#', '1'])) := by
   decide
 
+-- ===========================================================================
+-- APPENDED 2026-09-15 (stage 5, D9 track, step C5: the day header and records
+-- family in `Replay.lean`).  Design §16 names no cheat for C5; this one guards
+-- late binding, which §8.2 lists as a rule to port ("energy_obs_slept_is_the_days_
+-- first_logged_sleep").  Number 147 is the next free number in this checkout (the
+-- highest was 146, C4).  The control, which compiles, is
+-- `Replay.energy_obs_slept_is_the_days_first_logged_sleep` with its witness
+-- `Replay.an_energy_line_before_its_wake_reads_the_wakes_sleep`.
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 147 — an energy observation bound early.  The tempting port reads the
+   day's sleep from what has been replayed so far, so an `energy` line logged
+   before its day's `wake` (`tm wake 06:05` typed after `tm energy 4`) carries no
+   sleep.  Fork `slept_by_day` is built from every surviving wake before the walk:
+   on `[energy 09:00, wake 06:00 slept 420]` the observation reads 420, so
+   `decide` refuses the early-bound `none`. -/
+theorem anEnergyLineReadsOnlyTheWakesLoggedBeforeIt :
+    (Replay.replay Replay.utcZone [Replay.bE 1 63924368400 (.energy 3 4 (.nat 2) ['h']),
+        Replay.bE 2 63924357600 (.wake 420 none)]).energy.map (·.sleptMin) = [none] := by
+  decide
+
 end Tm

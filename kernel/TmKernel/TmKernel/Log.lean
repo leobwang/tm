@@ -875,13 +875,34 @@ def parseInstanceStatus (s : List Char) : Option InstanceStatus :=
   else if s == ['s','k','i','p','p','e','d'] || s == ['s','k','i','p'] then some .skipped
   else none
 
-/-- chrono's generic `%Y-%m-%d` (`NaiveDate::parse_from_str`), through B2's readers of its fallback
-(`yearOf`, `lit`, `numIn`: whitespace before each number, one or two digits for month and day, a
-signed year), then the end.  The year, month and day as written; validity is the caller's. -/
-def chronoDateParts (s : List Char) : Option (Nat × Nat × Nat) :=
-  match LogStamp.yearOf s with
-  | .error _ => none
-  | .ok (y, s) =>
+/-- **chrono's `%Y`, signed** (`format::parse::parse_internal`'s `Numeric(Year, _)`, width 4, signed):
+whitespace (`str::trim_start`), then `-` or `+` with one or more ASCII digits and no width bound, or one
+to four unsigned digits.  The value must fit `Parsed::set_year`'s `i32` (a larger magnitude is
+`OUT_OF_RANGE`, as is an `i64` overflow, which the `i32` bound subsumes).  The year as an `Int`: stage 5
+D9 C5's port, so a negative year and a signed year past 9999 are years here as they are to chrono
+(B2's `LogStamp.yearOf` refuses both, which a timestamp's `beforeOrigin` and `pastYear9999` need). -/
+def chronoYear (s : List Char) : Option (Int × List Char) :=
+  match LogStamp.trimWs s with
+  | '-' :: t =>
+    match readNat (t.takeWhile Field.isDigitC) with
+    | some v => if v ≤ 2147483648 then some (-(v : Int), t.dropWhile Field.isDigitC) else none
+    | none => none
+  | '+' :: t =>
+    match readNat (t.takeWhile Field.isDigitC) with
+    | some v => if v ≤ 2147483647 then some ((v : Int), t.dropWhile Field.isDigitC) else none
+    | none => none
+  | _ =>
+    match LogStamp.numIn 4 0 9999 .badDate s with
+    | .ok (v, rest) => some ((v : Int), rest)
+    | .error _ => none
+
+/-- chrono's generic `%Y-%m-%d` (`NaiveDate::parse_from_str`): `chronoYear`, then B2's readers of the
+fallback (`lit`, `numIn`: whitespace before each number, one or two digits for month and day), then the
+end.  The year, month and day as written; validity is `chronoDateValid`'s. -/
+def chronoDateParts (s : List Char) : Option (Int × Nat × Nat) :=
+  match chronoYear s with
+  | none => none
+  | some (y, s) =>
     match LogStamp.lit '-' .badDate s with
     | .error _ => none
     | .ok s =>
@@ -895,6 +916,14 @@ def chronoDateParts (s : List Char) : Option (Nat × Nat × Nat) :=
           | .error _ => none
           | .ok (d, rest) => if rest.isEmpty then some (y, m, d) else none
 
+/-- **`NaiveDate::from_ymd_opt`** for a proleptic Gregorian year that may be zero or negative: the year in
+chrono's range (`MIN_YEAR = (i32::MIN >> 13) + 1`, `MAX_YEAR = (i32::MAX >> 13) - 1`), and the month and
+day valid in it.  A year's leap rule repeats every 400 years, so it is read at the year of its class in
+`[400, 800)` (as `isoWeekOfKey` does). -/
+def chronoDateValid (y : Int) (m d : Nat) : Bool :=
+  decide (-262143 ≤ y) && decide (y ≤ 262142) &&
+    Cal.Date.valid ⟨((y % 400 + 400) % 400 + 400).toNat, m, d⟩
+
 /-- Rust's `str::len`: a string's length in **UTF-8 bytes**, not in characters (a `foldl`, D9-21).
 chrono's numeric items skip Unicode whitespace (`LogStamp.trimWs`), so a 10-character date spelled
 with a no-break space is 11 bytes, and `parse_date` refuses it before chrono reads it
@@ -903,11 +932,12 @@ def utf8Len (s : List Char) : Nat := s.foldl (fun n c => n + c.utf8Size) 0
 
 /-- **`parse_date`** (`model.rs`): exactly 10 bytes (`s.len() != 10`), then chrono's `%Y-%m-%d`, as a
 `Day`.  Year 0 and negative years are dates to chrono and not a `Cal.Day`, so they are `none` here
-(P23's residue; for a routine's done date, parity P33). -/
+(P23's residue; for a routine's done date, parity P33).  A signed year past 9999 (`+10000-1-7`) is a
+date to chrono and is one here (stage 5 D9 C5, through `chronoYear`). -/
 def instDate? (s : List Char) : Option Nat :=
   if utf8Len s = 10 then
     (chronoDateParts s).bind (fun (y, m, d) =>
-      if Cal.Date.valid ⟨y, m, d⟩ then some (Cal.toDay ⟨y, m, d⟩) else none)
+      if 1 ≤ y ∧ chronoDateValid y m d then some (Cal.toDay ⟨y.toNat, m, d⟩) else none)
   else none
 
 /-- `str::split_once("-W")`, as a loop. -/
@@ -951,7 +981,7 @@ def stampFromKey (s : List Char) : Option Field.Stamp :=
   | none =>
     if utf8Len s = 10 then
       match chronoDateParts s with
-      | some (y, m, d) => if Cal.Date.valid ⟨y + 400, m, d⟩ then some (.day d) else none
+      | some (y, m, d) => if chronoDateValid y m d then some (.day d) else none
       | none => none
     else none
 
@@ -2549,12 +2579,28 @@ two bytes) then `07` is 10 characters that chrono's `%Y-%m-%d` reads as 2026-09-
 the fork's `s.len() != 10` refuses it first.  A routine `done` on that instance is dated by its day, not
 by its `inst` (T5's completion arm writes it). -/
 theorem the_date_grammars_count_bytes_not_characters :
-    chronoDateParts ['2','0','2','6','-','9','-','\u00A0','0','7'] = some (2026, 9, 7) ∧
+    chronoDateParts ['2','0','2','6','-','9','-','\u00A0','0','7'] = some ((2026 : Int), 9, 7) ∧
     ['2','0','2','6','-','9','-','\u00A0','0','7'].length = 10 ∧
     instDate? ['2','0','2','6','-','9','-','\u00A0','0','7'] = none ∧
     stampFromKey ['2','0','2','6','-','9','-','\u00A0','0','7'] = none ∧
     instDate? ['2','0','2','6','-','9','-',' ','0','7'] = some (Cal.toDay ⟨2026, 9, 7⟩) :=
   ⟨by decide, by decide, by decide, by decide, by decide⟩
+
+/-- **A signed year is a year to chrono** (stage 5 D9 C5's repair of C4's recorded disagreement 7): chrono's
+`%Y` reads `-` or `+` with any number of digits, so `-001-09-07` (year −1) and `+10000-1-7` are dates.
+`stamp_from_key` gives each its day of the month, and `parse_date` the second (a `Day`); the first, and
+year 0, are before `Cal.Day`'s origin (parity P33).  The leap rule holds before the origin: year −4 is a
+leap year and year −1 is not.  An unsigned year is still at most four digits (`10000-1-07` is not a date). -/
+theorem a_signed_year_is_a_date_to_chrono :
+    stampFromKey ['-','0','0','1','-','0','9','-','0','7'] = some (.day 7) ∧
+    stampFromKey ['+','1','0','0','0','0','-','1','-','7'] = some (.day 7) ∧
+    stampFromKey ['-','0','0','4','-','0','2','-','2','9'] = some (.day 29) ∧
+    stampFromKey ['-','0','0','1','-','0','2','-','2','9'] = none ∧
+    stampFromKey ['1','0','0','0','0','-','1','-','0','7'] = none ∧
+    instDate? ['+','1','0','0','0','0','-','1','-','7'] = some (Cal.toDay ⟨10000, 1, 7⟩) ∧
+    instDate? ['-','0','0','1','-','0','9','-','0','7'] = none ∧
+    instDate? ['0','0','0','0','-','0','9','-','0','7'] = none :=
+  ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
 
 end Witnesses
 

@@ -17,6 +17,7 @@
 //! | C1 | `cancelled`: the lines of the entries the undo mask cancels (`ViewRow::cancelled`) |
 //! | C2 | `days`: every entry's wake-attributed day (`ViewRow::day`), survivors, cancelled entries and undos alike, as `(line, days since 0001-01-01)` |
 //! | C3 | `block`: the block family of the machine (`start`, `pause`, `unpause`, `interrupt`, `resume`, `stop`, `done`, `extend`). Per day, `DayReplay`'s `first_start`, `starts`, `block_min`, `blocks_done`, `load_fifths`, `minutes_by_ci`, `ci_unknown`, `done`, `lost_min`, `dropped` and its `Block`/`Pause`/`Interrupt` segments; every `ItemReplay` field; the start observations of `energy`; `durations`; `interrupts`; `open_block`; `open_interrupt`; `last_effective_t` ([`Block`]) |
+//! | C5 | `day`: the day header and records family (`wake`, `arrive`, `loc`, `break`, `energy`, `idle`, `routine`'s day half, `plan`, `demote`, `drop`, `close`, unknown events). Per day every remaining `DayReplay` field (`wake`, `slept_min`, `onset_min`, `arrival`, `loc`, `window`, `budget`, `loc_changes`, `leak_min`, `longest_leak`, `idle`, `breaks`, `routine_min`, `plans`, `replans_today`, `drift_min`, `last_plan_hash`); `demotions` (each with its day), `closes` (each with its day), `dropped_items`, the global `longest_leak`, `unknown`. The block family's comparison widens to every segment kind, every energy observation, and exactly the Rust's set of days ([`DayFam`]) |
 //! | C4 | `completion`: the completion family (`done`'s `mark_done`, `routine`, `skip`, `event`): `done_items` and `last_done` (the latest by instant, the first of equal instants), `done_dates`, `instances` (the last record in file order), `LatestNamed` per `(name, id?)` from `events` (with each occurrence's line) and every `latest_named` query, `event_names`; and the replay warnings as `(line, status)`, each checked against `Replay.warnings`' text ([`Completion`]) |
 //!
 //! **The inputs**, every one compared in full:
@@ -36,7 +37,10 @@
 //! C4 adds none to the compared inputs (§17: `last_done` by instant and instances
 //! by file order are exact by design). Parity P33, a routine `done` whose `inst`
 //! names a date before 0001-01-01, is not generated; it has its own named test
-//! ([`t5_p33_a_done_date_before_the_origin_is_the_named_exception`]).
+//! ([`t5_p33_a_done_date_before_the_origin_is_the_named_exception`]). C5 adds none
+//! (§17: late-bound `slept` is exact by design). Parity P34, an `idle` gap or a
+//! routine's minutes reaching before 0001-01-01, is not generated; it has its own
+//! named test ([`t5_p34_a_gap_before_the_origin_is_the_named_exception`]).
 
 #[allow(dead_code)]
 #[path = "../src/cli/tz_table.rs"]
@@ -88,6 +92,8 @@ struct Facts {
     block: Block,
     /// C4: the completion family and the replay warnings.
     completion: Completion,
+    /// C5: the day header and records family.
+    day: DayFam,
     /// Not a replay fact: the lines each reader refused (T1's field, carried so a
     /// line one reader dropped cannot hide from the facts above).
     warnings: Vec<u64>,
@@ -107,8 +113,8 @@ fn stamp_of(t: &DateTime<FixedOffset>) -> Stamp {
     (t.timestamp() + EPOCH_FROM_CE, t.timestamp_subsec_nanos(), off < 0, off.unsigned_abs())
 }
 
-/// C3: one day's block fields (`DayReplay`). Segments are the block family's
-/// kinds, `(start, end, kind, id)`, in `DayReplay::segments`' order.
+/// C3: one day's block fields (`DayReplay`). Segments are `(start, end, kind,
+/// arguments)` of every kind (C5 widens C3's three), in `DayReplay::segments`' order.
 #[derive(Clone, Debug, PartialEq, Default)]
 struct DayBlock {
     first_start: Option<Stamp>,
@@ -121,14 +127,7 @@ struct DayBlock {
     done: Vec<String>,
     lost_min: u64,
     dropped: Vec<String>,
-    segments: Vec<(Stamp, Stamp, String, Option<String>)>,
-}
-
-impl DayBlock {
-    /// What `DayReplay::new` holds: a day created by an arm of another family.
-    fn empty() -> DayBlock {
-        DayBlock { by_ci: vec![0; 6], ..DayBlock::default() }
-    }
+    segments: Vec<(Stamp, Stamp, String, Vec<Option<String>>)>,
 }
 
 /// C3: one item's `ItemReplay`, `minutes_by_day` included.
@@ -152,11 +151,9 @@ type InterruptRow = (Option<Stamp>, Option<Stamp>, i64, Option<String>, u64, Vec
 /// `OpenBlock`: `(id, started, worked_min, since, paused)`.
 type OpenBlockRow = (String, Stamp, u64, Option<Stamp>, bool);
 
-/// **C3: the block family.** `days` holds every day the reader created; the
-/// kernel creates only the days a block-family arm touches, so [`assert_parity`]
-/// requires the kernel's days to be the Rust's days, less days whose block
-/// fields are all [`DayBlock::empty`]. `energy` is the start observations
-/// (`from_start`); the `energy` event's are C5's.
+/// **C3: the block family.** `days` holds every day the reader created (C5: the
+/// kernel creates every day the fork does, so the two sets are compared exactly).
+/// `energy` is every observation, a start's and (C5) an `energy` event's.
 #[derive(Clone, Debug, PartialEq, Default)]
 struct Block {
     days: BTreeMap<i64, DayBlock>,
@@ -418,7 +415,7 @@ fn kernel_block(b: &Value) -> Block {
                 .iter()
                 .map(|g| {
                     let g = j_arr(g, "a segment");
-                    (j_stamp(&g[0]), j_stamp(&g[1]), j_str(&g[2], "kind"), j_opt(&g[3], |x| j_str(x, "id")))
+                    (j_stamp(&g[0]), j_stamp(&g[1]), j_str(&g[2], "kind"), g[3..].iter().map(|x| j_opt(x, |y| j_str(y, "a segment argument"))).collect())
                 })
                 .collect(),
         };
@@ -519,14 +516,16 @@ fn rust_block(r: &Replay) -> Block {
                     segments: day
                         .segments
                         .iter()
-                        .filter_map(|g| {
-                            let (kind, id) = match &g.kind {
-                                SegmentKind::Block { id } => ("block", Some(id.clone())),
-                                SegmentKind::Pause { id } => ("pause", Some(id.clone())),
-                                SegmentKind::Interrupt { id } => ("interrupt", id.clone()),
-                                _ => return None,
+                        .map(|g| {
+                            let (kind, args) = match &g.kind {
+                                SegmentKind::Block { id } => ("block", vec![Some(id.clone())]),
+                                SegmentKind::Pause { id } => ("pause", vec![Some(id.clone())]),
+                                SegmentKind::Interrupt { id } => ("interrupt", vec![id.clone()]),
+                                SegmentKind::Break { r#where } => ("break", vec![r#where.clone()]),
+                                SegmentKind::Routine { item, inst } => ("routine", vec![Some(item.clone()), Some(inst.clone())]),
+                                SegmentKind::Idle { attributed } => ("idle", vec![Some(attributed.clone())]),
                             };
-                            Some((stamp_of(&g.start), stamp_of(&g.end), kind.to_string(), id))
+                            (stamp_of(&g.start), stamp_of(&g.end), kind.to_string(), args)
                         })
                         .collect(),
                 };
@@ -552,7 +551,6 @@ fn rust_block(r: &Replay) -> Block {
         energy: r
             .energy
             .iter()
-            .filter(|o| o.from_start)
             .map(|o| {
                 (
                     o.line,
@@ -597,6 +595,185 @@ fn rust_block(r: &Replay) -> Block {
     }
 }
 
+/// C5: a location change, `(stamp, loc)`.
+type LocRow = (Stamp, String);
+/// C5: an `IdleRecord`, `(t, day, attributed, min)`.
+type IdleRow = (Stamp, i64, String, u64);
+/// C5: a `BreakRecord`, `(t, day, planned_min, actual_min, where)`.
+type BreakRow = (Stamp, i64, u64, Option<u64>, Option<String>);
+/// C5: a `Demotion` with its day, `(day, t, id, from, to, est_min, stamp as demoted: writes it)`.
+type DemotionRow = (i64, Stamp, String, String, String, u64, Option<String>);
+/// C5: a `CloseRecord` with its day, `(day, t, period, key)`.
+type CloseRow = (i64, Stamp, String, String);
+
+/// C5: one day's header and records (`DayReplay` beyond the block family).
+#[derive(Clone, Debug, PartialEq, Default)]
+struct DayRec {
+    wake: Option<Stamp>,
+    slept_min: Option<u64>,
+    onset_min: Option<u64>,
+    arrival: Option<Stamp>,
+    loc: Option<String>,
+    window: Option<(String, String)>,
+    budget: Option<u64>,
+    loc_changes: Vec<LocRow>,
+    leak_min: u64,
+    longest_leak: u64,
+    idle: Vec<IdleRow>,
+    breaks: Vec<BreakRow>,
+    routine_min: u64,
+    plans: u64,
+    replans_today: u64,
+    drift_min: u64,
+    last_plan_hash: Option<String>,
+}
+
+/// **C5: the day header and records family.**
+#[derive(Clone, Debug, PartialEq, Default)]
+struct DayFam {
+    days: BTreeMap<i64, DayRec>,
+    /// In file order, each with the day of its line.
+    demotions: Vec<DemotionRow>,
+    /// In file order, each with the day of its line.
+    closes: Vec<CloseRow>,
+    dropped: BTreeSet<String>,
+    /// `(t, day, min)`.
+    longest_leak: Option<(Stamp, i64, u64)>,
+    unknown: u64,
+}
+
+/// The kernel's `facts.day`. A day's record is a positional array; maps are read
+/// as maps and a repeated key fails.
+fn kernel_day(v: &Value) -> DayFam {
+    let mut days = BTreeMap::new();
+    for p in j_arr(&v["days"], "day.days") {
+        let p = j_arr(p, "a day");
+        let a = j_arr(&p[1], "a day record");
+        assert_eq!(a.len(), 17, "a day record has 17 fields: {}", p[1]);
+        let rec = DayRec {
+            wake: j_opt(&a[0], j_stamp),
+            slept_min: j_opt(&a[1], |x| j_u64(x, "sleptMin")),
+            onset_min: j_opt(&a[2], |x| j_u64(x, "onsetMin")),
+            arrival: j_opt(&a[3], j_stamp),
+            loc: j_opt(&a[4], |x| j_str(x, "loc")),
+            window: j_opt(&a[5], |x| {
+                let w = j_arr(x, "a window");
+                (j_str(&w[0], "window"), j_str(&w[1], "window"))
+            }),
+            budget: j_opt(&a[6], |x| j_u64(x, "budget")),
+            loc_changes: j_arr(&a[7], "locChanges").iter().map(|c| {
+                let c = j_arr(c, "a location change");
+                (j_stamp(&c[0]), j_str(&c[1], "loc"))
+            }).collect(),
+            leak_min: j_u64(&a[8], "leakMin"),
+            longest_leak: j_u64(&a[9], "longestLeak"),
+            idle: j_arr(&a[10], "idle").iter().map(|r| {
+                let r = j_arr(r, "an idle record");
+                (j_stamp(&r[0]), r[1].as_i64().expect("day"), j_str(&r[2], "attributed"), j_u64(&r[3], "min"))
+            }).collect(),
+            breaks: j_arr(&a[11], "breaks").iter().map(|r| {
+                let r = j_arr(r, "a break");
+                (j_stamp(&r[0]), r[1].as_i64().expect("day"), j_u64(&r[2], "planned"), j_opt(&r[3], |x| j_u64(x, "actual")), j_opt(&r[4], |x| j_str(x, "where")))
+            }).collect(),
+            routine_min: j_u64(&a[12], "routineMin"),
+            plans: j_u64(&a[13], "plans"),
+            replans_today: j_u64(&a[14], "replansToday"),
+            drift_min: j_u64(&a[15], "driftMin"),
+            last_plan_hash: j_opt(&a[16], |x| j_str(x, "lastPlanHash")),
+        };
+        assert!(days.insert(p[0].as_i64().expect("a day"), rec).is_none(), "a repeated day record");
+    }
+    let mut dropped = BTreeSet::new();
+    for x in j_arr(&v["dropped"], "dropped") {
+        assert!(dropped.insert(j_str(x, "a dropped id")), "a repeated dropped id");
+    }
+    DayFam {
+        days,
+        demotions: j_arr(&v["demotions"], "demotions").iter().map(|r| {
+            let r = j_arr(r, "a demotion");
+            (r[0].as_i64().expect("day"), j_stamp(&r[1]), j_str(&r[2], "id"), j_str(&r[3], "from"), j_str(&r[4], "to"), j_u64(&r[5], "est"), j_opt(&r[6], |x| j_str(x, "stamp")))
+        }).collect(),
+        closes: j_arr(&v["closes"], "closes").iter().map(|r| {
+            let r = j_arr(r, "a close");
+            (r[0].as_i64().expect("day"), j_stamp(&r[1]), j_str(&r[2], "period"), j_str(&r[3], "key"))
+        }).collect(),
+        dropped,
+        longest_leak: j_opt(&v["longestLeak"], |x| {
+            let x = j_arr(x, "the longest leak");
+            (j_stamp(&x[0]), x[1].as_i64().expect("day"), j_u64(&x[2], "min"))
+        }),
+        unknown: j_u64(&v["unknown"], "unknown"),
+    }
+}
+
+/// The Rust's day family, from the in-tree `Replay`. The demotions and closes need
+/// each record's day, which the fork's records do not carry: they are walked beside
+/// the surviving rows of their kind, in file order, and checked against them.
+fn rust_day(r: &Replay) -> DayFam {
+    let survivors: Vec<_> = r.view().iter().filter(|row| !row.cancelled).collect();
+    let mut demotions = Vec::new();
+    let mut per_id: BTreeMap<String, usize> = BTreeMap::new();
+    let mut closes = Vec::new();
+    for row in &survivors {
+        match &row.entry.ev {
+            Event::Demote { id, .. } => {
+                let k = per_id.entry(id.clone()).or_insert(0);
+                let d = &r.demotions.get(id).expect("the demotions of a surviving demote")[*k];
+                *k += 1;
+                assert_eq!(stamp_of(&d.t), stamp_of(&row.entry.t), "demotions[{id}] in file order");
+                demotions.push((day_number(row.day), stamp_of(&d.t), d.id.clone(), d.from.clone(), d.to.clone(), u64::from(d.est_min), d.stamp.map(|s| s.to_string())));
+            }
+            Event::Close { .. } => {
+                let c = &r.closes[closes.len()];
+                assert_eq!(stamp_of(&c.t), stamp_of(&row.entry.t), "closes in file order");
+                closes.push((day_number(row.day), stamp_of(&c.t), c.period.clone(), c.key.clone()));
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(closes.len(), r.closes.len(), "closes are the surviving close rows");
+    for (id, v) in &r.demotions {
+        assert_eq!(per_id.get(id).copied(), Some(v.len()), "demotions[{id}] are its surviving rows");
+    }
+    DayFam {
+        days: r
+            .days
+            .iter()
+            .map(|(d, day)| {
+                let rec = DayRec {
+                    wake: day.wake.as_ref().map(stamp_of),
+                    slept_min: day.slept_min.map(u64::from),
+                    onset_min: day.onset_min.map(u64::from),
+                    arrival: day.arrival.as_ref().map(stamp_of),
+                    loc: day.loc.clone(),
+                    window: day.window.as_ref().map(|w| (w[0].clone(), w[1].clone())),
+                    budget: day.budget.map(u64::from),
+                    loc_changes: day.loc_changes.iter().map(|(t, l)| (stamp_of(t), l.clone())).collect(),
+                    leak_min: u64::from(day.leak_min),
+                    longest_leak: u64::from(day.longest_leak),
+                    idle: day.idle.iter().map(|i| (stamp_of(&i.t), day_number(i.day), i.attributed.clone(), u64::from(i.min))).collect(),
+                    breaks: day
+                        .breaks
+                        .iter()
+                        .map(|b| (stamp_of(&b.t), day_number(b.day), u64::from(b.planned_min), b.actual_min.map(u64::from), b.r#where.clone()))
+                        .collect(),
+                    routine_min: u64::from(day.routine_min),
+                    plans: u64::from(day.plans),
+                    replans_today: u64::from(day.replans_today),
+                    drift_min: u64::from(day.drift_min),
+                    last_plan_hash: day.last_plan_hash.clone(),
+                };
+                (day_number(*d), rec)
+            })
+            .collect(),
+        demotions,
+        closes,
+        dropped: r.dropped_items.clone(),
+        longest_leak: r.longest_leak.as_ref().map(|l| (stamp_of(&l.t), day_number(l.day), u64::from(l.min))),
+        unknown: u64::from(r.unknown),
+    }
+}
+
 /// **The kernel's facts**: one genesis `log` call over the whole text, lines
 /// split on `\n` as the in-tree reader's `parse_bytes` splits them.
 fn kernel_facts(text: &str, tz: Tz) -> Facts {
@@ -630,6 +807,7 @@ fn kernel_facts(text: &str, tz: Tz) -> Facts {
             .collect(),
         block: kernel_block(&facts["block"]),
         completion: kernel_completion(&facts["completion"], &facts["replayWarnings"]),
+        day: kernel_day(&facts["day"]),
         warnings: resp["ok"]["log"]["warnings"]
             .as_array()
             .expect("warnings")
@@ -647,20 +825,49 @@ fn rust_facts(text: &str, tz: Tz) -> Facts {
         days: r.view().iter().map(|row| (row.line, day_number(row.day))).collect(),
         block: rust_block(&r),
         completion: rust_completion(&r, tz),
+        day: rust_day(&r),
         warnings: replay::warning_lines_of_text(text),
     }
 }
 
 /// Compare one log; the kernel's facts are returned for the arms' own checks.
 fn assert_parity(name: &str, text: &str, tz: Tz) -> Facts {
-    let (k, mut r) = (kernel_facts(text, tz), rust_facts(text, tz));
-    // C3: a day the kernel's block family did not create must be one another
-    // family created in the Rust (its block fields all `DayReplay::new`'s), and
-    // every day the kernel created must exist in the Rust.
-    for d in k.block.days.keys() {
-        assert!(r.block.days.contains_key(d), "{name} ({}): the kernel created block day {d}, the Rust has no such day", tz.name());
+    let (k, r) = (kernel_facts(text, tz), rust_facts(text, tz));
+    // C5: the kernel creates every day the fork creates, and no other: its block
+    // records and its day records are one set of days, the Rust's.
+    let (kd, rd): (BTreeSet<_>, BTreeSet<_>) = (k.block.days.keys().collect(), r.block.days.keys().collect());
+    assert!(k.block.days.keys().eq(k.day.days.keys()), "{name} ({}): the kernel's block and day records name different days", tz.name());
+    if kd != rd {
+        panic!(
+            "{name} ({}): the days differ\n kernel only: {:?}\n rust only: {:?}",
+            tz.name(),
+            kd.difference(&rd).collect::<Vec<_>>(),
+            rd.difference(&kd).collect::<Vec<_>>()
+        );
     }
-    r.block.days.retain(|d, b| k.block.days.contains_key(d) || *b != DayBlock::empty());
+    if k.day != r.day {
+        let (kf, rf) = (&k.day, &r.day);
+        let mut why = Vec::new();
+        for (d, x) in &rf.days {
+            if kf.days.get(d) != Some(x) {
+                why.push(format!("day {d}:\n  kernel {:?}\n  rust   {:?}", kf.days.get(d), x));
+            }
+        }
+        if kf.demotions != rf.demotions {
+            why.push(format!("demotions:\n  kernel {:?}\n  rust   {:?}", kf.demotions, rf.demotions));
+        }
+        if kf.closes != rf.closes {
+            why.push(format!("closes:\n  kernel {:?}\n  rust   {:?}", kf.closes, rf.closes));
+        }
+        if (&kf.dropped, &kf.longest_leak, kf.unknown) != (&rf.dropped, &rf.longest_leak, rf.unknown) {
+            why.push(format!(
+                "dropped/longest leak/unknown:\n  kernel {:?} {:?} {}\n  rust   {:?} {:?} {}",
+                kf.dropped, kf.longest_leak, kf.unknown, rf.dropped, rf.longest_leak, rf.unknown
+            ));
+        }
+        why.truncate(5);
+        panic!("{name} ({}): the day family differs\n{}", tz.name(), why.join("\n"));
+    }
     if k.block != r.block {
         let (kb, rb) = (&k.block, &r.block);
         let mut why = Vec::new();
@@ -784,6 +991,25 @@ struct Tally {
     retro_instances: usize,
     /// C4: `(name, id?)` keys whose latest by instant is not their latest by date (carried note 3 showing).
     clock_back_keys: usize,
+    /// C5.
+    wakes: usize,
+    arrivals: usize,
+    loc_changes: usize,
+    idle: usize,
+    breaks: usize,
+    routine_days: usize,
+    plan_days: usize,
+    demotions: usize,
+    demotion_stamps: usize,
+    closes: usize,
+    dropped: usize,
+    longest_leaks: usize,
+    unknown: u64,
+    energy_events: usize,
+    /// C5: energy observations whose sleep is a wake logged after them (late binding showing; [`day_separations`]).
+    late_sleeps: usize,
+    /// C5: idle records on a day other than their own entry's (a gap on the day it began; [`day_separations`]).
+    early_gaps: usize,
 }
 
 impl Tally {
@@ -794,6 +1020,22 @@ impl Tally {
         self.named += c.named.len();
         self.replay_warnings += c.warnings.len();
         self.clock_back_keys += c.named.values().filter(|k| k.0 != k.2).count();
+    }
+    fn add_day(&mut self, d: &DayFam, b: &Block) {
+        self.wakes += d.days.values().filter(|x| x.wake.is_some()).count();
+        self.arrivals += d.days.values().filter(|x| x.arrival.is_some()).count();
+        self.loc_changes += d.days.values().map(|x| x.loc_changes.len()).sum::<usize>();
+        self.idle += d.days.values().map(|x| x.idle.len()).sum::<usize>();
+        self.breaks += d.days.values().map(|x| x.breaks.len()).sum::<usize>();
+        self.routine_days += d.days.values().filter(|x| x.routine_min > 0).count();
+        self.plan_days += d.days.values().filter(|x| x.plans > 0).count();
+        self.demotions += d.demotions.len();
+        self.demotion_stamps += d.demotions.iter().filter(|x| x.6.is_some()).count();
+        self.closes += d.closes.len();
+        self.dropped += d.dropped.len();
+        self.longest_leaks += usize::from(d.longest_leak.is_some());
+        self.unknown += d.unknown;
+        self.energy_events += b.energy.iter().filter(|o| !o.10).count();
     }
     fn add(&mut self, b: &Block) {
         self.days += b.days.len();
@@ -813,12 +1055,40 @@ impl std::fmt::Display for Tally {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "block family: {} days ({} segments, {} ci-unknown pairs), {} items ({} item days), {} start observations, {} durations, {} interruptions, {} open blocks, {} open interruptions; \
-             completion family: {} done items ({} done dates), {} instances ({} whose last record in file order is not their latest by instant), {} named keys ({} whose latest by instant is not their latest by date), {} replay warnings",
+            "block family: {} days ({} segments, {} ci-unknown pairs), {} items ({} item days), {} energy observations, {} durations, {} interruptions, {} open blocks, {} open interruptions; \
+             completion family: {} done items ({} done dates), {} instances ({} whose last record in file order is not their latest by instant), {} named keys ({} whose latest by instant is not their latest by date), {} replay warnings; \
+             day family: {} wakes, {} arrivals, {} location changes, {} idle records ({} on a day before their own entry's), {} breaks, {} days with routine minutes, {} days with plans, {} demotions ({} stamped), {} closes, {} dropped ids, {} longest leaks, {} unknown events, {} energy-event observations ({} reading a wake logged after them)",
             self.days, self.segments, self.ci_unknown, self.items, self.item_days, self.energy, self.durations, self.interrupts, self.open_blocks, self.open_interrupts,
-            self.done_items, self.done_dates, self.instances, self.retro_instances, self.named, self.clock_back_keys, self.replay_warnings
+            self.done_items, self.done_dates, self.instances, self.retro_instances, self.named, self.clock_back_keys, self.replay_warnings,
+            self.wakes, self.arrivals, self.loc_changes, self.idle, self.early_gaps, self.breaks, self.routine_days, self.plan_days, self.demotions, self.demotion_stamps,
+            self.closes, self.dropped, self.longest_leaks, self.unknown, self.energy_events, self.late_sleeps
         )
     }
+}
+
+/// **C5's separations in a log**, from the Rust reader: `(late_sleeps, early_gaps)`,
+/// the energy observations whose day's first logged wake is on a later line (late
+/// binding), and the idle records dated on a day other than their entry's (a gap on the
+/// day it began).
+fn day_separations(text: &str, tz: Tz) -> (usize, usize) {
+    let r = replay::replay_of_text(text, tz);
+    let survivors: Vec<_> = r.view().iter().filter(|row| !row.cancelled).collect();
+    let mut late = 0;
+    let mut early = 0;
+    for row in &survivors {
+        match &row.entry.ev {
+            Event::Energy { .. } => {
+                let wake = survivors.iter().find(|w| matches!(w.entry.ev, Event::Wake { .. }) && w.day == row.day);
+                late += usize::from(wake.is_some_and(|w| w.line > row.line));
+            }
+            Event::Idle { .. } => {
+                let rec = r.days.values().flat_map(|d| d.idle.iter()).find(|i| stamp_of(&i.t) == stamp_of(&row.entry.t));
+                early += usize::from(rec.is_some_and(|i| i.day != row.day));
+            }
+            _ => {}
+        }
+    }
+    (late, early)
 }
 
 /// **Quirk Q6(b) in a log**: how many instances' last surviving record in file
@@ -998,9 +1268,15 @@ enum Arm {
     /// fall-back), so the latest by instant is not the latest by date (carried
     /// note 3).
     ClockBack,
+    /// C5: the day family's edges, one of ten cases a time (late-bound sleep and
+    /// out-of-order wakes of one day, arrivals and locations, plans, idle gaps
+    /// with equal leaks and a gap begun on an earlier day, breaks and `:60`
+    /// stamps, routine minutes, demote keys, drops, closes and unknown events,
+    /// an energy line on a day nothing else touches, and a block after midnight).
+    DayRecords,
 }
 
-const ARMS: [Arm; 19] = [
+const ARMS: [Arm; 20] = [
     Arm::Wake,
     Arm::OutOfOrderWake,
     Arm::Block,
@@ -1020,6 +1296,7 @@ const ARMS: [Arm; 19] = [
     Arm::BlockEdges,
     Arm::Completions,
     Arm::ClockBack,
+    Arm::DayRecords,
 ];
 
 /// One generated log and what the Rust must have cancelled because of the arms
@@ -1037,6 +1314,8 @@ struct Generated {
     edges: Vec<u64>,
     /// C4: the [`completion_edge`] cases this sequence ran.
     completions: Vec<u64>,
+    /// C5: the [`day_edge`] cases this sequence ran.
+    day_edges: Vec<u64>,
 }
 
 /// Move the clock on by 1 to 90 minutes and return it.
@@ -1069,6 +1348,7 @@ fn generate(seed: u64) -> Generated {
     let mut housekeeping = Vec::new();
     let mut edges = Vec::new();
     let mut completions = Vec::new();
+    let mut day_edges = Vec::new();
     // Events that a silent-verb undo can target: (tag, line) of the latest move/readopt.
     let mut last_move: Option<u64> = None;
     w.push(now, ev_wake(420));
@@ -1199,6 +1479,13 @@ fn generate(seed: u64) -> Generated {
                 }
             }
             Arm::ClockBack => clock_back(&mut w, tz, id, &mut rng),
+            Arm::DayRecords => {
+                for _ in 0..1 + rng.below(3) {
+                    let case = rng.below(DAY_EDGES);
+                    day_edges.push(case);
+                    day_edge(case, &mut w, &mut now, &mut rng, id, tz);
+                }
+            }
             Arm::Misc => {
                 let t = tick(&mut now, &mut rng);
                 match rng.below(14) {
@@ -1227,7 +1514,119 @@ fn generate(seed: u64) -> Generated {
             }
         }
     }
-    Generated { tz, text: w.text(), arms, silent_targets, housekeeping, edges, completions }
+    Generated { tz, text: w.text(), arms, silent_targets, housekeeping, edges, completions, day_edges }
+}
+
+/// How many cases [`day_edge`] has.
+const DAY_EDGES: u64 = 10;
+
+/// A line stamped `:60` on the minute of `t` in the writer's zone (chrono reads it
+/// as the 59th second plus a leap nanosecond, T3 and P23), with the rest of the
+/// object after `t`.
+fn leap_line(w: &Writer, t: DateTime<Utc>, rest: &str) -> String {
+    let stamp = w.stamp(t);
+    format!(r#"{{"t":"{}:60{}",{rest}}}"#, stamp.format("%Y-%m-%dT%H:%M"), stamp.format("%:z"))
+}
+
+/// One of [`Arm::DayRecords`]' cases, by number.
+fn day_edge(case: u64, w: &mut Writer, now: &mut DateTime<Utc>, rng: &mut Rng, id: &str, tz: Tz) {
+    match case {
+        // Late binding and quirk Q6(a) in the day's fields: an `energy` line, then (appended after
+        // it) a wake 40 minutes earlier and one 55 minutes earlier, and another `energy`: both
+        // observations read the first wake logged, whose sleep the day keeps too.
+        0 => {
+            let t = tick(now, rng);
+            w.push(t, Event::Energy { pred: 2, rep: 3, hsw: 1.5, loc: "home".into() });
+            w.push(t - Duration::minutes(40), Event::Wake { slept_min: 380, onset_min: Some(15) });
+            w.push(t - Duration::minutes(55), Event::Wake { slept_min: 300, onset_min: None });
+            w.push(tick(now, rng), Event::Energy { pred: 4, rep: 4, hsw: 0.0, loc: "lounge".into() });
+        }
+        // Arrivals and locations: the first arrival sets the window and budget, every one moves.
+        1 => {
+            w.push(tick(now, rng), Event::Arrive { loc: "lounge".into(), window: ["08:00".into(), "16:00".into()], budget: 6 });
+            w.push(tick(now, rng), Event::Loc { loc: "home".into() });
+            w.push(tick(now, rng), Event::Arrive { loc: "office".into(), window: ["09:00".into(), "17:30".into()], budget: 4 });
+        }
+        // Plans: replans that fall and rise, drift, the last hash.
+        2 => {
+            for (hash, replans, drift) in [("h1", 3, 5), ("h2", 1, 0), ("h3", 4, 2)] {
+                w.push(tick(now, rng), Event::Plan { hash: hash.into(), replans_today: replans, drift_min: drift });
+            }
+        }
+        // Idle gaps: two equal leaks (the first maximum stays), another attribution, and a leak of 20
+        // hours, which began on an earlier day.
+        3 => {
+            let t = tick(now, rng);
+            w.push(t, Event::Idle { attributed: "leak".into(), min: 25 });
+            w.push(t + Duration::minutes(30), Event::Idle { attributed: "leak".into(), min: 25 });
+            w.push(t + Duration::minutes(35), Event::Idle { attributed: (*rng.pick(&["work", "break", "routine", "interrupt", ""])).into(), min: 10 });
+            w.push(t + Duration::minutes(40), Event::Idle { attributed: "leak".into(), min: 20 * 60 });
+            *now = t + Duration::minutes(40);
+        }
+        // Breaks planned only, with an actual and a place, and `:60` stamps on a break, a gap and a
+        // routine's minutes (a leap second before adding or subtracting minutes).
+        4 => {
+            w.push(tick(now, rng), Event::Break { planned_min: 10, actual_min: None, r#where: None });
+            w.push(tick(now, rng), Event::Break { planned_min: 15, actual_min: Some(0), r#where: Some("walk".into()) });
+            for rest in [
+                r#""ev":"break","planned_min":5"#,
+                r#""ev":"idle","attributed":"leak","min":7"#,
+                r##""ev":"routine","item":"stretch","inst":"#6","status":"done","actual_min":3"##,
+            ] {
+                let t = tick(now, rng);
+                let line = leap_line(w, t, rest);
+                w.push_raw(line);
+            }
+        }
+        // Routine minutes: a `done` whose minutes began long before (another day), a `done` without
+        // minutes, and a `pending` and an unknown status with minutes (no segment, no minutes).
+        5 => {
+            w.push(tick(now, rng), Event::Routine { item: "stretch".into(), inst: "#4".into(), status: "done".into(), actual_min: Some(600 + rng.below(900) as u32) });
+            w.push(tick(now, rng), Event::Routine { item: "stretch".into(), inst: now.with_timezone(&tz).date_naive().to_string(), status: "done".into(), actual_min: None });
+            w.push(tick(now, rng), Event::Routine { item: "water".into(), inst: "#1".into(), status: "pending".into(), actual_min: Some(5) });
+            w.push(tick(now, rng), Event::Routine { item: "water".into(), inst: "#2".into(), status: "Done".into(), actual_min: Some(5) });
+        }
+        // Demote keys: a week, a date, a month, a week 2027 does not have, one 2026 has, signed years
+        // before the origin and past 9999, a padded date and year 0's 29 February; and a routine done
+        // on a signed year past 9999.
+        6 => {
+            for from in ["2026-W37", "2026-09-07", "2026-09", "2027-W53", "2026-W53", "-001-09-07", "+10000-1-7", " 2026-9-07", "0000-02-29", "-001-02-29"] {
+                w.push(tick(now, rng), Event::Demote { id: id.into(), from: from.into(), to: "backlog.md".into(), est_min: 30 });
+            }
+            w.push(tick(now, rng), Event::Routine { item: "stretch".into(), inst: "+10000-1-7".into(), status: "done".into(), actual_min: None });
+        }
+        // Drops, closes and unknown events, and undos of a close and of an unknown tag.
+        7 => {
+            w.push(tick(now, rng), Event::Drop { id: id.into() });
+            w.push(tick(now, rng), ev_close("week", "2026-W37"));
+            w.push(tick(now, rng), ev_close("day", &now.with_timezone(&tz).date_naive().to_string()));
+            let t = tick(now, rng);
+            let stamp = w.stamp(t);
+            w.push_raw(format!(r#"{{"t":"{}","ev":"mood","level":2}}"#, stamp.to_rfc3339()));
+            let t = tick(now, rng);
+            let stamp = w.stamp(t);
+            w.push_raw(format!(r#"{{"t":"{}","ev":"weather","id":"{id}","sky":"grey"}}"#, stamp.to_rfc3339()));
+            if rng.below(2) == 0 {
+                w.push(tick(now, rng), ev_undo("close", None));
+            }
+            if rng.below(2) == 0 {
+                w.push(tick(now, rng), ev_undo("mood", None));
+            }
+        }
+        // An `energy` line on a date three days ahead that nothing else touches: an observation and no day.
+        8 => {
+            w.push(*now + Duration::days(3), Event::Energy { pred: 1, rep: 2, hsw: 9.0, loc: "home".into() });
+        }
+        // Quirk Q6(g): a block after midnight in the read zone, before the next wake.
+        _ => {
+            let local = now.with_timezone(&tz);
+            let to_midnight = 24 * 60 - i64::from(local.hour() * 60 + local.minute());
+            *now += Duration::minutes(to_midnight + 10);
+            w.push(*now, ev_start(id));
+            *now += Duration::minutes(30);
+            w.push(*now, ev_done_at(id, 30, false, 2, None));
+        }
+    }
 }
 
 /// How many cases [`completion_edge`] has.
@@ -1514,6 +1913,8 @@ struct ZoneCase {
     /// C4: `(name, id?)` keys and the lines of their latest occurrence by instant
     /// and by local date, worked out by hand.
     named: Vec<(&'static str, Option<&'static str>, u64, u64)>,
+    /// C5: the days of the day family's idle records, in the order the days hold them, worked out by hand.
+    gaps: Vec<NaiveDate>,
 }
 
 fn date(y: i32, m: u32, d: u32) -> NaiveDate {
@@ -1537,7 +1938,7 @@ fn zone_cases() -> Vec<ZoneCase> {
         w.push(utc(2026, 11, 1, 7, 40, 0), ev_undo("done", Some("1")));
         w.push(utc(2026, 11, 1, 7, 50, 0), ev_done("1", 60, false)); // 01:50 CST
         let expect = vec![(1, date(2026, 10, 31)), (2, date(2026, 11, 1)), (4, date(2026, 11, 1)), (6, date(2026, 11, 1))];
-        out.push(ZoneCase { name: "fall-back 01:30 twice".to_string(), text: w.text(), tz: chicago, expect, named: vec![] });
+        out.push(ZoneCase { name: "fall-back 01:30 twice".to_string(), text: w.text(), tz: chicago, expect, named: vec![], gaps: vec![] });
     }
     // (2) A wake after midnight, under 24 hours after the previous one: once
     //     undone (the day stays the first wake's), once standing (it starts a day).
@@ -1555,7 +1956,7 @@ fn zone_cases() -> Vec<ZoneCase> {
             ("standing", date(2026, 9, 8))
         };
         let expect = vec![(2, day), (3, day), (4, day)];
-        out.push(ZoneCase { name: format!("wake after midnight under 24h, {label}"), text: w.text(), tz: chicago, expect, named: vec![] });
+        out.push(ZoneCase { name: format!("wake after midnight under 24h, {label}"), text: w.text(), tz: chicago, expect, named: vec![], gaps: vec![] });
     }
     // (3) Events 23–25 real hours after a wake, across both transitions: before
     //     24 hours the wake's date, from 24 hours the entry's own.
@@ -1571,7 +1972,7 @@ fn zone_cases() -> Vec<ZoneCase> {
         w.push(wake + Duration::minutes(25 * 60 + 5), ev_undo("note", None));
         let woke = wake.with_timezone(&chicago).date_naive();
         let expect = vec![(1, woke), (2, woke), (3, woke), (4, own), (5, own), (6, own)];
-        out.push(ZoneCase { name: format!("23-25h after a wake, {label} transition"), text: w.text(), tz: chicago, expect, named: vec![] });
+        out.push(ZoneCase { name: format!("23-25h after a wake, {label} transition"), text: w.text(), tz: chicago, expect, named: vec![], gaps: vec![] });
     }
     // (4) A fold at midnight where consecutive dedup differs from earliest-per-date:
     //     a wake just after midnight before the fold, one before midnight after it.
@@ -1610,7 +2011,7 @@ fn zone_cases() -> Vec<ZoneCase> {
             // Line 3, the third wake: its own date while it stands; undone, the
             // second wake's day (a second before it).
             let expect = vec![(2, dates[1]), (3, day), (4, day), (5, day)];
-            out.push(ZoneCase { name: format!("fold at midnight, {}, {label}", tz.name()), text: w.text(), tz, expect, named: vec![] });
+            out.push(ZoneCase { name: format!("fold at midnight, {}, {label}", tz.name()), text: w.text(), tz, expect, named: vec![], gaps: vec![] });
         }
     }
     assert!(folds > 0, "no zone of the fold arm has a backwards-date transition in [1970, 2100)");
@@ -1624,7 +2025,7 @@ fn zone_cases() -> Vec<ZoneCase> {
         w.push_at((base + Duration::hours(4)).with_timezone(&east(2 * 3600)), ev_undo("done", None));
         w.push_at((base + Duration::hours(5)).with_timezone(&east(-5 * 3600)), ev_done("a1", 55, false));
         let expect = (1..=5).map(|l| (l, date(2026, 9, 7))).collect();
-        out.push(ZoneCase { name: "offsets -05:00 then +02:00".to_string(), text: w.text(), tz: chicago, expect, named: vec![] });
+        out.push(ZoneCase { name: "offsets -05:00 then +02:00".to_string(), text: w.text(), tz: chicago, expect, named: vec![], gaps: vec![] });
     }
     // (6) cfg.tz different from the writer's Local: written in Berlin, read in
     //     Chicago. The wake is 23:00 on the 6th in Chicago (06:00 on the 7th in
@@ -1638,7 +2039,7 @@ fn zone_cases() -> Vec<ZoneCase> {
         w.push(base + Duration::hours(20), ev_wake(380));
         w.push(base + Duration::hours(21), ev_undo("done", Some("17")));
         let expect = vec![(1, date(2026, 9, 6)), (2, date(2026, 9, 6)), (3, date(2026, 9, 6)), (4, date(2026, 9, 7)), (5, date(2026, 9, 7))];
-        out.push(ZoneCase { name: "cfg.tz Chicago, written in Berlin".to_string(), text: w.text(), tz: chicago, expect, named: vec![] });
+        out.push(ZoneCase { name: "cfg.tz Chicago, written in Berlin".to_string(), text: w.text(), tz: chicago, expect, named: vec![], gaps: vec![] });
     }
     // (7) A `:60` stamp at the 24-hour edge (carried note 1): chrono's
     //     `signed_duration_since` counts a leap second only before a later clock of
@@ -1657,7 +2058,7 @@ fn zone_cases() -> Vec<ZoneCase> {
         w.push(utc(2026, 9, 11, 3, 2, 0), Event::Note { text: "undone".into() });
         w.push(utc(2026, 9, 11, 3, 3, 0), ev_undo("note", None));
         let expect = vec![(1, date(2026, 9, 7)), (2, date(2026, 9, 7)), (3, date(2026, 9, 10)), (4, date(2026, 9, 11))];
-        out.push(ZoneCase { name: "a :60 stamp at the 24-hour edge".to_string(), text: w.text(), tz, expect, named: vec![] });
+        out.push(ZoneCase { name: "a :60 stamp at the 24-hour edge".to_string(), text: w.text(), tz, expect, named: vec![], gaps: vec![] });
     }
     // (8) C4, carried note 3: St John's clock going back across midnight (00:01 NDT to 23:01
     //     NST before 2011; the first such transition of the probed table, 1987-10-25). `event
@@ -1687,6 +2088,31 @@ fn zone_cases() -> Vec<ZoneCase> {
             tz,
             expect: vec![(2, d7 - Duration::days(1)), (3, d7 - Duration::days(1)), (6, d7 - Duration::days(1))],
             named: vec![("arrival", None, 3, 2), ("arrival", Some("3"), 4, 4)],
+            gaps: vec![],
+        });
+    }
+    // (9) C5: a gap, a routine and a break across Chicago's fall-back hour. Wakes at 06:00 CDT on
+    //     31 October and at 01:05 CDT on 1 November (19 hours later, a new date, so a new day). A
+    //     `leak` gap of 90 minutes answered at 01:20 CST began at 00:50 CDT, before the second
+    //     wake: its record is the 31st's. A routine `done` of 50 minutes at 01:30 CST began at 01:40
+    //     CDT, after it; a break of 60 minutes from 01:45 CDT ends at 01:45 CST, the hour used twice.
+    {
+        let mut w = Writer::new(chicago);
+        w.push(utc(2026, 10, 31, 11, 0, 0), ev_wake(420));
+        w.push(utc(2026, 11, 1, 6, 5, 0), ev_wake(200));
+        w.push(utc(2026, 11, 1, 7, 20, 0), Event::Idle { attributed: "leak".into(), min: 90 });
+        w.push(utc(2026, 11, 1, 7, 30, 0), Event::Routine { item: "stretch".into(), inst: "#1".into(), status: "done".into(), actual_min: Some(50) });
+        w.push(utc(2026, 11, 1, 6, 45, 0), Event::Break { planned_min: 60, actual_min: None, r#where: None });
+        w.push(utc(2026, 11, 1, 7, 50, 0), Event::Note { text: "undone".into() });
+        w.push(utc(2026, 11, 1, 7, 51, 0), ev_undo("note", None));
+        let expect = vec![(1, date(2026, 10, 31)), (2, date(2026, 11, 1)), (3, date(2026, 11, 1)), (4, date(2026, 11, 1)), (5, date(2026, 11, 1))];
+        out.push(ZoneCase {
+            name: "a gap, a routine and a break across the fall-back hour".to_string(),
+            text: w.text(),
+            tz: chicago,
+            expect,
+            named: vec![],
+            gaps: vec![date(2026, 10, 31)],
         });
     }
     out
@@ -1724,6 +2150,10 @@ fn t5_the_corpus_logs_replay_as_the_fork_does() {
         off += off_their_own_date(&text, chrono_tz::America::Chicago);
         tally.add(&k.block);
         tally.add_completion(&k.completion);
+        tally.add_day(&k.day, &k.block);
+        let (late, early) = day_separations(&text, chrono_tz::America::Chicago);
+        tally.late_sleeps += late;
+        tally.early_gaps += early;
     }
     assert!(tally.durations > 0 && tally.items > 0, "the corpus has blocks");
     eprintln!("T5 corpus: 7 logs, {cancelled} cancelled lines, {days} days compared ({off} off their own local date); {tally}; {} latest_named queries; 0 exceptions", latest_named_queries());
@@ -1742,6 +2172,10 @@ fn t5_the_generated_month_and_half_year_replay_as_the_fork_does() {
         let mut tally = Tally::default();
         tally.add(&k.block);
         tally.add_completion(&k.completion);
+        tally.add_day(&k.day, &k.block);
+        let (late, early) = day_separations(&text, chrono_tz::America::Chicago);
+        tally.late_sleeps += late;
+        tally.early_gaps += early;
         tally.retro_instances += q6b_separations(&text, chrono_tz::America::Chicago);
         eprintln!(
             "T5 {label}: {} lines, {} bytes, {} cancelled, {} days compared ({} off their own local date); {tally}; {} latest_named queries so far; {ms:.0} ms for both readers, 0 exceptions",
@@ -1764,11 +2198,19 @@ fn t5_generated_sequences_replay_as_the_fork_does() {
     let mut tally = Tally::default();
     let mut edges: BTreeMap<u64, usize> = BTreeMap::new();
     let mut completions: BTreeMap<u64, usize> = BTreeMap::new();
+    let mut day_edges: BTreeMap<u64, usize> = BTreeMap::new();
     for seed in 0..SEQUENCES {
         let g = generate(seed);
         let k = assert_parity(&format!("sequence {seed}"), &g.text, g.tz);
         tally.add(&k.block);
         tally.add_completion(&k.completion);
+        tally.add_day(&k.day, &k.block);
+        let (late, early) = day_separations(&g.text, g.tz);
+        tally.late_sleeps += late;
+        tally.early_gaps += early;
+        for e in &g.day_edges {
+            *day_edges.entry(*e).or_default() += 1;
+        }
         tally.retro_instances += q6b_separations(&g.text, g.tz);
         for e in &g.edges {
             *edges.entry(*e).or_default() += 1;
@@ -1809,9 +2251,14 @@ fn t5_generated_sequences_replay_as_the_fork_does() {
         tally.retro_instances > 0 && tally.clock_back_keys > 0 && tally.replay_warnings > 0 && tally.done_dates > 0,
         "quirk Q6(b), the clock going back and the replay warnings were exercised: {tally}"
     );
+    assert_eq!(day_edges.len() as u64, DAY_EDGES, "every day edge case ran: {day_edges:?}");
+    assert!(
+        tally.late_sleeps > 0 && tally.early_gaps > 0 && tally.demotion_stamps > 0 && tally.longest_leaks > 0 && tally.unknown > 0 && tally.arrivals > 0,
+        "late binding, gaps on the day they began, demote stamps, leaks, unknown events and arrivals were exercised: {tally}"
+    );
     eprintln!(
         "T5 sequences: {SEQUENCES} logs, {lines} lines, {cancelled} cancelled, {days} days compared ({off} off their own local date), {silent} silent-verb undos \
-         cancelling an older move, {auto} week closes left standing by an undo that took the automatic close; {tally}; block edge cases {edges:?}; completion edge cases {completions:?}; {} latest_named queries; arms {counts:?}; zones {zones:?}; 0 exceptions",
+         cancelling an older move, {auto} week closes left standing by an undo that took the automatic close; {tally}; block edge cases {edges:?}; completion edge cases {completions:?}; day edge cases {day_edges:?}; {} latest_named queries; arms {counts:?}; zones {zones:?}; 0 exceptions",
         latest_named_queries()
     );
 }
@@ -1826,11 +2273,23 @@ fn t5_the_zone_cases_replay_as_the_fork_does() {
         let k = assert_parity(&c.name, &c.text, c.tz);
         tally.add(&k.block);
         tally.add_completion(&k.completion);
+        tally.add_day(&k.day, &k.block);
+        let (late, early) = day_separations(&c.text, c.tz);
+        tally.late_sleeps += late;
+        tally.early_gaps += early;
         tally.retro_instances += q6b_separations(&c.text, c.tz);
         assert!(!k.cancelled.is_empty(), "{}: every zone case carries an undo", c.name);
         for (line, d) in &c.expect {
             assert_eq!(day_of_line(&k, *line), day_number(*d), "{}: line {line} should be on {d}", c.name);
             named += 1;
+        }
+        let gap_days: Vec<i64> = k.day.days.iter().flat_map(|(d, rec)| rec.idle.iter().map(move |i| {
+            assert_eq!(i.1, *d, "{}: an idle record is on its own day", c.name);
+            *d
+        })).collect();
+        if !c.gaps.is_empty() {
+            assert_eq!(gap_days, c.gaps.iter().map(|d| day_number(*d)).collect::<Vec<_>>(), "{}: the gaps' days", c.name);
+            named += c.gaps.len();
         }
         for (n, id, latest, dated) in &c.named {
             let rec = k.completion.named.get(&(n.to_string(), id.map(str::to_string))).expect("the named key");
@@ -1920,6 +2379,38 @@ fn t5_a_block_log_of_distinct_ids_is_measured() {
     assert_eq!(k.block.items.len(), 3_500);
     assert_eq!(k, r);
     eprintln!("T5 distinct ids: {} lines, {} bytes, kernel {kernel_ms:.0} ms, rust {rust_ms:.0} ms", w.lines.len(), text.len());
+}
+
+/// **Parity P34, the named exception** (C5): an `idle` gap whose minutes reach
+/// before 0001-01-01T00:00:00Z. `idle.min` is a `u32`, so 4,294,967,295 minutes
+/// (about 8,166 years) before 2026-09-07 is a negative year: chrono's
+/// `t - Duration::minutes(min)` gives it, and the fork puts the `Idle` segment, the
+/// `IdleRecord` and the longest leak on that day. The kernel's instants start at the
+/// origin (`Cal.subMinutes` saturates there), so it puts them on day 0,
+/// 0001-01-01, with the segment starting at the origin. Everything else is compared
+/// as in the tests above, with the one day and the one start put back.
+#[test]
+fn t5_p34_a_gap_before_the_origin_is_the_named_exception() {
+    let tz = chrono_tz::UTC;
+    let mut w = Writer::new(tz);
+    w.push(utc(2026, 9, 7, 9, 0, 0), Event::Idle { attributed: "leak".into(), min: u32::MAX });
+    let text = w.text();
+    let (k, mut r) = (kernel_facts(&text, tz), rust_facts(&text, tz));
+    let fork_day = r.day.longest_leak.as_ref().expect("the fork's longest leak").1;
+    assert!(fork_day < 0, "the fork dates the gap in a negative year: day {fork_day}");
+    assert_eq!(k.day.longest_leak.as_ref().map(|l| l.1), Some(0), "the kernel dates it at the origin");
+    let origin: Stamp = (0, 0, false, 0);
+    let mut block = r.block.days.remove(&fork_day).expect("the fork's day of the gap");
+    assert!(block.segments[0].0 .0 < 0, "the fork's segment starts before the origin");
+    block.segments[0].0 = origin;
+    r.block.days.insert(0, block);
+    let mut rec = r.day.days.remove(&fork_day).expect("the fork's record of the gap");
+    rec.idle[0].1 = 0;
+    r.day.days.insert(0, rec);
+    if let Some(l) = r.day.longest_leak.as_mut() {
+        l.1 = 0;
+    }
+    assert_eq!(k, r, "P34 is the only difference");
 }
 
 /// **Parity P33, the named exception** (C4): a routine `done` whose `inst` names a

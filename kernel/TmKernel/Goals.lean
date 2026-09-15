@@ -425,6 +425,21 @@ design §8.4's "a since filter commutes with max" is refuted
 `LatestNamed`'s instants (`Replay.named_keeps_the_latest_by_instant_and_the_latest_by_local_date`).
 README "Stage 5 D9 C4". -/
 
+/- **§8.2's day header and records family is real (2026-09-15, stage 5 D9 step C5).**
+The C5 goals were added here, elaborated against `TmKernel/Replay.lean` (17 goals, no error), and discharged in
+the same step, so the burn-down stays at 13, each checked against its proof by a scratch `example`.
+`Replay.energy_obs_slept_is_the_days_first_logged_sleep` (§15's late binding: an energy observation that is not a
+start's reads the first surviving wake in file order of its day, a wake logged after it included) is proved as
+stated.  Design §8.2 lists the other three as witnesses; they were stated here as laws where a law exists:
+`Replay.the_first_leak_maximum_wins` (fork `longest_leak` is the running maximum of the survivors' leak gaps under
+a strictly-longer replacement, so the first of equal maxima stays; witness
+`Replay.the_first_of_equal_leaks_is_the_longest`), `Replay.a_demote_stamp_reads_the_week_or_date_key` (every
+demotion carries `Log.stampFromKey` of its `from`; witness `Replay.the_demote_stamps_of_a_week_a_date_and_a_month_key`),
+and `Replay.idle_and_idle_since_read_different_orders` (§8.4's two-line log, as `∃ …`: `lastEffective` is the
+last line and `Replay.lastTOn`, fork `DaySeam.last_t`, the latest instant).  Quirks Q6(f) and Q6(g) are ported
+with their separating witnesses, `Replay.an_undo_of_a_close_cancels_the_latest_close_whatever_its_period` and
+`Replay.the_calendar_today_is_not_the_replays_day_after_midnight`.  README "Stage 5 D9 C5". -/
+
 /-! ############################################################################
 # STAGE 6 — the planner; §8.3's invariants; L24 and L25
 

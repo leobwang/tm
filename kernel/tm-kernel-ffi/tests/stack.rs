@@ -165,7 +165,7 @@ fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
         assert_eq!(
             out,
             format!(
-                r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"log":{{"lines":32768,"warnings":[],"facts":{{"cancelled":[{}],"days":[{}],"block":{{"days":[],"items":[],"itemDays":[],"energy":[],"durations":[],"interrupts":[],"openBlock":null,"openInterrupt":null,"lastEffective":null}},"completion":{{"lastDone":[],"doneDates":[],"instances":[],"named":[]}},"replayWarnings":[]}},"headers":[],"render":[]}}}}}}"#,
+                r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"log":{{"lines":32768,"warnings":[],"facts":{{"cancelled":[{}],"days":[{}],"block":{{"days":[],"items":[],"itemDays":[],"energy":[],"durations":[],"interrupts":[],"openBlock":null,"openInterrupt":null,"lastEffective":null}},"completion":{{"lastDone":[],"doneDates":[],"instances":[],"named":[]}},"replayWarnings":[],"day":{{"days":[],"demotions":[],"closes":[],"dropped":[],"longestLeak":null,"unknown":0}}}},"headers":[],"render":[]}}}}}}"#,
                 all.join(","),
                 // C2: 06:05 at -05:00 is 11:05 UTC on 2026-09-07, day 739,865, for every line.
                 (1..=32_768).map(|n| format!("[{n},739865]")).collect::<Vec<_>>().join(",")
@@ -193,14 +193,39 @@ fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
         // C3: wakes have no block facts; the last survivor in file order is line
         // 32,768's wake, 06:05 UTC on day 739,865 − 32,767.
         let last: i64 = (739_865 - 32_767) * 86_400 + 6 * 3_600 + 5 * 60;
-        assert_eq!(
-            out,
-            format!(
-                r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"log":{{"lines":32768,"warnings":[],"facts":{{"cancelled":[],"days":[{}],"block":{{"days":[],"items":[],"itemDays":[],"energy":[],"durations":[],"interrupts":[],"openBlock":null,"openInterrupt":null,"lastEffective":[{last},0,false,0]}},"completion":{{"lastDone":[],"doneDates":[],"instances":[],"named":[]}},"replayWarnings":[]}},"headers":[],"render":[]}}}}}}"#,
+        assert!(
+            out.starts_with(&format!(
+                r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"log":{{"lines":32768,"warnings":[],"facts":{{"cancelled":[],"days":[{}],"block":{{"days":["#,
                 days.join(",")
-            )
+            )),
+            "{}",
+            &out[..out.len().min(400)]
         );
-        eprintln!("the day index at the line bound: {:.0} ms", start.elapsed().as_secs_f64() * 1000.0);
+        // C5: every wake creates its day. Each day's block fields are `DayReplay::new`'s,
+        // and its record holds the wake (06:05 UTC) and its sleep, 420.
+        assert_eq!(
+            out.matches(r#",{"firstStart":null,"starts":[],"blockMin":0,"blocksDone":0,"loadFifths":0,"byCi":[0,0,0,0,0,0],"ciUnknown":[],"done":[],"lostMin":0,"dropped":[],"segments":[]}]"#).count(),
+            32_768,
+            "one empty block record a wake's day"
+        );
+        assert_eq!(out.matches(r#",0,false,0],420,null,null,null,null,null,[],0,0,[],[],0,0,0,0,null]]"#).count(), 32_768, "one day record a wake");
+        for i in [0i64, 1, 16_383, 32_767] {
+            let d = 739_865 - i;
+            let sec = d * 86_400 + 6 * 3_600 + 5 * 60;
+            assert!(out.contains(&format!(r#"[{d},[[{sec},0,false,0],420,"#)), "the day record of day {d}");
+        }
+        assert!(
+            out.contains(&format!(
+                r#"],"items":[],"itemDays":[],"energy":[],"durations":[],"interrupts":[],"openBlock":null,"openInterrupt":null,"lastEffective":[{last},0,false,0]}},"completion":{{"lastDone":[],"doneDates":[],"instances":[],"named":[]}},"replayWarnings":[],"day":{{"days":["#
+            )),
+            "the block family's tail"
+        );
+        assert!(
+            out.ends_with(r#"],"demotions":[],"closes":[],"dropped":[],"longestLeak":null,"unknown":0}},"headers":[],"render":[]}}}"#),
+            "{}",
+            &out[out.len().saturating_sub(300)..]
+        );
+        eprintln!("the day index at the line bound: {:.0} ms, {} bytes", start.elapsed().as_secs_f64() * 1000.0, out.len());
     });
     // Stage 5 D9 C3: the block machine at the line bound (`Replay.replay`, compiled as
     // `Replay.replayFast`: one `foldl` of the effects over the survivors, maps altered by a
@@ -230,14 +255,18 @@ fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
         assert!(out.contains(r#"["a",{"minutes":16384,"blocks":16384,"doneAt":["#), "{}", &out[..out.len().min(400)]);
         assert_eq!(out.matches(r#""block","a"]"#).count(), 16_384, "one segment a block");
         assert_eq!(out.matches(r#",739865,3,3,0.0,"h",0,null,"a",true]"#).count(), 720, "the first day's start observations");
-        let tail = &out[out.len().saturating_sub(2_000)..];
+        let at = out.find(r#""openBlock":null,"openInterrupt":null,"#).expect("the block family's tail");
+        let tail = &out[at..(at + 2_000).min(out.len())];
         assert!(tail.contains(r#""openBlock":null,"openInterrupt":null,"lastEffective":[63926302020,0,false,0]},"completion":{"lastDone":[["a",[63926302020,0,false,0]]],"doneDates":["#), "{tail}");
         // C4: every `done` completes `a`, so its done dates are the 23 days, and its
         // `last_done` is the last `done`.
         for d in 739_865..=739_887 {
             assert!(tail.contains(&format!(r#"["a",{d}]"#)), "done on day {d}");
         }
-        assert!(out.ends_with(r#""instances":[],"named":[]},"replayWarnings":[]},"headers":[],"render":[]}}}"#), "{}", &out[out.len().saturating_sub(300)..]);
+        assert!(out.contains(r#""instances":[],"named":[]},"replayWarnings":[],"day":{"days":["#), "{}", &out[out.len().saturating_sub(300)..]);
+        // C5: the 23 days' records hold nothing of the day family (no wake, arrival, gap or plan).
+        assert_eq!(out.matches(r#",[null,null,null,null,null,null,null,[],0,0,[],[],0,0,0,0,null]]"#).count(), 23, "23 empty day records");
+        assert!(out.ends_with(r#"],"demotions":[],"closes":[],"dropped":[],"longestLeak":null,"unknown":0}},"headers":[],"render":[]}}}"#), "{}", &out[out.len().saturating_sub(300)..]);
         eprintln!("the block machine at the line bound: {:.0} ms, {} bytes", start.elapsed().as_secs_f64() * 1000.0, out.len());
     });
     // Stage 5 D9 C4: the completion family at the line bound (the same `foldl`; instances,
