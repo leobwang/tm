@@ -14923,3 +14923,219 @@ in two ways: `want.facts: true` is answered, and every `log` answer carries `"fa
 
 **Owed next:** C2 (the day index). It extends `Facts` with every survivor's day, and its zone arms are already
 in T5. Then C3–C7, W1–W3, S and S2.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5, D9 track, step C2 on rebuild-on-lean (after C1
+     ae3a3cc).  Design §6.2, §14.4's C2 row and T5.  Takes gap 82 (the design's
+     label, Q6(a)) and cheat 144 (design label 96).  Takes no parity number.
+     =========================================================================== -->
+
+## Stage 5 D9 C2, 2026-09-14: the day index — an event belongs to its wake's day, in chrono's order, through every zone case
+
+**Starting point.** `ae3a3cc`, clean: check.sh 7/7 (built tree 2.85 s, re-measured before any edit), audit
+2800, corpus 29/37 files and 4/5 plans, burn-down 13, `cargo test --workspace` 1065 / 0 / 4 ignored across 73
+binaries, FFI 98.
+
+### What was built
+
+**`Replay.lean`, section C2 (no new module; `TmKernel.lean` keeps its twenty imports).**
+- **The index, fork `DayIndex::new`.** `sortWakes` sorts the wake instants in **chrono's order**
+  (`DateTime`'s `Ord`, the UTC `(sec, ns)` pair, which is `Cal.Instant`'s `≤`). The specification is an
+  insertion sort (`insertWake`), which `decide` can evaluate. `keptStep`/`dedupFrom` are fork
+  `dedup_by(|later, kept| same local date)`, a `foldl` whose state is the last kept wake.
+  `keptFrom z last ws` continues a run, and `keptWakes z ws = keptFrom z none ws`.
+- **The lookup, fork `last_wake_before` and `day_of`.** `lastWakeLe` is the last wake `≤ t`, as a
+  fold. `dayOf z kw t` is that wake's `Cal.localDate` when `(Cal.durationBetween w t).1 < 86400`, which is
+  chrono's `t.signed_duration_since(w) < Duration::hours(24)` with its leap-second rule; otherwise it
+  is `t`'s own local date.
+- **The log's index.** `isWake`, `wakeInstants` (the survivors' wakes in file order), `dayIndexOf z es`,
+  and `entryDays z es`: `(line, dayOf)` for **every** entry, cancelled ones and undos included (fork
+  `ViewRow::day`).
+- **Quirk Q6(a), both rules.** `keptWakeOn` (fork `wake_of`, which has no caller outside `log.rs`; it exists
+  here only to state the quirk) and `firstLoggedWakeOn` (the first surviving wake in **file order**
+  attributed to a day, which C5's `DayReplay.wake` and `slept_by_day` read).
+- **The fast twins (`@[csimp]`, D9-21).** `sortWakes_eq_sortWakesFast` compiles the sort as core's
+  `mergeSort`. It is proved by `eq_of_perm_of_sorted`: two sorted permutations of one list are equal,
+  because the order is antisymmetric on instants. `entryDays_eq_entryDaysFast` compiles each entry's
+  lookup as a bisection over an array of the kept wakes (`lePoint`, the fork's `partition_point`). It is
+  proved by `lePoint_spec` (the bisection finds the partition point of a sorted array),
+  `lastWakeLe_of_point` (the fold returns the element before it) and `keptWakes_sorted`.
+- **Laws.** `keptWakes_append_of_later` (with `sortWakes_append_of_later`, `foldl_keptStep_acc`,
+  `foldl_keptStep_head`, `keptWakes_last`), `dayOf_agrees_below_a_later_wake` (§6.2's locality for W2),
+  `dayOf_without_a_recent_wake_is_the_local_date`, and
+  `an_instant_off_its_own_date_is_within_a_day_of_its_wake`. The last is "a day is never longer than 24
+  hours" for every index: an instant off its own date has a kept wake at or before it, of that date,
+  under 24 hours earlier.
+- **Q6(a)'s two directions.** `the_kept_wake_is_not_the_first_logged_wake` separates the rules on wakes
+  appended out of time order. `the_kept_wake_is_the_first_logged_wake_when_wakes_are_logged_in_order`
+  proves that is the only way they differ: when the surviving wakes are in chrono's order, the first kept
+  wake of every date is the first logged wake of that day. It is proved via `a_wake_is_on_its_own_date`
+  (`lastWakeLe_dedup_same_date`) and `find?_dedupFrom`.
+
+**The wire (`Boundary.lean`).**
+- **The zone reaches the facts.** B4 read the `tz` section and dropped the table. `LogReq` gains a
+  seventh field, `tz : Cal.Tz`, last. `readLogReq z j` takes the zone. `readLogSection` and
+  `logSectionWith` pass the table they read (`logSectionWith_passes_its_zone`), so the zone is still read
+  once (gap 110).
+- **`facts` gains `days`.** `factsJson z es` is `{"cancelled": […], "days": [[line, day], …]}`: every
+  entry in file order, `day` counted from 0001-01-01 (`Cal.Day`).
+- **Edited in place.** `readLogReq_refuses_more_lines_than_the_bound` and
+  `readLogReq_reads_the_lines_as_sent` gain the zone argument. `logAnswer_facts` spells out `days`.
+  C1's `the_log_op_answers_the_cancelled_lines` now expects `days` (every entry on 2026-09-07, day
+  739,865). The literal in `the_response_shapes_emit_in_build_order` gains `Replay.utcZone`.
+- **New end to end:** `the_log_op_answers_every_entrys_day`. In UTC, a wake at 11:00 on 2026-09-07, a note
+  18 hours later on the 8th (the wake's day), and a note 25 hours later (its own date, the 8th).
+
+**`Negative.lean`.** CHEAT 144 (design 96): a `dayOf` with a 25-hour window. `decide` refuses
+`a_wake_day_is_shorter_than_a_day` on 06:35 the next morning, 24 h 30 min after a Chicago wake.
+**One existing block was edited: CHEAT 132's request literal gains `, Replay.utcZone`** for the new
+field. Without it, 132 would fail with "insufficient number of fields", not its stated `decide`
+refusal (AGENTS §7.4 item 10). Checked: it still fails at its `decide` line, and 144 fails at its own.
+
+**The FFI suite.** `the_log_op_answers_the_cancelled_lines` expects `days`. `stack.rs`'s mask-at-the-bound
+test expects 32,768 days. A new block in the same test runs **the day index at the line bound**:
+32,768 wakes on 32,768 dates written newest first, on a 2 MiB thread. The sort reverses the whole list,
+the index keeps every wake, and every wake's day is its own date.
+
+### Goals (AGENTS §3.2)
+
+§15's three C2 goals were added to `Goals.lean` **restated in chrono's order** (carried note 1), elaborated
+in-tree (16 goals, no error), and discharged in the step. Burn-down **13 → 16 → 13**. A note in the STAGE 5
+section records it, and a scratch `example` per goal checks each against its proof.
+
+| goal | status |
+|---|---|
+| `dayOf_is_the_wake_date_within_a_day` | **refuted as written, proved as restated.** §15's `h24 : t.nanos < w.nanos + 86400·10^9` becomes `(Cal.durationBetween w t).1 < 86400`. As written it is false of the fork's day: `dayOf_is_the_wake_date_within_a_day_by_nanos_is_refuted` (a wake at `03:00:59` plus 1.5 s of leap nanoseconds, and `03:01:00` the next day: 23 h 59 min 59.5 s by nanoseconds, 24 h 0.5 s by chrono) |
+| `a_wake_day_is_shorter_than_a_day` | **refuted as written, proved as restated.** The conclusion becomes `(Cal.durationBetween w t).1 < 86400`. As written: `a_wake_day_is_shorter_than_a_day_by_nanos_is_refuted` (a 03:00:00 wake and `02:59:60.5` the next day, on the wake's day at 23 h 59 min 59.5 s of chrono's duration and 24 h 0.5 s of nanoseconds). Its hypotheses are satisfiable: `a_wake_day_is_shorter_than_a_day_is_not_vacuous` |
+| `keptWakes_append_of_later` | **refuted as written, proved as restated.** The hypothesis becomes `a < b` in `Cal.Instant`'s order. As written: `keptWakes_append_of_later_by_nanos_is_refuted` (`00:01:00` has fewer nanoseconds than `00:00:59` plus 1.5 s of leap nanoseconds and is later in chrono's order, so the sort, and the run's kept wake, differ) |
+
+None is a weakening. Each restatement replaces a test the fork never makes with the one it makes, and each
+original is exhibited false of the fork's own function.
+
+**Also proved** (§6.2's "Proved in C2" list): `dayOf_without_a_recent_wake_is_the_local_date`,
+`dayOf_agrees_below_a_later_wake`, `the_kept_wake_is_not_the_first_logged_wake` (gap 82), and the four cases
+of `day_index_wake_to_wake` as a witness (`day_index_wake_to_wake_ported`: all seven `day_of` assertions and
+the two on the empty index, the UTC-written one included). **Beyond the list:** the other direction of Q6(a)
+(above), `an_instant_off_its_own_date_is_within_a_day_of_its_wake`, `the_day_index_dedups_runs_not_dates`
+(§6.2's porting trap, in a one-transition zone that falls back across midnight: wakes dated 7, 8, 7, all
+three kept, and 23:45 on the 7th on the third wake's day where earliest-per-date would say the 8th), and
+`an_undone_wake_indexes_nothing`.
+
+**Carried note 2 (whole-minute offsets) is not used by C2, so it is not proved.**
+
+**Witnesses.** There are 9 new decided witnesses and 2 re-probed. All were probed in a scratch copy under
+`MemoryMax=8G timeout 120`, with at most 3 entries or wakes, at most 2 zone transitions and `Nat` instants.
+- **In `Replay.lean`, all eight with the C2 section in one file: 0.36 s, 621 MB.** They are
+  `day_index_wake_to_wake_ported`, `the_kept_wake_is_not_the_first_logged_wake`,
+  `the_day_index_dedups_runs_not_dates`, the three `…_by_nanos_is_refuted`,
+  `a_wake_day_is_shorter_than_a_day_is_not_vacuous` and `an_undone_wake_indexes_nothing`.
+- **On the wire, 0.40 s, 648 MB:** the new `the_log_op_answers_every_entrys_day`, plus C1's
+  `the_log_op_answers_the_cancelled_lines`, re-probed. The three lines are 56, 51 and 51 characters.
+
+Altering an expected day fails at `decide` (checked on the ported witness, the refutation pair and the wire
+witness).
+
+### T5 (`tm/tests/kernel_replay_parity.rs`, extended)
+
+`Facts` gains `days: Vec<(line, day)>`. The kernel's side reads `facts.days`. The Rust's side is
+`ViewRow::day` for every row, counted from 0001-01-01 (`day_number`). T5 compares **every entry's day**,
+cancelled rows included, which is a superset of §14.4's "every survivor's day". A mismatch prints the
+first five differing lines.
+
+| input | run |
+|---|---|
+| corpus | 7 logs, 12 cancelled, **512 days** compared (1 off its own local date) |
+| generated, 40 a day, seed 7 | 1mo: 1,191 lines, 123,939 bytes, **1,191 days** (0 off). 6mo: 7,472 lines, 776,568 bytes, **7,472 days** (0 off); 125–135 ms for both readers |
+| 256 sequences | 8,894 lines, 3,761 cancelled, **8,894 days, 2,421 off their own local date**; arms and zones as at C1 |
+| §6.4 zone cases, one arm each | **10 cases, 58 days compared, 44 of them also checked against days worked out by hand** (so the two readers cannot agree on a wrong day unnoticed), 15 off their own local date. The cases: the 01:30 fall-back wake with the ambiguous hour twice; a wake after midnight under 24 h, **undone** and **standing**; 23–25 h after a wake across the spring and fall transitions (23 h and 23 h 59 min on the wake's date, 24 h and later on their own); the St John's fold at midnight (1987-10-25T02:31Z), **third wake undone** and **third wake standing**; one day written `-05:00` then `+02:00`; `cfg.tz` Chicago written in Berlin (the start at Chicago midnight belongs to the 6th); and, new, **a `:60` stamp at the 24-hour edge**: `02:59:60.5` the next day is on a 03:00:00 wake's day, and `03:01:00` the next day is off a `03:00:60.5` wake's day. That separates chrono's duration from nanoseconds in both directions |
+
+**Exceptions: 0.** §17 lists both first-wake rules, and day attribution in `cfg.tz` inside the span with leap
+seconds included, as exact by design. **T5 bites.** A scratch mutation of the Rust side (each row's calendar
+date in `cfg.tz` instead of `ViewRow::day`) fails three of the five tests: the sequences, the corpus and the
+zone cases. The 1mo and 6mo logs still pass under it, because `loggen` never writes an entry off its own
+local date (below).
+
+### Recorded disagreements between the design and the repo
+
+1. **§6.2 and §15 order and time wakes by `Instant.nanos`.** The fork sorts `DateTime`s and tests chrono's
+   `signed_duration_since`, which differ at a leap second (B1's `the_instant_order_is_not_the_nanos_order`).
+   The definitions use chrono's order, and the three goals are refuted as written and restated (above).
+2. **§6.2's `keptWakes` is `ws.mergeSort …`.** Core's `mergeSort` is well-founded recursion, which
+   `decide` does not evaluate. So the specification is an insertion sort, compiled as `mergeSort` through
+   a proved `@[csimp]`.
+3. **§6.2 lists `lastWakeLe` over `kw` without a fast form.** A fold per entry over the kept wakes is
+   quadratic on a log of wakes. It is compiled as a bisection (`entryDays_eq_entryDaysFast`). The twin is
+   on `entryDays`, not on `lastWakeLe`: the bisection equals the fold only on a sorted list, and a
+   `@[csimp]` must hold for every argument.
+4. **§10.1's `log` op did not carry the zone to the facts.** B4 read `tz` and dropped it. `LogReq.tz` is
+   new, and two B4 theorems and CHEAT 132's literal were edited in place (above).
+5. **§10.2 has no `facts.days`.** At C2, before C6's headers, `facts` is `{"cancelled": […], "days": […]}`.
+   C6 puts the day, with the cancelled flag and the display, on each header, and T5's decoder follows.
+6. **C1's fold arm and its "wake after midnight" arm undid the very wake they were about.** Each arm's undo
+   of `wake` cancelled the most recent wake, which was the separating one. So at C1 neither replayed state
+   had the case in it: after the undo, both dedup rules agreed on the fold, and no wake stood after
+   midnight. Both arms now also run with the undo taking the `done` instead, and the hand-named days show
+   the difference (the standing fold puts the start on the third wake's date).
+7. **`loggen`'s logs never exercise the index.** No entry of the 1mo or 6mo log is off its own local date:
+   the generator writes each day between its wake and midnight. The sequences (2,421 entries), the zone
+   cases (15) and the corpus (1) do. This is recorded rather than changed, because A3 and R14's latency
+   baselines are measured on these logs.
+8. **§6.2's "the four cases of `day_index_wake_to_wake`".** The fork test has seven `day_of` assertions
+   and two on an empty index; all nine are ported. Its `bounds` and `wake_of` assertions are not, since
+   §6.2 does not port those functions.
+
+### Rule D9-21 (functions over a list the wire can make large)
+
+- `sortWakesFast`: core `mergeSort`, compiled as `mergeSortTR₂` through core's `@[csimp]`. It recurses on
+  halves.
+- The dedup: a `foldl` of `keptStep`, then `reverse`.
+- `wakeInstants`: `filterTR`, `mapTR`.
+- `entryDaysFast`: `mapTR`, one `toArray`.
+- `lePoint`: a bisection, recursion depth `log₂` of the kept wakes.
+- `factsJson`'s `days`: `mapTR`.
+- `Cal.localDate`: `offsetAt`, a `foldl` over at most 4,096 transitions. It runs once per entry and twice
+  per wake; W4's binary-search twin is the lever if W5 measures it.
+- Specification only, never on the wire: `insertWake` and `sortWakes` (compiled as their twin),
+  `lastWakeLe` and `entryDays` (compiled as `entryDaysFast`), and `keptWakeOn` and `firstLoggedWakeOn`
+  (`find?`; not called by the op).
+
+### Gap 82 (the design's label, Q6(a)) — two "first wake" rules
+
+(1) *What is not done*: the two rules are not unified. The day index (`Replay.keptWakes`) keeps the
+**earliest wake by instant** of each run of one date. Fork `DayReplay.wake`, `slept_min`, `onset_min` and
+`slept_by_day` (C5, `Replay.firstLoggedWakeOn`) take the **first surviving wake in file order**
+attributed to the day. Both are ported faithfully. (2) *Why not now*: Q6(a) says port now and fix later,
+because stage 5's acceptance is parity with the fork, and unifying the rules changes behaviour. (3) *Cost*:
+only for wakes appended out of time order, such as a `tm wake 06:05` typed after a later wake of the same
+day. Attribution then uses the earlier instant, while the day's reported wake and sleep come from the
+line written first. `the_kept_wake_is_the_first_logged_wake_when_wakes_are_logged_in_order` proves the
+rules agree otherwise. (4) *When it clears*: after the switch, as a behaviour change with its own parity
+entry, unifying on the earliest wake by instant.
+
+### Numbers
+
+**Taken:** gap 82 (the design's label; free, checked by grep), cheat 144 (design 96). **Parity entries:
+none.** Highest: gap 117, cheat 144, parity P32. **Behaviour rows:** none in the binary, which still has one
+reader of the log, the Rust. The kernel's `log` op answers `facts.days`.
+
+**Re-measured** (main worktree, every command capped at 40 GB; probes at 8 GB, the scratch twin measurement at 16 GB):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.86 / 2.82 / 2.83 s (baseline 2.85 s; +0.4% at the worst, the budget is 10%) |
+| axiom audit | **2853 theorems** (2800 + 53). The three §6.3 counts agree at 2853 |
+| `Negative.lean` | check 4 ok; 140 errors; 134 `/- CHEAT` banners; no duplicate number; 144 fails at its `decide`, 132 still at its own |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (13 → 16 → 13 within the step) |
+| `TmKernel.lean` | **20 imports** (no new module) |
+| `lake build TmKernel.Boundary` after the edits | 2 min 20 s (`Replay` 1.2 s) |
+| `Replay.lean` elaboration (8 GB probe cap) | 1.08 s, 696 MB; 1,936 lines |
+| `cargo test --workspace` | **1065 passed / 0 failed / 4 ignored across 73 binaries**, 0 compiler warnings (T5 adds no test; its five tests compare more) |
+| FFI suite | **98 passed / 0 failed** (kernel 84, corpus 8, stack 6; `stack.rs` 2.21 s: the mask at the bound 309 ms, the day index at the bound 199 ms) |
+| T5 (`kernel_replay_parity.rs`) | 5 passed, 0.45 s; 0 exceptions |
+| `cli_latency.rs --include-ignored`, three serial runs | green, 4 passed. No log: first 617.3 / 612.3 / 617.5 ms, later 50.6 / 50.6 / 50.6 ms. 1y: first 718.5 / 708.8 / 708.6, later 121.6 / 121.6 / 121.6. 3y: first 956.1 / 931.3 / 956.8, later 283.0 / 283.6 / 283.5. T14: 81.0 / 75.9 / 80.9 ms (3 years), 141.7 / 126.5 / 141.8 ms (10 years). The binary's reader is unchanged, and so are these |
+| **the twin bites** (scratch copy, 16 GB cap, dev profile, `examples/oneshot`) | 32,768 wakes on as many dates, newest first, UTC, one call (2,261,130 bytes). With `entryDays_eq_entryDaysFast`: 0.20 / 0.19 / 0.19 s, 151 MB. Without that attribute (Replay and Boundary rebuilt; the sort's twin kept): 4.18 / 4.29 / 4.20 s, 151 MB, the same answer byte for byte (one `md5sum`). The copy was deleted |
+
+**Owed next:** C3 (effects and the block family; site R8, gap 83). Its `credit` reads `dayOf` of the closing
+event, and T5 gains the block fields. C5 reads `firstLoggedWakeOn` for `DayReplay.wake` and `slept_by_day`.
+C6 moves `days` onto the headers. Then C4–C7, W1–W3, S and S2.

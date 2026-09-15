@@ -3286,3 +3286,67 @@ open Tm
 #print axioms Tm.LogReq.wf_facts_from_line_one
 #print axioms Tm.mkLogReq?_refuses_facts_of_a_tail_without_a_checkpoint
 #print axioms Tm.the_log_op_answers_the_cancelled_lines
+
+-- APPENDED 2026-09-14 (stage 5, D9 track).  Step C2 (design §6.2, §14.4 row C2): the day index in
+-- Replay.lean and the `log` op's `facts.days` in Boundary.lean (the request carries its zone,
+-- `LogReq.tz`).  The three goals §15 names for C2 were added to Goals.lean restated in chrono's order
+-- (carried note 1) and discharged in the step: `dayOf_is_the_wake_date_within_a_day`,
+-- `a_wake_day_is_shorter_than_a_day` and `keptWakes_append_of_later`; §15's nanosecond statements are
+-- refuted by the three `…_by_nanos_is_refuted`.  Quirk Q6(a): `the_kept_wake_is_not_the_first_logged_wake`
+-- and `the_kept_wake_is_the_first_logged_wake_when_wakes_are_logged_in_order`.  The fast twins are
+-- `sortWakes_eq_sortWakesFast` and `entryDays_eq_entryDaysFast`, both `@[csimp]`.  Two existing
+-- Boundary theorems gained the zone argument and keep their audit lines:
+-- `readLogReq_refuses_more_lines_than_the_bound`, `readLogReq_reads_the_lines_as_sent`.
+#print axioms Tm.Replay.instant_le_trans
+#print axioms Tm.Replay.instant_le_refl
+#print axioms Tm.Replay.instant_le_of_not_le
+#print axioms Tm.Replay.instant_le_of_lt
+#print axioms Tm.Replay.instant_not_le_of_lt
+#print axioms Tm.Replay.insertWake_perm
+#print axioms Tm.Replay.sortWakes_perm
+#print axioms Tm.Replay.insertWake_sorted
+#print axioms Tm.Replay.sortWakes_sorted
+#print axioms Tm.Replay.eq_of_perm_of_sorted
+#print axioms Tm.Replay.sortWakes_eq_sortWakesFast
+#print axioms Tm.Replay.sortWakes_append_of_later
+#print axioms Tm.Replay.foldl_keptStep_acc
+#print axioms Tm.Replay.foldl_keptStep_head
+#print axioms Tm.Replay.keptWakes_last
+#print axioms Tm.Replay.keptWakes_append_of_later
+#print axioms Tm.Replay.mem_foldl_keptStep
+#print axioms Tm.Replay.mem_of_mem_keptFrom
+#print axioms Tm.Replay.foldl_keptStep_sublist
+#print axioms Tm.Replay.keptWakes_sorted
+#print axioms Tm.Replay.foldl_lastWake_or
+#print axioms Tm.Replay.lastWakeLe_cons
+#print axioms Tm.Replay.lastWakeLe_le
+#print axioms Tm.Replay.lastWakeLe_append_of_later
+#print axioms Tm.Replay.dayOf_is_the_wake_date_within_a_day
+#print axioms Tm.Replay.dayOf_without_a_recent_wake_is_the_local_date
+#print axioms Tm.Replay.a_wake_day_is_shorter_than_a_day
+#print axioms Tm.Replay.dayOf_agrees_below_a_later_wake
+#print axioms Tm.Replay.an_instant_off_its_own_date_is_within_a_day_of_its_wake
+#print axioms Tm.Replay.dedupFrom_append
+#print axioms Tm.Replay.dedupFrom_last
+#print axioms Tm.Replay.dedupFrom_single
+#print axioms Tm.Replay.lastWakeLe_snoc
+#print axioms Tm.Replay.lastWakeLe_of_all_le
+#print axioms Tm.Replay.lastWakeLe_dedup_same_date
+#print axioms Tm.Replay.a_wake_is_on_its_own_date
+#print axioms Tm.Replay.find?_congr_mem
+#print axioms Tm.Replay.find?_dedupFrom
+#print axioms Tm.Replay.the_kept_wake_is_the_first_logged_wake_when_wakes_are_logged_in_order
+#print axioms Tm.Replay.lePoint_spec
+#print axioms Tm.Replay.lastWakeLe_of_point
+#print axioms Tm.Replay.lastWakeLeArr_eq_lastWakeLe
+#print axioms Tm.Replay.entryDays_eq_entryDaysFast
+#print axioms Tm.Replay.day_index_wake_to_wake_ported
+#print axioms Tm.Replay.the_kept_wake_is_not_the_first_logged_wake
+#print axioms Tm.Replay.the_day_index_dedups_runs_not_dates
+#print axioms Tm.Replay.dayOf_is_the_wake_date_within_a_day_by_nanos_is_refuted
+#print axioms Tm.Replay.a_wake_day_is_shorter_than_a_day_by_nanos_is_refuted
+#print axioms Tm.Replay.keptWakes_append_of_later_by_nanos_is_refuted
+#print axioms Tm.Replay.a_wake_day_is_shorter_than_a_day_is_not_vacuous
+#print axioms Tm.Replay.an_undone_wake_indexes_nothing
+#print axioms Tm.logSectionWith_passes_its_zone
+#print axioms Tm.the_log_op_answers_every_entrys_day

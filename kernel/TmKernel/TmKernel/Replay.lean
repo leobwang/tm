@@ -59,6 +59,42 @@ hash decides only which bucket is searched, never what is found.
 proofs stay on the specification (`maskFast_inv` is the simulation).  Both twins are `foldl`s over
 the entries, so neither recurses per line.
 
+## C2: the day index (§6.2)
+
+Fork `DayIndex` (inventory §2.3), built over the **surviving** wakes (`dayIndexOf`):
+
+* `keptWakes`: the wake instants sorted in **chrono's order** (`DateTime`'s `Ord`, the UTC `(sec, ns)`
+  pair, which is `Cal.Instant`'s `≤` and not `Instant.nanos`'s order at a leap second), then fork
+  `dedup_by` on the local date in `cfg.tz`.  **The porting trap: `dedup_by` is consecutive.**  The index
+  keeps the first wake of each *run* of one date, not the earliest wake per date; the two differ when
+  local dates are not monotone in instant order, a clock falling back across midnight
+  (`the_day_index_dedups_runs_not_dates`; T5's St John's arm).
+* `lastWakeLe` is `last_wake_before` (`partition_point(|w| *w <= t)`), and `dayOf` is `day_of`: the
+  wake's local date when `t.signed_duration_since(w) < Duration::hours(24)` by chrono's duration
+  (`Cal.durationBetween`, its leap-second rule), otherwise `t`'s own local date.
+* **Restated in chrono's order.**  §15's three C2 goals test `Instant.nanos`; each is false of the
+  fork's index at a leap second (`dayOf_is_the_wake_date_within_a_day_by_nanos_is_refuted`,
+  `a_wake_day_is_shorter_than_a_day_by_nanos_is_refuted`, `keptWakes_append_of_later_by_nanos_is_refuted`),
+  and each is proved under its name with chrono's order and duration.
+* **Quirk Q6(a), two "first wake" rules, ported faithfully** (gap 82).  The index keeps the earliest wake
+  by instant per run; fork `DayReplay.wake` and `slept_by_day` (C5) read the first wake **in file order**
+  attributed to the day (`firstLoggedWakeOn`).  `the_kept_wake_is_not_the_first_logged_wake` separates
+  them on wakes appended out of time order, and
+  `the_kept_wake_is_the_first_logged_wake_when_wakes_are_logged_in_order` shows that is the only way
+  they differ.
+* **Every entry has a day**, cancelled entries and undos included (`entryDays`, fork `ViewRow::day`):
+  what the `log` op's `facts.days` carries.
+* Not ported: `DayIndex::bounds`, `wake_of` (`keptWakeOn` exists only to state Q6(a)) and
+  `local_midnight`, which have no caller outside `log.rs`.
+
+**The fast twins.**  `sortWakes` is an insertion sort, which `decide` evaluates; it is compiled as
+core's merge sort (`sortWakes_eq_sortWakesFast`, by `eq_of_perm_of_sorted`: a list sorted in an
+antisymmetric order is determined by its elements).  `entryDays` looks each entry's wake up with a fold
+over the kept wakes; it is compiled as a bisection over an array of them, which is the fork's
+`partition_point` (`entryDays_eq_entryDaysFast`, by `lePoint_spec` and `lastWakeLe_of_point`, using
+`keptWakes_sorted`).  Without it, a log of thirty thousand wakes costs a quadratic number of instant
+comparisons.
+
 ## Rule D9-21 (functions here over a list the wire can make large)
 
 `survivors`, `stackI`, `danglingOf` (`foldl`, specification only: compiled as their `@[csimp]` twins or
@@ -66,6 +102,13 @@ not called by the wire), `maskFast` (`foldl` of `maskFastStep`), `survivorsFast`
 `cancelledLinesFast` (`zipIdx`, `filterTR`, `mapTR`), `keyHash` (`foldl`), `pairKey`
 (`flatMapTR`, `appendTR`), `PosMap.get` (`find?`), `PosMap.set` (`filterTR`), `List.dropWhile`
 (a loop), and `Log.linesIncreasing` (the tail of `&&`; specification only).
+C2 adds: `sortWakesFast` (core `mergeSort`, compiled as `mergeSortTR₂` behind core's `@[csimp]`;
+it recurses on halves), the dedup (`foldl` of `keptStep`, then `reverse`), `wakeInstants` (`filterTR`,
+`mapTR`), `entryDaysFast` (`mapTR` and one `toArray`), `lePoint` (a bisection, recursion depth
+`log₂` of the wakes), and `Cal.localDate` (`offsetAt`, a `foldl` over at most 4,096 transitions).
+Specification only, never on the wire: `insertWake` and `sortWakes` (compiled as their twin),
+`lastWakeLe` and `entryDays` (compiled as `entryDaysFast`), and `keptWakeOn` and `firstLoggedWakeOn`
+(`find?`, a loop; not called by the op).
 -/
 namespace Tm
 namespace Log
@@ -1102,6 +1145,792 @@ theorem an_undo_with_an_id_passes_over_other_ids :
   decide
 
 end Witnesses
+
+/-! ## C2: the day index (§6.2) -/
+
+section DayIndex
+
+theorem instant_le_trans {a b c : Cal.Instant} (h₁ : a ≤ b) (h₂ : b ≤ c) : a ≤ c := by
+  rw [Cal.Instant.le_iff] at *; omega
+
+theorem instant_le_refl (a : Cal.Instant) : a ≤ a := by
+  rw [Cal.Instant.le_iff]; omega
+
+theorem instant_le_of_not_le {a b : Cal.Instant} (h : ¬ a ≤ b) : b ≤ a := by
+  rcases Cal.Instant.le_total a b with h' | h'
+  · exact absurd h' h
+  · exact h'
+
+theorem instant_le_of_lt {a b : Cal.Instant} (h : a < b) : a ≤ b := by
+  rw [Cal.Instant.le_iff]; rw [Cal.Instant.lt_iff] at h; omega
+
+theorem instant_not_le_of_lt {a b : Cal.Instant} (h : a < b) : ¬ b ≤ a := by
+  rw [Cal.Instant.le_iff]; rw [Cal.Instant.lt_iff] at h; omega
+
+/-! ### `wakes.sort()` -/
+
+/-- Insert into a list ascending in chrono's order, before the first element it is at or before. -/
+def insertWake (w : Cal.Instant) : List Cal.Instant → List Cal.Instant
+  | [] => [w]
+  | x :: xs => if w ≤ x then w :: x :: xs else x :: insertWake w xs
+
+/-- **`wakes.sort()`** in chrono's order (`DateTime`'s `Ord`, the UTC `(sec, ns)` pair): the
+specification is an insertion sort, which `decide` evaluates; the code is core's merge sort
+(`sortWakes_eq_sortWakesFast`). -/
+def sortWakes (ws : List Cal.Instant) : List Cal.Instant := ws.foldr insertWake []
+
+def sortWakesFast (ws : List Cal.Instant) : List Cal.Instant := ws.mergeSort (fun a b => decide (a ≤ b))
+
+theorem insertWake_perm (w : Cal.Instant) : ∀ (l : List Cal.Instant), (insertWake w l).Perm (w :: l)
+  | [] => List.Perm.refl _
+  | x :: xs => by
+    unfold insertWake
+    split
+    · exact List.Perm.refl _
+    · exact ((insertWake_perm w xs).cons x).trans (List.Perm.swap w x xs)
+
+theorem sortWakes_perm : ∀ (ws : List Cal.Instant), (sortWakes ws).Perm ws
+  | [] => List.Perm.refl _
+  | w :: ws => (insertWake_perm w _).trans ((sortWakes_perm ws).cons w)
+
+theorem insertWake_sorted (w : Cal.Instant) : ∀ (l : List Cal.Instant), l.Pairwise (· ≤ ·) →
+    (insertWake w l).Pairwise (· ≤ ·)
+  | [], _ => List.pairwise_singleton _ _
+  | x :: xs, h => by
+    unfold insertWake
+    split
+    · rename_i hwx
+      refine List.Pairwise.cons ?_ h
+      intro y hy
+      rcases List.mem_cons.1 hy with rfl | hy
+      · exact hwx
+      · exact instant_le_trans hwx (List.rel_of_pairwise_cons h hy)
+    · rename_i hwx
+      refine List.Pairwise.cons ?_ (insertWake_sorted w xs h.of_cons)
+      intro y hy
+      rcases List.mem_cons.1 ((insertWake_perm w xs).mem_iff.1 hy) with rfl | hy
+      · exact instant_le_of_not_le hwx
+      · exact List.rel_of_pairwise_cons h hy
+
+theorem sortWakes_sorted : ∀ (ws : List Cal.Instant), (sortWakes ws).Pairwise (· ≤ ·)
+  | [] => List.Pairwise.nil
+  | w :: ws => insertWake_sorted w _ (sortWakes_sorted ws)
+
+/-- **A list sorted in chrono's order is determined by its elements**: two sorted permutations of
+one list are equal, because the order is antisymmetric on instants. -/
+theorem eq_of_perm_of_sorted : ∀ {l₁ l₂ : List Cal.Instant}, l₁.Perm l₂ →
+    l₁.Pairwise (· ≤ ·) → l₂.Pairwise (· ≤ ·) → l₁ = l₂
+  | [], _, h, _, _ => h.nil_eq
+  | _ :: _, [], h, _, _ => h.eq_nil
+  | a :: t₁, b :: t₂, h, h₁, h₂ => by
+    have hab : a ≤ b := by
+      rcases List.mem_cons.1 (h.mem_iff.2 List.mem_cons_self) with hb | hb
+      · rw [hb]; exact instant_le_refl _
+      · exact List.rel_of_pairwise_cons h₁ hb
+    have hba : b ≤ a := by
+      rcases List.mem_cons.1 (h.mem_iff.1 List.mem_cons_self) with ha | ha
+      · rw [ha]; exact instant_le_refl _
+      · exact List.rel_of_pairwise_cons h₂ ha
+    have := Cal.Instant.le_antisymm hab hba
+    subst this
+    rw [eq_of_perm_of_sorted (List.perm_cons a |>.1 h) h₁.of_cons h₂.of_cons]
+
+@[csimp] theorem sortWakes_eq_sortWakesFast : @sortWakes = @sortWakesFast := by
+  funext ws
+  apply eq_of_perm_of_sorted ((sortWakes_perm ws).trans (List.mergeSort_perm ws _).symm)
+    (sortWakes_sorted ws)
+  have := List.pairwise_mergeSort (le := fun a b : Cal.Instant => decide (a ≤ b))
+    (fun a b c hab hbc => by simp only [decide_eq_true_eq] at *; exact instant_le_trans hab hbc)
+    (fun a b => by rcases Cal.Instant.le_total a b with h | h <;> simp [h]) ws
+  exact this.imp (fun h => by simpa using h)
+
+/-- Two lists each sorted, every element of the first before every element of the second, sort as
+their concatenation. -/
+theorem sortWakes_append_of_later (ws₁ ws₂ : List Cal.Instant) (h : ∀ a ∈ ws₁, ∀ b ∈ ws₂, a < b) :
+    sortWakes (ws₁ ++ ws₂) = sortWakes ws₁ ++ sortWakes ws₂ := by
+  apply eq_of_perm_of_sorted
+  · exact (sortWakes_perm _).trans ((sortWakes_perm ws₁).append (sortWakes_perm ws₂)).symm
+  · exact sortWakes_sorted _
+  · rw [List.pairwise_append]
+    refine ⟨sortWakes_sorted _, sortWakes_sorted _, fun a ha b hb => ?_⟩
+    exact instant_le_of_lt (h a ((sortWakes_perm ws₁).mem_iff.1 ha) b ((sortWakes_perm ws₂).mem_iff.1 hb))
+
+/-! ### `dedup_by` on the date: the first of each run of one date -/
+
+/-- One step of fork `dedup_by(|later, kept| later's date == kept's date)`: the state is the last
+kept wake and the kept wakes, most recent first.  A wake whose local date in `z` is the last kept
+wake's is dropped; any other is kept. -/
+def keptStep (z : Cal.Tz) (acc : Option Cal.Instant × List Cal.Instant) (w : Cal.Instant) :
+    Option Cal.Instant × List Cal.Instant :=
+  match acc.1 with
+  | some k => if Cal.localDate z w = Cal.localDate z k then acc else (some w, w :: acc.2)
+  | none => (some w, w :: acc.2)
+
+/-- The dedup over `ws` in the order given, continuing a run whose last kept wake is `last`. -/
+def dedupFrom (z : Cal.Tz) (last : Option Cal.Instant) (ws : List Cal.Instant) : List Cal.Instant :=
+  (ws.foldl (keptStep z) (last, [])).2.reverse
+
+/-- **Continue a day index**: sort `ws`, then dedup it continuing the run whose last kept wake is
+`last` (§6.2's `keptFrom`, what `keptWakes_append_of_later` needs). -/
+def keptFrom (z : Cal.Tz) (last : Option Cal.Instant) (ws : List Cal.Instant) : List Cal.Instant :=
+  dedupFrom z last (sortWakes ws)
+
+/-- **Fork `DayIndex::new`**: the wakes sorted in chrono's order, then **consecutive** dedup on the
+local date in `z`, keeping the first of each run.  Not "the earliest wake per date": the two differ
+when local dates are not monotone in instant order (a fold at midnight). -/
+def keptWakes (z : Cal.Tz) (ws : List Cal.Instant) : List Cal.Instant := keptFrom z none ws
+
+theorem foldl_keptStep_acc (z : Cal.Tz) : ∀ (xs : List Cal.Instant) (l : Option Cal.Instant)
+    (acc : List Cal.Instant),
+    xs.foldl (keptStep z) (l, acc)
+      = ((xs.foldl (keptStep z) (l, [])).1, (xs.foldl (keptStep z) (l, [])).2 ++ acc)
+  | [], _, _ => rfl
+  | x :: xs, l, acc => by
+    rw [List.foldl_cons, List.foldl_cons]
+    cases l with
+    | none =>
+      simp only [keptStep]
+      rw [foldl_keptStep_acc z xs (some x) (x :: acc), foldl_keptStep_acc z xs (some x) [x]]
+      simp
+    | some k =>
+      simp only [keptStep]
+      split
+      · rw [foldl_keptStep_acc z xs (some k) acc]
+      · rw [foldl_keptStep_acc z xs (some x) (x :: acc), foldl_keptStep_acc z xs (some x) [x]]
+        simp
+
+theorem foldl_keptStep_head (z : Cal.Tz) (l : Option Cal.Instant) : ∀ (xs : List Cal.Instant)
+    (s : Option Cal.Instant × List Cal.Instant), s.1 = s.2.head?.or l →
+    (xs.foldl (keptStep z) s).1 = (xs.foldl (keptStep z) s).2.head?.or l
+  | [], _, h => h
+  | x :: xs, s, h => by
+    rw [List.foldl_cons]
+    apply foldl_keptStep_head z l xs
+    obtain ⟨s1, s2⟩ := s
+    unfold keptStep
+    cases s1 with
+    | none => simp
+    | some k =>
+      simp only
+      split
+      · exact h
+      · simp
+
+theorem keptWakes_last (z : Cal.Tz) (ws : List Cal.Instant) :
+    ((sortWakes ws).foldl (keptStep z) (none, [])).1 = (keptWakes z ws).getLast? := by
+  rw [foldl_keptStep_head z none _ _ rfl]
+  simp [keptWakes, keptFrom, dedupFrom]
+
+/-- `keptWakes_append_of_later` (Goals, §15, C2), **restated in chrono's order** (carried note 1: the
+fork sorts `DateTime`s, whose order is not `Instant.nanos`'s at a leap second): when every wake of
+`ws₁` is before every wake of `ws₂`, the day index of both is `ws₁`'s continued by `ws₂`'s. -/
+theorem keptWakes_append_of_later (z : Cal.Tz) (ws₁ ws₂ : List Cal.Instant)
+    (h : ∀ a ∈ ws₁, ∀ b ∈ ws₂, a < b) :
+    keptWakes z (ws₁ ++ ws₂) = keptWakes z ws₁ ++ keptFrom z (keptWakes z ws₁).getLast? ws₂ := by
+  unfold keptWakes keptFrom dedupFrom
+  rw [sortWakes_append_of_later ws₁ ws₂ h, List.foldl_append]
+  rw [foldl_keptStep_acc z (sortWakes ws₂)]
+  simp only [List.reverse_append]
+  have := keptWakes_last z ws₁
+  unfold keptWakes keptFrom dedupFrom at this
+  rw [this]
+
+theorem mem_foldl_keptStep (z : Cal.Tz) : ∀ (xs : List Cal.Instant) (s : Option Cal.Instant × List Cal.Instant)
+    (x : Cal.Instant), x ∈ (xs.foldl (keptStep z) s).2 → x ∈ s.2 ∨ x ∈ xs
+  | [], _, _, h => Or.inl h
+  | y :: xs, s, x, h => by
+    rw [List.foldl_cons] at h
+    rcases mem_foldl_keptStep z xs _ x h with h | h
+    · obtain ⟨s1, s2⟩ := s
+      unfold keptStep at h
+      cases s1 with
+      | none =>
+        rcases List.mem_cons.1 h with rfl | h
+        · exact Or.inr List.mem_cons_self
+        · exact Or.inl h
+      | some k =>
+        simp only at h
+        split at h
+        · exact Or.inl h
+        · rcases List.mem_cons.1 h with rfl | h
+          · exact Or.inr List.mem_cons_self
+          · exact Or.inl h
+    · exact Or.inr (List.mem_cons_of_mem _ h)
+
+/-- Every wake the index keeps was one of the wakes. -/
+theorem mem_of_mem_keptFrom (z : Cal.Tz) (last : Option Cal.Instant) (ws : List Cal.Instant)
+    (x : Cal.Instant) (h : x ∈ keptFrom z last ws) : x ∈ ws := by
+  unfold keptFrom dedupFrom at h
+  rw [List.mem_reverse] at h
+  rcases mem_foldl_keptStep z _ _ x h with h | h
+  · simp at h
+  · exact (sortWakes_perm ws).mem_iff.1 h
+
+theorem foldl_keptStep_sublist (z : Cal.Tz) : ∀ (xs : List Cal.Instant) (l : Option Cal.Instant),
+    (xs.foldl (keptStep z) (l, [])).2.reverse.Sublist xs
+  | [], _ => List.Sublist.slnil
+  | x :: xs, l => by
+    rw [List.foldl_cons]
+    cases l with
+    | none =>
+      simp only [keptStep]
+      rw [foldl_keptStep_acc z xs (some x) [x]]
+      simp only [List.reverse_append, List.reverse_cons, List.reverse_nil, List.nil_append]
+      exact (foldl_keptStep_sublist z xs (some x)).cons_cons x
+    | some k =>
+      simp only [keptStep]
+      split
+      · exact (foldl_keptStep_sublist z xs (some k)).cons x
+      · rw [foldl_keptStep_acc z xs (some x) [x]]
+        simp only [List.reverse_append, List.reverse_cons, List.reverse_nil, List.nil_append]
+        exact (foldl_keptStep_sublist z xs (some x)).cons_cons x
+
+/-- **The kept wakes are in chrono's order.** -/
+theorem keptWakes_sorted (z : Cal.Tz) (ws : List Cal.Instant) : (keptWakes z ws).Pairwise (· ≤ ·) :=
+  (sortWakes_sorted ws).sublist (foldl_keptStep_sublist z _ none)
+
+/-! ### `last_wake_before` and `day_of` -/
+
+/-- **Fork `DayIndex::last_wake_before`**: the last wake at or before `t` in chrono's order.  The fork
+reads it with `partition_point` over its sorted vector; over a sorted list that is the last element
+`≤ t` in list order, which is this fold (`lastWakeLeArr_eq_lastWakeLe`, the compiled bisection). -/
+def lastWakeLe (kw : List Cal.Instant) (t : Cal.Instant) : Option Cal.Instant :=
+  kw.foldl (fun acc w => if w ≤ t then some w else acc) none
+
+/-- **Fork `DayIndex::day_of`**: the local date in `z` of the last wake at or before `t` when
+`t.signed_duration_since(w) < Duration::hours(24)`, otherwise `t`'s own local date.  chrono's
+duration is `Cal.durationBetween` (its leap-second rule), and a `TimeDelta` below 24 hours has fewer
+than 86,400 whole seconds, whatever its nanoseconds. -/
+def dayOf (z : Cal.Tz) (kw : List Cal.Instant) (t : Cal.Instant) : Nat :=
+  match lastWakeLe kw t with
+  | some w => if (Cal.durationBetween w t).1 < 86400 then Cal.localDate z w else Cal.localDate z t
+  | none => Cal.localDate z t
+
+theorem foldl_lastWake_or (t : Cal.Instant) : ∀ (kw : List Cal.Instant) (acc : Option Cal.Instant),
+    kw.foldl (fun acc w => if w ≤ t then some w else acc) acc = (lastWakeLe kw t).or acc
+  | [], acc => by simp [lastWakeLe]
+  | w :: kw, acc => by
+    unfold lastWakeLe
+    rw [List.foldl_cons, List.foldl_cons, foldl_lastWake_or t kw, foldl_lastWake_or t kw]
+    by_cases h : w ≤ t <;> simp [h]
+
+/-- The wake found is at or before `t`, and one of the wakes. -/
+theorem lastWakeLe_cons (w : Cal.Instant) (kw : List Cal.Instant) (t : Cal.Instant) :
+    lastWakeLe (w :: kw) t = (lastWakeLe kw t).or (if w ≤ t then some w else none) := by
+  unfold lastWakeLe
+  rw [List.foldl_cons, foldl_lastWake_or]
+  rfl
+
+theorem lastWakeLe_le : ∀ (kw : List Cal.Instant) (t w : Cal.Instant), lastWakeLe kw t = some w →
+    w ≤ t ∧ w ∈ kw
+  | [], _, _, h => by simp [lastWakeLe] at h
+  | x :: kw, t, w, h => by
+    rw [lastWakeLe_cons] at h
+    cases hl : lastWakeLe kw t with
+    | some y =>
+      rw [hl] at h
+      simp only [Option.some_or, Option.some.injEq] at h
+      subst h
+      exact ⟨(lastWakeLe_le kw t y hl).1, List.mem_cons_of_mem _ (lastWakeLe_le kw t y hl).2⟩
+    | none =>
+      rw [hl] at h
+      by_cases hx : x ≤ t
+      · simp only [hx, if_true, Option.none_or, Option.some.injEq] at h
+        subst h
+        exact ⟨hx, List.mem_cons_self⟩
+      · simp [hx] at h
+
+/-- A later list of wakes, every one after `t`, does not move `t`'s last wake. -/
+theorem lastWakeLe_append_of_later (l₁ l₂ : List Cal.Instant) (t : Cal.Instant)
+    (h : ∀ b ∈ l₂, t < b) : lastWakeLe (l₁ ++ l₂) t = lastWakeLe l₁ t := by
+  unfold lastWakeLe
+  rw [List.foldl_append, foldl_lastWake_or]
+  have : lastWakeLe l₂ t = none := by
+    cases hl : lastWakeLe l₂ t with
+    | none => rfl
+    | some w =>
+      obtain ⟨hle, hmem⟩ := lastWakeLe_le l₂ t w hl
+      exact absurd hle (instant_not_le_of_lt (h w hmem))
+  rw [this]
+  rfl
+
+/-- `dayOf_is_the_wake_date_within_a_day` (Goals, §15, C2), **restated in chrono's order**: the
+hypothesis is chrono's `signed_duration_since(w) < 24 h`, not `t.nanos < w.nanos + 86400·10^9`
+(`dayOf_is_the_wake_date_within_a_day_by_nanos_is_refuted`). -/
+theorem dayOf_is_the_wake_date_within_a_day (z : Cal.Tz) (kw : List Cal.Instant) (t w : Cal.Instant)
+    (hw : lastWakeLe kw t = some w) (h24 : (Cal.durationBetween w t).1 < 86400) :
+    dayOf z kw t = Cal.localDate z w := by
+  simp [dayOf, hw, h24]
+
+theorem dayOf_without_a_recent_wake_is_the_local_date (z : Cal.Tz) (kw : List Cal.Instant)
+    (t : Cal.Instant) (h : ∀ w, lastWakeLe kw t = some w → 86400 ≤ (Cal.durationBetween w t).1) :
+    dayOf z kw t = Cal.localDate z t := by
+  unfold dayOf
+  cases hw : lastWakeLe kw t with
+  | none => rfl
+  | some w => simp [Int.not_lt.2 (h w hw)]
+
+/-- `a_wake_day_is_shorter_than_a_day` (Goals, §15, C2), **restated in chrono's order**: an instant
+attributed to its wake's date, which is not its own, is under 24 hours of chrono's duration after
+that wake. -/
+theorem a_wake_day_is_shorter_than_a_day (z : Cal.Tz) (ws : List Cal.Instant) (t w : Cal.Instant)
+    (hw : lastWakeLe (keptWakes z ws) t = some w)
+    (hd : dayOf z (keptWakes z ws) t = Cal.localDate z w)
+    (hne : Cal.localDate z t ≠ Cal.localDate z w) :
+    (Cal.durationBetween w t).1 < 86400 := by
+  unfold dayOf at hd
+  rw [hw] at hd
+  simp only at hd
+  split at hd
+  · assumption
+  · exact absurd hd hne
+
+/-- **The locality W2 needs** (§6.2, §9.5): wakes appended later, all after `t`, do not change `t`'s
+day. -/
+theorem dayOf_agrees_below_a_later_wake (z : Cal.Tz) (ws₁ ws₂ : List Cal.Instant) (t : Cal.Instant)
+    (h : ∀ a ∈ ws₁, ∀ b ∈ ws₂, a < b) (ht : ∀ b ∈ ws₂, t < b) :
+    dayOf z (keptWakes z (ws₁ ++ ws₂)) t = dayOf z (keptWakes z ws₁) t := by
+  rw [keptWakes_append_of_later z ws₁ ws₂ h]
+  unfold dayOf
+  rw [lastWakeLe_append_of_later _ _ t (fun b hb => ht b (mem_of_mem_keptFrom z _ ws₂ b hb))]
+
+/-- **An instant off its own date belongs to a wake under a day before it**: whenever `dayOf` is not
+`t`'s local date, there is a kept wake at or before `t`, of that date, under 24 hours of chrono's
+duration earlier.  What "a day is never longer than 24 hours" says, for every index. -/
+theorem an_instant_off_its_own_date_is_within_a_day_of_its_wake (z : Cal.Tz) (kw : List Cal.Instant)
+    (t : Cal.Instant) (h : dayOf z kw t ≠ Cal.localDate z t) :
+    ∃ w, lastWakeLe kw t = some w ∧ w ∈ kw ∧ w ≤ t ∧ dayOf z kw t = Cal.localDate z w ∧
+      (Cal.durationBetween w t).1 < 86400 := by
+  unfold dayOf at *
+  cases hw : lastWakeLe kw t with
+  | none => rw [hw] at h; exact absurd rfl h
+  | some w =>
+    rw [hw] at h
+    simp only at h ⊢
+    obtain ⟨hle, hmem⟩ := lastWakeLe_le kw t w hw
+    by_cases h24 : (Cal.durationBetween w t).1 < 86400
+    · exact ⟨w, rfl, hmem, hle, by simp [h24], h24⟩
+    · simp [h24] at h
+
+/-! ### The index of a log, and quirk Q6(a): two "first wake" rules -/
+
+def isWake (e : Entry) : Bool :=
+  match e.ev with
+  | .wake _ _ => true
+  | _ => false
+
+/-- The survivors' wake instants, in file order (fork `refs.filter(Wake).map(t)`). -/
+def wakeInstants (sv : List Entry) : List Cal.Instant := (sv.filter isWake).map (fun e => e.t.val)
+
+/-- **The day index of a log**: the kept wakes of its surviving wakes (fork `replay_lines`'
+`DayIndex::new(tz, refs…)`). -/
+def dayIndexOf (z : Cal.Tz) (es : List Entry) : List Cal.Instant := keptWakes z (wakeInstants (survivors es))
+
+/-- Fork `DayIndex::wake_of`: the first kept wake whose local date is `d`.  Not on the wire (§6.2: no
+caller outside `log.rs`); it states quirk Q6(a). -/
+def keptWakeOn (z : Cal.Tz) (kw : List Cal.Instant) (d : Nat) : Option Cal.Instant :=
+  kw.find? (fun w => Cal.localDate z w == d)
+
+/-- **The first logged wake of day `d`**: the first entry **in file order** that is a wake attributed to
+`d` (fork `DayReplay.wake`'s `if d.wake.is_none()` and `slept_by_day`'s `or_insert`; C5 reads it). -/
+def firstLoggedWakeOn (z : Cal.Tz) (kw : List Cal.Instant) (es : List Entry) (d : Nat) : Option Entry :=
+  es.find? (fun e => isWake e && dayOf z kw e.t.val == d)
+
+theorem dedupFrom_append (z : Cal.Tz) (l : Option Cal.Instant) (V U : List Cal.Instant) :
+    dedupFrom z l (V ++ U) = dedupFrom z l V ++ dedupFrom z (V.foldl (keptStep z) (l, [])).1 U := by
+  unfold dedupFrom
+  rw [List.foldl_append]
+  have : V.foldl (keptStep z) (l, []) = ((V.foldl (keptStep z) (l, [])).1, (V.foldl (keptStep z) (l, [])).2) := rfl
+  rw [this, foldl_keptStep_acc z U]
+  simp
+
+theorem dedupFrom_last (z : Cal.Tz) (V : List Cal.Instant) :
+    (V.foldl (keptStep z) (none, [])).1 = (dedupFrom z none V).getLast? := by
+  rw [foldl_keptStep_head z none V _ rfl]
+  simp [dedupFrom]
+
+theorem dedupFrom_single (z : Cal.Tz) (L : Option Cal.Instant) (x : Cal.Instant) :
+    dedupFrom z L [x]
+      = (match L with | some k => if Cal.localDate z x = Cal.localDate z k then [] else [x] | none => [x]) := by
+  cases L with
+  | none => rfl
+  | some k =>
+    simp only [dedupFrom, List.foldl_cons, List.foldl_nil, keptStep]
+    split <;> rfl
+
+theorem lastWakeLe_snoc (l : List Cal.Instant) (x t : Cal.Instant) :
+    lastWakeLe (l ++ [x]) t = if x ≤ t then some x else lastWakeLe l t := by
+  unfold lastWakeLe
+  rw [List.foldl_append, List.foldl_cons, List.foldl_nil]
+
+theorem lastWakeLe_of_all_le (t : Cal.Instant) : ∀ (l : List Cal.Instant), (∀ y ∈ l, y ≤ t) →
+    lastWakeLe l t = l.getLast?
+  | [], _ => rfl
+  | x :: xs, h => by
+    rw [lastWakeLe_cons, lastWakeLe_of_all_le t xs (fun y hy => h y (List.mem_cons_of_mem _ hy)),
+      if_pos (h x List.mem_cons_self), List.getLast?_cons]
+    cases xs.getLast? <;> rfl
+
+/-- **In a sorted list of wakes, each wake's last kept wake is of its own date**: the run a wake
+belongs to began at a kept wake of its date, and a later kept wake at or before it equals it. -/
+theorem lastWakeLe_dedup_same_date (z : Cal.Tz) : ∀ (R : List Cal.Instant), R.reverse.Pairwise (· ≤ ·) →
+    ∀ w ∈ R.reverse, ∃ k, lastWakeLe (dedupFrom z none R.reverse) w = some k ∧
+      Cal.localDate z k = Cal.localDate z w
+  | [], _, w, hw => by simp at hw
+  | x :: R, hs, w, hw => by
+    simp only [List.reverse_cons] at hs hw ⊢
+    obtain ⟨hsV, -, hVx⟩ := List.pairwise_append.1 hs
+    have hle : ∀ v ∈ R.reverse, v ≤ x := fun v hv => hVx v hv x List.mem_cons_self
+    have hK : ∀ y ∈ dedupFrom z none R.reverse, y ≤ x := fun y hy =>
+      hle y ((foldl_keptStep_sublist z R.reverse none).subset hy)
+    rw [dedupFrom_append, dedupFrom_last, dedupFrom_single]
+    rcases List.mem_append.1 hw with hw | hw
+    · obtain ⟨k, hk, hkd⟩ := lastWakeLe_dedup_same_date z R hsV w hw
+      have hkeep : ∀ (tail : List Cal.Instant), (tail = [] ∨ tail = [x]) →
+          ∃ k, lastWakeLe (dedupFrom z none R.reverse ++ tail) w = some k ∧
+            Cal.localDate z k = Cal.localDate z w := by
+        intro tail ht
+        rcases ht with rfl | rfl
+        · exact ⟨k, by rw [List.append_nil]; exact hk, hkd⟩
+        · rw [lastWakeLe_snoc]
+          by_cases hxw : x ≤ w
+          · rw [if_pos hxw]
+            exact ⟨x, rfl, by rw [Cal.Instant.le_antisymm hxw (hle w hw)]⟩
+          · rw [if_neg hxw]; exact ⟨k, hk, hkd⟩
+      apply hkeep
+      split
+      · split
+        · exact Or.inl rfl
+        · exact Or.inr rfl
+      · exact Or.inr rfl
+    · simp only [List.mem_singleton] at hw
+      subst hw
+      cases hL : (dedupFrom z none R.reverse).getLast? with
+      | none => exact ⟨w, by rw [lastWakeLe_snoc, if_pos (instant_le_refl w)], rfl⟩
+      | some k =>
+        simp only
+        split
+        · rename_i hdate
+          refine ⟨k, ?_, hdate.symm⟩
+          rw [List.append_nil, lastWakeLe_of_all_le w _ hK, hL]
+        · exact ⟨w, by rw [lastWakeLe_snoc, if_pos (instant_le_refl w)], rfl⟩
+
+/-- **A logged wake belongs to its own date** when the wakes are in chrono's order. -/
+theorem a_wake_is_on_its_own_date (z : Cal.Tz) (W : List Cal.Instant) (hs : W.Pairwise (· ≤ ·))
+    (w : Cal.Instant) (hw : w ∈ W) : dayOf z (keptWakes z W) w = Cal.localDate z w := by
+  have hsort : sortWakes W = W := eq_of_perm_of_sorted (sortWakes_perm W) (sortWakes_sorted W) hs
+  have := lastWakeLe_dedup_same_date z W.reverse (by rw [List.reverse_reverse]; exact hs) w
+    (by rw [List.reverse_reverse]; exact hw)
+  rw [List.reverse_reverse] at this
+  obtain ⟨k, hk, hkd⟩ := this
+  unfold dayOf keptWakes keptFrom
+  rw [hsort, hk]
+  simp only
+  split <;> simp [hkd]
+
+theorem find?_congr_mem {α : Type} : ∀ (l : List α) (p q : α → Bool), (∀ a ∈ l, p a = q a) →
+    l.find? p = l.find? q
+  | [], _, _, _ => rfl
+  | x :: xs, p, q, h => by
+    rw [List.find?_cons, List.find?_cons, h x List.mem_cons_self,
+      find?_congr_mem xs p q (fun a ha => h a (List.mem_cons_of_mem _ ha))]
+
+theorem find?_dedupFrom (z : Cal.Tz) (d : Nat) : ∀ (W : List Cal.Instant) (last : Option Cal.Instant),
+    (∀ k, last = some k → Cal.localDate z k ≠ d) →
+    (dedupFrom z last W).find? (fun w => Cal.localDate z w == d) = W.find? (fun w => Cal.localDate z w == d)
+  | [], _, _ => rfl
+  | x :: xs, last, h => by
+    have hcons : dedupFrom z last (x :: xs)
+        = dedupFrom z last [x] ++ dedupFrom z ((keptStep z (last, []) x).1) xs := by
+      rw [show x :: xs = [x] ++ xs from rfl, dedupFrom_append]; rfl
+    rw [hcons, dedupFrom_single, List.find?_append]
+    cases last with
+    | none =>
+      simp only [keptStep]
+      by_cases hx : Cal.localDate z x = d
+      · simp [hx]
+      · have ih := find?_dedupFrom z d xs (some x) (fun k hk => by cases hk; exact hx)
+        simp [hx, ih]
+    | some k =>
+      simp only [keptStep]
+      by_cases hxk : Cal.localDate z x = Cal.localDate z k
+      · have hx : Cal.localDate z x ≠ d := by rw [hxk]; exact h k rfl
+        have ih := find?_dedupFrom z d xs (some k) h
+        rw [if_pos hxk, if_pos hxk, List.find?_nil, Option.none_or, ih, List.find?_cons,
+          beq_eq_false_iff_ne.2 hx]
+      · rw [if_neg hxk, if_neg hxk, List.find?_cons, List.find?_nil, List.find?_cons]
+        by_cases hx : Cal.localDate z x = d
+        · rw [beq_iff_eq.2 hx]; rfl
+        · have ih := find?_dedupFrom z d xs (some x) (fun k hk => by cases hk; exact hx)
+          rw [beq_eq_false_iff_ne.2 hx]
+          simpa using ih
+
+/-- **Quirk Q6(a)'s other direction: in-order wakes make the two rules one.**  When the surviving
+wakes are logged in chrono's order, the first kept wake of a date is the first logged wake of that
+day; the rules differ only on wakes appended out of time order
+(`the_kept_wake_is_not_the_first_logged_wake`). -/
+theorem the_kept_wake_is_the_first_logged_wake_when_wakes_are_logged_in_order (z : Cal.Tz)
+    (es : List Entry) (d : Nat) (hs : (wakeInstants (survivors es)).Pairwise (· ≤ ·)) :
+    keptWakeOn z (dayIndexOf z es) d
+      = (firstLoggedWakeOn z (dayIndexOf z es) (survivors es) d).map (fun e => e.t.val) := by
+  have hsort : sortWakes (wakeInstants (survivors es)) = wakeInstants (survivors es) :=
+    eq_of_perm_of_sorted (sortWakes_perm _) (sortWakes_sorted _) hs
+  unfold keptWakeOn firstLoggedWakeOn
+  have hl : (dayIndexOf z es).find? (fun w => Cal.localDate z w == d)
+      = (wakeInstants (survivors es)).find? (fun w => Cal.localDate z w == d) := by
+    unfold dayIndexOf keptWakes keptFrom
+    rw [hsort]
+    exact find?_dedupFrom z d _ none (fun k hk => by cases hk)
+  rw [hl]
+  have hr : (wakeInstants (survivors es)).find? (fun w => Cal.localDate z w == d)
+      = (wakeInstants (survivors es)).find? (fun w => dayOf z (dayIndexOf z es) w == d) := by
+    apply find?_congr_mem
+    intro w hw
+    rw [dayIndexOf, a_wake_is_on_its_own_date z _ hs w hw]
+  rw [hr]
+  unfold wakeInstants
+  rw [List.find?_map, List.find?_filter]
+  congr 1
+  apply find?_congr_mem
+  intro e _
+  simp only [Function.comp_apply, Bool.decide_and, Bool.decide_eq_true]
+
+/-! ### Every entry's day, on the wire, and its compiled twin -/
+
+/-- **Every entry's day** (fork `ViewRow::day`): `(line, dayOf)` for every entry in file order,
+cancelled entries and undos included, over the day index of the survivors' wakes. -/
+def entryDays (z : Cal.Tz) (es : List Entry) : List (Nat × Nat) :=
+  let kw := dayIndexOf z es
+  es.map (fun e => (e.line, dayOf z kw e.t.val))
+
+/-- **Fork `partition_point(|w| *w <= t)`**: the number of wakes at or before `t` in an ascending
+array, by bisection of `[lo, hi)`. -/
+def lePoint (a : Array Cal.Instant) (t : Cal.Instant) (lo hi : Nat) : Nat :=
+  if _h : lo < hi then
+    match a[(lo + hi) / 2]? with
+    | some w => if w ≤ t then lePoint a t ((lo + hi) / 2 + 1) hi else lePoint a t lo ((lo + hi) / 2)
+    | none => lo
+  else lo
+termination_by hi - lo
+decreasing_by all_goals omega
+
+def lastWakeLeArr (a : Array Cal.Instant) (t : Cal.Instant) : Option Cal.Instant :=
+  match lePoint a t 0 a.size with
+  | 0 => none
+  | p + 1 => a[p]?
+
+def dayOfArr (z : Cal.Tz) (a : Array Cal.Instant) (t : Cal.Instant) : Nat :=
+  match lastWakeLeArr a t with
+  | some w => if (Cal.durationBetween w t).1 < 86400 then Cal.localDate z w else Cal.localDate z t
+  | none => Cal.localDate z t
+
+def entryDaysFast (z : Cal.Tz) (es : List Entry) : List (Nat × Nat) :=
+  let a := (dayIndexOf z es).toArray
+  es.map (fun e => (e.line, dayOfArr z a e.t.val))
+
+theorem lePoint_spec (l : List Cal.Instant) (hs : l.Pairwise (· ≤ ·)) (t : Cal.Instant) (lo hi : Nat)
+    (hlh : lo ≤ hi) (hn : hi ≤ l.length)
+    (hlo : ∀ i (hi' : i < l.length), i < lo → l[i] ≤ t)
+    (hhi : ∀ i (hi' : i < l.length), hi ≤ i → ¬ l[i] ≤ t) :
+    lePoint l.toArray t lo hi ≤ l.length ∧
+    (∀ i (h : i < l.length), i < lePoint l.toArray t lo hi → l[i] ≤ t) ∧
+    (∀ i (h : i < l.length), lePoint l.toArray t lo hi ≤ i → ¬ l[i] ≤ t) := by
+  rw [lePoint]
+  split
+  · rename_i h
+    have hm : (lo + hi) / 2 < l.length := by omega
+    rw [List.getElem?_toArray, List.getElem?_eq_getElem hm]
+    simp only
+    split
+    · rename_i hle
+      apply lePoint_spec l hs t _ hi (by omega) hn
+      · intro i hi' hi2
+        by_cases hlt : i < lo
+        · exact hlo i hi' hlt
+        · rcases Nat.lt_or_eq_of_le (Nat.le_of_lt_succ hi2) with hi3 | hi3
+          · exact instant_le_trans (List.pairwise_iff_getElem.1 hs i _ hi' hm hi3) hle
+          · simp only [hi3]; exact hle
+      · exact hhi
+    · rename_i hle
+      apply lePoint_spec l hs t lo _ (by omega) (by omega) hlo
+      intro i hi' hi2
+      rcases Nat.lt_or_eq_of_le hi2 with hi3 | hi3
+      · intro hc; exact hle (instant_le_trans (List.pairwise_iff_getElem.1 hs _ i hm hi' hi3) hc)
+      · simp only [← hi3]; exact hle
+  · refine ⟨by omega, fun i hi' hi2 => hlo i hi' hi2, fun i hi' hi2 => hhi i hi' (by omega)⟩
+termination_by hi - lo
+decreasing_by all_goals omega
+
+theorem lastWakeLe_of_point (t : Cal.Instant) : ∀ (l : List Cal.Instant) (p : Nat), p ≤ l.length →
+    (∀ i (h : i < l.length), i < p → l[i] ≤ t) →
+    (∀ i (h : i < l.length), p ≤ i → ¬ l[i] ≤ t) →
+    lastWakeLe l t = (match p with | 0 => none | q + 1 => l[q]?)
+  | [], p, hp, _, _ => by
+    simp at hp; subst hp; rfl
+  | x :: xs, 0, _, _, h2 => by
+    have ih := lastWakeLe_of_point t xs 0 (Nat.zero_le _) (fun i _ hi => absurd hi (Nat.not_lt_zero _))
+      (fun i h _ => by have := h2 (i + 1) (by simp; omega) (Nat.zero_le _); rwa [List.getElem_cons_succ] at this)
+    simp only at ih ⊢
+    rw [lastWakeLe_cons, ih, if_neg (by have := h2 0 (by simp) (Nat.le_refl 0); rwa [List.getElem_cons_zero] at this)]
+    rfl
+  | x :: xs, q + 1, hp, h1, h2 => by
+    have hx : x ≤ t := by have := h1 0 (by simp) (Nat.succ_pos _); rwa [List.getElem_cons_zero] at this
+    have ih := lastWakeLe_of_point t xs q (by simp at hp; omega)
+      (fun i h hi => by have := h1 (i + 1) (by simp; omega) (by omega); rwa [List.getElem_cons_succ] at this)
+      (fun i h hi => by have := h2 (i + 1) (by simp; omega) (by omega); rwa [List.getElem_cons_succ] at this)
+    rw [lastWakeLe_cons, ih, if_pos hx]
+    cases q with
+    | zero => rfl
+    | succ r =>
+      have hr : r < xs.length := by simp at hp; omega
+      simp [List.getElem?_eq_getElem hr]
+
+/-- **The bisection is the fold** on an ascending list. -/
+theorem lastWakeLeArr_eq_lastWakeLe (l : List Cal.Instant) (hs : l.Pairwise (· ≤ ·)) (t : Cal.Instant) :
+    lastWakeLeArr l.toArray t = lastWakeLe l t := by
+  obtain ⟨hp, h1, h2⟩ := lePoint_spec l hs t 0 l.length (Nat.zero_le _) (Nat.le_refl _)
+    (fun i _ h => absurd h (Nat.not_lt_zero _)) (fun i hi h => absurd hi (Nat.not_lt.2 h))
+  rw [lastWakeLe_of_point t l _ hp h1 h2]
+  unfold lastWakeLeArr
+  simp only [List.size_toArray]
+  split <;> simp_all
+
+@[csimp] theorem entryDays_eq_entryDaysFast : @entryDays = @entryDaysFast := by
+  funext z es
+  unfold entryDays entryDaysFast
+  simp only
+  apply List.map_congr_left
+  intro e _
+  unfold dayOfArr dayOf dayIndexOf
+  rw [lastWakeLeArr_eq_lastWakeLe _ (keptWakes_sorted z _)]
+
+end DayIndex
+
+
+
+/-! ## Witnesses (C2)
+
+Each was probed in a scratch copy under `MemoryMax=8G timeout 120` (§14.0 item 4): at most 3 entries
+or 3 wakes, at most 2 zone transitions (`Cal.chicago`'s two, `foldZone`'s one, `utcZone`'s none),
+instants as `Nat` literals, no text parsed. -/
+
+section DayWitnesses
+
+/-- UTC: no transitions. -/
+def utcZone : Cal.Tz := ⟨⟨['U', 'T', 'C'], ⟨false, 0⟩, []⟩, by decide⟩
+
+/-- **`day_index_wake_to_wake`, ported** (§6.2, inventory §2.3): Chicago, wakes at 2026-09-07T06:05-05:00
+and 2026-09-08T06:40-05:00, both kept.  The first wake is on the 7th; 00:30 the next morning, before
+the next wake, is the 7th; 06:20 on the 8th is the 8th (the wake is 24 h 15 min old, stale); the second
+wake is the 8th; 00:30 on the 9th is the 8th; 07:00 on the 9th is the 9th (no wake that date); 05:00
+on the 7th is the 7th (before the first wake).  With no wakes, 00:30 on the 8th is the 8th, and
+`2026-09-08T03:00:00+00:00` is the 7th: the date is read in the zone, not the written offset.  Days
+739865–739867 are 2026-09-07 to 09 (`Cal.toDay`). -/
+theorem day_index_wake_to_wake_ported :
+    let kw := keptWakes Cal.chicago [⟨63924375900, 0⟩, ⟨63924464400, 0⟩]
+    kw = [⟨63924375900, 0⟩, ⟨63924464400, 0⟩] ∧
+    dayOf Cal.chicago kw ⟨63924375900, 0⟩ = 739865 ∧
+    dayOf Cal.chicago kw ⟨63924442200, 0⟩ = 739865 ∧
+    dayOf Cal.chicago kw ⟨63924463200, 0⟩ = 739866 ∧
+    dayOf Cal.chicago kw ⟨63924464400, 0⟩ = 739866 ∧
+    dayOf Cal.chicago kw ⟨63924528600, 0⟩ = 739866 ∧
+    dayOf Cal.chicago kw ⟨63924552000, 0⟩ = 739867 ∧
+    dayOf Cal.chicago kw ⟨63924372000, 0⟩ = 739865 ∧
+    dayOf Cal.chicago [] ⟨63924442200, 0⟩ = 739866 ∧
+    dayOf Cal.chicago [] ⟨63924433200, 0⟩ = 739865 := by
+  decide
+
+
+/-- A wake entry of the witnesses, written at `-05:00`. -/
+def wWake (line : Nat) (t : Cal.VInstant) : Entry := ⟨line, t, Log.cdt, .wake ⟨420, by decide⟩ none⟩
+
+def wNote (line : Nat) (t : Cal.VInstant) : Entry := ⟨line, t, Log.cdt, .note ['n']⟩
+
+/-- **Quirk Q6(a): two "first wake" rules** (gap 82).  Two wakes on 2026-09-07 in Chicago, appended out
+of time order: 07:00 on line 1, then 06:05 on line 2.  The day index keeps the earlier **by instant**,
+06:05; the first wake **in file order** attributed to that day is line 1's 07:00, which is what fork
+`DayReplay.wake` and `slept_by_day` read.  Both rules are ported; this is what separates them. -/
+theorem the_kept_wake_is_not_the_first_logged_wake :
+    ∃ (z : Cal.Tz) (es : List Entry) (d : Nat) (w : Cal.Instant) (e : Entry),
+      keptWakeOn z (dayIndexOf z es) d = some w ∧
+      firstLoggedWakeOn z (dayIndexOf z es) (survivors es) d = some e ∧ e.t.val ≠ w :=
+  ⟨Cal.chicago, [wWake 1 ⟨⟨63924379200, 0⟩, by decide⟩, wWake 2 ⟨⟨63924375900, 0⟩, by decide⟩], 739865,
+    ⟨63924375900, 0⟩, wWake 1 ⟨⟨63924379200, 0⟩, by decide⟩, by decide, by decide, by decide⟩
+
+/-- A zone whose clock falls back across midnight: UTC until 2026-09-08T00:30:00Z, `-01:00` from then
+(the local clock goes from 00:30 on the 8th back to 23:30 on the 7th).  One transition. -/
+def foldZone : Cal.Tz := ⟨⟨['F', 'o', 'l', 'd'], ⟨false, 0⟩, [(⟨63924424200, 0⟩, ⟨true, 3600⟩)]⟩, by decide⟩
+
+/-- **The porting trap of §6.2: `dedup_by` is consecutive.**  In `foldZone`, wakes at 21:30 on the 7th,
+00:29:59 on the 8th and, one second later, 23:30 on the 7th again have local dates 7, 8, 7 in instant
+order.  The index keeps all three, since no two consecutive ones share a date, where "the earliest
+wake per date" would keep two; and 23:45 on the 7th then belongs to the third wake's day, the 7th,
+where the earliest-per-date index would put it on the 8th. -/
+theorem the_day_index_dedups_runs_not_dates :
+    keptWakes foldZone [⟨63924413400, 0⟩, ⟨63924424199, 0⟩, ⟨63924424200, 0⟩]
+      = [⟨63924413400, 0⟩, ⟨63924424199, 0⟩, ⟨63924424200, 0⟩] ∧
+    (([⟨63924413400, 0⟩, ⟨63924424199, 0⟩, ⟨63924424200, 0⟩] : List Cal.Instant).map (Cal.localDate foldZone))
+      = [739865, 739866, 739865] ∧
+    dayOf foldZone [⟨63924413400, 0⟩, ⟨63924424199, 0⟩, ⟨63924424200, 0⟩] ⟨63924425100, 0⟩ = 739865 ∧
+    dayOf foldZone [⟨63924413400, 0⟩, ⟨63924424199, 0⟩] ⟨63924425100, 0⟩ = 739866 := by
+  decide
+
+/-- **Refuted as §15 wrote it** (carried note 1): with the 24-hour test on `Instant.nanos`,
+`dayOf_is_the_wake_date_within_a_day` is false of the fork's day.  A wake at `03:00:59` plus 1.5 s of
+leap nanoseconds on 2026-09-07 UTC and `03:01:00` on the 8th are 23 h 59 min 59.5 s apart by nanosecond
+counts, and 24 h 0.5 s apart by chrono's `signed_duration_since`, which counts the leap second because
+the later clock is past it in the day.  The fork gives the 8th. -/
+theorem dayOf_is_the_wake_date_within_a_day_by_nanos_is_refuted :
+    ∃ (kw : List Cal.Instant) (t w : Cal.Instant), lastWakeLe kw t = some w ∧
+      t.nanos < w.nanos + 86400 * 1000000000 ∧ dayOf utcZone kw t ≠ Cal.localDate utcZone w :=
+  ⟨[⟨63924346859, 1500000000⟩], ⟨63924433260, 0⟩, ⟨63924346859, 1500000000⟩, by decide⟩
+
+/-- **Refuted as §15 wrote it** (carried note 1): `a_wake_day_is_shorter_than_a_day` with a nanosecond
+conclusion is false of the fork's day.  A wake at 03:00:00 UTC on 2026-09-07 and the stamp
+`2026-09-08T02:59:60.5Z` (second 59 with 1.5 s of leap nanoseconds, chrono's reading of `:60`): chrono
+counts no leap second before a clock earlier in the day, so 23 h 59 min 59.5 s passed and the stamp is
+on the wake's day, the 7th, a date not its own; by nanosecond counts 24 h 0.5 s passed. -/
+theorem a_wake_day_is_shorter_than_a_day_by_nanos_is_refuted :
+    ∃ (ws : List Cal.Instant) (t w : Cal.Instant),
+      lastWakeLe (keptWakes utcZone ws) t = some w ∧
+      dayOf utcZone (keptWakes utcZone ws) t = Cal.localDate utcZone w ∧
+      Cal.localDate utcZone t ≠ Cal.localDate utcZone w ∧
+      Cal.durationBetween w t = (86399, 500000000) ∧
+      ¬ t.nanos < w.nanos + 86400 * 1000000000 :=
+  ⟨[⟨63924346800, 0⟩], ⟨63924433199, 1500000000⟩, ⟨63924346800, 0⟩, by decide⟩
+
+/-- **Refuted as §15 wrote it** (carried note 1): `keptWakes_append_of_later` with its hypothesis on
+`Instant.nanos` is false of the fork's index, which sorts in chrono's order.  `00:01:00` has fewer
+nanoseconds than `00:00:59` plus 1.5 s of leap nanoseconds and is after it in chrono's order, so the
+sort puts the leap second first and the date's run keeps it, not `00:01:00`. -/
+theorem keptWakes_append_of_later_by_nanos_is_refuted :
+    ∃ (ws₁ ws₂ : List Cal.Instant), (∀ a ∈ ws₁, ∀ b ∈ ws₂, a.nanos < b.nanos) ∧
+      keptWakes utcZone (ws₁ ++ ws₂)
+        ≠ keptWakes utcZone ws₁ ++ keptFrom utcZone (keptWakes utcZone ws₁).getLast? ws₂ :=
+  ⟨[⟨60, 0⟩], [⟨59, 1500000000⟩], by decide⟩
+
+/-- **`a_wake_day_is_shorter_than_a_day`'s hypotheses are satisfiable**: 00:30 on 2026-09-08 in Chicago
+belongs to the 06:05 wake of the 7th, a date not its own. -/
+theorem a_wake_day_is_shorter_than_a_day_is_not_vacuous :
+    lastWakeLe (keptWakes Cal.chicago [⟨63924375900, 0⟩, ⟨63924464400, 0⟩]) ⟨63924442200, 0⟩
+      = some ⟨63924375900, 0⟩ ∧
+    dayOf Cal.chicago (keptWakes Cal.chicago [⟨63924375900, 0⟩, ⟨63924464400, 0⟩]) ⟨63924442200, 0⟩
+      = Cal.localDate Cal.chicago ⟨63924375900, 0⟩ ∧
+    Cal.localDate Cal.chicago ⟨63924442200, 0⟩ ≠ Cal.localDate Cal.chicago ⟨63924375900, 0⟩ := by
+  decide
+
+/-- **An undone wake indexes nothing, and every entry keeps a day**: a wake at 06:05 on the 7th, a note
+at 00:30 on the 8th, and `undo{of:"wake"}` at 00:31.  With the wake cancelled the note is on its own
+date, the 8th; the cancelled wake and the undo still have days (their own dates). -/
+theorem an_undone_wake_indexes_nothing :
+    entryDays Cal.chicago [wWake 1 ⟨⟨63924375900, 0⟩, by decide⟩, wNote 2 ⟨⟨63924442200, 0⟩, by decide⟩,
+      ⟨3, ⟨⟨63924442260, 0⟩, by decide⟩, Log.cdt, .undo Log.Kind.wake.tag none⟩]
+      = [(1, 739865), (2, 739866), (3, 739866)] ∧
+    entryDays Cal.chicago [wWake 1 ⟨⟨63924375900, 0⟩, by decide⟩, wNote 2 ⟨⟨63924442200, 0⟩, by decide⟩]
+      = [(1, 739865), (2, 739865)] := by
+  decide
+
+end DayWitnesses
 
 end Replay
 end Tm

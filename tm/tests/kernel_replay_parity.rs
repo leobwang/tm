@@ -15,6 +15,7 @@
 //! | step | fields |
 //! |---|---|
 //! | C1 | `cancelled`: the lines of the entries the undo mask cancels (`ViewRow::cancelled`) |
+//! | C2 | `days`: every entry's wake-attributed day (`ViewRow::day`), survivors, cancelled entries and undos alike, as `(line, days since 0001-01-01)` |
 //!
 //! **The inputs**, every one compared in full:
 //! * the seven corpus logs (`kernel/corpus/logs/*.jsonl`, the design's four, and
@@ -27,8 +28,9 @@
 //! * §6.4's zone cases, each its own arm ([`zone_cases`]).
 //!
 //! **Exceptions** come only from design §17's parity list, each named where it
-//! is used. At C1 there are none: §17 lists the undo mask, dangling undos and the
-//! housekeeping cancellation as exact by design.
+//! is used. At C1 and C2 there are none: §17 lists the undo mask, dangling undos,
+//! the housekeeping cancellation, both first-wake rules and day attribution in
+//! `cfg.tz` inside the table's span, leap seconds included, as exact by design.
 
 #[allow(dead_code)]
 #[path = "../src/cli/tz_table.rs"]
@@ -45,7 +47,7 @@ mod replay;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Mutex, OnceLock};
 
-use chrono::{DateTime, Datelike, Duration, FixedOffset, TimeZone, Utc};
+use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate, TimeZone, Utc};
 use chrono_tz::Tz;
 use serde_json::{json, Value};
 use tm_core::log::{Event, LogEntry};
@@ -63,9 +65,18 @@ struct Facts {
     /// C1: the physical lines of the cancelled entries (undone, or undos), in
     /// file order.
     cancelled: Vec<u64>,
+    /// C2: every entry's day in file order, `(line, day)`, the day counted from
+    /// 0001-01-01 as the kernel's `Cal.Day` is ([`day_number`]).
+    days: Vec<(u64, i64)>,
     /// Not a replay fact: the lines each reader refused (T1's field, carried so a
     /// line one reader dropped cannot hide from the facts above).
     warnings: Vec<u64>,
+}
+
+/// A date as the kernel counts it: days since 0001-01-01 (chrono counts that
+/// date as day 1 from the common era).
+fn day_number(d: NaiveDate) -> i64 {
+    i64::from(d.num_days_from_ce()) - 1
 }
 
 /// The wire table of `tz`, probed once per zone per test binary.
@@ -97,6 +108,16 @@ fn kernel_facts(text: &str, tz: Tz) -> Facts {
             .iter()
             .map(|n| n.as_u64().expect("a line"))
             .collect(),
+        days: facts["days"]
+            .as_array()
+            .expect("facts.days")
+            .iter()
+            .map(|p| {
+                let p = p.as_array().expect("a [line, day] pair");
+                assert_eq!(p.len(), 2, "a [line, day] pair");
+                (p[0].as_u64().expect("a line"), p[1].as_i64().expect("a day"))
+            })
+            .collect(),
         warnings: resp["ok"]["log"]["warnings"]
             .as_array()
             .expect("warnings")
@@ -111,6 +132,7 @@ fn rust_facts(text: &str, tz: Tz) -> Facts {
     let r = replay::replay_of_text(text, tz);
     Facts {
         cancelled: r.view().iter().filter(|row| row.cancelled).map(|row| row.line).collect(),
+        days: r.view().iter().map(|row| (row.line, day_number(row.day))).collect(),
         warnings: replay::warning_lines_of_text(text),
     }
 }
@@ -129,8 +151,35 @@ fn assert_parity(name: &str, text: &str, tz: Tz) -> Facts {
             rs.difference(&ks).map(show).collect::<Vec<_>>()
         );
     }
+    if k.days != r.days {
+        let lines: Vec<&str> = text.split('\n').collect();
+        let wrong: Vec<String> = k
+            .days
+            .iter()
+            .zip(&r.days)
+            .filter(|(a, b)| a != b)
+            .take(5)
+            .map(|(a, b)| format!("line {}: kernel {} rust {} ({})", a.0, a.1, b.1, lines.get(a.0 as usize - 1).copied().unwrap_or("?")))
+            .collect();
+        panic!("{name} ({}): days differ ({} vs {} rows)\n {}", tz.name(), k.days.len(), r.days.len(), wrong.join("\n "));
+    }
     assert_eq!(k, r, "{name}");
     k
+}
+
+/// How many entries of `text` the day index puts on a date other than their own
+/// local date in `tz`: what shows the index, not the calendar, was compared.
+fn off_their_own_date(text: &str, tz: Tz) -> usize {
+    replay::replay_of_text(text, tz)
+        .view()
+        .iter()
+        .filter(|row| row.day != row.entry.t.with_timezone(&tz).date_naive())
+        .count()
+}
+
+/// The kernel's day of physical line `line`.
+fn day_of_line(k: &Facts, line: u64) -> i64 {
+    k.days.iter().find(|(l, _)| *l == line).map(|(_, d)| *d).expect("the line has a day")
 }
 
 // ---------------------------------------------------------------------------
@@ -493,9 +542,24 @@ fn backwards_date_transition(tz: Tz) -> Option<(i64, i32, i32)> {
 }
 
 
-/// §6.4's zone cases (CRIT 11): `(name, text, cfg.tz)`. Each carries undos, so the
-/// C1 mask is exercised on every one; C2's day index is what they are for.
-fn zone_cases() -> Vec<(String, String, Tz)> {
+/// One of §6.4's zone cases: a log, the zone it is read in, and the days some of
+/// its lines must have, worked out by hand from the fork's rule (so the two
+/// readers cannot agree on a wrong day unnoticed).
+struct ZoneCase {
+    name: String,
+    text: String,
+    tz: Tz,
+    expect: Vec<(u64, NaiveDate)>,
+}
+
+fn date(y: i32, m: u32, d: u32) -> NaiveDate {
+    NaiveDate::from_ymd_opt(y, m, d).expect("a date")
+}
+
+/// §6.4's zone cases (CRIT 11). Each carries undos, so the C1 mask is exercised
+/// on every one; C2's day index is what they are for, and each names the days
+/// its interesting lines must have.
+fn zone_cases() -> Vec<ZoneCase> {
     let chicago = chrono_tz::America::Chicago;
     let mut out = Vec::new();
 
@@ -508,27 +572,42 @@ fn zone_cases() -> Vec<(String, String, Tz)> {
         w.push(utc(2026, 11, 1, 7, 30, 0), ev_done("1", 45, false)); // 01:30 CST
         w.push(utc(2026, 11, 1, 7, 40, 0), ev_undo("done", Some("1")));
         w.push(utc(2026, 11, 1, 7, 50, 0), ev_done("1", 60, false)); // 01:50 CST
-        out.push(("fall-back 01:30 twice".to_string(), w.text(), chicago));
+        let expect = vec![(1, date(2026, 10, 31)), (2, date(2026, 11, 1)), (4, date(2026, 11, 1)), (6, date(2026, 11, 1))];
+        out.push(ZoneCase { name: "fall-back 01:30 twice".to_string(), text: w.text(), tz: chicago, expect });
     }
-    // (2) A wake after midnight, under 24 hours after the previous one.
-    {
+    // (2) A wake after midnight, under 24 hours after the previous one: once
+    //     undone (the day stays the first wake's), once standing (it starts a day).
+    for undo_the_wake in [true, false] {
         let mut w = Writer::new(chicago);
         w.push(utc(2026, 9, 7, 11, 0, 0), ev_wake(420)); // 06:00 CDT
         w.push(utc(2026, 9, 8, 5, 30, 0), ev_wake(200)); // 00:30 CDT next day, 18.5 h later
         w.push(utc(2026, 9, 8, 6, 0, 0), ev_start("2"));
         w.push(utc(2026, 9, 8, 6, 50, 0), ev_done("2", 50, false));
-        w.push(utc(2026, 9, 8, 7, 0, 0), ev_undo("wake", None));
-        out.push(("wake after midnight under 24h".to_string(), w.text(), chicago));
+        let (label, day) = if undo_the_wake {
+            w.push(utc(2026, 9, 8, 7, 0, 0), ev_undo("wake", None));
+            ("undone", date(2026, 9, 7))
+        } else {
+            w.push(utc(2026, 9, 8, 7, 0, 0), ev_undo("done", Some("2")));
+            ("standing", date(2026, 9, 8))
+        };
+        let expect = vec![(2, day), (3, day), (4, day)];
+        out.push(ZoneCase { name: format!("wake after midnight under 24h, {label}"), text: w.text(), tz: chicago, expect });
     }
-    // (3) Events 23–25 real hours after a wake, across both transitions.
-    for (label, wake) in [("spring", utc(2026, 3, 7, 14, 0, 0)), ("fall", utc(2026, 10, 31, 13, 0, 0))] {
+    // (3) Events 23–25 real hours after a wake, across both transitions: before
+    //     24 hours the wake's date, from 24 hours the entry's own.
+    for (label, wake, own) in [
+        ("spring", utc(2026, 3, 7, 14, 0, 0), date(2026, 3, 8)),
+        ("fall", utc(2026, 10, 31, 13, 0, 0), date(2026, 11, 1)),
+    ] {
         let mut w = Writer::new(chicago);
         w.push(wake, ev_wake(420));
         for (k, mins) in [23 * 60, 23 * 60 + 59, 24 * 60, 24 * 60 + 1, 25 * 60].into_iter().enumerate() {
             w.push(wake + Duration::minutes(mins), Event::Note { text: format!("n{k}") });
         }
         w.push(wake + Duration::minutes(25 * 60 + 5), ev_undo("note", None));
-        out.push((format!("23-25h after a wake, {label} transition"), w.text(), chicago));
+        let woke = wake.with_timezone(&chicago).date_naive();
+        let expect = vec![(1, woke), (2, woke), (3, woke), (4, own), (5, own), (6, own)];
+        out.push(ZoneCase { name: format!("23-25h after a wake, {label} transition"), text: w.text(), tz: chicago, expect });
     }
     // (4) A fold at midnight where consecutive dedup differs from earliest-per-date:
     //     a wake just after midnight before the fold, one before midnight after it.
@@ -537,7 +616,6 @@ fn zone_cases() -> Vec<(String, String, Tz)> {
         let Some((at, before, after)) = backwards_date_transition(tz) else { continue };
         folds += 1;
         let at = DateTime::from_timestamp(at, 0).expect("in range");
-        let mut w = Writer::new(tz);
         // A wake the evening before, a wake the second before the fold (old
         // offset, the later date), and a wake at the fold (new offset, the date
         // before): by instant the dates run D-1, D, D-1, so consecutive dedup keeps
@@ -548,13 +626,28 @@ fn zone_cases() -> Vec<(String, String, Tz)> {
         let per_date = dates.iter().collect::<BTreeSet<_>>().len();
         assert_ne!(consecutive, per_date, "{}: the fold arm must separate the two dedup rules", tz.name());
         eprintln!("T5 fold arm: {} at {} ({:+} s to {:+} s), dates {dates:?}", tz.name(), at, before, after);
-        w.push_at(wakes[0].with_timezone(&east(before)), ev_wake(400));
-        w.push_at(wakes[1].with_timezone(&east(before)), ev_wake(10));
-        w.push_at(wakes[2].with_timezone(&east(after)), ev_wake(20));
-        w.push_at((at + Duration::minutes(30)).with_timezone(&east(after)), ev_start("3"));
-        w.push_at((at + Duration::minutes(80)).with_timezone(&east(after)), ev_done("3", 50, false));
-        w.push_at((at + Duration::minutes(90)).with_timezone(&east(after)), ev_undo("wake", None));
-        out.push((format!("fold at midnight, {}", tz.name()), w.text(), tz));
+        // Once with the undo taking the third wake (both rules then agree: the start
+        // is on the second wake's date), once with it taking the done (the third
+        // wake stands, and only consecutive dedup puts the start on its date).
+        for undo_the_wake in [true, false] {
+            let mut w = Writer::new(tz);
+            w.push_at(wakes[0].with_timezone(&east(before)), ev_wake(400));
+            w.push_at(wakes[1].with_timezone(&east(before)), ev_wake(10));
+            w.push_at(wakes[2].with_timezone(&east(after)), ev_wake(20));
+            w.push_at((at + Duration::minutes(30)).with_timezone(&east(after)), ev_start("3"));
+            w.push_at((at + Duration::minutes(80)).with_timezone(&east(after)), ev_done("3", 50, false));
+            let (label, day) = if undo_the_wake {
+                w.push_at((at + Duration::minutes(90)).with_timezone(&east(after)), ev_undo("wake", None));
+                ("third wake undone", dates[1])
+            } else {
+                w.push_at((at + Duration::minutes(90)).with_timezone(&east(after)), ev_undo("done", Some("3")));
+                ("third wake standing", dates[2])
+            };
+            // Line 3, the third wake: its own date while it stands; undone, the
+            // second wake's day (a second before it).
+            let expect = vec![(2, dates[1]), (3, day), (4, day), (5, day)];
+            out.push(ZoneCase { name: format!("fold at midnight, {}, {label}", tz.name()), text: w.text(), tz, expect });
+        }
     }
     assert!(folds > 0, "no zone of the fold arm has a backwards-date transition in [1970, 2100)");
     // (5) One day with written offsets -05:00 then +02:00.
@@ -566,9 +659,12 @@ fn zone_cases() -> Vec<(String, String, Tz)> {
         w.push_at((base + Duration::hours(3)).with_timezone(&east(2 * 3600)), ev_done("a1", 60, false));
         w.push_at((base + Duration::hours(4)).with_timezone(&east(2 * 3600)), ev_undo("done", None));
         w.push_at((base + Duration::hours(5)).with_timezone(&east(-5 * 3600)), ev_done("a1", 55, false));
-        out.push(("offsets -05:00 then +02:00".to_string(), w.text(), chicago));
+        let expect = (1..=5).map(|l| (l, date(2026, 9, 7))).collect();
+        out.push(ZoneCase { name: "offsets -05:00 then +02:00".to_string(), text: w.text(), tz: chicago, expect });
     }
-    // (6) cfg.tz different from the writer's Local: written in Berlin, read in Chicago.
+    // (6) cfg.tz different from the writer's Local: written in Berlin, read in
+    //     Chicago. The wake is 23:00 on the 6th in Chicago (06:00 on the 7th in
+    //     Berlin), so the start at midnight is the 6th's.
     {
         let mut w = Writer::new(chrono_tz::Europe::Berlin);
         let base = utc(2026, 9, 7, 4, 0, 0);
@@ -577,7 +673,27 @@ fn zone_cases() -> Vec<(String, String, Tz)> {
         w.push(base + Duration::hours(2), ev_done("17", 50, false));
         w.push(base + Duration::hours(20), ev_wake(380));
         w.push(base + Duration::hours(21), ev_undo("done", Some("17")));
-        out.push(("cfg.tz Chicago, written in Berlin".to_string(), w.text(), chicago));
+        let expect = vec![(1, date(2026, 9, 6)), (2, date(2026, 9, 6)), (3, date(2026, 9, 6)), (4, date(2026, 9, 7)), (5, date(2026, 9, 7))];
+        out.push(ZoneCase { name: "cfg.tz Chicago, written in Berlin".to_string(), text: w.text(), tz: chicago, expect });
+    }
+    // (7) A `:60` stamp at the 24-hour edge (carried note 1): chrono's
+    //     `signed_duration_since` counts a leap second only before a later clock of
+    //     the day, so the 24 hours are chrono's, not a difference of nanoseconds.
+    //     `02:59:60.5` the next day is 23 h 59 min 59.5 s after a 03:00:00 wake (the
+    //     wake's day; by nanoseconds 24 h 0.5 s); `03:01:00` the next day is 24 h
+    //     0.5 s after a `03:00:60.5` wake (its own day; by nanoseconds 23 h 59 min
+    //     59.5 s).
+    {
+        let tz = chrono_tz::UTC;
+        let mut w = Writer::new(tz);
+        w.push(utc(2026, 9, 7, 3, 0, 0), ev_wake(420));
+        w.push_raw(r#"{"t":"2026-09-08T02:59:60.5Z","ev":"note","text":"leap"}"#.to_string());
+        w.push_raw(r#"{"t":"2026-09-10T03:00:60.5Z","ev":"wake","slept_min":400}"#.to_string());
+        w.push(utc(2026, 9, 11, 3, 1, 0), Event::Note { text: "edge".into() });
+        w.push(utc(2026, 9, 11, 3, 2, 0), Event::Note { text: "undone".into() });
+        w.push(utc(2026, 9, 11, 3, 3, 0), ev_undo("note", None));
+        let expect = vec![(1, date(2026, 9, 7)), (2, date(2026, 9, 7)), (3, date(2026, 9, 10)), (4, date(2026, 9, 11))];
+        out.push(ZoneCase { name: "a :60 stamp at the 24-hour edge".to_string(), text: w.text(), tz, expect });
     }
     out
 }
@@ -605,11 +721,14 @@ fn corpus_logs() -> Vec<(String, String)> {
 /// **T5 over the corpus logs**: every one in full.
 #[test]
 fn t5_the_corpus_logs_replay_as_the_fork_does() {
-    let mut cancelled = 0;
+    let (mut cancelled, mut days, mut off) = (0, 0, 0);
     for (name, text) in corpus_logs() {
-        cancelled += assert_parity(&name, &text, chrono_tz::America::Chicago).cancelled.len();
+        let k = assert_parity(&name, &text, chrono_tz::America::Chicago);
+        cancelled += k.cancelled.len();
+        days += k.days.len();
+        off += off_their_own_date(&text, chrono_tz::America::Chicago);
     }
-    eprintln!("T5 corpus: 7 logs, {cancelled} cancelled lines, 0 exceptions");
+    eprintln!("T5 corpus: 7 logs, {cancelled} cancelled lines, {days} days compared ({off} off their own local date), 0 exceptions");
 }
 
 /// **T5 over the generated 1-month and 6-month logs** (40 a day, seed 7).
@@ -621,12 +740,14 @@ fn t5_the_generated_month_and_half_year_replay_as_the_fork_does() {
         let start = std::time::Instant::now();
         let k = assert_parity(label, &text, chrono_tz::America::Chicago);
         assert!(!k.cancelled.is_empty(), "{label}: the generator writes undos");
+        let ms = start.elapsed().as_secs_f64() * 1000.0;
         eprintln!(
-            "T5 {label}: {} lines, {} bytes, {} cancelled, {:.0} ms for both readers, 0 exceptions",
+            "T5 {label}: {} lines, {} bytes, {} cancelled, {} days compared ({} off their own local date), {ms:.0} ms for both readers, 0 exceptions",
             lines.len(),
             text.len(),
             k.cancelled.len(),
-            start.elapsed().as_secs_f64() * 1000.0
+            k.days.len(),
+            off_their_own_date(&text, chrono_tz::America::Chicago),
         );
     }
 }
@@ -636,7 +757,7 @@ fn t5_the_generated_month_and_half_year_replay_as_the_fork_does() {
 fn t5_generated_sequences_replay_as_the_fork_does() {
     let mut counts: BTreeMap<Arm, usize> = BTreeMap::new();
     let mut zones: BTreeMap<&str, usize> = BTreeMap::new();
-    let (mut lines, mut cancelled, mut silent, mut auto) = (0, 0, 0, 0);
+    let (mut lines, mut cancelled, mut silent, mut auto, mut days, mut off) = (0, 0, 0, 0, 0, 0);
     for seed in 0..SEQUENCES {
         let g = generate(seed);
         let k = assert_parity(&format!("sequence {seed}"), &g.text, g.tz);
@@ -646,6 +767,8 @@ fn t5_generated_sequences_replay_as_the_fork_does() {
         *zones.entry(g.tz.name()).or_default() += 1;
         lines += g.text.lines().count();
         cancelled += k.cancelled.len();
+        days += k.days.len();
+        off += off_their_own_date(&g.text, g.tz);
         // Quirk Q6(d): the silent-verb undo cancels the older move, in both readers.
         for t in &g.silent_targets {
             assert!(k.cancelled.contains(t), "sequence {seed}: the silent-verb undo left line {t} standing");
@@ -665,20 +788,32 @@ fn t5_generated_sequences_replay_as_the_fork_does() {
     assert!(silent > 0, "quirk Q6(d) never exercised");
     assert!(auto > 0, "quirk Q6(f) never left a week close standing");
     eprintln!(
-        "T5 sequences: {SEQUENCES} logs, {lines} lines, {cancelled} cancelled, {silent} silent-verb undos \
+        "T5 sequences: {SEQUENCES} logs, {lines} lines, {cancelled} cancelled, {days} days compared ({off} off their own local date), {silent} silent-verb undos \
          cancelling an older move, {auto} week closes left standing by an undo that took the automatic close; arms {counts:?}; zones {zones:?}; 0 exceptions"
     );
 }
 
-/// **T5 over §6.4's zone cases**, each its own arm.
+/// **T5 over §6.4's zone cases**, each its own arm, with the days each case
+/// names checked against the kernel's facts.
 #[test]
 fn t5_the_zone_cases_replay_as_the_fork_does() {
     let cases = zone_cases();
-    for (name, text, tz) in &cases {
-        let k = assert_parity(name, text, *tz);
-        assert!(!k.cancelled.is_empty(), "{name}: every zone case carries an undo");
+    let (mut days, mut named, mut off) = (0, 0, 0);
+    for c in &cases {
+        let k = assert_parity(&c.name, &c.text, c.tz);
+        assert!(!k.cancelled.is_empty(), "{}: every zone case carries an undo", c.name);
+        for (line, d) in &c.expect {
+            assert_eq!(day_of_line(&k, *line), day_number(*d), "{}: line {line} should be on {d}", c.name);
+            named += 1;
+        }
+        days += k.days.len();
+        off += off_their_own_date(&c.text, c.tz);
     }
-    eprintln!("T5 zone cases: {} ({:?}), 0 exceptions", cases.len(), cases.iter().map(|c| &c.0).collect::<Vec<_>>());
+    eprintln!(
+        "T5 zone cases: {} ({:?}), {days} days compared, {named} named days checked, {off} entries off their own local date, 0 exceptions",
+        cases.len(),
+        cases.iter().map(|c| &c.name).collect::<Vec<_>>()
+    );
 }
 
 /// The generator is deterministic: a sequence is its seed.

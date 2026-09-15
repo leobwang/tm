@@ -1383,6 +1383,8 @@ fn the_log_op_answers_by_line() {
 /// `the_log_op_answers_the_cancelled_lines`): a note, its undo, a blank line and
 /// a note, from line 1, facts asked. The note on line 1 and its undo on line 2
 /// are cancelled; `facts` sits after `warnings`, and is `null` when not asked.
+/// C2: every entry, cancelled or not, has its day, 2026-09-07 (day 739,865 from
+/// 0001-01-01) in UTC; the blank line has none.
 #[test]
 fn the_log_op_answers_the_cancelled_lines() {
     let utc = r#"{"key":"UTC","base":"+00:00:00","then":[]}"#;
@@ -1390,7 +1392,7 @@ fn the_log_op_answers_the_cancelled_lines() {
     let out = call(&format!(r#"{{"docs":[],"tz":{utc},"log":{{"ckpt":null,"from":1,"lines":{lines},"terminated":true,"want":{{"facts":true}}}}}}"#)).unwrap();
     assert_eq!(
         out,
-        r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":4,"warnings":[],"facts":{"cancelled":[1,2]},"headers":[],"render":[]}}}"#
+        r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":4,"warnings":[],"facts":{"cancelled":[1,2],"days":[[1,739865],[2,739865],[4,739865]]},"headers":[],"render":[]}}}"#
     );
     let out = call(&format!(r#"{{"docs":[],"tz":{utc},"log":{{"ckpt":null,"from":1,"lines":{lines},"terminated":true,"want":{{"facts":false}}}}}}"#)).unwrap();
     assert!(out.contains(r#""warnings":[],"facts":null,"headers":[]"#), "{out}");

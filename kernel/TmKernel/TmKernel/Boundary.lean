@@ -2743,6 +2743,9 @@ structure LogReq where
   /-- `want.facts` (stage 5 D9 C1): the tail's replay facts; at C1, its cancelled line set.  Last, so
   the five fields before it keep their places. -/
   facts : Bool
+  /-- The request's zone (stage 5 D9 C2): the `tz` section, read once (`zoneOf`), which the facts'
+  day index reads.  Last, so the six fields before it keep their places. -/
+  tz : Cal.Tz
 deriving DecidableEq, Repr
 
 /-- Line numbers on the wire are below `2^40` (§10.4). -/
@@ -2827,8 +2830,8 @@ where
     | _ => .error (.badLogReq .render)
 
 /-- **The `log` section**, field by field, then `mkLogReq?`.  `lines` is measured before its
-elements are read. -/
-def readLogReq (j : JVal) : Except LogRefusal VLogReq :=
+elements are read.  `z` is the request's zone, already read (stage 5 D9 C2). -/
+def readLogReq (z : Cal.Tz) (j : JVal) : Except LogRefusal VLogReq :=
   match j with
   | .obj _ =>
     if !nullOrAbsent j "ckpt" then .error (.badLogReq .ckpt) else
@@ -2848,7 +2851,7 @@ def readLogReq (j : JVal) : Except LogRefusal VLogReq :=
               match jget j "want" with
               | .ok w =>
                 match readWant w with
-                | .ok (fa, hf, rs) => mkLogReq? ⟨from_, rev.reverse, term, hf, rs, fa⟩
+                | .ok (fa, hf, rs) => mkLogReq? ⟨from_, rev.reverse, term, hf, rs, fa, z⟩
                 | .error e => .error e
               | .error _ => .error (.badLogReq .want)
           | _ => .error (.badLogReq .terminated)
@@ -2920,9 +2923,12 @@ def entryOf : Log.Verdict → Option Log.Entry
 
 /-- **The tail's facts** (design §10.2's `facts`, stage 5 D9 C1): at C1 the cancelled line set, the
 lines of the entries the undo mask cancels (`Replay.cancelledLines`, compiled as its fast twin), in
-file order.  C6 replaces this with the whole view. -/
-def factsJson (es : List Log.Entry) : JVal :=
-  .obj [("cancelled".toList, .arr ((Replay.cancelledLines es).map JVal.num))]
+file order.  **C2 adds `days`**: `[line, day]` for every entry in file order, cancelled ones included,
+its wake-attributed day in the request's zone (`Replay.entryDays`, compiled as its bisection twin),
+a day being days since 0001-01-01.  C6 replaces this with the whole view. -/
+def factsJson (z : Cal.Tz) (es : List Log.Entry) : JVal :=
+  .obj [("cancelled".toList, .arr ((Replay.cancelledLines es).map JVal.num)),
+        ("days".toList, .arr ((Replay.entryDays z es).map (fun p => .arr [.num p.1, .num p.2])))]
 
 /-- **The `log` answer**: `lines` (the last physical line seen), `warnings`, `headers`, `render`,
 keys in build order.  `render` looks its lines up in an array. -/
@@ -2931,7 +2937,7 @@ def logAnswer (r : VLogReq) : JVal :=
   let arr := vs.toArray
   .obj [("lines".toList, .num (r.val.from_ + r.val.lines.length - 1)),
         ("warnings".toList, .arr (vs.filterMap warningOf)),
-        ("facts".toList, if r.val.facts then factsJson (vs.filterMap entryOf) else .null),
+        ("facts".toList, if r.val.facts then factsJson r.val.tz (vs.filterMap entryOf) else .null),
         ("headers".toList, .arr (match r.val.headersFrom with
           | none => []
           | some hf => vs.filterMap (headerOf hf))),
@@ -2947,15 +2953,16 @@ def readLogSection (j : JVal) : Except JVal (Option VLogReq) :=
     | .ok tz =>
       match tz.map readTz with
       | some (.error w) => .error (LogRefusal.badTz w).json
-      | _ =>
+      | zr =>
         match jget j "log" with
         | .ok none => .ok none
         | .ok (some l) =>
-          if tz.isNone then .error LogRefusal.tzAbsent.json
-          else
-            match readLogReq l with
+          match zr with
+          | some (.ok z) =>
+            match readLogReq z l with
             | .ok r => .ok (some r)
             | .error e => .error e.json
+          | _ => .error LogRefusal.tzAbsent.json
         | .error _ => .error (LogRefusal.badLogReq .log).json
   | _ => .ok none
 
@@ -4448,7 +4455,7 @@ theorem the_response_shapes_emit_in_build_order :
     -- (`withLog_jone`), the answer's value with its keys in order, and the warning's bytes.
     jemit (withLog .null (jone "ok" (.obj [("docs".toList, .arr []), ("report".toList, reportJson Report.empty)])))
       = "{\"ok\":{\"docs\":[],\"report\":{\"closes\":[]},\"log\":null}}".toList ∧
-    logAnswer ⟨⟨17, [none], true, some 17, [17], false⟩, by decide⟩
+    logAnswer ⟨⟨17, [none], true, some 17, [17], false, Replay.utcZone⟩, by decide⟩
       = .obj [("lines".toList, .num 17), ("warnings".toList, .arr [lwarnJson 17 .invalidUtf8]),
           ("facts".toList, .null), ("headers".toList, .arr []), ("render".toList, .arr [.arr [.num 17, .null, .null]])] ∧
     jemit (lwarnJson 17 .invalidUtf8) = "{\"line\":17,\"w\":\"invalidUtf8\"}".toList ∧
@@ -8114,11 +8121,11 @@ theorem readTz_refuses_too_many_transitions (kvs : List (List Char × JVal)) (ke
     readTz (.obj kvs) = .error .tooManyTransitions := by
   simp [readTz, hk, hb, hbo, ht, hl, Nat.not_lt.mpr hkl]
 
-theorem readLogReq_refuses_more_lines_than_the_bound (kvs : List (List Char × JVal)) (n : Nat)
+theorem readLogReq_refuses_more_lines_than_the_bound (z : Cal.Tz) (kvs : List (List Char × JVal)) (n : Nat)
     (xs : List JVal) (hc : nullOrAbsent (.obj kvs) "ckpt" = true)
     (hf : jget (.obj kvs) "from" = .ok (some (.num n)))
     (hl : jget (.obj kvs) "lines" = .ok (some (.arr xs))) (hn : maxLogLines < xs.length) :
-    readLogReq (.obj kvs) = .error .tooManyLines := by
+    readLogReq z (.obj kvs) = .error .tooManyLines := by
   simp [readLogReq, hc, hf, hl, hn]
 
 /-- A line as the host sent it: a string, or `null` for a line that is not UTF-8. -/
@@ -8146,7 +8153,7 @@ theorem lineStep_fold (xs : List JVal) : ∀ (acc ys : List (Option (List Char))
 
 /-- **The op reads the lines the host sent, in order** (with `logVerdicts_eq`: line `from + k` is
 `Log.readLine` of the `k`-th element). -/
-theorem readLogReq_reads_the_lines_as_sent (j : JVal) (v : VLogReq) (h : readLogReq j = .ok v) :
+theorem readLogReq_reads_the_lines_as_sent (z : Cal.Tz) (j : JVal) (v : VLogReq) (h : readLogReq z j = .ok v) :
     ∃ xs, jget j "lines" = .ok (some (.arr xs)) ∧ v.val.lines = xs.map segOf := by
   unfold readLogReq at h
   repeat' (split at h)
@@ -9172,9 +9179,10 @@ def logSectionWith (j : JVal) (zo : Option Cal.Tz) : Except JVal (Option VLogReq
   match jget j "log" with
   | .ok none => .ok none
   | .ok (some l) =>
-    if zo.isNone then .error LogRefusal.tzAbsent.json
-    else
-      match readLogReq l with
+    match zo with
+    | none => .error LogRefusal.tzAbsent.json
+    | some z =>
+      match readLogReq z l with
       | .ok r => .ok (some r)
       | .error e => .error e.json
   | .error _ => .error (LogRefusal.badLogReq .log).json
@@ -10430,11 +10438,14 @@ theorem the_tail_entries_have_increasing_lines (r : LogReq) :
   rw [logVerdicts_eq]
   exact linesIncreasing_of_pairwise _ (filterMap_entryOf_pairwise _ _)
 
-/-- **The `facts` key**: `null` unless asked; asked, the cancelled lines of the tail's entries. -/
+/-- **The `facts` key**: `null` unless asked; asked, the cancelled lines of the tail's entries and (C2)
+every entry's day in the request's zone. -/
 theorem logAnswer_facts (r : VLogReq) :
     ∃ a b c d, logAnswer r = .obj [a, b, ("facts".toList,
       if r.val.facts then .obj [("cancelled".toList,
-        .arr ((Replay.cancelledLines ((logVerdicts r.val).filterMap entryOf)).map JVal.num))] else .null), c, d] :=
+        .arr ((Replay.cancelledLines ((logVerdicts r.val).filterMap entryOf)).map JVal.num)),
+        ("days".toList, .arr ((Replay.entryDays r.val.tz ((logVerdicts r.val).filterMap entryOf)).map
+          (fun p => .arr [.num p.1, .num p.2])))] else .null), c, d] :=
   ⟨_, _, _, _, rfl⟩
 
 /-- An accepted request asking for facts reads its tail from line 1. -/
@@ -10483,14 +10494,77 @@ def factsWitnessUndo : List Char :=
 
 set_option maxRecDepth 8000 in
 /-- **The op answers the cancelled lines, end to end**: a note, the undo of it, a blank line and a
-note after it, from line 1, facts asked.  Lines 1 and 2 are cancelled; line 4 survives. -/
+note after it, from line 1, facts asked.  Lines 1 and 2 are cancelled; line 4 survives.  (C2: every
+entry, the cancelled two included, is on 2026-09-07, day 739865, in UTC; the blank line has no day.) -/
 theorem the_log_op_answers_the_cancelled_lines :
     logAnswer ⟨⟨1, [some factsWitnessNote, some factsWitnessUndo, some [], some factsWitnessNote],
-        true, none, [], true⟩, by decide⟩
+        true, none, [], true, Replay.utcZone⟩, by decide⟩
       = .obj [("lines".toList, .num 4), ("warnings".toList, .arr []),
-          ("facts".toList, .obj [("cancelled".toList, .arr [.num 1, .num 2])]),
+          ("facts".toList, .obj [("cancelled".toList, .arr [.num 1, .num 2]),
+            ("days".toList, .arr [.arr [.num 1, .num 739865], .arr [.num 2, .num 739865],
+              .arr [.num 4, .num 739865]])]),
           ("headers".toList, .arr []), ("render".toList, .arr [])] := by
   decide
 
 end C1
+
+/-! ## Stage 5 D9 C2: the `log` op's facts — every entry's day
+
+APPENDED 2026-09-14 (stage 5, D9 track, step C2; design §6.2, §14.4 row C2).  `facts` gains `days`:
+`[line, day]` for every entry of the tail in file order, cancelled entries and undos included, where
+`day` is the entry's wake-attributed day (`Replay.entryDays`, compiled as `Replay.entryDaysFast`) in
+the request's zone, as days since 0001-01-01.  The zone is the `tz` section, read once by `zoneOf`
+(gap 110) and carried into the validated request as `LogReq.tz`: `readLogReq` takes it, and
+`readLogSection` and `logSectionWith` pass the table they read (`logSectionWith_passes_its_zone`). -/
+
+section C2
+
+/-- **The request carries the zone its section was read with**: whatever `logSectionWith` accepts
+over a zone holds that zone. -/
+theorem logSectionWith_passes_its_zone (j : JVal) (z : Cal.Tz) (r : VLogReq)
+    (h : logSectionWith j (some z) = .ok (some r)) : r.val.tz = z := by
+  unfold logSectionWith at h
+  split at h
+  · cases h
+  · rename_i l _
+    simp only at h
+    split at h
+    · rename_i r' hr
+      cases h
+      unfold readLogReq at hr
+      repeat' (split at hr)
+      all_goals first
+        | (cases hr; done)
+        | skip
+      rw [mkLogReq?_keeps_the_request _ _ hr]
+    · cases h
+  · cases h
+
+/-- A `wake` line of 56 characters and two notes of 51, spelled as characters (the parser reads
+them): the wake at 11:00 UTC on 2026-09-07, a note 18 hours later at 05:00 on the 8th, and a note 25
+hours later at 12:00 on the 8th. -/
+def daysWitnessWake : List Char :=
+  ['{', '"', 't', '"', ':', '"', '2', '0', '2', '6', '-', '0', '9', '-', '0', '7', 'T', '1', '1', ':', '0', '0', ':', '0', '0', 'Z', '"', ',', '"', 'e', 'v', '"', ':', '"', 'w', 'a', 'k', 'e', '"', ',', '"', 's', 'l', 'e', 'p', 't', '_', 'm', 'i', 'n', '"', ':', '4', '2', '0', '}']
+
+def daysWitnessNoteA : List Char :=
+  ['{', '"', 't', '"', ':', '"', '2', '0', '2', '6', '-', '0', '9', '-', '0', '8', 'T', '0', '5', ':', '0', '0', ':', '0', '0', 'Z', '"', ',', '"', 'e', 'v', '"', ':', '"', 'n', 'o', 't', 'e', '"', ',', '"', 't', 'e', 'x', 't', '"', ':', '"', 'a', '"', '}']
+
+def daysWitnessNoteB : List Char :=
+  ['{', '"', 't', '"', ':', '"', '2', '0', '2', '6', '-', '0', '9', '-', '0', '8', 'T', '1', '2', ':', '0', '0', ':', '0', '0', 'Z', '"', ',', '"', 'e', 'v', '"', ':', '"', 'n', 'o', 't', 'e', '"', ',', '"', 't', 'e', 'x', 't', '"', ':', '"', 'b', '"', '}']
+
+set_option maxRecDepth 8000 in
+/-- **The op answers every entry's day, end to end**: in UTC, the wake is on 2026-09-07 (day 739865),
+the note 18 hours after it on the 8th belongs to the wake's day, and the note 25 hours after it is on
+its own date, the 8th (day 739866).  Nothing is cancelled. -/
+theorem the_log_op_answers_every_entrys_day :
+    logAnswer ⟨⟨1, [some daysWitnessWake, some daysWitnessNoteA, some daysWitnessNoteB],
+        true, none, [], true, Replay.utcZone⟩, by decide⟩
+      = .obj [("lines".toList, .num 3), ("warnings".toList, .arr []),
+          ("facts".toList, .obj [("cancelled".toList, .arr []),
+            ("days".toList, .arr [.arr [.num 1, .num 739865], .arr [.num 2, .num 739865],
+              .arr [.num 3, .num 739866]])]),
+          ("headers".toList, .arr []), ("render".toList, .arr [])] := by
+  decide
+
+end C2
 end Tm

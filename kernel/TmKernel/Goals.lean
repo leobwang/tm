@@ -384,6 +384,20 @@ burn-down stays at 13: `Replay.survivors_snoc_event`, `Replay.survivors_snoc_und
 `hu`, which it does not need (§15's statement is that theorem applied to fewer
 arguments).  README "Stage 5 D9 C1". -/
 
+/- **§6.2's day index is real (2026-09-14, stage 5 D9 step C2).**
+The three C2 goals of design §15 were added here **restated in chrono's order**, elaborated against
+`TmKernel/Replay.lean` (16 goals, no error), and discharged in the same step, so the burn-down stays
+at 13.  §15 wrote them on `Cal.Instant.nanos`; the fork sorts `DateTime`s and tests
+`t.signed_duration_since(w) < Duration::hours(24)`, which differ from nanosecond counts at a leap
+second, and each statement as written is false of the fork's index
+(`Replay.dayOf_is_the_wake_date_within_a_day_by_nanos_is_refuted`,
+`Replay.a_wake_day_is_shorter_than_a_day_by_nanos_is_refuted`,
+`Replay.keptWakes_append_of_later_by_nanos_is_refuted`).  Restated with `(Cal.durationBetween w t).1 <
+86400` and `Cal.Instant`'s `<`, all three are proved as restated:
+`Replay.dayOf_is_the_wake_date_within_a_day`, `Replay.a_wake_day_is_shorter_than_a_day` and
+`Replay.keptWakes_append_of_later` (each checked against its restated goal by a scratch `example`).
+README "Stage 5 D9 C2". -/
+
 /-! ############################################################################
 # STAGE 6 — the planner; §8.3's invariants; L24 and L25
 

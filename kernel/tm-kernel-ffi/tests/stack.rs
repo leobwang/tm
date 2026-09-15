@@ -165,11 +165,39 @@ fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
         assert_eq!(
             out,
             format!(
-                r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"log":{{"lines":32768,"warnings":[],"facts":{{"cancelled":[{}]}},"headers":[],"render":[]}}}}}}"#,
-                all.join(",")
+                r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"log":{{"lines":32768,"warnings":[],"facts":{{"cancelled":[{}],"days":[{}]}},"headers":[],"render":[]}}}}}}"#,
+                all.join(","),
+                // C2: 06:05 at -05:00 is 11:05 UTC on 2026-09-07, day 739,865, for every line.
+                (1..=32_768).map(|n| format!("[{n},739865]")).collect::<Vec<_>>().join(",")
             )
         );
         eprintln!("the mask at the line bound: {:.0} ms", start.elapsed().as_secs_f64() * 1000.0);
+    });
+    // Stage 5 D9 C2: the day index at the line bound (`Replay.sortWakes` compiled as
+    // core's merge sort, `sortWakes_eq_sortWakesFast`; each entry's wake found by
+    // bisection, `entryDays_eq_entryDaysFast`). 32,768 wakes on 32,768 dates written
+    // newest first, so the sort reverses the whole list and the index keeps every
+    // wake; each wake is on its own date. The specification's fold per entry would
+    // compare over half a billion pairs.
+    on_a_2mib_thread(|| {
+        let lines: Vec<String> = (0..32_768i64)
+            .map(|i| format!(r#""{{\"t\":\"{}T06:05:00Z\",\"ev\":\"wake\",\"slept_min\":420}}""#, date_after_spec_monday(-i)))
+            .collect();
+        let req = format!(
+            r#"{{"docs":[],"tz":{{"key":"UTC","base":"+00:00:00","then":[]}},"log":{{"ckpt":null,"from":1,"lines":[{}],"terminated":true,"want":{{"facts":true}}}}}}"#,
+            lines.join(",")
+        );
+        let start = std::time::Instant::now();
+        let out = call(&req).unwrap();
+        let days: Vec<String> = (0..32_768i64).map(|i| format!("[{},{}]", i + 1, 739_865 - i)).collect();
+        assert_eq!(
+            out,
+            format!(
+                r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"log":{{"lines":32768,"warnings":[],"facts":{{"cancelled":[],"days":[{}]}},"headers":[],"render":[]}}}}}}"#,
+                days.join(",")
+            )
+        );
+        eprintln!("the day index at the line bound: {:.0} ms", start.elapsed().as_secs_f64() * 1000.0);
     });
 }
 

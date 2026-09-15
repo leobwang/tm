@@ -1386,7 +1386,7 @@ def unsortedZone : Cal.Tz :=
    line 2 alone asks for line 1; `mkLogReq?` refuses it `renderNotInTail`, so
    claiming the request is accepted is false: `decide` refuses it. -/
 theorem aRenderLineOutsideTheTailAccepted :
-    (mkLogReq? ⟨2, [some ['x']], true, none, [1], false⟩).toBool = true := by
+    (mkLogReq? ⟨2, [some ['x']], true, none, [1], false, Replay.utcZone⟩).toBool = true := by
   decide
 
 -- ===========================================================================
@@ -1555,6 +1555,37 @@ def maskStepKeepingTheUndo (st : List Log.Entry) (e : Log.Entry) : List Log.Entr
 theorem anUndoThatKeepsItselfNeverSurvives :
     ∀ u ∈ ([Replay.wEnt 1 (.undo Log.Kind.note.tag none)].foldl maskStepKeepingTheUndo []).reverse,
       u.ev.isUndo = false := by
+  decide
+
+
+-- ===========================================================================
+-- APPENDED 2026-09-14 (stage 5, D9 track, step C2: the day index in
+-- `Replay.lean`).  Design §16's label 96 ("a 25-hour wake day").  Number 144 is
+-- the next free number in this checkout (the highest was 143, C1).  The control,
+-- which compiles, is `Replay.a_wake_day_is_shorter_than_a_day` with its witness
+-- `Replay.a_wake_day_is_shorter_than_a_day_is_not_vacuous`.  Everything below
+-- must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 144 — a 25-hour wake day.  Fork `DayIndex::day_of` attributes an instant
+   to its last wake's date only while `t.signed_duration_since(w) < 24 h`
+   (`Replay.a_wake_day_is_shorter_than_a_day`).  A `dayOf` whose window is 25
+   hours claims the same law and cannot have it: in Chicago, 06:35 on 2026-09-08
+   is 24 h 30 min after the 06:05 wake of the 7th, a different date, and this
+   `dayOf` still puts it on the 7th.  `decide` refuses. -/
+def dayOfWithA25HourDay (z : Cal.Tz) (kw : List Cal.Instant) (t : Cal.Instant) : Nat :=
+  match Replay.lastWakeLe kw t with
+  | some w => if (Cal.durationBetween w t).1 < 90000 then Cal.localDate z w else Cal.localDate z t
+  | none => Cal.localDate z t
+
+theorem aWakeDayOf25HoursIsShorterThanADay :
+    let kw := Replay.keptWakes Cal.chicago [⟨63924375900, 0⟩]
+    let t : Cal.Instant := ⟨63924464100, 0⟩
+    let w : Cal.Instant := ⟨63924375900, 0⟩
+    Replay.lastWakeLe kw t = some w →
+    dayOfWithA25HourDay Cal.chicago kw t = Cal.localDate Cal.chicago w →
+    Cal.localDate Cal.chicago t ≠ Cal.localDate Cal.chicago w →
+    (Cal.durationBetween w t).1 < 86400 := by
   decide
 
 end Tm
