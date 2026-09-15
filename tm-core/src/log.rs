@@ -53,8 +53,9 @@
 //!   `instance_status(item, inst)`, `instances_of(item)`, `stamps(id)`,
 //!   `events_named(name)`, `events_for(id)`, `breaks()`,
 //!   `done_minutes_map()` (§6.4, keyed by [`crate::model::Id`] for
-//!   `tree::done_minutes`), and [`DayReplay::gaps`] (unattributed gaps for
-//!   the §11 leak ledger). `Replay` is
+//!   `tree::done_minutes`), [`DayReplay::gaps`] (unattributed gaps for
+//!   the §11 leak ledger), and `seam(date)`, the [`DaySeam`] facts the
+//!   CLI and TUI once walked the log for. `Replay` is
 //!   `Serialize`/`Deserialize` (JSON-safe: every map key is a string or a
 //!   date) for `--json` output.
 //!
@@ -1501,6 +1502,24 @@ impl DayReplay {
     }
 }
 
+/// A day's seam facts (stage 5 D9 Phase R, design §8.4's "since-break anchor,
+/// idle marks" and `lastT` rows): what the CLI and TUI used to walk
+/// `Log::iter_day` for, derived once by the replay instead.
+///
+/// Kept beside [`Replay::days`], not inside [`DayReplay`]: a `DayReplay`
+/// exists only for a day some events create (a `wake`, `start`, `break`, …),
+/// while these facts read **every** surviving entry whose wake-attributed day
+/// is the date — a day holding only a `pause` or a `note` has a seam and no
+/// `DayReplay`, and adding a `DayReplay` for it would change what
+/// `Replay::day` and every `days` iteration see.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+pub struct DaySeam {
+    /// When the last `break` of the day ended (`t + actual_min`, a missing
+    /// `actual_min` counting as 0), else the day's first `start`; `None` with
+    /// neither. `day.rs`'s `since_break_min` measures from it.
+    pub since_break: Option<DateTime<FixedOffset>>,
+}
+
 /// Per-item derived state.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct ItemReplay {
@@ -1567,12 +1586,19 @@ pub struct Replay {
     /// Inconsistencies noticed while replaying (a `done` for an item that was
     /// not started is fine; an unknown routine status is not).
     pub warnings: Vec<String>,
+    /// Per wake-attributed day inside the range: the seam facts of every
+    /// surviving entry of that day ([`DaySeam`]).
+    pub seams: BTreeMap<NaiveDate, DaySeam>,
 }
 
 impl Replay {
     /// The day's record.
     pub fn day(&self, date: NaiveDate) -> Option<&DayReplay> {
         self.days.get(&date)
+    }
+    /// The day's seam facts, when any surviving entry belongs to `date`.
+    pub fn seam(&self, date: NaiveDate) -> Option<&DaySeam> {
+        self.seams.get(&date)
     }
     /// Σ block minutes for `id`.
     pub fn block_minutes(&self, id: &str) -> u32 {
@@ -1921,6 +1947,16 @@ impl Machine {
     fn step(&mut self, e: &LogEntry) {
         let t = e.t;
         let day = self.days.day_of(t);
+        if self.in_range(day) {
+            let seam = self.out.seams.entry(day).or_default();
+            match &e.ev {
+                Event::Break { actual_min, .. } => {
+                    seam.since_break = Some(t + Duration::minutes(i64::from(actual_min.unwrap_or(0))));
+                }
+                Event::Start { .. } if seam.since_break.is_none() => seam.since_break = Some(t),
+                _ => {}
+            }
+        }
         match &e.ev {
             Event::Wake {
                 slept_min,
@@ -2442,6 +2478,7 @@ fn replay_refs(entries: &[&LogEntry], range: Option<RangeInclusive<NaiveDate>>, 
             open_interrupt: None,
             unknown: 0,
             warnings: Vec::new(),
+            seams: BTreeMap::new(),
         },
         block: None,
         last_cut: None,

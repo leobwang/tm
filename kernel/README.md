@@ -12504,3 +12504,57 @@ none.** **Parity entries: none.** **Observable behaviour changes: none** (no cod
 | `cargo test --workspace` | **1026 passed / 0 failed / 2 ignored across 70 binaries** |
 | FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
 | `cli_latency.rs` | green: first verb 632.6 / 626.7 / 622.7 ms (226 files, 2,959 lines), later verb 50.6 / 55.7 / 50.7 ms |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-14: stage 5 D9 R1 (design §14.3 row R1, §8.4), on
+     rebuild-on-lean after 1fe59c6.  Takes no gap, cheat or parity number.
+     =========================================================================== -->
+
+## Stage 5 D9 R1, 2026-09-14: the replay says when the last break ended — `day.rs` stops walking the log
+
+**What changed.** `tm_core::log` gains `DaySeam { since_break }`, a `Replay.seams` map keyed by
+wake-attributed day, and `Replay::seam(date)`. The machine fills it in `step` for every surviving
+entry whose day is in range: a `break` sets `since_break = t + actual_min` (a missing `actual_min`
+counts as 0), a `start` sets it to `t` only while it is still unset. `cli/day.rs`'s
+`since_break_min` reads `ctx.replay.seam(ctx.today)` instead of walking `ctx.log.iter_day`; its
+running-break and `now` clamping are unchanged.
+
+**Equivalence test (run, then deleted with the old walk in this commit, §14.3).** A unit test in
+`cli/day.rs` held the old loop verbatim and compared it with `seam(d).since_break` for every day
+`d` a surviving entry is attributed to, and the day before and after, in `America/Chicago`, over the
+four corpus logs (`three-days`, `energy-14d`, `review-14d`, `malformed`) and loggen's 1-month logs at
+both rates (`log-1mo`, 1,191 entries; `log80-1mo`, 1,845): **104 days equal, 90 of them with an
+anchor, 0 differences**.
+
+**Existing suites.** No assertion changed. `cli_day` 26 passed. One snapshot was extended, not
+changed: `log_replay__three_days_replay.snap` serialises the whole `Replay`, so it gains the
+`seams:` map (7 added lines, 0 removed; the three days' anchors 09:32, 08:45 and 09:05). §14.3's
+"assertions do not change" is read as covering this: the snapshot is the struct's serialisation, and
+every new field of a later R step extends it the same way.
+
+### Recorded disagreements between the design and the repo
+
+1. **The seam facts live in `Replay.seams`, not in `DayReplay`** (rows R1, R2, R4 say
+   `DayReplay.since_break`, `DayReplay.idle_marks`, `DayReplay.last_t`; §8.4 puts them in
+   `DayFacts`). A `DayReplay` exists only for a day some events create (`wake`, `arrive`, `loc`,
+   `start`, `break`, `idle`, `plan`, a `resume`'s start day, a routine `done`), while the walks these
+   facts replace read **every** survivor of the day: `pause`, `unpause` and `interrupt` (R2) and
+   `note`, `energy`, `close` or an unknown event (R4) create no record. Creating one would change
+   `Replay::day` (16 call sites) and `status_line`'s `days.keys().last`. So one side map holds the
+   three facts for every touched day, and `Replay.days` is untouched. R1's own fact is exact either
+   way (`start` and `break` both create the day); the shape was chosen once here so R2 and R4 do not
+   move it. The kernel's `DayFacts` (C-phase) exists for every touched day, which is `seams`' key set,
+   not `days`'.
+
+**Goals discharged: none. Refuted: none. Added: none.** Burn-down **13 → 13**. **New theorems:
+none.** **Parity entries: none.** **Observable behaviour changes: none.** **Numbers taken: none.**
+No kernel change; no recursion over a wire list.
+
+**Re-measured** (main worktree, every command under the 30 GB cap):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.82 s; audit **2672**; corpus **29/37 and 4/5**; burn-down **13** |
+| `cargo test --workspace` | **1026 passed / 0 failed / 2 ignored across 70 binaries** |
+| FFI suite (`tm-kernel-ffi`) | **92 passed / 0 failed** |
+| `cli_latency.rs` | green: first verb 632.8 / 621.8 / 627.8 ms (226 files, 2,959 lines), later verb 55.7 / 50.6 / 50.7 ms |

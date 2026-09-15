@@ -87,17 +87,7 @@ fn ask_energy(pred: u8) -> Option<u8> {
 /// first `start` instead: zero would read as "a break has just ended" after
 /// five hours of unbroken work.
 fn since_break_min(ctx: &Ctx) -> u32 {
-    let mut since = None;
-    for e in ctx.log.iter_day(ctx.today, ctx.cfg.tz) {
-        match &e.ev {
-            Event::Break { actual_min, .. } => {
-                let mins = i64::from(actual_min.unwrap_or(0));
-                since = Some(e.t + chrono::Duration::minutes(mins));
-            }
-            Event::Start { .. } if since.is_none() => since = Some(e.t),
-            _ => {}
-        }
-    }
+    let since = ctx.replay.seam(ctx.today).and_then(|s| s.since_break);
     // A break that is still running (started, not yet ended) is itself the
     // most recent boundary: nothing has been worked since it began.
     if let Some(br) = &ctx.state.break_ {
