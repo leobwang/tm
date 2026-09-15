@@ -18618,3 +18618,144 @@ still the only reader; the switch is S).
 **Owed next, unchanged by this repair:** **S (the switch)**, which nothing here blocks. Also owed, each already named:
 gap 127 (the pinned day's reseal, unbounded), gap 126's wire levers, gap 123's tests, gap 122's linear-growth
 measurement, and gap 120's part 3 (wiring every verb but `tm check` to the named fault, at S).
+
+<!-- ===========================================================================
+     APPENDED 2026-09-15: stage 5, D9 track, the S attempt on rebuild-on-lean
+     (after the W-5 audit repair, 017ead3).  THE SWITCH DID NOT LAND.  This
+     block says what did land, what S is still missing (by name), and what was
+     measured.  Takes gap 128; new gaps start at 129.  Cheats and parity
+     entries are untouched (no Lean edited).
+     =========================================================================== -->
+
+## Stage 5 D9, the S attempt, 2026-09-15: the switch did NOT land — the fork point becomes a real oracle, and the four fields S is missing are named
+
+**Starting point.** `017ead3`, clean: check.sh 7/7, audit 3934, corpus 29/37 files and 4/5 whole plans,
+burn-down 13, `cargo test --workspace` 1082 / 0 / 5 across 73 result lines, FFI 100, T5 19.
+
+**The binary still has exactly one reader of the log, and it is the Rust.** `Ctx::replay_with`'s body is
+unchanged. Nothing in `tm` calls `kernel_log.rs`. **No observable behaviour changed**, and design §14.6's
+"do not commit a partial switch" was honoured: what landed below is preparation that stands on its own,
+not half a switch.
+
+### Why S did not land, stated plainly
+
+§14.6 item 4 retargets **T5's oracle** to fork point `4748911`, because the switch deletes the in-tree
+Rust reader that T5 compares against today. That oracle **did not exist**: AGENTS §7.3 recorded
+`build-oracle.sh` as *"Broken in this clone, and owed"* — it ran `git archive main`, and `main` was
+discarded on 2026-09-12, so it failed before it built anything. S cannot be accepted while the acceptance
+instrument for its largest claim is broken, so the instrument was built first.
+
+That left the switch itself unstarted. Its blocking finding is gap 128 below.
+
+### What landed
+
+1. **`build-oracle.sh` is repaired and retargeted to the fork point `4748911`** (AGENTS §7.3's owed
+   repair). It stamps the scratch tree with the ref it extracted (`.oracle-ref`), so a tree left by the
+   old `main`-targeted script, or a changed `TM_FORK`, is re-extracted instead of silently reused; the
+   workspace-members edit is written through a temp file rather than `sed -i`, whose backup suffix is
+   spelled differently by GNU and BSD sed, and it now **fails loudly** if the members line is not the
+   shape it expected instead of building the wrong thing.
+2. **The oracle learns `replay <tz>`** (`examples/oracle/src/main.rs`): it reads whole log texts, one
+   JSON string per line, and prints what the fork's `log::replay(None, tz)` derives from each, as JSON.
+   **This is T5's oracle at the switch.**
+3. **Two false provenance strings are corrected.** `oracle-compare.rs` printed
+   `differential oracle — Lean kernel vs `main`'s tm-core::grammar` on every run, and its docstring said
+   the input came from "a scratch checkout of `main`". Both now name the fork point. A tool that prints
+   the wrong provenance for its own evidence is worse than one that does not run.
+4. **AGENTS §7.3 is corrected** — the "broken and owed" paragraph, and the figures it says "cannot be
+   reproduced here", are replaced by the repaired state and the figures measured below.
+
+**Why the `replay` oracle is a whole-`Replay` comparison and not a hand-listed one** (measured, not
+assumed): the fork's `Replay` and this branch's serialise **20** and **22** keys; the branch-only keys are
+exactly `seams` and `last_effective_t` (steps R1–R4), there are **no** fork-only keys, `rows` and
+`line_count` are `#[serde(skip)]` on both sides, and **all 19 nested record structs** (`DayReplay`,
+`ItemReplay`, `EnergyObs`, `DurationObs`, `Interruption`, `NamedEvent`, `Demotion`, `CloseRecord`,
+`InstanceRecord`, `LeakRecord`, `OpenBlock`, `StartRecord`, `BreakRecord`, `IdleRecord`, `LogSegment`,
+`SegmentKind`, `DaySeam`, `IdleMark`, and `Replay` itself) have identical field lists on identical
+`chrono` 0.4 / `chrono-tz` 0.10. So the two `serde_json` values are comparable key for key once those two
+added keys are set aside.
+
+### Gap 128 (new; label S-a) — the kernel's facts become a `Replay` only inside T5, and that decoder borrows four fields from the reader S deletes
+
+1. **What is not done.** §11.1's `kernel_log::decode_facts` does not exist. The only code that turns the
+   kernel's `facts` into a `tm_core::log::Replay` is `kernel_replay()` in
+   `tm/tests/kernel_replay_parity.rs` (whose own docstring says "the decoder `kernel_log::decode_facts`
+   will be at S"), and it takes the in-tree Rust `Replay` as an argument and copies **four** fields
+   straight out of it: `events`, `warnings`, `rows` and `line_count`. S deletes that argument's source,
+   so the decoder does not survive the switch as written.
+2. **Why.** Two of the four need a tm-core reshape first, not just a decoder:
+   - **`events`** is `BTreeMap<String, Vec<NamedEvent>>`, an occurrence list per name. The kernel keeps
+     only the latest per `(name, id?)` (design §8.4), which is all its two readers need
+     (`priority.rs:484` `event_names()`, `recur.rs:1141` `latest_named()`) — but the field, and T5's
+     `PartialEq` over it, are still shaped for the list.
+   - **`rows`** is `Vec<ViewRow>` and each `ViewRow` holds a whole parsed `LogEntry`; after S the kernel
+     supplies `[line, tag, id, day, cancelled, display]` and the line's bytes come from the `render` op
+     (§11.4), so `ViewRow`, `tm log`'s `log_human`, and the undo `Recorder`'s `headers_from` all change
+     shape together.
+   - `warnings` has **no reader in the binary** (the two `.warnings` sites in `day.rs` and `lifecycle.rs`
+     are the ICS sync's, not the replay's), so it is only a text to re-render from `replayWarnings`.
+   - `line_count` is `answer.lines`, and is trivial.
+3. **What it costs.** S's body swap is blocked on it: `Ctx::replay_with` cannot return a kernel-built
+   `Replay` until all four are the kernel's. It is the largest single piece of §14.6 and the reason the
+   step is not a body swap plus deletions as §14.6's "Why one commit is safe" paragraph assumes.
+4. **Which step clears it.** S, first thing: build `decode_facts` in `kernel_log.rs` with the two
+   reshapes above, and re-point T5's `kernel_replay` at it, before touching `Ctx::replay_with`.
+
+### What S still owes, beyond gap 128 (each already named; nothing here is new)
+
+§14.6's contents 1–3 and 5 (the body swap, §12's ≈1,750 lines of deletions in `log.rs` including
+`parse_timestamp`, R12's consumer tests moved to `tm/tests/`, the `log` names in
+`kernel_bridge::refusal`); item 7's D18 defaults (`tm check` listing log warnings and lines dated more
+than two days after `now`, and **gap 120 part 3**, every verb except `tm check` failing by name on
+`ReachTooFar`); **gap 117** (`tm log`'s `Hot` tail, `lifecycle.rs` `log_scope`'s `(None, None)` arm);
+**gap 119** (`tm check` naming a stall); the nine T9 CLI tests, T12's byte-identical `model.json`, T11's
+seven latency rows and the per-verb kernel-call count against R14's table; and the §5.13 drive.
+**Item 6 is already satisfied** and was verified, not changed: `tm init`'s template carries `.tm/cache/`
+and `init/mod.rs`'s `merged_gitignore` appends it to an older block (`init_tree.rs` covers both).
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited.** Goals discharged, refuted, added: none; burn-down 13 → 13. New theorems: none.
+New `decide`/`rfl` witnesses: none, so §14.0 item 4's probe budget is untouched. New cheats: none
+(highest stays 157). New parity entries: none (highest stays P34). `TmKernel.lean` imports: 78,
+unchanged. No recursion over a wire-sized list was added (rule D9-21): the only Rust added is the
+oracle's `observe_log`, which is **not in either build graph** — `tm-oracle` is not a member of this
+workspace (`members = ["tm-core", "tm"]`) and cargo does not auto-discover `examples/oracle/`, so its
+`chrono-tz` line adds no dependency to this repo (R7).
+
+### Numbers
+
+**Taken:** gap 128. **Highest:** gap 128, cheat 157, parity P34. **Behaviour rows: none** — the binary
+still has one reader of the log, the Rust, and nothing in it calls `kernel_log.rs`.
+
+**Re-measured** (main worktree, on the tree committed; every command capped at `MemoryMax=40G`,
+`MemorySwapMax=0`; the oracle build at 16G):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 3.01 / 3.07 / 3.05 s (W-5 repair: 3.03 / 3.06 / 3.11 s; flat, inside the 10% a step may add) |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged, stages 3–6) |
+| `cargo test --workspace` | **1082 passed / 0 failed / 5 ignored across 73 result lines** (W-5 repair: 1082 — unchanged, as it must be: no file in either build graph changed), exit 0, 0 warnings |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6; `stack.rs` 2.31 s) — unchanged |
+| T5 (`kernel_replay_parity.rs --include-ignored`) | **19 passed / 0 failed**, 6.46 s — unchanged |
+| `cli_latency.rs --include-ignored` | **4 passed / 0 failed**, 3.75 s, the year-of-log and three-year tests included — unchanged |
+| **the oracle, corpus set** (`run-oracle.sh … 512 4`) | **138 lines compared, 77 with nothing to report.** Denominators: 138 is-it-an-item, 138 Rust round-trip, 78 kernel round-trip, 138 id, 138 acceptance, 78 `est` edit |
+| **the oracle, generated set** | **2,048 lines compared, 470 with nothing to report.** Denominators: 2,048 / 2,048 / 1,560 / 548 / 2,048 / 39 |
+| the oracle's `replay` mode | 7 corpus logs → 7 records, **byte-identical across two runs**; `malformed.jsonl` yields 7 refused lines; re-running in `Asia/Tokyo` moves the day attribution, so it is really replaying |
+| fork vs branch `Replay` | **20 vs 22** serialised keys; branch-only `seams`, `last_effective_t`; fork-only **none**; 19 nested record structs field-identical |
+
+**The oracle's figures moved, and that is the retarget, not a regression.** AGENTS §7.3 recorded **126**
+of 138 corpus lines and **481** of 2,048 generated lines with nothing to report, measured against
+**`main`** at `c8f3a38`; against the **fork point** they are **77** and **470**. §7.3 predicted exactly
+this — "every 'no disagreement' it prints from then on is against the fork-point grammar, whose delta to
+`main@557a3d2` is stage 0's fix". These are the new baseline; quote them, not the old pair. The corpus
+drop is concentrated in one row: the corpus set's largest single disagreement row is
+**`itemCheck/danglingParent` at 55**, the kernel refusing a parent the fork-point corpus does not resolve.
+Stated carefully, because the rows are not a partition: **61** of the 138 corpus lines have something to
+report (138 − 77), against **12** on the old `main` side, so **49** are new; a line may disagree in more
+than one comparison, so the corpus rows sum to **199**, not 61.
+
+**Owed next: S, in full**, starting from gap 128. Nothing in this block blocks it, and the instrument it
+needs now exists.

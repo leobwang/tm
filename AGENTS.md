@@ -1180,26 +1180,28 @@ refused. Do not quote `1/5`, and do not look for `splitLine` — it is gone.
 
 ### 7.3 The differential oracle (not in `check.sh`)
 
-**Broken in this clone, and owed.** `build-oracle.sh` runs `git archive main`,
-and `main` was discarded on 2026-09-12 (§2.2), so the script fails before it
-builds anything. Its source must move to the fork point `4748911` — the README's
-"`main` DISCARDED" paragraph says so — and every "no disagreement" it prints from
-then on is against the fork-point grammar, whose delta to `main@557a3d2` is stage
-0's fix. The numbers below were measured against `main` at `c8f3a38` and cannot
-be reproduced here. What the paragraphs below say about its method stands.
+**Repaired and retargeted at the S attempt** (2026-09-15; README "the S
+attempt"). `build-oracle.sh` used to run `git archive main`, and `main` was
+discarded on 2026-09-12 (§2.2), so it failed before it built anything. It now
+extracts the fork point `4748911`, stamps the scratch tree with the ref it holds
+so a tree left by the old script is re-extracted rather than silently reused, and
+every "no disagreement" it prints is against the fork-point grammar, whose delta
+to `main@557a3d2` is stage 0's fix. The numbers below are re-measured against the
+fork point; the old `main`-side pair (126 of 138, 481 of 2,048) is **superseded
+and must not be quoted**.
 
 ```bash
 cd /Users/psixyzt/code/planner/kernel/tm-kernel-ffi
 ./examples/oracle/run-oracle.sh <scratch-dir> [cases-per-seed] [seeds]
 ```
 
-It extracts `main` into a scratch directory, builds a small binary against the
-shipped `tm-core::grammar`, and runs both implementations over two input sets:
-the corpus's own item lines, and `main`'s own `grammar_proptest` generator over
-several seeds. It writes nothing inside the repository. It is deliberately **not**
-a seventh check, because it needs a Rust build of `main` outside the repo, which
-is the wrong dependency for an acceptance script that must run on this branch
-alone.
+It extracts the fork point into a scratch directory, builds a small binary
+against the shipped `tm-core::grammar` and `tm-core::log`, and runs both
+implementations over two input sets: the corpus's own item lines, and the fork
+point's own `grammar_proptest` generator over several seeds. It writes nothing
+inside the repository. It is deliberately **not** a seventh check, because it
+needs a Rust build of the fork point outside the repo, which is the wrong
+dependency for an acceptance script that must run on this branch alone.
 
 It prints the denominator for every comparison, so "no disagreement" is never
 confused with "never ran". Four things are comparable through a `String → String`
@@ -1209,11 +1211,27 @@ priority, parent, tags, shape, recurrence, budget, `loc:`, `buffer:` and the
 flags are **not** compared, because the kernel keeps those tokens verbatim and
 has no answer to differ from (gap 35).
 
-Run twice at `c8f3a38` with `512 4`, byte-identical both times: **138 corpus
-lines compared, 126 with nothing to report; 2,048 generated lines compared, 481
-with nothing to report.** These are deterministic for a fixed seed count — they
-move when the *kernel* moves, not between runs. The README's `129`/`479` were
-taken before the demotion model changed; that is the whole point of §5.11.
+**A fifth thing became comparable at the S attempt:** `tm-oracle replay <tz>`
+reads whole log texts and prints what the fork's `log::replay` derives from each,
+as JSON. That is **T5's oracle at the switch** (design §14.6 item 4), which
+deletes the in-tree Rust reader T5 compares against today. The fork's `Replay`
+and this branch's serialise 20 and 22 keys, differing only by this branch's
+`seams` and `last_effective_t`, with all 19 nested record structs field-identical
+on the same `chrono`/`chrono-tz`, so the comparison is key for key over the whole
+structure. It is driven from `tm/tests/kernel_replay_parity.rs`, which holds the
+log corpus, not from `run-oracle.sh`.
+
+Run at `017ead3` with `512 4`, byte-identical across runs: **138 corpus lines
+compared, 77 with nothing to report; 2,048 generated lines compared, 470 with
+nothing to report.** These are deterministic for a fixed seed count — they move
+when the *kernel* or the *oracle target* moves, not between runs. They fell from
+the `main`-side 126/481 when the target became the fork point, which is the
+retarget and not a regression: the largest single corpus row is
+`itemCheck/danglingParent` at 55. The rows are not a partition — 61 of the 138
+corpus lines have something to report against the old side's 12, so 49 are new,
+and because a line may disagree in more than one comparison the corpus rows sum
+to 199. The README's `129`/`479` were taken before the demotion model changed;
+that is the whole point of §5.11.
 
 ### 7.4 The self-check an audit will apply to your theorem statements
 

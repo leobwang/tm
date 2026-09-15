@@ -16,3 +16,4 @@ description = "the Rust half of the kernel-vs-Rust differential oracle"
 tm-core = { path = "../tm-core" }
 serde_json = "1"
 proptest = "1"
+chrono-tz = "0.10"

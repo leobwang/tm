@@ -2,7 +2,8 @@
 //!
 //! The plan says a checked parser is worth having "even with no FFI" because it
 //! can be run against the Rust. This is that. It reads the JSONL that
-//! `examples/oracle/` produces on a scratch checkout of `main` — one record per
+//! `examples/oracle/` produces on a scratch checkout of the fork point `4748911`
+//! (`main` was discarded; AGENTS §7.3) — one record per
 //! candidate line, saying what `tm-core::grammar` makes of it — asks the kernel
 //! the same questions through the FFI, and reports every disagreement.
 //!
@@ -418,7 +419,7 @@ fn main() {
     }
 
     // ---- report ---------------------------------------------------------
-    println!("\n  differential oracle — Lean kernel vs `main`'s tm-core::grammar\n");
+    println!("\n  differential oracle — Lean kernel vs the fork point 4748911's tm-core::grammar\n");
     println!("  {} lines compared, {agree} with nothing to report\n", records.len());
     if f.by_kind.is_empty() {
         println!("  no disagreements.");

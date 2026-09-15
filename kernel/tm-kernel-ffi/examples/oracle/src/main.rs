@@ -1,11 +1,14 @@
-//! **The `main`-side half of the differential oracle.**
+//! **The fork-point half of the differential oracle.**
 //!
-//! `main` still carries `tm-core/src/grammar.rs` — 1,246 lines of hand-written
-//! tokenizer, parser and byte-faithful serializer — and that is the code that
-//! shipped. This binary makes it *observable*: it reads candidate item lines
+//! The fork point `4748911` carries `tm-core/src/grammar.rs` — 1,246 lines of
+//! hand-written tokenizer, parser and byte-faithful serializer — and
+//! `tm-core/src/log.rs`'s reader, and that is the code that shipped. (It used
+//! to be built from `main`, which was DISCARDED on 2026-09-12; AGENTS §7.3
+//! recorded the script as broken and owed until this retarget.) This binary
+//! makes that code *observable*: it reads candidate item lines, or whole logs,
 //! and prints, as JSONL, exactly what the Rust says about each one. The Lean
-//! side (`kernel/tm-kernel-ffi/examples/oracle-compare.rs`) asks the kernel the
-//! same questions through the FFI and reports every disagreement.
+//! side (`kernel/tm-kernel-ffi/examples/oracle-compare.rs`, and `tm`'s T5)
+//! asks the kernel the same questions and reports every disagreement.
 //!
 //! Modes:
 //!
@@ -14,6 +17,11 @@
 //!   below, so the corpus is the one the shipped proptest samples from), and
 //!   report on each. Deterministic in `seed`.
 //! * `parse` — read one JSON string per line from stdin and report on each.
+//! * `replay <tz>` — read one JSON string per line from stdin, each the whole
+//!   text of a `.tm/log.jsonl`, and print what the fork's `log::replay` derives
+//!   from it, as JSON. This is **T5's oracle** at the switch (design §14.6
+//!   item 4): the in-tree Rust reader is deleted there, so the fork point
+//!   becomes the only other implementation to compare against.
 //!
 //! One JSON object per line, on stdout:
 //!
@@ -26,6 +34,22 @@
 //!  "problems": [<tm check's diagnostics for this line>],
 //!  "est_edit": <the line after set_token("est","45m"), or null>}
 //! ```
+//!
+//! and for `replay`, one object per input log:
+//!
+//! ```text
+//! {"replay": <tm_core::log::Replay, serialised>,
+//!  "warningLines": [<1-based physical line of every line the reader refused>],
+//!  "entries": <surviving + cancelled entries the reader read>}
+//! ```
+//!
+//! The fork's `Replay` and this branch's differ by exactly two serialised
+//! fields — this branch adds `seams` and `last_effective_t` (step R1–R4), and
+//! its `rows`/`line_count` are `#[serde(skip)]` — and every nested record
+//! struct has the identical field list, on the same `chrono`/`chrono-tz`
+//! versions. So the two `serde_json` values are comparable key for key once
+//! those two added keys are set aside, which is what makes this a whole-
+//! `Replay` comparison rather than a hand-listed one.
 
 use proptest::prelude::*;
 use proptest::strategy::ValueTree;
@@ -34,9 +58,10 @@ use serde_json::{json, Value};
 use std::io::{BufRead, Write};
 
 use tm_core::grammar::{parse_line, ItemLine, ParseCtx};
+use tm_core::log::Log;
 
 // ---------------------------------------------------------------------------
-// The generator, copied from tm-core/tests/grammar_proptest.rs on `main`.
+// The generator, copied from tm-core/tests/grammar_proptest.rs at the fork point.
 // Do not "improve" it: its value is that it is the shipped generator.
 // ---------------------------------------------------------------------------
 
@@ -250,6 +275,19 @@ fn observe(text: &str) -> Value {
     }
 }
 
+/// What the fork's reader derives from one whole log's text, in `tz`.
+///
+/// `replay(None, tz)` is exactly what `Ctx::replay_of` called on this branch
+/// before the switch: the whole log, every day, no range.
+fn observe_log(text: &str, tz: chrono_tz::Tz) -> Value {
+    let log = Log::parse(text);
+    json!({
+        "replay": log.replay(None, tz),
+        "warningLines": log.warnings.iter().map(|w| w.line as u64).collect::<Vec<u64>>(),
+        "entries": log.entries.len(),
+    })
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let stdout = std::io::stdout();
@@ -280,8 +318,27 @@ fn main() {
                 writeln!(w, "{}", observe(&text)).unwrap();
             }
         }
+        Some("replay") => {
+            let tz: chrono_tz::Tz = args
+                .get(2)
+                .expect("replay <tz>  (e.g. America/Chicago)")
+                .parse()
+                .expect("a tz database name");
+            for l in std::io::stdin().lock().lines() {
+                let l = l.unwrap();
+                if l.trim().is_empty() {
+                    continue;
+                }
+                let text: String = serde_json::from_str(&l)
+                    .unwrap_or_else(|e| panic!("stdin must be one JSON string per line: {e} in {l:?}"));
+                writeln!(w, "{}", observe_log(&text, tz)).unwrap();
+            }
+        }
         _ => {
-            eprintln!("usage: tm-oracle gen <n> <seed>   |   tm-oracle parse  (JSON strings on stdin)");
+            eprintln!(
+                "usage: tm-oracle gen <n> <seed>   |   tm-oracle parse  (JSON strings on stdin)\n\
+                 \x20      tm-oracle replay <tz>  (whole log texts, one JSON string per line)"
+            );
             std::process::exit(2);
         }
     }

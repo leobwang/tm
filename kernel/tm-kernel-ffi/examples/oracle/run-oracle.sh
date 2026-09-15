@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The whole differential sweep in one command: build the `main`-side oracle in a
+# The whole differential sweep in one command: build the fork-point oracle in a
 # scratch directory, run both input sets through it, and compare with the Lean
 # kernel through the FFI.
 #
@@ -9,9 +9,13 @@
 #
 #   1. the corpus's own item lines — real tm syntax, every one with an id, so
 #      the id and `est`-edit comparisons actually run on them;
-#   2. `main`'s own `grammar_proptest` generator, the 512-case strategy that
-#      ships, over several seeds — wide, adversarial, and mostly id-less, so it
-#      is where the tokenizer differences show up.
+#   2. the fork point's own `grammar_proptest` generator, the 512-case strategy
+#      that ships, over several seeds — wide, adversarial, and mostly id-less,
+#      so it is where the tokenizer differences show up.
+#
+# The `replay` mode the switch needs (T5's oracle, design §14.6 item 4) is not
+# swept here: it is driven from `tm/tests/kernel_replay_parity.rs`, which holds
+# the log corpus and the field-by-field comparison.
 #
 # Nothing is written inside the repository and no Rust is built in this
 # worktree.
@@ -35,7 +39,7 @@ cargo run --quiet --example oracle-compare -- --emit-corpus-lines \
 cargo run --quiet --example oracle-compare -- "$scratch/corpus.jsonl"
 
 echo
-echo "############ input set 2: ${cases} cases x ${seeds} seeds from main's grammar_proptest"
+echo "############ input set 2: ${cases} cases x ${seeds} seeds from the fork point's grammar_proptest"
 : > "$scratch/gen.jsonl"
 for s in $(seq 1 "$seeds"); do
   "$oracle" gen "$cases" "$s" >> "$scratch/gen.jsonl"
