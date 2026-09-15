@@ -4514,3 +4514,60 @@ open Tm
 #print axioms Tm.the_log_op_names_its_resume_refusals
 #print axioms Tm.the_log_op_refuses_a_count_past_2_53_by_its_key
 #print axioms Tm.the_log_op_merges_a_sealed_day_below_its_ledger_day
+
+-- APPENDED 2026-09-15 (stage 5, D9 track).  Step W4 (design §14.5 row W4, §19 K1/K23; W5's gate failed): the replay's
+-- compiled twins where the profile put the time.  SealTwin.lean (new): `canonDesc` and the csimp twins of the grouping
+-- functions over the checkpoint's four orders, the window facts grouped by date, the item tables, `mergedItems` and
+-- `resumedAnswer`, and the day index by bisection (`bisect`, `offsetAtArr`, `dayOfZ`, `dayFn`).  SealWire.lean: the resume
+-- over caller-read entries and warnings (`resumeRunV`) and building only what its request wants (`resumeRunW`), the cut
+-- check with its fixed parts given (`cutCheckAt`), the state at the cut and the unfolded lows in one fold (`foldCut`), the
+-- reseal over caller-read warnings (`resealOfV`).  Boundary.lean: the `log` op reading each line once (`logOpFast`).
+#print axioms Tm.Seal.canon_eq_canonDesc
+#print axioms Tm.Seal.itemIds_eq_itemIdsFast
+#print axioms Tm.Seal.dayKeys_eq_dayKeysFast
+#print axioms Tm.Seal.winKeys_eq_winKeysFast
+#print axioms Tm.Seal.windowOf_eq_windowOfFast
+#print axioms Tm.Seal.instOtherOf_eq_instOtherOfFast
+#print axioms Tm.Seal.namedOf_eq_namedOfFast
+#print axioms Tm.Seal.storedSlept_eq_storedSleptFast
+#print axioms Tm.Seal.mergeTagLines_eq_mergeTagLinesFast
+#print axioms Tm.Seal.daysIn_eq_daysInT
+#print axioms Tm.Seal.daysFrom_eq_daysFromT
+#print axioms Tm.Seal.mem_foldl_groupStep
+#print axioms Tm.Seal.windowOfG_eq
+#print axioms Tm.Seal.windowsIn_eq_windowsInG
+#print axioms Tm.Seal.windowsFrom_eq_windowsFromG
+#print axioms Tm.Seal.foldl_firstStep_get
+#print axioms Tm.Seal.foldl_doneStep
+#print axioms Tm.Seal.foldl_doneIdStep_get
+#print axioms Tm.Seal.foldl_incr_get
+#print axioms Tm.Seal.foldl_winStep_get
+#print axioms Tm.Seal.aggMergedT_eq
+#print axioms Tm.Seal.mergedItems_eq_mergedItemsFast
+#print axioms Tm.Seal.resumedAnswer_eq_resumedAnswerFast
+#print axioms Tm.Seal.bisect_spec
+#print axioms Tm.Seal.foldl_last_of_point
+#print axioms Tm.Seal.offsetAtArr_eq
+#print axioms Tm.Seal.localDateArr_eq
+#print axioms Tm.Seal.dayOfZ_eq
+#print axioms Tm.Seal.instAscending_pairwise
+#print axioms Tm.Seal.dayFn_eq
+#print axioms Tm.Seal.resumeRunV_eq
+#print axioms Tm.Seal.resumeRunW_eq
+#print axioms Tm.Seal.foldl_badStep_all
+#print axioms Tm.Seal.firstBadLine_all
+#print axioms Tm.Seal.and8_perm
+#print axioms Tm.Seal.cutCheckAt_eq
+#print axioms Tm.Seal.foldl_lowsStep_of_not
+#print axioms Tm.Seal.filter_split_of_pairwise
+#print axioms Tm.Seal.foldCut_eq_foldCutFast
+#print axioms Tm.Seal.resealOfWith_spec
+#print axioms Tm.Seal.resealOfV_eq
+#print axioms Tm.foldl_logLineStep_map_verdict
+#print axioms Tm.logLines_map_verdict
+#print axioms Tm.lineEntries_eq_verdicts
+#print axioms Tm.lineWarnings_eq_verdicts
+#print axioms Tm.logOp_core
+#print axioms Tm.logOpCore_map
+#print axioms Tm.logOpFast_core
+#print axioms Tm.logOp_eq_logOpFast

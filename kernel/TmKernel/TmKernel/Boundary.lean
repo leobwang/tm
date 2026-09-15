@@ -3118,6 +3118,128 @@ def logOp (r : VLogReq) : Except LogRefusal JVal :=
         | some f => .error (.seal (.counterOverflow f))
         | none => within53 (q.resumed run rs)
 
+/-! ### The `log` op reading each line once (stage 5 D9 W4)
+
+Placed before the op's first caller (`logAnswerOf`), so every caller is compiled against the twin. -/
+
+/-- A verdict's line warning, as `Log.Line.warning?` reads it. -/
+def verdictWarn : Log.Verdict → Option (Nat × Log.LWarn)
+  | .warn n w => some (n, w)
+  | _ => none
+
+theorem foldl_logLineStep_map_verdict : ∀ (l : List (Option (List Char))) (acc : List Log.Line) (k : Nat),
+    (l.foldl logLineStep (acc, k)).1.map Log.Line.verdict = (l.foldl readStep (acc.map Log.Line.verdict, k)).1
+  | [], _, _ => rfl
+  | seg :: l, acc, k => foldl_logLineStep_map_verdict l (⟨k, seg⟩ :: acc) (k + 1)
+
+theorem logLines_map_verdict (r : LogReq) : (logLines r).map Log.Line.verdict = logVerdicts r := by
+  unfold logLines logVerdicts
+  rw [List.map_reverse, foldl_logLineStep_map_verdict]
+  rfl
+
+theorem lineEntries_eq_verdicts (ls : List Log.Line) : Log.lineEntries ls = (ls.map Log.Line.verdict).filterMap entryOf := by
+  unfold Log.lineEntries; rw [List.filterMap_map]; rfl
+
+theorem lineWarnings_eq_verdicts (ls : List Log.Line) :
+    Log.lineWarnings ls = (ls.map Log.Line.verdict).filterMap verdictWarn := by
+  unfold Log.lineWarnings; rw [List.filterMap_map]; rfl
+
+/-- `logBody` over verdicts already read. -/
+def logBodyV (r : LogReq) (vs : List Log.Verdict) (facts : JVal) (headers : List JVal) (reseal : JVal) : JVal :=
+  let arr := vs.toArray
+  .obj [("lines".toList, .num (r.from_ + r.lines.length - 1)),
+        ("warnings".toList, .arr (vs.filterMap warningOf)),
+        ("facts".toList, facts),
+        ("headers".toList, .arr headers),
+        ("render".toList, .arr (r.render.map (fun n => renderJson n arr[n - r.from_]?))),
+        ("reseal".toList, reseal)]
+
+def LogReq.resumedV (r : LogReq) (vs : List Log.Verdict) (run : Seal.Run) (rs : Option Seal.Resealed) : JVal :=
+  logBodyV r vs (if r.facts then emitAnswer (r.merged run.answer) else .null) (r.headersOf run) (optJson Seal.emitResealed rs)
+
+/-- The log op with its resume, reseal and answer given. -/
+def logOpCore (q : LogReq) (res : Except Seal.Refusal Seal.Run) (rsf : Seal.Policy → Seal.Run → Option Seal.Resealed)
+    (body : Seal.Run → Option Seal.Resealed → JVal) : Except LogRefusal JVal :=
+  if !q.resumes then within53 (logBody q .null [] .null)
+  else
+    let K := q.start
+    if K.tzKey ≠ q.tz.val.key then .error (.seal .zone)
+    else if q.from_ ≠ K.cut + 1 then .error (.seal .cutMismatch)
+    else
+      match res with
+      | .error e => .error (.seal e)
+      | .ok run =>
+        let rs := q.reseal.bind (fun p => rsf p run)
+        match rs.bind Seal.Resealed.fault with
+        | some f => .error (.seal (.counterOverflow f))
+        | none => within53 (body run rs)
+
+theorem logOp_core (r : VLogReq) :
+    logOp r = logOpCore r.val (Seal.resumeRun r.val.tz (r.val.now.getD 0) r.val.start (logLines r.val))
+      (fun p run => Seal.resealOf r.val.tz (r.val.now.getD 0) r.val.start (logLines r.val) r.val.terminated p run)
+      (fun run rs => r.val.resumed run rs) := rfl
+
+/-- A resume's run mapped is the run read through the map. -/
+theorem logOpCore_map (q : LogReq) (res : Except Seal.Refusal Seal.Run) (rsf : Seal.Policy → Seal.Run → Option Seal.Resealed)
+    (body : Seal.Run → Option Seal.Resealed → JVal) (g : Seal.Run → Seal.Run) :
+    logOpCore q (res.map g) rsf body = logOpCore q res (fun p run => rsf p (g run)) (fun run rs => body (g run) rs) := by
+  cases res <;> rfl
+
+/-- **The `log` op, compiled (W4)**: the resume builds its answer and headers only when the request wants them
+(`Seal.resumeRunW`), and each tail line is read once (`Log.readLine`), its verdicts giving the resume's entries,
+the resume's and the reseal's line warnings and the answer's `warnings` and `render`.  The specification reads every line
+four times: `logVerdicts` for the answer, and `Log.lineEntries` and `Log.lineWarnings` (twice) inside the resume and the
+reseal (W4's third profile: `readLine` was 34% of a genesis). -/
+def logOpFast (r : VLogReq) : Except LogRefusal JVal :=
+  let q := r.val
+  if !q.resumes then within53 (logBody q .null [] .null)
+  else
+    let K := q.start
+    if K.tzKey ≠ q.tz.val.key then .error (.seal .zone)
+    else if q.from_ ≠ K.cut + 1 then .error (.seal .cutMismatch)
+    else
+      let ls := logLines q
+      let vs := ls.map Log.Line.verdict
+      let ws := vs.filterMap verdictWarn
+      match Seal.resumeRunW q.facts q.headersFrom.isSome q.tz (q.now.getD 0) K ls (vs.filterMap entryOf) ws with
+      | .error e => .error (.seal e)
+      | .ok run =>
+        let rs := q.reseal.bind (fun p => Seal.resealOfV q.tz (q.now.getD 0) K ls ws q.terminated p run)
+        match rs.bind Seal.Resealed.fault with
+        | some f => .error (.seal (.counterOverflow f))
+        | none => within53 (q.resumedV vs run rs)
+
+theorem logOpFast_core (r : VLogReq) :
+    logOpFast r = logOpCore r.val
+      (Seal.resumeRunW r.val.facts r.val.headersFrom.isSome r.val.tz (r.val.now.getD 0) r.val.start (logLines r.val)
+        (((logLines r.val).map Log.Line.verdict).filterMap entryOf)
+        (((logLines r.val).map Log.Line.verdict).filterMap verdictWarn))
+      (fun p run => Seal.resealOfV r.val.tz (r.val.now.getD 0) r.val.start (logLines r.val)
+        (((logLines r.val).map Log.Line.verdict).filterMap verdictWarn) r.val.terminated p run)
+      (fun run rs => r.val.resumedV ((logLines r.val).map Log.Line.verdict) run rs) := rfl
+
+/-- **The op reading each line once is the op** (`@[csimp]`). -/
+@[csimp] theorem logOp_eq_logOpFast : @logOp = @logOpFast := by
+  funext r
+  have h1 : Seal.resumeRunV r.val.tz (r.val.now.getD 0) r.val.start (logLines r.val)
+      (((logLines r.val).map Log.Line.verdict).filterMap entryOf)
+      (((logLines r.val).map Log.Line.verdict).filterMap verdictWarn)
+      = Seal.resumeRun r.val.tz (r.val.now.getD 0) r.val.start (logLines r.val) := by
+    rw [← lineEntries_eq_verdicts, ← lineWarnings_eq_verdicts, Seal.resumeRunV_eq]
+  have h2 : (fun p run => Seal.resealOfV r.val.tz (r.val.now.getD 0) r.val.start (logLines r.val)
+        (((logLines r.val).map Log.Line.verdict).filterMap verdictWarn) r.val.terminated p
+        (Seal.trimRun r.val.facts r.val.headersFrom.isSome run))
+      = (fun p run => Seal.resealOf r.val.tz (r.val.now.getD 0) r.val.start (logLines r.val) r.val.terminated p run) := by
+    funext p run; rw [← lineWarnings_eq_verdicts, ← Seal.resealOfV_eq]; rfl
+  have h3 : (fun run rs => r.val.resumedV ((logLines r.val).map Log.Line.verdict)
+        (Seal.trimRun r.val.facts r.val.headersFrom.isSome run) rs)
+      = (fun run rs => r.val.resumed run rs) := by
+    funext run rs
+    rw [logLines_map_verdict]
+    unfold LogReq.resumedV LogReq.resumed LogReq.headersOf
+    cases hf : r.val.facts <;> cases hh : r.val.headersFrom <;> simp [Seal.trimRun] <;> rfl
+  rw [logOp_core, logOpFast_core, Seal.resumeRunW_eq, logOpCore_map, h1, h2, h3]
+
 /-- The op's result as a plain value, for decided witnesses (`Except` has no decidable equality). -/
 def logAnswered : Except LogRefusal JVal → Sum LogRefusal JVal
   | .ok v => .inr v

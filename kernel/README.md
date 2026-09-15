@@ -18102,3 +18102,240 @@ still the only reader).
 
 **Owed next:** W4 (required: both of its triggers measured), gap 122's `dayOf` twin, gap 124's policy lever, and gap 125's
 levers, then this gate re-run by `logbench` (g) before S; gap 123's tests.
+
+
+<!-- ===================================================================== -->
+<!-- Stage 5 D9 W4 (2026-09-15).  Gaps, cheats and parity entries are     -->
+<!-- numbered from the next free numbers (gap 126, cheat 158, P35).        -->
+<!-- ===================================================================== -->
+## Stage 5 D9 W4, 2026-09-15: the replay's maps become tables and trees of halves — every gate figure under its bound
+
+**Starting point.** `61d668c` (W5), clean: check.sh 7/7, audit 3885 theorems, corpus 29/37 files and 4/5 plans,
+burn-down 13, `cargo test --workspace` 1078 / 0 / 5 ignored across 73 binaries, FFI 100. W5's gate FAILED on genesis,
+the hot call and the far undo, so §14.5 row W4 was required.
+
+**Result: the gate PASSES** through the committed harness (`logbench only-g`, table below): genesis 1,372 ms, the worst
+hot call 41.8 ms, one rebuild and then ten hot calls after the far undo, one checkpoint write a day in the stall, per-call
+RSS 169.1 MiB. Rust is still the only reader in the binary; `cli_latency` did not move.
+
+### Profiled first (callgrind; `perf` is blocked here by `perf_event_paranoid = 4`)
+
+Method: `valgrind --tool=callgrind` on `windowbench`'s children, collecting only inside `tm_kernel_call_c` (the kernel), or
+inside `*ReplayCache::replay*` (the kernel and the Rust around it). Figures are inclusive instruction counts; each twin
+below was aimed at the largest one, then the scenario re-timed and re-profiled.
+
+| profile | where the instructions went |
+|---|---|
+| hot call, at W5's tree | `resumedAnswer` **76.1%** of the kernel call: `canon`'s insertion 38.2% (each insertion scans the ids so far), `aggMerged` 35.0% (a per-id `findItem` over the checkpoint's items 16.6%, and a per-id filter of every done date through `HMap.pairs` 12.9%), `itemIds` 19.1% |
+| one genesis chunk (days 0–67, 4,067 lines), W5's tree | the fold point's scan **82.4%**: `cutOkFast` recomputes `floorOf` (a day-index lookup per survivor) for every candidate cut, 1.1 million `dayOf` calls; inside them `Cal.offsetAt`'s `foldl` over the zone's transitions 52.8% and `lastWakeLe`'s `foldl` over the wakes 26.9% |
+| the whole genesis, after the first twins | `dayFn` 28.6%, of it `lean_list_to_array` 20.7%; `stepLows` 18.3% (a second fold of every survivor); `windowsIn` 14.8% (a filter of every pair per date); `Log.readLine` 22.5% |
+| the whole genesis, after binding the index | `Log.readLine` **34.0%** (every tail line read four times: `logVerdicts` 8.6%, `lineEntries` 8.6%, `lineWarnings` twice 17.3%); `lean_list_to_array` still 26.8% (below, lesson) |
+| the whole genesis, Rust included, after reading lines once | the kernel 88.9% of it; the request's parse (`jvalAcc`) 37.9% and the answer's emission (`jemitRev`) 38.2% (overlapping, recursive); `resealOfV` 22.2%, `readLine` 18.0% (one read), `resumeRunV` 13.3%, of it `resumedAnswerFast` 5.1% built and dropped on every chunk that asks no facts |
+
+**Lesson (the compiler, not the proofs).** A `@[csimp]` twin must build its arrays in `let`s bound before any function value
+that reads them. `dayFn z kw : Cal.Instant → Nat` is compiled at its type's arity, so `dayFn z kw` applied to an index
+alone rebuilt both arrays at every lookup; and `let dy := if c then dayOfZ z z.val.trans.toArray kw.toArray else …` was
+lifted into the lookup's lambda with the arrays inside it. The compiler's IR (`trace.compiler.ir.result`, probed in
+scratch) shows the bound form building each array once. Measured: genesis 2,867 → 2,084 ms from that change alone.
+
+### What was built
+
+**`SealTwin.lean` (new; imports `SealLaw9`; imported by `SealWire`).** `TmKernel.lean` gains its import: **78 imports**.
+Every twin is a proved equality to the specification behind `@[csimp]`; the laws and the kernel still read the
+specification.
+- **Canonical lists** (`canonDesc`, `canon_eq_canonDesc`): `canon lt l` depends only on `l`'s elements
+  (`canon_eq_of_mem_iff`), so it is `canon` over `l` merge-sorted and reversed, where every insertion stops at the head.
+  `canon` itself cannot be a `csimp` target (the equality needs a strict total order), so each definition over one of the
+  four key orders has its twin: `itemIds`, `dayKeys`, `winKeys`, `windowOf`, `instOtherOf`, `namedOf`, `storedSlept`,
+  `mergeTagLines`; `daysIn` and `daysFrom` get word-for-word twins so that they are compiled after those.
+- **The window facts grouped by date once** (`winGroups`, `mem_foldl_groupStep`, `windowOfG_eq`): each date's record reads
+  its group, not a filter of every pair; `windowsIn` and `windowsFrom` are compiled over the groups.
+- **The item tables** (`itemTables`, `aggMergedT_eq`): the checkpoint's items by id (the first of an id, as `findItem`
+  reads), each id's least done date and count, and each id's count of window records naming it, each built in one pass
+  into a bucketed map and read through `HMap.get_alter` (so the bucket count never matters). `mergedItems` (the resumed and
+  resealed item list) and `resumedAnswer` are compiled over them.
+- **The day index by bisection** (`bisect`, `bisect_spec`, `foldl_last_of_point`, `offsetAtArr_eq`, `dayOfZ_eq`,
+  `dayFn_eq`): `Cal.offsetAt` over the transitions' array by `tz_transitions_strictly_increase`, and `Replay.dayOf` over
+  the wakes' array by C2's `lastWakeLeArr_eq_lastWakeLe`, when the index is ascending (`instAscending`, checked; every
+  resume's index is, `keptWakes_sorted`).
+
+**`SealWire.lean`.**
+- **The resume** (`resumeRunV`, `resumeRunW`): over entries and warnings its caller read, and building its answer only
+  when facts are wanted and its headers only when headers or facts are. `resumeRunW_eq`: it is the resume mapped through
+  `trimRun`, every refusal the same.
+- **The cut check with its fixed parts given** (`cutCheckAt`, `cutCheckAt_eq`): condition (i) as one bound computed in
+  one pass (`firstBadLine`, `firstBadLine_all`), the tail's dangling undos and undo targets computed once, and the
+  conditions that read no list first (`and8_perm`), so a candidate cut that one of them refuses costs no pass over the
+  tail.
+- **The state at the cut and the unfolded steps' lows in one fold** (`foldCut`, `foldCut_eq_foldCutFast`, by
+  `filter_split_of_pairwise` and `foldl_lowsStep_of_not`, reusing `SealCutLows.lowsStep`): when the survivors' lines
+  increase, the lows' fold starts from the state at the cut instead of the checkpoint's.
+- **The reseal** (`resealOfWith`, `resealOfV`): its day index, `F`, cut check and the lines' warnings given;
+  `resealOfWith_spec` and `resealOfV_eq`. `resumeRun_eq_resumeRunFast` and `resealOf_eq_resealOfFast` now go through them.
+
+**`Boundary.lean`, directly after `logOp`** (before its first caller, `logAnswerOf`, so every caller is compiled against
+the twin): **`logOpFast`**, each tail line read once, its verdicts giving the resume's entries, the resume's and the
+reseal's line warnings and the answer's `warnings` and `render` (`logLines_map_verdict`, `lineEntries_eq_verdicts`,
+`lineWarnings_eq_verdicts`), and the resume told what the request wants. The proof goes through one shape both ops have
+(`logOpCore`, `logOp_core`, `logOpFast_core`, `logOpCore_map`), so the csimp is a rewrite of three arguments.
+
+**`tm/src/cli/kernel_log.rs` (gap 124's lever).** `ckpt.json` records `logLines`, the log's line count when the snapshot
+was written (`FORMAT` 3: a cache of format 2 goes to genesis once, as every kernel build's does), and §9.6's 512-line
+trigger counts only foldable lines appended since then. A tail a reseal could not fold (an unfolded undo's target,
+`cutOk`'s condition (vi)) no longer reseals on every call.
+
+**Progression** (`windowbench`'s genesis and hot children, one run per tree, before the gate run below):
+
+| tree | genesis ms | hot call median ms |
+|---|---:|---:|
+| W5 (`61d668c`) | 25,457 | 74.9 |
+| item tables, `canonDesc`, the hoisted cut check, `dayFn` | 4,158 | 33.9 |
+| + window groups, `foldCut` | 2,867 | 31.8 |
+| + the index's arrays bound once | 2,084 | 31.4 |
+| + each line read once | 1,466 | 30.8 |
+| + the resume builds what is wanted | 1,380 | 30.8 |
+
+### The gate (one measurement: `logbench only-g`, the tree committed, dev profile, `MemoryMax=16G`)
+
+| bound | measured | verdict |
+|---|---|---|
+| genesis ≤ 1.5 s | **1,372 ms** (17 calls, 0 pops, largest call 4,334 lines; 1,091 day and 1,065 window records in 36 month files) | ok |
+| hot call ≤ 60 ms, digest included, stalled or pinned | **41.8 ms** worst (pinned). Hot: best 30.1 / median 30.4 / max 30.6 ms. Stalled: median 30.8, max 36.6. Pinned: median 33.7, max 41.8; day 14 median 37.8 at an 838-line tail | ok |
+| at most one checkpoint write a day in the stall | **1** each of the ten days (the day's first call reseals at 46.3–61.6 ms; ledger day held at 740,671 from the third day) | ok |
+| after the far undo: one rebuild, then hot calls | the rebuild (1,511.8 ms, `undoReach at line 65772`), then **ten hot calls**, median 50.8, max 51.2 ms (cut 63,990, tail 1,782–1,792 lines) | ok |
+| per-call RSS ≤ 256 MiB | **169.1 MiB** worst (far undo); genesis 158.5, hot 50.2, reseal 50.3, stall 61.8, pinned 66.9 | ok |
+
+**The other figures, from the same run.**
+- The hot call's parts: tail 151 lines, 15,533 B (3 wakes); checkpoint 225,727 B, request 257,709 B; the digest alone
+  best 4.82 / median 4.83 ms; the kernel call alone best 16.8 / median 16.9 ms (W5: 59.6 / 60.5).
+- A reseal call: best 44.1 / median 45.1 / max 60.5 ms (W5: 164.6 / 166.0 / 173.4).
+- The pinned days' first calls: 50.7–68.5 ms over fourteen days (W5: 153.7 ms on day 1, 742.6 ms on day 14).
+- Two geneses at once: 1,728 and 1,683 ms, **314.4 MiB** together (under W3's owed 400 MiB).
+- Genesis through day 1,054: 1,322 ms, 151.4 MiB.
+
+**`logbench` (f)**, re-run on this tree (`only-f`, the committed table's method):
+
+| cut | lines | line B | request B | best ms | median ms | RSS before → peak | gate (≤ 200 MiB) |
+|---|---:|---:|---:|---:|---:|---|---|
+| 4,096 lines | 4,096 | 428,135 | 509,862 | 64.93 | 69.03 | 12.7 → 78.5 MiB | ok |
+| 8,192 lines | 8,192 | 855,486 | 1,018,679 | 175.10 | 180.24 | 13.8 → 111.8 MiB | ok |
+| 8,192 notes, 1,536 KiB | 8,192 | 1,572,864 | 1,687,767 | 177.89 | 181.65 | 11.4 → **186.6 MiB** | ok |
+| 8,192 notes, 1,792 KiB | 8,192 | 1,835,008 | 1,949,911 | 192.00 | 195.01 | 14.4 → 220.1 MiB | OVER |
+| 8,192 notes, 1,920 KiB | 8,192 | 1,966,080 | 2,080,983 | 196.38 | 198.03 | 11.7 → 220.9 MiB | OVER |
+
+The resend cap W3 chose (8,192 lines or 1,536 KiB) still holds under the 200 MiB rule, but the byte row's peak rose from
+174.1 to 186.6 MiB (the twins' arrays, tables and sorts): the margin is 13.4 MiB, not 25.9. No memory bound was raised
+(D18).
+
+### Recorded disagreements between the design and the repo
+
+1. **§14.5 row W4: "`Std.TreeMap` fast twins of the item and window maps … `items_eq_itemsFast`".** Since C3 those maps are
+   bucketed hash maps (`HMap`), and the profile put the time in sorting (`canon`), per-id and per-date scans of lists, the
+   day index's `foldl`s and the line reads, not in map lookups. The twins are a merge sort, one-pass tables into the
+   existing `HMap`, bisections over arrays and a single read; no `Std` import. The theorem names are those listed below.
+2. **The row's files are `Replay.lean` and `Seal.lean`.** Both are unchanged: a `csimp` lemma rewrites only code compiled
+   after it, and the callers are `SealWire`'s and `Boundary`'s, so the twins live in `SealTwin.lean` (before `SealWire`),
+   `SealWire.lean` and `Boundary.lean` (before `logAnswerOf`).
+3. **§9.6's host policy** reads "reseal when the tail holds more than 512 foldable lines". The host now counts lines
+   appended since the snapshot was written (`logLines`); the laws hold for any policy (§9.6). §18.7's "no later call is
+   pinned" after a far undo holds with this policy; with the design's, W5 measured every call resealing (gap 124).
+4. **§18.2 and §18.4 are replaced by the measurements above** (AGENTS §5.11): the hot call 30.4 ms (the low column
+   estimated 15 ms, on a 3-day tail; the measured call's fixed cost is its request's parse and emission), genesis 1,372 ms
+   (the tree-map column estimated 0.9–1.0 s).
+5. **W5's gap 125 named K14 (in-process checkpoint reuse) and K9 (a seal-time digest)** as the hot call's levers. Neither
+   was needed: the hot call's fixed cost was `resumedAnswer`'s quadratic grouping, not the checkpoint's parse.
+6. **W2 part 4b's disagreement 12 (a one-pass `foldPoint`)** is not built. The downward scan with the hoisted check costs
+   constant time per candidate that conditions (0), (i), (ii) and (iv)–(vi) refuse; a candidate that reaches condition
+   (iii) still costs a pass over the tail, so a tail whose unfolded wakes keep failing (iii) (hand-written out-of-order
+   wakes) remains quadratic in the distance from the end. No CLI-written log was measured doing so.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**Goals added: none. Discharged: none. Refuted: none.** Burn-down **13** (unchanged).
+
+**49 new theorems**, every one in `Check.lean` under the W4 banner:
+- `SealTwin.lean` (30): `canon_eq_canonDesc`, `itemIds_eq_itemIdsFast`, `dayKeys_eq_dayKeysFast`, `winKeys_eq_winKeysFast`,
+  `windowOf_eq_windowOfFast`, `instOtherOf_eq_instOtherOfFast`, `namedOf_eq_namedOfFast`, `storedSlept_eq_storedSleptFast`,
+  `mergeTagLines_eq_mergeTagLinesFast`, `daysIn_eq_daysInT`, `daysFrom_eq_daysFromT`, `mem_foldl_groupStep`,
+  `windowOfG_eq`, `windowsIn_eq_windowsInG`, `windowsFrom_eq_windowsFromG`, `foldl_firstStep_get`, `foldl_doneStep`,
+  `foldl_doneIdStep_get`, `foldl_incr_get`, `foldl_winStep_get`, `aggMergedT_eq`, `mergedItems_eq_mergedItemsFast`,
+  `resumedAnswer_eq_resumedAnswerFast`, `bisect_spec`, `foldl_last_of_point`, `offsetAtArr_eq`, `localDateArr_eq`,
+  `dayOfZ_eq`, `instAscending_pairwise`, `dayFn_eq`;
+- `SealWire.lean` (11): `resumeRunV_eq`, `resumeRunW_eq`, `foldl_badStep_all`, `firstBadLine_all`, `and8_perm`,
+  `cutCheckAt_eq`, `foldl_lowsStep_of_not`, `filter_split_of_pairwise`, `foldCut_eq_foldCutFast`, `resealOfWith_spec`,
+  `resealOfV_eq` (`resumeRun_eq_resumeRunFast` and `resealOf_eq_resealOfFast` keep their names and statements, with new
+  proofs);
+- `Boundary.lean` (8): `foldl_logLineStep_map_verdict`, `logLines_map_verdict`, `lineEntries_eq_verdicts`,
+  `lineWarnings_eq_verdicts`, `logOp_core`, `logOpCore_map`, `logOpFast_core`, `logOp_eq_logOpFast`.
+
+The `csimp` equalities are `@f = @g` with no hypothesis; the rest are single-run lemmas their proofs use (no relational
+law). **Witnesses: none** (no `decide` or `rfl` evaluates data; the `rfl`s are definitional unfoldings). Every new module
+and prototype was elaborated in scratch under the 8 GB / 120 s probe cap (each under 0.3 s). One prototype stopped at
+the 200,000-heartbeat `whnf` limit (`resumeRunW_eq`'s last branch by `rfl`); it was answered by rewriting both sides to
+one term, not by raising `maxHeartbeats` (AGENTS §5.10a). **Cheats: none. Parity entries: none.** `Negative.lean` still
+fails for its stated reasons (check 4).
+
+### Rule D9-21 (functions over a list the wire can make large)
+
+`canonDesc` (core `mergeSort`, compiled as `mergeSortTR₂`; `reverse`; `canon`'s `foldl`, whose insertion returns at the
+head on a descending list); `groupStep`, `firstStep`, `doneIdStep`, `winStep` and `incr` (`foldl`s of one `HMap.alter`);
+`windowOfG` and `aggMergedT` (bucket reads, and `canonDesc` over one date's group); `bisect` (recursion on halves, depth
+`log₂` of the array); `instAscending` (a tail call); `badStep`/`firstBadLine` (`foldl`); `cutCheckAt` (condition (iii)'s
+`filter`, `flatMap` and `all`, reached only past the constant-time conditions); `foldCutFast` (`filter`, `foldl`,
+`Log.linesIncreasing`'s tail call); `logOpFast`'s `map Log.Line.verdict` and `filterMap`s (tail-recursive). Specification
+only, never on the wire: `foldCut`'s second component (compiled as its twin), `resumeRunWith` (the proofs' form), `trimRun`
+and `blankAnswer` (no recursion).
+
+### Gaps
+
+**Gap 124 (W5-a) is closed**: after the far undo, one rebuild and ten hot calls (the gate table), by `logLines`.
+
+**Gap 125 (W5-b) is closed**: the hot call is 30.4 ms median, the kernel call 16.9 ms, and the worst stalled or pinned hot
+call 41.8 ms, against 60 ms.
+
+**Gap 122 (W3-a) is narrowed, not closed by name.** The superlinear terms it named are gone (`dayOf`'s wake scan, the
+per-cut `floorOf`, the double refold of the lows): a resend-shaped call takes 69.0 / 180.2 ms at 4,096 / 8,192 lines (W3:
+480.2 / 1,962.9), and genesis 1,372 ms. Growth per doubling is still 2.6× at those sizes (the checkpoint's parse and
+emission grow with the ids, and condition (iii) is a pass per candidate that reaches it, disagreement 6). It clears when
+a measurement shows linear growth, or with gap 126's levers.
+
+**Gap 121** stands unchanged (the digest 4.83 ms of the 30.4 ms hot call). **Gap 123** stands: its tests are still not
+built, though its cost reason is gone (T0 (b)'s genesis over 200,000 lines now takes 5.5 s, W3: 36.8 s). **Gap 120**
+stands, re-measured above: the byte row's peak is 186.6 MiB, so the named fault's threshold did not move.
+
+### Gap 126 (new; label W4-a) — the wire dominates genesis, and its margin is 8.5%
+
+(1) *What is not done*: genesis at 3 years takes 1,372 ms against the 1.5 s gate. After the twins, the kernel is 88.9% of
+genesis' instructions and the request's parse and the answer's emission are its largest part (`jvalAcc` 37.9%, `jemitRev`
+38.2% inclusive, of the kernel), ahead of the replay (`resealOfV` 22.2%, `resumeRunV` 13.3%). Every chunk re-parses and
+re-emits the checkpoint the previous chunk emitted (225,727 B at the end). (2) *Why not now*: W4's row is the replay's
+twins; the wire's levers are §19's: K14's in-process checkpoint reuse (a call hands the next the checkpoint without
+emitting and parsing it), and a `String`-based parser and emitter twin in `Json.lean`, each a larger proof than any here.
+(3) *Cost*: genesis grows about 0.46 s a year of log at this rate, so the gate's genesis bound breaks at roughly 3.3 years
+of a 61-events-a-day log; `cli_latency`'s `FIRST_VERB` = 5 s is far off. (4) *When it clears*: with K14 or the parser
+twin, or when a re-run of `logbench` (g) measures genesis above 1.5 s, which makes one of them required before S.
+
+### Numbers
+
+**Taken:** gap 126. **Highest:** gap 126, cheat 157, parity P34. **Behaviour rows:** none in the binary (Rust is still the
+only reader; `ckpt.json`'s format is the kernel path's own, used by no verb yet).
+
+**Re-measured** (main worktree, on the tree committed; every command capped at 40 GB, the benchmarks at 16 GB, the
+probes at 8 GB):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 3.04 / 3.04 / 3.04 s (W5: 3.07 / 3.12 / 3.07 s; flat) |
+| axiom audit | **3934 theorems** (3885 + 49) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged) |
+| `TmKernel.lean` | **78 imports** (`SealTwin` new) |
+| `cargo test --workspace` | **1078 passed / 0 failed / 5 ignored across 73 binaries** |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6; `stack.rs` 2.25 s, W5: 4.30 s) |
+| T5 (`kernel_replay_parity.rs --include-ignored`) | **16 passed**, 6.24 s (W5: 39.1 s). The windowed T5 4.8 s (W5: 19.8 s). T0 (b): 200,000 lines, 49 calls, 0 pops, largest call 4,337 lines, 3,315 day and 3,287 window records, genesis 5,473 ms (W3: 36.8 s), a call at the cap 212 ms (W3: 1,834), one reseal of 1,997 day records. Distinct ids kernel 804 ms, the hostile undo log 933 ms (W3: 1,707 and 2,071); Rust 31 and 74 ms |
+| `cli_latency.rs --include-ignored`, three serial runs | green, 4 passed each. No log: first 632.8 / 638.0 / 617.7 ms, later 50.7 / 50.7 / 55.8 ms. 1y: first 748.8 / 733.1 / 728.6, later 121.6 / 121.4 / 121.5. 3y: first 930.9 / 971.0 / 956.5, later 283.5 / 283.6 / 283.5. T14: 81.1 / 81.1 / 76.0 ms (3 years), 141.7 / 126.7 / 131.7 ms (10 years). Unchanged: Rust reads |
+| `logbench` (g) | the gate table above: **PASS** |
+| `logbench` (f) | the table above |
+
+**Owed next:** S (the switch), which this gate no longer blocks; gap 123's tests; gap 126's wire levers if a re-run puts
+genesis above 1.5 s.

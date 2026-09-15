@@ -32,9 +32,10 @@
 //! * **Integrity** (G9, §9.8): the prefix digest is checked on every call; a differing length,
 //!   a prefix not ending in `\n`, a differing FNV, zone key, format or kernel id goes straight
 //!   to genesis.
-//! * **Host policy** (§9.6): reseal when the tail holds more than [`FOLDABLE_TRIGGER`] foldable
-//!   lines, or when `now` is more than two days past the ledger day and the checkpoint was not
-//!   sealed today (the back-off, CRIT 19).
+//! * **Host policy** (§9.6): reseal when more than [`FOLDABLE_TRIGGER`] foldable lines were
+//!   appended since the snapshot was written (`logLines`, W4's gap 124: a tail a reseal could not
+//!   fold does not reseal again on every call), or when `now` is more than two days past the ledger
+//!   day and the checkpoint was not sealed today (the back-off, CRIT 19).
 //! * **An unwritable cache** (CRIT 26) is not fatal: one named notice per process, and the
 //!   checkpoint is kept in memory for that process.
 
@@ -49,7 +50,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime};
 
 /// The format `ckpt.json` carries; any other goes to genesis.
-pub const FORMAT: u64 = 2;
+pub const FORMAT: u64 = 3;
 /// The cache directory, relative to the plan root (D13; `tm init` excludes `.tm/cache/` from sync).
 pub const CACHE_DIR: &str = ".tm/cache/replay";
 /// The checkpoint's file inside the cache directory.
@@ -552,6 +553,8 @@ pub struct Snapshot {
     pub kernel: String,
     pub tz_key: String,
     pub prefix_lines: u64,
+    /// The log's line count when this snapshot was written (W4, gap 124): the reseal trigger counts only lines after it.
+    pub log_lines: u64,
     pub prefix_bytes: u64,
     pub prefix_fnv: String,
     pub gen: String,
@@ -565,7 +568,7 @@ impl Snapshot {
     /// The text of `ckpt.json`, the checkpoint spliced in verbatim.
     pub fn to_text(&self) -> String {
         let head = serde_json::json!({
-            "format": FORMAT, "kernel": self.kernel, "tzKey": self.tz_key, "prefixLines": self.prefix_lines,
+            "format": FORMAT, "kernel": self.kernel, "tzKey": self.tz_key, "prefixLines": self.prefix_lines, "logLines": self.log_lines,
             "prefixBytes": self.prefix_bytes, "prefixFnv": self.prefix_fnv, "gen": self.gen, "prevGen": self.prev_gen,
             "manifest": self.manifest, "meta": self.meta.to_json(),
         })
@@ -589,6 +592,7 @@ impl Snapshot {
             kernel: s("kernel")?,
             tz_key: s("tzKey")?,
             prefix_lines: n("prefixLines")?,
+            log_lines: n("logLines")?,
             prefix_bytes: n("prefixBytes")?,
             prefix_fnv: s("prefixFnv")?,
             gen: s("gen")?,
@@ -869,7 +873,14 @@ impl ReplayCache {
             let tail = &s.lines[cut..];
             let too_big = tail.len() > RESEND_LINES || s.bytes_between(cut, s.lines.len()) > RESEND_BYTES;
             if !too_big {
-                let foldable = tail.iter().enumerate().filter(|(i, _)| max_line.is_none_or(|m| (cut + i + 1) as u64 <= m)).count();
+                // Gap 124 (W4): only lines appended since this snapshot was written count, so a tail the last reseal could
+                // not fold (an unfolded undo's target, `SealResume.cutOk`'s condition (vi)) does not reseal on every call.
+                let written = (sn.log_lines as usize).clamp(cut, s.lines.len());
+                let foldable = tail
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| cut + i >= written && max_line.is_none_or(|m| (cut + i + 1) as u64 <= m))
+                    .count();
                 let reseal = (foldable > FOLDABLE_TRIGGER
                     || (now_day > sn.meta.ledger_day + KEEP_DAYS && sn.meta.reseal_day < now_day))
                     .then_some(Policy { keep_days: KEEP_DAYS, max_line });
@@ -942,6 +953,7 @@ impl ReplayCache {
                 kernel: kernel_id().into(),
                 tz_key,
                 prefix_lines: 0,
+                log_lines: s.lines.len() as u64,
                 prefix_bytes: 0,
                 prefix_fnv: format!("{:016x}", fnv1a64(&[])),
                 gen: String::new(),
@@ -992,6 +1004,7 @@ fn snapshot_of(rs: &Resealed, tz_key: &str, s: &Split, bytes: &[u8]) -> Snapshot
         kernel: kernel_id().into(),
         tz_key: tz_key.into(),
         prefix_lines: rs.meta.cut,
+        log_lines: s.lines.len() as u64,
         prefix_bytes: pb as u64,
         prefix_fnv: format!("{:016x}", fnv1a64(&bytes[..pb])),
         gen: String::new(),
@@ -1059,6 +1072,7 @@ mod tests {
             kernel: kernel_id().into(),
             tz_key: "UTC".into(),
             prefix_lines: 2,
+            log_lines: 3,
             prefix_bytes: 4,
             prefix_fnv: format!("{:016x}", fnv1a64(b"a\nb\n")),
             gen: "0123456789abcdef".into(),
