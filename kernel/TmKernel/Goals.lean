@@ -488,14 +488,17 @@ a resumed checkpoint's maps are sized differently (C7's `SameReadings`, carried 
 **W2, part 1** discharged law 1's four goals and law 11 (`Seal.the_answer_reads_the_replay`,
 `Seal.a_day_record_is_the_replays_day`, `Seal.a_window_record_is_the_replays_window`,
 `Seal.seal_partition_is_the_replay`, `Seal.sealed_and_live_observations_are_the_replays`, in `SealLaw.lean`);
-eleven goals and the six provisional definitions remain (README "Stage 5 D9 W2").
+eleven goals and the six provisional definitions remained.
+**W2, part 2** discharged law 2 (`Seal.resume_is_replay`, through the codec round trips as rewrites), law 3
+(`Seal.resume_answer_ignores_the_policy`), the `now` anchor (`Seal.an_accepted_resume_covers_now`), law 8
+(`Seal.resume_from_empty_is_replay`) and its pair (`Seal.resume_from_empty_never_refuses_by_guard`), in
+`SealLaw2D.lean`–`SealLaw2F.lean`; the real `Seal.resume` (`SealResume.lean`) replaced its provisional definition, so
+the goals below read it.  Its reseal (`Seal.resealOf`) is not built yet and returns `none`: laws 6, 6's pair and 7
+hold vacuously of it and are **not** discharged.  Six goals and five provisional definitions remain (README "Stage 5
+D9 W2, part 2").
 ############################################################################ -/
 
 -- provisional, replaced by the real definitions in W2 (signatures fixed by design §15)
-/-- **Provisional (W2).**  Resume checkpoint `k` over the tail `b` at request day `T`, under G0–G4; with a policy,
-reseal. -/
-def Seal.resume (z : Cal.Tz) (T : Nat) (k : Seal.Ckpt) (b : List Log.Line) (terminated : Bool)
-    (p : Option Seal.Policy) : Except Seal.Refusal (Seal.Answer × Option Seal.Resealed) := sorry
 /-- **Provisional (W2).**  How many tail lines a reseal folds: the greatest valid cut (§9.4). -/
 def Seal.foldPoint (z : Cal.Tz) (T : Nat) (k : Seal.Ckpt) (b : List Log.Line) (terminated : Bool)
     (p : Seal.Policy) : Nat := sorry
@@ -509,22 +512,6 @@ def Seal.tagsClear (z : Cal.Tz) (T₀ L : Nat) (a r b : List Log.Line) : Bool :=
 /-- **Provisional (W2).**  The chunked rebuild with exact pops (§9.7). -/
 def Seal.genesis (z : Cal.Tz) (T : Nat) (chunks : List (List Log.Line)) (terminated : Bool) (p : Seal.Policy) :
     Except Seal.Refusal (List Seal.DayRecord × List Seal.WindowRecord × Seal.Answer) := sorry
-
-/-- **Law 2, two-run, through the disk** (AGENTS §5.9): resuming the stored checkpoint of `a` over `b` answers as the
-checkpoint of `a ++ b`. -/
-theorem resume_is_replay (z : Cal.Tz) (T₀ T L : Nat) (a r b : List Log.Line) (term : Bool)
-    (j : JVal) (k : Seal.Ckpt) (v : Seal.Answer)
-    (hc : Log.contiguousFrom 1 (a ++ b) = true) (hr : r <+: b) (hs : Seal.sealable z T₀ L a r = true)
-    (hwire : jparse (jemit (Seal.emitCkpt (Seal.ckptOf z T₀ L a r))) = .ok j)
-    (hk : Seal.readCkpt j = .ok k)
-    (h : Seal.resume z T k b term none = .ok (v, none)) :
-    v = Seal.answer (Seal.ckptOf z T₀ L (a ++ b) []) := sorry
-
-/-- **Law 3**: the reseal's own answer is the same answer (CRIT 3). -/
-theorem resume_answer_ignores_the_policy (z : Cal.Tz) (T : Nat) (k : Seal.Ckpt) (b : List Log.Line) (term : Bool)
-    (p : Seal.Policy) (v : Seal.Answer) (x : Option Seal.Resealed)
-    (h : Seal.resume z T k b term (some p) = .ok (v, x)) :
-    Seal.resume z T k b term none = .ok (v, none) := sorry
 
 /-- **Law 4, two-run**: what Rust stored is still true. -/
 theorem resume_keeps_the_sealed_records (z : Cal.Tz) (T₀ T L : Nat) (a r b : List Log.Line) (term : Bool)
@@ -561,14 +548,6 @@ theorem a_reseal_never_seals_past_now (z : Cal.Tz) (T₀ T L : Nat) (a r b : Lis
     Seal.sealDay z T (Seal.ckptOf z T₀ L a r) b term p = L ∨
     Seal.sealDay z T (Seal.ckptOf z T₀ L a r) b term p + p.keepDays ≤ T := sorry
 
-/-- **The `now` anchor** (§9.1): an accepted resume's today, week, month and auto-close dates are at or after the
-horizon. -/
-theorem an_accepted_resume_covers_now (z : Cal.Tz) (T : Nat) (k : Seal.Ckpt) (b : List Log.Line) (term : Bool)
-    (p : Option Seal.Policy) (x : Seal.Answer × Option Seal.Resealed)
-    (h : Seal.resume z T k b term p = .ok x) :
-    k.ledgerDay ≤ T ∧ Seal.horizonOf k.ledgerDay ≤ Cal.monthStart T ∧
-    Seal.horizonOf k.ledgerDay ≤ Cal.isoMonday T ∧ Seal.horizonOf k.ledgerDay ≤ T - 16 := sorry
-
 /-- **Law 7, no loop**: a resealed checkpoint accepts its own unfolded suffix at every later day. -/
 theorem a_resealed_checkpoint_accepts_its_own_suffix (z : Cal.Tz) (T₀ T L : Nat) (a r b : List Log.Line)
     (term : Bool) (p : Seal.Policy) (v : Seal.Answer) (s : Seal.Resealed)
@@ -577,17 +556,6 @@ theorem a_resealed_checkpoint_accepts_its_own_suffix (z : Cal.Tz) (T₀ T L : Na
     (T' : Nat) (hT : T ≤ T') (term' : Bool) :
     (Seal.resume z T' s.ckpt (b.drop (Seal.foldPoint z T (Seal.ckptOf z T₀ L a r) b term p)) term' none).isOk = true :=
   sorry
-
-/-- **Law 8, one code path**: a resume from the empty checkpoint is the replay. -/
-theorem resume_from_empty_is_replay (z : Cal.Tz) (T : Nat) (ls : List Log.Line) (term : Bool) (v : Seal.Answer)
-    (hc : Log.contiguousFrom 1 ls = true) (h : Seal.resume z T (Seal.Ckpt.empty z) ls term none = .ok (v, none))
-    (q : Seal.Q) :
-    Seal.askMerged [] [] v q = Replay.ask (Seal.replayLines z ls) q := sorry
-
-/-- **Law 8's pair**: the empty checkpoint is never refused by a guard. -/
-theorem resume_from_empty_never_refuses_by_guard (z : Cal.Tz) (T : Nat) (ls : List Log.Line) (term : Bool)
-    (p : Option Seal.Policy) (e : Seal.Refusal)
-    (h : Seal.resume z T (Seal.Ckpt.empty z) ls term p = .error e) : e.isGuard = false := sorry
 
 /-- **Law 9**: chunking and exact pops are invisible. -/
 theorem chunked_genesis_is_one_replay (z : Cal.Tz) (T : Nat) (chunks : List (List Log.Line)) (term : Bool)

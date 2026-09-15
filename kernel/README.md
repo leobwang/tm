@@ -17003,3 +17003,126 @@ reading lemmas are W1's).
 **Owed next (W2, part 2 onward):** `resume` with G0–G4 and the `now` anchor, `foldPoint`, `sealDay`, the reseal and
 record emission, `genesis`; the eleven remaining W goals; the in-step theorems of §14.5's W2 row; cheats 99–104
 (design labels).
+
+<!-- ===================================================================== -->
+<!-- Stage 5 D9 W2, part 2 (2026-09-15).  Gaps, cheats and parity entries  -->
+<!-- are numbered from the next free numbers (gap 119, cheat 152, P35).    -->
+<!-- ===================================================================== -->
+
+## Stage 5 D9 W2, part 2, 2026-09-15: resuming a checkpoint is replaying the log — law 2 through the disk, law 3, the `now` anchor and law 8
+
+**Starting point.** `37727f5` (part 1), with this part's `Seal.lean` changes and the route's first modules in the
+tree, uncommitted.
+
+### What was built
+
+**`SealResume.lean` (new): the resume, definitions only (§9.3).** `Seal.resume z T K b term p` is `resumeRun`, then
+the reseal (`resealOf`, which returns `none` until part 3 builds it).
+- **G0** (`zone`, `cutMismatch`) and **G4** (`nowBelowLedger`).
+- **G1** (`g1`): the first undo of the tail, settled undos set aside (`unsettled`), that dangles there and whose tag a
+  folded survivor may carry (`tagLast`, or an unknown tag under `tagOverflow`).
+- **The tail's checked fold** (`tailFold`, `stepCheck`), from the restored state (`restore`), on the stored wakes and
+  the tail's (`tailIndex`) and `slept_by_day` (`tailSlept`: a day's first folded wake's, else its first tail
+  wake's). Each step refuses, first to last: **G3's head** (an instant the step reads the index at, `stepQueries`,
+  before the head second `headSec L = (L − 1)·86,400`), **G2** (a surviving wake not after `maxT`, or not more than
+  `fenceSec` before `futureFloor`), **G3's keys** (an effect key below `L` or `horizonOf L`). Then every tail header,
+  cancelled entries included (`headerCheck`).
+- **The answer** (`resumedAnswer`): the resumed state, its observations rebound to the resume's `slept_by_day`
+  (`rebindState`), grouped as `ckptOf` groups a state; an item's first done date and done-date count merge the
+  checkpoint's dates below the horizon (`aggMerged`); headers are the stored ones then the tail's (`tailHeaders`).
+
+**`Seal.lean` changes.** Future-ness per instant (`futureSec T = (T + 3)·86,400`, `isFuture`); the instants an entry's
+arms read (`entryInstants`: the stamp and a gap's start); `maxT` and `futureFloor` over every folded entry's instants;
+`headSec`; `storedWakes L` (the last kept wake before the head second, then every one at or after it); `settledStep`
+and `settledOf` over the call-wide stacks.
+
+**The route (§9.5), 22 modules of specification:**
+- `SealMask`, `SealMaskAux`, `SealBits`: **the mask splits at the cut under G1** (`survivors_append_of_g1`).
+- `SealIndex`: **the whole log's index agrees with the folded lines' at every folded instant**
+  (`dayOf_folded_agrees`) **and with the stored wakes and the tail's at or after the head second**
+  (`dayOf_tail_agrees`).
+- `SealStep`: a step reads the index only at its queries (`effectsWith_congr`, `foldl_stepWith_congr`), and the
+  machine's instants are earlier stamps (`foldl_mi`).
+- `SealRebind`: **late binding commutes with the fold** (`foldl_rebind`).
+- `SealAgree`: `AgreeAbove L H` (each day at or above `L`, each window date at or above `H`, the all-time facts
+  exactly) is kept by every common effect.
+- `SealRestore`: the restored state agrees with the folded one (`restore_agrees`).
+- `SealSlept`, `SealFull`, `SealBounds`, `SealRun`: `slept_by_day` per day, keys never removed and the frame below the
+  horizons, G2's bounds, and an accepted run unpacked (`resumeRun_ok`).
+- `SealGroup`, `SealAgg`, `SealAgg2`, `SealHeaders`: grouping two agreeing states gives one answer; the merged
+  aggregates and headers.
+- `SealLaw2A`–`SealLaw2C`: an accepted resume's index facts (`resume_index`) and state (`resume_state_agrees`).
+- `SealLaw2D`: **law 2 in memory** (`resume_answer_eq`), with the headers (`resume_headers`) and the items
+  (`items_merged_eq`).
+- `SealLaw2E`: law 3; the `now` anchor, from `monthStart_mono` and `isoMonday_mono`; law 8's pair.
+- `SealLaw2F`: **law 2 through the disk**: `jparse_jemit` and `readCkptFields_emit` as rewrites, never evaluated
+  (§14.0 item 4); law 8.
+
+`TmKernel.lean` gains the 23 imports: **45 imports**. The 23 modules hold 4,972 lines.
+
+### Goals (AGENTS §3.2)
+
+**Discharged (5), under their §15 names, deleted from `Goals.lean`:** `resume_is_replay` (law 2),
+`resume_answer_ignores_the_policy` (law 3), `an_accepted_resume_covers_now`, `resume_from_empty_is_replay` (law 8)
+and `resume_from_empty_never_refuses_by_guard`. **The provisional `Seal.resume` is deleted**, so the remaining goals
+read the real one.
+
+- **Law 2 does not use `hs`** (renamed `_hs`): acceptance carries what it needs. It uses `hc` for distinct lines.
+- **Law 8's pair needs no `contiguousFrom`**: the empty checkpoint's only refusal is `cutMismatch`, which is not a
+  guard.
+- **Not discharged:** laws 4 and 5, and the reseal's laws 6, 6's pair and 7, which would hold vacuously of
+  `resealOf = none`; law 9.
+
+**Added: none. Refuted: none.** Burn-down **24 → 19**.
+
+### Recorded disagreements between the design and the repo
+
+1. **Future-ness is per instant, on the UTC clock.** §9.4 dates an entry future when `localDate z t > T + 2`. The
+   kernel classifies each instant a folded entry's arms read (its stamp, and an `idle` or `routine … done` gap's
+   start) as future when it is at or after `(T + 3)·86,400` UTC seconds. A gap's start is read by the index too, and
+   the index agreement needs an order on instants, not on dates.
+2. **G2's fence is three days (259,200 s), not two (172,800 s).** The index agreement at a folded future instant
+   (`dayOf_folded_agrees`) needs the tail wake on an earlier local date and more than a day before it under any zone
+   table, and offsets of up to a day each way make two days too few. A wake between two and three days before a
+   folded future instant is refused (one pop, never a wrong fact). §14.5's in-step `dayOf_agrees_two_days_before` is
+   owed in part 3, with its counterexample and the three-day restatement.
+3. **The stored wakes are anchored to the head second** (`(L − 1)·86,400` UTC), not "dated `≥ L − 2`", and G3's head
+   rule reads every instant a step reads the index at (the open block's sub-segment and pause starts included), not
+   only the entry's stamp.
+4. **`settled` is computed over the call-wide stacks** (`settledStep`), with W1's meaning: an unfolded undo whose
+   call-wide target is folded or absent.
+5. **An item's all-time aggregates after a resume merge the checkpoint's** (`aggMerged`): the window below the horizon
+   is not restorable, so the first done date and the count of done dates combine the stored aggregate with the
+   dates at or above the horizon.
+6. **§14.5 puts W2 in `Seal.lean`.** The kernel puts it in 23 new modules, to keep each file's elaboration small
+   under the 40 GB cap.
+
+### Rule D9-21 (functions over a list the wire can make large)
+
+- **Reachable from `resume` (on the wire from W3):** `restore` (`foldl`s; `writeAll` a `foldl`), `unsettled`
+  (`filterTR`), `tailFold` and `tailHeaders` (`foldl`), `stepCheck` and `headerCheck` (`find?`, `findSome?`, tail
+  recursive), `storedHeaders` and the pair lists (`flatMapTR`), `rebindState` (`mapTR`), `tailSlept`
+  (`KMap.get`, `find?`). **Two quadratic readers, recorded for W4/W5:** `g1` reads `danglingOf`, a `foldl` whose steps
+  scan the stack (a hostile tail of undos); `resumedAnswer` groups with `canon`, whose insertions scan (W4's lever).
+- **Specification only:** everything in `SealStep` … `SealLaw2F`.
+
+### Numbers
+
+**Taken:** none. **Highest:** gap 118, cheat 151, parity P34. **Parity entries:** none. **Witnesses:** 2 new closed
+`decide`s (`cumBefore_le_335`), probed at the 8 GB cap with timeout 120 (0.12 s); no log evaluated.
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 3.04 / 3.07 / 3.02 s (part 1: 2.98 / 2.98 / 3.01 s, +3% at the worst; the first run after the build, cold, 3.82 s) |
+| axiom audit | **3614 theorems** (3319 + 295) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **19** |
+| `TmKernel.lean` | **45 imports** |
+| `cargo test --workspace` | **1068 passed / 0 failed / 5 ignored across 73 binaries** (no test added or removed) |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6; `stack.rs` 4.21 s) |
+| T5 (`kernel_replay_parity.rs --include-ignored`) | 10 passed, 0.90 s |
+| `cli_latency.rs --include-ignored`, three serial runs | green, 4 passed each. No log: first 622.7 / 627.8 / 632.8 ms, later 50.8 / 50.7 / 50.8 ms. 1y: first 718.4 / 727.6 / 743.1, later 121.6 / 121.4 / 121.4. 3y: first 941.5 / 944.8 / 951.8, later 268.4 / 283.6 / 283.5. T14: 81.0 / 75.9 / 75.9 ms (3 years), 141.7 / 167.0 / 126.5 ms (10 years). The binary's reader is unchanged (Rust) |
+
+**Owed next (W2, part 3):** laws 4 and 5 (`reachFree`, `tagsClear`); `foldPoint`, `sealDay` and the reseal with record
+emission, laws 6, 6's pair and 7, and W1's disagreement 11; `genesis` and law 9; the in-step theorems of §14.5's W2
+row; cheats 99–104 (design labels).

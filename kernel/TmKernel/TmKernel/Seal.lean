@@ -69,7 +69,7 @@ schemas), `answer` (`map`) and `OpenDay.finish` (`sortObs`, compiled as core's m
 (each insertion scans), `foldedSurvivors`, `foldedIndex`, `foldedState` and `foldedHeaders` (the replay's spec
 functions), `dayKeys`, `openDayOf`, `daysIn`, `daysFrom`, `winKeys`, `windowOf`, `windowsIn`, `windowsFrom`,
 `itemIds`, `itemAggOf`, `instOtherOf`, `namedOf`, `storedWakes`, `storedSlept`, `tagLines`, `keptTags`, `targetStep`,
-`undoTargets` and `settledOf` (`filter`, `map`, `eraseP`, `find?`), `ckptOfEntries`, `ckptOf`, the records and
+`settledStep` and `settledOf` (`filter`, `map`, `eraseP`, `find?`), `ckptOfEntries`, `ckptOf`, the records and
 `sealable` (W2's `resume` builds checkpoints, and `reseal_is_seal` says they are these), `askAnswer`, `dayRead`,
 `winRead`, `askMerged`, `Replay.sortByLine` and `Replay.Doc.obs` (`find?`, `insSort`).
 -/
@@ -711,11 +711,11 @@ structure Ckpt where
   ledgerDay : Nat
   /-- the `T` of the call that sealed it (host back-off only) -/
   resealDay : Nat
-  /-- the latest instant among folded entries that are not future-dated (G2) -/
+  /-- the latest of the folded entries' instants (`entryInstants`) that are not future at `resealDay` (G2) -/
   maxT : Option Cal.Instant
-  /-- the earliest instant among folded future-dated entries (G2) -/
+  /-- the earliest of the folded entries' instants that are future at `resealDay` (G2) -/
   futureFloor : Option Cal.Instant
-  /-- the last kept wake dated `< L − 2`, then every kept wake dated `≥ L − 2`, in the index's order -/
+  /-- the last kept wake before `headSec ledgerDay`, then every kept wake at or after it, in the index's order -/
   wakes : List Cal.Instant
   /-- fork `slept_by_day` for days `≥ L`: the first surviving wake in file order of each day, sorted by day -/
   sleptByDay : List (Nat × Nat)
@@ -1385,8 +1385,32 @@ def namedOf (st : State) : List ((List Char × Option Log.Id) × NamedRec) :=
 
 /-! ### The checkpoint's bookkeeping -/
 
-/-- **Future-dated** (§9.4): the entry's local date is more than two days after `T`. -/
-def futureDated (z : Cal.Tz) (T : Nat) (e : Entry) : Bool := decide (T + 2 < Cal.localDate z e.t.val)
+/-- **The first UTC second counted as future at request day `T`**: the start of UTC day `T + 3` (§9.4's "more than two
+days after `T`", W2).  Read on the UTC clock, not the local date, so that it is monotone in the instant: an instant at or
+after it at `T` is at or after it at every earlier day (README "Stage 5 D9 W2", disagreement 2). -/
+def futureSec (T : Nat) : Nat := (T + 3) * 86400
+
+/-- **Future at `T`** (§9.4): an instant at or after `futureSec T`. -/
+def isFuture (T : Nat) (q : Cal.Instant) : Bool := decide (futureSec T ≤ q.sec)
+
+/-- The start of a gap an entry logs (`idle`, and `routine … done` with minutes), where its day arm reads the index. -/
+def gapStart? (e : Entry) : Option Cal.Instant :=
+  match e.ev with
+  | .idle _ min => some (Cal.subMinutes e.t.val min.val)
+  | .routine _ _ status actual =>
+    match Log.parseInstanceStatus status, actual with
+    | some .done, some m => some (Cal.subMinutes e.t.val m.val)
+    | _, _ => none
+  | _ => none
+
+/-- **The instants an entry's arms read the day index at, besides the open block's**: its stamp and its gap's start
+(W2; the open block's instants are stamps of earlier entries). -/
+def entryInstants (e : Entry) : List Cal.Instant := e.t.val :: (gapStart? e).toList
+
+/-- **The head second of a ledger day** (W2): an instant before `(L − 1)` UTC days has a day before `L` on every index
+(its local date, and every wake's at or before it, is below `L`), so a tail reading it is refused without computing
+it. -/
+def headSec (L : Nat) : Nat := (L - 1) * 86400
 
 def maxInstant? (l : List Cal.Instant) : Option Cal.Instant :=
   l.foldl (fun acc t => some (match acc with | none => t | some a => if a < t then t else a)) none
@@ -1394,10 +1418,11 @@ def maxInstant? (l : List Cal.Instant) : Option Cal.Instant :=
 def minInstant? (l : List Cal.Instant) : Option Cal.Instant :=
   l.foldl (fun acc t => some (match acc with | none => t | some a => if t < a then t else a)) none
 
-/-- The kept wakes the checkpoint stores (§9.2): the last dated `< L − 2`, then every one dated `≥ L − 2`. -/
-def storedWakes (z : Cal.Tz) (L : Nat) (kw : List Cal.Instant) : List Cal.Instant :=
-  (kw.filter (fun w => decide (Cal.localDate z w < L - 2))).getLast?.toList
-    ++ kw.filter (fun w => decide (L - 2 ≤ Cal.localDate z w))
+/-- **The kept wakes the checkpoint stores** (§9.2, read on the UTC clock in W2): the last before the head second, then
+every one at or after it, in the index's order.  A tail instant at or after the head second finds its last wake among
+them; one before it is refused (`headSec`). -/
+def storedWakes (L : Nat) (kw : List Cal.Instant) : List Cal.Instant :=
+  (kw.filter (fun w => decide (w.sec < headSec L))).getLast?.toList ++ kw.filter (fun w => decide (headSec L ≤ w.sec))
 
 /-- Fork `slept_by_day` for days `≥ L`, one pair a day (its first in file order, as `KMap.get` reads it). -/
 def storedSlept (sl : List (Nat × Nat)) (L : Nat) : List (Nat × Nat) :=
@@ -1414,21 +1439,17 @@ def keptTags (sv : List Entry) : List (List Char × Nat) :=
   let unknownKept := ((all.filter (fun p => !Log.isKnownTag p.1 && decide (p.1.length ≤ maxTagChars))).take maxUnknownTags)
   all.filter (fun p => Log.isKnownTag p.1 || unknownKept.contains p)
 
-/-- One step of the mask that also records each undo's target position (the stack's first match), or none. -/
-def targetStep (acc : List (Entry × Nat) × List (Nat × Option Nat)) (p : Entry × Nat) :
-    List (Entry × Nat) × List (Nat × Option Nat) :=
-  match p.1.ev with
-  | .undo of_ id => (acc.1.eraseP (fun q => Replay.«matches» of_ id q.1),
-      (p.2, (acc.1.find? (fun q => Replay.«matches» of_ id q.1)).map Prod.snd) :: acc.2)
-  | _ => (p :: acc.1, acc.2)
-
-/-- Every undo's position and its target's, in file order. -/
-def undoTargets (es : List Entry) : List (Nat × Option Nat) := (es.zipIdx.foldl targetStep ([], [])).2.reverse
+/-- One step of the call-wide mask that also records each undo of the unfolded lines whose target is folded or absent
+(§7.4): the survivor stack, and the settled lines, most recent first. -/
+def settledStep (es : List Entry) (acc : List Entry × List Nat) (e : Entry) : List Entry × List Nat :=
+  match e.ev with
+  | .undo of_ id => (acc.1.eraseP (Replay.«matches» of_ id),
+      if (acc.1.find? (Replay.«matches» of_ id)).all (fun t => es.contains t) then e.line :: acc.2 else acc.2)
+  | _ => (e :: acc.1, acc.2)
 
 /-- **The settled undos** (§7.4): the lines of the undos of `er` whose call-wide target is in `es` or absent. -/
 def settledOf (es er : List Entry) : List Nat :=
-  ((undoTargets (es ++ er)).filter (fun p => decide (es.length ≤ p.1) && p.2.all (fun t => decide (t < es.length)))).filterMap
-    (fun p => ((es ++ er)[p.1]?).map (·.line))
+  (er.foldl (settledStep es) (es.foldl Replay.maskStep [], [])).2.reverse
 
 /-! ### The specification checkpoint, its records and its answer -/
 
@@ -1441,9 +1462,9 @@ def ckptOfEntries (z : Cal.Tz) (T₀ L cut : Nat) (es er : List Entry) (ws : Lis
   let kw := foldedIndex z es er
   let tags := tagLines sv
   ⟨ckptVersion, z.val.key, cut, L, T₀,
-   maxInstant? ((es.filter (fun e => !futureDated z T₀ e)).map (·.t.val)),
-   minInstant? ((es.filter (futureDated z T₀)).map (·.t.val)),
-   storedWakes z L kw, storedSlept (Replay.sleptByDay z kw sv) L, keptTags sv, decide ((keptTags sv).length < tags.length),
+   maxInstant? ((es.flatMap entryInstants).filter (fun q => !isFuture T₀ q)),
+   minInstant? ((es.flatMap entryInstants).filter (isFuture T₀)),
+   storedWakes L kw, storedSlept (Replay.sleptByDay z kw sv) L, keptTags sv, decide ((keptTags sv).length < tags.length),
    settledOf es er, st.machine, (itemIds st).map (itemAggOf st), windowsFrom st (horizonOf L), instOtherOf st,
    namedOf st, daysFrom st hs L, Replay.maxDay? (st.days.pairs.map Prod.fst), st.global.lastEffective, es.length,
    st.unknown, st.longestLeak, st.rwarns.reverse, ws.take maxWarnings, ws.length - maxWarnings⟩
