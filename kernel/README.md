@@ -16017,3 +16017,318 @@ the log, the Rust. The kernel's `log` op answers `facts.day`.
   - Replaces `facts.cancelled`, `days`, `block`, `completion`, `replayWarnings` and `day` with the view.
   - Defines `Effect.day?`, which must decide what the global longest leak's day means (disagreement 7).
 - **C7** (the undo law, gap 86's law beside it), then W1–W3, S and S2.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-15: stage 5, D9 track, step C6 on rebuild-on-lean (after C5
+     f50886d).  Design §8.2, §8.4, §10.2, §11, §14.4's C6 row, §15's C6 goals, and
+     T5.  Takes cheat 148 (design label 105).  Takes no gap and no parity number.
+     =========================================================================== -->
+
+## Stage 5 D9 C6, 2026-09-15: every replay fact the Rust reads, the kernel now derives — T5 agrees on the whole Replay
+
+**Starting point.** `f50886d`, clean: check.sh 7/7 (built tree 2.88 / 2.83 / 2.89 s, re-measured before any edit),
+audit 3059, corpus 29/37 files and 4/5 plans, burn-down 13, `cargo test --workspace` 1067 / 0 / 5 ignored across 73
+binaries, FFI 100.
+
+### What was built
+
+**`Replay.lean` (no new module; `TmKernel.lean` keeps its twenty imports).**
+
+*Edited in place, in C3's and C5's sections:*
+- **`HeaderRec`** gains the entry's written stamp (`t`, `off`), and `HeaderRec.of e c` builds a header. The display is
+  rendered from the stamp at emission (`LogStamp.displayStamp`, fork `ViewRow::display`).
+- **`Interruption`, `Demotion` and `CloseRec`** gain `line`: the `resume`'s line for an interruption (the open one,
+  which fork `finish` builds and no line pushes, carries 0), and the entry's line for the other two. The view hands
+  these records back per day, and Rust restores the fork's order by the line, as §11.2 does for observations.
+- **The seams** (fork `DaySeam`, Phase R's R1, R2 and R4) are a new effect, `Effect.seam d op` (key `day d`). Every
+  survivor writes one on its day, third in `effectsWith` after its header and the bookkeeping.
+  - `SeamOp.apply` is fork `Machine::step`'s seam half: `last_t` by `lastMaxStep atLe` (a later line wins a tie); a
+    `break` sets the since-break anchor to `addMinutes t actual_or_0` and pushes a mark; a `start` sets the anchor if
+    unset; `pause`, `interrupt`, `unpause` and `resume` push marks.
+  - `State` and `Facts` gain `seams`, and `DayView` gains the day's seam. `addMinutes` and `atLe` moved above their new
+    first use.
+- **Re-proved over the seam effect and the new fields, names unchanged:** `valueAt_applyEffect` (a new arm),
+  `every_known_event_has_an_arm`, `safe_apply`, `conserves_step`, `stepWith_lastDone`, `stepWith_named`,
+  `stepWith_doneDates`, the replay-warning step, `sleptInv_step` and `effectsWith_filterMap_rec`.
+  - `an_extend_changes_only_the_bookkeeping_and_its_extended_minutes` has its key list restated: an `extend` now names
+    its day twice, for its header and its seam.
+
+*New section C6:*
+- **Every line's header.**
+  - `entryHeaders z es` gives every entry in file order its day, on the survivors' index, and its mask bit. Its
+    `@[csimp]` twin `entryHeadersFast` reads `maskFast`'s dead array once and bisects the kept wakes.
+  - `cancelledHeaderFx` is §8.2's second pass: a `header` effect, `cancelled := true`, for every cancelled line.
+  - `the_survivors_headers_are_the_uncancelled_entry_headers` holds for every list: the replay's own header effects
+    are exactly the uncancelled part of `entryHeaders`.
+  - `the_two_header_passes_are_every_entrys_header`: the two passes together are `entryHeaders` up to order, one header
+    per entry.
+- **The seams' law**, C5's owed equation: `a_days_last_t_is_the_latest_stamp_of_its_survivors` says a day's derived
+  `lastT` is `lastTOn`.
+- **Every dated output names its day key** (below). `Key.date?` is the date a key names. `Effect.day?` is the day of
+  the dated record an effect writes.
+- **Observations in file order** (below), by the multiset of emitted and pending observation lines: `arm_obs` for each
+  arm, `stepWith_obs`, `foldl_stepWith_obs`.
+- **The view** (§8.4):
+  - `Doc` and `replayDoc z es` hold the facts, every header and the entry count. `@[csimp] replayDoc_eq_replayDocFast`
+    computes the mask and the day index once, for the replay and the headers.
+  - `DayQ`, `WinQ` and `Q` give one query per reading: a day's (O and DR), a window date's (W and WR), and the all-time
+    readings (A).
+  - `Answer`; `factsView f : Q → Answer`, every fact reading through `get` (so no answer depends on how many buckets
+    the replay sized a map with), with the line bookkeeping answering `lines`; and `ask doc`, which is `factsView` plus
+    the headers and the entry count (`ask_reads_the_facts`).
+  - The wire's grouping, one `foldl` per list into buckets: `dayOuts`, `winOuts`, `itemOuts`, and `instOthers` beside
+    them.
+
+**The wire (`Boundary.lean`).**
+- **`facts` is §8.4's view**, keys in build order:
+  - `days`: `[day, record, seam, energy, durations, interrupts, demotions, closes, headers]`, where the record is fork
+    `DayReplay` as one positional array of 28 fields;
+  - `window`: `[date, [[id, min]…], [doneId…], [instance…]]`;
+  - `items`: `[id, [minutes, blocks, doneAt, partialDoneAt, stops, extendedMin] | null, lastDone, dropped, doneFirst,
+    doneCount]`;
+  - `instOther`, `named`, `open: {block, interrupt}`, `lastDay`, `lastEffective`, `entryCount`, `unknown`,
+    `longestLeak` and `replayWarnings`;
+  - `warnings: {first, overflow}`, the tail's first 256 line warnings and the overflow count.
+- C1–C5's `cancelled`, `days`, `block`, `completion` and `day` objects are gone, with `blockJson`, `completionJson`,
+  `dayJson`, `dayBlockJson`, `itemBlockJson`, `dayRecJson` and the verdict-based `headerOf`.
+- **Headers are `[line, tag, id, day, cancelled, display]`** (`tailHeaders`, over `Replay.entryHeaders`).
+- **R10: headers, like facts, are answered only for a log from line 1.** A header carries its day and mask bit, which
+  the lines before a tail decide. See `LogReq.fault`'s new last clause,
+  `mkLogReq?_refuses_headers_of_a_tail_without_a_checkpoint` and `LogReq.wf_headers_from_line_one`.
+  `logAnswer_headers` states the key.
+- **Edited in place:**
+  - `logAnswer_facts` is restated over the view.
+  - The five wire witnesses `the_log_op_answers_*` keep their logs and names; their answers are now the view's.
+  - B4's `the_log_op_reads_a_four_line_tail` now sends its four lines from line 1, not line 7. Its header gains the day,
+    the bit and the display.
+  - `the_response_shapes_emit_in_build_order`'s request drops `headersFrom`.
+  - The C1 section gains a note saying all this.
+
+**`Negative.lean`.** CHEAT 148 (design 105): an observation effect keyed `global`. `decide` refuses its claim that the
+global key names the observation's day. The other 137 banners still fail at their own lines. No existing block was
+edited.
+
+**The FFI suite.**
+- `kernel.rs`: the cancelled-lines, completion and day-family answers are the view's. `the_log_op_answers_by_line` and
+  the log-with-capacity test send from line 1. The refusal table gains `headersFrom` from line 2.
+- `stack.rs`: the headers at the line bound carry day, bit and display. The mask, the day index, the block machine and
+  the completion family at the line bound assert the view.
+
+**T1 (`kernel_log_grammar.rs`).** A long file is still several calls of at most 4,096 renderings, but each call now
+sends the file from line 1 to the end of its window.
+
+### Goals (AGENTS §3.2)
+
+§15's two C6 goals were added to `Goals.lean`, elaborated in-tree (15 goals, no error), and discharged in the step.
+Burn-down **13 → 15 → 13**. A note in the STAGE 5 section records it, and a scratch `example` per goal checks it
+against its proof (for the refuted one, its negation against the refutation).
+
+| goal | status |
+|---|---|
+| `every_dated_output_names_its_day_key` | **proved for every effect**, without §15's `hfx` (the law needs no entry). §15's statement is this theorem given fewer arguments |
+| `observations_are_in_file_order` | **refuted as stated** (below); the law is `observations_are_in_file_order_on_increasing_lines` |
+
+**Refuted and renamed: one goal.** §15's `observations_are_in_file_order` quantifies over every list of entries. A
+list holding one `energy` entry twice replays to two observations on one line, which are not strictly increasing
+(`observations_are_not_in_file_order_when_a_line_repeats`). The law holds under `Log.linesIncreasing es`, which every
+list the log op builds satisfies (`the_tail_entries_have_increasing_lines`, C1).
+
+**What `Effect.day?` says, and the global longest leak** (C5's recorded disagreement 7, decided here). `day?` is the day
+of the O, DR, W or WR record an effect writes: a day's record, header, seam, observation, interruption, demotion or
+close; an item's minutes on a day; a done date; a date-keyed instance. An all-time aggregate (A) carries dates as
+values and writes no dated record: the global longest leak's record, a named event's local date, `last_done`'s stamp,
+and the bookkeeping. So the global longest leak stays keyed `global`, and `day?` is `none` on it. Its gap's day is still
+named by the same entry: `every_leak_is_on_a_day_its_idle_record_names` gives the `dayAdd r.day (.idle …)` beside every
+`leak r`. **W1 owes a decision here.** Under D14 the global longest leak is a ported fact for sealed day records, but it
+is a first maximum in file order over all days, so W1 must keep it in the checkpoint (A) or carry each day's candidate
+with its line.
+
+### Witnesses
+
+6 new decided theorems, all probed in a scratch copy under `MemoryMax=8G timeout 120`, each with at most 6 entries,
+`utcZone`, and `Nat` instants:
+- in `Replay.lean`, five:
+  - `a_days_seam_holds_its_break_its_marks_and_its_latest_stamp` (the anchor is a break's end that a later `start`
+    does not move; marks in file order; `last_t` the latest stamp, not the last line);
+  - `the_since_break_anchor_is_the_first_start_without_a_break` (and a note-only day has a seam and no record);
+  - `every_line_has_a_header_and_a_cancelled_one_is_marked`;
+  - `a_start_observation_is_in_its_starts_place`;
+  - `the_view_reads_a_small_log`;
+- the refutation above.
+
+Alone, the five took 0.19 s at 572 MB. **Re-probed:**
+- the five wire witnesses, over the view: 2.02 s at 1.37 GB;
+- B4's two edited witnesses: 0.93 s at 780 MB.
+
+The wire witnesses' expected answers were evaluated with `#eval` in a capped scratch file and then read line by line
+against their doc comments before being pinned. Altering an expected value fails at `decide`: checked on
+`a_start_observation_is_in_its_starts_place` (the order swapped) and on the cancelled-lines wire witness
+(`entryCount` 3 → 4).
+
+**Process note.** One re-run of the five `Replay.lean` witnesses (0.19 s, 578 MB) was started without the
+`systemd-run` cap, against the memory rule. It was small and finished, and every other `lake`, `lean`, `cargo` and
+`check.sh` run in the step was capped.
+
+### T5 (`tm/tests/kernel_replay_parity.rs`, extended to the whole `Replay`)
+
+**The kernel's facts are decoded from the view** (`kernel_view`), and the view is checked on the way:
+- a dated record sits under its own day;
+- no map key repeats;
+- the energy, duration, interruption, demotion, close and header lists, restored by their lines, carry no line twice;
+- the facts' `warnings.first` and `overflow` are the answer's;
+- the answer's top-level `headers` (`want.headersFrom: 1`) are the days' headers in file order.
+
+**`Facts` gains:**
+- `seams`: per day `(since_break, idle marks, last_t)`;
+- `rows`: `tm log`'s view rows `(line, tag, id, day, cancelled, display)`, from fork `ViewRow` and `display()`;
+- `counts`: `entry_count()`, `line_count()` and `days.keys().last()`;
+- per id `(done_date_first, done_date_count)`.
+
+**The whole `Replay`:**
+- `kernel_replay` rebuilds a `tm_core::log::Replay` from the kernel's facts, as `kernel_log::decode_facts` will at S.
+  Every `u32` and `u8` goes through `try_from`.
+- It is compared with the fork's by the fork's own `PartialEq`, which destructures every field. `ported_facts()` (D14)
+  is compared too.
+- **Two fields come from the fork**, each compared beforehand another way:
+  - `events`, whose occurrence lists the kernel does not keep (§8.4: the latest per `(name, id?)`). They are compared
+    through every `latest_named` query since C4.
+  - `warnings`' text, which names the warned line's written stamp. It is compared by line and status since C4 (P15).
+- `rows` and `line_count` are line bookkeeping, and are compared as view rows and counts.
+
+**The host's split.** T5 now sends a log's lines without the empty segment after a final `\n` (§10.1's
+`terminated`), so the answer's `lines` is the fork's `line_count`.
+
+**Tally.** The generated sequences now assert that a break's end served as the anchor, that every kind of idle mark
+appeared, and that some rows were cancelled.
+
+| input | run (C6's view columns; the families' counts are C5's, unchanged) |
+|---|---|
+| corpus | 7 logs, 512 rows (12 cancelled), 67 seams (29 anchored at a break's end), idle marks pause / interrupt / unpause / resume / break 2 / 4 / 1 / 4 / 43, 13 `latest_named` queries |
+| generated, 40 a day, seed 7 | 1mo: 1,191 rows (8 cancelled), 30 seams (30 at a break's end), marks 36 / 30 / 36 / 30 / 77. 6mo: 7,472 rows (58 cancelled), 182 seams (182), marks 254 / 163 / 254 / 163 / 462. 29 and 261 ms for both readers, serial |
+| 256 sequences | 11,355 rows (3,176 cancelled), 717 seams (173 at a break's end), marks 508 / 191 / 514 / 175 / 290, 545 `latest_named` queries. Arms 149–204 each, zones as at C5 |
+| §6.4 zone cases | 12 cases, 73 rows (24 cancelled), 22 seams (1 at a break's end), 1 break mark |
+| P33, P34 | 1 log each, the one named difference. Each test also carries the difference into the first done date (P33) or the last day (P34) |
+
+**Exceptions: 0** among the compared inputs.
+
+**T5 bites.** Five scratch mutations of `tm-core/src/log.rs` were each restored afterwards (`git diff` empty):
+- every `start` moving the since-break anchor fails the corpus, the months and the sequences (seams);
+- `last_t` in file order fails a zone case and sequence 11 (seams);
+- `resume` marks dropped fails the corpus, the months and the sequences (seams);
+- `ViewRow::display` with seconds fails the corpus, the months, P33's and P34's tests (view rows);
+- `done_date_first` taking the last date fails the corpus, the months and the sequences (completion family).
+
+**Measurements** (`#[ignore]`d, three runs; the kernel's time now includes the headers and the view's decoding in Rust):
+- `t5_a_block_log_of_distinct_ids_is_measured`: kernel 303 / 306 / 345 ms (C5 244–266), Rust 27–28 ms, equal.
+- The hostile undo log: kernel 248 / 251 / 255 ms (C5 186–199), Rust 102 ms, equal.
+
+### Which fact answers each accessor (carried note 5: the R-audit table and W-3's `planner.rs:842` row)
+
+| accessor (R-audit) | the kernel's fact (C6's view) | lives in |
+|---|---|---|
+| `done_items`, `is_done` | `items[id].lastDone` non-null (fork `done_items` are `last_done`'s keys; T5 checks) | A |
+| `last_done` | `items[id].lastDone` | A |
+| `done_dates` `.first()` / `.len()` (`done_date_first`, `done_date_count`) | `items[id].doneFirst`, `doneCount`; the dates in `window[d].done` | A (+ W) |
+| `ItemReplay.minutes`, `.blocks`, `done_minutes_map` | `items[id]` record fields 0 and 1 | A |
+| `block_minutes_on(id, d)` | `window[d]`'s `[id, min]` | W |
+| `block_minutes_on_day(d)`, `blocks_done` (incl. `planner.rs:842`), `day(d)` and every `DayReplay` field | `days[d]` record | O |
+| `days` iteration | `days` with a record | O |
+| `days.keys().last` | `lastDay` | A |
+| `instances_of`, `instance` | `window[d]`'s instances whose `inst` names `d`, and `instOther` | W + A |
+| `events_named`, `latest_named`, `event_names`, `event_occurred` | `named`: fork `LatestNamed` per `(name, id?)` (§8.4; the occurrence lists are not derived) | A |
+| `events_for`, `stamps` | not derived: no library reader (R-audit; CRIT 23) | — |
+| `energy`, `energy_on` | every `days[d].energy`, sorted by line | O |
+| `durations`, `durations_on` | every `days[d].durations`, sorted by line | O |
+| `demotions` | every `days[d].demotions`, grouped by id in line order | O |
+| `open_block` | `open.block` | A |
+| `last_cut` | not a field and no reader (R-audit): machine state for W1's checkpoint | — |
+| `open_interrupt`, `interrupts`, `interrupts_on` | `open.interrupt`; every `days[d].interrupts`, sorted by line | A + O |
+| `warnings` | `replayWarnings` (named, P15) | A |
+| `unknown` | `unknown` | A |
+| R1 `since_break`, R2 `idle_marks`, R4 `last_t` (`seam(d)`) | `days[d].seam` | O |
+| R3 `last_effective_t` | `lastEffective` | A |
+| `view()`, `headers_from(line)`, `entry_count()`, `line_count()` | every `days[d].headers` and the answer's `headers` from `want.headersFrom`; `entryCount`; the answer's `lines` | O + tail |
+| `PortedFacts` (D14): `closes`, `dropped_items`, `open_interrupt`, `longest_leak`, `interrupts`; per day `replans_today`, `last_plan_hash`, `loc_changes`, `dropped`, `longest_leak`, `routine_min`, `idle`; per item `stops`, `extended_min`, `done_at`, `partial_done_at`, `blocks` | `days[d].closes`; `items[id].dropped`; `open.interrupt`; `longestLeak`; `days[d].interrupts`; the day record's fields; the item record's fields | O + A |
+
+### Widths of what the facts emit (R10: every integer crossing gets a stated width)
+
+The request bounds bound every numeral the facts emit, so each is below `2^53`. W3's law 13 proves it at emission.
+- **Lines** are below `2^40 + 32,768`.
+- **Instants' seconds** are below `3.2·10^11`; a gap's end adds at most `60·(2^32 − 1)`.
+- **Days** are below `3.7·10^6`.
+- **Minutes, fifths and counts** are sums of at most 32,768 `u32` or `U8` values, so below `5·2^47`.
+- **`hsw`** is the decimal as read.
+
+The Rust decoder converts every `u32` and `u8` with `try_from`. At S a minute sum over `u32::MAX` is refused by name
+(P17).
+
+### Recorded disagreements between the design and the repo
+
+1. **§15's `observations_are_in_file_order` is false as stated.** It is refuted and restated on increasing lines (above).
+2. **§15's `every_dated_output_names_its_day_key` carries an unused `hfx`.** It is proved for every effect. `Effect.day?`
+   excludes the A aggregates (above).
+3. **§8.2's `header` effect holds a display.** The kernel keeps the written stamp and renders the display at emission,
+   so no header allocates text before it is emitted.
+4. **§10.2's `facts` object differs** in four ways:
+   - `replayWarnings` stays inside `facts`, since the warnings exist only when the replay runs;
+   - `open` has no `lastCut`: no Rust field or reader, per the R-audit, so the machine's last cut is W1's checkpoint's;
+   - `facts` gains `longestLeak`;
+   - records are positional arrays.
+5. **§10.3 has no refusal for headers of a tail without a checkpoint.** Until W3's `cutMismatch` it is
+   `badLogReq headersFrom`, as C1 did for facts. T1 and two FFI tests now send from line 1.
+6. **§11.2 gives only observations a line.** An interruption, a demotion and a close carry one too, for the per-day
+   view. The open interruption's line is 0.
+7. **§15's W block writes `Replay.ask (Replay.replayDoc z ls)` over `Log.Line`s and `Seal.Q`.** No `Log.Line` type
+   exists. `replayDoc` takes entries, and the query type is `Replay.Q`. W1 wraps the lines and aliases the query.
+8. **§8.4 lists "since-break anchor, idle marks" as `DayFacts` fields.** They are a separate `seams` map, as fork
+   `Replay.seams` is: a day with only a `note` has a seam and no `DayReplay`, and adding one would change `days`.
+9. **§14.4 says T5 compares "the entire `Replay`".** Two fields are taken from the fork after their own comparison:
+   `events` and `warnings`' text (above).
+
+### Rule D9-21 (functions over a list the wire can make large)
+
+- **On the wire:**
+  - `entryHeadersFast` and `replayDocFast` (`zipIdx`, `mapTR`, `filterTR`, one `maskFast`, one array of the kept wakes;
+    the `@[csimp]` twins of `entryHeaders` and `replayDoc`);
+  - `SeamOp.apply` (no recursion; one `HMap.alter` a survivor);
+  - `dayOuts`, `winOuts` and `itemOuts` (a `foldl` a list or map, into buckets; `reverse` first so a day's list keeps
+    file order);
+  - `instOthers` (`filterTR`);
+  - `maxDay?` and `minDay?` (`foldl`);
+  - `factsJson`, `dayOutJson`, `dayRecordJson`, `seamJson`, `winOutJson`, `itemOutJson`, `tailHeaders` and `headerJson`
+    (`mapTR`, `filterTR`, `HMap.pairs`' `foldl`, `takeTR`).
+- **Specification only, never on the wire:** `entryHeaders` and `replayDoc` (compiled as their twins),
+  `cancelledHeaderFx` (`filter`, `map`), `factsView` and `ask` (`filter`, `map`: W's laws read them), `pendLines`,
+  `obsLines`, and the `Effect` projections of the laws.
+
+### Numbers
+
+**Taken:** cheat 148 (design label 105; the next free number, checked by grep). **Highest:** gap 117, cheat 148, parity
+P34. **Behaviour rows:** none in the binary, which still has one reader of the log, the Rust. The kernel's `log` op
+answers the view, and refuses headers of a tail from any line but 1.
+
+**Re-measured** (main worktree; commands capped at 40 GB, probes and measurements at 8 or 16 GB):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 2.91 / 2.85 / 2.87 s. Baseline 2.88 / 2.83 / 2.89 s, re-measured before any edit: +2.8% at the worst against the fastest baseline run, and the budget is 10% |
+| axiom audit | **3105 theorems** (3059 + 46). The three §6.3 counts agree at 3105 |
+| `Negative.lean` | check 4 ok; 144 errors; 138 `/- CHEAT` banners; no duplicate number; 148 fails at its `decide`. At the 8 GB cap: 1.99 s, 1.99 GB |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (13 → 15 → 13 within the step) |
+| `TmKernel.lean` | **20 imports** (no new module) |
+| `lake build TmKernel:static` after a `Replay.lean` edit | 2 min 32 s (`Boundary` rebuilt) |
+| `Replay.lean` elaboration (8 GB probe cap) | 7.24 / 7.25 s, 1.13 GB; 7,243 lines (C5 5.77–5.90 s, 1.04–1.07 GB, 6,156 lines) |
+| `cargo test --workspace` | **1067 passed / 0 failed / 5 ignored across 73 binaries**, 0 compiler warnings (no test added or removed; T5's assertions widened) |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6). `stack.rs` serial, three runs, 9.09–9.25 s, each figure printed after its test's assertions: the mask at the bound 389 / 382 / 375 ms; the day index 956 / 916 / 918 ms (7,460,371 bytes); the block machine 1,363 / 1,366 / 1,354 ms (5,603,391 bytes); the completion family's call alone 590 / 584 / 560 ms (2,951,093 bytes; C5 415–443 ms) |
+| the `log` op at the line bound (`examples/oneshot`, dev profile, UTC) | 32,768 wakes, facts asked: 0.61 / 0.62 / 0.62 s, 260 MiB peak (C5 0.57–0.63 s, 307 MiB, a larger answer). 16,384 `start`/`done` pairs: facts 0.68 / 0.69 / 0.72 s, 249 MiB; headers only 0.38 / 0.39 / 0.42 s; neither 0.23 / 0.23 / 0.24 s, 207 MiB. Before `replayDoc`'s twin, facts took 0.74–0.75 s on the pairs and 0.64 s on the wakes. Every peak is under gap 102's 308 MiB |
+| T5 (`kernel_replay_parity.rs`) | 7 passed, 2 ignored, 0.91–0.93 s; 0 exceptions |
+| `cli_latency.rs --include-ignored`, three serial runs | green, 4 passed. No log: first 632.5 / 647.2 / 622.7 ms, later 50.7 / 55.8 / 55.8 ms. 1y: first 703.7 / 703.0 / 708.7, later 121.6 / 126.6 / 121.7. 3y: first 950.1 / 935.5 / 936.3, later 283.1 / 283.0 / 273.4. T14: 81.0 / 75.8 / 81.0 ms (3 years), 141.5 / 136.5 / 141.7 ms (10 years). The binary's reader is unchanged, and so are these |
+
+**Owed next:**
+- **C7** (the undo law, with gap 86's law beside it). `factsView` is ready for its statement.
+- **W1** must:
+  - decide where the global longest leak lives (above);
+  - carry the machine's `lastCut` in the checkpoint;
+  - alias `Seal.Q` to `Replay.Q`, and wrap `replayDoc` over lines.
+- **W3** owes law 13 (`counterOverflow` at emission). Then S and S2.

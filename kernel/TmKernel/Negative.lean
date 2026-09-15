@@ -1663,4 +1663,31 @@ theorem anEnergyLineReadsOnlyTheWakesLoggedBeforeIt :
         Replay.bE 2 63924357600 (.wake 420 none)]).energy.map (·.sleptMin) = [none] := by
   decide
 
+-- ===========================================================================
+-- APPENDED 2026-09-15 (stage 5, D9 track, step C6: the facts, the observations
+-- and the headers in `Replay.lean`).  Design §16's label 105 ("an observation
+-- effect keyed `global` instead of its day", CRIT 9).  Number 148 is the next
+-- free number in this checkout (the highest was 147, C5).  The control, which
+-- compiles, is `Replay.every_dated_output_names_its_day_key`.
+-- Everything below must FAIL to compile.
+-- ===========================================================================
+
+/- CHEAT 148 — an observation keyed `global`.  The tempting key for an energy
+   observation is the all-time one, like `last_done`'s: the fit reads every
+   observation.  But an observation is dated (it lives in its day's record, and a
+   sealed day's record is written once), so a guard reading keys would miss a tail
+   line writing an observation into a sealed day.  `every_dated_output_names_its_
+   day_key` says the key names the date `Effect.day?` gives: on an observation of
+   2026-09-07 (day 739865) the global key names no date, so `decide` refuses. -/
+def keyObservationsGlobally : Replay.Effect → Replay.Key
+  | .obs _ => .global
+  | fx => fx.key
+
+theorem anObservationKeyedGloballyNamesItsDay :
+    (keyObservationsGlobally (.obs (.energy ⟨1, (⟨63924368400, 0⟩, ⟨false, 0⟩), 739865, 3, 4, .nat 2, ['h'], none, none,
+        none, false⟩))).date?
+      = (Replay.Effect.obs (.energy ⟨1, (⟨63924368400, 0⟩, ⟨false, 0⟩), 739865, 3, 4, .nat 2, ['h'], none, none, none,
+        false⟩)).day? := by
+  decide
+
 end Tm

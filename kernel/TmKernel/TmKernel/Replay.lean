@@ -178,6 +178,33 @@ a log of wakes on as many dates would make an association list's absent-key scan
 * **`idle` and `idle_since` read different orders** (§8.4): `lastEffective` is the last line, `lastTOn` (fork
   `DaySeam.last_t`, which C6 derives) the latest instant (`idle_and_idle_since_read_different_orders`).
 
+## C6: the facts, the observations and the headers (§8.2, §8.4, §11)
+
+* **Every line has one header effect** (§8.2): a survivor's is in its `effects`, `HeaderRec.of e false`, and a
+  cancelled line's is the **second pass**, `cancelledHeaderFx`, `cancelled := true`.  `entryHeaders` is every entry's
+  header in file order with its day and mask bit, and the two passes are exactly it
+  (`the_survivors_headers_are_the_uncancelled_entry_headers`, `the_two_header_passes_are_every_entrys_header`).  A
+  header keeps its written stamp; the display (`LogStamp.displayStamp`, fork `ViewRow::display`) is rendered at
+  emission.
+* **The seams** (fork `DaySeam`, Phase R's R1, R2, R4) are one effect of every survivor on its day, `Effect.seam`:
+  the since-break anchor (the last `break`'s end, else the first `start`), the idle marks in file order, and
+  `last_t`, which is C5's `lastTOn` (`a_days_last_t_is_the_latest_stamp_of_its_survivors`).  A day holding only a
+  `note` has a seam and no `DayAcc`, as in the fork.
+* **A dated record carries its line**: `Interruption` (its `resume`'s; the open one 0), `Demotion` and `CloseRec`, so
+  a view handed back per day restores the fork's order, as observations do (§11.2).
+* **Observations are in file order** on the log op's entries, whose lines strictly increase
+  (`observations_are_in_file_order_on_increasing_lines`, by the multiset of emitted and pending lines:
+  `arm_obs`, `foldl_stepWith_obs`); §15's statement over every list is refuted by a repeated line
+  (`observations_are_not_in_file_order_when_a_line_repeats`).
+* **Every dated output names its day key** (CRIT 9): `Effect.day?` is the day of the dated record an effect writes,
+  `Key.date?` the date a key names (`every_dated_output_names_its_day_key`).  The global longest leak is an all-time
+  aggregate keyed `global`; its gap's day is named by the same entry's idle record
+  (`every_leak_is_on_a_day_its_idle_record_names`).
+* **The view** (§8.4): `replayDoc` (the facts, every header, the entry count), `Q` (one query per reading: a day's,
+  a window date's, and the all-time ones), `factsView` (every fact reading, through `get`, so the answer does not
+  depend on bucket counts; the line bookkeeping answers `lines`) and `ask` (it and the headers).  The wire groups the
+  view by where each fact lives (`dayOuts`, `winOuts`, `itemOuts`, `instOthers`).
+
 ## Rule D9-21 (functions here over a list the wire can make large)
 
 `survivors`, `stackI`, `danglingOf` (`foldl`, specification only: compiled as their `@[csimp]` twins or
@@ -210,6 +237,13 @@ new reverses and `finish`'s demotions and closes (`reverse`), and `HMap.mapVals`
 only, never on the wire: `sleptByDay` (`filterMap`; compiled as `sleptMap` through `replay_eq_replayFast`),
 `firstLoggedSleep` (`find?`), `leakOf`, `demotionOf`, `closeOf`, `isUnknownEv` and `lastTOn` (`filter`, `map`,
 `foldl`), `insBy_perm`/`insSort_perm`, and the `Effect` projections of the laws.
+C6 adds: `entryHeadersFast` (`zipIdx`, `mapTR`, one `maskFast` and one array of the kept wakes; `@[csimp]` twin of
+`entryHeaders`), `replayDocFast` (`@[csimp]` twin of `replayDoc`: the mask and the day index computed once for the
+replay and the headers), `SeamOp.apply` (no recursion; one `HMap.alter` a survivor), `dayOuts`, `winOuts` and `itemOuts` (one
+`foldl` per list or map, into buckets; `reverse` first where a day's list keeps file order), `instOthers` (`filterTR`),
+`maxDay?` and `minDay?` (`foldl`).  Specification only, never on the wire: `entryHeaders` (compiled as its twin),
+`cancelledHeaderFx` (`filter`, `map`), `factsView` and `ask` (`filter`, `map`; W's laws read them), `pendLines`,
+`obsLines` and the `Effect` projections of the laws.
 -/
 namespace Tm
 namespace Log
@@ -2194,8 +2228,11 @@ structure DurationObs where
   isPartial : Bool
 deriving DecidableEq, Repr
 
-/-- Fork `Interruption`. -/
+/-- Fork `Interruption`, with (C6) the line of the `resume` that pushed it: the view hands interruptions back
+per day, and Rust restores the fork's push order by it (design §11.2's rule for observations).  The open
+interruption, which fork `finish` builds and no line pushes, carries line 0. -/
 structure Interruption where
+  line : Nat
   start : Option At
   stop : Option At
   day : Nat
@@ -2228,8 +2265,10 @@ structure LeakRec where
   min : Nat
 deriving DecidableEq, Repr
 
-/-- **C5: fork `Demotion`**, its `stamp` fork `stamp_from_key(from)` (`Log.stampFromKey`). -/
+/-- **C5: fork `Demotion`**, its `stamp` fork `stamp_from_key(from)` (`Log.stampFromKey`), with (C6) its entry's
+line: the view hands demotions back per day, and Rust restores each id's file order by it. -/
 structure Demotion where
+  line : Nat
   t : At
   id : Id
   from_ : List Char
@@ -2238,8 +2277,9 @@ structure Demotion where
   stamp : Option Field.Stamp
 deriving DecidableEq, Repr
 
-/-- **C5: fork `CloseRecord`.** -/
+/-- **C5: fork `CloseRecord`**, with (C6) its entry's line, for the same reason as a demotion's. -/
 structure CloseRec where
+  line : Nat
   t : At
   period : List Char
   key : List Char
@@ -2420,13 +2460,98 @@ structure Machine where
   interrupt : Option (At × Nat × Option Id)
 deriving DecidableEq, Repr
 
-/-- An entry's line header as the state keeps it (§8.2's `header`; C6 adds the display). -/
+/-- **C5: `t + Duration::minutes(m)`** (a break's end): chrono's `NaiveTime::overflowing_add_signed`
+with a positive whole-minute delta.  A leap second is left as its own second before adding
+(`frac -= 1_000_000_000`); a zero delta leaves the instant, leap second and all.  No overflow: a stamp's
+year is at most 9999 and `u32::MAX` minutes is under 8,200 years, inside chrono's range. -/
+def addMinutes (t : Cal.Instant) (m : Nat) : Cal.Instant :=
+  if m = 0 then t
+  else if 1000000000 ≤ t.ns then ⟨t.sec + 60 * m, t.ns - 1000000000⟩
+  else ⟨t.sec + 60 * m, t.ns⟩
+
+/-- **An entry's line header** (§8.2's `header`; fork `ViewRow` less its entry): its physical line, its tag
+(fork `Event::name`), its primary id (fork `Event::primary_id`), whether the undo mask cancels it, and (C6) its
+stamp as written, from which the display (`LogStamp.displayStamp`, fork `ViewRow::display`) is rendered at
+emission.  The day is the effect's (`Effect.header d h`). -/
 structure HeaderRec where
   line : Nat
   tag : List Char
   id : Option Id
   cancelled : Bool
+  t : Cal.VInstant
+  off : Cal.VOffset
 deriving DecidableEq, Repr
+
+/-- **C6: an entry's header**, with the mask bit `c`. -/
+def HeaderRec.of (e : Entry) (c : Bool) : HeaderRec := ⟨e.line, e.ev.tag, e.ev.primaryId, c, e.t, e.off⟩
+
+/-- Not earlier by instant (fork `DaySeam.last_t`'s `t >= l`: a later line wins a tie). -/
+def atLe (a b : At) : Bool := decide (a.1 ≤ b.1)
+
+/-- **C6: a mark of a day's idle time** (fork `IdleMark`, R2): a `pause`, `interrupt`, `unpause` or `resume` at
+its stamp, or a `break` at its stamp with the `actual_min` it was logged with. -/
+inductive IdleMark
+  | pause (t : At)
+  | interrupt (t : At)
+  | unpause (t : At)
+  | resume (t : At)
+  | brk (t : At) (actualMin : Option Nat)
+deriving DecidableEq, Repr
+
+/-- **C6: a day's seam facts** (fork `DaySeam`, Phase R's R1, R2 and R4): the since-break anchor (the last
+`break`'s end, else the day's first `start`), the idle marks (newest first; the facts put them back in file
+order), and `last_t`, the latest stamp by instant over the day's survivors of any kind, a later line winning a
+tie.  Every surviving entry writes its day's seam, so a day holding only a `note` has a seam and no
+`DayAcc`. -/
+structure SeamAcc where
+  sinceBreak : Option At
+  idleMarks : List IdleMark
+  lastT : Option At
+deriving DecidableEq, Repr
+
+def SeamAcc.empty : SeamAcc := ⟨none, [], none⟩
+
+/-- What an entry's kind writes to its day's seam beyond `last_t`. -/
+inductive SeamKind
+  | other
+  | brk (actualMin : Option Nat)
+  | start
+  | pause
+  | interrupt
+  | unpause
+  | resume
+deriving DecidableEq, Repr
+
+/-- **C6: one survivor's write to its day's seam**: its stamp and its kind's part. -/
+structure SeamOp where
+  t : At
+  kind : SeamKind
+deriving DecidableEq, Repr
+
+/-- Fork `Machine::step`'s seam half, for one survivor whose stamp is `op.t`. -/
+def SeamOp.apply (op : SeamOp) (a : SeamAcc) : SeamAcc :=
+  let a := { a with lastT := lastMaxStep atLe a.lastT op.t }
+  match op.kind with
+  | .other => a
+  | .brk am => { a with sinceBreak := some (addMinutes op.t.1 (am.getD 0), op.t.2), idleMarks := .brk op.t am :: a.idleMarks }
+  | .start =>
+    match a.sinceBreak with
+    | none => { a with sinceBreak := some op.t }
+    | some _ => a
+  | .pause => { a with idleMarks := .pause op.t :: a.idleMarks }
+  | .interrupt => { a with idleMarks := .interrupt op.t :: a.idleMarks }
+  | .unpause => { a with idleMarks := .unpause op.t :: a.idleMarks }
+  | .resume => { a with idleMarks := .resume op.t :: a.idleMarks }
+
+/-- The seam kind of an event (fork `step`'s seam match). -/
+def seamKindOf : Event → SeamKind
+  | .brk _ actual _ => .brk (actual.map (·.val))
+  | .start .. => .start
+  | .pause _ => .pause
+  | .interrupt _ => .interrupt
+  | .unpause _ => .unpause
+  | .resume _ _ => .resume
+  | _ => .other
 
 /-- The bookkeeping every surviving entry writes: fork `last_effective_t` (the last survivor's `t` in
 file order) and how many survivors were stepped. -/
@@ -2469,12 +2594,14 @@ structure State where
   longestLeak : Option LeakRec
   /-- C5: fork `Replay.unknown` -/
   unknown : Nat
+  /-- C6: fork `Replay.seams`, per day -/
+  seams : HMap Nat SeamAcc
 deriving DecidableEq, Repr
 
 /-- The empty state, its bucketed maps sized for `n` entries. -/
 def State.init (n : Nat) : State :=
   ⟨HMap.empty n, HMap.empty n, HMap.empty n, [], [], [], [], ⟨none, none, none⟩, ⟨none, 0⟩,
-    HMap.empty n, HMap.empty n, HMap.empty n, HMap.empty n, [], [], [], HMap.empty n, none, 0⟩
+    HMap.empty n, HMap.empty n, HMap.empty n, HMap.empty n, [], [], [], HMap.empty n, none, 0, HMap.empty n⟩
 
 /-! ### Effects and keys (§8.2) -/
 
@@ -2628,6 +2755,8 @@ inductive Effect
   | leak (r : LeakRec)
   /-- C5, `unknown += 1` -/
   | unknown
+  /-- C6, a survivor's write to its day's seam (fork `DaySeam`) -/
+  | seam (d : Nat) (op : SeamOp)
 deriving DecidableEq, Repr
 
 /-- **The keys** (§8.2's block-family and completion keys; C5 adds the record keys).  An instance is
@@ -2669,6 +2798,7 @@ def Effect.key : Effect → Key
   | .drop i => .item i
   | .leak _ => .global
   | .unknown => .global
+  | .seam d _ => .day d
 
 def Effect.isHeader : Effect → Bool
   | .header _ _ => true
@@ -2678,6 +2808,8 @@ def Effect.isHeader : Effect → Bool
 closes dated to it. -/
 structure DayView where
   acc : Option DayAcc
+  /-- C6 -/
+  seam : Option SeamAcc
   energy : List EnergyObs
   durations : List DurationObs
   interrupts : List Interruption
@@ -2699,7 +2831,7 @@ deriving DecidableEq, Repr
 
 /-- **The value at a key**: what a sealed day (G3) or a query reads. -/
 def State.valueAt (st : State) : Key → Val
-  | .day d => .day ⟨st.days.get d, st.energy.filter (fun o => decide (o.day = d)),
+  | .day d => .day ⟨st.days.get d, st.seams.get d, st.energy.filter (fun o => decide (o.day = d)),
       st.durations.filter (fun o => decide (o.day = d)), st.interrupts.filter (fun r => decide (r.day = d)),
       (st.headers.filter (fun h => decide (h.1 = d))).map Prod.snd,
       (st.demotions.filter (fun p => decide (p.1 = d))).map Prod.snd,
@@ -2742,6 +2874,7 @@ def applyEffect (st : State) : Effect → State
   | .drop i => { st with dropped := st.dropped.alter i (fun _ => some ()) }
   | .leak r => { st with longestLeak := lastMaxStep leakLt st.longestLeak r }
   | .unknown => { st with unknown := st.unknown + 1 }
+  | .seam d op => { st with seams := st.seams.alter d (fun o => some (op.apply (o.getD SeamAcc.empty))) }
 
 /-- Apply effects in order (a `foldl`, D9-21). -/
 def applyEffects (st : State) (fx : List Effect) : State := fx.foldl applyEffect st
@@ -2847,15 +2980,6 @@ def resumeBlock (b : Block) (t : At) : Block :=
     | none => { b with since := some t }
     | some _ => b
 
-/-- **C5: `t + Duration::minutes(m)`** (a break's end): chrono's `NaiveTime::overflowing_add_signed`
-with a positive whole-minute delta.  A leap second is left as its own second before adding
-(`frac -= 1_000_000_000`); a zero delta leaves the instant, leap second and all.  No overflow: a stamp's
-year is at most 9999 and `u32::MAX` minutes is under 8,200 years, inside chrono's range. -/
-def addMinutes (t : Cal.Instant) (m : Nat) : Cal.Instant :=
-  if m = 0 then t
-  else if 1000000000 ≤ t.ns then ⟨t.sec + 60 * m, t.ns - 1000000000⟩
-  else ⟨t.sec + 60 * m, t.ns⟩
-
 /-- **C5: the day header and records family's arms of fork `Machine::step`**, one per event (`wake`,
 `arrive`, `loc`, `break`, `energy`, `idle`, `routine`'s day half, `plan`, `demote`, `drop`, `close` and
 unknown events; `readopt`, `move`, `edit`, `note` and `undo` write nothing).  `sl` is fork `slept_by_day`,
@@ -2893,9 +3017,9 @@ def dayArm (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (e : Entry) (t :
        .dayAdd d (.routineMin m.val)]
     | _, _ => []
   | .plan hash replans drift => [.dayAdd d (.plan hash replans.val drift.val)]
-  | .demote id from_ to est => [.demote d ⟨t, id, from_, to, est.val, Log.stampFromKey from_⟩]
+  | .demote id from_ to est => [.demote d ⟨e.line, t, id, from_, to, est.val, Log.stampFromKey from_⟩]
   | .drop id => [.drop id]
-  | .close period key => [.close d ⟨t, period, key⟩]
+  | .close period key => [.close d ⟨e.line, t, period, key⟩]
   | .unknown _ _ => [.unknown]
   | _ => []
 
@@ -2945,11 +3069,11 @@ def arm (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Machine) (e : 
   | .resume lost dropped =>
     match m.interrupt with
     | some (s, sd, iid) =>
-      [.dayAdd sd (.segment ⟨s, t, .interrupt iid⟩), .interruption ⟨some s, some t, sd, iid, lost.val, dropped⟩,
+      [.dayAdd sd (.segment ⟨s, t, .interrupt iid⟩), .interruption ⟨e.line, some s, some t, sd, iid, lost.val, dropped⟩,
        .dayAdd sd (.lost lost.val dropped),
        .machine { m with block := m.block.map (resumeBlock · t), interrupt := none }]
     | none =>
-      [.interruption ⟨none, some t, d, none, lost.val, dropped⟩, .dayAdd d (.lost lost.val dropped),
+      [.interruption ⟨e.line, none, some t, d, none, lost.val, dropped⟩, .dayAdd d (.lost lost.val dropped),
        .machine { m with block := m.block.map (resumeBlock · t) }]
   | .stop id _ =>
     match m.block with
@@ -2993,7 +3117,8 @@ C6's second pass heads the cancelled lines) and its bookkeeping, then its machin
 family's) and its completion family's.  `sl` is fork `slept_by_day`, which the `energy` arm reads (C5). -/
 def effectsWith (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (st : State) (e : Entry) :
     List Effect :=
-  .header (dy e.t.val) ⟨e.line, e.ev.tag, e.ev.primaryId, false⟩ :: .global (e.t.val, e.off.val) ::
+  .header (dy e.t.val) (HeaderRec.of e false) :: .global (e.t.val, e.off.val) ::
+    .seam (dy e.t.val) ⟨(e.t.val, e.off.val), seamKindOf e.ev⟩ ::
     (arm dy sl st.machine e (e.t.val, e.off.val) (dy e.t.val) ++ completionArm z e (e.t.val, e.off.val) (dy e.t.val))
 
 /-- **Fork `Machine::step` as effects** (§8.2), over the day index `kw` and fork `slept_by_day` as the list
@@ -3051,6 +3176,8 @@ structure Facts where
   longestLeak : Option LeakRec
   /-- C5: fork `unknown` -/
   unknown : Nat
+  /-- C6: fork `seams`, each day's idle marks in file order -/
+  seams : HMap Nat SeamAcc
 deriving DecidableEq, Repr
 
 /-- Fork `Replay::last_done(id)`. -/
@@ -3147,11 +3274,12 @@ def finish (st : State) : Facts :=
     energy := sortObs (st.energy.reverse ++ (st.machine.block.bind (·.obs)).toList),
     durations := st.durations.reverse, interrupts := st.interrupts.reverse, headers := st.headers.reverse,
     openBlock := st.machine.block.map (fun b => ⟨b.id, b.started, b.workedMin, b.since, b.paused⟩),
-    openInterrupt := st.machine.interrupt.map (fun i => ⟨some i.1, none, i.2.1, i.2.2, 0, []⟩),
+    openInterrupt := st.machine.interrupt.map (fun i => ⟨0, some i.1, none, i.2.1, i.2.2, 0, []⟩),
     lastEffective := st.global.lastEffective, entries := st.global.entries,
     lastDoneMap := st.lastDone, doneDates := st.doneDates, instances := st.instances, named := st.named,
     warnings := st.rwarns.reverse, demotions := st.demotions.reverse, closes := st.closes.reverse,
-    dropped := st.dropped, longestLeak := st.longestLeak, unknown := st.unknown }
+    dropped := st.dropped, longestLeak := st.longestLeak, unknown := st.unknown,
+    seams := st.seams.mapVals (fun a => { a with idleMarks := a.idleMarks.reverse }) }
 
 /-- A wake's `slept_min`. -/
 def sleptOf (e : Entry) : Option Nat :=
@@ -3666,6 +3794,11 @@ theorem valueAt_applyEffect (st : State) (e : Effect) (k : Key) (h : k ≠ e.key
     rcases k with d' | ⟨i', d'⟩ | i' | _ | _ | ⟨i', d'⟩ | ⟨it', is', d'⟩ | ⟨it', is'⟩ | ⟨n', id'⟩ <;>
       simp only [applyEffect, State.valueAt]
     exact absurd rfl h
+  | seam d op =>
+    rcases k with d' | ⟨i', d'⟩ | i' | _ | _ | ⟨i', d'⟩ | ⟨it', is', d'⟩ | ⟨it', is'⟩ | ⟨n', id'⟩ <;>
+      simp only [applyEffect, State.valueAt]
+    have : d' ≠ d := fun e => h (by rw [e]; rfl)
+    rw [HMap.get_alter, if_neg this]
 
 /-- **The frame law** (§8.2, Goals): applying effects changes only the keys they name. -/
 theorem applyEffects_touches_only_named_keys (st : State) (fx : List Effect) (k : Key)
@@ -4006,7 +4139,7 @@ theorem every_known_event_has_an_arm (z : Cal.Tz) (kw : List Cal.Instant) (slept
     (st : State) (e : Entry) :
     ((effects z kw slept st e).filter Effect.isHeader).length = 1 := by
   unfold effects effectsWith
-  rw [List.filter_cons, List.filter_cons]
+  rw [List.filter_cons, List.filter_cons, List.filter_cons]
   simp only [Effect.isHeader, if_true, Bool.false_eq_true, if_false, List.length_cons]
   rw [List.filter_eq_nil_iff.2 (fun x hx => by
     rcases List.mem_append.1 hx with hx | hx
@@ -4187,6 +4320,7 @@ theorem safe_apply (st : State) (e : Effect) (hs : e.safe = true) (hb : Balanced
   | drop i => exact ⟨hb, fun _ _ => Nat.le_refl _, rfl⟩
   | leak r => exact ⟨hb, fun _ _ => Nat.le_refl _, rfl⟩
   | unknown => exact ⟨hb, fun _ _ => Nat.le_refl _, rfl⟩
+  | seam d op => exact ⟨hb, fun _ _ => Nat.le_refl _, rfl⟩
 
 theorem safe_list (fx : List Effect) (hs : ∀ x ∈ fx, x.safe = true) : ∀ (st : State), Balanced st →
     Balanced (applyEffects st fx) ∧ (∀ d i, unk st d i ≤ unk (applyEffects st fx) d i) ∧
@@ -4475,10 +4609,10 @@ theorem conserves_init (n : Nat) : Conserves (State.init n) := by
 theorem conserves_step (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (st : State)
     (e : Entry) (h : Conserves st) : Conserves (stepWith z dy sl st e) := by
   unfold stepWith effectsWith
-  rw [applyEffects_cons, applyEffects_cons, applyEffects_append]
-  have h2 : Conserves (applyEffect (applyEffect st (.header (dy e.t.val) ⟨e.line, e.ev.tag, e.ev.primaryId, false⟩))
-      (.global (e.t.val, e.off.val))) :=
-    conserves_safe st [.header _ _, .global _] (by simp [Effect.safe]) h
+  rw [applyEffects_cons, applyEffects_cons, applyEffects_cons, applyEffects_append]
+  have h2 : Conserves (applyEffect (applyEffect (applyEffect st (.header (dy e.t.val) (HeaderRec.of e false)))
+      (.global (e.t.val, e.off.val))) (.seam (dy e.t.val) ⟨(e.t.val, e.off.val), seamKindOf e.ev⟩)) :=
+    conserves_safe st [.header _ _, .global _, .seam _ _] (by simp [Effect.safe]) h
   exact conserves_safe _ _ (completionArm_safe z e _ _) (conserves_arm dy sl _ e _ _ h2)
 
 theorem conserves_foldl (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) :
@@ -4625,15 +4759,17 @@ item's `extended_min` grows by `by_min` (the item created if absent, as fork `it
 frame law nothing at any other key moves. -/
 theorem an_extend_changes_only_the_bookkeeping_and_its_extended_minutes (z : Cal.Tz) (kw : List Cal.Instant)
     (slept : List (Nat × Nat)) (st : State) (e : Entry) (id : Id) (by_ : U32) (h : e.ev = .extend id by_) :
-    (effects z kw slept st e).map Effect.key = [.day (dayOf z kw e.t.val), .global, .item id] ∧
+    (effects z kw slept st e).map Effect.key
+      = [.day (dayOf z kw e.t.val), .global, .day (dayOf z kw e.t.val), .item id] ∧
     (step z kw slept st e).items.get id =
       some { (st.items.get id).getD ItemAcc.empty with
              extendedMin := ((st.items.get id).getD ItemAcc.empty).extendedMin + by_.val } ∧
     ∀ k, k ∉ [Key.day (dayOf z kw e.t.val), .global, .item id] →
       (step z kw slept st e).valueAt k = st.valueAt k := by
-  have hfx : effects z kw slept st e = [.header (dayOf z kw e.t.val) ⟨e.line, e.ev.tag, e.ev.primaryId, false⟩,
-      .global (e.t.val, e.off.val), .itemAdd id (.extend by_.val)] := by
-    simp [effects, effectsWith, arm, completionArm, h]
+  have hfx : effects z kw slept st e = [.header (dayOf z kw e.t.val) (HeaderRec.of e false),
+      .global (e.t.val, e.off.val), .seam (dayOf z kw e.t.val) ⟨(e.t.val, e.off.val), .other⟩,
+      .itemAdd id (.extend by_.val)] := by
+    simp [effects, effectsWith, arm, completionArm, h, seamKindOf]
   refine ⟨by rw [hfx]; rfl, ?_, fun k hk => ?_⟩
   · unfold step
     rw [hfx]
@@ -4641,7 +4777,9 @@ theorem an_extend_changes_only_the_bookkeeping_and_its_extended_minutes (z : Cal
     cases st.items.get id <;> rfl
   · unfold step
     apply applyEffects_touches_only_named_keys
-    rw [hfx]; exact hk
+    rw [hfx]
+    simp only [List.map, Effect.key, List.mem_cons, List.not_mem_nil, or_false, not_or] at hk ⊢
+    exact ⟨hk.1, hk.2.1, hk.1, hk.2.2⟩
 
 end BlockLaws
 
@@ -4812,7 +4950,7 @@ theorem stepWith_lastDone (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat → 
     (stepWith z dy sl st e).lastDone.get i
       = (if completes i e then [stampOf e] else []).foldl (lastMaxStep instLt) (st.lastDone.get i) := by
   unfold stepWith effectsWith
-  rw [lastDone_applyEffects, List.filterMap_cons, List.filterMap_cons, List.filterMap_append, arm_markOf,
+  rw [lastDone_applyEffects, List.filterMap_cons, List.filterMap_cons, List.filterMap_cons, List.filterMap_append, arm_markOf,
     completionArm_markOf]
   rfl
 
@@ -5029,7 +5167,7 @@ theorem stepWith_named (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat → Opt
     (stepWith z dy sl st e).named.get (name, id)
       = (namedOccurrences z name id [e]).foldl pushStep (st.named.get (name, id)) := by
   unfold stepWith effectsWith
-  rw [named_applyEffects, List.filterMap_cons, List.filterMap_cons, List.filterMap_append]
+  rw [named_applyEffects, List.filterMap_cons, List.filterMap_cons, List.filterMap_cons, List.filterMap_append]
   have ha : (arm dy sl st.machine e (e.t.val, e.off.val) (dy e.t.val)).filterMap (Effect.namedOf name id) = [] :=
     List.filterMap_eq_nil_iff.2 (fun x hx => by
       have := arm_ofBlock _ _ _ _ _ _ x hx
@@ -5125,7 +5263,7 @@ theorem stepWith_rwarns (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat → Op
       rw [applyEffects_cons, ih _ (fun y hy => hx y (List.mem_cons_of_mem _ hy))]
       exact (applyEffect_ofBlock_keeps s x (hx x (List.mem_cons_self ..))).1
   unfold stepWith effectsWith
-  rw [applyEffects_cons, applyEffects_cons, applyEffects_append, completionArm_rwarns,
+  rw [applyEffects_cons, applyEffects_cons, applyEffects_cons, applyEffects_append, completionArm_rwarns,
     hgen _ _ (arm_ofBlock _ _ _ _ _ _)]
   rfl
 
@@ -5206,7 +5344,7 @@ theorem stepWith_doneDates (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat →
     ((stepWith z dy sl st e).doneDates.get (d, i)).isSome
       = ((st.doneDates.get (d, i)).isSome || (completes i e && decide (doneDateOf dy e = d))) := by
   unfold stepWith effectsWith
-  rw [applyEffects_doneDates, List.any_cons, List.any_cons, List.any_append, completionArm_doneDates]
+  rw [applyEffects_doneDates, List.any_cons, List.any_cons, List.any_cons, List.any_append, completionArm_doneDates]
   have ha : (arm dy sl st.machine e (e.t.val, e.off.val) (dy e.t.val)).any (fun x => x.dateOf i == some d) = false :=
     List.any_eq_false.2 (fun x hx => by
       have := arm_ofBlock _ _ _ _ _ _ x hx
@@ -5486,7 +5624,8 @@ theorem sleptInv_step (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat → Opti
   apply sleptInv_applyEffects sl _ st _ h
   intro x hx
   simp only [List.mem_cons, List.mem_append] at hx
-  rcases hx with rfl | rfl | hx | hx
+  rcases hx with rfl | rfl | rfl | hx | hx
+  · rfl
   · rfl
   · rfl
   · exact List.all_eq_true.1 (arm_sleptOk dy sl st.machine e _ _ h.2) x hx
@@ -5570,8 +5709,9 @@ theorem effectsWith_filterMap_rec {α : Type} (ρ : Effect → Option α) (hρ :
   have hc : (completionArm z e (e.t.val, e.off.val) (dy e.t.val)).filterMap ρ = [] :=
     List.filterMap_eq_nil_iff.2 (fun x hx => hρ x (by simpa using List.all_eq_true.1 (completionArm_noRec z e _ _) x hx))
   unfold effectsWith
-  simp only [List.filterMap_cons, hρ (.header (dy e.t.val) ⟨e.line, e.ev.tag, e.ev.primaryId, false⟩) rfl,
-    hρ (.global (e.t.val, e.off.val)) rfl, List.filterMap_append, arm_filterMap_rec ρ hρ, hc, List.append_nil]
+  simp only [List.filterMap_cons, hρ (.header (dy e.t.val) (HeaderRec.of e false)) rfl,
+    hρ (.global (e.t.val, e.off.val)) rfl, hρ (.seam (dy e.t.val) ⟨(e.t.val, e.off.val), seamKindOf e.ev⟩) rfl,
+    List.filterMap_append, arm_filterMap_rec ρ hρ, hc, List.append_nil]
 
 def Effect.leakOf? : Effect → Option LeakRec
   | .leak r => some r
@@ -5678,13 +5818,13 @@ theorem applyEffects_records : ∀ (fx : List Effect) (st : State),
 `stamp_from_key(from)`. -/
 def demotionOf (dy : Cal.Instant → Nat) (e : Entry) : Option (Nat × Demotion) :=
   match e.ev with
-  | .demote id from_ to est => some (dy e.t.val, ⟨stampOf e, id, from_, to, est.val, Log.stampFromKey from_⟩)
+  | .demote id from_ to est => some (dy e.t.val, ⟨e.line, stampOf e, id, from_, to, est.val, Log.stampFromKey from_⟩)
   | _ => none
 
 /-- **The close an entry records** (fork `close`): its day, stamp, period and key. -/
 def closeOf (dy : Cal.Instant → Nat) (e : Entry) : Option (Nat × CloseRec) :=
   match e.ev with
-  | .close period key => some (dy e.t.val, ⟨stampOf e, period, key⟩)
+  | .close period key => some (dy e.t.val, ⟨e.line, stampOf e, period, key⟩)
   | _ => none
 
 /-- An unknown event (fork `Event::Unknown`). -/
@@ -5772,15 +5912,897 @@ theorem a_demote_stamp_reads_the_week_or_date_key (z : Cal.Tz) (es : List Entry)
 
 /-! #### `lastT`: the latest instant of a day, beside `lastEffective`, the last line -/
 
-/-- Not earlier by instant (fork `DaySeam.last_t`'s `t >= l`: a later line wins a tie). -/
-def atLe (a b : At) : Bool := decide (a.1 ≤ b.1)
-
 /-- **§8.4's `lastT` of a day** (fork `DaySeam.last_t`, the TUI's `idle_since`; C6 derives the seam): the latest
 stamp by instant over the survivors of any kind attributed to the day, a later line winning a tie. -/
 def lastTOn (z : Cal.Tz) (es : List Entry) (d : Nat) : Option At :=
   lastMax? atLe (((survivors es).filter (fun e => decide (dayOf z (dayIndexOf z es) e.t.val = d))).map stampOf)
 
 end DayLaws
+
+/-! ## C6: every line's header, the seams, the observations in file order, and the view (§8.2, §8.4, §11)
+
+**Every line has one header effect** (§8.2): a survivor's is in its `effects` (`HeaderRec.of e false`), and a
+cancelled line's is the **second pass**, `cancelledHeaderFx`, over the whole list with `cancelled := true`.
+`entryHeaders` is every entry's header in file order, and the two passes partition it
+(`the_survivors_headers_are_the_uncancelled_entry_headers`, `the_two_header_passes_are_every_entrys_header`).
+**The seams** (fork `DaySeam`, R1–R4) are an effect of every survivor on its day (`Effect.seam`), and a day's
+`last_t` is C5's specification `lastTOn` (`a_days_last_t_is_the_latest_stamp_of_its_survivors`).
+**Observations are in file order** over the log op's entries, whose lines strictly increase
+(`observations_are_in_file_order_on_increasing_lines`; §15's statement without that hypothesis is refuted by a
+repeated line, `observations_are_not_in_file_order_when_a_line_repeats`).  **Every dated output names its day
+key** (`every_dated_output_names_its_day_key`, CRIT 9).  **The view** (§8.4) is `ask`, one total query per
+reading, over `replayDoc`; `factsView` is it without the line bookkeeping. -/
+
+section Facts6
+
+open Log (Id U8 U32 Num)
+
+/-! ### Every line's header -/
+
+/-- **Every entry's header** (fork `Replay::view`'s rows, §11.4): per entry in file order, cancelled entries and
+undos included, its wake-attributed day on the survivors' index and its header with the undo mask's bit. -/
+def entryHeaders (z : Cal.Tz) (es : List Entry) : List (Nat × HeaderRec) :=
+  let dy := dayOf z (dayIndexOf z es)
+  es.zipIdx.map (fun p => (dy p.1.t.val, HeaderRec.of p.1 (cancelledAt es p.2)))
+
+/-- The compiled headers: the fast mask's dead array read once, and the day index by bisection. -/
+def entryHeadersFast (z : Cal.Tz) (es : List Entry) : List (Nat × HeaderRec) :=
+  let dead := maskFast es
+  let a := (dayIndexOf z es).toArray
+  es.zipIdx.map (fun p => (dayOfArr z a p.1.t.val, HeaderRec.of p.1 (deadAt dead p.2)))
+
+@[csimp] theorem entryHeaders_eq_entryHeadersFast : @entryHeaders = @entryHeadersFast := by
+  funext z es
+  unfold entryHeaders entryHeadersFast
+  simp only
+  apply List.map_congr_left
+  intro p hp
+  rw [cancelledAt_eq_deadAt es p hp]
+  unfold dayOfArr dayOf dayIndexOf
+  rw [lastWakeLeArr_eq_lastWakeLe _ (keptWakes_sorted z _)]
+
+theorem entryHeaders_length (z : Cal.Tz) (es : List Entry) : (entryHeaders z es).length = es.length := by
+  simp [entryHeaders]
+
+/-- **The second pass** (§8.2): a `header` effect for every cancelled line, on its day, `cancelled := true`. -/
+def cancelledHeaderFx (z : Cal.Tz) (es : List Entry) : List Effect :=
+  ((entryHeaders z es).filter (fun p => p.2.cancelled)).map (fun p => .header p.1 p.2)
+
+def Effect.headerOf? : Effect → Option (Nat × HeaderRec)
+  | .header d h => some (d, h)
+  | _ => none
+
+theorem headerOf?_of_not_isHeader (x : Effect) (h : x.isHeader = false) : x.headerOf? = none := by
+  cases x <;> simp_all [Effect.isHeader, Effect.headerOf?]
+
+theorem applyEffects_headers : ∀ (fx : List Effect) (st : State),
+    (applyEffects st fx).headers = (fx.filterMap Effect.headerOf?).reverse ++ st.headers
+  | [], _ => rfl
+  | x :: fx, st => by
+    rw [applyEffects_cons, applyEffects_headers fx, filterMap_cons_toList, List.reverse_append, List.append_assoc]
+    congr 1
+    cases x with
+    | header d h => rfl
+    | itemDaySub i d m => simp only [applyEffect, Effect.headerOf?]; split <;> rfl
+    | obs o => cases o <;> rfl
+    | _ => rfl
+
+theorem effectsWith_headers (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (st : State) (e : Entry) :
+    (effectsWith z dy sl st e).filterMap Effect.headerOf? = [(dy e.t.val, HeaderRec.of e false)] := by
+  unfold effectsWith
+  rw [List.filterMap_cons, List.filterMap_cons, List.filterMap_cons, List.filterMap_append,
+    List.filterMap_eq_nil_iff.2 (fun x hx => headerOf?_of_not_isHeader x (arm_no_header _ _ _ _ _ _ x hx)),
+    List.filterMap_eq_nil_iff.2 (fun x hx => headerOf?_of_not_isHeader x (completionArm_no_header _ _ _ _ x hx))]
+  rfl
+
+theorem foldl_stepWith_headers (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) :
+    ∀ (l : List Entry) (st : State),
+      (l.foldl (stepWith z dy sl) st).headers = (l.map (fun e => (dy e.t.val, HeaderRec.of e false))).reverse ++ st.headers
+  | [], _ => rfl
+  | e :: l, st => by
+    rw [List.foldl_cons, foldl_stepWith_headers z dy sl l, List.map_cons, List.reverse_cons, List.append_assoc]
+    congr 1
+    unfold stepWith
+    rw [applyEffects_headers, effectsWith_headers]
+    rfl
+
+/-- **The survivors' header effects are the uncancelled entries' headers**, in file order (for every list of
+entries): what the replay's own header effects hold is exactly the part of `entryHeaders` the mask keeps. -/
+theorem the_survivors_headers_are_the_uncancelled_entry_headers (z : Cal.Tz) (es : List Entry) :
+    (replay z es).headers = (entryHeaders z es).filter (fun p => !p.2.cancelled) := by
+  rw [replay_state]
+  unfold finish
+  simp only
+  rw [foldl_stepWith_headers]
+  simp only [State.init, List.append_nil, List.reverse_reverse]
+  rw [survivors_are_the_uncancelled_entries]
+  unfold entryHeaders
+  simp only
+  rw [List.filter_map, List.map_map]
+  have hf : (es.zipIdx.filter ((fun p : Nat × HeaderRec => !p.2.cancelled) ∘
+      (fun p => (dayOf z (dayIndexOf z es) p.1.t.val, HeaderRec.of p.1 (cancelledAt es p.2)))))
+      = es.zipIdx.filter (fun p => !cancelledAt es p.2) := rfl
+  rw [hf]
+  apply List.map_congr_left
+  intro p hp
+  have hc : cancelledAt es p.2 = false := by simpa using (List.mem_filter.1 hp).2
+  simp [HeaderRec.of, hc]
+
+/-- **The two header passes are every entry's header** (§8.2, CRIT 9): the survivors' header effects and the second
+pass's, together, are `entryHeaders` up to order, one per entry. -/
+theorem the_two_header_passes_are_every_entrys_header (z : Cal.Tz) (es : List Entry) :
+    ((replay z es).headers ++ (cancelledHeaderFx z es).filterMap Effect.headerOf?).Perm (entryHeaders z es) := by
+  rw [the_survivors_headers_are_the_uncancelled_entry_headers]
+  have h2 : (cancelledHeaderFx z es).filterMap Effect.headerOf? = (entryHeaders z es).filter (fun p => p.2.cancelled) := by
+    unfold cancelledHeaderFx
+    generalize (entryHeaders z es).filter (fun p => p.2.cancelled) = l
+    induction l with
+    | nil => rfl
+    | cons a l ih => simp [Effect.headerOf?, ih]
+  rw [h2]
+  exact List.perm_append_comm.trans (List.filter_append_perm _ _)
+
+/-! ### The seams -/
+
+def Effect.seamOf? : Effect → Option (Nat × SeamOp)
+  | .seam d op => some (d, op)
+  | _ => none
+
+theorem seamOp_lastT (op : SeamOp) (a : SeamAcc) : (op.apply a).lastT = lastMaxStep atLe a.lastT op.t := by
+  unfold SeamOp.apply
+  cases op.kind <;> simp only
+  split <;> rfl
+
+theorem applyEffects_seam_lastT (d : Nat) : ∀ (fx : List Effect) (st : State),
+    ((applyEffects st fx).seams.get d).bind (·.lastT)
+      = (((fx.filterMap Effect.seamOf?).filter (fun p => decide (p.1 = d))).map (·.2.t)).foldl (lastMaxStep atLe)
+          ((st.seams.get d).bind (·.lastT))
+  | [], _ => rfl
+  | x :: fx, st => by
+    rw [applyEffects_cons, applyEffects_seam_lastT d fx, filterMap_cons_toList, List.filter_append, List.map_append,
+      List.foldl_append]
+    congr 1
+    cases x with
+    | seam d' op =>
+      simp only [Effect.seamOf?, Option.toList_some, applyEffect, HMap.get_alter]
+      by_cases h : d = d'
+      · subst h
+        simp only [if_true, decide_true, List.filter_cons_of_pos, List.filter_nil, List.map_cons, List.map_nil,
+          List.foldl_cons, List.foldl_nil, Option.bind_some, seamOp_lastT]
+        cases st.seams.get d <;> rfl
+      · simp [h, Ne.symm h]
+    | itemDaySub i d m => simp only [applyEffect]; split <;> rfl
+    | obs o => cases o <;> rfl
+    | _ => rfl
+
+theorem dayArm_noSeam (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (e : Entry) (t : At) (d : Nat) :
+    ∀ x ∈ dayArm dy sl e t d, x.seamOf? = none := by
+  have h : (dayArm dy sl e t d).filterMap Effect.seamOf? = [] := by
+    unfold dayArm
+    split <;> (repeat' split) <;> simp [Effect.seamOf?]
+  exact List.filterMap_eq_nil_iff.1 h
+
+theorem arm_noSeam (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Machine) (e : Entry) (t : At) (d : Nat) :
+    ∀ x ∈ arm dy sl m e t d, x.seamOf? = none := by
+  intro x hx
+  rcases arm_split dy sl m e t d with h | ⟨h, -⟩
+  · rw [h] at hx; exact dayArm_noSeam dy sl e t d x hx
+  · have := h x hx
+    cases x <;> simp_all [Effect.blockOnly, Effect.seamOf?]
+
+theorem completionArm_noSeam (z : Cal.Tz) (e : Entry) (t : At) (d : Nat) :
+    ∀ x ∈ completionArm z e t d, x.seamOf? = none := by
+  have h : (completionArm z e t d).filterMap Effect.seamOf? = [] := by
+    unfold completionArm
+    split <;> (repeat' split) <;> simp [Effect.seamOf?]
+  exact List.filterMap_eq_nil_iff.1 h
+
+theorem effectsWith_seams (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (st : State) (e : Entry) :
+    (effectsWith z dy sl st e).filterMap Effect.seamOf? = [(dy e.t.val, ⟨(e.t.val, e.off.val), seamKindOf e.ev⟩)] := by
+  unfold effectsWith
+  rw [List.filterMap_cons, List.filterMap_cons, List.filterMap_cons, List.filterMap_append,
+    List.filterMap_eq_nil_iff.2 (arm_noSeam _ _ _ _ _ _), List.filterMap_eq_nil_iff.2 (completionArm_noSeam _ _ _ _)]
+  rfl
+
+theorem foldl_stepWith_seam_lastT (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (d : Nat) :
+    ∀ (l : List Entry) (st : State),
+      ((l.foldl (stepWith z dy sl) st).seams.get d).bind (·.lastT)
+        = ((l.filter (fun e => decide (dy e.t.val = d))).map stampOf).foldl (lastMaxStep atLe) ((st.seams.get d).bind (·.lastT))
+  | [], _ => rfl
+  | e :: l, st => by
+    rw [List.foldl_cons, foldl_stepWith_seam_lastT z dy sl d l, List.filter_cons]
+    unfold stepWith
+    rw [applyEffects_seam_lastT, effectsWith_seams]
+    by_cases h : dy e.t.val = d <;> simp [h, stampOf]
+
+/-- **A day's `last_t` is the latest stamp of its survivors** (fork `DaySeam.last_t`, R4; C5's owed equation): the
+derived seam's `lastT` is C5's specification `lastTOn`, the running maximum by instant over the survivors of any
+kind attributed to the day, a later line winning a tie. -/
+theorem a_days_last_t_is_the_latest_stamp_of_its_survivors (z : Cal.Tz) (es : List Entry) (d : Nat) :
+    ((replay z es).seams.get d).bind (·.lastT) = lastTOn z es d := by
+  rw [replay_state]
+  unfold finish lastTOn lastMax?
+  simp only
+  rw [HMap.get_mapVals]
+  have hm : ∀ (o : Option SeamAcc), (o.map (fun a => { a with idleMarks := a.idleMarks.reverse })).bind (·.lastT)
+      = o.bind (·.lastT) := by intro o; cases o <;> rfl
+  rw [hm, foldl_stepWith_seam_lastT]
+  simp [State.init, HMap.get_empty]
+
+/-! ### Every dated output names its day key (CRIT 9) -/
+
+/-- The date a key names, if any: a day's record, an item's minutes on a day, a done date, a date-keyed instance. -/
+def Key.date? : Key → Option Nat
+  | .day d => some d
+  | .itemDay _ d => some d
+  | .doneDate _ d => some d
+  | .instDate _ _ d => some d
+  | _ => none
+
+/-- **The day of the dated record an effect writes** (§8.4's O, DR, W and WR): a day's record, header, seam,
+observation, interruption, demotion or close; an item's minutes on a day; a done date; an instance whose `inst`
+names a date.  An all-time aggregate (A) carries dates as values and writes no dated record: the global longest
+leak's day (its gap's day is named by its `IdleRecord`, `every_leak_is_on_a_day_its_idle_record_names`), a named
+event's local date (the `LatestNamed` since-filter's), `last_done`'s stamp, the bookkeeping. -/
+def Effect.day? : Effect → Option Nat
+  | .dayAdd d _ => some d
+  | .header d _ => some d
+  | .itemDay _ d _ => some d
+  | .itemDaySub _ d _ => some d
+  | .obs o => some o.day
+  | .interruption r => some r.day
+  | .doneDate _ d => some d
+  | .inst _ ins _ => Log.instDate? ins
+  | .demote d _ => some d
+  | .close d _ => some d
+  | .seam d _ => some d
+  | _ => none
+
+/-- **Every dated output names its day key** (§15, Goals; CRIT 9): an effect that writes a dated record names that
+date in its key, so a guard reading keys (G3, G3w) sees every write to a sealed day or window date.  Proved for every
+effect; §15's statement, over the effects of an entry, is this theorem given fewer arguments. -/
+theorem every_dated_output_names_its_day_key (fx : Effect) (d : Nat) (hd : fx.day? = some d) :
+    fx.key.date? = some d := by
+  cases fx with
+  | inst item ins r =>
+    simp only [Effect.day?] at hd
+    simp [Effect.key, hd, Key.date?]
+  | obs o => cases o <;> simp_all [Effect.day?, Effect.key, Key.date?, Obs.day]
+  | _ => simp_all [Effect.day?, Effect.key, Key.date?]
+
+/-- **Every leak is on a day its idle record names**: the global longest leak's candidate (keyed `global`, an
+all-time aggregate) is emitted beside the `IdleRecord` of the same gap on the same day, whose `dayAdd` effect names
+that day, so the day of the gap is seen by a guard even though the aggregate's key is not dated. -/
+theorem every_leak_is_on_a_day_its_idle_record_names (z : Cal.Tz) (kw : List Cal.Instant) (slept : List (Nat × Nat))
+    (st : State) (e : Entry) (r : LeakRec) (h : Effect.leak r ∈ effects z kw slept st e) :
+    ∃ ir : IdleRec, Effect.dayAdd r.day (.idle ir) ∈ effects z kw slept st e ∧ ir.t = r.t ∧ ir.min = r.min := by
+  have hc : Effect.leak r ∉ completionArm z e (e.t.val, e.off.val) (dayOf z kw e.t.val) := by
+    intro hm
+    have : (completionArm z e (e.t.val, e.off.val) (dayOf z kw e.t.val)).all (fun x => !x.isRec) = true :=
+      completionArm_noRec z e _ _
+    simpa [Effect.isRec] using List.all_eq_true.1 this _ hm
+  have ha : Effect.leak r ∈ arm (dayOf z kw) (KMap.get slept) st.machine e (e.t.val, e.off.val) (dayOf z kw e.t.val) := by
+    unfold effects effectsWith at h
+    simp only [List.mem_cons, List.mem_append, reduceCtorEq, false_or] at h
+    rcases h with h | h
+    · exact h
+    · exact absurd h hc
+  suffices hs : ∃ ir : IdleRec, Effect.dayAdd r.day (.idle ir) ∈ arm (dayOf z kw) (KMap.get slept) st.machine e
+      (e.t.val, e.off.val) (dayOf z kw e.t.val) ∧ ir.t = r.t ∧ ir.min = r.min by
+    obtain ⟨ir, hm, h1, h2⟩ := hs
+    refine ⟨ir, ?_, h1, h2⟩
+    unfold effects effectsWith
+    simp only [List.mem_cons, List.mem_append, reduceCtorEq, false_or]
+    exact Or.inl hm
+  rcases arm_split (dayOf z kw) (KMap.get slept) st.machine e (e.t.val, e.off.val) (dayOf z kw e.t.val) with hs | ⟨hs, -⟩
+  · rw [hs] at ha ⊢
+    unfold dayArm at ha ⊢
+    cases hev : e.ev <;> simp only [hev] at ha ⊢ <;> try simp at ha
+    case idle attributed min =>
+      by_cases hl : attributed = "leak".toList
+      · obtain ⟨-, rfl⟩ := ha
+        exact ⟨⟨(e.t.val, e.off.val), dayOf z kw (Cal.subMinutes e.t.val min.val), attributed, min.val⟩, by simp, rfl, rfl⟩
+      · simp_all
+    all_goals (repeat' split at ha) <;> simp at ha
+  · have := hs _ ha; simp [Effect.blockOnly] at this
+
+/-! ### Observations in file order -/
+
+def Effect.energyOf? : Effect → Option EnergyObs
+  | .obs (.energy o) => some o
+  | _ => none
+
+def Effect.durationOf? : Effect → Option DurationObs
+  | .obs (.duration o) => some o
+  | _ => none
+
+def Effect.machineOf? : Effect → Option Machine
+  | .machine m => some m
+  | _ => none
+
+theorem applyEffects_obs : ∀ (fx : List Effect) (st : State),
+    (applyEffects st fx).energy = (fx.filterMap Effect.energyOf?).reverse ++ st.energy ∧
+    (applyEffects st fx).durations = (fx.filterMap Effect.durationOf?).reverse ++ st.durations ∧
+    (applyEffects st fx).machine = ((fx.filterMap Effect.machineOf?).getLast?).getD st.machine
+  | [], _ => ⟨rfl, rfl, rfl⟩
+  | x :: fx, st => by
+    obtain ⟨h1, h2, h3⟩ := applyEffects_obs fx (applyEffect st x)
+    rw [applyEffects_cons, h1, h2, h3, filterMap_cons_toList, filterMap_cons_toList, filterMap_cons_toList]
+    cases x with
+    | obs o => cases o <;> simp [applyEffect, Effect.energyOf?, Effect.durationOf?, Effect.machineOf?]
+    | machine m =>
+      refine ⟨rfl, rfl, ?_⟩
+      simp only [applyEffect, Effect.machineOf?, Option.toList_some, List.singleton_append, List.getLast?_cons]
+      rfl
+    | itemDaySub i d m =>
+      simp only [applyEffect]
+      split <;> exact ⟨rfl, rfl, rfl⟩
+    | _ => exact ⟨rfl, rfl, rfl⟩
+
+/-- The line of the machine's pending start observation, if any. -/
+def pendLines (m : Machine) : List Nat := ((m.block.bind (·.obs)).map (·.line)).toList
+
+/-- The lines of a state's energy observations, emitted and pending. -/
+def obsLines (st : State) : List Nat := st.energy.map (·.line) ++ pendLines st.machine
+
+theorem closeSub_obs (dy : Cal.Instant → Nat) (m : Machine) (t : At) :
+    (closeSub dy m t).2.filterMap Effect.energyOf? = [] ∧ (closeSub dy m t).2.filterMap Effect.durationOf? = [] ∧
+    (closeSub dy m t).2.filterMap Effect.machineOf? = [] := by
+  unfold closeSub; split <;> (repeat' split) <;> simp [Effect.energyOf?, Effect.durationOf?, Effect.machineOf?]
+
+theorem closePause_obs (dy : Cal.Instant → Nat) (m : Machine) (t : At) :
+    (closePause dy m t).2.filterMap Effect.energyOf? = [] ∧ (closePause dy m t).2.filterMap Effect.durationOf? = [] ∧
+    (closePause dy m t).2.filterMap Effect.machineOf? = [] := by
+  unfold closePause; split <;> (repeat' split) <;> simp [Effect.energyOf?, Effect.durationOf?, Effect.machineOf?]
+
+theorem creditFx_obs (dy : Cal.Instant → Nat) (id : Id) (t : At) (min : Nat) (ci : Option U8) :
+    (creditFx dy id t min ci).filterMap Effect.energyOf? = [] ∧ (creditFx dy id t min ci).filterMap Effect.durationOf? = [] ∧
+    (creditFx dy id t min ci).filterMap Effect.machineOf? = [] := by
+  simp [creditFx, Effect.energyOf?, Effect.durationOf?, Effect.machineOf?]
+
+theorem uncreditFx_obs (c : Cut) :
+    (uncreditFx c).filterMap Effect.energyOf? = [] ∧ (uncreditFx c).filterMap Effect.durationOf? = [] ∧
+    (uncreditFx c).filterMap Effect.machineOf? = [] := by
+  unfold uncreditFx; split <;> simp [Effect.energyOf?, Effect.durationOf?, Effect.machineOf?]
+
+theorem obsFx_obs (o : Option EnergyObs) :
+    ((obsFx o).filterMap Effect.energyOf?) = o.toList ∧ (obsFx o).filterMap Effect.durationOf? = [] ∧
+    (obsFx o).filterMap Effect.machineOf? = [] := by
+  cases o <;> simp [obsFx, Effect.energyOf?, Effect.durationOf?, Effect.machineOf?]
+
+/-- **A cut emits the pending observation**, and leaves no block. -/
+theorem cut_obs (dy : Cal.Instant → Nat) (m : Machine) (t : At) :
+    ((cut dy m t).2.filterMap Effect.energyOf?).map (·.line) = pendLines m ∧
+    (cut dy m t).2.filterMap Effect.durationOf? = [] ∧ (cut dy m t).2.filterMap Effect.machineOf? = [] ∧
+    pendLines (cut dy m t).1 = [] := by
+  have e1 := closeSub_pending dy m t
+  have e2 := closePause_pending dy (closeSub dy m t).1 t
+  obtain ⟨a1, a2, a3⟩ := closeSub_obs dy m t
+  obtain ⟨b1, b2, b3⟩ := closePause_obs dy (closeSub dy m t).1 t
+  unfold cut
+  simp only
+  split
+  · rename_i b hb
+    have hp : pendLines m = (b.obs.map (·.line)).toList := by
+      unfold pendLines; rw [← e1, ← e2, hb]; rfl
+    obtain ⟨c1, c2, c3⟩ := creditFx_obs dy b.id t b.workedMin none
+    obtain ⟨d1, d2, d3⟩ := obsFx_obs b.obs
+    simp only [List.filterMap_append, a1, a2, a3, b1, b2, b3, c1, c2, c3, d1, d2, d3, List.nil_append, hp]
+    refine ⟨?_, ?_, ?_, ?_⟩
+    · cases b.obs <;> rfl
+    all_goals first | rfl | trivial
+  · rename_i hb
+    have hp : pendLines m = [] := by unfold pendLines; rw [← e1, ← e2, hb]; rfl
+    simp only [List.filterMap_append, a1, a2, a3, b1, b2, b3, List.nil_append, List.map_nil, hp]
+    refine ⟨?_, ?_, ?_, ?_⟩
+    all_goals first | rfl | trivial | (unfold pendLines; rw [hb]; rfl)
+
+/-- **A `done` closing its block emits the pending observation** (with `went`); otherwise nothing is emitted and
+the pending observation stays. -/
+theorem doneClose_obs (dy : Cal.Instant → Nat) (m : Machine) (t : At) (id : Id) (actual : Nat) (went : Option U8) :
+    ((doneClose dy m t id actual went).2.filterMap Effect.energyOf?).map (·.line) ++ pendLines (doneClose dy m t id actual went).1
+      = pendLines m ∧
+    (doneClose dy m t id actual went).2.filterMap Effect.durationOf? = [] ∧
+    (doneClose dy m t id actual went).2.filterMap Effect.machineOf? = [] := by
+  have e1 := closeSub_pending dy m t
+  have e2 := closePause_pending dy (closeSub dy m t).1 t
+  obtain ⟨a1, a2, a3⟩ := closeSub_obs dy m t
+  obtain ⟨b1, b2, b3⟩ := closePause_obs dy (closeSub dy m t).1 t
+  unfold doneClose
+  split
+  · rename_i b hb
+    split
+    · obtain ⟨d1, d2, d3⟩ := obsFx_obs (b.obs.map (wentOn went))
+      have hp : pendLines m = (b.obs.map (·.line)).toList := by unfold pendLines; rw [hb]; rfl
+      simp only [List.filterMap_append, a1, a2, a3, b1, b2, b3, d1, d2, d3, List.nil_append, hp]
+      refine ⟨?_, ?_, ?_⟩
+      · have hw : ∀ o : EnergyObs, (wentOn went o).line = o.line := fun o => by cases went <;> rfl
+        cases b.obs with
+        | none => rfl
+        | some o => simp [pendLines, hw]
+      all_goals first | rfl | trivial
+    · exact ⟨by simp, rfl, rfl⟩
+  · split
+    · split
+      · obtain ⟨u1, u2, u3⟩ := uncreditFx_obs _
+        refine ⟨?_, u2, u3⟩
+        simp only [u1, List.map_nil, List.nil_append]
+        rfl
+      · exact ⟨by simp, rfl, rfl⟩
+    · exact ⟨by simp, rfl, rfl⟩
+
+theorem doneFx_obs (dy : Cal.Instant → Nat) (m : Machine) (line : Nat) (t : At) (d : Nat) (id : Id)
+    (est actual : Nat) (went : Option U8) (tags : List (List Char)) (ci : U8) (isPartial : Bool) :
+    ((doneFx dy m line t d id est actual went tags ci isPartial).filterMap Effect.energyOf?).map (·.line) ++
+      pendLines (((doneFx dy m line t d id est actual went tags ci isPartial).filterMap Effect.machineOf?).getLast?.getD m)
+      = pendLines m ∧
+    List.Sublist (((doneFx dy m line t d id est actual went tags ci isPartial).filterMap Effect.durationOf?).map (·.line)) [line] := by
+  obtain ⟨h1, h2, h3⟩ := doneClose_obs dy m t id actual went
+  obtain ⟨c1, c2, c3⟩ := creditFx_obs dy id t actual (some ci)
+  unfold doneFx
+  by_cases ha : 0 < actual <;> by_cases hp : isPartial = true <;>
+    simp only [ha, hp, if_true, if_false, List.filterMap_cons, List.filterMap_append, List.filterMap_nil,
+      Effect.machineOf?, Effect.energyOf?, Effect.durationOf?, h2, h3, c1, c2, c3, List.nil_append, List.append_nil,
+      List.getLast?_singleton, Option.getD_some, Bool.false_eq_true] <;>
+    exact ⟨h1, by simp⟩
+
+theorem dayArm_obs (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (e : Entry) (t : At) (d : Nat) :
+    (dayArm dy sl e t d).filterMap Effect.machineOf? = [] ∧ (dayArm dy sl e t d).filterMap Effect.durationOf? = [] ∧
+    List.Sublist (((dayArm dy sl e t d).filterMap Effect.energyOf?).map (·.line)) [e.line] := by
+  unfold dayArm
+  split <;> (repeat' split) <;> simp [Effect.machineOf?, Effect.durationOf?, Effect.energyOf?]
+
+/-- **Each machine arm emits what was pending, and at most one new observation, on its own line.** -/
+theorem arm_obs (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Machine) (e : Entry) (t : At) (d : Nat) :
+    ∃ X : List Nat, List.Sublist X [e.line] ∧
+      (((arm dy sl m e t d).filterMap Effect.energyOf?).map (·.line) ++
+        pendLines (((arm dy sl m e t d).filterMap Effect.machineOf?).getLast?.getD m)).Perm (pendLines m ++ X) ∧
+      List.Sublist (((arm dy sl m e t d).filterMap Effect.durationOf?).map (·.line)) [e.line] := by
+  unfold arm
+  cases hev : e.ev <;> simp only
+  case start id pred rep hsw sleptMin loc _ _ =>
+    obtain ⟨c1, c2, c3, c4⟩ := cut_obs dy m t
+    refine ⟨(rep.map (fun _ => e.line)).toList, ?_, ?_, ?_⟩
+    · cases rep <;> simp
+    · simp only [List.filterMap_append, List.filterMap_cons, List.filterMap_nil, Effect.energyOf?, Effect.machineOf?,
+        c3, List.append_nil, c1, List.nil_append, List.getLast?_singleton, Option.getD_some]
+      refine List.Perm.append_left _ ?_
+      unfold pendLines
+      cases rep <;> exact List.Perm.refl _
+    · simp [List.filterMap_append, c2, Effect.durationOf?]
+  case pause id =>
+    refine ⟨[], List.nil_sublist _, ?_, ?_⟩
+    · split
+      · split
+        · obtain ⟨a1, a2, a3⟩ := closeSub_obs dy m t
+          have hp := closeSub_pending dy m t
+          simp only [List.filterMap_append, List.filterMap_cons, List.filterMap_nil, Effect.energyOf?, Effect.machineOf?,
+            a1, a3, List.nil_append, List.map_nil, List.getLast?_singleton, Option.getD_some, List.append_nil]
+          unfold pendLines
+          rw [← hp]
+          cases (closeSub dy m t).1.block <;> exact List.Perm.refl _
+        · simp
+      · simp
+    · split
+      · split
+        · simp [List.filterMap_append, (closeSub_obs dy m t).2.1, Effect.durationOf?]
+        · simp
+      · simp
+  case unpause id =>
+    refine ⟨[], List.nil_sublist _, ?_, ?_⟩
+    · split
+      · split
+        · obtain ⟨a1, a2, a3⟩ := closePause_obs dy m t
+          have hp := closePause_pending dy m t
+          simp only [List.filterMap_append, List.filterMap_cons, List.filterMap_nil, Effect.energyOf?, Effect.machineOf?,
+            a1, a3, List.nil_append, List.map_nil, List.getLast?_singleton, Option.getD_some, List.append_nil]
+          unfold pendLines
+          rw [← hp]
+          cases (closePause dy m t).1.block <;> exact List.Perm.refl _
+        · simp
+      · simp
+    · split
+      · split
+        · simp [List.filterMap_append, (closePause_obs dy m t).2.1, Effect.durationOf?]
+        · simp
+      · simp
+  case interrupt id =>
+    refine ⟨[], List.nil_sublist _, ?_, ?_⟩
+    · obtain ⟨a1, a2, a3⟩ := closeSub_obs dy m t
+      obtain ⟨b1, b2, b3⟩ := closePause_obs dy (closeSub dy m t).1 t
+      have e1 := closeSub_pending dy m t
+      have e2 := closePause_pending dy (closeSub dy m t).1 t
+      simp only [List.filterMap_append, List.filterMap_cons, List.filterMap_nil, Effect.energyOf?, Effect.machineOf?, a1, a3,
+        b1, b3, List.nil_append, List.map_nil, List.getLast?_singleton, Option.getD_some, List.append_nil]
+      unfold pendLines
+      split <;> simp only [e2, e1] <;> exact List.Perm.refl _
+    · simp [List.filterMap_append, (closeSub_obs dy m t).2.1, (closePause_obs dy _ t).2.1, Effect.durationOf?]
+  case resume lost dropped =>
+    refine ⟨[], List.nil_sublist _, ?_, ?_⟩
+    · have hr : ((m.block.map (resumeBlock · t)).bind (·.obs)) = m.block.bind (·.obs) := by
+        cases m.block <;> simp [resumeBlock_obs]
+      split
+      · simp only [List.filterMap_cons, List.filterMap_nil, Effect.energyOf?, Effect.machineOf?, List.map_nil,
+          List.nil_append, List.getLast?_singleton, Option.getD_some, List.append_nil]
+        unfold pendLines
+        rw [hr]
+      · simp only [List.filterMap_cons, List.filterMap_nil, Effect.energyOf?, Effect.machineOf?, List.map_nil,
+          List.nil_append, List.getLast?_singleton, Option.getD_some, List.append_nil]
+        unfold pendLines
+        rw [hr]
+    · split <;> simp [Effect.durationOf?]
+  case stop id rem =>
+    refine ⟨[], List.nil_sublist _, ?_, ?_⟩
+    · split
+      · split
+        · obtain ⟨c1, c2, c3, c4⟩ := cut_obs dy m t
+          simp only [List.filterMap_append, List.filterMap_cons, List.filterMap_nil, Effect.energyOf?, Effect.machineOf?,
+            c3, List.append_nil, c1, List.nil_append, List.getLast?_singleton, Option.getD_some, c4]
+          exact List.Perm.refl _
+        · simp
+      · simp
+    · split
+      · split
+        · simp [List.filterMap_append, (cut_obs dy m t).2.1, Effect.durationOf?]
+        · simp
+      · simp
+  case extend id by_ =>
+    refine ⟨[], List.nil_sublist _, ?_, ?_⟩
+    · show List.Perm ([] ++ pendLines m) (pendLines m ++ [])
+      simp
+    · exact List.nil_sublist _
+  case done id est actual went tags ci isPartial =>
+    obtain ⟨h1, h2⟩ := doneFx_obs dy m e.line t d id est.val actual.val went tags ci isPartial
+    exact ⟨[], List.nil_sublist _, by rw [h1]; simp, h2⟩
+  all_goals
+    obtain ⟨g1, g2, g3⟩ := dayArm_obs dy sl e t d
+    exact ⟨_, g3, by rw [g1]; exact List.perm_append_comm, by rw [g2]; exact List.nil_sublist _⟩
+
+theorem completionArm_obs (z : Cal.Tz) (e : Entry) (t : At) (d : Nat) :
+    (completionArm z e t d).filterMap Effect.energyOf? = [] ∧ (completionArm z e t d).filterMap Effect.durationOf? = [] ∧
+    (completionArm z e t d).filterMap Effect.machineOf? = [] := by
+  unfold completionArm
+  split <;> (repeat' split) <;> simp [Effect.energyOf?, Effect.durationOf?, Effect.machineOf?]
+
+theorem stepWith_obs (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (st : State) (e : Entry) :
+    ∃ X D : List Nat, List.Sublist X [e.line] ∧ List.Sublist D [e.line] ∧ (obsLines (stepWith z dy sl st e)).Perm (obsLines st ++ X) ∧
+      ((stepWith z dy sl st e).durations.map (·.line)).reverse = (st.durations.map (·.line)).reverse ++ D := by
+  obtain ⟨X, hX, hp, hd⟩ := arm_obs dy sl st.machine e (e.t.val, e.off.val) (dy e.t.val)
+  obtain ⟨c1, c2, c3⟩ := completionArm_obs z e (e.t.val, e.off.val) (dy e.t.val)
+  obtain ⟨h1, h2, h3⟩ := applyEffects_obs (effectsWith z dy sl st e) st
+  refine ⟨X, _, hX, hd, ?_, ?_⟩
+  · unfold obsLines stepWith
+    rw [h1, h3]
+    unfold effectsWith
+    simp only [List.filterMap_cons, List.filterMap_append, Effect.energyOf?, Effect.machineOf?, c1, c3, List.append_nil]
+    rw [List.map_append, List.map_reverse]
+    have := (List.perm_append_comm (l₁ := (List.map (·.line) (List.filterMap Effect.energyOf? (arm dy sl st.machine e (e.t.val, e.off.val) (dy e.t.val)))).reverse)
+      (l₂ := st.energy.map (·.line))).append_right
+      (pendLines ((List.filterMap Effect.machineOf? (arm dy sl st.machine e (e.t.val, e.off.val) (dy e.t.val))).getLast?.getD st.machine))
+    refine this.trans ?_
+    rw [List.append_assoc, List.append_assoc]
+    exact List.Perm.append_left _ (((List.reverse_perm _).append_right _).trans hp)
+  · unfold stepWith
+    rw [h2]
+    unfold effectsWith
+    simp only [List.filterMap_cons, List.filterMap_append, Effect.durationOf?, c2, List.append_nil, List.map_append,
+      List.map_reverse, List.reverse_append, List.reverse_reverse]
+
+theorem foldl_stepWith_obs (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) :
+    ∀ (l : List Entry) (st : State), ∃ Y D : List Nat, List.Sublist Y (l.map (·.line)) ∧ List.Sublist D (l.map (·.line)) ∧
+      (obsLines (l.foldl (stepWith z dy sl) st)).Perm (obsLines st ++ Y) ∧
+      ((l.foldl (stepWith z dy sl) st).durations.map (·.line)).reverse = (st.durations.map (·.line)).reverse ++ D
+  | [], st => ⟨[], [], List.nil_sublist _, List.nil_sublist _, by simp, by simp⟩
+  | e :: l, st => by
+    obtain ⟨X, D₁, hX, hD₁, hp₁, hd₁⟩ := stepWith_obs z dy sl st e
+    obtain ⟨Y, D₂, hY, hD₂, hp₂, hd₂⟩ := foldl_stepWith_obs z dy sl l (stepWith z dy sl st e)
+    refine ⟨X ++ Y, D₁ ++ D₂, ?_, ?_, ?_, ?_⟩
+    · rw [List.map_cons]; exact (hX.append hY).trans (by simp)
+    · rw [List.map_cons]; exact (hD₁.append hD₂).trans (by simp)
+    · rw [List.foldl_cons]
+      exact hp₂.trans (by rw [← List.append_assoc]; exact hp₁.append_right Y)
+    · rw [List.foldl_cons, hd₂, hd₁, List.append_assoc]
+
+theorem sublist_nodup_of_pairwise_lt {l : List Nat} (h : l.Pairwise (· < ·)) {Y : List Nat} (hY : List.Sublist Y l) : Y.Nodup :=
+  (h.sublist hY).imp (fun hab => Nat.ne_of_lt hab)
+
+theorem survivors_lines_pairwise (es : List Entry) (hl : Log.linesIncreasing es = true) :
+    ((survivors es).map (·.line)).Pairwise (· < ·) := by
+  rw [survivors_are_the_uncancelled_entries, List.map_map, List.pairwise_map]
+  have hp := Log.linesIncreasing_pairwise es hl
+  have hs : List.Sublist ((es.zipIdx.filter (fun p => !cancelledAt es p.2)).map Prod.fst) es := by
+    have : es.zipIdx.map Prod.fst = es := by simp
+    conv => rhs; rw [← this]
+    exact List.Sublist.map _ List.filter_sublist
+  have := hp.sublist hs
+  rw [List.pairwise_map] at this
+  exact this
+
+/-- **Refuted: §15's `observations_are_in_file_order` over every list of entries.**  A list holding one `energy`
+entry twice (as no reader builds: the log op's entries have strictly increasing lines,
+`the_tail_entries_have_increasing_lines`) replays to two observations on one line, which are not strictly
+increasing.  The law holds on increasing lines: `observations_are_in_file_order_on_increasing_lines`. -/
+theorem observations_are_not_in_file_order_when_a_line_repeats :
+    ∃ es : List Entry, ¬ ((replay utcZone es).energy.map (·.line)).Pairwise (· < ·) := by
+  refine ⟨[⟨1, ⟨⟨63924368400, 0⟩, by decide⟩, ⟨⟨false, 0⟩, by decide⟩, .energy 3 4 (.nat 2) ['h']⟩,
+    ⟨1, ⟨⟨63924368400, 0⟩, by decide⟩, ⟨⟨false, 0⟩, by decide⟩, .energy 3 4 (.nat 2) ['h']⟩], ?_⟩
+  decide
+
+/-- **Observations are in file order** (§11.2, §15 restated on increasing lines, Goals): over a log whose lines
+strictly increase (every list the log op builds, `the_tail_entries_have_increasing_lines`), the replay's energy
+observations, a start's carrying its start's line, and its duration observations are in strictly increasing line
+order, so Rust's sort by line is the fork's push order. -/
+theorem observations_are_in_file_order_on_increasing_lines (z : Cal.Tz) (es : List Entry)
+    (hl : Log.linesIncreasing es = true) :
+    ((replay z es).energy.map (·.line)).Pairwise (· < ·) ∧
+    ((replay z es).durations.map (·.line)).Pairwise (· < ·) := by
+  have hsv := survivors_lines_pairwise es hl
+  obtain ⟨Y, D, hY, hD, hp, hd⟩ :=
+    foldl_stepWith_obs z (dayOf z (dayIndexOf z es)) (slOf z es) (survivors es) (State.init es.length)
+  rw [replay_state]
+  unfold finish
+  simp only
+  constructor
+  · generalize hst : (survivors es).foldl (stepWith z (dayOf z (dayIndexOf z es)) (slOf z es)) (State.init es.length) = st at hp
+    have hinit : obsLines (State.init es.length) = [] := rfl
+    rw [hinit, List.nil_append] at hp
+    have hnd : (obsLines st).Nodup := hp.nodup_iff.2 (sublist_nodup_of_pairwise_lt hsv hY)
+    have hperm : ((sortObs (st.energy.reverse ++ (st.machine.block.bind (·.obs)).toList)).map (·.line)).Perm (obsLines st) := by
+      refine ((insSort_perm obsLe _).map _).trans ?_
+      unfold obsLines pendLines
+      rw [List.map_append, List.map_reverse]
+      refine ((List.reverse_perm _).append_right _).trans ?_
+      cases st.machine.block.bind (·.obs) <;> simp
+    have hsorted : ((sortObs (st.energy.reverse ++ (st.machine.block.bind (·.obs)).toList)).map (·.line)).Pairwise (· ≤ ·) := by
+      unfold sortObs
+      rw [insSort_eq_mergeSort obsLe (fun a b c h₁ h₂ => by simp [obsLe] at *; omega) (fun a b => by simp [obsLe]; omega)]
+      rw [List.pairwise_map]
+      exact (List.pairwise_mergeSort (fun a b c h₁ h₂ => by simp [obsLe] at *; omega) (fun a b => by simp [obsLe]; omega) _).imp
+        (fun h => by simpa [obsLe] using h)
+    have hnd' := hperm.nodup_iff.2 hnd
+    exact (hsorted.and hnd').imp (fun h => Nat.lt_of_le_of_ne h.1 h.2)
+  · have hinit : ((State.init es.length).durations.map (·.line)).reverse = [] := rfl
+    rw [hinit, List.nil_append] at hd
+    have hr : (((survivors es).foldl (stepWith z (dayOf z (dayIndexOf z es)) (slOf z es)) (State.init es.length)).durations.reverse.map (·.line)) = D := by
+      rw [List.map_reverse, hd]
+    rw [hr]
+    exact hsv.sublist hD
+
+/-! ### The view (§8.4): every reading as a total query -/
+
+/-- **A replayed log** (§8.4's "view"): the facts, every entry's header in file order, and the entry count (fork
+`Replay::entry_count`, `tm log`'s `total`). -/
+structure Doc where
+  facts : Facts
+  headers : List (Nat × HeaderRec)
+  entryCount : Nat
+
+/-- **The replay of a log with its line bookkeeping** (W1's laws read it through `ask`). -/
+def replayDoc (z : Cal.Tz) (es : List Entry) : Doc := ⟨replay z es, entryHeaders z es, es.length⟩
+
+/-- **The compiled `replayDoc`**: the undo mask computed once and read twice (the survivors and every header's
+bit), the day index built once and bisected for the replay and for every header. -/
+def replayDocFast (z : Cal.Tz) (es : List Entry) : Doc :=
+  let dead := maskFast es
+  let sv := (es.zipIdx.filter (fun p => !deadAt dead p.2)).map Prod.fst
+  let a := (keptWakes z (wakeInstants sv)).toArray
+  let dy := dayOfArr z a
+  let sm := sleptMap dy sv es.length
+  ⟨finish (sv.foldl (stepWith z dy (fun d => sm.get d)) (State.init es.length)),
+   es.zipIdx.map (fun p => (dy p.1.t.val, HeaderRec.of p.1 (deadAt dead p.2))), es.length⟩
+
+@[csimp] theorem replayDoc_eq_replayDocFast : @replayDoc = @replayDocFast := by
+  funext z es
+  unfold replayDoc
+  rw [replay_eq_replayFast, entryHeaders_eq_entryHeadersFast]
+  unfold replayFast entryHeadersFast dayIndexOf
+  rw [survivors_eq_survivorsFast]
+  rfl
+
+
+/-- A reading of one day (O, and DR once sealed). -/
+inductive DayQ
+  | record
+  | seam
+  | energy
+  | durations
+  | interrupts
+  | demotions
+  | closes
+  | headers
+deriving DecidableEq, Repr
+
+/-- A reading of one date's window facts (W, and WR once sealed). -/
+inductive WinQ
+  | itemMin (i : Id)
+  | done (i : Id)
+  | inst (item inst : List Char)
+deriving DecidableEq, Repr
+
+/-- **A query** (§8.4's rows, one per reading).  `day` and `win` name a date; the rest are all-time (A). -/
+inductive Q
+  | day (d : Nat) (q : DayQ)
+  | win (d : Nat) (q : WinQ)
+  | item (i : Id)
+  | lastDone (i : Id)
+  | doneFirst (i : Id)
+  | doneCount (i : Id)
+  | dropped (i : Id)
+  | instOther (item inst : List Char)
+  | named (name : List Char) (id : Option Id)
+  | openBlock
+  | openInterrupt
+  | lastDay
+  | lastEffective
+  | unknown
+  | longestLeak
+  | replayWarnings
+  | entryCount
+deriving DecidableEq, Repr
+
+/-- What a query answers. `lines` is the answer `factsView` gives a query about line bookkeeping. -/
+inductive Answer
+  | lines
+  | dayRecord (a : Option DayAcc)
+  | seam (a : Option SeamAcc)
+  | energy (l : List EnergyObs)
+  | durations (l : List DurationObs)
+  | interrupts (l : List Interruption)
+  | demotions (l : List Demotion)
+  | closes (l : List CloseRec)
+  | headers (l : List HeaderRec)
+  | minutes (m : Option Nat)
+  | bool (b : Bool)
+  | inst (r : Option InstRec)
+  | item (a : Option ItemAcc)
+  | stamp (t : Option At)
+  | date (d : Option Nat)
+  | count (n : Nat)
+  | named (r : Option NamedRec)
+  | openBlock (b : Option OpenBlock)
+  | openInterrupt (r : Option Interruption)
+  | leak (r : Option LeakRec)
+  | warnings (l : List RWarn)
+deriving DecidableEq, Repr
+
+/-- The smallest of a list of days. -/
+def minDay? (l : List Nat) : Option Nat := l.foldl (fun acc d => some (match acc with | none => d | some a => Nat.min a d)) none
+
+/-- The largest of a list of days. -/
+def maxDay? (l : List Nat) : Option Nat := l.foldl (fun acc d => some (match acc with | none => d | some a => Nat.max a d)) none
+
+/-- **The facts' view** (§8.4 without the line bookkeeping): every fact reading, as a total query; a header query
+and the entry count answer `lines`.  Maps are read through `get`, so the answer does not depend on how many
+buckets the replay sized them with. -/
+def factsView (f : Facts) : Q → Answer
+  | .day d .record => .dayRecord (f.days.get d)
+  | .day d .seam => .seam (f.seams.get d)
+  | .day d .energy => .energy (f.energy.filter (fun o => decide (o.day = d)))
+  | .day d .durations => .durations (f.durations.filter (fun o => decide (o.day = d)))
+  | .day d .interrupts => .interrupts (f.interrupts.filter (fun r => decide (r.day = d)))
+  | .day d .demotions => .demotions ((f.demotions.filter (fun p => decide (p.1 = d))).map Prod.snd)
+  | .day d .closes => .closes ((f.closes.filter (fun p => decide (p.1 = d))).map Prod.snd)
+  | .day _ .headers => .lines
+  | .win d (.itemMin i) => .minutes (f.itemDays.get (d, i))
+  | .win d (.done i) => .bool (f.doneOn i d)
+  | .win d (.inst item inst) => .inst (if Log.instDate? inst = some d then f.instance item inst else none)
+  | .item i => .item (f.items.get i)
+  | .lastDone i => .stamp (f.lastDone i)
+  | .doneFirst i => .date (minDay? ((f.doneDates.pairs.filter (fun p => decide (p.1.2 = i))).map (·.1.1)))
+  | .doneCount i => .count (f.doneDates.pairs.filter (fun p => decide (p.1.2 = i))).length
+  | .dropped i => .bool (f.dropped.get i).isSome
+  | .instOther item inst => .inst (if Log.instDate? inst = none then f.instance item inst else none)
+  | .named name id => .named (f.namedAt name id)
+  | .openBlock => .openBlock f.openBlock
+  | .openInterrupt => .openInterrupt f.openInterrupt
+  | .lastDay => .date (maxDay? (f.days.pairs.map Prod.fst))
+  | .lastEffective => .stamp f.lastEffective
+  | .unknown => .count f.unknown
+  | .longestLeak => .leak f.longestLeak
+  | .replayWarnings => .warnings f.warnings
+  | .entryCount => .lines
+
+/-- **The view** (§8.4): `factsView`, and the line bookkeeping (a day's headers, cancelled ones included, and the
+entry count). -/
+def ask (doc : Doc) : Q → Answer
+  | .day d .headers => .headers ((doc.headers.filter (fun p => decide (p.1 = d))).map Prod.snd)
+  | .entryCount => .count doc.entryCount
+  | q => factsView doc.facts q
+
+/-- **`ask` is `factsView` on every fact reading**: only the line bookkeeping reads the headers. -/
+theorem ask_reads_the_facts (doc : Doc) (q : Q) (hh : ∀ d, q ≠ .day d .headers) (he : q ≠ .entryCount) :
+    ask doc q = factsView doc.facts q := by
+  unfold ask
+  split
+  · rename_i d; exact absurd rfl (hh d)
+  · exact absurd rfl he
+  · rfl
+
+/-! ### The view, grouped for the wire (D9-21: one `foldl` per list, into buckets) -/
+
+/-- **One day's view**, as the wire hands it back: the fork's record (if the day has one), its seam (if a survivor
+is on it), and its observations, interruptions, demotions, closes and headers, each list in file order. -/
+structure DayOut where
+  record : Option DayAcc
+  seam : Option SeamAcc
+  energy : List EnergyObs
+  durations : List DurationObs
+  interrupts : List Interruption
+  demotions : List Demotion
+  closes : List CloseRec
+  headers : List HeaderRec
+
+def DayOut.empty : DayOut := ⟨none, none, [], [], [], [], [], []⟩
+
+/-- Write one day's view in its bucket. -/
+def upDay (m : HMap Nat DayOut) (d : Nat) (g : DayOut → DayOut) : HMap Nat DayOut :=
+  m.alter d (fun o => some (g (o.getD DayOut.empty)))
+
+/-- **Every day's view** (§8.4's O): one `foldl` per list into day buckets; a list is folded from its end, so each
+day's list keeps file order. -/
+def dayOuts (doc : Doc) : HMap Nat DayOut :=
+  let f := doc.facts
+  let m : HMap Nat DayOut := HMap.empty doc.entryCount
+  let m := f.days.pairs.foldl (fun m p => upDay m p.1 (fun o => { o with record := some p.2 })) m
+  let m := f.seams.pairs.foldl (fun m p => upDay m p.1 (fun o => { o with seam := some p.2 })) m
+  let m := f.energy.reverse.foldl (fun m x => upDay m x.day (fun o => { o with energy := x :: o.energy })) m
+  let m := f.durations.reverse.foldl (fun m x => upDay m x.day (fun o => { o with durations := x :: o.durations })) m
+  let m := f.interrupts.reverse.foldl (fun m x => upDay m x.day (fun o => { o with interrupts := x :: o.interrupts })) m
+  let m := f.demotions.reverse.foldl (fun m p => upDay m p.1 (fun o => { o with demotions := p.2 :: o.demotions })) m
+  let m := f.closes.reverse.foldl (fun m p => upDay m p.1 (fun o => { o with closes := p.2 :: o.closes })) m
+  doc.headers.reverse.foldl (fun m p => upDay m p.1 (fun o => { o with headers := p.2 :: o.headers })) m
+
+/-- **One date's window view** (§8.4's W): its item minutes, done ids and date-keyed instances. -/
+structure WinOut where
+  itemMin : List (Id × Nat)
+  done : List Id
+  inst : List (List Char × List Char × InstRec)
+
+def WinOut.empty : WinOut := ⟨[], [], []⟩
+
+def upWin (m : HMap Nat WinOut) (d : Nat) (g : WinOut → WinOut) : HMap Nat WinOut :=
+  m.alter d (fun o => some (g (o.getD WinOut.empty)))
+
+/-- **Every date's window view**: one `foldl` per map. -/
+def winOuts (f : Facts) (n : Nat) : HMap Nat WinOut :=
+  let m : HMap Nat WinOut := HMap.empty n
+  let m := f.itemDays.pairs.foldl (fun m p => upWin m p.1.1 (fun o => { o with itemMin := (p.1.2, p.2) :: o.itemMin })) m
+  let m := f.doneDates.pairs.foldl (fun m p => upWin m p.1.1 (fun o => { o with done := p.1.2 :: o.done })) m
+  f.instances.pairs.foldl (fun m p =>
+    match Log.instDate? p.1.2 with
+    | some d => upWin m d (fun o => { o with inst := (p.1.1, p.1.2, p.2) :: o.inst })
+    | none => m) m
+
+/-- The instances whose `inst` names no date (§8.4's A). -/
+def instOthers (f : Facts) : List ((List Char × List Char) × InstRec) :=
+  f.instances.pairs.filter (fun p => (Log.instDate? p.1.2).isNone)
+
+/-- **One item's all-time view** (§8.4's A): its record, `last_done`, whether it was dropped, and its first done date
+and count of done dates. -/
+structure ItemOut where
+  acc : Option ItemAcc
+  lastDone : Option At
+  dropped : Bool
+  doneFirst : Option Nat
+  doneCount : Nat
+
+def ItemOut.empty : ItemOut := ⟨none, none, false, none, 0⟩
+
+def upItem (m : HMap Id ItemOut) (i : Id) (g : ItemOut → ItemOut) : HMap Id ItemOut :=
+  m.alter i (fun o => some (g (o.getD ItemOut.empty)))
+
+/-- **Every item's view**: one `foldl` per map. -/
+def itemOuts (f : Facts) (n : Nat) : HMap Id ItemOut :=
+  let m : HMap Id ItemOut := HMap.empty n
+  let m := f.items.pairs.foldl (fun m p => upItem m p.1 (fun o => { o with acc := some p.2 })) m
+  let m := f.lastDoneMap.pairs.foldl (fun m p => upItem m p.1 (fun o => { o with lastDone := some p.2 })) m
+  let m := f.dropped.pairs.foldl (fun m p => upItem m p.1 (fun o => { o with dropped := true })) m
+  f.doneDates.pairs.foldl (fun m p => upItem m p.1.2 (fun o =>
+    { o with doneFirst := some (match o.doneFirst with | none => p.1.1 | some a => Nat.min a p.1.1),
+             doneCount := o.doneCount + 1 })) m
+
+end Facts6
+
 
 /-! ## Witnesses (C3)
 
@@ -6151,6 +7173,71 @@ theorem idle_and_idle_since_read_different_orders :
     (⟨63924364800, 0⟩, ⟨false, 0⟩), (⟨63924368400, 0⟩, ⟨false, 0⟩), by decide, by decide, by decide, by decide⟩
 
 end DayWitnesses5
+
+/-! ## Witnesses (C6)
+
+Each was probed in a scratch copy under `MemoryMax=8G timeout 120` (§14.0 item 4): at most 6 entries, `utcZone` (no
+transition), instants as `Nat` literals, no stamp text parsed.  2026-09-07T09:00:00Z is second 63924368400, and the day
+is 739865. -/
+
+section FactsWitnesses6
+
+open Log (Id U8 U32 Num)
+
+/-- **The seam of a day** (R1, R2, R4): `start a` 09:00, a `break` at 10:00 with 15 minutes actual, `start b`
+11:00, `pause b` 11:30, `unpause b` 11:40, and a `note` at 08:00 logged last.  The since-break anchor is the
+break's end, 10:15 (a later `start` does not move it); the idle marks are the break, the pause and the unpause
+in file order; `last_t` is the latest stamp, 11:40, not the last line's 08:00.  The note's day has a seam, and
+so does every survivor's. -/
+theorem a_days_seam_holds_its_break_its_marks_and_its_latest_stamp :
+    let s := (replay utcZone [bE 1 63924368400 (bStart ['a']), bE 2 63924372000 (.brk 10 (some 15) none),
+      bE 3 63924375600 (bStart ['b']), bE 4 63924377400 (.pause ['b']), bE 5 63924378000 (.unpause ['b']),
+      bE 6 63924364800 (.note ['n'])]).seams.get 739865
+    s.map (·.sinceBreak) = some (some (⟨63924372900, 0⟩, ⟨false, 0⟩)) ∧
+    s.map (fun a => a.idleMarks) = some [.brk (⟨63924372000, 0⟩, ⟨false, 0⟩) (some 15),
+      .pause (⟨63924377400, 0⟩, ⟨false, 0⟩), .unpause (⟨63924378000, 0⟩, ⟨false, 0⟩)] ∧
+    s.map (·.lastT) = some (some (⟨63924378000, 0⟩, ⟨false, 0⟩)) := by
+  decide
+
+/-- **Without a break the anchor is the day's first start**, and a day holding only a `note` has a seam and no
+record: `start a` at 09:00 and `start b` at 09:30 on the 7th, a `note` at 09:00 on the 8th. -/
+theorem the_since_break_anchor_is_the_first_start_without_a_break :
+    let f := replay utcZone [bE 1 63924368400 (bStart ['a']), bE 2 63924370200 (bStart ['b']),
+      bE 3 63924454800 (.note ['n'])]
+    (f.seams.get 739865).map (·.sinceBreak) = some (some (⟨63924368400, 0⟩, ⟨false, 0⟩)) ∧
+    (f.seams.get 739866).map (·.lastT) = some (some (⟨63924454800, 0⟩, ⟨false, 0⟩)) ∧ f.days.get 739866 = none := by
+  decide
+
+/-- **A cancelled line has a header on its day**: a `note`, its `undo`, and a `drop a`.  Every entry has a header
+in file order; the note and the undo are cancelled; the survivors' header effects hold the `drop` alone. -/
+theorem every_line_has_a_header_and_a_cancelled_one_is_marked :
+    let es := [bE 1 63924368400 (.note ['n']), bE 2 63924368460 (.undo ['n', 'o', 't', 'e'] none),
+      bE 3 63924368520 (.drop ['a'])]
+    (entryHeaders utcZone es).map (fun p => (p.1, p.2.line, p.2.id, p.2.cancelled))
+      = [(739865, 1, none, true), (739865, 2, none, true), (739865, 3, some ['a'], false)] ∧
+    (replay utcZone es).headers.map (·.2.line) = [3] := by
+  decide
+
+/-- **A start's observation is in its start's place**: `start a` (with a reported energy) at 09:00 on line 1, an
+`energy` report at 09:30 on line 2, `done a` at 10:00 on line 3.  The start's observation is emitted at the `done`,
+after the report's, and the replay's observations are in line order, 1 then 2. -/
+theorem a_start_observation_is_in_its_starts_place :
+    (replay utcZone [bE 1 63924368400 (bStart ['a']), bE 2 63924370200 (.energy 3 4 (.nat 2) ['h']),
+      bE 3 63924372000 (bDone ['a'] 60 false)]).energy.map (fun o => (o.line, o.fromStart)) = [(1, true), (2, false)] := by
+  decide
+
+/-- **The view reads a small log**: `wake` at 06:00, `note` at 09:00 and its `undo`, `drop a`.  The last day is the
+7th, the log has four entries, the day's headers are four (the cancelled two included), `a` is dropped, and the
+view without the line bookkeeping does not answer the headers. -/
+theorem the_view_reads_a_small_log :
+    let doc := replayDoc utcZone [bE 1 63924357600 (.wake 420 none), bE 2 63924368400 (.note ['n']),
+      bE 3 63924368460 (.undo ['n', 'o', 't', 'e'] none), bE 4 63924368520 (.drop ['a'])]
+    ask doc .lastDay = .date (some 739865) ∧ ask doc .entryCount = .count 4 ∧
+    (match ask doc (.day 739865 .headers) with | .headers l => l.length | _ => 0) = 4 ∧
+    ask doc (.dropped ['a']) = .bool true ∧ factsView doc.facts (.day 739865 .headers) = .lines := by
+  decide
+
+end FactsWitnesses6
 
 end Replay
 end Tm

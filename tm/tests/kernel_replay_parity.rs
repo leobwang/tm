@@ -18,6 +18,7 @@
 //! | C2 | `days`: every entry's wake-attributed day (`ViewRow::day`), survivors, cancelled entries and undos alike, as `(line, days since 0001-01-01)` |
 //! | C3 | `block`: the block family of the machine (`start`, `pause`, `unpause`, `interrupt`, `resume`, `stop`, `done`, `extend`). Per day, `DayReplay`'s `first_start`, `starts`, `block_min`, `blocks_done`, `load_fifths`, `minutes_by_ci`, `ci_unknown`, `done`, `lost_min`, `dropped` and its `Block`/`Pause`/`Interrupt` segments; every `ItemReplay` field; the start observations of `energy`; `durations`; `interrupts`; `open_block`; `open_interrupt`; `last_effective_t` ([`Block`]) |
 //! | C5 | `day`: the day header and records family (`wake`, `arrive`, `loc`, `break`, `energy`, `idle`, `routine`'s day half, `plan`, `demote`, `drop`, `close`, unknown events). Per day every remaining `DayReplay` field (`wake`, `slept_min`, `onset_min`, `arrival`, `loc`, `window`, `budget`, `loc_changes`, `leak_min`, `longest_leak`, `idle`, `breaks`, `routine_min`, `plans`, `replans_today`, `drift_min`, `last_plan_hash`); `demotions` (each with its day), `closes` (each with its day), `dropped_items`, the global `longest_leak`, `unknown`. The block family's comparison widens to every segment kind, every energy observation, and exactly the Rust's set of days ([`DayFam`]) |
+//! | C6 | **the entire `Replay`**. The kernel's facts are design §8.4's view (every day's record, seam, observations, interruptions, demotions, closes and headers; every date's window; every item; the all-time counts), decoded into the families above plus `seams` (fork `DaySeam`: since-break anchor, idle marks, `last_t`), `rows` (`tm log`'s `ViewRow`s: line, tag, id, day, cancelled, display), the counts (`entry_count`, `line_count`, `days.keys().last()`) and each id's first done date and count; and then rebuilt as a `tm_core::log::Replay` ([`kernel_replay`]) compared with the fork's by its own `PartialEq` and `ported_facts()` (D14) |
 //! | C4 | `completion`: the completion family (`done`'s `mark_done`, `routine`, `skip`, `event`): `done_items` and `last_done` (the latest by instant, the first of equal instants), `done_dates`, `instances` (the last record in file order), `LatestNamed` per `(name, id?)` from `events` (with each occurrence's line) and every `latest_named` query, `event_names`; and the replay warnings as `(line, status)`, each checked against `Replay.warnings`' text ([`Completion`]) |
 //!
 //! **The inputs**, every one compared in full:
@@ -40,7 +41,10 @@
 //! ([`t5_p33_a_done_date_before_the_origin_is_the_named_exception`]). C5 adds none
 //! (§17: late-bound `slept` is exact by design). Parity P34, an `idle` gap or a
 //! routine's minutes reaching before 0001-01-01, is not generated; it has its own
-//! named test ([`t5_p34_a_gap_before_the_origin_is_the_named_exception`]).
+//! named test ([`t5_p34_a_gap_before_the_origin_is_the_named_exception`]). C6 adds none: the
+//! seams, the view rows and the counts are exact (§17: observation order by source
+//! line is exact by design); P33's and P34's tests carry the one date into the first
+//! done date and the last day.
 
 #[allow(dead_code)]
 #[path = "../src/cli/tz_table.rs"]
@@ -60,7 +64,10 @@ use std::sync::{Mutex, OnceLock};
 use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
 use serde_json::{json, Value};
-use tm_core::log::{fmt_timestamp, parse_instance_status, Event, Interruption, LogEntry, Replay, SegmentKind};
+use tm_core::log::{
+    fmt_timestamp, parse_instance_status, BreakRecord, CloseRecord, DayReplay, DaySeam, Demotion, DurationObs, EnergyObs, Event, IdleMark, IdleRecord,
+    InstanceRecord, Interruption, ItemReplay, LeakRecord, LogEntry, LogSegment, OpenBlock, Replay, SegmentKind, StartRecord,
+};
 use tm_core::model::InstanceStatus;
 
 /// How many generated sequences T5 runs (design §14.4).
@@ -94,6 +101,12 @@ struct Facts {
     completion: Completion,
     /// C5: the day header and records family.
     day: DayFam,
+    /// C6: every day's seam (fork `DaySeam`: R1's since-break anchor, R2's idle marks, R4's `last_t`).
+    seams: BTreeMap<i64, SeamRow>,
+    /// C6: `tm log`'s view rows, every entry in file order (`ViewRow` and its display).
+    rows: Vec<RowView>,
+    /// C6: `entry_count()`, `line_count()`, and `days.keys().last()` (`status_line`'s fallback, §8.4's `lastDay`).
+    counts: (u64, u64, Option<i64>),
     /// Not a replay fact: the lines each reader refused (T1's field, carried so a
     /// line one reader dropped cannot hide from the facts above).
     warnings: Vec<u64>,
@@ -166,6 +179,11 @@ struct Block {
     last_effective: Option<Stamp>,
 }
 
+/// C6: a day's seam, `(since_break, idle marks as (kind, stamp, actual_min), last_t)`.
+type SeamRow = (Option<Stamp>, Vec<(String, Stamp, Option<u64>)>, Option<Stamp>);
+/// C6: a view row, `(line, tag, id, day, cancelled, display)`.
+type RowView = (u64, String, Option<String>, i64, bool, String);
+
 /// C4: an instance record, `(stamp, status, status as logged, actual_min)`.
 type InstanceRow = (Stamp, String, String, Option<u64>);
 /// C4: one `(name, id?)` key's `LatestNamed`, `(latest line, latest stamp, dated
@@ -185,6 +203,8 @@ struct Completion {
     named: BTreeMap<(String, Option<String>), NamedRow>,
     /// The replay warnings, `(line, status as logged)`, in file order.
     warnings: Vec<(u64, String)>,
+    /// C6: per id with a done date, `(done_date_first, done_date_count)` (R3's narrowing; §8.4's A).
+    done_first: BTreeMap<String, (Option<i64>, u64)>,
 }
 
 fn status_name(s: InstanceStatus) -> &'static str {
@@ -197,37 +217,6 @@ fn status_name(s: InstanceStatus) -> &'static str {
     }
 }
 
-/// The kernel's `facts.completion` and `facts.replayWarnings`. Maps are read as
-/// maps and a repeated key fails.
-fn kernel_completion(c: &Value, w: &Value) -> Completion {
-    let mut out = Completion::default();
-    for p in j_arr(&c["lastDone"], "lastDone") {
-        let p = j_arr(p, "a lastDone pair");
-        assert!(out.last_done.insert(j_str(&p[0], "id"), j_stamp(&p[1])).is_none(), "a repeated lastDone id");
-    }
-    for p in j_arr(&c["doneDates"], "doneDates") {
-        let p = j_arr(p, "a doneDates pair");
-        assert!(
-            out.done_dates.entry(j_str(&p[0], "id")).or_default().insert(p[1].as_i64().expect("a day")),
-            "a repeated done date"
-        );
-    }
-    for r in j_arr(&c["instances"], "instances") {
-        let r = j_arr(r, "an instance");
-        let row = (j_stamp(&r[2]), j_str(&r[3], "status"), j_str(&r[4], "raw"), j_opt(&r[5], |x| j_u64(x, "actualMin")));
-        assert!(out.instances.insert((j_str(&r[0], "item"), j_str(&r[1], "inst")), row).is_none(), "a repeated instance");
-    }
-    for r in j_arr(&c["named"], "named") {
-        let r = j_arr(r, "a named record");
-        let row = (j_u64(&r[2], "latest line"), j_stamp(&r[3]), j_u64(&r[4], "dated line"), j_stamp(&r[5]));
-        assert!(out.named.insert((j_str(&r[0], "name"), j_opt(&r[1], |x| j_str(x, "id"))), row).is_none(), "a repeated named key");
-    }
-    for x in j_arr(w, "replayWarnings") {
-        assert_eq!(x["w"], "unknownInstanceStatus", "the one replay warning: {x}");
-        out.warnings.push((j_u64(&x["line"], "line"), j_str(&x["raw"], "raw")));
-    }
-    out
-}
 
 /// The instant order of two stamps (chrono's: the offset is not compared).
 fn instant_of(s: &Stamp) -> (i64, u32) {
@@ -244,6 +233,7 @@ fn rust_completion(r: &Replay, tz: Tz) -> Completion {
     let mut out = Completion {
         last_done: r.last_done.iter().map(|(k, t)| (k.clone(), stamp_of(t))).collect(),
         done_dates: r.done_dates.iter().map(|(k, ds)| (k.clone(), ds.iter().map(|d| day_number(*d)).collect())).collect(),
+        done_first: r.done_dates.keys().map(|id| (id.clone(), (r.done_date_first(id).map(day_number), r.done_date_count(id) as u64))).collect(),
         instances: r
             .instances
             .iter()
@@ -371,125 +361,17 @@ fn j_stamp(v: &Value) -> Stamp {
         u32::try_from(j_u64(&a[3], "offset")).expect("offset"),
     )
 }
-fn j_interrupt(v: &Value) -> InterruptRow {
+/// `Interruption` on the wire, `[line, start, stop, day, id, lost, dropped]`: the line of the `resume` that pushed
+/// it (0 for the open one), and the fork's record.
+fn j_interrupt(v: &Value) -> (u64, InterruptRow) {
     let a = j_arr(v, "an interruption");
+    assert_eq!(a.len(), 7, "an interruption is [line, start, stop, day, id, lost, dropped]");
     (
-        j_opt(&a[0], j_stamp),
-        j_opt(&a[1], j_stamp),
-        a[2].as_i64().expect("day"),
-        j_opt(&a[3], |x| j_str(x, "id")),
-        j_u64(&a[4], "lost"),
-        j_strs(&a[5], "dropped"),
+        j_u64(&a[0], "line"),
+        (j_opt(&a[1], j_stamp), j_opt(&a[2], j_stamp), a[3].as_i64().expect("day"), j_opt(&a[4], |x| j_str(x, "id")), j_u64(&a[5], "lost"), j_strs(&a[6], "dropped")),
     )
 }
 
-/// The kernel's `facts.block`. Maps are read as maps and a repeated key fails.
-fn kernel_block(b: &Value) -> Block {
-    let mut days = BTreeMap::new();
-    for p in j_arr(&b["days"], "block.days") {
-        let p = j_arr(p, "a day");
-        let o = &p[1];
-        let mut ci_unknown = BTreeMap::new();
-        for c in j_arr(&o["ciUnknown"], "ciUnknown") {
-            let c = j_arr(c, "a ciUnknown pair");
-            assert!(ci_unknown.insert(j_str(&c[0], "id"), j_u64(&c[1], "min")).is_none(), "a repeated ciUnknown id: {o}");
-        }
-        let day = DayBlock {
-            first_start: j_opt(&o["firstStart"], j_stamp),
-            starts: j_arr(&o["starts"], "starts")
-                .iter()
-                .map(|r| {
-                    let r = j_arr(r, "a start");
-                    (j_stamp(&r[0]), j_str(&r[1], "id"), j_u64(&r[2], "pred"), j_opt(&r[3], |x| j_u64(x, "rep")))
-                })
-                .collect(),
-            block_min: j_u64(&o["blockMin"], "blockMin"),
-            blocks_done: j_u64(&o["blocksDone"], "blocksDone"),
-            load_fifths: j_u64(&o["loadFifths"], "loadFifths"),
-            by_ci: j_arr(&o["byCi"], "byCi").iter().map(|c| j_u64(c, "byCi")).collect(),
-            ci_unknown,
-            done: j_strs(&o["done"], "done"),
-            lost_min: j_u64(&o["lostMin"], "lostMin"),
-            dropped: j_strs(&o["dropped"], "dropped"),
-            segments: j_arr(&o["segments"], "segments")
-                .iter()
-                .map(|g| {
-                    let g = j_arr(g, "a segment");
-                    (j_stamp(&g[0]), j_stamp(&g[1]), j_str(&g[2], "kind"), g[3..].iter().map(|x| j_opt(x, |y| j_str(y, "a segment argument"))).collect())
-                })
-                .collect(),
-        };
-        assert!(days.insert(p[0].as_i64().expect("a day"), day).is_none(), "a repeated day");
-    }
-    let mut items: BTreeMap<String, ItemBlock> = BTreeMap::new();
-    for p in j_arr(&b["items"], "block.items") {
-        let p = j_arr(p, "an item");
-        let o = &p[1];
-        let item = ItemBlock {
-            minutes: j_u64(&o["minutes"], "minutes"),
-            blocks: j_u64(&o["blocks"], "blocks"),
-            by_day: BTreeMap::new(),
-            done_at: j_arr(&o["doneAt"], "doneAt").iter().map(j_stamp).collect(),
-            partial_done_at: j_arr(&o["partialDoneAt"], "partialDoneAt").iter().map(j_stamp).collect(),
-            stops: j_u64(&o["stops"], "stops"),
-            extended_min: j_u64(&o["extendedMin"], "extendedMin"),
-        };
-        assert!(items.insert(j_str(&p[0], "id"), item).is_none(), "a repeated item");
-    }
-    for p in j_arr(&b["itemDays"], "block.itemDays") {
-        let p = j_arr(p, "an item day");
-        let item = items.entry(j_str(&p[0], "id")).or_default();
-        assert!(item.by_day.insert(p[1].as_i64().expect("day"), j_u64(&p[2], "min")).is_none(), "a repeated item day");
-    }
-    Block {
-        days,
-        items,
-        energy: j_arr(&b["energy"], "energy")
-            .iter()
-            .map(|o| {
-                let o = j_arr(o, "an energy observation");
-                (
-                    j_u64(&o[0], "line"),
-                    j_stamp(&o[1]),
-                    o[2].as_i64().expect("day"),
-                    j_u64(&o[3], "pred"),
-                    j_u64(&o[4], "rep"),
-                    o[5].as_f64().expect("hsw"),
-                    j_str(&o[6], "loc"),
-                    j_opt(&o[7], |x| j_u64(x, "slept")),
-                    j_opt(&o[8], |x| j_u64(x, "went")),
-                    j_opt(&o[9], |x| j_str(x, "id")),
-                    o[10].as_bool().expect("fromStart"),
-                )
-            })
-            .collect(),
-        durations: j_arr(&b["durations"], "durations")
-            .iter()
-            .map(|o| {
-                let o = j_arr(o, "a duration observation");
-                (
-                    j_u64(&o[0], "line"),
-                    j_stamp(&o[1]),
-                    o[2].as_i64().expect("day"),
-                    j_str(&o[3], "id"),
-                    j_u64(&o[4], "ci"),
-                    j_strs(&o[5], "tags"),
-                    j_u64(&o[6], "est"),
-                    j_u64(&o[7], "actual"),
-                    j_opt(&o[8], |x| j_u64(x, "went")),
-                    o[9].as_bool().expect("partial"),
-                )
-            })
-            .collect(),
-        interrupts: j_arr(&b["interrupts"], "interrupts").iter().map(j_interrupt).collect(),
-        open_block: j_opt(&b["openBlock"], |o| {
-            let o = j_arr(o, "the open block");
-            (j_str(&o[0], "id"), j_stamp(&o[1]), j_u64(&o[2], "worked"), j_opt(&o[3], j_stamp), o[4].as_bool().expect("paused"))
-        }),
-        open_interrupt: j_opt(&b["openInterrupt"], j_interrupt),
-        last_effective: j_opt(&b["lastEffective"], j_stamp),
-    }
-}
 
 fn interrupt_row(i: &Interruption) -> InterruptRow {
     (i.start.as_ref().map(stamp_of), i.end.as_ref().map(stamp_of), day_number(i.day), i.id.clone(), u64::from(i.lost_min), i.dropped.clone())
@@ -642,69 +524,6 @@ struct DayFam {
     unknown: u64,
 }
 
-/// The kernel's `facts.day`. A day's record is a positional array; maps are read
-/// as maps and a repeated key fails.
-fn kernel_day(v: &Value) -> DayFam {
-    let mut days = BTreeMap::new();
-    for p in j_arr(&v["days"], "day.days") {
-        let p = j_arr(p, "a day");
-        let a = j_arr(&p[1], "a day record");
-        assert_eq!(a.len(), 17, "a day record has 17 fields: {}", p[1]);
-        let rec = DayRec {
-            wake: j_opt(&a[0], j_stamp),
-            slept_min: j_opt(&a[1], |x| j_u64(x, "sleptMin")),
-            onset_min: j_opt(&a[2], |x| j_u64(x, "onsetMin")),
-            arrival: j_opt(&a[3], j_stamp),
-            loc: j_opt(&a[4], |x| j_str(x, "loc")),
-            window: j_opt(&a[5], |x| {
-                let w = j_arr(x, "a window");
-                (j_str(&w[0], "window"), j_str(&w[1], "window"))
-            }),
-            budget: j_opt(&a[6], |x| j_u64(x, "budget")),
-            loc_changes: j_arr(&a[7], "locChanges").iter().map(|c| {
-                let c = j_arr(c, "a location change");
-                (j_stamp(&c[0]), j_str(&c[1], "loc"))
-            }).collect(),
-            leak_min: j_u64(&a[8], "leakMin"),
-            longest_leak: j_u64(&a[9], "longestLeak"),
-            idle: j_arr(&a[10], "idle").iter().map(|r| {
-                let r = j_arr(r, "an idle record");
-                (j_stamp(&r[0]), r[1].as_i64().expect("day"), j_str(&r[2], "attributed"), j_u64(&r[3], "min"))
-            }).collect(),
-            breaks: j_arr(&a[11], "breaks").iter().map(|r| {
-                let r = j_arr(r, "a break");
-                (j_stamp(&r[0]), r[1].as_i64().expect("day"), j_u64(&r[2], "planned"), j_opt(&r[3], |x| j_u64(x, "actual")), j_opt(&r[4], |x| j_str(x, "where")))
-            }).collect(),
-            routine_min: j_u64(&a[12], "routineMin"),
-            plans: j_u64(&a[13], "plans"),
-            replans_today: j_u64(&a[14], "replansToday"),
-            drift_min: j_u64(&a[15], "driftMin"),
-            last_plan_hash: j_opt(&a[16], |x| j_str(x, "lastPlanHash")),
-        };
-        assert!(days.insert(p[0].as_i64().expect("a day"), rec).is_none(), "a repeated day record");
-    }
-    let mut dropped = BTreeSet::new();
-    for x in j_arr(&v["dropped"], "dropped") {
-        assert!(dropped.insert(j_str(x, "a dropped id")), "a repeated dropped id");
-    }
-    DayFam {
-        days,
-        demotions: j_arr(&v["demotions"], "demotions").iter().map(|r| {
-            let r = j_arr(r, "a demotion");
-            (r[0].as_i64().expect("day"), j_stamp(&r[1]), j_str(&r[2], "id"), j_str(&r[3], "from"), j_str(&r[4], "to"), j_u64(&r[5], "est"), j_opt(&r[6], |x| j_str(x, "stamp")))
-        }).collect(),
-        closes: j_arr(&v["closes"], "closes").iter().map(|r| {
-            let r = j_arr(r, "a close");
-            (r[0].as_i64().expect("day"), j_stamp(&r[1]), j_str(&r[2], "period"), j_str(&r[3], "key"))
-        }).collect(),
-        dropped,
-        longest_leak: j_opt(&v["longestLeak"], |x| {
-            let x = j_arr(x, "the longest leak");
-            (j_stamp(&x[0]), x[1].as_i64().expect("day"), j_u64(&x[2], "min"))
-        }),
-        unknown: j_u64(&v["unknown"], "unknown"),
-    }
-}
 
 /// The Rust's day family, from the in-tree `Replay`. The demotions and closes need
 /// each record's day, which the fork's records do not carry: they are walked beside
@@ -774,46 +593,569 @@ fn rust_day(r: &Replay) -> DayFam {
     }
 }
 
-/// **The kernel's facts**: one genesis `log` call over the whole text, lines
-/// split on `\n` as the in-tree reader's `parse_bytes` splits them.
-fn kernel_facts(text: &str, tz: Tz) -> Facts {
-    let segs: Vec<Value> = text.split('\n').map(|s| Value::String(s.to_string())).collect();
+/// **The kernel's facts** (C6: design §8.4's view of the log, every reading grouped by where it lives: `days`,
+/// `window`, `items`, `instOther`, `named`, `open`, and the all-time counts), decoded into the families the
+/// earlier steps compare. The view is checked for its own consistency on the way: a dated record sits under its
+/// own day, no map key repeats, a list the Rust keeps in file order is restored by the line each record carries
+/// and those lines do not repeat, and the facts' line warnings are the answer's.
+fn kernel_view(log: &Value) -> Facts {
+    let v = &log["facts"];
+    assert!(v.is_object(), "no facts: {}", &log.to_string()[..log.to_string().len().min(400)]);
+    let (mut block, mut completion, mut day) = (Block::default(), Completion::default(), DayFam::default());
+    let mut seams = BTreeMap::new();
+    let mut rows: Vec<RowView> = Vec::new();
+    let mut interrupts: Vec<(u64, InterruptRow)> = Vec::new();
+    let mut demotions: Vec<(u64, DemotionRow)> = Vec::new();
+    let mut closes: Vec<(u64, CloseRow)> = Vec::new();
+    for p in j_arr(&v["days"], "days") {
+        let p = j_arr(p, "a day");
+        assert_eq!(p.len(), 9, "a day is [day, record, seam, energy, durations, interrupts, demotions, closes, headers]");
+        let d = p[0].as_i64().expect("a day");
+        assert!(!seams.contains_key(&d) && !block.days.contains_key(&d) && rows.iter().all(|r| r.3 != d), "a repeated day {d}");
+        if !p[1].is_null() {
+            let a = j_arr(&p[1], "a day record");
+            assert_eq!(a.len(), 28, "a day record has 28 fields: {}", p[1]);
+            let mut ci_unknown = BTreeMap::new();
+            for c in j_arr(&a[6], "ciUnknown") {
+                let c = j_arr(c, "a ciUnknown pair");
+                assert!(ci_unknown.insert(j_str(&c[0], "id"), j_u64(&c[1], "min")).is_none(), "a repeated ciUnknown id");
+            }
+            block.days.insert(
+                d,
+                DayBlock {
+                    first_start: j_opt(&a[0], j_stamp),
+                    starts: j_arr(&a[1], "starts")
+                        .iter()
+                        .map(|r| {
+                            let r = j_arr(r, "a start");
+                            (j_stamp(&r[0]), j_str(&r[1], "id"), j_u64(&r[2], "pred"), j_opt(&r[3], |x| j_u64(x, "rep")))
+                        })
+                        .collect(),
+                    block_min: j_u64(&a[2], "blockMin"),
+                    blocks_done: j_u64(&a[3], "blocksDone"),
+                    load_fifths: j_u64(&a[4], "loadFifths"),
+                    by_ci: j_arr(&a[5], "byCi").iter().map(|c| j_u64(c, "byCi")).collect(),
+                    ci_unknown,
+                    done: j_strs(&a[7], "done"),
+                    lost_min: j_u64(&a[8], "lostMin"),
+                    dropped: j_strs(&a[9], "dropped"),
+                    segments: j_arr(&a[10], "segments")
+                        .iter()
+                        .map(|g| {
+                            let g = j_arr(g, "a segment");
+                            (j_stamp(&g[0]), j_stamp(&g[1]), j_str(&g[2], "kind"), g[3..].iter().map(|x| j_opt(x, |y| j_str(y, "a segment argument"))).collect())
+                        })
+                        .collect(),
+                },
+            );
+            day.days.insert(
+                d,
+                DayRec {
+                    wake: j_opt(&a[11], j_stamp),
+                    slept_min: j_opt(&a[12], |x| j_u64(x, "sleptMin")),
+                    onset_min: j_opt(&a[13], |x| j_u64(x, "onsetMin")),
+                    arrival: j_opt(&a[14], j_stamp),
+                    loc: j_opt(&a[15], |x| j_str(x, "loc")),
+                    window: j_opt(&a[16], |x| {
+                        let w = j_arr(x, "a window");
+                        (j_str(&w[0], "window"), j_str(&w[1], "window"))
+                    }),
+                    budget: j_opt(&a[17], |x| j_u64(x, "budget")),
+                    loc_changes: j_arr(&a[18], "locChanges")
+                        .iter()
+                        .map(|c| {
+                            let c = j_arr(c, "a location change");
+                            (j_stamp(&c[0]), j_str(&c[1], "loc"))
+                        })
+                        .collect(),
+                    leak_min: j_u64(&a[19], "leakMin"),
+                    longest_leak: j_u64(&a[20], "longestLeak"),
+                    idle: j_arr(&a[21], "idle")
+                        .iter()
+                        .map(|r| {
+                            let r = j_arr(r, "an idle record");
+                            (j_stamp(&r[0]), r[1].as_i64().expect("day"), j_str(&r[2], "attributed"), j_u64(&r[3], "min"))
+                        })
+                        .collect(),
+                    breaks: j_arr(&a[22], "breaks")
+                        .iter()
+                        .map(|r| {
+                            let r = j_arr(r, "a break");
+                            (j_stamp(&r[0]), r[1].as_i64().expect("day"), j_u64(&r[2], "planned"), j_opt(&r[3], |x| j_u64(x, "actual")), j_opt(&r[4], |x| j_str(x, "where")))
+                        })
+                        .collect(),
+                    routine_min: j_u64(&a[23], "routineMin"),
+                    plans: j_u64(&a[24], "plans"),
+                    replans_today: j_u64(&a[25], "replansToday"),
+                    drift_min: j_u64(&a[26], "driftMin"),
+                    last_plan_hash: j_opt(&a[27], |x| j_str(x, "lastPlanHash")),
+                },
+            );
+        }
+        if !p[2].is_null() {
+            seams.insert(d, j_seam(&p[2]));
+        }
+        for o in j_arr(&p[3], "energy") {
+            let row = j_energy(o);
+            assert_eq!(row.2, d, "an energy observation under its own day");
+            block.energy.push(row);
+        }
+        for o in j_arr(&p[4], "durations") {
+            let row = j_duration(o);
+            assert_eq!(row.2, d, "a duration observation under its own day");
+            block.durations.push(row);
+        }
+        for o in j_arr(&p[5], "interrupts") {
+            let (line, row) = j_interrupt(o);
+            assert_eq!(row.2, d, "an interruption under its own day");
+            interrupts.push((line, row));
+        }
+        for o in j_arr(&p[6], "demotions") {
+            let r = j_arr(o, "a demotion");
+            demotions.push((
+                j_u64(&r[0], "line"),
+                (d, j_stamp(&r[1]), j_str(&r[2], "id"), j_str(&r[3], "from"), j_str(&r[4], "to"), j_u64(&r[5], "est"), j_opt(&r[6], |x| j_str(x, "stamp"))),
+            ));
+        }
+        for o in j_arr(&p[7], "closes") {
+            let r = j_arr(o, "a close");
+            closes.push((j_u64(&r[0], "line"), (d, j_stamp(&r[1]), j_str(&r[2], "period"), j_str(&r[3], "key"))));
+        }
+        for h in j_arr(&p[8], "headers") {
+            let h = j_arr(h, "a header");
+            assert_eq!(h.len(), 5, "a day's header is [line, tag, id, cancelled, display]");
+            rows.push((j_u64(&h[0], "line"), j_str(&h[1], "tag"), j_opt(&h[2], |x| j_str(x, "id")), d, h[3].as_bool().expect("cancelled"), j_str(&h[4], "display")));
+        }
+    }
+    fn in_line_order<T>(mut xs: Vec<(u64, T)>, what: &str) -> Vec<T> {
+        xs.sort_by_key(|x| x.0);
+        assert!(xs.windows(2).all(|w| w[0].0 < w[1].0), "{what}: a line carried twice");
+        xs.into_iter().map(|x| x.1).collect()
+    }
+    block.energy = in_line_order(block.energy.drain(..).map(|o| (o.0, o)).collect(), "energy");
+    block.durations = in_line_order(block.durations.drain(..).map(|o| (o.0, o)).collect(), "durations");
+    block.interrupts = in_line_order(interrupts, "interrupts");
+    day.demotions = in_line_order(demotions, "demotions");
+    day.closes = in_line_order(closes, "closes");
+    rows = in_line_order(rows.into_iter().map(|r| (r.0, r)).collect(), "headers");
+    for p in j_arr(&v["items"], "items") {
+        let p = j_arr(p, "an item");
+        assert_eq!(p.len(), 6, "an item is [id, record, lastDone, dropped, doneFirst, doneCount]");
+        let id = j_str(&p[0], "id");
+        if !p[1].is_null() {
+            let o = j_arr(&p[1], "an item record");
+            let item = ItemBlock {
+                minutes: j_u64(&o[0], "minutes"),
+                blocks: j_u64(&o[1], "blocks"),
+                by_day: BTreeMap::new(),
+                done_at: j_arr(&o[2], "doneAt").iter().map(j_stamp).collect(),
+                partial_done_at: j_arr(&o[3], "partialDoneAt").iter().map(j_stamp).collect(),
+                stops: j_u64(&o[4], "stops"),
+                extended_min: j_u64(&o[5], "extendedMin"),
+            };
+            assert!(block.items.insert(id.clone(), item).is_none(), "a repeated item {id}");
+        }
+        if let Some(t) = j_opt(&p[2], j_stamp) {
+            assert!(completion.last_done.insert(id.clone(), t).is_none(), "a repeated lastDone");
+        }
+        if p[3].as_bool().expect("dropped") {
+            assert!(day.dropped.insert(id.clone()), "a repeated dropped id");
+        }
+        let (first, count) = (p[4].as_i64(), j_u64(&p[5], "doneCount"));
+        if count > 0 || first.is_some() {
+            assert!(completion.done_first.insert(id.clone(), (first, count)).is_none(), "a repeated done count");
+        }
+    }
+    for w in j_arr(&v["window"], "window") {
+        let w = j_arr(w, "a window date");
+        assert_eq!(w.len(), 4, "a window date is [date, itemMin, done, inst]");
+        let d = w[0].as_i64().expect("a date");
+        for m in j_arr(&w[1], "itemMin") {
+            let m = j_arr(m, "an item's minutes");
+            let id = j_str(&m[0], "id");
+            let item = block.items.get_mut(&id).unwrap_or_else(|| panic!("minutes on {d} of {id}, which has no record"));
+            assert!(item.by_day.insert(d, j_u64(&m[1], "min")).is_none(), "a repeated item day");
+        }
+        for id in j_strs(&w[2], "done") {
+            assert!(completion.done_dates.entry(id).or_default().insert(d), "a repeated done date");
+        }
+        for r in j_arr(&w[3], "inst") {
+            let (key, row) = j_instance(r);
+            assert!(completion.instances.insert(key, row).is_none(), "a repeated instance");
+        }
+    }
+    for r in j_arr(&v["instOther"], "instOther") {
+        let (key, row) = j_instance(r);
+        assert!(completion.instances.insert(key, row).is_none(), "a repeated instance");
+    }
+    for r in j_arr(&v["named"], "named") {
+        let r = j_arr(r, "a named record");
+        let row = (j_u64(&r[2], "latest line"), j_stamp(&r[3]), j_u64(&r[4], "dated line"), j_stamp(&r[5]));
+        assert!(completion.named.insert((j_str(&r[0], "name"), j_opt(&r[1], |x| j_str(x, "id"))), row).is_none(), "a repeated named key");
+    }
+    for x in j_arr(&v["replayWarnings"], "replayWarnings") {
+        assert_eq!(x["w"], "unknownInstanceStatus", "the one replay warning: {x}");
+        completion.warnings.push((j_u64(&x["line"], "line"), j_str(&x["raw"], "raw")));
+    }
+    block.open_block = j_opt(&v["open"]["block"], |o| {
+        let o = j_arr(o, "the open block");
+        (j_str(&o[0], "id"), j_stamp(&o[1]), j_u64(&o[2], "worked"), j_opt(&o[3], j_stamp), o[4].as_bool().expect("paused"))
+    });
+    block.open_interrupt = j_opt(&v["open"]["interrupt"], |o| {
+        let (line, row) = j_interrupt(o);
+        assert_eq!(line, 0, "the open interruption is pushed by no line");
+        row
+    });
+    block.last_effective = j_opt(&v["lastEffective"], j_stamp);
+    day.unknown = j_u64(&v["unknown"], "unknown");
+    day.longest_leak = j_opt(&v["longestLeak"], |x| {
+        let x = j_arr(x, "the longest leak");
+        (j_stamp(&x[0]), x[1].as_i64().expect("day"), j_u64(&x[2], "min"))
+    });
+    let warnings: Vec<Value> = j_arr(&log["warnings"], "warnings").clone();
+    let first = j_arr(&v["warnings"]["first"], "warnings.first");
+    assert_eq!(first.as_slice(), &warnings[..warnings.len().min(256)], "the facts' line warnings are the answer's first 256");
+    assert_eq!(j_u64(&v["warnings"]["overflow"], "overflow"), warnings.len().saturating_sub(256) as u64);
+    // The answer's headers (`want.headersFrom: 1`) are the view's rows, with their days.
+    let top: Vec<RowView> = j_arr(&log["headers"], "headers")
+        .iter()
+        .map(|h| {
+            let h = j_arr(h, "a header");
+            assert_eq!(h.len(), 6, "a header is [line, tag, id, day, cancelled, display]");
+            (j_u64(&h[0], "line"), j_str(&h[1], "tag"), j_opt(&h[2], |x| j_str(x, "id")), h[3].as_i64().expect("day"), h[4].as_bool().expect("cancelled"), j_str(&h[5], "display"))
+        })
+        .collect();
+    assert_eq!(top, rows, "the answer's headers are the days' headers in file order");
+    Facts {
+        cancelled: rows.iter().filter(|r| r.4).map(|r| r.0).collect(),
+        days: rows.iter().map(|r| (r.0, r.3)).collect(),
+        block,
+        completion,
+        day,
+        seams,
+        counts: (j_u64(&v["entryCount"], "entryCount"), j_u64(&log["lines"], "lines"), v["lastDay"].as_i64()),
+        rows,
+        warnings: warnings.iter().map(|w| w["line"].as_u64().expect("a line")).collect(),
+    }
+}
+
+/// C6: an idle mark, `(kind, stamp, actual_min)`; a day's seam.
+fn j_seam(v: &Value) -> SeamRow {
+    let a = j_arr(v, "a seam");
+    assert_eq!(a.len(), 3, "a seam is [sinceBreak, idleMarks, lastT]");
+    let marks = j_arr(&a[1], "idleMarks")
+        .iter()
+        .map(|m| {
+            let m = j_arr(m, "an idle mark");
+            let kind = j_str(&m[0], "kind");
+            let actual = if kind == "break" { j_opt(&m[2], |x| j_u64(x, "actual")) } else {
+                assert_eq!(m.len(), 2, "only a break mark carries minutes");
+                None
+            };
+            (kind, j_stamp(&m[1]), actual)
+        })
+        .collect();
+    (j_opt(&a[0], j_stamp), marks, j_opt(&a[2], j_stamp))
+}
+
+fn j_energy(o: &Value) -> EnergyRow {
+    let o = j_arr(o, "an energy observation");
+    (
+        j_u64(&o[0], "line"),
+        j_stamp(&o[1]),
+        o[2].as_i64().expect("day"),
+        j_u64(&o[3], "pred"),
+        j_u64(&o[4], "rep"),
+        o[5].as_f64().expect("hsw"),
+        j_str(&o[6], "loc"),
+        j_opt(&o[7], |x| j_u64(x, "slept")),
+        j_opt(&o[8], |x| j_u64(x, "went")),
+        j_opt(&o[9], |x| j_str(x, "id")),
+        o[10].as_bool().expect("fromStart"),
+    )
+}
+
+fn j_duration(o: &Value) -> DurationRow {
+    let o = j_arr(o, "a duration observation");
+    (
+        j_u64(&o[0], "line"),
+        j_stamp(&o[1]),
+        o[2].as_i64().expect("day"),
+        j_str(&o[3], "id"),
+        j_u64(&o[4], "ci"),
+        j_strs(&o[5], "tags"),
+        j_u64(&o[6], "est"),
+        j_u64(&o[7], "actual"),
+        j_opt(&o[8], |x| j_u64(x, "went")),
+        o[9].as_bool().expect("partial"),
+    )
+}
+
+fn j_instance(r: &Value) -> ((String, String), InstanceRow) {
+    let r = j_arr(r, "an instance");
+    ((j_str(&r[0], "item"), j_str(&r[1], "inst")), (j_stamp(&r[2]), j_str(&r[3], "status"), j_str(&r[4], "raw"), j_opt(&r[5], |x| j_u64(x, "actualMin"))))
+}
+
+/// The lines of `text` as the host sends them: split on `\n`, the empty segment after a final `\n` not sent
+/// (it is not a line; `terminated` says the last line had its `\n`).
+fn segments(text: &str) -> Vec<Value> {
+    let mut segs: Vec<Value> = text.split('\n').map(|s| Value::String(s.to_string())).collect();
+    if text.is_empty() || text.ends_with('\n') {
+        segs.pop();
+    }
+    segs
+}
+
+/// **The kernel's `log` answer**: one genesis call over the whole text, facts and every header asked.
+fn kernel_answer(text: &str, tz: Tz) -> Value {
+    let segs = segments(text);
     assert!(segs.len() <= 32_768, "T5 sends one call; W3's chunked genesis is not built yet");
     let req = json!({
         "docs": [], "tz": table(tz),
-        "log": {"ckpt": null, "from": 1, "lines": segs, "terminated": text.ends_with('\n'),
-                "reseal": null, "want": {"facts": true}}
+        "log": {"ckpt": null, "from": 1, "lines": segs, "terminated": text.is_empty() || text.ends_with('\n'),
+                "reseal": null, "want": {"facts": true, "headersFrom": 1}}
     });
     let raw = tm_kernel_ffi::call(&req.to_string()).expect("kernel call");
     let resp: Value = serde_json::from_str(&raw).expect("the response is JSON");
-    let facts = &resp["ok"]["log"]["facts"];
-    assert!(facts.is_object(), "no facts: {}", &raw[..raw.len().min(400)]);
-    Facts {
-        cancelled: facts["cancelled"]
-            .as_array()
-            .expect("facts.cancelled")
+    assert!(resp["ok"]["log"].is_object(), "no log answer: {}", &raw[..raw.len().min(400)]);
+    resp["ok"]["log"].clone()
+}
+
+/// **The kernel's facts**.
+fn kernel_facts(text: &str, tz: Tz) -> Facts {
+    kernel_view(&kernel_answer(text, tz))
+}
+
+/// C6: a kernel stamp as chrono's `DateTime<FixedOffset>`.
+fn date_time(s: &Stamp) -> DateTime<FixedOffset> {
+    let off = FixedOffset::east_opt(if s.2 { -(s.3 as i32) } else { s.3 as i32 }).expect("an offset");
+    DateTime::from_timestamp(s.0 - EPOCH_FROM_CE, s.1).expect("an instant").with_timezone(&off)
+}
+
+/// C6: a kernel day as a date.
+fn date_of(d: i64) -> NaiveDate {
+    NaiveDate::from_num_days_from_ce_opt(i32::try_from(d + 1).expect("a day")).expect("a date")
+}
+
+fn u32_of(n: u64) -> u32 {
+    u32::try_from(n).expect("a u32 (P17: the decoder at S refuses minutesOverflow by name)")
+}
+
+fn u8_of(n: u64) -> u8 {
+    u8::try_from(n).expect("a u8 (the kernel's `U8`)")
+}
+
+/// **C6: the kernel's facts as a `tm_core::log::Replay`** (the decoder `kernel_log::decode_facts` will be at S),
+/// so the fork's own `PartialEq` and `ported_facts()` compare the whole of it. Two fields are not the kernel's:
+/// `events`, whose occurrence lists the kernel does not keep (design §8.4: the latest per `(name, id?)`, compared
+/// through every `latest_named` query above), and `warnings`' text, which names the warned line's written stamp
+/// (compared above by line and status). Both are taken from the fork, as are the line bookkeeping `rows` and
+/// `line_count` (compared as view rows).
+fn kernel_replay(f: &Facts, tz: Tz, r: &Replay) -> Replay {
+    let segment = |g: &(Stamp, Stamp, String, Vec<Option<String>>)| {
+        let arg = |i: usize| g.3.get(i).cloned().flatten();
+        LogSegment {
+            start: date_time(&g.0),
+            end: date_time(&g.1),
+            kind: match g.2.as_str() {
+                "block" => SegmentKind::Block { id: arg(0).expect("an id") },
+                "pause" => SegmentKind::Pause { id: arg(0).expect("an id") },
+                "interrupt" => SegmentKind::Interrupt { id: arg(0) },
+                "break" => SegmentKind::Break { r#where: arg(0) },
+                "routine" => SegmentKind::Routine { item: arg(0).expect("an item"), inst: arg(1).expect("an inst") },
+                "idle" => SegmentKind::Idle { attributed: arg(0).expect("an attribution") },
+                other => panic!("a segment kind {other}"),
+            },
+        }
+    };
+    let interruption = |i: &InterruptRow| Interruption {
+        start: i.0.as_ref().map(date_time),
+        end: i.1.as_ref().map(date_time),
+        day: date_of(i.2),
+        id: i.3.clone(),
+        lost_min: u32_of(i.4),
+        dropped: i.5.clone(),
+    };
+    let status = |s: &str| match s {
+        "pending" => InstanceStatus::Pending,
+        "done" => InstanceStatus::Done,
+        "missed" => InstanceStatus::Missed,
+        "expired" => InstanceStatus::Expired,
+        "skipped" => InstanceStatus::Skipped,
+        other => panic!("a status {other}"),
+    };
+    let days = f
+        .block
+        .days
+        .iter()
+        .map(|(d, b)| {
+            let x = &f.day.days[d];
+            let rec = DayReplay {
+                date: date_of(*d),
+                wake: x.wake.as_ref().map(date_time),
+                slept_min: x.slept_min.map(u32_of),
+                onset_min: x.onset_min.map(u32_of),
+                arrival: x.arrival.as_ref().map(date_time),
+                loc: x.loc.clone(),
+                window: x.window.clone().map(|w| [w.0, w.1]),
+                budget: x.budget.map(u32_of),
+                loc_changes: x.loc_changes.iter().map(|(t, l)| (date_time(t), l.clone())).collect(),
+                first_start: b.first_start.as_ref().map(date_time),
+                starts: b
+                    .starts
+                    .iter()
+                    .map(|s| StartRecord { t: date_time(&s.0), id: s.1.clone(), pred: u8_of(s.2), rep: s.3.map(u8_of) })
+                    .collect(),
+                block_min: u32_of(b.block_min),
+                blocks_done: u32_of(b.blocks_done),
+                load_fifths: b.load_fifths,
+                minutes_by_ci: std::array::from_fn(|i| u32_of(b.by_ci[i])),
+                ci_unknown: b.ci_unknown.iter().map(|(k, m)| (k.clone(), u32_of(*m))).collect(),
+                done: b.done.clone(),
+                lost_min: u32_of(b.lost_min),
+                dropped: b.dropped.clone(),
+                leak_min: u32_of(x.leak_min),
+                longest_leak: u32_of(x.longest_leak),
+                idle: x.idle.iter().map(|i| IdleRecord { t: date_time(&i.0), day: date_of(i.1), attributed: i.2.clone(), min: u32_of(i.3) }).collect(),
+                breaks: x
+                    .breaks
+                    .iter()
+                    .map(|k| BreakRecord { t: date_time(&k.0), day: date_of(k.1), planned_min: u32_of(k.2), actual_min: k.3.map(u32_of), r#where: k.4.clone() })
+                    .collect(),
+                routine_min: u32_of(x.routine_min),
+                plans: u32_of(x.plans),
+                replans_today: u32_of(x.replans_today),
+                drift_min: u32_of(x.drift_min),
+                last_plan_hash: x.last_plan_hash.clone(),
+                segments: b.segments.iter().map(segment).collect(),
+            };
+            (date_of(*d), rec)
+        })
+        .collect();
+    let mut demotions: BTreeMap<String, Vec<Demotion>> = BTreeMap::new();
+    for x in &f.day.demotions {
+        demotions.entry(x.2.clone()).or_default().push(Demotion {
+            t: date_time(&x.1),
+            id: x.2.clone(),
+            from: x.3.clone(),
+            to: x.4.clone(),
+            est_min: u32_of(x.5),
+            stamp: x.6.as_ref().map(|s| tm_core::model::Stamp::parse(s).expect("a stamp")),
+        });
+    }
+    let mut instances: BTreeMap<String, BTreeMap<String, InstanceRecord>> = BTreeMap::new();
+    for ((item, inst), row) in &f.completion.instances {
+        instances.entry(item.clone()).or_default().insert(
+            inst.clone(),
+            InstanceRecord { t: date_time(&row.0), status: status(&row.1), raw_status: row.2.clone(), actual_min: row.3.map(u32_of) },
+        );
+    }
+    Replay {
+        tz,
+        range: None,
+        days,
+        items: f
+            .block
+            .items
             .iter()
-            .map(|n| n.as_u64().expect("a line"))
-            .collect(),
-        days: facts["days"]
-            .as_array()
-            .expect("facts.days")
-            .iter()
-            .map(|p| {
-                let p = p.as_array().expect("a [line, day] pair");
-                assert_eq!(p.len(), 2, "a [line, day] pair");
-                (p[0].as_u64().expect("a line"), p[1].as_i64().expect("a day"))
+            .map(|(id, it)| {
+                let item = ItemReplay {
+                    id: id.clone(),
+                    minutes: u32_of(it.minutes),
+                    blocks: u32_of(it.blocks),
+                    minutes_by_day: it.by_day.iter().map(|(d, m)| (date_of(*d), u32_of(*m))).collect(),
+                    done_at: it.done_at.iter().map(date_time).collect(),
+                    partial_done_at: it.partial_done_at.iter().map(date_time).collect(),
+                    stops: u32_of(it.stops),
+                    extended_min: u32_of(it.extended_min),
+                };
+                (id.clone(), item)
             })
             .collect(),
-        block: kernel_block(&facts["block"]),
-        completion: kernel_completion(&facts["completion"], &facts["replayWarnings"]),
-        day: kernel_day(&facts["day"]),
-        warnings: resp["ok"]["log"]["warnings"]
-            .as_array()
-            .expect("warnings")
+        instances,
+        energy: f
+            .block
+            .energy
             .iter()
-            .map(|w| w["line"].as_u64().expect("a line"))
+            .map(|o| EnergyObs {
+                line: o.0,
+                t: date_time(&o.1),
+                day: date_of(o.2),
+                pred: u8_of(o.3),
+                rep: u8_of(o.4),
+                hsw: o.5,
+                loc: o.6.clone(),
+                slept_min: o.7.map(u32_of),
+                went: o.8.map(u8_of),
+                id: o.9.clone(),
+                from_start: o.10,
+            })
             .collect(),
+        durations: f
+            .block
+            .durations
+            .iter()
+            .map(|o| DurationObs {
+                line: o.0,
+                t: date_time(&o.1),
+                day: date_of(o.2),
+                id: o.3.clone(),
+                ci: u8_of(o.4),
+                tags: o.5.clone(),
+                est_min: u32_of(o.6),
+                actual_min: u32_of(o.7),
+                went: o.8.map(u8_of),
+                partial: o.9,
+            })
+            .collect(),
+        interrupts: f.block.interrupts.iter().map(interruption).collect(),
+        events: r.events.clone(),
+        demotions,
+        closes: f.day.closes.iter().map(|c| CloseRecord { t: date_time(&c.1), period: c.2.clone(), key: c.3.clone() }).collect(),
+        dropped_items: f.day.dropped.clone(),
+        done_items: f.completion.last_done.keys().cloned().collect(),
+        last_done: f.completion.last_done.iter().map(|(k, t)| (k.clone(), date_time(t))).collect(),
+        done_dates: f.completion.done_dates.iter().map(|(k, ds)| (k.clone(), ds.iter().map(|d| date_of(*d)).collect())).collect(),
+        longest_leak: f.day.longest_leak.as_ref().map(|l| LeakRecord { t: date_time(&l.0), day: date_of(l.1), min: u32_of(l.2) }),
+        open_block: f.block.open_block.as_ref().map(|b| OpenBlock {
+            id: b.0.clone(),
+            started: date_time(&b.1),
+            worked_min: u32_of(b.2),
+            since: b.3.as_ref().map(date_time),
+            paused: b.4,
+        }),
+        open_interrupt: f.block.open_interrupt.as_ref().map(interruption),
+        unknown: u32_of(f.day.unknown),
+        warnings: r.warnings.clone(),
+        seams: f
+            .seams
+            .iter()
+            .map(|(d, s)| {
+                let seam = DaySeam {
+                    since_break: s.0.as_ref().map(date_time),
+                    idle_marks: s
+                        .1
+                        .iter()
+                        .map(|(kind, t, actual)| {
+                            let t = date_time(t);
+                            match kind.as_str() {
+                                "pause" => IdleMark::Pause(t),
+                                "interrupt" => IdleMark::Interrupt(t),
+                                "unpause" => IdleMark::Unpause(t),
+                                "resume" => IdleMark::Resume(t),
+                                "break" => IdleMark::Break { t, actual_min: actual.map(u32_of) },
+                                other => panic!("an idle mark {other}"),
+                            }
+                        })
+                        .collect(),
+                    last_t: s.2.as_ref().map(date_time),
+                };
+                (date_of(*d), seam)
+            })
+            .collect(),
+        last_effective_t: f.block.last_effective.as_ref().map(date_time),
+        rows: r.rows.clone(),
+        line_count: r.line_count,
     }
 }
 
@@ -826,13 +1168,38 @@ fn rust_facts(text: &str, tz: Tz) -> Facts {
         block: rust_block(&r),
         completion: rust_completion(&r, tz),
         day: rust_day(&r),
+        seams: r
+            .seams
+            .iter()
+            .map(|(d, s)| {
+                let marks = s
+                    .idle_marks
+                    .iter()
+                    .map(|m| match m {
+                        IdleMark::Pause(t) => ("pause".to_string(), stamp_of(t), None),
+                        IdleMark::Interrupt(t) => ("interrupt".to_string(), stamp_of(t), None),
+                        IdleMark::Unpause(t) => ("unpause".to_string(), stamp_of(t), None),
+                        IdleMark::Resume(t) => ("resume".to_string(), stamp_of(t), None),
+                        IdleMark::Break { t, actual_min } => ("break".to_string(), stamp_of(t), actual_min.map(u64::from)),
+                    })
+                    .collect();
+                (day_number(*d), (s.since_break.as_ref().map(stamp_of), marks, s.last_t.as_ref().map(stamp_of)))
+            })
+            .collect(),
+        rows: r
+            .view()
+            .iter()
+            .map(|row| (row.line, row.entry.ev.name().to_string(), row.entry.ev.primary_id().map(str::to_string), day_number(row.day), row.cancelled, row.display()))
+            .collect(),
+        counts: (r.entry_count() as u64, r.line_count(), r.days.keys().last().map(|d| day_number(*d))),
         warnings: replay::warning_lines_of_text(text),
     }
 }
 
 /// Compare one log; the kernel's facts are returned for the arms' own checks.
 fn assert_parity(name: &str, text: &str, tz: Tz) -> Facts {
-    let (k, r) = (kernel_facts(text, tz), rust_facts(text, tz));
+    let answer = kernel_answer(text, tz);
+    let (k, r) = (kernel_view(&answer), rust_facts(text, tz));
     // C5: the kernel creates every day the fork creates, and no other: its block
     // records and its day records are one set of days, the Rust's.
     let (kd, rd): (BTreeSet<_>, BTreeSet<_>) = (k.block.days.keys().collect(), r.block.days.keys().collect());
@@ -963,7 +1330,30 @@ fn assert_parity(name: &str, text: &str, tz: Tz) -> Facts {
             .collect();
         panic!("{name} ({}): days differ ({} vs {} rows)\n {}", tz.name(), k.days.len(), r.days.len(), wrong.join("\n "));
     }
+    // C6: the seams, the view rows and the counts.
+    if k.seams != r.seams {
+        let keys: BTreeSet<_> = k.seams.keys().chain(r.seams.keys()).collect();
+        let why: Vec<String> = keys
+            .into_iter()
+            .filter(|d| k.seams.get(*d) != r.seams.get(*d))
+            .take(5)
+            .map(|d| format!("seam of day {d}:\n  kernel {:?}\n  rust   {:?}", k.seams.get(d), r.seams.get(d)))
+            .collect();
+        panic!("{name} ({}): the seams differ\n{}", tz.name(), why.join("\n"));
+    }
+    if k.rows != r.rows {
+        let wrong: Vec<String> = k.rows.iter().zip(&r.rows).filter(|(a, b)| a != b).take(5).map(|(a, b)| format!("kernel {a:?}\n  rust   {b:?}")).collect();
+        panic!("{name} ({}): the view rows differ ({} vs {} rows)\n  {}", tz.name(), k.rows.len(), r.rows.len(), wrong.join("\n  "));
+    }
+    assert_eq!(k.counts, r.counts, "{name}: entry count, line count, last day");
+    assert_eq!(k.completion.done_first, r.completion.done_first, "{name}: first done dates and counts");
     assert_eq!(k, r, "{name}");
+    // C6: the whole `Replay`, through the fork's own `PartialEq` (every field placed on one side or the other by
+    // its destructuring) and `ported_facts()` (D14: every field nothing reads).
+    let rr = replay::replay_of_text(text, tz);
+    let kr = kernel_replay(&k, tz, &rr);
+    assert!(kr == rr, "{name} ({}): the kernel's Replay is not the fork's", tz.name());
+    assert_eq!(kr.ported_facts(), rr.ported_facts(), "{name}: the ported facts (D14)");
     k
 }
 
@@ -1010,9 +1400,32 @@ struct Tally {
     late_sleeps: usize,
     /// C5: idle records on a day other than their own entry's (a gap on the day it began; [`day_separations`]).
     early_gaps: usize,
+    /// C6: seams, the days whose since-break anchor is a break's end (not a start), the idle marks by kind
+    /// (pause, interrupt, unpause, resume, break), the view rows and the cancelled ones.
+    seams: usize,
+    break_anchors: usize,
+    marks: [usize; 5],
+    rows: usize,
+    cancelled_rows: usize,
 }
 
 impl Tally {
+    /// C6.
+    fn add_view(&mut self, f: &Facts) {
+        self.seams += f.seams.len();
+        for s in f.seams.values() {
+            for (kind, _, _) in &s.1 {
+                let i = ["pause", "interrupt", "unpause", "resume", "break"].iter().position(|k| k == kind).expect("a mark kind");
+                self.marks[i] += 1;
+            }
+            // The anchor is a break's end when it is the last break mark's `t + actual_min`.
+            if let (Some(anchor), Some((_, t, actual))) = (s.0, s.1.iter().rev().find(|m| m.0 == "break")) {
+                self.break_anchors += usize::from(date_time(&anchor) == date_time(t) + Duration::minutes(actual.unwrap_or(0) as i64));
+            }
+        }
+        self.rows += f.rows.len();
+        self.cancelled_rows += f.rows.iter().filter(|r| r.4).count();
+    }
     fn add_completion(&mut self, c: &Completion) {
         self.done_items += c.last_done.len();
         self.done_dates += c.done_dates.values().map(BTreeSet::len).sum::<usize>();
@@ -1057,11 +1470,13 @@ impl std::fmt::Display for Tally {
             f,
             "block family: {} days ({} segments, {} ci-unknown pairs), {} items ({} item days), {} energy observations, {} durations, {} interruptions, {} open blocks, {} open interruptions; \
              completion family: {} done items ({} done dates), {} instances ({} whose last record in file order is not their latest by instant), {} named keys ({} whose latest by instant is not their latest by date), {} replay warnings; \
-             day family: {} wakes, {} arrivals, {} location changes, {} idle records ({} on a day before their own entry's), {} breaks, {} days with routine minutes, {} days with plans, {} demotions ({} stamped), {} closes, {} dropped ids, {} longest leaks, {} unknown events, {} energy-event observations ({} reading a wake logged after them)",
+             day family: {} wakes, {} arrivals, {} location changes, {} idle records ({} on a day before their own entry's), {} breaks, {} days with routine minutes, {} days with plans, {} demotions ({} stamped), {} closes, {} dropped ids, {} longest leaks, {} unknown events, {} energy-event observations ({} reading a wake logged after them); \
+             view: {} seams ({} anchored at a break's end), idle marks pause/interrupt/unpause/resume/break {:?}, {} rows ({} cancelled)",
             self.days, self.segments, self.ci_unknown, self.items, self.item_days, self.energy, self.durations, self.interrupts, self.open_blocks, self.open_interrupts,
             self.done_items, self.done_dates, self.instances, self.retro_instances, self.named, self.clock_back_keys, self.replay_warnings,
             self.wakes, self.arrivals, self.loc_changes, self.idle, self.early_gaps, self.breaks, self.routine_days, self.plan_days, self.demotions, self.demotion_stamps,
-            self.closes, self.dropped, self.longest_leaks, self.unknown, self.energy_events, self.late_sleeps
+            self.closes, self.dropped, self.longest_leaks, self.unknown, self.energy_events, self.late_sleeps,
+            self.seams, self.break_anchors, self.marks, self.rows, self.cancelled_rows
         )
     }
 }
@@ -2151,6 +2566,7 @@ fn t5_the_corpus_logs_replay_as_the_fork_does() {
         tally.add(&k.block);
         tally.add_completion(&k.completion);
         tally.add_day(&k.day, &k.block);
+        tally.add_view(&k);
         let (late, early) = day_separations(&text, chrono_tz::America::Chicago);
         tally.late_sleeps += late;
         tally.early_gaps += early;
@@ -2173,6 +2589,7 @@ fn t5_the_generated_month_and_half_year_replay_as_the_fork_does() {
         tally.add(&k.block);
         tally.add_completion(&k.completion);
         tally.add_day(&k.day, &k.block);
+        tally.add_view(&k);
         let (late, early) = day_separations(&text, chrono_tz::America::Chicago);
         tally.late_sleeps += late;
         tally.early_gaps += early;
@@ -2205,6 +2622,7 @@ fn t5_generated_sequences_replay_as_the_fork_does() {
         tally.add(&k.block);
         tally.add_completion(&k.completion);
         tally.add_day(&k.day, &k.block);
+        tally.add_view(&k);
         let (late, early) = day_separations(&g.text, g.tz);
         tally.late_sleeps += late;
         tally.early_gaps += early;
@@ -2253,6 +2671,10 @@ fn t5_generated_sequences_replay_as_the_fork_does() {
     );
     assert_eq!(day_edges.len() as u64, DAY_EDGES, "every day edge case ran: {day_edges:?}");
     assert!(
+        tally.break_anchors > 0 && tally.marks.iter().all(|m| *m > 0) && tally.cancelled_rows > 0,
+        "C6: a break's end as the anchor, every kind of idle mark and cancelled rows were exercised: {tally}"
+    );
+    assert!(
         tally.late_sleeps > 0 && tally.early_gaps > 0 && tally.demotion_stamps > 0 && tally.longest_leaks > 0 && tally.unknown > 0 && tally.arrivals > 0,
         "late binding, gaps on the day they began, demote stamps, leaks, unknown events and arrivals were exercised: {tally}"
     );
@@ -2274,6 +2696,7 @@ fn t5_the_zone_cases_replay_as_the_fork_does() {
         tally.add(&k.block);
         tally.add_completion(&k.completion);
         tally.add_day(&k.day, &k.block);
+        tally.add_view(&k);
         let (late, early) = day_separations(&c.text, c.tz);
         tally.late_sleeps += late;
         tally.early_gaps += early;
@@ -2410,6 +2833,9 @@ fn t5_p34_a_gap_before_the_origin_is_the_named_exception() {
     if let Some(l) = r.day.longest_leak.as_mut() {
         l.1 = 0;
     }
+    // C6: the gap's day is the only day with a record, so it is the last day too.
+    assert_eq!(r.counts.2, Some(fork_day), "the fork's last day is the gap's");
+    r.counts.2 = Some(0);
     assert_eq!(k, r, "P34 is the only difference");
 }
 
@@ -2430,5 +2856,8 @@ fn t5_p33_a_done_date_before_the_origin_is_the_named_exception() {
     assert_eq!(fork, BTreeSet::from([day_number(date(0, 9, 7))]), "the fork dates it in year 0");
     assert_eq!(k.completion.done_dates.get("stretch"), Some(&BTreeSet::from([day_number(date(2026, 9, 7))])), "the kernel dates it on its day");
     r.completion.done_dates.insert("stretch".to_string(), BTreeSet::from([day_number(date(2026, 9, 7))]));
+    // C6: the date is also the item's first done date.
+    assert_eq!(r.completion.done_first.get("stretch"), Some(&(Some(day_number(date(0, 9, 7))), 1)), "the fork's first done date is in year 0");
+    r.completion.done_first.insert("stretch".to_string(), (Some(day_number(date(2026, 9, 7))), 1));
     assert_eq!(k, r, "P33 is the only difference");
 }

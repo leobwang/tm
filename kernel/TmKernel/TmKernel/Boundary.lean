@@ -2767,7 +2767,10 @@ def LogReq.fault (r : LogReq) : Option LogRefusal :=
   else
     match r.render.find? (fun n => n < r.from_ || r.from_ + r.lines.length ≤ n) with
     | some n => some (.renderNotInTail n)
-    | none => if r.facts && r.from_ != 1 then some (.badLogReq .facts) else none
+    | none =>
+      if r.facts && r.from_ != 1 then some (.badLogReq .facts)
+      else if r.headersFrom.isSome && r.from_ != 1 then some (.badLogReq .headersFrom)
+      else none
 
 def LogReq.wf (r : LogReq) : Bool := r.fault.isNone
 
@@ -2887,14 +2890,6 @@ def lwarnJson (n : Nat) (w : Log.LWarn) : JVal :=
   | .missingField k => at_ "missingField" [("key".toList, .str k)]
   | .badField k => at_ "badField" [("key".toList, .str k)]
 
-/-- A header at B4: `[line, tag, id]` (`Event::name`, `Event::primary_id`).  C6 adds the day,
-the cancelled flag and the display. -/
-def headerJson (e : Log.Entry) : JVal :=
-  .arr [.num e.line, .str e.ev.tag,
-    match e.ev.primaryId with
-    | some i => .str i
-    | none => .null]
-
 /-- A rendering: `[line, renderLine, displayStamp]`, or `[line, null, null]` for a line that is
 blank or a warning. -/
 def renderJson (n : Nat) : Option Log.Verdict → JVal
@@ -2913,21 +2908,18 @@ def warningOf : Log.Verdict → Option JVal
   | .warn n w => some (lwarnJson n w)
   | _ => none
 
-def headerOf (hf : Nat) : Log.Verdict → Option JVal
-  | .entry e => if hf ≤ e.line then some (headerJson e) else none
-  | _ => none
-
 def entryOf : Log.Verdict → Option Log.Entry
   | .entry e => some e
   | _ => none
 
-/-! ### Stage 5 D9 C3: the block family's facts on the wire
+/-! ### Stage 5 D9 C3–C6: the replay's facts on the wire
 
-APPENDED 2026-09-15 (stage 5, D9 track, step C3; design §8.1–§8.2, §14.4 row C3).  `facts.block` is
-`Replay.replay`'s block family (compiled as `Replay.replayFast`), for T5 to compare with the fork's
-`Replay` field by field.  An instant is `[sec, ns, west, offsetSec]` (seconds since
-0001-01-01T00:00:00Z, the leap nanoseconds in `ns`, and the written offset).  Maps go out in the
-state's order, one pair per key (T5 reads them as maps); C6's view replaces this object. -/
+APPENDED 2026-09-15 (stage 5, D9 track, steps C3–C5), and **REPLACED at C6** (design §8.4, §10.2, §11, §14.4 row
+C6): C3–C5's interim objects `block`, `completion`, `day` and C1–C2's `cancelled` and `days` give way to §8.4's
+view of `Replay.replayDoc`, every reading grouped by where it lives (`Replay.dayOuts`, `Replay.winOuts`,
+`Replay.itemOuts`).  An instant is `[sec, ns, west, offsetSec]` (seconds since 0001-01-01T00:00:00Z, the leap
+nanoseconds in `ns`, and the written offset); a record is a positional array; maps go out one entry per key in
+bucket order (Rust reads them as maps). -/
 
 def atJson (t : Replay.At) : JVal := .arr [.num t.1.sec, .num t.1.ns, .bool t.2.west, .num t.2.sec]
 
@@ -2949,50 +2941,69 @@ def segKindJson : Replay.SegKind → List JVal
   | .routine item inst => [.str "routine".toList, .str item, .str inst]
   | .idle attributed => [.str "idle".toList, .str attributed]
 
-def dayBlockJson (a : Replay.DayAcc) : JVal :=
-  .obj [("firstStart".toList, optJson atJson a.firstStart),
-        ("starts".toList, .arr (a.starts.map (fun r =>
-          .arr [atJson r.t, .str r.id, .num r.pred.val, optJson (fun x => .num x.val) r.rep]))),
-        ("blockMin".toList, .num a.blockMin), ("blocksDone".toList, .num a.blocksDone),
-        ("loadFifths".toList, .num a.loadFifths), ("byCi".toList, .arr (a.byCi.toList.map JVal.num)),
-        ("ciUnknown".toList, .arr (a.ciUnknown.map (fun p => .arr [.str p.1, .num p.2]))),
-        ("done".toList, strsJson a.done), ("lostMin".toList, .num a.lostMin),
-        ("dropped".toList, strsJson a.dropped),
-        ("segments".toList, .arr (a.segments.map (fun g => .arr ([atJson g.start, atJson g.stop] ++ segKindJson g.kind))))]
+/-- **A day's record** (fork `DayReplay`), positional: `[firstStart, starts, blockMin, blocksDone, loadFifths, byCi,
+ciUnknown, done, lostMin, dropped, segments, wake, sleptMin, onsetMin, arrival, loc, window, budget, locChanges,
+leakMin, longestLeak, idle, breaks, routineMin, plans, replansToday, driftMin, lastPlanHash]`.  A start is
+`[stamp, id, pred, rep]`, a segment `[start, stop, kind, arguments…]`, a location change `[stamp, loc]`, an idle
+record `[stamp, day, attributed, min]` and a break `[stamp, day, plannedMin, actualMin, where]`. -/
+def dayRecordJson (a : Replay.DayAcc) : JVal :=
+  .arr [optJson atJson a.firstStart,
+        .arr (a.starts.map (fun r => .arr [atJson r.t, .str r.id, .num r.pred.val, optJson (fun x => .num x.val) r.rep])),
+        .num a.blockMin, .num a.blocksDone, .num a.loadFifths, .arr (a.byCi.toList.map JVal.num),
+        .arr (a.ciUnknown.map (fun p => .arr [.str p.1, .num p.2])), strsJson a.done, .num a.lostMin, strsJson a.dropped,
+        .arr (a.segments.map (fun g => .arr ([atJson g.start, atJson g.stop] ++ segKindJson g.kind))),
+        optJson atJson a.wake, optJson JVal.num a.sleptMin, optJson JVal.num a.onsetMin, optJson atJson a.arrival,
+        optJson JVal.str a.loc, optJson (fun w => .arr [.str w.1, .str w.2]) a.window, optJson JVal.num a.budget,
+        .arr (a.locChanges.map (fun p => .arr [atJson p.1, .str p.2])), .num a.leakMin, .num a.longestLeak,
+        .arr (a.idle.map (fun r => .arr [atJson r.t, .num r.day, .str r.attributed, .num r.min])),
+        .arr (a.breaks.map (fun r =>
+          .arr [atJson r.t, .num r.day, .num r.plannedMin, optJson JVal.num r.actualMin, optJson JVal.str r.where_])),
+        .num a.routineMin, .num a.plans, .num a.replansToday, .num a.driftMin, optJson JVal.str a.lastPlanHash]
 
-def itemBlockJson (a : Replay.ItemAcc) : JVal :=
-  .obj [("minutes".toList, .num a.minutes), ("blocks".toList, .num a.blocks),
-        ("doneAt".toList, .arr (a.doneAt.map atJson)), ("partialDoneAt".toList, .arr (a.partialDoneAt.map atJson)),
-        ("stops".toList, .num a.stops), ("extendedMin".toList, .num a.extendedMin)]
+/-- An idle mark: `["pause", stamp]` (and `interrupt`, `unpause`, `resume`), or `["break", stamp, actualMin]`. -/
+def idleMarkJson : Replay.IdleMark → JVal
+  | .pause t => .arr [.str "pause".toList, atJson t]
+  | .interrupt t => .arr [.str "interrupt".toList, atJson t]
+  | .unpause t => .arr [.str "unpause".toList, atJson t]
+  | .resume t => .arr [.str "resume".toList, atJson t]
+  | .brk t am => .arr [.str "break".toList, atJson t, optJson JVal.num am]
 
+/-- **A day's seam** (fork `DaySeam`): `[sinceBreak, idleMarks, lastT]`. -/
+def seamJson (a : Replay.SeamAcc) : JVal :=
+  .arr [optJson atJson a.sinceBreak, .arr (a.idleMarks.map idleMarkJson), optJson atJson a.lastT]
+
+/-- `EnergyObs`: `[line, stamp, day, pred, rep, hsw, loc, sleptMin, went, id, fromStart]`. -/
+def energyJson (o : Replay.EnergyObs) : JVal :=
+  .arr [.num o.line, atJson o.t, .num o.day, .num o.pred.val, .num o.rep.val, hswJson o.hsw, .str o.loc,
+        optJson JVal.num o.sleptMin, optJson (fun w => .num w.val) o.went, optJson JVal.str o.id, .bool o.fromStart]
+
+/-- `DurationObs`: `[line, stamp, day, id, ci, tags, estMin, actualMin, went, partial]`. -/
+def durationJson (o : Replay.DurationObs) : JVal :=
+  .arr [.num o.line, atJson o.t, .num o.day, .str o.id, .num o.ci.val, strsJson o.tags, .num o.estMin,
+        .num o.actualMin, optJson (fun w => .num w.val) o.went, .bool o.isPartial]
+
+/-- `Interruption`: `[line, start, stop, day, id, lostMin, dropped]`. -/
 def interruptionJson (r : Replay.Interruption) : JVal :=
-  .arr [optJson atJson r.start, optJson atJson r.stop, .num r.day, optJson JVal.str r.id, .num r.lostMin,
+  .arr [.num r.line, optJson atJson r.start, optJson atJson r.stop, .num r.day, optJson JVal.str r.id, .num r.lostMin,
         strsJson r.dropped]
 
-/-- **The block family's facts** (C3): per day, per item and per item-day, the observations, the
-interruptions, the open block and interruption, and the last survivor's stamp. -/
-def blockJson (f : Replay.Facts) : JVal :=
-  .obj [("days".toList, .arr (f.days.pairs.map (fun p => .arr [.num p.1, dayBlockJson p.2]))),
-        ("items".toList, .arr (f.items.pairs.map (fun p => .arr [.str p.1, itemBlockJson p.2]))),
-        ("itemDays".toList, .arr (f.itemDays.pairs.map (fun p => .arr [.str p.1.2, .num p.1.1, .num p.2]))),
-        ("energy".toList, .arr (f.energy.map (fun o =>
-          .arr [.num o.line, atJson o.t, .num o.day, .num o.pred.val, .num o.rep.val, hswJson o.hsw, .str o.loc,
-                optJson JVal.num o.sleptMin, optJson (fun w => .num w.val) o.went, optJson JVal.str o.id,
-                .bool o.fromStart]))),
-        ("durations".toList, .arr (f.durations.map (fun o =>
-          .arr [.num o.line, atJson o.t, .num o.day, .str o.id, .num o.ci.val, strsJson o.tags, .num o.estMin,
-                .num o.actualMin, optJson (fun w => .num w.val) o.went, .bool o.isPartial]))),
-        ("interrupts".toList, .arr (f.interrupts.map interruptionJson)),
-        ("openBlock".toList, optJson (fun b =>
-          .arr [.str b.id, atJson b.started, .num b.workedMin, optJson atJson b.since, .bool b.paused]) f.openBlock),
-        ("openInterrupt".toList, optJson interruptionJson f.openInterrupt),
-        ("lastEffective".toList, optJson atJson f.lastEffective)]
+/-- `Demotion`: `[line, stamp, id, from, to, estMin, stamp_from_key]` (the stamp `W37`, `D07` or `null`). -/
+def demotionJson (r : Replay.Demotion) : JVal :=
+  .arr [.num r.line, atJson r.t, .str r.id, .str r.from_, .str r.to, .num r.estMin, stampJson r.stamp]
 
-/-! ### Stage 5 D9 C4: the completion family's facts on the wire
+/-- `CloseRecord`: `[line, stamp, period, key]`. -/
+def closeJson (r : Replay.CloseRec) : JVal := .arr [.num r.line, atJson r.t, .str r.period, .str r.key]
 
-APPENDED 2026-09-15 (stage 5, D9 track, step C4; design §8.2–§8.4, §14.4 row C4).  `facts.completion` is
-`Replay.replay`'s completion family and `facts.replayWarnings` its replay warnings, for T5 to compare with
-the fork's `Replay` field by field.  C6's view replaces both. -/
+/-- A header inside its day: `[line, tag, id, cancelled, display]` (the display `YYYY-MM-DD HH:MM` in the written
+offset, `LogStamp.displayStamp`, fork `ViewRow::display`). -/
+def dayHeaderJson (h : Replay.HeaderRec) : JVal :=
+  .arr [.num h.line, .str h.tag, optJson JVal.str h.id, .bool h.cancelled, .str (LogStamp.displayStamp h.t h.off)]
+
+/-- **One day** (§8.4's O): `[day, record, seam, energy, durations, interrupts, demotions, closes, headers]`. -/
+def dayOutJson (p : Nat × Replay.DayOut) : JVal :=
+  .arr [.num p.1, optJson dayRecordJson p.2.record, optJson seamJson p.2.seam, .arr (p.2.energy.map energyJson),
+        .arr (p.2.durations.map durationJson), .arr (p.2.interrupts.map interruptionJson),
+        .arr (p.2.demotions.map demotionJson), .arr (p.2.closes.map closeJson), .arr (p.2.headers.map dayHeaderJson)]
 
 /-- A routine instance's status, as `parse_instance_status` names it. -/
 def instStatusJson : Log.InstanceStatus → JVal
@@ -3002,83 +3013,85 @@ def instStatusJson : Log.InstanceStatus → JVal
   | .expired => .str "expired".toList
   | .skipped => .str "skipped".toList
 
+/-- An instance record: `[item, inst, stamp, status, raw, actualMin]` (the last record in file order). -/
+def instJson (item inst : List Char) (r : Replay.InstRec) : JVal :=
+  .arr [.str item, .str inst, atJson r.t, instStatusJson r.status, .str r.raw, optJson JVal.num r.actualMin]
+
+/-- **One date's window** (§8.4's W): `[date, itemMin, done, inst]`, `itemMin` as `[id, min]`. -/
+def winOutJson (p : Nat × Replay.WinOut) : JVal :=
+  .arr [.num p.1, .arr (p.2.itemMin.map (fun q => .arr [.str q.1, .num q.2])), strsJson p.2.done,
+        .arr (p.2.inst.map (fun q => instJson q.1 q.2.1 q.2.2))]
+
+/-- An item's record (fork `ItemReplay` less `minutes_by_day`, which is the window's):
+`[minutes, blocks, doneAt, partialDoneAt, stops, extendedMin]`. -/
+def itemAccJson (a : Replay.ItemAcc) : JVal :=
+  .arr [.num a.minutes, .num a.blocks, .arr (a.doneAt.map atJson), .arr (a.partialDoneAt.map atJson), .num a.stops,
+        .num a.extendedMin]
+
+/-- **One item** (§8.4's A): `[id, record, lastDone, dropped, doneFirst, doneCount]`. -/
+def itemOutJson (p : Log.Id × Replay.ItemOut) : JVal :=
+  .arr [.str p.1, optJson itemAccJson p.2.acc, optJson atJson p.2.lastDone, .bool p.2.dropped,
+        optJson JVal.num p.2.doneFirst, .num p.2.doneCount]
+
 /-- A replay warning as design §10.2 spells it: `{"line": n, "w": "unknownInstanceStatus", "raw": s}`. -/
 def rwarnJson : Replay.RWarn → JVal
   | .unknownInstanceStatus line raw =>
     .obj [("line".toList, .num line), ("w".toList, .str "unknownInstanceStatus".toList), ("raw".toList, .str raw)]
 
-/-- **The completion family's facts** (C4): `lastDone` (fork `last_done`, whose ids are `done_items`) as
-`[id, stamp]`; `doneDates` as `[id, day]`; `instances` as `[item, inst, stamp, status, raw, actualMin]`
-(the last record in file order); and `named`, fork `LatestNamed` per `(name, id?)`, as
-`[name, id, latestLine, latestStamp, datedLine, datedStamp]`. -/
-def completionJson (f : Replay.Facts) : JVal :=
-  .obj [("lastDone".toList, .arr (f.lastDoneMap.pairs.map (fun p => .arr [.str p.1, atJson p.2]))),
-        ("doneDates".toList, .arr (f.doneDates.pairs.map (fun p => .arr [.str p.1.2, .num p.1.1]))),
-        ("instances".toList, .arr (f.instances.pairs.map (fun p =>
-          .arr [.str p.1.1, .str p.1.2, atJson p.2.t, instStatusJson p.2.status, .str p.2.raw,
-                optJson JVal.num p.2.actualMin]))),
+/-- The most line warnings the facts carry (§8.4: the first 256 and an overflow count). -/
+def maxFactWarnings : Nat := 256
+
+/-- **The facts** (design §10.2, §8.4's view of `Replay.replayDoc`): `days` (every day's record, seam, observations,
+interruptions, demotions, closes and headers), `window` (every date's item minutes, done ids and date-keyed
+instances), `items` (every item's record, `last_done`, drop bit, first done date and count), `instOther` (instances
+whose `inst` names no date), `named` (fork `LatestNamed` per `(name, id?)`: `[name, id, latestLine, latestStamp,
+datedLine, datedStamp]`), `open` (the open block and interruption), `lastDay`, `lastEffective`, `entryCount`,
+`unknown`, `longestLeak` (`[stamp, day, min]`), `replayWarnings`, and `warnings`, the tail's line warnings (the
+first 256 and the overflow count). -/
+def factsJson (doc : Replay.Doc) (ws : List JVal) : JVal :=
+  let f := doc.facts
+  .obj [("days".toList, .arr ((Replay.dayOuts doc).pairs.map dayOutJson)),
+        ("window".toList, .arr ((Replay.winOuts f doc.entryCount).pairs.map winOutJson)),
+        ("items".toList, .arr ((Replay.itemOuts f doc.entryCount).pairs.map itemOutJson)),
+        ("instOther".toList, .arr ((Replay.instOthers f).map (fun p => instJson p.1.1 p.1.2 p.2))),
         ("named".toList, .arr (f.named.pairs.map (fun p =>
           .arr [.str p.1.1, optJson JVal.str p.1.2, .num p.2.latest.1, atJson p.2.latest.2,
-                .num p.2.dated.2.1, atJson p.2.dated.2.2])))]
-
-/-! ### Stage 5 D9 C5: the day header and records family's facts on the wire
-
-APPENDED 2026-09-15 (stage 5, D9 track, step C5; design §8.2–§8.4, §14.4 row C5).  `facts.day` is
-`Replay.replay`'s day header and records per day, and the records outside a day, for T5 to compare with the
-fork's `Replay` field by field.  A day's record is a positional array (a line-bound log of wakes creates as
-many days, and key names would triple the answer).  C6's view replaces it. -/
-
-/-- **One day's header and records** (fork `DayReplay`'s fields beyond the block family's), in this order:
-`[wake, sleptMin, onsetMin, arrival, loc, window, budget, locChanges, leakMin, longestLeak, idle, breaks,
-routineMin, plans, replansToday, driftMin, lastPlanHash]`.  A location change is `[stamp, loc]`, an idle record
-`[stamp, day, attributed, min]` and a break `[stamp, day, plannedMin, actualMin, where]`. -/
-def dayRecJson (a : Replay.DayAcc) : JVal :=
-  .arr [optJson atJson a.wake, optJson JVal.num a.sleptMin, optJson JVal.num a.onsetMin, optJson atJson a.arrival,
-        optJson JVal.str a.loc, optJson (fun w => .arr [.str w.1, .str w.2]) a.window, optJson JVal.num a.budget,
-        .arr (a.locChanges.map (fun p => .arr [atJson p.1, .str p.2])), .num a.leakMin, .num a.longestLeak,
-        .arr (a.idle.map (fun r => .arr [atJson r.t, .num r.day, .str r.attributed, .num r.min])),
-        .arr (a.breaks.map (fun r =>
-          .arr [atJson r.t, .num r.day, .num r.plannedMin, optJson JVal.num r.actualMin, optJson JVal.str r.where_])),
-        .num a.routineMin, .num a.plans, .num a.replansToday, .num a.driftMin, optJson JVal.str a.lastPlanHash]
-
-/-- **The day family's facts** (C5): per day its header and records (`dayRecJson`); `demotions` as `[day, stamp,
-id, from, to, estMin, stamp_from_key]` (the stamp `W37`, `D07` or `null`, as `demoted:` writes it); `closes` as
-`[day, stamp, period, key]`; `dropped` (fork `dropped_items`); `longestLeak` as `[stamp, day, min]`; and
-`unknown`, the count. -/
-def dayJson (f : Replay.Facts) : JVal :=
-  .obj [("days".toList, .arr (f.days.pairs.map (fun p => .arr [.num p.1, dayRecJson p.2]))),
-        ("demotions".toList, .arr (f.demotions.map (fun p =>
-          .arr [.num p.1, atJson p.2.t, .str p.2.id, .str p.2.from_, .str p.2.to, .num p.2.estMin, stampJson p.2.stamp]))),
-        ("closes".toList, .arr (f.closes.map (fun p => .arr [.num p.1, atJson p.2.t, .str p.2.period, .str p.2.key]))),
-        ("dropped".toList, .arr (f.dropped.pairs.map (fun p => .str p.1))),
+                .num p.2.dated.2.1, atJson p.2.dated.2.2]))),
+        ("open".toList, .obj [("block".toList, optJson (fun b =>
+            .arr [.str b.id, atJson b.started, .num b.workedMin, optJson atJson b.since, .bool b.paused]) f.openBlock),
+          ("interrupt".toList, optJson interruptionJson f.openInterrupt)]),
+        ("lastDay".toList, optJson JVal.num (Replay.maxDay? (f.days.pairs.map Prod.fst))),
+        ("lastEffective".toList, optJson atJson f.lastEffective),
+        ("entryCount".toList, .num doc.entryCount),
+        ("unknown".toList, .num f.unknown),
         ("longestLeak".toList, optJson (fun r => .arr [atJson r.t, .num r.day, .num r.min]) f.longestLeak),
-        ("unknown".toList, .num f.unknown)]
+        ("replayWarnings".toList, .arr (f.warnings.map rwarnJson)),
+        ("warnings".toList, .obj [("first".toList, .arr (ws.take maxFactWarnings)),
+          ("overflow".toList, .num (ws.length - maxFactWarnings))])]
 
-/-- **The tail's facts** (design §10.2's `facts`, stage 5 D9 C1): at C1 the cancelled line set, the
-lines of the entries the undo mask cancels (`Replay.cancelledLines`, compiled as its fast twin), in
-file order.  **C2 adds `days`**: `[line, day]` for every entry in file order, cancelled ones included,
-its wake-attributed day in the request's zone (`Replay.entryDays`, compiled as its bisection twin),
-a day being days since 0001-01-01.  **C3 adds `block`**: the block family of `Replay.replay`
-(`blockJson`).  **C4 adds `completion` and `replayWarnings`** (`completionJson`, `rwarnJson`), from the same
-replay.  **C5 adds `day`** (`dayJson`).  C6 replaces this with the whole view. -/
-def factsJson (z : Cal.Tz) (es : List Log.Entry) : JVal :=
-  let f := Replay.replay z es
-  .obj [("cancelled".toList, .arr ((Replay.cancelledLines es).map JVal.num)),
-        ("days".toList, .arr ((Replay.entryDays z es).map (fun p => .arr [.num p.1, .num p.2]))),
-        ("block".toList, blockJson f), ("completion".toList, completionJson f),
-        ("replayWarnings".toList, .arr (f.warnings.map rwarnJson)), ("day".toList, dayJson f)]
+/-- **A header** (§10.2, §11.4): `[line, tag, id, day, cancelled, display]` (fork `ViewRow`'s line, `Event::name`,
+`Event::primary_id`, day and mask bit, and `ViewRow::display`). -/
+def headerJson (p : Nat × Replay.HeaderRec) : JVal :=
+  .arr [.num p.2.line, .str p.2.tag, optJson JVal.str p.2.id, .num p.1, .bool p.2.cancelled,
+        .str (LogStamp.displayStamp p.2.t p.2.off)]
 
-/-- **The `log` answer**: `lines` (the last physical line seen), `warnings`, `headers`, `render`,
-keys in build order.  `render` looks its lines up in an array. -/
+/-- The headers of the entries at or after `hf`. -/
+def tailHeaders (z : Cal.Tz) (es : List Log.Entry) (hf : Nat) : List JVal :=
+  ((Replay.entryHeaders z es).filter (fun p => decide (hf ≤ p.2.line))).map headerJson
+
+/-- **The `log` answer**: `lines` (the last physical line seen), `warnings`, `facts` (§8.4's view, when asked),
+`headers` (every entry at or after `want.headersFrom`, with its day, mask bit and display), `render`, keys in build
+order.  `render` looks its lines up in an array. -/
 def logAnswer (r : VLogReq) : JVal :=
   let vs := logVerdicts r.val
   let arr := vs.toArray
   .obj [("lines".toList, .num (r.val.from_ + r.val.lines.length - 1)),
         ("warnings".toList, .arr (vs.filterMap warningOf)),
-        ("facts".toList, if r.val.facts then factsJson r.val.tz (vs.filterMap entryOf) else .null),
+        ("facts".toList, if r.val.facts then
+          factsJson (Replay.replayDoc r.val.tz (vs.filterMap entryOf)) (vs.filterMap warningOf) else .null),
         ("headers".toList, .arr (match r.val.headersFrom with
           | none => []
-          | some hf => vs.filterMap (headerOf hf))),
+          | some hf => tailHeaders r.val.tz (vs.filterMap entryOf) hf)),
         ("render".toList, .arr (r.val.render.map (fun n => renderJson n arr[n - r.val.from_]?)))]
 
 /-- **The two sections of a request.**  Not an object: nothing (`run` refuses it as before).
@@ -4593,7 +4606,7 @@ theorem the_response_shapes_emit_in_build_order :
     -- (`withLog_jone`), the answer's value with its keys in order, and the warning's bytes.
     jemit (withLog .null (jone "ok" (.obj [("docs".toList, .arr []), ("report".toList, reportJson Report.empty)])))
       = "{\"ok\":{\"docs\":[],\"report\":{\"closes\":[]},\"log\":null}}".toList ∧
-    logAnswer ⟨⟨17, [none], true, some 17, [17], false, Replay.utcZone⟩, by decide⟩
+    logAnswer ⟨⟨17, [none], true, none, [17], false, Replay.utcZone⟩, by decide⟩
       = .obj [("lines".toList, .num 17), ("warnings".toList, .arr [lwarnJson 17 .invalidUtf8]),
           ("facts".toList, .null), ("headers".toList, .arr []), ("render".toList, .arr [.arr [.num 17, .null, .null]])] ∧
     jemit (lwarnJson 17 .invalidUtf8) = "{\"line\":17,\"w\":\"invalidUtf8\"}".toList ∧
@@ -8398,26 +8411,29 @@ def logWitnessLine : List Char :=
 
 def logWitnessRequest : JVal :=
   .obj [("docs".toList, .arr []), ("tz".toList, utcTzJson),
-    ("log".toList, .obj [("ckpt".toList, .null), ("from".toList, .num 7),
+    ("log".toList, .obj [("ckpt".toList, .null), ("from".toList, .num 1),
       ("lines".toList, .arr [.str logWitnessLine, .str [], .null, .str ['{', '"', 'e', 'v', '"', ':', '7', '}']]),
       ("terminated".toList, .bool true),
-      ("want".toList, .obj [("headersFrom".toList, .num 7), ("render".toList, .arr [.num 7, .num 8])])])]
+      ("want".toList, .obj [("headersFrom".toList, .num 1), ("render".toList, .arr [.num 1, .num 2])])])]
 
 def logWitnessAnswer : JVal :=
-  .obj [("lines".toList, .num 10),
-    ("warnings".toList, .arr [.obj [("line".toList, .num 9), ("w".toList, .str "invalidUtf8".toList)],
-                              .obj [("line".toList, .num 10), ("w".toList, .str "noT".toList)]]),
+  .obj [("lines".toList, .num 4),
+    ("warnings".toList, .arr [.obj [("line".toList, .num 3), ("w".toList, .str "invalidUtf8".toList)],
+                              .obj [("line".toList, .num 4), ("w".toList, .str "noT".toList)]]),
     ("facts".toList, .null),
-    ("headers".toList, .arr [.arr [.num 7, .str "drop".toList, .str "a1".toList]]),
-    ("render".toList, .arr [.arr [.num 7, .str "{\"t\":\"2026-09-07T09:00:00+00:00\",\"ev\":\"drop\",\"id\":\"a1\"}".toList,
+    ("headers".toList, .arr [.arr [.num 1, .str "drop".toList, .str "a1".toList, .num 739865, .bool false,
+      .str "2026-09-07 09:00".toList]]),
+    ("render".toList, .arr [.arr [.num 1, .str "{\"t\":\"2026-09-07T09:00:00+00:00\",\"ev\":\"drop\",\"id\":\"a1\"}".toList,
                                   .str "2026-09-07 09:00".toList],
-                            .arr [.num 8, .null, .null]])]
+                            .arr [.num 2, .null, .null]])]
 
 set_option maxRecDepth 8000 in
-/-- **The op end to end, on a tail of four lines from line 7**: a `drop` (a header with its id, and
-a rendering in serde's bytes with `+00:00` for UTC and the `tm log` column), a blank line, a line
-that is not UTF-8, and `{"ev":7}` (no `t`).  The `ok` object is `run`'s, with `log` after
-`report`. -/
+/-- **The op end to end, on a log of four lines**: a `drop` (a header with its id and, since C6, its day 2026-09-07,
+its mask bit and its display; a rendering in serde's bytes with `+00:00` for UTC and the `tm log` column), a blank
+line, a line that is not UTF-8, and `{"ev":7}` (no `t`).  The `ok` object is `run`'s, with `log` after `report`.
+(B4 sent the four lines from line 7.  C6's headers carry the day and the mask bit, which only a log from line 1
+has before W3's checkpoint, so headers asked of any other tail are refused,
+`mkLogReq?_refuses_headers_of_a_tail_without_a_checkpoint`.) -/
 theorem the_log_op_reads_a_four_line_tail :
     answered (runWithLog logWitnessRequest)
       = .inr (jone "ok" (.obj [("docs".toList, .arr []), ("report".toList, reportJson Report.empty),
@@ -10503,6 +10519,12 @@ end CapWire
 
 /-! ## Stage 5 D9 C1: the `log` op's facts — the cancelled line set
 
+**C6 note (2026-09-15).**  C1–C5's interim `facts` objects below (`cancelled`, `days`, `block`, `completion`,
+`replayWarnings`, `day`) are replaced by §8.4's view (`factsJson`, defined before `logAnswer`), and the five end-to-end
+witnesses of this section and the next four were re-stated over it in place: same logs, same names, their answers the
+view's.  A header now carries its day, its mask bit and its display, and headers, like facts, are answered only for a
+log from line 1 (`mkLogReq?_refuses_headers_of_a_tail_without_a_checkpoint`, `logAnswer_headers`).
+
 APPENDED 2026-09-14 (stage 5, D9 track, step C1; design §7.1, §10.2, §14.4 row C1).  `want.facts: true`
 is accepted since C1 and answers `facts: {"cancelled": [line, …]}`, the lines of the tail's entries
 that the undo mask cancels (`Replay.cancelledLines`, compiled as `Replay.cancelledLinesFast`); `facts`
@@ -10576,22 +10598,24 @@ theorem the_tail_entries_have_increasing_lines (r : LogReq) :
   rw [logVerdicts_eq]
   exact linesIncreasing_of_pairwise _ (filterMap_entryOf_pairwise _ _)
 
-/-- **The `facts` key**: `null` unless asked; asked, the cancelled lines of the tail's entries, (C2)
-every entry's day in the request's zone, (C3) the block family of their replay, (C4) its completion
-family and replay warnings, and (C5) its day family. -/
+/-- **The `facts` key**: `null` unless asked; asked, §8.4's view of the tail's entries (C6), with the tail's line
+warnings. -/
 theorem logAnswer_facts (r : VLogReq) :
     ∃ a b c d, logAnswer r = .obj [a, b, ("facts".toList,
-      if r.val.facts then .obj [("cancelled".toList,
-        .arr ((Replay.cancelledLines ((logVerdicts r.val).filterMap entryOf)).map JVal.num)),
-        ("days".toList, .arr ((Replay.entryDays r.val.tz ((logVerdicts r.val).filterMap entryOf)).map
-          (fun p => .arr [.num p.1, .num p.2]))),
-        ("block".toList, blockJson (Replay.replay r.val.tz ((logVerdicts r.val).filterMap entryOf))),
-        ("completion".toList, completionJson (Replay.replay r.val.tz ((logVerdicts r.val).filterMap entryOf))),
-        ("replayWarnings".toList,
-          .arr ((Replay.replay r.val.tz ((logVerdicts r.val).filterMap entryOf)).warnings.map rwarnJson)),
-        ("day".toList, dayJson (Replay.replay r.val.tz ((logVerdicts r.val).filterMap entryOf)))]
+      if r.val.facts then factsJson (Replay.replayDoc r.val.tz ((logVerdicts r.val).filterMap entryOf))
+        ((logVerdicts r.val).filterMap warningOf)
       else .null), c, d] :=
   ⟨_, _, _, _, rfl⟩
+
+/-- **The `headers` key** (C6): for `want.headersFrom = some hf`, the header of every entry of the tail at or after
+line `hf`, with its day on the tail's day index, its mask bit and its display. -/
+theorem logAnswer_headers (r : VLogReq) (hf : Nat) (h : r.val.headersFrom = some hf) :
+    ∃ a b c d, logAnswer r = .obj [a, b, c,
+      ("headers".toList, .arr (((Replay.entryHeaders r.val.tz ((logVerdicts r.val).filterMap entryOf)).filter
+        (fun p => decide (hf ≤ p.2.line))).map headerJson)), d] := by
+  unfold logAnswer
+  simp only [h]
+  exact ⟨_, _, _, _, rfl⟩
 
 /-- An accepted request asking for facts reads its tail from line 1. -/
 theorem LogReq.wf_facts_from_line_one (r : LogReq) (h : r.wf = true) (hf : r.facts = true) :
@@ -10629,6 +10653,37 @@ theorem mkLogReq?_refuses_facts_of_a_tail_without_a_checkpoint (r : LogReq) (h0 
   simp [LogReq.fault, Nat.pos_iff_ne_zero.mp h0, Nat.not_le.mpr h1, Nat.not_lt.mpr h2, h3',
     Nat.not_lt.mpr h4, h5', hf, hne]
 
+/-- An accepted request asking for headers reads its tail from line 1 (stage 5 D9 C6). -/
+theorem LogReq.wf_headers_from_line_one (r : LogReq) (h : r.wf = true) (hf : r.headersFrom.isSome = true) :
+    r.from_ = 1 := by
+  unfold LogReq.wf LogReq.fault at h
+  split at h; · simp at h
+  split at h; · simp at h
+  split at h; · simp at h
+  split at h; · simp at h
+  split at h; · simp at h
+  by_cases hne : r.from_ = 1
+  · exact hne
+  · cases hfa : r.facts <;> simp_all
+
+/-- **R10: headers of a tail without a checkpoint are refused by name** (stage 5 D9 C6) unless the tail starts at
+line 1: a header carries its day and its mask bit, which the lines before the tail decide.  Every earlier bound
+holds and no facts are asked, so the headers are the fault. -/
+theorem mkLogReq?_refuses_headers_of_a_tail_without_a_checkpoint (r : LogReq) (h0 : 0 < r.from_)
+    (h1 : r.from_ < logLineBound) (h2 : r.lines.length ≤ maxLogLines) (hf : Nat)
+    (h3 : r.headersFrom = some hf) (h3b : hf < logLineBound) (h4 : r.render.length ≤ maxRenderLines)
+    (h5 : ∀ n ∈ r.render, r.from_ ≤ n ∧ n < r.from_ + r.lines.length)
+    (hfa : r.facts = false) (hne : r.from_ ≠ 1) :
+    mkLogReq? r = .error (.badLogReq .headersFrom) := by
+  rw [mkLogReq?_error_is_the_fault]
+  have h5' : r.render.find? (fun n => n < r.from_ || r.from_ + r.lines.length ≤ n) = none := by
+    apply List.find?_eq_none.2
+    intro n hn
+    have := h5 n hn
+    simp; omega
+  simp [LogReq.fault, Nat.pos_iff_ne_zero.mp h0, Nat.not_le.mpr h1, Nat.not_lt.mpr h2, h3, Nat.not_le.mpr h3b,
+    Nat.not_lt.mpr h4, h5', hfa, hne]
+
 /-- A note and the undo that cancels it, from line 1: `{"t":…,"ev":"note","text":"a"}` and
 `{"t":…,"ev":"undo","of":"note"}`, 51 and 51 characters, spelled as characters (the parser reads them). -/
 def factsWitnessNote : List Char :=
@@ -10638,27 +10693,25 @@ def factsWitnessUndo : List Char :=
   ['{', '"', 't', '"', ':', '"', '2', '0', '2', '6', '-', '0', '9', '-', '0', '7', 'T', '0', '9', ':', '0', '1', ':', '0', '0', 'Z', '"', ',', '"', 'e', 'v', '"', ':', '"', 'u', 'n', 'd', 'o', '"', ',', '"', 'o', 'f', '"', ':', '"', 'n', 'o', 't', 'e', '"', '}']
 
 set_option maxRecDepth 8000 in
-/-- **The op answers the cancelled lines, end to end**: a note, the undo of it, a blank line and a
-note after it, from line 1, facts asked.  Lines 1 and 2 are cancelled; line 4 survives.  (C2: every
-entry, the cancelled two included, is on 2026-09-07, day 739865, in UTC; the blank line has no day.
-C3: a note has no block facts, and the last survivor is line 4's note at 09:00:00 UTC.) -/
+/-- **The op answers the cancelled lines, end to end**: a note, the undo of it, a blank line and a note after it, from
+line 1, facts asked.  (C6: §8.4's view.)  The one day, 2026-09-07 (739865 in UTC), has no record (a note creates no
+day) and a seam whose latest stamp is line 4's 09:00 note, the only survivor; its headers are the three entries in file
+order, lines 1 and 2 cancelled and line 4 not, each with its display.  The blank line has none.  Nothing else: the
+last survivor is line 4's note, and the log has three entries. -/
 theorem the_log_op_answers_the_cancelled_lines :
-    logAnswer ⟨⟨1, [some factsWitnessNote, some factsWitnessUndo, some [], some factsWitnessNote],
-        true, none, [], true, Replay.utcZone⟩, by decide⟩
-      = .obj [("lines".toList, .num 4), ("warnings".toList, .arr []),
-          ("facts".toList, .obj [("cancelled".toList, .arr [.num 1, .num 2]),
-            ("days".toList, .arr [.arr [.num 1, .num 739865], .arr [.num 2, .num 739865],
-              .arr [.num 4, .num 739865]]),
-            ("block".toList, .obj [("days".toList, .arr []), ("items".toList, .arr []),
-              ("itemDays".toList, .arr []), ("energy".toList, .arr []), ("durations".toList, .arr []),
-              ("interrupts".toList, .arr []), ("openBlock".toList, .null), ("openInterrupt".toList, .null),
-              ("lastEffective".toList, .arr [.num 63924368400, .num 0, .bool false, .num 0])]),
-            ("completion".toList, .obj [("lastDone".toList, .arr []), ("doneDates".toList, .arr []),
-              ("instances".toList, .arr []), ("named".toList, .arr [])]),
-            ("replayWarnings".toList, .arr []),
-            ("day".toList, .obj [("days".toList, .arr []), ("demotions".toList, .arr []), ("closes".toList, .arr []),
-              ("dropped".toList, .arr []), ("longestLeak".toList, .null), ("unknown".toList, .num 0)])]),
-          ("headers".toList, .arr []), ("render".toList, .arr [])] := by
+    logAnswer ⟨⟨1, [some factsWitnessNote, some factsWitnessUndo, some [], some factsWitnessNote], true, none, [], true, Replay.utcZone⟩, by decide⟩
+      = .obj [("lines".toList, .num 4), ("warnings".toList, .arr []), ("facts".toList, .obj [("days".toList,
+        .arr [.arr [.num 739865, .null, .arr [.null, .arr [], .arr [.num 63924368400, .num 0, .bool false,
+        .num 0]], .arr [], .arr [], .arr [], .arr [], .arr [], .arr [.arr [.num 1, .str "note".toList, .null,
+        .bool true, .str "2026-09-07 09:00".toList], .arr [.num 2, .str "undo".toList, .null, .bool true,
+        .str "2026-09-07 09:01".toList], .arr [.num 4, .str "note".toList, .null, .bool false,
+        .str "2026-09-07 09:00".toList]]]]), ("window".toList, .arr []), ("items".toList, .arr []),
+        ("instOther".toList, .arr []), ("named".toList, .arr []), ("open".toList, .obj [("block".toList,
+        .null), ("interrupt".toList, .null)]), ("lastDay".toList, .null), ("lastEffective".toList,
+        .arr [.num 63924368400, .num 0, .bool false, .num 0]), ("entryCount".toList, .num 3),
+        ("unknown".toList, .num 0), ("longestLeak".toList, .null), ("replayWarnings".toList, .arr []),
+        ("warnings".toList, .obj [("first".toList, .arr []), ("overflow".toList, .num 0)])]),
+        ("headers".toList, .arr []), ("render".toList, .arr [])] := by
   decide
 
 end C1
@@ -10708,31 +10761,31 @@ def daysWitnessNoteB : List Char :=
   ['{', '"', 't', '"', ':', '"', '2', '0', '2', '6', '-', '0', '9', '-', '0', '8', 'T', '1', '2', ':', '0', '0', ':', '0', '0', 'Z', '"', ',', '"', 'e', 'v', '"', ':', '"', 'n', 'o', 't', 'e', '"', ',', '"', 't', 'e', 'x', 't', '"', ':', '"', 'b', '"', '}']
 
 set_option maxRecDepth 8000 in
-/-- **The op answers every entry's day, end to end**: in UTC, the wake is on 2026-09-07 (day 739865),
-the note 18 hours after it on the 8th belongs to the wake's day, and the note 25 hours after it is on
-its own date, the 8th (day 739866).  Nothing is cancelled.  (C3: no block facts; the last survivor
-in file order is the 12:00 note on the 8th.  C5: the wake creates its day, whose block fields are
-`DayReplay::new`'s and whose wake and sleep are the wake's; notes create no day.) -/
+/-- **The op answers every entry's day, end to end**: in UTC, the wake is on 2026-09-07 (day 739865), the note 18
+hours after it on the 8th belongs to the wake's day, and the note 25 hours after it is on its own date, the 8th (day
+739866).  (C6: §8.4's view.)  Day 739865 holds the wake's record (`DayReplay::new`'s block fields, the wake and its
+sleep), a seam whose latest stamp is the 05:00 note, and the headers of lines 1 and 2; day 739866 has no record, a
+seam of the 12:00 note, and line 3's header.  The last day is 739865; the last survivor in file order is the 12:00
+note. -/
 theorem the_log_op_answers_every_entrys_day :
-    logAnswer ⟨⟨1, [some daysWitnessWake, some daysWitnessNoteA, some daysWitnessNoteB],
-        true, none, [], true, Replay.utcZone⟩, by decide⟩
-      = .obj [("lines".toList, .num 3), ("warnings".toList, .arr []),
-          ("facts".toList, .obj [("cancelled".toList, .arr []),
-            ("days".toList, .arr [.arr [.num 1, .num 739865], .arr [.num 2, .num 739865],
-              .arr [.num 3, .num 739866]]),
-            ("block".toList, .obj [("days".toList, .arr [.arr [.num 739865, dayBlockJson Replay.DayAcc.empty]]),
-              ("items".toList, .arr []),
-              ("itemDays".toList, .arr []), ("energy".toList, .arr []), ("durations".toList, .arr []),
-              ("interrupts".toList, .arr []), ("openBlock".toList, .null), ("openInterrupt".toList, .null),
-              ("lastEffective".toList, .arr [.num 63924465600, .num 0, .bool false, .num 0])]),
-            ("completion".toList, .obj [("lastDone".toList, .arr []), ("doneDates".toList, .arr []),
-              ("instances".toList, .arr []), ("named".toList, .arr [])]),
-            ("replayWarnings".toList, .arr []),
-            ("day".toList, .obj [("days".toList, .arr [.arr [.num 739865, dayRecJson
-                { Replay.DayAcc.empty with wake := some (⟨63924375600, 0⟩, ⟨false, 0⟩), sleptMin := some 420 }]]),
-              ("demotions".toList, .arr []), ("closes".toList, .arr []), ("dropped".toList, .arr []),
-              ("longestLeak".toList, .null), ("unknown".toList, .num 0)])]),
-          ("headers".toList, .arr []), ("render".toList, .arr [])] := by
+    logAnswer ⟨⟨1, [some daysWitnessWake, some daysWitnessNoteA, some daysWitnessNoteB], true, none, [], true, Replay.utcZone⟩, by decide⟩
+      = .obj [("lines".toList, .num 3), ("warnings".toList, .arr []), ("facts".toList, .obj [("days".toList,
+        .arr [.arr [.num 739866, .null, .arr [.null, .arr [], .arr [.num 63924465600, .num 0, .bool false,
+        .num 0]], .arr [], .arr [], .arr [], .arr [], .arr [], .arr [.arr [.num 3, .str "note".toList, .null,
+        .bool false, .str "2026-09-08 12:00".toList]]], .arr [.num 739865, .arr [.null, .arr [], .num 0,
+        .num 0, .num 0, .arr [.num 0, .num 0, .num 0, .num 0, .num 0, .num 0], .arr [], .arr [], .num 0,
+        .arr [], .arr [], .arr [.num 63924375600, .num 0, .bool false, .num 0], .num 420, .null, .null,
+        .null, .null, .null, .arr [], .num 0, .num 0, .arr [], .arr [], .num 0, .num 0, .num 0, .num 0,
+        .null], .arr [.null, .arr [], .arr [.num 63924440400, .num 0, .bool false, .num 0]], .arr [],
+        .arr [], .arr [], .arr [], .arr [], .arr [.arr [.num 1, .str "wake".toList, .null, .bool false,
+        .str "2026-09-07 11:00".toList], .arr [.num 2, .str "note".toList, .null, .bool false,
+        .str "2026-09-08 05:00".toList]]]]), ("window".toList, .arr []), ("items".toList, .arr []),
+        ("instOther".toList, .arr []), ("named".toList, .arr []), ("open".toList, .obj [("block".toList,
+        .null), ("interrupt".toList, .null)]), ("lastDay".toList, .num 739865), ("lastEffective".toList,
+        .arr [.num 63924465600, .num 0, .bool false, .num 0]), ("entryCount".toList, .num 3),
+        ("unknown".toList, .num 0), ("longestLeak".toList, .null), ("replayWarnings".toList, .arr []),
+        ("warnings".toList, .obj [("first".toList, .arr []), ("overflow".toList, .num 0)])]),
+        ("headers".toList, .arr []), ("render".toList, .arr [])] := by
   decide
 
 end C2
@@ -10754,48 +10807,40 @@ def blockWitnessDone : List Char :=
   ['{', '"', 't', '"', ':', '"', '2', '0', '2', '6', '-', '0', '9', '-', '0', '7', 'T', '0', '9', ':', '3', '0', ':', '0', '0', 'Z', '"', ',', '"', 'e', 'v', '"', ':', '"', 'd', 'o', 'n', 'e', '"', ',', '"', 'i', 'd', '"', ':', '"', 'a', '"', ',', '"', 'e', 's', 't', '_', 'm', 'i', 'n', '"', ':', '5', ',', '"', 'a', 'c', 't', 'u', 'a', 'l', '_', 'm', 'i', 'n', '"', ':', '3', '0', ',', '"', 'c', 'i', '"', ':', '3', '}']
 
 set_option maxRecDepth 8000 in
-/-- **The op answers the block family, end to end**: a `start` and its `done`, from line 1, facts asked.
-The day holds the start, 30 block minutes at ci 3 (90 fifths), one block done and the 09:00–09:30
-segment; the item holds 30 minutes, one block and its completion; the start's observation carries line
-1, `hsw` 0.0 and `slept_min` 0 (their defaults); the `done`'s `DurationObs` carries line 2.  Nothing is
-open, and the last survivor is the `done`. -/
+/-- **The op answers the block family, end to end**: a `start` and its `done`, from line 1, facts asked.  (C6: §8.4's
+view.)  The day's record holds the start, 30 block minutes at ci 3 (90 fifths), one block done and the 09:00–09:30
+segment; its seam's anchor is the start and its latest stamp the `done`; the start's observation carries line 1,
+`hsw` 0.0 and `slept_min` 0 (their defaults); the `done`'s `DurationObs` carries line 2.  The window of the 7th holds
+`a`'s 30 minutes and its done date; the item holds 30 minutes, one block, its completion, `last_done`, and its first
+and only done date.  Nothing is open, and the last survivor is the `done`. -/
 theorem the_log_op_answers_the_block_facts :
     logAnswer ⟨⟨1, [some blockWitnessStart, some blockWitnessDone], true, none, [], true, Replay.utcZone⟩, by decide⟩
-      = .obj [("lines".toList, .num 2), ("warnings".toList, .arr []),
-          ("facts".toList, .obj [("cancelled".toList, .arr []),
-            ("days".toList, .arr [.arr [.num 1, .num 739865], .arr [.num 2, .num 739865]]),
-            ("block".toList, .obj [
-              ("days".toList, .arr [.arr [.num 739865, .obj [
-                ("firstStart".toList, .arr [.num 63924368400, .num 0, .bool false, .num 0]),
-                ("starts".toList, .arr [.arr [.arr [.num 63924368400, .num 0, .bool false, .num 0],
-                  .str ['a'], .num 3, .num 3]]),
-                ("blockMin".toList, .num 30), ("blocksDone".toList, .num 1), ("loadFifths".toList, .num 90),
-                ("byCi".toList, .arr [.num 0, .num 0, .num 0, .num 30, .num 0, .num 0]),
-                ("ciUnknown".toList, .arr []), ("done".toList, .arr [.str ['a']]), ("lostMin".toList, .num 0),
-                ("dropped".toList, .arr []),
-                ("segments".toList, .arr [.arr [.arr [.num 63924368400, .num 0, .bool false, .num 0],
-                  .arr [.num 63924370200, .num 0, .bool false, .num 0], .str "block".toList, .str ['a']]])]]]),
-              ("items".toList, .arr [.arr [.str ['a'], .obj [("minutes".toList, .num 30),
-                ("blocks".toList, .num 1),
-                ("doneAt".toList, .arr [.arr [.num 63924370200, .num 0, .bool false, .num 0]]),
-                ("partialDoneAt".toList, .arr []), ("stops".toList, .num 0), ("extendedMin".toList, .num 0)]]]),
-              ("itemDays".toList, .arr [.arr [.str ['a'], .num 739865, .num 30]]),
-              ("energy".toList, .arr [.arr [.num 1, .arr [.num 63924368400, .num 0, .bool false, .num 0],
-                .num 739865, .num 3, .num 3, hswJson Log.Num.zero, .str ['h'], .num 0, .null, .str ['a'],
-                .bool true]]),
-              ("durations".toList, .arr [.arr [.num 2, .arr [.num 63924370200, .num 0, .bool false, .num 0],
-                .num 739865, .str ['a'], .num 3, .arr [], .num 5, .num 30, .null, .bool false]]),
-              ("interrupts".toList, .arr []), ("openBlock".toList, .null), ("openInterrupt".toList, .null),
-              ("lastEffective".toList, .arr [.num 63924370200, .num 0, .bool false, .num 0])]),
-            ("completion".toList, .obj [
-              ("lastDone".toList, .arr [.arr [.str ['a'], .arr [.num 63924370200, .num 0, .bool false, .num 0]]]),
-              ("doneDates".toList, .arr [.arr [.str ['a'], .num 739865]]),
-              ("instances".toList, .arr []), ("named".toList, .arr [])]),
-            ("replayWarnings".toList, .arr []),
-            ("day".toList, .obj [("days".toList, .arr [.arr [.num 739865, dayRecJson Replay.DayAcc.empty]]),
-              ("demotions".toList, .arr []), ("closes".toList, .arr []), ("dropped".toList, .arr []),
-              ("longestLeak".toList, .null), ("unknown".toList, .num 0)])]),
-          ("headers".toList, .arr []), ("render".toList, .arr [])] := by
+      = .obj [("lines".toList, .num 2), ("warnings".toList, .arr []), ("facts".toList, .obj [("days".toList,
+        .arr [.arr [.num 739865, .arr [.arr [.num 63924368400, .num 0, .bool false, .num 0],
+        .arr [.arr [.arr [.num 63924368400, .num 0, .bool false, .num 0], .str "a".toList, .num 3, .num 3]],
+        .num 30, .num 1, .num 90, .arr [.num 0, .num 0, .num 0, .num 30, .num 0, .num 0], .arr [],
+        .arr [.str "a".toList], .num 0, .arr [], .arr [.arr [.arr [.num 63924368400, .num 0, .bool false,
+        .num 0], .arr [.num 63924370200, .num 0, .bool false, .num 0], .str "block".toList,
+        .str "a".toList]], .null, .null, .null, .null, .null, .null, .null, .arr [], .num 0, .num 0, .arr [],
+        .arr [], .num 0, .num 0, .num 0, .num 0, .null], .arr [.arr [.num 63924368400, .num 0, .bool false,
+        .num 0], .arr [], .arr [.num 63924370200, .num 0, .bool false, .num 0]], .arr [.arr [.num 1,
+        .arr [.num 63924368400, .num 0, .bool false, .num 0], .num 739865, .num 3, .num 3,
+        hswJson Log.Num.zero, .str "h".toList, .num 0, .null, .str "a".toList, .bool true]],
+        .arr [.arr [.num 2, .arr [.num 63924370200, .num 0, .bool false, .num 0], .num 739865,
+        .str "a".toList, .num 3, .arr [], .num 5, .num 30, .null, .bool false]], .arr [], .arr [], .arr [],
+        .arr [.arr [.num 1, .str "start".toList, .str "a".toList, .bool false,
+        .str "2026-09-07 09:00".toList], .arr [.num 2, .str "done".toList, .str "a".toList, .bool false,
+        .str "2026-09-07 09:30".toList]]]]), ("window".toList, .arr [.arr [.num 739865,
+        .arr [.arr [.str "a".toList, .num 30]], .arr [.str "a".toList], .arr []]]), ("items".toList,
+        .arr [.arr [.str "a".toList, .arr [.num 30, .num 1, .arr [.arr [.num 63924370200, .num 0,
+        .bool false, .num 0]], .arr [], .num 0, .num 0], .arr [.num 63924370200, .num 0, .bool false,
+        .num 0], .bool false, .num 739865, .num 1]]), ("instOther".toList, .arr []), ("named".toList,
+        .arr []), ("open".toList, .obj [("block".toList, .null), ("interrupt".toList, .null)]),
+        ("lastDay".toList, .num 739865), ("lastEffective".toList, .arr [.num 63924370200, .num 0,
+        .bool false, .num 0]), ("entryCount".toList, .num 2), ("unknown".toList, .num 0),
+        ("longestLeak".toList, .null), ("replayWarnings".toList, .arr []), ("warnings".toList,
+        .obj [("first".toList, .arr []), ("overflow".toList, .num 0)])]), ("headers".toList, .arr []),
+        ("render".toList, .arr [])] := by
   decide
 
 end C3
@@ -10820,34 +10865,31 @@ def completionWitnessEvent : List Char :=
   ['{', '"', 't', '"', ':', '"', '2', '0', '2', '6', '-', '0', '9', '-', '0', '7', 'T', '0', '9', ':', '0', '2', ':', '0', '0', 'Z', '"', ',', '"', 'e', 'v', '"', ':', '"', 'e', 'v', 'e', 'n', 't', '"', ',', '"', 'n', 'a', 'm', 'e', '"', ':', '"', 'x', '"', '}']
 
 set_option maxRecDepth 8000 in
-/-- **The op answers the completion family, end to end**: `routine s #1 maybe` at 09:00, `skip s #1` at
-09:01 and `event x` at 09:02, from line 1, facts asked.  The unknown status is one replay warning naming
-line 1 and `maybe`; the instance is the last record in file order, the `skip` (`skipped`, logged
-`"skipped"`, no minutes); nothing is done; and `event x` addressed to nobody is its own latest occurrence
-by instant and by date, on line 3.  No block facts; the last survivor is the `event`. -/
+/-- **The op answers the completion family, end to end**: `routine s #1 maybe` at 09:00, `skip s #1` at 09:01 and
+`event x` at 09:02, from line 1, facts asked.  (C6: §8.4's view.)  The unknown status is one replay warning naming line
+1 and `maybe`; the instance is the last record in file order, the `skip` (`skipped`, logged `"skipped"`, no minutes),
+and `#1` names no date, so it is an all-time instance; nothing is done; `event x` addressed to nobody is its own latest
+occurrence by instant and by date, on line 3.  No day has a record; the day's seam and headers hold the three
+entries. -/
 theorem the_log_op_answers_the_completion_facts :
-    logAnswer ⟨⟨1, [some completionWitnessRoutine, some completionWitnessSkip, some completionWitnessEvent],
-        true, none, [], true, Replay.utcZone⟩, by decide⟩
-      = .obj [("lines".toList, .num 3), ("warnings".toList, .arr []),
-          ("facts".toList, .obj [("cancelled".toList, .arr []),
-            ("days".toList, .arr [.arr [.num 1, .num 739865], .arr [.num 2, .num 739865],
-              .arr [.num 3, .num 739865]]),
-            ("block".toList, .obj [("days".toList, .arr []), ("items".toList, .arr []),
-              ("itemDays".toList, .arr []), ("energy".toList, .arr []), ("durations".toList, .arr []),
-              ("interrupts".toList, .arr []), ("openBlock".toList, .null), ("openInterrupt".toList, .null),
-              ("lastEffective".toList, .arr [.num 63924368520, .num 0, .bool false, .num 0])]),
-            ("completion".toList, .obj [("lastDone".toList, .arr []), ("doneDates".toList, .arr []),
-              ("instances".toList, .arr [.arr [.str ['s'], .str ['#', '1'],
-                .arr [.num 63924368460, .num 0, .bool false, .num 0], .str "skipped".toList,
-                .str "skipped".toList, .null]]),
-              ("named".toList, .arr [.arr [.str ['x'], .null, .num 3,
-                .arr [.num 63924368520, .num 0, .bool false, .num 0], .num 3,
-                .arr [.num 63924368520, .num 0, .bool false, .num 0]]])]),
-            ("replayWarnings".toList, .arr [.obj [("line".toList, .num 1),
-              ("w".toList, .str "unknownInstanceStatus".toList), ("raw".toList, .str ['m', 'a', 'y', 'b', 'e'])]]),
-            ("day".toList, .obj [("days".toList, .arr []), ("demotions".toList, .arr []), ("closes".toList, .arr []),
-              ("dropped".toList, .arr []), ("longestLeak".toList, .null), ("unknown".toList, .num 0)])]),
-          ("headers".toList, .arr []), ("render".toList, .arr [])] := by
+    logAnswer ⟨⟨1, [some completionWitnessRoutine, some completionWitnessSkip, some completionWitnessEvent], true, none, [], true, Replay.utcZone⟩, by decide⟩
+      = .obj [("lines".toList, .num 3), ("warnings".toList, .arr []), ("facts".toList, .obj [("days".toList,
+        .arr [.arr [.num 739865, .null, .arr [.null, .arr [], .arr [.num 63924368520, .num 0, .bool false,
+        .num 0]], .arr [], .arr [], .arr [], .arr [], .arr [], .arr [.arr [.num 1, .str "routine".toList,
+        .str "s".toList, .bool false, .str "2026-09-07 09:00".toList], .arr [.num 2, .str "skip".toList,
+        .str "s".toList, .bool false, .str "2026-09-07 09:01".toList], .arr [.num 3, .str "event".toList,
+        .null, .bool false, .str "2026-09-07 09:02".toList]]]]), ("window".toList, .arr []), ("items".toList,
+        .arr []), ("instOther".toList, .arr [.arr [.str "s".toList, .str "#1".toList, .arr [.num 63924368460,
+        .num 0, .bool false, .num 0], .str "skipped".toList, .str "skipped".toList, .null]]),
+        ("named".toList, .arr [.arr [.str "x".toList, .null, .num 3, .arr [.num 63924368520, .num 0,
+        .bool false, .num 0], .num 3, .arr [.num 63924368520, .num 0, .bool false, .num 0]]]),
+        ("open".toList, .obj [("block".toList, .null), ("interrupt".toList, .null)]), ("lastDay".toList,
+        .null), ("lastEffective".toList, .arr [.num 63924368520, .num 0, .bool false, .num 0]),
+        ("entryCount".toList, .num 3), ("unknown".toList, .num 0), ("longestLeak".toList, .null),
+        ("replayWarnings".toList, .arr [.obj [("line".toList, .num 1), ("w".toList,
+        .str "unknownInstanceStatus".toList), ("raw".toList, .str "maybe".toList)]]), ("warnings".toList,
+        .obj [("first".toList, .arr []), ("overflow".toList, .num 0)])]), ("headers".toList, .arr []),
+        ("render".toList, .arr [])] := by
   decide
 
 end C4
@@ -10872,45 +10914,34 @@ def dayWitnessIdle : List Char :=
   ['{', '"', 't', '"', ':', '"', '2', '0', '2', '6', '-', '0', '9', '-', '0', '7', 'T', '0', '9', ':', '3', '0', ':', '0', '0', 'Z', '"', ',', '"', 'e', 'v', '"', ':', '"', 'i', 'd', 'l', 'e', '"', ',', '"', 'a', 't', 't', 'r', 'i', 'b', 'u', 't', 'e', 'd', '"', ':', '"', 'l', 'e', 'a', 'k', '"', ',', '"', 'm', 'i', 'n', '"', ':', '2', '0', '}']
 
 set_option maxRecDepth 8000 in
-/-- **The op answers the day family, end to end**: `energy` at 09:00, the day's `wake` at 06:00 (slept 420)
-logged after it, and a `leak` gap of 20 minutes answered at 09:30, from line 1, facts asked.  The energy
-observation reads the wake's 420 (late binding) and is not a start's; the day's record holds the wake and its
-sleep, 20 leak minutes, the longest 20 and the idle record; its block fields hold the 09:10–09:30 `Idle`
-segment; the global longest leak is the gap, on its day.  Nothing else. -/
+/-- **The op answers the day family, end to end**: `energy` at 09:00, the day's `wake` at 06:00 (slept 420) logged after
+it, and a `leak` gap of 20 minutes answered at 09:30, from line 1, facts asked.  (C6: §8.4's view.)  The energy
+observation reads the wake's 420 (late binding) and is not a start's; the day's record holds the 09:10–09:30 `Idle`
+segment, the wake and its sleep, 20 leak minutes, the longest 20 and the idle record; the seam's latest stamp is the
+09:30 answer; the global longest leak is the gap, on its day. -/
 theorem the_log_op_answers_the_day_facts :
-    logAnswer ⟨⟨1, [some dayWitnessEnergy, some dayWitnessWake, some dayWitnessIdle], true, none, [], true,
-        Replay.utcZone⟩, by decide⟩
-      = .obj [("lines".toList, .num 3), ("warnings".toList, .arr []),
-          ("facts".toList, .obj [("cancelled".toList, .arr []),
-            ("days".toList, .arr [.arr [.num 1, .num 739865], .arr [.num 2, .num 739865], .arr [.num 3, .num 739865]]),
-            ("block".toList, .obj [
-              ("days".toList, .arr [.arr [.num 739865, .obj [
-                ("firstStart".toList, .null), ("starts".toList, .arr []), ("blockMin".toList, .num 0),
-                ("blocksDone".toList, .num 0), ("loadFifths".toList, .num 0),
-                ("byCi".toList, .arr [.num 0, .num 0, .num 0, .num 0, .num 0, .num 0]),
-                ("ciUnknown".toList, .arr []), ("done".toList, .arr []), ("lostMin".toList, .num 0),
-                ("dropped".toList, .arr []),
-                ("segments".toList, .arr [.arr [.arr [.num 63924369000, .num 0, .bool false, .num 0],
-                  .arr [.num 63924370200, .num 0, .bool false, .num 0], .str "idle".toList, .str "leak".toList]])]]]),
-              ("items".toList, .arr []), ("itemDays".toList, .arr []),
-              ("energy".toList, .arr [.arr [.num 1, .arr [.num 63924368400, .num 0, .bool false, .num 0],
-                .num 739865, .num 3, .num 4, hswJson Log.Num.zero, .str ['h'], .num 420, .null, .null, .bool false]]),
-              ("durations".toList, .arr []), ("interrupts".toList, .arr []), ("openBlock".toList, .null),
-              ("openInterrupt".toList, .null),
-              ("lastEffective".toList, .arr [.num 63924370200, .num 0, .bool false, .num 0])]),
-            ("completion".toList, .obj [("lastDone".toList, .arr []), ("doneDates".toList, .arr []),
-              ("instances".toList, .arr []), ("named".toList, .arr [])]),
-            ("replayWarnings".toList, .arr []),
-            ("day".toList, .obj [
-              ("days".toList, .arr [.arr [.num 739865, .arr [.arr [.num 63924357600, .num 0, .bool false, .num 0],
-                .num 420, .null, .null, .null, .null, .null, .arr [], .num 20, .num 20,
-                .arr [.arr [.arr [.num 63924370200, .num 0, .bool false, .num 0], .num 739865, .str "leak".toList,
-                  .num 20]],
-                .arr [], .num 0, .num 0, .num 0, .num 0, .null]]]),
-              ("demotions".toList, .arr []), ("closes".toList, .arr []), ("dropped".toList, .arr []),
-              ("longestLeak".toList, .arr [.arr [.num 63924370200, .num 0, .bool false, .num 0], .num 739865, .num 20]),
-              ("unknown".toList, .num 0)])]),
-          ("headers".toList, .arr []), ("render".toList, .arr [])] := by
+    logAnswer ⟨⟨1, [some dayWitnessEnergy, some dayWitnessWake, some dayWitnessIdle], true, none, [], true, Replay.utcZone⟩, by decide⟩
+      = .obj [("lines".toList, .num 3), ("warnings".toList, .arr []), ("facts".toList, .obj [("days".toList,
+        .arr [.arr [.num 739865, .arr [.null, .arr [], .num 0, .num 0, .num 0, .arr [.num 0, .num 0, .num 0,
+        .num 0, .num 0, .num 0], .arr [], .arr [], .num 0, .arr [], .arr [.arr [.arr [.num 63924369000,
+        .num 0, .bool false, .num 0], .arr [.num 63924370200, .num 0, .bool false, .num 0],
+        .str "idle".toList, .str "leak".toList]], .arr [.num 63924357600, .num 0, .bool false, .num 0],
+        .num 420, .null, .null, .null, .null, .null, .arr [], .num 20, .num 20,
+        .arr [.arr [.arr [.num 63924370200, .num 0, .bool false, .num 0], .num 739865, .str "leak".toList,
+        .num 20]], .arr [], .num 0, .num 0, .num 0, .num 0, .null], .arr [.null, .arr [],
+        .arr [.num 63924370200, .num 0, .bool false, .num 0]], .arr [.arr [.num 1, .arr [.num 63924368400,
+        .num 0, .bool false, .num 0], .num 739865, .num 3, .num 4, hswJson Log.Num.zero, .str "h".toList,
+        .num 420, .null, .null, .bool false]], .arr [], .arr [], .arr [], .arr [], .arr [.arr [.num 1,
+        .str "energy".toList, .null, .bool false, .str "2026-09-07 09:00".toList], .arr [.num 2,
+        .str "wake".toList, .null, .bool false, .str "2026-09-07 06:00".toList], .arr [.num 3,
+        .str "idle".toList, .null, .bool false, .str "2026-09-07 09:30".toList]]]]), ("window".toList,
+        .arr []), ("items".toList, .arr []), ("instOther".toList, .arr []), ("named".toList, .arr []),
+        ("open".toList, .obj [("block".toList, .null), ("interrupt".toList, .null)]), ("lastDay".toList,
+        .num 739865), ("lastEffective".toList, .arr [.num 63924370200, .num 0, .bool false, .num 0]),
+        ("entryCount".toList, .num 3), ("unknown".toList, .num 0), ("longestLeak".toList,
+        .arr [.arr [.num 63924370200, .num 0, .bool false, .num 0], .num 739865, .num 20]),
+        ("replayWarnings".toList, .arr []), ("warnings".toList, .obj [("first".toList, .arr []),
+        ("overflow".toList, .num 0)])]), ("headers".toList, .arr []), ("render".toList, .arr [])] := by
   decide
 
 end C5

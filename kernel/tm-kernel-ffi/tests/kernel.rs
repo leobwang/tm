@@ -1366,16 +1366,18 @@ fn add_reads_a_parent_off_its_title_and_refuses_a_dangling_one() {
 // the_log_section_refuses_by_name, the_response_shapes_emit_in_build_order.
 // ---------------------------------------------------------------------------
 
-/// **The `log` op, by line.**  From line 7: a `drop` (a header with its id, and
-/// its rendering in serde's bytes with the `tm log` column), a blank line, a
-/// line that is not UTF-8 (`null`), and `{"ev":7}` (no `t`).  The answer comes
-/// after `report`; the lines are the Lean witness's, byte for byte.
+/// **The `log` op, by line.**  From line 1: a `drop` (a header with its id and,
+/// since stage 5 D9 C6, its day 739,865, its mask bit and its display; and its
+/// rendering in serde's bytes with the `tm log` column), a blank line, a line
+/// that is not UTF-8 (`null`), and `{"ev":7}` (no `t`).  The answer comes after
+/// `report`; the lines are the Lean witness's, byte for byte.  (B4 sent them from
+/// line 7; C6 answers headers only for a log from line 1, until W3's checkpoint.)
 #[test]
 fn the_log_op_answers_by_line() {
-    let out = call(r#"{"docs":[],"tz":{"key":"UTC","base":"+00:00:00","then":[]},"log":{"ckpt":null,"from":7,"lines":["{\"t\":\"2026-09-07T09:00:00Z\",\"ev\":\"drop\",\"id\":\"a1\"}","",null,"{\"ev\":7}"],"terminated":true,"want":{"headersFrom":7,"render":[7,8]}}}"#).unwrap();
+    let out = call(r#"{"docs":[],"tz":{"key":"UTC","base":"+00:00:00","then":[]},"log":{"ckpt":null,"from":1,"lines":["{\"t\":\"2026-09-07T09:00:00Z\",\"ev\":\"drop\",\"id\":\"a1\"}","",null,"{\"ev\":7}"],"terminated":true,"want":{"headersFrom":1,"render":[1,2]}}}"#).unwrap();
     assert_eq!(
         out,
-        r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":10,"warnings":[{"line":9,"w":"invalidUtf8"},{"line":10,"w":"noT"}],"facts":null,"headers":[[7,"drop","a1"]],"render":[[7,"{\"t\":\"2026-09-07T09:00:00+00:00\",\"ev\":\"drop\",\"id\":\"a1\"}","2026-09-07 09:00"],[8,null,null]]}}}"#
+        r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":4,"warnings":[{"line":3,"w":"invalidUtf8"},{"line":4,"w":"noT"}],"facts":null,"headers":[[1,"drop","a1",739865,false,"2026-09-07 09:00"]],"render":[[1,"{\"t\":\"2026-09-07T09:00:00+00:00\",\"ev\":\"drop\",\"id\":\"a1\"}","2026-09-07 09:00"],[2,null,null]]}}}"#
     );
 }
 
@@ -1383,12 +1385,12 @@ fn the_log_op_answers_by_line() {
 /// `the_log_op_answers_the_cancelled_lines`): a note, its undo, a blank line and
 /// a note, from line 1, facts asked. The note on line 1 and its undo on line 2
 /// are cancelled; `facts` sits after `warnings`, and is `null` when not asked.
-/// C2: every entry, cancelled or not, has its day, 2026-09-07 (day 739,865 from
-/// 0001-01-01) in UTC; the blank line has none. C3: `facts.block` holds no block
-/// facts for notes, and the last survivor is line 4's note at 09:00:00 UTC
-/// (second 63,924,368,400 from 0001-01-01). C4: nothing is done, no instance, no
-/// event, no replay warning. C5: notes create no day, and there is no demotion,
-/// close, drop, leak or unknown event.
+/// C6 (design §8.4's view): the one day, 2026-09-07 (day 739,865 from 0001-01-01)
+/// in UTC, has no record (notes create no day), a seam whose latest stamp is line
+/// 4's note at 09:00:00 UTC (second 63,924,368,400 from 0001-01-01), and the
+/// headers of the three entries, lines 1 and 2 cancelled; the blank line has none.
+/// Nothing is done, no instance, no event, no replay warning, no demotion, close,
+/// drop, leak or unknown event; the log has three entries.
 #[test]
 fn the_log_op_answers_the_cancelled_lines() {
     let utc = r#"{"key":"UTC","base":"+00:00:00","then":[]}"#;
@@ -1396,7 +1398,7 @@ fn the_log_op_answers_the_cancelled_lines() {
     let out = call(&format!(r#"{{"docs":[],"tz":{utc},"log":{{"ckpt":null,"from":1,"lines":{lines},"terminated":true,"want":{{"facts":true}}}}}}"#)).unwrap();
     assert_eq!(
         out,
-        r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":4,"warnings":[],"facts":{"cancelled":[1,2],"days":[[1,739865],[2,739865],[4,739865]],"block":{"days":[],"items":[],"itemDays":[],"energy":[],"durations":[],"interrupts":[],"openBlock":null,"openInterrupt":null,"lastEffective":[63924368400,0,false,0]},"completion":{"lastDone":[],"doneDates":[],"instances":[],"named":[]},"replayWarnings":[],"day":{"days":[],"demotions":[],"closes":[],"dropped":[],"longestLeak":null,"unknown":0}},"headers":[],"render":[]}}}"#
+        r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":4,"warnings":[],"facts":{"days":[[739865,null,[null,[],[63924368400,0,false,0]],[],[],[],[],[],[[1,"note",null,true,"2026-09-07 09:00"],[2,"undo",null,true,"2026-09-07 09:01"],[4,"note",null,false,"2026-09-07 09:00"]]]],"window":[],"items":[],"instOther":[],"named":[],"open":{"block":null,"interrupt":null},"lastDay":null,"lastEffective":[63924368400,0,false,0],"entryCount":3,"unknown":0,"longestLeak":null,"replayWarnings":[],"warnings":{"first":[],"overflow":0}},"headers":[],"render":[]}}}"#
     );
     let out = call(&format!(r#"{{"docs":[],"tz":{utc},"log":{{"ckpt":null,"from":1,"lines":{lines},"terminated":true,"want":{{"facts":false}}}}}}"#)).unwrap();
     assert!(out.contains(r#""warnings":[],"facts":null,"headers":[]"#), "{out}");
@@ -1406,7 +1408,9 @@ fn the_log_op_answers_the_cancelled_lines() {
 /// `the_log_op_answers_the_completion_facts`): `routine s #1 maybe` at 09:00, `skip
 /// s #1` at 09:01 and `event x` at 09:02. The unknown status is one replay warning
 /// naming line 1 and `maybe`; the instance is the last record in file order, the
-/// `skip`; nothing is done; `event x` is its own latest by instant and by date.
+/// `skip`, an all-time instance (`#1` names no date); nothing is done; `event x` is
+/// its own latest by instant and by date.  C6: in §8.4's view, grouped by where
+/// each fact lives.
 #[test]
 fn the_log_op_answers_the_completion_facts() {
     let utc = r#"{"key":"UTC","base":"+00:00:00","then":[]}"#;
@@ -1414,7 +1418,7 @@ fn the_log_op_answers_the_completion_facts() {
     let out = call(&format!(r#"{{"docs":[],"tz":{utc},"log":{{"ckpt":null,"from":1,"lines":{lines},"terminated":true,"want":{{"facts":true}}}}}}"#)).unwrap();
     assert_eq!(
         out,
-        r##"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":3,"warnings":[],"facts":{"cancelled":[],"days":[[1,739865],[2,739865],[3,739865]],"block":{"days":[],"items":[],"itemDays":[],"energy":[],"durations":[],"interrupts":[],"openBlock":null,"openInterrupt":null,"lastEffective":[63924368520,0,false,0]},"completion":{"lastDone":[],"doneDates":[],"instances":[["s","#1",[63924368460,0,false,0],"skipped","skipped",null]],"named":[["x",null,3,[63924368520,0,false,0],3,[63924368520,0,false,0]]]},"replayWarnings":[{"line":1,"w":"unknownInstanceStatus","raw":"maybe"}],"day":{"days":[],"demotions":[],"closes":[],"dropped":[],"longestLeak":null,"unknown":0}},"headers":[],"render":[]}}}"##
+        r##"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":3,"warnings":[],"facts":{"days":[[739865,null,[null,[],[63924368520,0,false,0]],[],[],[],[],[],[[1,"routine","s",false,"2026-09-07 09:00"],[2,"skip","s",false,"2026-09-07 09:01"],[3,"event",null,false,"2026-09-07 09:02"]]]],"window":[],"items":[],"instOther":[["s","#1",[63924368460,0,false,0],"skipped","skipped",null]],"named":[["x",null,3,[63924368520,0,false,0],3,[63924368520,0,false,0]]],"open":{"block":null,"interrupt":null},"lastDay":null,"lastEffective":[63924368520,0,false,0],"entryCount":3,"unknown":0,"longestLeak":null,"replayWarnings":[{"line":1,"w":"unknownInstanceStatus","raw":"maybe"}],"warnings":{"first":[],"overflow":0}},"headers":[],"render":[]}}}"##
     );
 }
 
@@ -1422,9 +1426,9 @@ fn the_log_op_answers_the_completion_facts() {
 /// `the_log_op_answers_the_day_facts`): `energy` at 09:00, the day's `wake` at 06:00
 /// (slept 420) logged after it, and a `leak` gap of 20 minutes answered at 09:30. The
 /// energy observation reads the wake's 420 (late binding); the day's record (a
-/// positional array) holds the wake, its sleep, 20 leak minutes, the longest 20 and
-/// the idle record; its block fields hold the 09:10–09:30 `Idle` segment; the global
-/// longest leak is the gap.
+/// positional array) holds the 09:10–09:30 `Idle` segment, the wake, its sleep, 20 leak
+/// minutes, the longest 20 and the idle record; the global longest leak is the gap.
+/// C6: in §8.4's view, the day's seam and headers beside its record.
 #[test]
 fn the_log_op_answers_the_day_facts() {
     let utc = r#"{"key":"UTC","base":"+00:00:00","then":[]}"#;
@@ -1432,7 +1436,7 @@ fn the_log_op_answers_the_day_facts() {
     let out = call(&format!(r#"{{"docs":[],"tz":{utc},"log":{{"ckpt":null,"from":1,"lines":{lines},"terminated":true,"want":{{"facts":true}}}}}}"#)).unwrap();
     assert_eq!(
         out,
-        r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":3,"warnings":[],"facts":{"cancelled":[],"days":[[1,739865],[2,739865],[3,739865]],"block":{"days":[[739865,{"firstStart":null,"starts":[],"blockMin":0,"blocksDone":0,"loadFifths":0,"byCi":[0,0,0,0,0,0],"ciUnknown":[],"done":[],"lostMin":0,"dropped":[],"segments":[[[63924369000,0,false,0],[63924370200,0,false,0],"idle","leak"]]}]],"items":[],"itemDays":[],"energy":[[1,[63924368400,0,false,0],739865,3,4,0.0,"h",420,null,null,false]],"durations":[],"interrupts":[],"openBlock":null,"openInterrupt":null,"lastEffective":[63924370200,0,false,0]},"completion":{"lastDone":[],"doneDates":[],"instances":[],"named":[]},"replayWarnings":[],"day":{"days":[[739865,[[63924357600,0,false,0],420,null,null,null,null,null,[],20,20,[[[63924370200,0,false,0],739865,"leak",20]],[],0,0,0,0,null]]],"demotions":[],"closes":[],"dropped":[],"longestLeak":[[63924370200,0,false,0],739865,20],"unknown":0}},"headers":[],"render":[]}}}"#
+        r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":3,"warnings":[],"facts":{"days":[[739865,[null,[],0,0,0,[0,0,0,0,0,0],[],[],0,[],[[[63924369000,0,false,0],[63924370200,0,false,0],"idle","leak"]],[63924357600,0,false,0],420,null,null,null,null,null,[],20,20,[[[63924370200,0,false,0],739865,"leak",20]],[],0,0,0,0,null],[null,[],[63924370200,0,false,0]],[[1,[63924368400,0,false,0],739865,3,4,0.0,"h",420,null,null,false]],[],[],[],[],[[1,"energy",null,false,"2026-09-07 09:00"],[2,"wake",null,false,"2026-09-07 06:00"],[3,"idle",null,false,"2026-09-07 09:30"]]]],"window":[],"items":[],"instOther":[],"named":[],"open":{"block":null,"interrupt":null},"lastDay":739865,"lastEffective":[63924370200,0,false,0],"entryCount":3,"unknown":0,"longestLeak":[[63924370200,0,false,0],739865,20],"replayWarnings":[],"warnings":{"first":[],"overflow":0}},"headers":[],"render":[]}}}"#
     );
 }
 
@@ -1448,6 +1452,8 @@ fn the_log_section_refuses_by_name() {
         (format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":1,"lines":[],"terminated":true,"want":{{"facts":7}}}}}}"#), r#"{"err":{"log":{"badLogReq":"facts"}}}"#),
         // Stage 5 D9 C1: facts are answered only for a tail from line 1 (no checkpoint yet).
         (format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":2,"lines":["x"],"terminated":true,"want":{{"facts":true}}}}}}"#), r#"{"err":{"log":{"badLogReq":"facts"}}}"#),
+        // Stage 5 D9 C6: so are headers, which carry each entry's day and mask bit.
+        (format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":2,"lines":["x"],"terminated":true,"want":{{"headersFrom":2}}}}}}"#), r#"{"err":{"log":{"badLogReq":"headersFrom"}}}"#),
         (format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":1,"lines":[7],"terminated":true}}}}"#), r#"{"err":{"log":{"badLogReq":"lines"}}}"#),
         (format!(r#"{{"docs":[],"tz":{utc},"log":{{"from":1,"lines":["x"],"terminated":true,"want":{{"render":[2]}}}}}}"#), r#"{"err":{"log":{"renderNotInTail":{"line":2}}}}"#),
         (r#"{"docs":[],"tz":{"key":"UTC","base":"-00:00:00","then":[]}}"#.to_string(), r#"{"err":{"log":{"badTz":"base"}}}"#),
@@ -1569,13 +1575,13 @@ fn a_calendar_wall_takes_its_hours_out_of_the_lookahead() {
 /// without `log` gets.  A refused `log` section refuses first.
 #[test]
 fn a_request_with_log_and_capacity_answers_both_in_build_order() {
-    let log = r#""log":{"from":7,"lines":["{\"t\":\"2026-09-07T09:00:00Z\",\"ev\":\"drop\",\"id\":\"x\"}"],"terminated":true,"want":{"headersFrom":7}}"#;
+    let log = r#""log":{"from":1,"lines":["{\"t\":\"2026-09-07T09:00:00Z\",\"ev\":\"drop\",\"id\":\"x\"}"],"terminated":true,"want":{"headersFrom":1}}"#;
     let both = call(&capacity_req("", &format!("{log},{SPEC_CAPACITY}"))).unwrap();
     let cap_only = call(&capacity_req("", SPEC_CAPACITY)).unwrap();
     let log_only = call(&format!(r#"{{"docs":[],"now":"2026-09-07","blockMin":60,{CHICAGO_2026},{log}}}"#)).unwrap();
     let log_at = both.find(r#","log":"#).expect("log key");
     let look_at = both.find(r#","lookahead":"#).expect("lookahead key");
-    assert!(both.starts_with(r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":7,"#), "{both}");
+    assert!(both.starts_with(r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"lines":1,"#), "{both}");
     assert!(log_at < look_at);
     assert_eq!(&both[..look_at], &log_only[..log_only.len() - 2], "the log answer is the log op's");
     assert_eq!(&both[look_at..], &cap_only[cap_only.find(r#","lookahead":"#).unwrap()..], "the lookahead is the capacity op's");

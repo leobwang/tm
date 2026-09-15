@@ -49,27 +49,33 @@ enum Kernel {
 
 /// One `log` call over `segs` (lines split on `\n`; `None` is not UTF-8), every
 /// line asked for a header and a rendering. Lines are numbered from 1.
+///
+/// `want.render` holds at most 4,096 lines, so a long file is several calls. Each
+/// sends the file from line 1 up to the end of its window: since stage 5 D9 C6 a
+/// header carries its entry's day and mask bit, which the lines before a tail
+/// decide, so headers are answered only for a log from line 1 (until W3's
+/// checkpoint).
 fn kernel_read(segs: &[Option<&str>], terminated: bool) -> Vec<Kernel> {
     let mut out = Vec::with_capacity(segs.len());
-    // `want.render` holds at most 4,096 lines, so a long file is several calls.
     for (c, chunk) in segs.chunks(4096).enumerate() {
         let from = (c * 4096 + 1) as u64;
+        let upto = c * 4096 + chunk.len();
         let lines: Vec<Value> =
-            chunk.iter().map(|s| s.map_or(Value::Null, |s| Value::String(s.to_string()))).collect();
+            segs[..upto].iter().map(|s| s.map_or(Value::Null, |s| Value::String(s.to_string()))).collect();
         let render: Vec<u64> = (from..from + chunk.len() as u64).collect();
         let req = json!({
             "docs": [], "tz": chicago(),
-            "log": {"ckpt": null, "from": from, "lines": lines,
-                    "terminated": terminated || (c + 1) * 4096 < segs.len(),
+            "log": {"ckpt": null, "from": 1, "lines": lines,
+                    "terminated": terminated || upto < segs.len(),
                     "want": {"facts": false, "headersFrom": from, "render": render}}
         });
         let raw = tm_kernel_ffi::call(&req.to_string()).expect("kernel call");
         let resp: Value = serde_json::from_str(&raw).expect("the response is JSON");
         let log = &resp["ok"]["log"];
         assert!(log.is_object(), "no log answer: {}", &raw[..raw.len().min(300)]);
-        assert_eq!(log["lines"], from + chunk.len() as u64 - 1);
+        assert_eq!(log["lines"], upto as u64);
         let mut warns = BTreeMap::new();
-        for w in log["warnings"].as_array().expect("warnings") {
+        for w in log["warnings"].as_array().expect("warnings").iter().filter(|w| w["line"].as_u64() >= Some(from)) {
             let mut class = w["w"].as_str().expect("w").to_string();
             if let Some(k) = w.get("key").and_then(Value::as_str) {
                 class = format!("{class}:{k}");

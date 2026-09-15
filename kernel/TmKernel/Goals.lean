@@ -440,6 +440,18 @@ last line and `Replay.lastTOn`, fork `DaySeam.last_t`, the latest instant).  Qui
 with their separating witnesses, `Replay.an_undo_of_a_close_cancels_the_latest_close_whatever_its_period` and
 `Replay.the_calendar_today_is_not_the_replays_day_after_midnight`.  README "Stage 5 D9 C5". -/
 
+/- **§8.4's view is real: the facts, the observations and the headers (2026-09-15, stage 5 D9 step C6).**
+The two C6 goals of design §15 were added here, elaborated against `TmKernel/Replay.lean` (15 goals, no error), and
+discharged in the same step, so the burn-down stays at 13, each checked against its proof by a scratch `example`.
+`Replay.every_dated_output_names_its_day_key` is proved for every effect (§15's statement, over an entry's effects,
+is it given fewer arguments), with `Replay.Effect.day?` the day of the dated record an effect writes and
+`Replay.Key.date?` the date a key names; the global longest leak, an all-time aggregate whose record carries a day,
+is keyed `global`, and `Replay.every_leak_is_on_a_day_its_idle_record_names` shows its gap's day is named by the
+same entry's idle record.  §15's `observations_are_in_file_order` is **false as stated**, over every list of
+entries: an `energy` entry listed twice gives two observations on one line
+(`Replay.observations_are_not_in_file_order_when_a_line_repeats`).  The law holds on the log op's entries, whose
+lines strictly increase: `Replay.observations_are_in_file_order_on_increasing_lines`.  README "Stage 5 D9 C6". -/
+
 /-! ############################################################################
 # STAGE 6 — the planner; §8.3's invariants; L24 and L25
 

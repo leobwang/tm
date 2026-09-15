@@ -3599,3 +3599,66 @@ open Tm
 #print axioms Tm.Replay.the_calendar_today_is_not_the_replays_day_after_midnight
 #print axioms Tm.Replay.idle_and_idle_since_read_different_orders
 #print axioms Tm.the_log_op_answers_the_day_facts
+
+-- APPENDED 2026-09-15 (stage 5, D9 track).  Step C6 (design §8.2, §8.4, §11, §14.4 row C6): every line's header
+-- (the survivors' `header` effects and the second pass over the cancelled lines, `entryHeaders` compiled as its
+-- fast twin), the seams (`Effect.seam`, fork `DaySeam`), the observations in file order, `Effect.day?` and
+-- `Key.date?`, and §8.4's view (`replayDoc`, `factsView`, `ask`, and the wire's grouping `dayOuts`, `winOuts`,
+-- `itemOuts`) in Replay.lean; the `log` op's `facts` as the view and its headers with day, mask bit and display
+-- in Boundary.lean (a header of a tail from any line but 1 refused by name).  The C6 goals were added to Goals.lean
+-- and discharged in the step: `every_dated_output_names_its_day_key` (for every effect) and
+-- `observations_are_in_file_order`, refuted as stated (`observations_are_not_in_file_order_when_a_line_repeats`)
+-- and proved on increasing lines (`observations_are_in_file_order_on_increasing_lines`).  C5's owed equation:
+-- `a_days_last_t_is_the_latest_stamp_of_its_survivors`.  Audited under C1–C5 and re-proved over the seam effect
+-- and the new fields (names unchanged): `valueAt_applyEffect`, `every_known_event_has_an_arm`, `safe_apply`,
+-- `conserves_step`, `an_extend_changes_only_the_bookkeeping_and_its_extended_minutes` (its key list gains the
+-- seam's day), `stepWith_lastDone`, `stepWith_named`, `stepWith_doneDates`, the replay-warning step,
+-- `sleptInv_step`, `effectsWith_filterMap_rec`, `the_log_op_reads_a_four_line_tail` (now from line 1),
+-- `the_response_shapes_emit_in_build_order`, `logAnswer_facts` (restated over the view) and the five wire
+-- witnesses `the_log_op_answers_*` (re-probed over the view).
+#print axioms Tm.Replay.entryHeaders_eq_entryHeadersFast
+#print axioms Tm.Replay.entryHeaders_length
+#print axioms Tm.Replay.headerOf?_of_not_isHeader
+#print axioms Tm.Replay.applyEffects_headers
+#print axioms Tm.Replay.effectsWith_headers
+#print axioms Tm.Replay.foldl_stepWith_headers
+#print axioms Tm.Replay.the_survivors_headers_are_the_uncancelled_entry_headers
+#print axioms Tm.Replay.the_two_header_passes_are_every_entrys_header
+#print axioms Tm.Replay.seamOp_lastT
+#print axioms Tm.Replay.applyEffects_seam_lastT
+#print axioms Tm.Replay.dayArm_noSeam
+#print axioms Tm.Replay.arm_noSeam
+#print axioms Tm.Replay.completionArm_noSeam
+#print axioms Tm.Replay.effectsWith_seams
+#print axioms Tm.Replay.foldl_stepWith_seam_lastT
+#print axioms Tm.Replay.a_days_last_t_is_the_latest_stamp_of_its_survivors
+#print axioms Tm.Replay.every_dated_output_names_its_day_key
+#print axioms Tm.Replay.every_leak_is_on_a_day_its_idle_record_names
+#print axioms Tm.Replay.applyEffects_obs
+#print axioms Tm.Replay.closeSub_obs
+#print axioms Tm.Replay.closePause_obs
+#print axioms Tm.Replay.creditFx_obs
+#print axioms Tm.Replay.uncreditFx_obs
+#print axioms Tm.Replay.obsFx_obs
+#print axioms Tm.Replay.cut_obs
+#print axioms Tm.Replay.doneClose_obs
+#print axioms Tm.Replay.doneFx_obs
+#print axioms Tm.Replay.dayArm_obs
+#print axioms Tm.Replay.arm_obs
+#print axioms Tm.Replay.completionArm_obs
+#print axioms Tm.Replay.stepWith_obs
+#print axioms Tm.Replay.foldl_stepWith_obs
+#print axioms Tm.Replay.sublist_nodup_of_pairwise_lt
+#print axioms Tm.Replay.survivors_lines_pairwise
+#print axioms Tm.Replay.observations_are_not_in_file_order_when_a_line_repeats
+#print axioms Tm.Replay.observations_are_in_file_order_on_increasing_lines
+#print axioms Tm.Replay.ask_reads_the_facts
+#print axioms Tm.Replay.replayDoc_eq_replayDocFast
+#print axioms Tm.Replay.a_days_seam_holds_its_break_its_marks_and_its_latest_stamp
+#print axioms Tm.Replay.the_since_break_anchor_is_the_first_start_without_a_break
+#print axioms Tm.Replay.every_line_has_a_header_and_a_cancelled_one_is_marked
+#print axioms Tm.Replay.a_start_observation_is_in_its_starts_place
+#print axioms Tm.Replay.the_view_reads_a_small_log
+#print axioms Tm.logAnswer_headers
+#print axioms Tm.LogReq.wf_headers_from_line_one
+#print axioms Tm.mkLogReq?_refuses_headers_of_a_tail_without_a_checkpoint
