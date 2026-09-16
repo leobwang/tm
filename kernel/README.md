@@ -22046,3 +22046,234 @@ part 3**), **gaps 119, 129, 132, 133**, the three pre-switch assertions turned a
 clearing as written), the two `#[ignore]`s deleted, and the **§5.13 drive** (now performable in
 full: **gap 131**'s item is reworded, and it carries **gaps 138, 139, 143, 144**'s questions for
 the owner). Then **S2** (**gap 130**, D16) with quirk Q6(f) (**gap 86**), then **L9** (**gap 93**).
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 5, W-11 — track B, the GRAMMAR differential's
+     retarget (owner decision D23, gap 148).  **S IS NOT MADE HERE AND THIS
+     BLOCK DOES NOT CLAIM IT IS.**  What this run does is remove T1-T3's
+     dependence on the reader design §12 deletes, so that the switch commit does
+     not have to retarget a grammar differential inside itself.  Track B's gap
+     range is 160-169; takes gap 160, so the next free number in this range is
+     161.  No Lean edited: audit 3934, cheats 157, parity P35, burn-down 13, all
+     unchanged.  No shipped source file was touched — nothing under `tm/src` or
+     `tm-core/src` — so no behaviour can have moved.
+     =========================================================================== -->
+
+## Stage 5, W-11 (track B), 2026-09-16: the grammar differential that survives the deletion
+
+**The honest paragraph, first.** **S is still not made**, and nothing here moves it closer except by
+subtraction: `Ctx::replay_with` still calls `Ctx::replay_of`, whose body is still
+`Log::parse_bytes(&bytes).replay(None, cfg.tz)`. What this run removes is one of the three items W-10
+left on S's blocker list. **Gap 148 is closed**: `tm/tests/kernel_log_grammar.rs` had **11 direct
+sites** on `Log::parse_bytes`, `LogEntry::parse` and `parse_timestamp` — the three functions §12
+deletes — and it now has **none**. Gaps **147** (T5's generated classes) and **149** (the door
+suite's seven exposed tests) are *not* this run's and are untouched.
+
+### Which half of T1-T3 is parse, which is writer, and why only one needed an oracle
+
+This was the question gap 148 said "has not been taken". It is taken here, and the answer is that the
+two halves split cleanly:
+
+| half | what it tests | §12 | needs the oracle? |
+|---|---|---|---|
+| **parse** | serde's and chrono's *per-line acceptance*: is this line an entry, a warning or blank, and which entry | **deletes** `Log::parse_bytes`, `LogEntry::parse`, `parse_timestamp` | **yes** — that was its only Rust implementation on this branch |
+| **writer** | `LogEntry::{new, to_json}`, `Event`, `EVENT_NAMES`, `fmt_timestamp`, `hours_since_wake` | **keeps** (the "stays" column of §12's `tm-core/src/log.rs` row) | **no** |
+
+So **T2 (`kernel_reads_what_the_rust_writer_writes`) is untouched by this retarget** and keeps using
+the in-tree writer, which is correct: it builds a line with `LogEntry::new(..).to_json()` and asks the
+kernel to render it back, and both sides of that survive S intact. The same is true of
+`the_writer_proptest_covers_every_writable_event`, which only reads `EVENT_NAMES` and `Event::name`.
+T1's byte-identity arm is the one place the two halves meet — it needs the fork to *parse* a line and
+*write* it back — and that round trip is what the new oracle mode supplies.
+
+### What landed
+
+1. **`tm-oracle parse-entry`** (D23), in `kernel/tm-kernel-ffi/examples/oracle/src/main.rs`. It reads
+   **one log line per line of stdin** and prints what fork point 4748911's `Log::parse_bytes` says
+   about that single segment — its own loop body, which is exactly the call the deleted `fork_read`
+   made against the in-tree copy. Accepted lines carry the fork's `to_json`, its `ev` tag, its
+   primary id, the `tm log` column, and the instant as `epoch`/`nanos`/`offset`; refusals carry
+   serde's or chrono's message **verbatim**, because the kernel's classes are named constructors and
+   the fork's are free text (parity **P15**), and the class is still read off that text by the same
+   `fork_class` the test has always used. The oracle's pre-existing `parse` mode reads **item** lines
+   for the grammar comparison and was never a candidate for this — that is the confusion gap 148
+   named.
+   **A segment that is not UTF-8 cannot be a JSON string**, so `parse-entry` also accepts a JSON
+   **array of byte values**. That is not decoration: the crafted set's two torn-write segments are
+   exactly the P13 inputs T1 exists to pin, and they reach the fork byte-exact through this path.
+2. **T1 and T3 retargeted**, and the fork's verdicts **frozen** into
+   `tm/tests/fixtures/fork-4748911-log-lines.jsonl` — **11 sources, 8,273 per-line verdicts and 7
+   whole-file readings, 1,946,886 bytes**, blessed from the oracle by an `#[ignore]`d test that is
+   inert unless **both** `TM_ORACLE` and `TM_FORK_BLESS` are set, and **byte-identical on a
+   re-bless** (checked twice). The four input classes are the seven corpus logs, the crafted set,
+   T3's 4,601 timestamp spellings, and the two generated months — the same inputs as before, built by
+   the same code, now named once in `all_sources()` so the bless and the tests cannot drift apart.
+3. **A whole-file cross-check the old test could not make.** T1 used to compare its per-segment
+   reading against `Log::parse_bytes` over the whole file, which is a property of the *fork's own*
+   reader. The fixture now carries the fork's whole-file reading of each corpus log — how many
+   entries it got and which physical lines it refused — and T1 asserts its sweep accounts for exactly
+   those. That is a **stronger** statement than the one it replaces, because the comparand is the
+   fork rather than the reader under test.
+4. **Two `TM_ORACLE` arms**, both `#[ignore]`d and inert without it:
+   `the_frozen_fork_line_answers_are_reblessed_from_the_oracle`, and
+   `the_fork_reads_back_every_rendering_the_kernel_writes` — **1,375** kernel renderings handed back
+   to the fork and read to the same entry.
+5. **`run-oracle.sh` gained input set 4**, and **AGENTS §7.3** documents the mode and its
+   denominators; **§8.3** records gap 148 closed.
+
+### The one assertion bytes on disk cannot make, and where it went
+
+T1's old `let back = LogEntry::parse(rendering); assert_eq!(&back, e)` asks the fork to read back a
+string the kernel produces *at test time*. A frozen file cannot answer that, and saying otherwise
+would be the disguised gap AGENTS §9.2 calls "a check no input can fail". So it is split, and both
+halves are real:
+
+- in `cargo test --workspace`, it is replaced by the **stronger byte-level** claim it implied — the
+  kernel's rendering **is** the fork's own `to_json` bytes, or differs from them only in a
+  hand-written numeral (**20** lines, P29's class, compared as values through `numerals_as_f64`);
+- the round trip itself is kept **exactly**, under `TM_ORACLE`, by
+  `the_fork_reads_back_every_rendering_the_kernel_writes`.
+
+That arm also had to be got right rather than written twice: comparing the fork's reading of the
+kernel's rendering against the fork's *original* entry fails on the **writer's own contract**, not on
+any disagreement, because `fmt_timestamp` keeps whole seconds and a line carrying a fraction of a
+second is truncated by either writer. It compares **round trip against round trip**, which is what T3
+always did (`back.t == want.t`, where `want` was itself round-tripped). The first version of this arm
+failed on precisely that — a subsecond of 100000000 against 0 — and the failure was the test being
+wrong, not the kernel.
+
+### Every acceptance edge the retarget had to keep, by whose grammar it belongs to
+
+**chrono's, reached through `"t"`** (T3, 4,601 spellings; 822 read, 3,765 refused by both):
+RFC 3339 and the fork's no-seconds fallback `%Y-%m-%dT%H:%M%:z`; leap seconds `:60` (**42** read);
+fractional seconds including more than nine digits; `Z`/`z`, `+00:00`, `-00:00`; offsets spelled
+`+HHMM`, `+HH`, `±23:59`, `+24:00`, `+05:60`; the separators `T`/`t`/space and the padding-agnostic
+fallback; the Unicode minus U+2212, the spaces U+3000/U+00A0/U+200A and fullwidth digits; years
+`0000`, `0001`, `9999`, `+10000` and signed or zero-padded year prefixes. **P23 residue: 14** —
+instants outside `[0001-01-01, 10000-01-01)`, which chrono reads and `Cal.Instant` cannot hold.
+
+**serde's, reached through the line and its payload** (T1, 636 lines; 553 entries, 66 warnings,
+9 blank): numeric width and type at a known field (`-0`, `3.0`, `4294967295`/`4294967296`, `1e2`,
+`-1`, `null`, `"5"`, `18446744073709551616`, `0.0` into `u32`; `255`/`256`/`-0`/`2.0` into `u8`);
+the float band `k` in `[308, 310]` and the long `1.797…e308` family, `1e309`, `0e999`, `1e2147483647`
+(**17** `numberOutOfRange`); duplicate keys, on `t`, on `ev` and on a payload field; missing and
+bad fields named per key (`missingField:<k>`, `badField:<k>`); `ev` absent, `ev` not a string, an
+unknown `ev` kept as an `Unknown` payload; **the JSON-escaped key `"ev"` reading as `ev`**;
+nesting at 63/64/65/126/127/128; non-objects, truncated JSON and trailing content after the object;
+CRLF and a lone carriage return; invalid UTF-8 as a per-line warning (**P13**). **P14 residue: 3**
+deep-nesting lines and **1** line past 65,536 characters; **P15 residue: 4**; **8 residue lines in
+total**, each one asserted to still differ.
+
+### The bug this run made, and how it was caught — because it is the lesson
+
+Rewriting the test file **silently decoded two JSON escapes** that sat inside Rust raw strings in
+`crafted()`: the escaped key `"ev"` became a plain `"ev"`, and a line carrying ``,
+`` and a `😀` surrogate pair became literal control characters and a decoded emoji.
+The second made its line invalid JSON; the first **destroyed the escaped-key acceptance edge
+outright** while still parsing, which is the quieter and worse of the two.
+
+Nothing about the suite went red. What showed was a **denominator moving by one** — 553 entries and
+66 warnings became 552 and 67 — in a test that still passed. The temptation was to explain it as a
+real in-tree-versus-fork difference, which would have been a plausible and completely wrong ledger
+entry. It was instead **measured**: a temporary diagnostic compared the in-tree reader with the
+frozen fork line by line and found **zero** disagreements, which ruled that story out; then a
+per-line verdict dump from the old and new files was diffed and named `crafted:105`; then the two
+files' shared functions were diffed region by region. `crafted()` was restored **byte-exact from
+`HEAD`**, and all **ten** verbatim-copied regions are now proved byte-identical to it
+(`crafted`, `spellings`, `residue`, `fork_class`, `kernel_read`, `any_event`, `any_stamp`,
+`numerals_as_f64`, `any_text`, `corpus_logs`). Every denominator then returned to its pre-retarget
+value, and that equality is the evidence the retarget preserved the tests rather than rewrote them.
+
+**The rule this earns:** when a differential's *denominator* moves and its assertions stay green,
+that is a finding, not noise — and §5.11 applies to it. Reason about it and you will invent a story;
+diff it and it names itself.
+
+### Observable behaviour changes
+
+**None.** The diff is one test file, one new test fixture, the oracle example, its sweep script and
+`AGENTS.md`. Nothing under `tm/src`, `tm-core/src` or `kernel/TmKernel` was touched, so every verb
+answers exactly what it answered at `1075ce7`, byte for byte, and no log bytes, refusal text, `--json`
+shape or new capability exists that did not exist before.
+
+### Recorded disagreements between the design, the ledger and the repo
+
+1. **The design never said how T1-T3 keep an oracle after §12.** §14.2 row B4 names them "against the
+   fork point" and §14.6 item 4 retargets **T5** only; the parse half of the grammar tests is not on
+   any list. That silence *is* gap 148, and D23 is the answer. Recorded, not patched into the design.
+2. **§12's one-reader grep is 123 in this worktree, and it did not fall by eleven.** Eleven code
+   sites went to zero, but **nine doc-comment lines** in the retargeted file still name
+   `Log::parse_bytes`, `LogEntry::parse` and `parse_timestamp` in prose — deliberately, because they
+   explain what was retargeted and why. Quote §12's alternation, never R8's 89 (W-7's disagreement 1,
+   now standing for a fifth run).
+3. **The grep reads 126 in the main worktree and that is not a tree difference.** It is track A's
+   *uncommitted* edit to `tm/tests/kernel_replay_parity.rs`, in flight while this ran. At `3c0844c`
+   and at committed `HEAD` it is **125**, verified in a clean checkout. W-10's 125 stands; the next
+   run should not chase the 126.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited** — no `.lean`, no `lean-toolchain`, no `Cargo.toml`, no `Cargo.lock`, nothing
+under `kernel/corpus/`. Goals discharged, refuted, added: none; burn-down **13 → 13**. New theorems:
+none — the audit stays at **3934** over **78** modules. New `decide`/`rfl` witnesses: none, so no
+probe budget was spent. New cheats: none (highest **157**). **New parity entries: none** (highest
+stays **P35**) — the retarget compares against the **existing** P13, P14, P15, P23 and P29 rows and
+adds no exception. No predicate or assertion was weakened, no goal deleted, no memory bound raised,
+no corpus reblessed; the one fixture blessed here was blessed from the fork point and proved
+reproducible.
+
+### Gap 160 (new; label W11b-a) — the crafted set has no whole-file fork reading
+
+1. **What is not done.** The fixture carries the fork's whole-file reading (entry count and refused
+   lines) for the **seven corpus logs** only. The crafted set, T3's spellings and the two generated
+   months are compared line by line, with no whole-file comparand.
+2. **Why.** `tm-oracle replay` takes a whole log as a **JSON string**, and the crafted set contains
+   two segments that are not UTF-8 — the very inputs it exists to pin. Giving `replay` a byte-array
+   input was considered and declined here as widening a mode four other tests depend on, to re-check
+   a property (`Log::parse_bytes` splits on newlines and parses each segment independently) that is
+   structural in the fork's own loop.
+3. **What it costs.** If the kernel's line **segmentation** ever disagreed with the fork's on a
+   non-corpus class, the per-line sweep would compare verdicts at mismatched line numbers and could
+   still pass. For the corpus class this is closed; for the other three it rests on both sides
+   splitting on newlines the same way, which is asserted only indirectly (the line counts match).
+4. **When it clears.** Cheaply, whenever `parse-entry`'s byte-array encoding is extended to a
+   whole-file mode — or it is deliberately left, since the corpus class is the one carrying recorded
+   history.
+
+### Numbers
+
+**Taken:** gap **160** (track B's range is 160-169). **Highest in this range:** 160; next free **161**.
+Cheats, parity and the audit are unchanged.
+
+**Re-measured** on the tree committed here, in the `w11-oracle` worktree; every command capped at
+`MemoryMax=40G`, `MemorySwapMax=0`, the oracle build and the oracle-driven tests at 16G:
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, exit 0, **3.16 / 3.33 / 3.07 s** (parent `1075ce7` measured today: 3.04 / 3.09 / 3.10). Flat — no Lean was touched; inside the 10%-per-step rule |
+| axiom audit | **3934 theorems** (unchanged) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged; all stage 6) |
+| `cargo test --workspace` | **1126 passed / 0 failed / 11 ignored across 79 result lines**, exit 0, **0 warnings** (parent **1125 / 0 / 9** across 79). **+1 passing** (the fixture-coverage test), **+2 ignored** (the re-bless and the fork round trip) |
+| FFI suite | **100 passed / 0 failed** |
+| `kernel_log_grammar` | **6 passed / 0 failed / 2 ignored**, 0.21 s (parent: 5 / 0 / 0) |
+| T1, retargeted | **636 lines, 553 entries (533 byte-identical, 20 differing only in hand-written numerals), 66 warnings, 9 blank, 8 residue, 7 whole-file readings** — every figure identical to the pre-retarget run against the in-tree reader, plus the whole-file arm |
+| T3, retargeted | **4,601 spellings: 822 read (42 leap seconds), 3,765 refused by both, 14 P23 residue** — identical to the pre-retarget run |
+| the generated month | **3,036 lines byte-identical, 24 event kinds** — identical to the pre-retarget run |
+| the fork round trip (`TM_ORACLE`) | **1,375** kernel renderings read back to the fork's own entry; 3,862 lines skipped (blank, refused by either side, or P14/P15 residue) |
+| the frozen fixture | **1,946,886 bytes, 8,280 lines: 11 sources, 8,273 per-line verdicts, 7 whole-file readings**; byte-identical on a second bless |
+| T5 (`kernel_replay_parity --include-ignored`) | **22 passed / 0 failed**, 6.59 s |
+| the door suite (`kernel_log_door`) | **15 passed / 0 failed**, 1.48 s |
+| `cli_latency --include-ignored` | **5 passed / 0 failed**, 10.03 s |
+| `kernel_call_counts` | **1 passed** |
+| `cli_switch_acceptance` | **7 passed / 0 failed / 2 ignored** (unchanged — both `#[ignore]`s are S's, not this run's) |
+| `cli_check_log` | **6 passed / 0 failed** |
+| §12's one-reader grep | **123** in this worktree (125 at committed `HEAD`): **11 code sites to 0**, and **9 doc-comment lines** still naming the deleted functions in prose |
+| the diff | `tm/tests/kernel_log_grammar.rs` **+694 −109**; the oracle **+96 −1**; `run-oracle.sh` **+21 −0**; `AGENTS.md` **+37 −0**; one new fixture, 8,280 lines / **1,946,886 B**; and this block. **No shipped source file** — nothing under `tm/src` or `tm-core/src` — no Lean, no `Cargo.toml`, no `lean-toolchain`, no `kernel/corpus/` |
+
+**Owed next, unchanged by this run except for its first item.** The rest of the retarget —
+**gaps 147** (T5's generated classes) and **149** (the door suite's seven exposed tests) — then
+**gap 144**'s `tm log --json` decision (D22) and **gap 145**'s tolerant `Ctx::load` for `tm check`,
+then design §14.6's contents **1, 2 and 5**: the body swap plus §12's deletion, with item 7's D18
+defaults (**gap 120 part 3**), **gaps 119, 129, 132, 133**, the three pre-switch assertions turned
+around, the two `#[ignore]`s deleted, and the **§5.13 drive**. Then **S2** (**gap 130**, D16) with
+quirk Q6(f) (**gap 86**), then **L9** (**gap 93**).

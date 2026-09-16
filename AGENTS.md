@@ -1266,6 +1266,29 @@ with the kernel's facts — the whole `Replay` key for key, and the `Model`
 without `TM_ORACLE`, so `cargo test --workspace` never needs the fork build;
 `run-oracle.sh` sets it and runs it as input set 3.
 
+**A fourth input set landed on 2026-09-16 (W-11), under owner decision D23**
+(README gap 148): `tm-oracle parse-entry` reads **one log line per line of
+stdin** and prints what the fork's `Log::parse_bytes` says about that single
+segment — accepted (with the entry as the fork's own `to_json`, its tag, id,
+`tm log` column, and the instant as `epoch`/`nanos`/`offset`), refused (with
+serde's or chrono's message verbatim), or blank. A segment that is not UTF-8
+cannot be a JSON string, so it may be given as a **JSON array of byte values**
+instead; that is how the crafted set's torn-write lines reach the fork. This is
+**T1-T3's oracle at the switch**: their comparand until W-11 was the in-tree
+`Log::parse_bytes`, `LogEntry::parse` and `parse_timestamp`, which design §12
+deletes, so all three would otherwise have had to be retargeted inside the
+switch commit. The verdicts are frozen into
+`tm/tests/fixtures/fork-4748911-log-lines.jsonl` — **11 sources, 8,273 per-line
+verdicts and 7 whole-file readings, 1,946,886 bytes**, byte-reproducible on a
+re-bless — so the comparison runs in plain `cargo test --workspace`, and the
+`TM_ORACLE` arms are the re-bless and the one assertion bytes on disk cannot
+make: **1,375** kernel renderings handed back to the fork and read to the same
+entry. Measured at the retarget, unchanged from the pre-retarget figures against
+the in-tree reader: **T1 636 lines, 553 entries (533 byte-identical), 66
+warnings, 9 blank, 8 residue; T3 4,601 spellings, 822 read (42 leap seconds),
+3,765 refused by both, 14 P23 residue; the generated month 3,036 lines over 24
+event kinds.**
+
 Run at stage 5's close with `512 4`: **138 corpus lines compared, 77 with nothing
 to report; 2,048 generated lines compared, 470 with nothing to report** — both
 identical to the `017ead3` run below, so the grammar surface did not move while
@@ -2149,6 +2172,20 @@ remains of the retarget is **gaps 147-149**: T5's *generated* classes (1mo/6mo, 
 zone cases, 64 triples) are still compared against the in-tree reader (**147**), T1-T3's grammar
 comparand is `Log::parse_bytes`/`LogEntry::parse`/`parse_timestamp` themselves (**148**), and the
 door suite's 7 exposed tests are unretargeted (**149**).
+
+*Gap 148 closed 2026-09-16 (W-11, track B; README "the grammar differential that
+survives the deletion").* **T1-T3 no longer name a function design §12 deletes.**
+`tm-oracle` gained the per-log-entry `parse-entry` mode D23 called for (§7.3's
+fourth input set), and `tm/tests/kernel_log_grammar.rs`'s **11** direct sites on
+`Log::parse_bytes`/`LogEntry::parse`/`parse_timestamp` are now **0** — the parse
+half reads fork point 4748911's frozen per-line verdicts, and the writer half
+(`LogEntry::{new, to_json}`, `Event`, `EVENT_NAMES`, `hours_since_wake`) never
+needed an oracle because §12 **keeps** it, which is why **T2 is untouched**.
+Every acceptance edge the tests covered is preserved, with the denominators
+unchanged (§7.3), and the sweep gained the fork's whole-file reading of each
+corpus log as a cross-check. §12's one-reader grep falls **125 → 123**: eleven
+code sites went, and **nine doc-comment lines still name the deleted functions in
+prose**, which is why the count does not fall by eleven.
 
 *Closed 2026-09-16, on the `w8-facts` track (README, "the three findings that would have made a
 naive switch wrong").* **Gaps 134, 135 and 136 are no longer on this list.** `tm check` is wired to

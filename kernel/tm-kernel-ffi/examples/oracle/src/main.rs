@@ -17,6 +17,15 @@
 //!   below, so the corpus is the one the shipped proptest samples from), and
 //!   report on each. Deterministic in `seed`.
 //! * `parse` — read one JSON string per line from stdin and report on each.
+//! * `parse-entry` — read one **log line** per line of stdin and report what
+//!   the fork's `log::Log::parse_bytes` says about that single segment:
+//!   accepted (with the entry in a stable form), refused (with serde's or
+//!   chrono's own message), or blank. This is **T1-T3's oracle at the switch**
+//!   (design §12 deletes `Log::parse_bytes`, `LogEntry::parse` and
+//!   `parse_timestamp`, which are the only comparand those three tests have
+//!   today; README gap 148, owner decision **D23**). A segment that is not
+//!   UTF-8 cannot be a JSON string, so it may be given as a JSON array of byte
+//!   values instead.
 //! * `fit <tz> <today>` — the same input, run through the fork's
 //!   `energy::fit_replay` at the default configuration, printing the fitted
 //!   `Model` as JSON. This is design §14.6's T12 against the fork point: the
@@ -47,6 +56,17 @@
 //!  "entries": <surviving + cancelled entries the reader read>}
 //! ```
 //!
+//! and for `parse-entry`, one object per input segment:
+//!
+//! ```text
+//! {"v": "entry", "json": <LogEntry::to_json>, "tag": <ev>, "id": <primary id>,
+//!  "t": <fmt_timestamp>, "display": <tm log's column>,
+//!  "epoch": <seconds>, "nanos": <subsec, >= 1e9 on a leap second>,
+//!  "offset": <written offset in seconds east>}
+//! {"v": "warn", "error": <serde's or chrono's own text>}
+//! {"v": "blank"}
+//! ```
+//!
 //! The fork's `Replay` and this branch's differ by exactly two serialised
 //! fields — this branch adds `seams` and `last_effective_t` (step R1–R4), and
 //! its `rows`/`line_count` are `#[serde(skip)]` — and every nested record
@@ -62,7 +82,7 @@ use serde_json::{json, Value};
 use std::io::{BufRead, Write};
 
 use tm_core::grammar::{parse_line, ItemLine, ParseCtx};
-use tm_core::log::Log;
+use tm_core::log::{fmt_timestamp, Log};
 
 // ---------------------------------------------------------------------------
 // The generator, copied from tm-core/tests/grammar_proptest.rs at the fork point.
@@ -292,6 +312,50 @@ fn observe_log(text: &str, tz: chrono_tz::Tz) -> Value {
     })
 }
 
+/// **What the fork's reader says about ONE physical log line** (owner decision
+/// **D23**; README gap 148).
+///
+/// This is `Log::parse_bytes`'s own loop body over a single `\n`-separated
+/// segment — exactly the call `tm/tests/kernel_log_grammar.rs`'s `fork_read`
+/// made against the **in-tree** copy of this reader until design §12 deleted
+/// it. It gives the three verdicts that reader can give (blank, entry,
+/// warning) and, for an entry, everything T1 and T3 compare:
+///
+/// * `json` — `LogEntry::to_json`, serde's own bytes for the entry just read.
+///   That is the parse-*then*-write round trip T1's byte-identity arm needs.
+///   The writer alone (`to_json`, `fmt_timestamp`, `Event`) is **kept** by §12
+///   and so needs no oracle; it is the *parse* that has to come from here.
+/// * `tag`, `id` — `Event::name` and `Event::primary_id`: the kernel's header.
+/// * `t`, `display` — `fmt_timestamp` and `tm log`'s column.
+/// * `epoch`, `nanos`, `offset` — the instant exactly as chrono read it. `json`
+///   keeps only whole seconds, so a leap second (`nanos >= 1e9`) and the
+///   *written* offset would otherwise not survive the round trip, and both are
+///   what T3 is about.
+///
+/// A refusal carries serde's or chrono's message **verbatim**. The kernel's
+/// warning classes are named constructors and the fork's are free text (parity
+/// **P15**), so the class is read off this text on the kernel's side, by the
+/// same `fork_class` the test has always used.
+fn observe_entry(seg: &[u8]) -> Value {
+    let log = Log::parse_bytes(seg);
+    match (log.entries.first(), log.warnings.first()) {
+        (Some(e), None) => json!({
+            "v": "entry",
+            "json": e.to_json().expect("serde writes back the entry it just read"),
+            "tag": e.ev.name(),
+            "id": e.ev.primary_id(),
+            "t": fmt_timestamp(&e.t),
+            "display": e.t.format("%Y-%m-%d %H:%M").to_string(),
+            "epoch": e.t.timestamp(),
+            "nanos": e.t.timestamp_subsec_nanos(),
+            "offset": e.t.offset().local_minus_utc(),
+        }),
+        (None, Some(w)) => json!({ "v": "warn", "error": w.error }),
+        (None, None) => json!({ "v": "blank" }),
+        (Some(_), Some(_)) => panic!("one segment gave both an entry and a warning"),
+    }
+}
+
 /// What the fork's `tm model --fit` makes of one whole log, in `tz`, as of
 /// `today`: fork `energy::fit_replay` over the fork's own replay, at the
 /// default configuration — both halves of the comparison must use the same
@@ -338,6 +402,35 @@ fn main() {
                 writeln!(w, "{}", observe(&text)).unwrap();
             }
         }
+        Some("parse-entry") => {
+            for l in std::io::stdin().lock().lines() {
+                let l = l.unwrap();
+                if l.trim().is_empty() {
+                    continue;
+                }
+                // One physical log line per input line. A UTF-8 segment arrives
+                // as a JSON string, like every other mode. A segment that is
+                // NOT UTF-8 (a torn write; the crafted set's `\xff`) cannot be
+                // a JSON string at all, so it arrives as a JSON array of byte
+                // values. Either way the reader is handed the raw bytes of one
+                // segment, which is what `Log::parse_bytes` splits out.
+                let v: Value = serde_json::from_str(&l).unwrap_or_else(|e| {
+                    panic!("stdin must be a JSON string or byte array per line: {e} in {l:?}")
+                });
+                let seg: Vec<u8> = match v {
+                    Value::String(s) => s.into_bytes(),
+                    Value::Array(bytes) => bytes
+                        .iter()
+                        .map(|b| {
+                            let n = b.as_u64().unwrap_or_else(|| panic!("a byte array holds numbers: {b} in {l:?}"));
+                            u8::try_from(n).unwrap_or_else(|_| panic!("a byte is 0..=255, not {n}, in {l:?}"))
+                        })
+                        .collect(),
+                    other => panic!("stdin must be a JSON string or byte array per line, not {other} in {l:?}"),
+                };
+                writeln!(w, "{}", observe_entry(&seg)).unwrap();
+            }
+        }
         Some("replay") => {
             let tz: chrono_tz::Tz = args
                 .get(2)
@@ -378,6 +471,7 @@ fn main() {
         _ => {
             eprintln!(
                 "usage: tm-oracle gen <n> <seed>   |   tm-oracle parse  (JSON strings on stdin)\n\
+                 \x20      tm-oracle parse-entry  (ONE log line per line: a JSON string, or a JSON array of bytes)\n\
                  \x20      tm-oracle replay <tz>  (whole log texts, one JSON string per line)\n\
                  \x20      tm-oracle fit <tz> <today>  (the same, fitted: `tm model --fit`)"
             );
