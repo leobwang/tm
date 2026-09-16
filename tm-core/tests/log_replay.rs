@@ -178,9 +178,17 @@ fn day_one_matches_hand_computed_values() {
     assert_eq!(r.instance_status("package", "2026-09-08"), InstanceStatus::Pending);
     assert_eq!(r.last_done("lunch"), Some(at("2026-09-07T11:50:00-05:00")));
     assert_eq!(r.done_dates("package"), vec![d7]);
-    assert_eq!(r.events_named("reply").len(), 1);
-    assert_eq!(r.events_named("reply")[0].id.as_deref(), Some("a4"));
-    assert_eq!(r.events_for("a4").len(), 1);
+    // The narrowed `tm event` facts (step R3, design §8.4): the latest per
+    // `(name, id?)`, which is every reading the binary has.
+    let reply = r.named("reply").expect("the `reply` event");
+    assert!(reply.unaddressed.is_none(), "the only `reply` is addressed to a4");
+    assert_eq!(reply.by_id.keys().collect::<Vec<_>>(), vec!["a4"]);
+    assert_eq!(reply.by_id["a4"].latest, at("2026-09-07T17:00:00-05:00"));
+    assert_eq!(
+        r.latest_named("reply", "a4", TZ).map(|l| l.latest),
+        Some(at("2026-09-07T17:00:00-05:00"))
+    );
+    assert!(r.latest_named("reply", "t1", TZ).is_none(), "addressed to a4, not t1");
     assert!(r.event_occurred("reply", None, Some("a4")));
     assert!(!r.event_occurred("reply", Some(at("2026-09-07T17:01:00-05:00")), None));
     assert_eq!(r.interrupts_on(d7).count(), 1);
@@ -241,8 +249,8 @@ fn day_two_applies_undo_and_the_midnight_close() {
     assert_eq!(r.instance_status("shower", "#3"), InstanceStatus::Done);
     assert_eq!(r.instances_of("laundry").map(|(k, _)| k).collect::<Vec<_>>(), vec!["2026-09-07"]);
     assert!(r.dropped_items.is_empty(), "drop undone");
-    assert!(r.events_named("visa").is_empty(), "event undone");
-    assert_eq!(r.events.len(), 1);
+    assert!(r.named("visa").is_none(), "event undone");
+    assert_eq!(r.named.len(), 1);
     // Completion bookkeeping across days.
     assert!(r.is_done("t3"));
     assert_eq!(r.last_done("t3"), Some(at("2026-09-08T08:40:00-05:00")));
@@ -336,26 +344,22 @@ fn observations_carry_their_source_line() {
     for o in &r.energy {
         let row = row(o.line);
         assert!(!row.cancelled, "line {}", o.line);
-        assert_eq!(row.entry.t, o.t, "line {}", o.line);
-        match &row.entry.ev {
-            tm_core::log::Event::Start { id, .. } => {
+        assert_eq!(row.t, o.t, "line {}", o.line);
+        match row.tag.as_str() {
+            "start" => {
                 assert!(o.from_start);
-                assert_eq!(o.id.as_deref(), Some(id.as_str()));
+                assert_eq!(o.id, row.id, "line {}", o.line);
             }
-            tm_core::log::Event::Energy { .. } => assert!(!o.from_start),
-            other => panic!("line {}: {other:?} is not an observation", o.line),
+            "energy" => assert!(!o.from_start),
+            other => panic!("line {}: `{other}` is not an observation", o.line),
         }
     }
     assert_eq!(r.durations.len(), 8);
     for o in &r.durations {
         let row = row(o.line);
         assert!(!row.cancelled, "line {}", o.line);
-        assert_eq!(row.entry.t, o.t, "line {}", o.line);
-        assert!(
-            matches!(&row.entry.ev, tm_core::log::Event::Done { id, .. } if *id == o.id),
-            "line {}",
-            o.line
-        );
+        assert_eq!(row.t, o.t, "line {}", o.line);
+        assert_eq!((row.tag.as_str(), row.id.as_deref()), ("done", Some(o.id.as_str())), "line {}", o.line);
     }
     assert!(r.energy.windows(2).all(|w| w[0].line < w[1].line));
     assert!(r.durations.windows(2).all(|w| w[0].line < w[1].line));

@@ -25,6 +25,8 @@
 //! * [`check`] — `check.rs`, exit code 2 when the tree has errors.
 //! * [`tui`] — the §12 terminal UI (all five screens).
 
+use std::collections::BTreeMap;
+
 use chrono::{Duration, NaiveDate};
 use serde::Serialize;
 
@@ -603,11 +605,16 @@ pub struct LogOut {
 pub fn log(g: &Globals, args: &super::LogArgs) -> Result<i32, CliError> {
     let ctx = Ctx::load_scoped(g, false, |_, today| log_scope(args, today))?;
     let rows = log_rows(&ctx.replay, args, ctx.today)?;
+    // §11.4's order: select headers, then read the bytes of the selected lines
+    // (`Ctx::entries_at`, the kernel's `render` op after the switch), then
+    // render. Only the selected lines are read, not the whole log again.
+    let lines: Vec<u64> = rows.iter().map(|r| r.line).collect();
+    let entries = Ctx::entries_at(&ctx.store, &lines)?;
     let out = LogOut {
         total: ctx.replay.entry_count(),
-        entries: rows.iter().map(|r| r.entry.clone()).collect(),
+        entries: lines.iter().filter_map(|l| entries.get(l).cloned()).collect(),
     };
-    emit(ctx.json, || log_human(&rows), &out)?;
+    emit(ctx.json, || log_human(&rows, &entries), &out)?;
     Ok(0)
 }
 
@@ -627,7 +634,7 @@ fn log_rows<'a>(
             replay
                 .view()
                 .iter()
-                .filter(|r| !r.cancelled && r.entry.ev.primary_id() == Some(key.as_str()))
+                .filter(|r| !r.cancelled && r.id.as_deref() == Some(key.as_str()))
                 .collect()
         }
         None => replay.view().iter().collect(),
@@ -648,23 +655,32 @@ fn log_rows<'a>(
 }
 
 /// `tm log`'s human lines: the row's display text, the tag, and the `k=v`
-/// pairs of the entry's JSON without `t` and `ev`.
-fn log_human(rows: &[&ViewRow]) -> String {
+/// pairs of the line's JSON without `t` and `ev`.
+///
+/// The header comes from the row ([`ViewRow`]) and the payload from
+/// `entries[line]`, the bytes [`Ctx::entries_at`] read for exactly these lines
+/// (§11.4 step 3). A line whose payload did not come back — the file changed
+/// under the command between the replay and the read — still prints its header,
+/// which is what the kernel's `render` returns for a line it cannot render.
+fn log_human(rows: &[&ViewRow], entries: &BTreeMap<u64, LogEntry>) -> String {
     rows.iter()
         .map(|r| {
-            let mut v = serde_json::to_value(&r.entry).unwrap_or(serde_json::Value::Null);
-            let obj = v.as_object_mut();
-            let rest = obj
-                .map(|m| {
+            let rest = entries
+                .get(&r.line)
+                .and_then(|e| {
+                    let mut v = serde_json::to_value(e).ok()?;
+                    let m = v.as_object_mut()?;
                     m.remove("t");
                     m.remove("ev");
-                    m.iter()
-                        .map(|(k, v)| format!("{k}={v}"))
-                        .collect::<Vec<_>>()
-                        .join(" ")
+                    Some(
+                        m.iter()
+                            .map(|(k, v)| format!("{k}={v}"))
+                            .collect::<Vec<_>>()
+                            .join(" "),
+                    )
                 })
                 .unwrap_or_default();
-            format!("{} {} {}", r.display(), r.entry.ev.name(), rest)
+            format!("{} {} {}", r.display(), r.tag, rest)
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -772,7 +788,7 @@ fn log_problems(ctx: &Ctx) -> Vec<validate::CheckProblem> {
         .collect();
     let fence = ctx.now + Duration::days(validate::LOG_FUTURE_DAYS);
     for row in ctx.replay.view() {
-        if row.entry.t > fence {
+        if row.t > fence {
             out.push(validate::CheckProblem::warning(
                 validate::LOG_FUTURE,
                 LOG_PATH,
@@ -781,7 +797,7 @@ fn log_problems(ctx: &Ctx) -> Vec<validate::CheckProblem> {
                 format!(
                     "a `{}` dated {}, more than {} days after now ({}); it changes nothing about \
                      today, and no verb refuses it",
-                    row.entry.ev.name(),
+                    row.tag,
                     row.display(),
                     validate::LOG_FUTURE_DAYS,
                     ctx.now.format("%Y-%m-%d %H:%M"),

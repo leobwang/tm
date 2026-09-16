@@ -19899,3 +19899,227 @@ tests, **T12**, T11's seven latency rows, the per-verb kernel-call count against
 table, and the **§5.13 drive** (short by **gap 131**'s item). Then **S2** (**gap 130**)
 with quirk Q6(f) (**gap 86**), then **L9** (**gap 93**). **Gap 132** is S's to close in the
 same item 7 that closes gap 120 part 3.
+
+
+<!-- ===========================================================================
+     APPENDED 2026-09-15: stage 5, D9 track, step X1 on rebuild-on-lean (after
+     the W-6 audit repair, 022317d).  THE SWITCH STILL HAS NOT LANDED.  This is
+     S's precondition and not S: nothing in the binary changed reader, and
+     `Ctx::replay_with` still delegates to `Ctx::replay_of`.  What it does is
+     close gap 128 — `kernel_log::decode_facts` exists, and T5's decoder borrows
+     nothing from the reader S deletes.  Takes gap 133; new gaps start at 134.
+     Cheats and parity entries are untouched (no Lean edited): highest stay
+     cheat 157 and P35.
+     =========================================================================== -->
+
+## Stage 5, step X1, 2026-09-15: the kernel's facts become a `Replay` on their own — gap 128 closed
+
+**The honest paragraph, first.** The switch did not land here either, and this block does
+not pretend otherwise. `tm/src/cli/ctx.rs`'s `Ctx::replay_with` still calls
+`Ctx::replay_of`, whose body is still `Log::parse_bytes(..).replay(None, cfg.tz)`; the
+shipped `tm` reads `.tm/log.jsonl` with the Rust reader exactly as it did at the fork
+point, and **33 `tm log` and `tm check` invocations over three corpus plans and a damaged
+log are byte-identical to the parent commit's binary, stdout, stderr and exit code**. That
+is the point: this step is S's precondition, and a precondition that changed behaviour
+would be S done badly. What changed is that **S is now possible**. Gap 128 said
+`kernel_log::decode_facts` did not exist and that the only code turning the kernel's facts
+into a `tm_core::log::Replay` — T5's `kernel_replay()` — copied four fields straight out of
+the Rust `Replay` that S deletes. Both halves are now false.
+
+### What landed
+
+**1. `kernel_log::decode_facts` (design §11.1)** — 588 lines at the end of
+`tm/src/cli/kernel_log.rs` (1,129 → 1,721). It takes one `log` answer and a zone and
+returns a whole `tm_core::log::Replay`: every field, `PortedFacts` (D14) and the seams
+included. It merges nothing itself, because the kernel already has — a request's `sealed`
+records are folded into `facts` by `LogReq.merged` before the answer is built — so the
+scope a verb asked for (§11.1's `Hot`, `Dates`, `All`) is already in front of the decoder.
+It is total: every field is read through a named `Result`, and a shape the kernel changes
+is an error naming the field, never a panic. **Parity P17** is enforced here by name: a
+count past `u32::MAX` is `minutesOverflow at <field>`, not a saturation.
+
+**2. The two tm-core reshapes gap 128 named**, each with an equivalence test:
+
+| field | was | is | why the kernel could not supply the old shape |
+|---|---|---|---|
+| `Replay.events` | `BTreeMap<String, Vec<NamedEvent>>`, an occurrence list per name | `Replay.named: BTreeMap<String, NamedRecord>` — per name, the latest occurrence addressed to nobody and the latest addressed to each id (`NamedLatest`: two instants and, as bookkeeping, their lines) | §8.4 gives `events_named` the **A** row, "latest instant per `(name, id?)`. Exact, because a `>= since` filter commutes with max". The kernel never had the list |
+| `ViewRow` | `{line, entry: LogEntry, day, cancelled}` | `{line, tag, id, t, day, cancelled}` — the kernel's header `[line, tag, id, day, cancelled, display]`, with `display()` still a method over `t` (W-3's latency repair kept) | the kernel supplies a header, not an entry; a line's payload comes back from the `render` op (§11.4 steps 3-4) |
+
+The other two fields needed no reshape, exactly as gap 128 predicted: `line_count` is
+`answer.lines`, and `warnings` is re-rendered from `facts.replayWarnings` and the warned
+line's own header (with one narrowing, **gap 133** below).
+
+**3. The consumers, repointed** — the reshape is not a rename, so every reader moved with
+it, and each moved *towards* §11.4 rather than around it:
+
+- `Replay::events_named` and `Replay::events_for` are **deleted**; `named(name)`,
+  `event_names()`, `latest_named(name, id, tz)` and `event_occurred(name, since, id)` stay
+  and are re-expressed over the narrowed records. `latest_named` merges the `(name, None)`
+  and `(name, Some(id))` keys — a maximum over a union is the maximum of the maxima, which
+  is why the narrowing loses nothing it reads.
+- `tm log` now does §11.4's steps in §11.4's order: **select headers** from
+  `Replay::view()`, then **read the bytes** of the selected lines only
+  (`Ctx::entries_at`, new), then render. At S that read becomes the kernel's `render` op
+  and nothing above it changes.
+- `Ctx::log_tail_of` hands back `LogHeader { line, tag, id }` instead of parsed entries —
+  which is all `tm undo`'s `Recorder` ever wanted (design §14.3 row R6). The
+  wake-attributed day is deliberately absent: a tail read decides days from the wakes it
+  can see, so the one field it cannot answer honestly is not offered.
+- `tm check`'s far-future scan reads `row.t` and `row.tag` instead of `row.entry`.
+
+**4. T5 borrows nothing.** `kernel_replay` is now the decoder itself, not a twin of it, so
+T5 measures the shipped code:
+
+```
+$ grep -n "fn kernel_replay" -A 2 tm/tests/kernel_replay_parity.rs
+1031:fn kernel_replay(answer: &Value, tz: Tz) -> Replay {
+1032-    kernel_log::decode_facts(answer, tz).expect("the kernel's facts decode into a Replay")
+1033-}
+```
+
+Its two call sites pass `(answer, tz)` and nothing else; the `&Replay` third argument is
+gone from the file. T5 still compares against the **in-tree Rust reader** (retargeting to
+fork point `4748911` is §14.6 item 4's, at S), and it still passes over every input class
+it covers: the seven corpus logs, the generated 1-month and 6-month logs, 256 generated
+sequences, §6.4's twelve zone cases, 64 undo triples, the windowed cache arms and T0 (b)'s
+200,000 lines — **20 passed, 0 failed**, the whole `Replay` compared through the fork's own
+`PartialEq` and `ported_facts()`.
+
+**5. The equivalence tests** (design §14.3's rule for a reshape) —
+`tm-core/tests/log_narrowed_facts.rs`, 292 lines. It recomputes the **old** shape from the
+log text and asks the new accessors every question the old ones answered, over the four
+corpus logs, a generated month and a hand-built log that ties. Denominators, because a
+comparison that never ran reports no disagreement: **3 logs with `tm event` lines, 5 names,
+147 `latest_named` queries, 185 `event_occurred` queries; 1,613 view-row headers (828
+carrying an id); 0 disagreements.** It goes at S with the `Log::parse` it calls.
+
+### The mutation check, and the weakness it found
+
+Two replay rules were broken in turn, each in a copy restored byte-for-byte afterwards
+(`sha256sum -c` clean):
+
+| mutation | what it breaks | what bit |
+|---|---|---|
+| `undo_mask`: an `undo` entry is itself cancelled → `cancelled[i] = false` | design §7.1's mask, the C1 rule | **six T5 tests FAILED** — corpus, generated month and half-year, zone cases, sequences, undo triples, the resend-cap arm |
+| `NamedLatest::absorb`: the file-order tie-break `>=` → `>` on equal instants | the rule X1 itself introduced | `log_narrowed_facts` **FAILED by name** (`tied tm event lines: latest_named("reply", "a4")`) and **two T5 tests FAILED** (generated sequences, undo triples) |
+
+**The second mutation did not bite at first, and that is worth writing down.** The
+equivalence test compared instants with `assert_eq!` on `DateTime<FixedOffset>` — and
+`chrono`'s `PartialEq` compares the **instant only**, ignoring the written offset. The
+tie-break decides *which of two spellings of one instant* the reader keeps, so a comparison
+by `DateTime` alone could not see the rule it existed to guard: §9.2's "a checker whose
+bite is a proof and not a test". It was fixed twice over — an offset-aware comparand
+(`(t, offset_seconds)`, which is T5's `stamp_of` idea), and a hand-built input with four
+pairs of `tm event` lines that share an instant and differ in offset, one pair cancelled by
+an `undo` so the mask is applied before the tie is resolved. The corpus could never have
+caught it: it carries **three** `tm event` lines in all (two in `three-days.jsonl`, one in
+`plan-recur`), and no tie among them.
+
+### Gap 128 — CLOSED
+
+`kernel_log::decode_facts` exists, builds every field of `tm_core::log::Replay` from one
+kernel answer, and is the function T5 runs. The four borrowed fields are the kernel's:
+`named` from `facts.named`, `warnings` from `facts.replayWarnings` and the warned line's
+header, `rows` from the day records' headers carrying the answer's displays, and
+`line_count` from `answer.lines`. The two reshapes it needed are landed with their
+equivalence tests. **S's first task is done; S itself is not.**
+
+### Gap 133 (new; label X1-a) — a replay warning's text needs the warned line's header, which the `Hot` scope will not carry
+
+1. **What is not done.** `Replay.warnings` holds the fork's sentence,
+   `"<fmt_timestamp(t)>: unknown routine status <raw>"`. The kernel carries the warning as
+   `(line, raw)` — named, not formatted (**P15**) — so `decode_facts` recovers the instant
+   from that line's **header**. Before S every answer T5 builds carries every header
+   (`want.headersFrom: 1`), so the text is exact. **After S it will not be**: `Hot` carries
+   headers only for open days and the tail (§8.4), and a warning on a folded line would be
+   **dropped** rather than re-rendered.
+2. **Why not now.** The instant is not a field of the kernel's replay warning, and adding
+   one means widening `Seal.Answer`'s `rwarns` and its emitter — a W-tier change to a
+   record format W1 froze and SealLaw proves about, for a field with **no reader**. The
+   alternative, printing the warning without its stamp, would be a second spelling of one
+   sentence, which §5.3 forbids.
+3. **What it costs.** Nothing today: `Replay.warnings` is read by no verb (the two
+   `.warnings` sites in `day.rs` and `lifecycle.rs` are the ICS sync's, not the replay's),
+   and T5 compares it in full at every scope it exercises. It costs the field's
+   completeness in `Hot` after the switch, which is why it is recorded now rather than
+   discovered then. It is the same shape as **gap 132**: a scan that is exact only while
+   every scope is the whole log.
+4. **When it clears.** At **S**, beside gap 132, in item 7's D18 wiring — `tm check`'s log
+   warnings come from the answer's own `warnings` array (D18 (i)), not from this field — or
+   as a decision that the field is dead, in which case it is deleted with its last test and
+   the gap closes as a deletion.
+
+### Recorded disagreements between the design and the repo
+
+1. **§10.2 puts `replayWarnings` at the `log` level; the kernel puts it inside `facts`.**
+   `Boundary.lean`'s `emitAnswer` emits it beside `longestLeak`, within the facts object,
+   and T5's `kernel_view` has always read it there. The decoder follows the Lean source and
+   the committed test, which is what the brief says to do when the two disagree.
+2. **§12 lists `Replay::{events_for, stamps}` among S's deletions; `events_for` is deleted
+   here instead.** It cannot be answered from a record that keeps one occurrence per key,
+   so it had to go with the reshape rather than with the switch. `stamps(id)` stays: it
+   reads `demotions`, which the kernel does derive.
+3. **§12's post-S one-reader grep goes up again, 116 → 123.** Three hits are
+   `Ctx::entries_at`'s byte split and `LogEntry::parse` (§11.4 step 3, which S replaces with
+   the `render` op), two are `entries_of_text` in the test chokepoint, and three are the new
+   equivalence test. Every one is already inside S's deletion list; the number moved, and
+   this is the second step in a row to say so rather than quote the old one.
+4. **`ViewRow::display()`'s comment claimed "only `tm log` reads it".** `tm check`'s
+   far-future scan has read it since D18 (ii) landed at W-6. Corrected in place.
+5. **Design §14.3 says a reshape's equivalence test "is deleted with the old function in
+   the same commit".** Taken literally that would leave no evidence, since the old shape is
+   deleted here. It is read as the R12 chokepoint rule instead: the test recomputes the old
+   shape from the log text through `Log::parse`, and is deleted at **S** with that reader.
+
+### Observable behaviour changes
+
+**None**, and measured rather than asserted: the parent commit's `tm` (`022317d`, built in
+a scratch worktree) and this tree's `tm` were run over three corpus plans — one of them with
+a malformed line and a line dated 2027 appended — across 11 spellings each of `tm log`
+(human and `--json`, `--tail`, `--since`, `--item`) and `tm check`. **33 invocations, 0
+differences** in stdout, stderr or exit code. `tm log`'s human bytes are now also **pinned
+by a test** (`cli_lifecycle.rs`): before this step nothing asserted them, so the switch to
+the kernel's `render` op would have had nothing to be byte-identical to.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited.** Goals discharged, refuted, added: none; burn-down **13 → 13**, all
+stage 6's. New theorems: none — the audit stays at **3934**. New `decide`/`rfl` witnesses:
+none, so §14.0 item 4's probe budget is untouched. New cheats: none (highest **157**). New
+parity entries: **none** (highest stays **P35**); P17 is now *enforced* by
+`decode_facts` under its existing number, and P15 is why gap 133 exists at all.
+`TmKernel.lean` imports: **78**, unchanged. Rule D9-21 has nothing to add: no function over
+a wire-sized list was written in Lean — `decode_facts` walks a decoded answer in Rust.
+
+### Numbers
+
+**Taken:** gap **133**. **Highest:** gap 133, cheat 157, parity P35. New gaps start at
+**134**.
+
+**Re-measured** (main worktree, on the tree committed; every command capped at
+`MemoryMax=40G`, `MemorySwapMax=0`):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 3.13 / 3.04 / 3.11 s (W-6 repair at `022317d`: 3.06 / 3.12 / 3.08 s; flat, far inside the 10%-per-step rule) |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged; all stage 6) |
+| `cargo test --workspace` | **1096 passed / 0 failed / 6 ignored across 75 result lines**, exit 0, **0 warnings** (`022317d`: 1094 / 0 / 6 across 74). **+2 tests in +1 binary**: `tm-core/tests/log_narrowed_facts.rs` |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) — unchanged |
+| T5 (`kernel_replay_parity.rs --include-ignored`) | **20 passed / 0 failed**, 6.56 s (`022317d`: 6.52 s) — the same 20 arms, now against the decoder |
+| `cli_latency.rs --include-ignored` | **4 passed / 0 failed**, 3.77 s, the year-of-log and three-year rows included (`022317d`: 3.79 s) |
+| byte identity against `022317d`'s binary | **33 invocations, 0 differences** (3 corpus plans + a damaged log; `tm log` human and `--json`, `--tail`, `--since`, `--item`; `tm check` human and `--json`) |
+| the narrowing's own denominators | 5 event names, **147 `latest_named`** and **185 `event_occurred`** queries, **1,613 view-row headers** |
+| §12's one-reader grep | **123 lines** (`022317d`: 116; disagreement 3 above) |
+| the diff | 5 shipped files **+918 −116**; 5 test files **+133 −279**; one new 292-line test file. No Lean, no `Cargo.toml`, no `lean-toolchain`, no `kernel/corpus/` |
+
+**Owed next: S, in full** — and it is now unblocked. Its first task is done, so what remains
+is §14.6's contents 1-3 and 5 (`Ctx::replay_with`'s body becomes `kernel_log::replay(scope)`;
+§12's ≈1,750 lines of deletions in `log.rs`, `parse_timestamp` included; R12's consumer tests
+moved to `tm/tests/`; the `log` names in `kernel_bridge::refusal`), item 4's **retarget of T5
+to fork point 4748911**, item 7's remaining D18 default (**gap 120 part 3**, (iii)), **gap
+119**, **gap 129**, **gap 132** and **gap 133** in the same item 7, the remaining seven T9
+tests, **T12**, T11's seven latency rows, the per-verb kernel-call count against R14's table,
+and the **§5.13 drive** (short by **gap 131**'s item). Then **S2** (**gap 130**) with quirk
+Q6(f) (**gap 86**), then **L9** (**gap 93**).

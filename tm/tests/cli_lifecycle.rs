@@ -625,6 +625,26 @@ fn log_tail_since_and_item() {
     let since = tm.json(&["log", "--since", "7d"]);
     assert_eq!(since["entries"].as_array().map(Vec::len), Some(3));
 
+    // §11.4 steps 2-4, pinned: the human line is the **header's** display and
+    // tag, then the `k=v` pairs of the line's **own bytes**, which
+    // `Ctx::entries_at` reads for the selected lines only (step X1 — `ViewRow`
+    // no longer carries a parsed entry). Before X1 nothing asserted these bytes,
+    // so the switch to the kernel's `render` op would have had nothing to be
+    // byte-identical to.
+    let human = tm.run(&["log"]);
+    assert_eq!(human.code, 0, "{}{}", human.stdout, human.stderr);
+    let lines: Vec<&str> = human.stdout.trim_end().lines().collect();
+    assert_eq!(lines.len(), 3, "{}", human.stdout);
+    for (line, want_tag) in lines.iter().zip(["wake", "start", "done"]) {
+        let mut parts = line.splitn(3, ' ');
+        let (date, time, rest) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""), parts.next().unwrap_or(""));
+        assert_eq!(date.len(), 10, "the header's date: {line}");
+        assert_eq!(time.len(), 5, "the header's time: {line}");
+        assert!(rest.starts_with(want_tag), "the header's tag: {line}");
+    }
+    assert!(lines[0].contains("slept_min="), "the wake's own payload: {}", lines[0]);
+    assert!(lines[2].contains("actual_min="), "the done's own payload: {}", lines[2]);
+
     let mut schema_json = tm.json(&["log", "--tail", "1"]);
     scrub(&mut schema_json, "t", "[t]");
     insta::assert_json_snapshot!("log_json", schema_json);

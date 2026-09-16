@@ -41,9 +41,11 @@
 
 #![allow(dead_code)]
 
+use chrono::{DateTime, FixedOffset, NaiveDate};
+use chrono_tz::Tz;
 use serde_json::value::RawValue;
 use serde_json::Value;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -1126,4 +1128,594 @@ mod tests {
             "the named fault, not a kernel call"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// §11.1: the kernel's facts, decoded into Rust's `Replay`.
+
+use tm_core::log::{
+    fmt_timestamp, BreakRecord, CloseRecord, DayReplay, DaySeam, Demotion, DurationObs, EnergyObs, IdleMark, IdleRecord, InstanceRecord, Interruption,
+    ItemReplay, LeakRecord, LogSegment, NamedLatest, NamedRecord, OpenBlock, Replay, SegmentKind, StartRecord, ViewRow,
+};
+use tm_core::model::InstanceStatus;
+
+/// Seconds from `0001-01-01T00:00:00Z` to the Unix epoch: the kernel counts
+/// instants from the former and `chrono` from the latter.
+const EPOCH_FROM_CE: i64 = 62_135_596_800;
+
+/// What a malformed answer says. Every decoder below names the field it could
+/// not read, as `read_response` and [`Refusal`] do; nothing here panics, so a
+/// kernel that changes a shape is a named error and not a crash.
+type D<T> = Result<T, String>;
+
+fn d_arr<'a>(v: &'a Value, what: &str) -> D<&'a Vec<Value>> {
+    v.as_array().ok_or_else(|| format!("{what}: not an array"))
+}
+fn d_at<'a>(a: &'a [Value], i: usize, what: &str) -> D<&'a Value> {
+    a.get(i).ok_or_else(|| format!("{what}: no field {i} of {}", a.len()))
+}
+fn d_tuple<'a>(v: &'a Value, n: usize, what: &str) -> D<&'a Vec<Value>> {
+    let a = d_arr(v, what)?;
+    if a.len() != n {
+        return Err(format!("{what}: {} fields, not {n}", a.len()));
+    }
+    Ok(a)
+}
+fn d_u64(v: &Value, what: &str) -> D<u64> {
+    v.as_u64().ok_or_else(|| format!("{what}: not a number"))
+}
+fn d_i64(v: &Value, what: &str) -> D<i64> {
+    v.as_i64().ok_or_else(|| format!("{what}: not a signed number"))
+}
+fn d_str(v: &Value, what: &str) -> D<String> {
+    Ok(v.as_str().ok_or_else(|| format!("{what}: not a string"))?.to_string())
+}
+fn d_bool(v: &Value, what: &str) -> D<bool> {
+    v.as_bool().ok_or_else(|| format!("{what}: not a boolean"))
+}
+fn d_strs(v: &Value, what: &str) -> D<Vec<String>> {
+    d_arr(v, what)?.iter().map(|s| d_str(s, what)).collect()
+}
+fn d_opt<T>(v: &Value, f: impl FnOnce(&Value) -> D<T>) -> D<Option<T>> {
+    if v.is_null() {
+        Ok(None)
+    } else {
+        f(v).map(Some)
+    }
+}
+/// A minute or count the fork holds in a `u32`. **Parity P17**: the kernel
+/// counts in `Nat`, and a sum past `u32::MAX` is refused here by name rather
+/// than saturated.
+fn d_u32(v: &Value, what: &str) -> D<u32> {
+    u32::try_from(d_u64(v, what)?).map_err(|_| format!("minutesOverflow at {what}"))
+}
+fn d_u8(v: &Value, what: &str) -> D<u8> {
+    u8::try_from(d_u64(v, what)?).map_err(|_| format!("{what}: not a U8"))
+}
+/// An instant as the kernel writes one: `[sec, ns, west, offsetSec]`, seconds
+/// from `0001-01-01T00:00:00Z`, with the offset **as written** kept.
+fn d_when(v: &Value, what: &str) -> D<DateTime<FixedOffset>> {
+    let a = d_tuple(v, 4, what)?;
+    let (sec, ns) = (d_i64(d_at(a, 0, what)?, what)?, d_u32(d_at(a, 1, what)?, what)?);
+    let west = d_bool(d_at(a, 2, what)?, what)?;
+    let off = i32::try_from(d_u64(d_at(a, 3, what)?, what)?).map_err(|_| format!("{what}: an offset"))?;
+    let off = FixedOffset::east_opt(if west { -off } else { off }).ok_or_else(|| format!("{what}: an offset"))?;
+    let t = DateTime::from_timestamp(sec - EPOCH_FROM_CE, ns).ok_or_else(|| format!("{what}: an instant"))?;
+    Ok(t.with_timezone(&off))
+}
+/// A day, counted from `0001-01-01` as `Cal.Day` is.
+fn d_date(v: &Value, what: &str) -> D<NaiveDate> {
+    let d = d_i64(v, what)?;
+    let n = i32::try_from(d + 1).map_err(|_| format!("{what}: a day"))?;
+    NaiveDate::from_num_days_from_ce_opt(n).ok_or_else(|| format!("{what}: a day"))
+}
+
+/// A list the fork keeps in file order, restored by the line each record carries.
+fn in_line_order<T>(mut xs: Vec<(u64, T)>) -> Vec<T> {
+    xs.sort_by_key(|x| x.0);
+    xs.into_iter().map(|x| x.1).collect()
+}
+
+/// A segment kind in the codec's numeral tags (`[0, id]` block, `[1, id]` pause,
+/// `[2, id?]` interrupt, `[3, where?]` break, `[4, item, inst]` routine,
+/// `[5, attributed]` idle).
+fn d_seg_kind(v: &Value) -> D<SegmentKind> {
+    let a = d_arr(v, "a segment kind")?;
+    let arg = |i: usize| -> D<Option<String>> {
+        match a.get(i) {
+            None | Some(Value::Null) => Ok(None),
+            Some(x) => d_str(x, "a segment argument").map(Some),
+        }
+    };
+    let need = |i: usize, what: &str| -> D<String> { arg(i)?.ok_or_else(|| format!("a segment kind: no {what}")) };
+    match d_u64(d_at(a, 0, "a segment kind's tag")?, "a segment kind's tag")? {
+        0 => Ok(SegmentKind::Block { id: need(1, "id")? }),
+        1 => Ok(SegmentKind::Pause { id: need(1, "id")? }),
+        2 => Ok(SegmentKind::Interrupt { id: arg(1)? }),
+        3 => Ok(SegmentKind::Break { r#where: arg(1)? }),
+        4 => Ok(SegmentKind::Routine { item: need(1, "item")?, inst: need(2, "inst")? }),
+        5 => Ok(SegmentKind::Idle { attributed: need(1, "attribution")? }),
+        t => Err(format!("a segment kind tag {t}")),
+    }
+}
+
+/// An idle mark in the codec's numeral tags (`[0, t]` pause, `[1, t]` interrupt,
+/// `[2, t]` unpause, `[3, t]` resume, `[4, t, actual]` break).
+fn d_idle_mark(v: &Value) -> D<IdleMark> {
+    let a = d_arr(v, "an idle mark")?;
+    let t = d_when(d_at(a, 1, "an idle mark's t")?, "an idle mark's t")?;
+    match d_u64(d_at(a, 0, "an idle mark's tag")?, "an idle mark's tag")? {
+        0 => Ok(IdleMark::Pause(t)),
+        1 => Ok(IdleMark::Interrupt(t)),
+        2 => Ok(IdleMark::Unpause(t)),
+        3 => Ok(IdleMark::Resume(t)),
+        4 => Ok(IdleMark::Break { t, actual_min: d_opt(d_at(a, 2, "a break mark's minutes")?, |x| d_u32(x, "a break mark's minutes"))? }),
+        t => Err(format!("an idle mark tag {t}")),
+    }
+}
+
+/// A demotion's stamp in the codec's shape, `[0, week]` or `[1, day]`, as
+/// `demoted:` writes it (`W37`, `D07`).
+fn d_demotion_stamp(v: &Value) -> D<tm_core::model::Stamp> {
+    let a = d_arr(v, "a demotion stamp")?;
+    let n = d_u64(d_at(a, 1, "a demotion stamp's number")?, "a demotion stamp's number")?;
+    let text = match d_u64(d_at(a, 0, "a demotion stamp's tag")?, "a demotion stamp's tag")? {
+        0 => format!("W{n:02}"),
+        1 => format!("D{n:02}"),
+        t => return Err(format!("a demotion stamp tag {t}")),
+    };
+    tm_core::model::Stamp::parse(&text).map_err(|_| format!("a demotion stamp {text}"))
+}
+
+/// An interruption, `[line, start, stop, day, id, lost, dropped]`: the line of
+/// the `resume` that pushed it (0 for the still-open one), and the fork's record.
+fn d_interruption(v: &Value) -> D<(u64, Interruption)> {
+    let a = d_tuple(v, 7, "an interruption")?;
+    Ok((
+        d_u64(d_at(a, 0, "an interruption's line")?, "an interruption's line")?,
+        Interruption {
+            start: d_opt(d_at(a, 1, "an interruption's start")?, |x| d_when(x, "an interruption's start"))?,
+            end: d_opt(d_at(a, 2, "an interruption's end")?, |x| d_when(x, "an interruption's end"))?,
+            day: d_date(d_at(a, 3, "an interruption's day")?, "an interruption's day")?,
+            id: d_opt(d_at(a, 4, "an interruption's id")?, |x| d_str(x, "an interruption's id"))?,
+            lost_min: d_u32(d_at(a, 5, "an interruption's lost minutes")?, "an interruption's lost minutes")?,
+            dropped: d_strs(d_at(a, 6, "an interruption's dropped ids")?, "an interruption's dropped ids")?,
+        },
+    ))
+}
+
+/// A routine instance, `[[item, inst], [t, status, raw, actualMin]]`, its status
+/// a numeral (done 0, pending 1, missed 2, expired 3, skipped 4).
+fn d_instance(v: &Value) -> D<((String, String), InstanceRecord)> {
+    let a = d_tuple(v, 2, "an instance")?;
+    let key = d_tuple(d_at(a, 0, "an instance key")?, 2, "an instance key")?;
+    let rec = d_arr(d_at(a, 1, "an instance record")?, "an instance record")?;
+    let status = match d_u64(d_at(rec, 1, "an instance status")?, "an instance status")? {
+        0 => InstanceStatus::Done,
+        1 => InstanceStatus::Pending,
+        2 => InstanceStatus::Missed,
+        3 => InstanceStatus::Expired,
+        4 => InstanceStatus::Skipped,
+        s => return Err(format!("an instance status {s}")),
+    };
+    Ok((
+        (d_str(d_at(key, 0, "an instance's item")?, "an instance's item")?, d_str(d_at(key, 1, "an instance's inst")?, "an instance's inst")?),
+        InstanceRecord {
+            t: d_when(d_at(rec, 0, "an instance's t")?, "an instance's t")?,
+            status,
+            raw_status: d_str(d_at(rec, 2, "an instance's raw status")?, "an instance's raw status")?,
+            actual_min: d_opt(d_at(rec, 3, "an instance's minutes")?, |x| d_u32(x, "an instance's minutes"))?,
+        },
+    ))
+}
+
+/// **The kernel's facts as a `tm_core::log::Replay`** (design §11.1).
+///
+/// `answer` is one `log` answer — the object under `ok.log` — whose `facts` the
+/// kernel has already merged with every sealed record the request sent
+/// (`LogReq.merged`, §10.1's `sealed`), so the scope a verb asked for is already
+/// in front of this decoder and it merges nothing itself. Every field of
+/// `Replay` is built from that answer and from its `headers` and `lines`:
+/// nothing here reads `.tm/log.jsonl`, and nothing here borrows from the Rust
+/// reader the switch deletes. That is gap 128, and this function is its closure.
+///
+/// **What comes from where.** The facts give the days, items, window, instances,
+/// named events, open machine and counts. The answer's `headers`
+/// (`want.headersFrom`) give each row's display; each day record's own headers
+/// give its rows' tag, id, mask bit and instant. `answer.lines` is the physical
+/// line count. `Replay::range` is `None`: a kernel answer is never a ranged
+/// replay.
+///
+/// **One narrowing, named** (gap 133): a replay warning's text embeds the warned
+/// line's timestamp, which this decoder takes from that line's header. In the
+/// `Hot` scope a folded line has no header, and such a warning is dropped. It
+/// has no reader in the binary — `Replay::warnings` is read by no verb — and T5
+/// compares it in full at every scope that carries the headers.
+pub fn decode_facts(answer: &Value, tz: Tz) -> D<Replay> {
+    let v = answer.get("facts").ok_or("no facts in the answer")?;
+    if !v.is_object() {
+        return Err("facts: not an object".to_string());
+    }
+
+    // The display of every line the answer carries a header for.
+    let mut displays: BTreeMap<u64, String> = BTreeMap::new();
+    for h in d_arr(answer.get("headers").unwrap_or(&Value::Null), "headers")? {
+        let a = d_tuple(h, 6, "a header")?;
+        displays.insert(
+            d_u64(d_at(a, 0, "a header's line")?, "a header's line")?,
+            d_str(d_at(a, 5, "a header's display")?, "a header's display")?,
+        );
+    }
+
+    let mut days: BTreeMap<NaiveDate, DayReplay> = BTreeMap::new();
+    let mut seams: BTreeMap<NaiveDate, DaySeam> = BTreeMap::new();
+    let mut energy: Vec<(u64, EnergyObs)> = Vec::new();
+    let mut durations: Vec<(u64, DurationObs)> = Vec::new();
+    let mut interrupts: Vec<(u64, Interruption)> = Vec::new();
+    let mut demotions: Vec<(u64, Demotion)> = Vec::new();
+    let mut closes: Vec<(u64, CloseRecord)> = Vec::new();
+    let mut rows: Vec<(u64, ViewRow)> = Vec::new();
+
+    for p in d_arr(v.get("days").unwrap_or(&Value::Null), "facts.days")? {
+        let p = d_tuple(p, 9, "a day")?;
+        let dn = d_at(p, 0, "a day's number")?;
+        let date = d_date(dn, "a day's number")?;
+        let rec = d_at(p, 1, "a day record")?;
+        if !rec.is_null() {
+            let a = d_tuple(rec, 28, "a day record")?;
+            let g = |i: usize, what: &'static str| -> D<&Value> { d_at(a, i, what) };
+            let mut ci_unknown = BTreeMap::new();
+            for c in d_arr(g(6, "ciUnknown")?, "ciUnknown")? {
+                let c = d_tuple(c, 2, "a ciUnknown pair")?;
+                ci_unknown.insert(
+                    d_str(d_at(c, 0, "a ciUnknown id")?, "a ciUnknown id")?,
+                    d_u32(d_at(c, 1, "a ciUnknown minute")?, "a ciUnknown minute")?,
+                );
+            }
+            let by_ci = d_tuple(g(5, "byCi")?, 6, "byCi")?;
+            let mut minutes_by_ci = [0u32; 6];
+            for (i, slot) in minutes_by_ci.iter_mut().enumerate() {
+                *slot = d_u32(d_at(by_ci, i, "a byCi minute")?, "a byCi minute")?;
+            }
+            let day = DayReplay {
+                date,
+                wake: d_opt(g(11, "wake")?, |x| d_when(x, "wake"))?,
+                slept_min: d_opt(g(12, "sleptMin")?, |x| d_u32(x, "sleptMin"))?,
+                onset_min: d_opt(g(13, "onsetMin")?, |x| d_u32(x, "onsetMin"))?,
+                arrival: d_opt(g(14, "arrival")?, |x| d_when(x, "arrival"))?,
+                loc: d_opt(g(15, "loc")?, |x| d_str(x, "loc"))?,
+                window: d_opt(g(16, "window")?, |x| {
+                    let w = d_tuple(x, 2, "a window")?;
+                    Ok([d_str(d_at(w, 0, "a window")?, "a window")?, d_str(d_at(w, 1, "a window")?, "a window")?])
+                })?,
+                budget: d_opt(g(17, "budget")?, |x| d_u32(x, "budget"))?,
+                loc_changes: d_arr(g(18, "locChanges")?, "locChanges")?
+                    .iter()
+                    .map(|c| {
+                        let c = d_tuple(c, 2, "a location change")?;
+                        Ok((d_when(d_at(c, 0, "a location change")?, "a location change")?, d_str(d_at(c, 1, "a location")?, "a location")?))
+                    })
+                    .collect::<D<Vec<_>>>()?,
+                first_start: d_opt(g(0, "firstStart")?, |x| d_when(x, "firstStart"))?,
+                starts: d_arr(g(1, "starts")?, "starts")?
+                    .iter()
+                    .map(|r| {
+                        let r = d_tuple(r, 4, "a start")?;
+                        Ok(StartRecord {
+                            t: d_when(d_at(r, 0, "a start's t")?, "a start's t")?,
+                            id: d_str(d_at(r, 1, "a start's id")?, "a start's id")?,
+                            pred: d_u8(d_at(r, 2, "a start's pred")?, "a start's pred")?,
+                            rep: d_opt(d_at(r, 3, "a start's rep")?, |x| d_u8(x, "a start's rep"))?,
+                        })
+                    })
+                    .collect::<D<Vec<_>>>()?,
+                block_min: d_u32(g(2, "blockMin")?, "blockMin")?,
+                blocks_done: d_u32(g(3, "blocksDone")?, "blocksDone")?,
+                load_fifths: d_u64(g(4, "loadFifths")?, "loadFifths")?,
+                minutes_by_ci,
+                ci_unknown,
+                done: d_strs(g(7, "done")?, "done")?,
+                lost_min: d_u32(g(8, "lostMin")?, "lostMin")?,
+                dropped: d_strs(g(9, "dropped")?, "dropped")?,
+                leak_min: d_u32(g(19, "leakMin")?, "leakMin")?,
+                longest_leak: d_u32(g(20, "longestLeak")?, "longestLeak")?,
+                idle: d_arr(g(21, "idle")?, "idle")?
+                    .iter()
+                    .map(|r| {
+                        let r = d_tuple(r, 4, "an idle record")?;
+                        Ok(IdleRecord {
+                            t: d_when(d_at(r, 0, "an idle record's t")?, "an idle record's t")?,
+                            day: d_date(d_at(r, 1, "an idle record's day")?, "an idle record's day")?,
+                            attributed: d_str(d_at(r, 2, "an idle attribution")?, "an idle attribution")?,
+                            min: d_u32(d_at(r, 3, "an idle record's minutes")?, "an idle record's minutes")?,
+                        })
+                    })
+                    .collect::<D<Vec<_>>>()?,
+                breaks: d_arr(g(22, "breaks")?, "breaks")?
+                    .iter()
+                    .map(|r| {
+                        let r = d_tuple(r, 5, "a break")?;
+                        Ok(BreakRecord {
+                            t: d_when(d_at(r, 0, "a break's t")?, "a break's t")?,
+                            day: d_date(d_at(r, 1, "a break's day")?, "a break's day")?,
+                            planned_min: d_u32(d_at(r, 2, "a break's planned minutes")?, "a break's planned minutes")?,
+                            actual_min: d_opt(d_at(r, 3, "a break's actual minutes")?, |x| d_u32(x, "a break's actual minutes"))?,
+                            r#where: d_opt(d_at(r, 4, "a break's where")?, |x| d_str(x, "a break's where"))?,
+                        })
+                    })
+                    .collect::<D<Vec<_>>>()?,
+                routine_min: d_u32(g(23, "routineMin")?, "routineMin")?,
+                plans: d_u32(g(24, "plans")?, "plans")?,
+                replans_today: d_u32(g(25, "replansToday")?, "replansToday")?,
+                drift_min: d_u32(g(26, "driftMin")?, "driftMin")?,
+                last_plan_hash: d_opt(g(27, "lastPlanHash")?, |x| d_str(x, "lastPlanHash"))?,
+                segments: d_arr(g(10, "segments")?, "segments")?
+                    .iter()
+                    .map(|s| {
+                        let s = d_tuple(s, 3, "a segment")?;
+                        Ok(LogSegment {
+                            start: d_when(d_at(s, 0, "a segment's start")?, "a segment's start")?,
+                            end: d_when(d_at(s, 1, "a segment's end")?, "a segment's end")?,
+                            kind: d_seg_kind(d_at(s, 2, "a segment's kind")?)?,
+                        })
+                    })
+                    .collect::<D<Vec<_>>>()?,
+            };
+            if days.insert(date, day).is_some() {
+                return Err(format!("a repeated day {date}"));
+            }
+        }
+        let seam = d_at(p, 2, "a seam")?;
+        if !seam.is_null() {
+            let a = d_tuple(seam, 3, "a seam")?;
+            seams.insert(
+                date,
+                DaySeam {
+                    since_break: d_opt(d_at(a, 0, "sinceBreak")?, |x| d_when(x, "sinceBreak"))?,
+                    idle_marks: d_arr(d_at(a, 1, "idleMarks")?, "idleMarks")?.iter().map(d_idle_mark).collect::<D<Vec<_>>>()?,
+                    last_t: d_opt(d_at(a, 2, "lastT")?, |x| d_when(x, "lastT"))?,
+                },
+            );
+        }
+        for o in d_arr(d_at(p, 3, "a day's energy")?, "energy")? {
+            let o = d_tuple(o, 11, "an energy observation")?;
+            let line = d_u64(d_at(o, 0, "an observation's line")?, "an observation's line")?;
+            energy.push((
+                line,
+                EnergyObs {
+                    line,
+                    t: d_when(d_at(o, 1, "an observation's t")?, "an observation's t")?,
+                    day: d_date(d_at(o, 2, "an observation's day")?, "an observation's day")?,
+                    pred: d_u8(d_at(o, 3, "pred")?, "pred")?,
+                    rep: d_u8(d_at(o, 4, "rep")?, "rep")?,
+                    hsw: d_at(o, 5, "hsw")?.as_f64().ok_or("hsw: not a number")?,
+                    loc: d_str(d_at(o, 6, "loc")?, "loc")?,
+                    slept_min: d_opt(d_at(o, 7, "sleptMin")?, |x| d_u32(x, "sleptMin"))?,
+                    went: d_opt(d_at(o, 8, "went")?, |x| d_u8(x, "went"))?,
+                    id: d_opt(d_at(o, 9, "an observation's id")?, |x| d_str(x, "an observation's id"))?,
+                    from_start: d_bool(d_at(o, 10, "fromStart")?, "fromStart")?,
+                },
+            ));
+        }
+        for o in d_arr(d_at(p, 4, "a day's durations")?, "durations")? {
+            let o = d_tuple(o, 10, "a duration observation")?;
+            let line = d_u64(d_at(o, 0, "a duration's line")?, "a duration's line")?;
+            durations.push((
+                line,
+                DurationObs {
+                    line,
+                    t: d_when(d_at(o, 1, "a duration's t")?, "a duration's t")?,
+                    day: d_date(d_at(o, 2, "a duration's day")?, "a duration's day")?,
+                    id: d_str(d_at(o, 3, "a duration's id")?, "a duration's id")?,
+                    ci: d_u8(d_at(o, 4, "ci")?, "ci")?,
+                    tags: d_strs(d_at(o, 5, "tags")?, "tags")?,
+                    est_min: d_u32(d_at(o, 6, "estMin")?, "estMin")?,
+                    actual_min: d_u32(d_at(o, 7, "actualMin")?, "actualMin")?,
+                    went: d_opt(d_at(o, 8, "went")?, |x| d_u8(x, "went"))?,
+                    partial: d_bool(d_at(o, 9, "partial")?, "partial")?,
+                },
+            ));
+        }
+        for o in d_arr(d_at(p, 5, "a day's interrupts")?, "interrupts")? {
+            interrupts.push(d_interruption(o)?);
+        }
+        for o in d_arr(d_at(p, 6, "a day's demotions")?, "demotions")? {
+            let o = d_tuple(o, 7, "a demotion")?;
+            let id = d_str(d_at(o, 2, "a demotion's id")?, "a demotion's id")?;
+            demotions.push((
+                d_u64(d_at(o, 0, "a demotion's line")?, "a demotion's line")?,
+                Demotion {
+                    t: d_when(d_at(o, 1, "a demotion's t")?, "a demotion's t")?,
+                    id,
+                    from: d_str(d_at(o, 3, "a demotion's from")?, "a demotion's from")?,
+                    to: d_str(d_at(o, 4, "a demotion's to")?, "a demotion's to")?,
+                    est_min: d_u32(d_at(o, 5, "a demotion's estimate")?, "a demotion's estimate")?,
+                    stamp: d_opt(d_at(o, 6, "a demotion's stamp")?, d_demotion_stamp)?,
+                },
+            ));
+        }
+        for o in d_arr(d_at(p, 7, "a day's closes")?, "closes")? {
+            let o = d_tuple(o, 4, "a close")?;
+            closes.push((
+                d_u64(d_at(o, 0, "a close's line")?, "a close's line")?,
+                CloseRecord {
+                    t: d_when(d_at(o, 1, "a close's t")?, "a close's t")?,
+                    period: d_str(d_at(o, 2, "a close's period")?, "a close's period")?,
+                    key: d_str(d_at(o, 3, "a close's key")?, "a close's key")?,
+                },
+            ));
+        }
+        for h in d_arr(d_at(p, 8, "a day's headers")?, "headers")? {
+            let h = d_tuple(h, 6, "a day's header")?;
+            let line = d_u64(d_at(h, 0, "a header's line")?, "a header's line")?;
+            let (sec, off) = (d_tuple(d_at(h, 4, "a header's t")?, 2, "a header's t")?, d_tuple(d_at(h, 5, "a header's offset")?, 2, "a header's offset")?);
+            let when = serde_json::json!([sec[0], sec[1], off[0], off[1]]);
+            rows.push((
+                line,
+                ViewRow {
+                    line,
+                    tag: d_str(d_at(h, 1, "a header's tag")?, "a header's tag")?,
+                    id: d_opt(d_at(h, 2, "a header's id")?, |x| d_str(x, "a header's id"))?,
+                    t: d_when(&when, "a header's t")?,
+                    day: date,
+                    cancelled: d_bool(d_at(h, 3, "a header's mask bit")?, "a header's mask bit")?,
+                },
+            ));
+        }
+    }
+
+    // Items: the record, the latest completion, the dropped bit.
+    let mut items: BTreeMap<String, ItemReplay> = BTreeMap::new();
+    let mut last_done: BTreeMap<String, DateTime<FixedOffset>> = BTreeMap::new();
+    let mut dropped_items: BTreeSet<String> = BTreeSet::new();
+    for p in d_arr(v.get("items").unwrap_or(&Value::Null), "facts.items")? {
+        let p = d_tuple(p, 6, "an item")?;
+        let id = d_str(d_at(p, 0, "an item's id")?, "an item's id")?;
+        let rec = d_at(p, 1, "an item record")?;
+        if !rec.is_null() {
+            let o = d_tuple(rec, 6, "an item record")?;
+            let item = ItemReplay {
+                id: id.clone(),
+                minutes: d_u32(d_at(o, 0, "an item's minutes")?, "an item's minutes")?,
+                blocks: d_u32(d_at(o, 1, "an item's blocks")?, "an item's blocks")?,
+                minutes_by_day: BTreeMap::new(),
+                done_at: d_arr(d_at(o, 2, "doneAt")?, "doneAt")?.iter().map(|x| d_when(x, "doneAt")).collect::<D<Vec<_>>>()?,
+                partial_done_at: d_arr(d_at(o, 3, "partialDoneAt")?, "partialDoneAt")?.iter().map(|x| d_when(x, "partialDoneAt")).collect::<D<Vec<_>>>()?,
+                stops: d_u32(d_at(o, 4, "stops")?, "stops")?,
+                extended_min: d_u32(d_at(o, 5, "extendedMin")?, "extendedMin")?,
+            };
+            if items.insert(id.clone(), item).is_some() {
+                return Err(format!("a repeated item {id}"));
+            }
+        }
+        if let Some(t) = d_opt(d_at(p, 2, "an item's lastDone")?, |x| d_when(x, "lastDone"))? {
+            last_done.insert(id.clone(), t);
+        }
+        if d_bool(d_at(p, 3, "an item's dropped bit")?, "an item's dropped bit")? {
+            dropped_items.insert(id);
+        }
+    }
+
+    // The window: item-day minutes, done dates, date-keyed instances.
+    let mut done_dates: BTreeMap<String, BTreeSet<NaiveDate>> = BTreeMap::new();
+    let mut instances: BTreeMap<String, BTreeMap<String, InstanceRecord>> = BTreeMap::new();
+    for w in d_arr(v.get("window").unwrap_or(&Value::Null), "facts.window")? {
+        let w = d_tuple(w, 4, "a window date")?;
+        let date = d_date(d_at(w, 0, "a window date")?, "a window date")?;
+        for m in d_arr(d_at(w, 1, "itemMin")?, "itemMin")? {
+            let m = d_tuple(m, 2, "an item's minutes")?;
+            let id = d_str(d_at(m, 0, "an item's id")?, "an item's id")?;
+            let min = d_u32(d_at(m, 1, "an item's minutes")?, "an item's minutes")?;
+            items
+                .get_mut(&id)
+                .ok_or_else(|| format!("minutes on {date} of {id}, which has no item record"))?
+                .minutes_by_day
+                .insert(date, min);
+        }
+        for id in d_strs(d_at(w, 2, "a window date's done ids")?, "a window date's done ids")? {
+            done_dates.entry(id).or_default().insert(date);
+        }
+        for r in d_arr(d_at(w, 3, "a window date's instances")?, "inst")? {
+            let ((item, inst), rec) = d_instance(r)?;
+            instances.entry(item).or_default().insert(inst, rec);
+        }
+    }
+    for r in d_arr(v.get("instOther").unwrap_or(&Value::Null), "facts.instOther")? {
+        let ((item, inst), rec) = d_instance(r)?;
+        instances.entry(item).or_default().insert(inst, rec);
+    }
+
+    // `tm event`, narrowed to the latest per `(name, id?)` (§8.4).
+    let mut named: BTreeMap<String, NamedRecord> = BTreeMap::new();
+    for r in d_arr(v.get("named").unwrap_or(&Value::Null), "facts.named")? {
+        let r = d_tuple(r, 2, "a named record")?;
+        let key = d_tuple(d_at(r, 0, "a named key")?, 2, "a named key")?;
+        let rec = d_tuple(d_at(r, 1, "a named record's value")?, 2, "a named record's value")?;
+        let latest = d_tuple(d_at(rec, 0, "the latest occurrence")?, 2, "the latest occurrence")?;
+        let dated = d_tuple(d_at(rec, 1, "the dated occurrence")?, 2, "the dated occurrence")?;
+        let dated = d_tuple(d_at(dated, 1, "the dated occurrence's line and t")?, 2, "the dated occurrence's line and t")?;
+        let rec = NamedLatest {
+            latest: d_when(d_at(latest, 1, "the latest occurrence's t")?, "the latest occurrence's t")?,
+            latest_line: d_u64(d_at(latest, 0, "the latest occurrence's line")?, "the latest occurrence's line")?,
+            latest_dated: d_when(d_at(dated, 1, "the dated occurrence's t")?, "the dated occurrence's t")?,
+            dated_line: d_u64(d_at(dated, 0, "the dated occurrence's line")?, "the dated occurrence's line")?,
+        };
+        let name = d_str(d_at(key, 0, "a named key's name")?, "a named key's name")?;
+        let who = d_opt(d_at(key, 1, "a named key's id")?, |x| d_str(x, "a named key's id"))?;
+        let slot = named.entry(name).or_default();
+        match who {
+            None => slot.unaddressed = Some(rec),
+            Some(i) => {
+                slot.by_id.insert(i, rec);
+            }
+        }
+    }
+
+    let rows: Vec<ViewRow> = in_line_order(rows);
+    // The replay warnings, in the fork's words: one a surviving routine whose
+    // status the fork does not read, stamped with the warned line's own `t`.
+    let mut warnings: Vec<String> = Vec::new();
+    for x in d_arr(v.get("replayWarnings").unwrap_or(&Value::Null), "facts.replayWarnings")? {
+        let x = d_tuple(x, 2, "a replay warning")?;
+        let line = d_u64(d_at(x, 0, "a replay warning's line")?, "a replay warning's line")?;
+        let raw = d_str(d_at(x, 1, "a replay warning's status")?, "a replay warning's status")?;
+        // Gap 133: no header for the line, no timestamp to print with it.
+        if let Ok(i) = rows.binary_search_by_key(&line, |r| r.line) {
+            warnings.push(format!("{}: unknown routine status {raw:?}", fmt_timestamp(&rows[i].t)));
+        }
+    }
+
+    let open = v.get("open").unwrap_or(&Value::Null);
+    let open_block = d_opt(open.get("block").unwrap_or(&Value::Null), |o| {
+        let o = d_tuple(o, 5, "the open block")?;
+        Ok(OpenBlock {
+            id: d_str(d_at(o, 0, "the open block's id")?, "the open block's id")?,
+            started: d_when(d_at(o, 1, "the open block's start")?, "the open block's start")?,
+            worked_min: d_u32(d_at(o, 2, "the open block's minutes")?, "the open block's minutes")?,
+            since: d_opt(d_at(o, 3, "the open block's since")?, |x| d_when(x, "the open block's since"))?,
+            paused: d_bool(d_at(o, 4, "the open block's paused bit")?, "the open block's paused bit")?,
+        })
+    })?;
+    let open_interrupt = d_opt(open.get("interrupt").unwrap_or(&Value::Null), |o| d_interruption(o).map(|p| p.1))?;
+    let longest_leak = d_opt(v.get("longestLeak").unwrap_or(&Value::Null), |x| {
+        let x = d_tuple(x, 3, "the longest leak")?;
+        Ok(LeakRecord {
+            t: d_when(d_at(x, 0, "the longest leak's t")?, "the longest leak's t")?,
+            day: d_date(d_at(x, 1, "the longest leak's day")?, "the longest leak's day")?,
+            min: d_u32(d_at(x, 2, "the longest leak's minutes")?, "the longest leak's minutes")?,
+        })
+    })?;
+
+    Ok(Replay {
+        tz,
+        range: None,
+        days,
+        items,
+        instances,
+        energy: in_line_order(energy),
+        durations: in_line_order(durations),
+        interrupts: in_line_order(interrupts),
+        named,
+        demotions: {
+            let mut by_id: BTreeMap<String, Vec<Demotion>> = BTreeMap::new();
+            for d in in_line_order(demotions) {
+                by_id.entry(d.id.clone()).or_default().push(d);
+            }
+            by_id
+        },
+        closes: in_line_order(closes),
+        dropped_items,
+        done_items: last_done.keys().cloned().collect(),
+        last_done,
+        done_dates,
+        longest_leak,
+        open_block,
+        open_interrupt,
+        unknown: d_u32(v.get("unknown").unwrap_or(&Value::Null), "facts.unknown")?,
+        warnings,
+        seams,
+        last_effective_t: d_opt(v.get("lastEffective").unwrap_or(&Value::Null), |x| d_when(x, "lastEffective"))?,
+        rows,
+        line_count: d_u64(answer.get("lines").unwrap_or(&Value::Null), "the answer's line count")?,
+    })
 }

@@ -70,9 +70,11 @@ use std::sync::{Mutex, OnceLock};
 use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
 use serde_json::{json, Value};
+// The record structs the old `kernel_replay` built by hand are gone with it:
+// `kernel_log::decode_facts` builds them now (step X1), and T5 names only what
+// its own comparison reads.
 use tm_core::log::{
-    fmt_timestamp, parse_instance_status, BreakRecord, CloseRecord, DayReplay, DaySeam, Demotion, DurationObs, EnergyObs, Event, IdleMark, IdleRecord,
-    InstanceRecord, Interruption, ItemReplay, LeakRecord, LogEntry, LogSegment, OpenBlock, Replay, SegmentKind, StartRecord,
+    fmt_timestamp, parse_instance_status, Event, IdleMark, Interruption, LogEntry, Replay, SegmentKind, ViewRow,
 };
 use tm_core::model::InstanceStatus;
 
@@ -233,7 +235,7 @@ fn instant_of(s: &Stamp) -> (i64, u32) {
 /// and the warnings need each occurrence's line, which the fork's lists do not
 /// carry: they are walked beside the surviving rows of their kind, in file order,
 /// and checked against them.
-fn rust_completion(r: &Replay, tz: Tz) -> Completion {
+fn rust_completion(r: &Replay, entries: &BTreeMap<u64, LogEntry>, tz: Tz) -> Completion {
     let done_items: BTreeSet<String> = r.last_done.keys().cloned().collect();
     assert_eq!(done_items, r.done_items, "the fork's done_items are its last_done keys");
     let mut out = Completion {
@@ -255,10 +257,11 @@ fn rust_completion(r: &Replay, tz: Tz) -> Completion {
         ..Completion::default()
     };
     let survivors: Vec<_> = r.view().iter().filter(|row| !row.cancelled).collect();
+    let ev = |row: &ViewRow| &entries.get(&row.line).expect("the row's entry").ev;
     // The replay warnings: one a surviving routine with a status the fork does not read.
     for row in &survivors {
-        if let Event::Routine { status, .. } = &row.entry.ev {
-            if parse_instance_status(status).is_none() {
+        if let Event::Routine { status, .. } = ev(row) {
+            if parse_instance_status(status.as_str()).is_none() {
                 out.warnings.push((row.line, status.clone()));
             }
         }
@@ -268,21 +271,26 @@ fn rust_completion(r: &Replay, tz: Tz) -> Completion {
         .iter()
         .map(|(line, raw)| {
             let row = survivors.iter().find(|row| row.line == *line).expect("the warned row");
-            format!("{}: unknown routine status {raw:?}", fmt_timestamp(&row.entry.t))
+            format!("{}: unknown routine status {raw:?}", fmt_timestamp(&row.t))
         })
         .collect();
     assert_eq!(texts, r.warnings, "Replay.warnings is one message a surviving unknown status, in file order");
-    // `events[name]` in file order, beside the surviving `event` rows of that name.
-    for (name, occ) in &r.events {
-        let rows: Vec<_> = survivors.iter().filter(|row| matches!(&row.entry.ev, Event::Named { name: n, .. } if n == name)).collect();
-        assert_eq!(rows.len(), occ.len(), "events[{name}] is its surviving rows");
+    // Every surviving `event` row, by name, in file order: the occurrence lists the
+    // narrowed `Replay.named` (step X1) no longer keeps, rebuilt from the entries so
+    // the kernel's `named` records are still compared against every occurrence.
+    let mut lists: BTreeMap<String, Vec<(u64, Stamp, Option<String>)>> = BTreeMap::new();
+    for row in &survivors {
+        if let Event::Named { name, id } = ev(row) {
+            lists.entry(name.clone()).or_default().push((row.line, stamp_of(&row.t), id.clone()));
+        }
+    }
+    for (name, occ) in &lists {
         let mut keys: BTreeMap<Option<String>, NamedRow> = BTreeMap::new();
-        for (row, e) in rows.iter().zip(occ) {
-            let Event::Named { id: row_id, .. } = &row.entry.ev else { unreachable!("filtered to events") };
-            assert_eq!((stamp_of(&row.entry.t), row_id), (stamp_of(&e.t), &e.id), "events[{name}] in file order");
-            let (line, t) = (row.line, stamp_of(&e.t));
+        for (line, t, who) in occ {
+            let (line, t) = (*line, *t);
+            let e_id = who;
             let date = |s: &Stamp| day_number(date_in(s, tz));
-            keys.entry(e.id.clone())
+            keys.entry(e_id.clone())
                 .and_modify(|k| {
                     // `t >= latest` and `(date, t) >= (date, latest_dated)`: a later line wins a tie.
                     if instant_of(&t) >= instant_of(&k.1) {
@@ -534,23 +542,23 @@ struct DayFam {
 /// The Rust's day family, from the in-tree `Replay`. The demotions and closes need
 /// each record's day, which the fork's records do not carry: they are walked beside
 /// the surviving rows of their kind, in file order, and checked against them.
-fn rust_day(r: &Replay) -> DayFam {
+fn rust_day(r: &Replay, entries: &BTreeMap<u64, LogEntry>) -> DayFam {
     let survivors: Vec<_> = r.view().iter().filter(|row| !row.cancelled).collect();
     let mut demotions = Vec::new();
     let mut per_id: BTreeMap<String, usize> = BTreeMap::new();
     let mut closes = Vec::new();
     for row in &survivors {
-        match &row.entry.ev {
+        match &entries.get(&row.line).expect("the row's entry").ev {
             Event::Demote { id, .. } => {
                 let k = per_id.entry(id.clone()).or_insert(0);
                 let d = &r.demotions.get(id).expect("the demotions of a surviving demote")[*k];
                 *k += 1;
-                assert_eq!(stamp_of(&d.t), stamp_of(&row.entry.t), "demotions[{id}] in file order");
+                assert_eq!(stamp_of(&d.t), stamp_of(&row.t), "demotions[{id}] in file order");
                 demotions.push((day_number(row.day), stamp_of(&d.t), d.id.clone(), d.from.clone(), d.to.clone(), u64::from(d.est_min), d.stamp.map(|s| s.to_string())));
             }
             Event::Close { .. } => {
                 let c = &r.closes[closes.len()];
-                assert_eq!(stamp_of(&c.t), stamp_of(&row.entry.t), "closes in file order");
+                assert_eq!(stamp_of(&c.t), stamp_of(&row.t), "closes in file order");
                 closes.push((day_number(row.day), stamp_of(&c.t), c.period.clone(), c.key.clone()));
             }
             _ => {}
@@ -999,242 +1007,43 @@ fn date_time(s: &Stamp) -> DateTime<FixedOffset> {
     DateTime::from_timestamp(s.0 - EPOCH_FROM_CE, s.1).expect("an instant").with_timezone(&off)
 }
 
-/// C6: a kernel day as a date.
-fn date_of(d: i64) -> NaiveDate {
-    NaiveDate::from_num_days_from_ce_opt(i32::try_from(d + 1).expect("a day")).expect("a date")
-}
-
 fn u32_of(n: u64) -> u32 {
     u32::try_from(n).expect("a u32 (P17: the decoder at S refuses minutesOverflow by name)")
 }
 
-fn u8_of(n: u64) -> u8 {
-    u8::try_from(n).expect("a u8 (the kernel's `U8`)")
-}
-
-/// **C6: the kernel's facts as a `tm_core::log::Replay`** (the decoder `kernel_log::decode_facts` will be at S),
-/// so the fork's own `PartialEq` and `ported_facts()` compare the whole of it. Two fields are not the kernel's:
-/// `events`, whose occurrence lists the kernel does not keep (design §8.4: the latest per `(name, id?)`, compared
-/// through every `latest_named` query above), and `warnings`' text, which names the warned line's written stamp
-/// (compared above by line and status). Both are taken from the fork, as are the line bookkeeping `rows` and
-/// `line_count` (compared as view rows).
-fn kernel_replay(f: &Facts, tz: Tz, r: &Replay) -> Replay {
-    let segment = |g: &(Stamp, Stamp, String, Vec<Option<String>>)| {
-        let arg = |i: usize| g.3.get(i).cloned().flatten();
-        LogSegment {
-            start: date_time(&g.0),
-            end: date_time(&g.1),
-            kind: match g.2.as_str() {
-                "block" => SegmentKind::Block { id: arg(0).expect("an id") },
-                "pause" => SegmentKind::Pause { id: arg(0).expect("an id") },
-                "interrupt" => SegmentKind::Interrupt { id: arg(0) },
-                "break" => SegmentKind::Break { r#where: arg(0) },
-                "routine" => SegmentKind::Routine { item: arg(0).expect("an item"), inst: arg(1).expect("an inst") },
-                "idle" => SegmentKind::Idle { attributed: arg(0).expect("an attribution") },
-                other => panic!("a segment kind {other}"),
-            },
-        }
-    };
-    let interruption = |i: &InterruptRow| Interruption {
-        start: i.0.as_ref().map(date_time),
-        end: i.1.as_ref().map(date_time),
-        day: date_of(i.2),
-        id: i.3.clone(),
-        lost_min: u32_of(i.4),
-        dropped: i.5.clone(),
-    };
-    let status = |s: &str| match s {
-        "pending" => InstanceStatus::Pending,
-        "done" => InstanceStatus::Done,
-        "missed" => InstanceStatus::Missed,
-        "expired" => InstanceStatus::Expired,
-        "skipped" => InstanceStatus::Skipped,
-        other => panic!("a status {other}"),
-    };
-    let days = f
-        .block
-        .days
-        .iter()
-        .map(|(d, b)| {
-            let x = &f.day.days[d];
-            let rec = DayReplay {
-                date: date_of(*d),
-                wake: x.wake.as_ref().map(date_time),
-                slept_min: x.slept_min.map(u32_of),
-                onset_min: x.onset_min.map(u32_of),
-                arrival: x.arrival.as_ref().map(date_time),
-                loc: x.loc.clone(),
-                window: x.window.clone().map(|w| [w.0, w.1]),
-                budget: x.budget.map(u32_of),
-                loc_changes: x.loc_changes.iter().map(|(t, l)| (date_time(t), l.clone())).collect(),
-                first_start: b.first_start.as_ref().map(date_time),
-                starts: b
-                    .starts
-                    .iter()
-                    .map(|s| StartRecord { t: date_time(&s.0), id: s.1.clone(), pred: u8_of(s.2), rep: s.3.map(u8_of) })
-                    .collect(),
-                block_min: u32_of(b.block_min),
-                blocks_done: u32_of(b.blocks_done),
-                load_fifths: b.load_fifths,
-                minutes_by_ci: std::array::from_fn(|i| u32_of(b.by_ci[i])),
-                ci_unknown: b.ci_unknown.iter().map(|(k, m)| (k.clone(), u32_of(*m))).collect(),
-                done: b.done.clone(),
-                lost_min: u32_of(b.lost_min),
-                dropped: b.dropped.clone(),
-                leak_min: u32_of(x.leak_min),
-                longest_leak: u32_of(x.longest_leak),
-                idle: x.idle.iter().map(|i| IdleRecord { t: date_time(&i.0), day: date_of(i.1), attributed: i.2.clone(), min: u32_of(i.3) }).collect(),
-                breaks: x
-                    .breaks
-                    .iter()
-                    .map(|k| BreakRecord { t: date_time(&k.0), day: date_of(k.1), planned_min: u32_of(k.2), actual_min: k.3.map(u32_of), r#where: k.4.clone() })
-                    .collect(),
-                routine_min: u32_of(x.routine_min),
-                plans: u32_of(x.plans),
-                replans_today: u32_of(x.replans_today),
-                drift_min: u32_of(x.drift_min),
-                last_plan_hash: x.last_plan_hash.clone(),
-                segments: b.segments.iter().map(segment).collect(),
-            };
-            (date_of(*d), rec)
-        })
-        .collect();
-    let mut demotions: BTreeMap<String, Vec<Demotion>> = BTreeMap::new();
-    for x in &f.day.demotions {
-        demotions.entry(x.2.clone()).or_default().push(Demotion {
-            t: date_time(&x.1),
-            id: x.2.clone(),
-            from: x.3.clone(),
-            to: x.4.clone(),
-            est_min: u32_of(x.5),
-            stamp: x.6.as_ref().map(|s| tm_core::model::Stamp::parse(s).expect("a stamp")),
-        });
-    }
-    let mut instances: BTreeMap<String, BTreeMap<String, InstanceRecord>> = BTreeMap::new();
-    for ((item, inst), row) in &f.completion.instances {
-        instances.entry(item.clone()).or_default().insert(
-            inst.clone(),
-            InstanceRecord { t: date_time(&row.0), status: status(&row.1), raw_status: row.2.clone(), actual_min: row.3.map(u32_of) },
-        );
-    }
-    Replay {
-        tz,
-        range: None,
-        days,
-        items: f
-            .block
-            .items
-            .iter()
-            .map(|(id, it)| {
-                let item = ItemReplay {
-                    id: id.clone(),
-                    minutes: u32_of(it.minutes),
-                    blocks: u32_of(it.blocks),
-                    minutes_by_day: it.by_day.iter().map(|(d, m)| (date_of(*d), u32_of(*m))).collect(),
-                    done_at: it.done_at.iter().map(date_time).collect(),
-                    partial_done_at: it.partial_done_at.iter().map(date_time).collect(),
-                    stops: u32_of(it.stops),
-                    extended_min: u32_of(it.extended_min),
-                };
-                (id.clone(), item)
-            })
-            .collect(),
-        instances,
-        energy: f
-            .block
-            .energy
-            .iter()
-            .map(|o| EnergyObs {
-                line: o.0,
-                t: date_time(&o.1),
-                day: date_of(o.2),
-                pred: u8_of(o.3),
-                rep: u8_of(o.4),
-                hsw: o.5,
-                loc: o.6.clone(),
-                slept_min: o.7.map(u32_of),
-                went: o.8.map(u8_of),
-                id: o.9.clone(),
-                from_start: o.10,
-            })
-            .collect(),
-        durations: f
-            .block
-            .durations
-            .iter()
-            .map(|o| DurationObs {
-                line: o.0,
-                t: date_time(&o.1),
-                day: date_of(o.2),
-                id: o.3.clone(),
-                ci: u8_of(o.4),
-                tags: o.5.clone(),
-                est_min: u32_of(o.6),
-                actual_min: u32_of(o.7),
-                went: o.8.map(u8_of),
-                partial: o.9,
-            })
-            .collect(),
-        interrupts: f.block.interrupts.iter().map(interruption).collect(),
-        events: r.events.clone(),
-        demotions,
-        closes: f.day.closes.iter().map(|c| CloseRecord { t: date_time(&c.1), period: c.2.clone(), key: c.3.clone() }).collect(),
-        dropped_items: f.day.dropped.clone(),
-        done_items: f.completion.last_done.keys().cloned().collect(),
-        last_done: f.completion.last_done.iter().map(|(k, t)| (k.clone(), date_time(t))).collect(),
-        done_dates: f.completion.done_dates.iter().map(|(k, ds)| (k.clone(), ds.iter().map(|d| date_of(*d)).collect())).collect(),
-        longest_leak: f.day.longest_leak.as_ref().map(|l| LeakRecord { t: date_time(&l.0), day: date_of(l.1), min: u32_of(l.2) }),
-        open_block: f.block.open_block.as_ref().map(|b| OpenBlock {
-            id: b.0.clone(),
-            started: date_time(&b.1),
-            worked_min: u32_of(b.2),
-            since: b.3.as_ref().map(date_time),
-            paused: b.4,
-        }),
-        open_interrupt: f.block.open_interrupt.as_ref().map(interruption),
-        unknown: u32_of(f.day.unknown),
-        warnings: r.warnings.clone(),
-        seams: f
-            .seams
-            .iter()
-            .map(|(d, s)| {
-                let seam = DaySeam {
-                    since_break: s.0.as_ref().map(date_time),
-                    idle_marks: s
-                        .1
-                        .iter()
-                        .map(|(kind, t, actual)| {
-                            let t = date_time(t);
-                            match kind.as_str() {
-                                "pause" => IdleMark::Pause(t),
-                                "interrupt" => IdleMark::Interrupt(t),
-                                "unpause" => IdleMark::Unpause(t),
-                                "resume" => IdleMark::Resume(t),
-                                "break" => IdleMark::Break { t, actual_min: actual.map(u32_of) },
-                                other => panic!("an idle mark {other}"),
-                            }
-                        })
-                        .collect(),
-                    last_t: s.2.as_ref().map(date_time),
-                };
-                (date_of(*d), seam)
-            })
-            .collect(),
-        last_effective_t: f.block.last_effective.as_ref().map(date_time),
-        rows: r.rows.clone(),
-        line_count: r.line_count,
-    }
+/// **C6: the kernel's facts as a `tm_core::log::Replay`** — this is
+/// `kernel_log::decode_facts` itself (design §11.1), so the fork's own
+/// `PartialEq` and `ported_facts()` compare the whole of it.
+///
+/// **It takes the answer and the zone, and nothing else** (gap 128, step X1).
+/// Until this step it took the in-tree Rust `Replay` as a third argument and
+/// copied four fields straight out of it — `events`, `warnings`, `rows` and
+/// `line_count` — so the decoder it stood for could not have survived the switch
+/// that deletes that reader. It now borrows nothing: `named` is the kernel's
+/// narrowed `(name, id?)` records, `warnings` is re-rendered from
+/// `replayWarnings` and the warned line's own header, `rows` are the day
+/// records' headers carrying the answer's displays, and `line_count` is
+/// `answer.lines`.
+///
+/// It is **not a copy** of the decoder: it *is* the decoder, the one
+/// `Ctx::replay_with` calls at S, so T5 measures the shipped code and not a
+/// test-only twin.
+fn kernel_replay(answer: &Value, tz: Tz) -> Replay {
+    kernel_log::decode_facts(answer, tz).expect("the kernel's facts decode into a Replay")
 }
 
 /// **The Rust's facts**, through the test chokepoint.
 fn rust_facts(text: &str, tz: Tz) -> Facts {
     let r = replay::replay_of_text(text, tz);
+    // The lines' payloads, which `ViewRow` no longer carries (step X1): the fork
+    // side of the comparison still reads them, through the test chokepoint.
+    let entries: BTreeMap<u64, LogEntry> = replay::entries_of_text(text).into_iter().collect();
     Facts {
         cancelled: r.view().iter().filter(|row| row.cancelled).map(|row| row.line).collect(),
         days: r.view().iter().map(|row| (row.line, day_number(row.day))).collect(),
         block: rust_block(&r),
-        completion: rust_completion(&r, tz),
-        day: rust_day(&r),
+        completion: rust_completion(&r, &entries, tz),
+        day: rust_day(&r, &entries),
         seams: r
             .seams
             .iter()
@@ -1256,7 +1065,7 @@ fn rust_facts(text: &str, tz: Tz) -> Facts {
         rows: r
             .view()
             .iter()
-            .map(|row| (row.line, row.entry.ev.name().to_string(), row.entry.ev.primary_id().map(str::to_string), day_number(row.day), row.cancelled, row.display()))
+            .map(|row| (row.line, row.tag.clone(), row.id.clone(), day_number(row.day), row.cancelled, row.display()))
             .collect(),
         counts: (r.entry_count() as u64, r.line_count(), r.days.keys().last().map(|d| day_number(*d))),
         warnings: replay::warning_lines_of_text(text),
@@ -1368,7 +1177,7 @@ fn assert_parity_answer(name: &str, text: &str, tz: Tz, answer: &Value) -> Facts
     // C4: every `latest_named` query the fork answers (every name, every id it was
     // addressed to and one it was not), from the kernel's per-key records.
     let rr = replay::replay_of_text(text, tz);
-    let ids: BTreeSet<String> = rr.events.values().flatten().filter_map(|e| e.id.clone()).chain(["zz-absent".to_string()]).collect();
+    let ids: BTreeSet<String> = rr.named.values().flat_map(|r| r.by_id.keys().cloned()).chain(["zz-absent".to_string()]).collect();
     let names: BTreeSet<&str> = rr.event_names().collect();
     assert_eq!(names, k.completion.named.keys().map(|(n, _)| n.as_str()).collect::<BTreeSet<_>>(), "{name}: event_names");
     for n in names.iter().copied().chain(["zz-absent"]) {
@@ -1422,7 +1231,7 @@ fn assert_parity_answer(name: &str, text: &str, tz: Tz, answer: &Value) -> Facts
     // C6: the whole `Replay`, through the fork's own `PartialEq` (every field placed on one side or the other by
     // its destructuring) and `ported_facts()` (D14: every field nothing reads).
     let rr = replay::replay_of_text(text, tz);
-    let kr = kernel_replay(&k, tz, &rr);
+    let kr = kernel_replay(answer, tz);
     assert!(kr == rr, "{name} ({}): the kernel's Replay is not the fork's", tz.name());
     assert_eq!(kr.ported_facts(), rr.ported_facts(), "{name}: the ported facts (D14)");
     k
@@ -1562,13 +1371,13 @@ fn day_separations(text: &str, tz: Tz) -> (usize, usize) {
     let mut late = 0;
     let mut early = 0;
     for row in &survivors {
-        match &row.entry.ev {
-            Event::Energy { .. } => {
-                let wake = survivors.iter().find(|w| matches!(w.entry.ev, Event::Wake { .. }) && w.day == row.day);
+        match row.tag.as_str() {
+            "energy" => {
+                let wake = survivors.iter().find(|w| w.tag == "wake" && w.day == row.day);
                 late += usize::from(wake.is_some_and(|w| w.line > row.line));
             }
-            Event::Idle { .. } => {
-                let rec = r.days.values().flat_map(|d| d.idle.iter()).find(|i| stamp_of(&i.t) == stamp_of(&row.entry.t));
+            "idle" => {
+                let rec = r.days.values().flat_map(|d| d.idle.iter()).find(|i| stamp_of(&i.t) == stamp_of(&row.t));
                 early += usize::from(rec.is_some_and(|i| i.day != row.day));
             }
             _ => {}
@@ -1582,13 +1391,14 @@ fn day_separations(text: &str, tz: Tz) -> (usize, usize) {
 /// so the instance (last in file order) and the latest by instant differ.
 fn q6b_separations(text: &str, tz: Tz) -> usize {
     let r = replay::replay_of_text(text, tz);
+    let entries: BTreeMap<u64, LogEntry> = replay::entries_of_text(text).into_iter().collect();
     let mut by_inst: BTreeMap<(String, String), Vec<(i64, u32)>> = BTreeMap::new();
     for row in r.view().iter().filter(|row| !row.cancelled) {
-        let key = match &row.entry.ev {
+        let key = match &entries.get(&row.line).expect("the row's entry").ev {
             Event::Routine { item, inst, .. } | Event::Skip { item, inst } => (item.clone(), inst.clone()),
             _ => continue,
         };
-        by_inst.entry(key).or_default().push(instant_of(&stamp_of(&row.entry.t)));
+        by_inst.entry(key).or_default().push(instant_of(&stamp_of(&row.t)));
     }
     by_inst.values().filter(|ts| ts.last().is_some_and(|last| ts.iter().any(|t| t > last))).count()
 }
@@ -1599,7 +1409,7 @@ fn off_their_own_date(text: &str, tz: Tz) -> usize {
     replay::replay_of_text(text, tz)
         .view()
         .iter()
-        .filter(|row| row.day != row.entry.t.with_timezone(&tz).date_naive())
+        .filter(|row| row.day != row.t.with_timezone(&tz).date_naive())
         .count()
 }
 
@@ -3709,9 +3519,12 @@ fn stage5_parity_the_kernel_replays_and_fits_as_the_fork_point_does() {
 
     for (i, name) in names.iter().enumerate() {
         let text = &texts[i];
-        let r = replay::replay_of_text(text, tz);
-        let kf = kernel_facts(text, tz);
-        let kr = kernel_replay(&kf, tz, &r);
+        // One kernel call a log: its facts for the counts, and the same answer
+        // through `decode_facts` for the whole `Replay` (step X1). The in-tree
+        // Rust reader is not read at all here — this arm's oracle is the fork.
+        let answer = kernel_answer(text, tz);
+        let kf = kernel_view(&answer);
+        let kr = kernel_replay(&answer, tz);
         let kv_raw = serde_json::to_value(&kr).expect("the kernel's replay serialises");
         let mut kv = kv_raw.clone();
         as_fork_shaped(&mut kv);
@@ -3778,8 +3591,10 @@ fn stage5_parity_the_kernel_replays_and_fits_as_the_fork_point_does() {
 
     eprintln!(
         "\nstage-5 parity — the Lean kernel vs fork point 4748911's log::replay and energy::fit\n\
-         \x20 {} logs compared: {keys} Replay keys ({} of the fork's 20 per log; `events` and `warnings` \
-         excluded by name, gap 128 and P15), {entries_compared} entry counts, {fits} fitted models;\n\
+         \x20 {} logs compared: {keys} Replay keys ({} of the fork's 20 per log; the fork's `events` \
+         occurrence lists, which this branch narrowed to `named` at step X1, and `warnings`' text, \
+         which P15 names rather than formats, are excluded by name), {entries_compared} entry counts, \
+         {fits} fitted models;\n\
          \x20 {values} scalar values in all.",
         names.len(),
         FORK_REPLAY_KEYS.len(),

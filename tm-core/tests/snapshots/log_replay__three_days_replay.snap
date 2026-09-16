@@ -663,11 +663,13 @@ interrupts:
     id: t8
     lost_min: 15
     dropped: []
-events:
+named:
   reply:
-    - t: "2026-09-07T17:00:00-05:00"
-      name: reply
-      id: a4
+    unaddressed: ~
+    by_id:
+      a4:
+        latest: "2026-09-07T17:00:00-05:00"
+        latest_dated: "2026-09-07T17:00:00-05:00"
 demotions:
   m2:
     - t: "2026-09-08T14:00:00-05:00"

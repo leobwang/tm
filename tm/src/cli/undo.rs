@@ -29,11 +29,11 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use tm_core::log::{Event, LogEntry};
+use tm_core::log::Event;
 use tm_core::model::Id;
 use tm_core::store::{RuntimeState, Store, StoreError, StoreExt};
 
-use super::ctx::Ctx;
+use super::ctx::{Ctx, LogHeader};
 use super::out::CliError;
 
 /// `.tm/undo.json`.
@@ -123,24 +123,25 @@ fn snapshot(ctx: &Ctx) -> Result<BTreeMap<String, String>, CliError> {
 }
 
 /// The log's physical line count on disk now and, with `after`, the entries a
-/// command appended after that many lines, through [`Ctx::log_tail_of`] (the one
-/// door; the rows are `Replay::headers_from`'s, without replaying the lines
-/// before). `None` when the file cannot be read, which records no line count
-/// and no events, as the recorder always did.
-fn log_now(ctx: &Ctx, after: Option<u64>) -> Option<(u64, Vec<(u64, LogEntry)>)> {
+/// command appended after that many lines, as headers, through
+/// [`Ctx::log_tail_of`] (the one door; the rows are `Replay::headers_from`'s,
+/// without replaying the lines before). `None` when the file cannot be read,
+/// which records no line count and no events, as the recorder always did.
+fn log_now(ctx: &Ctx, after: Option<u64>) -> Option<(u64, Vec<LogHeader>)> {
     Ctx::log_tail_of(&ctx.store, &ctx.cfg, after).ok()
 }
 
-/// The events of `rows` (a command's appended entries), and the line of the first.
-fn recorded(rows: &[(u64, LogEntry)]) -> (Vec<UndoneEvent>, Option<u64>) {
+/// The events of `rows` (a command's appended headers), and the line of the first.
+///
+/// A header is all this needs — the tag and the primary id are exactly
+/// [`UndoneEvent`]'s two fields — which is why `Ctx::log_tail_of` hands back
+/// headers rather than parsed entries (design §14.3 row R6).
+fn recorded(rows: &[LogHeader]) -> (Vec<UndoneEvent>, Option<u64>) {
     let events = rows
         .iter()
-        .map(|(_, e)| UndoneEvent {
-            ev: e.ev.name().to_string(),
-            id: e.ev.primary_id().map(str::to_string),
-        })
+        .map(|h| UndoneEvent { ev: h.tag.clone(), id: h.id.clone() })
         .collect();
-    (events, rows.first().map(|(line, _)| *line))
+    (events, rows.first().map(|h| h.line))
 }
 
 /// Records what one command changed.

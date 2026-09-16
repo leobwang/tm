@@ -56,3 +56,16 @@ pub fn headers_of_text(text: &str) -> Vec<(String, Option<String>)> {
         .map(|e| (e.ev.name().to_string(), e.ev.primary_id().map(str::to_string)))
         .collect()
 }
+
+/// Every entry of `text` in file order with its 1-based physical line: the
+/// **fork-shaped** read, for the tests that still need a line's payload rather
+/// than its header ([`tm_core::log::ViewRow`] carries only the header).
+///
+/// This is the last direct use of `Log::parse` outside `log.rs`, and it goes at
+/// the switch with the reader it calls: after S a line's payload comes back from
+/// the kernel's `render` op (design §11.4 step 4), and the parity tests read it
+/// from there.
+pub fn entries_of_text(text: &str) -> Vec<(u64, LogEntry)> {
+    let log = tm_core::log::Log::parse(text);
+    log.lines.iter().copied().zip(log.entries).collect()
+}

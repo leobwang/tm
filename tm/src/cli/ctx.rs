@@ -180,6 +180,24 @@ pub struct LogRead {
     pub warnings: Vec<LogWarning>,
 }
 
+/// **One line's header**, as `tm undo`'s recorder reads it (design §14.3 row
+/// R6, §11.4): the physical line, the entry's tag and its primary id.
+///
+/// The wake-attributed day is deliberately **not** here. A tail read decides
+/// days from the wakes it can see, and a tail that starts after the day's
+/// `wake` would attribute its lines differently from the whole replay; the
+/// recorder reads a tag and an id and nothing else, so the field it cannot
+/// answer honestly is absent rather than wrong.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LogHeader {
+    /// The 1-based physical line.
+    pub line: u64,
+    /// The entry's tag ([`tm_core::log::Event::name`]).
+    pub tag: String,
+    /// Its primary id, when it has one.
+    pub id: Option<String>,
+}
+
 /// How much history a verb's [`Replay`] must hold (design §11.1).
 ///
 /// After the switch the kernel's answer covers the open days and the recent
@@ -403,8 +421,8 @@ impl Ctx {
     /// rows R6 and R8): the log's physical line count on disk now and, when
     /// `after` is given, the entries on the physical lines after it, each with
     /// its line, in file order. The count is exactly
-    /// `Ctx::replay_of(..).line_count()`, and the entries are exactly the `(line,
-    /// entry)` of `Ctx::replay_of(..).headers_from(after + 1)` (unit test
+    /// `Ctx::replay_of(..).line_count()`, and the headers are exactly those of
+    /// `Ctx::replay_of(..).headers_from(after + 1)` (unit test
     /// `the_recorders_tail_is_the_whole_replays`), without replaying the lines
     /// before `after`: a mutating verb used to replay the whole log twice more
     /// for its undo entry (W-3's audit: 4 replays a verb, ≈ 110 ms each on three
@@ -415,7 +433,7 @@ impl Ctx {
         store: &FsStore,
         cfg: &Config,
         after: Option<u64>,
-    ) -> Result<(u64, Vec<(u64, LogEntry)>), CliError> {
+    ) -> Result<(u64, Vec<LogHeader>), CliError> {
         let bytes = if store.exists(LOG_PATH) {
             store.read_bytes(LOG_PATH)?
         } else {
@@ -436,16 +454,57 @@ impl Ctx {
                 .replay(None, cfg.tz)
                 .headers_from(1)
                 .iter()
-                .map(|r| (r.line + after, r.entry.clone()))
+                .map(|r| LogHeader { line: r.line + after, tag: r.tag.clone(), id: r.id.clone() })
                 .collect(),
             None => Log::parse_bytes(&bytes)
                 .replay(None, cfg.tz)
                 .headers_from(after + 1)
                 .iter()
-                .map(|r| (r.line, r.entry.clone()))
+                .map(|r| LogHeader { line: r.line, tag: r.tag.clone(), id: r.id.clone() })
                 .collect(),
         };
         Ok((count, rows))
+    }
+
+    /// **The payload of the lines a verb selected** (design §11.4 step 3): the
+    /// raw bytes of each line of `lines`, read from `.tm/log.jsonl` by physical
+    /// line number and parsed.
+    ///
+    /// `tm log` is the one verb that shows a line's payload rather than its
+    /// header. §11.4 gives it this order — select headers, then read the bytes
+    /// of the selected lines, then render them — and this is that read: the
+    /// selection comes from [`Replay::view`], and only the selected lines are
+    /// parsed. A line the reader refuses has no [`tm_core::log::ViewRow`]
+    /// either, so it cannot be selected and is simply absent from the map.
+    ///
+    /// **At the switch this body becomes the kernel's `render` op** (§11.4 step
+    /// 4), which returns each line's canonical rendering and its display from
+    /// the same bytes. Until then the bytes are parsed here, which is what
+    /// `tm log` did when it held a whole `LogEntry` in every row.
+    pub fn entries_at(store: &FsStore, lines: &[u64]) -> Result<BTreeMap<u64, LogEntry>, CliError> {
+        let mut out = BTreeMap::new();
+        if lines.is_empty() {
+            return Ok(out);
+        }
+        let bytes = if store.exists(LOG_PATH) {
+            store.read_bytes(LOG_PATH)?
+        } else {
+            Vec::new()
+        };
+        let wanted: HashSet<u64> = lines.iter().copied().collect();
+        // The same split as `Log::parse_bytes`: on `\n`, a `\r` trimmed, each
+        // segment decoded on its own so one bad line takes only itself.
+        for (i, raw) in bytes.split(|b| *b == b'\n').enumerate() {
+            let line = i as u64 + 1;
+            if !wanted.contains(&line) {
+                continue;
+            }
+            let Ok(text) = std::str::from_utf8(raw) else { continue };
+            if let Ok(e) = LogEntry::parse(text.trim_end_matches('\r')) {
+                out.insert(line, e);
+            }
+        }
+        Ok(out)
     }
 
     /// A [`horizon::Ctx`] over the current snapshot (§6.3).
@@ -825,8 +884,11 @@ mod tests {
             assert_eq!((count, none.len()), (whole.line_count(), 0), "text {k}");
             for after in 0..=whole.line_count() + 2 {
                 let (count, rows) = Ctx::log_tail_of(&store, &cfg, Some(after)).expect("tail");
-                let want: Vec<(u64, LogEntry)> =
-                    whole.headers_from(after + 1).iter().map(|r| (r.line, r.entry.clone())).collect();
+                let want: Vec<LogHeader> = whole
+                    .headers_from(after + 1)
+                    .iter()
+                    .map(|r| LogHeader { line: r.line, tag: r.tag.clone(), id: r.id.clone() })
+                    .collect();
                 assert_eq!(count, whole.line_count(), "text {k}");
                 assert_eq!(rows, want, "text {k}, after {after}");
             }

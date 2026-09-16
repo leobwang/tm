@@ -46,18 +46,20 @@
 //!   energy mix, lost, leak, idle, breaks, plans, starts, done ids, actual
 //!   [`LogSegment`]s), per-item [`ItemReplay`] (minutes, blocks, by day,
 //!   done times), [`InstanceRecord`]s as `item → inst → record`,
-//!   [`EnergyObs`], [`DurationObs`], [`Interruption`]s, [`NamedEvent`]s,
+//!   [`EnergyObs`], [`DurationObs`], [`Interruption`]s, [`NamedRecord`]s (the
+//!   latest `tm event` per `(name, id?)`, not the occurrence list),
 //!   [`Demotion`]s with stamps, [`CloseRecord`]s, the longest leak, the
 //!   still-open block. Helpers: `block_minutes(id)`, `blocks_done(date)`,
 //!   `is_done(id)`, `last_done(id)`, `done_dates(id)`,
 //!   `instance_status(item, inst)`, `instances_of(item)`, `stamps(id)`,
-//!   `events_named(name)`, `events_for(id)`, `breaks()`,
+//!   `event_names()`, `latest_named(name, id, tz)`, `breaks()`,
 //!   `done_minutes_map()` (§6.4, keyed by [`crate::model::Id`] for
 //!   `tree::done_minutes`), [`DayReplay::gaps`] (unattributed gaps for
 //!   the §11 leak ledger), and `seam(date)`, the [`DaySeam`] facts the
-//!   CLI and TUI once walked the log for. [`Replay::view`] is every entry
-//!   with its physical line, day, mask bit and display text ([`ViewRow`],
-//!   `tm log`'s rows), [`Replay::entry_count`] their number,
+//!   CLI and TUI once walked the log for. [`Replay::view`] is every entry's
+//!   **header** — physical line, tag, id, `t`, day and mask bit ([`ViewRow`],
+//!   `tm log`'s rows; the line's payload comes from its own bytes, not from
+//!   here), [`Replay::entry_count`] their number,
 //!   [`Replay::headers_from`]`(line)` the rows from a physical line on
 //!   (`tm undo`'s recorder). `Replay` is
 //!   `Serialize`/`Deserialize` (JSON-safe: every map key is a string or a
@@ -1323,15 +1325,134 @@ pub struct Interruption {
     pub dropped: Vec<String>,
 }
 
-/// A `tm event` occurrence.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct NamedEvent {
-    /// When.
-    pub t: DateTime<FixedOffset>,
-    /// Event name.
-    pub name: String,
-    /// The item it was addressed to.
-    pub id: Option<String>,
+/// **The latest `tm event <name>` of one `(name, id?)` key**, which is all the
+/// kernel keeps of the occurrences (design §8.4's `events_named` row: "latest
+/// instant per `(name, id?)`. Exact, because a `>= since` filter commutes with
+/// max"), and all the two readers in the binary need —
+/// [`crate::priority::collect_candidates`]'s `event_names()` and
+/// `recur::arrival_of`'s [`Replay::latest_named`] (step R3's narrowing).
+///
+/// Two instants, because [`LatestNamed`] answers "the latest occurrence on or
+/// after a local date" from them: `latest` by instant, `latest_dated` by
+/// `(local date, instant)`. The lines are **bookkeeping, not facts** — they
+/// break a tie between two occurrences of the same instant the way the fork's
+/// file-order walk did, and, like [`EnergyObs::line`], they are neither
+/// serialised nor compared.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct NamedLatest {
+    /// The latest occurrence by instant (a tie goes to the later line).
+    pub latest: DateTime<FixedOffset>,
+    /// Its physical line. Bookkeeping; not serialised, not compared.
+    #[serde(skip)]
+    pub latest_line: u64,
+    /// The latest occurrence by `(local date in the replay's tz, instant)` (a
+    /// tie goes to the later line).
+    pub latest_dated: DateTime<FixedOffset>,
+    /// Its physical line. Bookkeeping; not serialised, not compared.
+    #[serde(skip)]
+    pub dated_line: u64,
+}
+
+impl PartialEq for NamedLatest {
+    fn eq(&self, other: &NamedLatest) -> bool {
+        // Destructured so a new field is a compile error here.
+        let NamedLatest {
+            latest,
+            latest_line: _,
+            latest_dated,
+            dated_line: _,
+        } = self;
+        *latest == other.latest && *latest_dated == other.latest_dated
+    }
+}
+
+impl NamedLatest {
+    /// One occurrence, on `line`, as a record of its own.
+    fn of(t: DateTime<FixedOffset>, line: u64) -> NamedLatest {
+        NamedLatest {
+            latest: t,
+            latest_line: line,
+            latest_dated: t,
+            dated_line: line,
+        }
+    }
+
+    /// Take the occurrence `(t, line)` into this record, in `tz`. The fork
+    /// walked the occurrences in file order and kept `t >= latest` and
+    /// `(date, t) >= (date, latest_dated)`, so a later line wins a tie; this
+    /// is that walk, one occurrence at a time.
+    fn absorb(&mut self, t: DateTime<FixedOffset>, line: u64, tz: Tz) {
+        if (t, line) >= (self.latest, self.latest_line) {
+            self.latest = t;
+            self.latest_line = line;
+        }
+        let key = |x: DateTime<FixedOffset>, l: u64| (x.with_timezone(&tz).date_naive(), x, l);
+        if key(t, line) >= key(self.latest_dated, self.dated_line) {
+            self.latest_dated = t;
+            self.dated_line = line;
+        }
+    }
+
+    /// The record of the union of two keys' occurrences, in `tz`: a maximum
+    /// over a union is the maximum of the maxima, which is why the narrowing
+    /// loses nothing that [`Replay::latest_named`] reads.
+    fn merged(self, other: NamedLatest, tz: Tz) -> NamedLatest {
+        let mut out = self;
+        out.absorb(other.latest, other.latest_line, tz);
+        out.absorb(other.latest_dated, other.dated_line, tz);
+        out
+    }
+}
+
+/// **What one `tm event` name's occurrences narrow to** ([`NamedLatest`] per
+/// `(name, id?)`): the latest addressed to nobody, and the latest addressed to
+/// each id. Keyed by a `String` so [`Replay`] stays JSON-safe.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+pub struct NamedRecord {
+    /// The latest occurrence of this name addressed to nobody.
+    pub unaddressed: Option<NamedLatest>,
+    /// The latest occurrence of this name addressed to each id.
+    pub by_id: BTreeMap<String, NamedLatest>,
+}
+
+impl NamedRecord {
+    /// Take one occurrence in, in `tz`.
+    fn absorb(&mut self, id: Option<&str>, t: DateTime<FixedOffset>, line: u64, tz: Tz) {
+        let slot = match id {
+            None => &mut self.unaddressed,
+            Some(i) => {
+                match self.by_id.get_mut(i) {
+                    Some(rec) => rec.absorb(t, line, tz),
+                    None => {
+                        self.by_id.insert(i.to_string(), NamedLatest::of(t, line));
+                    }
+                }
+                return;
+            }
+        };
+        match slot {
+            Some(rec) => rec.absorb(t, line, tz),
+            None => *slot = Some(NamedLatest::of(t, line)),
+        }
+    }
+
+    /// The record of every occurrence addressed to `id` **or to nobody** — the
+    /// set the fork's `latest_named` filtered to.
+    fn for_id(&self, id: &str, tz: Tz) -> Option<NamedLatest> {
+        match (self.unaddressed, self.by_id.get(id).copied()) {
+            (Some(a), Some(b)) => Some(a.merged(b, tz)),
+            (a, b) => a.or(b),
+        }
+    }
+
+    /// The latest occurrence of this name addressed to anyone or to nobody.
+    fn any(&self, tz: Tz) -> Option<NamedLatest> {
+        self.by_id
+            .values()
+            .copied()
+            .chain(self.unaddressed)
+            .reduce(|a, b| a.merged(b, tz))
+    }
 }
 
 /// A demotion.
@@ -1680,16 +1801,27 @@ pub struct ItemReplay {
     pub extended_min: u32,
 }
 
-/// One row of [`Replay::view`]: a log entry with its line bookkeeping, the
-/// Rust side of the kernel's line header `(line, tag, id?, day, cancelled,
-/// display)` (design §8.4, §11.4). Every entry has one, cancelled entries and
-/// `undo`s included; malformed and blank lines have none.
+/// One row of [`Replay::view`]: **the kernel's line header**
+/// `(line, tag, id?, day, cancelled, display)` (design §8.4, §11.4), and
+/// nothing else. Every entry has one, cancelled entries and `undo`s included;
+/// malformed and blank lines have none.
+///
+/// It does **not** hold the parsed [`LogEntry`]: the kernel supplies a header,
+/// not an entry, and the line's own bytes come back from the `render` op
+/// (§11.4 steps 3-4). `tm log`, the one verb that shows a line's payload,
+/// reads those bytes for the lines it selected; everything else reads the
+/// header. Until the switch `Ctx::entries_at` is that read (design §11.4 step
+/// 3), and at the switch it becomes the kernel's `render`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ViewRow {
     /// The entry's 1-based physical line ([`Log::lines`]).
     pub line: u64,
-    /// The entry as read.
-    pub entry: LogEntry,
+    /// The entry's tag ([`Event::name`]).
+    pub tag: String,
+    /// Its primary id ([`Event::primary_id`]), when it has one.
+    pub id: Option<String>,
+    /// When it happened, as written (instant and offset).
+    pub t: DateTime<FixedOffset>,
     /// Its wake-attributed day ([`DayIndex::day_of`] over the surviving
     /// wakes), whether or not it survives.
     pub day: NaiveDate,
@@ -1700,10 +1832,13 @@ pub struct ViewRow {
 impl ViewRow {
     /// `t` as `tm log` prints it: `%Y-%m-%d %H:%M` in the written offset. A
     /// method, not a field: formatting it for every row of every replay cost
-    /// about 20 ms a replay on three years of log, and only `tm log` reads it
-    /// (W-3's latency repair).
+    /// about 20 ms a replay on three years of log, and only `tm log` and `tm
+    /// check`'s far-future scan read it (W-3's latency repair; the clause used
+    /// to say `tm log` alone, which `log_problems` has made false since D18 (ii)
+    /// landed). The kernel's header carries the same string, and T5 compares the
+    /// two, so the switch keeps one definition of the display and not two.
     pub fn display(&self) -> String {
-        self.entry.t.format("%Y-%m-%d %H:%M").to_string()
+        self.t.format("%Y-%m-%d %H:%M").to_string()
     }
 }
 
@@ -1734,8 +1869,13 @@ pub struct Replay {
     pub durations: Vec<DurationObs>,
     /// Interruptions in time order.
     pub interrupts: Vec<Interruption>,
-    /// `tm event` occurrences by name.
-    pub events: BTreeMap<String, Vec<NamedEvent>>,
+    /// `tm event` occurrences by name, narrowed to the latest per
+    /// `(name, id?)` ([`NamedRecord`]): design §8.4's `events_named` row, and
+    /// what the kernel's `named` facts carry. The occurrence **lists** are
+    /// not kept: nothing in the binary reads one (step R3 narrowed
+    /// `recur.rs` to [`Replay::latest_named`] and `priority.rs` to
+    /// [`Replay::event_names`]), and a list is not a fact the kernel derives.
+    pub named: BTreeMap<String, NamedRecord>,
     /// Demotions by item id.
     pub demotions: BTreeMap<String, Vec<Demotion>>,
     /// `close` events.
@@ -1791,7 +1931,7 @@ impl PartialEq for Replay {
             energy,
             durations,
             interrupts,
-            events,
+            named,
             demotions,
             closes,
             dropped_items,
@@ -1816,7 +1956,7 @@ impl PartialEq for Replay {
             && *energy == other.energy
             && *durations == other.durations
             && *interrupts == other.interrupts
-            && *events == other.events
+            && *named == other.named
             && *demotions == other.demotions
             && *closes == other.closes
             && *dropped_items == other.dropped_items
@@ -2081,53 +2221,30 @@ impl Replay {
             .into_iter()
             .flat_map(|m| m.iter().map(|(k, v)| (k.as_str(), v)))
     }
-    /// Occurrences of `tm event <name>`. Read by tests only; the library
-    /// reads [`Replay::latest_named`] and [`Replay::event_names`].
-    pub fn events_named(&self, name: &str) -> &[NamedEvent] {
-        self.events.get(name).map_or(&[], Vec::as_slice)
+    /// What `tm event <name>` narrowed to ([`NamedRecord`]), or `None` when
+    /// the name was never logged.
+    pub fn named(&self, name: &str) -> Option<&NamedRecord> {
+        self.named.get(name)
     }
     /// The names `tm event` was logged with (§5.5's `after:event:` deps).
     pub fn event_names(&self) -> impl Iterator<Item = &str> {
-        self.events.keys().map(String::as_str)
+        self.named.keys().map(String::as_str)
     }
     /// The latest `tm event <name>` addressed to `id` or to nobody, with
     /// local dates in `tz` ([`LatestNamed`]); `None` when there is none.
+    ///
+    /// **`tz` must be the replay's own** ([`Replay::tz`]), which is the only
+    /// tz any caller passes: `recur::arrival_of` passes `cfg.tz`, and
+    /// `Ctx::replay_of` builds the replay with `cfg.tz`. `latest_dated` is a
+    /// maximum by `(local date, instant)`, so it is chosen when the replay is
+    /// built rather than when the query is asked, exactly as the kernel's
+    /// `named` facts choose it.
     pub fn latest_named(&self, name: &str, id: &str, tz: Tz) -> Option<LatestNamed> {
-        let mut out: Option<LatestNamed> = None;
-        for e in self.events_named(name) {
-            if e.id.as_deref().is_some_and(|i| i != id) {
-                continue;
-            }
-            let t = e.t;
-            out = Some(match out {
-                None => LatestNamed {
-                    latest: t,
-                    latest_dated: t,
-                },
-                Some(mut l) => {
-                    if t >= l.latest {
-                        l.latest = t;
-                    }
-                    let key = |x: DateTime<FixedOffset>| (x.with_timezone(&tz).date_naive(), x);
-                    if key(t) >= key(l.latest_dated) {
-                        l.latest_dated = t;
-                    }
-                    l
-                }
-            });
-        }
-        out
-    }
-    /// Every `tm event` addressed to `id`, in time order.
-    pub fn events_for(&self, id: &str) -> Vec<&NamedEvent> {
-        let mut v: Vec<&NamedEvent> = self
-            .events
-            .values()
-            .flatten()
-            .filter(|e| e.id.as_deref() == Some(id))
-            .collect();
-        v.sort_by_key(|e| e.t);
-        v
+        let rec = self.named.get(name)?.for_id(id, tz)?;
+        Some(LatestNamed {
+            latest: rec.latest,
+            latest_dated: rec.latest_dated,
+        })
     }
     /// Every break, in time order across days.
     pub fn breaks(&self) -> impl Iterator<Item = &BreakRecord> {
@@ -2139,15 +2256,26 @@ impl Replay {
     }
     /// True when `name` was logged, optionally only after `since`, and
     /// optionally only when addressed to `id`.
+    ///
+    /// "Some occurrence is at or after `since`" is "the latest occurrence is
+    /// at or after `since`", which is why the narrowing answers it exactly
+    /// (design §8.4: "a `>= since` filter commutes with max"). With `id`, the
+    /// occurrences are that id's own — an unaddressed one is not addressed to
+    /// it, as the fork's `e.id.as_deref() == Some(i)` said.
     pub fn event_occurred(
         &self,
         name: &str,
         since: Option<DateTime<FixedOffset>>,
         id: Option<&str>,
     ) -> bool {
-        self.events_named(name).iter().any(|e| {
-            since.is_none_or(|s| e.t >= s) && id.is_none_or(|i| e.id.as_deref() == Some(i))
-        })
+        let Some(rec) = self.named.get(name) else {
+            return false;
+        };
+        let latest = match id {
+            Some(i) => rec.by_id.get(i).map(|r| r.latest),
+            None => rec.any(self.tz).map(|r| r.latest),
+        };
+        latest.is_some_and(|t| since.is_none_or(|s| t >= s))
     }
     /// Demotion stamps for `id`, in order.
     pub fn stamps(&self, id: &str) -> Vec<Stamp> {
@@ -2816,11 +2944,12 @@ impl Machine {
             }
             Event::Named { name, id } => {
                 if self.in_range(day) {
-                    self.out.events.entry(name.clone()).or_default().push(NamedEvent {
-                        t,
-                        name: name.clone(),
-                        id: id.clone(),
-                    });
+                    let (line, tz) = (self.line, self.out.tz);
+                    self.out
+                        .named
+                        .entry(name.clone())
+                        .or_default()
+                        .absorb(id.as_deref(), t, line, tz);
                 }
             }
             Event::Demote {
@@ -2951,7 +3080,9 @@ fn replay_lines(
             let line = *line;
             ViewRow {
                 line,
-                entry: e.clone(),
+                tag: e.ev.name().to_string(),
+                id: e.ev.primary_id().map(str::to_string),
+                t: e.t,
                 day: days.day_of(e.t),
                 cancelled: *c,
             }
@@ -2991,7 +3122,7 @@ fn replay_refs(
             energy: Vec::new(),
             durations: Vec::new(),
             interrupts: Vec::new(),
-            events: BTreeMap::new(),
+            named: BTreeMap::new(),
             demotions: BTreeMap::new(),
             closes: Vec::new(),
             dropped_items: BTreeSet::new(),
@@ -3378,7 +3509,7 @@ mod reader_tests {
         assert!(!r.items.contains_key("t1"));
         assert_eq!(r.energy.len(), 3);
         assert_eq!(r.durations.len(), 3);
-        assert!(r.events_named("reply").is_empty());
+        assert!(r.named("reply").is_none());
         assert_eq!(r.instance_status("lunch", "2026-09-07"), InstanceStatus::Pending);
         assert_eq!(r.done_dates("t3"), vec![d8]);
         assert!(r.last_done("lunch").is_none());
