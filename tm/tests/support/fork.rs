@@ -24,6 +24,23 @@
 //!
 //! A re-bless is a decision about what the fork point says, never a way to make
 //! a failure go away (AGENTS §7.2).
+//!
+//! **The comparison is only as fine as the parser under it** (W-12, README gap
+//! 235). Both sides of every frozen comparison — the oracle's stdout at the
+//! bless, the fixture at the read — are decoded by this workspace's
+//! `serde_json`, and without its `float_roundtrip` feature serde's best-effort
+//! decimal parser answers the *nearest-but-one* double for a literal that needs
+//! all 17 significant digits: it read the fork's own
+//! `"days.2026-08-29.load": 187.60000000000002` back as `187.6`, which is
+//! exactly the double the kernel's `load_fifths / 5` produces. Eight genuine
+//! parity **P21** sightings across the two fixtures were therefore counted as
+//! agreement, and the bless had silently rounded the fork's answer into the
+//! file. The feature is on in the root `Cargo.toml` and
+//! [`the_frozen_comparand_is_read_at_full_precision`] (in
+//! `kernel_replay_parity.rs`) fails if it is ever dropped. Nothing about the
+//! *kernel's* own numeral parser changes: it ports serde **without**
+//! `float_roundtrip`, because that is what fork point `4748911` runs (parity
+//! P25, kernel/README.md's `finiteF64` row).
 
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
@@ -42,7 +59,9 @@ pub const FROZEN_FORK: &str = "fork-4748911-corpus-replay.jsonl";
 /// JSON would have to normalise parity **P21** out (some `days.<date>.load`
 /// values legitimately differ between the kernel's exact fifths and the fork's
 /// accumulated `f64`), and normalising P21 out hides the one thing P21 exists to
-/// watch. Every sighting stays visible and counted.
+/// watch. Every sighting stays visible and counted — which, until W-12's
+/// `float_roundtrip` (module docs above, README gap 235), the *parser* was
+/// quietly undoing on five of this file's records and three of [`FROZEN_FORK`]'s.
 ///
 /// §6.4's zone cases ride along: twelve tiny logs, 18,748 bytes for the lot, and
 /// they are the day index's own instrument.

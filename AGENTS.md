@@ -2193,15 +2193,23 @@ rebuilt under §7.3's freshness rule. Every denominator is recorded; none is omi
   6 zones** — 8 frozen (the seven corpus logs and a generated month) and 461 in the classes too
   large to freeze — **8,442 `Replay` keys** (18 of the fork's 20 per log), **285 `tm event` name
   sets**, **469 entry counts**, 7 refused-line lists, **8 fitted models**, **195,243 scalar
-  values**. Disagreements: **24**, every one `days.<date>.load`, every one **parity P21** (the
+  values**. Disagreements: **49**, every one `days.<date>.load`, every one **parity P21** (the
   kernel's exact fifths against the fork's accumulated `f64`), every one checked to display the
   same `round1` load and `load_blocks`. **Nothing else differs**, and `tm model --fit` agrees on
-  all 8 fitted logs — design §14.6's T12, against the fork rather than a saved file.
+  all 8 fitted logs — design §14.6's T12, against the fork rather than a saved file. *(This
+  number was **24** at stage 5's close and the undercount was the harness's, not the kernel's:
+  both sides of every comparison were decoded by a `serde_json` without `float_roundtrip`, which
+  reads the fork's own `187.60000000000002` back as `187.6` — the very double the kernel
+  produces. W-12 turned the feature on, re-blessed the two frozen fixtures from a fresh oracle
+  (8 leaves, every one a `days.<date>.load`) and re-ran this census: README **gap 235**. The
+  denominator did not move.)*
 - **inside plain `cargo test --workspace`, with no fork build** (D21): T5's frozen arms compare
   **20 inputs / 360 keys / 17,291 scalar values / 4 event-name sets** and the door **16
   `All`-scope reads / 288 keys / 32,976 values / 6 event-name sets**; 458 further inputs reach
   the fork only under `TM_ORACLE` (**gap 150**) and 2 door inputs are counted **skipped**, never
-  as agreement.
+  as agreement. Their **P21** sightings are **4 + 8 + 0** (corpus, generated month, zone cases)
+  and **24** (door) — **12 + 24**, where stage 5's close counted **4 + 8** for the same inputs,
+  for the parser reason above.
 - **the grammar** (input sets 1 and 2): 138 corpus lines, 77 with nothing to report; 2,048
   generated lines, 470 with nothing to report — **byte-for-byte the `017ead3` and stage-5-close
   figures**, so the grammar surface did not move while the reader was deleted, the writer
@@ -2239,12 +2247,23 @@ rebuilt under §7.3's freshness rule. Every denominator is recorded; none is omi
    §14.6's stage-5 list asks for the TUI through two reloads with a CLI verb in between
    (README **gap 182**). Two items on that list are owner questions the drive is meant to
    settle: **gap 131** and **gap 139**.
-3. **Open gaps**, the corrected list: **93**, **132**, **133**, **139**, **143**, **150**,
-   **151**, **152**, **160**, **170**, **180**, **181**, **182**, **190**, **200**, **201**,
-   **210**, **226**. Performance levers: **121, 122, 123, 126, 127** (and 143). Quirks kept by
-   owner answer Q6: **85** (e), **87** (g), **118** (b). *Gaps 140, 141, 142 and 145 were
-   cleared by S and are named closed in the README's closing block — four runs of "still open"
-   lists had carried them by mistake.*
+3. **Open gaps**, the corrected list: **93**, **94**, **98**, **113**, **114**, **116**,
+   **132**, **133**, **139**, **143**, **150**, **151**, **152**, **160**, **170**, **180**,
+   **181**, **182**, **190**, **200**, **201**, **210**, **226**. Performance levers: **121,
+   122, 123, 126, 127** (and 143). Quirks kept by owner answer Q6: **85** (e), **87** (g),
+   **118** (b). Kept by owner decision rather than open: **120**'s remainder (D18 — a hand edit
+   no rebuild can window is a named fault, and the memory cap is never raised).
+   *Gaps 140, 141, 142 and 145 were cleared by S and are named closed in the README's closing
+   block — four runs of "still open" lists had carried them by mistake.*
+   *And this list, billed as corrected, was itself five short (W-12, README **gap 236**):
+   **94, 98, 113, 114** and **116** are opened in the README and named closed nowhere in it —
+   the five the README's own closing block calls **stage 6's inheritance** (`94` two reserves
+   still Rust, `98` the 3,660-day lookahead clamp, `113` the candidates' facts are the host's,
+   `114`/`116` the what-if and TUI replans ranking by the previous load's priorities). **113 was
+   cited as a live constraint two bullets above this one** while being absent from it, and 98,
+   114 and 116 appeared nowhere in this file at all. The README's line 19519 groups **107** with
+   114 and 116 as stage 6's; 107 is closed (README "Gaps 107 and 80 — closed") and does not
+   belong on any open list.*
 4. **Phase F's F2 and F3** belong to stage 6's recurrence and priority tranches.
 
 *The dated paragraphs below are the working record of how the switch was reached, kept because
@@ -2667,7 +2686,14 @@ authoritative list; this is what stage 6 has to *do* with it:
   in with the close tranche) — each fact's last Rust reader goes with its tranche.
 - **The scope questions**: gaps **132** and **133**, facts the `Hot` scope will not carry.
 - **The levers**, all measured and none taken: **121, 122, 123, 126, 127, 143**. The baseline
-  they move against is a later verb at three years, **146.659 ms**.
+  they move against is a later verb at three years, **146.9 ms** — the one T11 row that holds
+  still: five capped runs across two sessions gave 146.66, 146.85, 146.87, 146.95 and 147.01 ms,
+  a spread of 0.2%. **Three of the seven rows do not hold still and must never be quoted as
+  single numbers** (W-12, README **gap 240**): over three capped runs here the reseal spans
+  **197.5-212.6 ms** (the README's closing block recorded 202.604 and an earlier block 192.455),
+  the 3-day-old routine **121.6-136.8 ms** (recorded 136.827) and `review week`
+  **248.1-253.3 ms** (recorded 253.270). A step reading any of the three as a regression is
+  reading noise; quote the range, or re-measure and quote your own run.
 - **Gap 226**: the parity list has no single home and no check, and P32 was issued twice. The
   next entry anyone adds is **P37**.
 
@@ -2793,12 +2819,12 @@ close) is in this file's history as of `30919c1`.
 | module | lines | theorem declarations | at `30919c1`, stage 4's close (lines / theorems) |
 |---|---:|---:|---:|
 | `Boundary.lean` | 11,353 | 466 | 7,099 / 298 |
-| `Replay.lean` | 7,962 | 396 | — (new, phase C) |
+| `Replay.lean` | 7,963 | 396 | — (new, phase C) |
 | `Line.lean` | 6,829 | 496 | 6,749 / 494 |
 | `Close.lean` | 5,838 | 258 | 5,459 / 246 |
 | `Lookahead.lean` | 4,752 | 284 | — (new, D10 L1–L8) |
 | `Json.lean` | 3,726 | 185 | 2,641 / 126 |
-| `Log.lean` | 2,754 | 115 | — (new, D9 step B3) |
+| `Log.lean` | 2,755 | 115 | — (new, D9 step B3) |
 | `Plan.lean` | 2,566 | 138 | 2,518 / 135 |
 | `Cmd.lean` | 2,196 | 113 | 2,196 / 113 (unchanged) |
 | `Cal.lean` | 1,734 | 169 | 833 / 105 |
@@ -2813,7 +2839,7 @@ close) is in this file's history as of `30919c1`.
 | `Tree.lean` | 541 | 37 | — (new, stage 5 step 1) |
 | `Grain.lean` | 310 | 30 | 310 / 30 (unchanged) |
 | `Seal.lean` **+ 57 `Seal*` modules** | **15,494** | **762** | — (new, phase W; **58 files**, each with its own import line, §2.3) |
-| **78 modules** | **73,555** | **3,946** (one is a docstring line in `Cmd.lean`; the grep skips `Arith.lean`'s `private theorem cancelR`, and the two cancel) | 32,358 / 1,826 (thirteen modules) |
+| **78 modules** | **73,557** | **3,946** (one is a docstring line in `Cmd.lean`; the grep skips `Arith.lean`'s `private theorem cancelR`, and the two cancel) | 32,358 / 1,826 (thirteen modules) |
 | `TmKernel.lean` | 78 | — (the 78 imports; §2.3) | 13 |
 | `Check.lean` | 4,598 | — (3,946 `#print axioms` lines, 3,946 distinct names, 63 `APPENDED` banners) | 2,167 |
 | `Negative.lean` | 1,905 | — (147 cheat blocks, highest numbered 157) | 778 |
@@ -2850,19 +2876,21 @@ at stage 4's close: 3.4×).
 FFI crate: `shim.c` 66 + `build.rs` 80 + `src/lib.rs` **105** = **251** lines (207 at
 `b344185`); tests `kernel.rs` 1,922 lines (1,288), `corpus.rs` 738 (unchanged), `stack.rs`
 526 and `tests/harness/mod.rs` 486. FFI tests: 86 + 8 + 6 = **100** (76 at stage 4's close).
-Host side: `tm/src/cli/kernel_bridge.rs` 1,507 lines (1,253), `tm/src/cli/kernel_log.rs`
-**2,189 — the binary's only reader AND writer of the log** (1,129 at `b344185`, when nothing
-in the binary called it), `tm/src/cli/kernel_capacity.rs` 1,034, `tm/src/cli/closing.rs`
-**728** (622), `tm/build.rs` 40. `tm-core/src/log.rs` is **1,806** lines — the writer, the
+Host side: `tm/src/cli/kernel_bridge.rs` 1,511 lines (1,253), `tm/src/cli/kernel_log.rs`
+**2,202 — the binary's only reader AND writer of the log** (1,129 at `b344185`, when nothing
+in the binary called it; its module header said so two commits longer than it was true, and
+its blanket `#![allow(dead_code)]` outlived the switch by four — README gap 238), `tm/src/cli/kernel_capacity.rs` 1,034, `tm/src/cli/closing.rs`
+**733** (622), `tm/src/cli/out.rs` **606**, `tm/build.rs` 40. `tm-core/src/log.rs` is **1,806** lines — the writer, the
 decoded `Replay` and nothing else — against **3,609** before §12's deletion at `2b26be3`.
 
-`check.sh`: **seven** checks, **3.04 / 3.04 / 3.07 s** over three serial capped runs on a
-built tree (3.04 / 3.13 / 3.11 s at `b344185`; 2.4 s at stage 4's close), corpus 29/37 files
-and 4/5 whole plans, burn-down 13. `cargo test --workspace`: **1,309 passed / 0 failed / 9
-ignored across 78 result lines**, capped (§7.5; 1,087 across 73 at `b344185`, 1,008 across 66
-at stage 4's close). `cli_latency.rs --include-ignored`: **6 passed, 15.82 s**, the
-year-of-log and both three-year tests included. T5 (`kernel_replay_parity.rs
---include-ignored`): **32 passed, 6.20 s**; the door suite **22**;
+`check.sh`: **seven** checks, **3.35 / 3.09 / 3.09 s** over three serial capped runs on a
+built tree, peak RSS 1.91-1.95 GiB (3.04 / 3.04 / 3.07 s at stage 5's close; 3.04 / 3.13 /
+3.11 s at `b344185`; 2.4 s at stage 4's close), corpus 29/37 files and 4/5 whole plans,
+burn-down 13. `cargo test --workspace`: **1,311 passed / 0 failed / 9 ignored across 78
+result lines**, 0 warnings, capped (§7.5; 1,309 at stage 5's close, 1,087 across 73 at
+`b344185`, 1,008 across 66 at stage 4's close). `cli_latency.rs --include-ignored`: **6
+passed, 15.76 s**, the year-of-log and both three-year tests included. T5
+(`kernel_replay_parity.rs --include-ignored`): **33 passed, 6.21 s**; the door suite **22**;
 `cli_switch_acceptance --include-ignored` **9**; `kernel_log_grammar --include-ignored`
 **18**. §12's one-reader grep: **41**, from 125 before the switch. `cargo build -p tm` into
 an empty target directory: **18.98 s, 1,556,152 KiB peak RSS** (1.48 GiB; 18.93 s and

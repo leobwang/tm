@@ -53,7 +53,7 @@ use tm_core::store::Closed;
 
 use super::ctx::Ctx;
 use super::kernel_bridge::{self, CloseDid, Cmd, Grain};
-use super::out::{CliError, KernelIssue};
+use super::out::{self, CliError, KernelIssue};
 
 /// The last day that has ended at `today`: yesterday.
 pub fn last_day(today: NaiveDate) -> NaiveDate {
@@ -476,6 +476,11 @@ pub fn auto_close(ctx: &mut Ctx) -> Result<AutoClosed, CliError> {
                      nothing was written; it runs again on the next command. {}",
                     explain(&issue)
                 );
+                // A tree the kernel will not close is usually a tree it will not load
+                // either, so the verb behind this close is about to fail with the same
+                // sentence. Record it: `out::CliError::report` prints the error line but
+                // not the repeat (W-12, README gap 239).
+                out::the_automatic_close_said(&issue.message);
             }
             Ok(AutoClosed::Refused)
         }

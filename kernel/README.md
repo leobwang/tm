@@ -24804,3 +24804,318 @@ renumbering); `tm/tests/kernel_log_grammar.rs` (the same renumbering);
 `tm/tests/support/fork.rs` and `tm/tests/kernel_replay_parity.rs` (gap 225's
 comparison and its printed denominators). No `Cargo.toml`, no `lean-toolchain`, nothing under
 `kernel/corpus/`, no fixture, no snapshot.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 5, W-12 (the repair) — the six defects W-12's
+     independent audit found, each REPRODUCED (or refused) before it was
+     touched, most severe first.  **Gap 235** (T5's frozen comparand could not
+     see a 1-ULP `load` difference, because both sides of every comparison went
+     through a `serde_json` without `float_roundtrip` — three real fork
+     disagreements in the corpus counted as agreement, and the fixture no longer
+     held the fork's bytes), **gap 236** (§8.3's "corrected list" of open gaps
+     was five short), **gap 237** (§10.1's Lean line counts were two lines behind
+     the commit they claim to measure), **gap 238** (`kernel_log.rs`'s module
+     header still said nothing in the binary calls it, and its blanket
+     `#![allow(dead_code)]` outlived the switch), **gap 239** (a kernel tree
+     refusal named neither file nor line and printed twice per command) and
+     **gap 240** (no recorded timing figure reproduced — which is the one that
+     did NOT reproduce as reported).  The repair step's range is 235-244; new
+     gaps start at 241.  **No Lean edited**: audit 3,946 theorems, cheats 157,
+     highest parity P36 and no new one taken, burn-down 13, all stage 6, all
+     unchanged.  **The comparand is still the fork**: `fork_arm` still runs
+     unconditionally against `4748911`, and the two frozen fixtures were
+     re-blessed from a freshly built oracle — deliberately, with the diff below.
+     =========================================================================== -->
+
+## Stage 5, W-12 (the repair), 2026-09-16: the instrument could not see one ULP, and a "corrected" list was five gaps short
+
+**The honest paragraph, first.** The headline finding is real and its cause is
+one line of `Cargo.toml`. The workspace pinned
+`serde_json = { version = "1", features = ["raw_value"] }`, and **without
+`float_roundtrip` serde's decimal parser answers the nearest-but-one double for
+a literal that needs all 17 significant digits**. Proved in a scratch crate
+outside the repo against the pinned `1.0.151`: `"187.60000000000002"` parses to
+bits `4067733333333333` — the double `187.6` — and with the feature to
+`4067733333333334`, the double the literal names. Fork point `4748911` computes
+`days.2026-08-29.load` as the latter and prints it exactly; the kernel's exact
+fifths give the former; **and every frozen comparison decoded both sides with
+that same parser**, so the difference was invisible. Worse, the *bless* went
+through it too, so `tm/tests/fixtures/fork-4748911-corpus-replay.jsonl` carried
+`"load":187.6` — a number the fork never wrote. `tm/tests/support/fork.rs` said
+the opposite in prose: "normalising P21 out hides the one thing P21 exists to
+watch. Every sighting stays visible and counted."
+
+**What it was hiding, measured rather than estimated.** With the feature on and
+the two frozen fixtures re-blessed from an oracle built at `4748911` this
+session (`build-oracle.sh`, banner showing all five modes per AGENTS §7.3):
+
+| arm | P21 sightings before | after |
+|---|---:|---:|
+| T5 frozen, the 7 corpus logs | 1 | **4** |
+| T5 frozen, the generated 1-month log | 3 | **8** |
+| T5 frozen, §6.4's 12 zone cases | 0 | **0** |
+| the door suite, 16 `All`-scope reads | 8 | **24** |
+| **the live-oracle census, 469 logs / 195,243 scalar values** | **24** | **49** |
+
+Every one of the 49 is still `days.<date>.load`, still checked to display the
+same `round1` load **and** the same `load_blocks`, and nothing else differs. The
+denominator did not move: 469 logs, 8,442 `Replay` keys, 285 event-name sets,
+195,243 scalar values, 8 fitted models, exactly as §8.3 records. **The kernel is
+not wrong and was never wrong** — P21 is a recorded exception, and this run made
+the instrument able to count it. AGENTS §8.3's "Disagreements: **24** … Nothing
+else differs" was an undercount of **25**, in exactly the place design §17 says
+drift lives.
+
+### Gap 235 — closed: the frozen comparand is read at full precision
+
+1. **What was not done.** The workspace's `serde_json` had `raw_value` (D22's)
+   and not `float_roundtrip`. Both sides of every frozen fork comparison —
+   the oracle's stdout at the bless, the fixture at the read — are decoded by it,
+   so a `days.<date>.load` differing from the kernel's exact fifths by one ULP
+   read back *as* the kernel's value and was counted as agreement. Eight leaves
+   across the two fixtures, and 25 sightings in the live census.
+2. **Why it mattered.** It is the failure README gap 16 names: an instrument
+   that quietly stops comparing and keeps passing. And it had already written
+   itself into the ledger — the fixture held `187.6` where the fork prints
+   `187.60000000000002`, so the *committed comparand* was no longer the fork's
+   bytes.
+3. **What was done.** `float_roundtrip` added to the root `Cargo.toml` beside
+   `raw_value`, with the reason in a comment there. `Cargo.lock` is byte-identical
+   (`cargo metadata --offline` then `diff`): **no new dependency**. Both frozen
+   fixtures re-blessed through the committed bless tests, deliberately, from the
+   fresh oracle — **corpus 146,868 → 146,907 bytes, 3 differing leaves; classes
+   212,349 → 212,415 bytes, 5 differing leaves; every one of the 8 a
+   `days.<date>.load` and nothing else**:
+
+   ```
+   logs/energy-14d.jsonl .days.2026-08-25.load   189.6  -> 189.60000000000002
+   logs/energy-14d.jsonl .days.2026-08-29.load   187.6  -> 187.60000000000002
+   logs/energy-14d.jsonl .days.2026-09-06.load   203.6  -> 203.60000000000002
+   generated 1mo         .days.2026-01-12.load   228.4  -> 228.39999999999998
+   generated 1mo         .days.2026-01-16.load   127.8  -> 127.80000000000001
+   generated 1mo         .days.2026-01-17.load    30.6  ->  30.599999999999998
+   generated 1mo         .days.2026-01-28.load   209.8  -> 209.79999999999998
+   generated 1mo         .days.2026-01-29.load   198.8  -> 198.79999999999998
+   ```
+
+   The third fixture, `fork-4748911-log-lines.jsonl` (8,273 per-line verdicts,
+   1,946,886 bytes), was re-blessed too and came back **byte-identical** — as it
+   must: a value the fork *parsed* is re-emitted shortest, and only a value the
+   fork *accumulated* can need 17 digits.
+4. **What holds it.** `the_frozen_comparand_is_read_at_full_precision`
+   (`tm/tests/kernel_replay_parity.rs`), not `#[ignore]`d, asserts on **bits**
+   for the three literals the corpus carries — `to_string` is `ryu` with or
+   without the feature, so only the bit pattern separates them. Dropping the
+   feature fails there by name instead of silently blunting T5 and the door.
+   `support/fork.rs`'s module docs and its `FROZEN_CLASSES` docstring now say
+   this out loud, next to the sentence that was false.
+
+**And what this does NOT change.** The kernel's own numeral parser is untouched
+and must stay untouched: `finiteF64` (parity **P25**) is a step-for-step port of
+serde **without** `float_roundtrip`, because that is what fork point `4748911`
+runs — its `Cargo.toml` line is `serde_json = "1"`, no features at all. The
+binary's shipped answers do not move either: the log's numerals are the kernel's
+to parse, `tm log --json` passes floats through as `RawValue` (D22), and D10/D17
+already make the capacity request read every configured decimal as **the
+literal's text** rather than as an `f64`. The evidence is the suite: 1,311
+passed / 0 failed / 9 ignored across 78, 0 warnings, every snapshot unmoved, and
+T12 still writes fork `4748911`'s `model.json` byte for byte (599 bytes).
+
+### Gap 236 — closed: §8.3's list of open gaps was five short
+
+1. **What was not done.** AGENTS §8.3 item 3, "Open gaps, **the corrected
+   list**", named 18 gaps and omitted five that are opened in this README and
+   named closed nowhere in it: **94** (two reserves stay Rust), **98** (the
+   lookahead capped at 3,660 days, parity P30), **113** (the candidates' facts
+   are the host's), **114** (a what-if replan ranks by pre-what-if priorities)
+   and **116** (the TUI's minute replan ranks the last load's candidates). These
+   are exactly the five this README's own closing block calls **stage 6's
+   inheritance**.
+2. **Why it mattered.** **Gap 113 was cited as a live constraint two bullets
+   above the list it was missing from** ("a candidate's `remaining` is a
+   host-supplied field of the capacity request (README gap 113)"), and 98, 114
+   and 116 appeared nowhere in AGENTS.md at all — 0 grep hits each. This is the
+   same ledger rot the closing commit set out to repair for 140/141/142/145, in
+   a list that bills itself as corrected.
+3. **What was done.** All five added to §8.3 item 3, with a sentence naming them
+   and saying where they came from. Two neighbours were checked rather than
+   assumed: **107** is closed (this README's "Gaps 107 and 80 — closed") and does
+   **not** belong on an open list, although line 19519's "gaps 107, 114, 116"
+   still groups it with stage 6's — that line is a dated record and was left
+   standing, with the correction made where the list is authoritative. **120**'s
+   remainder is not open either: D18 makes a hand edit no rebuild can window a
+   **named fault by decision**, so it is now recorded in §8.3 as kept by owner
+   decision, beside the Q6 quirks.
+4. **What it costs.** Nothing measurable; it is bookkeeping. The check that
+   found it is mechanical and cheap — every `### Gap N` heading in this README
+   against every closing statement — and **gap 226** (the parity list has no
+   single home and no check) is the same shape one register over.
+
+### Gap 237 — closed: §10.1's Lean line counts were two lines behind
+
+1. **What was not done.** AGENTS §10.1 gave `Replay.lean` 7,962, `Log.lean`
+   2,754 and **73,555** for the 78 modules "at stage 5's CLOSING commit".
+   Measured at `c627148`: **7,963**, **2,755**, **73,557**.
+2. **Why.** The closing commit's own P36 renumbering comments landed in those two
+   files (`+1` net line each) *after* the table was written.
+3. **What was done.** The three numbers corrected. Everything else in §10.1 was
+   re-checked and reproduces exactly — 78 modules, 78 imports with the import set
+   equal to the file set, 3,946 on all three §6.3 counts, 58 `Seal*` files /
+   15,494 lines / 762 theorems, `Check.lean` 4,598 with 63 banners,
+   `Negative.lean` 1,905, `Goals.lean` 752 with 13 `sorry`s all below the
+   `# STAGE 6` heading, archive 17,202,480 bytes, `log.rs` 1,806, §12's
+   one-reader grep 41.
+4. **What it costs.** Nothing now. The Rust rows of the same paragraph moved for
+   real this run and were re-measured with it (below).
+
+### Gap 238 — closed: the module header, and the `allow` that outlived the switch
+
+1. **What was not done.** `tm/src/cli/kernel_log.rs`'s header still opened with
+   "**Nothing in the binary calls this yet.** The switch S (W-6) makes
+   `Ctx::replay_with` call `ReplayCache::replay`; until then Rust's own reader
+   decides every verb" — false since `2b26be3` and doubly false since `47a0443`,
+   while AGENTS §10.1 calls the same file "the binary's only reader AND writer of
+   the log". AGENTS §2.3 tells readers these headers are the best source in the
+   repository, better than this README.
+2. **What else was stale with it.** The comment under it explained the blanket
+   `#![allow(dead_code)]` — "measured at this commit with the attribute removed
+   … **92 items**" — and promised "it is deleted at S, when `replay_scoped`
+   becomes the binary's one reader". S and S2 landed; it was not deleted.
+3. **What was done.** The header now says what is true and dates the lie. The
+   blanket attribute is **gone**: measured with it removed,
+   `cargo check -p tm --all-targets` now reports **4** items, not 92, and each
+   of the four carries its own `#[allow(dead_code)]` with a one-line reason —
+   `MAX_SEALED_IN`, `Replayed::rebuilt_because`, `ReplayCache::sealed_between`
+   and `Read::outcome` — the same four with `--all-targets` and without it, so
+   no test is propping one up. The build is **0 warnings**, so the cost the
+   old comment named is paid off with it: `cargo test --workspace`'s "0 warnings"
+   now does say that a function added to this file is reachable or tested.
+4. **What is owed.** Nothing by name. The four kept items are recorded above;
+   `sealed_between` in particular is D13's documented `Dates` route, reached in
+   practice through `records_of`, and a step that removes it should say so.
+
+### Gap 239 — closed: a tree refusal names where to look, and is printed once
+
+1. **What was not done.** One malformed line made almost every verb print
+   `kernel refusal: itemCheck — the tree fails the kernel's item invariant
+   (fileKindShape); the kernel refuses a tree it cannot load whole` — **with no
+   file, no line and no pointer to `tm check`** — once for §6.3's automatic close
+   and once for the verb itself. `tm check` on the same tree answers instantly
+   and precisely, naming the file and the line.
+2. **Reproduced** (a `tm init` tree with `- [ ] 2 30m thing ^x1` appended to
+   `routines.md`): `wake` printed it once and succeeded; `arrive`, `plan` and
+   `energy` printed it **twice** and exited 1; `tm check` said
+   `routines.md:15: error[routine-shape]: …`, 1 error, 0 warnings.
+3. **What was done, and what was deliberately not.** The kernel's item invariant
+   is a property of the **whole tree**, so its refusal carries a fault name and
+   no position — that is correct and was not changed. The refusal now ends with
+   "(run `tm check`: it names the file and the line)", the way `dupId` already
+   did. For the repeat: `closing::auto_close` records the `KernelIssue`'s own
+   message when it prints one, and `out::CliError::report` prints
+   `tm: the automatic close's refusal above is this command's too, so nothing was
+   written` instead of the identical paragraph. The error line stays — a failing
+   command must still say it failed — the comparison is **equality on the issue's
+   message**, so a *different* refusal still prints in full, and `--json` is
+   untouched.
+4. **What holds it.** `a_tree_refusal_points_at_tm_check_and_is_printed_once`
+   (`tm/tests/cli_items.rs`): the refusal contains "run `tm check`", the sentence
+   "the tree fails the kernel's item invariant" appears **exactly once** in
+   stderr, the close's own line is still there, the verb's own line is still
+   there, and `tm check` on the same tree names the file and the line.
+
+### Gap 240 — the timing finding, which did NOT reproduce as reported, and what is true instead
+
+1. **What the audit reported.** "No recorded timing figure reproduced exactly on
+   this machine; one T11 row is +10.4%", with `check.sh` +6-7%, `cli_latency`
+   +9%, and the shift near-uniform, read as machine state.
+2. **Refused, with evidence.** Measured here under the same cap: `check.sh`
+   **3.35 / 3.09 / 3.09 s** against §10.1's recorded 3.04 / 3.04 / 3.07;
+   `cli_latency --include-ignored` whole file **15.76 s** against the recorded
+   **15.82 s**; the three-year later verb **146.87 / 146.95 / 147.01 ms** against
+   the recorded **146.659**; `review week` **248.10-248.17 ms** against 248.183;
+   39 replay-cache files as recorded. Those reproduce. The audit's session was
+   loaded (its `cli_latency` was 17.25 s, 9% above both the record and this run).
+3. **What is true instead, and it is worth writing down.** Three T11 rows are
+   **noisy and must not be quoted as single numbers**. Over three capped runs
+   here: the reseal spans **197.5 / 207.6 / 212.6 ms** (this README's closing
+   block recorded 202.604, an earlier block 192.455, the audit measured 212.565);
+   the 3-day-old routine spans **121.6 / 131.7 / 136.8 ms** (recorded 136.827);
+   `review week` spans 248.1-253.3 ms across sessions (recorded 253.270). The
+   later-verb row, by contrast, has given 146.66, 146.85, 146.87, 146.95 and
+   147.01 ms across two sessions — a spread of 0.2%, which is why it is the right
+   baseline for the performance levers.
+4. **What was done.** AGENTS §8.4's lever baseline now says so by name: quote the
+   range for the three noisy rows, or re-measure and quote your own run. §5.11
+   asks for one measurement per number; for a row whose true value is a range,
+   one number is the wrong shape and this is the honest form of that rule.
+
+### The re-measured numbers (AGENTS §5.11, §10.1)
+
+Every figure taken at this commit under
+`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0` (the oracle
+build at 16G).
+
+| measurement | value | at `c627148` (stage 5's close) |
+|---|---|---|
+| `check.sh`, built tree | **7/7**, **3.35 / 3.09 / 3.09 s**, peak RSS 1.91-1.95 GiB | 3.04 / 3.04 / 3.07 s recorded; 3.26 / 3.22 / 3.25 measured by the audit — **no rise; the 10%-per-step rule is not approached** |
+| axiom audit | **3,946 theorems** (unchanged: no Lean edited) | 3,946 |
+| corpus round trip | **29/37 files and 4/5 whole plans** | unchanged |
+| burn-down | **13**, every one stage 6's | unchanged |
+| `cargo test --workspace` | **1,311 passed / 0 failed / 9 ignored across 78** result lines, exit 0, **0 warnings** | 1,309 / 0 / 9 across 78. **+2, fully explained**: the precision tripwire and the tree-refusal regression test |
+| FFI suite (outside the workspace by design) | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) | 100 |
+| T5 `--include-ignored` | **33 passed / 0 failed / 0 ignored**, 6.21 s | 32 |
+| T5 under `TM_ORACLE` (the live census) | **33 passed**, 469 logs / 8,442 keys / 195,243 values, **P21 × 49**, nothing else | P21 × 24 |
+| the door suite | **22 passed / 0 failed**, 1.56 s; **P21 × 24** on 32,976 values | 22; P21 × 8 |
+| `cli_switch_acceptance --include-ignored` | **9 passed / 0 failed / 0 ignored** (T12 byte-identical, 599 bytes) | 9 |
+| `kernel_log_grammar --include-ignored` | **18 passed**; the line fixture re-blessed **byte-identical** | 18 |
+| `kernel_lookahead_parity` / `kernel_unit_reserve` / `kernel_call_counts` / `cli_check_log` | **4 / 2 / 1 / 9**, 0 failed | unchanged |
+| `cli_latency --include-ignored` | **6 passed / 0 failed**, **15.76 s** | 15.82 s recorded |
+| §12's one-reader grep | **41** (unchanged; §12's alternation, never R8's 89) | 41 |
+| `cargo check -p tm --all-targets` with `kernel_log.rs`'s blanket allow removed | **4** dead items (each now named and individually allowed) | 92 at the pre-S measurement the comment quoted |
+| the Lean package | **78 modules**, **73,557 lines**, **3,946 theorem declarations**; `Replay.lean` **7,963**, `Log.lean` **2,755** | unchanged — the figures corrected, not the files |
+| host side | `kernel_log.rs` **2,202** (2,189), `out.rs` **606** (562), `closing.rs` **733** (728), `kernel_bridge.rs` **1,511** (1,507), `tm-core/src/log.rs` **1,806** (unchanged) | — |
+| the diff | 12 files, **+590 −50** (of which AGENTS.md and this README are +367 −24); **no Lean**, no `lean-toolchain`, nothing under `kernel/corpus/`, no snapshot; `Cargo.toml` +1 feature with `Cargo.lock` byte-identical; **two fixtures deliberately re-blessed, diff above** | — |
+
+**T11's seven rows**, re-measured on the 3-year log (66,169 lines / 6,896,281
+bytes), three runs where the row moves:
+
+| row | bound | measured | recorded at the close |
+|---|---|---|---|
+| first verb (genesis + close + drop) | < 5 s | **2.176 / 2.181 / 2.196 s** | 2.181 s |
+| **later verb** | < 1 s | **146.87 / 146.95 / 147.01 ms** | 146.659 ms |
+| `--now` + 1 day (a reseal) | < 1 s | **197.5 / 207.6 / 212.6 ms** — a range, see gap 240 | 202.604 ms |
+| a hand undo the gate can window | < 5 s, next not rebuilt | **151.92 ms**, next **146.90 ms** | 146.863 / 146.969 ms |
+| a routine for a 3-day-old instance | < 1 s, no rebuild | **121.6 / 131.7 / 136.8 ms** — a range, see gap 240 | 136.827 ms |
+| 10 stalled days | each < 1 s, ≤ 1 write a day | worst **536.59 ms**, **0** new generations | 536.748 ms |
+| `tm review week` (the `All` scope) | < 1 s | **248.10 / 248.12 / 248.17 ms** | 253.270 ms |
+
+**No row regressed**, and the 39 replay-cache files after the first two verbs are
+as recorded.
+
+### Behaviour rows
+
+| input | before | after | why |
+|---|---|---|---|
+| a frozen fork `load` one ULP above the kernel's exact fifths | read back as the kernel's own value; counted as agreement | counted as a **P21** sighting, and its two displays checked | gap 235 |
+| re-blessing a frozen fork answer | the fork's 17-digit literal silently rounded into the fixture | the fork's bytes | gap 235 |
+| a verb on a tree the kernel refuses (`itemCheck`), human output | the refusal printed twice, naming no file and no line | once, plus a one-line failure notice, and the refusal ends "run `tm check`: it names the file and the line" | gap 239 |
+| the same, `--json` | the error document | unchanged | the dedup is on the human path only |
+| a verb whose own refusal differs from the automatic close's | both printed in full | unchanged (the test is equality on the issue's message) | gap 239 |
+| `tm check` on the same tree | `routines.md:15: error[routine-shape]: …` | unchanged | it was already right; the refusal now points at it |
+
+### Parity entries
+
+**None taken.** P36 is still the highest and **P37 is still the next free
+number** (gap 226). P21's *definition* is unchanged; only the count of its
+sightings moved, and it moved because the instrument started seeing them.
+
+### What is owed, by name
+
+Unchanged from §8.3's list, plus the five this run put back on it: **93**, **94**,
+**98**, **113**, **114**, **116**, **132**, **133**, **139**, **143**, **150**,
+**151**, **152**, **160**, **170**, **180**, **181**, **182**, **190**, **200**,
+**201**, **210**, **226**. Performance levers **121, 122, 123, 126, 127** (and
+143), now with the honest baseline of gap 240. The **§5.13 human drives** of the
+stage-3, stage-4 and stage-5 binaries are still owed, and no agent can perform
+them. **Nothing in this repair was left half-done**; the repair step's range
+235-244 has 241-244 unused.

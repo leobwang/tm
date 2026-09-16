@@ -2,9 +2,13 @@
 //! `kernel/design/stage5/stage5-D9-D10-design.md` §9.6 host policy, §9.7 genesis, §9.8
 //! persistence and integrity, §10 the wire, §11.1's merge).
 //!
-//! **Nothing in the binary calls this yet.** The switch S (W-6) makes `Ctx::replay_with`
-//! call [`ReplayCache::replay`]; until then Rust's own reader decides every verb, and the
-//! tests (`tests/kernel_replay_parity.rs`'s windowed T5 and T0 (b)) are the only callers.
+//! **This is the binary's only reader of the log, and since S2 its only writer too.**
+//! `Ctx::replay_with` calls [`replay_scoped`] (the switch S, `2b26be3`, which deleted
+//! Rust's own reader: `tm-core/src/log.rs` fell 3,609 lines to 1,806), and every appending
+//! verb sends its typed event through [`render_events`], which asks the kernel for the exact
+//! bytes to append (D16's S2, `47a0443`). The log's grammar therefore has one definition, the
+//! kernel's, on both sides. *(This paragraph said "Nothing in the binary calls this yet"
+//! for two commits after it stopped being true — W-12's audit, README gap 238.)*
 //!
 //! What lives here:
 //! * **The byte split** ([`split`]): lines on `\n`, `None` for a line that is not UTF-8, and
@@ -39,22 +43,20 @@
 //! * **An unwritable cache** (CRIT 26) is not fatal: one named notice per process, and the
 //!   checkpoint is kept in memory for that process.
 
-// **Why this whole module is allowed to be dead, and what that costs.** Before S nothing under
-// `tm/src` calls this file — `Ctx::replay_with` still goes to the Rust reader — so every item here
-// is unreachable from the binary and `dead_code` fires on all of them. Measured at this commit
-// with the attribute removed, `cargo check -p tm --all-targets`: **92 items**. Of those, **79
-// predate step S** and **13 are S's** — 10 below the DOOR banner and three above it (`Scope`,
-// `Read` and `caches`), which is why the banner's count and S's are different numbers for
-// different cuts and are given here as both. The attribute is noise control, not a claim, and it
-// is deleted at S, when [`replay_scoped`] becomes the binary's one reader.
+// **The module-wide `#![allow(dead_code)]` is gone** (W-12, README gap 238). It was noise
+// control for the period when nothing under `tm/src` called this file: measured with the
+// attribute removed, `cargo check -p tm --all-targets` reported **92** unreachable items, and
+// the comment here promised the attribute would be deleted at S, "when `replay_scoped` becomes
+// the binary's one reader". S and S2 landed and it was not. Measured again now, the same
+// command reports **4**, with or without `--all-targets`; each of the four carries its own
+// `#[allow(dead_code)]` and says why it is kept. The cost the old comment named is paid off
+// with it: `cargo test --workspace`'s "0 warnings" now does say that a function added to this
+// file is reachable or tested.
 //
-// The cost is that `cargo test --workspace`'s "0 warnings" says nothing about whether a function
-// added here is reachable or tested — a step could ship dead code into the binary and report a
-// clean build. The instrument that does say so is
-// `tests/kernel_log_door.rs::every_door_function_the_switch_calls_is_exercised_here`: every
-// `pub fn` below the DOOR banner must be called by name in that file or the test fails. It found
+// The other instrument stays, and is the sharper one:
+// `tests/kernel_log_door.rs::every_door_function_the_switch_calls_is_exercised_here` requires
+// every `pub fn` below the DOOR banner to be called by name in that file. It found
 // [`max_line_of`] shipped and called by nothing at all — not the binary, not a test.
-#![allow(dead_code)]
 
 use chrono::{DateTime, FixedOffset, NaiveDate};
 use chrono_tz::Tz;
@@ -95,6 +97,9 @@ pub const FENCE_SEC: u64 = 259_200;
 /// Month files named by neither manifest are collected once older than this (§9.8).
 pub const COLLECT_AFTER: Duration = Duration::from_secs(600);
 /// The most sealed records one request carries (§10.4).
+// Dead since S: the `Dates` route that would cap on it is [`sealed_between`], also dead.
+// Kept because §10.4's bound is the kernel's and the number belongs next to the other caps.
+#[allow(dead_code)]
 pub const MAX_SEALED_IN: usize = 62;
 
 /// The kernel this binary links (`tm-kernel-ffi/build.rs`: FNV-1a-64 of its archive). A checkpoint written by another
@@ -726,6 +731,10 @@ pub struct Replayed {
     pub window: BTreeMap<u64, String>,
     pub notices: Vec<String>,
     /// Why the stored checkpoint was not used, when it was not.
+    // Written on every genesis path and read by nothing the binary compiles: the notice a verb
+    // prints comes from `notices`, and the readers are `kernel_replay_parity.rs`'s assertion
+    // messages, which are a separate target. Kept as the one place a rebuild's *cause* survives.
+    #[allow(dead_code)]
     pub rebuilt_because: Option<String>,
 }
 
@@ -1003,6 +1012,7 @@ impl ReplayCache {
     /// **An old-date read** (§11.1's `Dates` scope, D13): the snapshot's day records of `[from − 1, to + 1]` below its
     /// ledger day and window records of `[from, to]` below its horizon, sent as `sealed` (at most 62 per call) with the
     /// same tail, so the kernel's facts carry them merged.
+    #[allow(dead_code)] // §11.1's `Dates` scope reaches the same records through `records_of`; kept as D13's documented route.
     pub fn sealed_between(snap: &Snapshot, days: &BTreeMap<u64, String>, window: &BTreeMap<u64, String>, from: u64, to: u64) -> (Vec<String>, Vec<String>) {
         let d: Vec<String> = days
             .range(from.saturating_sub(1)..=to + 1)
@@ -1773,6 +1783,10 @@ pub enum Scope {
 #[derive(Clone, Debug)]
 pub struct Read {
     pub replay: Replay,
+    // `Replayed::outcome` is read; this copy of it, on the *scoped* read, is not — no verb
+    // branches on how its replay was answered. Kept so the scoped path does not silently lose
+    // the genesis/reseal/hot distinction the unscoped one carries.
+    #[allow(dead_code)]
     pub outcome: Outcome,
     pub notices: Vec<String>,
     /// **The checkpoint's ledger day `L` after this call** (§9.1), or `None`

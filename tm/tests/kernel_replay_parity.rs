@@ -3441,6 +3441,52 @@ fn t5_the_frozen_zone_cases_replay_as_the_fork_point_does() {
     compare_frozen_class(ZONE_CASE_CLASS, &inputs);
 }
 
+/// **The frozen comparand is read at full precision** (W-12, README gap 235).
+///
+/// Every frozen comparison decodes both of its sides with this workspace's
+/// `serde_json`, so the comparison can be no finer than that parser. Without the
+/// `float_roundtrip` feature serde answers the *nearest-but-one* double for a
+/// decimal that needs all 17 significant digits — it read fork point 4748911's
+/// own `"load": 187.60000000000002` back as `187.6`, the very double the
+/// kernel's `load_fifths / 5` produces, so eight real parity **P21** sightings
+/// (three in `FROZEN_FORK`, five in `FROZEN_CLASSES`) were counted as agreement
+/// and the bless wrote the rounded value into the fixture. This is the tripwire:
+/// the feature is declared once, in the root `Cargo.toml`, and dropping it fails
+/// here rather than silently blunting T5 and the door suite.
+///
+/// It deliberately asserts on **bits**, not on a rendering: `to_string` is `ryu`
+/// with or without the feature, so only the bit pattern tells the two apart. The
+/// three literals are the ones `logs/energy-14d.jsonl` actually carries.
+#[test]
+fn the_frozen_comparand_is_read_at_full_precision() {
+    for (text, want) in [
+        ("187.60000000000002", 0x4067_7333_3333_3334u64),
+        ("189.60000000000002", 0x4067_b333_3333_3334),
+        ("203.60000000000002", 0x4069_7333_3333_3334),
+    ] {
+        let v: f64 = serde_json::from_str(text).expect("a JSON number");
+        assert_eq!(
+            v.to_bits(),
+            want,
+            "serde_json read `{text}` as {v:?} (bits {:#018x}), not the double the literal \
+             names — the workspace has lost serde_json's `float_roundtrip` feature, and with \
+             it T5's and the door suite's ability to see a 1-ULP `load` difference against the \
+             fork (README gap 235)",
+            v.to_bits()
+        );
+    }
+    // The property that was actually broken: a fork `load` one ULP above the
+    // kernel's exact fifths must not read back *as* the kernel's value.
+    let row: serde_json::Value =
+        serde_json::from_str(r#"{"load":187.60000000000002}"#).expect("a JSON object");
+    assert_ne!(
+        row["load"].as_f64().expect("a number"),
+        187.6_f64,
+        "the fork's accumulated load and the kernel's exact fifths must stay distinguishable"
+    );
+    eprintln!("the frozen comparand: 17-significant-digit literals survive the read (3 checked)");
+}
+
 /// **The census** (gaps 137, 147, 149): every input class T5 covers, and how its
 /// comparand reaches fork point 4748911 once §12 deletes the in-tree reader.
 ///

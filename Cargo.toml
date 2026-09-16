@@ -17,7 +17,16 @@ license = "MIT"
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = { version = "0.10", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["raw_value"] }
+# `raw_value` is D22's (a float or a key order the renderer must not touch passes
+# through as bytes). `float_roundtrip` is the **instrument's**: without it serde's
+# best-effort decimal parser returns the nearest-but-one double for a literal that
+# needs all 17 significant digits — it reads the fork's `"load":187.60000000000002`
+# back as 187.6 — and since BOTH sides of a frozen fork comparison come through
+# this parser, a 1-ULP `load` difference was invisible to T5 and the door suite
+# (W-12, README gap 235). It changes no shipped answer: the log's numerals are the
+# kernel's to parse, and the kernel deliberately ports serde **without**
+# `float_roundtrip`, because that is what fork point 4748911 runs (parity P25).
+serde_json = { version = "1", features = ["raw_value", "float_roundtrip"] }
 toml = "0.8"
 thiserror = "2"
 anyhow = "1"

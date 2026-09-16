@@ -1166,12 +1166,16 @@ fn refusal(err: &Value) -> KernelIssue {
         // step 3): a parent is read off its line, and a dangling or cyclic
         // link refuses the whole tree — so these two say what to fix.
         let hint = match f {
-            "danglingParent" => " — an `@parent` names an id no line of the tree carries (a typo, or a parent whose line is gone); fix or remove the link (`tm check` names the line)",
-            "parentCycle" => " — the `@parent` links form a cycle, so no item on it has a root; break the cycle (`tm check` names the lines)",
+            "danglingParent" => " — an `@parent` names an id no line of the tree carries (a typo, or a parent whose line is gone); fix or remove the link",
+            "parentCycle" => " — the `@parent` links form a cycle, so no item on it has a root; break the cycle",
             _ => "",
         };
+        // W-12, README gap 239: the kernel's item invariant is a property of the whole tree, so
+        // the refusal carries a fault name and no position — which left a user staring at
+        // `fileKindShape` with no file and no line. `tm check` answers exactly that question
+        // against the same tree, so the refusal now says so instead of leaving it to be guessed.
         ("itemCheck".into(), format!(
-            "kernel refusal: itemCheck — the tree fails the kernel's item invariant ({f}){hint}; the kernel refuses a tree it cannot load whole"
+            "kernel refusal: itemCheck — the tree fails the kernel's item invariant ({f}){hint}; the kernel refuses a tree it cannot load whole (run `tm check`: it names the file and the line)"
         ))
     } else {
         put("error", err.to_string());

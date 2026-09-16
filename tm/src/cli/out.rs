@@ -17,6 +17,7 @@
 //! * [`fmt_dur`] and [`fmt_time`] — the small formatting helpers the
 //!   human output shares.
 
+use std::cell::RefCell;
 use std::io;
 
 use serde::Serialize;
@@ -287,12 +288,30 @@ impl CliError {
     /// Print the error on stderr: one JSON object with `--json` (§13), else
     /// the human text — a conflict prints both versions of the line so the
     /// two writers can be reconciled (§1.3, §17.2).
+    ///
+    /// **A refusal §6.3's automatic close already printed is not printed twice**
+    /// (W-12, README gap 239). `closing::auto_close` runs ahead of the verb and
+    /// prints the kernel's refusal by name when the tree cannot be closed; a tree
+    /// the kernel will not close is usually a tree it will not load either, so
+    /// the verb then failed with the identical sentence and every command on a
+    /// broken tree printed the same paragraph twice. The error line stays — a
+    /// failing command must still say it failed — it just stops repeating what
+    /// stands two lines above it. JSON output is untouched: a machine reader gets
+    /// the whole object either way.
     pub fn report(&self, json: bool) {
         if json {
             self.document().report();
             return;
         }
-        eprintln!("tm: {}", self.message());
+        let message = self.message();
+        if matches!(self, CliError::Kernel(i) if !i.is_fault()) && already_said_by_the_automatic_close(&message) {
+            eprintln!(
+                "tm: the automatic close's refusal above is this command's too, so nothing was \
+                 written"
+            );
+            return;
+        }
+        eprintln!("tm: {message}");
         // A kernel fault is a bug report, not a plan problem: print whatever
         // layer 2 captured off the kernel's stderr (the backtrace the
         // terminal never saw), and say where to send it.
@@ -330,6 +349,31 @@ impl CliError {
             }
         }
     }
+}
+
+thread_local! {
+    /// The refusal `closing::auto_close` last printed on stderr in this process,
+    /// if any (W-12, README gap 239).
+    static AUTO_CLOSE_SAID: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+/// Record the refusal §6.3's automatic close just printed, so [`CliError::report`]
+/// does not print the same sentence again when the verb behind it fails the same way.
+///
+/// Called only from `closing::auto_close`, and only on the branch that actually
+/// wrote to stderr — inside the TUI nothing is printed, so nothing is recorded and
+/// nothing is suppressed.
+pub fn the_automatic_close_said(message: &str) {
+    AUTO_CLOSE_SAID.with(|c| *c.borrow_mut() = Some(message.to_string()));
+}
+
+/// Whether `message` is exactly the refusal the automatic close already printed.
+///
+/// What is recorded is the [`KernelIssue`]'s own `message`, not the line the close
+/// printed around it, so the test is equality: a *different* refusal — the close
+/// refused one way and the verb another — still prints in full.
+fn already_said_by_the_automatic_close(message: &str) -> bool {
+    AUTO_CLOSE_SAID.with(|c| c.borrow().as_deref() == Some(message))
 }
 
 /// The kind slug of a [`StoreError`], filling `d` with its detail. Shared by

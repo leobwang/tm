@@ -832,6 +832,63 @@ fn a_typod_parent_refuses_a_kernel_backed_verb_by_name_and_writes_nothing() {
     }
 }
 
+/// **A tree refusal names where to look, and is not printed twice** (W-12,
+/// README gap 239).
+///
+/// The kernel's item invariant is a property of the *whole* tree, so its refusal
+/// carries a fault name and no position: on a drive of 20 consecutive commands a
+/// single malformed line made almost every verb print
+/// `itemCheck — … (fileKindShape)` with no file, no line and no suggestion, once
+/// for §6.3's automatic close and once for the verb itself. `tm check` answers
+/// exactly that question on the same tree, in milliseconds, so the refusal now
+/// says so; and the verb no longer repeats the sentence the close printed two
+/// lines above it. The error line stays — a failing command must still say it
+/// failed — and `--json` is untouched (the test above reads that document).
+#[test]
+fn a_tree_refusal_points_at_tm_check_and_is_printed_once() {
+    let tm = Tm::new();
+    let path = tm.plan.join("week/2026-W37.md");
+    let text = std::fs::read_to_string(&path).expect("read week");
+    let broken = text.replace("@O1 ^m1", "@O9 ^m1");
+    assert_ne!(broken, text, "the fixture no longer carries `@O1 ^m1`");
+    std::fs::write(&path, &broken).expect("write week");
+
+    // A Monday after the week: §6.3's automatic close runs ahead of the verb,
+    // meets the same tree and is refused first.
+    let out = tm.run_at("2026-09-14T09:00:00-05:00", &["drop", "^a1"]);
+    assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+    assert!(
+        out.stderr.contains("run `tm check`"),
+        "the refusal does not say where to look: {:?}",
+        out.stderr
+    );
+    assert_eq!(
+        out.stderr.matches("the tree fails the kernel's item invariant").count(),
+        1,
+        "the same refusal is printed more than once: {:?}",
+        out.stderr
+    );
+    assert!(
+        out.stderr.contains("the automatic close (\u{a7}6.3) was refused"),
+        "the close's own refusal is gone: {:?}",
+        out.stderr
+    );
+    assert!(
+        out.stderr.contains("this command's too"),
+        "the verb printed no failure line of its own: {:?}",
+        out.stderr
+    );
+
+    // And `tm check` does answer it: the file and the line.
+    let check = tm.run_at("2026-09-14T09:00:00-05:00", &["check"]);
+    assert!(
+        check.stdout.contains("week/2026-W37.md:") || check.stderr.contains("week/2026-W37.md:"),
+        "`tm check` does not name the file and line: {:?}{:?}",
+        check.stdout,
+        check.stderr
+    );
+}
+
 /// **A refused tree is not written by the housekeeping ahead of the verb
 /// either** — kernel/README.md "Stage 4 final, repair", defect 1. The test
 /// above runs at [`cli_common::NOW`], before `^a4`'s `on-event:reply/7d`
