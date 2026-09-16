@@ -1,0 +1,4467 @@
+=== plan-home-day | tm log | human
+2026-07-06 11:00 routine actual_min=30 inst="2026-07-06" item="laundry" status="done"
+2026-07-13 11:00 routine actual_min=30 inst="2026-07-13" item="laundry" status="done"
+2026-07-20 11:00 routine actual_min=30 inst="2026-07-20" item="laundry" status="done"
+2026-07-27 11:00 routine actual_min=30 inst="2026-07-27" item="laundry" status="done"
+2026-08-03 11:00 routine actual_min=30 inst="2026-08-03" item="laundry" status="done"
+2026-08-10 11:00 routine actual_min=30 inst="2026-08-10" item="laundry" status="done"
+2026-08-17 11:00 routine actual_min=30 inst="2026-08-17" item="laundry" status="done"
+2026-08-24 11:00 routine actual_min=30 inst="2026-08-24" item="laundry" status="done"
+2026-08-31 11:00 routine actual_min=30 inst="2026-08-31" item="laundry" status="done"
+2026-09-06 09:20 routine actual_min=20 inst="#1" item="shower" status="done"
+2026-09-07 07:30 wake onset_min=20 slept_min=450
+2026-09-07 08:00 routine actual_min=30 inst="2026-09-07" item="breakfast" status="done"
+2026-09-07 09:00 arrive budget=6 loc="home" window=["09:00","18:00"]
+=== plan-home-day | tm log | json
+{
+  "total": 13,
+  "entries": [
+    {
+      "t": "2026-07-06T11:00:00-05:00",
+      "ev": "routine",
+      "item": "laundry",
+      "inst": "2026-07-06",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-07-13T11:00:00-05:00",
+      "ev": "routine",
+      "item": "laundry",
+      "inst": "2026-07-13",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-07-20T11:00:00-05:00",
+      "ev": "routine",
+      "item": "laundry",
+      "inst": "2026-07-20",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-07-27T11:00:00-05:00",
+      "ev": "routine",
+      "item": "laundry",
+      "inst": "2026-07-27",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-08-03T11:00:00-05:00",
+      "ev": "routine",
+      "item": "laundry",
+      "inst": "2026-08-03",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-08-10T11:00:00-05:00",
+      "ev": "routine",
+      "item": "laundry",
+      "inst": "2026-08-10",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-08-17T11:00:00-05:00",
+      "ev": "routine",
+      "item": "laundry",
+      "inst": "2026-08-17",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-08-24T11:00:00-05:00",
+      "ev": "routine",
+      "item": "laundry",
+      "inst": "2026-08-24",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-08-31T11:00:00-05:00",
+      "ev": "routine",
+      "item": "laundry",
+      "inst": "2026-08-31",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-06T09:20:00-05:00",
+      "ev": "routine",
+      "item": "shower",
+      "inst": "#1",
+      "status": "done",
+      "actual_min": 20
+    },
+    {
+      "t": "2026-09-07T07:30:00-05:00",
+      "ev": "wake",
+      "slept_min": 450,
+      "onset_min": 20
+    },
+    {
+      "t": "2026-09-07T08:00:00-05:00",
+      "ev": "routine",
+      "item": "breakfast",
+      "inst": "2026-09-07",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-07T09:00:00-05:00",
+      "ev": "arrive",
+      "loc": "home",
+      "window": [
+        "09:00",
+        "18:00"
+      ],
+      "budget": 6
+    }
+  ]
+}
+=== plan-home-day | tm log --tail 5 | human
+2026-08-31 11:00 routine actual_min=30 inst="2026-08-31" item="laundry" status="done"
+2026-09-06 09:20 routine actual_min=20 inst="#1" item="shower" status="done"
+2026-09-07 07:30 wake onset_min=20 slept_min=450
+2026-09-07 08:00 routine actual_min=30 inst="2026-09-07" item="breakfast" status="done"
+2026-09-07 09:00 arrive budget=6 loc="home" window=["09:00","18:00"]
+=== plan-home-day | tm log --tail 5 | json
+{
+  "total": 13,
+  "entries": [
+    {
+      "t": "2026-08-31T11:00:00-05:00",
+      "ev": "routine",
+      "item": "laundry",
+      "inst": "2026-08-31",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-06T09:20:00-05:00",
+      "ev": "routine",
+      "item": "shower",
+      "inst": "#1",
+      "status": "done",
+      "actual_min": 20
+    },
+    {
+      "t": "2026-09-07T07:30:00-05:00",
+      "ev": "wake",
+      "slept_min": 450,
+      "onset_min": 20
+    },
+    {
+      "t": "2026-09-07T08:00:00-05:00",
+      "ev": "routine",
+      "item": "breakfast",
+      "inst": "2026-09-07",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-07T09:00:00-05:00",
+      "ev": "arrive",
+      "loc": "home",
+      "window": [
+        "09:00",
+        "18:00"
+      ],
+      "budget": 6
+    }
+  ]
+}
+=== plan-home-day | tm log --since 14d | human
+2026-09-06 09:20 routine actual_min=20 inst="#1" item="shower" status="done"
+2026-09-07 07:30 wake onset_min=20 slept_min=450
+2026-09-07 08:00 routine actual_min=30 inst="2026-09-07" item="breakfast" status="done"
+2026-09-07 09:00 arrive budget=6 loc="home" window=["09:00","18:00"]
+=== plan-home-day | tm log --since 14d | json
+{
+  "total": 13,
+  "entries": [
+    {
+      "t": "2026-09-06T09:20:00-05:00",
+      "ev": "routine",
+      "item": "shower",
+      "inst": "#1",
+      "status": "done",
+      "actual_min": 20
+    },
+    {
+      "t": "2026-09-07T07:30:00-05:00",
+      "ev": "wake",
+      "slept_min": 450,
+      "onset_min": 20
+    },
+    {
+      "t": "2026-09-07T08:00:00-05:00",
+      "ev": "routine",
+      "item": "breakfast",
+      "inst": "2026-09-07",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-07T09:00:00-05:00",
+      "ev": "arrive",
+      "loc": "home",
+      "window": [
+        "09:00",
+        "18:00"
+      ],
+      "budget": 6
+    }
+  ]
+}
+=== plan-travel-day | tm log | human
+2026-07-06 11:00 routine actual_min=30 inst="2026-07-06" item="laundry" status="done"
+2026-07-13 11:00 routine actual_min=30 inst="2026-07-13" item="laundry" status="done"
+2026-07-20 11:00 routine actual_min=30 inst="2026-07-20" item="laundry" status="done"
+2026-07-27 11:00 routine actual_min=30 inst="2026-07-27" item="laundry" status="done"
+2026-08-03 11:00 routine actual_min=30 inst="2026-08-03" item="laundry" status="done"
+2026-08-10 11:00 routine actual_min=30 inst="2026-08-10" item="laundry" status="done"
+2026-08-17 11:00 routine actual_min=30 inst="2026-08-17" item="laundry" status="done"
+2026-08-24 11:00 routine actual_min=30 inst="2026-08-24" item="laundry" status="done"
+2026-08-31 11:00 routine actual_min=30 inst="2026-08-31" item="laundry" status="done"
+2026-09-06 06:20 routine actual_min=20 inst="#1" item="shower" status="done"
+2026-09-07 05:30 wake slept_min=390
+2026-09-07 06:00 routine actual_min=30 inst="2026-09-07" item="breakfast" status="done"
+2026-09-07 07:00 arrive budget=6 loc="lounge" window=["07:00","19:40"]
+=== plan-travel-day | tm log | json
+{
+  "total": 13,
+  "entries": [
+    {
+      "t": "2026-07-06T11:00:00-05:00",
+      "ev": "routine",
+      "item": "laundry",
+      "inst": "2026-07-06",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-07-13T11:00:00-05:00",
+      "ev": "routine",
+      "item": "laundry",
+      "inst": "2026-07-13",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-07-20T11:00:00-05:00",
+      "ev": "routine",
+      "item": "laundry",
+      "inst": "2026-07-20",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-07-27T11:00:00-05:00",
+      "ev": "routine",
+      "item": "laundry",
+      "inst": "2026-07-27",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-08-03T11:00:00-05:00",
+      "ev": "routine",
+      "item": "laundry",
+      "inst": "2026-08-03",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-08-10T11:00:00-05:00",
+      "ev": "routine",
+      "item": "laundry",
+      "inst": "2026-08-10",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-08-17T11:00:00-05:00",
+      "ev": "routine",
+      "item": "laundry",
+      "inst": "2026-08-17",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-08-24T11:00:00-05:00",
+      "ev": "routine",
+      "item": "laundry",
+      "inst": "2026-08-24",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-08-31T11:00:00-05:00",
+      "ev": "routine",
+      "item": "laundry",
+      "inst": "2026-08-31",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-06T06:20:00-05:00",
+      "ev": "routine",
+      "item": "shower",
+      "inst": "#1",
+      "status": "done",
+      "actual_min": 20
+    },
+    {
+      "t": "2026-09-07T05:30:00-05:00",
+      "ev": "wake",
+      "slept_min": 390
+    },
+    {
+      "t": "2026-09-07T06:00:00-05:00",
+      "ev": "routine",
+      "item": "breakfast",
+      "inst": "2026-09-07",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-07T07:00:00-05:00",
+      "ev": "arrive",
+      "loc": "lounge",
+      "window": [
+        "07:00",
+        "19:40"
+      ],
+      "budget": 6
+    }
+  ]
+}
+=== plan-travel-day | tm log --tail 5 | human
+2026-08-31 11:00 routine actual_min=30 inst="2026-08-31" item="laundry" status="done"
+2026-09-06 06:20 routine actual_min=20 inst="#1" item="shower" status="done"
+2026-09-07 05:30 wake slept_min=390
+2026-09-07 06:00 routine actual_min=30 inst="2026-09-07" item="breakfast" status="done"
+2026-09-07 07:00 arrive budget=6 loc="lounge" window=["07:00","19:40"]
+=== plan-travel-day | tm log --tail 5 | json
+{
+  "total": 13,
+  "entries": [
+    {
+      "t": "2026-08-31T11:00:00-05:00",
+      "ev": "routine",
+      "item": "laundry",
+      "inst": "2026-08-31",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-06T06:20:00-05:00",
+      "ev": "routine",
+      "item": "shower",
+      "inst": "#1",
+      "status": "done",
+      "actual_min": 20
+    },
+    {
+      "t": "2026-09-07T05:30:00-05:00",
+      "ev": "wake",
+      "slept_min": 390
+    },
+    {
+      "t": "2026-09-07T06:00:00-05:00",
+      "ev": "routine",
+      "item": "breakfast",
+      "inst": "2026-09-07",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-07T07:00:00-05:00",
+      "ev": "arrive",
+      "loc": "lounge",
+      "window": [
+        "07:00",
+        "19:40"
+      ],
+      "budget": 6
+    }
+  ]
+}
+=== plan-travel-day | tm log --since 14d | human
+2026-09-06 06:20 routine actual_min=20 inst="#1" item="shower" status="done"
+2026-09-07 05:30 wake slept_min=390
+2026-09-07 06:00 routine actual_min=30 inst="2026-09-07" item="breakfast" status="done"
+2026-09-07 07:00 arrive budget=6 loc="lounge" window=["07:00","19:40"]
+=== plan-travel-day | tm log --since 14d | json
+{
+  "total": 13,
+  "entries": [
+    {
+      "t": "2026-09-06T06:20:00-05:00",
+      "ev": "routine",
+      "item": "shower",
+      "inst": "#1",
+      "status": "done",
+      "actual_min": 20
+    },
+    {
+      "t": "2026-09-07T05:30:00-05:00",
+      "ev": "wake",
+      "slept_min": 390
+    },
+    {
+      "t": "2026-09-07T06:00:00-05:00",
+      "ev": "routine",
+      "item": "breakfast",
+      "inst": "2026-09-07",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-07T07:00:00-05:00",
+      "ev": "arrive",
+      "loc": "lounge",
+      "window": [
+        "07:00",
+        "19:40"
+      ],
+      "budget": 6
+    }
+  ]
+}
+=== plan-recur | tm log | human
+2026-09-03 09:35 routine actual_min=12 inst="2026-09-03" item="standup" status="done"
+2026-09-03 17:30 routine actual_min=50 inst="2026-08-31" item="groceries" status="done"
+2026-09-03 19:25 routine actual_min=20 inst="2026-09-03" item="k1" status="done"
+2026-09-04 06:05 wake slept_min=470
+2026-09-04 07:00 routine actual_min=25 inst="2026-09-04" item="breakfast" status="done"
+2026-09-04 09:30 skip inst="2026-09-04" item="standup"
+2026-09-04 09:40 done actual_min=8 ci=2 est_min=10 id="a7" tags=[] went=1
+2026-09-04 12:15 routine actual_min=30 inst="2026-09-04" item="lunch" status="done"
+2026-09-04 16:00 skip inst="2026-09-04" item="workout"
+2026-09-04 19:20 routine actual_min=20 inst="2026-09-04" item="k1" status="done"
+2026-09-05 08:05 wake slept_min=505
+2026-09-05 08:06 routine actual_min=505 inst="2026-09-04" item="sleep" status="done"
+2026-09-05 08:10 skip inst="2026-09-05" item="breakfast"
+2026-09-05 08:20 routine actual_min=25 inst="#5" item="shower" status="done"
+2026-09-05 10:12 done actual_min=12 ci=2 est_min=15 id="a4" tags=[] went=1
+2026-09-05 13:00 routine actual_min=35 inst="2026-09-05" item="lunch" status="done"
+2026-09-06 08:00 wake slept_min=500
+2026-09-06 08:02 routine actual_min=500 inst="2026-09-05" item="sleep" status="done"
+2026-09-06 12:40 routine actual_min=30 inst="2026-09-06" item="lunch" status="done"
+2026-09-06 14:00 event id="a7" name="dentist"
+=== plan-recur | tm log | json
+{
+  "total": 75,
+  "entries": [
+    {
+      "t": "2026-09-03T09:35:00-05:00",
+      "ev": "routine",
+      "item": "standup",
+      "inst": "2026-09-03",
+      "status": "done",
+      "actual_min": 12
+    },
+    {
+      "t": "2026-09-03T17:30:00-05:00",
+      "ev": "routine",
+      "item": "groceries",
+      "inst": "2026-08-31",
+      "status": "done",
+      "actual_min": 50
+    },
+    {
+      "t": "2026-09-03T19:25:00-05:00",
+      "ev": "routine",
+      "item": "k1",
+      "inst": "2026-09-03",
+      "status": "done",
+      "actual_min": 20
+    },
+    {
+      "t": "2026-09-04T06:05:00-05:00",
+      "ev": "wake",
+      "slept_min": 470
+    },
+    {
+      "t": "2026-09-04T07:00:00-05:00",
+      "ev": "routine",
+      "item": "breakfast",
+      "inst": "2026-09-04",
+      "status": "done",
+      "actual_min": 25
+    },
+    {
+      "t": "2026-09-04T09:30:00-05:00",
+      "ev": "skip",
+      "item": "standup",
+      "inst": "2026-09-04"
+    },
+    {
+      "t": "2026-09-04T09:40:00-05:00",
+      "ev": "done",
+      "id": "a7",
+      "est_min": 10,
+      "actual_min": 8,
+      "went": 1,
+      "tags": [],
+      "ci": 2
+    },
+    {
+      "t": "2026-09-04T12:15:00-05:00",
+      "ev": "routine",
+      "item": "lunch",
+      "inst": "2026-09-04",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-04T16:00:00-05:00",
+      "ev": "skip",
+      "item": "workout",
+      "inst": "2026-09-04"
+    },
+    {
+      "t": "2026-09-04T19:20:00-05:00",
+      "ev": "routine",
+      "item": "k1",
+      "inst": "2026-09-04",
+      "status": "done",
+      "actual_min": 20
+    },
+    {
+      "t": "2026-09-05T08:05:00-05:00",
+      "ev": "wake",
+      "slept_min": 505
+    },
+    {
+      "t": "2026-09-05T08:06:00-05:00",
+      "ev": "routine",
+      "item": "sleep",
+      "inst": "2026-09-04",
+      "status": "done",
+      "actual_min": 505
+    },
+    {
+      "t": "2026-09-05T08:10:00-05:00",
+      "ev": "skip",
+      "item": "breakfast",
+      "inst": "2026-09-05"
+    },
+    {
+      "t": "2026-09-05T08:20:00-05:00",
+      "ev": "routine",
+      "item": "shower",
+      "inst": "#5",
+      "status": "done",
+      "actual_min": 25
+    },
+    {
+      "t": "2026-09-05T10:12:00-05:00",
+      "ev": "done",
+      "id": "a4",
+      "est_min": 15,
+      "actual_min": 12,
+      "went": 1,
+      "tags": [],
+      "ci": 2
+    },
+    {
+      "t": "2026-09-05T13:00:00-05:00",
+      "ev": "routine",
+      "item": "lunch",
+      "inst": "2026-09-05",
+      "status": "done",
+      "actual_min": 35
+    },
+    {
+      "t": "2026-09-06T08:00:00-05:00",
+      "ev": "wake",
+      "slept_min": 500
+    },
+    {
+      "t": "2026-09-06T08:02:00-05:00",
+      "ev": "routine",
+      "item": "sleep",
+      "inst": "2026-09-05",
+      "status": "done",
+      "actual_min": 500
+    },
+    {
+      "t": "2026-09-06T12:40:00-05:00",
+      "ev": "routine",
+      "item": "lunch",
+      "inst": "2026-09-06",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-06T14:00:00-05:00",
+      "ev": "event",
+      "name": "dentist",
+      "id": "a7"
+    }
+  ]
+}
+=== plan-recur | tm log --tail 5 | human
+2026-09-05 13:00 routine actual_min=35 inst="2026-09-05" item="lunch" status="done"
+2026-09-06 08:00 wake slept_min=500
+2026-09-06 08:02 routine actual_min=500 inst="2026-09-05" item="sleep" status="done"
+2026-09-06 12:40 routine actual_min=30 inst="2026-09-06" item="lunch" status="done"
+2026-09-06 14:00 event id="a7" name="dentist"
+=== plan-recur | tm log --tail 5 | json
+{
+  "total": 75,
+  "entries": [
+    {
+      "t": "2026-09-05T13:00:00-05:00",
+      "ev": "routine",
+      "item": "lunch",
+      "inst": "2026-09-05",
+      "status": "done",
+      "actual_min": 35
+    },
+    {
+      "t": "2026-09-06T08:00:00-05:00",
+      "ev": "wake",
+      "slept_min": 500
+    },
+    {
+      "t": "2026-09-06T08:02:00-05:00",
+      "ev": "routine",
+      "item": "sleep",
+      "inst": "2026-09-05",
+      "status": "done",
+      "actual_min": 500
+    },
+    {
+      "t": "2026-09-06T12:40:00-05:00",
+      "ev": "routine",
+      "item": "lunch",
+      "inst": "2026-09-06",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-06T14:00:00-05:00",
+      "ev": "event",
+      "name": "dentist",
+      "id": "a7"
+    }
+  ]
+}
+=== plan-recur | tm log --since 14d | human
+2026-09-01 06:05 wake slept_min=475
+2026-09-01 07:05 routine actual_min=24 inst="2026-09-01" item="breakfast" status="done"
+2026-09-01 09:35 routine actual_min=12 inst="2026-09-01" item="standup" status="done"
+2026-09-01 09:50 routine actual_min=10 inst="2026-09-01" item="water-plants" status="done"
+2026-09-01 12:20 routine actual_min=30 inst="2026-09-01" item="lunch" status="done"
+2026-09-01 19:20 routine actual_min=20 inst="2026-09-01" item="k1" status="done"
+2026-09-02 06:00 wake slept_min=480
+2026-09-02 07:00 routine actual_min=26 inst="2026-09-02" item="breakfast" status="done"
+2026-09-02 07:45 routine actual_min=20 inst="#4" item="shower" status="done"
+2026-09-02 09:35 routine actual_min=12 inst="2026-09-02" item="standup" status="done"
+2026-09-02 09:50 start blocks_done=0 hsw=3.83 id="m1" loc="lounge" pred=5 rep=5 since_break_min=0 slept_min=480
+2026-09-02 11:00 done actual_min=70 ci=5 est_min=60 id="m1" partial=true tags=["lean"] went=1
+2026-09-02 12:10 routine actual_min=30 inst="2026-09-02" item="lunch" status="done"
+2026-09-02 17:00 routine actual_min=65 inst="2026-09-02" item="workout" status="done"
+2026-09-02 19:30 routine actual_min=20 inst="2026-09-02" item="k1" status="done"
+2026-09-03 06:15 wake slept_min=460
+2026-09-03 07:05 routine actual_min=25 inst="2026-09-03" item="breakfast" status="done"
+2026-09-03 07:20 routine actual_min=5 inst="#3" item="vitamins" status="done"
+2026-09-03 09:35 routine actual_min=12 inst="2026-09-03" item="standup" status="done"
+2026-09-03 17:30 routine actual_min=50 inst="2026-08-31" item="groceries" status="done"
+2026-09-03 19:25 routine actual_min=20 inst="2026-09-03" item="k1" status="done"
+2026-09-04 06:05 wake slept_min=470
+2026-09-04 07:00 routine actual_min=25 inst="2026-09-04" item="breakfast" status="done"
+2026-09-04 09:30 skip inst="2026-09-04" item="standup"
+2026-09-04 09:40 done actual_min=8 ci=2 est_min=10 id="a7" tags=[] went=1
+2026-09-04 12:15 routine actual_min=30 inst="2026-09-04" item="lunch" status="done"
+2026-09-04 16:00 skip inst="2026-09-04" item="workout"
+2026-09-04 19:20 routine actual_min=20 inst="2026-09-04" item="k1" status="done"
+2026-09-05 08:05 wake slept_min=505
+2026-09-05 08:06 routine actual_min=505 inst="2026-09-04" item="sleep" status="done"
+2026-09-05 08:10 skip inst="2026-09-05" item="breakfast"
+2026-09-05 08:20 routine actual_min=25 inst="#5" item="shower" status="done"
+2026-09-05 10:12 done actual_min=12 ci=2 est_min=15 id="a4" tags=[] went=1
+2026-09-05 13:00 routine actual_min=35 inst="2026-09-05" item="lunch" status="done"
+2026-09-06 08:00 wake slept_min=500
+2026-09-06 08:02 routine actual_min=500 inst="2026-09-05" item="sleep" status="done"
+2026-09-06 12:40 routine actual_min=30 inst="2026-09-06" item="lunch" status="done"
+2026-09-06 14:00 event id="a7" name="dentist"
+=== plan-recur | tm log --since 14d | json
+{
+  "total": 75,
+  "entries": [
+    {
+      "t": "2026-09-01T06:05:00-05:00",
+      "ev": "wake",
+      "slept_min": 475
+    },
+    {
+      "t": "2026-09-01T07:05:00-05:00",
+      "ev": "routine",
+      "item": "breakfast",
+      "inst": "2026-09-01",
+      "status": "done",
+      "actual_min": 24
+    },
+    {
+      "t": "2026-09-01T09:35:00-05:00",
+      "ev": "routine",
+      "item": "standup",
+      "inst": "2026-09-01",
+      "status": "done",
+      "actual_min": 12
+    },
+    {
+      "t": "2026-09-01T09:50:00-05:00",
+      "ev": "routine",
+      "item": "water-plants",
+      "inst": "2026-09-01",
+      "status": "done",
+      "actual_min": 10
+    },
+    {
+      "t": "2026-09-01T12:20:00-05:00",
+      "ev": "routine",
+      "item": "lunch",
+      "inst": "2026-09-01",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-01T19:20:00-05:00",
+      "ev": "routine",
+      "item": "k1",
+      "inst": "2026-09-01",
+      "status": "done",
+      "actual_min": 20
+    },
+    {
+      "t": "2026-09-02T06:00:00-05:00",
+      "ev": "wake",
+      "slept_min": 480
+    },
+    {
+      "t": "2026-09-02T07:00:00-05:00",
+      "ev": "routine",
+      "item": "breakfast",
+      "inst": "2026-09-02",
+      "status": "done",
+      "actual_min": 26
+    },
+    {
+      "t": "2026-09-02T07:45:00-05:00",
+      "ev": "routine",
+      "item": "shower",
+      "inst": "#4",
+      "status": "done",
+      "actual_min": 20
+    },
+    {
+      "t": "2026-09-02T09:35:00-05:00",
+      "ev": "routine",
+      "item": "standup",
+      "inst": "2026-09-02",
+      "status": "done",
+      "actual_min": 12
+    },
+    {
+      "t": "2026-09-02T09:50:00-05:00",
+      "ev": "start",
+      "id": "m1",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 3.83,
+      "slept_min": 480,
+      "loc": "lounge",
+      "blocks_done": 0,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-02T11:00:00-05:00",
+      "ev": "done",
+      "id": "m1",
+      "est_min": 60,
+      "actual_min": 70,
+      "went": 1,
+      "tags": [
+        "lean"
+      ],
+      "ci": 5,
+      "partial": true
+    },
+    {
+      "t": "2026-09-02T12:10:00-05:00",
+      "ev": "routine",
+      "item": "lunch",
+      "inst": "2026-09-02",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-02T17:00:00-05:00",
+      "ev": "routine",
+      "item": "workout",
+      "inst": "2026-09-02",
+      "status": "done",
+      "actual_min": 65
+    },
+    {
+      "t": "2026-09-02T19:30:00-05:00",
+      "ev": "routine",
+      "item": "k1",
+      "inst": "2026-09-02",
+      "status": "done",
+      "actual_min": 20
+    },
+    {
+      "t": "2026-09-03T06:15:00-05:00",
+      "ev": "wake",
+      "slept_min": 460
+    },
+    {
+      "t": "2026-09-03T07:05:00-05:00",
+      "ev": "routine",
+      "item": "breakfast",
+      "inst": "2026-09-03",
+      "status": "done",
+      "actual_min": 25
+    },
+    {
+      "t": "2026-09-03T07:20:00-05:00",
+      "ev": "routine",
+      "item": "vitamins",
+      "inst": "#3",
+      "status": "done",
+      "actual_min": 5
+    },
+    {
+      "t": "2026-09-03T09:35:00-05:00",
+      "ev": "routine",
+      "item": "standup",
+      "inst": "2026-09-03",
+      "status": "done",
+      "actual_min": 12
+    },
+    {
+      "t": "2026-09-03T17:30:00-05:00",
+      "ev": "routine",
+      "item": "groceries",
+      "inst": "2026-08-31",
+      "status": "done",
+      "actual_min": 50
+    },
+    {
+      "t": "2026-09-03T19:25:00-05:00",
+      "ev": "routine",
+      "item": "k1",
+      "inst": "2026-09-03",
+      "status": "done",
+      "actual_min": 20
+    },
+    {
+      "t": "2026-09-04T06:05:00-05:00",
+      "ev": "wake",
+      "slept_min": 470
+    },
+    {
+      "t": "2026-09-04T07:00:00-05:00",
+      "ev": "routine",
+      "item": "breakfast",
+      "inst": "2026-09-04",
+      "status": "done",
+      "actual_min": 25
+    },
+    {
+      "t": "2026-09-04T09:30:00-05:00",
+      "ev": "skip",
+      "item": "standup",
+      "inst": "2026-09-04"
+    },
+    {
+      "t": "2026-09-04T09:40:00-05:00",
+      "ev": "done",
+      "id": "a7",
+      "est_min": 10,
+      "actual_min": 8,
+      "went": 1,
+      "tags": [],
+      "ci": 2
+    },
+    {
+      "t": "2026-09-04T12:15:00-05:00",
+      "ev": "routine",
+      "item": "lunch",
+      "inst": "2026-09-04",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-04T16:00:00-05:00",
+      "ev": "skip",
+      "item": "workout",
+      "inst": "2026-09-04"
+    },
+    {
+      "t": "2026-09-04T19:20:00-05:00",
+      "ev": "routine",
+      "item": "k1",
+      "inst": "2026-09-04",
+      "status": "done",
+      "actual_min": 20
+    },
+    {
+      "t": "2026-09-05T08:05:00-05:00",
+      "ev": "wake",
+      "slept_min": 505
+    },
+    {
+      "t": "2026-09-05T08:06:00-05:00",
+      "ev": "routine",
+      "item": "sleep",
+      "inst": "2026-09-04",
+      "status": "done",
+      "actual_min": 505
+    },
+    {
+      "t": "2026-09-05T08:10:00-05:00",
+      "ev": "skip",
+      "item": "breakfast",
+      "inst": "2026-09-05"
+    },
+    {
+      "t": "2026-09-05T08:20:00-05:00",
+      "ev": "routine",
+      "item": "shower",
+      "inst": "#5",
+      "status": "done",
+      "actual_min": 25
+    },
+    {
+      "t": "2026-09-05T10:12:00-05:00",
+      "ev": "done",
+      "id": "a4",
+      "est_min": 15,
+      "actual_min": 12,
+      "went": 1,
+      "tags": [],
+      "ci": 2
+    },
+    {
+      "t": "2026-09-05T13:00:00-05:00",
+      "ev": "routine",
+      "item": "lunch",
+      "inst": "2026-09-05",
+      "status": "done",
+      "actual_min": 35
+    },
+    {
+      "t": "2026-09-06T08:00:00-05:00",
+      "ev": "wake",
+      "slept_min": 500
+    },
+    {
+      "t": "2026-09-06T08:02:00-05:00",
+      "ev": "routine",
+      "item": "sleep",
+      "inst": "2026-09-05",
+      "status": "done",
+      "actual_min": 500
+    },
+    {
+      "t": "2026-09-06T12:40:00-05:00",
+      "ev": "routine",
+      "item": "lunch",
+      "inst": "2026-09-06",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-06T14:00:00-05:00",
+      "ev": "event",
+      "name": "dentist",
+      "id": "a7"
+    }
+  ]
+}
+=== plan-recur | tm log --item ^m1 | human
+2026-09-02 09:50 start blocks_done=0 hsw=3.83 id="m1" loc="lounge" pred=5 rep=5 since_break_min=0 slept_min=480
+2026-09-02 11:00 done actual_min=70 ci=5 est_min=60 id="m1" partial=true tags=["lean"] went=1
+=== plan-recur | tm log --item ^m1 | json
+{
+  "total": 75,
+  "entries": [
+    {
+      "t": "2026-09-02T09:50:00-05:00",
+      "ev": "start",
+      "id": "m1",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 3.83,
+      "slept_min": 480,
+      "loc": "lounge",
+      "blocks_done": 0,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-02T11:00:00-05:00",
+      "ev": "done",
+      "id": "m1",
+      "est_min": 60,
+      "actual_min": 70,
+      "went": 1,
+      "tags": [
+        "lean"
+      ],
+      "ci": 5,
+      "partial": true
+    }
+  ]
+}
+=== logs/energy-14d | tm log | human
+2026-09-06 12:51 done actual_min=91 ci=5 est_min=60 id="e120" tags=["lean"] went=2
+2026-09-06 13:20 start blocks_done=1 hsw=5.83 id="e121" loc="home" pred=3 rep=3 since_break_min=91 slept_min=470
+2026-09-06 14:26 done actual_min=66 ci=4 est_min=60 id="e121" tags=["soundcode"] went=3
+2026-09-06 14:26 break actual_min=20 planned_min=20 where="walk"
+2026-09-06 15:25 energy hsw=7.92 loc="home" pred=3 rep=3
+2026-09-06 15:55 start blocks_done=2 hsw=8.42 id="e122" loc="home" pred=2 rep=3 since_break_min=0 slept_min=470
+2026-09-06 16:48 done actual_min=53 ci=3 est_min=60 id="e122" tags=["admin"] went=1
+2026-09-06 18:15 start blocks_done=3 hsw=10.75 id="e123" loc="home" pred=2 rep=1 since_break_min=53 slept_min=470
+2026-09-06 19:25 done actual_min=70 ci=2 est_min=60 id="e123" tags=[] went=2
+2026-09-06 19:25 break actual_min=20 planned_min=20 where="walk"
+2026-09-07 06:05 wake slept_min=490
+2026-09-07 07:10 arrive budget=6 loc="lounge" window=["07:10","15:10"]
+2026-09-07 07:15 start blocks_done=0 hsw=1.17 id="e130" loc="lounge" pred=5 rep=5 since_break_min=0 slept_min=490
+2026-09-07 08:31 done actual_min=76 ci=5 est_min=60 id="e130" tags=["soundcode"] went=1
+2026-09-07 09:15 start blocks_done=1 hsw=3.17 id="e131" loc="lounge" pred=5 rep=5 since_break_min=76 slept_min=490
+2026-09-07 09:53 done actual_min=38 ci=4 est_min=60 id="e131" tags=["admin"] went=1
+2026-09-07 09:53 break actual_min=25 planned_min=20 where="seat"
+2026-09-07 11:20 energy hsw=5.25 loc="lounge" pred=4 rep=3
+2026-09-07 11:50 start blocks_done=2 hsw=5.75 id="e132" loc="lounge" pred=4 rep=3 since_break_min=0 slept_min=490
+2026-09-07 12:45 done actual_min=55 ci=3 est_min=60 id="e132" tags=[] went=2
+=== logs/energy-14d | tm log | json
+{
+  "total": 155,
+  "entries": [
+    {
+      "t": "2026-09-06T12:51:00-05:00",
+      "ev": "done",
+      "id": "e120",
+      "est_min": 60,
+      "actual_min": 91,
+      "went": 2,
+      "tags": [
+        "lean"
+      ],
+      "ci": 5
+    },
+    {
+      "t": "2026-09-06T13:20:00-05:00",
+      "ev": "start",
+      "id": "e121",
+      "pred": 3,
+      "rep": 3,
+      "hsw": 5.83,
+      "slept_min": 470,
+      "loc": "home",
+      "blocks_done": 1,
+      "since_break_min": 91
+    },
+    {
+      "t": "2026-09-06T14:26:00-05:00",
+      "ev": "done",
+      "id": "e121",
+      "est_min": 60,
+      "actual_min": 66,
+      "went": 3,
+      "tags": [
+        "soundcode"
+      ],
+      "ci": 4
+    },
+    {
+      "t": "2026-09-06T14:26:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 20,
+      "where": "walk"
+    },
+    {
+      "t": "2026-09-06T15:25:00-05:00",
+      "ev": "energy",
+      "pred": 3,
+      "rep": 3,
+      "hsw": 7.92,
+      "loc": "home"
+    },
+    {
+      "t": "2026-09-06T15:55:00-05:00",
+      "ev": "start",
+      "id": "e122",
+      "pred": 2,
+      "rep": 3,
+      "hsw": 8.42,
+      "slept_min": 470,
+      "loc": "home",
+      "blocks_done": 2,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-06T16:48:00-05:00",
+      "ev": "done",
+      "id": "e122",
+      "est_min": 60,
+      "actual_min": 53,
+      "went": 1,
+      "tags": [
+        "admin"
+      ],
+      "ci": 3
+    },
+    {
+      "t": "2026-09-06T18:15:00-05:00",
+      "ev": "start",
+      "id": "e123",
+      "pred": 2,
+      "rep": 1,
+      "hsw": 10.75,
+      "slept_min": 470,
+      "loc": "home",
+      "blocks_done": 3,
+      "since_break_min": 53
+    },
+    {
+      "t": "2026-09-06T19:25:00-05:00",
+      "ev": "done",
+      "id": "e123",
+      "est_min": 60,
+      "actual_min": 70,
+      "went": 2,
+      "tags": [],
+      "ci": 2
+    },
+    {
+      "t": "2026-09-06T19:25:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 20,
+      "where": "walk"
+    },
+    {
+      "t": "2026-09-07T06:05:00-05:00",
+      "ev": "wake",
+      "slept_min": 490
+    },
+    {
+      "t": "2026-09-07T07:10:00-05:00",
+      "ev": "arrive",
+      "loc": "lounge",
+      "window": [
+        "07:10",
+        "15:10"
+      ],
+      "budget": 6
+    },
+    {
+      "t": "2026-09-07T07:15:00-05:00",
+      "ev": "start",
+      "id": "e130",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 1.17,
+      "slept_min": 490,
+      "loc": "lounge",
+      "blocks_done": 0,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-07T08:31:00-05:00",
+      "ev": "done",
+      "id": "e130",
+      "est_min": 60,
+      "actual_min": 76,
+      "went": 1,
+      "tags": [
+        "soundcode"
+      ],
+      "ci": 5
+    },
+    {
+      "t": "2026-09-07T09:15:00-05:00",
+      "ev": "start",
+      "id": "e131",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 3.17,
+      "slept_min": 490,
+      "loc": "lounge",
+      "blocks_done": 1,
+      "since_break_min": 76
+    },
+    {
+      "t": "2026-09-07T09:53:00-05:00",
+      "ev": "done",
+      "id": "e131",
+      "est_min": 60,
+      "actual_min": 38,
+      "went": 1,
+      "tags": [
+        "admin"
+      ],
+      "ci": 4
+    },
+    {
+      "t": "2026-09-07T09:53:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 25,
+      "where": "seat"
+    },
+    {
+      "t": "2026-09-07T11:20:00-05:00",
+      "ev": "energy",
+      "pred": 4,
+      "rep": 3,
+      "hsw": 5.25,
+      "loc": "lounge"
+    },
+    {
+      "t": "2026-09-07T11:50:00-05:00",
+      "ev": "start",
+      "id": "e132",
+      "pred": 4,
+      "rep": 3,
+      "hsw": 5.75,
+      "slept_min": 490,
+      "loc": "lounge",
+      "blocks_done": 2,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-07T12:45:00-05:00",
+      "ev": "done",
+      "id": "e132",
+      "est_min": 60,
+      "actual_min": 55,
+      "went": 2,
+      "tags": [],
+      "ci": 3
+    }
+  ]
+}
+=== logs/energy-14d | tm log --tail 5 | human
+2026-09-07 09:53 done actual_min=38 ci=4 est_min=60 id="e131" tags=["admin"] went=1
+2026-09-07 09:53 break actual_min=25 planned_min=20 where="seat"
+2026-09-07 11:20 energy hsw=5.25 loc="lounge" pred=4 rep=3
+2026-09-07 11:50 start blocks_done=2 hsw=5.75 id="e132" loc="lounge" pred=4 rep=3 since_break_min=0 slept_min=490
+2026-09-07 12:45 done actual_min=55 ci=3 est_min=60 id="e132" tags=[] went=2
+=== logs/energy-14d | tm log --tail 5 | json
+{
+  "total": 155,
+  "entries": [
+    {
+      "t": "2026-09-07T09:53:00-05:00",
+      "ev": "done",
+      "id": "e131",
+      "est_min": 60,
+      "actual_min": 38,
+      "went": 1,
+      "tags": [
+        "admin"
+      ],
+      "ci": 4
+    },
+    {
+      "t": "2026-09-07T09:53:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 25,
+      "where": "seat"
+    },
+    {
+      "t": "2026-09-07T11:20:00-05:00",
+      "ev": "energy",
+      "pred": 4,
+      "rep": 3,
+      "hsw": 5.25,
+      "loc": "lounge"
+    },
+    {
+      "t": "2026-09-07T11:50:00-05:00",
+      "ev": "start",
+      "id": "e132",
+      "pred": 4,
+      "rep": 3,
+      "hsw": 5.75,
+      "slept_min": 490,
+      "loc": "lounge",
+      "blocks_done": 2,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-07T12:45:00-05:00",
+      "ev": "done",
+      "id": "e132",
+      "est_min": 60,
+      "actual_min": 55,
+      "went": 2,
+      "tags": [],
+      "ci": 3
+    }
+  ]
+}
+=== logs/energy-14d | tm log --since 14d | human
+2026-09-01 06:05 wake slept_min=490
+2026-09-01 07:05 arrive budget=6 loc="lounge" window=["07:05","15:05"]
+2026-09-01 07:10 start blocks_done=0 hsw=1.08 id="e70" loc="lounge" pred=5 rep=5 since_break_min=0 slept_min=490
+2026-09-01 08:05 done actual_min=55 ci=5 est_min=60 id="e70" tags=[] went=3
+2026-09-01 09:10 start blocks_done=1 hsw=3.08 id="e71" loc="lounge" pred=5 rep=5 since_break_min=55 slept_min=490
+2026-09-01 10:46 done actual_min=96 ci=4 est_min=60 id="e71" tags=["lean"] went=1
+2026-09-01 10:46 break actual_min=25 planned_min=20 where="seat"
+2026-09-01 11:15 energy hsw=5.17 loc="lounge" pred=4 rep=3
+2026-09-01 11:45 start blocks_done=2 hsw=5.67 id="e72" loc="lounge" pred=4 rep=3 since_break_min=0 slept_min=490
+2026-09-01 12:56 done actual_min=71 ci=3 est_min=60 id="e72" tags=["soundcode"] went=2
+2026-09-02 06:05 wake onset_min=35 slept_min=410
+2026-09-02 08:30 arrive budget=6 loc="home" window=["08:30","16:30"]
+2026-09-02 08:35 start blocks_done=0 hsw=2.5 id="e80" loc="home" pred=3 rep=4 since_break_min=0 slept_min=410
+2026-09-02 10:21 done actual_min=106 ci=5 est_min=60 id="e80" tags=["lean"] went=1
+2026-09-02 10:35 start blocks_done=1 hsw=4.5 id="e81" loc="home" pred=2 rep=1 since_break_min=106 slept_min=410
+2026-09-02 11:31 done actual_min=56 ci=4 est_min=60 id="e81" tags=["soundcode"] went=2
+2026-09-02 11:31 break actual_min=30 planned_min=20 where="phone"
+2026-09-02 12:40 energy hsw=6.58 loc="home" pred=2 rep=1
+2026-09-02 13:10 start blocks_done=2 hsw=7.08 id="e82" loc="home" pred=2 rep=2 since_break_min=0 slept_min=410
+2026-09-02 13:53 done actual_min=43 ci=3 est_min=60 id="e82" tags=["admin"] went=1
+2026-09-03 06:05 wake slept_min=480
+2026-09-03 07:10 arrive budget=6 loc="lounge" window=["07:10","15:10"]
+2026-09-03 07:15 start blocks_done=0 hsw=1.17 id="e90" loc="lounge" pred=5 rep=4 since_break_min=0 slept_min=480
+2026-09-03 08:21 done actual_min=66 ci=5 est_min=60 id="e90" tags=["soundcode"] went=2
+2026-09-03 09:15 start blocks_done=1 hsw=3.17 id="e91" loc="lounge" pred=5 rep=5 since_break_min=66 slept_min=480
+2026-09-03 10:08 done actual_min=53 ci=4 est_min=60 id="e91" tags=["admin"] went=1
+2026-09-03 10:08 break actual_min=20 planned_min=20 where="walk"
+2026-09-03 11:20 energy hsw=5.25 loc="lounge" pred=4 rep=4
+2026-09-03 11:50 start blocks_done=2 hsw=5.75 id="e92" loc="lounge" pred=4 rep=5 since_break_min=0 slept_min=480
+2026-09-03 13:00 done actual_min=70 ci=3 est_min=60 id="e92" tags=[] went=1
+2026-09-03 14:10 start blocks_done=3 hsw=8.08 id="e93" loc="lounge" pred=3 rep=2 since_break_min=70 slept_min=480
+2026-09-03 15:36 done actual_min=86 ci=2 est_min=60 id="e93" tags=["lean"] went=2
+2026-09-03 15:36 break actual_min=20 planned_min=20 where="walk"
+2026-09-04 06:05 wake slept_min=500
+2026-09-04 06:55 arrive budget=6 loc="lounge" window=["06:55","14:55"]
+2026-09-04 07:00 start blocks_done=0 hsw=0.92 id="e100" loc="lounge" pred=4 rep=4 since_break_min=0 slept_min=500
+2026-09-04 07:38 done actual_min=38 ci=5 est_min=60 id="e100" tags=["admin"] went=1
+2026-09-04 09:00 start blocks_done=1 hsw=2.92 id="e101" loc="lounge" pred=5 rep=5 since_break_min=38 slept_min=500
+2026-09-04 09:55 done actual_min=55 ci=4 est_min=60 id="e101" tags=[] went=1
+2026-09-04 09:55 break actual_min=25 planned_min=20 where="seat"
+2026-09-04 11:05 energy hsw=5.0 loc="lounge" pred=4 rep=3
+2026-09-04 11:35 start blocks_done=2 hsw=5.5 id="e102" loc="lounge" pred=4 rep=3 since_break_min=0 slept_min=500
+2026-09-04 13:11 done actual_min=96 ci=3 est_min=60 id="e102" tags=["lean"] went=3
+2026-09-05 07:30 wake slept_min=390
+2026-09-05 10:30 arrive budget=6 loc="home" window=["10:30","18:30"]
+2026-09-05 10:35 start blocks_done=0 hsw=3.08 id="e110" loc="home" pred=3 rep=4 since_break_min=0 slept_min=390
+2026-09-05 11:40 done actual_min=65 ci=5 est_min=60 id="e110" tags=[] went=1
+2026-09-05 12:35 start blocks_done=1 hsw=5.08 id="e111" loc="home" pred=2 rep=1 since_break_min=65 slept_min=390
+2026-09-05 14:21 done actual_min=106 ci=4 est_min=60 id="e111" tags=["lean"] went=2
+2026-09-05 14:21 break actual_min=30 planned_min=20 where="phone"
+2026-09-05 14:40 energy hsw=7.17 loc="home" pred=2 rep=1
+2026-09-05 15:10 start blocks_done=2 hsw=7.67 id="e112" loc="home" pred=2 rep=2 since_break_min=0 slept_min=390
+2026-09-05 16:06 done actual_min=56 ci=3 est_min=60 id="e112" tags=["soundcode"] went=1
+2026-09-06 07:30 wake slept_min=470
+2026-09-06 11:15 arrive budget=6 loc="home" window=["11:15","19:15"]
+2026-09-06 11:20 start blocks_done=0 hsw=3.83 id="e120" loc="home" pred=4 rep=3 since_break_min=0 slept_min=470
+2026-09-06 12:51 done actual_min=91 ci=5 est_min=60 id="e120" tags=["lean"] went=2
+2026-09-06 13:20 start blocks_done=1 hsw=5.83 id="e121" loc="home" pred=3 rep=3 since_break_min=91 slept_min=470
+2026-09-06 14:26 done actual_min=66 ci=4 est_min=60 id="e121" tags=["soundcode"] went=3
+2026-09-06 14:26 break actual_min=20 planned_min=20 where="walk"
+2026-09-06 15:25 energy hsw=7.92 loc="home" pred=3 rep=3
+2026-09-06 15:55 start blocks_done=2 hsw=8.42 id="e122" loc="home" pred=2 rep=3 since_break_min=0 slept_min=470
+2026-09-06 16:48 done actual_min=53 ci=3 est_min=60 id="e122" tags=["admin"] went=1
+2026-09-06 18:15 start blocks_done=3 hsw=10.75 id="e123" loc="home" pred=2 rep=1 since_break_min=53 slept_min=470
+2026-09-06 19:25 done actual_min=70 ci=2 est_min=60 id="e123" tags=[] went=2
+2026-09-06 19:25 break actual_min=20 planned_min=20 where="walk"
+2026-09-07 06:05 wake slept_min=490
+2026-09-07 07:10 arrive budget=6 loc="lounge" window=["07:10","15:10"]
+2026-09-07 07:15 start blocks_done=0 hsw=1.17 id="e130" loc="lounge" pred=5 rep=5 since_break_min=0 slept_min=490
+2026-09-07 08:31 done actual_min=76 ci=5 est_min=60 id="e130" tags=["soundcode"] went=1
+2026-09-07 09:15 start blocks_done=1 hsw=3.17 id="e131" loc="lounge" pred=5 rep=5 since_break_min=76 slept_min=490
+2026-09-07 09:53 done actual_min=38 ci=4 est_min=60 id="e131" tags=["admin"] went=1
+2026-09-07 09:53 break actual_min=25 planned_min=20 where="seat"
+2026-09-07 11:20 energy hsw=5.25 loc="lounge" pred=4 rep=3
+2026-09-07 11:50 start blocks_done=2 hsw=5.75 id="e132" loc="lounge" pred=4 rep=3 since_break_min=0 slept_min=490
+2026-09-07 12:45 done actual_min=55 ci=3 est_min=60 id="e132" tags=[] went=2
+=== logs/energy-14d | tm log --since 14d | json
+{
+  "total": 155,
+  "entries": [
+    {
+      "t": "2026-09-01T06:05:00-05:00",
+      "ev": "wake",
+      "slept_min": 490
+    },
+    {
+      "t": "2026-09-01T07:05:00-05:00",
+      "ev": "arrive",
+      "loc": "lounge",
+      "window": [
+        "07:05",
+        "15:05"
+      ],
+      "budget": 6
+    },
+    {
+      "t": "2026-09-01T07:10:00-05:00",
+      "ev": "start",
+      "id": "e70",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 1.08,
+      "slept_min": 490,
+      "loc": "lounge",
+      "blocks_done": 0,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-01T08:05:00-05:00",
+      "ev": "done",
+      "id": "e70",
+      "est_min": 60,
+      "actual_min": 55,
+      "went": 3,
+      "tags": [],
+      "ci": 5
+    },
+    {
+      "t": "2026-09-01T09:10:00-05:00",
+      "ev": "start",
+      "id": "e71",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 3.08,
+      "slept_min": 490,
+      "loc": "lounge",
+      "blocks_done": 1,
+      "since_break_min": 55
+    },
+    {
+      "t": "2026-09-01T10:46:00-05:00",
+      "ev": "done",
+      "id": "e71",
+      "est_min": 60,
+      "actual_min": 96,
+      "went": 1,
+      "tags": [
+        "lean"
+      ],
+      "ci": 4
+    },
+    {
+      "t": "2026-09-01T10:46:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 25,
+      "where": "seat"
+    },
+    {
+      "t": "2026-09-01T11:15:00-05:00",
+      "ev": "energy",
+      "pred": 4,
+      "rep": 3,
+      "hsw": 5.17,
+      "loc": "lounge"
+    },
+    {
+      "t": "2026-09-01T11:45:00-05:00",
+      "ev": "start",
+      "id": "e72",
+      "pred": 4,
+      "rep": 3,
+      "hsw": 5.67,
+      "slept_min": 490,
+      "loc": "lounge",
+      "blocks_done": 2,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-01T12:56:00-05:00",
+      "ev": "done",
+      "id": "e72",
+      "est_min": 60,
+      "actual_min": 71,
+      "went": 2,
+      "tags": [
+        "soundcode"
+      ],
+      "ci": 3
+    },
+    {
+      "t": "2026-09-02T06:05:00-05:00",
+      "ev": "wake",
+      "slept_min": 410,
+      "onset_min": 35
+    },
+    {
+      "t": "2026-09-02T08:30:00-05:00",
+      "ev": "arrive",
+      "loc": "home",
+      "window": [
+        "08:30",
+        "16:30"
+      ],
+      "budget": 6
+    },
+    {
+      "t": "2026-09-02T08:35:00-05:00",
+      "ev": "start",
+      "id": "e80",
+      "pred": 3,
+      "rep": 4,
+      "hsw": 2.5,
+      "slept_min": 410,
+      "loc": "home",
+      "blocks_done": 0,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-02T10:21:00-05:00",
+      "ev": "done",
+      "id": "e80",
+      "est_min": 60,
+      "actual_min": 106,
+      "went": 1,
+      "tags": [
+        "lean"
+      ],
+      "ci": 5
+    },
+    {
+      "t": "2026-09-02T10:35:00-05:00",
+      "ev": "start",
+      "id": "e81",
+      "pred": 2,
+      "rep": 1,
+      "hsw": 4.5,
+      "slept_min": 410,
+      "loc": "home",
+      "blocks_done": 1,
+      "since_break_min": 106
+    },
+    {
+      "t": "2026-09-02T11:31:00-05:00",
+      "ev": "done",
+      "id": "e81",
+      "est_min": 60,
+      "actual_min": 56,
+      "went": 2,
+      "tags": [
+        "soundcode"
+      ],
+      "ci": 4
+    },
+    {
+      "t": "2026-09-02T11:31:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 30,
+      "where": "phone"
+    },
+    {
+      "t": "2026-09-02T12:40:00-05:00",
+      "ev": "energy",
+      "pred": 2,
+      "rep": 1,
+      "hsw": 6.58,
+      "loc": "home"
+    },
+    {
+      "t": "2026-09-02T13:10:00-05:00",
+      "ev": "start",
+      "id": "e82",
+      "pred": 2,
+      "rep": 2,
+      "hsw": 7.08,
+      "slept_min": 410,
+      "loc": "home",
+      "blocks_done": 2,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-02T13:53:00-05:00",
+      "ev": "done",
+      "id": "e82",
+      "est_min": 60,
+      "actual_min": 43,
+      "went": 1,
+      "tags": [
+        "admin"
+      ],
+      "ci": 3
+    },
+    {
+      "t": "2026-09-03T06:05:00-05:00",
+      "ev": "wake",
+      "slept_min": 480
+    },
+    {
+      "t": "2026-09-03T07:10:00-05:00",
+      "ev": "arrive",
+      "loc": "lounge",
+      "window": [
+        "07:10",
+        "15:10"
+      ],
+      "budget": 6
+    },
+    {
+      "t": "2026-09-03T07:15:00-05:00",
+      "ev": "start",
+      "id": "e90",
+      "pred": 5,
+      "rep": 4,
+      "hsw": 1.17,
+      "slept_min": 480,
+      "loc": "lounge",
+      "blocks_done": 0,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-03T08:21:00-05:00",
+      "ev": "done",
+      "id": "e90",
+      "est_min": 60,
+      "actual_min": 66,
+      "went": 2,
+      "tags": [
+        "soundcode"
+      ],
+      "ci": 5
+    },
+    {
+      "t": "2026-09-03T09:15:00-05:00",
+      "ev": "start",
+      "id": "e91",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 3.17,
+      "slept_min": 480,
+      "loc": "lounge",
+      "blocks_done": 1,
+      "since_break_min": 66
+    },
+    {
+      "t": "2026-09-03T10:08:00-05:00",
+      "ev": "done",
+      "id": "e91",
+      "est_min": 60,
+      "actual_min": 53,
+      "went": 1,
+      "tags": [
+        "admin"
+      ],
+      "ci": 4
+    },
+    {
+      "t": "2026-09-03T10:08:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 20,
+      "where": "walk"
+    },
+    {
+      "t": "2026-09-03T11:20:00-05:00",
+      "ev": "energy",
+      "pred": 4,
+      "rep": 4,
+      "hsw": 5.25,
+      "loc": "lounge"
+    },
+    {
+      "t": "2026-09-03T11:50:00-05:00",
+      "ev": "start",
+      "id": "e92",
+      "pred": 4,
+      "rep": 5,
+      "hsw": 5.75,
+      "slept_min": 480,
+      "loc": "lounge",
+      "blocks_done": 2,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-03T13:00:00-05:00",
+      "ev": "done",
+      "id": "e92",
+      "est_min": 60,
+      "actual_min": 70,
+      "went": 1,
+      "tags": [],
+      "ci": 3
+    },
+    {
+      "t": "2026-09-03T14:10:00-05:00",
+      "ev": "start",
+      "id": "e93",
+      "pred": 3,
+      "rep": 2,
+      "hsw": 8.08,
+      "slept_min": 480,
+      "loc": "lounge",
+      "blocks_done": 3,
+      "since_break_min": 70
+    },
+    {
+      "t": "2026-09-03T15:36:00-05:00",
+      "ev": "done",
+      "id": "e93",
+      "est_min": 60,
+      "actual_min": 86,
+      "went": 2,
+      "tags": [
+        "lean"
+      ],
+      "ci": 2
+    },
+    {
+      "t": "2026-09-03T15:36:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 20,
+      "where": "walk"
+    },
+    {
+      "t": "2026-09-04T06:05:00-05:00",
+      "ev": "wake",
+      "slept_min": 500
+    },
+    {
+      "t": "2026-09-04T06:55:00-05:00",
+      "ev": "arrive",
+      "loc": "lounge",
+      "window": [
+        "06:55",
+        "14:55"
+      ],
+      "budget": 6
+    },
+    {
+      "t": "2026-09-04T07:00:00-05:00",
+      "ev": "start",
+      "id": "e100",
+      "pred": 4,
+      "rep": 4,
+      "hsw": 0.92,
+      "slept_min": 500,
+      "loc": "lounge",
+      "blocks_done": 0,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-04T07:38:00-05:00",
+      "ev": "done",
+      "id": "e100",
+      "est_min": 60,
+      "actual_min": 38,
+      "went": 1,
+      "tags": [
+        "admin"
+      ],
+      "ci": 5
+    },
+    {
+      "t": "2026-09-04T09:00:00-05:00",
+      "ev": "start",
+      "id": "e101",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 2.92,
+      "slept_min": 500,
+      "loc": "lounge",
+      "blocks_done": 1,
+      "since_break_min": 38
+    },
+    {
+      "t": "2026-09-04T09:55:00-05:00",
+      "ev": "done",
+      "id": "e101",
+      "est_min": 60,
+      "actual_min": 55,
+      "went": 1,
+      "tags": [],
+      "ci": 4
+    },
+    {
+      "t": "2026-09-04T09:55:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 25,
+      "where": "seat"
+    },
+    {
+      "t": "2026-09-04T11:05:00-05:00",
+      "ev": "energy",
+      "pred": 4,
+      "rep": 3,
+      "hsw": 5.0,
+      "loc": "lounge"
+    },
+    {
+      "t": "2026-09-04T11:35:00-05:00",
+      "ev": "start",
+      "id": "e102",
+      "pred": 4,
+      "rep": 3,
+      "hsw": 5.5,
+      "slept_min": 500,
+      "loc": "lounge",
+      "blocks_done": 2,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-04T13:11:00-05:00",
+      "ev": "done",
+      "id": "e102",
+      "est_min": 60,
+      "actual_min": 96,
+      "went": 3,
+      "tags": [
+        "lean"
+      ],
+      "ci": 3
+    },
+    {
+      "t": "2026-09-05T07:30:00-05:00",
+      "ev": "wake",
+      "slept_min": 390
+    },
+    {
+      "t": "2026-09-05T10:30:00-05:00",
+      "ev": "arrive",
+      "loc": "home",
+      "window": [
+        "10:30",
+        "18:30"
+      ],
+      "budget": 6
+    },
+    {
+      "t": "2026-09-05T10:35:00-05:00",
+      "ev": "start",
+      "id": "e110",
+      "pred": 3,
+      "rep": 4,
+      "hsw": 3.08,
+      "slept_min": 390,
+      "loc": "home",
+      "blocks_done": 0,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-05T11:40:00-05:00",
+      "ev": "done",
+      "id": "e110",
+      "est_min": 60,
+      "actual_min": 65,
+      "went": 1,
+      "tags": [],
+      "ci": 5
+    },
+    {
+      "t": "2026-09-05T12:35:00-05:00",
+      "ev": "start",
+      "id": "e111",
+      "pred": 2,
+      "rep": 1,
+      "hsw": 5.08,
+      "slept_min": 390,
+      "loc": "home",
+      "blocks_done": 1,
+      "since_break_min": 65
+    },
+    {
+      "t": "2026-09-05T14:21:00-05:00",
+      "ev": "done",
+      "id": "e111",
+      "est_min": 60,
+      "actual_min": 106,
+      "went": 2,
+      "tags": [
+        "lean"
+      ],
+      "ci": 4
+    },
+    {
+      "t": "2026-09-05T14:21:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 30,
+      "where": "phone"
+    },
+    {
+      "t": "2026-09-05T14:40:00-05:00",
+      "ev": "energy",
+      "pred": 2,
+      "rep": 1,
+      "hsw": 7.17,
+      "loc": "home"
+    },
+    {
+      "t": "2026-09-05T15:10:00-05:00",
+      "ev": "start",
+      "id": "e112",
+      "pred": 2,
+      "rep": 2,
+      "hsw": 7.67,
+      "slept_min": 390,
+      "loc": "home",
+      "blocks_done": 2,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-05T16:06:00-05:00",
+      "ev": "done",
+      "id": "e112",
+      "est_min": 60,
+      "actual_min": 56,
+      "went": 1,
+      "tags": [
+        "soundcode"
+      ],
+      "ci": 3
+    },
+    {
+      "t": "2026-09-06T07:30:00-05:00",
+      "ev": "wake",
+      "slept_min": 470
+    },
+    {
+      "t": "2026-09-06T11:15:00-05:00",
+      "ev": "arrive",
+      "loc": "home",
+      "window": [
+        "11:15",
+        "19:15"
+      ],
+      "budget": 6
+    },
+    {
+      "t": "2026-09-06T11:20:00-05:00",
+      "ev": "start",
+      "id": "e120",
+      "pred": 4,
+      "rep": 3,
+      "hsw": 3.83,
+      "slept_min": 470,
+      "loc": "home",
+      "blocks_done": 0,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-06T12:51:00-05:00",
+      "ev": "done",
+      "id": "e120",
+      "est_min": 60,
+      "actual_min": 91,
+      "went": 2,
+      "tags": [
+        "lean"
+      ],
+      "ci": 5
+    },
+    {
+      "t": "2026-09-06T13:20:00-05:00",
+      "ev": "start",
+      "id": "e121",
+      "pred": 3,
+      "rep": 3,
+      "hsw": 5.83,
+      "slept_min": 470,
+      "loc": "home",
+      "blocks_done": 1,
+      "since_break_min": 91
+    },
+    {
+      "t": "2026-09-06T14:26:00-05:00",
+      "ev": "done",
+      "id": "e121",
+      "est_min": 60,
+      "actual_min": 66,
+      "went": 3,
+      "tags": [
+        "soundcode"
+      ],
+      "ci": 4
+    },
+    {
+      "t": "2026-09-06T14:26:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 20,
+      "where": "walk"
+    },
+    {
+      "t": "2026-09-06T15:25:00-05:00",
+      "ev": "energy",
+      "pred": 3,
+      "rep": 3,
+      "hsw": 7.92,
+      "loc": "home"
+    },
+    {
+      "t": "2026-09-06T15:55:00-05:00",
+      "ev": "start",
+      "id": "e122",
+      "pred": 2,
+      "rep": 3,
+      "hsw": 8.42,
+      "slept_min": 470,
+      "loc": "home",
+      "blocks_done": 2,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-06T16:48:00-05:00",
+      "ev": "done",
+      "id": "e122",
+      "est_min": 60,
+      "actual_min": 53,
+      "went": 1,
+      "tags": [
+        "admin"
+      ],
+      "ci": 3
+    },
+    {
+      "t": "2026-09-06T18:15:00-05:00",
+      "ev": "start",
+      "id": "e123",
+      "pred": 2,
+      "rep": 1,
+      "hsw": 10.75,
+      "slept_min": 470,
+      "loc": "home",
+      "blocks_done": 3,
+      "since_break_min": 53
+    },
+    {
+      "t": "2026-09-06T19:25:00-05:00",
+      "ev": "done",
+      "id": "e123",
+      "est_min": 60,
+      "actual_min": 70,
+      "went": 2,
+      "tags": [],
+      "ci": 2
+    },
+    {
+      "t": "2026-09-06T19:25:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 20,
+      "where": "walk"
+    },
+    {
+      "t": "2026-09-07T06:05:00-05:00",
+      "ev": "wake",
+      "slept_min": 490
+    },
+    {
+      "t": "2026-09-07T07:10:00-05:00",
+      "ev": "arrive",
+      "loc": "lounge",
+      "window": [
+        "07:10",
+        "15:10"
+      ],
+      "budget": 6
+    },
+    {
+      "t": "2026-09-07T07:15:00-05:00",
+      "ev": "start",
+      "id": "e130",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 1.17,
+      "slept_min": 490,
+      "loc": "lounge",
+      "blocks_done": 0,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-07T08:31:00-05:00",
+      "ev": "done",
+      "id": "e130",
+      "est_min": 60,
+      "actual_min": 76,
+      "went": 1,
+      "tags": [
+        "soundcode"
+      ],
+      "ci": 5
+    },
+    {
+      "t": "2026-09-07T09:15:00-05:00",
+      "ev": "start",
+      "id": "e131",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 3.17,
+      "slept_min": 490,
+      "loc": "lounge",
+      "blocks_done": 1,
+      "since_break_min": 76
+    },
+    {
+      "t": "2026-09-07T09:53:00-05:00",
+      "ev": "done",
+      "id": "e131",
+      "est_min": 60,
+      "actual_min": 38,
+      "went": 1,
+      "tags": [
+        "admin"
+      ],
+      "ci": 4
+    },
+    {
+      "t": "2026-09-07T09:53:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 25,
+      "where": "seat"
+    },
+    {
+      "t": "2026-09-07T11:20:00-05:00",
+      "ev": "energy",
+      "pred": 4,
+      "rep": 3,
+      "hsw": 5.25,
+      "loc": "lounge"
+    },
+    {
+      "t": "2026-09-07T11:50:00-05:00",
+      "ev": "start",
+      "id": "e132",
+      "pred": 4,
+      "rep": 3,
+      "hsw": 5.75,
+      "slept_min": 490,
+      "loc": "lounge",
+      "blocks_done": 2,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-07T12:45:00-05:00",
+      "ev": "done",
+      "id": "e132",
+      "est_min": 60,
+      "actual_min": 55,
+      "went": 2,
+      "tags": [],
+      "ci": 3
+    }
+  ]
+}
+=== logs/malformed | tm log | human
+2026-09-07 06:05 wake slept_min=490
+2026-09-07 08:00 mood level=3
+2026-09-07 09:00 note text="last good line"
+=== logs/malformed | tm log | json
+{
+  "total": 3,
+  "entries": [
+    {
+      "t": "2026-09-07T06:05:00-05:00",
+      "ev": "wake",
+      "slept_min": 490
+    },
+    {
+      "t": "2026-09-07T08:00:00-05:00",
+      "ev": "mood",
+      "level": 3
+    },
+    {
+      "t": "2026-09-07T09:00:00-05:00",
+      "ev": "note",
+      "text": "last good line"
+    }
+  ]
+}
+=== logs/malformed | tm log --tail 5 | human
+2026-09-07 06:05 wake slept_min=490
+2026-09-07 08:00 mood level=3
+2026-09-07 09:00 note text="last good line"
+=== logs/malformed | tm log --tail 5 | json
+{
+  "total": 3,
+  "entries": [
+    {
+      "t": "2026-09-07T06:05:00-05:00",
+      "ev": "wake",
+      "slept_min": 490
+    },
+    {
+      "t": "2026-09-07T08:00:00-05:00",
+      "ev": "mood",
+      "level": 3
+    },
+    {
+      "t": "2026-09-07T09:00:00-05:00",
+      "ev": "note",
+      "text": "last good line"
+    }
+  ]
+}
+=== logs/malformed | tm log --since 14d | human
+2026-09-07 06:05 wake slept_min=490
+2026-09-07 08:00 mood level=3
+2026-09-07 09:00 note text="last good line"
+=== logs/malformed | tm log --since 14d | json
+{
+  "total": 3,
+  "entries": [
+    {
+      "t": "2026-09-07T06:05:00-05:00",
+      "ev": "wake",
+      "slept_min": 490
+    },
+    {
+      "t": "2026-09-07T08:00:00-05:00",
+      "ev": "mood",
+      "level": 3
+    },
+    {
+      "t": "2026-09-07T09:00:00-05:00",
+      "ev": "note",
+      "text": "last good line"
+    }
+  ]
+}
+=== logs/review-14d | tm log | human
+2026-09-07 09:35 plan drift_min=25 hash="b02c" replans_today=2
+2026-09-07 10:02 start blocks_done=2 hsw=3.95 id="t3" loc="lounge" pred=5 rep=5 since_break_min=0 slept_min=490
+2026-09-07 10:15 energy hsw=4.17 loc="lounge" pred=5 rep=5
+2026-09-07 11:15 energy hsw=5.17 loc="lounge" pred=4 rep=4
+2026-09-07 12:10 interrupt id="t3"
+2026-09-07 12:15 energy hsw=6.17 loc="lounge" pred=4 rep=4
+2026-09-07 13:05 resume dropped=["t5"] lost_min=55
+2026-09-07 13:06 plan drift_min=30 hash="c73d" replans_today=3
+2026-09-07 13:32 done actual_min=155 ci=4 est_min=120 id="t3" tags=["lean"] went=2
+2026-09-07 13:32 break actual_min=20 planned_min=20 where="walk"
+2026-09-07 13:52 start blocks_done=3 hsw=7.78 id="t4" loc="lounge" pred=4 rep=3 since_break_min=0 slept_min=490
+2026-09-07 14:15 energy hsw=8.17 loc="lounge" pred=4 rep=3
+2026-09-07 14:52 done actual_min=60 ci=3 est_min=60 id="t4" tags=["soundcode"] went=1
+2026-09-07 15:00 plan drift_min=20 hash="d41e" replans_today=4
+2026-09-07 15:06 start blocks_done=4 hsw=9.02 id="p1" loc="lounge" pred=3 rep=2 since_break_min=74 slept_min=490
+2026-09-07 15:06 idle attributed="leak" min=14
+2026-09-07 15:26 done actual_min=20 ci=2 est_min=20 id="p1" tags=["admin"] went=1
+2026-09-07 15:40 energy hsw=9.58 loc="lounge" pred=3 rep=2
+2026-09-07 15:56 routine actual_min=30 inst="2026-09-07" item="package" status="done"
+2026-09-07 21:00 demote est_min=30 from="2026-09-07" id="t5" to="2026-W37"
+=== logs/review-14d | tm log | json
+{
+  "total": 179,
+  "entries": [
+    {
+      "t": "2026-09-07T09:35:00-05:00",
+      "ev": "plan",
+      "hash": "b02c",
+      "replans_today": 2,
+      "drift_min": 25
+    },
+    {
+      "t": "2026-09-07T10:02:00-05:00",
+      "ev": "start",
+      "id": "t3",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 3.95,
+      "slept_min": 490,
+      "loc": "lounge",
+      "blocks_done": 2,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-07T10:15:00-05:00",
+      "ev": "energy",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 4.17,
+      "loc": "lounge"
+    },
+    {
+      "t": "2026-09-07T11:15:00-05:00",
+      "ev": "energy",
+      "pred": 4,
+      "rep": 4,
+      "hsw": 5.17,
+      "loc": "lounge"
+    },
+    {
+      "t": "2026-09-07T12:10:00-05:00",
+      "ev": "interrupt",
+      "id": "t3"
+    },
+    {
+      "t": "2026-09-07T12:15:00-05:00",
+      "ev": "energy",
+      "pred": 4,
+      "rep": 4,
+      "hsw": 6.17,
+      "loc": "lounge"
+    },
+    {
+      "t": "2026-09-07T13:05:00-05:00",
+      "ev": "resume",
+      "lost_min": 55,
+      "dropped": [
+        "t5"
+      ]
+    },
+    {
+      "t": "2026-09-07T13:06:00-05:00",
+      "ev": "plan",
+      "hash": "c73d",
+      "replans_today": 3,
+      "drift_min": 30
+    },
+    {
+      "t": "2026-09-07T13:32:00-05:00",
+      "ev": "done",
+      "id": "t3",
+      "est_min": 120,
+      "actual_min": 155,
+      "went": 2,
+      "tags": [
+        "lean"
+      ],
+      "ci": 4
+    },
+    {
+      "t": "2026-09-07T13:32:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 20,
+      "where": "walk"
+    },
+    {
+      "t": "2026-09-07T13:52:00-05:00",
+      "ev": "start",
+      "id": "t4",
+      "pred": 4,
+      "rep": 3,
+      "hsw": 7.78,
+      "slept_min": 490,
+      "loc": "lounge",
+      "blocks_done": 3,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-07T14:15:00-05:00",
+      "ev": "energy",
+      "pred": 4,
+      "rep": 3,
+      "hsw": 8.17,
+      "loc": "lounge"
+    },
+    {
+      "t": "2026-09-07T14:52:00-05:00",
+      "ev": "done",
+      "id": "t4",
+      "est_min": 60,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [
+        "soundcode"
+      ],
+      "ci": 3
+    },
+    {
+      "t": "2026-09-07T15:00:00-05:00",
+      "ev": "plan",
+      "hash": "d41e",
+      "replans_today": 4,
+      "drift_min": 20
+    },
+    {
+      "t": "2026-09-07T15:06:00-05:00",
+      "ev": "start",
+      "id": "p1",
+      "pred": 3,
+      "rep": 2,
+      "hsw": 9.02,
+      "slept_min": 490,
+      "loc": "lounge",
+      "blocks_done": 4,
+      "since_break_min": 74
+    },
+    {
+      "t": "2026-09-07T15:06:00-05:00",
+      "ev": "idle",
+      "attributed": "leak",
+      "min": 14
+    },
+    {
+      "t": "2026-09-07T15:26:00-05:00",
+      "ev": "done",
+      "id": "p1",
+      "est_min": 20,
+      "actual_min": 20,
+      "went": 1,
+      "tags": [
+        "admin"
+      ],
+      "ci": 2
+    },
+    {
+      "t": "2026-09-07T15:40:00-05:00",
+      "ev": "energy",
+      "pred": 3,
+      "rep": 2,
+      "hsw": 9.58,
+      "loc": "lounge"
+    },
+    {
+      "t": "2026-09-07T15:56:00-05:00",
+      "ev": "routine",
+      "item": "package",
+      "inst": "2026-09-07",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-07T21:00:00-05:00",
+      "ev": "demote",
+      "id": "t5",
+      "from": "2026-09-07",
+      "to": "2026-W37",
+      "est_min": 30
+    }
+  ]
+}
+=== logs/review-14d | tm log --tail 5 | human
+2026-09-07 15:06 idle attributed="leak" min=14
+2026-09-07 15:26 done actual_min=20 ci=2 est_min=20 id="p1" tags=["admin"] went=1
+2026-09-07 15:40 energy hsw=9.58 loc="lounge" pred=3 rep=2
+2026-09-07 15:56 routine actual_min=30 inst="2026-09-07" item="package" status="done"
+2026-09-07 21:00 demote est_min=30 from="2026-09-07" id="t5" to="2026-W37"
+=== logs/review-14d | tm log --tail 5 | json
+{
+  "total": 179,
+  "entries": [
+    {
+      "t": "2026-09-07T15:06:00-05:00",
+      "ev": "idle",
+      "attributed": "leak",
+      "min": 14
+    },
+    {
+      "t": "2026-09-07T15:26:00-05:00",
+      "ev": "done",
+      "id": "p1",
+      "est_min": 20,
+      "actual_min": 20,
+      "went": 1,
+      "tags": [
+        "admin"
+      ],
+      "ci": 2
+    },
+    {
+      "t": "2026-09-07T15:40:00-05:00",
+      "ev": "energy",
+      "pred": 3,
+      "rep": 2,
+      "hsw": 9.58,
+      "loc": "lounge"
+    },
+    {
+      "t": "2026-09-07T15:56:00-05:00",
+      "ev": "routine",
+      "item": "package",
+      "inst": "2026-09-07",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-07T21:00:00-05:00",
+      "ev": "demote",
+      "id": "t5",
+      "from": "2026-09-07",
+      "to": "2026-W37",
+      "est_min": 30
+    }
+  ]
+}
+=== logs/review-14d | tm log --since 14d | human
+2026-09-01 06:05 wake slept_min=480
+2026-09-01 07:00 arrive budget=6 loc="lounge" window=["07:00","15:00"]
+2026-09-01 07:05 start blocks_done=0 hsw=1.0 id="b07a" loc="lounge" pred=5 rep=5 since_break_min=0 slept_min=480
+2026-09-01 08:05 done actual_min=60 ci=5 est_min=45 id="b07a" tags=["lean"] went=1
+2026-09-01 08:05 break actual_min=20 planned_min=20 where="walk"
+2026-09-01 08:25 start blocks_done=1 hsw=2.33 id="b07b" loc="lounge" pred=5 rep=5 since_break_min=0 slept_min=480
+2026-09-01 09:25 done actual_min=60 ci=4 est_min=60 id="b07b" tags=["soundcode"] went=1
+2026-09-01 09:25 break actual_min=20 planned_min=20 where="seat"
+2026-09-01 09:45 start blocks_done=2 hsw=3.67 id="b07c" loc="lounge" pred=4 rep=4 since_break_min=0 slept_min=480
+2026-09-01 10:45 done actual_min=60 ci=3 est_min=75 id="b07c" tags=["admin"] went=1
+2026-09-01 11:15 start blocks_done=3 hsw=5.17 id="b07d" loc="lounge" pred=4 rep=4 since_break_min=90 slept_min=480
+2026-09-01 11:15 routine actual_min=30 inst="2026-09-01" item="lunch" status="done"
+2026-09-01 12:15 done actual_min=60 ci=2 est_min=60 id="b07d" tags=[] went=1
+2026-09-01 12:20 plan drift_min=0 hash="p07" replans_today=1
+2026-09-02 06:05 wake slept_min=480
+2026-09-02 07:00 arrive budget=6 loc="lounge" window=["07:00","15:00"]
+2026-09-02 07:05 start blocks_done=0 hsw=1.0 id="b08a" loc="lounge" pred=5 rep=5 since_break_min=0 slept_min=480
+2026-09-02 08:05 done actual_min=60 ci=5 est_min=45 id="b08a" tags=["lean"] went=1
+2026-09-02 08:05 break actual_min=20 planned_min=20 where="walk"
+2026-09-02 08:25 start blocks_done=1 hsw=2.33 id="b08b" loc="lounge" pred=5 rep=5 since_break_min=0 slept_min=480
+2026-09-02 09:25 done actual_min=60 ci=4 est_min=60 id="b08b" tags=["soundcode"] went=1
+2026-09-02 09:25 break actual_min=20 planned_min=20 where="seat"
+2026-09-02 09:45 start blocks_done=2 hsw=3.67 id="b08c" loc="lounge" pred=4 rep=4 since_break_min=0 slept_min=480
+2026-09-02 10:45 done actual_min=60 ci=3 est_min=75 id="b08c" tags=["admin"] went=1
+2026-09-02 11:30 start blocks_done=3 hsw=5.42 id="b08d" loc="lounge" pred=4 rep=3 since_break_min=105 slept_min=480
+2026-09-02 12:30 done actual_min=60 ci=2 est_min=60 id="b08d" tags=[] went=1
+2026-09-02 12:35 plan drift_min=0 hash="p08" replans_today=1
+2026-09-03 06:05 wake slept_min=400
+2026-09-03 07:00 arrive budget=6 loc="lounge" window=["07:00","15:00"]
+2026-09-03 07:05 start blocks_done=0 hsw=1.0 id="b09a" loc="lounge" pred=5 rep=4 since_break_min=0 slept_min=400
+2026-09-03 08:05 done actual_min=60 ci=5 est_min=45 id="b09a" tags=["lean"] went=1
+2026-09-03 08:05 break actual_min=20 planned_min=20 where="walk"
+2026-09-03 08:25 start blocks_done=1 hsw=2.33 id="b09b" loc="lounge" pred=5 rep=4 since_break_min=0 slept_min=400
+2026-09-03 09:25 done actual_min=60 ci=4 est_min=60 id="b09b" tags=["soundcode"] went=1
+2026-09-03 09:25 break actual_min=20 planned_min=20 where="seat"
+2026-09-03 09:45 start blocks_done=2 hsw=3.67 id="b09c" loc="lounge" pred=4 rep=4 since_break_min=0 slept_min=400
+2026-09-03 10:45 done actual_min=60 ci=3 est_min=75 id="b09c" tags=["admin"] went=1
+2026-09-03 11:15 start blocks_done=3 hsw=5.17 id="b09d" loc="lounge" pred=4 rep=3 since_break_min=90 slept_min=400
+2026-09-03 11:15 routine actual_min=30 inst="2026-09-03" item="lunch" status="done"
+2026-09-03 12:15 done actual_min=60 ci=2 est_min=60 id="b09d" tags=[] went=1
+2026-09-03 12:20 plan drift_min=0 hash="p09" replans_today=1
+2026-09-04 06:05 wake slept_min=480
+2026-09-04 07:00 arrive budget=6 loc="lounge" window=["07:00","15:00"]
+2026-09-04 07:05 start blocks_done=0 hsw=1.0 id="b10a" loc="lounge" pred=5 rep=5 since_break_min=0 slept_min=480
+2026-09-04 08:05 done actual_min=60 ci=5 est_min=45 id="b10a" tags=["lean"] went=1
+2026-09-04 08:05 break actual_min=20 planned_min=20 where="walk"
+2026-09-04 08:25 start blocks_done=1 hsw=2.33 id="b10b" loc="lounge" pred=5 rep=5 since_break_min=0 slept_min=480
+2026-09-04 09:25 done actual_min=60 ci=4 est_min=60 id="b10b" tags=["soundcode"] went=1
+2026-09-04 09:25 break actual_min=20 planned_min=20 where="seat"
+2026-09-04 09:45 start blocks_done=2 hsw=3.67 id="b10c" loc="lounge" pred=4 rep=4 since_break_min=0 slept_min=480
+2026-09-04 10:45 done actual_min=60 ci=3 est_min=75 id="b10c" tags=["admin"] went=1
+2026-09-04 11:15 start blocks_done=3 hsw=5.17 id="b10d" loc="lounge" pred=4 rep=4 since_break_min=90 slept_min=480
+2026-09-04 11:15 routine actual_min=30 inst="2026-09-04" item="lunch" status="done"
+2026-09-04 12:15 done actual_min=60 ci=2 est_min=60 id="b10d" tags=[] went=1
+2026-09-04 12:20 plan drift_min=0 hash="p10" replans_today=1
+2026-09-04 18:00 skip inst="2026-09-04" item="groceries"
+2026-09-05 08:30 wake slept_min=520
+2026-09-05 10:00 arrive budget=6 loc="lounge" window=["10:00","18:00"]
+2026-09-05 10:05 start blocks_done=0 hsw=1.58 id="b11a" loc="lounge" pred=4 rep=4 since_break_min=0 slept_min=520
+2026-09-05 11:05 done actual_min=60 ci=3 est_min=75 id="b11a" tags=["admin"] went=1
+2026-09-05 11:05 break actual_min=20 planned_min=20 where="walk"
+2026-09-05 11:25 start blocks_done=1 hsw=2.92 id="b11b" loc="lounge" pred=3 rep=3 since_break_min=0 slept_min=520
+2026-09-05 12:25 done actual_min=60 ci=2 est_min=60 id="b11b" tags=[] went=1
+2026-09-05 12:30 plan drift_min=0 hash="p11" replans_today=1
+2026-09-06 08:00 wake slept_min=500
+2026-09-06 09:30 arrive budget=6 loc="lounge" window=["09:30","17:30"]
+2026-09-06 09:35 start blocks_done=0 hsw=1.58 id="b12a" loc="lounge" pred=5 rep=5 since_break_min=0 slept_min=500
+2026-09-06 10:35 done actual_min=60 ci=5 est_min=45 id="b12a" tags=["lean"] went=1
+2026-09-06 10:35 break actual_min=20 planned_min=20 where="seat"
+2026-09-06 10:55 start blocks_done=1 hsw=2.92 id="b12b" loc="lounge" pred=5 rep=4 since_break_min=0 slept_min=500
+2026-09-06 11:55 done actual_min=60 ci=4 est_min=60 id="b12b" tags=["soundcode"] went=1
+2026-09-06 12:00 plan drift_min=0 hash="p12" replans_today=1
+2026-09-06 21:00 demote est_min=180 from="2026-W36" id="m2" to="2026-09"
+2026-09-06 21:00 demote est_min=120 from="2026-W36" id="m4" to="2026-09"
+2026-09-07 06:05 wake onset_min=25 slept_min=490
+2026-09-07 07:00 arrive budget=6 loc="lounge" window=["07:00","16:00"]
+2026-09-07 07:00 plan drift_min=0 hash="a91f" replans_today=1
+2026-09-07 07:02 start blocks_done=0 hsw=0.95 id="t1" loc="lounge" pred=5 rep=5 since_break_min=0 slept_min=490
+2026-09-07 08:09 done actual_min=67 ci=5 est_min=60 id="t1" tags=["lean"] went=1
+2026-09-07 08:09 break actual_min=24 planned_min=20 where="walk"
+2026-09-07 08:33 start blocks_done=1 hsw=2.47 id="t2" loc="lounge" pred=4 rep=5 since_break_min=0 slept_min=490
+2026-09-07 09:31 done actual_min=58 ci=5 est_min=60 id="t2" tags=["lean"] went=1
+2026-09-07 09:31 break actual_min=31 planned_min=20 where="seat"
+2026-09-07 09:35 plan drift_min=25 hash="b02c" replans_today=2
+2026-09-07 10:02 start blocks_done=2 hsw=3.95 id="t3" loc="lounge" pred=5 rep=5 since_break_min=0 slept_min=490
+2026-09-07 10:15 energy hsw=4.17 loc="lounge" pred=5 rep=5
+2026-09-07 11:15 energy hsw=5.17 loc="lounge" pred=4 rep=4
+2026-09-07 12:10 interrupt id="t3"
+2026-09-07 12:15 energy hsw=6.17 loc="lounge" pred=4 rep=4
+2026-09-07 13:05 resume dropped=["t5"] lost_min=55
+2026-09-07 13:06 plan drift_min=30 hash="c73d" replans_today=3
+2026-09-07 13:32 done actual_min=155 ci=4 est_min=120 id="t3" tags=["lean"] went=2
+2026-09-07 13:32 break actual_min=20 planned_min=20 where="walk"
+2026-09-07 13:52 start blocks_done=3 hsw=7.78 id="t4" loc="lounge" pred=4 rep=3 since_break_min=0 slept_min=490
+2026-09-07 14:15 energy hsw=8.17 loc="lounge" pred=4 rep=3
+2026-09-07 14:52 done actual_min=60 ci=3 est_min=60 id="t4" tags=["soundcode"] went=1
+2026-09-07 15:00 plan drift_min=20 hash="d41e" replans_today=4
+2026-09-07 15:06 start blocks_done=4 hsw=9.02 id="p1" loc="lounge" pred=3 rep=2 since_break_min=74 slept_min=490
+2026-09-07 15:06 idle attributed="leak" min=14
+2026-09-07 15:26 done actual_min=20 ci=2 est_min=20 id="p1" tags=["admin"] went=1
+2026-09-07 15:40 energy hsw=9.58 loc="lounge" pred=3 rep=2
+2026-09-07 15:56 routine actual_min=30 inst="2026-09-07" item="package" status="done"
+2026-09-07 21:00 demote est_min=30 from="2026-09-07" id="t5" to="2026-W37"
+=== logs/review-14d | tm log --since 14d | json
+{
+  "total": 179,
+  "entries": [
+    {
+      "t": "2026-09-01T06:05:00-05:00",
+      "ev": "wake",
+      "slept_min": 480
+    },
+    {
+      "t": "2026-09-01T07:00:00-05:00",
+      "ev": "arrive",
+      "loc": "lounge",
+      "window": [
+        "07:00",
+        "15:00"
+      ],
+      "budget": 6
+    },
+    {
+      "t": "2026-09-01T07:05:00-05:00",
+      "ev": "start",
+      "id": "b07a",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 1.0,
+      "slept_min": 480,
+      "loc": "lounge",
+      "blocks_done": 0,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-01T08:05:00-05:00",
+      "ev": "done",
+      "id": "b07a",
+      "est_min": 45,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [
+        "lean"
+      ],
+      "ci": 5
+    },
+    {
+      "t": "2026-09-01T08:05:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 20,
+      "where": "walk"
+    },
+    {
+      "t": "2026-09-01T08:25:00-05:00",
+      "ev": "start",
+      "id": "b07b",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 2.33,
+      "slept_min": 480,
+      "loc": "lounge",
+      "blocks_done": 1,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-01T09:25:00-05:00",
+      "ev": "done",
+      "id": "b07b",
+      "est_min": 60,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [
+        "soundcode"
+      ],
+      "ci": 4
+    },
+    {
+      "t": "2026-09-01T09:25:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 20,
+      "where": "seat"
+    },
+    {
+      "t": "2026-09-01T09:45:00-05:00",
+      "ev": "start",
+      "id": "b07c",
+      "pred": 4,
+      "rep": 4,
+      "hsw": 3.67,
+      "slept_min": 480,
+      "loc": "lounge",
+      "blocks_done": 2,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-01T10:45:00-05:00",
+      "ev": "done",
+      "id": "b07c",
+      "est_min": 75,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [
+        "admin"
+      ],
+      "ci": 3
+    },
+    {
+      "t": "2026-09-01T11:15:00-05:00",
+      "ev": "start",
+      "id": "b07d",
+      "pred": 4,
+      "rep": 4,
+      "hsw": 5.17,
+      "slept_min": 480,
+      "loc": "lounge",
+      "blocks_done": 3,
+      "since_break_min": 90
+    },
+    {
+      "t": "2026-09-01T11:15:00-05:00",
+      "ev": "routine",
+      "item": "lunch",
+      "inst": "2026-09-01",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-01T12:15:00-05:00",
+      "ev": "done",
+      "id": "b07d",
+      "est_min": 60,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [],
+      "ci": 2
+    },
+    {
+      "t": "2026-09-01T12:20:00-05:00",
+      "ev": "plan",
+      "hash": "p07",
+      "replans_today": 1,
+      "drift_min": 0
+    },
+    {
+      "t": "2026-09-02T06:05:00-05:00",
+      "ev": "wake",
+      "slept_min": 480
+    },
+    {
+      "t": "2026-09-02T07:00:00-05:00",
+      "ev": "arrive",
+      "loc": "lounge",
+      "window": [
+        "07:00",
+        "15:00"
+      ],
+      "budget": 6
+    },
+    {
+      "t": "2026-09-02T07:05:00-05:00",
+      "ev": "start",
+      "id": "b08a",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 1.0,
+      "slept_min": 480,
+      "loc": "lounge",
+      "blocks_done": 0,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-02T08:05:00-05:00",
+      "ev": "done",
+      "id": "b08a",
+      "est_min": 45,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [
+        "lean"
+      ],
+      "ci": 5
+    },
+    {
+      "t": "2026-09-02T08:05:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 20,
+      "where": "walk"
+    },
+    {
+      "t": "2026-09-02T08:25:00-05:00",
+      "ev": "start",
+      "id": "b08b",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 2.33,
+      "slept_min": 480,
+      "loc": "lounge",
+      "blocks_done": 1,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-02T09:25:00-05:00",
+      "ev": "done",
+      "id": "b08b",
+      "est_min": 60,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [
+        "soundcode"
+      ],
+      "ci": 4
+    },
+    {
+      "t": "2026-09-02T09:25:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 20,
+      "where": "seat"
+    },
+    {
+      "t": "2026-09-02T09:45:00-05:00",
+      "ev": "start",
+      "id": "b08c",
+      "pred": 4,
+      "rep": 4,
+      "hsw": 3.67,
+      "slept_min": 480,
+      "loc": "lounge",
+      "blocks_done": 2,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-02T10:45:00-05:00",
+      "ev": "done",
+      "id": "b08c",
+      "est_min": 75,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [
+        "admin"
+      ],
+      "ci": 3
+    },
+    {
+      "t": "2026-09-02T11:30:00-05:00",
+      "ev": "start",
+      "id": "b08d",
+      "pred": 4,
+      "rep": 3,
+      "hsw": 5.42,
+      "slept_min": 480,
+      "loc": "lounge",
+      "blocks_done": 3,
+      "since_break_min": 105
+    },
+    {
+      "t": "2026-09-02T12:30:00-05:00",
+      "ev": "done",
+      "id": "b08d",
+      "est_min": 60,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [],
+      "ci": 2
+    },
+    {
+      "t": "2026-09-02T12:35:00-05:00",
+      "ev": "plan",
+      "hash": "p08",
+      "replans_today": 1,
+      "drift_min": 0
+    },
+    {
+      "t": "2026-09-03T06:05:00-05:00",
+      "ev": "wake",
+      "slept_min": 400
+    },
+    {
+      "t": "2026-09-03T07:00:00-05:00",
+      "ev": "arrive",
+      "loc": "lounge",
+      "window": [
+        "07:00",
+        "15:00"
+      ],
+      "budget": 6
+    },
+    {
+      "t": "2026-09-03T07:05:00-05:00",
+      "ev": "start",
+      "id": "b09a",
+      "pred": 5,
+      "rep": 4,
+      "hsw": 1.0,
+      "slept_min": 400,
+      "loc": "lounge",
+      "blocks_done": 0,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-03T08:05:00-05:00",
+      "ev": "done",
+      "id": "b09a",
+      "est_min": 45,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [
+        "lean"
+      ],
+      "ci": 5
+    },
+    {
+      "t": "2026-09-03T08:05:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 20,
+      "where": "walk"
+    },
+    {
+      "t": "2026-09-03T08:25:00-05:00",
+      "ev": "start",
+      "id": "b09b",
+      "pred": 5,
+      "rep": 4,
+      "hsw": 2.33,
+      "slept_min": 400,
+      "loc": "lounge",
+      "blocks_done": 1,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-03T09:25:00-05:00",
+      "ev": "done",
+      "id": "b09b",
+      "est_min": 60,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [
+        "soundcode"
+      ],
+      "ci": 4
+    },
+    {
+      "t": "2026-09-03T09:25:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 20,
+      "where": "seat"
+    },
+    {
+      "t": "2026-09-03T09:45:00-05:00",
+      "ev": "start",
+      "id": "b09c",
+      "pred": 4,
+      "rep": 4,
+      "hsw": 3.67,
+      "slept_min": 400,
+      "loc": "lounge",
+      "blocks_done": 2,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-03T10:45:00-05:00",
+      "ev": "done",
+      "id": "b09c",
+      "est_min": 75,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [
+        "admin"
+      ],
+      "ci": 3
+    },
+    {
+      "t": "2026-09-03T11:15:00-05:00",
+      "ev": "start",
+      "id": "b09d",
+      "pred": 4,
+      "rep": 3,
+      "hsw": 5.17,
+      "slept_min": 400,
+      "loc": "lounge",
+      "blocks_done": 3,
+      "since_break_min": 90
+    },
+    {
+      "t": "2026-09-03T11:15:00-05:00",
+      "ev": "routine",
+      "item": "lunch",
+      "inst": "2026-09-03",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-03T12:15:00-05:00",
+      "ev": "done",
+      "id": "b09d",
+      "est_min": 60,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [],
+      "ci": 2
+    },
+    {
+      "t": "2026-09-03T12:20:00-05:00",
+      "ev": "plan",
+      "hash": "p09",
+      "replans_today": 1,
+      "drift_min": 0
+    },
+    {
+      "t": "2026-09-04T06:05:00-05:00",
+      "ev": "wake",
+      "slept_min": 480
+    },
+    {
+      "t": "2026-09-04T07:00:00-05:00",
+      "ev": "arrive",
+      "loc": "lounge",
+      "window": [
+        "07:00",
+        "15:00"
+      ],
+      "budget": 6
+    },
+    {
+      "t": "2026-09-04T07:05:00-05:00",
+      "ev": "start",
+      "id": "b10a",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 1.0,
+      "slept_min": 480,
+      "loc": "lounge",
+      "blocks_done": 0,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-04T08:05:00-05:00",
+      "ev": "done",
+      "id": "b10a",
+      "est_min": 45,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [
+        "lean"
+      ],
+      "ci": 5
+    },
+    {
+      "t": "2026-09-04T08:05:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 20,
+      "where": "walk"
+    },
+    {
+      "t": "2026-09-04T08:25:00-05:00",
+      "ev": "start",
+      "id": "b10b",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 2.33,
+      "slept_min": 480,
+      "loc": "lounge",
+      "blocks_done": 1,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-04T09:25:00-05:00",
+      "ev": "done",
+      "id": "b10b",
+      "est_min": 60,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [
+        "soundcode"
+      ],
+      "ci": 4
+    },
+    {
+      "t": "2026-09-04T09:25:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 20,
+      "where": "seat"
+    },
+    {
+      "t": "2026-09-04T09:45:00-05:00",
+      "ev": "start",
+      "id": "b10c",
+      "pred": 4,
+      "rep": 4,
+      "hsw": 3.67,
+      "slept_min": 480,
+      "loc": "lounge",
+      "blocks_done": 2,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-04T10:45:00-05:00",
+      "ev": "done",
+      "id": "b10c",
+      "est_min": 75,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [
+        "admin"
+      ],
+      "ci": 3
+    },
+    {
+      "t": "2026-09-04T11:15:00-05:00",
+      "ev": "start",
+      "id": "b10d",
+      "pred": 4,
+      "rep": 4,
+      "hsw": 5.17,
+      "slept_min": 480,
+      "loc": "lounge",
+      "blocks_done": 3,
+      "since_break_min": 90
+    },
+    {
+      "t": "2026-09-04T11:15:00-05:00",
+      "ev": "routine",
+      "item": "lunch",
+      "inst": "2026-09-04",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-04T12:15:00-05:00",
+      "ev": "done",
+      "id": "b10d",
+      "est_min": 60,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [],
+      "ci": 2
+    },
+    {
+      "t": "2026-09-04T12:20:00-05:00",
+      "ev": "plan",
+      "hash": "p10",
+      "replans_today": 1,
+      "drift_min": 0
+    },
+    {
+      "t": "2026-09-04T18:00:00-05:00",
+      "ev": "skip",
+      "item": "groceries",
+      "inst": "2026-09-04"
+    },
+    {
+      "t": "2026-09-05T08:30:00-05:00",
+      "ev": "wake",
+      "slept_min": 520
+    },
+    {
+      "t": "2026-09-05T10:00:00-05:00",
+      "ev": "arrive",
+      "loc": "lounge",
+      "window": [
+        "10:00",
+        "18:00"
+      ],
+      "budget": 6
+    },
+    {
+      "t": "2026-09-05T10:05:00-05:00",
+      "ev": "start",
+      "id": "b11a",
+      "pred": 4,
+      "rep": 4,
+      "hsw": 1.58,
+      "slept_min": 520,
+      "loc": "lounge",
+      "blocks_done": 0,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-05T11:05:00-05:00",
+      "ev": "done",
+      "id": "b11a",
+      "est_min": 75,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [
+        "admin"
+      ],
+      "ci": 3
+    },
+    {
+      "t": "2026-09-05T11:05:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 20,
+      "where": "walk"
+    },
+    {
+      "t": "2026-09-05T11:25:00-05:00",
+      "ev": "start",
+      "id": "b11b",
+      "pred": 3,
+      "rep": 3,
+      "hsw": 2.92,
+      "slept_min": 520,
+      "loc": "lounge",
+      "blocks_done": 1,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-05T12:25:00-05:00",
+      "ev": "done",
+      "id": "b11b",
+      "est_min": 60,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [],
+      "ci": 2
+    },
+    {
+      "t": "2026-09-05T12:30:00-05:00",
+      "ev": "plan",
+      "hash": "p11",
+      "replans_today": 1,
+      "drift_min": 0
+    },
+    {
+      "t": "2026-09-06T08:00:00-05:00",
+      "ev": "wake",
+      "slept_min": 500
+    },
+    {
+      "t": "2026-09-06T09:30:00-05:00",
+      "ev": "arrive",
+      "loc": "lounge",
+      "window": [
+        "09:30",
+        "17:30"
+      ],
+      "budget": 6
+    },
+    {
+      "t": "2026-09-06T09:35:00-05:00",
+      "ev": "start",
+      "id": "b12a",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 1.58,
+      "slept_min": 500,
+      "loc": "lounge",
+      "blocks_done": 0,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-06T10:35:00-05:00",
+      "ev": "done",
+      "id": "b12a",
+      "est_min": 45,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [
+        "lean"
+      ],
+      "ci": 5
+    },
+    {
+      "t": "2026-09-06T10:35:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 20,
+      "where": "seat"
+    },
+    {
+      "t": "2026-09-06T10:55:00-05:00",
+      "ev": "start",
+      "id": "b12b",
+      "pred": 5,
+      "rep": 4,
+      "hsw": 2.92,
+      "slept_min": 500,
+      "loc": "lounge",
+      "blocks_done": 1,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-06T11:55:00-05:00",
+      "ev": "done",
+      "id": "b12b",
+      "est_min": 60,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [
+        "soundcode"
+      ],
+      "ci": 4
+    },
+    {
+      "t": "2026-09-06T12:00:00-05:00",
+      "ev": "plan",
+      "hash": "p12",
+      "replans_today": 1,
+      "drift_min": 0
+    },
+    {
+      "t": "2026-09-06T21:00:00-05:00",
+      "ev": "demote",
+      "id": "m2",
+      "from": "2026-W36",
+      "to": "2026-09",
+      "est_min": 180
+    },
+    {
+      "t": "2026-09-06T21:00:00-05:00",
+      "ev": "demote",
+      "id": "m4",
+      "from": "2026-W36",
+      "to": "2026-09",
+      "est_min": 120
+    },
+    {
+      "t": "2026-09-07T06:05:00-05:00",
+      "ev": "wake",
+      "slept_min": 490,
+      "onset_min": 25
+    },
+    {
+      "t": "2026-09-07T07:00:00-05:00",
+      "ev": "arrive",
+      "loc": "lounge",
+      "window": [
+        "07:00",
+        "16:00"
+      ],
+      "budget": 6
+    },
+    {
+      "t": "2026-09-07T07:00:00-05:00",
+      "ev": "plan",
+      "hash": "a91f",
+      "replans_today": 1,
+      "drift_min": 0
+    },
+    {
+      "t": "2026-09-07T07:02:00-05:00",
+      "ev": "start",
+      "id": "t1",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 0.95,
+      "slept_min": 490,
+      "loc": "lounge",
+      "blocks_done": 0,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-07T08:09:00-05:00",
+      "ev": "done",
+      "id": "t1",
+      "est_min": 60,
+      "actual_min": 67,
+      "went": 1,
+      "tags": [
+        "lean"
+      ],
+      "ci": 5
+    },
+    {
+      "t": "2026-09-07T08:09:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 24,
+      "where": "walk"
+    },
+    {
+      "t": "2026-09-07T08:33:00-05:00",
+      "ev": "start",
+      "id": "t2",
+      "pred": 4,
+      "rep": 5,
+      "hsw": 2.47,
+      "slept_min": 490,
+      "loc": "lounge",
+      "blocks_done": 1,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-07T09:31:00-05:00",
+      "ev": "done",
+      "id": "t2",
+      "est_min": 60,
+      "actual_min": 58,
+      "went": 1,
+      "tags": [
+        "lean"
+      ],
+      "ci": 5
+    },
+    {
+      "t": "2026-09-07T09:31:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 31,
+      "where": "seat"
+    },
+    {
+      "t": "2026-09-07T09:35:00-05:00",
+      "ev": "plan",
+      "hash": "b02c",
+      "replans_today": 2,
+      "drift_min": 25
+    },
+    {
+      "t": "2026-09-07T10:02:00-05:00",
+      "ev": "start",
+      "id": "t3",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 3.95,
+      "slept_min": 490,
+      "loc": "lounge",
+      "blocks_done": 2,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-07T10:15:00-05:00",
+      "ev": "energy",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 4.17,
+      "loc": "lounge"
+    },
+    {
+      "t": "2026-09-07T11:15:00-05:00",
+      "ev": "energy",
+      "pred": 4,
+      "rep": 4,
+      "hsw": 5.17,
+      "loc": "lounge"
+    },
+    {
+      "t": "2026-09-07T12:10:00-05:00",
+      "ev": "interrupt",
+      "id": "t3"
+    },
+    {
+      "t": "2026-09-07T12:15:00-05:00",
+      "ev": "energy",
+      "pred": 4,
+      "rep": 4,
+      "hsw": 6.17,
+      "loc": "lounge"
+    },
+    {
+      "t": "2026-09-07T13:05:00-05:00",
+      "ev": "resume",
+      "lost_min": 55,
+      "dropped": [
+        "t5"
+      ]
+    },
+    {
+      "t": "2026-09-07T13:06:00-05:00",
+      "ev": "plan",
+      "hash": "c73d",
+      "replans_today": 3,
+      "drift_min": 30
+    },
+    {
+      "t": "2026-09-07T13:32:00-05:00",
+      "ev": "done",
+      "id": "t3",
+      "est_min": 120,
+      "actual_min": 155,
+      "went": 2,
+      "tags": [
+        "lean"
+      ],
+      "ci": 4
+    },
+    {
+      "t": "2026-09-07T13:32:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 20,
+      "where": "walk"
+    },
+    {
+      "t": "2026-09-07T13:52:00-05:00",
+      "ev": "start",
+      "id": "t4",
+      "pred": 4,
+      "rep": 3,
+      "hsw": 7.78,
+      "slept_min": 490,
+      "loc": "lounge",
+      "blocks_done": 3,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-07T14:15:00-05:00",
+      "ev": "energy",
+      "pred": 4,
+      "rep": 3,
+      "hsw": 8.17,
+      "loc": "lounge"
+    },
+    {
+      "t": "2026-09-07T14:52:00-05:00",
+      "ev": "done",
+      "id": "t4",
+      "est_min": 60,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [
+        "soundcode"
+      ],
+      "ci": 3
+    },
+    {
+      "t": "2026-09-07T15:00:00-05:00",
+      "ev": "plan",
+      "hash": "d41e",
+      "replans_today": 4,
+      "drift_min": 20
+    },
+    {
+      "t": "2026-09-07T15:06:00-05:00",
+      "ev": "start",
+      "id": "p1",
+      "pred": 3,
+      "rep": 2,
+      "hsw": 9.02,
+      "slept_min": 490,
+      "loc": "lounge",
+      "blocks_done": 4,
+      "since_break_min": 74
+    },
+    {
+      "t": "2026-09-07T15:06:00-05:00",
+      "ev": "idle",
+      "attributed": "leak",
+      "min": 14
+    },
+    {
+      "t": "2026-09-07T15:26:00-05:00",
+      "ev": "done",
+      "id": "p1",
+      "est_min": 20,
+      "actual_min": 20,
+      "went": 1,
+      "tags": [
+        "admin"
+      ],
+      "ci": 2
+    },
+    {
+      "t": "2026-09-07T15:40:00-05:00",
+      "ev": "energy",
+      "pred": 3,
+      "rep": 2,
+      "hsw": 9.58,
+      "loc": "lounge"
+    },
+    {
+      "t": "2026-09-07T15:56:00-05:00",
+      "ev": "routine",
+      "item": "package",
+      "inst": "2026-09-07",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-07T21:00:00-05:00",
+      "ev": "demote",
+      "id": "t5",
+      "from": "2026-09-07",
+      "to": "2026-W37",
+      "est_min": 30
+    }
+  ]
+}
+=== logs/three-days | tm log | human
+2026-09-08 14:00 demote est_min=180 from="2026-W37" id="m2" to="2026-09"
+2026-09-08 14:00 readopt id="m9"
+2026-09-08 14:01 move from="backlog" id="a1" to="week/2026-W37"
+2026-09-08 14:02 drop id="a5"
+2026-09-08 14:02 undo id="a5" of="drop"
+2026-09-08 14:03 edit field="est" from="2b" id="t8" to="1b"
+2026-09-08 14:05 event name="visa"
+2026-09-08 14:10 undo of="event"
+2026-09-08 14:10 energy hsw=7.5 loc="home" pred=3 rep=2
+2026-09-08 15:00 plan drift_min=30 hash="e5f7" replans_today=2
+2026-09-09 00:10 close key="2026-09-08" period="day"
+2026-09-09 09:00 arrive budget=6 loc="lounge" window=["09:00","17:00"]
+2026-09-09 09:01 note text="late, no wake logged"
+2026-09-09 09:02 undo of="note"
+2026-09-09 09:05 start blocks_done=0 hsw=0.0 id="t8" loc="lounge" pred=5 rep=5 since_break_min=0 slept_min=0
+2026-09-09 10:05 done actual_min=60 ci=5 est_min=60 id="t8" partial=true tags=["lean"] went=1
+2026-09-09 10:05 start blocks_done=1 hsw=0.0 id="t8" loc="lounge" pred=5 rep=4 since_break_min=60 slept_min=0
+2026-09-09 10:20 interrupt 
+2026-09-09 10:35 resume dropped=[] lost_min=15
+2026-09-09 10:50 pause id="t8"
+=== logs/three-days | tm log | json
+{
+  "total": 74,
+  "entries": [
+    {
+      "t": "2026-09-08T14:00:00-05:00",
+      "ev": "demote",
+      "id": "m2",
+      "from": "2026-W37",
+      "to": "2026-09",
+      "est_min": 180
+    },
+    {
+      "t": "2026-09-08T14:00:00-05:00",
+      "ev": "readopt",
+      "id": "m9"
+    },
+    {
+      "t": "2026-09-08T14:01:00-05:00",
+      "ev": "move",
+      "id": "a1",
+      "from": "backlog",
+      "to": "week/2026-W37"
+    },
+    {
+      "t": "2026-09-08T14:02:00-05:00",
+      "ev": "drop",
+      "id": "a5"
+    },
+    {
+      "t": "2026-09-08T14:02:30-05:00",
+      "ev": "undo",
+      "of": "drop",
+      "id": "a5"
+    },
+    {
+      "t": "2026-09-08T14:03:00-05:00",
+      "ev": "edit",
+      "id": "t8",
+      "field": "est",
+      "from": "2b",
+      "to": "1b"
+    },
+    {
+      "t": "2026-09-08T14:05:00-05:00",
+      "ev": "event",
+      "name": "visa"
+    },
+    {
+      "t": "2026-09-08T14:10:00-05:00",
+      "ev": "undo",
+      "of": "event"
+    },
+    {
+      "t": "2026-09-08T14:10:00-05:00",
+      "ev": "energy",
+      "pred": 3,
+      "rep": 2,
+      "hsw": 7.5,
+      "loc": "home"
+    },
+    {
+      "t": "2026-09-08T15:00:00-05:00",
+      "ev": "plan",
+      "hash": "e5f7",
+      "replans_today": 2,
+      "drift_min": 30
+    },
+    {
+      "t": "2026-09-09T00:10:00-05:00",
+      "ev": "close",
+      "period": "day",
+      "key": "2026-09-08"
+    },
+    {
+      "t": "2026-09-09T09:00:00-05:00",
+      "ev": "arrive",
+      "loc": "lounge",
+      "window": [
+        "09:00",
+        "17:00"
+      ],
+      "budget": 6
+    },
+    {
+      "t": "2026-09-09T09:01:00-05:00",
+      "ev": "note",
+      "text": "late, no wake logged"
+    },
+    {
+      "t": "2026-09-09T09:02:00-05:00",
+      "ev": "undo",
+      "of": "note"
+    },
+    {
+      "t": "2026-09-09T09:05:00-05:00",
+      "ev": "start",
+      "id": "t8",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 0.0,
+      "slept_min": 0,
+      "loc": "lounge",
+      "blocks_done": 0,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-09T10:05:00-05:00",
+      "ev": "done",
+      "id": "t8",
+      "est_min": 60,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [
+        "lean"
+      ],
+      "ci": 5,
+      "partial": true
+    },
+    {
+      "t": "2026-09-09T10:05:00-05:00",
+      "ev": "start",
+      "id": "t8",
+      "pred": 5,
+      "rep": 4,
+      "hsw": 0.0,
+      "slept_min": 0,
+      "loc": "lounge",
+      "blocks_done": 1,
+      "since_break_min": 60
+    },
+    {
+      "t": "2026-09-09T10:20:00-05:00",
+      "ev": "interrupt"
+    },
+    {
+      "t": "2026-09-09T10:35:00-05:00",
+      "ev": "resume",
+      "lost_min": 15,
+      "dropped": []
+    },
+    {
+      "t": "2026-09-09T10:50:00-05:00",
+      "ev": "pause",
+      "id": "t8"
+    }
+  ]
+}
+=== logs/three-days | tm log --tail 5 | human
+2026-09-09 10:05 done actual_min=60 ci=5 est_min=60 id="t8" partial=true tags=["lean"] went=1
+2026-09-09 10:05 start blocks_done=1 hsw=0.0 id="t8" loc="lounge" pred=5 rep=4 since_break_min=60 slept_min=0
+2026-09-09 10:20 interrupt 
+2026-09-09 10:35 resume dropped=[] lost_min=15
+2026-09-09 10:50 pause id="t8"
+=== logs/three-days | tm log --tail 5 | json
+{
+  "total": 74,
+  "entries": [
+    {
+      "t": "2026-09-09T10:05:00-05:00",
+      "ev": "done",
+      "id": "t8",
+      "est_min": 60,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [
+        "lean"
+      ],
+      "ci": 5,
+      "partial": true
+    },
+    {
+      "t": "2026-09-09T10:05:00-05:00",
+      "ev": "start",
+      "id": "t8",
+      "pred": 5,
+      "rep": 4,
+      "hsw": 0.0,
+      "slept_min": 0,
+      "loc": "lounge",
+      "blocks_done": 1,
+      "since_break_min": 60
+    },
+    {
+      "t": "2026-09-09T10:20:00-05:00",
+      "ev": "interrupt"
+    },
+    {
+      "t": "2026-09-09T10:35:00-05:00",
+      "ev": "resume",
+      "lost_min": 15,
+      "dropped": []
+    },
+    {
+      "t": "2026-09-09T10:50:00-05:00",
+      "ev": "pause",
+      "id": "t8"
+    }
+  ]
+}
+=== logs/three-days | tm log --since 14d | human
+2026-09-07 06:05 wake slept_min=490
+2026-09-07 07:00 arrive budget=6 loc="lounge" window=["07:00","15:00"]
+2026-09-07 07:00 plan drift_min=0 hash="a91f" replans_today=0
+2026-09-07 07:02 start blocks_done=0 hsw=0.95 id="t1" loc="lounge" pred=5 rep=5 since_break_min=0 slept_min=490
+2026-09-07 08:09 done actual_min=67 ci=5 est_min=60 id="t1" tags=["lean"] went=1
+2026-09-07 08:10 start blocks_done=1 hsw=2.08 id="t2" loc="lounge" pred=5 rep=5 since_break_min=67 slept_min=490
+2026-09-07 09:08 done actual_min=58 ci=5 est_min=60 id="t2" tags=["lean"] went=1
+2026-09-07 09:08 break actual_min=24 planned_min=20 where="walk"
+2026-09-07 09:32 energy hsw=3.45 loc="lounge" pred=5 rep=4
+2026-09-07 09:32 start blocks_done=2 hsw=3.45 id="t3" loc="lounge" pred=5 rep=4 since_break_min=0 slept_min=490
+2026-09-07 09:33 plan drift_min=10 hash="b2c4" replans_today=1
+2026-09-07 11:20 extend by_min=60 id="t3"
+2026-09-07 11:50 done actual_min=138 ci=4 est_min=120 id="t3" partial=true tags=["lean"] went=2
+2026-09-07 11:50 routine actual_min=30 inst="2026-09-07" item="lunch" status="done"
+2026-09-07 12:00 start blocks_done=3 hsw=5.92 id="t4" loc="lounge" pred=4 since_break_min=148 slept_min=490
+2026-09-07 12:10 interrupt id="t4"
+2026-09-07 13:05 resume dropped=["t5"] lost_min=55
+2026-09-07 13:20 pause id="t4"
+2026-09-07 13:30 unpause id="t4"
+2026-09-07 13:50 stop id="t4" remaining_min=30
+2026-09-07 14:00 loc loc="home"
+2026-09-07 14:05 start blocks_done=3 hsw=8.0 id="t5" loc="home" pred=3 rep=3 since_break_min=45 slept_min=490
+2026-09-07 15:05 done actual_min=60 ci=3 est_min=60 id="t5" tags=["soundcode"] went=1
+2026-09-07 15:40 idle attributed="leak" min=14
+2026-09-07 16:10 routine actual_min=18 inst="2026-09-07" item="package" status="done"
+2026-09-07 16:30 skip inst="2026-09-07" item="workout"
+2026-09-07 17:00 event id="a4" name="reply"
+2026-09-07 17:30 note text="tired after the call"
+2026-09-07 18:00 done actual_min=0 ci=1 est_min=20 id="a3" tags=[]
+2026-09-08 02:30 plan drift_min=65 hash="c3d5" replans_today=4
+2026-09-07 21:35 close key="2026-09-07" period="day"
+2026-09-08 06:40 wake onset_min=35 slept_min=400
+2026-09-08 07:30 arrive budget=6 loc="home" window=["07:30","15:30"]
+2026-09-08 07:30 plan drift_min=0 hash="d4e6" replans_today=0
+2026-09-08 07:35 start blocks_done=0 hsw=0.92 id="t3" loc="home" pred=4 rep=3 since_break_min=0 slept_min=400
+2026-09-08 08:40 done actual_min=65 ci=4 est_min=60 id="t3" tags=["lean"] went=3
+2026-09-08 08:45 break planned_min=20
+2026-09-08 09:05 start blocks_done=1 hsw=2.42 id="t6" loc="home" pred=4 rep=4 since_break_min=0 slept_min=400
+2026-09-08 10:05 done actual_min=60 ci=3 est_min=60 id="t6" tags=["soundcode"] went=1
+2026-09-08 10:06 undo id="t6" of="done"
+2026-09-08 10:07 done actual_min=62 ci=3 est_min=60 id="t6" tags=["soundcode"] went=1
+2026-09-08 10:10 idle attributed="work" min=3
+2026-09-08 10:15 start blocks_done=2 hsw=3.58 id="t7" loc="home" pred=4 since_break_min=70 slept_min=400
+2026-09-08 10:30 skip inst="2026-09-08" item="laundry"
+2026-09-08 10:31 undo id="laundry" of="skip"
+2026-09-08 10:45 stop id="t7" remaining_min=30
+2026-09-08 10:46 undo id="t7" of="stop"
+2026-09-08 11:00 done actual_min=45 ci=3 est_min=60 id="t7" tags=[] went=2
+2026-09-08 11:00 routine actual_min=15 inst="#3" item="shower" status="done"
+2026-09-08 11:30 routine inst="2026-09-07" item="laundry" status="missed"
+2026-09-08 11:30 routine inst="2026-09-08" item="breakfast" status="expired"
+2026-09-08 12:00 idle attributed="leak" min=25
+2026-09-08 12:30 idle attributed="leak" min=12
+2026-09-08 13:00 mood level=3 note="meh"
+2026-09-08 14:00 demote est_min=180 from="2026-W37" id="m2" to="2026-09"
+2026-09-08 14:00 readopt id="m9"
+2026-09-08 14:01 move from="backlog" id="a1" to="week/2026-W37"
+2026-09-08 14:02 drop id="a5"
+2026-09-08 14:02 undo id="a5" of="drop"
+2026-09-08 14:03 edit field="est" from="2b" id="t8" to="1b"
+2026-09-08 14:05 event name="visa"
+2026-09-08 14:10 undo of="event"
+2026-09-08 14:10 energy hsw=7.5 loc="home" pred=3 rep=2
+2026-09-08 15:00 plan drift_min=30 hash="e5f7" replans_today=2
+2026-09-09 00:10 close key="2026-09-08" period="day"
+2026-09-09 09:00 arrive budget=6 loc="lounge" window=["09:00","17:00"]
+2026-09-09 09:01 note text="late, no wake logged"
+2026-09-09 09:02 undo of="note"
+2026-09-09 09:05 start blocks_done=0 hsw=0.0 id="t8" loc="lounge" pred=5 rep=5 since_break_min=0 slept_min=0
+2026-09-09 10:05 done actual_min=60 ci=5 est_min=60 id="t8" partial=true tags=["lean"] went=1
+2026-09-09 10:05 start blocks_done=1 hsw=0.0 id="t8" loc="lounge" pred=5 rep=4 since_break_min=60 slept_min=0
+2026-09-09 10:20 interrupt 
+2026-09-09 10:35 resume dropped=[] lost_min=15
+2026-09-09 10:50 pause id="t8"
+=== logs/three-days | tm log --since 14d | json
+{
+  "total": 74,
+  "entries": [
+    {
+      "t": "2026-09-07T06:05:00-05:00",
+      "ev": "wake",
+      "slept_min": 490
+    },
+    {
+      "t": "2026-09-07T07:00:00-05:00",
+      "ev": "arrive",
+      "loc": "lounge",
+      "window": [
+        "07:00",
+        "15:00"
+      ],
+      "budget": 6
+    },
+    {
+      "t": "2026-09-07T07:00:00-05:00",
+      "ev": "plan",
+      "hash": "a91f",
+      "replans_today": 0,
+      "drift_min": 0
+    },
+    {
+      "t": "2026-09-07T07:02:00-05:00",
+      "ev": "start",
+      "id": "t1",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 0.95,
+      "slept_min": 490,
+      "loc": "lounge",
+      "blocks_done": 0,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-07T08:09:00-05:00",
+      "ev": "done",
+      "id": "t1",
+      "est_min": 60,
+      "actual_min": 67,
+      "went": 1,
+      "tags": [
+        "lean"
+      ],
+      "ci": 5
+    },
+    {
+      "t": "2026-09-07T08:10:00-05:00",
+      "ev": "start",
+      "id": "t2",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 2.08,
+      "slept_min": 490,
+      "loc": "lounge",
+      "blocks_done": 1,
+      "since_break_min": 67
+    },
+    {
+      "t": "2026-09-07T09:08:00-05:00",
+      "ev": "done",
+      "id": "t2",
+      "est_min": 60,
+      "actual_min": 58,
+      "went": 1,
+      "tags": [
+        "lean"
+      ],
+      "ci": 5
+    },
+    {
+      "t": "2026-09-07T09:08:00-05:00",
+      "ev": "break",
+      "planned_min": 20,
+      "actual_min": 24,
+      "where": "walk"
+    },
+    {
+      "t": "2026-09-07T09:32:00-05:00",
+      "ev": "energy",
+      "pred": 5,
+      "rep": 4,
+      "hsw": 3.45,
+      "loc": "lounge"
+    },
+    {
+      "t": "2026-09-07T09:32:00-05:00",
+      "ev": "start",
+      "id": "t3",
+      "pred": 5,
+      "rep": 4,
+      "hsw": 3.45,
+      "slept_min": 490,
+      "loc": "lounge",
+      "blocks_done": 2,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-07T09:33:00-05:00",
+      "ev": "plan",
+      "hash": "b2c4",
+      "replans_today": 1,
+      "drift_min": 10
+    },
+    {
+      "t": "2026-09-07T11:20:00-05:00",
+      "ev": "extend",
+      "id": "t3",
+      "by_min": 60
+    },
+    {
+      "t": "2026-09-07T11:50:00-05:00",
+      "ev": "done",
+      "id": "t3",
+      "est_min": 120,
+      "actual_min": 138,
+      "went": 2,
+      "tags": [
+        "lean"
+      ],
+      "ci": 4,
+      "partial": true
+    },
+    {
+      "t": "2026-09-07T11:50:00-05:00",
+      "ev": "routine",
+      "item": "lunch",
+      "inst": "2026-09-07",
+      "status": "done",
+      "actual_min": 30
+    },
+    {
+      "t": "2026-09-07T12:00:00-05:00",
+      "ev": "start",
+      "id": "t4",
+      "pred": 4,
+      "hsw": 5.92,
+      "slept_min": 490,
+      "loc": "lounge",
+      "blocks_done": 3,
+      "since_break_min": 148
+    },
+    {
+      "t": "2026-09-07T12:10:00-05:00",
+      "ev": "interrupt",
+      "id": "t4"
+    },
+    {
+      "t": "2026-09-07T13:05:00-05:00",
+      "ev": "resume",
+      "lost_min": 55,
+      "dropped": [
+        "t5"
+      ]
+    },
+    {
+      "t": "2026-09-07T13:20:00-05:00",
+      "ev": "pause",
+      "id": "t4"
+    },
+    {
+      "t": "2026-09-07T13:30:00-05:00",
+      "ev": "unpause",
+      "id": "t4"
+    },
+    {
+      "t": "2026-09-07T13:50:00-05:00",
+      "ev": "stop",
+      "id": "t4",
+      "remaining_min": 30
+    },
+    {
+      "t": "2026-09-07T14:00:00-05:00",
+      "ev": "loc",
+      "loc": "home"
+    },
+    {
+      "t": "2026-09-07T14:05:00-05:00",
+      "ev": "start",
+      "id": "t5",
+      "pred": 3,
+      "rep": 3,
+      "hsw": 8.0,
+      "slept_min": 490,
+      "loc": "home",
+      "blocks_done": 3,
+      "since_break_min": 45
+    },
+    {
+      "t": "2026-09-07T15:05:00-05:00",
+      "ev": "done",
+      "id": "t5",
+      "est_min": 60,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [
+        "soundcode"
+      ],
+      "ci": 3
+    },
+    {
+      "t": "2026-09-07T15:40:00-05:00",
+      "ev": "idle",
+      "attributed": "leak",
+      "min": 14
+    },
+    {
+      "t": "2026-09-07T16:10:00-05:00",
+      "ev": "routine",
+      "item": "package",
+      "inst": "2026-09-07",
+      "status": "done",
+      "actual_min": 18
+    },
+    {
+      "t": "2026-09-07T16:30:00-05:00",
+      "ev": "skip",
+      "item": "workout",
+      "inst": "2026-09-07"
+    },
+    {
+      "t": "2026-09-07T17:00:00-05:00",
+      "ev": "event",
+      "name": "reply",
+      "id": "a4"
+    },
+    {
+      "t": "2026-09-07T17:30:00-05:00",
+      "ev": "note",
+      "text": "tired after the call"
+    },
+    {
+      "t": "2026-09-07T18:00:00-05:00",
+      "ev": "done",
+      "id": "a3",
+      "est_min": 20,
+      "actual_min": 0,
+      "tags": [],
+      "ci": 1
+    },
+    {
+      "t": "2026-09-08T02:30:00+00:00",
+      "ev": "plan",
+      "hash": "c3d5",
+      "replans_today": 4,
+      "drift_min": 65
+    },
+    {
+      "t": "2026-09-07T21:35:00-05:00",
+      "ev": "close",
+      "period": "day",
+      "key": "2026-09-07"
+    },
+    {
+      "t": "2026-09-08T06:40:00-05:00",
+      "ev": "wake",
+      "slept_min": 400,
+      "onset_min": 35
+    },
+    {
+      "t": "2026-09-08T07:30:00-05:00",
+      "ev": "arrive",
+      "loc": "home",
+      "window": [
+        "07:30",
+        "15:30"
+      ],
+      "budget": 6
+    },
+    {
+      "t": "2026-09-08T07:30:00-05:00",
+      "ev": "plan",
+      "hash": "d4e6",
+      "replans_today": 0,
+      "drift_min": 0
+    },
+    {
+      "t": "2026-09-08T07:35:00-05:00",
+      "ev": "start",
+      "id": "t3",
+      "pred": 4,
+      "rep": 3,
+      "hsw": 0.92,
+      "slept_min": 400,
+      "loc": "home",
+      "blocks_done": 0,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-08T08:40:00-05:00",
+      "ev": "done",
+      "id": "t3",
+      "est_min": 60,
+      "actual_min": 65,
+      "went": 3,
+      "tags": [
+        "lean"
+      ],
+      "ci": 4
+    },
+    {
+      "t": "2026-09-08T08:45:00-05:00",
+      "ev": "break",
+      "planned_min": 20
+    },
+    {
+      "t": "2026-09-08T09:05:00-05:00",
+      "ev": "start",
+      "id": "t6",
+      "pred": 4,
+      "rep": 4,
+      "hsw": 2.42,
+      "slept_min": 400,
+      "loc": "home",
+      "blocks_done": 1,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-08T10:05:00-05:00",
+      "ev": "done",
+      "id": "t6",
+      "est_min": 60,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [
+        "soundcode"
+      ],
+      "ci": 3
+    },
+    {
+      "t": "2026-09-08T10:06:00-05:00",
+      "ev": "undo",
+      "of": "done",
+      "id": "t6"
+    },
+    {
+      "t": "2026-09-08T10:07:00-05:00",
+      "ev": "done",
+      "id": "t6",
+      "est_min": 60,
+      "actual_min": 62,
+      "went": 1,
+      "tags": [
+        "soundcode"
+      ],
+      "ci": 3
+    },
+    {
+      "t": "2026-09-08T10:10:00-05:00",
+      "ev": "idle",
+      "attributed": "work",
+      "min": 3
+    },
+    {
+      "t": "2026-09-08T10:15:00-05:00",
+      "ev": "start",
+      "id": "t7",
+      "pred": 4,
+      "hsw": 3.58,
+      "slept_min": 400,
+      "loc": "home",
+      "blocks_done": 2,
+      "since_break_min": 70
+    },
+    {
+      "t": "2026-09-08T10:30:00-05:00",
+      "ev": "skip",
+      "item": "laundry",
+      "inst": "2026-09-08"
+    },
+    {
+      "t": "2026-09-08T10:31:00-05:00",
+      "ev": "undo",
+      "of": "skip",
+      "id": "laundry"
+    },
+    {
+      "t": "2026-09-08T10:45:00-05:00",
+      "ev": "stop",
+      "id": "t7",
+      "remaining_min": 30
+    },
+    {
+      "t": "2026-09-08T10:46:00-05:00",
+      "ev": "undo",
+      "of": "stop",
+      "id": "t7"
+    },
+    {
+      "t": "2026-09-08T11:00:00-05:00",
+      "ev": "done",
+      "id": "t7",
+      "est_min": 60,
+      "actual_min": 45,
+      "went": 2,
+      "tags": [],
+      "ci": 3
+    },
+    {
+      "t": "2026-09-08T11:00:00-05:00",
+      "ev": "routine",
+      "item": "shower",
+      "inst": "#3",
+      "status": "done",
+      "actual_min": 15
+    },
+    {
+      "t": "2026-09-08T11:30:00-05:00",
+      "ev": "routine",
+      "item": "laundry",
+      "inst": "2026-09-07",
+      "status": "missed"
+    },
+    {
+      "t": "2026-09-08T11:30:00-05:00",
+      "ev": "routine",
+      "item": "breakfast",
+      "inst": "2026-09-08",
+      "status": "expired"
+    },
+    {
+      "t": "2026-09-08T12:00:00-05:00",
+      "ev": "idle",
+      "attributed": "leak",
+      "min": 25
+    },
+    {
+      "t": "2026-09-08T12:30:00-05:00",
+      "ev": "idle",
+      "attributed": "leak",
+      "min": 12
+    },
+    {
+      "t": "2026-09-08T13:00:00-05:00",
+      "ev": "mood",
+      "level": 3,
+      "note": "meh"
+    },
+    {
+      "t": "2026-09-08T14:00:00-05:00",
+      "ev": "demote",
+      "id": "m2",
+      "from": "2026-W37",
+      "to": "2026-09",
+      "est_min": 180
+    },
+    {
+      "t": "2026-09-08T14:00:00-05:00",
+      "ev": "readopt",
+      "id": "m9"
+    },
+    {
+      "t": "2026-09-08T14:01:00-05:00",
+      "ev": "move",
+      "id": "a1",
+      "from": "backlog",
+      "to": "week/2026-W37"
+    },
+    {
+      "t": "2026-09-08T14:02:00-05:00",
+      "ev": "drop",
+      "id": "a5"
+    },
+    {
+      "t": "2026-09-08T14:02:30-05:00",
+      "ev": "undo",
+      "of": "drop",
+      "id": "a5"
+    },
+    {
+      "t": "2026-09-08T14:03:00-05:00",
+      "ev": "edit",
+      "id": "t8",
+      "field": "est",
+      "from": "2b",
+      "to": "1b"
+    },
+    {
+      "t": "2026-09-08T14:05:00-05:00",
+      "ev": "event",
+      "name": "visa"
+    },
+    {
+      "t": "2026-09-08T14:10:00-05:00",
+      "ev": "undo",
+      "of": "event"
+    },
+    {
+      "t": "2026-09-08T14:10:00-05:00",
+      "ev": "energy",
+      "pred": 3,
+      "rep": 2,
+      "hsw": 7.5,
+      "loc": "home"
+    },
+    {
+      "t": "2026-09-08T15:00:00-05:00",
+      "ev": "plan",
+      "hash": "e5f7",
+      "replans_today": 2,
+      "drift_min": 30
+    },
+    {
+      "t": "2026-09-09T00:10:00-05:00",
+      "ev": "close",
+      "period": "day",
+      "key": "2026-09-08"
+    },
+    {
+      "t": "2026-09-09T09:00:00-05:00",
+      "ev": "arrive",
+      "loc": "lounge",
+      "window": [
+        "09:00",
+        "17:00"
+      ],
+      "budget": 6
+    },
+    {
+      "t": "2026-09-09T09:01:00-05:00",
+      "ev": "note",
+      "text": "late, no wake logged"
+    },
+    {
+      "t": "2026-09-09T09:02:00-05:00",
+      "ev": "undo",
+      "of": "note"
+    },
+    {
+      "t": "2026-09-09T09:05:00-05:00",
+      "ev": "start",
+      "id": "t8",
+      "pred": 5,
+      "rep": 5,
+      "hsw": 0.0,
+      "slept_min": 0,
+      "loc": "lounge",
+      "blocks_done": 0,
+      "since_break_min": 0
+    },
+    {
+      "t": "2026-09-09T10:05:00-05:00",
+      "ev": "done",
+      "id": "t8",
+      "est_min": 60,
+      "actual_min": 60,
+      "went": 1,
+      "tags": [
+        "lean"
+      ],
+      "ci": 5,
+      "partial": true
+    },
+    {
+      "t": "2026-09-09T10:05:00-05:00",
+      "ev": "start",
+      "id": "t8",
+      "pred": 5,
+      "rep": 4,
+      "hsw": 0.0,
+      "slept_min": 0,
+      "loc": "lounge",
+      "blocks_done": 1,
+      "since_break_min": 60
+    },
+    {
+      "t": "2026-09-09T10:20:00-05:00",
+      "ev": "interrupt"
+    },
+    {
+      "t": "2026-09-09T10:35:00-05:00",
+      "ev": "resume",
+      "lost_min": 15,
+      "dropped": []
+    },
+    {
+      "t": "2026-09-09T10:50:00-05:00",
+      "ev": "pause",
+      "id": "t8"
+    }
+  ]
+}
