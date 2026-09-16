@@ -423,7 +423,7 @@ pub struct ArrivalObs { pub date: NaiveDate, pub time: NaiveTime, pub loc: Strin
 pub struct FitInput<'a> { pub energy: &'a [log::EnergyObs], pub durations: &'a [log::DurationObs],
                           pub arrivals: &'a [ArrivalObs], pub base: Option<&'a Model> }   // ::new(e,d,a), .with_base(m)
 pub fn fit(&Config, &FitInput, today: NaiveDate) -> Model
-pub fn fit_replay(&Config, &log::Replay, today) -> Model            // `tm model --fit`
+pub fn fit_observations(&Config, &[EnergyObs], &[DurationObs], &[ArrivalObs], today) -> Model   // `tm model --fit` (stage 5 F1)
 pub fn arrivals_from_replay(&Config, &Replay) -> Vec<ArrivalObs>
 pub fn observation_weight(day, went, today, &Config) -> f64          // exp(-age/decay) * went (3->2.0, 2->1.5)
 pub fn shrunken_mean(prior, n0, &[(w, x)]) -> f64
@@ -473,7 +473,7 @@ Typical planner use: `let (end, budget) = window_and_budget(arrival, walls, cfg)
 ## Deviations (energy)
 1. **Sleep-debt sign (spec bug).** §8.5 writes `sleep_debt_shift = shrunken mean of (rep − energy[b])`, but the same section *subtracts* the shift and the example value is `+0.8`. Both cannot hold, so `fit` learns the deficit `mean(energy[b] − rep)` (positive under short sleep) and `predict` subtracts it. Documented in the module header.
 2. **`compare` takes `&Config` first**: `compare(cfg, a, b, obs)`. A model falls back to the config priors for buckets it has not learned, so re-predicting needs the config. Also added `calibration(cfg, obs)` (MAE/bias of the *logged* pred, which is what the §11 monitor and §12.4 review row actually show) and `estimate_calibration(cfg, durations, today)` for the §11 estimate-calibration monitor.
-3. **`fit` takes a `FitInput` with an optional `base: Option<&Model>`** rather than three loose slices, and `fit_replay(cfg, &Replay, today)` is the `tm model --fit` entry point. `base` implements §8.5's "hand edits become the new prior": when given, the current model.json is the shrinkage prior instead of the config priors.
+3. **`fit` takes a `FitInput` with an optional `base: Option<&Model>`** rather than three loose slices, and `fit_observations(cfg, &energy, &durations, &arrivals, today)` is the `tm model --fit` entry point (stage 5 D9 step F1; it replaced `fit_replay(cfg, &Replay, today)`, so the fit reads the observations themselves and never a whole `Replay`). `base` implements §8.5's "hand edits become the new prior": when given, the current model.json is the shrinkage prior instead of the config priors.
 4. **`duration[(ci, tag)]`**: v1 *learns* by first tag plus `_default` (as §8.5's own example is keyed), but the *lookup* tries `"<ci>:<tag>"` first so a hand-edited model can carry the fully-keyed value the formula names.
 5. **Location curves**: `Out`, `Any` and unknown named locations use the **home** curve (conservative), not `Config::prior_energy`'s own lounge fallback; a named location keeps its own curve when the model or config has one.
 6. **Multiple posterior reports**: the most recent report at or before the slot wins (superseded, not summed) — §8.5 only defines one report.

@@ -516,7 +516,13 @@ pub fn model(g: &Globals, args: &super::ModelArgs) -> Result<i32, CliError> {
     })?;
     if args.fit {
         let rec = undo_stack::Recorder::start(&ctx, "model")?;
-        let fitted = energy::fit_replay(&ctx.cfg, &ctx.replay, ctx.today);
+        let fitted = energy::fit_observations(
+            &ctx.cfg,
+            &ctx.replay.energy,
+            &ctx.replay.durations,
+            &energy::arrivals_from_replay(&ctx.cfg, &ctx.replay),
+            ctx.today,
+        );
         ctx.store.write_file(MODEL_PATH, &fitted.to_json())?;
         ctx.model = fitted.clone();
         ctx.reload()?;
@@ -535,7 +541,13 @@ pub fn model(g: &Globals, args: &super::ModelArgs) -> Result<i32, CliError> {
         return Ok(0);
     }
     if args.compare {
-        let fresh = energy::fit_replay(&ctx.cfg, &ctx.replay, ctx.today);
+        let fresh = energy::fit_observations(
+            &ctx.cfg,
+            &ctx.replay.energy,
+            &ctx.replay.durations,
+            &energy::arrivals_from_replay(&ctx.cfg, &ctx.replay),
+            ctx.today,
+        );
         let c = energy::compare(&ctx.cfg, &ctx.model, &fresh, &ctx.replay.energy);
         let out = ModelOut {
             action: "compare".to_string(),

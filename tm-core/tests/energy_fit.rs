@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, TimeZone, Weekday};
 use tm_core::config::Config;
 use tm_core::energy::{
-    self, arrivals_from_replay, calibration, compare, estimate_calibration, fit, fit_replay,
-    ArrivalObs, FitInput, Model, DEFAULT_TAG,
+    self, arrivals_from_replay, calibration, compare, estimate_calibration, fit,
+    fit_observations, ArrivalObs, FitInput, Model, DEFAULT_TAG,
 };
 use tm_core::log::{DurationObs, EnergyObs, Replay};
 
@@ -93,7 +93,7 @@ fn hand_computed_curve(cfg: &Config, r: &Replay, loc: &str) -> (Vec<u8>, Vec<usi
 #[test]
 fn fit_reproduces_hand_computed_bucket_means() {
     let (cfg, r) = setup();
-    let model = fit_replay(&cfg, &r, today());
+    let model = fit_observations(&cfg, &r.energy, &r.durations, &arrivals_from_replay(&cfg, &r), today());
     let n0 = cfg.energy.prior_weight;
     assert_eq!(n0, 5.0);
 
@@ -143,7 +143,7 @@ fn a_fit_without_energy_observations_is_the_prior_curve() {
     let (cfg, r) = setup();
     let arrivals = arrivals_from_replay(&cfg, &r);
     let blind = fit(&cfg, &FitInput::new(&[], &r.durations, &arrivals), today());
-    let real = fit_replay(&cfg, &r, today());
+    let real = fit_observations(&cfg, &r.energy, &r.durations, &arrivals_from_replay(&cfg, &r), today());
 
     for loc in ["lounge", "home"] {
         let prior: Vec<u8> = (0..12).map(|b| cfg.prior_energy(loc, b as f64)).collect();
@@ -162,7 +162,7 @@ fn a_fit_without_energy_observations_is_the_prior_curve() {
 #[test]
 fn fit_learns_the_sleep_debt_shift() {
     let (cfg, r) = setup();
-    let model = fit_replay(&cfg, &r, today());
+    let model = fit_observations(&cfg, &r.energy, &r.durations, &arrivals_from_replay(&cfg, &r), today());
     let under = cfg.energy.sleep_debt.under_hours;
     let obs: Vec<(f64, f64)> = r
         .energy
@@ -186,7 +186,7 @@ fn fit_learns_the_sleep_debt_shift() {
 #[test]
 fn fit_learns_duration_multipliers() {
     let (cfg, r) = setup();
-    let model = fit_replay(&cfg, &r, today());
+    let model = fit_observations(&cfg, &r.energy, &r.durations, &arrivals_from_replay(&cfg, &r), today());
     let n0 = cfg.energy.duration_prior_weight;
     assert_eq!(n0, 5.0);
 
@@ -220,7 +220,7 @@ fn fit_learns_p_lounge_and_arrival_for_monday() {
     let (cfg, r) = setup();
     let arrivals = arrivals_from_replay(&cfg, &r);
     assert_eq!(arrivals.len(), 14);
-    let model = fit_replay(&cfg, &r, today());
+    let model = fit_observations(&cfg, &r.energy, &r.durations, &arrivals_from_replay(&cfg, &r), today());
     let n0 = cfg.energy.prior_weight;
 
     let mondays: Vec<&ArrivalObs> = arrivals
@@ -312,7 +312,7 @@ fn fit_shrinks_towards_the_base_model() {
     let arrivals = arrivals_from_replay(&cfg, &r);
     let input = FitInput::new(&r.energy, &r.durations, &arrivals).with_base(&base);
     let with_base = fit(&cfg, &input, today());
-    let without = fit_replay(&cfg, &r, today());
+    let without = fit_observations(&cfg, &r.energy, &r.durations, &arrivals_from_replay(&cfg, &r), today());
     assert!(
         with_base.energy["lounge"][1] < without.energy["lounge"][1],
         "a zeroed base prior drags the fitted level down"
@@ -322,7 +322,7 @@ fn fit_shrinks_towards_the_base_model() {
 #[test]
 fn fitted_model_show_snapshot() {
     let (cfg, r) = setup();
-    let model = fit_replay(&cfg, &r, today());
+    let model = fit_observations(&cfg, &r.energy, &r.durations, &arrivals_from_replay(&cfg, &r), today());
     insta::assert_snapshot!("fitted_14d_show", energy::show(&model));
 }
 
@@ -378,7 +378,7 @@ fn compare_scores_two_models() {
 #[test]
 fn a_fitted_model_beats_the_prior_on_its_own_observations() {
     let (cfg, r) = setup();
-    let fitted = fit_replay(&cfg, &r, today());
+    let fitted = fit_observations(&cfg, &r.energy, &r.durations, &arrivals_from_replay(&cfg, &r), today());
     let c = compare(&cfg, &Model::default(), &fitted, &r.energy);
     assert_eq!(c.n, r.energy.len());
     assert!(c.b_is_better(), "prior {} vs fitted {}", c.mae_a, c.mae_b);

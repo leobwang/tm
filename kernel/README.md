@@ -19194,3 +19194,98 @@ rows, the per-verb kernel-call count against R14's table, and the §5.13 drive. 
 (**gap 130**): the append op, the writer retired, and quirk Q6(f) (**gap 86**) with its two re-proved
 C7 theorems. The §5.13 30-minute drive is S's, and was not attempted here — this step changed one line
 of the binary and three tests.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-15: stage 5, phase F, step F1 on rebuild-on-lean
+     (after S2's partial step, dfb89d0).  The fit reads the observations
+     themselves; `fit_replay` is deleted.  This is the ONE phase-F row that
+     does not wait for the switch, and it is recorded here with the driven
+     evidence that no fitted value moved.  Takes NO gap, NO cheat and NO
+     parity number: nothing observable changed.
+     =========================================================================== -->
+
+## Stage 5 phase F, step F1 — the fit reads the kernel's observations
+
+**What landed.** `tm-core/src/energy.rs`: `fit_replay(&Config, &Replay, today)` is **deleted** and
+`fit_observations(&Config, &[EnergyObs], &[DurationObs], &[ArrivalObs], today)` takes its place. The
+fit no longer takes a whole `Replay`; it takes the three observation lists design §11.2 names as the
+kernel's hand-back, and builds the `FitInput` itself. Twelve call sites moved: `tm/src/cli/lifecycle.rs`
+(`tm model --fit` and `tm model --compare`, both already on the `All` scope), `tm-core/tests/energy_fit.rs`
+(eight) and `tm-core/tests/review_week.rs` (one). `arrivals_from_replay` stays exactly as it was —
+D9-19 and §12 both keep it, and it is now the only thing in `energy.rs` that reads a `Replay`.
+
+**Why this one phase-F row is reachable before S.** F1 does not need a kernel fact. The fit's inputs
+were already `replay.energy`, `replay.durations` and the arrivals; S changes **who fills those lists**,
+not their shape, so moving the signature onto them costs nothing now and removes one `Replay` reader
+from `tm-core` before the switch has to think about it. Design §11.1's CRIT-4 note is the same
+statement from the other side: at S the fit runs over the `All`-scope `Replay`, and F1 "changes no
+value". That claim is now driven, not asserted (below).
+
+**Evidence that no fitted value changed** (design §14.7's acceptance, in the only form available —
+see the disagreement below). `tm model --fit` was run through the **shipped binary** on a copy of
+`tm-core/tests/fixtures/plan-basic` carrying `tests/fixtures/logs/energy-14d.jsonl` as `.tm/log.jsonl`,
+with `--now 2026-09-14T09:00:00-05:00` pinned so `model.json`'s `fitted` field does not float with the
+calendar. The **before** run is the tree at `dfb89d0` (`git stash`, rebuilt); the **after** run is this
+tree:
+
+| run | `.tm/model.json` sha256 | bytes | observations |
+|---|---|---|---|
+| before (`dfb89d0`) | `6415f1989418a9332916dc977dce9629cb78b851a42a16ceaca9cea62e1901ef` | 599 | `fitted from 61 observations` |
+| after (this step) | `6415f1989418a9332916dc977dce9629cb78b851a42a16ceaca9cea62e1901ef` | 599 | `fitted from 61 observations` |
+
+**Byte-identical.** `energy_fit.rs` is the second guard and the stronger one for *why*: its expectations
+are recomputed in the test from §8.5's formula rather than from the implementation, so its eight moved
+call sites would fail on any change of value, not merely on a change of bytes.
+
+### Recorded disagreements between the design and the repo
+
+1. **§14.7's acceptance for F1 is "T12 stays green". T12 does not exist.** It is `model_fit_is_the_fork_points_on_the_corpus`,
+   one of **S's** own deliverables (§14.6), and it has never been built — the README's S2 block already
+   records this for T9 and T12 together. It cannot be "kept green" here. What T12 would assert is byte
+   identity of `model.json` against fork point `4748911`; what is available before S is byte identity
+   **against this branch's own previous commit**, which is what the drive above measures. When S builds
+   T12, this step's claim is subsumed by it.
+2. **`design-migration.md`'s S6.1 row spells the new entry point `fit_observations(cfg, &Observations, today)`**,
+   with an `Observations` struct of "sealed plus live". The shipped shape is the three slices plus
+   `today`. Reason: `FitInput` **already is** that struct (`energy`, `durations`, `arrivals`, `base`),
+   and §12 and §14.7 — the governing document — name only the function, not a new type. A second
+   observation struct beside `FitInput` would be the duplication D9 exists to remove. `fit` and
+   `FitInput` are untouched, so `--compare`'s `base` route still works as written.
+3. **§14.7 marks F1 "(optional)".** It landed because it is the only phase-F row that is
+   S-independent; F2, F3 and F4 (= L9) each need a fact the kernel does not have until the switch.
+
+### Observable behaviour changes
+
+**None.** `tm model --fit` and `tm model --compare` write and print exactly what they wrote and printed
+at `dfb89d0`, byte for byte, on the same input and the same pinned `now`. No verb gained or lost a
+kernel call; no request or response shape moved.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited.** Goals discharged, refuted, added: none; burn-down **13 → 13**. New theorems:
+none — the audit stays at **3934**. New `decide`/`rfl` witnesses: none, so §14.0 item 4's probe budget
+is untouched. New cheats: none (**the file's highest is 157**; note that two earlier banners name
+"cheat 158" as the *next free* number and one block's "Highest:" line reads 158 — `grep 'CHEAT 158'
+Negative.lean` returns nothing, so 158 is free, not taken). New parity entries: none (highest **P35**).
+`TmKernel.lean` imports: **78**, unchanged. No recursion over a wire-sized list was added (D9-21): the
+Rust added is one function and twelve call sites.
+
+### Numbers
+
+**Taken:** nothing — no gap, no cheat, no parity entry. **Highest, unchanged:** gap 130, cheat 157,
+parity P35.
+
+**Re-measured** (main worktree, on the tree committed; every command capped at `MemoryMax=40G`,
+`MemorySwapMax=0`):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 3.03 / 3.05 / 3.11 s (`dfb89d0`: 3.08 / 3.08 / 3.10 s; flat, inside the 10% a step may add) |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged, stages 3–6) |
+| `cargo test --workspace` | **1087 passed / 0 failed / 5 ignored across 73 result lines**, exit 0, **0 compiler warnings** — identical to `dfb89d0`, as a pure refactor must be (no test was added or removed; twelve were rewritten in place) |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) — unchanged |
+| T5 (`kernel_replay_parity.rs --include-ignored`) | **19 passed / 0 failed**, 6.53 s — unchanged |
+| `cli_latency.rs --include-ignored` | **4 passed / 0 failed**, 3.74 s, the year-of-log and three-year tests included — unchanged; no row times `tm model` |
+| the fit drive | `model.json` **byte-identical** before and after, sha `6415f19…`, 599 bytes, 61 observations |

@@ -211,7 +211,13 @@ fn the_curve_overlay_carries_the_prior_and_the_learned_curve() {
     let cfg = fixture::config();
     let replay = fixture::replay();
     // A fitted model, so the overlay has both halves.
-    let model = tm_core::energy::fit_replay(&cfg, &replay, fixture::last_day());
+    let model = tm_core::energy::fit_observations(
+        &cfg,
+        &replay.energy,
+        &replay.durations,
+        &tm_core::energy::arrivals_from_replay(&cfg, &replay),
+        fixture::last_day(),
+    );
     let r = week_review(
         &fixture::plan_tree(&cfg),
         &replay,

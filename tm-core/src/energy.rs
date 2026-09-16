@@ -26,8 +26,10 @@
 //!   `posterior_zero_hours` ([`posterior_weight`]).
 //! * Fitting (§8.5 v1, bucketed shrinkage means): [`fit`] over a
 //!   [`FitInput`] of [`crate::log::EnergyObs`], [`crate::log::DurationObs`]
-//!   and [`ArrivalObs`], or [`fit_replay`] straight from a
-//!   [`crate::log::Replay`]. [`show`] renders a model for `tm model --show`;
+//!   and [`ArrivalObs`], or [`fit_observations`] from the three observation
+//!   lists themselves (design §11.2's hand-back; [`arrivals_from_replay`]
+//!   extracts the arrivals from a [`crate::log::Replay`]). [`show`] renders a
+//!   model for `tm model --show`;
 //!   [`compare`] scores two models against the same observations for
 //!   `tm model --compare`.
 //! * Monitors (§11): [`calibration`] (MAE and bias of the *logged* `pred`
@@ -1076,11 +1078,21 @@ pub fn fit(cfg: &Config, input: &FitInput, today: NaiveDate) -> Model {
     }
 }
 
-/// Fit straight from a [`Replay`] (`tm model --fit`).
-pub fn fit_replay(cfg: &Config, replay: &Replay, today: NaiveDate) -> Model {
-    let arrivals = arrivals_from_replay(cfg, replay);
-    let input = FitInput::new(&replay.energy, &replay.durations, &arrivals);
-    fit(cfg, &input, today)
+/// Fit from the observations themselves (`tm model --fit`).
+///
+/// Stage 5 D9 step F1 (design §14.7): the fit takes the three observation
+/// lists — the energy observations, the duration observations and the
+/// arrivals — and never a whole [`Replay`]. At the `All` scope those lists
+/// are what the kernel hands back (design §11.2), so this is the fit reading
+/// the kernel's observations directly.
+pub fn fit_observations(
+    cfg: &Config,
+    energy: &[EnergyObs],
+    durations: &[DurationObs],
+    arrivals: &[ArrivalObs],
+    today: NaiveDate,
+) -> Model {
+    fit(cfg, &FitInput::new(energy, durations, arrivals), today)
 }
 
 /// The `arrive` events of a replay, in `config.tz` local time.
