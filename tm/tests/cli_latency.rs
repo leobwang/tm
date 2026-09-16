@@ -313,14 +313,15 @@ const RESEAL_VERB: Duration = LATER_VERB;
 /// **The replay cache's files** (`kernel_log::CACHE_DIR`): `ckpt.json` plus
 /// every immutable generation file under `sealed/`.
 ///
-/// **Before the switch this is always 0** — nothing under `tm/src` calls
-/// `kernel_log::`, so no cache is ever written. Every "does not rebuild" and
-/// "at most one checkpoint write a day" assertion below is therefore measured
-/// against 0 today and only starts biting at S, and this file says so rather
-/// than implying the rows are already guarded. What is **not** vacuous today is
-/// the timing half of those rows, which is the thing S can actually regress:
-/// a verb that rebuilt when it should have resumed would miss `LATER_VERB` by
-/// roughly a genesis (≈ 0.9 s at three years), not by a hair.
+/// **Before the switch this was always 0** — nothing under `tm/src` called
+/// `kernel_log::`, so no cache was ever written, and every "does not rebuild"
+/// and "at most one checkpoint write a day" assertion below was measured
+/// against 0 and could not bite. **README gap 140 clears here**: since S the
+/// directory holds `ckpt.json` and the sealed month files, the counts below are
+/// real, and the first assertion in the test is turned around to say so — a
+/// switched binary that wrote *no* cache would mean the replay was being
+/// rebuilt from scratch on every verb, which is the regression these rows
+/// exist to catch.
 fn cache_files(tm: &Tm) -> usize {
     fn walk(dir: &std::path::Path) -> usize {
         let Ok(entries) = fs::read_dir(dir) else { return 0 };
@@ -337,6 +338,32 @@ fn cache_files(tm: &Tm) -> usize {
     }
     let dir = tm.plan.join(".tm/cache/replay");
     if dir.is_dir() { walk(&dir) } else { 0 }
+}
+
+/// **The distinct checkpoint _generations_ under the replay cache.**
+///
+/// A generation is what one reseal writes: `ckpt.json` plus an immutable
+/// `sealed/YYYY-MM.g<gen>.json` per month it sealed — so at three years a
+/// single generation is **~37 files**, and month files of the previous
+/// generation stay until the collector takes them (`kernel_log::COLLECT_AFTER`,
+/// ten minutes — far longer than this test runs).
+///
+/// The rows below claim "at most one checkpoint write", and this counts that
+/// claim. [`cache_files`] counts *files*, which is the right measure for "a
+/// cache exists at all" and "the routine did not rebuild" and the wrong one
+/// here: `cache_files <= before + 1` was vacuously true before S (the count was
+/// always 0) and cannot hold after it.
+fn cache_generations(tm: &Tm) -> usize {
+    let dir = tm.plan.join(".tm/cache/replay/sealed");
+    let Ok(entries) = fs::read_dir(&dir) else { return 0 };
+    let mut gens = std::collections::BTreeSet::new();
+    for e in entries.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        if let Some((_, rest)) = name.split_once(".g") {
+            gens.insert(rest.trim_end_matches(".json").to_string());
+        }
+    }
+    gens.len()
 }
 
 /// The id whose most recent `done` in `text` is closest to 30 days before
@@ -403,31 +430,73 @@ fn a_verb_on_a_tree_with_three_years_of_log_takes_well_under_a_second() {
     // times both and checks the work the bounds are about really happened.
     let (first, later) = history_verbs(&tm, &label);
     assert!(first < FIRST_VERB && later < LATER_VERB);
-    assert_eq!(cache_files(&tm), 0, "the unswitched binary wrote a replay cache");
+    // **Gap 140, turned around at S.** The switched binary persists its
+    // checkpoint; 0 here would mean every verb paid a genesis.
+    let cached = cache_files(&tm);
+    assert!(cached > 0, "the switched binary wrote no replay cache — every verb is rebuilding");
+    eprintln!("latency{label}: {cached} replay-cache file(s) after the first two verbs");
 
     // The remaining rows are timed one at a time, like the pair above.
     let _serial = SERIAL.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    // Row 4: a hand-appended `undo` whose target is about 30 days old. One
-    // rebuild is allowed FIRST_VERB; the verb after it must not rebuild again,
-    // which is what the LATER_VERB bound on the next verb measures.
+    // Row 4, in two halves — and the first half is a **finding**, recorded
+    // where it was measured (README gap 180).
+    //
+    // §14.6's row 4 reads "after hand-appending an `undo` whose target is 30
+    // days old (one rebuild) < 5 s". On *this* tree that is not reachable, and
+    // it is not a defect: a three-year log at ~60 events a day puts the pop
+    // that undo forces **9,039 lines** behind the cut, past the resend cap
+    // (`kernel_log::RESEND_LINES` = 8,192 lines / `RESEND_BYTES` = 1,536 KiB,
+    // gap 102's memory gate). So the answer is the named fault `reachTooFar`,
+    // exactly as the owner's D18 (iii) and parity **P31** require — and **the
+    // memory cap is never raised to make a bound reachable** (D18).
+    //
+    // Both halves are therefore measured: the 30-day undo must fail **by name
+    // and fast** (a fault that took a genesis to discover would still be a
+    // latency regression), and the row's actual latency claim — one rebuild,
+    // then no rebuild — is measured on an undo the gate can window.
     let log_text = fs::read_to_string(tm.plan.join(".tm/log.jsonl")).expect("log");
     let last_logged = chrono::NaiveDate::from_ymd_opt(LAST_LOGGED.0, LAST_LOGGED.1, LAST_LOGGED.2).expect("date");
     let (target, done_on) = undo_target_about_30_days_back(&log_text, last_logged);
     let age = (last_logged - done_on).num_days();
     assert!((28..=32).contains(&age), "the undo target is {age} days old");
-    let mut with_undo = log_text.clone();
-    if !with_undo.ends_with('\n') {
-        with_undo.push('\n');
-    }
-    with_undo.push_str(&format!(
-        "{{\"t\":\"{last_logged}T23:59:00-05:00\",\"ev\":\"undo\",\"of\":\"done\",\"id\":\"{target}\"}}\n"
-    ));
-    write(&tm, ".tm/log.jsonl", &with_undo);
+    let appended = |id: &str| {
+        let mut t = log_text.clone();
+        if !t.ends_with('\n') {
+            t.push('\n');
+        }
+        t.push_str(&format!(
+            "{{\"t\":\"{last_logged}T23:59:00-05:00\",\"ev\":\"undo\",\"of\":\"done\",\"id\":\"{id}\"}}\n"
+        ));
+        t
+    };
 
-    let before = cache_files(&tm);
+    // Half one: the 30-day-old target. Past the gate, so it is the named fault
+    // — and it must be named **fast**: a fault discovered only after a full
+    // genesis would still be the latency regression this row exists to catch.
+    write(&tm, ".tm/log.jsonl", &appended(&target));
+    let (code, out, faulted) = timed(&tm, &["now"], FIRST_VERB);
+    eprintln!("latency{label}: a {age}-day-old hand undo (target ^{target}, done {done_on}) {faulted:?}");
+    assert_ne!(code, 0, "a log past the resend cap was answered instead of refused: {out}");
+    assert!(out.contains("reachTooFar"), "the fault is not named: {out}");
+    assert!(faulted < FIRST_VERB, "naming the fault took {faulted:?} (bound {FIRST_VERB:?})");
+
+    // Half two: the row's latency claim, on an undo the gate *can* window — the
+    // most recent `done` in the log. One rebuild is allowed FIRST_VERB; the
+    // verb after it must not rebuild again, which is what the LATER_VERB bound
+    // on the next verb measures.
+    let recent = log_text
+        .lines()
+        .rev()
+        .find(|l| l.contains(r#""ev":"done""#))
+        .and_then(|l| l.split_once(r#""id":""#).map(|(_, r)| r))
+        .and_then(|r| r.split_once('"').map(|(id, _)| id.to_string()))
+        .expect("the log has a `done`");
+    write(&tm, ".tm/log.jsonl", &appended(&recent));
+
+    let before = cache_generations(&tm);
     let (code, out, rebuild) = timed(&tm, &["drop", "^z2"], FIRST_VERB);
-    eprintln!("latency{label}: the verb after a {age}-day-old undo {rebuild:?} (target ^{target}, done {done_on})");
+    eprintln!("latency{label}: the verb after a windowable hand undo (target ^{recent}) {rebuild:?}");
     assert_eq!(code, 0, "{out}");
     assert!(rebuild < FIRST_VERB, "the rebuild after a far undo took {rebuild:?} (bound {FIRST_VERB:?})");
     let (code, out, settled) = timed(&tm, &["drop", "^z3"], LATER_VERB);
@@ -438,7 +507,7 @@ fn a_verb_on_a_tree_with_three_years_of_log_takes_well_under_a_second() {
         "the verb after the rebuild took {settled:?} (bound {LATER_VERB:?}) — it rebuilt again"
     );
     assert!(
-        cache_files(&tm) <= before + 1,
+        cache_generations(&tm) <= before + 1,
         "the far undo wrote more than one checkpoint generation"
     );
 
@@ -470,12 +539,17 @@ fn a_verb_on_a_tree_with_three_years_of_log_takes_well_under_a_second() {
     // at `AT + 1 day` would be reading a log with a line dated after `now`,
     // which is a different measurement (D9-22's future-line fence).
     let day1 = "2026-09-15T09:00:00-05:00";
-    let before = cache_files(&tm);
+    let before = cache_generations(&tm);
     let (code, out, reseal) = timed_at(&tm, day1, &["drop", "^z4"], RESEAL_VERB);
     eprintln!("latency{label}: --now +1 day (a reseal) {reseal:?}");
     assert_eq!(code, 0, "{out}");
     assert!(reseal < RESEAL_VERB, "the +1 day verb took {reseal:?} (bound {RESEAL_VERB:?})");
-    assert!(cache_files(&tm) <= before + 1, "the reseal wrote more than one checkpoint generation");
+    assert!(
+        cache_generations(&tm) <= before + 1,
+        "the reseal wrote more than one checkpoint generation ({} -> {})",
+        before,
+        cache_generations(&tm)
+    );
 
     // Row 6: a block left open, then ten successive `--now` days. The stall
     // holds the ledger day back (design §18.7), so each day's verb carries one
@@ -484,7 +558,7 @@ fn a_verb_on_a_tree_with_three_years_of_log_takes_well_under_a_second() {
     let (code, out, _) = timed_at(&tm, "2026-09-15T09:05:00-05:00", &["start", "^z5"], LATER_VERB);
     assert_eq!(code, 0, "{out}");
     let mut worst = Duration::from_millis(0);
-    let before = cache_files(&tm);
+    let before = cache_generations(&tm);
     for d in 0..10 {
         let day = chrono::NaiveDate::from_ymd_opt(2026, 9, 16).expect("date") + chrono::Duration::days(d);
         let now = format!("{day}T09:00:00-05:00");
@@ -493,7 +567,9 @@ fn a_verb_on_a_tree_with_three_years_of_log_takes_well_under_a_second() {
         assert!(took < LATER_VERB, "day {day} of a stall took {took:?} (bound {LATER_VERB:?})");
         worst = worst.max(took);
     }
-    let writes = cache_files(&tm) - before;
-    eprintln!("latency{label}: 10 stalled days, worst {worst:?}, {writes} checkpoint file(s)");
-    assert!(writes <= 10, "a stalled run wrote {writes} checkpoint files over 10 days");
+    // `saturating_sub`: the collector may take the generations this run
+    // superseded, so the count can legitimately fall.
+    let writes = cache_generations(&tm).saturating_sub(before);
+    eprintln!("latency{label}: 10 stalled days, worst {worst:?}, {writes} checkpoint generation(s)");
+    assert!(writes <= 10, "a stalled run wrote {writes} checkpoint generations over 10 days");
 }

@@ -9,9 +9,9 @@
 //!   does.
 //! * [`Ctx`] — the loaded directory: [`Config`], an [`FsStore`], the parsed
 //!   [`PlanFiles`] and their [`Tree`], the log's [`Replay`] and the lines the
-//!   reader refused ([`LogRead`], asked for with the verb's [`ReplayScope`]
-//!   through [`Ctx::replay_with`], over [`Ctx::replay_of`], the one reader of
-//!   `.tm/log.jsonl`), the
+//!   log's [`Replay`] ([`LogRead`], asked for with the verb's [`ReplayScope`]
+//!   through [`Ctx::replay_with`] — **the kernel**, since the switch, and the
+//!   one reader of `.tm/log.jsonl`), the
 //!   learned [`Model`] and `.tm/state.json` ([`RuntimeState`]), plus `now` in
 //!   both `FixedOffset` (log timestamps) and `cfg.tz` (everything else).
 //!   [`Ctx::load`] runs the housekeeping of §6.3 (the automatic close —
@@ -34,20 +34,22 @@
 //!   [`ARRIVAL_PLAN_PATH`] (§9's ghost row: the plan as it stood at arrival)
 //!   and `.tm/undo.json` (see [`crate::cli::undo`]).
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::env;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Datelike, FixedOffset, Local, NaiveDate, NaiveDateTime, NaiveTime};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
+use serde_json::Value;
 
 use tm_core::capacity::{self, EnergyCtx, Slot, UnitCapacity, Wall};
 use tm_core::config::Config;
 use tm_core::energy::{Model, Posterior};
 use tm_core::grammar::ItemLine;
 use tm_core::horizon;
-use tm_core::log::{Event, Log, LogEntry, LogWarning, Replay};
+use tm_core::log::{Event, LogEntry, Replay};
 use tm_core::model::{Id, Item, Loc, Shape, State};
 use tm_core::priority::{self, Candidate, Prio};
 use tm_core::store::{
@@ -58,6 +60,7 @@ use tm_core::recur;
 
 use super::kernel_bridge;
 use super::kernel_capacity;
+use super::kernel_log;
 use super::out::CliError;
 
 /// `.tm/last_plan.json` — the plan `tm plan --diff` compares against and the
@@ -175,9 +178,6 @@ pub struct StoredSegment {
 pub struct LogRead {
     /// Every fact the log yields (§10.1).
     pub replay: Replay,
-    /// The lines the reader refused, in file order, each with its 1-based
-    /// physical line number.
-    pub warnings: Vec<LogWarning>,
 }
 
 /// **One line's header**, as `tm undo`'s recorder reads it (design §14.3 row
@@ -238,6 +238,61 @@ impl std::fmt::Display for ReplayScope {
 /// as `replay scope: <scope>` (the verb-family test reads it).
 pub const TRACE_SCOPE_ENV: &str = "TM_TRACE_REPLAY_SCOPE";
 
+/// The named fault of OWNER Q9 (iii) / D18 / parity **P31**: a hand edit no
+/// rebuild can window inside the memory gate. Spelled once, because
+/// [`Ctx::load_tolerant`] matches on it and `tm check` prints it.
+pub const REACH_TOO_FAR: &str = "reachTooFar";
+
+impl ReplayScope {
+    /// The kernel's own scope (design §11.1). The two enums are deliberately
+    /// separate types: this one is the *verb family's* request, `kernel_log`'s
+    /// is the wire's, and only this function relates them.
+    fn to_kernel(self) -> kernel_log::Scope {
+        match self {
+            ReplayScope::Hot => kernel_log::Scope::Hot,
+            ReplayScope::Dates { from, to } => kernel_log::Scope::Dates { from, to },
+            ReplayScope::All => kernel_log::Scope::All,
+        }
+    }
+}
+
+/// **Why the kernel could not answer for the log**, as a named [`CliError`]
+/// (design §10.3, §14.6 item 5: `kernel_bridge::refusal` gains the `log`
+/// names).
+///
+/// [`kernel_log::GenesisError::ReachTooFar`] is the one the *user* can act on,
+/// so it is the one spelled out: it names the line, the guard that refused it
+/// and how far the rebuild would have had to reach, and it says which verb
+/// still works. **The memory cap is never raised to make it go away** (D18);
+/// the line is moved or removed instead.
+fn genesis_error(e: kernel_log::GenesisError) -> CliError {
+    match e {
+        kernel_log::GenesisError::ReachTooFar { line, kind, reach, bytes } => {
+            let mut detail = serde_json::Map::new();
+            detail.insert("refusal".into(), Value::String(REACH_TOO_FAR.into()));
+            detail.insert("line".into(), Value::from(line));
+            detail.insert("guard".into(), Value::String(kind.clone()));
+            detail.insert("reach".into(), Value::from(reach));
+            detail.insert("bytes".into(), Value::from(bytes));
+            CliError::Kernel(super::out::KernelIssue {
+                name: REACH_TOO_FAR.into(),
+                message: format!(
+                    "{REACH_TOO_FAR}: {LOG_PATH} line {line} cannot be windowed — answering it would \
+                     resend {reach} lines ({bytes} bytes), past the memory gate, and the guard that \
+                     refused it is {kind}. Move or remove that line; `tm check` still runs and names it"
+                ),
+                detail,
+            })
+        }
+        kernel_log::GenesisError::Refused(r) => {
+            CliError::msg(format!("{LOG_PATH}: the kernel refused the replay ({r:?})"))
+        }
+        kernel_log::GenesisError::Fault(why) => {
+            CliError::Kernel(kernel_bridge::fault_issue(&format!("the log replay: {why}"), ""))
+        }
+    }
+}
+
 /// One loaded plan directory.
 pub struct Ctx {
     /// The store over the plan root ([`FsStore::root`] is the directory).
@@ -261,11 +316,18 @@ pub struct Ctx {
     /// The replay of `.tm/log.jsonl` (§10.1) in [`Ctx::scope`], from
     /// [`Ctx::replay_with`].
     pub replay: Replay,
-    /// The lines of `.tm/log.jsonl` the reader refused, from the same call
-    /// ([`LogRead::warnings`]). `tm check` names them (the owner's D18 (i));
-    /// after the switch they are the kernel's `log.warnings` array
-    /// (design §10.2).
-    pub log_warnings: Vec<LogWarning>,
+    /// **The named fault the replay refused with**, when this `Ctx` was loaded
+    /// tolerantly and the kernel could not window the log (gap 145, D18 (iii)).
+    ///
+    /// `None` for every ordinary load, because a refusal is then the verb's
+    /// error. Only [`Ctx::load_tolerant`] sets it, only `tm check` calls that,
+    /// and `tm check` turns it into a named problem — which is the whole of
+    /// D18's "every verb **except** `tm check`": the one verb that exists to
+    /// find the bad line must survive it.
+    ///
+    /// The line is carried beside the sentence rather than parsed back out of
+    /// it (§5.3: one reader of a fact, not two).
+    pub replay_fault: Option<(usize, String)>,
     /// The scope the verb asked its replay for; [`Ctx::reload`] asks again.
     pub scope: ReplayScope,
     /// `.tm/model.json` (§8.5).
@@ -282,7 +344,25 @@ impl Ctx {
     /// The replay is asked for in [`ReplayScope::Hot`]; a verb that reads
     /// older history loads through [`Ctx::load_scoped`].
     pub fn load(g: &Globals, housekeeping: bool) -> Result<Ctx, CliError> {
-        Ctx::load_with(g, housekeeping, housekeeping, |_, _| ReplayScope::Hot)
+        Ctx::load_with(g, housekeeping, housekeeping, false, |_, _| ReplayScope::Hot)
+    }
+
+    /// **[`Ctx::load`] for the one verb that must survive a log no rebuild can
+    /// window** (gap 145; OWNER Q9 (iii), D18, parity P31).
+    ///
+    /// D18 (iii) makes a hand edit beyond the rebuild bound a **named fault**
+    /// that fails every verb by name — *except* `tm check`, because `tm check`
+    /// is how the offending line is found. The fault reaches the user either
+    /// way; what this changes is that here it becomes a
+    /// [`Ctx::replay_fault`] and an empty [`Replay`] instead of an error, so
+    /// the verb goes on to check the tree and to name the line.
+    ///
+    /// It tolerates **only** that fault. Every other refusal, and every I/O
+    /// failure, is still an error: a `tm check` that answered "no problems"
+    /// over a log it could not read would be the exact defect D18 exists to
+    /// prevent.
+    pub fn load_tolerant(g: &Globals) -> Result<Ctx, CliError> {
+        Ctx::load_with(g, false, false, true, |_, _| ReplayScope::Hot)
     }
 
     /// [`Ctx::load`] with the replay asked for in the scope `scope` returns,
@@ -292,7 +372,7 @@ impl Ctx {
         housekeeping: bool,
         scope: impl FnOnce(&RuntimeState, NaiveDate) -> ReplayScope,
     ) -> Result<Ctx, CliError> {
-        Ctx::load_with(g, housekeeping, housekeeping, scope)
+        Ctx::load_with(g, housekeeping, housekeeping, false, scope)
     }
 
     /// [`Ctx::load`] with housekeeping but without the automatic close — for
@@ -303,13 +383,14 @@ impl Ctx {
         g: &Globals,
         scope: impl FnOnce(&RuntimeState, NaiveDate) -> ReplayScope,
     ) -> Result<Ctx, CliError> {
-        Ctx::load_with(g, true, false, scope)
+        Ctx::load_with(g, true, false, false, scope)
     }
 
     fn load_with(
         g: &Globals,
         housekeeping: bool,
         auto_close: bool,
+        tolerate: bool,
         scope: impl FnOnce(&RuntimeState, NaiveDate) -> ReplayScope,
     ) -> Result<Ctx, CliError> {
         let dir = resolve_dir(g.dir.as_deref())?;
@@ -326,7 +407,22 @@ impl Ctx {
         let today = now_tz.date_naive();
         let mut state = store.load_state()?;
         let scope = scope(&state, today);
-        let read = Ctx::replay_with(&store, &cfg, scope)?;
+        // Gap 145: `tm check` alone loads tolerantly, and only `reachTooFar` is
+        // tolerated — see `Ctx::load_tolerant`.
+        let (replay, replay_fault) = match Ctx::replay_with(&store, &cfg, now, today, scope) {
+            Ok(read) => (read.replay, None),
+            Err(CliError::Kernel(issue)) if tolerate && issue.name == REACH_TOO_FAR => {
+                let line = issue
+                    .detail
+                    .get("line")
+                    .and_then(Value::as_u64)
+                    .and_then(|l| usize::try_from(l).ok())
+                    .unwrap_or(1);
+                let tz = Ctx::tz_wire(&store, &cfg);
+                (Ctx::empty_replay(&cfg, &tz, today)?, Some((line, issue.message)))
+            }
+            Err(e) => return Err(e),
+        };
 
         if housekeeping && roll_day(&mut state, today) {
             store.save_state(&state)?;
@@ -345,8 +441,8 @@ impl Ctx {
             state,
             files,
             tree,
-            replay: read.replay,
-            log_warnings: read.warnings,
+            replay,
+            replay_fault,
             scope,
             model,
             timed_out: Vec::new(),
@@ -371,98 +467,139 @@ impl Ctx {
     pub fn reload(&mut self) -> Result<(), CliError> {
         self.files = self.store.read_tree()?;
         self.tree = self.files.tree();
-        let read = Ctx::replay_with(&self.store, &self.cfg, self.scope)?;
+        let read = Ctx::replay_with(&self.store, &self.cfg, self.now, self.today, self.scope)?;
         self.replay = read.replay;
-        self.log_warnings = read.warnings;
         Ok(())
     }
 
     /// **The replay a verb family asks for** (design §11.1, step R13): the
-    /// [`Replay`] holding every fact `scope` covers, and the lines the reader
-    /// refused. Before the switch every scope is [`Ctx::replay_of`], the whole
-    /// log; at the switch this body becomes the kernel's answer merged with
-    /// the sealed records `scope` names, and no caller changes. With
+    /// [`Replay`] holding every fact `scope` covers.
+    ///
+    /// **This is the switch** (design §14.6 item 1). The body is
+    /// [`kernel_log::replay_scoped`]: the Lean kernel derives every replay
+    /// fact from `.tm/log.jsonl`, resuming the checkpoint under
+    /// `.tm/cache/replay` (D13) and merging the sealed records `scope` names
+    /// (§11.1). Until S this delegated to `Ctx::replay_of`, the in-tree Rust
+    /// reader, which design §12 has now deleted — **one reader, and it is the
+    /// proved one** (D9). No caller's shape changed, which is what made S a
+    /// body swap rather than a rewrite.
+    ///
+    /// `now` is the undo stack's clock, not the replay's: §9.6 pins the tail
+    /// at the smallest `UndoEntry.log_line` younger than 14 days, so a reseal
+    /// never folds away an entry `tm undo` can still reach. With
     /// [`TRACE_SCOPE_ENV`] set it names the scope on stderr.
-    pub fn replay_with(store: &FsStore, cfg: &Config, scope: ReplayScope) -> Result<LogRead, CliError> {
+    ///
+    /// **A missing file is an empty log, and only an I/O failure is an error.**
+    /// Every unreadable line — malformed JSON, an unknown field type, a bad
+    /// timestamp, or bytes that are not UTF-8 — is a per-line warning the
+    /// kernel carries and the verb runs anyway (design §17's parity P13, the
+    /// owner's D18 (i)). `tm check` names them through its own read-only sweep
+    /// ([`kernel_log::line_warnings`]), because an answer's `warnings` array is
+    /// per call.
+    pub fn replay_with(
+        store: &FsStore,
+        cfg: &Config,
+        now: DateTime<FixedOffset>,
+        today: NaiveDate,
+        scope: ReplayScope,
+    ) -> Result<LogRead, CliError> {
         if env::var_os(TRACE_SCOPE_ENV).is_some() {
             eprintln!("replay scope: {scope}");
         }
-        Ctx::replay_of(store, cfg)
+        let bytes = Ctx::log_bytes(store)?;
+        let tz = Ctx::tz_wire(store, cfg);
+        let pin = kernel_log::max_line_of(
+            &store.read_text(super::undo::UNDO_PATH).unwrap_or_default(),
+            now,
+        );
+        let read = kernel_log::replay_scoped(
+            store.root(),
+            &bytes,
+            cfg.tz,
+            &tz,
+            today,
+            scope.to_kernel(),
+            pin,
+        )
+        .map_err(genesis_error)?;
+        // CRIT 26: an unwritable or moved cache is a notice, never a failure.
+        for notice in &read.notices {
+            eprintln!("{notice}");
+        }
+        Ok(LogRead { replay: read.replay })
     }
 
-    /// **The one door to the log** (design §14.3 row R8): the replay of the
-    /// whole of `.tm/log.jsonl` as it is on disk now, in `cfg.tz`, and the
-    /// lines it refused. A missing file is an empty log; **every** unreadable
-    /// line — malformed JSON, an unknown field type, a bad timestamp, or bytes
-    /// that are not UTF-8 — is one [`LogWarning`] and nothing else. Only an
-    /// I/O failure is an error. Nothing else in `tm/src` or `tm-core/src`
-    /// reads `LOG_PATH`: [`Ctx::append_entry`] and `horizon`'s close append to
-    /// it. At the switch its body becomes the kernel's `log` call.
-    ///
-    /// **The file is read as bytes and split before any line is decoded**
-    /// ([`tm_core::log::Log::parse_bytes`], `Store::read_bytes`). Reading it
-    /// as one `String` made a single bad byte anywhere in the file fail every
-    /// verb — `tm check` included, which is precisely the verb the owner's D18
-    /// requires to keep working so the bad line can be found. This is design
-    /// §17's parity P13 answered on the host side, with the same single
-    /// reader: the kernel's column of that row, reached before the switch.
-    pub fn replay_of(store: &FsStore, cfg: &Config) -> Result<LogRead, CliError> {
-        let bytes = if store.exists(LOG_PATH) {
-            store.read_bytes(LOG_PATH)?
+    /// The log's bytes as they are on disk now; a missing file is an empty log.
+    fn log_bytes(store: &FsStore) -> Result<Vec<u8>, CliError> {
+        if store.exists(LOG_PATH) {
+            Ok(store.read_bytes(LOG_PATH)?)
         } else {
-            Vec::new()
-        };
-        let log = Log::parse_bytes(&bytes);
-        let warnings = log.warnings.clone();
-        Ok(LogRead { replay: log.replay(None, cfg.tz), warnings })
+            Ok(Vec::new())
+        }
+    }
+
+    /// The zone table the kernel attributes days with (§6.1), from the cache
+    /// under the plan root when its key still matches, else probed (D13).
+    fn tz_wire(store: &FsStore, cfg: &Config) -> Value {
+        super::tz_table::wire_for(Some(&store.root().join(kernel_log::CACHE_DIR)), cfg.tz)
+    }
+
+    /// **The empty replay**, for the one verb that answers over a log no
+    /// rebuild can window (gap 145, D18 (iii)).
+    ///
+    /// It is the *kernel's* answer for a log of no lines, not a hand-built
+    /// value: §5.3's rule — a second definition of "an empty replay" would be
+    /// a second reader of the same concept. It never touches the checkpoint on
+    /// disk, because genesis over zero lines seals nothing.
+    fn empty_replay(cfg: &Config, tz: &Value, today: NaiveDate) -> Result<Replay, CliError> {
+        let want = kernel_log::Want { facts: true, headers_from: None, render: vec![] };
+        let policy = kernel_log::Policy { keep_days: kernel_log::KEEP_DAYS, max_line: None };
+        let now = today.format("%Y-%m-%d").to_string();
+        let g = kernel_log::genesis(&now, tz, &kernel_log::split(&[]), policy, &want)
+            .map_err(genesis_error)?;
+        let answer = serde_json::json!({
+            "lines": g.answer.lines,
+            "facts": g.answer.facts.clone().unwrap_or(Value::Null),
+            "headers": g.answer.headers.clone(),
+        });
+        kernel_log::decode_facts(&answer, cfg.tz)
+            .map_err(|why| CliError::msg(format!("the kernel's empty replay: {why}")))
     }
 
     /// **What the undo recorder reads, through the same door** (design §14.3
     /// rows R6 and R8): the log's physical line count on disk now and, when
     /// `after` is given, the entries on the physical lines after it, each with
     /// its line, in file order. The count is exactly
-    /// `Ctx::replay_of(..).line_count()`, and the headers are exactly those of
-    /// `Ctx::replay_of(..).headers_from(after + 1)` (unit test
-    /// `the_recorders_tail_is_the_whole_replays`), without replaying the lines
-    /// before `after`: a mutating verb used to replay the whole log twice more
-    /// for its undo entry (W-3's audit: 4 replays a verb, ≈ 110 ms each on three
-    /// years of log). A log with fewer lines than `after` (rewritten under the
-    /// verb) falls back to the whole replay. At the switch this body becomes the
-    /// kernel's `headersFrom`.
+    /// the whole replay's line count, and the headers are exactly the whole
+    /// replay's from `after + 1` (design §14.3 row R6), without replaying the
+    /// lines before `after`: a mutating verb used to replay the whole log twice
+    /// more for its undo entry (W-3's audit: 4 replays a verb, ≈ 110 ms each on
+    /// three years of log). A log with fewer lines than `after` (rewritten under
+    /// the verb) has no tail and yields none.
+    ///
+    /// **This is the switch** (design §14.6 item 1): the body is the kernel's
+    /// `headersFrom` ([`kernel_log::headers_after`]), which replays the tail
+    /// alone from the empty checkpoint and shifts each header's line back into
+    /// the whole file's numbering — exactly what the in-tree reader did here
+    /// before §12 deleted it.
     pub fn log_tail_of(
         store: &FsStore,
         cfg: &Config,
+        today: NaiveDate,
         after: Option<u64>,
     ) -> Result<(u64, Vec<LogHeader>), CliError> {
-        let bytes = if store.exists(LOG_PATH) {
-            store.read_bytes(LOG_PATH)?
-        } else {
-            Vec::new()
-        };
+        let bytes = Ctx::log_bytes(store)?;
         let count = tm_core::log::physical_line_count(&bytes);
         let Some(after) = after else {
             return Ok((count, Vec::new()));
         };
-        let skip = usize::try_from(after).unwrap_or(usize::MAX);
-        let start = if skip == 0 {
-            Some(0)
-        } else {
-            bytes.iter().enumerate().filter(|(_, b)| **b == b'\n').nth(skip - 1).map(|(i, _)| i + 1)
-        };
-        let rows = match start {
-            Some(at) => Log::parse_bytes(&bytes[at..])
-                .replay(None, cfg.tz)
-                .headers_from(1)
-                .iter()
-                .map(|r| LogHeader { line: r.line + after, tag: r.tag.clone(), id: r.id.clone() })
-                .collect(),
-            None => Log::parse_bytes(&bytes)
-                .replay(None, cfg.tz)
-                .headers_from(after + 1)
-                .iter()
-                .map(|r| LogHeader { line: r.line, tag: r.tag.clone(), id: r.id.clone() })
-                .collect(),
-        };
+        let tz = Ctx::tz_wire(store, cfg);
+        let now = today.format("%Y-%m-%d").to_string();
+        let rows = kernel_log::headers_after(&bytes, &now, &tz, after)
+            .map_err(|why| CliError::msg(format!("{LOG_PATH}: the kernel could not read the tail ({why})")))?
+            .into_iter()
+            .map(|(line, tag, id)| LogHeader { line, tag, id })
+            .collect();
         Ok((count, rows))
     }
 
@@ -477,33 +614,30 @@ impl Ctx {
     /// parsed. A line the reader refuses has no [`tm_core::log::ViewRow`]
     /// either, so it cannot be selected and is simply absent from the map.
     ///
-    /// **At the switch this body becomes the kernel's `render` op** (§11.4 step
-    /// 4), which returns each line's canonical rendering and its display from
-    /// the same bytes. Until then the bytes are parsed here, which is what
-    /// `tm log` did when it held a whole `LogEntry` in every row.
-    pub fn entries_at(store: &FsStore, lines: &[u64]) -> Result<BTreeMap<u64, LogEntry>, CliError> {
+    /// **This is the switch** (§11.4 step 4): the body is the kernel's `render`
+    /// op ([`kernel_log::render_lines`]), which returns each line's canonical
+    /// rendering — **as the line's own bytes** (D22) — and its display, from the
+    /// same bytes on disk. Until S the bytes were parsed here with
+    /// `LogEntry::parse`, which design §12 has deleted.
+    pub fn entries_at(
+        store: &FsStore,
+        cfg: &Config,
+        today: NaiveDate,
+        lines: &[u64],
+    ) -> Result<BTreeMap<u64, (Box<RawValue>, String)>, CliError> {
         let mut out = BTreeMap::new();
         if lines.is_empty() {
             return Ok(out);
         }
-        let bytes = if store.exists(LOG_PATH) {
-            store.read_bytes(LOG_PATH)?
-        } else {
-            Vec::new()
-        };
-        let wanted: HashSet<u64> = lines.iter().copied().collect();
-        // The same split as `Log::parse_bytes`: on `\n`, a `\r` trimmed, each
-        // segment decoded on its own so one bad line takes only itself.
-        for (i, raw) in bytes.split(|b| *b == b'\n').enumerate() {
-            let line = i as u64 + 1;
-            if !wanted.contains(&line) {
-                continue;
-            }
-            let Ok(text) = std::str::from_utf8(raw) else { continue };
-            if let Ok(e) = LogEntry::parse(text.trim_end_matches('\r')) {
-                out.insert(line, e);
-            }
-        }
+        let bytes = Ctx::log_bytes(store)?;
+        let wanted: BTreeSet<u64> = lines.iter().copied().collect();
+        let tz = Ctx::tz_wire(store, cfg);
+        let now = today.format("%Y-%m-%d").to_string();
+        out.extend(
+            kernel_log::render_lines(&bytes, &now, &tz, lines).map_err(|why| {
+                CliError::msg(format!("{LOG_PATH}: the kernel could not render the selected lines ({why})"))
+            })?,
+        );
         // **Every asked line comes back, or this read fails by name.** The
         // paragraph above is an invariant, not a hope: `Log::parse_bytes`
         // pushes a line into `Log::lines` — and so gives it a `ViewRow` —
@@ -857,27 +991,35 @@ mod tests {
         let text = format!("{}\n", first.join("\n"));
         std::fs::write(dir.path().join(LOG_PATH), &text).expect("write log");
         let store = FsStore::new(dir.path());
+        let cfg = Config { tz: chrono_tz::America::Chicago, ..Config::default() };
+        let today = NaiveDate::from_ymd_opt(2030, 1, 1).expect("date");
 
         // The lines the selection can actually make: both come back.
-        let got = Ctx::entries_at(&store, &[1, 2]).expect("both lines read back");
+        let got = Ctx::entries_at(&store, &cfg, today, &[1, 2]).expect("both lines read back");
         assert_eq!(got.len(), 2);
         // Nothing asked for, nothing read.
-        assert!(Ctx::entries_at(&store, &[]).expect("no lines").is_empty());
+        assert!(Ctx::entries_at(&store, &cfg, today, &[]).expect("no lines").is_empty());
 
         // A line the file does not hold — what a truncating writer leaves
         // behind between the replay's read and this one.
-        let err = Ctx::entries_at(&store, &[1, 5]).expect_err("line 5 cannot read back");
+        let err = Ctx::entries_at(&store, &cfg, today, &[1, 5]).expect_err("line 5 cannot read back");
         let msg = err.to_string();
         assert!(msg.contains("line 5"), "the failure names the line: {msg}");
         assert!(msg.contains(LOG_PATH), "the failure names the file: {msg}");
     }
 
     /// D14 (step R11): the facts nothing reads reach every caller through the
-    /// one door. `Ctx::replay_of` over each log on disk gives the same
-    /// [`tm_core::log::PortedFacts`] as the replay of the text, and both equal
-    /// the values `tm-core/tests/log_ported_facts.rs` pins — so the kernel's
-    /// port (T5, the sealed day records) is compared against what the
-    /// chokepoint returns, not against a second reading.
+    /// one door — **the kernel's, since S**. `Ctx::replay_with` over each log on
+    /// disk gives the [`tm_core::log::PortedFacts`] that
+    /// `tm/tests/log_ported_facts.rs` pins.
+    ///
+    /// **Its comparand is bytes on disk, not a second reader.** Until S this
+    /// also compared the chokepoint against `Log::parse(text).replay(..)`;
+    /// design §12 deleted that reader, and had this test kept only that arm it
+    /// would now be comparing the kernel with itself (README gap 146). The
+    /// pinned snapshot is what survives the deletion, and it is the arm that was
+    /// always doing the work: the values were measured from the fork's own
+    /// reader and committed.
     #[test]
     fn the_chokepoint_returns_the_ported_facts() {
         let corpus = |n: &str| {
@@ -893,17 +1035,27 @@ mod tests {
             ("loggen_1mo_61", loggen::text(&loggen::log(loggen::Rate::SixtyOne, 30))),
         ];
         let cfg = Config { tz: chrono_tz::America::Chicago, ..Config::default() };
+        let (now, today) = late_clock();
         for (name, text) in &logs {
             let dir = tempfile::TempDir::new().expect("tempdir");
             std::fs::create_dir_all(dir.path().join(".tm")).expect("mkdir");
             std::fs::write(dir.path().join(LOG_PATH), text).expect("write log");
             let store = FsStore::new(dir.path());
-            let door = Ctx::replay_of(&store, &cfg).expect("replay_of").replay;
-            let direct = Log::parse(text).replay(None, cfg.tz);
-            assert_eq!(door.ported_facts(), direct.ported_facts(), "{name}");
+            let door = Ctx::replay_with(&store, &cfg, now, today, ReplayScope::All)
+                .expect("replay_with")
+                .replay;
             let json = serde_json::to_value(door.ported_facts()).expect("json");
             assert_eq!(json, snapshot_body(name), "{name}: the pinned values");
         }
+    }
+
+    /// An instant after every log these tests read, in both shapes the door
+    /// wants: `now` is the undo stack's clock and `today` the day the kernel
+    /// answers for. Later than every fixture, so no line is future-dated and
+    /// every day of every log is a past day.
+    fn late_clock() -> (DateTime<FixedOffset>, NaiveDate) {
+        let now = DateTime::parse_from_rfc3339("2030-01-01T09:00:00-05:00").expect("instant");
+        (now, now.date_naive())
     }
 
     /// W-3's repair: the recorder's tail read is the whole replay's rows from
@@ -927,6 +1079,7 @@ mod tests {
             format!("{}\n\u{00e9}\u{0000}\n{}\n", lines[7], lines[8]),
         ];
         let cfg = Config { tz: chrono_tz::America::Chicago, ..Config::default() };
+        let (now, today) = late_clock();
         for (k, text) in texts.iter().enumerate() {
             let dir = tempfile::TempDir::new().expect("tempdir");
             std::fs::create_dir_all(dir.path().join(".tm")).expect("mkdir");
@@ -934,11 +1087,13 @@ mod tests {
                 std::fs::write(dir.path().join(LOG_PATH), text).expect("write log");
             }
             let store = FsStore::new(dir.path());
-            let whole = Ctx::replay_of(&store, &cfg).expect("replay_of").replay;
-            let (count, none) = Ctx::log_tail_of(&store, &cfg, None).expect("count");
+            let whole = Ctx::replay_with(&store, &cfg, now, today, ReplayScope::All)
+                .expect("replay_with")
+                .replay;
+            let (count, none) = Ctx::log_tail_of(&store, &cfg, today, None).expect("count");
             assert_eq!((count, none.len()), (whole.line_count(), 0), "text {k}");
             for after in 0..=whole.line_count() + 2 {
-                let (count, rows) = Ctx::log_tail_of(&store, &cfg, Some(after)).expect("tail");
+                let (count, rows) = Ctx::log_tail_of(&store, &cfg, today, Some(after)).expect("tail");
                 let want: Vec<LogHeader> = whole
                     .headers_from(after + 1)
                     .iter()
@@ -950,28 +1105,52 @@ mod tests {
         }
     }
 
-    /// Step R13: before the switch every scope is the whole log, and each
-    /// keeps the facts D14 ports (the switch changes only
-    /// `Ctx::replay_with`'s body; §11.1's merge must keep them too).
+    /// Step R13, **turned around at S** (README gap 140's sibling): before the
+    /// switch every scope *was* the whole log, because `Ctx::replay_with`
+    /// delegated to the one Rust reader and ignored the scope entirely. Since S
+    /// each scope is the kernel's own (§11.1) and a narrow one **legitimately**
+    /// carries fewer day records — so the old assertion would now be false, and
+    /// asserting it would mean the switch had not happened.
+    ///
+    /// What replaces it is the claim the scopes exist to preserve, and it is
+    /// the one that bites: **every scope answers, and every all-time fact is
+    /// whole at every scope** (design §8.4's column **A**; gaps 135 and 136).
+    /// Those are exactly the facts a narrowing could silently shrink — a
+    /// `tm log` total that counted only the scope's rows, or a recurrence
+    /// anchor that lost the dates below the horizon.
+    ///
+    /// The sharper per-scope claim — that each day record a narrow scope *does*
+    /// carry is the whole log's — is made where it has a comparand that is not
+    /// the kernel: `tm/tests/kernel_log_door.rs`.
     #[test]
-    fn every_scope_is_the_whole_replay_before_the_switch() {
+    fn every_all_time_fact_is_whole_at_every_scope_after_the_switch() {
         let d = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").expect("date");
         let text = loggen::text(&loggen::log(loggen::Rate::SixtyOne, 30));
         let cfg = Config { tz: chrono_tz::America::Chicago, ..Config::default() };
+        let (now, today) = late_clock();
         let dir = tempfile::TempDir::new().expect("tempdir");
         std::fs::create_dir_all(dir.path().join(".tm")).expect("mkdir");
         std::fs::write(dir.path().join(LOG_PATH), &text).expect("write log");
         let store = FsStore::new(dir.path());
-        let whole = Ctx::replay_of(&store, &cfg).expect("replay_of").replay;
+        let whole = Ctx::replay_with(&store, &cfg, now, today, ReplayScope::All)
+            .expect("replay_with")
+            .replay;
+        // Not vacuous: the log really does hold the days and the completions
+        // the loop below says survive every narrowing.
+        assert_eq!(whole.line_count(), text.lines().count() as u64, "the All scope reads every line");
+        assert!(whole.days.len() > 7, "the fixture must be wider than one scope: {}", whole.days.len());
+        assert!(!whole.done_date_totals.is_empty(), "the fixture logs no completion");
         for scope in [
             ReplayScope::Hot,
             ReplayScope::Dates { from: d("2026-09-01"), to: d("2026-09-07") },
             ReplayScope::All,
         ] {
-            let r = Ctx::replay_with(&store, &cfg, scope).expect("replay_with").replay;
-            assert!(r == whole, "{scope}");
-            assert_eq!(r.view(), whole.view(), "{scope}");
-            assert_eq!(r.ported_facts(), whole.ported_facts(), "{scope}");
+            let r = Ctx::replay_with(&store, &cfg, now, today, scope).expect("replay_with").replay;
+            assert_eq!(r.entry_count(), whole.entry_count(), "{scope}: entryCount is all-time");
+            assert_eq!(r.line_count(), whole.line_count(), "{scope}: the line count is the file's");
+            assert_eq!(r.done_date_totals, whole.done_date_totals, "{scope}: the done-date totals");
+            assert_eq!(r.done_items, whole.done_items, "{scope}: the done items");
+            assert_eq!(r.last_done, whole.last_done, "{scope}: the last completion per item");
         }
     }
 }

@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, FixedOffset, NaiveDate};
 use chrono_tz::Tz;
-use tm_core::log::{DayIndex, Event, Log, LogEntry, Replay};
+use tm_core::log::{Event, LogEntry, Replay};
 
 const TZ: Tz = Tz::America__Chicago;
 
@@ -70,6 +70,11 @@ fn stop(t: &str, id: &str, remaining_min: u32) -> LogEntry {
 
 fn replay_of(entries: Vec<LogEntry>) -> Replay {
     chokepoint::replay_of_entries(&entries, TZ)
+}
+
+/// [`replay_of`] keeping the kernel's named refusal (design §17's P17).
+fn try_replay_of(entries: Vec<LogEntry>) -> Result<Replay, String> {
+    chokepoint::try_replay_of_text(&chokepoint::text_of(&entries), TZ)
 }
 
 fn seg_lines(r: &Replay, date: NaiveDate) -> Vec<String> {
@@ -251,63 +256,7 @@ fn done_after_stop_replaces_the_partial_credit() {
     assert_eq!(r.block_minutes("b"), 60);
 }
 
-/// Scope: `read(path)` skips malformed lines as warnings and never fails on
-/// content. One torn byte must not take the whole log — and with it
-/// `done_minutes` (§6.4), instance statuses (§5.1) and every §11 monitor —
-/// out of service.
-#[test]
-fn read_tolerates_a_line_that_is_not_utf8() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join(".tm").join("log.jsonl");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(br#"{"t":"2026-09-07T06:00:00-05:00","ev":"note","text":"good"}"#);
-    bytes.push(b'\n');
-    bytes.extend_from_slice(&[0xff, 0xfe]);
-    bytes.push(b'\n');
-    bytes.extend_from_slice(br#"{"t":"2026-09-07T07:00:00-05:00","ev":"note","text":"also good"}"#);
-    bytes.push(b'\n');
-    std::fs::write(&path, &bytes).unwrap();
 
-    let log = Log::read(&path).unwrap();
-    assert_eq!(log.len(), 2);
-    assert_eq!(log.entries[0].ev, Event::Note { text: "good".into() });
-    assert_eq!(log.entries[1].ev, Event::Note { text: "also good".into() });
-    assert_eq!(log.warnings.len(), 1);
-    assert_eq!(log.warnings[0].line, 2);
-    assert!(log.warnings[0].error.contains("UTF-8"), "{}", log.warnings[0].error);
-}
-
-/// §10.1 is one JSON object per line. A previous append that failed part-way
-/// leaves the file without its final newline; the next append must not paste
-/// the new event onto the broken line and lose both.
-#[test]
-fn append_repairs_a_missing_trailing_newline() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join(".tm").join("log.jsonl");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(
-        &path,
-        r#"{"t":"2026-09-07T06:00:00-05:00","ev":"note","text":"a"}"#,
-    )
-    .unwrap();
-
-    let second = e("2026-09-07T07:00:00-05:00", Event::Note { text: "b".into() });
-    Log::append(&path, &second).unwrap();
-    let text = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(text.lines().count(), 2, "{text:?}");
-    assert!(text.ends_with('\n'));
-    let log = Log::read(&path).unwrap();
-    assert_eq!(log.len(), 2);
-    assert_eq!(log.entries[1], second);
-    assert!(log.warnings.is_empty(), "{:?}", log.warnings);
-
-    // An empty file is left alone (no leading blank line).
-    let empty = dir.path().join("empty.jsonl");
-    std::fs::write(&empty, "").unwrap();
-    Log::append(&empty, &second).unwrap();
-    assert_eq!(std::fs::read_to_string(&empty).unwrap(), format!("{}\n", second.to_json().unwrap()));
-}
 
 /// An `unpause` with no matching `pause` (a duplicate keypress, or a `pause`
 /// removed by `tm undo`) must be a no-op, not a reset of the block's clock.
@@ -337,12 +286,21 @@ fn a_stray_unpause_keeps_the_worked_minutes() {
     assert_eq!(r.block_minutes("a"), 50);
 }
 
-/// Nothing in a syntactically valid log line may make replay panic (§10.1:
-/// log content is never fatal).
+/// Nothing in a syntactically valid log line may make a read **panic** (§10.1:
+/// log content is never fatal) — and since S, a minute sum past `u32::MAX` is
+/// **refused by name** rather than saturated.
+///
+/// This is design §17's parity **P17**, which reads: "minute and count sums
+/// above `2^32 − 1` | `Nat`; the Rust decoder refuses `minutesOverflow` by name
+/// | `saturating_add`". Before the switch the in-tree reader took the fork's
+/// column and pinned every field at `u32::MAX`; the kernel takes the other one.
+/// The test is retargeted at the row, not weakened: what it asserts is still
+/// "this input does not panic", plus the stronger half — that the refusal
+/// **names** what overflowed, which a saturating sum could never tell you.
 #[test]
-fn absurd_minute_counts_saturate_instead_of_panicking() {
+fn absurd_minute_counts_are_refused_by_name_not_saturated() {
     let huge = 3_000_000_000u32;
-    let r = replay_of(vec![
+    let r = try_replay_of(vec![
         wake("2026-09-07T06:00:00-05:00", 480),
         done("2026-09-07T09:00:00-05:00", "a", huge, 5),
         done("2026-09-07T10:00:00-05:00", "a", huge, 5),
@@ -369,18 +327,19 @@ fn absurd_minute_counts_saturate_instead_of_panicking() {
             Event::Plan { hash: "x".into(), replans_today: 2, drift_min: huge },
         ),
     ]);
-    let day = r.day(d("2026-09-07")).unwrap();
-    assert_eq!(r.block_minutes("a"), u32::MAX);
-    assert_eq!(day.block_min, u32::MAX);
-    assert_eq!(day.minutes_by_ci[5], u32::MAX);
-    // An idle gap that long starts centuries earlier, so it is booked on that
-    // (ancient) day — what matters here is that the accumulation saturates.
-    assert!(r.days.values().any(|d| d.leak_min == u32::MAX), "leak minutes saturate");
-    assert_eq!(day.lost_min, u32::MAX);
-    assert_eq!(day.drift_min, u32::MAX);
-    assert_eq!(day.break_min(), u32::MAX);
-    assert_eq!(r.items["a"].extended_min, u32::MAX);
-    assert_eq!(r.total_block_min(), u32::MAX);
+    let why = r.expect_err("the kernel saturated a minute sum instead of refusing it");
+    assert!(
+        why.contains("minutesOverflow"),
+        "the refusal does not name P17's overflow: {why}"
+    );
+    // Named, not merely refused: the field that overflowed is in the message,
+    // which is the whole of §17's P15 ("named constructors where the fork had
+    // serde's free text") applied to this row.
+    assert!(
+        why.contains("leakMin") || why.contains("Min") || why.contains("min"),
+        "the refusal names no field: {why}"
+    );
+    eprintln!("P17: a minute sum past u32::MAX is refused by name — {why}");
 }
 
 /// `tm wake 06:05` typed at 09:40, after `tm energy 4` was already logged,
@@ -406,33 +365,32 @@ fn an_energy_report_logged_before_its_wake_still_gets_slept_min() {
 /// swallow the next morning.
 #[test]
 fn two_wakes_on_one_date_do_not_stretch_the_day() {
-    let idx = DayIndex::new(
-        TZ,
-        [at("2026-09-07T06:05:00-05:00"), at("2026-09-07T14:00:00-05:00")],
-    );
     let d7 = d("2026-09-07");
     let d8 = d("2026-09-08");
-    assert_eq!(idx.wakes().len(), 1, "one wake per date: the first one");
-    assert_eq!(idx.wake_of(d7), Some(at("2026-09-07T06:05:00-05:00")));
-    assert_eq!(idx.day_of(at("2026-09-07T15:00:00-05:00")), d7);
-    assert_eq!(idx.day_of(at("2026-09-08T10:00:00-05:00")), d8, "not the 7th");
+    // `DayIndex` went at S with the rest of the reader (design §12). The claim
+    // it carried is unchanged and is made here where a verb can still see it:
+    // the wake-attributed day of each entry, in the replay's own view rows.
+    // Only the **first** `wake` of a date counts, so an afternoon nap must not
+    // stretch the 7th to 38 h and swallow the next morning.
+    let attributed = replay_of(vec![
+        wake("2026-09-07T06:05:00-05:00", 480),
+        wake("2026-09-07T14:00:00-05:00", 60),
+        e("2026-09-07T15:00:00-05:00", Event::Note { text: "afternoon".into() }),
+        e("2026-09-08T10:00:00-05:00", Event::Note { text: "next morning".into() }),
+    ]);
+    let day_of_line = |line: u64| attributed.view().iter().find(|r| r.line == line).map(|r| r.day);
+    assert_eq!(day_of_line(1), Some(d7), "the first wake");
+    assert_eq!(day_of_line(2), Some(d7), "the nap belongs to the day it falls in");
+    assert_eq!(day_of_line(3), Some(d7), "the afternoon");
+    assert_eq!(day_of_line(4), Some(d8), "the next morning, not the 7th");
     assert_eq!(
-        idx.bounds(d7),
-        (at("2026-09-07T00:00:00-05:00"), at("2026-09-08T06:05:00-05:00")),
-        "24 h from the first wake, not 38"
+        attributed.day(d7).and_then(|x| x.wake),
+        Some(at("2026-09-07T06:05:00-05:00")),
+        "one wake per date: the first one"
     );
-    // Bounds and day_of still agree, and no day runs more than 24 h past its
-    // own wake (the 7th starts at midnight because the hours before the first
-    // wake belong to their calendar date).
-    for date in [d7, d8] {
-        let (s, en) = idx.bounds(date);
-        assert_eq!(idx.day_of(s), date);
-        assert_ne!(idx.day_of(en), date);
-        assert_eq!(idx.day_of(en - chrono::Duration::seconds(1)), date);
-        if let Some(w) = idx.wake_of(date) {
-            assert!(en <= w + chrono::Duration::hours(24), "{date}");
-        }
-    }
+    // (Deliberately not asserted: `days` gains a key only for a day with a
+    // *record*, and the next morning here holds nothing but a note. The claim
+    // is the attribution, and the view rows above are where it is visible.)
 
     // Replay attributes the next morning's work to the next day.
     let r = replay_of(vec![

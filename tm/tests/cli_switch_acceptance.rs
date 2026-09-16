@@ -505,7 +505,7 @@ fn a_now_before_the_ledger_is_answered_and_not_persisted() {
 /// **T9**: an unwritable cache is not fatal — the checkpoint is kept in memory for that process and
 /// exactly one notice says so (CRIT 26; `kernel_log::unwritable_notice`).
 ///
-/// **Ignored until S, and not weakened to fit.** The notice exists (`kernel_log.rs`) but has no
+/// **Un-ignored at S — the body is the one that was already written.** The notice exists (`kernel_log.rs`) but has no
 /// emitter: nothing under `tm/src` calls it, because nothing under `tm/src` calls `kernel_log` at
 /// all. Asserting "at most one notice" would pass today and assert nothing, so the body below is
 /// the post-switch one and S's acceptance is to delete the `#[ignore]`. The half that *is* true
@@ -513,7 +513,6 @@ fn a_now_before_the_ledger_is_answered_and_not_persisted() {
 /// unwritable cache directory does not move an answer (driven by hand at this commit, 0 differences).
 #[cfg(unix)]
 #[test]
-#[ignore = "the notice has no emitter until S: nothing in tm/src calls kernel_log::unwritable_notice"]
 fn an_unwritable_cache_rebuilds_in_memory_with_one_notice() {
     use std::os::unix::fs::PermissionsExt;
 
@@ -551,13 +550,12 @@ fn an_unwritable_cache_rebuilds_in_memory_with_one_notice() {
 /// **T9**: a hand-written `undo` reaching further back than any rebuild can window fails **by
 /// name**, and `tm check` is the one verb that still runs (OWNER Q9 (iii), D18, parity P31).
 ///
-/// **Ignored until S, and not weakened to fit.** `GenesisError::ReachTooFar` is built and tested in
+/// **Un-ignored at S — the body is the one that was already written.** `GenesisError::ReachTooFar` is built and tested in
 /// `kernel_log.rs`, but it has no call site in the binary: gap 120 part 3 has said so since W-6, and
 /// nothing in `tm/src` calls `kernel_log`. Today the Rust reader replays the whole log and this
 /// input simply works, so there is no failure to name. The body is the post-switch one; S's
 /// acceptance is to delete the `#[ignore]`.
 #[test]
-#[ignore = "reachTooFar has no call site until S (gap 120 part 3, D18 (iii))"]
 fn a_hand_undo_beyond_the_rebuild_bound_fails_by_name() {
     // A log longer than the resend cap (`kernel_log::RESEND_LINES` = 8,192 lines /
     // `RESEND_BYTES` = 1,536 KiB), so that a refusal needing a rebuild from the checkpoint's cut

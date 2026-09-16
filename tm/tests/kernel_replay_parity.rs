@@ -78,21 +78,11 @@ use serde_json::{json, Value};
 // `kernel_log::decode_facts` builds them now (step X1), and T5 names only what
 // its own comparison reads.
 use tm_core::log::{
-    fmt_timestamp, parse_instance_status, Event, IdleMark, Interruption, LogEntry, Replay, SegmentKind, ViewRow,
+    Event, LogEntry, Replay,
 };
-use tm_core::model::InstanceStatus;
 
 /// How many generated sequences T5 runs (design §14.4).
 const SEQUENCES: u64 = 256;
-
-thread_local! {
-    /// C4: how many `latest_named` queries [`assert_parity`] has compared on this test's thread.
-    static LATEST_NAMED_QUERIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-fn latest_named_queries() -> usize {
-    LATEST_NAMED_QUERIES.with(std::cell::Cell::get)
-}
 
 // ---------------------------------------------------------------------------
 // The two readers.
@@ -219,15 +209,6 @@ struct Completion {
     done_first: BTreeMap<String, (Option<i64>, u64)>,
 }
 
-fn status_name(s: InstanceStatus) -> &'static str {
-    match s {
-        InstanceStatus::Pending => "pending",
-        InstanceStatus::Done => "done",
-        InstanceStatus::Missed => "missed",
-        InstanceStatus::Expired => "expired",
-        InstanceStatus::Skipped => "skipped",
-    }
-}
 
 
 /// The instant order of two stamps (chrono's: the offset is not compared).
@@ -235,110 +216,8 @@ fn instant_of(s: &Stamp) -> (i64, u32) {
     (s.0, s.1)
 }
 
-/// The Rust's completion family, from the in-tree `Replay`. The named records
-/// and the warnings need each occurrence's line, which the fork's lists do not
-/// carry: they are walked beside the surviving rows of their kind, in file order,
-/// and checked against them.
-fn rust_completion(r: &Replay, entries: &BTreeMap<u64, LogEntry>, tz: Tz) -> Completion {
-    let done_items: BTreeSet<String> = r.last_done.keys().cloned().collect();
-    assert_eq!(done_items, r.done_items, "the fork's done_items are its last_done keys");
-    let mut out = Completion {
-        last_done: r.last_done.iter().map(|(k, t)| (k.clone(), stamp_of(t))).collect(),
-        done_dates: r.done_dates.iter().map(|(k, ds)| (k.clone(), ds.iter().map(|d| day_number(*d)).collect())).collect(),
-        done_first: r.done_dates.keys().map(|id| (id.clone(), (r.done_date_first(id).map(day_number), r.done_date_count(id) as u64))).collect(),
-        instances: r
-            .instances
-            .iter()
-            .flat_map(|(item, m)| {
-                m.iter().map(move |(inst, rec)| {
-                    (
-                        (item.clone(), inst.clone()),
-                        (stamp_of(&rec.t), status_name(rec.status).to_string(), rec.raw_status.clone(), rec.actual_min.map(u64::from)),
-                    )
-                })
-            })
-            .collect(),
-        ..Completion::default()
-    };
-    let survivors: Vec<_> = r.view().iter().filter(|row| !row.cancelled).collect();
-    let ev = |row: &ViewRow| &entries.get(&row.line).expect("the row's entry").ev;
-    // The replay warnings: one a surviving routine with a status the fork does not read.
-    for row in &survivors {
-        if let Event::Routine { status, .. } = ev(row) {
-            if parse_instance_status(status.as_str()).is_none() {
-                out.warnings.push((row.line, status.clone()));
-            }
-        }
-    }
-    let texts: Vec<String> = out
-        .warnings
-        .iter()
-        .map(|(line, raw)| {
-            let row = survivors.iter().find(|row| row.line == *line).expect("the warned row");
-            format!("{}: unknown routine status {raw:?}", fmt_timestamp(&row.t))
-        })
-        .collect();
-    assert_eq!(texts, r.warnings, "Replay.warnings is one message a surviving unknown status, in file order");
-    // Every surviving `event` row, by name, in file order: the occurrence lists the
-    // narrowed `Replay.named` (step X1) no longer keeps, rebuilt from the entries so
-    // the kernel's `named` records are still compared against every occurrence.
-    let mut lists: BTreeMap<String, Vec<(u64, Stamp, Option<String>)>> = BTreeMap::new();
-    for row in &survivors {
-        if let Event::Named { name, id } = ev(row) {
-            lists.entry(name.clone()).or_default().push((row.line, stamp_of(&row.t), id.clone()));
-        }
-    }
-    for (name, occ) in &lists {
-        let mut keys: BTreeMap<Option<String>, NamedRow> = BTreeMap::new();
-        for (line, t, who) in occ {
-            let (line, t) = (*line, *t);
-            let e_id = who;
-            let date = |s: &Stamp| day_number(date_in(s, tz));
-            keys.entry(e_id.clone())
-                .and_modify(|k| {
-                    // `t >= latest` and `(date, t) >= (date, latest_dated)`: a later line wins a tie.
-                    if instant_of(&t) >= instant_of(&k.1) {
-                        k.0 = line;
-                        k.1 = t;
-                    }
-                    if (date(&t), instant_of(&t)) >= (date(&k.3), instant_of(&k.3)) {
-                        k.2 = line;
-                        k.3 = t;
-                    }
-                })
-                .or_insert((line, t, line, t));
-        }
-        for (id, k) in keys {
-            out.named.insert((name.clone(), id), k);
-        }
-    }
-    out
-}
 
-/// The local date of a stamp in `tz`.
-fn date_in(s: &Stamp, tz: Tz) -> NaiveDate {
-    DateTime::from_timestamp(s.0 - EPOCH_FROM_CE, s.1).expect("a stamp in range").with_timezone(&tz).date_naive()
-}
 
-/// **`Replay::latest_named(name, id, tz)` from the kernel's per-key records**: the
-/// key addressed to nobody and the key addressed to `id` merged, the later line
-/// winning a tie, as the fork's walk over `events[name]` does.
-fn kernel_latest_named(c: &Completion, name: &str, id: &str, tz: Tz) -> Option<(Stamp, Stamp)> {
-    let keys = [c.named.get(&(name.to_string(), None)), c.named.get(&(name.to_string(), Some(id.to_string())))];
-    let mut best: Option<NamedRow> = None;
-    for k in keys.into_iter().flatten() {
-        best = Some(match best {
-            None => *k,
-            Some(b) => {
-                let date = |s: &Stamp| day_number(date_in(s, tz));
-                let latest = if (instant_of(&k.1), k.0) > (instant_of(&b.1), b.0) { (k.0, k.1) } else { (b.0, b.1) };
-                let dated = if (date(&k.3), instant_of(&k.3), k.2) > (date(&b.3), instant_of(&b.3), b.2) { (k.2, k.3) } else { (b.2, b.3) };
-                (latest.0, latest.1, dated.0, dated.1)
-            }
-        });
-    }
-    best.map(|b| (b.1, b.3))
-}
 
 /// A date as the kernel counts it: days since 0001-01-01 (chrono counts that
 /// date as day 1 from the common era).
@@ -391,109 +270,7 @@ fn j_interrupt(v: &Value) -> (u64, InterruptRow) {
 }
 
 
-fn interrupt_row(i: &Interruption) -> InterruptRow {
-    (i.start.as_ref().map(stamp_of), i.end.as_ref().map(stamp_of), day_number(i.day), i.id.clone(), u64::from(i.lost_min), i.dropped.clone())
-}
 
-/// The Rust's block family, from the in-tree `Replay`.
-fn rust_block(r: &Replay) -> Block {
-    Block {
-        days: r
-            .days
-            .iter()
-            .map(|(d, day)| {
-                let block = DayBlock {
-                    first_start: day.first_start.as_ref().map(stamp_of),
-                    starts: day.starts.iter().map(|s| (stamp_of(&s.t), s.id.clone(), u64::from(s.pred), s.rep.map(u64::from))).collect(),
-                    block_min: u64::from(day.block_min),
-                    blocks_done: u64::from(day.blocks_done),
-                    load_fifths: day.load_fifths,
-                    by_ci: day.minutes_by_ci.iter().map(|m| u64::from(*m)).collect(),
-                    ci_unknown: day.ci_unknown.iter().map(|(k, v)| (k.clone(), u64::from(*v))).collect(),
-                    done: day.done.clone(),
-                    lost_min: u64::from(day.lost_min),
-                    dropped: day.dropped.clone(),
-                    segments: day
-                        .segments
-                        .iter()
-                        .map(|g| {
-                            let (kind, args) = match &g.kind {
-                                SegmentKind::Block { id } => ("block", vec![Some(id.clone())]),
-                                SegmentKind::Pause { id } => ("pause", vec![Some(id.clone())]),
-                                SegmentKind::Interrupt { id } => ("interrupt", vec![id.clone()]),
-                                SegmentKind::Break { r#where } => ("break", vec![r#where.clone()]),
-                                SegmentKind::Routine { item, inst } => ("routine", vec![Some(item.clone()), Some(inst.clone())]),
-                                SegmentKind::Idle { attributed } => ("idle", vec![Some(attributed.clone())]),
-                            };
-                            (stamp_of(&g.start), stamp_of(&g.end), kind.to_string(), args)
-                        })
-                        .collect(),
-                };
-                (day_number(*d), block)
-            })
-            .collect(),
-        items: r
-            .items
-            .iter()
-            .map(|(id, it)| {
-                let item = ItemBlock {
-                    minutes: u64::from(it.minutes),
-                    blocks: u64::from(it.blocks),
-                    by_day: it.minutes_by_day.iter().map(|(d, m)| (day_number(*d), u64::from(*m))).collect(),
-                    done_at: it.done_at.iter().map(stamp_of).collect(),
-                    partial_done_at: it.partial_done_at.iter().map(stamp_of).collect(),
-                    stops: u64::from(it.stops),
-                    extended_min: u64::from(it.extended_min),
-                };
-                (id.clone(), item)
-            })
-            .collect(),
-        energy: r
-            .energy
-            .iter()
-            .map(|o| {
-                (
-                    o.line,
-                    stamp_of(&o.t),
-                    day_number(o.day),
-                    u64::from(o.pred),
-                    u64::from(o.rep),
-                    o.hsw,
-                    o.loc.clone(),
-                    o.slept_min.map(u64::from),
-                    o.went.map(u64::from),
-                    o.id.clone(),
-                    o.from_start,
-                )
-            })
-            .collect(),
-        durations: r
-            .durations
-            .iter()
-            .map(|o| {
-                (
-                    o.line,
-                    stamp_of(&o.t),
-                    day_number(o.day),
-                    o.id.clone(),
-                    u64::from(o.ci),
-                    o.tags.clone(),
-                    u64::from(o.est_min),
-                    u64::from(o.actual_min),
-                    o.went.map(u64::from),
-                    o.partial,
-                )
-            })
-            .collect(),
-        interrupts: r.interrupts.iter().map(interrupt_row).collect(),
-        open_block: r
-            .open_block
-            .as_ref()
-            .map(|b| (b.id.clone(), stamp_of(&b.started), u64::from(b.worked_min), b.since.as_ref().map(stamp_of), b.paused)),
-        open_interrupt: r.open_interrupt.as_ref().map(interrupt_row),
-        last_effective: r.last_effective_t.as_ref().map(stamp_of),
-    }
-}
 
 /// C5: a location change, `(stamp, loc)`.
 type LocRow = (Stamp, String);
@@ -543,73 +320,6 @@ struct DayFam {
 }
 
 
-/// The Rust's day family, from the in-tree `Replay`. The demotions and closes need
-/// each record's day, which the fork's records do not carry: they are walked beside
-/// the surviving rows of their kind, in file order, and checked against them.
-fn rust_day(r: &Replay, entries: &BTreeMap<u64, LogEntry>) -> DayFam {
-    let survivors: Vec<_> = r.view().iter().filter(|row| !row.cancelled).collect();
-    let mut demotions = Vec::new();
-    let mut per_id: BTreeMap<String, usize> = BTreeMap::new();
-    let mut closes = Vec::new();
-    for row in &survivors {
-        match &entries.get(&row.line).expect("the row's entry").ev {
-            Event::Demote { id, .. } => {
-                let k = per_id.entry(id.clone()).or_insert(0);
-                let d = &r.demotions.get(id).expect("the demotions of a surviving demote")[*k];
-                *k += 1;
-                assert_eq!(stamp_of(&d.t), stamp_of(&row.t), "demotions[{id}] in file order");
-                demotions.push((day_number(row.day), stamp_of(&d.t), d.id.clone(), d.from.clone(), d.to.clone(), u64::from(d.est_min), d.stamp.map(|s| s.to_string())));
-            }
-            Event::Close { .. } => {
-                let c = &r.closes[closes.len()];
-                assert_eq!(stamp_of(&c.t), stamp_of(&row.t), "closes in file order");
-                closes.push((day_number(row.day), stamp_of(&c.t), c.period.clone(), c.key.clone()));
-            }
-            _ => {}
-        }
-    }
-    assert_eq!(closes.len(), r.closes.len(), "closes are the surviving close rows");
-    for (id, v) in &r.demotions {
-        assert_eq!(per_id.get(id).copied(), Some(v.len()), "demotions[{id}] are its surviving rows");
-    }
-    DayFam {
-        days: r
-            .days
-            .iter()
-            .map(|(d, day)| {
-                let rec = DayRec {
-                    wake: day.wake.as_ref().map(stamp_of),
-                    slept_min: day.slept_min.map(u64::from),
-                    onset_min: day.onset_min.map(u64::from),
-                    arrival: day.arrival.as_ref().map(stamp_of),
-                    loc: day.loc.clone(),
-                    window: day.window.as_ref().map(|w| (w[0].clone(), w[1].clone())),
-                    budget: day.budget.map(u64::from),
-                    loc_changes: day.loc_changes.iter().map(|(t, l)| (stamp_of(t), l.clone())).collect(),
-                    leak_min: u64::from(day.leak_min),
-                    longest_leak: u64::from(day.longest_leak),
-                    idle: day.idle.iter().map(|i| (stamp_of(&i.t), day_number(i.day), i.attributed.clone(), u64::from(i.min))).collect(),
-                    breaks: day
-                        .breaks
-                        .iter()
-                        .map(|b| (stamp_of(&b.t), day_number(b.day), u64::from(b.planned_min), b.actual_min.map(u64::from), b.r#where.clone()))
-                        .collect(),
-                    routine_min: u64::from(day.routine_min),
-                    plans: u64::from(day.plans),
-                    replans_today: u64::from(day.replans_today),
-                    drift_min: u64::from(day.drift_min),
-                    last_plan_hash: day.last_plan_hash.clone(),
-                };
-                (day_number(*d), rec)
-            })
-            .collect(),
-        demotions,
-        closes,
-        dropped: r.dropped_items.clone(),
-        longest_leak: r.longest_leak.as_ref().map(|l| (stamp_of(&l.t), day_number(l.day), u64::from(l.min))),
-        unknown: u64::from(r.unknown),
-    }
-}
 
 /// **The kernel's facts** (C6: design §8.4's view of the log, every reading grouped by where it lives: `days`,
 /// `window`, `items`, `instOther`, `named`, `open`, and the all-time counts), decoded into the families the
@@ -1033,376 +743,39 @@ fn kernel_replay(answer: &Value, tz: Tz) -> Replay {
     kernel_log::decode_facts(answer, tz).expect("the kernel's facts decode into a Replay")
 }
 
-// ===========================================================================
-// BEGIN THE IN-TREE CROSS-CHECK — THE ARM §12 DELETES (gap 146, gap 137)
-//
-// Everything between this banner and its END names a symbol design §12 deletes
-// at S: `Log::parse` through the test chokepoint's `replay_of_text`,
-// `entries_of_text` and `warning_lines_of_text`.  It is a **cross-check**, not
-// the comparand: `assert_parity_answer` asks the fork FIRST (`fork_arm`, the
-// frozen fork-point answers on disk) and only then asks the in-tree reader.
-//
-// At S this whole region goes, mechanically, with every line outside it marked
-// `// S: deleted with the reader`.  Nothing else in this file names a deleted
-// symbol, and `no_reader_reference_escapes_the_deletion_region` is what checks
-// that rather than asserting it.
-// ===========================================================================
-mod in_tree {
-    use super::*;
-
-/// **The in-tree reader's facts**, through the test chokepoint.
-pub fn rust_facts(text: &str, tz: Tz) -> Facts {
-    let r = replay::replay_of_text(text, tz);
-    // The lines' payloads, which `ViewRow` no longer carries (step X1): the fork
-    // side of the comparison still reads them, through the test chokepoint.
-    let entries: BTreeMap<u64, LogEntry> = replay::entries_of_text(text).into_iter().collect();
-    Facts {
-        cancelled: r.view().iter().filter(|row| row.cancelled).map(|row| row.line).collect(),
-        days: r.view().iter().map(|row| (row.line, day_number(row.day))).collect(),
-        block: rust_block(&r),
-        completion: rust_completion(&r, &entries, tz),
-        day: rust_day(&r, &entries),
-        seams: r
-            .seams
-            .iter()
-            .map(|(d, s)| {
-                let marks = s
-                    .idle_marks
-                    .iter()
-                    .map(|m| match m {
-                        IdleMark::Pause(t) => ("pause".to_string(), stamp_of(t), None),
-                        IdleMark::Interrupt(t) => ("interrupt".to_string(), stamp_of(t), None),
-                        IdleMark::Unpause(t) => ("unpause".to_string(), stamp_of(t), None),
-                        IdleMark::Resume(t) => ("resume".to_string(), stamp_of(t), None),
-                        IdleMark::Break { t, actual_min } => ("break".to_string(), stamp_of(t), actual_min.map(u64::from)),
-                    })
-                    .collect();
-                (day_number(*d), (s.since_break.as_ref().map(stamp_of), marks, s.last_t.as_ref().map(stamp_of)))
-            })
-            .collect(),
-        rows: r
-            .view()
-            .iter()
-            .map(|row| (row.line, row.tag.clone(), row.id.clone(), day_number(row.day), row.cancelled, row.display()))
-            .collect(),
-        counts: (r.entry_count() as u64, r.line_count(), r.days.keys().last().map(|d| day_number(*d))),
-        warnings: replay::warning_lines_of_text(text),
-    }
-}
-
-/// **The in-tree cross-check**: the kernel's facts `k` against the facts the
-/// in-tree Rust reader derives from the same text.
-///
-/// This is what T5 compared against *first* until W-11. It is the fork's reader
-/// plus phase R's ≈790 lines, so it is a sharper instrument than the fork while
-/// it exists — it reaches `rows`, the per-line day index and the displays, which
-/// the fork's serialised `Replay` does not carry — and it is worthless the
-/// instant `replay_of_text`'s body becomes the kernel. Hence the banner.
-pub fn cross_check(name: &str, text: &str, tz: Tz, answer: &Value, k: &Facts) {
-    let r = rust_facts(text, tz);
-    // C5: the kernel creates every day the fork creates, and no other: its block
-    // records and its day records are one set of days, the Rust's.
-    let (kd, rd): (BTreeSet<_>, BTreeSet<_>) = (k.block.days.keys().collect(), r.block.days.keys().collect());
-    assert!(k.block.days.keys().eq(k.day.days.keys()), "{name} ({}): the kernel's block and day records name different days", tz.name());
-    if kd != rd {
-        panic!(
-            "{name} ({}): the days differ\n kernel only: {:?}\n rust only: {:?}",
-            tz.name(),
-            kd.difference(&rd).collect::<Vec<_>>(),
-            rd.difference(&kd).collect::<Vec<_>>()
-        );
-    }
-    if k.day != r.day {
-        let (kf, rf) = (&k.day, &r.day);
-        let mut why = Vec::new();
-        for (d, x) in &rf.days {
-            if kf.days.get(d) != Some(x) {
-                why.push(format!("day {d}:\n  kernel {:?}\n  rust   {:?}", kf.days.get(d), x));
-            }
-        }
-        if kf.demotions != rf.demotions {
-            why.push(format!("demotions:\n  kernel {:?}\n  rust   {:?}", kf.demotions, rf.demotions));
-        }
-        if kf.closes != rf.closes {
-            why.push(format!("closes:\n  kernel {:?}\n  rust   {:?}", kf.closes, rf.closes));
-        }
-        if (&kf.dropped, &kf.longest_leak, kf.unknown) != (&rf.dropped, &rf.longest_leak, rf.unknown) {
-            why.push(format!(
-                "dropped/longest leak/unknown:\n  kernel {:?} {:?} {}\n  rust   {:?} {:?} {}",
-                kf.dropped, kf.longest_leak, kf.unknown, rf.dropped, rf.longest_leak, rf.unknown
-            ));
-        }
-        why.truncate(5);
-        panic!("{name} ({}): the day family differs\n{}", tz.name(), why.join("\n"));
-    }
-    if k.block != r.block {
-        let (kb, rb) = (&k.block, &r.block);
-        let mut why = Vec::new();
-        for (d, b) in &rb.days {
-            if kb.days.get(d) != Some(b) {
-                why.push(format!("day {d}:\n  kernel {:?}\n  rust   {:?}", kb.days.get(d), b));
-            }
-        }
-        for (i, b) in &rb.items {
-            if kb.items.get(i) != Some(b) {
-                why.push(format!("item {i}:\n  kernel {:?}\n  rust   {:?}", kb.items.get(i), b));
-            }
-        }
-        for i in kb.items.keys().filter(|i| !rb.items.contains_key(*i)) {
-            why.push(format!("item {i}: only the kernel has it"));
-        }
-        if kb.energy != rb.energy {
-            why.push(format!("energy:\n  kernel {:?}\n  rust   {:?}", kb.energy, rb.energy));
-        }
-        if kb.durations != rb.durations {
-            why.push(format!("durations:\n  kernel {:?}\n  rust   {:?}", kb.durations, rb.durations));
-        }
-        if kb.interrupts != rb.interrupts {
-            why.push(format!("interrupts:\n  kernel {:?}\n  rust   {:?}", kb.interrupts, rb.interrupts));
-        }
-        if (&kb.open_block, &kb.open_interrupt, &kb.last_effective) != (&rb.open_block, &rb.open_interrupt, &rb.last_effective) {
-            why.push(format!(
-                "open/last:\n  kernel {:?} {:?} {:?}\n  rust   {:?} {:?} {:?}",
-                kb.open_block, kb.open_interrupt, kb.last_effective, rb.open_block, rb.open_interrupt, rb.last_effective
-            ));
-        }
-        why.truncate(5);
-        panic!("{name} ({}): the block family differs\n{}", tz.name(), why.join("\n"));
-    }
-    if k.completion != r.completion {
-        let (kc, rc) = (&k.completion, &r.completion);
-        let mut why = Vec::new();
-        let keys: BTreeSet<_> = kc.last_done.keys().chain(rc.last_done.keys()).collect();
-        for i in keys.into_iter().filter(|i| kc.last_done.get(*i) != rc.last_done.get(*i)) {
-            why.push(format!("last_done {i}: kernel {:?} rust {:?}", kc.last_done.get(i), rc.last_done.get(i)));
-        }
-        let keys: BTreeSet<_> = kc.done_dates.keys().chain(rc.done_dates.keys()).collect();
-        for i in keys.into_iter().filter(|i| kc.done_dates.get(*i) != rc.done_dates.get(*i)) {
-            why.push(format!("done_dates {i}: kernel {:?} rust {:?}", kc.done_dates.get(i), rc.done_dates.get(i)));
-        }
-        let keys: BTreeSet<_> = kc.instances.keys().chain(rc.instances.keys()).collect();
-        for i in keys.into_iter().filter(|i| kc.instances.get(*i) != rc.instances.get(*i)) {
-            why.push(format!("instance {i:?}: kernel {:?} rust {:?}", kc.instances.get(i), rc.instances.get(i)));
-        }
-        let keys: BTreeSet<_> = kc.named.keys().chain(rc.named.keys()).collect();
-        for i in keys.into_iter().filter(|i| kc.named.get(*i) != rc.named.get(*i)) {
-            why.push(format!("named {i:?}: kernel {:?} rust {:?}", kc.named.get(i), rc.named.get(i)));
-        }
-        if kc.warnings != rc.warnings {
-            why.push(format!("replay warnings:\n  kernel {:?}\n  rust   {:?}", kc.warnings, rc.warnings));
-        }
-        why.truncate(5);
-        panic!("{name} ({}): the completion family differs\n{}", tz.name(), why.join("\n"));
-    }
-    // C4: every `latest_named` query the fork answers (every name, every id it was
-    // addressed to and one it was not), from the kernel's per-key records.
-    let rr = replay::replay_of_text(text, tz);
-    let ids: BTreeSet<String> = rr.named.values().flat_map(|r| r.by_id.keys().cloned()).chain(["zz-absent".to_string()]).collect();
-    let names: BTreeSet<&str> = rr.event_names().collect();
-    assert_eq!(names, k.completion.named.keys().map(|(n, _)| n.as_str()).collect::<BTreeSet<_>>(), "{name}: event_names");
-    for n in names.iter().copied().chain(["zz-absent"]) {
-        for id in &ids {
-            let fork = rr.latest_named(n, id, tz).map(|l| (stamp_of(&l.latest), stamp_of(&l.latest_dated)));
-            assert_eq!(kernel_latest_named(&k.completion, n, id, tz), fork, "{name}: latest_named({n}, {id})");
-            LATEST_NAMED_QUERIES.with(|q| q.set(q.get() + 1));
-        }
-    }
-    if k.cancelled != r.cancelled {
-        let (ks, rs): (BTreeSet<_>, BTreeSet<_>) = (k.cancelled.iter().collect(), r.cancelled.iter().collect());
-        let lines: Vec<&str> = text.split('\n').collect();
-        let show = |n: &&u64| format!("{n}: {}", lines.get(**n as usize - 1).copied().unwrap_or("?"));
-        panic!(
-            "{name} ({}): cancelled differs\n kernel only: {:?}\n rust only: {:?}",
-            tz.name(),
-            ks.difference(&rs).map(show).collect::<Vec<_>>(),
-            rs.difference(&ks).map(show).collect::<Vec<_>>()
-        );
-    }
-    if k.days != r.days {
-        let lines: Vec<&str> = text.split('\n').collect();
-        let wrong: Vec<String> = k
-            .days
-            .iter()
-            .zip(&r.days)
-            .filter(|(a, b)| a != b)
-            .take(5)
-            .map(|(a, b)| format!("line {}: kernel {} rust {} ({})", a.0, a.1, b.1, lines.get(a.0 as usize - 1).copied().unwrap_or("?")))
-            .collect();
-        panic!("{name} ({}): days differ ({} vs {} rows)\n {}", tz.name(), k.days.len(), r.days.len(), wrong.join("\n "));
-    }
-    // C6: the seams, the view rows and the counts.
-    if k.seams != r.seams {
-        let keys: BTreeSet<_> = k.seams.keys().chain(r.seams.keys()).collect();
-        let why: Vec<String> = keys
-            .into_iter()
-            .filter(|d| k.seams.get(*d) != r.seams.get(*d))
-            .take(5)
-            .map(|d| format!("seam of day {d}:\n  kernel {:?}\n  rust   {:?}", k.seams.get(d), r.seams.get(d)))
-            .collect();
-        panic!("{name} ({}): the seams differ\n{}", tz.name(), why.join("\n"));
-    }
-    if k.rows != r.rows {
-        let wrong: Vec<String> = k.rows.iter().zip(&r.rows).filter(|(a, b)| a != b).take(5).map(|(a, b)| format!("kernel {a:?}\n  rust   {b:?}")).collect();
-        panic!("{name} ({}): the view rows differ ({} vs {} rows)\n  {}", tz.name(), k.rows.len(), r.rows.len(), wrong.join("\n  "));
-    }
-    assert_eq!(k.counts, r.counts, "{name}: entry count, line count, last day");
-    assert_eq!(k.completion.done_first, r.completion.done_first, "{name}: first done dates and counts");
-    assert_eq!(*k, r, "{name}");
-    // C6: the whole `Replay`, through the reader's own `PartialEq` (every field placed on one side or the other by
-    // its destructuring) and `ported_facts()` (D14: every field nothing reads).
-    let rr = replay::replay_of_text(text, tz);
-    let kr = kernel_replay(answer, tz);
-    assert!(kr == rr, "{name} ({}): the kernel's Replay is not the in-tree reader's", tz.name());
-    assert_eq!(kr.ported_facts(), rr.ported_facts(), "{name}: the ported facts (D14)");
-}
-
-/// **C5's separations in a log**, from the in-tree reader: `(late_sleeps, early_gaps)`,
-/// the energy observations whose day's first logged wake is on a later line (late
-/// binding), and the idle records dated on a day other than their entry's (a gap on the
-/// day it began).
-fn day_separations(text: &str, tz: Tz) -> (usize, usize) {
-    let r = replay::replay_of_text(text, tz);
-    let survivors: Vec<_> = r.view().iter().filter(|row| !row.cancelled).collect();
-    let mut late = 0;
-    let mut early = 0;
-    for row in &survivors {
-        match row.tag.as_str() {
-            "energy" => {
-                let wake = survivors.iter().find(|w| w.tag == "wake" && w.day == row.day);
-                late += usize::from(wake.is_some_and(|w| w.line > row.line));
-            }
-            "idle" => {
-                let rec = r.days.values().flat_map(|d| d.idle.iter()).find(|i| stamp_of(&i.t) == stamp_of(&row.t));
-                early += usize::from(rec.is_some_and(|i| i.day != row.day));
-            }
-            _ => {}
-        }
-    }
-    (late, early)
-}
-
-/// **Quirk Q6(b) in a log**: how many instances' last surviving record in file
-/// order is stamped strictly before another surviving record of the same instance,
-/// so the instance (last in file order) and the latest by instant differ.
-fn q6b_separations(text: &str, tz: Tz) -> usize {
-    let r = replay::replay_of_text(text, tz);
-    let entries: BTreeMap<u64, LogEntry> = replay::entries_of_text(text).into_iter().collect();
-    let mut by_inst: BTreeMap<(String, String), Vec<(i64, u32)>> = BTreeMap::new();
-    for row in r.view().iter().filter(|row| !row.cancelled) {
-        let key = match &entries.get(&row.line).expect("the row's entry").ev {
-            Event::Routine { item, inst, .. } | Event::Skip { item, inst } => (item.clone(), inst.clone()),
-            _ => continue,
-        };
-        by_inst.entry(key).or_default().push(instant_of(&stamp_of(&row.t)));
-    }
-    by_inst.values().filter(|ts| ts.last().is_some_and(|last| ts.iter().any(|t| t > last))).count()
-}
-
-/// **The denominators the reader supplies**, in one call, so a T5 test names the
-/// in-tree arm exactly once: the tally's late sleeps, early gaps and retro
-/// instances are added, and the count of entries off their own local date comes
-/// back. Every one of them is a *denominator* — how much of a family the inputs
-/// actually exercised — never a comparand.
-pub fn check_denominators(text: &str, tz: Tz, kernel_side: (usize, usize, usize)) {
-    let (late, early) = day_separations(text, tz);
-    let retro = q6b_separations(text, tz);
-    assert_eq!(
-        (late, early, retro),
-        kernel_side,
-        "the in-tree reader and the kernel disagree about (late sleeps, early gaps, retro instances)"
-    );
-}
-
-/// **T0 (b)'s entry count**, and P31's control that the fork replays a log the
-/// kernel refuses: both are the reader's, on inputs too large to freeze whole.
-pub fn entry_count_of(text: &str, tz: Tz) -> u64 {
-    replay::replay_of_text(text, tz).entry_count() as u64
-}
-
-/// P31's control (§17): the in-tree reader reads every physical line of a
-/// hand-edited log the kernel names a fault on.
-pub fn assert_reads_every_line(text: &str, tz: Tz, lines: u64) {
-    assert_eq!(replay::replay_of_text(text, tz).line_count(), lines, "the reader reads every line of the edited log");
-}
-
-/// The `#[ignore]`d measurements' second half: the same facts from the reader,
-/// timed, and the line the README quotes.
-pub fn measure_against_reader(what: &str, k: &Facts, text: &str, tz: Tz) {
-    let start = std::time::Instant::now();
-    let r = rust_facts(text, tz);
-    let ms = start.elapsed().as_secs_f64() * 1000.0;
-    assert_eq!(*k, r, "{what}: the kernel's facts are not the in-tree reader's");
-    eprintln!("{what}: the in-tree reader took {ms:.0} ms over the same log");
-}
-
-/// **Parity P34** (C5), the whole of its comparison with the in-tree reader: the
-/// one day and the one segment start put back, and then nothing else may differ.
-pub fn p34_is_the_only_difference(k: &Facts, text: &str, tz: Tz) {
-    let mut r = rust_facts(text, tz);
-    let fork_day = r.day.longest_leak.as_ref().expect("the reader's longest leak").1;
-    assert!(fork_day < 0, "the reader dates the gap in a negative year: day {fork_day}");
-    let origin: Stamp = (0, 0, false, 0);
-    let mut block = r.block.days.remove(&fork_day).expect("the reader's day of the gap");
-    assert!(block.segments[0].0 .0 < 0, "the reader's segment starts before the origin");
-    block.segments[0].0 = origin;
-    r.block.days.insert(0, block);
-    let mut rec = r.day.days.remove(&fork_day).expect("the reader's record of the gap");
-    rec.idle[0].1 = 0;
-    r.day.days.insert(0, rec);
-    if let Some(l) = r.day.longest_leak.as_mut() {
-        l.1 = 0;
-    }
-    // C6: the gap's day is the only day with a record, so it is the last day too.
-    assert_eq!(r.counts.2, Some(fork_day), "the reader's last day is the gap's");
-    r.counts.2 = Some(0);
-    assert_eq!(*k, r, "P34 is the only difference");
-}
-
-/// **Parity P33** (C4), likewise: the one date put back, and nothing else differs.
-pub fn p33_is_the_only_difference(k: &Facts, text: &str, tz: Tz) {
-    let mut r = rust_facts(text, tz);
-    let fork = r.completion.done_dates.get("stretch").cloned().expect("the reader's done date");
-    assert_eq!(fork, BTreeSet::from([day_number(date(0, 9, 7))]), "the reader dates it in year 0");
-    r.completion.done_dates.insert("stretch".to_string(), BTreeSet::from([day_number(date(2026, 9, 7))]));
-    assert_eq!(
-        r.completion.done_first.get("stretch"),
-        Some(&(Some(day_number(date(0, 9, 7))), 1)),
-        "the reader's first done date is in year 0"
-    );
-    r.completion.done_first.insert("stretch".to_string(), (Some(day_number(date(2026, 9, 7))), 1));
-    assert_eq!(*k, r, "P33 is the only difference");
-}
-
-}
-// ===========================================================================
-// END THE IN-TREE CROSS-CHECK
-// ===========================================================================
 
 /// Compare one log; the kernel's facts are returned for the arms' own checks.
 fn assert_parity(name: &str, text: &str, tz: Tz) -> Facts {
-    assert_parity_answer(name, text, tz, &kernel_answer(text, tz))
+    assert_parity_answer(name, tz, &kernel_answer(text, tz))
 }
 
 /// Compare one log with a kernel `log` answer built any way (W3: a windowed answer
 /// merged with its sealed records).
 ///
-/// **Two comparands, and the order is the point** (gap 146, gap 137, W-11).
+/// **One comparand, and it is outside this tree** (gaps 146, 137; W-11, S).
 ///
-/// 1. **The fork** — [`fork_arm`]: fork point `4748911`'s own `log::replay`, frozen
-///    into `tests/fixtures/` and compared key for key. Neither side of it is the
-///    in-tree reader, so §12's deletion cannot turn it into a self-comparison. Where
-///    no frozen answer exists for this input the arm records a **skip by name**, so
-///    "no disagreement" is never confused with "never ran" (AGENTS §7.3), and
-///    [`t5_every_input_class_says_how_it_reaches_the_fork`] is what fails if a class
-///    loses its fork comparand.
-/// 2. **The in-tree reader** — [`in_tree::cross_check`]: sharper while it exists
-///    (it reaches `rows`, the per-line day index and the displays, which the fork's
-///    serialised `Replay` does not carry), and worthless the moment `replay_of_text`
-///    calls the kernel. It lives inside the deletion banner above.
-fn assert_parity_answer(name: &str, text: &str, tz: Tz, answer: &Value) -> Facts {
+/// [`fork_arm`]: fork point `4748911`'s own `log::replay`, frozen into
+/// `tests/fixtures/` and compared key for key. Neither side of it is the
+/// in-tree reader, which is the whole point — **S has now deleted that reader**
+/// (design §12), and had T5 still been comparing against it, all of T5 would
+/// have become the kernel checking itself: still passing, proving nothing
+/// (README gap 146, AGENTS §9.2's worst disguised gap). The instrument was
+/// re-anchored *before* the change it watches, under **D21**, and this run is
+/// where that paid.
+///
+/// Where no frozen answer exists for an input the arm records a **skip by
+/// name**, so "no disagreement" is never confused with "never ran"
+/// (AGENTS §7.3), and [`t5_every_input_class_says_how_it_reaches_the_fork`] is
+/// what fails if a class loses its fork comparand.
+///
+/// (A second arm ran here until S — the in-tree reader, through the test
+/// chokepoint — and was sharper while it existed, because it reached `rows`,
+/// the per-line day index and the displays, which the fork's serialised
+/// `Replay` does not carry. It went with the reader, mechanically, by the rule
+/// its own banner stated.)
+fn assert_parity_answer(name: &str, tz: Tz, answer: &Value) -> Facts {
     let k = kernel_view(answer);
     fork_arm(name, tz, answer, &k);
-    in_tree::cross_check(name, text, tz, answer, &k); // S: deleted with the reader
     k
 }
 
@@ -2776,12 +2149,11 @@ fn t5_the_corpus_logs_replay_as_the_fork_does() {
         tally.add_completion(&k.completion);
         tally.add_day(&k.day, &k.block);
         tally.add_view(&k);
-        let (o, d) = off_their_own_date(&mut tally, &k, &text, chrono_tz::America::Chicago);
+        let (o, _) = off_their_own_date(&mut tally, &k, &text, chrono_tz::America::Chicago);
         off += o;
-        in_tree::check_denominators(&text, chrono_tz::America::Chicago, d); // S: deleted with the reader
     }
     assert!(tally.durations > 0 && tally.items > 0, "the corpus has blocks");
-    eprintln!("T5 corpus: 7 logs, {cancelled} cancelled lines, {days} days compared ({off} off their own local date); {tally}; {} latest_named queries; 0 exceptions", latest_named_queries());
+    eprintln!("T5 corpus: 7 logs, {cancelled} cancelled lines, {days} days compared ({off} off their own local date); {tally}; 0 exceptions");
 }
 
 /// **T5 over the generated 1-month and 6-month logs** (40 a day, seed 7).
@@ -2799,16 +2171,14 @@ fn t5_the_generated_month_and_half_year_replay_as_the_fork_does() {
         tally.add_completion(&k.completion);
         tally.add_day(&k.day, &k.block);
         tally.add_view(&k);
-        let (off, d) = off_their_own_date(&mut tally, &k, &text, chrono_tz::America::Chicago);
-        in_tree::check_denominators(&text, chrono_tz::America::Chicago, d); // S: deleted with the reader
+        let (off, _) = off_their_own_date(&mut tally, &k, &text, chrono_tz::America::Chicago);
         eprintln!(
-            "T5 {label}: {} lines, {} bytes, {} cancelled, {} days compared ({} off their own local date); {tally}; {} latest_named queries so far; {ms:.0} ms for both readers, 0 exceptions",
+            "T5 {label}: {} lines, {} bytes, {} cancelled, {} days compared ({} off their own local date); {tally}; {ms:.0} ms for both readers, 0 exceptions",
             lines.len(),
             text.len(),
             k.cancelled.len(),
             k.days.len(),
             off,
-            latest_named_queries(),
         );
     }
 }
@@ -2830,9 +2200,8 @@ fn t5_generated_sequences_replay_as_the_fork_does() {
         tally.add_completion(&k.completion);
         tally.add_day(&k.day, &k.block);
         tally.add_view(&k);
-        let (o, d) = off_their_own_date(&mut tally, &k, &g.text, g.tz);
+        let (o, _) = off_their_own_date(&mut tally, &k, &g.text, g.tz);
         off += o;
-        in_tree::check_denominators(&g.text, g.tz, d); // S: deleted with the reader
         for e in &g.day_edges {
             *day_edges.entry(*e).or_default() += 1;
         }
@@ -2885,8 +2254,7 @@ fn t5_generated_sequences_replay_as_the_fork_does() {
     );
     eprintln!(
         "T5 sequences: {SEQUENCES} logs, {lines} lines, {cancelled} cancelled, {days} days compared ({off} off their own local date), {silent} silent-verb undos \
-         cancelling an older move, {auto} week closes left standing by an undo that took the automatic close; {tally}; block edge cases {edges:?}; completion edge cases {completions:?}; day edge cases {day_edges:?}; {} latest_named queries; arms {counts:?}; zones {zones:?}; 0 exceptions",
-        latest_named_queries()
+         cancelling an older move, {auto} week closes left standing by an undo that took the automatic close; {tally}; block edge cases {edges:?}; completion edge cases {completions:?}; day edge cases {day_edges:?}; arms {counts:?}; zones {zones:?}; 0 exceptions"
     );
 }
 
@@ -2902,9 +2270,8 @@ fn t5_the_zone_cases_replay_as_the_fork_does() {
         tally.add_completion(&k.completion);
         tally.add_day(&k.day, &k.block);
         tally.add_view(&k);
-        let (o, d) = off_their_own_date(&mut tally, &k, &c.text, c.tz);
+        let (o, _) = off_their_own_date(&mut tally, &k, &c.text, c.tz);
         off += o;
-        in_tree::check_denominators(&c.text, c.tz, d); // S: deleted with the reader
         assert!(!k.cancelled.is_empty(), "{}: every zone case carries an undo", c.name);
         for (line, d) in &c.expect {
             assert_eq!(day_of_line(&k, *line), day_number(*d), "{}: line {line} should be on {d}", c.name);
@@ -2926,10 +2293,9 @@ fn t5_the_zone_cases_replay_as_the_fork_does() {
         days += k.days.len();
     }
     eprintln!(
-        "T5 zone cases: {} ({:?}), {days} days compared, {named} named days checked, {named_keys} named-event keys checked by hand, {off} entries off their own local date; {tally}; {} latest_named queries; 0 exceptions",
+        "T5 zone cases: {} ({:?}), {days} days compared, {named} named days checked, {named_keys} named-event keys checked by hand, {off} entries off their own local date; {tally}; 0 exceptions",
         cases.len(),
-        cases.iter().map(|c| &c.name).collect::<Vec<_>>(),
-        latest_named_queries()
+        cases.iter().map(|c| &c.name).collect::<Vec<_>>()
     );
 }
 
@@ -3013,7 +2379,6 @@ fn t5_a_hostile_undo_log_is_answered_in_linear_time() {
     assert!(text.len() < 1 << 20, "under 1 MiB");
     assert_eq!(k.cancelled.len(), 4_000);
     eprintln!("T5 hostile: {} lines, {} bytes, kernel {kernel_ms:.0} ms", w.lines.len(), text.len());
-    in_tree::measure_against_reader("T5 hostile", &k, &text, tz); // S: deleted with the reader
 }
 
 /// **The block family over many items** (C3; a measurement, `#[ignore]`d and
@@ -3042,7 +2407,6 @@ fn t5_a_block_log_of_distinct_ids_is_measured() {
     let kernel_ms = start.elapsed().as_secs_f64() * 1000.0;
     assert_eq!(k.block.items.len(), 3_500);
     eprintln!("T5 distinct ids: {} lines, {} bytes, kernel {kernel_ms:.0} ms", w.lines.len(), text.len());
-    in_tree::measure_against_reader("T5 distinct ids", &k, &text, tz); // S: deleted with the reader
 }
 
 /// **Parity P34, the named exception** (C5): an `idle` gap whose minutes reach
@@ -3061,7 +2425,6 @@ fn t5_p34_a_gap_before_the_origin_is_the_named_exception() {
     let text = w.text();
     let k = kernel_facts(&text, tz);
     assert_eq!(k.day.longest_leak.as_ref().map(|l| l.1), Some(0), "the kernel dates it at the origin");
-    in_tree::p34_is_the_only_difference(&k, &text, tz); // S: deleted with the reader
 }
 
 /// **Parity P33, the named exception** (C4): a routine `done` whose `inst` names a
@@ -3082,7 +2445,6 @@ fn t5_p33_a_done_date_before_the_origin_is_the_named_exception() {
         Some(&BTreeSet::from([day_number(date(2026, 9, 7))])),
         "the kernel dates it on its day"
     );
-    in_tree::p33_is_the_only_difference(&k, &text, tz); // S: deleted with the reader
 }
 
 
@@ -3156,7 +2518,7 @@ fn assert_windowed(name: &str, cache: &kernel_log::ReplayCache, r: &kernel_log::
     let s = kernel_log::split(text.as_bytes());
     let facts = r.answer.facts.as_ref().unwrap_or_else(|| panic!("{name}: facts asked"));
     let (days, window) = cache.records_of(r).unwrap_or_else(|| panic!("{name}: the snapshot's records load"));
-    assert_parity_answer(name, text, tz, &windowed_log(facts, &days, &window, &s, table))
+    assert_parity_answer(name, tz, &windowed_log(facts, &days, &window, &s, table))
 }
 
 /// **The windowed T5** (W3; design §9.6–§9.8, §11.1, §14.5 row W3's T7 and T10 in part): a year of the generated log in
@@ -3221,7 +2583,7 @@ fn t5_windowed_genesis_hot_reseal_old_date_and_fallbacks_replay_as_the_fork_does
         assert!(merged_days.contains(&d), "the sealed day {d} is merged into the facts");
     }
     let (sd_rest, sw_rest) = (sd.clone(), sw.clone());
-    assert_parity_answer("windowed old-date read", &text_c, tz, &windowed_log(&old_facts, &sd_rest, &sw_rest, &s_c, &table));
+    assert_parity_answer("windowed old-date read", tz, &windowed_log(&old_facts, &sd_rest, &sw_rest, &s_c, &table));
 
     // A hand undo of a `done` folded into the checkpoint, with no later `done` of that id: G1 refuses, genesis answers.
     let folded: Vec<(usize, String)> = c_lines[..cut]
@@ -3291,10 +2653,6 @@ fn t0b_genesis_over_200000_lines_in_chunks_runs_on_a_2mib_thread() {
     lines.truncate(200_000);
     let text = loggen::text(&lines);
     let now = kernel_log::date_of(day_after(&lines));
-    // The log is moved into the 2 MiB thread below, so this one has to be read
-    // before the move and kept: it is named `in_tree_*` so the deletion guard
-    // sees the binding as well as the call.
-    let in_tree_entries = in_tree::entry_count_of(&text, chrono_tz::UTC); // S: deleted with the reader
     let table = table(chrono_tz::UTC);
     let wake_days: Vec<String> = (0..2_000)
         .map(|i| {
@@ -3329,10 +2687,12 @@ fn t0b_genesis_over_200000_lines_in_chunks_runs_on_a_2mib_thread() {
             (g.calls, g.pops, g.largest_call, g.top.days.len(), g.top.window.len(), answered, genesis_ms, cap_ms, rs.days.len())
         })
         .expect("a 2 MiB thread");
-    let (calls, pops, largest, days, window, answered, genesis_ms, cap_ms, sealed_days) = handle.join().expect("no stack overflow");
+    // `answered` was compared with the in-tree reader's entry count until S; that
+    // comparand went with the reader (design §12), and entry counts are now
+    // compared against fork point 4748911's own, in the frozen arm below.
+    let (calls, pops, largest, days, window, _answered, genesis_ms, cap_ms, sealed_days) = handle.join().expect("no stack overflow");
     assert!(calls >= 25, "{calls} calls");
     assert!(largest <= kernel_log::RESEND_LINES, "{largest}");
-    assert_eq!(answered, in_tree_entries, "the last call answers for every entry"); // S: deleted with the reader
     assert!(days >= 3_000 && window >= 3_000, "{days} day and {window} window records");
     // F = min(now − keepDays, M − keepDays), M the last wake's day: the last two days stay open, the other 1,997 are sealed.
     assert_eq!(sealed_days, 1_997, "one reseal emits a record a day below F");
@@ -3398,7 +2758,6 @@ fn t0b_a_hand_edit_no_window_can_reach_is_the_named_fault_reach_too_far() {
     assert!(*reach <= 2 * kernel_log::CHUNK_LINES as u64 + 512, "the reach is about two chunks: {reach}");
 
     // §17 P31: the fork replays such a log. The kernel's answer is a named fault, and that difference is the parity row.
-    in_tree::assert_reads_every_line(&text, tz, edited.len() as u64); // S: deleted with the reader
     eprintln!(
         "ReachTooFar: {} lines, the edit at line {line}, {kind}, resend {reach} lines / {bytes} bytes (cap {} lines / {} bytes)",
         edited.len(), kernel_log::RESEND_LINES, kernel_log::RESEND_BYTES
@@ -4025,7 +3384,6 @@ fn t5_every_input_class_says_how_it_reaches_the_fork() {
 /// runs that alternation over **this file's own source** and requires every hit
 /// to be inside the `BEGIN … END THE IN-TREE CROSS-CHECK` region — so §12's
 /// deletion is `sed '/BEGIN THE IN-TREE/,/END THE IN-TREE/d'` plus the lines
-/// marked `// S: deleted with the reader`, and nothing else has to be found by
 /// reading.
 ///
 /// The needles are built at run time rather than written as literals, because a

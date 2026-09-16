@@ -1,19 +1,31 @@
-//! Serialization contract for `.tm/log.jsonl` (tm-spec-v1.md §10.1): every
-//! example line's key set round-trips, every other event kind has the field
-//! names of the spec, unknown events survive losslessly, malformed lines are
-//! tolerated. (The fixture log's byte-identical write-back and its snapshot test the
-//! reader too, so step R12 moved them beside it, into `log.rs`'s `reader_tests`.)
+//! **The writer's** serialization contract for `.tm/log.jsonl` (tm-spec-v1.md
+//! §10.1): every event kind has the field names of the spec, in the spec's
+//! order, and an unknown event survives a write losslessly.
+//!
+//! **Writer tests only, since S** (design §12). Every assertion that went
+//! through `LogEntry::parse`, `Log::read` or `Log::append` went with the
+//! reader those name, and each is still covered — by something that is not
+//! a second reader of the same bytes:
+//!
+//! * per-line **parse acceptance** (a missing field, a mistyped field, a bad
+//!   `ev`): `tm/tests/kernel_log_grammar.rs`'s T1, against fork point
+//!   `4748911`'s frozen verdicts — a differential, where this was a
+//!   self-check;
+//! * **writer byte-identity** over real logs: T2, same file;
+//! * a **malformed line is a warning, not an error**: `tm/tests/cli_check_log.rs`,
+//!   end to end through `tm check` (the owner's D18 (i));
+//! * **appending past a torn last line** (G9, parity P19):
+//!   `tm-core/tests/store_state.rs`'s `append_text_repairs_a_torn_last_line_in_both_stores`
+//!   and `tm/tests/cli_day.rs`'s `an_append_after_a_torn_line_starts_a_new_line`,
+//!   both over `FsStore::append_text`, which **is** the writer `Ctx::append_entry`
+//!   calls. `Log::append` never was.
 
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, FixedOffset};
 use serde_json::{Map, Value};
-use tm_core::log::{Event, Log, LogEntry, EVENT_NAMES};
+use tm_core::log::{Event, LogEntry, EVENT_NAMES};
 
-fn fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/logs").join(name)
-}
 
 fn at(s: &str) -> DateTime<FixedOffset> {
     DateTime::parse_from_rfc3339(s).unwrap()
@@ -53,39 +65,7 @@ fn keys(json: &str) -> Vec<String> {
     keys
 }
 
-/// The §10.1 examples with their `…` timestamps expanded.
-const SPEC_LINES: &[&str] = &[
-    r#"{"t":"2026-09-07T06:05:00-05:00","ev":"wake","slept_min":490}"#,
-    r#"{"t":"2026-09-07T07:00:00-05:00","ev":"arrive","loc":"lounge","window":["07:00","15:00"],"budget":6}"#,
-    r#"{"t":"2026-09-07T07:02:00-05:00","ev":"start","id":"t1","pred":5,"rep":5,"hsw":0.95,"slept_min":490,"loc":"lounge","blocks_done":0,"since_break_min":0}"#,
-    r#"{"t":"2026-09-07T08:09:00-05:00","ev":"done","id":"t1","est_min":60,"actual_min":67,"went":1,"tags":["lean"],"ci":5}"#,
-    r#"{"t":"2026-09-07T09:08:00-05:00","ev":"break","planned_min":20,"actual_min":24,"where":"walk"}"#,
-    r#"{"t":"2026-09-07T09:32:00-05:00","ev":"energy","pred":5,"rep":4,"hsw":3.45,"loc":"lounge"}"#,
-    r#"{"t":"2026-09-07T12:10:00-05:00","ev":"interrupt","id":"t4"}"#,
-    r#"{"t":"2026-09-07T13:05:00-05:00","ev":"resume","lost_min":55,"dropped":["t5"]}"#,
-    r#"{"t":"2026-09-07T15:40:00-05:00","ev":"idle","attributed":"leak","min":14}"#,
-    r#"{"t":"2026-09-07T16:10:00-05:00","ev":"routine","item":"package","inst":"2026-09-07","status":"done","actual_min":18}"#,
-    r#"{"t":"2026-09-07T21:30:00-05:00","ev":"plan","hash":"a91f…","replans_today":4,"drift_min":75}"#,
-    r#"{"t":"2026-09-07T21:31:00-05:00","ev":"event","name":"reply","id":"a4"}"#,
-    r#"{"t":"2026-09-07T21:32:00-05:00","ev":"demote","id":"m2","from":"2026-W37","to":"2026-09","est_min":180}"#,
-    r#"{"t":"2026-09-07T21:33:00-05:00","ev":"undo","of":"done","id":"t4"}"#,
-];
 
-#[test]
-fn spec_examples_round_trip_byte_identically() {
-    for line in SPEC_LINES {
-        let e = LogEntry::parse(line).unwrap_or_else(|err| panic!("{line}: {err}"));
-        assert!(!matches!(e.ev, Event::Unknown { .. }), "{line} parsed as Unknown");
-        let back = e.to_json().unwrap();
-        // Same keys in the same order, same values (the timestamp included).
-        assert_eq!(back, *line);
-        assert_eq!(
-            serde_json::from_str::<Value>(&back).unwrap(),
-            serde_json::from_str::<Value>(line).unwrap()
-        );
-        assert_eq!(LogEntry::parse(&back).unwrap(), e);
-    }
-}
 
 #[test]
 fn every_event_kind_has_the_spec_field_names() {
@@ -175,7 +155,6 @@ fn every_event_kind_has_the_spec_field_names() {
         let v: Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["ev"], Value::from(ev.name()), "{json}");
         assert!(EVENT_NAMES.contains(&ev.name()), "{}", ev.name());
-        assert_eq!(LogEntry::parse(&json).unwrap(), entry, "{json}");
         seen.insert(ev.name().to_string());
     }
     let all: BTreeSet<String> = EVENT_NAMES.iter().map(|n| n.to_string()).collect();
@@ -183,57 +162,6 @@ fn every_event_kind_has_the_spec_field_names() {
     assert_eq!(EVENT_NAMES.len(), 26);
 }
 
-#[test]
-fn unknown_events_round_trip_and_known_bad_payloads_do_not() {
-    let line = r#"{"t":"2026-09-08T13:00:00-05:00","ev":"mood","level":3,"nested":{"a":[1,2]},"note":"meh"}"#;
-    let e = LogEntry::parse(line).unwrap();
-    let Event::Unknown { ev, rest } = &e.ev else {
-        panic!("{:?}", e.ev);
-    };
-    assert_eq!(ev, "mood");
-    assert_eq!(rest.len(), 3);
-    assert_eq!(rest["level"], Value::from(3));
-    assert_eq!(e.ev.name(), "mood");
-    assert_eq!(e.ev.primary_id(), None);
-    assert!(!e.ev.is_state_change());
-    assert_eq!(e.to_json().unwrap(), line, "already in canonical key order");
-
-    // Built by hand, keys come out sorted after `ev`.
-    let mut rest = Map::new();
-    rest.insert("z".into(), Value::from(1));
-    rest.insert("id".into(), Value::from("k7"));
-    let built = LogEntry::new(at("2026-09-08T13:00:00-05:00"), Event::Unknown { ev: "zorg".into(), rest });
-    assert_eq!(
-        built.to_json().unwrap(),
-        r#"{"t":"2026-09-08T13:00:00-05:00","ev":"zorg","id":"k7","z":1}"#
-    );
-    assert_eq!(built.ev.primary_id(), Some("k7"));
-
-    // A known name with a bad payload names the event and the field.
-    let err = LogEntry::parse(r#"{"t":"2026-09-08T13:00:00-05:00","ev":"wake"}"#).unwrap_err();
-    assert!(err.to_string().contains("\"wake\""), "{err}");
-    assert!(err.to_string().contains("slept_min"), "{err}");
-    let err = LogEntry::parse(r#"{"t":"2026-09-08T13:00:00-05:00","ev":"done","id":"t1","est_min":"x","actual_min":1,"ci":5}"#)
-        .unwrap_err();
-    assert!(err.to_string().contains("\"done\""), "{err}");
-    assert!(err.to_string().contains("est_min"), "{err}");
-    // A raw-identifier field is named without its `r#` prefix.
-    let err = LogEntry::parse(r#"{"t":"2026-09-08T13:00:00-05:00","ev":"break","planned_min":20,"where":5}"#)
-        .unwrap_err();
-    assert!(err.to_string().contains("\"break\": where:"), "{err}");
-    // `ev` itself is required and must be a string.
-    assert!(LogEntry::parse(r#"{"t":"2026-09-08T13:00:00-05:00","text":"x"}"#)
-        .unwrap_err()
-        .to_string()
-        .contains("ev"));
-    assert!(LogEntry::parse(r#"{"t":"2026-09-08T13:00:00-05:00","ev":7}"#)
-        .unwrap_err()
-        .to_string()
-        .contains("string"));
-    // Event alone (without the `t` wrapper) parses too.
-    let ev: Event = serde_json::from_str(r#"{"ev":"note","text":"x"}"#).unwrap();
-    assert_eq!(ev, Event::Note { text: "x".into() });
-}
 
 /// What "losslessly" means for [`Event::Unknown`], stated where a change
 /// would break it: every key and value survives, but `rest` is a
@@ -243,81 +171,31 @@ fn unknown_events_round_trip_and_known_bad_payloads_do_not() {
 /// keys that are already sorted, so nothing else pins this down.
 #[test]
 fn unknown_events_keep_every_key_but_canonicalise_their_order() {
-    let line = r#"{"t":"2026-09-08T13:00:00-05:00","ev":"mood","note":"meh","level":3,"anger":null}"#;
-    let e = LogEntry::parse(line).unwrap();
-    let back = e.to_json().unwrap();
-    assert_ne!(back, line, "the keys were not written in sorted order");
-    assert_eq!(
-        back,
-        r#"{"t":"2026-09-08T13:00:00-05:00","ev":"mood","anger":null,"level":3,"note":"meh"}"#
-    );
-    // Nothing is lost: same value, and a second round trip is a fixed point.
-    assert_eq!(
-        serde_json::from_str::<Value>(&back).unwrap(),
-        serde_json::from_str::<Value>(line).unwrap()
-    );
-    assert_eq!(LogEntry::parse(&back).unwrap(), e);
-    assert_eq!(LogEntry::parse(&back).unwrap().to_json().unwrap(), back);
-
-    // The documented flip side: an unknown *extra* key on a **known** event is
-    // dropped on re-serialization. Nothing rewrites `.tm/log.jsonl` (§10.1 is
-    // append-only), so this only affects `to_jsonl`.
-    let e = LogEntry::parse(r#"{"t":"2026-09-08T13:00:00-05:00","ev":"note","text":"hi","extra":1}"#)
-        .unwrap();
-    assert_eq!(e.ev, Event::Note { text: "hi".into() });
+    // Put in deliberately unsorted, so the sorting below is the writer's doing
+    // and not the input's.
+    let mut rest = Map::new();
+    rest.insert("note".into(), Value::from("meh"));
+    rest.insert("level".into(), Value::from(3));
+    rest.insert("anger".into(), Value::Null);
+    let e = LogEntry::new(at("2026-09-08T13:00:00-05:00"), Event::Unknown { ev: "mood".into(), rest });
     assert_eq!(
         e.to_json().unwrap(),
-        r#"{"t":"2026-09-08T13:00:00-05:00","ev":"note","text":"hi"}"#
+        r#"{"t":"2026-09-08T13:00:00-05:00","ev":"mood","anger":null,"level":3,"note":"meh"}"#
     );
+    assert_eq!(e.ev.name(), "mood");
+    assert!(!EVENT_NAMES.contains(&e.ev.name()), "`mood` must not be a known kind");
+
+    // An `id` inside an unknown event's payload is still its primary id — what
+    // `undo{id}` matches against — and it is written in sorted position too.
+    let mut rest = Map::new();
+    rest.insert("z".into(), Value::from(1));
+    rest.insert("id".into(), Value::from("k7"));
+    let built = LogEntry::new(at("2026-09-08T13:00:00-05:00"), Event::Unknown { ev: "zorg".into(), rest });
+    assert_eq!(
+        built.to_json().unwrap(),
+        r#"{"t":"2026-09-08T13:00:00-05:00","ev":"zorg","id":"k7","z":1}"#
+    );
+    assert_eq!(built.ev.primary_id(), Some("k7"));
 }
 
-#[test]
-fn malformed_lines_are_warnings_not_errors() {
-    let log = Log::read(fixture("malformed.jsonl")).unwrap();
-    assert_eq!(log.entries.len(), 3, "{:?}", log.entries);
-    assert_eq!(log.entries[0].ev, Event::Wake { slept_min: 490, onset_min: None });
-    assert_eq!(log.entries[1].ev.name(), "mood");
-    assert_eq!(log.entries[2].ev, Event::Note { text: "last good line".into() });
-    let lines: Vec<usize> = log.warnings.iter().map(|w| w.line).collect();
-    assert_eq!(lines, vec![2, 3, 4, 5, 6, 7, 10]);
-    let msg = |line: usize| {
-        log.warnings
-            .iter()
-            .find(|w| w.line == line)
-            .map(|w| w.error.clone())
-            .unwrap()
-    };
-    assert!(msg(3).contains("slept_min"), "{}", msg(3));
-    assert!(msg(4).contains("`t`"), "{}", msg(4));
-    assert!(msg(5).contains("est_min"), "{}", msg(5));
-    assert!(msg(6).contains("timestamp"), "{}", msg(6));
-    assert!(msg(10).contains("string"), "{}", msg(10));
-    assert_eq!(log.warnings[0].text, "this is not json");
-    assert_eq!(log.warnings[0].to_string(), format!("line 2: {} ({:?})", msg(2), "this is not json"));
-    // Missing file → empty log, no error.
-    let missing = Log::read(fixture("does-not-exist.jsonl")).unwrap();
-    assert!(missing.is_empty() && missing.warnings.is_empty());
-}
 
-#[test]
-fn append_creates_the_directory_and_one_object_per_line() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join(".tm").join("log.jsonl");
-    let e1 = LogEntry::new(at("2026-09-07T06:05:00-05:00"), Event::Wake { slept_min: 490, onset_min: None });
-    let e2 = LogEntry::new(at("2026-09-07T07:00:00-05:00"), Event::Note { text: "multi\nline \"quoted\"".into() });
-    Log::append(&path, &e1).unwrap();
-    assert!(path.exists());
-    Log::append(&path, &e2).unwrap();
-    let text = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(text.lines().count(), 2);
-    assert!(text.ends_with('\n'));
-    let log = Log::read(&path).unwrap();
-    assert_eq!(log.entries, vec![e1.clone(), e2.clone()]);
-    assert!(log.warnings.is_empty());
-    Log::append_all(&path, &[e1.clone(), e2.clone()]).unwrap();
-    assert_eq!(Log::read(&path).unwrap().len(), 4);
-    // A directory in the way is a write error.
-    let bad = dir.path().join("dir-not-file");
-    std::fs::create_dir_all(&bad).unwrap();
-    assert!(Log::append(&bad, &e1).is_err());
-}

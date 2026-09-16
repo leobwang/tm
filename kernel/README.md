@@ -22907,3 +22907,308 @@ the three pre-switch assertions turned around
 `cli_latency`'s cache-file count — **gap 140** clearing as written), the call-count assertion turned
 on, the two `#[ignore]`s deleted, and the **§5.13 drive**. Then **S2** (**gap 130**, D16) with quirk
 Q6(f) (**gap 86**), then **L9** (**gap 93**). Residue from the retarget: **gaps 150, 152, 160, 170**.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 5, W-11 — **THE SWITCH (S) LANDED.**  Design
+     §14.6 items 1, 2, 5 and 7: `Ctx::replay_with`'s body is the kernel's, §12's
+     reader is deleted (1,803 lines out of `log.rs`), and gap 145 / gap 120
+     part 3 are built.  Takes gaps 180-182 (the Switch step's range is
+     180-189).  New gaps start at 183.  No Lean edited: audit 3934, cheats 157,
+     parity P35, burn-down 13, all unchanged.
+     =========================================================================== -->
+
+## Stage 5, W-11 (the Switch), 2026-09-16: the kernel is the only reader of the log
+
+**The honest paragraph, first.** **S is made.** `Ctx::replay_with`'s body is
+`kernel_log::replay_scoped(scope)`; `Ctx::log_tail_of` is `headers_after`;
+`Ctx::entries_at` is `render_lines`; `Ctx::replay_of` — the in-tree chokepoint —
+**no longer exists**, and neither does the reader it called. Every verb reads the
+log through the Lean kernel, at once, in one commit, as **D19** requires. The
+per-verb call table below is the measurement that says so: twelve verbs, every
+one of them making at least one kernel `log` call, where the same harness read
+twelve zeroes yesterday. This is the seventh run to face S and the first to land
+it — and it landed because **D21 put the instrument in first**: T5 and the door
+suite were re-anchored to fork point `4748911` last run, so the deletion below
+could not quietly turn them into self-comparisons.
+
+### What landed, in one commit
+
+1. **The body swap** (§14.6 item 1). `Ctx::replay_with(store, cfg, now, today,
+   scope)` calls `kernel_log::replay_scoped`, merging the sealed records the
+   scope names (§11.1) and resuming the checkpoint under `.tm/cache/replay`
+   (D13). `now` is new in the signature and is the **undo stack's** clock, not
+   the replay's: §9.6 pins the tail at the smallest `UndoEntry.log_line` younger
+   than 14 days (`kernel_log::max_line_of`), so a reseal never folds an entry
+   `tm undo` can still reach. The cache's notices go to stderr (CRIT 26).
+2. **§12's deletion.** `tm-core/src/log.rs` goes **3,609 → 1,806 lines**: all of
+   `Log` and its iterators, `LogEntry::{parse, local, calendar_date}`,
+   `parse_timestamp` and `ts::deserialize` (CRIT 20), `impl Deserialize for
+   Event` with the macro's private `Known` mirror and `field_error`,
+   `UndoMask`/`undo_mask`, `DayIndex`, `local_midnight`, `Block`/`Cut`/`Machine`
+   and the whole replay machine, `replay`/`replay_lines`/`replay_refs`,
+   `parse_instance_status`, `stamp_from_key`, `Replay::stamps`, and the file's
+   own `mod tests` and `mod reader_tests`. **The writer stays**, as §12 says and
+   D16's S2 needs: `Event` (`Serialize`, `name`, `primary_id`),
+   `LogEntry::{new, to_json}`, `fmt_timestamp`, `hours_since_wake`, and every
+   decoded record type.
+3. **`tm log` (§11.4) on the kernel.** Step 3 reads the selected lines through
+   `render_lines`, and step 5 prints the rendering's **own bytes** — D22's seam
+   (`entry_json_of`) did not have to change when its input moved from the writer
+   to the kernel, which is what D22 bought.
+   `tm_log_is_byte_identical_on_the_corpus` passes **unchanged and un-blessed**.
+4. **Gap 145 / gap 120 part 3, both halves** (§14.6 item 7; D18 (iii), P31).
+   `GenesisError::ReachTooFar` becomes a named `CliError` that fails every verb
+   by name — and `Ctx::load_tolerant`, which **only `tm check`** calls and which
+   tolerates **only** that fault, turns it into a named `tm check` problem over
+   an empty replay. The empty replay is the *kernel's* answer for a log of no
+   lines, not a hand-built value (§5.3: one definition of a concept).
+5. **The instruments turned around**, all three named in the brief:
+   `no_verb_makes_a_kernel_log_call_before_the_switch` →
+   `every_verb_reads_the_log_through_the_kernel_after_the_switch`;
+   `every_scope_is_the_whole_replay_before_the_switch` →
+   `every_all_time_fact_is_whole_at_every_scope_after_the_switch`;
+   `cli_latency`'s cache-file count (**gap 140 clears exactly as written** — 39
+   files where the assertion demanded 0). Both `#[ignore]`s are gone.
+
+### The per-verb kernel-call table (design §14.6's, beside T11)
+
+Measured by `kernel_call_counts.rs`, which yesterday asserted every one of these
+was **0**:
+
+| verb | `log` | apply | capacity | replays | scopes |
+|---|---|---|---|---|---|
+| wake | 3 | 1 | 0 | 2 | hot, hot |
+| arrive | 4 | 1 | 1 | 3 | hot, hot, hot |
+| start | 3 | 0 | 0 | 2 | hot, hot |
+| pause | 3 | 0 | 0 | 2 | hot, hot |
+| done | 3 | 0 | 0 | 2 | hot, hot |
+| energy | 4 | 1 | 1 | 3 | hot, hot, hot |
+| break | 2 | 0 | 0 | 2 | hot, hot |
+| drop | 3 | 1 | 0 | 2 | hot, hot |
+| undo | 2 | 0 | 0 | 2 | hot, hot |
+| review day | 1 | 0 | 1 | 1 | **all** |
+| log | 2 | 0 | 0 | 1 | **all** |
+| check | 2 | 0 | 0 | 1 | hot |
+
+A verb's count is its `replay_with` calls **plus** the undo recorder's two tail
+reads plus, for `tm log`, the `render` op — which is why `wake` reads 3 against 2
+replays. R14 measured 4-5 whole-log *reads* a writing verb before the switch and
+only the replay share was visible then; now the FFI counter sees all of them.
+`tm check` carries one more than its replay: gap 134's read-only sweep. **Two
+assertions, deliberately separate**: every verb ≥ 1 (the all-or-nothing gate,
+which survives any future re-measurement of the table) and each count exact.
+
+### The deletion is mechanical, and the survival test says so — run for real
+
+W-11's three tracks left a guard that reads §12's own alternation over each
+differential file and requires every hit to be inside a `BEGIN … END THE IN-TREE
+CROSS-CHECK` region or on a line marked `// S: deleted with the reader`. The
+deletion here was performed **by that rule** — the region, plus 13 marked lines
+in `kernel_replay_parity.rs` and 16 in `kernel_log_door.rs` — and the guard then
+checks the other direction, because with no banners left *no* reference may
+remain anywhere:
+
+```
+T5's in-tree region: GONE, and no reference to §12's reader remains
+the door's in-tree region: GONE, and no reference to §12's reader remains
+```
+
+Both suites still compare, and against the **fork**: T5's frozen arm reports
+*7 logs, 126 `Replay` keys, 7,189 scalar values, 7 entry counts, 7 refused-line
+lists; 1 parity P21 sighting, every one displaying the same load; 0 other
+exceptions*. This is the whole of D21's bet, collected.
+
+### §12's one-reader grep: **125 → 41**, and what all 41 are
+
+Quoting **§12's own alternation**, never R8's 89 (the fifth run to say so):
+
+| group | count | what they are |
+|---|---|---|
+| comments and doc prose | **29** | sentences naming the deleted symbols *to say they are gone*, or naming the **fork's** versions (`kernel_log_grammar.rs`'s T1-T3 header, `log.rs`'s new "what left at the switch" section, `ctx.rs`'s swap notes) |
+| the deletion guard's own needles | **9** | the alternation itself, as string literals in `support/fork.rs`'s `reader_scan` — it must name them to check for them |
+| functions named `replay` | **3** | `kernel_log.rs`'s `ReplayCache::replay` (**the one reader**), and two test helpers that wrap the chokepoint |
+
+One hit is a false positive: `mod.rs`'s *"Machine-readable output"* matches
+`Machine\b`. **No line in either crate parses a log line in Rust.**
+
+### The §5.13 drive, on the switched binary — and the two items it could not do
+
+A 120-day history tree, 1,418 lines, driven with the shipped binary. Every verb
+timed; the highlights are in the summary. `wake` 180 ms (first, genesis),
+then 11-48 ms for the day; three undos 20-23 ms, the third reaching behind the
+cut; `review week` this week 15 ms and **three months ago 12 ms**; `review day
+--date` two months back 12 ms; `close day` on the stale tree 18 ms; `model --fit`
+24 ms (*fitted from 470 observations*); `log --since 7d` 19 ms, `log --item ^t4`
+23 ms, `--json log` 22 ms. Deleting `.tm/cache/replay` mid-session: the next verb
+took **137 ms instead of 11 ms**, rebuilt all 7 files, and every answer was
+identical. A UTF-8-broken line appended by hand: every verb still ran, and
+`tm check` named it — `.tm/log.jsonl:1446: warning[log-line]: the log reader
+refused this line: invalid UTF-8` — with **exit 0** (P13, D18 (i)).
+
+**Two items were not performed, and this says so rather than implying they were:**
+
+- **The TUI.** `tm tui` refuses a non-tty (`tm tui needs a terminal (stdout is
+  not a tty)`), so the "two reloads with a CLI verb between" item cannot be
+  driven from a script. It is **owed to a human**, like stage 3's and stage 4's.
+- **A hand-appended undo 30 days back naming `reachTooFar`.** Driven on three
+  trees — 1,418, 9,512 and **19,050** lines — and every verb answered normally on
+  all three, because whether the fault fires is *the kernel's answer* (which pop
+  a guard forces), not a property of the log's age — exactly what W-10 recorded.
+  It **is** demonstrated on the real binary, twice, by committed tests: T11's
+  three-year row names it in **1.32 s**, and
+  `a_hand_undo_beyond_the_rebuild_bound_fails_by_name` asserts every verb fails
+  by name while `tm check` exits 0 and prints it.
+
+### T11: the seven rows, against the pre-switch figures
+
+| row | bound | measured | pre-switch |
+|---|---|---|---|
+| first verb (genesis + close + drop), 3 y | < 5 s | **2.18 s** | 0.69 s (no genesis existed) |
+| **later verb, 3 y** | < 1 s | **146.8 ms** | **278.6 ms** |
+| `--now` + 1 day (a reseal) | < 1 s | **202.4 ms** | — |
+| a hand undo the gate can window | < 5 s, next not rebuilt | **156.8 ms**, next **146.7 ms** | — |
+| a routine for a 3-day-old instance | < 1 s, no rebuild | **131.6 ms**, 0 new files | — |
+| 10 stalled days | each < 1 s, ≤ 1 write a day | worst **521.5 ms**, **0** new generations | — |
+| `tm review week` (the `All` scope) | < 1 s | **248.2 ms** | — |
+
+**The later verb is 1.9× faster than the reader it replaces**, which is the
+number to keep: the switch pays a one-off genesis and then reads a checkpoint.
+R14's 1-year row: first 1.17 s, later 96.3 ms. **No row regressed.**
+
+### Observable behaviour changes
+
+1. **Every verb's facts now come from the kernel.** No answer moved: the corpus
+   `tm log` bytes are identical, T12's `model.json` is still fork `4748911`'s
+   byte for byte, and the whole suite is green.
+2. **`.tm/cache/replay/` is now written by every verb** — `ckpt.json` and the
+   sealed month files (D13). Deleting it costs one rebuild and changes nothing.
+3. **A hand edit no rebuild can window fails every verb by name** and `tm check`
+   survives it (D18 (iii), P31). New user-visible text: `reachTooFar: …
+   cannot be windowed — answering it would resend N lines (B bytes), past the
+   memory gate, and the guard that refused it is undoReach. Move or remove that
+   line; `tm check` still runs and names it`.
+4. **A minute or count sum past `u32::MAX` is refused by name** where the fork
+   saturated — design §17's **P17**, now reachable and asserted
+   (`absurd_minute_counts_are_refused_by_name_not_saturated`).
+5. `tm check`'s sweep no longer has a second reader to fall back on: a sweep that
+   cannot run reports **no lines and says so**, rather than a clean log.
+
+### Recorded disagreements between the design, the brief and the repo
+
+1. **The brief asked for `cli_switch_acceptance` to be "10 passed / 0 ignored".
+   The binary holds nine tests** — its own header says "eight of §14.6's ten T9
+   names (the other two live in `cli_check_log.rs`) and T12", and W-10 measured
+   7 passed + 2 ignored = 9. Measured here: **9 passed / 0 ignored**. The two
+   `#[ignore]`s are gone, which is what the item was for.
+2. **Design §14.6's T11 row 4 is unreachable as written** on a three-year log:
+   "an `undo` whose target is 30 days old (one rebuild)" needs **9,039 lines**
+   resent, past gap 102's 8,192-line gate, so the answer is `reachTooFar`. That
+   is D18 (iii) working, not a defect — **and the memory cap is never raised to
+   make a bound reachable** (D18). The row is split in the test: the 30-day undo
+   must fail *by name and fast*, and the latency claim is measured on an undo the
+   gate can window. Recorded as **gap 180**.
+3. **`cli_latency`'s "at most one checkpoint generation" assertions counted
+   files.** A generation is `ckpt.json` **plus a month file per sealed month** —
+   ~37 files at three years — so `cache_files <= before + 1` was vacuously true
+   before S (the count was always 0) and could never hold after it. They count
+   generations now. This is the shape README gap 16 names: an assertion that
+   passed because nothing could fail it.
+4. **§12's one-reader grep is 41**, and R8's 89 is still the wrong number to
+   quote.
+
+### Gap 180 (new; label W11S-a) — T11 row 4's 30-day undo is past the memory gate
+
+1. **What is not done.** Design §14.6's T11 row 4 — "after hand-appending an
+   `undo` whose target is 30 days old (one rebuild) < 5 s" — is not measurable on
+   a three-year log, and no test asserts it as written.
+2. **Why.** Measured: the pop that undo forces resends **9,039 lines (942,870
+   bytes)**, past `RESEND_LINES` = 8,192 (gap 102's memory gate), so the answer
+   is the named fault. The reach is not a function of the target's *age* — it is
+   the cut the refusing guard pops to, which is the kernel's answer.
+3. **What it costs.** The row's latency claim is now measured on a nearer undo,
+   so "one rebuild at 30 days" is asserted nowhere. What *is* asserted is the
+   fault, by name and under the 5 s bound.
+4. **When it clears.** By the owner deciding what the row should say: either the
+   bound belongs to a windowable undo (which is what the test now measures), or
+   D18's cap discussion reopens — and the cap is never raised, so it is the row
+   that should move.
+
+### Gap 181 (new; label W11S-b) — the chokepoint's include duplicates 5 unit tests 31 times
+
+1. **What is not done.** `tm/tests/support/replay.rs` must reach the kernel, so
+   it `#[path]`-includes `tm/src/cli/kernel_log.rs`; that file's
+   `#[cfg(test)] mod tests` therefore compiles into **every** binary that
+   includes the chokepoint. Its 5 unit tests now run **31 times** (14 as
+   `chokepoint::`, 6 `tui_common::`, 5 `review_common::`, 4 `tui_queue_common::`,
+   2 `replay::`).
+2. **Why.** There is no other way in: `decode_facts` *is* the decoder, and a
+   second copy in the test tree would be the two-readers defect (§5.3). `tm` is
+   binary-only, so a test cannot link it as a library.
+3. **What it costs.** **155 of the workspace's 1,292 passing tests are the same
+   five tests**, so the headline count no longer means what a reader assumes, and
+   every one of those binaries pays their compile. Nothing is unsound — they pass
+   everywhere — but a count that overstates coverage is the §9.2 shape.
+4. **When it clears.** By giving `tm` a `[lib]`, or by gating that `mod tests` so
+   it compiles only in its own crate. Both are outside a body-swap commit.
+
+### Gap 182 (new; label W11S-c) — the drive's two unperformable items
+
+1. **What is not done.** The §5.13 drive could not exercise the **TUI** (it
+   refuses a non-tty, so "two reloads with a CLI verb between" is unscriptable)
+   and could not make **D18 (iii)** fire on a synthetic tree (three tried, to
+   19,050 lines).
+2. **Why.** The first is a property of the harness, not the binary. The second is
+   established: the fault depends on the pop a guard forces, not on the log's
+   age.
+3. **What it costs.** The TUI's post-switch behaviour — specifically the
+   in-process checkpoint reused across reloads (K14) — is covered by
+   `tui_*` tests but not by a human at a terminal. D18 (iii) is covered by two
+   committed tests, so nothing there is unwatched.
+4. **When it clears.** The TUI half is owed to the **owner's own 30-minute
+   drive**, with stage 3's and stage 4's.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited** — `git diff --name-only` contains no `.lean`, no
+`lean-toolchain`, no `Cargo.toml`, no `Cargo.lock` and nothing under
+`kernel/corpus/`. Goals discharged, refuted, added: none; burn-down **13 → 13**,
+all stage 6's. New theorems: none — the audit stays at **3934**. New
+`decide`/`rfl` witnesses: none, so no probe budget was spent. New cheats: none
+(highest **157**). New parity entries: none — **P13, P17, P21 and P31 all became
+*reachable* here**, which is what a parity list is for; the highest stays
+**P35**. `TmKernel.lean` imports: **78**. No predicate or assertion was weakened,
+no goal deleted, no memory bound raised, **no corpus or fixture re-blessed** (the
+`tm log` corpus expectation and every `insta` snapshot are untouched in the
+diff).
+
+### Numbers
+
+**Taken:** gaps **180-182**. **Highest:** gap 182, cheat 157, parity P35. New
+gaps start at **183**.
+
+**Re-measured** (main worktree, on the tree committed; every command capped at
+`MemoryMax=40G`, `MemorySwapMax=0`; the FFI suite at 16G):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, **3.15 / 3.11 / 3.14 s** (the merge `07b525e`: 3.03 / 3.10 / 3.03). +1.4% worst, inside the 10%-per-step rule |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged; all stage 6) |
+| `cargo test --workspace` | **1292 passed / 0 failed / 9 ignored across 78** result lines, exit 0, **0 warnings** (before: 1135 / 0 / 11 across 79). **+157 explained**: 155 are gap 181's duplicated five, against ~24 tests deleted with the reader; one binary fewer is `log_narrowed_facts.rs`, which went at S as its own header said it would |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) |
+| T5 (`kernel_replay_parity`) | **27 passed / 0 failed / 4 ignored**, 6.26 s — comparing against the **fork**, with the in-tree region gone |
+| the door suite (`kernel_log_door`) | **21 passed / 0 failed**, 1.57 s |
+| `cli_switch_acceptance --include-ignored` | **9 passed / 0 failed / 0 ignored** (was 7 / 0 / 2) |
+| `cli_latency --include-ignored` | **5 passed / 0 failed**, 12.30 s |
+| `kernel_call_counts` | **1 passed** — every verb ≥ 1 `log` call, each count exact |
+| `cli_check_log`, `log_serde`, `log_regressions`, `log_replay` | **6 / 2 / 12 / 10**, all passing |
+| §12's one-reader grep | **41** (from **125**): 29 comments, 9 guard needles, 3 `fn replay` |
+| `tm-core/src/log.rs` | **3,609 → 1,806 lines** |
+| the diff | 14 files, **+863 −3,405**; 1 file deleted; no Lean, no `Cargo.toml`, no `lean-toolchain`, no `kernel/corpus/`, no fixture, no snapshot |
+
+**Owed next.** **S2** (**gap 130**, D16: the kernel writes log lines) with quirk
+Q6(f) (**gap 86**); then **L9** (**gap 93**). Still open from this run: **gaps
+180-182**, and the earlier **119, 129, 132, 133, 150-152, 160, 170**. The
+performance levers (**121, 122, 123, 126, 127**) are untouched and now have a
+real baseline to move: a later verb at three years is **146.8 ms**.

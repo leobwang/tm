@@ -2412,7 +2412,7 @@ without `reseal`, and compares them field by field with `Ctx::replay_of` over:
   | first verb (genesis + automatic close + drop) | < 5 s |
   | later verb | < 1 s |
   | `--now` + 1 day (a reseal) | < 1 s |
-  | after hand-appending an `undo` whose target is 30 days old (one rebuild) | < 5 s, and the next verb does **not** rebuild |
+  | after hand-appending an `undo` whose target is 30 days old (one rebuild) | < 5 s, and the next verb does **not** rebuild *(corrected 2026-09-16, S: on a three-year log this is **unreachable** — the pop that undo forces resends 9,039 lines, past gap 102's 8,192-line memory gate, so the answer is the named fault `reachTooFar` (D18 (iii), P31), and **the cap is never raised** (D18). `cli_latency.rs` measures both halves: the 30-day undo must fail by name inside the 5 s bound, and the rebuild bound is measured on an undo the gate can window. README **gap 180**.)* |
   | a routine logged for an instance 3 days old | < 1 s, no rebuild |
   | a block left open, then 10 successive `--now` days | each < 1 s; at most one checkpoint write per day |
   | `tm review week` (the `All` scope) | < 1 s |

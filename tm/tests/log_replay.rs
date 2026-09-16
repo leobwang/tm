@@ -260,9 +260,17 @@ fn day_two_applies_undo_and_the_midnight_close() {
     assert_eq!(r.block_minutes("t3"), 203);
     assert_eq!(r.block_minutes_on("t3", d8), 65);
     // Demotion, drop-less, unknown, closes.
-    assert_eq!(r.stamps("m2"), vec![Stamp::Week(37)]);
+    // `Replay::stamps` went at S with the reader (design §12); the field it
+    // read is still here, and is still what the demotion carries.
+    let stamps = |id: &str| -> Vec<Stamp> {
+        r.demotions
+            .get(id)
+            .map(|v| v.iter().filter_map(|d| d.stamp).collect())
+            .unwrap_or_default()
+    };
+    assert_eq!(stamps("m2"), vec![Stamp::Week(37)]);
     assert_eq!(r.demotions["m2"][0].est_min, 180);
-    assert_eq!(r.stamps("m9"), vec![]);
+    assert_eq!(stamps("m9"), vec![]);
     assert_eq!(r.unknown, 1);
     assert_eq!(r.closes.len(), 2);
     assert_eq!(r.closes[1].key, "2026-09-08");

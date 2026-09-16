@@ -51,36 +51,6 @@ use serde_json::Value;
 
 const TZ: Tz = chrono_tz::America::Chicago;
 
-// ===========================================================================
-// BEGIN THE IN-TREE CROSS-CHECK — THE ARM §12 DELETES (README gaps 146, 149)
-//
-// Every use the door suite makes of the reader design §12 deletes is behind
-// these two functions, and every call site outside this region is marked
-// `// S: deleted with the reader`.  At S the region goes and those lines go
-// with it; `no_reader_reference_escapes_the_deletion_region` is what checks
-// that rather than asserting it.
-//
-// What is left when they go is recorded per test in the README block for
-// W-11: `the_door_is_the_reader_it_replaces` keeps its fork arm (the frozen
-// answers below), `the_doors_render_is_the_lines_own_bytes` needs no reader at
-// all any more, and the rest are named there by what they lose.
-// ===========================================================================
-mod in_tree {
-    use super::*;
-
-    /// The whole in-tree reader's `Replay` of `text`, through the chokepoint.
-    pub fn reader(text: &str) -> tm_core::log::Replay {
-        replay::replay_of_text(text, TZ)
-    }
-
-    /// The 1-based physical lines the in-tree reader refuses.
-    pub fn refused_lines(text: &str) -> Vec<u64> {
-        replay::warning_lines_of_text(text)
-    }
-}
-// ===========================================================================
-// END THE IN-TREE CROSS-CHECK
-// ===========================================================================
 
 /// The corpus logs T5 reads, by the same paths.
 fn corpus_logs() -> Vec<(String, String)> {
@@ -152,7 +122,6 @@ fn the_door_is_the_reader_it_replaces() {
     for (name, text) in &logs {
         let (dir, bytes) = tree(text);
         let today = day_after(text);
-        let reader = in_tree::reader(text); // S: deleted with the reader
         // Twice: genesis, then from the checkpoint it wrote.
         for pass in ["genesis", "from the checkpoint"] {
             let read = door(dir.path(), &bytes, today, kernel_log::Scope::All);
@@ -179,17 +148,12 @@ fn the_door_is_the_reader_it_replaces() {
                 None => t.skipped += 1,
             }
 
-            // The in-tree cross-check: sharper while it exists, because the
-            // reader's `PartialEq`, `ported_facts()` and `view()` reach fields
-            // the fork's serialised `Replay` does not carry.
-            assert!(read.replay == reader, "{name} ({pass}): the door's Replay is not the reader's"); // S: deleted with the reader
-            assert_eq!(read.replay.ported_facts(), reader.ported_facts(), "{name} ({pass}): the ported facts (D14)"); // S: deleted with the reader
-            assert_eq!(read.replay.line_count(), reader.line_count(), "{name} ({pass}): the line count"); // S: deleted with the reader
-            assert_eq!(read.replay.entry_count(), reader.entry_count(), "{name} ({pass}): the entry count"); // S: deleted with the reader
-            assert_eq!(read.replay.view(), reader.view(), "{name} ({pass}): the view rows"); // S: deleted with the reader
+            // The denominator, counted rather than claimed: `days` was the
+            // in-tree reader's day count until S, and is now the door's own —
+            // what the frozen fork answer above was compared over.
+            days += read.replay.days.len();
             compared += 1;
         }
-        days += reader.days.len(); // S: deleted with the reader
     }
     assert_eq!(t.logs, 16, "8 of the 9 logs are frozen, read twice each");
     assert!(t.values > 8_000, "the fork denominator is too small to mean anything: {}", t.values);
@@ -249,7 +213,6 @@ fn the_doors_narrow_scopes_carry_what_they_promise() {
     // whole answer is the whole's — so this test keeps its bite after S.
     let all = door(dir.path(), &bytes, today, kernel_log::Scope::All);
     let whole = &all.replay;
-    assert!(all.replay == in_tree::reader(&text), "the `All` scope is the whole reader's"); // S: deleted with the reader
 
     let hot = door(dir.path(), &bytes, today, kernel_log::Scope::Hot);
     assert!(
@@ -327,8 +290,6 @@ fn the_door_names_every_unreadable_line_not_just_the_last_calls() {
         vec![early as u64 + 1, middle as u64 + 1, late as u64 + 1],
         "every damaged line is named, whichever chunk it fell in"
     );
-    let want = in_tree::refused_lines(&text); // S: deleted with the reader
-    assert_eq!(got, want, "the sweep's lines are the reader's"); // S: deleted with the reader
     for w in &swept {
         assert_eq!(w.text, "not json at all", "the warning quotes the line's own bytes");
         assert!(w.error.starts_with("not JSON"), "the warning names its cause: {}", w.error);
@@ -422,13 +383,10 @@ fn the_doors_tail_headers_are_the_recorders() {
         // neither side of it is the reader.
         let from_zero = kernel_log::headers_after(&bytes, &now, &wire(dir.path()), 0).expect("a tail read");
         let lines = kernel_log::split(&bytes).lines.len() as u64;
-        let in_tree_whole = in_tree::reader(text); // S: deleted with the reader
         for after in 0..=lines + 2 {
             let got = kernel_log::headers_after(&bytes, &now, &wire(dir.path()), after).expect("a tail read");
             let want: Vec<(u64, String, Option<String>)> = from_zero.iter().filter(|h| h.0 > after).cloned().collect();
             assert_eq!(got, want, "text {k}, after {after}: the tail is not the suffix of the whole");
-            let in_tree_want: Vec<(u64, String, Option<String>)> = in_tree_whole.headers_from(after + 1).iter().map(|r| (r.line, r.tag.clone(), r.id.clone())).collect(); // S: deleted with the reader
-            assert_eq!(got, in_tree_want, "text {k}, after {after}"); // S: deleted with the reader
             cuts += 1;
         }
     }
@@ -556,7 +514,6 @@ fn every_door_function_the_switch_calls_is_exercised_here() {
 ///
 /// Every reference this file makes to the reader design §12 deletes is either
 /// inside the `BEGIN … END THE IN-TREE CROSS-CHECK` region or on a line marked
-/// `// S: deleted with the reader`. After S, with the region gone, the same test
 /// requires that **no** reference remains — so it goes on being the instrument
 /// instead of becoming a comment.
 #[test]
@@ -610,7 +567,6 @@ fn the_doors_hot_scope_answers_every_all_time_question() {
     let all = door(dir.path(), &bytes, today, kernel_log::Scope::All).replay;
     let whole = &all;
     let hot = door(dir.path(), &bytes, today, kernel_log::Scope::Hot).replay;
-    assert!(all == in_tree::reader(&text), "the `All` scope is the whole reader's"); // S: deleted with the reader
 
     // Non-vacuity, both halves: `Hot` must really be a narrowing here, and it must really narrow
     // the *date sets* the two questions below used to be answered from.
@@ -686,7 +642,6 @@ fn the_doors_total_is_the_logs_all_time_entry_count() {
     let all = door(dir.path(), &bytes, today, kernel_log::Scope::All).replay;
     let whole = &all;
     assert_eq!(all.entry_count(), all.view().len(), "on a whole log the answer's two counts agree");
-    assert!(all == in_tree::reader(&text), "the `All` scope is the whole reader's"); // S: deleted with the reader
 
     let first = *whole.days.keys().next().expect("a day");
     for (what, scope) in [

@@ -35,7 +35,7 @@ use tm_core::check as validate;
 use tm_core::energy::{self, Model};
 use tm_core::horizon::{self, REVIEW_BLOCK};
 use tm_core::ics;
-use tm_core::log::{LogEntry, Replay, ViewRow};
+use tm_core::log::{Replay, ViewRow};
 use tm_core::priority;
 use tm_core::review as core_review;
 use tm_core::model::{parse_date, Horizon, Id, IsoWeek, Period, YearMonth};
@@ -597,7 +597,7 @@ pub fn model(g: &Globals, args: &super::ModelArgs) -> Result<i32, CliError> {
 ///
 /// **`entries` holds each line's own JSON bytes** ([`RawValue`]), not a parsed
 /// value — the owner's **D22** (2026-09-16; AGENTS §4), which corrects design
-/// §11.4 step 5. See [`entry_json`] for why, and for the pretty-printing that
+/// §11.4 step 5. See [`entry_json_of`] for why, and for the pretty-printing that
 /// has to be re-emitted by hand once the bytes are carried rather than
 /// re-serialised.
 #[derive(Debug, Serialize)]
@@ -616,18 +616,19 @@ pub fn log(g: &Globals, args: &super::LogArgs) -> Result<i32, CliError> {
     // (`Ctx::entries_at`, the kernel's `render` op after the switch), then
     // render. Only the selected lines are read, not the whole log again.
     let lines: Vec<u64> = rows.iter().map(|r| r.line).collect();
-    let entries = Ctx::entries_at(&ctx.store, &lines)?;
+    let entries = Ctx::entries_at(&ctx.store, &ctx.cfg, ctx.today, &lines)?;
     let out = LogOut {
         total: ctx.replay.entry_count(),
         // **D22**: the payload is the line's own bytes, never a re-serialised
-        // `Value`. Today they come from the writer (`LogEntry::to_json`, which
-        // §12 keeps); at S they come from the kernel's `render` op
-        // (`kernel_log::render_lines`, which already hands back a `RawValue`),
-        // and this renderer does not change when they do.
+        // `Value`. Since S they are the kernel's `render` op's
+        // (`kernel_log::render_lines`, which hands back a `RawValue`); before it
+        // they were the writer's `LogEntry::to_json`. **This renderer did not
+        // change when they moved** — that is what D22's seam bought, and
+        // `tm_log_is_byte_identical_on_the_corpus` is what says so.
         entries: lines
             .iter()
             .filter_map(|l| entries.get(l))
-            .map(entry_json)
+            .map(|(raw, _)| entry_json_of(raw.get()))
             .collect::<Result<Vec<_>, CliError>>()?,
     };
     emit(ctx.json, || log_human(&rows, &entries), &out)?;
@@ -662,9 +663,10 @@ const ENTRY_DEPTH: usize = 2;
 /// names. So the fragment is indented here, by [`reindent`], exactly as
 /// serde_json's own `PrettyFormatter` would have indented the same value at
 /// [`ENTRY_DEPTH`].
-fn entry_json(entry: &LogEntry) -> Result<Box<RawValue>, CliError> {
-    entry_json_of(&entry.to_json()?)
-}
+// (`entry_json`, which took a parsed `LogEntry` and re-serialised it with the
+// writer, went at S with `Ctx::entries_at`'s old body: the kernel's `render`
+// hands back the bytes, so there is nothing left to re-serialise. The seam
+// below is the one that survived, unchanged, which is the point of it.)
 
 /// The seam itself: **one line's JSON bytes in, the bytes `--json` prints out**.
 ///
@@ -806,13 +808,19 @@ fn log_rows<'a>(
 /// (§11.4 step 3). A line whose payload did not come back — the file changed
 /// under the command between the replay and the read — still prints its header,
 /// which is what the kernel's `render` returns for a line it cannot render.
-fn log_human(rows: &[&ViewRow], entries: &BTreeMap<u64, LogEntry>) -> String {
+///
+/// **The parse stays on the human path deliberately** (§11.4 step 5): its
+/// alphabetical key order is what `tm log` prints today, and
+/// `tm_log_is_byte_identical_on_the_corpus` pins it. Only `--json` carries the
+/// line's own bytes (D22). The rendering parsed here is the kernel's since S;
+/// it was the writer's before, and the bytes are the same bytes.
+fn log_human(rows: &[&ViewRow], entries: &BTreeMap<u64, (Box<RawValue>, String)>) -> String {
     rows.iter()
         .map(|r| {
             let rest = entries
                 .get(&r.line)
-                .and_then(|e| {
-                    let mut v = serde_json::to_value(e).ok()?;
+                .and_then(|(raw, _)| {
+                    let mut v: serde_json::Value = serde_json::from_str(raw.get()).ok()?;
                     let m = v.as_object_mut()?;
                     m.remove("t");
                     m.remove("ev");
@@ -911,24 +919,26 @@ pub struct CheckOut {
 /// sweeps the whole file in those chunks, and is exact whatever scope the
 /// verb's own replay asked for.
 ///
-/// A sweep that cannot run falls back to the in-tree reader's warnings — what
-/// shipped before — and says so as its own warning rather than reporting a
-/// clean log: `tm check` is precisely the verb that must keep working on a
-/// damaged log (D18). The fallback goes with the reader at S.
+/// A sweep that cannot run reports **no lines and says so**, as its own
+/// warning, rather than reporting a clean log: `tm check` is precisely the verb
+/// that must keep working on a damaged log (D18), and the worst thing it could
+/// do is call a log it could not read clean. Until S there was a second
+/// answer to fall back on — the in-tree reader's warnings — and that fallback
+/// went with the reader at S (design §12).
 fn line_warnings(ctx: &Ctx) -> (Vec<tm_core::log::LogWarning>, Option<String>) {
     if !ctx.store.exists(LOG_PATH) {
         return (Vec::new(), None);
     }
     let bytes = match ctx.store.read_bytes(LOG_PATH) {
         Ok(b) => b,
-        Err(e) => return (ctx.log_warnings.clone(), Some(e.to_string())),
+        Err(e) => return (Vec::new(), Some(e.to_string())),
     };
     let cache = ctx.store.root().join(super::kernel_log::CACHE_DIR);
     let tz = super::tz_table::wire_for(Some(&cache), ctx.cfg.tz);
     let now = ctx.today.format("%Y-%m-%d").to_string();
     match super::kernel_log::line_warnings(&bytes, &now, &tz) {
         Ok(ws) => (ws, None),
-        Err(why) => (ctx.log_warnings.clone(), Some(why)),
+        Err(why) => (Vec::new(), Some(why)),
     }
 }
 
@@ -973,8 +983,21 @@ fn log_problems(ctx: &Ctx) -> Vec<validate::CheckProblem> {
             None,
             format!(
                 "the kernel could not sweep this log for unreadable lines ({why}); \
-                 the lines below are the in-tree reader's"
+                 no line below is reported from it"
             ),
+        ));
+    }
+    // **Gap 145 / D18 (iii): the fault that fails every other verb.** `tm check`
+    // loaded tolerantly (`Ctx::load_tolerant`), so a log no rebuild can window
+    // reaches the user here, by name, at the line that caused it — which is the
+    // reason `tm check` is exempted from the fault at all.
+    if let Some((line, fault)) = &ctx.replay_fault {
+        out.push(validate::CheckProblem::warning(
+            validate::LOG_LINE,
+            LOG_PATH,
+            *line,
+            None,
+            fault.clone(),
         ));
     }
     let fence = ctx.now + Duration::days(validate::LOG_FUTURE_DAYS);
@@ -1001,7 +1024,10 @@ fn log_problems(ctx: &Ctx) -> Vec<validate::CheckProblem> {
 
 /// `tm check [--fix-ids]` (§1.3, §13), plus the log's own warnings (D18).
 pub fn check(g: &Globals, args: &super::CheckArgs) -> Result<i32, CliError> {
-    let ctx = Ctx::load(g, false)?;
+    // **D18, gap 145**: the one verb that loads tolerantly, because it is the
+    // one that must survive a log no rebuild can window — it is how the line is
+    // found. Every other verb fails by name on that fault.
+    let ctx = Ctx::load_tolerant(g)?;
     let mut files = ctx.files.files.clone();
     let fixed = if args.fix_ids {
         let mut gen = id_gen(&ctx, "fix-ids");

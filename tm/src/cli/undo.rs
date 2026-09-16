@@ -128,7 +128,7 @@ fn snapshot(ctx: &Ctx) -> Result<BTreeMap<String, String>, CliError> {
 /// without replaying the lines before). `None` when the file cannot be read,
 /// which records no line count and no events, as the recorder always did.
 fn log_now(ctx: &Ctx, after: Option<u64>) -> Option<(u64, Vec<LogHeader>)> {
-    Ctx::log_tail_of(&ctx.store, &ctx.cfg, after).ok()
+    Ctx::log_tail_of(&ctx.store, &ctx.cfg, ctx.today, after).ok()
 }
 
 /// The events of `rows` (a command's appended headers), and the line of the first.
