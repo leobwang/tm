@@ -18973,3 +18973,224 @@ contents 1–3 and 5, item 7's D18 defaults (**gap 120 part 3** included), **gap
 count against R14's table, and the §5.13 drive. **T9, T11 and T12 could not be "re-run" by this step**:
 T9 and T12 do not exist — they are S's own deliverables and were never built — and T11 is `cli_latency.rs`,
 which is green above and whose rows do not cover the three verbs changed here.
+
+
+<!-- ===========================================================================
+     APPENDED 2026-09-15: stage 5, D9 track, step S2 on rebuild-on-lean
+     (after the S-gaps step, 5e42a34).  S2 DID NOT LAND IN FULL: the kernel
+     still does not write log lines, because the switch S that S2 is specified
+     to follow has not landed.  This block records what did land (D16's
+     byte-identity evidence, and quirk Q6(d)), why part 1 and quirk Q6(f) are
+     blocked on S, and what was measured.  Takes gap 130 and parity P35; new
+     gaps start at 131.  Cheats are untouched (no Lean edited): highest stays
+     157.
+     =========================================================================== -->
+
+## Stage 5 D9, step S2, 2026-09-15: the kernel does NOT write the log yet — D16's evidence built, gap 84 closed, and the two halves S blocks named
+
+**Starting point.** `5e42a34`, clean: check.sh 7/7, audit 3934, corpus 29/37 files and 4/5 whole plans,
+burn-down 13, `cargo test --workspace` 1084 / 0 / 5 across 73 result lines, FFI 100, T5 19, cli_latency 4.
+
+**The binary still has exactly one reader of the log and one writer, and both are the Rust.**
+`Ctx::replay_with`'s body is still `Ctx::replay_of`; nothing in `tm` calls `kernel_log.rs`.
+
+### Why S2 did not land in full, stated plainly
+
+D16 is specified as "a new step **after S**" (design §22.1). S has not landed — the two steps before this
+one (`89ead46`, `5e42a34`) both end with "S is still owed in full, starting from gap 128". Three
+consequences were checked rather than assumed, and each one blocks a different piece:
+
+1. **Part 1's headline claim would be false.** S2 is "after this step there is ONE definition of the
+   log's format: the kernel's grammar". Retiring the *writer* does not achieve that while the Rust
+   *reader* lives: design §12 deletes `impl Deserialize for Event`, `Known`, `field_error`,
+   `ts::deserialize`, `parse_timestamp` and all of `Log` **at S**, not here. Landing part 1 first would
+   keep two definitions and merely swap which one writes — and it would leave them pointing in opposite
+   directions, so a divergence would show up as tm writing lines its own reader rejects. That is
+   AGENTS §5.3's bug class, entered deliberately, under a commit message saying the opposite.
+2. **Part 1's wire shape would be thrown away.** After S every verb already sends a `log` section, and
+   the appended line rides in it. Before S no verb sends one, so an append would need its own kernel
+   call per appended event — a shape S deletes, and a per-verb kernel-call regression against R14's
+   baseline that S is separately required to measure. The kernel has no event-in/bytes-out op today:
+   `LogReq` carries `lines` (raw text the host already has) and `render` (line numbers **in the tail**),
+   so this is a new request section with its own `mkAppendReq?`, rejection theorem (R10) and build-order
+   conjunct — real Lean, built against an interface that is about to change.
+3. **Quirk Q6(f) needs both readers changed at once.** Giving `close` a primary id changes
+   `Event::primary_id` / `Log.Event.primaryId`, which is a **reader** function live in Rust (feeding
+   `undo_mask`, `iter_item`, `ViewRow`) *and* in Lean (feeding `Replay.matches` and the headers), and
+   T5 compares the two. §12 deletes the Rust one at S. Fixing it now means editing two definitions of
+   one concept in lockstep — exactly what D16 exists to end.
+
+Quirk Q6(d) is the one piece that survives this analysis, because it is a **writer-only** change that
+needs no reader edit on either side (below). It landed.
+
+### What landed
+
+1. **D16's byte-identity evidence, built before the writer moves** (`5ad893c`). S2's acceptance is that
+   the bytes are identical to what the binary wrote before it, "over the corpus and a generated month".
+   T1 already pins the corpus half. Two halves were unpinned and now are:
+   - `the_kernel_renders_a_generated_month_exactly_as_the_rust_writer_would` — `support/loggen.rs`' two
+     30-day months (the design pass's own generator, so these are the files every design §18 figure was
+     taken on): **3,036 lines, every one byte-identical**, covering **24 of the 26** event kinds (`loc`
+     and `readopt` are the two the generator never emits).
+   - `the_writer_proptest_covers_every_writable_event` — T2's byte identity is only as wide as its
+     `any_event` generator, and nothing tied that generator to `EVENT_NAMES`. A kind added to
+     `define_events!` without an arm would have left T2 quietly silent about it. 4,000 deterministic
+     samples; the set must equal `EVENT_NAMES`, which is 26.
+2. **Quirk Q6(d) fixed — gap 84 closed** (below).
+
+### The finding that changes Q6(d): its named case does not exist in this repo
+
+Design Q6(d) says the quirk fires on "`tm undo` of a recorded `move`/`readopt` on an id-less line, or of
+a `close` that closed nothing". **Driven at `5e42a34`, all three of those log an event**, so none of them
+reaches the silent branch:
+
+```
+$ tm move '^a1' week                                # then, on an id-less inbox line:
+$ tm move 'ask Kun about the dinner place' week
+{"t":"...T09:00:00-05:00","ev":"move","id":"a1",...}
+{"t":"...T09:01:00-05:00","ev":"move","id":"ask Kun about the dinner place",...}
+```
+
+The id-less path appends through `horizon::Ctx::log` (`tm-core/src/horizon.rs:492`), which the design's
+reading of that path missed; the explicit `close` always appends, because `closing.rs`'s guard is
+`which != Which::All || took`.
+
+So the branch that writes `undo{of:<verb>}` is reached only by verbs that append **nothing**:
+`rank` (the one with a committed test), `sync-cal`, `review --write`, `model --fit` and the TUI's `tui`
+mutation. **None of those five spells an event tag**, and every verb name that *does* spell one
+(`move`, `readopt`, `close`, `edit`, `demote`, `drop`, `event`, `skip`, `routine`, `note`, `loc`, and the
+day verbs) appends on every path. **Quirk Q6(d) is therefore a latent hazard in this repo, not a live
+bug** — it fires the moment anyone adds a silent verb named like an event kind. That is worth saying out
+loud, because gap 84's own cost line ("the older event vanishes from every fact that reads it and from
+`tm log`'s standing lines") describes what *would* happen, not what does.
+
+### Gap 84 — closed: a silent verb's undo names its verb
+
+**The fix is one site**, exactly where the gap said: `undo.rs`'s `entry.events.is_empty()` branch writes
+`of: format!("verb:{}", entry.verb)` instead of the bare verb name. No event tag contains a colon, so the
+undo matches nothing and dangles — which is what a command that logged nothing should leave behind.
+
+**Why this needed no reader change on either side, checked rather than assumed:** both masks compare `of`
+to the event's *tag* — `tm_core::log::undo_mask` (`ev.name() == of`) and the kernel's `Replay.matches`
+(`e.ev.tag == of_`) — and a non-matching `of` is *dangling* in both, by construction. So `verb:rank`
+cancels nothing in the Rust reader and in the kernel, with no edit to either. **No Lean was touched, and
+the two C7 witnesses stay true as stated**: `undo_of_a_silent_verb_cancels_an_older_event` is a theorem
+about the entries `[move a, undo "move" none]`, which is still exactly what an *older* log contains; what
+changed is that tm no longer writes that input. D5 is not engaged — no two-run theorem broke.
+
+**Driven before and after** (`tm rank ^m3 1`, then `tm undo`, on a copy of `plan-basic`):
+
+| | the line appended |
+|---|---|
+| before | `{"t":"2026-09-07T09:01:00-05:00","ev":"undo","of":"rank"}` |
+| after | `{"t":"2026-09-07T09:01:00-05:00","ev":"undo","of":"verb:rank"}` |
+
+**Tests, and the check that they bite.** `cli_undo.rs`'s existing
+`undo_of_a_verb_that_logs_nothing_still_leaves_a_trace` now expects `verb:rank`, and a new
+`a_silent_verb_undo_cancels_nothing_while_the_old_spelling_still_cancels` covers **both directions**
+(AGENTS §5.8) through the shipped binary: a hand-appended `undo{of:"move"}` — the spelling every log
+written before this step carries — still cancels the standing `move`, and a hand-appended
+`undo{of:"verb:move"}` leaves it standing. **Mutation-checked**: reverting the one-line fix and
+re-running fails with `left: ["rank"], right: ["verb:rank"]`, so the new expectation is not a check no
+input can fail (AGENTS §9.2).
+
+**A deviation recorded, not hidden:** the owner's Q6 answer says (d) is fixed *after the switch*, and the
+switch has not happened. It landed here because the analysis above shows it costs no reader edit and no
+re-proof, so none of the double-maintenance the owner's ordering was protecting against applies. If the
+owner wants the byte change held until S, this commit is a clean revert of one line and two test
+expectations.
+
+### Gap 86 — NOT closed, and why it cannot be here
+
+Quirk Q6(f) needs `close` to carry a primary id. That is reason 3 above: `primary_id`/`primaryId` is a
+reader function live on both sides, T5 compares them, and §12 deletes the Rust one at S. Fixing it before
+S means two definitions edited in lockstep, and the Lean half breaks
+`undo_after_housekeeping_cancels_the_housekeeping` and `the_undo_law_fails_without_untouchedBy`, which
+under D5 must then be **re-proved in their corrected form, never weakened** — work that belongs in the
+same commit as the wiring that makes it true, not ahead of it. Gap 86's text stands as written.
+
+### Gap 130 (new; label S2-a) — the kernel still does not write log lines, and quirk Q6(f) waits with it
+
+1. **What is not done.** D16's part 1: appending verbs do not send typed events, and the kernel returns
+   no bytes. `LogEntry::to_json` is still the one writer, reached from `Ctx::append_entry` (~30 verb
+   sites) and from `horizon::Ctx::log`. There is no event-in/bytes-out op on the wire. Quirk Q6(f)
+   (gap 86) is unstarted for the same reason.
+2. **Why.** The three checked reasons above: the "one definition" claim is false until S deletes the Rust
+   reader; the request shape S2 would build is one S then replaces; and Q6(f) needs a reader change on
+   both sides while both exist.
+3. **What it costs.** The format still has two definitions, held together by T2 — which is now as wide as
+   it claims (every writable event) and as deep (a generated month), so the residual risk is a kind
+   neither the corpus, nor 256 random events, nor 3,036 generated lines exercises. The per-verb kernel
+   call count is unchanged, so no latency row moves.
+4. **Which step clears it.** S2 proper, immediately after S, in one commit: the append op with its
+   `mkAppendReq?` and rejection theorem, `Ctx::append_entry` and `horizon::Ctx::log` routed through it,
+   `LogEntry::to_json` retired to a test-only oracle (T2 becomes the law about the kernel's own render),
+   and quirk Q6(f) with its two re-proved C7 theorems beside it.
+
+### Observable behaviour changes
+
+| where | before | after |
+|---|---|---|
+| `tm undo` of a verb that logged nothing (`rank`, `sync-cal`, `review --write`, `model --fit`, the TUI's mutation) | `{"ev":"undo","of":"<verb>"}` | `{"ev":"undo","of":"verb:<verb>"}` — it can no longer match an event tag |
+| a log written before this step | — | reads exactly as it did: a bare `of` still cancels the latest event of that tag (tested both ways) |
+| every other verb, and every fact | — | unchanged; no decision fact reads a dangling undo, and none of the five silent verbs spelled an event tag |
+
+### Parity P35 (new)
+
+| # | site | this branch | the fork point | authority | step |
+|---|---|---|---|---|---|
+| **P35** | the `of` a silent verb's compensating undo writes | `verb:<name>`, which matches no event tag and dangles | `<name>`, which cancels the latest surviving event of that tag | OWNER Q6(d), gap 84 | S2 |
+
+Both spellings are read identically by both readers, so no differential harness changes: the fork's
+reader dangles a `verb:`-prefixed undo exactly as the kernel does.
+
+### Recorded disagreements between the design and the repo
+
+1. **Q6(d)'s three named cases do not exist in this repo** (driven, above): the id-less `move` and
+   `readopt` append through `horizon::Ctx::log`, and an explicit `close` always appends. The quirk is
+   latent, reachable only by a future silent verb named like an event kind.
+2. **Design §5.4 says "25 `define_events!` tags"; there are 26.** `Kind.all` in `Log.lean` and
+   `EVENT_NAMES` in `log.rs` both list 26, and `log_serde.rs` asserts `EVENT_NAMES.len() == 26`. The new
+   coverage test asserts it too, so the number is now pinned in three places.
+3. **§14.7's F5 row still calls the kernel writer "optional".** D16 made it mandatory (§22.1 says F5 "is
+   absorbed by it and is no longer optional"); the F5 row was left as written and is named here so it is
+   not read as live.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited.** Goals discharged, refuted, added: none; burn-down **13 → 13**. New theorems:
+none. New `decide`/`rfl` witnesses: none, so design §14.0 item 4's probe budget is untouched. New cheats:
+none (highest stays **157**). New parity entries: **P35** (highest **P35**). `TmKernel.lean` imports:
+**78**, unchanged. No recursion over a wire-sized list was added (rule D9-21): the Rust added is one
+`format!` and three tests.
+
+### Numbers
+
+**Taken:** gap 130, parity P35. **Highest:** gap 130, cheat 157, parity P35. **Behaviour rows:** three,
+above — and **the binary still has one reader of the log and one writer, both Rust.**
+
+**Re-measured** (main worktree, on the tree committed; every command capped at `MemoryMax=40G`,
+`MemorySwapMax=0`):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 3.08 / 3.08 / 3.10 s (`5e42a34`: 3.05 / 3.12 / 3.08 s; flat, well inside the 10% a step may add) |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged, stages 3–6) |
+| `cargo test --workspace` | **1087 passed / 0 failed / 5 ignored across 73 result lines** (`5e42a34`: 1084; **+3**: two byte-identity tests and one undo test), exit 0, **0 compiler warnings**. The first commit's tree alone measured **1086** |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) — unchanged |
+| T5 (`kernel_replay_parity.rs --include-ignored`) | **19 passed / 0 failed**, 6.38 s — unchanged, as it must be: T5's undo arms build their own text, so they test the reader, which did not change |
+| `cli_latency.rs --include-ignored` | **4 passed / 0 failed**, 3.75 s, the year-of-log and three-year tests included — unchanged |
+| the month evidence | **3,036 generated lines byte-identical** (1,191 at 40/day + 1,845 at 61/day), **24 of 26** event kinds |
+| T1, unchanged | 636 lines, 553 entries (533 byte-identical, 20 differing only in hand-written numerals), 66 warnings, 9 blank, 8 residue |
+| gap 84, driven before | `tm rank` then `tm undo` → `{"ev":"undo","of":"rank"}` |
+| gap 84, driven after | the same two verbs → `{"ev":"undo","of":"verb:rank"}`; the mutation check fails with `left: ["rank"], right: ["verb:rank"]` |
+
+**Owed next: S, in full**, unchanged and unblocked by this step — starting from gap 128, then design
+§14.6's contents 1–3 and 5, item 7's D18 defaults (**gap 120 part 3** included), **gap 119** in the shape
+the previous block records, **gap 129**'s measurement, the nine T9 CLI tests, T12, T11's seven latency
+rows, the per-verb kernel-call count against R14's table, and the §5.13 drive. **Then S2 proper**
+(**gap 130**): the append op, the writer retired, and quirk Q6(f) (**gap 86**) with its two re-proved
+C7 theorems. The §5.13 30-minute drive is S's, and was not attempted here — this step changed one line
+of the binary and three tests.

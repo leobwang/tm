@@ -223,7 +223,58 @@ fn undo_of_a_verb_that_logs_nothing_still_leaves_a_trace() {
 
     tm.ok_at("2026-09-07T09:01:00-05:00", &["undo"]);
     assert_eq!(tm.read("week/2026-W37.md"), week);
-    assert_eq!(undone(&tm), vec!["rank"]);
+    // Q6(d), gap 84: the name is prefixed, so it can never collide with an
+    // event tag. `rank` never could; `move` and `close` can.
+    assert_eq!(undone(&tm), vec!["verb:rank"]);
+    assert_eq!(tm.last()["id"], serde_json::Value::Null);
+}
+
+/// Append one raw line to `.tm/log.jsonl`, as a hand edit or an older tm would
+/// have left it.
+fn append_raw(tm: &Tm, line: &str) {
+    use std::io::Write;
+    let path = tm.plan.join(".tm/log.jsonl");
+    let mut f = std::fs::OpenOptions::new().append(true).open(&path).expect("open the log");
+    writeln!(f, "{line}").expect("append");
+}
+
+/// The lines `tm log --item <id>` still shows: the mask drops a cancelled one.
+fn item_rows(tm: &Tm, now: &str, id: &str) -> Vec<String> {
+    tm.json_at(now, &["log", "--item", id])["entries"]
+        .as_array()
+        .expect("entries")
+        .iter()
+        .map(|e| e["ev"].as_str().unwrap_or_default().to_string())
+        .collect()
+}
+
+/// **Q6(d), gap 84 — the fix, in both directions** (design §22.1's step S2).
+///
+/// The bare spelling an older tm wrote still cancels the latest event of that
+/// tag; the `verb:` spelling this tm writes cancels nothing. Both are read by
+/// the same mask, so a log that mixes them reads each line as it was meant.
+#[test]
+fn a_silent_verb_undo_cancels_nothing_while_the_old_spelling_still_cancels() {
+    // The old spelling: `undo{of:"move"}` takes the standing `move`.
+    let old = Tm::new();
+    old.ok_at("2026-09-07T09:00:00-05:00", &["move", "^a1", "week"]);
+    assert_eq!(item_rows(&old, "2026-09-07T09:02:00-05:00", "^a1"), vec!["move"]);
+    append_raw(&old, r#"{"t":"2026-09-07T09:01:00-05:00","ev":"undo","of":"move"}"#);
+    assert!(
+        item_rows(&old, "2026-09-07T09:02:00-05:00", "^a1").is_empty(),
+        "a log written before this step must still cancel the way it did"
+    );
+
+    // The new spelling: `undo{of:"verb:move"}` matches no event tag, so the
+    // older, unrelated `move` stands. This is the byte `tm undo` now writes.
+    let new = Tm::new();
+    new.ok_at("2026-09-07T09:00:00-05:00", &["move", "^a1", "week"]);
+    append_raw(&new, r#"{"t":"2026-09-07T09:01:00-05:00","ev":"undo","of":"verb:move"}"#);
+    assert_eq!(
+        item_rows(&new, "2026-09-07T09:02:00-05:00", "^a1"),
+        vec!["move"],
+        "a `verb:`-prefixed undo must cancel nothing"
+    );
 }
 
 #[test]

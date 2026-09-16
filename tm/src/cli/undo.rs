@@ -261,9 +261,21 @@ pub fn undo(ctx: &mut Ctx) -> Result<Undone, CliError> {
     //    A verb that changed a file without logging anything (`tm rank`, §7.4
     //    — rank is line order) still gets one, named after the verb, so the
     //    change and its reversal are both visible to a replay.
+    //
+    //    **The name is prefixed `verb:`** (owner answer Q6(d), gap 84; design
+    //    §22.1's step S2). The mask matches an undo to the latest surviving
+    //    event whose *tag* is `of`, so a bare verb name that happens to spell
+    //    an event kind — `move`, `close`, `edit`, … — cancels an older,
+    //    unrelated event of that kind instead of nothing. No event tag
+    //    contains a colon, so `verb:<name>` matches nothing and the undo
+    //    dangles, which is what a command that logged nothing should leave.
+    //    Both readers agree without a change: `tm_core::log::undo_mask` and
+    //    the kernel's `Replay.matches` both compare `of` to `Event::name`.
+    //    Logs written before this carry the bare name and still cancel as
+    //    they always did (`cli_undo.rs`'s two spelling tests).
     if entry.events.is_empty() {
         ctx.append_event(Event::Undo {
-            of: entry.verb.clone(),
+            of: format!("verb:{}", entry.verb),
             id: None,
         })?;
     }
