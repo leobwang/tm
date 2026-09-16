@@ -20,14 +20,22 @@
 //!
 //! # What the baseline is, and what bites today
 //!
-//! Before the switch **no verb makes a single `log` call** — nothing under
-//! `tm/src` calls `kernel_log::` at all — so the assertion this file turns on
-//! today is `log == 0` for every verb. That is not a formality: it is the guard
-//! against a **half-switched binary** (some verbs reading through the kernel,
-//! some through the Rust reader), which is the exact failure D19's
-//! all-or-nothing rule exists to prevent. At S the switch updates
-//! [`EXPECTED_LOG_CALLS`] to the real per-verb count and the same harness
-//! starts guarding the other direction.
+//! Before the switch **no verb's replay comes from the kernel**, so the
+//! assertion this file turns on today is `log == 0` for every verb but one.
+//! That is not a formality: it is the guard against a **half-switched binary**
+//! (some verbs reading through the kernel, some through the Rust reader), which
+//! is the exact failure D19's all-or-nothing rule exists to prevent. At S the
+//! switch updates [`expected_log_calls`] to the real per-verb count and the
+//! same harness starts guarding the other direction.
+//!
+//! **The one exception, and why it is not a half-switch** (gap 134): `tm check`
+//! asks the kernel for the log's unreadable lines directly, because the answer's
+//! `warnings` array is **per call** and genesis returns only its last chunk's —
+//! so a `tm check` reading warnings off an answer would silently name the final
+//! chunk's lines alone. Its sweep (`kernel_log::line_warnings`) asks for no
+//! facts, no headers, no reseal and no sealed records, so it does not resume a
+//! replay at all: `tm check`'s own `Replay` still comes from `Ctx::replay_of`,
+//! like every other verb's.
 //!
 //! # What it does NOT count, said plainly
 //!
@@ -46,9 +54,20 @@ use std::collections::BTreeMap;
 
 use cli_common::Tm;
 
-/// The per-verb `log`-call count this binary must show. **All zero before the
-/// switch**; S replaces this table with the counts it measures.
-const EXPECTED_LOG_CALLS: u32 = 0;
+/// The per-verb `log`-call count this binary must show; S replaces it with the
+/// counts it measures.
+///
+/// Zero for every verb whose **replay** could come from the kernel — that is the
+/// half-switch guard. `tm check` is **one**: gap 134's read-only sweep, one call
+/// per genesis chunk, and this fixture's log is a single chunk. The number is
+/// therefore exact and not a floor, which is what keeps the guard biting: were
+/// `tm check`'s replay switched as well, it would read 2 and this would fire.
+fn expected_log_calls(verb: &str) -> u32 {
+    match verb {
+        "check" => 1,
+        _ => 0,
+    }
+}
 
 /// `tm/src/cli/ctx.rs`'s `TRACE_SCOPE_ENV`, spelled out rather than imported:
 /// `tm` is a **binary-only** package (its `Cargo.toml` declares `[[bin]]` and
@@ -146,14 +165,15 @@ fn no_verb_makes_a_kernel_log_call_before_the_switch() {
         );
     }
 
-    // **The assertion S turns around.** Today every one of these is 0: nothing
-    // under `tm/src` calls `kernel_log::`, so a non-zero count here means some
-    // verb has begun reading through the kernel while others have not — the
-    // half-switched binary D19 forbids.
+    // **The assertion S turns around.** Every verb but `tm check` is 0: its
+    // replay is still the Rust reader's, so a count here that is not the one
+    // expected means some verb has begun reading through the kernel while
+    // others have not — the half-switched binary D19 forbids.
     for (name, c) in &table {
+        let want = expected_log_calls(name);
         assert_eq!(
-            c.log, EXPECTED_LOG_CALLS,
-            "`tm {name}` made {} kernel `log` call(s) before the switch; \
+            c.log, want,
+            "`tm {name}` made {} kernel `log` call(s) before the switch, expected {want}; \
              the switch is all-or-nothing (D19) and this binary is half-switched",
             c.log
         );

@@ -1848,9 +1848,19 @@ impl ViewRow {
 /// fields [`PortedFacts`] names). The owner's D14 keeps every one: the kernel
 /// ports them, so nothing here may drop or stop deriving them before it does.
 ///
-/// `PartialEq` compares the facts and ignores the line bookkeeping (`rows`,
-/// `line_count`), as serialisation does: two logs with the same survivors
-/// replay to equal facts whatever lines they were read from.
+/// `PartialEq` compares the facts and ignores the **four** derived fields
+/// (`rows`, `line_count`, `entry_count`, `done_date_totals`), as serialisation
+/// does: two logs with the same survivors replay to equal facts whatever lines
+/// they were read from, and `replay(raw) == replay(masked)` holds although one
+/// entry list is twelve entries shorter than the other — which is exactly what
+/// `entry_count` counts.
+///
+/// The last two are derived all-time facts that the fork's `Replay` has no key
+/// for. Keeping them off the wire is what lets the stage-5 oracle compare the
+/// two shapes key for key, and it is why they cannot be compared here: a JSON
+/// round trip could not restore them. They are asserted **by name** instead,
+/// in `tm/tests/kernel_log_door.rs`, which is the stronger statement — it
+/// names the scope each one must survive.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Replay {
     /// Timezone used for day attribution.
@@ -1916,6 +1926,38 @@ pub struct Replay {
     /// bookkeeping; not serialised.
     #[serde(skip)]
     pub line_count: u64,
+    /// **How many entries the log holds, all-time** (design §8.4's
+    /// `entryCount`, column **A**; §11.4 step 5's `tm log` `total`).
+    ///
+    /// Not `rows.len()`. The two agree for a whole-log replay and part
+    /// company under a narrowed scope, where `rows` carries the scope's days
+    /// and this stays the count of every entry the log has ever held — which
+    /// is what `total` means. The kernel derives it in the checkpoint, so it
+    /// survives folding; the reader fills it from the entries it read.
+    ///
+    /// Neither serialised nor compared by [`PartialEq`] (see the type's own
+    /// doc): the fork's `Replay` has no such key, and the count is of the
+    /// entry list a replay was given, not of the facts it derived.
+    #[serde(skip)]
+    pub entry_count: usize,
+    /// **Per id, all-time: the first done date and the count of distinct done
+    /// dates** (design §8.4's `done_dates` row, column **A**).
+    ///
+    /// [`Replay::done_date_first`] and [`Replay::done_date_count`] read this,
+    /// never [`Replay::done_dates`], because those two questions are all-time
+    /// and the date **set** is a window fact: under a narrowed scope the set
+    /// holds only the dates at or above the horizon, so `.first()` would move
+    /// and `.len()` would shrink. `first` is `None` only for an id with no
+    /// done date, which is not given an entry here at all.
+    ///
+    /// The kernel carries both numbers in each item's all-time record
+    /// (`Seal.ItemAgg.doneFirst`/`doneCount`, "over **every** date, a date
+    /// below the horizon included"); the reader derives them from its own
+    /// whole set. Neither serialised nor compared, for the reason
+    /// `entry_count` gives; `kernel_log_door.rs` asserts it by name and by
+    /// scope.
+    #[serde(skip)]
+    pub done_date_totals: BTreeMap<String, (Option<NaiveDate>, u32)>,
 }
 
 impl PartialEq for Replay {
@@ -1945,6 +1987,8 @@ impl PartialEq for Replay {
             warnings,
             seams,
             last_effective_t,
+            entry_count: _,
+            done_date_totals: _,
             rows: _,
             line_count: _,
         } = self;
@@ -2128,10 +2172,13 @@ impl Replay {
     pub fn view(&self) -> &[ViewRow] {
         &self.rows
     }
-    /// How many entries the log holds (malformed and blank lines not
-    /// counted): `tm log`'s `total`.
+    /// How many entries the log holds, **all-time** (malformed and blank lines
+    /// not counted): `tm log`'s `total` (design §11.4 step 5).
+    ///
+    /// [`Replay::entry_count`], never `rows.len()`: the rows are the scope's,
+    /// the count is the log's. They agree for a whole-log replay.
     pub fn entry_count(&self) -> usize {
-        self.rows.len()
+        self.entry_count
     }
     /// The rows of the entries on physical line `line` or later, in file
     /// order: what a command appended after the log had `line - 1` lines
@@ -2190,12 +2237,16 @@ impl Replay {
         self.last_done.get(id).copied()
     }
     /// The first completion date of `id` (the `every:Nd` phase anchor).
+    ///
+    /// All-time, from [`Replay::done_date_totals`] and **not** from the date
+    /// set, which is a window fact: see that field.
     pub fn done_date_first(&self, id: &str) -> Option<NaiveDate> {
-        self.done_dates.get(id).and_then(|s| s.first().copied())
+        self.done_date_totals.get(id).and_then(|(first, _)| *first)
     }
-    /// How many distinct completion dates `id` has.
+    /// How many distinct completion dates `id` has, all-time
+    /// ([`Replay::done_date_totals`]).
     pub fn done_date_count(&self, id: &str) -> usize {
-        self.done_dates.get(id).map_or(0, BTreeSet::len)
+        self.done_date_totals.get(id).map_or(0, |(_, n)| *n as usize)
     }
     /// Completion dates of `id`, ascending. Read by tests only; the library
     /// reads [`Replay::done_date_first`] and [`Replay::done_date_count`].
@@ -2997,6 +3048,15 @@ impl Machine {
     }
 
     fn finish(mut self) -> Replay {
+        // The all-time done-date facts, from the whole set this reader built
+        // (design §8.4's column A). The kernel sends them in each item's
+        // all-time record instead, because its set is windowed.
+        self.out.done_date_totals = self
+            .out
+            .done_dates
+            .iter()
+            .map(|(id, ds)| (id.clone(), (ds.first().copied(), u32::try_from(ds.len()).unwrap_or(u32::MAX))))
+            .collect();
         if let Some(b) = self.block.take() {
             self.out.open_block = Some(OpenBlock {
                 id: b.id,
@@ -3091,6 +3151,7 @@ fn replay_lines(
     let mut out = replay_refs(&refs, days, range, tz);
     out.rows = rows;
     out.line_count = line_count.max(prev);
+    out.entry_count = entries.len();
     out
 }
 
@@ -3138,6 +3199,8 @@ fn replay_refs(
             last_effective_t: None,
             rows: Vec::new(),
             line_count: 0,
+            entry_count: 0,
+            done_date_totals: BTreeMap::new(),
         },
         block: None,
         last_cut: None,

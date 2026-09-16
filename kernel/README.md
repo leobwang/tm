@@ -21246,3 +21246,375 @@ body calling the kernel, with **gap 142**'s decision taken — item 4's **retarg
 **gaps 119, 129, 132, 133, 135, 136**, plus the **§5.13 drive** (short by **gap 131**'s item, and
 carrying **gaps 138 and 139**'s questions for the owner). **Gaps 140 and 141 clear at S.** Then
 **S2** (**gap 130**) with quirk Q6(f) (**gap 86**), then **L9** (**gap 93**).
+
+
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 5, W-8 PREP 2 (`w8-facts`), on a worktree off
+     `rebuild-on-lean` at 594e476.  **THE SWITCH DID NOT LAND AND THIS BLOCK
+     DOES NOT CLAIM IT DID** — `Ctx::replay_with` still calls `Ctx::replay_of`,
+     whose body is still `Log::parse_bytes(..).replay(..)`, and no verb's
+     *replay* comes from the kernel.  This is the three findings that would
+     have made a naive switch wrong: gaps **134**, **135** and **136**, closed
+     green against the UNSWITCHED binary under D19.  Takes gap **143**
+     (**142** on the branch; PREP 1 took 142 on the trunk the same day, so the
+     merge renumbered this one -- AGENTS 6.4, 6.5); highest gap 143, new gaps
+     start at 144.  No Lean edited: audit 3934,
+     cheats 157, parity P35, burn-down 13, imports 78, all unchanged.
+     =========================================================================== -->
+
+## Stage 5, W-8 prep 2, 2026-09-16: the three findings that would have made a naive switch wrong
+
+**The honest paragraph, first.** S is not made here. `Ctx::replay_with` still delegates to
+`Ctx::replay_of`, `log.rs` still holds every line §12 deletes, and **no verb's replay comes from the
+kernel**. What this commit does is remove three ways in which wiring that body *correctly* would
+still have produced wrong answers — each found by reading the kernel's own wire against the host's
+decoder, each now pinned by a test that was **shown to fail without its fix**.
+
+Two of the three were not "unbuilt work" but **facts the kernel already sends and the host threw
+away**. That is the shape worth remembering: the wire was right, the decoder was lossy, and nothing
+before the switch could notice, because before the switch every scope is the whole log.
+
+### What landed
+
+**1. Gap 134 — `tm check` names every unreadable line, not the last chunk's.** `lifecycle.rs`'s
+`log_problems` now takes its line warnings from `kernel_log::line_warnings`, the read-only sweep
+W-7 built and left unwired. The answer's `warnings` array is **per call** (`Boundary.logBody` over
+`logVerdicts`) and `kernel_log::genesis` returns only its **last chunk's**, so a `tm check` reading
+them off an answer would have named the final chunk's lines alone — at **every** scope, `All`
+included. The sweep asks for no facts, no headers, no reseal and no sealed records, so
+`LogReq.resumes` is false: the kernel reads its lines and answers their warnings with no replay, in
+chunks, exact at any scope. `tm/tests/cli_check_log.rs` gains
+`tm_check_names_an_unreadable_line_in_every_chunk_of_a_multi_chunk_log`: **12,109 lines over 3
+chunks**, damaged in the first, the middle and the last, all three named.
+
+A sweep that cannot run falls back to the in-tree reader's own warnings **and says so as its own
+warning**, rather than reporting a clean log — `tm check` is the one verb that must keep working on
+a damaged log (D18). That fallback is `Ctx.log_warnings`' last reader and goes with the reader at S.
+
+**2. Gap 135 — the verb audit, and the one real defect it found.** `decode_facts` read each item's
+wire record as a 6-tuple `[id, record, lastDone, dropped, doneFirst, doneCount]` and **used only the
+first four**, rebuilding `done_dates` from the window records alone. But `Seal.ItemAgg.doneFirst`
+and `doneCount` are §8.4 column-**A** facts — "its first done date and count of done dates over
+**every** date (a date below the horizon included)" — while the date **set** is a window fact. So
+`Replay::done_date_first` (`recur`'s `every:Nd` phase anchor) and `Replay::done_date_count` (the
+ordinal recurrences' pending number and completion count) were answered from a **suffix** at any
+narrowed scope. Measured on a 200-day log: **398 of 645 ids** have a narrowed done-date set at
+`Hot`, and the mutation check below shows one whose anchor moves from `2026-01-15` to `None`.
+
+Those two questions are asked by every verb that ranks candidates or builds instances — `tm plan`,
+`tm now`, `tm start`, `tm done`, `tm triage`, the TUI — and `Ctx::load` gives all of them `Hot`.
+The fix is to keep what the wire already carries: `Replay::done_date_totals`, filled from `ItemAgg`
+by `decode_facts` and from its own whole set by the reader.
+
+**3. Gap 136 — `tm log`'s `total`.** `Replay::entry_count()` was `rows.len()`, and the rows come
+from the day records, so a narrowed scope truncates them. §11.4 step 5 says `total = facts.entryCount`
+— the checkpoint's all-time count, answerable at any scope. `Replay::entry_count` is now that number.
+Measured on the same log: **8,201 entries all-time, 144 rows carried at `Hot`**.
+
+### The verb audit (gap 135), every verb against the measured narrowing
+
+`Hot` merges the answer alone, so what it drops is the sealed day records and the window's item-day
+minutes, done dates and date-keyed instances. The reason most reads are safe is **arithmetic, not
+luck**: the window horizon is `H = horizonOf L = min(monthStart L, isoMonday L, L − 16)`, which sits
+at or before the start of the current ISO week *and* of the current month *and* 16 days back — which
+is exactly `priority::done_this_period`'s span and the oldest date `auto_close` can reach.
+
+| verb(s) | scope | narrowing-sensitive facts read | `Hot` sufficient? |
+|---|---|---|---|
+| every verb not named below (`now`, `plan`, `start`, `done`, `stop`, `extend`, `break`, `pause`, `interrupt`, `resume`, `energy`, `idle`, `wake`, `arrive`, `add`, `edit`, `move`, `rank`, `demote`, `readopt`, `drop`, `event`, `skip`, `routine`, `triage`, `sync-cal`, `undo`) | `Hot` | `day(today)`, `seam(today)`, `blocks_done(today)`, `energy_on(today)`, `open_block`, `last_effective_t` — all open-day or all-time | **yes** |
+| the same verbs, through `priority::collect_candidates` | `Hot` | `done_this_period` → `block_minutes_on(id, d)` and `instances_of` for `d` in the current week/month | **yes**, by the horizon above |
+| the same verbs, through `recur::today_instances` | `Hot` | `done_date_first`, `done_date_count` (all-time), `instances_of`, `last_done`, `is_done` | **only after this commit** — the two all-time numbers were a suffix |
+| `close day` for `date ≥ H`, and the automatic close | `Hot` | `horizon::day_remaining` → `block_minutes_on(id, date)`, `date ≥ T − 16 ≥ H` | **yes** |
+| `close day --date <older>` | `Dates{d, d}` | the same, for the named date | **yes** — window records for `[d, d]` |
+| `log --since` | `Dates{from, today}` | `view()` rows by day, and `total` | **only after this commit** — `total` was the scope's row count |
+| `log`, `log --tail`, `log --item` | `All` | rows and `total` | yes (gap 117's settlement; gap 129 still owes the narrowing) |
+| `review day`, `review week`, `review month`, `model --fit`, `model --compare` | `All` | every day, duration and demotion | yes |
+| `check` | `Hot` | **`view()`** for D18 (ii)'s far-future scan | **no — gap 132, still open.** Its *line* warnings no longer depend on scope at all (gap 134) |
+| the TUI | `All` on Review or with no `state.date`, else `Dates{min(monday, state.date), today}` | `blocks_done(d)` over the ISO week; `recur::week_instances` over the same week | **yes** |
+
+**No verb's scope needed changing**, which is why the verb scope table is untouched: the one real
+defect was a lossy decoder, not a wrong scope, and the fix was to carry the fact the answer already
+held rather than to widen a scope and pay for history nobody asked for. Gap 132 stays open and is S's.
+
+### The mutation check — the tests bite
+
+Both new door tests were re-run against the **pre-fix** accessor bodies (`done_date_first` /
+`done_date_count` over the date set, `entry_count()` as `rows.len()`), the rest of the tree
+unchanged:
+
+| test | with the fix | against the pre-fix bodies |
+|---|---|---|
+| `the_doors_hot_scope_answers_every_all_time_question` | ok | **FAILED** — id `10`: the first done date `None`, expected `Some(2026-01-15)` |
+| `the_doors_total_is_the_logs_all_time_entry_count` | ok | **FAILED** — `hot`: total `144`, expected `8201` |
+
+Each also carries its own non-vacuity guard: the first requires that some id's date set really is
+narrowed at `Hot` (398 of 645 are) and the second that `Hot` really carries fewer rows than the log
+has entries, so neither can pass by having nothing to measure.
+
+### Observable behaviour changes
+
+| what | before | after |
+|---|---|---|
+| `tm check`'s wording for a refused log line | serde's free text — `EOF while parsing an object at line 1 column 44`, `expected ident at line 1 column 2`, `invalid UTF-8: invalid utf-8 sequence of 1 bytes from index 53` | the kernel's **named** verdict — `not JSON: unterminatedObject`, `not JSON: notAValue n`, `invalid UTF-8`. This is parity **P15** reaching the binary; no new parity entry |
+| `tm check` on a tree where no capacity verb has run | wrote nothing | writes `.tm/cache/replay/tz.json` (the zone table the sweep sends; D13's directory, which `tm init` excludes from sync) |
+
+**Measured, not asserted:** over a tree with a truncated line, a line of nonsense, an invalid-UTF-8
+line and a deep-nested line, `tm check`'s **codes, line numbers, severities, summary and exit code
+are identical** to `594e476`'s binary — `0 errors, 3 warnings`, `exit_code 0`, `log-line` at lines
+3, 4 and 5 on both. Only the sentence after the colon moved.
+
+### Gap 134 — CLOSED
+
+`tm check` is wired to `kernel_log::line_warnings`, with a multi-chunk test proving a warning in the
+**first** chunk is named. `Ctx.log_warnings` survives as the sweep's fallback only, and is deleted
+with the reader at S.
+
+### Gap 135 — CLOSED
+
+Every verb is audited against the measured narrowing in the table above; the one fact `Hot` truncated
+is carried from the kernel's own item record. What the audit did **not** find is worth recording too:
+no verb needed a wider scope.
+
+### Gap 136 — CLOSED
+
+`tm log`'s `total` is `facts.entryCount`, tested under `Hot`, `Dates` and `All`.
+
+### Gap 143 (new; label W8F-a) — `tm check` re-sweeps the whole log on every run
+
+1. **What is not done.** `kernel_log::line_warnings` reads every line of `.tm/log.jsonl` through the
+   FFI on every `tm check`, in chunks of 4,096 lines, whatever changed since the last run.
+2. **Why.** D18 (i) requires `tm check` to name **every** unreadable line, and the answer's
+   `warnings` array is per call, so there is no cheaper exact source before S. A sweep restricted to
+   the chunks whose digest moved needs a per-chunk digest the checkpoint does not carry.
+3. **What it costs.** Measured on a 65,760-line / 5.05 MB log of uniform `note` lines (the size class
+   of the design pass's 3-year log, not its mixture): `tm check` **44 ms → 336 ms**, about 17 calls.
+   `tm check` is not on the hot path and has no T11 row; every T11 verb is unchanged.
+4. **When it clears.** A lever at or after S, and only if someone wants it: the sweep is already
+   skipped entirely for a log with no lines.
+
+### Recorded disagreements between the design, the ledger and the repo
+
+1. **W-7's measured narrowing table is incomplete: `rows` narrows too.** The "whole at every scope"
+   list in the S block names `line_count` but says nothing of `rows`, because the door's
+   `narrowed_fields` never compared them — `Replay`'s `PartialEq` skips `rows` as line bookkeeping,
+   so the omission was invisible. Measured here: at `Hot` **and** at `Dates` the narrowed list is
+   `days, items, instances, energy, durations, interrupts, demotions, closes, done_dates, seams,
+   rows`. `narrowed_fields` now compares `rows`, `entry_count` and `done_date_totals`, and the last
+   two do **not** appear in it. This is the mechanism behind **gap 132** (`tm check`'s far-future
+   scan reads `view()`), which stays open.
+2. **The two new fields are neither serialised nor compared by `PartialEq`, and that is deliberate.**
+   Serialising them changes `tm/tests/snapshots/log_replay__three_days_replay.snap` and adds keys
+   the fork's `Replay` has no answer for; comparing them breaks two true equalities — `replay(raw)
+   == replay(masked)` in `log.rs`'s reader tests, where the masked list is twelve entries shorter
+   and `entry_count` legitimately differs, and `replay_is_json_safe_and_snapshotted`, where a JSON
+   round trip cannot restore a skipped field. Both failures were hit and are what settled the
+   design. The fields are asserted **by name and by scope** in `kernel_log_door.rs` instead, which
+   is the stronger statement.
+3. **`tm check` now makes one kernel `log` call, and the D19 half-switch guard records it by name.**
+   `kernel_call_counts.rs`'s expectation becomes per verb: **0 for eleven verbs, 1 for `tm check`**.
+   It is not a half-switch — the sweep asks for no facts and does not resume a replay, and
+   `tm check`'s own `Replay` still comes from `Ctx::replay_of` — and the number is **exact rather
+   than a floor**, so the guard still bites: were `tm check`'s replay switched too, it would read 2
+   and the assertion would fire.
+4. **`tm-core/src/log.rs` was edited, which this step's brief scopes narrowly.** Three fields, two
+   accessor bodies, one doc and two fill sites — the *decoded view* §12 says **stays** (and is
+   reshaped in phase R), never the reader. `Log::parse_bytes`, `replay`, `undo_mask`,
+   `parse_timestamp` and `Ctx::replay_of`/`replay_with` are untouched, and the §12 one-reader grep
+   is unmoved at 125.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited** — `git diff --name-only` matches no `.lean`, no `lean-toolchain`, nothing
+under `kernel/corpus/`, and no `Cargo.toml`/`Cargo.lock`. Goals discharged, refuted, added: none;
+burn-down **13 → 13**, all stage 6's. New theorems: none — the audit stays at **3934**. New
+`decide`/`rfl` witnesses: none, so no probe budget was spent. New cheats: none (highest **157**).
+New parity entries: none (highest stays **P35**); the warning-text change is **P15** reaching the
+binary, which that entry already describes. `TmKernel.lean` imports: **78**. No predicate or
+assertion was weakened, no memory bound raised, no corpus reblessed, no snapshot re-blessed.
+
+### Numbers
+
+**Taken:** gap **143** (**142** on the branch; renumbered at the merge). **Highest:** gap 143, cheat 157, parity P35. New gaps start at **144**.
+
+**Re-measured** (this worktree, on the tree committed; every command capped at `MemoryMax=40G`,
+`MemorySwapMax=0`):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, **3.19 / 3.03 / 3.08 s** (merge `594e476`: 3.81 / 3.08 / 3.07) — flat, far inside the 10%-per-step rule |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged; all stage 6) |
+| `cargo test --workspace` | **1124 passed / 0 failed / 8 ignored across 79 result lines**, exit 0, **0 warnings** (merge: 1121 / 0 / 8 across 79). **+3 tests, no new binary**: two in the door suite, one in `cli_check_log` |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) — unchanged |
+| T5 (`kernel_replay_parity --include-ignored`) | **20 passed / 0 failed**, **6.59 s** (merge: 6.50 s) |
+| the door suite (`kernel_log_door`) | **15 passed / 0 failed** (merge: 13) |
+| `cli_check_log` | **6 passed / 0 failed** (was 5) |
+| `kernel_call_counts` | **1 passed** — `log == 0` for eleven verbs, `== 1` for `tm check` |
+| `cli_latency --include-ignored` | **5 passed / 0 failed**, **10.03 s**. T11, all inside bounds: first verb **945.6 ms**, later **283.4**, reseal **308.8**, after a 30-day-old undo **278.2**, the next verb **283.4**, a 3-day-old routine **227.8**, `review week` **202.5**, 10 stalled days worst **683.6** (0 checkpoint files — gap 140, unchanged) |
+| the `Hot` narrowing, measured | 200-day log: **4 days of 200** carried; **645 ids**, **398** with a narrowed done-date set; **8,201** entries all-time against **144** rows at `Hot` |
+| `tm check` over 65,760 lines / 5.05 MB | **44 ms → 336 ms** (gap 143) |
+| `tm check` behaviour vs `594e476` | codes, lines, severities, summary and exit code **identical**; only the warning sentence changed (P15) |
+| §12's one-reader grep | **125 lines**; **124** excluding the two tracks' test files — **unchanged** |
+| the diff | 3 shipped files (`tm-core/src/log.rs`, `tm/src/cli/kernel_log.rs`, `tm/src/cli/lifecycle.rs`) and 3 test files, **+400 −28**. No Lean, no `Cargo.toml`, no `lean-toolchain`, no `kernel/corpus/` |
+
+**Owed next: S, in full — and its list is shorter by three.** Design §14.6's contents 1-3 and 5,
+item 4's **retarget of T5** (**gap 137**), item 7's D18 defaults (**gap 120 part 3**; gap 134's
+sweep is **done**), **gaps 119, 129, 132, 133**, and the **§5.13 drive** (short by **gap 131**'s
+item, carrying **gaps 138, 139** and now **143**'s question for the owner). **Gaps 140 and 141
+clear at S.** Then **S2** (**gap 130**) with quirk Q6(f) (**gap 86**), then **L9** (**gap 93**).
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 5, W-8's SECOND merge — PREP 2 (`w8-facts`)
+     landed on `rebuild-on-lean` beside PREP 1.  A merge commit, both parents
+     green.  **THE SWITCH STILL DID NOT LAND** and this block does not claim it
+     did.  Takes NO new gap; it RENUMBERS `w8-facts`' own gap from 142 to
+     **143**, because PREP 1 took 142 on the trunk the same day (AGENTS §6.4,
+     §6.5).  Highest gap 143; new gaps start at 144.  No Lean edited: audit
+     3934, cheats 157, parity P35, burn-down 13, imports 78, all unchanged.
+     =========================================================================== -->
+
+## Stage 5, W-8's second merge, 2026-09-16: the three findings join the migrated suite, and the gap sequence is one again
+
+**The honest paragraph, first.** This commit merges a branch and fixes a number. It ships **no new
+test and no new behaviour**: every line of code in it was already green on one of the two parents.
+S is still not made — `Ctx::replay_with` still calls `Ctx::replay_of`, whose body is still
+`Log::parse_bytes(..).replay(..)`, and `log.rs` still holds every line §12 deletes. What this commit
+adds to the ledger is the evidence that PREP 1 (the R12 test migration) and PREP 2 (gaps 134-136)
+did not interfere, measured on the merged tree.
+
+### What landed
+
+**PREP 2, whole** (`6d2b1fb`, branch `w8-facts`, worktree `.claude/worktrees/w8-facts`): gap **134**
+(`tm check` takes its line warnings from `kernel_log::line_warnings`, the read-only sweep, so it
+names every unreadable line and not just the last genesis chunk's), gap **135** (`decode_facts`
+keeps `Seal.ItemAgg`'s `doneFirst`/`doneCount`, the two all-time done-date facts a narrowed scope
+truncates, as `Replay::done_date_totals`) and gap **136** (`Replay::entry_count` is the log's
+all-time count, not `rows.len()`). Its six files merged with **no conflict in any source or test
+file**.
+
+**The only conflicts were the two documents both tracks append to**, `AGENTS.md` §8.3 and
+`kernel/README.md`, and only because both tracks appended at the same line. Both README blocks are
+kept, in commit order (PREP 1's, then PREP 2's). §8.3's paragraph is hand-merged to the one reading
+that is true of the merged tree: **contents 1, 2 and 5** (PREP 1 closed item 3's move half, so
+"contents 1-3" is stale), **gap 120 part 3** without gap 134's sweep (PREP 2 closed it), and
+**gaps 119, 129, 132, 133** without 135 and 136 (PREP 2 closed those too), followed by PREP 2's own
+"Closed 2026-09-16" paragraph.
+
+**The renumber, which is the one substantive edit** (AGENTS §6.5 item 2). Both tracks opened a gap
+numbered **142** on the same day for different findings. PREP 1's is on the trunk and **AGENTS §8.3
+already cites it by number**, so it keeps 142; PREP 2's is renumbered:
+
+| finding | on its branch | now | where |
+|---|---|---|---|
+| a moved test pins the saturation the kernel refuses by name (label P1-a) | gap 142 | **gap 142** (unmoved) | PREP 1's block |
+| `tm check` re-sweeps the whole log on every run (label W8F-a) | gap 142 | **gap 143** | PREP 2's block |
+
+PREP 2's own banner asked for exactly this. Its commit message `6d2b1fb` still says gap 142;
+**the README's numbers are the ones that are right**, and its banner now says so. No source file
+needed touching: `grep -rn 'gap 14[0-9]' tm/ tm-core/ --include=*.rs` finds nothing at all.
+
+### That the two tracks agree — the measurement, not the assertion
+
+The test counts are **exactly additive**, which is what "no interference" means here:
+
+| tree | result lines | passed | ignored |
+|---|---:|---:|---:|
+| `594e476`, the shared grandparent | 79 | 1121 | 8 |
+| PREP 1 alone (`27231af`) | 79 (+0) | 1121 (+0) | 8 (+0) |
+| PREP 2 alone (`6d2b1fb`) | 79 (+0) | 1124 (+3) | 8 (+0) |
+| **the merge** | **79** | **1124** | **8** |
+
+PREP 1 moved 23 test files between crates without changing a count; PREP 2 added three tests to two
+existing binaries (two in `kernel_log_door`, one in `cli_check_log`). 1121 + 3 = 1124 across the
+same 79 binaries. **No test was lost, none was double-counted, and neither track's tests changed the
+other's answers** — the door suite is **15** and `cli_check_log` **6** on the merged tree, exactly
+PREP 2's numbers, over PREP 1's migrated file layout.
+
+**And the half-switch guard still reads what PREP 2 left it reading**: `kernel_call_counts` passes
+with `log == 0` for eleven verbs and `== 1` for `tm check` (gap 134's read-only sweep, which asks
+for no facts and resumes no replay). `tm check`'s own `Replay` still comes from `Ctx::replay_of`,
+like every other verb's.
+
+**The two `#[ignore]`d T9 tests were run with `--include-ignored` on the merged tree and both
+FAIL**, which is the right answer and is recorded rather than assumed: `unwritable_notice` still has
+no emitter and `ReachTooFar` still has no call site. S's acceptance for them is to delete the
+attribute *and* make them pass, not merely to delete the attribute.
+
+### Observable behaviour changes
+
+**None from the merge itself.** One row arrives on `rebuild-on-lean` *with* PREP 2 and is restated
+here because it is new to this branch:
+
+| what | before | after |
+|---|---|---|
+| `tm check`'s wording for a refused log line | serde's free text (`EOF while parsing an object at line 1 column 44`) | the kernel's **named** verdict (`not JSON: unterminatedObject`) — parity **P15** reaching the binary; no new parity entry |
+| `tm check` on a tree where no capacity verb has run | wrote nothing | writes `.tm/cache/replay/tz.json` (the zone table the sweep sends; D13's directory, which `tm init` excludes from sync) |
+
+Codes, line numbers, severities, summary and exit code are unchanged; only the sentence after the
+colon moved. PREP 2's block carries that measurement.
+
+### Recorded disagreements between the design, the ledger and the repo
+
+1. **Two gaps were numbered 142 on the same day** — the second time in three days that parallel
+   tracks collided on one gap number (W-8's first merge renumbered 139-140 → 140-141). Resolved
+   above, in favour of the number already cited in `AGENTS.md`. The residue is permanent:
+   **`6d2b1fb`'s commit message names a gap 142 that is now 143**, and a commit message cannot be
+   rewritten after the fact. This block is the cross-reference. **A campaign that runs two tracks in
+   one day should allocate gap numbers before the tracks start, not at the merge.**
+2. **§12's one-reader grep is 125 on the merged tree**, unchanged from both parents: **124**
+   excluding the three test files the earlier tracks added, whose hits are doc comments about what S
+   deletes. Nothing was added and nothing deleted. **Quote §12's alternation, never R8's 89**
+   (W-7's disagreement 1, still standing).
+3. **The `w8-facts` worktree is removed; `stage5-lookahead`'s is deliberately kept.** The brief's
+   "remove both worktrees" is read as the two W-8 ones (`w8-latency`'s was already gone).
+   `stage5-lookahead` is merged and clean, but it is **D11's parallel D10 track** and the campaign's
+   own notes name it as L9's resume point (**gap 93**), so removing it is not this step's to do.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited by either parent or by the merge** — `git diff --name-only 27231af` matches no
+`.lean`, no `lean-toolchain`, nothing under `kernel/corpus/`, and no `Cargo.toml`/`Cargo.lock`. So
+**AGENTS §6.5's merge duties 1, 3, 4 and 5 are vacuous here and are recorded as such, not skipped**:
+no cheat to renumber (highest stays **157**), no theorem name to append to `Check.lean` (audit stays
+**3934**), no goal to delete from `Goals.lean` (burn-down **13 → 13**, stages 3-6), no new module to
+import (`TmKernel.lean` imports **78**). Duty 2 — one gap sequence — is the renumber above. Duty 6 is
+the acceptance below. New `decide`/`rfl` witnesses: none, so no probe budget was spent. New parity
+entries: none (highest stays **P35**). No predicate or assertion was weakened, no memory bound
+raised, no corpus reblessed, no snapshot re-blessed.
+
+### Numbers
+
+**Taken:** no new gap. **Renumbered:** PREP 2's 142 → **143**. **Highest:** gap 143, cheat 157,
+parity P35. New gaps start at **144**.
+
+**Re-measured** (main worktree, on the merged tree; every command capped at `MemoryMax=40G`,
+`MemorySwapMax=0`):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, **3.21 / 3.21 / 3.34 s** (`27231af`: 3.20 / 3.05 / 3.05; `6d2b1fb`: 3.19 / 3.03 / 3.08). Flat, far inside the 10%-per-step rule |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged; stages 3-6) |
+| `cargo test --workspace` | **1124 passed / 0 failed / 8 ignored across 79 result lines**, exit 0, **0 warnings** — the additivity table above |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) — unchanged |
+| T5 (`kernel_replay_parity --include-ignored`) | **20 passed / 0 failed**, **6.81 s** (`27231af`: 6.44 s) |
+| the door suite (`kernel_log_door`) | **15 passed / 0 failed**, **1.39 s** (`27231af`: 13 at 1.05 s) |
+| `cli_check_log` | **6 passed / 0 failed**, 0.59 s (`27231af`: 5) |
+| `cli_latency --include-ignored` | **5 passed / 0 failed**, **10.05 s** — T11's eight rows, all inside bounds |
+| `kernel_call_counts` | **1 passed**, 0.25 s — `log == 0` for eleven verbs, `== 1` for `tm check` |
+| `cli_switch_acceptance` | **7 passed / 0 failed / 2 ignored**; with `--include-ignored`, **2 failed** — the two S has yet to make true |
+| §12's one-reader grep | **125 lines**; **124** excluding the three test files the earlier tracks added — unchanged from both parents |
+| the diff | the merge's own change against `27231af` is `AGENTS.md`, `kernel/README.md` and PREP 2's six files. No Lean, no `Cargo.toml`, no `lean-toolchain`, no `kernel/corpus/` |
+
+**Owed next: S, in full — and after four preparation steps its list is at its shortest yet.** Design
+§14.6's contents **1, 2 and 5** (`Ctx::replay_with`'s body becomes the kernel call; §12's ≈1,750
+lines of deletions in `log.rs`, `parse_timestamp` included; the `log` names in
+`kernel_bridge::refusal`), **item 3's last half** — `tm/tests/support/replay.rs`'s `replay_of_text`
+calling the kernel, with **gap 142**'s decision taken — item 4's **retarget of T5** (**gap 137**),
+item 7's D18 defaults (**gap 120 part 3**; gap 134's sweep is **done**), **gaps 119, 129, 132, 133**,
+and the **§5.13 drive** (short by **gap 131**'s item, and carrying **gaps 138, 139 and 143**'s
+questions for the owner). **Gaps 140 and 141 clear at S.** Then **S2** (**gap 130**) with quirk
+Q6(f) (**gap 86**), then **L9** (**gap 93**).

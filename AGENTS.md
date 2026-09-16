@@ -2100,7 +2100,18 @@ W-7 audit caught it. The facts decoder landed at `4aaa99e`: `kernel_log::decode_
 defined in `tm/src/cli/kernel_log.rs`, and T5's `kernel_replay` (`tm/tests/kernel_replay_parity.rs`)
 *is* that call, borrowing nothing from the reader S deletes. What is left is design §14.6's
 contents 1, 2 and 5, item 4's retarget of T5 (**gap 137**), item 7's D18 defaults with **gap 120
-part 3** and **gap 134**'s sweep, and **gaps 119, 129, 132, 133, 135, 136**. **T11's seven latency
+part 3**, and **gaps 119, 129, 132, 133**.
+
+*Closed 2026-09-16, on the `w8-facts` track (README, "the three findings that would have made a
+naive switch wrong").* **Gaps 134, 135 and 136 are no longer on this list.** `tm check` is wired to
+the kernel's read-only line sweep, so it names every unreadable line and not just the last chunk's
+(**134**); `decode_facts` keeps the two all-time done-date numbers the kernel already sends
+(`Seal.ItemAgg.doneFirst`/`doneCount`), which is what the **135** audit found missing — without them
+`tm plan`'s `every:Nd` phase anchor and the ordinal recurrences' pending number are computed at
+`Hot` from a *suffix* of the completion dates; and `tm log`'s `total` is the log's all-time entry
+count rather than the row count of the scope it asked for (**136**). All three are green against the
+**unswitched** binary under D19, and each is pinned by a test that was shown to fail without its
+fix. **T11's seven latency
 rows and the per-verb kernel-call count are no longer on this list either**: they landed on
 2026-09-16 on the `w8-latency` track, merged to `rebuild-on-lean` the same day, as
 `tm/tests/cli_latency.rs`'s T11 and `tm/tests/kernel_call_counts.rs`, both green against the
