@@ -3092,9 +3092,10 @@ fn stage5_parity_the_kernel_replays_and_fits_as_the_fork_point_does() {
         "\nstage-5 parity — the Lean kernel vs fork point 4748911's log::replay and energy::fit\n\
          \x20 {} logs compared over {} zones ({} in the corpus and the generated month, {} in the \
          classes too large to freeze): {} Replay keys ({} of the fork's 20 per log; the fork's \
-         `events` occurrence lists, which this branch narrowed to `named` at step X1, and \
-         `warnings`' text, which P15 names rather than formats, are excluded by name), {} entry \
-         counts, {} refused-line lists, {fits} fitted models;\n\
+         `events` occurrence lists, which this branch narrowed to `named` at step X1, have no \
+         common value shape and are compared by their KEY SET instead — {} names, gap 225 — and \
+         `warnings`' text, which P15 names rather than formats, is compared by line and status), \
+         {} entry counts, {} refused-line lists, {fits} fitted models;\n\
          \x20 {} scalar values in all.",
         t.logs,
         by_zone.len() + 1,
@@ -3102,6 +3103,7 @@ fn stage5_parity_the_kernel_replays_and_fits_as_the_fork_point_does() {
         extra.len(),
         t.keys,
         fork::FORK_REPLAY_KEYS.len(),
+        t.event_names,
         t.entries,
         t.warning_lines,
         t.values,
@@ -3354,14 +3356,15 @@ fn compare_frozen_class(class: &str, inputs: &[(&'static str, String, Tz, String
     assert_eq!(t.logs, n, "one comparison an input");
     eprintln!(
         "T5 frozen fork (4748911) — {class}: {} inputs, {} Replay keys ({} of the fork's 20 each), \
-         {} scalar values, {} entry counts, {} refused lines compared; parity P21 {} day records, \
-         every one displaying the same load; 0 other exceptions",
+         {} scalar values, {} entry counts, {} refused lines, {} event-name sets compared; \
+         parity P21 {} day records, every one displaying the same load; 0 other exceptions",
         t.logs,
         t.keys,
         fork::FORK_REPLAY_KEYS.len(),
         t.values,
         t.entries,
         t.warning_lines,
+        t.event_names,
         t.p21
     );
     assert!(
@@ -3402,14 +3405,15 @@ fn t5_the_corpus_logs_replay_as_the_frozen_fork_point_does() {
     );
     eprintln!(
         "T5 frozen fork (4748911) — the corpus: {} logs, {} Replay keys ({} of the fork's 20 per log), \
-         {} scalar values, {} entry counts, {} refused lines compared; parity P21 {} day records, \
-         every one displaying the same load; 0 other exceptions",
+         {} scalar values, {} entry counts, {} refused lines, {} event-name sets compared; \
+         parity P21 {} day records, every one displaying the same load; 0 other exceptions",
         t.logs,
         t.keys,
         fork::FORK_REPLAY_KEYS.len(),
         t.values,
         t.entries,
         t.warning_lines,
+        t.event_names,
         t.p21
     );
     assert!(

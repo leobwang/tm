@@ -7175,7 +7175,8 @@ is vacuous at `none`), so it still cancels the latest close.  One mask reads bot
 log that mixes them reads each line as it was meant (`a_silent_verb_undo_cancels_nothing_while_the_old_spelling_still_cancels`
 is the same shape for Q6(d)).
 
-The fork writes `null` for a close's id, so this is parity entry **P32**. -/
+The fork writes `null` for a close's id, so this is parity entry **P36** (renumbered from P32 at
+stage 5's close: P32 was already D10 step L8's candidate-bounds row, README gap 226). -/
 theorem an_undo_of_a_close_cancels_its_own_period_and_an_older_one_still_cancels_the_latest :
     (Log.Event.close ['w'] ['k']).primaryId = some ['w', ':', 'k'] ∧
     (replay utcZone [bE 1 63924368400 (.close ['w', 'e', 'e', 'k'] ['2', '0', '2', '6', '-', 'W', '3', '7']),

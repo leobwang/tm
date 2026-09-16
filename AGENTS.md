@@ -223,12 +223,12 @@ kernel's own (§2.4).
 - `Cal` — the calendar. Days since 0001-01-01, proleptic Gregorian. ISO weeks.
 - `Grain` — the horizon order, all of it derived from `coarsen`.
 - `Text` — tokens, numerals, list surgery, `freshId`, the structural `splitOn`/`joinWith`. A token carries its own separator.
-- `Json` — the kernel-owned JSON fragment: `JVal`, `jescape`/`junescape`, `jemit`, the fuel-structural `jparse`, `jget`, and `jparse_jemit`. 2,641 lines.
-- `Line` — the item line and the whole of §4.1's field grammar, with the parse ⇒ wf bridges. 6,494 lines.
+- `Json` — the kernel-owned JSON fragment: `JVal`, `jescape`/`junescape`, `jemit`, the fuel-structural `jparse`, `jget`, and `jparse_jemit`. 3,726 lines (2,641 at stage 4's close; A2 widened `JVal` with `dec` for D9's log).
+- `Line` — the item line and the whole of §4.1's field grammar, with the parse ⇒ wf bridges. 6,829 lines.
 - `State` — entity versus observation. `Core`, `wf`, `Entity`, `render`.
 - `Plan` — `Store`, `Doc`, `PlanCore`, `planWf`, `WfPlan`, and the comment rule (`commentAfter`).
 - `Stamp` — the log's `"t"` field, namespace `Tm.LogStamp` (never `Tm.Stamp`: `Field.Stamp` is the `demoted:` stamp; write the names qualified and never `open LogStamp` beside `Field`): `parseStamp` (chrono 0.4.45's `parse_rfc3339`, then the fork's `%Y-%m-%dT%H:%M%:z` fallback; `StampErr`), `renderStamp` (`fmt_timestamp`), `displayStamp` (the `tm log` column), `stampBefore` (chrono's order: the instant's, never `nanos`), and `parseStamp_renderStamp`. Stage 5 D9 step B2.
-- `Log` — the typed event grammar of `.tm/log.jsonl`, namespace `Tm.Log` (write `LogStamp` names qualified here too): `Event` (the 26 `define_events!` kinds and `unknown tag rest`), `Entry`, the field table `Kind.schema` with one reader `readF` and one writer `renderF` per serde field type, `readLine` (a `Verdict`: `blank`, an entry, or a named `LWarn`, in `Log::parse_bytes`' order), `renderLine` (`LogEntry::to_json`), `finiteF64` (serde_json's own "number out of range", applied to every numeral in the line), the small grammars `parseInstanceStatus`, `instDate?` and `stampFromKey`, and the goals `the_log_reads_what_it_renders`, `a_known_event_is_never_read_as_unknown`, `an_unknown_tag_is_never_a_warning` and `lineTooLong_bounds_every_string`. Stage 5 D9 step B3.
+- `Log` — the typed event grammar of `.tm/log.jsonl`, namespace `Tm.Log` (write `LogStamp` names qualified here too): `Event` (the 26 `define_events!` kinds and `unknown tag rest`), `Entry`, the field table `Kind.schema` with one reader `readF` and one writer `renderF` per serde field type, `readLine` (a `Verdict`: `blank`, an entry, or a named `LWarn`, in `Log::parse_bytes`' order), `renderLine` (`LogEntry::to_json`), `finiteF64` (serde_json's own "number out of range", applied to every numeral in the line), the small grammars `parseInstanceStatus`, `instDate?` and `stampFromKey`, and the goals `the_log_reads_what_it_renders`, `a_known_event_is_never_read_as_unknown`, `an_unknown_tag_is_never_a_warning` and `lineTooLong_bounds_every_string`. Stage 5 D9 step B3. **Since step S2 (D16) it also WRITES**: `emitEvent` reads the host's values with the reader's own `readArgs` and `emitLine` renders them with `renderLine`, so the log's format has one definition and not two held together by T2 — and `Event.primaryId` of a `close` is `period:key` since quirk Q6(f) (parity **P36**, gap 86).
 - `Replay` — the kernel's replay of the log (design §7, §8; phase C), namespace `Tm.Replay`. Step C1: the undo mask as a left fold over a survivor stack (`matches`, written `«matches»` at its definition because `matches` is a keyword; `maskStep`, `survivors`, `dangles`), positions (`stackI`, `cancelledAt`, `cancelledLines`), `Log.linesIncreasing`, the goals `survivors_snoc_event`, `survivors_snoc_undo`, `a_cancelled_event_is_never_revived`, `a_dangling_undo_dangles_in_every_extension`, and the `@[csimp]` fast twins `survivorsFast`/`cancelledLinesFast` (per-tag and per-(tag, id) stacks of positions in `PosMap`, lazy deletion; `maskFast_inv` is the simulation). Stage 5 D9 step C1. Step C2: the day index, fork `DayIndex`, in chrono's order (`sortWakes`, `keptStep`/`dedupFrom`/`keptFrom`/`keptWakes`: consecutive dedup on the local date, not earliest per date; `lastWakeLe`, `dayOf` with chrono's `durationBetween` under 24 h; `dayIndexOf`, `entryDays` for every entry), quirk Q6(a)'s two first-wake rules (`keptWakeOn`, `firstLoggedWakeOn`, separated and bounded by `the_kept_wake_is_not_the_first_logged_wake` and `the_kept_wake_is_the_first_logged_wake_when_wakes_are_logged_in_order`), the goals `dayOf_is_the_wake_date_within_a_day`, `a_wake_day_is_shorter_than_a_day`, `keptWakes_append_of_later` restated in chrono's order (the design's nanosecond forms refuted by `…_by_nanos_is_refuted`), and the `@[csimp]` twins `sortWakesFast` (core `mergeSort`) and `entryDaysFast` (bisection, `lePoint`).
 - `Seal` **and 57 `Seal*` proof modules — 58 files, 15,494 lines, 762 theorem declarations** — the
   window: a checkpoint plus sealed day and window records that answer exactly what replaying the whole
@@ -253,7 +253,7 @@ kernel's own (§2.4).
 - `Cmd` — `lift`, `Transform`, `Dest`, `WfPlan.mapAt`, `KErr`, the commands (`cmdMove cmdDrop cmdSetEst cmdDemote cmdReadopt cmdRank cmdEdit cmdUnset`, and `WfPlan.insertFresh` for `add`), the `EditVal` table.
 - `Close` — §6.3's lifecycle as one fold at three grains: the `ClosePolicy` table and its bridges, `close`, the landing rank shift, `close_spec`, `autoClose`. On the wire since stage 4 step 5, as the `close` and `autoClose` ops.
 - `Report` — what a close reports (the owner's D3): `CloseEntry`, `Report`, `closeReport`, `closeR`/`autoCloseR`, and the theorems tying each entry to the close's result. kernel/README.md, stage-4 step-5 block.
-- `Boundary` — `String → String`: the request readers, `parseCmd`, the loader, `runLoad`/`run`, `respond`, `call`, `callExport`. Since stage 5 D9 step B4 `respond` runs `runWithLog`: the request's `tz` section (`readTz`, the zone table `tm/src/cli/tz_table.rs` probes, built only by `Cal.mkTz?`; **the one reader of `tz`** since the merge that closed gap 108) and `log` section (`readLogReq`, `mkLogReq?`, `logAnswer`: every line read by `Log.readLine`, its warnings by name, headers `[line, tag, id]`, renderings; since step C1 `want.facts`, answered as `facts.cancelled` for a tail from line 1, `Replay.cancelledLines`; since step C2 also `facts.days`, `[line, day]` for every entry, `Replay.entryDays` in the request's zone, which `LogReq.tz` carries from `zoneOf`), then `run`; a request with neither is `run`. Since stage 5 D10 step L6 the `capacity` section (`CapWire`, refusals `{"err":{"capacity":"<name> <key>"}}`; `CapWire.readTz` is `tzAbsent` or B4's `readTz`), `runCap`/`respondCap`/`callCap` (the `lookahead` response key, unit counts as digit strings), and `callExport`, which runs `callCap`: `runWithLog` on every request without `capacity` (`runCap_without_capacity_is_runWithLog`, `callExport_without_capacity_is_call`), and with it the `tz`/`log` sections first, then the documents, the capacity section and the commands, answering `docs`, `report`, `log`, `lookahead` (`runCap_answers_docs_report_log_lookahead`). Since stage 5 D10 step L8: the zone is read once (`zoneOf`, feeding `logSectionWith` and `readCapacityZ`; `the_zone_is_read_once_and_feeds_both_sections`), `runCap` answers through `runCapZ`, the optional `capacity.candidates` (`readCands`; `badCandidate <i> <key>`, `tooManyCandidates`) adds `lookahead.grants` (`grantJson`, `lookaheadJsonWith`), and a capacity request with commands is refused, `capacityWithCommands` (`runCap_refuses_commands_beside_capacity`, `an_answered_capacity_request_has_no_commands`). L8's host half: a candidate record's optional `floor` (`readFloor`, `badCandidate <i> floor`) and the floor answer's grant (`grantJsonF`, class `floor`; `grantJsonF_without_a_floor`); the binary's one encoder of this request is `tm/src/cli/kernel_capacity.rs`.
+- `Boundary` — `String → String`: the request readers, `parseCmd`, the loader, `runLoad`/`run`, `respond`, `call`, `callExport`. Since stage 5 D9 step B4 `respond` runs `runWithLog`: the request's `tz` section (`readTz`, the zone table `tm/src/cli/tz_table.rs` probes, built only by `Cal.mkTz?`; **the one reader of `tz`** since the merge that closed gap 108) and `log` section (`readLogReq`, `mkLogReq?`, `logAnswer`: every line read by `Log.readLine`, its warnings by name, headers `[line, tag, id]`, renderings; since step C1 `want.facts`, answered as `facts.cancelled` for a tail from line 1, `Replay.cancelledLines`; since step C2 also `facts.days`, `[line, day]` for every entry, `Replay.entryDays` in the request's zone, which `LogReq.tz` carries from `zoneOf`), then `run`; a request with neither is `run`. Since stage 5 D10 step L6 the `capacity` section (`CapWire`, refusals `{"err":{"capacity":"<name> <key>"}}`; `CapWire.readTz` is `tzAbsent` or B4's `readTz`), `runCap`/`respondCap`/`callCap` (the `lookahead` response key, unit counts as digit strings), and `callExport`, which runs `callCap`: `runWithLog` on every request without `capacity` (`runCap_without_capacity_is_runWithLog`, `callExport_without_capacity_is_call`), and with it the `tz`/`log` sections first, then the documents, the capacity section and the commands, answering `docs`, `report`, `log`, `lookahead` (`runCap_answers_docs_report_log_lookahead`). Since stage 5 D10 step L8: the zone is read once (`zoneOf`, feeding `logSectionWith` and `readCapacityZ`; `the_zone_is_read_once_and_feeds_both_sections`), `runCap` answers through `runCapZ`, the optional `capacity.candidates` (`readCands`; `badCandidate <i> <key>`, `tooManyCandidates`) adds `lookahead.grants` (`grantJson`, `lookaheadJsonWith`), and a capacity request with commands is refused, `capacityWithCommands` (`runCap_refuses_commands_beside_capacity`, `an_answered_capacity_request_has_no_commands`). L8's host half: a candidate record's optional `floor` (`readFloor`, `badCandidate <i> floor`) and the floor answer's grant (`grantJsonF`, class `floor`; `grantJsonF_without_a_floor`); the binary's one encoder of this request is `tm/src/cli/kernel_capacity.rs`. Since stage 5 step **S2** (D16) the **`emit` section**: `{"emit":[{"at":[sec,ns,west,offSec],"ev":<tag>,"f":{…}}]}` in, the exact bytes to append out, through `Log.emitEvent`/`emitLine`; `runWithEmit` wraps `runWithLog`, so every theorem proved about `run` and the `log` section holds unchanged. **The `log` and `capacity` sections are still answered independently** — `runCapZ` discards `logOp`'s `Seal.Run` once `logBody` has rendered it — which is README **gap 210**, and it is what step L9 and phase F's F2/F3 need opened.
 - `Arith` — exact rational arithmetic. Its consumers are `Report` (minutes as an `Arith.Pos`) and, since stage 5 step 2, `Priority` (the ladder, `safety`, a rational availability).
 
 **A new module is not built until it is imported.** `kernel/TmKernel/TmKernel.lean`
@@ -546,7 +546,7 @@ that needs the user's assent, not an agent's judgment.
 | Six `Status` cases, not five | a lone `[-]` is a *state*: `close month` carries a `# Demoted` copy forward without touching its partner, which may be in a file the host never hands over |
 | The week→month tie-break is `monthOfIsoWeek` (the civil month of the week's Thursday) | total, and a function of the week alone; "the month of today" is refuted by `monthOfWeekByToday_is_not_stable` |
 | `close day` targets the week containing *now* (`closeTo`), not the week the closed day belonged to; the stamp stays `demoted:D<dd>` | the owner drove stale trees (D1, 2026-09-12): the closed day's own week double-stamped a skipped weekend off Monday's plan, deleted a child whose parent was in the closing week, and stranded a close more than 16 days late in a sealed file |
-| **D5** (2026-09-13): §9.1's proof : definition brake is overridden — relational (two-run) laws keep being proved, L24/L25 included; a two-run theorem a change breaks is re-proved in that step, never downgraded to a property test or deleted, and a step whose re-proof will not close is not done | the owner priced the ratio (4.52 : 1 at `c9ef6f0`) against losing the laws that caught stage 4's defects; README "Stage 4 final". *Re-measured at stage 4 final step 4 (B3, the stage's last goal), same script: **4.80 : 1** (18,815 : 3,917), 9.36 : 1 in `Close.lean`, 6.22 : 1 in `Report.lean`.* **Re-measured again at stage 5's close, same script, over the 78 modules: 4.06 : 1** (42,426 proof : 10,451 definition lines; net 4.00 : 1 with witnesses and fixtures removed, 3.03 : 1 counting each declaration's doc comment with it). It **fell** while the library grew 2.3×, and the arithmetic says why: what stages 5's D9/D10 tranche added is **23,611 proof : 6,534 definition lines = 3.61 : 1**, against the design's own estimate of "≈ 3.6 : 1, below stage 4's 4.80 : 1" (`kernel/design/stage5/stage5-D9-D10-design.md` §14.9) — the tranche landed on its predicted ratio and pulled the average down. Per module the spread is wide and worth reading before quoting the average: `Close.lean` 10.10 : 1, the `Seal*` group **5.74 : 1** (10,471 : 1,824), `Lookahead.lean` 3.99 : 1, `Replay.lean` 3.31 : 1, `Log.lean` 1.81 : 1 (a field table is definition), and `Seal.lean` **alone** 0.22 : 1 (216 proof to 983 definition lines — it holds the types and the codecs, and its proofs live in the 57 modules beside it). Under D5 it informs and stops nothing |
+| **D5** (2026-09-13): §9.1's proof : definition brake is overridden — relational (two-run) laws keep being proved, L24/L25 included; a two-run theorem a change breaks is re-proved in that step, never downgraded to a property test or deleted, and a step whose re-proof will not close is not done | the owner priced the ratio (4.52 : 1 at `c9ef6f0`) against losing the laws that caught stage 4's defects; README "Stage 4 final". *Re-measured at stage 4 final step 4 (B3, the stage's last goal), same script: **4.80 : 1** (18,815 : 3,917), 9.36 : 1 in `Close.lean`, 6.22 : 1 in `Report.lean`.* **Re-measured again at stage 5's close, same script, over the 78 modules: 4.03 : 1** (42,506 proof : 10,543 definition lines; net 3.97 : 1 with witnesses and fixtures removed, 3.00 : 1 counting each declaration's doc comment with it — taken at the stage's closing commit, after the switch, S2 and Q6(f); it read 4.06 : 1 / 42,426 : 10,451 at `b344185`, before S2 added `emitEvent`'s definitions and theorems). It **fell** while the library grew 2.3×, and the arithmetic says why: what stages 5's D9/D10 tranche added is **23,611 proof : 6,534 definition lines = 3.61 : 1**, against the design's own estimate of "≈ 3.6 : 1, below stage 4's 4.80 : 1" (`kernel/design/stage5/stage5-D9-D10-design.md` §14.9) — the tranche landed on its predicted ratio and pulled the average down. Per module the spread is wide and worth reading before quoting the average: `Close.lean` 10.10 : 1, the `Seal*` group **5.74 : 1** (10,471 : 1,824), `Lookahead.lean` 3.99 : 1, `Replay.lean` 3.32 : 1, `Log.lean` 1.86 : 1 (a field table is definition; it rose from 1.81 with S2), and `Seal.lean` **alone** 0.22 : 1 (216 proof to 983 definition lines — it holds the types and the codecs, and its proofs live in the 57 modules beside it). Under D5 it informs and stops nothing |
 | **D6** (2026-09-13): parents are on, strictly — `@parent` is a view over the token vector, not a stored slot; a dangling link refuses the whole tree (`danglingParent`), a cycle refuses (`parentCycle`); the corpus harness loads whole trees only | one reader per field (§5.3), and a refusal by name over the old Rust's check-only `@ghost`; stricter than the Rust, chosen knowingly (gap 22, §10.5 q3) |
 | **D7** (2026-09-13): at a week close a past-due dated `persist` line (a point's or interval's default) moves to `backlog.md # Overdue`, staying `[ ]` — pulled forward from stage 5 | spec §6.3's week row and §5.3; §4.3's own example week (`^d1`) otherwise refuses its automatic close (gap 55) |
 | **D8** (2026-09-13): a not-yet-due dated line unfinished at a week close is demoted like any other and keeps its `due:`; the month rule "an outcome carries no date" covers outcomes, not `# Demoted` records — a deliberate owner narrowing of `shapesWf` | spec §6.3 calls `# Demoted` records work items, and fork-point `check.rs` has no date rule for month items (gap 55) |
@@ -866,7 +866,19 @@ bare-`tm init` tree that no kernel-backed verb could load, the bridge's phantom
 blank line and lost final newline (`e5d38b8`), and gap 45's two readers were all
 found by driving it, not by a proof. The human's 30-minute drive of the stage-3
 binary is still owed (§8.1), and so is the stage-4 binary's — `tm close` and the
-automatic close on a real stale tree (§8.2).
+automatic close on a real stale tree (§8.2) — **and, since 2026-09-16, the
+stage-5 binary's**, whose list is design §14.6's own.
+
+**Why no agent has done these, and no agent can.** Half of every drive list is
+the TUI, and `tm tui` exits by name when stdout is not a tty
+(`tm/src/tui/mod.rs:92`: *"tm tui needs a terminal (stdout is not a tty) — every
+verb of §13 also works on its own"*). Stage 5's list asks specifically for "the
+TUI through two reloads, with the CLI running a verb in between", which is
+exactly the integration surface no proof reaches (README **gap 182**). An agent
+can run the CLI half and has; it cannot run this, and it should say so rather
+than report a partial drive as a drive. Two recorded questions wait on the
+stage-5 drive: **gap 131** (a close cannot be aimed at an older period) and
+**gap 139** (`--now` at an earlier instant rolls `.tm/state.json` back).
 
 ---
 
@@ -955,9 +967,9 @@ demonstrably lost names:
 
 ```bash
 cd /Users/psixyzt/code/planner/kernel/TmKernel
-grep -c '^#print axioms' Check.lean                                     # 3934 (1299 at bf7cc63, 1006 at c8f3a38)
-grep '^#print axioms' Check.lean | awk '{print $3}' | sort -u | wc -l   # 3934
-grep -hcE '^(@\[[^]]*\][[:space:]]*)?theorem ' TmKernel/*.lean | awk '{s+=$1} END {print s}'   # 3934
+grep -c '^#print axioms' Check.lean                                     # 3946 (1299 at bf7cc63, 1006 at c8f3a38)
+grep '^#print axioms' Check.lean | awk '{print $3}' | sort -u | wc -l   # 3946
+grep -hcE '^(@\[[^]]*\][[:space:]]*)?theorem ' TmKernel/*.lean | awk '{s+=$1} END {print s}'   # 3946
 ```
 
 **These told an inconsistent story and were repaired at `e7b816c`; the trap that
@@ -967,9 +979,8 @@ whose final dotted segment was dropped audits the *type* and cheerfully reports
 "does not depend on any axioms". That is how 21 theorems came to be unaudited
 while the count looked healthy.
 
-**Re-measured 2026-09-16 (W-10; the figures below used to read 1299 and were
-three commits' worth of stale).** The three numbers agree at **3934** over the
-**78** modules — and the agreement is still the *same two off-by-ones
+**Re-measured 2026-09-16 at stage 5's close (they read 3934 at W-10 and 1299
+before that).** The three numbers agree at **3946** over the **78** modules — and the agreement is still the *same two off-by-ones
 cancelling*, which you should know before you quote it. Re-derived today by
 diffing the two **multisets** — declared short names against audited last
 segments — not the two `sort -u` counts, which cannot see a name declared in two
@@ -983,19 +994,22 @@ comm -23 /tmp/decl /tmp/aud   # `whose`  — the prose line below
 comm -13 /tmp/decl /tmp/aud   # `WfPlan` — the `def` below
 ```
 
-- 3934 audit lines, 3934 **distinct** names: no name is audited twice.
+- 3946 audit lines, 3946 **distinct** names: no name is audited twice.
 - Every theorem declared in the 78 modules is audited: the multiset diff above
   is **exactly two entries**, one each way. `^theorem` alone misses the declared
   `@[simp] theorem`s, which is why the grep allows an attribute prefix.
 - The third number counts one prose line — `Cmd.lean`'s header contains
   *"theorem whose command argument was unused"* at column 0 (`Cmd.lean:30`) — so
-  there are **3933** real declarations. Distinct short names are fewer still
-  (**3790**), because 144 short names are declared in more than one namespace;
-  that is why the reconciliation is a multiset diff and not a count comparison.
+  there are **3945** real declarations. Distinct short names are fewer still
+  (**3916**), because **23** short names are declared in more than one namespace
+  (30 names of excess); that is why the reconciliation is a multiset diff and not
+  a count comparison. *(This bullet read "3790 … 144" from W-10 until stage 5's
+  close, and neither figure reproduces by the pipeline above — a reminder that
+  §5.11 applies to this file too.)*
 - **Plus one non-theorem** in the audit: `Tm.WfPlan`, a `def`, is still audited,
   now at `Check.lean:472`. That is the last instance of the pattern the repair
   removed. Leave it or delete it deliberately; do not let it breed.
-- The file carries **61** `APPENDED …` banners (sixteen at `bf7cc63`).
+- The file carries **63** `APPENDED …` banners (sixteen at `bf7cc63`).
 
 So the honest sentence is *"every theorem in the 78 modules is audited, and the
 audit names one definition as well"* — not *"every theorem"* with nothing after
@@ -1326,12 +1340,32 @@ call quotes the exit code and *both* streams. A leftover binary is still the
 right thing to reuse — just re-run the script first; it is a no-op when the tree
 and the sources already match.
 
-Run at stage 5's close with `512 4`: **138 corpus lines compared, 77 with nothing
-to report; 2,048 generated lines compared, 470 with nothing to report** — both
-identical to the `017ead3` run below, so the grammar surface did not move while
-phases C, W and F landed. Set 3: **8 logs, 144 `Replay` keys, 8 entry counts, 8
-fitted models, 16,772 scalar values; 4 sightings of parity P21 and no other
-disagreement.**
+**Re-run AFTER the switch, at stage 5's closing commit (2026-09-16), with `512 4`
+and a REBUILT oracle** — this is stage 5's plan acceptance (§8.3) and the run to
+quote: **138 corpus lines compared, 77 with nothing to report; 2,048 generated
+lines compared, 470 with nothing to report** — both **byte-for-byte** the
+`017ead3` and stage-5-close figures, so the grammar surface did not move while
+the in-tree reader was deleted, the writer was replaced by the kernel's (S2) and
+quirk Q6(f) was fixed. Set 3: **469 logs over 6 zones, 8,442 `Replay` keys, 285
+`tm event` name sets, 469 entry counts, 7 refused-line lists, 8 fitted models,
+195,243 scalar values; 24 sightings of parity P21 — each checked to display the
+same `round1` load and `load_blocks` — and no other disagreement.** Set 4:
+**1,375** kernel renderings read back to the fork's own entry.
+
+**The `events` key set joined the comparison at the close (README gap 225).** The
+fork serialises 20 `Replay` keys and the frozen comparison covers 18; `warnings`
+is P15, and `events` had been left out because the kernel keeps only the latest
+record per `(name, id?)`. Its doc comment said T5's `latest_named` queries
+compared it — **true until S, and false the moment the in-tree reader those
+queries used was deleted**, which turned the whole `named` family from compared
+into merely counted with nothing saying so. `fork::compare_event_names` now
+compares the half both sides share, the key set, which is the half
+`priority::collect_candidates` actually reads, and it was shown to fail against a
+deliberately corrupted kernel answer before being trusted.
+
+*Run at the stage's first close (`b344185`, before the switch), superseded by the
+run above:* 138 / 77 and 2,048 / 470; set 3 **8 logs, 144 `Replay` keys, 8 entry
+counts, 8 fitted models, 16,772 scalar values; 4 P21 sightings.*
 
 Run at `017ead3` with `512 4`, byte-identical across runs: **138 corpus lines
 compared, 77 with nothing to report; 2,048 generated lines compared, 470 with
@@ -1395,12 +1429,14 @@ systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet ./check.s
 #   seven ok lines, exit 0
 cd /Users/psixyzt/code/planner
 systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet cargo test --workspace
-#   984 passed / 0 failed / 0 ignored across 64 test binaries at bf7cc63, 4.9 s warm
+#   1,309 passed / 0 failed / 9 ignored across 78 result lines at stage 5's close
+#   (984 / 0 / 0 across 64 test binaries at bf7cc63, 4.9 s warm)
 ```
 
 They do not overlap: the root workspace `exclude`s `kernel/tm-kernel-ffi`, so
-`cargo test --workspace` does **not** run the FFI crate's own 63 tests (checks 5
-and 6 do), and `check.sh` does not run the CLI, TUI, `tm-core` or proptest
+`cargo test --workspace` does **not** run the FFI crate's own **100** tests
+(checks 5 and 6 do; 63 at `bf7cc63`), and `check.sh` does not run the CLI, TUI,
+`tm-core` or proptest
 suites. The FFI crate's `build.rs` re-drives `lake` when any file under
 `TmKernel/` changes, and `tm` depends on that crate, so the workspace run also
 rebuilds the kernel it links (`tm/build.rs` only adds the toolchain `lib/` rpath). A green
@@ -2129,9 +2165,11 @@ the switch S, the kernel-writer step D16 adds after S, and F) runs on `rebuild-o
 (L1–L9, with stage 6's E7, slot cut and energy prediction pulled in as L2–L4 under D12) runs in
 parallel on `stage5-lookahead` (D11).*
 
-**Status at stage 5's close (2026-09-15, README "Stage 5 closed").** The kernel half of
-stage 5 is **complete and proved**; the **switch is not made**, and that is the honest
-headline. What landed, by phase:
+**STAGE 5 IS CLOSED (2026-09-16, README "Stage 5 closed — the kernel reads and writes the
+log"). The switch is made.** Since `2b26be3` the Lean kernel is the shipped binary's **only
+reader** of `.tm/log.jsonl`, and since `47a0443` the **only writer** of its lines (D16). This
+paragraph said "the switch is not made" from 2026-09-15 through four runs that correctly
+refused S; the sentence is false now and it is gone. What landed, by phase:
 
 | phase | what landed | commits |
 |---|---|---|
@@ -2140,42 +2178,78 @@ headline. What landed, by phase:
 | **R** Rust seams | fourteen steps; `Ctx::replay_of` became the one reader of `LOG_PATH`, every verb asks for its §11.1 scope, R14's Rust latency baseline | `1fe59c6` … `a9cbeda` (15 commits) |
 | **C** the kernel replay | the undo mask, the day index, the block, completion and day-record families, the whole fact view, the undo law | `ae3a3cc`, `1e55211`, `5cc3831`, `c5689f8`, `f50886d`, `69bd90f`, `8fe6d80` |
 | **W** windowing | `Seal.lean` and 57 proof modules: **all sixteen window laws**, the codecs, genesis in chunks, the measured gate | `45e8133` … `72576ec`, `017ead3` |
-| **L** (D10) | the exact mixture, E7's window, the slot cut, future energy, the lookahead, its wire, the parity twin, the grants and floor pass | `319919c` … `23b06e2` |
+| **L** (D10) | the exact mixture, E7's window, the slot cut, future energy, the lookahead, its wire, the parity twin, the grants and floor pass — **L1–L8; L9 did not land** | `319919c` … `23b06e2` |
 | **F1** | the fit reads the kernel's observations; `fit_replay` deleted | `983a8be` |
+| **preparation for S** (D19, D21, D22, D23) | the eight missing T9s and T12, T11's seven latency rows, the per-verb call counts, gaps 134-136 and 138/D20, R12's consumer tests moved, and the whole instrument re-anchored **outside** the tree to fork point `4748911` (gaps 137, 146, 147, 148, 149) | `022317d` … `1b416e8`, `ab455cf`, `07b525e` |
+| **S, the switch** | `Ctx::replay_with` → `kernel_log::replay_scoped`; `Ctx::replay_of` gone; §12's deletion (`tm-core/src/log.rs` 3,609 → 1,806 lines); D18's defaults wired; the one-reader grep 125 → **41** | **`2b26be3`** |
+| **S-after** | `tm check` names a stalled ledger day (gap 119); a bare `tm log` at three years measured at 232.9 ms, so gap 129's narrowing is **not needed** | `cae3695` |
+| **S2** (D16) | the kernel returns the exact bytes to append — `Log.emitEvent`/`emitLine`, the `emit` wire section, `Ctx::append_entry`; the log's format has **one** definition (gap 130) | `47a0443` |
+| **Q6(f)** | a `close` carries `period:key` as its primary id, so undoing your own close no longer cancels the automatic one (gap 86); parity **P36** | `760ead6` |
+| **the close** | the parity harness re-run *after* the switch through a rebuilt oracle; gap 225 closed; the ratio, §10.1 and §2.3 re-measured | this commit |
 
-**What the acceptance measured** (AGENTS §7.3's harness, extended to every stage-5 surface it
-can reach, run at the close):
-- **the replay and the fit against fork point `4748911`** (input set 3, new): 8 logs — the seven
-  corpus logs and a generated month — **144 `Replay` keys, 8 entry counts, 8 fitted models,
-  16,772 scalar values**. Disagreements: **4**, every one `days.<date>.load`, every one
-  **parity P21** (the kernel's exact fifths against the fork's accumulated `f64`), and every one
-  checked to display the same `round1` load and the same `load_blocks`. Nothing else differs, and
-  `tm model --fit` agrees on all 8 logs — design §14.6's T12, against the fork rather than a
-  saved file.
+**What the acceptance measured**, re-run **after** the switch (2026-09-16) through an oracle
+rebuilt under §7.3's freshness rule. Every denominator is recorded; none is omitted:
+- **the whole `Replay` and the fit against fork point `4748911`** (input set 3): **469 logs over
+  6 zones** — 8 frozen (the seven corpus logs and a generated month) and 461 in the classes too
+  large to freeze — **8,442 `Replay` keys** (18 of the fork's 20 per log), **285 `tm event` name
+  sets**, **469 entry counts**, 7 refused-line lists, **8 fitted models**, **195,243 scalar
+  values**. Disagreements: **24**, every one `days.<date>.load`, every one **parity P21** (the
+  kernel's exact fifths against the fork's accumulated `f64`), every one checked to display the
+  same `round1` load and `load_blocks`. **Nothing else differs**, and `tm model --fit` agrees on
+  all 8 fitted logs — design §14.6's T12, against the fork rather than a saved file.
+- **inside plain `cargo test --workspace`, with no fork build** (D21): T5's frozen arms compare
+  **20 inputs / 360 keys / 17,291 scalar values / 4 event-name sets** and the door **16
+  `All`-scope reads / 288 keys / 32,976 values / 6 event-name sets**; 458 further inputs reach
+  the fork only under `TM_ORACLE` (**gap 150**) and 2 door inputs are counted **skipped**, never
+  as agreement.
 - **the grammar** (input sets 1 and 2): 138 corpus lines, 77 with nothing to report; 2,048
-  generated lines, 470 with nothing to report — unchanged from `017ead3`.
+  generated lines, 470 with nothing to report — **byte-for-byte the `017ead3` and stage-5-close
+  figures**, so the grammar surface did not move while the reader was deleted, the writer
+  replaced and a quirk fixed. Per line (input set 4, D23): 8,273 frozen verdicts and **1,375**
+  kernel renderings read back to the fork's own entry.
 - **the lookahead, priority, hysteresis and EDF** are measured by the committed T13
-  (`kernel_lookahead_parity.rs`) and T16 (`kernel_unit_reserve.rs`). Those compare against the
-  **in-tree** `tm_core::capacity` and `tm_core::priority`, and that is a fork-point comparison:
-  `capacity.rs` is **purely additive** since `4748911` (198 added lines, no line removed or
-  changed) and `priority.rs`'s only non-additive edit is `is_impossible` reading the exact
-  shortfall, which is P1-refined's own downstream.
+  (`kernel_lookahead_parity.rs`) and T16 (`kernel_unit_reserve.rs`): **92 windows, 552 future
+  days, 482 candidates** (312 entering the pass, 6 held by hysteresis, 132 floors) and **256**
+  proptest cases, with **0** disagreements outside **P1** (25 candidates), **P2** (3), **P3**
+  (131) and **P27** (31 fork days). Those compare against the **in-tree** `tm_core::capacity` and
+  `tm_core::priority`, and that is a fork-point comparison, **re-verified at the close rather
+  than carried**: `capacity.rs` is purely additive since `4748911` (198 added, **0 removed**);
+  `priority.rs` is 27 added / 6 removed, and its non-additive edits are **three**, not one — the
+  `use` line gaining `Exact`, `is_impossible` reading the exact shortfall (P1-refined's own
+  downstream), and `collect_candidates`' `events` source moving to `Replay::event_names()` at
+  step X1. *(That last one is what README **gap 225** was about, and it is why the hole
+  mattered: this sentence used to say "`priority.rs`'s only non-additive edit is
+  `is_impossible`".)*
 - **`remaining`, the rollup and the series head are NOT measured, because they are not reachable**:
   the kernel has no wire op that answers them, and a candidate's `remaining` is a **host-supplied**
   field of the capacity request (README gap 113). `Tree.remainingMin` and `Tree.seriesHead` are
   proved and witnessed inside the kernel and reach no response key. The denominator is **0**, said
   out loud rather than reported as agreement.
 
-**What remains, by name** (README's closing block carries the four-part form of each;
-re-measured against the repo on 2026-09-15, after `4aaa99e` and `00acba7` — this paragraph had
-gone stale in two places and an agent reading it as a work list would have redone committed
-work):
-**S, the switch, in full** — but **not** gap 128, which this paragraph named first until the
-W-7 audit caught it. The facts decoder landed at `4aaa99e`: `kernel_log::decode_facts` is
-defined in `tm/src/cli/kernel_log.rs`, and T5's `kernel_replay` (`tm/tests/kernel_replay_parity.rs`)
-*is* that call, borrowing nothing from the reader S deletes. What is left is design §14.6's
-contents 1, 2 and 5, item 4's retarget of T5 (**gap 137**), item 7's D18 defaults with **gap 120
-part 3**, and **gaps 119, 129, 132, 133**.
+**What remains, by name** — and "closed" does not mean nothing is owed:
+1. **Step L9 (README gap 93) did not land.** Day 0 of the lookahead is still the host's
+   histogram. Its blocker is no longer the switch but **gap 210**, a seam inside the kernel:
+   `runCapZ` answers a request's `log` and `capacity` sections independently, so the capacity
+   path cannot read the replay the same call just ran. Design §14.8 prices L9 at 200 definition
+   and 600 proof lines, −150 Rust, 4–6 agent-days; phase F's **F2** and **F3** want the same
+   seam, so it is paid once for three steps. `kernel_lookahead_parity.rs` asserts in words that
+   day 0 is the host's, so L9 must **re-aim** that harness, not extend it.
+2. **The §5.13 human drives** of the stage-3, stage-4 **and stage-5** binaries. **No agent can
+   perform them**: `tm tui` refuses a non-tty by name (`tm/src/tui/mod.rs:92`) and design
+   §14.6's stage-5 list asks for the TUI through two reloads with a CLI verb in between
+   (README **gap 182**). Two items on that list are owner questions the drive is meant to
+   settle: **gap 131** and **gap 139**.
+3. **Open gaps**, the corrected list: **93**, **132**, **133**, **139**, **143**, **150**,
+   **151**, **152**, **160**, **170**, **180**, **181**, **182**, **190**, **200**, **201**,
+   **210**, **226**. Performance levers: **121, 122, 123, 126, 127** (and 143). Quirks kept by
+   owner answer Q6: **85** (e), **87** (g), **118** (b). *Gaps 140, 141, 142 and 145 were
+   cleared by S and are named closed in the README's closing block — four runs of "still open"
+   lists had carried them by mistake.*
+4. **Phase F's F2 and F3** belong to stage 6's recurrence and priority tranches.
+
+*The dated paragraphs below are the working record of how the switch was reached, kept because
+each says what it closed and on what evidence. **None of them is a work list any more** — items
+1–4 above are what is owed.*
 
 *Measured 2026-09-16 (README, "W-9: the switch was built and measured, and it did not land").* The
 body swap is **built and green** — `Ctx::replay_with` onto `kernel_log::replay_scoped`, and with it
@@ -2339,10 +2413,14 @@ rounding sites**; extend the existing oracle scaffolding rather than writing a
 new one — after first moving it off `main`, which no longer exists, to the fork
 point `4748911` (§7.3). Stage 5's parity is therefore against the fork-point
 Rust. *Done at the stage's close: the scaffolding was retargeted (`89ead46`) and
-extended with a third input set and a `fit` mode; the exception list ran to P35,
-and the measured disagreement over the log corpus was **P21 alone**, four
-sightings, none of them reaching a display. The numbers and the denominators are
-in the status block above.*
+extended with a third input set and a `fit` mode, then a fourth (D23's
+`parse-entry`); the exception list runs to **P36**.* **Re-run AFTER the switch
+on 2026-09-16 through a rebuilt oracle**, which is the run that counts: over
+**469 logs / 8,442 `Replay` keys / 195,243 scalar values / 8 fitted models**, the
+measured disagreement is **P21 alone**, **24** sightings, none of them reaching a
+display; over the capacity surface it is **P1, P2, P3 and P27** and nothing else.
+The numbers and every denominator — including the one that is **zero** — are in
+the status block above and in `kernel/README.md`'s closing block.
 
 **Named traps.**
 
@@ -2575,6 +2653,24 @@ section byte-identical across the file, `tm now`, `tm tui` and `tm plan --json`.
 **Inherited debt.** Gaps 11, 18, 20, 22, 26, 28, 29, 35; and every `M`/`~` row
 of plan §4 that no proof reaches.
 
+**Inherited from stage 5 at its close (2026-09-16), by name** — §8.3's "what remains" is the
+authoritative list; this is what stage 6 has to *do* with it:
+- **Step L9 (gap 93)**, the one step of stage 5's own plan that did not land: day 0 of the
+  lookahead is still the host's `DayCapacity::from_slots`. Its opening move is **gap 210** — the
+  kernel answers a request's `log` and `capacity` sections independently, so the capacity path
+  cannot read the replay the same call just ran. **Phase F's F2 and F3 want the same seam**, so
+  stage 6 pays for it once and three steps spend it. Design §14.8 prices L9 at 200 definition and
+  600 proof lines, −150 Rust, 4–6 agent-days; `kernel_lookahead_parity.rs` asserts in words that
+  day 0 is the host's, so L9 **re-aims** that harness rather than extending it.
+- **F2** (the recurrence family: `done_dates` first and count, `last_done`, instances,
+  `latest_named`, `is_done`) and **F3** (the priority rule inputs, and `block_minutes_on` moving
+  in with the close tranche) — each fact's last Rust reader goes with its tranche.
+- **The scope questions**: gaps **132** and **133**, facts the `Hot` scope will not carry.
+- **The levers**, all measured and none taken: **121, 122, 123, 126, 127, 143**. The baseline
+  they move against is a later verb at three years, **146.659 ms**.
+- **Gap 226**: the parity list has no single home and no check, and P32 was issued twice. The
+  next entry anyone adds is **P37**.
+
 ---
 
 ### 8.5 Stage 7, so you know what stages 3–6 are building toward
@@ -2683,7 +2779,7 @@ as 'tm becomes verified' is overstating it by a factor of three."*
 
 ## 10. Reference
 
-### 10.1 The package, re-measured at stage 5's close on 2026-09-15 (parent `b344185`)
+### 10.1 The package, re-measured at stage 5's CLOSING commit, 2026-09-16 (after `2b26be3`, `47a0443`, `760ead6`)
 
 The theorem column counts declarations including `@[simp] theorem`, which is what
 §6.3's third command counts and what reconciles with the audit. The right-hand
@@ -2696,13 +2792,13 @@ close) is in this file's history as of `30919c1`.
 
 | module | lines | theorem declarations | at `30919c1`, stage 4's close (lines / theorems) |
 |---|---:|---:|---:|
-| `Boundary.lean` | 11,190 | 463 | 7,099 / 298 |
-| `Replay.lean` | 7,929 | 395 | — (new, phase C) |
+| `Boundary.lean` | 11,353 | 466 | 7,099 / 298 |
+| `Replay.lean` | 7,962 | 396 | — (new, phase C) |
 | `Line.lean` | 6,829 | 496 | 6,749 / 494 |
 | `Close.lean` | 5,838 | 258 | 5,459 / 246 |
 | `Lookahead.lean` | 4,752 | 284 | — (new, D10 L1–L8) |
 | `Json.lean` | 3,726 | 185 | 2,641 / 126 |
-| `Log.lean` | 2,608 | 107 | — (new, D9 step B3) |
+| `Log.lean` | 2,754 | 115 | — (new, D9 step B3) |
 | `Plan.lean` | 2,566 | 138 | 2,518 / 135 |
 | `Cmd.lean` | 2,196 | 113 | 2,196 / 113 (unchanged) |
 | `Cal.lean` | 1,734 | 169 | 833 / 105 |
@@ -2717,51 +2813,60 @@ close) is in this file's history as of `30919c1`.
 | `Tree.lean` | 541 | 37 | — (new, stage 5 step 1) |
 | `Grain.lean` | 310 | 30 | 310 / 30 (unchanged) |
 | `Seal.lean` **+ 57 `Seal*` modules** | **15,494** | **762** | — (new, phase W; **58 files**, each with its own import line, §2.3) |
-| **78 modules** | **73,213** | **3,934** (one is a docstring line in `Cmd.lean`; the grep skips `Arith.lean`'s `private theorem cancelR`, and the two cancel) | 32,358 / 1,826 (thirteen modules) |
+| **78 modules** | **73,555** | **3,946** (one is a docstring line in `Cmd.lean`; the grep skips `Arith.lean`'s `private theorem cancelR`, and the two cancel) | 32,358 / 1,826 (thirteen modules) |
 | `TmKernel.lean` | 78 | — (the 78 imports; §2.3) | 13 |
-| `Check.lean` | 4,573 | — (3,934 `#print axioms` lines, 3,934 distinct names, 61 `APPENDED` banners) | 2,167 |
+| `Check.lean` | 4,598 | — (3,946 `#print axioms` lines, 3,946 distinct names, 63 `APPENDED` banners) | 2,167 |
 | `Negative.lean` | 1,905 | — (147 cheat blocks, highest numbered 157) | 778 |
-| `Goals.lean` | 750 | — (13 goals with `sorry`, **all stage 6**; not imported) | 740 |
-| **total** | **80,519** | | 36,056 |
+| `Goals.lean` | 752 | — (13 goals with `sorry`, **all stage 6**; not imported) | 740 |
+| **total** | **80,888** | | 36,056 |
 
-§6.3's three counts agree exactly at **3,934** — 3,934 audit lines, 3,934 distinct audited
-names, 3,934 declared. The agreement is still two off-by-ones cancelling, and knowing which
+§6.3's three counts agree exactly at **3,946** — 3,946 audit lines, 3,946 distinct audited
+names, 3,946 declared. The agreement is still two off-by-ones cancelling, and knowing which
 is the point of that section: the declared count includes `Cmd.lean`'s prose line at column 0
 and excludes `Arith.lean`'s `private theorem cancelR`, which is not audited either, and the
 audit still names one **definition**, `Tm.WfPlan`, at `Check.lean:472`. The honest sentence is
 unchanged: every theorem in the 78 modules is audited except the private `cancelR`, and the
-audit names one definition as well.
+audit names one definition as well. Re-derived here by §6.3's own multiset diff: exactly two
+entries, `whose` declared-and-unaudited and `WfPlan` audited-and-undeclared.
 
 Proof : definition, by the same line-classification script, kept verbatim in the README's
-"Stage 4 closed" block (`python3 /tmp/claude-1000/proof_ratio.py kernel/TmKernel/TmKernel`):
-**4.06 : 1** over the 78 modules (42,426 proof lines : 10,451 definition lines), net
-4.00 : 1 with witnesses and fixtures removed, 3.03 : 1 counting each declaration's doc
+"Stage 4 closed" block (`python3 /tmp/claude-1000/proof_ratio.py kernel/TmKernel/TmKernel`;
+the on-disk copy was diffed against that verbatim copy at the close and is identical):
+**4.03 : 1** over the 78 modules (42,506 proof lines : 10,543 definition lines), net
+3.97 : 1 with witnesses and fixtures removed, 3.00 : 1 counting each declaration's doc
 comment with it. Above §9.1's 3 : 1, a trigger the owner overrode (D5), so the number is
 recorded and gates nothing. It **fell** from 4.80 : 1 while the library grew 2.3×, and the
 arithmetic says why: what this stage added is 23,611 proof : 6,534 definition lines =
 **3.61 : 1**, the design's own estimate for the tranche (§14.9, "≈ 3.6 : 1"). The spread is
 wide enough that the average should not be quoted alone: `Close.lean` 10.10 : 1, the
-`Seal*` group 5.74 : 1, `Lookahead.lean` 3.99 : 1, `Replay.lean` 3.31 : 1, `Log.lean`
-1.81 : 1 (a field table is definition), `Seal.lean` alone 0.22 : 1. *At stage 4's close:*
-4.80 : 1 (18,815 : 3,917). *At `10bae51`:* 4.49 : 1 (14,616 : 3,252).
+`Seal*` group 5.74 : 1 (10,471 : 1,824), `Priority.lean` 4.48 : 1, `Lookahead.lean`
+3.99 : 1, `Replay.lean` 3.32 : 1, `Log.lean` 1.86 : 1 (a field table is definition; it rose
+from 1.81 when S2 added `emitEvent`), `Seal.lean` alone 0.22 : 1. *At `b344185`, stage 5's
+first close:* 4.06 : 1 (42,426 : 10,451). *At stage 4's close:* 4.80 : 1 (18,815 : 3,917).
+*At `10bae51`:* 4.49 : 1 (14,616 : 3,252).
 
-Archive: `libTmKernel_TmKernel.a`, **17,133,648 bytes** (5,087,900 at stage 4's close: 3.4×).
-FFI crate: `shim.c` 66 + `build.rs` 80 + `src/lib.rs` 61 = **207** lines; tests `kernel.rs`
-1,922 lines (1,288), `corpus.rs` 738 (unchanged), `stack.rs` 526 and `tests/harness/mod.rs`
-486. FFI tests: 86 + 8 + 6 = **100** (76 at stage 4's close). Host side:
-`tm/src/cli/kernel_bridge.rs` 1,507 lines (1,253), `tm/src/cli/kernel_log.rs` **1,129 —
-which nothing in the binary calls yet**, `tm/src/cli/kernel_capacity.rs` 1,034,
-`tm/src/cli/closing.rs` 622, `tm/build.rs` 40.
+Archive: `libTmKernel_TmKernel.a`, **17,202,480 bytes** (17,133,648 at `b344185`; 5,087,900
+at stage 4's close: 3.4×).
+FFI crate: `shim.c` 66 + `build.rs` 80 + `src/lib.rs` **105** = **251** lines (207 at
+`b344185`); tests `kernel.rs` 1,922 lines (1,288), `corpus.rs` 738 (unchanged), `stack.rs`
+526 and `tests/harness/mod.rs` 486. FFI tests: 86 + 8 + 6 = **100** (76 at stage 4's close).
+Host side: `tm/src/cli/kernel_bridge.rs` 1,507 lines (1,253), `tm/src/cli/kernel_log.rs`
+**2,189 — the binary's only reader AND writer of the log** (1,129 at `b344185`, when nothing
+in the binary called it), `tm/src/cli/kernel_capacity.rs` 1,034, `tm/src/cli/closing.rs`
+**728** (622), `tm/build.rs` 40. `tm-core/src/log.rs` is **1,806** lines — the writer, the
+decoded `Replay` and nothing else — against **3,609** before §12's deletion at `2b26be3`.
 
-`check.sh`: **seven** checks, **3.04 / 3.13 / 3.11 s** over three serial capped runs on a
-built tree (2.4 s at stage 4's close), corpus 29/37 files and 4/5 whole plans, burn-down 13.
-`cargo test --workspace`: **1,087 passed / 0 failed / 6 ignored across 73 result lines**,
-capped (§7.5; 1,008 across 66 at stage 4's close). `cli_latency.rs --include-ignored`:
-**4 passed, 3.76 s**, the year-of-log and three-year tests included. T5
-(`kernel_replay_parity.rs --include-ignored`): **20 passed, 6.58 s**. Re-measured for the
-first time since `bf7cc63`: `cargo build -p tm` into an empty target directory, **18.93 s,
-1,743,872 KiB peak RSS** (1.66 GiB; the old quote was 18.1 s with no memory figure). Every
-figure here was taken under
+`check.sh`: **seven** checks, **3.04 / 3.04 / 3.07 s** over three serial capped runs on a
+built tree (3.04 / 3.13 / 3.11 s at `b344185`; 2.4 s at stage 4's close), corpus 29/37 files
+and 4/5 whole plans, burn-down 13. `cargo test --workspace`: **1,309 passed / 0 failed / 9
+ignored across 78 result lines**, capped (§7.5; 1,087 across 73 at `b344185`, 1,008 across 66
+at stage 4's close). `cli_latency.rs --include-ignored`: **6 passed, 15.82 s**, the
+year-of-log and both three-year tests included. T5 (`kernel_replay_parity.rs
+--include-ignored`): **32 passed, 6.20 s**; the door suite **22**;
+`cli_switch_acceptance --include-ignored` **9**; `kernel_log_grammar --include-ignored`
+**18**. §12's one-reader grep: **41**, from 125 before the switch. `cargo build -p tm` into
+an empty target directory: **18.98 s, 1,556,152 KiB peak RSS** (1.48 GiB; 18.93 s and
+1,743,872 KiB at `b344185`). Every figure here was taken under
 `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`.
 
 *As it stood at `10bae51` (stage 4's first close):* twelve modules, 25,800 lines,
@@ -2789,6 +2894,9 @@ Check these before you quote them.
 | "`move` is open on `main`" / "426 pairs reachable on tm `main`" | PLAN §4 row A6; `kernel/README.md` | Stage 0 landed on `main` (`557a3d2`, `move_to` calling `destination` → `Err(occupied(...))`), and **`main` was then discarded** (2026-09-12), stage 0's fix with it. The restored `tm-core` is the pre-stage-0 fork point, so its `move_to` has the hole again — but the shipped binary's `move`/`readopt` go through the kernel, where `occupied` is a constructor obligation, so **A6 is dead in the binary** (`d8e8d4d`). The 426 were measured on pre-fix `main`, by a harness this clone no longer holds |
 | Rust line citations (`horizon.rs:943`, `:958`, `:1323`, `:1543`, `:1792`) | PLAN §2.1, §3.2 | **they resolve again**, on the restored `tm-core/src/horizon.rs` (unchanged from `4748911`): `move_line` at 943, its `move_to` call at 958, and 1323/1543/1792 inside `close_day`/`close_week`/`close_month`. Fork-point offsets: `move_to` 819, `move_line` 943, `demote_one` 1005, `readopt` 1119, `rank` 1286, `close_day` 1322, `close_week` 1537, `close_month` 1782, `auto_close` 2032; `destination` and `occupied` do not exist there. The `main` offsets this row used to give are unreproducible. **Still cite function names.** `model.rs:686` (`default_on_miss`, Window → Expire), `priority.rs:349` and `planner.rs:323` (the two `round()` sites) still resolve |
 | "Five states, not six" | PLAN §2.4, §3.1 | six. `Status` is `settled o \| live h \| demoted`; a lone `[-]` is a state |
+| "the exception list ran to **P35**" / design §17's table ending at **P31** | this file (before stage 5's close); `kernel/design/stage5/stage5-D9-D10-design.md` §17 | the list runs to **P36** and design §17 carries only P13–P31. **P32–P36 live in `kernel/README.md`'s blocks alone**: P32 the candidate bounds (D10 L8), P33 (C4), P34 (C5), P35 (S2's block), **P36** a close's primary id (Q6(f)). **P32 was issued twice** and Q6(f)'s entry was renumbered to P36 at stage 5's close; nothing reconciles these numbers, which is README **gap 226**. P37 is the next free one — grep before taking it |
+| "the switch is not made" | this file §8.3, 2026-09-15 to 2026-09-16 | **it is made**, at `2b26be3`. The Lean kernel is the binary's only reader of `.tm/log.jsonl` and, since `47a0443`, the only writer of its lines. The sentence was true when written and was removed at stage 5's close |
+| "`priority.rs`'s only non-additive edit is `is_impossible`" | this file §8.3, 2026-09-15 to 2026-09-16 | there are **three** since `4748911`: the `use` line gaining `Exact`, `is_impossible` reading `shortfall_min_exact`, and `collect_candidates`' `events` source moving to `Replay::event_names()` (step X1). `capacity.rs` really is purely additive — 198 added, 0 removed |
 | `PlanCore` has a `log` field | PLAN §3.1 | it is `{docs, store}`. Stages 5 and 6 need the log and it has nowhere to go |
 | `Doc = {path, frontRaw, secs, prose}` | PLAN §3.1 | it is `{path, prose, region}`. Headings and front matter are ranked verbatim prose; §4.2's section is *derived*, not stored |
 | The FFI is `tm-kernel-sys/`, ~250 lines | PLAN §5 | it is `kernel/tm-kernel-ffi/`, 192 lines at `bf7cc63` (185 at `c8f3a38`) — still the one stage-3 number that moved in the good direction |
@@ -2950,3 +3058,21 @@ record), **q11** (whether `hfold` was forced), **q7** (lifecycle commutation, st
 (gap 60, the `[-]` refusal) — plus the **§5.13 drives**, now of three binaries. The stage-5 drive
 is design §14.6's own list, and it cannot be run until S lands, because the shipped binary still
 does not read the log through the kernel.
+
+**Update 2026-09-16, STAGE 5 CLOSED (README "Stage 5 closed — the kernel reads and writes the
+log").** No question in this table was answered or raised. The switch landed (`2b26be3`), the
+kernel writes the lines it reads (`47a0443`, D16), quirk Q6(f) is fixed (`760ead6`), and the
+parity harness was **re-run after the switch** through a rebuilt fork-point oracle: over 469 logs
+/ 8,442 `Replay` keys / 195,243 scalar values the only disagreement is **P21**, 24 sightings, none
+reaching a display; over the capacity surface it is **P1, P2, P3, P27** and nothing else;
+`remaining`, the rollup and the series head stay unreachable, denominator **0**. Still owed to the
+human, unchanged in kind: **q10** (a dropped child's standing record), **q11** (whether `hfold`
+was forced), **q7** (lifecycle commutation, stage 6) and **q9** (gap 60, the `[-]` refusal) — plus
+the **§5.13 drives of three binaries**, which are now the *only* thing stage 5 owes the owner and
+which **an agent cannot perform**: `tm tui` refuses a non-tty by name, and design §14.6's drive
+list asks for the TUI through two reloads (README gap 182). The drive is also where two recorded
+questions get decided: **gap 131** (a close cannot be aimed at an older period — the refusal is
+right, the drive item as written is not performable) and **gap 139** (`--now` at an earlier
+instant rolls `.tm/state.json` back — should `--now` be read-only?). **One step of stage 5's own
+plan did not land and is carried by name into stage 6: L9 (gap 93), blocked on gap 210.** That is
+not an owner question; it is work, priced by design §14.8 at 4–6 agent-days.

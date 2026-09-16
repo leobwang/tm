@@ -84,12 +84,19 @@ pub fn frozen_row(name: &str, a: &Value) -> String {
     serde_json::to_string(&row).expect("a frozen answer serialises") + "\n"
 }
 
-/// The fork point's `Replay` keys this compares. The fork serialises **20**;
-/// two are left out and neither is the kernel's to answer yet:
+/// The fork point's `Replay` keys this compares **whole**. The fork serialises
+/// **20**; two are left out of this list, and neither is left uncompared:
 ///
-/// * `events` — the kernel keeps only the latest occurrence per `(name, id?)`
-///   (design §8.4) while the field is still shaped as a list. That is **gap
-///   128**, and T5's `latest_named` queries are what compare it.
+/// * `events` — the fork keeps a list of every occurrence per name; the kernel
+///   keeps only the latest per `(name, id?)` (design §8.4), so the *values*
+///   have no common shape. The **key set** does, and it is what the binary
+///   reads: `priority::collect_candidates` builds its `events` set from
+///   `Replay::event_names()`. [`compare_event_names`] compares exactly that,
+///   counted separately in [`ForkTally::event_names`]. *(Restored at stage 5's
+///   close, README gap 225: this comment used to say "T5's `latest_named`
+///   queries are what compare it", and that stopped being true the moment S
+///   deleted the in-tree reader those queries were compared against — the
+///   family went from compared to merely counted, with nothing saying so.)*
 /// * `warnings` — free text on the fork's side, named constructors on the
 ///   kernel's: **parity P15**, compared by line and status instead.
 ///
@@ -229,6 +236,10 @@ pub struct ForkTally {
     /// Parity **P21** sightings: a day whose `load` differs from the fork's in
     /// the last ulp. Counted, and each one's displays checked to be equal.
     pub p21: usize,
+    /// `tm event` names compared between the fork's `events` map and the
+    /// kernel's [`Replay::event_names`] (README gap 225). Counted apart from
+    /// `keys`, because it is the one family whose *values* have no common shape.
+    pub event_names: usize,
     /// Inputs that had no frozen answer, so the fork did not answer them at all.
     /// The number that must never be read as agreement.
     pub skipped: usize,
@@ -242,22 +253,24 @@ impl ForkTally {
         self.entries += o.entries;
         self.warning_lines += o.warning_lines;
         self.p21 += o.p21;
+        self.event_names += o.event_names;
         self.skipped += o.skipped;
     }
 
     /// One line saying what was compared and what was not.
     pub fn line(&self, what: &str) -> String {
         format!(
-            "fork point 4748911 — {what}: {} inputs, {} Replay keys ({} of the fork's 20 each), \
-             {} scalar values, {} entry counts, {} refused-line lists compared; parity P21 {} day \
-             records, every one displaying the same load; {} inputs had no frozen answer; \
-             0 other exceptions",
+            "fork point 4748911 — {what}: {} inputs, {} Replay keys ({} of the fork's 20 each, \
+             plus `events`' key set), {} scalar values, {} entry counts, {} refused-line lists, \
+             {} event-name sets compared; parity P21 {} day records, every one displaying the \
+             same load; {} inputs had no frozen answer; 0 other exceptions",
             self.logs,
             self.keys,
             FORK_REPLAY_KEYS.len(),
             self.values,
             self.entries,
             self.warning_lines,
+            self.event_names,
             self.p21,
             self.skipped
         )
@@ -324,6 +337,12 @@ pub fn compare_replay_with_fork(
         ));
     }
 
+    // The one family whose values have no common shape, compared by the part
+    // that does: the set of `tm event` names (README gap 225).
+    if let Some(why) = compare_event_names(name, kr, fork, t) {
+        findings.push(why);
+    }
+
     // The all-time entry count (design §8.4's `entryCount`, §11.4 step 5's
     // `tm log` total; gap 136).
     t.entries += 1;
@@ -346,6 +365,41 @@ pub fn compare_replay_with_fork(
         findings.push(format!("{name}: the refused lines differ — kernel {warnings:?} fork {fork_lines:?}"));
     }
     findings
+}
+
+/// **The `events` family, compared by the part both sides agree on** (README
+/// gap 225).
+///
+/// The fork's `events` is `BTreeMap<String, Vec<NamedEvent>>` — every
+/// occurrence of every `tm event <name>`. This branch narrowed it at step X1 to
+/// `named`, the latest record per `(name, id?)` (design §8.4), so the values
+/// cannot be compared leaf for leaf and the key is not in
+/// [`FORK_REPLAY_KEYS`]. **The names can be compared, and they are the half the
+/// binary reads**: `priority::collect_candidates` builds a candidate's `events`
+/// set from `Replay::event_names()`, which is `named`'s keys, and an
+/// `on-event:` recurrence fires off that set.
+///
+/// Returns `None` when the two name sets are equal, and the difference by name
+/// when they are not. `t.event_names` counts the names the fork offered, so a
+/// log with no `tm event` in it adds 0 and can never read as agreement.
+pub fn compare_event_names(name: &str, kr: &Replay, fork: &Value, t: &mut ForkTally) -> Option<String> {
+    let fork_names: Vec<&str> = match fork["events"].as_object() {
+        Some(o) => o.keys().map(String::as_str).collect(),
+        // The fork always serialises the key; a missing one is a damaged fixture.
+        None => {
+            assert!(fork["events"].is_null(), "{name}: the frozen fork's `events` is not a map");
+            Vec::new()
+        }
+    };
+    t.event_names += fork_names.len();
+    // Both sides are `BTreeMap` keys, so both are sorted and deduplicated.
+    let kernel_names: Vec<&str> = kr.event_names().collect();
+    if kernel_names == fork_names {
+        return None;
+    }
+    Some(format!(
+        "{name}: the `tm event` names differ — kernel {kernel_names:?} fork {fork_names:?}"
+    ))
 }
 
 /// Panic unless `findings` is empty, quoting every one.

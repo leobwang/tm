@@ -590,7 +590,9 @@ fn kernel_reads_the_corpus_logs_as_the_fork_point_did() {
                     entries += 1;
                     assert_eq!(tag, &e.tag, "{name}:{n}");
                     if tag == "close" {
-                        // **Parity P32** (quirk Q6(f), gap 86): a close carries
+                        // **Parity P36** (quirk Q6(f), gap 86; renumbered from
+                        // P32 at stage 5's close — P32 was already L8's
+                        // candidate-bounds row, README gap 226): a close carries
                         // `period:key` as its primary id, so undoing one cancels
                         // *that* close instead of whichever is latest. The fork
                         // has no id for a close at all. The frozen answer is the
