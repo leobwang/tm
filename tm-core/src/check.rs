@@ -77,6 +77,10 @@
 //! | `day-section` | warning | an item in a `day/` file outside `# Pinned` (§6.2) |
 //! | `waiting-state` | warning | `waiting:` without `[?]`, or `[?]` without `waiting:` |
 //!
+//! Two more codes reach a `tm check` run without coming from [`check`] at
+//! all: the CLI adds [`LOG_LINE`] and [`LOG_FUTURE`] from `.tm/log.jsonl`
+//! (the owner's D18, [`LOG_CODES`]). Both are warnings.
+//!
 //! Only errors set the exit code; warnings are advice.
 
 use std::collections::HashSet;
@@ -160,6 +164,26 @@ pub const CODES: &[&str] = &[
     DAY_SECTION,
     WAITING_STATE,
 ];
+
+/// A line of `.tm/log.jsonl` the log reader refused: malformed JSON, an
+/// unknown field type, a bad timestamp, or bytes that are not UTF-8 (the
+/// owner's D18 (i)).
+pub const LOG_LINE: &str = "log-line";
+/// A line of `.tm/log.jsonl` stamped more than [`LOG_FUTURE_DAYS`] days after
+/// `now` (the owner's D18 (ii)).
+pub const LOG_FUTURE: &str = "log-future";
+
+/// How far after `now` a log line may be stamped before it is named (D18
+/// (ii): "lines dated more than 2 days after now as warnings").
+pub const LOG_FUTURE_DAYS: i64 = 2;
+
+/// The codes the **CLI** adds to a `tm check` run from `.tm/log.jsonl` (the
+/// owner's D18). They are deliberately **not** in [`CODES`]: [`check`] is pure
+/// over the plan files and never reads the log, so no fixture of the tree can
+/// produce them, and `CODES` is the list `check` itself can emit. Both are
+/// warnings, so neither moves [`exit_code`] — which is D18's own requirement:
+/// `tm check` must keep working, and keep its exit code, on a damaged log.
+pub const LOG_CODES: &[&str] = &[LOG_LINE, LOG_FUTURE];
 
 // ---------------------------------------------------------------------------
 // Problems

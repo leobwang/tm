@@ -19571,3 +19571,331 @@ Rule D9-21 has nothing to add: no function over a wire-sized list was written.
 the per-verb kernel-call count against R14's table, and the **§5.13 drive**. Then **S2** (**gap
 130**) with quirk Q6(f) (**gap 86**), then **L9** (**gap 93**). Stage 6 starts from the 13 goals
 in `Goals.lean` and the inheritance listed above.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-15: stage 5, the W-6 audit repair, on rebuild-on-lean
+     (after the stage-5 closing block, a831616).  THE SWITCH STILL HAS NOT
+     LANDED, and this block does not pretend otherwise: it repairs the four
+     defects W-6's audit found that are reachable without S, reproduces the
+     three that are not, and says which is which.  Takes gaps 131 and 132;
+     new gaps start at 133.  Cheats and parity entries are untouched (no Lean
+     edited): highest stay cheat 157 and P35.
+     =========================================================================== -->
+
+## Stage 5, the W-6 audit repair, 2026-09-15: D18 is wired for `tm check`, a damaged log stops killing every verb, and `tm close --date` stops lying
+
+**The honest paragraph, first.** W-6's independent audit found seven defects: three
+blockers, three major, one minor. **The three blockers are still open, and nothing here
+closes them.** S — the switch — did not land here either, and it would have been wrong to
+land a piece of it: design §14.6 commits the whole switch in one commit, and the README's
+own S-attempt block records "do not commit a partial switch" as the rule that was honoured
+last time. D16/S2 waits on S. The nine T9 tests, T12 and T11's seven latency rows wait on
+S. T5's retarget to the fork point waits on a fork build. Every one is named below with
+its gap number, as it already was.
+
+What this commit does is take the **four defects that do not need the switch** and fix
+them, each reproduced first and each with a test that fails without the fix:
+
+| # | audit's severity | defect | state |
+|---|---|---|---|
+| 5 | major | D18 entirely unwired: one invalid UTF-8 byte kills every verb, `tm check` included | **fixed**, for (i) and (ii) |
+| 6 | major | `tm close --date` accepted and silently ignored at all three grains | **fixed**: refused by name |
+| 7 | minor | `--date <DATE>` documented as a date, parsed as a period key | **fixed**: both spellings read |
+| 1, 2, 3 | blocker | S, D16/S2, the twelve acceptance tests | **open**; gaps 128, 130, 86, 120 part 3, 119 |
+| 4 | major | T5's oracle is the in-tree Rust, not the fork | **open**, by design until S (§14.6 item 4) |
+
+**Every defect was reproduced before it was touched.** All seven reproduce exactly as the
+audit describes them; none was dismissed. The reproductions are quoted below.
+
+### Defect 5 — D18 (i) and (ii), wired; and the one damaged-log case that left no diagnostic at all
+
+**Reproduced.** Three damaged trees, driven at `--now 2026-09-09T09:00:00-05:00` on a copy
+of `kernel/corpus/plan-basic` carrying `logs/three-days.jsonl`:
+
+| tree | before |
+|---|---|
+| a truncated `{"t":…,"ev":"wake"` plus a line of nonsense | `tm check` → `no problems`, **exit 0**, the log named nowhere |
+| a line dated `2027-11-30` (more than 2 days after `now`) | not named, exit 0 |
+| **one invalid UTF-8 byte appended** | `check`, `now`, `log`, `plan`, `review day`, `undo` **all exit 1** with `tm: .tm/log.jsonl: stream did not contain valid UTF-8`, naming no line |
+
+The third is the one worth the owner's attention on its own, and the audit said so: D18
+(iii) requires every verb **except** `tm check` to fail by name on `reachTooFar` — which
+makes `tm check` precisely the verb that must keep working, because it is how the bad line
+is found. It was dead alongside the others.
+
+**The cause was one line, and it was not the reader.** `tm-core/src/log.rs`'s
+`Log::parse_bytes` has always split the file on `\n` and decoded each line on its own, so
+"one line of invalid UTF-8 is a `LogWarning` like any other malformed line" — its own
+docstring. The binary never reached it: `Ctx::replay_of` called `store.read_text(LOG_PATH)`,
+whose `FsStore` body is `fs::read_to_string`, which refuses the **whole file** for one bad
+byte before any line exists. The warnings `Log::parse` *did* collect were then dropped on
+the floor, because `replay_of` returned only the `Replay`.
+
+**What landed.**
+
+1. **`Store::read_bytes`** (`tm-core/src/store.rs`): a trait method with a default over
+   `read_text`, overridden in `FsStore` with `fs::read`. `MemStore` keeps the default, so
+   nothing else changes.
+2. **`Ctx::replay_of` reads bytes and returns both halves** (`tm/src/cli/ctx.rs`). Its
+   return type is the new `LogRead { replay, warnings }` — deliberately the shape the
+   kernel's `log` answer already has, `facts` beside `warnings` (design §10.2), so **S
+   changes this body and not this type**. `Ctx::log_tail_of` reads bytes too, so the undo
+   recorder cannot die on the byte either. `Ctx` gains `log_warnings`, filled by `load_with`
+   and `reload` from the same single call.
+3. **`tm check` lists them** (`tm/src/cli/lifecycle.rs` `log_problems`): every refused line
+   as `log-line`, every line stamped more than `LOG_FUTURE_DAYS = 2` days after `now` as
+   `log-future`, each a **warning** at its own physical line, merged into the tree's
+   problems in `(file, line)` order. Warnings, so `exit_code` is the tree's alone — which is
+   D18 (i)'s "exit code unchanged", and is what lets `tm check` keep working.
+
+**The two codes are deliberately not in `check::CODES`.** `check()` is pure over the plan
+files and never reads the log, and `tm-core/tests/check_fixtures.rs` asserts that the
+`plan-conflicts` fixture exercises **every** code in `CODES` — so adding a code no tree
+fixture can produce would have broken that assertion, and weakening the assertion to make
+room would have been exactly the wrong move. They are `check::LOG_CODES`, documented beside
+`CODES` as the codes the **CLI** adds, and `check_fixtures.rs` is untouched.
+
+**Measured after** (same three trees, same instant):
+
+```
+.tm/log.jsonl:75: warning[log-line]: the log reader refused this line: EOF while parsing an object
+                  at line 1 column 44 ("{\"t\":\"2026-09-08T10:00:00-05:00\",\"ev\":\"wake\"")
+.tm/log.jsonl:76: warning[log-line]: the log reader refused this line: expected ident at line 1
+                  column 2 ("not json at all")
+0 errors, 2 warnings                                                                    exit 0
+
+.tm/log.jsonl:75: warning[log-future]: a `wake` dated 2027-11-30 10:00, more than 2 days after now
+                  (2026-09-09 09:00); it changes nothing about today, and no verb refuses it
+0 errors, 1 warning                                                                     exit 0
+
+.tm/log.jsonl:75: warning[log-line]: the log reader refused this line: invalid UTF-8: invalid utf-8
+                  sequence of 1 bytes from index 53 (…)
+0 errors, 1 warning                                                                     exit 0
+```
+
+and on the UTF-8 tree `check`, `now`, `log`, `plan`, `review day` all exit **0** (`undo`
+exits 1 with `nothing to undo`, which is that tree's own undo state, not the byte).
+
+**This is parity P13's kernel column, reached before the switch, through the same one
+reader.** §17's P13 reads "a log line that is not UTF-8 — the kernel: a per-line
+`invalidUtf8` warning, the verb runs, `tm check` names the line; the fork: `read_to_string`
+fails the whole command". The host now does what the kernel's column says, so **P13's
+difference shrinks to nothing for this case**; the row is not deleted, because the
+kernel-side warning name (`invalidUtf8`, a named constructor) is still P15's business and
+still arrives at S. **No new parity number is taken**, and P13 is not narrowed as a claim:
+what changed is the fork-side column, in the direction the switch was always going to take
+it.
+
+### Defect 6 — `tm close --date` was accepted and silently ignored; it is refused by name
+
+**Reproduced**, on settled copies, exactly as the audit reported:
+
+| driven | before |
+|---|---|
+| `tm close week --date 2026-W25` | `closed week 2026-W37 · 2 moved · 5 demoted · 1 carried · 4 dropped`, exit 0 |
+| `tm close month --date 2026-07` | `closed month 2026-08 …`, exit 0 |
+| `tm close day --date 2026-09-01` | `closed day 2026-09-14 …`, exit 0 |
+
+and `tm close --help` said `--date <DATE>  The period to close (default: the current one)`.
+
+**It is pre-existing and it was unrecorded**, both of which the audit established and this
+block confirms: `git diff 017ead3..HEAD` over `closing.rs`, `horizon.rs` and `mod.rs` is
+empty, and no gap, cheat or parity row named it. It is a consequence of the owner's **D1**
+— a close takes every ended region of the grain and files into the period containing now,
+via the kernel's `closeTo` — and `closing.rs`'s own docstring already said the flag "no
+longer picks a period … it is kept for the spellings scripts hold". What it did not say is
+that naming a different ended period was then **accepted, ignored, and reported as a close
+of the period it really took**, appending a `close` event for a key already closed. The
+audit's drive tree ended with three `{"ev":"close","period":"day","key":"2026-09-14"}`
+lines.
+
+**What landed.** `closing::check_date` now compares the named period with
+`last_ended_key(grain, today)` — the one period this close takes — and refuses anything
+else:
+
+* **`periodNotEnded`** (unchanged) for a period still running;
+* **`periodNotTaken`** (new) for an ended period that is not the one taken. The message
+  names both periods and points at `tm review <grain> --date <period>`, which honours any
+  key.
+
+This is not a new policy; it is the module's own stated principle applied to the case it
+missed. Its comment for the running-period refusal reads "saying `closed` over it would be
+the silent wrong answer" — and `closed week 2026-W37` in answer to `--date 2026-W25` is
+the same silent wrong answer wearing an older date.
+
+**Nothing committed relied on the old behaviour, and that was checked before the rule was
+tightened, not after.** Every `--date` in the test suite already names exactly the period
+its close takes: `cli_lifecycle.rs`'s `close_takes_its_flags_on_either_side_of_the_period`
+(day `2026-09-07` at `2026-09-08`, week `2026-W37` at `2026-09-14`, month `2026-09` at
+`2026-10-01`) and `each_verb_family_asks_for_the_replay_scope_it_needs` (`close day --date
+2026-09-06` at `2026-09-07`). All four are `last_ended_key`. The suite is green with no
+test edited.
+
+### Defect 7 — `--date <DATE>` is documented as a date and now reads one
+
+`tm review week --date 2026-06-15` exited 1 with `invalid iso-week: "2026-06-15"` while the
+help read `--date <DATE>`, so a user reviewing an old week had to guess the ISO-week
+spelling from an error message. `closing::week_key` and `month_key` now read the period key
+**or** any calendar date inside it, `review` and `close` both use them, and the two help
+strings say what is taken (`2026-09-13`, `2026-W37` or `2026-08`) with `value_name =
+PERIOD`. A value that is neither still fails by the period parser's own name, which
+`cli_json_matrix.rs`'s `review day --date garbage` case depends on.
+
+### Behaviour rows (the binary's observable behaviour, four)
+
+1. **A log line that is not UTF-8 no longer fails the command.** It is one
+   `warning[log-line]` at its line, and every verb runs. Before: every verb, `tm check`
+   included, exited 1 with `stream did not contain valid UTF-8`, naming no line.
+2. **`tm check` lists the log's own problems**: refused lines (`log-line`) and lines dated
+   more than 2 days after `now` (`log-future`), as warnings, in `(file, line)` order with
+   the tree's. **The exit code is unchanged** — still 0 or 2 by the tree's errors alone.
+3. **`tm close <grain> --date <an ended period it does not take>` is refused**
+   (`periodNotTaken`, exit 1) and writes nothing — no close, no log line, no stamp. Before:
+   it closed the period it really takes and said so.
+4. **`--date` reads a calendar date** on `review`/`close` for week and month (the period
+   containing it); the two help strings name the spellings.
+
+### Gap 131 (new; label W6-a) — a close cannot be aimed at an older period, and §14.6's own drive item cannot be performed
+
+1. **What is not done.** There is no way to close a period other than the last one that has
+   ended. `tm close day --date <two months ago>` is now refused by name instead of silently
+   closing yesterday, which is honest, but it is still refused. Design §14.6's §5.13 drive
+   list includes "`close day` for a date two months ago" as a thing to drive, and it cannot
+   be driven.
+2. **Why not now.** It is the owner's D1: the kernel's close takes every ended region of
+   the grain and files into the period containing `now` (`closeTo`). Aiming it at an older
+   period is a **kernel-tier change** to `Close.lean`'s `closeTo` and its laws, not a host
+   fix — and §11.1 already gives `tm close day <date>` for `date < H` the `Dates` scope and
+   a sealed **window record**, which is S's and D13's machinery, not available before the
+   switch. Making the host fake it by rewriting old files directly would be a second writer
+   of the close, which is the thing the kernel exists to prevent.
+3. **What it costs.** The `--date` flag on `tm close` is now only a **check** — it asserts
+   which period the close takes and never changes it. A user who wants an old period closed
+   has no verb for it; `tm review <grain> --date <key>` reads it, and the refusal says so.
+   Design §14.6's drive list is short by one item until this clears.
+4. **When it clears.** With the close tranche (phase **F3**), which moves
+   `horizon::close_day`/`day_remaining`'s `block_minutes_on` into the kernel and reads a
+   sealed window record for an old date (D9-13) — after S. The owner may also settle it as
+   "a close is always of the last ended period", in which case the flag's job is exactly
+   what it now does and this gap closes as a decision rather than as work.
+
+### Gap 132 (new; label W6-b) — D18 (ii)'s far-future scan reads `view()`, which the `Hot` scope will not carry after S
+
+1. **What is not done.** `log_problems` finds a far-future line by walking
+   `ctx.replay.view()` — every row of the replay. Before S every scope is the whole log, so
+   `tm check`'s `Hot` scope sees every row and the scan is exact. **After S it will not
+   be**: `Hot` merges "the answer only" (§11.1), and a future-dated line appended long ago
+   and since folded below the cut has no row in it. `tm check` would then stop naming a
+   line D18 (ii) requires it to name.
+2. **Why not now.** The kernel already carries the fact this wants: a folded future-dated
+   line's instant becomes the checkpoint's `futureFloor` (§9.4, G2's fence), and the `log`
+   answer's `warnings` array is per call. Wiring the scan to those two is S's work on a
+   request shape that does not exist yet in the binary, and building it against the
+   pre-switch `view()` would be the third thing in this campaign built to a shape S
+   replaces (gaps 93 and 130 are the other two).
+3. **What it costs.** Nothing today — the scan is exact at every scope, because every scope
+   is the whole log. It becomes a silent under-report at the switch, which is why it is
+   recorded now rather than discovered then. It also costs one O(entries) pass per `tm
+   check`; at three years of log that is a timestamp compare per row on a `Replay` already
+   built, and `cli_latency` is unmoved.
+4. **When it clears.** At **S**, in item 7's D18 wiring, beside **gap 120 part 3**: the
+   warnings come from the answer's `warnings` array and the far-future test from the
+   response, not from a walk over decoded rows. S's own T9 test
+   `a_line_dated_next_year_changes_nothing_about_today_and_tm_check_names_it` — landed here
+   — is the test that will catch it if it is forgotten.
+
+### Still owed, unchanged, each by name
+
+**The switch and what waits on it** — this repair moves none of it.
+
+- **gap 128** — `kernel_log::decode_facts` does not exist; T5's `kernel_replay()` is the
+  only code turning the kernel's facts into a `Replay`, and it borrows `events`,
+  `warnings`, `rows` and `line_count` from the reader S deletes. **S's first task.**
+- **S itself** — §14.6 contents 1–3 and 5; §12's ≈1,750 lines of deletions in `log.rs`,
+  `parse_timestamp` included; R12's consumer tests moved to `tm/tests/`; the `log` names in
+  `kernel_bridge::refusal`. **`Ctx::replay_with` still delegates to `replay_of`**, whose
+  body is still the in-tree Rust reader, and `kernel_log.rs` is still reached in the binary
+  only by `pub mod kernel_log;` (`tm/src/cli/mod.rs:36`).
+- **gap 120 part 3** — every verb except `tm check` must fail by name on `ReachTooFar`.
+  **Still unreachable**, and for the same reason as before: nothing in the binary calls
+  `kernel_log`, so the fault has no call site to be raised from. D18 (i) and (ii) are wired
+  here; **(iii) is not**, and this block does not claim it.
+- **gap 119** — a stall holds the ledger day back and `tm check` does not name it. `tm
+  check` can now carry a log-shaped warning, which is half of what that gap needed; the
+  other half is the checkpoint's `ledgerDay`, which only S produces.
+- **gap 129** — a plain `tm log` asks `All`; the narrowing is unbuilt.
+- **gap 130** — the kernel still does not write log lines (D16's S2). `LogEntry::to_json`
+  (`tm-core/src/log.rs:618`) is still the one writer, reached from `ctx.rs` and
+  `horizon.rs`. **gap 86** (quirk Q6(f)) waits with it.
+- **gap 93** — day 0 of the lookahead is the host's histogram until L9, which depends on S.
+- **gap 113** — the candidates' facts are the host's.
+- **T9 (seven of the nine), T12, T11's seven latency rows** — two of the nine T9 names
+  landed here, **`invalid_utf8_line_is_a_warning_and_tm_check_names_it`** and
+  **`a_line_dated_next_year_changes_nothing_about_today_and_tm_check_names_it`**, because
+  both are about the host's reading of a damaged log and neither needs the checkpoint. The
+  other seven all name the replay cache, the checkpoint or a seal, and **cannot be written
+  honestly before S**: `deleting_the_replay_cache_changes_nothing` passes vacuously today
+  (nothing writes `.tm/cache/replay`), and a vacuous test is a false signal, which is worse
+  than a missing one. T12 needs a fork build; T11's rows need genesis.
+- **T5's oracle** — still the in-tree Rust reader, by §14.6 item 4's own schedule. The
+  fork-facing harness `stage5_parity_the_kernel_replays_and_fits_as_the_fork_point_does`
+  exists, is `#[ignore]`d and returns INERT without `TM_ORACLE`; it needs an out-of-repo
+  fork build, which was not available here either.
+- **The §5.13 drive** — three binaries' worth, still owed to the human. Stage 5's is
+  §14.6's own 30-minute list, and **gap 131** now names one item of it that cannot be
+  performed at all.
+
+### Recorded disagreements between the design and the repo
+
+1. **§12's post-S one-reader grep goes up, not down, in this commit: 113 → 116 hits.** The
+   three new ones are `Log::parse_bytes` in `Ctx::replay_of` (1) and `Ctx::log_tail_of` (2)
+   — the same one door, now reading bytes. S's deletion list grows by three call sites in a
+   file S rewrites anyway. Recorded rather than smoothed over: the grep is a claim about
+   `main`-facing symbols, and it moved.
+2. **§17's P13 is written as a difference and is now, for the UTF-8 case, none.** The
+   design's parity list was written before the switch and assumed the fork column would
+   hold until S. It no longer does. P13 keeps its number for the warning's *name*
+   (`invalidUtf8`, P15's naming rule), which is still the kernel's alone.
+3. **`closing.rs`'s `check_date` docstring described `--date` as "kept for the spellings
+   scripts hold" and did not say what happened when it named a different ended period.**
+   The behaviour was wrong and the comment was silent on it. Both are corrected; the
+   comment now states the rule and names the two refusals.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited.** Goals discharged, refuted, added: none; burn-down **13 → 13**, all
+stage 6's. New theorems: none — the audit stays at **3934**. New `decide`/`rfl` witnesses:
+none, so §14.0 item 4's probe budget is untouched. New cheats: none (highest **157**). New
+parity entries: **none** (highest stays **P35**); P13 is discussed above and keeps its
+number. `TmKernel.lean` imports: **78**, unchanged. Rule D9-21 has nothing to add: no
+function over a wire-sized list was written — `log_problems` walks a decoded `Replay` in
+Rust, not a wire list in Lean.
+
+### Numbers
+
+**Taken:** gaps **131** and **132**. **Highest:** gap 132, cheat 157, parity P35. New gaps
+start at **133**.
+
+**Re-measured** (main worktree, on the tree committed; every command capped at
+`MemoryMax=40G`, `MemorySwapMax=0`):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 3.06 / 3.12 / 3.08 s (stage 5's close at `a831616`: 3.04 / 3.13 / 3.11 s; flat, far inside the 10%-per-step rule) |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged; all stage 6) |
+| `cargo test --workspace` | **1094 passed / 0 failed / 6 ignored across 74 result lines**, exit 0, **0 warnings** (`a831616`: 1087 / 0 / 6 across 73). **+7 tests in +1 binary**: `tm/tests/cli_check_log.rs`'s five, and two in `closing.rs`'s unit module |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) — unchanged |
+| T5 (`kernel_replay_parity.rs --include-ignored`) | **20 passed / 0 failed**, 6.52 s — unchanged |
+| `cli_latency.rs --include-ignored` | **4 passed / 0 failed**, 3.79 s, the year-of-log and three-year tests included — unchanged |
+| R8's one-reader grep | **116 lines** (`a831616`: 113; disagreement 1 above) |
+| the diff | 6 shipped files, **+311 −60**, plus a new 237-line test file. No Lean, no `Cargo.toml`, no `lean-toolchain`, no `kernel/corpus/` |
+
+**Owed next: S, in full** — unchanged by this repair, which adds nothing to the binary's
+path to the kernel: **gap 128** first, then §14.6's contents 1–3 and 5, item 7's remaining
+D18 default (**gap 120 part 3**, (iii)), **gap 119**, **gap 129**, the remaining seven T9
+tests, **T12**, T11's seven latency rows, the per-verb kernel-call count against R14's
+table, and the **§5.13 drive** (short by **gap 131**'s item). Then **S2** (**gap 130**)
+with quirk Q6(f) (**gap 86**), then **L9** (**gap 93**). **Gap 132** is S's to close in the
+same item 7 that closes gap 120 part 3.

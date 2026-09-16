@@ -36,7 +36,7 @@ use tm_core::log::{LogEntry, Replay, ViewRow};
 use tm_core::priority;
 use tm_core::review as core_review;
 use tm_core::model::{parse_date, Horizon, Id, IsoWeek, Period, YearMonth};
-use tm_core::store::{Store, MODEL_PATH};
+use tm_core::store::{Store, LOG_PATH, MODEL_PATH};
 use tm_core::tree::Tree;
 
 use super::closing;
@@ -401,7 +401,7 @@ pub fn review(g: &Globals, args: &super::ReviewArgs) -> Result<i32, CliError> {
         }
         Period::Week => {
             let week = match &args.date {
-                Some(d) => IsoWeek::parse(d)?,
+                Some(d) => closing::week_key(d)?,
                 None => IsoWeek::from_date(ctx.today),
             };
             let extras = core_review::WeekExtras {
@@ -431,7 +431,7 @@ pub fn review(g: &Globals, args: &super::ReviewArgs) -> Result<i32, CliError> {
         }
         Period::Month => {
             let month = match &args.date {
-                Some(d) => YearMonth::parse(d)?,
+                Some(d) => closing::month_key(d)?,
                 None => YearMonth::from_date(ctx.today),
             };
             let r = core_review::month_review(
@@ -737,7 +737,62 @@ pub struct CheckOut {
     pub exit_code: i32,
 }
 
-/// `tm check [--fix-ids]` (§1.3, §13).
+/// **What `tm check` says about `.tm/log.jsonl`** (the owner's D18 (i) and
+/// (ii)): every line the reader refused — malformed JSON, an unknown field
+/// type, a bad timestamp, bytes that are not UTF-8 — and every line stamped
+/// more than [`validate::LOG_FUTURE_DAYS`] days after `now`, each as a
+/// **warning** at its own physical line.
+///
+/// Warnings, so the exit code is exactly what the tree gives it. That is
+/// D18's point: `tm check` is the one verb that must keep working on a
+/// damaged log, because it is how the bad line is found. Before this repair
+/// it said `no problems` about a log holding a truncated line and a line of
+/// nonsense, and a line dated next year went unmentioned.
+fn log_problems(ctx: &Ctx) -> Vec<validate::CheckProblem> {
+    let quote = |text: &str| {
+        let short: String = text.chars().take(72).collect();
+        if short.chars().count() < text.chars().count() {
+            format!("{short:?}…")
+        } else {
+            format!("{short:?}")
+        }
+    };
+    let mut out: Vec<validate::CheckProblem> = ctx
+        .log_warnings
+        .iter()
+        .map(|w| {
+            validate::CheckProblem::warning(
+                validate::LOG_LINE,
+                LOG_PATH,
+                w.line,
+                None,
+                format!("the log reader refused this line: {} ({})", w.error, quote(&w.text)),
+            )
+        })
+        .collect();
+    let fence = ctx.now + Duration::days(validate::LOG_FUTURE_DAYS);
+    for row in ctx.replay.view() {
+        if row.entry.t > fence {
+            out.push(validate::CheckProblem::warning(
+                validate::LOG_FUTURE,
+                LOG_PATH,
+                row.line as usize,
+                None,
+                format!(
+                    "a `{}` dated {}, more than {} days after now ({}); it changes nothing about \
+                     today, and no verb refuses it",
+                    row.entry.ev.name(),
+                    row.display(),
+                    validate::LOG_FUTURE_DAYS,
+                    ctx.now.format("%Y-%m-%d %H:%M"),
+                ),
+            ));
+        }
+    }
+    out
+}
+
+/// `tm check [--fix-ids]` (§1.3, §13), plus the log's own warnings (D18).
 pub fn check(g: &Globals, args: &super::CheckArgs) -> Result<i32, CliError> {
     let ctx = Ctx::load(g, false)?;
     let mut files = ctx.files.files.clone();
@@ -748,7 +803,12 @@ pub fn check(g: &Globals, args: &super::CheckArgs) -> Result<i32, CliError> {
         Vec::new()
     };
     let tree = Tree::build(&files, &ctx.cfg);
-    let problems = validate::check(&files, &tree, &ctx.cfg);
+    let mut problems = validate::check(&files, &tree, &ctx.cfg);
+    // `validate::check` sorts by `(file, line, code, message)`; this stable
+    // sort by `(file, line)` merges the log's problems into that order
+    // without disturbing it inside a line.
+    problems.extend(log_problems(&ctx));
+    problems.sort_by(|a, b| (a.file.as_str(), a.line).cmp(&(b.file.as_str(), b.line)));
     let code = validate::exit_code(&problems);
     let out = CheckOut {
         summary: validate::summary(&problems),

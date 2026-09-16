@@ -142,30 +142,94 @@ fn advance(closed: &mut Closed, grain: Grain, today: NaiveDate) -> bool {
     }
 }
 
-/// `--date` on `tm close`: the kernel closes every ended region of the
-/// grain, so the flag no longer picks a period — it is kept for the
-/// spellings scripts hold, and it must name a period that has ended. A
-/// period still running is refused before anything is read: the kernel
-/// cannot close it (`closeTo_target_is_open`), and saying `closed` over it
-/// would be the silent wrong answer.
+/// **A week `--date`**: `2026-W37`, or any calendar date, which names the
+/// week containing it.
+///
+/// The flag's help offered `<DATE>` and its parser took only the period key,
+/// so `tm review week --date 2026-06-15` — the spelling the help invited —
+/// came back `invalid iso-week: "2026-06-15"` and left the user to guess the
+/// ISO-week form from an error message. Both spellings are read now; the
+/// help says so, and a value that is neither still fails by the period
+/// parser's own name.
+pub fn week_key(date: &str) -> Result<IsoWeek, CliError> {
+    match IsoWeek::parse(date) {
+        Ok(w) => Ok(w),
+        Err(e) => match tm_core::model::parse_date(date) {
+            Ok(d) => Ok(IsoWeek::from_date(d)),
+            Err(_) => Err(e.into()),
+        },
+    }
+}
+
+/// **A month `--date`**: `2026-08`, or any calendar date, which names the
+/// month containing it ([`week_key`]'s reason).
+pub fn month_key(date: &str) -> Result<YearMonth, CliError> {
+    match YearMonth::parse(date) {
+        Ok(m) => Ok(m),
+        Err(e) => match tm_core::model::parse_date(date) {
+            Ok(d) => Ok(YearMonth::from_date(d)),
+            Err(_) => Err(e.into()),
+        },
+    }
+}
+
+/// The period key a `--date` names, for `grain` ([`week_key`], [`month_key`]).
+fn named_key(grain: Grain, date: &str) -> Result<String, CliError> {
+    Ok(match grain {
+        Grain::Day => tm_core::model::parse_date(date)?.format("%Y-%m-%d").to_string(),
+        Grain::Week => week_key(date)?.to_string(),
+        Grain::Month => month_key(date)?.to_string(),
+    })
+}
+
+/// `--date` on `tm close`: the kernel closes every ended region of the grain
+/// and files each line into the period containing now (the owner's D1), so
+/// the flag does not *pick* a period — it **names the one period this close
+/// takes**, and it is checked against it.
+///
+/// Two ways the name can be wrong, and neither is acted on:
+///
+/// * **`periodNotEnded`** — a period still running. The kernel cannot close
+///   it (`closeTo_target_is_open`), and saying `closed` over it would be the
+///   silent wrong answer.
+/// * **`periodNotTaken`** — a period that *has* ended but is not the one this
+///   close takes. Until this repair that was accepted and ignored:
+///   `tm close week --date 2026-W25` printed `closed week 2026-W37`, appended
+///   a `close` event for W37, and said nothing about the week that was asked
+///   for — the same silent wrong answer wearing an older date, and it could
+///   be repeated, appending a second and third `close` for a key already
+///   closed. There is no way to aim a close at an older period; the message
+///   names `tm review` instead, which honours any key.
+///
+/// The value may be the grain's period key or any calendar date inside it.
 pub fn check_date(grain: Grain, date: &str, today: NaiveDate) -> Result<(), CliError> {
+    let named = named_key(grain, date)?;
+    let takes = last_ended_key(grain, today);
+    if named == takes {
+        return Ok(());
+    }
     let ended = match grain {
         Grain::Day => tm_core::model::parse_date(date)? <= last_day(today),
-        Grain::Week => IsoWeek::parse(date)? <= last_week(today),
-        Grain::Month => YearMonth::parse(date)? <= last_month(today),
+        Grain::Week => week_key(date)? <= last_week(today),
+        Grain::Month => month_key(date)? <= last_month(today),
     };
-    if ended {
-        Ok(())
-    } else {
-        Err(CliError::msg(format!(
+    if !ended {
+        return Err(CliError::msg(format!(
             "periodNotEnded — `tm close {g} --date {date}`: that {g} has not ended at {today}; \
              a close takes only periods that have ended (the kernel's `Closed`, the owner's D1), \
-             and the last {g} that has is {last}",
+             and the last {g} that has is {takes}",
             g = grain.name(),
             today = today.format("%Y-%m-%d"),
-            last = last_ended_key(grain, today),
-        )))
+        )));
     }
+    Err(CliError::msg(format!(
+        "periodNotTaken — `tm close {g} --date {date}`: this close takes {g} {takes}, not {named}; \
+         a close takes every {g} that has ended and files into the period containing {today} \
+         (the kernel's `closeTo`, the owner's D1), so it cannot be aimed at an older {g} — \
+         `tm review {g} --date {named}` reads that one",
+        g = grain.name(),
+        today = today.format("%Y-%m-%d"),
+    )))
 }
 
 /// Minutes as the kernel emitted them: an integer pair, never divided here.
@@ -526,6 +590,48 @@ mod tests {
         assert!(check_date(Grain::Week, "2026-W37", today).is_err());
         assert!(check_date(Grain::Month, "2026-08", today).is_ok());
         assert!(check_date(Grain::Month, "2026-09", today).is_err());
+    }
+
+    /// W-6's audit defect: a `--date` naming an **ended** period that is not
+    /// the one this close takes used to be accepted and ignored — `tm close
+    /// week --date 2026-W25` closed W37, said `closed week 2026-W37`, and
+    /// appended a `close` event for a key it had already closed. Every one is
+    /// now `periodNotTaken`, and the message names both periods.
+    #[test]
+    fn an_ended_period_this_close_does_not_take_is_refused_by_name() {
+        let today = d("2026-09-07");
+        // The three the audit drove, at this instant's own keys.
+        for (grain, date, takes) in [
+            (Grain::Day, "2026-08-26", "2026-09-06"),
+            (Grain::Week, "2026-W25", "2026-W36"),
+            (Grain::Month, "2026-07", "2026-08"),
+        ] {
+            let e = check_date(grain, date, today).expect_err("an older ended period");
+            let text = e.to_string();
+            assert!(text.contains("periodNotTaken"), "{text}");
+            assert!(text.contains(takes), "{text} does not name what it takes");
+            assert!(text.contains(date), "{text} does not name what was asked");
+            // The refusal points at the verb that *does* honour an old key.
+            assert!(text.contains("tm review"), "{text}");
+        }
+    }
+
+    /// A `--date` may be the period key or any calendar date inside it, which
+    /// is what the flag's `<DATE>` help promised all along.
+    #[test]
+    fn a_date_may_be_a_calendar_date_inside_the_period() {
+        assert_eq!(week_key("2026-W25").expect("a key"), IsoWeek::new(2026, 25));
+        assert_eq!(week_key("2026-06-15").expect("a date"), IsoWeek::new(2026, 25));
+        assert_eq!(week_key("2026-06-21").expect("a date"), IsoWeek::new(2026, 25));
+        assert_eq!(month_key("2026-07").expect("a key"), YearMonth::new(2026, 7));
+        assert_eq!(month_key("2026-07-15").expect("a date"), YearMonth::new(2026, 7));
+        // Neither spelling: the period parser's own name, as before.
+        assert!(week_key("garbage").expect_err("neither").to_string().contains("iso-week"));
+        assert!(month_key("garbage").expect_err("neither").to_string().contains("year-month"));
+        // And a calendar date inside the period the close takes is accepted.
+        let today = d("2026-09-07");
+        assert!(check_date(Grain::Week, "2026-09-02", today).is_ok(), "a Wednesday of 2026-W36");
+        assert!(check_date(Grain::Month, "2026-08-26", today).is_ok(), "a day of 2026-08");
     }
 
     /// The host's "last ended period" is the kernel's `Closed` boundary, not

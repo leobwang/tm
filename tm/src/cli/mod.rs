@@ -434,8 +434,13 @@ pub struct CloseArgs {
     /// Which period.
     #[command(subcommand)]
     pub period: ClosePeriod,
-    /// The period to close (default: the current one).
-    #[arg(long, global = true, value_name = "DATE")]
+    /// The period this close must take: `2026-09-13`, `2026-W37` or
+    /// `2026-08` — a calendar date names the period containing it. A close
+    /// takes every region of its grain that has ended and files into the
+    /// period containing now (the owner's D1), so `--date` cannot aim it at
+    /// an older period: it names the one period the close would take, and
+    /// any other is refused.
+    #[arg(long, global = true, value_name = "PERIOD")]
     pub date: Option<String>,
     /// `--drop` before the period (`tm close --drop ^id month`): the same
     /// flag as the month close's, in the position §13's synopsis allows.
@@ -527,8 +532,10 @@ pub struct ReviewArgs {
     /// Write the review into the file's `tm:review` section.
     #[arg(long)]
     pub write: bool,
-    /// The period to review (default: the current one).
-    #[arg(long)]
+    /// The period to review: `2026-09-13`, `2026-W37` or `2026-08` — a
+    /// calendar date names the week or month containing it. Default: the
+    /// period containing today.
+    #[arg(long, value_name = "PERIOD")]
     pub date: Option<String>,
 }
 

@@ -8,9 +8,10 @@
 //!   (`config.toml` plus `.tm/` or a plan file) or has a `plan/` child that
 //!   does.
 //! * [`Ctx`] — the loaded directory: [`Config`], an [`FsStore`], the parsed
-//!   [`PlanFiles`] and their [`Tree`], the log's [`Replay`] (asked for with
-//!   the verb's [`ReplayScope`] through [`Ctx::replay_with`], over
-//!   [`Ctx::replay_of`], the one reader of `.tm/log.jsonl`), the
+//!   [`PlanFiles`] and their [`Tree`], the log's [`Replay`] and the lines the
+//!   reader refused ([`LogRead`], asked for with the verb's [`ReplayScope`]
+//!   through [`Ctx::replay_with`], over [`Ctx::replay_of`], the one reader of
+//!   `.tm/log.jsonl`), the
 //!   learned [`Model`] and `.tm/state.json` ([`RuntimeState`]), plus `now` in
 //!   both `FixedOffset` (log timestamps) and `cfg.tz` (everything else).
 //!   [`Ctx::load`] runs the housekeeping of §6.3 (the automatic close —
@@ -46,7 +47,7 @@ use tm_core::config::Config;
 use tm_core::energy::{Model, Posterior};
 use tm_core::grammar::ItemLine;
 use tm_core::horizon;
-use tm_core::log::{Event, Log, LogEntry, Replay};
+use tm_core::log::{Event, Log, LogEntry, LogWarning, Replay};
 use tm_core::model::{Id, Item, Loc, Shape, State};
 use tm_core::priority::{self, Candidate, Prio};
 use tm_core::store::{
@@ -162,6 +163,23 @@ pub struct StoredSegment {
     pub item: Option<String>,
 }
 
+/// **What one read of `.tm/log.jsonl` gives a verb**: the replay, and the
+/// lines the reader refused.
+///
+/// The pair is the shape the kernel's `log` answer already has — `facts`
+/// beside `warnings` (design §10.2) — so the switch changes
+/// [`Ctx::replay_of`]'s body and not this type. Before the repair the
+/// warnings were computed and dropped on the floor, which is why `tm check`
+/// could say `no problems` about a log with two unreadable lines in it.
+#[derive(Clone, Debug)]
+pub struct LogRead {
+    /// Every fact the log yields (§10.1).
+    pub replay: Replay,
+    /// The lines the reader refused, in file order, each with its 1-based
+    /// physical line number.
+    pub warnings: Vec<LogWarning>,
+}
+
 /// How much history a verb's [`Replay`] must hold (design §11.1).
 ///
 /// After the switch the kernel's answer covers the open days and the recent
@@ -225,6 +243,11 @@ pub struct Ctx {
     /// The replay of `.tm/log.jsonl` (§10.1) in [`Ctx::scope`], from
     /// [`Ctx::replay_with`].
     pub replay: Replay,
+    /// The lines of `.tm/log.jsonl` the reader refused, from the same call
+    /// ([`LogRead::warnings`]). `tm check` names them (the owner's D18 (i));
+    /// after the switch they are the kernel's `log.warnings` array
+    /// (design §10.2).
+    pub log_warnings: Vec<LogWarning>,
     /// The scope the verb asked its replay for; [`Ctx::reload`] asks again.
     pub scope: ReplayScope,
     /// `.tm/model.json` (§8.5).
@@ -285,7 +308,7 @@ impl Ctx {
         let today = now_tz.date_naive();
         let mut state = store.load_state()?;
         let scope = scope(&state, today);
-        let replay = Ctx::replay_with(&store, &cfg, scope)?;
+        let read = Ctx::replay_with(&store, &cfg, scope)?;
 
         if housekeeping && roll_day(&mut state, today) {
             store.save_state(&state)?;
@@ -304,7 +327,8 @@ impl Ctx {
             state,
             files,
             tree,
-            replay,
+            replay: read.replay,
+            log_warnings: read.warnings,
             scope,
             model,
             timed_out: Vec::new(),
@@ -329,17 +353,19 @@ impl Ctx {
     pub fn reload(&mut self) -> Result<(), CliError> {
         self.files = self.store.read_tree()?;
         self.tree = self.files.tree();
-        self.replay = Ctx::replay_with(&self.store, &self.cfg, self.scope)?;
+        let read = Ctx::replay_with(&self.store, &self.cfg, self.scope)?;
+        self.replay = read.replay;
+        self.log_warnings = read.warnings;
         Ok(())
     }
 
     /// **The replay a verb family asks for** (design §11.1, step R13): the
-    /// [`Replay`] holding every fact `scope` covers. Before the switch every
-    /// scope is [`Ctx::replay_of`], the whole log; at the switch this body
-    /// becomes the kernel's answer merged with the sealed records `scope`
-    /// names, and no caller changes. With [`TRACE_SCOPE_ENV`] set it names the
-    /// scope on stderr.
-    pub fn replay_with(store: &FsStore, cfg: &Config, scope: ReplayScope) -> Result<Replay, CliError> {
+    /// [`Replay`] holding every fact `scope` covers, and the lines the reader
+    /// refused. Before the switch every scope is [`Ctx::replay_of`], the whole
+    /// log; at the switch this body becomes the kernel's answer merged with
+    /// the sealed records `scope` names, and no caller changes. With
+    /// [`TRACE_SCOPE_ENV`] set it names the scope on stderr.
+    pub fn replay_with(store: &FsStore, cfg: &Config, scope: ReplayScope) -> Result<LogRead, CliError> {
         if env::var_os(TRACE_SCOPE_ENV).is_some() {
             eprintln!("replay scope: {scope}");
         }
@@ -347,19 +373,30 @@ impl Ctx {
     }
 
     /// **The one door to the log** (design §14.3 row R8): the replay of the
-    /// whole of `.tm/log.jsonl` as it is on disk now, in `cfg.tz`. A missing
-    /// file is an empty log; malformed lines are the replay's rows' gaps and
-    /// its warnings' business; only an I/O failure (or a file that is not
-    /// UTF-8) is an error. Nothing else in `tm/src` or `tm-core/src` reads
-    /// `LOG_PATH`: [`Ctx::append_entry`] and `horizon`'s close append to it.
-    /// At the switch its body becomes the kernel's `log` call.
-    pub fn replay_of(store: &FsStore, cfg: &Config) -> Result<Replay, CliError> {
-        let text = if store.exists(LOG_PATH) {
-            store.read_text(LOG_PATH)?
+    /// whole of `.tm/log.jsonl` as it is on disk now, in `cfg.tz`, and the
+    /// lines it refused. A missing file is an empty log; **every** unreadable
+    /// line — malformed JSON, an unknown field type, a bad timestamp, or bytes
+    /// that are not UTF-8 — is one [`LogWarning`] and nothing else. Only an
+    /// I/O failure is an error. Nothing else in `tm/src` or `tm-core/src`
+    /// reads `LOG_PATH`: [`Ctx::append_entry`] and `horizon`'s close append to
+    /// it. At the switch its body becomes the kernel's `log` call.
+    ///
+    /// **The file is read as bytes and split before any line is decoded**
+    /// ([`tm_core::log::Log::parse_bytes`], `Store::read_bytes`). Reading it
+    /// as one `String` made a single bad byte anywhere in the file fail every
+    /// verb — `tm check` included, which is precisely the verb the owner's D18
+    /// requires to keep working so the bad line can be found. This is design
+    /// §17's parity P13 answered on the host side, with the same single
+    /// reader: the kernel's column of that row, reached before the switch.
+    pub fn replay_of(store: &FsStore, cfg: &Config) -> Result<LogRead, CliError> {
+        let bytes = if store.exists(LOG_PATH) {
+            store.read_bytes(LOG_PATH)?
         } else {
-            String::new()
+            Vec::new()
         };
-        Ok(Log::parse(&text).replay(None, cfg.tz))
+        let log = Log::parse_bytes(&bytes);
+        let warnings = log.warnings.clone();
+        Ok(LogRead { replay: log.replay(None, cfg.tz), warnings })
     }
 
     /// **What the undo recorder reads, through the same door** (design §14.3
@@ -379,12 +416,12 @@ impl Ctx {
         cfg: &Config,
         after: Option<u64>,
     ) -> Result<(u64, Vec<(u64, LogEntry)>), CliError> {
-        let text = if store.exists(LOG_PATH) {
-            store.read_text(LOG_PATH)?
+        let bytes = if store.exists(LOG_PATH) {
+            store.read_bytes(LOG_PATH)?
         } else {
-            String::new()
+            Vec::new()
         };
-        let count = tm_core::log::physical_line_count(text.as_bytes());
+        let count = tm_core::log::physical_line_count(&bytes);
         let Some(after) = after else {
             return Ok((count, Vec::new()));
         };
@@ -392,16 +429,16 @@ impl Ctx {
         let start = if skip == 0 {
             Some(0)
         } else {
-            text.bytes().enumerate().filter(|(_, b)| *b == b'\n').nth(skip - 1).map(|(i, _)| i + 1)
+            bytes.iter().enumerate().filter(|(_, b)| **b == b'\n').nth(skip - 1).map(|(i, _)| i + 1)
         };
         let rows = match start {
-            Some(at) => Log::parse(&text[at..])
+            Some(at) => Log::parse_bytes(&bytes[at..])
                 .replay(None, cfg.tz)
                 .headers_from(1)
                 .iter()
                 .map(|r| (r.line + after, r.entry.clone()))
                 .collect(),
-            None => Log::parse(&text)
+            None => Log::parse_bytes(&bytes)
                 .replay(None, cfg.tz)
                 .headers_from(after + 1)
                 .iter()
@@ -747,7 +784,7 @@ mod tests {
             std::fs::create_dir_all(dir.path().join(".tm")).expect("mkdir");
             std::fs::write(dir.path().join(LOG_PATH), text).expect("write log");
             let store = FsStore::new(dir.path());
-            let door = Ctx::replay_of(&store, &cfg).expect("replay_of");
+            let door = Ctx::replay_of(&store, &cfg).expect("replay_of").replay;
             let direct = Log::parse(text).replay(None, cfg.tz);
             assert_eq!(door.ported_facts(), direct.ported_facts(), "{name}");
             let json = serde_json::to_value(door.ported_facts()).expect("json");
@@ -783,7 +820,7 @@ mod tests {
                 std::fs::write(dir.path().join(LOG_PATH), text).expect("write log");
             }
             let store = FsStore::new(dir.path());
-            let whole = Ctx::replay_of(&store, &cfg).expect("replay_of");
+            let whole = Ctx::replay_of(&store, &cfg).expect("replay_of").replay;
             let (count, none) = Ctx::log_tail_of(&store, &cfg, None).expect("count");
             assert_eq!((count, none.len()), (whole.line_count(), 0), "text {k}");
             for after in 0..=whole.line_count() + 2 {
@@ -808,13 +845,13 @@ mod tests {
         std::fs::create_dir_all(dir.path().join(".tm")).expect("mkdir");
         std::fs::write(dir.path().join(LOG_PATH), &text).expect("write log");
         let store = FsStore::new(dir.path());
-        let whole = Ctx::replay_of(&store, &cfg).expect("replay_of");
+        let whole = Ctx::replay_of(&store, &cfg).expect("replay_of").replay;
         for scope in [
             ReplayScope::Hot,
             ReplayScope::Dates { from: d("2026-09-01"), to: d("2026-09-07") },
             ReplayScope::All,
         ] {
-            let r = Ctx::replay_with(&store, &cfg, scope).expect("replay_with");
+            let r = Ctx::replay_with(&store, &cfg, scope).expect("replay_with").replay;
             assert!(r == whole, "{scope}");
             assert_eq!(r.view(), whole.view(), "{scope}");
             assert_eq!(r.ported_facts(), whole.ported_facts(), "{scope}");

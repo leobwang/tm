@@ -6,7 +6,8 @@
 //!
 //! * [`Store`] — the object-safe trait every reader/writer of `plan/` goes
 //!   through. Implementors supply the primitives (`list_files`, `read_text`,
-//!   `write_file`, `exists`, `abs_path`, `read_config`) and the one
+//!   `write_file`, `exists`, `abs_path`, `read_config`; `read_bytes` has a
+//!   default over `read_text` that [`FsStore`] overrides) and the one
 //!   id-addressed edit primitive [`Store::modify_line`]; everything else is a
 //!   provided method built on the pure text transforms in [`edit`], so every
 //!   store behaves identically and bytes outside the edited line are never
@@ -873,6 +874,18 @@ pub trait Store {
     fn list_files(&self) -> Result<Vec<String>, StoreError>;
     /// The raw text of a file.
     fn read_text(&self, rel: &str) -> Result<String, StoreError>;
+    /// The raw **bytes** of a file.
+    ///
+    /// The default answers from [`Store::read_text`], so a store whose
+    /// contents are already `String`s behaves exactly as before; [`FsStore`]
+    /// overrides it with a byte read. That override is what lets
+    /// `.tm/log.jsonl` be split into lines *before* any line is decoded
+    /// ([`crate::log::Log::parse_bytes`]): one line of invalid UTF-8 is then a
+    /// warning like any other malformed line (the owner's D18 (i), design
+    /// §17's parity P13) instead of failing the whole command.
+    fn read_bytes(&self, rel: &str) -> Result<Vec<u8>, StoreError> {
+        self.read_text(rel).map(String::into_bytes)
+    }
     /// Write a whole file (atomically on disk; parent directories created).
     fn write_file(&self, rel: &str, text: &str) -> Result<(), StoreError>;
     /// True when the file exists.
@@ -1518,6 +1531,10 @@ impl Store for FsStore {
 
     fn read_text(&self, rel: &str) -> Result<String, StoreError> {
         fs::read_to_string(self.abs(rel)?).map_err(|e| io_err(rel, e))
+    }
+
+    fn read_bytes(&self, rel: &str) -> Result<Vec<u8>, StoreError> {
+        fs::read(self.abs(rel)?).map_err(|e| io_err(rel, e))
     }
 
     fn write_file(&self, rel: &str, text: &str) -> Result<(), StoreError> {
