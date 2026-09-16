@@ -61,6 +61,10 @@ mod loggen;
 mod replay;
 
 #[allow(dead_code)]
+#[path = "support/fork.rs"]
+mod fork;
+
+#[allow(dead_code)]
 #[path = "../src/cli/kernel_log.rs"]
 mod kernel_log;
 
@@ -1007,9 +1011,6 @@ fn date_time(s: &Stamp) -> DateTime<FixedOffset> {
     DateTime::from_timestamp(s.0 - EPOCH_FROM_CE, s.1).expect("an instant").with_timezone(&off)
 }
 
-fn u32_of(n: u64) -> u32 {
-    u32::try_from(n).expect("a u32 (P17: the decoder at S refuses minutesOverflow by name)")
-}
 
 /// **C6: the kernel's facts as a `tm_core::log::Replay`** — this is
 /// `kernel_log::decode_facts` itself (design §11.1), so the fork's own
@@ -1032,8 +1033,25 @@ fn kernel_replay(answer: &Value, tz: Tz) -> Replay {
     kernel_log::decode_facts(answer, tz).expect("the kernel's facts decode into a Replay")
 }
 
-/// **The Rust's facts**, through the test chokepoint.
-fn rust_facts(text: &str, tz: Tz) -> Facts {
+// ===========================================================================
+// BEGIN THE IN-TREE CROSS-CHECK — THE ARM §12 DELETES (gap 146, gap 137)
+//
+// Everything between this banner and its END names a symbol design §12 deletes
+// at S: `Log::parse` through the test chokepoint's `replay_of_text`,
+// `entries_of_text` and `warning_lines_of_text`.  It is a **cross-check**, not
+// the comparand: `assert_parity_answer` asks the fork FIRST (`fork_arm`, the
+// frozen fork-point answers on disk) and only then asks the in-tree reader.
+//
+// At S this whole region goes, mechanically, with every line outside it marked
+// `// S: deleted with the reader`.  Nothing else in this file names a deleted
+// symbol, and `no_reader_reference_escapes_the_deletion_region` is what checks
+// that rather than asserting it.
+// ===========================================================================
+mod in_tree {
+    use super::*;
+
+/// **The in-tree reader's facts**, through the test chokepoint.
+pub fn rust_facts(text: &str, tz: Tz) -> Facts {
     let r = replay::replay_of_text(text, tz);
     // The lines' payloads, which `ViewRow` no longer carries (step X1): the fork
     // side of the comparison still reads them, through the test chokepoint.
@@ -1072,14 +1090,16 @@ fn rust_facts(text: &str, tz: Tz) -> Facts {
     }
 }
 
-/// Compare one log; the kernel's facts are returned for the arms' own checks.
-fn assert_parity(name: &str, text: &str, tz: Tz) -> Facts {
-    assert_parity_answer(name, text, tz, &kernel_answer(text, tz))
-}
-
-/// Compare one log with a kernel `log` answer built any way (W3: a windowed answer merged with its sealed records).
-fn assert_parity_answer(name: &str, text: &str, tz: Tz, answer: &Value) -> Facts {
-    let (k, r) = (kernel_view(answer), rust_facts(text, tz));
+/// **The in-tree cross-check**: the kernel's facts `k` against the facts the
+/// in-tree Rust reader derives from the same text.
+///
+/// This is what T5 compared against *first* until W-11. It is the fork's reader
+/// plus phase R's ≈790 lines, so it is a sharper instrument than the fork while
+/// it exists — it reaches `rows`, the per-line day index and the displays, which
+/// the fork's serialised `Replay` does not carry — and it is worthless the
+/// instant `replay_of_text`'s body becomes the kernel. Hence the banner.
+pub fn cross_check(name: &str, text: &str, tz: Tz, answer: &Value, k: &Facts) {
+    let r = rust_facts(text, tz);
     // C5: the kernel creates every day the fork creates, and no other: its block
     // records and its day records are one set of days, the Rust's.
     let (kd, rd): (BTreeSet<_>, BTreeSet<_>) = (k.block.days.keys().collect(), r.block.days.keys().collect());
@@ -1227,13 +1247,162 @@ fn assert_parity_answer(name: &str, text: &str, tz: Tz, answer: &Value) -> Facts
     }
     assert_eq!(k.counts, r.counts, "{name}: entry count, line count, last day");
     assert_eq!(k.completion.done_first, r.completion.done_first, "{name}: first done dates and counts");
-    assert_eq!(k, r, "{name}");
-    // C6: the whole `Replay`, through the fork's own `PartialEq` (every field placed on one side or the other by
+    assert_eq!(*k, r, "{name}");
+    // C6: the whole `Replay`, through the reader's own `PartialEq` (every field placed on one side or the other by
     // its destructuring) and `ported_facts()` (D14: every field nothing reads).
     let rr = replay::replay_of_text(text, tz);
     let kr = kernel_replay(answer, tz);
-    assert!(kr == rr, "{name} ({}): the kernel's Replay is not the fork's", tz.name());
+    assert!(kr == rr, "{name} ({}): the kernel's Replay is not the in-tree reader's", tz.name());
     assert_eq!(kr.ported_facts(), rr.ported_facts(), "{name}: the ported facts (D14)");
+}
+
+/// **C5's separations in a log**, from the in-tree reader: `(late_sleeps, early_gaps)`,
+/// the energy observations whose day's first logged wake is on a later line (late
+/// binding), and the idle records dated on a day other than their entry's (a gap on the
+/// day it began).
+fn day_separations(text: &str, tz: Tz) -> (usize, usize) {
+    let r = replay::replay_of_text(text, tz);
+    let survivors: Vec<_> = r.view().iter().filter(|row| !row.cancelled).collect();
+    let mut late = 0;
+    let mut early = 0;
+    for row in &survivors {
+        match row.tag.as_str() {
+            "energy" => {
+                let wake = survivors.iter().find(|w| w.tag == "wake" && w.day == row.day);
+                late += usize::from(wake.is_some_and(|w| w.line > row.line));
+            }
+            "idle" => {
+                let rec = r.days.values().flat_map(|d| d.idle.iter()).find(|i| stamp_of(&i.t) == stamp_of(&row.t));
+                early += usize::from(rec.is_some_and(|i| i.day != row.day));
+            }
+            _ => {}
+        }
+    }
+    (late, early)
+}
+
+/// **Quirk Q6(b) in a log**: how many instances' last surviving record in file
+/// order is stamped strictly before another surviving record of the same instance,
+/// so the instance (last in file order) and the latest by instant differ.
+fn q6b_separations(text: &str, tz: Tz) -> usize {
+    let r = replay::replay_of_text(text, tz);
+    let entries: BTreeMap<u64, LogEntry> = replay::entries_of_text(text).into_iter().collect();
+    let mut by_inst: BTreeMap<(String, String), Vec<(i64, u32)>> = BTreeMap::new();
+    for row in r.view().iter().filter(|row| !row.cancelled) {
+        let key = match &entries.get(&row.line).expect("the row's entry").ev {
+            Event::Routine { item, inst, .. } | Event::Skip { item, inst } => (item.clone(), inst.clone()),
+            _ => continue,
+        };
+        by_inst.entry(key).or_default().push(instant_of(&stamp_of(&row.t)));
+    }
+    by_inst.values().filter(|ts| ts.last().is_some_and(|last| ts.iter().any(|t| t > last))).count()
+}
+
+/// **The denominators the reader supplies**, in one call, so a T5 test names the
+/// in-tree arm exactly once: the tally's late sleeps, early gaps and retro
+/// instances are added, and the count of entries off their own local date comes
+/// back. Every one of them is a *denominator* — how much of a family the inputs
+/// actually exercised — never a comparand.
+pub fn check_denominators(text: &str, tz: Tz, kernel_side: (usize, usize, usize)) {
+    let (late, early) = day_separations(text, tz);
+    let retro = q6b_separations(text, tz);
+    assert_eq!(
+        (late, early, retro),
+        kernel_side,
+        "the in-tree reader and the kernel disagree about (late sleeps, early gaps, retro instances)"
+    );
+}
+
+/// **T0 (b)'s entry count**, and P31's control that the fork replays a log the
+/// kernel refuses: both are the reader's, on inputs too large to freeze whole.
+pub fn entry_count_of(text: &str, tz: Tz) -> u64 {
+    replay::replay_of_text(text, tz).entry_count() as u64
+}
+
+/// P31's control (§17): the in-tree reader reads every physical line of a
+/// hand-edited log the kernel names a fault on.
+pub fn assert_reads_every_line(text: &str, tz: Tz, lines: u64) {
+    assert_eq!(replay::replay_of_text(text, tz).line_count(), lines, "the reader reads every line of the edited log");
+}
+
+/// The `#[ignore]`d measurements' second half: the same facts from the reader,
+/// timed, and the line the README quotes.
+pub fn measure_against_reader(what: &str, k: &Facts, text: &str, tz: Tz) {
+    let start = std::time::Instant::now();
+    let r = rust_facts(text, tz);
+    let ms = start.elapsed().as_secs_f64() * 1000.0;
+    assert_eq!(*k, r, "{what}: the kernel's facts are not the in-tree reader's");
+    eprintln!("{what}: the in-tree reader took {ms:.0} ms over the same log");
+}
+
+/// **Parity P34** (C5), the whole of its comparison with the in-tree reader: the
+/// one day and the one segment start put back, and then nothing else may differ.
+pub fn p34_is_the_only_difference(k: &Facts, text: &str, tz: Tz) {
+    let mut r = rust_facts(text, tz);
+    let fork_day = r.day.longest_leak.as_ref().expect("the reader's longest leak").1;
+    assert!(fork_day < 0, "the reader dates the gap in a negative year: day {fork_day}");
+    let origin: Stamp = (0, 0, false, 0);
+    let mut block = r.block.days.remove(&fork_day).expect("the reader's day of the gap");
+    assert!(block.segments[0].0 .0 < 0, "the reader's segment starts before the origin");
+    block.segments[0].0 = origin;
+    r.block.days.insert(0, block);
+    let mut rec = r.day.days.remove(&fork_day).expect("the reader's record of the gap");
+    rec.idle[0].1 = 0;
+    r.day.days.insert(0, rec);
+    if let Some(l) = r.day.longest_leak.as_mut() {
+        l.1 = 0;
+    }
+    // C6: the gap's day is the only day with a record, so it is the last day too.
+    assert_eq!(r.counts.2, Some(fork_day), "the reader's last day is the gap's");
+    r.counts.2 = Some(0);
+    assert_eq!(*k, r, "P34 is the only difference");
+}
+
+/// **Parity P33** (C4), likewise: the one date put back, and nothing else differs.
+pub fn p33_is_the_only_difference(k: &Facts, text: &str, tz: Tz) {
+    let mut r = rust_facts(text, tz);
+    let fork = r.completion.done_dates.get("stretch").cloned().expect("the reader's done date");
+    assert_eq!(fork, BTreeSet::from([day_number(date(0, 9, 7))]), "the reader dates it in year 0");
+    r.completion.done_dates.insert("stretch".to_string(), BTreeSet::from([day_number(date(2026, 9, 7))]));
+    assert_eq!(
+        r.completion.done_first.get("stretch"),
+        Some(&(Some(day_number(date(0, 9, 7))), 1)),
+        "the reader's first done date is in year 0"
+    );
+    r.completion.done_first.insert("stretch".to_string(), (Some(day_number(date(2026, 9, 7))), 1));
+    assert_eq!(*k, r, "P33 is the only difference");
+}
+
+}
+// ===========================================================================
+// END THE IN-TREE CROSS-CHECK
+// ===========================================================================
+
+/// Compare one log; the kernel's facts are returned for the arms' own checks.
+fn assert_parity(name: &str, text: &str, tz: Tz) -> Facts {
+    assert_parity_answer(name, text, tz, &kernel_answer(text, tz))
+}
+
+/// Compare one log with a kernel `log` answer built any way (W3: a windowed answer
+/// merged with its sealed records).
+///
+/// **Two comparands, and the order is the point** (gap 146, gap 137, W-11).
+///
+/// 1. **The fork** — [`fork_arm`]: fork point `4748911`'s own `log::replay`, frozen
+///    into `tests/fixtures/` and compared key for key. Neither side of it is the
+///    in-tree reader, so §12's deletion cannot turn it into a self-comparison. Where
+///    no frozen answer exists for this input the arm records a **skip by name**, so
+///    "no disagreement" is never confused with "never ran" (AGENTS §7.3), and
+///    [`t5_every_input_class_says_how_it_reaches_the_fork`] is what fails if a class
+///    loses its fork comparand.
+/// 2. **The in-tree reader** — [`in_tree::cross_check`]: sharper while it exists
+///    (it reaches `rows`, the per-line day index and the displays, which the fork's
+///    serialised `Replay` does not carry), and worthless the moment `replay_of_text`
+///    calls the kernel. It lives inside the deletion banner above.
+fn assert_parity_answer(name: &str, text: &str, tz: Tz, answer: &Value) -> Facts {
+    let k = kernel_view(answer);
+    fork_arm(name, tz, answer, &k);
+    in_tree::cross_check(name, text, tz, answer, &k); // S: deleted with the reader
     k
 }
 
@@ -1287,6 +1456,9 @@ struct Tally {
     marks: [usize; 5],
     rows: usize,
     cancelled_rows: usize,
+    /// Stamps design §17 **P23** spells in a way chrono will not read, so the
+    /// day-index denominator could not be taken for them.
+    p23_stamps: usize,
 }
 
 impl Tally {
@@ -1351,66 +1523,91 @@ impl std::fmt::Display for Tally {
             "block family: {} days ({} segments, {} ci-unknown pairs), {} items ({} item days), {} energy observations, {} durations, {} interruptions, {} open blocks, {} open interruptions; \
              completion family: {} done items ({} done dates), {} instances ({} whose last record in file order is not their latest by instant), {} named keys ({} whose latest by instant is not their latest by date), {} replay warnings; \
              day family: {} wakes, {} arrivals, {} location changes, {} idle records ({} on a day before their own entry's), {} breaks, {} days with routine minutes, {} days with plans, {} demotions ({} stamped), {} closes, {} dropped ids, {} longest leaks, {} unknown events, {} energy-event observations ({} reading a wake logged after them); \
-             view: {} seams ({} anchored at a break's end), idle marks pause/interrupt/unpause/resume/break {:?}, {} rows ({} cancelled)",
+             view: {} seams ({} anchored at a break's end), idle marks pause/interrupt/unpause/resume/break {:?}, {} rows ({} cancelled); \
+             {} stamps chrono will not read (P23)",
             self.days, self.segments, self.ci_unknown, self.items, self.item_days, self.energy, self.durations, self.interrupts, self.open_blocks, self.open_interrupts,
             self.done_items, self.done_dates, self.instances, self.retro_instances, self.named, self.clock_back_keys, self.replay_warnings,
             self.wakes, self.arrivals, self.loc_changes, self.idle, self.early_gaps, self.breaks, self.routine_days, self.plan_days, self.demotions, self.demotion_stamps,
             self.closes, self.dropped, self.longest_leaks, self.unknown, self.energy_events, self.late_sleeps,
-            self.seams, self.break_anchors, self.marks, self.rows, self.cancelled_rows
+            self.seams, self.break_anchors, self.marks, self.rows, self.cancelled_rows, self.p23_stamps
         )
     }
 }
 
-/// **C5's separations in a log**, from the Rust reader: `(late_sleeps, early_gaps)`,
-/// the energy observations whose day's first logged wake is on a later line (late
-/// binding), and the idle records dated on a day other than their entry's (a gap on the
-/// day it began).
-fn day_separations(text: &str, tz: Tz) -> (usize, usize) {
-    let r = replay::replay_of_text(text, tz);
-    let survivors: Vec<_> = r.view().iter().filter(|row| !row.cancelled).collect();
-    let mut late = 0;
-    let mut early = 0;
-    for row in &survivors {
-        match row.tag.as_str() {
-            "energy" => {
-                let wake = survivors.iter().find(|w| w.tag == "wake" && w.day == row.day);
-                late += usize::from(wake.is_some_and(|w| w.line > row.line));
+/// How many entries of `text` the **kernel's** day index puts on a date other
+/// than their own local date in `tz`: what shows the index, not the calendar,
+/// was compared.
+///
+/// **Read from the kernel's facts and the log's own bytes** (W-11), so it
+/// survives §12's deletion — it used to come from the in-tree reader, and a
+/// denominator that silently goes to zero at S is a disguised gap
+/// (AGENTS §9.2). Stamps chrono will not read at all are design §17 **P23**'s
+/// spellings: they are counted separately rather than folded in.
+fn off_their_own_date(tally: &mut Tally, k: &Facts, text: &str, tz: Tz) -> (usize, (usize, usize, usize)) {
+    let lines: Vec<&str> = text.split('\n').collect();
+    let json_at = |line: u64| serde_json::from_str::<Value>(lines[line as usize - 1]).ok();
+    let stamp_at = |line: u64| -> Option<Stamp> {
+        let v = json_at(line)?;
+        DateTime::parse_from_rfc3339(v.get("t")?.as_str()?).ok().map(|t| stamp_of(&t))
+    };
+
+    // C2: entries the day index puts on a date other than their own local one.
+    let mut off = 0usize;
+    for (line, day) in &k.days {
+        match stamp_at(*line).and_then(|_| json_at(*line)) {
+            Some(v) => {
+                let t = DateTime::parse_from_rfc3339(v["t"].as_str().expect("a `t`")).expect("a stamp");
+                off += usize::from(day_number(t.with_timezone(&tz).date_naive()) != *day);
             }
-            "idle" => {
-                let rec = r.days.values().flat_map(|d| d.idle.iter()).find(|i| stamp_of(&i.t) == stamp_of(&row.t));
-                early += usize::from(rec.is_some_and(|i| i.day != row.day));
-            }
-            _ => {}
+            None => tally.p23_stamps += 1,
         }
     }
-    (late, early)
-}
 
-/// **Quirk Q6(b) in a log**: how many instances' last surviving record in file
-/// order is stamped strictly before another surviving record of the same instance,
-/// so the instance (last in file order) and the latest by instant differ.
-fn q6b_separations(text: &str, tz: Tz) -> usize {
-    let r = replay::replay_of_text(text, tz);
-    let entries: BTreeMap<u64, LogEntry> = replay::entries_of_text(text).into_iter().collect();
-    let mut by_inst: BTreeMap<(String, String), Vec<(i64, u32)>> = BTreeMap::new();
-    for row in r.view().iter().filter(|row| !row.cancelled) {
-        let key = match &entries.get(&row.line).expect("the row's entry").ev {
-            Event::Routine { item, inst, .. } | Event::Skip { item, inst } => (item.clone(), inst.clone()),
-            _ => continue,
-        };
-        by_inst.entry(key).or_default().push(instant_of(&stamp_of(&row.t)));
-    }
-    by_inst.values().filter(|ts| ts.last().is_some_and(|last| ts.iter().any(|t| t > last))).count()
-}
+    let survivors: Vec<&RowView> = k.rows.iter().filter(|r| !r.4).collect();
 
-/// How many entries of `text` the day index puts on a date other than their own
-/// local date in `tz`: what shows the index, not the calendar, was compared.
-fn off_their_own_date(text: &str, tz: Tz) -> usize {
-    replay::replay_of_text(text, tz)
-        .view()
+    // C5: energy observations whose day's first logged wake is on a later line.
+    // The rule is the **first** logged wake of that day, not any later one: a
+    // day whose first wake precedes the observation is not late-bound even when
+    // a second wake follows it. (The in-tree cross-check below caught exactly
+    // that difference on generated sequence 129.)
+    let late = survivors
         .iter()
-        .filter(|row| row.day != row.t.with_timezone(&tz).date_naive())
-        .count()
+        .filter(|r| r.1 == "energy")
+        .filter(|r| {
+            survivors.iter().find(|w| w.1 == "wake" && w.3 == r.3).is_some_and(|w| w.0 > r.0)
+        })
+        .count();
+
+    // C5: idle records dated on a day other than their own entry's.
+    let early = survivors
+        .iter()
+        .filter(|r| r.1 == "idle")
+        .filter(|r| {
+            stamp_at(r.0).is_some_and(|s| {
+                k.day.days.values().flat_map(|d| d.idle.iter()).any(|i| i.0 == s && i.1 != r.3)
+            })
+        })
+        .count();
+
+    // Quirk Q6(b): instances whose last surviving record in file order is
+    // stamped strictly before another surviving record of the same instance.
+    let mut by_inst: BTreeMap<(String, String), Vec<(i64, u32)>> = BTreeMap::new();
+    for r in survivors.iter().filter(|r| r.1 == "routine" || r.1 == "skip") {
+        let Some(v) = json_at(r.0) else { continue };
+        let (Some(item), Some(inst)) = (v.get("item").and_then(Value::as_str), v.get("inst").and_then(Value::as_str))
+        else {
+            continue;
+        };
+        if let Some(s) = stamp_at(r.0) {
+            by_inst.entry((item.to_string(), inst.to_string())).or_default().push(instant_of(&s));
+        }
+    }
+    let retro = by_inst.values().filter(|ts| ts.last().is_some_and(|last| ts.iter().any(|t| t > last))).count();
+
+    tally.late_sleeps += late;
+    tally.early_gaps += early;
+    tally.retro_instances += retro;
+    (off, (late, early, retro))
 }
 
 /// The kernel's day of physical line `line`.
@@ -1604,7 +1801,7 @@ struct Generated {
     /// Lines a silent-verb undo must cancel (the older event of its tag).
     silent_targets: Vec<u64>,
     /// Quirk Q6(f): `(week close, automatic close)` lines; the undo of the week
-    /// close cancels the automatic one and leaves the week's standing.
+    /// close cancels the automatic one and fork::leaves the week's standing.
     housekeeping: Vec<(u64, u64)>,
     /// C3: the [`block_edge`] cases this sequence ran.
     edges: Vec<u64>,
@@ -2062,7 +2259,7 @@ fn block_edge(case: u64, w: &mut Writer, now: &mut DateTime<Utc>, rng: &mut Rng,
             w.push(tick(now, rng), ev_start(other));
             w.push(tick(now, rng), ev_done_at(id, 0, rng.below(2) == 0, 4, went));
         }
-        // A `done` for another id while a block is open leaves it open.
+        // A `done` for another id while a block is open fork::leaves it open.
         1 => {
             w.push(tick(now, rng), ev_start(id));
             w.push(tick(now, rng), ev_done_at(other, 25, false, 3, went));
@@ -2536,7 +2733,7 @@ fn triple(seed: u64) -> Triple {
         (e_lines.iter().chain(&u_lines).copied().collect(), m_lines.clone())
     } else {
         match (seed / 2) % 4 {
-            // The undo takes `M`'s event, the latest match, and leaves the command's standing.
+            // The undo takes `M`'s event, the latest match, and fork::leaves the command's standing.
             0..=2 => (m_lines.iter().chain(&u_lines).copied().collect(), e_lines.clone()),
             // `M`'s undo takes the command's `done`; `tm undo`'s takes `L`'s `done` of the id, and `L`'s last `done` stands.
             _ => (vec![pre_lines[0], e_lines[0], m_lines[0], u_lines[0]], vec![pre_lines[1]]),
@@ -2573,17 +2770,15 @@ fn t5_the_corpus_logs_replay_as_the_fork_does() {
     let (mut cancelled, mut days, mut off, mut tally) = (0, 0, 0, Tally::default());
     for (name, text) in corpus_logs() {
         let k = assert_parity(&name, &text, chrono_tz::America::Chicago);
-        tally.retro_instances += q6b_separations(&text, chrono_tz::America::Chicago);
         cancelled += k.cancelled.len();
         days += k.days.len();
-        off += off_their_own_date(&text, chrono_tz::America::Chicago);
         tally.add(&k.block);
         tally.add_completion(&k.completion);
         tally.add_day(&k.day, &k.block);
         tally.add_view(&k);
-        let (late, early) = day_separations(&text, chrono_tz::America::Chicago);
-        tally.late_sleeps += late;
-        tally.early_gaps += early;
+        let (o, d) = off_their_own_date(&mut tally, &k, &text, chrono_tz::America::Chicago);
+        off += o;
+        in_tree::check_denominators(&text, chrono_tz::America::Chicago, d); // S: deleted with the reader
     }
     assert!(tally.durations > 0 && tally.items > 0, "the corpus has blocks");
     eprintln!("T5 corpus: 7 logs, {cancelled} cancelled lines, {days} days compared ({off} off their own local date); {tally}; {} latest_named queries; 0 exceptions", latest_named_queries());
@@ -2592,7 +2787,7 @@ fn t5_the_corpus_logs_replay_as_the_fork_does() {
 /// **T5 over the generated 1-month and 6-month logs** (40 a day, seed 7).
 #[test]
 fn t5_the_generated_month_and_half_year_replay_as_the_fork_does() {
-    for (label, days) in [("1mo", 30), ("6mo", 182)] {
+    for (label, days) in [(GENERATED_MONTH, 30), (GENERATED_HALF_YEAR, 182)] {
         let lines = loggen::log(loggen::Rate::Forty, days);
         let text = loggen::text(&lines);
         let start = std::time::Instant::now();
@@ -2604,17 +2799,15 @@ fn t5_the_generated_month_and_half_year_replay_as_the_fork_does() {
         tally.add_completion(&k.completion);
         tally.add_day(&k.day, &k.block);
         tally.add_view(&k);
-        let (late, early) = day_separations(&text, chrono_tz::America::Chicago);
-        tally.late_sleeps += late;
-        tally.early_gaps += early;
-        tally.retro_instances += q6b_separations(&text, chrono_tz::America::Chicago);
+        let (off, d) = off_their_own_date(&mut tally, &k, &text, chrono_tz::America::Chicago);
+        in_tree::check_denominators(&text, chrono_tz::America::Chicago, d); // S: deleted with the reader
         eprintln!(
             "T5 {label}: {} lines, {} bytes, {} cancelled, {} days compared ({} off their own local date); {tally}; {} latest_named queries so far; {ms:.0} ms for both readers, 0 exceptions",
             lines.len(),
             text.len(),
             k.cancelled.len(),
             k.days.len(),
-            off_their_own_date(&text, chrono_tz::America::Chicago),
+            off,
             latest_named_queries(),
         );
     }
@@ -2637,13 +2830,12 @@ fn t5_generated_sequences_replay_as_the_fork_does() {
         tally.add_completion(&k.completion);
         tally.add_day(&k.day, &k.block);
         tally.add_view(&k);
-        let (late, early) = day_separations(&g.text, g.tz);
-        tally.late_sleeps += late;
-        tally.early_gaps += early;
+        let (o, d) = off_their_own_date(&mut tally, &k, &g.text, g.tz);
+        off += o;
+        in_tree::check_denominators(&g.text, g.tz, d); // S: deleted with the reader
         for e in &g.day_edges {
             *day_edges.entry(*e).or_default() += 1;
         }
-        tally.retro_instances += q6b_separations(&g.text, g.tz);
         for e in &g.edges {
             *edges.entry(*e).or_default() += 1;
         }
@@ -2657,7 +2849,6 @@ fn t5_generated_sequences_replay_as_the_fork_does() {
         lines += g.text.lines().count();
         cancelled += k.cancelled.len();
         days += k.days.len();
-        off += off_their_own_date(&g.text, g.tz);
         // Quirk Q6(d): the silent-verb undo cancels the older move, in both readers.
         for t in &g.silent_targets {
             assert!(k.cancelled.contains(t), "sequence {seed}: the silent-verb undo left line {t} standing");
@@ -2711,10 +2902,9 @@ fn t5_the_zone_cases_replay_as_the_fork_does() {
         tally.add_completion(&k.completion);
         tally.add_day(&k.day, &k.block);
         tally.add_view(&k);
-        let (late, early) = day_separations(&c.text, c.tz);
-        tally.late_sleeps += late;
-        tally.early_gaps += early;
-        tally.retro_instances += q6b_separations(&c.text, c.tz);
+        let (o, d) = off_their_own_date(&mut tally, &k, &c.text, c.tz);
+        off += o;
+        in_tree::check_denominators(&c.text, c.tz, d); // S: deleted with the reader
         assert!(!k.cancelled.is_empty(), "{}: every zone case carries an undo", c.name);
         for (line, d) in &c.expect {
             assert_eq!(day_of_line(&k, *line), day_number(*d), "{}: line {line} should be on {d}", c.name);
@@ -2734,7 +2924,6 @@ fn t5_the_zone_cases_replay_as_the_fork_does() {
             named_keys += 1;
         }
         days += k.days.len();
-        off += off_their_own_date(&c.text, c.tz);
     }
     eprintln!(
         "T5 zone cases: {} ({:?}), {days} days compared, {named} named days checked, {named_keys} named-event keys checked by hand, {off} entries off their own local date; {tally}; {} latest_named queries; 0 exceptions",
@@ -2821,13 +3010,10 @@ fn t5_a_hostile_undo_log_is_answered_in_linear_time() {
     let start = std::time::Instant::now();
     let k = kernel_facts(&text, tz);
     let kernel_ms = start.elapsed().as_secs_f64() * 1000.0;
-    let start = std::time::Instant::now();
-    let r = rust_facts(&text, tz);
-    let rust_ms = start.elapsed().as_secs_f64() * 1000.0;
-    assert_eq!(k, r);
     assert!(text.len() < 1 << 20, "under 1 MiB");
     assert_eq!(k.cancelled.len(), 4_000);
-    eprintln!("T5 hostile: {} lines, {} bytes, kernel {kernel_ms:.0} ms, rust {rust_ms:.0} ms", w.lines.len(), text.len());
+    eprintln!("T5 hostile: {} lines, {} bytes, kernel {kernel_ms:.0} ms", w.lines.len(), text.len());
+    in_tree::measure_against_reader("T5 hostile", &k, &text, tz); // S: deleted with the reader
 }
 
 /// **The block family over many items** (C3; a measurement, `#[ignore]`d and
@@ -2854,12 +3040,9 @@ fn t5_a_block_log_of_distinct_ids_is_measured() {
     let start = std::time::Instant::now();
     let k = kernel_facts(&text, tz);
     let kernel_ms = start.elapsed().as_secs_f64() * 1000.0;
-    let start = std::time::Instant::now();
-    let r = rust_facts(&text, tz);
-    let rust_ms = start.elapsed().as_secs_f64() * 1000.0;
     assert_eq!(k.block.items.len(), 3_500);
-    assert_eq!(k, r);
-    eprintln!("T5 distinct ids: {} lines, {} bytes, kernel {kernel_ms:.0} ms, rust {rust_ms:.0} ms", w.lines.len(), text.len());
+    eprintln!("T5 distinct ids: {} lines, {} bytes, kernel {kernel_ms:.0} ms", w.lines.len(), text.len());
+    in_tree::measure_against_reader("T5 distinct ids", &k, &text, tz); // S: deleted with the reader
 }
 
 /// **Parity P34, the named exception** (C5): an `idle` gap whose minutes reach
@@ -2876,25 +3059,9 @@ fn t5_p34_a_gap_before_the_origin_is_the_named_exception() {
     let mut w = Writer::new(tz);
     w.push(utc(2026, 9, 7, 9, 0, 0), Event::Idle { attributed: "leak".into(), min: u32::MAX });
     let text = w.text();
-    let (k, mut r) = (kernel_facts(&text, tz), rust_facts(&text, tz));
-    let fork_day = r.day.longest_leak.as_ref().expect("the fork's longest leak").1;
-    assert!(fork_day < 0, "the fork dates the gap in a negative year: day {fork_day}");
+    let k = kernel_facts(&text, tz);
     assert_eq!(k.day.longest_leak.as_ref().map(|l| l.1), Some(0), "the kernel dates it at the origin");
-    let origin: Stamp = (0, 0, false, 0);
-    let mut block = r.block.days.remove(&fork_day).expect("the fork's day of the gap");
-    assert!(block.segments[0].0 .0 < 0, "the fork's segment starts before the origin");
-    block.segments[0].0 = origin;
-    r.block.days.insert(0, block);
-    let mut rec = r.day.days.remove(&fork_day).expect("the fork's record of the gap");
-    rec.idle[0].1 = 0;
-    r.day.days.insert(0, rec);
-    if let Some(l) = r.day.longest_leak.as_mut() {
-        l.1 = 0;
-    }
-    // C6: the gap's day is the only day with a record, so it is the last day too.
-    assert_eq!(r.counts.2, Some(fork_day), "the fork's last day is the gap's");
-    r.counts.2 = Some(0);
-    assert_eq!(k, r, "P34 is the only difference");
+    in_tree::p34_is_the_only_difference(&k, &text, tz); // S: deleted with the reader
 }
 
 /// **Parity P33, the named exception** (C4): a routine `done` whose `inst` names a
@@ -2909,15 +3076,13 @@ fn t5_p33_a_done_date_before_the_origin_is_the_named_exception() {
     let mut w = Writer::new(tz);
     w.push(utc(2026, 9, 7, 9, 0, 0), ev_routine("stretch", "0000-09-07", "done", None));
     let text = w.text();
-    let (k, mut r) = (kernel_facts(&text, tz), rust_facts(&text, tz));
-    let fork = r.completion.done_dates.get("stretch").cloned().expect("the fork's done date");
-    assert_eq!(fork, BTreeSet::from([day_number(date(0, 9, 7))]), "the fork dates it in year 0");
-    assert_eq!(k.completion.done_dates.get("stretch"), Some(&BTreeSet::from([day_number(date(2026, 9, 7))])), "the kernel dates it on its day");
-    r.completion.done_dates.insert("stretch".to_string(), BTreeSet::from([day_number(date(2026, 9, 7))]));
-    // C6: the date is also the item's first done date.
-    assert_eq!(r.completion.done_first.get("stretch"), Some(&(Some(day_number(date(0, 9, 7))), 1)), "the fork's first done date is in year 0");
-    r.completion.done_first.insert("stretch".to_string(), (Some(day_number(date(2026, 9, 7))), 1));
-    assert_eq!(k, r, "P33 is the only difference");
+    let k = kernel_facts(&text, tz);
+    assert_eq!(
+        k.completion.done_dates.get("stretch"),
+        Some(&BTreeSet::from([day_number(date(2026, 9, 7))])),
+        "the kernel dates it on its day"
+    );
+    in_tree::p33_is_the_only_difference(&k, &text, tz); // S: deleted with the reader
 }
 
 
@@ -3126,7 +3291,10 @@ fn t0b_genesis_over_200000_lines_in_chunks_runs_on_a_2mib_thread() {
     lines.truncate(200_000);
     let text = loggen::text(&lines);
     let now = kernel_log::date_of(day_after(&lines));
-    let entries = replay::replay_of_text(&text, chrono_tz::UTC).entry_count() as u64;
+    // The log is moved into the 2 MiB thread below, so this one has to be read
+    // before the move and kept: it is named `in_tree_*` so the deletion guard
+    // sees the binding as well as the call.
+    let in_tree_entries = in_tree::entry_count_of(&text, chrono_tz::UTC); // S: deleted with the reader
     let table = table(chrono_tz::UTC);
     let wake_days: Vec<String> = (0..2_000)
         .map(|i| {
@@ -3164,7 +3332,7 @@ fn t0b_genesis_over_200000_lines_in_chunks_runs_on_a_2mib_thread() {
     let (calls, pops, largest, days, window, answered, genesis_ms, cap_ms, sealed_days) = handle.join().expect("no stack overflow");
     assert!(calls >= 25, "{calls} calls");
     assert!(largest <= kernel_log::RESEND_LINES, "{largest}");
-    assert_eq!(answered, entries, "the last call answers for every entry");
+    assert_eq!(answered, in_tree_entries, "the last call answers for every entry"); // S: deleted with the reader
     assert!(days >= 3_000 && window >= 3_000, "{days} day and {window} window records");
     // F = min(now − keepDays, M − keepDays), M the last wake's day: the last two days stay open, the other 1,997 are sealed.
     assert_eq!(sealed_days, 1_997, "one reseal emits a record a day below F");
@@ -3230,8 +3398,7 @@ fn t0b_a_hand_edit_no_window_can_reach_is_the_named_fault_reach_too_far() {
     assert!(*reach <= 2 * kernel_log::CHUNK_LINES as u64 + 512, "the reach is about two chunks: {reach}");
 
     // §17 P31: the fork replays such a log. The kernel's answer is a named fault, and that difference is the parity row.
-    let forked = replay::replay_of_text(&text, tz);
-    assert_eq!(forked.line_count(), edited.len() as u64, "the fork reads every line of the edited log");
+    in_tree::assert_reads_every_line(&text, tz, edited.len() as u64); // S: deleted with the reader
     eprintln!(
         "ReachTooFar: {} lines, the edit at line {line}, {kind}, resend {reach} lines / {bytes} bytes (cap {} lines / {} bytes)",
         edited.len(), kernel_log::RESEND_LINES, kernel_log::RESEND_BYTES
@@ -3283,150 +3450,6 @@ fn t5_a_tail_past_the_resend_cap_rebuilds_instead_of_resending() {
 // in-tree reader (AGENTS §8.3, §7.3; design §14.6 item 4, §17).
 // ---------------------------------------------------------------------------
 
-/// The fork point's `Replay` keys this compares. The fork serialises **20**;
-/// two are left out here and neither is the kernel's to answer yet:
-///
-/// * `events` — `kernel_replay` copies it from the in-tree reader, because the
-///   kernel keeps only the latest occurrence per `(name, id?)` (design §8.4)
-///   while the field is still shaped as a list. That is **gap 128**, and the
-///   `latest_named` queries above are what does compare it.
-/// * `warnings` — free text on the fork's side, named constructors on the
-///   kernel's: **parity P15**, compared above by line and status instead.
-///
-/// Every other key is the kernel's own fact, decoded by [`kernel_replay`].
-///
-/// **One record differs in shape, and it is a Rust rename, not a fact.** Phase
-/// R's R9 (`100bd88`) turned `DayReplay.load` into `load_fifths` with a
-/// `load()` accessor, so the fork writes `"load": 5.2` where this branch writes
-/// `"load_fifths": 26`. [`as_fork_shaped`] maps the one back to the other —
-/// `load_fifths / 5`, the exact fifths R9 claims, divided once — so the
-/// comparison tests R9's claim rather than stepping around it. The two `f64`s then differ
-/// wherever the fork's accumulated sum has drifted from the exact value —
-/// **parity P21**, which design §17 states at exactly this site (`DayReplay.load`
-/// at display: "exact fifths, divided once" against "an accumulated `f64` sum").
-/// Each sighting is counted, and **both of its displays are checked to be equal
-/// anyway**: §12.1's `round1` load, and `DayReview::load_blocks` by R9's exact
-/// half-up hundredths against the fork's `round2(load / block_min)`. A
-/// difference that reaches a display is a defect, not an exception, and fails.
-///
-/// (The oracle's own docstring says "every nested record struct has the
-/// identical field list". That is now false, and this is the one exception:
-/// recorded in the README block, not papered over. `EnergyObs.line` and
-/// `DurationObs.line` (R13) are `#[serde(skip)]`, so they do not reach this
-/// comparison at all.)
-const FORK_REPLAY_KEYS: [&str; 18] = [
-    "tz",
-    "range",
-    "days",
-    "items",
-    "instances",
-    "energy",
-    "durations",
-    "interrupts",
-    "demotions",
-    "closes",
-    "dropped_items",
-    "done_items",
-    "last_done",
-    "done_dates",
-    "longest_leak",
-    "open_block",
-    "open_interrupt",
-    "unknown",
-];
-
-/// **Parity P21**, checked rather than waved through: this day's `load` differs
-/// between the kernel's exact fifths and the fork's accumulated `f64` sum.
-/// `Some(why)` only when the difference reaches a display — which is what R9
-/// promised it never does ("recorded as P21 here, in Rust, so the switch changes
-/// no display").
-fn p21_display_is_unchanged(date: &str, fifths: u64, fork_load: f64, block_min: u32) -> Option<String> {
-    let round1 = |x: f64| (x * 10.0).round() / 10.0;
-    let round2 = |x: f64| (x * 100.0).round() / 100.0;
-    let b = u128::from(block_min.max(1));
-    // R9's exact route: `review.rs`'s `load_blocks_of_fifths`.
-    let kernel_blocks = ((40 * u128::from(fifths) + b) / (2 * b)) as f64 / 100.0;
-    let fork_blocks = round2(fork_load / f64::from(block_min.max(1)));
-    let kernel_load = fifths as f64 / 5.0;
-    if round1(kernel_load) != round1(fork_load) {
-        return Some(format!(
-            "days.{date}.load reaches the display: round1 kernel {} fork {}",
-            round1(kernel_load),
-            round1(fork_load)
-        ));
-    }
-    if kernel_blocks != fork_blocks {
-        return Some(format!("days.{date}.load_blocks differs: kernel {kernel_blocks} fork {fork_blocks}"));
-    }
-    None
-}
-
-/// The kernel-side value in the **fork's** record shape: `load_fifths` back to
-/// the fork's `load`, exactly as R9's `DayReplay::load()` computes it. Nothing
-/// else is touched, so any other difference is a real one.
-fn as_fork_shaped(v: &mut Value) {
-    match v {
-        Value::Array(a) => a.iter_mut().for_each(as_fork_shaped),
-        Value::Object(o) => {
-            if let Some(fifths) = o.remove("load_fifths").and_then(|f| f.as_u64()) {
-                let load = fifths as f64 / 5.0;
-                o.insert("load".to_string(), serde_json::json!(load));
-            }
-            o.values_mut().for_each(as_fork_shaped);
-        }
-        _ => {}
-    }
-}
-
-/// Every differing leaf, named by its path, so a finding says which field of
-/// which day differs rather than printing two truncated records.
-fn diff_paths(path: &str, k: &Value, f: &Value, out: &mut Vec<(String, String)>) {
-    if k == f {
-        return;
-    }
-    match (k, f) {
-        (Value::Object(ko), Value::Object(fo)) => {
-            for (key, fv) in fo {
-                match ko.get(key) {
-                    Some(kv) => diff_paths(&format!("{path}.{key}"), kv, fv, out),
-                    None => out.push((
-                        format!("{path}.{key}"),
-                        format!("{path}.{key}: kernel has no such key, fork {fv}"),
-                    )),
-                }
-            }
-            for key in ko.keys().filter(|k| !fo.contains_key(*k)) {
-                out.push((
-                    format!("{path}.{key}"),
-                    format!("{path}.{key}: fork has no such key, kernel {}", ko[key]),
-                ));
-            }
-        }
-        (Value::Array(ka), Value::Array(fa)) if ka.len() == fa.len() => {
-            for (i, (kv, fv)) in ka.iter().zip(fa).enumerate() {
-                diff_paths(&format!("{path}[{i}]"), kv, fv, out);
-            }
-        }
-        _ => {
-            let (ks, fs) = (k.to_string(), f.to_string());
-            out.push((
-                path.to_string(),
-                format!("{path}: kernel {} fork {}", &ks[..ks.len().min(90)], &fs[..fs.len().min(90)]),
-            ));
-        }
-    }
-}
-
-/// Scalar leaves of a JSON value: the denominator that says how much was
-/// actually compared, rather than how many keys were looked at.
-fn leaves(v: &Value) -> usize {
-    match v {
-        Value::Array(a) => a.iter().map(leaves).sum(),
-        Value::Object(o) => o.values().map(leaves).sum(),
-        _ => 1,
-    }
-}
-
 /// Run one mode of the fork-point oracle over `texts`, one JSON string per line
 /// in, one JSON object per line out.
 fn fork_oracle(bin: &std::path::Path, args: &[&str], texts: &[String]) -> Vec<Value> {
@@ -3468,7 +3491,7 @@ fn fork_oracle(bin: &std::path::Path, args: &[&str], texts: &[String]) -> Vec<Va
 /// is what §8.3 calls for and what T5 is retargeted to at S. Two things are
 /// compared per log:
 ///
-/// * **the whole `Replay`**, key for key over [`FORK_REPLAY_KEYS`] — the
+/// * **the whole `Replay`**, key for key over [`fork::FORK_REPLAY_KEYS`] — the
 ///   kernel's facts decoded by [`kernel_replay`] and serialised, against the
 ///   fork's own;
 /// * **`tm model --fit`** (design §14.6's T12): the `Model` the fit writes from
@@ -3496,15 +3519,17 @@ fn stage5_parity_the_kernel_replays_and_fits_as_the_fork_point_does() {
     let tz = chrono_tz::America::Chicago;
     let today = NaiveDate::from_ymd_opt(2026, 9, 15).expect("a date");
 
+    // Phase 1, in Chicago: the corpus and the generated month, replayed **and**
+    // fitted (T12). The in-tree Rust reader is not read at all here — this arm's
+    // oracle is the fork.
     let mut names: Vec<String> = Vec::new();
     let mut texts: Vec<String> = Vec::new();
     for (name, text) in corpus_logs() {
         names.push(name);
         texts.push(text);
     }
-    let month = loggen::text(&loggen::log(loggen::Rate::Forty, 30));
-    names.push("generated 1mo (40 a day)".to_string());
-    texts.push(month);
+    names.push(GENERATED_MONTH.to_string());
+    texts.push(loggen::text(&loggen::log(loggen::Rate::Forty, 30)));
 
     let fork_replays = fork_oracle(&bin, &["replay", tz.name()], &texts);
     let fork_fits = fork_oracle(&bin, &["fit", tz.name(), &today.to_string()], &texts);
@@ -3512,74 +3537,23 @@ fn stage5_parity_the_kernel_replays_and_fits_as_the_fork_point_does() {
     assert_eq!(fork_fits.len(), texts.len(), "one fork fit per log");
 
     let cfg = tm_core::config::Config::default();
-    let (mut keys, mut values, mut entries_compared, mut fits) = (0usize, 0usize, 0usize, 0usize);
-    // Parity P21 sightings: a day whose `load` differs from the fork's in the last ulp.
-    let mut p21 = 0usize;
+    let mut t = fork::ForkTally::default();
+    let mut fits = 0usize;
     let mut findings: Vec<String> = Vec::new();
 
     for (i, name) in names.iter().enumerate() {
-        let text = &texts[i];
-        // One kernel call a log: its facts for the counts, and the same answer
-        // through `decode_facts` for the whole `Replay` (step X1). The in-tree
-        // Rust reader is not read at all here — this arm's oracle is the fork.
-        let answer = kernel_answer(text, tz);
+        let answer = kernel_answer(&texts[i], tz);
         let kf = kernel_view(&answer);
-        let kr = kernel_replay(&answer, tz);
-        let kv_raw = serde_json::to_value(&kr).expect("the kernel's replay serialises");
-        let mut kv = kv_raw.clone();
-        as_fork_shaped(&mut kv);
-        let fork = &fork_replays[i]["replay"];
-
-        for key in FORK_REPLAY_KEYS {
-            let (k, f) = (&kv[key], &fork[key]);
-            assert!(!f.is_null() || k.is_null(), "{name}: the fork has no key `{key}`");
-            keys += 1;
-            values += leaves(f);
-            if k != f {
-                let mut paths = Vec::new();
-                diff_paths(key, k, f, &mut paths);
-                let mut real: Vec<String> = Vec::new();
-                for (path, message) in paths {
-                    // `days.<date>.load` is parity P21: counted and checked, never skipped.
-                    if let Some(date) = path.strip_prefix("days.").and_then(|r| r.strip_suffix(".load")) {
-                        p21 += 1;
-                        let day = &fork["days"][date];
-                        let fifths = kv_raw["days"][date]["load_fifths"].as_u64().expect("the kernel's fifths");
-                        let fork_load = day["load"].as_f64().expect("the fork's load");
-                        let block_min = u32_of(day["block_min"].as_u64().expect("the day's block_min"));
-                        if let Some(why) = p21_display_is_unchanged(date, fifths, fork_load, block_min) {
-                            real.push(why);
-                        }
-                        continue;
-                    }
-                    real.push(message);
-                }
-                if real.is_empty() {
-                    continue;
-                }
-                let shown = real.len().min(6);
-                findings.push(format!(
-                    "{name}: `{key}` differs at {} leaf/leaves\n      {}",
-                    real.len(),
-                    real[..shown].join("\n      ")
-                ));
-            }
-        }
-
-        // The entry count the fork's reader kept, against the kernel's own.
-        entries_compared += 1;
-        let fork_entries = fork_replays[i]["entries"].as_u64().expect("an entry count");
-        if kf.counts.0 != fork_entries {
-            findings.push(format!("{name}: entries differ — kernel {} fork {fork_entries}", kf.counts.0));
-        }
+        findings.extend(compare_with_fork(name, &answer, tz, &kf, &fork_replays[i], &mut t));
 
         // T12: the fit over the kernel's observations against the fork's own.
         fits += 1;
+        let kr = kernel_replay(&answer, tz);
         let arrivals = tm_core::energy::arrivals_from_replay(&cfg, &kr);
         let model = tm_core::energy::fit_observations(&cfg, &kr.energy, &kr.durations, &arrivals, today);
         let kmodel = serde_json::to_value(&model).expect("a model serialises");
         let fmodel = &fork_fits[i]["model"];
-        values += leaves(fmodel);
+        t.values += fork::leaves(fmodel);
         if &kmodel != fmodel {
             findings.push(format!(
                 "{name}: `tm model --fit` differs\n    kernel {}\n    fork   {}",
@@ -3589,20 +3563,73 @@ fn stage5_parity_the_kernel_replays_and_fits_as_the_fork_point_does() {
         }
     }
 
+    // Phase 2 (W-11, gap 147's clearance route): every input class T5 covers
+    // that is **too large to freeze by value** — the generated half-year, the
+    // 256 sequences, the 192 undo-triple logs — reaches the fork here, grouped
+    // by zone so each zone costs one oracle subprocess rather than one a log.
+    // §6.4's zone cases and the month are frozen and compared in
+    // `cargo test --workspace`; they are replayed again here because a second
+    // reading of the same bytes is what says the fixture is still the fork's.
+    let mut extra: Vec<(String, Tz, String)> = Vec::new();
+    extra.push((
+        GENERATED_HALF_YEAR.to_string(),
+        tz,
+        loggen::text(&loggen::log(loggen::Rate::Forty, 182)),
+    ));
+    for c in zone_cases() {
+        extra.push((c.name, c.tz, c.text));
+    }
+    for seed in 0..SEQUENCES {
+        let g = generate(seed);
+        extra.push((format!("sequence {seed}"), g.tz, g.text));
+    }
+    for seed in 0..TRIPLES {
+        let tr = triple(seed);
+        let name = format!("triple {seed} ({})", tr.kind);
+        extra.push((format!("{name}, undone"), tr.tz, tr.undone));
+        extra.push((format!("{name}, without the command"), tr.tz, tr.without));
+        extra.push((format!("{name}, before the undo"), tr.tz, tr.before));
+    }
+
+    let mut by_zone: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    for (i, (_, z, _)) in extra.iter().enumerate() {
+        by_zone.entry(z.name().to_string()).or_default().push(i);
+    }
+    for (zone, idx) in &by_zone {
+        let batch: Vec<String> = idx.iter().map(|i| extra[*i].2.clone()).collect();
+        let answers = fork_oracle(&bin, &["replay", zone], &batch);
+        assert_eq!(answers.len(), idx.len(), "{zone}: one fork replay per input");
+        for (i, a) in idx.iter().zip(answers) {
+            let (name, z, text) = &extra[*i];
+            let answer = kernel_answer(text, *z);
+            let kf = kernel_view(&answer);
+            findings.extend(compare_with_fork(name, &answer, *z, &kf, &a, &mut t));
+        }
+    }
+
     eprintln!(
         "\nstage-5 parity — the Lean kernel vs fork point 4748911's log::replay and energy::fit\n\
-         \x20 {} logs compared: {keys} Replay keys ({} of the fork's 20 per log; the fork's `events` \
-         occurrence lists, which this branch narrowed to `named` at step X1, and `warnings`' text, \
-         which P15 names rather than formats, are excluded by name), {entries_compared} entry counts, \
-         {fits} fitted models;\n\
-         \x20 {values} scalar values in all.",
+         \x20 {} logs compared over {} zones ({} in the corpus and the generated month, {} in the \
+         classes too large to freeze): {} Replay keys ({} of the fork's 20 per log; the fork's \
+         `events` occurrence lists, which this branch narrowed to `named` at step X1, and \
+         `warnings`' text, which P15 names rather than formats, are excluded by name), {} entry \
+         counts, {} refused-line lists, {fits} fitted models;\n\
+         \x20 {} scalar values in all.",
+        t.logs,
+        by_zone.len() + 1,
         names.len(),
-        FORK_REPLAY_KEYS.len(),
+        extra.len(),
+        t.keys,
+        fork::FORK_REPLAY_KEYS.len(),
+        t.entries,
+        t.warning_lines,
+        t.values,
     );
     eprintln!(
         "  parity P21 (`DayReplay.load`: exact fifths against the fork's accumulated f64): \
-         {p21} day records differ in the last ulp, and every one displays the same `round1` \
-         load and the same `load_blocks`."
+         {} day records differ in the last ulp, and every one displays the same `round1` \
+         load and the same `load_blocks`.",
+        t.p21
     );
     if findings.is_empty() {
         eprintln!("  no disagreements beyond the recorded exceptions.\n");
@@ -3649,140 +3676,241 @@ fn stage5_parity_the_kernel_replays_and_fits_as_the_fork_point_does() {
 // ===========================================================================
 
 /// The frozen fork-point answers: one JSON object a line, keyed by log name.
-const FROZEN_FORK: &str = "fork-4748911-corpus-replay.jsonl";
-
-fn fixtures_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
+/// **Every input the classes fixture freezes**: `(class, name, tz, text)`.
+///
+/// One list, read by the bless, by the comparison and by the census, so a class
+/// cannot be frozen in one place and forgotten in another. The `name` is exactly
+/// the name [`assert_parity`] gives that input, which is what [`fork_arm`] looks
+/// the frozen answer up by.
+fn frozen_class_inputs() -> Vec<(&'static str, String, Tz, String)> {
+    let mut out: Vec<(&'static str, String, Tz, String)> = Vec::new();
+    out.push((
+        GENERATED_MONTH_CLASS,
+        GENERATED_MONTH.to_string(),
+        chrono_tz::America::Chicago,
+        loggen::text(&loggen::log(loggen::Rate::Forty, 30)),
+    ));
+    for c in zone_cases() {
+        out.push((ZONE_CASE_CLASS, c.name.clone(), c.tz, c.text.clone()));
+    }
+    out
 }
 
-/// The frozen answers by log name. Each carries the fork's serialised `Replay`,
-/// its all-time entry count, and the physical lines its reader refused.
-fn frozen_fork_answers() -> BTreeMap<String, Value> {
-    let path = fixtures_dir().join(FROZEN_FORK);
-    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| {
-        panic!("{}: {e} — re-bless it (see this file's GAP 146 banner)", path.display())
-    });
-    text.lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| {
-            let v: Value = serde_json::from_str(l).expect("a frozen fork answer is JSON");
-            (v["name"].as_str().expect("a frozen fork answer names its log").to_string(), v)
-        })
-        .collect()
+const GENERATED_MONTH_CLASS: &str = "the generated 1-month log (40 a day)";
+const ZONE_CASE_CLASS: &str = "\u{a7}6.4's zone cases";
+/// The name [`t5_the_generated_month_and_half_year_replay_as_the_fork_does`]
+/// gives the month, and the key its frozen answer is stored under.
+const GENERATED_MONTH: &str = "generated 1mo (40 a day)";
+const GENERATED_HALF_YEAR: &str = "generated 6mo (40 a day)";
+
+/// How an input class reaches fork point `4748911` — which is to say, what is
+/// left of it once §12 deletes the in-tree reader.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Reach {
+    /// A frozen fork answer in `tests/fixtures/`, compared inside plain
+    /// `cargo test --workspace`. **Survives the deletion and guards a commit.**
+    Frozen,
+    /// The live fork oracle, under `TM_ORACLE`
+    /// ([`stage5_parity_the_kernel_replays_and_fits_as_the_fork_point_does`]).
+    /// Survives the deletion; does **not** guard a commit, because it needs a
+    /// Rust build of the fork point outside this repository (AGENTS §7.3).
+    Oracle,
+    /// Nothing to compare with the fork: a law over the kernel's own answers, a
+    /// refusal, or a measurement. Untouched by the deletion.
+    KernelOnly,
 }
 
-/// What one fork comparison actually counted, so "no disagreement" is never
-/// confused with "never ran" (AGENTS §7.3).
-#[derive(Default)]
-struct ForkTally {
-    logs: usize,
-    keys: usize,
-    values: usize,
-    entries: usize,
-    warning_lines: usize,
-    /// Parity **P21** sightings: a day whose `load` differs from the fork's in
-    /// the last ulp. Counted, and each one's displays checked to be equal.
-    p21: usize,
+/// One input class T5 covers.
+struct Class {
+    class: &'static str,
+    reach: Reach,
+    /// How many inputs the class carries, counted rather than claimed.
+    inputs: usize,
+    /// The names [`assert_parity`] gives them. Exact for a [`Reach::Frozen`]
+    /// class, so a fixture row that went missing is a failure and not a silent
+    /// skip; a sample or empty for the others.
+    names: Vec<String>,
+    why: &'static str,
 }
 
-/// Compare one log's kernel facts with fork point 4748911's own answer: key for
-/// key over [`FORK_REPLAY_KEYS`], plus the all-time entry count and the lines
-/// each reader refused. Every disagreement that is not a recorded design §17
-/// exception comes back by name.
-fn compare_with_fork(name: &str, text: &str, tz: Tz, fork_answer: &Value, t: &mut ForkTally) -> Vec<String> {
+/// **The ledger of T5's comparands, in code** (gaps 137, 147, 149).
+fn classes() -> Vec<Class> {
+    let corpus: Vec<String> = corpus_logs().into_iter().map(|(n, _)| n).collect();
+    let zones: Vec<String> = zone_cases().into_iter().map(|c| c.name).collect();
+    vec![
+        Class {
+            class: "the 7 corpus logs",
+            reach: Reach::Frozen,
+            inputs: corpus.len(),
+            names: corpus,
+            why: fork::FROZEN_FORK,
+        },
+        Class {
+            class: GENERATED_MONTH_CLASS,
+            reach: Reach::Frozen,
+            inputs: 1,
+            names: vec![GENERATED_MONTH.to_string()],
+            why: fork::FROZEN_CLASSES,
+        },
+        Class {
+            class: ZONE_CASE_CLASS,
+            reach: Reach::Frozen,
+            inputs: zones.len(),
+            names: zones,
+            why: fork::FROZEN_CLASSES,
+        },
+        Class {
+            class: "the generated 6-month log (40 a day)",
+            reach: Reach::Oracle,
+            inputs: 1,
+            names: vec![GENERATED_HALF_YEAR.to_string()],
+            why: "D21 freezes one generated month, not every generated class",
+        },
+        Class {
+            class: "generated sequences",
+            reach: Reach::Oracle,
+            inputs: SEQUENCES as usize,
+            names: (0..SEQUENCES).map(|s| format!("sequence {s}")).collect(),
+            why: "256 whole Replays is an order of magnitude past the corpus file; D21",
+        },
+        Class {
+            class: "undo triples (3 logs each)",
+            reach: Reach::Oracle,
+            inputs: TRIPLES as usize * 3,
+            names: Vec::new(),
+            why: "192 whole Replays; the undo law itself is kernel-only and survives",
+        },
+        Class {
+            class: "the windowed cache arms",
+            reach: Reach::Oracle,
+            inputs: 7,
+            names: Vec::new(),
+            why: "a 365-day log, too large to freeze; README gap 150",
+        },
+        Class {
+            class: "T0 (b)'s 200,000-line genesis, and P31's edited log",
+            reach: Reach::Oracle,
+            inputs: 2,
+            names: Vec::new(),
+            why: "entry and line counts only, from the reader; README gap 150",
+        },
+        Class {
+            class: "the undo law, the refusals, the measurements",
+            reach: Reach::KernelOnly,
+            inputs: 6,
+            names: Vec::new(),
+            why: "laws over the kernel's own answers: nothing for the fork to say",
+        },
+    ]
+}
+
+/// T5's side of [`fork::compare_replay_with_fork`]: the kernel's `Replay` is
+/// [`kernel_replay`]'s — `kernel_log::decode_facts`, the function
+/// `Ctx::replay_with` calls at S — and the counts are the answer's own, so
+/// nothing here reads the in-tree reader.
+fn compare_with_fork(
+    name: &str,
+    answer: &Value,
+    tz: Tz,
+    kf: &Facts,
+    fork_answer: &Value,
+    t: &mut fork::ForkTally,
+) -> Vec<String> {
+    fork::compare_replay_with_fork(name, &kernel_replay(answer, tz), kf.counts.0, &kf.warnings, fork_answer, t)
+}
+
+/// What every [`assert_parity`] in this binary compared against the fork,
+/// summed across the tests that ran.
+fn fork_arm_tally() -> &'static Mutex<fork::ForkTally> {
+    static T: OnceLock<Mutex<fork::ForkTally>> = OnceLock::new();
+    T.get_or_init(|| Mutex::new(fork::ForkTally::default()))
+}
+
+/// **T5's default comparand** (gap 137, W-11): fork point `4748911`, for every
+/// input a frozen answer exists for.
+///
+/// It is asked **before** the in-tree cross-check, and it names nothing §12
+/// deletes: one side is `kernel_answer` through [`kernel_replay`]
+/// (`kernel_log::decode_facts`, the function `Ctx::replay_with` calls at S), the
+/// other is bytes on disk. An input with no frozen answer is **counted as
+/// skipped** rather than passed over in silence, and
+/// [`t5_every_input_class_says_how_it_reaches_the_fork`] is what says which
+/// classes those are.
+fn fork_arm(name: &str, tz: Tz, answer: &Value, k: &Facts) {
+    let Some(fork) = fork::frozen_fork_answers().get(name) else {
+        fork_arm_tally().lock().expect("the fork tally").skipped += 1;
+        return;
+    };
+    let mut t = fork::ForkTally::default();
+    let findings = compare_with_fork(name, answer, tz, k, fork, &mut t);
+    assert!(
+        findings.is_empty(),
+        "{} disagreements with fork point 4748911 (each must be on design \u{a7}17's list):\n  {}",
+        findings.len(),
+        findings.join("\n  ")
+    );
+    fork_arm_tally().lock().expect("the fork tally").add(&t);
+}
+
+/// One frozen class, compared in full: every input of it, against the fork's
+/// own frozen answer.
+fn compare_frozen_class(class: &str, inputs: &[(&'static str, String, Tz, String)]) {
+    let frozen = fork::frozen_fork_answers();
+    let mut t = fork::ForkTally::default();
     let mut findings: Vec<String> = Vec::new();
-    let answer = kernel_answer(text, tz);
-    let kf = kernel_view(&answer);
-    let kr = kernel_replay(&answer, tz);
-    let kv_raw = serde_json::to_value(&kr).expect("the kernel's replay serialises");
-    let mut kv = kv_raw.clone();
-    as_fork_shaped(&mut kv);
-    let fork = &fork_answer["replay"];
-    t.logs += 1;
-
-    for key in FORK_REPLAY_KEYS {
-        let (k, f) = (&kv[key], &fork[key]);
-        assert!(!f.is_null() || k.is_null(), "{name}: the frozen fork has no key `{key}`");
-        t.keys += 1;
-        t.values += leaves(f);
-        if k == f {
-            continue;
-        }
-        let mut paths = Vec::new();
-        diff_paths(key, k, f, &mut paths);
-        let mut real: Vec<String> = Vec::new();
-        for (path, message) in paths {
-            // `days.<date>.load` is parity P21: counted and checked, never skipped.
-            if let Some(date) = path.strip_prefix("days.").and_then(|r| r.strip_suffix(".load")) {
-                t.p21 += 1;
-                let day = &fork["days"][date];
-                let fifths = kv_raw["days"][date]["load_fifths"].as_u64().expect("the kernel's fifths");
-                let fork_load = day["load"].as_f64().expect("the fork's load");
-                let block_min = u32_of(day["block_min"].as_u64().expect("the day's block_min"));
-                if let Some(why) = p21_display_is_unchanged(date, fifths, fork_load, block_min) {
-                    real.push(why);
-                }
-                continue;
-            }
-            real.push(message);
-        }
-        if real.is_empty() {
-            continue;
-        }
-        let shown = real.len().min(6);
-        findings.push(format!(
-            "{name}: `{key}` differs at {} leaf/leaves\n      {}",
-            real.len(),
-            real[..shown].join("\n      ")
-        ));
+    let mut n = 0usize;
+    for (c, name, tz, text) in inputs.iter().filter(|(c, ..)| *c == class) {
+        let _ = c;
+        let fork = frozen
+            .get(name)
+            .unwrap_or_else(|| panic!("no frozen fork answer for `{name}` — re-bless (see the GAP 146 banner)"));
+        let answer = kernel_answer(text, *tz);
+        let kf = kernel_view(&answer);
+        findings.extend(compare_with_fork(name, &answer, *tz, &kf, fork, &mut t));
+        n += 1;
     }
-
-    // The all-time entry count (design §8.4's `entryCount`, §11.4 step 5's
-    // `tm log` total; gap 136).
-    t.entries += 1;
-    let fork_entries = fork_answer["entries"].as_u64().expect("a frozen entry count");
-    if kf.counts.0 != fork_entries {
-        findings.push(format!("{name}: entries differ — kernel {} fork {fork_entries}", kf.counts.0));
-    }
-
-    // The physical lines each reader refused. Parity P15 makes the warning
-    // *text* differ by design (named constructors against serde's free text) —
-    // which line is refused must not.
-    let fork_lines: Vec<u64> = fork_answer["warningLines"]
-        .as_array()
-        .expect("frozen warning lines")
-        .iter()
-        .map(|l| l.as_u64().expect("a refused line"))
-        .collect();
-    t.warning_lines += fork_lines.len();
-    if kf.warnings != fork_lines {
-        findings.push(format!(
-            "{name}: the refused lines differ — kernel {:?} fork {fork_lines:?}",
-            kf.warnings
-        ));
-    }
-    findings
+    assert!(n > 0, "{class}: no inputs, so this test cannot fail");
+    assert_eq!(t.logs, n, "one comparison an input");
+    eprintln!(
+        "T5 frozen fork (4748911) — {class}: {} inputs, {} Replay keys ({} of the fork's 20 each), \
+         {} scalar values, {} entry counts, {} refused lines compared; parity P21 {} day records, \
+         every one displaying the same load; 0 other exceptions",
+        t.logs,
+        t.keys,
+        fork::FORK_REPLAY_KEYS.len(),
+        t.values,
+        t.entries,
+        t.warning_lines,
+        t.p21
+    );
+    assert!(
+        findings.is_empty(),
+        "{} disagreements with fork point 4748911 (each must be on design \u{a7}17's list):\n  {}",
+        findings.len(),
+        findings.join("\n  ")
+    );
 }
 
 /// **Gap 146's answer, and design §14.6 item 4's retarget**: the kernel's replay
 /// against **fork point 4748911's own**, frozen, over the corpus logs.
 ///
-/// This is the one differential in `cargo test --workspace` that §12's deletion
-/// cannot turn into a self-comparison, because neither side is the in-tree
-/// reader. When `support/replay.rs`'s body becomes the kernel at S, the `t5_*`
-/// tests above stop proving anything and **this** is what still bites.
+/// This is one of the differentials in `cargo test --workspace` that §12's
+/// deletion cannot turn into a self-comparison, because neither side is the
+/// in-tree reader.
 #[test]
 fn t5_the_corpus_logs_replay_as_the_frozen_fork_point_does() {
-    let frozen = frozen_fork_answers();
+    let frozen = fork::frozen_fork_answers();
     let tz = chrono_tz::America::Chicago;
-    let mut t = ForkTally::default();
+    let mut t = fork::ForkTally::default();
     let mut findings: Vec<String> = Vec::new();
     let logs = corpus_logs();
     for (name, text) in &logs {
         let fork = frozen.get(name).unwrap_or_else(|| {
             panic!("no frozen fork answer for `{name}` — re-bless (see the GAP 146 banner)")
         });
-        findings.extend(compare_with_fork(name, text, tz, fork, &mut t));
+        let answer = kernel_answer(text, tz);
+        let kf = kernel_view(&answer);
+        findings.extend(compare_with_fork(name, &answer, tz, &kf, fork, &mut t));
     }
     assert_eq!(t.logs, logs.len(), "one comparison a corpus log");
     assert!(
@@ -3792,12 +3920,12 @@ fn t5_the_corpus_logs_replay_as_the_frozen_fork_point_does() {
         t.logs
     );
     eprintln!(
-        "T5 frozen fork (4748911): {} logs, {} Replay keys ({} of the fork's 20 per log), \
+        "T5 frozen fork (4748911) — the corpus: {} logs, {} Replay keys ({} of the fork's 20 per log), \
          {} scalar values, {} entry counts, {} refused lines compared; parity P21 {} day records, \
          every one displaying the same load; 0 other exceptions",
         t.logs,
         t.keys,
-        FORK_REPLAY_KEYS.len(),
+        fork::FORK_REPLAY_KEYS.len(),
         t.values,
         t.entries,
         t.warning_lines,
@@ -3805,10 +3933,122 @@ fn t5_the_corpus_logs_replay_as_the_frozen_fork_point_does() {
     );
     assert!(
         findings.is_empty(),
-        "{} disagreements with fork point 4748911 (each must be on design §17's list):\n  {}",
+        "{} disagreements with fork point 4748911 (each must be on design \u{a7}17's list):\n  {}",
         findings.len(),
         findings.join("\n  ")
     );
+}
+
+/// **GAP 147, under D21**: the representative generated month, against the fork's
+/// own frozen answer — by **value**, so every parity P21 sighting stays visible
+/// and counted rather than normalised away by a digest.
+#[test]
+fn t5_the_frozen_generated_month_replays_as_the_fork_point_does() {
+    let inputs = frozen_class_inputs();
+    compare_frozen_class(GENERATED_MONTH_CLASS, &inputs);
+}
+
+/// **GAP 149's half of the retarget on this side**: §6.4's zone cases, the day
+/// index's own instrument, against the fork's frozen answers.
+#[test]
+fn t5_the_frozen_zone_cases_replay_as_the_fork_point_does() {
+    let inputs = frozen_class_inputs();
+    compare_frozen_class(ZONE_CASE_CLASS, &inputs);
+}
+
+/// **The census** (gaps 137, 147, 149): every input class T5 covers, and how its
+/// comparand reaches fork point 4748911 once §12 deletes the in-tree reader.
+///
+/// It fails if a frozen class loses a fixture row, if a fixture row belongs to no
+/// class, or if the frozen classes stop covering what they claim. That is the
+/// instrument README gap 16's lesson asks for: a differential that quietly stops
+/// comparing must break something, not keep passing.
+#[test]
+fn t5_every_input_class_says_how_it_reaches_the_fork() {
+    let classes = classes();
+    let frozen = fork::frozen_fork_answers();
+    let mut claimed: BTreeSet<String> = BTreeSet::new();
+    let (mut f_inputs, mut o_inputs, mut k_inputs) = (0usize, 0usize, 0usize);
+
+    for c in &classes {
+        match c.reach {
+            Reach::Frozen => {
+                assert_eq!(
+                    c.names.len(),
+                    c.inputs,
+                    "{}: a frozen class must name every one of its inputs",
+                    c.class
+                );
+                for n in &c.names {
+                    assert!(
+                        frozen.contains_key(n),
+                        "{}: no frozen fork answer for `{n}` — the class claims Frozen and is not",
+                        c.class
+                    );
+                    assert!(claimed.insert(n.clone()), "{}: `{n}` is claimed twice", c.class);
+                }
+                f_inputs += c.inputs;
+            }
+            Reach::Oracle => o_inputs += c.inputs,
+            Reach::KernelOnly => k_inputs += c.inputs,
+        }
+    }
+
+    let orphans: Vec<&String> = frozen.keys().filter(|k| !claimed.contains(*k)).collect();
+    assert!(orphans.is_empty(), "frozen fork answers no class claims: {orphans:?}");
+
+    // The frozen classes must really be the ones `fork_arm` can answer: the
+    // inputs list and the census are two statements of the same fact, and this
+    // is where they are made to agree.
+    let listed: BTreeSet<String> = frozen_class_inputs().into_iter().map(|(_, n, _, _)| n).collect();
+    let corpus: BTreeSet<String> = corpus_logs().into_iter().map(|(n, _)| n).collect();
+    assert_eq!(
+        listed.union(&corpus).cloned().collect::<BTreeSet<String>>(),
+        claimed,
+        "the frozen inputs list and the census disagree about what is frozen"
+    );
+
+    eprintln!("\nT5's comparands after \u{a7}12's deletion — how each input class reaches fork point 4748911:");
+    for c in &classes {
+        eprintln!("  {:<10} {:>5} input(s)  {}  ({})", format!("{:?}", c.reach), c.inputs, c.class, c.why);
+    }
+    eprintln!(
+        "  totals: {f_inputs} inputs compared against a frozen fork answer inside `cargo test --workspace`, \
+         {o_inputs} reachable only under TM_ORACLE (README gap 150), {k_inputs} kernel-only.\n"
+    );
+    assert!(f_inputs >= 20, "too little is frozen to guard a commit: {f_inputs} inputs");
+}
+
+/// **The deletion is mechanical, and this is what checks it** (gap 146).
+///
+/// Design §12's one-reader grep is the definition of "the reader". This test
+/// runs that alternation over **this file's own source** and requires every hit
+/// to be inside the `BEGIN … END THE IN-TREE CROSS-CHECK` region — so §12's
+/// deletion is `sed '/BEGIN THE IN-TREE/,/END THE IN-TREE/d'` plus the lines
+/// marked `// S: deleted with the reader`, and nothing else has to be found by
+/// reading.
+///
+/// The needles are built at run time rather than written as literals, because a
+/// file that greps itself would otherwise match its own test.
+#[test]
+fn no_reader_reference_escapes_the_deletion_region() {
+    const SELF: &str = include_str!("kernel_replay_parity.rs");
+    let scan = fork::reader_scan(SELF);
+    assert!(
+        scan.escapes.is_empty(),
+        "\u{a7}12's reader is named outside the deletion region, so the deletion is not mechanical:\n  {}",
+        scan.escapes.join("\n  ")
+    );
+    if scan.deleted {
+        eprintln!("T5's in-tree region: GONE, and no reference to \u{a7}12's reader remains");
+    } else {
+        assert!(scan.region_bytes > 4_000, "the region is too small to be the cross-check: {} bytes", scan.region_bytes);
+        assert!(scan.markers >= 8, "the marked call sites: {}", scan.markers);
+        eprintln!(
+            "T5's in-tree region: {} bytes, {} marked call sites outside it, 0 escapes",
+            scan.region_bytes, scan.markers
+        );
+    }
 }
 
 /// **Re-bless the frozen fork answers** from AGENTS §7.3's oracle scaffolding.
@@ -3822,7 +4062,9 @@ fn the_frozen_fork_answers_are_reblessed_from_the_oracle() {
         eprintln!(
             "the frozen fork answers: INERT — set TM_ORACLE to the fork-point oracle binary \
              (kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh prints its path) and \
-             TM_FORK_BLESS=1 to rewrite tests/fixtures/{FROZEN_FORK}"
+             TM_FORK_BLESS=1 to rewrite tests/fixtures/{} and tests/fixtures/{}",
+            fork::FROZEN_FORK,
+            fork::FROZEN_CLASSES
         );
         return;
     };
@@ -3836,16 +4078,9 @@ fn the_frozen_fork_answers_are_reblessed_from_the_oracle() {
     let mut out = String::new();
     for ((name, _), a) in logs.iter().zip(&answers) {
         assert!(a["replay"].is_object(), "{name}: the oracle answered no replay");
-        let row = json!({
-            "name": name,
-            "entries": a["entries"],
-            "warningLines": a["warningLines"],
-            "replay": a["replay"],
-        });
-        out.push_str(&serde_json::to_string(&row).expect("a frozen answer serialises"));
-        out.push('\n');
+        out.push_str(&fork::frozen_row(name, a));
     }
-    let path = fixtures_dir().join(FROZEN_FORK);
+    let path = fork::fixtures_dir().join(fork::FROZEN_FORK);
     std::fs::write(&path, &out).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
     eprintln!(
         "re-blessed {} from fork point 4748911 in {}: {} logs, {} bytes",
@@ -3854,4 +4089,41 @@ fn the_frozen_fork_answers_are_reblessed_from_the_oracle() {
         logs.len(),
         out.len()
     );
+
+    // The classes file: several zones, so one oracle call per zone, in the
+    // order the inputs list gives them.
+    let inputs = frozen_class_inputs();
+    let mut by_zone: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    for (i, (_, _, tz, _)) in inputs.iter().enumerate() {
+        by_zone.entry(tz.name().to_string()).or_default().push(i);
+    }
+    let mut rows: BTreeMap<usize, Value> = BTreeMap::new();
+    for (zone, idx) in &by_zone {
+        let texts: Vec<String> = idx.iter().map(|i| inputs[*i].3.clone()).collect();
+        let answers = fork_oracle(&bin, &["replay", zone], &texts);
+        assert_eq!(answers.len(), idx.len(), "{zone}: one fork answer per input");
+        for (i, a) in idx.iter().zip(answers) {
+            rows.insert(*i, a);
+        }
+    }
+    let mut out = String::new();
+    let mut sizes: BTreeMap<&str, usize> = BTreeMap::new();
+    for (i, (class, name, _, _)) in inputs.iter().enumerate() {
+        let a = &rows[&i];
+        assert!(a["replay"].is_object(), "{name}: the oracle answered no replay");
+        let row = fork::frozen_row(name, a);
+        *sizes.entry(class).or_default() += row.len();
+        out.push_str(&row);
+    }
+    let path = fork::fixtures_dir().join(fork::FROZEN_CLASSES);
+    std::fs::write(&path, &out).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+    eprintln!(
+        "re-blessed {} from fork point 4748911 over {} zones: {} inputs, {} bytes ({:?})",
+        path.display(),
+        by_zone.len(),
+        inputs.len(),
+        out.len(),
+        sizes
+    );
 }
+

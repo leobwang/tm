@@ -22046,3 +22046,258 @@ part 3**), **gaps 119, 129, 132, 133**, the three pre-switch assertions turned a
 clearing as written), the two `#[ignore]`s deleted, and the **§5.13 drive** (now performable in
 full: **gap 131**'s item is reworded, and it carries **gaps 138, 139, 143, 144**'s questions for
 the owner). Then **S2** (**gap 130**, D16) with quirk Q6(f) (**gap 86**), then **L9** (**gap 93**).
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 5, W-11 — the instrument is anchored outside the
+     tree.  **S IS NOT MADE HERE AND THIS BLOCK DOES NOT CLAIM IT IS.**  Under
+     D21 the fork retarget comes BEFORE S: T5's and the door suite's default
+     comparand becomes fork point 4748911, and the run proves it by SIMULATING
+     §12's deletion and showing both suites still compare — and still fail when
+     a kernel answer is corrupted.  Closes gaps 137, 146, 147, 149; takes gaps
+     150-152 (Track A's range is 150-159).  New gaps start at 153.  No Lean
+     edited: audit 3934, cheats 157, parity P35, burn-down 13, all unchanged.
+     No shipped source file was touched, so no behaviour can have moved.
+     =========================================================================== -->
+
+## Stage 5, W-11, 2026-09-16: the instrument is anchored outside the tree
+
+**The honest paragraph, first.** **S is still not made.** `tm/src/cli/ctx.rs`'s `Ctx::replay_with`
+still calls `Ctx::replay_of`, whose body is still `Log::parse_bytes(&bytes).replay(None, cfg.tz)`;
+`tm-core/src/log.rs` still holds every line §12 deletes; the only three `kernel_log::` references
+under `tm/src` are still gap 134's read-only line sweep in `lifecycle.rs`. **No file under
+`tm/src`, `tm-core/src` or `kernel/` was touched at all**, so no verb can answer differently than it
+did at `1075ce7`. This is the **fifth** run to leave the switch unmade, and it is the one D21 asked
+for: the switch's instrument now reads something other than the code the switch deletes.
+
+### What landed
+
+1. **T5's default comparand is the fork** (gap 137). `assert_parity_answer` asks `fork_arm` —
+   fork point `4748911`'s own frozen answers — **before** it asks the in-tree reader, and an input
+   with no frozen answer is **counted as skipped**, never passed over in silence (AGENTS §7.3).
+2. **The frozen classes file** (gap 147, under **D21**): `tm/tests/fixtures/fork-4748911-classes-replay.jsonl`,
+   **212,349 bytes**, 13 rows — one representative **generated month** (40 a day, 30 days;
+   193,601 B) and **§6.4's twelve zone cases** (18,748 B). Blessed from the oracle, by **value**:
+   no digest, because a digest would have to normalise parity **P21** out and so hide the one thing
+   P21 exists to watch. The corpus file was re-blessed in the same run and came back **byte-identical**
+   (146,868 B), which is what says the oracle and the fixture still agree.
+3. **`tm/tests/support/fork.rs`** (456 lines, new): the one place that reads the frozen answers back
+   and compares, shared by `kernel_replay_parity.rs` and `kernel_log_door.rs` — because W-10 put the
+   fixture in `tests/fixtures/` precisely so the door could use it.
+4. **The door suite is retargeted** (gap 149). Its headline test now compares the `All` scope with
+   the frozen fork; three scope tests compare against the kernel's **own** `All` answer (which that
+   headline test has just proved is the fork's); the render test compares against **the log's own
+   written bytes** and names no reader at all.
+5. **The deletion is mechanical, and a test says so.** Every reference either suite makes to §12's
+   reader is inside a `BEGIN … END THE IN-TREE CROSS-CHECK` region or on a line marked
+   `// S: deleted with the reader`, and `no_reader_reference_escapes_the_deletion_region` runs §12's
+   own alternation over each file's source to check it. **It keeps checking after S**: with the
+   banners gone it requires that *no* reference remains, so it becomes the assertion that the
+   comparand really moved rather than a comment saying it did.
+6. **Three denominators moved off the reader** and onto the kernel's own facts plus the log's bytes
+   (`off_their_own_date`, C5's late sleeps and early gaps, quirk Q6(b)'s retro instances) — a
+   denominator that silently goes to zero at S is a disguised gap (AGENTS §9.2). The reader is
+   demoted to a per-log **cross-check** of those numbers, and it earned its keep: it caught this
+   run's own error, that a late-bound sleep is measured against the **first** wake of the day and
+   not against any later one (generated sequence 129).
+
+### The acceptance that matters, actually run
+
+A copy of the tree at `/tmp/claude-1000/s-sim`, with §12's reader made **unreachable**: the banner
+regions and every marked line deleted from both suites (**401 test lines**); `support/replay.rs`'s
+reader-backed helpers deleted; and in `tm-core/src` and `tm/src` the reader **renamed**
+(`Log::parse`, `parse_bytes`, `replay`, `DayIndex`, `parse_timestamp`, `undo_mask`, `iter_day`) so
+that **any** surviving reference is a compile error rather than a silent success, with `log.rs`'s own
+394 test lines `cfg`'d out as §12 requires. (`tm/src`'s own reader use is S's **body swap**, built
+and measured green at W-10, and is not what this proves.)
+
+```
+########## (1) T5 AND THE DOOR, WITH §12's READER UNREACHABLE ##########
+the door's in-tree region: GONE, and no reference to §12's reader remains
+  the door's fork point 4748911 — the `All` scope against the frozen fork: 16 inputs, 288 Replay
+  keys (18 of the fork's 20 each), 32976 scalar values, 16 entry counts, 14 refused-line lists
+  compared; parity P21 8 day records, every one displaying the same load; 2 inputs had no frozen
+  answer; 0 other exceptions
+test result: ok. 16 passed; 0 failed; 0 ignored
+T5's in-tree region: GONE, and no reference to §12's reader remains
+T5 frozen fork (4748911) — the corpus: 7 logs, 126 Replay keys, 7189 scalar values, 7 entry counts,
+  7 refused lines compared; parity P21 1 day records, every one displaying the same load
+T5 frozen fork (4748911) — the generated 1-month log (40 a day): 1 inputs, 18 Replay keys, 9299
+  scalar values, 1 entry counts; parity P21 3 day records, every one displaying the same load
+T5 frozen fork (4748911) — §6.4's zone cases: 12 inputs, 216 Replay keys, 803 scalar values,
+  12 entry counts; parity P21 0 day records
+test result: ok. 22 passed; 0 failed; 4 ignored
+
+########## (2) ONE KERNEL ANSWER CORRUPTED — IT MUST NOW FAIL ##########
+(`kernel_replay`, which *is* `kernel_log::decode_facts`, returns `r.unknown += 1`)
+failures:
+1 disagreements with fork point 4748911 (each must be on design §17's list):
+  logs/energy-14d.jsonl: `unknown` differs at 1 leaf/leaves
+      unknown: kernel 1 fork 0
+7 disagreements with fork point 4748911 (each must be on design §17's list):
+  logs/energy-14d.jsonl: `unknown` differs at 1 leaf/leaves — kernel 1 fork 0
+  logs/malformed.jsonl:  `unknown` differs at 1 leaf/leaves — kernel 2 fork 1
+  logs/review-14d.jsonl: `unknown` differs at 1 leaf/leaves — kernel 1 fork 0
+  logs/three-days.jsonl: `unknown` differs at 1 leaf/leaves — kernel 2 fork 1
+```
+
+**So gap 146 is closed**: with the reader gone the suites still build, still run, and still compare
+against something that is not themselves — and when the kernel's answer moves, they say so by name.
+
+### How every input class reaches the fork (printed by the test, not claimed here)
+
+| reach | inputs | class |
+|---|---|---|
+| **Frozen** | 7 | the corpus logs |
+| **Frozen** | 1 | the generated 1-month log (40 a day) |
+| **Frozen** | 12 | §6.4's zone cases |
+| Oracle | 1 | the generated 6-month log |
+| Oracle | 256 | generated sequences |
+| Oracle | 192 | undo triples (3 logs each) |
+| Oracle | 7 | the windowed cache arms |
+| Oracle | 2 | T0 (b)'s 200,000-line genesis, and P31's edited log |
+| KernelOnly | 6 | the undo law, the refusals, the measurements |
+
+`t5_every_input_class_says_how_it_reaches_the_fork` fails if a frozen class loses a fixture row, if a
+row belongs to no class, or if fewer than 20 inputs are frozen. **20 frozen inputs guard a commit;
+458 reach the fork only under `TM_ORACLE`** — that is gap 150, and it is D21's deliberate line, not
+an oversight.
+
+### The door suite's 15, one line each (gap 149's answer)
+
+| test | comparand now | at S |
+|---|---|---|
+| `the_door_is_the_reader_it_replaces` | **frozen fork answer** (+ marked reader cross-check) | survives whole |
+| `the_doors_narrow_scopes_carry_what_they_promise` | **the kernel's own `All` scope** | survives whole |
+| `the_door_names_every_unreadable_line_not_just_the_last_calls` | **a hand-written expectation**, now asserted first | survives whole |
+| `the_doors_render_is_the_lines_own_bytes` | **the log's own written bytes** — no reader at all | survives whole |
+| `the_doors_tail_headers_are_the_recorders` | **the door's own cut-0 read, suffixed** | survives, weaker (gap 152) |
+| `the_doors_hot_scope_answers_every_all_time_question` | **the kernel's own `All` scope** | survives whole |
+| `the_doors_total_is_the_logs_all_time_entry_count` | **the kernel's own `All` scope** | survives whole |
+| `the_doors_undo_pin_is_the_smallest_young_log_line` | hand-built JSON | untouched |
+| `the_doors_merge_prefers_the_answer_and_keeps_day_order` | hand-built | untouched |
+| `every_door_function_the_switch_calls_is_exercised_here` | the module's own source | untouched |
+| `kernel_log::tests::*` (5) | kernel-only | untouched |
+
+W-10 measured that **7 of the 15** named a chokepoint §12 deletes. After this run **none of them
+does as its comparand**: three moved to the frozen fork or the log's bytes, three to the kernel's own
+`All` scope, one to a hand-written expectation, and every remaining reader line is marked.
+
+### Gap 150 (new; label W11-a) — 458 inputs reach the fork only under `TM_ORACLE`
+
+1. **What is not done.** The generated half-year, the 256 generated sequences, the 192 undo-triple
+   logs, the 7 windowed cache arms and T0 (b)'s two large logs are not frozen. In plain
+   `cargo test --workspace` their comparand after S is the kernel itself.
+2. **Why.** **D21.** One representative generated month is frozen; every generated class is not,
+   because the only way to afford them all is a digest, and a digest must normalise parity P21 out.
+   Measured: the month alone is 193,601 bytes for 1,191 lines, so the half-year is ≈ 1.2 MB and the
+   sequences more again.
+3. **What it costs.** Those classes keep their *coverage* — the `TM_ORACLE` arm reaches every one of
+   them, widened this run from 8 logs to **469 over 6 zones** — but they stop guarding a commit,
+   because that arm needs a Rust build of the fork point outside the repository (AGENTS §7.3).
+   The undo **law** itself is over the kernel's own answers and is untouched.
+4. **When it clears.** By a decision, not by work: either freeze more (the bytes are the only cost,
+   and `frozen_class_inputs()` is the one list to extend) or accept the `TM_ORACLE` arm as the
+   guard for the large classes. The owner has taken the first half of that decision in D21.
+
+### Gap 151 (new; label W11-b) — §12's deletion list reaches past the reader
+
+1. **What is not done.** Design §12 lists `parse_instance_status`, `Event::primary_id` and
+   `Event::is_state_change` among S's deletions. They are used by code that is **not** the reader:
+   T5's undo-triple generator (`undo_matches`, `untouched_by`, `undos_for`, 3 sites),
+   `support/replay.rs`'s `headers_of_text`, `kernel_log_grammar.rs` and `log_narrowed_facts.rs`.
+2. **Why.** They are `Event` accessors, and `Event` itself §12 **keeps** (it is the writer's). The
+   list was written for the reader and swept them up.
+3. **What it costs.** Nothing yet — the deletion simulation left them standing and both suites built
+   — but at S they are either kept (and §12's list is wrong) or replaced at four call sites that
+   have nothing to do with replay. It is a small decision that should not be discovered inside the
+   switch commit.
+4. **When it clears.** At S, by keeping them and correcting §12's list, which is what the evidence
+   here supports.
+
+### Gap 152 (new; label W11-c) — what the retarget could not carry across
+
+1. **What is not done.** Three comparisons are weaker after S than before it:
+   `the_doors_tail_headers_are_the_recorders` keeps only the suffix property, not the per-line
+   `(line, tag, id)` the reader gave it; and T5's `t5_p33_…`, `t5_p34_…` and the two `#[ignore]`d
+   measurements lose their comparand entirely.
+2. **Why.** The fork's serialised `Replay` carries 20 keys and `rows` is **`#[serde(skip)]`**, so the
+   frozen answers cannot speak about per-line headers or displays at all. P33 and P34 are *named
+   exceptions* whose whole content is "the reader does X, the kernel does Y".
+3. **What it costs.** The tail-header property drops from "these are the reader's headers" to "these
+   are the suffix of the door's own whole read" — real, and measured over 7 texts and 153 cuts, but
+   it could not catch a fault the door makes consistently at every cut. P33/P34 become assertions
+   about the kernel alone.
+4. **When it clears.** By widening the oracle's `replay` mode to emit the fork's per-line view
+   (`tm-oracle` already links the fork's `tm-core::log`), which is the same move **D23** makes for
+   T1-T3's `parse-entry` mode — best done with it, in Track B's step.
+
+### Observable behaviour changes
+
+**None.** `git diff --name-only 1075ce7..HEAD` contains nothing under `tm/src`, `tm-core/src`,
+`kernel/TmKernel`, `kernel/corpus/`, no `.lean`, no `Cargo.toml`, no `Cargo.lock` and no
+`lean-toolchain`. The diff is two test files, one new test support module, one new test fixture, and
+three documents. No log bytes, no refusal text, no `--json` shape, no new capability.
+
+### Recorded disagreements between the design, the ledger and the repo
+
+1. **§12's one-reader grep now reads 136, and 125 of that is unchanged.** The alternation matches
+   this run's *instrument*: **9** hits are the deletion guard's own literal needle list in
+   `support/fork.rs`, and **2** are the bridge lines inside the deletion regions. Outside the
+   instrument the count is exactly the parent's **125**. Quote §12's alternation, never R8's 89
+   (W-7's disagreement 1, still standing, now for the fifth run) — and from here on say which of
+   the two numbers is meant.
+2. **Design §14.6 item 4 was one line of design and a step of work**, as W-9 said. It is corrected
+   in place with what was actually built.
+3. **§12's deletion list is wider than the reader** (gap 151).
+4. **The fork's `Replay` cannot answer for `rows`** (gap 152). AGENTS §7.3 says the two `Replay`s are
+   comparable "key for key over the whole structure"; that is true of the 18 keys compared and
+   silent about the two that are `#[serde(skip)]` on this branch.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited.** Goals discharged, refuted, added: none; burn-down **13 → 13**, all stage 6's.
+New theorems: none — the audit stays at **3934**. New `decide`/`rfl` witnesses: none, so no probe
+budget was spent. New cheats: none (highest **157**). New parity entries: none (highest stays
+**P35**) — the frozen arms compare against the **existing** P21 and P15 rows and add no exception.
+`TmKernel.lean` imports: **78**. No predicate or assertion was weakened, no goal deleted, no memory
+bound raised, no corpus reblessed; the one committed fixture that was re-blessed came back
+byte-identical and the new one was blessed from the fork point.
+
+### Numbers
+
+**Taken:** gaps **150-152**. **Highest:** gap 152, cheat 157, parity P35. New gaps start at **153**.
+
+**Re-measured** (main worktree, on the tree committed; every command capped at `MemoryMax=40G`,
+`MemorySwapMax=0`; the FFI suite and the fork-oracle work at 16G):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, **3.04 / 3.04 / 3.00 s** (parent `1075ce7`/W-10: 3.03 / 3.03 / 3.07). Flat, far inside the 10%-per-step rule |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged; all stage 6) |
+| `cargo test --workspace` | **1130 passed / 0 failed / 9 ignored across 79 result lines**, exit 0, **0 warnings** (parent: **1125 / 0 / 9** across 79). **+5 passing**: two frozen-class arms, the class census, and a deletion guard in each suite |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) |
+| T5 (`kernel_replay_parity`) | **22 passed / 0 failed / 4 ignored**; **26 passed** with `--include-ignored`, **6.5 s** (parent: 22 with `--include-ignored`) |
+| the door suite (`kernel_log_door`) | **16 passed / 0 failed**, **1.6 s** (parent: 15) |
+| `cli_latency --include-ignored` | **5 passed / 0 failed**, **9.95 s** |
+| `kernel_call_counts` | **1 passed** — `log == 0` for eleven verbs, `== 1` for `tm check` |
+| frozen fork inside `cargo test --workspace` | T5 **20 inputs** (7 corpus + 1 month + 12 zone cases): **360 `Replay` keys, 17,291 scalar values, 20 entry counts, 7 refused-line lists, 4 P21 sightings**. The door **16 scoped reads**: **288 keys, 32,976 values, 16 entry counts, 14 refused-line lists, 8 P21 sightings** |
+| the `TM_ORACLE` arm | **469 logs over 6 zones, 8,442 `Replay` keys, 469 entry counts, 8 fitted models, 195,243 scalar values; 24 P21 sightings, no other disagreement** (parent: 8 logs, 144 keys, 16,772 values, 4 P21) |
+| the fixtures | corpus **146,868 B** (re-blessed, byte-identical); classes **212,349 B**, 13 rows (month 193,601 + zone cases 18,748) |
+| the deletion simulation | **401 test lines** deleted mechanically (T5 region 18,145 B + 13 marked lines; door region 1,448 B + 16 marked lines); `log.rs` 3,609 → 3,217 lines. Both suites **green and still comparing**; corrupted, **1 and 7 named disagreements** |
+| §12's one-reader grep | **136** (parent 125) — **125 outside this run's instrument**, +9 the guard's needle list, +2 the bridge lines |
+| the diff | 2 test files **+895 −540**; 2 new files (`support/fork.rs` 456 lines; the classes fixture 13 rows / 212,349 B); `AGENTS.md` **+23 −1**; the design **+6**; and this block. **No shipped source file**, no Lean, no `Cargo.toml`, no `lean-toolchain`, no `kernel/corpus/` |
+
+**Owed next: S, with its instrument now outside the tree.** In order: **gap 148** (Track B: D23's
+`parse-entry` mode, so T1-T3 keep a differential after §12), **gap 144**'s three-way `tm log --json`
+decision (Track C, under **D22**: `RawValue` scoped to the renderer, pretty-printing re-emitted and
+**verified**), and **gap 145**'s tolerant `Ctx::load` for `tm check`. Then design §14.6's contents
+**1, 2 and 5** — the body swap (built and measured green at W-9, **141.8-151.8 ms** for a three-year
+later verb against the pre-switch 278.6 ms) plus §12's deletion, with item 7's D18 defaults (**gap
+120 part 3** and **gap 145**), **gaps 119, 129, 132, 133**, the three pre-switch assertions turned
+around (`no_verb_makes_a_kernel_log_call_before_the_switch`,
+`every_scope_is_the_whole_replay_before_the_switch`, `cli_latency`'s cache-file count — **gap 140**
+clearing as written), the call-count assertion turned on, the two `#[ignore]`s deleted, and the
+**§5.13 drive**. Then **S2** (**gap 130**, D16) with quirk Q6(f) (**gap 86**), then **L9**
+(**gap 93**).

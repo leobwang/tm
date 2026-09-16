@@ -35,6 +35,10 @@ mod kernel_log;
 mod replay;
 
 #[allow(dead_code)]
+#[path = "support/fork.rs"]
+mod fork;
+
+#[allow(dead_code)]
 #[path = "support/loggen.rs"]
 mod loggen;
 
@@ -46,6 +50,37 @@ use chrono_tz::Tz;
 use serde_json::Value;
 
 const TZ: Tz = chrono_tz::America::Chicago;
+
+// ===========================================================================
+// BEGIN THE IN-TREE CROSS-CHECK — THE ARM §12 DELETES (README gaps 146, 149)
+//
+// Every use the door suite makes of the reader design §12 deletes is behind
+// these two functions, and every call site outside this region is marked
+// `// S: deleted with the reader`.  At S the region goes and those lines go
+// with it; `no_reader_reference_escapes_the_deletion_region` is what checks
+// that rather than asserting it.
+//
+// What is left when they go is recorded per test in the README block for
+// W-11: `the_door_is_the_reader_it_replaces` keeps its fork arm (the frozen
+// answers below), `the_doors_render_is_the_lines_own_bytes` needs no reader at
+// all any more, and the rest are named there by what they lose.
+// ===========================================================================
+mod in_tree {
+    use super::*;
+
+    /// The whole in-tree reader's `Replay` of `text`, through the chokepoint.
+    pub fn reader(text: &str) -> tm_core::log::Replay {
+        replay::replay_of_text(text, TZ)
+    }
+
+    /// The 1-based physical lines the in-tree reader refuses.
+    pub fn refused_lines(text: &str) -> Vec<u64> {
+        replay::warning_lines_of_text(text)
+    }
+}
+// ===========================================================================
+// END THE IN-TREE CROSS-CHECK
+// ===========================================================================
 
 /// The corpus logs T5 reads, by the same paths.
 fn corpus_logs() -> Vec<(String, String)> {
@@ -111,26 +146,56 @@ fn the_door_is_the_reader_it_replaces() {
     logs.push(("generated 1mo (40 a day)".into(), loggen::text(&loggen::log(loggen::Rate::Forty, 30))));
     logs.push(("generated 1mo (61 a day)".into(), loggen::text(&loggen::log(loggen::Rate::SixtyOne, 30))));
     let (mut compared, mut days) = (0usize, 0usize);
+    let frozen = fork::frozen_fork_answers();
+    let mut t = fork::ForkTally::default();
+    let mut findings: Vec<String> = Vec::new();
     for (name, text) in &logs {
         let (dir, bytes) = tree(text);
         let today = day_after(text);
-        let fork = replay::replay_of_text(text, TZ);
+        let reader = in_tree::reader(text); // S: deleted with the reader
         // Twice: genesis, then from the checkpoint it wrote.
         for pass in ["genesis", "from the checkpoint"] {
             let read = door(dir.path(), &bytes, today, kernel_log::Scope::All);
-            assert!(
-                read.replay == fork,
-                "{name} ({pass}): the door's Replay is not the reader's"
-            );
-            assert_eq!(read.replay.ported_facts(), fork.ported_facts(), "{name} ({pass}): the ported facts (D14)");
-            assert_eq!(read.replay.line_count(), fork.line_count(), "{name} ({pass}): the line count");
-            assert_eq!(read.replay.entry_count(), fork.entry_count(), "{name} ({pass}): the entry count");
-            assert_eq!(read.replay.view(), fork.view(), "{name} ({pass}): the view rows");
+
+            // **The comparand that survives §12** (gap 149). The door's `All`
+            // scope, against fork point 4748911's own frozen answer — neither
+            // side the in-tree reader, so the deletion cannot make it vacuous.
+            // The refused lines come from the kernel's own sweep, which is what
+            // `tm check` calls and what §12 leaves standing.
+            match frozen.get(name) {
+                Some(f) => {
+                    let swept = kernel_log::line_warnings(&bytes, &today.to_string(), &wire(dir.path()))
+                        .expect("the sweep answers");
+                    let refused: Vec<u64> = swept.iter().map(|w| w.line as u64).collect();
+                    findings.extend(fork::compare_replay_with_fork(
+                        &format!("{name} ({pass})"),
+                        &read.replay,
+                        read.replay.entry_count() as u64,
+                        &refused,
+                        f,
+                        &mut t,
+                    ));
+                }
+                None => t.skipped += 1,
+            }
+
+            // The in-tree cross-check: sharper while it exists, because the
+            // reader's `PartialEq`, `ported_facts()` and `view()` reach fields
+            // the fork's serialised `Replay` does not carry.
+            assert!(read.replay == reader, "{name} ({pass}): the door's Replay is not the reader's"); // S: deleted with the reader
+            assert_eq!(read.replay.ported_facts(), reader.ported_facts(), "{name} ({pass}): the ported facts (D14)"); // S: deleted with the reader
+            assert_eq!(read.replay.line_count(), reader.line_count(), "{name} ({pass}): the line count"); // S: deleted with the reader
+            assert_eq!(read.replay.entry_count(), reader.entry_count(), "{name} ({pass}): the entry count"); // S: deleted with the reader
+            assert_eq!(read.replay.view(), reader.view(), "{name} ({pass}): the view rows"); // S: deleted with the reader
             compared += 1;
         }
-        days += fork.days.len();
+        days += reader.days.len(); // S: deleted with the reader
     }
+    assert_eq!(t.logs, 16, "8 of the 9 logs are frozen, read twice each");
+    assert!(t.values > 8_000, "the fork denominator is too small to mean anything: {}", t.values);
     eprintln!("the door: {} logs, {compared} scoped reads, {days} days compared, 0 differences", logs.len());
+    eprintln!("  the door's {}", t.line("the `All` scope against the frozen fork"));
+    fork::no_disagreement(&findings);
 }
 
 /// Which top-level fields of `a` differ from `b`'s: what a scope narrows away, by name.
@@ -178,36 +243,39 @@ fn the_doors_narrow_scopes_carry_what_they_promise() {
     let text = loggen::text(&loggen::log(loggen::Rate::Forty, 200));
     let (dir, bytes) = tree(&text);
     let today = day_after(&text);
-    let fork = replay::replay_of_text(&text, TZ);
-
+    // **The comparand that survives §12** (gap 149): the door's own `All` scope,
+    // which `the_door_is_the_reader_it_replaces` has already compared with the
+    // frozen whole. A narrowing is measured against the whole answer, and the
+    // whole answer is the whole's — so this test keeps its bite after S.
     let all = door(dir.path(), &bytes, today, kernel_log::Scope::All);
-    assert!(all.replay == fork, "the `All` scope is the whole reader's");
+    let whole = &all.replay;
+    assert!(all.replay == in_tree::reader(&text), "the `All` scope is the whole reader's"); // S: deleted with the reader
 
     let hot = door(dir.path(), &bytes, today, kernel_log::Scope::Hot);
     assert!(
-        hot.replay.days.len() < fork.days.len(),
+        hot.replay.days.len() < whole.days.len(),
         "a 200-day log must fold something, else this test proves nothing: {} of {} days",
         hot.replay.days.len(),
-        fork.days.len()
+        whole.days.len()
     );
     for (date, day) in &hot.replay.days {
-        assert_eq!(Some(day), fork.days.get(date), "the hot day {date} is not the reader's");
+        assert_eq!(Some(day), whole.days.get(date), "the hot day {date} is not the whole answer's");
     }
     // **Which fields a scope narrows**, measured rather than assumed. §11.1 says `Hot` merges
     // "the answer only (A, W, O)" without saying which of `Replay`'s fields that leaves short,
     // and the answer turns out to be less obvious than the sentence: an item's *aggregate*
     // minutes ride the checkpoint, but its per-day breakdown and its done dates are the window
     // records', so `items` and `done_dates` narrow with the scope while `named` does not.
-    let narrowed = narrowed_fields(&hot.replay, &fork);
+    let narrowed = narrowed_fields(&hot.replay, whole);
     assert!(
         !narrowed.contains(&"named"),
         "`named` rides the checkpoint and must be whole at every scope; narrowed: {narrowed:?}"
     );
-    assert_eq!(hot.replay.line_count(), fork.line_count(), "the line count is whole at `Hot`");
+    assert_eq!(hot.replay.line_count(), whole.line_count(), "the line count is whole at `Hot`");
     eprintln!("the door's `Hot` narrowing: {narrowed:?}");
 
     // `Dates` reaches back to the days it names, and each is the reader's.
-    let first = *fork.days.keys().next().expect("a day");
+    let first = *whole.days.keys().next().expect("a day");
     let dates = door(
         dir.path(),
         &bytes,
@@ -217,15 +285,15 @@ fn the_doors_narrow_scopes_carry_what_they_promise() {
     let reached: BTreeSet<NaiveDate> = dates.replay.days.keys().copied().collect();
     assert!(reached.contains(&first), "the `Dates` scope reaches its own first day");
     for d in &reached {
-        assert_eq!(dates.replay.days.get(d), fork.days.get(d), "the dated day {d} is not the reader's");
+        assert_eq!(dates.replay.days.get(d), whole.days.get(d), "the dated day {d} is not the whole answer's");
     }
-    eprintln!("the door's `Dates` narrowing: {:?}", narrowed_fields(&dates.replay, &fork));
+    eprintln!("the door's `Dates` narrowing: {:?}", narrowed_fields(&dates.replay, whole));
     eprintln!(
         "the door's scopes: hot {} days, dates {} days, all {} days, reader {} days",
         hot.replay.days.len(),
         dates.replay.days.len(),
         all.replay.days.len(),
-        fork.days.len()
+        whole.days.len()
     );
 }
 
@@ -252,13 +320,15 @@ fn the_door_names_every_unreadable_line_not_just_the_last_calls() {
 
     let swept = kernel_log::line_warnings(&bytes, &now, &wire(dir.path())).expect("the sweep answers");
     let got: Vec<u64> = swept.iter().map(|w| w.line as u64).collect();
-    let want = replay::warning_lines_of_text(&text);
-    assert_eq!(got, want, "the sweep's lines are the reader's");
+    // The hand-written expectation first, because it is the one that survives
+    // §12: it names the three lines this test damaged, by construction.
     assert_eq!(
         got,
         vec![early as u64 + 1, middle as u64 + 1, late as u64 + 1],
         "every damaged line is named, whichever chunk it fell in"
     );
+    let want = in_tree::refused_lines(&text); // S: deleted with the reader
+    assert_eq!(got, want, "the sweep's lines are the reader's"); // S: deleted with the reader
     for w in &swept {
         assert_eq!(w.text, "not json at all", "the warning quotes the line's own bytes");
         assert!(w.error.starts_with("not JSON"), "the warning names its cause: {}", w.error);
@@ -292,16 +362,20 @@ fn the_doors_render_is_the_lines_own_bytes() {
     let wanted: Vec<u64> = vec![1, 2, kernel_log::CHUNK_LINES as u64, kernel_log::CHUNK_LINES as u64 + 1, n / 2, n - 1, n];
 
     let rendered = kernel_log::render_lines(&bytes, &now, &wire(dir.path()), &wanted).expect("the render answers");
-    let fork: std::collections::BTreeMap<u64, tm_core::log::LogEntry> =
-        replay::entries_of_text(&text).into_iter().collect();
     assert_eq!(rendered.len(), wanted.len(), "every wanted line comes back");
     for line in &wanted {
         let (value, display) = rendered.get(line).unwrap_or_else(|| panic!("line {line} was not rendered"));
-        let entry = fork.get(line).unwrap_or_else(|| panic!("the reader has no line {line}"));
+        // **The comparand is the log's own bytes** (gap 149, W-11). It used to be
+        // `entries_of_text`, which is `Log::parse` — so §12's deletion would have
+        // made this test compare the kernel's rendering with the kernel's own.
+        // The writer's bytes are already on disk: `loggen` writes what
+        // `LogEntry::to_json` writes, and that is what `tm log --json` must
+        // reproduce. Nothing here reads the reader.
+        let written = &lines[*line as usize - 1];
         assert_eq!(
             serde_json::from_str::<Value>(value.get()).expect("the kernel's rendering parses"),
-            serde_json::to_value(entry).expect("the reader's entry serialises"),
-            "line {line}: the kernel's rendering is not the reader's entry"
+            serde_json::from_str::<Value>(written).expect("the written line parses"),
+            "line {line}: the kernel's rendering is not the line that was written"
         );
         // **By bytes, not only by value** (T2, parity P20). Comparing two parsed
         // `Value`s cannot see a key *order* change — this workspace's `serde_json`
@@ -309,10 +383,12 @@ fn the_doors_render_is_the_lines_own_bytes() {
         // is exactly what `tm log --json` shows. This is the assertion that bites.
         assert_eq!(
             value.get(),
-            entry.to_json().expect("the reader's entry serialises").as_str(),
+            written.as_str(),
             "line {line}: the kernel's rendering is not byte-identical to the writer's"
         );
-        assert_eq!(*display, entry.t.format("%Y-%m-%d %H:%M").to_string(), "line {line}: the display");
+        let t = serde_json::from_str::<Value>(written).expect("the written line parses");
+        let stamp = chrono::DateTime::parse_from_rfc3339(t["t"].as_str().expect("a written `t`")).expect("a stamp");
+        assert_eq!(*display, stamp.format("%Y-%m-%d %H:%M").to_string(), "line {line}: the display");
     }
     eprintln!("the door's render: {} lines asked of a {}-line log, across {} chunks", wanted.len(), n, n as usize / kernel_log::CHUNK_LINES + 1);
 }
@@ -340,15 +416,19 @@ fn the_doors_tail_headers_are_the_recorders() {
     for (k, text) in texts.iter().enumerate() {
         let (dir, bytes) = tree(text);
         let now = if text.trim().is_empty() { "2026-09-15".to_string() } else { day_after(text).to_string() };
-        let whole = replay::replay_of_text(text, TZ);
-        for after in 0..=whole.line_count() + 2 {
+        // **The comparand that survives §12** (gap 149): the door's own read from
+        // cut 0 is every header the log has, and a read from cut `after` must be
+        // exactly its suffix. That is the property the recorder depends on, and
+        // neither side of it is the reader.
+        let from_zero = kernel_log::headers_after(&bytes, &now, &wire(dir.path()), 0).expect("a tail read");
+        let lines = kernel_log::split(&bytes).lines.len() as u64;
+        let in_tree_whole = in_tree::reader(text); // S: deleted with the reader
+        for after in 0..=lines + 2 {
             let got = kernel_log::headers_after(&bytes, &now, &wire(dir.path()), after).expect("a tail read");
-            let want: Vec<(u64, String, Option<String>)> = whole
-                .headers_from(after + 1)
-                .iter()
-                .map(|r| (r.line, r.tag.clone(), r.id.clone()))
-                .collect();
-            assert_eq!(got, want, "text {k}, after {after}");
+            let want: Vec<(u64, String, Option<String>)> = from_zero.iter().filter(|h| h.0 > after).cloned().collect();
+            assert_eq!(got, want, "text {k}, after {after}: the tail is not the suffix of the whole");
+            let in_tree_want: Vec<(u64, String, Option<String>)> = in_tree_whole.headers_from(after + 1).iter().map(|r| (r.line, r.tag.clone(), r.id.clone())).collect(); // S: deleted with the reader
+            assert_eq!(got, in_tree_want, "text {k}, after {after}"); // S: deleted with the reader
             cuts += 1;
         }
     }
@@ -472,6 +552,34 @@ fn every_door_function_the_switch_calls_is_exercised_here() {
     eprintln!("the door's surface: {} functions, every one called here", names.len());
 }
 
+/// **The deletion is mechanical here too, and this is what checks it** (gap 149).
+///
+/// Every reference this file makes to the reader design §12 deletes is either
+/// inside the `BEGIN … END THE IN-TREE CROSS-CHECK` region or on a line marked
+/// `// S: deleted with the reader`. After S, with the region gone, the same test
+/// requires that **no** reference remains — so it goes on being the instrument
+/// instead of becoming a comment.
+#[test]
+fn no_reader_reference_escapes_the_deletion_region() {
+    const SELF: &str = include_str!("kernel_log_door.rs");
+    let scan = fork::reader_scan(SELF);
+    assert!(
+        scan.escapes.is_empty(),
+        "\u{a7}12's reader is named outside the deletion region, so the deletion is not mechanical:\n  {}",
+        scan.escapes.join("\n  ")
+    );
+    if scan.deleted {
+        eprintln!("the door's in-tree region: GONE, and no reference to \u{a7}12's reader remains");
+    } else {
+        assert!(scan.region_bytes > 500, "the region: {} bytes", scan.region_bytes);
+        assert!(scan.markers >= 8, "the marked call sites: {}", scan.markers);
+        eprintln!(
+            "the door's in-tree region: {} bytes, {} marked call sites outside it, 0 escapes",
+            scan.region_bytes, scan.markers
+        );
+    }
+}
+
 /// **Gap 135**: every *all-time* question a verb asks is answered whole at `Hot`.
 ///
 /// `Ctx::load` defaults every verb not named in §11.1 to `Hot`, and `Hot` merges the answer
@@ -497,21 +605,25 @@ fn the_doors_hot_scope_answers_every_all_time_question() {
     let text = loggen::text(&loggen::log(loggen::Rate::Forty, 200));
     let (dir, bytes) = tree(&text);
     let today = day_after(&text);
-    let fork = replay::replay_of_text(&text, TZ);
+    // The comparand is the door's own `All` scope (gap 149), which the frozen
+    // whole has already answered for.
+    let all = door(dir.path(), &bytes, today, kernel_log::Scope::All).replay;
+    let whole = &all;
     let hot = door(dir.path(), &bytes, today, kernel_log::Scope::Hot).replay;
+    assert!(all == in_tree::reader(&text), "the `All` scope is the whole reader's"); // S: deleted with the reader
 
     // Non-vacuity, both halves: `Hot` must really be a narrowing here, and it must really narrow
     // the *date sets* the two questions below used to be answered from.
     assert!(
-        hot.days.len() < fork.days.len(),
+        hot.days.len() < whole.days.len(),
         "a 200-day log must fold something: {} of {} days",
         hot.days.len(),
-        fork.days.len()
+        whole.days.len()
     );
-    let narrowed_sets: Vec<&String> = fork
+    let narrowed_sets: Vec<&String> = whole
         .done_dates
         .keys()
-        .filter(|id| hot.done_dates.get(*id) != fork.done_dates.get(*id))
+        .filter(|id| hot.done_dates.get(*id) != whole.done_dates.get(*id))
         .collect();
     assert!(
         !narrowed_sets.is_empty(),
@@ -519,32 +631,32 @@ fn the_doors_hot_scope_answers_every_all_time_question() {
     );
 
     // The all-time questions, per id.
-    let ids: BTreeSet<&String> = fork.items.keys().chain(fork.done_dates.keys()).collect();
+    let ids: BTreeSet<&String> = whole.items.keys().chain(whole.done_dates.keys()).collect();
     assert!(!ids.is_empty(), "the generated log has items");
     for id in &ids {
         let id = id.as_str();
-        assert_eq!(hot.done_date_first(id), fork.done_date_first(id), "{id}: the first done date (the `every:Nd` phase anchor)");
-        assert_eq!(hot.done_date_count(id), fork.done_date_count(id), "{id}: the count of distinct done dates");
-        assert_eq!(hot.is_done(id), fork.is_done(id), "{id}: the done bit");
-        assert_eq!(hot.last_done(id), fork.last_done(id), "{id}: the latest completion");
-        assert_eq!(hot.block_minutes(id), fork.block_minutes(id), "{id}: the aggregate block minutes");
+        assert_eq!(hot.done_date_first(id), whole.done_date_first(id), "{id}: the first done date (the `every:Nd` phase anchor)");
+        assert_eq!(hot.done_date_count(id), whole.done_date_count(id), "{id}: the count of distinct done dates");
+        assert_eq!(hot.is_done(id), whole.is_done(id), "{id}: the done bit");
+        assert_eq!(hot.last_done(id), whole.last_done(id), "{id}: the latest completion");
+        assert_eq!(hot.block_minutes(id), whole.block_minutes(id), "{id}: the aggregate block minutes");
     }
 
     // The all-time questions about the log as a whole.
-    assert_eq!(hot.entry_count(), fork.entry_count(), "the all-time entry count");
-    assert_eq!(hot.line_count(), fork.line_count(), "the physical line count");
-    assert_eq!(hot.done_minutes_map(), fork.done_minutes_map(), "the id-keyed minutes map");
+    assert_eq!(hot.entry_count(), whole.entry_count(), "the all-time entry count");
+    assert_eq!(hot.line_count(), whole.line_count(), "the physical line count");
+    assert_eq!(hot.done_minutes_map(), whole.done_minutes_map(), "the id-keyed minutes map");
     assert_eq!(
         hot.event_names().collect::<Vec<_>>(),
-        fork.event_names().collect::<Vec<_>>(),
+        whole.event_names().collect::<Vec<_>>(),
         "the `tm event` names"
     );
-    assert_eq!(hot.done_items, fork.done_items, "the done ids");
-    assert_eq!(hot.dropped_items, fork.dropped_items, "the dropped ids");
-    assert_eq!(hot.open_block, fork.open_block, "the open block");
-    assert_eq!(hot.open_interrupt, fork.open_interrupt, "the open interruption");
-    assert_eq!(hot.longest_leak, fork.longest_leak, "the longest leak");
-    assert_eq!(hot.last_effective_t, fork.last_effective_t, "the last effective `t`");
+    assert_eq!(hot.done_items, whole.done_items, "the done ids");
+    assert_eq!(hot.dropped_items, whole.dropped_items, "the dropped ids");
+    assert_eq!(hot.open_block, whole.open_block, "the open block");
+    assert_eq!(hot.open_interrupt, whole.open_interrupt, "the open interruption");
+    assert_eq!(hot.longest_leak, whole.longest_leak, "the longest leak");
+    assert_eq!(hot.last_effective_t, whole.last_effective_t, "the last effective `t`");
 
     eprintln!(
         "the door's `Hot` all-time facts: {} ids, {} of them with a narrowed done-date set, \
@@ -552,8 +664,8 @@ fn the_doors_hot_scope_answers_every_all_time_question() {
         ids.len(),
         narrowed_sets.len(),
         hot.days.len(),
-        fork.days.len(),
-        narrowed_fields(&hot, &fork)
+        whole.days.len(),
+        narrowed_fields(&hot, whole)
     );
 }
 
@@ -570,27 +682,30 @@ fn the_doors_total_is_the_logs_all_time_entry_count() {
     let text = loggen::text(&loggen::log(loggen::Rate::Forty, 200));
     let (dir, bytes) = tree(&text);
     let today = day_after(&text);
-    let fork = replay::replay_of_text(&text, TZ);
-    assert_eq!(fork.entry_count(), fork.view().len(), "on a whole log the reader's two counts agree");
+    // The comparand is the door's own `All` scope (gap 149).
+    let all = door(dir.path(), &bytes, today, kernel_log::Scope::All).replay;
+    let whole = &all;
+    assert_eq!(all.entry_count(), all.view().len(), "on a whole log the answer's two counts agree");
+    assert!(all == in_tree::reader(&text), "the `All` scope is the whole reader's"); // S: deleted with the reader
 
-    let first = *fork.days.keys().next().expect("a day");
+    let first = *whole.days.keys().next().expect("a day");
     for (what, scope) in [
         ("hot", kernel_log::Scope::Hot),
         ("dates", kernel_log::Scope::Dates { from: first, to: first + chrono::Duration::days(6) }),
         ("all", kernel_log::Scope::All),
     ] {
         let r = door(dir.path(), &bytes, today, scope).replay;
-        assert_eq!(r.entry_count(), fork.entry_count(), "{what}: the total is the log's, not the scope's");
+        assert_eq!(r.entry_count(), whole.entry_count(), "{what}: the total is the log's, not the scope's");
     }
 
     // Non-vacuity: at `Hot` the rows really are fewer than the entries, so `rows.len()` would
     // have been a different — and wrong — number.
     let hot = door(dir.path(), &bytes, today, kernel_log::Scope::Hot).replay;
     assert!(
-        hot.view().len() < fork.entry_count(),
+        hot.view().len() < whole.entry_count(),
         "`Hot` must carry fewer rows than the log has entries, else this test proves nothing: {} of {}",
         hot.view().len(),
-        fork.entry_count()
+        whole.entry_count()
     );
     eprintln!(
         "the door's `total`: {} entries all-time, {} rows carried at `Hot`",

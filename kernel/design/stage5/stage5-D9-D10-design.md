@@ -2364,6 +2364,12 @@ without `reseal`, and compares them field by field with `Ctx::replay_of` over:
 3. The consumer tests from R12 move to `tm/tests/` and call the kernel through `replay_of_text`.
 4. **T5 is retargeted.** Its in-tree Rust side is gone, so its oracle becomes fork point `4748911`'s
    `log::replay`, through AGENTS §7.3's oracle scaffolding (moved off `main` as §8.3 requires).
+   *(Done before S, 2026-09-16, W-11, under **D21**: this one line was a step of work, not a step of
+   the commit — see README gap 146. The fork's answers are frozen into `tm/tests/fixtures/` and
+   compared inside plain `cargo test --workspace`; the classes too large to freeze reach the fork
+   through the `TM_ORACLE` arm, widened from 8 logs to **469 over 6 zones**. What is frozen and what
+   is not is settled by D21 and stated in code by `t5_every_input_class_says_how_it_reaches_the_fork`.
+   README **gaps 137, 147, 149** closed; residue **gap 150**.)*
 5. `kernel_bridge::refusal` gains the `log` names; `TM_KERNEL_ID` from `tm-kernel-ffi/build.rs`.
 6. `.gitignore` handling per Q3.
 7. Per Q9's defaults: `tm check` lists log warnings, future-dated lines and a `reachTooFar` fault.

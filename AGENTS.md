@@ -1257,6 +1257,21 @@ on the same `chrono`/`chrono-tz`, so the comparison is key for key over the whol
 structure. It is driven from `tm/tests/kernel_replay_parity.rs`, which holds the
 log corpus, not from `run-oracle.sh`.
 
+**The fork's answers are also frozen, and that arm is not `#[ignore]`d**
+(2026-09-16, W-11; design §14.6 item 4, README gaps 137/146/147/149). Taking the
+oracle's answers once and committing them to `tm/tests/fixtures/` puts a
+*differential* inside plain `cargo test --workspace`, which is what guards a
+commit — an arm that runs only when someone builds the fork point does not.
+`tm/tests/support/fork.rs` is the one place that reads them back, shared by
+`kernel_replay_parity.rs` and `kernel_log_door.rs`; **20 T5 inputs and 16 scoped
+door reads** are compared against them, key for key. Freezing is not weakening:
+a frozen expectation is the fork's own bytes, blessed by
+`the_frozen_fork_answers_are_reblessed_from_the_oracle` (inert without **both**
+`TM_ORACLE` and `TM_FORK_BLESS`, because rewriting a committed differential
+fixture is a decision and never a repair, §7.2). Values, never a digest: a digest
+would have to normalise parity **P21** out, and that hides the one thing P21
+exists to watch (**D21**).
+
 **A third input set landed at stage 5's close**, and it is stage 5's own plan
 acceptance (§8.3): `tm-oracle replay` and the new `tm-oracle fit` read whole log
 texts, and `tm/tests/kernel_replay_parity.rs`'s
@@ -1264,7 +1279,13 @@ texts, and `tm/tests/kernel_replay_parity.rs`'s
 with the kernel's facts — the whole `Replay` key for key, and the `Model`
 `tm model --fit` writes from it (design §14.6's T12). It is `#[ignore]`d and inert
 without `TM_ORACLE`, so `cargo test --workspace` never needs the fork build;
-`run-oracle.sh` sets it and runs it as input set 3.
+`run-oracle.sh` sets it and runs it as input set 3. **Widened at W-11** from the
+8 corpus-and-month logs to every input class T5 covers — the generated half-year,
+the 256 generated sequences and the 192 undo-triple logs as well — grouped by
+zone so each zone costs one subprocess rather than one a log: **469 logs over 6
+zones, 8,442 `Replay` keys, 469 entry counts, 8 fitted models, 195,243 scalar
+values; 24 sightings of parity P21 and no other disagreement** (was 8 logs,
+144 keys, 16,772 values, 4 P21).
 
 Run at stage 5's close with `512 4`: **138 corpus lines compared, 77 with nothing
 to report; 2,048 generated lines compared, 470 with nothing to report** — both
