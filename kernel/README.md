@@ -23830,3 +23830,141 @@ before it still reads correctly. Then **L9** (**gap 93**). Still open:
 performance levers **121, 122, 123, 126, 127**. The **§5.13 human drives** of
 the stage-3, stage-4 and stage-5 binaries are still owed, and so is the TUI half
 of the switch's own drive (**gap 182**).
+
+<!-- ===================================================================== -->
+
+## Stage 5, W-12 (Q6(f)), 2026-09-16: a close carries its period as an id
+
+**Gap 86 closes.** `Event.primaryId` of a `close` is now `period:key`, so
+`tm undo` of a close cancels **that** close instead of whichever close happens
+to be latest — which, once a later verb's housekeeping had appended its own
+automatic close, was the automatic one rather than the one the user undid.
+
+### The brief predicted the bytes would move, and they do — but not where
+
+The brief says of this step: *"This one DOES change the bytes appended."* It
+does, and the first thing this run got wrong was **which** line moves.
+
+A `close` line's fields are `period` and `key` (`Kind.schema`); it has never
+carried an `id` key and it still does not. The primary id is **derived** from
+those two fields for the header and the undo mask, and is never written into
+the line. So:
+
+- **`close` lines: byte-identical.** Every close ever written still reads and
+  re-renders exactly as before.
+- **`undo` lines: changed.** `tm undo` of a close now appends
+  `{"t":…,"ev":"undo","of":"close","id":"week:2026-W37"}` where it previously
+  appended no `id` at all.
+
+`cli_close_kernel.rs`'s `closing_twice_changes_zero_bytes_the_second_time`
+caught the wrong assumption: it reads the **line's** own `id` field, got `""`,
+and refused the edit that expected `week:2026-W36`. That edit is reverted, with
+the reason written where the next reader will hit it.
+
+### The undo law's counterexample dissolved, and was re-witnessed, not weakened
+
+This is the finding worth the most.
+
+`undo_after_housekeeping_cancels_the_housekeeping` and its twin
+`the_undo_law_fails_without_untouchedBy` are the witnesses that justify
+`untouchedBy` in the undo law's hypothesis (design §7.3; Goals §15's C7). Both
+used **`E = [close week]` against `M = [close day]`** — a close of a *different*
+period — and both depended on `close` having no id, because that is what made
+the two match.
+
+Fixing Q6(f) makes that pair stop matching, so the old witness satisfies
+`untouchedBy` and no longer exhibits the failure. Under **D5** a two-run theorem
+a change breaks is re-proved, never downgraded: the statements are unchanged and
+the **witness** moved to the case that still bites — the **same** period closed
+twice, which is what `tm close week` followed by a sweep of that same ended week
+leaves. Beside them, `an_automatic_close_of_another_period_is_untouched` states
+the fix as the law reaching further: the pair that used to be the counterexample
+now satisfies the hypothesis.
+
+The quirk's own theorem is renamed in place beside the rule it replaces:
+`an_undo_of_a_close_cancels_the_latest_close_whatever_its_period` →
+`an_undo_of_a_close_cancels_its_own_period_and_an_older_one_still_cancels_the_latest`.
+
+### A log written before this step still reads exactly as it did
+
+This is the brief's other requirement, and it is a **proof**, not a test. The
+renamed theorem carries it as its own conjunct: the bare
+`undo{of:"close", id:null}` an older `tm` wrote matches on the tag alone
+(`matches` quantifies its `id` with `Option.all`, vacuous at `none`), so it
+still cancels the latest close. One mask reads both spellings, and a log that
+mixes them reads each line as it was meant — the same shape Q6(d) has in
+`a_silent_verb_undo_cancels_nothing_while_the_old_spelling_still_cancels`.
+
+### Observable behaviour changes
+
+| # | before | after | why |
+|---|---|---|---|
+| 1 | `tm undo` of a close wrote `undo{of:"close"}` with no id, cancelling the **latest** close — the automatic one a later verb appended | it writes `undo{of:"close", id:"<period>:<key>"}` and cancels the close the user undid | quirk Q6(f), gap 86; owner answer Q6's last column |
+| 2 | a close's header id was `null` | it is `period:key`, so `tm log --item week:2026-W37` selects that close | the header reads `Event.primaryId` |
+
+**`close` lines themselves do not move** — see above.
+
+### Parity
+
+**P32 (new)** — a close's primary id. The kernel derives `period:key`; **fork
+point 4748911 has no id for a close at all.** This is a deliberate divergence
+under owner answer Q6, recorded before the harness ran and asserted by name in
+`kernel_log_grammar.rs`'s T1 arm: the frozen fork answer is checked to still be
+`None` and the kernel's to be exactly `period:key`. **No fixture was
+re-blessed** — the fork's answer has not changed and must not.
+
+Exposure is bounded and was measured, not assumed: `rows` is **not** among
+`FORK_REPLAY_KEYS`, and `CloseRecord` carries only `t`, `period` and `key`, so
+**T5 compares nothing that this moves**. The only fork-compared close lines are
+the two in `corpus/logs/three-days.jsonl`.
+
+### Gap 86 — closed
+
+Quirk Q6(f) is fixed, with the rule it replaces stated beside it as a theorem
+and the old spelling's behaviour kept as a conjunct of the same theorem.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+- **Goals:** none added, none discharged — `Goals.lean` still **13**, all stage 6.
+- **Theorems:** **+1** net (`an_automatic_close_of_another_period_is_untouched`),
+  one renamed in place. `Check.lean` carries **3,946** `#print axioms` lines
+  against 3,945 at `47a0443`.
+- **Cheats:** none added (gap 201 stands).
+- **Two witnesses re-witnessed, statements unchanged** (D5, §3.1).
+- **Prose repaired where it had gone stale**: `Replay.lean`'s module header and
+  `Goals.lean`'s C5 note both described Q6(f) as "ported faithfully" and named
+  the old theorem; both now say it is fixed and name the new one. The two
+  remaining mentions of the old name are in this README's W-11-era blocks, which
+  stay as written history (§6.4).
+
+### Numbers, re-measured at this commit, capped at `MemoryMax=40G`
+
+- `check.sh`: **seven ok**. Axiom audit **3,946** theorems (3,945 at `47a0443`:
+  one renamed in place, one added); corpus **29/37** files and **4/5** whole
+  plans; burn-down **13**, all stage 6.
+- `cargo test --workspace`: **1,309 passed / 0 failed / 9 ignored across 78
+  binaries**, against **1,308 / 0 / 9 across 78** at `47a0443` — **+1**, which is
+  exactly the one test this step adds (`an_undo_of_a_close_names_the_period_it_closed`).
+- T5 (`kernel_replay_parity --include-ignored`) **32 passed**, the door suite
+  **22 passed**, `cli_switch_acceptance --include-ignored` **9 passed**,
+  `horizon_close` **32 passed** — all 0 failed.
+- **T11**, on the 3-year log (66,169 lines): **later verb 146.658 ms** against
+  146.958 ms at `47a0443` and 146.8 ms before S2 — **no row regressed**; first
+  verb **2.181 s**; `--now` +1 day (a reseal) **202.507 ms**; `review week` (the
+  `All` scope) **248.166 ms**; a routine for a 3-day-old instance **131.766 ms**;
+  the 1-year later verb **96.337 ms**.
+- Per-verb kernel calls: **unchanged by this step** — `wake` 1, `arrive` 2 and
+  `undo` 1 `emit` call, with the `log` column exactly as pinned at `47a0443`.
+  Q6(f) moves what an `undo` line *says*, not how many calls a verb makes.
+- Package: `Log.lean` **2,754** lines / **115** theorems; `Replay.lean`
+  **7,962** / **396**; `Check.lean` **4,598**; `Goals.lean` **752**
+  (13 goals, unchanged).
+
+**Owed next.** **Gap 86 is closed here**, and with it the last of Q6's "fix
+after the switch" rows — (d) went at W-6, (f) goes here; (a), (c) and (e) remain
+deliberately ported (owner answer Q6's last column), and (b) and (g) are kept.
+Next is **L9** (**gap 93**): the kernel derives day 0, and the `day0` argument
+goes. Still open: **gaps 132, 133, 150-152, 160, 170, 180-182, 190, 200, 201**,
+and the performance levers **121, 122, 123, 126, 127**. The **§5.13 human
+drives** of the stage-3, stage-4 and stage-5 binaries are still owed, and so is
+the TUI half of the switch's own drive (**gap 182**).

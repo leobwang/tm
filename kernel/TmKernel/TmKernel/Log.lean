@@ -518,6 +518,13 @@ def Event.primaryId : Event → Option Id
   | .move i _ _ => some i
   | .drop i => some i
   | .edit i _ _ _ => some i
+  -- **Quirk Q6(f), fixed** (gap 86; owner answer Q6, "fix, after the switch").  A close's id is
+  -- `period:key`, so `tm undo` of a week close writes `undo{of:"close", id:"week:2026-W37"}` and
+  -- cancels **that** close — not whichever close happens to be latest, which before this was the
+  -- automatic one a later verb's housekeeping had appended.  The fork writes `null` here, which is
+  -- parity **P32**; a log written before this step still reads as it did, because an undo with no
+  -- id matches on the tag alone.
+  | .close p k => some (p ++ ':' :: k)
   | .undo _ i => i
   | .unknown _ rest =>
     match lastVal rest ['i','d'] with

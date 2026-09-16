@@ -180,6 +180,10 @@ fn closing_twice_changes_zero_bytes_the_second_time() {
     let new_events: Vec<_> = events(&tm)[events_first.len()..].to_vec();
     assert_eq!(
         new_events,
+        // Q6(f) (gap 86) does **not** move these bytes: a close line's fields are
+        // `period` and `key`, and its primary id is *derived* from them for the
+        // header and the undo mask — it is never written into the line. This
+        // reads the line's own `id` field, which a close has never had.
         vec![("close".to_string(), String::new())],
         "a close of nothing logs only its own close"
     );

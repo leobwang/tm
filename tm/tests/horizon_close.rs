@@ -234,7 +234,10 @@ fn close_day_resets_the_active_line_and_moves_the_pinned_item() {
         log_events(&store),
         vec![
             ("demote".to_string(), "p1".to_string()),
-            ("close".to_string(), String::new()),
+            // Q6(f), gap 86: a close's primary id is `period:key`. These are the
+            // kernel's headers (`chokepoint::headers_of_text`), not the line's
+            // own fields — the close line still writes `period` and `key` only.
+            ("close".to_string(), "day:2026-09-07".to_string()),
         ]
     );
 }
@@ -503,7 +506,8 @@ fn close_week_demotes_folds_children_and_files_the_overdue_item() {
             ("move".to_string(), "x1".to_string()),
             ("move".to_string(), "x2".to_string()),
             ("move".to_string(), "d1".to_string()),
-            ("close".to_string(), String::new()),
+            // Q6(f), gap 86.
+            ("close".to_string(), "week:2026-W37".to_string()),
         ]
     );
 }
@@ -831,7 +835,8 @@ fn close_month_carries_outcomes_and_demoted_lines_and_honours_drop() {
             ("move".to_string(), "O1".to_string()),
             ("move".to_string(), "O2".to_string()),
             ("move".to_string(), "m2".to_string()),
-            ("close".to_string(), String::new()),
+            // Q6(f), gap 86.
+            ("close".to_string(), "month:2026-09".to_string()),
         ]
     );
 }

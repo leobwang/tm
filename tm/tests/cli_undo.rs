@@ -385,3 +385,63 @@ fn an_undo_stack_written_before_log_line_still_undoes() {
     tm.ok_at("2026-09-07T09:06:00-05:00", &["undo"]);
     assert_eq!(undone(&tm), vec!["start", "wake"]);
 }
+
+/// **Q6(f), gap 86 — a close carries its period as a primary id.**
+///
+/// `tm close day`, then `tm undo`: the compensating event names the period it
+/// closed, so it cancels **that** close. Before this step `close` had no id at
+/// all, and the undo cancelled whichever close was latest — which, once a later
+/// verb's housekeeping had appended its own automatic close, was the automatic
+/// one rather than the one the user undid.
+///
+/// The other half of the fix — that a log written **before** this step still
+/// reads exactly as it did, because an undo carrying no id matches on the tag
+/// alone — is proved in the kernel, where both spellings can be put side by
+/// side over one replay:
+/// `Replay.an_undo_of_a_close_cancels_its_own_period_and_an_older_one_still_cancels_the_latest`.
+#[test]
+fn an_undo_of_a_close_names_the_period_it_closed() {
+    let tm = Tm::new();
+    tm.ok_at("2026-09-07T06:05:00-05:00", &["wake", "06:05", "--slept", "8h"]);
+    tm.ok_at("2026-09-08T09:00:00-05:00", &["close", "day"]);
+
+    // The close itself is unchanged: it always carried its period and key.
+    let closes: Vec<(String, String)> = tm
+        .log()
+        .into_iter()
+        .filter(|e| e["ev"] == "close")
+        .map(|e| {
+            (
+                e["period"].as_str().unwrap_or_default().to_string(),
+                e["key"].as_str().unwrap_or_default().to_string(),
+            )
+        })
+        .collect();
+    assert!(!closes.is_empty(), "the close logged nothing: {:?}", tm.log());
+
+    tm.ok_at("2026-09-08T09:01:00-05:00", &["undo"]);
+
+    // What changed is the undo: it names `period:key`, so the mask can tell one
+    // close from another.
+    let undos: Vec<(String, String)> = tm
+        .log()
+        .into_iter()
+        .filter(|e| e["ev"] == "undo")
+        .map(|e| {
+            (
+                e["of"].as_str().unwrap_or_default().to_string(),
+                e["id"].as_str().unwrap_or_default().to_string(),
+            )
+        })
+        .collect();
+    let close_undo = undos
+        .iter()
+        .find(|(of, _)| of == "close")
+        .unwrap_or_else(|| panic!("no undo of a close: {undos:?}"));
+    let (period, key) = closes.last().expect("a close");
+    assert_eq!(
+        close_undo.1,
+        format!("{period}:{key}"),
+        "the undo of a close must name the period it closed: {undos:?}"
+    );
+}

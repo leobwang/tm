@@ -589,7 +589,24 @@ fn kernel_reads_the_corpus_logs_as_the_fork_point_did() {
                 (Fork::Entry(e), Kernel::Entry(tag, id, rendering, display)) => {
                     entries += 1;
                     assert_eq!(tag, &e.tag, "{name}:{n}");
-                    assert_eq!(id.as_deref(), e.id.as_deref(), "{name}:{n}");
+                    if tag == "close" {
+                        // **Parity P32** (quirk Q6(f), gap 86): a close carries
+                        // `period:key` as its primary id, so undoing one cancels
+                        // *that* close instead of whichever is latest. The fork
+                        // has no id for a close at all. The frozen answer is the
+                        // fork's and stays exactly as it is — this is a
+                        // deliberate divergence, not a stale fixture.
+                        assert_eq!(e.id, None, "{name}:{n}: the fork grew a close id");
+                        let v: Value = serde_json::from_str(&text).expect("a close line is JSON");
+                        let want = format!(
+                            "{}:{}",
+                            v["period"].as_str().expect("period"),
+                            v["key"].as_str().expect("key")
+                        );
+                        assert_eq!(id.as_deref(), Some(want.as_str()), "{name}:{n}");
+                    } else {
+                        assert_eq!(id.as_deref(), e.id.as_deref(), "{name}:{n}");
+                    }
                     assert_eq!(display, &e.display, "{name}:{n}");
                     // The fork's own `to_json` of the entry it read from this
                     // line. Byte identity here is what used to be checked by

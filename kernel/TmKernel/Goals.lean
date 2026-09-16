@@ -436,9 +436,11 @@ a strictly-longer replacement, so the first of equal maxima stays; witness
 `Replay.the_first_of_equal_leaks_is_the_longest`), `Replay.a_demote_stamp_reads_the_week_or_date_key` (every
 demotion carries `Log.stampFromKey` of its `from`; witness `Replay.the_demote_stamps_of_a_week_a_date_and_a_month_key`),
 and `Replay.idle_and_idle_since_read_different_orders` (§8.4's two-line log, as `∃ …`: `lastEffective` is the
-last line and `Replay.lastTOn`, fork `DaySeam.last_t`, the latest instant).  Quirks Q6(f) and Q6(g) are ported
-with their separating witnesses, `Replay.an_undo_of_a_close_cancels_the_latest_close_whatever_its_period` and
-`Replay.the_calendar_today_is_not_the_replays_day_after_midnight`.  README "Stage 5 D9 C5". -/
+last line and `Replay.lastTOn`, fork `DaySeam.last_t`, the latest instant).  Quirk Q6(g) is ported with its
+separating witness `Replay.the_calendar_today_is_not_the_replays_day_after_midnight`; **Q6(f) was ported here and
+fixed at W-12** (gap 86), its witness now
+`Replay.an_undo_of_a_close_cancels_its_own_period_and_an_older_one_still_cancels_the_latest`, which keeps the old
+spelling's behaviour as its own conjunct.  README "Stage 5 D9 C5". -/
 
 /- **§8.4's view is real: the facts, the observations and the headers (2026-09-15, stage 5 D9 step C6).**
 The two C6 goals of design §15 were added here, elaborated against `TmKernel/Replay.lean` (15 goals, no error), and

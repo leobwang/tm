@@ -171,10 +171,12 @@ a log of wakes on as many dates would make an association list's absent-key scan
   (`the_demotions_are_the_survivors_demotes_in_file_order`, `the_closes_are_the_survivors_closes_in_file_order`),
   a demotion's stamp is its `from` key's (`a_demote_stamp_reads_the_week_or_date_key`), and the unknown count is
   the surviving unknown events (`the_unknown_count_is_the_surviving_unknown_events`).
-* **Quirks ported faithfully, with their separations**: Q6(f), `close` has no id, so an undo of a week close
-  after the automatic close cancels the automatic one
-  (`an_undo_of_a_close_cancels_the_latest_close_whatever_its_period`, gap 86); Q6(g), the calendar's today is not
-  the replay's day after midnight (`the_calendar_today_is_not_the_replays_day_after_midnight`, gap 87).
+* **Quirks, with their separations**: Q6(f) is **fixed** at W-12 (gap 86) — a `close` carries `period:key` as its
+  primary id, so an undo of a week close cancels *that* close and not the automatic one a later verb appended,
+  while a log written before the fix still reads as it did
+  (`an_undo_of_a_close_cancels_its_own_period_and_an_older_one_still_cancels_the_latest`); Q6(g) is still ported
+  faithfully — the calendar's today is not the replay's day after midnight
+  (`the_calendar_today_is_not_the_replays_day_after_midnight`, gap 87).
 * **`idle` and `idle_since` read different orders** (§8.4): `lastEffective` is the last line, `lastTOn` (fork
   `DaySeam.last_t`, which C6 derives) the latest instant (`idle_and_idle_since_read_different_orders`).
 
@@ -7160,12 +7162,27 @@ theorem the_demote_stamps_of_a_week_a_date_and_a_month_key :
     f.days.get 739865 = none := by
   decide
 
-/-- **Quirk Q6(f), ported faithfully** (gap 86): `close` has no primary id, so `tm close week` (line 1), the next
-verb's automatic `close day` (line 2) and `tm undo` of the week close, written `undo{of:"close", id:null}` (line
-3), leave the **week's** close standing and cancel the automatic one.  What the undo meant, the log without the
-week close, keeps only the automatic close. -/
-theorem an_undo_of_a_close_cancels_the_latest_close_whatever_its_period :
-    (Log.Event.close ['w'] ['k']).primaryId = none ∧
+/-- **Quirk Q6(f), fixed** (gap 86; owner answer Q6's last column, "fix, after the switch"; W-12).
+A close now carries `period:key` as its primary id, so `tm undo` of a week close writes
+`undo{of:"close", id:"week:2026-W37"}` and cancels **the week's** close — leaving the automatic
+`close day` that a later verb's housekeeping appended standing, which is what the undo meant.
+
+Before this, `close` had no id, and the undo cancelled whichever close was latest: the automatic
+one.  The rule this replaces is the second conjunct, kept verbatim and still true, because **a log
+written before this step must still read as it did** — the bare `undo{of:"close", id:null}` an
+older `tm` wrote matches on the tag alone (`matches` quantifies its `id` with `Option.all`, which
+is vacuous at `none`), so it still cancels the latest close.  One mask reads both spellings, and a
+log that mixes them reads each line as it was meant (`a_silent_verb_undo_cancels_nothing_while_the_old_spelling_still_cancels`
+is the same shape for Q6(d)).
+
+The fork writes `null` for a close's id, so this is parity entry **P32**. -/
+theorem an_undo_of_a_close_cancels_its_own_period_and_an_older_one_still_cancels_the_latest :
+    (Log.Event.close ['w'] ['k']).primaryId = some ['w', ':', 'k'] ∧
+    (replay utcZone [bE 1 63924368400 (.close ['w', 'e', 'e', 'k'] ['2', '0', '2', '6', '-', 'W', '3', '7']),
+        bE 2 63924368460 (.close ['d', 'a', 'y'] ['2', '0', '2', '6', '-', '0', '9', '-', '0', '7']),
+        bE 3 63924368520 (.undo ['c', 'l', 'o', 's', 'e']
+          (some ['w', 'e', 'e', 'k', ':', '2', '0', '2', '6', '-', 'W', '3', '7']))]).closes.map (·.2.period)
+      = [['d', 'a', 'y']] ∧
     (replay utcZone [bE 1 63924368400 (.close ['w', 'e', 'e', 'k'] ['2', '0', '2', '6', '-', 'W', '3', '7']),
         bE 2 63924368460 (.close ['d', 'a', 'y'] ['2', '0', '2', '6', '-', '0', '9', '-', '0', '7']),
         bE 3 63924368520 (.undo ['c', 'l', 'o', 's', 'e'] none)]).closes.map (·.2.period) = [['w', 'e', 'e', 'k']] ∧
@@ -7893,15 +7910,31 @@ theorem undo_of_a_silent_verb_cancels_an_older_event :
   ⟨[bE 1 63924368400 (.move ['a'] ['w'] ['b'])], bE 2 63924368460 (.undo ['m', 'o', 'v', 'e'] none),
     by rw [move_toList]; rfl, by decide⟩
 
-/-- `undo_after_housekeeping_cancels_the_housekeeping` (Goals, §15, C7, with `undosFor`'s offset): `E = [close week]`,
-`M = [close day]` (the next verb's automatic close), and `undosFor E = [undo{of:"close"}]`.  `M`'s close matches
-the undo, so `untouchedBy` fails, and the survivors are `E`'s close, not `M`'s. -/
+/-- `undo_after_housekeeping_cancels_the_housekeeping` (Goals, §15, C7, with `undosFor`'s offset): `E` is a close,
+`M` is a later verb's automatic close of **the same period**, and `undosFor E = [undo{of:"close", id:"week:k"}]`.
+`M`'s close matches the undo, so `untouchedBy` fails, and the survivors are `E`'s close, not `M`'s.
+
+**The witness changed at W-12, and the reason is quirk Q6(f) being fixed** (gap 86).  It used to be
+`E = [close week]` against `M = [close day]` — a close of a *different* period — because `close` had no primary
+id and an undo of one close cancelled whichever close was latest.  Now a close carries `period:key`, so those two
+no longer match and that pair satisfies `untouchedBy`: the law applies to it, which is exactly the fix.  The law
+still needs its hypothesis, so the witness is the case that still bites — the **same** period closed twice, which
+is what `tm close week` followed by a sweep of the same ended week leaves.  The statement is unchanged; only the
+log that exhibits it is (AGENTS §3.1: re-proved, never weakened). -/
 theorem undo_after_housekeeping_cancels_the_housekeeping :
     ∃ (L E M : List Entry) (n : Nat) (t : Cal.VInstant) (o : Cal.VOffset),
       E.all (fun e => !e.ev.isUndo) = true ∧ untouchedBy E M = false ∧
       survivors (L ++ E ++ M ++ undosFor E n t o) ≠ survivors (L ++ M) :=
-  ⟨[], [bE 1 63924368400 (.close ['w', 'e', 'e', 'k'] ['k'])], [bE 2 63924368460 (.close ['d', 'a', 'y'] ['k'])], 3,
+  ⟨[], [bE 1 63924368400 (.close ['w', 'e', 'e', 'k'] ['k'])], [bE 2 63924368460 (.close ['w', 'e', 'e', 'k'] ['k'])], 3,
     undoStamp, undoOffset, by decide, by decide, by decide⟩
+
+/-- **Q6(f)'s fix, stated as the law reaching further** (gap 86): the pair that used to be the counterexample —
+a week close and the next verb's automatic **day** close — now satisfies `untouchedBy`, so the undo law applies to
+it and `tm undo` of the week close leaves the automatic one alone. -/
+theorem an_automatic_close_of_another_period_is_untouched :
+    untouchedBy [bE 1 63924368400 (.close ['w', 'e', 'e', 'k'] ['k'])]
+      [bE 2 63924368460 (.close ['d', 'a', 'y'] ['k'])] = true := by
+  decide
 
 /-- **The refutation twin: the law fails without `untouchedBy`**, in its conclusion, not only in the survivors.  On
 the housekeeping witness the undone log's closes on 2026-09-07 are the week's, and the log without the command's
@@ -7911,7 +7944,7 @@ theorem the_undo_law_fails_without_untouchedBy :
       E.all (fun e => !e.ev.isUndo) = true ∧ untouchedBy E M = false ∧
       factsView (replay z (L ++ E ++ M ++ undosFor E n t o)) ≠ factsView (replay z (L ++ M)) := by
   refine ⟨utcZone, [], [bE 1 63924368400 (.close ['w', 'e', 'e', 'k'] ['k'])],
-    [bE 2 63924368460 (.close ['d', 'a', 'y'] ['k'])], 3, undoStamp, undoOffset, by decide, by decide, fun h => ?_⟩
+    [bE 2 63924368460 (.close ['w', 'e', 'e', 'k'] ['k'])], 3, undoStamp, undoOffset, by decide, by decide, fun h => ?_⟩
   have := congrFun h (.day 739865 .closes)
   revert this
   decide

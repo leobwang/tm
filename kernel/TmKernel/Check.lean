@@ -3587,7 +3587,7 @@ open Tm
 #print axioms Tm.Replay.a_break_lasts_its_actual_minutes_else_its_planned
 #print axioms Tm.Replay.the_first_of_equal_leaks_is_the_longest
 #print axioms Tm.Replay.the_demote_stamps_of_a_week_a_date_and_a_month_key
-#print axioms Tm.Replay.an_undo_of_a_close_cancels_the_latest_close_whatever_its_period
+#print axioms Tm.Replay.an_undo_of_a_close_cancels_its_own_period_and_an_older_one_still_cancels_the_latest
 #print axioms Tm.Replay.the_calendar_today_is_not_the_replays_day_after_midnight
 #print axioms Tm.Replay.idle_and_idle_since_read_different_orders
 
@@ -4588,3 +4588,11 @@ open Tm
 #print axioms Tm.runWithEmit_without_an_emit_is_runWithLog
 #print axioms Tm.a_request_without_an_emit_is_read_as_before
 #print axioms Tm.runWithEmit_refuses_an_emit_section_first
+
+-- APPENDED 2026-09-16 (stage 5, W-12).  Quirk **Q6(f)** (gap 86; owner answer Q6's last column,
+-- "fix, after the switch"): a `close` carries `period:key` as its primary id, so `tm undo` of one
+-- cancels *that* close and not whichever close is latest.  The quirk's own theorem is renamed in
+-- place above, beside the rule it replaces
+-- (`an_undo_of_a_close_cancels_its_own_period_and_an_older_one_still_cancels_the_latest`), and the
+-- undo law's counterexample is re-witnessed rather than weakened.
+#print axioms Tm.Replay.an_automatic_close_of_another_period_is_untouched
