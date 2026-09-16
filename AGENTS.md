@@ -2281,6 +2281,22 @@ whole point of landing this before S — over the moved suites' own **308 distin
 pairs**: the kernel door and the Rust reader agree **exactly**, with one refusal, which is the
 recorded parity exception **P17** (**gap 142**).
 
+*Gaps 119 and 129 closed 2026-09-16 (W-11, S-after; README "a stalled ledger day has a
+name").* Both were **unreachable before S and reachable the moment it landed**, which is why
+three runs had correctly left them. **Gap 119**: `tm check` now names a stall in D18's warning
+family (`check::LOG_STALL`, `log-stall`), at the line the stall began on, with the ledger day it
+holds and the verb that clears it. The obvious rule was a trapdoor and the tests say so — a lag
+test ("the ledger day is more than 7 days behind `now`") fires on **healthy** trees, because
+§9.4 folds only to `min(T, M) - keepDays` and so `L` trails the log's own last activity:
+measured over two trees identical but for the open block, the unstalled one ran **12 days**
+behind while the stalled one pinned at its block's day forever. The cause is named, not the lag.
+**Gap 129**: measured, not narrowed, on exactly the condition the gap wrote for itself — a bare
+`tm log` over three years (66,169 lines) is **232.9 ms**, inside `LATER_VERB`, so `All` stays and
+the two-step narrowing is not built. The three-year behavioural test gap 117 could not carry
+landed with it. Residue: **gap 190**, design §9.4's third stall cause (a `stop` never followed by
+a `start`) is invisible to the host — it lives in the kernel's `Replay.Machine.lastCut` and
+reaches no response key, and a stopped tree with a 23-day ledger lag still reports `no problems`.
+
 **Depends on.** `Cal.lean` and `Arith.lean` (both built), §4.1's field grammar
 (built), stage 4 for `close`, and — a hard dependency — the `parent` decision.
 

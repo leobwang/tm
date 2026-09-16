@@ -177,13 +177,28 @@ pub const LOG_FUTURE: &str = "log-future";
 /// (ii): "lines dated more than 2 days after now as warnings").
 pub const LOG_FUTURE_DAYS: i64 = 2;
 
+/// **A stall**: a block or an interruption left open for more than
+/// [`LOG_STALL_DAYS`] days, which holds the replay checkpoint's ledger day
+/// back (design §9.4's "Stalls" and §18.7; README gap 119, design gap 88).
+///
+/// It is not a damaged log — every line is well formed — so like the other
+/// two it is a **warning** and moves no exit code. What it costs is space and
+/// time rather than correctness: every day since the stall began stays an
+/// open day in the checkpoint, growing it by about 2.5 KB a stalled day, and
+/// every call carries them.
+pub const LOG_STALL: &str = "log-stall";
+
+/// How long a block or an interruption may stay open before [`LOG_STALL`]
+/// names it (design §9.4: "`tm check` names a stall longer than 7 days").
+pub const LOG_STALL_DAYS: i64 = 7;
+
 /// The codes the **CLI** adds to a `tm check` run from `.tm/log.jsonl` (the
 /// owner's D18). They are deliberately **not** in [`CODES`]: [`check`] is pure
 /// over the plan files and never reads the log, so no fixture of the tree can
 /// produce them, and `CODES` is the list `check` itself can emit. Both are
 /// warnings, so neither moves [`exit_code`] — which is D18's own requirement:
 /// `tm check` must keep working, and keep its exit code, on a damaged log.
-pub const LOG_CODES: &[&str] = &[LOG_LINE, LOG_FUTURE];
+pub const LOG_CODES: &[&str] = &[LOG_LINE, LOG_FUTURE, LOG_STALL];
 
 // ---------------------------------------------------------------------------
 // Problems

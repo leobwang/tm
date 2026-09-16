@@ -23212,3 +23212,208 @@ Q6(f) (**gap 86**); then **L9** (**gap 93**). Still open from this run: **gaps
 180-182**, and the earlier **119, 129, 132, 133, 150-152, 160, 170**. The
 performance levers (**121, 122, 123, 126, 127**) are untouched and now have a
 real baseline to move: a later verb at three years is **146.8 ms**.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 5, W-11 (S-after) — the two gaps only the
+     switch made reachable.  **Gap 119 closed** (`tm check` names a stall, in
+     D18's warning family) and **gap 129 closed as measured, not needed** (a
+     bare `tm log` over three years is 232.9 ms at the `All` scope, inside
+     LATER_VERB, so the narrowing is not built).  Takes gap 190 (S-after's
+     range is 190-194).  New gaps start at 191.  No Lean edited: audit 3934,
+     cheats 157, parity P35, burn-down 13, all unchanged.
+     =========================================================================== -->
+
+## Stage 5, W-11 (S-after), 2026-09-16: a stalled ledger day has a name
+
+**The honest paragraph, first.** Both gaps are closed, and both were closed the
+only way they could be: **by measuring, not by reasoning**. Gap 119's obvious
+implementation — "warn when the ledger day is more than seven days behind
+`now`" — is **wrong**, and two probe trees say so rather than an argument. Gap
+129's question was settled by its own pre-written condition, and the answer is
+that `All` stays. One new gap, **190**, is the third stall cause design §9.4
+names and the host cannot see.
+
+### Gap 119 — closed: a stall is named, and the cause is what is named
+
+`tm check` gains a third code in D18's family, `check::LOG_STALL`
+(**`log-stall`**), beside `log-line` and `log-future`. A warning, so the exit
+code stays the tree's alone (D18 (i)); at the line the stall began on; naming
+the cause, the ledger day it holds, and the verb that clears it:
+
+```
+.tm/log.jsonl:2: warning[log-stall]: a block on ^t4 has been open since
+2026-09-07 09:05, 33 days ago (more than 7); it holds the ledger day at
+2026-09-07, so every day since then stays open in the replay checkpoint
+(about 2.5 KB a stalled day) — close it with `tm done` or `tm stop`
+0 errors, 1 warning                                                    exit 0
+```
+
+**The rule I first wrote was a trapdoor, and the measurement caught it.** The
+natural reading of design gap 88 ("`tm check` names stalls longer than 7 days")
+is a lag test on the ledger day. Measured on two trees identical but for the
+open block, driven over the same days with the shipped binary:
+
+| tree | ledger day after a verb on 09-12 / 09-21 / 09-30 / 10-10 | lag at 10-10 |
+|---|---|---|
+| **stalled** (block left open) | 2026-09-07 / 09-07 / 09-07 / **09-07** | **33 days, growing without bound** |
+| **control** (same block, `done`) | 2026-09-07 / 09-07 / 09-19 / **09-28** | **12 days, and healthy** |
+
+A lag test fires on **both**. §9.4 folds only up to `min(T, M) − keepDays`,
+where `M` is the greatest header day among survivors, so `L` trails the log's
+own last activity and **not** today — an ordinary tree that has been quiet runs
+a ledger day well past seven days back with nothing wrong with it. That warning
+would have been §5.8's trapdoor exactly: a check a legitimate tree fails. So
+the **cause** is what is named — §9.4's own "an open block holding an
+observation … or an open interruption" — with its age, and the ledger day is
+reported beside it as the consequence. `a_stalled_ledger_day_is_named_and_a_healthy_one_is_not`
+asserts both directions, and the control half is the assertion that would have
+failed the rule I first wrote.
+
+**The bound is `> 7`, asserted on both sides of itself.** A block open exactly
+seven days is not a stall; eight days is
+(`a_block_open_exactly_seven_days_is_not_yet_a_stall`). Without it `>=` and `>`
+both pass and the design's sentence is not the code's.
+
+**Both visible causes are exercised.** `tm interrupt` leaves the block open
+*and* an interruption open on top of it; both hold `L`, so both are named, each
+at its own line with its own fix verb (`tm resume` for the interruption). An
+arm that was built and never driven would be §9.2's disguised gap, so
+`an_interruption_never_resumed_is_named_beside_its_block` drives it.
+
+**Where the ledger day comes from.** `kernel_log::Read` and `Ctx` gain
+`ledger_day: Option<u64>`, carried out of the one door (`replay_scoped`) from
+the snapshot's `meta.ledgerDay`. **`0` is the "nothing sealed" sentinel, not
+year 1** — a genesis that sealed nothing carries `Meta::default()`, and a lag
+computed against it would read as seven hundred thousand days — so it is
+`None`, and `tm check`'s tolerant load after a `reachTooFar` is `None` too: the
+checkpoint is exactly what could not be read, so that tree reports the fault
+and never a stall.
+
+### Gap 129 — closed as *measured, not needed*, on its own pre-written condition
+
+Gap 129 item 4 set the test in advance: "if a bare `tm log` at three years sits
+inside `LATER_VERB` on the `All` scope, the narrowing is not worth its second
+call and this gap closes as *measured, not needed*; if it does not, S builds
+the two-step." Measured on T11's three-year tree — **66,169 lines, 6,896,281
+bytes** — through the shipped switched binary:
+
+| `tm log` spelling | scope (§11.1) | measured | bound |
+|---|---|---|---|
+| bare (the default tail of 20) | `All` | **232.9 ms** | < 1 s |
+| `--tail 200` | `All` | **233.0 ms** | < 1 s |
+| `--item ^y1` | `All` | **212.7 ms** | < 1 s |
+| `--since 7d` | `Dates` | **75.9 ms** | < 1 s |
+| `--json log --tail 200` | `All` | **232.5 ms** | < 1 s |
+| (the first verb, genesis) | — | 2.19 s | < 5 s |
+
+**So `All` stays and the two-step narrowing is not built.** The condition is
+met with a factor of four in hand.
+
+**The lever is real, and here is its size, for whoever wants it later.** The
+`Dates` row is **75.9 ms** against `All`'s 232.9 — the narrowing would buy
+about **157 ms** on the most common spelling. It is not taken because it costs
+a second kernel call to learn how far back *n* headers lie (§11.1's own
+two-step), and because the verb is already four times inside budget. It belongs
+with the performance levers **121, 122, 123, 126, 127**, not with the defects.
+
+**And the behavioural test gap 117 could not carry landed here.** Before S every
+scope answered with the whole log, so `tm log --tail n` returned *n* whatever
+scope it asked for and **no test could fail**. The scope is real now, so a tail
+whose scope could not hold the last *n* headers would come out silently short.
+`tm_log_on_three_years_of_log_stays_a_later_verb_and_returns_its_whole_tail`
+asks for **200** over three years and asserts 200 come back, in order, with
+`total` the log's all-time count (**66,292**) and not the scope's row count —
+gap 136's settlement, still holding.
+
+### Gap 190 (new; label W11Sa-a) — the third stall cause the host cannot see
+
+1. **What is not done.** Design §9.4 names three causes that hold `L'` back:
+   "an open block holding an observation, **a `stop` never followed by a
+   `start`**, or an open interruption". `tm check` names the first and the
+   third. The second is not named.
+2. **Why.** It is not visible to the host. It lives in the kernel's
+   `Replay.Machine.lastCut` (`Replay.lean:2479`) and reaches **no response
+   key**: `decode_facts` reads `open.block` and `open.interrupt`, and the
+   decoded `Replay` has no field for a cut. Naming it needs the kernel to send
+   it, which is a wire change, not a `tm check` change.
+3. **What it costs.** Measured, not assumed: a tree driven `wake` → `start` →
+   **`stop`**, then verbs on three later days, pins its ledger day at
+   **2026-09-07** — a **23-day** lag on the run day — and `tm check` reports
+   **`no problems`**. That is a real stall, paying ≈ 2.5 KB a stalled day,
+   silently.
+4. **When it clears.** With a wire field for `machine.lastCut` (its day and
+   id), in any step that touches the `log` answer's `open` object — **S2**
+   (gap 130) is the natural one, since it is already in that grammar.
+
+### Observable behaviour changes
+
+| where | before | after |
+|---|---|---|
+| `tm check` on a tree with a block or interruption left open > 7 days | `no problems` | one `warning[log-stall]` per open cause, at its own line, naming the ledger day it holds and the verb that clears it; **exit code unchanged** (D18) |
+| `tm check` on a quiet tree whose ledger day trails by 12 days | `no problems` | `no problems` — deliberately, and the control half of the test says so |
+| `tm log` at any scope | — | unchanged: no narrowing was built, no scope moved, and `kernel_call_counts`' table is untouched |
+
+### Recorded disagreements between the design, the brief and the repo
+
+1. **Design gap 88's sentence is right and its obvious implementation is
+   wrong.** "`tm check` names stalls longer than 7 days" cannot be a test on
+   the ledger day's lag, because §9.4's own fold rule makes that lag large on
+   healthy trees (12 days, measured). The design is not changed — §9.4 already
+   says a stall *is* an open block, a bare `stop`, or an open interruption —
+   but anyone implementing it from gap 88's one line alone will write the
+   trapdoor, so it is recorded here.
+2. **§9.4 names three stall causes; the host can see two.** Gap 190.
+3. **The brief asked for "a named line in D18's family and a test on a stalled
+   tree".** Delivered, plus the healthy-tree half — which is the half that
+   makes the test mean anything.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited** — `git diff --name-only` contains no `.lean`, no
+`lean-toolchain`, no `Cargo.toml`, no `Cargo.lock`, nothing under
+`kernel/corpus/`, no fixture and no snapshot. Goals discharged, refuted, added:
+none; burn-down **13 → 13**, all stage 6's. New theorems: none — the audit
+stays at **3934**. New `decide`/`rfl` witnesses: none, so no probe budget was
+spent. New cheats: none (highest **157**). New parity entries: none (highest
+**P35**): a stall is not a difference from the fork — the fork has no
+checkpoint to hold back — it is a new diagnostic over a kernel fact, so it
+takes a **check code**, not a parity row. No predicate or assertion was
+weakened, no goal deleted, **no memory bound raised**, nothing re-blessed.
+
+### Numbers
+
+**Taken:** gap **190**. **Highest:** gap 190, cheat 157, parity P35. New gaps
+start at **191**.
+
+**Re-measured** (main worktree, on the tree committed; every command capped at
+`MemoryMax=40G`, `MemorySwapMax=0`; the FFI suite and the 3-year measurement at
+16G; probes at 8G):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, **3.12 / 3.08 / 3.09 s** (the switch `2b26be3`: 3.15 / 3.11 / 3.14). **−1.6%**, inside the 10%-per-step rule |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged; all stage 6) |
+| `cargo test --workspace` | **1296 passed / 0 failed / 9 ignored across 78** result lines, exit 0 (before: 1292 / 0 / 9 across 78). **+4, fully explained**: three stall tests in `cli_check_log` and one `tm log` test in `cli_latency` |
+| FFI suite | **100 passed / 0 failed** (5 binaries) |
+| T5 (`kernel_replay_parity`) | **27 passed / 0 failed / 4 ignored**, 6.17 s (unchanged) |
+| the door suite (`kernel_log_door`) | **21 passed / 0 failed**, 1.57 s (unchanged) |
+| `kernel_call_counts` | **1 passed** — the per-verb table is **unmoved**, which is the point: no scope was narrowed |
+| `cli_check_log` | **9 passed** (was 6): the three stall tests |
+| `cli_latency --include-ignored` | **6 passed / 0 failed**, 15.80 s (was 5) |
+| `cli_switch_acceptance --include-ignored` | **9 passed / 0 failed / 0 ignored** (unchanged) |
+| `log_serde`, `log_regressions`, `log_replay` | **2 / 12 / 10**, all passing (unchanged) |
+| §12's one-reader grep | **41** (unchanged; quote §12's alternation, never R8's 89) |
+| a bare `tm log`, 3-year log, `All` scope | **232.9 ms** (`Dates` would be 75.9) |
+| the diff | 6 files, **+358 −7**; no Lean, no `Cargo.toml`, no `lean-toolchain`, no `kernel/corpus/`, no fixture, no snapshot |
+
+**Owed next.** **S2** (**gap 130**, D16: the kernel writes log lines) with quirk
+Q6(f) (**gap 86**) — and **gap 190** should be taken with it, because it is a
+field in the same `open` object S2 is already editing. Then **L9** (**gap 93**).
+Still open: **gaps 132, 133, 150-152, 160, 170, 180-182, 190**, and the
+performance levers **121, 122, 123, 126, 127**, which now have a second real
+number beside the switch's 146.8 ms: the `tm log` narrowing is worth ≈ 157 ms
+and is not built. The **§5.13 human drives** of the stage-3, stage-4 and
+stage-5 binaries are still owed, and so is the TUI half of the switch's own
+drive (**gap 182**).

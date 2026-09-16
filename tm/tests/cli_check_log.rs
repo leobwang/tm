@@ -72,7 +72,13 @@ fn log_lines(tm: &Tm) -> usize {
 
 /// Every problem `tm check --json` reported, as `(code, severity, file, line)`.
 fn problems(tm: &Tm) -> Vec<(String, String, String, u64)> {
-    let doc = tm.json(&["check"]);
+    problems_at(tm, cli_common::NOW)
+}
+
+/// [`problems`] at an explicit instant — the stall tests check a tree weeks
+/// after the block they are about was opened.
+fn problems_at(tm: &Tm, now: &str) -> Vec<(String, String, String, u64)> {
+    let doc = tm.json_at(now, &["check"]);
     doc["problems"]
         .as_array()
         .expect("problems")
@@ -321,4 +327,137 @@ fn tm_check_names_an_unreadable_line_in_every_chunk_of_a_multi_chunk_log() {
         lines.len().div_ceil(CHUNK_LINES),
         named.len()
     );
+}
+
+/// **Gap 119 / design §9.4's "Stalls", §18.7 and design gap 88** — a block
+/// left open holds the replay checkpoint's **ledger day** back, and until now
+/// `tm check` said `no problems` about it.
+///
+/// Three runs before the switch found this unreachable and said so honestly:
+/// the ledger day is a fact of the kernel's checkpoint, and no verb read one.
+/// S made it reachable, so this is the test that can finally fail.
+///
+/// **Both directions, because the obvious check is a trapdoor** (§5.8). The
+/// natural rule — "the ledger day is more than seven days behind `now`" — is
+/// true of trees with nothing wrong with them: §9.4 folds only up to
+/// `min(T, M) - keepDays`, so `L` trails the log's own last activity, and the
+/// **control tree below runs about twelve days behind while perfectly
+/// healthy**. It is the open block that must be named, with its age. So this
+/// asserts the warning bites on a stall *and* stays silent on a tree that is
+/// merely quiet — which is the assertion that would have caught the rule I
+/// first wrote.
+#[test]
+fn a_stalled_ledger_day_is_named_and_a_healthy_one_is_not() {
+    const LATE: &str = "2026-10-10T09:00:00-05:00";
+    // Days a verb runs on between the stall and the check, so the checkpoint
+    // reseals more than once and the ledger day has every chance to move on.
+    const BETWEEN: &[&str] = &["2026-09-12", "2026-09-21", "2026-09-30"];
+
+    // (1) The stall: `with_a_log` starts a block on ^t4 and nothing closes it.
+    let tm = with_a_log();
+    for day in BETWEEN {
+        tm.ok_at(&format!("{day}T09:00:00-05:00"), &["now"]);
+    }
+    let start_line = tm.log().iter().position(|e| e["ev"] == "start").expect("a `start`") as u64 + 1;
+
+    let out = tm.run_at(LATE, &["check"]);
+    assert_eq!(out.code, 0, "a stall is a warning, not an error: {}{}", out.stdout, out.stderr);
+    assert!(out.stdout.contains("log-stall"), "the stall is not named: {}", out.stdout);
+    assert!(out.stdout.contains("^t4"), "the stall does not name the block: {}", out.stdout);
+    // The consequence §9.4 names, not just the cause.
+    assert!(out.stdout.contains("ledger day"), "the stall does not name what it holds: {}", out.stdout);
+    let found = problems_at(&tm, LATE);
+    assert!(
+        found.contains(&("log-stall".into(), "warning".into(), ".tm/log.jsonl".into(), start_line)),
+        "the stall is not at the `start`'s own line {start_line}: {found:?}"
+    );
+    // D18's rule for the whole family: the exit code is the tree's alone.
+    assert_eq!(tm.json_at(LATE, &["check"])["exit_code"], 0);
+
+    // (2) The control: the same tree, the same days, the block **closed**. Its
+    // ledger day still trails `now` by far more than the seven-day bound, so a
+    // lag test would name it. Nothing is wrong with it and nothing is said.
+    let tm = with_a_log();
+    tm.ok_at("2026-09-07T10:05:00-05:00", &["done", "--went", "1"]);
+    for day in BETWEEN {
+        tm.ok_at(&format!("{day}T09:00:00-05:00"), &["now"]);
+    }
+    let out = tm.run_at(LATE, &["check"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(
+        !out.stdout.contains("log-stall"),
+        "a tree whose block was closed was named as stalled: {}",
+        out.stdout
+    );
+}
+
+/// **The bound is `> 7` days, and it is asserted on both sides of itself**
+/// (`check::LOG_STALL_DAYS`; design §9.4's "a stall longer than 7 days").
+///
+/// A block open for exactly seven days is not a stall; one open for eight is.
+/// Without this, `>=` and `>` both pass the test above, and the sentence the
+/// design wrote would not be the sentence the code means.
+#[test]
+fn a_block_open_exactly_seven_days_is_not_yet_a_stall() {
+    // `with_a_log` starts its block on 2026-09-07 (`cli_common::NOW`).
+    let seven = "2026-09-14T09:00:00-05:00";
+    let eight = "2026-09-15T09:00:00-05:00";
+
+    let tm = with_a_log();
+    let out = tm.run_at(seven, &["check"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(
+        !out.stdout.contains("log-stall"),
+        "a block open exactly 7 days was named a stall: {}",
+        out.stdout
+    );
+
+    let tm = with_a_log();
+    let out = tm.run_at(eight, &["check"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(
+        out.stdout.contains("log-stall"),
+        "a block open 8 days was not named a stall: {}",
+        out.stdout
+    );
+    assert!(out.stdout.contains("^t4"), "{}", out.stdout);
+}
+
+/// **The second stall cause design §9.4 names**: "an open block holding an
+/// observation, a `stop` never followed by a `start`, or an **open
+/// interruption** holds `L'` back."
+///
+/// `tm interrupt` leaves both at once — the block is still open and the
+/// interruption sits on top of it — and both really do hold the ledger day,
+/// so both are named, each at its own line with the verb that clears it. This
+/// exists because an arm that is built and never exercised is the shape §9.2
+/// calls a disguised gap: it would have passed review and named nothing.
+#[test]
+fn an_interruption_never_resumed_is_named_beside_its_block() {
+    const LATE: &str = "2026-10-10T09:00:00-05:00";
+    let tm = with_a_log();
+    tm.ok_at("2026-09-07T09:30:00-05:00", &["interrupt"]);
+    for day in ["2026-09-12", "2026-09-21", "2026-09-30"] {
+        tm.ok_at(&format!("{day}T09:00:00-05:00"), &["now"]);
+    }
+    let line_of = |ev: &str| {
+        tm.log().iter().position(|e| e["ev"] == ev).unwrap_or_else(|| panic!("a `{ev}`")) as u64 + 1
+    };
+
+    let out = tm.run_at(LATE, &["check"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    let stalls: Vec<_> = problems_at(&tm, LATE).into_iter().filter(|p| p.0 == "log-stall").collect();
+    assert_eq!(stalls.len(), 2, "both stalls should be named, got {stalls:?}");
+    for ev in ["start", "interrupt"] {
+        let line = line_of(ev);
+        assert!(
+            stalls.contains(&("log-stall".into(), "warning".into(), ".tm/log.jsonl".into(), line)),
+            "the `{ev}` at line {line} is not named: {stalls:?}"
+        );
+    }
+    // Each names the verb that actually clears it — the point of naming them
+    // separately rather than as one "something is open".
+    assert!(out.stdout.contains("an interruption of ^t4"), "{}", out.stdout);
+    assert!(out.stdout.contains("`tm resume`"), "{}", out.stdout);
+    assert!(out.stdout.contains("`tm done`"), "{}", out.stdout);
 }

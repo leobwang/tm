@@ -45,6 +45,7 @@ use tm_core::tree::Tree;
 use super::closing;
 use super::ctx::{Ctx, Globals, ReplayScope};
 use super::kernel_bridge::Grain;
+use super::kernel_log;
 use super::ghost;
 use super::items::id_gen;
 use super::out::{emit, CliError};
@@ -1015,6 +1016,104 @@ fn log_problems(ctx: &Ctx) -> Vec<validate::CheckProblem> {
                     row.display(),
                     validate::LOG_FUTURE_DAYS,
                     ctx.now.format("%Y-%m-%d %H:%M"),
+                ),
+            ));
+        }
+    }
+    out.extend(stall_problems(ctx));
+    out
+}
+
+/// **A stall, named** — design §9.4's "Stalls" and §18.7 (README gap 119,
+/// design gap 88: "`tm check` names a stall longer than 7 days").
+///
+/// A block left open, or an interruption never resumed, holds the replay
+/// checkpoint's **ledger day** `L` back. Every day from the stall onward then
+/// stays an *open day* inside the checkpoint instead of going out once as a
+/// sealed record, so the checkpoint grows by about 2.5 KB a stalled day and
+/// every call carries the lot. No answer is wrong and no line is damaged,
+/// which is why this is a **warning** like the other two and moves no exit
+/// code (D18).
+///
+/// **The cause is what is named, not the lag — measured, not assumed.** The
+/// obvious check is "the ledger day is more than seven days behind `now`", and
+/// it is wrong: §9.4 folds only up to `min(T, M) - keepDays`, where `M` is the
+/// greatest header day among survivors, so `L` trails the log's own last
+/// activity rather than today. Measured on this branch over two trees
+/// identical but for the open block, the **unstalled** one ran a ledger day
+/// **twelve days** behind `now` while the stalled one pinned at the day its
+/// block opened and never moved. A lag test would therefore have named a tree
+/// with nothing wrong with it — a warning nobody can act on, and §5.8's
+/// trapdoor. What is both actionable and exactly what §9.4 calls a stall is
+/// the open block or open interruption itself, with its age; the ledger day
+/// it holds is reported beside it as the consequence, when there is one.
+fn stall_problems(ctx: &Ctx) -> Vec<validate::CheckProblem> {
+    // The line the stall began on. A stall holds the ledger day at its own
+    // day, so its line is unfolded and the view still carries it; line 0 is
+    // `CheckProblem`'s "the file, no line", which is what a header this scope
+    // cannot see honestly gets rather than a guess.
+    let line_of = |tag: &str, id: Option<&str>| -> usize {
+        ctx.replay
+            .view()
+            .iter()
+            .rev()
+            .find(|r| r.tag == tag && !r.cancelled && r.id.as_deref() == id)
+            .map_or(0, |r| r.line as usize)
+    };
+    // The consequence clause, when anything is sealed at all. `None` is a tree
+    // whose log is all recent lines (nothing folded) and `tm check`'s own
+    // tolerant load after a `reachTooFar` — in both, no ledger day is being
+    // held, so the sentence is simply not made.
+    let held = ctx.ledger_day.map_or_else(String::new, |l| {
+        format!(
+            "; it holds the ledger day at {}, so every day since then stays open in the \
+             replay checkpoint (about 2.5 KB a stalled day)",
+            kernel_log::date_of(l)
+        )
+    });
+    // Whole days in `cfg.tz`, the zone every day is attributed in.
+    let days_since = |t: chrono::DateTime<chrono::FixedOffset>| -> i64 {
+        (ctx.today - t.with_timezone(&ctx.cfg.tz).date_naive()).num_days()
+    };
+    let mut out = Vec::new();
+    if let Some(b) = &ctx.replay.open_block {
+        let age = days_since(b.started);
+        if age > validate::LOG_STALL_DAYS {
+            out.push(validate::CheckProblem::warning(
+                validate::LOG_STALL,
+                LOG_PATH,
+                line_of("start", Some(b.id.as_str())),
+                None,
+                format!(
+                    "a block on ^{} has been open since {}, {age} days ago (more than {}){held} \
+                     — close it with `tm done` or `tm stop`",
+                    b.id,
+                    b.started.format("%Y-%m-%d %H:%M"),
+                    validate::LOG_STALL_DAYS,
+                ),
+            ));
+        }
+    }
+    // An interruption with no `start` is a `resume` that never had one: there
+    // is no instant to age it from, so it is not named here.
+    if let Some(i) = ctx.replay.open_interrupt.as_ref().filter(|i| i.start.is_some()) {
+        let began = i.start.expect("filtered to `Some`");
+        let age = days_since(began);
+        if age > validate::LOG_STALL_DAYS {
+            let what = i.id.as_ref().map_or_else(
+                || "an interruption".to_string(),
+                |id| format!("an interruption of ^{id}"),
+            );
+            out.push(validate::CheckProblem::warning(
+                validate::LOG_STALL,
+                LOG_PATH,
+                line_of("interrupt", i.id.as_deref()),
+                None,
+                format!(
+                    "{what} has been open since {}, {age} days ago (more than {}){held} \
+                     — close it with `tm resume`",
+                    began.format("%Y-%m-%d %H:%M"),
+                    validate::LOG_STALL_DAYS,
                 ),
             ));
         }

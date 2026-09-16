@@ -1775,6 +1775,18 @@ pub struct Read {
     pub replay: Replay,
     pub outcome: Outcome,
     pub notices: Vec<String>,
+    /// **The checkpoint's ledger day `L` after this call** (§9.1), or `None`
+    /// when nothing is sealed.
+    ///
+    /// Every day below `L` is final; days at or above it stay in the
+    /// checkpoint as open days, so how far `L` trails `now` is what a stall
+    /// costs (§9.4, §18.7). `tm check` reads it to name one (README gap 119).
+    ///
+    /// **`0` is the "nothing sealed" sentinel, not year 1.** A genesis that
+    /// sealed nothing — a log of recent lines only — carries `Meta::default()`,
+    /// and `Ckpt.empty` has `ledgerDay 0` too, so a lag computed against it
+    /// would read as seven hundred thousand days. It is `None` here instead.
+    pub ledger_day: Option<u64>,
 }
 
 /// **The process's replay caches**, one per plan root (§9.8, CRIT 26, K14).
@@ -2075,5 +2087,6 @@ pub fn replay_scoped(
     let replay = decode_facts(&answer, tz).map_err(GenesisError::Fault)?;
     let mut notices = r.notices.clone();
     notices.extend(notice);
-    Ok(Read { replay, outcome: r.outcome, notices })
+    let ledger_day = (r.snapshot.meta.ledger_day > 0).then_some(r.snapshot.meta.ledger_day);
+    Ok(Read { replay, outcome: r.outcome, notices, ledger_day })
 }

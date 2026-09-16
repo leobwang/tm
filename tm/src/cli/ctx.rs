@@ -178,6 +178,9 @@ pub struct StoredSegment {
 pub struct LogRead {
     /// Every fact the log yields (§10.1).
     pub replay: Replay,
+    /// The checkpoint's ledger day after this call, or `None` when nothing is
+    /// sealed ([`kernel_log::Read::ledger_day`]).
+    pub ledger_day: Option<u64>,
 }
 
 /// **One line's header**, as `tm undo`'s recorder reads it (design §14.3 row
@@ -328,6 +331,15 @@ pub struct Ctx {
     /// The line is carried beside the sentence rather than parsed back out of
     /// it (§5.3: one reader of a fact, not two).
     pub replay_fault: Option<(usize, String)>,
+    /// **The replay checkpoint's ledger day `L`** (§9.1), as of the call that
+    /// loaded this `Ctx`; `None` when nothing is sealed.
+    ///
+    /// Days below `L` are final and their records went out once; days at or
+    /// above it stay in the checkpoint as open days. A stall — a block or an
+    /// interruption left open — holds `L` back, so the checkpoint keeps every
+    /// day since as open (§9.4, §18.7). `tm check` is the one reader
+    /// (README gap 119).
+    pub ledger_day: Option<u64>,
     /// The scope the verb asked its replay for; [`Ctx::reload`] asks again.
     pub scope: ReplayScope,
     /// `.tm/model.json` (§8.5).
@@ -409,8 +421,8 @@ impl Ctx {
         let scope = scope(&state, today);
         // Gap 145: `tm check` alone loads tolerantly, and only `reachTooFar` is
         // tolerated — see `Ctx::load_tolerant`.
-        let (replay, replay_fault) = match Ctx::replay_with(&store, &cfg, now, today, scope) {
-            Ok(read) => (read.replay, None),
+        let (replay, replay_fault, ledger_day) = match Ctx::replay_with(&store, &cfg, now, today, scope) {
+            Ok(read) => (read.replay, None, read.ledger_day),
             Err(CliError::Kernel(issue)) if tolerate && issue.name == REACH_TOO_FAR => {
                 let line = issue
                     .detail
@@ -419,7 +431,9 @@ impl Ctx {
                     .and_then(|l| usize::try_from(l).ok())
                     .unwrap_or(1);
                 let tz = Ctx::tz_wire(&store, &cfg);
-                (Ctx::empty_replay(&cfg, &tz, today)?, Some((line, issue.message)))
+                // No ledger day: the checkpoint is exactly what could not be
+                // read, so `tm check` reports the fault and never a stall.
+                (Ctx::empty_replay(&cfg, &tz, today)?, Some((line, issue.message)), None)
             }
             Err(e) => return Err(e),
         };
@@ -443,6 +457,7 @@ impl Ctx {
             tree,
             replay,
             replay_fault,
+            ledger_day,
             scope,
             model,
             timed_out: Vec::new(),
@@ -469,6 +484,7 @@ impl Ctx {
         self.tree = self.files.tree();
         let read = Ctx::replay_with(&self.store, &self.cfg, self.now, self.today, self.scope)?;
         self.replay = read.replay;
+        self.ledger_day = read.ledger_day;
         Ok(())
     }
 
@@ -526,7 +542,7 @@ impl Ctx {
         for notice in &read.notices {
             eprintln!("{notice}");
         }
-        Ok(LogRead { replay: read.replay })
+        Ok(LogRead { replay: read.replay, ledger_day: read.ledger_day })
     }
 
     /// The log's bytes as they are on disk now; a missing file is an empty log.

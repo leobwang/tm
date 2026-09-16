@@ -573,3 +573,72 @@ fn a_verb_on_a_tree_with_three_years_of_log_takes_well_under_a_second() {
     eprintln!("latency{label}: 10 stalled days, worst {worst:?}, {writes} checkpoint generation(s)");
     assert!(writes <= 10, "a stalled run wrote {writes} checkpoint generations over 10 days");
 }
+
+/// **Gap 129, measured rather than assumed** — a plain `tm log` asks the `All`
+/// scope (§11.1), which since the switch merges **every** month's sealed
+/// records, on one of the verbs users run most often.
+///
+/// Gap 129 item 4 set the condition for closing it in advance: "if a bare
+/// `tm log` at three years sits inside `LATER_VERB` on the `All` scope, the
+/// narrowing is not worth its second call and this gap closes as *measured,
+/// not needed*; if it does not, S builds the two-step." This is that
+/// measurement, on the same three-year tree T11 uses.
+///
+/// **And it is the behavioural test gap 117 could not carry.** Before S every
+/// scope answered with the whole log, so `tm log --tail n` returned *n*
+/// whatever scope it asked for and no test could fail. The scope is real now:
+/// a tail whose scope could not hold the last *n* headers would come out
+/// **short**, silently, which is the failure gap 117 took `All` to avoid. A
+/// three-year log is the case where that can actually happen, and a tail far
+/// longer than the default is asked for here on purpose.
+#[test]
+fn tm_log_on_three_years_of_log_stays_a_later_verb_and_returns_its_whole_tail() {
+    let tm = history_tree();
+    let (lines, bytes) = write_log(&tm, 1_095);
+    let label = format!(" (gap 129 3y log: {lines} lines, {bytes} bytes)");
+    let _serial = SERIAL.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    // Genesis first, so what follows is a later verb and not the one-off
+    // rebuild every upgrade pays (gap 99). Its own bound is FIRST_VERB.
+    let (code, out, first) = timed(&tm, &["drop", "^z2"], FIRST_VERB);
+    assert_eq!(code, 0, "{out}");
+    eprintln!("latency{label}: the first verb (genesis) {first:?}");
+
+    // Every `tm log` spelling, each at the scope §11.1 gives it: a bare tail
+    // and `--item` ask `All`, `--since` asks `Dates`.
+    for (what, args) in [
+        ("tm log (bare, the default tail of 20; All)", vec!["log"]),
+        ("tm log --tail 200 (All)", vec!["log", "--tail", "200"]),
+        ("tm log --item ^y1 (All)", vec!["log", "--item", "^y1"]),
+        ("tm log --since 7d (Dates)", vec!["log", "--since", "7d"]),
+        ("tm --json log --tail 200 (All)", vec!["--json", "log", "--tail", "200"]),
+    ] {
+        let (code, out, took) = timed(&tm, &args, LATER_VERB);
+        assert_eq!(code, 0, "`tm {}`: {out}", args.join(" "));
+        eprintln!("latency{label}: {what} {took:?}");
+        assert!(took < LATER_VERB, "`tm {}` took {took:?} (bound {LATER_VERB:?})", args.join(" "));
+    }
+
+    // **The behavioural half.** The tail comes back whole, and `total` is the
+    // log's all-time entry count rather than the row count of the scope it
+    // asked for (gap 136's settlement, §11.4 step 5).
+    let doc = tm.json_at(AT, &["log", "--tail", "200"]);
+    let entries = doc["entries"].as_array().expect("entries");
+    assert_eq!(
+        entries.len(),
+        200,
+        "a `--tail 200` over three years came back with {} entries — the scope could not hold it",
+        entries.len()
+    );
+    let total = doc["total"].as_u64().expect("total");
+    assert!(
+        total >= lines as u64,
+        "`total` is {total}, below the {lines} lines written: it is the scope's rows, not the log's count"
+    );
+    // The rows really are the newest ones, in order: a tail that came back
+    // whole but stale would pass the count assertion alone.
+    let first_t = entries[0]["t"].as_str().expect("a t").to_string();
+    let last_t = entries[199]["t"].as_str().expect("a t").to_string();
+    assert!(first_t < last_t, "the tail is not in order: {first_t} then {last_t}");
+    eprintln!("latency{label}: --tail 200 returned 200 entries, total {total}, {first_t}..{last_t}");
+}
