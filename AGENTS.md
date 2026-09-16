@@ -1310,6 +1310,22 @@ warnings, 9 blank, 8 residue; T3 4,601 spellings, 822 read (42 leap seconds),
 3,765 refused by both, 14 P23 residue; the generated month 3,036 lines over 24
 event kinds.**
 
+**Provenance is not freshness: rebuild the binary before you trust a scratch
+tree** (W-11's audit repair; README gap 196). `build-oracle.sh` stamps the
+scratch tree with the ref it extracted, and that stamp says nothing about when
+the **binary** beside it was built. W-11's audit did exactly what this section
+asks — diffed the extracted `tm-core/src/log.rs` and `tm/src/cli/ctx.rs` against
+`git show 4748911:` and found them identical — and the binary it then ran
+predated D23, had no `parse-entry`, and failed both grammar arms with the empty
+message `the fork oracle failed: ` (that oracle printed its usage banner on
+stdout, and only stderr was quoted). One re-run of `build-oracle.sh` fixed it.
+The tests no longer let that happen silently: `fork_oracle` in
+`kernel_log_grammar.rs` and `kernel_replay_parity.rs` reads the binary's own
+usage banner and **refuses an oracle that lacks the mode by name**, and a failed
+call quotes the exit code and *both* streams. A leftover binary is still the
+right thing to reuse — just re-run the script first; it is a no-op when the tree
+and the sources already match.
+
 Run at stage 5's close with `512 4`: **138 corpus lines compared, 77 with nothing
 to report; 2,048 generated lines compared, 470 with nothing to report** — both
 identical to the `017ead3` run below, so the grammar surface did not move while

@@ -108,8 +108,26 @@ fi
 out=$( cd TmKernel && LEAN_PATH=.lake/build/lib/lean "$LEAN" Goals.lean 2>&1 )
 rc=$?
 goals=$( grep -c '^theorem ' TmKernel/Goals.lean )
+# The stage mix is MEASURED, not spelled.  This line used to print a literal
+# "stages 3-6" beside a counted $goals, and by W-11 all thirteen outstanding
+# goals were stage 6's -- a number quoted from a stale measurement, which is
+# AGENTS 9.2's own disguised-gap list.  Each goal belongs to the `# STAGE n`
+# header above it; a goal above every header is counted and SAID, never
+# silently attributed.
+stages=$( awk '
+  /^# STAGE/ { s = ""; for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+$/) { s = $i; break }; next }
+  /^theorem / { if (s == "") loose++; else { seen[s] = 1; n++ } }
+  END {
+    m = 0; for (k in seen) out[m++] = k + 0
+    for (i = 0; i < m; i++) for (j = i + 1; j < m; j++) if (out[j] < out[i]) { t = out[i]; out[i] = out[j]; out[j] = t }
+    if (m == 0) line = "no stage header"
+    else if (m == 1) line = "all stage " out[0]
+    else { line = "stages " out[0]; for (i = 1; i < m; i++) line = line ", " out[i] }
+    if (loose) line = line ", " loose " above every header"
+    print line
+  }' TmKernel/Goals.lean )
 if [ $rc -eq 0 ] && ! printf '%s\n' "$out" | grep -q 'error'; then
-  say "stage goals" "ok  ($goals outstanding, stages 3-6)"
+  say "stage goals" "ok  ($goals outstanding, $stages)"
 else
   say "stage goals" "FAILED"; fail=1
   printf '%s\n' "$out" | grep -v 'declaration uses' | head -40

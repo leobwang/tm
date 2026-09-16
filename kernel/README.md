@@ -23417,3 +23417,194 @@ number beside the switch's 146.8 ms: the `tm log` narrowing is worth ≈ 157 ms
 and is not built. The **§5.13 human drives** of the stage-3, stage-4 and
 stage-5 binaries are still owed, and so is the TUI half of the switch's own
 drive (**gap 182**).
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 5, W-11 (the repair) — the three defects W-11's
+     independent audit found, each REPRODUCED before it was fixed, most severe
+     first.  **Gap 195** (S's own acceptance test for the zone guard could not
+     detect that guard's removal — and the reason turned out to be a SECOND
+     guard nobody had written down), **gap 196** (a leftover oracle binary whose
+     provenance was right and whose modes were stale, reported through an EMPTY
+     failure message) and **gap 197** (`check.sh` printed a literal "stages 3-6"
+     beside a measured burn-down).  The repair step's range is 195-199; new gaps
+     start at 198.  No Lean edited: audit 3934, cheats 157, parity P35,
+     burn-down 13, all stage 6, all unchanged.
+     =========================================================================== -->
+
+## Stage 5, W-11 (the repair), 2026-09-16: a test that could not fail, an oracle that was stale, and a literal that lied
+
+**The honest paragraph, first.** Every defect was **reproduced before it was
+fixed**, and the first fix is *not* the one its name suggests. The audit's
+headline finding is real — `a_changed_tz_invalidates_the_checkpoint` stays green
+with the host's zone guard neutralised — and the reason is a **second guard
+nobody had written down**: the kernel refuses the very same checkpoint itself
+(G0's `zone`, `ckpt.tzKey ≠ tz.key`), and the host's fallback from that refusal
+is the same genesis, writing the same fresh generation. Measured, not argued:
+with the branch neutralised the tree still answers in the new zone, and the
+checkpoint still moves from `America/Chicago … g9cb394de003974c8` to
+`Asia/Tokyo … g7fc9709dd7150f0c`. So **no CLI-visible fact separates the two
+guards**, no strengthening of that T9 could make it bite for the host's branch
+alone, and claiming otherwise would have been a worse gap than the one being
+closed. The repair has two halves instead: the T9 now asserts the invalidation
+it is named for **directly**, and the guard that *is* separable is asserted
+where it can be separated — in process, by the reason the host records.
+
+### Gap 195 — closed: the zone guard is now detectable by its removal
+
+1. **What was not done.** `a_changed_tz_invalidates_the_checkpoint`
+   (`tm/tests/cli_switch_acceptance.rs`), one of §14.6's ten T9 names, asserted
+   only that the zone change moved some answer (`!bite.is_empty()`) and that a
+   stale-cached tree answers like a cache-deleted one (`same(stale, rebuilt)`).
+   Both hold on its fixture **even when the whole of `Snapshot::valid_for` is
+   short-circuited** (the audit's mutation) — a check no input can fail, inside
+   S's own acceptance suite. README gap 16's class, AGENTS §9.2's list.
+2. **Why it could not simply be sharpened.** The kernel's G0 refuses the stale
+   checkpoint independently, so both arms end in genesis with identical answers
+   and an identically fresh generation. The audit's second suggestion — "a log
+   whose sealed records are zone-dependent at the instant asked" — is therefore
+   **unreachable**: no such log can make a stale record decide an answer, because
+   no stale record is ever used.
+3. **What was done.** Two halves, both green and both measured against the
+   mutation:
+   - the T9 now reads `ckpt.json` itself, before and after: the checkpoint must
+     be **re-keyed** to the new zone, in a **new generation whose `prevGen` names
+     the old one**, with a manifest naming that new generation's sealed records
+     and none of the old zone's. It prints what it saw
+     (`the checkpoint went America/Chicago|2025b|1900-2200 g096876bef219b12f →
+     Asia/Tokyo|2025b|1900-2200 g1d22da1e30d864d5 over 2 sealed months`);
+   - a new in-process test,
+     `t5_a_changed_zone_key_is_refused_by_the_host_and_by_the_kernel_behind_it`
+     (`tm/tests/kernel_replay_parity.rs`), asserts **each guard on its own**: the
+     host's by the reason it records (`another zone`, *not* the kernel's `zone at
+     line 0`), and the kernel's by handing the stale checkpoint straight to
+     `log_call` with the other zone's table and requiring `Refusal::Zone`. A
+     control call in the *same* zone must resume, so the claim is not vacuous for
+     a cache that rebuilt on every call.
+4. **The bite, measured** (each mutation applied in a scratch run and reverted;
+   the tree was clean and rebuilt after every one):
+
+| mutation of `tm/src/cli/kernel_log.rs` | the T9 | the new in-process test | `valid_for`'s unit test |
+|---|---|---|---|
+| `if false && self.tz_key != tz_key` (the zone branch alone) | **ok** — 7 of 11 answers moved; recorded, not hidden | **FAILED**: left `Some("zone at line 0")`, right `Some("another zone")` | **FAILED**: left `Ok(())`, right `Err("another zone")` |
+| the whole of `valid_for` returning `Ok(())` (the audit's) | ok (the audit measured this; the prefix T9 is the one that failed) | — | — |
+
+   So the mutation that used to pass the whole suite now fails **two** tests by
+   name, and the T9 says in its own doc comment what it can and cannot separate.
+
+### Gap 196 — closed: a stale oracle is refused by name, not by an empty message
+
+1. **What was not done.** `fork_oracle` (in `kernel_log_grammar.rs` and
+   `kernel_replay_parity.rs`) quoted only the child's **stderr** on failure. The
+   binary W-10 left at `/tmp/claude-1000/tm-oracle/target/debug/tm-oracle` had the
+   right provenance — `.oracle-ref` and the extracted `tm-core/src/log.rs` and
+   `tm/src/cli/ctx.rs` are `4748911` — and predated **D23**, so it had no
+   `parse-entry` mode: it printed its usage banner (on stdout) and exited 2, and
+   both `TM_ORACLE` grammar arms failed with `the fork oracle failed: ` and
+   nothing after the colon. **Provenance is not freshness**, and the brief's own
+   provenance check could not catch it.
+2. **What was done.** `fork_oracle` reads the binary's **own usage banner**
+   before feeding it anything and refuses a binary that lacks the requested mode,
+   naming the rebuild command; a failed call now quotes the exit code and *both*
+   streams. AGENTS §7.3 records the lesson beside the oracle's own instructions.
+3. **Verified both ways.** Against a stub that behaves exactly as the pre-D23
+   binary did (usage on stdout, exit 2), the round-trip test now fails with
+   `the oracle at … has no `parse-entry` mode — it is STALE, whatever its
+   `.oracle-ref` says. Rebuild it: …` and the banner it read. Against a freshly
+   built oracle (one `build-oracle.sh` run, capped at 16G) every arm passes:
+   **1,375** kernel renderings read back to the fork's own entry, and T5's
+   `TM_ORACLE` arm reports **469 logs over 6 zones, 8,442 `Replay` keys, 195,243
+   scalar values, 24 sightings of P21 and no other disagreement** — the figures
+   AGENTS §7.3 already records, reproduced.
+
+### Gap 197 — closed: `check.sh` measures the stage mix it prints
+
+1. **What was not done.** `kernel/check.sh`'s check 7 printed
+   `ok  ($goals outstanding, stages 3-6)`: the count was measured and the **range
+   was a literal**. All thirteen outstanding goals are stage 6's, so the line was
+   a stale measurement of exactly the kind §5.11 exists to stop, in the script
+   every audit quotes.
+2. **What was done.** The mix is read from `Goals.lean`'s own `# STAGE n`
+   headers: each goal is attributed to the header above it, one stage prints as
+   `all stage 6`, several print as a list, and a goal above every header is
+   counted and **said** rather than silently attributed. Today the line reads
+   `ok  (13 outstanding, all stage 6)`, which is what this README's blocks have
+   been claiming independently.
+
+### The fourth audit item: the brief is stale and the repo is right
+
+The audit's own fourth item asked for `cli_switch_acceptance --include-ignored`
+to report **10 passed**. The file holds **nine** `#[test]`s and says so in its
+header: eight of §14.6's ten T9 names (the other two live in `cli_check_log.rs`)
+plus **T12**. `--include-ignored` reports **9 passed / 0 ignored**, both
+`#[ignore]`s having been deleted at S. Re-verified here: nine `#[test]`s, zero
+`#[ignore]`s, and `cli_check_log.rs` green at 9. **The committed tests are the
+truth and the brief's count is stale** — recorded, nothing changed.
+
+### Observable behaviour changes
+
+| where | before | after |
+|---|---|---|
+| `kernel/check.sh`, check 7's line | `ok  (13 outstanding, stages 3-6)` — the range a literal | `ok  (13 outstanding, all stage 6)` — the range measured from `Goals.lean`'s headers |
+| a `TM_ORACLE` arm run against a stale oracle binary | `the fork oracle failed: ` (empty) | the mode is named, with the rebuild command and the banner the binary printed |
+| `tm` itself, every verb | — | **unchanged**: no `tm/src` file is touched by this commit |
+
+### Recorded disagreements between the design, the brief and the repo
+
+1. **The zone guard is two guards, and the design says so in two places without
+   joining them** (§9.8's invalidation list for the host, §10.4/G0's `zone` for
+   the kernel). Nothing in the design or the README said that the second makes
+   the first undetectable from the CLI. It does, it is now written down in the
+   T9's own doc comment, and it is the reason gap 195 could not be closed the way
+   the audit suggested.
+2. **The brief's `cli_switch_acceptance --include-ignored` count (10) is stale**;
+   the repo's nine is right (above).
+3. **The brief's "§12's one-reader grep is 125"** is §12's *pre-deletion* figure.
+   Measured here with §12's own alternation: **41**, exactly what the switch and
+   S-after blocks recorded. Quote §12's alternation, never R8's 89.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited** — `git diff --name-only` holds five files, none of them
+`.lean`, no `lean-toolchain`, no `Cargo.toml`, no `Cargo.lock`, nothing under
+`kernel/corpus/`, **no fixture and no snapshot re-blessed**. Goals discharged,
+refuted or added: none; burn-down **13 → 13**, all stage 6's. New theorems: none
+— the audit stays at **3934**. New `decide`/`rfl` witnesses: none, so no probe
+budget was spent. New cheats: none (highest **157**). New parity entries: none
+(highest **P35**): a host-side guard is not a difference from the fork — the fork
+has no checkpoint to invalidate. No predicate or assertion was weakened, no
+memory bound raised, and the comparand stayed the fork throughout.
+
+### Numbers
+
+**Taken:** gaps **195**, **196**, **197**. **Highest:** gap 197, cheat 157,
+parity P35. New gaps start at **198** (the repair step's range is 195-199).
+
+**Re-measured** on the committed tree; every command capped at `MemoryMax=40G`,
+`MemorySwapMax=0`, the oracle build and the oracle arms at 16G:
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, **3.09 / 3.03 / 3.06 s** (S-after `cae3695`: 3.12 / 3.08 / 3.09). **−1.0%**, inside the 10%-per-step rule |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13**, and check 7 now *says* all thirteen are stage 6's |
+| `cargo test --workspace` | **1297 passed / 0 failed / 9 ignored across 78** result lines, exit 0 (the audit measured 1296 / 0 / 9 across 78). **+1, fully explained**: the new in-process zone test |
+| FFI suite | **100 passed / 0 failed** (5 binaries) |
+| T5 (`kernel_replay_parity`) | **28 passed / 0 failed / 4 ignored**, 6.16 s (was 27) |
+| T5's `TM_ORACLE` arm, fresh oracle (16G) | **469 logs over 6 zones, 8,442 `Replay` keys, 469 entry counts, 8 fitted models, 195,243 scalar values; 24 P21 and no other disagreement** |
+| the door suite (`kernel_log_door`) | **21 passed / 0 failed** (unchanged) |
+| `kernel_log_grammar` | **6 passed / 2 ignored**; under the fresh oracle both arms run, **1,375** renderings read back |
+| `cli_switch_acceptance --include-ignored` | **9 passed / 0 failed / 0 ignored** (unchanged) |
+| `cli_check_log` | **9 passed** (unchanged) |
+| `cli_latency --include-ignored` | **6 passed / 0 failed**, 15.72 s (unchanged) |
+| `kernel_call_counts` | **1 passed** — the per-verb table is unmoved: no scope, no verb and no call count changed |
+| `log_serde`, `log_regressions`, `log_replay` | **2 / 12 / 10**, all passing (unchanged) |
+| §12's one-reader grep | **41** (unchanged; §12's alternation, never R8's 89) |
+| the diff | 6 files, **+451 −5**, this ledger included (**+260 −5** outside it: three test files, `check.sh` and AGENTS §7.3); no Lean, no `Cargo.toml`, no `lean-toolchain`, no `kernel/corpus/`, no fixture, no snapshot, and **nothing under `tm/src`** |
+
+**Owed next**, unchanged by this repair: **S2** (**gap 130**, D16) with quirk
+Q6(f) (**gap 86**), and **gap 190** with it; then **L9** (**gap 93**). Still
+open: **gaps 132, 133, 150-152, 160, 170, 180-182, 190**, and the performance
+levers **121, 122, 123, 126, 127**. The **§5.13 human drives** of the stage-3,
+stage-4 and stage-5 binaries are still owed, and so is the TUI half of the
+switch's own drive (**gap 182**).

@@ -975,6 +975,38 @@ fn the_frozen_fork_answers_cover_exactly_the_inputs_the_tests_feed() {
 // AGENTS §7.3 keeps out of `check.sh` and out of `cargo test --workspace`.
 // ---------------------------------------------------------------------------
 
+/// **The oracle's own usage banner**, read from the binary itself.
+///
+/// Provenance is not freshness. W-11's audit followed the brief, verified that
+/// the scratch tree's `.oracle-ref` and extracted sources were fork point
+/// `4748911` — and the *binary* built from them was older than owner decision
+/// **D23**, so it had no `parse-entry` mode: every call printed this banner and
+/// exited 2, and the success assertion below reported `the fork oracle failed: `
+/// with an **empty** message, because that oracle printed its banner on stdout.
+/// So the mode is checked before it is used and named when it is missing, and
+/// both streams are quoted when a call fails.
+///
+/// Neither the exit code (2, no subcommand) nor the stream matters here; only
+/// the text does.
+fn oracle_banner(bin: &std::path::Path) -> String {
+    let out = std::process::Command::new(bin)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap_or_else(|e| panic!("the fork oracle {}: {e}", bin.display()));
+    format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr))
+}
+
+/// Refuse a stale oracle **by name**, before it is fed anything.
+fn assert_oracle_mode(bin: &std::path::Path, mode: &str) {
+    let banner = oracle_banner(bin);
+    assert!(
+        banner.contains(&format!("tm-oracle {mode}")),
+        "the oracle at {} has no `{mode}` mode — it is STALE, whatever its `.oracle-ref` says. \
+         Rebuild it: kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh. Its banner reads:\n{banner}",
+        bin.display()
+    );
+}
+
 /// Run one mode of the fork-point oracle over `inputs`, one JSON value per line
 /// in, one JSON object per line out.
 ///
@@ -983,6 +1015,7 @@ fn the_frozen_fork_answers_cover_exactly_the_inputs_the_tests_feed() {
 /// values, which `parse-entry` accepts for exactly this reason.
 fn fork_oracle(bin: &std::path::Path, args: &[&str], inputs: &[Vec<u8>]) -> Vec<Value> {
     use std::io::Write as _;
+    assert_oracle_mode(bin, args.first().expect("the oracle is run in a mode"));
     let mut child = std::process::Command::new(bin)
         .args(args)
         .stdin(std::process::Stdio::piped())
@@ -1006,7 +1039,15 @@ fn fork_oracle(bin: &std::path::Path, args: &[&str], inputs: &[Vec<u8>]) -> Vec<
     let feeder = std::thread::spawn(move || stdin.write_all(input.as_bytes()).expect("write to the oracle"));
     let out = child.wait_with_output().expect("the oracle runs");
     feeder.join().expect("the feeding thread");
-    assert!(out.status.success(), "the fork oracle failed: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "the fork oracle {} {:?} failed (exit {:?})\n--- stderr ---\n{}\n--- stdout ---\n{}",
+        bin.display(),
+        args,
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr),
+        String::from_utf8_lossy(&out.stdout)
+    );
     String::from_utf8(out.stdout)
         .expect("the oracle's output is UTF-8")
         .lines()

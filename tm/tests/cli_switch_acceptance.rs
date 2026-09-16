@@ -165,6 +165,18 @@ fn cache_dir(tm: &Tm) -> PathBuf {
     tm.plan.join(".tm/cache/replay")
 }
 
+/// The checkpoint the replay cache holds (`kernel_log::CKPT_FILE`, §9.8's format 3), as JSON.
+fn checkpoint(tm: &Tm) -> serde_json::Value {
+    let path = cache_dir(tm).join("ckpt.json");
+    let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    serde_json::from_str(&text).unwrap_or_else(|e| panic!("{} is not JSON: {e}", path.display()))
+}
+
+/// One string field of a checkpoint.
+fn ckpt_str(ckpt: &serde_json::Value, key: &str) -> String {
+    ckpt[key].as_str().unwrap_or_else(|| panic!("the checkpoint has no string `{key}`: {ckpt}")).to_string()
+}
+
 /// Every file under `dir`, by relative path, with its bytes — for "nothing was persisted".
 fn bytes_under(dir: &Path) -> BTreeMap<String, Vec<u8>> {
     let mut out = BTreeMap::new();
@@ -346,8 +358,26 @@ fn deleting_the_replay_cache_changes_nothing() {
 /// The comparand is the same tree with the cache deleted: two trees identical in every byte except
 /// the derived cache must answer identically, or the cache decided something. That is the exact
 /// claim "invalidates the checkpoint" makes, and it is the claim whether the cache holds a zone
-/// table (today) or a zone-keyed `ckpt.json` (after S, whose integrity check refuses a differing
+/// table (before S) or a zone-keyed `ckpt.json` (since S, whose integrity check refuses a differing
 /// zone key and goes to genesis, §9.8).
+///
+/// **The answers alone did not make that claim, and now the checkpoint itself is read** (W-11 audit
+/// repair, README gap 195). The two `--json` comparisons above are necessary and not sufficient: on
+/// this fixture they both hold *even when the whole of `Snapshot::valid_for` is neutralised*
+/// — measured — so a test that stopped there would stay green while the mechanism it is named for
+/// was deleted (README gap 16, AGENTS §9.2). So the checkpoint on disk is read before and after:
+/// it must be re-keyed to the new zone, in a **new generation naming the old one**, and its
+/// manifest must name that new generation's records rather than the old zone's.
+///
+/// **What this still cannot separate, said plainly.** The host's `valid_for` is not the only zone
+/// guard: the kernel's G0 refuses the same checkpoint (`ckpt.tzKey ≠ tz.key`), and the host's
+/// fallback from that refusal is the same genesis, writing the same fresh generation. So no
+/// CLI-visible fact distinguishes the two, and neutralising the host's branch alone leaves every
+/// assertion here true. The guard that *is* separable is asserted where it can be —
+/// `kernel_replay_parity.rs`'s `t5_a_changed_zone_key_is_refused_by_the_host_and_by_the_kernel_behind_it`,
+/// which reads `rebuilt_because` (`another zone`, not `zone at line 0`) — and the host's own unit
+/// test `a_snapshot_round_trips_its_text_with_the_checkpoint_verbatim` keeps `valid_for`'s four
+/// refusals by name.
 #[test]
 fn a_changed_tz_invalidates_the_checkpoint() {
     let tm = plan_with_log("energy-14d");
@@ -355,6 +385,15 @@ fn a_changed_tz_invalidates_the_checkpoint() {
     let under_chicago = answers(&tm, LATER, JSON_SPELLINGS);
     let zone_before = fs::read_to_string(cache_dir(&tm).join("tz.json")).unwrap_or_default();
     assert!(zone_before.contains("America/Chicago"), "the cache is not keyed by the old zone");
+
+    // The checkpoint the old zone wrote, and something actually sealed under it: without a
+    // checkpoint there is nothing here to invalidate, and the test would be about nothing.
+    let ckpt_before = checkpoint(&tm);
+    let gen_before = ckpt_str(&ckpt_before, "gen");
+    let key_before = ckpt_str(&ckpt_before, "tzKey");
+    assert!(key_before.starts_with("America/Chicago"), "the checkpoint is not keyed by the old zone: {key_before}");
+    let months_before = ckpt_before["manifest"].as_object().expect("a manifest").len();
+    assert!(months_before > 0, "the checkpoint seals no month, so there is no checkpoint to invalidate");
 
     let config = tm.plan.join("config.toml");
     let text = fs::read_to_string(&config).expect("read config.toml");
@@ -376,7 +415,26 @@ fn a_changed_tz_invalidates_the_checkpoint() {
     let zone_after = fs::read_to_string(cache_dir(&tm).join("tz.json")).unwrap_or_default();
     assert!(zone_after.contains("Asia/Tokyo"), "the cache still holds the old zone's table");
 
-    eprintln!("changed tz: {} of {} answers moved: {bite:?}", bite.len(), under_chicago.len());
+    // The checkpoint itself: re-keyed, a new generation, and the old zone's records unread.
+    let ckpt_after = checkpoint(&tm);
+    let key_after = ckpt_str(&ckpt_after, "tzKey");
+    let gen_after = ckpt_str(&ckpt_after, "gen");
+    assert!(key_after.starts_with("Asia/Tokyo"), "the checkpoint still carries the old zone's key: {key_after}");
+    assert_ne!(gen_after, gen_before, "the old zone's generation was kept, so the checkpoint was not invalidated");
+    assert_eq!(ckpt_str(&ckpt_after, "prevGen"), gen_before, "the new generation must name the old-zone one it replaced");
+    let manifest = ckpt_after["manifest"].as_object().expect("a manifest");
+    assert_eq!(manifest.len(), months_before, "the rebuild seals the same months");
+    for (month, file) in manifest {
+        let file = file.as_str().unwrap_or_else(|| panic!("{month} names no file: {file}"));
+        assert!(file.contains(&gen_after), "{month} reads a record of another generation: {file}");
+        assert!(!file.contains(&gen_before), "{month} still reads the old zone's sealed record: {file}");
+    }
+
+    eprintln!(
+        "changed tz: {} of {} answers moved: {bite:?}; the checkpoint went {key_before} g{gen_before} → {key_after} g{gen_after} over {months_before} sealed months",
+        bite.len(),
+        under_chicago.len()
+    );
 }
 
 /// **T9**: a rewritten log **prefix** invalidates the checkpoint — the tree answers from the bytes
