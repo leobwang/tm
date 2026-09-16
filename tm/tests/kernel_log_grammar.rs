@@ -23,13 +23,17 @@
 #[path = "../src/cli/tz_table.rs"]
 mod tz_table;
 
-use std::collections::BTreeMap;
+#[allow(dead_code)]
+#[path = "support/loggen.rs"]
+mod loggen;
+
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
 use chrono::{DateTime, Duration, FixedOffset, TimeZone, Utc};
 use proptest::prelude::*;
 use serde_json::{json, Value};
-use tm_core::log::{fmt_timestamp, hours_since_wake, parse_timestamp, Event, Log, LogEntry};
+use tm_core::log::{fmt_timestamp, hours_since_wake, parse_timestamp, Event, Log, LogEntry, EVENT_NAMES};
 
 /// Chicago's table, probed once per test binary.
 fn chicago() -> &'static Value {
@@ -599,4 +603,79 @@ fn kernel_reads_every_timestamp_spelling_chrono_reads() {
     assert!(leap >= 4, "the `:60` spellings were read ({leap})");
     assert!(outside >= 5, "the P23 residue is exercised ({outside})");
     eprintln!("T3: {} spellings: {read} read ({leap} leap seconds), {refused} refused by both, {outside} P23 residue", spellings.len());
+}
+
+// ---------------------------------------------------------------------------
+// D16 (owner answer Q5 (b); design §22.1's step S2): the evidence the writer
+// swap needs, built BEFORE the swap.
+//
+// S2 replaces `LogEntry::to_json` with the kernel's `renderLine` as the one
+// definition of the line format.  That swap is only safe if the kernel already
+// renders, byte for byte, what the Rust writer writes — otherwise it silently
+// rewrites `.tm/log.jsonl`.  T1 pins that over the corpus (a corpus entry that
+// is not byte-identical fails there) and T2 over 256 random events.  Neither
+// pins it over a realistic month, and nothing checked that T2's generator
+// covers every event the binary can write.  Both are added here, so the claim
+// "the bytes do not change" is a claim that can fail.
+
+/// **Every writable event is actually generated.** T2's byte identity is only
+/// as wide as [`any_event`], and nothing tied that list to [`EVENT_NAMES`]: a
+/// kind added to `define_events!` without an arm here would leave T2 quietly
+/// silent about it, and S2 would swap the writer for that kind on no evidence.
+#[test]
+fn the_writer_proptest_covers_every_writable_event() {
+    use proptest::strategy::ValueTree;
+    use proptest::test_runner::TestRunner;
+
+    let mut runner = TestRunner::deterministic();
+    let strategy = any_event();
+    let mut seen = BTreeSet::new();
+    for _ in 0..4_000 {
+        let ev = strategy.new_tree(&mut runner).expect("a generated event").current();
+        seen.insert(ev.name().to_string());
+    }
+    let all: BTreeSet<String> = EVENT_NAMES.iter().map(|n| n.to_string()).collect();
+    assert_eq!(seen, all, "T2 does not generate every writable event");
+    // `Unknown` is deliberately absent: the writer never writes one.
+    assert_eq!(EVENT_NAMES.len(), 26);
+}
+
+/// **T2 over a generated month** (design §22.1's S2 acceptance: "the bytes are
+/// identical to what the binary wrote before this step, over the corpus and a
+/// generated month").  `support/loggen.rs` is the design pass's own generator,
+/// so these are the files every §18 figure was taken on: 30 days at both event
+/// rates, every line parsed by the fork's reader and written back by the fork's
+/// writer, against the kernel's rendering of the same line.
+///
+/// This is the realistic-shape half of the writer evidence; T2's proptest is the
+/// random-value half and T1's corpus the recorded-history half.
+#[test]
+fn the_kernel_renders_a_generated_month_exactly_as_the_rust_writer_would() {
+    let mut seen = BTreeSet::new();
+    let mut counted = 0usize;
+    for rate in [loggen::Rate::Forty, loggen::Rate::SixtyOne] {
+        let lines = loggen::log(rate, 30);
+        let segs: Vec<Option<&str>> = lines.iter().map(|l| Some(l.as_str())).collect();
+        let kernel = kernel_read(&segs, true);
+        assert_eq!(kernel.len(), lines.len(), "{}", rate.label());
+        for (i, (line, k)) in lines.iter().zip(&kernel).enumerate() {
+            let n = i + 1;
+            let entry = LogEntry::parse(line)
+                .unwrap_or_else(|e| panic!("{} line {n}: the fork cannot read {line}: {e}", rate.label()));
+            let serde = entry.to_json().expect("serde writes it");
+            match k {
+                Kernel::Entry(tag, _, rendering, _) => {
+                    assert_eq!(rendering, &serde, "{} line {n}: {line}", rate.label());
+                    assert_eq!(tag, entry.ev.name(), "{} line {n}", rate.label());
+                    seen.insert(tag.clone());
+                }
+                other => panic!("{} line {n}: {other:?} on {line}", rate.label()),
+            }
+            counted += 1;
+        }
+    }
+    // The two months are `loggen`'s pinned 1mo files (tm/tests/loggen.rs).
+    assert_eq!(counted, 1_191 + 1_845, "both months, every line");
+    assert!(seen.len() >= 20, "a month covers only {} event kinds: {seen:?}", seen.len());
+    eprintln!("S2 evidence: {counted} generated lines byte-identical, {} event kinds", seen.len());
 }
