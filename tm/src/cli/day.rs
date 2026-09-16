@@ -926,6 +926,22 @@ pub struct BreakOut {
 /// `tm break [20m] [--where walk]` — starts a break, or ends the running one.
 pub fn take_break(g: &Globals, args: &super::BreakArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
+    // **The arguments are read in both arms** (the owner's D20, gap 138). The
+    // running-break arm used to take its branch before it ever looked at
+    // `args.dur`, so `tm break zzzz` was refused by name on a fresh tree and
+    // silently accepted — ending the break, discarding both arguments and
+    // exiting 0 — when a break was running. One verb, two acceptances, and a
+    // user could not tell which they had got. Parsing here, ahead of the
+    // branch, refuses the same spelling in both arms.
+    //
+    // D20 also settles what a *valid* argument does to a running break:
+    // **nothing**. `tm break 20m` with a break running still just ends it;
+    // retiming was considered and declined as a new feature, so `asked` is
+    // read by the starting arm alone.
+    let asked = match &args.dur {
+        Some(s) => Some(dur(s, ctx.block_min())?.as_minutes()),
+        None => None,
+    };
     let rec = Recorder::start(&ctx, "break")?;
     let running = ctx.state.break_.clone();
     let out = if let Some(br) = running {
@@ -938,10 +954,7 @@ pub fn take_break(g: &Globals, args: &super::BreakArgs) -> Result<i32, CliError>
             place: br.place,
         }
     } else {
-        let planned = match &args.dur {
-            Some(s) => dur(s, ctx.block_min())?.as_minutes(),
-            None => ctx.cfg.day.break_min,
-        };
+        let planned = asked.unwrap_or(ctx.cfg.day.break_min);
         ctx.state.break_ = Some(BreakState {
             started: Some(ctx.now_tz.time()),
             planned_min: planned,

@@ -20517,3 +20517,209 @@ seven latency rows, the per-verb kernel-call count against R14's table, and the 
 (short by **gap 131**'s item, and now carrying **gap 138**'s question for the owner). Then **S2**
 (**gap 130**) with quirk Q6(f) (**gap 86**), then **L9** (**gap 93**). What this commit changes
 about that list is only that **AGENTS §8.3 now states it correctly**.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 5, W-8 track B (branch w8-latency, worktree
+     .claude/worktrees/w8-latency).  Built in parallel with track A on
+     rebuild-on-lean, under the owner's D19: everything separable lands BEFORE
+     the switch, each piece green against the UNSWITCHED binary, so that S is
+     the body swap plus §12's deletion and nothing else.  **The switch is not
+     made here and this block does not claim it is.**  Closes gap 138 (D20).
+     Takes gaps 139-140; new gaps start at 141.  No Lean edited: audit 3934,
+     cheats 157, parity P35, burn-down 13, all unchanged.  Whoever merges
+     renumbers (AGENTS §6.2, §6.4).
+     =========================================================================== -->
+
+## Stage 5, W-8 track B, 2026-09-16: the switch's instruments land before the switch, and `tm break` stops swallowing its arguments
+
+**The honest paragraph, first.** S is still not made, and nothing here moves it: `Ctx::replay_with`
+still calls `Ctx::replay_of`, whose body is still `Log::parse_bytes(..).replay(None, cfg.tz)`;
+`log.rs` still holds every line §12 deletes; nothing under `tm/src` calls `kernel_log::`. §12's
+one-reader grep is **124**, exactly as W-7 left it — nothing was deleted and no reader was added.
+What this commit does is make S smaller by landing three of its acceptance instruments and one of
+its mechanical fixes *now*, measured against the binary as it stands.
+
+### What landed
+
+**1. T11, design §14.6's seven latency rows** — `tm/tests/cli_latency.rs`'s
+`a_verb_on_a_tree_with_three_years_of_log_takes_well_under_a_second`, on the history tree plus a
+three-year loggen log (66,169 lines, 6,896,281 bytes). It is **not** `#[ignore]`d: it is the guard
+S must not regress, so it runs in `cargo test --workspace`. R14's own three-year variant stays
+ignored beside it, because that one is a by-hand measurement and this one is a bound.
+
+| § 14.6's row | bound | run 1 | run 2 |
+|---|---|---:|---:|
+| first verb (genesis + automatic close + drop) | < 5 s | **920.7 ms** | **956.0 ms** |
+| a later verb | < 1 s | **283.3 ms** | **278.2 ms** |
+| `--now` + 1 day (a reseal) | < 1 s | **303.2 ms** | **308.3 ms** |
+| after a hand-appended `undo` 30 days old: one rebuild | < 5 s | **293.4 ms** | **278.4 ms** |
+| … and the next verb does **not** rebuild | < 1 s | **278.6 ms** | **263.3 ms** |
+| a routine logged for an instance 3 days old | < 1 s | **233.0 ms** | **237.9 ms** |
+| a block left open, then 10 successive `--now` days | each < 1 s | worst **698.5 ms** | worst **683.1 ms** |
+| `tm review week` (the `All` scope) | < 1 s | **202.2 ms** | **197.5 ms** |
+
+Two of those rows are measurements nobody had taken, and both were resolved against the binary
+rather than guessed:
+
+- **the undo target is chosen from the generated log, not hard-coded.** The test scans the log for
+  the id whose most recent `done` is nearest 30 days before the end, inside 28..=32, and appends
+  `undo{of:"done", id}` naming it: `^140`, done **2026-08-14**, exactly 30 days before the log's
+  last day. `expect` rather than a skip, so a generator whose draws move fails the test instead of
+  quietly weakening it.
+- **"an instance 3 days old" had no spelling.** `tm routine done` marks *today's* instance and there
+  is no `--inst`. Driven through the binary, `every:Fri on-miss:persist` on the Monday `AT` names
+  has its pending instance on Friday **2026-09-11** — three days old. The test asserts that age off
+  the logged `inst`, so the row cannot silently become a zero-day instance.
+
+**The margin to watch is the stalled-day row**, 683-698 ms against a 1 s bound — the tightest of the
+seven, and the one S should re-measure first.
+
+**2. The per-verb kernel-call harness** — `tm/tests/kernel_call_counts.rs`, with the counting seam
+at `tm_kernel_ffi::call` (`TM_TRACE_KERNEL_CALLS`). It sits at the **FFI** because that is the one
+door: `kernel_bridge.rs` and `kernel_log.rs` each reach the kernel on their own, so a counter in
+either would miss the other. Beside it the harness reads `ctx.rs`'s existing
+`TM_TRACE_REPLAY_SCOPE`, which counts `Ctx::replay_with` — **the call whose body becomes
+`kernel_log::replay_scoped` at S**, so that column is what S's own count must be compared with.
+
+| verb | log | apply | capacity | other | replays | scopes |
+|---|---:|---:|---:|---:|---:|---|
+| `wake` | **0** | 1 | 0 | 0 | 2 | hot, hot |
+| `arrive` | **0** | 1 | 1 | 0 | 3 | hot, hot, hot |
+| `start` | **0** | 0 | 0 | 0 | 2 | hot, hot |
+| `pause` | **0** | 0 | 0 | 0 | 2 | hot, hot |
+| `done` | **0** | 0 | 0 | 0 | 2 | hot, hot |
+| `energy` | **0** | 1 | 1 | 0 | 3 | hot, hot, hot |
+| `break` | **0** | 0 | 0 | 0 | 2 | hot, hot |
+| `drop` | **0** | 1 | 0 | 0 | 2 | hot, hot |
+| `undo` | **0** | 0 | 0 | 0 | 2 | hot, hot |
+| `review day` | **0** | 0 | 1 | 0 | 1 | all |
+| `log` | **0** | 0 | 0 | 0 | 1 | all |
+| `check` | **0** | 0 | 0 | 0 | 1 | hot |
+
+**The assertion that is on today is `log == 0` for every verb.** That is not a formality: it is the
+guard against a **half-switched binary** — some verbs reading through the kernel, some through the
+Rust reader — which is the single failure D19's all-or-nothing rule exists to prevent, and the only
+one the body swap can cause. At S the switch replaces `EXPECTED_LOG_CALLS` with the counts it
+measures and the same harness guards the other direction, with no change to the seam.
+
+**Against R14's table, which is what the campaign asked for.** R14 measured **4-5 whole-log reads
+per writing verb** (load, the automatic close's reload, `Recorder::start`, the verb's reload,
+`Recorder::finish`). The replays column above shows **1-3**, and the difference is not a
+disagreement: only the `replay_with` share is visible here, because the undo recorder reads through
+`Ctx::log_tail_of`, not through the traced door. That is recorded as **gap 140** rather than papered
+over.
+
+**3. Gap 138 / D20 — `tm break` validates its arguments in both arms.**
+
+**Reproduced first, against `3ae75fa`'s own binary**, before anything was changed: on a fresh tree
+`tm break zzzz --where bed` exits **1** with `tm: invalid duration: "zzzz"`; with a break running the
+same command exits **0**, ends the break and discards both arguments. One verb, two acceptances.
+
+`day.rs`'s `take_break` now parses `args.dur` **before** the running-break branch, so the same
+spelling is refused in both arms. Per D20 the arguments do **not** retime a running break: `asked`
+is read by the starting arm alone, and `tm break 20m` with a break running still just ends it.
+`tm/tests/cli_break_args.rs` drives one test per arm, and the second test pins the *absence* of
+retiming so that "validate in both arms" is never mistaken for "retime in both arms".
+
+### Observable behaviour changes
+
+One, intended and named. Everything else is unchanged.
+
+| what | before | after |
+|---|---|---|
+| `tm break <unreadable duration>` **with a break running** | exit **0**: the break ended and both arguments were discarded | exit **1**, `tm: invalid duration: "…"`; the break is **still running**, unchanged, and no `break` event is appended |
+
+Unchanged and pinned by test, because it would otherwise look like part of the fix: `tm break 20m`
+with a break running still ends the running break and does **not** retime it — the ended break
+reports its own `planned_min` and `place`, not the arguments'.
+
+### Gap 138 — CLOSED
+
+`tm break` reads its arguments in both arms; `tm break zzzz` is refused by name whether or not a
+break is running (D20). It needed no parity entry, writes no new log bytes and adds no capability.
+
+### Gap 139 (new; label W8B-a) — T11's "does not rebuild" halves are vacuous until the switch
+
+1. **What is not done.** T11 asserts, on three rows, that a verb wrote at most one checkpoint
+   generation and that a routine rebuilt nothing. It counts files under `.tm/cache/replay`, and
+   **before the switch that count is always 0**, because nothing under `tm/src` calls
+   `kernel_log::`. Measured: `0 checkpoint file(s)` across ten stalled days.
+2. **Why it is here anyway.** The *timing* half of those rows is not vacuous and is the half S can
+   actually regress: a verb that rebuilt where it should have resumed would miss `LATER_VERB` by
+   roughly a genesis (≈ 0.9 s at three years), not by a hair. The row that would catch gap 124's
+   failure mode — the verb after a far undo — is timed at **263-279 ms** against a 1 s bound.
+3. **What it costs.** An assertion that cannot fail today is a checker whose bite is a proof and not
+   a test (README gap 16's lesson), and this block says so rather than letting a future reader count
+   three guarded rows that are not yet guarded.
+4. **When it clears.** At S, when the cache exists and the same counter sees real generations.
+
+### Gap 140 (new; label W8B-b) — the per-verb call count does not see the undo recorder's reads
+
+1. **What is not done.** The replays column counts `Ctx::replay_with` only. `Recorder::start` and
+   `Recorder::finish` read the whole log through `Ctx::log_tail_of`, and those reads are invisible
+   to it — which is why this table shows 1-3 where R14 measured 4-5.
+2. **Why.** Counting them means instrumenting `Ctx::replay_of`, which this step is forbidden to
+   touch: it is the switch's own body, and editing it here is exactly the half-switch D19 forbids.
+3. **What it costs.** The pre-switch baseline is a lower bound on the reads that become kernel calls,
+   so S cannot subtract this table from its own and get zero; it must account for the recorder
+   separately.
+4. **When it clears.** At S: every one of those reads becomes a kernel call, and the FFI counter
+   already counts them all with no change to `kernel_call_counts.rs`.
+
+### Recorded disagreements between the design, the ledger and the repo
+
+1. **`tm` is a binary-only package**, so an integration test cannot import `ctx.rs`'s
+   `TRACE_SCOPE_ENV`; `kernel_call_counts.rs` spells the string out with the reason beside it. The
+   FFI constant *is* imported, because `tm-kernel-ffi` is a real library dependency. The test guards
+   against the resulting rot by asserting the traces are **live** (every verb reports ≥ 1 replay,
+   and the run as a whole reached the kernel), not merely that the counts are zero.
+2. **The log request carries no `"op"` key.** §14.6 speaks of the `log` op, but
+   `kernel_log::request` emits `{"docs":[],"now":…,"tz":…,"log":{…}}` while an apply emits
+   `"cmds":[{"op":…}]` and a capacity call `"capacity":{…}`. The FFI seam therefore discriminates on
+   those three literals rather than parsing — the crate may depend on nothing (R7) — and the caveat
+   is in its doc comment: a *document line* containing one of the literals would be miscounted, in a
+   diagnostic no answer depends on.
+3. **"The one-reader grep" still names two different commands** (W-7's disagreement 1). §12's
+   alternation measures **124** on this tree, unchanged. This block quotes that one and no other; an
+   R8-shaped alternation is *not* quoted here, because the 89 on record belongs to R8's exact
+   spelling and an approximation of it is how the confusion W-7 found got started.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited.** Goals discharged, refuted, added: none; burn-down **13 → 13**, all stage 6's.
+New theorems: none — the audit stays at **3934**. New `decide`/`rfl` witnesses: none. New cheats:
+none (highest **157**). New parity entries: none (highest stays **P35**) — D20 needed none, and
+neither instrument changes a value. `TmKernel.lean` imports: **78**, unchanged. D9-21 has nothing to
+add: no Lean function over a wire-sized list was written. No predicate or assertion was weakened, no
+goal deleted, no memory bound raised, no corpus reblessed.
+
+### Numbers
+
+**Taken:** gaps **139-140**; gap **138 closed**. **Highest:** gap 140, cheat 157, parity P35. New
+gaps start at **141**.
+
+**Re-measured** (worktree `.claude/worktrees/w8-latency`, on the tree committed; every command capped
+at `MemoryMax=40G`, `MemorySwapMax=0`):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, **3.12 / 3.13 s** warm (4.80 s on the fresh worktree's first, cold run). `3ae75fa`: 3.06 / 3.14 / 3.10 s — **flat**, far inside the 10%-per-step rule |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged; all stage 6) |
+| `cargo test --workspace` | **1114 passed / 0 failed / 6 ignored across 78 result lines**, exit 0, **0 warnings** (`3ae75fa`: 1110 / 0 / 6 across 76). **+4 tests in +2 binaries**: `cli_break_args.rs` (2), `kernel_call_counts.rs` (1), and T11 in the existing `cli_latency` binary (1) |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) — unchanged, and it covers the seam added to `tm-kernel-ffi/src/lib.rs` |
+| T5 (`kernel_replay_parity --include-ignored`) | **20 passed / 0 failed**, **6.62 s** (`3ae75fa`: 6.49 s) |
+| the door suite | **13 passed / 0 failed**, 1.04 s — unchanged |
+| `cli_latency --include-ignored` | **5 passed / 0 failed**, **9.97 s** (`3ae75fa`: 4 passed, 3.71 s). The +1 test and +6 s are T11 itself. 1y log: first **728.9 ms**, later **121.5 ms**. R14's 3y: first **916.3 ms**, later **278.6 ms**. `plan` with a `due:` 3 y out **86.1 ms**, 10 y out **141.8 ms** |
+| T11's own figures | the seven-row table above, two runs |
+| per-verb kernel `log` calls | **0 for every verb**, the table above |
+| §12's one-reader grep | **124 lines** (`3ae75fa`: 124 — nothing deleted, no reader added) |
+| the diff | 3 tracked files **+255 −6** (2 shipped: `tm-kernel-ffi/src/lib.rs`, `tm/src/cli/day.rs`; 1 test: `cli_latency.rs`); 2 new test files **+271**. No Lean, no `Cargo.toml`, no `Cargo.lock`, no `lean-toolchain`, no `kernel/corpus/` |
+
+**Owed next: S, in full**, and this commit shortens its list rather than changing it. Still owed by
+S: design §14.6's contents 1-3 and 5, item 4's **retarget of T5** (**gap 137**), item 7's D18
+defaults (**gap 120 part 3**, and **gap 134**'s sweep), **gaps 119, 129, 132, 133, 135, 136**, the
+**eight** remaining T9 tests, **T12**, and the **§5.13 drive** (short by **gap 131**'s item). What S
+no longer owes: **T11's seven latency rows**, **the per-verb kernel-call count**, and **gap 138**.
+Then **S2** (**gap 130**) with quirk Q6(f) (**gap 86**), then **L9** (**gap 93**).
