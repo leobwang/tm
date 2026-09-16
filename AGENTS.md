@@ -2100,9 +2100,13 @@ W-7 audit caught it. The facts decoder landed at `4aaa99e`: `kernel_log::decode_
 defined in `tm/src/cli/kernel_log.rs`, and T5's `kernel_replay` (`tm/tests/kernel_replay_parity.rs`)
 *is* that call, borrowing nothing from the reader S deletes. What is left is design §14.6's
 contents 1–3 and 5, item 4's retarget of T5 (**gap 137**), item 7's D18 defaults with **gap 120
-part 3** and **gap 134**'s sweep, **gaps 119, 129, 132, 133, 135, 136**, T11's seven latency rows
-and the per-verb kernel-call count against R14's baseline. **The eight remaining T9 CLI tests and
-T12 are no longer on this list**: they landed on 2026-09-16 under D19 as
+part 3** and **gap 134**'s sweep, and **gaps 119, 129, 132, 133, 135, 136**. **T11's seven latency
+rows and the per-verb kernel-call count are no longer on this list either**: they landed on
+2026-09-16 on the `w8-latency` track, merged to `rebuild-on-lean` the same day, as
+`tm/tests/cli_latency.rs`'s T11 and `tm/tests/kernel_call_counts.rs`, both green against the
+**unswitched** binary. That track also closed **gap 138** (D20) and opened **gaps 140-141** (139-140
+on its own branch; renumbered at the merge, AGENTS §6.5, because track A took 139 the same day).
+**The eight remaining T9 CLI tests and T12 are no longer on this list**: they landed under D19 as
 `tm/tests/cli_switch_acceptance.rs`, six T9s and T12 green against the **unswitched** binary and
 two `#[ignore]`d with their full post-switch bodies (README, "the T9/T12 step"). S's acceptance for
 those two is to delete the attribute, not to write the test.

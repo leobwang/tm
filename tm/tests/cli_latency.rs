@@ -132,14 +132,19 @@ fn history_tree() -> Tm {
 /// to the quadratic kernel must fail this test in seconds, not hang it for an
 /// hour. Returns the exit code, stdout and stderr together, and the wall time.
 fn timed(tm: &Tm, args: &[&str], limit: Duration) -> (i32, String, Duration) {
-    let log = tm.tmp.path().join(format!("latency-{}.out", args.join("-").replace('^', "")));
+    timed_at(tm, AT, args, limit)
+}
+
+/// [`timed`] at an explicit instant — T11's rows that move `--now` forward.
+fn timed_at(tm: &Tm, now: &str, args: &[&str], limit: Duration) -> (i32, String, Duration) {
+    let log = tm.tmp.path().join(format!("latency-{}-{now}.out", args.join("-").replace('^', "")));
     let file = fs::File::create(&log).expect("output file");
     let start = Instant::now();
     let mut child = Command::new(env!("CARGO_BIN_EXE_tm"))
         .arg("--dir")
         .arg(&tm.plan)
         .arg("--now")
-        .arg(AT)
+        .arg(now)
         .args(args)
         .stdout(Stdio::from(file.try_clone().expect("clone")))
         .stderr(Stdio::from(file))
@@ -297,4 +302,198 @@ fn a_plan_with_a_due_three_and_ten_years_out_stays_a_later_verb() {
         assert!(!out.contains("clamped"), "{out}");
         assert!(took < LATER_VERB, "a plan with a due {years} years out took {took:?} (bound {LATER_VERB:?})");
     }
+}
+
+// ---------------------------------------------------------------------------
+// T11 (design §14.6): the seven latency rows the switch must not regress.
+
+/// Row 3's bound: a `--now` + 1 day verb, which is a reseal after the switch.
+const RESEAL_VERB: Duration = LATER_VERB;
+
+/// **The replay cache's files** (`kernel_log::CACHE_DIR`): `ckpt.json` plus
+/// every immutable generation file under `sealed/`.
+///
+/// **Before the switch this is always 0** — nothing under `tm/src` calls
+/// `kernel_log::`, so no cache is ever written. Every "does not rebuild" and
+/// "at most one checkpoint write a day" assertion below is therefore measured
+/// against 0 today and only starts biting at S, and this file says so rather
+/// than implying the rows are already guarded. What is **not** vacuous today is
+/// the timing half of those rows, which is the thing S can actually regress:
+/// a verb that rebuilt when it should have resumed would miss `LATER_VERB` by
+/// roughly a genesis (≈ 0.9 s at three years), not by a hair.
+fn cache_files(tm: &Tm) -> usize {
+    fn walk(dir: &std::path::Path) -> usize {
+        let Ok(entries) = fs::read_dir(dir) else { return 0 };
+        let mut n = 0;
+        for e in entries.flatten() {
+            let path = e.path();
+            if path.is_dir() {
+                n += walk(&path);
+            } else {
+                n += 1;
+            }
+        }
+        n
+    }
+    let dir = tm.plan.join(".tm/cache/replay");
+    if dir.is_dir() { walk(&dir) } else { 0 }
+}
+
+/// The id whose most recent `done` in `text` is closest to 30 days before
+/// `last`, searched inside 28..=32 days, with that date.
+///
+/// Row 4 hand-appends an `undo` naming this id, so the undo's target is about
+/// a month old and the next call cannot resume from a checkpoint past it.
+/// Chosen from the generated log rather than hard-coded, so it cannot rot when
+/// the generator's draws move; `expect` rather than a skip, so a log that stops
+/// containing such an id fails the test instead of quietly weakening it.
+///
+/// The caveat, stated: loggen writes its own `undo{of:"done"}` lines, and one
+/// of them may already have cancelled this `done`. That can only push the
+/// mask's target *further* back, which is still a far undo — so the row keeps
+/// its meaning, and what is asserted is what is controlled: the id's last
+/// `done` line is 28-32 days before the log's end.
+fn undo_target_about_30_days_back(text: &str, last: chrono::NaiveDate) -> (String, chrono::NaiveDate) {
+    let mut last_done: std::collections::BTreeMap<String, chrono::NaiveDate> = std::collections::BTreeMap::new();
+    for line in text.lines() {
+        if !line.contains(r#""ev":"done""#) {
+            continue;
+        }
+        let Some(date) = line.strip_prefix(r#"{"t":""#).and_then(|r| r.get(..10)) else { continue };
+        let Ok(day) = date.parse::<chrono::NaiveDate>() else { continue };
+        let Some(rest) = line.split_once(r#""id":""#).map(|(_, r)| r) else { continue };
+        let Some((id, _)) = rest.split_once('"') else { continue };
+        let slot = last_done.entry(id.to_string()).or_insert(day);
+        if day > *slot {
+            *slot = day;
+        }
+    }
+    let want = last - chrono::Duration::days(30);
+    let mut best: Option<(String, chrono::NaiveDate)> = None;
+    for (id, day) in last_done {
+        let age = (last - day).num_days();
+        if !(28..=32).contains(&age) {
+            continue;
+        }
+        let closer = match &best {
+            None => true,
+            Some((_, b)) => (want - day).num_days().abs() < (want - *b).num_days().abs(),
+        };
+        if closer {
+            best = Some((id, day));
+        }
+    }
+    best.expect("a 3-year loggen log holds an id whose last `done` is 28-32 days before its end")
+}
+
+/// **T11** (design §14.6's latency table): the seven rows the switch must not
+/// regress, measured on a three-year log through the **unswitched** binary.
+/// Every figure this prints is a number S is compared with, so it runs in the
+/// default suite rather than behind `#[ignore]` — R14's three-year variant
+/// stays ignored beside it, because that one is a by-hand measurement and this
+/// one is a guard.
+#[test]
+fn a_verb_on_a_tree_with_three_years_of_log_takes_well_under_a_second() {
+    let tm = history_tree();
+    let (lines, bytes) = write_log(&tm, 1_095);
+    let label = format!(" (T11 3y log: {lines} lines, {bytes} bytes)");
+
+    // Rows 1 and 2: the first verb (genesis + the automatic close + a drop) and
+    // a later verb on the swept tree. `history_verbs` takes the serial lock,
+    // times both and checks the work the bounds are about really happened.
+    let (first, later) = history_verbs(&tm, &label);
+    assert!(first < FIRST_VERB && later < LATER_VERB);
+    assert_eq!(cache_files(&tm), 0, "the unswitched binary wrote a replay cache");
+
+    // The remaining rows are timed one at a time, like the pair above.
+    let _serial = SERIAL.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    // Row 4: a hand-appended `undo` whose target is about 30 days old. One
+    // rebuild is allowed FIRST_VERB; the verb after it must not rebuild again,
+    // which is what the LATER_VERB bound on the next verb measures.
+    let log_text = fs::read_to_string(tm.plan.join(".tm/log.jsonl")).expect("log");
+    let last_logged = chrono::NaiveDate::from_ymd_opt(LAST_LOGGED.0, LAST_LOGGED.1, LAST_LOGGED.2).expect("date");
+    let (target, done_on) = undo_target_about_30_days_back(&log_text, last_logged);
+    let age = (last_logged - done_on).num_days();
+    assert!((28..=32).contains(&age), "the undo target is {age} days old");
+    let mut with_undo = log_text.clone();
+    if !with_undo.ends_with('\n') {
+        with_undo.push('\n');
+    }
+    with_undo.push_str(&format!(
+        "{{\"t\":\"{last_logged}T23:59:00-05:00\",\"ev\":\"undo\",\"of\":\"done\",\"id\":\"{target}\"}}\n"
+    ));
+    write(&tm, ".tm/log.jsonl", &with_undo);
+
+    let before = cache_files(&tm);
+    let (code, out, rebuild) = timed(&tm, &["drop", "^z2"], FIRST_VERB);
+    eprintln!("latency{label}: the verb after a {age}-day-old undo {rebuild:?} (target ^{target}, done {done_on})");
+    assert_eq!(code, 0, "{out}");
+    assert!(rebuild < FIRST_VERB, "the rebuild after a far undo took {rebuild:?} (bound {FIRST_VERB:?})");
+    let (code, out, settled) = timed(&tm, &["drop", "^z3"], LATER_VERB);
+    eprintln!("latency{label}: the verb after that one {settled:?}");
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        settled < LATER_VERB,
+        "the verb after the rebuild took {settled:?} (bound {LATER_VERB:?}) — it rebuilt again"
+    );
+    assert!(
+        cache_files(&tm) <= before + 1,
+        "the far undo wrote more than one checkpoint generation"
+    );
+
+    // Row 5: a routine logged for an instance three days old, and no rebuild.
+    // On the Monday `AT` names, `every:Fri on-miss:persist` has its pending
+    // instance on Friday 2026-09-11 — measured through the binary, and the
+    // instance's age is asserted below rather than assumed.
+    write(&tm, "routines.md", "- fridaything win:09:00-21:00 dur:30m every:Fri on-miss:persist\n");
+    let before = cache_files(&tm);
+    let (code, out, routine) = timed(&tm, &["--json", "routine", "done", "fridaything"], LATER_VERB);
+    eprintln!("latency{label}: a routine for a 3-day-old instance {routine:?}");
+    assert_eq!(code, 0, "{out}");
+    assert!(routine < LATER_VERB, "a routine done took {routine:?} (bound {LATER_VERB:?})");
+    let inst = tm.last_ev("routine")["inst"].as_str().expect("an inst").to_string();
+    let inst_date = inst.parse::<chrono::NaiveDate>().expect("inst is a date");
+    let at_date = chrono::NaiveDate::from_ymd_opt(2026, 9, 14).expect("date");
+    assert_eq!((at_date - inst_date).num_days(), 3, "the routine's instance is {inst}, not three days old");
+    assert_eq!(cache_files(&tm), before, "the routine rebuilt the cache");
+
+    // Row 7: `tm review week` — the `All` scope, which after the switch merges
+    // every month's sealed records.
+    let (code, out, review) = timed(&tm, &["review", "week"], LATER_VERB);
+    eprintln!("latency{label}: review week (the All scope) {review:?}");
+    assert_eq!(code, 0, "{out}");
+    assert!(review < LATER_VERB, "`tm review week` took {review:?} (bound {LATER_VERB:?})");
+
+    // Row 3: `--now` + 1 day, a reseal after the switch. Run after the rows
+    // above so that time only ever moves forward: a verb at `AT` following one
+    // at `AT + 1 day` would be reading a log with a line dated after `now`,
+    // which is a different measurement (D9-22's future-line fence).
+    let day1 = "2026-09-15T09:00:00-05:00";
+    let before = cache_files(&tm);
+    let (code, out, reseal) = timed_at(&tm, day1, &["drop", "^z4"], RESEAL_VERB);
+    eprintln!("latency{label}: --now +1 day (a reseal) {reseal:?}");
+    assert_eq!(code, 0, "{out}");
+    assert!(reseal < RESEAL_VERB, "the +1 day verb took {reseal:?} (bound {RESEAL_VERB:?})");
+    assert!(cache_files(&tm) <= before + 1, "the reseal wrote more than one checkpoint generation");
+
+    // Row 6: a block left open, then ten successive `--now` days. The stall
+    // holds the ledger day back (design §18.7), so each day's verb carries one
+    // more open day than the last; each must stay a later verb, and each day
+    // may write at most one checkpoint.
+    let (code, out, _) = timed_at(&tm, "2026-09-15T09:05:00-05:00", &["start", "^z5"], LATER_VERB);
+    assert_eq!(code, 0, "{out}");
+    let mut worst = Duration::from_millis(0);
+    let before = cache_files(&tm);
+    for d in 0..10 {
+        let day = chrono::NaiveDate::from_ymd_opt(2026, 9, 16).expect("date") + chrono::Duration::days(d);
+        let now = format!("{day}T09:00:00-05:00");
+        let (code, out, took) = timed_at(&tm, &now, &["drop", &format!("^z{}", 10 + d)], LATER_VERB);
+        assert_eq!(code, 0, "{out}");
+        assert!(took < LATER_VERB, "day {day} of a stall took {took:?} (bound {LATER_VERB:?})");
+        worst = worst.max(took);
+    }
+    let writes = cache_files(&tm) - before;
+    eprintln!("latency{label}: 10 stalled days, worst {worst:?}, {writes} checkpoint file(s)");
+    assert!(writes <= 10, "a stalled run wrote {writes} checkpoint files over 10 days");
 }

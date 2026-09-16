@@ -41,12 +41,49 @@ pub fn init() -> Result<(), KernelFault> {
     }
 }
 
+/// **The per-verb kernel-call counter's env var** (stage 5, the instrument
+/// design §14.6 asks for beside T11: "the per-verb kernel-call count against
+/// R14's baseline table").
+///
+/// When it is set, every call through [`call`] writes one line to stderr:
+/// `kernel call: <kind>`. It lives here, at the FFI, because this is the one
+/// door — `tm/src/cli/kernel_bridge.rs` and `tm/src/cli/kernel_log.rs` each
+/// reach the kernel on their own, so a counter in either would miss the other,
+/// and a call site added later cannot forget this one.
+///
+/// **Before the switch the `log` count is 0 for every verb**, because nothing
+/// under `tm/src` calls the kernel's `log` op yet; `tm/tests/kernel_call_counts.rs`
+/// records that baseline and asserts it, so a half-switched binary fails a test
+/// rather than being noticed later.
+pub const TRACE_CALLS_ENV: &str = "TM_TRACE_KERNEL_CALLS";
+
+/// Which kind of request this is, by the one literal each builder emits and no
+/// other does: `"capacity":` (`kernel_capacity::request`), `"log":{`
+/// (`kernel_log::request`), `"cmds":` (`kernel_bridge`'s apply). This crate may
+/// depend on nothing (AGENTS R7), so it is a substring test and not a parse —
+/// a *document line* containing one of these literals would be miscounted, which
+/// is acceptable in a diagnostic that no answer depends on.
+fn trace_kind(request: &str) -> &'static str {
+    if request.contains(r#""capacity":"#) {
+        "capacity"
+    } else if request.contains(r#""log":{"#) {
+        "log"
+    } else if request.contains(r#""cmds":"#) {
+        "apply"
+    } else {
+        "other"
+    }
+}
+
 /// Apply a request to the kernel and return its response.
 ///
 /// The request carries the raw text of every file plus the commands to apply;
 /// the response carries the raw text of every file, or a structured error.
 pub fn call(request: &str) -> Result<String, KernelFault> {
     init()?;
+    if std::env::var_os(TRACE_CALLS_ENV).is_some() {
+        eprintln!("kernel call: {}", trace_kind(request));
+    }
     let c = CString::new(request).map_err(|_| KernelFault::NulInRequest)?;
     let raw = unsafe { tm_kernel_call_c(c.as_ptr()) };
     if raw.is_null() {
