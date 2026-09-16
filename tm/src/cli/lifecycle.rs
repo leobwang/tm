@@ -29,6 +29,7 @@ use std::collections::BTreeMap;
 
 use chrono::{Duration, NaiveDate};
 use serde::Serialize;
+use serde_json::value::RawValue;
 
 use tm_core::check as validate;
 use tm_core::energy::{self, Model};
@@ -593,12 +594,18 @@ pub fn model(g: &Globals, args: &super::ModelArgs) -> Result<i32, CliError> {
 }
 
 /// `tm log --json`.
+///
+/// **`entries` holds each line's own JSON bytes** ([`RawValue`]), not a parsed
+/// value — the owner's **D22** (2026-09-16; AGENTS §4), which corrects design
+/// §11.4 step 5. See [`entry_json`] for why, and for the pretty-printing that
+/// has to be re-emitted by hand once the bytes are carried rather than
+/// re-serialised.
 #[derive(Debug, Serialize)]
 pub struct LogOut {
     /// How many entries the log holds.
     pub total: usize,
-    /// The selected entries, oldest first.
-    pub entries: Vec<LogEntry>,
+    /// The selected entries, oldest first, each as the bytes of its own line.
+    pub entries: Vec<Box<RawValue>>,
 }
 
 /// `tm log --tail 20 | --since 7d | --item ^id` (§10.1).
@@ -612,10 +619,147 @@ pub fn log(g: &Globals, args: &super::LogArgs) -> Result<i32, CliError> {
     let entries = Ctx::entries_at(&ctx.store, &lines)?;
     let out = LogOut {
         total: ctx.replay.entry_count(),
-        entries: lines.iter().filter_map(|l| entries.get(l).cloned()).collect(),
+        // **D22**: the payload is the line's own bytes, never a re-serialised
+        // `Value`. Today they come from the writer (`LogEntry::to_json`, which
+        // §12 keeps); at S they come from the kernel's `render` op
+        // (`kernel_log::render_lines`, which already hands back a `RawValue`),
+        // and this renderer does not change when they do.
+        entries: lines
+            .iter()
+            .filter_map(|l| entries.get(l))
+            .map(entry_json)
+            .collect::<Result<Vec<_>, CliError>>()?,
     };
     emit(ctx.json, || log_human(&rows, &entries), &out)?;
     Ok(0)
+}
+
+/// Where `entries`' elements sit in `tm log --json`'s document: `{` is depth 0,
+/// `"entries": [` opens depth 1, and each entry object is an element of that
+/// array, so its own braces sit at depth 2.
+///
+/// It is a constant because [`emit`] formats the document and this function
+/// formats the fragment, and the two have to agree. `the_log_documents_shape_is_serde_jsons`
+/// is the test that fails if this number and [`LogOut`]'s shape ever part company.
+const ENTRY_DEPTH: usize = 2;
+
+/// **One log line, as the bytes `tm log --json` prints** — the owner's **D22**.
+///
+/// Design §11.4 step 5 asked for two things that cannot both hold: that `--json`
+/// emit "each rendering **parsed as a generic `serde_json::Value`**", and that it
+/// be "**byte-identical to today**". This workspace's `serde_json` is built
+/// without `preserve_order`, so [`serde_json::Value`]'s object is a `BTreeMap`
+/// and parsing **alphabetises every key**, where the writer emits `t` first.
+/// Measured at W-9: taking the sentence literally moved `tm log --json` on **7 of
+/// 69** corpus invocations, every difference a key order and no value. D22 settles
+/// it in favour of byte-identity, and scopes the fix to this function.
+///
+/// **The pretty-printing is re-emitted here, not inherited.** A [`RawValue`] is
+/// written into the enclosing document *verbatim*, so
+/// `serde_json::to_string_pretty` — which formats every value it can see — cannot
+/// indent bytes it is handed as one opaque fragment, and an entry would print
+/// compact on a single line. That is a real byte change and it is the trap D22
+/// names. So the fragment is indented here, by [`reindent`], exactly as
+/// serde_json's own `PrettyFormatter` would have indented the same value at
+/// [`ENTRY_DEPTH`].
+fn entry_json(entry: &LogEntry) -> Result<Box<RawValue>, CliError> {
+    entry_json_of(&entry.to_json()?)
+}
+
+/// The seam itself: **one line's JSON bytes in, the bytes `--json` prints out**.
+///
+/// It is written over `&str` and not over [`LogEntry`] on purpose. Today its
+/// argument is the writer's `to_json`; at S it is the kernel's rendering
+/// (`kernel_log::render_lines`, already a [`RawValue`]), and §12 deletes the
+/// reader that would otherwise stand between them. A function that took a parsed
+/// entry would have to be rewritten at the switch; this one does not, and its
+/// tests do not either.
+fn entry_json_of(raw: &str) -> Result<Box<RawValue>, CliError> {
+    RawValue::from_string(reindent(raw, ENTRY_DEPTH)).map_err(CliError::from)
+}
+
+/// Re-indent compact JSON as `serde_json::to_string_pretty` would at nesting
+/// depth `depth`, **without parsing it** — so key order, number lexemes and
+/// string escapes are the input's own bytes.
+///
+/// serde_json's `PrettyFormatter` is two spaces per level; it opens a non-empty
+/// object or array with a newline and an indent, writes `": "` between a key and
+/// its value, puts each element after a `,` on its own line, and closes on a
+/// fresh line at the parent's indent — while an **empty** object or array stays
+/// `{}` or `[]` with nothing between the braces. That is the whole of what this
+/// reproduces. `the_reindent_is_serde_jsons_pretty_printer` checks it against
+/// `to_string_pretty` itself over values whose keys are already alphabetical, so
+/// the comparison is about *formatting* and the ordering is not in the way.
+fn reindent(raw: &str, depth: usize) -> String {
+    let b = raw.as_bytes();
+    let mut out = String::with_capacity(raw.len() * 2);
+    let mut depth = depth;
+    let mut i = 0;
+    let newline = |out: &mut String, depth: usize| {
+        out.push('\n');
+        for _ in 0..depth {
+            out.push_str("  ");
+        }
+    };
+    while i < b.len() {
+        match b[i] {
+            // A string is copied verbatim, escapes and all: this function never
+            // re-escapes a byte, which is half of why it is byte-faithful.
+            b'"' => {
+                let start = i;
+                i += 1;
+                while i < b.len() {
+                    match b[i] {
+                        b'\\' => i += 2,
+                        b'"' => {
+                            i += 1;
+                            break;
+                        }
+                        _ => i += 1,
+                    }
+                }
+                out.push_str(&raw[start..i.min(raw.len())]);
+            }
+            open @ (b'{' | b'[') => {
+                let close = if open == b'{' { b'}' } else { b']' };
+                let mut j = i + 1;
+                while j < b.len() && (b[j] as char).is_ascii_whitespace() {
+                    j += 1;
+                }
+                out.push(open as char);
+                if j < b.len() && b[j] == close {
+                    // Empty: serde_json writes `{}` / `[]` with no newline.
+                    out.push(close as char);
+                    i = j + 1;
+                } else {
+                    depth += 1;
+                    newline(&mut out, depth);
+                    i += 1;
+                }
+            }
+            close @ (b'}' | b']') => {
+                depth = depth.saturating_sub(1);
+                newline(&mut out, depth);
+                out.push(close as char);
+                i += 1;
+            }
+            b',' => {
+                out.push(',');
+                newline(&mut out, depth);
+                i += 1;
+            }
+            b':' => {
+                out.push_str(": ");
+                i += 1;
+            }
+            c if (c as char).is_ascii_whitespace() => i += 1,
+            c => {
+                out.push(c as char);
+                i += 1;
+            }
+        }
+    }
+    out
 }
 
 /// The rows `tm log` prints, from [`Replay::view`] (design §11.4 step 2):
@@ -950,5 +1094,165 @@ mod tests {
         );
         // A bound `log_rows` will refuse: nothing is read for it.
         assert_eq!(log_scope(&args(None, Some("not a date"), None), today), ReplayScope::Hot);
+    }
+
+    /// **[`reindent`] is serde_json's own pretty-printer, byte for byte** - D22's
+    /// "pretty-printing must be re-emitted explicitly and **verified**".
+    ///
+    /// Every value here has **alphabetical** keys, so `serde_json::Value`'s
+    /// `BTreeMap` order is the input's order and the comparison is purely about
+    /// *formatting*: indentation, the space after a colon, where the newlines fall,
+    /// and the empty object and array that stay on one line.
+    ///
+    /// Every value here also spells its numbers and escapes the way serde_json
+    /// spells them, because `to_string_pretty` **re-prints lexemes**: a `1e3`
+    /// becomes `1000.0`, and a unicode escape becomes the character it names. That
+    /// is a difference in the *value's* printing and not in the formatting; it is
+    /// parity **P29**, it is the behaviour this renderer is supposed to have, and
+    /// the next test is what pins it.
+    #[test]
+    fn the_reindent_is_serde_jsons_pretty_printer() {
+        let cases = [
+            r#"{}"#,
+            r#"[]"#,
+            r#"{"a":1}"#,
+            r#"{"a":1,"b":2}"#,
+            r#"{"a":{},"b":[],"c":[1,2,3]}"#,
+            r#"{"a":{"b":{"c":[{"d":1},{"e":[]}]}}}"#,
+            r#"{"a":"x \" y \\ z","b":"\u0001\n\t"}"#,
+            r#"{"a":-0.5,"b":true,"c":false,"d":null}"#,
+            r#"[[],[[]],[{"a":[]}]]"#,
+        ];
+        for raw in cases {
+            let value: serde_json::Value =
+                serde_json::from_str(raw).unwrap_or_else(|e| panic!("{raw}: {e}"));
+            let want = serde_json::to_string_pretty(&value).expect("pretty");
+            assert_eq!(reindent(raw, 0), want, "reindent disagrees with serde_json on {raw}");
+        }
+    }
+
+    /// **A hand-written numeral or escape is printed as written** - parity **P20**
+    /// and **P29**, and the second half of why the bytes are carried rather than
+    /// re-serialised.
+    ///
+    /// `.tm/log.jsonl` can be hand-edited, and serde_json re-prints whatever it
+    /// parses: a `1e3` comes back `1000.0`, a `1.50` comes back `1.5`, and a unicode
+    /// escape comes back as its character. The renderer hands back the line's own
+    /// bytes, so `tm log` shows the user what is actually in their file. P29 records
+    /// exactly this as a deliberate difference from the fork, which re-serialises
+    /// through `Value`.
+    #[test]
+    fn a_hand_written_numeral_or_escape_is_printed_as_written() {
+        let cases = [
+            (r#"{"a":1e3}"#, "1e3"),
+            (r#"{"a":1.50}"#, "1.50"),
+            (r#"{"a":-0}"#, "-0"),
+            (r#"{"a":3.0}"#, "3.0"),
+            (r#"{"a":10000000000000000000000}"#, "10000000000000000000000"),
+            (r#"{"a":"caf\u00e9"}"#, r#""caf\u00e9""#),
+        ];
+        for (raw, written) in cases {
+            assert_eq!(
+                reindent(raw, 0),
+                format!("{{\n  \"a\": {written}\n}}"),
+                "the renderer did not print {written} as written"
+            );
+        }
+        // And the difference is real, not assumed: both of these are re-printed by
+        // the reading D22 declined. Measured here rather than quoted.
+        for raw in [r#"{"a":1e3}"#, r#"{"a":"caf\u00e9"}"#] {
+            let twin = serde_json::to_string_pretty(
+                &serde_json::from_str::<serde_json::Value>(raw).expect("parse"),
+            )
+            .expect("pretty");
+            assert_ne!(reindent(raw, 0), twin, "serde_json no longer re-prints {raw}; P29 is stale");
+        }
+    }
+
+    /// **The document `tm log --json` prints is serde_json's, at [`ENTRY_DEPTH`]**.
+    ///
+    /// [`emit`] formats the outer document and [`entry_json_of`] formats the
+    /// fragment, so the two have to agree about how deep an entry sits. This builds
+    /// the real [`LogOut`] and compares it with a twin of the same shape whose
+    /// entries are parsed `Value`s - with alphabetical keys, so the twin's
+    /// `BTreeMap` cannot reorder anything *inside* an entry and only the
+    /// indentation is under test. If `LogOut` grew a field, or `entries` moved, this
+    /// is what fails.
+    ///
+    /// **The twin has to be a struct.** Its first spelling built it with
+    /// `serde_json::json!`, and the test failed with `entries` printed before
+    /// `total`: a `Value` map alphabetised the *document's own* keys, which is the
+    /// very reordering under test arriving one level up. That is how narrow the
+    /// escape hatch is, and it is why D22 scopes `RawValue` to the renderer rather
+    /// than reaching for `Value` anywhere near this path.
+    #[test]
+    fn the_log_documents_shape_is_serde_jsons() {
+        #[derive(Serialize)]
+        struct Twin {
+            total: usize,
+            entries: Vec<serde_json::Value>,
+        }
+        let raws = [r#"{"a":1,"b":{"c":[1,2]}}"#, r#"{"d":"x","e":{}}"#];
+        let out = LogOut {
+            total: 7,
+            entries: raws.iter().map(|r| entry_json_of(r).expect("a valid fragment")).collect(),
+        };
+        let twin = Twin {
+            total: 7,
+            entries: raws
+                .iter()
+                .map(|r| serde_json::from_str::<serde_json::Value>(r).expect("parse"))
+                .collect(),
+        };
+        assert_eq!(
+            serde_json::to_string_pretty(&out).expect("the document"),
+            serde_json::to_string_pretty(&twin).expect("the twin"),
+            "`tm log --json`'s document is not serde_json's own formatting"
+        );
+    }
+
+    /// **The key order is the writer's, and the declined reading would have moved
+    /// it** — gap 144, and the assertion that gives D22 its teeth.
+    ///
+    /// The fork's `LogEntry` writes `t` first and its event's fields in
+    /// declaration order. Design §11.4 step 5 asked for the rendering "parsed as a
+    /// generic `serde_json::Value`"; this workspace's `serde_json` has no
+    /// `preserve_order`, so that parse alphabetises — `actual_min` first, `t`
+    /// last. Both halves are asserted here: what this renderer emits, and what the
+    /// declined alternative would have emitted instead, so the test fails if
+    /// someone reintroduces it *or* if the feature flag is ever turned on
+    /// workspace-wide without this decision being revisited.
+    #[test]
+    fn the_renderer_keeps_the_writers_key_order_where_a_value_would_not() {
+        let raw = r#"{"t":"2026-07-06T11:00:00-05:00","ev":"routine","item":"laundry","inst":"2026-07-06","status":"done","actual_min":30}"#;
+        let keys = |text: &str| -> Vec<String> {
+            text.lines()
+                .filter_map(|l| l.trim().strip_prefix('"'))
+                .filter_map(|l| l.split_once("\":"))
+                .map(|(k, _)| k.to_string())
+                .collect()
+        };
+        let written = ["t", "ev", "item", "inst", "status", "actual_min"];
+
+        let ours = reindent(raw, 0);
+        assert_eq!(keys(&ours), written, "the renderer did not keep the writer's key order");
+
+        // The reading D22 declined, run here so the difference is measured and not
+        // asserted from memory.
+        let as_value: serde_json::Value = serde_json::from_str(raw).expect("parse");
+        let alphabetised = serde_json::to_string_pretty(&as_value).expect("pretty");
+        let mut sorted = written;
+        sorted.sort_unstable();
+        assert_eq!(keys(&alphabetised), sorted, "serde_json::Value no longer alphabetises");
+        assert_ne!(ours, alphabetised, "the two readings agree, so this test proves nothing");
+
+        // And the whole fragment, at the depth `tm log --json` prints it at.
+        let entry = entry_json_of(raw).expect("a valid fragment");
+        assert_eq!(
+            entry.get(),
+            "{\n      \"t\": \"2026-07-06T11:00:00-05:00\",\n      \"ev\": \"routine\",\n      \
+             \"item\": \"laundry\",\n      \"inst\": \"2026-07-06\",\n      \"status\": \"done\",\n      \
+             \"actual_min\": 30\n    }"
+        );
     }
 }

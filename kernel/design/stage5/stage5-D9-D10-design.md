@@ -1900,11 +1900,24 @@ Both are written by the reseal that moves the horizon past them (§9.4), and loa
 4. **Render.** A render-only call (`ckpt: null`, `reseal: null`, `want.render`) returns
    `[line, rendering, display]` for each. **The kernel parses and renders; it does not replay.**
 5. **Print.**
-   - `--json` emits each rendering parsed as a generic `serde_json::Value`. It is byte-identical to today
-     for every line the Rust writer wrote (T2). Hand-appended unknown lines with non-canonical numerals
-     are P29.
-   - The human line is the kernel's `display`, the tag, and the `k=v` pairs of that `Value` without `t`
-     and `ev`. Rust never parses a timestamp, so `parse_timestamp` is deleted at S (CRIT 20).
+   - `--json` emits each rendering's **own bytes**, verbatim — `serde_json::value::RawValue`, scoped to
+     the renderer — so that it is byte-identical to today for every line the Rust writer wrote (T2).
+     **The pretty-printing is re-emitted by the renderer**, because a `RawValue` is written into the
+     enclosing document unformatted and would otherwise print each entry compact on one line.
+     Hand-appended unknown lines with non-canonical numerals are P29. *(Corrected 2026-09-16, W-11,
+     under **D22**: this bullet read "emits each rendering **parsed as a generic `serde_json::Value`**"
+     and, in the same sentence, that it "is **byte-identical to today**" — and those two cannot both
+     hold. This workspace's `serde_json` is built without `preserve_order`, so `Value`'s object is a
+     `BTreeMap` and parsing **alphabetises every key**, where the writer emits `t` first; following the
+     sentence literally moved `tm log --json` on **7 of 69** corpus invocations, every difference a key
+     order and no value (W-9's measurement). `serde_json/preserve_order` was declined as changing
+     `Value`'s ordering workspace-wide unmeasured, and alphabetising was declined as spending
+     byte-identity in one of the few places the corpus test still catches a regression. README
+     **gap 144**; AGENTS §4 **D22**.)*
+   - The human line is the kernel's `display`, the tag, and the `k=v` pairs of that rendering **parsed as
+     a `Value`** without `t` and `ev`. The parse stays on the *human* path deliberately: its alphabetical
+     order is what `tm log` prints today, and `tm_log_is_byte_identical_on_the_corpus` pins it. Rust
+     never parses a timestamp, so `parse_timestamp` is deleted at S (CRIT 20).
    - `total = facts.entryCount`.
 
 A hand edit between two commands is caught at step 1 of the next command, so no header is rendered
