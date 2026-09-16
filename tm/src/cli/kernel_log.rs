@@ -1135,7 +1135,7 @@ mod tests {
 
 use tm_core::log::{
     fmt_timestamp, BreakRecord, CloseRecord, DayReplay, DaySeam, Demotion, DurationObs, EnergyObs, IdleMark, IdleRecord, InstanceRecord, Interruption,
-    ItemReplay, LeakRecord, LogSegment, NamedLatest, NamedRecord, OpenBlock, Replay, SegmentKind, StartRecord, ViewRow,
+    ItemReplay, LeakRecord, LogSegment, LogWarning, NamedLatest, NamedRecord, OpenBlock, Replay, SegmentKind, StartRecord, ViewRow,
 };
 use tm_core::model::InstanceStatus;
 
@@ -1718,4 +1718,310 @@ pub fn decode_facts(answer: &Value, tz: Tz) -> D<Replay> {
         rows,
         line_count: d_u64(answer.get("lines").unwrap_or(&Value::Null), "the answer's line count")?,
     })
+}
+
+// ---------------------------------------------------------------------------
+// The switch (S, design §14.6): the one door `Ctx::replay_with` calls.
+
+/// **The replay a verb family asks for** (§11.1), host side.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Scope {
+    /// The answer only (A, W, O).
+    Hot,
+    /// The answer, plus day records for `[from − 1, to + 1]` and window records for `[from, to]`.
+    Dates { from: NaiveDate, to: NaiveDate },
+    /// The answer, plus every month's records.
+    All,
+}
+
+/// **What one scoped replay gives a verb**: the decoded `Replay`, how it was answered, and the
+/// notices the cache raised (an unwritable directory, a generation that moved underneath).
+#[derive(Clone, Debug)]
+pub struct Read {
+    pub replay: Replay,
+    pub outcome: Outcome,
+    pub notices: Vec<String>,
+}
+
+/// **The process's replay caches**, one per plan root (§9.8, CRIT 26, K14).
+///
+/// A cache is per process, not per call: an unwritable directory keeps its checkpoint in memory
+/// for the life of the process, so a TUI session pays genesis once rather than once per reload.
+fn caches() -> &'static std::sync::Mutex<BTreeMap<PathBuf, ReplayCache>> {
+    static CACHES: std::sync::OnceLock<std::sync::Mutex<BTreeMap<PathBuf, ReplayCache>>> =
+        std::sync::OnceLock::new();
+    CACHES.get_or_init(|| std::sync::Mutex::new(BTreeMap::new()))
+}
+
+/// **The undo stack's pin** (§9.6): the smallest `UndoEntry.log_line` among entries younger than
+/// 14 days, or `None`. Read from `.tm/undo.json` directly — the seal policy needs a number, not a
+/// stack, and `UndoStack::load` wants a whole `Ctx` this is called to build.
+///
+/// An entry written before R6 has no `log_line` and is ignored (CRIT 27); so is one older than 14
+/// days, so a light user's stale stack does not pin the tail.
+pub fn max_line_of(undo_json: &str, now: DateTime<FixedOffset>) -> Option<u64> {
+    let v: Value = serde_json::from_str(undo_json).ok()?;
+    let cutoff = now - chrono::Duration::days(14);
+    v.get("entries")?
+        .as_array()?
+        .iter()
+        .filter(|e| {
+            e.get("t")
+                .and_then(Value::as_str)
+                .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
+                .is_some_and(|t| t >= cutoff)
+        })
+        .filter_map(|e| e.get("log_line").and_then(Value::as_u64))
+        .min()
+}
+
+/// **The `All` and `Dates` merge** (§11.1), host side.
+///
+/// Design §11.1 has the kernel merge the records a request sends (`LogReq.merged`). That is the
+/// `Dates` scope's route and D13's, and it is capped: [`MAX_SEALED_IN`] records per call. The
+/// `All` scope reaches every month — about 1,100 day records at three years — so its merge cannot
+/// be a request's, and is done here instead: the sealed `days` and `window` arrays are merged in
+/// front of the answer's own, which win where both hold a key.
+///
+/// Only those two arrays are windowed away by a reseal. The items, instances, named records, open
+/// machine and counts are carried by the checkpoint itself, so the answer already holds them
+/// whole. T5's windowed arm compares the result with the fork's whole replay, which is what says
+/// this merge is complete.
+pub fn merge_records(facts: &Value, days: &BTreeMap<u64, String>, window: &BTreeMap<u64, String>) -> Result<Value, String> {
+    if days.is_empty() && window.is_empty() {
+        return Ok(facts.clone());
+    }
+    let mut facts = facts.clone();
+    let parse = |t: &String| serde_json::from_str::<Value>(t).map_err(|e| format!("a sealed record: {e}"));
+    let merge = |key: &str, sealed: &BTreeMap<u64, String>, facts: &mut Value| -> Result<(), String> {
+        let mut all: BTreeMap<u64, Value> = BTreeMap::new();
+        for (d, t) in sealed {
+            all.insert(*d, parse(t)?);
+        }
+        for r in facts[key].as_array().ok_or_else(|| format!("facts.{key} is not an array"))? {
+            let d = r[0].as_u64().ok_or_else(|| format!("a facts.{key} entry has no day"))?;
+            all.insert(d, r.clone());
+        }
+        facts[key] = Value::Array(all.into_values().collect());
+        Ok(())
+    };
+    merge("days", days, &mut facts)?;
+    merge("window", window, &mut facts)?;
+    Ok(facts)
+}
+
+/// A line warning's sentence, from the kernel's **named** verdict (§17's P15: named
+/// constructors where the fork had serde's free text).
+fn warning_text(w: &Value) -> String {
+    let name = w.get("w").and_then(Value::as_str).unwrap_or("unreadable");
+    let why = w.get("why").and_then(Value::as_str).unwrap_or_default();
+    match name {
+        // The fork's sentence began `invalid UTF-8: …`; the phrase is kept, the cause is named.
+        "invalidUtf8" => "invalid UTF-8".to_string(),
+        "lineTooLong" => "the line is longer than 65,536 characters".to_string(),
+        "lineTooDeep" => "the line nests deeper than 64 brackets".to_string(),
+        "notJson" => format!("not JSON: {why}"),
+        "numberOutOfRange" => "a number out of range".to_string(),
+        "notAnObject" => "not a JSON object".to_string(),
+        "noT" => "missing field `t`".to_string(),
+        "tNotString" => "`t` is not a string".to_string(),
+        "badT" => format!("invalid timestamp: {why}"),
+        "duplicateT" => "duplicate field `t`".to_string(),
+        other => format!("the kernel refused this line: {other}"),
+    }
+}
+
+/// The chunks a read-only sweep sends: at most [`CHUNK_LINES`] lines and [`CHUNK_BYTES`] bytes.
+fn sweep_chunks(s: &Split) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    let (mut start, n) = (0usize, s.lines.len());
+    while start < n {
+        let mut end = start + 1;
+        while end < n && end - start < CHUNK_LINES && s.bytes_between(start, end + 1) <= CHUNK_BYTES {
+            end += 1;
+        }
+        out.push((start, end));
+        start = end;
+    }
+    out
+}
+
+/// **Every line of the log the reader refuses** (D18 (i)), for `tm check`.
+///
+/// A call that asks for no facts, no headers, no reseal and no records **does not resume**
+/// (`Boundary.LogReq.resumes`): the kernel reads its lines with `Log.readLine` and answers their
+/// warnings, with no replay and no checkpoint. So this is a read-only sweep of the whole file, in
+/// chunks, and it is exact whatever scope the verb's own replay asked for.
+///
+/// It exists because **the answer's `warnings` array is per call** (`Boundary.logBody`): a hot
+/// call carries only its tail's, and genesis returns only its last chunk's. `tm check` must name
+/// every unreadable line in the file, so it asks for them directly rather than taking whatever the
+/// last call happened to see.
+pub fn line_warnings(bytes: &[u8], now: &str, tz: &Value) -> Result<Vec<LogWarning>, String> {
+    let s = split(bytes);
+    let mut out: Vec<LogWarning> = Vec::new();
+    let want = Want::default();
+    for (a, b) in sweep_chunks(&s) {
+        let req = request(now, tz, None, a as u64 + 1, &s.lines[a..b], b < s.lines.len() || s.terminated, None, &want, None);
+        let answer = log_call(&req)?.map_err(|r| format!("a read-only sweep was refused: {r:?}"))?;
+        for w in answer.warnings.as_array().ok_or("warnings is not an array")? {
+            let line = w.get("line").and_then(Value::as_u64).ok_or("a warning without its line")?;
+            let text = s
+                .lines
+                .get(line as usize - 1)
+                .and_then(|l| l.clone())
+                .unwrap_or_else(|| {
+                    // A line that is not UTF-8 has no text on this side either; show it lossily,
+                    // as the fork's reader did, so `tm check` can quote the bytes.
+                    let (from, to) = (if line == 1 { 0 } else { s.ends[line as usize - 2] }, s.ends[line as usize - 1]);
+                    String::from_utf8_lossy(&bytes[from..to]).trim_end_matches('\n').trim_end_matches('\r').to_string()
+                });
+            out.push(LogWarning { line: line as usize, text, error: warning_text(w) });
+        }
+    }
+    Ok(out)
+}
+
+/// **The `render` op** (§11.4 steps 3-4): each wanted line's canonical rendering and its display.
+///
+/// The lines a verb selected are scattered through the file, and one call may carry at most
+/// [`RESEND_LINES`] lines, so the file is swept in chunks and a chunk holding none of the wanted
+/// lines is never sent. A line the kernel cannot render (a malformed one) comes back absent, which
+/// is what `tm log` prints a header without a payload for.
+pub fn render_lines(bytes: &[u8], now: &str, tz: &Value, wanted: &[u64]) -> Result<BTreeMap<u64, (Value, String)>, String> {
+    let mut out = BTreeMap::new();
+    if wanted.is_empty() {
+        return Ok(out);
+    }
+    let s = split(bytes);
+    let want_set: BTreeSet<u64> = wanted.iter().copied().collect();
+    for (a, b) in sweep_chunks(&s) {
+        let here: Vec<u64> = want_set.range(a as u64 + 1..=b as u64).copied().collect();
+        if here.is_empty() {
+            continue;
+        }
+        let want = Want { facts: false, headers_from: None, render: here };
+        let req = request(now, tz, None, a as u64 + 1, &s.lines[a..b], b < s.lines.len() || s.terminated, None, &want, None);
+        let answer = log_call(&req)?.map_err(|r| format!("a render call was refused: {r:?}"))?;
+        for r in answer.render.as_array().ok_or("render is not an array")? {
+            let line = r[0].as_u64().ok_or("a render row without its line")?;
+            let (Some(text), Some(display)) = (r[1].as_str(), r[2].as_str()) else { continue };
+            let value: Value = serde_json::from_str(text).map_err(|e| format!("the kernel's rendering of line {line}: {e}"))?;
+            out.insert(line, (value, display.to_string()));
+        }
+    }
+    Ok(out)
+}
+
+/// **The headers a command appended** (§11.4, design §14.3 row R6): the tail after `after`
+/// physical lines, replayed on its own from the empty checkpoint, each header's line shifted back
+/// into the whole file's numbering.
+///
+/// This is what `tm undo`'s recorder reads, and replaying the tail alone is exactly what it did
+/// before the switch: a tail that starts after the day's `wake` attributes its lines from the
+/// wakes it can see, which is why the day is not among the fields handed back.
+pub fn headers_after(bytes: &[u8], now: &str, tz: &Value, after: u64) -> Result<Vec<(u64, String, Option<String>)>, String> {
+    let s = split(bytes);
+    let at = after as usize;
+    if at >= s.lines.len() {
+        return Ok(Vec::new());
+    }
+    let tail = &s.lines[at..];
+    if tail.len() > RESEND_LINES || s.bytes_between(at, s.lines.len()) > RESEND_BYTES {
+        return Err(format!("a tail of {} lines is past the resend cap", tail.len()));
+    }
+    let want = Want { facts: false, headers_from: Some(1), render: vec![] };
+    let req = request(now, tz, None, 1, tail, s.terminated, None, &want, None);
+    let answer = log_call(&req)?.map_err(|r| format!("a tail read was refused: {r:?}"))?;
+    let mut out = Vec::new();
+    for h in answer.headers.as_array().ok_or("headers is not an array")? {
+        let line = h[0].as_u64().ok_or("a header without its line")?;
+        let tag = h[1].as_str().ok_or("a header without its tag")?.to_string();
+        let id = h[2].as_str().map(str::to_string);
+        out.push((line + after, tag, id));
+    }
+    out.sort_by_key(|h| h.0);
+    Ok(out)
+}
+
+/// The months a date range spans, as `YYYY-MM` keys, with §11.1's one-day margin already applied.
+fn months_between(from: u64, to: u64) -> Vec<String> {
+    let mut out: BTreeSet<String> = BTreeSet::new();
+    let mut d = from;
+    while d <= to {
+        out.insert(month_of(d));
+        d += 28;
+    }
+    out.insert(month_of(to));
+    out.into_iter().collect()
+}
+
+/// The sealed records a scope merges, and any notice loading them raised (§11.1, §9.8).
+fn records_for(cache: &ReplayCache, r: &Replayed, scope: Scope) -> (BTreeMap<u64, String>, BTreeMap<u64, String>, Option<String>) {
+    let own = || (r.days.clone(), r.window.clone());
+    match scope {
+        Scope::Hot => (BTreeMap::new(), BTreeMap::new(), None),
+        Scope::All => match cache.records_of(r) {
+            Some((d, w)) => (d, w, None),
+            None => {
+                let (d, w) = own();
+                (d, w, Some(format!("replay cache {CACHE_DIR} changed underneath; rebuilt in memory")))
+            }
+        },
+        Scope::Dates { from, to } => {
+            let (lo, hi) = (day_of(from).saturating_sub(1), day_of(to) + 1);
+            if r.outcome == Outcome::GenesisUnpersisted || r.snapshot.gen.is_empty() {
+                let (d, w) = own();
+                return (
+                    d.into_iter().filter(|(k, _)| *k >= lo && *k <= hi).collect(),
+                    w.into_iter().filter(|(k, _)| *k >= day_of(from) && *k <= day_of(to)).collect(),
+                    None,
+                );
+            }
+            match cache.load_months(&r.snapshot, &months_between(lo, hi)) {
+                Some((d, w)) => (
+                    d.into_iter().filter(|(k, _)| *k >= lo && *k <= hi).collect(),
+                    w.into_iter().filter(|(k, _)| *k >= day_of(from) && *k <= day_of(to)).collect(),
+                    None,
+                ),
+                None => {
+                    let (d, w) = own();
+                    (d, w, Some(format!("replay cache {CACHE_DIR} changed underneath; rebuilt in memory")))
+                }
+            }
+        }
+    }
+}
+
+/// **The one door to the log** (design §14.6 item 1, §11.1): the replay of `.tm/log.jsonl` as the
+/// kernel derives it, in the scope `scope` asks for.
+///
+/// The checkpoint is this process's, kept across reloads so a TUI session pays genesis once
+/// (K14); the cache directory is `<root>/.tm/cache/replay` (D13). The answer's facts are merged
+/// with the sealed records the scope names ([`merge_records`]) and decoded by [`decode_facts`].
+///
+/// `want.headersFrom` is **not** asked: every row of the view comes from a day record's own
+/// header, and the answer's top-level headers would only repeat their displays.
+pub fn replay_scoped(
+    root: &Path,
+    bytes: &[u8],
+    tz: Tz,
+    tz_wire: &Value,
+    today: NaiveDate,
+    scope: Scope,
+    max_line: Option<u64>,
+) -> Result<Read, GenesisError> {
+    let dir = root.join(CACHE_DIR);
+    let mut all = caches().lock().unwrap_or_else(|p| p.into_inner());
+    let cache = all.entry(root.to_path_buf()).or_insert_with(|| ReplayCache::new(Some(dir)));
+    let want = Want { facts: true, headers_from: None, render: vec![] };
+    let r = cache.replay(bytes, day_of(today), tz_wire, max_line, &want)?;
+    let facts = r.answer.facts.clone().ok_or_else(|| GenesisError::Fault("the answer carries no facts".into()))?;
+    let (days, window, notice) = records_for(cache, &r, scope);
+    let merged = merge_records(&facts, &days, &window).map_err(GenesisError::Fault)?;
+    let answer = serde_json::json!({"lines": r.answer.lines, "facts": merged, "headers": r.answer.headers});
+    let replay = decode_facts(&answer, tz).map_err(GenesisError::Fault)?;
+    let mut notices = r.notices.clone();
+    notices.extend(notice);
+    Ok(Read { replay, outcome: r.outcome, notices })
 }

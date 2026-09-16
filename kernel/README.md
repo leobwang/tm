@@ -20123,3 +20123,207 @@ to fork point 4748911**, item 7's remaining D18 default (**gap 120 part 3**, (ii
 tests, **T12**, T11's seven latency rows, the per-verb kernel-call count against R14's table,
 and the **§5.13 drive** (short by **gap 131**'s item). Then **S2** (**gap 130**) with quirk
 Q6(f) (**gap 86**), then **L9** (**gap 93**).
+
+<!-- ===========================================================================
+     APPENDED 2026-09-15: stage 5, D9 track, step S on rebuild-on-lean (after
+     X1, 4aaa99e).  **THE SWITCH DID NOT LAND.**  This block does not claim it
+     did.  `Ctx::replay_with` still delegates to `Ctx::replay_of`, and the
+     shipped `tm` still reads `.tm/log.jsonl` with the Rust reader: 35
+     invocations over three corpus plans and a damaged log are byte-identical
+     to the parent commit's binary.  What landed is the host half S calls —
+     `kernel_log::replay_scoped` and the four functions around it — and, more
+     to the point, a test that compares every one of them with the reader S
+     deletes, while that reader still exists to be compared against.
+     Takes gaps 134-137.  New gaps start at 138.  No Lean edited: the audit
+     stays at 3934, cheats at 157, parity at P35.
+     =========================================================================== -->
+
+## Stage 5, step S, 2026-09-15: the door the switch opens, measured against the reader it replaces — S itself did not land
+
+**The honest paragraph, first.** S is one commit that makes the kernel the binary's only reader
+of the log, and it is **not made here**. `tm/src/cli/ctx.rs`'s `Ctx::replay_with` still calls
+`Ctx::replay_of`, whose body is still `Log::parse_bytes(..).replay(None, cfg.tz)`; `log.rs` still
+holds every line §12 deletes; the R12 consumer tests are still in `tm-core/tests/`; T5's oracle is
+still the in-tree reader. **35 invocations** of `tm log` (human and `--json`, `--tail`, `--since`,
+`--item`) and `tm check` over three corpus plans and a tree with a malformed line and a line dated
+2027 are **byte-identical** to `4aaa99e`'s binary — stdout, stderr and exit code. That is the
+measurement that says this commit changed no behaviour, which is what an unfinished switch owes.
+
+**Why it stopped where it did.** §14.6's acceptance is all-or-nothing by its own words — "do not
+commit a partial switch" — and its contents are the body swap, ≈1,750 lines of deletions, a
+24-file cross-crate test move with ≈47 insta snapshots, T5's retarget across eight input classes,
+eight T9 tests, T12, seven T11 latency rows and a 30-minute drive. Starting the deletions and the
+test move without finishing them would have left the tree red with the old reader half-removed and
+the new one not yet wired, and the fix would have been to revert exactly the work added. The
+session's remaining budget did not cover finishing *and verifying* that, so the half-switch was
+reverted (`tm/src/cli/ctx.rs` and `tm/src/cli/lifecycle.rs` are at `4aaa99e`) and only the
+additive half kept.
+
+### What landed
+
+**1. The host half of the door** — 307 lines at the end of `tm/src/cli/kernel_log.rs`
+(1,721 → 2,028), every one of them the code `Ctx` will call at S, none of them called yet:
+
+| function | S's use |
+|---|---|
+| `replay_scoped(root, bytes, tz, wire, today, scope, max_line)` | `Ctx::replay_with`'s body (§14.6 item 1): the process's checkpoint, the scope's records merged, `decode_facts` |
+| `merge_records(facts, days, window)` | §11.1's merge, host side |
+| `line_warnings(bytes, now, tz)` | D18 (i): every unreadable line in the file, for `tm check` |
+| `render_lines(bytes, now, tz, wanted)` | §11.4 steps 3-5: `Ctx::entries_at`'s replacement |
+| `headers_after(bytes, now, tz, after)` | §14.3 row R6: `Ctx::log_tail_of`'s replacement |
+| `max_line_of(undo_json, now)` | §9.6's pin, read from `.tm/undo.json` |
+| `Scope`, `Read`, `caches()` | §11.1's scopes; the per-process cache K14 wants |
+
+**2. `tm/tests/kernel_log_door.rs`** (338 lines, 5 tests) — the reason the above is not a fourth
+artifact built to a shape S replaces. The README already names three (gaps 93, 130, 132), and
+committing 307 lines of uncalled, untested host code would have been the fourth. Each test calls
+the shipped function and compares it with the in-tree reader through the R12 chokepoint:
+
+| test | denominator | result |
+|---|---|---|
+| `the_door_is_the_reader_it_replaces` | 9 logs (7 corpus + two generated months), **18 scoped reads** (genesis and then from the checkpoint it wrote), **127 days** | the `All`-scope `Replay` **is** `Ctx::replay_of`'s, by the fork's own `PartialEq`, `ported_facts()` (D14), `view()`, `entry_count()` and `line_count()`; **0 differences** |
+| `the_doors_narrow_scopes_carry_what_they_promise` | a 200-day log; hot 4 days, dates 12, all 200, reader 200 | every day record a narrow scope carries **is** the whole reader's; the narrowing is measured, not assumed |
+| `the_door_names_every_unreadable_line_not_just_the_last_calls` | **12,109 lines / 1,263,502 bytes over 3 chunks**, damaged in the first, middle and last | all 4 warnings named, at the reader's line numbers |
+| `the_doors_render_is_the_lines_own_bytes` | 7 lines of a 7,251-line log, across a chunk boundary | each rendering equals the reader's `LogEntry`, each display its `%Y-%m-%d %H:%M` |
+| `the_doors_tail_headers_are_the_recorders` | 7 texts (empty, blank, torn, CRLF, malformed, non-UTF-8), **153 cuts** | `(line, tag, id)` equals `headers_from(after + 1)`; **0 differences** |
+
+**3. The stage-5 parity harness ran against the fork point for the first time.** W-6 recorded it
+as owed because the fork build was unavailable; the oracle now builds from `4748911`
+(`build-oracle.sh`, scratch tree outside the repo) and
+`stage5_parity_the_kernel_replays_and_fits_as_the_fork_point_does` ran for real rather than
+returning INERT: **8 logs, 144 `Replay` keys, 8 entry counts, 8 fitted models, 16,772 scalar
+values; 4 parity-P21 sightings, every one displaying the same `round1` load and the same
+`load_blocks`; no disagreement beyond the recorded exceptions.**
+
+### The scope narrowing, measured (design §11.1 understates it)
+
+§11.1 says `Hot` merges "the answer only (A, W, O)". Which of `Replay`'s fields that leaves short
+is not stated anywhere, and it is not obvious: an item's *aggregate* minutes ride the checkpoint,
+but its per-day breakdown and its done dates are the **window records'**, so `items` narrows while
+`named` does not. Measured on a 200-day log:
+
+| | fields |
+|---|---|
+| **narrowed by `Hot` and by `Dates`** | `days`, `items`, `instances`, `energy`, `durations`, `interrupts`, `demotions`, `closes`, `done_dates`, `seams` |
+| **whole at every scope** | `tz`, `range`, `named`, `dropped_items`, `done_items`, `last_done`, `longest_leak`, `open_block`, `open_interrupt`, `unknown`, `warnings`, `last_effective_t`, `line_count` |
+
+### Gap 134 (new; label S-a) — the answer's `warnings` array is per call, and nothing is wired to the sweep that fixes it
+
+1. **What is not done.** `tm check` is not wired to `kernel_log::line_warnings`. D18 (i) requires it
+   to name **every** line the reader refuses.
+2. **Why it matters more than gap 133 said.** Gap 133 recorded that a *replay* warning's text is
+   dropped for a folded line under `Hot`. The **line** warnings are worse and were unrecorded:
+   `Boundary.logBody` emits `warnings` from `logVerdicts r`, this call's lines only, and
+   `kernel_log::genesis` returns only the **last chunk's** answer. A naive S taking `tm check`'s
+   warnings from the answer would silently name only the lines in the final chunk — at **every**
+   scope, `All` included, not just `Hot`.
+3. **What it costs.** Nothing today (the Rust reader still supplies them). The fix is built and
+   tested here: a read-only sweep (`LogReq.resumes` is false when no facts, headers, reseal or
+   sealed records are asked, so the kernel reads its lines and answers their warnings with no
+   replay), chunked over the whole file, exact at any scope. At three years that is ≈17 calls on a
+   verb that is not on the hot path.
+4. **When it clears.** At S, in item 7's D18 wiring, with `Ctx.log_warnings` deleted rather than
+   left a half-truth: its only reader is `log_problems`.
+
+### Gap 135 (new; label S-b) — no verb has been audited against the measured narrowing
+
+1. **What is not done.** Every verb's `ReplayScope` was chosen against §11.1's prose. The table
+   above is the first measurement of what the prose means, and no verb has been checked against it.
+2. **Why it matters.** `tm check`'s far-future scan reads `view()` (gap 132) — but `days` and
+   `seams` narrow too, so any verb reading a day record, a seam, a duration or a demotion at `Hot`
+   is reading a suffix. `Ctx::load` defaults every unlisted verb to `Hot`.
+3. **What it costs.** Nothing today: before the switch every scope is the whole log, which is
+   exactly why the audit cannot be done by testing and has to be done by reading.
+4. **When it clears.** At S, as part of item 1: each verb's scope justified against the table, and
+   the ones that read narrowed fields moved up or given the fact from the answer instead.
+
+### Gap 136 (new; label S-c) — `tm log`'s `total` and the §11.1 narrowing cannot both be had
+
+1. **What is not done.** `tm log` prints `total = ctx.replay.entry_count()`, which is `rows.len()`.
+2. **Why.** §11.4 step 5 says `total = facts.entryCount` — the kernel's **all-time** count. Under a
+   narrowed scope `rows.len()` is the rows that scope carries, so `tm log --since 7d` would print a
+   `total` smaller than the log. `decode_facts` does not carry `entryCount`: `Replay` has no field
+   for it. So S must either keep every `tm log` at `All` (done in the reverted draft, and the
+   honest choice) or give `Replay` the count.
+3. **What it costs.** At `All`, `tm log --since 7d` loads every month's records — the cost gap 129
+   already names and still has not measured.
+4. **When it clears.** With gap 129, at or after S.
+
+### Gap 137 (new; label S-d) — retargeting T5 takes it out of `cargo test --workspace`
+
+1. **What is not done.** T5 still compares against the in-tree reader (§14.6 item 4's own schedule).
+2. **Why it is a gap and not just a step.** After S its oracle is a Rust build of fork point
+   `4748911` outside the repository — the dependency AGENTS §7.3 deliberately keeps out of
+   `check.sh` *and* out of `cargo test --workspace`. So the retargeted T5 must be `#[ignore]`d and
+   inert without `TM_ORACLE`, like `stage5_parity_…` already is: the switch's central claim leaves
+   the default suite on the very commit that makes it load-bearing.
+3. **What it costs.** `cargo test --workspace`'s count **falls** at S rather than holding, and the
+   guard against a regression in the reader becomes a command someone has to remember to run.
+   `tm/tests/kernel_log_door.rs` covers the gap only until the reader it compares against is
+   deleted — which is S.
+4. **When it clears.** At S, by deciding deliberately: either the door test is rewritten against
+   pinned expectations so something stays in the default suite, or the README states that the
+   kernel's reader is guarded only by the oracle run.
+
+### Recorded disagreements between the design and the repo
+
+1. **§11.1 says the kernel merges the sealed records; the `All` scope cannot use that route.**
+   `LogReq.merged` merges what a request *sends*, and a request carries at most `MAX_SEALED_IN` =
+   **62** records (§10.4). `All` reaches every month — ≈1,100 day records at three years. So the
+   `All` merge is host-side (`merge_records`), which is what T5's windowed arm has always done in
+   `windowed_log`; this commit promotes that from test-only code to the shipped path. `Dates` can
+   still use either route; it uses the same one here, for one code path and no second call.
+2. **`decode_facts`'s `displays` map has no reader.** It is built from the answer's top-level
+   `headers`, but every view row takes its `t` from its own day record's header (the 6-tuple's
+   elements 4 and 5). So `want.headersFrom` need not be asked on the hot path, and
+   `replay_scoped` does not ask it. The map is left in place rather than deleted mid-step.
+3. **§12's post-S one-reader grep is unmoved at 123.** Nothing was deleted here, and the new host
+   code adds no hit.
+
+### Observable behaviour changes
+
+**None**, and measured rather than asserted: `4aaa99e`'s binary and this tree's were run over
+three corpus plans and a damaged tree — **35 invocations, 0 differences** in stdout, stderr and
+exit code. Nothing in the binary calls the new module's new functions; `tm/src/cli/mod.rs`'s
+`pub mod kernel_log;` is still their only reach.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited.** Goals discharged, refuted, added: none; burn-down **13 → 13**, all stage
+6's. New theorems: none — the audit stays at **3934**. New `decide`/`rfl` witnesses: none. New
+cheats: none (highest **157**). New parity entries: none (highest stays **P35**). `TmKernel.lean`
+imports: **78**, unchanged. D9-21 has nothing to add: no function over a wire-sized list was
+written in Lean.
+
+### Numbers
+
+**Taken:** gaps **134-137**. **Highest:** gap 137, cheat 157, parity P35. New gaps start at **138**.
+
+**Re-measured** (main worktree, on the tree committed; every command capped at `MemoryMax=40G`,
+`MemorySwapMax=0`; the oracle build at 16G):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, **3.10 s** (`4aaa99e`: 3.13 / 3.04 / 3.11 s) — flat, far inside the 10%-per-step rule |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged; all stage 6) |
+| `cargo test --workspace` | **1106 passed / 0 failed / 6 ignored across 76 result lines**, exit 0, **0 warnings** (`4aaa99e`: 1096 / 0 / 6 across 75). **+10 tests in +1 binary**: `tm/tests/kernel_log_door.rs` (5 of its own, 5 `kernel_log` unit tests that compile into it) |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) — unchanged |
+| T5 (`kernel_replay_parity --include-ignored`) | **20 passed / 0 failed**, **6.43 s** (`4aaa99e`: 6.56 s) |
+| stage-5 parity vs fork `4748911` | **ran, not INERT**: 8 logs, **144 `Replay` keys**, 8 entry counts, 8 fitted models, **16,772 scalar values**; **4 P21 sightings**, each displaying identically; no other disagreement |
+| the door test | **10 passed / 0 failed**, 1.02 s |
+| `cli_latency --include-ignored` | **4 passed / 0 failed**, 3.73 s. 1y log (22,180 lines): first verb **719 ms**, later **122 ms**. 3y log (66,169 lines): first **926 ms**, later **268 ms**. `plan` with a `due:` 3 y out **81 ms**, 10 y out **137 ms** |
+| byte identity against `4aaa99e`'s binary | **35 invocations, 0 differences** (3 corpus plans + a damaged tree) |
+| §12's one-reader grep | **123 lines** (`4aaa99e`: 123 — nothing deleted here) |
+| the diff | 1 shipped file **+307 −1**; one new 338-line test file. No Lean, no `Cargo.toml`, no `lean-toolchain`, no `kernel/corpus/` |
+
+**Owed next: S, in full, and it is still §14.6's own list** — contents 1-3 and 5 (`Ctx::replay_with`'s
+body becomes `kernel_log::replay_scoped(scope)`, for which the callee now exists and is tested;
+§12's ≈1,750 lines of deletions in `log.rs`, `parse_timestamp` included; R12's consumer tests moved
+to `tm/tests/` with their ≈47 snapshots; the `log` names in `kernel_bridge::refusal`), item 4's
+**retarget of T5** (**gap 137**), item 7's D18 defaults (**gap 120 part 3**, and **gap 134**'s
+sweep), **gaps 119, 129, 132, 133, 135, 136**, the eight remaining T9 tests, **T12**, T11's seven
+latency rows, the per-verb kernel-call count against R14's table, and the **§5.13 drive** (short by
+**gap 131**'s item). Then **S2** (**gap 130**) with quirk Q6(f) (**gap 86**), then **L9**
+(**gap 93**).
