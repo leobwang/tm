@@ -22532,3 +22532,196 @@ then design §14.6's contents **1, 2 and 5**: the body swap plus §12's deletion
 defaults (**gap 120 part 3**), **gaps 119, 129, 132, 133**, the three pre-switch assertions turned
 around, the two `#[ignore]`s deleted, and the **§5.13 drive**. Then **S2** (**gap 130**, D16) with
 quirk Q6(f) (**gap 86**), then **L9** (**gap 93**).
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 5, W-11 TRACK C — D22 / gap 144, `tm log --json`
+     keeps byte-identity with the fork via `RawValue` SCOPED TO THE RENDERER.
+     One shipped file (`tm/src/cli/lifecycle.rs`) and the design's §11.4 step 5.
+     **No behaviour moves: 0 of 138 captured outputs across the 69-invocation
+     sweep.**  S IS NOT MADE HERE and this block does not claim it is.  Takes
+     gap 170; closes gap 144.  No Lean edited: audit 3934, cheats 157, parity
+     P35, burn-down 13, imports 78, all unchanged.
+     =========================================================================== -->
+
+## Stage 5, W-11 Track C, 2026-09-16: the renderer carries the line's own bytes
+
+**The honest paragraph, first.** This is **not** the switch. `Ctx::replay_with` still calls
+`Ctx::replay_of`, whose body is still `Log::parse_bytes(&bytes).replay(None, cfg.tz)`; §12's
+one-reader grep is **125**, exactly where W-9 and W-10 left it. What lands here is **D22**: the one
+decision gap 144 asked for, taken and built, so that the switch commit can swap `Ctx::entries_at`
+for `kernel_log::render_lines` without moving a byte of `tm log --json`.
+
+### What landed
+
+1. **`LogOut.entries` is `Vec<Box<RawValue>>`** — each entry is its own line's JSON bytes, not a
+   re-serialised value. Today those bytes come from the writer (`LogEntry::to_json`, which §12
+   **keeps**); at S they come from the kernel's `render` op, which already hands back a `RawValue`.
+2. **The seam is written over `&str`, not over `LogEntry`.** `entry_json_of(raw: &str)` is the
+   function the switch re-points; `entry_json(&LogEntry)` is today's one-line caller. A seam typed
+   on the parsed entry would have had to be rewritten inside S's commit, and so would its tests.
+3. **The pretty-printing is re-emitted, and it was verified rather than assumed** — D22's own
+   instruction, and the trap in it. Measured first: `tm log --json` today is **pretty-printed** by
+   `out::emit`'s `serde_json::to_string_pretty`, two-space indent, with each entry object's braces
+   at depth 2 (its keys at six spaces, its closing brace at four). A `RawValue` is written into the
+   enclosing document **verbatim**, so `to_string_pretty` cannot indent a fragment it is handed as
+   one opaque token: left alone, every entry would have printed compact on a single line. `reindent`
+   re-emits serde_json's own `PrettyFormatter` shape over the raw bytes without parsing them, and
+   `the_reindent_is_serde_jsons_pretty_printer` compares it against `to_string_pretty` itself.
+4. **Design §11.4 step 5 is corrected** with a dated note naming D22, in the style §14.6's drive item
+   was corrected in at W-10. The human-line bullet beneath it is corrected too: the `Value` parse
+   stays on the **human** path deliberately, because its alphabetical `k=v` order is what `tm log`
+   prints today and what the corpus expectation pins.
+
+### The before/after bytes, on a multi-entry log
+
+`tm log --json` on `plan-home-day` (25 entries, 3,218 bytes) at the pinned `2026-09-15T09:00:00-05:00`
+is **`cmp`-clean** between the HEAD binary and this one. The first entry, both sides:
+
+```json
+{
+  "total": 25,
+  "entries": [
+    {
+      "t": "2026-08-10T11:00:00-05:00",
+      "ev": "routine",
+      "item": "laundry",
+      "inst": "2026-08-10",
+      "status": "done",
+      "actual_min": 30
+    },
+```
+
+And the reading D22 **declined** — §11.4 step 5 taken literally, the rendering parsed into a generic
+`serde_json::Value` — prints the same entry like this, which is the 7-of-69 regression W-9 measured:
+
+```json
+{
+  "actual_min": 30,
+  "ev": "routine",
+  "inst": "2026-07-06",
+  "item": "laundry",
+  "status": "done",
+  "t": "2026-07-06T11:00:00-05:00"
+}
+```
+
+### The instrument, and the 69-invocation sweep
+
+- **`tm_log_is_byte_identical_on_the_corpus` passes**: **44 cases, 111,159 bytes, byte-identical.**
+  The expectation was **not** re-blessed; `tm/tests/fixtures/tm-log-corpus.expected` is untouched in
+  this commit, which is the point of it.
+- **The 69-invocation sweep W-9 used: 0 moved, of 138 captured files.** Four corpus plans
+  (`plan-basic`, `plan-home-day`, `plan-recur`, `plan-travel-day`) plus a damaged tree (`plan-basic`
+  carrying `logs/malformed.jsonl`), thirteen `--json` spellings each — `now`, `plan`, `log`,
+  `log --tail 5`, `log --since 7d`, `log --since 14d`, `log --item ^m1`, `check`, `review day|week|month`,
+  `model --show`, `triage` — plus the four human `tm log` spellings on `plan-recur`: **69
+  invocations × (stdout, stderr) = 138 files**, all 69 exiting 0 on both binaries, every file
+  identical.
+
+### Four tests, two of which failed first and were right to
+
+`the_renderer_keeps_the_writers_key_order_where_a_value_would_not` asserts both halves — what this
+renderer emits, and what the declined reading would have emitted — so it fails if anyone reintroduces
+the `Value` parse **or** turns on `serde_json/preserve_order` workspace-wide without revisiting D22.
+The other three were written, failed, and the **expectations** were wrong, not the code:
+
+1. `to_string_pretty` **re-prints lexemes**: a `1e3` comes back `1000.0`, a `\u00e9` escape comes back
+   as its character. That is parity **P29** — the renderer shows the user what is in their file — so
+   the formatting comparison now uses canonical spellings only, and
+   `a_hand_written_numeral_or_escape_is_printed_as_written` pins P20/P29 on the renderer directly.
+   **P29 had no test before this run; it has one now.**
+2. `the_log_documents_shape_is_serde_jsons` first built its twin with `serde_json::json!`, and failed
+   with **`entries` printed before `total`**: a `Value` map alphabetised the *document's own* keys —
+   the very reordering under test, arriving one level up, inside the test meant to catch it. The twin
+   is now a `#[derive(Serialize)]` struct. That is how narrow the escape hatch is, and it is the
+   sharpest argument for D22's word **scoped**.
+
+### Gap 144 (W9-a) — CLOSED
+
+The three-way choice is taken and built: `RawValue` in the renderer, `serde_json/preserve_order`
+declined (an unmeasured workspace-wide change to `Value`'s ordering), alphabetising declined (it
+spends byte-identity in one of the few places the corpus test still catches a regression). The
+pretty-printing half — the part of gap 144 that was not obvious from its own text — is measured,
+re-emitted and tested.
+
+### Gap 170 (new; label W11C-a) — the 69-invocation sweep is a scratch harness, not a test
+
+1. **What is not done.** The behaviour sweep quoted as authority by W-9 ("131 of 138"), by W-10 and
+   by this block exists only as a shell script in a scratch directory. It is **not** in the tree.
+2. **Why.** It drives the *binary* over copies of the corpus and compares two builds, so it needs a
+   second binary to compare against — which `cargo test` has no way to build. This run reconstructed
+   it from W-9's prose (four corpus plans, a damaged tree, 69 invocations, 138 files) and reproduced
+   the 138 exactly, but the reconstruction is an inference from a sentence, not a re-run.
+3. **What it costs.** Every run that wants the figure rebuilds the harness and may rebuild it
+   *differently*, and two runs' "of 69" then mean different things. The in-tree instrument
+   (`tm_log_is_byte_identical_on_the_corpus`, 44 cases) covers `tm log` only; the sweep is what
+   covers the other twelve verbs against a previous build.
+4. **When it clears.** Either by committing the sweep as a script under `tm/tests/` support with the
+   baseline binary named explicitly, or by recording in the ledger — once — the exact invocation list
+   so the next run reproduces it rather than infers it. This block's list above is that record, until
+   the script lands.
+
+### Observable behaviour changes
+
+**None, and it is measured rather than argued.** 0 of 138 captured outputs moved across the
+69-invocation sweep; `tm log --json`'s corpus bytes are unchanged (44 cases, 111,159 bytes); no log
+bytes, refusal text, `--json` shape or capability exists that did not exist before. `tm log`'s human
+output is untouched by construction — `log_human` still reads the parsed `LogEntry`, and its
+alphabetical `k=v` order is unchanged.
+
+### Recorded disagreements between the design, the ledger and the repo
+
+1. **Design §11.4 step 5 was unimplementable as written, and is now corrected in place** (gap 144).
+   This is the correction W-9 and W-10 both recorded as owed.
+2. **§12's one-reader grep is 125 here**, unchanged by this run — quote §12's alternation, never
+   R8's 89. W-7's disagreement, now standing for the fifth run.
+3. **W-10's "gap 144's three-way decision" framing understated it**: the key-order question was one
+   of two. The pretty-printing question had to be *measured* (today's output is pretty-printed, and a
+   `RawValue` defeats the outer formatter), and nothing in gap 144's own four parts said so.
+
+### Method disclosure
+
+This worktree has no `.lake`, and Track C edits no Lean, so the binary here was built against the
+main tree's already-built kernel archive (`kernel/TmKernel/.lake`, symlinked for the run and removed
+before the commit). `lake build TmKernel:static` confirmed up to date, 160 jobs, before any Rust was
+compiled. The `check.sh` figures below are the main tree's, on identical Lean sources.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited** — no `.lean`, no `lean-toolchain`, no `Cargo.toml`, no `Cargo.lock`, nothing
+under `kernel/corpus/`. Goals discharged, refuted, added: none; burn-down **13 → 13**, all stage 6.
+New theorems: none — the audit stays at **3934**. New `decide`/`rfl` witnesses: none, so no probe
+budget was spent. New cheats: none (highest **157**). New parity entries: none (highest stays
+**P35**) — **P20 and P29 gain their first direct test** on the renderer, which strengthens two
+existing rows rather than adding one. No predicate or assertion was weakened, no goal deleted, no
+memory bound raised, no corpus reblessed, and **no snapshot or expectation re-blessed**.
+
+### Numbers
+
+**Taken:** gap **170**. **Closed:** gap **144**. **Highest:** gap 170 in this track's range (150-159
+Track A, 160-169 Track B, 170-179 Track C, 180-189 the Switch step, 190-194 S-after, 195-199 repair).
+
+**Re-measured** (every command capped at `MemoryMax=40G, MemorySwapMax=0`; the sweep and the FFI
+build at 16G):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree (main worktree, identical Lean) | **7/7**, **3.55 / 3.08 / 3.08 s** (W-10 at `3c0844c`: 3.03 / 3.03 / 3.07). The first is a warm-up; the pair that follows is inside the 10%-per-step rule |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged; all stage 6) |
+| `cargo test --workspace` | **1129 passed / 0 failed / 9 ignored across 79 result lines**, exit 0, **0 warnings** (parent: **1125 / 0 / 9** across 79). **+4 passing**, all four the renderer's own |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) |
+| T5 (`kernel_replay_parity --include-ignored`) | **22 passed / 0 failed**, **6.45 s** (parent: 22, 6.49 s) |
+| the door suite (`kernel_log_door`) | **15 passed / 0 failed**, **1.49 s** |
+| `cli_switch_acceptance` | **7 passed / 0 failed / 2 ignored**, and `tm_log_is_byte_identical_on_the_corpus` reports **44 cases, 111,159 bytes, byte-identical** |
+| `cli_latency --include-ignored` | **5 passed / 0 failed**, **10.03 s** |
+| `kernel_call_counts` | **1 passed** — `log == 0` for eleven verbs, `== 1` for `tm check` |
+| the 69-invocation sweep | **69 invocations, 138 captured files, 0 moved**; all 69 exit 0 on both binaries |
+| §12's one-reader grep | **125 lines** (unchanged) |
+| the diff | 1 shipped file (`tm/src/cli/lifecycle.rs`, **+310 −7**: ~150 of it doc comment and tests), the design **+23 −8**, and this block. **No Lean, no `Cargo.toml`, no `lean-toolchain`, no `kernel/corpus/`, no re-blessed fixture** |
+
+**Owed next, unchanged by this run:** S itself — the body swap plus §12's deletion — with the rest of
+the fork retarget (**gaps 147, 148, 149**), **gap 145**'s tolerant `Ctx::load` for `tm check`, item
+7's D18 defaults (**gap 120 part 3**), the three pre-switch assertions turned around, the two
+`#[ignore]`s deleted, and the **§5.13 drive**. Gap 144 is no longer among them.
