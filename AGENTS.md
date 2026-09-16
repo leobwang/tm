@@ -952,9 +952,9 @@ demonstrably lost names:
 
 ```bash
 cd /Users/psixyzt/code/planner/kernel/TmKernel
-grep -c '^#print axioms' Check.lean                                     # 1299 (1006 at c8f3a38)
-grep '^#print axioms' Check.lean | awk '{print $3}' | sort -u | wc -l   # 1299
-grep -hcE '^(@\[[^]]*\][[:space:]]*)?theorem ' TmKernel/*.lean | awk '{s+=$1} END {print s}'   # 1299
+grep -c '^#print axioms' Check.lean                                     # 3934 (1299 at bf7cc63, 1006 at c8f3a38)
+grep '^#print axioms' Check.lean | awk '{print $3}' | sort -u | wc -l   # 3934
+grep -hcE '^(@\[[^]]*\][[:space:]]*)?theorem ' TmKernel/*.lean | awk '{s+=$1} END {print s}'   # 3934
 ```
 
 **These told an inconsistent story and were repaired at `e7b816c`; the trap that
@@ -964,27 +964,39 @@ whose final dotted segment was dropped audits the *type* and cheerfully reports
 "does not depend on any axioms". That is how 21 theorems came to be unaudited
 while the count looked healthy.
 
-At `bf7cc63` the three numbers agree at 1299 — and the agreement is still the
-same two off-by-ones cancelling, which you should know before you quote it
-(re-checked by diffing declared short names against audited last segments; the
-only mismatches are dotted declaration names such as `Q.le_refl`, the prose line
-and the `def` below):
+**Re-measured 2026-09-16 (W-10; the figures below used to read 1299 and were
+three commits' worth of stale).** The three numbers agree at **3934** over the
+**78** modules — and the agreement is still the *same two off-by-ones
+cancelling*, which you should know before you quote it. Re-derived today by
+diffing the two **multisets** — declared short names against audited last
+segments — not the two `sort -u` counts, which cannot see a name declared in two
+namespaces:
 
-- 1299 audit lines, 1299 **distinct** names: no name is audited twice.
-- Every theorem declared in the ten modules is audited. `^theorem` alone misses
-  the declared `@[simp] theorem`s, which is why the grep above allows an
-  attribute prefix.
+```bash
+grep -hoE '^(@\[[^]]*\][[:space:]]*)?theorem [^ (){}:]+' TmKernel/*.lean \
+  | sed 's/.*theorem //' | sed 's/.*\.//' | sort > /tmp/decl
+grep '^#print axioms' Check.lean | awk '{print $3}' | sed 's/.*\.//' | sort > /tmp/aud
+comm -23 /tmp/decl /tmp/aud   # `whose`  — the prose line below
+comm -13 /tmp/decl /tmp/aud   # `WfPlan` — the `def` below
+```
+
+- 3934 audit lines, 3934 **distinct** names: no name is audited twice.
+- Every theorem declared in the 78 modules is audited: the multiset diff above
+  is **exactly two entries**, one each way. `^theorem` alone misses the declared
+  `@[simp] theorem`s, which is why the grep allows an attribute prefix.
 - The third number counts one prose line — `Cmd.lean`'s header contains
-  *"theorem whose command argument was unused"* at column 0 — so there are 1298
-  real declarations, under one fewer distinct short name
-  (`clock_rejects_minute_60` exists in two namespaces).
+  *"theorem whose command argument was unused"* at column 0 (`Cmd.lean:30`) — so
+  there are **3933** real declarations. Distinct short names are fewer still
+  (**3790**), because 144 short names are declared in more than one namespace;
+  that is why the reconciliation is a multiset diff and not a count comparison.
 - **Plus one non-theorem** in the audit: `Tm.WfPlan`, a `def`, is still audited,
-  now at `Check.lean:475`. That is the last instance of the pattern the repair
+  now at `Check.lean:472`. That is the last instance of the pattern the repair
   removed. Leave it or delete it deliberately; do not let it breed.
+- The file carries **61** `APPENDED …` banners (sixteen at `bf7cc63`).
 
-So the honest sentence is *"every theorem in the ten modules is audited, and the
+So the honest sentence is *"every theorem in the 78 modules is audited, and the
 audit names one definition as well"* — not *"every theorem"* with nothing after
-it. `check.sh` reports the audit size by grepping its own output, so its printed
+it. (It read "the ten modules" until 2026-09-16; ten was stage one's count.) `check.sh` reports the audit size by grepping its own output, so its printed
 number is the audit's, not the package's.
 
 ### 6.4 `kernel/README.md` — append a block, and keep the gap list a single sequence
@@ -2118,6 +2130,22 @@ belong inside S: **gap 144** (`tm log --json` cannot be both key-ordered and pre
 §11.4 step 5 prescribes — `serde_json` here has no `preserve_order`, so parsing to `Value`
 alphabetises the keys) and **gap 145** (`tm check` does not survive a `reachTooFar` log, which is
 D18 (iii)'s "every verb **except** `tm check`" half).
+
+*Partly closed 2026-09-16 (W-10; README, "the comparand that survives the deletion").* **Gap 146's
+blocker is answered for the corpus class, and its own figure was wrong.** `tm/tests/fixtures/`
+now carries **fork point 4748911's own answers, frozen** — 7 corpus logs, 146,868 bytes, blessed
+through AGENTS §7.3's oracle by an `#[ignore]`d test and byte-reproducible on a re-bless — and
+`t5_the_corpus_logs_replay_as_the_frozen_fork_point_does` compares the kernel against them inside
+`cargo test --workspace`: **126 `Replay` keys, 7,189 scalar values, 7 entry counts, 7 refused-line
+lists, 1 parity P21 sighting whose displays are equal, 0 other disagreements.** It names neither
+`replay_of_text` nor `entries_of_text`, so §12's deletion **cannot** turn it into a
+self-comparison — which is the whole of what gap 146 asked for. **The "door suite's 15" in gap 146
+is a miscount**: the binary's 15 is 10 door tests plus the 5 `kernel_log::tests::*` unit tests the
+`#[path]` include pulls in, and only **7 of the 15** name a chokepoint function §12 deletes. What
+remains of the retarget is **gaps 147-149**: T5's *generated* classes (1mo/6mo, 256 sequences, the
+zone cases, 64 triples) are still compared against the in-tree reader (**147**), T1-T3's grammar
+comparand is `Log::parse_bytes`/`LogEntry::parse`/`parse_timestamp` themselves (**148**), and the
+door suite's 7 exposed tests are unretargeted (**149**).
 
 *Closed 2026-09-16, on the `w8-facts` track (README, "the three findings that would have made a
 naive switch wrong").* **Gaps 134, 135 and 136 are no longer on this list.** `tm check` is wired to

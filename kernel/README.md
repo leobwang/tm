@@ -21821,3 +21821,228 @@ step for **gap 146** (retarget T1-T3 and T5 to the fork oracle; settle the door 
 139, 143** and now **144**'s questions for the owner). **Gaps 140 and 141 were measured clearing
 exactly as written.** Then **S2** (**gap 130**) with quirk Q6(f) (**gap 86**), then **L9**
 (**gap 93**).
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 5, W-10 — the repair run for W-8's independent
+     audit.  **S IS NOT MADE HERE AND THIS BLOCK DOES NOT CLAIM IT IS.**  What
+     this run does is clear S's *named* blocker: the comparand that survives
+     §12's deletion now exists and runs in `cargo test --workspace`.  Two of the
+     audit's six defects are fixed outright (the §5.13 drive item D1 makes
+     unreachable; AGENTS §6.3's stale 1299), one is fixed for the class that
+     matters (T5 against the fork), and three are S-gated and reported as such.
+     Takes gaps 147-149; new gaps start at 150.  No Lean edited: audit 3934,
+     cheats 157, parity P35, burn-down 13, all unchanged.  No shipped source
+     file was touched, so no behaviour can have moved.
+     =========================================================================== -->
+
+## Stage 5, W-10, 2026-09-16: the comparand that survives the deletion
+
+**The honest paragraph, first.** **S is still not made.** `tm/src/cli/ctx.rs`'s `Ctx::replay_with`
+still calls `Ctx::replay_of`, whose body is still `Log::parse_bytes(&bytes).replay(None, cfg.tz)`;
+`tm-core/src/log.rs` still holds every line §12 deletes; §12's one-reader grep is **125**, exactly
+where W-9 left it; and the only three `kernel_log::` references under `tm/src` are still gap 134's
+read-only line sweep in `lifecycle.rs`. This is the **fourth** run to leave the switch unmade. What
+is different is that W-9's named blocker — **gap 146** — is no longer a thing to be built: for the
+corpus class it is built, measured and committed here, and what is left of it is three gaps with
+numbers.
+
+### Every defect the audit raised, reproduced before anything was changed
+
+| # | defect | reproduced? | disposition |
+|---|---|---|---|
+| 1 | **S did not land** (blocker) | **yes** — `ctx.rs:415` is `Log::parse_bytes`; §12's grep **125** across 17 files, 73 of them `log.rs`; three `kernel_log::` hits under `tm/src`, all in the line sweep | **not fixed.** Its blocker is what this run clears |
+| 2 | **D18 (iii) has no code** (blocker) | **yes** — drove a scratch `plan-recur` with a 30-day-back hand `undo`: `tm check` → `no problems`, exit 0; `tm now` answered normally. `ReachTooFar` occurs only in `kernel_log.rs`'s own enum, its construction site and two tests | **not fixed, and now shown to be S-gated by construction** (below) |
+| 3 | **two T9 names `#[ignore]`d and failing** | **yes** — `--include-ignored` gives `FAILED. 7 passed; 2 failed`, at `:543` ("one notice per process, not 0") and `:597` ("`tm now` answered a log no rebuild can window") | **not fixed;** both are defect 1's call sites |
+| 4 | **T5 does not compare against the fork** | **yes** — `rust_facts` is `replay::replay_of_text` + `entries_of_text`; the fork arm is `#[ignore]`d behind `TM_ORACLE` | **fixed for the corpus class** — the substance of this run |
+| 5 | **gap 131: `close day --date` cannot be aimed at an old day** | **yes** — `tm close day --date 2026-07-16` exits 1 with `periodNotTaken`, verbatim as the audit quoted | **fixed** (the design's drive list, not the binary) |
+| 6 | **AGENTS §6.3 prints 1299** | **yes** — all three counts are **3934** | **fixed**, and re-derived rather than renumbered |
+
+### What landed
+
+1. **Fork point 4748911's own answers, frozen** — `tm/tests/fixtures/fork-4748911-corpus-replay.jsonl`,
+   7 corpus logs, **146,868 bytes**, one JSON object a line (`name`, `entries`, `warningLines`,
+   `replay`). Blessed **from the oracle**, not from the in-tree reader, by
+   `the_frozen_fork_answers_are_reblessed_from_the_oracle` — `#[ignore]`d and inert unless **both**
+   `TM_ORACLE` and `TM_FORK_BLESS` are set, because rewriting a committed differential fixture is a
+   decision and never a repair (AGENTS §7.2). Re-blessed a second time and compared: **identical
+   bytes**.
+2. **`t5_the_corpus_logs_replay_as_the_frozen_fork_point_does`**, which runs in plain
+   `cargo test --workspace`. One side is `kernel_answer` (the FFI) through `kernel_replay` — which
+   *is* `kernel_log::decode_facts`, the function `Ctx::replay_with` calls at S — and the other is
+   bytes on disk. **It names neither `replay_of_text` nor `entries_of_text`**, verified by grep over
+   the appended region, so §12's deletion cannot turn it into a self-comparison. Measured:
+   **7 logs, 126 `Replay` keys (18 of the fork's 20 each), 7,189 scalar values, 7 entry counts,
+   7 refused-line lists; 1 parity P21 sighting whose `round1` load and `load_blocks` are equal;
+   0 other disagreements.**
+3. **Design §14.6's §5.13 drive list is corrected** (gap 131): "`close day` for a date two months
+   ago" is unreachable by construction under **D1**, so the item is now the stale-tree close plus
+   the dated `review` the refusal itself points at, with the correction stated inline.
+4. **AGENTS §6.3's worked example is re-measured at 3934** and its reconciliation *re-derived*.
+
+### The reconciliation §6.3 asks for, actually run (AGENTS §6.3, §7.4 item 11)
+
+The old note compared two `sort -u` counts, which cannot see a name declared in two namespaces. The
+right check is a **multiset** diff of declared short names against audited last segments:
+
+```
+declared short (multiset): 3934      audited short (multiset): 3934
+comm -23 decl aud  ->  whose         (Cmd.lean:30's prose line, at column 0)
+comm -13 decl aud  ->  WfPlan        (Tm.WfPlan, a `def`, Check.lean:472)
+```
+
+**Exactly two entries, one each way** — the same two off-by-ones cancelling that held at `bf7cc63`,
+at three times the size. So: **3933** real theorem declarations, every one audited, plus one `def`.
+Distinct short names are only **3790**, because 144 are declared in more than one namespace, which
+is precisely why the count comparison the old note used could not have caught a loss.
+
+### Why defect 2 cannot be fixed before the switch — established, not assumed
+
+Gap 134's fix put `kernel_log::line_warnings` into the shipped binary *before* S, so "a read-only
+kernel call in a verb" is already a settled, D19-compatible shape. The obvious repair for D18 (iii)
+is the same move: a read-only reach check that refuses by name. **It does not exist, and the reason
+is in `genesis()`.** `GenesisError::ReachTooFar` fires when `e - cut` passes the resend cap, and
+`cut` is the *stack top's*, which only moves as real `log` calls reseal and only shrinks when a
+**guard refusal pops the stack**. Whether a hand-edited `undo` forces a pop is not a property of the
+bytes — it is the kernel's answer. The one case decidable without a call is a single line past the
+byte bound, which is exactly the case `a_line_past_the_resend_cap_is_the_named_fault_before_any_call`
+already covers. Any honest pre-switch gate would therefore have to run genesis on every verb while
+the Rust reader still supplies the facts — paying the rebuild twice and reading nothing from it.
+That is not a smaller change than S; it is S plus waste. **So defect 2 stays with defect 1**, and
+gap 120 part 3 and gap 145 stay S's.
+
+### Gap 146 — partly closed, and its own figure corrected
+
+The corpus class is done (above). **Gap 146's "the door suite's 15 become self-comparisons" is a
+miscount**, measured here: the `kernel_log_door` binary's 15 is **10 door tests plus the 5
+`kernel_log::tests::*` unit tests** the `#[path]` include pulls in, and only **7 of the 15** name a
+chokepoint function §12 deletes — `the_door_is_the_reader_it_replaces`,
+`the_doors_narrow_scopes_carry_what_they_promise`,
+`the_door_names_every_unreadable_line_not_just_the_last_calls`,
+`the_doors_render_is_the_lines_own_bytes`, `the_doors_tail_headers_are_the_recorders`,
+`the_doors_hot_scope_answers_every_all_time_question` and
+`the_doors_total_is_the_logs_all_time_entry_count`. The other 8 — the undo pin, the merge, the door
+surface, and the five unit tests — are untouched by the deletion. The residue is gaps 147-149.
+
+### Gap 147 (new; label W10-a) — T5's generated classes still compare against the reader S deletes
+
+1. **What is not done.** The frozen fork comparand covers the **7 corpus logs** only. T5's other
+   input classes — the generated 1-month and 6-month logs, the **256** generated sequences, §6.4's
+   zone cases and the **64** undo triples — still reach the fork only through `replay_of_text`.
+2. **Why.** Size and shape. The fork's whole `Replay` is 146,868 bytes for 7 small corpus logs; the
+   6-month generated log alone would be roughly an order of magnitude more, and 256 sequences more
+   again. A digest instead of the value was considered and rejected here: **parity P21 makes some
+   values legitimately differ**, so a digest over the fork-shaped JSON would fail for a recorded
+   exception, and normalising P21 out of a digest hides the one thing P21 exists to watch.
+3. **What it costs.** At S these classes stop being differential and become kernel-vs-kernel. The
+   *coverage* is not lost — the `TM_ORACLE` harness can reach every one of them, since each is a log
+   text and `fork_oracle` already takes texts plus a zone — but it is lost from
+   `cargo test --workspace`, which is what guards a commit.
+4. **When it clears.** In S's preparation, by extending
+   `stage5_parity_the_kernel_replays_and_fits_as_the_fork_point_does` to feed the generated classes
+   grouped by zone (cheap: they are already texts), and by deciding per class whether a frozen value
+   is worth its bytes. One representative generated month frozen would close most of it.
+
+### Gap 148 (new; label W10-b) — T1-T3's comparand *is* what §12 deletes
+
+1. **What is not done.** `tm/tests/kernel_log_grammar.rs` (T1, T2, T3) compares the kernel's `log`
+   op against `Log::parse_bytes`, `LogEntry::parse` and `parse_timestamp` — **11 direct sites** —
+   and all three are on §12's deletion list.
+2. **Why.** Unlike T5, T1-T3's oracle is not the fork's *replay* but serde's and chrono's
+   *per-line* acceptance, and `tm-oracle` has no per-log-entry `parse` op: its `parse` mode reads
+   **item lines** for the grammar comparison (AGENTS §7.3), not log entries.
+3. **What it costs.** If §12's deletion lands without this, T1-T3 either stop compiling or are
+   retargeted in the same commit — and retargeting a grammar differential inside the switch commit
+   is exactly the "least reviewable commit of the stage" problem gap 146 was raised about.
+4. **When it clears.** In S's preparation, by adding a `parse-entry` mode to `tm-oracle` (it already
+   links the fork's `tm-core::log`) and freezing its verdicts per line, as this run froze the
+   replays — or by a decision that T1-T3's writer half (`to_json`, which §12 **keeps**) is the only
+   half worth carrying past S. That decision has not been taken.
+
+### Gap 149 (new; label W10-c) — the door suite's 7 exposed tests are unretargeted
+
+1. **What is not done.** The 7 tests named above still read the in-tree reader through the
+   chokepoint.
+2. **Why.** They compare *host* functions (`replay_scoped`, `line_warnings`, `render_lines`,
+   `headers_after`) against the reader, and each needs a different comparand:
+   `the_doors_render_is_the_lines_own_bytes` only needs `LogEntry::to_json`, the **writer**, which
+   §12 keeps; `the_doors_narrow_scopes_...`, `..._hot_scope_...` and `..._total_...` compare a
+   narrow scope against the `All` scope *of the kernel itself* as well, so they keep part of their
+   bite; the other three lose it entirely.
+3. **What it costs.** Three tests (`the_door_is_the_reader_it_replaces`,
+   `the_door_names_every_unreadable_line_not_just_the_last_calls`,
+   `the_doors_tail_headers_are_the_recorders`) become vacuous at S unless retargeted; the rest
+   weaken by a measured amount rather than silently.
+4. **When it clears.** In S's preparation. The frozen fixture this run commits already answers the
+   first of the three — `the_door_is_the_reader_it_replaces` can compare `replay_scoped`'s `All`
+   scope against the same frozen fork rows — which is why the fixture is a shared `tests/fixtures/`
+   artifact and not private to `kernel_replay_parity.rs`.
+
+### Observable behaviour changes
+
+**None.** No file under `tm/src`, `tm-core/src` or `kernel/TmKernel` was touched: the diff is one
+test file, one new test fixture, and three documents. Every verb answers exactly what it answered at
+`1bb8f0b`, byte for byte, and no log bytes, refusal text, `--json` shape or new capability exists
+that did not exist before.
+
+### Recorded disagreements between the design, the ledger and the repo
+
+1. **Gap 146 overstated its own door-suite figure** (15 against a measured 7 of 15), and the 15
+   itself is 10 tests plus 5 included unit tests. Corrected above; the gap's *substance* — that the
+   deletion makes differentials self-compare — was right, and is what this run acted on.
+2. **Design §14.6's §5.13 drive list contained an item D1 forbids** (gap 131). This is the second
+   sentence of the design found to be not performable as written (gap 144 was the first). Corrected
+   in place.
+3. **§12's one-reader grep is 125 here**, unchanged by this run. Quote §12's alternation, never
+   R8's 89 (W-7's disagreement 1, still standing, now for the fourth run).
+4. **AGENTS §6.3's reconciliation method was wrong, not just its numbers** — two `sort -u` counts
+   cannot detect a lost name when 144 short names are declared twice. The method is replaced, not
+   only the figures.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited** — `git diff --name-only 1bb8f0b..HEAD` contains no `.lean`, no
+`lean-toolchain`, no `Cargo.toml`, no `Cargo.lock` and nothing under `kernel/corpus/`. Goals
+discharged, refuted, added: none; burn-down **13 → 13**, all stage 6's. New theorems: none — the
+audit stays at **3934**. New `decide`/`rfl` witnesses: none, so no probe budget was spent. New
+cheats: none (highest **157**). New parity entries: none (highest stays **P35**) — the frozen arm
+compares against the **existing** P21 and P15 rows and adds no exception. `TmKernel.lean` imports:
+**78**. No predicate or assertion was weakened, no goal deleted, no memory bound raised, no corpus
+reblessed, and the one fixture blessed here was blessed from the fork point and proved reproducible.
+
+### Numbers
+
+**Taken:** gaps **147-149**. **Highest:** gap 149, cheat 157, parity P35. New gaps start at **150**.
+
+**Re-measured** (main worktree, on the tree committed; every command capped at `MemoryMax=40G`,
+`MemorySwapMax=0`; the FFI suite and the fork-oracle build at 16G):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, **3.03 / 3.03 / 3.07 s** (parent `1bb8f0b`, measured today: 3.14 / 3.15 / 3.14). Flat — inside the 10%-per-step rule, and faster |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged; all stage 6) |
+| `cargo test --workspace` | **1125 passed / 0 failed / 9 ignored across 79 result lines**, exit 0, **0 warnings** (parent: **1124 / 0 / 8** across 79). **+1 passing** (the frozen fork arm), **+1 ignored** (its bless) |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) |
+| T5 (`kernel_replay_parity --include-ignored`) | **22 passed / 0 failed**, **6.49 s** (parent: 20, 6.50 s) |
+| the frozen fork arm | **7 logs, 126 `Replay` keys, 7,189 scalar values, 7 entry counts, 7 refused-line lists; 1 P21 sighting, displays equal; 0 other disagreements** |
+| the door suite (`kernel_log_door`) | **15 passed / 0 failed**, **1.48 s** (10 door tests + 5 `kernel_log::tests::*`) |
+| `cli_latency --include-ignored` | **5 passed / 0 failed**, **10.07 s** |
+| `cli_switch_acceptance` | **7 passed / 0 failed / 2 ignored** — and **7 passed / 2 failed** with `--include-ignored`, which is the audit's defect 3, unchanged and honestly reported |
+| `cli_check_log` | **6 passed / 0 failed** |
+| `kernel_call_counts` | **1 passed** — `log == 0` for eleven verbs, `== 1` for `tm check` |
+| §12's one-reader grep | **125 lines** (unchanged) |
+| the fixture | **146,868 bytes**, 7 lines; byte-identical on a second bless |
+| the diff | 1 test file **+242 −0**; 1 new fixture, 7 lines / **146,868 B**; `AGENTS.md` **+46 −18**; the design **+6 −1**; and this block (**+225**). **No shipped source file** — nothing under `tm/src` or `tm-core/src` — no Lean, no `Cargo.toml`, no `lean-toolchain`, no `kernel/corpus/` |
+
+**Owed next: S, whose blocker list is now shorter by its first item.** In order: the rest of the
+retarget (**gaps 147, 148, 149**), then **gap 144**'s three-way `tm log --json` decision and
+**gap 145**'s tolerant `Ctx::load` for `tm check`, then design §14.6's contents **1, 2 and 5** —
+the body swap (built and measured green at W-9, **141.8-151.8 ms** for a three-year later verb
+against the pre-switch 278.6 ms) plus §12's deletion — with item 7's D18 defaults (**gap 120
+part 3**), **gaps 119, 129, 132, 133**, the three pre-switch assertions turned around
+(`no_verb_makes_a_kernel_log_call_before_the_switch`,
+`every_scope_is_the_whole_replay_before_the_switch`, `cli_latency`'s cache-file count — **gap 140**
+clearing as written), the two `#[ignore]`s deleted, and the **§5.13 drive** (now performable in
+full: **gap 131**'s item is reworded, and it carries **gaps 138, 139, 143, 144**'s questions for
+the owner). Then **S2** (**gap 130**, D16) with quirk Q6(f) (**gap 86**), then **L9** (**gap 93**).

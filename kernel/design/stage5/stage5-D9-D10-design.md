@@ -2402,7 +2402,12 @@ without `reseal`, and compares them field by field with `Ctx::replay_of` over:
 - **The §5.13 drive**, 30 minutes on a copy of a real `.tm/`:
   - `now`, `start`, `pause`, `done`, three `undo`s (one reaching behind the cut);
   - `review week` for this week and for three months ago;
-  - `close day` for a date two months ago;
+  - `close day` on a **stale** tree, and `review day --date` for a date two months ago. *(Corrected
+    2026-09-16, W-10: this item read "`close day` for a date two months ago", which **D1 makes
+    unreachable by construction** — a close takes every day that has ended and files into the period
+    containing `now` (the kernel's `closeTo`), so `tm close day --date <old>` is refused by name with
+    `periodNotTaken`, which is the right refusal. README **gap 131**. The drive item that can be
+    performed is the stale-tree close plus the dated **review** the refusal itself points at.)*
   - `model --fit`, `log --since 7d`, `log --item`;
   - the TUI through two reloads, with the CLI running a verb in between;
   - deleting the cache mid-session;

@@ -3613,3 +3613,245 @@ fn stage5_parity_the_kernel_replays_and_fits_as_the_fork_point_does() {
         panic!("{} disagreements with the fork point (each must be on §17's list)", findings.len());
     }
 }
+
+// ===========================================================================
+// GAP 146: THE FORK'S OWN ANSWERS, FROZEN — the comparand that survives §12.
+//
+// Every `t5_*` test above compares the kernel with the **in-tree** reader,
+// through the test chokepoint `support/replay.rs`.  Design §12 deletes that
+// reader at S, and §14.6 item 3 makes `replay_of_text` call the kernel — at
+// which moment all of them become kernel-against-kernel comparisons that keep
+// passing and prove nothing.  That is README gap 146, and AGENTS §9.2 names
+// the shape: "a check no input can fail".
+//
+// This arm is the comparand that survives.  It is fork point 4748911's own
+// `log::replay`, taken through AGENTS §7.3's oracle once and frozen into
+// `tests/fixtures/` — design §14.6 item 4's retarget (gap 137), made to run
+// inside `cargo test --workspace` rather than only under `TM_ORACLE`, because
+// a differential that runs only when someone builds the fork is not what
+// guards the switch commit.
+//
+// **It borrows nothing from the reader S deletes.**  One side is
+// `kernel_answer` (the FFI) through `kernel_replay`
+// (`kernel_log::decode_facts`, the function `Ctx::replay_with` calls at S);
+// the other is bytes on disk.  Neither `replay_of_text` nor `entries_of_text`
+// is named below, so this file's `#[path]` include of the chokepoint could be
+// deleted and this test would still run.
+//
+// Re-bless with, from the repository root:
+//
+//   TM_ORACLE=$(kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh) \
+//   TM_FORK_BLESS=1 cargo test --test kernel_replay_parity -- --ignored \
+//     the_frozen_fork_answers_are_reblessed_from_the_oracle
+//
+// A re-bless is a decision about what the fork point says, never a way to make
+// a failure go away (AGENTS §7.2).
+// ===========================================================================
+
+/// The frozen fork-point answers: one JSON object a line, keyed by log name.
+const FROZEN_FORK: &str = "fork-4748911-corpus-replay.jsonl";
+
+fn fixtures_dir() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
+}
+
+/// The frozen answers by log name. Each carries the fork's serialised `Replay`,
+/// its all-time entry count, and the physical lines its reader refused.
+fn frozen_fork_answers() -> BTreeMap<String, Value> {
+    let path = fixtures_dir().join(FROZEN_FORK);
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!("{}: {e} — re-bless it (see this file's GAP 146 banner)", path.display())
+    });
+    text.lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| {
+            let v: Value = serde_json::from_str(l).expect("a frozen fork answer is JSON");
+            (v["name"].as_str().expect("a frozen fork answer names its log").to_string(), v)
+        })
+        .collect()
+}
+
+/// What one fork comparison actually counted, so "no disagreement" is never
+/// confused with "never ran" (AGENTS §7.3).
+#[derive(Default)]
+struct ForkTally {
+    logs: usize,
+    keys: usize,
+    values: usize,
+    entries: usize,
+    warning_lines: usize,
+    /// Parity **P21** sightings: a day whose `load` differs from the fork's in
+    /// the last ulp. Counted, and each one's displays checked to be equal.
+    p21: usize,
+}
+
+/// Compare one log's kernel facts with fork point 4748911's own answer: key for
+/// key over [`FORK_REPLAY_KEYS`], plus the all-time entry count and the lines
+/// each reader refused. Every disagreement that is not a recorded design §17
+/// exception comes back by name.
+fn compare_with_fork(name: &str, text: &str, tz: Tz, fork_answer: &Value, t: &mut ForkTally) -> Vec<String> {
+    let mut findings: Vec<String> = Vec::new();
+    let answer = kernel_answer(text, tz);
+    let kf = kernel_view(&answer);
+    let kr = kernel_replay(&answer, tz);
+    let kv_raw = serde_json::to_value(&kr).expect("the kernel's replay serialises");
+    let mut kv = kv_raw.clone();
+    as_fork_shaped(&mut kv);
+    let fork = &fork_answer["replay"];
+    t.logs += 1;
+
+    for key in FORK_REPLAY_KEYS {
+        let (k, f) = (&kv[key], &fork[key]);
+        assert!(!f.is_null() || k.is_null(), "{name}: the frozen fork has no key `{key}`");
+        t.keys += 1;
+        t.values += leaves(f);
+        if k == f {
+            continue;
+        }
+        let mut paths = Vec::new();
+        diff_paths(key, k, f, &mut paths);
+        let mut real: Vec<String> = Vec::new();
+        for (path, message) in paths {
+            // `days.<date>.load` is parity P21: counted and checked, never skipped.
+            if let Some(date) = path.strip_prefix("days.").and_then(|r| r.strip_suffix(".load")) {
+                t.p21 += 1;
+                let day = &fork["days"][date];
+                let fifths = kv_raw["days"][date]["load_fifths"].as_u64().expect("the kernel's fifths");
+                let fork_load = day["load"].as_f64().expect("the fork's load");
+                let block_min = u32_of(day["block_min"].as_u64().expect("the day's block_min"));
+                if let Some(why) = p21_display_is_unchanged(date, fifths, fork_load, block_min) {
+                    real.push(why);
+                }
+                continue;
+            }
+            real.push(message);
+        }
+        if real.is_empty() {
+            continue;
+        }
+        let shown = real.len().min(6);
+        findings.push(format!(
+            "{name}: `{key}` differs at {} leaf/leaves\n      {}",
+            real.len(),
+            real[..shown].join("\n      ")
+        ));
+    }
+
+    // The all-time entry count (design §8.4's `entryCount`, §11.4 step 5's
+    // `tm log` total; gap 136).
+    t.entries += 1;
+    let fork_entries = fork_answer["entries"].as_u64().expect("a frozen entry count");
+    if kf.counts.0 != fork_entries {
+        findings.push(format!("{name}: entries differ — kernel {} fork {fork_entries}", kf.counts.0));
+    }
+
+    // The physical lines each reader refused. Parity P15 makes the warning
+    // *text* differ by design (named constructors against serde's free text) —
+    // which line is refused must not.
+    let fork_lines: Vec<u64> = fork_answer["warningLines"]
+        .as_array()
+        .expect("frozen warning lines")
+        .iter()
+        .map(|l| l.as_u64().expect("a refused line"))
+        .collect();
+    t.warning_lines += fork_lines.len();
+    if kf.warnings != fork_lines {
+        findings.push(format!(
+            "{name}: the refused lines differ — kernel {:?} fork {fork_lines:?}",
+            kf.warnings
+        ));
+    }
+    findings
+}
+
+/// **Gap 146's answer, and design §14.6 item 4's retarget**: the kernel's replay
+/// against **fork point 4748911's own**, frozen, over the corpus logs.
+///
+/// This is the one differential in `cargo test --workspace` that §12's deletion
+/// cannot turn into a self-comparison, because neither side is the in-tree
+/// reader. When `support/replay.rs`'s body becomes the kernel at S, the `t5_*`
+/// tests above stop proving anything and **this** is what still bites.
+#[test]
+fn t5_the_corpus_logs_replay_as_the_frozen_fork_point_does() {
+    let frozen = frozen_fork_answers();
+    let tz = chrono_tz::America::Chicago;
+    let mut t = ForkTally::default();
+    let mut findings: Vec<String> = Vec::new();
+    let logs = corpus_logs();
+    for (name, text) in &logs {
+        let fork = frozen.get(name).unwrap_or_else(|| {
+            panic!("no frozen fork answer for `{name}` — re-bless (see the GAP 146 banner)")
+        });
+        findings.extend(compare_with_fork(name, text, tz, fork, &mut t));
+    }
+    assert_eq!(t.logs, logs.len(), "one comparison a corpus log");
+    assert!(
+        t.values > 7_000,
+        "the denominator is too small to mean anything: {} scalar values over {} logs",
+        t.values,
+        t.logs
+    );
+    eprintln!(
+        "T5 frozen fork (4748911): {} logs, {} Replay keys ({} of the fork's 20 per log), \
+         {} scalar values, {} entry counts, {} refused lines compared; parity P21 {} day records, \
+         every one displaying the same load; 0 other exceptions",
+        t.logs,
+        t.keys,
+        FORK_REPLAY_KEYS.len(),
+        t.values,
+        t.entries,
+        t.warning_lines,
+        t.p21
+    );
+    assert!(
+        findings.is_empty(),
+        "{} disagreements with fork point 4748911 (each must be on design §17's list):\n  {}",
+        findings.len(),
+        findings.join("\n  ")
+    );
+}
+
+/// **Re-bless the frozen fork answers** from AGENTS §7.3's oracle scaffolding.
+///
+/// `#[ignore]`d and inert without **both** `TM_ORACLE` and `TM_FORK_BLESS`: it
+/// rewrites a committed fixture, which is a decision and never a repair.
+#[test]
+#[ignore]
+fn the_frozen_fork_answers_are_reblessed_from_the_oracle() {
+    let (Some(bin), Some(_)) = (std::env::var_os("TM_ORACLE"), std::env::var_os("TM_FORK_BLESS")) else {
+        eprintln!(
+            "the frozen fork answers: INERT — set TM_ORACLE to the fork-point oracle binary \
+             (kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh prints its path) and \
+             TM_FORK_BLESS=1 to rewrite tests/fixtures/{FROZEN_FORK}"
+        );
+        return;
+    };
+    let bin = std::path::PathBuf::from(bin);
+    let tz = chrono_tz::America::Chicago;
+    let logs = corpus_logs();
+    let texts: Vec<String> = logs.iter().map(|(_, text)| text.clone()).collect();
+    let answers = fork_oracle(&bin, &["replay", tz.name()], &texts);
+    assert_eq!(answers.len(), logs.len(), "one fork answer per corpus log");
+
+    let mut out = String::new();
+    for ((name, _), a) in logs.iter().zip(&answers) {
+        assert!(a["replay"].is_object(), "{name}: the oracle answered no replay");
+        let row = json!({
+            "name": name,
+            "entries": a["entries"],
+            "warningLines": a["warningLines"],
+            "replay": a["replay"],
+        });
+        out.push_str(&serde_json::to_string(&row).expect("a frozen answer serialises"));
+        out.push('\n');
+    }
+    let path = fixtures_dir().join(FROZEN_FORK);
+    std::fs::write(&path, &out).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+    eprintln!(
+        "re-blessed {} from fork point 4748911 in {}: {} logs, {} bytes",
+        path.display(),
+        tz.name(),
+        logs.len(),
+        out.len()
+    );
+}
