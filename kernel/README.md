@@ -19289,3 +19289,129 @@ parity P35.
 | T5 (`kernel_replay_parity.rs --include-ignored`) | **19 passed / 0 failed**, 6.53 s — unchanged |
 | `cli_latency.rs --include-ignored` | **4 passed / 0 failed**, 3.74 s, the year-of-log and three-year tests included — unchanged; no row times `tm model` |
 | the fit drive | `model.json` **byte-identical** before and after, sha `6415f19…`, 599 bytes, 61 observations |
+
+<!-- ===========================================================================
+     APPENDED 2026-09-15: stage 5, D10 track, step L9 on rebuild-on-lean
+     (after F1, 983a8be).  L9 DID NOT LAND, and gap 93 is NOT closed.  This
+     block records the checked reason — day 0 is not a future day, and three
+     of its seven inputs are replay facts the kernel cannot reach until the
+     switch S — restates gap 93 in the four-part form with that blocker
+     named, and inventories what L9 owes so its commit after S is a wiring
+     step and not a rediscovery.  Takes NO new gap number: gap 93 already
+     names exactly this, and a second number for it would split one gap in
+     two (AGENTS §6.4).  No cheat, no parity entry, no Lean edited.
+     =========================================================================== -->
+
+## Stage 5 D10 step L9 — day 0 of the lookahead waits for the switch
+
+**What was attempted and what stopped it.** L9 makes the kernel compute day 0 (today's actual
+remaining slots) instead of receiving it as six numbers. Design §14.8's L9 row states its dependency
+in one word — **S** — and that dependency is real, not bookkeeping. The check that settles it:
+
+**Day 0 is not a future day.** Every day `i > 0` of the lookahead is a *pure* function of the plan and
+the configuration: `dayOf` calls `pureDay` twice (`Lookahead.lean`), and `futureEnergy` is
+`capForLocation homeMax false loc (predictAt …)` — no posterior, no sleep debt, no blocks done, and
+`allowHome` hardwired to `false` at `Lookahead.lean:2492`. Day 0 is the opposite: `Ctx::today_slots`
+(`tm/src/cli/ctx.rs`) reads **seven** things the kernel has no way to reach today.
+
+| what day 0 needs | where it comes from now | kind | what the wire needs |
+|---|---|---|---|
+| `now`'s instant, to cut from | `ctx.now_tz`; the request's `now` is a **date string** only | host fact | §13.5's new `at` stamp, with `nowDisagrees` |
+| today's stored window/budget (what `tm arrive` wrote), else the formula from `state.arrival` | `Ctx::window` over `state.window`/`state.budget`/`state.arrival`/`state.date` | host fact | a state section; the request sends none (`"state"`, `"budget"` appear 0 times in `kernel_capacity.rs`; line 643's `arrival` is the **weekday expected-arrival table** and 652–653's are the `[day]` config keys) |
+| the current location | `Ctx::loc` from `state.loc` | host fact | a `loc` key |
+| `--allow-home` | a **Rust parameter** of `kernel_capacity::request`, used only at line 638 to build `day0` host-side | host fact | an `allowHome` key |
+| today's posterior | `Posterior::from_observations(replay.energy_on(today))` | **replay fact** | the kernel's own replay |
+| minutes slept last night | `replay.day(today).slept_min` | **replay fact** | the kernel's own replay |
+| blocks already done today | `replay.blocks_done(today)` | **replay fact** | the kernel's own replay |
+
+Four are host facts and could be wired at any time. **Three are replay facts**, and before S the binary
+has no kernel reader of the log at all: the capacity request's keys are `docs`, `now`, `blockMin`, `tz`
+and `capacity`, and `"log"` appears **0 times** in `kernel_capacity.rs`. Handing those three across as
+host-computed fields would build precisely the request shape S then replaces — the same argument this
+README already records as **gap 130** for S2's append op. After S it is not a new shape at all: design
+§10.1 already specifies `log` and `capacity` as **sibling keys of one request**, so a capacity verb's
+single call carries the replay the lookahead needs.
+
+**Why site R10 was not landed early.** The L9 row's goals column names `Arith.lean`'s site R10 with its
+`_withinOne`/`_mono` pair, and that arithmetic is S-independent, so landing it ahead of the wiring was
+considered and **rejected**. Both halves of R10 are claims that the kernel's exact form agrees with the
+fork's `f64`: `under_slept ⇔ slept · den < 60 · num` restates `m as f64 / 60.0 < under_hours`, and the
+shift is `model.sleep_shift(cfg).round()` — half away from zero on a value read from `model.json`.
+Site R11's row earns its "exact against the fork's `f64` for every input" with an ulp argument (no
+quotient within an ulp of a tie, no hundredth within an ulp of a range key). R10 needs the same
+argument, and it cannot be made honestly with **no caller to drive and no wire pair to anchor it** —
+it would be a parity claim with nothing measuring it (AGENTS §7.4 items 5 and 11). R10 lands in L9's
+own commit, with `sleepShift` and `underHours` arriving through `written_pair` with their rejection
+theorems, where `Ctx::today_slots` is the oracle that makes the claim testable.
+
+### Gap 93 (the design's label) — restated, with its blocker named
+
+1. **What is not done.** Day 0 of the lookahead is still the host's histogram:
+   `DayCapacity::from_slots(ctx.today, &ctx.today_slots(allow_home)).minutes_at_level`
+   (`kernel_capacity.rs:638`), sent as the request's six-entry `day0`, and the kernel's `dayOf` still
+   reads `if i = 0 then ofHist I.today I.day0`. Today's window, walls, cut, posterior, sleep shift and
+   home cap are Rust's.
+2. **Why not now.** L9 depends on **S** (§14.8). Three of day 0's seven inputs are replay facts (the
+   table above), and before the switch the kernel is not a reader of the log in the binary: the
+   capacity request carries no `log` section. Wiring the three as host-computed fields now would build
+   a request shape S replaces — gap 130's argument, unchanged.
+3. **What it costs.** Two readers of today's walls and window (`Ctx::walls_today`/`Ctx::window` for day
+   0, the kernel's `wallIndex`/`windowOn` for every later day); today's slot energies are still decided
+   by the fork's `f64`, so today's histogram sits outside the kernel's proved mixture while days 1..n
+   sit inside it; and `--allow-home` is honoured host-side only, because the kernel's future days
+   hardwire `allowHome = false`. `kernel_lookahead_parity.rs` pins the arrangement as it stands — "day
+   0 is the host's" — so the parity target for L9 is already written down.
+4. **When it clears.** L9, in the commit after S: the `at` stamp and `nowDisagrees`, a state section
+   (window, budget, arrival, date, `loc`), `allowHome`, site R10 with its two theorems and its two
+   configured decimals through `written_pair`, and day 0 built from the kernel's own replay — with
+   parity against `Ctx::today_slots` exactly, not P1.
+
+### Recorded disagreements between the design and the repo
+
+1. **§14.8's L9 row lists only `Lookahead.lean`, `Boundary.lean` (`at`) and `Arith.lean` (site R10)**,
+   which reads as though L9 were kernel-only. It is not: it also deletes the `day0` argument and its
+   `badDay0` rejection from the wire, and `kernel_capacity.rs` must instead send `at`, the stored
+   window/budget/arrival/date, `loc` and `allowHome`. The row's Rust column (**−150** lines) is
+   consistent with a net deletion, so the omission is in the file list, not in the estimate.
+2. **§13.5 says day 0's cut is "from `now`'s instant"; the request's `now` is a date.** `"now":
+   ctx.today.to_string()` (`kernel_capacity.rs`). The `at` stamp §13.5 introduces is therefore not a
+   refinement of `now` but a new field beside it, and its "local date must equal `now`" check is what
+   ties the two together.
+
+### Observable behaviour changes
+
+**None.** No Rust and no Lean was edited in this commit; it is the record of a step that did not land.
+Day 0 is computed exactly where it was computed at `983a8be`.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited.** Goals discharged, refuted, added: none; burn-down **13 → 13**. New theorems:
+none — the audit stays at **3934**. New `decide`/`rfl` witnesses: none. New cheats: none (highest
+**157**; design's reserved **cheat 118**, "the posterior applied after the cap", is still unused and is
+L9's to take). New parity entries: none (highest **P35**). `TmKernel.lean` imports: **78**, unchanged.
+
+### Numbers
+
+**Taken:** nothing. **Highest, unchanged:** gap 130, cheat 157, parity P35. **Still open and named
+here:** gap 93.
+
+**Re-measured** (main worktree, on the tree committed; every command capped at `MemoryMax=40G`,
+`MemorySwapMax=0`):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 3.14 / 3.08 / 3.10 s (F1 at `983a8be`: 3.03 / 3.05 / 3.11 s; flat) |
+| axiom audit | **3934 theorems** (unchanged) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged, stages 3–6) |
+| `cargo test --workspace` | **1087 passed / 0 failed / 5 ignored across 73 result lines**, exit 0 — unchanged from F1 |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) — unchanged |
+| T5 (`kernel_replay_parity.rs --include-ignored`) | **19 passed / 0 failed**, 6.44 s — unchanged |
+| `cli_latency.rs --include-ignored` | **4 passed / 0 failed**, 3.74 s, the year-of-log and three-year tests included — unchanged |
+
+**Owed next: S, in full**, unchanged by F1 and by this block — gap 128, design §14.6's contents 1–3 and
+5, item 7's D18 defaults (**gap 120 part 3**), **gap 119**, **gap 129**'s measurement, the nine T9 CLI
+tests, **T12** (which F1's byte-identity drive anticipates but does not replace), T11's seven latency
+rows, the per-verb kernel-call count against R14's table, and the §5.13 drive. **Then S2 proper**
+(**gap 130**) with quirk Q6(f) (**gap 86**), and **then L9** (**gap 93**), whose inventory is the table
+above. Phase F's remaining rows F2 and F3 are their tranches', as §14.7 states.
