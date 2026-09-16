@@ -19415,3 +19415,159 @@ tests, **T12** (which F1's byte-identity drive anticipates but does not replace)
 rows, the per-verb kernel-call count against R14's table, and the §5.13 drive. **Then S2 proper**
 (**gap 130**) with quirk Q6(f) (**gap 86**), and **then L9** (**gap 93**), whose inventory is the table
 above. Phase F's remaining rows F2 and F3 are their tranches', as §14.7 states.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-15: STAGE 5 CLOSED, on rebuild-on-lean (after L9's
+     record, b344185).  This is the stage's closing block: the plan
+     acceptance (AGENTS §8.3) run and measured against fork point 4748911,
+     the proof-to-definition ratio re-measured beside D5, AGENTS §2.3, §4,
+     §7.3, §8.3, §10.1 and §10.5 re-measured and rewritten, and everything
+     still owed listed by name with its gap number.  Takes NO new gap, cheat
+     or parity number: nothing new was found that was not already named.
+     No Lean was edited.
+     =========================================================================== -->
+
+## Stage 5 closed — the parity harness measured, the ratio re-measured, AGENTS re-measured
+
+**The honest paragraph.** Stage 5's *kernel* is complete and proved; stage 5's *switch is not
+made*, and no amount of green acceptance changes that. The kernel replays the whole log
+(`Replay.lean`, 7,929 lines) and windows it (`Seal.lean` and 57 proof modules, 15,494 lines,
+762 theorems) with all sixteen window laws proved; D10's lookahead is an exact mixture through
+the EDF pass; phase F1 moved the fit onto the kernel's observations. The library is **78
+modules, 73,213 lines, 3,934 theorem declarations**, every one of them imported and audited
+(§6.3's three counts agree exactly at 3,934). And **`tm/src/cli/kernel_log.rs` — 1,129 lines of
+it — is still called by nothing in the binary**: the shipped `tm` reads `.tm/log.jsonl` with the
+Rust reader, exactly as it did at the fork point. That is gap 128 and the S step behind it.
+What this commit adds is evidence, not code: the differential oracle (AGENTS §7.3) gained a
+`fit` mode and a third input set, and **stage 5's plan acceptance ran for the first time against
+the fork point itself**. Over the seven corpus logs and a generated month it compared 144
+`Replay` keys, 8 entry counts, 8 fitted models and **16,772 scalar values**, and found **four**
+disagreements — every one `days.<date>.load`, every one **parity P21** (the kernel's exact
+fifths against the fork's accumulated `f64`), and every one checked to display the same
+`round1` load and the same `load_blocks`. `tm model --fit` agrees on all eight logs, which is
+design §14.6's T12 asked of the fork point rather than of a saved file. The grammar sweep is
+unchanged from `017ead3` (138 corpus lines, 77 with nothing to report; 2,048 generated lines,
+470 with nothing to report), which is the point of quoting denominators: a comparison that
+never ran reports no disagreement. The proof-to-definition ratio is **4.06 : 1** and has
+**fallen** from 4.80 : 1 — not because proving stopped, but because this tranche came in at
+3.61 : 1, the design's own §14.9 estimate.
+
+### What the acceptance could not reach, said out loud
+
+`remaining`, the §6.4 rollup and the series head are **not measured, because they are not
+reachable**. `Tree.remainingMin` and `Tree.seriesHead` are proved and witnessed inside the
+kernel, but no response key carries them: a candidate's `remaining` is a **host-supplied**
+field of the capacity request (**gap 113**). The denominator is **0**, and it is recorded as 0
+rather than reported as agreement. The lookahead, priority, hysteresis and the EDF pass *are*
+measured, by the committed T13 (`kernel_lookahead_parity.rs`) and T16
+(`kernel_unit_reserve.rs`) — and those are fork-point comparisons even though they call the
+in-tree `tm_core`, because `capacity.rs` is **purely additive** since `4748911` (198 lines
+added, none removed or changed) and `priority.rs`'s only non-additive edit is `is_impossible`
+reading the exact shortfall, which is P1-refined's own downstream.
+
+### Recorded disagreements between the documents and the repo
+
+1. **The oracle's docstring claims "every nested record struct has the identical field list"
+   between the fork's `Replay` and this branch's. That is false**, and the harness now says so:
+   phase R's R9 (`100bd88`) renamed `DayReplay.load` to `load_fifths` with a `load()` accessor,
+   so the fork writes `"load": 5.2` where this branch writes `"load_fifths": 26`. The harness
+   maps the one to the other (`load_fifths / 5`, the exact fifths R9 claims) so that the
+   comparison **tests** R9's claim instead of stepping around it. `EnergyObs.line` and
+   `DurationObs.line` (R13) are `#[serde(skip)]` and never reach the comparison.
+2. **Design §17's P21 is stated at `DayReplay.load`; this README's recorded P21 row narrowed it
+   to `DayReview.load_blocks` at a tie.** The measurement lands on the design's reading: the
+   difference is in the raw `load` value (four sightings), and **both** displays agree in every
+   one. No new parity number is taken — it is P21 under either reading — but the row's narrowing
+   understates where the difference lives, and a later step should not be surprised to find it
+   at the raw value.
+
+### Still owed, each by name
+
+**The switch and what waits on it**
+- **gap 128** — `kernel_log::decode_facts` does not exist; the only code turning the kernel's
+  facts into a `Replay` is T5's `kernel_replay()`, which borrows `events`, `warnings`, `rows`
+  and `line_count` from the reader S deletes. **S's first task.**
+- **S itself** — design §14.6 contents 1–3 and 5; item 7's D18 defaults; the nine T9 CLI tests;
+  T12 in the binary; T11's seven latency rows; the per-verb kernel-call count against R14's
+  baseline.
+- **gap 120 part 3** — every verb except `tm check` must fail by name on `ReachTooFar`.
+- **gap 119** — a stall holds the ledger day back and `tm check` does not name it.
+- **gap 129** — a plain `tm log` asks `All`; the narrowing is unbuilt.
+- **gap 130** — the kernel still does not write log lines (D16's S2), and **gap 86** (quirk
+  Q6(f), an undo after housekeeping cancelling the automatic close) waits with it.
+- **gap 93** — day 0 of the lookahead is the host's histogram until L9, which depends on S.
+- **gap 113** — the candidates' facts are the host's, which is also why this stage's acceptance
+  cannot reach `remaining` or the series head.
+
+**Performance and unbuilt tests** (each measured, none a gate failure)
+- **gap 121** — hand-edit detection costs a full digest per call (4.8 ms at a 3-year log).
+- **gap 122** — the resume and the reseal grow faster than linearly; narrowed at W4/W5, not
+  closed by name.
+- **gap 123** — W3's row names tests that are still not built (T6, T7, T8, T10's proptest).
+- **gap 126** — the wire dominates genesis and the margin is 8.5%.
+- **gap 127** — the pinned day's one reseal reaches 68.9 ms and is bounded by nothing.
+
+**Quirks kept by decision, until their step** — **82** (Q6a, two first-wake rules), **83**
+(Q6c, site R8's per-sub-segment truncation), **85** (Q6e, a multi-day wall), **87** (Q6g, two
+definitions of "today"), **89** (two writers of the line format until S2), **90** (two zone
+evaluators until stage 6), **91** (`arrive.window` and `idle.attributed` unvalidated), **118**
+(Q6b, two "latest" rules).
+
+**Stage 6's inheritance** — `Goals.lean`'s **13** goals, every one stage 6's (the eight §8.3
+plan invariants, `plan_never_batches_past_an_equal_ci_candidate`, and L24/L25, which D5 says are
+to be **proved**); **gap 94** (two reserves stay Rust, tested against the kernel by T16);
+**gap 98** (the lookahead capped at 3,660 days); **gaps 107, 114, 116** (the what-if replan and
+the TUI's ranking); and stage 6's own planner, which now inherits E7, the slot cut and future-day
+energy already built and proved here under D12.
+
+**Owed to the human** — the **§5.13 drives**, now of three binaries: stage 3's, stage 4's and
+stage 5's. Stage 5's is design §14.6's own 30-minute list, and it **cannot be run until S
+lands**, because the binary does not yet read the log through the kernel.
+
+### Observable behaviour changes
+
+**None.** No Lean and no shipped Rust was edited. The changes are one test file
+(`tm/tests/kernel_replay_parity.rs`, the new `#[ignore]`d parity harness), the oracle example
+(`kernel/tm-kernel-ffi/examples/oracle/`, which is not in either build graph), `AGENTS.md` and
+this README.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited.** Goals discharged, refuted, added: none; burn-down **13 → 13**, and every
+one of the 13 is under `Goals.lean`'s `# STAGE 6` banner — **no stage-5 goal stands**. New
+theorems: none; the audit stays at **3,934**. New `decide`/`rfl` witnesses: none. New cheats:
+none (highest **157**; 147 blocks). New parity entries: **none** — the four sightings are P21,
+which is already recorded (highest stays **P35**). `TmKernel.lean` imports: **78**, unchanged.
+Rule D9-21 has nothing to add: no function over a wire-sized list was written.
+
+### Numbers
+
+**Taken:** nothing — no gap, no cheat, no parity entry. **Highest, unchanged:** gap 130, cheat
+157, parity P35.
+
+**Re-measured** (main worktree, on the tree committed; every command capped at `MemoryMax=40G`,
+`MemorySwapMax=0`, the ratio and the oracle build at 16G):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, 3.04 / 3.13 / 3.11 s (L9's record at `b344185`: 3.14 / 3.08 / 3.10 s; flat, far inside the 10%-per-step rule) |
+| axiom audit | **3934 theorems** (unchanged); §6.3's three counts agree exactly at 3,934 |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged; all stage 6) |
+| `cargo test --workspace` | **1087 passed / 0 failed / 6 ignored across 73 result lines**, exit 0. Passed is unchanged from `b344185`; ignored is **5 → 6**, the new parity harness, which never runs without `TM_ORACLE` |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) — unchanged |
+| T5 (`kernel_replay_parity.rs --include-ignored`) | **20 passed / 0 failed**, 6.58 s (`b344185`: 19) |
+| `cli_latency.rs --include-ignored` | **4 passed / 0 failed**, 3.76 s, the year-of-log and three-year tests included |
+| **parity, input set 3** (new; kernel vs fork point `4748911`) | **8 logs; 144 `Replay` keys, 8 entry counts, 8 fitted models, 16,772 scalar values.** 4 disagreements, all **P21**, all with equal displays; nothing else |
+| **parity, input sets 1 and 2** (the grammar) | **138 corpus lines, 77 with nothing to report; 2,048 generated lines, 470 with nothing to report** — identical to `017ead3` |
+| proof : definition | **4.06 : 1** (42,426 : 10,451); net 4.00 : 1; 3.03 : 1 with doc comments. This stage's own addition: **3.61 : 1** |
+| library | **78 modules, 73,213 lines, 3,934 theorem declarations**; with `Check`, `Negative`, `Goals` and the root: 80,519 lines |
+| archive | `libTmKernel_TmKernel.a` **17,133,648 bytes** (stage 4's close: 5,087,900) |
+| cold build | `cargo build -p tm` into an empty target directory: **18.93 s, 1,743,872 KiB peak RSS** |
+
+**Owed next: S, in full** — unchanged by this block, which adds no code to the binary: **gap
+128** first, then design §14.6's contents 1–3 and 5, item 7's D18 defaults (**gap 120 part 3**),
+**gap 119**, **gap 129**, the nine T9 CLI tests, **T12** in the binary, T11's seven latency rows,
+the per-verb kernel-call count against R14's table, and the **§5.13 drive**. Then **S2** (**gap
+130**) with quirk Q6(f) (**gap 86**), then **L9** (**gap 93**). Stage 6 starts from the 13 goals
+in `Goals.lean` and the inheritance listed above.

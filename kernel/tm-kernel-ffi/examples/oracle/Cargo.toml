@@ -17,3 +17,4 @@ tm-core = { path = "../tm-core" }
 serde_json = "1"
 proptest = "1"
 chrono-tz = "0.10"
+chrono = "0.4"

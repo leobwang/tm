@@ -17,6 +17,10 @@
 //!   below, so the corpus is the one the shipped proptest samples from), and
 //!   report on each. Deterministic in `seed`.
 //! * `parse` — read one JSON string per line from stdin and report on each.
+//! * `fit <tz> <today>` — the same input, run through the fork's
+//!   `energy::fit_replay` at the default configuration, printing the fitted
+//!   `Model` as JSON. This is design §14.6's T12 against the fork point: the
+//!   kernel's half fits the observations **the kernel** derived.
 //! * `replay <tz>` — read one JSON string per line from stdin, each the whole
 //!   text of a `.tm/log.jsonl`, and print what the fork's `log::replay` derives
 //!   from it, as JSON. This is **T5's oracle** at the switch (design §14.6
@@ -288,6 +292,22 @@ fn observe_log(text: &str, tz: chrono_tz::Tz) -> Value {
     })
 }
 
+/// What the fork's `tm model --fit` makes of one whole log, in `tz`, as of
+/// `today`: fork `energy::fit_replay` over the fork's own replay, at the
+/// default configuration — both halves of the comparison must use the same
+/// one, and the corpus logs carry no config of their own.
+///
+/// This is design §14.6's **T12** asked of the fork point rather than of a
+/// saved `model.json`: on this branch `fit_replay` is gone (phase F1,
+/// `983a8be`), and the fit reads the three observation lists. So the kernel's
+/// half runs `energy::fit_observations` over the observations **the kernel
+/// derived**, and the two `Model`s must be equal field for field.
+fn observe_fit(text: &str, tz: chrono_tz::Tz, today: chrono::NaiveDate) -> Value {
+    let replay = Log::parse(text).replay(None, tz);
+    let cfg = tm_core::config::Config::default();
+    json!({ "model": tm_core::energy::fit_replay(&cfg, &replay, today) })
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let stdout = std::io::stdout();
@@ -334,10 +354,32 @@ fn main() {
                 writeln!(w, "{}", observe_log(&text, tz)).unwrap();
             }
         }
+        Some("fit") => {
+            let tz: chrono_tz::Tz = args
+                .get(2)
+                .expect("fit <tz> <today>  (e.g. America/Chicago 2026-09-15)")
+                .parse()
+                .expect("a tz database name");
+            let today = chrono::NaiveDate::parse_from_str(
+                args.get(3).expect("fit <tz> <today>"),
+                "%Y-%m-%d",
+            )
+            .expect("today as YYYY-MM-DD");
+            for l in std::io::stdin().lock().lines() {
+                let l = l.unwrap();
+                if l.trim().is_empty() {
+                    continue;
+                }
+                let text: String = serde_json::from_str(&l)
+                    .unwrap_or_else(|e| panic!("stdin must be one JSON string per line: {e} in {l:?}"));
+                writeln!(w, "{}", observe_fit(&text, tz, today)).unwrap();
+            }
+        }
         _ => {
             eprintln!(
                 "usage: tm-oracle gen <n> <seed>   |   tm-oracle parse  (JSON strings on stdin)\n\
-                 \x20      tm-oracle replay <tz>  (whole log texts, one JSON string per line)"
+                 \x20      tm-oracle replay <tz>  (whole log texts, one JSON string per line)\n\
+                 \x20      tm-oracle fit <tz> <today>  (the same, fitted: `tm model --fit`)"
             );
             std::process::exit(2);
         }

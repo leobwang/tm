@@ -3467,3 +3467,334 @@ fn t5_a_tail_past_the_resend_cap_rebuilds_instead_of_resending() {
     assert_eq!(rc.rebuilt_because.as_deref(), Some("a tail past the resend cap"), "named, not silent");
     assert_windowed("a tail past the cap: rebuilt", &cache, &rc, &text_c, tz, &table);
 }
+
+// ---------------------------------------------------------------------------
+// Stage 5's plan acceptance: the kernel against the FORK POINT, not against the
+// in-tree reader (AGENTS §8.3, §7.3; design §14.6 item 4, §17).
+// ---------------------------------------------------------------------------
+
+/// The fork point's `Replay` keys this compares. The fork serialises **20**;
+/// two are left out here and neither is the kernel's to answer yet:
+///
+/// * `events` — `kernel_replay` copies it from the in-tree reader, because the
+///   kernel keeps only the latest occurrence per `(name, id?)` (design §8.4)
+///   while the field is still shaped as a list. That is **gap 128**, and the
+///   `latest_named` queries above are what does compare it.
+/// * `warnings` — free text on the fork's side, named constructors on the
+///   kernel's: **parity P15**, compared above by line and status instead.
+///
+/// Every other key is the kernel's own fact, decoded by [`kernel_replay`].
+///
+/// **One record differs in shape, and it is a Rust rename, not a fact.** Phase
+/// R's R9 (`100bd88`) turned `DayReplay.load` into `load_fifths` with a
+/// `load()` accessor, so the fork writes `"load": 5.2` where this branch writes
+/// `"load_fifths": 26`. [`as_fork_shaped`] maps the one back to the other —
+/// `load_fifths / 5`, the exact fifths R9 claims, divided once — so the
+/// comparison tests R9's claim rather than stepping around it. The two `f64`s then differ
+/// wherever the fork's accumulated sum has drifted from the exact value —
+/// **parity P21**, which design §17 states at exactly this site (`DayReplay.load`
+/// at display: "exact fifths, divided once" against "an accumulated `f64` sum").
+/// Each sighting is counted, and **both of its displays are checked to be equal
+/// anyway**: §12.1's `round1` load, and `DayReview::load_blocks` by R9's exact
+/// half-up hundredths against the fork's `round2(load / block_min)`. A
+/// difference that reaches a display is a defect, not an exception, and fails.
+///
+/// (The oracle's own docstring says "every nested record struct has the
+/// identical field list". That is now false, and this is the one exception:
+/// recorded in the README block, not papered over. `EnergyObs.line` and
+/// `DurationObs.line` (R13) are `#[serde(skip)]`, so they do not reach this
+/// comparison at all.)
+const FORK_REPLAY_KEYS: [&str; 18] = [
+    "tz",
+    "range",
+    "days",
+    "items",
+    "instances",
+    "energy",
+    "durations",
+    "interrupts",
+    "demotions",
+    "closes",
+    "dropped_items",
+    "done_items",
+    "last_done",
+    "done_dates",
+    "longest_leak",
+    "open_block",
+    "open_interrupt",
+    "unknown",
+];
+
+/// **Parity P21**, checked rather than waved through: this day's `load` differs
+/// between the kernel's exact fifths and the fork's accumulated `f64` sum.
+/// `Some(why)` only when the difference reaches a display — which is what R9
+/// promised it never does ("recorded as P21 here, in Rust, so the switch changes
+/// no display").
+fn p21_display_is_unchanged(date: &str, fifths: u64, fork_load: f64, block_min: u32) -> Option<String> {
+    let round1 = |x: f64| (x * 10.0).round() / 10.0;
+    let round2 = |x: f64| (x * 100.0).round() / 100.0;
+    let b = u128::from(block_min.max(1));
+    // R9's exact route: `review.rs`'s `load_blocks_of_fifths`.
+    let kernel_blocks = ((40 * u128::from(fifths) + b) / (2 * b)) as f64 / 100.0;
+    let fork_blocks = round2(fork_load / f64::from(block_min.max(1)));
+    let kernel_load = fifths as f64 / 5.0;
+    if round1(kernel_load) != round1(fork_load) {
+        return Some(format!(
+            "days.{date}.load reaches the display: round1 kernel {} fork {}",
+            round1(kernel_load),
+            round1(fork_load)
+        ));
+    }
+    if kernel_blocks != fork_blocks {
+        return Some(format!("days.{date}.load_blocks differs: kernel {kernel_blocks} fork {fork_blocks}"));
+    }
+    None
+}
+
+/// The kernel-side value in the **fork's** record shape: `load_fifths` back to
+/// the fork's `load`, exactly as R9's `DayReplay::load()` computes it. Nothing
+/// else is touched, so any other difference is a real one.
+fn as_fork_shaped(v: &mut Value) {
+    match v {
+        Value::Array(a) => a.iter_mut().for_each(as_fork_shaped),
+        Value::Object(o) => {
+            if let Some(fifths) = o.remove("load_fifths").and_then(|f| f.as_u64()) {
+                let load = fifths as f64 / 5.0;
+                o.insert("load".to_string(), serde_json::json!(load));
+            }
+            o.values_mut().for_each(as_fork_shaped);
+        }
+        _ => {}
+    }
+}
+
+/// Every differing leaf, named by its path, so a finding says which field of
+/// which day differs rather than printing two truncated records.
+fn diff_paths(path: &str, k: &Value, f: &Value, out: &mut Vec<(String, String)>) {
+    if k == f {
+        return;
+    }
+    match (k, f) {
+        (Value::Object(ko), Value::Object(fo)) => {
+            for (key, fv) in fo {
+                match ko.get(key) {
+                    Some(kv) => diff_paths(&format!("{path}.{key}"), kv, fv, out),
+                    None => out.push((
+                        format!("{path}.{key}"),
+                        format!("{path}.{key}: kernel has no such key, fork {fv}"),
+                    )),
+                }
+            }
+            for key in ko.keys().filter(|k| !fo.contains_key(*k)) {
+                out.push((
+                    format!("{path}.{key}"),
+                    format!("{path}.{key}: fork has no such key, kernel {}", ko[key]),
+                ));
+            }
+        }
+        (Value::Array(ka), Value::Array(fa)) if ka.len() == fa.len() => {
+            for (i, (kv, fv)) in ka.iter().zip(fa).enumerate() {
+                diff_paths(&format!("{path}[{i}]"), kv, fv, out);
+            }
+        }
+        _ => {
+            let (ks, fs) = (k.to_string(), f.to_string());
+            out.push((
+                path.to_string(),
+                format!("{path}: kernel {} fork {}", &ks[..ks.len().min(90)], &fs[..fs.len().min(90)]),
+            ));
+        }
+    }
+}
+
+/// Scalar leaves of a JSON value: the denominator that says how much was
+/// actually compared, rather than how many keys were looked at.
+fn leaves(v: &Value) -> usize {
+    match v {
+        Value::Array(a) => a.iter().map(leaves).sum(),
+        Value::Object(o) => o.values().map(leaves).sum(),
+        _ => 1,
+    }
+}
+
+/// Run one mode of the fork-point oracle over `texts`, one JSON string per line
+/// in, one JSON object per line out.
+fn fork_oracle(bin: &std::path::Path, args: &[&str], texts: &[String]) -> Vec<Value> {
+    use std::io::Write as _;
+    let mut child = std::process::Command::new(bin)
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap_or_else(|e| panic!("the fork oracle {}: {e}", bin.display()));
+    let mut input = String::new();
+    for t in texts {
+        input.push_str(&serde_json::to_string(t).expect("a JSON string"));
+        input.push('\n');
+    }
+    // The input is larger than a pipe buffer and so is the oracle's answer, so
+    // the write has to happen while this side is free to drain stdout — writing
+    // it all first deadlocks: the child blocks writing its reply, we block
+    // writing the request.
+    let mut stdin = child.stdin.take().expect("stdin");
+    let feeder = std::thread::spawn(move || stdin.write_all(input.as_bytes()).expect("write to the oracle"));
+    let out = child.wait_with_output().expect("the oracle runs");
+    feeder.join().expect("the feeding thread");
+    assert!(out.status.success(), "the fork oracle failed: {}", String::from_utf8_lossy(&out.stderr));
+    String::from_utf8(out.stdout)
+        .expect("the oracle's output is UTF-8")
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| serde_json::from_str(l).expect("the oracle prints JSON"))
+        .collect()
+}
+
+/// **Stage 5's plan acceptance** (AGENTS §8.3): the kernel's replay and the fit
+/// that reads it, against **fork point `4748911`** over the fixture corpus.
+///
+/// T5 above compares the kernel with the *in-tree* reader, which is the fork's
+/// plus phase R's ≈790 lines. This compares it with the fork point itself,
+/// through AGENTS §7.3's oracle scaffolding (`tm-oracle replay` and `fit`), which
+/// is what §8.3 calls for and what T5 is retargeted to at S. Two things are
+/// compared per log:
+///
+/// * **the whole `Replay`**, key for key over [`FORK_REPLAY_KEYS`] — the
+///   kernel's facts decoded by [`kernel_replay`] and serialised, against the
+///   fork's own;
+/// * **`tm model --fit`** (design §14.6's T12): the `Model` the fit writes from
+///   the **kernel's** observations (`energy::fit_observations`, phase F1) against
+///   the one the fork writes from its own replay (`energy::fit_replay`), at the
+///   same default configuration and the same `today`.
+///
+/// It prints its denominators: a comparison that never ran reports no
+/// disagreement, which is not the same statement as agreement (§7.3).
+///
+/// `#[ignore]`d and inert without `TM_ORACLE`, because it needs a Rust build of
+/// the fork point outside this repository — the dependency AGENTS §7.3 keeps out
+/// of `check.sh` and out of `cargo test --workspace`. `run-oracle.sh` sets it.
+#[test]
+#[ignore]
+fn stage5_parity_the_kernel_replays_and_fits_as_the_fork_point_does() {
+    let Some(bin) = std::env::var_os("TM_ORACLE") else {
+        eprintln!(
+            "stage-5 parity: INERT — set TM_ORACLE to the fork-point oracle binary \
+             (kernel/tm-kernel-ffi/examples/oracle/run-oracle.sh builds it and runs this)"
+        );
+        return;
+    };
+    let bin = std::path::PathBuf::from(bin);
+    let tz = chrono_tz::America::Chicago;
+    let today = NaiveDate::from_ymd_opt(2026, 9, 15).expect("a date");
+
+    let mut names: Vec<String> = Vec::new();
+    let mut texts: Vec<String> = Vec::new();
+    for (name, text) in corpus_logs() {
+        names.push(name);
+        texts.push(text);
+    }
+    let month = loggen::text(&loggen::log(loggen::Rate::Forty, 30));
+    names.push("generated 1mo (40 a day)".to_string());
+    texts.push(month);
+
+    let fork_replays = fork_oracle(&bin, &["replay", tz.name()], &texts);
+    let fork_fits = fork_oracle(&bin, &["fit", tz.name(), &today.to_string()], &texts);
+    assert_eq!(fork_replays.len(), texts.len(), "one fork replay per log");
+    assert_eq!(fork_fits.len(), texts.len(), "one fork fit per log");
+
+    let cfg = tm_core::config::Config::default();
+    let (mut keys, mut values, mut entries_compared, mut fits) = (0usize, 0usize, 0usize, 0usize);
+    // Parity P21 sightings: a day whose `load` differs from the fork's in the last ulp.
+    let mut p21 = 0usize;
+    let mut findings: Vec<String> = Vec::new();
+
+    for (i, name) in names.iter().enumerate() {
+        let text = &texts[i];
+        let r = replay::replay_of_text(text, tz);
+        let kf = kernel_facts(text, tz);
+        let kr = kernel_replay(&kf, tz, &r);
+        let kv_raw = serde_json::to_value(&kr).expect("the kernel's replay serialises");
+        let mut kv = kv_raw.clone();
+        as_fork_shaped(&mut kv);
+        let fork = &fork_replays[i]["replay"];
+
+        for key in FORK_REPLAY_KEYS {
+            let (k, f) = (&kv[key], &fork[key]);
+            assert!(!f.is_null() || k.is_null(), "{name}: the fork has no key `{key}`");
+            keys += 1;
+            values += leaves(f);
+            if k != f {
+                let mut paths = Vec::new();
+                diff_paths(key, k, f, &mut paths);
+                let mut real: Vec<String> = Vec::new();
+                for (path, message) in paths {
+                    // `days.<date>.load` is parity P21: counted and checked, never skipped.
+                    if let Some(date) = path.strip_prefix("days.").and_then(|r| r.strip_suffix(".load")) {
+                        p21 += 1;
+                        let day = &fork["days"][date];
+                        let fifths = kv_raw["days"][date]["load_fifths"].as_u64().expect("the kernel's fifths");
+                        let fork_load = day["load"].as_f64().expect("the fork's load");
+                        let block_min = u32_of(day["block_min"].as_u64().expect("the day's block_min"));
+                        if let Some(why) = p21_display_is_unchanged(date, fifths, fork_load, block_min) {
+                            real.push(why);
+                        }
+                        continue;
+                    }
+                    real.push(message);
+                }
+                if real.is_empty() {
+                    continue;
+                }
+                let shown = real.len().min(6);
+                findings.push(format!(
+                    "{name}: `{key}` differs at {} leaf/leaves\n      {}",
+                    real.len(),
+                    real[..shown].join("\n      ")
+                ));
+            }
+        }
+
+        // The entry count the fork's reader kept, against the kernel's own.
+        entries_compared += 1;
+        let fork_entries = fork_replays[i]["entries"].as_u64().expect("an entry count");
+        if kf.counts.0 != fork_entries {
+            findings.push(format!("{name}: entries differ — kernel {} fork {fork_entries}", kf.counts.0));
+        }
+
+        // T12: the fit over the kernel's observations against the fork's own.
+        fits += 1;
+        let arrivals = tm_core::energy::arrivals_from_replay(&cfg, &kr);
+        let model = tm_core::energy::fit_observations(&cfg, &kr.energy, &kr.durations, &arrivals, today);
+        let kmodel = serde_json::to_value(&model).expect("a model serialises");
+        let fmodel = &fork_fits[i]["model"];
+        values += leaves(fmodel);
+        if &kmodel != fmodel {
+            findings.push(format!(
+                "{name}: `tm model --fit` differs\n    kernel {}\n    fork   {}",
+                &kmodel.to_string()[..kmodel.to_string().len().min(240)],
+                &fmodel.to_string()[..fmodel.to_string().len().min(240)]
+            ));
+        }
+    }
+
+    eprintln!(
+        "\nstage-5 parity — the Lean kernel vs fork point 4748911's log::replay and energy::fit\n\
+         \x20 {} logs compared: {keys} Replay keys ({} of the fork's 20 per log; `events` and `warnings` \
+         excluded by name, gap 128 and P15), {entries_compared} entry counts, {fits} fitted models;\n\
+         \x20 {values} scalar values in all.",
+        names.len(),
+        FORK_REPLAY_KEYS.len(),
+    );
+    eprintln!(
+        "  parity P21 (`DayReplay.load`: exact fifths against the fork's accumulated f64): \
+         {p21} day records differ in the last ulp, and every one displays the same `round1` \
+         load and the same `load_blocks`."
+    );
+    if findings.is_empty() {
+        eprintln!("  no disagreements beyond the recorded exceptions.\n");
+    } else {
+        for f in &findings {
+            eprintln!("  {f}");
+        }
+        panic!("{} disagreements with the fork point (each must be on §17's list)", findings.len());
+    }
+}
