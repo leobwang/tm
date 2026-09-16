@@ -21070,3 +21070,179 @@ the owner). **What S no longer owes:** the ten T9 names and T12 (two `#[ignore]`
 there is to delete an attribute, not to write a test), **T11's seven latency rows**, **the per-verb
 kernel-call count**, and **gap 138**. **Gaps 140 and 141 clear at S** and are its measurements, not
 its work. Then **S2** (**gap 130**) with quirk Q6(f) (**gap 86**), then **L9** (**gap 93**).
+
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 5, PREP 1 for S, on rebuild-on-lean, under the
+     owner's D19.  **THE SWITCH STILL DID NOT LAND**, and this block does not
+     claim it did: it lands design §14.6 item 3's MOVE half before the switch, so
+     that S's commit is smaller by 25 paths and 49 snapshots.  Takes gap 142;
+     new gaps start at 143.  No Lean edited: audit 3934, cheats 157, parity P35,
+     burn-down 13, all unchanged.
+     =========================================================================== -->
+
+## Stage 5, PREP 1 for S, 2026-09-16: the consumer tests read through the door — R12's suite moved while both readers still answer
+
+**The honest paragraph, first.** S is still not made, and nothing here moves the binary one inch
+closer on its own. `Ctx::replay_with` still calls `Ctx::replay_of`, whose body is still
+`Log::parse_bytes(..).replay(..)`; `log.rs` still holds every line §12 deletes; **nothing under
+`tm/src` calls `kernel_log::`**. This commit moves test files between crates and changes **no
+shipped behaviour at all** — the one shipped-source line it edits is a path inside a `#[cfg(test)]`
+helper. What it buys is that design §14.6 item 3 is no longer S's to do: what item 3 still owes the
+switch is **one line**, the chokepoint's body.
+
+### What landed
+
+**The move (design §14.6 item 3, D9-18).** 23 test files and the two shared modules
+`planner_common/` and `review_common/` moved from `tm-core/tests/` to `tm/tests/`, with the 49
+insta snapshots that belong to them and `planner_invariants.proptest-regressions`. 75 paths in all.
+
+**Why they had to move, stated once:** `tm` is a **binary-only** crate with no lib target, so its
+tests reach `tm/src/cli/kernel_log.rs` by `#[path]`. `tm-core` cannot reach it at all — it does not
+depend on `tm-kernel-ffi` and the dependency runs the other way. So at S, when
+`tm/tests/support/replay.rs`'s body calls the kernel, any suite still living in `tm-core/tests/`
+would stop compiling. Moving them now, while the Rust reader still answers, is what makes the
+switch a body swap instead of a body swap plus a cross-crate migration.
+
+**What each moved file needed** (no assertion was touched):
+
+| rewrite | files |
+|---|---|
+| `#[path = "../../tm/tests/support/replay.rs"]` becomes `"support/replay.rs"` (and `"../support/replay.rs"` from the two shared modules) | 15 + 2 |
+| the fixture tree stays in `tm-core`, so `CARGO_MANIFEST_DIR` reaches it as `../tm-core/tests/fixtures` | 8 + 2 |
+| doc-comment and assert-message paths naming `tests/fixtures/...` | 6 |
+| nothing at all — they reach the chokepoint only through a shared module | 8 (7 `.rs` + the proptest-regressions file) |
+
+`{}/../kernel/corpus/...` needed no edit: `tm/..` and `tm-core/..` are the same directory.
+
+**One shipped-source line.** `tm/src/cli/ctx.rs`'s `#[cfg(test)]` `snapshot_body` read
+`../tm-core/tests/snapshots/log_ported_facts__*.snap`; it now reads its own crate's
+`tests/snapshots/`. **The suite caught this, not a reading of it** — the first run after the move
+failed with `No such file or directory`. It is worth recording as a small win: the move **removed a
+cross-crate reach from shipped source into another crate's test tree**.
+
+### The evidence the move is safe, taken while both readers still exist
+
+This is the whole reason D19 puts the move before the switch, and it is a check that **can never be
+made again** once §§12's deletions land. A temporary recorder in the chokepoint captured every
+distinct `(log text, zone)` pair the moved suites feed `replay_of_text`; each was then replayed
+through **both** the in-tree Rust reader and the shipped kernel door
+(`kernel_log::replay_scoped` → `decode_facts`) at the `All` scope and compared field for field
+(the fork's own `PartialEq`, plus `ported_facts()`, `view()`, `line_count()`, `entry_count()`).
+The recorder and the comparison binary were **deleted in this commit**, as R12's own equivalence
+test was — the numbers are the deliverable:
+
+| corpus | pairs | bytes | days | view rows | differences |
+|---|---:|---:|---:|---:|---:|
+| **the moved suites' own texts** | **308** | 780,170 | 530 | 7,589 | **0** |
+| every `replay_of_text` caller (T5 and the door suite too) | 777 | 34,591,195 | 7,478 | 335,648 | 2, both named below |
+
+**The moved suites agree with the door exactly**, with **one** refusal, which is a recorded parity
+entry — gap 142 below. The wider 777-pair superset has three further non-agreements, and **all
+three are T5's own deliberately crafted extremes, each already a named exception**, not consumer
+tests: parity **P34** (`t5_p34_a_gap_before_the_origin_is_the_named_exception` — an `idle` gap of
+`u32::MAX` minutes reaches before 0001-01-01, which `Day := Nat` cannot represent); parity **P33**
+(`t5_p33_a_done_date_before_the_origin_is_the_named_exception` — `inst:"0000-09-07"`); and the
+named fault `ReachTooFar` on T5's own resend-cap log (16,456 lines all at one timestamp, so nothing
+folds). Each is quoted here so the next reader does not have to rediscover that they are expected.
+
+### The snapshots are byte-identical, and that was verified rather than asserted
+
+Every one of the 49 moved snapshots was compared **blob by blob against its `HEAD` version**:
+**0 with a changed body, and 0 changed lines that are not insta's `source:` header**, which moves
+from `tm-core/tests/<f>.rs` to `tm/tests/<f>.rs` because insta writes it workspace-root-relative.
+The snapshot **file names** did not change at all: insta keys them by the test binary's module
+name, which the move preserves. No snapshot was re-blessed; `cargo insta accept` was never run.
+
+### Gap 142 (new; label P1-a) — a moved test pins the saturation the kernel refuses by name
+
+1. **What is not done.** `tm/tests/log_regressions.rs`'s
+   `absurd_minute_counts_saturate_instead_of_panicking` pins the fork reader's `saturating_add`
+   behaviour: `u32::MAX` for `block_minutes`, `day.block_min`, `minutes_by_ci[5]`, `leak_min`,
+   `lost_min`, `drift_min`, `break_min()`, `extended_min` and `total_block_min()`. The kernel
+   refuses that same log **by name** — measured here as `Fault("minutesOverflow at leakMin")`.
+   Nothing has decided what the test becomes at S.
+2. **Why it is not a defect.** The disagreement is **parity P17**, settled at design §17: the kernel
+   carries minute sums in `Nat` and the Rust decoder refuses `minutesOverflow` by name, where the
+   fork saturates. What is undecided is the *test*, not the behaviour.
+3. **What it costs.** Nothing today — the test is green against the Rust reader, and this run is
+   the only reason anyone knows. At S it does **not** merely change an expected value: it
+   **faults**. Written blind, that looks like a regression at exactly the moment the switch is
+   least reviewable, which is the trap this prep step exists to spring early.
+4. **When it clears.** At S, with item 3's remaining one-line body swap: either the test asserts
+   the named refusal (P17's kernel column) or it is deleted with the reader it pins. It is one of
+   the two, deliberately.
+
+### Recorded disagreements between the design, the ledger and the repo
+
+1. **The design's file count is short, and the S block's is close but not exact.** §§12's Tests row
+   and §§14.3's R12 row say "18 tm-core files (45 call sites)"; the S block says "a 24-file
+   cross-crate test move with ~47 insta snapshots". Measured at the move: **23 `.rs` files plus the
+   two shared modules, and 49 snapshots**. The arithmetic, so it is not rediscovered: R12's 18
+   entries are 16 `.rs` files plus the two `mod.rs`; add `log_narrowed_facts.rs` (which post-dates
+   R12's count) and the **six** files that reach the chokepoint only *through* a shared module
+   (`emit_planner`, `planner_dynamics`, `planner_fixtures` via `planner_common`; `review_fixture`,
+   `review_month`, `review_week` via `review_common`) — 16 + 1 + 6 = 23. A file whose only reach is
+   a shared module still cannot stay behind.
+2. **The fixture tree did not move, and did not need to.** `tm-core/tests/fixtures/` is read by
+   suites that stay (`check_fixtures`, `grammar_fixtures`, `capacity_lookahead`, `energy_model`,
+   `ics_sample`, `log_serde`, `review_write`, `store_*`, `tree_*`), so it stays put and the moved
+   suites reach it as `../tm-core/tests/fixtures`. Its four log fixtures and three plan logs are
+   **byte-identical to `kernel/corpus/`'s** (verified with `cmp`), so the door suite's corpus
+   already covers every fixture log the moved suites read — extending it would have added a
+   denominator and no information.
+3. **§§12's one-reader grep is unmoved at 125.** The moved files carry their hits from one crate to
+   the other and the grep spans both. Nothing was added, nothing deleted. **Quote §12's
+   alternation, never R8's 89** (W-7's disagreement 1, still standing).
+
+### Observable behaviour changes
+
+**None.** No shipped code path changed: the only edit outside `tests/` is a path string inside a
+`#[cfg(test)]` helper in `tm/src/cli/ctx.rs`, which is compiled out of the binary. No log bytes, no
+new capability, no refusal text, no `--json` shape. No parity entry was added (highest stays
+**P35**); **P17** was *sighted*, which is what gap 142 records.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited** — no `.lean`, no `lean-toolchain`, nothing under `kernel/corpus/`, no
+`Cargo.toml` and no `Cargo.lock`. Goals discharged, refuted, added: none; burn-down **13 -> 13**,
+stages 3-6. New theorems: none — the audit stays at **3934**. New `decide`/`rfl` witnesses: none,
+so no probe budget was spent. New cheats: none (highest **157**). `TmKernel.lean` imports: **78**,
+unchanged. No predicate or assertion was weakened, no goal deleted, no memory bound raised, no
+corpus reblessed, no snapshot re-blessed.
+
+### Numbers
+
+**Taken:** gap **142**. **Highest:** gap 142, cheat 157, parity P35. New gaps start at **143**.
+
+**Re-measured** (main worktree, on the tree committed; every command capped at `MemoryMax=40G`,
+`MemorySwapMax=0`):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, **3.20 / 3.05 / 3.05 s** (the merge `594e476`: 3.81 / 3.08 / 3.07). Flat, far inside the 10%-per-step rule |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged; stages 3-6) |
+| `cargo test --workspace` | **1121 passed / 0 failed / 8 ignored across 79 result lines**, exit 0, **0 warnings** — **identical to the parent**, and identical **per binary**: all 79 rows match name for name and count for count |
+| test files per crate | `tm/tests` **33 -> 56**, `tm-core/tests` **43 -> 20** (exactly additive: +23 / -23) |
+| snapshots per crate | `tm/tests/snapshots` **92 -> 141**, `tm-core/tests/snapshots` **84 -> 35** (+49 / -49) |
+| snapshot bodies changed | **0 of 49**, verified blob by blob against `HEAD`; **0** changed lines that are not `source:` |
+| reader-vs-door equivalence, moved suites | **308 (text, zone) pairs**, 780,170 bytes, 530 days, 7,589 view rows, **0 differences**, 1 recorded-P17 refusal, **0 unrecorded refusals** |
+| reader-vs-door equivalence, every caller | **777 pairs**, 34,591,195 bytes, 7,478 days, 335,648 view rows; 2 differences (**P33**, **P34**) and 1 `ReachTooFar`, **all three T5's own crafted extremes** |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) — unchanged |
+| T5 (`kernel_replay_parity --include-ignored`) | **20 passed / 0 failed**, **6.44 s** (merge: 6.50 s) |
+| the door suite (`kernel_log_door`) | **13 passed / 0 failed**, **1.05 s** (merge: 1.06 s) |
+| `cli_latency --include-ignored` | **5 passed / 0 failed**, **10.05 s** (merge: 9.97 s) |
+| `kernel_call_counts` | **1 passed**, 0.24 s — the half-switch guard: `log == 0` for all twelve verbs, still |
+| §§12's one-reader grep | **125 lines** (merge: 125 — nothing added, nothing deleted) |
+| the diff | 75 paths moved (23 test files, 2 shared modules, 1 proptest-regressions, 49 snapshots); 2 files edited beyond the move, **+12 -6**. No Lean, no `Cargo.toml`, no `lean-toolchain`, no `kernel/corpus/` |
+
+**Owed next: S, and design §§14.6's item 3 is now down to one line.** Contents **1, 2 and 5**
+(`Ctx::replay_with`'s body becomes the kernel call; §§12's deletions in `log.rs`, `parse_timestamp`
+included; the `log` names in `kernel_bridge::refusal`), **item 3's last half** — the chokepoint's
+body calling the kernel, with **gap 142**'s decision taken — item 4's **retarget of T5**
+(**gap 137**), item 7's D18 defaults (**gap 120 part 3**, and **gap 134**'s sweep), and
+**gaps 119, 129, 132, 133, 135, 136**, plus the **§5.13 drive** (short by **gap 131**'s item, and
+carrying **gaps 138 and 139**'s questions for the owner). **Gaps 140 and 141 clear at S.** Then
+**S2** (**gap 130**) with quirk Q6(f) (**gap 86**), then **L9** (**gap 93**).

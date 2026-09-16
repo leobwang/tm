@@ -1,0 +1,6 @@
+---
+source: tm/tests/priority_plan_basic.rs
+expression: "blocked.join(\"\\n\")"
+---
+t5: blocked by ^t4
+a4: waiting

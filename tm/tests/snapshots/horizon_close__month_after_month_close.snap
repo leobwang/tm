@@ -1,0 +1,11 @@
+---
+source: tm/tests/horizon_close.rs
+expression: "text(&store, MONTH)"
+---
+---
+month: 2026-09
+---
+# Outcomes
+- [~] 2 !3 Winter course selection + admin done        ^O3
+
+# Demoted

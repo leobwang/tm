@@ -1,0 +1,13 @@
+---
+source: tm/tests/horizon_close.rs
+expression: "text(&store, NEXT_MONTH)"
+---
+---
+month: 2026-10
+---
+# Outcomes
+- [ ] 5 !1 Lean: through ch.8 of the tutorial          ^O1
+- [ ] 4 !1 Soundcode: end-to-end demo runs             ^O2
+
+# Demoted
+- [-] 4 3b Rollback path passes tests @O2 est:3b demoted:W37 ^m2

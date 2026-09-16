@@ -1,0 +1,18 @@
+---
+source: tm/tests/horizon_close.rs
+expression: "text(&store, WEEK)"
+---
+---
+week: 2026-W37
+window: 2026-09-07..2026-09-13
+budget: 25
+planned: 20
+closed: 2026-09-14
+---
+# Milestones
+- [-] 5 6b Finish ch.5 exercises        @O1 ^m1
+- [-] 4 6b Rollback path passes tests   @O2 ^m2
+- [-] 5 3b Read ch.6                    @O1 ^m3
+- [-] 2 2b Pick winter courses          @O3 ^m4
+
+# Tasks

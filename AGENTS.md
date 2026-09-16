@@ -2099,7 +2099,7 @@ work):
 W-7 audit caught it. The facts decoder landed at `4aaa99e`: `kernel_log::decode_facts` is
 defined in `tm/src/cli/kernel_log.rs`, and T5's `kernel_replay` (`tm/tests/kernel_replay_parity.rs`)
 *is* that call, borrowing nothing from the reader S deletes. What is left is design §14.6's
-contents 1–3 and 5, item 4's retarget of T5 (**gap 137**), item 7's D18 defaults with **gap 120
+contents 1, 2 and 5, item 4's retarget of T5 (**gap 137**), item 7's D18 defaults with **gap 120
 part 3** and **gap 134**'s sweep, and **gaps 119, 129, 132, 133, 135, 136**. **T11's seven latency
 rows and the per-verb kernel-call count are no longer on this list either**: they landed on
 2026-09-16 on the `w8-latency` track, merged to `rebuild-on-lean` the same day, as
@@ -2133,6 +2133,17 @@ missing are in `tm/tests/cli_switch_acceptance.rs`; **six pass against the unswi
 (`ReachTooFar` has no call site; **gap 120 part 3**). The figure to quote from here is
 "ten exist, two ignored until S". That step also took **gap 139** (`--now` at an instant before the
 stored runtime day rolls `.tm/state.json` back), which is a question for the §5.13 drive, not S's.
+
+*Item 3 closed 2026-09-16 (D19).* **Design §14.6 item 3 — R12's consumer tests — is landed**, before
+the switch and green against the unswitched binary: **23** test files and the two shared modules
+(`planner_common/`, `review_common/`) moved from `tm-core/tests/` to `tm/tests/` with their **49**
+insta snapshots, whose bodies are byte-identical — only insta's `source:` header line changed, and
+that was verified blob by blob, not asserted. What item 3 still owes S is **only the chokepoint's
+one-line body swap**: `tm/tests/support/replay.rs`'s `replay_of_text` calling the kernel instead of
+`Log::parse(..).replay(..)`. No caller changes. Measured while both readers still existed — the
+whole point of landing this before S — over the moved suites' own **308 distinct (text, zone)
+pairs**: the kernel door and the Rust reader agree **exactly**, with one refusal, which is the
+recorded parity exception **P17** (**gap 142**).
 
 **Depends on.** `Cal.lean` and `Arith.lean` (both built), §4.1's field grammar
 (built), stage 4 for `close`, and — a hard dependency — the `parent` decision.

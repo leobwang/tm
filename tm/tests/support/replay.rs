@@ -5,12 +5,18 @@
 //! text of a log, never from `Log` directly: [`replay_of_text`] is the whole
 //! reader, [`replay_of_entries`] writes entries with the Rust writer first and
 //! reads the text back. Until the switch the body is the in-tree Rust reader,
-//! as `Ctx::replay_of` is for the binary. At S the tm-core suites move to
-//! `tm/tests/` and this body calls the kernel; no caller changes.
+//! as `Ctx::replay_of` is for the binary. **At S this body calls the kernel,
+//! and no caller changes** — that is the whole of design §14.6 item 3 that is
+//! left, because the consumer suites have already moved (see below).
 //!
-//! Included by path (`#[path = ".../tm/tests/support/replay.rs"]`) from
-//! `tm-core/tests` and `tm/tests` alike, so it names only `tm_core` and
-//! `chrono_tz`.
+//! **The move is done** (design §14.6 item 3, landed before S under D19). Every
+//! consumer suite that reads a log now lives in `tm/tests/`, so this file is
+//! included only from its own crate, by `#[path = "support/replay.rs"]` (or
+//! `"../support/replay.rs"` from `planner_common/` and `review_common/`). It no
+//! longer has to name only `tm_core` and `chrono_tz` to keep `tm-core`'s test
+//! tree compiling: `tm-core/tests` includes it nowhere. The fixture tree it
+//! reads stays where it is, so the moved suites reach it as
+//! `../tm-core/tests/fixtures`.
 
 use chrono_tz::Tz;
 use tm_core::log::{LogEntry, Replay};

@@ -1,0 +1,802 @@
+---
+source: tm/tests/recur_fixture.rs
+expression: rows
+---
+- item: k1
+  recur: "every:day"
+  on_miss: expire
+  instances:
+    - inst: 2026-09-01
+      status: Done
+      due: "2026-09-01T21:00"
+      window: "2026-09-01T19:00..2026-09-01T21:00"
+    - inst: 2026-09-02
+      status: Done
+      due: "2026-09-02T21:00"
+      window: "2026-09-02T19:00..2026-09-02T21:00"
+    - inst: 2026-09-03
+      status: Done
+      due: "2026-09-03T21:00"
+      window: "2026-09-03T19:00..2026-09-03T21:00"
+    - inst: 2026-09-04
+      status: Done
+      due: "2026-09-04T21:00"
+      window: "2026-09-04T19:00..2026-09-04T21:00"
+    - inst: 2026-09-05
+      status: Expired
+      due: "2026-09-05T21:00"
+      window: "2026-09-05T19:00..2026-09-05T21:00"
+    - inst: 2026-09-06
+      status: Expired
+      due: "2026-09-06T21:00"
+      window: "2026-09-06T19:00..2026-09-06T21:00"
+    - inst: 2026-09-07
+      status: Pending
+      due: "2026-09-07T21:00"
+      window: "2026-09-07T19:00..2026-09-07T21:00"
+      flags: mandatory · last-chance · not-yet
+    - inst: 2026-09-08
+      status: Pending
+      due: "2026-09-08T21:00"
+      window: "2026-09-08T19:00..2026-09-08T21:00"
+      flags: not-yet
+    - inst: 2026-09-09
+      status: Pending
+      due: "2026-09-09T21:00"
+      window: "2026-09-09T19:00..2026-09-09T21:00"
+      flags: not-yet
+    - inst: 2026-09-10
+      status: Pending
+      due: "2026-09-10T21:00"
+      window: "2026-09-10T19:00..2026-09-10T21:00"
+      flags: not-yet
+    - inst: 2026-09-11
+      status: Pending
+      due: "2026-09-11T21:00"
+      window: "2026-09-11T19:00..2026-09-11T21:00"
+      flags: not-yet
+    - inst: 2026-09-12
+      status: Pending
+      due: "2026-09-12T21:00"
+      window: "2026-09-12T19:00..2026-09-12T21:00"
+      flags: not-yet
+    - inst: 2026-09-13
+      status: Pending
+      due: "2026-09-13T21:00"
+      window: "2026-09-13T19:00..2026-09-13T21:00"
+      flags: not-yet
+    - inst: 2026-09-14
+      status: Pending
+      due: "2026-09-14T21:00"
+      window: "2026-09-14T19:00..2026-09-14T21:00"
+      flags: not-yet
+    - inst: 2026-09-15
+      status: Pending
+      due: "2026-09-15T21:00"
+      window: "2026-09-15T19:00..2026-09-15T21:00"
+      flags: not-yet
+    - inst: 2026-09-16
+      status: Pending
+      due: "2026-09-16T21:00"
+      window: "2026-09-16T19:00..2026-09-16T21:00"
+      flags: not-yet
+    - inst: 2026-09-17
+      status: Pending
+      due: "2026-09-17T21:00"
+      window: "2026-09-17T19:00..2026-09-17T21:00"
+      flags: not-yet
+    - inst: 2026-09-18
+      status: Pending
+      due: "2026-09-18T21:00"
+      window: "2026-09-18T19:00..2026-09-18T21:00"
+      flags: not-yet
+    - inst: 2026-09-19
+      status: Pending
+      due: "2026-09-19T21:00"
+      window: "2026-09-19T19:00..2026-09-19T21:00"
+      flags: not-yet
+    - inst: 2026-09-20
+      status: Pending
+      due: "2026-09-20T21:00"
+      window: "2026-09-20T19:00..2026-09-20T21:00"
+      flags: not-yet
+    - inst: 2026-09-21
+      status: Pending
+      due: "2026-09-21T21:00"
+      window: "2026-09-21T19:00..2026-09-21T21:00"
+      flags: not-yet
+- item: r1
+  recur: "-"
+  on_miss: expire
+  instances:
+    - inst: 2026-09-11
+      status: Pending
+      due: "2026-09-11T17:00"
+      window: "2026-09-11T09:00..2026-09-11T17:00"
+      flags: not-yet
+- item: a3
+  recur: "-"
+  on_miss: expire
+  instances:
+    - inst: 2026-09-07
+      status: Pending
+      due: "2026-09-07T21:00"
+      window: "2026-09-07T09:00..2026-09-07T21:00"
+      flags: mandatory · last-chance
+- item: a6
+  recur: "on-event:lease"
+  on_miss: persist
+  instances:
+    - inst: "#1"
+      status: Pending
+      due: ~
+      window: ~
+- item: a7
+  recur: "on-event:dentist/3d"
+  on_miss: persist
+  instances:
+    - inst: "#2"
+      status: Pending
+      due: ~
+      window: ~
+- item: sleep
+  recur: "every:day"
+  on_miss: expire
+  instances:
+    - inst: 2026-09-01
+      status: Expired
+      due: "2026-09-02T08:00"
+      window: "2026-09-01T22:00..2026-09-02T08:00"
+    - inst: 2026-09-02
+      status: Expired
+      due: "2026-09-03T08:00"
+      window: "2026-09-02T22:00..2026-09-03T08:00"
+    - inst: 2026-09-03
+      status: Expired
+      due: "2026-09-04T08:00"
+      window: "2026-09-03T22:00..2026-09-04T08:00"
+    - inst: 2026-09-04
+      status: Done
+      due: "2026-09-05T08:00"
+      window: "2026-09-04T22:00..2026-09-05T08:00"
+    - inst: 2026-09-05
+      status: Done
+      due: "2026-09-06T08:00"
+      window: "2026-09-05T22:00..2026-09-06T08:00"
+    - inst: 2026-09-06
+      status: Pending
+      due: "2026-09-07T08:00"
+      window: "2026-09-06T22:00..2026-09-07T08:00"
+      flags: deferred
+    - inst: 2026-09-07
+      status: Pending
+      due: "2026-09-08T08:00"
+      window: "2026-09-07T22:00..2026-09-08T08:00"
+      flags: not-yet
+    - inst: 2026-09-08
+      status: Pending
+      due: "2026-09-09T08:00"
+      window: "2026-09-08T22:00..2026-09-09T08:00"
+      flags: not-yet
+    - inst: 2026-09-09
+      status: Pending
+      due: "2026-09-10T08:00"
+      window: "2026-09-09T22:00..2026-09-10T08:00"
+      flags: not-yet
+    - inst: 2026-09-10
+      status: Pending
+      due: "2026-09-11T08:00"
+      window: "2026-09-10T22:00..2026-09-11T08:00"
+      flags: not-yet
+    - inst: 2026-09-11
+      status: Pending
+      due: "2026-09-12T08:00"
+      window: "2026-09-11T22:00..2026-09-12T08:00"
+      flags: not-yet
+    - inst: 2026-09-12
+      status: Pending
+      due: "2026-09-13T08:00"
+      window: "2026-09-12T22:00..2026-09-13T08:00"
+      flags: not-yet
+    - inst: 2026-09-13
+      status: Pending
+      due: "2026-09-14T08:00"
+      window: "2026-09-13T22:00..2026-09-14T08:00"
+      flags: not-yet
+    - inst: 2026-09-14
+      status: Pending
+      due: "2026-09-15T08:00"
+      window: "2026-09-14T22:00..2026-09-15T08:00"
+      flags: not-yet
+    - inst: 2026-09-15
+      status: Pending
+      due: "2026-09-16T08:00"
+      window: "2026-09-15T22:00..2026-09-16T08:00"
+      flags: not-yet
+    - inst: 2026-09-16
+      status: Pending
+      due: "2026-09-17T08:00"
+      window: "2026-09-16T22:00..2026-09-17T08:00"
+      flags: not-yet
+    - inst: 2026-09-17
+      status: Pending
+      due: "2026-09-18T08:00"
+      window: "2026-09-17T22:00..2026-09-18T08:00"
+      flags: not-yet
+    - inst: 2026-09-18
+      status: Pending
+      due: "2026-09-19T08:00"
+      window: "2026-09-18T22:00..2026-09-19T08:00"
+      flags: not-yet
+    - inst: 2026-09-19
+      status: Pending
+      due: "2026-09-20T08:00"
+      window: "2026-09-19T22:00..2026-09-20T08:00"
+      flags: not-yet
+    - inst: 2026-09-20
+      status: Pending
+      due: "2026-09-21T08:00"
+      window: "2026-09-20T22:00..2026-09-21T08:00"
+      flags: not-yet
+    - inst: 2026-09-21
+      status: Pending
+      due: "2026-09-22T08:00"
+      window: "2026-09-21T22:00..2026-09-22T08:00"
+      flags: not-yet
+- item: breakfast
+  recur: "every:day"
+  on_miss: expire
+  instances:
+    - inst: 2026-09-01
+      status: Done
+      due: "2026-09-01T09:00"
+      window: "2026-09-01T06:00..2026-09-01T09:00"
+    - inst: 2026-09-02
+      status: Done
+      due: "2026-09-02T09:00"
+      window: "2026-09-02T06:00..2026-09-02T09:00"
+    - inst: 2026-09-03
+      status: Done
+      due: "2026-09-03T09:00"
+      window: "2026-09-03T06:00..2026-09-03T09:00"
+    - inst: 2026-09-04
+      status: Done
+      due: "2026-09-04T09:00"
+      window: "2026-09-04T06:00..2026-09-04T09:00"
+    - inst: 2026-09-05
+      status: Skipped
+      due: "2026-09-05T09:00"
+      window: "2026-09-05T06:00..2026-09-05T09:00"
+    - inst: 2026-09-06
+      status: Expired
+      due: "2026-09-06T09:00"
+      window: "2026-09-06T06:00..2026-09-06T09:00"
+    - inst: 2026-09-07
+      status: Pending
+      due: "2026-09-07T09:00"
+      window: "2026-09-07T06:00..2026-09-07T09:00"
+    - inst: 2026-09-08
+      status: Pending
+      due: "2026-09-08T09:00"
+      window: "2026-09-08T06:00..2026-09-08T09:00"
+      flags: not-yet
+    - inst: 2026-09-09
+      status: Pending
+      due: "2026-09-09T09:00"
+      window: "2026-09-09T06:00..2026-09-09T09:00"
+      flags: not-yet
+    - inst: 2026-09-10
+      status: Pending
+      due: "2026-09-10T09:00"
+      window: "2026-09-10T06:00..2026-09-10T09:00"
+      flags: not-yet
+    - inst: 2026-09-11
+      status: Pending
+      due: "2026-09-11T09:00"
+      window: "2026-09-11T06:00..2026-09-11T09:00"
+      flags: not-yet
+    - inst: 2026-09-12
+      status: Pending
+      due: "2026-09-12T09:00"
+      window: "2026-09-12T06:00..2026-09-12T09:00"
+      flags: not-yet
+    - inst: 2026-09-13
+      status: Pending
+      due: "2026-09-13T09:00"
+      window: "2026-09-13T06:00..2026-09-13T09:00"
+      flags: not-yet
+    - inst: 2026-09-14
+      status: Pending
+      due: "2026-09-14T09:00"
+      window: "2026-09-14T06:00..2026-09-14T09:00"
+      flags: not-yet
+    - inst: 2026-09-15
+      status: Pending
+      due: "2026-09-15T09:00"
+      window: "2026-09-15T06:00..2026-09-15T09:00"
+      flags: not-yet
+    - inst: 2026-09-16
+      status: Pending
+      due: "2026-09-16T09:00"
+      window: "2026-09-16T06:00..2026-09-16T09:00"
+      flags: not-yet
+    - inst: 2026-09-17
+      status: Pending
+      due: "2026-09-17T09:00"
+      window: "2026-09-17T06:00..2026-09-17T09:00"
+      flags: not-yet
+    - inst: 2026-09-18
+      status: Pending
+      due: "2026-09-18T09:00"
+      window: "2026-09-18T06:00..2026-09-18T09:00"
+      flags: not-yet
+    - inst: 2026-09-19
+      status: Pending
+      due: "2026-09-19T09:00"
+      window: "2026-09-19T06:00..2026-09-19T09:00"
+      flags: not-yet
+    - inst: 2026-09-20
+      status: Pending
+      due: "2026-09-20T09:00"
+      window: "2026-09-20T06:00..2026-09-20T09:00"
+      flags: not-yet
+    - inst: 2026-09-21
+      status: Pending
+      due: "2026-09-21T09:00"
+      window: "2026-09-21T06:00..2026-09-21T09:00"
+      flags: not-yet
+- item: lunch
+  recur: "every:day"
+  on_miss: expire
+  instances:
+    - inst: 2026-09-01
+      status: Done
+      due: "2026-09-01T13:30"
+      window: "2026-09-01T11:30..2026-09-01T13:30"
+    - inst: 2026-09-02
+      status: Done
+      due: "2026-09-02T13:30"
+      window: "2026-09-02T11:30..2026-09-02T13:30"
+    - inst: 2026-09-03
+      status: Expired
+      due: "2026-09-03T13:30"
+      window: "2026-09-03T11:30..2026-09-03T13:30"
+    - inst: 2026-09-04
+      status: Done
+      due: "2026-09-04T13:30"
+      window: "2026-09-04T11:30..2026-09-04T13:30"
+    - inst: 2026-09-05
+      status: Done
+      due: "2026-09-05T13:30"
+      window: "2026-09-05T11:30..2026-09-05T13:30"
+    - inst: 2026-09-06
+      status: Done
+      due: "2026-09-06T13:30"
+      window: "2026-09-06T11:30..2026-09-06T13:30"
+    - inst: 2026-09-07
+      status: Pending
+      due: "2026-09-07T13:30"
+      window: "2026-09-07T11:30..2026-09-07T13:30"
+      flags: mandatory · last-chance · not-yet
+    - inst: 2026-09-08
+      status: Pending
+      due: "2026-09-08T13:30"
+      window: "2026-09-08T11:30..2026-09-08T13:30"
+      flags: not-yet
+    - inst: 2026-09-09
+      status: Pending
+      due: "2026-09-09T13:30"
+      window: "2026-09-09T11:30..2026-09-09T13:30"
+      flags: not-yet
+    - inst: 2026-09-10
+      status: Pending
+      due: "2026-09-10T13:30"
+      window: "2026-09-10T11:30..2026-09-10T13:30"
+      flags: not-yet
+    - inst: 2026-09-11
+      status: Pending
+      due: "2026-09-11T13:30"
+      window: "2026-09-11T11:30..2026-09-11T13:30"
+      flags: not-yet
+    - inst: 2026-09-12
+      status: Pending
+      due: "2026-09-12T13:30"
+      window: "2026-09-12T11:30..2026-09-12T13:30"
+      flags: not-yet
+    - inst: 2026-09-13
+      status: Pending
+      due: "2026-09-13T13:30"
+      window: "2026-09-13T11:30..2026-09-13T13:30"
+      flags: not-yet
+    - inst: 2026-09-14
+      status: Pending
+      due: "2026-09-14T13:30"
+      window: "2026-09-14T11:30..2026-09-14T13:30"
+      flags: not-yet
+    - inst: 2026-09-15
+      status: Pending
+      due: "2026-09-15T13:30"
+      window: "2026-09-15T11:30..2026-09-15T13:30"
+      flags: not-yet
+    - inst: 2026-09-16
+      status: Pending
+      due: "2026-09-16T13:30"
+      window: "2026-09-16T11:30..2026-09-16T13:30"
+      flags: not-yet
+    - inst: 2026-09-17
+      status: Pending
+      due: "2026-09-17T13:30"
+      window: "2026-09-17T11:30..2026-09-17T13:30"
+      flags: not-yet
+    - inst: 2026-09-18
+      status: Pending
+      due: "2026-09-18T13:30"
+      window: "2026-09-18T11:30..2026-09-18T13:30"
+      flags: not-yet
+    - inst: 2026-09-19
+      status: Pending
+      due: "2026-09-19T13:30"
+      window: "2026-09-19T11:30..2026-09-19T13:30"
+      flags: not-yet
+    - inst: 2026-09-20
+      status: Pending
+      due: "2026-09-20T13:30"
+      window: "2026-09-20T11:30..2026-09-20T13:30"
+      flags: not-yet
+    - inst: 2026-09-21
+      status: Pending
+      due: "2026-09-21T13:30"
+      window: "2026-09-21T11:30..2026-09-21T13:30"
+      flags: not-yet
+- item: stretch
+  recur: "every:day"
+  on_miss: next
+  instances:
+    - inst: 2026-09-01
+      status: Skipped
+      due: "2026-09-01T09:00"
+      window: "2026-09-01T07:00..2026-09-01T09:00"
+    - inst: 2026-09-02
+      status: Skipped
+      due: "2026-09-02T09:00"
+      window: "2026-09-02T07:00..2026-09-02T09:00"
+    - inst: 2026-09-03
+      status: Skipped
+      due: "2026-09-03T09:00"
+      window: "2026-09-03T07:00..2026-09-03T09:00"
+    - inst: 2026-09-04
+      status: Skipped
+      due: "2026-09-04T09:00"
+      window: "2026-09-04T07:00..2026-09-04T09:00"
+    - inst: 2026-09-05
+      status: Skipped
+      due: "2026-09-05T09:00"
+      window: "2026-09-05T07:00..2026-09-05T09:00"
+    - inst: 2026-09-06
+      status: Skipped
+      due: "2026-09-06T09:00"
+      window: "2026-09-06T07:00..2026-09-06T09:00"
+    - inst: 2026-09-07
+      status: Pending
+      due: "2026-09-07T09:00"
+      window: "2026-09-07T07:00..2026-09-07T09:00"
+    - inst: 2026-09-08
+      status: Pending
+      due: "2026-09-08T09:00"
+      window: "2026-09-08T07:00..2026-09-08T09:00"
+      flags: not-yet
+    - inst: 2026-09-09
+      status: Pending
+      due: "2026-09-09T09:00"
+      window: "2026-09-09T07:00..2026-09-09T09:00"
+      flags: not-yet
+    - inst: 2026-09-10
+      status: Pending
+      due: "2026-09-10T09:00"
+      window: "2026-09-10T07:00..2026-09-10T09:00"
+      flags: not-yet
+    - inst: 2026-09-11
+      status: Pending
+      due: "2026-09-11T09:00"
+      window: "2026-09-11T07:00..2026-09-11T09:00"
+      flags: not-yet
+    - inst: 2026-09-12
+      status: Pending
+      due: "2026-09-12T09:00"
+      window: "2026-09-12T07:00..2026-09-12T09:00"
+      flags: not-yet
+    - inst: 2026-09-13
+      status: Pending
+      due: "2026-09-13T09:00"
+      window: "2026-09-13T07:00..2026-09-13T09:00"
+      flags: not-yet
+    - inst: 2026-09-14
+      status: Pending
+      due: "2026-09-14T09:00"
+      window: "2026-09-14T07:00..2026-09-14T09:00"
+      flags: not-yet
+    - inst: 2026-09-15
+      status: Pending
+      due: "2026-09-15T09:00"
+      window: "2026-09-15T07:00..2026-09-15T09:00"
+      flags: not-yet
+    - inst: 2026-09-16
+      status: Pending
+      due: "2026-09-16T09:00"
+      window: "2026-09-16T07:00..2026-09-16T09:00"
+      flags: not-yet
+    - inst: 2026-09-17
+      status: Pending
+      due: "2026-09-17T09:00"
+      window: "2026-09-17T07:00..2026-09-17T09:00"
+      flags: not-yet
+    - inst: 2026-09-18
+      status: Pending
+      due: "2026-09-18T09:00"
+      window: "2026-09-18T07:00..2026-09-18T09:00"
+      flags: not-yet
+    - inst: 2026-09-19
+      status: Pending
+      due: "2026-09-19T09:00"
+      window: "2026-09-19T07:00..2026-09-19T09:00"
+      flags: not-yet
+    - inst: 2026-09-20
+      status: Pending
+      due: "2026-09-20T09:00"
+      window: "2026-09-20T07:00..2026-09-20T09:00"
+      flags: not-yet
+    - inst: 2026-09-21
+      status: Pending
+      due: "2026-09-21T09:00"
+      window: "2026-09-21T07:00..2026-09-21T09:00"
+      flags: not-yet
+- item: standup
+  recur: "every:weekday"
+  on_miss: expire
+  instances:
+    - inst: 2026-09-01
+      status: Done
+      due: "2026-09-01T10:00"
+      window: "2026-09-01T09:30..2026-09-01T10:00"
+    - inst: 2026-09-02
+      status: Done
+      due: "2026-09-02T10:00"
+      window: "2026-09-02T09:30..2026-09-02T10:00"
+    - inst: 2026-09-03
+      status: Done
+      due: "2026-09-03T10:00"
+      window: "2026-09-03T09:30..2026-09-03T10:00"
+    - inst: 2026-09-04
+      status: Skipped
+      due: "2026-09-04T10:00"
+      window: "2026-09-04T09:30..2026-09-04T10:00"
+    - inst: 2026-09-07
+      status: Pending
+      due: "2026-09-07T10:00"
+      window: "2026-09-07T09:30..2026-09-07T10:00"
+    - inst: 2026-09-08
+      status: Pending
+      due: "2026-09-08T10:00"
+      window: "2026-09-08T09:30..2026-09-08T10:00"
+      flags: not-yet
+    - inst: 2026-09-09
+      status: Pending
+      due: "2026-09-09T10:00"
+      window: "2026-09-09T09:30..2026-09-09T10:00"
+      flags: not-yet
+    - inst: 2026-09-10
+      status: Pending
+      due: "2026-09-10T10:00"
+      window: "2026-09-10T09:30..2026-09-10T10:00"
+      flags: not-yet
+    - inst: 2026-09-11
+      status: Pending
+      due: "2026-09-11T10:00"
+      window: "2026-09-11T09:30..2026-09-11T10:00"
+      flags: not-yet
+    - inst: 2026-09-14
+      status: Pending
+      due: "2026-09-14T10:00"
+      window: "2026-09-14T09:30..2026-09-14T10:00"
+      flags: not-yet
+    - inst: 2026-09-15
+      status: Pending
+      due: "2026-09-15T10:00"
+      window: "2026-09-15T09:30..2026-09-15T10:00"
+      flags: not-yet
+    - inst: 2026-09-16
+      status: Pending
+      due: "2026-09-16T10:00"
+      window: "2026-09-16T09:30..2026-09-16T10:00"
+      flags: not-yet
+    - inst: 2026-09-17
+      status: Pending
+      due: "2026-09-17T10:00"
+      window: "2026-09-17T09:30..2026-09-17T10:00"
+      flags: not-yet
+    - inst: 2026-09-18
+      status: Pending
+      due: "2026-09-18T10:00"
+      window: "2026-09-18T09:30..2026-09-18T10:00"
+      flags: not-yet
+    - inst: 2026-09-21
+      status: Pending
+      due: "2026-09-21T10:00"
+      window: "2026-09-21T09:30..2026-09-21T10:00"
+      flags: not-yet
+- item: workout
+  recur: "every:Mon,Wed,Fri"
+  on_miss: expire
+  instances:
+    - inst: 2026-09-02
+      status: Done
+      due: "2026-09-02T19:00"
+      window: "2026-09-02T16:00..2026-09-02T19:00"
+    - inst: 2026-09-04
+      status: Skipped
+      due: "2026-09-04T19:00"
+      window: "2026-09-04T16:00..2026-09-04T19:00"
+    - inst: 2026-09-07
+      status: Pending
+      due: "2026-09-07T19:00"
+      window: "2026-09-07T16:00..2026-09-07T19:00"
+      flags: mandatory · last-chance · not-yet
+    - inst: 2026-09-09
+      status: Pending
+      due: "2026-09-09T19:00"
+      window: "2026-09-09T16:00..2026-09-09T19:00"
+      flags: not-yet
+    - inst: 2026-09-11
+      status: Pending
+      due: "2026-09-11T19:00"
+      window: "2026-09-11T16:00..2026-09-11T19:00"
+      flags: not-yet
+    - inst: 2026-09-14
+      status: Pending
+      due: "2026-09-14T19:00"
+      window: "2026-09-14T16:00..2026-09-14T19:00"
+      flags: not-yet
+    - inst: 2026-09-16
+      status: Pending
+      due: "2026-09-16T19:00"
+      window: "2026-09-16T16:00..2026-09-16T19:00"
+      flags: not-yet
+    - inst: 2026-09-18
+      status: Pending
+      due: "2026-09-18T19:00"
+      window: "2026-09-18T16:00..2026-09-18T19:00"
+      flags: not-yet
+    - inst: 2026-09-21
+      status: Pending
+      due: "2026-09-21T19:00"
+      window: "2026-09-21T16:00..2026-09-21T19:00"
+      flags: not-yet
+- item: water-plants
+  recur: "every:3d"
+  on_miss: expire
+  instances:
+    - inst: 2026-09-01
+      status: Done
+      due: "2026-09-01T20:00"
+      window: "2026-09-01T08:00..2026-09-01T20:00"
+    - inst: 2026-09-04
+      status: Expired
+      due: "2026-09-04T20:00"
+      window: "2026-09-04T08:00..2026-09-04T20:00"
+    - inst: 2026-09-07
+      status: Pending
+      due: "2026-09-07T20:00"
+      window: "2026-09-07T08:00..2026-09-07T20:00"
+      flags: mandatory · last-chance
+    - inst: 2026-09-10
+      status: Pending
+      due: "2026-09-10T20:00"
+      window: "2026-09-10T08:00..2026-09-10T20:00"
+      flags: not-yet
+    - inst: 2026-09-13
+      status: Pending
+      due: "2026-09-13T20:00"
+      window: "2026-09-13T08:00..2026-09-13T20:00"
+      flags: not-yet
+    - inst: 2026-09-16
+      status: Pending
+      due: "2026-09-16T20:00"
+      window: "2026-09-16T08:00..2026-09-16T20:00"
+      flags: not-yet
+    - inst: 2026-09-19
+      status: Pending
+      due: "2026-09-19T20:00"
+      window: "2026-09-19T08:00..2026-09-19T20:00"
+      flags: not-yet
+- item: deep-clean
+  recur: "every:2w:Sun"
+  on_miss: expire
+  instances:
+    - inst: 2026-09-13
+      status: Pending
+      due: "2026-09-13T18:00"
+      window: "2026-09-13T10:00..2026-09-13T18:00"
+      flags: not-yet
+- item: bins
+  recur: "every:month:15"
+  on_miss: expire
+  instances:
+    - inst: 2026-09-15
+      status: Pending
+      due: "2026-09-15T09:00"
+      window: "2026-09-15T07:00..2026-09-15T09:00"
+      flags: not-yet
+- item: laundry
+  recur: "every:week"
+  on_miss: persist
+  instances:
+    - inst: 2026-08-31
+      status: Pending
+      due: "2026-09-06T21:00"
+      window: "2026-08-31T09:00..2026-09-06T21:00"
+      flags: mandatory · overdue · carried-from 2026-09-06 · deferred
+    - inst: 2026-09-07
+      status: Pending
+      due: "2026-09-13T21:00"
+      window: "2026-09-07T09:00..2026-09-13T21:00"
+    - inst: 2026-09-14
+      status: Pending
+      due: "2026-09-20T21:00"
+      window: "2026-09-14T09:00..2026-09-20T21:00"
+      flags: not-yet
+    - inst: 2026-09-21
+      status: Pending
+      due: "2026-09-27T21:00"
+      window: "2026-09-21T09:00..2026-09-27T21:00"
+      flags: not-yet
+- item: groceries
+  recur: "every:week"
+  on_miss: expire
+  instances:
+    - inst: 2026-08-31
+      status: Done
+      due: "2026-09-06T20:00"
+      window: "2026-08-31T10:00..2026-09-06T20:00"
+    - inst: 2026-09-07
+      status: Pending
+      due: "2026-09-13T20:00"
+      window: "2026-09-07T10:00..2026-09-13T20:00"
+    - inst: 2026-09-14
+      status: Pending
+      due: "2026-09-20T20:00"
+      window: "2026-09-14T10:00..2026-09-20T20:00"
+      flags: not-yet
+    - inst: 2026-09-21
+      status: Pending
+      due: "2026-09-27T20:00"
+      window: "2026-09-21T10:00..2026-09-27T20:00"
+      flags: not-yet
+- item: shower
+  recur: "after-done:2d~1d"
+  on_miss: expire
+  instances:
+    - inst: "#4"
+      status: Done
+      due: ~
+      window: ~
+    - inst: "#5"
+      status: Done
+      due: ~
+      window: ~
+    - inst: "#6"
+      status: Pending
+      due: "2026-09-07T23:00"
+      window: "2026-09-07T07:00..2026-09-08T23:00"
+- item: vitamins
+  recur: "after-done:2d"
+  on_miss: expire
+  instances:
+    - inst: "#3"
+      status: Done
+      due: ~
+      window: ~
+    - inst: "#4"
+      status: Pending
+      due: "2026-09-05T11:00"
+      window: "2026-09-05T07:00..2026-09-07T11:00"
+      flags: overdue · carried-from 2026-09-05 · deferred

@@ -828,7 +828,7 @@ mod tests {
     /// header.
     fn snapshot_body(name: &str) -> serde_json::Value {
         let path = format!(
-            "{}/../tm-core/tests/snapshots/log_ported_facts__{name}.snap",
+            "{}/tests/snapshots/log_ported_facts__{name}.snap",
             env!("CARGO_MANIFEST_DIR")
         );
         let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));

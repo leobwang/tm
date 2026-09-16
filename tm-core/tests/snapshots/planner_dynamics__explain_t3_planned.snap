@@ -1,5 +1,0 @@
----
-source: tm-core/tests/planner_dynamics.rs
-expression: placed
----
-p = k(1) + 2 (no due, no floor) = 3; slot 07:00 energy 4, ci 4, gap 0; deps ok

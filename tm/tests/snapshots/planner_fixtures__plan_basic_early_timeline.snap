@@ -1,0 +1,25 @@
+---
+source: tm/tests/planner_fixtures.rs
+expression: timeline(&day)
+---
+date 2026-09-07 · window 07:00–16:00 · budget 6b
+06:10-06:40 routine      · breakfast  ✓    
+07:00-08:00 block        4 t3              
+08:00-09:00 block        5 m1              
+09:00-09:20 routine      1 a3         ⚠!   
+09:20-10:20 block        5 m1              
+10:20-11:20 block        5 m1              
+11:30-12:00 routine      · lunch      !    
+12:00-12:50 block        4 m2              
+12:50-13:50 wall         · g1              
+13:50-14:50 block        4 m2              
+14:50-15:10 break        · ·               
+15:10-16:00 rest         3 ·               
+16:00-17:00 routine      · workout    !    
+17:00-17:30 routine      · laundry    ~    
+17:30-18:00 routine      · dinner     !    
+18:00-18:45 routine      · groceries  ~    
+18:45-19:05 routine      · shower     ~    
+19:05-20:05 optional     · Severance S3E4      
+21:30-22:00 wind-down    · ·               
+22:00-00:00 sleep        · sleep

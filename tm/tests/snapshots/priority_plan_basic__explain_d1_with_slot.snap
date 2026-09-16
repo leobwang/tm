@@ -1,0 +1,5 @@
+---
+source: tm/tests/priority_plan_basic.rs
+expression: ex.to_string()
+---
+p = k(3) + bin(u=0.43 → +1) = 4; need 7.8b, avail 18b by 2026-09-11; slot 11:50 energy 4, ci 4, gap 0; deps ok; cap 2b/d: 0b used

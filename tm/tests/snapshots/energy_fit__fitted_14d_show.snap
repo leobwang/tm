@@ -1,0 +1,13 @@
+---
+source: tm/tests/energy_fit.rs
+expression: "energy::show(&model)"
+---
+model  fitted 2026-09-07 · 61 obs
+energy    hsw  0  1  2  3  4  5  6  7  8  9 10 11
+  home         3  4  4  4  3  3  3  2  2  2  2  2
+  lounge       4  5  5  5  5  4  4  4  3  3  2  2
+sleep     debt shift 1.01
+duration  _default ×1.1 · admin ×0.86 · lean ×1.4 · soundcode ×1.05
+weekday      Mon   Tue   Wed   Thu   Fri   Sat   Sun
+p(lounge)   0.93  0.92  0.79  0.92  0.85  0.37  0.30
+arrival    07:01 07:01 07:13 07:01 07:00 10:08 10:19

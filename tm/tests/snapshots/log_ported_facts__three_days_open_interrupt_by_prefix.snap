@@ -1,0 +1,28 @@
+---
+source: tm/tests/log_ported_facts.rs
+expression: open
+---
+[
+  [
+    16,
+    {
+      "day": "2026-09-07",
+      "dropped": [],
+      "end": null,
+      "id": "t4",
+      "lost_min": 0,
+      "start": "2026-09-07T12:10:00-05:00"
+    }
+  ],
+  [
+    72,
+    {
+      "day": "2026-09-09",
+      "dropped": [],
+      "end": null,
+      "id": "t8",
+      "lost_min": 0,
+      "start": "2026-09-09T10:20:00-05:00"
+    }
+  ]
+]
