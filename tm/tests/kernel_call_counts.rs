@@ -88,6 +88,38 @@ fn expected_log_calls(verb: &str) -> u32 {
     }
 }
 
+/// **The per-verb `emit`-call count** — the writer S2 added (**D16**), measured
+/// at S2 and pinned here beside the reader's.
+///
+/// One call per event a verb appends, because the kernel now renders every line
+/// the binary writes. Reading the numbers: `arrive` and `energy` make **two**
+/// because each also appends the `plan` event its replan writes (`planning.rs`);
+/// `tm break 20m` makes **none**, because the `break` entry is appended when the
+/// break *ends*, not when it starts; and the three read-only verbs append
+/// nothing at all.
+///
+/// Pinned exactly, for the reason the `log` column is: a verb that starts
+/// appending — or quietly stops — is a behaviour change, and this is the column
+/// it shows up in. Before S2 every entry here was 0, because the binary wrote
+/// its own bytes.
+fn expected_emit_calls(verb: &str) -> u32 {
+    match verb {
+        "wake" => 1,
+        "arrive" => 2,
+        "start" => 1,
+        "pause" => 1,
+        "done" => 1,
+        "energy" => 2,
+        "break" => 0,
+        "drop" => 1,
+        "undo" => 1,
+        "review day" => 0,
+        "log" => 0,
+        "check" => 0,
+        other => panic!("`tm {other}` is not in the measured table"),
+    }
+}
+
 /// `tm/src/cli/ctx.rs`'s `TRACE_SCOPE_ENV`, spelled out rather than imported:
 /// `tm` is a **binary-only** package (its `Cargo.toml` declares `[[bin]]` and
 /// no `[lib]`), so an integration test cannot name anything inside it. The FFI
@@ -106,6 +138,9 @@ struct Counts {
     apply: u32,
     /// `kernel call: capacity` — D10's lookahead call.
     capacity: u32,
+    /// `kernel call: emit` — the writer S2 added (**D16**): one per event a verb
+    /// appends, because the kernel now renders every line the binary writes.
+    emit: u32,
     /// Any other request shape reaching the FFI.
     other: u32,
     /// `replay scope: …` — one per `Ctx::replay_with`.
@@ -116,7 +151,7 @@ struct Counts {
 
 impl Counts {
     fn kernel_calls(&self) -> u32 {
-        self.log + self.apply + self.capacity + self.other
+        self.log + self.apply + self.capacity + self.emit + self.other
     }
 }
 
@@ -137,6 +172,7 @@ fn traced(tm: &Tm, now: &str, args: &[&str]) -> (i32, Counts) {
                 "log" => c.log += 1,
                 "apply" => c.apply += 1,
                 "capacity" => c.capacity += 1,
+                "emit" => c.emit += 1,
                 _ => c.other += 1,
             }
         } else if let Some(scope) = line.strip_prefix("replay scope: ") {
@@ -176,11 +212,14 @@ fn every_verb_reads_the_log_through_the_kernel_after_the_switch() {
 
     // The table, for the README block and for S to compare against.
     eprintln!("per-verb kernel calls (switched binary)");
-    eprintln!("{:<12} {:>4} {:>6} {:>9} {:>6} {:>8}  scopes", "verb", "log", "apply", "capacity", "other", "replays");
+    eprintln!(
+        "{:<12} {:>4} {:>5} {:>6} {:>9} {:>6} {:>8}  scopes",
+        "verb", "log", "emit", "apply", "capacity", "other", "replays"
+    );
     for (name, c) in &table {
         eprintln!(
-            "{:<12} {:>4} {:>6} {:>9} {:>6} {:>8}  {}",
-            name, c.log, c.apply, c.capacity, c.other, c.replays, c.scopes.join(",")
+            "{:<12} {:>4} {:>5} {:>6} {:>9} {:>6} {:>8}  {}",
+            name, c.log, c.emit, c.apply, c.capacity, c.other, c.replays, c.scopes.join(",")
         );
     }
 
@@ -207,6 +246,27 @@ fn every_verb_reads_the_log_through_the_kernel_after_the_switch() {
             c.log
         );
     }
+
+    // **The writer's exact counts** (S2, owner decision D16). Every line the
+    // binary appends is one kernel `emit` call, so this column *is* the writer
+    // swap, made countable. Before S2 it was 0 everywhere.
+    for (name, c) in &table {
+        let want = expected_emit_calls(name);
+        assert_eq!(
+            c.emit, want,
+            "`tm {name}` made {} kernel `emit` call(s), expected {want}",
+            c.emit
+        );
+    }
+
+    // **And the swap is real**, so this column cannot go quietly back to zero:
+    // a binary that wrote its own bytes again would pass every count above and
+    // fail here.
+    let written: u32 = table.values().map(|c| c.emit).sum();
+    assert!(
+        written > 0,
+        "no verb wrote a line through the kernel — the binary is writing its own bytes again (D16)"
+    );
 
     // **The harness is not vacuous** (README gap 16's lesson: a check no input
     // can fail is not a check). Both traces must actually be live: the run as a

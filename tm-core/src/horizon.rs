@@ -231,6 +231,10 @@ pub enum HorizonError {
     /// A log event could not be encoded.
     #[error("cannot encode a log event: {0}")]
     Log(#[from] serde_json::Error),
+    /// The installed line writer refused to write a log line (owner decision **D16**: in the
+    /// shipped binary that writer is the Lean kernel).
+    #[error("cannot write a log line: {0}")]
+    LogWrite(String),
 }
 
 // ---------------------------------------------------------------------------
@@ -436,7 +440,18 @@ pub struct Ctx<'a> {
     pub replay: Option<&'a Replay>,
     /// The instant the operation happens at; timestamps every log event.
     pub now: DateTime<FixedOffset>,
+    /// **How a log line's bytes are written** (owner decision **D16**).
+    ///
+    /// `None` keeps `LogEntry::to_json`, which is what this crate's own tests read. The shipped
+    /// binary always installs the kernel ([`Ctx::writing_lines_with`], from `Ctx::hz`), so every
+    /// line **the binary** appends has one definition of its format — the kernel's grammar — and
+    /// serde's writer survives only as a test oracle.
+    pub write_line_as: Option<LineWriter>,
 }
+
+/// Turns one entry into the bytes of its line, without the newline (D16). A plain function
+/// pointer: the kernel's writer needs no state, so this costs no lifetime and no allocation.
+pub type LineWriter = fn(&LogEntry) -> Result<String, String>;
 
 impl<'a> Ctx<'a> {
     /// Build a context without a replay.
@@ -452,12 +467,19 @@ impl<'a> Ctx<'a> {
             tree,
             replay: None,
             now,
+            write_line_as: None,
         }
     }
 
     /// Attach the log replay [`close_day`] reads today's minutes from.
     pub fn with_replay(mut self, replay: &'a Replay) -> Ctx<'a> {
         self.replay = Some(replay);
+        self
+    }
+
+    /// Write log lines with `f` — the Lean kernel, in the shipped binary (**D16**).
+    pub fn writing_lines_with(mut self, f: LineWriter) -> Ctx<'a> {
+        self.write_line_as = Some(f);
         self
     }
 
@@ -487,8 +509,18 @@ impl<'a> Ctx<'a> {
         self.local().naive_local()
     }
 
+    /// Append one event to `.tm/log.jsonl`.
+    ///
+    /// **Who writes the bytes is the host's to say** (owner decision **D16**): with a
+    /// [`LineWriter`] installed — the Lean kernel, in the shipped binary — the line is the
+    /// kernel's `renderLine`, the same grammar its reader reads. Without one it is
+    /// `LogEntry::to_json`, which is now only a test oracle.
     fn log(&self, ev: Event) -> Result<(), HorizonError> {
-        let mut line = LogEntry::new(self.now, ev).to_json()?;
+        let entry = LogEntry::new(self.now, ev);
+        let mut line = match self.write_line_as {
+            Some(write) => write(&entry).map_err(HorizonError::LogWrite)?,
+            None => entry.to_json()?,
+        };
         line.push('\n');
         self.store.append_text(LOG_PATH, &line)?;
         Ok(())

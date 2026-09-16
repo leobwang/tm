@@ -668,3 +668,123 @@ fn the_doors_total_is_the_logs_all_time_entry_count() {
         hot.view().len()
     );
 }
+
+// ---------------------------------------------------------------------------
+// S2 (owner decision D16): the door's other half.
+//
+// The switch made the kernel the only *reader* of `.tm/log.jsonl`. S2 makes it
+// the only *writer*, so `kernel_log.rs` grew four more functions below the door
+// banner and `every_door_function_the_switch_calls_is_exercised_here` demanded
+// them here — correctly, and it failed until this test existed. They are
+// exercised rather than exempted: the writer is as much the door as the reader.
+// ---------------------------------------------------------------------------
+
+/// The `(instant, tag, field values)` of a line, as an appending verb hands them
+/// over: values only, never bytes.
+fn door_values_of(line: &[u8]) -> Option<(chrono::DateTime<chrono::FixedOffset>, String, Value)> {
+    let v: Value = serde_json::from_slice(line).ok()?;
+    let obj = v.as_object()?;
+    let t = chrono::DateTime::parse_from_rfc3339(obj.get("t")?.as_str()?).ok()?;
+    let tag = obj.get("ev")?.as_str()?.to_string();
+    if !tm_core::log::EVENT_NAMES.contains(&tag.as_str()) {
+        return None;
+    }
+    let mut f = obj.clone();
+    f.remove("t");
+    f.remove("ev");
+    Some((t, tag, Value::Object(f)))
+}
+
+/// **The door writes what the door reads** (S2, **D16**; design §22.1's step S2).
+///
+/// `Ctx::append_entry` and `tm_core::horizon::Ctx`'s line writer both go through
+/// these functions, so this is the writer half of §14.6 item 1: the bytes the
+/// binary appends are the kernel's, and they are the bytes that were there
+/// before the swap.
+#[test]
+fn the_doors_writer_writes_the_lines_the_door_reads() {
+    // `instant_wire` is the exact inverse of the answer decoder's `d_when`:
+    // seconds from 0001-01-01, nanoseconds, and the offset as written.
+    let t = chrono::DateTime::parse_from_rfc3339("2026-09-07T09:00:00+00:00").expect("a stamp");
+    assert_eq!(kernel_log::instant_wire(t), serde_json::json!([63_924_368_400u64, 0, false, 0]));
+
+    // `render_events` — what every appending verb reaches.
+    let ev = tm_core::log::Event::Drop { id: "a1".to_string() };
+    let written = kernel_log::render_events(&[(t, &ev)]).expect("the kernel writes it");
+    assert_eq!(written[0], r#"{"t":"2026-09-07T09:00:00+00:00","ev":"drop","id":"a1"}"#);
+
+    // `render_one` — the function pointer `Ctx::hz` installs, so the id-less
+    // fallback paths (gap 5) write the kernel's bytes too. It agrees with the
+    // serde writer it replaced, which is the whole claim of S2.
+    let entry = tm_core::log::LogEntry::new(t, ev.clone());
+    assert_eq!(kernel_log::render_one(&entry).expect("the kernel writes it"), written[0]);
+    assert_eq!(
+        kernel_log::render_one(&entry).expect("the kernel writes it"),
+        entry.to_json().expect("serde writes it"),
+        "the kernel's line is not the line the Rust writer wrote"
+    );
+
+    // `render_values` — over the door's own corpus: every line the reader
+    // accepts is a line the writer rebuilds from its values alone.
+    //
+    // **The line is not the comparand, and finding that out is the point.** Some
+    // corpus logs are hand-written, so their keys are not always in
+    // `define_events!` order — `plan-recur/.tm/log.jsonl:49` spells a `done` as
+    // `… ci, went, tags, partial` where the writer writes `… went, tags, ci,
+    // partial`. Both the kernel's reader and the fork's writer put such a line
+    // back in declaration order, which is why T1's byte-identity arm compares
+    // against the fork's `to_json` and not against the file. So the claims here
+    // are the two that are actually true of a writer: it loses **no value**, and
+    // its output is **canonical** (writing it again changes nothing). Byte
+    // identity against the fork's own writer is measured where the frozen
+    // answers live, in `kernel_log_grammar.rs`, over 3,565 lines.
+    let (mut identical, mut reordered, mut filled, mut skipped) = (0usize, 0usize, 0usize, 0usize);
+    for (name, text) in corpus_logs() {
+        for (i, line) in text.lines().enumerate() {
+            let Some((t, tag, f)) = door_values_of(line.as_bytes()) else {
+                skipped += 1;
+                continue;
+            };
+            let Ok(out) = kernel_log::render_values(&[(t, tag, f)]) else {
+                // `malformed.jsonl` is the corpus's bad-line source and exists to
+                // hold values the reader refuses; anywhere else a refusal is a
+                // defect.
+                assert!(name.contains("malformed"), "{name}:{}: the writer refused a good line", i + 1);
+                skipped += 1;
+                continue;
+            };
+            // **No value the line carried is lost or changed.** The writer may
+            // *add* a field the file left out — `renderF` always writes a `strs`
+            // and a `num`, so a hand-written `done` with no `tags` comes back
+            // with `"tags":[]`, exactly as serde's writer would write it
+            // (`plan-recur/.tm/log.jsonl:62`). That is the writer filling in a
+            // default, not losing anything, so the claim is stated per key.
+            let want: Value = serde_json::from_str(line).expect("the line is JSON");
+            let got: Value = serde_json::from_str(&out[0]).expect("the kernel writes JSON");
+            let wobj = want.as_object().expect("the line is an object");
+            for (k, v) in wobj {
+                assert_eq!(got.get(k), Some(v), "{name}:{}: the writer changed {k}", i + 1);
+            }
+            if got.as_object().map(serde_json::Map::len) != Some(wobj.len()) {
+                filled += 1;
+            }
+            // And the output is canonical: writing its own values again is a
+            // fixed point, so the format cannot drift line by line.
+            let (t2, tag2, f2) = door_values_of(out[0].as_bytes()).expect("the kernel's line reads back");
+            let again = kernel_log::render_values(&[(t2, tag2, f2)]).expect("the kernel writes it again");
+            assert_eq!(again[0], out[0], "{name}:{}: the writer is not a fixed point", i + 1);
+            if out[0] == line {
+                identical += 1;
+            } else {
+                reordered += 1;
+            }
+        }
+    }
+    assert!(identical + reordered > 100, "only {} corpus lines rebuilt", identical + reordered);
+    assert!(identical > 0, "no corpus line came back byte-identical");
+    eprintln!(
+        "S2 door: {identical} corpus lines rebuilt byte-identically, {reordered} canonicalised \
+         (hand-written key order, or a default the file omitted; {filled} of those gained a \
+         written-by-default field), {skipped} skipped"
+    );
+}

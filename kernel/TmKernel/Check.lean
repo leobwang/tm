@@ -3130,7 +3130,7 @@ open Tm
 -- `runPlan_ok_is_docs_then_report` in place above.  L6's second `tz` reader is gone (gap 108):
 -- `CapWire.readTz_on_witnesses`, `CapWire.the_zone_texts_read_on_witnesses` and
 -- `CapWire.readTz_refuses_too_many_transitions` are re-proved over B4's `readTz` (audited above).
-#print axioms Tm.runCap_without_capacity_is_runWithLog
+#print axioms Tm.runCap_without_capacity_is_runWithEmit
 #print axioms Tm.runCap_refuses_a_log_section_first
 #print axioms Tm.runCap_answers_docs_report_log_lookahead
 
@@ -4571,3 +4571,20 @@ open Tm
 #print axioms Tm.logOpCore_map
 #print axioms Tm.logOpFast_core
 #print axioms Tm.logOp_eq_logOpFast
+
+-- APPENDED 2026-09-16 (stage 5, W-12).  Step S2 (owner decision D16; design §22.1's "a new step
+-- after S", §14.7 F5): the kernel writes the log lines it reads.  `Log.emitEvent`/`Log.emitLine`
+-- reuse the reader (`readArgs`) and the writer (`renderLine`) rather than adding a third
+-- definition of the format; the `emit` section puts them on the wire.  11 theorems, in Log.lean
+-- and Boundary.lean.
+#print axioms Tm.Log.renderLine_ignores_the_line
+#print axioms Tm.Log.restOf_cons_t_ev
+#print axioms Tm.Log.restOf_of_canonical
+#print axioms Tm.Log.emitEvent_of_fields
+#print axioms Tm.Log.the_log_emits_what_it_reads
+#print axioms Tm.Log.the_log_reads_what_it_emits
+#print axioms Tm.Log.emitEvent_refuses_what_a_line_could_not_carry
+#print axioms Tm.Log.the_kernel_decides_what_is_left_out
+#print axioms Tm.runWithEmit_without_an_emit_is_runWithLog
+#print axioms Tm.a_request_without_an_emit_is_read_as_before
+#print axioms Tm.runWithEmit_refuses_an_emit_section_first

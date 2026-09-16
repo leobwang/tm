@@ -232,6 +232,9 @@ impl CliError {
                 "horizon"
             }
             CliError::Horizon(HorizonError::Log(_)) => "json",
+            // D16: the kernel refused to write the line. It is a log failure, not a JSON one —
+            // nothing was encoded, because nothing was appended.
+            CliError::Horizon(HorizonError::LogWrite(_)) => "log",
             CliError::Log(tm_core::log::LogError::Read { path, .. })
             | CliError::Log(tm_core::log::LogError::Write { path, .. }) => {
                 put(d, "path", path);

@@ -58,6 +58,14 @@ mod tz_table;
 #[path = "support/loggen.rs"]
 mod loggen;
 
+/// **The shipped writer, since S2** (owner decision **D16**): `Ctx::append_entry` and
+/// `tm_core::horizon::Ctx`'s line writer both go through `kernel_log::render_events`, so the
+/// byte-identity arms below compare the function the binary actually calls — not a twin of it
+/// (AGENTS §5.4).
+#[allow(dead_code)]
+#[path = "../src/cli/kernel_log.rs"]
+mod kernel_log;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
@@ -1197,4 +1205,207 @@ fn the_fork_reads_back_every_rendering_the_kernel_writes() {
         "the fork round trip (4748911): {checked} kernel renderings read back to the fork's own entry, \
          {skipped} lines skipped (blank, refused by either side, or P14/P15 residue)"
     );
+}
+
+// ---------------------------------------------------------------------------
+// S2 (owner decision D16; design §22.1's "a new step after S"): the writer swap
+// itself, measured.
+//
+// The section above built the evidence BEFORE the swap: T2 over 256 random
+// events, the coverage check that T2 generates all 26 kinds, and the generated
+// month. Those pin that the kernel **renders** what the Rust writer wrote. What
+// follows pins the thing the swap actually changes — that the kernel, handed an
+// event's *values* by a verb, hands back the very bytes `LogEntry::to_json`
+// would have written. Same claim, opposite direction, and it is the one that
+// can fail if S2 got the wire wrong.
+//
+// `LogEntry::to_json` is the comparand here and nothing else: §12 keeps it, and
+// after S2 it is a **test oracle only** — no path in the binary calls it.
+// ---------------------------------------------------------------------------
+
+/// The bytes the binary appends since S2: the kernel's, through the shipped call.
+fn kernel_written(t: DateTime<FixedOffset>, ev: &Event) -> String {
+    let mut v = kernel_log::render_events(&[(t, ev)])
+        .unwrap_or_else(|why| panic!("the kernel would not write {}: {why}", ev.name()));
+    assert_eq!(v.len(), 1, "one event, one line");
+    v.remove(0)
+}
+
+/// The bytes the binary appended before S2: serde's, now a test oracle.
+fn writer_written(t: DateTime<FixedOffset>, ev: &Event) -> String {
+    LogEntry::new(t, ev.clone()).to_json().expect("serde writes it")
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(256))]
+
+    /// **T2, turned around: the kernel writes what the Rust writer wrote.**
+    ///
+    /// The same generators T2 reads with, so the two arms cover the same ground
+    /// from both sides: `kernel_reads_what_the_rust_writer_writes` sends bytes
+    /// and compares the rendering; this sends *values* and compares the bytes.
+    #[test]
+    fn the_kernel_writes_what_the_rust_writer_wrote(t in any_stamp(), ev in any_event()) {
+        prop_assert_eq!(kernel_written(t, &ev), writer_written(t, &ev));
+    }
+}
+
+/// **Every writable event kind, byte for byte** (the brief's "how many kinds").
+///
+/// The coverage check beside it (`the_writer_proptest_covers_every_writable_event`)
+/// pins that `any_event` reaches all 26; this walks the same deterministic
+/// stream and compares the bytes of each, so no kind is swapped on no evidence.
+#[test]
+fn the_writer_swap_moves_no_byte_of_any_writable_event() {
+    use proptest::strategy::ValueTree;
+    use proptest::test_runner::TestRunner;
+
+    let t = DateTime::parse_from_rfc3339("2026-09-07T06:05:00-05:00").expect("a stamp");
+    let mut runner = TestRunner::deterministic();
+    let strategy = any_event();
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    let mut compared = 0usize;
+    for _ in 0..4_000 {
+        let ev = strategy.new_tree(&mut runner).expect("a generated event").current();
+        assert_eq!(kernel_written(t, &ev), writer_written(t, &ev), "{}", ev.name());
+        seen.insert(ev.name().to_string());
+        compared += 1;
+    }
+    let all: BTreeSet<String> = EVENT_NAMES.iter().map(|n| n.to_string()).collect();
+    assert_eq!(seen, all, "a writable event kind was swapped without being compared");
+    assert_eq!(EVENT_NAMES.len(), 26);
+    eprintln!("S2: {compared} generated events, {} kinds, kernel bytes == writer bytes", seen.len());
+}
+
+/// The `(instant, tag, field values)` of a line, as a verb would hand them over:
+/// values only, in the object's own order, never bytes. `None` for a line that
+/// is not an object, whose `t` is not a stamp chrono reads, or whose tag is not
+/// one of the 26 — an unknown event is the writer's `rest`, which serde sorts
+/// and which `log_serde.rs` already pins.
+fn values_of(line: &[u8]) -> Option<(DateTime<FixedOffset>, String, Value)> {
+    let v: Value = serde_json::from_slice(line).ok()?;
+    let obj = v.as_object()?;
+    let t = DateTime::parse_from_rfc3339(obj.get("t")?.as_str()?).ok()?;
+    let tag = obj.get("ev")?.as_str()?.to_string();
+    if !EVENT_NAMES.contains(&tag.as_str()) {
+        return None;
+    }
+    let mut f = obj.clone();
+    f.remove("t");
+    f.remove("ev");
+    Some((t, tag, Value::Object(f)))
+}
+
+/// **The writer swap against the fork, on the corpus and a generated month**
+/// (the brief's "how many lines").
+///
+/// The comparand is **fork point 4748911's own `to_json`**, frozen in
+/// `tests/fixtures/fork-4748911-log-lines.jsonl` — not the line, and not this
+/// tree's writer. So this says what S2 has to say: the bytes a verb appends
+/// after the swap are the bytes the fork's writer produced for that event.
+#[test]
+fn the_kernel_writes_the_corpus_and_a_generated_month_as_the_fork_wrote_them() {
+    let frozen = frozen();
+    let (mut compared, mut skipped, mut refused) = (0usize, 0usize, 0usize);
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    let mut sources = t1_sources();
+    sources.extend(month_sources());
+    for src in &sources {
+        for (i, seg) in src.segs.iter().enumerate() {
+            let n = (i + 1) as u64;
+            let Fork::Entry(e) = frozen.line(&src.name, n) else {
+                skipped += 1;
+                continue;
+            };
+            let Some((t, tag, f)) = values_of(seg) else {
+                skipped += 1;
+                continue;
+            };
+            match kernel_log::render_values(&[(t, tag.clone(), f)]) {
+                Ok(lines) => {
+                    // The crafted set exists to hold the acceptance edges the two
+                    // sides decide differently (P23-P25); everywhere else a
+                    // difference is a defect.
+                    if lines[0] != e.json {
+                        assert_eq!(src.name, "crafted", "{}:{n}: the kernel writes it differently", src.name);
+                        refused += 1;
+                        continue;
+                    }
+                    seen.insert(tag);
+                    compared += 1;
+                }
+                Err(_) => {
+                    assert_eq!(src.name, "crafted", "{}:{n}: the kernel would not write it", src.name);
+                    refused += 1;
+                }
+            }
+        }
+    }
+    assert!(compared > 3_000, "only {compared} lines compared");
+    assert!(seen.len() >= 20, "only {} event kinds: {seen:?}", seen.len());
+    eprintln!(
+        "S2 (fork 4748911, frozen): {compared} lines written byte-identically over {} kinds, \
+         {skipped} skipped (blank, refused, or an unknown tag), {refused} crafted residue",
+        seen.len()
+    );
+}
+
+/// **The omission rule is the kernel's, and it bites** (D16).
+///
+/// A verb may spell an absent `Option` as an explicit `null` and `partial` as an
+/// explicit `false`; the bytes are the same either way, because `renderF`
+/// decides what is left out and the host's own `skip_serializing_if` is
+/// redundant rather than authoritative. Without this, serde's omission could
+/// silently be the one doing the work and nothing would notice.
+#[test]
+fn the_kernel_and_not_the_host_decides_what_is_left_out() {
+    let t = DateTime::parse_from_rfc3339("2026-09-07T06:05:00-05:00").expect("a stamp");
+    let spelt_out = kernel_log::render_values(&[(
+        t,
+        "wake".to_string(),
+        json!({"slept_min": 480, "onset_min": null}),
+    )])
+    .expect("the kernel writes it");
+    let left_out =
+        kernel_log::render_values(&[(t, "wake".to_string(), json!({"slept_min": 480}))])
+            .expect("the kernel writes it");
+    assert_eq!(spelt_out[0], left_out[0]);
+    assert_eq!(spelt_out[0], writer_written(t, &Event::Wake { slept_min: 480, onset_min: None }));
+    assert!(!spelt_out[0].contains("onset_min"), "{}", spelt_out[0]);
+
+    // `partial: false` is `is_false`, the other omission the table carries.
+    let done = json!({"id": "a1", "est_min": 30, "actual_min": 30, "tags": [], "ci": 3, "partial": false});
+    let out = kernel_log::render_values(&[(t, "done".to_string(), done)]).expect("the kernel writes it");
+    assert!(!out[0].contains("partial"), "{}", out[0]);
+    assert!(!out[0].contains("went"), "{}", out[0]);
+}
+
+/// **A line the reader would refuse is never written** (D16, AGENTS §5.7).
+///
+/// Both directions (§5.8): the values a line could not carry are refused by the
+/// reader's own name, and the same event with the field supplied is written.
+/// This is the half that matters most — before S2 a verb could append a line
+/// nothing could read back, and nothing would say so.
+#[test]
+fn the_kernel_refuses_to_write_a_line_it_could_not_read_back() {
+    let t = DateTime::parse_from_rfc3339("2026-09-07T06:05:00-05:00").expect("a stamp");
+    let missing = kernel_log::render_values(&[(t, "wake".to_string(), json!({}))]);
+    let why = missing.expect_err("a wake with no slept_min must be refused");
+    assert!(why.contains("missingField") && why.contains("slept_min"), "{why}");
+
+    let bad = kernel_log::render_values(&[(t, "wake".to_string(), json!({"slept_min": "eight"}))]);
+    let why = bad.expect_err("a slept_min that is not a number must be refused");
+    assert!(why.contains("badField") && why.contains("slept_min"), "{why}");
+
+    // The refusal names the item, so a verb appending several knows which one.
+    let second = kernel_log::render_values(&[
+        (t, "wake".to_string(), json!({"slept_min": 480})),
+        (t, "wake".to_string(), json!({})),
+    ]);
+    let why = second.expect_err("the second event is refused");
+    assert!(why.contains("\"item\":1"), "the refusal names the item: {why}");
+
+    // And it does not over-bite.
+    let ok = kernel_log::render_values(&[(t, "wake".to_string(), json!({"slept_min": 480}))]);
+    assert_eq!(ok.expect("the kernel writes it")[0], writer_written(t, &Event::Wake { slept_min: 480, onset_min: None }));
 }

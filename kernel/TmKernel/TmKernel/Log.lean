@@ -2604,5 +2604,144 @@ theorem a_signed_year_is_a_date_to_chrono :
 
 end Witnesses
 
+/-! ## S2 (D16): the kernel writes the line it reads
+
+APPENDED 2026-09-16 (stage 5, W-12, step S2; owner decision **D16**, design §22.1's "a new step
+after S (§14.6), under D16", §14.7 F5, §4 Q5 (b)).
+
+The switch made the kernel the only *reader* of `.tm/log.jsonl`.  D16 makes it the only
+*definition of the format*: an appending verb sends the event's values and the kernel returns the
+bytes to append, so `LogEntry::to_json` stops being a second definition of the line held level
+with this one by T2 alone.
+
+**This section adds no grammar, and that is the point.**  `emitEvent` reads the host's values with
+`readArgs` — the very reader `readObject` uses for a line off the disk — and `emitLine` writes them
+with `renderLine`, the very writer.  A third definition of the format would be the defect the step
+exists to remove (§5.3).
+
+**The host supplies values; the kernel decides bytes.**  The key order (`Kind.schema`), which
+fields are left out (`renderF`: a `none` `Option`, `partial: false`), how each numeral is spelled,
+and the stamp (`LogStamp.renderStamp`) are all the kernel's.  There is deliberately no way to hand
+the kernel a *line*, so the two cannot drift: `the_log_emits_what_it_reads` says emitting a line's
+own parts rebuilds that line byte for byte, and `the_log_reads_what_it_emits` says every line the
+kernel emits is one the reader reads back to the event it named.
+-/
+
+/-- **The event a host's values name** (D16).  The tag picks the kind and `readArgs` reads that
+kind's fields out of `kvs`, exactly as `readObject` does for a line: a field missing with no
+default is `missingField`, one of the wrong type or outside its width is `badField`, and among
+each the first in declaration order is named (`FR.pair`).  An unknown tag is `unknown`, its `rest`
+the pairs as serde's `Map` keeps them (`restOf`), so a verb may append an event this version does
+not know and the line still reads back.
+
+The refusals are the **reader's own**, by name: a value that could not survive a round trip
+through the file is refused here rather than written. -/
+def emitEvent (tag : List Char) (kvs : List (List Char × JVal)) : Except LWarn Event :=
+  match kindOf tag with
+  | some k =>
+    match readArgs kvs k.schema with
+    | .ok a => .ok (k.build a)
+    | .missing key => .error (.missingField key)
+    | .bad key => .error (.badField key)
+  | none => .ok (.unknown tag (restOf kvs))
+
+/-- **The bytes to append** (D16): the event's values, written by `renderLine` — the one writer.
+The physical line number is the file's to choose and not the host's, so it is `0` here; nothing in
+the bytes reads it (`renderLine` is `jemit (lineVal e)`, and `lineVal` reads only `t`, `off` and
+`ev`), which `renderLine_ignores_the_line` states. -/
+def emitLine (t : VInstant) (o : VOffset) (tag : List Char) (kvs : List (List Char × JVal)) :
+    Except LWarn (List Char) :=
+  match emitEvent tag kvs with
+  | .ok ev => .ok (renderLine ⟨0, t, o, ev⟩)
+  | .error w => .error w
+
+/-- The bytes do not depend on the physical line number. -/
+theorem renderLine_ignores_the_line (n m : Nat) (t : VInstant) (o : VOffset) (ev : Event) :
+    renderLine ⟨n, t, o, ev⟩ = renderLine ⟨m, t, o, ev⟩ := rfl
+
+theorem restOf_cons_t_ev (a b : JVal) (rest : List (List Char × JVal)) :
+    restOf ((kT, a) :: (kEv, b) :: rest) = restOf rest := by
+  simp only [restOf, List.filter_cons]
+  have h1 : (!(kT == kT) && !(kT == kEv)) = false := by decide
+  have h2 : (!(kEv == kT) && !(kEv == kEv)) = false := by decide
+  simp only [h1, h2, Bool.false_eq_true, if_false]
+
+/-- An event's own `rest` is already the `Map` it came from, so re-reading it changes nothing. -/
+theorem restOf_of_canonical (rest : List (List Char × JVal)) (h : restCanonical rest = true) :
+    restOf rest = rest := by
+  rw [← restOf_cons_t_ev .null .null rest]
+  exact restOf_canonical .null .null rest h
+
+/-- **The reader's values name the reader's event.**  Handing `emitEvent` the tag and fields an
+event writes gives that event back — for a known kind through `readArgs ∘ renderArgs`, for an
+unknown one through `restOf` on a `rest` that is already sorted. -/
+theorem emitEvent_of_fields (ev : Event) (h : ev.canonical = true) :
+    emitEvent ev.tag ev.fields = .ok ev := by
+  cases hu : ev.isUnknown with
+  | false =>
+    obtain ⟨k, a, hsp⟩ := Event.split_of_not_unknown ev hu
+    simp only [emitEvent, Event.tag_of_split ev k a hsp, kindOf_tag,
+      Event.fields_of_split ev k a hsp]
+    have hag := agrees_renderArgs k.schema a [] (Kind.keys_nodup k) (by intro kv hkv; cases hkv)
+    simp only [List.nil_append] at hag
+    rw [readArgs_of_agrees _ k.schema a hag]
+    exact congrArg Except.ok (Kind.build_of_split ev k a hsp)
+  | true =>
+    cases ev with
+    | unknown tag rest =>
+      simp only [Event.canonical, Bool.and_eq_true, Bool.not_eq_true'] at h
+      obtain ⟨⟨hkn, _hfr⟩, hrc⟩ := h
+      have hk : kindOf tag = none := by
+        simp only [isKnownTag, Option.isSome_eq_false_iff] at hkn; simpa using hkn
+      simp only [emitEvent, Event.tag, Event.fields, hk]
+      rw [restOf_of_canonical rest hrc]
+    | _ => cases hu
+
+/-- **The bytes do not move** (D16's acceptance, in the kernel): emitting a line's own parts
+rebuilds that line, byte for byte.  With `the_log_reads_what_it_renders` this closes the circle —
+the writer and the reader are one definition, not two that happen to agree. -/
+theorem the_log_emits_what_it_reads (e : Entry) (h : e.ev.canonical = true) :
+    emitLine e.t e.off e.ev.tag e.ev.fields = .ok (renderLine e) := by
+  obtain ⟨line, t, o, ev⟩ := e
+  simp only [emitLine, emitEvent_of_fields ev h]
+  rfl
+
+/-- **The log reads what it emits** (D16's end-to-end law): every line the kernel hands back to be
+appended is a line the kernel's own reader reads back to exactly the event the host named. -/
+theorem the_log_reads_what_it_emits (n : Nat) (t : VInstant) (o : VOffset) (tag : List Char)
+    (kvs : List (List Char × JVal)) (ev : Event) (l : List Char)
+    (hev : emitEvent tag kvs = .ok ev) (he : emitLine t o tag kvs = .ok l)
+    (hc : Entry.canonical ⟨n, t, o, ev⟩ = true) :
+    readLine n (some l) = .entry ⟨n, t, o, ev⟩ := by
+  simp only [emitLine, hev] at he
+  cases he
+  exact the_log_reads_what_it_renders ⟨n, t, o, ev⟩ hc
+
+/-- **§5.8, both directions, at the writer.**  The check bites — a field a line could not carry is
+refused by the reader's own name, and the offending key is named — and it does not over-bite: the
+same values with the field supplied are the event.  `wake`'s `slept_min` has no default, so an
+absent one is `missingField`; a string there is `badField`. -/
+theorem emitEvent_refuses_what_a_line_could_not_carry :
+    emitEvent ['w','a','k','e'] [] = .error (.missingField ['s','l','e','p','t','_','m','i','n']) ∧
+    emitEvent ['w','a','k','e'] [(['s','l','e','p','t','_','m','i','n'], .str ['x'])]
+      = .error (.badField ['s','l','e','p','t','_','m','i','n']) ∧
+    emitEvent ['w','a','k','e'] [(['s','l','e','p','t','_','m','i','n'], .num 480)]
+      = .ok (.wake 480 none) :=
+  -- `rfl`, not `decide`: `Except` has no `DecidableEq` in this package (the same reason
+  -- `logAnswered` and `LogStamp.accepted` exist), and these are closed terms that reduce.
+  ⟨rfl, rfl, rfl⟩
+
+/-- **The omission rule is the kernel's** (D16).  An `Option` the host sends as `null` and a
+`partial` it sends as `false` are left out of the bytes, because `renderF` leaves them out — the
+host's own omission is redundant, never authoritative.  Stated on the fields alone, so no stamp is
+evaluated. -/
+theorem the_kernel_decides_what_is_left_out :
+    (Event.wake 480 none).fields = [(['s','l','e','p','t','_','m','i','n'], .num 480)] ∧
+    emitEvent ['w','a','k','e'] [(['s','l','e','p','t','_','m','i','n'], .num 480),
+        (['o','n','s','e','t','_','m','i','n'], .null)] = .ok (.wake 480 none) ∧
+    (Event.close ['d','a','y'] ['k']).fields
+      = [(['p','e','r','i','o','d'], .str ['d','a','y']), (['k','e','y'], .str ['k'])] :=
+  ⟨rfl, rfl, rfl⟩
+
 end Log
 end Tm

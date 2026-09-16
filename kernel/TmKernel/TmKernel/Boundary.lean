@@ -2983,9 +2983,9 @@ def stampErrName : LogStamp.StampErr → String
 
 /-- A line warning: `{"line":n,"w":name}`, with `key` for a field and `why` for a parse or a
 stamp. -/
-def lwarnJson (n : Nat) (w : Log.LWarn) : JVal :=
+def lwarnJsonAt (where_ : String) (n : Nat) (w : Log.LWarn) : JVal :=
   let at_ (name : String) (extra : List (List Char × JVal)) : JVal :=
-    .obj ([("line".toList, .num n), ("w".toList, .str name.toList)] ++ extra)
+    .obj ([(where_.toList, .num n), ("w".toList, .str name.toList)] ++ extra)
   match w with
   | .invalidUtf8 => at_ "invalidUtf8" []
   | .lineTooLong => at_ "lineTooLong" []
@@ -3001,6 +3001,11 @@ def lwarnJson (n : Nat) (w : Log.LWarn) : JVal :=
   | .evNotString => at_ "evNotString" []
   | .missingField k => at_ "missingField" [("key".toList, .str k)]
   | .badField k => at_ "badField" [("key".toList, .str k)]
+
+/-- A line warning, at its physical line.  One definition of the warning table (§5.3): step S2's
+`emit` refusals spell the same names through `lwarnJsonAt "item"`, because an event that has not
+been appended has an index and no line. -/
+def lwarnJson (n : Nat) (w : Log.LWarn) : JVal := lwarnJsonAt "line" n w
 
 /-- A rendering: `[line, renderLine, displayStamp]`, or `[line, null, null]` for a line that is
 blank or a warning. -/
@@ -3292,6 +3297,160 @@ def runWithLog (j : JVal) : Except JVal JVal :=
   | .error e => .error e
   | .ok none => run j
   | .ok (some a) => (run j).map (withLog a)
+
+/-! ### `emit`: the kernel writes the line (stage 5, W-12, step S2; owner decision D16)
+
+INSERTED 2026-09-16 (design §22.1's "a new step after S (§14.6), under D16"; §14.7 F5; AGENTS §4
+**D16**).
+
+`log` is how the host asks what the file **says**.  `emit` is how it asks what to **write**: an
+appending verb sends the event's values and gets back the exact bytes of the line, so
+`Log.renderLine` is the only definition of the format there is.
+
+**The host sends values, never bytes.**  One item is
+`{"at": [sec, ns, west, offSec], "ev": <tag>, "f": {<field>: <value>}}` — the instant in the
+kernel's own encoding (seconds from 0001-01-01 and nanoseconds, as `Seal.cInstant` writes one,
+with the offset **as written**), the tag, and the field values in any order.  The kernel decides
+the key order, which fields are left out, how each numeral is spelled and how the stamp is
+written.  There is deliberately **no** way to hand the kernel a line, which is what makes this one
+definition rather than two that agree.
+
+**A bad event is a refusal, not a warning.**  A line already on disk that does not parse is a
+warning, because refusing it would lose the rest of the file (D18 (i)).  An event about to be
+*appended* has no such excuse: writing a line the reader would refuse is exactly the defect this
+step removes, so `emitRefused` names the item and the reader's own warning (§5.7).
+
+**R10.**  The instant and the offset cross the wire as numbers and are built only by
+`Cal.mkInstant?` and `Cal.mkOffset?`; a pair either constructor refuses is `badAt <item>`.
+
+**D9-21.**  `emitStep` is a `foldl`, run at most `maxEmitItems` times. -/
+
+/-- **The `emit` op's refusals** (§10.3's shape, `{"err":{"emit":…}}`).  Each names the item it is
+about, because a call may carry several and only one of them is wrong. -/
+inductive EmitRefusal
+  /-- `emit` is present but not an array, or an item is not an object -/
+  | shape
+  /-- more items in one call than `maxEmitItems` -/
+  | tooMany
+  /-- `at` is absent, repeated, not `[sec, ns, west, offSec]`, or an instant/offset the kernel
+  cannot hold (R10: `Cal.mkInstant?`/`Cal.mkOffset?` refused it) -/
+  | badAt (item : Nat)
+  /-- `ev` is absent, repeated or not a string -/
+  | badEv (item : Nat)
+  /-- `f` is present and not an object -/
+  | badFields (item : Nat)
+  /-- the reader refuses these values, by its own name -/
+  | refused (item : Nat) (w : Log.LWarn)
+deriving DecidableEq, Repr
+
+/-- Keys in build order: `{"err":{"emit":…}}`. -/
+def EmitRefusal.json : EmitRefusal → JVal
+  | .shape => jone "err" (jone "emit" (.str "shape".toList))
+  | .tooMany => jone "err" (jone "emit" (.str "tooMany".toList))
+  | .badAt i => jone "err" (jone "emit" (jone "badAt" (jone "item" (.num i))))
+  | .badEv i => jone "err" (jone "emit" (jone "badEv" (jone "item" (.num i))))
+  | .badFields i => jone "err" (jone "emit" (jone "badFields" (jone "item" (.num i))))
+  | .refused i w => jone "err" (jone "emit" (jone "refused" (lwarnJsonAt "item" i w)))
+
+/-- One event the host wants written. -/
+structure EmitItem where
+  t : Cal.VInstant
+  off : Cal.VOffset
+  tag : List Char
+  fields : List (List Char × JVal)
+
+/-- Events per call.  An append writes one; a close writes a handful. -/
+def maxEmitItems : Nat := 256
+
+/-- **`at`, through the only constructors there are** (R10). -/
+def readEmitAt (i : Nat) (v : Option JVal) : Except EmitRefusal (Cal.VInstant × Cal.VOffset) :=
+  match v with
+  | some (.arr [.num sec, .num ns, .bool west, .num osec]) =>
+    match Cal.mkInstant? sec ns, Cal.mkOffset? west osec with
+    | some t, some o => .ok (t, o)
+    | _, _ => .error (.badAt i)
+  | _ => .error (.badAt i)
+
+/-- One item: the instant, the tag, and the field values (an absent `f` is no fields). -/
+def readEmitItem (i : Nat) (v : JVal) : Except EmitRefusal EmitItem :=
+  match v with
+  | .obj _ =>
+    match jget v "at" with
+    | .error _ => .error (.badAt i)
+    | .ok a =>
+      match readEmitAt i a with
+      | .error e => .error e
+      | .ok (t, o) =>
+        match jget v "ev" with
+        | .ok (some (.str tag)) =>
+          match jget v "f" with
+          | .ok none | .ok (some .null) => .ok ⟨t, o, tag, []⟩
+          | .ok (some (.obj kvs)) => .ok ⟨t, o, tag, kvs⟩
+          | _ => .error (.badFields i)
+        | _ => .error (.badEv i)
+  | _ => .error .shape
+
+/-- One step of writing the items, reversed; a `foldl` (D9-21), run only below `maxEmitItems`. -/
+def emitStep (acc : Except EmitRefusal (List (List Char) × Nat)) (v : JVal) :
+    Except EmitRefusal (List (List Char) × Nat) :=
+  match acc with
+  | .error e => .error e
+  | .ok (ls, i) =>
+    match readEmitItem i v with
+    | .error e => .error e
+    | .ok it =>
+      match Log.emitLine it.t it.off it.tag it.fields with
+      | .ok l => .ok (l :: ls, i + 1)
+      | .error w => .error (.refused i w)
+
+/-- **The `emit` section**: absent or `null` asks for nothing; otherwise each item's line, in the
+order they were sent.  A request that is not an object is left to `run` to refuse, exactly as
+`readLogSection` leaves it. -/
+def readEmitSection (j : JVal) : Except JVal (Option JVal) :=
+  match j with
+  | .obj _ =>
+    match jget j "emit" with
+    | .ok none | .ok (some .null) => .ok none
+    | .ok (some (.arr xs)) =>
+      if maxEmitItems < xs.length then .error EmitRefusal.tooMany.json
+      else
+        match xs.foldl emitStep (.ok ([], 0)) with
+        | .ok (ls, _) => .ok (some (.arr (ls.reverse.map JVal.str)))
+        | .error e => .error e.json
+    | _ => .error EmitRefusal.shape.json
+  | _ => .ok none
+
+/-- The `emit` answer after `log` in the `ok` object. -/
+def withEmit (a : JVal) : JVal → JVal
+  | .obj [(k, .obj kvs)] => .obj [(k, .obj (kvs ++ [("emit".toList, a)]))]
+  | r => r
+
+/-- **The request, with its `emit` section.**  Without one it is `runWithLog` (definitionally), so
+every theorem above about `run` and the `log` section holds of it unchanged. -/
+def runWithEmit (j : JVal) : Except JVal JVal :=
+  match readEmitSection j with
+  | .error e => .error e
+  | .ok none => runWithLog j
+  | .ok (some a) => (runWithLog j).map (withEmit a)
+
+/-- **A request without an `emit` section is read exactly as before** — definitionally
+`runWithLog`, so every law above about `run` and the `log` section holds of the new entry point
+unchanged.  This is what keeps S2 from touching the switch's proved surface. -/
+theorem runWithEmit_without_an_emit_is_runWithLog (j : JVal) (h : readEmitSection j = .ok none) :
+    runWithEmit j = runWithLog j := by
+  simp [runWithEmit, h]
+
+/-- The same, from the absent key rather than the read. -/
+theorem a_request_without_an_emit_is_read_as_before (j : JVal) (h : jget j "emit" = .ok none) :
+    runWithEmit j = runWithLog j := by
+  apply runWithEmit_without_an_emit_is_runWithLog
+  cases j <;> simp [readEmitSection, h]
+
+/-- **A refused `emit` section refuses the request**, before the plan is loaded and before a byte
+is handed back: the host never receives a line it should not append. -/
+theorem runWithEmit_refuses_an_emit_section_first (j e : JVal) (h : readEmitSection j = .error e) :
+    runWithEmit j = .error e := by
+  simp [runWithEmit, h]
 
 
 /-! ### The round trip is not vacuous
@@ -3944,7 +4103,7 @@ def respond (input : List Char) : JVal :=
   match jparse input with
   | .error e => jsonErr s!"bad json: {jerrText e}"
   | .ok j =>
-    match runWithLog j with
+    match runWithEmit j with
     | .error e => e
     | .ok r    => r
 
@@ -4872,7 +5031,7 @@ instance of `jparse_jemit`, not a parser run over a literal), the loader's
 refusal is evaluated, and the emission is `the_real_response_bytes_round_trip`. -/
 theorem call_refuses_the_real_duplicate_id_request :
     call (String.ofList demoRequestBytes) = String.ofList demoResponseBytes := by
-  have hrun : runWithLog demoRequest = .error demoResponse := rfl
+  have hrun : runWithEmit demoRequest = .error demoResponse := rfl
   unfold call respond
   rw [String.toList_ofList, the_real_request_bytes_round_trip.2]
   simp only [hrun]
@@ -9549,7 +9708,7 @@ section.  **Stage 5 D10 L8**: one zone reading, grants, and the commands refusal
 def runCap (j : JVal) : Except JVal JVal :=
   match jget j "capacity" with
   | .error e => .error (jsonErr e)
-  | .ok none => runWithLog j
+  | .ok none => runWithEmit j
   | .ok (some cap) =>
     match zoneOf j with
     | .error e => .error e
@@ -9646,16 +9805,20 @@ theorem zoneOf_of_readLogSection {j cap : JVal} {lg : Option JVal} (hc : jget j 
   | error e => rw [hz] at hg; cases hg
   | ok zo => rw [hz] at hg; exact ⟨zo, rfl, hg⟩
 
-/-- **A request without `capacity` is `runWithLog`'s**, byte for byte (merged form: L6 stated
-`runCap j = run j`, which the merge made false for a request with a `log` section). -/
-theorem runCap_without_capacity_is_runWithLog {j : JVal} (h : jget j "capacity" = .ok none) :
-    runCap j = runWithLog j := by
+/-- **A request without `capacity` is `runWithEmit`'s**, byte for byte (merged form: L6 stated
+`runCap j = run j`, which the merge made false for a request with a `log` section; S2 made it
+false again for one with an `emit` section, so the name follows the outermost wrapper). -/
+theorem runCap_without_capacity_is_runWithEmit {j : JVal} (h : jget j "capacity" = .ok none) :
+    runCap j = runWithEmit j := by
   simp [runCap, h]
 
-/-- **A request without `capacity` or a `log` section is `run`'s**, byte for byte. -/
+/-- **A request without `capacity`, an `emit` or a `log` section is `run`'s**, byte for byte.
+*Narrowed at S2* (AGENTS §3.1 item 4): the `emit` hypothesis is new, because a request that asks
+the kernel to write a line is no longer `run`'s answer — it is `run`'s answer plus the bytes. -/
 theorem runCap_without_capacity_is_run {j : JVal} (h : jget j "capacity" = .ok none)
-    (hl : readLogSection j = .ok none) : runCap j = run j := by
-  rw [runCap_without_capacity_is_runWithLog h, runWithLog_without_a_log_is_run j hl]
+    (he : readEmitSection j = .ok none) (hl : readLogSection j = .ok none) : runCap j = run j := by
+  rw [runCap_without_capacity_is_runWithEmit h, runWithEmit_without_an_emit_is_runWithLog j he,
+    runWithLog_without_a_log_is_run j hl]
 
 /-- **At the bytes**: a request that parses to a value without `capacity` gets `respond`'s answer. -/
 theorem respondCap_without_capacity_is_respond (input : List Char)
@@ -9663,7 +9826,7 @@ theorem respondCap_without_capacity_is_respond (input : List Char)
   unfold respondCap respond
   cases hp : jparse input with
   | error e => rfl
-  | ok j => dsimp only; rw [runCap_without_capacity_is_runWithLog (h j hp)]; try rfl
+  | ok j => dsimp only; rw [runCap_without_capacity_is_runWithEmit (h j hp)]; try rfl
 
 /-- **The exported function is `call` on every request without `capacity`**, so every theorem stated
 about `call` above holds of the FFI for those requests. -/

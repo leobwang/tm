@@ -59,15 +59,22 @@ pub const TRACE_CALLS_ENV: &str = "TM_TRACE_KERNEL_CALLS";
 
 /// Which kind of request this is, by the one literal each builder emits and no
 /// other does: `"capacity":` (`kernel_capacity::request`), `"log":{`
-/// (`kernel_log::request`), `"cmds":` (`kernel_bridge`'s apply). This crate may
+/// (`kernel_log::request`), `"emit":[` (`kernel_log::render_values`, the writer
+/// S2 added under **D16**), `"cmds":` (`kernel_bridge`'s apply). This crate may
 /// depend on nothing (AGENTS R7), so it is a substring test and not a parse —
 /// a *document line* containing one of these literals would be miscounted, which
 /// is acceptable in a diagnostic that no answer depends on.
+///
+/// `emit` gets its own name rather than falling into `other` on purpose: after
+/// S2 every appending verb makes one, so it is a per-verb cost the call-count
+/// instrument must be able to see and pin (`tm/tests/kernel_call_counts.rs`).
 fn trace_kind(request: &str) -> &'static str {
     if request.contains(r#""capacity":"#) {
         "capacity"
     } else if request.contains(r#""log":{"#) {
         "log"
+    } else if request.contains(r#""emit":["#) {
+        "emit"
     } else if request.contains(r#""cmds":"#) {
         "apply"
     } else {

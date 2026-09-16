@@ -1977,6 +1977,103 @@ pub fn render_lines(bytes: &[u8], now: &str, tz: &Value, wanted: &[u64]) -> Resu
     Ok(out)
 }
 
+// ---------------------------------------------------------------------------
+// S2 (owner decision D16): the kernel writes the lines the binary appends.
+
+/// **An instant as the kernel encodes one** — `[sec, ns, west, offSec]`, the exact inverse of
+/// [`d_when`]: seconds from `0001-01-01T00:00:00Z`, the subsecond nanoseconds (at or above 1e9 on
+/// a leap second, as chrono holds one), and the offset **as written**, its sign in `west`.
+///
+/// An instant chrono can hold but `Cal.Instant` cannot — a year before 1 — sends a negative
+/// `sec`, which is not a `JVal.num`, so the kernel refuses it by name (`badAt`) rather than
+/// writing a line its own reader could not read back.
+pub fn instant_wire(t: DateTime<FixedOffset>) -> Value {
+    let off = t.offset().local_minus_utc();
+    serde_json::json!([
+        t.timestamp() + EPOCH_FROM_CE,
+        t.timestamp_subsec_nanos(),
+        off < 0,
+        off.unsigned_abs()
+    ])
+}
+
+/// **The bytes to append, from the kernel** (owner decision **D16**; design §22.1's step S2),
+/// for events given as a tag and a bag of field **values**.
+///
+/// This is the whole of the writer swap: an appending verb sends its events' values and appends
+/// exactly what comes back, so `.tm/log.jsonl`'s format has one definition — the kernel's
+/// grammar, reached through the same `Log.renderLine` the reader reads through
+/// (`the_log_emits_what_it_reads`).
+///
+/// The values may be in any order and may spell an optional field explicitly as `null`: the
+/// kernel decides the key order, which fields are left out and how each numeral is written
+/// (`the_kernel_decides_what_is_left_out`). There is deliberately no way to hand the kernel a
+/// *line*, so the writer and the reader cannot drift apart.
+///
+/// A refusal is an error and never a written line: an event whose values the reader would refuse
+/// is named (`emit.refused`) rather than appended, which is the defect this step removes.
+pub fn render_values(evs: &[(DateTime<FixedOffset>, String, Value)]) -> Result<Vec<String>, String> {
+    if evs.is_empty() {
+        return Ok(Vec::new());
+    }
+    let items: Vec<Value> = evs
+        .iter()
+        .map(|(t, tag, f)| serde_json::json!({"at": instant_wire(*t), "ev": tag, "f": f}))
+        .collect();
+    let req = serde_json::json!({"docs": [], "emit": items});
+    let resp = tm_kernel_ffi::call(&req.to_string()).map_err(|e| format!("kernel fault: {e:?}"))?;
+    let v: Value =
+        serde_json::from_str(&resp).map_err(|e| format!("the response is not JSON: {e}"))?;
+    if let Some(err) = v.get("err") {
+        return Err(format!("the kernel refused a line to append: {err}"));
+    }
+    let arr = v
+        .get("ok")
+        .and_then(|o| o.get("emit"))
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("no emit answer: {}", &resp[..resp.len().min(200)]))?;
+    if arr.len() != evs.len() {
+        return Err(format!("the kernel wrote {} lines for {} events", arr.len(), evs.len()));
+    }
+    arr.iter()
+        .map(|x| {
+            x.as_str()
+                .map(str::to_string)
+                .ok_or_else(|| "a rendering is not a string".to_string())
+        })
+        .collect()
+}
+
+/// [`render_values`] for typed events — what every appending verb calls (D16).
+///
+/// The field values are serde's (`to_value`); the **bytes** never are. serde's own
+/// `skip_serializing_if` is redundant here rather than authoritative: the kernel's `renderF`
+/// re-omits what serde omitted, and would omit an explicit `null` just the same
+/// (`the_kernel_decides_what_is_left_out`). `ev` is dropped from the payload because the tag
+/// travels in its own key — the kernel picks the kind from the tag, never from the payload.
+pub fn render_events(
+    evs: &[(DateTime<FixedOffset>, &tm_core::log::Event)],
+) -> Result<Vec<String>, String> {
+    let mut items = Vec::with_capacity(evs.len());
+    for (t, ev) in evs {
+        let mut v =
+            serde_json::to_value(ev).map_err(|e| format!("an event does not serialise: {e}"))?;
+        let obj = v.as_object_mut().ok_or("an event is not a JSON object")?;
+        obj.remove("ev");
+        items.push((*t, ev.name().to_string(), Value::Object(std::mem::take(obj))));
+    }
+    render_values(&items)
+}
+
+/// [`render_events`] for one entry — the function pointer `tm_core::horizon::Ctx` writes through
+/// (D16), so the id-less fallback paths (gap 5) append the kernel's bytes too.
+pub fn render_one(entry: &tm_core::log::LogEntry) -> Result<String, String> {
+    render_events(&[(entry.t, &entry.ev)])?
+        .into_iter()
+        .next()
+        .ok_or_else(|| "the kernel returned no line".to_string())
+}
+
 /// **The headers a command appended** (§11.4, design §14.3 row R6): the tail after `after`
 /// physical lines, replayed on its own from the empty checkpoint, each header's line shifted back
 /// into the whole file's numbering.

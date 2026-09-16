@@ -23608,3 +23608,225 @@ open: **gaps 132, 133, 150-152, 160, 170, 180-182, 190**, and the performance
 levers **121, 122, 123, 126, 127**. The **§5.13 human drives** of the stage-3,
 stage-4 and stage-5 binaries are still owed, and so is the TUI half of the
 switch's own drive (**gap 182**).
+
+<!-- ===================================================================== -->
+
+## Stage 5, W-12, 2026-09-16: the kernel writes the log it reads
+
+**D16 lands.** The switch (`2b26be3`) made the Lean kernel the only *reader* of
+`.tm/log.jsonl`. This step makes it the only *definition of the format*:
+an appending verb sends the event's **values** and the kernel returns the exact
+bytes to append. `LogEntry::to_json` is no longer the binary's writer — it
+survives only as a test oracle, and this block says plainly where.
+
+### What landed, in one commit
+
+1. **`Log.emitEvent` / `Log.emitLine`** (`Log.lean`, +139 lines, +8 theorems).
+   They add **no grammar**: `emitEvent` reads the host's values with `readArgs`
+   — the reader `readObject` uses for a line off the disk — and `emitLine`
+   writes them with `renderLine`, the writer the reader already round-trips
+   against. A third definition of the format would have been the very defect
+   §5.3 exists to remove.
+2. **The `emit` wire section** (`Boundary.lean`, +163 lines, +3 theorems):
+   `{"emit":[{"at":[sec,ns,west,offSec],"ev":<tag>,"f":{…}}]}` in, the lines
+   out. `runWithEmit` wraps `runWithLog`, so **every** theorem proved about
+   `run` and the `log` section still holds unchanged — S2 does not touch the
+   switch's proved surface.
+3. **`kernel_log::render_values` / `render_events` / `render_one`** and
+   `instant_wire`, the exact inverse of the answer decoder's `d_when`.
+4. **`Ctx::append_entry`** appends the kernel's bytes. Every verb the brief
+   names — the Recorder's undo events, close, demote, routine, energy, plan,
+   note — reaches the log through it.
+5. **`tm_core::horizon::Ctx` gains a `LineWriter` function pointer** (D16), and
+   `Ctx::hz` installs the kernel's. That is what carries the **id-less fallback
+   paths** (gap 5 — `move`, `readopt`, `drop` on a line with no `^id`), which
+   are tm-core's and cannot call the kernel themselves. `None` keeps
+   `to_json`, which is what tm-core's own tests read.
+
+**Where `LogEntry::to_json` still is, said plainly.** No path in the shipped
+binary calls it. It remains (a) the default of the `LineWriter` hook, reached
+only by a caller that installs none — tm-core's own suites; and (b) the
+**comparand** of the byte-identity arms below. That is the honest answer to the
+brief's "keep it only as a test oracle if that is the honest thing": it is a
+test oracle, and one deletion away from nothing at all.
+
+### The bytes did not move, and here is how many
+
+| arm | inputs | result |
+|---|---|---|
+| `the_kernel_writes_what_the_rust_writer_wrote` (T2, turned around) | 256 generated `(stamp, event)` pairs | kernel bytes == `to_json` bytes |
+| `the_writer_swap_moves_no_byte_of_any_writable_event` | **4,000** generated events, **26 of 26** kinds | identical, every kind |
+| `the_kernel_writes_the_corpus_and_a_generated_month_as_the_fork_wrote_them` | corpus + both generated months | **3,565 lines** byte-identical **against fork 4748911's own `to_json`**, 26 kinds, 104 skipped, 3 crafted residue |
+| `the_doors_writer_writes_the_lines_the_door_reads` | the door's 7 corpus logs | **507** rebuilt byte-identically, 3 canonicalised, 10 skipped |
+
+The comparand of the third arm is the **fork's** writer, frozen in
+`tests/fixtures/fork-4748911-log-lines.jsonl` — not this tree's writer and not
+the line. **No fixture was re-blessed**: no byte moved, so the frozen answers
+are untouched.
+
+### Two corpus lines are not canonical writer output — a finding, not a defect
+
+Writing the door's arm turned up something worth recording, because it first
+made the test fail and the first two readings of it were wrong:
+
+- `plan-recur/.tm/log.jsonl:49` spells a `done` as `… ci, went, tags, partial`
+  where `define_events!` declares `… went, tags, ci, partial`.
+- `plan-recur/.tm/log.jsonl:62` omits `tags` entirely; `renderF` **always**
+  writes a `strs` field, and so does serde, so the canonical line carries
+  `"tags":[]`.
+
+Both are hand-written. The kernel's writer canonicalises both — key order and
+the filled-in default — **exactly as the fork's `to_json` does**, which is why
+T1's byte-identity arm has always compared against the fork's rendering and not
+against the file. So the door's claims are the two that are actually true of a
+writer: every key the line carried survives with its value, and the output is a
+**fixed point** (writing its own values again changes nothing). Byte identity
+against the fork lives where the frozen answers are.
+
+### The guard caught the four new functions, and it was right to
+
+`every_door_function_the_switch_calls_is_exercised_here` failed on the first
+run: `["instant_wire", "render_values", "render_events", "render_one"]` —
+"shipped into the binary, called by no test". They were **exercised, not
+exempted**: S2 gives the door a second half, and the writer is as much the door
+as the reader. Moving the banner would have been the cheaper lie.
+
+### Observable behaviour changes
+
+| # | before | after | why |
+|---|---|---|---|
+| 1 | a verb could append a line the reader refuses, and nothing said so | the values are refused **by the reader's own name** (`emit.refused`, naming the item and the field) and **nothing is appended** | D16; AGENTS §5.7. The bytes of every line that *was* written are unchanged |
+| 2 | — | `HorizonError::LogWrite`, a named failure when the installed writer refuses | the id-less fallback paths now write through the kernel |
+
+**No parity entry is added.** The bytes are identical for every writable event,
+so P20 (`tm log --json` bytes) is unchanged and nothing new diverges from the
+fork.
+
+### Gaps
+
+**Gap 130 — closed.** D16 is implemented: appending verbs send typed events and
+the kernel returns the bytes. The log's format has one definition.
+
+**Gap 200 (new; label W12-a) — nothing pins that `Ctx::hz` installs the kernel
+writer.**
+1. *What is not done.* No test asserts that the shipped `horizon::Ctx` carries a
+   `LineWriter`. If `.writing_lines_with(kernel_log::render_one)` were dropped
+   from `Ctx::hz`, the id-less fallback paths (gap 5) would silently go back to
+   `LogEntry::to_json` and every test would still pass.
+2. *Why.* The fallback fires only for a line with no `^id`, and the one CLI
+   fixture (`plan-basic`) has no such line — every item there carries an id. A
+   test needs a hand-built tree, which is a fixture change this step did not
+   take.
+3. *What it costs.* The writer would have two definitions again for exactly
+   those three verbs, and the README would be wrong about it. Nothing else
+   moves: the bytes would be identical, which is what makes it invisible.
+4. *When it clears.* An id-less line in a CLI fixture plus one `tm move` on it,
+   asserting the appended line came from the kernel — or `LineWriter` becoming
+   non-optional, which costs tm-core's own suites a writer argument.
+
+**Gap 201 (new; label W12-b) — no `Negative.lean` cheat guards the emit op.**
+1. *What is not done.* `Negative.lean` is unchanged (147 blocks, highest 157).
+   No cheat asserts that a writer which skips `readArgs` and trusts the host's
+   fields fails to compile or is refuted.
+2. *Why.* The emit op's guards are stated positively instead — `§5.8`'s both
+   directions live in `emitEvent_refuses_what_a_line_could_not_carry` and in
+   the Rust arm `the_kernel_refuses_to_write_a_line_it_could_not_read_back`.
+3. *What it costs.* A future narrowing of `emitEvent` that accepted a bad field
+   would be caught by those two, but a *weakened* one that bypassed the reader
+   entirely and still round-tripped canonical input would not be.
+4. *When it clears.* One cheat, numbered from 158, defining an `emitEvent` that
+   renders the host's pairs verbatim and refuting its round trip.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+- **Goals:** none added, none discharged. `Goals.lean` is unchanged at 750
+  lines and **13** outstanding, all stage 6.
+- **Theorems:** **+11**, all appended to `Check.lean` under a W-12 banner.
+  §6.3's three counts agree at **3945** (3934 before), the same two
+  off-by-ones cancelling.
+- **Cheats:** none added (gap 201).
+- **One theorem renamed, and one narrowed, both deliberately:**
+  `runCap_without_capacity_is_runWithLog` → `…_is_runWithEmit` (the name
+  follows the outermost wrapper), and `runCap_without_capacity_is_run` gains a
+  hypothesis that the request has no `emit` section — its conclusion is false
+  for a request that asks the kernel to write a line, so this is a narrowing
+  named in the statement (AGENTS §3.1 item 4), not a weakening.
+- **`decide` budget:** two witnesses were written as `decide` and would not
+  elaborate — `Except` has no `DecidableEq` in this package, which is why
+  `logAnswered` and `LogStamp.accepted` exist. They are `⟨rfl, rfl, rfl⟩` over
+  closed terms instead: no new `decide` over a rendering, so §5.10a's memory
+  rule has nothing new to bound.
+
+### Recorded disagreements between the design, the brief and the repo
+
+1. **Design §22.1 says S2 deletes `LogEntry::to_json` "with its last caller".**
+   The repo disagrees and the repo is right: its last caller is not in the
+   binary. It is the comparand of T2 and of the three byte-identity arms above,
+   and the default of the `LineWriter` hook that tm-core's own suites use.
+   Deleting it would delete the oracle that proves the swap moved no byte.
+2. **Design §14.7 F5 calls the kernel writer "optional".** §22.1 supersedes it
+   under D16, which is what this step followed.
+
+### Numbers, all re-measured at this commit under
+`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`
+
+- `check.sh`: **seven ok**, **3.07 / 3.06 / 3.04 s** over three serial capped
+  runs on a built tree, against **3.04 / 3.13 / 3.11 s** at stage 5's close —
+  no rise (the ≤ 10% per-step rule is not approached). Axiom audit **3945**
+  theorems; corpus **29/37** files and **4/5** whole plans; burn-down **13**,
+  all stage 6.
+- `cargo test --workspace`: **1,308 passed / 0 failed / 9 ignored across 78
+  binaries**, against **1,297 / 0 / 9 across 78** before this step. The **+11**
+  is accounted for exactly: **6** new tests (five in `kernel_log_grammar.rs`,
+  one in `kernel_log_door.rs`) plus **5** that are `kernel_log.rs`'s own
+  `#[cfg(test)]` unit tests, compiled a further time because the grammar suite
+  now `#[path]`-includes that module to call the shipped writer — **gap 181**'s
+  recorded cost, one inclusion larger.
+- FFI suite (`kernel/tm-kernel-ffi`): **100 passed** (8 + 86 + 6), 0 failed.
+- T5 (`kernel_replay_parity --include-ignored`), the door suite,
+  `cli_switch_acceptance --include-ignored`: green.
+- **T11's seven rows**, on the 3-year log (66,169 lines, 6,896,281 bytes):
+  first verb **2.152 s** (< 5 s); **later verb 146.958 ms against 146.8 ms
+  pre-S2 — no row regressed**; `--now` +1 day (a reseal) **192.455 ms**;
+  the 30-day hand undo **1.286 s** as the named fault (gap 180), and the two
+  verbs after a windowable one **151.987 / 152.018 ms** (no rebuild); a routine
+  for a 3-day-old instance **136.674 ms**; `review week` (the `All` scope)
+  **248.183 ms**. `tm log` rows: bare **238.0 ms**, `--tail 200` **238.0 ms**,
+  `--item` **217.8 ms**, `--since 7d` **76.1 ms**, `--json --tail 200`
+  **233.0 ms**. A `due:` 3 years out **80.973 ms**, 10 years out **141.751 ms**.
+- **The per-verb kernel-call table** (design §14.6's, beside T11). The `log`
+  column is **unchanged by S2**; the `emit` column is new and pinned exactly:
+
+| verb | log | emit | apply | capacity | replays |
+|---|---:|---:|---:|---:|---:|
+| wake | 3 | 1 | 1 | 0 | 2 |
+| arrive | 4 | 2 | 1 | 1 | 3 |
+| start | 3 | 1 | 0 | 0 | 2 |
+| pause | 3 | 1 | 0 | 0 | 2 |
+| done | 3 | 1 | 0 | 0 | 2 |
+| energy | 4 | 2 | 1 | 1 | 3 |
+| break | 2 | 0 | 0 | 0 | 2 |
+| drop | 3 | 1 | 1 | 0 | 2 |
+| undo | 2 | 1 | 0 | 0 | 2 |
+| review day | 1 | 0 | 0 | 1 | 1 |
+| log | 2 | 0 | 0 | 0 | 1 |
+| check | 2 | 0 | 0 | 0 | 1 |
+
+  `arrive` and `energy` make two because each also appends the `plan` event its
+  replan writes; `tm break 20m` makes none, because the `break` entry is
+  appended when the break *ends*; the three read-only verbs append nothing.
+- Package: `Log.lean` **2,747** lines / **115** theorem declarations (2,608 /
+  107); `Boundary.lean` **11,353** / **466** (11,190 / 463); `Check.lean`
+  **4,590**; `Negative.lean` **1,905** (unchanged); `Goals.lean` **750**
+  (unchanged). Archive `libTmKernel_TmKernel.a` **17,202,100 bytes**
+  (17,133,648 at stage 5's close).
+
+**Owed next.** **Q6(f)** (**gap 86**) — a `close` carries its period as a
+primary id, so undoing your own close no longer cancels the automatic one. It
+changes the bytes appended, so it needs its own behaviour row, a parity entry
+for the header id the fork writes as `null`, and a test that a log written
+before it still reads correctly. Then **L9** (**gap 93**). Still open:
+**gaps 132, 133, 150-152, 160, 170, 180-182, 190, 200, 201**, and the
+performance levers **121, 122, 123, 126, 127**. The **§5.13 human drives** of
+the stage-3, stage-4 and stage-5 binaries are still owed, and so is the TUI half
+of the switch's own drive (**gap 182**).

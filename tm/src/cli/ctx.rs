@@ -678,7 +678,11 @@ impl Ctx {
 
     /// A [`horizon::Ctx`] over the current snapshot (§6.3).
     pub fn hz(&self) -> horizon::Ctx<'_> {
-        horizon::Ctx::new(&self.store, &self.files, &self.tree, self.now).with_replay(&self.replay)
+        horizon::Ctx::new(&self.store, &self.files, &self.tree, self.now)
+            .with_replay(&self.replay)
+            // D16: the id-less fallback paths (gap 5) write the kernel's bytes too, so every
+            // line the *binary* appends has one definition of its format.
+            .writing_lines_with(kernel_log::render_one)
     }
 
     /// Append one event to `.tm/log.jsonl` (§10.1).
@@ -687,8 +691,21 @@ impl Ctx {
     }
 
     /// Append one already-timestamped entry.
+    ///
+    /// **The kernel writes the line** (owner decision **D16**; design §22.1's step S2): the verb
+    /// sends the event's values and appends the bytes the kernel hands back, so
+    /// `LogEntry::to_json` is no longer the binary's writer and the log's format has **one**
+    /// definition — the kernel's grammar, reached through the same `Log.renderLine` the reader
+    /// reads through. The bytes do not move (`the_log_emits_what_it_reads`, and T2 over every
+    /// writable event); what changes is who decides them.
+    ///
+    /// A refusal is an error and never a written line: an event whose values the reader would
+    /// refuse is named rather than appended.
     pub fn append_entry(&self, entry: &LogEntry) -> Result<(), CliError> {
-        let line = format!("{}\n", entry.to_json()?);
+        let mut line = kernel_log::render_one(entry).map_err(|why| {
+            CliError::msg(format!("the kernel could not write this log line: {why}"))
+        })?;
+        line.push('\n');
         self.store.append_text(LOG_PATH, &line)?;
         Ok(())
     }
