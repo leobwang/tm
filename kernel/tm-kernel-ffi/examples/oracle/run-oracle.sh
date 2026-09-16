@@ -19,6 +19,16 @@
 #      That set is driven from `tm/tests/kernel_replay_parity.rs`, which holds
 #      the decoder; this script points it at the oracle binary and runs it.
 #
+#   4. every log LINE the grammar tests feed, through the `parse-entry` mode:
+#      the fork's per-line acceptance — is this an entry, a warning or blank,
+#      and what entry is it — against the kernel's `log` op.  That is T1-T3's
+#      oracle after design §12 deletes the in-tree parser (owner decision D23,
+#      README gap 148).  It is driven from `tm/tests/kernel_log_grammar.rs`,
+#      which holds the input sets; this script points it at the oracle and runs
+#      the two arms that need it: the re-bless of the frozen verdicts, and the
+#      round trip the frozen file cannot make (the fork reading back every
+#      rendering the kernel writes).
+#
 # Nothing is written inside the repository and no Rust is built in this
 # worktree.
 set -euo pipefail
@@ -58,3 +68,14 @@ repo=$(cd "$ffi/../.." && git rev-parse --show-toplevel)
 ( cd "$repo" && TM_ORACLE="$oracle" cargo test --quiet --test kernel_replay_parity \
     -- --ignored --exact --nocapture \
     stage5_parity_the_kernel_replays_and_fits_as_the_fork_point_does )
+
+echo
+echo "############ input set 4: every log line the grammar tests feed, per-line"
+# The kernel's half is `tm/tests/kernel_log_grammar.rs` (it holds the input
+# sets).  The round trip runs against the oracle; the re-bless does NOT run
+# here, because rewriting a committed fixture is a decision and never part of a
+# sweep (AGENTS §7.2) — it needs TM_FORK_BLESS as well, and its command is in
+# that file's GAP 148 banner.
+( cd "$repo" && TM_ORACLE="$oracle" cargo test --quiet --test kernel_log_grammar \
+    -- --ignored --exact --nocapture \
+    the_fork_reads_back_every_rendering_the_kernel_writes )
