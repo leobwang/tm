@@ -2208,6 +2208,25 @@ corpus log as a cross-check. §12's one-reader grep falls **125 → 123**: eleve
 code sites went, and **nine doc-comment lines still name the deleted functions in
 prose**, which is why the count does not fall by eleven.
 
+*Gaps 137, 146, 147 and 149 closed 2026-09-16 (W-11, track A; README "the
+instrument is anchored outside the tree"), and re-verified at the W-11 merge.*
+**The retarget is finished: nothing on this list is now compared against the
+reader §12 deletes.** T5's default comparand is the fork (`fork_arm` is asked
+before the in-tree reader, and an input with no frozen answer is counted as
+**skipped**, never passed over); one representative generated month and §6.4's
+twelve zone cases are frozen by value under **D21**
+(`fork-4748911-classes-replay.jsonl`, 212,349 B); and the door suite's exposed
+tests now compare against the frozen fork, the kernel's own `All` scope, a
+hand-written expectation, or the log's own bytes — none against a §12-deleted
+chokepoint. **Proved by simulating the deletion, not asserted:** with the reader
+made unreachable both suites still build, run and compare (T5 20 inputs / 360
+`Replay` keys / 17,291 scalar values; the door 16 reads / 288 keys / 32,976
+values), and with one kernel answer corrupted they fail by name against fork
+point 4748911 — T5 on all three frozen arms, the door at **14 passed / 2
+failed**. Residue: **gap 150** (458 inputs reach the fork only under
+`TM_ORACLE`), **gap 152** (the fork's `Replay` cannot answer for `rows`), and
+**gap 151** (§12's deletion list reaches past the reader, to be settled at S).
+
 *Closed 2026-09-16, on the `w8-facts` track (README, "the three findings that would have made a
 naive switch wrong").* **Gaps 134, 135 and 136 are no longer on this list.** `tm check` is wired to
 the kernel's read-only line sweep, so it names every unreadable line and not just the last chunk's

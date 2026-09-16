@@ -22725,3 +22725,185 @@ build at 16G):
 the fork retarget (**gaps 147, 148, 149**), **gap 145**'s tolerant `Ctx::load` for `tm check`, item
 7's D18 defaults (**gap 120 part 3**), the three pre-switch assertions turned around, the two
 `#[ignore]`s deleted, and the **§5.13 drive**. Gap 144 is no longer among them.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 5, W-11 MERGE — tracks B and C land on
+     rebuild-on-lean beside track A, and the survival test is RE-RUN
+     INDEPENDENTLY on the merged tree.  **S IS NOT MADE HERE.**  No code was
+     written by this step: it merges, measures, and re-proves gap 146 against
+     the merged tree rather than trusting track A's report of it.  The merge
+     step was assigned NO gap range and therefore TAKES NO GAP NUMBER; its
+     findings are recorded below as disagreements.  No Lean edited: audit 3934,
+     cheats 157, parity P35, burn-down 13, imports 78, all unchanged.
+     =========================================================================== -->
+
+## Stage 5, W-11 merge, 2026-09-16: the three anchor tracks agree
+
+**The honest paragraph, first.** **S is still not made**, and this step did not try to make it.
+`Ctx::replay_with` still calls `Ctx::replay_of`, whose body is still
+`Log::parse_bytes(&bytes).replay(None, cfg.tz)`. This is the **sixth** run to leave the switch
+unmade. What it adds is not code — it is the confirmation, measured here and not taken on report,
+that the instrument D21 asked for really is outside the tree on the branch S will land on.
+
+### What landed
+
+| commit | track | what |
+|---|---|---|
+| `b0d646f` | A (already on the branch) | T5 and the door retargeted to fork point 4748911; gaps **137, 146, 147, 149** closed; gaps 150-152 opened |
+| `1b416e8` | B (`w11-oracle`) | T1-T3's parse half retargeted; D23's `tm-oracle parse-entry`; gap **148** closed; gap 160 opened |
+| `ab455cf` | C (`w11-json`) | **D22**: `tm log --json` keeps byte-identity via `RawValue` scoped to the renderer; design §11.4 step 5 corrected in place; gap **144** closed; gap 170 opened |
+
+Both merges conflicted **only** on `kernel/README.md`'s append point, and were resolved by keeping
+**all three blocks whole**, each under its own banner — nothing dropped, nothing renumbered. Track C's
+README change is a pure 193-line append, so the second resolution was done by reconstruction
+(merge-1's file plus that tail) rather than by editing conflict markers by hand. Both worktrees are
+removed; `.claude/worktrees/stage5-lookahead` is **untouched** (D11's D10 track, L9's resume point,
+gap 93).
+
+### The survival test, re-run here rather than believed (gap 146)
+
+Track A's claim is the one this step exists to check, because it is the claim S rests on. It was
+re-run **from scratch on the merged tree**, not replayed from track A's scratch directory: a copy of
+the tree at `/tmp/claude-1000/s-sim3` with §12's reader made **unreachable** — the
+`BEGIN … END THE IN-TREE CROSS-CHECK` regions and every `// S: deleted with the reader` line deleted
+from both suites (T5 4,129 → 3,774 lines, the door 715 → 671), `support/replay.rs`'s five
+reader-backed helpers deleted with their doc comments (77 → 26 lines), and in `tm-core/src` and
+`tm/src` the reader's own definitions **renamed** (`Log::parse`, `LogEntry::parse`, `parse_bytes`,
+`parse_timestamp`, `undo_mask`, `DayIndex`, `iter_day`) so that any surviving **test** reference is a
+compile error rather than a silent success, with `log.rs`'s own tests `cfg`'d out as §12 requires.
+
+```
+########## (1) T5 AND THE DOOR, WITH §12's READER UNREACHABLE ##########
+the door's in-tree region: GONE, and no reference to §12's reader remains
+  the door's fork point 4748911 — the `All` scope against the frozen fork: 16 inputs, 288 Replay
+  keys (18 of the fork's 20 each), 32976 scalar values, 16 entry counts, 14 refused-line lists
+  compared; parity P21 8 day records, every one displaying the same load; 2 inputs had no frozen
+  answer; 0 other exceptions
+test result: ok. 16 passed; 0 failed; 0 ignored
+T5's in-tree region: GONE, and no reference to §12's reader remains
+T5 frozen fork (4748911) — the corpus: 7 logs, 126 Replay keys, 7189 scalar values, 7 entry counts,
+  7 refused lines compared; parity P21 1 day records, every one displaying the same load
+T5 frozen fork (4748911) — the generated 1-month log (40 a day): 1 inputs, 18 Replay keys, 9299
+  scalar values, 1 entry counts; parity P21 3 day records
+T5 frozen fork (4748911) — §6.4's zone cases: 12 inputs, 216 Replay keys, 803 scalar values,
+  12 entry counts; parity P21 0 day records
+  totals: 20 inputs compared against a frozen fork answer inside `cargo test --workspace`,
+  458 reachable only under TM_ORACLE (gap 150), 6 kernel-only.
+test result: ok. 22 passed; 0 failed; 4 ignored
+
+########## (2) ONE KERNEL ANSWER CORRUPTED — BOTH SUITES MUST NOW FAIL ##########
+(a) T5's `kernel_replay` (which IS `kernel_log::decode_facts`) returns `r.unknown += 1`:
+  1 disagreements with fork point 4748911 (each must be on design §17's list):
+    logs/energy-14d.jsonl: `unknown` differs at 1 leaf/leaves — unknown: kernel 1 fork 0
+  1 disagreements: generated 1mo (40 a day) — unknown: kernel 1 fork 0
+  7 disagreements: energy-14d, malformed (kernel 2 fork 1), review-14d, three-days (kernel 2 fork 1),
+    plan-home-day, plan-recur, plan-travel-day
+  1 disagreements: fall-back 01:30 twice — unknown: kernel 1 fork 0
+(b) the SHIPPED `kernel_log::decode_facts` corrupted, which BOTH suites route through:
+  the door: test result: FAILED. 14 passed; 2 failed
+    the_door_is_the_reader_it_replaces — logs/energy-14d.jsonl (genesis): `unknown` differs,
+      kernel 1 fork 0; and again (from the checkpoint); malformed kernel 2 fork 1
+```
+
+**So gap 146 is confirmed closed on the merged tree**, by the two halves that matter: with the reader
+gone both suites still **compare** against something that is not themselves (20 T5 inputs / 360
+`Replay` keys / 17,291 scalar values; the door 16 reads / 288 keys / 32,976 values), and when a kernel
+answer moves they **fail by name**. **The Switch step may run.**
+
+**Three harness defects of this step's own, disclosed** (§5.12; none of them a finding about the
+tree): the first rename pass double-substituted `fn parse_bytes` → `SDEL_SDEL_…`; the second renamed
+`fn parse(` on `Dur`, `YearMonth`, `IsoWeek`, `hhmm`, `Period`, `Dep` and `Stamp` while their call
+sites kept the old name; and the first `decode_facts` corruption **never applied** (that function ends
+in a struct literal, not `Ok(r)`), so its exit 0 was the *clean* tree and was discarded rather than
+reported as a passing door. Each was a bug in the simulation, found by reading the compiler's own
+error, and none changed what the suites assert.
+
+### Observable behaviour changes
+
+**None from the merge itself.** The merge wrote no code. Across `1075ce7..HEAD` the only shipped
+source file that moved is track C's `tm/src/cli/lifecycle.rs`, whose own measurement is **0 of 138**
+captured outputs across the 69-invocation sweep and **44 cases / 111,159 bytes byte-identical** on
+`tm log --json`. No `.lean`, no `lean-toolchain`, no `Cargo.toml`, no `Cargo.lock`, nothing under
+`kernel/corpus/`, and no fixture re-blessed by this step.
+
+### Recorded disagreements between the design, the ledger and the repo
+
+1. **`cli_switch_acceptance` is 7 passed / 2 ignored, not the 8 / 2 the step's brief predicted.** The
+   binary holds **9** tests, and its own header says "two of the ten". The missing two of §14.6's ten
+   T9s — `invalid_utf8_line_is_a_warning_and_tm_check_names_it` and
+   `a_line_dated_next_year_changes_nothing_about_today_and_tm_check_names_it` — live in
+   `cli_check_log.rs` (**6 passed / 0 failed**), not here. The two `#[ignore]`d are
+   `an_unwritable_cache_rebuilds_in_memory_with_one_notice` and
+   `a_hand_undo_beyond_the_rebuild_bound_fails_by_name`, both S-gated by construction. **7 / 0 / 2 is
+   the number to quote until S deletes those two attributes.**
+2. **§12's one-reader grep is 134 on the merged tree, and 123 outside this campaign's instrument.**
+   The arithmetic is exact: track A's 136 minus track B's net −2 (eleven code sites went, nine
+   doc-comment lines still name the deleted functions in prose). Of the 134, **9** are
+   `support/fork.rs`'s own needle list and **2** are the bridge lines inside the deletion regions.
+   Quote **§12's alternation**, never R8's 89 — W-7's disagreement, now standing for a **sixth** run.
+3. **The gap list is deliberately no longer one sequence, and the merge did not renumber it.** The
+   owner partitioned ranges to stop the collisions of the previous three days (A 150-159, B 160-169,
+   C 170-179, Switch 180-189, S-after 190-194, repair 195-199), so **153-159, 161-169 and 171-179 are
+   holes**. AGENTS §6.4 asks the merge to keep one sequence; renumbering now would invalidate every
+   cross-reference the three blocks just wrote, and the ranges are the owner's live instrument against
+   a recurring failure. Recorded here as the deviation it is, for the owner to settle.
+4. **AGENTS §8.3 had gone stale and is repaired in this commit.** It still read "what remains of the
+   retarget is **gaps 147-149**" after three of those four were closed; only 148 had a closure note.
+
+### What AGENTS §6.5 owes at a merge, item by item
+
+1. `Negative.lean` cheat renumbering — **no-op**: no cheat added or moved (highest **157**).
+2. Gap numbering and cross-references — **see disagreement 3**; every cross-reference checked, none
+   moved by the merge.
+3. New theorem names into `Check.lean` — **no-op**: no theorem added (audit **3934**).
+4. Goals discharged deleted from `Goals.lean` — **no-op**: burn-down **13 → 13**, all stage 6.
+5. Every new module imported in `TmKernel.lean` — **no-op**: no module added (**78** imports).
+6. `check.sh` seven ok and `cargo test --workspace` green beside it — **done, below**.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited by any of the three tracks or by the merge.** Goals discharged, refuted, added:
+none; burn-down **13 → 13**. New theorems: none — the audit stays at **3934**. New `decide`/`rfl`
+witnesses: none, so no probe budget was spent. New cheats: none (highest **157**). New parity
+entries: none (highest stays **P35**). No predicate or assertion was weakened, no goal deleted, no
+memory bound raised, no corpus or snapshot re-blessed.
+
+### Numbers
+
+**Taken:** none — the merge step has no assigned gap range. **Highest:** gap **170**, cheat 157,
+parity P35. **Free:** 153-159 (A), 161-169 (B), 171-179 (C), 180-189 (Switch), 190-194, 195-199.
+
+**Re-measured on the merged tree** (main worktree, on the tree committed; every command capped at
+`MemoryMax=40G`, `MemorySwapMax=0`; the FFI suite at 16G):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, **3.05 / 3.06 s** (parent `b0d646f`: 3.04 / 3.04 / 3.00). Flat, far inside the 10%-per-step rule |
+| axiom audit | **3934 theorems** (unchanged) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged; all stage 6) |
+| `cargo test --workspace` | **1135 passed / 0 failed / 11 ignored across 79 result lines**, exit 0, **0 warnings**. The arithmetic is exact: `b0d646f` **1130 / 0 / 9**, plus B's **+1 passing / +2 ignored**, plus C's **+4 passing** |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) |
+| T5 (`kernel_replay_parity`) | **22 passed / 0 failed / 4 ignored**, 6.53 s; **26 passed** with `--include-ignored` |
+| the door suite (`kernel_log_door`) | **16 passed / 0 failed**, 1.57 s |
+| `kernel_log_grammar` | **6 passed / 0 failed / 2 ignored** |
+| `cli_switch_acceptance` | **7 passed / 0 failed / 2 ignored** (see disagreement 1) |
+| `cli_check_log` | **6 passed / 0 failed** |
+| `cli_latency --include-ignored` | **5 passed / 0 failed**, 9.98 s |
+| `kernel_call_counts` | **1 passed** — `log == 0` for eleven verbs, `== 1` for `tm check` |
+| the frozen fork inside `cargo test --workspace` | T5 **20 inputs**: 360 `Replay` keys, 17,291 scalar values, 20 entry counts, 4 P21 sightings. The door **16 scoped reads**: 288 keys, 32,976 values, 16 entry counts, 14 refused-line lists, 8 P21 sightings |
+| the fixtures | corpus **146,868 B** (7 rows); classes **212,349 B** (13 rows); log lines **1,946,886 B** (8,280 rows). None re-blessed here |
+| the deletion simulation | T5 4,129 → 3,774 lines, the door 715 → 671, `support/replay.rs` 77 → 26. Both suites **green and still comparing**; corrupted, T5 fails on all three frozen arms and the door goes **14 passed / 2 failed** |
+| §12's one-reader grep | **134** merged, **123** outside this campaign's instrument |
+| the merge diff | `1075ce7..HEAD`: **12 files, +11,438 −649**. One shipped source file (track C's `lifecycle.rs`), two test suites, one new test support module, three fixtures, three documents. **No Lean**, no `Cargo.toml`, no `lean-toolchain`, no `kernel/corpus/` |
+
+**Owed next: S itself, and its instrument is now outside the tree on this branch.** Design §14.6's
+contents **1, 2 and 5** — the body swap (built and measured green at W-10, **141.8-151.8 ms** for a
+three-year later verb against the pre-switch 278.6 ms) plus §12's deletion — with item 7's D18
+defaults (**gap 120 part 3** and **gap 145**), **gaps 119, 129, 132, 133**, **gap 151**'s decision
+(§12's deletion list reaches past the reader: keep the three `Event` accessors and correct the list),
+the three pre-switch assertions turned around
+(`no_verb_makes_a_kernel_log_call_before_the_switch`, `every_scope_is_the_whole_replay_before_the_switch`,
+`cli_latency`'s cache-file count — **gap 140** clearing as written), the call-count assertion turned
+on, the two `#[ignore]`s deleted, and the **§5.13 drive**. Then **S2** (**gap 130**, D16) with quirk
+Q6(f) (**gap 86**), then **L9** (**gap 93**). Residue from the retarget: **gaps 150, 152, 160, 170**.
