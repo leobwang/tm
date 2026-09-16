@@ -21070,3 +21070,218 @@ the owner). **What S no longer owes:** the ten T9 names and T12 (two `#[ignore]`
 there is to delete an attribute, not to write a test), **T11's seven latency rows**, **the per-verb
 kernel-call count**, and **gap 138**. **Gaps 140 and 141 clear at S** and are its measurements, not
 its work. Then **S2** (**gap 130**) with quirk Q6(f) (**gap 86**), then **L9** (**gap 93**).
+
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 5, W-8 PREP 2 (`w8-facts`), on a worktree off
+     `rebuild-on-lean` at 594e476.  **THE SWITCH DID NOT LAND AND THIS BLOCK
+     DOES NOT CLAIM IT DID** — `Ctx::replay_with` still calls `Ctx::replay_of`,
+     whose body is still `Log::parse_bytes(..).replay(..)`, and no verb's
+     *replay* comes from the kernel.  This is the three findings that would
+     have made a naive switch wrong: gaps **134**, **135** and **136**, closed
+     green against the UNSWITCHED binary under D19.  Takes gap **142**;
+     highest gap 142, new gaps start at 143.  No Lean edited: audit 3934,
+     cheats 157, parity P35, burn-down 13, imports 78, all unchanged.
+     =========================================================================== -->
+
+## Stage 5, W-8 prep 2, 2026-09-16: the three findings that would have made a naive switch wrong
+
+**The honest paragraph, first.** S is not made here. `Ctx::replay_with` still delegates to
+`Ctx::replay_of`, `log.rs` still holds every line §12 deletes, and **no verb's replay comes from the
+kernel**. What this commit does is remove three ways in which wiring that body *correctly* would
+still have produced wrong answers — each found by reading the kernel's own wire against the host's
+decoder, each now pinned by a test that was **shown to fail without its fix**.
+
+Two of the three were not "unbuilt work" but **facts the kernel already sends and the host threw
+away**. That is the shape worth remembering: the wire was right, the decoder was lossy, and nothing
+before the switch could notice, because before the switch every scope is the whole log.
+
+### What landed
+
+**1. Gap 134 — `tm check` names every unreadable line, not the last chunk's.** `lifecycle.rs`'s
+`log_problems` now takes its line warnings from `kernel_log::line_warnings`, the read-only sweep
+W-7 built and left unwired. The answer's `warnings` array is **per call** (`Boundary.logBody` over
+`logVerdicts`) and `kernel_log::genesis` returns only its **last chunk's**, so a `tm check` reading
+them off an answer would have named the final chunk's lines alone — at **every** scope, `All`
+included. The sweep asks for no facts, no headers, no reseal and no sealed records, so
+`LogReq.resumes` is false: the kernel reads its lines and answers their warnings with no replay, in
+chunks, exact at any scope. `tm/tests/cli_check_log.rs` gains
+`tm_check_names_an_unreadable_line_in_every_chunk_of_a_multi_chunk_log`: **12,109 lines over 3
+chunks**, damaged in the first, the middle and the last, all three named.
+
+A sweep that cannot run falls back to the in-tree reader's own warnings **and says so as its own
+warning**, rather than reporting a clean log — `tm check` is the one verb that must keep working on
+a damaged log (D18). That fallback is `Ctx.log_warnings`' last reader and goes with the reader at S.
+
+**2. Gap 135 — the verb audit, and the one real defect it found.** `decode_facts` read each item's
+wire record as a 6-tuple `[id, record, lastDone, dropped, doneFirst, doneCount]` and **used only the
+first four**, rebuilding `done_dates` from the window records alone. But `Seal.ItemAgg.doneFirst`
+and `doneCount` are §8.4 column-**A** facts — "its first done date and count of done dates over
+**every** date (a date below the horizon included)" — while the date **set** is a window fact. So
+`Replay::done_date_first` (`recur`'s `every:Nd` phase anchor) and `Replay::done_date_count` (the
+ordinal recurrences' pending number and completion count) were answered from a **suffix** at any
+narrowed scope. Measured on a 200-day log: **398 of 645 ids** have a narrowed done-date set at
+`Hot`, and the mutation check below shows one whose anchor moves from `2026-01-15` to `None`.
+
+Those two questions are asked by every verb that ranks candidates or builds instances — `tm plan`,
+`tm now`, `tm start`, `tm done`, `tm triage`, the TUI — and `Ctx::load` gives all of them `Hot`.
+The fix is to keep what the wire already carries: `Replay::done_date_totals`, filled from `ItemAgg`
+by `decode_facts` and from its own whole set by the reader.
+
+**3. Gap 136 — `tm log`'s `total`.** `Replay::entry_count()` was `rows.len()`, and the rows come
+from the day records, so a narrowed scope truncates them. §11.4 step 5 says `total = facts.entryCount`
+— the checkpoint's all-time count, answerable at any scope. `Replay::entry_count` is now that number.
+Measured on the same log: **8,201 entries all-time, 144 rows carried at `Hot`**.
+
+### The verb audit (gap 135), every verb against the measured narrowing
+
+`Hot` merges the answer alone, so what it drops is the sealed day records and the window's item-day
+minutes, done dates and date-keyed instances. The reason most reads are safe is **arithmetic, not
+luck**: the window horizon is `H = horizonOf L = min(monthStart L, isoMonday L, L − 16)`, which sits
+at or before the start of the current ISO week *and* of the current month *and* 16 days back — which
+is exactly `priority::done_this_period`'s span and the oldest date `auto_close` can reach.
+
+| verb(s) | scope | narrowing-sensitive facts read | `Hot` sufficient? |
+|---|---|---|---|
+| every verb not named below (`now`, `plan`, `start`, `done`, `stop`, `extend`, `break`, `pause`, `interrupt`, `resume`, `energy`, `idle`, `wake`, `arrive`, `add`, `edit`, `move`, `rank`, `demote`, `readopt`, `drop`, `event`, `skip`, `routine`, `triage`, `sync-cal`, `undo`) | `Hot` | `day(today)`, `seam(today)`, `blocks_done(today)`, `energy_on(today)`, `open_block`, `last_effective_t` — all open-day or all-time | **yes** |
+| the same verbs, through `priority::collect_candidates` | `Hot` | `done_this_period` → `block_minutes_on(id, d)` and `instances_of` for `d` in the current week/month | **yes**, by the horizon above |
+| the same verbs, through `recur::today_instances` | `Hot` | `done_date_first`, `done_date_count` (all-time), `instances_of`, `last_done`, `is_done` | **only after this commit** — the two all-time numbers were a suffix |
+| `close day` for `date ≥ H`, and the automatic close | `Hot` | `horizon::day_remaining` → `block_minutes_on(id, date)`, `date ≥ T − 16 ≥ H` | **yes** |
+| `close day --date <older>` | `Dates{d, d}` | the same, for the named date | **yes** — window records for `[d, d]` |
+| `log --since` | `Dates{from, today}` | `view()` rows by day, and `total` | **only after this commit** — `total` was the scope's row count |
+| `log`, `log --tail`, `log --item` | `All` | rows and `total` | yes (gap 117's settlement; gap 129 still owes the narrowing) |
+| `review day`, `review week`, `review month`, `model --fit`, `model --compare` | `All` | every day, duration and demotion | yes |
+| `check` | `Hot` | **`view()`** for D18 (ii)'s far-future scan | **no — gap 132, still open.** Its *line* warnings no longer depend on scope at all (gap 134) |
+| the TUI | `All` on Review or with no `state.date`, else `Dates{min(monday, state.date), today}` | `blocks_done(d)` over the ISO week; `recur::week_instances` over the same week | **yes** |
+
+**No verb's scope needed changing**, which is why the verb scope table is untouched: the one real
+defect was a lossy decoder, not a wrong scope, and the fix was to carry the fact the answer already
+held rather than to widen a scope and pay for history nobody asked for. Gap 132 stays open and is S's.
+
+### The mutation check — the tests bite
+
+Both new door tests were re-run against the **pre-fix** accessor bodies (`done_date_first` /
+`done_date_count` over the date set, `entry_count()` as `rows.len()`), the rest of the tree
+unchanged:
+
+| test | with the fix | against the pre-fix bodies |
+|---|---|---|
+| `the_doors_hot_scope_answers_every_all_time_question` | ok | **FAILED** — id `10`: the first done date `None`, expected `Some(2026-01-15)` |
+| `the_doors_total_is_the_logs_all_time_entry_count` | ok | **FAILED** — `hot`: total `144`, expected `8201` |
+
+Each also carries its own non-vacuity guard: the first requires that some id's date set really is
+narrowed at `Hot` (398 of 645 are) and the second that `Hot` really carries fewer rows than the log
+has entries, so neither can pass by having nothing to measure.
+
+### Observable behaviour changes
+
+| what | before | after |
+|---|---|---|
+| `tm check`'s wording for a refused log line | serde's free text — `EOF while parsing an object at line 1 column 44`, `expected ident at line 1 column 2`, `invalid UTF-8: invalid utf-8 sequence of 1 bytes from index 53` | the kernel's **named** verdict — `not JSON: unterminatedObject`, `not JSON: notAValue n`, `invalid UTF-8`. This is parity **P15** reaching the binary; no new parity entry |
+| `tm check` on a tree where no capacity verb has run | wrote nothing | writes `.tm/cache/replay/tz.json` (the zone table the sweep sends; D13's directory, which `tm init` excludes from sync) |
+
+**Measured, not asserted:** over a tree with a truncated line, a line of nonsense, an invalid-UTF-8
+line and a deep-nested line, `tm check`'s **codes, line numbers, severities, summary and exit code
+are identical** to `594e476`'s binary — `0 errors, 3 warnings`, `exit_code 0`, `log-line` at lines
+3, 4 and 5 on both. Only the sentence after the colon moved.
+
+### Gap 134 — CLOSED
+
+`tm check` is wired to `kernel_log::line_warnings`, with a multi-chunk test proving a warning in the
+**first** chunk is named. `Ctx.log_warnings` survives as the sweep's fallback only, and is deleted
+with the reader at S.
+
+### Gap 135 — CLOSED
+
+Every verb is audited against the measured narrowing in the table above; the one fact `Hot` truncated
+is carried from the kernel's own item record. What the audit did **not** find is worth recording too:
+no verb needed a wider scope.
+
+### Gap 136 — CLOSED
+
+`tm log`'s `total` is `facts.entryCount`, tested under `Hot`, `Dates` and `All`.
+
+### Gap 142 (new; label W8F-a) — `tm check` re-sweeps the whole log on every run
+
+1. **What is not done.** `kernel_log::line_warnings` reads every line of `.tm/log.jsonl` through the
+   FFI on every `tm check`, in chunks of 4,096 lines, whatever changed since the last run.
+2. **Why.** D18 (i) requires `tm check` to name **every** unreadable line, and the answer's
+   `warnings` array is per call, so there is no cheaper exact source before S. A sweep restricted to
+   the chunks whose digest moved needs a per-chunk digest the checkpoint does not carry.
+3. **What it costs.** Measured on a 65,760-line / 5.05 MB log of uniform `note` lines (the size class
+   of the design pass's 3-year log, not its mixture): `tm check` **44 ms → 336 ms**, about 17 calls.
+   `tm check` is not on the hot path and has no T11 row; every T11 verb is unchanged.
+4. **When it clears.** A lever at or after S, and only if someone wants it: the sweep is already
+   skipped entirely for a log with no lines.
+
+### Recorded disagreements between the design, the ledger and the repo
+
+1. **W-7's measured narrowing table is incomplete: `rows` narrows too.** The "whole at every scope"
+   list in the S block names `line_count` but says nothing of `rows`, because the door's
+   `narrowed_fields` never compared them — `Replay`'s `PartialEq` skips `rows` as line bookkeeping,
+   so the omission was invisible. Measured here: at `Hot` **and** at `Dates` the narrowed list is
+   `days, items, instances, energy, durations, interrupts, demotions, closes, done_dates, seams,
+   rows`. `narrowed_fields` now compares `rows`, `entry_count` and `done_date_totals`, and the last
+   two do **not** appear in it. This is the mechanism behind **gap 132** (`tm check`'s far-future
+   scan reads `view()`), which stays open.
+2. **The two new fields are neither serialised nor compared by `PartialEq`, and that is deliberate.**
+   Serialising them changes `tm/tests/snapshots/log_replay__three_days_replay.snap` and adds keys
+   the fork's `Replay` has no answer for; comparing them breaks two true equalities — `replay(raw)
+   == replay(masked)` in `log.rs`'s reader tests, where the masked list is twelve entries shorter
+   and `entry_count` legitimately differs, and `replay_is_json_safe_and_snapshotted`, where a JSON
+   round trip cannot restore a skipped field. Both failures were hit and are what settled the
+   design. The fields are asserted **by name and by scope** in `kernel_log_door.rs` instead, which
+   is the stronger statement.
+3. **`tm check` now makes one kernel `log` call, and the D19 half-switch guard records it by name.**
+   `kernel_call_counts.rs`'s expectation becomes per verb: **0 for eleven verbs, 1 for `tm check`**.
+   It is not a half-switch — the sweep asks for no facts and does not resume a replay, and
+   `tm check`'s own `Replay` still comes from `Ctx::replay_of` — and the number is **exact rather
+   than a floor**, so the guard still bites: were `tm check`'s replay switched too, it would read 2
+   and the assertion would fire.
+4. **`tm-core/src/log.rs` was edited, which this step's brief scopes narrowly.** Three fields, two
+   accessor bodies, one doc and two fill sites — the *decoded view* §12 says **stays** (and is
+   reshaped in phase R), never the reader. `Log::parse_bytes`, `replay`, `undo_mask`,
+   `parse_timestamp` and `Ctx::replay_of`/`replay_with` are untouched, and the §12 one-reader grep
+   is unmoved at 125.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited** — `git diff --name-only` matches no `.lean`, no `lean-toolchain`, nothing
+under `kernel/corpus/`, and no `Cargo.toml`/`Cargo.lock`. Goals discharged, refuted, added: none;
+burn-down **13 → 13**, all stage 6's. New theorems: none — the audit stays at **3934**. New
+`decide`/`rfl` witnesses: none, so no probe budget was spent. New cheats: none (highest **157**).
+New parity entries: none (highest stays **P35**); the warning-text change is **P15** reaching the
+binary, which that entry already describes. `TmKernel.lean` imports: **78**. No predicate or
+assertion was weakened, no memory bound raised, no corpus reblessed, no snapshot re-blessed.
+
+### Numbers
+
+**Taken:** gap **142**. **Highest:** gap 142, cheat 157, parity P35. New gaps start at **143**.
+
+**Re-measured** (this worktree, on the tree committed; every command capped at `MemoryMax=40G`,
+`MemorySwapMax=0`):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, **3.19 / 3.03 / 3.08 s** (merge `594e476`: 3.81 / 3.08 / 3.07) — flat, far inside the 10%-per-step rule |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged; all stage 6) |
+| `cargo test --workspace` | **1124 passed / 0 failed / 8 ignored across 79 result lines**, exit 0, **0 warnings** (merge: 1121 / 0 / 8 across 79). **+3 tests, no new binary**: two in the door suite, one in `cli_check_log` |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) — unchanged |
+| T5 (`kernel_replay_parity --include-ignored`) | **20 passed / 0 failed**, **6.59 s** (merge: 6.50 s) |
+| the door suite (`kernel_log_door`) | **15 passed / 0 failed** (merge: 13) |
+| `cli_check_log` | **6 passed / 0 failed** (was 5) |
+| `kernel_call_counts` | **1 passed** — `log == 0` for eleven verbs, `== 1` for `tm check` |
+| `cli_latency --include-ignored` | **5 passed / 0 failed**, **10.03 s**. T11, all inside bounds: first verb **945.6 ms**, later **283.4**, reseal **308.8**, after a 30-day-old undo **278.2**, the next verb **283.4**, a 3-day-old routine **227.8**, `review week` **202.5**, 10 stalled days worst **683.6** (0 checkpoint files — gap 140, unchanged) |
+| the `Hot` narrowing, measured | 200-day log: **4 days of 200** carried; **645 ids**, **398** with a narrowed done-date set; **8,201** entries all-time against **144** rows at `Hot` |
+| `tm check` over 65,760 lines / 5.05 MB | **44 ms → 336 ms** (gap 142) |
+| `tm check` behaviour vs `594e476` | codes, lines, severities, summary and exit code **identical**; only the warning sentence changed (P15) |
+| §12's one-reader grep | **125 lines**; **124** excluding the two tracks' test files — **unchanged** |
+| the diff | 3 shipped files (`tm-core/src/log.rs`, `tm/src/cli/kernel_log.rs`, `tm/src/cli/lifecycle.rs`) and 3 test files, **+400 −28**. No Lean, no `Cargo.toml`, no `lean-toolchain`, no `kernel/corpus/` |
+
+**Owed next: S, in full — and its list is shorter by three.** Design §14.6's contents 1-3 and 5,
+item 4's **retarget of T5** (**gap 137**), item 7's D18 defaults (**gap 120 part 3**; gap 134's
+sweep is **done**), **gaps 119, 129, 132, 133**, and the **§5.13 drive** (short by **gap 131**'s
+item, carrying **gaps 138, 139** and now **142**'s question for the owner). **Gaps 140 and 141
+clear at S.** Then **S2** (**gap 130**) with quirk Q6(f) (**gap 86**), then **L9** (**gap 93**).

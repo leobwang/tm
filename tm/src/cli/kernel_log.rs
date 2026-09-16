@@ -1583,6 +1583,7 @@ pub fn decode_facts(answer: &Value, tz: Tz) -> D<Replay> {
     let mut items: BTreeMap<String, ItemReplay> = BTreeMap::new();
     let mut last_done: BTreeMap<String, DateTime<FixedOffset>> = BTreeMap::new();
     let mut dropped_items: BTreeSet<String> = BTreeSet::new();
+    let mut done_date_totals: BTreeMap<String, (Option<NaiveDate>, u32)> = BTreeMap::new();
     for p in d_arr(v.get("items").unwrap_or(&Value::Null), "facts.items")? {
         let p = d_tuple(p, 6, "an item")?;
         let id = d_str(d_at(p, 0, "an item's id")?, "an item's id")?;
@@ -1605,6 +1606,19 @@ pub fn decode_facts(answer: &Value, tz: Tz) -> D<Replay> {
         }
         if let Some(t) = d_opt(d_at(p, 2, "an item's lastDone")?, |x| d_when(x, "lastDone"))? {
             last_done.insert(id.clone(), t);
+        }
+        // **The all-time done-date facts** (§8.4's `done_dates` row, column A):
+        // the first done date and the count of distinct ones, over *every*
+        // date, a date below the horizon included (`Seal.ItemAgg`). They are
+        // read here rather than derived from the window's dates because the
+        // window is exactly what a narrowed scope drops: `done_dates` carries
+        // the dates at or above the horizon, and `.first()`/`.len()` over it
+        // would answer for that suffix. `tm plan`'s `every:Nd` phase anchor and
+        // the ordinal recurrences' pending number are those two questions.
+        let first = d_opt(d_at(p, 4, "an item's first done date")?, |x| d_date(x, "an item's first done date"))?;
+        let count = d_u32(d_at(p, 5, "an item's done-date count")?, "an item's done-date count")?;
+        if first.is_some() || count > 0 {
+            done_date_totals.insert(id.clone(), (first, count));
         }
         if d_bool(d_at(p, 3, "an item's dropped bit")?, "an item's dropped bit")? {
             dropped_items.insert(id);
@@ -1732,6 +1746,11 @@ pub fn decode_facts(answer: &Value, tz: Tz) -> D<Replay> {
         last_effective_t: d_opt(v.get("lastEffective").unwrap_or(&Value::Null), |x| d_when(x, "lastEffective"))?,
         rows,
         line_count: d_u64(answer.get("lines").unwrap_or(&Value::Null), "the answer's line count")?,
+        // §11.4 step 5: `tm log`'s `total` is the log's all-time entry count,
+        // which the checkpoint carries, not the row count of this scope.
+        entry_count: usize::try_from(d_u64(v.get("entryCount").unwrap_or(&Value::Null), "facts.entryCount")?)
+            .map_err(|_| "facts.entryCount: too many entries".to_string())?,
+        done_date_totals,
     })
 }
 

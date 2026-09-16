@@ -753,6 +753,41 @@ pub struct CheckOut {
     pub exit_code: i32,
 }
 
+/// **Every line of `.tm/log.jsonl` the kernel refuses** (D18 (i), gap 134).
+///
+/// **Why this is its own read-only sweep and not the verb's replay.** The
+/// kernel's `log` answer carries a `warnings` array that is **per call**
+/// (`Boundary.logBody` over `logVerdicts`): a hot call sees only its own
+/// tail's lines, and genesis returns only its **last chunk's**. So taking
+/// `tm check`'s warnings from an answer would silently name the lines of the
+/// final chunk alone — at *every* scope, `All` included, not just `Hot`. A
+/// call that asks for no facts, no headers, no reseal and no sealed records
+/// does not resume (`Boundary.LogReq.resumes`), so the kernel reads its lines
+/// and answers their warnings with no replay at all: [`kernel_log::line_warnings`]
+/// sweeps the whole file in those chunks, and is exact whatever scope the
+/// verb's own replay asked for.
+///
+/// A sweep that cannot run falls back to the in-tree reader's warnings — what
+/// shipped before — and says so as its own warning rather than reporting a
+/// clean log: `tm check` is precisely the verb that must keep working on a
+/// damaged log (D18). The fallback goes with the reader at S.
+fn line_warnings(ctx: &Ctx) -> (Vec<tm_core::log::LogWarning>, Option<String>) {
+    if !ctx.store.exists(LOG_PATH) {
+        return (Vec::new(), None);
+    }
+    let bytes = match ctx.store.read_bytes(LOG_PATH) {
+        Ok(b) => b,
+        Err(e) => return (ctx.log_warnings.clone(), Some(e.to_string())),
+    };
+    let cache = ctx.store.root().join(super::kernel_log::CACHE_DIR);
+    let tz = super::tz_table::wire_for(Some(&cache), ctx.cfg.tz);
+    let now = ctx.today.format("%Y-%m-%d").to_string();
+    match super::kernel_log::line_warnings(&bytes, &now, &tz) {
+        Ok(ws) => (ws, None),
+        Err(why) => (ctx.log_warnings.clone(), Some(why)),
+    }
+}
+
 /// **What `tm check` says about `.tm/log.jsonl`** (the owner's D18 (i) and
 /// (ii)): every line the reader refused — malformed JSON, an unknown field
 /// type, a bad timestamp, bytes that are not UTF-8 — and every line stamped
@@ -765,6 +800,7 @@ pub struct CheckOut {
 /// it said `no problems` about a log holding a truncated line and a line of
 /// nonsense, and a line dated next year went unmentioned.
 fn log_problems(ctx: &Ctx) -> Vec<validate::CheckProblem> {
+    let (warnings, swept) = line_warnings(ctx);
     let quote = |text: &str| {
         let short: String = text.chars().take(72).collect();
         if short.chars().count() < text.chars().count() {
@@ -773,8 +809,7 @@ fn log_problems(ctx: &Ctx) -> Vec<validate::CheckProblem> {
             format!("{short:?}")
         }
     };
-    let mut out: Vec<validate::CheckProblem> = ctx
-        .log_warnings
+    let mut out: Vec<validate::CheckProblem> = warnings
         .iter()
         .map(|w| {
             validate::CheckProblem::warning(
@@ -786,6 +821,18 @@ fn log_problems(ctx: &Ctx) -> Vec<validate::CheckProblem> {
             )
         })
         .collect();
+    if let Some(why) = swept {
+        out.push(validate::CheckProblem::warning(
+            validate::LOG_LINE,
+            LOG_PATH,
+            1,
+            None,
+            format!(
+                "the kernel could not sweep this log for unreadable lines ({why}); \
+                 the lines below are the in-tree reader's"
+            ),
+        ));
+    }
     let fence = ctx.now + Duration::days(validate::LOG_FUTURE_DAYS);
     for row in ctx.replay.view() {
         if row.t > fence {

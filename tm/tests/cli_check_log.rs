@@ -25,10 +25,36 @@
 
 mod cli_common;
 
+#[allow(dead_code)]
+#[path = "support/loggen.rs"]
+mod loggen;
+
 use std::fs::OpenOptions;
 use std::io::Write;
 
 use cli_common::Tm;
+
+/// `tm/src/cli/kernel_log.rs`'s `CHUNK_LINES`, spelled out rather than
+/// imported: a CLI test drives the binary and must not pull a `tm::cli`
+/// module into its own crate (`kernel_call_counts.rs` spells out
+/// `TM_TRACE_REPLAY_SCOPE` for the same reason). If the constant moves, this
+/// test's own assertion that the log spans several chunks is what fails.
+const CHUNK_LINES: usize = 4_096;
+
+/// The day after the log's last dated line, as an instant: a `now` that makes
+/// no line future-dated, so `tm check`'s D18 (ii) half stays quiet and the
+/// line warnings are the only thing under test.
+fn day_after(text: &str) -> String {
+    let last = text
+        .lines()
+        .rev()
+        .find_map(|l| {
+            let v: serde_json::Value = serde_json::from_str(l).ok()?;
+            chrono::DateTime::parse_from_rfc3339(v.get("t")?.as_str()?).ok()
+        })
+        .expect("a dated line");
+    format!("{}T12:00:00-05:00", last.date_naive() + chrono::Duration::days(1))
+}
 
 /// Append raw bytes to the log, as a hand edit or a torn write would.
 fn append_bytes(tm: &Tm, bytes: &[u8]) {
@@ -234,4 +260,65 @@ fn review_reads_a_calendar_date_for_a_week_or_a_month() {
     // And the help no longer promises what the parser refuses.
     let help = tm.run(&["review", "--help"]);
     assert!(help.stdout.contains("2026-W37"), "{}", help.stdout);
+}
+
+/// **Gap 134**: `tm check` names every unreadable line of a log long enough to
+/// span several genesis chunks — including one in the **first** chunk.
+///
+/// The kernel's `log` answer carries a `warnings` array that is **per call**
+/// (`Boundary.logBody` over `logVerdicts`), and `kernel_log::genesis` returns
+/// only its **last chunk's** answer. A `tm check` wired to that array would
+/// name the final chunk's lines and silently drop every earlier one — at every
+/// scope, `All` included. The verb asks the kernel for the lines directly
+/// instead (`kernel_log::line_warnings`, a read-only sweep of the whole file
+/// in chunks), which is what this test pins: the damage is put in the first
+/// chunk, the middle and the last, and all three must be named.
+///
+/// Before the wiring this test could not fail for the right reason — the
+/// in-tree Rust reader reads the whole file in one pass — so its value is that
+/// it fails the moment the sweep is replaced by an answer's array.
+#[test]
+fn tm_check_names_an_unreadable_line_in_every_chunk_of_a_multi_chunk_log() {
+    let tm = Tm::new();
+    let mut lines = loggen::log(loggen::Rate::SixtyOne, 200);
+    assert!(
+        lines.len() > 2 * CHUNK_LINES,
+        "the log must span more than two chunks, else this test proves nothing: {} lines",
+        lines.len()
+    );
+    // One in the first chunk, one in the middle, one in the last.
+    let (early, middle, late) = (10, CHUNK_LINES + 500, lines.len() - 3);
+    for i in [early, middle, late] {
+        lines[i] = "not json at all".to_string();
+    }
+    let text = loggen::text(&lines);
+    // `plan-basic` has no `.tm/` until a verb writes one; this log is written
+    // straight in, so the damaged lines keep the numbering the test asserts.
+    std::fs::create_dir_all(tm.plan.join(".tm")).expect("mkdir .tm");
+    std::fs::write(tm.plan.join(".tm/log.jsonl"), &text).expect("write the log");
+    let now = day_after(&text);
+
+    let out = tm.run_at(&now, &["check"]);
+    assert_eq!(out.code, 0, "a damaged log must not move the exit code: {}{}", out.stdout, out.stderr);
+
+    let doc = tm.json_at(&now, &["check"]);
+    let named: Vec<u64> = doc["problems"]
+        .as_array()
+        .expect("problems")
+        .iter()
+        .filter(|p| p["code"] == "log-line" && p["file"] == ".tm/log.jsonl")
+        .map(|p| p["line"].as_u64().expect("a line"))
+        .collect();
+    assert_eq!(
+        named,
+        vec![early as u64 + 1, middle as u64 + 1, late as u64 + 1],
+        "every damaged line is named, whichever chunk it fell in"
+    );
+    eprintln!(
+        "tm check swept {} lines / {} bytes over {} chunks and named {} lines",
+        lines.len(),
+        text.len(),
+        lines.len().div_ceil(CHUNK_LINES),
+        named.len()
+    );
 }

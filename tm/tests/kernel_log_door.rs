@@ -17,6 +17,8 @@
 //! | [`the_door_names_every_unreadable_line_not_just_the_last_calls`] | D18 (i): `tm check` must name **every** refused line, and the answer's `warnings` array is per call |
 //! | [`the_doors_render_is_the_lines_own_bytes`] | §11.4 steps 3-5: a selected line's payload is the kernel's rendering of that line |
 //! | [`the_doors_tail_headers_are_the_recorders`] | §14.3 row R6: `tm undo`'s recorder reads the same headers from the same cut |
+//! | [`the_doors_hot_scope_answers_every_all_time_question`] | gap 135: every §8.4 column-**A** fact is whole at `Hot`, the two done-date questions included |
+//! | [`the_doors_total_is_the_logs_all_time_entry_count`] | gap 136: `tm log`'s `total` is `facts.entryCount`, not the row count of the scope |
 //!
 //! Nothing here is a twin of the shipped code: each test calls the function `Ctx` will call.
 
@@ -158,6 +160,13 @@ fn narrowed_fields(a: &tm_core::log::Replay, b: &tm_core::log::Replay) -> Vec<&'
     if a.warnings != b.warnings { out.push("warnings"); }
     if a.seams != b.seams { out.push("seams"); }
     if a.last_effective_t != b.last_effective_t { out.push("last_effective_t"); }
+    // `Replay`'s `PartialEq` skips `rows` as line bookkeeping, so the narrowing
+    // measured at W-7 never looked at it — and it *does* narrow, because every
+    // row comes from a day record's headers. `tm check`'s far-future scan reads
+    // `view()` (gap 132), which is why the omission mattered.
+    if a.rows != b.rows { out.push("rows"); }
+    if a.entry_count() != b.entry_count() { out.push("entry_count"); }
+    if a.done_date_totals != b.done_date_totals { out.push("done_date_totals"); }
     out
 }
 
@@ -452,4 +461,131 @@ fn every_door_function_the_switch_calls_is_exercised_here() {
          cannot say it for us"
     );
     eprintln!("the door's surface: {} functions, every one called here", names.len());
+}
+
+/// **Gap 135**: every *all-time* question a verb asks is answered whole at `Hot`.
+///
+/// `Ctx::load` defaults every verb not named in §11.1 to `Hot`, and `Hot` merges the answer
+/// alone — so the sealed day records and the window's item-day minutes, done dates and
+/// date-keyed instances are what it drops. Most reads are inside the window **by construction**:
+/// the horizon `H = min(monthStart L, isoMonday L, L − 16)` sits at or before the start of the
+/// current ISO week and of the current month, which is exactly the span
+/// `priority::done_this_period` walks and the oldest date `auto_close` can reach.
+///
+/// **Two reads are not inside it.** `recur`'s `every:Nd` phase anchor is the *first* completion
+/// date the log ever saw (`done_date_first`), and the ordinal recurrences' pending number counts
+/// *every* distinct completion date (`done_date_count`). Both are §8.4 column-**A** facts, both
+/// ride the kernel's own item record (`Seal.ItemAgg.doneFirst`/`doneCount`, "over **every** date,
+/// a date below the horizon included") — and `decode_facts` used to drop those two wire fields and
+/// rebuild the pair from the window's dates, which is a *suffix* at `Hot`. Every verb that ranks
+/// candidates or builds instances (`tm plan`, `tm now`, `tm start`, `tm done`, `tm triage`, the
+/// TUI) asks both questions at `Hot`.
+///
+/// The test is written to fail if it ever stops biting: it first requires the log to be long
+/// enough that `Hot` really does narrow the day records *and* the raw done-date sets.
+#[test]
+fn the_doors_hot_scope_answers_every_all_time_question() {
+    let text = loggen::text(&loggen::log(loggen::Rate::Forty, 200));
+    let (dir, bytes) = tree(&text);
+    let today = day_after(&text);
+    let fork = replay::replay_of_text(&text, TZ);
+    let hot = door(dir.path(), &bytes, today, kernel_log::Scope::Hot).replay;
+
+    // Non-vacuity, both halves: `Hot` must really be a narrowing here, and it must really narrow
+    // the *date sets* the two questions below used to be answered from.
+    assert!(
+        hot.days.len() < fork.days.len(),
+        "a 200-day log must fold something: {} of {} days",
+        hot.days.len(),
+        fork.days.len()
+    );
+    let narrowed_sets: Vec<&String> = fork
+        .done_dates
+        .keys()
+        .filter(|id| hot.done_dates.get(*id) != fork.done_dates.get(*id))
+        .collect();
+    assert!(
+        !narrowed_sets.is_empty(),
+        "no id's done-date set is narrowed at `Hot`, so this test cannot see the defect it exists for"
+    );
+
+    // The all-time questions, per id.
+    let ids: BTreeSet<&String> = fork.items.keys().chain(fork.done_dates.keys()).collect();
+    assert!(!ids.is_empty(), "the generated log has items");
+    for id in &ids {
+        let id = id.as_str();
+        assert_eq!(hot.done_date_first(id), fork.done_date_first(id), "{id}: the first done date (the `every:Nd` phase anchor)");
+        assert_eq!(hot.done_date_count(id), fork.done_date_count(id), "{id}: the count of distinct done dates");
+        assert_eq!(hot.is_done(id), fork.is_done(id), "{id}: the done bit");
+        assert_eq!(hot.last_done(id), fork.last_done(id), "{id}: the latest completion");
+        assert_eq!(hot.block_minutes(id), fork.block_minutes(id), "{id}: the aggregate block minutes");
+    }
+
+    // The all-time questions about the log as a whole.
+    assert_eq!(hot.entry_count(), fork.entry_count(), "the all-time entry count");
+    assert_eq!(hot.line_count(), fork.line_count(), "the physical line count");
+    assert_eq!(hot.done_minutes_map(), fork.done_minutes_map(), "the id-keyed minutes map");
+    assert_eq!(
+        hot.event_names().collect::<Vec<_>>(),
+        fork.event_names().collect::<Vec<_>>(),
+        "the `tm event` names"
+    );
+    assert_eq!(hot.done_items, fork.done_items, "the done ids");
+    assert_eq!(hot.dropped_items, fork.dropped_items, "the dropped ids");
+    assert_eq!(hot.open_block, fork.open_block, "the open block");
+    assert_eq!(hot.open_interrupt, fork.open_interrupt, "the open interruption");
+    assert_eq!(hot.longest_leak, fork.longest_leak, "the longest leak");
+    assert_eq!(hot.last_effective_t, fork.last_effective_t, "the last effective `t`");
+
+    eprintln!(
+        "the door's `Hot` all-time facts: {} ids, {} of them with a narrowed done-date set, \
+         {} days of {} carried; narrowed: {:?}",
+        ids.len(),
+        narrowed_sets.len(),
+        hot.days.len(),
+        fork.days.len(),
+        narrowed_fields(&hot, &fork)
+    );
+}
+
+/// **Gap 136**: `tm log`'s `total` is the log's **all-time** entry count (§11.4 step 5's
+/// `facts.entryCount`), not the number of rows the scope it asked for happens to carry.
+///
+/// `Replay::entry_count()` was `rows.len()`, and the rows come from the day records: under a
+/// narrowed scope they are that scope's. So `tm log --since 7d`, which asks `Dates`, would have
+/// printed a `total` smaller than the log. The count rides the checkpoint, so the kernel can
+/// answer it at any scope; the reader fills it from the entries it read, and the two agree on a
+/// whole log.
+#[test]
+fn the_doors_total_is_the_logs_all_time_entry_count() {
+    let text = loggen::text(&loggen::log(loggen::Rate::Forty, 200));
+    let (dir, bytes) = tree(&text);
+    let today = day_after(&text);
+    let fork = replay::replay_of_text(&text, TZ);
+    assert_eq!(fork.entry_count(), fork.view().len(), "on a whole log the reader's two counts agree");
+
+    let first = *fork.days.keys().next().expect("a day");
+    for (what, scope) in [
+        ("hot", kernel_log::Scope::Hot),
+        ("dates", kernel_log::Scope::Dates { from: first, to: first + chrono::Duration::days(6) }),
+        ("all", kernel_log::Scope::All),
+    ] {
+        let r = door(dir.path(), &bytes, today, scope).replay;
+        assert_eq!(r.entry_count(), fork.entry_count(), "{what}: the total is the log's, not the scope's");
+    }
+
+    // Non-vacuity: at `Hot` the rows really are fewer than the entries, so `rows.len()` would
+    // have been a different — and wrong — number.
+    let hot = door(dir.path(), &bytes, today, kernel_log::Scope::Hot).replay;
+    assert!(
+        hot.view().len() < fork.entry_count(),
+        "`Hot` must carry fewer rows than the log has entries, else this test proves nothing: {} of {}",
+        hot.view().len(),
+        fork.entry_count()
+    );
+    eprintln!(
+        "the door's `total`: {} entries all-time, {} rows carried at `Hot`",
+        hot.entry_count(),
+        hot.view().len()
+    );
 }
