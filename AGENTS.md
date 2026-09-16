@@ -2100,9 +2100,13 @@ W-7 audit caught it. The facts decoder landed at `4aaa99e`: `kernel_log::decode_
 defined in `tm/src/cli/kernel_log.rs`, and T5's `kernel_replay` (`tm/tests/kernel_replay_parity.rs`)
 *is* that call, borrowing nothing from the reader S deletes. What is left is design §14.6's
 contents 1–3 and 5, item 4's retarget of T5 (**gap 137**), item 7's D18 defaults with **gap 120
-part 3** and **gap 134**'s sweep, **gaps 119, 129, 132, 133, 135, 136**, the **eight** remaining
-T9 CLI tests, T12 in the binary, T11's seven latency rows and the per-verb kernel-call count
-against R14's baseline. Then **S2** (**gap 130**, D16's kernel writer, with quirk
+part 3** and **gap 134**'s sweep, **gaps 119, 129, 132, 133, 135, 136**, T11's seven latency rows
+and the per-verb kernel-call count against R14's baseline. **The eight remaining T9 CLI tests and
+T12 are no longer on this list**: they landed on 2026-09-16 under D19 as
+`tm/tests/cli_switch_acceptance.rs`, six T9s and T12 green against the **unswitched** binary and
+two `#[ignore]`d with their full post-switch bodies (README, "the T9/T12 step"). S's acceptance for
+those two is to delete the attribute, not to write the test.
+Then **S2** (**gap 130**, D16's kernel writer, with quirk
 Q6(f) = **gap 86**), then **L9** (**gap 93**, day 0). Phase F's F2 and F3 belong to the recurrence
 and priority tranches. Performance and unbuilt-test debt: **gaps 121, 122, 123, 126, 127**. Quirks
 kept by decision: **85** (e), **87** (g), **118** (b). And the **§5.13 human drives** of the stage-3,
@@ -2116,6 +2120,15 @@ that is the figure to quote. This paragraph said "nine" from the stage's close u
 `kernel/README.md`'s X1 block says "seven"; its S block says "eight" and is the one that is right.
 The older README blocks are append-only history (§6.4) and are not rewritten — §10.2's table
 carries the correction for anyone quoting them.
+
+*Closed 2026-09-16 (D19).* **All ten T9 names now exist**, and so does T12. The eight that were
+missing are in `tm/tests/cli_switch_acceptance.rs`; **six pass against the unswitched binary**, and
+**two are `#[ignore]`d** because the code they name has no caller until S —
+`an_unwritable_cache_rebuilds_in_memory_with_one_notice` (nothing in `tm/src` calls
+`kernel_log::unwritable_notice`) and `a_hand_undo_beyond_the_rebuild_bound_fails_by_name`
+(`ReachTooFar` has no call site; **gap 120 part 3**). The figure to quote from here is
+"ten exist, two ignored until S". That step also took **gap 139** (`--now` at an instant before the
+stored runtime day rolls `.tm/state.json` back), which is a question for the §5.13 drive, not S's.
 
 **Depends on.** `Cal.lean` and `Arith.lean` (both built), §4.1's field grammar
 (built), stage 4 for `close`, and — a hard dependency — the `parent` decision.

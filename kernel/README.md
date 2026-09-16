@@ -20517,3 +20517,186 @@ seven latency rows, the per-verb kernel-call count against R14's table, and the 
 (short by **gap 131**'s item, and now carrying **gap 138**'s question for the owner). Then **S2**
 (**gap 130**) with quirk Q6(f) (**gap 86**), then **L9** (**gap 93**). What this commit changes
 about that list is only that **AGENTS §8.3 now states it correctly**.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 5, the T9/T12 step, on rebuild-on-lean, under
+     the owner's D19.  **THE SWITCH STILL DID NOT LAND**, and this block does
+     not claim it did: it records the switch's *acceptance*, landed before the
+     switch as D19 requires.  The tests landed at `2015000`; this block and
+     AGENTS §8.3's correction are the docs commit beside it (§6.4's block was
+     owed from that commit and is paid here).  Takes gap 139; new gaps start at
+     140.  No Lean edited: audit 3934, cheats 157, parity P35, burn-down 13,
+     all unchanged.
+     =========================================================================== -->
+
+## Stage 5, the T9/T12 step, 2026-09-16: the switch's acceptance exists before the switch
+
+**The honest paragraph, first.** S is still not made, and nothing here moves it closer in the
+binary. `Ctx::replay_with` still calls `Ctx::replay_of`, whose body is still
+`Log::parse_bytes(&bytes)` into `.replay(..)`; `log.rs` still holds every line §12 deletes; **nothing
+under `tm/src` calls `kernel_log::`** (the grep is empty). **No shipped file changed at all**:
+`git diff --name-only 3ae75fa..2015000` is exactly three paths — one test file and two fixtures — so
+there is no behaviour row to report and none is claimed.
+
+**Why these land before S and not inside it (D19, 2026-09-16; AGENTS §4).** S stays
+all-or-nothing: one commit in which every verb begins reading through the kernel at once, because a
+half-switched binary — some verbs on the kernel, some on Rust — is the thing the gate exists to
+prevent. The owner chose a third dedicated run over weakening that gate, and made it fit by landing
+everything *separable* first, each piece green against the **unswitched** binary, so that S's commit
+is the body swap plus §12's deletion and nothing else. Moving the instruments out of S costs no
+safety: only the body swap can half-switch the binary. These tests are the instruments, and because
+they are S's acceptance, **S cannot be claimed without them**.
+
+### What landed: design §14.6's ten T9 names, and T12
+
+Ten exist now. Two landed with D18 at `022317d`; the other eight and T12 landed at `2015000` as
+`tm/tests/cli_switch_acceptance.rs` (744 lines) with two fixtures.
+
+| §14.6 T9 name | file | today |
+|---|---|---|
+| `invalid_utf8_line_is_a_warning_and_tm_check_names_it` | `cli_check_log.rs` | passes (`022317d`, D18 (i)) |
+| `a_line_dated_next_year_changes_nothing_about_today_and_tm_check_names_it` | `cli_check_log.rs` | passes (`022317d`, D18 (ii)) |
+| `tm_undo_across_a_seal_restores_the_facts` | `cli_switch_acceptance.rs` | **passes** |
+| `deleting_the_replay_cache_changes_nothing` | `cli_switch_acceptance.rs` | **passes** |
+| `a_changed_tz_invalidates_the_checkpoint` | `cli_switch_acceptance.rs` | **passes** |
+| `a_rewritten_log_prefix_invalidates_the_checkpoint` | `cli_switch_acceptance.rs` | **passes** |
+| `a_now_before_the_ledger_is_answered_and_not_persisted` | `cli_switch_acceptance.rs` | **passes** |
+| `tm_log_is_byte_identical_on_the_corpus` | `cli_switch_acceptance.rs` | **passes** |
+| `an_unwritable_cache_rebuilds_in_memory_with_one_notice` | `cli_switch_acceptance.rs` | **`#[ignore]`d until S** |
+| `a_hand_undo_beyond_the_rebuild_bound_fails_by_name` | `cli_switch_acceptance.rs` | **`#[ignore]`d until S** |
+| **T12** `model_fit_is_the_fork_points_on_the_corpus` | `cli_switch_acceptance.rs` | **passes** |
+
+**The figure to quote is "ten exist, two ignored until S"**, not "eight remain".
+
+**Every test is written to hold on both sides of the switch**, which is the whole mechanism. Each
+asserts the *observable invariant* the checkpoint exists to preserve — the answers a verb gives —
+and never the mechanism's private shape. Today the only thing under `.tm/cache/replay/` is
+`tz.json` (`tz_table::wire_for`, D13); after S the same directory holds `ckpt.json` and the sealed
+month files, and the *same assertions* then say the checkpoint was invalidated, deleted or rebuilt
+correctly. A test asserting "there is no checkpoint" would pass today and fail at S, which is the
+opposite of what these are for.
+
+**What each passing test actually measures** (re-measured on this tree, the tests' own output):
+
+| test | measured |
+|---|---|
+| `a_changed_tz_invalidates_the_checkpoint` | **7 of 11** `--json` answers move (`now`, `plan`, `log`, `log --tail 5`, `log --since 7d`, `review day`, `review week`), and the tree then answers exactly as the same tree with its cache deleted |
+| `a_rewritten_log_prefix_invalidates_the_checkpoint` | line **4 of 158** rewritten, **2 of 11** answers move (`review day`, `review week`), same comparand |
+| `deleting_the_replay_cache_changes_nothing` | **1** cached file removed and **1** rebuilt, **11** `--json` spellings byte-identical |
+| `a_now_before_the_ledger_is_answered_and_not_persisted` | **1** cached file unchanged, **15** tree files unchanged under read-only verbs at an early instant, **11** ledger-day answers unchanged |
+| `tm_undo_across_a_seal_restores_the_facts` | a 14-day log, **9** fact spellings, **3** moved by the command and all **3** restored, **3** log lines appended and **0** rewritten |
+| `tm_log_is_byte_identical_on_the_corpus` | **44** cases, **111,159** bytes, human **and** `--json`, three corpus plans and the corpus logs |
+| **T12** | **599** bytes, byte-identical to the fork's, `fitted from 61 observations` |
+
+**T12's fixture is the fork's own output, not this branch's re-blessed.**
+`tm/tests/fixtures/fork-4748911-energy-14d-model.json` (33 lines, **599 bytes**, sha256
+`6415f198…1901ef`) was produced by building **fork point `4748911`**
+(`kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh` extracts it; `cargo build -p tm` in that
+scratch tree is its binary) and running *its* `tm model --fit` on the same fixture tree at the same
+pinned `--now`. The SHA is in the filename and in the test's doc comment. This is design §11.1's
+CRIT 4: at S the fit runs over the **`All`**-scope `Replay`, so a scope that quietly narrowed the
+observations would refit on fewer of them and 61 would silently become 60.
+`tm/tests/fixtures/tm-log-corpus.expected` (4,467 lines, 111,159 bytes) is measured, not hand-written
+— `TM_LOG_BLESS=1` rewrites it — and a case that starts disagreeing is a **failure, not a re-bless**.
+
+### The two that cannot pass before the switch, and what S owes them
+
+Neither was weakened to fit; both carry their **full post-switch body**, so **S's acceptance is to
+delete the attribute, not to write the test**:
+
+```
+cargo test --test cli_switch_acceptance -- --include-ignored      # at S: 9 passed, 0 ignored
+```
+
+1. `an_unwritable_cache_rebuilds_in_memory_with_one_notice` — the notice exists
+   (`kernel_log::unwritable_notice`, `tm/src/cli/kernel_log.rs`) but has **no emitter**: nothing
+   under `tm/src` calls it, because nothing under `tm/src` calls `kernel_log` at all. Asserting "at
+   most one notice" would pass today and assert nothing. The half that *is* true today is asserted
+   by its sibling: an unwritable cache directory does not move an answer.
+2. `a_hand_undo_beyond_the_rebuild_bound_fails_by_name` — `GenesisError::ReachTooFar` is built and
+   tested in `kernel_log.rs` but has **no call site** in the binary (**gap 120 part 3**, since W-6).
+   Today the Rust reader replays the whole log and this input simply works, so there is no failure
+   to name.
+
+### Gap 139 (new; label T9-a) — `--now` before the stored runtime day rolls `.tm/state.json` back
+
+1. **What is wrong.** At an instant before the stored runtime day, `Ctx::load`'s `roll_day` rolls
+   `.tm/state.json` back and clears `last_plan_hash`. So `tm --now <an earlier instant> now` is not
+   a read: the next plan at the *real* day then counts one more replan, and `tm review day`'s
+   `replans` moves **1 → 2**.
+2. **Why it matters.** It is the §5.13 class — a plausible keystroke (`--now` to look at an earlier
+   instant) that silently changes what a later, ordinary command answers. A user cannot see it
+   happen.
+3. **What it costs.** Nothing at S: it is the `--now` flag's own behaviour in `Ctx::load`, not the
+   replay's, and the switch does not touch it. It cost the T9 test its first shape:
+   `a_now_before_the_ledger_is_answered_and_not_persisted` therefore asserts non-persistence against
+   the read-only verbs (`log`, `check`) and asserts `tm now`'s *answer* and *cache* separately,
+   rather than asserting something that is not true.
+4. **When it clears.** With the §5.13 drive of the stage-5 binary, as a question for the owner
+   alongside **gap 138**'s — is the rollback wanted at all, and should `--now` be read-only?
+
+### Observable behaviour changes
+
+**None.** No shipped file changed: the step is one test file and two fixtures. Every verb answers
+what it answered at `3ae75fa`, byte for byte.
+
+### Recorded disagreements between the design, the ledger and the repo
+
+1. **The W-6 ledger called `deleting_the_replay_cache_changes_nothing` vacuous** — "nothing writes
+   `.tm/cache/replay`", and on that premise judged seven of the ten unwritable before S. Measured on
+   this tree the premise is **false**: a capacity verb writes `.tm/cache/replay/tz.json` on its first
+   run in a plan directory (`kernel_capacity.rs` calls `tz_table::wire_for(Some(&cache), ..)`), so
+   the deletion removes a real derived file and the rerun rebuilds it — 1 removed, 1 rebuilt,
+   measured above. D19 settles the rest.
+2. **§12's one-reader grep goes 124 → 125, and the added hit is a comment.** The one new match is
+   the word `parse_timestamp` inside `cli_switch_acceptance.rs`'s doc comment, explaining what S
+   deletes. No reader was added; excluding that file the count is exactly W-7's **124**. This is the
+   same shape as W-7's own 123 → 124. **Quote §12's alternation, never R8's 89** (W-7's disagreement 1).
+3. **The code commit preceded its README block.** `2015000` landed the tests without the §6.4 block;
+   this block and AGENTS §8.3's `*Closed 2026-09-16 (D19)*` paragraph are that commit's ledger, paid
+   one commit late. Nothing in `2015000` was changed to write them.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited** — `git diff --name-only 3ae75fa..HEAD` contains no `.lean`, no
+`lean-toolchain`, no `Cargo.toml` and nothing under `kernel/corpus/`. Goals discharged, refuted,
+added: none; burn-down **13 → 13**, all stage 6's. New theorems: none — the audit stays at **3934**.
+New `decide`/`rfl` witnesses: none, so no probe budget was spent. New cheats: none (the file's
+highest is **157**; `grep 'CHEAT 158' Negative.lean` returns nothing, so 158 is free, not taken —
+the older banners naming "cheat 158" mean the *next free* number). New parity entries: none (highest
+stays **P35**). `TmKernel.lean` imports: **78**, unchanged. D9-21 has nothing to add: no Lean
+function over a wire-sized list was written. No predicate or assertion was weakened, no goal
+deleted, no memory bound raised, no corpus reblessed.
+
+### Numbers
+
+**Taken:** gap **139**. **Highest:** gap 139, cheat 157, parity P35. New gaps start at **140**.
+
+**Re-measured** (main worktree, on the tree committed; every command capped at `MemoryMax=40G`,
+`MemorySwapMax=0`):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, **3.05 / 3.11 / 3.10 s** (`f653aaa`: 3.06 / 3.14 / 3.10) — flat, far inside the 10%-per-step rule; the three runs' output is identical |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged; stages 3-6) |
+| `cargo test --workspace` | **1117 passed / 0 failed / 8 ignored across 77 result lines**, exit 0, **0 warnings** (`f653aaa`: 1110 / 0 / 6 across 76). **+7 passing, +2 ignored, +1 binary** — all of them `cli_switch_acceptance.rs` |
+| `cli_switch_acceptance` | **7 passed / 0 failed / 2 ignored**, 0.36 s parallel / 1.66 s single-threaded |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) — unchanged |
+| T5 (`kernel_replay_parity --include-ignored`) | **20 passed / 0 failed**, **6.51 s** (`f653aaa`: 6.49 s) |
+| the door test | **13 passed / 0 failed**, **1.03 s** (unchanged) |
+| `cli_latency --include-ignored` | **4 passed / 0 failed**, **3.68 s** (`f653aaa`: 3.71 s) |
+| §12's one-reader grep | **125 lines** (`f653aaa`: 124; disagreement 2 above — the new hit is a doc comment). R8's different grep is not this number |
+| the diff | 1 test file **+744 −0**; 2 fixtures **+4,500 −0** (599 B and 111,159 B); `AGENTS.md` **+16 −3**; this README block. No shipped file, no Lean, no `Cargo.toml`, no `lean-toolchain`, no `kernel/corpus/` |
+
+**Owed next: S, in full — and its list is shorter by exactly what this step landed.** Design §14.6's
+contents 1-3 and 5 (`Ctx::replay_with`'s body becomes the kernel call; §12's deletions in `log.rs`,
+`parse_timestamp` included; **R12's consumer tests moved** to `tm/tests/`; the `log` names in
+`kernel_bridge::refusal`), item 4's **retarget of T5** (**gap 137**), item 7's D18 defaults
+(**gap 120 part 3**, and **gap 134**'s sweep), **gaps 119, 129, 132, 133, 135, 136**, **T11's seven
+latency rows**, the **per-verb kernel-call count** against R14's table, and the **§5.13 drive**
+(short by **gap 131**'s item, and now carrying **gaps 138 and 139**'s questions for the owner). Then
+**S2** (**gap 130**) with quirk Q6(f) (**gap 86**), then **L9** (**gap 93**). What this step changes
+about that list is that **the ten T9 names and T12 are no longer on it** — S's acceptance for the
+last two is to delete an `#[ignore]`, not to write a test.
