@@ -23968,3 +23968,429 @@ goes. Still open: **gaps 132, 133, 150-152, 160, 170, 180-182, 190, 200, 201**,
 and the performance levers **121, 122, 123, 126, 127**. The **§5.13 human
 drives** of the stage-3, stage-4 and stage-5 binaries are still owed, and so is
 the TUI half of the switch's own drive (**gap 182**).
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 5, W-12 Track L, step L9, on branch
+     w12-lookahead (cut from rebuild-on-lean at 8c6ab67, after the switch S,
+     the S-after step and W-11's audit repair).  **L9 DID NOT LAND, and gap 93
+     is NOT closed.**  What this block adds over W-6's restatement (b344185) is
+     that gap 93's blocker has CHANGED IDENTITY: it is no longer "the binary has
+     no kernel reader of the log" — the switch made that false — it is a seam
+     INSIDE the kernel, which this block names, measures and costs, and which
+     phase F's F2 and F3 need as well.  No Lean and no Rust was edited.
+     Gap numbers here come from the Lookahead range 210-219.
+     =========================================================================== -->
+
+## Stage 5, W-12 Track L, step L9 — day 0 waits for a seam inside the kernel, not for the switch
+
+**The honest paragraph, first.** L9 makes the kernel compute day 0 of the lookahead from its own
+replay instead of receiving it as six numbers. It did not land. The step was reachable in the sense
+the brief meant — the switch really has removed the blocker W-6 recorded — but the blocker that
+replaced it is a different one, and it is not session-sized: the kernel answers a request's `log`
+and `capacity` sections **independently**, so the capacity path cannot read the replay the same
+call just ran. Closing gap 93 means opening that seam, carrying §13.5's five inputs across a wire
+that does not exist yet, adding `Arith.lean`'s site R10, deleting the `day0` argument and its
+`badDay0` refusal from 9 files, and re-aiming the parity harness that currently *asserts* day 0 is
+the host's. Design §14.8 prices L9 at 200 definition and 600 proof lines and 4–6 agent-days, and
+after reading the seam I think that price is right. The tree is left exactly as it was found, green.
+
+### What the switch did change, and what it did not
+
+W-6's block (`b344185`) recorded gap 93's blocker as: three of day 0's seven inputs are **replay
+facts**, and "before S the binary has no kernel reader of the log at all … the capacity request's
+keys are `docs`, `now`, `blockMin`, `tz` and `capacity`, and `"log"` appears **0 times** in
+`kernel_capacity.rs`."
+
+The first half is now false and the second half is still true, and that is the whole finding:
+
+* **The kernel is the only reader of the log** since `2b26be3`. `Ctx::replay_with` is
+  `kernel_log::replay_scoped`, so `Ctx::today_slots`' three replay facts —
+  `replay.energy_on(today)`, `replay.day(today).slept_min` and `replay.blocks_done(today)` — are
+  **already the kernel's own derived facts**, decoded by `kernel_log::decode_facts`. Nothing about
+  them is computed by a second reader any more.
+* **`"log"` still appears 0 times in `kernel_capacity.rs`** (measured here). A capacity verb builds
+  a request of `docs`, `now`, `blockMin`, `tz`, `capacity` and calls the kernel; the replay it needs
+  was produced by a *different* call.
+
+So the question L9 turns on is no longer "can the kernel read the log" but "can the kernel's
+capacity path read the replay **it just ran**". Today it cannot, and the reason is structural.
+
+### The seam, by name
+
+`runCap` reads the zone once (`zoneOf`) and hands it to `runCapZ`, which does, in order:
+
+1. `logSectionWith j zo` — the `log` section. Its type is `Except JVal (Option JVal)`: it returns
+   the **rendered answer**. Inside it, `logAnswerOf` → `logOp` runs `Seal.resumeRun`, producing a
+   `Seal.Run` that carries `state`, `headers` and a `Seal.Answer` — and then `logBody` turns that
+   answer into JSON and the `Run` goes out of scope.
+2. `runLoad j` — the documents.
+3. `readCapacityZ plan clock zo cap` — the capacity section, which builds `Look.InputIn` and
+   `mkInput?`s it into `Look.Input`. Its arguments are the plan, the clock, the zone and the
+   section. **There is no argument through which a replay could reach it**, and `Look.Input`'s
+   `day0 : Hist` is the six numbers the host sent.
+4. `withLookahead (logInto lg r) (lookaheadJsonWith c q)` — the two answers are placed side by side
+   in one response object.
+
+The facts day 0 needs do exist in that discarded value: `Seal.Answer.days : List DayRecord`, and a
+`DayRecord` carries `record : Option DayAcc` (which holds `blocksDone`, `sleptMin`, `wake`) and
+`energy : List EnergyObs` (which carries `t`, `pred`, `rep` — exactly the triple
+`Posterior::from_observations` reads). For **today**, an open day, they are in the run's state
+rather than in a sealed record, which is a second reason the extraction is not a one-line
+projection.
+
+This is why gap 93 could not be closed by wiring alone, and it is recorded as **gap 210** below,
+because it is not only day 0's problem: design §14.7's **F2** and **F3** move the recurrence and
+priority families' facts into the kernel and want the same seam.
+
+### What is already built, so that L9 is a seam plus a wire plus one site
+
+Worth writing down, because it is most of the arithmetic and none of it is missing:
+
+| day 0 needs | in the kernel today |
+|---|---|
+| the window and budget | `Look.windowOn`, `Look.windowMinOf` (site R3), `Look.budgetOf` (site R2) |
+| the walls | `Look.wallIndex` / `Look.wallsOn` |
+| the cut from an instant | `Look.cutSlots` (already takes `rests` and a since-break count) |
+| hours since wake, in seconds | `Look.hsw100`, `Look.hswAt`, `Look.bucket` (site R11) |
+| the prediction | `Look.predictAt`, `Look.priorLevel`, `Look.learnedLevel`, `Look.stepAt` |
+| the posterior correction | **`Arith.ramp`, `Arith.posteriorNum`, `Arith.energyAfter` (site R5), already proved** |
+| the home cap | `Look.capForLocation` — which already takes `allowHome`, hardwired `false` by `futureEnergy` |
+| the histogram | `Look.histOf'`, `Look.limitHist` |
+| **the sleep-debt shift** | **missing — site R10** |
+
+`Arith.lean`'s rounding-sites table carries R1–R7 and R11; its R11 row says in its own text that
+"R8–R10 are the D9 track's and step L9's rows, added by their steps". R10 is still L9's to add.
+
+### Why site R10 was again not landed on its own
+
+W-6 considered landing site R10 early and rejected it because it "cannot be made honestly with no
+caller to drive and no wire pair to anchor it — it would be a parity claim with nothing measuring
+it (AGENTS §7.4 items 5 and 11)". That reasoning is unchanged by the switch: `sleepShift` and
+`underSlept` are claims that the kernel's exact form agrees with the fork's `f64`, and with no
+caller there is nothing to measure them against. Landing them alone would have added two
+definitions, their theorems and a `Check.lean` banner to a module nothing calls — the dead-code
+failure AGENTS §5.6 names ("wiring a toy calendar into the command path would be a worse lie than
+the dead code was"). **I followed W-6's precedent and added nothing.** R10 lands in L9's commit,
+where `Ctx::today_slots` is the oracle that makes the claim testable.
+
+### Day 0's seven inputs, restated post-switch
+
+W-6's table stands; the **kind** column is what moved.
+
+| what day 0 needs | where it comes from now | kind, post-switch | what the wire needs |
+|---|---|---|---|
+| `now`'s instant to cut from | `ctx.now_tz`; the request's `now` is a **date** | host fact | the `at` stamp, with `nowDisagrees` |
+| today's stored window/budget, else the formula | `Ctx::window` over `state.window`/`budget`/`arrival`/`date` | host fact | a state section |
+| the current location | `Ctx::loc` from `state.loc` | host fact | a `loc` key |
+| `--allow-home` | a Rust parameter of `kernel_capacity::request` | host fact (a CLI flag) | an `allowHome` key |
+| today's posterior | `Posterior::from_observations(replay.energy_on(today))` | **the kernel's own fact, decoded** | the seam (gap 210), or a courier |
+| minutes slept last night | `replay.day(today).slept_min` | **the kernel's own fact, decoded** | the seam, or a courier |
+| blocks already done today | `replay.blocks_done(today)` | **the kernel's own fact, decoded** | the seam, or a courier |
+
+**The courier route is now available, and I did not take it.** Before the switch, sending those
+three as host-computed fields would have built "precisely the request shape S then replaces" (W-6,
+citing gap 130's argument). That objection has genuinely weakened: post-switch the host does not
+*compute* them, it **decodes them from the kernel**, so echoing them back is not a second reader and
+not a second definition — it is a round trip. What it costs is a second *wire representation* of
+facts the kernel already holds, and design §10.1 specifies `log` and `capacity` as sibling keys of
+one request precisely so that one call can carry both. Choosing the courier over the seam is a
+plan-tier call about the wire's shape, not an agent's (AGENTS §4), so it is **surfaced here, not
+taken**. The seam is what §13.5 and the L9 row describe, and it is what gap 210 names.
+
+### Gap 93 (the design's label) — restated a fourth time, with the blocker that actually stands
+
+1. **What is not done.** Day 0 of the lookahead is still the host's histogram:
+   `DayCapacity::from_slots(ctx.today, &ctx.today_slots(allow_home)).minutes_at_level` in
+   `kernel_capacity::request`, sent as the request's six-entry `day0`, and `Look.dayOf` still reads
+   `if i = 0 then ofHist I.today I.day0`. Today's window, walls, cut, posterior, sleep shift and
+   home cap are Rust's.
+2. **Why not now.** *Not* the switch, which has landed. The kernel's `capacity` path cannot reach
+   the replay run by the `log` section of the same request (**gap 210**), and L9's remaining wire —
+   the `at` stamp with `nowDisagrees`, a state section, `loc`, `allowHome`, site R10 with its two
+   configured decimals through `written_pair` — plus the deletion of `day0`/`badDay0` and the
+   re-aiming of `kernel_lookahead_parity.rs` is a 4–6 agent-day step (§14.8), not a session.
+3. **What it costs.** Unchanged, and now measurable: two readers of today's walls and window
+   (`Ctx::walls_today`/`Ctx::window` for day 0, `Look.wallIndex`/`windowOn` for every later day);
+   today's slot energies are decided by the fork's `f64` while days 1..n sit inside the kernel's
+   proved mixture; `--allow-home` is honoured host-side only. `kernel_lookahead_parity.rs` pins the
+   arrangement in words — `"{tag}: {name} day 0 is the host's"` — so L9's parity target is written
+   down and its instrument already exists.
+4. **When it clears.** L9, once gap 210 is opened: day 0 built from the kernel's own replay, with
+   parity against `Ctx::today_slots` exactly, not P1.
+
+### Gap 210 (new; label W12L-a) — the kernel answers a request's two sections independently
+
+1. **What is not done.** A request may carry both a `log` and a `capacity` section, and the kernel
+   answers them side by side without either seeing the other. `runCapZ` binds
+   `logSectionWith j zo : Except JVal (Option JVal)` — a rendered answer — and `logOp`'s
+   `Seal.Run` (its `state`, `headers` and `Seal.Answer`) is consumed by `logBody` and discarded.
+   `readCapacityZ` builds `Look.Input` from the section, the plan, the clock and the zone only.
+2. **Why not now.** Exposing the run is a signature change through `logOp`, `logAnswerOf`,
+   `logSectionWith` and `runCapZ`, under laws stated over their current shapes
+   (`readLogSection_is_zoneOf_then_logSectionWith`, `the_zone_is_read_once_and_feeds_both_sections`,
+   `runCap_without_capacity_is_runWithLog`), and its first consumer needs **today's** facts, which
+   live in the run's state as an open day rather than in a sealed `DayRecord`. It is L9's opening
+   move, not a separable refactor, and it was not started here rather than left half-done.
+3. **What it costs.** L9 cannot compute day 0 from the kernel's own replay (gap 93); design
+   §14.7's F2 and F3 want the same seam for the recurrence and priority families, so the cost is
+   paid once and shared by three steps.
+4. **When it clears.** L9's own commit.
+
+### Recorded disagreements between the design and the repo
+
+1. **§13.5 says day 0 goes "through `Arith.energyAfter`/`ramp` over minutes", but nothing converts
+   the configured hours to minutes.** `Arith.ramp` takes `fullMin zeroMin : Nat` (`defaultRamp` is
+   `ramp 180 360`), while `config.energy.posterior_full_hours` / `posterior_zero_hours` are `f64`
+   (defaults `3.0` / `6.0`) read straight into `Posterior { full_hours, zero_hours }`. An
+   hours→minutes conversion of a configured decimal is a rounding decision with **no row in
+   `Arith.lean`'s sites table**. L9 owes either an exact pair carried to `ramp` or a named site.
+2. **§13.5 says "its two configured decimals through `written_pair`"; day 0 reads four.** Site
+   R10's pair is `energy.sleep_debt.shift` and `energy.sleep_debt.under_hours`; the posterior adds
+   `posterior_full_hours` and `posterior_zero_hours`. All four are `f64` in `Config` and all four
+   must reach the kernel as exact pairs.
+3. **§14.8's L9 row lists only `Lookahead.lean`, `Boundary.lean` (`at`) and `Arith.lean`.** W-6
+   already recorded that it omits the Rust; this run adds that it also omits the *parity harness*:
+   `tm/tests/kernel_lookahead_parity.rs` asserts day 0 is the host's — **one** assertion, run over
+   the four kernel runs it compares (lounge, home, twin, mixed), beside a fifth that the fork's own
+   day 0 is its slots — and both its case builders generate `day0` as random levels, so L9 must
+   re-aim that harness, not merely extend it.
+4. **`Posterior::correct` rounds half **away from zero** (`f64::round`) where `Arith.energyAfter`
+   is half-up.** They agree on the reachable domain — `energyAfter` returns 0 for a non-positive
+   numerator and Rust clamps to `0.0` — so no parity entry is opened here. Stated as an obligation
+   for L9 to **prove**, not as a claim this block establishes.
+5. **`--allow-home` is not a fork difference.** The fork's `capacity::lookahead` builds future days
+   with `EnergyCtx::new(…)`, whose `allow_home` is `false`, so the kernel's hardwired
+   `allowHome = false` on future days matches it. Only day 0 honours the flag, in both.
+
+### Observable behaviour changes
+
+**None.** No `.lean`, no `tm/src`, no `tm-core/src` file is touched by this commit; the diff is this
+ledger. Day 0 is computed exactly where it was computed at `8c6ab67`, by the same Rust, and every
+suite reports the same figures as W-11's repair did.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited.** Goals discharged, refuted or added: none; burn-down **13 → 13**, all stage
+6's. New theorems: none — the axiom audit stays at **3934**. New `decide`/`rfl` witnesses: none, so
+no probe budget was spent and no new memory bound was approached. New cheats: none (highest
+**157**; the design's reserved **cheat 118**, "the posterior applied after the cap", is still unused
+and is L9's to take). New parity entries: none (highest **P35**) — a step that changes no answer
+creates no difference from the fork. `TmKernel.lean` imports: **78**, unchanged. **`Check.lean`:
+nothing appended and nothing omitted** — §6.3 asks for one or the other explicitly, and with no new
+theorem there is nothing to append. No predicate or assertion was weakened, no goal deleted, no
+memory bound raised, no fixture or snapshot re-blessed, and the comparand stayed the fork
+throughout.
+
+### Method disclosure
+
+Every command was run in the worktree `.claude/worktrees/w12-lookahead` (branch `w12-lookahead`,
+cut from `rebuild-on-lean` at `8c6ab67`), each capped at `MemoryMax=40G`, `MemorySwapMax=0`. The
+seam was read, not inferred: `runCapZ`, `logSectionWith`, `logAnswerOf`, `logOp`, `Seal.Run`,
+`Seal.Answer`, `DayRecord`, `OpenDay` and `readCapacityZ` in `Boundary.lean`/`Seal.lean`, and
+`Ctx::today_slots`, `Ctx::window`, `capacity::energize`, `EnergyCtx::energy_at`,
+`Posterior::from_observations` and `kernel_capacity::request` in the Rust. The two counts quoted
+below (`"log"` in `kernel_capacity.rs`, §12's one-reader grep) were measured here, not carried.
+
+### Numbers
+
+**Taken:** gap **210** (the Lookahead range is 210-219; **211-219 free**). **Highest on this
+branch:** gap 210, cheat 157, parity P35. **Closed: none.** **Still open and named here:** gap 93.
+
+**Re-measured** on the committed tree (which is the tree as found):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, **3.18 / 3.09 / 3.11 s** (W-11 repair at `8c6ab67`: 3.09 / 3.03 / 3.06 s; +2.9% at worst, inside the 10%-per-step rule — and nothing was edited, so it is machine noise) |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13**, all stage 6 (unchanged) |
+| `cargo test --workspace` | **1297 passed / 0 failed / 9 ignored across 78 result lines**, exit 0 — identical to the figure W-11's repair recorded |
+| FFI suite (`kernel/tm-kernel-ffi`) | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6). Measured by its own `cargo test`: `tm-kernel-ffi` is **excluded** from the workspace by design, so the 78 result lines above do not contain it |
+| T5 (`kernel_replay_parity`) | **28 passed / 0 failed / 4 ignored**, 6.02 s |
+| the door suite (`kernel_log_door`) | **21 passed / 0 failed** |
+| `cli_switch_acceptance` | **9 passed / 0 failed** |
+| `cli_check_log` | **9 passed / 0 failed** |
+| `kernel_call_counts` | **1 passed** — the per-verb table is unmoved |
+| `kernel_lookahead_parity` (this track's own) | **4 passed / 0 failed**, 0.67 s — including the assertion that day 0 is the host's |
+| `kernel_log_grammar` | **6 passed / 2 ignored** (the two `TM_ORACLE` arms, inert without the fork build) |
+| `cli_latency --include-ignored` | **6 passed / 0 failed**, 15.66 s — T11's rows green |
+| §12's one-reader grep | **41** (unchanged; §12's alternation) |
+| `"log"` in `tm/src/cli/kernel_capacity.rs` | **0** — the measurement gap 210 rests on |
+| the diff | **1 file**, `kernel/README.md`, this ledger only. No Lean, no Rust, no `Cargo.toml`, no `lean-toolchain`, nothing under `kernel/corpus/`, no fixture and no snapshot |
+
+**Owed next, by name.** **L9 in full**, whose opening move is **gap 210** (the seam), then §13.5's
+five inputs across the wire — the `at` stamp with `nowDisagrees`, a state section
+(window, budget, arrival, date, `loc`), `allowHome`, and **site R10** with its two theorems and its
+configured decimals through `written_pair` — then the deletion of the `day0` argument and its
+`badDay0` refusal (**21 occurrences in `Lookahead.lean`, 12 in `Boundary.lean`, 12 in
+`kernel_lookahead_parity.rs`, and 9 files in all**), cheat 118, and the re-aimed parity harness,
+with parity against `Ctx::today_slots` exactly, not P1. The design prices it at 200 definition and
+600 proof lines, −150 Rust, 4-6 agent-days (§14.8), and nothing read here contradicts that.
+Unchanged elsewhere: **S2** (**gap 130**, D16) with quirk Q6(f) (**gap 86**) and **gap 190**; still
+open **gaps 132, 133, 150-152, 160, 170, 180-182, 190**; the performance levers **121, 122, 123,
+126, 127**; and the **§5.13 human drives** of the stage-3, stage-4 and stage-5 binaries, with the
+TUI half of the switch's own drive (**gap 182**).
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 5, W-12's merge — the lookahead track (branch
+     `w12-lookahead`, one commit `7a6f416`) lands on `rebuild-on-lean` on top of
+     W-12's two writer commits (`47a0443`, `760ead6`).  The lookahead step L9
+     **DID NOT LAND**; what merges is its ledger.  No Lean, no Rust, no fixture
+     and no snapshot is touched by this merge: the whole diff is
+     `kernel/README.md`.  Gap numbers here would come from the Merge range
+     220-224; **none was needed, so 220-224 are all free.**
+     =========================================================================== -->
+
+## Stage 5, W-12's merge, 2026-09-16: the lookahead track lands, and day 0 is still the host's
+
+**Said plainly, first: L9 did not land, and gap 93 is not closed.** The
+lookahead track's one commit is a ledger. Its finding is real and worth landing
+— gap 93's blocker has changed identity, from "the binary has no kernel reader
+of the log" (false since `2b26be3`) to **gap 210**, a seam inside the kernel:
+`runCapZ` answers a request's `log` and `capacity` sections independently, so
+the capacity path cannot read the replay the same call just ran. That block is
+merged unedited. **Day 0 of the lookahead is computed by exactly the Rust that
+computed it at `8c6ab67`.**
+
+### What merged, and what conflicted
+
+| branch | commit | what it is |
+|---|---|---|
+| `rebuild-on-lean` | `47a0443`, `760ead6` | W-12's writer step S2 (D16, gap 130) and quirk Q6(f) (gap 86) — both landed, both green |
+| `w12-lookahead` | `7a6f416` | step L9's refusal: gap 93 restated a fourth time, **gap 210** opened, five design/repo disagreements recorded. Docs only |
+
+One conflict, in one file: both sides appended to the end of `kernel/README.md`,
+so `git` could not order the two appends. **Resolved by keeping both, in landing
+order** — S2's two blocks, then L9's — which is what §6.4's append-only
+convention means when two branches append at once. Nothing was dropped, nothing
+was rewritten, and no test from either side was discarded: the lookahead branch
+contributed no test to keep.
+
+### The merged ledger corrects two things the lookahead block says
+
+Per §6.4 a committed block is written history and stays as written; the
+correction belongs here, in the block that merges it.
+
+1. **L9's "Owed next" names S2 and Q6(f) as open.** Its closing paragraph reads
+   "Unchanged elsewhere: **S2** (**gap 130**, D16) with quirk Q6(f) (**gap 86**)
+   and **gap 190**". That was true of its parent `8c6ab67` and is **false of
+   this tree**: gap 130 closed at `47a0443` and gap 86 at `760ead6`. Gap 190
+   does stand.
+2. **L9's measured table is `8c6ab67`'s, not this tree's.** It re-measured the
+   tree as it found it and says so; every figure it quotes (1,297 across 78,
+   3,934 theorems, T5 28+4, the door 21, `kernel_log_grammar` 6+2) is the
+   pre-S2 number. The table below is the merged tree's, and the difference is
+   S2's and Q6(f)'s, not the merge's.
+
+Everything else in that block was re-checked here and stands: §12's one-reader
+grep is still **41**, `"log"` still appears **0** times in
+`tm/src/cli/kernel_capacity.rs` — the measurement gap 210 rests on — and
+`kernel_lookahead_parity` still asserts, in words, that day 0 is the host's.
+
+### The instrument is still outside the tree (D21)
+
+Confirmed at this commit, not carried:
+
+- **T5's and the door's comparand is fork point `4748911`**, frozen. T5's three
+  frozen arms report `T5 frozen fork (4748911)` over the 7 corpus logs, the
+  generated month and §6.4's 12 zone cases — **20 inputs compared against a
+  frozen fork answer inside `cargo test --workspace`**, 458 reachable only under
+  `TM_ORACLE`, 6 kernel-only. The door reports the same fork point for its 16
+  `All`-scope inputs.
+- **The deletion guard passes in both suites**, and prints the post-switch
+  wording: `T5's in-tree region: GONE, and no reference to §12's reader
+  remains`, and `the door's in-tree region: GONE, …`.
+- **No in-tree reader was reintroduced.** §12's grep over `tm-core tm
+  --include=*.rs` returns **41**, the post-switch figure (29 comments, 9 needle
+  literals inside the guard, 3 functions merely named `replay`).
+- **Nothing was re-blessed.** `tests/fixtures/fork-4748911-*.jsonl` are
+  untouched by this merge; the re-bless arm stayed `INERT`, as it must without
+  both `TM_ORACLE` and `TM_FORK_BLESS`.
+
+### Observable behaviour changes
+
+**None.** The merge's diff is `kernel/README.md` and nothing else, so the
+shipped binary at this commit is byte-for-byte the binary at `760ead6`.
+
+### Parity, goals, theorems, cheats (AGENTS §3.2, §6.3, §6.5)
+
+§6.5's six items, one by one, with a merge that carried no Lean:
+
+1. **`Negative.lean` cheats** — the lookahead branch added none; nothing to
+   renumber. Highest unchanged.
+2. **Gap numbering is one sequence** — S2 took **200** and **201** from the
+   Writer range, L9 took **210** from the Lookahead range, the Merge range
+   **220-224** was not needed and is free. No number is used twice and no
+   cross-reference moved.
+3. **`Check.lean`** — no new theorem on either side of the merge, so nothing to
+   append; recorded explicitly, as §6.3 requires.
+4. **`Goals.lean`** — no goal discharged and none added; burn-down **13**, all
+   stage 6, unchanged in both directions.
+5. **`TmKernel.lean` imports** — **78**, unchanged.
+6. **`check.sh` and `cargo test --workspace`** — below.
+
+**New parity entries: none** (highest **P35**). A merge that changes no answer
+creates no difference from the fork.
+
+### Numbers, re-measured on the merged tree, every command capped at `MemoryMax=40G`, `MemorySwapMax=0`
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, exit 0, **3.09 / 3.09 / 3.06 s** (three consecutive runs; `8c6ab67`: 3.09 / 3.03 / 3.06 s — **+2.0% at worst**, inside the 10%-per-step rule, and the merge edits no Lean) |
+| axiom audit | **3,946 theorems** (S2's figure; 3,934 at `8c6ab67`) |
+| corpus | **29/37 files and 4/5 whole plans** round-trip byte-identically |
+| burn-down | **13**, all stage 6 |
+| `cargo test --workspace` | **1,309 passed / 0 failed / 9 ignored across 78 result lines**, exit 0 — against **1,297 / 0 / 9 across 78** pre-W-12; the **+12** is S2's eleven and Q6(f)'s one |
+| FFI suite (`kernel/tm-kernel-ffi`, excluded from the workspace by design) | **100 passed / 0 failed** — kernel 86, corpus 8, stack 6 |
+| T5 (`kernel_replay_parity --include-ignored`) | **32 passed / 0 failed / 0 ignored**, 6.08 s |
+| the door suite (`kernel_log_door --include-ignored`) | **22 passed / 0 failed** |
+| `cli_switch_acceptance --include-ignored` | **9 passed / 0 failed** |
+| `kernel_call_counts` | **1 passed** — the per-verb table is unmoved |
+| `kernel_lookahead_parity` | **4 passed / 0 failed** — including the assertion that day 0 is the host's, which L9 will have to re-aim |
+| `cli_check_log` | **9 passed / 0 failed** |
+| `kernel_log_grammar --include-ignored` | **18 passed / 0 failed** |
+| §12's one-reader grep | **41** |
+| `"log"` in `tm/src/cli/kernel_capacity.rs` | **0** |
+| the diff | **1 file**, `kernel/README.md`, **+262**; no Lean, no Rust, no `Cargo.toml`, no `lean-toolchain`, nothing under `kernel/corpus/`, no fixture, no snapshot |
+
+**T11's seven rows** (`cli_latency --include-ignored`, 3-year log, 66,169 lines
+/ 6,896,281 bytes), **measured twice** because the code is byte-identical to
+`760ead6` and any movement is the machine:
+
+| row | run 1 | run 2 | at `760ead6` |
+|---|---|---|---|
+| first verb (genesis) | 2.174 s | 2.222 s | 2.181 s |
+| later verb | 146.774 ms | 146.812 ms | 146.658 ms |
+| the verb after a windowable hand undo | 146.832 ms | 146.871 ms | — |
+| a routine for a 3-day-old instance | 136.684 ms | **131.740 ms** | 131.766 ms |
+| `review week` (the `All` scope) | 253.018 ms | **247.948 ms** | 248.166 ms |
+| `--now` +1 day (a reseal) | 207.407 ms | 207.703 ms | 202.507 ms |
+| the 1-year later verb | 96.230 ms | 96.340 ms | 96.337 ms |
+
+**Read honestly:** run 1 shows three rows 2-4% above `760ead6`'s and run 2 puts
+two of them back underneath it, on a tree whose every compiled byte is
+`760ead6`'s. That is machine noise, not a regression, and the only row that sits
+above its predecessor in **both** runs is the reseal (207.4 / 207.7 ms against
+202.5 ms, **+2.5%**) — recorded rather than explained away, because a merge that
+compiles nothing new cannot have caused it.
+
+### Worktrees
+
+`.claude/worktrees/w12-lookahead` is **removed** (`git worktree remove`), its
+branch `w12-lookahead` merged and left in place as history.
+`.claude/worktrees/stage5-lookahead` is **left alone**: it is not the branch
+merged here, and its branch `stage5-lookahead` (`80fdc40`) is already an
+ancestor of `rebuild-on-lean`, so it holds no unique work either way.
+
+**Owed next, by name.** **L9** (**gap 93**) in full, whose opening move is now
+**gap 210** — the seam that lets the kernel's capacity path read the replay its
+own `log` section ran — then §13.5's five inputs across the wire (the `at` stamp
+with `nowDisagrees`, a state section, `loc`, `allowHome`, and **site R10** with
+its configured decimals through `written_pair`), the deletion of the `day0`
+argument and its `badDay0` refusal, cheat 118, and the **re-aimed**
+`kernel_lookahead_parity.rs`; design §14.8 prices it at 200 definition and 600
+proof lines, −150 Rust, 4-6 agent-days. Design §14.7's **F2** and **F3** want
+the same seam. Still open: **gaps 132, 133, 150-152, 160, 170, 180-182, 190,
+200, 201, 210**, and the performance levers **121, 122, 123, 126, 127**. The
+**§5.13 human drives** of the stage-3, stage-4 and stage-5 binaries are still
+owed, and so is the TUI half of the switch's own drive (**gap 182**).
