@@ -20327,3 +20327,193 @@ sweep), **gaps 119, 129, 132, 133, 135, 136**, the eight remaining T9 tests, **T
 latency rows, the per-verb kernel-call count against R14's table, and the **§5.13 drive** (short by
 **gap 131**'s item). Then **S2** (**gap 130**) with quirk Q6(f) (**gap 86**), then **L9**
 (**gap 93**).
+
+<!-- ===========================================================================
+     APPENDED 2026-09-15: stage 5, the W-7 audit repair, on rebuild-on-lean
+     (after S, 00acba7).  **THE SWITCH STILL DID NOT LAND**, and this block does
+     not claim it did.  It repairs the four defects W-7's independent audit
+     found in X1 (`4aaa99e`), S (`00acba7`) and in the ledger those two left
+     behind — one major, three minor.  Takes gap 138; new gaps start at 139.
+     No Lean edited: audit 3934, cheats 157, parity P35, burn-down 13, all
+     unchanged.
+     =========================================================================== -->
+
+## Stage 5, the W-7 audit repair, 2026-09-15: the ledger stops naming closed work as owed, and the door's one untested function gets a test
+
+**The honest paragraph, first.** S is still not made. `Ctx::replay_with` still calls
+`Ctx::replay_of`, whose body is still `Log::parse_bytes(..).replay(None, cfg.tz)`; `log.rs` still
+holds every line §12 deletes; nothing under `tm/src` calls `kernel_log::`. **32 invocations** of
+`tm log` (human, `--json`, `--tail`, `--since`, `--item`) and `tm check` over the seven corpus logs
+and a tree carrying a malformed line and a line dated 2027 are **byte-identical** to `00acba7`'s
+binary — stdout, stderr and exit code. The two visible changes this commit makes are named in the
+behaviour table below, and neither is in those 32.
+
+### Defect 1 (major, repaired) — AGENTS §8.3's work list named work that was already committed
+
+**Reproduced.** `AGENTS.md` is absent from `git diff --name-only 022317d..HEAD`: neither X1 nor S
+touched it, and its stage-5 close block still opened S's list with "gap 128 first (the facts
+decoder `kernel_log::decode_facts`)". Gap 128 closed at `4aaa99e`: `decode_facts` is defined in
+`tm/src/cli/kernel_log.rs` and T5's `kernel_replay` **is** that call. An agent taking §8.3 as its
+work list would have redone committed work, which the campaign brief forbids by name.
+
+**The second error, and the count this ledger gave three ways.** Design §14.6 lists **ten** T9
+names, not nine. Two exist and pass — `invalid_utf8_line_is_a_warning_and_tm_check_names_it` and
+`a_line_dated_next_year_changes_nothing_about_today_and_tm_check_names_it`, both in
+`tm/tests/cli_check_log.rs`, both landed with D18 (i) and (ii) at `022317d`. **Eight remain.**
+AGENTS §8.3 said "nine"; this README's X1 block says "the remaining seven"; its S block says
+"eight" and is the one that is right, but it corrected the figure silently.
+
+**Repaired.** §8.3's "What remains, by name" is re-measured against the repo and now opens by
+saying gap 128 is *closed*, carries **eight** T9 tests, and picks up the gaps S recorded (**134-137**,
+and **119, 129, 132, 133, 135, 136**). A second paragraph states the ten/two/eight arithmetic and
+names all three counts, so the correction is recorded rather than made silently. §10.5's
+"(gap 128 first)" is corrected. §10.2 — the table of stale statements to check before quoting —
+gains **two rows**, one for the T9 count and one for gap 128, because this README's older blocks
+are append-only history (§6.4) and are not rewritten; §10.2 is where a reader quoting them is
+told. §10.1 is left alone: it is explicitly pinned to parent `b344185`, so its staleness is
+declared, and the audit did not count it.
+
+### Defect 2 (minor, repaired) — the module-wide `#![allow(dead_code)]` was hiding a shipped function that *nothing* called
+
+**Reproduced and measured.** `tm/src/cli/kernel_log.rs` carries `#![allow(dead_code)]` (pre-existing,
+from `4b7ee9c`, not added by S). With the attribute removed, `cargo check -p tm --all-targets`
+warns on **92 items**: **79 predate step S**, **13 are S's** — 10 below the door banner and three
+above it (`Scope`, `Read`, `caches`). So S's block reporting "**0 warnings**" beside "none of them
+called yet" was true and empty at the same time: the compiler could not have said otherwise.
+
+**The hole the silence was hiding.** Checking each of S's entry points against the door test rather
+than against the warning count: `max_line_of` — §9.6's undo-stack pin, 2,027-line file, linked into
+the shipped binary — was **called by nothing at all**: not `tm/src`, not any test, not the module's
+own `#[cfg(test)]` block. `merge_records` was exercised only *through* `replay_scoped`, which cannot
+separate a merge fault from a decode fault and which merges nothing on a small log.
+
+**Repaired.** The attribute is **kept** — removing it puts 92 warnings on every build and the 79
+are legitimately dead until S deletes the Rust reader — but it is no longer bare. It now carries
+why it exists, both measured cuts of the 92, and when it goes (at S). The instrument that the
+attribute takes away is replaced by three tests in `tm/tests/kernel_log_door.rs`:
+
+| test | what it pins |
+|---|---|
+| `the_doors_undo_pin_is_the_smallest_young_log_line` | §9.6: the smallest *young* `log_line` wins; an entry older than 14 days does not pin the tail; a pre-R6 entry with no `log_line` is ignored (CRIT 27); an empty or unreadable stack is `None` |
+| `the_doors_merge_prefers_the_answer_and_keeps_day_order` | §11.1: the answer's record **wins** where both hold a day, the merged array comes out in day-key order, nothing sealed is the identity, and a torn sealed record is a **fault**, not a silent drop |
+| `every_door_function_the_switch_calls_is_exercised_here` | the replacement for the warning: every `pub fn` below the new `THE DOOR THE SWITCH OPENS` banner must appear as `kernel_log::<name>` in that file, or the test fails. **It is what found `max_line_of`.** |
+
+### Defect 3 (minor, repaired) — `tm log`'s `--json` could silently disagree with its human output
+
+**Reproduced.** X1 added `Ctx::entries_at` (`tm/src/cli/ctx.rs`), a second host-side read of
+`.tm/log.jsonl` in one `tm log` — deliberate, and design §11.4's own order, because `ViewRow` no
+longer carries the payload and the kernel's `render` op supplies it at S. But `LogOut.entries` was
+`lines.iter().filter_map(|l| entries.get(l).cloned())`: a selected line that did not come back from
+the second read was **dropped from `--json`** while `log_human` still printed its header from the
+row. Before X1 the two could not disagree, because one entry rode every row.
+
+**Repaired without undoing the narrowing.** The function's own doc comment already asserted the
+invariant — "a line the reader refuses has no `ViewRow` either" — and `Log::parse_bytes` confirms
+it: a line enters `Log::lines` (and so gets a `ViewRow`) in exactly the case `entries_at` inserts
+it, off the same bytes. That assertion is now **enforced**: every asked line comes back or the read
+**fails by name**, naming the file and the line. It is unreachable on a file nobody rewrites
+mid-command — which is why the 32 invocations above are byte-identical — and it fires exactly where
+the silent drop used to be, on a log truncated or rewritten between the replay's read and this one.
+`tm/src/cli/ctx.rs`'s `a_line_that_does_not_read_back_is_named_not_dropped` drives all three cases.
+The guard goes with the body at S.
+
+### Defect 4 (minor, repaired as a help-text fix) — `tm break 10` is refused and `--help` never says how to spell it
+
+**Reproduced** on a fresh tree: `tm break 10` → `tm: invalid duration: "10"`, exit 1, while
+`tm break --help` said only `[DUR]  How long (default: `config.day.break_min`)`. Pre-existing, not
+from `4aaa99e` or `00acba7`.
+
+**Repaired, and deliberately narrowly.** Four duration arguments now name their own spelling in
+`--help`: `break [DUR]`, `extend [BY]`, `wake --slept`, `wake --onset` (`tm wake --slept 8` failed
+the same way and is the same class). What was **not** changed, and why:
+
+- **The grammar is untouched.** `Dur::parse` accepts `Nb | Nm | Nh | NhMm | Nd` and the fork accepts
+  exactly that; widening it to a bare number would move `tm-core` off the fork point that T5, the
+  grammar proptest and the stage-5 parity harness all measure against. `README.md` already documents
+  the refusal on purpose — "Durations need a unit … a bare `90` is `tm: invalid duration: "90"`. The
+  exception is `--min`, which is a bare number of minutes."
+- **The error text is untouched.** `ModelError::Invalid`'s sentence is a `--json` contract:
+  `detail.what` and `detail.value` are pinned by `cli_errors.rs`'s
+  `a_rejected_value_names_what_and_the_value`, and the sentence itself is quoted in `README.md`.
+  Naming the fix inside the message would have moved a documented shape for a help-text problem.
+
+### Observable behaviour changes
+
+Two, both intended, both named — everything else measured identical:
+
+| what | before | after |
+|---|---|---|
+| `tm break --help`, `tm extend --help`, `tm wake --help` | `[DUR]  How long (default: `config.day.break_min`)` | `[DUR]  How long: a duration with a unit — `20m`, `1h30m`, `1b` (default: `config.day.break_min`)`, and the same for `[BY]`, `--slept`, `--onset` |
+| `tm log` over a log rewritten or truncated **between** the replay's read and `entries_at`'s | the line vanished from `--json`'s `entries`; the human output still printed its header | fails by name: `.tm/log.jsonl changed while this command was reading it: line N did not read back; run the command again` |
+
+Everything else: **32 invocations, 0 differences** against `00acba7`'s binary (seven corpus logs and
+a damaged tree; `tm log` human and `--json`, `--tail`, `--since`, `--item`; `tm check` human and
+`--json`).
+
+### Gap 138 (new; label W7-a) — `tm break` ignores its arguments outright when a break is running
+
+1. **What is wrong.** With a break running, `tm break zzzz --where bed` exits **0**, ends the break
+   and never parses either argument: `day.rs`'s `break_` takes the running-break arm before it looks
+   at `args.dur`. On a fresh tree the same `zzzz` is refused by name. So the verb is two verbs, and
+   only one of them validates.
+2. **Why it matters.** It is the §5.13 class exactly: a plausible keystroke that neither works nor
+   says so. `tm break 10` refused with an error is the *good* case; `tm break 10` accepted, silently
+   discarded and reported as success is the bad one, and a user cannot tell which they got without
+   knowing whether a break was already running.
+3. **What it costs.** Nothing today, and nothing at S: no kernel fact and no log line depends on it.
+   Fixing it is a **behaviour** change to a shipped verb — refuse the arguments, or let them retime
+   the running break — and that is the owner's call, not a defect repair's.
+4. **When it clears.** With the §5.13 drive of the stage-5 binary, as a question for the owner
+   alongside the drive's other findings.
+
+### Recorded disagreements between the design, the ledger and the repo
+
+1. **"The one-reader grep" names two different commands.** Design §12 (line 1942) and R8's row
+   (§14.3, line 2311) give different alternations, and the ledger calls both "the one-reader grep".
+   Measured on this tree: **§12's = 124**, **R8's = 89**. The README's 116 and 123 are §12's. Quote
+   which one, always — this is the same ambiguity that produced defect 1.
+2. **§12's grep goes 123 → 124, and the added hit is a comment.** The one new match is the word
+   `Log::parse_bytes` inside `entries_at`'s guard comment, explaining why the invariant holds. No
+   reader was added; nothing was deleted.
+3. **Design §14.6 lists ten T9 names.** AGENTS §8.3 said nine. The design and the committed tests
+   are the truth (campaign brief), so the design wins and §8.3 is corrected.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited.** Goals discharged, refuted, added: none; burn-down **13 → 13**, all stage 6's.
+New theorems: none — the audit stays at **3934**. New `decide`/`rfl` witnesses: none. New cheats:
+none (highest **157**). New parity entries: none (highest stays **P35**). `TmKernel.lean` imports:
+**78**, unchanged. D9-21 has nothing to add: no Lean function over a wire-sized list was written.
+No predicate or assertion was weakened, no goal deleted, no memory bound raised, no corpus
+reblessed.
+
+### Numbers
+
+**Taken:** gap **138**. **Highest:** gap 138, cheat 157, parity P35. New gaps start at **139**.
+
+**Re-measured** (main worktree, on the tree committed; every command capped at `MemoryMax=40G`,
+`MemorySwapMax=0`):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, **3.06 / 3.14 / 3.10 s** (`00acba7`: 3.10 s) — flat, far inside the 10%-per-step rule |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged; all stage 6) |
+| `cargo test --workspace` | **1110 passed / 0 failed / 6 ignored across 76 result lines**, exit 0, **0 warnings** (`00acba7`: 1106 / 0 / 6 across 76). **+4 tests, no new binary**: 3 in `kernel_log_door.rs`, 1 in `ctx.rs` |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) — unchanged |
+| T5 (`kernel_replay_parity --include-ignored`) | **20 passed / 0 failed**, **6.49 s** (`00acba7`: 6.43 s) |
+| the door test | **13 passed / 0 failed** (`00acba7`: 10) |
+| `cli_latency --include-ignored` | **4 passed / 0 failed**, **3.71 s** (`00acba7`: 3.73 s). 1y log (22,180 lines): first verb **724 ms**, later **122 ms**. 3y log (66,169 lines): first **925 ms**, later **278 ms**. `plan` with a `due:` 3 y out **76 ms**, 10 y out **137 ms** |
+| byte identity against `00acba7`'s binary | **32 invocations, 0 differences** (7 corpus logs + a damaged tree) |
+| the dead-code probe | **92 items** with the attribute removed: 79 pre-S, 13 S's (10 below the door banner, 3 above) |
+| §12's one-reader grep | **124 lines** (`00acba7`: 123; disagreement 2 above). R8's different grep: **89** |
+| the diff | 3 shipped files **+85 −4**; 1 test file **+117 −0**; `AGENTS.md` **+25 −7**. No Lean, no `Cargo.toml`, no `lean-toolchain`, no `kernel/corpus/` |
+
+**Owed next: S, in full, and its list is unchanged** — design §14.6's contents 1-3 and 5, item 4's
+**retarget of T5** (**gap 137**), item 7's D18 defaults (**gap 120 part 3**, and **gap 134**'s
+sweep), **gaps 119, 129, 132, 133, 135, 136**, the **eight** remaining T9 tests, **T12**, T11's
+seven latency rows, the per-verb kernel-call count against R14's table, and the **§5.13 drive**
+(short by **gap 131**'s item, and now carrying **gap 138**'s question for the owner). Then **S2**
+(**gap 130**) with quirk Q6(f) (**gap 86**), then **L9** (**gap 93**). What this commit changes
+about that list is only that **AGENTS §8.3 now states it correctly**.

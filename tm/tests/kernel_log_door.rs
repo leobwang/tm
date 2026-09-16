@@ -336,3 +336,120 @@ fn the_doors_tail_headers_are_the_recorders() {
     }
     eprintln!("the door's tail headers: {} texts, {cuts} cuts, 0 differences", texts.len());
 }
+
+
+/// **§9.6's pin — the one door function nothing called.** `max_line_of` reads `.tm/undo.json`
+/// directly, because the seal policy needs a number and `UndoStack::load` wants the whole `Ctx`
+/// this is called to build. It is exercised here because
+/// [`every_door_function_the_switch_calls_is_exercised_here`] found it shipped into the binary
+/// and called by nothing at all: not `tm/src` (nothing there reaches this module before S), not
+/// a test, and not the module's own `#[cfg(test)]` block. The module-wide `#![allow(dead_code)]`
+/// meant no warning could say so.
+///
+/// The three rules it has to keep: the **smallest** young `log_line` wins, an entry older than
+/// 14 days does not pin the tail, and an entry written before R6 — with no `log_line` — is
+/// ignored (CRIT 27).
+#[test]
+fn the_doors_undo_pin_is_the_smallest_young_log_line() {
+    let now = chrono::DateTime::parse_from_rfc3339("2026-09-15T08:00:00-05:00").expect("a now");
+    let entry = |t: &str, line: Option<u64>| match line {
+        Some(l) => serde_json::json!({"t": t, "log_line": l}),
+        None => serde_json::json!({"t": t}),
+    };
+    let stack = |entries: Vec<Value>| serde_json::json!({"entries": entries}).to_string();
+
+    // The smallest of the young ones, not the last and not the first.
+    let young = stack(vec![
+        entry("2026-09-14T09:00:00-05:00", Some(400)),
+        entry("2026-09-15T07:00:00-05:00", Some(120)),
+        entry("2026-09-13T09:00:00-05:00", Some(310)),
+    ]);
+    assert_eq!(kernel_log::max_line_of(&young, now), Some(120));
+
+    // Older than 14 days: a light user's stale stack does not pin the tail.
+    let stale = stack(vec![
+        entry("2026-08-01T09:00:00-05:00", Some(7)),
+        entry("2026-09-14T09:00:00-05:00", Some(400)),
+    ]);
+    assert_eq!(kernel_log::max_line_of(&stale, now), Some(400));
+    let all_stale = stack(vec![entry("2026-08-01T09:00:00-05:00", Some(7))]);
+    assert_eq!(kernel_log::max_line_of(&all_stale, now), None);
+
+    // Pre-R6 entries carry no `log_line` (CRIT 27), and neither does an empty
+    // or an unreadable stack.
+    let pre_r6 = stack(vec![entry("2026-09-14T09:00:00-05:00", None)]);
+    assert_eq!(kernel_log::max_line_of(&pre_r6, now), None);
+    assert_eq!(kernel_log::max_line_of(&stack(vec![]), now), None);
+    assert_eq!(kernel_log::max_line_of("not json", now), None);
+}
+
+/// **§11.1's host-side merge, asserted directly.** `merge_records` is what the `All` scope uses
+/// instead of `LogReq.merged`, whose request carries at most `MAX_SEALED_IN` = 62 records. Until
+/// now it was only ever exercised *through* [`the_door_is_the_reader_it_replaces`], which cannot
+/// separate a merge fault from a decode fault, and which on a small log merges nothing at all.
+///
+/// The two rules a reseal depends on: the answer's own record **wins** where both hold a day, and
+/// the merged array comes out in day-key order whatever order the records arrive in.
+#[test]
+fn the_doors_merge_prefers_the_answer_and_keeps_day_order() {
+    let facts = serde_json::json!({
+        "days": [[12, "answer-12"], [10, "answer-10"]],
+        "window": [[12, "w-answer-12"]],
+    });
+    let sealed = |pairs: Vec<(u64, &str)>| {
+        pairs.into_iter().map(|(d, t)| (d, t.to_string())).collect::<std::collections::BTreeMap<u64, String>>()
+    };
+    let days = sealed(vec![(8, r#"[8,"sealed-8"]"#), (10, r#"[10,"sealed-10"]"#)]);
+    let window = sealed(vec![(9, r#"[9,"w-sealed-9"]"#)]);
+
+    let got = kernel_log::merge_records(&facts, &days, &window).expect("the merge");
+    let keys: Vec<u64> = got["days"].as_array().expect("days").iter().map(|r| r[0].as_u64().expect("a day")).collect();
+    assert_eq!(keys, vec![8, 10, 12], "day-key order, whatever order the records arrive in");
+    assert_eq!(got["days"][1][1], "answer-10", "the answer's record wins where both hold the day");
+    assert_eq!(got["days"][0][1], "sealed-8", "a day only the seal holds is carried");
+    let wkeys: Vec<u64> = got["window"].as_array().expect("window").iter().map(|r| r[0].as_u64().expect("a day")).collect();
+    assert_eq!(wkeys, vec![9, 12], "the window array merges by the same rule");
+
+    // Nothing sealed is the identity, which is what `Hot` relies on.
+    let empty = std::collections::BTreeMap::new();
+    assert_eq!(kernel_log::merge_records(&facts, &empty, &empty).expect("the merge"), facts);
+    // A record that is not JSON is named, not silently dropped.
+    let bad = sealed(vec![(8, "not json")]);
+    assert!(kernel_log::merge_records(&facts, &bad, &empty).is_err(), "a torn sealed record is a fault");
+}
+
+/// **The instrument the module-wide `#![allow(dead_code)]` takes away** (W-7 audit, defect 2).
+///
+/// `tm/src/cli/kernel_log.rs` carries `#![allow(dead_code)]` because before S nothing under
+/// `tm/src` calls it: with the attribute removed, `cargo check -p tm --all-targets` warns on **92
+/// items** — 79 that predate step S and 13 that are S's, of which 10 sit below the DOOR banner
+/// and three above it (`Scope`, `Read`, `caches`). That is noise control, but it also means the
+/// compiler cannot tell anyone that a function was shipped into the binary and called by nothing
+/// — and `cargo test --workspace`'s "0 warnings" then carries no information about it.
+///
+/// This is the replacement: every `pub fn` below the DOOR banner in that file — the functions
+/// `Ctx` calls at S — must be named as `kernel_log::<name>` somewhere in *this* file. A step that
+/// adds a door function without a test fails here instead of passing quietly.
+#[test]
+fn every_door_function_the_switch_calls_is_exercised_here() {
+    const MODULE: &str = include_str!("../src/cli/kernel_log.rs");
+    const SELF: &str = include_str!("kernel_log_door.rs");
+    const BANNER: &str = "// THE DOOR THE SWITCH OPENS";
+
+    let below = MODULE.split_once(BANNER).unwrap_or_else(|| panic!("{BANNER} is gone from kernel_log.rs")).1;
+    let names: Vec<&str> = below
+        .lines()
+        .filter_map(|l| l.strip_prefix("pub fn "))
+        .filter_map(|l| l.split(['(', '<']).next())
+        .collect();
+    assert!(names.len() >= 6, "the door's functions: {names:?}");
+
+    let missing: Vec<&&str> = names.iter().filter(|n| !SELF.contains(&format!("kernel_log::{n}"))).collect();
+    assert!(
+        missing.is_empty(),
+        "shipped into the binary, called by no test: {missing:?} — every `pub fn` below the door \
+         banner must be called by name here, because `dead_code` is allowed module-wide and \
+         cannot say it for us"
+    );
+    eprintln!("the door's surface: {} functions, every one called here", names.len());
+}

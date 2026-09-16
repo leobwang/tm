@@ -504,6 +504,25 @@ impl Ctx {
                 out.insert(line, e);
             }
         }
+        // **Every asked line comes back, or this read fails by name.** The
+        // paragraph above is an invariant, not a hope: `Log::parse_bytes`
+        // pushes a line into `Log::lines` — and so gives it a `ViewRow` —
+        // in exactly the case this loop inserts it, off the same bytes. But
+        // these are two reads of one file at two instants, so a writer that
+        // truncates or rewrites `.tm/log.jsonl` between them can take away a
+        // line the selection has already made. Unguarded, that line was
+        // absent from `--json`'s `entries` while `log_human` still printed
+        // its header from the row, and the two outputs disagreed in silence.
+        // Naming it costs nothing on a file nobody rewrites mid-command,
+        // which is why no behaviour moves; at S the kernel's `render` op
+        // answers the same lines and this guard goes with the body.
+        if out.len() != wanted.len() {
+            let missing = lines.iter().find(|l| !out.contains_key(l)).copied().unwrap_or(0);
+            return Err(CliError::msg(format!(
+                "{LOG_PATH} changed while this command was reading it: line {missing} did not \
+                 read back; run the command again"
+            )));
+        }
         Ok(out)
     }
 
@@ -815,6 +834,42 @@ mod tests {
         let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
         let body = text.splitn(3, "---\n").nth(2).unwrap_or_else(|| panic!("{path}: no header"));
         serde_json::from_str(body).unwrap_or_else(|e| panic!("{path}: {e}"))
+    }
+
+    /// **`tm log`'s two outputs cannot disagree about which lines they carry.**
+    /// `Ctx::entries_at` is the second host-side read of `.tm/log.jsonl` in one
+    /// `tm log` (the first is the replay's), and until the guard it enforces
+    /// the doc comment's invariant it dropped a line it could not read back:
+    /// `--json`'s `entries` lost it while `log_human` still printed its header
+    /// from the row. A line the reader never accepted has no `ViewRow` and is
+    /// never asked for, so this fires only on a log rewritten mid-command —
+    /// and then it is named, not swallowed.
+    #[test]
+    fn a_line_that_does_not_read_back_is_named_not_dropped() {
+        let dir = tempfile::TempDir::new().expect("tempdir");
+        std::fs::create_dir_all(dir.path().join(".tm")).expect("mkdir");
+        // Real lines, from the generator the other tests here use: a line the
+        // reader refuses never becomes a `ViewRow` and so is never asked for,
+        // which is the invariant this guard rests on.
+        let gen = loggen::text(&loggen::log(loggen::Rate::SixtyOne, 1));
+        let first: Vec<&str> = gen.lines().take(2).collect();
+        assert_eq!(first.len(), 2, "the generator gives at least two lines");
+        let text = format!("{}\n", first.join("\n"));
+        std::fs::write(dir.path().join(LOG_PATH), &text).expect("write log");
+        let store = FsStore::new(dir.path());
+
+        // The lines the selection can actually make: both come back.
+        let got = Ctx::entries_at(&store, &[1, 2]).expect("both lines read back");
+        assert_eq!(got.len(), 2);
+        // Nothing asked for, nothing read.
+        assert!(Ctx::entries_at(&store, &[]).expect("no lines").is_empty());
+
+        // A line the file does not hold — what a truncating writer leaves
+        // behind between the replay's read and this one.
+        let err = Ctx::entries_at(&store, &[1, 5]).expect_err("line 5 cannot read back");
+        let msg = err.to_string();
+        assert!(msg.contains("line 5"), "the failure names the line: {msg}");
+        assert!(msg.contains(LOG_PATH), "the failure names the file: {msg}");
     }
 
     /// D14 (step R11): the facts nothing reads reach every caller through the

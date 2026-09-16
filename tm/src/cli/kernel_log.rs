@@ -39,6 +39,21 @@
 //! * **An unwritable cache** (CRIT 26) is not fatal: one named notice per process, and the
 //!   checkpoint is kept in memory for that process.
 
+// **Why this whole module is allowed to be dead, and what that costs.** Before S nothing under
+// `tm/src` calls this file — `Ctx::replay_with` still goes to the Rust reader — so every item here
+// is unreachable from the binary and `dead_code` fires on all of them. Measured at this commit
+// with the attribute removed, `cargo check -p tm --all-targets`: **92 items**. Of those, **79
+// predate step S** and **13 are S's** — 10 below the DOOR banner and three above it (`Scope`,
+// `Read` and `caches`), which is why the banner's count and S's are different numbers for
+// different cuts and are given here as both. The attribute is noise control, not a claim, and it
+// is deleted at S, when [`replay_scoped`] becomes the binary's one reader.
+//
+// The cost is that `cargo test --workspace`'s "0 warnings" says nothing about whether a function
+// added here is reachable or tested — a step could ship dead code into the binary and report a
+// clean build. The instrument that does say so is
+// `tests/kernel_log_door.rs::every_door_function_the_switch_calls_is_exercised_here`: every
+// `pub fn` below the DOOR banner must be called by name in that file or the test fails. It found
+// [`max_line_of`] shipped and called by nothing at all — not the binary, not a test.
 #![allow(dead_code)]
 
 use chrono::{DateTime, FixedOffset, NaiveDate};
@@ -1752,6 +1767,15 @@ fn caches() -> &'static std::sync::Mutex<BTreeMap<PathBuf, ReplayCache>> {
         std::sync::OnceLock::new();
     CACHES.get_or_init(|| std::sync::Mutex::new(BTreeMap::new()))
 }
+
+// ===========================================================================
+// THE DOOR THE SWITCH OPENS (design §14.6 item 1, §11.1, §11.4).
+//
+// Every `pub fn` below this banner is one `Ctx` calls at S, and
+// `tests/kernel_log_door.rs` must call each of them by name — see
+// `every_door_function_the_switch_calls_is_exercised_here`, which reads this
+// banner and that file. Adding a function here without a test fails it.
+// ===========================================================================
 
 /// **The undo stack's pin** (§9.6): the smallest `UndoEntry.log_line` among entries younger than
 /// 14 days, or `None`. Read from `.tm/undo.json` directly — the seal policy needs a number, not a

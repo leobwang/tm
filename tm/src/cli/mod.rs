@@ -192,10 +192,10 @@ pub struct InitArgs {
 pub struct WakeArgs {
     /// The wake time (default: now).
     pub time: Option<String>,
-    /// How long you slept.
+    /// How long you slept: a duration with a unit — `8h10m`, `450m`.
     #[arg(long)]
     pub slept: Option<String>,
-    /// How long it took to fall asleep.
+    /// How long it took to fall asleep: a duration with a unit — `25m`.
     #[arg(long)]
     pub onset: Option<String>,
 }
@@ -254,14 +254,16 @@ pub struct DoneArgs {
 /// `tm extend [1b]`.
 #[derive(Debug, Args)]
 pub struct ExtendArgs {
-    /// How much to add (default: one block).
+    /// How much to add: a duration with a unit — `20m`, `1h30m`, `1b`
+    /// (default: one block).
     pub by: Option<String>,
 }
 
 /// `tm break [20m] [--where walk]`.
 #[derive(Debug, Args)]
 pub struct BreakArgs {
-    /// How long (default: `config.day.break_min`).
+    /// How long: a duration with a unit — `20m`, `1h30m`, `1b` (default:
+    /// `config.day.break_min`).
     pub dur: Option<String>,
     /// Where: walk, seat, bed, phone.
     #[arg(long = "where")]

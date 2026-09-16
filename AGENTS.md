@@ -2089,15 +2089,31 @@ can reach, run at the close):
   proved and witnessed inside the kernel and reach no response key. The denominator is **0**, said
   out loud rather than reported as agreement.
 
-**What remains, by name** (README's closing block carries the four-part form of each):
-**S, the switch, in full** — gap 128 first (the facts decoder `kernel_log::decode_facts`), then
-design §14.6's contents 1–3 and 5, item 7's D18 defaults with **gap 120 part 3**, **gap 119**,
-**gap 129**, the nine T9 CLI tests, T12 in the binary, T11's seven latency rows and the per-verb
-kernel-call count against R14's baseline. Then **S2** (**gap 130**, D16's kernel writer, with quirk
+**What remains, by name** (README's closing block carries the four-part form of each;
+re-measured against the repo on 2026-09-15, after `4aaa99e` and `00acba7` — this paragraph had
+gone stale in two places and an agent reading it as a work list would have redone committed
+work):
+**S, the switch, in full** — but **not** gap 128, which this paragraph named first until the
+W-7 audit caught it. The facts decoder landed at `4aaa99e`: `kernel_log::decode_facts` is
+defined in `tm/src/cli/kernel_log.rs`, and T5's `kernel_replay` (`tm/tests/kernel_replay_parity.rs`)
+*is* that call, borrowing nothing from the reader S deletes. What is left is design §14.6's
+contents 1–3 and 5, item 4's retarget of T5 (**gap 137**), item 7's D18 defaults with **gap 120
+part 3** and **gap 134**'s sweep, **gaps 119, 129, 132, 133, 135, 136**, the **eight** remaining
+T9 CLI tests, T12 in the binary, T11's seven latency rows and the per-verb kernel-call count
+against R14's baseline. Then **S2** (**gap 130**, D16's kernel writer, with quirk
 Q6(f) = **gap 86**), then **L9** (**gap 93**, day 0). Phase F's F2 and F3 belong to the recurrence
 and priority tranches. Performance and unbuilt-test debt: **gaps 121, 122, 123, 126, 127**. Quirks
 kept by decision: **85** (e), **87** (g), **118** (b). And the **§5.13 human drives** of the stage-3,
 stage-4 and stage-5 binaries are still owed.
+
+**"Eight T9 tests" — and the three counts this ledger gave for one number.** Design §14.6 lists
+**ten** T9 names. Two of them exist and pass, both in `tm/tests/cli_check_log.rs` and both landed
+with D18 (i) and (ii) at `022317d`: `invalid_utf8_line_is_a_warning_and_tm_check_names_it` and
+`a_line_dated_next_year_changes_nothing_about_today_and_tm_check_names_it`. **Eight remain**, and
+that is the figure to quote. This paragraph said "nine" from the stage's close until 2026-09-15;
+`kernel/README.md`'s X1 block says "seven"; its S block says "eight" and is the one that is right.
+The older README blocks are append-only history (§6.4) and are not rewritten — §10.2's table
+carries the correction for anyone quoting them.
 
 **Depends on.** `Cal.lean` and `Arith.lean` (both built), §4.1's field grammar
 (built), stage 4 for `close`, and — a hard dependency — the `parent` decision.
@@ -2585,6 +2601,8 @@ Check these before you quote them.
 | "`Core` stores four things" | `kernel/README.md` prose | four again since stage 4 final step 3 (D6): `parent` is a view of the line. Between the tombstone's landing and that step it was five, `parent` a stored `none` (gap 22, closed) |
 | "`lake build` from clean 1.6 s; `cargo test` from clean 3.6 s" | `kernel/README.md` header | not re-measured at `c8f3a38` or `bf7cc63`, and certainly not true of today's 20,902-line kernel. The warm numbers in §10.1 are, plus `cargo build -p tm` into an empty target directory with the archive built: 18.1 s |
 | "Five separate Rust code paths" / "six entrances to one hole" | in circulation, and in an earlier version of this document | **six catalogued defects (PLAN §4.A rows A1–A6), five of them patched entrances, one hole, one precondition.** §1 settles which number means what; the harness says *five* entrances |
+| "the nine T9 CLI tests"; "the remaining seven T9 tests" | AGENTS §8.3 before 2026-09-15; `kernel/README.md`'s X1 block and every block before it | **eight**, out of design §14.6's **ten**. Two are landed and passing in `tm/tests/cli_check_log.rs` (D18 (i) and (ii), `022317d`). The README's S block (`00acba7`) is the first place that says eight, and §8.3 now says it too |
+| "gap 128 first", the facts decoder, as the first thing S owes | AGENTS §8.3 and §10.5 before 2026-09-15; `kernel/README.md`'s blocks up to `4aaa99e`'s own | **closed at `4aaa99e`.** `kernel_log::decode_facts` exists and T5's `kernel_replay` is that call. S's list starts at design §14.6's contents 1–3 |
 | "943 tests" | in circulation | not sourced anywhere **as a claim about proofs**. 943 is `horizon.rs:943`, the line of `move_line`. The documented figure is line counts: tm-core has 19,298 test lines (re-measured on the restored tree: still 19,298), of which the kernel-area files are 9,497 (49%) — *"the tests proofs substantially replace"*. **A second, real 943 now exists and must not be confused with it:** `cargo test --workspace` passed 943 tests at the restore, `835d960` (984 at `bf7cc63`) |
 | "a week→month behaviour change" needing assent; "the month of today" as `horizon.rs:1543`'s rejected rule | AGENTS §8.2 trap (b), §10.5 q1's second half; `Cal.lean`'s header; `kernel/README.md`'s "month of today" row (24) and its week → month tie-break section — all from `6f67873` | **there is no such behaviour change.** `horizon::close_week` already computes `closeTo week now`; `monthOfIsoWeek` names the month a week belongs to and is not the close rule, as `Grain.lean` says. q1's second half is **withdrawn** (§10.5). **Repaired at stage 4 step 1:** §8.2's trap, §10.5 q1 and `Cal.lean`'s header corrected; the README supersedes its row 24 and "Rejected" paragraph by name in its stage-4 block. Left as history, and to be read as wrong on this point: `Negative.lean`'s `CHEAT 24` banner (§6.2), and the origin, PLAN §3.2(b), with PLAN §6.2 q1's and stage-4 row's "two behaviour changes" (quoted in `Goals.lean`'s `# STAGE 4` header, which since stage 4's closing docs commit says to read it as one) — there is one, D1 |
 | `main` is the oracle; `git checkout main -- tm-core Cargo.toml Cargo.lock`; `git show main:…` | earlier versions of this document; `tm/DORMANT.md`'s old text; `kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh` (comments and `git archive main`); README gap 36 | `main` is discarded (`f386c56`). The oracle is `4748911`; the restore ran from it (`835d960`); the oracle scripts still say `main` and fail (§7.3) |
@@ -2726,8 +2744,8 @@ to the human: **q10**, **q11**, **q7**, **q9**, and the §5.13 drives.
 
 **Update 2026-09-15, stage 5's close (README "Stage 5 closed").** No question in this table was
 answered or raised, and **nothing here blocks the switch**: D9's phases A, B, R, C and W, D10's
-L1–L8 and phase F1 all landed, and S is owed for its own reasons (gap 128 first), not for want
-of an owner decision. The stage's acceptance ran and is recorded in §8.3: over the log corpus the
+L1–L8 and phase F1 all landed, and S is owed for its own reasons (§8.3's list — **not** gap 128,
+which closed at `4aaa99e`), not for want of an owner decision. The stage's acceptance ran and is recorded in §8.3: over the log corpus the
 only measured disagreement with fork point `4748911` is **P21**, four sightings, none of which
 reaches a display. Still owed to the human, unchanged: **q10** (a dropped child's standing
 record), **q11** (whether `hfold` was forced), **q7** (lifecycle commutation, stage 6) and **q9**
