@@ -2102,6 +2102,23 @@ defined in `tm/src/cli/kernel_log.rs`, and T5's `kernel_replay` (`tm/tests/kerne
 contents 1, 2 and 5, item 4's retarget of T5 (**gap 137**), item 7's D18 defaults with **gap 120
 part 3**, and **gaps 119, 129, 132, 133**.
 
+*Measured 2026-09-16 (README, "W-9: the switch was built and measured, and it did not land").* The
+body swap is **built and green** — `Ctx::replay_with` onto `kernel_log::replay_scoped`, and with it
+`Ctx::log_tail_of`, `Ctx::entries_at`, the undo recorder and `tm log` — and it was measured end to
+end against the unswitched binary before being reverted: **T5 20/20 and the door suite 15/15 pass
+against the shipped switched path**, T12 passes, **8 of 10 T9s** pass (the unwritable-cache one with
+its `#[ignore]` removed), **131 of 138** captured outputs are byte-identical, and the three-year
+later verb is **faster** — 141.8 ms against track B's pre-switch 278.6 ms. So S's blocker is **not**
+item 1, and **not** the size of §12's deletion: it is **gap 146** — the moment
+`tm/tests/support/replay.rs`'s `replay_of_text` calls the kernel, T5's 20 tests and the door suite's
+15 become **self-comparisons**, passing while proving nothing (§9.2's worst disguised gap) on the
+least reviewable commit of the stage. Retargeting them to the fork oracle (**gap 137**) should be
+**its own preparation step before S**, exactly as D19 did for T9/T12, T11 and R12. Two new decisions
+belong inside S: **gap 144** (`tm log --json` cannot be both key-ordered and pretty-printed as design
+§11.4 step 5 prescribes — `serde_json` here has no `preserve_order`, so parsing to `Value`
+alphabetises the keys) and **gap 145** (`tm check` does not survive a `reachTooFar` log, which is
+D18 (iii)'s "every verb **except** `tm check`" half).
+
 *Closed 2026-09-16, on the `w8-facts` track (README, "the three findings that would have made a
 naive switch wrong").* **Gaps 134, 135 and 136 are no longer on this list.** `tm check` is wired to
 the kernel's read-only line sweep, so it names every unreadable line and not just the last chunk's

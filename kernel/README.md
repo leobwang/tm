@@ -21618,3 +21618,206 @@ item 7's D18 defaults (**gap 120 part 3**; gap 134's sweep is **done**), **gaps 
 and the **§5.13 drive** (short by **gap 131**'s item, and carrying **gaps 138, 139 and 143**'s
 questions for the owner). **Gaps 140 and 141 clear at S.** Then **S2** (**gap 130**) with quirk
 Q6(f) (**gap 86**), then **L9** (**gap 93**).
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 5, W-9 — the SWITCH ATTEMPT.  **S DID NOT LAND
+     AND THIS BLOCK DOES NOT CLAIM IT DID.**  `Ctx::replay_with` still calls
+     `Ctx::replay_of`, whose body is still `Log::parse_bytes(..).replay(..)`.
+     The switch was built in the working tree, measured end to end against the
+     unswitched binary, and then REVERTED, because §14.6 item 2 — §12's
+     deletion — could not be finished green in this run and the brief forbids a
+     partial switch.  What is committed is one instrument fix the measurement
+     uncovered, plus this ledger.  Takes gaps 144-146; new gaps start at 147.
+     No Lean edited: audit 3934, cheats 157, parity P35, burn-down 13, imports
+     78, all unchanged.
+     =========================================================================== -->
+
+## Stage 5, W-9, 2026-09-16: the switch was built and measured, and it did not land
+
+**The honest paragraph, first.** S is **not made**. `tm/src/cli/ctx.rs`'s `Ctx::replay_with` still
+calls `Ctx::replay_of`, whose body is still `Log::parse_bytes(&bytes).replay(None, cfg.tz)`;
+`log.rs` still holds every line §12 deletes; §12's one-reader grep is **125**, exactly where the
+merge left it. This is the **third** run to refuse S, and the reason is narrower and better
+evidenced than the previous two: the body swap itself is *done and measured green*, and what stops
+the commit is item 2 — §12's deletion — whose cascade is measured below.
+
+**What this commit contains** is one shipped-source fix the measurement uncovered (an instrument
+that could not see the regression it exists to catch), and this block.
+
+### What the run did land
+
+1. **The merge** (`137e803`, its own block above): PREP 2's gaps 134-136 joined PREP 1's migrated
+   suite; gap 142/143's collision renumbered.
+2. **`kernel_log::render_lines` hands back the rendering's own bytes** (`Box<RawValue>`) instead of
+   a parsed `Value`, and `kernel_log_door.rs`'s `the_doors_render_is_the_lines_own_bytes` now
+   compares **bytes** as well as values. It has no caller in the binary today, so **no behaviour
+   moves**; what changes is that the instrument can now fail for the reason it exists. See gap 144.
+
+### The switch, built and measured — then reverted
+
+The body swap was written and run in full: `Ctx::replay_with` → `kernel_log::replay_scoped`,
+`Ctx::log_tail_of` → `headers_after`, `Ctx::entries_at` → `render_lines`, the undo recorder and
+`tm log` onto them, `GenesisError` mapped to a named `CliError`, and the cache's notices to stderr.
+**160 insertions / 59 deletions across five files.** The patch compiled with **zero errors across
+`cargo check --workspace --all-targets`**, because the test chokepoint (`support/replay.rs`) still
+reads through the Rust reader — which made this the ideal measuring configuration: **the binary
+fully switched, every differential suite still comparing it against the reader S deletes.**
+
+**What the measurement says — and it is a strong result:**
+
+| measured on the switched binary | value |
+|---|---|
+| `cargo test --workspace --no-fail-fast` | **1120 passed / 4 failed / 8 ignored across 79** (unswitched: 1124 / 0 / 8) |
+| **T5** (`kernel_replay_parity`, `--include-ignored`) | **20 passed / 0 failed** — the kernel's answer *through the shipped `Ctx::replay_with`* **is** the Rust reader's, over the corpus, two generated months, 256 generated sequences, the zone cases and the undo triples |
+| **the door suite** | **15 passed / 0 failed** |
+| **T12** (`model_fit_is_the_fork_points_on_the_corpus`) | **passes** — `tm model --fit` still writes fork `4748911`'s `model.json` byte for byte, from the `All` scope, `fitted from 61 observations` |
+| **T9** | **8 of 10 pass**, and `an_unwritable_cache_rebuilds_in_memory_with_one_notice` **passes with its `#[ignore]` removed** once the notice reaches stderr |
+| behaviour, 69 invocations × (stdout, stderr) over four corpus plans and a damaged tree | **131 of 138 byte-identical**; every differing file is `tm log --json`. **Every human `tm log` output is identical**, `tm check` identical, every other verb identical |
+| latency, 3-year log (66,169 lines) | later verb **141.8-151.8 ms** against track B's pre-switch **278.6 ms** — the switch is **faster**, not slower. First verb **2.14 s** (genesis now real) against the 5 s bound |
+| §12's one-reader grep, switched | **121** (from 125): the swap alone removes four |
+
+**The four failures are not four defects.** Three are assertions whose own names say they are
+pre-switch, and S turns them around:
+
+| failing test | why |
+|---|---|
+| `no_verb_makes_a_kernel_log_call_before_the_switch` | `tm arrive` makes **4** kernel `log` calls. This is the half-switch guard doing its job, and S replaces `expected_log_calls` with the measured table |
+| `cli::ctx::tests::every_scope_is_the_whole_replay_before_the_switch` | fails at `Dates{2026-09-01..2026-09-07}`, because `Dates` now really narrows |
+| `a_verb_on_a_tree_with_three_years_of_log_takes_well_under_a_second` | `assert_eq!(cache_files(&tm), 0, "the unswitched binary wrote a replay cache")` — the cache now holds **39** files. **This is gap 140 clearing exactly as gap 140 predicted.** Its four sibling assertions (`cli_latency.rs` lines 441, 459, 478, 496) stop being vacuous at the same moment |
+
+The fourth, `tm_log_is_byte_identical_on_the_corpus`, is a real finding and is gap 144.
+
+### Gap 144 (new; label W9-a) — `tm log --json` cannot be both key-ordered and pretty-printed as §11.4 step 5 prescribes
+
+1. **What is not done.** Design §11.4 step 5 says `--json` "emits each rendering **parsed as a
+   generic `serde_json::Value`**" and, in the same sentence, that it "is **byte-identical to today**
+   for every line the Rust writer wrote (T2)". Measured here: **those two cannot both hold.**
+2. **Why.** This workspace's `serde_json` is built without `preserve_order`, so `Value`'s object is
+   a `BTreeMap` and parsing **alphabetises every object's keys**, where the fork's `LogEntry` writes
+   them in declaration order (`t` first). Following §11.4 literally moved `tm log --json` on **7 of
+   69** corpus invocations — every difference a key *order*, no value. Emitting the rendering's own
+   bytes (`RawValue`) fixes the order but loses the pretty-printing, because `to_string_pretty`
+   writes a `RawValue` verbatim: entries then print compact, one per line. A third option exists and
+   is **not** a new dependency — `indexmap 2.14.2` is already in `Cargo.lock` via `toml_edit`, so
+   `serde_json/preserve_order` is a feature flag, not a crate — but it changes `Value`'s ordering
+   **workspace-wide**, for every `--json` document the binary builds, and that blast radius is
+   unmeasured.
+3. **What it costs.** Nothing today: `render_lines` has no caller in the binary. At S it is a
+   deliberate three-way choice — a key-order change, a formatting change, or a workspace-wide
+   feature flag — and it must be *taken*, not discovered. **`tm_log_is_byte_identical_on_the_corpus`
+   is the test that catches it**, which is precisely why D19 put it before the switch.
+4. **When it clears.** At S, by deciding. The instrument half is closed here: the door suite's render
+   test compared two parsed `Value`s, which are order-insensitive by construction, so it **passed
+   15/15 while `tm log --json` was visibly wrong**. It now compares the bytes.
+
+### Gap 145 (new; label W9-b) — `tm check` does not survive a `reachTooFar` log
+
+1. **What is not done.** D18 (iii) and §14.6 item 5 require that a hand edit no rebuild can window
+   makes **every verb except `tm check`** fail by name. The "except `tm check`" half has no code.
+2. **Why.** `lifecycle::check` calls `Ctx::load`, which calls `Ctx::replay_with`; once that body is
+   the kernel's, a `ReachTooFar` is an `Err` and `tm check` dies with every other verb. Measured on
+   the switched binary: `a_hand_undo_beyond_the_rebuild_bound_fails_by_name` gets past its "every
+   verb fails by name" loop — the fault **is** raised and named, `reachTooFar … line 10622 … the
+   guard that refused it is undoReach` — and then fails at
+   `assert_eq!(check.code, 0, "tm check died on the log it exists to diagnose")`.
+3. **What it costs.** Nothing today; at S it is the difference between a diagnosable damaged log and
+   an undiagnosable one, which is the whole of D18. `Ctx::load` needs a path that tolerates a refused
+   replay — an empty `Replay` plus the fault as a named `tm check` problem.
+4. **When it clears.** At S, as the second half of **gap 120 part 3**. The first half (the fault
+   reaching the user by name) is built and measured here.
+
+### Gap 146 (new; label W9-c) — §12's deletion silently makes 35 differential tests self-comparisons
+
+1. **What is not done.** §12's ~1,750-line deletion in `log.rs`, and with it design §14.6 item 3's
+   last line: `tm/tests/support/replay.rs`'s `replay_of_text` calling the kernel. **This is what
+   stopped S**, and it is not the deletion's size.
+2. **Why it is worse than a big diff.** `replay_of_text` is the comparand of **T5 (20 tests)** and
+   **the door suite (15 tests)**. The moment its body calls the kernel, all 35 compare the kernel
+   with the kernel: they keep passing and prove nothing — README gap 16's lesson and AGENTS §9.2's
+   worst disguised gap, arriving on the least reviewable commit of the stage. Measured cascade of the
+   deletion, by direct reference to the symbols §12 names: **12 files** — `tm-core/tests/log_serde.rs`
+   **21** sites, `tm/tests/kernel_log_grammar.rs` **11** (T1/T2/T3 *are* `Log::parse_bytes`,
+   `LogEntry::parse` and `parse_timestamp`), `tm/tests/log_regressions.rs` **6** (gap 142's
+   decision), `tm/tests/support/replay.rs` **5**, `tm/src/cli/ctx.rs` **4**,
+   `tm/tests/log_narrowed_facts.rs` **3**, and six files with one each — plus `log.rs`'s own
+   `mod tests` (**237** lines) and `mod reader_tests` (**157** lines), which go with the reader.
+3. **What it costs.** It makes **gap 137** the switch's real blocker rather than a footnote. T5's
+   `rust_facts` builds a ten-family `Facts` from the in-tree `Replay` *plus* `entries_of_text`
+   payloads; the fork oracle (`tm-oracle replay <tz>`, built and verified working in this run at
+   `/tmp/claude-1000/tm-oracle`) emits a **serialised fork `Replay`**. Retargeting "field by field
+   over every input class it covers today" therefore needs an oracle-side decoder and a subprocess
+   per input class — corpus, two generated months, 256 sequences, the zone cases, the undo triples —
+   all `#[ignore]`d and inert without `TM_ORACLE`, as gap 137 already requires.
+4. **When it clears.** At S, and **it should be its own preparation step before S**, exactly as D19
+   did for T9/T12, T11 and R12: retarget T1-T3 and T5 to the fork oracle and settle the door suite's
+   fate **while the Rust reader still answers**, so that S's commit is the body swap plus a deletion
+   whose comparands have already moved.
+
+### The shape of the next run, from the measurement rather than an estimate
+
+The body swap is **done and green** and is saved as a patch. What S needs beyond it, in order:
+
+1. **A preparation step (gap 146):** retarget T1-T3 and T5 to the fork oracle, and decide the door
+   suite's fate — pinned expectations, or deletion with the reader it compares against.
+2. Gap 144's three-way decision, gap 145's tolerant load for `tm check`, and turning around the three
+   pre-switch assertions named above.
+3. Then §12's deletion and the body swap in one commit, plus the §5.13 drive.
+
+### Observable behaviour changes
+
+**None.** `kernel_log::render_lines` has **no caller in the binary** — `tm/src/cli/ctx.rs` still uses
+its own byte loop — so the one shipped-source change here cannot move an answer. No log bytes, no
+new capability, no refusal text, no `--json` shape. Re-measured: `cargo test --workspace` is
+**1124 / 0 / 8 across 79**, identical to the merge, with **0 warnings**.
+
+### Recorded disagreements between the design, the ledger and the repo
+
+1. **Design §11.4 step 5 is self-contradictory** (gap 144). It is the first sentence of the design
+   this campaign has found to be *not implementable as written*; every earlier disagreement was a
+   stale count or a shape.
+2. **§14.6 item 4's "T5 is retargeted" is one line of design and a step of work** (gap 146). The
+   ledger has carried it as a footnote since W-7's gap 137; it is the switch's blocker.
+3. **§12's one-reader grep is 125 here and 121 with the switch applied.** Quote §12's alternation,
+   never R8's 89 (W-7's disagreement 1, still standing).
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+**No Lean was edited** — no `.lean`, no `lean-toolchain`, nothing under `kernel/corpus/`, no
+`Cargo.toml` and no `Cargo.lock`. Goals discharged, refuted, added: none; burn-down **13 → 13**,
+stages 3-6. New theorems: none — the audit stays at **3934**. New `decide`/`rfl` witnesses: none, so
+no probe budget was spent. New cheats: none (highest **157**). New parity entries: none (highest
+stays **P35**). `TmKernel.lean` imports: **78**. No predicate or assertion was weakened, no goal
+deleted, no memory bound raised, no corpus reblessed, no snapshot re-blessed.
+
+### Numbers
+
+**Taken:** gaps **144-146**. **Highest:** gap 146, cheat 157, parity P35. New gaps start at **147**.
+
+**Re-measured** (main worktree, on the tree committed; every command capped at `MemoryMax=40G`,
+`MemorySwapMax=0`; the fork-oracle build at 16G):
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, **3.06 / 3.10 / 3.07 s** (the merge `137e803`: 3.21 / 3.21 / 3.34). Flat, far inside the 10%-per-step rule |
+| axiom audit | **3934 theorems** (unchanged: no Lean edited) |
+| corpus | **29/37 files and 4/5 whole plans** (unchanged) |
+| burn-down | **13** (unchanged; stages 3-6) |
+| `cargo test --workspace` | **1124 passed / 0 failed / 8 ignored across 79 result lines**, exit 0, **0 warnings** — identical to the merge |
+| FFI suite | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) |
+| T5 (`kernel_replay_parity --include-ignored`) | **20 passed / 0 failed**, **6.50 s** |
+| the door suite (`kernel_log_door`) | **15 passed / 0 failed**, **1.50 s** — now byte-comparing |
+| `cli_latency --include-ignored` | **5 passed / 0 failed**, **9.86 s** |
+| `kernel_call_counts` | **1 passed** — `log == 0` for eleven verbs, `== 1` for `tm check` |
+| `cli_switch_acceptance` | **7 passed / 0 failed / 2 ignored** |
+| `cli_check_log` | **6 passed / 0 failed** |
+| §12's one-reader grep | **125 lines** (unchanged; **121** with the switch applied) |
+| the diff | 2 files **+21 −3** (1 shipped, 1 test), and this block. No Lean, no `Cargo.toml`, no `lean-toolchain`, no `kernel/corpus/` |
+
+**Owed next: S, and for the first time its blocker is named rather than its size.** A preparation
+step for **gap 146** (retarget T1-T3 and T5 to the fork oracle; settle the door suite), then design
+§14.6's contents **1, 2 and 5** with **gaps 144** and **145** decided, item 4's retarget
+(**gap 137**, subsumed by the preparation step), item 7's D18 defaults (**gap 120 part 3**), **gaps
+119, 129, 132, 133**, and the **§5.13 drive** (short by **gap 131**'s item, carrying **gaps 138,
+139, 143** and now **144**'s questions for the owner). **Gaps 140 and 141 were measured clearing
+exactly as written.** Then **S2** (**gap 130**) with quirk Q6(f) (**gap 86**), then **L9**
+(**gap 93**).

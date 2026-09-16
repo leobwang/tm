@@ -1931,7 +1931,15 @@ pub fn line_warnings(bytes: &[u8], now: &str, tz: &Value) -> Result<Vec<LogWarni
 /// [`RESEND_LINES`] lines, so the file is swept in chunks and a chunk holding none of the wanted
 /// lines is never sent. A line the kernel cannot render (a malformed one) comes back absent, which
 /// is what `tm log` prints a header without a payload for.
-pub fn render_lines(bytes: &[u8], now: &str, tz: &Value, wanted: &[u64]) -> Result<BTreeMap<u64, (Value, String)>, String> {
+///
+/// **It hands back the rendering's own bytes** ([`RawValue`]), not a parsed [`Value`]. Design §11.4
+/// step 5 says `tm log --json` "emits each rendering parsed as a generic `serde_json::Value`" and
+/// in the same sentence that it "is byte-identical to today" — and those two cannot both hold.
+/// This workspace's `serde_json` has no `preserve_order`, so `Value`'s map is a `BTreeMap` and
+/// parsing re-orders every object's keys **alphabetically**, where the fork's `LogEntry` writes
+/// them in declaration order (`t` first). Measured: `tm log --json` moved on 7 of 69 corpus
+/// invocations, every difference a key order and no value. The bytes are kept instead.
+pub fn render_lines(bytes: &[u8], now: &str, tz: &Value, wanted: &[u64]) -> Result<BTreeMap<u64, (Box<RawValue>, String)>, String> {
     let mut out = BTreeMap::new();
     if wanted.is_empty() {
         return Ok(out);
@@ -1949,7 +1957,8 @@ pub fn render_lines(bytes: &[u8], now: &str, tz: &Value, wanted: &[u64]) -> Resu
         for r in answer.render.as_array().ok_or("render is not an array")? {
             let line = r[0].as_u64().ok_or("a render row without its line")?;
             let (Some(text), Some(display)) = (r[1].as_str(), r[2].as_str()) else { continue };
-            let value: Value = serde_json::from_str(text).map_err(|e| format!("the kernel's rendering of line {line}: {e}"))?;
+            let value = RawValue::from_string(text.to_string())
+                .map_err(|e| format!("the kernel's rendering of line {line}: {e}"))?;
             out.insert(line, (value, display.to_string()));
         }
     }

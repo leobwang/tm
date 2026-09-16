@@ -299,9 +299,18 @@ fn the_doors_render_is_the_lines_own_bytes() {
         let (value, display) = rendered.get(line).unwrap_or_else(|| panic!("line {line} was not rendered"));
         let entry = fork.get(line).unwrap_or_else(|| panic!("the reader has no line {line}"));
         assert_eq!(
-            *value,
+            serde_json::from_str::<Value>(value.get()).expect("the kernel's rendering parses"),
             serde_json::to_value(entry).expect("the reader's entry serialises"),
             "line {line}: the kernel's rendering is not the reader's entry"
+        );
+        // **By bytes, not only by value** (T2, parity P20). Comparing two parsed
+        // `Value`s cannot see a key *order* change — this workspace's `serde_json`
+        // has no `preserve_order`, so both sides alphabetise — and an order change
+        // is exactly what `tm log --json` shows. This is the assertion that bites.
+        assert_eq!(
+            value.get(),
+            entry.to_json().expect("the reader's entry serialises").as_str(),
+            "line {line}: the kernel's rendering is not byte-identical to the writer's"
         );
         assert_eq!(*display, entry.t.format("%Y-%m-%d %H:%M").to_string(), "line {line}: the display");
     }
