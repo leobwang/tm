@@ -723,6 +723,11 @@ def setVal : EditVal → RawItem → RawItem
   | .waiting n, r => Field.setWaiting n.val r
   | .after ds, r => Field.setAfter ds.val r
 
+/-- **An edit never adds or removes a state box** — every arm is `setKey`.
+`Plan.boxesWf` therefore costs the edit path nothing. -/
+@[simp] theorem setVal_boxed (v : EditVal) (r : RawItem) : (setVal v r).boxed = r.boxed := by
+  cases v <;> exact Field.setKey_boxed _ _ _
+
 /-- Whatever key the command writes, the token that lands is read back as that
 key with the rendered value — `lookupKey_setKey`, once, for all nine, which is
 what makes a tenth key unable to be the odd one out. -/
@@ -1324,8 +1329,8 @@ theorem move_last_wins_refuted_globally :
     ∃ (t t' : Site) (e : Entity),
       ((moveTo t e).bind (moveTo t')).map Subtype.val ≠ (moveTo t' e).map Subtype.val := by
   refine ⟨⟨1, 0⟩, ⟨2, 0⟩,
-    ⟨{ live := ⟨0, 0⟩, archive := some ⟨⟨1, 0⟩, ⟨[], []⟩⟩, status := .live .free,
-       line := ⟨[], []⟩ }, rfl⟩, ?_⟩
+    ⟨{ live := ⟨0, 0⟩, archive := some ⟨⟨1, 0⟩, ⟨[], true, []⟩⟩, status := .live .free,
+       line := ⟨[], true, []⟩ }, rfl⟩, ?_⟩
   simp [moveTo, lift, Except.map, Except.bind]
 
 /-! ### L4: what `move` is and is not invertible by
@@ -1538,7 +1543,7 @@ theorem floor_and_respect_are_incompatible (bm : Nat) (f : Nat → Entity → En
     (hf : FloorsAtRecorded bm f) : ¬ RespectsUserEdit bm f := by
   intro hr
   let e0 : Entity := ⟨{ live := ⟨0, 0⟩, archive := none, status := .live .free,
-                        line := ⟨[], []⟩ }, rfl⟩
+                        line := ⟨[], true, []⟩ }, rfl⟩
   have h1 : 1 ≤ remainingOf bm (f 1 e0).val.line := hf 1 e0
   have h2 : remainingOf bm (f 1 e0).val.line = remainingOf bm e0.val.line := hr 1 e0
   have h3 : remainingOf bm e0.val.line = 0 := rfl
@@ -1650,7 +1655,7 @@ original estimate unit"). -/
 def carryEst (t line : RawItem) : RawItem :=
   if ownsEstimate line then line
   else match estKeyTok t with
-    | some tok => ⟨line.indent, insertBeforeId tok.word line.toks⟩
+    | some tok => ⟨line.indent, line.boxed, insertBeforeId tok.word line.toks⟩
     | none     => line
 
 /-- The bytes a demotion files forward: with no standing record, `demote`'s; with
@@ -1943,8 +1948,8 @@ def setEstInTo (w : List Char) : List Tok → List Tok
   | t :: ts => if isEstKey t.word then ⟨t.sep, w⟩ :: ts else t :: setEstInTo w ts
 
 def setEstTo (v : List Char) (r : RawItem) : RawItem :=
-  if hasEst r then ⟨r.indent, setEstInTo (['e', 's', 't', ':'] ++ v) r.toks⟩
-  else ⟨r.indent, insertBeforeId (['e', 's', 't', ':'] ++ v) r.toks⟩
+  if hasEst r then ⟨r.indent, r.boxed, setEstInTo (['e', 's', 't', ':'] ++ v) r.toks⟩
+  else ⟨r.indent, r.boxed, insertBeforeId (['e', 's', 't', ':'] ++ v) r.toks⟩
 
 theorem find_setEstInTo (w : List Char) (hw : isEstKey w = true) (ts : List Tok)
     (h : ts.any (fun t => isEstKey t.word) = true) :

@@ -167,7 +167,7 @@ open Tm
 -- §4.2's sections and §4.3's per-file-kind shapes
 #print axioms Tm.a_day_file_holds_only_pinned_items
 #print axioms Tm.calendar_lines_are_intervals
-#print axioms Tm.routine_lines_are_open
+#print axioms Tm.a_routine_line_need_not_carry_the_open_flag
 #print axioms Tm.routine_lines_have_a_window_or_after_done
 #print axioms Tm.optional_items_declare_a_duration
 #print axioms Tm.a_shapeless_calendar_line_is_rejected
@@ -902,7 +902,7 @@ open Tm
 #print axioms Tm.Field.view_render_id
 #print axioms Tm.Field.field_round_trip
 #print axioms Tm.Field.title_absorbs_the_unclassified
-#print axioms Tm.Field.spec_line_is_an_item
+#print axioms Tm.spec_line_is_an_item
 #print axioms Tm.Field.spec_line_ci
 #print axioms Tm.Field.spec_line_leading_estimate
 #print axioms Tm.Field.spec_line_remaining
@@ -4986,3 +4986,51 @@ open Tm
 #print axioms Tm.Planner.the_earliest_free_position_is_run
 #print axioms Tm.Planner.the_evening_is_closed_to_a_routine
 #print axioms Tm.Planner.a_deferred_routine_has_no_row
+-- W-15 track K, K3a (D31, gap 301): the item grammar widened — the state box
+-- is optional and an id-less line is keyed by its title (`Field.titleKey`).
+-- `Tm.parseLine` is the store's reading; `Tm.parseItem` stays the file's.
+#print axioms Tm.an_unflagged_optional_is_open
+#print axioms Tm.an_unflagged_routine_is_open
+#print axioms Tm.bareOk_all
+#print axioms Tm.bareOk_any
+#print axioms Tm.bareOk_mk
+#print axioms Tm.boxAt_box
+#print axioms Tm.boxAt_eq_some
+#print axioms Tm.boxAt_none_of_head
+#print axioms Tm.canonicalKeyed_of_canonical
+#print axioms Tm.Field.findSome_kParent_phase0
+#print axioms Tm.Field.kinds_bare
+#print axioms Tm.Field.kinds_boxed
+#print axioms Tm.parseBody_bare
+#print axioms Tm.parseBody_bare_head
+#print axioms Tm.parseBody_bare_of_noBox
+#print axioms Tm.parseBody_boxed
+#print axioms Tm.parseLine_ok
+#print axioms Tm.parseToks_ok
+#print axioms Tm.serialize_parse_id
+#print axioms Tm.serialize_parseLine
+#print axioms Tm.the_flag_is_still_read_off_a_week_line
+#print axioms Tm.the_spec_routine_line_is_a_title_keyed_item
+#print axioms Tm.the_spec_routine_line_round_trips
+#print axioms Tm.Field.titleKey_congr
+#print axioms Tm.tokBare_head
+#print axioms Tm.tokBare_sep
+#print axioms Tm.a_boxless_line_cannot_carry_a_state
+#print axioms Tm.a_boxless_todo_line_is_well_formed
+#print axioms Tm.boxesWf_set
+#print axioms Tm.boxWf_of_mem
+#print axioms Tm.Field.setKey_boxed
+#print axioms Tm.setVal_boxed
+#print axioms Tm.a_routine_line_is_an_item
+#print axioms Tm.an_optional_line_is_keyed_by_its_whole_title
+#print axioms Tm.a_bare_line_has_no_positional_slots
+#print axioms Tm.an_empty_bullet_is_prose
+#print axioms Tm.a_front_matter_rule_is_prose
+#print axioms Tm.a_line_with_a_bracket_is_not_a_bare_item
+#print axioms Tm.a_bare_line_may_carry_its_id
+#print axioms Tm.the_three_refusals_are_unchanged
+#print axioms Tm.effectiveScope
+#print axioms Tm.a_routine_line_loads_as_an_entity
+#print axioms Tm.two_titles_in_one_file_are_a_dupId
+#print axioms Tm.a_title_colliding_with_an_id_is_refused
+#print axioms Tm.parseLine_serializeItem

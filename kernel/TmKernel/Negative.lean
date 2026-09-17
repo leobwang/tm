@@ -360,7 +360,8 @@ namespace Tm
    words", and `tm-core::grammar` splits on any whitespace run.  `Text.lean`'s
    separator is `isSp c := c == ' '`, so a tab is an ordinary word character:
    `a<TAB>b` is ONE token, not two.  Consequences the oracle found:
-   `- [ ] x<TAB>^a1` is refused as `noId`, `- [ ] x ^a1<TAB>` yields the id
+   `- [ ] x<TAB>^a1` is refused as `noId` (still, after K3a: the title key is
+   the **bare** form's, and that line carries a box), `- [ ] x ^a1<TAB>` yields the id
    `"a1\t"` — a store key the Rust's `Id::is_valid` rejects — and `tm edit est=`
    lands on a different token than the Rust's does when an earlier `est:` is
    glued to the previous word by a tab. -/
@@ -371,7 +372,15 @@ theorem tokens_are_whitespace_separated :
    literal `- [`, so `- <TAB>[ ] …` and `-  [ ] …` (two spaces) are not item
    lines at all.  They are kept as prose and written back unchanged, so nothing
    reports anything: the item is simply invisible to every command, to ranks,
-   and to `tm check`.  1,049 of 2,048 generated lines land here. -/
+   and to `tm check`.  1,049 of 2,048 generated lines land here.
+
+   RESTATED 2026-09-17 (W-15, K3a): the box is optional now, so "not the boxed
+   arm" no longer implies "not an item" — without a second clause these lines
+   would have become **bare** items whose title begins `[`, which is a worse
+   answer than the prose they are.  `Field.bareOk`'s `tokBare` refuses a bare
+   line carrying a `[` anywhere, so both shapes are still prose and this block
+   still does not close; `a_line_with_a_bracket_is_not_a_bare_item` (Line.lean)
+   is the positive statement of the same fact. -/
 theorem one_space_is_not_the_only_separator_after_the_bullet :
     isItemLine "-  [ ] 2 30m Spaced ^a1".toList = true := by decide
 
@@ -2095,5 +2104,53 @@ theorem theSmallHoursReopened :
     Planner.earliestFree 75600 108000 1800 [(75600, 86400)]
       = Planner.earliestFree 75600 108000 1800 [(75600, 172800)] := by
   decide
+-- APPENDED 2026-09-17 (stage 6, run W-15, track K — K3a, the widened item
+-- grammar: the state box is optional and an id-less line is keyed by its
+-- title.  D31, gap 301).  Appended at the end (§6.2: append, never renumber).
+-- Labels 174-176; 161-170 stay reserved for track P's planner steps.
+-- ===========================================================================
+
+/- CHEAT 174 — a **boxed** line with no `^id` is keyed by its title.  K3a keys
+   an id-less line by `Field.titleKey`, but only the BARE form: §4.1 omits the
+   box and the id together, in the same three files, and a line that carries a
+   state box is a tracked item whose id the kernel does not invent.  So
+   `- [ ] no id here` is still `PErr.noId` and the whole plan is refused, which
+   is what `a_malformed_item_line_is_rejected_not_treated_as_prose` (the FFI
+   suite) asserts.  `tree.rs`'s `key_of` does not look at the box and would key
+   this line `Id("no id here")` with a `missing-id` warning; the divergence is
+   deliberate and this block is where it is written down. -/
+theorem aBoxedLineWithNoIdIsKeyedByItsTitle :
+    parseLine "- [ ] no id here".toList =
+      Except.ok (['n','o',' ','i','d',' ','h','e','r','e'], Glyph.todo,
+        ⟨[], true, tokenize " no id here".toList⟩) := by rfl
+
+/- CHEAT 175 — a box-less line can carry a state.  `serializeItem` writes back
+   the box it read, so an entity whose live line is bare and whose status is
+   `dropped` renders the bytes it was read from and the state vanishes on the
+   next read.  `Plan.boxesWf` is the clause that refuses it and
+   `a_boxless_line_cannot_carry_a_state` proves the clause fails on exactly
+   that shape; driven through the wire, `{"op":"drop","id":"lunch"}` against a
+   `routines.md` line answered `ok` with the line unchanged before the clause
+   landed, and answers `{"err":{"kernel":"badHorizon"}}` after. -/
+theorem aBoxlessLineCanCarryAState :
+    boxWf { live := ⟨0, 0⟩, archive := none, status := .settled .dropped,
+            line := ⟨[], false, tokenize " lunch win:11:30-13:30".toList⟩ } = true := by rfl
+
+/- CHEAT 176 — two routines with one title are two entities.  A title key that
+   silently collides is a wrong answer (§5.6), and the fork's fallback — key the
+   *later* line `file:line` — depends on the order the host listed its
+   documents, which is the defect §5.6 exists to forbid.  So the kernel refuses
+   by name: `{"err":{"dupId":"lunch"}}` for two in one file, `notADemotion` for
+   two in different files or for a title that collides with an `^id`.  The claim
+   below is that the loader builds an entity from two `lunch` placements; the
+   positive forms are `two_titles_in_one_file_are_a_dupId` and
+   `a_title_colliding_with_an_id_is_refused` (Boundary.lean), which run the
+   whole loader and pin the JSON each refusal emits. -/
+theorem twoRoutinesWithOneTitleAreTwoEntities :
+    (match buildEntity "lunch".toList
+        [⟨0, 0, "lunch".toList, Glyph.todo, ⟨[], false, tokenize " lunch".toList⟩, none⟩,
+         ⟨0, 1, "lunch".toList, Glyph.todo, ⟨[], false, tokenize " lunch".toList⟩, none⟩] with
+     | .ok _    => true
+     | .error _ => false) = true := by rfl
 
 end Tm

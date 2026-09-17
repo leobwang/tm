@@ -284,7 +284,7 @@ def ranksAscend : List (Nat × List Char) → Bool
 
 theorem item_lines_open_no_comment (l : List Char) (h : isItemLine l = true) :
     opensComment l = false := by
-  unfold isItemLine parseItem at h
+  unfold isItemLine parseLine parseItem at h
   unfold opensComment
   cases hd : l.dropWhile isSp with
   | nil => rfl
@@ -442,7 +442,7 @@ private def orientDocs : List Doc :=
   [⟨['w'], [], some ⟨week, 35⟩⟩, ⟨['m'], [], some ⟨month, 8⟩⟩]
 
 private def orientCore (st : Status) : Core :=
-  { live := ⟨0, 0⟩, archive := some ⟨⟨1, 0⟩, ⟨[], []⟩⟩, status := st, line := ⟨[], []⟩ }
+  { live := ⟨0, 0⟩, archive := some ⟨⟨1, 0⟩, ⟨[], true, []⟩⟩, status := st, line := ⟨[], true, []⟩ }
 
 private def orientPlan (st : Status) : PlanCore :=
   ⟨orientDocs,
@@ -726,15 +726,55 @@ def durPositive : Dur → Bool
   | .simple n _ => decide (0 < n)
   | .hm h m     => decide (0 < h * 60 + m)
 
-/-- How long the shape says the thing takes, where the shape says it at all.
-The interval case measures the two `DT`s and says so in minutes; the window
-case hands back the `dur:` **as written**, unit included, because §4.1 says a
-rewrite keeps the unit. -/
+/-- How long the item says it takes.  The interval case measures the two `DT`s
+and says so in minutes; the window case hands back the `dur:` **as written**,
+unit included, because §4.1 says a rewrite keeps the unit; and with no shape at
+all the bare `dur:` token is the answer.
+
+**The third arm is new at K3a, and it is a defect being fixed, not a rule being
+relaxed.**  `shapeWfFor`'s own doc comment already said "a bare `dur:` on an
+optional line is … the reading that makes §4.3's `- Severance S3E4  dur:1h` a
+`Shape`" — and the code did not do it: `Core.shape` of that line is
+`Shape.none` (`viewShape` needs a `win:` before it reads a `dur:`), so
+`declaredDur` answered `none` and the rule refused §4.3's own example.  Nothing
+saw it because optional lines were prose until this step.  `viewShape` is
+**not** changed — a bare `dur:` is still not a window, which would have moved
+every other reader of the shape. -/
 def declaredDur (c : Core) : Option Dur :=
   match c.shape with
   | .window _ dv  => some dv
   | .interval a b => some (.simple (b.abs - a.abs) .minutes)
-  | _             => none
+  | _             => Field.viewDur c.line
+
+/-- §3.1's `scope`, **as the file also answers it**.  `model.rs`'s §3.1 row is
+"`open` flag, **or a routines/optional file**", and `Core.scope` reads the flag
+alone because a `Core` does not know where it sits.  `shapeWfFor` does — the
+`DocKind` is its first argument — so this is the reading the file-kind rules
+ask, and it is the kernel's only reader of "is this item open-ended in this
+file".
+
+**This corrects a rule that refused the spec's own examples** (§5.2's
+`shapeWfFor .calendar`, again).  Before K3a a routines line was prose and the
+clause was never reached; the moment the widened grammar made those lines
+entities, every fixture plan was refused `itemCheck: fileKindShape`, because
+§4.3's own `routines.md` carries no `open` flag on any line — it does not need
+one, the file says it.  `an_unflagged_routine_is_open` and
+`the_flag_is_still_read_off_a_week_line` pin both halves. -/
+def effectiveScope : DocKind → Core → Scope
+  | .routines, _ => .openEnded
+  | .optional, _ => .openEnded
+  | _,         c => c.scope
+
+theorem an_unflagged_routine_is_open (c : Core) :
+    effectiveScope .routines c = Scope.openEnded := rfl
+
+theorem an_unflagged_optional_is_open (c : Core) :
+    effectiveScope .optional c = Scope.openEnded := rfl
+
+/-- Everywhere else the flag is still the only answer, so nothing outside
+`routines.md` and `optional.md` became open. -/
+theorem the_flag_is_still_read_off_a_week_line (c : Core) :
+    effectiveScope .week c = c.scope := rfl
 
 /-- §4.3's four file-kind rules, as one function of the kind.
 
@@ -750,16 +790,23 @@ def declaredDur (c : Core) : Option Dur :=
   `shapesWf` does not read this clause for it (`demotedRecordPlacement`).
 
 Every other kind — backlog, week, day, and any path outside §2's layout — has
-no shape rule, which is what §4.3 says about them. -/
+no shape rule, which is what §4.3 says about them.
+
+**The routines/optional scope clause reads `effectiveScope`, not `Core.scope`**
+(K3a): §4.3's "every line is `open`" is answered by the *file*, so the conjunct
+is `true` for those two kinds by construction and the clause it is really
+checking is the window/`after-done` half.  Said plainly rather than left for a
+reader to notice: this **accepts** a routines or optional line that carries no
+`open` flag, which the flag-reading version refused. -/
 def shapeWfFor : DocKind → Core → Bool
   | .routines, c =>
-      (c.scope == Scope.openEnded) &&
+      (effectiveScope .routines c == Scope.openEnded) &&
       (match c.shape, c.recur with
        | .window _ _, _  => true
        | _,           .afterDone _ => true
        | _,           _  => false)
   | .optional, c =>
-      (c.scope == Scope.openEnded) &&
+      (effectiveScope .optional c == Scope.openEnded) &&
       (match declaredDur c with
        | some dv => durPositive dv
        | none    => false)
@@ -787,22 +834,94 @@ def shapesWf (p : PlanCore) : Bool :=
     | none   => true
     | some e => shapeWfFor (docKindAt p e.val.live.doc) e.val || demotedRecordPlacement p e.val.live)
 
+/-! #### A line with no state box carries no state (K3a, D31)
+
+§4.1 omits the box in `routines.md`, `optional.md` and `inbox.md`, and
+`serializeItem` writes back the box it read — so an entity whose live line is
+bare and whose status is not `live free` would render **the same bytes it was
+read from**, and the status would simply vanish on the next read.  That is the
+silently-wrong-answer shape §5.6 exists to forbid, and it is reachable: with the
+widened grammar `{"op":"drop","id":"lunch"}` addresses a routine by its title
+key, and without this clause it answered `ok` and wrote the line back unchanged.
+
+The loader cannot build such an entity — a bare line parses as `Glyph.todo` —
+so this is what stops a **command** from producing one, and `mapAt` answers it
+by refusing the post-state.
+
+Why here and not in `Core.wf`: `wf_ignores_the_item_fields` is the reason the
+entity is `Bool` + `Subtype` at all (`{c with line := l}` re-discharges
+nothing), and a `wf` clause reading the line would end that.  The plan tier is
+where the placement rules already live. -/
+
+/-- The tombstone's bytes carry `[-]`, so its line must have a box too. -/
+def boxWf (c : Core) : Bool :=
+  (c.line.boxed || (glyphOfStatus c.status == Glyph.todo)) &&
+    (match c.archive with
+     | none   => true
+     | some t => t.line.boxed)
+
+/-- **A box-less line cannot carry a state.**  Both directions, so this is not
+decoration: the clause fails exactly when the render would lose the box. -/
+theorem a_boxless_line_cannot_carry_a_state (c : Core) (hb : c.line.boxed = false)
+    (hs : glyphOfStatus c.status ≠ Glyph.todo) : boxWf c = false := by
+  unfold boxWf
+  simp [hb, hs]
+
+theorem a_boxless_todo_line_is_well_formed (c : Core) (hs : c.status = Status.live .free)
+    (ha : c.archive = none) : boxWf c = true := by
+  unfold boxWf
+  simp [hs, ha, glyphOfStatus]
+
+def boxesWf (p : PlanCore) : Bool :=
+  p.store.dom.all (fun i =>
+    match p.store.get i with
+    | none   => true
+    | some e => boxWf e.val)
+
+theorem boxWf_of_mem {p : PlanCore} {i : Id} {e : Entity} (h : boxesWf p = true)
+    (hdom : i ∈ p.store.dom) (hget : p.store.get i = some e) : boxWf e.val = true := by
+  have := List.all_eq_true.1 h i hdom
+  rw [hget] at this
+  exact this
+
+/-- **One entity replaced keeps the clause**, as long as the replacement keeps
+its box.  This is what makes `boxesWf` free on the edit path rather than a
+hypothesis every caller has to carry. -/
+theorem boxesWf_set {p : PlanCore} {i : Id} {e' : Entity} (hs : (p.store.get i).isSome = true)
+    (h : boxesWf p = true) (hb : boxWf e'.val = true) :
+    boxesWf { p with store := p.store.set i e' hs } = true := by
+  unfold boxesWf
+  simp only [Store.dom_set]
+  refine List.all_eq_true.2 (fun j hj => ?_)
+  show (match (p.store.set i e' hs).get j with | none => true | some e => boxWf e.val) = true
+  by_cases hji : j = i
+  · subst hji
+    show (match (if j = j then some e' else p.store.get j) with
+          | none => true | some e => boxWf e.val) = true
+    simp [hb]
+  · show (match (if j = i then some e' else p.store.get j) with
+          | none => true | some e => boxWf e.val) = true
+    rw [if_neg hji]
+    exact List.all_eq_true.1 h j hj
+
 /-- The item half of the plan-level tier, in one Bool. -/
 def itemsWf (p : PlanCore) : Bool :=
   normalized p && parentsTotal p && parentsAcyclic p && afterTotal p && afterAcyclic p &&
-    sectionsWf p && shapesWf p
+    sectionsWf p && shapesWf p && boxesWf p
 
 theorem itemsWf_parts {p : PlanCore} (h : itemsWf p = true) :
     normalized p = true ∧ parentsTotal p = true ∧ parentsAcyclic p = true ∧
       afterTotal p = true ∧ afterAcyclic p = true ∧ sectionsWf p = true ∧
-      shapesWf p = true := by
+      shapesWf p = true ∧ boxesWf p = true := by
   simp only [itemsWf, Bool.and_eq_true] at h
-  exact ⟨h.1.1.1.1.1.1, h.1.1.1.1.1.2, h.1.1.1.1.2, h.1.1.1.2, h.1.1.2, h.1.2, h.2⟩
+  exact ⟨h.1.1.1.1.1.1.1, h.1.1.1.1.1.1.2, h.1.1.1.1.1.2, h.1.1.1.1.2, h.1.1.1.2, h.1.1.2,
+    h.1.2, h.2⟩
 
 theorem itemsWf_of_parts {p : PlanCore} (h1 : normalized p = true) (h2 : parentsTotal p = true)
     (h3 : parentsAcyclic p = true) (h4 : afterTotal p = true) (h5 : afterAcyclic p = true)
-    (h6 : sectionsWf p = true) (h7 : shapesWf p = true) : itemsWf p = true := by
-  simp [itemsWf, h1, h2, h3, h4, h5, h6, h7]
+    (h6 : sectionsWf p = true) (h7 : shapesWf p = true) (h8 : boxesWf p = true) :
+    itemsWf p = true := by
+  simp [itemsWf, h1, h2, h3, h4, h5, h6, h7, h8]
 
 def planWf (p : PlanCore) : Bool :=
   docsWf p && sitesInRange p && pathsDistinct p && demotionsOriented p && itemsWf p
@@ -828,7 +947,8 @@ def firstItemFault (p : PlanCore) : String :=
   else if !afterTotal p then "danglingDep"
   else if !afterAcyclic p then "depCycle"
   else if !sectionsWf p then "sectionDiscipline"
-  else "fileKindShape"
+  else if !shapesWf p then "fileKindShape"
+  else "boxlessState"
 
 /-- The plan.  You cannot make one without discharging `planWf`. -/
 def WfPlan := { p : PlanCore // planWf p = true }
@@ -983,7 +1103,7 @@ def splitDocC (c : Bool) (k : Nat) (ls : List (List Char)) : DocSplit :=
   | l :: rest =>
     let d := splitDocC (commentAfter c l) (k + 1) rest
     if c then ⟨(k, l) :: d.prose, d.items⟩ else
-    match parseItem l with
+    match parseLine l with
     | .ok (i, g, r) => ⟨d.prose, (k, i, g, r) :: d.items⟩
     | .error _      => ⟨(k, l) :: d.prose, d.items⟩
 
@@ -1005,7 +1125,7 @@ def splitDocCAcc.go (c : Bool) (k : Nat) (ls : List (List Char))
   | [] => ⟨ps.reverse, is.reverse⟩
   | l :: rest =>
     if c then splitDocCAcc.go (commentAfter c l) (k + 1) rest ((k, l) :: ps) is else
-    match parseItem l with
+    match parseLine l with
     | .ok (i, g, r) => splitDocCAcc.go (commentAfter c l) (k + 1) rest ps ((k, i, g, r) :: is)
     | .error _      => splitDocCAcc.go (commentAfter c l) (k + 1) rest ((k, l) :: ps) is
 
@@ -1024,7 +1144,7 @@ theorem splitDocCAcc_go (ls : List (List Char)) : ∀ (c : Bool) (k : Nat) ps is
     cases c with
     | true => simp [splitDocCAcc.go, splitDocC, ih]
     | false =>
-      cases h : parseItem l with
+      cases h : parseLine l with
       | ok x =>
         obtain ⟨i, g, r⟩ := x
         simp [splitDocCAcc.go, splitDocC, h, ih]
@@ -1088,14 +1208,14 @@ theorem splitDocC_cons (c : Bool) (k : Nat) (l : List Char) (rest : List (List C
         ⟨(k, l) :: (splitDocC (commentAfter c l) (k + 1) rest).prose,
          (splitDocC (commentAfter c l) (k + 1) rest).items⟩ ∧
       (c = true ∨ isItemLine l = false)) ∨
-    (∃ i g r, c = false ∧ parseItem l = .ok (i, g, r) ∧
+    (∃ i g r, c = false ∧ parseLine l = .ok (i, g, r) ∧
       splitDocC c k (l :: rest) =
         ⟨(splitDocC (commentAfter c l) (k + 1) rest).prose,
          (k, i, g, r) :: (splitDocC (commentAfter c l) (k + 1) rest).items⟩) := by
   cases c with
   | true => exact Or.inl ⟨by simp [splitDocC], Or.inl rfl⟩
   | false =>
-      cases hp : parseItem l with
+      cases hp : parseLine l with
       | ok t =>
           obtain ⟨i, g, r⟩ := t
           exact Or.inr ⟨i, g, r, rfl, rfl, by simp [splitDocC, hp]⟩
@@ -1261,7 +1381,7 @@ theorem renderSplit_splitDocC (c : Bool) (k : Nat) (ls : List (List Char)) :
       · rw [h]
         simp only [renderSplit, List.map_cons]
         rw [weave_item_first _ k _ _ ?_]
-        · rw [serialize_parse l i g r hp, ihr]
+        · rw [serialize_parseLine l i g r hp, ihr]
         · intro q hq
           have := splitDocC_prose_ge _ (k + 1) rest q hq
           omega
@@ -1303,7 +1423,7 @@ Three facts do it, and none of them needs Mathlib:
 theorem splitDoc_nil (k : Nat) : splitDoc k [] = ⟨[], []⟩ := rfl
 
 theorem splitDoc_cons_ok (k : Nat) (l : List Char) (rest : List (List Char))
-    (i : Id) (g : Glyph) (r : RawItem) (h : parseItem l = .ok (i, g, r)) :
+    (i : Id) (g : Glyph) (r : RawItem) (h : parseLine l = .ok (i, g, r)) :
     splitDoc k (l :: rest) =
       ⟨(splitDoc (k + 1) rest).prose, (k, i, g, r) :: (splitDoc (k + 1) rest).items⟩ := by
   have hc' : commentAfter false l = false :=
@@ -1316,7 +1436,7 @@ line leaves — which is still `splitDoc` unless the line opened a comment.
 (Restated 2026-09-12: the tail was `splitDoc (k + 1) rest`, which is false of a
 line that opens a comment.) -/
 theorem splitDoc_cons_error (k : Nat) (l : List Char) (rest : List (List Char))
-    (e : PErr) (h : parseItem l = .error e) :
+    (e : PErr) (h : parseLine l = .error e) :
     splitDoc k (l :: rest) =
       ⟨(k, l) :: (splitDocC (commentAfter false l) (k + 1) rest).prose,
        (splitDocC (commentAfter false l) (k + 1) rest).items⟩ := by
@@ -2352,7 +2472,7 @@ theorem shapeWf_or_record_of_mem (p : WfPlan) (i : Id) (e : Entity)
     shapeWfFor (docKindAt p.val e.val.live.doc) e.val = true ∨
       demotedRecordPlacement p.val e.val.live = true := by
   have hdom : i ∈ p.val.store.dom := (p.val.store.domSpec i).mpr (by rw [hget]; rfl)
-  have hall := List.all_eq_true.1 (itemsWf_parts p.items).2.2.2.2.2.2 i hdom
+  have hall := List.all_eq_true.1 (itemsWf_parts p.items).2.2.2.2.2.2.1 i hdom
   rw [hget] at hall
   simpa using hall
 
@@ -2394,17 +2514,34 @@ theorem calendar_lines_are_intervals (p : WfPlan) (i : Id) (e : Entity)
   | point d      => rw [hsh] at h; simp at h
   | window r d   => rw [hsh] at h; simp at h
 
-/-- §4.3's `routines.md`: "every line is `open`, has a window or
-`after-done`". -/
-theorem routine_lines_are_open (p : WfPlan) (i : Id) (e : Entity)
-    (hget : p.val.store.get i = some e)
-    (hr : docKindAt p.val e.val.live.doc = DocKind.routines) :
-    e.val.scope = Scope.openEnded := by
-  have h := shapeWf_of_mem p i e hget (by rw [hr]; decide)
-  rw [hr] at h
-  simp only [shapeWfFor, Bool.and_eq_true, beq_iff_eq] at h
-  exact h.1
+/-- **`routine_lines_are_open` as stage 4 wrote it is refuted** (K3a, D31).
 
+It concluded `e.val.scope = Scope.openEnded` — that the *line* carries the
+`open` flag — and read that off `shapeWfFor`'s first conjunct.  §4.3's own
+`routines.md` carries the flag on no line: the file says it.  The witness is
+the spec's own lunch line, which parses (bare, K3a's widening), and whose flag
+set is empty.  What survives is the statement about the **file**
+(`an_unflagged_routine_is_open`) and the window/after-done half below, which is
+what the clause was ever able to check. -/
+theorem a_routine_line_need_not_carry_the_open_flag :
+    Field.flagsOf (Field.itemOf "- lunch win:11:30-13:30 dur:30m every:day".toList) = [] := by
+  decide
+
+/-- …and it really is an item now, keyed by its title. -/
+theorem the_spec_routine_line_is_a_title_keyed_item :
+    parseLine "- lunch win:11:30-13:30 dur:30m every:day".toList =
+      Except.ok (['l','u','n','c','h'], Glyph.todo,
+        ⟨[], false, tokenize " lunch win:11:30-13:30 dur:30m every:day".toList⟩) := by
+  rfl
+
+theorem the_spec_routine_line_round_trips :
+    serializeItem ['l','u','n','c','h'] Glyph.todo
+      ⟨[], false, tokenize " lunch win:11:30-13:30 dur:30m every:day".toList⟩
+      = "- lunch win:11:30-13:30 dur:30m every:day".toList := by
+  decide
+
+/-- §4.3's `routines.md`: "every line has a window or `after-done`" — the half
+of the rule that is a question about the bytes. -/
 theorem routine_lines_have_a_window_or_after_done (p : WfPlan) (i : Id) (e : Entity)
     (hget : p.val.store.get i = some e)
     (hr : docKindAt p.val e.val.live.doc = DocKind.routines) :
@@ -2442,11 +2579,10 @@ gives it a rest slot, and a rest slot has a length. -/
 theorem optional_items_declare_a_duration (p : WfPlan) (i : Id) (e : Entity)
     (hget : p.val.store.get i = some e)
     (ho : docKindAt p.val e.val.live.doc = DocKind.optional) :
-    e.val.scope = Scope.openEnded ∧ ∃ dv, declaredDur e.val = some dv ∧ durPositive dv = true := by
+    ∃ dv, declaredDur e.val = some dv ∧ durPositive dv = true := by
   have h := shapeWf_of_mem p i e hget (by rw [ho]; decide)
   rw [ho] at h
   simp only [shapeWfFor, Bool.and_eq_true, beq_iff_eq] at h
-  refine ⟨h.1, ?_⟩
   have h2 := h.2
   cases hd : declaredDur e.val with
   | none => rw [hd] at h2; simp at h2
