@@ -25383,3 +25383,589 @@ unallocated). **Closed:** none. **Highest:** gap **257**, cheat **157**, parity
 and `kernel/README.md` (this block). No Lean, no Rust, no `Cargo.toml`, no
 `lean-toolchain`, nothing under `kernel/corpus/`, no fixture, no snapshot,
 nothing re-blessed.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 6 (the planner), run W-13, **track B** — D24's
+     seam, opened INSIDE the kernel.  Branch `w13-seam`, cut from
+     `rebuild-on-lean` at `0585e72`.  Gap numbers here come from the Seam range
+     **260-269**; **260, 261, 262 taken, 263-269 free**.  Track A owns 250-259
+     and `kernel/design/stage6/**`, which this branch does not touch.
+     =========================================================================== -->
+
+## Stage 6, W-13 track B, 2026-09-16: the seam is open — the capacity section reads the log section's own replay
+
+**What landed, in one sentence.** `logOp` now answers a **`LogAnswer`** — the bytes it always
+answered, and the `Seal.Answer` those bytes were rendered from — `logAnswerOf`, `readLogSection`
+and `logSectionWith` carry it, `runCapZ` hands its replay to `readCapacityZ`, and the first thing
+that reads it is `"wake": "log"`, a capacity section that asks the kernel for today's logged wake
+instead of being told it. **Gap 210 is closed.** Day 0 itself is not built here — that is step L9,
+after the merge, exactly as the brief required.
+
+### The seam, by name
+
+| before | after |
+|---|---|
+| `logOp : VLogReq → Except LogRefusal JVal` | `logOpZ : VLogReq → Except LogRefusal LogAnswer`, and `logOp` is **kept, as a view**: `(logOpZ r).map LogAnswer.wire` |
+| `logOpCore` took a resume, a reseal and a body | it takes a **fourth** argument, the seam's `fac : Seal.Run → Option Seal.Answer` |
+| `@[csimp] logOp_eq_logOpFast` | `@[csimp] logOpZ_eq_logOpZFast`, the same proof plus `h4` |
+| `logAnswerOf : … → Except JVal (Option JVal)` | `… → Except JVal (Option LogAnswer)` |
+| `readLogSection`, `logSectionWith` | the same change; `runWithLog` and `logInto` emit `.wire` |
+| `readCapacity`/`readCapacityZ` had **no argument a replay could arrive through** | both take `rep : Option Seal.Answer`; `runCapZ` passes `lg.bind LogAnswer.facts` |
+
+`LogAnswer.facts` is `some` **exactly when the request resumed and asked for facts**
+(`LogReq.seamFacts`). That is not a convenience: a resume that asks no facts runs through
+`Seal.resumeRunW`, whose answer is `Seal.blankAnswer`, so there is no replay to carry. A consumer
+handed `none` must refuse by name, and the one built here does (`wakeWithoutLog`). Nothing new is
+computed on any path — the seam carries a value the op had already built and was throwing away, and
+`h4` of the csimp proof is exactly the statement that the compiled op carries the same one
+(`Seal.trimRun wa _ run` keeps `run.answer` when `wa`, and when it does not, both sides are `none`).
+
+### How the seam carries TODAY's facts — the brief's item 3, and the part L9 stands on
+
+W-12's block recorded that today's facts "live in the run's state as an **open day** rather than in
+a sealed `DayRecord`, which is a second reason the extraction is not a one-line projection."
+**That is half right, and the wrong half is the one that matters.** Read `Seal.resumedAnswer`:
+
+```lean
+days := (daysFrom st hs K.ledgerDay).map (OpenDay.finish st.machine)
+```
+
+`daysFrom` takes every day **at or after the checkpoint's ledger day** — open days included — and
+`OpenDay.finish` finishes each one: `o.acc.map DayAcc.finish` for the record, and
+`Replay.sortObs (o.energy ++ pendingOn m o.day)` for the observations, which **emits the machine's
+pending start observation**. G4 already refuses a resume whose `T < K.ledgerDay`, so today is at or
+after the ledger day whenever the request is accepted at all.
+
+So today is **already a finished `DayRecord` in `Seal.Answer.days`**, carrying
+`record : Option DayAcc` — whose `blocksDone`, `sleptMin` and `wake` are three of day 0's seven
+inputs — and `energy : List EnergyObs`, whose `(t, pred, rep)` triple is what
+`Posterior::from_observations` reads. The extraction **is** a projection, and it is written here as
+`CapWire.dayRecordOn : Seal.Answer → Nat → Option Seal.DayRecord`.
+
+Two further facts L9 should not have to re-derive:
+
+1. **The seam carries the *merged* answer** (`LogReq.merged`), the same value `LogReq.resumed`
+   renders into the `log` key. `Seal.mergeSealed` prepends only sealed records with
+   `day < ledgerDay`, so today's record is the run's own either way (`findDay_filter_append` is the
+   lemma). The kernel's `dayRecordOn` and the host's `kernel_log::decode_facts` therefore read
+   **the same fact set**, which is what makes a parity claim between them meaningful.
+2. **What is still missing for day 0 is not the facts.** It is `Look.Input`'s shape (`day0 : Hist`
+   is a histogram, not the raw facts), site **R10**, the `at` stamp with `nowDisagrees`, a state
+   section (window, budget, arrival, date, `loc`), `allowHome`, and the re-aimed
+   `kernel_lookahead_parity.rs`. Design §14.8's price stands; the seam was the cheap part of it,
+   and it came in at **+425/−88 lines in `Boundary.lean`** (much of that doc comment) against the
+   200-definition/600-proof estimate for the whole of L9.
+
+### The laws: what is unchanged, what is stronger, and what is new
+
+**Re-proved with their statements untouched, word for word** (AGENTS §3.1, D5 — never weakened):
+
+* `readLogSection_is_zoneOf_then_logSectionWith` — unchanged **because** `readLogSection` and
+  `logSectionWith` changed **together**: both now answer `Option LogAnswer`, so the equation is
+  between the same two functions it always was. Proof unchanged.
+* `runCap_without_capacity_is_runWithEmit` — unchanged, proof unchanged. (W-12's rename to
+  `..._is_runWithEmit` and its narrowed sibling `runCap_without_capacity_is_run` were read first,
+  as the brief instructed; the brief's third name, `runCap_without_capacity_is_runWithLog`, no
+  longer exists and has not existed since S2.)
+* Every law about `logOp` — `logOp_refuses_a_checkpoint_of_another_zone`,
+  `logOp_refuses_a_tail_not_at_its_checkpoints_cut`, `logOp_refuses_what_the_resume_refuses`,
+  `logOp_answers_through_the_resume`, `logOp_reads_without_a_replay`,
+  `the_log_op_emits_only_numerals_below_2_53`, `the_log_op_checks_every_numeral`,
+  `the_log_op_emits_only_what_its_readers_read_back`, `the_log_op_facts_from_genesis_are_the_replays`,
+  `the_log_op_facts_from_a_stored_checkpoint_are_the_replays`, and the decided witnesses
+  `the_log_op_names_its_resume_refusals`. **This is why `logOp` was kept as a view rather than
+  renamed**: eleven laws and their witnesses keep their exact text and their standing audit lines.
+  Only their proofs gained `logOpZ` in a `simp` set and, in three places, `within53A_wire`.
+
+**Strengthened, and here is exactly how the new statement implies the old one:**
+
+* `the_zone_is_read_once_and_feeds_both_sections`. Its first conjunct is unchanged. Its second read
+  `∀ plan clock cap, readCapacity plan clock j cap = readCapacityZ plan clock zo cap`; it now reads
+  `∀ plan clock rep cap, readCapacity plan clock rep j cap = readCapacityZ plan clock zo rep cap`.
+  The two functions each gained the **same** argument in the **same** position, so the new statement
+  is the old one universally quantified over the replay as well: it says the zone is read once *for
+  every replay the seam could hand in*, which is strictly more, and the old statement is the
+  instance at any fixed `rep`. Nothing about it was relaxed; a hypothesis was added to the
+  **conclusion's** quantifier, not to the theorem's antecedent.
+
+**Shape changes forced by the type, each a re-typing rather than a weakening:**
+`runWithLog_puts_the_log_after_the_report` (`a : JVal` → `a : LogAnswer`, and the emitted key is
+`a.wire`), `zoneOf_of_readLogSection` and the seven `runCap_*` laws (`lg : Option JVal` →
+`Option LogAnswer`, `readCapacity … j cap` → `readCapacity … (lg.bind LogAnswer.facts) j cap`),
+`runCap_answers_docs_report_log_lookahead` (`l.wire` in the emitted object), `readCapacity_ok`
+(a `rep` binder). **Every one of them still pins the same emitted bytes**: what changed is that the
+capacity reader's replay argument is now *named in the statement*, which is the whole point.
+
+**New, and audited** (`Check.lean`'s W-13 banner, 12 lines):
+
+| theorem | what it says |
+|---|---|
+| `within53A_wire` | the seam's replay rides **beside** law 13's check, never through it |
+| `logAnswerOf_carries_the_op` | the section's bytes are `logOp`'s, and its facts are `logOpZ`'s — one computation, two halves |
+| `the_capacity_section_reads_the_log_sections_own_replay` | **gap 210.** The inversion of `runCapZ`: an accepted capacity request's `CapReq` was read against `(logSectionWith j zo).facts`, the replay behind the `log` key of the same response |
+| `runCap_reads_the_capacity_section_against_its_own_log_answer` | the same at `runCap`: the zone is read once (gap 110) **and the replay once** (gap 210) |
+| `Look.mkInput?_ok_wake_wf` | R10 at L5's only constructor: no wake the clock cannot represent reaches the lookahead, from either side of the wire |
+| `CapWire.wakeClockOf_sec_lt` | the seam's clock is a time of day, below 86,400 s, always |
+| `CapWire.wakeClockOf_wf` | it is well formed on every instant but a leap second through a second-resolution offset |
+| `CapWire.resolve_fromLog_without_a_replay` | `"log"` with no replay is `wakeWithoutLog`, never a blank answer read as a fact |
+| `CapWire.readCapacityZ_refuses_a_logged_wake_without_a_replay` | the same refusal reaches the wire, before the lookahead runs |
+| `CapWire.resolve_fromLog_without_a_day` | a day the replay does not reach is **no wake**, exactly as an absent key — the seam invents nothing |
+| `CapWire.the_capacity_input_is_the_replays_wake` | the positive law, for **every** request: with `"wake": "log"`, `Look.Input.wake` *is* `wakeClockOf` of the replay's record for today |
+| `CapWire.a_capacity_answer_can_depend_on_a_log_fact` | the demonstration, end to end (below) |
+
+### A capacity answer can now depend on a log fact — and the proof is not decorative
+
+AGENTS §5.2 and §5.6 are the traps here: a `rep` argument nothing reads is dead code, and a law
+about it compiles and means nothing. So the seam has a **load-bearing** first consumer, and the
+demonstration is a composition of two proved things:
+
+* `Look.a_future_day_reads_todays_wake_to_the_second` (already in the tree, unchanged) proves that a
+  **forty-second** move in today's wake clock moves Tuesday's emitted capacity from 240 minutes at
+  level 5 to 180 at 5 and 180 at 4.
+* `a_capacity_answer_can_depend_on_a_log_fact` adds the two ends: two `wake` lines forty seconds
+  apart project, through `wakeClockOf` — the seam's only projection — to exactly the two clocks that
+  theorem separates.
+* `the_capacity_input_is_the_replays_wake` is the middle link, stated for every request rather than
+  this one.
+
+So the chain **replay → `wakeClockOf` → `Look.Input.wake` → `Look.wakeOn` → the day's minutes at
+each level** is proved, not asserted, and the parameter is not inert.
+
+**Why `wake` and not day 0.** Day 0's three replay facts (`blocksDone`, `sleptMin`, the posterior)
+are step L9's by the brief's own item 5, and building any of them here would be building day 0. The
+capacity section's *only other* replay-derived value is `wake`, and it is a **courier** today:
+`Ctx::logged_wake` is `state.wake.or_else(|| replay.day(today).and_then(|d| d.wake)…)`, whose second
+disjunct the host decodes from the kernel (`kernel_log::decode_facts`) and sends straight back.
+Taking that disjunct over is D9's one-reader rule in miniature and it is exactly the round trip D24
+declined. **It is opt-in**, so no request the binary sends today changes by a byte.
+
+### Wire values, bounds and rejection (R10, D9-21)
+
+* **`"wake": "log"`** is the only new wire shape: `capacity.wake` accepted absent/`null` and
+  `{"sec", "ns"}`; it now also accepts the **exact** string `"log"`. Any other string is `badWake`,
+  which is what any string was before — so the single behaviour change is that `{"wake": "log"}`
+  stops being refused and becomes the seam. `Section.wake` is a three-case `WakeSrc`, not a widened
+  `Option`, so no reader can confuse "absent" with "from the log".
+* **Nothing unbounded crosses.** The replay never reaches the wire; it is passed by reference inside
+  one call. The one value the seam *constructs* is a `WakeClock`, and it is bounded
+  (`wakeClockOf_sec_lt`), well formed except on a leap second through a sub-minute offset
+  (`wakeClockOf_wf`), and **rejected by name rather than rounded** when it is not
+  (`Look.mkInput?_ok_wake_wf`, `mkInput?`'s `badWake`).
+* **The new refusal is named**: `wakeWithoutLog wake`, in `Refusal.text`, on the wire as
+  `{"err":{"capacity":"wakeWithoutLog wake"}}`, with both a unit law and a request-level law.
+
+### Behaviour rows
+
+| # | rule before | rule now | why, and what proves it |
+|---|---|---|---|
+| 1 | `capacity.wake` of `"log"` (any string) was refused `badWake` | `"log"` means *today's logged wake, from this call's own replay*; every other string is still `badWake` | the seam's first consumer; D9's one reader. `readWake`, `WakeSrc`, `the_capacity_input_is_the_replays_wake`. **Opt-in: nothing the binary sends today uses it** |
+| 2 | a capacity request with `"wake": "log"` and no usable `log` section had no meaning | it is refused by name, `wakeWithoutLog` | AGENTS §5.7: rejection is real. `resolve_fromLog_without_a_replay`, `readCapacityZ_refuses_a_logged_wake_without_a_replay` |
+| 3 | `check.sh`'s axiom audit said **ok** while `Check.lean` held errors | an error Lean reports for `Check.lean` fails the check, and the first three are printed | **found by falling into it here**: D24 renamed three W4 twin rows, their three `#print axioms` lines became `unknown constant`, the audit printed three fewer `axioms` lines and still said ok. A theorem silently stops being audited and only a count moves — gap 235's class exactly. Verified to bite: an added bogus `#print axioms` now prints `FAILED (Check.lean errors)` |
+
+**Row 3 is a strengthening of an acceptance instrument, not a re-blessing.** No assertion was
+weakened, no fixture or snapshot was re-blessed, and no predicate was loosened anywhere in this
+commit.
+
+### Observable behaviour changes to the shipped binary
+
+**None.** No file under `tm/src`, `tm-core/src` or `kernel/tm-kernel-ffi/src` is touched; no
+fixture, no snapshot, no corpus file, no `Cargo.toml`, no `lean-toolchain`. The binary sends no
+`"wake": "log"`, so every request it makes is answered byte for byte as before — which the frozen
+fork comparands confirm below.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+Goals discharged, refuted or added: **none**; burn-down **13 → 13**, all stage 6's. New theorems:
+**12**, every one with an audit line; **3 renamed in place** (`logOpZ_core`, `logOpZFast_core`,
+`logOpZ_eq_logOpZFast`) with their audit lines renamed with them. Axiom audit **3,946 → 3,958**.
+New `decide` witnesses: **2**, both inside `a_capacity_answer_can_depend_on_a_log_fact`; the whole
+`lake build` including them was probed under `MemoryMax=8G`, `MemorySwapMax=0` and passed, so no new
+memory bound was approached and none was raised. New cheats: **none** (highest **157**; the
+design's reserved **cheat 118** is still unused and still L9's). New parity entries: **none**
+(highest **P36**, next free **P37**) — the fork has no `"wake": "log"` and no answer the binary
+produces moved. `TmKernel.lean` imports: **78**, unchanged (no new module). No `sorry` outside
+`Goals.lean`, no new axiom, no `partial def`, `unsafe`, `opaque`, `implemented_by`, `panic!`,
+`!`-accessor, `.toOption`, no Mathlib, no new dependency.
+
+### Method disclosure
+
+Everything ran in the worktree `.claude/worktrees/w13-seam` (branch `w13-seam`, cut from
+`rebuild-on-lean` at `0585e72`), every `lake`, `lean`, `cargo`, `check.sh` and oracle invocation
+under `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet` (16G for the oracle
+build, 8G for the witness probe). The worktree's `.lake` was copied from the main tree at the same
+commit rather than rebuilt from scratch; the first `check.sh` in it printed seven `ok` and
+**3,946** theorems, which is the baseline every figure below is compared against. The seam was
+read, not inferred: `logOp`, `logOpCore`, `logOpFast`, `logAnswerOf`, `readLogSection`,
+`logSectionWith`, `runCapZ`, `readCapacityZ`, `Seal.resumedAnswer`, `Seal.daysFrom`,
+`Seal.openDayOf`, `Seal.OpenDay.finish`, `Seal.mergeSealed`, `Seal.trimRun`, `Seal.resumeRunW`,
+`Replay.DayAcc`/`DayAcc.finish`/`EnergyObs`, `Look.mkInput?`/`wakeOf`/`wakeOn`/`WakeClock.wf`,
+`Cal.localSec`/`localSecAt`/`offsetAt`, and `Ctx::logged_wake`, `Ctx::slept_min` and
+`kernel_capacity::request` in the Rust.
+
+### Numbers, all re-measured on the committed tree
+
+| measurement | value | comparand |
+|---|---|---|
+| `check.sh`, built tree | **7/7**, **3.083 / 3.095 / 3.124 s**, peak RSS **1.95 GiB** | W-12 repair (`a7f07fc`): 3.35 / 3.09 / 3.09 s, 1.91-1.95 GiB. **No rise; the 10%-per-step rule is not approached** |
+| axiom audit | **3,958 theorems** | 3,946. **+12**, every new theorem audited |
+| burn-down | **13**, all stage 6 | unchanged |
+| corpus | **29/37 files and 4/5 whole plans** | unchanged |
+| `cargo test --workspace` | **1,311 passed / 0 failed / 9 ignored across 78 result lines**, exit 0 | **1,311 / 0 / 9 across 78** — identical |
+| FFI suite (`kernel/tm-kernel-ffi`, excluded from the workspace by design) | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) | 100 |
+| T5 `kernel_replay_parity` | **29 passed / 0 failed / 4 ignored**, 6.20 s; `--include-ignored` **33 / 0 / 0**, 6.17 s | 33 |
+| T5 under `TM_ORACLE` (the live census) | **33 passed**; **P21 × 49**, "no disagreements beyond the recorded exceptions"; frozen fork 4748911: corpus 7 logs/126 keys/7,189 values, generated month 9,299 values, §6.4's 12 zone cases 803 values, **0 other exceptions** | **P21 × 49** — identical |
+| the door suite `kernel_log_door` | **22 passed / 0 failed**, 1.58 s; under `TM_ORACLE`, **P21 × 24** on **32,976** values, 0 other exceptions | 22; **P21 × 24** on 32,976 — identical |
+| `kernel_log_grammar` | **16 / 0 / 2 ignored**; under `TM_ORACLE` **18 / 0 / 0** | 16 / 18 |
+| `cli_switch_acceptance` | **9 passed / 0 failed** | 9 |
+| `cli_check_log` | **9 passed / 0 failed** | 9 |
+| `kernel_call_counts` | **1 passed** — the per-verb table is unmoved | 1 |
+| `kernel_lookahead_parity` | **4 passed / 0 failed**, 0.69 s — still asserting day 0 is the host's, which it still is | 4 |
+| `planner_invariants` | **6 passed / 0 failed**, 17.47 s | 6 |
+| `cli_latency --include-ignored` | **6 passed / 0 failed**, 15.82 s | 6 |
+| T11, **the reliable row**: later verb, 3-year log | **146.964 ms** (and 146.914 ms in the sibling test) | the stable band **146.66-147.01 ms**. **Flat — the seam costs nothing measurable** |
+| T11, first verb (genesis), 3-year log | **2.195 s** | 2.15-2.48 s |
+| T11, the three noisy rows (**quoted as ranges, never as single numbers** — gap 240) | reseal **192.427 ms**; 3-day-old routine **136.556 ms**; `review week` **248.265 ms** | 197.5-212.6 / 121.6-136.8 / 248.1-253.3. The reseal reads *below* its recorded band; that is noise, not an improvement, and it is not claimed as one |
+| the diff | **7 files**: `kernel/TmKernel/TmKernel/Boundary.lean`, `kernel/TmKernel/TmKernel/Lookahead.lean` (+20), `kernel/TmKernel/Check.lean`, `kernel/check.sh` (+10), `kernel/TmKernel/TmKernel/SealWire.lean` and `AGENTS.md` (stale cross-references and the four false gap-210 claims), and this ledger | no Rust, no fixture, no snapshot, nothing under `kernel/corpus/`, no `Cargo.toml`, no `lean-toolchain` |
+| the fork oracle | rebuilt with `build-oracle.sh` at `MemoryMax=16G` **outside the repo** (`/tmp/tm-oracle`); usage banner checked before trusting it and it carries D23's `parse-entry` mode | AGENTS §7.3 |
+
+### Documents brought up to date
+
+`AGENTS.md` said, in five places, that gap 210 was open; four of them are the live claim that the
+two sections are answered independently. All five are corrected in this commit: §2.3's `Boundary`
+row (rewritten to describe the seam), §8.3's "what remains" item 1 and its corrected open-gap list,
+§8.4's inherited-from-stage-5 L9 row, and §10.1's closing paragraph. `SealWire.lean`'s doc
+cross-reference to `Boundary.logOpFast` follows the rename. **W-12's `Check.lean` banner still says
+`logOpFast` in its prose**; that is a historical record of what W-12 did and is deliberately left
+alone — the rename is stated in W-13's banner immediately below it.
+
+### Gaps
+
+**Closed: 210** — the kernel answers a request's two sections independently. It does not any more;
+`the_capacity_section_reads_the_log_sections_own_replay` is the theorem, and
+`a_capacity_answer_can_depend_on_a_log_fact` is the evidence that the seam is not decorative.
+
+**Opened: 260, 261, 262** (the Seam range is 260-269; **263-269 are free**).
+
+#### Gap 260 (new; label W13B-a) — the axiom audit has no roster, only a count
+
+1. **What is not done.** `check.sh` check 3 now fails on an error in `Check.lean` (behaviour row 3),
+   which catches a `#print axioms` naming a constant that has been renamed away. It does **not**
+   catch the converse: a theorem that is never added to `Check.lean` is never audited, and nothing
+   notices. The only signal is the printed count, which a reader must compare by hand against a
+   README block.
+2. **Why not now.** A roster check needs a source of truth for "which theorems must be audited".
+   The honest one is "every `theorem` in the library", which would add ~3,000 lines to `Check.lean`
+   and is a scope question, not a fix. Proposing the rule is a plan-tier call.
+3. **What it costs.** A theorem can be proved, claimed in a block, and never checked for `sorryAx`
+   — and the burn-down protocol (§3.2) *depends* on the audit line existing, because that is what
+   licenses deleting the goal.
+4. **When it clears.** Whenever the owner settles what the roster should be.
+
+#### Gap 261 (new; label W13B-b) — `"wake": "log"` cannot express "the state's wake wins"
+
+1. **What is not done.** `Ctx::logged_wake` is `state.wake.or_else(|| replay.day(today)…)`. The
+   seam's `"log"` reads the replay only. A host that sends `"log"` unconditionally would lose
+   `state.wake`; a host that wants the fork's precedence must send `{"sec","ns"}` when
+   `state.wake` is set and `"log"` otherwise — which works, and is not written down anywhere.
+2. **Why not now.** The state section is step L9's (`window`, `budget`, `arrival`, `date`, `loc`
+   travel together), and inventing a precedence rule for one field ahead of it would be a second
+   design of the same thing.
+3. **What it costs.** Nothing today (the binary sends no `"log"`), and a wrong wake tomorrow if L9
+   flips the host over without deciding it.
+4. **When it clears.** L9, with the state section — the precedence belongs in the same decision.
+
+#### Gap 262 (new; label W13B-c) — one refusal name for two different faults
+
+1. **What is not done.** A wake the clock cannot represent is `badWake` whether it came off the
+   wire or out of the replay through `wakeClockOf` (a leap second read through a sub-minute
+   offset). The host cannot tell a malformed request from a log line it cannot project.
+2. **Why not now.** Splitting the name is a wire change (a new `Refusal` case and its text) whose
+   only reachable trigger is a pre-1972 zone table plus a leap second — so it is currently
+   unreachable in practice, and adding an unreachable refusal with no test is the dead-code failure
+   §5.6 names.
+3. **What it costs.** A diagnostic that points at the request when the fault is in the log.
+4. **When it clears.** With the first real second-resolution-offset case, or with F2/F3, whichever
+   needs a projected instant first.
+
+**Highest on this branch:** gap **262**, cheat **157**, parity **P36**.
+
+### Owed next, by name
+
+* **Step L9 in full** (gap 93): day 0 from the kernel's own replay. The seam is no longer in its
+  way. What remains is `Look.Input`'s `day0` shape, the `at` stamp with `nowDisagrees`, a state
+  section (window, budget, arrival, date, `loc`), `allowHome`, **site R10** with its two theorems
+  and its **four** configured decimals through `written_pair` (W-12's recorded disagreement 2 —
+  §13.5 says two, day 0 reads four), the hours→minutes conversion §13.5 leaves without a rounding
+  site (recorded disagreement 1), the deletion of the `day0` argument and its `badDay0` refusal
+  (21 occurrences in `Lookahead.lean`, 12 in `Boundary.lean`, 12 in `kernel_lookahead_parity.rs`,
+  9 files in all), **cheat 118**, and the **re-aimed** parity harness — `kernel_lookahead_parity.rs`
+  still asserts in words that day 0 is the host's, and it still passes, because it still is.
+* **F2 and F3** (design §14.7): they now have the seam D24 bought for them. F2's recurrence family
+  (`done_dates` first and count, `last_done`, instances, `latest_named`, `is_done`) reads
+  `Seal.Answer.items`, `.window`, `.instOther` and `.named`; F3's priority inputs and
+  `block_minutes_on` read `.window` and `.days`. All four are already in the value the seam carries.
+* **Gaps 260, 261, 262** above, and this run's own untouched inheritance: stage 5's residue
+  (**93, 94, 98, 113, 114, 116, 132, 133, 139, 143, 150, 151, 152, 160, 170, 180, 181, 182, 190,
+  200, 201, 226**) and the performance levers (**121, 122, 123, 126, 127**, and 143), which D25
+  leaves unstarted on purpose.
+* **The §5.13 human drives** of the stage-3, stage-4 and stage-5 binaries, with the TUI half of the
+  switch's own drive (**gap 182**). No agent can perform them.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 6 (the planner), run W-13, the **MERGE** step —
+     `w13-seam` (`f9ee3d0`, track B) landed on `rebuild-on-lean` at `85bfcd4`
+     (track A, the design).  One conflict, in `kernel/README.md`, both sides
+     appending; resolved by keeping both in landing order.  The Merge range is
+     **270-274**; **270 taken, 271-274 free**.  Every figure below was
+     re-measured ON THE MERGED TREE, each command capped at MemoryMax=40G,
+     MemorySwapMax=0 (16G for the oracle build).
+     =========================================================================== -->
+
+## Stage 6, W-13's merge, 2026-09-16: the seam lands — the kernel's log answer can reach its capacity section
+
+**Said plainly, first: both W-13 tracks landed, and neither refused.** Track A
+wrote the stage-6 step plan and no code; track B opened D24's seam inside the
+kernel and **closed gap 210**. The merge carries both, unedited, and adds
+nothing of its own but this block.
+
+### What merged, and what conflicted
+
+| branch | commit | what it is |
+|---|---|---|
+| `rebuild-on-lean` | `85bfcd4` (track A, the design) | `kernel/design/stage6/stage6-planner-design.md`, 1,346 lines: §14.0's rules, four tracks as tables, the dependency graph, `Goals.lean`'s signature list, and §4's **eight owner questions**. Docs only; gaps **250-257** |
+| `w13-seam` | `f9ee3d0` (track B, the seam) | `logOpZ` answers a `LogAnswer`, `runCapZ` hands its replay to `readCapacityZ`, first consumer `"wake": "log"`; **gap 210 closed**, gaps **260, 261, 262** opened. Lean and docs only |
+
+**One conflict, in one file.** Both sides appended to the end of
+`kernel/README.md`, so `git` could not order the two appends — the same conflict
+W-12's merge hit, and resolved the same way: **keep both, in landing order**
+(track A's block, then track B's), which is what §6.4's append-only convention
+means when two branches append at once. Verified afterwards by diffing each
+merged region against its own branch: **both blocks are byte-identical to their
+branches**, separated by one blank line. Nothing was dropped, nothing rewritten,
+no test discarded — track A contributed no test, and track B's Lean merged
+without conflict.
+
+`AGENTS.md`, `kernel/TmKernel/Check.lean`,
+`kernel/TmKernel/TmKernel/{Boundary,Lookahead,SealWire}.lean` and
+`kernel/check.sh` came across clean: track A touched none of them.
+
+### The two gap ranges did not collide
+
+Track A took **250-257** (258-259 free), track B took **260-262** (263-269
+free), this merge takes **270** (271-274 free). **No number is used twice**,
+which is the whole point of the split ranges — two collisions earlier in this
+campaign came from tracks sharing one sequence. Highest gap on the merged tree:
+**270**. Highest cheat **157**, highest parity **P36** (P37 free), all unmoved.
+
+### The merged ledger corrects one thing, and opens gap 270 for the rest
+
+Per §6.4 a committed block is written history and stays as written; the
+correction belongs here, in the block that merges it.
+
+**Track A's design document was written before the seam landed and says so.**
+Its opening says "Nothing was built: no `Planner.lean`, no `Emit.lean`, **no
+seam**", its **K1** row (line 1021, and again at 1108) describes the seam as
+work to be done and names **gap 210 as open**, and §14.5's dependency graph puts
+K1 first. *All of that is history as of this merge:* K1 **landed** at `f9ee3d0`
+and gap 210 is **closed**. The design's own prediction is worth recording
+against what it cost — K1 was priced at **120 definition / 450 proof lines, 2-3
+agent-days**, and the commit that landed it changed **+427 / −89 in
+`Boundary.lean`, +20 in `Lookahead.lean`, +35 / −3 in `Check.lean`**, which is
+the right order of magnitude on the definition side and cheaper than feared
+overall. Two smaller staleness items ride along: the K1 row names
+`runCap_without_capacity_is_runWithLog`, and the theorem in the tree has been
+`runCap_without_capacity_is_runWithEmit` since S2 (with
+`runCap_without_capacity_is_run` beside it); and §14.8's L9 price of 200/600
+still excludes the seam, which is now *paid*, so L9's remaining cost is strictly
+less than that row says.
+
+**The design document is NOT edited here.** Track A owns
+`kernel/design/stage6/**` (single ownership), and a merge step rewriting another
+track's design document is exactly how a parity list ends up with no home —
+which is gap 226, still open. The staleness is named instead:
+
+#### Gap 270 (new; label W13M-a) — the stage-6 design reads as though the seam were unbuilt
+
+1. **What is not done.** `kernel/design/stage6/stage6-planner-design.md` still
+   presents **K1** as an unbuilt step and **gap 210** as open (lines 35, 346,
+   1021, 1027, 1108, 1308), and §14.5's graph still gates every track on it. The
+   seam landed at `f9ee3d0`; the document has not been re-aimed at the tree it
+   now sits on.
+2. **Why not now.** The document is track A's, and this is the merge step. A
+   merge that silently edits another track's design document destroys the one
+   property that made the split ranges work — that each artefact has exactly one
+   author per run. Re-aiming it is a track-A edit, cheap, and should happen in
+   the run that next opens that file.
+3. **What it costs.** An agent reading the design cold will believe the seam is
+   owed and may build it a second time, or will price L9 with the seam included
+   and over-estimate by 120/450 lines. The `runWithLog`/`runWithEmit` name will
+   send a grep to nothing.
+4. **When it clears.** At the next step that opens the stage-6 design — K2 or
+   L9, whichever moves first — by striking K1's row to "landed at `f9ee3d0`",
+   correcting the theorem name, and noting that §14.8's L9 price no longer
+   carries the seam.
+
+### The stage-5 invariants, re-confirmed at this commit (not carried)
+
+Each of these was **measured on the merged tree**, because "it held on the
+branch" is provenance, not freshness (§7.3):
+
+- **D9, ONE reader.** §12's one-reader grep —
+  `grep -rn 'fn replay\b\|undo_mask\|DayIndex\|parse_bytes\|LogEntry::parse\|Log::parse\|Log::new\|Machine\b\|iter_day\|effective()\|parse_timestamp' tm-core tm --include=*.rs`
+  — returns **41**, its post-switch floor, unchanged from stage 5's close and
+  from `2b26be3`'s 125 → 41. **No in-tree reader was reintroduced.**
+- **D16, ONE writer.** `Horizon::log` is still the single append site and still
+  routes through the installed `LineWriter` (`tm-core/src/horizon.rs:518-526`),
+  with `LogEntry::to_json` reachable only when no writer is installed — a test
+  oracle. The merge touches **no Rust at all**, so this could not have moved,
+  and it was re-read rather than assumed.
+- **D21, the instrument is outside the tree.** Both deletion guards print the
+  post-switch wording on the merged tree: `T5's in-tree region: GONE, and no
+  reference to §12's reader remains`, and `the door's in-tree region: GONE, …`.
+  T5's frozen arms report `T5 frozen fork (4748911)` over the 7 corpus logs, the
+  generated month and §6.4's 12 zone cases — **20 inputs compared against a
+  frozen fork answer inside `cargo test --workspace`**, 458 reachable only under
+  `TM_ORACLE`, 6 kernel-only; the door reports the same fork point for its 16
+  `All`-scope inputs. `fork_arm` ran unconditionally.
+- **Full precision (gap 235).** `the_frozen_comparand_is_read_at_full_precision`
+  **passes by name**, printing `the frozen comparand: 17-significant-digit
+  literals survive the read (3 checked)`, and the workspace still pins
+  `serde_json = { version = "1", features = ["raw_value", "float_roundtrip"] }`
+  (`Cargo.toml:29`). Without it a one-ULP `load` difference reads back as
+  equality; with it, **P21 reports 49 day records differing in the last ulp**
+  across T5's 469 logs, every one displaying the same `round1` load — which is
+  the instrument seeing what it exists to see.
+- **Nothing was re-blessed.** `tm/tests/fixtures/fork-4748911-*.jsonl` are
+  untouched by this merge; both re-bless arms stayed `INERT`, as they must
+  without `TM_FORK_BLESS`.
+- **The oracle is fresh, not merely present.** Rebuilt for this step with
+  `kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh` at **MemoryMax=16G**,
+  **outside the repository** (`/tmp/tm-oracle`); its ref stamp is
+  `4748911555969ace2b48faa8929122aeccbfb415`, equal to `git rev-parse 4748911`,
+  and its **usage banner carries four verbs** — `gen`, `parse`/`parse-entry`,
+  `replay`, `fit` — the `fit` verb being the one a stale binary would lack.
+
+### Observable behaviour changes
+
+**None from the merge itself**, and none reaching the shipped binary from either
+side: the merged diff contains **no Rust, no `Cargo.toml`, no `lean-toolchain`,
+no fixture, no snapshot and nothing under `kernel/corpus/`**. Track B's three
+behaviour rows are the kernel's own and are recorded in its block — the seam
+carries a value the `log` op had already built, `"wake": "log"` is opt-in and
+refused by name (`wakeWithoutLog`) without a replay, and `check.sh` check 3 now
+fails on an error in `Check.lean`. **No request the binary sends today changes
+by a byte.** `"log"` still appears **0** times in
+`tm/src/cli/kernel_capacity.rs`.
+
+### Parity, goals, theorems, cheats (AGENTS §3.2, §6.3, §6.5)
+
+§6.5's six items, one by one:
+
+1. **`Negative.lean` cheats** — neither side added one; nothing to renumber.
+   Highest **157**, unchanged on both branches and here.
+2. **Gap numbering is one sequence** — 250-257 (A), 260-262 (B), 270 (merge).
+   No number used twice, no cross-reference moved.
+3. **`Check.lean`** — track B's 12 new theorems arrived with their `#print
+   axioms` lines and 3 renamed in place; the merge adds none. Audit **3,958**,
+   and `check.sh` check 3 now *fails* on any `Check.lean` error, so a renamed
+   constant can no longer drop silently out of the roster.
+4. **`Goals.lean`** — no goal discharged, refuted or added by either side;
+   burn-down **13**, all of them stage 6's, and the thirteen are the eleven
+   single-run checkers plus `plan_tail_drop` (L24) and
+   `plan_is_stable_across_a_replan` (L25), which **D5 says to prove**.
+5. **`TmKernel.lean` imports** — **78**, unchanged; no module was added by
+   either track.
+6. **`check.sh` and `cargo test --workspace`** — below.
+
+**New parity entries: none.** Highest **P36**, next free **P37**. A merge that
+changes no answer creates no difference from the fork.
+
+**Hard rules, re-checked on the merged tree:** no `sorry` outside `Goals.lean`
+(zero hits), **no axiom declaration anywhere** in the library, and no
+`native_decide`, `partial def`, `unsafe`, `opaque`, `implemented_by`, `panic!`
+or `.toOption` outside prose explaining why each is banned. No memory bound
+raised (D18). No predicate or assertion weakened — track B *strengthened*
+`the_zone_is_read_once_and_feeds_both_sections`, whose old statement is now an
+instance of the new one.
+
+### Numbers, re-measured on the merged tree, every command capped at `MemoryMax=40G`, `MemorySwapMax=0`
+
+| measurement | value |
+|---|---|
+| `check.sh`, built tree | **7/7**, exit 0, **3.15 / 3.09 / 3.12 s** over three serial capped runs, peak RSS **1.93-1.97 GiB** (`f9ee3d0`: 3.083 / 3.095 / 3.124 s; `85bfcd4`: 3.142 / 3.189 s; W-12 repair: 3.35 / 3.09 / 3.09 s). Worst row **+0.8%** on the seam's worst — inside the 10%-per-step rule, and this merge compiles nothing new. Cold rebuild from scratch: **2 m 32 s** |
+| axiom audit | **3,958 theorems** (3,946 at `85bfcd4`; the **+12** is track B's, every one audited) |
+| corpus round trip | **29/37 files and 4/5 whole plans** byte-identically |
+| burn-down | **13**, all stage 6 |
+| `cargo test --workspace` | **1,311 passed / 0 failed / 9 ignored across 78 result lines**, exit 0, **0 compiler warnings** — matching the campaign comparand **1,311 across 78** exactly |
+| FFI suite (`kernel/tm-kernel-ffi`, excluded from the workspace by design) | **100 passed / 0 failed** — kernel 86, corpus 8, stack 6 |
+| T5 (`kernel_replay_parity`) | **29 / 0 / 4**, 6.21 s; `--include-ignored` **33 / 0 / 0**, 6.24 s |
+| T5 under `TM_ORACLE` (fork 4748911) | **469 logs over 6 zones**, 8,442 `Replay` keys, 469 entry counts, 7 refused-line lists, 8 fitted models, **195,243 scalar values**; parity **P21: 49 day records differ in the last ulp, every one displaying the same `round1` load and `load_blocks`**; **no disagreements beyond the recorded exceptions** |
+| the door suite (`kernel_log_door`) | **22 / 0**; under `TM_ORACLE`, 16 `All`-scope inputs, 288 `Replay` keys, **32,976 scalar values**, 16 entry counts, 14 refused-line lists, 6 event-name sets; **P21 24 day records**, 2 inputs with no frozen answer, **0 other exceptions** |
+| `kernel_log_grammar` | **16 / 0 / 2**; `--include-ignored` under the oracle **18 / 0 / 0** (8,273 per-line verdicts, 7 whole-file readings) |
+| `cli_switch_acceptance` | **9 / 0** |
+| `cli_check_log` | **9 / 0** |
+| `kernel_call_counts` | **1 passed** — the per-verb table is unmoved |
+| `kernel_lookahead_parity` | **4 / 0** — including the assertion, still in words, that day 0 is the host's, which **L9** must re-aim rather than extend |
+| `planner_invariants` | **6 / 0**, 17.49 s — the stage-6 acceptance target is 256 cases through the FFI; it is not there yet and this step did not move it |
+| `cli_latency --include-ignored` | **6 / 0**, 16.08 s |
+| §12's one-reader grep | **41** (floor) |
+| `"log"` in `tm/src/cli/kernel_capacity.rs` | **0** |
+| `TmKernel.lean` imports | **78** |
+| the diff | **7 files**: `AGENTS.md`, `kernel/README.md`, `kernel/check.sh`, `Check.lean`, `Boundary.lean`, `Lookahead.lean`, `SealWire.lean`. **No Rust, no `Cargo.toml`, no `lean-toolchain`, nothing under `kernel/corpus/`, no fixture, no snapshot** |
+
+**T11's rows** (`cli_latency --include-ignored`, the 3-year log: 66,169 lines /
+6,896,281 bytes). **Three rows are noisy across sessions and are quoted against
+their bands, not as single numbers:**
+
+| row | this tree | recorded band / comparand | read |
+|---|---|---|---|
+| **later verb** (the reliable baseline) | **146.943 ms** | 146.66-147.01 ms | inside, mid-band — the merge costs nothing measurable |
+| the verb after a windowable hand undo | 146.979 ms | — | tracks the baseline |
+| the verb after that one | 146.795 ms | — | tracks the baseline |
+| **a routine for a 3-day-old instance** *(noisy)* | **131.480 ms** | 121.6-136.8 ms | inside |
+| **`review week`, the `All` scope** *(noisy)* | **247.658 ms** | 248.1-253.3 ms | **0.18% BELOW the band floor** — faster than every session recorded, so the band's floor wants widening to ≈247.6 rather than the tree wanting explaining |
+| **`--now` +1 day, a reseal** *(noisy)* | **202.374 ms** | 197.5-212.6 ms | inside |
+| first verb (genesis) | 2.2017 s | 2.174-2.223 s | inside |
+| a 30-day-old hand undo (target `^140`) | 1.3615 s | — | recorded |
+| replay-cache files after the first two verbs | **39** | 39 | unchanged |
+| 10 stalled days, worst | 525.740 ms, **0 checkpoint generations** | — | recorded |
+
+Off the T11 log: `plan` with a due 3 years out **86.150 ms**, 10 years out
+**187.259 ms**; first verb **718.915 ms** / later verb **60.812 ms** on the small
+tree; the 1-year log's later verb **101.333 ms**.
+
+### Worktrees
+
+`.claude/worktrees/w13-seam` is **removed** (`git worktree remove`), its branch
+`w13-seam` merged and left in place as history.
+`.claude/worktrees/stage5-lookahead` is **left alone**, as the brief requires:
+it is not the branch merged here, and its branch (`80fdc40`) is already an
+ancestor of `rebuild-on-lean`, so it holds no unique work either way.
+
+### Owed next, by name
+
+**Nothing in this merge was left half-done.** What the merged tree owes:
+
+* **The owner's answers to design §4's eight questions.** **Q3** and **Q7** gate
+  **P0**, so track P cannot start without them; **Q2** gates P4, **Q4** gates
+  G2, **Q5** and **Q6** gate P8, **Q1** gates scheduling, **Q8** gates nothing
+  but is answered before R3. §22 is the empty table they go into.
+* **Step L9 (gap 93)** — day 0 of the lookahead is still the host's
+  `DayCapacity::from_slots`. **Its blocker is gone**: gap 210 is closed and the
+  capacity path can read `(logSectionWith j zo).facts`. What is left is L9's own
+  wire and **site R10**, the `--allow-home` and sleep-shift inputs, the deletion
+  of the `day0` argument with its `badDay0` refusal, and the **re-aimed**
+  `kernel_lookahead_parity.rs`. Design §14.7's **F2** and **F3** now spend a seam
+  that is already paid, as does the planner's past half (**gap 255**).
+* **Gaps 260, 261, 262** (track B's), **250-257** (track A's), and **270**
+  (this merge's).
+* **Gap 226** — the parity list still has no single home and no check, and P32
+  was issued twice. Track A's block says it should be settled before stage 6
+  runs wide; it is not settled.
+* **Stage 5's residue, unchanged and NOT absorbed** (§8.3): **93, 94, 98, 113,
+  114, 116, 132, 133, 139, 143, 150, 151, 152, 160, 170, 180, 181, 182, 190,
+  200, 201, 226**, plus the performance levers **121, 122, 123, 126, 127** (and
+  143), which **D25 leaves unstarted on purpose**.
+* **The §5.13 human drives** of the stage-3, stage-4 and stage-5 binaries, with
+  the TUI half of the switch's own drive (**gap 182**). No agent can perform
+  them.

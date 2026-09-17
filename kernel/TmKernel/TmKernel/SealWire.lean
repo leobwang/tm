@@ -116,7 +116,7 @@ def resumeRunWith (dyf : List Cal.Instant → Cal.Instant → Nat) (z : Cal.Tz) 
         .ok ⟨bs, N, sv, kw, sl, st, hs, resumedAnswer K st hs bs.length (Log.lineWarnings b)⟩
 
 /-- **The resume on its tail's entries `bs` and line warnings `ws`, read by the caller** (the `log` op reads each line
-once: `Boundary.logOpFast`): the day index by bisection (W4), `resumeRunWith (dayFn z)` written out.  The index is a
+once: `Boundary.logOpZFast`): the day index by bisection (W4), `resumeRunWith (dayFn z)` written out.  The index is a
 partial application of `dayOfZ` over arrays bound before it, so they are built once: `dayFn` itself is compiled at its
 type's arity, and a branch that built the arrays inside it is lifted into the lookup's lambda, so either would rebuild both
 arrays at every lookup (W4's second and third profiles; the compiler's IR shows the bound form builds them once). -/

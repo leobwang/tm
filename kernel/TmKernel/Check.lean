@@ -4567,10 +4567,10 @@ open Tm
 #print axioms Tm.logLines_map_verdict
 #print axioms Tm.lineEntries_eq_verdicts
 #print axioms Tm.lineWarnings_eq_verdicts
-#print axioms Tm.logOp_core
+#print axioms Tm.logOpZ_core
 #print axioms Tm.logOpCore_map
-#print axioms Tm.logOpFast_core
-#print axioms Tm.logOp_eq_logOpFast
+#print axioms Tm.logOpZFast_core
+#print axioms Tm.logOpZ_eq_logOpZFast
 
 -- APPENDED 2026-09-16 (stage 5, W-12).  Step S2 (owner decision D16; design §22.1's "a new step
 -- after S", §14.7 F5): the kernel writes the log lines it reads.  `Log.emitEvent`/`Log.emitLine`
@@ -4596,3 +4596,35 @@ open Tm
 -- (`an_undo_of_a_close_cancels_its_own_period_and_an_older_one_still_cancels_the_latest`), and the
 -- undo law's counterexample is re-witnessed rather than weakened.
 #print axioms Tm.Replay.an_automatic_close_of_another_period_is_untouched
+
+-- APPENDED 2026-09-16 (stage 6, W-13, track B).  **D24, gap 210: the seam is opened inside the
+-- kernel.**  The `log` op now answers a `LogAnswer` — the bytes it always answered, and the
+-- `Seal.Answer` those bytes were rendered from — and `runCapZ` hands that replay to the capacity
+-- section, which could not previously reach it (`readCapacityZ` had no argument it could arrive
+-- through).  `logOp` is kept as the bytes half, a *view* of `logOpZ`, so every law stated about it
+-- before D24 keeps its exact text and its audit line above: the three W4 twin rows are the only
+-- renames, and they are renamed in place (`logOpZ_core`, `logOpZFast_core`,
+-- `logOpZ_eq_logOpZFast`), the `@[csimp]` now carrying the seam's fourth argument.
+--
+-- Re-proved over their current shapes, NOT weakened (D5), and audited by their standing lines
+-- above: `readLogSection_is_zoneOf_then_logSectionWith` (3180) and
+-- `runCap_without_capacity_is_runWithEmit` (3133) are **unchanged, word for word**;
+-- `the_zone_is_read_once_and_feeds_both_sections` (3182) is **strengthened** — its capacity
+-- conjunct now quantifies over the replay as well (`∀ plan clock rep cap`), so the old statement
+-- is its `rep = none` instance and it says strictly more.
+--
+-- The seam's own laws follow.  `a_capacity_answer_can_depend_on_a_log_fact` is the one that makes
+-- the parameter load-bearing rather than decorative (AGENTS §5.2, §5.6): its two `decide`
+-- witnesses were probed under `MemoryMax=8G`, `timeout 120`.
+#print axioms Tm.within53A_wire
+#print axioms Tm.logAnswerOf_carries_the_op
+#print axioms Tm.the_capacity_section_reads_the_log_sections_own_replay
+#print axioms Tm.runCap_reads_the_capacity_section_against_its_own_log_answer
+#print axioms Tm.Look.mkInput?_ok_wake_wf
+#print axioms Tm.CapWire.wakeClockOf_sec_lt
+#print axioms Tm.CapWire.wakeClockOf_wf
+#print axioms Tm.CapWire.resolve_fromLog_without_a_replay
+#print axioms Tm.CapWire.resolve_fromLog_without_a_day
+#print axioms Tm.CapWire.readCapacityZ_refuses_a_logged_wake_without_a_replay
+#print axioms Tm.CapWire.the_capacity_input_is_the_replays_wake
+#print axioms Tm.CapWire.a_capacity_answer_can_depend_on_a_log_fact

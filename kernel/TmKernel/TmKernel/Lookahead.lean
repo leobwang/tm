@@ -3125,6 +3125,26 @@ theorem mkInput?_refuses_too_many_days (x : Look.InputIn) (h : Look.maxLookahead
     Look.mkInput? x = .error .lookaheadTooLong := by
   simp [mkInput?, h]
 
+/-- **R10 at L5's constructor** (stage 6 D24): every accepted input's wake is a clock chrono can
+represent.  `mkInput?` is the only constructor of an `Input`, so a wake the `NaiveTime` bound
+rejects — off the wire, or derived from the kernel's own replay through D24's seam
+(`CapWire.wakeClockOf`) — never reaches a day's hours-since-wake: it is refused `badWake` by name
+(AGENTS §5.7), never rounded into a representable one. -/
+theorem mkInput?_ok_wake_wf (x : Look.InputIn) (I : Look.Input) (h : Look.mkInput? x = .ok I) :
+    I.wake.wf = true := by
+  unfold mkInput? at h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  rename_i hw _
+  cases h
+  simpa using hw
+
 /-! ### One future day: window, cut, energy and limit at each location, then the mixture -/
 
 /-- Fork `limit_to_budget`'s `budget.saturating_mul(block_min)`, `budget` from `budget_blocks`. -/

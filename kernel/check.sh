@@ -23,10 +23,20 @@ else
 fi
 
 # 3. The axiom audit: no theorem may depend on sorryAx.
+#
+#    An ERROR in Check.lean is also a failure, and used not to be.  A
+#    `#print axioms` naming a constant that has been renamed elaborates to
+#    `unknown constant`, prints no `axioms` line, and this check still said ok --
+#    the theorem silently stopped being audited and only the count moved.  Stage
+#    6 W-13 hit exactly that (three W4 twin rows renamed by D24's seam), so the
+#    check now fails on any error Lean reports for this file.
 out=$( cd TmKernel && LEAN_PATH=.lake/build/lib/lean "$LEAN" Check.lean 2>&1 )
 n=$( printf '%s' "$out" | grep -c 'axioms' )
 if printf '%s' "$out" | grep -q sorryAx; then
   say "axiom audit ($n theorems)" "FAILED (sorryAx)"; fail=1
+elif bad=$( printf '%s\n' "$out" | grep -E '^Check\.lean:[0-9]+:[0-9]+: error' | head -3 ); [ -n "$bad" ]; then
+  say "axiom audit ($n theorems)" "FAILED (Check.lean errors)"; fail=1
+  printf '%s\n' "$bad"
 else
   say "axiom audit ($n theorems)" "ok"
 fi
