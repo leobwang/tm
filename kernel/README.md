@@ -26471,3 +26471,329 @@ L9 price no longer carries the seam"* — all three done, plus §14.0's numbers 
 * **The seam's 260 and 262**, and **275-279**, stand as written.
 * **The §5.13 human drives** of the stage-3, stage-4 and stage-5 binaries, with
   the TUI half of the switch's drive (**gap 182**). No agent can perform them.
+
+## Stage 6, W-14 track P step P0, 2026-09-17: the planner has a vocabulary — `Seg` on absolute seconds, `PlanReq` without a second window
+
+**No Rust changed and no behaviour changed.**  This step adds one Lean module,
+widens `Lookahead.lean` by one `Today` accessor and its three laws, replaces
+`Goals.lean`'s five provisional declarations with the real ones, and takes two
+`Negative.lean` cheats.  `cargo test --workspace` is unmoved at **1,312 / 0 / 9
+across 78**, which is what a Lean-only step must leave.
+
+### What landed
+
+1. **`kernel/TmKernel/TmKernel/Planner.lean`** (new, 812 lines: 52 theorems, 51
+   `def`s, 10 `structure`s, 5 `inductive`s, 9 `abbrev`s) **with its
+   `import TmKernel.Planner` line in `TmKernel/TmKernel.lean` in this same
+   commit** (§2.3; AGENTS §9.2's "a new module that is never imported looks
+   built, and check 1 agrees").
+2. **`Seg` is on `Look.Slot`'s absolute seconds** — `start`/`stop`, not
+   `startMin`/`endMin`.  **Gap 256 closed**, and with it the caveat
+   `plan_never_moves_a_wall` carried in its own doc comment ("says nothing about
+   a wall that crosses midnight").  The restated goal pins both ends of a wall
+   to the second `Cal.instantOf` resolves **in the request's zone**, day and DST
+   fold included — strictly more than the minutes-since-midnight form said, not
+   less.
+3. **`SegKind` has its eleven constructors**, `batch` carrying a bounded
+   `BatchIds` (`maxBatch = 16`) and `ghost` for §12.1's arrival-plan row.
+4. **`DayPlan` regains `diagnostics`, `priorities` and `planHash`**; `PlanReq`
+   carries the `Seal.Run` D24's seam exposes and **drops every field that would
+   have been a second copy**.
+5. **`dayPlan` keeps its total signature (D28)** — no `dayPlan?`, no
+   `PlanRefusal`, no `Except` — and its body is the fork's own
+   `DayPlan::empty`.  Said plainly below.
+6. **`Look.Today.storedBudget`** and three laws, widened into `Lookahead.lean`
+   rather than copied into `Planner.lean` (§5.3: `Today` is where a
+   `state.json` fact is read).  Nothing in the lookahead calls it; the planner
+   does.
+
+### `dayPlan` is EMPTY, and no goal may be discharged against it
+
+`dayPlan r = DayPlan.empty r.today r.window r.blockMin r.budgetBlocks`: a
+window, a budget, **no segments**.  Every one of `Goals.lean`'s thirteen
+stage-6 goals is therefore *vacuously* true of it today, and a discharge taken
+now would be worth exactly nothing — check 7's number would fall and nothing
+would be true, which AGENTS §9.2 names as the one way to make this document's
+headline measurement lie.
+
+Two tripwires make that impossible to do quietly, and both are audited in
+`Check.lean`:
+
+| theorem | says | whose job is to delete it |
+|---|---|---|
+| `Planner.the_day_has_no_segments_until_the_first_step_lands` | `(dayPlan r).segments = []` | **P1** |
+| `Planner.the_plan_hash_is_a_placeholder_until_the_emitter_lands` | `(dayPlan r).planHash = PlanHash.zero` | **P8** |
+
+`Goals.lean`'s stage-6 header says the same in words and names design §6.4's
+per-step order.  **Burn-down unchanged at 13**, and it must stay 13 until P1.
+
+### §9's twelve `RuntimeState` rows: where each one landed
+
+The design tables twelve.  **Seven of them already cross and are already
+bounded** — `Boundary.readState` and `readWake` decode them into `Look.Today`
+and `Look.Input`, which step L9 landed at `5ab24bf`.  Re-declaring any of those
+in `Planner.lean` would have been AGENTS §5.3's defect inside the step whose
+own header is about §5.3, so they are **read through `PlanReq.look`** instead.
+
+| # | §9 row | disposition here | bound / constructor / rejection |
+|---|---|---|---|
+| 1 | `date` | **reuse** `Look.Today.date` | `Boundary.optDateAt` → `Field.parseDate`'s calendar bound |
+| 2 | `wake` | **reuse** `Look.Input.wake` | `Look.WakeClock.wf`, refusal `badWake` — as the design's own column said |
+| 3 | `arrival` | **reuse** `Look.Today.arrival` | `Field.Clock` = `Fin 1440` |
+| 4 | `loc` | **reuse** `Look.Today.loc` | `Boundary.maxLocName = 1024`, refusal `.badState .loc` |
+| 5 | `window` | **reuse** `Look.Today.window` | `Field.Clock` × `Field.Clock`. **`mkWindow?`/`refuses_an_inverted_window` NOT shipped** — see the deviation table |
+| 6 | `budget` | **reuse** `Look.Today.budget`, read through the new `Today.storedBudget` | `Budget`, `mkBudget?`, `mkBudget?_refuses_an_impossible_budget` (`maxBudget = 96`) — **defined here, not yet wired**: gap **321** |
+| 7 | `active` | **new** `ActiveBlock` | `mkActive?`, `refuses_a_start_after_now`, `refuses_an_estimate_past_the_day` |
+| 8 | `break` | **new** `BreakState` + named `BreakPlace` | `mkBreak?`, `refuses_a_break_longer_than_a_day`, `refuses_a_start_after_now` |
+| 9 | `interrupt` | **new** `InterruptState` | `mkInterrupt?`, `refuses_a_start_after_now` |
+| 10 | `last_plan_hash` | **new** `PlanHash` | `mkHash?`, `refuses_a_short_digest`, `refuses_a_non_hex_digit` |
+| 11 | `priorities_yesterday` | **new** `mkYesterday?` over **reused** `yesterdayOf?` | `refuses_a_priority_past_seven`, `refuses_too_many` |
+| 12 | `closed` | **not declared** | `planner.rs` never reads `runtime.closed` (`grep -n closed tm-core/src/planner.rs` finds only prose in comments), and the close tranche already carries it |
+
+`PlanReq.state` is therefore **five fields, not twelve** — rows 7–11.
+
+### R10 and R11, by name (design §8.4's named trap: forgetting **one** type reopens the hole)
+
+| type | smart constructor | rejection theorem(s) | accept theorem |
+|---|---|---|---|
+| `Capped α` / `IdList` | `Capped.ofList?`, `Capped.cons?` | `ofList?_refuses_past_the_cap`, `cons?_refuses_past_the_cap` | `ofList?_accepts` |
+| `BatchIds` | `mkBatch?` | `mkBatch?_refuses_too_many_members` | `mkBatch?_accepts` |
+| `Seg` / `WfSeg` | `mkSeg?` (`Except SegErr`) | `mkSeg?_refuses_an_inverted_segment`, `mkSeg?_refuses_past_the_horizon` | `mkSeg?_accepts` |
+| `PlanHash` | `mkHash?` | `mkHash?_refuses_a_short_digest`, `mkHash?_refuses_a_non_hex_digit` | `mkHash?_accepts` |
+| `Budget` | `mkBudget?` | `mkBudget?_refuses_an_impossible_budget` | `mkBudget?_accepts` |
+| `ActiveBlock` | `mkActive?` | `mkActive?_refuses_a_start_after_now`, `mkActive?_refuses_an_estimate_past_the_day` | `mkActive?_accepts` |
+| `BreakState` | `mkBreak?` | `mkBreak?_refuses_a_break_longer_than_a_day`, `mkBreak?_refuses_a_start_after_now` | `mkBreak?_accepts` |
+| `InterruptState` | `mkInterrupt?` | `mkInterrupt?_refuses_a_start_after_now` | `mkInterrupt?_accepts` |
+| yesterday's `p` map | `mkYesterday?` | `mkYesterday?_refuses_a_priority_past_seven`, `mkYesterday?_refuses_too_many` | (through `yesterdayOf?_accepts`) |
+| `PlanOverrides` | `mkOverrides?` | `mkOverrides?_refuses_too_many_estimates`, `mkOverrides?_refuses_too_many_drops` | — |
+
+**R11, `view ∘ set = id`**, one pair per setter, each with a "touches nothing
+else" law beside it: `Seg.energy_withEnergy` /
+`Seg.withEnergy_touches_only_the_energy` / `Seg.wf_withEnergy`;
+`Seg.note_withNote` / `Seg.withNote_touches_only_the_note` / `Seg.wf_withNote`;
+`Diagnostics.notes_withNote` /
+`Diagnostics.withNote_touches_only_the_notes`;
+`Diagnostics.droppedTail_withDropped` /
+`Diagnostics.withDropped_touches_only_the_dropped_tail`; and
+`Capped.val_cons?` for the bounded-list setter itself.  `DayPlan` is produced,
+never edited, and so exports no setter and owes no such law (design §5.3).
+
+### AGENTS §5.3: nothing stage 5 built was built again
+
+`Planner.lean` defines **no** window, budget, cut, energy, priority, EDF pass
+or candidate.  A grep a critic can rerun:
+
+```
+$ grep -cE 'def (windowEnd|windowOn|budgetOf|cutSlots|freeIntervals|energize|limitSlots|hsw100|predictAt|capForLocation|wallIndex|wallsOn|ramp|posteriorNum|energyAfter|edf|prio|finalPrio|hysteresis)' \
+    kernel/TmKernel/TmKernel/Planner.lean
+0
+```
+
+Instead: `PlanReq.window` **is** `Look.day0Window`, `PlanReq.budgetBlocks` is
+`Today.storedBudget` else `Look.budgetOf`, `PlanReq.day` is stage 5's
+`Look.DayCfg` (which contains `CutCfg`, never a copy), `Seg.minutes` is
+`Look.Slot.minutes`' arithmetic, `Seg.wf`'s horizon is `Cal.Instant.wf`'s own
+(no second literal), `mkHash?` reads hex through `Json.hexDigit`, and the one
+`Today` fact the lookahead lacked was **widened into `Lookahead.lean`**, not
+forked.
+
+### Where the repo made me deviate from design §5, §9 and §10, and why
+
+| the design says | what landed | why |
+|---|---|---|
+| `PlanReq` has `now`, `tz`, `day`, `curves`, `homeMax`, `allowHome`, `loc`, `state`, `caps` as fields | `PlanReq` has `plan`, `run`, `look`, `caps`, `state`, `overrides`; the other seven are **views** over `Look.Input` | the design drops the window and budget as "a second copy" and stops there.  Since L9, `Look.Input`/`Look.Today` already hold `now`, `tz`, `[day]`, the curves, the home cap, `loc` and `--allow-home` too, so the same rule removes seven more fields.  `r.now`, `r.tz`, `r.day`, … still read as the design wrote them |
+| `RuntimeIn` decodes twelve `RuntimeState` rows | five (`active`, `break`, `interrupt`, `last_plan_hash`, `priorities_yesterday`) | seven already cross and are already bounded; `closed` is read by nothing in the planner.  See the §9 table |
+| `mkWindow?`, `refuses_an_inverted_window` | **not shipped** | an inverted stored window is NOT invalid: `planner::window_and_budget` reads `end < start` as **crossing midnight** and adds a day.  A theorem refusing it would have encoded the wrong rule and broken `tm arrive 22:00`.  The real disagreement is gap **320** |
+| `refuses_a_negative_break` | `mkBreak?_refuses_a_break_longer_than_a_day` | the fork's field is a `u32` and this one is a `Nat`: there is no negative break to refuse, so a theorem of that name would be a precondition nothing can satisfy (AGENTS §5.2) |
+| `DayPlan.planHash : UInt64` and `state.last_plan_hash` as "16 hex chars" | one `PlanHash` for both | they are one value in two spellings; two representations of it is §5.3's bug with a log write behind it.  `hashBound = 2^64` is stated (R10) and `UInt64`'s wrapping arithmetic is not imported |
+| `SegFlags` is five `Bool`s; `ghost` is a `SegKind` | seven `Bool`s (`mandatory` and `deferred` added); `ghost` is a `SegKind`, as the design says | `mandatory` and `deferred` are marks §8.2 steps 2 and 6 set, they are `Bool`s of exactly the same kind, and adding one later is the trap §8.4 names.  The fork's non-`Bool` members of `SegFlags` (`planned_min`, `multiplier`, `note`) are **values, not marks**, and sit on `Seg`: `mult` as an `Arith.Pos` (no `Float`, AGENTS §4) and `note` as a named `Note` |
+| `Diagnostics.notes : List Note` with `Note` bounded by a smart constructor | `Note` is an **inductive with the fork's four `notes.push` sites as constructors** and needs none | a finite constructor set with `Nat` and `Id` payloads is bounded by construction; a smart constructor whose rejection nothing can reach is §9.2's "check no input can fail".  Rendering stays out of the kernel (D30 Q6) |
+| `Diagnostics.waiting : List (Id × Nat)` | `IdList` | the fork's field is `Vec<Id>`; the design's `Nat` has no source |
+| `Diagnostics` lists carry the fork's full payloads | the design's narrower shapes | they are recoverable at render time from the segment and the plan — recorded as gap **323** so P8 finds it stated |
+
+### D9-21, the recursion rule
+
+Three functions here walk a list the wire can make large, and **none writes a
+new recursion**: `Capped.ofList?` is `List.length` plus a `Subtype`;
+`mkYesterday?` is `List.length` **first** (so an oversized map is refused before
+it is walked) then core `List.mapM`; `mkOverrides?` is three `Capped.ofList?`.
+`Seg.items` is `Subtype.val` / `Option.toList`.  `dayPlan` folds over nothing —
+its segment list is `[]`.  No `@[csimp]` twin is owed at this step; the assign
+fold that will need one is P5's.
+
+### `Negative.lean`: cheats 159 and 160 (design §16's two P0 rows)
+
+| cheat | the claim it refuses | reproduced |
+|---|---|---|
+| **159** | a `Seg` with `stop < start` is well-formed (the fork's `Segment` has no check and `Segment::minutes` papers over it with `.max(0)`) | `Negative.lean:1954: error: Tactic 'decide' proved that the proposition … is false` |
+| **160** | `mkBatch?` accepts seventeen members (the fork's `SegKind::Batch(Vec<Id>)` is unbounded) | `Negative.lean:1964: error: …` |
+
+Probed at `MemoryMax=8G timeout 120`: the whole of `Negative.lean` elaborates in
+**2.08 s** and `Planner.lean` in **0.57 s**.  Two new `decide` witnesses, both
+literal and tiny; §14.0 item 4's budget of 20 per step is nowhere near touched.
+
+### Behaviour rows
+
+**None.**  No Rust changed, no wire changed, no verb can answer differently.
+The `plan` request section design §10.1 adds is **not** built here — `PlanReq`
+has no decoder yet, which is why `Boundary.lean` is untouched and track K's
+worktree cannot collide with this commit.
+
+### Measured, on the committed tree, every command capped at `MemoryMax=40G`
+
+| what | figure | against |
+|---|---|---|
+| `check.sh` | **seven `ok`**, 3.16 / 3.10 / 3.15 s built-tree | 3.07 / 3.13 / 3.10 s measured here at `c754cce`: **+1.2%** on midpoints, inside the 10%-per-step rule.  The added work is one more module to replay and 55 more `#print axioms` lines |
+| axiom audit | **4,048 theorems** | 3,993 at `c754cce`.  **+55, every new theorem audited**: 52 in `Planner.lean`, 3 in `Lookahead.lean`.  `comm -3` between the declarations and the audit lines is **empty in both directions for this step**, and check 3's own reconciliation (W-13's repair) says `ok` |
+| burn-down | **13 outstanding, all stage 6** | 13.  **Unchanged, deliberately**: P0 discharges nothing, and the five provisional `structure`/`inductive`/`def` declarations it removed were never counted (check 7 counts `^theorem `) |
+| corpus | **29/37 files, 4/5 whole plans** | unchanged |
+| `cargo test --workspace` | **1,312 passed / 0 failed / 9 ignored across 78 result lines**, exit 0 | 1,312 / 78 at `c754cce`; **unchanged**, as a Lean-only step must leave it |
+| FFI suite | **100 / 0** (kernel 86, corpus 8, stack 6) | unchanged |
+| T5 (`kernel_replay_parity --include-ignored`) | **33 / 0 / 0** | unchanged |
+| the door suite (`kernel_log_door`) | **23 / 0** | unchanged |
+| `cli_switch_acceptance --include-ignored` · `kernel_call_counts` | **9 / 0** · **1 / 0** | unchanged |
+| full precision | `the_frozen_comparand_is_read_at_full_precision` **1 passed** | gap 235's guard still by name |
+| the **reliable** T11 row (`later verb`, 3y log) | **146.884819 ms** | recorded band 146.66–147.01 ms — **inside it** |
+| the three noisy T11 rows | reseal **202.37 ms** · 3-day-old routine **136.76 ms** · `review week` **273.13 ms** | bands 197.5–212.6 (in) · 121.6–136.8 (in, at the top) · **248.1–253.3 (OUT, as gap 275 already says)**.  Not quoted as single numbers; not reblessed |
+| `cli_latency` as a test | **5 passed / 0 failed / 1 ignored** | unchanged |
+
+**One transient, recorded rather than swallowed.**  A `cargo test` invocation
+during the timing loop printed
+`cli::ctx::tests::the_chokepoint_returns_the_ported_facts … FAILED`, panicking
+at `tm/src/cli/ctx.rs:834:70` for a missing
+`tm-core/tests/snapshots/log_ported_facts__three_days.snap`.  Line 834 of the
+current `ctx.rs` is a **comment** (L9's note that `Ctx::window` was deleted), so
+the binary that panicked predated K2 — a stale artifact in `target/`, not a
+failure of this tree.  The clean `cargo test --workspace` above is 1,312 / 0 and
+`tm/tests/log_ported_facts.rs` passes in it.
+
+### Gaps
+
+**Closed: 256** — `Goals.lean`'s `Seg` no longer uses minutes since midnight;
+`Seg.start`/`Seg.stop` are `Look.Slot`'s absolute seconds, there is one
+representation of an instant in the kernel, and `plan_never_moves_a_wall`'s
+midnight caveat is gone from the goal and from its doc comment.
+
+#### Gap 320 (new; label W14P0-a) — the stored window has TWO readings in the shipped binary, and they disagree on three inputs
+
+1. **What is not done.**  `Look.day0Window` (the kernel's, since L9) and
+   `Planner::window_and_budget` (`tm-core/src/planner.rs:1111`) both read
+   `state.window` and `state.budget`, and they are not the same function.
+   **Driven on a scratch `tm init` workspace with the shipped binary**, `tm plan`:
+   * `date: null`, `window: ["08:00","10:00"]`, `budget: 3` → prints
+     `window 08:00–10:00 · budget 3 blocks`.  `Look.Today.storedWindow` and the
+     new `storedBudget` both require `date = some today`, so the kernel's day 0
+     takes the **formula** branch and the default budget.  (`roll_day`
+     (`tm/src/cli/ctx.rs:134`) only clears the day-scoped fields when
+     `state.date` is `Some(d)` with `d != today`, so a `null` date clears
+     nothing.)
+   * `window: ["08:00","10:00"]`, `budget: null`, `date` today → prints
+     `window 08:00–10:00`.  `storedWindow` refuses a window with no budget
+     beside it (`some w, some _`) and takes the formula branch.
+   * `window: ["22:00","01:00"]`, `budget: 3`, `date` today → prints
+     `window 22:00–01:00`; `planner.rs` reads `end < start` as **crossing
+     midnight** and adds a day.  `Look.day0Window` has no such branch, so it
+     returns a pair with `stop < start` and `Look.day0Cut` answers the **empty**
+     cut.
+2. **Why now.**  P0's job was to make this *unrepresentable in the request*, and
+   it is: `PlanReq` has no window and no budget field, so there is exactly one
+   place P1 can put the answer.  Choosing which reading wins is a **behaviour
+   row** and belongs to the step that ports §8.2 choice 1, not to the step that
+   names the types.
+3. **What it costs.**  Today a late-night window plans a day the kernel's
+   capacity believes is empty, and a window stored without a budget is honoured
+   by the planner and ignored by the lookahead — AGENTS §5.6 ("the loader never
+   picks between two readings") is the rule at stake, and §5.3 is the defect
+   class.
+4. **When it clears.**  Stage 6 step **P1**, where the window becomes the
+   kernel's one reading, with a behaviour row for whichever of the three inputs
+   changes answer and a parity entry beside it.
+
+#### Gap 321 (new; label W14P0-b) — `Budget` is defined and not yet wired
+
+1. **What is not done.**  `state.budget` crosses as an unbounded `Option Nat`
+   inside `Look.Today` (`Boundary.readState`'s `optNatAt`).  `Budget`,
+   `mkBudget?` and `mkBudget?_refuses_an_impossible_budget` (`maxBudget = 96`)
+   exist in `Planner.lean` and **no decoder calls them**.
+2. **Why now.**  Applying the bound means changing `readState`'s result type,
+   which is the **capacity** section — track K's file this run (design §19 item
+   6, D26).  Carrying a second, bounded budget in a `plan` section beside
+   `Today`'s would be the second copy this whole step is about.
+3. **What it costs.**  A hand-edited `state.json` with `"budget": 4000000000`
+   is accepted today and produces a nonsense budget rather than a named refusal
+   (AGENTS §5.7); R10's table for this stage is one row short until it is wired.
+4. **When it clears.**  Either track **K** widening `Look.Today.budget` to
+   `Budget` in `readState`, or step **P4/P8** when the `plan` request section
+   lands — whichever reaches it first.  It is one line at the decoder and one
+   type change; the theorem is already proved.
+
+#### Gap 322 (new; label W14P0-c) — nothing yet says what the producer does at the diagnostic cap
+
+1. **What is not done.**  `Capped α` caps every diagnostic list, the priority
+   list and the three override lists at `maxCands = 1024`, and `Capped.cons?`
+   returns `none` at the cap.  No step yet says what §8.2 step 8 does with that
+   `none`.
+2. **Why now.**  The honest answer depends on the candidate bound, which is
+   **P4**'s: once the kernel collects the candidates (D27) and refuses more than
+   `maxCands` of them by name (`PlanErr.tooManyCands`, declared here), each
+   diagnostic list holds at most one entry per candidate and the cap becomes
+   unreachable — R10 working, not a gate.
+3. **What it costs.**  Until P4 takes that bound, a producer written against
+   `cons?` has an `Option` to discharge with no stated rule, which is how a
+   silent drop gets written.
+4. **When it clears.**  Step **P4**, by bounding the candidate list at the same
+   `maxCands`, and saying so with the theorem that makes the two agree.
+
+#### Gap 323 (new; label W14P0-d) — three diagnostic payloads the fork carries are not carried
+
+1. **What is not done.**  `Diagnostics.underused` is an `IdList` where the fork
+   carries `(Id, u8, u8)` (slot energy and item `ci`); `impossible` carries
+   `(Id, Nat)` where the fork carries `(Id, u32, NaiveDate)` (the due date); and
+   `blocked` is an `IdList` where the fork carries `(Id, Vec<Dep>)`.
+2. **Why.**  Design §5.3's own shapes were taken rather than invented over.  All
+   three are **recoverable** at render time — the slot energy is on the segment,
+   the `ci` is `Plan.effectiveCi`, the due date and the deps are on the item — so
+   this is a re-derivation cost, not lost information.
+3. **What it costs.**  §4.3's note column (`↓ slot 4, item 3`) and §7.3's
+   IMPOSSIBLE banner have to look the payload up again in `Emit.lean` instead of
+   reading it off the diagnostic, and a reader comparing `Diagnostics` to
+   `planner::Diagnostics` field by field will find three that do not match.
+4. **When it clears.**  Step **P8**, which either re-derives them (and says so)
+   or widens these three fields and re-proves their bounds — never forks a
+   second diagnostic record (§5.3).
+
+**Highest on this branch:** gap **323**, cheat **160**, parity **P37** (P38
+free).  Track P's range is 320–339; **324–339 are free**.  Track K owns 300–319,
+Merge 340–344, the goals track 365–384, Land 385–389, the repair step 390–399.
+
+### What this step did NOT do, by name
+
+* **No `Emit.lean`**, and no row renderer.  D30 Q5/Q6 are P8's and nothing here
+  formats a byte.
+* **No planner step.**  §8.2 steps 1–8 are P1–P7 and `dayPlan` places nothing.
+  Half-building step 1 in the step that settles the representation is how a type
+  gets frozen around one caller, so the step stopped at the vocabulary and said
+  so out loud with two tripwire theorems.
+* **No goal discharged, and none may be** until its step lands (design §6.4).
+  `plan_tail_drop` is **not** restated to D29's form here: a restatement without
+  the refutation beside it is a weakening (AGENTS §3.1 item 3, D5), and the
+  witness needs a `dayPlan` that places something.  Its doc comment carries
+  D29's exact statement so **G2** does not have to rediscover it.  The same for
+  the five §6.3 restatements that are P5's and G3's.
+* **No wire.**  `PlanReq` has no decoder, the request gains no `plan` or `state`
+  section, and `Boundary.lean` is untouched — deliberately, so that track K's
+  worktree and this commit cannot collide in the one file design §19 item 6
+  warns about.
+* **`edfNumbers` stays provisional** in `Goals.lean`.  Design §5.5 gives it to
+  **P4**, and because check 7 counts `^theorem ` and not `def`, the burn-down
+  will **not** move on the day it goes — said here so a reader comparing counts
+  does not go looking for a discharge that did not happen.
+* **Stage 5's residue** stands as §8.3 names it: **94, 98, 113, 114, 116, 132,
+  133, 139, 143, 150, 151, 152, 160, 170, 180, 181, 182, 190, 200, 201, 226**,
+  with the performance levers (**121, 122, 123, 126, 127**, 143) unstarted on
+  purpose (D25).  The seam's **260** and **262**, **275–279**, and **285** stand
+  as written; **275**'s `review week` row was re-measured at 273.13 ms here and
+  is still out of band.
+* **The §5.13 human drives** of the stage-3, stage-4 and stage-5 binaries, with
+  the TUI half of the switch's drive (**gap 182**).  No agent can perform them,
+  and stage 6 will add a fourth.

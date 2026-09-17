@@ -1935,4 +1935,32 @@ theorem aPosteriorAfterTheCap :
       = (List.finRange 6).map (Look.day0Hist aHomeDayWithALiftingReport) := by
   decide
 
+-- ===========================================================================
+-- APPENDED 2026-09-17 (stage 6, run W-14, track P step P0 — the planner's
+-- vocabulary; design §16's two P0 cheats).  Numbered from the end of this file
+-- (§6.2: append, never renumber).
+-- ===========================================================================
+
+/- CHEAT 159 — a segment that ends before it starts, accepted.  `Seg.wf` is
+   `start ≤ stop` and the end inside the calendar; the fork's `Segment` has no
+   such check at all and `Segment::minutes` papers over it with
+   `.max(0)`, so a wall written `17:00-09:00` renders as a zero-minute row
+   instead of being refused.  `mkSeg?` names it `.inverted`.  `decide` refuses
+   the claim that the inverted one is well-formed. -/
+def anInvertedSeg : Planner.Seg :=
+  { start := 61200, stop := 32400, kind := Planner.SegKind.wall, energy := none,
+    item := none, inst := none, flags := {}, planned := none, mult := none, note := none }
+
+theorem anInvertedSegIsWellFormed : Planner.Seg.wf anInvertedSeg = true := by decide
+
+/- CHEAT 160 — a batch of seventeen.  §7.5 gathers small items into ONE slot
+   under `batch_max_min`, so `BatchIds` is bounded at `maxBatch = 16`; the
+   fork's `SegKind::Batch(Vec<Id>)` is unbounded, which is the hole R10 exists
+   to close.  `decide` refuses the claim that `mkBatch?` accepts seventeen. -/
+def seventeenIds : List Id :=
+  [['a'], ['b'], ['c'], ['d'], ['e'], ['f'], ['g'], ['h'], ['i'],
+   ['j'], ['k'], ['l'], ['m'], ['n'], ['o'], ['p'], ['q']]
+
+theorem aBatchOfSeventeenIsAccepted : (Planner.mkBatch? seventeenIds).isSome = true := by decide
+
 end Tm

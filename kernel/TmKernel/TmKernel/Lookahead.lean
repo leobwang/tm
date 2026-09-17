@@ -3301,6 +3301,37 @@ def Today.storedWindow (T : Today) (today : Nat) : Option (Field.Clock × Field.
      | _, _ => none)
   else none
 
+/-- **§10.2's budget, on the same rule as the window** (stage 6 step P0): `state.budget` counts
+only when `state.date` is today — "`date` says which day `window`, `budget` and `last_plan_hash`
+belong to", which is the host's own `roll_day` comment.  Widened here rather than copied into
+`Planner.lean`, because `Today` is the one place a `state.json` fact is read (AGENTS §5.3).
+Nothing in the lookahead calls it: day 0's capacity never reads the budget, and the planner
+does. -/
+def Today.storedBudget (T : Today) (today : Nat) : Option Nat :=
+  if T.date = some today then T.budget else none
+
+theorem Today.storedBudget_on_another_day (T : Today) (today : Nat) (h : T.date ≠ some today) :
+    T.storedBudget today = none := by
+  unfold Today.storedBudget
+  rw [if_neg h]
+
+theorem Today.storedBudget_today (T : Today) (today : Nat) (h : T.date = some today) :
+    T.storedBudget today = T.budget := by
+  unfold Today.storedBudget
+  rw [if_pos h]
+
+/-- A stored window is never read without a budget beside it, so whenever `storedWindow`
+answers, `storedBudget` answers too.  The two `Ctx::window` branches stay in step. -/
+theorem Today.storedWindow_brings_a_budget (T : Today) (today : Nat) (w : Field.Clock × Field.Clock)
+    (h : T.storedWindow today = some w) : ∃ b, T.storedBudget today = some b := by
+  unfold Today.storedWindow at h
+  unfold Today.storedBudget
+  split at h
+  · next hd =>
+    rw [if_pos hd]
+    cases hw : T.window <;> cases hb : T.budget <;> rw [hw, hb] at h <;> simp at h ⊢
+  · exact absurd h (by simp)
+
 /-- **Fork `Ctx::window`'s formula branch**: `state.arrival` when it is today's, else `now`. -/
 def Today.arrivalSec (T : Today) (today : Nat) (z : Cal.Tz) : Nat :=
   if T.date = some today then

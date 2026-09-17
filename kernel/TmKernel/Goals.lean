@@ -525,122 +525,80 @@ Plan §5: "D1–D14 decidable-checked on every plan the corpus produces;
 `planner_invariants.rs` green at 256 cases through the FFI".  L26 is "decidable
 over the produced `DayPlan`", so the output type is what has to exist and the
 input mostly does not.
+
+**The five provisional declarations that stood here are gone** (stage 6 step
+P0, `Planner.lean`): `SegKind`, `Seg`, `DayPlan`, `PlanReq` and `dayPlan` are
+real now, and so are `segItems`, `assignedOf` and `blockMinutes`.  `Seg` moved
+from minutes-since-midnight to `Look.Slot`'s **absolute seconds** (README gap
+256), which is why every statement below reads `s.val.start`/`s.val.stop`, and
+why `plan_never_moves_a_wall` has lost its midnight caveat and gained a zone:
+it now pins the wall to an absolute second through `Cal.instantOf`, which is
+strictly more than the minutes-since-midnight form said.  Only `edfNumbers`
+stays provisional; design §5.5 gives it to step **P4**.
+
+**NO GOAL BELOW MAY BE DISCHARGED UNTIL ITS STEP HAS LANDED.**  At P0
+`Planner.dayPlan` is the fork's own `DayPlan::empty` — a window, a budget and
+**no segments** — so every one of these is *vacuously* true of it and a
+discharge taken today would be worth nothing.  The tripwire is
+`Planner.the_day_has_no_segments_until_the_first_step_lands`, which is audited
+in `Check.lean` and which the step that fills the day must delete.  While it
+compiles, this file's count is the only honest reading of the stage.  Design
+§6.4 says which step makes each goal real: P1 the two wall laws, P2 wind-down,
+P3 the break and one-block laws, P5 the remaining six, G2 and G3 the two
+relational ones.
 ############################################################################ -/
 
-/-- **Provisional (stage 6).**  §8's `SegKind`, transcribed.  `Batch(Vec<Id>)`
-keeps its member list here for the same reason it does there: a batch is one
-slot holding several items, and §7.5's ordering rule is about that list. -/
-inductive SegKind
-  | block | batch (ids : List Id) | brk | routine | wall | rest
-  | optional | windDown | sleep | lost
-deriving DecidableEq, Repr
-
-/-- **Provisional (stage 6).**  §8's `Segment`, reduced to what §8.3 reads.
-Times are minutes since midnight rather than `DateTime`, because README gap 10
-records that the kernel has days and no time of day yet; `instance` and `flags`
-are omitted because no §8.3 invariant mentions them.  Stage 6 widens this. -/
-structure Seg where
-  startMin : Nat
-  endMin   : Nat
-  kind     : SegKind
-  energy   : Option (Fin 6)
-  item     : Option Id
-deriving Repr
-
-/-- **Provisional (stage 6).**  §8's `DayPlan`, minus `diagnostics` and
-`priorities` — both are reports, and no §8.3 invariant is about them. -/
-structure DayPlan where
-  day          : Day
-  windowStart  : Nat
-  windowEnd    : Nat
-  blockMin     : Nat
-  budgetBlocks : Nat
-  segments     : List Seg
-
-/-- **Provisional (stage 6), and the one place this file constrains a later
-stage.**  §8's `PlanInput` names six components and three of them — `cfg`,
-`model`, `runtime` — have **no kernel representation at all**.  What is
-transcribed here is §8.1's settled half: the plan value, the instant, the
-window, the block length and the budget.  Every goal below reads only the
-*output*, so widening this record does not disturb any of them; that is why
-declaring it is safe and declaring `PlanInput` in full would not be. -/
-structure PlanReq where
-  plan         : WfPlan
-  now          : Day
-  windowStart  : Nat
-  windowEnd    : Nat
-  blockMin     : Nat
-  budgetBlocks : Nat
-
-/-- **Provisional (stage 6).**  §8's `pub fn plan(input) -> DayPlan; // pure; no
-I/O`.  L23 ("`plan` is pure") is **free and already discharged**: it is a
-function, and Lean has no other kind.  That is why there is no purity goal
-below. -/
-def dayPlan (r : PlanReq) : DayPlan := sorry
-
-/-- The items one segment carries: a batch carries its whole member list
-(§7.5's "one block with several of them in key order"), everything else carries
-at most one.  A real definition, not a provisional one. -/
-def segItems (s : Seg) : List Id :=
-  match s.kind with
-  | SegKind.batch ids => ids
-  | _                 => s.item.toList
-
-/-- The items a plan assigns, in slot order — the list §8.3's two relational
-laws compare.  Batched items count as assigned, which is why this is not
-`filterMap Seg.item`: §7.5 exists precisely so the `+3` bin gets a slot, and a
-definition that lost batch members would make "monotone rank" and "impossible
-never dropped" quietly weaker than §8.3 states them. -/
-def assignedOf (d : DayPlan) : List Id := d.segments.flatMap segItems
-
-/-- The minutes a plan gives to work blocks. -/
-def blockMinutes (d : DayPlan) : Nat :=
-  (d.segments.filter (fun s => decide (s.kind = SegKind.block))).foldl
-    (fun a s => a + (s.endMin - s.startMin)) 0
+open Planner
 
 /-- **L26 / §8.3 "no overbooking" (P\*), stage 6.**  Σ Block minutes ≤
 `remaining_budget × block_min`.  Decidable over the produced `DayPlan`, which is
-what L26 promises. -/
+what L26 promises.
+
+Design §6.3 records this as **false as written** against the fork (§8.2 choice
+5b gives the running block its minutes whatever the budget says); it is
+restated with the Active reservation excluded, **and its refutation, in step
+P5** — never here and never without the witness (AGENTS §3.1 item 3). -/
 theorem plan_does_not_overbook (r : PlanReq) :
     blockMinutes (dayPlan r) ≤ (dayPlan r).budgetBlocks * (dayPlan r).blockMin := sorry
 
 /-- **E1 (P\*), stage 6.**  No block is longer than one block.  The shipped bug:
 "the Active reservation covered the whole remaining estimate; a 6b item
 swallowed 355 minutes". -/
-theorem plan_reserves_one_block_at_a_time (r : PlanReq) (s : Seg)
-    (hs : s ∈ (dayPlan r).segments) (hk : s.kind = SegKind.block) :
-    s.endMin - s.startMin ≤ (dayPlan r).blockMin := sorry
+theorem plan_reserves_one_block_at_a_time (r : PlanReq) (s : WfSeg)
+    (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.block) :
+    s.val.minutes ≤ (dayPlan r).blockMin := sorry
 
 /-- **L26 / §8.3 "energy filter" (P\*), stage 6.**  Every block has
 `item.ci ≤ slot.energy`.  `effectiveCi` (Plan.lean) is §3.2's inheritance walk,
 already proved — this is the planner honouring it.  Rules out E8's shape: two
 readers of an item's `ci` disagreeing about eligibility. -/
-theorem plan_respects_the_energy_filter (r : PlanReq) (s : Seg) (i : Id) (lvl : Fin 6)
-    (hs : s ∈ (dayPlan r).segments) (hk : s.kind = SegKind.block)
-    (hi : s.item = some i) (he : s.energy = some lvl) :
+theorem plan_respects_the_energy_filter (r : PlanReq) (s : WfSeg) (i : Id) (lvl : Fin 6)
+    (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.block)
+    (hi : s.val.item = some i) (he : s.val.energy = some lvl) :
     (effectiveCi r.plan.val i).val ≤ lvl.val := sorry
 
-/-- **L26 / §8.3 "no segment overlaps a Wall" (P\*), stage 6.** -/
-theorem plan_places_no_block_over_a_wall (r : PlanReq) (b w : Seg)
+/-- **L26 / §8.3 "no segment overlaps a Wall" (P\*), stage 6.**  On absolute
+seconds, so a wall that crosses midnight is covered. -/
+theorem plan_places_no_block_over_a_wall (r : PlanReq) (b w : WfSeg)
     (hb : b ∈ (dayPlan r).segments) (hw : w ∈ (dayPlan r).segments)
-    (hbk : b.kind = SegKind.block) (hwk : w.kind = SegKind.wall) :
-    b.endMin ≤ w.startMin ∨ w.endMin ≤ b.startMin := sorry
+    (hbk : b.val.kind = SegKind.block) (hwk : w.val.kind = SegKind.wall) :
+    b.val.stop ≤ w.val.start ∨ w.val.stop ≤ b.val.start := sorry
 
 /-- **E5 (P\*), stage 6.**  The same statement for breaks: "free positions
 included breaks" is the shipped defect, and §8.2 step 3 puts "a break of
 `break_min` after every `break_after_blocks` blocks" into the slot list, so a
 planner that treats free time as free will place work on top of one. -/
-theorem plan_places_no_block_over_a_break (r : PlanReq) (b k : Seg)
+theorem plan_places_no_block_over_a_break (r : PlanReq) (b k : WfSeg)
     (hb : b ∈ (dayPlan r).segments) (hk : k ∈ (dayPlan r).segments)
-    (hbk : b.kind = SegKind.block) (hkk : k.kind = SegKind.brk) :
-    b.endMin ≤ k.startMin ∨ k.endMin ≤ b.startMin := sorry
+    (hbk : b.val.kind = SegKind.block) (hkk : k.val.kind = SegKind.brk) :
+    b.val.stop ≤ k.val.start ∨ k.val.stop ≤ b.val.start := sorry
 
 /-- **L26 / §8.3 "no ci ≥ 4 Block after wind-down" (P\*), stage 6.**  §8.2 step
 2: "sleep and wind-down define the hard end of the day". -/
-theorem plan_places_no_demanding_block_after_wind_down (r : PlanReq) (b w : Seg) (i : Id)
+theorem plan_places_no_demanding_block_after_wind_down (r : PlanReq) (b w : WfSeg) (i : Id)
     (hb : b ∈ (dayPlan r).segments) (hw : w ∈ (dayPlan r).segments)
-    (hbk : b.kind = SegKind.block) (hwk : w.kind = SegKind.windDown)
-    (hi : b.item = some i) (hafter : w.startMin ≤ b.startMin) :
+    (hbk : b.val.kind = SegKind.block) (hwk : w.val.kind = SegKind.windDown)
+    (hi : b.val.item = some i) (hafter : w.val.start ≤ b.val.start) :
     (effectiveCi r.plan.val i).val < 4 := sorry
 
 /-- **L26 / §8.3 "walls never moved" (P\*), stage 6.**  A wall segment sits
@@ -648,15 +606,18 @@ where its interval says, not where the planner found room.  §8.2 step 1:
 overlapping walls go to `diagnostics.conflicts` and "the planner does not
 resolve them".
 
-**Caveat, and it is why this statement will need revisiting:** `Field.DT`
-carries a day and a `Clock`, and `Seg` carries minutes-since-midnight, so this
-says nothing about a wall that crosses midnight.  When README gap 10's
-time-of-day arrives, the right statement is over absolute minutes
-(`DT.abs`). -/
-theorem plan_never_moves_a_wall (r : PlanReq) (w : Seg) (i : Id) (e : Entity) (a b : DT)
-    (hw : w ∈ (dayPlan r).segments) (hk : w.kind = SegKind.wall) (hi : w.item = some i)
+**The caveat this goal carried is gone** (README gap 256).  It used to read
+"`Field.DT` carries a day and a `Clock`, and `Seg` carries
+minutes-since-midnight, so this says nothing about a wall that crosses
+midnight"; `Seg` is on absolute seconds now, so the statement pins both ends to
+the second `Cal.instantOf` resolves in the request's own zone — the day
+included, the DST fold included.  That is the form the old comment asked for. -/
+theorem plan_never_moves_a_wall (r : PlanReq) (w : WfSeg) (i : Id) (e : Entity) (a b : DT)
+    (hw : w ∈ (dayPlan r).segments) (hk : w.val.kind = SegKind.wall)
+    (hi : w.val.item = some i)
     (hget : r.plan.val.store.get i = some e) (hs : e.val.shape = Shape.interval a b) :
-    w.startMin = a.time.val ∧ w.endMin = b.time.val := sorry
+    w.val.start = (Cal.instantOf r.tz a.day a.time).sec ∧
+      w.val.stop = (Cal.instantOf r.tz b.day b.time).sec := sorry
 
 /-- **L26 / §8.3 "monotone rank" (P\*), stage 6.**  "For two candidates with
 equal `p` and equal `ci`, the one with the lower line order is never left
@@ -665,7 +626,11 @@ unassigned while the other is assigned."
 Stated with `rootPrio` and `effectiveCi` standing in for §7's `p`, because
 `prio` above is stage 5's and takes a bin this statement has no way to produce.
 When stage 5 lands, the honest form replaces `rootPrio … = rootPrio …` with
-equality of the computed priority; the shape of the goal does not change. -/
+equality of the computed priority; the shape of the goal does not change.
+
+Design §6.3 records this as **false as written** — §8.2 step 5 skips a
+`loc:`-constrained, `atomic` or `max:`-capped item for reasons no §8.3
+invariant is about — and gives the restatement plus its refutation to **P5**. -/
 theorem plan_is_monotone_in_rank (r : PlanReq) (i j : Id) (e f : Entity)
     (hi : r.plan.val.store.get i = some e) (hj : r.plan.val.store.get j = some f)
     (hp : rootPrio r.plan.val i = rootPrio r.plan.val j)
@@ -677,17 +642,21 @@ theorem plan_is_monotone_in_rank (r : PlanReq) (i j : Id) (e f : Entity)
 
 /-- **L26 / §8.3 "HOT before queue" (P\*), stage 6.**  Stated over §7.2's `hot`
 **flag**, which is in the grammar (`Field.Flag.hot`) and so needs nothing from
-stage 5.  The `u ≥ 1` half of HOT is the next goal's business. -/
-theorem plan_puts_hot_before_the_queue (r : PlanReq) (i j : Id) (e f : Entity) (sj : Seg)
+stage 5.  The `u ≥ 1` half of HOT is the next goal's business.  Design §6.3
+gives its restatement and refutation to **P5**. -/
+theorem plan_puts_hot_before_the_queue (r : PlanReq) (i j : Id) (e f : Entity) (sj : WfSeg)
     (hi : r.plan.val.store.get i = some e) (hj : r.plan.val.store.get j = some f)
     (hhot : Flag.hot ∈ e.val.flags) (hnot : Flag.hot ∉ f.val.flags)
-    (hsj : sj ∈ (dayPlan r).segments) (hji : sj.item = some j) :
-    ∃ si ∈ (dayPlan r).segments, si.item = some i ∧ si.startMin ≤ sj.startMin := sorry
+    (hsj : sj ∈ (dayPlan r).segments) (hji : sj.val.item = some j) :
+    ∃ si ∈ (dayPlan r).segments, si.val.item = some i ∧
+      si.val.start ≤ sj.val.start := sorry
 
-/-- **Provisional (stage 6).**  §7.3's two numbers for one candidate: its
-`need` and the capacity available to it by its due date, after earlier
-deadlines have reserved.  Stage 5's `edf` produces both; this is the hook §8.3
-needs to name IMPOSSIBLE and nothing more. -/
+/-- **Provisional (stage 6), and the last one in this file.**  §7.3's two
+numbers for one candidate: its `need` and the capacity available to it by its
+due date, after earlier deadlines have reserved.  Stage 5's `edf` produces
+both — design §5.5: this becomes `(g.deadline.need, g.avail)` from
+`Cap.grantOf` over `r.caps`, in step **P4**, and since the burn-down counts
+`theorem`s and not `def`s, check 7 does **not** move on the day it goes. -/
 def edfNumbers (r : PlanReq) (i : Id) : Nat × Nat := sorry
 
 /-- **L26 / §8.3 "impossible never dropped" (P\*), stage 6.**  §7.3: "IMPOSSIBLE
@@ -695,7 +664,8 @@ items are still scheduled with everything available; the banner names the item
 and the shortfall".  Rules out the failure that silently looks like success —
 an item the day cannot fit vanishing from the plan instead of appearing with a
 shortfall.  `Arith.isImpossible` and `Arith.impossible_imp_hot` are proved
-already; what is owed is that the planner acts on them. -/
+already; what is owed is that the planner acts on them.  Design §6.3 gives its
+restatement and refutation to **P5**. -/
 theorem plan_never_drops_an_impossible_item (r : PlanReq) (i : Id) (e : Entity)
     (hget : r.plan.val.store.get i = some e)
     (himp : Arith.isImpossible (edfNumbers r i).1 (edfNumbers r i).2 = true) :
@@ -704,11 +674,12 @@ theorem plan_never_drops_an_impossible_item (r : PlanReq) (i : Id) (e : Entity)
 /-- **E2 (P\*), stage 6, §7.5.**  Batching gathers in key order and does not
 reach past an equal-`ci` candidate that ranks ahead of it.  The shipped bug did
 exactly that, and the effect is invisible in the output: the batch looks
-correct and the skipped item simply never appears. -/
-theorem plan_never_batches_past_an_equal_ci_candidate (r : PlanReq) (s : Seg) (ids : List Id)
-    (i j : Id) (e f : Entity)
-    (hs : s ∈ (dayPlan r).segments) (hk : s.kind = SegKind.batch ids)
-    (hi : i ∈ ids) (hj : j ∉ ids)
+correct and the skipped item simply never appears.  Design §6.3 gives its
+restatement and refutation to **P5**. -/
+theorem plan_never_batches_past_an_equal_ci_candidate (r : PlanReq) (s : WfSeg)
+    (ids : BatchIds) (i j : Id) (e f : Entity)
+    (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.batch ids)
+    (hi : i ∈ ids.val) (hj : j ∉ ids.val)
     (hie : r.plan.val.store.get i = some e) (hjf : r.plan.val.store.get j = some f)
     (hci : effectiveCi r.plan.val i = effectiveCi r.plan.val j)
     (hdoc : e.val.live.doc = f.val.live.doc)
@@ -721,31 +692,50 @@ Plan §6.2.4: these relate **two runs** of a greedy fold — real inductions, no
 `decide`.  `inventory` budgets tail-drop alone at plausibly a week and has a
 working 882-line proptest at 256 cases that has empirically caught things.
 
-**The plan's recommendation, and it is deliberate: keep the proptest, state the
-law in Lean, prove it last or never.**  A kernel that proves 25 of 27 laws and
-property-tests 2 is not compromised.  They are stated here so that the choice is
-visible in the burn-down rather than absent from it — and so that "we decided
-not to prove these" cannot be confused with "we forgot". -/
+**The plan's recommendation was: keep the proptest, state the law in Lean,
+prove it last or never.  The owner's D5 supersedes it** — relational laws keep
+being proved, L24 and L25 included, and a two-run theorem a change breaks is
+re-proved in that step, never downgraded to a property test and never deleted.
+They are stated here so that the choice is visible in the burn-down rather than
+absent from it, and design §7 prices them at ≈ 3,000 proof lines together. -/
 
-/-- **L24 (?), stage 6, §8.3 tail-drop — relational; keep the proptest.**
+/-- **L24 (?), stage 6, §8.3 tail-drop — relational; proved under D5.**
 "Removing minutes from the day (interrupt, overrun, downgrade) never changes
 the set of assigned items except by removing a suffix in key order (Active item
 excepted)."  Stated over the budget, which is the cleanest of the three ways
-minutes leave a day.  The `Active`-item exception is not modelled here and is
-part of what makes this expensive. -/
+minutes leave a day.
+
+**The owner's D29 restates this, and the restatement is step G2's, not P0's.**
+As written it is FALSE against the fork: §8.2 choice 5b reserves the running
+block before the budget is consulted, so shrinking the budget can drop items
+ranking ahead of the Active item while it stays, and the result is not a
+prefix.  D29's form erases the Active item from both sides —
+`∃ n, (assignedOf (dayPlan r')).erase a = ((assignedOf (dayPlan r)).erase a).take n`
+— and ships with `plan_tail_drop_as_stage_6_wrote_it_is_refuted` and its
+witness **in the same commit**.  It is left as written here because a
+restatement without its refutation is a weakening (AGENTS §3.1 item 3), and the
+witness needs a `dayPlan` that places something.
+
+The window is one pair now, not two numbers. -/
 theorem plan_tail_drop (r r' : PlanReq)
     (hplan : r'.plan = r.plan) (hnow : r'.now = r.now)
-    (hws : r'.windowStart = r.windowStart) (hwe : r'.windowEnd = r.windowEnd)
+    (hwin : r'.window = r.window)
     (hbm : r'.blockMin = r.blockMin) (hless : r'.budgetBlocks ≤ r.budgetBlocks) :
     ∃ n : Nat, assignedOf (dayPlan r') = (assignedOf (dayPlan r)).take n := sorry
 
-/-- **L25 (?), stage 6, §8.3 stability — relational; keep the proptest.**  "A
+/-- **L25 (?), stage 6, §8.3 stability — relational; proved under D5.**  "A
 replan changes no segment with `end ≤ now`."  The first half of §8.3's bullet
-("same input → identical `DayPlan`") is free and is not restated. -/
-theorem plan_is_stable_across_a_replan (r r' : PlanReq) (nowMin : Nat) (s : Seg)
-    (hplan : r'.plan = r.plan) (hws : r'.windowStart = r.windowStart)
+("same input → identical `DayPlan`") is free and is not restated.
+
+`nowSec` is an absolute second now, not minutes since midnight.  Design §6.3
+records that this is **false as written** — the running block and the running
+interruption *grow* rather than move (`SegFlags.isOpen`), so a segment settled
+in run 1 is present but not equal in run 2 — and gives the restatement, the
+refutation and `an_open_segment_only_extends` to step **G3**. -/
+theorem plan_is_stable_across_a_replan (r r' : PlanReq) (nowSec : Nat) (s : WfSeg)
+    (hplan : r'.plan = r.plan) (hwin : r'.window = r.window)
     (hbm : r'.blockMin = r.blockMin) (hbb : r'.budgetBlocks = r.budgetBlocks)
-    (hs : s ∈ (dayPlan r).segments) (hend : s.endMin ≤ nowMin) :
+    (hs : s ∈ (dayPlan r).segments) (hend : s.val.stop ≤ nowSec) :
     s ∈ (dayPlan r').segments := sorry
 
 end Goals

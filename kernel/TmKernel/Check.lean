@@ -4694,3 +4694,75 @@ open Tm
 #print axioms Tm.Look.latestBefore_go
 #print axioms Tm.Look.SleepCfg.shiftOf_without_sleep
 #print axioms Tm.Look.day0Cut_eq
+
+-- ===========================================================================
+-- APPENDED 2026-09-17 (stage 6, run **W-14**, track P step **P0** — the
+-- planner's vocabulary: `Planner.lean`, `Seg` on absolute seconds, `PlanReq`
+-- without a second window).
+--
+-- Fifty-six theorems: R10's smart constructors and their rejections, R11's
+-- `view ∘ set = id` pairs, the two `Look.Today` budget laws L9's `storedWindow`
+-- needed beside it, and `dayPlan`'s shape.
+--
+-- Two of them are TRIPWIRES and are meant to stop compiling:
+-- `the_day_has_no_segments_until_the_first_step_lands` must be deleted by P1
+-- and `the_plan_hash_is_a_placeholder_until_the_emitter_lands` by P8.  While
+-- the first one stands, `Goals.lean`'s thirteen stage-6 goals are vacuously
+-- true of `dayPlan` and **none of them may be discharged** — the file says so
+-- at its stage-6 header.
+-- ===========================================================================
+#print axioms Tm.Look.Today.storedBudget_on_another_day
+#print axioms Tm.Look.Today.storedBudget_today
+#print axioms Tm.Look.Today.storedWindow_brings_a_budget
+#print axioms Tm.Planner.Capped.ofList?_refuses_past_the_cap
+#print axioms Tm.Planner.Capped.ofList?_accepts
+#print axioms Tm.Planner.Capped.cons?_refuses_past_the_cap
+#print axioms Tm.Planner.Capped.val_cons?
+#print axioms Tm.Planner.mkBatch?_refuses_too_many_members
+#print axioms Tm.Planner.mkBatch?_accepts
+#print axioms Tm.Planner.mkSeg?_refuses_an_inverted_segment
+#print axioms Tm.Planner.mkSeg?_refuses_past_the_horizon
+#print axioms Tm.Planner.mkSeg?_accepts
+#print axioms Tm.Planner.Seg.energy_withEnergy
+#print axioms Tm.Planner.Seg.withEnergy_touches_only_the_energy
+#print axioms Tm.Planner.Seg.wf_withEnergy
+#print axioms Tm.Planner.Seg.note_withNote
+#print axioms Tm.Planner.Seg.withNote_touches_only_the_note
+#print axioms Tm.Planner.Seg.wf_withNote
+#print axioms Tm.Planner.Diagnostics.notes_withNote
+#print axioms Tm.Planner.Diagnostics.withNote_touches_only_the_notes
+#print axioms Tm.Planner.Diagnostics.droppedTail_withDropped
+#print axioms Tm.Planner.Diagnostics.withDropped_touches_only_the_dropped_tail
+#print axioms Tm.Planner.mkHash?_refuses_a_short_digest
+#print axioms Tm.Planner.mkHash?_refuses_a_non_hex_digit
+#print axioms Tm.Planner.mkHash?_accepts
+#print axioms Tm.Planner.mkBudget?_refuses_an_impossible_budget
+#print axioms Tm.Planner.mkBudget?_accepts
+#print axioms Tm.Planner.mkActive?_refuses_a_start_after_now
+#print axioms Tm.Planner.mkActive?_refuses_an_estimate_past_the_day
+#print axioms Tm.Planner.mkActive?_accepts
+#print axioms Tm.Planner.mkBreak?_refuses_a_break_longer_than_a_day
+#print axioms Tm.Planner.mkBreak?_refuses_a_start_after_now
+#print axioms Tm.Planner.mkBreak?_accepts
+#print axioms Tm.Planner.mkInterrupt?_refuses_a_start_after_now
+#print axioms Tm.Planner.mkInterrupt?_accepts
+#print axioms Tm.Planner.mkYesterday?_refuses_a_priority_past_seven
+#print axioms Tm.Planner.mkYesterday?_refuses_too_many
+#print axioms Tm.Planner.RuntimeIn.activeId_empty
+#print axioms Tm.Planner.PlanOverrides.isEmpty_empty
+#print axioms Tm.Planner.mkOverrides?_refuses_too_many_estimates
+#print axioms Tm.Planner.mkOverrides?_refuses_too_many_drops
+#print axioms Tm.Planner.assignedOf_empty
+#print axioms Tm.Planner.blockMinutes_empty
+#print axioms Tm.Planner.PlanReq.window_is_the_lookaheads
+#print axioms Tm.Planner.PlanReq.budget_is_the_stored_one_when_there_is_one
+#print axioms Tm.Planner.PlanReq.budget_is_the_formula_without_a_stored_one
+#print axioms Tm.Planner.dayPlan_day
+#print axioms Tm.Planner.dayPlan_window
+#print axioms Tm.Planner.dayPlan_blockMin
+#print axioms Tm.Planner.dayPlan_budgetBlocks
+#print axioms Tm.Planner.dayPlan_diagnostics
+#print axioms Tm.Planner.the_day_has_no_segments_until_the_first_step_lands
+#print axioms Tm.Planner.the_plan_hash_is_a_placeholder_until_the_emitter_lands
+#print axioms Tm.Planner.dayPlan_assigns_nothing_yet
+#print axioms Tm.Planner.dayPlan_spends_no_minutes_yet
