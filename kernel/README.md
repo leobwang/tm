@@ -27123,7 +27123,12 @@ D27 kills gaps **113**, **114** and **116**. D27 did not land, so:
    left to the host for 10 is a second reader on a subset — the class D27 exists
    to end — and a kernel answering a default for an id it cannot resolve is a
    silent wrong answer (AGENTS §5.6).
-2. **Why not now.** The fix is README "What this does not cover" item 5 — a
+2. **Why not now.** *(ITEM 2 DONE 2026-09-17 at W-15/K3a, `f2225ec`: the box is
+   optional, `RawItem.boxed` records it, a bare id-less line is keyed by
+   `Field.titleKey`, and item 5 is corrected. **Item 1 stands** — none of D27's
+   nine fields has moved, gaps 113/114/116 are open and whole — so this gap
+   stays open for its first item alone.)* The fix is README "What this does not
+   cover" item 5 — a
    `RawItem` that records whether the box was there — **and one half that item 5
    does not name**, which this step found and which makes the change strictly
    bigger than the standing statement says. A routines line has **no `^id`**
@@ -29108,6 +29113,23 @@ title words, no new recursion), `Plan.boxesWf` (`List.all` over `store.dom`,
 the shape every other `itemsWf` conjunct already has). `bareOk` is `any` + `all`.
 `boxAt` is a three-cell match. No new `@[csimp]` twin is owed: nothing here is a
 hand-written structural recursion.
+
+### Gaps closed, and one closed only in half
+
+* **README "What this does not cover" item 5** — *"state-less lines are still
+  not representable"* — **closed**, by exactly the means it named. Corrected in
+  place, as gap 301's item 2 instructed (AGENTS §10.2).
+* **Gap 301 — closed in half, and the half is named.** Its item 2 (the grammar:
+  `RawItem` records the box, and a key synthesised from the title the way
+  `Tree::key_of` does, with `serializeItem` writing the line back with **no id
+  token** so `no_file_is_silently_rewritten` still holds) is **done**, and the
+  corpus is the proof: 29/37 files and 4/5 whole plans, unchanged, with 14 more
+  entities in `plan-basic` alone. Its item 1 — *"none of D27's nine fields moved
+  into the kernel"* — is **untouched**: that is D27, it is not this step's, and
+  **gaps 113, 114 and 116 stay open and whole**. Gap 301 therefore stays open,
+  with its item 2 struck and its item 1 standing.
+* **Gap 32 is NOT closed.** Its 1,049 lines are re-measured and still 1,049;
+  see the correction note above.
 
 ### Gaps opened
 
