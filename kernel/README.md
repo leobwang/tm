@@ -26745,22 +26745,47 @@ D27 kills gaps **113**, **114** and **116**. D27 did not land, so:
    left to the host for 10 is a second reader on a subset — the class D27 exists
    to end — and a kernel answering a default for an id it cannot resolve is a
    silent wrong answer (AGENTS §5.6).
-2. **Why not now.** The fix is README "What this does not cover" item 5: a
-   `RawItem` that records whether the box was there, which changes a type
-   `State.lean`, `Plan.lean`, `Cmd.lean` and `Boundary.lean` all use — a
-   switch-shaped change that under **D19** is one commit and must land with its
-   separable work first. Design §14.1's K3 row prices the recurrence *facts*
-   (350 / 900 / −250 / 6-8 days) and not the *grammar*, so K3 is under-priced by
-   the whole of this tranche.
+2. **Why not now.** The fix is README "What this does not cover" item 5 — a
+   `RawItem` that records whether the box was there — **and one half that item 5
+   does not name**, which this step found and which makes the change strictly
+   bigger than the standing statement says. A routines line has **no `^id`**
+   either, and `parseToks` answers `PErr.noId` on a token list with no id word,
+   which `scanLinesFrom` turns into `LErr.badLine` and which **refuses the whole
+   plan**. So relaxing the box alone does not make routines loadable; it moves
+   them from *silently prose* to *every plan refused*. **Driven, not inferred:**
+   appending `- [ ] a boxed line with no id  dur:30m` to a copy of `plan-basic`'s
+   `backlog.md` and running `tm plan` answers `kernel refusal: badLine —
+   backlog.md:12 looks like an item but does not parse (Tm.PErr.noId); the kernel
+   refuses a tree it cannot load whole`, and nothing is written. That is exactly
+   the state every routines line would be in the moment the box requirement
+   alone is lifted. The two halves must land
+   in one commit (**D19**): the box, and a key synthesised from the title the way
+   fork `Tree::key_of` does, with `serializeItem` writing the line back with no
+   id token so `no_file_is_silently_rewritten` still holds. Correct README "What
+   this does not cover" item 5 accordingly (AGENTS §10.2).
+
+   **The blast radius, measured rather than adjectival.** Attributing every
+   mention of `RawItem`, `parseItem`, `parseBody`, `parseToks`, `serializeItem`,
+   `isItemLine` and `Glyph` to its enclosing declaration: **270 declarations —
+   145 theorems, 117 defs, 6 structures, 1 inductive, 1 abbrev — across ten
+   files**: `Line.lean` 135, `Boundary.lean` 32, `State.lean` 25, `Cmd.lean` 24,
+   `Plan.lean` 17, `Close.lean` 15, `Negative.lean` 9, `Tree.lean` 6,
+   `Text.lean` 5, `Report.lean` 2. The 145 theorems are **3.6% of the 3,993**
+   audited. Design §14.1's K3 row prices the recurrence *facts* (350 / 900 /
+   −250 / 6-8 days) and not the *grammar*, so K3 is under-priced by the whole of
+   this tranche.
 3. **What it costs.** D27, and therefore gaps 113, 114, 116 and 275, all wait on
    it. Four kernel definitions that already exist and are proved —
    `Tree.remainingMin`, `Plan.effectiveCi`, `Plan.rootPrio` and the `Interval`
    shape — have no caller for 36% of the candidates, so `Look.Cand.id` crosses
    the wire only to be echoed back in `grantJson`, never resolved against
    `PlanCore.store`.
-4. **When it clears.** In K3, re-scoped: the state-box-less line first, then the
-   recurrence family. It should be re-priced before it is scheduled, and §14.7's
-   K column (970 / 2,750 / −600 / 17-24) re-added with it.
+4. **When it clears.** In K3, re-scoped into two steps that the dependency
+   forces into this order: **K3a** the grammar (box and title key together, one
+   commit, the 270 declarations above re-proved not weakened, D5), then **K3b**
+   the recurrence family §14.1 already describes. It should be re-priced before
+   it is scheduled, and §14.7's K column (970 / 2,750 / −600 / 17-24) re-added
+   with it.
 
 **Highest on this branch:** gap **301**, cheat **158**, parity **P37**.
 
