@@ -117,7 +117,7 @@ def scanLinesFrom (path : List Char) : Option Nat → Nat → List (List Char) �
   | o, k, l :: rest =>
     let o' := if commentAfter o.isSome l then some (o.getD k) else none
     if o.isSome then scanLinesFrom path o' (k + 1) rest else
-    match parseItem l with
+    match parseLine l with
     | .ok _             => scanLinesFrom path o' (k + 1) rest
     | .error .notAnItem => scanLinesFrom path o' (k + 1) rest
     | .error e          => .error (.badLine path k e)
@@ -135,14 +135,14 @@ theorem scanLinesFrom_cons_ok (path : List Char) (o : Option Nat) (k : Nat) (l :
     (rest : List (List Char)) (h : scanLinesFrom path o k (l :: rest) = .ok ()) :
     scanLinesFrom path (if commentAfter o.isSome l then some (o.getD k) else none) (k + 1) rest
         = .ok () ∧
-      (o.isSome = false → parseItem l = .error .notAnItem ∨ isItemLine l = true) := by
+      (o.isSome = false → parseLine l = .error .notAnItem ∨ isItemLine l = true) := by
   cases o with
   | some n =>
       refine ⟨?_, fun hs => by simp at hs⟩
       simpa [scanLinesFrom] using h
   | none =>
       simp only [scanLinesFrom, Option.isSome_none, Bool.false_eq_true, if_false] at h
-      cases hp : parseItem l with
+      cases hp : parseLine l with
       | ok t =>
           rw [hp] at h
           exact ⟨h, fun _ => Or.inr (by simp [isItemLine, hp])⟩
@@ -157,7 +157,7 @@ theorem scanLinesFrom_prose (path : List Char) (o : Option Nat) (k : Nat)
     (ls : List (List Char)) (h : scanLinesFrom path o k ls = .ok ()) :
     ∀ q ∈ (splitDocC o.isSome k ls).prose,
       commentOpenFrom o.isSome (splitDocC o.isSome k ls).prose q.1 = false →
-      parseItem q.2 = .error .notAnItem := by
+      parseLine q.2 = .error .notAnItem := by
   induction ls generalizing o k with
   | nil => intro q hq; simp [splitDocC] at hq
   | cons l rest ih =>
@@ -198,7 +198,7 @@ inside a comment is prose whatever its bytes, broken item shapes included.) -/
 theorem scanLines_prose_outside_a_comment (path : List Char) (k : Nat) (ls : List (List Char))
     (h : scanLines path k ls = .ok ()) :
     ∀ q ∈ (splitDoc k ls).prose,
-      inComment (splitDoc k ls).prose q.1 = false → parseItem q.2 = .error .notAnItem :=
+      inComment (splitDoc k ls).prose q.1 = false → parseLine q.2 = .error .notAnItem :=
   scanLinesFrom_prose path none k ls h
 
 theorem scanLinesFrom_closes (path : List Char) (o : Option Nat) (k : Nat)
@@ -762,13 +762,13 @@ line the loader takes on its own.  Parse the bytes, build the entity, ask
 counterexample to this statement and not to `serialize_parse`, which is why it
 survived. -/
 theorem load_render_line (cs : List Char) (i : Id) (g : Glyph) (r : RawItem)
-    (k rk : Nat) (reg : Option Region) (e : Entity) (hp : parseItem cs = .ok (i, g, r))
+    (k rk : Nat) (reg : Option Region) (e : Entity) (hp : parseLine cs = .ok (i, g, r))
     (he : e = loneEntity ⟨k, rk, i, g, r, reg⟩) :
     serializeItem i (glyphAt e.val e.val.live) e.val.line = cs := by
   subst he
   obtain ⟨_, hline, hglyph⟩ := lone_placement_renders_back ⟨k, rk, i, g, r, reg⟩
   rw [hglyph, hline]
-  exact serialize_parse cs i g r hp
+  exact serialize_parseLine cs i g r hp
 
 /-- **Both lines of a demotion come back as they were found — box *and*
 bytes.**  Whichever of the two the loader made the tombstone, each site renders
@@ -1318,7 +1318,7 @@ title naming an id the tree does not carry is refused by the post-state's
 `planWf` (`danglingParent`), not written. -/
 def addCore (p : PlanCore) (dd : Dest p) (i : Id) (title : List Char) : Core :=
   { live := dd.site (freshRank p dd.ix), archive := none, status := .live .free,
-    line := { indent := [], toks := addTitleToks title i } }
+    line := { indent := [], boxed := true, toks := addTitleToks title i } }
 
 /-- `wf` of an `add`'s core is `wfPair _ none`: there is no tombstone to be in
 the wrong file.  The freshness argument is elsewhere — L21 for the id,
@@ -2400,18 +2400,20 @@ theorem setEst_normalized (p : WfPlan) (i : Id) (e : Entity) (v : Nat)
     normalized { p.val with store := p.val.store.set i (setEstE v e) hs } = true :=
   normalized_after_edit p i e (setEstE v e) hs hget rfl rfl
 
-/-- The six conjuncts of `itemsWf` that are **not** rank distinctness.  A
+/-- The **seven** conjuncts of `itemsWf` that are not rank distinctness.  A
 command really can break any of them — a move into a day file outside
-`# Pinned` breaks `sectionsWf`, a move into `month/` can break `shapesWf` — so
-they stay hypotheses.  `Normalized` is the one that no longer has to be. -/
+`# Pinned` breaks `sectionsWf`, a move into `month/` can break `shapesWf`, and
+since K3a a status change on a box-less line breaks `boxesWf` — so they stay
+hypotheses.  `Normalized` is the one that no longer has to be. -/
 def itemsWfButRanks (p : PlanCore) : Bool :=
   parentsTotal p && parentsAcyclic p && afterTotal p && afterAcyclic p &&
-    sectionsWf p && shapesWf p
+    sectionsWf p && shapesWf p && boxesWf p
 
 theorem itemsWf_of_normalized (p : PlanCore) (h1 : normalized p = true)
     (h2 : itemsWfButRanks p = true) : itemsWf p = true := by
   simp only [itemsWfButRanks, Bool.and_eq_true] at h2
-  exact itemsWf_of_parts h1 h2.1.1.1.1.1 h2.1.1.1.1.2 h2.1.1.1.2 h2.1.1.2 h2.1.2 h2.2
+  exact itemsWf_of_parts h1 h2.1.1.1.1.1.1 h2.1.1.1.1.1.2 h2.1.1.1.1.2 h2.1.1.1.2 h2.1.1.2
+    h2.1.2 h2.2
 
 /-- **`cmdMove_succeeds` at the boundary, with the rank hypothesis gone.**
 Cmd.lean's version needs the caller to supply `itemsWf` of the post-state,
@@ -5193,6 +5195,37 @@ policy (`keyNotWired demoted`, Negative.lean CHEAT 45).  `after` additionally
 meets the plan tier: its post-state can dangle or cycle, and those refusals are
 named (`danglingDep`, `depCycle`) instead of `mapAt`'s `badHorizon`. -/
 
+/-! ### K3a: the title key, at the loader (D31, gap 301)
+
+The three questions a title-derived key has to answer, answered on the loader
+itself rather than on the parser, because the *key* is only half of it: what a
+collision costs is decided where the store is built.  `tree.rs` resolves a
+collision by keying the **later** line `file:line`, which depends on the order
+the host listed its documents — §5.6's own defect — so the kernel refuses by
+name instead, and these say which name. -/
+
+/-- §4.3's own `routines.md` line loads: one entity, keyed `lunch`, no box. -/
+theorem a_routine_line_loads_as_an_entity :
+    (match loadPlan [⟨"routines.md", none,
+        ["- lunch win:11:30-13:30 dur:30m every:day".toList]⟩] with
+     | .ok p => (p.val.store.get "lunch".toList).isSome
+     | .error _ => false) = true := by rfl
+
+/-- **Two routines with one title are refused by name**, in one file. -/
+theorem two_titles_in_one_file_are_a_dupId :
+    loadPlan [⟨"routines.md", none,
+        ["- lunch win:11:30-13:30 dur:30m every:day".toList,
+         "- lunch win:12:30-13:30 dur:30m every:day".toList]⟩]
+      = .error (jone "err" (lerrJson (LErr.dupId "lunch".toList))) := by rfl
+
+/-- **A title that collides with an `^id` is refused by name too** — the two
+lines are one key in two files, which is the demotion shape, and neither is
+`[-]`. -/
+theorem a_title_colliding_with_an_id_is_refused :
+    loadPlan [⟨"routines.md", none, ["- lunch win:11:30-13:30 dur:30m every:day".toList]⟩,
+              ⟨"week/2026-W37.md", some ⟨week, 37⟩, ["- [ ] Write ^lunch".toList]⟩]
+      = .error (jone "err" (lerrJson (LErr.notADemotion "lunch".toList))) := by rfl
+
 /-- §5.7 at the parse tier, one named refusal per bridged key — a value the
 key's grammar rejects (Feb 30, an end before its start, hour 25, a zero period,
 a name with a space, an unpadded date, an empty id), `loc:`'s word bound (a
@@ -5344,8 +5377,17 @@ theorem applyCmd_after_succeeds (p : WfPlan) (i : Id) (e : Entity) (ds : WfDeps)
     have h1 := hdeps hs
     have h2 := hrest hs
     simp only [Bool.and_eq_true] at h2
+    have hbox : boxesWf (editPost p i e (.after ds) hs) = true := by
+      unfold editPost
+      refine boxesWf_set hs (itemsWf_parts (planWf_parts p.property).2.2.2.2).2.2.2.2.2.2.2 ?_
+      show boxWf { e.val with line := setVal (.after ds) e.val.line } = true
+      have he : boxWf e.val = true :=
+        boxWf_of_mem (itemsWf_parts (planWf_parts p.property).2.2.2.2).2.2.2.2.2.2.2
+          ((p.val.store.domSpec i).2 (by rw [hget]; rfl)) hget
+      unfold boxWf at he ⊢
+      simpa [setVal_boxed] using he
     show itemsWfButRanks (editPost p i e (.after ds) hs) = true
-    simp [itemsWfButRanks, h1.1, h1.2, h2.1.1.1, h2.1.1.2, h2.1.2, h2.2])
+    simp [itemsWfButRanks, h1.1, h1.2, h2.1.1.1, h2.1.1.2, h2.1.2, h2.2, hbox])
   refine ⟨q, hq, _, hqi, ?_⟩
   exact the_edit_path_writes_what_the_field_path_reads (.after ds) e _
     (editE_ok_of_tabless _ e htab)

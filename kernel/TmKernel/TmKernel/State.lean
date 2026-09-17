@@ -371,13 +371,11 @@ theorem findSome_kParent_phase1 (ts : List Tok) (h : ts.all (fun t => !atWord t.
     · exact findSome_kParent_phase2 (t :: ts) h
 
 /-- **A line with no `@` word has no parent.** -/
-theorem parentRef_of_no_at (r : RawItem) (h : r.toks.all (fun t => !atWord t.word) = true) :
-    parentRef r = none := by
-  unfold parentRef kinds
-  cases hr : r.toks with
+theorem findSome_kParent_phase0 (ts : List Tok) (h : ts.all (fun t => !atWord t.word) = true) :
+    (classifyPhase0 ts).findSome? kParent = none := by
+  cases ts with
   | nil => rfl
   | cons t ts =>
-    rw [hr] at h
     show (match ciSlot t.word with
           | some c => TokKind.ci c :: classifyPhase1 ts
           | none   => classifyPhase1 (t :: ts)).findSome? kParent = none
@@ -386,6 +384,13 @@ theorem parentRef_of_no_at (r : RawItem) (h : r.toks.all (fun t => !atWord t.wor
       rw [findSome_cons_none _ _ _ rfl]
       exact findSome_kParent_phase1 ts h.2
     · exact findSome_kParent_phase1 (t :: ts) h
+
+theorem parentRef_of_no_at (r : RawItem) (h : r.toks.all (fun t => !atWord t.word) = true) :
+    parentRef r = none := by
+  unfold parentRef kinds
+  cases hb : r.boxed with
+  | true  => simp only [if_pos]; exact findSome_kParent_phase0 r.toks h
+  | false => simp only [Bool.false_eq_true, if_false]; exact findSome_kParent_phase2 r.toks h
 
 /-- `parentRef`, classifying only a line that has an `@` word. -/
 def parentRefFast (r : RawItem) : Option (List Char) :=

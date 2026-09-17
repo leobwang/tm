@@ -803,7 +803,7 @@ def itemsWfFast (p : PlanCore) : Bool :=
   normalized p &&
     (let t := parentTable p
      parentsTotalIn t p && parentsAcyclicIn t p) &&
-    afterTotal p && afterAcyclic p && sectionsWf p && shapesWf p
+    afterTotal p && afterAcyclic p && sectionsWf p && shapesWf p && boxesWf p
 
 @[csimp] theorem itemsWf_eq_itemsWfFast : @itemsWf = @itemsWfFast := by
   funext p
@@ -826,7 +826,8 @@ def firstItemFaultFast (p : PlanCore) : String :=
     else if !afterTotal p then "danglingDep"
     else if !afterAcyclic p then "depCycle"
     else if !sectionsWf p then "sectionDiscipline"
-    else "fileKindShape"
+    else if !shapesWf p then "fileKindShape"
+    else "boxlessState"
 
 @[csimp] theorem firstItemFault_eq_firstItemFaultFast : @firstItemFault = @firstItemFaultFast := by
   funext p

@@ -5,14 +5,29 @@ import TmKernel.Text
 The grammar subset this stage interprets (§4.1):
 
 ```
-<indent>- [<state>] <tokens…>
+<indent>- [<state>] <tokens…>          -- the boxed form
+<indent>- <tokens…>                    -- the BARE form (§4.1: routines, optional, inbox)
 ```
 
 * `<state>` is one of `[ ] [>] [x] [-] [~] [?]` and is **rendered from the
   status and the placement**, never stored — §6.3's `[-]` is positional.
+  §4.1 has `routines.md`, `optional.md` and `inbox.md` **omit the box by
+  design** — a routine recurs rather than being checked off — so the box is
+  optional and `RawItem.boxed` records whether the bytes carried one.  A bare
+  line's state is `Todo` (`model.rs`: "`Todo` when omitted"), and
+  `serializeItem` writes a box only where one was read.
+* the two **positional** slots (`ci`, the leading estimate) are read only
+  after a state box (`grammar.rs:387`, `if has_state { … }`), so `kinds`
+  reads a bare line from phase 2 and `- 5 min stretch` has the title
+  `5 min stretch` and no ci;
 * tokens are whitespace-separated words, kept **verbatim**;
-* exactly one token must be `^<id>`, and its word is **rendered from the store
-  key**, never stored;
+* **at most one** token may be `^<id>`; its word is **rendered from the store
+  key**, never stored.  A line with no `^id` is keyed by its **title** —
+  `Field.titleKey`, the title words joined by single spaces, which is
+  `tree.rs`'s `Id(title)` — and a line with neither an `^id` nor a title has
+  no key and is refused as `PErr.noId`.  Two lines that resolve to one key are
+  the loader's existing `dupId`/`notADemotion` refusals, **by name**: the
+  fork's `file:line` fallback is order-dependent, which §5.6 forbids;
 * `est:<N>b|m|h` and the leading estimate `<N>b|m|h` are *interpreted*
   (they are where the `tm edit est=` bug lived);
 * every other token — `@parent`, `#tag`, `!k`, `due:`, `at:`, `every:`, … — is
@@ -33,6 +48,10 @@ namespace Tm
 
 structure RawItem where
   indent : List Char
+  /-- the bytes carried a `[<state>]` box.  §4.1's routines/optional/inbox
+  lines do not, and `false` is how a line that never had one is written back
+  without growing one. -/
+  boxed  : Bool
   toks   : List Tok
 deriving DecidableEq, Repr, Inhabited
 
@@ -42,38 +61,220 @@ def isIdWord (w : List Char) : Bool := w.head? == some '^'
 def Tok.rawFor (i : Id) (t : Tok) : List Char :=
   t.sep ++ (if isIdWord t.word then '^' :: i else t.word)
 
+/-- The bytes of a line.  The box is written **iff the line was read with
+one**: a bare line's separator lives in its first token, so the two forms are
+`indent ++ "- [g]" ++ toks` and `indent ++ "-" ++ toks`. -/
 def serializeItem (i : Id) (g : Glyph) (r : RawItem) : List Char :=
-  r.indent ++ ('-' :: ' ' :: '[' :: g.char :: ']' :: r.toks.flatMap (Tok.rawFor i))
+  r.indent ++ '-' ::
+    (if r.boxed then ' ' :: '[' :: g.char :: ']' :: r.toks.flatMap (Tok.rawFor i)
+     else r.toks.flatMap (Tok.rawFor i))
 
 inductive PErr | notAnItem | badState (c : Char) | noId | manyIds
 deriving DecidableEq, Repr
 
 def idToks (r : RawItem) : List Tok := r.toks.filter (fun t => isIdWord t.word)
 
-def parseToks (indent : List Char) (g : Glyph) (ts : List Tok) :
-    Except PErr (Id × Glyph × RawItem) :=
+/-- **A bare item line may not carry a `[` at all.**  The kernel's boxed arm
+wants the literal `- [`; the fork's skips whitespace first (`grammar.rs:276`'s
+`state_at`) and `Text.isSp` does not count a tab as space (cheat 122), so
+`-  [ ] 2 30m Spaced ^a1` and `- <TAB>[ ] …` are lines the two read
+differently.  Refusing every bare line with a bracket in it keeps both of them
+prose — which is what they are today (cheat 123) — instead of reading them as
+items whose title begins `[`.  It is also the clause that makes a bare line's
+bytes unable to re-read as a box, which is what round trip B needs, and being
+about *every* token rather than the first it survives a setter that removes
+one. -/
+def tokBare (u : Tok) : Bool := !u.sep.isEmpty && !u.word.any (fun c => c == '[')
+
+/-- **What a bare line's token run must satisfy.**  `serializeItem` writes it
+as `- ` + the run, so the run must carry a separator on every token (or two
+words would run together), must have a word in it at all (`- ` and `-   ` are
+not items — `grammar.rs`'s `rest.trim().is_empty()`), and must not carry a `[`
+(`tokBare`). -/
+def bareOk (ts : List Tok) : Bool :=
+  ts.any (fun u => !u.word.isEmpty) && ts.all tokBare
+
+theorem tokBare_sep {u : Tok} (h : tokBare u = true) : u.sep ≠ [] := by
+  unfold tokBare at h
+  simp only [Bool.and_eq_true, Bool.not_eq_true'] at h
+  simpa [List.isEmpty_iff] using h.1
+
+theorem tokBare_head {u : Tok} (h : tokBare u = true) : u.word.head? ≠ some '[' := by
+  unfold tokBare at h
+  simp only [Bool.and_eq_true, Bool.not_eq_true', List.any_eq_false] at h
+  intro hc
+  exact absurd (h.2 '[' (List.mem_of_mem_head? hc)) (by simp)
+
+theorem bareOk_all {ts : List Tok} (h : bareOk ts = true) : ∀ u ∈ ts, tokBare u = true := by
+  simp only [bareOk, Bool.and_eq_true] at h
+  exact fun u hu => List.all_eq_true.1 h.2 u hu
+
+theorem bareOk_any {ts : List Tok} (h : bareOk ts = true) : ∃ u ∈ ts, u.word ≠ [] := by
+  simp only [bareOk, Bool.and_eq_true] at h
+  obtain ⟨u, hu, hw⟩ := List.any_eq_true.1 h.1
+  exact ⟨u, hu, by simp only [Bool.not_eq_true'] at hw; simpa [List.isEmpty_iff] using hw⟩
+
+theorem bareOk_mk {ts : List Tok} (h1 : ∃ u ∈ ts, u.word ≠ [])
+    (h2 : ∀ u ∈ ts, tokBare u = true) : bareOk ts = true := by
+  simp only [bareOk, Bool.and_eq_true]
+  refine ⟨List.any_eq_true.2 ?_, List.all_eq_true.2 h2⟩
+  obtain ⟨u, hu, hw⟩ := h1
+  exact ⟨u, hu, by simp only [Bool.not_eq_true']; simpa [List.isEmpty_iff] using hw⟩
+
+/-- The `^id` the line carries, if it carries one.  `none` is not an error
+here: the key of an id-less line is its title, and `keyOf` is where that rule
+lives — it needs the classifier, which is two thousand lines below. -/
+def parseToks (indent : List Char) (boxed : Bool) (g : Glyph) (ts : List Tok) :
+    Except PErr (Option Id × Glyph × RawItem) :=
   match ts.filter (fun t => isIdWord t.word) with
-  | [t] => .ok (t.word.tail, g, ⟨indent, ts⟩)
-  | []  => .error .noId
+  | [t] => .ok (some t.word.tail, g, ⟨indent, boxed, ts⟩)
+  | []  => .ok (none, g, ⟨indent, boxed, ts⟩)
   | _   => .error .manyIds
 
-def parseBody (indent rest : List Char) : Except PErr (Id × Glyph × RawItem) :=
-  match rest with
-  | '-' :: ' ' :: '[' :: c :: ']' :: tail =>
-    match Glyph.ofChar? c with
-    | none   => .error (.badState c)
-    | some g => parseToks indent g (tokenize tail)
-  | _ => .error .notAnItem
+/-- The state box at the head of an item body: the glyph character it spells
+and the bytes after `]`.  A separate function so that "this line has no box" is
+one lemma (`boxAt_none_of_head`) rather than a pattern overlap. -/
+def boxAt (t : List Char) : Option (Char × List Char) :=
+  match t with
+  | b :: c :: r :: tail => if b == '[' && r == ']' then some (c, tail) else none
+  | _                   => none
 
-def parseItem (cs : List Char) : Except PErr (Id × Glyph × RawItem) :=
+theorem boxAt_box (c : Char) (tail : List Char) :
+    boxAt ('[' :: c :: ']' :: tail) = some (c, tail) := rfl
+
+theorem boxAt_eq_some {t : List Char} {c : Char} {body : List Char}
+    (h : boxAt t = some (c, body)) : t = '[' :: c :: ']' :: body := by
+  unfold boxAt at h
+  split at h
+  · rename_i b c' r tail
+    split at h
+    · rename_i hbr
+      simp only [Bool.and_eq_true, beq_iff_eq] at hbr
+      simp only [Option.some.injEq, Prod.mk.injEq] at h
+      rw [hbr.1, hbr.2, h.1, h.2]
+    · simp at h
+  · simp at h
+
+/-- A body whose first byte is not `[` carries no box. -/
+theorem boxAt_none_of_head {c : Char} (hc : c ≠ '[') (t : List Char) :
+    boxAt (c :: t) = none := by
+  cases t with
+  | nil => rfl
+  | cons c2 t2 =>
+    cases t2 with
+    | nil => rfl
+    | cons c3 t3 =>
+      show (if c == '[' && c3 == ']' then some (c2, t3) else none) = none
+      rw [if_neg (by simp [hc])]
+
+def parseBody (indent rest : List Char) : Except PErr (Option Id × Glyph × RawItem) :=
+  match rest with
+  | '-' :: ' ' :: tail =>
+    match boxAt tail with
+    | some (c, body) =>
+      match Glyph.ofChar? c with
+      | none   => Except.error (PErr.badState c)
+      | some g => parseToks indent true g (tokenize body)
+    | none =>
+      if bareOk (tokenize (' ' :: tail))
+      then parseToks indent false Glyph.todo (tokenize (' ' :: tail))
+      else Except.error PErr.notAnItem
+  | _ => Except.error PErr.notAnItem
+
+theorem parseBody_boxed (indent : List Char) (c : Char) (tail : List Char) :
+    parseBody indent ('-' :: ' ' :: '[' :: c :: ']' :: tail) =
+      (match Glyph.ofChar? c with
+       | none   => Except.error (PErr.badState c)
+       | some g => parseToks indent true g (tokenize tail)) := rfl
+
+theorem parseBody_bare_of_noBox (indent : List Char) (tail : List Char)
+    (hb : boxAt tail = none) :
+    parseBody indent ('-' :: ' ' :: tail) =
+      (if bareOk (tokenize (' ' :: tail))
+       then parseToks indent false Glyph.todo (tokenize (' ' :: tail))
+       else Except.error PErr.notAnItem) := by
+  show (match boxAt tail with
+        | some (c, body) =>
+          (match Glyph.ofChar? c with
+           | none   => Except.error (PErr.badState c)
+           | some g => parseToks indent true g (tokenize body))
+        | none => _) = _
+  rw [hb]
+
+/-- The bare arm, reached.  A line whose first byte after `- ` is not `[`
+cannot be the boxed arm, so `parseBody` answers with the bare reading. -/
+theorem parseBody_bare_head (indent : List Char) (c : Char) (t : List Char) (hc : c ≠ '[') :
+    parseBody indent ('-' :: ' ' :: c :: t) =
+      (if bareOk (tokenize (' ' :: c :: t))
+       then parseToks indent false Glyph.todo (tokenize (' ' :: c :: t))
+       else Except.error PErr.notAnItem) :=
+  parseBody_bare_of_noBox indent (c :: t) (boxAt_none_of_head hc t)
+
+/-- The line as the **file** wrote it: the box it carried, its tokens, and the
+`^id` it spells if it spells one.  `parseLine` (end of this module) is the
+reading the **store** uses, which resolves the key. -/
+def parseItem (cs : List Char) : Except PErr (Option Id × Glyph × RawItem) :=
   parseBody (cs.takeWhile isSp) (cs.dropWhile isSp)
 
-/-- `.toOption` is banned in this kernel (it is how the FFI spike silently
-erased `est: -3`), so this is a match. -/
-def isItemLine (cs : List Char) : Bool :=
-  match parseItem cs with
-  | .ok _    => true
-  | .error _ => false
+/-- The bare arm at the level the round trips use it: on a well-shaped token
+run that satisfies `bareOk`, `parseBody` of `- ` + the run is the run. -/
+theorem parseBody_bare (indent : List Char) (ts : List Tok)
+    (hbo : bareOk ts = true) (htw : toksWf ts = true) :
+    parseBody indent ('-' :: ts.flatMap Tok.raw) = parseToks indent false Glyph.todo ts := by
+  cases ts with
+  | nil => simp [bareOk] at hbo
+  | cons v vs =>
+    have hvb : tokBare v = true := bareOk_all hbo v (by simp)
+    have hsep : v.sep ≠ [] := tokBare_sep hvb
+    have hbr : v.word.head? ≠ some '[' := tokBare_head hvb
+    have hvwf : v.wf = true := by
+      cases vs with
+      | nil => simpa [toksWf] using htw
+      | cons w ws => simp only [toksWf, Bool.and_eq_true] at htw; exact htw.1.1
+    have hword : v.word ≠ [] := by
+      unfold Tok.wf at hvwf
+      simp only [Bool.and_eq_true, Bool.not_eq_true'] at hvwf
+      simpa [List.isEmpty_iff] using hvwf.1.2
+    have hvsp : ∀ x ∈ v.sep, isSp x = true := by
+      intro x hx
+      unfold Tok.wf at hvwf
+      simp only [Bool.and_eq_true] at hvwf
+      exact List.all_eq_true.1 hvwf.1.1 x hx
+    cases hsp : v.sep with
+    | nil => exact absurd hsp hsep
+    | cons s sp' =>
+      have hs : s = ' ' := by
+        have := hvsp s (by rw [hsp]; simp)
+        simpa [isSp] using this
+      subst hs
+      cases hw : v.word with
+      | nil => exact absurd hw hword
+      | cons w0 w' =>
+        have hw0 : w0 ≠ '[' := by
+          intro hx; exact hbr (by rw [hw, hx]; rfl)
+        have hraw : (v :: vs).flatMap Tok.raw
+            = ' ' :: (sp' ++ (w0 :: (w' ++ vs.flatMap Tok.raw))) := by
+          simp [Tok.raw, hsp, hw, List.append_assoc]
+        rw [hraw]
+        cases hsp' : sp' with
+        | nil =>
+          rw [show ([] ++ (w0 :: (w' ++ vs.flatMap Tok.raw))) = w0 :: (w' ++ vs.flatMap Tok.raw)
+              from rfl]
+          rw [parseBody_bare_head indent w0 _ hw0]
+          rw [show (' ' :: w0 :: (w' ++ vs.flatMap Tok.raw)) = (v :: vs).flatMap Tok.raw
+              from by rw [hraw, hsp']; rfl]
+          rw [tokenize_toks (v :: vs) htw, if_pos hbo]
+        | cons s2 sp2 =>
+          have hs2 : s2 = ' ' := by
+            have := hvsp s2 (by rw [hsp, hsp']; simp)
+            simpa [isSp] using this
+          subst hs2
+          rw [show ((' ' :: sp2) ++ (w0 :: (w' ++ vs.flatMap Tok.raw)))
+              = ' ' :: (sp2 ++ (w0 :: (w' ++ vs.flatMap Tok.raw))) from rfl]
+          rw [parseBody_bare_head indent ' ' _ (by decide)]
+          rw [show (' ' :: ' ' :: (sp2 ++ (w0 :: (w' ++ vs.flatMap Tok.raw))))
+              = (v :: vs).flatMap Tok.raw from by rw [hraw, hsp']; rfl]
+          rw [tokenize_toks (v :: vs) htw, if_pos hbo]
 
 /-! ## Round trip A -/
 
@@ -102,48 +303,99 @@ theorem rawFor_eq_raw (i : Id) (ts : List Tok)
         · rw [if_neg hid]
       rw [hd, ih (fun u hu => h u (by simp [hu]))]
 
+/-- What an accepted token run says about the id: the glyph and the item come
+straight back, and **every id word on the line is `^i`** — vacuously when the
+line carries none, which is the id-less case the title keys. -/
+theorem parseToks_ok {indent : List Char} {b : Bool} {g : Glyph} {ts : List Tok}
+    {oi : Option Id} {g' : Glyph} {r : RawItem}
+    (h : parseToks indent b g ts = Except.ok (oi, g', r)) :
+    g' = g ∧ r = ⟨indent, b, ts⟩ ∧
+      ∀ i : Id, (∀ j, oi = some j → i = j) →
+        ts.flatMap (Tok.rawFor i) = ts.flatMap Tok.raw := by
+  unfold parseToks at h
+  split at h
+  · rename_i t hfilter
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨hoi, hgg, hr⟩ := h
+    refine ⟨hgg.symm, hr.symm, fun i hi => rawFor_eq_raw i ts ?_⟩
+    intro u hu hidw
+    have humem : u ∈ ts.filter (fun t => isIdWord t.word) := by
+      simp [List.mem_filter, hu, hidw]
+    rw [hfilter] at humem
+    simp only [List.mem_singleton] at humem
+    subst humem
+    have hhd : u.word.head? = some '^' := by simpa [isIdWord] using hidw
+    rw [hi u.word.tail hoi.symm]
+    exact head_cons_tail hhd
+  · rename_i hfilter
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨_, hgg, hr⟩ := h
+    refine ⟨hgg.symm, hr.symm, fun i _ => rawFor_eq_raw i ts ?_⟩
+    intro u hu hidw
+    have humem : u ∈ ts.filter (fun t => isIdWord t.word) := by
+      simp [List.mem_filter, hu, hidw]
+    rw [hfilter] at humem
+    simp at humem
+  · simp at h
+
 /-- **Round trip A.**  Every line the parser accepts serialises back to exactly
-the bytes it was read from — including the state box and the `^id`, which are
-*regenerated* from the status and the store key rather than copied.  §17's "a
-line that crosses a horizon crosses it byte for byte" is the representation,
-not a property tested afterwards. -/
-theorem serialize_parse (cs : List Char) (i : Id) (g : Glyph) (r : RawItem)
-    (h : parseItem cs = .ok (i, g, r)) : serializeItem i g r = cs := by
+the bytes it was read from — including the state box (**where there was one**)
+and the `^id`, which are *regenerated* from the status and the store key rather
+than copied.  §17's "a line that crosses a horizon crosses it byte for byte" is
+the representation, not a property tested afterwards.
+
+The id argument is now separate, because a line need not carry one: any key
+serialises the same bytes when the line has no `^id`, and the hypothesis only
+pins the key where the line *does* spell it. -/
+theorem serialize_parse (cs : List Char) (oi : Option Id) (g : Glyph) (r : RawItem)
+    (h : parseItem cs = .ok (oi, g, r)) (i : Id) (hi : ∀ j, oi = some j → i = j) :
+    serializeItem i g r = cs := by
   unfold parseItem parseBody at h
   split at h
-  · rename_i c tail heq
+  · rename_i tail heq
     split at h
-    · simp at h
-    · rename_i g' hg
-      unfold parseToks at h
+    · rename_i cb body hbox
+      have htail : tail = '[' :: cb :: ']' :: body := boxAt_eq_some hbox
       split at h
-      · rename_i t hfilter
-        simp only [Except.ok.injEq, Prod.mk.injEq] at h
-        obtain ⟨hi, hgg, hr⟩ := h
-        subst hgg; subst hr
-        have hid : ∀ u ∈ tokenize tail, isIdWord u.word = true → u.word = '^' :: i := by
-          intro u hu hidw
-          have humem : u ∈ (tokenize tail).filter (fun t => isIdWord t.word) := by
-            simp [List.mem_filter, hu, hidw]
-          rw [show (tokenize tail).filter (fun t => isIdWord t.word) = [t] from hfilter] at humem
-          simp only [List.mem_singleton] at humem
-          subst humem
-          have : u.word.head? = some '^' := by simpa [isIdWord] using hidw
-          rw [← hi]
-          exact head_cons_tail this
-        unfold serializeItem
-        simp only
-        rw [rawFor_eq_raw i _ hid, tokenize_raw, ofChar_char hg, ← heq,
-          List.takeWhile_append_dropWhile]
       · simp at h
+      · rename_i g₀ hg
+        obtain ⟨hgg, hr, hraw⟩ := parseToks_ok h
+        subst hgg; subst hr
+        unfold serializeItem
+        show (cs.takeWhile isSp) ++
+          ('-' :: ' ' :: '[' :: g.char :: ']' :: (tokenize body).flatMap (Tok.rawFor i)) = cs
+        rw [hraw i hi, tokenize_raw, ofChar_char hg, ← htail, ← heq,
+          List.takeWhile_append_dropWhile]
+    · rename_i hbox
+      split at h
+      · obtain ⟨hgg, hr, hraw⟩ := parseToks_ok h
+        subst hgg; subst hr
+        unfold serializeItem
+        show (cs.takeWhile isSp) ++
+          ('-' :: (tokenize (' ' :: tail)).flatMap (Tok.rawFor i)) = cs
+        rw [hraw i hi, tokenize_raw, ← heq, List.takeWhile_append_dropWhile]
       · simp at h
   · simp at h
 
+/-- Round trip A at a line that carries its `^id` — the shape every command
+path writes, and the form stage 3's callers were stated over. -/
+theorem serialize_parse_id (cs : List Char) (i : Id) (g : Glyph) (r : RawItem)
+    (h : parseItem cs = .ok (some i, g, r)) : serializeItem i g r = cs :=
+  serialize_parse cs (some i) g r h i (fun _ hj => Option.some.inj hj)
+
 /-! ## Round trip B -/
 
-/-- Decidable.  See the module header for what is *not* proved about it. -/
+/-- Decidable.  See the module header for what is *not* proved about it.
+
+`r.boxed` is the conjunct the widened grammar adds, and it is **vacuous on
+every line the old grammar could build** — before the box became optional every
+`RawItem` was boxed, so this is the same predicate on the same inputs, and
+every theorem below is the same theorem.  The bare form's round trip is
+`CanonicalKeyed`/`parseLine_serializeItem` at the end of this module: the store
+reads a bare line by its *title*, so the predicate it needs is a different one,
+and stating both here would have made one of them say the wrong thing. -/
 def CanonicalItem (i : Id) (r : RawItem) : Bool :=
-  r.indent.all isSp && toksWf r.toks &&
+  r.boxed && r.indent.all isSp && toksWf r.toks &&
     (match idToks r with
      | [t] => t.word == '^' :: i
      | _   => false)
@@ -151,10 +403,10 @@ def CanonicalItem (i : Id) (r : RawItem) : Bool :=
 /-- **Round trip B.**  Anything the kernel writes, it reads back identically.
 This is the direction that matters after an edit. -/
 theorem parse_serialize (i : Id) (g : Glyph) (r : RawItem) (h : CanonicalItem i r = true) :
-    parseItem (serializeItem i g r) = .ok (i, g, r) := by
+    parseItem (serializeItem i g r) = .ok (some i, g, r) := by
   unfold CanonicalItem at h
   simp only [Bool.and_eq_true] at h
-  obtain ⟨⟨hind, htw⟩, hids⟩ := h
+  obtain ⟨⟨⟨hb, hind⟩, htw⟩, hids⟩ := h
   -- the one id token
   cases hft : idToks r with
   | nil => rw [hft] at hids; simp at hids
@@ -173,22 +425,28 @@ theorem parse_serialize (i : Id) (g : Glyph) (r : RawItem) (h : CanonicalItem i 
       have hbody : r.toks.flatMap (Tok.rawFor i) = r.toks.flatMap Tok.raw :=
         rawFor_eq_raw i r.toks hid
       have hindsp : ∀ c ∈ r.indent, isSp c = true := fun c hc => List.all_eq_true.1 hind c hc
+      have hidt : r.toks.filter (fun t => isIdWord t.word) = [t] := hft
+      have htail : t.word.tail = i := by rw [hids]; rfl
       have hhd : ∀ c, ('-' :: ' ' :: '[' :: g.char :: ']' :: r.toks.flatMap (Tok.rawFor i)).head?
           = some c → isSp c = false := by
         intro c hc; simp only [List.head?_cons, Option.some.injEq] at hc; subst hc; rfl
       have hsplit := takeWhile_append_all isSp r.indent
         ('-' :: ' ' :: '[' :: g.char :: ']' :: r.toks.flatMap (Tok.rawFor i)) hindsp hhd
+      have hre : (⟨r.indent, true, r.toks⟩ : RawItem) = r := by rw [← hb]
       unfold parseItem serializeItem
-      rw [hsplit.1, hsplit.2]
-      unfold parseBody
-      simp only [glyph_roundtrip]
+      rw [show (r.indent ++ '-' ::
+          (if r.boxed then ' ' :: '[' :: g.char :: ']' :: r.toks.flatMap (Tok.rawFor i)
+           else r.toks.flatMap (Tok.rawFor i)))
+          = r.indent ++ ('-' :: ' ' :: '[' :: g.char :: ']' :: r.toks.flatMap (Tok.rawFor i))
+          from by rw [hb]; rfl]
+      rw [hsplit.1, hsplit.2,
+        parseBody_boxed r.indent g.char (r.toks.flatMap (Tok.rawFor i)), glyph_roundtrip]
+      show parseToks r.indent true g (tokenize (r.toks.flatMap (Tok.rawFor i))) = _
       rw [hbody, tokenize_toks r.toks htw]
       unfold parseToks
-      have hidt : r.toks.filter (fun t => isIdWord t.word) = [t] := hft
       rw [hidt]
-      show Except.ok (t.word.tail, g, (⟨r.indent, r.toks⟩ : RawItem)) = Except.ok (i, g, r)
-      have htail : t.word.tail = i := by rw [hids]; rfl
-      rw [htail]
+      show Except.ok (some t.word.tail, g, (⟨r.indent, true, r.toks⟩ : RawItem)) = _
+      rw [htail, hre]
 
 /-! ## Views: the estimate
 
@@ -272,8 +530,8 @@ def hasEst (r : RawItem) : Bool := r.toks.any (fun t => isEstKey t.word)
 
 /-- `tm edit ^id est=v`: write the slot the view reads. -/
 def setEst (v : Nat) (r : RawItem) : RawItem :=
-  if hasEst r then ⟨r.indent, setEstIn v r.toks⟩
-  else ⟨r.indent, insertBeforeId (estWord v) r.toks⟩
+  if hasEst r then ⟨r.indent, r.boxed, setEstIn v r.toks⟩
+  else ⟨r.indent, r.boxed, insertBeforeId (estWord v) r.toks⟩
 
 /-- The one thing `est:` values must do: survive a write followed by a read. -/
 theorem unitValue_estWord (bm v : Nat) : unitValue bm ((estWord v).drop 4) = some v := by
@@ -372,8 +630,8 @@ def setLeadWord (w : List Char) (r : RawItem) : RawItem :=
     if isCiWord t.word then
       match ts with
       | []       => r
-      | u :: us  => ⟨r.indent, t :: ⟨u.sep, w⟩ :: us⟩
-    else ⟨r.indent, ⟨t.sep, w⟩ :: ts⟩
+      | u :: us  => ⟨r.indent, r.boxed, t :: ⟨u.sep, w⟩ :: us⟩
+    else ⟨r.indent, r.boxed, ⟨t.sep, w⟩ :: ts⟩
 
 /-- **The shipped bug, as a theorem.**  With an `est:` token present, writing
 the leading estimate changes nothing the kernel reads.  Lean will not let you
@@ -383,7 +641,7 @@ theorem lead_edit_is_silent :
     ∃ (r : RawItem) (w : List Char) (bm : Nat),
       viewRemaining bm (setLeadWord w r) = viewRemaining bm r ∧
       viewRemaining bm r ≠ unitValue bm w := by
-  refine ⟨⟨[], [⟨[' '], ['6', 'b']⟩, ⟨[' '], ['e','s','t',':','1','b']⟩,
+  refine ⟨⟨[], true, [⟨[' '], ['6', 'b']⟩, ⟨[' '], ['e','s','t',':','1','b']⟩,
               ⟨[' '], ['^','m','1']⟩]⟩, ['3', 'b'], 90, ?_, ?_⟩ <;> decide
 
 /-! ## The setters preserve `CanonicalItem`
@@ -569,7 +827,7 @@ theorem idWords_setEstIn (v : Nat) : ∀ ts : List Tok,
         by_cases hid : isIdWord u.word = true <;> simp [hid, ih]
 
 theorem canonical_iff (i : Id) (r : RawItem) : CanonicalItem i r = true ↔
-    (r.indent.all isSp = true ∧ toksWf r.toks = true ∧
+    (r.boxed = true ∧ r.indent.all isSp = true ∧ toksWf r.toks = true ∧
       (idToks r).map Tok.word = ['^' :: i]) := by
   unfold CanonicalItem idToks
   cases r.toks.filter (fun t => isIdWord t.word) with
@@ -584,8 +842,9 @@ canonical line to a canonical line — the id token survives, every token stays
 well shaped, and no two words run together. -/
 theorem setEst_canonical (i : Id) (v : Nat) (r : RawItem) (h : CanonicalItem i r = true) :
     CanonicalItem i (setEst v r) = true := by
-  obtain ⟨hind, htw, hids⟩ := (canonical_iff i r).1 h
-  refine (canonical_iff i (setEst v r)).2 ⟨?_, ?_, ?_⟩
+  obtain ⟨hb, hind, htw, hids⟩ := (canonical_iff i r).1 h
+  refine (canonical_iff i (setEst v r)).2 ⟨?_, ?_, ?_, ?_⟩
+  · unfold setEst; by_cases hE : hasEst r = true <;> simp [hE, hb]
   · unfold setEst; by_cases hE : hasEst r = true <;> simp [hE, hind]
   · unfold setEst
     by_cases hE : hasEst r = true
@@ -2451,8 +2710,19 @@ def classifyPhase0 : List Tok → List TokKind
     | some c => TokKind.ci c :: classifyPhase1 ts
     | none   => classifyPhase1 (t :: ts)
 
-/-- The token grammar applied to a line. -/
-def kinds (r : RawItem) : List TokKind := classifyPhase0 r.toks
+/-- The line's tokens, classified.  **The two positional slots are read only
+after a state box** — `grammar.rs:387` guards them with `if has_state`, and
+§4.1's EBNF puts them after `state SP`.  So a bare line starts at phase 2 and
+`- 5 min stretch win:09:00-17:00 dur:5m` has the title `5 min stretch`, no ci
+and no leading estimate, which is what the fork reads. -/
+def kinds (r : RawItem) : List TokKind :=
+  if r.boxed then classifyPhase0 r.toks else classifyPhase2 r.toks
+
+@[simp] theorem kinds_boxed (r : RawItem) (h : r.boxed = true) :
+    kinds r = classifyPhase0 r.toks := by simp [kinds, h]
+
+@[simp] theorem kinds_bare (r : RawItem) (h : r.boxed = false) :
+    kinds r = classifyPhase2 r.toks := by simp [kinds, h]
 
 /-! ### Where a word can and cannot be classified
 
@@ -2876,6 +3146,30 @@ def titleSegment (r : RawItem) : List (List Char) := (kinds r).filterMap kTitle
 /-- §4.1: "tokens the parser cannot classify stay in the title". -/
 def titleWords (r : RawItem) : List (List Char) := (kinds r).filterMap kTitleWord
 
+/-- The words a title key is built from: the title words with the empty one a
+trailing run of spaces leaves dropped, so `- a ` and `- a` key the same. -/
+def keyWords (r : RawItem) : List (List Char) :=
+  (titleWords r).filter (fun w => !w.isEmpty)
+
+/-- **The title key.**  `tree.rs`'s `Id(title)`: the title words joined by
+single spaces.  `none` when the line has no title text at all — the one shape
+that has no key, refused by name as `PErr.noId` rather than given the empty id.
+
+Total and deterministic: it is a fold over one list, it reads nothing but the
+line, and two lines with the same tokens and the same box have the same key
+(`titleKey_congr`).  It is **not** stable under an edit that rewords the title
+— that is the fork's behaviour too (`Tree::key_of` recomputes it on every
+build) and it is why `Plan.keysWf` is checked rather than assumed. -/
+def titleKey (r : RawItem) : Option Id :=
+  match keyWords r with
+  | []      => none
+  | w :: ws => some (ws.foldl (fun acc u => acc ++ ' ' :: u) w)
+
+theorem titleKey_congr (r r' : RawItem) (hb : r.boxed = r'.boxed) (ht : r.toks = r'.toks) :
+    titleKey r = titleKey r' := by
+  unfold titleKey keyWords titleWords kinds
+  rw [hb, ht]
+
 def tagWords (r : RawItem) : List (List Char) := (kinds r).filterMap kTag
 
 def flagsOf (r : RawItem) : List Flag := (kinds r).filterMap kFlag
@@ -3226,12 +3520,21 @@ theorem rawKeyPair_none_of_notStarts {w : List Char} (h : startsToken w = false)
 /-- **The key views are a plain scan.**  One instance of the token-grammar
 induction; it is the theorem the setters rest on. -/
 theorem keyPairs_raw (r : RawItem) :
-    keyPairs r = r.toks.filterMap (fun t => rawKeyPair t.word) :=
-  extract_phase0 kpOne rawKeyPair kpOne_classifyWord
-    (fun _ w h => ⟨rfl, rawKeyPair_none_of_digit (ciSlot_head h)⟩)
-    (fun _ w h => ⟨rfl, rawKeyPair_none_of_digit (estSlot_head h)⟩)
-    (fun w h => ⟨rfl, rawKeyPair_none_of_notStarts h⟩)
-    r.toks
+    keyPairs r = r.toks.filterMap (fun t => rawKeyPair t.word) := by
+  unfold keyPairs kinds
+  cases hb : r.boxed with
+  | true =>
+      simp only [if_pos]
+      exact extract_phase0 kpOne rawKeyPair kpOne_classifyWord
+        (fun _ w h => ⟨rfl, rawKeyPair_none_of_digit (ciSlot_head h)⟩)
+        (fun _ w h => ⟨rfl, rawKeyPair_none_of_digit (estSlot_head h)⟩)
+        (fun w h => ⟨rfl, rawKeyPair_none_of_notStarts h⟩)
+        r.toks
+  | false =>
+      simp only [Bool.false_eq_true, if_false]
+      exact extract_phase2 kpOne rawKeyPair kpOne_classifyWord
+        (fun w h => ⟨rfl, rawKeyPair_none_of_notStarts h⟩)
+        r.toks
 
 
 /-! ## The setters, and `view ∘ set = id`
@@ -3327,12 +3630,18 @@ def hasKeyTok (k : Key) (r : RawItem) : Bool := r.toks.any (isKeyTok k)
 the `^id` (which is where `insertBeforeId` puts it, with the separator care
 that the `est:` insert branch needed). -/
 def setKey (k : Key) (v : List Char) (r : RawItem) : RawItem :=
-  if hasKeyTok k r then ⟨r.indent, setKeyIn k v r.toks⟩
-  else ⟨r.indent, insertBeforeId (keyWord k v) r.toks⟩
+  if hasKeyTok k r then ⟨r.indent, r.boxed, setKeyIn k v r.toks⟩
+  else ⟨r.indent, r.boxed, insertBeforeId (keyWord k v) r.toks⟩
+
+/-- **A setter never adds or removes a state box.**  Every §4.1 key setter is
+`setKey`, so this one line is why `Plan.boxesWf` survives every `tm edit`. -/
+@[simp] theorem setKey_boxed (k : Key) (v : List Char) (r : RawItem) :
+    (setKey k v r).boxed = r.boxed := by
+  unfold setKey; split <;> rfl
 
 /-- `tm edit ^id <key>=` — remove the key's tokens. -/
 def unsetKey (k : Key) (r : RawItem) : RawItem :=
-  ⟨r.indent, r.toks.filter (fun t => !isKeyTok k t)⟩
+  ⟨r.indent, r.boxed, r.toks.filter (fun t => !isKeyTok k t)⟩
 
 theorem setKeyIn_cons_pos (k : Key) (v : List Char) (t : Tok) (ts : List Tok)
     (h : isKeyTok k t = true) : setKeyIn k v (t :: ts) = ⟨t.sep, keyWord k v⟩ :: ts := by
@@ -3653,10 +3962,10 @@ kernel reports is one block.  A setter that wrote the *leading* slot would
 change the first number and leave the answer at `1b` — success reported,
 nothing changed. -/
 theorem est_key_overrides_the_leading_estimate :
-    estLeadOf ⟨[], [⟨[' '], ['6','b']⟩, ⟨[' '], ['R','e','a','d']⟩,
+    estLeadOf ⟨[], true, [⟨[' '], ['6','b']⟩, ⟨[' '], ['R','e','a','d']⟩,
                     ⟨[' '], ['e','s','t',':','1','b']⟩, ⟨[' '], ['^','t','3']⟩]⟩
         = some (.simple 6 .blocks) ∧
-      viewRemainingDur ⟨[], [⟨[' '], ['6','b']⟩, ⟨[' '], ['R','e','a','d']⟩,
+      viewRemainingDur ⟨[], true, [⟨[' '], ['6','b']⟩, ⟨[' '], ['R','e','a','d']⟩,
                             ⟨[' '], ['e','s','t',':','1','b']⟩, ⟨[' '], ['^','t','3']⟩]⟩
         = some (.simple 1 .blocks) := by
   constructor <;> decide
@@ -3665,10 +3974,10 @@ theorem est_key_overrides_the_leading_estimate :
 positional digit are two slots; removing the key leaves the digit, so a
 complete `--unset ci` has to clear both.  Here is a line where it matters. -/
 theorem unset_ci_key_leaves_the_positional_digit :
-    viewCi ⟨[], [⟨[' '], ['4']⟩, ⟨[' '], ['R','e','a','d']⟩,
+    viewCi ⟨[], true, [⟨[' '], ['4']⟩, ⟨[' '], ['R','e','a','d']⟩,
                  ⟨[' '], ['c','i',':','2']⟩, ⟨[' '], ['^','t','3']⟩]⟩
         = some ⟨2, by decide⟩ ∧
-      viewCi (unsetKey .ci ⟨[], [⟨[' '], ['4']⟩, ⟨[' '], ['R','e','a','d']⟩,
+      viewCi (unsetKey .ci ⟨[], true, [⟨[' '], ['4']⟩, ⟨[' '], ['R','e','a','d']⟩,
                                  ⟨[' '], ['c','i',':','2']⟩, ⟨[' '], ['^','t','3']⟩]⟩)
         = some ⟨4, by decide⟩ := by
   constructor <;> decide
@@ -3814,8 +4123,9 @@ theorem idWords_insertBeforeId_gen (w : List Char) (hw : isIdWord w = false) : �
 theorem setKey_canonical (i : Id) (k : Key) (v : List Char) (r : RawItem)
     (hv : wordWf v = true) (h : CanonicalItem i r = true) :
     CanonicalItem i (setKey k v r) = true := by
-  obtain ⟨hind, htw, hids⟩ := (canonical_iff i r).1 h
-  refine (canonical_iff i (setKey k v r)).2 ⟨?_, ?_, ?_⟩
+  obtain ⟨hb, hind, htw, hids⟩ := (canonical_iff i r).1 h
+  refine (canonical_iff i (setKey k v r)).2 ⟨?_, ?_, ?_, ?_⟩
+  · unfold setKey; by_cases hE : hasKeyTok k r = true <;> simp [hE, hb]
   · unfold setKey; by_cases hE : hasKeyTok k r = true <;> simp [hE, hind]
   · unfold setKey
     by_cases hE : hasKeyTok k r = true
@@ -3862,7 +4172,7 @@ def insertAfterId (w : List Char) : List Tok → Option (List Tok)
     else (insertAfterId w us).map (fun r => u :: r)
 
 def setFlag (f : Flag) (r : RawItem) : Option RawItem :=
-  (insertAfterId (Flag.name f) r.toks).map (fun ts => ⟨r.indent, ts⟩)
+  (insertAfterId (Flag.name f) r.toks).map (fun ts => ⟨r.indent, r.boxed, ts⟩)
 
 theorem isIdWord_startsToken {w : List Char} (h : isIdWord w = true) : startsToken w = true := by
   unfold isIdWord at h
@@ -3921,14 +4231,25 @@ theorem view_set_flag (f : Flag) (r r' : RawItem) (h : setFlag f r = some r') :
       rw [hi] at h
       simp only [Option.map_some, Option.some.injEq] at h
       obtain ⟨a, u, b, hb, hid⟩ := insertAfterId_shape (Flag.name f) r.toks ts hi
-      obtain ⟨ks, hks⟩ := classifyPhase0_suffix a u (⟨[' '], Flag.name f⟩ :: b)
-        (isIdWord_startsToken hid)
-      have hkinds : kinds r' = ks ++ classifyPhase3 (u :: ⟨[' '], Flag.name f⟩ :: b) := by
+      have hkinds : ∃ ks, kinds r' = ks ++ classifyPhase3 (u :: ⟨[' '], Flag.name f⟩ :: b) := by
         unfold kinds
         rw [← h]
-        show classifyPhase0 ts = _
-        rw [hb]
-        exact hks
+        cases hbx : (⟨r.indent, r.boxed, ts⟩ : RawItem).boxed with
+        | true =>
+            obtain ⟨ks, hks⟩ := classifyPhase0_suffix a u (⟨[' '], Flag.name f⟩ :: b)
+              (isIdWord_startsToken hid)
+            refine ⟨ks, ?_⟩
+            simp only [hbx, if_pos]
+            show classifyPhase0 ts = _
+            rw [hb]; exact hks
+        | false =>
+            obtain ⟨ks, hks⟩ := classifyPhase2_suffix u (⟨[' '], Flag.name f⟩ :: b)
+              (isIdWord_startsToken hid) a
+            refine ⟨ks, ?_⟩
+            simp only [hbx, Bool.false_eq_true, if_false]
+            show classifyPhase2 ts = _
+            rw [hb]; exact hks
+      obtain ⟨ks, hkinds⟩ := hkinds
       have hmem : TokKind.flag f ∈ kinds r' := by
         rw [hkinds]
         refine List.mem_append_right _ ?_
@@ -4066,7 +4387,7 @@ def midToks (i : Id) (f : Fields) : List Tok :=
 def renderToks (i : Id) (f : Fields) : List Tok :=
   ciToks f ++ estToks f ++ titleToks f ++ midToks i f
 
-def renderItem (i : Id) (f : Fields) : RawItem := ⟨[], renderToks i f⟩
+def renderItem (i : Id) (f : Fields) : RawItem := ⟨[], true, renderToks i f⟩
 
 /-! ### The key half: every `key:` renders and parses back
 
@@ -5476,11 +5797,10 @@ def specLine : List Char := ['-',' ','[',' ',']',' ','4',' ','2','b',' ','E','x'
 def itemOf (cs : List Char) : RawItem :=
   match parseItem cs with
   | .ok (_, _, r) => r
-  | .error _      => ⟨[], []⟩
+  | .error _      => ⟨[], true, []⟩
 
 def specItem : RawItem := itemOf specLine
 
-theorem spec_line_is_an_item : isItemLine specLine = true := by decide
 theorem spec_line_ci : viewCi specItem = some ⟨4, by decide⟩ := by decide
 theorem spec_line_leading_estimate : estLeadOf specItem = some (.simple 2 .blocks) := by decide
 /-- `est:` overrides the leading estimate — §4.1, and C1. -/
@@ -5872,7 +6192,7 @@ theorem renderItem_canonical (i : Id) (f : Fields) (h : Fields.canonicalWf i f =
     CanonicalItem i (renderItem i f) = true := by
   have hwf : Fields.wf i f = true := by
     simp only [Fields.canonicalWf, Bool.and_eq_true] at h; exact h.1
-  refine (canonical_iff i (renderItem i f)).2 ⟨rfl, ?_, ?_⟩
+  refine (canonical_iff i (renderItem i f)).2 ⟨rfl, rfl, ?_, ?_⟩
   · show toksWf (renderToks i f) = true
     rw [renderToks_words]
     exact toksWf_tokOf _ (renderWords_wordWf i f hwf)
@@ -6201,8 +6521,8 @@ theorem idWords_filter_notKey (k : Key) : ∀ ts : List Tok,
 /-- **`tm edit ^id <key>=` takes a canonical line to a canonical line.** -/
 theorem unsetKey_canonical (i : Id) (k : Key) (r : RawItem) (h : CanonicalItem i r = true) :
     CanonicalItem i (unsetKey k r) = true := by
-  obtain ⟨hind, htw, hids⟩ := (canonical_iff i r).1 h
-  refine (canonical_iff i (unsetKey k r)).2 ⟨hind, ?_, ?_⟩
+  obtain ⟨hb, hind, htw, hids⟩ := (canonical_iff i r).1 h
+  refine (canonical_iff i (unsetKey k r)).2 ⟨hb, hind, ?_, ?_⟩
   · exact toksWf_filter _ r.toks htw
   · show ((r.toks.filter (fun t => !isKeyTok k t)).filter
       (fun t => isIdWord t.word)).map Tok.word = _
@@ -6826,4 +7146,261 @@ theorem remainingOf_setDemoted (bm : Nat) (ss : List Stamp) (r : RawItem) :
       simp only [List.append_nil]
 
 end Field
+
+/-! ## The store's reading of a line: the key
+
+`parseItem` answers with the `^id` the **file** spells.  The **store** needs a
+key for every line, and §4.1 leaves `routines.md`, `optional.md` and
+`inbox.md` without one by design, so the key rule is:
+
+* one `^id` on the line → that id (unchanged, and the id is *regenerated* from
+  the store key when the line is written back, so the two cannot drift);
+* no `^id` → the **title key** (`Field.titleKey`) — `tree.rs`'s `Id(title)`,
+  which is how the CLI names a routine (`tm skip lunch`);
+* no `^id` and no title → **`PErr.noId`**, by name.  An empty key is a lie and
+  §5.7 does not allow one;
+* more than one `^id` → `PErr.manyIds`, unchanged.
+
+**Two lines that resolve to one key are refused by name** — `dupId` when they
+are in one file, `notADemotion` otherwise — and that is a deliberate divergence
+from the fork, which falls back to a `file:line` key for the *later* of the two.
+The fork's rule depends on the order the files were listed in, which is the
+defect §5.6 exists to forbid; a refusal that names the key does not. -/
+
+/-- The key an item line resolves to, from the id it spells and its bytes.
+
+**The title key is the bare form's key.**  A line that carries a state box and
+no `^id` is still `PErr.noId`: §4.1 omits the box and the id together, in the
+same three files, and a boxed line is a tracked item whose id the kernel does
+not invent.  `tree.rs`'s `key_of` does not look at the box and would key such a
+line by its title with a `missing-id` warning; that divergence is deliberate,
+it is the stricter side, and cheat 174 pins it. -/
+def keyOf (oi : Option Id) (r : RawItem) : Except PErr Id :=
+  match oi with
+  | some i => Except.ok i
+  | none   =>
+    if r.boxed then Except.error PErr.noId
+    else
+      match Field.titleKey r with
+      | some k => Except.ok k
+      | none   => Except.error PErr.noId
+
+/-- The line as the **store** reads it: the key, the box, the tokens. -/
+def parseLine (cs : List Char) : Except PErr (Id × Glyph × RawItem) :=
+  match parseItem cs with
+  | Except.error e       => Except.error e
+  | Except.ok (oi, g, r) =>
+    match keyOf oi r with
+    | Except.ok i    => Except.ok (i, g, r)
+    | Except.error e => Except.error e
+
+/-- `.toOption` is banned in this kernel (it is how the FFI spike silently
+erased `est: -3`), so this is a match. -/
+def isItemLine (cs : List Char) : Bool :=
+  match parseLine cs with
+  | Except.ok _    => true
+  | Except.error _ => false
+
+theorem spec_line_is_an_item : isItemLine Field.specLine = true := by decide
+
+/-! ### What the widened grammar reads, and what it still refuses
+
+Eight lines, `decide`d, so the kernel checks them every time it compiles.  The
+first three are §4.1's three box-less files; the rest are the shapes the
+widening must **not** have swallowed. -/
+
+/-- A `routines.md` line: an item, keyed by its title, with no box. -/
+theorem a_routine_line_is_an_item : isItemLine "- lunch win:11:30-13:30 dur:30m every:day".toList = true := by
+  decide
+
+/-- An `optional.md` line — a two-word title, joined by a single space. -/
+theorem an_optional_line_is_keyed_by_its_whole_title :
+    parseLine "- Severance S3E4  dur:1h".toList =
+      Except.ok ("Severance S3E4".toList, Glyph.todo,
+        ⟨[], false, tokenize " Severance S3E4  dur:1h".toList⟩) := by rfl
+
+/-- **The positional slots are not read without a box** (`grammar.rs:387`), so
+the `5` is title text and not a ci.  This is the line the fork's own
+`assert_canonical_round_trip` uses. -/
+theorem a_bare_line_has_no_positional_slots :
+    parseLine "- 5 min stretch win:09:00-17:00 dur:5m".toList =
+      Except.ok ("5 min stretch".toList, Glyph.todo,
+        ⟨[], false, tokenize " 5 min stretch win:09:00-17:00 dur:5m".toList⟩) := by rfl
+
+/-- An empty bullet is **not** an item (`rest.trim().is_empty()`), so a blank
+list marker in a month file does not refuse the plan. -/
+theorem an_empty_bullet_is_prose :
+    parseLine "- ".toList = Except.error PErr.notAnItem ∧
+      parseLine "-   ".toList = Except.error PErr.notAnItem := ⟨rfl, rfl⟩
+
+/-- A YAML front-matter rule is not an item either: the bare arm wants `- `. -/
+theorem a_front_matter_rule_is_prose :
+    parseLine "---".toList = Except.error PErr.notAnItem := rfl
+
+/-- **Cheat 123 still holds.**  A line the fork reads as boxed and this kernel
+does not is prose, not an item whose title begins `[`. -/
+theorem a_line_with_a_bracket_is_not_a_bare_item :
+    parseLine "-  [ ] 2 30m Spaced ^a1".toList = Except.error PErr.notAnItem ∧
+      parseLine "- read the [Lean] book".toList = Except.error PErr.notAnItem := ⟨rfl, rfl⟩
+
+/-- A bare line may still spell its own `^id`, and then that is the key. -/
+theorem a_bare_line_may_carry_its_id :
+    parseLine "- lunch ^lu1 win:11:30-13:30".toList =
+      Except.ok (['l','u','1'], Glyph.todo,
+        ⟨[], false, tokenize " lunch ^lu1 win:11:30-13:30".toList⟩) := by rfl
+
+/-- And the three refusals the boundary had are unchanged: a bad box, two ids,
+and a line with neither an id nor a title. -/
+theorem the_three_refusals_are_unchanged :
+    parseLine "- [Z] bad ^a1".toList = Except.error (PErr.badState 'Z') ∧
+      parseLine "- two ids ^a1 ^a2".toList = Except.error PErr.manyIds ∧
+      parseLine "- #tag".toList = Except.error PErr.noId ∧
+      parseLine "- [ ] no id here".toList = Except.error PErr.noId := ⟨rfl, rfl, rfl, rfl⟩
+
+theorem parseLine_ok {cs : List Char} {i : Id} {g : Glyph} {r : RawItem}
+    (h : parseLine cs = Except.ok (i, g, r)) :
+    ∃ oi, parseItem cs = Except.ok (oi, g, r) ∧ keyOf oi r = Except.ok i := by
+  unfold parseLine at h
+  split at h
+  · simp at h
+  · rename_i oi g' r' hp
+    split at h
+    · rename_i i' hk
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨hi, hg, hr⟩ := h
+      subst hi; subst hg; subst hr
+      exact ⟨oi, hp, hk⟩
+    · simp at h
+
+/-- **Round trip A, at the store's reading.**  Whatever key the line resolved
+to, writing it back gives the bytes it was read from — the id-less case
+included, where the key is not written into the line at all. -/
+theorem serialize_parseLine (cs : List Char) (i : Id) (g : Glyph) (r : RawItem)
+    (h : parseLine cs = Except.ok (i, g, r)) : serializeItem i g r = cs := by
+  obtain ⟨oi, hp, hk⟩ := parseLine_ok h
+  refine serialize_parse cs oi g r hp i (fun j hj => ?_)
+  subst hj
+  unfold keyOf at hk
+  simpa using hk.symm
+
+/-- **The store's canonicity.**  `CanonicalItem` says the line carries its own
+`^id`; this says the weaker and wider thing the store needs — the key the line
+*reads back with* is `i`, whether it spells an id or is keyed by its title. -/
+def CanonicalKeyed (i : Id) (r : RawItem) : Bool :=
+  r.indent.all isSp && toksWf r.toks && (r.boxed || bareOk r.toks) &&
+    (match idToks r with
+     | [t] => t.word == '^' :: i
+     | []  => !r.boxed && Field.titleKey r == some i
+     | _   => false)
+
+/-- **Round trip B at the store's reading**, which is the one the bare form
+needs: what the kernel writes for key `i`, it reads back **under that key**.
+The `CanonicalItem` version above cannot say this — its predicate pins the line
+to an `^id` it carries, and a routines line carries none. -/
+theorem parseLine_serializeItem (i : Id) (g : Glyph) (r : RawItem)
+    (hbox : r.boxed = true ∨ g = Glyph.todo) (h : CanonicalKeyed i r = true) :
+    parseLine (serializeItem i g r) = Except.ok (i, g, r) := by
+  unfold CanonicalKeyed at h
+  simp only [Bool.and_eq_true] at h
+  obtain ⟨⟨⟨hind, htw⟩, hbare⟩, hids⟩ := h
+  have hindsp : ∀ c ∈ r.indent, isSp c = true := fun c hc => List.all_eq_true.1 hind c hc
+  -- the id words, if any, all spell `i`
+  have hid : ∀ v ∈ r.toks, isIdWord v.word = true → v.word = '^' :: i := by
+    intro v hv hidw
+    have hmem : v ∈ idToks r := by simp [idToks, List.mem_filter, hv, hidw]
+    cases hft : idToks r with
+    | nil => rw [hft] at hmem; simp at hmem
+    | cons t rest =>
+      cases rest with
+      | cons u us => rw [hft] at hids; simp at hids
+      | nil =>
+        rw [hft] at hmem hids
+        simp only [List.mem_singleton] at hmem
+        simp only [beq_iff_eq] at hids
+        subst hmem; exact hids
+  have hbody : r.toks.flatMap (Tok.rawFor i) = r.toks.flatMap Tok.raw := rawFor_eq_raw i r.toks hid
+  -- the parse of the bytes, before the key is resolved
+  have hparse : parseItem (serializeItem i g r) =
+      Except.ok (((idToks r).head?.map (fun t => t.word.tail)), g, r) := by
+    cases hb : r.boxed with
+    | true =>
+      have hre : (⟨r.indent, true, r.toks⟩ : RawItem) = r := by rw [← hb]
+      have hhd : ∀ c, ('-' :: ' ' :: '[' :: g.char :: ']' :: r.toks.flatMap (Tok.rawFor i)).head?
+          = some c → isSp c = false := by
+        intro c hc; simp only [List.head?_cons, Option.some.injEq] at hc; subst hc; rfl
+      have hsplit := takeWhile_append_all isSp r.indent
+        ('-' :: ' ' :: '[' :: g.char :: ']' :: r.toks.flatMap (Tok.rawFor i)) hindsp hhd
+      unfold parseItem serializeItem
+      rw [show (r.indent ++ '-' ::
+          (if r.boxed then ' ' :: '[' :: g.char :: ']' :: r.toks.flatMap (Tok.rawFor i)
+           else r.toks.flatMap (Tok.rawFor i)))
+          = r.indent ++ ('-' :: ' ' :: '[' :: g.char :: ']' :: r.toks.flatMap (Tok.rawFor i))
+          from by rw [hb]; rfl]
+      rw [hsplit.1, hsplit.2,
+        parseBody_boxed r.indent g.char (r.toks.flatMap (Tok.rawFor i)), glyph_roundtrip]
+      show parseToks r.indent true g (tokenize (r.toks.flatMap (Tok.rawFor i))) = _
+      rw [hbody, tokenize_toks r.toks htw]
+      unfold parseToks idToks
+      cases hft : r.toks.filter (fun t => isIdWord t.word) with
+      | nil => simp [hre]
+      | cons t rest =>
+          cases rest with
+          | nil => simp only [hre, List.head?_cons, Option.map_some]
+          | cons u us => simp only [idToks, hft] at hids; simp at hids
+    | false =>
+      have hg : g = Glyph.todo := by
+        rcases hbox with hx | hx
+        · rw [hb] at hx; exact absurd hx (by simp)
+        · exact hx
+      have hbo : bareOk r.toks = true := by rw [hb] at hbare; simpa using hbare
+      have hre : (⟨r.indent, false, r.toks⟩ : RawItem) = r := by rw [← hb]
+      have hhd : ∀ c, ('-' :: r.toks.flatMap (Tok.rawFor i)).head? = some c → isSp c = false := by
+        intro c hc; simp only [List.head?_cons, Option.some.injEq] at hc; subst hc; rfl
+      have hsplit := takeWhile_append_all isSp r.indent
+        ('-' :: r.toks.flatMap (Tok.rawFor i)) hindsp hhd
+      unfold parseItem serializeItem
+      rw [show (r.indent ++ '-' ::
+          (if r.boxed then ' ' :: '[' :: g.char :: ']' :: r.toks.flatMap (Tok.rawFor i)
+           else r.toks.flatMap (Tok.rawFor i)))
+          = r.indent ++ ('-' :: r.toks.flatMap (Tok.rawFor i))
+          from by rw [hb]; rfl]
+      rw [hsplit.1, hsplit.2, hbody, parseBody_bare r.indent r.toks hbo htw]
+      unfold parseToks idToks
+      rw [hg]
+      cases hft : r.toks.filter (fun t => isIdWord t.word) with
+      | nil => simp [hre]
+      | cons t rest =>
+          cases rest with
+          | nil => simp only [hre, List.head?_cons, Option.map_some]
+          | cons u us => simp only [idToks, hft] at hids; simp at hids
+  -- and the key it resolves to
+  unfold parseLine
+  rw [hparse]
+  cases hft : idToks r with
+  | nil =>
+      rw [hft] at hids
+      simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at hids
+      simp [hft, keyOf, hids.1, hids.2]
+  | cons t rest =>
+      cases rest with
+      | cons u us => rw [hft] at hids; simp at hids
+      | nil =>
+          rw [hft] at hids
+          simp only [beq_iff_eq] at hids
+          simp [hft, keyOf, hids]
+
+theorem canonicalKeyed_of_canonical (i : Id) (r : RawItem) (h : CanonicalItem i r = true) :
+    CanonicalKeyed i r = true := by
+  obtain ⟨hb, hind, htw, hids⟩ := (canonical_iff i r).1 h
+  unfold CanonicalKeyed
+  cases hft : idToks r with
+  | nil => rw [hft] at hids; simp at hids
+  | cons t rest =>
+    cases rest with
+    | cons u rs => rw [hft] at hids; simp at hids
+    | nil =>
+      rw [hft] at hids
+      simp only [List.map_cons, List.map_nil, List.cons.injEq, and_true] at hids
+      simp [hind, htw, hb, hft, hids]
+
 end Tm

@@ -838,7 +838,7 @@ by computation on every command's post-state:
 | `after:` total | 5.5 | `dep_names_an_item` |
 | `after:` acyclic | 5.5 | `afterAcyclic_sound` and `afterAcyclic_complete`; `no_deadlocked_set` |
 | section discipline | 4.2 | `a_demoted_section_is_a_month_section`, `a_pinned_section_is_a_day_section`, `a_day_file_holds_only_pinned_items` |
-| per-file-kind shapes | 4.3 | `month_items_are_outcomes`, `calendar_lines_are_intervals`, `routine_lines_are_open`, `routine_lines_have_a_window_or_after_done`, `optional_items_declare_a_duration` |
+| per-file-kind shapes | 4.3 | `month_items_are_outcomes`, `calendar_lines_are_intervals`, `routine_lines_have_a_window_or_after_done`, `optional_items_declare_a_duration` *(W-15/K3a: `routine_lines_are_open` is gone — refuted as `a_routine_line_need_not_carry_the_open_flag`, and `optional_items_declare_a_duration` lost its scope conjunct for the same reason; the file answers §4.3's "every line is `open`", not the flag)* |
 
 **Acyclicity over a finite domain, without Mathlib, is the substance**, and it
 is done twice because the two relations have different shapes.
@@ -28897,3 +28897,302 @@ on a scratch tree outside the repo, with `--now` fixing the clock, and was drive
 **through** the fix as well as into the defect.
 
 **Highest on this branch:** gap **396**, cheat **173**, parity **P37**.
+
+---
+
+## Stage 6, W-15 track K step K3a, 2026-09-17: the item grammar is widened — the state box is optional, and an id-less line is keyed by its title
+
+**D31, gap 301.** `Line.lean`'s `parseBody` required `- [<state>]` and `parseToks`
+answered `PErr.noId` without a `^id`, but spec §4.1 has `routines.md`,
+`optional.md` and `inbox.md` **omit the box by design** — a routine recurs
+rather than being checked off. So every line of those three files was
+`PErr.notAnItem`, loaded as **prose**, and had no entity in `PlanCore.store`.
+D27 (the kernel collects the planning candidates) cannot be done over a store
+that does not hold the candidates, and the owner bought this prerequisite
+after seeing its price.
+
+**Both halves landed in one commit (D19), because the half-measure is worse
+than either end.** Reproduced first, as the brief asked: with the box relaxed
+and the key rule left alone, every routines line answers `PErr.noId`,
+`scanLinesFrom` turns that into `LErr.badLine`, and the **whole plan** is
+refused —
+`{"badLine":{"path":"routines.md","line":0,"why":"Tm.PErr.noId"}}`. That is the
+failure this step exists to prevent, and it is why the box and the key are one
+commit.
+
+### The five rules, and where each lives
+
+| rule | where | what it says |
+|---|---|---|
+| **the box is optional** | `RawItem.boxed`, `Field.boxAt`, `parseBody` | the bytes carried a `[<state>]` box, or they did not; `serializeItem` writes one **iff one was read**. A bare line's state is `Glyph.todo` (`model.rs`: "`Todo` when omitted") |
+| **the key** | `Field.titleKey`, `keyOf`, `parseLine` | one `^id` → that id; **no `^id` on a bare line → the title key**, the title words joined by single spaces (`tree.rs`'s `Id(title)`); no `^id` and no title → `PErr.noId`, by name; more than one → `PErr.manyIds`, unchanged |
+| **the positional slots** | `Field.kinds` | `ci` and the leading estimate are read **only after a box** (`grammar.rs:387`, `if has_state`), so a bare line starts at phase 2 and `- 5 min stretch win:…` has the title `5 min stretch` and no ci — the fork's reading |
+| **a collision is refused, by name** | `buildEntity` (unchanged) | two lines resolving to one key are `dupId` in one file and `notADemotion` across two. The fork keys the *later* line `file:line`, which depends on the order the host listed its documents — §5.6's own defect — so the kernel refuses instead |
+| **a box-less line carries no state** | `Plan.boxWf`, `Plan.boxesWf` | `serializeItem` writes back the box it read, so an entity whose live line is bare and whose status is not `live free` would render the bytes it was read from and **lose the state**. `boxesWf` joins `itemsWf`, and `mapAt` refuses the post-state |
+
+**The fifth rule is not decoration; it was driven.** Before it landed,
+`{"op":"drop","id":"lunch"}` against a `routines.md` line answered
+`{"ok":{"docs":[{"path":"routines.md","lines":["- lunch win:11:30-13:30 dur:30m every:day"]}]…`
+— success, and the `[~]` nowhere. It now answers
+`{"err":{"kernel":"badHorizon"}}`. `{"op":"est","id":"lunch","min":45}` still
+lands, and writes `- lunch win:11:30-13:30 dur:30m every:day est:45m`.
+
+**And a bare line may not carry a `[` anywhere** (`Field.tokBare`). The kernel's
+boxed arm wants the literal `- [`; the fork's skips whitespace first
+(`grammar.rs:276`) and `Text.isSp` does not count a tab as space (cheat 122), so
+`-  [ ] 2 30m Spaced ^a1` and `- <TAB>[ ] …` are lines the two read
+differently. Without this clause they would have become **bare items whose
+title begins `[`** — a worse answer than the prose they are, and cheat 123
+would have started compiling. They are still prose, and the oracle below says
+so with a denominator.
+
+### What the store holds now, measured
+
+`plan-basic` loaded through `loadPlan`, its eight files in one request:
+
+| | before | after |
+|---|---:|---:|
+| entities in `PlanCore.store` | 26 | **40** |
+| keyed by a `^id` | 26 | 26 |
+| keyed by a **title** | 0 | **14** — 8 routines (`sleep`…`groceries`), 2 optional (`Severance S3E4`, `Factorio`), 4 inbox |
+
+The 14 were prose before this step. D31's "10 of 28 candidates keyed by title"
+is the *candidate* count at plan time; this is the store, which is what D27
+needs.
+
+### Two rules that refused §4.3's own examples, corrected
+
+Both are §5.2's `shapeWfFor .calendar` again — a clause nothing had reached,
+because the lines it governs were prose:
+
+* **`shapeWfFor .routines` and `.optional` read `Core.scope`**, which is the
+  `open` **flag**; §4.3's own `routines.md` carries the flag on no line, so the
+  moment the widened grammar made those lines entities **every fixture plan was
+  refused `itemCheck: fileKindShape`**. `Plan.effectiveScope` is the reading
+  §3.1's row actually gives (`model.rs`: "`open` flag, **or a routines/optional
+  file**"), and it is the kernel's only reader of "is this item open-ended in
+  this file".
+* **`declaredDur` read the shape alone**, so `- Severance S3E4  dur:1h` — whose
+  `Core.shape` is `Shape.none`, because `viewShape` wants a `win:` before it
+  reads a `dur:` — answered `none` and the optional rule refused it. Its third
+  arm is the bare `dur:` token now. `viewShape` is **not** changed: a bare
+  `dur:` is still not a window, which would have moved every other reader of
+  the shape. `shapeWfFor`'s own doc comment had claimed this reading since
+  stage 4 and the code never did it.
+
+### Laws restated (D5), with the old form, the new form, and which implies which
+
+| law | at `d2c0aa6` | here | new ⇒ old? |
+|---|---|---|---|
+| `serialize_parse` | `parseItem cs = .ok (i, g, r) → serializeItem i g r = cs` | `parseItem cs = .ok (oi, g, r) → (∀ j, oi = some j → i = j) → serializeItem i g r = cs` | **yes** — `serialize_parse_id` is the old statement, derived in one line. The id became `Option`, because a line need not spell one; any key serialises the same bytes when it does not |
+| `parse_serialize` | `CanonicalItem i r → parseItem (serializeItem i g r) = .ok (i, g, r)` | the same, with `.ok (some i, …)`, and `CanonicalItem` gained `r.boxed` | **yes on every old input** — before this step every `RawItem` was boxed, so the predicate is the same predicate on the same inhabitants. The bare form's round trip is a **separate, wider** statement: `CanonicalKeyed` + `parseLine_serializeItem`, which says the key the line *reads back with* is `i` |
+| `routine_lines_are_open` | `docKindAt … = .routines → e.val.scope = Scope.openEnded` | **refuted and deleted** — `a_routine_line_need_not_carry_the_open_flag` is the witness (§4.3's own lunch line, flag set `[]`), and `an_unflagged_routine_is_open` says what survives | **no — it is false.** The file answers §4.3's "every line is `open`", not the flag |
+| `optional_items_declare_a_duration` | `… → e.val.scope = openEnded ∧ ∃ dv, declaredDur = some dv ∧ durPositive dv` | the duration half only | **no — it narrowed**, for the same reason, and the dropped conjunct is the one just refuted |
+| `itemsWf_parts` / `itemsWf_of_parts` | seven conjuncts | **eight** — `boxesWf` joined | **yes** (`_parts` gives strictly more; `_of_parts` asks strictly more, and every caller in the tree discharges it) |
+| `itemsWfButRanks` | six conjuncts | **seven** | as above; `applyCmd_after_succeeds` **kept its signature** — `setKey_boxed`, `setVal_boxed` and `boxesWf_set` discharge the new conjunct instead of a caller carrying it |
+| `firstItemFault` | `… else "fileKindShape"` | `… else if !shapesWf then "fileKindShape" else "boxlessState"` | **yes** — a strictly finer answer; no existing fault renamed |
+| `kinds` | `classifyPhase0 r.toks` | `if r.boxed then classifyPhase0 r.toks else classifyPhase2 r.toks` | **yes** on every boxed line, which is every line the old grammar could build (`kinds_boxed`) |
+| `keyPairs_raw`, `parentRef_of_no_at`, `view_set_flag` | stated over `classifyPhase0` | the same statements, proved over **both** phases | **yes**; `findSome_kParent_phase0` is the old proof, lifted out |
+
+No two-run (D5 relational) law is touched: this step adds no `Planner`/`Seal`
+statement and changes none.
+
+### The differential oracle, run and compared in the same session
+
+`run-oracle.sh … 512 4` against fork point `4748911`, then the **same two input
+files** (`corpus.jsonl`, `gen.jsonl`) re-compared against the baseline kernel
+with this step's diff stashed — so the comparand is this machine, this session,
+this generator seed set.
+
+| | `d2c0aa6` | here |
+|---|---|---|
+| corpus set | 138 lines, **77** with nothing to report; denominators 138 / 138 / 78 / 138 / 138 / 78 | **identical**, category for category |
+| generated set | 2,048 lines, **470** with nothing to report | 2,048 lines, **473** |
+| `item-ness — Rust: item, kernel: prose (no [state] box (a routines/optional/inbox line))` | **419 + 32 = 451** | **0 — the class is gone.** This is what D31 bought, counted |
+| `item-ness — … (more than one space, or a tab, between the bullet and [)` | 922 + 127 = **1,049** | **1,049, unchanged** — cheat 123's class, deliberately preserved by `tokBare` |
+| `id — Rust reads none, kernel reads one` | 18 | **437** — see gap **402**: the oracle compares the fork's written `^id` against the kernel's **store key**, and for an id-less line those are different questions; `Tree::key_of` would give the same answer the kernel does |
+| `acceptance — Rust reports a problem, kernel accepts: missing state` | 391 | **351** (−40) |
+| denominator: `kernel hands the line back unchanged` | 1,560 | **1,506** (−54) — see the behaviour row |
+| `id — Rust reads one, kernel refuses (noId)` | 9 | **9, unchanged** (boxed lines with a tab before the `^id`; cheat 122) |
+| input sets 3 and 4 (the log) | — | **469 logs over 6 zones, 8,442 `Replay` keys, 469 entry counts, 8 fitted models, 195,243 scalar values; 49 day records differ from the fork in the last ulp of `DayReplay.load` (parity **P21**, every one displaying the same `round1` load) and no other disagreement**; 1,375 kernel renderings read back to the fork's own entry. Untouched by this step and re-run only to say so — the 49 is this machine's reading of a number AGENTS §7.3 last recorded as 24 at W-11, in a path this step does not touch, and it is printed rather than claimed |
+
+### Behaviour rows
+
+| row | before | after |
+|---|---|---|
+| a `routines.md` / `optional.md` / `inbox.md` line (no state box) | **prose**: kept, written back, invisible to the store, to ranks and to every command | an **entity** in `PlanCore.store`, keyed by its title; `plan-basic` 26 → 40 entities |
+| a `routines.md` / `optional.md` line with no `open` flag | refused: `{"err":{"itemCheck":"fileKindShape"}}` | accepted — §4.3's "every line is `open`" is answered by the file (`effectiveScope`) |
+| an `optional.md` line whose only duration is a bare `dur:` | refused: `fileKindShape` | accepted (`declaredDur`'s third arm) |
+| a command that would put a state on a box-less line (`drop`, `demote`, a close) | **`ok`, and the line written back unchanged** — the state silently lost | `{"err":{"kernel":"badHorizon"}}` (`boxesWf`; see gap **400** for the name) |
+| a generated line the fork calls an item and the kernel called prose for want of a box | prose, round-tripped, nothing reported | an item — and where it carries a fault the kernel names it. **54 of 2,048 generated lines** the kernel used to hand back as prose are now **refused** (`noId` on a bare line with no title, `danglingParent`, `danglingDep`), which is §5.7's whole point |
+| `- ` and `-   ` (an empty bullet), `---` (front matter) | prose | **prose** — `grammar.rs`'s `rest.trim().is_empty()`, and the bare arm wants `- ` |
+| `-  [ ] …`, `- <TAB>[ ] …`, any bare line carrying `[` | prose | **prose** (`tokBare`) |
+| `- [ ] no id here` (boxed, no id) | `PErr.noId` → the plan refused | **`PErr.noId`, unchanged** — the title key is the **bare** form's only (cheat 174) |
+
+Exit codes, the `--json` document shape, the wire format and R10's table are
+unchanged. **Nothing was re-blessed**: no fixture, no snapshot, nothing under
+`kernel/corpus/`, no latency band, no frozen comparand. `kernel/corpus/` was
+not touched at all.
+
+### Measured, at this commit
+
+All capped with `systemd-run --user --scope -p MemoryMax=40G -p
+MemorySwapMax=0 --quiet` (16G for the oracle build and the FFI, 8G for the
+witness probe). **No bound was raised**; nothing was retried uncapped; no
+`native_decide`; no new axiom; no `sorry` outside `Goals.lean`.
+
+| measurement | this commit | comparand (`d2c0aa6`, measured in **this** session in **this** worktree) |
+|---|---|---|
+| `check.sh` | **7/7 ok** | 7/7 |
+| `check.sh`, built tree | **3.17 / 3.14 / 3.17 s**, peak RSS **1.93 / 1.94 / 1.97 GiB** | **3.09 / 3.13 s**, RSS 1.95 / 1.97 GiB. **+1.9% on the midpoint**, inside the 10% rule. An intermediate tree measured **3.48 s (+11.9%)**, over it: cheat 176 was a `rfl` over the whole of `loadPlan` and paid on every `check.sh` run. It moved into `Boundary.lean` as two real theorems (`two_titles_in_one_file_are_a_dupId`, `a_title_colliding_with_an_id_is_refused`), where the cost is paid once at `lake build`, and the cheat became a `buildEntity` claim |
+| axiom audit | **4,196 theorems**, §6.3 reconciliation `ok` | 4,151. **+45**: 47 audit lines added, 2 removed (`routine_lines_are_open`, deleted with its refutation; `Field.spec_line_is_an_item`, renamed when `isItemLine` moved to `Tm` scope). Every added declaration has a line |
+| burn-down | **12 outstanding, all stage 6** | 12. **Unchanged — no goal was discharged, none was added and none was deleted** |
+| corpus round trip | **29/37 files, 4/5 whole plans** | identical. The 8 failing files are `plan-conflicts`, refused for `manyIds` at `week/2026-W37.md:22`, which this widening does not and must not fix |
+| `cargo test --workspace` | **1,316 passed / 0 failed / 9 ignored across 78 result lines**, exit 0, **0 warnings** | 1,316 / 0 / 9 across 78. **No delta, and none is expected**: no Rust line changed |
+| FFI (`tm-kernel-ffi`, `--test kernel`) | **86 passed / 0 failed** | 86 / 0 |
+| T5 (`kernel_replay_parity`) | **29 / 0 / 4** | 29 / 0 / 4 |
+| door (`kernel_log_door`) | **23 / 0** | 23 / 0 |
+| `cli_switch_acceptance` | **9 / 0** | 9 / 0 |
+| `kernel_call_counts` | **2 / 0** | 2 / 0 |
+| `cli_latency` | **5 / 0 / 1**, every band met | see below |
+
+`cli_latency`, release, `--nocapture`, one run: first verb 694.22 ms; later verb
+55.81 ms; T11 3y later verb **126.72 ms**; reseal **187.06 ms** (NOISY);
+3-day-old routine **101.33 ms** (NOISY); `review week` **253.29 ms** (NOISY, out
+of band for gap 275's reason, **not re-blessed**); `tm --json log --tail 200`
+207.62 ms; 10 stalled days worst 506.42 ms. Every reading is inside run-to-run
+noise of W-14's same-machine figures (126.70/126.62, 172.09/187.39,
+101.30/101.38, 253.24/253.28, 212.78/212.63, 500.94/506.40). No mechanism for a
+change exists: no Rust changed, and the widened grammar is not on `tm`'s hot
+path — `tm` reads its Markdown with `tm-core::grammar`, and the kernel's log
+path is untouched.
+
+### The recursion rule (D9-21)
+
+Three functions added that recurse over a wire-sized list, all through existing
+folds: `Field.keyWords` and `Field.titleKey` (`filter` then one `foldl` over the
+title words, no new recursion), `Plan.boxesWf` (`List.all` over `store.dom`,
+the shape every other `itemsWf` conjunct already has). `bareOk` is `any` + `all`.
+`boxAt` is a three-cell match. No new `@[csimp]` twin is owed: nothing here is a
+hand-written structural recursion.
+
+### Gaps opened
+
+#### Gap 400 (label W15K-a) — `mapAt` names a `boxesWf` refusal `badHorizon`
+
+1. **What is not done.** A command refused because its post-state would put a
+   state on a box-less line answers `{"err":{"kernel":"badHorizon"}}`, whose own
+   doc comment says it is about *relocation*.
+2. **Why.** `WfPlan.mapAt` returns one name for every `planWf` failure, and has
+   since stage 3; `KErr.badItem` exists for the insertion path and `editFault`
+   names the two dependency conjuncts specially. Giving the eighth conjunct its
+   own name means a new `KErr` constructor, its wire name, an R10 row and a
+   `kerrJson` arm — a wire change, which is not this step's.
+3. **What it costs.** The refusal is real and the diagnostic is wrong about
+   *why*. A host cannot tell "you may not drop a routine" from "that file is
+   behind the tombstone". `firstItemFault` **does** name it (`boxlessState`),
+   so the loader's diagnostic is right; only the command path's is not.
+4. **When it clears.** With the next wire-touching step on the command path, or
+   at P8 where `Emit.lean` reworks the diagnostics.
+
+#### Gap 401 (label W15K-b) — no invariant ties an id-less entity's key to its line's title
+
+1. **What is not done.** `CanonicalKeyed` is decidable and `parseLine_serializeItem`
+   proves the round trip, but nothing in `planWf` asserts that an id-less
+   entity's **store key** is its line's `titleKey`. The loader establishes it by
+   construction; a command is not stopped from breaking it.
+2. **Why.** It is breakable, and the break is real: `unsetKey` removing a
+   `key:` token can *lengthen* the title (`- lunch est:1b extra win:…` →
+   `- lunch extra win:…` keys `lunch extra`, not `lunch`), because the title
+   runs to the first token-starting word. Adding the conjunct needs
+   `titleKey (setKey k v r) = titleKey r`, which is **false** in that shape, so
+   the honest form is a refusal — and deciding whether `tm edit` may reword a
+   routine's key is an owner-tier call, not a repair.
+3. **What it costs.** Nothing to the bytes: the key is never written into the
+   line, so the file is correct either way and the next load recomputes the key
+   — which is the fork's behaviour (`Tree::key_of` recomputes on every build).
+   The cost is inside one request: a second command naming the old key would
+   get `noSuchId`. No shipped verb does this today, because `setVal` writes only
+   `key:` tokens and `tm add` writes a boxed line with an `^id`.
+4. **When it clears.** At K3b or P4, whichever first needs a stable candidate
+   key across a request; the owner call is "may an edit rename a title-keyed
+   item, or is it refused".
+
+#### Gap 402 (label W15K-c) — the oracle's `id` column compares two different questions
+
+1. **What is not done.** `oracle-compare` compares the kernel's key against the
+   fork's `ItemLine::id()`, which is the **written** `^id`. For an id-less line
+   the kernel answers its title key and the fork answers none, so the sweep
+   reports **437** disagreements that are not disagreements: `Tree::key_of`
+   gives the same answer the kernel does.
+2. **Why.** The oracle binary is built from the fork point outside the repo and
+   its comparison set was written when no id-less line was an item here. Aiming
+   the column at `key_of` is a change to `examples/oracle/src`, which is not
+   this step's file set.
+3. **What it costs.** The sweep's `id` line reads far worse than the tree is.
+   The number is *recorded here* so the next reader does not mistake it for a
+   regression; the three real id divergences are unchanged (`manyIds` 11→13,
+   `noId` 9→9, different-id 8→14, all of them cheat 122's tab class).
+4. **When it clears.** With the next oracle change — R2 aims the proptest
+   through the FFI and is the natural place.
+
+#### Gap 403 (label W15K-d) — the title key joins words with single spaces; the fork keeps the span
+
+1. **What is not done.** `Field.titleKey` joins `titleWords` with one space, so
+   `- a  b dur:1h` keys `a b`; `grammar.rs`'s `ItemLine::title()` returns the
+   leading segment's **span**, `a  b`, and normalises only the words it appends
+   after a token.
+2. **Why.** The kernel's token vector keeps each word and its separator, and
+   the title is a list of words; reconstructing the span means reading the
+   separators back out, which is a second reader of the same bytes for a value
+   that never reaches a file.
+3. **What it costs.** Two lines whose titles differ only in internal whitespace
+   are one key here and two there. No corpus line is affected (checked: every
+   bare line in the five fixture plans has single spaces inside its title), and
+   a store key is never written, so no byte differs — only the *addressability*
+   of two such lines, and here they collide and are refused by name.
+4. **When it clears.** At K4/P4 if a candidate ever needs the fork's exact key,
+   or never, as a recorded deviation.
+
+**Parity P38 taken**: *the kernel reads a store key where the fork's
+`ItemLine::id()` reads none* — the title key, `tree.rs`'s `key_of` without the
+`file:line` fallback. 437 generated lines, gap 402. **P38 and not P37**,
+because the register's last two statements disagree about P37 — §6.4's list
+says "P36 is the highest and P37 is free" and W-14's repair block's closing
+line says "parity **P37**" — and a hole in the numbers costs nothing while a
+duplicate costs a renumber and a wrong number in a commit message (§6.2).
+
+### What this step did NOT do, by name
+
+* **It discharged no goal and added none.** The burn-down is 12 before and 12
+  after.
+* **It did not touch `Planner.lean` or `PlanCheck.lean`** — tracks P and W.
+* **It did not do K3b** (the recurrence family), and it did not do **D27**:
+  gaps 113, 114 and 116 are open and whole. K3a is what they waited on.
+* **It did not give `boxesWf` its own `KErr`** (gap 400), did not add the
+  key-stability invariant (gap 401), did not re-aim the oracle (gap 402) and
+  did not match the fork's whitespace-preserving title (gap 403).
+* **It did not change `viewShape`**: a bare `dur:` is still not a window.
+* **It did not change one line of Rust**, one byte under `kernel/corpus/`,
+  `lean-toolchain`, or any dependency. No axiom, no `partial def`, no `unsafe`,
+  no `opaque`, no `panic!`, no `!`-accessor, no `.toOption`, no Mathlib.
+* **It did not re-bless anything**, and it did not re-bless the frozen fork
+  comparands — the oracle was run to *read* them, never with `TM_FORK_BLESS`.
+
+### Method disclosure
+
+Every `lake`, `lean`, `cargo`, `check.sh` and oracle invocation ran capped. The
+`decide`/`rfl` budget (§5.10a): **17** new closed-term witnesses, every one
+probed at `MemoryMax=8G timeout 120` before it was kept, none over one line of
+input, no `native_decide`. `check.sh` was run **eleven** times (once as the
+baseline before any edit, seven while the Lean was being completed, and **three
+on the final tree, which are the ones quoted**). `cargo test --workspace` was
+run **three** times and the third, on the final tree, is the one in the table.
+The oracle was built **once**, in `/tmp`, outside the repository, and its two
+input files were re-compared against the stashed baseline in the same session —
+the only way to say "451 fewer disagreements" with evidence rather than with a
+remembered number. The `drop`/`est` drives were run through `Tm.run` on
+hand-written requests, before and after the `boxesWf` clause, and are quoted
+above verbatim.
+
+**Highest on this branch:** gap **403**, cheat **176**, parity **P38**.
