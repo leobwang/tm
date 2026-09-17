@@ -26,9 +26,13 @@
 //!   [`Ctx::save_state`] (§10.2), [`Ctx::item`] / [`Ctx::line`] /
 //!   [`Ctx::write_line`] (byte-faithful edits through
 //!   [`tm_core::grammar::ItemLine`]), [`Ctx::hz`] (a [`horizon::Ctx`]),
-//!   [`Ctx::walls_today`] / [`Ctx::window`] / [`Ctx::today_slots`] (§8.1,
-//!   §8.2 step 3) and [`Ctx::priorities`] (§7 and the §8.4 lookahead, the
-//!   kernel's since stage 5 D10 L8).
+//!   [`Ctx::walls_today`] (§8.1) and [`Ctx::priorities`] (§7 and the §8.4
+//!   lookahead, the kernel's since stage 5 D10 L8).  **`Ctx::window` and
+//!   `Ctx::today_slots` are gone** (stage 6 step L9, gap 93): §8.1's window and
+//!   §8.2 step 3's slots for **today** are the kernel's now, derived from its
+//!   own replay, and a second definition here would be the bug AGENTS §5.3
+//!   names.  The fork's versions live on as the parity harness's comparand
+//!   (`tm/tests/kernel_lookahead_parity.rs`), as `Ctx::walls_on`'s copy does.
 //! * Sidecars `.tm/` grew for state §10.2 does not model:
 //!   [`LAST_PLAN_PATH`] (`tm plan --diff` and the hysteresis roll),
 //!   [`ARRIVAL_PLAN_PATH`] (§9's ghost row: the plan as it stood at arrival)
@@ -44,9 +48,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use serde_json::Value;
 
-use tm_core::capacity::{self, EnergyCtx, Slot, UnitCapacity, Wall};
+use tm_core::capacity::{self, UnitCapacity, Wall};
 use tm_core::config::Config;
-use tm_core::energy::{Model, Posterior};
+use tm_core::energy::Model;
 use tm_core::grammar::ItemLine;
 use tm_core::horizon;
 use tm_core::log::{Event, LogEntry, Replay};
@@ -268,7 +272,7 @@ impl ReplayScope {
 /// and how far the rebuild would have had to reach, and it says which verb
 /// still works. **The memory cap is never raised to make it go away** (D18);
 /// the line is moved or removed instead.
-fn genesis_error(e: kernel_log::GenesisError) -> CliError {
+pub(super) fn genesis_error(e: kernel_log::GenesisError) -> CliError {
     match e {
         kernel_log::GenesisError::ReachTooFar { line, kind, reach, bytes } => {
             let mut detail = serde_json::Map::new();
@@ -546,7 +550,7 @@ impl Ctx {
     }
 
     /// The log's bytes as they are on disk now; a missing file is an empty log.
-    fn log_bytes(store: &FsStore) -> Result<Vec<u8>, CliError> {
+    pub(super) fn log_bytes(store: &FsStore) -> Result<Vec<u8>, CliError> {
         if store.exists(LOG_PATH) {
             Ok(store.read_bytes(LOG_PATH)?)
         } else {
@@ -826,43 +830,13 @@ impl Ctx {
         capacity::local_dt(self.cfg.tz, dt.date(), dt.time())
     }
 
-    /// §8.1's working window and block budget: what `tm arrive` stored *for
-    /// today*, else the formula from the arrival (or now). A window stored on
-    /// an earlier day is ignored — its times belong to that day, not this one
-    /// (see [`roll_day`], which normally clears it first).
-    pub fn window(&self) -> (DateTime<Tz>, DateTime<Tz>, u32) {
-        let today = self.state.date == Some(self.today);
-        match (self.state.window, self.state.budget) {
-            (Some((from, to)), Some(budget)) if today => (self.at(from), self.at(to), budget),
-            _ => {
-                let arrival = self
-                    .state
-                    .arrival
-                    .filter(|_| today)
-                    .map_or(self.now_tz, |t| self.at(t));
-                let (end, budget) = capacity::window_and_budget(arrival, &self.walls_today(), &self.cfg);
-                (arrival, end, budget)
-            }
-        }
-    }
-
-    /// Today's remaining slots with their predicted energy (§8.2 step 3).
-    pub fn today_slots(&self, allow_home: bool) -> Vec<Slot> {
-        let (start, end, _) = self.window();
-        let from = start.max(self.now_tz);
-        if end <= from {
-            return Vec::new();
-        }
-        let walls = self.walls_today();
-        let cut = capacity::cut_slots(from, end, &walls, &self.cfg);
-        let obs: Vec<_> = self.replay.energy_on(self.today).cloned().collect();
-        let posterior = Posterior::from_observations(&obs, self.cfg.tz, &self.cfg);
-        let ectx = EnergyCtx::new(&self.model, &self.cfg, &posterior, self.wake_dt(), self.loc())
-            .with_slept(self.slept_min())
-            .with_blocks_done(self.replay.blocks_done(self.today))
-            .with_allow_home(allow_home);
-        capacity::energize(&cut.slots, &ectx)
-    }
+    // **`Ctx::window` and `Ctx::today_slots` were deleted at stage 6 step L9** (gap 93).
+    // §8.1's window and §8.2 step 3's slots for today are the kernel's now: the capacity request
+    // carries `at`, `state` and `allowHome`, the kernel reads last night's sleep and today's
+    // energy reports off its own replay through D24's seam, and `Look.day0Hist` is the answer
+    // (`Look.day_zero_is_the_spec_day_energised`).  Keeping a second definition here is exactly
+    // the bug AGENTS §5.3 names; the fork's two functions live on as the comparand of
+    // `tm/tests/kernel_lookahead_parity.rs`, the way `Ctx::walls_on` already does.
 
     /// §7: the candidates, their priorities and the first days of the capacity
     /// lookahead they were computed against — **the kernel's** since stage 5 D10

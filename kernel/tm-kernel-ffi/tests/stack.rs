@@ -360,12 +360,15 @@ fn a_3660_day_lookahead_runs_on_a_2mib_thread() {
                 r#""home":[{{"from":{{"num":0,"den":1}},"to":{{"num":1,"den":1}},"level":3}},{{"from":{{"num":1,"den":1}},"to":{{"num":4,"den":1}},"level":4}},{{"from":{{"num":4,"den":1}},"to":{{"num":8,"den":1}},"level":3}},{{"from":{{"num":8,"den":1}},"level":2}}]}},"#,
                 r#""homeMaxCi":3,"day":{{"breakMin":20,"breakAfterBlocks":2,"minLastBlockMin":30,"windowHours":{{"num":8,"den":1}},"windowCap":"19:00","budgetRatio":{{"num":75,"den":100}}}},"#,
                 r#""priority":{{"bins":[{{"num":5,"den":10}},{{"num":25,"den":100}},{{"num":1,"den":10}}],"safety":{{"num":13,"den":10}},"defaultPriority":3}},"#,
-                r#""days":{days},"day0":[0,0,0,60,170,180]}}"#
+                r#""days":{days},"at":"2026-09-07T07:00:00-05:00","#,
+                r#""state":{{"date":null,"window":null,"budget":null,"arrival":null,"loc":"lounge","allowHome":false}},"#,
+                r#""posterior":{{"fullHours":{{"num":3,"den":1}},"zeroHours":{{"num":6,"den":1}}}},"#,
+                r#""sleep":{{"shiftModel":null,"shiftConfig":{{"neg":false,"num":1,"den":1}},"underHours":{{"num":7,"den":1}}}}}}"#
             ),
             days = days
         )
     };
-    let request = |days: u32| format!(r#"{{"docs":[{docs}],"now":"2026-09-07","blockMin":60,{tz},{}}}"#, capacity(days));
+    let request = |days: u32| format!(r#"{{"docs":[{docs}],"now":"2026-09-07","blockMin":60,{tz},{CAP_LOG},{}}}"#, capacity(days));
     let long = request(3660);
     let week = request(7);
     on_a_2mib_thread(move || {
@@ -384,6 +387,12 @@ fn a_3660_day_lookahead_runs_on_a_2mib_thread() {
     });
 }
 
+/// **The `log` section every capacity request carries since step L9** (gap 93): day 0 is derived
+/// from the replay of the same call (D24's seam), so a capacity request without one is refused
+/// `day0WithoutLog`.
+const CAP_LOG: &str =
+    r#""log":{"ckpt":null,"from":1,"lines":[],"terminated":true,"reseal":null,"want":{"facts":true,"headersFrom":null,"render":[]},"sealed":null}"#;
+
 /// The T0 (c) request's capacity section (no calendar), with `candidates` when
 /// `cands` is non-empty.
 fn grants_request(days: u32, cands: &[String]) -> String {
@@ -400,7 +409,7 @@ fn grants_request(days: u32, cands: &[String]) -> String {
     };
     format!(
         concat!(
-            r#"{{"docs":[],"now":"2026-09-07","blockMin":60,{tz},"#,
+            r#"{{"docs":[],"now":"2026-09-07","blockMin":60,{tz},{cap_log},"#,
             r#""capacity":{{"pLounge":{{"config":{{"Mon":{{"num":"9","den":"10"}},"Tue":{{"num":"9","den":"10"}},"Wed":{{"num":"9","den":"10"}},"Thu":{{"num":"9","den":"10"}},"Fri":{{"num":"8","den":"10"}},"Sat":{{"num":"5","den":"10"}},"Sun":{{"num":"4","den":"10"}}}}}},"#,
             r#""arrival":{{"config":{{"Mon":"07:00","Tue":"07:00","Wed":"07:00","Thu":"07:00","Fri":"07:00","Sat":"10:00","Sun":"10:00"}}}},"#,
             r#""wake":{{"sec":21940,"ns":250000000}},"#,
@@ -408,9 +417,13 @@ fn grants_request(days: u32, cands: &[String]) -> String {
             r#""home":[{{"from":{{"num":0,"den":1}},"to":{{"num":1,"den":1}},"level":3}},{{"from":{{"num":1,"den":1}},"to":{{"num":4,"den":1}},"level":4}},{{"from":{{"num":4,"den":1}},"to":{{"num":8,"den":1}},"level":3}},{{"from":{{"num":8,"den":1}},"level":2}}]}},"#,
             r#""homeMaxCi":3,"day":{{"breakMin":20,"breakAfterBlocks":2,"minLastBlockMin":30,"windowHours":{{"num":8,"den":1}},"windowCap":"19:00","budgetRatio":{{"num":75,"den":100}}}},"#,
             r#""priority":{{"bins":[{{"num":5,"den":10}},{{"num":25,"den":100}},{{"num":1,"den":10}}],"safety":{{"num":13,"den":10}},"defaultPriority":3}},"#,
-            r#""days":{days},"day0":[0,0,0,60,170,180]{candidates}}}}}"#
+            r#""days":{days},"at":"2026-09-07T07:00:00-05:00","#,
+            r#""state":{{"date":null,"window":null,"budget":null,"arrival":null,"loc":"lounge","allowHome":false}},"#,
+            r#""posterior":{{"fullHours":{{"num":3,"den":1}},"zeroHours":{{"num":6,"den":1}}}},"#,
+            r#""sleep":{{"shiftModel":null,"shiftConfig":{{"neg":false,"num":1,"den":1}},"underHours":{{"num":7,"den":1}}}}{candidates}}}}}"#
         ),
         tz = tz,
+        cap_log = CAP_LOG,
         days = days,
         candidates = candidates
     )

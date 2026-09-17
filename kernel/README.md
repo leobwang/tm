@@ -25969,3 +25969,333 @@ ancestor of `rebuild-on-lean`, so it holds no unique work either way.
 * **The §5.13 human drives** of the stage-3, stage-4 and stage-5 binaries, with
   the TUI half of the switch's own drive (**gap 182**). No agent can perform
   them.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 6 (the planner), run W-13, step **L9** — day 0
+     of the lookahead is computed IN THE KERNEL, on D24's seam.  **Gap 93 is
+     CLOSED**, after four restatements (W-6, W-12, and twice before them).
+     `Look.Input.day0` and the `badDay0` refusal are gone; `Ctx::window` and
+     `Ctx::today_slots` are deleted from the binary.  The L9 gap range is
+     **275-284**; **275-279 taken, 280-284 free**.  Every figure below was
+     re-measured on the committed tree, each command capped at MemoryMax=40G,
+     MemorySwapMax=0 (16G for the oracle build, 8G for the witness probe).
+     =========================================================================== -->
+
+## Stage 6, W-13 step L9, 2026-09-16: day 0 is the kernel's own — gap 93 closed
+
+**What landed, in one sentence.** The kernel derives day 0 of the lookahead itself — today's
+window from `state.json` or §8.1's formula, cut from `now`, energised through the location's own
+curve, the sleep-debt shift (**site R10**, new) and today's posterior (site R5), then the home cap
+— reading last night's sleep and today's energy reports off **this call's own replay** through
+D24's seam; the `day0` argument and its `badDay0` refusal are deleted, and so are `Ctx::window`
+and `Ctx::today_slots`, the two functions in the binary that used to answer the same question.
+
+### It is observable in the shipped binary, and here is the measurement
+
+`tm --json plan` on a one-item plan at 09:00 on 2026-09-16, reading `^b1`'s available minutes at
+levels ≥ 3 — each number a fact the kernel derived from its own replay and nothing else:
+
+| the log | `avail_min` | what moved it |
+|---|---|---|
+| empty | **1,101** | the wake falls back to the weekday's expected arrival |
+| `wake slept_min:480` at 06:10 | **1,041** | the logged wake moves every slot's hours-since-wake (site R11) |
+| `wake slept_min:300` at 06:10 | **921** | five hours is under `sleep_debt.under_hours`: **site R10**'s shift comes off every day-0 level |
+| the 480 line plus `energy pred:5 rep:1` at 08:30 | **801** | today's posterior (site R5) carries a residual of −4 forward, at the ramp's weight |
+
+and the wake **precedence** (gap 261, which said it was written down nowhere): with a logged wake
+of 03:00 and nothing in `state.json`, 924 minutes; with `state.wake = 08:00` beside it, **1,140**.
+The host sends `state.wake`'s clock when it has one and `"log"` otherwise, which *is*
+`Ctx::logged_wake`'s `state.wake.or_else(replay…)`, and it is now written down in
+`kernel_capacity::request` with this drive beside it.
+
+### The seam's second consumer, and what each side sends
+
+| what day 0 needs | where it comes from now |
+|---|---|
+| `now`'s instant | the **`at` stamp**, read by B2's one stamp reader; its local date must be the request's `now` or the request is refused `nowDisagrees` (`Look.nowAgrees`, at `mkInput?`) |
+| today's window | `state.date`/`window`/`budget`/`arrival` on the wire; **the rule is the kernel's** — `Look.Today.storedWindow` (a stored window counts only with its budget and only on its own day) and `Look.Today.arrivalSec`, then `Look.windowFrom`, which is `windowOn`'s definition, not a second one |
+| the walls | `Look.wallsOn` over `wallIndex`, the same index every future day reads |
+| the location | `state.loc` as a name; `Look.curveKeyOf` is fork `energy::curve_key` (`any` reads `home`, an unknown name reads its own curve when the model or the config has one and `home` otherwise) and `Look.capLoc` is the only thing the cap sees |
+| `--allow-home` | `state.allowHome` |
+| last night's minutes | **the seam** — `CapWire.todayFromLog`'s `record.sleptMin` |
+| today's energy reports | **the seam** — the same `DayRecord`'s `energy`, as `(t, pred, rep)` |
+| the four `[energy]` decimals | `posterior.fullHours`/`zeroHours` and `sleep.underHours`/`shiftConfig`, plus `.tm/model.json`'s `shiftModel` — five in all, each as the exact decimal its file writes |
+
+A capacity request with no `log` section has no replay to derive day 0 from and is refused by
+name, **`day0WithoutLog`** — never answered with an empty day (AGENTS §5.7, and the same choice
+`wakeWithoutLog` made at the seam). So `kernel_capacity::request` now carries one:
+`kernel_log::capacity_log_section` builds the section `ReplayCache::replay` would send on its hot
+path, spliced into the request **as text** because `Seal.readCkptFields` reads a checkpoint's keys
+in build order and `serde_json::Value` is a `BTreeMap` — gap 144's lesson, met again at a second
+seam and named in `kernel_bridge::call_text`.
+
+### Site R10, landed **with its caller** — which is why W-6 and W-12 both refused to land it alone
+
+`Arith.roundAway` is `f64::round` on a **signed** decimal: half away from zero, which is
+`halfUpQ` on the magnitude with the sign put back. §8.5 fits `sleep_debt_shift` as a shrunken
+**mean**, so the sign is real and half-up is not the rule below zero. Its two laws are
+`roundAway_withinOne` (the magnitude's `WithinOne`, carried through the sign) and `roundAway_mono`
+(monotone within each sign *and across the two*), and its caller is `Look.todayEnergy`, reached by
+every day-0 slot. `under_slept` stays a **comparison** and cross-multiplies, as `Arith.lean`'s own
+note says a comparison should.
+
+### The four recorded design-vs-repo disagreements, settled with the repo as the truth
+
+1. **§13.5 says day 0's posterior goes through `Arith.ramp`/`energyAfter` "over minutes", and the
+   repo says it needs no minutes and no rounding site at all.** `posterior_weight` compares
+   `hours = seconds/3600` against two configured `f64` hours, and both comparisons are *exact on
+   the pair*. `Look.weightAt` puts all three values over the one unit `1/(3600·fd·zd)` hours — an
+   exact scaling — and the ramp is then `Arith.ramp`'s, §8.5's one definition (AGENTS §5.3).
+   **No R-site is owed for an hours→minutes conversion, because there is no conversion.**
+2. **§13.5 says "its two configured decimals"; day 0 reads four, and a fifth from the model.**
+   `energy.posterior_full_hours`, `energy.posterior_zero_hours`, `energy.sleep_debt.under_hours`
+   and `energy.sleep_debt.shift` in `config.toml`, and `sleep_debt_shift` in `.tm/model.json`
+   (`Model::sleep_shift` prefers it, so the host sends both and the kernel picks — D10-4). All
+   five go through `written_pair`; the two shifts through `signed_written_pair`, added here.
+3. **§14.8's L9 row lists only `Lookahead.lean`, `Boundary.lean` and `Arith.lean`.** It is wrong
+   about the Rust (W-6's finding) *and* about the tests (W-12's): L9 touched five files under
+   `tm/src`, four test files and two FFI test files. The row's own estimate — 200 definition and
+   600 proof lines, −150 Rust — came in at **+1,056/−78 Lean** and **+297/−69 Rust**, so the Lean
+   is close and the "−150 Rust" is wrong in sign: deleting `Ctx::window` and `Ctx::today_slots`
+   (−35 lines) does not pay for the wire, the log section and the text splice.
+4. **`Posterior::correct` rounds half away from zero where `Arith.energyAfter` is half-up.** They
+   agree, and the two points at which they could part company are now decided:
+   `the_posterior_rounds_a_half_the_way_the_fork_does` pins a corrected value of exactly −0.5
+   (the fork rounds to −1 and clamps to 0; `energyAfter`'s non-positive branch answers 0) and of
+   exactly +0.5 (both answer 1). No parity entry is opened for it, and the parity run below found
+   no disagreement over 92 day-0 comparisons.
+
+### What the re-aimed parity harness found — a real kernel defect, in the degenerate posterior
+
+`kernel_lookahead_parity.rs` no longer asserts that day 0 is the host's. It computes the fork's
+own `Ctx::window` and `Ctx::today_slots` — copied into the harness because L9 **deleted** them
+from the binary, exactly as `fork_walls_by_date` already copies `Ctx::walls_on` — and compares
+the kernel's day 0 against `DayCapacity::from_slots` of those slots, **exactly, not through P1**.
+The generator now makes `at`, `state`, `--allow-home`, a `slept_min` and today's energy reports,
+and sends the *lines* to the kernel and the *values* to the fork, so the seam is on the path.
+
+On its first run it failed, and the finding is worth its own paragraph. Fork
+`posterior_weight` tests `hours <= full_hours` **before** it tests `zero_hours <= full_hours`, so
+a report inside `full` weighs one *even when the pair is degenerate*. `Look.weightAt` took the
+degenerate case first and weighed such a report nothing. At `posterior_full_hours = 3`,
+`posterior_zero_hours = 2` a whole day's levels moved. Fixed, with the order written into the
+definition's doc comment and `weightAt_full` restated to hold **whatever `zero` is** (the old
+statement carried a `full < zero` hypothesis, which is precisely the case that hid the bug).
+
+**The denominators, because agreement without a count is not a measurement:**
+
+| run | day-0 comparisons | with slots left | on a stored window | cut from `now` past the window's start | with energy reports (posterior moved a level) | short nights (shift rounds away from zero) | at home (`--allow-home`, cap bit) | disagreements |
+|---|---|---|---|---|---|---|---|---|
+| generated, 64 windows | **64** | 39 | 9 | 12 | 48 (25) | 24 (23) | 7 (17, 3) | **0** |
+| corpus, 28 windows | **28** | 28 | 0 | 10 | 21 (19) | 13 (13) | 6 (11, 1) | **0** |
+
+and every earlier assertion of that harness still holds at its own denominators (384 + 168 future
+days, P27 on 10 windows / 13 fork days, gap 85 on 3 days, 0 disagreements), as does the priorities
+half (543 candidates, 360 entered, P2 on 8, P7 on 6, 0 disagreements).
+
+### Behaviour rows
+
+| # | rule before | rule now | why, and what proves it |
+|---|---|---|---|
+| 1 | day 0 was `DayCapacity::from_slots(ctx.today, &ctx.today_slots(allow_home))`, sent as six numbers | the kernel derives it from its own replay and the host's runtime facts | **gap 93.** `Look.day0Hist`, `Look.lookahead_day_zero_is_the_kernels`, `Look.day_zero_is_the_spec_day_energised`; the drive above |
+| 2 | a capacity request carried `docs`, `now`, `blockMin`, `tz`, `capacity` | it carries a **`log` section** as well, and without one is refused `day0WithoutLog` | day 0's facts are the kernel's. One more kernel replay for `tm plan`, `tm now`, `tm review day` and `tm review week` — **measured** below and named as **gap 275** |
+| 3 | `capacity.wake` was `Ctx::logged_wake()`'s resolved clock | it is `state.wake`'s clock when set and `"log"` otherwise | **gap 261 closed**: the fork's precedence, implemented and written down. Driven: 924 → 1,140 minutes |
+| 4 | a capacity request missing `now` or `tz` was refused `nowAbsent` / `tzAbsent` by the capacity section | a request that carries a `log` section is refused by **that** section first (`badLogReq now`, `log: tzAbsent`) | the log section reads the clock and the zone first. Both capacity names are still reachable and still asserted, from a request with no `log` section |
+| 5 | `Ctx::window` and `Ctx::today_slots` computed §8.1's window and §8.2 step 3's slots for today | **they are gone** from the binary | AGENTS §5.3: one definition. The fork's versions live on as the parity harness's comparand |
+| 6 | `check_inputs` checked the weights, `[day]`'s two ratios, `[priority]`'s edges and the prior's keys | it checks five more, by file and key (parity P26's reach) | a `posterior_full_hours` of more than six places, or a denominator past `10^6`, now fails every verb that computes capacity **by name** instead of being rounded into the request. Driven: `[energy.sleep_debt] shift = -1.2345678` gives `config.toml: energy.sleep_debt.shift = -1.2345678 has 7 decimal places (at most 6) … (parity P26)` |
+
+**No fixture, snapshot or corpus file was re-blessed.** Two hand-written test fixtures were
+**restated** because their input mechanism was deleted, each with its numbers re-derived in the
+open: `kernel_unit_reserve.rs`'s fixed case now makes its day 0 with a 07:00-08:00 stored window
+(one 60-minute block at the lounge prior's level 5, `[0,0,0,0,0,60]`, where it used to hand in
+`[0,0,60,0,0,60]`) and every number it asserts is unchanged, because all four read the level-5
+hour; and the FFI spec week's day 0 is now the derived `[0,0,0,0,240,180]` (420 minutes from a
+07:00 arrival with no walls) where it used to hand in a 410-minute split, which moves `^a1`'s
+availability 410 → 420, `^a2`'s 731 → 741 and its shortfall 49 → 39.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+Goals discharged, refuted or added: **none**; burn-down **13 → 13**, all stage 6's. New theorems:
+**26**, every one with an audit line; **two renamed in place with their theorems** —
+`lookahead_day_zero_is_the_hosts` → `lookahead_day_zero_is_the_kernels` (restated: day 0 is
+`ofHist I.today (day0Hist I)`) and `mkInput?_refuses_a_bad_day0` →
+`mkInput?_refuses_a_now_that_disagrees` (the refusal it existed to raise is gone; `nowDisagrees`
+takes its place in the constructor's order). Axiom audit **3,958 → 3,984**. New `decide`/`rfl`
+witnesses: **9** — `Arith.roundAway_examples` and eight in `Lookahead.lean`
+(`the_posterior_rounds_a_half_the_way_the_fork_does`, the budget one and six day-0 ones) — beside
+**two restated** in `Boundary.lean` (`runCap_reads_the_corpus_request`,
+`runCap_refuses_a_command_beside_the_corpus_request`), which needed `maxRecDepth 20000` and
+**no `maxHeartbeats` was raised** (AGENTS §5.10a: a heartbeat timeout is the same bomb with a
+budget — `decide` was replaced by `rfl`, which is what the originals used). The whole
+`lake build` was probed under `MemoryMax=8G`, `MemorySwapMax=0` and passed. New cheats: **1** —
+**158**, the design's reserved **cheat 118**, "the posterior applied after the cap", now takeable
+because its caller exists. New parity entries: **1**, **P37**. `TmKernel.lean` imports: **78**,
+unchanged (no new module). No `sorry` outside `Goals.lean`, no new axiom, no `partial def`,
+`unsafe`, `opaque`, `implemented_by`, `panic!`, `!`-accessor, `.toOption`, no Mathlib, no new
+dependency, no memory bound raised, no predicate or assertion weakened.
+
+**Parity P37 (new) — today's slot energy, the kernel's exact arithmetic against the fork's `f64`.**
+Three places where day 0's energy is a quotient the fork holds as a double and the kernel holds
+exactly: `under_slept`'s `slept_min as f64 / 60.0 < under_hours` (the kernel cross-multiplies),
+the posterior weight `(zero − hours)/(zero − full)`, and `pred + δ·w` before R5's rounding.
+Recorded **before** the run, as L7 recorded P1: **measured at 0 disagreements over 92 day-0
+comparisons**, 69 of them carrying an energy report (44 where it moved a level) and 37 a short
+night. The shift itself is not
+in the class — a decimal of at most six places that lands on a `round()` tie is exactly `x.5`,
+which is exactly representable, so `f64::round` and `halfUpQ` agree on it by construction.
+
+### Method disclosure
+
+Everything ran on `rebuild-on-lean` in the main worktree (no parallel track was live: `git worktree
+list` showed only this checkout and the stale `stage5-lookahead`), every `lake`, `lean`, `cargo`,
+`check.sh`, `tm` and oracle invocation under
+`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet` (16G for the oracle
+build, 8G for the witness probe). The fork oracle was **rebuilt** with
+`kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh` at `MemoryMax=16G` outside the repo
+(`/tmp/tm-oracle`) and its usage banner checked before it was trusted (AGENTS §7.3: provenance is
+not freshness) — it carries D23's `parse-entry` mode. The fork's side of day 0 was read, not
+inferred: `Ctx::window`, `Ctx::today_slots`, `Ctx::wake_time`, `Ctx::logged_wake`, `Ctx::slept_min`,
+`Ctx::loc`, `capacity::window_and_budget`, `cut_slots`, `energize`, `EnergyCtx::energy_at`,
+`cap_for_location`, `energy::predict`, `curve_key`, `prior_level`, `Model::energy_at`,
+`Model::sleep_shift`, `Features::under_slept`, `Posterior::from_observations`/`from_reports`/
+`latest_before`/`adjustment`/`correct`, `posterior_weight` and `DayCapacity::from_slots`. The
+timing rows below were taken **single-threaded** (`--test-threads=1`): run in parallel with the
+rest of the suite the same rows read 182 ms and 355 ms, which is machine load, not this step.
+
+### Numbers, all re-measured on the committed tree
+
+| measurement | value | comparand |
+|---|---|---|
+| `check.sh`, built tree | **7/7**, **3.15 / 3.10 / 3.15 s**, peak RSS **1.95 GiB** | W-13 merge (`455ac8d`): 3.083 / 3.095 / 3.124 s. **+2.0% at worst — inside the 10%-per-step rule** |
+| axiom audit | **3,984 theorems** | 3,958. **+26**, every new theorem audited |
+| burn-down | **13**, all stage 6 | unchanged |
+| corpus | **29/37 files and 4/5 whole plans** | unchanged |
+| `cargo test --workspace` | **1,312 passed / 0 failed / 9 ignored across 78 result lines**, exit 0 | **1,311 / 0 / 9 across 78**. **+1**: the new door test |
+| FFI suite (`kernel/tm-kernel-ffi`, excluded from the workspace by design) | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) | 100 |
+| T5 `kernel_replay_parity --include-ignored` | **33 / 0 / 0**, 6.12 s | 33 |
+| T5 under `TM_ORACLE` (the live census) | **33 passed**; **P21 × 49**, "no disagreements beyond the recorded exceptions"; frozen fork 4748911: corpus 7 logs / 126 keys / 7,189 values, generated month 9,299 values, §6.4's 12 zone cases 803 values, **0 other exceptions** | **P21 × 49** — identical |
+| the door suite `kernel_log_door` | **23 passed / 0 failed**, 1.59 s; under `TM_ORACLE`, **P21 × 24** on **32,976** values, 0 other exceptions | 22; P21 × 24 on 32,976 — **+1 test**, the same census |
+| `cli_switch_acceptance --include-ignored` | **9 passed / 0 failed** | 9 |
+| `cli_check_log` | **9 passed / 0 failed** | 9 |
+| `kernel_call_counts` | **1 passed** — the `log` and `emit` columns are unmoved | 1. The capacity call's replay is invisible to it: **gap 278** |
+| `kernel_lookahead_parity` | **4 passed / 0 failed**, 0.74 s — **re-aimed**, 92 day-0 comparisons, 0 disagreements | 4 |
+| `kernel_unit_reserve` | **2 passed / 0 failed** (256 proptest cases) | 2 |
+| `kernel_log_grammar` | **16 / 0 / 2 ignored** | 16 |
+| `planner_invariants` | **6 passed / 0 failed**, 17.49 s | 6 |
+| `cli_latency --include-ignored --test-threads=1` | **6 passed / 0 failed**, 15.90 / 16.00 s | 6 |
+| T11, **the reliable row**: later verb, 3-year log | **147.01 / 146.91 / 146.88 / 146.91 ms** | the stable band **146.66-147.01 ms**. **Flat — `tm drop` makes no capacity call** |
+| T11, first verb (genesis), 3-year log | **2.156 / 2.147 / 2.212 / 2.366 s** | 2.15-2.48 s |
+| T11, the three noisy rows (**quoted as ranges** — gap 240) | reseal **207.68 / 207.81 ms**; 3-day-old routine **136.59 / 136.59 ms**; `review week` **298.44 / 278.17 ms** | 197.5-212.6 ✓ / 121.6-136.8 ✓ (at its top) / **248.1-253.3 ✗** |
+| **`review week` is the one row outside its band** | +25 to +45 ms | the second replay the capacity request carries (**gap 275**). `tm review week` makes 1 capacity call and 1 log call; `tm drop` makes 0 capacity calls, which is why the reliable row did not move |
+| T11, `tm plan` with a due 3 / 10 years out | **86.2 / 81.0 ms** and **146.9 / 141.8 ms** | inside `LATER_VERB` (1 s) |
+| the diff | **17 files**, **+2,264 / −280**: Lean **+1,056/−78** (`Arith`, `Lookahead`, `Boundary`, `Check`, `Negative`), Rust under `tm/src` **+297/−69**, tests **+553/−109**, and the three documents | no fixture, no snapshot, nothing under `kernel/corpus/`, no `Cargo.toml`, no `lean-toolchain` |
+| Lean line counts | `kernel/TmKernel/TmKernel/` **74,815**; `Check.lean` **4,671**; `Goals.lean` **752** (13 goals, unchanged); `Negative.lean` **1,938** | — |
+
+### Gaps
+
+**Closed: 93** — day 0 of the lookahead is the kernel's own, derived from its own replay. Four
+sessions restated it as blocked; the blocker each of them named (first the switch, then D24's
+seam) is gone, and `Look.day0Hist` is the answer. **Closed: 261** — `"wake": "log"` could not
+express `state.wake`-first precedence; the host's rule is implemented, written down and driven.
+**Gap 210's consumer half** is spent: the seam now carries day 0's two replay facts as well as
+the wake, and `CapWire.todayFromLog` is the projection.
+
+**Opened: 275, 276, 277, 278, 279** (the L9 range is 275-284; **280-284 are free**).
+
+#### Gap 275 (new; label L9-a) — a capacity verb now replays the log twice
+
+1. **What is not done.** `Ctx::replay_with` runs one replay for the verb, and
+   `kernel_capacity::request` carries a `log` section that runs a second one inside the capacity
+   call. `tm review week` moved from its recorded 248.1-253.3 ms band to **278.2-298.4 ms** on a
+   three-year log; `tm plan`, `tm now` and `tm review day` pay the same.
+2. **Why not now.** The cure is one call carrying both sections — which is what design §10.1's
+   sibling keys are *for* — and it means `Ctx` deferring its own replay until `allow_home` and the
+   candidates are known, or carrying the request forward. That is a plan-tier change to the host's
+   shape, not an agent's (AGENTS §4).
+3. **What it costs.** 25-45 ms on four verbs at three years of log, against a 1 s bound; the
+   checkpoint and its cache absorb the rest, and no row is near failing. It is also the one cost
+   that grows with log length on those verbs.
+4. **When it clears.** With the owner's answer, or with F2/F3, which will want the same call.
+
+#### Gap 276 (new; label L9-b) — one log shape has no one-call capacity section
+
+1. **What is not done.** `capacity_log_section` resumes from the process's own checkpoint, and
+   falls back to genesis **in one call** when there is none. A log with no valid checkpoint that
+   is also past the resend cap (8,192 lines / 1,536 KiB) has neither, and the verb fails by name
+   rather than answering.
+2. **Why not now.** Reaching it needs a log of more than 8,192 lines **none of which is older
+   than `KEEP_DAYS = 2`**, so that genesis sealed nothing to resume from. Genesis itself chunks
+   and so is unaffected; only the capacity request, which is one call, cannot. Raising the cap is
+   forbidden (D18) and chunking a capacity request is a wire change.
+3. **What it costs.** A `tm plan` that used to answer would name a fault, on a log shape nothing
+   in the corpus or the generators produces.
+4. **When it clears.** With gap 275's one-call shape, which removes the second section entirely.
+
+#### Gap 277 (new; label L9-c) — the planner still computes its own window and budget
+
+1. **What is not done.** L9 deleted `Ctx::window`, and `tm-core/src/planner.rs`'s
+   `window_and_budget` is still a second reading of §8.1 in the Rust — the one the `tm plan`
+   header prints.
+2. **Why not now.** It is `dayPlan`'s to absorb, and AGENTS §8.4 already says so ("the window,
+   the budget and the walls are already stage 5's … `dayPlan` reuses them and never writes a
+   second copy").
+3. **What it costs.** Two definitions of §8.1 in the tree until stage 6's planner step, where
+   before L9 there were three.
+4. **When it clears.** Stage 6's `dayPlan`.
+
+#### Gap 278 (new; label L9-d) — the per-verb call-count table cannot see the second replay
+
+1. **What is not done.** `tm_kernel_ffi::trace_kind` classifies a request by the first literal it
+   finds and tests `"capacity":` first, so a request carrying **both** sections counts as one
+   `capacity` call and no `log` call. `kernel_call_counts.rs` pins the `log` and `emit` columns
+   exactly and they did not move — correctly, and yet the replay gap 275 names is invisible there.
+2. **Why not now.** Splitting the count needs the trace to report both kinds for one call, which
+   is a change to the diagnostic's shape and to the table's meaning.
+3. **What it costs.** The instrument beside T11 would not catch a third replay appearing inside a
+   capacity request.
+4. **When it clears.** With gap 275, or with a trace that names every section a request carries.
+
+#### Gap 279 (new; label L9-e) — the TUI builds its own `EnergyCtx` for today
+
+1. **What is not done.** `tm/src/tui/app.rs` builds an `EnergyCtx` with `with_slept`,
+   `with_blocks_done` and the posterior for its own day view — a third computation of the shape
+   L9 just made the kernel's. It is the *planner's* today, not the lookahead's day 0, so L9 left
+   it alone rather than widen its scope.
+2. **Why not now.** It is `dayPlan`'s (stage 6's planner step), with gap 277.
+3. **What it costs.** A TUI day view whose levels could drift from the plan's if either side
+   changes alone.
+4. **When it clears.** Stage 6's `dayPlan`, with gap 277.
+
+**Highest on this branch:** gap **279**, cheat **158**, parity **P37**.
+
+### Documents brought up to date
+
+`AGENTS.md`: §2.3's `Lookahead` and `Boundary` rows (day 0 derived, `badDay0` gone, site R10,
+`Today`, the `at`/`state`/`posterior`/`sleep` keys, `day0WithoutLog`), §8.3's "what remains" item
+1 and its open-gap list (gap 93 closed), §8.4's scope note and its inherited-from-stage-5 L9 row,
+and §10.1's closing paragraph. `Arith.lean`'s rounding-sites table gains the **R10** row and its
+R11 row stops promising one. `kernel_bridge.rs`'s refusal table drops `badDay0` and names the six new
+capacity refusals in words, and `kernel_capacity::named_refusal` maps `badPosterior` and
+`badSleep` to their file and key (`.tm/model.json`'s `sleep_debt_shift` among them), so P26's
+reach covers the five new decimals from both directions.
+`kernel/design/stage6/stage6-planner-design.md`'s two **K2** rows are
+marked **LANDED** with what they got wrong (two configured decimals, not five; the Rust files they
+omit; the cost) — a targeted correction, not the full pass **gap 270** still asks for. One of
+those corrections is a dependency: the design lists **Q7** as gating K2, and it does not. Day 0
+reads `state.json`'s `date`, `window`, `budget`, `arrival`, `loc` and `--allow-home`, and **no**
+§9 row at all — `active`, `break`, `interrupt` and `last_plan_hash` never cross the wire. Q7 is
+`P0`'s and the planner's; it was not waited on here, and that is said rather than assumed.
+
+### Owed next, by name
+
+* **Stage 6's own eight steps** (AGENTS §8.4, and the step plan at `85bfcd4`): walls, routines,
+  slots, priority, assign, deferred routines, rest, emit — with `dayPlan` reusing L2-L4 and L9,
+  never copying them (gaps 277 and 279 are its first two deletions).
+* **F2 and F3** (design §14.7): the seam now has three consumers' worth of evidence, and
+  `CapWire.todayFromLog` is the shape their projections take.
+* **Gaps 275-279** above, and this run's untouched inheritance: stage 5's residue (**94, 98, 113,
+  114, 116, 132, 133, 139, 143, 150, 151, 152, 160, 170, 180, 181, 182, 190, 200, 201, 226**),
+  the seam's **260** and **262**, the merge's **270**, and the performance levers (**121, 122,
+  123, 126, 127**, and 143), which D25 leaves unstarted on purpose.
+* **The §5.13 human drives** of the stage-3, stage-4 and stage-5 binaries, with the TUI half of
+  the switch's own drive (**gap 182**). No agent can perform them.

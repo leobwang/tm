@@ -62,7 +62,8 @@ each monotone (`*_mono`) and each within one minute of the exact value
 | R5 | §8.5 slot energy after the posterior correction | **half-up, then clamp to `0..5`** — and the clamp is load-bearing (`posterior_can_go_negative`) | `energyAfter` |
 | R6 | §8.2 step 3's short last block, "≥ 30m or dropped" (§16 `min_last_block_min`) | a **comparison**, not a rounding — named so that nobody adds one | — |
 | R7 | §8.4's future-day capacity, mixing the two locations by `p_lounge` | **open**: a mixture of two integer capacities by a rational weight. Nothing rounds here yet; the pair is carried exact | — |
-| R11 | §8.5's hours since wake, `hsw = round(seconds / 36) / 100` (fork `log::hours_since_wake`), which `energy::bucket` floors and the prior curve's range keys compare | **half away from zero**, on whole seconds (`Cal.secondsBetween`, chrono's `num_seconds`); exact against the fork's `f64` for every input, because no quotient lies within an ulp of a tie and no hundredth within an ulp of a range key with `den ≤ 10^6`. *Added at stage 5 D10 step L4 (design D10-11). R8–R10 are the D9 track's and step L9's rows, added by their steps* | `Look.hsw100` (`hsw100_mono`, `hsw100_withinOne`) |
+| R11 | §8.5's hours since wake, `hsw = round(seconds / 36) / 100` (fork `log::hours_since_wake`), which `energy::bucket` floors and the prior curve's range keys compare | **half away from zero**, on whole seconds (`Cal.secondsBetween`, chrono's `num_seconds`); exact against the fork's `f64` for every input, because no quotient lies within an ulp of a tie and no hundredth within an ulp of a range key with `den ≤ 10^6`. *Added at stage 5 D10 step L4 (design D10-11). R8 and R9 are the D9 track's rows, added by their steps* | `Look.hsw100` (`hsw100_mono`, `hsw100_withinOne`) |
+| R10 | §8.5's sleep-debt shift, `model.sleep_shift(cfg).round()`, subtracted from the base level before the `0..5` clamp | **half away from zero** on a **signed** decimal — §8.5 fits `sleep_debt_shift` as a shrunken mean, so the sign is real and `f64::round` is not half-up below zero. *Added at stage 6 step L9 (design §13.5), with day 0 as its caller* | `roundAway` (`roundAway_mono`, `roundAway_withinOne`) |
 
 Two families that look like rounding and are not.  §7.1's utilization, §7.3's
 `avail` and `reserve`, §7.4's hysteresis, §7.5's batching threshold, §8.5's
@@ -1076,5 +1077,112 @@ theorem energyAfter_examples :
     (energyAfter 4 (-2) (defaultRamp 270)).val = 3 ∧
     (energyAfter 2 (-5) (defaultRamp 0)).val = 0 ∧
     (energyAfter 5 3 (defaultRamp 0)).val = 5 := by decide
+
+/-! ### R10 — the §8.5 sleep-debt shift (stage 6 step L9)
+
+Fork `energy::predict`: when the night was short, the base level loses
+`model.sleep_shift(cfg).round()` levels **before** the `0..5` clamp.  The shift is a
+configured decimal (`config.toml`'s `[energy.sleep_debt] shift`) or a fitted one
+(`.tm/model.json`'s `sleep_debt_shift`, which `Model::sleep_shift` prefers), and §8.5
+writes the fitted one as a shrunken *mean*, so it is genuinely **signed**.
+`f64::round` is half **away from zero**: that is `halfUpQ` on the magnitude with the
+sign put back, and it is *not* half-up on a negative value (`-1.5` rounds to `-2`,
+not to `-1`).
+
+`under_slept` — `slept_min as f64 / 60.0 < under_hours` — is a **comparison**, not a
+rounding, and it cross-multiplies (`slept · den < 60 · num`): the table's note above
+already says why a comparison has no row. -/
+
+/-- A signed decimal, as a sign and a non-negative pair.  The host reads the sign off
+the literal and sends it beside the magnitude, so nothing is rounded and nothing is
+lost (D17). -/
+structure Signed where
+  neg : Bool
+  mag : Pos
+
+/-- The signed value's numerator, over `den`. -/
+def Signed.num (s : Signed) : Int := if s.neg then -(s.mag.val.num : Int) else (s.mag.val.num : Int)
+
+/-- The signed value's denominator, positive by construction. -/
+def Signed.den (s : Signed) : Nat := s.mag.val.den
+
+theorem Signed.den_pos (s : Signed) : 0 < s.den := denPos s.mag
+
+/-- **R10** — `f64::round` on a signed decimal: half away from zero. -/
+def roundAway (s : Signed) : Int := if s.neg then -(halfUpQ s.mag : Int) else (halfUpQ s.mag : Int)
+
+/-- A pair with a zero numerator rounds to zero, whatever its sign. -/
+theorem halfUpQ_of_zero_num {p : Pos} (h : p.val.num = 0) : halfUpQ p = 0 := by
+  have hd := denPos p
+  simp only [halfUpQ, h, Nat.mul_zero, Nat.zero_add]
+  exact Nat.div_eq_of_lt (by omega)
+
+/-- The sign-carrying half of R10's two laws, over the naturals it is built from. -/
+theorem roundAway_withinOne_aux (neg : Bool) (h m d : Nat) (hlt : h * d < m + d)
+    (hgt : m < h * d + d) :
+    (if neg then -(h : Int) else (h : Int)) * (d : Int)
+        < (if neg then -(m : Int) else (m : Int)) + (d : Int) ∧
+      (if neg then -(m : Int) else (m : Int))
+        < (if neg then -(h : Int) else (h : Int)) * (d : Int) + (d : Int) := by
+  have hmul : ((h : Int)) * ((d : Int)) = ((h * d : Nat) : Int) := (Int.natCast_mul _ _).symm
+  cases neg
+  · simp only [Bool.false_eq_true, if_false, hmul]
+    omega
+  · simp only [if_true, Int.neg_mul, hmul]
+    omega
+
+/-- **R10 is within one level of the exact shift**, in both directions: the magnitude's
+`WithinOne`, which the sign carries to the other end. -/
+theorem roundAway_withinOne (s : Signed) :
+    roundAway s * (s.den : Int) < s.num + (s.den : Int) ∧
+      s.num < roundAway s * (s.den : Int) + (s.den : Int) := by
+  obtain ⟨hlt, hgt⟩ := halfUpQ_withinOne s.mag
+  exact roundAway_withinOne_aux s.neg (halfUpQ s.mag) s.mag.val.num s.mag.val.den hlt hgt
+
+/-- The monotone half of R10's two laws, over the naturals it is built from. -/
+theorem roundAway_mono_aux (na nb : Bool) (ma da mb db ha hb : Nat)
+    (hda : 0 < da) (hdb : 0 < db)
+    (hup : ma * db ≤ mb * da → ha ≤ hb) (hdown : mb * da ≤ ma * db → hb ≤ ha)
+    (hza : ma = 0 → ha = 0) (hzb : mb = 0 → hb = 0)
+    (h : (if na then -(ma : Int) else (ma : Int)) * (db : Int)
+        ≤ (if nb then -(mb : Int) else (mb : Int)) * (da : Int)) :
+    (if na then -(ha : Int) else (ha : Int)) ≤ (if nb then -(hb : Int) else (hb : Int)) := by
+  have hA : ((ma : Int)) * ((db : Int)) = ((ma * db : Nat) : Int) := (Int.natCast_mul _ _).symm
+  have hB : ((mb : Int)) * ((da : Int)) = ((mb * da : Nat) : Int) := (Int.natCast_mul _ _).symm
+  cases na <;> cases nb <;>
+    simp only [Bool.false_eq_true, if_false, if_true, Int.neg_mul, hA, hB] at h ⊢
+  · have := hup (by omega); omega
+  · -- `a ≥ 0 ≥ b` forces both magnitudes, and so both roundings, to zero
+    have h1 : ma * db = 0 := by omega
+    have h2 : mb * da = 0 := by omega
+    have hma : ma = 0 := by rcases Nat.mul_eq_zero.mp h1 with h' | h' <;> omega
+    have hmb : mb = 0 := by rcases Nat.mul_eq_zero.mp h2 with h' | h' <;> omega
+    rw [hza hma, hzb hmb]
+    omega
+  · omega
+  · have := hdown (by omega); omega
+
+/-- **R10 is monotone**: a larger shift never subtracts less — within each sign and
+across the two. -/
+theorem roundAway_mono {a b : Signed} (h : a.num * (b.den : Int) ≤ b.num * (a.den : Int)) :
+    roundAway a ≤ roundAway b := by
+  simp only [Signed.num, Signed.den] at h
+  simp only [roundAway]
+  refine roundAway_mono_aux a.neg b.neg a.mag.val.num a.mag.val.den b.mag.val.num b.mag.val.den
+    (halfUpQ a.mag) (halfUpQ b.mag) (denPos a.mag) (denPos b.mag)
+    (fun hc => halfUpQ_mono (Q.le_of hc)) (fun hc => halfUpQ_mono (Q.le_of hc))
+    (fun hc => halfUpQ_of_zero_num hc) (fun hc => halfUpQ_of_zero_num hc) h
+
+/-- §16's default: a whole level, subtracted. -/
+def defaultShift : Signed := ⟨false, mkPos 1 1 (by omega)⟩
+
+/-- Half away from zero, both ways, and the default. -/
+theorem roundAway_examples :
+    roundAway defaultShift = 1 ∧
+    roundAway ⟨false, mkPos 15 10 (by omega)⟩ = 2 ∧
+    roundAway ⟨true, mkPos 15 10 (by omega)⟩ = -2 ∧
+    roundAway ⟨false, mkPos 14 10 (by omega)⟩ = 1 ∧
+    roundAway ⟨true, mkPos 14 10 (by omega)⟩ = -1 ∧
+    roundAway ⟨true, mkPos 0 1 (by omega)⟩ = 0 := by decide
 
 end Tm.Arith

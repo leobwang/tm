@@ -474,6 +474,74 @@ fn the_doors_merge_prefers_the_answer_and_keeps_day_order() {
     assert!(kernel_log::merge_records(&facts, &bad, &empty).is_err(), "a torn sealed record is a fault");
 }
 
+/// **Step L9's door: the `log` section a capacity request carries** (gap 93; D24's seam).
+///
+/// Day 0 of the lookahead is the kernel's own since L9, derived from the replay of the **same**
+/// call, so `kernel_capacity::request` puts a `log` section beside its `capacity` section and
+/// `capacity_log_section` builds it. Three rules decide its shape, and all three are here:
+///
+/// * with a checkpoint this process's own replay just produced, it **resumes** from it — the
+///   checkpoint spliced in verbatim (`Seal.readCkptFields` reads its keys in build order, so a
+///   `serde_json::Value` round trip would alphabetise them into `badCkpt v`), the tail from its
+///   cut, `facts: true` and `reseal: null` — the verb's own replay owns the cache;
+/// * with no checkpoint it is **genesis in one call** (`ckpt: null`, `from: 1`, every line);
+/// * with `now` **below** the checkpoint's ledger day it does not resume into G4's refusal
+///   (§9.7 answers that from an unpersisted genesis), and falls back to the one call.
+///
+/// And the answer it draws must carry `facts`, because `LogAnswer.facts` is `some` exactly when
+/// the request resumed **and** asked for facts: that is what the seam hands the capacity reader.
+#[test]
+fn the_doors_capacity_section_resumes_the_processs_own_checkpoint() {
+    let text = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../kernel/corpus/logs/energy-14d.jsonl"),
+    )
+    .expect("the corpus log");
+    let (dir, bytes) = tree(&text);
+    let today = day_after(&text);
+    let day = kernel_log::day_of(today);
+
+    // Before any replay there is no checkpoint: genesis in one call.
+    let cold = kernel_log::capacity_log_section(dir.path(), &bytes, &wire(dir.path()), day)
+        .expect("a section");
+    assert!(cold.starts_with(r#"{"ckpt":null,"from":1,"#), "a cold section is not a genesis: {}", &cold[..60.min(cold.len())]);
+    assert!(cold.contains(r#""facts":true"#), "the section does not ask for facts");
+    assert!(cold.contains(r#""reseal":null"#), "the section reseals, and the verb's own replay owns the cache");
+
+    // The verb's own replay runs, and writes a checkpoint; the section then resumes from it.
+    let read = door(dir.path(), &bytes, today, kernel_log::Scope::Hot);
+    assert!(read.ledger_day.is_some(), "the replay sealed nothing, so \"resume\" would be vacuous");
+    let hot = kernel_log::capacity_log_section(dir.path(), &bytes, &wire(dir.path()), day)
+        .expect("a section");
+    assert!(hot.starts_with(r#"{"ckpt":{"v":1,"#), "a warm section is not a resume: {}", &hot[..60.min(hot.len())]);
+    assert!(hot.len() < cold.len() + 400_000, "a resume is not a genesis in disguise");
+
+    // A `now` below the ledger day does not resume into G4's refusal.
+    let early = kernel_log::capacity_log_section(dir.path(), &bytes, &wire(dir.path()), day - 30)
+        .expect("a section");
+    assert!(
+        early.starts_with(r#"{"ckpt":null,"#),
+        "a `now` below the ledger day resumed into a refusal: {}",
+        &early[..60.min(early.len())]
+    );
+
+    // Both sections are answered, and both carry the facts the seam hands the capacity reader.
+    for (what, section) in [("cold", &cold), ("hot", &hot)] {
+        let req = format!(
+            r#"{{"docs":[],"now":"{}","tz":{},"log":{section}}}"#,
+            today,
+            wire(dir.path())
+        );
+        let resp = tm_kernel_ffi::call(&req).unwrap_or_else(|e| panic!("the {what} section faults: {e:?}"));
+        let v: Value = serde_json::from_str(&resp).expect("a response");
+        assert!(v.get("err").is_none(), "the {what} section was refused: {resp}");
+        assert!(
+            !v["ok"]["log"]["facts"].is_null(),
+            "the {what} section's answer carries no facts, so day 0 has nothing to be derived from"
+        );
+    }
+    eprintln!("the capacity section: cold {} bytes, hot {} bytes", cold.len(), hot.len());
+}
+
 /// **The instrument the module-wide `#![allow(dead_code)]` takes away** (W-7 audit, defect 2).
 ///
 /// `tm/src/cli/kernel_log.rs` carries `#![allow(dead_code)]` because before S nothing under

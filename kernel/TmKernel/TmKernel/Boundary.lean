@@ -9013,6 +9013,35 @@ inductive Part where
   | days
   /-- Stage 5 D10 L8: the `candidates` object, its `hysteresis` and its `items`. -/
   | candidates
+  /-- Stage 6 L9: `.tm/state.json`'s runtime facts, day 0's. -/
+  | state
+  /-- Stage 6 L9: `[energy.sleep_debt]` and the model's fitted shift (site R10). -/
+  | sleep
+  /-- Stage 6 L9: `[energy]`'s two posterior decimals (site R5). -/
+  | posterior
+deriving DecidableEq, Repr
+
+/-- Stage 6 L9: a key of the `state` object (`badState state.<key>`). -/
+inductive StateKey where
+  | date
+  | window
+  | budget
+  | arrival
+  | loc
+  | allowHome
+deriving DecidableEq, Repr
+
+/-- Stage 6 L9: a key of the `sleep` object (`badSleep sleep.<key>`). -/
+inductive SleepKey where
+  | shiftModel
+  | shiftConfig
+  | underHours
+deriving DecidableEq, Repr
+
+/-- Stage 6 L9: a key of the `posterior` object (`badPosterior posterior.<key>`). -/
+inductive PostKey where
+  | fullHours
+  | zeroHours
 deriving DecidableEq, Repr
 
 /-- Stage 5 D10 L8: a key of one candidate record (`badCandidate <position> <key>`). -/
@@ -9053,7 +9082,6 @@ inductive Refusal where
   | badCap
   | badDay (k : DayKey)
   | lookaheadTooLong
-  | badDay0
   | badBins
   | badSafety
   | badDefaultPriority
@@ -9067,6 +9095,20 @@ inductive Refusal where
   it did not resume, or it did not ask for facts.  The seam refuses rather than read a blank
   answer as a fact. -/
   | wakeWithoutLog
+  /-- Stage 6 L9: the `at` stamp is not a stamp B2's one reader accepts. -/
+  | badAt
+  /-- Stage 6 L9, design §13.5: the `at` stamp's local date is not the request's `now`, so day 0
+  would be cut from an instant outside the day it plans. -/
+  | nowDisagrees
+  /-- Stage 6 L9: a key of the `state` object. -/
+  | badState (k : StateKey)
+  /-- Stage 6 L9: a key of the `sleep` object (site R10's pairs). -/
+  | badSleep (k : SleepKey)
+  /-- Stage 6 L9: a key of the `posterior` object (site R5's pairs). -/
+  | badPosterior (k : PostKey)
+  /-- Stage 6 L9, gap 93: day 0 is the kernel's own, and this request's `log` section carried no
+  replay to derive it from — it did not resume, or it did not ask for facts. -/
+  | day0WithoutLog
 deriving DecidableEq, Repr
 
 def Src.name : Src → String
@@ -9077,6 +9119,17 @@ def Part.name : Part → String
   | .pLoungeConfig => "pLounge.config" | .arrival => "arrival" | .arrivalModel => "arrival.model"
   | .arrivalConfig => "arrival.config" | .energy => "energy" | .prior => "prior" | .day => "day"
   | .priority => "priority" | .days => "days" | .candidates => "candidates"
+  | .state => "state" | .sleep => "sleep" | .posterior => "posterior"
+
+def StateKey.name : StateKey → String
+  | .date => "date" | .window => "window" | .budget => "budget" | .arrival => "arrival"
+  | .loc => "loc" | .allowHome => "allowHome"
+
+def SleepKey.name : SleepKey → String
+  | .shiftModel => "shiftModel" | .shiftConfig => "shiftConfig" | .underHours => "underHours"
+
+def PostKey.name : PostKey → String
+  | .fullHours => "fullHours" | .zeroHours => "zeroHours"
 
 def CandKey.name : CandKey → String
   | .id => "id" | .ci => "ci" | .rootPrio => "rootPrio" | .remaining => "remaining" | .due => "due"
@@ -9113,7 +9166,6 @@ def Refusal.text : Refusal → String
   | .badCap => "badCap homeMaxCi"
   | .badDay k => "badDay " ++ dayKeyName k
   | .lookaheadTooLong => "lookaheadTooLong"
-  | .badDay0 => "badDay0"
   | .badBins => "badBins"
   | .badSafety => "badSafety"
   | .badDefaultPriority => "badDefaultPriority"
@@ -9121,6 +9173,12 @@ def Refusal.text : Refusal → String
   | .badCandidate i k => "badCandidate " ++ String.ofList (digitsOf i) ++ " " ++ k.name
   | .capacityWithCommands => "capacityWithCommands"
   | .wakeWithoutLog => "wakeWithoutLog wake"
+  | .badAt => "badAt at"
+  | .nowDisagrees => "nowDisagrees at"
+  | .badState k => "badState state." ++ k.name
+  | .badSleep k => "badSleep sleep." ++ k.name
+  | .badPosterior k => "badPosterior posterior." ++ k.name
+  | .day0WithoutLog => "day0WithoutLog"
 
 /-- The refusal on the wire: `{"err": {"capacity": "<name> <key>"}}`. -/
 def refusalJson (r : Refusal) : JVal := jone "err" (jone "capacity" (.str r.text.toList))
@@ -9201,6 +9259,111 @@ def clockAt (v : JVal) (k : String) (r : Refusal) : Except Refusal Field.Clock :
   match need v k r with
   | .ok c => orErr (clockOf c) r
   | .error e => .error e
+
+/-! ### Step L9's readers: optionals, an exact pair, a signed one, a boolean -/
+
+/-- An optional natural at `k`. -/
+def optNatAt (v : JVal) (k : String) (r : Refusal) : Except Refusal (Option Nat) :=
+  match opt v k r with
+  | .error e => .error e
+  | .ok none => .ok none
+  | .ok (some (.num n)) => .ok (some n)
+  | .ok (some _) => .error r
+
+/-- An optional `HH:MM` clock at `k`. -/
+def optClockAt (v : JVal) (k : String) (r : Refusal) : Except Refusal (Option Field.Clock) :=
+  match opt v k r with
+  | .error e => .error e
+  | .ok none => .ok none
+  | .ok (some c) => (orErr (clockOf c) r).map some
+
+/-- An optional `YYYY-MM-DD` at `k`, through the one date grammar. -/
+def optDateAt (v : JVal) (k : String) (r : Refusal) : Except Refusal (Option Nat) :=
+  match opt v k r with
+  | .error e => .error e
+  | .ok none => .ok none
+  | .ok (some (.str d)) => (orErr (Field.parseDate d) r).map some
+  | .ok (some _) => .error r
+
+/-- A required boolean at `k`. -/
+def boolReq (v : JVal) (k : String) (r : Refusal) : Except Refusal Bool :=
+  match need v k r with
+  | .ok (.bool b) => .ok b
+  | _ => .error r
+
+/-- The widest denominator and the largest value a configured `[energy]` decimal may carry (R10;
+design §13.6's `den ∈ [1, 10^6]` row).  `posterior_full_hours`, `posterior_zero_hours`,
+`sleep_debt.under_hours` and `sleep_debt.shift` are hours and levels — six decimal places and a
+million are far outside anything a night or a curve can mean. -/
+def maxRatioDen : Nat := 1000000
+def maxRatioNum : Nat := 1000000
+
+/-- **A configured `[energy]` decimal, bounded** (R10): `Arith.ofPair?` is the one constructor —
+it refuses a zero denominator — and the bounds refuse the rest.  Nothing is clamped. -/
+def boundedPos (n d : Nat) : Option Arith.Pos :=
+  if d ≤ maxRatioDen ∧ n ≤ maxRatioNum * d then Arith.ofPair? n d else none
+
+theorem boundedPos_zero_den (n : Nat) : boundedPos n 0 = none := by
+  simp only [boundedPos]
+  split
+  · exact Arith.ofPair?_zero n
+  · rfl
+
+theorem boundedPos_wide_den {n d : Nat} (h : maxRatioDen < d) : boundedPos n d = none := by
+  simp only [boundedPos]
+  rw [if_neg (by omega)]
+
+theorem boundedPos_large_num {n d : Nat} (h : maxRatioNum * d < n) : boundedPos n d = none := by
+  simp only [boundedPos]
+  rw [if_neg (by omega)]
+
+theorem boundedPos_ok {n d : Nat} {q : Arith.Pos} (h : boundedPos n d = some q) :
+    0 < d ∧ d ≤ maxRatioDen ∧ n ≤ maxRatioNum * d ∧ q.val = ⟨n, d⟩ := by
+  unfold boundedPos at h
+  split at h
+  · rename_i hb
+    unfold Arith.ofPair? at h
+    split at h
+    · rename_i hd
+      cases h
+      exact ⟨hd, hb.1, hb.2, rfl⟩
+    · cases h
+  · cases h
+
+/-- **A configured decimal as an exact non-negative pair** (R10): `{"num": n, "den": d}` through
+`boundedPos`. -/
+def posAt (v : JVal) (k : String) (r : Refusal) : Except Refusal Arith.Pos :=
+  match pairAt v k r with
+  | .ok p => orErr (boundedPos p.1 p.2) r
+  | .error e => .error e
+
+/-- **A signed configured decimal** (site R10's shift): `{"neg": bool, "num": n, "den": d}`, the
+sign beside a non-negative magnitude so nothing is rounded and nothing is lost.  `neg` absent is
+`false`. -/
+def signedOf (v : JVal) (r : Refusal) : Except Refusal Arith.Signed := do
+  let n ← natAt v "num" r
+  let d ← natAt v "den" r
+  let neg ← (match opt v "neg" r with
+    | .error e => (Except.error e : Except Refusal Bool)
+    | .ok none => .ok false
+    | .ok (some (.bool b)) => .ok b
+    | .ok (some _) => .error r)
+  match boundedPos n d with
+  | some m => .ok ⟨neg, m⟩
+  | none => .error r
+
+/-- A signed pair at `k`. -/
+def signedAt (v : JVal) (k : String) (r : Refusal) : Except Refusal Arith.Signed :=
+  match need v k r with
+  | .ok p => signedOf p r
+  | .error e => .error e
+
+/-- An optional signed pair at `k`. -/
+def optSignedAt (v : JVal) (k : String) (r : Refusal) : Except Refusal (Option Arith.Signed) :=
+  match opt v k r with
+  | .error e => .error e
+  | .ok none => .ok none
+  | .ok (some p) => (signedOf p r).map some
 
 /-- **One lounge weight** (L1's `mkWeight?`): a pair of digit strings, then the constructor's names. -/
 def readWeight (src : Src) (wd : Cal.Weekday) (v : JVal) : Except Refusal (Nat × Nat) :=
@@ -9429,7 +9592,20 @@ structure Section where
   day       : DayCfg
   prio      : Bins × Arith.Pos × Fin 4
   days      : Nat
-  day0      : List Nat
+  /-- Stage 6 L9: the request's own instant, `Ctx::now_tz`, through B2's one stamp reader. -/
+  atNow     : Cal.Instant
+  /-- Stage 6 L9: `.tm/state.json`'s day, window, budget, arrival and location. -/
+  stDate    : Option Nat
+  stWindow  : Option (Field.Clock × Field.Clock)
+  stBudget  : Option Nat
+  stArrival : Option Field.Clock
+  stLoc     : List Char
+  /-- Stage 6 L9: `tm plan --allow-home`. -/
+  allowHome : Bool
+  /-- Stage 6 L9: §16's two posterior decimals (site R5). -/
+  post      : Look.PostCfg
+  /-- Stage 6 L9: `[energy.sleep_debt]` and the model's fitted shift (site R10). -/
+  sleep     : Look.SleepCfg
 
 /-- `wake`: absent or `null` is no logged wake; `"log"` is the seam (D24); an object is the time of
 day the request sent.  Anything else is `badWake`. -/
@@ -9445,11 +9621,66 @@ def readWake (sec : JVal) : Except Refusal WakeSrc :=
 /-- `days`: a natural (its bound is `mkInput?`'s). -/
 def readDays (sec : JVal) : Except Refusal Nat := natAt sec "days" (.badCapacity .days)
 
-/-- `day0`: at most six naturals, read (the exact count and bound are `mkInput?`'s). -/
-def readDay0 (sec : JVal) : Except Refusal (List Nat) :=
-  match arrAt sec "day0" .badDay0 with
-  | .ok xs => orErr (if 6 < xs.length then none else xs.mapM natOf) .badDay0
-  | .error e => .error e
+/-- **The request's own instant** (step L9; design §13.5's `at` stamp): the stamp `Ctx::now_tz`
+renders, read by B2's one stamp reader, so an accepted `at` is a `Cal.VInstant` — R10's bound,
+not a number off the wire.  Its local date must be the request's `now`, which `mkInput?` checks
+(`nowDisagrees`). -/
+def readAt (sec : JVal) : Except Refusal Cal.Instant :=
+  match need sec "at" .badAt with
+  | .ok (.str t) =>
+    (match LogStamp.parseStamp t with
+     | .ok (i, _) => .ok i.val
+     | .error _ => .error .badAt)
+  | _ => .error .badAt
+
+/-- The longest location name a request may carry (R10). -/
+def maxLocName : Nat := 1024
+
+/-- **`state`** (step L9): the runtime facts of `.tm/state.json` that day 0 reads — the day the
+state describes, the window and budget `tm arrive` stored, the stored arrival, the current
+location and `--allow-home`.  `state.json` is the host's file (AGENTS §8.4), so the host resolves
+`Loc::parse`'s own fallback and sends a name; every rule *about* these values —
+`state.date == today`, `window` only with `budget`, the name's curve — is the kernel's
+(`Look.Today.storedWindow`, `Look.curveKeyOf`). -/
+def readState (sec : JVal) :
+    Except Refusal (Option Nat × Option (Field.Clock × Field.Clock) × Option Nat ×
+      Option Field.Clock × List Char × Bool) := do
+  let s0 ← need sec "state" (.badCapacity .state)
+  let v ← needObj s0 .state
+  let date ← optDateAt v "date" (.badState .date)
+  let w0 ← opt v "window" (.badState .window)
+  let w ← (match w0 with
+    | none => (Except.ok none : Except Refusal (Option (Field.Clock × Field.Clock)))
+    | some wv => do
+      let f ← clockAt wv "from" (.badState .window)
+      let t ← clockAt wv "to" (.badState .window)
+      return some (f, t))
+  let budget ← optNatAt v "budget" (.badState .budget)
+  let arr ← optClockAt v "arrival" (.badState .arrival)
+  let loc ← strAt v "loc" (.badState .loc)
+  let ah ← boolReq v "allowHome" (.badState .allowHome)
+  if maxLocName < loc.length then .error (.badState .loc)
+  else return (date, w, budget, arr, loc, ah)
+
+/-- **`posterior`** (step L9, site R5): §16's `posterior_full_hours` and `posterior_zero_hours` as
+the exact decimals their file writes.  Nothing converts them to minutes (`Look.weightAt`). -/
+def readPosterior (sec : JVal) : Except Refusal Look.PostCfg := do
+  let p0 ← need sec "posterior" (.badCapacity .posterior)
+  let v ← needObj p0 .posterior
+  let f ← posAt v "fullHours" (.badPosterior .fullHours)
+  let z ← posAt v "zeroHours" (.badPosterior .zeroHours)
+  return ⟨f, z⟩
+
+/-- **`sleep`** (step L9, site R10): `[energy.sleep_debt]`'s `under_hours` and `shift`, and the
+model's fitted `sleep_debt_shift` beside it.  Both shifts are sent and the kernel picks (D10-4);
+both are **signed**, because §8.5 fits the shift as a shrunken mean. -/
+def readSleep (sec : JVal) : Except Refusal Look.SleepCfg := do
+  let s0 ← need sec "sleep" (.badCapacity .sleep)
+  let v ← needObj s0 .sleep
+  let sm ← optSignedAt v "shiftModel" (.badSleep .shiftModel)
+  let sc ← signedAt v "shiftConfig" (.badSleep .shiftConfig)
+  let uh ← posAt v "underHours" (.badSleep .underHours)
+  return ⟨sm, sc, uh⟩
 
 /-- **The section** (design §13.6), in the order of the example. -/
 def readSection (bm : Nat) (cap : JVal) : Except Refusal Section := do
@@ -9465,8 +9696,12 @@ def readSection (bm : Nat) (cap : JVal) : Except Refusal Section := do
   let day ← readDay bm sec
   let prio ← readPriority sec
   let days ← readDays sec
-  let day0 ← readDay0 sec
-  return ⟨p.1, p.2, a.1, a.2, wake, energy, prior, homeMax, day, prio, days, day0⟩
+  let atNow ← readAt sec
+  let st ← readState sec
+  let post ← readPosterior sec
+  let sleep ← readSleep sec
+  return ⟨p.1, p.2, a.1, a.2, wake, energy, prior, homeMax, day, prio, days, atNow,
+    st.1, st.2.1, st.2.2.1, st.2.2.2.1, st.2.2.2.2.1, st.2.2.2.2.2, post, sleep⟩
 
 /-- The decoded request: the lookahead's raw input and its decoded form, and the priority
 configuration for the priority wiring (L8). -/
@@ -9482,7 +9717,7 @@ def ofCapErr (x : InputIn) : CapErr → Refusal
   | .lookaheadTooLong => .lookaheadTooLong
   | .weight wd e => .weight e (if (x.pModel wd).isSome then .model else .config) wd
   | .badWake => .badWake
-  | .badDay0 => .badDay0
+  | .nowDisagrees => .nowDisagrees
 
 /-- The lookahead's last day is a date the calendar renders (year ≤ 9999). -/
 def lookaheadInCalendar (today days : Nat) : Bool := days == 0 || Field.dayWf (today + days - 1)
@@ -9529,12 +9764,41 @@ def WakeSrc.resolve (rep : Option Seal.Answer) (z : Cal.Tz) (today : Nat) :
     | none => .error .wakeWithoutLog
     | some a => .ok (((dayRecordOn a today).bind (fun r => r.record.bind (fun c => c.wake))).map (wakeClockOf z))
 
-/-- The lookahead's raw input from the section, the zone, today, the resolved wake and the plan's
-walls.  **D24**: the wake is handed in already resolved, because `"log"` reads the seam, which is
-not the section's to see. -/
+/-! ### The seam's second consumer (stage 6 step L9, gap 93): day 0's own facts
+
+Day 0 is not a histogram the host hands in any more.  Two of its inputs are facts the kernel
+derives — last night's minutes and today's energy reports — and both are in the `DayRecord`
+`dayRecordOn` already finds.  A capacity request whose `log` section carried no replay cannot
+have a day 0 at all, and is refused by name (`day0WithoutLog`) rather than answered with an
+empty day: AGENTS §5.7, and exactly the choice `wakeWithoutLog` made above. -/
+
+/-- **Today's sleep and energy reports, from this call's own replay**: `record.sleptMin` is what
+`tm wake` logged last night (fork `Ctx::slept_min`), and `energy`'s `(t, pred, rep)` triples are
+what `Posterior::from_observations` reads off `replay.energy_on(today)` (fork `Ctx::today_slots`).
+A day the replay does not reach has neither, which is what a day with no lines means. -/
+def todayFromLog (a : Seal.Answer) (today : Nat) : Option Nat × List Look.Report :=
+  match dayRecordOn a today with
+  | none => (none, [])
+  | some r => (r.record.bind (fun c => c.sleptMin),
+      r.energy.map (fun o => ⟨o.t.1, o.pred.val, o.rep.val⟩))
+
+/-- **What today is** (step L9): the section's host-sent half, and the replay's half through the
+seam.  Without a replay there is no day 0, and the request is refused by name. -/
+def Section.today0 (s : Section) (rep : Option Seal.Answer) (today : Nat) :
+    Except Refusal Look.Today :=
+  match rep with
+  | none => .error .day0WithoutLog
+  | some a =>
+    let f := todayFromLog a today
+    .ok ⟨s.atNow, s.stDate, s.stWindow, s.stBudget, s.stArrival, s.stLoc, s.allowHome,
+      f.1, f.2, s.post, s.sleep⟩
+
+/-- The lookahead's raw input from the section, the zone, today, the resolved wake, today's own
+facts and the plan's walls.  **D24**: the wake and day 0's facts are handed in already resolved,
+because both read the seam, which is not the section's to see. -/
 def Section.input (s : Section) (today bm : Nat) (z : Cal.Tz) (plan : PlanCore)
-    (w : Option WakeClock) : InputIn :=
-  ⟨today, s.days, s.day0, s.pModel, s.pConfig, s.arrModel, s.arrConfig, w, ⟨s.prior, s.energy⟩,
+    (w : Option WakeClock) (T : Look.Today) : InputIn :=
+  ⟨today, s.days, T, s.pModel, s.pConfig, s.arrModel, s.arrConfig, w, ⟨s.prior, s.energy⟩,
     s.homeMax, s.day, z, wallIndex z bm plan⟩
 
 /-- A lookahead the calendar can render, or `lookaheadTooLong`. -/
@@ -9550,9 +9814,10 @@ def readCapacity (plan : PlanCore) (clock : ReqClock) (rep : Option Seal.Answer)
   let z ← readTz j
   let s ← readSection bm cap
   let w ← s.wake.resolve rep z today
-  let I ← (mkInput? (s.input today bm z plan w)).mapError (ofCapErr (s.input today bm z plan w))
+  let T ← s.today0 rep today
+  let I ← (mkInput? (s.input today bm z plan w T)).mapError (ofCapErr (s.input today bm z plan w T))
   let _ ← inCalendar today s.days
-  return ⟨s.input today bm z plan w, I, s.prio.1, s.prio.2.1, s.prio.2.2⟩
+  return ⟨s.input today bm z plan w T, I, s.prio.1, s.prio.2.1, s.prio.2.2⟩
 
 /-- **`readCapacity` over a zone already read** (stage 5 D10 L8, gap 110): the same request, with the
 zone handed in instead of read again.  `runCap` reads `tz` once (`zoneOf`) and calls this;
@@ -9565,9 +9830,10 @@ def readCapacityZ (plan : PlanCore) (clock : ReqClock) (zo : Option Cal.Tz) (rep
   let z ← orErr zo .tzAbsent
   let s ← readSection bm cap
   let w ← s.wake.resolve rep z today
-  let I ← (mkInput? (s.input today bm z plan w)).mapError (ofCapErr (s.input today bm z plan w))
+  let T ← s.today0 rep today
+  let I ← (mkInput? (s.input today bm z plan w T)).mapError (ofCapErr (s.input today bm z plan w T))
   let _ ← inCalendar today s.days
-  return ⟨s.input today bm z plan w, I, s.prio.1, s.prio.2.1, s.prio.2.2⟩
+  return ⟨s.input today bm z plan w T, I, s.prio.1, s.prio.2.1, s.prio.2.2⟩
 
 /-! ### The candidates (stage 5 D10 L8, gaps 80 and 107)
 
@@ -10522,6 +10788,9 @@ theorem readSection_ok {bm : Nat} {cap : JVal} {s : Section} (h : readSection bm
   obtain ⟨⟨b, sf, df⟩, hpo, h⟩ := capBind_ok_elim h
   obtain ⟨_, -, h⟩ := capBind_ok_elim h
   obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
   cases h
   obtain ⟨hpm, hpc⟩ := readTables_ok hp
   obtain ⟨hn, ha⟩ := readEnergy_ok he
@@ -10557,6 +10826,7 @@ theorem readCapacity_ok {plan : PlanCore} {clock : ReqClock} {rep : Option Seal.
   obtain ⟨z, -, h⟩ := capBind_ok_elim h
   obtain ⟨s, hs, h⟩ := capBind_ok_elim h
   obtain ⟨w, -, h⟩ := capBind_ok_elim h
+  obtain ⟨T, -, h⟩ := capBind_ok_elim h
   obtain ⟨I, hI, h⟩ := capBind_ok_elim h
   obtain ⟨_, hcal, h⟩ := capBind_ok_elim h
   cases h
@@ -10686,6 +10956,18 @@ open Look
 
 /-- `{"num": n, "den": d}`. -/
 def pairJ (n d : JVal) : JVal := .obj [(['n', 'u', 'm'], n), (['d', 'e', 'n'], d)]
+
+/-- A **signed** configured decimal on the wire (site R10): the sign beside the magnitude. -/
+def signedJ (neg : Bool) (n d : JVal) : JVal :=
+  .obj [("neg".toList, .bool neg), (['n', 'u', 'm'], n), (['d', 'e', 'n'], d)]
+
+/-- The `log` section a capacity request carries so that day 0 has a replay to be derived from
+(step L9): a resume from no checkpoint that asks for facts — genesis in one call, which is what
+the host sends when the cache holds no checkpoint. -/
+def logFromGenesisJ (lines : List JVal) : JVal :=
+  .obj [("ckpt".toList, .null), ("from".toList, .num 1), ("lines".toList, .arr lines),
+    ("terminated".toList, .bool true),
+    ("want".toList, .obj [("facts".toList, .bool true)])]
 
 /-- The zone texts: an offset `±HH:MM:SS` (seconds kept, as a pre-1972 table has them) and a
 transition `YYYY-MM-DDTHH:MM:SSZ`; anything else is refused.  Re-proved at the merge over B4's one
@@ -10904,7 +11186,14 @@ def corpusSectionJ : JVal :=
       (['s', 'a', 'f', 'e', 't', 'y'], pairJ (.num 13) (.num 10)),
       (['d', 'e', 'f', 'a', 'u', 'l', 't', 'P', 'r', 'i', 'o', 'r', 'i', 't', 'y'], .num 3)]),
     (['d', 'a', 'y', 's'], .num 7),
-    (['d', 'a', 'y', '0'], .arr ([0, 0, 0, 60, 170, 180].map JVal.num))]
+    ("at".toList, .str "2026-09-07T09:00:00-05:00".toList),
+    ("state".toList, .obj [("date".toList, .null), ("window".toList, .null), ("budget".toList, .null),
+      ("arrival".toList, .null), ("loc".toList, .str "lounge".toList), ("allowHome".toList, .bool false)]),
+    ("posterior".toList, .obj [("fullHours".toList, pairJ (.num 3) (.num 1)),
+      ("zeroHours".toList, pairJ (.num 6) (.num 1))]),
+    ("sleep".toList, .obj [("shiftModel".toList, .null),
+      ("shiftConfig".toList, signedJ false (.num 1) (.num 1)),
+      ("underHours".toList, pairJ (.num 7) (.num 1))])]
 
 def weekdays : List Cal.Weekday := [.monday, .tuesday, .wednesday, .thursday, .friday, .saturday, .sunday]
 
@@ -10913,13 +11202,16 @@ corpus model and config reads through its constructor, the model's weights and a
 has them, the config's beside them, and the learned curves as written. -/
 theorem the_capacity_section_reads_the_corpus_model :
     (readSection 60 corpusSectionJ).map (fun s => (weekdays.map s.pModel, weekdays.map s.pConfig,
-        weekdays.map s.arrModel, weekdays.map s.arrConfig, s.wake, s.energy, s.prior, s.homeMax, s.days, s.day0))
+        weekdays.map s.arrModel, weekdays.map s.arrConfig, s.wake, s.energy, s.prior, s.homeMax, s.days,
+        s.atNow, s.stLoc, s.allowHome, s.post.full.val, s.post.zero.val,
+        s.sleep.shiftModel.isSome, Arith.roundAway s.sleep.shiftConfig, s.sleep.underHours.val))
       = .ok ([some (9, 10), some (9, 10), some (8, 10), some (9, 10), some (7, 10), some (5, 10), some (4, 10)],
           [(9, 10), (9, 10), (9, 10), (9, 10), (8, 10), (5, 10), (4, 10)],
           [some 430, none, none, none, none, some 630, none],
           [420, 420, 420, 420, 420, 600, 600], WakeSrc.absent,
           [(loungeKey, [4, 5, 5, 5, 5, 4, 4, 4, 3, 3, 2, 2]), (homeKey, [3, 4, 4, 4, 3, 3, 3, 2, 2, 2, 2, 2])],
-          shippedPrior, 3, 7, [0, 0, 0, 60, 170, 180]) := by
+          shippedPrior, 3, 7,
+          ⟨(Cal.instantOf Cal.chicago 739865 540).sec, 0⟩, loungeKey, false, ⟨3, 1⟩, ⟨6, 1⟩, false, 1, ⟨7, 1⟩) := by
   rfl
 
 end CapWire
@@ -10954,17 +11246,36 @@ def corpusRequestJ (tz : Bool) (days : Nat) : JVal :=
   .obj ([(['d', 'o', 'c', 's'], .arr []), (['n', 'o', 'w'], .str ['2', '0', '2', '6', '-', '0', '9', '-', '0', '7']),
     (['b', 'l', 'o', 'c', 'k', 'M', 'i', 'n'], .num 60)] ++
     (if tz then [(['t', 'z'], chicagoTzJ springJ fallJ)] else []) ++
-    [(['c', 'a', 'p', 'a', 'c', 'i', 't', 'y'], sectionWithDays days)])
+    [("log".toList, logFromGenesisJ []),
+     (['c', 'a', 'p', 'a', 'c', 'i', 't', 'y'], sectionWithDays days)])
 
-/-- **End to end at `runCap`**: the corpus request for one day answers `run`'s documents and report,
-then `lookahead` with day 0 as handed in, over `capDen`; for 3,661 days it is `lookaheadTooLong`, and
-without `tz` it is `tzAbsent`. -/
+/-- A response's `lookahead`, for a decided witness: the whole `ok` object now also carries the
+`log` answer the seam ran, which is `the_log_op_reads_a_four_line_tail`'s business, not this
+theorem's. -/
+def lookaheadOf : Except JVal JVal → Sum JVal JVal
+  | .error e => .inl e
+  | .ok v =>
+    match jget v "ok" with
+    | .ok (some ok) =>
+      (match jget ok "lookahead" with
+       | .ok (some l) => .inr l
+       | _ => .inl .null)
+    | _ => .inl .null
+
+set_option maxRecDepth 20000 in
+/-- **End to end at `runCap`**: the corpus request for one day carries a `log` section beside its
+`capacity` section (step L9: day 0 is derived from the replay, so every capacity request carries
+one), and its `lookahead` is day 0 **derived** — arriving at 09:00 on 2026-09-07 in Chicago with
+nothing stored and no walls, §8.1's window runs to 17:00 and its seven blocks hold 180 minutes at
+level 5, 180 at 4 and 60 at 3, over `capDen`.  For 3,661 days it is `lookaheadTooLong`; without
+`tz` it is `tzAbsent`, now named by the **`log`** section, which reads the zone first (the
+capacity section's own `tzAbsent` is unreachable from a request that carries a `log` section, and
+every capacity request does since L9). -/
 theorem runCap_reads_the_corpus_request :
-    runCap (corpusRequestJ true 1) = .ok (jone "ok" (.obj [(['d', 'o', 'c', 's'], .arr []),
-      (['r', 'e', 'p', 'o', 'r', 't'], reportJson Report.empty),
-      (['l', 'o', 'o', 'k', 'a', 'h', 'e', 'a', 'd'], lookaheadJson [ofHist 739865 (histOf [0, 0, 0, 60, 170, 180])])])) ∧
+    lookaheadOf (runCap (corpusRequestJ true 1))
+      = .inr (lookaheadJson [ofHist 739865 (histOf [0, 0, 0, 60, 180, 180])]) ∧
     runCap (corpusRequestJ true 3661) = .error (refusalJson .lookaheadTooLong) ∧
-    runCap (corpusRequestJ false 1) = .error (refusalJson .tzAbsent) := by
+    runCap (corpusRequestJ false 1) = .error LogRefusal.tzAbsent.json := by
   refine ⟨rfl, rfl, rfl⟩
 
 end CapWire
@@ -11105,6 +11416,7 @@ def corpusRequestWithACommandJ : JVal :=
       (['i', 'd'], .str ['m', '1']), (['m', 'i', 'n'], .num 30)]])])
   | v => v
 
+set_option maxRecDepth 20000 in
 /-- **Gap 109's refusal, end to end**: the corpus request that `runCap_reads_the_corpus_request`
 answers is refused, by name, once it also carries one command. -/
 theorem runCap_refuses_a_command_beside_the_corpus_request :

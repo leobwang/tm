@@ -30,7 +30,15 @@
 //!   `w` of each date's own weekday, model's else config's
 //!   (`lookahead_future_day_is_the_mixture`), and so lies between the locations
 //!   (`lookahead_between_the_locations`);
-//! * **day 0** is the host's histogram in every run (`lookahead_day_zero_is_the_hosts`).
+//! * **day 0** is the **kernel's own** in every run (stage 6 step L9, gap 93;
+//!   `Look.lookahead_day_zero_is_the_kernels`), and it is compared against the
+//!   fork's `Ctx::today_slots` **exactly** — not through P1 — with the inputs
+//!   that reach it counted below: a stored window or §8.1's formula, a cut from
+//!   `now`, today's posterior (site R5), the sleep-debt shift (site R10), the
+//!   location's own curve and the home cap under `--allow-home`. Both functions
+//!   the comparand needs were **deleted from the binary** by L9 and live here
+//!   instead ([`fork_window`], [`fork_today_slots`]), the way `Ctx::walls_on`
+//!   already did.
 //!
 //! **P27** (site R3 reopened): where `f64` rounds the window's minutes or floors the
 //! budget differently from the exact pair, the fork is run again on a config whose
@@ -46,13 +54,13 @@ mod tz_table;
 
 use std::collections::BTreeMap;
 
-use chrono::{Datelike, Duration, NaiveDate, NaiveTime, TimeZone, Timelike, Weekday};
+use chrono::{Datelike, Duration, NaiveDate, NaiveTime, Timelike, Weekday};
 use chrono_tz::Tz;
 use serde_json::{json, Value};
-use tm_core::capacity::{self, DayCapacity, Slot, SlotKind, Wall, WallsByDate};
+use tm_core::capacity::{self, DayCapacity, EnergyCtx, Slot, Wall, WallsByDate};
 use tm_core::config::{Config, PerWeekday, Step, StepFn};
-use tm_core::energy::{weekday_key, Hhmm, Model, WeekdayMap};
-use tm_core::model::Shape;
+use tm_core::energy::{weekday_key, Hhmm, Model, Posterior, WeekdayMap};
+use tm_core::model::{Loc, Shape};
 use tm_core::tree::Tree;
 
 /// `Look.capDen` (D17).
@@ -233,7 +241,24 @@ struct Case {
     arr_config: [NaiveTime; 7],
     arr_model: [Option<NaiveTime>; 7],
     wake: Option<(u32, u32)>,
-    day0: [u32; 6],
+    /// Stage 6 step L9: day 0's own inputs, where `day0: [u32; 6]` used to be.
+    /// `at` is the local time `now` falls at on `today`; `st_*` are `.tm/state.json`'s.
+    at: NaiveTime,
+    st_date: Option<NaiveDate>,
+    st_window: Option<(NaiveTime, NaiveTime)>,
+    st_budget: Option<u32>,
+    st_arrival: Option<NaiveTime>,
+    loc: String,
+    allow_home: bool,
+    /// `tm wake`'s `slept_min` of today, and today's `energy` reports — both **logged**:
+    /// the fork is handed the values, the kernel the lines, and the seam must agree.
+    slept: Option<u32>,
+    reports: Vec<(NaiveTime, u8, u8)>,
+    /// `[energy]`'s four configured decimals (sites R5 and R10); the shift is signed.
+    posterior_full: f64,
+    posterior_zero: f64,
+    sleep_under: f64,
+    sleep_shift: f64,
     /// `(path, text)`; a generated window has one calendar file of walls.
     docs: Vec<(String, String)>,
     /// The generated calendar's line count; `None` for a corpus plan.
@@ -324,7 +349,31 @@ fn gen_case(r: &mut Rng, zone: (Tz, &[&str])) -> Case {
             if r.chance(50) { 0 } else { r.below(1_000_000_000) as u32 },
         ),
     });
-    let day0 = std::array::from_fn(|_| if r.chance(50) { 0 } else { r.below(241) as u32 });
+    // Day 0's own inputs (step L9).  `at` stays inside the day so its local date is `today`.
+    let at = NaiveTime::from_hms_opt(1 + r.below(21) as u32, 5 * r.below(12) as u32, r.below(60) as u32).unwrap();
+    let st_date = if r.chance(70) { Some(today) } else if r.chance(50) { Some(today - Duration::days(1)) } else { None };
+    let st_window = r.chance(40).then(|| {
+        let from = NaiveTime::from_hms_opt(6 + r.below(4) as u32, 15 * r.below(4) as u32, 0).unwrap();
+        (from, from + Duration::minutes(30 + 30 * r.below(20) as i64))
+    });
+    let st_budget = r.chance(70).then(|| r.below(12) as u32);
+    let st_arrival = r.chance(50).then(|| NaiveTime::from_hms_opt(6 + r.below(5) as u32, 5 * r.below(12) as u32, 0).unwrap());
+    let loc = (*r.pick(&["lounge", "home", "out", "any", "zoom"])).to_string();
+    let allow_home = r.chance(30);
+    let slept = r.chance(60).then(|| r.below(660) as u32);
+    let reports: Vec<(NaiveTime, u8, u8)> = (0..r.below(4))
+        .map(|_| {
+            (
+                NaiveTime::from_hms_opt(5 + r.below(14) as u32, 5 * r.below(12) as u32, 0).unwrap(),
+                r.below(6) as u8,
+                r.below(6) as u8,
+            )
+        })
+        .collect();
+    let posterior_full = *r.pick(&[0.0, 1.0, 3.0, 4.5]);
+    let posterior_zero = *r.pick(&[2.0, 6.0, 6.5, 9.0]);
+    let sleep_under = *r.pick(&[5.0, 6.0, 7.0, 7.5, 8.0]);
+    let sleep_shift = *r.pick(&[-2.0, -1.5, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0]);
     let mut calendar = Vec::new();
     for i in 0..r.below(7) {
         let state = *r.pick(&["[ ]", "[ ]", "[ ]", "[ ]", "[>]", "[?]", "[x]", "[~]"]);
@@ -377,7 +426,19 @@ fn gen_case(r: &mut Rng, zone: (Tz, &[&str])) -> Case {
         arr_config,
         arr_model,
         wake,
-        day0,
+        at,
+        st_date,
+        st_window,
+        st_budget,
+        st_arrival,
+        loc,
+        allow_home,
+        slept,
+        reports,
+        posterior_full,
+        posterior_zero,
+        sleep_under,
+        sleep_shift,
         docs: vec![(
             format!(
                 "calendar/{}-W{:02}.md",
@@ -396,6 +457,10 @@ fn gen_case(r: &mut Rng, zone: (Tz, &[&str])) -> Case {
 
 fn fork_config(c: &Case, window_hours: f64, budget_ratio: f64) -> Config {
     let mut cfg = Config::default();
+    cfg.energy.posterior_full_hours = c.posterior_full;
+    cfg.energy.posterior_zero_hours = c.posterior_zero;
+    cfg.energy.sleep_debt.under_hours = c.sleep_under;
+    cfg.energy.sleep_debt.shift = c.sleep_shift;
     cfg.tz = c.tz;
     cfg.day.block_min = c.block_min;
     cfg.day.break_min = c.break_min;
@@ -533,17 +598,68 @@ fn fork_walls_by_date(tree: &Tree, tz: Tz, today: NaiveDate, days: u32, clip: bo
 }
 
 /// Day 0's slots: one slot per level holding the host's minutes.
-fn today_slots(c: &Case) -> Vec<Slot> {
-    let t0 = c.tz.from_utc_datetime(&c.today.and_hms_opt(12, 0, 0).unwrap());
-    (0..6)
-        .filter(|l| c.day0[*l] > 0)
-        .map(|l| Slot {
-            start: t0,
-            end: t0 + Duration::minutes(c.day0[l] as i64),
-            energy: l as u8,
-            kind: SlotKind::Block,
-        })
-        .collect()
+/// [`fork_today_slots`] over the case's own documents and config — the shape every caller but
+/// `run_case` needs (which already has the tree in hand).
+fn today_slots(c: &Case, cfg: &Config) -> Vec<Slot> {
+    let files: Vec<(&str, &str)> = c.docs.iter().map(|(p, s)| (p.as_str(), s.as_str())).collect();
+    let tree = Tree::from_texts(&files, cfg);
+    let walls = fork_walls_on(&tree, c.tz, c.today);
+    fork_today_slots(c, cfg, &fork_model(c, None), &walls)
+}
+
+/// The instant `now` is at, in the case's zone.
+fn fork_now(c: &Case) -> chrono::DateTime<Tz> {
+    capacity::local_dt(c.tz, c.today, c.at)
+}
+
+/// **The fork's `Ctx::window`** — §8.1's working window and block budget: what `tm arrive` stored
+/// *for today*, else the formula from the stored arrival (or `now`).
+///
+/// Copied here at stage 6 step L9 because `tm/src/cli/ctx.rs` **deleted it**: the kernel derives
+/// today's window now (`Look.day0Window`), and a second definition in the binary would be the bug
+/// AGENTS §5.3 names. The copy is the comparand, exactly as [`fork_walls_on`] copies
+/// `Ctx::walls_on`.
+fn fork_window(c: &Case, cfg: &Config, walls: &[Wall]) -> (chrono::DateTime<Tz>, chrono::DateTime<Tz>) {
+    let today = c.st_date == Some(c.today);
+    match (c.st_window, c.st_budget) {
+        (Some((from, to)), Some(_)) if today => (
+            capacity::local_dt(c.tz, c.today, from),
+            capacity::local_dt(c.tz, c.today, to),
+        ),
+        _ => {
+            let arrival = c
+                .st_arrival
+                .filter(|_| today)
+                .map_or(fork_now(c), |t| capacity::local_dt(c.tz, c.today, t));
+            let (end, _) = capacity::window_and_budget(arrival, walls, cfg);
+            (arrival, end)
+        }
+    }
+}
+
+/// **The fork's `Ctx::today_slots(allow_home)`** — §8.2 step 3's slots for today, with their
+/// predicted energy. The comparand step L9's parity is against, *exactly* and not through P1
+/// (design §13.5). Deleted from the binary with [`fork_window`], and copied here for the same
+/// reason.
+fn fork_today_slots(c: &Case, cfg: &Config, model: &Model, walls: &[Wall]) -> Vec<Slot> {
+    let (start, end) = fork_window(c, cfg, walls);
+    let from = start.max(fork_now(c));
+    if end <= from {
+        return Vec::new();
+    }
+    let cut = capacity::cut_slots(from, end, walls, cfg);
+    let reports: Vec<(chrono::DateTime<Tz>, u8, u8)> = c
+        .reports
+        .iter()
+        .map(|(t, pred, rep)| (capacity::local_dt(c.tz, c.today, *t), *pred, *rep))
+        .collect();
+    let posterior = Posterior::from_reports(&reports, cfg);
+    let wake = capacity::local_dt(c.tz, c.today, model.wake_or_expected(wake_time(c), c.today.weekday(), cfg));
+    let ectx = EnergyCtx::new(model, cfg, &posterior, wake, Loc::parse(&c.loc).unwrap_or(Loc::Lounge))
+        .with_slept(c.slept)
+        .with_blocks_done(0)
+        .with_allow_home(c.allow_home);
+    capacity::energize(&cut.slots, &ectx)
 }
 
 fn wake_time(c: &Case) -> Option<NaiveTime> {
@@ -563,6 +679,39 @@ fn pair_json(x: f64) -> Value {
 fn nat_pair(text: &str) -> Value {
     let (n, d) = decimal_pair(text.parse().unwrap());
     json!({"num": n as u64, "den": d as u64})
+}
+
+/// A **signed** configured decimal on the wire (site R10): the sign beside the magnitude, so
+/// nothing is rounded and nothing is lost.
+fn signed_pair(x: f64) -> Value {
+    let (n, d) = decimal_pair(x.abs());
+    json!({"neg": x < 0.0, "num": n as u64, "den": d as u64})
+}
+
+/// A stamp as the log writes it, on today's date in the case's zone.
+fn stamp(c: &Case, t: NaiveTime) -> String {
+    capacity::local_dt(c.tz, c.today, t).to_rfc3339_opts(chrono::SecondsFormat::Secs, false)
+}
+
+/// **The `log` section every capacity request carries since step L9** (gap 93): today's `wake`
+/// line with its `slept_min`, and today's `energy` reports — the *lines*, not the values. The
+/// fork is handed the values directly; the kernel derives them from this replay through D24's
+/// seam, and day 0 is compared against the fork's slots afterwards. Genesis in one call, with no
+/// checkpoint to resume from and no reseal.
+fn log_section(c: &Case) -> Value {
+    let mut lines: Vec<String> = Vec::new();
+    if let Some(m) = c.slept {
+        let t = wake_time(c).unwrap_or_else(|| NaiveTime::from_hms_opt(6, 5, 0).expect("a clock"));
+        lines.push(format!(r#"{{"t":"{}","ev":"wake","slept_min":{m}}}"#, stamp(c, t)));
+    }
+    for (t, pred, rep) in &c.reports {
+        lines.push(format!(
+            r#"{{"t":"{}","ev":"energy","pred":{pred},"rep":{rep},"hsw":1.0,"loc":"lounge"}}"#,
+            stamp(c, *t)
+        ));
+    }
+    json!({"ckpt": null, "from": 1, "lines": lines, "terminated": true, "reseal": null,
+           "want": {"facts": true, "headersFrom": null, "render": []}, "sealed": null})
 }
 
 /// The request; `model_weights` replaces the model's `pLounge` table when given.
@@ -614,6 +763,7 @@ fn kernel_request(c: &Case, tz_wire: &Value, model_weights: Option<[(u128, u128)
         "now": c.today.to_string(),
         "blockMin": c.block_min,
         "tz": tz_wire,
+        "log": log_section(c),
         "capacity": {
             "pLounge": {"model": p_model, "config": p_config},
             "arrival": {"model": a_model, "config": a_config},
@@ -627,7 +777,19 @@ fn kernel_request(c: &Case, tz_wire: &Value, model_weights: Option<[(u128, u128)
             "priority": {"bins": [{"num": 5, "den": 10}, {"num": 25, "den": 100}, {"num": 1, "den": 10}],
                          "safety": {"num": 13, "den": 10}, "defaultPriority": 3},
             "days": 7,
-            "day0": c.day0,
+            "at": stamp(c, c.at),
+            "state": {
+                "date": c.st_date.map(|d| d.to_string()),
+                "window": c.st_window.map(|(f, t)| json!({"from": hhmm(f), "to": hhmm(t)})),
+                "budget": c.st_budget,
+                "arrival": c.st_arrival.map(hhmm),
+                "loc": c.loc,
+                "allowHome": c.allow_home,
+            },
+            "posterior": {"fullHours": nat_pair(&format!("{}", c.posterior_full)),
+                          "zeroHours": nat_pair(&format!("{}", c.posterior_zero))},
+            "sleep": {"shiftModel": null, "shiftConfig": signed_pair(c.sleep_shift),
+                      "underHours": nat_pair(&format!("{}", c.sleep_under))},
         }
     })
 }
@@ -697,6 +859,18 @@ struct Tally {
     gap85_level_minutes: i64,
     gap111_days_differing: usize,
     whole_cut_visible: usize,
+    /// Step L9's own denominators: day 0 derived, and the inputs that were reached.
+    day0_days: usize,
+    day0_nonempty: usize,
+    day0_stored_window: usize,
+    day0_cut_from_now: usize,
+    day0_with_reports: usize,
+    day0_corrected: usize,
+    day0_short_nights: usize,
+    day0_shifted: usize,
+    day0_home: usize,
+    day0_allow_home: usize,
+    day0_capped: usize,
     disagreements: Vec<String>,
 }
 
@@ -728,7 +902,11 @@ fn run_case(c: &Case, tz_wire: &Value, t: &mut Tally) {
     let walls = fork_walls_by_date(&tree, c.tz, c.today, 7, false);
     let clipped = fork_walls_by_date(&tree, c.tz, c.today, 7, true);
     let planner_walls = planner_walls_by_date(&tree, c.tz, c.today, 7);
-    let slots = today_slots(c);
+    let today_walls = fork_walls_on(&tree, c.tz, c.today);
+    // Day 0's slots, the fork's own (step L9): computed from the case's `state`, `at`,
+    // `--allow-home`, sleep reading and energy reports, exactly as `Ctx::today_slots` did.
+    let real_model = fork_model(c, None);
+    let slots = fork_today_slots(c, &cfg, &real_model, &today_walls);
 
     // P27: the doubles' window minutes and budget against the exact pairs'.
     let (xw, xb) = exact_window_and_budget(c);
@@ -753,10 +931,18 @@ fn run_case(c: &Case, tz_wire: &Value, t: &mut Tally) {
         cfg.clone()
     };
 
+    // Where P27 bites, the kernel's exact window is the fork's corrected one — and that reaches
+    // day 0 too, since L9 derives it from the same `[day]` pair.
+    let slots_exact = if p27 {
+        fork_today_slots(c, &cfg_exact, &real_model, &today_walls)
+    } else {
+        slots.clone()
+    };
     let wake_of = |m: &Model| m.wake_or_expected(wake_time(c), c.today.weekday(), &cfg);
     let fork = |cfg: &Config, force: Option<f64>, walls: &WallsByDate| {
         let m = fork_model(c, force);
-        capacity::lookahead(walls, cfg, &m, &slots, c.today, 7, wake_of(&m))
+        let s = if std::ptr::eq(cfg, &cfg_exact) { &slots_exact } else { &slots };
+        capacity::lookahead(walls, cfg, &m, s, c.today, 7, wake_of(&m))
     };
     // The same runs with the logged wake cut to its minute: where they differ, the
     // wake's seconds are observable (site R11), and the kernel must still agree.
@@ -796,7 +982,9 @@ fn run_case(c: &Case, tz_wire: &Value, t: &mut Tally) {
         assert_eq!(k.len(), 7, "{tag}");
     }
 
-    let day0: [u128; 6] = c.day0.map(|m| m as u128 * CAP_DEN);
+    // **Step L9's parity, against `Ctx::today_slots` exactly**: the kernel's day 0 is the fork's
+    // own slots summed by `DayCapacity::from_slots`, in units.
+    let day0: [u128; 6] = units(&DayCapacity::from_slots(c.today, &slots_exact));
     for i in 0..7 {
         let d = c.today + Duration::days(i as i64);
         let wd = d.weekday().num_days_from_monday() as usize;
@@ -815,9 +1003,39 @@ fn run_case(c: &Case, tz_wire: &Value, t: &mut Tally) {
                 ("twin", &k_twin),
                 ("mixed", &k_real),
             ] {
-                assert_eq!(k[0].1, day0, "{tag}: {name} day 0 is the host's");
+                assert_eq!(
+                    k[0].1, day0,
+                    "{tag}: {name} day 0 is not the fork's `Ctx::today_slots` (window {:?}, at {}, loc {}, allow_home {}, slept {:?}, {} report(s))",
+                    fork_window(c, &cfg_exact, &today_walls), c.at, c.loc, c.allow_home, c.slept, c.reports.len()
+                );
+                if k[0].1 != day0 {
+                    eprintln!(
+                        "the fork's day-0 slots: {:?}",
+                        slots_exact.iter().map(|s| (s.start.to_string(), s.energy, s.minutes())).collect::<Vec<_>>()
+                    );
+                }
             }
-            assert_eq!(units(&f_real[0]), day0, "{tag}: the fork's day 0 is its slots");
+            assert_eq!(units(&e_real[0]), day0, "{tag}: the fork's own day 0 is those slots");
+            t.day0_days += 1;
+            t.day0_nonempty += usize::from(!slots_exact.is_empty());
+            t.day0_stored_window += usize::from(c.st_date == Some(c.today) && c.st_window.is_some() && c.st_budget.is_some());
+            t.day0_cut_from_now += usize::from(fork_window(c, &cfg_exact, &today_walls).0 < fork_now(c));
+            t.day0_with_reports += usize::from(!c.reports.is_empty());
+            t.day0_corrected += usize::from(
+                !slots_exact.is_empty()
+                    && c.reports.iter().any(|(rt, pred, rep)| {
+                        pred != rep && capacity::local_dt(c.tz, c.today, *rt) <= slots_exact[slots_exact.len() - 1].start
+                    }),
+            );
+            t.day0_short_nights += usize::from(c.slept.is_some_and(|m| (m as f64) / 60.0 < c.sleep_under));
+            t.day0_shifted += usize::from(
+                c.slept.is_some_and(|m| (m as f64) / 60.0 < c.sleep_under) && c.sleep_shift.round() != 0.0,
+            );
+            t.day0_home += usize::from(c.loc == "home");
+            t.day0_allow_home += usize::from(c.allow_home);
+            t.day0_capped += usize::from(
+                c.loc == "home" && !c.allow_home && slots_exact.iter().any(|s| s.energy == c.home_max),
+            );
             continue;
         }
         t.future_days += 1;
@@ -1020,7 +1238,21 @@ fn corpus_case(plan: &str, today: NaiveDate, k: usize, r: &mut Rng) -> Case {
         arr_config: WEEK.map(|wd| *cfg.expected.arrival.get(wd)),
         arr_model: WEEK.map(|wd| model.expected_arrival.get(wd).map(|h| h.0)),
         wake: (k % 2 == 1).then_some((6 * 3600 + 5 * 60 + 40, 0)),
-        day0: std::array::from_fn(|_| if r.chance(50) { 0 } else { r.below(181) as u32 }),
+        at: NaiveTime::from_hms_opt(7 + r.below(6) as u32, 5 * r.below(12) as u32, 0).expect("a clock"),
+        st_date: r.chance(60).then_some(today),
+        st_window: None,
+        st_budget: r.chance(60).then(|| r.below(12) as u32),
+        st_arrival: r.chance(50).then(|| NaiveTime::from_hms_opt(7, 0, 0).expect("a clock")),
+        loc: (*r.pick(&["lounge", "home", "out"])).to_string(),
+        allow_home: r.chance(30),
+        slept: r.chance(60).then(|| r.below(660) as u32),
+        reports: (0..r.below(3))
+            .map(|_| (NaiveTime::from_hms_opt(6 + r.below(8) as u32, 0, 0).expect("a clock"), r.below(6) as u8, r.below(6) as u8))
+            .collect(),
+        posterior_full: cfg.energy.posterior_full_hours,
+        posterior_zero: cfg.energy.posterior_zero_hours,
+        sleep_under: cfg.energy.sleep_debt.under_hours,
+        sleep_shift: cfg.energy.sleep_debt.shift,
         docs,
         wall_lines: None,
     }
@@ -1031,10 +1263,16 @@ fn report(t: &Tally, what: &str) {
         "{what}: {} windows, {} future days ({} on a zone transition, {} of them with walls; {} with a wall across a date boundary), {} interval items, \
          {} wakes with seconds ({} leap), observable on {} days; twin at the lounge on {} days ({} at exactly 0.5); mixed strictly between on {} days; \
          P27: {} windows, {} fork days differ from the exact rounding; gap 85: {} days would change, {} minutes of daily totals, {} level-minutes; \
-         gap 104: the whole cut visible on {} location-days; gap 111: the planner's walls change {} days; disagreements: {}",
+         gap 104: the whole cut visible on {} location-days; gap 111: the planner's walls change {} days; \
+         L9 day 0 derived (against `Ctx::today_slots` exactly): {} days, {} with slots left, {} on a stored window, {} cut from `now` past the window's start, \
+         {} with energy reports ({} where the posterior moved a level's slot), {} short nights ({} with a shift that rounds away from zero), \
+         {} at home ({} with --allow-home, {} where the home cap bit); disagreements: {}",
         t.windows, t.future_days, t.dst_days, t.dst_wall_days, t.multi_day_wall_days, t.walls, t.wakes_with_seconds, t.leap_wakes,
         t.seconds_matter_days, t.twin_lounge_days, t.half_weight_days, t.mixed_strictly_between, t.p27_windows, t.p27_days_differing, t.gap85_days_differing,
-        t.gap85_minutes, t.gap85_level_minutes, t.whole_cut_visible, t.gap111_days_differing, t.disagreements.len()
+        t.gap85_minutes, t.gap85_level_minutes, t.whole_cut_visible, t.gap111_days_differing,
+        t.day0_days, t.day0_nonempty, t.day0_stored_window, t.day0_cut_from_now, t.day0_with_reports, t.day0_corrected,
+        t.day0_short_nights, t.day0_shifted, t.day0_home, t.day0_allow_home, t.day0_capped,
+        t.disagreements.len()
     );
     for d in &t.disagreements {
         println!("  {d}");
@@ -1092,6 +1330,8 @@ fn the_recorded_exceptions_are_refused_where_the_fork_answers() {
             docs: vec![],
             prior: base.prior.clone(),
             energy: base.energy.clone(),
+            loc: base.loc.clone(),
+            reports: base.reports.clone(),
             window_hours: base.window_hours.clone(),
             budget_ratio: base.budget_ratio.clone(),
             ..base
@@ -1105,7 +1345,7 @@ fn the_recorded_exceptions_are_refused_where_the_fork_answers() {
         let cfg = fork_config(&c, c.window_hours.parse().unwrap(), c.budget_ratio.parse().unwrap());
         let m = fork_model(&c, None);
         let wake = m.wake_or_expected(wake_time(&c), c.today.weekday(), &cfg);
-        let caps = capacity::lookahead(&WallsByDate::new(), &cfg, &m, &today_slots(&c), c.today, 7, wake);
+        let caps = capacity::lookahead(&WallsByDate::new(), &cfg, &m, &today_slots(&c, &cfg), c.today, 7, wake);
         assert_eq!(caps.len(), 7, "{what}: the fork answers");
     }
     // P30: 3,661 days.
@@ -1123,7 +1363,7 @@ fn the_recorded_exceptions_are_refused_where_the_fork_answers() {
         &WallsByDate::new(),
         &cfg,
         &m,
-        &today_slots(&base),
+        &today_slots(&base, &cfg),
         base.today,
         3661,
         wake,
@@ -1403,7 +1643,7 @@ fn run_priorities(c: &Case, tz_wire: &Value, cs: &[GenCand], hysteresis: bool, t
     let walls = fork_walls_by_date(&tree, c.tz, c.today, 7, false);
     let m = fork_model(c, None);
     let wake = m.wake_or_expected(wake_time(c), c.today.weekday(), &cfg);
-    let caps = capacity::lookahead(&walls, &cfg, &m, &today_slots(c), c.today, 7, wake);
+    let caps = capacity::lookahead(&walls, &cfg, &m, &today_slots(c, &cfg), c.today, 7, wake);
 
     let yesterday: BTreeMap<Id, u8> =
         cs.iter().filter_map(|g| g.yesterday.map(|y| (Id::new(g.id.clone()), y))).collect();
@@ -1473,6 +1713,33 @@ fn run_priorities(c: &Case, tz_wire: &Value, cs: &[GenCand], hysteresis: bool, t
 }
 
 /// One plain candidate of 9 minutes at level 0, due today at midnight.
+/// **A case whose day 0 is exactly `minutes` at level 0.**  Step L9 deleted the `day0` argument,
+/// so the shape is *made* rather than handed in: a stored window of `minutes` minutes from 09:00
+/// with `now` at 09:00, `min_last_block_min = 1` so the short block is kept and no break, a prior
+/// that is level 0 at every hour with no learned curve, at the lounge, rested, with no report.
+fn case_with_a_day0_of(r: &mut Rng, zone: (Tz, &[&str]), minutes: u32) -> Case {
+    let nine = NaiveTime::from_hms_opt(9, 0, 0).expect("a clock");
+    let zero = vec![("0".to_string(), None, 0u8)];
+    let mut c = gen_case(r, zone);
+    c.docs = Vec::new();
+    c.wall_lines = None;
+    c.block_min = 60;
+    c.min_last = 1;
+    c.break_min = 0;
+    c.at = nine;
+    c.st_date = Some(c.today);
+    c.st_window = Some((nine, nine + Duration::minutes(i64::from(minutes))));
+    c.st_budget = Some(6);
+    c.st_arrival = None;
+    c.loc = "lounge".to_string();
+    c.allow_home = false;
+    c.slept = None;
+    c.reports = Vec::new();
+    c.prior = BTreeMap::from([("lounge".to_string(), zero.clone()), ("home".to_string(), zero)]);
+    c.energy = BTreeMap::new();
+    c
+}
+
 fn one_like(today: NaiveDate) -> GenCand {
     GenCand {
         id: "p7".into(),
@@ -1521,15 +1788,20 @@ fn the_twin_priorities_are_the_forks_modulo_p2_p3_p7() {
     // minutes is due today.  The fork's need is `ceil(11.7) = 12` against 12 available, `u = 1`,
     // HOT; the kernel's exact `11.7 / 12` is the `+0` bin, `p = k`.
     for (z, zone) in zones().iter().enumerate() {
-        let mut case = gen_case(&mut r, *zone);
-        case.day0 = [12, 0, 0, 0, 0, 0];
+        let mut case = case_with_a_day0_of(&mut r, *zone, 12);
+        assert_eq!(
+            DayCapacity::from_slots(case.today, &today_slots(&case, &fork_config(&case, 8.0, 0.75))).minutes_at_level,
+            [12, 0, 0, 0, 0, 0],
+            "the made day 0 in {}",
+            zone.0.name()
+        );
         let one = one_like(case.today);
         let before = t.p7;
         run_priorities(&case, &tables[z], &[one], true, &mut t);
         assert_eq!(t.p7, before + 1, "P7 is reached in {}", zone.0.name());
         // The tie, where both readings agree: 10 minutes need 13, against 13 available, `u = 1`
         // exactly, HOT in both (the kernel's `u ≥ 1` includes the edge, as the fork's does).
-        case.day0 = [13, 0, 0, 0, 0, 0];
+        case.st_window = case.st_window.map(|(f, _)| (f, f + Duration::minutes(13)));
         let tie = GenCand { remaining: 10, ..one_like(case.today) };
         let hot_before = t.hot;
         run_priorities(&case, &tables[z], &[tie], true, &mut t);

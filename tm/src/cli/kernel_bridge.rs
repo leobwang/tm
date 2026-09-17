@@ -884,9 +884,18 @@ pub fn doc_json(rel: &str, lines: &[&str]) -> Value {
 /// `ok` the caller reads) and the captured stderr; an `err` is the named
 /// refusal ([`refusal`]), and no usable response is a named fault.
 pub fn call(request: &Value) -> Result<(Value, String), CliError> {
-    let request = request.to_string();
+    call_text(&request.to_string())
+}
+
+/// **The same call, from the request's own bytes** (stage 6 step L9).  The
+/// capacity request carries a `log` section since L9, and a checkpoint inside it
+/// is read **in build order** (`Seal.readCkptFields`): `serde_json::Value` is a
+/// `BTreeMap`, so round-tripping the section through it alphabetises the
+/// checkpoint's keys and the kernel refuses `badCkpt v` — gap 144's lesson, at a
+/// second seam.  The section is therefore spliced in as text and never parsed.
+pub fn call_text(request: &str) -> Result<(Value, String), CliError> {
     let capture = StderrCapture::start();
-    let called = tm_kernel_ffi::call(&request);
+    let called = tm_kernel_ffi::call(request);
     let stderr = capture.map(StderrCapture::finish).unwrap_or_default();
     // The constructed panic probe (AGENTS 8.1's named trap: the kernel is
     // total by CI, so a reachable panic does not exist — the probe injects
@@ -1111,7 +1120,14 @@ fn refusal(err: &Value) -> KernelIssue {
             "badCap" => "`home_max_ci` is above 5",
             "badDay" => "a `[day]` value is outside its bound",
             "lookaheadTooLong" => "the lookahead runs past 3,660 days or past year 9999",
-            "badDay0" => "today's capacity is not six levels of at most 1,440 minutes",
+            // stage 6 step L9: day 0's own inputs (gap 93; `badDay0` is gone with the argument
+            // it refused — the kernel derives day 0 rather than being handed it)
+            "badAt" => "the `at` stamp is not a timestamp the kernel can read",
+            "nowDisagrees" => "the `at` stamp's local date is not the request's `now`, so day 0 would be cut from an instant outside the day being planned",
+            "badState" => "a `state.json` value the capacity request carries is of the wrong type or outside its bound",
+            "badPosterior" => "an `[energy]` posterior decimal is not an exact pair with a denominator of at most 10^6",
+            "badSleep" => "an `[energy.sleep_debt]` decimal (or the model's `sleep_debt_shift`) is not an exact pair with a denominator of at most 10^6",
+            "day0WithoutLog" => "a capacity request carried no `log` section, so the kernel has no replay to derive today's capacity from",
             "badBins" => "`priority.bins` is not a descending ladder of at most 16 edges in (0, 1]",
             "badSafety" => "`priority.safety` is not in (0, 1000]",
             "badDefaultPriority" => "`priority.default_priority` is not 1 to 4",
@@ -1308,7 +1324,13 @@ mod tests {
             (serde_json::json!({"capacity":"badCap homeMaxCi"}), "badCap"),
             (serde_json::json!({"capacity":"badDay breakMin"}), "badDay"),
             (serde_json::json!({"capacity":"lookaheadTooLong"}), "lookaheadTooLong"),
-            (serde_json::json!({"capacity":"badDay0"}), "badDay0"),
+            // stage 6 step L9
+            (serde_json::json!({"capacity":"badAt at"}), "badAt"),
+            (serde_json::json!({"capacity":"nowDisagrees at"}), "nowDisagrees"),
+            (serde_json::json!({"capacity":"badState state.loc"}), "badState"),
+            (serde_json::json!({"capacity":"badPosterior posterior.fullHours"}), "badPosterior"),
+            (serde_json::json!({"capacity":"badSleep sleep.shiftConfig"}), "badSleep"),
+            (serde_json::json!({"capacity":"day0WithoutLog"}), "day0WithoutLog"),
             (serde_json::json!({"capacity":"badBins"}), "badBins"),
             (serde_json::json!({"capacity":"badSafety"}), "badSafety"),
             (serde_json::json!({"capacity":"badDefaultPriority"}), "badDefaultPriority"),

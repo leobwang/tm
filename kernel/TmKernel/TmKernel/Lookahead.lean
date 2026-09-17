@@ -1152,10 +1152,17 @@ theorem instantOf_ns (z : Cal.Tz) (d : Nat) (c : Fin 1440) : (Cal.instantOf z d 
 /-- **Fork `window_and_budget(local_dt(tz, d, arrival), walls, cfg)`'s window for day `d`**,
 as UTC seconds `(start, end)`.  The walls are UTC seconds (`wallsOn`); `windowMin` is
 `windowMinOf`'s minutes.  The cap is `window_cap` on the arrival's local date. -/
+def windowFrom (z : Cal.Tz) (a windowMin : Nat) (windowCap : Field.Clock)
+    (walls : List (Nat × Nat)) : Nat × Nat :=
+  (a, windowEnd a (60 * windowMin) (Cal.instantOf z (Cal.localDate z ⟨a, 0⟩) windowCap).sec walls)
+
+/-- **Fork `window_and_budget(local_dt(tz, d, arrival), walls, cfg)`'s window for day `d`**: the
+same window, from an arrival named as a clock.  Step L9's day 0 arrives at an *instant* — `now`,
+or `state.arrival` — so `windowFrom` is the definition and this is its whole-minute instance
+(AGENTS §5.3: one window, not two). -/
 def windowOn (z : Cal.Tz) (d : Nat) (arrival windowCap : Field.Clock) (windowMin : Nat)
     (walls : List (Nat × Nat)) : Nat × Nat :=
-  let a := (Cal.instantOf z d arrival).sec
-  (a, windowEnd a (60 * windowMin) (Cal.instantOf z (Cal.localDate z ⟨a, 0⟩) windowCap).sec walls)
+  windowFrom z (Cal.instantOf z d arrival).sec windowMin windowCap walls
 
 /-- E7 in real seconds, as `windowOn` runs it. -/
 theorem windowOn_solves_E7 (z : Cal.Tz) (d : Nat) (arrival windowCap : Field.Clock) (windowMin : Nat)
@@ -2474,10 +2481,40 @@ def Loc.curve : Loc → List Char
   | .lounge => loungeKey
   | .home => homeKey
 
-/-- **Fork `energy::predict` with no sleep-debt shift**: the learned level, else the prior,
-clamped to `0..5`. -/
-def predictAt (c : Curves) (curve : List Char) (h : Int) : Fin 6 :=
-  ⟨min 5 ((learnedLevel c.energy curve h).getD (priorLevel c.prior curve h)), by omega⟩
+/-- The key `any` names: fork `Loc::Any`, which `curve_key` reads as `home`. -/
+def anyKey : List Char := ['a', 'n', 'y']
+
+/-- **Fork `energy::curve_key(loc, cfg, model)`**: `lounge` and `home` are their own curves,
+`any` reads `home`, and any other name (`out`, `zoom`, …) reads its own curve when the model or
+the config has one and `home` otherwise.  A future day is always one of the two locations, so
+only step L9's day 0 — which reads `state.loc` — can reach the last two branches. -/
+def curveKeyOf (c : Curves) (name : List Char) : List Char :=
+  if name = loungeKey then loungeKey
+  else if name = homeKey then homeKey
+  else if name = anyKey then homeKey
+  else if (curveLookup c.energy name).isSome || (curveLookup c.prior name).isSome then name
+  else homeKey
+
+/-- **Fork `energy::predict`'s base level**: the learned level at the hour's bucket, else the
+config prior — **before** the sleep-debt shift and before the `0..5` clamp, because the fork
+subtracts the shift from the raw base and clamps once.  The distinction is observable: the wire
+bounds a learned curve entry below 256, so a base above 5 with a shift of 1 clamps to 5, where
+clamping first would give 4. -/
+def baseLevel (c : Curves) (curve : List Char) (h : Int) : Nat :=
+  (learnedLevel c.energy curve h).getD (priorLevel c.prior curve h)
+
+/-- **Fork `energy::predict`**: `(base − shift).clamp(0, 5)`, the shift site R10's
+(`Arith.roundAway`) and zero unless the night was short. -/
+def predictShift (c : Curves) (curve : List Char) (h : Int) (shift : Int) : Fin 6 :=
+  ⟨min 5 ((baseLevel c curve h : Int) - shift).toNat, by omega⟩
+
+/-- **Fork `energy::predict` with no sleep-debt shift**: a future day, whose `EnergyCtx` carries
+no `slept_min`, so `under_slept` is false and the shift is zero. -/
+def predictAt (c : Curves) (curve : List Char) (h : Int) : Fin 6 := predictShift c curve h 0
+
+theorem predictAt_val (c : Curves) (curve : List Char) (h : Int) :
+    (predictAt c curve h).val = min 5 (baseLevel c curve h) := by
+  simp only [predictAt, predictShift, Int.sub_zero, Int.toNat_natCast]
 
 /-- **Fork `EnergyCtx::cap_for_location`**: `min(energy, home_max_ci)` at home unless
 `--allow-home`. -/
@@ -2485,6 +2522,12 @@ def capForLocation (homeMax : Nat) (allowHome : Bool) (loc : Loc) (e : Fin 6) : 
   match loc, allowHome with
   | .home, false => ⟨min e.val homeMax, by omega⟩
   | _, _ => e
+
+/-- The location the **cap** sees.  Fork `cap_for_location` compares `self.loc == Loc::Home` and
+nothing else, so only "is it home" crosses; the curve is chosen separately (`curveKeyOf`), because
+`curve_key` reads the location's *name*.  Step L9's day 0 is the only caller with a location that
+is neither `lounge` nor `home`. -/
+def capLoc (name : List Char) : Loc := if name = homeKey then .home else .lounge
 
 /-- **A future day's slot energy** (fork `EnergyCtx::energy_at` under `EnergyCtx::new` and
 `Posterior::none`): predicted from the hours since `wake` at `t`, then the home cap. -/
@@ -2934,10 +2977,12 @@ keeps the seconds and leaves a leap second (`leapFold`).  Its whole-minute insta
 ### The input (R10, D10-4)
 
 `InputIn` is what the host has: both readings of every weekday table, today's logged wake if
-any, day 0's six levels, the curves, the `[day]` keys and the walls indexed once.  `mkInput?`
-is the smart constructor.  It refuses `lookaheadTooLong` first (more than 3,660 days, D10-13),
-then a weight by weekday (`weight wd e`, L1's `WErr`), then a wake chrono could not hold
-(`badWake`), then day-0 levels that are not six of at most 1,440 minutes (`badDay0`); each
+any, **`Today`** (step L9: the `at` instant, `state.json`'s runtime facts, `--allow-home`, and
+the two facts the seam carries), the curves, the `[day]` keys and the walls indexed once.
+`mkInput?` is the smart constructor.  It refuses `lookaheadTooLong` first (more than 3,660 days,
+D10-13), then a weight by weekday (`weight wd e`, L1's `WErr`), then a wake chrono could not hold
+(`badWake`), then an `at` stamp whose local date is not `today` (`nowDisagrees`, step L9, where
+`badDay0` used to be); each
 refusal has its theorem, and every other input is accepted (`mkInput?_accepts`).  The kernel
 applies the model-then-config fallbacks and the wake fallback itself
 (`mkInput?_weight_is_the_model_then_config`, `mkInput?_arrival_and_wake`).  The curves' and
@@ -2955,8 +3000,10 @@ day and the mixed numerators as `Six`, six numbers read in constant time.
 Over lists the wire can make large: the day range is core's `List.range` (`range.loop`, tail
 recursive) folded by `foldl` and reversed; each day's walls, window, cut, energy and limit are
 L2–L4's, listed in their sections; `Cal.localHits` and `Cal.gapHit` are B1's (a `foldl` over the
-zone table; structural fuel 180).  `weightsOf?`, `day0Wf` (core `all` over at most six entries
-after the length check) and `Six` recurse over nothing large.  Proof-only recursions:
+zone table; structural fuel 180).  Day 0's own recursions are the same ones (step L9: `day0Cut`
+is L3's `cutSlots`, `day0Slots` a `map`, `day0Hist` L4's `histOf'`), plus `latestBefore`, a
+`foldl` over the day's energy reports, which the replay bounds.  `weightsOf?` and `Six` recurse
+over nothing large.  Proof-only recursions:
 `foldl_cons_map`, `daysAscending_range'`.
 -/
 
@@ -3028,6 +3075,240 @@ theorem wakeInstantOf_on_an_unambiguous_time (z : Cal.Tz) (d : Nat) (w : WakeClo
 /-- The lookahead's R10 bound (D10-13): at most 3,660 days, else `lookaheadTooLong`. -/
 def maxLookaheadDays : Nat := 3660
 
+/-! ### Today's posterior, its sleep debt, and what else today is (step L9; design §13.5)
+
+Day 0 is not a histogram the host hands in any more (gap 93).  Everything a **future** day reads
+is a table; everything **today** reads that a future day does not is here: the instant the
+request was made, `state.json`'s window, budget, arrival, date and location, `--allow-home`, and
+the two facts the kernel derives from its own replay through D24's seam — last night's minutes
+and today's energy reports.
+
+Fork `Ctx::today_slots(allow_home)` is the whole of it, and `DayCapacity::from_slots` is what it
+becomes.  Note what is *not* here: `blocks_done` and `since_break_min` reach `Features` and no
+further — `energy::predict` reads `loc`, `hsw` and `slept_min` only (they are §8.5's v2 features),
+so they cannot move a slot's energy and day 0 does not carry them.  Nor is there a budget limit:
+`from_slots` sums the energised slots and `limit_to_budget` is a *future* day's (`pureDay`). -/
+
+/-- One of today's energy reports as the posterior reads it (fork `Report`): the instant, what was
+predicted then, and what was reported.  `Posterior::from_observations` maps the day's
+`EnergyObs` to exactly this triple. -/
+structure Report where
+  t    : Cal.Instant
+  pred : Nat
+  rep  : Nat
+deriving DecidableEq, Repr
+
+/-- **Fork `Posterior::latest_before(t)`**: `reports.iter().rev().find(|r| r.t <= t)` over the
+**stably sorted** reports — the newest report at or before `t`, and the last of the day's own
+order among any that share that instant.  Written as one left fold, which needs no sort: it keeps
+the last reading that is both at or before `t` and no earlier than the one held, which is that
+element for a list in any order (fork `sort_by_key` is stable, so on the sorted list the two
+agree; the fold does not depend on the list arriving sorted). -/
+def keepsIt (t : Cal.Instant) (acc : Option Report) (r : Report) : Bool :=
+  decide (r.t ≤ t) && (match acc with | none => true | some a => decide (a.t ≤ r.t))
+
+theorem keepsIt_le {t : Cal.Instant} {acc : Option Report} {r : Report}
+    (h : keepsIt t acc r = true) : r.t ≤ t := by
+  unfold keepsIt at h
+  rw [Bool.and_eq_true] at h
+  exact of_decide_eq_true h.1
+
+def latestStep (t : Cal.Instant) (acc : Option Report) (r : Report) : Option Report :=
+  if keepsIt t acc r then some r else acc
+
+def latestBefore (l : List Report) (t : Cal.Instant) : Option Report :=
+  l.foldl (latestStep t) none
+
+theorem latestBefore_nil (t : Cal.Instant) : latestBefore [] t = none := rfl
+
+/-- The fold keeps a report of the list, at or before `t`, or what it was handed. -/
+theorem latestBefore_go : ∀ (l : List Report) (t : Cal.Instant) (acc : Option Report) (r : Report),
+    l.foldl (latestStep t) acc = some r → (r ∈ l ∧ r.t ≤ t) ∨ acc = some r
+  | [], _, _, _, h => Or.inr h
+  | x :: xs, t, acc, r, h => by
+    rcases latestBefore_go xs t (latestStep t acc x) r h with h' | h'
+    · exact Or.inl ⟨List.mem_cons_of_mem _ h'.1, h'.2⟩
+    · unfold latestStep at h'
+      by_cases hc : keepsIt t acc x = true
+      · rw [if_pos hc] at h'
+        have hx : x = r := Option.some.inj h'
+        subst hx
+        exact Or.inl ⟨List.mem_cons_self .., keepsIt_le hc⟩
+      · rw [if_neg hc] at h'
+        exact Or.inr h'
+
+/-- What the fold keeps is one of the reports, at or before `t`. -/
+theorem latestBefore_sound (l : List Report) (t : Cal.Instant) (r : Report)
+    (h : latestBefore l t = some r) : r ∈ l ∧ r.t ≤ t := by
+  rcases latestBefore_go l t none r h with h' | h'
+  · exact h'
+  · cases h'
+
+/-- No report at or before `t` and the fold keeps nothing. -/
+theorem latestBefore_none_of_all_after {l : List Report} {t : Cal.Instant}
+    (h : ∀ r ∈ l, ¬ r.t ≤ t) : latestBefore l t = none := by
+  rcases hl : latestBefore l t with _ | r
+  · rfl
+  · exact absurd (latestBefore_sound l t r hl).2 (h r (latestBefore_sound l t r hl).1)
+
+/-- §16's `[energy] posterior_full_hours` and `posterior_zero_hours`, as the exact decimals their
+file writes.  **Nothing converts them to minutes.**  §13.5 says day 0's posterior goes through
+`Arith.ramp` "over minutes", and the repo says otherwise: `posterior_weight` compares
+`hours = seconds/3600` against two `f64` hours, and both comparisons are exact on the pair, so
+the weight is taken over the common unit `1/(3600·fd·zd)` hours — an exact scaling with nothing
+rounded, and therefore no rounding site to add. -/
+structure PostCfg where
+  full : Arith.Pos
+  zero : Arith.Pos
+
+/-- **Fork `posterior_weight(hours, full_hours, zero_hours)`** for a report `dt` **seconds** old,
+exactly: `1` up to `full`, falling linearly to `0` at `zero`, and `0` at or past it.  The three
+values are put over one exact unit and the ramp is then `Arith.ramp`'s — §8.5's one definition
+(AGENTS §5.3).
+
+**The order of the fork's tests is load-bearing** and this was found by measurement, not by
+reading: `hours <= full_hours` is tested **before** `zero_hours <= full_hours`, so a report inside
+`full` weighs one *even when the pair is degenerate* (`zero ≤ full`).  Taking the degenerate case
+first — which this definition did until the L9 parity run reached `full = 3, zero = 2` — weighs
+such a report nothing, and a whole day's levels move.  `hours < 0` is the fork's first test and is
+unreachable here: `latestBefore` only ever returns a report at or before `t`. -/
+def weightAt (c : PostCfg) (dt : Nat) : Arith.Pos :=
+  let fu := 3600 * c.full.val.num * c.zero.val.den
+  let zu := 3600 * c.zero.val.num * c.full.val.den
+  let du := dt * (c.full.val.den * c.zero.val.den)
+  if du ≤ fu then Arith.posOfNat 1
+  else if h : fu < zu then Arith.ramp fu zu h du
+  else Arith.mkPos 0 1 (by omega)
+
+/-- A report no older than `posterior_full_hours` weighs one — whatever `zero` is. -/
+theorem weightAt_full (c : PostCfg) {dt : Nat}
+    (h : dt * (c.full.val.den * c.zero.val.den) ≤ 3600 * c.full.val.num * c.zero.val.den) :
+    Arith.Q.equiv (weightAt c dt).val (Arith.ofNat 1) = true := by
+  simp only [weightAt, if_pos h]
+  rfl
+
+/-- A report **past** `posterior_full_hours` and at or past `posterior_zero_hours` weighs nothing,
+and so does one past `full` under a degenerate pair. -/
+theorem weightAt_zero (c : PostCfg) {dt : Nat}
+    (hf : 3600 * c.full.val.num * c.zero.val.den < dt * (c.full.val.den * c.zero.val.den))
+    (hz : 3600 * c.zero.val.num * c.full.val.den ≤ dt * (c.full.val.den * c.zero.val.den)) :
+    (weightAt c dt).val.num = 0 := by
+  simp only [weightAt, if_neg (by omega : ¬ dt * (c.full.val.den * c.zero.val.den) ≤ 3600 * c.full.val.num * c.zero.val.den)]
+  split
+  · exact Arith.ramp_zero _ _ _ hz
+  · rfl
+
+/-- **A staler report weighs less** (fork's falling ramp; `Arith.ramp_antitone`). -/
+theorem weightAt_antitone (c : PostCfg) {d₁ d₂ : Nat} (h : d₁ ≤ d₂) :
+    Arith.Q.le (weightAt c d₂).val (weightAt c d₁).val = true := by
+  have hm : d₁ * (c.full.val.den * c.zero.val.den) ≤ d₂ * (c.full.val.den * c.zero.val.den) :=
+    Nat.mul_le_mul_right _ h
+  simp only [weightAt]
+  by_cases h2 : d₂ * (c.full.val.den * c.zero.val.den) ≤ 3600 * c.full.val.num * c.zero.val.den
+  · rw [if_pos h2, if_pos (by omega)]
+    exact Arith.Q.le_refl _
+  · rw [if_neg h2]
+    by_cases h1 : d₁ * (c.full.val.den * c.zero.val.den) ≤ 3600 * c.full.val.num * c.zero.val.den
+    · rw [if_pos h1]
+      split
+      · rename_i hfz
+        have hd : (Arith.ofNat 1).defined = true := by decide
+        exact Arith.Q.le_trans hd (Arith.ramp_le_one _ _ hfz _) (Arith.Q.le_refl _)
+      · exact Arith.Q.le_of (by simp [Arith.mkPos, Arith.posOfNat])
+    · rw [if_neg h1]
+      split
+      · exact Arith.ramp_antitone _ _ _ hm
+      · exact Arith.Q.le_refl _
+
+/-- **Fork `Posterior::correct(t, pred)`**: the prediction at `t` plus `δ·w` of the newest report
+at or before `t`, rounded and clamped to `0..5` — site R5's `Arith.energyAfter`.  With no report
+the adjustment is `0` and the answer is the prediction (`Arith.energyAfter_no_report`).
+
+`f64::round` is half **away from zero** where `energyAfter` is half **up**; the two rules differ
+only strictly below zero, and there the fork's own `clamp(0.0, 5.0)` answers `0` while
+`energyAfter`'s non-positive branch answers `0` as well
+(`the_posterior_rounds_a_half_the_way_the_fork_does`). -/
+def correctAt (c : PostCfg) (l : List Report) (t : Cal.Instant) (pred : Nat) : Fin 6 :=
+  match latestBefore l t with
+  | none => Arith.energyAfter pred 0 (Arith.posOfNat 1)
+  | some r => Arith.energyAfter pred ((r.rep : Int) - (r.pred : Int))
+      (weightAt c (Cal.secondsBetween r.t t).toNat)
+
+/-- **No report, no correction.** -/
+theorem correctAt_without_a_report (c : PostCfg) {l : List Report} {t : Cal.Instant}
+    (h : latestBefore l t = none) (pred : Nat) : (correctAt c l t pred).val = min 5 pred := by
+  simp only [correctAt, h]
+  exact Arith.energyAfter_no_report _ _
+
+/-- **The half that decides the two rounding rules agree.**  A corrected value of exactly `−0.5`
+is `round`ed to `−1` by the fork and clamped to `0`; `+0.5` is rounded to `1` by both.  These are
+the two points at which half-away-from-zero and half-up could part company on this domain, and
+they do not. -/
+theorem the_posterior_rounds_a_half_the_way_the_fork_does :
+    (Arith.energyAfter 1 (-3) (Arith.mkPos 1 2 (by omega))).val = 0 ∧
+    (Arith.energyAfter 2 (-3) (Arith.mkPos 1 2 (by omega))).val = 1 ∧
+    (Arith.energyAfter 3 (-3) (Arith.mkPos 1 2 (by omega))).val = 2 := by decide
+
+/-- §16's `[energy.sleep_debt]` and `.tm/model.json`'s fitted `sleep_debt_shift`: the host sends
+both shifts and the kernel picks (D10-4), beside the hours a night must reach not to count as
+debt. -/
+structure SleepCfg where
+  shiftModel  : Option Arith.Signed
+  shiftConfig : Arith.Signed
+  underHours  : Arith.Pos
+
+/-- **Fork `Model::sleep_shift(cfg)`**: the model's shift, else the config's. -/
+def SleepCfg.shift (s : SleepCfg) : Arith.Signed := s.shiftModel.getD s.shiftConfig
+
+/-- **Fork `Features::under_slept(cfg)`**: `slept_min / 60 < under_hours`.  A **comparison**, so
+it cross-multiplies and nothing rounds (`Arith.lean`'s note).  No sleep reading is no debt. -/
+def SleepCfg.underSlept (s : SleepCfg) : Option Nat → Bool
+  | none => false
+  | some m => Arith.Q.lt ⟨m, 60⟩ s.underHours.val
+
+/-- **Fork `energy::predict`'s shift**: site R10's rounding of the chosen shift under debt, and
+nothing otherwise. -/
+def SleepCfg.shiftOf (s : SleepCfg) (slept : Option Nat) : Int :=
+  if s.underSlept slept then Arith.roundAway s.shift else 0
+
+theorem SleepCfg.shiftOf_without_sleep (s : SleepCfg) : s.shiftOf none = 0 := rfl
+
+/-- **What today is, beside the tables every day reads** (step L9; design §13.5).  `now` is the
+request's own instant — the `at` stamp, whose local date `mkInput?` checks against `now`
+(`nowDisagrees`); `date`, `window`, `budget`, `arrival` and `loc` are `state.json`'s, which is
+the host's file (AGENTS §8.4, "runtime state that lives in Rust"); `allowHome` is
+`tm plan --allow-home`; and `slept` and `reports` are the kernel's own, read off this call's
+replay through D24's seam. -/
+structure Today where
+  now       : Cal.Instant
+  date      : Option Nat
+  window    : Option (Field.Clock × Field.Clock)
+  budget    : Option Nat
+  arrival   : Option Field.Clock
+  loc       : List Char
+  allowHome : Bool
+  slept     : Option Nat
+  reports   : List Report
+  post      : PostCfg
+  sleep     : SleepCfg
+
+/-- **Fork `Ctx::window`'s stored branch**: `state.window` counts only with `state.budget` beside
+it and only when `state.date` is today — a window stored on an earlier day belongs to that day. -/
+def Today.storedWindow (T : Today) (today : Nat) : Option (Field.Clock × Field.Clock) :=
+  if T.date = some today then
+    (match T.window, T.budget with
+     | some w, some _ => some w
+     | _, _ => none)
+  else none
+
+/-- **Fork `Ctx::window`'s formula branch**: `state.arrival` when it is today's, else `now`. -/
+def Today.arrivalSec (T : Today) (today : Nat) (z : Cal.Tz) : Nat :=
+  if T.date = some today then
+    (match T.arrival with
+     | some c => (Cal.instantOf z today c).sec
+     | none => T.now.sec)
+  else T.now.sec
+
 /-- The `[day]` keys the window, the budget and the cut read.  L6 decodes it with §13.6's
 bounds (`badDay <key>`); `CutCfg` is L3's, contained, not copied. -/
 structure DayCfg where
@@ -3042,7 +3323,7 @@ once (`wallIndex`). -/
 structure InputIn where
   today     : Nat
   days      : Nat
-  day0      : List Nat
+  today0    : Today
   pModel    : Cal.Weekday → Option (Nat × Nat)
   pConfig   : Cal.Weekday → Nat × Nat
   arrModel  : Cal.Weekday → Option Field.Clock
@@ -3058,7 +3339,7 @@ structure InputIn where
 structure Input where
   today   : Nat
   days    : Nat
-  day0    : Hist
+  today0  : Today
   weight  : Cal.Weekday → Weight
   arrival : Cal.Weekday → Field.Clock
   wake    : WakeClock
@@ -3073,7 +3354,7 @@ inductive CapErr where
   | lookaheadTooLong
   | weight (wd : Cal.Weekday) (e : WErr)
   | badWake
-  | badDay0
+  | nowDisagrees
 deriving DecidableEq, Repr
 
 /-- **Fork `Model::p_lounge_on(wd, cfg)`**: the learned pair, else the config's, decoded
@@ -3106,19 +3387,21 @@ def arrivalOn (x : InputIn) (wd : Cal.Weekday) : Field.Clock := (x.arrModel wd).
 logged wake, else today's weekday's expected arrival.  Every future day reuses it. -/
 def wakeOf (x : InputIn) : WakeClock := x.wake.getD (WakeClock.ofClock (arrivalOn x (Cal.weekdayOf x.today)))
 
-/-- Day 0's six levels (interim until L9): exactly six, each a day's minutes at most. -/
-def day0Wf (ns : List Nat) : Bool := ns.length == 6 && ns.all (fun n => decide (n ≤ 1440))
+/-- **The `at` stamp names today** (step L9; design §13.5): `Ctx::now_tz` and `Ctx::today` are
+one instant read two ways, so a request whose `at` falls on another local date would cut day 0
+from an instant outside the day it is planning.  R10: it is refused by name, never adjusted. -/
+def nowAgrees (x : InputIn) : Bool := Cal.localDate x.tz x.today0.now == x.today
 
 /-- **The smart constructor** (R10).  Checked in the order `lookaheadTooLong`, the weights
-Monday first, `badWake`, `badDay0`. -/
+Monday first, `badWake`, `nowDisagrees`. -/
 def mkInput? (x : InputIn) : Except CapErr Input :=
   if maxLookaheadDays < x.days then .error .lookaheadTooLong else
   match weightsOf? x with
   | .error e => .error e
   | .ok ws =>
     if (wakeOf x).wf = false then .error .badWake
-    else if day0Wf x.day0 = false then .error .badDay0
-    else .ok ⟨x.today, x.days, histOf x.day0, ws, arrivalOn x, wakeOf x, x.curves, x.homeMax, x.day,
+    else if nowAgrees x = false then .error .nowDisagrees
+    else .ok ⟨x.today, x.days, x.today0, ws, arrivalOn x, wakeOf x, x.curves, x.homeMax, x.day,
       x.tz, x.walls⟩
 
 theorem mkInput?_refuses_too_many_days (x : Look.InputIn) (h : Look.maxLookaheadDays < x.days) :
@@ -3172,10 +3455,58 @@ theorem pureDay_is_dayHist (I : Input) (loc : Loc) (d : Nat) :
     pureDay I loc d = dayHist I.curves I.homeMax loc (wakeOn I d) (budgetMinOf I.day) (dayCut I d).slots :=
   (dayHist_eq _ _ _ _ _ _).symm
 
-/-- **Entry `i` of the lookahead**: day 0 is the host's histogram (interim until L9, design
-§13.5); a later day mixes the two locations' limited days at its weekday's weight (D10-3). -/
+/-! ### Day 0: today, derived in the kernel (step L9, gap 93; design §13.5) -/
+
+/-- **Fork `Ctx::window`**: the window `tm arrive` stored *for today*, else §8.1's formula from
+the stored arrival (or `now`) over today's walls — the same `windowFrom` every future day uses.
+The budget is not read: day 0 has no budget limit (`from_slots` sums the slots), and
+`state.budget` only decides whether the stored window counts at all. -/
+def day0Window (I : Input) : Nat × Nat :=
+  match I.today0.storedWindow I.today with
+  | some w => ((Cal.instantOf I.tz I.today w.1).sec, (Cal.instantOf I.tz I.today w.2).sec)
+  | none =>
+    windowFrom I.tz (I.today0.arrivalSec I.today I.tz) (windowMinOf I.day.windowHours)
+      I.day.windowCap (wallsOn I.walls I.today)
+
+/-- **Fork `Ctx::today_slots`'s cut**: from `max(window.start, now)` to the window's end, around
+today's walls, with no placed rest and no block worked since a break — and nothing at all when
+the window has already ended (`if end <= from { return Vec::new() }`). -/
+def day0Cut (I : Input) : Cut :=
+  let w := day0Window I
+  let lo := max w.1 I.today0.now.sec
+  if w.2 ≤ lo then ⟨[], []⟩ else cutSlots I.day.cut lo w.2 (wallsOn I.walls I.today) [] 0
+
+theorem day0Cut_eq (I : Input) :
+    day0Cut I =
+      (if (day0Window I).2 ≤ max (day0Window I).1 I.today0.now.sec then ⟨[], []⟩
+       else cutSlots I.day.cut (max (day0Window I).1 I.today0.now.sec) (day0Window I).2
+         (wallsOn I.walls I.today) [] 0) := rfl
+
+/-- **Fork `EnergyCtx::energy_at` on today**: the prediction at the hours since wake, less the
+sleep-debt shift (site R10), corrected by today's posterior (site R5), then the home cap.  The
+order is the fork's and it is load-bearing — cheat 118 is the posterior applied *after* the
+cap. -/
+def todayEnergy (I : Input) (t : Cal.Instant) : Fin 6 :=
+  capForLocation I.homeMax I.today0.allowHome (capLoc I.today0.loc)
+    (correctAt I.today0.post I.today0.reports t
+      (predictShift I.curves (curveKeyOf I.curves I.today0.loc) (hswAt (wakeOn I I.today) t)
+        (I.today0.sleep.shiftOf I.today0.slept)).val)
+
+/-- **Fork `capacity::energize(cut.slots, ectx)`** on today: each slot with its energy at its
+start.  (`blocks_done` and `since_break_min` count up in the fork and reach `Features` only;
+`energy::predict` reads `loc`, `hsw` and `slept_min`, so neither can move a level.) -/
+def day0Slots (I : Input) : List (Fin 6 × Slot) :=
+  (day0Cut I).slots.map fun s => (todayEnergy I ⟨s.start, 0⟩, s)
+
+/-- **Fork `DayCapacity::from_slots(ctx.today, &ctx.today_slots(allow_home))`** — day 0, derived
+from the kernel's own replay instead of handed in (gap 93). -/
+def day0Hist (I : Input) : Hist := histOf' (day0Slots I)
+
+/-- **Entry `i` of the lookahead**: day 0 is today, cut from `now` and energised through today's
+posterior and sleep debt (step L9); a later day mixes the two locations' limited days at its
+weekday's weight (D10-3). -/
 def dayOf (I : Input) (i : Nat) : DayCapacity :=
-  if i = 0 then ofHist I.today I.day0
+  if i = 0 then ofHist I.today (day0Hist I)
   else mixDay (I.today + i) (I.weight (Cal.weekdayOf (I.today + i)))
     (pureDay I .lounge (I.today + i)) (pureDay I .home (I.today + i))
 
@@ -3216,10 +3547,20 @@ theorem locSix_get (c : Curves) (homeMax : Nat) (loc : Loc) (wake : Cal.Instant)
     (locSix c homeMax loc wake budgetMin slots).get = limitHist budgetMin (histOf' (energize c homeMax loc wake slots)) := by
   simp only [locSix, Six.get_of]
 
+/-- Day 0's six levels, held (L4's note): the cut and the energising run once per call. -/
+def day0Six (I : Input) : Six :=
+  let sl := day0Slots I
+  Six.of (histOf' sl)
+
+theorem day0Six_get (I : Input) : (day0Six I).get = day0Hist I := by
+  simp only [day0Six, day0Hist, Six.get_of]
+
 /-- `dayOf` as the compiled code runs it: the cut once per day, each location's day held, the
 mixed numerators held. -/
 def dayOfFast (I : Input) (i : Nat) : DayCapacity :=
-  if i = 0 then ⟨I.today, (Six.of (ofHist I.today I.day0).numAt).get⟩
+  if i = 0 then
+    let s := day0Six I
+    ⟨I.today, (Six.of (fun l => capDen * s.get l)).get⟩
   else
     let d := I.today + i
     let slots := (dayCut I d).slots
@@ -3234,7 +3575,7 @@ def dayOfFast (I : Input) (i : Nat) : DayCapacity :=
   funext I i
   unfold dayOf dayOfFast
   split
-  · simp only [Six.get_of]; rfl
+  · simp only [Six.get_of, day0Six_get, ofHist]
   · simp only [locSix_get, Six.get_of, pureDay]; rfl
 
 /-- **Fork `capacity::lookahead`, under D10** (design §13.4): `days` entries from `today`, a
@@ -3300,9 +3641,12 @@ theorem lookahead_entry {I : Input} {i : Nat} {c : DayCapacity} (h : (lookahead 
   · exact ⟨by assumption, (Option.some.inj h).symm⟩
   · cases h
 
-/-- **Day 0 is the host's histogram** (interim until L9, design §13.5). -/
-theorem lookahead_day_zero_is_the_hosts (I : Input) (h : 0 < I.days) :
-    (lookahead I)[0]? = some (ofHist I.today I.day0) := by
+/-- **Day 0 is the kernel's own** (step L9, gap 93): today's cut from `now`, energised through
+today's posterior and sleep debt, summed as `from_slots` sums it — not a histogram the host
+handed in.  (Until L9 this theorem read `some (ofHist I.today I.day0)`, and `I.day0` no longer
+exists.) -/
+theorem lookahead_day_zero_is_the_kernels (I : Input) (h : 0 < I.days) :
+    (lookahead I)[0]? = some (ofHist I.today (day0Hist I)) := by
   rw [lookahead_getElem?, if_pos h]
   rfl
 
@@ -3339,6 +3683,34 @@ theorem lookahead_at_a_certain_weight_is_the_pure_location {I : Input} {i : Nat}
     simp only [mixDay, ofHist, mix_at_one_is_lounge _ hw]
   · conv => lhs; rw [e]
     simp only [mixDay, ofHist, mix_at_zero_is_home _ hw]
+
+/-- **Day 0's slots lie inside today's window and start no earlier than `now`** — the cut's laws
+at day 0's arguments (an ended window cuts nothing at all). -/
+theorem day0_slots_are_inside_the_window (I : Input) :
+    ∀ s ∈ (day0Cut I).slots,
+      max (day0Window I).1 I.today0.now.sec ≤ s.start ∧ s.start < s.stop ∧ s.stop ≤ (day0Window I).2 := by
+  rw [day0Cut_eq]
+  split
+  · intro s hs; cases hs
+  · intro s hs; exact cutSlots_inside_the_window _ _ _ _ _ _ hs
+
+/-- **No unit of a day-0 slot is inside a wall of today's.** -/
+theorem day0_slots_avoid_the_walls (I : Input) :
+    ∀ s ∈ (day0Cut I).slots, ∀ w ∈ wallsOn I.walls I.today, ∀ t,
+      s.start ≤ t → t < s.stop → ¬ (w.1 ≤ t ∧ t < w.2) := by
+  rw [day0Cut_eq]
+  split
+  · intro s hs; cases hs
+  · intro s hs w hw t h1 h2
+    exact cutSlots_avoid_the_walls _ _ _ _ _ _ hs (by simpa using hw) h1 h2
+
+/-- **A window that has already ended leaves day 0 empty** (fork's
+`if end <= from { return Vec::new() }`). -/
+theorem day0_after_the_window_is_empty (I : Input)
+    (h : (day0Window I).2 ≤ max (day0Window I).1 I.today0.now.sec) (l : Fin 6) :
+    day0Hist I l = 0 := by
+  simp only [day0Hist, day0Slots, day0Cut_eq, if_pos h, histOf']
+  rfl
 
 /-- The lookahead with every weight replaced by the fork's threshold (step L7's twin). -/
 def Input.twin (I : Input) : Input := { I with weight := fun wd => Look.twin (I.weight wd) }
@@ -3398,8 +3770,8 @@ theorem weightsOf?_of_ok {x : InputIn} (h : ∀ wd, ∃ w, weightOn? x wd = .ok 
 /-- What an accepted input satisfied, and what it holds. -/
 theorem mkInput?_ok_elim {x : InputIn} {I : Input} (h : mkInput? x = .ok I) :
     x.days ≤ maxLookaheadDays ∧ (∀ wd, weightOn? x wd = .ok (I.weight wd)) ∧
-      (wakeOf x).wf = true ∧ day0Wf x.day0 = true ∧
-      I.today = x.today ∧ I.days = x.days ∧ I.day0 = histOf x.day0 ∧ I.arrival = arrivalOn x ∧
+      (wakeOf x).wf = true ∧ nowAgrees x = true ∧
+      I.today = x.today ∧ I.days = x.days ∧ I.today0 = x.today0 ∧ I.arrival = arrivalOn x ∧
       I.wake = wakeOf x ∧ I.curves = x.curves ∧ I.homeMax = x.homeMax ∧ I.day = x.day ∧ I.tz = x.tz ∧
       I.walls = x.walls := by
   unfold mkInput? at h
@@ -3412,7 +3784,7 @@ theorem mkInput?_ok_elim {x : InputIn} {I : Input} (h : mkInput? x = .ok I) :
       by_cases hw : (wakeOf x).wf = false
       · rw [if_pos hw] at h; cases h
       · rw [if_neg hw] at h
-        by_cases h0 : day0Wf x.day0 = false
+        by_cases h0 : nowAgrees x = false
         · rw [if_pos h0] at h; cases h
         · rw [if_neg h0] at h
           cases h
@@ -3455,7 +3827,9 @@ theorem mkInput?_refuses_a_bad_wake {x : InputIn} (h : (wakeOf x).wf = false) (I
   rw [h] at this
   cases this
 
-theorem mkInput?_refuses_a_bad_day0 {x : InputIn} (h : day0Wf x.day0 = false) (I : Input) :
+/-- An `at` stamp on another local date is refused by name (design §13.5's `nowDisagrees`),
+never planned against. -/
+theorem mkInput?_refuses_a_now_that_disagrees {x : InputIn} (h : nowAgrees x = false) (I : Input) :
     mkInput? x ≠ .ok I := fun hI => by
   have := (mkInput?_ok_elim hI).2.2.2.1
   rw [h] at this
@@ -3463,10 +3837,10 @@ theorem mkInput?_refuses_a_bad_day0 {x : InputIn} (h : day0Wf x.day0 = false) (I
 
 /-- **Both directions**: every other input is accepted. -/
 theorem mkInput?_accepts {x : InputIn} (hd : x.days ≤ maxLookaheadDays)
-    (hws : ∀ wd, ∃ w, weightOn? x wd = .ok w) (hw : (wakeOf x).wf = true) (h0 : day0Wf x.day0 = true) :
+    (hws : ∀ wd, ∃ w, weightOn? x wd = .ok w) (hw : (wakeOf x).wf = true) (h0 : nowAgrees x = true) :
     ∃ I, mkInput? x = .ok I := by
   obtain ⟨ws, hws⟩ := weightsOf?_of_ok hws
-  refine ⟨⟨x.today, x.days, histOf x.day0, ws, arrivalOn x, wakeOf x, x.curves, x.homeMax, x.day, x.tz,
+  refine ⟨⟨x.today, x.days, x.today0, ws, arrivalOn x, wakeOf x, x.curves, x.homeMax, x.day, x.tz,
     x.walls⟩, ?_⟩
   simp only [mkInput?, if_neg (Nat.not_lt.mpr hd), hws, hw, h0]
   rfl
@@ -3523,10 +3897,19 @@ def shippedArrival : Cal.Weekday → Field.Clock
   | .sunday => 600
   | _ => 420
 
+/-- The §4.3 Monday as `Ctx` describes it at 07:00: nothing stored in `state.json` (so §8.1's
+formula runs from `now`), at the lounge, the home cap in force, no sleep reading and no energy
+report yet, and §16's `[energy]` decimals — `posterior_full_hours = 3`, `posterior_zero_hours = 6`,
+`sleep_debt.under_hours = 7`, `sleep_debt.shift = 1`. -/
+def specToday : Today :=
+  ⟨⟨(Cal.instantOf Cal.chicago 739865 420).sec, 0⟩, none, none, none, none, loungeKey, false, none, [],
+    ⟨Arith.mkPos 3 1 (by decide), Arith.mkPos 6 1 (by decide)⟩,
+    ⟨none, Arith.defaultShift, Arith.mkPos 7 1 (by decide)⟩⟩
+
 /-- The fork's `capacity_lookahead.rs` week, from Monday 2026-09-07 in Chicago: the shipped
-config, no learned model, no walls, woken at 06:05; day 0 is the §4.3 day's 410 minutes. -/
+config, no learned model, no walls, woken at 06:05; day 0 is today, derived (step L9). -/
 def specInput : Input :=
-  ⟨739865, 3, histOf [0, 0, 0, 60, 170, 180], shippedWeight, shippedArrival, ⟨6 * 3600 + 5 * 60, 0⟩,
+  ⟨739865, 3, specToday, shippedWeight, shippedArrival, ⟨6 * 3600 + 5 * 60, 0⟩,
     Curves.shipped, 3, DayCfg.shipped, Cal.chicago, []⟩
 
 /-- **A future day reuses today's wake clock to the second** (fork `Ctx::wake_time`, then
@@ -3543,14 +3926,15 @@ theorem a_future_day_reads_todays_wake_to_the_second :
 /-- Fork test `lookahead_follows_the_learned_arrival_and_location`, through the twin: the
 learned Tuesday arrival 12:00 and the learned Wednesday `P(lounge)` 0.2 (a home day).  With the
 location forced as the fork forces it, the kernel's three days are the fork's minutes times
-`capDen`: day 0 as handed in, Tuesday `[0, 0, 120, 120, 120, 0]` (the fork's assertion) and
-Wednesday at home, capped at level 3. -/
+`capDen`: day 0 **derived** (step L9 — arriving at 07:00 with nothing stored and no walls, the
+window runs to 15:00 and its seven blocks hold 240 minutes at level 4 and 180 at 5), Tuesday
+`[0, 0, 120, 120, 120, 0]` (the fork's assertion) and Wednesday at home, capped at level 3. -/
 theorem the_twin_follows_the_learned_arrival_and_location :
     (lookahead { specInput with
         arrival := fun wd => if wd = Cal.Weekday.tuesday then 720 else shippedArrival wd,
         weight := fun wd => if wd = Cal.Weekday.wednesday then ⟨200000000000000000, by decide⟩ else shippedWeight wd }.twin).map
         (fun c => (c.day, (List.finRange 6).map c.numAt))
-      = [(739865, [0, 0, 0, 60 * capDen, 170 * capDen, 180 * capDen]),
+      = [(739865, [0, 0, 0, 0, 240 * capDen, 180 * capDen]),
          (739866, [0, 0, 120 * capDen, 120 * capDen, 120 * capDen, 0]),
          (739867, [0, 0, 0, 360 * capDen, 0, 0])] := by
   decide
@@ -3568,7 +3952,7 @@ theorem the_expected_tuesday :
 /-- `specInput`'s raw form: the shipped tables as the host sends them, nothing learned, no
 logged wake. -/
 def specIn : InputIn :=
-  ⟨739865, 3, [0, 0, 0, 60, 170, 180], fun _ => none,
+  ⟨739865, 3, specToday, fun _ => none,
     fun wd => match wd with | .friday => (8, 10) | .saturday => (5, 10) | .sunday => (4, 10) | _ => (9, 10),
     fun _ => none, shippedArrival, none, Curves.shipped, 3, DayCfg.shipped, Cal.chicago, []⟩
 
@@ -3576,7 +3960,7 @@ def specIn : InputIn :=
 arrival (Monday 07:00) as the wake; a learned Sunday weight 0.8 over the config's 0.4; 3,660
 days; a leap second on second 59.  Refused by name: 3,661 days; a config weight 3/2 on
 Saturday; a learned third on Wednesday, whatever the config says; a wake at 24:00; a leap
-second off second 59; five day-0 levels; a day-0 level of 1,441 minutes. -/
+second off second 59; an `at` stamp on yesterday, and one on tomorrow. -/
 theorem mkInput?_on_witnesses :
     (mkInput? specIn).map (fun I => (I.days, (I.weight .sunday).val, I.wake)) = .ok (3, 400000000000000000, ⟨25200, 0⟩) ∧
     (mkInput? { specIn with pModel := fun wd => if wd = Cal.Weekday.sunday then some (8, 10) else none }).map
@@ -3590,8 +3974,10 @@ theorem mkInput?_on_witnesses :
       (fun _ => ()) = .error (.weight .wednesday .weightPrecision) ∧
     (mkInput? { specIn with wake := some ⟨86400, 0⟩ }).map (fun _ => ()) = .error .badWake ∧
     (mkInput? { specIn with wake := some ⟨7 * 3600 + 58, 1500000000⟩ }).map (fun _ => ()) = .error .badWake ∧
-    (mkInput? { specIn with day0 := [0, 0, 0, 60, 170] }).map (fun _ => ()) = .error .badDay0 ∧
-    (mkInput? { specIn with day0 := [0, 0, 0, 0, 0, 1441] }).map (fun _ => ()) = .error .badDay0 :=
+    (mkInput? { specIn with today0 := { specToday with now := ⟨(Cal.instantOf Cal.chicago 739864 420).sec, 0⟩ } }).map
+      (fun _ => ()) = .error .nowDisagrees ∧
+    (mkInput? { specIn with today0 := { specToday with now := ⟨(Cal.instantOf Cal.chicago 739866 420).sec, 0⟩ } }).map
+      (fun _ => ()) = .error .nowDisagrees :=
   ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- **Sunday mixes at its own weekday's weight** (fork `p_lounge_on(date.weekday())`): the
@@ -3601,6 +3987,104 @@ theorem sunday_mixes_at_its_own_weight :
     (List.finRange 6).map (pureDay specInput .lounge 739871) = [0, 0, 0, 120, 120, 120] ∧
     (List.finRange 6).map (pureDay specInput .home 739871) = [0, 0, 120, 240, 0, 0] ∧
     (List.finRange 6).map (dayOf specInput 6).numAt = [0, 0, 72 * capDen, 192 * capDen, 48 * capDen, 48 * capDen] := by
+  decide
+
+/-! ### Day 0's witnesses (step L9): the §4.3 day, derived -/
+
+/-- The §4.3 meeting moved onto the Monday, 12:50–13:50 in Chicago — so that day 0's own window
+and cut are the ones `cut_slots_on_the_spec_day` documents. -/
+def mondayWall : List WallIx :=
+  [⟨739865, 739865, (Cal.instantOf Cal.chicago 739865 770).sec, (Cal.instantOf Cal.chicago 739865 830).sec⟩]
+
+/-- `specInput` with that wall: the §4.3 day as day 0. -/
+def specWalled : Input := { specInput with walls := mondayWall }
+
+/-- An instant on the §4.3 day. -/
+def atSpec (c : Field.Clock) : Cal.Instant := ⟨(Cal.instantOf Cal.chicago 739865 c).sec, 0⟩
+
+/-- **Day 0 *is* the §4.3 day, derived** (gap 93).  Arriving at 07:00 with the 12:50–13:50
+meeting, §8.1's window runs to 16:00 and `cut_slots_on_the_spec_day`'s seven blocks hold 410
+minutes; at the lounge, woken at 06:05, they energise to 180 minutes at level 5 (08:00, 09:20,
+10:20), 180 at 4 (07:00, 11:40, 13:50) and the 50-minute short block at 3 (15:10).  Nothing is
+handed in: this is `Ctx::today_slots` then `DayCapacity::from_slots`, in the kernel. -/
+theorem day_zero_is_the_spec_day_energised :
+    (day0Window specWalled).2 = (Cal.instantOf Cal.chicago 739865 960).sec ∧
+    (day0Cut specWalled).slotMinutes = 410 ∧
+    (List.finRange 6).map (day0Hist specWalled) = [0, 0, 0, 50, 180, 180] := by
+  decide
+
+/-- **Day 0 is not limited to the budget**, and a future day is (D10-3).  The §4.3 Monday holds
+420 minutes where `budget_blocks × block_min` is 360: `from_slots` sums the energised slots and
+`limit_to_budget` is `pureDay`'s. -/
+theorem the_day_zero_histogram_is_not_limited_to_the_budget :
+    budgetMinOf specInput.day = 360 ∧
+    (List.finRange 6).map (day0Hist specInput) = [0, 0, 0, 0, 240, 180] ∧
+    (List.finRange 6).map (pureDay specInput .lounge 739866) = [0, 0, 0, 0, 180, 180] := by
+  decide
+
+/-- **Day 0 is cut from `now`, not from the arrival** (fork `from = start.max(self.now_tz)`):
+with 07:00 stored as today's arrival and `now` at 10:00, the window is unchanged and the day
+holds what is left of it — 260 minutes. -/
+theorem day_zero_is_cut_from_now :
+    (List.finRange 6).map (day0Hist { specWalled with today0 :=
+        { specToday with date := some 739865, arrival := some 420, now := atSpec 600 } })
+      = [0, 0, 0, 50, 90, 120] := by
+  decide
+
+/-- **The stored window counts only with its budget, and only on its own day** (fork
+`Ctx::window`): `state.window = 09:00–12:00` with `state.budget` is today's window; the same
+window with no budget, or dated yesterday, falls back to §8.1's formula. -/
+theorem day_zero_reads_the_stored_window :
+    day0Window { specWalled with today0 :=
+        { specToday with date := some 739865, window := some (540, 720), budget := some 6 } }
+      = ((Cal.instantOf Cal.chicago 739865 540).sec, (Cal.instantOf Cal.chicago 739865 720).sec) ∧
+    day0Window { specWalled with today0 :=
+        { specToday with date := some 739865, window := some (540, 720), budget := none } }
+      = day0Window specWalled ∧
+    day0Window { specWalled with today0 :=
+        { specToday with date := some 739864, window := some (540, 720), budget := some 6 } }
+      = day0Window specWalled := by
+  decide
+
+/-- **Today's posterior moves today's levels** (§8.5, site R5): a 09:00 report of 2 against a
+prediction of 5 is a residual of −3, at full weight for three hours and fading to nothing at
+six, so the day's levels fall and then recover.  A report from last night at 23:00 is past
+`posterior_zero_hours` and weighs nothing. -/
+theorem todays_posterior_moves_todays_levels :
+    (List.finRange 6).map (day0Hist { specWalled with today0 :=
+        { specToday with reports := [⟨atSpec 540, 5, 2⟩] } })
+      = [0, 60, 120, 110, 60, 60] ∧
+    (List.finRange 6).map (day0Hist { specWalled with today0 :=
+        { specToday with reports := [⟨⟨(Cal.instantOf Cal.chicago 739864 1380).sec, 0⟩, 5, 2⟩] } })
+      = [0, 0, 0, 50, 180, 180] := by
+  decide
+
+/-- **A short night shifts every level** (site R10): five hours is below `under_hours = 7`, so
+the shift of 1 comes off each base level; eight hours is not, and nothing moves. -/
+theorem a_short_night_shifts_every_level :
+    (List.finRange 6).map (day0Hist { specWalled with today0 := { specToday with slept := some 300 } })
+      = [0, 0, 50, 180, 180, 0] ∧
+    (List.finRange 6).map (day0Hist { specWalled with today0 := { specToday with slept := some 480 } })
+      = [0, 0, 0, 50, 180, 180] := by
+  decide
+
+/-- **Today's location is read, and `--allow-home` lifts the cap** (fork `Ctx::loc`,
+`EnergyCtx::cap_for_location`): at home the day reads the home curve and every level is capped
+at `home_max_ci = 3`; with `--allow-home` the same curve is uncapped.  A location the curves do
+not name — `zoom` — reads the home curve and is **not** capped, because `cap_for_location`
+compares `Loc::Home` and nothing else. -/
+theorem day_zero_reads_todays_location :
+    (List.finRange 6).map (day0Hist { specWalled with today0 := { specToday with loc := homeKey } })
+      = [0, 0, 50, 360, 0, 0] ∧
+    (List.finRange 6).map (day0Hist { specWalled with today0 :=
+        { specToday with loc := homeKey, allowHome := true } })
+      = [0, 0, 50, 240, 120, 0] ∧
+    (List.finRange 6).map (day0Hist { specWalled with today0 :=
+        { specToday with loc := ['z', 'o', 'o', 'm'] } })
+      = [0, 0, 50, 240, 120, 0] ∧
+    curveKeyOf Curves.shipped ['z', 'o', 'o', 'm'] = homeKey ∧
+    curveKeyOf Curves.shipped anyKey = homeKey ∧
+    curveKeyOf Curves.shipped loungeKey = loungeKey := by
   decide
 
 /-- The §4.3 meeting on Wednesday 2026-09-09, 12:50–13:50 in Chicago, as `wallIndex` lists it. -/

@@ -950,7 +950,7 @@ reason the seam and the vocabulary are the stage's first two steps.
 ```
 { "tz": …, "now": …, "docs": […],            // as today
   "log": { … },                               // as today — and its Run now reaches the rest (K1)
-  "capacity": { … },                          // as today; "day0" DELETED by K2
+  "capacity": { … },                          // "day0" DELETED by K2 — LANDED, stage 6 W-13 step L9
   "state": { … },                             // NEW (§9)
   "plan": { "blockMin": …, "day": {…}, "curves": {…}, "allowHome": …,
             "overrides": … } }                // NEW
@@ -1019,7 +1019,7 @@ D24 and D25 fold four pieces of work into this stage. They are track **K** and t
 | step | what | why here |
 |---|---|---|
 | **K1** the seam | expose the `log` section's `Seal.Run` to the capacity path: a signature change through `logOp`, `logAnswerOf`, `logSectionWith`, `runCapZ`, with `readLogSection_is_zoneOf_then_logSectionWith`, `the_zone_is_read_once_and_feeds_both_sections` and `runCap_without_capacity_is_runWithLog` **re-proved over their new shapes, never weakened** (D5) | gap 210; L9, F2, F3-rule **and the planner's past half** (gap 255) all need it |
-| **K2** L9 | day 0 from the kernel's own replay: the `at` stamp with `nowDisagrees`, the state section, `loc`, `allowHome`, site R10's two configured decimals through `written_pair`; deletes `day0` and `badDay0`; **re-aims** `kernel_lookahead_parity.rs`, whose assertion is the words `"{tag}: {name} day 0 is the host's"` | gap 93; D24 |
+| **K2** L9 — **LANDED** (stage 6 W-13 step L9, gap 93 closed) | day 0 from the kernel's own replay: the `at` stamp with `nowDisagrees`, the state section (`date`, `window`, `budget`, `arrival`, `loc`, `allowHome`), site R10 (`Arith.roundAway`, **signed**) and **five** configured decimals through `written_pair`, not two; `day0` and `badDay0` deleted, and `Ctx::window`/`Ctx::today_slots` with them; `kernel_lookahead_parity.rs` **re-aimed** to compare against `Ctx::today_slots` exactly (92 day-0 comparisons, 0 disagreements) | gap 93; D24 |
 | **K3** F2 | the recurrence family (`done_dates` first and count, `last_done`, instances, `latest_named`, `is_done`) read inside the kernel; each fact's last Rust reader goes with its tranche | design §14.7; needed by P2, P6 and Q2 (a) |
 | **K4** F3-rule | `RuleIn.overdue`, `mandatory`, `pass`; `done_this_period` from W's window; `block_minutes_on` moves in with the close tranche, reading a sealed window record for an old date (D13) | design §14.7; needed by P4 and Q2 (a); closes gap **113** |
 
@@ -1106,7 +1106,7 @@ is carried unchanged.
 | step | depends on | files | goals (added → discharged) | acceptance | cost |
 |---|---|---|---|---|---|
 | **K1** the seam | — | `Boundary.lean` (`logOp`, `logAnswerOf`, `logSectionWith`, `runCapZ`, `logOpFast` and its `@[csimp]`), `Check.lean` | none added; **three laws re-proved over new shapes** | check.sh; `cargo test` unchanged; the three laws' names unchanged and their statements strengthened, not weakened; gap **210** closed | 120 / 450 / 0 / 2–3 |
-| **K2** L9 (day 0) | **K1**; Q7 | `Lookahead.lean`, `Boundary.lean` (`at`, the state section), `Arith.lean` (site R10), `kernel_capacity.rs` (−`day0`) | site R10's `_withinOne`/`_mono` | parity against `Ctx::today_slots` **exactly**, not P1; `kernel_lookahead_parity.rs` **re-aimed**, not extended; cheat 118 (the posterior applied after the cap); gap **93** closed | 200 / 600 / −150 / 4–6 |
+| **K2** L9 (day 0) — **LANDED** | **K1**; ~~Q7~~ (it did **not** gate this step: day 0 reads `state.json`'s `date`/`window`/`budget`/`arrival`/`loc` and `--allow-home`, and **no** §9 row — `active`, `break`, `interrupt`, `last_plan_hash` never cross the wire) | `Lookahead.lean`, `Boundary.lean` (`at`, `state`, `posterior`, `sleep`), `Arith.lean` (site R10), `kernel_capacity.rs` (−`day0`, +the `log` section), `kernel_log.rs` (`capacity_log_section`), `kernel_bridge.rs` (`call_text`), `ctx.rs` (−`window`, −`today_slots`), and four test files | site R10's `roundAway_withinOne` / `roundAway_mono` | parity against `Ctx::today_slots` **exactly**, not P1, at 92 comparisons with 0 disagreements; `kernel_lookahead_parity.rs` **re-aimed**, not extended; cheat 118 taken as **cheat 158**; gap **93** closed | measured **+1,056/−78 Lean, +297/−69 Rust** against the estimate 200 / 600 / −150 / 4-6 |
 | **K3** F2 recurrence | **K1** | `Replay.lean`, `Plan.lean`, a recurrence tranche | the recurrence family's laws | that tranche's parity; **a grep shows no Rust reader** of each moved fact | 350 / 900 / −250 / 6–8 |
 | **K4** F3-rule | **K1**, K3; **Q2** | `Priority.lean`, `Seal.lean` (`block_minutes_on` from a sealed window record), `Boundary.lean` | `RuleIn`'s inputs derived, with their laws | the priority wiring's parity; gaps **79–80**, **113** closed | 300 / 800 / −200 / 5–7 |
 

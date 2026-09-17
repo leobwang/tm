@@ -42,7 +42,7 @@ use std::collections::BTreeMap;
 use chrono::{NaiveDate, Timelike};
 use serde_json::{json, Map, Value};
 
-use tm_core::capacity::{self, DayCapacity, Exact, UnitCapacity, CAP_DEN};
+use tm_core::capacity::{self, Exact, UnitCapacity, CAP_DEN};
 use tm_core::config::Config;
 use tm_core::energy::{weekday_key, Model};
 use tm_core::model::Id;
@@ -51,6 +51,7 @@ use tm_core::store::Store;
 
 use super::ctx::Ctx;
 use super::kernel_bridge;
+use super::kernel_log;
 use super::out::CliError;
 use super::tz_table;
 
@@ -163,6 +164,23 @@ pub fn written_pair(text: &str, max_places: u32) -> Result<(String, String), Pai
     Ok((num, format!("1{}", "0".repeat(places))))
 }
 
+/// **A decimal literal as the exact rational it writes, with its sign** (stage 6 step L9, site
+/// R10): the same reading as [`written_pair`], except that a negative value comes back as
+/// `(true, num, den)` instead of [`PairErr::Negative`]. §8.5 fits `sleep_debt_shift` as a shrunken
+/// **mean**, so the shift is genuinely signed, and the kernel rounds it half away from zero
+/// (`Arith.roundAway`). `-0`, `-0.000` and `-0e3` are `(false, "0", "1")`, as they are unsigned.
+pub fn signed_written_pair(text: &str, max_places: u32) -> Result<(bool, String, String), PairErr> {
+    match written_pair(text, max_places) {
+        Ok((n, d)) => Ok((false, n, d)),
+        Err(PairErr::Negative) => {
+            let t = text.trim();
+            let (n, d) = written_pair(t.strip_prefix('-').unwrap_or(t), max_places)?;
+            Ok((n != "0", n, d))
+        }
+        Err(e) => Err(e),
+    }
+}
+
 /// `num / den > 1` for a pair of [`written_pair`] (digit strings, no leading zeros).
 fn above_one(num: &str, den: &str) -> bool {
     num.len() > den.len() || (num.len() == den.len() && num > den)
@@ -204,6 +222,16 @@ pub struct Written {
     pub safety: Option<String>,
     /// Each `energy.prior.<curve>` range key as written: `(curve, key)`.
     pub prior_keys: Vec<(String, String)>,
+    /// `energy.posterior_full_hours` (stage 6 L9, site R5).
+    pub posterior_full_hours: Option<String>,
+    /// `energy.posterior_zero_hours`.
+    pub posterior_zero_hours: Option<String>,
+    /// `energy.sleep_debt.under_hours` (site R10's comparison).
+    pub sleep_under_hours: Option<String>,
+    /// `energy.sleep_debt.shift` (site R10).
+    pub sleep_shift: Option<String>,
+    /// `.tm/model.json`'s fitted `sleep_debt_shift`, when the file writes one.
+    pub model_sleep_shift: Option<String>,
 }
 
 /// The shadow of `config.toml` that keeps the literals (every other key ignored).
@@ -236,6 +264,15 @@ struct PriorityText {
 #[serde(default)]
 struct EnergyText {
     prior: BTreeMap<String, BTreeMap<String, toml::Value>>,
+    posterior_full_hours: Option<toml::Spanned<toml::Value>>,
+    posterior_zero_hours: Option<toml::Spanned<toml::Value>>,
+    sleep_debt: SleepDebtText,
+}
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct SleepDebtText {
+    under_hours: Option<toml::Spanned<toml::Value>>,
+    shift: Option<toml::Spanned<toml::Value>>,
 }
 
 /// The shadow of `.tm/model.json`: `p_lounge`'s entries in file order, as raw text.
@@ -244,6 +281,7 @@ struct EnergyText {
 struct ModelText {
     #[serde(deserialize_with = "raw_entries")]
     p_lounge: Vec<(String, Box<serde_json::value::RawValue>)>,
+    sleep_debt_shift: Option<Box<serde_json::value::RawValue>>,
 }
 
 /// A JSON object's entries in file order, each value's raw text.
@@ -293,6 +331,10 @@ impl Written {
             for (curve, keys) in &c.energy.prior {
                 w.prior_keys.extend(keys.keys().map(|k| (curve.clone(), k.clone())));
             }
+            w.posterior_full_hours = c.energy.posterior_full_hours.as_ref().map(lit);
+            w.posterior_zero_hours = c.energy.posterior_zero_hours.as_ref().map(lit);
+            w.sleep_under_hours = c.energy.sleep_debt.under_hours.as_ref().map(lit);
+            w.sleep_shift = c.energy.sleep_debt.shift.as_ref().map(lit);
         }
         if let Some(text) = model {
             let m: ModelText = serde_json::from_str(text)
@@ -302,6 +344,7 @@ impl Written {
                     w.model_p[i] = Some(v.get().to_string());
                 }
             }
+            w.model_sleep_shift = m.sleep_debt_shift.as_ref().map(|v| v.get().to_string());
         }
         Ok(w)
     }
@@ -395,6 +438,20 @@ struct Pairs {
     budget_ratio: (String, String),
     bins: Vec<(String, String)>,
     safety: (String, String),
+    /// Stage 6 L9, site R5: `energy.posterior_full_hours` and `posterior_zero_hours`.
+    posterior_full: (String, String),
+    posterior_zero: (String, String),
+    /// Stage 6 L9, site R10: `energy.sleep_debt.under_hours`, and the two shifts (signed).
+    sleep_under: (String, String),
+    sleep_shift: (bool, String, String),
+    model_sleep_shift: Option<(bool, String, String)>,
+}
+
+/// A **signed** configured decimal of a file, as written (site R10).
+fn check_signed(file: &str, key: &str, written: Option<&str>, x: f64, places: u32)
+    -> Result<(bool, String, String), CliError> {
+    let text = text_of(file, key, written, x)?;
+    signed_written_pair(&text, places).map_err(|e| bad_value(file, key, &text, &pair_why(e, places)))
 }
 
 /// The checks of [`check_inputs`], keeping the pairs they read.
@@ -419,6 +476,20 @@ fn pairs_of(cfg: &Config, model: &Model, written: &Written) -> Result<Pairs, Cli
         bins.push(check_places(&format!("priority.bins[{i}]"), lit, *edge, PRIORITY_PLACES)?);
     }
     let safety = check_places("priority.safety", written.safety.as_deref(), cfg.priority.safety, PRIORITY_PLACES)?;
+    // Stage 6 L9: the four `[energy]` decimals day 0 reads (design §13.5 says two; the repo has
+    // four, and the model's fitted shift is a fifth).  The shift is signed: §8.5 fits it as a mean.
+    let posterior_full = check_places(
+        "energy.posterior_full_hours", written.posterior_full_hours.as_deref(), cfg.energy.posterior_full_hours, RATIO_PLACES)?;
+    let posterior_zero = check_places(
+        "energy.posterior_zero_hours", written.posterior_zero_hours.as_deref(), cfg.energy.posterior_zero_hours, RATIO_PLACES)?;
+    let sleep_under = check_places(
+        "energy.sleep_debt.under_hours", written.sleep_under_hours.as_deref(), cfg.energy.sleep_debt.under_hours, RATIO_PLACES)?;
+    let sleep_shift = check_signed(
+        CONFIG_FILE, "energy.sleep_debt.shift", written.sleep_shift.as_deref(), cfg.energy.sleep_debt.shift, RATIO_PLACES)?;
+    let model_sleep_shift = match model.sleep_debt_shift {
+        None => None,
+        Some(x) => Some(check_signed(MODEL_FILE, "sleep_debt_shift", written.model_sleep_shift.as_deref(), x, RATIO_PLACES)?),
+    };
     // The prior's range keys, as written.  At most 6 places and at most 48 hours,
     // a key has at most 8 significant digits, so its double's shortest text is
     // exactly the written decimal and the request may send the double's pair.
@@ -441,7 +512,8 @@ fn pairs_of(cfg: &Config, model: &Model, written: &Written) -> Result<Pairs, Cli
             }
         }
     }
-    Ok(Pairs { model_p, config_p, window_hours, budget_ratio, bins, safety })
+    Ok(Pairs { model_p, config_p, window_hours, budget_ratio, bins, safety,
+        posterior_full, posterior_zero, sleep_under, sleep_shift, model_sleep_shift })
 }
 
 /// **Every configured decimal the capacity request carries, checked before it is
@@ -489,6 +561,24 @@ pub fn named_refusal(issue: &super::out::KernelIssue) -> Option<CliError> {
                 "minLastBlockMin" => "day.min_last_block_min",
                 "windowHours" => "day.window_hours",
                 "budgetRatio" => "day.budget_ratio",
+                _ => return None,
+            };
+            (CONFIG_FILE, k.to_string())
+        }
+        // Stage 6 step L9: day 0's four configured decimals, and the model's fitted shift.
+        "badPosterior" => {
+            let k = match key {
+                "posterior.fullHours" => "energy.posterior_full_hours",
+                "posterior.zeroHours" => "energy.posterior_zero_hours",
+                _ => return None,
+            };
+            (CONFIG_FILE, k.to_string())
+        }
+        "badSleep" if key == "sleep.shiftModel" => (MODEL_FILE, "sleep_debt_shift".to_string()),
+        "badSleep" => {
+            let k = match key {
+                "sleep.shiftConfig" => "energy.sleep_debt.shift",
+                "sleep.underHours" => "energy.sleep_debt.under_hours",
                 _ => return None,
             };
             (CONFIG_FILE, k.to_string())
@@ -591,7 +681,7 @@ fn cand_json(ctx: &Ctx, c: &Candidate, yesterday: &BTreeMap<Id, u8>) -> Value {
 /// **The capacity request** for `days` days from today, with the candidates when
 /// `ranked` is given. Returns the request and the order the candidates were
 /// sent in.
-pub fn request(ctx: &Ctx, allow_home: bool, days: u32, ranked: Option<&Ranked<'_>>) -> Result<(Value, Vec<usize>), CliError> {
+pub fn request(ctx: &Ctx, allow_home: bool, days: u32, ranked: Option<&Ranked<'_>>) -> Result<(String, Vec<usize>), CliError> {
     // Every configured decimal as its file writes it (D10, D17): checked, then sent.
     let pairs = pairs_of(&ctx.cfg, &ctx.model, &Written::of(ctx)?)?;
     let cfg = &ctx.cfg;
@@ -634,9 +724,21 @@ pub fn request(ctx: &Ctx, allow_home: bool, days: u32, ranked: Option<&Ranked<'_
             (curve.clone(), Value::Array(steps))
         })
         .collect();
-    let wake = ctx.logged_wake().map(|t| json!({"sec": t.num_seconds_from_midnight(), "ns": t.nanosecond()}));
-    let day0 = DayCapacity::from_slots(ctx.today, &ctx.today_slots(allow_home)).minutes_at_level;
+    // `Ctx::logged_wake` is `state.wake`, else the replay's `wake` of today.  The first disjunct
+    // is `state.json`'s and the host sends it; the second is the kernel's own fact, and since D24
+    // the kernel reads it off this call's replay rather than being told (`"log"`).  Sending the
+    // clock when `state.wake` is set and `"log"` otherwise **is** the fork's precedence, written
+    // down here because kernel/README.md gap 261 said it was written down nowhere.
+    let wake = match ctx.state.wake {
+        Some(t) => json!({"sec": t.num_seconds_from_midnight(), "ns": t.nanosecond()}),
+        None => json!("log"),
+    };
     let bins: Vec<Value> = pairs.bins.iter().cloned().map(nat_pair_of).collect();
+    let signed_pair_of = |(neg, n, d): &(bool, String, String)| {
+        let mut v = nat_pair_of((n.clone(), d.clone()));
+        v["neg"] = json!(neg);
+        v
+    };
 
     let mut section = json!({
         "pLounge": {"model": p_model, "config": p_config},
@@ -659,7 +761,28 @@ pub fn request(ctx: &Ctx, allow_home: bool, days: u32, ranked: Option<&Ranked<'_
             "defaultPriority": cfg.priority.default_priority,
         },
         "days": days,
-        "day0": day0,
+        // Stage 6 step L9 (gap 93): day 0 is the kernel's own.  What crosses is what only the host
+        // knows — the instant the verb ran, `.tm/state.json`'s runtime facts and the CLI flag —
+        // plus the `[energy]` decimals the posterior and the sleep debt read.  Today's sleep and
+        // energy reports do **not** cross: the kernel reads them off the `log` section below.
+        "at": tm_core::log::fmt_timestamp(&ctx.now_tz.fixed_offset()),
+        "state": {
+            "date": ctx.state.date.map(|d| d.to_string()),
+            "window": ctx.state.window.map(|(f, t)| json!({"from": hhmm(f), "to": hhmm(t)})),
+            "budget": ctx.state.budget,
+            "arrival": ctx.state.arrival.map(hhmm),
+            "loc": ctx.loc().as_str(),
+            "allowHome": allow_home,
+        },
+        "posterior": {
+            "fullHours": nat_pair_of(pairs.posterior_full.clone()),
+            "zeroHours": nat_pair_of(pairs.posterior_zero.clone()),
+        },
+        "sleep": {
+            "shiftModel": pairs.model_sleep_shift.as_ref().map(signed_pair_of),
+            "shiftConfig": signed_pair_of(&pairs.sleep_shift),
+            "underHours": nat_pair_of(pairs.sleep_under.clone()),
+        },
     });
     let mut order = Vec::new();
     if let Some(r) = ranked {
@@ -668,13 +791,25 @@ pub fn request(ctx: &Ctx, allow_home: bool, days: u32, ranked: Option<&Ranked<'_
         section["candidates"] = json!({"hysteresis": cfg.priority.hysteresis, "items": items});
     }
     let cache = ctx.store.root().join(".tm/cache/replay");
-    let request = json!({
+    let tz_wire = tz_table::wire_for(Some(&cache), cfg.tz);
+    // Stage 6 step L9: the `log` section day 0 is derived from (D24's seam).  The kernel answers
+    // both sections in one call and `runCapZ` hands the log answer's replay to the capacity
+    // reader; without it the kernel refuses `day0WithoutLog` rather than invent an empty day.
+    let log = kernel_log::capacity_log_section(
+        ctx.store.root(), &Ctx::log_bytes(&ctx.store)?, &tz_wire, kernel_log::day_of(ctx.today))
+        .map_err(super::ctx::genesis_error)?;
+    let rest = json!({
         "docs": docs,
         "now": ctx.today.to_string(),
         "blockMin": ctx.block_min(),
-        "tz": tz_table::wire_for(Some(&cache), cfg.tz),
+        "tz": tz_wire,
         "capacity": section,
-    });
+    })
+    .to_string();
+    // The `log` section is **spliced as text**: its checkpoint is read in build order
+    // (`Seal.readCkptFields`) and `serde_json::Value` is a `BTreeMap`, so parsing it here would
+    // alphabetise those keys and the kernel would refuse `badCkpt v`.
+    let request = format!("{{\"log\":{log},{}", &rest[1..]);
     Ok((request, order))
 }
 
@@ -826,7 +961,7 @@ pub fn ask(ctx: &Ctx, allow_home: bool, want: u32, ranked: Option<&Ranked<'_>>) 
         say_clamped(ctx.today, want, days);
     }
     let (req, order) = request(ctx, allow_home, days, ranked)?;
-    let (resp, _) = match kernel_bridge::call(&req) {
+    let (resp, _) = match kernel_bridge::call_text(&req) {
         Ok(r) => r,
         Err(CliError::Kernel(issue)) => {
             return Err(named_refusal(&issue).unwrap_or(CliError::Kernel(issue)));

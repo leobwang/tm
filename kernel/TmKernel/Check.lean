@@ -3013,7 +3013,7 @@ open Tm
 #print axioms Tm.Look.daysAscending_range'
 #print axioms Tm.Look.lookahead_is_a_lookahead
 #print axioms Tm.Look.lookahead_entry
-#print axioms Tm.Look.lookahead_day_zero_is_the_hosts
+#print axioms Tm.Look.lookahead_day_zero_is_the_kernels
 #print axioms Tm.Look.lookahead_future_day_is_the_mixture
 #print axioms Tm.Look.lookahead_between_the_locations
 #print axioms Tm.Look.lookahead_at_a_certain_weight_is_the_pure_location
@@ -3028,7 +3028,7 @@ open Tm
 #print axioms Tm.Look.mkInput?_days_le
 #print axioms Tm.Look.mkInput?_refuses_a_bad_weight
 #print axioms Tm.Look.mkInput?_refuses_a_bad_wake
-#print axioms Tm.Look.mkInput?_refuses_a_bad_day0
+#print axioms Tm.Look.mkInput?_refuses_a_now_that_disagrees
 #print axioms Tm.Look.mkInput?_accepts
 #print axioms Tm.Look.wakeOf_without_a_logged_wake_is_wf
 #print axioms Tm.Look.lookahead_is_the_expected_minutes
@@ -4628,3 +4628,44 @@ open Tm
 #print axioms Tm.CapWire.readCapacityZ_refuses_a_logged_wake_without_a_replay
 #print axioms Tm.CapWire.the_capacity_input_is_the_replays_wake
 #print axioms Tm.CapWire.a_capacity_answer_can_depend_on_a_log_fact
+
+-- ===========================================================================
+-- APPENDED 2026-09-16 (stage 6, run W-13, step **L9** — day 0 is the kernel's
+-- own; design §13.5, gap 93).  `Look.Input.day0` and the `badDay0` refusal are
+-- **gone**: the kernel derives today from its own replay through D24's seam.
+--
+-- Two rows above were RENAMED with their theorems, not deleted:
+-- `lookahead_day_zero_is_the_hosts` -> `lookahead_day_zero_is_the_kernels`
+-- (restated: day 0 is `ofHist I.today (day0Hist I)`), and
+-- `mkInput?_refuses_a_bad_day0` -> `mkInput?_refuses_a_now_that_disagrees`
+-- (the refusal `badDay0` existed to raise is gone; `nowDisagrees` takes its
+-- place in the same position of the constructor's order).
+--
+-- Site R10 lands here **with its caller** (`Look.todayEnergy`), which is why
+-- W-6 and W-12 both refused to land it alone (AGENTS §5.6, §7.4 items 5, 11).
+#print axioms Tm.Arith.roundAway_withinOne
+#print axioms Tm.Arith.roundAway_mono
+#print axioms Tm.Arith.roundAway_examples
+#print axioms Tm.Look.predictAt_val
+#print axioms Tm.Look.latestBefore_sound
+#print axioms Tm.Look.latestBefore_none_of_all_after
+#print axioms Tm.Look.weightAt_full
+#print axioms Tm.Look.weightAt_zero
+#print axioms Tm.Look.correctAt_without_a_report
+#print axioms Tm.Look.the_posterior_rounds_a_half_the_way_the_fork_does
+#print axioms Tm.Look.day0_slots_are_inside_the_window
+#print axioms Tm.Look.day0_slots_avoid_the_walls
+#print axioms Tm.Look.day0_after_the_window_is_empty
+#print axioms Tm.Look.day0Six_get
+#print axioms Tm.Look.the_day_zero_histogram_is_not_limited_to_the_budget
+#print axioms Tm.Look.day_zero_is_the_spec_day_energised
+#print axioms Tm.Look.day_zero_is_cut_from_now
+#print axioms Tm.Look.day_zero_reads_the_stored_window
+#print axioms Tm.Look.todays_posterior_moves_todays_levels
+#print axioms Tm.Look.a_short_night_shifts_every_level
+#print axioms Tm.Look.day_zero_reads_todays_location
+#print axioms Tm.Look.weightAt_antitone
+#print axioms Tm.CapWire.boundedPos_zero_den
+#print axioms Tm.CapWire.boundedPos_wide_den
+#print axioms Tm.CapWire.boundedPos_large_num
+#print axioms Tm.CapWire.boundedPos_ok

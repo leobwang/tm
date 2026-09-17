@@ -1489,7 +1489,11 @@ const CHICAGO_2026: &str = r#""tz":{"key":"America/Chicago","base":"-06:00:00","
 /// `config.toml` tables (`p_lounge` 0.9 Monday to Thursday, 0.8 Friday, 0.5
 /// Saturday, 0.4 Sunday; arrival 07:00 weekdays, 10:00 weekends), the shipped
 /// prior curves, `[day]`, `home_max_ci` and `[priority]`, woken at 06:05, seven
-/// days, day 0 the §4.3 day's 410 minutes (L5's `specInput`).
+/// days, and — since stage 6 step L9 — **day 0's own inputs** instead of a day-0
+/// histogram: the `at` stamp (07:00 on the spec Monday), `state.json`'s runtime
+/// facts (nothing stored, at the lounge, no `--allow-home`) and the `[energy]`
+/// decimals the posterior (R5) and the sleep debt (R10) read.  The kernel derives
+/// day 0 from them and from this call's own replay (L5's `specInput`).
 const SPEC_CAPACITY: &str = concat!(
     r#""capacity":{"pLounge":{"config":{"Mon":{"num":"9","den":"10"},"Tue":{"num":"9","den":"10"},"Wed":{"num":"9","den":"10"},"Thu":{"num":"9","den":"10"},"Fri":{"num":"8","den":"10"},"Sat":{"num":"5","den":"10"},"Sun":{"num":"4","den":"10"}}},"#,
     r#""arrival":{"config":{"Mon":"07:00","Tue":"07:00","Wed":"07:00","Thu":"07:00","Fri":"07:00","Sat":"10:00","Sun":"10:00"}},"#,
@@ -1498,11 +1502,26 @@ const SPEC_CAPACITY: &str = concat!(
     r#""home":[{"from":{"num":0,"den":1},"to":{"num":1,"den":1},"level":3},{"from":{"num":1,"den":1},"to":{"num":4,"den":1},"level":4},{"from":{"num":4,"den":1},"to":{"num":8,"den":1},"level":3},{"from":{"num":8,"den":1},"level":2}]},"#,
     r#""homeMaxCi":3,"day":{"breakMin":20,"breakAfterBlocks":2,"minLastBlockMin":30,"windowHours":{"num":8,"den":1},"windowCap":"19:00","budgetRatio":{"num":75,"den":100}},"#,
     r#""priority":{"bins":[{"num":5,"den":10},{"num":25,"den":100},{"num":1,"den":10}],"safety":{"num":13,"den":10},"defaultPriority":3},"#,
-    r#""days":7,"day0":[0,0,0,60,170,180]}"#
+    r#""days":7,"at":"2026-09-07T07:00:00-05:00","#,
+    r#""state":{"date":null,"window":null,"budget":null,"arrival":null,"loc":"lounge","allowHome":false},"#,
+    r#""posterior":{"fullHours":{"num":3,"den":1},"zeroHours":{"num":6,"den":1}},"#,
+    r#""sleep":{"shiftModel":null,"shiftConfig":{"neg":false,"num":1,"den":1},"underHours":{"num":7,"den":1}}}"#
 );
 
+/// **The `log` section every capacity request carries since step L9** (gap 93):
+/// day 0 is derived from the replay of the *same* call (D24's seam), so a capacity
+/// request without one is refused `day0WithoutLog`.  This log is empty, so today
+/// has no sleep reading and no energy report.
+const CAP_LOG: &str =
+    r#""log":{"ckpt":null,"from":1,"lines":[],"terminated":true,"reseal":null,"want":{"facts":true,"headersFrom":null,"render":[]},"sealed":null}"#;
+
 fn capacity_req(docs: &str, capacity: &str) -> String {
-    format!(r#"{{"docs":[{docs}],"now":"2026-09-07","blockMin":60,{CHICAGO_2026},{capacity}}}"#)
+    capacity_req_log(docs, CAP_LOG, capacity)
+}
+
+/// The same, with the `log` section named (the test that asks for both answers).
+fn capacity_req_log(docs: &str, log: &str, capacity: &str) -> String {
+    format!(r#"{{"docs":[{docs}],"now":"2026-09-07","blockMin":60,{CHICAGO_2026},{log},{capacity}}}"#)
 }
 
 /// One day of the response, minutes per level times `capDen` as digit strings.
@@ -1511,9 +1530,13 @@ fn day_units(date: &str, minutes: [u128; 6]) -> String {
     format!(r#"{{"day":"{date}","numAt":[{}]}}"#, units.join(","))
 }
 
-/// **The spec week in exact units** (D10, D17).  Day 0 is the host's histogram;
-/// every later day mixes the two locations' budget-limited days at its own
-/// weekday's weight.  Tuesday (`Look.the_expected_tuesday`: 36, 162, 162) and
+/// **The spec week in exact units** (D10, D17).  Day 0 is the **kernel's own**
+/// since step L9: arriving at 07:00 with nothing stored and no walls, §8.1's
+/// window runs to 15:00 and its seven blocks hold 240 minutes at level 4 and 180
+/// at 5 (`Look.the_day_zero_histogram_is_not_limited_to_the_budget`; the request
+/// used to hand in `[0, 0, 0, 60, 170, 180]`, a 410-minute split of the §4.3 day
+/// that nothing derived).  Every later day mixes the two locations'
+/// budget-limited days at its own weekday's weight.  Tuesday (`Look.the_expected_tuesday`: 36, 162, 162) and
 /// Sunday (`Look.sunday_mixes_at_its_own_weight`: 72, 192, 48, 48) are decided
 /// witnesses in `Lookahead.lean`; this checks the same numbers reach Rust, and
 /// that units past `u64` read as `u128`.
@@ -1521,7 +1544,7 @@ fn day_units(date: &str, minutes: [u128; 6]) -> String {
 fn capacity_answers_the_spec_week_in_units() {
     let out = call(&capacity_req("", SPEC_CAPACITY)).unwrap();
     let days = [
-        day_units("2026-09-07", [0, 0, 0, 60, 170, 180]),
+        day_units("2026-09-07", [0, 0, 0, 0, 240, 180]),
         day_units("2026-09-08", [0, 0, 0, 36, 162, 162]),
         day_units("2026-09-09", [0, 0, 0, 36, 162, 162]),
         day_units("2026-09-10", [0, 0, 0, 36, 162, 162]),
@@ -1529,17 +1552,20 @@ fn capacity_answers_the_spec_week_in_units() {
         day_units("2026-09-12", [0, 0, 60, 180, 60, 60]),
         day_units("2026-09-13", [0, 0, 72, 192, 48, 48]),
     ];
-    assert_eq!(
-        out,
-        format!(
-            r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"lookahead":{{"den":"1000000000000000000","days":[{}]}}}}}}"#,
+    // The response carries the `log` answer too since L9 (the section day 0 is derived from), so
+    // the exact bytes asserted are the lookahead's and the build order around them.
+    assert!(out.starts_with(r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"#), "{out}");
+    assert!(
+        out.ends_with(&format!(
+            r#","lookahead":{{"den":"1000000000000000000","days":[{}]}}}}}}"#,
             days.join(",")
-        )
+        )),
+        "{out}"
     );
     // A unit count past u64 reads as u128 (170 minutes is 1.7·10^20 units).
-    let units: u128 = "170000000000000000000".parse().unwrap();
+    let units: u128 = "240000000000000000000".parse().unwrap();
     assert!(units > u64::MAX as u128);
-    assert!(out.contains(r#""170000000000000000000""#), "{out}");
+    assert!(out.contains(r#""240000000000000000000""#), "{out}");
 }
 
 /// **The response carries the first `min(days, 7)` days** (design D10-8), and a
@@ -1585,8 +1611,8 @@ fn a_calendar_wall_takes_its_hours_out_of_the_lookahead() {
 /// without `log` gets.  A refused `log` section refuses first.
 #[test]
 fn a_request_with_log_and_capacity_answers_both_in_build_order() {
-    let log = r#""log":{"from":1,"lines":["{\"t\":\"2026-09-07T09:00:00Z\",\"ev\":\"drop\",\"id\":\"x\"}"],"terminated":true,"want":{"headersFrom":1}}"#;
-    let both = call(&capacity_req("", &format!("{log},{SPEC_CAPACITY}"))).unwrap();
+    let log = r#""log":{"from":1,"lines":["{\"t\":\"2026-09-07T09:00:00Z\",\"ev\":\"drop\",\"id\":\"x\"}"],"terminated":true,"want":{"facts":true,"headersFrom":1}}"#;
+    let both = call(&capacity_req_log("", log, SPEC_CAPACITY)).unwrap();
     let cap_only = call(&capacity_req("", SPEC_CAPACITY)).unwrap();
     let log_only = call(&format!(r#"{{"docs":[],"now":"2026-09-07","blockMin":60,{CHICAGO_2026},{log}}}"#)).unwrap();
     let log_at = both.find(r#","log":"#).expect("log key");
@@ -1595,7 +1621,7 @@ fn a_request_with_log_and_capacity_answers_both_in_build_order() {
     assert!(log_at < look_at);
     assert_eq!(&both[..look_at], &log_only[..log_only.len() - 2], "the log answer is the log op's");
     assert_eq!(&both[look_at..], &cap_only[cap_only.find(r#","lookahead":"#).unwrap()..], "the lookahead is the capacity op's");
-    let refused = call(&capacity_req("", &format!(r#""log":{{"from":0,"lines":[],"terminated":true}},{SPEC_CAPACITY}"#))).unwrap();
+    let refused = call(&capacity_req_log("", r#""log":{"from":0,"lines":[],"terminated":true}"#, SPEC_CAPACITY)).unwrap();
     assert_eq!(refused, r#"{"err":{"log":{"badLogReq":"from"}}}"#);
 }
 
@@ -1615,12 +1641,36 @@ fn a_request_without_capacity_is_answered_as_before() {
 fn every_capacity_refusal_is_named() {
     let base = capacity_req("", SPEC_CAPACITY);
     assert!(call(&base).unwrap().starts_with(r#"{"ok":"#));
+    // Three refusals move to the **`log`** section at step L9, because every capacity request now
+    // carries one and it reads the clock and the zone first.  The capacity section's own names are
+    // still reachable — from a request with no `log` section — and are asserted below the loop.
+    assert_eq!(
+        call(&base.replacen(r#""now":"2026-09-07","#, "", 1)).unwrap(),
+        r#"{"err":{"log":{"badLogReq":"now"}}}"#
+    );
+    assert_eq!(call(&base.replacen(r#""tz":{"#, r#""tzz":{"#, 1)).unwrap(), r#"{"err":{"log":"tzAbsent"}}"#);
+    assert_eq!(
+        call(&format!(r#"{{"docs":[],"blockMin":60,{CHICAGO_2026},{SPEC_CAPACITY}}}"#)).unwrap(),
+        r#"{"err":{"capacity":"nowAbsent"}}"#
+    );
+    assert_eq!(
+        call(&format!(r#"{{"docs":[],"now":"2026-09-07","blockMin":60,{SPEC_CAPACITY}}}"#)).unwrap(),
+        r#"{"err":{"capacity":"tzAbsent"}}"#
+    );
+    // A capacity request with no `log` section has no replay to derive day 0 from (gap 93).
+    assert_eq!(
+        call(&format!(r#"{{"docs":[],"now":"2026-09-07","blockMin":60,{CHICAGO_2026},{SPEC_CAPACITY}}}"#)).unwrap(),
+        r#"{"err":{"capacity":"day0WithoutLog"}}"#
+    );
+    // A lookahead past year 9999 needs its `at` stamp to move with its `now` (`nowDisagrees` is
+    // checked at `mkInput?`, before the calendar bound).
+    let far = base
+        .replacen(r#""now":"2026-09-07""#, r#""now":"9999-12-30""#, 1)
+        .replacen(r#""at":"2026-09-07T07:00:00-05:00""#, r#""at":"9999-12-30T07:00:00-05:00""#, 1);
+    assert_eq!(call(&far).unwrap(), r#"{"err":{"capacity":"lookaheadTooLong"}}"#);
     let cases: &[(&str, &str, &str)] = &[
-        (r#""now":"2026-09-07","#, "", "nowAbsent"),
         (r#""blockMin":60,"#, "", "blockMinAbsent"),
         (r#""blockMin":60,"#, r#""blockMin":1441,"#, "badDay blockMin"),
-        (r#""now":"2026-09-07""#, r#""now":"9999-12-30""#, "lookaheadTooLong"),
-        (r#""tz":{"#, r#""tzz":{"#, "tzAbsent"),
         (r#""capacity":{"#, r#""capacity":7,"x":{"#, "badCapacity capacity"),
         (r#""pLounge":{"#, r#""pLoungeX":{"#, "badCapacity pLounge"),
         (r#""pLounge":{"config""#, r#""pLounge":{"model":[],"config""#, "badCapacity pLounge.model"),
@@ -1679,8 +1729,19 @@ fn every_capacity_refusal_is_named() {
         (r#""defaultPriority":3"#, r#""defaultPriority":5"#, "badDefaultPriority"),
         (r#""days":7"#, r#""days":"7""#, "badCapacity days"),
         (r#""days":7"#, r#""days":3661"#, "lookaheadTooLong"),
-        (r#""day0":[0,0,0,60,170,180]"#, r#""day0":[0,0,0,60,170]"#, "badDay0"),
-        (r#""day0":[0,0,0,60,170,180]"#, r#""day0":[0,0,0,60,170,1441]"#, "badDay0"),
+        // Stage 6 step L9: day 0's own inputs, each refused by name.
+        (r#""at":"2026-09-07T07:00:00-05:00""#, r#""at":"not a stamp""#, "badAt at"),
+        (r#""at":"2026-09-07T07:00:00-05:00""#, r#""at":"2026-09-08T07:00:00-05:00""#, "nowDisagrees at"),
+        (r#""loc":"lounge""#, r#""loc":3"#, "badState state.loc"),
+        (r#""allowHome":false"#, r#""allowHome":null"#, "badState state.allowHome"),
+        (r#""state":{"#, r#""stateX":{"#, "badCapacity state"),
+        (r#""fullHours":{"num":3,"den":1}"#, r#""fullHours":{"num":3,"den":0}"#, "badPosterior posterior.fullHours"),
+        (r#""zeroHours":{"num":6,"den":1}"#, r#""zeroHours":{"num":6000000,"den":1}"#, "badPosterior posterior.zeroHours"),
+        (r#""posterior":{"#, r#""posteriorX":{"#, "badCapacity posterior"),
+        (r#""underHours":{"num":7,"den":1}"#, r#""underHours":{"num":7,"den":0}"#, "badSleep sleep.underHours"),
+        (r#""shiftConfig":{"neg":false,"num":1,"den":1}"#, r#""shiftConfig":{"neg":3,"num":1,"den":1}"#, "badSleep sleep.shiftConfig"),
+        (r#""shiftModel":null"#, r#""shiftModel":{"neg":false,"num":1,"den":0}"#, "badSleep sleep.shiftModel"),
+        (r#""sleep":{"#, r#""sleepX":{"#, "badCapacity sleep"),
     ];
     for (from, to, name) in cases {
         assert_eq!(base.matches(from).count(), 1, "the edit {from:?} is not unique in the request");
@@ -1728,14 +1789,11 @@ fn cand(id: &str, ci: u8, root_prio: &str, remaining: u64, due: &str, wall: bool
     )
 }
 
-/// The spec capacity for two days (day 0's 410 minutes at levels 3–5, Tuesday's
-/// 36/162/162) with `candidates`.
+/// The spec capacity for two days (day 0's 420 derived minutes at levels 4 and 5,
+/// Tuesday's 36/162/162) with `candidates`.
 fn spec_with_candidates(hysteresis: bool, items: &[String]) -> String {
-    SPEC_CAPACITY.replace(r#""days":7,"#, r#""days":2,"#).replacen(
-        r#""day0":[0,0,0,60,170,180]}"#,
-        &format!(r#""day0":[0,0,0,60,170,180],"candidates":{{"hysteresis":{hysteresis},"items":[{}]}}}}"#, items.join(",")),
-        1,
-    )
+    let base = SPEC_CAPACITY.replace(r#""days":7,"#, r#""days":2,"#);
+    format!(r#"{},"candidates":{{"hysteresis":{hysteresis},"items":[{}]}}}}"#, &base[..base.len() - 1], items.join(","))
 }
 
 /// The five candidates of `Look.witnessCands`, on the spec days.
@@ -1751,11 +1809,12 @@ fn witness_items() -> Vec<String> {
 
 /// **The grants, in request order, in exact units** (gaps 80 and 107).  The wall
 /// and the optional enter nothing.  `^a1` (due Monday, listed third) is served
-/// first: 410 minutes available at levels ≥ 3, 39 reserved (R1's ceiling of
-/// 30 × 1.3), `u = 39/410` in the `+3` bin, `p = k + 3 = 4` with its written
+/// first: **420** minutes available at levels ≥ 3 — day 0 derived, step L9, where
+/// the handed-in histogram used to say 410 — 39 reserved (R1's ceiling of
+/// 30 × 1.3), `u = 39/420` in the `+3` bin, `p = k + 3 = 4` with its written
 /// `!1`, held at 6 by yesterday's 7 (§7.4).  `^a2` (due Tuesday) then sees the
-/// 371 minutes left plus Tuesday's 360: 731 against 780, IMPOSSIBLE, `p = 0`,
-/// 49 minutes short.  `^r` is undated, pure rank: `k + 2 = 3`.  Without
+/// 381 minutes left plus Tuesday's 360: 741 against 780, IMPOSSIBLE, `p = 0`,
+/// 39 minutes short.  `^r` is undated, pure rank: `k + 2 = 3`.  Without
 /// hysteresis `^a1` is its raw 4.
 #[test]
 fn capacity_answers_grants_in_request_order() {
@@ -1765,26 +1824,28 @@ fn capacity_answers_grants_in_request_order() {
         r#"{"id":"w","class":"wall","k":3,"p":null,"rawP":null,"need":0,"until":null,"avail":"0","allocation":"0","shortfall":"0","bin":null}"#.to_string(),
         format!(
             r#"{{"id":"a2","class":"impossible","k":3,"p":0,"rawP":0,"need":780,"until":"2026-09-08","avail":"{}","allocation":"{}","shortfall":"{}","bin":null}}"#,
-            e18(731),
-            e18(731),
-            e18(49)
+            e18(741),
+            e18(741),
+            e18(39)
         ),
         format!(
             r#"{{"id":"a1","class":"dated","k":1,"p":6,"rawP":4,"need":39,"until":"2026-09-07","avail":"{}","allocation":"{}","shortfall":"0","bin":3}}"#,
-            e18(410),
+            e18(420),
             e18(39)
         ),
         r#"{"id":"o","class":"optional","k":3,"p":5,"rawP":5,"need":26,"until":null,"avail":"0","allocation":"0","shortfall":"0","bin":null}"#.to_string(),
         r#"{"id":"r","class":"rank","k":1,"p":3,"rawP":3,"need":65,"until":null,"avail":"0","allocation":"0","shortfall":"0","bin":null}"#.to_string(),
     ];
-    let days = [day_units("2026-09-07", [0, 0, 0, 60, 170, 180]), day_units("2026-09-08", [0, 0, 0, 36, 162, 162])];
-    assert_eq!(
-        out,
-        format!(
-            r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"lookahead":{{"den":"1000000000000000000","days":[{}],"grants":[{}]}}}}}}"#,
+    let days = [day_units("2026-09-07", [0, 0, 0, 0, 240, 180]), day_units("2026-09-08", [0, 0, 0, 36, 162, 162])];
+    // The response carries the `log` answer too since L9; the bytes asserted are the lookahead's.
+    assert!(out.starts_with(r#"{"ok":{"docs":[],"report":{"closes":[]},"log":{"#), "{out}");
+    assert!(
+        out.ends_with(&format!(
+            r#","lookahead":{{"den":"1000000000000000000","days":[{}],"grants":[{}]}}}}}}"#,
             days.join(","),
             grants.join(",")
-        )
+        )),
+        "{out}"
     );
     let plain = call(&capacity_req("", &spec_with_candidates(false, &witness_items()))).unwrap();
     assert!(plain.contains(r#"{"id":"a1","class":"dated","k":1,"p":4,"rawP":4,"#), "{plain}");
@@ -1828,7 +1889,7 @@ fn every_candidate_refusal_is_named() {
     // Gap 109: the walls are the documents as sent, so capacity and commands are never answered together.
     let doc = r#"{"path":"weeks/2026-W37.md","lines":["- [ ] Draft est:30m ^m1"]}"#;
     let with_cmd = format!(
-        r#"{{"docs":[{doc}],"cmds":[{{"op":"est","id":"m1","min":45}}],"now":"2026-09-07","blockMin":60,{CHICAGO_2026},{SPEC_CAPACITY}}}"#
+        r#"{{"docs":[{doc}],"cmds":[{{"op":"est","id":"m1","min":45}}],"now":"2026-09-07","blockMin":60,{CHICAGO_2026},{CAP_LOG},{SPEC_CAPACITY}}}"#
     );
     assert_eq!(call(&with_cmd).unwrap(), r#"{"err":{"capacity":"capacityWithCommands"}}"#);
     let without = with_cmd.replacen(r#""cmds":[{"op":"est","id":"m1","min":45}],"#, "", 1);
@@ -1844,10 +1905,11 @@ fn with_floor(rec: &str, floor: &str) -> String {
 
 /// **The floor pass reads what the pass left** (`Look.prioritiesWithFloors`, gap 79).
 /// `^a2` owes 100 minutes (need 130), so after `^a1`'s 39 and `^a2`'s 130 the pass
-/// leaves 241 minutes at levels ≥ 3 on Monday and all of Tuesday's 360.  `^r` (level
-/// 2, undated, `!1`) has a floor of 120 minutes (need 156): to Tuesday it sees 601,
-/// `u ≈ 0.26`, the `+1` bin, `p = 2`; to Monday 241, `u ≈ 0.65`, the `+0` bin,
-/// `p = 1`.  The optional's floor of 10 minutes shows 241 available and 13 allocated
+/// leaves 251 minutes at levels ≥ 3 on Monday (day 0 derived, step L9: 420, where
+/// the handed-in histogram used to say 410) and all of Tuesday's 360.  `^r` (level
+/// 2, undated, `!1`) has a floor of 120 minutes (need 156): to Tuesday it sees 611,
+/// `u ≈ 0.26`, the `+1` bin, `p = 2`; to Monday 251, `u ≈ 0.62`, the `+0` bin,
+/// `p = 1`.  The optional's floor of 10 minutes shows 251 available and 13 allocated
 /// and stays `p = 5`.  `^a1`'s floor is ignored (it enters the pass), and a floor
 /// reserves nothing: `^a2`'s grant is the same with and without the floors.
 #[test]
@@ -1862,13 +1924,13 @@ fn a_floor_is_answered_over_what_the_pass_left() {
     let out = call(&capacity_req("", &spec_with_candidates(true, &items))).unwrap();
     let r = format!(
         r#"{{"id":"r","class":"floor","k":1,"p":2,"rawP":2,"need":156,"until":"2026-09-08","avail":"{}","allocation":"{}","shortfall":"0","bin":1}}"#,
-        e18(601),
+        e18(611),
         e18(156)
     );
     assert!(out.contains(&r), "{out}");
     let o = format!(
         r#"{{"id":"o","class":"optional","k":3,"p":5,"rawP":5,"need":13,"until":"2026-09-07","avail":"{}","allocation":"{}","shortfall":"0","bin":3}}"#,
-        e18(241),
+        e18(251),
         e18(13)
     );
     assert!(out.contains(&o), "{out}");
@@ -1885,7 +1947,7 @@ fn a_floor_is_answered_over_what_the_pass_left() {
     assert!(
         monday.contains(&format!(
             r#"{{"id":"r","class":"floor","k":1,"p":1,"rawP":1,"need":156,"until":"2026-09-07","avail":"{}","allocation":"{}","shortfall":"0","bin":0}}"#,
-            e18(241),
+            e18(251),
             e18(156)
         )),
         "{monday}"

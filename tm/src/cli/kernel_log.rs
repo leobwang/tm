@@ -333,11 +333,13 @@ pub struct LogAnswer {
     pub reseal: Option<Resealed>,
 }
 
-/// **One `log` request** (§10.1), built as text so the checkpoint and the records go in byte for byte.
+/// **One `log` section** (§10.1), built as text so the checkpoint and the records go in byte for byte.
+///
+/// Split out of [`request`] at stage 6 step L9, because a **capacity** request now carries one
+/// too: day 0 of the lookahead is the kernel's own, derived from this call's replay through D24's
+/// seam ([`capacity_log_section`]).
 #[allow(clippy::too_many_arguments)]
-pub fn request(
-    now: &str,
-    tz: &Value,
+pub fn log_section(
     ckpt: Option<&str>,
     from: u64,
     lines: &[Option<String>],
@@ -347,11 +349,7 @@ pub fn request(
     sealed: Option<(&[String], &[String])>,
 ) -> String {
     let mut r = String::with_capacity(lines.iter().map(|l| l.as_ref().map_or(4, |s| s.len() + 8)).sum::<usize>() + 4096);
-    r.push_str(r#"{"docs":[],"now":"#);
-    r.push_str(&Value::String(now.to_string()).to_string());
-    r.push_str(r#","tz":"#);
-    r.push_str(&tz.to_string());
-    r.push_str(r#","log":{"ckpt":"#);
+    r.push_str(r#"{"ckpt":"#);
     r.push_str(ckpt.unwrap_or("null"));
     r.push_str(&format!(r#","from":{from},"lines":"#));
     r.push_str(&serde_json::to_string(lines).expect("lines serialise"));
@@ -377,7 +375,33 @@ pub fn request(
             r.push_str("]}");
         }
     }
-    r.push_str("}}");
+    r.push('}');
+    r
+}
+
+/// **One `log` request** (§10.1): the section, with the empty documents, the clock and the zone
+/// the op needs around it.
+#[allow(clippy::too_many_arguments)]
+pub fn request(
+    now: &str,
+    tz: &Value,
+    ckpt: Option<&str>,
+    from: u64,
+    lines: &[Option<String>],
+    terminated: bool,
+    reseal: Option<Policy>,
+    want: &Want,
+    sealed: Option<(&[String], &[String])>,
+) -> String {
+    let section = log_section(ckpt, from, lines, terminated, reseal, want, sealed);
+    let mut r = String::with_capacity(section.len() + 4096);
+    r.push_str(r#"{"docs":[],"now":"#);
+    r.push_str(&Value::String(now.to_string()).to_string());
+    r.push_str(r#","tz":"#);
+    r.push_str(&tz.to_string());
+    r.push_str(r#","log":"#);
+    r.push_str(&section);
+    r.push('}');
     r
 }
 
@@ -745,12 +769,18 @@ pub struct ReplayCache {
     /// The process's own checkpoint and records, used when the directory is not writable (CRIT 26).
     pub memory: Option<(Snapshot, BTreeMap<u64, String>, BTreeMap<u64, String>)>,
     pub writable: bool,
+    /// **The snapshot this process's last replay ended on** (stage 6 step L9), persisted or not.
+    /// A `now` below the ledger day answers from an *unpersisted* genesis (§9.7), and the stored
+    /// `ckpt.json` is then the wrong one to resume from — but the capacity request that follows,
+    /// in the same process and for the same bytes, needs a checkpoint to derive day 0 from.
+    /// This is it ([`capacity_log_section`]).
+    pub last: Option<Snapshot>,
 }
 
 impl ReplayCache {
     /// A cache in `dir` (`<root>/.tm/cache/replay`), or in memory only.
     pub fn new(dir: Option<PathBuf>) -> ReplayCache {
-        ReplayCache { writable: dir.is_some(), dir, memory: None }
+        ReplayCache { writable: dir.is_some(), dir, memory: None, last: None }
     }
 
     fn ckpt_path(&self) -> Option<PathBuf> {
@@ -877,8 +907,25 @@ impl ReplayCache {
 
     /// **One replay for a verb** (§9.8, §9.7, §9.6): check the stored checkpoint against the log, resume its tail (with a
     /// reseal when the policy says so), and fall back to genesis on a refusal, a failed digest or no checkpoint.
+    ///
+    /// The snapshot it ends on is kept in [`ReplayCache::last`] for the capacity request that may
+    /// follow it in the same process (stage 6 step L9).
     #[allow(clippy::too_many_arguments)]
     pub fn replay(
+        &mut self,
+        bytes: &[u8],
+        now_day: u64,
+        tz: &Value,
+        max_line: Option<u64>,
+        want: &Want,
+    ) -> Result<Replayed, GenesisError> {
+        let r = self.replay_once(bytes, now_day, tz, max_line, want)?;
+        self.last = Some(r.snapshot.clone());
+        Ok(r)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn replay_once(
         &mut self,
         bytes: &[u8],
         now_day: u64,
@@ -2166,6 +2213,56 @@ fn records_for(cache: &ReplayCache, r: &Replayed, scope: Scope) -> (BTreeMap<u64
             }
         }
     }
+}
+
+/// **The `log` section a capacity request carries** (stage 6 step L9, gap 93; D24's seam).
+///
+/// Day 0 of the lookahead is the kernel's own since L9: it is cut from `now` and energised
+/// through today's posterior and sleep debt, all of which the kernel derives from **its own**
+/// replay. So a capacity request carries a `log` section beside its `capacity` section, and
+/// `Boundary.runCapZ` hands the one section's replay to the other (`the_capacity_section_reads_
+/// the_log_sections_own_replay`). Without it the kernel refuses by name, `day0WithoutLog`.
+///
+/// It is the section [`ReplayCache::replay`] sends on its hot path — the process checkpoint and
+/// the tail since its cut — when that checkpoint is still valid for these bytes, and genesis in
+/// one call (`ckpt: null`, every line) when it is not. **It never reseals** (`reseal: null`): the
+/// verb's own replay owns the cache, and a second reseal in the same process would write a second
+/// generation for one verb.
+///
+/// The one case it cannot serve is a log with no valid checkpoint that is also past the resend
+/// cap — a log of more than [`RESEND_LINES`] lines, none of them older than [`KEEP_DAYS`], so
+/// that genesis sealed nothing to resume from. It is named, not guessed at (D18: the cap is never
+/// raised).
+pub fn capacity_log_section(root: &Path, bytes: &[u8], tz: &Value, now_day: u64) -> Result<String, GenesisError> {
+    let want = Want { facts: true, headers_from: None, render: vec![] };
+    let s = split(bytes);
+    let tz_key = tz.get("key").and_then(Value::as_str).unwrap_or_default().to_string();
+    let dir = root.join(CACHE_DIR);
+    let mut all = caches().lock().unwrap_or_else(|p| p.into_inner());
+    let cache = all.entry(root.to_path_buf()).or_insert_with(|| ReplayCache::new(Some(dir)));
+    if let Some(sn) = cache.last.clone().or_else(|| cache.read_snapshot()) {
+        let cut = sn.meta.cut as usize;
+        if !sn.ckpt.is_empty()
+            && sn.valid_for(bytes, &tz_key).is_ok()
+            // G4 refuses a resume whose `now` is below the checkpoint's ledger day (§9.3), which is
+            // the very case §9.7 answers from an unpersisted genesis: do not resume into a refusal.
+            && now_day >= sn.meta.ledger_day
+            && cut <= s.lines.len()
+            && s.lines.len() - cut <= RESEND_LINES
+            && s.bytes_between(cut, s.lines.len()) <= RESEND_BYTES
+        {
+            return Ok(log_section(Some(&sn.ckpt), cut as u64 + 1, &s.lines[cut..], s.terminated, None, &want, None));
+        }
+    }
+    if s.lines.len() <= RESEND_LINES && s.bytes_between(0, s.lines.len()) <= RESEND_BYTES {
+        return Ok(log_section(None, 1, &s.lines, s.terminated, None, &want, None));
+    }
+    Err(GenesisError::ReachTooFar {
+        line: 1,
+        kind: "no checkpoint to compute today from".to_string(),
+        reach: s.lines.len() as u64,
+        bytes: s.bytes_between(0, s.lines.len()) as u64,
+    })
 }
 
 /// **The one door to the log** (design §14.6 item 1, §11.1): the replay of `.tm/log.jsonl` as the

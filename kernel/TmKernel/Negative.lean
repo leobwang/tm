@@ -1423,7 +1423,7 @@ theorem aFutureWakeOnTheMinute :
    Monday's is 0.9.  The Sunday lounge day keeps 120 minutes at level 5, so the expected level
    5 is 48 minutes and the cheat's 108.  `decide` refuses the equality. -/
 def dayOfAtTodaysWeight (I : Look.Input) (i : Nat) : DayCapacity :=
-  if i = 0 then Look.ofHist I.today I.day0
+  if i = 0 then Look.ofHist I.today (Look.day0Hist I)
   else Look.mixDay (I.today + i) (I.weight (Cal.weekdayOf I.today))
     (Look.pureDay I .lounge (I.today + i)) (Look.pureDay I .home (I.today + i))
 
@@ -1900,6 +1900,39 @@ set_option maxRecDepth 8000 in
 theorem aFoldPointIgnoringTheEndLeavesTheLastLineUnfolded :
     foldPointIgnoringTheEnd Replay.utcZone 739865 (Seal.Ckpt.empty Replay.utcZone) [⟨1, some ['x']⟩] false ⟨2, none⟩
       aRunOfALineAYearAhead < 1 := by
+  decide
+
+-- ===========================================================================
+-- APPENDED 2026-09-16 (stage 6, run W-13, step L9 — day 0 is the kernel's own;
+-- design §13.5, gap 93).  Cheat 158 is the design's reserved **cheat 118**,
+-- "the posterior applied after the cap"; it is numbered from the end of this
+-- file (§6.2: append, never renumber), and the design's label is recorded here
+-- so the two can be read together.
+-- ===========================================================================
+
+/- CHEAT 158 (design label 118) — today's posterior applied AFTER the home cap.
+   `EnergyCtx::energy_at` predicts, corrects with the posterior, and caps: the
+   cap is last, so a report that lifts a home level above `home_max_ci` is still
+   capped.  Applying the correction after the cap lets it through.  On the §4.3
+   Monday at home, with `home_max_ci = 3` and a 09:00 report of 5 against a
+   prediction of 3, the fork keeps every minute at 3 and the cheat lifts three
+   blocks to 5.  `decide` refuses the equality. -/
+def todayEnergyCappedFirst (I : Look.Input) (t : Cal.Instant) : Fin 6 :=
+  Look.correctAt I.today0.post I.today0.reports t
+    (Look.capForLocation I.homeMax I.today0.allowHome (Look.capLoc I.today0.loc)
+      (Look.predictShift I.curves (Look.curveKeyOf I.curves I.today0.loc)
+        (Look.hswAt (Look.wakeOn I I.today) t) (I.today0.sleep.shiftOf I.today0.slept))).val
+
+def aHomeDayWithALiftingReport : Look.Input :=
+  { Look.specWalled with today0 :=
+      { Look.specToday with loc := Look.homeKey, reports := [⟨Look.atSpec 540, 3, 5⟩] } }
+
+def day0HistCappedFirst (I : Look.Input) : Look.Hist :=
+  Look.histOf' ((Look.day0Cut I).slots.map fun s => (todayEnergyCappedFirst I ⟨s.start, 0⟩, s))
+
+theorem aPosteriorAfterTheCap :
+    (List.finRange 6).map (day0HistCappedFirst aHomeDayWithALiftingReport)
+      = (List.finRange 6).map (Look.day0Hist aHomeDayWithALiftingReport) := by
   decide
 
 end Tm
