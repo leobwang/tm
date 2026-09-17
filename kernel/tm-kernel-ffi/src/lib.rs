@@ -46,10 +46,16 @@ pub fn init() -> Result<(), KernelFault> {
 /// R14's baseline table").
 ///
 /// When it is set, every call through [`call`] writes one line to stderr:
-/// `kernel call: <kind>`. It lives here, at the FFI, because this is the one
-/// door — `tm/src/cli/kernel_bridge.rs` and `tm/src/cli/kernel_log.rs` each
-/// reach the kernel on their own, so a counter in either would miss the other,
-/// and a call site added later cannot forget this one.
+/// `kernel call: <kind>[+<kind>…]` — **one line per call**, naming every
+/// section that call carries ([`trace_kinds`]). It lives here, at the FFI,
+/// because this is the one door — `tm/src/cli/kernel_bridge.rs` and
+/// `tm/src/cli/kernel_log.rs` each reach the kernel on their own, so a counter
+/// in either would miss the other, and a call site added later cannot forget
+/// this one.
+///
+/// Counting the lines is therefore counting **calls**; counting the names is
+/// counting **sections**, and since L9 those are different numbers for a
+/// capacity verb (README gaps 275 and 278).
 ///
 /// **Before the switch the `log` count is 0 for every verb**, because nothing
 /// under `tm/src` calls the kernel's `log` op yet; `tm/tests/kernel_call_counts.rs`
@@ -57,29 +63,50 @@ pub fn init() -> Result<(), KernelFault> {
 /// rather than being noticed later.
 pub const TRACE_CALLS_ENV: &str = "TM_TRACE_KERNEL_CALLS";
 
-/// Which kind of request this is, by the one literal each builder emits and no
-/// other does: `"capacity":` (`kernel_capacity::request`), `"log":{`
-/// (`kernel_log::request`), `"emit":[` (`kernel_log::render_values`, the writer
-/// S2 added under **D16**), `"cmds":` (`kernel_bridge`'s apply). This crate may
-/// depend on nothing (AGENTS R7), so it is a substring test and not a parse —
-/// a *document line* containing one of these literals would be miscounted, which
-/// is acceptable in a diagnostic that no answer depends on.
+/// **Every section this request carries**, by the one literal each builder
+/// emits and no other does: `"capacity":` (`kernel_capacity::request`),
+/// `"log":{` (`kernel_log::request`, and `kernel_log::capacity_log_section`
+/// spliced into a capacity request), `"emit":[` (`kernel_log::render_values`,
+/// the writer S2 added under **D16**), `"cmds":` (`kernel_bridge`'s apply).
+/// This crate may depend on nothing (AGENTS R7), so it is a substring test and
+/// not a parse — a *document line* containing one of these literals would be
+/// miscounted, which is acceptable in a diagnostic that no answer depends on.
 ///
 /// `emit` gets its own name rather than falling into `other` on purpose: after
 /// S2 every appending verb makes one, so it is a per-verb cost the call-count
 /// instrument must be able to see and pin (`tm/tests/kernel_call_counts.rs`).
-fn trace_kind(request: &str) -> &'static str {
+///
+/// **One request can carry more than one section, and since L9 one does**
+/// (README **gap 278**). A capacity request carries a `log` section as well —
+/// that is D24's seam, and it is a second replay of the log inside the verb's
+/// own call (**gap 275**). This used to answer `"capacity"` and stop, because
+/// it tested `"capacity":` first and returned; the replay was then invisible to
+/// `tm/tests/kernel_call_counts.rs`, which pins the `log` column exactly. So it
+/// now names **all** of them, in a fixed order, and [`call`] joins them with
+/// `+` on the one line it writes per call: a capacity verb traces
+/// `kernel call: capacity+log`.
+///
+/// The order is fixed (capacity, log, emit, apply) so the line is a stable key,
+/// and a request matching nothing is `other` — never the empty list, which
+/// would trace a blank name.
+fn trace_kinds(request: &str) -> Vec<&'static str> {
+    let mut kinds = Vec::new();
     if request.contains(r#""capacity":"#) {
-        "capacity"
-    } else if request.contains(r#""log":{"#) {
-        "log"
-    } else if request.contains(r#""emit":["#) {
-        "emit"
-    } else if request.contains(r#""cmds":"#) {
-        "apply"
-    } else {
-        "other"
+        kinds.push("capacity");
     }
+    if request.contains(r#""log":{"#) {
+        kinds.push("log");
+    }
+    if request.contains(r#""emit":["#) {
+        kinds.push("emit");
+    }
+    if request.contains(r#""cmds":"#) {
+        kinds.push("apply");
+    }
+    if kinds.is_empty() {
+        kinds.push("other");
+    }
+    kinds
 }
 
 /// Apply a request to the kernel and return its response.
@@ -89,7 +116,7 @@ fn trace_kind(request: &str) -> &'static str {
 pub fn call(request: &str) -> Result<String, KernelFault> {
     init()?;
     if std::env::var_os(TRACE_CALLS_ENV).is_some() {
-        eprintln!("kernel call: {}", trace_kind(request));
+        eprintln!("kernel call: {}", trace_kinds(request).join("+"));
     }
     let c = CString::new(request).map_err(|_| KernelFault::NulInRequest)?;
     let raw = unsafe { tm_kernel_call_c(c.as_ptr()) };
