@@ -750,8 +750,23 @@ prefix.  D29's form erases the Active item from both sides —
 `∃ n, (assignedOf (dayPlan r')).erase a = ((assignedOf (dayPlan r)).erase a).take n`
 — and ships with `plan_tail_drop_as_stage_6_wrote_it_is_refuted` and its
 witness **in the same commit**.  It is left as written here because a
-restatement without its refutation is a weakening (AGENTS §3.1 item 3), and the
-witness needs a `dayPlan` that places something.
+restatement without its refutation is a weakening (AGENTS §3.1 item 3).
+
+**W-15 re-derived what is blocking, with a builder in hand** (README gaps 348,
+366, 452).  A concrete `PlanReq` can be written down now
+(`PlannerWit.theRequest`), and two things came out of it.  *Choice 5b's witness
+still needs P5*: `PlannerWit.the_budget_does_not_reach_the_assigned_set_until_the
+_assign_fold_lands` proves the budget cannot reach `assignedOf` at all while the
+assign fold is unwritten, so `plan(budget)` and `plan(budget − Δ)` are the same
+list and the counterexample D29 names is unreachable.  *And the statement below
+is false for a second reason nobody had recorded*: its hypotheses pin five views
+of `PlanReq` and leave `run` free, while D24's seam put the day's past half
+inside `run` —
+`PlannerWit.plan_tail_drop_as_stage_6_wrote_it_is_refuted_by_the_run_it_does_not_pin`,
+with `PlannerWit.erasing_the_active_item_does_not_repair_a_law_whose_run_is_free`
+beside it, which shows D29's erasure does **not** repair that hole for any
+choice of erased item.  So the restatement this goal is to become owes one more
+hypothesis (`r'.run = r.run`, or one run throughout) before it can be proved.
 
 The window is one pair now, not two numbers. -/
 theorem plan_tail_drop (r r' : PlanReq)

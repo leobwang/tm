@@ -27634,6 +27634,11 @@ recorded below as gap 345 with what remains of it), which is not the same thing.
 
 #### Gap 348 (new; label W14P1-d) — no `PlanReq` can be built inside `Planner.lean`, so the wall laws have no end-to-end witness
 
+> **CLOSED at W-15 (track W), `TmKernel/PlannerWit.lean`.** `mkPlanReq?` builds one
+> from raw parts through five existing constructors and `PlannerWit.theRequest` is a
+> concrete request; item 4's second placement was the one taken. The four items below
+> are kept as the record of why it was owed.
+
 1. **What is not done.** The refutation and the restatement are proved over
    `wallRows` and over `dayPlan` respectively, and the non-vacuity witnesses
    (`the_spec_days_walls_are_placed_where_they_are_written`,
@@ -28063,6 +28068,15 @@ is new machinery, not a repair.
    battery's one instantiation, and the four bridges lose their parameter.
 
 #### Gap 366 (new; label W14G-b) — D29's restatement and its refutation are blocked on a `dayPlan` that places something
+
+> **STILL OPEN, and its reason CORRECTED AGAIN at W-15 (track W).** The missing witness
+> is no longer the blocker — `PlannerWit.theRequest` exists — but **§8.2 choice 5b's**
+> witness needs **P5**, and `PlannerWit.the_budget_does_not_reach_the_assigned_set_until_the_assign_fold_lands`
+> proves it. W-15 also found the law false for a second, unrecorded reason (the
+> hypotheses leave `PlanReq.run` free) and refuted it under a name that says so. D29's
+> restated form is **not provable as worded**: see **gap 450**. Item 4 below was right
+> that P5 is needed; the W-14 repair's summary sentence — "gap 348 is the blocker for
+> 366, 393's witness half and this" — over-reached for this one.
 
 1. **What is not done.** `plan_tail_drop` is **not** restated with the Active
    item erased and `plan_tail_drop_as_stage_6_wrote_it_is_refuted` is **not**
@@ -28793,6 +28807,11 @@ fork-anchored arm, and the two frozen arms are the ones that would have caught o
 
 #### Gap 396 (new; label W14R-b) — the checker battery's one non-vacuous check is a restatement of a `Planner` theorem
 
+> **CLOSED at W-15 (track W).** Exactly as item 4 specifies: `PlannerWit.the_battery_passes_at_the_witness`
+> computes `planOkCore` over a day with real Block rows (so `hnopast` is false and the
+> lift is unavailable) and `the_battery_bites_at_the_witness` flips it under a 60-second
+> wall move. Neither worse option was taken.
+
 1. **What is not done.** `PlanCheck` gives no independent opinion on wall
    placement. `dayPlan_ok_core`'s seventh check is `plan_never_moves_a_wall`
    applied through `wallsUnmoved_iff`; the other six are vacuous under `hnopast`.
@@ -28897,3 +28916,422 @@ on a scratch tree outside the repo, with `--now` fixing the clock, and was drive
 **through** the fix as well as into the defect.
 
 **Highest on this branch:** gap **396**, cheat **173**, parity **P37**.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-17: stage 6 (the planner), run **W-15**, **track W** — the
+     `PlanReq` builder (gap 348) and the three gaps it blocked.  Isolated
+     worktree `.claude/worktrees/w15-w`, branch `w15-w`, from `d2c0aa6`; the
+     Land step merges it.  Track W's gap range is **450-469**; this block takes
+     **450-453**, leaving **454-469** free.  No goal was discharged and none was
+     added: the burn-down is **12**, unchanged.  Every figure below was
+     re-measured on this worktree, each command capped at MemoryMax=40G,
+     MemorySwapMax=0.
+     =========================================================================== -->
+
+## Stage 6, W-15 track W, 2026-09-17: a `PlanReq` you can write down — and what it does and does not buy D29
+
+**Branch `w15-w`**, from `d2c0aa6`. One new module,
+`kernel/TmKernel/TmKernel/PlannerWit.lean` (**32 theorems**, all audited), its
+import line in `TmKernel/TmKernel.lean` (§2.3, same commit), its audit banner in
+`Check.lean`, and prose corrections in `PlanCheck.lean` and `Goals.lean` that the
+new theorems make necessary.  **No shipped path changed**: nothing imports
+`PlannerWit`, no Rust was edited, no wire value moved, no fixture or band was
+re-blessed.
+
+### The one sentence
+
+`Tm.PlannerWit.theRequest` is a concrete `PlanReq`, built by a concrete builder
+from a loaded plan, a resumed log, a decoded lookahead input and a real
+`Lookahead` — so **gap 348 is closed**, and with it **gap 396** and **gap 393's
+witness half**.  **Gap 366 is not closed**, and the reason is a finding: with the
+builder in hand, D29's own witness turns out to need **P5**, and the law D29
+restates turns out to be false for a *second* reason nobody had recorded.
+
+### What landed
+
+* **`mkPlanReq? : PlanReqIn → Except WitErr PlanReq`** — a decoder-shaped
+  assembler.  Every field goes through the constructor that already owns it and
+  **nothing is re-implemented** (AGENTS §5.3): `plan` through `Boundary.loadPlan`,
+  `look` through `Look.mkInput?` (L5), `run` through `Seal.resumeRun` from
+  genesis (`Seal.Ckpt.empty`), `caps` through `lookaheadOf?`.  Five rejection
+  theorems, one per stage, each naming the refusal it forwards
+  (`mkPlanReq?_refuses_a_plan_the_loader_refuses`,
+  `…_an_input_the_decoder_refuses`, `…_a_wall_index_that_is_not_the_plans`,
+  `…_a_run_the_guards_refuse`, `…_a_zero_denominator`), and
+  `mkPlanReq?_ok_parts`, which says the parts come back out unchanged.
+* **`mkPlanReq?_ok_wallsAgree` — gap 346's hypothesis gets a caller.**  Every
+  request the builder accepts satisfies `PlanReq.wallsAgree`, so
+  `Planner.plan_never_moves_a_wall`'s and `PlanCheck.dayPlan_ok_core`'s `hagree`
+  is discharged at any built request (`theRequest_wallsAgree`).  Gap 346 does
+  **not** close — the wire decoder is still unwritten and the type still permits
+  a disagreeing pair (gap **451**) — but the hypothesis is no longer a promise
+  about a constructor nobody has written.
+* **`theRequest`, the §4.3 Wednesday.**  2026-09-09 in Chicago at 14:00: the
+  boundary's own one-line calendar (`Boundary.lookWallWitness`, the 12:50–13:50
+  meeting `^g1`) as the plan, six lines of `.tm/log.jsonl` for that morning as
+  the run (woken 06:05, at the lounge from 07:00, blocks `m1` 07:05–08:05 and
+  `m2` 09:05–10:05), and the shipped `[day]`/`[expected]`/`[energy]`
+  configuration as the lookahead input.  **Reused, not rewritten**:
+  `Boundary.lookWallPlan`, `Boundary.the_look_wall_calendar_indexes_one_wednesday_wall`,
+  `Look.wednesdayWall`, `Look.specToday`, `Look.DayCfg.shipped`,
+  `Look.Curves.shipped`, `Look.shippedArrival`, `Look.capDen`.
+* **`witBuilds : mkPlanReq? witReqIn = .ok theRequest`**, proved by **rewriting**
+  with the four stage equations.  No `decide` holds two stages of the pipeline —
+  the practice `Boundary.lean`'s own L5 witness states out loud.
+* **The day, computed** — gap 348's missing sentence, *"here is a request whose
+  `dayPlan` contains this row"*:
+  `the_witness_day_is_two_replayed_blocks_and_the_written_wall` gives all three
+  rows with both endpoints written as `Cal.instantOf` of a local clock, and
+  `the_witness_day_is_planned_from_two_in_the_afternoon` gives the window
+  (14:00–19:00, through `Look.day0Window`), the budget (6) and the block length
+  (60).
+
+### Gap 393's witness half, and the distinction it makes concrete
+
+`PlanCheck.a_replayed_block_is_assigned` was proved at the W-14 repair and had no
+`r` to fire at.  It has one now:
+
+* `the_witness_assigns_the_two_replayed_blocks : assignedOf (dayPlan theRequest) = [m1, m2]`;
+* `the_witness_assigns_nothing_after_now : assignedFrom (dayPlan theRequest) theRequest.now.sec = []`.
+
+The two together are exactly the distinction the repair drew and could not
+exhibit: `assignedOf` counts the replayed past, `assignedFrom … now` counts the
+planner's own placements, and only the second is empty.  The second is also
+`Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands` fired at
+a request — **P5 must delete both**.
+
+### Gap 396: the battery gives a second opinion, and it bites
+
+The W-14 repair reproduced gap 396 by reading the proof: `dayPlan_ok_core`
+discharges six of seven checks vacuously under `hnopast` and the seventh applies
+`Planner.plan_never_moves_a_wall` through `wallsUnmoved_iff`, so *"for its one
+non-vacuous check the battery is a restatement, not a second opinion"*.  Its item
+4 named the fix exactly: *"a `decide`-computed witness running `wallsUnmoved`
+over a day whose rows came from `wallRows` and whose endpoints came from
+`Cal.instantOf` **is** a second opinion, and it flips under exactly the mutation
+above."*  That is what landed, and neither of the two worse options was taken
+(no second copy of the placement rule, no stub).
+
+* `the_battery_passes_at_the_witness : PlanCheck.planOkCore theRequest (dayPlan theRequest) = true`
+  — **computed**, not derived.  Nothing in its proof mentions
+  `plan_never_moves_a_wall` or `dayPlan_ok_core`.
+* `the_witness_defeats_the_lifts_hypothesis` — and it is not the lift in
+  disguise, because `dayPlan_ok_core`'s `hnopast` is **false** at this request:
+  the log holds two Blocks, so the six block-side checks run over real Block rows
+  and the lift is unavailable.
+* `the_battery_bites_at_the_witness` — six computed refusals over three
+  mutations of the day the planner actually built: the Wall row pushed **60
+  seconds** later (`wallsUnmoved = false`), the first replayed Block laid across
+  the meeting (`noBlockOverAWall = false`), and that Block stretched to two hours
+  (`oneBlockAtATime = false`); `planOkCore` is `false` on each.  A mutation of
+  `Planner.wallRows`' endpoint therefore fails **in `PlannerWit.lean`**, at check
+  1, and not only through `banned: sorry` and `sorryAx`.
+
+### Gap 366 / D29 — re-derived from the code, not inherited, and still open
+
+The brief for this run says gap 366's recorded "Why" rested on a theorem P1
+deleted and must be re-derived with a builder in hand.  It was.  Three things
+came out of it and the first is the one that matters.
+
+1. **§8.2 choice 5b's witness needs P5, and a builder does not help.**  D29 asks
+   for *"the running block reserved before the budget is consulted, so shrinking
+   the budget drops items ranking ahead of the Active item while it stays"*.
+   There is no reservation and no budget consumption in `dayPlan` today, and this
+   is now a **theorem** rather than a reading:
+   `the_budget_does_not_reach_the_assigned_set_until_the_assign_fold_lands`
+   proves, for **every** request, that changing `state.budget` leaves `assignedOf`
+   identical.  `plan(budget)` and `plan(budget − Δ)` are the same list, so the
+   counterexample D29 names is unreachable.  **P5 must delete this theorem**, and
+   the commit that breaks it is the commit that can write D29's witness.
+   Gap 366 item 4 already said "after **P5** *and* after the builder"; the W-14
+   repair's summary sentence — *"gap 348 is the blocker for 366, 393's witness
+   half and this"* — over-reached for 366, and this block corrects it.
+2. **The law as stage 6 wrote it is FALSE anyway, for a reason nobody had
+   recorded — and the builder makes that witness writable.**
+   `plan_tail_drop`'s hypotheses pin `plan`, `now`, `window`, `blockMin` and the
+   budget ordering: five *views* of a six-field record.  They leave `run` free,
+   and D24's seam put the day's past half **inside** `PlanReq.run`.  So two
+   requests built by `mkPlanReq?` that differ in that one field satisfy every
+   hypothesis and disagree about the whole assigned set.
+   `plan_tail_drop_as_stage_6_wrote_it_is_refuted_by_the_run_it_does_not_pin` is
+   that refutation, with `theQuietRequest` (the same day, empty log,
+   `the_quiet_day_assigns_nothing`) beside `theRequest`.  **The name says which
+   hypothesis fails**, deliberately: it is not D29's refutation and must not be
+   read as one.
+3. **D29's restatement inherits the hole.**  Erasing the Active item repairs the
+   prefix failure choice 5b causes; it does not repair this one, and
+   `erasing_the_active_item_does_not_repair_a_law_whose_run_is_free` proves it
+   for **every** choice of erased item, not merely the wrong one.  So D29's form
+   — `∃ n, (assignedOf (dayPlan r')).erase a = ((assignedOf (dayPlan r)).erase a).take n`
+   — is **not provable** under the hypothesis set the goal currently carries.
+   **The owner is owed one more hypothesis** (`r'.run = r.run`, or the law stated
+   over one run) before D29 can be discharged.  That is gap **450**.
+
+`plan_tail_drop` therefore stays in `Goals.lean`, as written, with a `sorry`: a
+restatement shipped without choice 5b's refutation is a weakening (AGENTS §3.1
+item 3).  `PlanCheck.a_kept_reservation_defeats_the_prefix_but_not_the_erasure`
+— the arithmetic of choice 5b with the planner factored out, proved at W-14 —
+stands untouched, and nothing here supersedes it.
+
+### The four equations are build-time walls, and P2/P3/P5 will break them
+
+`PlanCheck.dayPlan_ok_core` was written over step P0's empty day and stopped
+compiling the moment P1 placed a row; that is how the W-14 merge found two
+findings at merge time instead of at P5.  The same is deliberately true here.
+`the_witness_day_is_two_replayed_blocks_and_the_written_wall`,
+`the_witness_assigns_the_two_replayed_blocks`, `the_battery_passes_at_the_witness`
+and `the_battery_bites_at_the_witness` are equations about the day **P1**
+produces; **P2 (routines), P3 (slots) and P5 (assign) each add rows and each will
+make them fail to reduce.**  Re-deriving them is a `decide`, not a proof, and the
+diff then shows the reader exactly what the new step put in the day.  That cost
+is named here rather than discovered.
+
+### Measured, RE-MEASURED at this commit
+
+All capped with `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0
+--quiet`. **No bound was raised**, nothing was retried uncapped, no
+`native_decide`, no new axiom, no `sorry` outside `Goals.lean`.
+
+| measurement | this commit | comparand (`d2c0aa6`, measured in THIS session on THIS worktree by stashing the diff), and what explains the delta |
+|---|---|---|
+| `check.sh` | **7/7 ok** | 7/7 |
+| `check.sh`, built tree | **3.11 / 3.08 / 3.15 / 3.14 / 3.18 s**, peak RSS **1.92–1.99 GiB** (2,035,140 / 2,065,212 / 2,089,388 / 2,011,548 / 2,023,644 KiB). One further reading of **8.33 s** is printed rather than dropped: `uptime` showed a load average of **9.2** while another agent's build held the machine, and it is contention, not this tree | `d2c0aa6`: **3.12 / 3.13 / 3.11 s**, RSS 2,034,992 / 2,009,472 / 2,072,840 KiB. **+0.6% on the midpoint at worst**, inside the 10%-per-step rule; a new module nothing imports adds one `lake` node and no dependent rebuild |
+| axiom audit | **4,183 theorems**, §6.3 reconciliation `ok` | 4,151. **+32, every one audited** — the whole of `PlannerWit.lean`, listed under its own banner in `Check.lean` |
+| burn-down | **12 outstanding, all stage 6** | 12. **Unchanged — no goal was discharged and none was deleted.** `plan_tail_drop` and `plan_is_stable_across_a_replan` keep their `sorry`s; only their prose moved |
+| corpus round trip | **29/37 files, 4/5 whole plans** | identical |
+| `cargo test --workspace` | **1,316 passed / 0 failed / 9 ignored across 78 result lines**, exit 0, **0 warnings** | 1,316 / 0 / 9 across 78 — identical. No Rust was edited |
+| FFI (`tm-kernel-ffi`, `--test kernel`) | **86 passed / 0 failed** | 86 / 0 |
+| FFI corpus (`--test corpus`) | **8 passed / 0 failed**, `CORPUS: 29/37 … 4/5` | 8 / 0 |
+| T5 (`kernel_replay_parity`) | **29 passed / 0 failed / 4 ignored** | 29 / 0 / 4 |
+| door (`kernel_log_door`) | **23 passed / 0 failed** | 23 / 0 |
+| `cli_switch_acceptance` | **9 passed / 0 failed** | 9 / 0 |
+| `kernel_call_counts` | **2 passed / 0 failed** | 2 / 0 |
+| `planner_invariants` (the 882-line proptest) | **6 passed / 0 failed** | 6 / 0 |
+| `cli_latency` | **5 passed / 0 failed / 1 ignored**, every band met | see below |
+
+#### `cli_latency`, release, `--nocapture`, two runs
+
+Every row sits on top of the **W-14 repair's same-session figures** and below the
+brief's T11 bands, for the reason that step already established and evidenced by
+stashing: the offset is the machine's, not a change. This step edits **no Rust
+and no shipped-path byte**, and the three noisy rows are quoted as both readings,
+never as single numbers.
+
+| row | run 1 | run 2 | W-14 repair, same session | brief's band |
+|---|---|---|---|---|
+| first verb (226 files) | 693.18 ms | 733.54 ms | 668.09 / 683.45 | — |
+| later verb | 60.83 ms | 65.97 ms | 55.83 / 55.78 | — |
+| T11 3y log: **later verb** (the reliable row) | 126.73 ms | 126.61 ms | 126.70 / 126.62 | 146.66–147.01 |
+| T11 3y: **`--now +1 day` (a reseal)** — NOISY | 187.31 ms | 187.32 ms | 172.09 / 187.39 | 197.5–212.6 |
+| T11 3y: **3-day-old routine** — NOISY | 101.38 ms | 101.40 ms | 101.30 / 101.38 | 121.6–136.8 |
+| T11 3y: **review week** — NOISY, out of band, gap 275 | 253.01 ms | 253.33 ms | 253.24 / 253.28 | 278.6–294.7 |
+| `tm --json log --tail 200` | 207.60 ms | 207.70 ms | 212.78 / 212.63 | — |
+| 10 stalled days, worst | 511.30 ms | 531.19 ms | 500.94 / 506.40 | — |
+
+`tm drop`'s row — the T11 later verb — is the reliable one and it is **126.7 ms
+on both runs**, matching the W-14 repair to 0.1%. `kernel_call_counts`' pairing
+assertion still passes; the one-call shape has not landed and this step does not
+move it.
+
+### Gaps closed
+
+* **348** — no `PlanReq` could be built inside `Planner.lean`, so the wall laws
+  had no end-to-end witness. **Closed**: `PlannerWit.mkPlanReq?` builds one from
+  raw parts through five existing constructors, `PlannerWit.theRequest` is a
+  concrete request, and `the_witness_day_is_two_replayed_blocks_and_the_written_wall`
+  is the sentence the gap said did not exist. Gap 348 item 4 offered two
+  placements and said *"it should be one of them and not both"*; the new module
+  is the second, and the decoder (gap 346) is untouched.
+* **396** — the checker battery's one non-vacuous check was a restatement of a
+  `Planner` theorem. **Closed exactly as item 4 specified**:
+  `the_battery_passes_at_the_witness` computes `planOkCore` over a day with real
+  Block rows (so `hnopast` is false and the lift is unavailable —
+  `the_witness_defeats_the_lifts_hypothesis`), and `the_battery_bites_at_the_witness`
+  flips it under a 60-second wall move and two more mutations. Neither worse
+  option was taken: no second copy of the placement rule, no stub eligibility.
+* **393's witness half** — `PlanCheck.a_replayed_block_is_assigned` had no `r` to
+  fire at. It has one: `the_witness_assigns_the_two_replayed_blocks` and
+  `the_witness_assigns_nothing_after_now`.
+
+### Gaps opened / left open
+
+#### Gap 450 (new; label W15W-a) — D29's restatement is FALSE under the hypothesis set `plan_tail_drop` carries, and the owner is owed one more hypothesis
+
+1. **What is not done.** `plan_tail_drop` is **not** restated with the Active
+   item erased, and `plan_tail_drop_as_stage_6_wrote_it_is_refuted` (D29's name,
+   with choice 5b's witness) is **not** shipped. What *is* shipped is a
+   differently-named refutation and the proof that D29's form does not survive
+   the goal's own hypotheses:
+   `PlannerWit.erasing_the_active_item_does_not_repair_a_law_whose_run_is_free`.
+2. **Why.** Two independent reasons, both re-derived from the code at W-15 rather
+   than inherited. (a) §8.2 choice 5b's witness needs **P5**:
+   `PlannerWit.the_budget_does_not_reach_the_assigned_set_until_the_assign_fold_lands`
+   proves the budget cannot reach `assignedOf` while the assign fold is unwritten,
+   so `plan(budget)` and `plan(budget − Δ)` are the same list and the drop D29
+   describes cannot happen. (b) The goal's hypotheses pin five *views* of
+   `PlanReq` and leave `run` free, and D24's seam put the day's past half inside
+   `run`; erasing one item does not repair a two-item disagreement, for **any**
+   erased item. So D29's restated form is not provable as worded.
+3. **What it costs.** L24 stays in `Goals.lean` in its false-against-the-fork
+   form — the state D29 was taken to end — and the owner's D29 is undischarged for
+   a second run. Nothing in the tree is *wrong*: the goal is a `sorry`, the
+   as-written form now has a compiled refutation beside it, and the reason is
+   recorded in three places (this block, `PlanCheck.lean`'s D29 section,
+   `Goals.lean`'s own doc comment).
+4. **When it clears.** **G2, after P5** — and D29 needs an owner amendment first:
+   the restatement should carry `r'.run = r.run` (or be stated over one run)
+   alongside the Active erasure. That is a plan-tier wording change, not an
+   agent's call (AGENTS §4).
+
+#### Gap 451 (new; label W15W-b) — `wallsAgree` is a theorem about one builder, not an invariant of the type
+
+1. **What is not done.** `PlanReq` still permits a request whose wall index is not
+   its plan's; `PlanReq.wallsAgree` is still a `Bool` a law takes as a hypothesis.
+2. **Why.** The **wire** decoder is design §10.1's and no P-row owns it yet (gap
+   346 item 4 says so and says it "should be named in one"). `mkPlanReq?` is a
+   *witness* builder, not the wire, so making the agreement structural would be a
+   second door with a different lock.
+3. **What it costs.** `hagree` is dischargeable only for requests built by
+   `mkPlanReq?`. Every other `PlanReq` — every one the wire will eventually make —
+   still carries the hypothesis, so gap 346 is **narrowed, not closed**.
+4. **When it clears.** With gap 346, in the step that writes the request decoder,
+   where `wallsAgree` becomes a refusal by name (R10, AGENTS §5.7) and
+   `mkPlanReq?`'s `.walls` branch becomes that decoder's.
+
+#### Gap 452 (new; label W15W-c) — a `decide` over `"…".toList` of a log line costs more than 8 GiB, and nothing says so
+
+1. **What is not done.** Nothing in `AGENTS.md` §5.10a, `check.sh` or
+   `totality.py` warns that spelling a witness log line as a Lean **string
+   literal** rather than a character list makes a `decide` over `Log.lineEntries`
+   exhaust the memory cap. `Boundary.logWitnessLine`'s comment — *"spelled as
+   characters (the parser reads it)"* — is the same finding, recorded as a style
+   note with no measurement and no reason.
+2. **Why it is only recorded.** The fix is a habit, not a check; a linter that
+   banned `.toList` inside a `decide` would be wrong (the plan documents'
+   `"# Tasks".toList` decide fine, and `Boundary.sampleRequest` uses them).
+3. **What it costs.** Measured here: `(Log.lineEntries [l]).length = 1` for ONE
+   60-character line written `"{\"t\":…}".toList` is killed at
+   `MemoryMax=8G` after **12.6 s** (exit 137); the identical line written
+   `['{','"','t','"',…]` decides in **0.21 s**. An agent who writes the natural
+   form and probes at 8G, as the campaign requires, reads an OOM and concludes a
+   `decide` over the log reader is unaffordable — which is false, and would cost a
+   session.
+4. **When it clears.** Whenever `AGENTS.md` §5.10a is next edited; it is one
+   sentence. Recorded here because §5.10a is the plan-tier document and this run
+   does not edit it.
+
+#### Gap 453 (new; label W15W-d) — the witness's store holds no entity for the ids its log replays
+
+1. **What is not done.** `PlannerWit.theRequest`'s plan is the boundary's one-line
+   calendar, which holds `^g1` and nothing else, while its log replays blocks on
+   `m1` and `m2`. So `PlanCheck.energyOk`, `windDownOk` and `wallUnmoved` take
+   their `store.get i = none` branch for every Block row, and
+   `Plan.effectiveCi`'s real path is exercised only through
+   `PlanCheck.effectiveCi_of_an_absent_id`.
+2. **Why.** Adding a week document to the request would fork
+   `Boundary.lookWallWitness` and cost a fresh `decide` over `Look.wallIndex` on
+   the enlarged plan — the one the boundary already pays for once and whose
+   equation (`the_look_wall_calendar_indexes_one_wednesday_wall`) this module
+   **reuses** instead of re-deriving (AGENTS §5.3).
+3. **What it costs.** The energy filter and the wind-down check are non-vacuous at
+   this request only in their *shape*, not in their `ci` comparison; a defect that
+   read `ci` from the wrong entity would not be caught by
+   `the_battery_passes_at_the_witness`.
+4. **When it clears.** At **P3** or **P5**, where a Block row carries a slot
+   energy and a second witness plan is needed anyway; the cheapest shape is a
+   second `ReqDoc` list beside `lookWallWitness` with its own indexed equation.
+
+**Stage 5's residue and the rest stand exactly as the W-14 repair lists them**:
+**94, 98, 113, 114, 116, 132, 133, 139, 143, 150, 151, 152, 160, 170, 180, 181,
+182, 190, 200, 201, 226**, the performance levers (**121, 122, 123, 126, 127**,
+143) unstarted on purpose (D25), and **260, 262, 275-279, 285, 300, 301,
+320-323, 340, 345-347, 349, 350, 365, 366, 367, 368, 385, 386, 394**. Gap
+**348** and gap **396** are closed here; **346** is narrowed by gap 451 and stays
+open; **366**'s reason is corrected above and it stays open, now with gap 450
+beside it.
+
+**Highest on this branch after this step:** gap **453** (range 450-469, so
+**454-469** free), cheat **173** (unchanged — none added), parity **P37**
+(unchanged).
+
+### What this step did NOT do, by name
+
+* **It discharged no goal and deleted none.** The burn-down is 12 before and 12
+  after. `plan_tail_drop` keeps its `sorry` and its as-written form; only prose
+  changed in `Goals.lean`.
+* **It did not ship D29.** The restatement and choice 5b's refutation are both
+  absent, and gap 450 says why with a theorem rather than a reading.
+* **It did not close gap 346.** `mkPlanReq?_ok_wallsAgree` gives the hypothesis a
+  caller; the wire decoder is still unwritten (gap 451).
+* **It did not touch the grammar's ten files, `Planner.lean`'s step bodies, or
+  any Rust.** `PlanCheck.lean` and `Goals.lean` changed in **comments only**;
+  `TmKernel.lean` and `Check.lean` gained lines and lost none.
+* **It did not re-bless anything**: no fixture, no snapshot, nothing under
+  `kernel/corpus/`, no latency band, no frozen comparand.
+* **It did not rebuild the fork oracle** and did not re-run the `TM_ORACLE`
+  census. Said plainly: no shipped-path byte changed on either fork-anchored arm,
+  and both frozen arms (T5's 29, the door's 23) ran green with their denominators
+  printed above.
+* **It did not perform §5.13's human drive.** Nothing user-visible changed, and no
+  agent can perform it.
+* **It touched `lean-toolchain` not at all**, added no dependency, no axiom, no
+  `partial def`, no `unsafe`, no `opaque`, no `panic!`, no `!`-accessor, no
+  `.toOption`, no Mathlib, no `native_decide`.
+
+### Worktrees, and a disclosure about the main checkout
+
+Work happened on the isolated worktree `.claude/worktrees/w15-w` (branch
+`w15-w`, from `d2c0aa6`), which the Land step merges. Its `.lake` was seeded by
+copying the main checkout's build cache at `d2c0aa6` **before** anything was
+edited, which is why the first `check.sh` here cost 4.9 s rather than a cold
+rebuild.
+
+**The main checkout was dirty with another track's work throughout**, and this is
+said plainly: `git status` there showed nine modified files — `Planner.lean`
+(+826 lines), `Lookahead.lean`, `Boundary.lean`, `State.lean` and five Rust files
+— none of them this step's. **`check.sh` was run in the main checkout four times
+before that was noticed**, while looking for a same-commit comparand; it writes
+only to `kernel/TmKernel/.lake` and `target/`, both derived, and it will have cost
+that agent an incremental rebuild. Nothing in the main checkout's **sources** was
+read, written or reverted by this step, and the comparand was re-taken the right
+way — by stashing this step's own diff on this worktree, which is the table above.
+`.claude/worktrees/stage5-lookahead` was left alone, as instructed.
+
+**Track P is rewriting `Planner.lean` while this lands.** `PlannerWit.lean`
+depends on `Planner.dayPlan`, `pastRows`, `segOf`, `assignedOf`, `assignedFrom`
+and `PlanReq`, so the Land step should expect the four computed equations to need
+re-deriving against whatever P2/P3 put in the day — that is the build-time wall
+this block's previous section describes, working as intended.
+
+**Two prose sites the Land step should sweep**, both in files this step was told
+not to touch. `Planner.lean`'s `plan_never_moves_a_wall_as_stage_6_wrote_it_is_refuted`
+doc comment ends *"A witness that also loaded a plan and a run would say the same
+thing about more machinery (README gap 348)"* — the sentence is still true and the
+cite now points at a **closed** gap, so it should read "gap 348, closed at W-15"
+or name `PlannerWit.theRequest`. And `Planner.segOf` is shadowed inside any module
+that opens `Planner` under `Tm`, because `Boundary.lean:8680` declares
+`Tm.segOf : JVal → Option (List Char)`; `PlannerWit.lean` qualifies every use, and
+a reader who does not will get *"structure type expected JVal"*. Neither is a
+defect; both are the kind of thing check 3's short-name reconciliation cannot see.
+
+### Method disclosure
+
+Every `lake`, `lean`, `cargo` and `check.sh` invocation ran under
+`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet`, and
+**every new `decide` was probed first at `MemoryMax=8G -p MemorySwapMax=0` with
+`timeout 120`**, exit code checked each time. No bound was raised and nothing was
+retried uncapped. Three probes were **killed at 8G (exit 137)** and each kill is a
+finding, not a flaky run: `Seal.resumeRun` over four string-literal log lines,
+the same over one, and `Log.lineEntries` over one — all three the same cause,
+recorded as gap 452 and fixed by spelling the lines as characters, after which
+the **whole module elaborates in 5.1 s inside the 8G probe**. `check.sh` was run
+**sixteen** times on this worktree: **one** to seed and verify the `d2c0aa6`
+baseline (4.94 s, the cache copy's first relink), **four** on an intermediate tree
+that had the module but not yet the prose corrections, **four** as the stashed
+`d2c0aa6` comparand (of which the last three are the ones quoted; the first, 4.69
+s, carries the stash's rebuild), and **seven** on the final tree (of which the
+**five** steady readings are quoted, the 8.33 s contention reading is printed
+beside them, and the first, 5.09 s, carries the unstash rebuild and is not
+quoted). Add the four in the main checkout disclosed above. `cargo test --workspace` was run **once**, on the
+final tree. `cli_latency` was run **twice** in release with `--nocapture`, and
+every noisy row is reported as both readings.
