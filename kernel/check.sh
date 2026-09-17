@@ -30,13 +30,33 @@ fi
 #    the theorem silently stopped being audited and only the count moved.  Stage
 #    6 W-13 hit exactly that (three W4 twin rows renamed by D24's seam), so the
 #    check now fails on any error Lean reports for this file.
+#
+#    And the OTHER direction, which this check could not see until W-13's repair:
+#    a theorem DECLARED in a module and never given an audit line.  The count
+#    alone cannot show it -- step L9 added 35 declarations and 26 audit lines,
+#    both numbers rose, and the check said ok at 3984 while nine theorems went
+#    unaudited (gap 260: the audit had a count, not a roster).  So the check now
+#    runs AGENTS 6.3's own reconciliation: the multiset of declared short names
+#    against the multiset of audited last segments, `comm -23`, which must be
+#    EMPTY.  It is one-directional on purpose -- `Tm.WfPlan` is a `def` that is
+#    deliberately audited (6.3), and auditing more than the theorems is not a
+#    defect.  A `sort -u` count cannot replace this: 23 short names are declared
+#    in more than one namespace.
 out=$( cd TmKernel && LEAN_PATH=.lake/build/lib/lean "$LEAN" Check.lean 2>&1 )
 n=$( printf '%s' "$out" | grep -c 'axioms' )
+unaudited=$( cd TmKernel && comm -23 \
+  <( grep -hoE '^(@\[[^]]*\][[:space:]]*)?theorem [^ (){}:]+' TmKernel/*.lean \
+       | sed 's/.*theorem //' | sed 's/.*\.//' | sort ) \
+  <( grep '^#print axioms' Check.lean | awk '{print $3}' | sed 's/.*\.//' | sort ) )
 if printf '%s' "$out" | grep -q sorryAx; then
   say "axiom audit ($n theorems)" "FAILED (sorryAx)"; fail=1
 elif bad=$( printf '%s\n' "$out" | grep -E '^Check\.lean:[0-9]+:[0-9]+: error' | head -3 ); [ -n "$bad" ]; then
   say "axiom audit ($n theorems)" "FAILED (Check.lean errors)"; fail=1
   printf '%s\n' "$bad"
+elif [ -n "$unaudited" ]; then
+  m=$( printf '%s\n' "$unaudited" | wc -l )
+  say "axiom audit ($n theorems)" "FAILED ($m declared, never audited)"; fail=1
+  printf '%s\n' "$unaudited" | head -5 | sed 's/^/  no #print axioms for: /'
 else
   say "axiom audit ($n theorems)" "ok"
 fi

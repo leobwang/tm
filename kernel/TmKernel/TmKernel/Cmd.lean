@@ -26,8 +26,11 @@ clear about which is which is the whole point of the bottom section.
   `demote_into_a_horizon_that_does_not_follow_is_rejected` are the proofs that
   it bites.
 
-An earlier version of this module claimed the first bullet for all three, in a
-theorem whose command argument was unused.  It is withdrawn.
+An earlier version of this module claimed the first bullet for all three, in
+a theorem whose command argument was unused.  It is withdrawn.  (The reflow is
+deliberate: `check.sh` check 3 reconciles declared theorems against audit lines
+with a column-0 `^theorem ` grep, and this prose line used to be counted as a
+tenth unaudited declaration -- AGENTS §6.3's documented off-by-one.)
 -/
 namespace Tm
 

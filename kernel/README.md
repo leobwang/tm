@@ -26299,3 +26299,175 @@ reads `state.json`'s `date`, `window`, `budget`, `arrival`, `loc` and `--allow-h
   123, 126, 127**, and 143), which D25 leaves unstarted on purpose.
 * **The §5.13 human drives** of the stage-3, stage-4 and stage-5 binaries, with the TUI half of
   the switch's own drive (**gap 182**). No agent can perform them.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 6 (the planner), run **W-13 repair** — the
+     independent audit's six findings, reproduced first and then fixed.  The
+     major one: **step L9 declared 35 theorems and audited 26**, and its block
+     said "every one with an audit line" twice.  The nine are audited here, and
+     `check.sh` check 3 now runs AGENTS §6.3's own reconciliation so that this
+     class of rot cannot pass a green check again.  **Gap 270 is CLOSED** (the
+     stage-6 design is re-aimed at the tree the seam landed on).  The repair gap
+     range is **285-294**; **285 taken, 286-294 free**.  Every figure below was
+     re-measured on the committed tree, each command capped at MemoryMax=40G,
+     MemorySwapMax=0 (the oracle build at 16G).
+     =========================================================================== -->
+
+## Stage 6, run W-13 (repair) — the audit was nine theorems short, and the check could not see it
+
+**Nothing was proved and nothing was deleted here.** No new theorem, no new
+definition, no goal moved, no Rust behaviour changed: the only Rust edit is a
+module doc comment. What changed is the *ledger* and the *instrument* that
+guards it.
+
+### Every finding was reproduced before it was touched
+
+| # | the audit's claim | reproduced? | what I did |
+|---|---|---|---|
+| **1** (major) | nine theorems added by L9 are unaudited; the block claims the opposite | **exactly.** §6.3's counts at `5ab24bf` read 3984 / 3984 / **3993**, and the multiset diff left exactly nine `<` lines beyond the two documented off-by-ones | **fixed**, three ways: the nine audit lines, the `whose` off-by-one removed, and check 3 taught to fail on it |
+| **2** | the design presents the seam as unbuilt and names a theorem that has never existed | **exactly.** `grep -rn runCap_without_capacity_is_runWithLog --include=*.lean` returns nothing | **fixed** — the design is re-aimed; **gap 270 closed** |
+| **3** | `kernel_capacity.rs`'s header still documents `day0` as part of the request | **exactly.** Line 28, against a `request` that sends `at`/`state`/`posterior`/`sleep` at 768-797 | **fixed** |
+| **4** | §14.0's "before any step" numbers are stale one run after they were written | **exactly.** Gap 240 / cheat 157 / P36 printed, against **279 / 158 / P37** at `5ab24bf` | **fixed**, and the line now says it is a snapshot |
+| **5** | `review week` sits outside its T11 band | **confirmed, and correctly declared already.** 268.5 / 278.6 / 278.6 / 294.7 ms here against the band 248.1-253.3 | **left, by name** — it is **gap 275**, opened by L9 itself with its cause |
+| **6** | `tm plan` schedules a routine whose window is malformed rather than refusing it | **in substance, yes; the stated placement, no** — see below | **left, by name — new gap 285** |
+
+**Finding 6, precisely.** Driven on a copy of the audit's own workspace with
+`- lunch      win:25:99-13:30 dur:30m  every:day` in `routines.md`: `tm check`
+refuses correctly and names the file and line twice (`routines.md:3:
+error[bad-value]` and `routines.md:3: error[routine-shape]`, 2 errors, exit 2),
+and `tm now` and `tm plan` both **proceed with rc=0**, the invalid window simply
+dropped. That is the substance and it reproduces. The audit's *particular*
+observation — "places `lunch` at 09:00 with a ⚠ marker" — did **not** reproduce
+at 23:21, where the same routine comes back `impossible: 39m short` and
+`dropped`. The placement is clock-dependent; the refusal that never happens is
+not. I record the reproducible half and say which half it is (§5.11).
+
+### What landed
+
+1. **The nine audit lines** (`Check.lean`, a 66th `APPENDED` banner). All nine
+   elaborate, none depends on `sorryAx`:
+   `Tm.Arith.Signed.den_pos` · `Tm.Arith.halfUpQ_of_zero_num` ·
+   `Tm.Arith.roundAway_withinOne_aux` · `Tm.Arith.roundAway_mono_aux` ·
+   `Tm.Look.keepsIt_le` · `Tm.Look.latestBefore_nil` · `Tm.Look.latestBefore_go` ·
+   `Tm.Look.SleepCfg.shiftOf_without_sleep` · `Tm.Look.day0Cut_eq`.
+2. **`check.sh` check 3 now proves coverage, not only soundness.** It runs
+   §6.3's own reconciliation — the multiset of declared short names against the
+   multiset of audited last segments, `comm -23`, which must be **empty** — and
+   on failure prints `FAILED (N declared, never audited)` and **names** up to
+   five. **Verified to bite**: with two audit lines removed the check printed
+   `axiom audit (3991 theorems) FAILED (2 declared, never audited)` followed by
+   `no #print axioms for: day0Cut_eq` and `… den_pos`. It is **one-directional**
+   on purpose: `Tm.WfPlan` is a `def` audited deliberately (§6.3), and auditing
+   more than the theorems is not a defect.
+3. **The `whose` off-by-one is gone.** `Cmd.lean`'s header had the words *"…in a
+   theorem whose command argument was unused"* wrapping so that `theorem` sat at
+   column 0, and §6.3's grep counted it as a declaration. Two off-by-ones
+   cancelling is how the three counts looked equal while the diff was non-trivial
+   — so the comment is reflowed by one word, with the reason in the comment.
+   Nothing about the module changed.
+4. **The stage-6 design is re-aimed (gap 270 closed).** §0 item 1, §7's cost
+   list, §12's **K1** row and its FINDING, §14.0 item 1, §14.1's **K1** row,
+   §14.5's graph and §20's gap-255 row now say the seam **landed at `f9ee3d0`**
+   and gap 210 is **closed**, and the theorem is named
+   **`runCap_without_capacity_is_runWithEmit`** (`Boundary.lean:10214`), with a
+   note that no theorem was ever called `…_is_runWithLog`. K1's estimate
+   (120/450/0/2-3) is left standing beside its measured cost, because a design's
+   wrong prediction is evidence.
+5. **`kernel_capacity.rs`'s module header** now describes the request the
+   function below it actually builds, `wake` included.
+6. **`AGENTS.md` §6.3 and §7.1's check-3 paragraph** carry the new counts, the
+   new guard and the story of how the rule was broken.
+
+### Behaviour rows
+
+| # | the rule before | the rule now | why |
+|---|---|---|---|
+| 1 | `check.sh` check 3 said `ok` whenever `Check.lean` elaborated with no `sorryAx` and no error — a theorem declared and never audited was invisible, because the printed number is the *audit's* size, not the package's | check 3 **also** fails when any theorem declared in the 78 modules has no `#print axioms` line, and names the theorems | L9 added 35 declarations and 26 audit lines; **both numbers rose** and the check stayed green at 3984. §6.3 had documented this trap ("the audit covered 119 of 445 theorems while the README implied it covered the kernel") and guarded it only with a manual instruction |
+
+No other behaviour row: nothing else in this commit can change an answer.
+
+### The ledger correction, stated plainly
+
+Per §6.4 a committed block is written history and stays as written, so
+**`5ab24bf`'s block is not edited**; the correction belongs here.
+
+* Its line "New theorems: **26**, every one with an audit line" was **false**.
+  L9 added **35** theorem declarations. Twenty-six had audit lines; **nine did
+  not**, and AGENTS §6.3's alternative — recording the omission by name — was
+  not taken either.
+* Its parity row "| axiom audit | **3,984 theorems** | 3,958. **+26**, every new
+  theorem audited |" was false in the same way. The audit went 3,958 → 3,984
+  (+26) while the package went 3,958 → **3,993** (+35).
+* **Not a soundness hole.** Nothing imports `Goals.lean`, check 3 found no
+  `sorryAx`, and all nine are helper lemmas (`den_pos`, the two `roundAway_*_aux`
+  pair, `latestBefore_nil`/`_go`, `keepsIt_le`, `shiftOf_without_sleep`,
+  `halfUpQ_of_zero_num`, `day0Cut_eq`). The audit was nine short; the count said
+  healthy. That is **gap 260**'s shape exactly — the audit has a count, not a
+  roster — and item 2 above is the roster.
+
+### Measured, re-measured on the committed tree
+
+| what | figure | against |
+|---|---|---|
+| `check.sh` | **seven `ok`**, 3.118 / 3.183 / 3.154 s built-tree on the committed tree (3.127 / 3.132 / 3.142 s before the README block) | 3.089 s measured here at `5ab24bf` (3.191 s in the audit): **+0.9% to +3.0%**, inside the 10%-per-step rule. The added work is one `comm` over two greps of 78 files |
+| axiom audit | **3,993 theorems** | 3,984. **+9 audit lines, 0 new theorems** — the package is unchanged and the audit caught up to it |
+| the three §6.3 counts | **3993 / 3993 / 3992** | they reconcile: `comm -23` **empty**, `comm -13` = `WfPlan` (the deliberate `def`). At `5ab24bf` they read 3984 / 3984 / 3993 |
+| `cargo test --workspace` | **1,312 passed / 0 failed / 9 ignored across 78 result lines**, 0 warnings | 1,312/78 at `5ab24bf`; **unchanged**, as a comment-only Rust edit must leave it |
+| FFI suite | **100 / 0** (kernel 86, corpus 8, stack 6) | unchanged |
+| T5 plain | **29 / 0 / 4** | unchanged |
+| T5 `--include-ignored` under `TM_ORACLE` | **33 / 0 / 0**; frozen arms 7189 + 9299 + 803 scalar values, parity **P21** 4 + 8 + 0 day records, **0 other exceptions**; 20 inputs against a frozen fork answer inside plain `cargo test`, 458 oracle-only, 6 kernel-only | unchanged |
+| the door suite | **23 / 0** plain; under `TM_ORACLE`, **32,976 scalar values** over 16 inputs, parity **P21 × 24**, 2 inputs with no frozen answer, **0 other exceptions** | unchanged |
+| the fork oracle | rebuilt at 16G **outside the repo**, `.oracle-ref` = `4748911555969ace2b48faa8929122aeccbfb415`, usage banner carries `replay` and `fit` — checked, not assumed (§7.3) | D21 |
+| full precision | `the_frozen_comparand_is_read_at_full_precision` **1 passed** | gap 235's guard still by name |
+| `cli_switch_acceptance --include-ignored` · `kernel_call_counts` | **9 / 0** · **1 / 0** | unchanged |
+| the **reliable** T11 row (`later verb`) | 146.91 / 151.76 / 156.97 ms across three back-to-back capped runs | recorded band 146.66-147.01 ms. **The binary was not rebuilt between the three runs** — the row climbed monotonically over one identical binary, which is what machine load looks like, and this commit changes no Rust behaviour. Recorded as a reading. **The band is NOT reblessed** |
+| the three noisy T11 rows | reseal 192.4 / 202.6 / 207.6 ms · 3-day-old routine 136.6 / 136.6 / 131.9 ms · `review week` 278.6 / 294.7 / 278.6 ms | bands 197.5-212.6 · 121.6-136.8 · **248.1-253.3**. `review week` is outside, as **gap 275** already says and as the audit independently confirmed at 283-294 ms |
+
+### Gaps
+
+**Closed: 270** — the stage-6 design no longer reads as though the seam were
+unbuilt, and no longer names a theorem that does not exist. Its own "when it
+clears" said *"at the next step that opens the stage-6 design … by striking K1's
+row to landed at `f9ee3d0`, correcting the theorem name, and noting that §14.8's
+L9 price no longer carries the seam"* — all three done, plus §14.0's numbers and
+§14.5's graph.
+
+#### Gap 285 (new; label W13R-a) — `tm plan` and `tm now` drop a malformed routine window instead of refusing
+
+1. **What is not done.** A routine whose `win:` does not parse
+   (`win:25:99-13:30`) is refused by `tm check` — twice, by file and line — and
+   silently *dropped* by `tm plan` and `tm now`, which exit 0. The routine is
+   then carried with no window at all, so it is scheduled or reported impossible
+   on the planner's own terms rather than on its declared ones.
+2. **Why not now.** This is host-planner behaviour that stage 6 **ports**, not
+   kernel behaviour: the refusal would have to become the kernel's, and the
+   design already reserves a **P2 cheat** for exactly this shape ("a routine
+   placed outside its window"). Fixing it in the host now would be a second
+   definition of the rule, which is AGENTS §5.3's defect.
+3. **What it costs.** Two verbs disagree with `tm check` about whether a plan is
+   loadable, and the one that disagrees is the one the user reads every morning.
+   §5.6 ("the loader never picks between two readings") is the rule at stake.
+4. **When it clears.** Stage 6 step **P2** (routines), where the window becomes
+   the kernel's reading and the cheat is taken deliberately with its refusal
+   theorem beside it.
+
+**Highest on this branch:** gap **285**, cheat **158**, parity **P37**.
+
+### What this repair did NOT do, by name
+
+* **`review week`'s 25-45 ms** is left where L9 put it: **gap 275**, whose cause
+  (a capacity verb replays the log twice) is named and whose fix is the one-call
+  shape. Repairing it here would be a wire change in a ledger-repair commit.
+* **Gap 278** (the capacity call's second replay is invisible to
+  `kernel_call_counts`) is untouched; it is the same one-call shape.
+* **`Tm.WfPlan`** is still audited as a `def`. §6.3 says leave it or delete it
+  *deliberately*; deleting it is a decision about what the audit is for, not a
+  repair, so it stays and check 3's reconciliation is one-directional because of
+  it.
+* **Stage 5's residue**, as §8.3 names it — **93** and **210** are closed (L9
+  and the seam); **94, 98, 113, 114, 116, 132, 133, 139, 143, 150, 151, 152,
+  160, 170, 180, 181, 182, 190, 200, 201, 226** stand open, and the performance
+  levers (**121, 122, 123, 126, 127**, and 143) are unstarted on purpose (D25).
+* **The seam's 260 and 262**, and **275-279**, stand as written.
+* **The §5.13 human drives** of the stage-3, stage-4 and stage-5 binaries, with
+  the TUI half of the switch's drive (**gap 182**). No agent can perform them.

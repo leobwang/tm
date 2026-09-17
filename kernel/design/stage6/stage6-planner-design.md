@@ -39,6 +39,10 @@ architecture row that kills G1, and — §4 — the questions only the owner can
    produce the past half at all, so it cannot produce the day file's rows, so §8.4 item 3 — the
    architecture row that kills G1 — cannot land either. Three steps were said to pay for the seam
    once (D24); it is four, and the fourth is the stage itself.
+   **LANDED 2026-09-16 (gap 270's re-aim).** The seam is **built** — `f9ee3d0`, merged `455ac8d`
+   — and **gap 210 is closed**. This item is now the *record of why it was built first*, not work
+   owed: its first consumer, L9, landed on it at `5ab24bf`, and the planner's past half can reach
+   the replay today. Every "the seam comes first" sentence below reads as history.
 2. **Nothing stage 5 built is built again.** §1 is a table of eighteen names with the step that
    consumes each. A second copy of any of them is a defect under AGENTS §5.3, and the reason the
    table is written out by name is that `dayPlan` is the first kernel function whose natural
@@ -343,8 +347,11 @@ did for D9.
 
 What the extra buys, in the same shape D9's Q1 used:
 - the proofs D5 requires, since L24 and L25 cannot be downgraded;
-- the seam (K1), which §14.8's L9 row does not include because gap 210 was found two days after
-  that row was written;
+- ~~the seam (K1), which §14.8's L9 row does not include because gap 210 was found two days after
+  that row was written~~ — **spent, not owed**: K1 landed at `f9ee3d0` and L9 at `5ab24bf`, so
+  this line no longer belongs in the *remaining* cost. Its measured price was +427/−89 in
+  `Boundary.lean`, +20 in `Lookahead.lean`, +35/−3 in `Check.lean`, against an estimate of
+  120/450 lines and 2–3 agent-days;
 - the candidate collection (K4/P4), without which the planner has two readers of `remaining`,
   `ci` and `due`;
 - `Emit.lean` and the architecture row that kills G1;
@@ -1018,7 +1025,7 @@ D24 and D25 fold four pieces of work into this stage. They are track **K** and t
 
 | step | what | why here |
 |---|---|---|
-| **K1** the seam | expose the `log` section's `Seal.Run` to the capacity path: a signature change through `logOp`, `logAnswerOf`, `logSectionWith`, `runCapZ`, with `readLogSection_is_zoneOf_then_logSectionWith`, `the_zone_is_read_once_and_feeds_both_sections` and `runCap_without_capacity_is_runWithLog` **re-proved over their new shapes, never weakened** (D5) | gap 210; L9, F2, F3-rule **and the planner's past half** (gap 255) all need it |
+| **K1** the seam — **LANDED** at `f9ee3d0` (merged `455ac8d`), gap 210 **closed** | expose the `log` section's `Seal.Run` to the capacity path: a signature change through `logOp`, `logAnswerOf`, `logSectionWith`, `runCapZ`, with `readLogSection_is_zoneOf_then_logSectionWith`, `the_zone_is_read_once_and_feeds_both_sections` and **`runCap_without_capacity_is_runWithEmit`** (this row named it `…_is_runWithLog`; **no theorem of that name has ever existed** — it has been `…_is_runWithEmit` since S2, `Boundary.lean:10214`) **re-proved over their new shapes, never weakened** (D5) | gap 210 — **closed**; L9 (landed), F2, F3-rule **and the planner's past half** (gap 255) all needed it, and it is now **paid for all four** |
 | **K2** L9 — **LANDED** (stage 6 W-13 step L9, gap 93 closed) | day 0 from the kernel's own replay: the `at` stamp with `nowDisagrees`, the state section (`date`, `window`, `budget`, `arrival`, `loc`, `allowHome`), site R10 (`Arith.roundAway`, **signed**) and **five** configured decimals through `written_pair`, not two; `day0` and `badDay0` deleted, and `Ctx::window`/`Ctx::today_slots` with them; `kernel_lookahead_parity.rs` **re-aimed** to compare against `Ctx::today_slots` exactly (92 day-0 comparisons, 0 disagreements) | gap 93; D24 |
 | **K3** F2 | the recurrence family (`done_dates` first and count, `last_done`, instances, `latest_named`, `is_done`) read inside the kernel; each fact's last Rust reader goes with its tranche | design §14.7; needed by P2, P6 and Q2 (a) |
 | **K4** F3-rule | `RuleIn.overdue`, `mandatory`, `pass`; `done_this_period` from W's window; `block_minutes_on` moves in with the close tranche, reading a sealed window record for an old date (D13) | design §14.7; needed by P4 and Q2 (a); closes gap **113** |
@@ -1027,6 +1034,14 @@ D24 and D25 fold four pieces of work into this stage. They are track **K** and t
 200 / 600 / −150 / 4–6, and that row was written on 2026-09-14, **two days before gap 210 was
 found**. It therefore does not include the seam. K1 is priced separately below and the L9 figure
 is carried unchanged.
+
+**RE-AIMED 2026-09-16 (W-13 repair; this closes gap 270).** K1 and K2 have both **landed** — the
+seam at `f9ee3d0`, L9 at `5ab24bf` — so neither is owed, and an agent reading this table must not
+build the seam a second time. K1's estimate was 120 / 450 / 0 / 2–3; it cost **+427 / −89 in
+`Boundary.lean`, +20 in `Lookahead.lean`, +35 / −3 in `Check.lean`** — the right order of
+magnitude, and cheaper overall than feared. **K3 and K4 are what track K still owes**, and they
+inherit a seam that is already built, so their own rows are the only place the seam's price still
+appears — and it is already spent.
 
 ---
 
@@ -1058,12 +1073,18 @@ is carried unchanged.
 
 ### 14.0 Before any step
 
-1. **Numbers.** At `0585e72`: highest **gap 240**, highest **cheat 157**, highest **parity P36**
-   (P37 free). This design takes gaps **250–257** (§20); **258 and 259 are free**. Gaps **241–244**
-   were left unused inside W-12's repair range (that block's closing line) and **245–249** were
-   never allocated — **do not reuse any of them without checking the README's newest block**. Before each commit, re-read the
-   README's newest block; if a parallel track took numbers meanwhile, renumber **before**
-   committing, never after (AGENTS §6.2, §6.4), and keep the label-to-number map in the block.
+1. **Numbers.** **RE-MEASURED 2026-09-16 at the W-13 repair commit (gap 270).** Highest **gap
+   294**, highest **cheat 158**, highest **parity P37** (P38 free). *(This item read "At `0585e72`:
+   highest gap 240, highest cheat 157, highest parity P36 (P37 free)" for one run after it was
+   written, which is exactly the staleness §5.11 warns about — the numbers below moved under it.)*
+   This design took gaps **250–257** (§20); **258 and 259 are free**. The W-13 campaign then took
+   **260–269** (seam), **270–274** (merge), **275–284** (L9; 280–284 free) and **285–294** (this
+   repair; 291–294 free). Gaps **241–244** were left unused inside W-12's repair range (that
+   block's closing line) and **245–249** were never allocated — **do not reuse any of them without
+   checking the README's newest block**. Before each commit, re-read the README's newest block; if
+   a parallel track took numbers meanwhile, renumber **before** committing, never after (AGENTS
+   §6.2, §6.4), and keep the label-to-number map in the block. **These printed numbers are a
+   snapshot and go stale in one run: the README's newest block is the authority, not this line.**
 2. **Ranges, if two tracks run (Q1 (a)).** Track K and track P each get a range at the start and
    never take a number outside it. Two gap-number collisions happened in this campaign because
    parallel tracks shared one sequence.
@@ -1105,7 +1126,7 @@ is carried unchanged.
 
 | step | depends on | files | goals (added → discharged) | acceptance | cost |
 |---|---|---|---|---|---|
-| **K1** the seam | — | `Boundary.lean` (`logOp`, `logAnswerOf`, `logSectionWith`, `runCapZ`, `logOpFast` and its `@[csimp]`), `Check.lean` | none added; **three laws re-proved over new shapes** | check.sh; `cargo test` unchanged; the three laws' names unchanged and their statements strengthened, not weakened; gap **210** closed | 120 / 450 / 0 / 2–3 |
+| **K1** the seam — **LANDED** `f9ee3d0` | — | `Boundary.lean` (`logOp`, `logAnswerOf`, `logSectionWith`, `runCapZ`, `logOpFast` and its `@[csimp]`), `Check.lean` | none added; **three laws re-proved over new shapes** — `readLogSection_is_zoneOf_then_logSectionWith`, `the_zone_is_read_once_and_feeds_both_sections`, `runCap_without_capacity_is_runWithEmit` (**not** `…_is_runWithLog`; that name has never existed) | check.sh; `cargo test` unchanged; the three laws' names unchanged and their statements strengthened, not weakened; gap **210** closed | estimate 120 / 450 / 0 / 2–3; **measured +427/−89 `Boundary.lean`, +20 `Lookahead.lean`, +35/−3 `Check.lean`** |
 | **K2** L9 (day 0) — **LANDED** | **K1**; ~~Q7~~ (it did **not** gate this step: day 0 reads `state.json`'s `date`/`window`/`budget`/`arrival`/`loc` and `--allow-home`, and **no** §9 row — `active`, `break`, `interrupt`, `last_plan_hash` never cross the wire) | `Lookahead.lean`, `Boundary.lean` (`at`, `state`, `posterior`, `sleep`), `Arith.lean` (site R10), `kernel_capacity.rs` (−`day0`, +the `log` section), `kernel_log.rs` (`capacity_log_section`), `kernel_bridge.rs` (`call_text`), `ctx.rs` (−`window`, −`today_slots`), and four test files | site R10's `roundAway_withinOne` / `roundAway_mono` | parity against `Ctx::today_slots` **exactly**, not P1, at 92 comparisons with 0 disagreements; `kernel_lookahead_parity.rs` **re-aimed**, not extended; cheat 118 taken as **cheat 158**; gap **93** closed | measured **+1,056/−78 Lean, +297/−69 Rust** against the estimate 200 / 600 / −150 / 4-6 |
 | **K3** F2 recurrence | **K1** | `Replay.lean`, `Plan.lean`, a recurrence tranche | the recurrence family's laws | that tranche's parity; **a grep shows no Rust reader** of each moved fact | 350 / 900 / −250 / 6–8 |
 | **K4** F3-rule | **K1**, K3; **Q2** | `Priority.lean`, `Seal.lean` (`block_minutes_on` from a sealed window record), `Boundary.lean` | `RuleIn`'s inputs derived, with their laws | the priority wiring's parity; gaps **79–80**, **113** closed | 300 / 800 / −200 / 5–7 |
@@ -1153,6 +1174,10 @@ P0 ── P1 ── P2 ── P3 ┘              ┘                  │      
 `P0` needs only Q3 and Q7, so **track P can start the day the owner answers**, in parallel with
 K1. `P1` needs K1 (the past half) and `P3` needs K2 (day 0's posterior); everything else in P is
 sequential.
+
+**RE-AIMED 2026-09-16 (gap 270):** **K1 and K2 are done** (`f9ee3d0`, `5ab24bf`), so the graph's
+first column is already discharged: `P1`'s and `P3`'s K-dependencies are **satisfied today**, and
+the only remaining K edges are K3 → K4 → P4. Track P is gated on the owner's Q3/Q7 alone.
 
 ### 14.6 What a step that will not fit does
 
@@ -1305,7 +1330,7 @@ four-part form in the README block.
 | **252** | "F3" names a PLAN §4 **defect** and a design §14.7 **build step**, and AGENTS §8.4 cites both without distinguishing them | this document (F3-rule / F3-review); AGENTS §8.4 when the owner confirms |
 | **253** | §8.4 cites `tm-core/tests/planner_invariants.rs`; the file is `tm/tests/planner_invariants.rs` (882 lines, 256 cases, in the workspace suite) | AGENTS §8.4's citation |
 | **254** | "the day section byte-identical across the file, `tm now`, `tm tui` and `tm plan --json`" is not satisfiable literally | Q5; then P8/R1 |
-| **255** | the seam (gap 210) blocks the **planner**, not only L9: the fork's `plan()` returns the past half from the replay | K1 |
+| **255** | the seam (gap 210) blocks the **planner**, not only L9: the fork's `plan()` returns the past half from the replay | K1 — **done** at `f9ee3d0`; gap 210 closed, and the planner's past half is reachable |
 | **256** | `Goals.lean`'s `Seg` uses minutes since midnight while `Look.Slot` uses absolute seconds — two representations of an instant | P0 |
 | **257** | nothing in the tree measures a TUI replan through the FFI, so §9.1's 5 ms trigger has no instrument | P5 (the instrument), Q8 (the decision) |
 

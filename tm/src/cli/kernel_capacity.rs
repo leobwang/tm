@@ -23,11 +23,21 @@
 //!   refusal a configured value can cause.
 //! * [`request`] builds the whole request: the plan's documents (walls are the
 //!   kernel's reading, gap 111), `now`, `blockMin`, the zone table from
-//!   [`super::tz_table`] (the one zone encoder), and the `capacity` section:
-//!   both weekday tables raw (the kernel picks, D10-4), today's logged wake,
-//!   the learned curves, the prior, `[day]`, `[priority]`, `days` and `day0`
-//!   (the host's histogram until L9, gap 93), with the candidates when priorities
-//!   are asked for (their facts are the host's, gap 113).
+//!   [`super::tz_table`] (the one zone encoder), a **`log` section** (D24's
+//!   seam), and the `capacity` section: both weekday tables raw (the kernel
+//!   picks, D10-4), today's `wake` (`state.json`'s clock, else the literal
+//!   `"log"` — the fork's precedence, gap 261), the learned curves, the prior,
+//!   `[day]`, `[priority]`, `days`, and day 0's own host-only facts — `at`,
+//!   `state`, `posterior`, `sleep` — with the candidates when priorities are
+//!   asked for (their facts are the host's, gap 113).
+//!
+//!   **`day0` is gone (step L9, gap 93 closed).** The host no longer hands in a
+//!   histogram of today: the kernel derives day 0 from its own replay of the
+//!   `log` section, and refuses `day0WithoutLog` when a capacity request
+//!   carries none. What still crosses is only what the kernel cannot know —
+//!   the instant the verb ran, `.tm/state.json`'s runtime facts, `--allow-home`,
+//!   and the `[energy]` decimals the posterior and the sleep debt read. Today's
+//!   sleep and energy reports do **not** cross.
 //! * [`read_answer`] parses the response: `den` must be `capDen`, unit counts are
 //!   digit strings read into `u128` (D17), and each grant becomes a [`Prio`]
 //!   whose integer minutes are floors beside their exact values (D15).

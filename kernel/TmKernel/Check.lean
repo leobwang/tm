@@ -4669,3 +4669,28 @@ open Tm
 #print axioms Tm.CapWire.boundedPos_wide_den
 #print axioms Tm.CapWire.boundedPos_large_num
 #print axioms Tm.CapWire.boundedPos_ok
+
+-- ===========================================================================
+-- APPENDED 2026-09-16 (stage 6, run **W-13 repair**, defect 1 — the nine
+-- theorems step L9 declared and did not audit).
+--
+-- AGENTS §6.3 gives two ways to end a step: append the audit lines, **or**
+-- record the omission by name in the README block.  `5ab24bf` did neither, and
+-- its block said the opposite twice ("New theorems: **26**, every one with an
+-- audit line").  The three §6.3 counts read 3984 / 3984 / **3993** at that
+-- commit; they reconciled exactly at `0585e72`, `f9ee3d0` and `455ac8d`.
+--
+-- The nine are helper lemmas — nothing imports `Goals.lean` and check 3 finds
+-- no `sorryAx`, so this was never a soundness hole; the audit was simply nine
+-- short while the printed count said healthy.  That is gap 260's shape exactly
+-- (the audit has a count, not a roster), and check 3 now carries the §6.3
+-- reconciliation so a declared theorem can no longer go unaudited in silence.
+#print axioms Tm.Arith.Signed.den_pos
+#print axioms Tm.Arith.halfUpQ_of_zero_num
+#print axioms Tm.Arith.roundAway_withinOne_aux
+#print axioms Tm.Arith.roundAway_mono_aux
+#print axioms Tm.Look.keepsIt_le
+#print axioms Tm.Look.latestBefore_nil
+#print axioms Tm.Look.latestBefore_go
+#print axioms Tm.Look.SleepCfg.shiftOf_without_sleep
+#print axioms Tm.Look.day0Cut_eq

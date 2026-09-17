@@ -964,14 +964,22 @@ in your README block. One of the two, explicitly. Current practice is visible in
 the file — it carries sixteen `APPENDED …` banners at `bf7cc63` (three at
 `c8f3a38`).
 
+**This rule was broken once, and the count could not see it.** Step L9
+(`5ab24bf`) declared **35** theorems and appended **26** audit lines, did neither
+of the two things above for the other nine, and its README block said the
+opposite twice ("every one with an audit line"). Both numbers rose, so nothing
+looked wrong. **`check.sh` check 3 now runs the reconciliation below itself** and
+fails, naming the theorems, when a declared theorem has no audit line — so the
+manual step is now guarded rather than merely documented.
+
 **The check that makes this safe**, because the append step is manual and has
 demonstrably lost names:
 
 ```bash
 cd /Users/psixyzt/code/planner/kernel/TmKernel
-grep -c '^#print axioms' Check.lean                                     # 3946 (1299 at bf7cc63, 1006 at c8f3a38)
-grep '^#print axioms' Check.lean | awk '{print $3}' | sort -u | wc -l   # 3946
-grep -hcE '^(@\[[^]]*\][[:space:]]*)?theorem ' TmKernel/*.lean | awk '{s+=$1} END {print s}'   # 3946
+grep -c '^#print axioms' Check.lean                                     # 3993 (1299 at bf7cc63, 1006 at c8f3a38)
+grep '^#print axioms' Check.lean | awk '{print $3}' | sort -u | wc -l   # 3993
+grep -hcE '^(@\[[^]]*\][[:space:]]*)?theorem ' TmKernel/*.lean | awk '{s+=$1} END {print s}'   # 3992
 ```
 
 **These told an inconsistent story and were repaired at `e7b816c`; the trap that
@@ -981,37 +989,43 @@ whose final dotted segment was dropped audits the *type* and cheerfully reports
 "does not depend on any axioms". That is how 21 theorems came to be unaudited
 while the count looked healthy.
 
-**Re-measured 2026-09-16 at stage 5's close (they read 3934 at W-10 and 1299
-before that).** The three numbers agree at **3946** over the **78** modules — and the agreement is still the *same two off-by-ones
-cancelling*, which you should know before you quote it. Re-derived today by
-diffing the two **multisets** — declared short names against audited last
-segments — not the two `sort -u` counts, which cannot see a name declared in two
-namespaces:
+**Re-measured 2026-09-16 at W-13's audit repair (3946 at stage 5's close, 3934 at
+W-10, 1299 before that).** The audit numbers agree at **3993** over the **78**
+modules, against **3992** declarations — and the one entry of difference is now
+in the *harmless* direction only. Re-derive by diffing the two **multisets** —
+declared short names against audited last segments — not the two `sort -u`
+counts, which cannot see a name declared in two namespaces:
 
 ```bash
 grep -hoE '^(@\[[^]]*\][[:space:]]*)?theorem [^ (){}:]+' TmKernel/*.lean \
   | sed 's/.*theorem //' | sed 's/.*\.//' | sort > /tmp/decl
 grep '^#print axioms' Check.lean | awk '{print $3}' | sed 's/.*\.//' | sort > /tmp/aud
-comm -23 /tmp/decl /tmp/aud   # `whose`  — the prose line below
+comm -23 /tmp/decl /tmp/aud   # MUST BE EMPTY — check 3 fails if it is not
 comm -13 /tmp/decl /tmp/aud   # `WfPlan` — the `def` below
 ```
 
-- 3946 audit lines, 3946 **distinct** names: no name is audited twice.
-- Every theorem declared in the 78 modules is audited: the multiset diff above
-  is **exactly two entries**, one each way. `^theorem` alone misses the declared
-  `@[simp] theorem`s, which is why the grep allows an attribute prefix.
-- The third number counts one prose line — `Cmd.lean`'s header contains
-  *"theorem whose command argument was unused"* at column 0 (`Cmd.lean:30`) — so
-  there are **3945** real declarations. Distinct short names are fewer still
-  (**3916**), because **23** short names are declared in more than one namespace
-  (30 names of excess); that is why the reconciliation is a multiset diff and not
-  a count comparison. *(This bullet read "3790 … 144" from W-10 until stage 5's
-  close, and neither figure reproduces by the pipeline above — a reminder that
-  §5.11 applies to this file too.)*
+- 3993 audit lines, 3993 **distinct** names: no name is audited twice.
+- Every theorem declared in the 78 modules is audited, and `comm -23` is now
+  **empty** — that is the direction `check.sh` check 3 enforces. `^theorem`
+  alone misses the declared `@[simp] theorem`s, which is why the grep allows an
+  attribute prefix.
+- **The `whose` off-by-one is gone.** The third number used to count one prose
+  line — `Cmd.lean`'s header contained *"theorem whose command argument was
+  unused"* at column 0 — so the two off-by-ones cancelled and the three counts
+  looked equal while the diff was non-trivial. That comment is reflowed
+  (`Cmd.lean:29-33`, which says why), so the third number is now **3992 real
+  declarations** with nothing to subtract. Distinct short names are fewer still,
+  because **23** short names are declared in more than one namespace; that is why
+  the reconciliation is a multiset diff and not a count comparison. *(This bullet
+  read "3790 … 144" from W-10 until stage 5's close, and neither figure
+  reproduces by the pipeline above — a reminder that §5.11 applies to this file
+  too.)*
 - **Plus one non-theorem** in the audit: `Tm.WfPlan`, a `def`, is still audited,
   now at `Check.lean:472`. That is the last instance of the pattern the repair
-  removed. Leave it or delete it deliberately; do not let it breed.
-- The file carries **63** `APPENDED …` banners (sixteen at `bf7cc63`).
+  removed, and it is why check 3's reconciliation is **one-directional**:
+  auditing more than the theorems is not a defect. Leave it or delete it
+  deliberately; do not let it breed.
+- The file carries **66** `APPENDED …` banners (65 at `5ab24bf`, sixteen at `bf7cc63`).
 
 So the honest sentence is *"every theorem in the 78 modules is audited, and the
 audit names one definition as well"* — not *"every theorem"* with nothing after
@@ -1099,8 +1113,23 @@ cd /Users/psixyzt/code/planner/kernel/TmKernel && ~/.elan/bin/lake env lean Chec
 
 Proves no audited theorem depends on `sorryAx` — transitively, so a `sorry`
 anywhere under an audited theorem surfaces. This is also what keeps check 7 safe:
-a `sorryAx` here means `Goals.lean` leaked into something proved (§3.2). It does
-**not** prove coverage; see §6.3.
+a `sorryAx` here means `Goals.lean` leaked into something proved (§3.2).
+
+**It now proves coverage too** (W-13's audit repair). Three ways the audit can
+rot, all three of them caught here:
+- a `#print axioms` naming a renamed constant elaborates to `unknown constant`,
+  prints no `axioms` line and used to leave the check green — **any error Lean
+  reports for `Check.lean` now fails it**, and the first three are printed;
+- a theorem **declared and never audited** used to be invisible, because the
+  printed number is the audit's size and not the package's — the check now runs
+  §6.3's multiset reconciliation (`comm -23` of declared short names against
+  audited last segments), fails when it is non-empty, and **names** up to five of
+  the missing theorems;
+- auditing a `def` is *not* failed, deliberately: `Tm.WfPlan` is audited on
+  purpose (§6.3), so the reconciliation is one-directional.
+
+Step L9 added 35 declarations and 26 audit lines and this check said `ok` at
+3984. That is the case the reconciliation exists for; §6.3 has the history.
 
 **4 — `Negative.lean` MUST fail to compile.**
 
