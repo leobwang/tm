@@ -530,22 +530,31 @@ input mostly does not.
 P0, `Planner.lean`): `SegKind`, `Seg`, `DayPlan`, `PlanReq` and `dayPlan` are
 real now, and so are `segItems`, `assignedOf` and `blockMinutes`.  `Seg` moved
 from minutes-since-midnight to `Look.Slot`'s **absolute seconds** (README gap
-256), which is why every statement below reads `s.val.start`/`s.val.stop`, and
-why `plan_never_moves_a_wall` has lost its midnight caveat and gained a zone:
-it now pins the wall to an absolute second through `Cal.instantOf`, which is
-strictly more than the minutes-since-midnight form said.  Only `edfNumbers`
-stays provisional; design §5.5 gives it to step **P4**.
+256), which is why every statement below reads `s.val.start`/`s.val.stop`.
+Only `edfNumbers` stays provisional; design §5.5 gives it to step **P4**.
 
-**NO GOAL BELOW MAY BE DISCHARGED UNTIL ITS STEP HAS LANDED.**  At P0
-`Planner.dayPlan` is the fork's own `DayPlan::empty` — a window, a budget and
-**no segments** — so every one of these is *vacuously* true of it and a
-discharge taken today would be worth nothing.  The tripwire is
-`Planner.the_day_has_no_segments_until_the_first_step_lands`, which is audited
-in `Check.lean` and which the step that fills the day must delete.  While it
-compiles, this file's count is the only honest reading of the stage.  Design
-§6.4 says which step makes each goal real: P1 the two wall laws, P2 wind-down,
-P3 the break and one-block laws, P5 the remaining six, G2 and G3 the two
-relational ones.
+**NO GOAL BELOW MAY BE DISCHARGED UNTIL ITS STEP HAS LANDED.**  Design §6.4
+says which step makes each goal real: P1 the two wall laws, P2 wind-down, P3
+the break and one-block laws, P5 the remaining six, G2 and G3 the two
+relational ones — **and §6.4's P1 row is wrong about one of the two**
+(README gap 347).
+
+**Step P1 has landed** (`Planner.lean`, §8.2 step 1: the walls, the running
+interruption, the replayed past, the conflicts and the travel-day zeroing).
+`plan_never_moves_a_wall` is **gone from this file**: it is **false as it was
+written here** — a `buffer:` puts a second Wall row in front of the event and a
+wall past local midnight is clipped to the day — and it left as
+`Planner.plan_never_moves_a_wall_as_stage_6_wrote_it_is_refuted` with the
+restatement `Planner.plan_never_moves_a_wall` and the general form
+`Planner.a_wall_row_comes_from_the_index` beside it (AGENTS §3.1 item 3, D5).
+
+`plan_places_no_block_over_a_wall` **stays**, and staying is the point: step 1
+places no Block of its own, so the statement is vacuous over `dayPlan` today
+and a discharge would be AGENTS §5.2's theorem that compiles and means nothing.
+It becomes real at **P5**.  The tripwire that says so is
+`Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands`, which
+is audited in `Check.lean` and which P5 must delete; while it compiles, no goal
+below that quantifies over an assigned Block is worth discharging.
 ############################################################################ -/
 
 open Planner
@@ -600,24 +609,6 @@ theorem plan_places_no_demanding_block_after_wind_down (r : PlanReq) (b w : WfSe
     (hbk : b.val.kind = SegKind.block) (hwk : w.val.kind = SegKind.windDown)
     (hi : b.val.item = some i) (hafter : w.val.start ≤ b.val.start) :
     (effectiveCi r.plan.val i).val < 4 := sorry
-
-/-- **L26 / §8.3 "walls never moved" (P\*), stage 6.**  A wall segment sits
-where its interval says, not where the planner found room.  §8.2 step 1:
-overlapping walls go to `diagnostics.conflicts` and "the planner does not
-resolve them".
-
-**The caveat this goal carried is gone** (README gap 256).  It used to read
-"`Field.DT` carries a day and a `Clock`, and `Seg` carries
-minutes-since-midnight, so this says nothing about a wall that crosses
-midnight"; `Seg` is on absolute seconds now, so the statement pins both ends to
-the second `Cal.instantOf` resolves in the request's own zone — the day
-included, the DST fold included.  That is the form the old comment asked for. -/
-theorem plan_never_moves_a_wall (r : PlanReq) (w : WfSeg) (i : Id) (e : Entity) (a b : DT)
-    (hw : w ∈ (dayPlan r).segments) (hk : w.val.kind = SegKind.wall)
-    (hi : w.val.item = some i)
-    (hget : r.plan.val.store.get i = some e) (hs : e.val.shape = Shape.interval a b) :
-    w.val.start = (Cal.instantOf r.tz a.day a.time).sec ∧
-      w.val.stop = (Cal.instantOf r.tz b.day b.time).sec := sorry
 
 /-- **L26 / §8.3 "monotone rank" (P\*), stage 6.**  "For two candidates with
 equal `p` and equal `ci`, the one with the lower line order is never left

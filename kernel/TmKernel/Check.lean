@@ -4704,12 +4704,12 @@ open Tm
 -- `view ∘ set = id` pairs, the two `Look.Today` budget laws L9's `storedWindow`
 -- needed beside it, and `dayPlan`'s shape.
 --
--- Two of them are TRIPWIRES and are meant to stop compiling:
--- `the_day_has_no_segments_until_the_first_step_lands` must be deleted by P1
--- and `the_plan_hash_is_a_placeholder_until_the_emitter_lands` by P8.  While
--- the first one stands, `Goals.lean`'s thirteen stage-6 goals are vacuously
--- true of `dayPlan` and **none of them may be discharged** — the file says so
--- at its stage-6 header.
+-- Two of them were TRIPWIRES and were meant to stop compiling.  Step P1 took
+-- the first one (`the_day_has_no_segments_until_the_first_step_lands`, deleted
+-- with `dayPlan_diagnostics` and `dayPlan_assigns_nothing_yet`, which P1's body
+-- made false); `the_plan_hash_is_a_placeholder_until_the_emitter_lands` still
+-- stands and is P8's.  P1's own tripwire, in the block below, is
+-- `the_day_assigns_nothing_after_now_until_the_assign_step_lands`.
 -- ===========================================================================
 #print axioms Tm.Look.Today.storedBudget_on_another_day
 #print axioms Tm.Look.Today.storedBudget_today
@@ -4761,8 +4761,75 @@ open Tm
 #print axioms Tm.Planner.dayPlan_window
 #print axioms Tm.Planner.dayPlan_blockMin
 #print axioms Tm.Planner.dayPlan_budgetBlocks
-#print axioms Tm.Planner.dayPlan_diagnostics
-#print axioms Tm.Planner.the_day_has_no_segments_until_the_first_step_lands
 #print axioms Tm.Planner.the_plan_hash_is_a_placeholder_until_the_emitter_lands
-#print axioms Tm.Planner.dayPlan_assigns_nothing_yet
-#print axioms Tm.Planner.dayPlan_spends_no_minutes_yet
+
+-- ===========================================================================
+-- STAGE 6, W-14 TRACK P, STEP P1 (2026-09-17): the walls
+--
+-- Appended for step P1 (design 14.2's P1 row): 8.2 step 1 in `Planner.lean`,
+-- on the wall set stage 5 already indexes.  `Look.WallIx` is WIDENED, not
+-- forked (AGENTS 5.3): it carries the item id it always had in scope and the
+-- event's own start that `buffer:` used to fold away, and `Look.wallIxOn` is
+-- `wallsOn`'s own selection with the projection left off, so the day's window,
+-- the day's cut and the day's rows read ONE rule about which walls are today's.
+--
+-- Forty-one theorems.  Two are RUN rather than argued -- AGENTS 5.2's non-vacuity
+-- check -- and two are findings named as such:
+--
+--   * `the_spec_days_walls_are_placed_where_they_are_written` and
+--     `the_spec_days_clash_is_named_once` -- 8.2 step 1 evaluated on the 4.3
+--     Monday with a `buffer:1h` meeting and a second one that clashes with it:
+--     three rows at the six seconds the index wrote, and the pair named once.
+--
+--   * `plan_never_moves_a_wall_as_stage_6_wrote_it_is_refuted` -- the goal's
+--     form is FALSE against the fork (a `buffer:` puts a second Wall row in
+--     front of the event; a wall past midnight is clipped to the day), refuted
+--     and restated with `plan_never_moves_a_wall` and
+--     `a_wall_row_comes_from_the_index` beside it (AGENTS 3.1 item 3, D5).
+--   * `the_day_assigns_nothing_after_now_until_the_assign_step_lands` -- the
+--     TRIPWIRE P5 must delete.  Step 1 places no Block of its own, so
+--     `plan_places_no_block_over_a_wall` is NOT discharged here: it is vacuous
+--     over this body and design 6.4's row that gives it to P1 is wrong
+--     (README gap 347).
+-- ===========================================================================
+#print axioms Tm.Look.mem_wallIxOn
+#print axioms Tm.Look.wallsOn_eq_map_wallIxOn
+#print axioms Tm.Look.wallOfEntity_lo_is_evLo_without_a_buffer
+#print axioms Tm.Look.wallOfEntity_keeps_the_id
+#print axioms Tm.Look.wallOfEntity_evLo_is_the_written_start
+#print axioms Tm.Planner.Capped.ofListTake_keeps_everything_below_the_cap
+#print axioms Tm.Planner.Capped.ofListTake_is_a_prefix
+#print axioms Tm.Planner.mem_assignedOf
+#print axioms Tm.Planner.a_wall_is_not_work
+#print axioms Tm.Planner.instant_wf_of_sec
+#print axioms Tm.Planner.Seg.wf_of
+#print axioms Tm.Planner.clampSec_lt
+#print axioms Tm.Planner.clampSec_id
+#print axioms Tm.Planner.segOf_is_the_row_inside_the_calendar
+#print axioms Tm.Planner.segOf_kind
+#print axioms Tm.Planner.segOf_item
+#print axioms Tm.Planner.wallsToday_is_wallsOfDay
+#print axioms Tm.Planner.mem_wallsToday
+#print axioms Tm.Planner.clipWall_id
+#print axioms Tm.Planner.clipWall_within
+#print axioms Tm.Planner.clipWall_id_inside
+#print axioms Tm.Planner.the_spec_days_clash_is_named_once
+#print axioms Tm.Planner.wallConflicts_nil
+#print axioms Tm.Planner.mem_wallConflicts
+#print axioms Tm.Planner.a_travel_day_has_no_budget
+#print axioms Tm.Planner.remainingBudget_le_budget
+#print axioms Tm.Planner.wallRows_are_walls_of_the_item
+#print axioms Tm.Planner.the_event_row_is_the_event
+#print axioms Tm.Planner.wallRows_without_a_buffer
+#print axioms Tm.Planner.the_spec_days_walls_are_placed_where_they_are_written
+#print axioms Tm.Planner.interruptRows_are_open_lost_time
+#print axioms Tm.Planner.interruptRows_are_not_walls
+#print axioms Tm.Planner.pastRows_end_at_now
+#print axioms Tm.Planner.pastRows_are_not_walls
+#print axioms Tm.Planner.mem_stepOneRows
+#print axioms Tm.Planner.dayPlan_segments
+#print axioms Tm.Planner.dayPlan_remaining_budget_is_the_forks_local
+#print axioms Tm.Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands
+#print axioms Tm.Planner.plan_never_moves_a_wall_as_stage_6_wrote_it_is_refuted
+#print axioms Tm.Planner.plan_never_moves_a_wall
+#print axioms Tm.Planner.a_wall_row_comes_from_the_index

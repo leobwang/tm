@@ -1222,11 +1222,29 @@ theorem the_window_counts_real_hours_across_the_spring_transition :
 
 /-! ### Walls from the plan: fork `Ctx::walls_on`, indexed once per request -/
 
-/-- One wall of the plan: the local dates it belongs to and its UTC seconds. -/
+/-- One wall of the plan: the item it belongs to, the local dates it covers, and its UTC
+seconds.
+
+**Widened for stage 6 step P1** (AGENTS §5.3: the shape is changed, not forked).  The
+planner places walls as *rows of a day*, and a row carries the item it is about and the note
+`buffer before …` that separates the blocked run-up from the event itself.  Both facts were
+computed here and thrown away: `wallOfEntity` had `i` in scope and dropped it, and `lo` folded
+`buffer:` into the start so the event's own start was unrecoverable.  A second index beside
+this one is the defect this kernel exists to remove, so this one answers both.
+
+* `lo` is the **blocked** start — `start − buffer:` — and is what `wallsOn` projects, so
+  §8.1's window and L3's cut are unchanged to the bit.
+* `evLo` is the event's **own** start.  Without a `buffer:` they are equal
+  (`wallOfEntity_lo_is_evLo_without_a_buffer`). -/
 structure WallIx where
+  /-- The item the wall is written on (fork `WallSeg::id`). -/
+  id      : Id
   fromDay : Nat
   toDay   : Nat
+  /-- The blocked start: the event's start moved back by `buffer:` (fork `blocked_start`). -/
   lo      : Nat
+  /-- The event's own start, before `buffer:` (fork `WallSeg::start`). -/
+  evLo    : Nat
   hi      : Nat
 deriving DecidableEq, Repr
 
@@ -1253,7 +1271,8 @@ def wallOfEntity (z : Cal.Tz) (bm : Nat) (p : PlanCore) (i : Id) (e : Entity) : 
     match effectiveShape p i with
     | .interval s f =>
       let sb := shiftBack s ((e.val.buffer.map (Field.Dur.minutes bm)).getD 0)
-      some ⟨sb.1, f.day, (Cal.instantOf z sb.1 sb.2).sec, (Cal.instantOf z f.day f.time).sec⟩
+      some ⟨i, sb.1, f.day, (Cal.instantOf z sb.1 sb.2).sec,
+        (Cal.instantOf z s.day s.time).sec, (Cal.instantOf z f.day f.time).sec⟩
     | _ => none
 
 /-- Every wall of the plan, read once per request (`bm` is `block_min`, for a `buffer:`
@@ -1280,6 +1299,29 @@ theorem mem_wallsOn {ix : List WallIx} {d : Nat} {w : Nat × Nat} :
   · rintro ⟨x, hx, h1, h2, rfl⟩
     exact ⟨x, hx, by simp [h1, h2]⟩
 
+/-- **`wallsOn`'s selection, unprojected** (stage 6 step P1): the same walls, still carrying the
+item and the event's own start.  `wallsOn` is this followed by `(lo, hi)`
+(`wallsOn_eq_map_wallIxOn`), so the day's window, the day's cut and the day's *rows* all read
+one selection rule — the planner never asks a second time which walls are today's. -/
+def wallIxOn (ix : List WallIx) (d : Nat) : List WallIx :=
+  ix.filter fun w => decide (w.fromDay ≤ d ∧ d ≤ w.toDay)
+
+theorem mem_wallIxOn {ix : List WallIx} {d : Nat} {x : WallIx} :
+    x ∈ wallIxOn ix d ↔ x ∈ ix ∧ x.fromDay ≤ d ∧ d ≤ x.toDay := by
+  simp [wallIxOn]
+
+/-- **There is one rule for "today's walls", and `wallsOn` is its projection.** -/
+theorem wallsOn_eq_map_wallIxOn (ix : List WallIx) (d : Nat) :
+    wallsOn ix d = (wallIxOn ix d).map (fun w => (w.lo, w.hi)) := by
+  induction ix with
+  | nil => rfl
+  | cons a l ih =>
+    by_cases h : a.fromDay ≤ d ∧ d ≤ a.toDay
+    · simp [wallsOn, wallIxOn, h] at ih ⊢
+      exact ih
+    · simp [wallsOn, wallIxOn, h] at ih ⊢
+      exact ih
+
 theorem mem_wallIndex {z : Cal.Tz} {bm : Nat} {p : PlanCore} {x : WallIx} :
     x ∈ wallIndex z bm p ↔ ∃ i e, p.store.get i = some e ∧ wallOfEntity z bm p i e = some x := by
   simp only [wallIndex, List.mem_filterMap]
@@ -1302,11 +1344,54 @@ theorem wallOfEntity_interval (z : Cal.Tz) (bm : Nat) (p : PlanCore) (i : Id) (e
     (s f : Field.DT) (hst : ∀ o, e.val.status ≠ .settled o) (hsh : effectiveShape p i = .interval s f)
     (hb : e.val.buffer = none) :
     wallOfEntity z bm p i e
-      = some ⟨s.day, f.day, (Cal.instantOf z s.day s.time).sec, (Cal.instantOf z f.day f.time).sec⟩ := by
+      = some ⟨i, s.day, f.day, (Cal.instantOf z s.day s.time).sec,
+          (Cal.instantOf z s.day s.time).sec, (Cal.instantOf z f.day f.time).sec⟩ := by
   unfold wallOfEntity
   split
   · rename_i o ho; exact absurd ho (hst o)
   · simp [hsh, hb, shiftBack_zero]
+
+/-- **Without a `buffer:` the blocked start *is* the event's start** (stage 6 step P1): the two
+fields differ exactly by the run-up, so a wall with no run-up has one start and the planner
+emits one row for it. -/
+theorem wallOfEntity_lo_is_evLo_without_a_buffer (z : Cal.Tz) (bm : Nat) (p : PlanCore) (i : Id)
+    (e : Entity) (x : WallIx) (hb : e.val.buffer = none) (h : wallOfEntity z bm p i e = some x) :
+    x.lo = x.evLo := by
+  unfold wallOfEntity at h
+  split at h
+  · cases h
+  split at h
+  · rename_i s f hsh
+    simp only [hb, Option.map_none, Option.getD_none, shiftBack_zero, Option.some.injEq] at h
+    subst h
+    rfl
+  · cases h
+
+/-- **The wall carries the item it is written on** (stage 6 step P1): `wallIndex` keys the plan
+by id, and the row the planner places says which item it is about — the fork's `WallSeg::id`,
+which was computed here and dropped before P1. -/
+theorem wallOfEntity_keeps_the_id (z : Cal.Tz) (bm : Nat) (p : PlanCore) (i : Id) (e : Entity)
+    (x : WallIx) (h : wallOfEntity z bm p i e = some x) : x.id = i := by
+  unfold wallOfEntity at h
+  split at h
+  · cases h
+  split at h
+  · simp only [Option.some.injEq] at h; subst h; rfl
+  · cases h
+
+/-- **The event's own start is the interval's, unclipped and unshifted** — the equation the
+restated `plan_never_moves_a_wall` turns on (stage 6 step P1). -/
+theorem wallOfEntity_evLo_is_the_written_start (z : Cal.Tz) (bm : Nat) (p : PlanCore) (i : Id)
+    (e : Entity) (s f : Field.DT) (x : WallIx) (hsh : effectiveShape p i = .interval s f)
+    (h : wallOfEntity z bm p i e = some x) :
+    x.evLo = (Cal.instantOf z s.day s.time).sec ∧ x.hi = (Cal.instantOf z f.day f.time).sec := by
+  unfold wallOfEntity at h
+  split at h
+  · cases h
+  rw [hsh] at h
+  simp only [Option.some.injEq] at h
+  subst h
+  exact ⟨rfl, rfl⟩
 
 /-- **The buffer comes off the local clock, not off the instant** (fork `walls_on`): an
 03:30 interval with `buffer:60m` on 2026-03-08 starts its wall at the local time 02:30,
@@ -1325,8 +1410,8 @@ Tuesday's window runs from 07:00 to Thursday 01:00 and Wednesday's from 07:00 to
 window to its own date (the later fix Q6 names) would change Tuesday's end, so the fix is a
 behaviour change with its own parity entry. -/
 theorem a_multi_day_wall_puts_one_evening_in_two_windows :
-    let ix : List WallIx := [⟨739865, 739867, (Cal.instantOf Cal.chicago 739865 540).sec,
-      (Cal.instantOf Cal.chicago 739867 1020).sec⟩]
+    let ix : List WallIx := [⟨['q','1'], 739865, 739867, (Cal.instantOf Cal.chicago 739865 540).sec,
+      (Cal.instantOf Cal.chicago 739865 540).sec, (Cal.instantOf Cal.chicago 739867 1020).sec⟩]
     windowOn Cal.chicago 739866 420 1140 480 (wallsOn ix 739866)
       = ((Cal.instantOf Cal.chicago 739866 420).sec, (Cal.instantOf Cal.chicago 739868 60).sec) ∧
     windowOn Cal.chicago 739867 420 1140 480 (wallsOn ix 739867)
@@ -4025,7 +4110,8 @@ theorem sunday_mixes_at_its_own_weight :
 /-- The §4.3 meeting moved onto the Monday, 12:50–13:50 in Chicago — so that day 0's own window
 and cut are the ones `cut_slots_on_the_spec_day` documents. -/
 def mondayWall : List WallIx :=
-  [⟨739865, 739865, (Cal.instantOf Cal.chicago 739865 770).sec, (Cal.instantOf Cal.chicago 739865 830).sec⟩]
+  [⟨['g','1'], 739865, 739865, (Cal.instantOf Cal.chicago 739865 770).sec,
+    (Cal.instantOf Cal.chicago 739865 770).sec, (Cal.instantOf Cal.chicago 739865 830).sec⟩]
 
 /-- `specInput` with that wall: the §4.3 day as day 0. -/
 def specWalled : Input := { specInput with walls := mondayWall }
@@ -4120,7 +4206,8 @@ theorem day_zero_reads_todays_location :
 
 /-- The §4.3 meeting on Wednesday 2026-09-09, 12:50–13:50 in Chicago, as `wallIndex` lists it. -/
 def wednesdayWall : List WallIx :=
-  [⟨739867, 739867, (Cal.instantOf Cal.chicago 739867 770).sec, (Cal.instantOf Cal.chicago 739867 830).sec⟩]
+  [⟨['g','1'], 739867, 739867, (Cal.instantOf Cal.chicago 739867 770).sec,
+    (Cal.instantOf Cal.chicago 739867 770).sec, (Cal.instantOf Cal.chicago 739867 830).sec⟩]
 
 /-- **The Wednesday wall, end to end** (design §13.4's loaded-plan witness; `Boundary.lean`
 reaches it from a loaded calendar through `wallIndex`).  Without walls Wednesday's window ends

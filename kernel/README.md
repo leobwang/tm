@@ -27358,3 +27358,386 @@ frozen against `fork-4748911-*.jsonl` inside `cargo test --workspace`, and both
 ran green with their denominators printed above — those are the arms that would
 have caught a change. The `w14-k` worktree was removed after the merge verified
 clean; `.claude/worktrees/stage5-lookahead` was left alone.
+
+## Stage 6, W-14 track P step P1, 2026-09-17: the planner places its walls — §8.2 step 1, on stage 5's own wall set
+
+**Branch `rebuild-on-lean`**, on top of the W-14 merge (`fe6543d`). Design
+§14.2's **P1** row. The brief asked for P1, P2 and P3; **P1 landed and P2 and P3
+did not**, and the reason is structural rather than a shortfall of time — it is
+written out in "What this step did NOT do" below and opened as gap **350**.
+
+### What landed
+
+§8.2 **step 1** in `Planner.lean`, placed from the wall set stage 5 already
+indexes. Nothing here computes a wall: `Look.wallOfEntity` ran once, at the
+boundary, inside `Look.wallIndex`, and `Boundary.readCapacity_ok` already proves
+the request's index *is* the loaded plan's.
+
+1. **`Look.WallIx` widened, not forked** (AGENTS §5.3). It gains **`id : Id`** —
+   which `wallOfEntity` had in scope and dropped — and **`evLo : Nat`**, the
+   event's own start, which `buffer:` used to fold away into `lo`. `lo` is still
+   the *blocked* start and `wallsOn` still projects `(lo, hi)`, so §8.1's window
+   and L3's cut are unchanged to the bit.
+2. **`Look.wallIxOn`** — `wallsOn`'s own selection with the projection left off,
+   with **`Look.wallsOn_eq_map_wallIxOn`** to say so. The day's window, the day's
+   slots and the day's *rows* now read **one** rule about which walls are
+   today's; a second `wallOfEntity` would have been §5.3's defect with a calendar
+   behind it.
+3. **`wallsOfDay` / `wallsToday`** — fork `collect_walls`: today's walls clipped
+   to `[day_start, day_end]`, an empty clip dropped, sorted by blocked start then
+   id (`Replay.insSort`, reused — no new sort was written).
+4. **`wallRows`** — fork `emit_segments`' wall loop (`planner.rs:1772-1797`): the
+   `buffer:` run-up as its own Wall row carrying `Note.bufferBefore`, then the
+   event's own row, both carrying the item.
+5. **`wallConflicts`** — fork `wall_conflicts` (`planner.rs:2238`): every
+   overlapping pair once, at the later one, compared on the **events'** spans and
+   not on the blocked ones, and *unresolved*.
+6. **The travel day** — `PlanReq.isTravelDay` reads `Field.Flag.travelDay` off
+   the same store `wallIndex` keyed; `remainingBudget` is fork
+   `capacity::remaining_budget(budget, blocks_done)` (`Nat` subtraction *is* the
+   fork's `saturating_sub`) with §8.2 step 1's zeroing in front of it, and
+   `Note.travelDay` goes in `diagnostics.notes`.
+7. **§9's running interruption** as an ad-hoc wall — `interruptRows`, a `Lost`
+   row from where it started to `now`, `open`, taking no part in the conflicts and
+   extending no window.
+8. **The past half** — `pastRows`, fork `past_segments` (`planner.rs:2034`), read
+   out of **this call's own run** (`PlanReq.run`, D24's seam) and never from a
+   second read of the log (D9). `Note` gains the five things the replayed rows
+   say in prose, each named (AGENTS §5.7) rather than left a `String`.
+9. **`dayPlan` is no longer empty.** It is the past half, the interruption and the
+   wall rows, sorted as the fork sorts them (`a.start` then `a.end`), with the
+   conflicts and the travel-day note in `diagnostics`. Its signature is still
+   total (D28): no `dayPlan?`, no `PlanRefusal`.
+10. **`assignedOf` corrected** (gap 345): it now filters `SegKind.isWork`, as fork
+    `DayPlan::assigned` does (`planner.rs:634`). P0's form was the flatMap over
+    *every* segment, harmless while the day was empty and wrong the moment a row
+    is placed — a Wall row carries the item it is written on, so the P0 form would
+    have reported a meeting as an assigned task and **four of the thirteen goals
+    would have been about the wrong set**. `assignedFrom` is added beside it,
+    fork `DayPlan::assigned_from` (`planner.rs:647`), which is the set §8.3's
+    laws are actually about.
+
+### The two findings
+
+**FINDING 1 — `plan_never_moves_a_wall` is FALSE as stage 6 wrote it.** Two
+shapes break it and neither is an edge case:
+
+* a **`buffer:`** puts a *second* Wall row in front of the event, from
+  `start − buffer:` to `start`, carrying the same item, so that row's start is
+  not the interval's start (fork `emit_segments`, `planner.rs:1772-1786`);
+* a wall that runs **past local midnight** is clipped to the day, so its stop is
+  not the interval's end (fork `collect_walls`' `end.min(self.day_end)`).
+
+Handled in D29's shape, and in the same commit (AGENTS §3.1 item 3, D5):
+`plan_never_moves_a_wall_as_stage_6_wrote_it_is_refuted` proves the negation;
+`plan_never_moves_a_wall` is restated with the two things `buffer:` and the clip
+do named as hypotheses and **proved**; and
+`a_wall_row_comes_from_the_index` carries the sentence the goal existed to
+protect — *both ends of every wall row come from the index and neither comes from
+the planner* — true of a buffered wall and a clipped one alike. The goal is
+**deleted from `Goals.lean`**: burn-down **13 → 12**.
+
+**FINDING 2 — design §6.4's P1 row is wrong about the other wall goal.**
+§6.4 says `plan_places_no_block_over_a_wall` becomes provable after P1. It does
+not: step 1 places **no Block of its own**, so the statement is vacuous over
+`dayPlan` and a discharge would be AGENTS §5.2's theorem that compiles and means
+nothing — the exact failure `every_transform_preserves_the_invariant` was
+withdrawn for. It is **left in `Goals.lean`** and becomes real at **P5**. The
+invariant P1 was supposed to establish for it is already stage 5's
+(`Look.day0_slots_avoid_the_walls`), so P1 adds nothing to it. Recorded as gap
+**347**; the tripwire that says so is
+`the_day_assigns_nothing_after_now_until_the_assign_step_lands`, audited in
+`Check.lean`, which **P5 must delete**.
+
+### AGENTS §5.3: what was consumed, and what was changed rather than forked
+
+**Consumed, by name, and re-implemented none of them.** `Look.wallIndex`,
+`Look.wallOfEntity`, `Look.wallsOn`, `Look.shiftBack`, `Look.mem_wallIndex`,
+`Look.mem_wallsOn`, `Look.effectiveShape`/`Tm.effectiveShape_as_written`,
+`Look.day0Window` and `Look.budgetOf` (through P0's `PlanReq.window` /
+`PlanReq.budgetBlocks` views), `Look.day0_slots_avoid_the_walls` (cited, not
+restated), `Cal.instantOf`, `Cal.Instant.wf`, `Replay.insSort` and
+`Replay.insSort_perm` (the sort and its permutation law — **no new sort was
+written**), `Replay.Segment`/`Replay.SegKind`/`Replay.DayAcc.segments`,
+`Seal.Run`/`Seal.Answer.days`/`Seal.DayRecord.record`, `Log.charsLe`,
+`Field.Flag.travelDay`, `Field.Dur.minutes`, and P0's own `Seg`, `SegKind`,
+`SegFlags`, `Note`, `Diagnostics`, `Capped`, `RuntimeIn` and `PlanReq`.
+
+**Changed rather than forked, and said out loud.** `Look.WallIx` is widened
+(above). The brief's rule is that a step which finds a stage-5 artefact the wrong
+shape *changes that artefact* and does not copy it; this is that, and the three
+`WallIx` literals in `Lookahead.lean` plus
+`Boundary.the_look_wall_calendar_indexes_one_wednesday_wall` were updated with
+it and re-`decide`d green. **`wallsOn`'s answer is unchanged** — it is now
+provably the projection of `wallIxOn`, and `kernel_lookahead_parity` is still
+4/4.
+
+### Non-vacuity, run rather than argued (AGENTS §5.2)
+
+Every law here is a `∀` over a request, and a `PlanReq` cannot be constructed in
+`Planner.lean` (it needs a `WfPlan` and a `Seal.Run`; gap **348**). So the rule
+itself is **evaluated** on a real day: `the_spec_days_walls_are_placed_where_they
+_are_written` takes §4.3's Monday meeting with `buffer:1h` and a second meeting
+that clashes with it, hands them to step 1 **in the wrong order**, and `decide`s
+that the answer is three rows — the run-up 11:50-12:50, the event 12:50-13:50 and
+the second 13:30-14:30 — at the six seconds the index wrote;
+`the_spec_days_clash_is_named_once` `decide`s that the pair is reported once and
+nothing is moved. Both probed at `MemoryMax=8G`.
+
+### Behaviour rows
+
+**None. The shipped binary does not change, and cannot.** `dayPlan` has no
+caller: `PlanReq` has no decoder, the request gains no section, and
+`Boundary.lean` is untouched (gap **346**, P0's own). Every number below is
+therefore expected to be flat, and is. The behaviour rows design §20 lists for
+this stage are still owed by the steps that wire the planner up.
+
+| input | before | after | why |
+|---|---|---|---|
+| any verb | the Rust planner | the Rust planner | **unchanged** — P1 is kernel-side only |
+
+### Goals, theorems, cheats, parity (AGENTS §3.2, §6.2, §6.3)
+
+* **Burn-down 13 → 12.** `plan_never_moves_a_wall` left `Goals.lean` refuted and
+  restated. `plan_places_no_block_over_a_wall` **stays**, deliberately (finding 2).
+* **+41 audited theorems** in `Check.lean` under a P1 banner (5 in
+  `Lookahead.lean`, 36 in `Planner.lean`); **−4** audit lines for the P0 theorems
+  P1's body made false (`dayPlan_diagnostics`,
+  `the_day_has_no_segments_until_the_first_step_lands`,
+  `dayPlan_assigns_nothing_yet`, `dayPlan_spends_no_minutes_yet`). 4,048 + 41 − 4
+  = **4,085**, and check 3's §6.3 reconciliation names no unaudited declaration.
+* **P0's first tripwire is discharged as designed**:
+  `the_day_has_no_segments_until_the_first_step_lands` said "P1 must delete this"
+  and P1 deleted it. `the_plan_hash_is_a_placeholder_until_the_emitter_lands`
+  stands and is P8's.
+* **`Negative.lean` cheats 161 and 162** (design §16's two P1 rows): *a wall
+  placed where there was room* — a `wallRows` that fits the wall into the first
+  free position of the day at the same duration; *an overlap filled* — a
+  `resolveOverlap` that shunts the later wall past the earlier one, so the
+  conflict report goes quiet. Each fails at a line of its own. **Highest cheat:
+  162.**
+* **Parity: no entry owed, and that is a claim with a proof behind it.** The only
+  stage-5 answer this step could have moved is `wallsOn`'s, and
+  `wallsOn_eq_map_wallIxOn` plus the re-`decide`d
+  `the_look_wall_calendar_indexes_one_wednesday_wall` say it did not.
+  **Highest parity: P37.**
+
+### Measured, on the committed tree, every command capped at `MemoryMax=40G`
+
+| measurement | this tree | comparand, and what explains the delta |
+|---|---|---|
+| `check.sh` | **7/7 ok**, **3.13 / 3.07 / 3.03 s** warm, peak RSS **1.98 / 1.90 / 1.98 GiB** (2,074,616 / 1,988,060 / 2,073,520 KiB) | merged tree `fe6543d` **3.06 / 3.09 / 3.05 s**, RSS 1.98 / 1.91 / 1.95 GiB. **+0.7% on midpoints**, far inside the 10%-per-step rule. An earlier set of readings (4.2 / 6.2 / 7.7 s) was taken at load average 15-17 and is discarded as machine load, not quoted |
+| axiom audit, with check 3's reconciliation | **4,085 theorems**, reconciliation `ok` | **4,048** merged. **+37 net**: +41 new audit lines, −4 for the P0 theorems P1 made false |
+| burn-down (check 7) | **12 outstanding, all stage 6** | **13** merged. **−1, and it is named**: `plan_never_moves_a_wall`, refuted and restated |
+| corpus round trip | **29/37 files and 4/5 whole plans** | unchanged |
+| `cargo test --workspace` | **1,313 passed / 0 failed / 9 ignored across 78 result lines**, exit 0 | **1,313 / 0 / 9 across 78** merged. **Unchanged, as a Lean-only step must leave it** |
+| FFI suite (`kernel/tm-kernel-ffi`) | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) | 100 |
+| **T5** `kernel_replay_parity -- --include-ignored` | **33 / 0 / 0**, 7.26 s | 33 |
+| the door `kernel_log_door` | **23 / 0**, 1.66 s | 23 |
+| `cli_switch_acceptance -- --include-ignored` | **9 / 0**, 1.52 s | 9 |
+| `kernel_call_counts` | **2 / 0**, 0.30 s | 2 |
+| `kernel_lookahead_parity` | **4 / 0**, 0.76 s | 4 — the arm that would have caught the `WallIx` widening changing an answer |
+| `cli_latency -- --include-ignored --test-threads=1` | **6 / 0**, ×3, **15.99 / 15.96 / 15.89 s** | 15.90 / 15.92 / 15.91 s |
+
+**T11, the rows — the three noisy ones quoted as ranges (gap 240), never as
+single numbers.**
+
+| row | this tree, three passes | band | verdict |
+|---|---|---|---|
+| **later verb, 3-year log — the reliable row** | **147.03 / 146.82 / 147.00 ms**, and 146.76 / 146.87 / 151.90 ms on the sibling test | **146.66-147.01 ms** | **inside**, with pass 1 at 147.03 ms — **0.02 ms over the top edge**, recorded rather than rounded in. The sibling's 151.90 ms is one reading of a row the machine was loaded for; it is printed, not averaged away |
+| the verb after a windowable hand undo | 146.92 / 151.98 / 151.92 ms | — | as before; noisy on this machine |
+| reseal (`--now +1 day`) | 207.70 / 207.73 / **192.36** ms | 197.5-212.6 ms | pass 3 is **5.1 ms below the low edge** — a *faster* reading, printed rather than dropped; the band is **not** re-blessed |
+| 3-day-old routine | 131.71 / 131.76 / 131.75 ms | 121.6-136.8 ms | inside |
+| **`review week` (the `All` scope)** | **283.71 / 293.81 / 283.52 ms** | 248.1-253.3 ms | **STILL OUTSIDE, by +30 to +40 ms** — gap **275**, whose cause (a capacity verb replays the log twice) and fix order (gap **300**: K3 → K4 → the one-call shape) are unchanged by this step |
+| first verb (genesis), 3-year log | 2.212 / 2.181 / 2.157 s | 2.15-2.48 s | inside |
+| `tm plan` with a due 3 / 10 years out | 86.07 / 86.15 / 86.12 ms and 146.85 / 141.80 / 146.87 ms | `LATER_VERB` 1 s | inside |
+| 10 stalled days, worst | 551.6 / 536.7 / 536.7 ms, **0** checkpoint generations | — | as before |
+
+### Gaps
+
+**Closed: none.** P1 closes no gap of its own. It *discharges a goal* (finding 1)
+and *corrects a defect this step would otherwise have shipped* (`assignedOf`,
+recorded below as gap 345 with what remains of it), which is not the same thing.
+
+**Opened: 345-350** (track P's planner range is 345-364; **351-364 are free**).
+
+#### Gap 345 (new; label W14P1-a) — `assignedOf` does not dedupe, where the fork does
+
+1. **What is not done.** `Planner.assignedOf` now filters `SegKind.isWork` as
+   fork `DayPlan::assigned` does, but it does **not** dedupe. The fork's
+   `assigned()` and `assigned_from()` both push through a `BTreeSet` and keep the
+   **first** occurrence (`planner.rs:632`, `:648`), so an item split across two
+   Blocks appears once there and twice here.
+2. **Why not now.** Membership is unaffected, and membership is what four of the
+   five goals that read `assignedOf` use (`i ∈ assignedOf …`). The one statement
+   the difference reaches is `plan_tail_drop`'s `.erase a` / `.take n` form,
+   which is **G2's** and is already being restated under D29. The kernel has two
+   dedup semantics today — `Boundary.dedupIds` keeps the **last** occurrence, the
+   fork keeps the **first** — and adding a third reading in a step that cannot
+   exercise it would be AGENTS §5.3's defect, not a fix.
+3. **What it costs.** A `plan_tail_drop` proved over a list with repeats is
+   proved about a different object than the fork's `assigned_from`, and the
+   882-line proptest compares against the fork's.
+4. **When it clears.** In **P5**, where Blocks are placed and a split item is
+   representable, or in **G2** if G2 gets there first — with **one** dedup in the
+   kernel, `first` semantics, and `Boundary.dedupIds` either moved to it or
+   explicitly kept apart with the reason written down.
+
+#### Gap 346 (new; label W14P1-b) — nothing enforces that a request's walls are its plan's
+
+1. **What is not done.** `PlanReq` carries a `WfPlan` *and* a `Look.Input`, and
+   the `Look.Input` carries the wall index; the type does not say they agree, so
+   a request can name a wall no item in its plan writes. `PlanReq.wallsAgree` is
+   defined and is a **hypothesis** of `plan_never_moves_a_wall`, not an invariant.
+2. **Why not now.** `PlanReq` has **no decoder at all** — P0 deliberately left the
+   wire alone, and this step did too, so `Boundary.lean` is untouched and cannot
+   collide with a K-track worktree. The boundary already establishes exactly this
+   shape for the *capacity* request (`Boundary.readCapacity_ok`'s
+   `c.input.walls = wallIndex c.input.tz c.input.day.cut.blockMin plan`), so the
+   pattern is known and is the decoder's to apply, not the type's to assume.
+3. **What it costs.** Every law that crosses from a wall row back to the item it
+   is written on carries a hypothesis a caller must discharge, and there is no
+   caller yet to discharge it.
+4. **When it clears.** In the step that gives `PlanReq` its decoder (the wire is
+   design §10.1's, and no P-row owns it yet — **it should be named in one**),
+   where `wallsAgree` becomes a refusal by name (R10, AGENTS §5.7) and the laws
+   drop the hypothesis.
+
+#### Gap 347 (new; label W14P1-c) — design §6.4's P1 row promises a discharge P1 cannot honestly make
+
+1. **What is not done.** `plan_places_no_block_over_a_wall` is **not** discharged.
+   Design §6.4's table says it becomes provable after P1; it becomes *vacuous*
+   after P1, because step 1 places no Block of its own and the only Blocks in the
+   day are the replayed past's, which no planner rule is about.
+2. **Why not now.** AGENTS §5.2. A discharge here would be a theorem that
+   compiles and means nothing, and check 7 would go down while nothing became
+   true — §3.2 names that as the worst thing that can be done to `Goals.lean`.
+3. **What it costs.** The burn-down moves **13 → 12** where §14.2's P1 row says
+   13 → 11, so a reader tracking the row's own number will find one missing.
+   Design §14.2 and §6.4 both need the correction.
+4. **When it clears.** At **P5**, where Blocks are assigned. The tripwire
+   `the_day_assigns_nothing_after_now_until_the_assign_step_lands` is audited and
+   must be deleted there; the invariant the goal needs is already stage 5's
+   (`Look.day0_slots_avoid_the_walls`), so the discharge is the reflection step
+   and not a new induction.
+
+#### Gap 348 (new; label W14P1-d) — no `PlanReq` can be built inside `Planner.lean`, so the wall laws have no end-to-end witness
+
+1. **What is not done.** The refutation and the restatement are proved over
+   `wallRows` and over `dayPlan` respectively, and the non-vacuity witnesses
+   (`the_spec_days_walls_are_placed_where_they_are_written`,
+   `the_spec_days_clash_is_named_once`) are `decide` over the **rule**. There is
+   no witness that says "here is a request whose `dayPlan` contains this row".
+2. **Why not now.** A `PlanReq` needs a `WfPlan` and a `Seal.Run`. The only
+   `WfPlan` constructors are `Boundary.loadPlan`'s, and `Planner.lean` does not
+   import `Boundary.lean` — deliberately (gap 346 item 2). Putting the witness in
+   `Boundary.lean` would touch the one file design §19 item 6 warns two tracks
+   about; putting it in a new module that imports both is the right move and is a
+   module this step did not need for anything else.
+3. **What it costs.** `plan_never_moves_a_wall`'s hypotheses are satisfiable by
+   construction (`the_spec_days_walls_are_placed_where_they_are_written` shows the
+   row, `Boundary.the_look_wall_calendar_indexes_one_wednesday_wall` shows the
+   index, `readCapacity_ok` shows `wallsAgree`) but no single theorem satisfies
+   them **together**. That is exactly the gap between "each part is real" and
+   "the conjunction fires" that `shapeWfFor .calendar` hid for a whole stage.
+4. **When it clears.** In the step that gives `PlanReq` its decoder (gap 346), or
+   in a small `PlannerWit.lean` importing `Boundary` and `Planner` — whichever
+   comes first. It should be one of them and not both.
+
+#### Gap 349 (new; label W14P1-e) — a recurring wall is placed from its written `at:`, not from its instance window
+
+1. **What is not done.** Fork `collect_walls` iterates **candidates** and uses
+   `c.window` — the recurrence instance's own span — when it has one, falling back
+   to `effective_shape` otherwise (`planner.rs:1161-1172`). The kernel's
+   `Look.wallIndex` iterates the **store** and only ever reads `effectiveShape`.
+   So a recurring Interval instance whose occurrence is not its written one is
+   placed at the written one.
+2. **Why not now.** `c.window` is the recurrence family's, which is **K3** (F2),
+   and K3 did not land — track K's own block says so. Deriving an instance window
+   inside P1 would be a second reader of the recurrence, which is the class D27
+   exists to end.
+3. **What it costs.** Every wall in the fixture corpus is a plain `at:` interval,
+   so nothing measurable moves today; a `every:1w at:…` calendar item would be
+   placed on the wrong week the moment the planner is wired up.
+4. **When it clears.** With **K3**, where the instance window becomes the
+   kernel's. `wallOfEntity` is the one place to change and it already has the
+   entity and the id in scope.
+
+#### Gap 350 (new; label W14P1-f) — P2 (routines) and P3 (slots) did not land, and P2 cannot land before K3
+
+1. **What is not done.** §8.2 **step 2** (routines: mandatory placement, `pref:`
+   anchors, deferral, sleep and wind-down) and **step 3** (the slot cut and the
+   energy filter) are not built. `plan_places_no_demanding_block_after_wind_down`,
+   `plan_places_no_block_over_a_break` and `plan_reserves_one_block_at_a_time`
+   stand in `Goals.lean`. Gap **285** — `tm plan` schedules a routine whose
+   declared window is malformed instead of refusing it — is **not** closed, and
+   design §16's P2 cheats are not written.
+2. **Why not now.** Design §14.2's own P2 row says P2 depends on **P1 and K3**,
+   and **K3 is not in the tree** — track K landed the call-count instrument and
+   refused K3/K4, with gap **301** giving the reason: `Line.lean`'s `parseBody`
+   requires `- [<glyph>]` and `parseToks` answers `PErr.noId`, so **every line of
+   `routines.md` and `optional.md` loads as prose** and `PlanCore.store` holds no
+   entity for any of them. A routines step would therefore have had nothing to
+   place: there is no `Entity`, no `win:` to read, and no id to key an instance
+   by. Gap 285's fix has the same blocker — the kernel cannot refuse a malformed
+   routine window it cannot parse — and W-13 left it for P2 precisely so the host
+   would not get a second definition of the rule. P3's cut is stage 5's
+   (`Look.day0Cut` already cuts today around the walls with `rests = []`); what P3
+   adds is the **placed routines as rests**, which is P2's output. Building P3
+   against `rests = []` would have frozen the cut around a caller P2 must change.
+3. **What it costs.** The stage's largest row, P5, is three steps away rather than
+   one, and gap 285 stands for another run: two verbs still disagree with
+   `tm check` about whether a plan is loadable, and the one that disagrees is the
+   one the user reads every morning.
+4. **When it clears.** **K3a** (the grammar: the state box and the title key
+   together, one commit, gap 301's 270 declarations re-proved and not weakened —
+   D19, D5), then **K3b** (the recurrence family), then P2, then P3. Gap **340**
+   already says K must be **re-priced before it is scheduled**; this gap is the
+   track-P consequence of that and does not change the order.
+
+**Highest on this branch:** gap **350**, cheat **162**, parity **P37**.
+
+### What this step did NOT do, by name
+
+* **P2 and P3** — gap 350, with the dependency that blocks P2 and the reason P3
+  should not be half-built ahead of it.
+* **`open_block_segment`** (fork `planner.rs:2002`) — the stretch of the running
+  block that has already happened, which `emit_segments` puts between the past
+  half and the Active reservation. It is not in `pastRows`: it reads
+  `replay.open_block`, and the Active reservation it belongs beside is §8.2
+  choice 5b's, which is **P5's**. Landing half of that pair here would have
+  frozen the `open` flag around one caller.
+* **No wire, and no `Boundary.lean`.** `PlanReq` still has no decoder, the request
+  gains no section, and the planner is unreachable from the shipped binary. Gap
+  346, and it is why the behaviour table above has one row and it says
+  "unchanged".
+* **No `Emit.lean`, no row renderer, no plan hash.** D30 Q5/Q6 are P8's;
+  `the_plan_hash_is_a_placeholder_until_the_emitter_lands` still stands.
+* **`plan_places_no_block_over_a_wall` NOT discharged** — gap 347, deliberately,
+  and the burn-down says 12 and not 11 because of it.
+* **`edfNumbers` stays provisional** in `Goals.lean`; design §5.5 gives it to
+  **P4**, and check 7 counts `theorem`s and not `def`s, so the burn-down will not
+  move on the day it goes.
+* **The fork oracle was not rebuilt and the `TM_ORACLE` census was not re-run.**
+  Said plainly: this step changes no shipped-path byte (no caller), both
+  fork-anchored arms are frozen against `fork-4748911-*.jsonl` inside
+  `cargo test --workspace`, and both ran green with their denominators printed
+  above — those are the arms that would have caught a change.
+* **Stage 5's residue** stands as §8.3 names it: **94, 98, 113, 114, 116, 132,
+  133, 139, 143, 150, 151, 152, 160, 170, 180, 181, 182, 190, 200, 201, 226**,
+  with the performance levers (**121, 122, 123, 126, 127**, 143) unstarted on
+  purpose (D25). The seam's **260** and **262**, **275-279**, **285**, **300**,
+  **301**, **320-323** and **340** stand as written.
+* **The §5.13 human drives** of the stage-3, stage-4 and stage-5 binaries, with
+  the TUI half of the switch's drive (**gap 182**). No agent can perform them.
+
+### Method disclosure
+
+Every `lake`, `lean`, `cargo`, `check.sh` and `tm` invocation ran under
+`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet`; the two
+new `decide` witnesses and `Negative.lean`'s two new cheats were probed at
+`MemoryMax=8G` and the whole library was built once at 8G to confirm it. No bound
+was raised and nothing was retried uncapped. `cli_latency` was run **three
+times** and every noisy row is reported as its three readings. The first
+`check.sh` timing set was taken while the machine was at load average 15-17 and
+is **discarded and said so**, not averaged in.

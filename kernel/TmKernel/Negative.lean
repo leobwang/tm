@@ -1963,4 +1963,49 @@ def seventeenIds : List Id :=
 
 theorem aBatchOfSeventeenIsAccepted : (Planner.mkBatch? seventeenIds).isSome = true := by decide
 
+-- ===========================================================================
+-- APPENDED 2026-09-17 (stage 6, run W-14, track P step P1 — the walls;
+-- design §16's two P1 cheats).  Numbered from the end of this file (§6.2).
+-- ===========================================================================
+
+/-- The §4.3 meeting as `wallIndex` lists it, with an hour of `buffer:` in front:
+   blocked from 11:50, the event 12:50-13:50, on one day. -/
+def aBufferedWall : Look.WallIx :=
+  ⟨['g','1'], 739865, 739865, 42600, 46200, 49800⟩
+
+/-- The same day's second meeting, overlapping it: 13:30-14:30. -/
+def anOverlappingWall : Look.WallIx :=
+  ⟨['g','2'], 739865, 739865, 48600, 48600, 52200⟩
+
+/- CHEAT 161 — a wall placed where there was room.  §8.2 step 1 places an
+   Interval instance EXACTLY where it is written; `Planner.wallRows` reads both
+   ends off the index and contributes neither.  A planner that treated a wall as
+   something to fit — first free position, same duration — is what
+   `plan_never_moves_a_wall` exists to rule out, and it is what
+   `horizon.rs`-shaped code does with everything else.  `decide` refuses the
+   claim that the two agree. -/
+def wallRowsAtTheFirstFreePosition (dayLo : Nat) (x : Look.WallIx) : List Planner.Seg :=
+  [{ start := dayLo, stop := dayLo + (x.hi - x.evLo), kind := Planner.SegKind.wall,
+     energy := none, item := some x.id, inst := none, flags := {}, planned := none,
+     mult := none, note := none }]
+
+theorem aWallPlacedWhereThereWasRoom :
+    wallRowsAtTheFirstFreePosition 39600 aBufferedWall = Planner.wallRows false aBufferedWall := by
+  decide
+
+/- CHEAT 162 — an overlap filled.  §8.2 step 1: overlapping walls are reported
+   pairwise in `diagnostics.conflicts`, the planner "does not resolve them", and
+   BOTH stay blocked so nothing is placed in the overlap.  Shunting the later
+   wall to the end of the earlier one fills the overlap and makes the conflict
+   disappear — the failure that looks like success, because the report goes
+   quiet.  `decide` refuses the claim that the resolved pair reports what the
+   written pair reports. -/
+def resolveOverlap (a b : Look.WallIx) : Look.WallIx :=
+  if b.evLo < a.hi ∧ a.evLo < b.hi then { b with lo := a.hi, evLo := a.hi } else b
+
+theorem anOverlapFilled :
+    Planner.wallConflicts [aBufferedWall, resolveOverlap aBufferedWall anOverlappingWall]
+      = Planner.wallConflicts [aBufferedWall, anOverlappingWall] := by
+  decide
+
 end Tm
