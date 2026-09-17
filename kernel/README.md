@@ -26668,7 +26668,7 @@ the shipped path.
 
 | measurement | value | comparand |
 |---|---|---|
-| `check.sh`, built tree | **7/7 ok**, **3.16 / 3.20 s** warm (4.19 s cold), peak RSS **1.96-2.05 GiB** | W-13's L9 block: 3.15 / 3.10 / 3.15 s. **+1.6% at worst — inside the 10%-per-step rule** |
+| `check.sh`, built tree | **7/7 ok**, **3.16 / 3.20 s** warm (4.19 s cold), peak RSS **1.89 / 1.91 / 1.95 GiB** (1,977,044 / 2,001,712 / 2,048,096 KiB) | W-13's L9 block: 3.15 / 3.10 / 3.15 s, peak RSS 1.95 GiB. **+1.6% at worst — inside the 10%-per-step rule**, RSS flat |
 | axiom audit | **3,993 theorems** | 3,993 at `c754cce`. **Unchanged** — no Lean file touched |
 | burn-down | **13**, all stage 6 | unchanged |
 | corpus | **29/37 files and 4/5 whole plans** | unchanged |
@@ -26678,7 +26678,7 @@ the shipped path.
 | the door suite `kernel_log_door` | **23 passed / 0 failed**, 1.66 s | 23 |
 | `cli_switch_acceptance --include-ignored` | **9 passed / 0 failed** | 9 |
 | `cli_check_log` | **9 / 0** | 9 |
-| `kernel_lookahead_parity` | **4 / 0**, 0.74 s — 92 day-0 comparisons, 0 disagreements | 4 |
+| `kernel_lookahead_parity` | **4 / 0**, 0.73-0.74 s — **92** day-0 comparisons (64 generated + 28 corpus) and **543 candidates, 360 entered the pass**, 0 disagreements | 4, and the same denominators. This is the arm that would catch a candidate fact changing hands, and it is why gap 301 is a finding rather than a guess |
 | `kernel_call_counts` | **2 passed / 0 failed** | **1**. **+1**, the capacity-verb table |
 | per-verb `log` **sections** (the corrected column) | `arrive` **5**, `energy` **5**, `review day` **2**; `wake` 3, `start` 3, `pause` 3, `done` 3, `drop` 3, `break` 2, `undo` 2, `log` 2, `check` 2 | 4, 4, 1 and the same nine. The three that moved are the three that compute capacity |
 | per-verb `capacity` sections | `arrive` 1, `energy` 1, `review day` 1, the other nine **0** | never pinned before |
