@@ -25119,3 +25119,267 @@ Unchanged from §8.3's list, plus the five this run put back on it: **93**, **94
 stage-3, stage-4 and stage-5 binaries are still owed, and no agent can perform
 them. **Nothing in this repair was left half-done**; the repair step's range
 235-244 has 241-244 unused.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-16: stage 6, run W-13 (track A, the design) — the stage-6
+     step plan, written and committed as
+     `kernel/design/stage6/stage6-planner-design.md`.  **No Lean, no Rust and no
+     fixture was edited**: audit 3,946 theorems, cheats 157, highest parity P36
+     with none taken, burn-down 13 and every one stage 6's, all unchanged.  The
+     document takes gaps **250-257** and leaves **258-259** free; **241-249 stay
+     unallocated** (241-244 inside W-12's repair range, 245-249 never issued).
+     Its §4 holds **eight owner questions**, in the shape the D9/D10 design's §4
+     held nine that became D11-D18, and §22 is the empty table they are answered
+     into.  Five of its eight findings contradict a document in the repo; each
+     one was checked in the committed tree before it was written down.
+     =========================================================================== -->
+
+## Stage 6, W-13 (track A), 2026-09-16: the planner's step plan, its eleven checkers, and the questions only the owner can settle
+
+**What landed.** One file, `kernel/design/stage6/stage6-planner-design.md` (1,346
+lines), plus this block. Stage 5 succeeded because a design with a numbered step
+plan and an explicit list of owner questions came first —
+`kernel/design/stage5/stage5-D9-D10-design.md` drove twelve runs and its §22
+became D11-D18 — and this document is built to be used the same way: §14.0 is
+the rules-before-any-step list, §14.1-§14.4 are the four tracks as tables with
+dependencies, files, goals, acceptance and cost, §14.5 is the dependency graph,
+§15 is the `Goals.lean` signature list, and §22 is the empty owner-answer table.
+
+**Nothing was built.** This step was scoped to write the design and not to start
+the planner, and it did not: `Planner.lean` and `Emit.lean` do not exist, the
+seam was not touched (it is track B's), and the thirteen `Goals.lean` goals are
+untouched.
+
+### 1. The five findings that contradict a document in the repo
+
+Each was checked in the committed tree at `0585e72` before it was written, and
+each has a gap number below.
+
+1. **The seam blocks the planner, not only L9 (gap 255).** D24 opens gap 210's
+   seam for L9's day 0, and the README's own list says "three steps pay for it
+   once" (L9, F2, F3). It is **four**. The fork's `plan()` returns *the whole
+   day, past and future*, and its past half is `Planner::past_segments()` —
+   the day's segments replayed from the log
+   (`tm-core/src/planner.rs:2034`, and the module header at line 28: "segments
+   that ended before `now` are replayed from the log, so a replan never
+   rewrites them"). A kernel `dayPlan` that cannot reach the replay cannot
+   produce the past half, so it cannot produce the day file's rows, so §8.4
+   item 3 — the architecture row that kills G1 — cannot land either. **K1 is
+   therefore the stage's first commit, not merely L9's.**
+2. **Five of the thirteen stage-6 goals are FALSE AS WRITTEN against the fork,
+   and two more are true only by accident (gap 251).**
+   `tm/tests/planner_invariants.rs`'s own header (lines 16-39) says so in
+   prose: the running block is excepted from overbooking ("§9 gives it its
+   minutes whatever the budget says"); the running block and the running
+   interruption **grow** rather than move, so a segment with `end ≤ now` is
+   present but not equal after a replan; and every comparison between two
+   candidates has to be restricted to "the candidates the rule is written
+   about", because §8.2 step 5 skips a `loc:`-constrained, `atomic` or
+   `max:`-capped item for reasons no §8.3 invariant is about. The design's §6.3
+   is the table: `plan_does_not_overbook`, `plan_is_stable_across_a_replan`,
+   `plan_is_monotone_in_rank`, `plan_puts_hot_before_the_queue`,
+   `plan_never_drops_an_impossible_item` and
+   `plan_never_batches_past_an_equal_ci_candidate` are restated, each with its
+   refutation in the same commit (the E7 shape), and
+   `plan_respects_the_energy_filter` gains the hypothesis that makes it say
+   what it means rather than being true by luck.
+3. **"F3" names two different things and §8.4 cites both (gap 252).**
+   `PLAN-lean-kernel.md` §4 line 823: `F3 | close day replaced a written review
+   with "review pending" | P | needs generated-block ownership — arrives at
+   stage 6`. A **defect**. `kernel/design/stage5/stage5-D9-D10-design.md`
+   §14.7: `F3 | priority rule inputs … block_minutes_on moves into the kernel`.
+   A **build step**. AGENTS §8.4 cites the design's F3 in its inherited list and
+   PLAN's F3 in its named traps. The design calls them **F3-rule** (build step
+   K4) and **F3-review** (build step P8) and never "F3" alone.
+4. **The one-renderer acceptance is not satisfiable literally (gap 254).** §8.4
+   asks for "the day section byte-identical across the file, `tm now`, `tm tui`
+   and `tm plan --json`". `tm now` prints the current block and the next three
+   with its own format string (`emit::render_now_with`, `tm-core/src/emit.rs:1512`);
+   the day file prints the day; and the TUI pane's width is a `Layout`
+   parameter. The design's **Q5** offers the reading that is buildable — one
+   row renderer, every surface's rows byte-equal to it, `tm now`'s rows a
+   contiguous sub-list — and asks the owner to confirm it, so the acceptance is
+   not read literally later and declared unmet.
+5. **§8.4's price is "3-4 wk" against ≈ 5,360 definition and ≈ 21,350 proof
+   lines (gap 250).** That is 82% of stage 5's definitions and 90% of its
+   proofs, and the plan called stage 5 "3-4 weeks" too. The estimating method
+   is the one that priced D9+D10 at 6,550 / 23,300 against an actual
+   6,534 / 23,611 — within 0.3% and 1.3%. **Q1** asks the owner to confirm or
+   narrow, with four costed levers.
+
+Three smaller ones: **gap 253** (§8.4 cites `tm-core/tests/planner_invariants.rs`;
+the file is `tm/tests/planner_invariants.rs`, 882 lines, 256 cases, and it runs
+in the workspace suite), **gap 256** (`Goals.lean`'s provisional `Seg` uses
+minutes since midnight while `Look.Slot` uses absolute seconds — two
+representations of an instant, which is §5.3's class, and the goal
+`plan_never_moves_a_wall` already records the defect it causes), and **gap 257**
+(nothing in the tree measures a TUI replan through the FFI, so §9.1's 5 ms
+trigger has no instrument; the 0.8 ms figure is the FFI spike's, not this
+kernel's).
+
+### 2. What the design says, in six sentences
+
+- **The eight steps become four tracks**: **K** (the seam, L9, F2, F3-rule),
+  **P** (P0 vocabulary, then walls, routines, slots, priority, assign, deferred
+  routines, rest, emit), **G** (the lift, L24, L25) and **R** (the one-renderer
+  test, the proptest through the FFI, `planner.rs`'s retirement). §14.5 is the
+  graph; P0 needs only two owner answers, so track P starts the day they arrive.
+- **Stage 5's names are reused and never rewritten** (§1, five tables, 42 rows,
+  the consuming step named for each): `Look.windowEnd`, `windowOn`,
+  `budgetOf`, `wallIndex`/`wallsOn`, `freeIntervals`, `cutSlots`, `hsw100`,
+  `predictAt`, `capForLocation`, `energize`, `limitSlots`, `Arith.ramp`,
+  `posteriorNum`, `energyAfter`, plus the EDF pass, the priority rule, the
+  hysteresis and the candidate machinery. **A second copy of any of them is a
+  defect (AGENTS §5.3)**, and the design says so in those words.
+- **L26's eleven are one `Check` battery, one `planOk`, and one lift.** The
+  checkers are cheap; the lift — `dayPlan_ok : ∀ r, planOk r (dayPlan r) = true`
+  — is a fold induction carrying eleven invariants through eight steps and is
+  **≈ 4,500 proof lines, a quarter of the stage**. §8.4 calls the eleven "cheap"
+  and is right about the checkers and silent about the lift.
+- **L24 and L25 are PROVED (D5, which supersedes §8.4's older "leave them to the
+  proptest" prose)**, priced at ≈ 3,000 proof lines and 15-23 agent-days
+  together. L25 is cheaper than it looks because the fork's past half is not
+  planned; L24 is dearer than `Goals.lean` suggests because the Active item
+  breaks the prefix property outright.
+- **`Emit.lean` owns what the day section says; one Rust function owns how wide
+  it is** — G1's verdict is `A` ("the kernel owns the generated blocks") and
+  G6's is `M` (`pad`/`truncate` "stays in the TUI"), and Q6 reconciles them.
+  `emit::render_now_with` and `tui/today.rs::seg_title` are the two renderers
+  that die; the day bar and the SVG stay Rust.
+- **§9 splits**: the facts (the running block, the interrupt wall, the
+  posterior, the window) are `dayPlan` inputs and stage 6's; the prompts and
+  their timers stay Rust; §9.1's "→ drops: …" consequence is `dayPlan` run twice
+  and diffed, which closes **gap 114**. §11's table assigns all thirteen rows.
+  **Gap 116 is not closed by that table** and the design says so rather than
+  letting it look closed.
+
+### 3. The eight owner questions (design §4; §22 is the empty answer table)
+
+| # | question | recommendation | blocks |
+|---|---|---|---|
+| **Q1** | the price: confirm ≈ 5,360 / ≈ 21,350 lines and 121-167 agent-days, or narrow | (a) confirm, two parallel tracks (D11's shape) | scheduling |
+| **Q2** | does the kernel collect candidates, or does the host keep sending them (gap 113)? | (a) the kernel collects — the cheap option contradicts §5.3 | P4 |
+| **Q3** | are the eleven single-run laws **proved** (`∀ r`) or **checked-and-refused** (a named refusal)? | (a) prove; (c) is the pre-priced fallback, and the two are exclusive | **P0** |
+| **Q4** | `plan_tail_drop`'s Active exception: restate, or restrict to no-Active requests? | (a) restate over the list with the Active item erased | G2 |
+| **Q5** | what does "byte-identical across four surfaces" mean? | (a) one row renderer, rows byte-equal, `tm now` a sub-list | P8, R1 |
+| **Q6** | does the kernel emit padded text, or cells? | (a) cells; one Rust padder keeps G6's width table | P8 |
+| **Q7** | which rows of §9 are stage 6's? | (b) the facts and the consequence; the prompts stay Rust | **P0** |
+| **Q8** | what happens if §9.1's 5 ms TUI trigger fires? | (a) measure at P5, with the reload-only fallback pre-authorised | gates R3 |
+
+**Q3 is the largest.** `Goals.lean` states the eleven as `∀ (r : PlanReq), …`;
+§8.4's acceptance says "decidable-checked on **every plan the corpus
+produces**". Those are different claims and only one of them is in the
+burn-down. The design refuses to ship both a proved lift and a runtime gate,
+because a gate a proved lift makes unreachable is "a check no input can fail" —
+AGENTS §9.2's own disguised-gap list.
+
+### 4. Acceptance, re-measured at this commit
+
+Every command capped with
+`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet`.
+
+| measurement | value | comparand |
+|---|---|---|
+| `check.sh`, built tree | **7/7 ok**, **3.142 s** | 3.04 / 3.04 / 3.07 s at `c627148`; 3.35 / 3.09 / 3.09 at W-12 — **+2.4% on the recorded figure, inside the 10%-per-step rule, and this step edited no Lean** |
+| axiom audit | **3,946 theorems** | unchanged |
+| corpus round trip | **29/37 files and 4/5 whole plans** | unchanged |
+| burn-down | **13**, every one stage 6's | unchanged |
+| `cargo test --workspace` | **1,311 passed / 0 failed / 9 ignored across 78** result lines, exit 0 | **1,311 / 78** — the brief's comparand, matched exactly |
+| `tm/tests/planner_invariants.rs` | **882 lines, 256 cases**, runs in the workspace suite | §8.4's cited path is stale (gap 253) |
+
+T5, the door suite, `cli_switch_acceptance`, `cli_latency` and
+`kernel_call_counts` were **not** re-run, and neither was the FFI crate's
+`stack` binary: this step edits no Lean, no Rust, no fixture and no
+`Cargo.toml`, so nothing they measure can have moved. What did run covers the
+boundary anyway — `check.sh`'s check 5 is the FFI crate's `kernel` test (Rust →
+C shim → Lean) and its check 6 is the `corpus` test, so two of the FFI suite's
+three binaries passed inside the seven `ok` lines, and the full workspace suite
+passed at its expected 1,311 / 78. **That is a deliberate narrowing of the
+acceptance list for a docs-only commit, and it is recorded here rather than left
+to be noticed.**
+
+### 5. Sizes measured for the cost table
+
+| file | lines | what it means for stage 6 |
+|---|---:|---|
+| `tm-core/src/planner.rs` | **2,700** (2,673 code) | the eight steps, and its module header's **ten numbered choices** are the only complete statement of what the spec leaves open — §2 of the design tabulates them against the build step that owns each |
+| `tm-core/src/emit.rs` | **1,840** | the renderers; `render_plan_section` survives as the padder, `render_now_with` dies |
+| `tm-core/src/priority.rs` | **1,499** | §7; the rule and the hysteresis are already the kernel's, the candidate collection is not |
+| `tm-core/src/capacity.rs` | **1,012** (948 code) | already the kernel's since D10 |
+| `tm-core/src/review.rs` | **2,249** (2,156 code) | the review block's content moves in P8 (F3-review) |
+| `tm/src/cli/render.rs` | **117** | already delegates; `kind_name` dies |
+| `TmKernel/Lookahead.lean` | **4,752** | the eighteen reused names |
+
+### 6. Gaps opened (250-257; **258 and 259 free**)
+
+Each is in AGENTS §9.2's four-part form in design §20.
+
+| gap | what is not done | clears in |
+|---|---|---|
+| **250** | §8.4 prices stage 6 at "3-4 wk" against ≈ 5,360 / ≈ 21,350 lines and 121-167 agent-days | Q1, then AGENTS §10.2 |
+| **251** | five of the thirteen stage-6 goals are false as written against the fork; two more are true only by accident | P5, G2, G3 |
+| **252** | "F3" names a PLAN §4 defect and a design §14.7 build step; §8.4 cites both | this design; AGENTS §8.4 on the owner's word |
+| **253** | §8.4 cites `tm-core/tests/planner_invariants.rs`; the file is `tm/tests/planner_invariants.rs` | AGENTS §8.4's citation |
+| **254** | the four-surface byte-identity acceptance is not satisfiable literally | Q5, then P8/R1 |
+| **255** | the seam (gap 210) blocks the **planner**, not only L9 | K1 |
+| **256** | `Goals.lean`'s `Seg` uses minutes since midnight; `Look.Slot` uses absolute seconds | P0 |
+| **257** | nothing measures a TUI replan through the FFI, so §9.1's 5 ms trigger has no instrument | P5 (instrument), Q8 (decision) |
+
+### 7. Behaviour rows, parity, goals, theorems, cheats
+
+- **Behaviour rows:** **none taken.** The five stage 6 *will* owe are listed in
+  design §20 so they are not discovered one at a time.
+- **Parity:** **none taken.** P36 is still the highest and **P37 is still the
+  next free number**. Design §13 says to settle **gap 226** (the parity list has
+  no single home and no check, and P32 was issued twice) **before stage 6's
+  first entry**, because this stage will issue the largest tranche since stage
+  5.
+- **Goals:** none added, none discharged, none deleted. **Burn-down 13**, all
+  stage 6's, re-verified by reading `Goals.lean` and not by trusting check 7.
+- **Theorems:** none added; audit **3,946**.
+- **Cheats:** none added; highest **157**. Design §16 lists the eleven blocks
+  the stage owes, by step.
+
+### 8. What is owed, by name
+
+Unchanged from §8.3's list: **93**, **94**, **98**, **113**, **114**, **116**,
+**132**, **133**, **139**, **143**, **150**, **151**, **152**, **160**, **170**,
+**180**, **181**, **182**, **190**, **200**, **201**, **210**, **226**, plus the
+performance levers **121, 122, 123, 126, 127** and **143**, which D25 leaves
+unstarted on purpose. This step adds **250-257**. The **§5.13 human drives** of
+the stage-3, stage-4 and stage-5 binaries are still owed and **no agent can
+perform them** (gap 182); stage 6 will add a fourth, which design §19 risk 7
+names so the compounding is visible.
+
+**What this step did not do**, plainly: it wrote no `Planner.lean`, no
+`Emit.lean` and no seam, because the brief scoped it to the design and the
+design is what it committed. Nothing here is half-done and nothing is hidden.
+
+### Method disclosure
+
+Every command ran in `/home/leobwang/code/projects/tm` on `rebuild-on-lean`,
+capped as above. Every citation of a line number was taken from the committed
+tree at `0585e72` by `grep -n` or `sed -n`, not from memory: `planner.rs:2034`
+(`past_segments`), `emit.rs:1512` (`render_now_with`), `emit.rs:288-343` (the
+width table), `tui/today.rs:299` (`seg_title`), `store.rs:1993`
+(`RuntimeState`), `horizon.rs:194` (`REVIEW_PLACEHOLDER`), `review.rs:1147`
+(`render_day`), `tui/app.rs:845` (the TUI's timeline rows),
+`PLAN-lean-kernel.md:823` (F3 the defect) and `:832` (G1), and
+`planner_invariants.rs:16-39` (the exceptions). Two names the first draft cited
+did not exist and were corrected against the tree before committing:
+`Replay.InstKey` (instances are keyed by the `(item, inst)` pair
+`Replay.Facts.instances` holds) and the `§14.11` cross-reference (the cost table
+is `§14.7`). The cost table's four tranche rows were summed and the totals
+corrected twice. **No oracle was run and no parity claim is made**, because this
+step measures nothing new about the fork.
+
+### Numbers
+
+**Taken:** gaps **250-257** (**258 and 259 are free**; 241-249 remain
+unallocated). **Closed:** none. **Highest:** gap **257**, cheat **157**, parity
+**P36** (P37 free).
+
+**The diff:** 2 files — `kernel/design/stage6/stage6-planner-design.md` (new)
+and `kernel/README.md` (this block). No Lean, no Rust, no `Cargo.toml`, no
+`lean-toolchain`, nothing under `kernel/corpus/`, no fixture, no snapshot,
+nothing re-blessed.
