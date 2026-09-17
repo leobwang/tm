@@ -1073,13 +1073,14 @@ appears — and it is already spent.
 
 ### 14.0 Before any step
 
-1. **Numbers.** **RE-MEASURED 2026-09-16 at the W-13 repair commit (gap 270).** Highest **gap
-   294**, highest **cheat 158**, highest **parity P37** (P38 free). *(This item read "At `0585e72`:
-   highest gap 240, highest cheat 157, highest parity P36 (P37 free)" for one run after it was
-   written, which is exactly the staleness §5.11 warns about — the numbers below moved under it.)*
+1. **Numbers.** **RE-MEASURED 2026-09-16 at the W-13 repair commit (gap 270).** Highest gap
+   **TAKEN 285** (**286–294 reserved and free**), highest **cheat 158**, highest **parity P37**
+   (P38 free). *(This item read "At `0585e72`: highest gap 240, highest cheat 157, highest parity
+   P36 (P37 free)" for one run after it was written, which is exactly the staleness §5.11 warns
+   about — the numbers below moved under it.)*
    This design took gaps **250–257** (§20); **258 and 259 are free**. The W-13 campaign then took
    **260–269** (seam), **270–274** (merge), **275–284** (L9; 280–284 free) and **285–294** (this
-   repair; 291–294 free). Gaps **241–244** were left unused inside W-12's repair range (that
+   repair; **only 285 is used, 286–294 free**). Gaps **241–244** were left unused inside W-12's repair range (that
    block's closing line) and **245–249** were never allocated — **do not reuse any of them without
    checking the README's newest block**. Before each commit, re-read the README's newest block; if
    a parallel track took numbers meanwhile, renumber **before** committing, never after (AGENTS
