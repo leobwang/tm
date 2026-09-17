@@ -2008,4 +2008,44 @@ theorem anOverlapFilled :
       = Planner.wallConflicts [aBufferedWall, anOverlappingWall] := by
   decide
 
+-- ===========================================================================
+-- APPENDED 2026-09-17 (stage 6, run W-14, track G — L26's eleven single-run
+-- laws as one checker battery, `PlanCheck.lean`, design §6).  Appended at the
+-- end (§6.2: append, never renumber).
+--
+-- **The labels start at 171, not 161, on purpose.**  Track P is running its
+-- planner steps in parallel on another branch (D26) and design §16 gives P1-P8
+-- two to three cheats each, so 161-170 is left to it.  A hole in the labels
+-- costs nothing; a duplicate label costs a merge-time renumber and leaves a
+-- wrong number in a commit message, which this campaign has paid for twice.
+-- ===========================================================================
+
+/- CHEAT 171 — the battery cannot refuse a day.  This is AGENTS §9.2's own
+   disguised gap, written out: *"a check no input can fail"*.  A checker battery
+   that is true of every `(r, d)` proves nothing about `dayPlan`, and the whole
+   value of `dayPlan_ok_core` rests on `planOkCore` being falsifiable.  It is —
+   `PlanCheck.planOkCore_can_fail` exhibits the day it refuses — so the claim
+   below does not close. -/
+theorem theBatteryCannotRefuseADay (r : Planner.PlanReq) (d : Planner.DayPlan) :
+    PlanCheck.planOkCore r d = true := by rfl
+
+/- CHEAT 172 — a block laid across a wall passes the wall check.  §8.3's "no
+   segment overlaps a Wall" is the law, and `PlanCheck.theBlockOverAWallDay`
+   puts an hour-long block at [0, 3600) under a wall at [1800, 5400).  The
+   checker answers `false` and the claim that it answers `true` does not close.
+   This is the pair to design §16's P1 cheat "an overlap filled": that one will
+   catch the *planner* placing it, this one catches the *checker* going
+   blind. -/
+theorem aBlockLaidAcrossAWallPassesTheWallCheck (r : Planner.PlanReq) :
+    PlanCheck.noBlockOverAWall r PlanCheck.theBlockOverAWallDay = true := by rfl
+
+/- CHEAT 173 — a kept reservation still leaves a prefix.  This is the belief
+   D29 corrects: §8.2 choice 5b reserves the running block BEFORE the budget is
+   consulted, so a candidate ranking ahead of it can leave the day while the
+   reservation stays, and the shorter assignment is then not a prefix of the
+   longer one.  `PlanCheck.a_kept_reservation_defeats_the_prefix_but_not_the_erasure`
+   proves both halves; this block asserts the half that is false. -/
+theorem aKeptReservationStillLeavesAPrefix (a x : Id) (hne : x ≠ a) :
+    ∃ n : Nat, ([a] : List Id) = ([x, a] : List Id).take n := ⟨1, by simp⟩
+
 end Tm

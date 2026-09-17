@@ -99,6 +99,19 @@ stage then has to fight.
 * **Stage 3's panic probe** — "returns `KernelFault`, not exit 0".  Every Lean
   function here is total by construction, so there is nothing to state on this
   side; the probe is a Rust test against the shim.
+* **§6.1's `dayPlan_ok` at its real eligibility** (stage 6, track G).  The
+  eleven checkers, their reflection lemmas, `planOk`, `checks_all` and the
+  eleven one-line bridges are built and proved in `PlanCheck.lean`, and the
+  **eligibility-free half of the lift is a theorem there**, not a goal:
+  `PlanCheck.dayPlan_ok_core`, re-proved at the W-14 land step over the day step
+  P1 produces and carrying the two hypotheses that day makes necessary (README
+  gap 385).  The other four checks compare
+  two candidates and have to be restricted to comparable ones (design §6.3),
+  and that predicate — `eligibleAt`, design §15 — is step **P5**'s.  Until it
+  exists the whole-battery lift is **not stateable**: `∀ el, planOk el r
+  (dayPlan r) = true` is the *unrestricted* claim §6.3 refutes, and `∃ el, …` is
+  satisfied by the predicate that answers `false`.  So it is here as prose and
+  not as a `sorry`, and the step that writes `eligibleAt` states it.
 * **§7.1's bin ladder is deliberately absent.**  Three of its four edges are
   halvings and the fourth is 1/10, so it does not derive; the only property it
   supports is antitonicity, and that is already proved
@@ -555,6 +568,18 @@ It becomes real at **P5**.  The tripwire that says so is
 `Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands`, which
 is audited in `Check.lean` and which P5 must delete; while it compiles, no goal
 below that quantifies over an assigned Block is worth discharging.
+
+**The machinery that will discharge them is already built** (track G,
+`PlanCheck.lean`, design §6): eleven decidable checkers, eleven reflection
+lemmas, `planOk`/`planOkCore`, `checks_all`, and one bridge per goal, so each
+discharge below is one line the day its step lands.  What landed with it is
+`PlanCheck.dayPlan_ok_core`, the lift over the seven eligibility-free checks,
+as a **theorem in a shipped module** rather than a goal — track G wrote it over
+P0's empty day, and this run's merge is where P1's own body had to re-prove it
+(README gap 385).  A goal below is still not dischargeable from it: seven of the
+eleven checks are vacuous over a day whose only rows are walls, the replayed
+past and the running interruption, and `dayPlan_ok_core` says exactly that much
+and no more.
 ############################################################################ -/
 
 open Planner
