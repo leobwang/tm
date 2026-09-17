@@ -99,6 +99,18 @@ stage then has to fight.
 * **Stage 3's panic probe** — "returns `KernelFault`, not exit 0".  Every Lean
   function here is total by construction, so there is nothing to state on this
   side; the probe is a Rust test against the shim.
+* **§6.1's `dayPlan_ok` at its real eligibility** (stage 6, track G).  The
+  eleven checkers, their reflection lemmas, `planOk`, `checks_all` and the
+  eleven one-line bridges are built and proved in `PlanCheck.lean`, and the
+  **eligibility-free half of the lift is a theorem there**, not a goal:
+  `PlanCheck.dayPlan_ok_core : ∀ r, planOkCore r (dayPlan r) = true`, which P1
+  cannot leave standing when it fills the day.  The other four checks compare
+  two candidates and have to be restricted to comparable ones (design §6.3),
+  and that predicate — `eligibleAt`, design §15 — is step **P5**'s.  Until it
+  exists the whole-battery lift is **not stateable**: `∀ el, planOk el r
+  (dayPlan r) = true` is the *unrestricted* claim §6.3 refutes, and `∃ el, …` is
+  satisfied by the predicate that answers `false`.  So it is here as prose and
+  not as a `sorry`, and the step that writes `eligibleAt` states it.
 * **§7.1's bin ladder is deliberately absent.**  Three of its four edges are
   halvings and the fourth is 1/10, so it does not derive; the only property it
   supports is antitonicity, and that is already proved
@@ -546,6 +558,16 @@ compiles, this file's count is the only honest reading of the stage.  Design
 §6.4 says which step makes each goal real: P1 the two wall laws, P2 wind-down,
 P3 the break and one-block laws, P5 the remaining six, G2 and G3 the two
 relational ones.
+
+**The machinery that will discharge them is already built** (track G,
+`PlanCheck.lean`, design §6): eleven decidable checkers, eleven reflection
+lemmas, `planOk`/`planOkCore`, `checks_all`, and one bridge per goal, so each
+discharge below is one line the day its step lands.  **Eleven of them could be
+written today and would be worth nothing**, for the reason in the paragraph
+above; that is why the count here is still thirteen.  What did land instead is
+`PlanCheck.dayPlan_ok_core`, the lift over the seven eligibility-free checks,
+as a **theorem in a shipped module** rather than a goal — so P1 cannot fill the
+day without re-proving it, which is a stronger obligation than a `sorry` here.
 ############################################################################ -/
 
 open Planner

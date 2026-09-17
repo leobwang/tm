@@ -4766,3 +4766,81 @@ open Tm
 #print axioms Tm.Planner.the_plan_hash_is_a_placeholder_until_the_emitter_lands
 #print axioms Tm.Planner.dayPlan_assigns_nothing_yet
 #print axioms Tm.Planner.dayPlan_spends_no_minutes_yet
+
+-- ===========================================================================
+-- APPENDED 2026-09-17 (stage 6, run **W-14**, track G — L26's eleven single-run
+-- laws as one checker battery: `PlanCheck.lean`, design §6).
+--
+-- Fifty-nine theorems: the eleven reflection lemmas and their per-element
+-- helpers, `checks_all` and the eleven one-line bridges a P step's discharge
+-- will be, the fold induction's base case, the eleven non-vacuity witnesses
+-- (AGENTS §5.2 — a battery that cannot refuse means nothing), and the list
+-- arithmetic D29's refutation will apply.
+--
+-- ONE of them is a TRIPWIRE and is meant to stop compiling: `dayPlan_ok_core`
+-- is §6.1's lift over the seven eligibility-free checks, and today its proof is
+-- `planOkCore_of_no_segments` applied to
+-- `Planner.the_day_has_no_segments_until_the_first_step_lands`.  P1 deletes
+-- that theorem; this proof then fails and the step that fills the day re-proves
+-- it carrying the seven invariants.  **No goal was discharged here** — see
+-- `Goals.lean`'s stage-6 header and `PlanCheck.lean`'s own.
+-- ===========================================================================
+#print axioms Tm.PlanCheck.withoutActive_segments
+#print axioms Tm.PlanCheck.noOverbook_iff
+#print axioms Tm.PlanCheck.oneBlockAtATime_iff
+#print axioms Tm.PlanCheck.energyOk_iff
+#print axioms Tm.PlanCheck.energyFilterOk_iff
+#print axioms Tm.PlanCheck.noBlockOverAWall_iff
+#print axioms Tm.PlanCheck.noBlockOverABreak_iff
+#print axioms Tm.PlanCheck.windDownOk_iff
+#print axioms Tm.PlanCheck.noDemandingAfterWindDown_iff
+#print axioms Tm.PlanCheck.wallUnmoved_iff
+#print axioms Tm.PlanCheck.wallsUnmoved_iff
+#print axioms Tm.PlanCheck.rankPairOk_iff
+#print axioms Tm.PlanCheck.hotPairOk_iff
+#print axioms Tm.PlanCheck.impossibleKept_iff
+#print axioms Tm.PlanCheck.batchPairOk_iff
+#print axioms Tm.PlanCheck.checksOf_length
+#print axioms Tm.PlanCheck.checksCore_length
+#print axioms Tm.PlanCheck.checks_all
+#print axioms Tm.PlanCheck.checksCore_all
+#print axioms Tm.PlanCheck.planOk_imp_core
+#print axioms Tm.PlanCheck.overbook_from_the_battery
+#print axioms Tm.PlanCheck.one_block_from_the_battery
+#print axioms Tm.PlanCheck.energy_filter_from_the_battery
+#print axioms Tm.PlanCheck.no_block_over_a_wall_from_the_battery
+#print axioms Tm.PlanCheck.no_block_over_a_break_from_the_battery
+#print axioms Tm.PlanCheck.wind_down_from_the_battery
+#print axioms Tm.PlanCheck.walls_unmoved_from_the_battery
+#print axioms Tm.PlanCheck.monotone_in_rank_from_the_battery
+#print axioms Tm.PlanCheck.hot_before_queue_from_the_battery
+#print axioms Tm.PlanCheck.impossible_kept_from_the_battery
+#print axioms Tm.PlanCheck.mem_dom_of_get
+#print axioms Tm.PlanCheck.assignedOf_of_no_segments
+#print axioms Tm.PlanCheck.eligibleSomewhere_of_no_segments
+#print axioms Tm.PlanCheck.planOkCore_of_no_segments
+#print axioms Tm.PlanCheck.planOk_of_no_segments
+#print axioms Tm.PlanCheck.dayPlan_ok_core
+#print axioms Tm.PlanCheck.dayPlan_ok_at_every_eligibility_while_the_day_is_empty
+#print axioms Tm.PlanCheck.all_eq_false_of_mem
+#print axioms Tm.PlanCheck.wSeg_wf
+#print axioms Tm.PlanCheck.wDay_segments
+#print axioms Tm.PlanCheck.effectiveCi_of_an_absent_id
+#print axioms Tm.PlanCheck.aBlockOfAnHour_is_not_the_reservation
+#print axioms Tm.PlanCheck.noOverbook_can_fail
+#print axioms Tm.PlanCheck.oneBlockAtATime_can_fail
+#print axioms Tm.PlanCheck.energyFilterOk_can_fail
+#print axioms Tm.PlanCheck.noBlockOverAWall_can_fail
+#print axioms Tm.PlanCheck.noBlockOverABreak_can_fail
+#print axioms Tm.PlanCheck.noDemandingAfterWindDown_can_fail
+#print axioms Tm.PlanCheck.wallsUnmoved_can_fail
+#print axioms Tm.PlanCheck.assignedOf_theOnlyJIsAssignedDay
+#print axioms Tm.PlanCheck.eligibleSomewhere_permissive
+#print axioms Tm.PlanCheck.monotoneInRank_can_fail
+#print axioms Tm.PlanCheck.hotBeforeQueue_can_fail
+#print axioms Tm.PlanCheck.assignedOf_theBatchDay
+#print axioms Tm.PlanCheck.batchDoesNotReachPast_can_fail
+#print axioms Tm.PlanCheck.impossibleKept_can_fail
+#print axioms Tm.PlanCheck.planOkCore_can_fail
+#print axioms Tm.PlanCheck.planOk_can_fail
+#print axioms Tm.PlanCheck.a_kept_reservation_defeats_the_prefix_but_not_the_erasure

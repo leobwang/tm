@@ -72,6 +72,7 @@ import TmKernel.Priority
 import TmKernel.Capacity
 import TmKernel.Lookahead
 import TmKernel.Planner
+import TmKernel.PlanCheck
 import TmKernel.Fast
 import TmKernel.Cmd
 import TmKernel.Close

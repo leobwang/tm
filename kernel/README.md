@@ -27358,3 +27358,385 @@ frozen against `fork-4748911-*.jsonl` inside `cargo test --workspace`, and both
 ran green with their denominators printed above — those are the arms that would
 have caught a change. The `w14-k` worktree was removed after the merge verified
 clean; `.claude/worktrees/stage5-lookahead` was left alone.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-17: stage 6 (the planner), run **W-14**, **track G** — the
+     checker battery design §6 specifies, built and proved on an isolated
+     worktree (`w14-g`, branched from the W-14 merge `fe6543d`).  Eleven
+     decidable checkers, eleven reflection lemmas, `planOk`, `checks_all`, the
+     eleven one-line bridges, the fold induction's base case, and **the
+     eligibility-free half of §6.1's lift as a theorem in a shipped module**.
+     **No goal was discharged and the burn-down is unchanged at 13 — on
+     purpose**; eleven of them could have been deleted today and would have been
+     worth nothing, and the block says so in its own section.  Track G's gap
+     range is **365-384**; it takes **365-368**, leaving **369-384 free**.
+     Cheats are **171-173**, offset from 161 on purpose (see below).  Every
+     figure below was re-measured on the worktree, each command capped at
+     MemoryMax=40G, MemorySwapMax=0.
+     =========================================================================== -->
+
+## Stage 6, W-14 track G, 2026-09-17: L26's eleven are one battery — and the lift's core half is a wall, not a goal
+
+**What landed.** One new Lean module, `kernel/TmKernel/TmKernel/PlanCheck.lean`
+(**989 lines: 52 definitions, 59 theorems**), its `import TmKernel.PlanCheck`
+line in `TmKernel.lean` **in the same commit** (§2.3), 59 `#print axioms` lines
+under a new `Check.lean` banner, three `Negative.lean` cheats, and two prose
+edits to `Goals.lean`. **No Rust, no wire change, no behaviour row, and nothing
+re-blessed.**
+
+### The step's four items, answered one at a time
+
+**1. The checker battery (design §6.1) — landed whole.** `CheckName` (eleven
+constructors), `Check`, the eleven checkers, `checksCore` / `checksEligible` /
+`checksOf`, `planOkCore` / `planOk`, `checks_all` and `checksCore_all`. Each
+checker has its **reflection lemma** and each goal has a **bridge** — the
+one-line discharge §6.1 item 3 describes, written once so the P step that owes
+it writes `<bridge> r (dayPlan r) (dayPlan_ok_core r) …` and nothing else.
+
+| § 8.3 goal | checker | reflection lemma | provable *now*? |
+|---|---|---|---|
+| overbook | `noOverbook` | `noOverbook_iff` | **yes** — restated around the Active reservation alone (design §6.3 row 1), which `Planner.RuntimeIn.activeId` already names |
+| one block | `oneBlockAtATime` | `oneBlockAtATime_iff` | **yes** |
+| energy filter | `energyFilterOk` | `energyOk_iff`, `energyFilterOk_iff` | **yes** — the `hactive` hypothesis §6.3 row 2 asks for is in the statement |
+| over a wall | `noBlockOverAWall` | `noBlockOverAWall_iff` | **yes** |
+| over a break | `noBlockOverABreak` | `noBlockOverABreak_iff` | **yes** |
+| wind-down | `noDemandingAfterWindDown` | `windDownOk_iff`, `noDemandingAfterWindDown_iff` | **yes** |
+| wall moved | `wallsUnmoved` | `wallUnmoved_iff`, `wallsUnmoved_iff` | **yes** |
+| rank | `monotoneInRank` | `rankPairOk_iff` | **built and proved; the *lift* waits on P5's `eligibleAt`** |
+| hot | `hotBeforeQueue` | `hotPairOk_iff` | same |
+| impossible | `impossibleKept` | `impossibleKept_iff` | same, **and** its bridge to §7.3's numbers waits on P4 (gap 367) |
+| batch | `batchDoesNotReachPast` | `batchPairOk_iff` | same |
+
+**Why the battery is parameterised, and why that is not a hedge.** Design §6.3
+found that four of the eleven have to be restricted to *comparable* candidates,
+and §15 gives that predicate — `eligibleAt` — to step **P5**, because §8.2 step
+5's assign fold is its first caller. So `PlanCheck` takes it as a parameter
+(`abbrev Eligible`). Writing a second copy here is the defect AGENTS §5.3 is
+named after: P5 needs the same predicate to *decide* assignment and the battery
+must check against the one the fold used. Writing a stub that answers `true` is
+AGENTS §9.2's *"a check no input can fail"*, and it would silently restore the
+four unrestricted forms §6.3 refutes. A parameter puts the dependency in the
+type, where `check.sh` and a reader can both see it. **Gap 365.**
+
+**2. `dayPlan_ok` — half proved, half not stateable, and the proved half is the
+more useful shape.**
+
+* `PlanCheck.dayPlan_ok_core (r : PlanReq) : planOkCore r (dayPlan r) = true` is
+  **proved**, in a shipped module, over the **seven** eligibility-free checks.
+  Today its proof is one line — `planOkCore_of_no_segments` applied to
+  `Planner.the_day_has_no_segments_until_the_first_step_lands` — because P0's
+  `dayPlan` places nothing. **That is the point.** P1 must delete that tripwire
+  when it fills the day, and this proof stops compiling on the same commit:
+  `check.sh` check 1 fails until P1 re-proves it carrying the seven invariants.
+  A `sorry` in `Goals.lean` is an obligation a step may not look at; a green
+  theorem in a shipped module is a build-time wall. That is AGENTS §3.1 item 1
+  — *"can a decidable check on the post-state establish it?"* — taken rather
+  than described.
+* **The whole-battery lift is NOT stated, because it is not stateable**, and
+  that is recorded in `Goals.lean`'s own "not stateable yet" list rather than as
+  a `sorry`. `∀ el, planOk el r (dayPlan r) = true` is the **unrestricted**
+  claim design §6.3 refutes; `∃ el, …` is satisfied by the predicate that
+  answers `false`. The honest form names `Planner.eligibleAt`, so the step that
+  writes it states the lift. `dayPlan_ok_at_every_eligibility_while_the_day_is_empty`
+  records the one reason the `∀ el` form holds today — the day is empty, so
+  nothing is eligible anywhere — under a name that cannot be misread.
+* **What was proved of the induction's skeleton:** its **base case**, twice
+  (`planOkCore_of_no_segments`, `planOk_of_no_segments`), plus the two lemmas it
+  rests on (`assignedOf_of_no_segments`, `eligibleSomewhere_of_no_segments`).
+  The eleven invariants' **step** cases are P1-P5's, because there are no steps
+  to induct over until `dayPlan` folds. Design §6.2's ≈ 4,500 proof lines are
+  for that fold; **none of them is claimed here**, and this step spent 989 lines
+  building the frame the fold will be proved inside.
+
+**3. NO GATE, and nothing moved toward one.** `dayPlan` keeps its total
+signature. There is no `dayPlan?`, no `PlanRefusal` and no `Except` anywhere in
+`PlanCheck.lean`; `Planner.PlanErr` gained no `planCheckFailed` constructor
+(P0's own doc comment already forbids it under D28). The battery is the object
+`dayPlan_ok` is proved **about**, never a runtime refusal.
+
+**4. D29 — REFUSED, by name, and here is exactly why.** The brief asks for
+`plan_tail_drop` restated with the Active item erased **and**
+`plan_tail_drop_as_stage_6_wrote_it_is_refuted` **with its witness**.
+`Planner.dayPlan_assigns_nothing_yet` says `assignedOf (dayPlan r) = []` for
+every request, so `∃ n, [] = [].take n` holds at `n = 0`: **the form stage 6
+wrote is TRUE of today's `dayPlan` and there is nothing to refute.**
+`Goals.lean`'s own doc comment on that goal says the same ("the witness needs a
+`dayPlan` that places something"). Shipping the restatement without its
+refutation is a weakening (AGENTS §3.1 item 3), so `plan_tail_drop` is left
+exactly as it stands and this is **gap 366**.
+
+What did land is the arithmetic the refutation and the restatement both apply,
+with the planner factored out:
+`a_kept_reservation_defeats_the_prefix_but_not_the_erasure (a x : Id) (hne : x ≠ a)`
+proves **both halves at once** — `¬ ∃ n, [a] = [x, a].take n` (a reservation
+kept while an earlier candidate drops is not a prefix: the as-written law's
+failure) and `∃ n, [a].erase a = ([x, a].erase a).take n` (it is a prefix again
+once the reservation is erased: D29's restatement). Cheat **173** asserts the
+false half from the other side. G2's remaining work is to instantiate this at a
+`dayPlan` that reserves and assigns.
+
+### The eleven goals could have been deleted today. They were not.
+
+This is the reportable decision of the step, so it is stated plainly rather than
+left to be inferred from an unchanged number.
+
+With `dayPlan_ok_core` proved and the eleven bridges written, discharging
+`plan_places_no_block_over_a_wall` and six others is **one line each**, right
+now, and check 7 would print **2 outstanding** by tonight. Every one of those
+discharges would be about a planner that places nothing. `Goals.lean`'s stage-6
+banner already forbids it — *"NO GOAL BELOW MAY BE DISCHARGED UNTIL ITS STEP HAS
+LANDED … a discharge taken today would be worth nothing"* — and AGENTS §9.2
+lists "a goal deleted from `Goals.lean` without a proof" as *the one way to make
+this document's headline measurement lie*. **The burn-down is 13, unchanged, and
+that is the honest reading.** Design §14.3's "burn-down 8 → 2" for G1 is still
+owed and still belongs to the step that makes `dayPlan` place something.
+
+`Goals.lean` gained two prose edits saying this, and no `theorem` and no `sorry`:
+the stage-6 banner now points at `PlanCheck.lean` and at `dayPlan_ok_core`, and
+the "not stateable yet" list gained the `eligibleAt` entry.
+
+### Non-vacuity (AGENTS §5.2) — every checker refuses something
+
+*"A check no input can fail"* is on §9.2's disguised-gap list, so the eleven
+carry witnesses: `noOverbook_can_fail`, `oneBlockAtATime_can_fail`,
+`energyFilterOk_can_fail`, `noBlockOverAWall_can_fail`,
+`noBlockOverABreak_can_fail`, `noDemandingAfterWindDown_can_fail`,
+`wallsUnmoved_can_fail`, `monotoneInRank_can_fail`, `hotBeforeQueue_can_fail`,
+`impossibleKept_can_fail`, `batchDoesNotReachPast_can_fail`, and the battery
+itself in `planOkCore_can_fail` and `planOk_can_fail`.
+
+Five refuse for **every** request. Six read the request's plan and carry
+hypotheses; each is satisfiable by an ordinary plan — an id the plan does not
+hold (`effectiveCi_of_an_absent_id` gives §3.1's default of three), an item with
+`ci:5`, an `at:` interval, two ranked siblings in one doc, a batch. The three
+that compare two candidates take the **permissive** eligibility
+(`fun _ _ _ _ => true`), which is precisely the form §6.3 refutes for a day that
+places anything — that is what the witness is for.
+
+**The witnesses add no `decide` and no `rfl` to §5.10a's budget.** `Seg.wf` is
+two `Nat` comparisons and `wSeg_wf` discharges them once with `omega`; the
+day-level facts are `rfl` on concrete records, not evaluation of a realistic
+input. **Zero new probed `decide` witnesses this step** (the budget is 20).
+
+### `Negative.lean` cheats 171-173, and why they do not start at 161
+
+* **171** — the battery cannot refuse a day (`planOkCore r d = true` for all
+  `r`, `d`): §9.2's own disguised gap, written out.
+* **172** — a block laid across a wall passes the wall check. The pair to design
+  §16's P1 cheat "an overlap filled": that one will catch the *planner* placing
+  it, this one catches the *checker* going blind.
+* **173** — a kept reservation still leaves a prefix: the belief D29 corrects.
+
+Each fails at a line of its own (`rfl` failed, `rfl` failed, unsolved goals),
+verified after the rebuild — the first run reported *unknown identifier*
+instead, because `TmKernel.olean` had not been rebuilt with the new import, and
+an error for the wrong reason still makes check 4 say `ok`. It was re-run.
+
+**The labels start at 171 deliberately.** Track P is running its planner steps
+in parallel on `rebuild-on-lean` under D26, and design §16 gives P1-P8 two to
+three cheats each, so **161-170 is left to it**. A hole in the labels costs
+nothing; a duplicate label costs a merge-time renumber and leaves a wrong number
+in a commit message, which this campaign has already paid for twice. If 161-170
+is still unused at the merge, the numbers stay as they are — §6.2 says append,
+never renumber.
+
+### D9-21, the recursion rule
+
+Every checker recurses over a list the wire can make large, and **each is core's
+`List.all` / `List.any` / `List.filter`** over `d.segments` (≤ 2 ×
+`Planner.maxCands`), `r.plan.val.store.dom`, a `BatchIds` (≤ 16) or a bounded
+diagnostic list. **No new recursion is written in this module**; there is no
+`foldl` of my own and no `@[csimp]` twin is owed, because nothing here is on the
+shipped path.
+
+Six of them are nested and therefore quadratic in their list —
+`noBlockOverAWall`, `noBlockOverABreak`, `noDemandingAfterWindDown` (segments ×
+segments), `monotoneInRank`, `hotBeforeQueue` (dom × dom) and
+`batchDoesNotReachPast` (segments × batch × dom). **That is a specification
+cost, not a latency one, and it is deliberately not a gap**: nothing evaluates
+`planOk` — D28 proves the eleven rather than gating on them, so the battery is
+the object a theorem is about and never a runtime check. A step that ever does
+run it owes the measurement; none is planned.
+
+### What was consumed rather than re-implemented (AGENTS §5.3)
+
+**CONSUMED, by name, and re-implemented NONE of them.** From P0's
+`Planner.lean`: `Seg`, `WfSeg`, `Seg.wf`, `Seg.minutes`, `Seg.items`, `SegKind`
+(all eleven), `SegFlags`, `BatchIds`, `Capped`/`IdList`, `Diagnostics`,
+`Diagnostics.empty`, `DayPlan`, `PlanHash.zero`, `PlanReq` and its views
+(`PlanReq.tz`, `PlanReq.plan`), `RuntimeIn`, **`RuntimeIn.activeId`** (the
+Active exception has one reader and this module uses it rather than re-deriving
+"is this the running block"), `assignedOf`, `segItems`, **`blockMinutes`** (the
+overbooking restatement hands it a *shorter segment list* through
+`withoutActive` rather than writing a second minute-sum), `maxCands`,
+`maxBatch`. From stage 5 and earlier: `Plan.effectiveCi`, `Plan.rootPrio`,
+`Plan.PlanCore`, `Store.get`/`Store.dom`/**`Store.domSpec`** (which is why
+`mem_dom_of_get` is three tokens and not a new invariant), `Field.Shape`,
+`Field.Flag`, `Field.DT`, `Cal.instantOf`, `Cal.Instant.wf`. **No window, no
+budget, no cut, no energy, no EDF number is computed anywhere in this module** —
+the battery reads the produced `DayPlan` and the request, which is what L26
+means by "decidable over the produced `DayPlan`".
+
+One near-miss worth naming: `impossibleKept` reads `Diagnostics.impossible` —
+the plan's own account of which items the day cannot fit — rather than calling
+`Goals.edfNumbers`, which is still provisional. That is the right reading of
+L26 and it is also **gap 367**: the bridge from `Diagnostics.impossible` to
+§7.3's `(need, avail)` is P4's, and until it lands the goal's own form is not
+reachable from this checker.
+
+### Numbers, all re-measured on the worktree
+
+**The box was not quiet.** Track P's session was running `planner_invariants` at
+**94% CPU** on the same machine throughout (load average 3.6-5.4), which is the
+cause of the elevated readings below; every noisy figure is given as all its
+readings, never as a single number (§5.11, gap 240).
+
+| measurement | this worktree | comparand (`fe6543d`, the W-14 merge), and what explains the delta |
+|---|---|---|
+| `check.sh` | **7/7 ok**; warm **3.07 / 3.14 / 3.23 / 3.25 / 3.31 / 3.33 / 3.65 s** (median **3.25**), peak RSS **1.92-1.97 GiB** (2,009,008-2,063,264 KiB) | merge block **3.06 / 3.09 / 3.05 s**, RSS 1.91-1.98 GiB. **Median +6.2%, inside the 10%-per-step rule.** Attributed: one more module in check 1's warm replay, three more cheats in check 4, and the contention above. **The 59 new audit lines are NOT the cause** — `lean Check.lean` timed directly with and without them is 0.31/0.32 s against 0.35/0.31 s, i.e. inside its own noise |
+| axiom audit, with check 3's §6.3 reconciliation | **4,107 theorems**, reconciliation `ok` | **4,048**. **+59, and every one is this module's** — 4,048 + 59 + 0 = 4,107, and check 3 names no missing theorem. The reconciliation was the point: 59 declared, 59 audited |
+| burn-down (check 7) | **13 outstanding, all stage 6** | 13. **Unchanged, and deliberately** — see the section above |
+| corpus round trip | **29/37 files and 4/5 whole plans** | unchanged |
+| `cargo test --workspace` | **1,313 passed / 0 failed / 9 ignored across 78 result lines**, exit 0 | **1,313 / 0 / 9 across 78**. **Identical — a Lean-only step must not move it**, and it did not |
+| FFI suite (`kernel/tm-kernel-ffi`) | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) | 100 |
+| **T5** `kernel_replay_parity -- --include-ignored` | **33 / 0 / 0**, 6.38 s | 33 |
+| the door `kernel_log_door` | **23 / 0**, 1.61 s | 23 |
+| `cli_switch_acceptance -- --include-ignored` | **9 / 0**, 1.33 s | 9 |
+| `kernel_call_counts` | **2 / 0**, 0.28 s | 2 |
+| `cli_check_log` | **9 / 0**, 0.97 s | 9 |
+| `kernel_lookahead_parity` | **4 / 0**, 0.74 s | 4 |
+| `the_frozen_comparand_is_read_at_full_precision` | **passes by name** | gap 235's tripwire; `serde_json`'s `float_roundtrip` pin untouched |
+| `cli_latency -- --include-ignored --test-threads=1` | **6 passed / 0 failed** | 6 |
+
+**T11, the rows — five readings of the 3-year-log test, the three noisy rows as
+ranges (gap 240).**
+
+| row | this worktree, five readings | band | verdict |
+|---|---|---|---|
+| **later verb, 3-year log — the reliable row** | 146.87 / **162.09** / **156.88** / 146.93 / 146.83 ms | 146.66-147.01 ms | **three of five inside; the two outside are the two heaviest-contention passes.** The last two readings, taken as the box quieted, are 146.83 and 146.93 — dead centre. **No shipped-path cost from this step, which is what a Lean-only step must show** |
+| reseal (`--now +1 day`) | 197.38 / 222.74 / 202.62 / 202.63 / 212.74 ms | 197.5-212.6 ms | noisy; three inside, 222.74 over and 197.38 0.12 ms under — both recorded rather than rounded in |
+| 3-day-old routine | 126.61 / 136.63 / 131.70 / 121.62 / 136.81 ms | 121.6-136.8 ms | inside, both edges touched; 136.81 is 0.01 ms over the top edge and is reported, not absorbed |
+| **`review week` (the `All` scope)** | 298.68 / 283.68 / 278.60 / 283.74 / 278.61 ms | 248.1-253.3 ms | **STILL OUTSIDE**, as it has been since L9 — **gap 275**, a capacity verb replaying the log twice. Untouched by this step and **the band is not re-blessed** |
+| first verb (genesis), 3-year log | 2.409 / 2.261 s, and 2.483 / 2.241 s on the `tm log` test | 2.15-2.48 s | inside except the 2.483 s pass, 3 ms over the top edge under contention |
+| `tm plan`, due 3 / 10 years out | 86.05 / 141.77 ms and 85.99 / 136.64 ms | `LATER_VERB` 1 s | inside |
+| 30-day-old hand undo | 1.508 / 1.499 s | — | as before |
+| 10 stalled days, worst | 567.2 / 587.7 ms, **0** checkpoint generations | — | as before, under contention |
+
+### Behaviour rows
+
+**None.** No shipped-path Rust, no wire value, no rendered text and no refusal
+changed. **No fixture, snapshot, corpus file or latency band was re-blessed.**
+
+### Parity
+
+**No parity entry is taken or owed.** Nothing in this module is compared against
+the fork: the battery is a statement about the kernel's own output, and the
+fork's planner has no corresponding object. Highest parity stays **P37**, P38
+free.
+
+### Gaps
+
+**Closed: none.** This step closes no gap of its own and says so — the battery
+is new machinery, not a repair.
+
+#### Gap 365 (new; label W14G-a) — four of the eleven checkers are parameterised because `eligibleAt` does not exist, so §6.1's whole-battery lift cannot be stated
+
+1. **What is not done.** `Planner.eligibleAt` — design §6.3's shared
+   restriction, §15's one-line `def`, step **P5**'s — is not written, so
+   `PlanCheck.checksEligible`, `planOk`, `monotoneInRank`, `hotBeforeQueue`,
+   `impossibleKept` and `batchDoesNotReachPast` all take an `Eligible`
+   parameter, and **`dayPlan_ok` in the form design §6.1 writes is not stated
+   anywhere**.
+2. **Why.** A stub here would be either a second copy of the predicate the
+   assign fold must use (AGENTS §5.3) or a check no input can fail (§9.2), and
+   the second is exactly the unrestricted form §6.3 refutes. `∀ el, …` is that
+   unrestricted claim and is false of any day that places two comparable
+   candidates; `∃ el, …` is satisfied by the predicate that answers `false`. So
+   the honest statement names `eligibleAt`, and it does not exist.
+3. **What it costs.** Four of the eleven reflection lemmas are proved but their
+   *bridges* are stated at a parameter, so a P step cannot yet apply them to
+   `dayPlan`; and the burn-down cannot fall below 7 even after the seven
+   eligibility-free invariants are established, because six of §6.4's goals are
+   in the restricted four's group.
+4. **When it clears.** **P5**, in the commit that writes `eligibleAt`: it states
+   `dayPlan_ok` at that predicate, `planOk Planner.eligibleAt` becomes the
+   battery's one instantiation, and the four bridges lose their parameter.
+
+#### Gap 366 (new; label W14G-b) — D29's restatement and its refutation are blocked on a `dayPlan` that places something
+
+1. **What is not done.** `plan_tail_drop` is **not** restated with the Active
+   item erased and `plan_tail_drop_as_stage_6_wrote_it_is_refuted` is **not**
+   shipped. Neither is `plan_is_stable_across_a_replan`'s restatement, its
+   refutation, or `an_open_segment_only_extends` (design §15, step G3) —
+   **gap 368** for that half.
+2. **Why.** `Planner.dayPlan_assigns_nothing_yet` proves
+   `assignedOf (dayPlan r) = []` for every request, so the form stage 6 wrote is
+   **true** at `n = 0` and a refutation of a true statement does not exist. A
+   restatement shipped without its refutation is a weakening (AGENTS §3.1
+   item 3), so neither half was taken.
+3. **What it costs.** L24 stays in `Goals.lean` in its false-against-the-fork
+   form, which is the state D29 was decided to end; anyone reading the goal
+   sees the correction only in its doc comment and in this block. Nothing is
+   *wrong* in the tree — the goal is a `sorry` — but the owner's D29 is not yet
+   discharged.
+4. **When it clears.** **G2**, after **P5**: the witness design §7.1 item 4
+   prices (an 8-`Entry` request with a running block and two candidates, one
+   ranking ahead of it) needs a fold that reserves and assigns.
+   `PlanCheck.a_kept_reservation_defeats_the_prefix_but_not_the_erasure` is the
+   lemma it will apply, proved here, so G2's remaining work is the
+   instantiation and not the argument.
+
+#### Gap 367 (new; label W14G-c) — `impossibleKept` is stated over `Diagnostics.impossible`, and the bridge to §7.3's EDF numbers is P4's
+
+1. **What is not done.** `plan_never_drops_an_impossible_item` is stated in
+   `Goals.lean` over `Goals.edfNumbers` — still a provisional `def … := sorry`
+   — while `PlanCheck.impossibleKept` is stated over
+   `DayPlan.diagnostics.impossible`, the plan's own `(id, shortfall)` list. The
+   theorem joining them does not exist.
+2. **Why.** L26 promises "decidable over the produced `DayPlan`", and a checker
+   that called the EDF pass would be re-deriving a number the plan already
+   carries. Design §5.5 gives `edfNumbers` its real definition — `(g.deadline.need,
+   g.avail)` from `Cap.grantOf` — in step **P4**.
+3. **What it costs.** `impossible_kept_from_the_battery` delivers "every item
+   the plan *names* impossible is assigned", not "every item §7.3's numbers make
+   impossible is assigned". The second is the goal, and it is one rewrite away
+   once P4 lands — but it is not there today.
+4. **When it clears.** **P4**, with a theorem
+   `(i, m) ∈ d.diagnostics.impossible ↔ Arith.isImpossible (edfNumbers r i).1 (edfNumbers r i).2 = true`
+   beside `edfNumbers`' real definition.
+
+#### Gap 368 (new; label W14G-d) — L25's restatement, refutation and `an_open_segment_only_extends` are not written
+
+1. **What is not done.** Design §15's three G3 declarations —
+   `plan_is_stable_across_a_replan` restated over segments that are `end ≤ now`
+   **and not `open`**, `plan_is_stable_across_a_replan_as_stage_6_wrote_it_is_refuted`,
+   and `an_open_segment_only_extends` — are absent. `Planner.SegFlags.isOpen`
+   exists (P0 built it for exactly this) and nothing reads it.
+2. **Why.** Outside this step's brief, which names D29/L24 only; and blocked by
+   the same emptiness as gap 366 — with no segments, every stability statement
+   is vacuous and its refutation impossible.
+3. **What it costs.** One of the thirteen goals keeps its false-as-written form
+   with no compiled refutation beside it, and design §7.2's cheap half (the past
+   half is a function of the run alone, ≈ 300 proof lines) is unstarted.
+4. **When it clears.** **G3**, after P1 puts the past half in the day and P5
+   makes the fold exist.
+
+**Highest on this branch after this step:** gap **368** (range 365-384, so
+**369-384 free**), cheat **173** (with **161-170 left to track P**), parity
+**P37**.
+
+### Method disclosure
+
+Everything ran on the isolated worktree `.claude/worktrees/w14-g` (branch
+`w14-g`, from `fe6543d`); **the main checkout was never touched** — it was dirty
+throughout with track P's step-P1 work in progress, which was left alone and is
+named here so a reader knows why `git status` in the main tree showed four
+modified files during this step. Every `lake`, `lean`, `cargo` and `check.sh`
+invocation ran under `systemd-run --user --scope -p MemoryMax=40G -p
+MemorySwapMax=0 --quiet`; no bound was raised and nothing was retried uncapped.
+`cli_latency` was run twice in full and the 3-year-log row three more times, and
+every noisy row is reported as all five readings. **The fork oracle was not
+rebuilt and the `TM_ORACLE` census was not re-run**, said plainly: this step
+changes no Rust and no wire value, and both fork-anchored arms (T5's 33 and the
+door's 23) ran green inside `cargo test --workspace` against the frozen
+`fork-4748911-*.jsonl`, which are the arms that would have caught a change.
