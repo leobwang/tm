@@ -22,7 +22,8 @@ step that makes them false.  Nothing in `Goals.lean` is discharged here.
   second representation of an instant beside `Cal.Instant` and `Look.Slot` (AGENTS §5.3), and
   `plan_never_moves_a_wall`'s own doc comment recorded the defect it caused — "says nothing
   about a wall that crosses midnight".  On seconds the caveat is not weakened, it is **gone**.
-  `Seg.minutes` is `Look.Slot.minutes`' arithmetic on the same units.
+  `Seg.minutes` **calls** `Look.spanMinutes`, the one body `Look.Slot.minutes` is also built
+  on (W-14 repair, gap 390).
 * **`SegKind` has eleven constructors**, `batch` carrying a **bounded** `BatchIds` (R10) and
   `ghost` naming §12.1's arrival-plan row that the provisional form had no name for.
 * **Nothing here re-derives a window, a budget, a cut or an energy.**  `PlanReq` carries
@@ -309,8 +310,9 @@ theorem mkSeg?_refuses_an_inverted_segment (s : Seg) (h : s.stop < s.start) :
   rw [dif_neg (by simp [decide_eq_true_eq]; omega), if_neg (by simp; omega)]
 
 theorem mkSeg?_refuses_past_the_horizon (s : Seg) (hle : s.start ≤ s.stop)
-    (h : 315537897600 ≤ s.stop) : mkSeg? s = .error .pastTheHorizon := by
+    (h : LogStamp.yearEnd ≤ s.stop) : mkSeg? s = .error .pastTheHorizon := by
   unfold mkSeg? Seg.wf Cal.Instant.wf
+  simp only [LogStamp.yearEnd] at h
   rw [dif_neg (by simp; omega), if_pos (by simp [hle])]
 
 theorem mkSeg?_accepts (s : Seg) (h : Seg.wf s = true) :
@@ -319,8 +321,10 @@ theorem mkSeg?_accepts (s : Seg) (h : Seg.wf s = true) :
   rw [dif_pos h]
   rfl
 
-/-- Fork `Segment::minutes`, on `Look.Slot.minutes`' arithmetic. -/
-def Seg.minutes (s : Seg) : Nat := (s.stop - s.start) / 60
+/-- Fork `Segment::minutes`.  **`Look.spanMinutes` is the arithmetic, called and not copied**
+(AGENTS §5.3, W-14 repair, gap 390): P0 wrote a second body identical to `Look.Slot.minutes`'
+and recorded the copy in a doc comment instead of consuming it. -/
+def Seg.minutes (s : Seg) : Nat := Look.spanMinutes s.start s.stop
 
 /-- Fork `Segment::items`: every item this segment holds — one, or a batch's members. -/
 def Seg.items (s : Seg) : List Id :=
@@ -719,17 +723,28 @@ theorem mem_assignedOf (d : DayPlan) (i : Id) :
 `SegKind::is_work`, which answers `true` for `Block` and `Batch` and for nothing else. -/
 theorem a_wall_is_not_work : SegKind.wall.isWork = false := rfl
 
-/-- The minutes the day spends on blocks — §8.3's overbooking law counts these.  (Was
-`Goals.blockMinutes`; on seconds now, through `Seg.minutes`.) -/
-def blockMinutes (d : DayPlan) : Nat :=
+/-- The **seconds** the day spends on blocks — §8.3's overbooking law counts these.
+
+**Seconds and not `Seg.minutes`** (W-14 repair, gap 392).  P0 ported `Goals.blockMinutes`
+from minutes-since-midnight to absolute seconds and folded `Seg.minutes`, which *floors*:
+`Σ ⌊(stop − start)/60⌋ ≤ budget × blockMin` tolerates up to 59 s of unbudgeted work **per
+Block row**, where the minutes-since-midnight form it replaced could not express a sub-minute
+overrun at all.  That was a silent weakening of `plan_does_not_overbook` and of
+`plan_reserves_one_block_at_a_time`.  Summing seconds and comparing against `budget × blockMin
+× 60` is the faithful port: identical on minute-aligned rows, and strictly stronger on the
+rows `pastRows` can actually produce, which are clipped at `min stop now` — an arbitrary
+second.  `Seg.minutes` stays, because the fork's `Segment::minutes` is what the renderer and
+the diagnostics print; it is just not what a budget law is stated over (AGENTS §2545: where
+you floor is load-bearing). -/
+def blockSeconds (d : DayPlan) : Nat :=
   (d.segments.filter (fun s => decide (s.val.kind = SegKind.block))).foldl
-    (fun a s => a + s.val.minutes) 0
+    (fun a s => a + (s.val.stop - s.val.start)) 0
 
 theorem assignedOf_empty (day : Day) (w : Nat × Nat) (bm bb : Nat) :
     assignedOf (DayPlan.empty day w bm bb) = [] := rfl
 
-theorem blockMinutes_empty (day : Day) (w : Nat × Nat) (bm bb : Nat) :
-    blockMinutes (DayPlan.empty day w bm bb) = 0 := rfl
+theorem blockSeconds_empty (day : Day) (w : Nat × Nat) (bm bb : Nat) :
+    blockSeconds (DayPlan.empty day w bm bb) = 0 := rfl
 
 /-! ## `PlanReq` — what §9 and the seam make necessary
 
@@ -839,25 +854,36 @@ fork's day is the replay's past joined to the plan's future and P1 is the step t
 produces a row at all.
 -/
 
-/-- `Cal.Instant.wf`'s own horizon, named once.  `Seg.wf` bounds a row by it (P0). -/
-def horizonSec : Nat := 315537897600
+/-! **The horizon is `LogStamp.yearEnd` and nothing else** (AGENTS §5.3, W-14 repair, gap 391).
+P0 wrote the bound as a bare literal in `mkSeg?_refuses_past_the_horizon` and P1 then added a
+third spelling, `Planner.horizonSec`, beside it — while stage 5 had already named the same
+number once, in `LogStamp.yearEnd`, with the same doc comment.  Both stage-6 copies are gone;
+this module consumes stage 5's name, and the two theorems below pin it to the bound it claims
+to be, so a change to `Cal.Instant.wf`'s own literal cannot pass silently. -/
 
-theorem instant_wf_of_sec (n : Nat) (h : n < horizonSec) : Cal.Instant.wf ⟨n, 0⟩ = true := by
-  simp only [Cal.Instant.wf, horizonSec] at *
+theorem instant_wf_of_sec (n : Nat) (h : n < LogStamp.yearEnd) :
+    Cal.Instant.wf ⟨n, 0⟩ = true := by
+  simp only [Cal.Instant.wf, LogStamp.yearEnd] at *
   simp [h]
 
-theorem Seg.wf_of (s : Seg) (h1 : s.start ≤ s.stop) (h2 : s.stop < horizonSec) :
+/-- The other side of the same pin: the horizon itself is **not** representable, so
+`LogStamp.yearEnd` is exactly `Cal.Instant.wf`'s bound and not merely below it. -/
+theorem the_horizon_is_cal_instants_own_bound :
+    Cal.Instant.wf ⟨LogStamp.yearEnd, 0⟩ = false := by
+  simp [Cal.Instant.wf, LogStamp.yearEnd]
+
+theorem Seg.wf_of (s : Seg) (h1 : s.start ≤ s.stop) (h2 : s.stop < LogStamp.yearEnd) :
     Seg.wf s = true := by
   simp [Seg.wf, instant_wf_of_sec _ h2, h1]
 
 /-- A second inside the calendar. -/
-def clampSec (n : Nat) : Nat := min n (horizonSec - 1)
+def clampSec (n : Nat) : Nat := min n (LogStamp.yearEnd - 1)
 
-theorem clampSec_lt (n : Nat) : clampSec n < horizonSec := by
-  simp only [clampSec, horizonSec]; omega
+theorem clampSec_lt (n : Nat) : clampSec n < LogStamp.yearEnd := by
+  simp only [clampSec, LogStamp.yearEnd]; omega
 
-theorem clampSec_id (n : Nat) (h : n < horizonSec) : clampSec n = n := by
-  simp only [clampSec, horizonSec] at *; omega
+theorem clampSec_id (n : Nat) (h : n < LogStamp.yearEnd) : clampSec n = n := by
+  simp only [clampSec, LogStamp.yearEnd] at *; omega
 
 /-- **The total constructor the placement steps use** (D28: `dayPlan` is total, so no step of
 it may fail).  A row is forced forwards and into the calendar; `segOf_is_the_row_inside_the
@@ -868,8 +894,8 @@ def segOf (s : Seg) : WfSeg :=
     Seg.wf_of _ (Nat.le_max_left _ _) (Nat.max_lt.2 ⟨clampSec_lt _, clampSec_lt _⟩)⟩
 
 theorem segOf_is_the_row_inside_the_calendar (s : Seg) (h1 : s.start ≤ s.stop)
-    (h2 : s.stop < horizonSec) : (segOf s).val = s := by
-  have h3 : s.start < horizonSec := by omega
+    (h2 : s.stop < LogStamp.yearEnd) : (segOf s).val = s := by
+  have h3 : s.start < LogStamp.yearEnd := by omega
   simp only [segOf, clampSec_id _ h2, clampSec_id _ h3, Nat.max_eq_right h1]
 
 theorem segOf_kind (s : Seg) : (segOf s).val.kind = s.kind := rfl
@@ -1231,16 +1257,37 @@ def rowLe (a b : WfSeg) : Bool :=
   decide (a.val.start < b.val.start) ||
     (decide (a.val.start = b.val.start) && decide (a.val.stop ≤ b.val.stop))
 
+/-- The day's rows in the fork's order.  `Replay.insSort` is the **specification** sort —
+quadratic and not tail-recursive, kept because it reduces under `decide` — and `sortRowsFast`
+is its compiled twin (D9-21, W-14 repair, gap 394).  Every stage-5 sort of this shape ships
+one (`Replay.sortSegs`/`sortSegsFast`, `Look.windowEnd`/`windowEndFast`); P1 took the half
+that reduces and not the half that runs, and this list is the whole day's, under D30 Q8's
+5 ms trigger. -/
+def sortRows (l : List WfSeg) : List WfSeg := Replay.insSort rowLe l
+
+def sortRowsFast (l : List WfSeg) : List WfSeg := l.mergeSort rowLe
+
+@[csimp] theorem sortRows_eq_sortRowsFast : @sortRows = @sortRowsFast := by
+  funext l
+  exact Replay.insSort_eq_mergeSort rowLe
+    (fun a b c h₁ h₂ => by
+      simp only [rowLe, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq] at *; omega)
+    (fun a b => by
+      simp only [rowLe, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq]; omega) l
+
+theorem mem_sortRows {l : List WfSeg} {s : WfSeg} : s ∈ sortRows l ↔ s ∈ l :=
+  (Replay.insSort_perm rowLe l).mem_iff
+
 /-- **§8.2 step 1's rows, in the fork's order.** -/
 def stepOneRows (r : PlanReq) : List WfSeg :=
-  Replay.insSort rowLe
+  sortRows
     ((pastRows r ++ interruptRows r ++
       (wallsToday r).flatMap (fun x => wallRows (r.isTravelDay x.id) x)).map segOf)
 
 theorem mem_stepOneRows {r : PlanReq} {s : WfSeg} (h : s ∈ stepOneRows r) :
     ∃ t ∈ pastRows r ++ interruptRows r ++
       (wallsToday r).flatMap (fun x => wallRows (r.isTravelDay x.id) x), s = segOf t := by
-  have hm := (Replay.insSort_perm rowLe _).mem_iff.1 h
+  have hm := mem_sortRows.1 h
   simpa [eq_comm] using List.mem_map.1 hm
 
 /-- §8.2 step 8's diagnostics, as far as step 1 fills them: the overlapping walls it refused to
@@ -1387,7 +1434,7 @@ theorem plan_never_moves_a_wall (r : PlanReq) (w : WfSeg) (i : Id) (e : Entity)
     (hin : r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec)
     (hout : (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd)
     (hfwd : (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec)
-    (hcal : (Cal.instantOf r.tz b.day b.time).sec < horizonSec) :
+    (hcal : (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd) :
     w.val.start = (Cal.instantOf r.tz a.day a.time).sec ∧
       w.val.stop = (Cal.instantOf r.tz b.day b.time).sec := by
   obtain ⟨t, ht, rfl⟩ := mem_stepOneRows (dayPlan_segments r ▸ hw)

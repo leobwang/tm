@@ -26591,11 +26591,22 @@ $ grep -cE 'def (windowEnd|windowOn|budgetOf|cutSlots|freeIntervals|energize|lim
 
 Instead: `PlanReq.window` **is** `Look.day0Window`, `PlanReq.budgetBlocks` is
 `Today.storedBudget` else `Look.budgetOf`, `PlanReq.day` is stage 5's
-`Look.DayCfg` (which contains `CutCfg`, never a copy), `Seg.minutes` is
-`Look.Slot.minutes`' arithmetic, `Seg.wf`'s horizon is `Cal.Instant.wf`'s own
-(no second literal), `mkHash?` reads hex through `Json.hexDigit`, and the one
+`Look.DayCfg` (which contains `CutCfg`, never a copy), `mkHash?` reads hex
+through `Json.hexDigit`, and the one
 `Today` fact the lookahead lacked was **widened into `Lookahead.lean`**, not
 forked.
+
+**Two claims in the sentence above were false when this block was written, and
+the W-14 reuse critic caught both** (gaps 390, 391; both fixed at the repair
+step, and the false clauses are struck from the list rather than left to be
+believed). They were: "`Seg.minutes` is `Look.Slot.minutes`' arithmetic" — it
+was a **second body**, identical but for the argument type, and the doc comment
+saying so was an admission of the copy, not a call to it; and "`Seg.wf`'s
+horizon is `Cal.Instant.wf`'s own **(no second literal)**" — `git blame` puts a
+bare `315537897600` in `mkSeg?_refuses_past_the_horizon` at **`06ec0c9`, this
+step itself**, and P1 then added a third spelling, `Planner.horizonSec`, beside
+`LogStamp.yearEnd`. Both are repaired: `Look.spanMinutes` is the one body, and
+`LogStamp.yearEnd` is the one horizon.
 
 ### Where the repo made me deviate from design §5, §9 and §10, and why
 
@@ -27837,16 +27848,22 @@ signature. There is no `dayPlan?`, no `PlanRefusal` and no `Except` anywhere in
 (P0's own doc comment already forbids it under D28). The battery is the object
 `dayPlan_ok` is proved **about**, never a runtime refusal.
 
-**4. D29 — REFUSED, by name, and here is exactly why.** The brief asks for
-`plan_tail_drop` restated with the Active item erased **and**
-`plan_tail_drop_as_stage_6_wrote_it_is_refuted` **with its witness**.
-`Planner.dayPlan_assigns_nothing_yet` says `assignedOf (dayPlan r) = []` for
-every request, so `∃ n, [] = [].take n` holds at `n = 0`: **the form stage 6
-wrote is TRUE of today's `dayPlan` and there is nothing to refute.**
-`Goals.lean`'s own doc comment on that goal says the same ("the witness needs a
-`dayPlan` that places something"). Shipping the restatement without its
-refutation is a weakening (AGENTS §3.1 item 3), so `plan_tail_drop` is left
-exactly as it stands and this is **gap 366**.
+**4. D29 — REFUSED, by name. THE REASON GIVEN HERE WAS WRONG and is corrected
+at the W-14 repair step (gap 393); the refusal itself stands.** The brief asks
+for `plan_tail_drop` restated with the Active item erased **and**
+`plan_tail_drop_as_stage_6_wrote_it_is_refuted` **with its witness**. What this
+block originally said was: "`Planner.dayPlan_assigns_nothing_yet` says
+`assignedOf (dayPlan r) = []` for every request, so `∃ n, [] = [].take n` holds
+at `n = 0`: the form stage 6 wrote is TRUE of today's `dayPlan` and there is
+nothing to refute." **That theorem had already been deleted in this very merge**
+— it is two paragraphs above, under "Two audit lines removed, not merged" —
+because P1's body made it false, and the claim it made is false in general:
+`PlanCheck.a_replayed_block_is_assigned` proves a replayed Block is work, is a
+row of the day, and is in `assignedOf`. The correct reason is the **missing
+witness** (gaps 346/348): there is no way to write down a `PlanReq` at all yet,
+so there is no `r` whose `dayPlan` reserves and assigns. Shipping the
+restatement without its refutation is a weakening (AGENTS §3.1 item 3), so
+`plan_tail_drop` is left exactly as it stands and this is **gap 366**.
 
 What did land is the arithmetic the refutation and the restatement both apply,
 with the planner factored out:
@@ -28052,19 +28069,34 @@ is new machinery, not a repair.
    shipped. Neither is `plan_is_stable_across_a_replan`'s restatement, its
    refutation, or `an_open_segment_only_extends` (design §15, step G3) —
    **gap 368** for that half.
-2. **Why.** `Planner.dayPlan_assigns_nothing_yet` proves
-   `assignedOf (dayPlan r) = []` for every request, so the form stage 6 wrote is
-   **true** at `n = 0` and a refutation of a true statement does not exist. A
-   restatement shipped without its refutation is a weakening (AGENTS §3.1
-   item 3), so neither half was taken.
+2. **Why — CORRECTED at the W-14 repair step (gap 393); the refusal stands, its
+   recorded reason did not.** What stood here said:
+   "`Planner.dayPlan_assigns_nothing_yet` proves `assignedOf (dayPlan r) = []`
+   for every request, so the form stage 6 wrote is **true** at `n = 0`". That
+   theorem **does not exist** — P1 deleted it, because its body made it false —
+   and the claim is false in general:
+   `PlanCheck.a_replayed_block_is_assigned` (proved at the repair) shows that a
+   Block today's log holds is work, is a row of the day, and **is** in
+   `assignedOf`. `dayPlan_block_rows_come_from_the_log` is unconditional and
+   `dayPlan_ok_core`'s `hnopast` hypothesis exists for exactly that reason. What
+   *is* empty is `Planner.assignedFrom … now`, the set §8.3's laws are about, and
+   `Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands` is the
+   tripwire that says so.
+   **The real blocker is the witness**, and it is gap 348's: `PlanReq` carries a
+   `WfPlan`, a `Seal.Run`, a `Look.Input` and a `Lookahead`, and there is no
+   decoder and no builder for one, so no `r` can be exhibited whose `dayPlan`
+   reserves and assigns. A restatement shipped without its refutation is a
+   weakening (AGENTS §3.1 item 3), so neither half was taken.
 3. **What it costs.** L24 stays in `Goals.lean` in its false-against-the-fork
    form, which is the state D29 was decided to end; anyone reading the goal
    sees the correction only in its doc comment and in this block. Nothing is
    *wrong* in the tree — the goal is a `sorry` — but the owner's D29 is not yet
    discharged.
-4. **When it clears.** **G2**, after **P5**: the witness design §7.1 item 4
-   prices (an 8-`Entry` request with a running block and two candidates, one
-   ranking ahead of it) needs a fold that reserves and assigns.
+4. **When it clears.** **G2**, after **P5** *and* after the `PlanReq` builder
+   gap 346/348 names: the witness design §7.1 item 4 prices (an 8-`Entry`
+   request with a running block and two candidates, one ranking ahead of it)
+   needs a request that can be written down at all, and then a fold that
+   reserves and assigns.
    `PlanCheck.a_kept_reservation_defeats_the_prefix_but_not_the_erasure` is the
    lemma it will apply, proved here, so G2's remaining work is the
    instantiation and not the argument.
@@ -28251,6 +28283,20 @@ P5's too, with the `buffer:` row and the clip named the way P1 named them.
   `Seal.Run` — and the two falsity claims above rest on `pastRows`' own
   definition and on P1's `..._is_refuted`, which *is* proved. Said plainly
   rather than implied.
+* **APPENDED AT THE W-14 REPAIR STEP (gap 396): it did not add independent
+  detection, and "tripwire" at the head of this block should be read narrowly.**
+  Six of `dayPlan_ok_core`'s seven checks are vacuous under `hnopast`; the
+  seventh, `wallsUnmoved`, is discharged by *applying*
+  `Planner.plan_never_moves_a_wall` through `wallsUnmoved_iff`. Nothing in
+  `PlanCheck.lean` re-derives a wall endpoint, so the battery cannot disagree
+  with the planner about one — by construction, and correctly, because a second
+  copy of the placement rule is the AGENTS §5.3 defect this block already
+  refuses two bullets up. A mutation of the placement (`start := x.evLo + 60`)
+  breaks four *named `Planner` proofs* and `PlanCheck.lean` compiles untouched
+  once those four are `sorry`-ed; the break is still caught, by check 2
+  (`banned: sorry`) and check 3 (`sorryAx`), so there is **no soundness hole** —
+  but the catch comes from the totality and axiom checks and not from the
+  battery. Gap 396 records when that changes.
 * **It did not touch `Boundary.lean`, any Rust file, any fixture or any
   corpus file.** The merge is Lean-and-README only; the `cargo` numbers below
   are identical to both parents' and must be.
@@ -28428,3 +28474,426 @@ times in full and every noisy row is reported as its three readings. The
 are unaffected by the doc-comment rewrite, which touches only Lean comments and
 this README.
 The fork oracle was not rebuilt — see "What this step did NOT do".
+
+## Stage 6, W-14 REPAIR, 2026-09-17: the ledger cited a theorem P1 had deleted — and three spellings of one number became one
+
+**Branch `rebuild-on-lean`**, on top of the W-14 land (`ce89332`). Two
+independent auditors read the landed tree: a defect audit (four findings) and a
+**§5.3 reuse critic** (three findings). **All seven reproduced**, each before
+anything was touched, and each reproduction is recorded below beside its fix.
+Nothing was adopted on the strength of the report alone.
+
+Six are fixed here. One — the seventh, the battery's independence — **cannot be
+fixed without either a `PlanReq` witness (gap 348) or a second copy of the wall
+placement rule (AGENTS §5.3)**, so it is left, recorded by name, and the land
+block's own prose is corrected so it no longer claims what the battery does not
+do. That is the honest half of this step and it is stated first rather than
+buried.
+
+### 1. Gap 393 (MAJOR) — a live open gap and a shipped doc comment both proved their point with a theorem that does not exist
+
+**Reproduced.** `grep -rn 'dayPlan_assigns_nothing_yet' kernel/ --include=*.lean`
+returns **no declaration** — only `Check.lean:4709`'s removal note, which says P1
+deleted it "because its body made [it] false". Three places nevertheless rested
+an argument on it:
+
+* `PlanCheck.lean`, the shipped D29 section: "`assignedOf (dayPlan r) = []` for
+  every request today (`Planner.dayPlan_assigns_nothing_yet`), so `plan_tail_drop`
+  **as stage 6 wrote it** is *true* of this `dayPlan` and there is nothing to
+  refute".
+* README **gap 366 item 2** — an **open** gap, whose item 2 is the recorded reason
+  D29 was refused — saying the same.
+* Track G's block, saying it a third time.
+
+And the claim is false, not merely unsupported. P1's own replacement says so in
+as many words (`Planner.lean`: the tripwire is stated over `assignedFrom … now`
+and **not** over `assignedOf`, "because a replayed past Block *is* work and *is*
+in `assignedOf` — the fork counts it too"), `dayPlan_block_rows_come_from_the_log`
+is unconditional, and `dayPlan_ok_core` carries `hnopast` precisely because
+today's log **can** hold a Block.
+
+**Fixed, with a proof rather than a retraction.** Two theorems in `PlanCheck.lean`,
+beside the forward direction they invert:
+
+```
+theorem a_replayed_row_is_a_row_of_the_day (r : PlanReq) (t : Seg)
+    (ht : t ∈ pastRows r) : segOf t ∈ (dayPlan r).segments
+
+theorem a_replayed_block_is_assigned (r : PlanReq) (t : Seg) (ht : t ∈ pastRows r)
+    (hk : t.kind = SegKind.block) (i : Id) (hi : i ∈ t.items) :
+    i ∈ assignedOf (dayPlan r)
+```
+
+so "`assignedOf (dayPlan r) = []`" is now refutable **from the tree** the moment a
+request with a replayed Block can be written down. The three prose sites are
+corrected in place (the two historical blocks keep what they said, marked as
+corrected, so the rot is visible rather than erased), and the **real** reason D29
+stays refused is recorded where the wrong one was: **there is no `PlanReq`
+witness** — gaps 346 and 348 — so no `r` can be exhibited whose `dayPlan`
+reserves and assigns. The refusal of D29 is unchanged; only its stated reason is.
+
+**Why check 3 could not see it.** The land step caught and removed the two stale
+`#print axioms` lines for this very pair. §6.3's reconciliation compares
+declarations against audit lines; it cannot see a citation inside a doc comment
+or a README bullet. That is the whole of the ledger-rot class, and the only
+instrument against it is a reader.
+
+### 2. Gap 392 — the move to absolute seconds silently weakened two burn-down goals
+
+**Reproduced.** At `c754cce` the pair read, over minutes since midnight:
+
+```
+blockMinutes d = Σ (s.endMin - s.startMin)          -- exact, minute resolution
+plan_does_not_overbook           : blockMinutes (dayPlan r) ≤ budget * blockMin
+plan_reserves_one_block_at_a_time: s.endMin - s.startMin ≤ blockMin
+```
+
+At `ce89332`, on absolute seconds, `Seg.minutes` is `(stop - start) / 60` and
+`blockMinutes` folds it — so both goals **floor per row** and tolerate up to 59 s
+of unbudgeted work on every Block row. A sub-minute overrun was not expressible
+in the form they replaced; it is now. `pastRows` clips a replayed row at
+`min g.stop.1.sec r.now.sec` — an arbitrary second — so a non-aligned Block row is
+reachable, not hypothetical. P0's block asserts the seconds move is "strictly more
+than the minutes-since-midnight form said, not less", but says it only about
+`plan_never_moves_a_wall`, where it is true. The per-segment flooring of these two
+was disclosed nowhere, and AGENTS §2545
+(`flooring_the_capacity_changes_the_verdict`) shows the project already treats
+where-you-floor as load-bearing.
+
+**Fixed by restoring the strength, not by disclosing the loss.**
+`Planner.blockMinutes` is now `Planner.blockSeconds` (Σ `stop - start`), and both
+goals and both checkers are stated in seconds:
+
+| statement | at `ce89332` | here |
+|---|---|---|
+| `plan_does_not_overbook` | `blockMinutes (dayPlan r) ≤ budget * blockMin` | `blockSeconds (dayPlan r) ≤ budget * blockMin * 60` |
+| `plan_reserves_one_block_at_a_time` | `s.val.minutes ≤ blockMin` | `s.val.stop - s.val.start ≤ blockMin * 60` |
+| `PlanCheck.noOverbook` | `blockMinutes (withoutActive r d) ≤ budget * blockMin` | `blockSeconds (withoutActive r d) ≤ budget * blockMin * 60` |
+| `PlanCheck.oneBlockAtATime` | `s.val.minutes ≤ d.blockMin` | `s.val.stop - s.val.start ≤ d.blockMin * 60` |
+
+Identical on minute-aligned rows; strictly stronger otherwise. Both goals are
+still `sorry` — **no goal was discharged here** — so what changed is the size of
+the obligation P5 will owe, upward. The two reflection lemmas, the two bridges and
+the two `can_fail` witnesses moved with them; **no checker was weakened and no
+witness stopped refusing**. `Seg.minutes` stays, because the fork's
+`Segment::minutes` is what the renderer and the diagnostics print — it is just not
+what a budget law is stated over.
+
+### 3. Gap 390 (§5.3) — `Seg.minutes` re-implemented `Look.Slot.minutes`
+
+**Reproduced.** Two identical bodies for one concept:
+`Lookahead.lean:1501 def Slot.minutes (s : Slot) : Nat := (s.stop - s.start) / 60`
+and `Planner.lean:323 def Seg.minutes (s : Seg) : Nat := (s.stop - s.start) / 60`.
+They differ in nothing but the argument type, and `Seg` and `Slot` carry the same
+two absolute-UTC-second fields. Design §1.2 lists `Look.Slot.minutes` with P0 as a
+consumer; P0 built `Seg` on `Slot`'s *representation* and wrote a second copy of
+its *arithmetic*. The two references to `Slot.minutes` in the stage-6 files were
+**prose, not calls** — the doc comment "on `Look.Slot.minutes`' arithmetic" is an
+admission of the copy.
+
+**Fixed by widening the stage-5 artefact, as §5.3 prescribes.** `Look.spanMinutes
+(lo hi : Nat) : Nat` is the one body; `Look.Slot.minutes` and `Planner.Seg.minutes`
+both call it. Two `simp only` sites in `Lookahead.lean` name it beside
+`Slot.minutes`. `grep -rn -- '/ 60'` over `kernel/TmKernel/TmKernel` now finds the
+span arithmetic at **one** line, `Lookahead.lean`'s `spanMinutes`; it was at two.
+
+### 4. Gap 391 (§5.3) — three spellings of the calendar horizon, and a README claim of the opposite
+
+**Reproduced.** `grep -rn '315537897600' kernel/TmKernel --include=*.lean` returned
+five hits at `ce89332`: `Cal.lean:882` (inside `Instant.wf`, the definition site),
+`Stamp.lean:303` (`LogStamp.yearEnd`, stage 5's name for it, same doc sentence),
+`Planner.lean:843` (`Planner.horizonSec`, added by P1, **same doc sentence again**),
+and two **bare literals** in theorem statements — `Planner.lean:312` and
+`PlanCheck.lean:820`. `git blame` puts the bare literal at `06ec0c9`, **P0 itself**
+— the commit whose block says "`Seg.wf`'s horizon is `Cal.Instant.wf`'s own **(no
+second literal)**". The claim was false in the commit that made it, and
+`horizonSec` had by then leaked out of `Planner` into `PlanCheck`, so the third
+spelling was the one two modules depended on.
+
+**Fixed by deleting the new copies and consuming stage 5's.** `Planner.horizonSec`
+is gone; all ten of its uses and both bare literals are `LogStamp.yearEnd`. Two
+theorems pin that name to the bound it claims to be, so a change to
+`Cal.Instant.wf`'s own literal cannot pass silently in either direction:
+`instant_wf_of_sec` (`n < LogStamp.yearEnd → Cal.Instant.wf ⟨n,0⟩ = true`) and the
+new **`the_horizon_is_cal_instants_own_bound`**
+(`Cal.Instant.wf ⟨LogStamp.yearEnd, 0⟩ = false`). One literal remains in the tree,
+inside `Cal.Instant.wf` itself, which is where the bound is *defined*. The P0
+block's sentence is corrected in place and both false clauses are struck from it.
+
+`LogStamp.yearEnd` is a `def`, so the nine non-vacuity witnesses that used to
+discharge `stop < 315537897600` with a bare `omega` need it unfolded once.
+`PlanCheck.horizonOk` does that once for all nine rather than nine times — still
+`omega` and not `decide`, so AGENTS §5.10a's witness budget is unchanged, and the
+nine call sites stay inside the file's line length.
+
+### 5. Gap 394 (§5.3) — the spec sorts had no compiled twins; one now does, one does not
+
+**Reproduced.** `Planner.wallsOfDay` and `Planner.stepOneRows` both called
+`Replay.insSort` directly and `grep -n 'csimp\|Fast' Planner.lean PlanCheck.lean`
+returned nothing. Every stage-5 artefact of this shape ships a twin
+(`Replay.sortSegs`/`sortSegsFast`, `Look.windowEnd`/`windowEndFast`,
+`Look.limitSlots`/`limitSlotsFast`, `Look.dayOf`/`dayOfFast`), and `Look`'s own
+comment names why: the insertion sort is "quadratic and not tail-recursive, kept
+because it reduces under `decide`". P1 took the half that reduces and not the half
+that runs.
+
+**Half fixed.** The row sort — the one under D30 Q8's 5 ms trigger, because
+`stepOneRows` sorts the **whole day's** rows — now has its twin:
+
+```
+def sortRows (l : List WfSeg) : List WfSeg := Replay.insSort rowLe l
+def sortRowsFast (l : List WfSeg) : List WfSeg := l.mergeSort rowLe
+@[csimp] theorem sortRows_eq_sortRowsFast : @sortRows = @sortRowsFast
+```
+
+through `Replay.insSort_eq_mergeSort` at `rowLe`'s transitivity and totality, with
+`mem_sortRows` standing in for the two `insSort_perm` rewrites that used it. The
+specification body is unchanged, so every `decide` witness still reduces — including
+`the_spec_days_walls_are_placed_where_they_are_written`.
+
+**The wall sort did not get one, and the reason is named**: `wallLe` breaks ties on
+`Log.charsLe`, which has **no transitivity and no totality lemma** in the tree
+(`Log.lean:802`; only `charsLe_of_lt`). `insSort_eq_mergeSort` needs both.
+Manufacturing them is a real induction over `List Char` and it is not this step's;
+`wallsOfDay` sorts one day's walls, not the day's rows, so it is the cheaper half
+by a wide margin. **Gap 394 stays open** for it.
+
+### 6. Gap 395 — `tm undo`'s conflict refusal reported the two sides as equal, and its advice could not be followed
+
+**Reproduced, by driving the binary** (§5.13), not by reading. In a scratch tree:
+`tm init`, `wake`, `arrive office`, `plan`, then
+`--now 2026-09-17T15:10 energy 3`, `--now …15:25 plan`, `--now …15:30 undo`:
+
+```
+tm: conflict in day/2026-09-17.md — the file changed under us
+  ours:   22 lines
+  theirs: 25 lines
+  reconcile day/2026-09-17.md in your editor, then try again
+```
+exit 3. I followed the advice and made the file 22 lines. It still refused, now
+printing **`ours: 22 lines / theirs: 22 lines`** — a message that says the two
+sides differ while its only evidence says they are the same, and that never names
+what differs. The data exists: `tm --json undo` returns `kind=conflict`,
+`exit_code=3`, with `detail.ours` and `detail.theirs` carrying both whole texts,
+which differ in the `<!-- tm:plan start HH:MM -->` block `tm plan` regenerated
+under a later minute. Only the human line was unactionable. Not a recorded gap
+before this step.
+
+**Fixed** in `tm/src/cli/out.rs`. `first_difference(ours, theirs)` walks the two
+texts line by line and returns the first line number at which they part, with the
+end of the shorter text reported as `(end of file)` so a pure truncation is named
+as precisely as a rewrite. The advice says what `undo` actually requires, and
+where the whole texts are:
+
+```
+tm: conflict in day/2026-09-17.md — the file changed under us
+  ours:   22 lines — what the undone command wrote
+  theirs: 22 lines — what day/2026-09-17.md holds now
+  first difference, line 6:
+    ours:   <!-- tm:plan start 14:38 -->
+    theirs: <!-- tm:plan start 08:25 -->
+  undo needs day/2026-09-17.md to hold exactly what the undone command wrote, byte for byte
+  `tm --json undo` prints both texts whole, as detail.ours and detail.theirs
+```
+
+**Driven again after the fix**, to the end: writing `detail.ours` back over the
+file and re-running `tm undo` answers `undid energy (energy 3) · 1 file(s)
+restored · 1 left`, exit 0. The advice is now one a human can act on. Three unit
+tests pin it (`a_whole_file_conflict_names_the_first_line_that_differs`, which
+asserts the two line counts are **equal** so a summary made of counts proves
+nothing; `a_truncation_is_named_at_the_end_of_the_shorter_text`;
+`texts_that_agree_line_by_line_have_no_first_difference`). The `--json` document
+is untouched — a machine reader got the whole object before and gets the
+identical one now.
+
+### 7. Gap 396 — the battery adds no independent detection, and the land block is corrected rather than the battery
+
+**Reproduced by reading the proof, which settles it without the mutation.**
+`dayPlan_ok_core` discharges six of its seven checks from `hnopast` through
+`dayPlan_has_no_block_row` — vacuously, because step P1 places no Block. The
+seventh is
+
+```
+have h7 : wallsUnmoved r (dayPlan r) = true := by
+  refine (wallsUnmoved_iff r _).mpr (fun s hs i e a b hi hget hsh hk => ?_)
+  …
+  exact plan_never_moves_a_wall r s i e a b hagree hs hk hi hget hsh …
+```
+
+— the Planner theorem applied. Nothing in `PlanCheck.lean` re-derives a wall
+endpoint, so **for its one non-vacuous check the battery is a restatement, not a
+second opinion**, and the auditor's mutation (`start := x.evLo + 60`, then `sorry`
+in the four `Planner` proofs it breaks) compiles `PlanCheck.lean` untouched. The
+break is still caught — by check 2 (`banned: sorry`) and check 3 (`sorryAx`) — so
+there is **no soundness hole**; the catch simply does not come from the battery.
+
+**Not fixed, deliberately.** The only two ways to give the battery a second
+opinion are (a) re-derive the endpoints inside `PlanCheck` — a second copy of the
+placement rule, which is the §5.3 defect the land block already refuses — or (b) a
+`decide`-computed witness over a concrete request, which needs a `PlanReq` that
+cannot be written down (gap 348). Both are worse than the finding. What is fixed
+is the **claim**: the land block gains a "What this step did NOT do" bullet saying
+exactly the above, so nothing in the ledger now offers the battery as detection it
+does not provide.
+
+### Behaviour rows
+
+| row | before | after |
+|---|---|---|
+| `tm undo` refusing a **whole-file** conflict (empty id), human path | `ours: N lines` / `theirs: M lines` / `reconcile <file> in your editor, then try again` — silent about *what* differs, and identical on both sides in the commonest case | the same two counts, each labelled; then `first difference, line K:` with both lines (or `(end of file)`); then advice naming the actual requirement (exact bytes) and where the whole texts are (`tm --json undo`) |
+
+Exit code **3** unchanged, `--json` document byte-identical, the **id**-conflict
+branch (one line each side) untouched. No other shipped text, wire value, refusal
+or fixture changed. **Nothing was re-blessed**: no fixture, no snapshot, no corpus
+file, no latency band.
+
+### Parity
+
+No parity arm moved. `kernel_replay_parity` (T5) **29 passed / 0 failed / 4
+ignored**, `kernel_log_door` **23 / 0 / 0**, both green against the frozen
+`fork-4748911-*.jsonl` comparands; `the_frozen_comparand_is_read_at_full_precision`
+passes by name and `serde_json`'s `float_roundtrip` pin is untouched. The fork
+oracle was **not** rebuilt — this step changes no shipped-path byte on either
+fork-anchored arm, and the two frozen arms are the ones that would have caught one.
+
+### Gaps closed
+
+* **390** — `Seg.minutes` was a second copy of `Look.Slot.minutes`. Closed:
+  `Look.spanMinutes` is the one body and both call it.
+* **391** — three spellings of the calendar horizon plus two bare literals, and a
+  P0 claim of "no second literal". Closed: `LogStamp.yearEnd` is the one name,
+  pinned to `Cal.Instant.wf` from both sides, and the P0 block is corrected.
+* **392** — the seconds port floored two burn-down goals. Closed: both goals and
+  both checkers restated in seconds, strictly stronger, still `sorry`.
+* **393** — an open gap and a shipped doc comment cited `dayPlan_assigns_nothing_yet`,
+  which P1 deleted, to justify a claim that is false. Closed: the contrary is
+  proved (`a_replayed_block_is_assigned`), and the three prose sites carry the real
+  reason (the missing `PlanReq` witness) with the old text visible and marked.
+* **395** — `tm undo`'s whole-file conflict refusal was unactionable. Closed:
+  first-difference line, honest advice, three unit tests, driven end to end.
+
+### Gaps opened / left open
+
+#### Gap 394 (new; label W14R-a) — `wallsOfDay`'s spec sort still has no compiled twin
+
+1. **What is not done.** `Planner.wallsOfDay` calls `Replay.insSort wallLe`
+   directly and there is no `@[csimp]` twin for it. `stepOneRows`' sort has one
+   (`sortRows_eq_sortRowsFast`, this step).
+2. **Why.** `insSort_eq_mergeSort` demands transitivity and totality of the order.
+   `wallLe` breaks ties on `Log.charsLe`, for which the tree has only
+   `charsLe_of_lt` — neither law exists, and proving them is an induction over
+   `List Char` that belongs with `Log`'s own lemmas and not in a repair step.
+3. **What it costs.** Nothing today: `dayPlan` has no caller (`PlanReq` has no
+   decoder, gap 346). At P5 it is a quadratic, non-tail-recursive sort of one day's
+   wall list on the path D30 Q8 puts under a 5 ms trigger — smaller than the row
+   list by a wide margin, which is why this half was the one deferred.
+4. **When it clears.** With `Log.charsLe`'s two order lemmas, wherever they are
+   first needed; **P5 at the latest**, where the 5 ms trigger is measured and where
+   the fallback is already pre-authorised.
+
+#### Gap 396 (new; label W14R-b) — the checker battery's one non-vacuous check is a restatement of a `Planner` theorem
+
+1. **What is not done.** `PlanCheck` gives no independent opinion on wall
+   placement. `dayPlan_ok_core`'s seventh check is `plan_never_moves_a_wall`
+   applied through `wallsUnmoved_iff`; the other six are vacuous under `hnopast`.
+2. **Why.** The two alternatives are a second copy of the placement rule inside
+   `PlanCheck` (AGENTS §5.3, the defect the land block refuses two bullets above
+   its own claim) and a `decide` witness over a concrete request (gap 348 — no
+   `PlanReq` can be written down). Both are worse than the finding, so the claim
+   was corrected instead of the code.
+3. **What it costs.** A mutation of the wall placement is caught by check 2 and
+   check 3 — `banned: sorry` and `sorryAx` — and not by the battery. There is no
+   soundness hole; there is less defence in depth than the land block implied, and
+   P5 will lean on the battery.
+4. **When it clears.** At the step that can build a `PlanReq`: a `decide`-computed
+   witness running `wallsUnmoved` over a day whose rows came from `wallRows` and
+   whose endpoints came from `Cal.instantOf` **is** a second opinion, and it flips
+   under exactly the mutation above. That is gap 348's builder, so **gap 348 is
+   the blocker for 366, 393's witness half and this**.
+
+### Measured, RE-MEASURED at this commit
+
+All capped with `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0
+--quiet`. **No bound was raised**; nothing was retried uncapped; no
+`native_decide`; no new axiom; no `sorry` outside `Goals.lean`.
+
+| measurement | this commit | comparand (`ce89332`, the W-14 land), and what explains the delta |
+|---|---|---|
+| `check.sh` | **7/7 ok** | 7/7 |
+| `check.sh`, built tree | **3.94 / 3.10 / 3.12 s**, peak RSS **1.95 / 1.93 / 1.93 GiB** (2,046,176 / 2,021,356 / 2,027,316 KiB). One earlier pass in this session cost **159.53 s at 7.51 GiB** — a cold, whole-kernel rebuild, forced by stashing this step's diff to take the `ce89332` latency comparand below. It is printed rather than dropped, and it is **not** a built-tree figure: the 10% rule is about the three above | `ce89332` measured **in this session**: 3.14 s, 1.95 GiB (2,049,896 KiB). **−0.6% on the midpoint** (3.12 vs 3.14); the 3.94 s first pass carries an incremental relink. RSS **down** 1% |
+| axiom audit | **4,151 theorems**, §6.3 reconciliation `ok` | 4,145. **+6, every one audited**: `Planner.the_horizon_is_cal_instants_own_bound`, `Planner.sortRows_eq_sortRowsFast`, `Planner.mem_sortRows`, `PlanCheck.a_replayed_row_is_a_row_of_the_day`, `PlanCheck.a_replayed_block_is_assigned`, `PlanCheck.horizonOk`. One rename moved with its audit line (`blockMinutes_empty` → `blockSeconds_empty`) |
+| burn-down | **12 outstanding, all stage 6** | 12. **Unchanged — no goal was discharged and none was deleted.** Two were *restated upward* (gap 392) and both are still `sorry` |
+| corpus round trip | **29/37 files, 4/5 whole plans** | identical |
+| `cargo test --workspace` | **1,316 passed / 0 failed / 9 ignored across 78 result lines**, exit 0, **0 warnings** | 1,313 / 0 / 9 across 78. **+3, fully explained**: the three `out.rs` unit tests for the conflict diagnostic. (The brief's 1,312 is the `c754cce` figure; the +1 to 1,313 is track K's second-replay test at `3b65beb`) |
+| FFI (`tm-kernel-ffi`, `--test kernel`) | **86 passed / 0 failed** | 86 / 0 |
+| T5 (`kernel_replay_parity`) | **29 passed / 0 failed / 4 ignored** | 29 / 0 / 4 |
+| door (`kernel_log_door`) | **23 passed / 0 failed** | 23 / 0 |
+| `cli_switch_acceptance` | **9 passed / 0 failed** | 9 / 0 |
+| `kernel_call_counts` | **2 passed / 0 failed** | 2 / 0 |
+| `cli_undo` / `cli_errors` | **20 / 0** and **9 / 0** | unchanged; these are the two suites the conflict renderer is under |
+| `cli_latency` | **5 passed / 0 failed / 1 ignored**, every band met | see the row below |
+
+#### `cli_latency`, with a same-session comparand rather than the brief's bands
+
+Every reading on this machine today sits **below** the brief's quoted T11 bands —
+uniformly, across every row, including rows this step cannot touch. That is a
+machine/session effect and not a change, and the only way to say so with evidence
+is to measure the comparand in the same session. So `ce89332` was measured here
+too, by stashing this step's diff and running the identical command:
+
+| row (release, `--nocapture`) | `ce89332`, this session | this commit, two runs | brief's band |
+|---|---|---|---|
+| first verb (226 files) | 673.32 ms | 668.09 / 683.45 ms | — |
+| later verb | 55.79 ms | 55.83 / 55.78 ms | — |
+| T11 3y log: **later verb** (the reliable row) | 131.72 ms | 126.70 / 126.62 ms | 146.66–147.01 |
+| T11 3y log: **`--now +1 day` (a reseal)** — NOISY | 187.42 ms | 172.09 / 187.39 ms | 197.5–212.6 |
+| T11 3y log: **3-day-old routine** — NOISY | 106.43 ms | 101.30 / 101.38 ms | 121.6–136.8 |
+| T11 3y log: **review week** — NOISY, out of band, gap 275 | 248.25 ms | 253.24 / 253.28 ms | 278.6–294.7 |
+| `tm --json log --tail 200` | 207.68 ms | 212.78 / 212.63 ms | — |
+| 10 stalled days, worst | 516.35 ms | 500.94 / 506.40 ms | — |
+
+Every row is within run-to-run noise of its own comparand, and the three noisy
+rows are reported as their readings rather than as single numbers, per the brief.
+**The delta against the brief's bands is present at `ce89332` too**, so this step
+explains none of it and claims none of it. The suite's own assertions — which
+encode the bands — passed on both trees. Nor is there a mechanism: the only
+shipped-path change is an **error-path** renderer (`tm undo`'s conflict text), and
+the `@[csimp]` twin is on `sortRows`, which is reachable only from `dayPlan`, which
+**has no caller** (gap 346).
+
+### What this step did NOT do, by name
+
+* **It discharged no goal and deleted none.** The burn-down is 12 before and 12
+  after. Two goals were restated **upward** and both are still `sorry`.
+* **It did not build a `PlanReq` witness**, so D29 is still refused and gap 366 is
+  still open — for its corrected reason now, not its wrong one.
+* **It did not give the battery a second opinion** (gap 396), and it did not buy
+  one with a second copy of the wall rule.
+* **It did not prove `Log.charsLe` transitive or total**, so `wallsOfDay` still has
+  no compiled twin (gap 394).
+* **It did not re-bless anything**: no fixture, no snapshot, nothing under
+  `kernel/corpus/`, no latency band, no frozen comparand.
+* **It did not rebuild the fork oracle** and did not re-run the `TM_ORACLE` census.
+  Said plainly: no shipped-path byte on either fork-anchored arm changed, and both
+  frozen arms ran green with their denominators printed above.
+* **It touched `lean-toolchain` not at all**, added no dependency, no axiom, no
+  `partial def`, no `unsafe`, no `opaque`, no `panic!`, no `!`-accessor, no
+  `.toOption`, no Mathlib.
+
+### Method disclosure
+
+Every `lake`, `lean`, `cargo`, `check.sh` and `tm` invocation ran under
+`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet`. No bound
+was raised and nothing was retried uncapped. `check.sh` was run **twelve** times (once as the
+`ce89332` baseline, eight while the Lean edits and the audit roster were being
+completed — one of them the cold rebuild the stash cycle forced — and **three on
+the final tree, which are the ones quoted**). `cargo test --workspace` was run
+**four** times; the first run's output was truncated by a `tail` in the harness
+and its numbers are **not** quoted, two intermediate runs agreed, and the fourth,
+on the final tree, is the one in the table. `cli_latency` was run
+**three** times in all: twice on this tree and once on `ce89332` with this step's
+diff stashed, which is the comparand table above. The `tm undo` drive was performed
+on a scratch tree outside the repo, with `--now` fixing the clock, and was driven
+**through** the fix as well as into the defect.
+
+**Highest on this branch:** gap **396**, cheat **173**, parity **P37**.

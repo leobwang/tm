@@ -339,13 +339,89 @@ impl CliError {
             // An id conflict is one line each; a whole-file conflict (an
             // empty id) would be two whole files, so that one is summarised —
             // the error itself still carries both texts for the TUI's diff.
+            //
+            // **The summary names the first line that differs** (W-14 repair,
+            // README gap 395). It used to be two line counts and
+            // "reconcile <file> in your editor, then try again", which on the
+            // commonest whole-file conflict — `tm plan` regenerating the day
+            // file's `<!-- tm:plan start HH:MM -->` block under a later minute
+            // — printed `ours: 22 lines / theirs: 22 lines`: a message whose
+            // only evidence says the two sides are the same, naming nothing to
+            // reconcile. The advice could not be followed either, because what
+            // `tm undo` requires is not a line count but the exact bytes the
+            // undone command wrote. Both are fixed here; the two whole texts
+            // stay where they were, in the `--json` document.
             if id.is_empty() {
-                eprintln!("  ours:   {} lines", ours.lines().count());
-                eprintln!("  theirs: {} lines", theirs.lines().count());
-                eprintln!("  reconcile {file} in your editor, then try again");
+                eprintln!(
+                    "  ours:   {} lines — what the undone command wrote",
+                    ours.lines().count()
+                );
+                eprintln!(
+                    "  theirs: {} lines — what {file} holds now",
+                    theirs.lines().count()
+                );
+                match first_difference(ours, theirs) {
+                    Some(d) => {
+                        eprintln!("  first difference, line {}:", d.line);
+                        eprintln!("    ours:   {}", d.ours);
+                        eprintln!("    theirs: {}", d.theirs);
+                    }
+                    // `lines()` drops line endings, so two texts that differ
+                    // only in a trailing newline or in CRLF reach here. Through
+                    // `undo` the strings provably differ, so saying *where* is
+                    // still the whole job — and a silent branch would be this
+                    // gap again.
+                    None => eprintln!(
+                        "  every line agrees — they differ only in a line ending or a trailing \
+                         newline"
+                    ),
+                }
+                eprintln!(
+                    "  undo needs {file} to hold exactly what the undone command wrote, byte for \
+                     byte"
+                );
+                eprintln!("  `tm --json undo` prints both texts whole, as detail.ours and detail.theirs");
             } else {
                 eprintln!("  ours:   {}", ours.trim_end());
                 eprintln!("  theirs: {}", theirs.trim_end());
+            }
+        }
+    }
+}
+
+/// The first line at which two whole-file texts differ (W-14 repair, gap 395).
+///
+/// A conflict the user can act on has to name something; a line count does not,
+/// and two equal line counts actively mislead. Lines are compared in order and
+/// the end of the shorter text is reported as `(end of file)`, so a pure
+/// truncation is named as precisely as a rewrite.
+pub struct FirstDifference {
+    /// 1-indexed line number.
+    pub line: usize,
+    /// The line the undone command wrote there, or `(end of file)`.
+    pub ours: String,
+    /// The line the file holds there now, or `(end of file)`.
+    pub theirs: String,
+}
+
+/// `None` only when the two texts agree line by line — which `undo` cannot
+/// produce, since it compares the strings themselves.
+pub fn first_difference(ours: &str, theirs: &str) -> Option<FirstDifference> {
+    const EOF: &str = "(end of file)";
+    let mut o = ours.lines();
+    let mut t = theirs.lines();
+    let mut line = 0usize;
+    loop {
+        line += 1;
+        match (o.next(), t.next()) {
+            (None, None) => return None,
+            (a, b) if a == b => continue,
+            (a, b) => {
+                return Some(FirstDifference {
+                    line,
+                    ours: a.unwrap_or(EOF).to_string(),
+                    theirs: b.unwrap_or(EOF).to_string(),
+                })
             }
         }
     }
@@ -504,6 +580,45 @@ mod tests {
             ours: "- [x] 4 2b Exercises 5.3–5.5 @m1 ^t3".to_string(),
             theirs: "- [>] 4 2b Exercises 5.3–5.5 @m1 est:1b ^t3".to_string(),
         }
+    }
+
+    /// W-14 repair, gap 395. The whole-file conflict's summary used to be two
+    /// line counts, and the commonest one in practice — `tm plan` rewriting the
+    /// day file's generated block under a later minute — has the SAME count on
+    /// both sides, so the message said "the file changed under us" and then
+    /// printed its only evidence that it had not. What it must do instead is
+    /// name a line.
+    #[test]
+    fn a_whole_file_conflict_names_the_first_line_that_differs() {
+        let ours = "---\ndate: 2026-09-17\n<!-- tm:plan start 14:38 -->\nrest 1h\n";
+        let theirs = "---\ndate: 2026-09-17\n<!-- tm:plan start 08:25 -->\nrest 1h\n";
+        assert_eq!(ours.lines().count(), theirs.lines().count(), "the counts agree, so a \
+             summary made of counts proves nothing — which is the defect");
+        let d = first_difference(ours, theirs).expect("the two texts differ");
+        assert_eq!(d.line, 3);
+        assert_eq!(d.ours, "<!-- tm:plan start 14:38 -->");
+        assert_eq!(d.theirs, "<!-- tm:plan start 08:25 -->");
+    }
+
+    /// A pure truncation is named as precisely as a rewrite: the end of the
+    /// shorter text is a side of the difference, not a reason to say nothing.
+    #[test]
+    fn a_truncation_is_named_at_the_end_of_the_shorter_text() {
+        let d = first_difference("a\nb\nc\n", "a\nb\n").expect("the two texts differ");
+        assert_eq!((d.line, d.ours.as_str(), d.theirs.as_str()), (3, "c", "(end of file)"));
+        let d = first_difference("a\nb\n", "a\nb\nc\n").expect("the two texts differ");
+        assert_eq!((d.line, d.ours.as_str(), d.theirs.as_str()), (3, "(end of file)", "c"));
+    }
+
+    /// The one case with no line to name — two texts `lines()` cannot tell
+    /// apart, which is a trailing newline or a CRLF. Kept honest rather than
+    /// silent: the printed branch says which it is.
+    #[test]
+    fn texts_that_agree_line_by_line_have_no_first_difference() {
+        assert!(first_difference("a\nb\n", "a\nb\n").is_none());
+        assert!(first_difference("a\nb\n", "a\nb").is_none(), "a trailing newline is invisible \
+             to `lines()`, which is why that branch names the line ending instead of a line");
+        assert!(first_difference("a\r\nb\n", "a\nb\n").is_none());
     }
 
     #[test]

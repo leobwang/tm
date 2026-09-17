@@ -150,7 +150,7 @@ def isActive (r : PlanReq) (s : WfSeg) : Bool :=
   | some a => decide (s.val.item = some a)
   | none   => false
 
-/-- The day with §8.2 choice 5b's reservation removed.  `Planner.blockMinutes` is **not**
+/-- The day with §8.2 choice 5b's reservation removed.  `Planner.blockSeconds` is **not**
 re-implemented (AGENTS §5.3): this hands it a shorter segment list. -/
 def withoutActive (r : PlanReq) (d : DayPlan) : DayPlan :=
   { d with segments := d.segments.filter (fun s => !isActive r s) }
@@ -164,23 +164,30 @@ Design §6.3 row 1: false as written, because §8.2 choice 5b "gives the running
 minutes whatever the budget says". -/
 
 /-- §8.3's overbooking law, restated over the blocks that are **not** the Active
-reservation. -/
+reservation.  **In seconds on both sides** (W-14 repair, gap 392): see
+`Planner.blockSeconds`, which says why a floored per-row minute count is a weaker law than the
+minutes-since-midnight one it replaced. -/
 def noOverbook (r : PlanReq) (d : DayPlan) : Bool :=
-  decide (blockMinutes (withoutActive r d) ≤ d.budgetBlocks * d.blockMin)
+  decide (blockSeconds (withoutActive r d) ≤ d.budgetBlocks * d.blockMin * 60)
 
 theorem noOverbook_iff (r : PlanReq) (d : DayPlan) :
     noOverbook r d = true ↔
-      blockMinutes (withoutActive r d) ≤ d.budgetBlocks * d.blockMin := by
+      blockSeconds (withoutActive r d) ≤ d.budgetBlocks * d.blockMin * 60 := by
   simp [noOverbook]
 
 /-! ## 2. `oneBlock` — no block is longer than one block -/
 
+/-- **In seconds** (W-14 repair, gap 392): `s.val.minutes ≤ d.blockMin` floors, and so admits
+a Block of `blockMin` minutes **and 59 seconds**.  `pastRows` clips a replayed row at
+`min stop now`, an arbitrary second, so such a row is reachable rather than hypothetical. -/
 def oneBlockAtATime (_r : PlanReq) (d : DayPlan) : Bool :=
-  d.segments.all (fun s => decide (s.val.kind = SegKind.block → s.val.minutes ≤ d.blockMin))
+  d.segments.all
+    (fun s => decide (s.val.kind = SegKind.block → s.val.stop - s.val.start ≤ d.blockMin * 60))
 
 theorem oneBlockAtATime_iff (r : PlanReq) (d : DayPlan) :
     oneBlockAtATime r d = true ↔
-      ∀ s ∈ d.segments, s.val.kind = SegKind.block → s.val.minutes ≤ d.blockMin := by
+      ∀ s ∈ d.segments, s.val.kind = SegKind.block →
+        s.val.stop - s.val.start ≤ d.blockMin * 60 := by
   simp only [oneBlockAtATime, List.all_eq_true, decide_eq_true_eq]
 
 /-! ## 3. `energyFilter` — every block has `item.ci ≤ slot.energy`
@@ -560,11 +567,12 @@ Each is the reflection lemma composed with `checks_all`, so the discharge a P st
 `dayPlan` here** (see the module header). -/
 
 theorem overbook_from_the_battery (r : PlanReq) (d : DayPlan) (h : planOkCore r d = true) :
-    blockMinutes (withoutActive r d) ≤ d.budgetBlocks * d.blockMin :=
+    blockSeconds (withoutActive r d) ≤ d.budgetBlocks * d.blockMin * 60 :=
   (noOverbook_iff r d).mp (checksCore_all r d h ⟨.overbook, noOverbook⟩ (by simp [checksCore]))
 
 theorem one_block_from_the_battery (r : PlanReq) (d : DayPlan) (h : planOkCore r d = true) :
-    ∀ s ∈ d.segments, s.val.kind = SegKind.block → s.val.minutes ≤ d.blockMin :=
+    ∀ s ∈ d.segments, s.val.kind = SegKind.block →
+      s.val.stop - s.val.start ≤ d.blockMin * 60 :=
   (oneBlockAtATime_iff r d).mp
     (checksCore_all r d h ⟨.oneBlock, oneBlockAtATime⟩ (by simp [checksCore]))
 
@@ -641,8 +649,8 @@ theorem planOkCore_of_no_segments (r : PlanReq) (d : DayPlan) (h : d.segments = 
     planOkCore r d = true := by
   have hw : (withoutActive r d).segments = [] := by
     simp only [withoutActive_segments, h, List.filter_nil]
-  have hb : blockMinutes (withoutActive r d) = 0 := by
-    simp only [blockMinutes, hw, List.filter_nil, List.foldl_nil]
+  have hb : blockSeconds (withoutActive r d) = 0 := by
+    simp only [blockSeconds, hw, List.filter_nil, List.foldl_nil]
   simp [planOkCore, checksCore, noOverbook, oneBlockAtATime, energyFilterOk, noBlockOverAWall,
     noBlockOverABreak, noDemandingAfterWindDown, wallsUnmoved, h, hb]
 
@@ -719,6 +727,33 @@ theorem dayPlan_block_rows_come_from_the_log (r : PlanReq) (s : WfSeg)
     rw [(wallRows_are_walls_of_the_item (r.isTravelDay x.id) x t hx).1] at htk
     cases htk
 
+/-- **Every replayed row is a row of the day** — the converse of
+`dayPlan_block_rows_come_from_the_log`, and the half that was missing when the ledger claimed
+otherwise (W-14 repair, gap 393). -/
+theorem a_replayed_row_is_a_row_of_the_day (r : PlanReq) (t : Seg) (ht : t ∈ pastRows r) :
+    segOf t ∈ (dayPlan r).segments := by
+  rw [dayPlan_segments]
+  refine mem_sortRows.2 (List.mem_map.2 ⟨t, ?_, rfl⟩)
+  exact List.mem_append_left _ (List.mem_append_left _ ht)
+
+/-- **A replayed Block *is* assigned**, so `assignedOf (dayPlan r) = []` is **not** a law of
+this `dayPlan` (W-14 repair, gap 393).
+
+The merge's own ledger, and the D29 section below it, asserted the opposite and cited
+`Planner.dayPlan_assigns_nothing_yet` — a theorem step P1 **deleted**, because its body made
+it false.  This is the statement that survives P1: a Block the log holds for today is work
+(`SegKind.isWork`), it is a row of the day, and its items are in `assignedOf`.  The fork
+counts it too (`DayPlan::assigned`).  What *is* empty is the set §8.3's laws are about,
+`Planner.assignedFrom … now`, and `Planner.the_day_assigns_nothing_after_now_until_the_assign
+_step_lands` is the tripwire that says so.
+
+`dayPlan_ok_core`'s `hnopast` hypothesis exists for exactly this reason. -/
+theorem a_replayed_block_is_assigned (r : PlanReq) (t : Seg) (ht : t ∈ pastRows r)
+    (hk : t.kind = SegKind.block) (i : Id) (hi : i ∈ t.items) :
+    i ∈ assignedOf (dayPlan r) :=
+  (mem_assignedOf _ i).2
+    ⟨segOf t, a_replayed_row_is_a_row_of_the_day r t ht, by rw [segOf_kind, hk]; rfl, hi⟩
+
 /-- The day has no Block row of its own: on a day whose log holds none, it has none at all. -/
 theorem dayPlan_has_no_block_row (r : PlanReq)
     (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block) (s : WfSeg)
@@ -754,17 +789,17 @@ theorem dayPlan_ok_core (r : PlanReq)
         r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec ∧
         (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
         (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
-        (Cal.instantOf r.tz b.day b.time).sec < horizonSec) :
+        (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd) :
     planOkCore r (dayPlan r) = true := by
   have hnb : ∀ s ∈ (dayPlan r).segments, s.val.kind ≠ SegKind.block :=
     fun s hs => dayPlan_has_no_block_row r hnopast s hs
-  have hbm : blockMinutes (withoutActive r (dayPlan r)) = 0 := by
+  have hbm : blockSeconds (withoutActive r (dayPlan r)) = 0 := by
     have hnil : (withoutActive r (dayPlan r)).segments.filter
         (fun s => decide (s.val.kind = SegKind.block)) = [] := by
       refine List.filter_eq_nil_iff.2 (fun s hs => ?_)
       rw [withoutActive_segments] at hs
       simp [hnb s (List.mem_filter.1 hs).1]
-    simp [blockMinutes, hnil]
+    simp [blockSeconds, hnil]
   have h1 : noOverbook r (dayPlan r) = true := by simp [noOverbook, hbm]
   have h2 : oneBlockAtATime r (dayPlan r) = true :=
     (oneBlockAtATime_iff r _).mpr (fun s hs hk => absurd hk (hnb s hs))
@@ -817,8 +852,9 @@ def wSeg (start stop : Nat) (k : SegKind) (it : Option Id) (en : Option (Fin 6))
     flags := SegFlags.none, planned := none, mult := none, note := none }
 
 theorem wSeg_wf (start stop : Nat) (k : SegKind) (it : Option Id) (en : Option (Fin 6))
-    (hle : start ≤ stop) (hh : stop < 315537897600) :
+    (hle : start ≤ stop) (hh : stop < LogStamp.yearEnd) :
     Seg.wf (wSeg start stop k it en) = true := by
+  simp only [LogStamp.yearEnd] at hh
   simp [Seg.wf, wSeg, Cal.Instant.wf, hle, hh]
 
 /-- A witness day. -/
@@ -836,8 +872,14 @@ theorem effectiveCi_of_an_absent_id (p : PlanCore) (i : Id) (h : p.store.get i =
     effectiveCi p i = 3 := by
   simp [effectiveCi, fuel, effectiveCiAux, h]
 
+/-- Every witness segment below ends well inside the calendar; `LogStamp.yearEnd` is a `def`,
+so `omega` needs it unfolded once (W-14 repair, gap 391).  Still `omega` and not `decide`, so
+AGENTS §5.10a's witness budget is unchanged. -/
+theorem horizonOk {stop : Nat} (h : stop ≤ 86400 := by omega) : stop < LogStamp.yearEnd := by
+  unfold LogStamp.yearEnd; omega
+
 def aBlockOfAnHour : WfSeg :=
-  ⟨wSeg 0 3600 SegKind.block none none, wSeg_wf _ _ _ _ _ (by omega) (by omega)⟩
+  ⟨wSeg 0 3600 SegKind.block none none, wSeg_wf _ _ _ _ _ (by omega) horizonOk⟩
 
 theorem aBlockOfAnHour_is_not_the_reservation (r : PlanReq) : isActive r aBlockOfAnHour = false := by
   unfold isActive aBlockOfAnHour wSeg
@@ -850,9 +892,9 @@ def theOverbookedDay : DayPlan := wDay [aBlockOfAnHour] 60 0 Capped.nil
 theorem noOverbook_can_fail (r : PlanReq) : noOverbook r theOverbookedDay = false := by
   have hw : (withoutActive r theOverbookedDay).segments = [aBlockOfAnHour] := by
     simp [withoutActive_segments, theOverbookedDay, wDay, aBlockOfAnHour_is_not_the_reservation r]
-  have hb : blockMinutes (withoutActive r theOverbookedDay) = 60 := by
-    simp [blockMinutes, hw, aBlockOfAnHour, wSeg, Seg.minutes]
-  have hbud : theOverbookedDay.budgetBlocks * theOverbookedDay.blockMin = 0 := rfl
+  have hb : blockSeconds (withoutActive r theOverbookedDay) = 3600 := by
+    simp [blockSeconds, hw, aBlockOfAnHour, wSeg]
+  have hbud : theOverbookedDay.budgetBlocks * theOverbookedDay.blockMin * 60 = 0 := rfl
   unfold noOverbook
   rw [hb, hbud]
   simp
@@ -863,12 +905,12 @@ def theOverlongBlockDay : DayPlan := wDay [aBlockOfAnHour] 30 4 Capped.nil
 
 theorem oneBlockAtATime_can_fail (r : PlanReq) :
     oneBlockAtATime r theOverlongBlockDay = false := by
-  simp [oneBlockAtATime, theOverlongBlockDay, wDay, aBlockOfAnHour, wSeg, Seg.minutes]
+  simp [oneBlockAtATime, theOverlongBlockDay, wDay, aBlockOfAnHour, wSeg]
 
 /-! ### 3. `energyFilter` — a `ci = 3` item in a level-0 slot -/
 
 def anUnderpoweredBlock (i : Id) : WfSeg :=
-  ⟨wSeg 0 3600 SegKind.block (some i) (some 0), wSeg_wf _ _ _ _ _ (by omega) (by omega)⟩
+  ⟨wSeg 0 3600 SegKind.block (some i) (some 0), wSeg_wf _ _ _ _ _ (by omega) horizonOk⟩
 
 def theEnergyBreachDay (i : Id) : DayPlan := wDay [anUnderpoweredBlock i] 60 4 Capped.nil
 
@@ -892,10 +934,10 @@ theorem energyFilterOk_can_fail (r : PlanReq) (i : Id)
 /-! ### 4 and 5. `overWall`, `overBreak` — a block laid across each -/
 
 def aWallAcross : WfSeg :=
-  ⟨wSeg 1800 5400 SegKind.wall none none, wSeg_wf _ _ _ _ _ (by omega) (by omega)⟩
+  ⟨wSeg 1800 5400 SegKind.wall none none, wSeg_wf _ _ _ _ _ (by omega) horizonOk⟩
 
 def aBreakAcross : WfSeg :=
-  ⟨wSeg 1800 5400 SegKind.brk none none, wSeg_wf _ _ _ _ _ (by omega) (by omega)⟩
+  ⟨wSeg 1800 5400 SegKind.brk none none, wSeg_wf _ _ _ _ _ (by omega) horizonOk⟩
 
 def theBlockOverAWallDay : DayPlan := wDay [aBlockOfAnHour, aWallAcross] 60 4 Capped.nil
 
@@ -912,10 +954,10 @@ theorem noBlockOverABreak_can_fail (r : PlanReq) :
 /-! ### 6. `windDown` — a demanding block after the hard end of the day -/
 
 def aWindDown : WfSeg :=
-  ⟨wSeg 0 60 SegKind.windDown none none, wSeg_wf _ _ _ _ _ (by omega) (by omega)⟩
+  ⟨wSeg 0 60 SegKind.windDown none none, wSeg_wf _ _ _ _ _ (by omega) horizonOk⟩
 
 def aLateBlock (i : Id) : WfSeg :=
-  ⟨wSeg 3600 7200 SegKind.block (some i) none, wSeg_wf _ _ _ _ _ (by omega) (by omega)⟩
+  ⟨wSeg 3600 7200 SegKind.block (some i) none, wSeg_wf _ _ _ _ _ (by omega) horizonOk⟩
 
 def theLateDemandingDay (i : Id) : DayPlan := wDay [aLateBlock i, aWindDown] 60 4 Capped.nil
 
@@ -936,7 +978,7 @@ theorem noDemandingAfterWindDown_can_fail (r : PlanReq) (i : Id)
 /-! ### 7. `wallMoved` — a wall placed where there was room -/
 
 def aMovedWall (i : Id) : WfSeg :=
-  ⟨wSeg 0 60 SegKind.wall (some i) none, wSeg_wf _ _ _ _ _ (by omega) (by omega)⟩
+  ⟨wSeg 0 60 SegKind.wall (some i) none, wSeg_wf _ _ _ _ _ (by omega) horizonOk⟩
 
 def theMovedWallDay (i : Id) : DayPlan := wDay [aMovedWall i] 60 4 Capped.nil
 
@@ -958,7 +1000,7 @@ Each takes the **permissive** eligibility (`fun _ _ _ _ => true`), which is the 
 refutes for a day that places anything; that is the point of the witness. -/
 
 def aBlockFor (j : Id) : WfSeg :=
-  ⟨wSeg 0 3600 SegKind.block (some j) none, wSeg_wf _ _ _ _ _ (by omega) (by omega)⟩
+  ⟨wSeg 0 3600 SegKind.block (some j) none, wSeg_wf _ _ _ _ _ (by omega) horizonOk⟩
 
 def theOnlyJIsAssignedDay (j : Id) : DayPlan := wDay [aBlockFor j] 60 4 Capped.nil
 
@@ -1008,7 +1050,7 @@ theorem hotBeforeQueue_can_fail (r : PlanReq) (i j : Id) (e f : Entity)
   exact all_eq_false_of_mem hid (all_eq_false_of_mem hjd hpair)
 
 def aBatchSeg (ids : BatchIds) : WfSeg :=
-  ⟨wSeg 0 3600 (SegKind.batch ids) none none, wSeg_wf _ _ _ _ _ (by omega) (by omega)⟩
+  ⟨wSeg 0 3600 (SegKind.batch ids) none none, wSeg_wf _ _ _ _ _ (by omega) horizonOk⟩
 
 def theBatchDay (ids : BatchIds) : DayPlan := wDay [aBatchSeg ids] 60 4 Capped.nil
 
@@ -1057,12 +1099,21 @@ theorem planOk_can_fail (el : Eligible) (r : PlanReq) :
 
 /-! ## D29 / L24 — what the refutation will apply, with the planner factored out
 
-**The refutation itself is not here and cannot be.**  `assignedOf (dayPlan r) = []` for every
-request today (`Planner.dayPlan_assigns_nothing_yet`), so `plan_tail_drop` **as stage 6 wrote
-it** is *true* of this `dayPlan` and there is nothing to refute; `Goals.lean`'s own doc comment
-on that goal says the same ("the witness needs a `dayPlan` that places something").  Restating
-it without its refutation would be a weakening (AGENTS §3.1 item 3), so `plan_tail_drop` is
-left exactly as it stands and the debt is recorded by name in the README.
+**The refutation itself is not here, and this is the real reason** (W-14 repair, gap 393).
+
+What stood here until the repair said that `assignedOf (dayPlan r) = []` for every request,
+cited `Planner.dayPlan_assigns_nothing_yet`, and concluded that `plan_tail_drop` as stage 6
+wrote it is *true* and has nothing to refute.  **Both halves are wrong.**  P1 deleted the
+cited theorem, because its body made it false; and `a_replayed_block_is_assigned` above proves
+the contrary: a Block today's log holds is work, is a row of the day, and is in `assignedOf`.
+`dayPlan_block_rows_come_from_the_log` is unconditional and `dayPlan_ok_core`'s `hnopast`
+hypothesis exists precisely because today's log **can** hold one.
+
+What is actually missing is a **witness**: `PlanReq` carries a `WfPlan`, a `Seal.Run`, a
+`Look.Input` and a `Lookahead`, and there is no decoder and no builder for one yet (gap 346,
+gap 348), so no `r` can be exhibited whose `dayPlan` places two candidates and a reservation.
+A restatement shipped without its refutation is a weakening (AGENTS §3.1 item 3), so
+`plan_tail_drop` is left exactly as it stands and the debt is recorded by name in the README.
 
 What *is* provable today is the arithmetic D29 turns on, and it is the whole of it: §8.2 choice
 5b reserves the running block **before** the budget is consulted, so a candidate that ranks

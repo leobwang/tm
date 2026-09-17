@@ -1497,8 +1497,15 @@ structure Slot where
   kind  : SlotKind
 deriving DecidableEq, Repr
 
-/-- Fork `Slot::minutes`: `(end − start).num_minutes().max(0)`. -/
-def Slot.minutes (s : Slot) : Nat := (s.stop - s.start) / 60
+/-- **Minutes in an absolute-second span `[lo, hi)`, floored** — fork
+`(end − start).num_minutes().max(0)`.  **One arithmetic, one site** (AGENTS §5.3): stage 6's
+`Planner.Seg.minutes` is this function and not a second copy of its body, which is what the
+W-14 reuse audit caught (README gap 390).  Where a span rounds is load-bearing (AGENTS §2545),
+so a change here is exactly the change that must reach both callers and not one. -/
+def spanMinutes (lo hi : Nat) : Nat := (hi - lo) / 60
+
+/-- Fork `Slot::minutes`. -/
+def Slot.minutes (s : Slot) : Nat := spanMinutes s.start s.stop
 
 /-- Fork `Cut`: the slots and the breaks, each in time order. -/
 structure Cut where
@@ -2159,7 +2166,7 @@ theorem cutSlots_block_is_block_min (c : CutCfg) (lo hi : Nat) (walls rests : Li
   obtain ⟨_, _, _, h4, _, _, _, _⟩ := cutSlots_spec c lo hi walls rests k
   have h := (h4 s hs).1.2.1 hk
   refine ⟨h, ?_, (h4 s hs).2⟩
-  simp only [Slot.minutes, h]
+  simp only [Slot.minutes, spanMinutes, h]
   omega
 
 /-- **A short block is at least `min_last`** (never dropped at `min_last`, never below it)
@@ -2171,7 +2178,7 @@ theorem cutSlots_short_block_is_at_least_min_last (c : CutCfg) (lo hi : Nat)
       c.minLast ≤ s.minutes ∧ s.minutes < c.blockMin := by
   obtain ⟨_, _, _, h4, _, _, _, _⟩ := cutSlots_spec c lo hi walls rests k
   obtain ⟨h1, h2⟩ := (h4 s hs).1.2.2 hk
-  refine ⟨h1, h2, ?_, ?_⟩ <;> simp only [Slot.minutes] <;> omega
+  refine ⟨h1, h2, ?_, ?_⟩ <;> simp only [Slot.minutes, spanMinutes] <;> omega
 
 /-- A break is exactly `break_min` minutes, and breaks happen only with `break_min > 0`. -/
 theorem cutSlots_break_is_break_min (c : CutCfg) (lo hi : Nat) (walls rests : List (Nat × Nat))

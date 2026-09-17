@@ -4753,7 +4753,7 @@ open Tm
 #print axioms Tm.Planner.mkOverrides?_refuses_too_many_estimates
 #print axioms Tm.Planner.mkOverrides?_refuses_too_many_drops
 #print axioms Tm.Planner.assignedOf_empty
-#print axioms Tm.Planner.blockMinutes_empty
+#print axioms Tm.Planner.blockSeconds_empty
 #print axioms Tm.Planner.PlanReq.window_is_the_lookaheads
 #print axioms Tm.Planner.PlanReq.budget_is_the_stored_one_when_there_is_one
 #print axioms Tm.Planner.PlanReq.budget_is_the_formula_without_a_stored_one
@@ -4802,6 +4802,7 @@ open Tm
 #print axioms Tm.Planner.mem_assignedOf
 #print axioms Tm.Planner.a_wall_is_not_work
 #print axioms Tm.Planner.instant_wf_of_sec
+#print axioms Tm.Planner.the_horizon_is_cal_instants_own_bound
 #print axioms Tm.Planner.Seg.wf_of
 #print axioms Tm.Planner.clampSec_lt
 #print axioms Tm.Planner.clampSec_id
@@ -4826,6 +4827,8 @@ open Tm
 #print axioms Tm.Planner.interruptRows_are_not_walls
 #print axioms Tm.Planner.pastRows_end_at_now
 #print axioms Tm.Planner.pastRows_are_not_walls
+#print axioms Tm.Planner.sortRows_eq_sortRowsFast
+#print axioms Tm.Planner.mem_sortRows
 #print axioms Tm.Planner.mem_stepOneRows
 #print axioms Tm.Planner.dayPlan_segments
 #print axioms Tm.Planner.dayPlan_remaining_budget_is_the_forks_local
@@ -4901,10 +4904,13 @@ open Tm
 #print axioms Tm.PlanCheck.planOkCore_of_no_segments
 #print axioms Tm.PlanCheck.planOk_of_no_segments
 #print axioms Tm.PlanCheck.dayPlan_block_rows_come_from_the_log
+#print axioms Tm.PlanCheck.a_replayed_row_is_a_row_of_the_day
+#print axioms Tm.PlanCheck.a_replayed_block_is_assigned
 #print axioms Tm.PlanCheck.dayPlan_has_no_block_row
 #print axioms Tm.PlanCheck.dayPlan_ok_core
 #print axioms Tm.PlanCheck.all_eq_false_of_mem
 #print axioms Tm.PlanCheck.wSeg_wf
+#print axioms Tm.PlanCheck.horizonOk
 #print axioms Tm.PlanCheck.wDay_segments
 #print axioms Tm.PlanCheck.effectiveCi_of_an_absent_id
 #print axioms Tm.PlanCheck.aBlockOfAnHour_is_not_the_reservation

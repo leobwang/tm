@@ -541,7 +541,7 @@ input mostly does not.
 
 **The five provisional declarations that stood here are gone** (stage 6 step
 P0, `Planner.lean`): `SegKind`, `Seg`, `DayPlan`, `PlanReq` and `dayPlan` are
-real now, and so are `segItems`, `assignedOf` and `blockMinutes`.  `Seg` moved
+real now, and so are `segItems`, `assignedOf` and `blockSeconds`.  `Seg` moved
 from minutes-since-midnight to `Look.Slot`'s **absolute seconds** (README gap
 256), which is why every statement below reads `s.val.start`/`s.val.stop`.
 Only `edfNumbers` stays provisional; design §5.5 gives it to step **P4**.
@@ -569,6 +569,16 @@ It becomes real at **P5**.  The tripwire that says so is
 is audited in `Check.lean` and which P5 must delete; while it compiles, no goal
 below that quantifies over an assigned Block is worth discharging.
 
+**Two goals below are stated in SECONDS after the W-14 repair** (README gap
+392): `plan_does_not_overbook` and `plan_reserves_one_block_at_a_time`.  P0's
+port to absolute seconds folded the *floored* `Seg.minutes`, which tolerates 59 s
+of unbudgeted work per Block row where the minutes-since-midnight form it
+replaced could not express a sub-minute overrun at all — a weakening of the
+obligation, disclosed nowhere.  Seconds on both sides is the faithful port; it is
+identical on minute-aligned rows and strictly stronger on the rows `pastRows`
+can produce, which are clipped at `min stop now`.  `Planner.blockMinutes` is
+`Planner.blockSeconds` now, and `PlanCheck`'s two checkers moved with them.
+
 **The machinery that will discharge them is already built** (track G,
 `PlanCheck.lean`, design §6): eleven decidable checkers, eleven reflection
 lemmas, `planOk`/`planOkCore`, `checks_all`, and one bridge per goal, so each
@@ -591,16 +601,27 @@ what L26 promises.
 Design §6.3 records this as **false as written** against the fork (§8.2 choice
 5b gives the running block its minutes whatever the budget says); it is
 restated with the Active reservation excluded, **and its refutation, in step
-P5** — never here and never without the witness (AGENTS §3.1 item 3). -/
+P5** — never here and never without the witness (AGENTS §3.1 item 3).
+
+**Stated in seconds** (W-14 repair, gap 392).  Until this repair it read
+`blockMinutes (dayPlan r) ≤ budget × blockMin` with `blockMinutes` folding the
+*floored* `Seg.minutes`, which tolerates 59 s of unbudgeted work per Block row.
+The minutes-since-midnight form this replaced at `c754cce` could not express a
+sub-minute overrun, so the port had quietly made the obligation weaker; seconds
+on both sides is the faithful one.  See `Planner.blockSeconds`. -/
 theorem plan_does_not_overbook (r : PlanReq) :
-    blockMinutes (dayPlan r) ≤ (dayPlan r).budgetBlocks * (dayPlan r).blockMin := sorry
+    blockSeconds (dayPlan r) ≤ (dayPlan r).budgetBlocks * (dayPlan r).blockMin * 60 := sorry
 
 /-- **E1 (P\*), stage 6.**  No block is longer than one block.  The shipped bug:
 "the Active reservation covered the whole remaining estimate; a 6b item
-swallowed 355 minutes". -/
+swallowed 355 minutes".
+
+**Stated in seconds**, for the reason above (W-14 repair, gap 392): `s.val.minutes
+≤ blockMin` admits a Block of `blockMin` minutes and 59 seconds, and `pastRows`
+clips a replayed row at `min stop now` — an arbitrary second. -/
 theorem plan_reserves_one_block_at_a_time (r : PlanReq) (s : WfSeg)
     (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.block) :
-    s.val.minutes ≤ (dayPlan r).blockMin := sorry
+    s.val.stop - s.val.start ≤ (dayPlan r).blockMin * 60 := sorry
 
 /-- **L26 / §8.3 "energy filter" (P\*), stage 6.**  Every block has
 `item.ci ≤ slot.energy`.  `effectiveCi` (Plan.lean) is §3.2's inheritance walk,
