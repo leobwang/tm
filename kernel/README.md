@@ -26615,9 +26615,14 @@ Goals discharged, refuted or added: **none**; burn-down **13 → 13**, all stage
 6's. New theorems: **none** — no Lean file was touched, so the axiom audit is
 **3,993**, unchanged, and check 3's reconciliation is unaffected. New
 `decide`/`rfl` witnesses: **none**. New cheats: **none**. New parity entries:
-**none** — nothing on a kernel-against-fork path changed; the frozen-comparand
-guard `the_frozen_comparand_is_read_at_full_precision` still runs in the door
-suite, which passed 23/23 with `fork_arm` unconditional (D21-D23).
+**none** — nothing on a kernel-against-fork path changed; both fork-anchored
+arms ran green anyway (D21-D23), and they are **two different files**, which
+this block got wrong once and corrects here: `fork_arm` and the precision
+tripwire `the_frozen_comparand_is_read_at_full_precision` are in **T5**
+(`tm/tests/kernel_replay_parity.rs`, 33/33), while the **door suite**
+(`kernel_log_door`, 23/23) compares through `fork::compare_replay_with_fork`
+against the same frozen `fork-4748911-*.jsonl` answers, with its own denominator
+assertion (`t.values > 8_000`).
 `TmKernel.lean` imports: **78**, unchanged (no new module). No `sorry` outside
 `Goals.lean`, no new axiom, no `partial def`, `unsafe`, `opaque`,
 `implemented_by`, `panic!` in kernel code, `!`-accessor, `.toOption`, no
@@ -26643,9 +26648,12 @@ Every `lake`, `lean`, `cargo`, `check.sh` and `tm` invocation ran under
 the candidate probe). **The fork oracle was not rebuilt and the `TM_ORACLE`
 census was not re-run**, said plainly: this diff is two Rust files, one a test
 and the other an env-gated diagnostic, and nothing on the kernel-against-fork
-path changed — the door suite's unconditional `fork_arm` comparison against the
-frozen `fork-4748911-*.jsonl` fixtures ran green anyway and is the arm that
-would have caught a change.
+path changed — and both fork-anchored arms ran green anyway: T5
+(`kernel_replay_parity`, where `fork_arm` and
+`the_frozen_comparand_is_read_at_full_precision` live) 33/33, and the door
+suite, which compares against the frozen `fork-4748911-*.jsonl` answers through
+`fork::compare_replay_with_fork`, 23/23. Those are the arms that would have
+caught a change.
 
 **The latency rows were taken twice, paired.** Track P's `lake build` was
 running at 261% CPU (load average 4.04) during the first reading and every T11
